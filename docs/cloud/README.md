@@ -2,6 +2,10 @@
 
 C4 Cloud는 C4의 호스팅 SaaS 버전입니다.
 
+> **현재 상태**: 계획 단계. 로컬 버전(v0.1.0) 완성 후 개발 예정.
+>
+> 로드맵은 [../ROADMAP.md](../ROADMAP.md) 참조.
+
 ## Documents
 
 | Document | Description |
@@ -9,28 +13,61 @@ C4 Cloud는 C4의 호스팅 SaaS 버전입니다.
 | [PRD.md](./PRD.md) | Product Requirements Document |
 | [ARCHITECTURE.md](./ARCHITECTURE.md) | System Architecture |
 
-## Key Features (vs Local)
+## 로컬 vs 클라우드
 
+| 기능 | C4 Local (v0.1) | C4 Cloud (계획) |
+|------|-----------------|-----------------|
+| 설치 | `uv sync` + MCP 설정 | 웹 브라우저만 |
+| API 키 | 사용자 관리 | C4가 관리 |
+| 결과물 | 로컬 파일 | GitHub 자동 push |
+| 워커 | 같은 머신 | 슬라이더로 조절 |
+| 팀 협업 | 제한적 | 완전 지원 |
+| 비용 | 무료 | 구독 + 사용량 |
+
+## 개발 단계
+
+### Phase 1: State Store 추상화 (v0.2.0)
+
+로컬 버전에서 원격 state 지원 준비:
+
+```yaml
+# .c4/config.yaml
+sync:
+  backend: supabase  # or redis, postgresql
+  url: https://xxx.supabase.co
 ```
-C4 Local (CLI)              C4 Cloud (SaaS)
-─────────────────           ─────────────────
-터미널 설치 필요      →      웹 브라우저만
-API 키 직접 관리      →      C4가 관리
-로컬 파일 결과        →      GitHub 자동 push
-수동 워커 추가        →      슬라이더로 조절
-무료                  →      구독 + 사용량
-```
 
-## Target Launch
+### Phase 2: Cloud MVP (v1.0.0)
 
-- **v2.0 (MVP)**: 기본 웹 대시보드 + GitHub 연동
-- **v2.5**: 멀티 워커 + 팀 기능
-- **v3.0**: Enterprise (SSO, 온프레미스)
+- 웹 대시보드
+- GitHub 연동
+- Worker Pool 관리
+
+### Phase 3: Enterprise
+
+- SSO
+- 온프레미스
+- 감사 로그
 
 ## Tech Stack (Planned)
 
-- **Frontend**: Next.js, Vercel
-- **Backend**: FastAPI, Fly.io
-- **Database**: PostgreSQL (Supabase)
-- **Auth**: Clerk
-- **Payments**: Stripe
+| Layer | Technology |
+|-------|------------|
+| Frontend | Next.js, Vercel |
+| Backend | FastAPI, Fly.io |
+| Database | PostgreSQL (Supabase) |
+| Cache/Lock | Redis |
+| Auth | Clerk |
+| Payments | Stripe |
+
+## MCP 연결 옵션
+
+Cloud 버전에서 Claude Code 연결:
+
+```bash
+# Option A: HTTP Transport (권장)
+claude mcp add --transport http c4-cloud https://api.c4.dev/mcp
+
+# Option B: 로컬 Daemon + Cloud State
+# 로컬에서 Daemon 실행, state만 cloud에 저장
+```
