@@ -1,0 +1,171 @@
+"""Tests for C4D State Machine"""
+
+import tempfile
+from pathlib import Path
+
+import pytest
+
+from c4d.models import ProjectStatus, ExecutionMode
+from c4d.state_machine import (
+    StateMachine,
+    StateTransitionError,
+    InvariantViolationError,
+    TRANSITIONS,
+    ALLOWED_COMMANDS,
+)
+
+
+@pytest.fixture
+def temp_c4_dir():
+    """Create a temporary .c4 directory"""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        c4_dir = Path(tmpdir) / ".c4"
+        c4_dir.mkdir()
+        (c4_dir / "events").mkdir()
+        yield c4_dir
+
+
+@pytest.fixture
+def state_machine_init(temp_c4_dir):
+    """Create a state machine in INIT state"""
+    sm = StateMachine(temp_c4_dir)
+    sm.initialize_state("test-project")
+    return sm
+
+
+@pytest.fixture
+def state_machine(temp_c4_dir):
+    """Create a state machine in PLAN state (most common starting point)"""
+    sm = StateMachine(temp_c4_dir)
+    sm.initialize_state("test-project")
+    sm.transition("c4_init")  # INIT → PLAN
+    return sm
+
+
+class TestStateTransitions:
+    """Test state transition logic"""
+
+    def test_init_to_plan(self, state_machine_init):
+        """Test INIT → PLAN transition"""
+        assert state_machine_init.state.status == ProjectStatus.INIT
+        state_machine_init.transition("c4_init")
+        assert state_machine_init.state.status == ProjectStatus.PLAN
+
+    def test_plan_to_execute(self, state_machine):
+        """Test PLAN → EXECUTE transition"""
+        state_machine.transition("c4_run")
+        assert state_machine.state.status == ProjectStatus.EXECUTE
+        assert state_machine.state.execution_mode == ExecutionMode.RUNNING
+
+    def test_execute_to_halted(self, state_machine):
+        """Test EXECUTE → HALTED transition"""
+        state_machine.transition("c4_run")  # PLAN → EXECUTE
+        state_machine.transition("c4_stop")  # EXECUTE → HALTED
+        assert state_machine.state.status == ProjectStatus.HALTED
+
+    def test_halted_to_execute(self, state_machine):
+        """Test HALTED → EXECUTE transition"""
+        state_machine.transition("c4_run")  # PLAN → EXECUTE
+        state_machine.transition("c4_stop")  # EXECUTE → HALTED
+        state_machine.transition("c4_run")  # HALTED → EXECUTE
+        assert state_machine.state.status == ProjectStatus.EXECUTE
+
+    def test_invalid_transition_raises(self, state_machine):
+        """Test that invalid transitions raise StateTransitionError"""
+        # Try to run from PLAN to COMPLETE (invalid)
+        with pytest.raises(StateTransitionError):
+            state_machine.transition("approve")  # Not valid from PLAN
+
+    def test_transition_persistence(self, state_machine, temp_c4_dir):
+        """Test that transitions are persisted to state.json"""
+        state_machine.transition("c4_run")
+
+        # Load fresh state machine and check
+        sm2 = StateMachine(temp_c4_dir)
+        sm2.load_state()
+        assert sm2.state.status == ProjectStatus.EXECUTE
+
+
+class TestCommandValidation:
+    """Test command validation per state"""
+
+    def test_init_allowed_commands(self):
+        """Test allowed commands in INIT state"""
+        assert ALLOWED_COMMANDS[ProjectStatus.INIT] == ["init"]
+
+    def test_plan_allowed_commands(self):
+        """Test allowed commands in PLAN state"""
+        assert "run" in ALLOWED_COMMANDS[ProjectStatus.PLAN]
+        assert "stop" in ALLOWED_COMMANDS[ProjectStatus.PLAN]
+        assert "status" in ALLOWED_COMMANDS[ProjectStatus.PLAN]
+
+    def test_execute_allowed_commands(self):
+        """Test allowed commands in EXECUTE state"""
+        assert "worker join" in ALLOWED_COMMANDS[ProjectStatus.EXECUTE]
+        assert "stop" in ALLOWED_COMMANDS[ProjectStatus.EXECUTE]
+        assert "init" not in ALLOWED_COMMANDS[ProjectStatus.EXECUTE]
+
+    def test_is_command_allowed(self, state_machine):
+        """Test is_command_allowed method"""
+        # In PLAN state
+        assert state_machine.is_command_allowed("run")
+        assert state_machine.is_command_allowed("status")
+        assert not state_machine.is_command_allowed("worker join")
+
+
+class TestEventLogging:
+    """Test event logging"""
+
+    def test_transition_emits_event(self, state_machine, temp_c4_dir):
+        """Test that transitions emit STATE_CHANGED events"""
+        events_dir = temp_c4_dir / "events"
+
+        # Count initial events
+        initial_count = len(list(events_dir.glob("*.json")))
+
+        # Make a transition
+        state_machine.transition("c4_run")
+
+        # Check event was created
+        new_count = len(list(events_dir.glob("*.json")))
+        assert new_count > initial_count
+
+    def test_event_file_format(self, state_machine, temp_c4_dir):
+        """Test event file naming format"""
+        state_machine.transition("c4_run")
+
+        events_dir = temp_c4_dir / "events"
+        event_files = list(events_dir.glob("*STATE_CHANGED*.json"))
+
+        assert len(event_files) > 0
+        # Check format: NNNNNN-YYYYMMDDTHHMMSS-TYPE.json
+        filename = event_files[0].name
+        assert filename.startswith("0")  # Sequential ID
+        assert "STATE_CHANGED" in filename
+
+
+class TestInvariants:
+    """Test invariant checking"""
+
+    def test_check_invariants_empty_on_valid_state(self, state_machine):
+        """Test that check_invariants returns empty list for valid state"""
+        violations = state_machine.check_invariants()
+        assert violations == []
+
+
+class TestTransitionTable:
+    """Test transition table completeness"""
+
+    def test_all_states_have_transitions(self):
+        """Test that all states (except COMPLETE/ERROR) have outgoing transitions"""
+        states_with_transitions = set(s for s, _ in TRANSITIONS.keys())
+
+        for status in ProjectStatus:
+            if status in [ProjectStatus.COMPLETE, ProjectStatus.ERROR]:
+                continue  # These are terminal states
+            assert status in states_with_transitions, f"{status} has no transitions"
+
+    def test_all_states_have_allowed_commands(self):
+        """Test that all states have defined allowed commands"""
+        for status in ProjectStatus:
+            assert status in ALLOWED_COMMANDS, f"{status} missing from ALLOWED_COMMANDS"
