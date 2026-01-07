@@ -2,7 +2,7 @@
   "mcpServers": {
     "c4d": {
       "command": "uv",
-      "args": ["run", "python", "-m", "c4d.mcp_server"]
+      "args": ["run", "python", "-m", "c4.mcp_server"]
     }
   }
 }

@@ -8,9 +8,9 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from c4d.bundle import BundleCreator
-from c4d.models import SupervisorDecision
-from c4d.supervisor import Supervisor, SupervisorError
+from c4.bundle import BundleCreator
+from c4.models import SupervisorDecision
+from c4.supervisor import Supervisor, SupervisorError
 
 
 @pytest.fixture

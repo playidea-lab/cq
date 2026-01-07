@@ -8,8 +8,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from c4d.models import C4Config, ValidationConfig
-from c4d.validation import (
+from c4.models import C4Config, ValidationConfig
+from c4.validation import (
     ValidationRun,
     ValidationRunner,
     extract_failure_signature,

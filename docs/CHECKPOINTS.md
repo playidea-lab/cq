@@ -1,31 +1,31 @@
-# C4D Review Checkpoints
+# C4 Refactoring Checkpoints
 
-## CP1: 코드 리뷰 완료 ✅
+## CP-R1: Breaking Change 검증 ⏳
 
 ### Gate Conditions
 
-- [x] T-001: MCP Server 리뷰 완료
-- [x] T-002: State Machine 리뷰 완료
-- [x] T-003: Supervisor 리뷰 완료
+- [ ] T-R01: 패키지 리네임 c4d → c4
+- [ ] T-R02: daemon/ 서브패키지 추출
 
 ### Required Validations
 
-- lint: `uv run ruff check c4d/`
-- unit: `uv run pytest tests/`
+- lint: `uv run ruff check c4/ tests/`
+- unit: `uv run pytest tests/ -v`
 
 ### Decision Criteria
 
-- 모든 리뷰 태스크 완료
-- 테스트 전체 통과
+- 127개 테스트 전체 통과
+- 모든 import문 수정 완료
+- MCP Server 재연결 성공
 
 ---
 
-## CP2: 프로젝트 완료 ✅
+## CP-R2: 최종 검증 ⏳
 
 ### Gate Conditions
 
-- [x] T-004: 문서 리뷰 완료
-- [x] T-005: README 업데이트 완료
+- [ ] T-R03: models/ 분리
+- [ ] T-R04: 테스트 재편성
 
 ### Required Validations
 
@@ -34,5 +34,6 @@
 
 ### Decision Criteria
 
-- 전체 리뷰 완료
-- 문서화 완료
+- 127개+ 테스트 통과
+- 최대 파일 LOC < 300
+- 테스트 구조 unit/integration/e2e 분리 완료

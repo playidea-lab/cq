@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from c4d.mcp_server import C4Daemon
-from c4d.models import ProjectStatus, Task
+from c4.mcp_server import C4Daemon
+from c4.models import ProjectStatus, Task
 
 
 @pytest.fixture

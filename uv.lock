@@ -34,7 +34,7 @@ wheels = [
 ]
 
 [[package]]
-name = "c4d"
+name = "c4"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [

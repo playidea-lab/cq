@@ -16,16 +16,16 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from c4d.bundle import BundleCreator
-from c4d.mcp_server import C4Daemon
-from c4d.models import (
+from c4.bundle import BundleCreator
+from c4.mcp_server import C4Daemon
+from c4.models import (
     CheckpointConfig,
     ProjectStatus,
     SupervisorDecision,
     Task,
     ValidationConfig,
 )
-from c4d.supervisor import Supervisor
+from c4.supervisor import Supervisor
 
 
 @pytest.fixture

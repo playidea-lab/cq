@@ -39,6 +39,7 @@ htmlcov/
 
 # C4 runtime directories (will be created per-project)
 .c4/
+.c4-backup*/
 
 # OS
 .DS_Store

@@ -6,8 +6,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from c4d.mcp_server import C4Daemon
-from c4d.models import (
+from c4.mcp_server import C4Daemon
+from c4.models import (
     CheckpointConfig,
     ProjectStatus,
     Task,
