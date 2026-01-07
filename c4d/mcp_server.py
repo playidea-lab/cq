@@ -1008,9 +1008,19 @@ def create_server(project_root: Path | None = None) -> Server:
 
 async def main():
     """Run the MCP server"""
+    from mcp.server import InitializationOptions
+    from mcp.types import ServerCapabilities, ToolsCapability
+
     server = create_server()
+    init_options = InitializationOptions(
+        server_name="c4d",
+        server_version="0.1.0",
+        capabilities=ServerCapabilities(
+            tools=ToolsCapability(listChanged=False),
+        ),
+    )
     async with stdio_server() as (read_stream, write_stream):
-        await server.run(read_stream, write_stream)
+        await server.run(read_stream, write_stream, init_options)
 
 
 if __name__ == "__main__":
