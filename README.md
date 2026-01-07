@@ -1,6 +1,11 @@
-# C4D - AI Project Orchestration Daemon
+# C4 - AI Project Orchestration System
 
 C4 (Codex-Claude-Completion Control) is an AI project orchestration system that enables AI agents to execute projects from planning through completion without interruption.
+
+**Components:**
+
+- **c4** - CLI for project management
+- **c4d** - Daemon (MCP Server) for state management
 
 ## Features
 
