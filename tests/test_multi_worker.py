@@ -9,17 +9,13 @@ Tests concurrent worker scenarios including:
 
 import tempfile
 import time
-from datetime import datetime, timedelta
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 import pytest
 
 from c4d.mcp_server import C4Daemon
 from c4d.models import (
-    C4Config,
-    CheckpointConfig,
-    ProjectStatus,
     Task,
     ValidationConfig,
 )

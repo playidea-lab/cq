@@ -12,7 +12,6 @@ from .models import (
     EventType,
     ExecutionMode,
     ProjectStatus,
-    TaskQueue,
 )
 
 

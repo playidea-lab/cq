@@ -1,19 +1,19 @@
 """Tests for C4D Validation Runner"""
 
 import json
+import subprocess
 import tempfile
 from pathlib import Path
-from unittest.mock import patch, MagicMock
-import subprocess
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from c4d.models import C4Config, ValidationConfig
 from c4d.validation import (
-    ValidationRunner,
     ValidationRun,
-    parse_test_output,
+    ValidationRunner,
     extract_failure_signature,
+    parse_test_output,
 )
 
 

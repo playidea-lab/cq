@@ -5,7 +5,6 @@ import re
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
 
 from jinja2 import Environment, FileSystemLoader, Template
 
@@ -62,8 +61,8 @@ You are reviewing checkpoint **{{ checkpoint_id }}** for the C4 project.
 - Lines removed: -{{ lines_removed }}
 
 ## Validation Results
-{% for result in test_results %}
-- {{ result.name }}: {{ result.status }}{% if result.duration_ms %} ({{ result.duration_ms }}ms){% endif %}
+{% for r in test_results %}
+- {{ r.name }}: {{ r.status }}{% if r.duration_ms %} ({{ r.duration_ms }}ms){%- endif %}
 {% endfor %}
 
 ## Diff Summary

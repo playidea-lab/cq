@@ -2,13 +2,12 @@
 
 import tempfile
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from c4d.mcp_server import C4Daemon
 from c4d.models import (
-    C4Config,
     CheckpointConfig,
     ProjectStatus,
     Task,

@@ -5,13 +5,12 @@ from pathlib import Path
 
 import pytest
 
-from c4d.models import ProjectStatus, ExecutionMode
+from c4d.models import ExecutionMode, ProjectStatus
 from c4d.state_machine import (
+    ALLOWED_COMMANDS,
+    TRANSITIONS,
     StateMachine,
     StateTransitionError,
-    InvariantViolationError,
-    TRANSITIONS,
-    ALLOWED_COMMANDS,
 )
 
 

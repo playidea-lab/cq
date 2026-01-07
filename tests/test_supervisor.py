@@ -4,13 +4,13 @@ import json
 import subprocess
 import tempfile
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
-from c4d.supervisor import Supervisor, SupervisorResponse, SupervisorError
 from c4d.bundle import BundleCreator
 from c4d.models import SupervisorDecision
+from c4d.supervisor import Supervisor, SupervisorError
 
 
 @pytest.fixture
@@ -129,7 +129,10 @@ class TestRunSupervisor:
 
         mock_run.return_value = MagicMock(
             returncode=0,
-            stdout='{"decision": "REPLAN", "checkpoint": "CP1", "notes": "Architecture issue", "required_changes": []}',
+            stdout=(
+                '{"decision": "REPLAN", "checkpoint": "CP1", '
+                '"notes": "Architecture issue", "required_changes": []}'
+            ),
             stderr="",
         )
 
@@ -148,7 +151,10 @@ class TestRunSupervisor:
             MagicMock(returncode=0, stdout="Still thinking...", stderr=""),
             MagicMock(
                 returncode=0,
-                stdout='{"decision": "APPROVE", "checkpoint": "CP1", "notes": "OK", "required_changes": []}',
+                stdout=(
+                    '{"decision": "APPROVE", "checkpoint": "CP1", '
+                    '"notes": "OK", "required_changes": []}'
+                ),
                 stderr="",
             ),
         ]
@@ -198,7 +204,10 @@ class TestRunSupervisor:
             subprocess.TimeoutExpired("claude", 300),
             MagicMock(
                 returncode=0,
-                stdout='{"decision": "APPROVE", "checkpoint": "CP1", "notes": "OK", "required_changes": []}',
+                stdout=(
+                    '{"decision": "APPROVE", "checkpoint": "CP1", '
+                    '"notes": "OK", "required_changes": []}'
+                ),
                 stderr="",
             ),
         ]
@@ -218,7 +227,10 @@ class TestRunSupervisor:
             MagicMock(returncode=1, stdout="", stderr="Error: Something went wrong"),
             MagicMock(
                 returncode=0,
-                stdout='{"decision": "APPROVE", "checkpoint": "CP1", "notes": "OK", "required_changes": []}',
+                stdout=(
+                    '{"decision": "APPROVE", "checkpoint": "CP1", '
+                    '"notes": "OK", "required_changes": []}'
+                ),
                 stderr="",
             ),
         ]

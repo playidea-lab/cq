@@ -12,21 +12,20 @@ Scenarios:
 import json
 import tempfile
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
+from c4d.bundle import BundleCreator
 from c4d.mcp_server import C4Daemon
-from c4d.bundle import BundleCreator, BundleSummary
-from c4d.supervisor import Supervisor, SupervisorResponse, SupervisorError
 from c4d.models import (
-    C4Config,
     CheckpointConfig,
     ProjectStatus,
     SupervisorDecision,
     Task,
     ValidationConfig,
 )
+from c4d.supervisor import Supervisor
 
 
 @pytest.fixture
@@ -401,9 +400,9 @@ class TestBundleCreator:
         bundle_creator = BundleCreator(temp_project, configured_daemon.c4_dir)
 
         # Create multiple bundles
-        bundle1 = bundle_creator.create_bundle("CP1", ["T-001"], [])
-        bundle2 = bundle_creator.create_bundle("CP1", ["T-001", "T-002"], [])
-        bundle3 = bundle_creator.create_bundle("CP2", ["T-003"], [])
+        _bundle1 = bundle_creator.create_bundle("CP1", ["T-001"], [])
+        _bundle2 = bundle_creator.create_bundle("CP1", ["T-001", "T-002"], [])
+        _bundle3 = bundle_creator.create_bundle("CP2", ["T-003"], [])
 
         # Get latest overall
         latest = bundle_creator.get_latest_bundle()
@@ -488,7 +487,11 @@ class TestSupervisor:
         """Test parsing raw JSON without code block"""
         supervisor = Supervisor(temp_project)
 
-        output = '''Here is my decision: {"decision": "REQUEST_CHANGES", "checkpoint": "CP1", "notes": "Found issues", "required_changes": ["Fix lint error"]}'''
+        output = (
+            'Here is my decision: {"decision": "REQUEST_CHANGES", '
+            '"checkpoint": "CP1", "notes": "Found issues", '
+            '"required_changes": ["Fix lint error"]}'
+        )
 
         response = supervisor.parse_decision(output)
         assert response.decision == SupervisorDecision.REQUEST_CHANGES
@@ -498,7 +501,10 @@ class TestSupervisor:
         """Test parsing when entire output is JSON"""
         supervisor = Supervisor(temp_project)
 
-        output = '{"decision": "REPLAN", "checkpoint": "CP1", "notes": "Need to reconsider", "required_changes": []}'
+        output = (
+            '{"decision": "REPLAN", "checkpoint": "CP1", '
+            '"notes": "Need to reconsider", "required_changes": []}'
+        )
 
         response = supervisor.parse_decision(output)
         assert response.decision == SupervisorDecision.REPLAN

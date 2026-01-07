@@ -1,6 +1,5 @@
 """C4D CLI - Command line interface for c4d daemon and c4 project management"""
 
-import json
 import os
 import signal
 import subprocess
@@ -77,18 +76,19 @@ def start(
             pid_file.unlink()  # Stale pid file
 
     if foreground:
-        console.print(f"[green]Starting C4 daemon in foreground...[/green]")
+        console.print("[green]Starting C4 daemon in foreground...[/green]")
         console.print(f"Project: {project}")
         console.print(f"Log: {log_file}")
 
         # Run MCP server directly
-        from .mcp_server import main
         import asyncio
+
+        from .mcp_server import main
 
         asyncio.run(main())
     else:
         # Daemonize
-        console.print(f"[green]Starting C4 daemon...[/green]")
+        console.print("[green]Starting C4 daemon...[/green]")
 
         # Start as subprocess
         cmd = [sys.executable, "-m", "c4d.mcp_server"]
@@ -195,7 +195,7 @@ def init(
 
     state = daemon.initialize(project_id)
 
-    console.print(f"[green]C4 initialized![/green]")
+    console.print("[green]C4 initialized![/green]")
     console.print(f"Project ID: {state.project_id}")
     console.print(f"Status: {state.status.value}")
     console.print()
@@ -248,7 +248,9 @@ def _show_status(daemon: C4Daemon):
         console.print(f"[bold]Mode:[/bold] {status['execution_mode']}")
 
     if status["checkpoint"]["current"]:
-        console.print(f"[bold]Checkpoint:[/bold] {status['checkpoint']['current']} ({status['checkpoint']['state']})")
+        cp_current = status['checkpoint']['current']
+        cp_state = status['checkpoint']['state']
+        console.print(f"[bold]Checkpoint:[/bold] {cp_current} ({cp_state})")
 
     console.print()
 
@@ -325,8 +327,8 @@ def run():
         raise typer.Exit(1)
 
 
-@c4_app.command()
-def stop():
+@c4_app.command("stop")
+def halt():
     """Stop execution (→ HALTED)"""
     daemon = C4Daemon(Path.cwd())
 
@@ -337,7 +339,8 @@ def stop():
     daemon.load()
 
     if not daemon.state_machine.can_transition("c4_stop"):
-        console.print(f"[red]Error:[/red] Cannot stop from state {daemon.state_machine.state.status.value}")
+        state_val = daemon.state_machine.state.status.value
+        console.print(f"[red]Error:[/red] Cannot stop from state {state_val}")
         raise typer.Exit(1)
 
     try:
@@ -403,7 +406,8 @@ def worker_join(
     daemon.load()
 
     if daemon.state_machine.state.status != ProjectStatus.EXECUTE:
-        console.print(f"[red]Error:[/red] Cannot join workers in state {daemon.state_machine.state.status.value}")
+        state_val = daemon.state_machine.state.status.value
+        console.print(f"[red]Error:[/red] Cannot join workers in state {state_val}")
         console.print("Run 'c4 run' first to start execution")
         raise typer.Exit(1)
 
@@ -412,7 +416,7 @@ def worker_join(
         import uuid
         worker_id = f"worker-{uuid.uuid4().hex[:8]}"
 
-    worker = daemon.register_worker(worker_id)
+    _worker = daemon.register_worker(worker_id)
     console.print(f"[green]Joined as worker:[/green] {worker_id}")
     console.print()
     console.print("Ready to receive tasks. Use MCP tools:")

@@ -1,7 +1,6 @@
 """C4D MCP Server - Main server implementation with MCP tools"""
 
 import json
-import os
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -15,7 +14,6 @@ from .models import (
     C4State,
     CheckpointResponse,
     EventType,
-    ExecutionMode,
     ProjectStatus,
     ScopeLock,
     SubmitResponse,
@@ -26,7 +24,7 @@ from .models import (
     WorkerInfo,
 )
 from .state_machine import StateMachine, StateTransitionError
-from .validation import ValidationRunner, ValidationRun
+from .validation import ValidationRunner
 
 
 class C4Daemon:
@@ -748,8 +746,8 @@ class C4Daemon:
         Returns:
             Dictionary with supervisor decision and processing result
         """
-        from .supervisor import Supervisor, SupervisorResponse, SupervisorError
         from .models import SupervisorDecision
+        from .supervisor import Supervisor, SupervisorError
 
         if self.state_machine is None:
             raise RuntimeError("C4 not initialized")
@@ -853,7 +851,7 @@ def create_server(project_root: Path | None = None) -> Server:
             ),
             Tool(
                 name="c4_get_task",
-                description="Request next task assignment for a worker. Returns task details or null if no tasks available.",
+                description="Request next task assignment for a worker.",
                 inputSchema={
                     "type": "object",
                     "properties": {
@@ -912,7 +910,7 @@ def create_server(project_root: Path | None = None) -> Server:
             ),
             Tool(
                 name="c4_checkpoint",
-                description="Record supervisor checkpoint decision (APPROVE, REQUEST_CHANGES, REPLAN)",
+                description="Record supervisor checkpoint decision",
                 inputSchema={
                     "type": "object",
                     "properties": {
@@ -933,14 +931,14 @@ def create_server(project_root: Path | None = None) -> Server:
             ),
             Tool(
                 name="c4_run_validation",
-                description="Run validation commands (lint, test, etc.) and return results. Workers use this to verify their work before submitting.",
+                description="Run validation commands (lint, test) and return results.",
                 inputSchema={
                     "type": "object",
                     "properties": {
                         "names": {
                             "type": "array",
                             "items": {"type": "string"},
-                            "description": "Specific validations to run (e.g., ['lint', 'unit']). If not provided, runs all required validations.",
+                            "description": "Validations to run (e.g., ['lint', 'unit'])",
                         },
                         "fail_fast": {
                             "type": "boolean",
