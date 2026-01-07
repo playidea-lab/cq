@@ -237,7 +237,7 @@ class TestWorkerManagement:
 
     def test_register_worker(self, daemon):
         """Test worker registration"""
-        worker = daemon.register_worker("worker-1")
+        worker = daemon.worker_manager.register("worker-1")
 
         assert worker.worker_id == "worker-1"
         assert worker.state == "idle"

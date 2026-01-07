@@ -529,7 +529,7 @@ class TestLockManagement:
         time.sleep(0.1)
 
         # Refresh lock
-        result = daemon._refresh_scope_lock("api", "worker-1")
+        result = daemon.lock_manager.refresh("api", "worker-1")
         assert result is True
 
         # Expiry should be extended
@@ -547,7 +547,7 @@ class TestLockManagement:
         daemon.c4_get_task("worker-1")
 
         # Worker 2 tries to refresh Worker 1's lock
-        result = daemon._refresh_scope_lock("api", "worker-2")
+        result = daemon.lock_manager.refresh("api", "worker-2")
         assert result is False
 
     def test_cleanup_expired_locks(self, multi_worker_daemon):
@@ -566,7 +566,7 @@ class TestLockManagement:
         time.sleep(1.1)
 
         # Cleanup
-        expired = daemon._cleanup_expired_locks()
+        expired = daemon.lock_manager.cleanup_expired()
         assert "db" in expired
         assert "db" not in daemon.state_machine.state.locks.scopes
 
@@ -583,7 +583,7 @@ class TestLockManagement:
         daemon.c4_get_task("worker-a")
         daemon.c4_get_task("worker-b")
 
-        status = daemon.get_lock_status()
+        status = daemon.lock_manager.get_status()
 
         assert status["total_locks"] == 2
         assert "scope-0" in status["locks"]
@@ -606,6 +606,6 @@ class TestLockManagement:
         # Wait for expiration
         time.sleep(1.1)
 
-        status = daemon.get_lock_status()
+        status = daemon.lock_manager.get_status()
         assert status["locks"]["cache"]["expired"] is True
         assert status["locks"]["cache"]["remaining_seconds"] == 0

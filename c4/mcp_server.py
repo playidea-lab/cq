@@ -1,7 +1,6 @@
 """C4D MCP Server - Main server implementation with MCP tools"""
 
 import json
-from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -9,19 +8,18 @@ from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import TextContent, Tool
 
+from .daemon import LockManager, WorkerManager
 from .models import (
     C4Config,
     C4State,
     CheckpointResponse,
     EventType,
     ProjectStatus,
-    ScopeLock,
     SubmitResponse,
     Task,
     TaskAssignment,
     TaskStatus,
     ValidationResult,
-    WorkerInfo,
 )
 from .state_machine import StateMachine, StateTransitionError
 from .validation import ValidationRunner
@@ -37,6 +35,8 @@ class C4Daemon:
         self._config: C4Config | None = None
         self._tasks: dict[str, Task] = {}
         self._validation_runner: ValidationRunner | None = None
+        self._lock_manager: LockManager | None = None
+        self._worker_manager: WorkerManager | None = None
 
     # =========================================================================
     # Initialization
@@ -126,6 +126,24 @@ class C4Daemon:
             self._validation_runner = ValidationRunner(self.root, self.config)
         return self._validation_runner
 
+    @property
+    def lock_manager(self) -> LockManager:
+        """Get lock manager, creating if necessary"""
+        if self._lock_manager is None:
+            if self.state_machine is None:
+                raise RuntimeError("C4 not loaded")
+            self._lock_manager = LockManager(self.state_machine, self.config)
+        return self._lock_manager
+
+    @property
+    def worker_manager(self) -> WorkerManager:
+        """Get worker manager, creating if necessary"""
+        if self._worker_manager is None:
+            if self.state_machine is None:
+                raise RuntimeError("C4 not loaded")
+            self._worker_manager = WorkerManager(self.state_machine, self.config)
+        return self._worker_manager
+
     # =========================================================================
     # Task Management
     # =========================================================================
@@ -155,136 +173,6 @@ class C4Daemon:
             self.state_machine.state.queue.pending.append(task.id)
         self._save_tasks()
         self.state_machine.save_state()
-
-    # =========================================================================
-    # Worker Management
-    # =========================================================================
-
-    def register_worker(self, worker_id: str) -> WorkerInfo:
-        """Register a new worker"""
-        if self.state_machine is None:
-            raise RuntimeError("C4 not loaded")
-
-        now = datetime.now()
-        worker = WorkerInfo(
-            worker_id=worker_id,
-            state="idle",
-            joined_at=now,
-            last_seen=now,
-        )
-
-        self.state_machine.state.workers[worker_id] = worker
-        self.state_machine.emit_event(
-            EventType.WORKER_JOINED,
-            worker_id,
-            {"worker_id": worker_id},
-        )
-        self.state_machine.save_state()
-
-        return worker
-
-    def _can_assign_task(self, task: Task, worker_id: str) -> bool:
-        """Check if a task can be assigned to a worker"""
-        # Check dependencies
-        for dep_id in task.dependencies:
-            if dep_id not in self.state_machine.state.queue.done:
-                return False
-
-        # Check scope lock
-        if task.scope:
-            scope_locks = self.state_machine.state.locks.scopes
-            if task.scope in scope_locks:
-                lock = scope_locks[task.scope]
-                if lock.owner != worker_id and lock.expires_at > datetime.now():
-                    return False
-
-        return True
-
-    def _acquire_scope_lock(self, scope: str, worker_id: str) -> ScopeLock:
-        """Acquire a scope lock for a worker"""
-        ttl = self.config.scope_lock_ttl_sec
-        lock = ScopeLock(
-            owner=worker_id,
-            scope=scope,
-            expires_at=datetime.now() + timedelta(seconds=ttl),
-        )
-        self.state_machine.state.locks.scopes[scope] = lock
-        return lock
-
-    def _refresh_scope_lock(self, scope: str, worker_id: str) -> bool:
-        """
-        Refresh a scope lock's TTL.
-
-        Args:
-            scope: The scope to refresh
-            worker_id: The worker requesting refresh
-
-        Returns:
-            True if refresh successful, False if lock not owned
-        """
-        if self.state_machine is None:
-            return False
-
-        locks = self.state_machine.state.locks.scopes
-        if scope not in locks:
-            return False
-
-        lock = locks[scope]
-        if lock.owner != worker_id:
-            return False
-
-        # Extend TTL
-        ttl = self.config.scope_lock_ttl_sec
-        lock.expires_at = datetime.now() + timedelta(seconds=ttl)
-        self.state_machine.save_state()
-        return True
-
-    def _cleanup_expired_locks(self) -> list[str]:
-        """
-        Remove all expired scope locks.
-
-        Returns:
-            List of scopes that were cleaned up
-        """
-        if self.state_machine is None:
-            return []
-
-        now = datetime.now()
-        expired = []
-        locks = self.state_machine.state.locks.scopes
-
-        for scope, lock in list(locks.items()):
-            if lock.expires_at < now:
-                expired.append(scope)
-                del locks[scope]
-
-        if expired:
-            self.state_machine.save_state()
-
-        return expired
-
-    def get_lock_status(self) -> dict[str, Any]:
-        """Get current lock status for debugging/monitoring"""
-        if self.state_machine is None:
-            return {"error": "Not initialized"}
-
-        now = datetime.now()
-        locks = self.state_machine.state.locks.scopes
-        lock_info = {}
-
-        for scope, lock in locks.items():
-            remaining = (lock.expires_at - now).total_seconds()
-            lock_info[scope] = {
-                "owner": lock.owner,
-                "expires_at": lock.expires_at.isoformat(),
-                "remaining_seconds": max(0, remaining),
-                "expired": remaining <= 0,
-            }
-
-        return {
-            "total_locks": len(locks),
-            "locks": lock_info,
-        }
 
     # =========================================================================
     # MCP Tool Implementations
@@ -331,8 +219,8 @@ class C4Daemon:
             return None
 
         # Register worker if not exists
-        if worker_id not in state.workers:
-            self.register_worker(worker_id)
+        if not self.worker_manager.is_registered(worker_id):
+            self.worker_manager.register(worker_id)
 
         # Find available task
         for task_id in state.queue.pending[:]:  # Copy to avoid mutation during iteration
@@ -340,7 +228,7 @@ class C4Daemon:
             if task is None:
                 continue
 
-            if self._can_assign_task(task, worker_id):
+            if self.lock_manager.can_assign_task(task, worker_id):
                 # Assign task
                 state.queue.pending.remove(task_id)
                 state.queue.in_progress[task_id] = worker_id
@@ -353,13 +241,12 @@ class C4Daemon:
 
                 # Acquire scope lock
                 if task.scope:
-                    self._acquire_scope_lock(task.scope, worker_id)
+                    self.lock_manager.acquire(task.scope, worker_id)
 
                 # Update worker
-                state.workers[worker_id].state = "busy"
-                state.workers[worker_id].task_id = task_id
-                state.workers[worker_id].scope = task.scope
-                state.workers[worker_id].branch = task.branch
+                self.worker_manager.set_busy(
+                    worker_id, task_id, task.scope, task.branch
+                )
 
                 # Emit event
                 self.state_machine.emit_event(
@@ -432,14 +319,11 @@ class C4Daemon:
             self._save_tasks()
 
         # Release scope lock
-        if task and task.scope and task.scope in state.locks.scopes:
-            del state.locks.scopes[task.scope]
+        if task and task.scope:
+            self.lock_manager.release(task.scope)
 
         # Update worker
-        if worker_id in state.workers:
-            state.workers[worker_id].state = "idle"
-            state.workers[worker_id].task_id = None
-            state.workers[worker_id].scope = None
+        self.worker_manager.set_idle(worker_id)
 
         # Update metrics
         state.metrics.tasks_completed += 1
