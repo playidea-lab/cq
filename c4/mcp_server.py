@@ -1,6 +1,7 @@
 """C4D MCP Server - Main server implementation with MCP tools"""
 
 import json
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -8,13 +9,15 @@ from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import TextContent, Tool
 
-from .daemon import LockManager, WorkerManager
+from .daemon import LockManager, SupervisorLoopManager, WorkerManager
 from .models import (
     C4Config,
     C4State,
+    CheckpointQueueItem,
     CheckpointResponse,
     EventType,
     ProjectStatus,
+    RepairQueueItem,
     SubmitResponse,
     Task,
     TaskAssignment,
@@ -37,6 +40,7 @@ class C4Daemon:
         self._validation_runner: ValidationRunner | None = None
         self._lock_manager: LockManager | None = None
         self._worker_manager: WorkerManager | None = None
+        self._supervisor_loop_manager: SupervisorLoopManager | None = None
 
     # =========================================================================
     # Initialization
@@ -144,6 +148,35 @@ class C4Daemon:
             self._worker_manager = WorkerManager(self.state_machine, self.config)
         return self._worker_manager
 
+    @property
+    def supervisor_loop_manager(self) -> SupervisorLoopManager:
+        """Get supervisor loop manager, creating if necessary"""
+        if self._supervisor_loop_manager is None:
+            self._supervisor_loop_manager = SupervisorLoopManager(self)
+        return self._supervisor_loop_manager
+
+    def start_supervisor_loop(
+        self,
+        poll_interval: float = 1.0,
+        max_retries: int = 3,
+        supervisor_timeout: int = 300,
+    ) -> None:
+        """Start the background supervisor loop"""
+        self.supervisor_loop_manager.start(
+            poll_interval=poll_interval,
+            max_retries=max_retries,
+            supervisor_timeout=supervisor_timeout,
+        )
+
+    def stop_supervisor_loop(self) -> None:
+        """Stop the background supervisor loop"""
+        self.supervisor_loop_manager.stop()
+
+    @property
+    def is_supervisor_loop_running(self) -> bool:
+        """Check if supervisor loop is running"""
+        return self._supervisor_loop_manager is not None and self._supervisor_loop_manager.is_running
+
     # =========================================================================
     # Task Management
     # =========================================================================
@@ -205,6 +238,16 @@ class C4Daemon:
                 for wid, w in state.workers.items()
             },
             "metrics": state.metrics.model_dump(),
+            # Async queues for automation
+            "checkpoint_queue": [
+                {"checkpoint_id": item.checkpoint_id, "triggered_at": item.triggered_at}
+                for item in state.checkpoint_queue
+            ],
+            "repair_queue": [
+                {"task_id": item.task_id, "attempts": item.attempts}
+                for item in state.repair_queue
+            ],
+            "supervisor_loop_running": self.is_supervisor_loop_running,
         }
 
     def c4_get_task(self, worker_id: str) -> TaskAssignment | None:
@@ -347,12 +390,14 @@ class C4Daemon:
         # Check if checkpoint reached
         cp_id = self.state_machine.check_gate_conditions(self.config)
         if cp_id:
-            # Actually enter checkpoint state
+            # NON-BLOCKING: Add to checkpoint queue for async processing
+            self._add_to_checkpoint_queue(cp_id, results)
+            # Enter checkpoint state
             self.state_machine.enter_checkpoint(cp_id)
             return SubmitResponse(
                 success=True,
                 next_action="await_checkpoint",
-                message=f"Checkpoint {cp_id} reached",
+                message=f"Checkpoint {cp_id} queued for review",
             )
 
         # Check if all done
@@ -368,6 +413,28 @@ class C4Daemon:
             next_action="get_next_task",
             message="Task completed successfully",
         )
+
+    def _add_to_checkpoint_queue(
+        self, checkpoint_id: str, validation_results: list[ValidationResult]
+    ) -> None:
+        """Add checkpoint to queue for async supervisor processing"""
+        if self.state_machine is None:
+            return
+
+        state = self.state_machine.state
+
+        # Check if already in queue (avoid duplicates)
+        if any(item.checkpoint_id == checkpoint_id for item in state.checkpoint_queue):
+            return
+
+        item = CheckpointQueueItem(
+            checkpoint_id=checkpoint_id,
+            triggered_at=datetime.now().isoformat(),
+            tasks_completed=list(state.queue.done),
+            validation_results=validation_results,
+        )
+        state.checkpoint_queue.append(item)
+        self.state_machine.save_state()
 
     def c4_add_todo(
         self,
@@ -472,6 +539,77 @@ class C4Daemon:
 
         except StateTransitionError as e:
             return CheckpointResponse(success=False, message=str(e))
+
+    def c4_mark_blocked(
+        self,
+        task_id: str,
+        worker_id: str,
+        failure_signature: str,
+        attempts: int,
+        last_error: str = "",
+    ) -> dict[str, Any]:
+        """
+        Mark a task as blocked after max retry attempts.
+        Adds the task to repair queue for supervisor guidance.
+
+        Args:
+            task_id: ID of the blocked task
+            worker_id: ID of the worker that was working on the task
+            failure_signature: Error signature from validation failures
+            attempts: Number of fix attempts made
+            last_error: Last error message
+
+        Returns:
+            Dictionary with success status and message
+        """
+        if self.state_machine is None:
+            raise RuntimeError("C4 not initialized")
+
+        state = self.state_machine.state
+
+        # Move task from in_progress back to pending (will be picked up after repair)
+        if task_id in state.queue.in_progress:
+            del state.queue.in_progress[task_id]
+
+        # Get task and release scope lock
+        task = self.get_task(task_id)
+        if task and task.scope:
+            self.lock_manager.release(task.scope)
+
+        # Update worker state
+        if self.worker_manager.is_registered(worker_id):
+            self.worker_manager.set_idle(worker_id)
+
+        # Add to repair queue
+        item = RepairQueueItem(
+            task_id=task_id,
+            worker_id=worker_id,
+            failure_signature=failure_signature,
+            attempts=attempts,
+            blocked_at=datetime.now().isoformat(),
+            last_error=last_error,
+        )
+        state.repair_queue.append(item)
+
+        # Emit event
+        self.state_machine.emit_event(
+            EventType.WORKER_SUBMITTED,  # Reuse event type for blocked
+            worker_id,
+            {
+                "task_id": task_id,
+                "blocked": True,
+                "failure_signature": failure_signature,
+                "attempts": attempts,
+            },
+        )
+
+        self.state_machine.save_state()
+
+        return {
+            "success": True,
+            "message": f"Task {task_id} marked as blocked and added to repair queue",
+            "repair_queue_size": len(state.repair_queue),
+        }
 
     def c4_run_validation(
         self,
@@ -849,6 +987,36 @@ def create_server(project_root: Path | None = None) -> Server:
                     "required": [],
                 },
             ),
+            Tool(
+                name="c4_mark_blocked",
+                description="Mark a task as blocked after max retry attempts. Adds to repair queue for supervisor guidance.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "task_id": {
+                            "type": "string",
+                            "description": "ID of the blocked task",
+                        },
+                        "worker_id": {
+                            "type": "string",
+                            "description": "ID of the worker that was working on the task",
+                        },
+                        "failure_signature": {
+                            "type": "string",
+                            "description": "Error signature from validation failures",
+                        },
+                        "attempts": {
+                            "type": "integer",
+                            "description": "Number of fix attempts made",
+                        },
+                        "last_error": {
+                            "type": "string",
+                            "description": "Last error message",
+                        },
+                    },
+                    "required": ["task_id", "worker_id", "failure_signature", "attempts"],
+                },
+            ),
         ]
 
     @server.call_tool()
@@ -887,6 +1055,14 @@ def create_server(project_root: Path | None = None) -> Server:
                     names=arguments.get("names"),
                     fail_fast=arguments.get("fail_fast", True),
                     timeout=arguments.get("timeout", 300),
+                )
+            elif name == "c4_mark_blocked":
+                result = daemon.c4_mark_blocked(
+                    task_id=arguments["task_id"],
+                    worker_id=arguments["worker_id"],
+                    failure_signature=arguments["failure_signature"],
+                    attempts=arguments["attempts"],
+                    last_error=arguments.get("last_error", ""),
                 )
             else:
                 result = {"error": f"Unknown tool: {name}"}

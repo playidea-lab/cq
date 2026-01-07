@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 
 from .checkpoint import CheckpointState
 from .enums import ExecutionMode, ProjectStatus
+from .queue import CheckpointQueueItem, RepairQueueItem
 from .worker import WorkerInfo
 
 
@@ -62,5 +63,12 @@ class C4State(BaseModel):
     locks: LocksState = Field(default_factory=LocksState)
     last_validation: dict[str, str] | None = None  # validation_name → "pass"/"fail"
     metrics: Metrics = Field(default_factory=Metrics)
+    # Async queues for automation
+    checkpoint_queue: list[CheckpointQueueItem] = Field(
+        default_factory=list, description="Pending checkpoints awaiting supervisor review"
+    )
+    repair_queue: list[RepairQueueItem] = Field(
+        default_factory=list, description="Blocked tasks awaiting supervisor guidance"
+    )
     created_at: datetime = Field(default_factory=datetime.now)
     updated_at: datetime = Field(default_factory=datetime.now)

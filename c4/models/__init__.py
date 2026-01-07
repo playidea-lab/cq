@@ -17,6 +17,9 @@ from .enums import (
 # Event models
 from .event import Event
 
+# Queue models
+from .queue import CheckpointQueueItem, RepairQueueItem
+
 # Response models
 from .responses import CheckpointResponse, SubmitResponse, TaskAssignment
 
@@ -53,6 +56,9 @@ __all__ = [
     "CheckpointState",
     # Event
     "Event",
+    # Queue
+    "CheckpointQueueItem",
+    "RepairQueueItem",
     # State
     "C4State",
     "LeaderLock",
