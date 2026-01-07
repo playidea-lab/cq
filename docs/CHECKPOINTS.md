@@ -20,12 +20,12 @@
 
 ---
 
-## CP2: 프로젝트 완료
+## CP2: 프로젝트 완료 ✅
 
 ### Gate Conditions
 
-- [ ] T-004: 문서 리뷰 완료
-- [ ] T-005: README 업데이트 완료
+- [x] T-004: 문서 리뷰 완료
+- [x] T-005: README 업데이트 완료
 
 ### Required Validations
 
