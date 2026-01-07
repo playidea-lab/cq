@@ -347,6 +347,8 @@ class C4Daemon:
         # Check if checkpoint reached
         cp_id = self.state_machine.check_gate_conditions(self.config)
         if cp_id:
+            # Actually enter checkpoint state
+            self.state_machine.enter_checkpoint(cp_id)
             return SubmitResponse(
                 success=True,
                 next_action="await_checkpoint",
@@ -423,6 +425,10 @@ class C4Daemon:
         # Process decision
         try:
             if decision == "APPROVE":
+                # Add to passed checkpoints to prevent re-triggering
+                if checkpoint_id not in state.passed_checkpoints:
+                    state.passed_checkpoints.append(checkpoint_id)
+
                 # Check if this is the final checkpoint
                 is_final = not state.queue.pending
                 if is_final:
@@ -432,6 +438,11 @@ class C4Daemon:
                 state.metrics.checkpoints_passed += 1
 
             elif decision == "REQUEST_CHANGES":
+                # Mark checkpoint as passed to prevent re-triggering
+                # (supervisor has reviewed; RC tasks are the follow-up)
+                if checkpoint_id not in state.passed_checkpoints:
+                    state.passed_checkpoints.append(checkpoint_id)
+
                 # Add required changes as tasks
                 if required_changes:
                     for i, change in enumerate(required_changes):

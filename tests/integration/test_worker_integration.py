@@ -294,6 +294,72 @@ class TestCheckpointTrigger:
         assert daemon.state_machine.state.status == ProjectStatus.CHECKPOINT
 
 
+class TestPassedCheckpointTracking:
+    """Test that passed checkpoints are not re-triggered"""
+
+    @patch("subprocess.run")
+    def test_passed_checkpoint_not_retriggered(self, mock_run, temp_project):
+        """Test that a checkpoint is not triggered again after being approved"""
+        mock_run.return_value = MagicMock(
+            returncode=0,
+            stdout="ok",
+            stderr="",
+        )
+
+        daemon = C4Daemon(temp_project)
+        daemon.initialize("test-project")
+
+        # Configure two checkpoints
+        daemon._config.checkpoints = [
+            CheckpointConfig(
+                id="CP1",
+                required_tasks=["T-001"],
+                required_validations=["lint", "unit"],
+            ),
+            CheckpointConfig(
+                id="CP2",
+                required_tasks=["T-001", "T-002"],
+                required_validations=["lint", "unit"],
+            ),
+        ]
+        daemon._config.validation = ValidationConfig(
+            commands={"lint": "echo ok", "unit": "echo ok"},
+            required=["lint", "unit"],
+        )
+
+        # Add two tasks
+        daemon.add_task(Task(id="T-001", title="Task 1", dod="Test"))
+        daemon.add_task(Task(id="T-002", title="Task 2", dod="Test"))
+        daemon.state_machine.transition("c4_run")
+
+        # Complete T-001 and trigger CP1
+        daemon.c4_get_task("worker-1")
+        daemon.c4_run_validation()
+        result = daemon.c4_submit(
+            "T-001",
+            "commit-1",
+            [{"name": "lint", "status": "pass"}, {"name": "unit", "status": "pass"}],
+        )
+        assert result.next_action == "await_checkpoint"
+
+        # Approve CP1
+        daemon.c4_checkpoint("CP1", "APPROVE", "Approved")
+        assert "CP1" in daemon.state_machine.state.passed_checkpoints
+
+        # Complete T-002
+        daemon.c4_get_task("worker-1")
+        daemon.c4_run_validation()
+        result = daemon.c4_submit(
+            "T-002",
+            "commit-2",
+            [{"name": "lint", "status": "pass"}, {"name": "unit", "status": "pass"}],
+        )
+
+        # Should trigger CP2, NOT CP1 again
+        assert result.next_action == "await_checkpoint"
+        assert daemon.state_machine.state.checkpoint.current == "CP2"
+
+
 class TestMultipleTaskWorkflow:
     """Test workflow with multiple tasks"""
 

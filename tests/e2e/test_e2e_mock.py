@@ -132,11 +132,9 @@ class TestE2EHappyPath:
         assert submit_result.success is True
         assert submit_result.next_action == "await_checkpoint"
 
-        # === Phase 3: Checkpoint reached, trigger it ===
-        checkpoint_result = daemon.check_and_trigger_checkpoint()
-        assert checkpoint_result is not None
-        assert checkpoint_result["checkpoint_id"] == "CP1"
+        # === Phase 3: Checkpoint is now automatically triggered by c4_submit ===
         assert daemon.state_machine.state.status == ProjectStatus.CHECKPOINT
+        assert daemon.state_machine.state.checkpoint.current == "CP1"
 
         # === Phase 4: Create bundle and run mock supervisor ===
         bundle_dir = bundle_creator.create_bundle(
@@ -210,9 +208,9 @@ class TestE2ERequestChanges:
             ],
         )
 
-        # Trigger checkpoint
-        daemon.check_and_trigger_checkpoint()
+        # Checkpoint is now automatically triggered by c4_submit
         assert daemon.state_machine.state.status == ProjectStatus.CHECKPOINT
+        assert daemon.state_machine.state.checkpoint.current == "CP1"
 
         # === Create bundle and get REQUEST_CHANGES decision ===
         bundle_dir = bundle_creator.create_bundle(
@@ -327,9 +325,9 @@ class TestE2EReplan:
             ],
         )
 
-        # Trigger checkpoint
-        daemon.check_and_trigger_checkpoint()
+        # Checkpoint is now automatically triggered by c4_submit
         assert daemon.state_machine.state.status == ProjectStatus.CHECKPOINT
+        assert daemon.state_machine.state.checkpoint.current == "CP1"
 
         # === Get REPLAN decision ===
         bundle_dir = bundle_creator.create_bundle(

@@ -270,8 +270,12 @@ class StateMachine:
         """
         Check if any checkpoint gate conditions are met.
         Returns checkpoint ID if conditions met, None otherwise.
+        Skips checkpoints that have already been passed.
         """
         for cp_config in config.checkpoints:
+            # Skip already passed checkpoints
+            if cp_config.id in self.state.passed_checkpoints:
+                continue
             if self._is_checkpoint_satisfied(cp_config):
                 return cp_config.id
         return None

@@ -56,6 +56,7 @@ class C4State(BaseModel):
     status: ProjectStatus = ProjectStatus.INIT
     execution_mode: ExecutionMode | None = None
     checkpoint: CheckpointState = Field(default_factory=CheckpointState)
+    passed_checkpoints: list[str] = Field(default_factory=list)  # List of passed checkpoint IDs
     queue: TaskQueue = Field(default_factory=TaskQueue)
     workers: dict[str, WorkerInfo] = Field(default_factory=dict)
     locks: LocksState = Field(default_factory=LocksState)
