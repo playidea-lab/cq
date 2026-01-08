@@ -3,6 +3,17 @@
 자동으로 task를 받아 구현하고, 검증하고, 제출하는 루프를 실행합니다.
 **이 루프는 수동 확인 없이 자동으로 계속됩니다.**
 
+## ⚠️ 중요: MCP 도구만 사용
+
+**CLI(bash) 명령어를 사용하지 마세요!** 반드시 MCP 도구를 사용하세요:
+- `mcp__c4__c4_get_task(worker_id)` - 태스크 할당
+- `mcp__c4__c4_run_validation()` - 검증 실행
+- `mcp__c4__c4_submit(...)` - 태스크 제출
+- `mcp__c4__c4_mark_blocked(...)` - 블록 마킹
+- `mcp__c4__c4_status()` - 상태 확인
+
+MCP 도구가 안 되면 Claude Code를 재시작하세요.
+
 ## Instructions
 
 이 스킬이 호출되면 다음 루프를 **자동으로 반복**합니다.
