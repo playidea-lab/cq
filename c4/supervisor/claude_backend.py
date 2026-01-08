@@ -120,14 +120,14 @@ class ClaudeCliBackend(SupervisorBackend):
 
         raise ValueError(f"No valid JSON found in supervisor output: {output[:200]}...")
 
-    def _extract_json_object(self, text: str, start: int) -> str:
+    def _extract_json_object(self, text: str, start: int, max_length: int = 10000) -> str:
         """Extract a complete JSON object starting at given position"""
         depth = 0
         in_string = False
         escape = False
         result = []
 
-        for i, char in enumerate(text[start:], start):
+        for i, char in enumerate(text[start:start + max_length], start):
             result.append(char)
 
             if escape:

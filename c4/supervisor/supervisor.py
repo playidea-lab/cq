@@ -118,10 +118,11 @@ class Supervisor:
     # Backward compatibility aliases
     def run_supervisor_mock(self, *args, **kwargs) -> SupervisorResponse:
         """Deprecated: Use MockBackend instead"""
+        from ..models import SupervisorDecision
         from .mock_backend import MockBackend
 
         mock_backend = MockBackend(
-            decision=kwargs.get("mock_decision"),
+            decision=kwargs.get("mock_decision", SupervisorDecision.APPROVE),
             notes=kwargs.get("mock_notes", "Mock approval"),
             required_changes=kwargs.get("mock_changes"),
         )
