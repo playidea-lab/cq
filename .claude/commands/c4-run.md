@@ -2,6 +2,16 @@
 
 PLAN → EXECUTE 상태 전환 후 **Worker Loop를 자동으로 시작**합니다.
 
+## ⚠️ 중요: MCP 도구만 사용
+
+**CLI(bash) 명령어를 사용하지 마세요!** 반드시 MCP 도구를 사용하세요:
+- `mcp__c4__c4_status()` - 상태 확인
+- `mcp__c4__c4_get_task(worker_id)` - 태스크 할당
+- `mcp__c4__c4_submit(task_id, commit_sha, validation_results)` - 태스크 제출
+- `mcp__c4__c4_run_validation(names)` - 검증 실행
+
+MCP 도구가 안 되면 Claude Code를 재시작하세요.
+
 ## Instructions
 
 ### 1. 상태 확인
@@ -17,13 +27,15 @@ status = mcp__c4__c4_status()
 - **COMPLETE**: "프로젝트가 완료되었습니다."
 - **INIT**: "먼저 /c4-plan으로 계획을 수립하세요."
 
-### 2. PLAN 상태인 경우
+### 2. PLAN 또는 HALTED 상태인 경우
+
+PLAN/HALTED → EXECUTE 전환은 CLI로 합니다 (이것만 예외):
 
 ```bash
-uv run c4 run
+C4_PROJECT_ROOT=$(pwd) uv run --directory $C4_INSTALL_DIR c4 run
 ```
 
-실행하여 EXECUTE 상태로 전환합니다.
+($C4_INSTALL_DIR은 `cat ~/.c4-install-path`로 확인)
 
 ### 3. 상태 확인
 
