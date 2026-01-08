@@ -905,6 +905,17 @@ def create_server(project_root: Path | None = None) -> Server:
     # For backward compatibility
     daemon = get_daemon()
 
+    def clear_daemon_cache(project_root_str: str | None = None) -> bool:
+        """Clear daemon cache for a specific project or all projects"""
+        if project_root_str:
+            if project_root_str in _daemon_cache:
+                del _daemon_cache[project_root_str]
+                return True
+            return False
+        else:
+            _daemon_cache.clear()
+            return True
+
     @server.list_tools()
     async def list_tools() -> list[Tool]:
         return [
@@ -915,6 +926,25 @@ def create_server(project_root: Path | None = None) -> Server:
                     "type": "object",
                     "properties": {},
                     "required": [],
+                },
+            ),
+            Tool(
+                name="c4_clear",
+                description="Clear C4 state completely. Deletes .c4 directory and clears daemon cache. Use for development/debugging.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "confirm": {
+                            "type": "boolean",
+                            "description": "Must be true to confirm deletion",
+                        },
+                        "keep_config": {
+                            "type": "boolean",
+                            "description": "Keep config.yaml (default: false)",
+                            "default": False,
+                        },
+                    },
+                    "required": ["confirm"],
                 },
             ),
             Tool(
@@ -1062,6 +1092,56 @@ def create_server(project_root: Path | None = None) -> Server:
 
             if name == "c4_status":
                 result = daemon.c4_status()
+            elif name == "c4_clear":
+                if not arguments.get("confirm"):
+                    result = {"error": "Must set confirm=true to clear C4 state"}
+                else:
+                    import shutil
+                    import os
+
+                    # Get current project root
+                    if os.environ.get("C4_PROJECT_ROOT"):
+                        root = Path(os.environ["C4_PROJECT_ROOT"])
+                    elif project_root:
+                        root = project_root
+                    else:
+                        root = Path.cwd()
+
+                    c4_dir = root / ".c4"
+                    keep_config = arguments.get("keep_config", False)
+
+                    deleted_items = []
+                    if c4_dir.exists():
+                        if keep_config:
+                            # Delete everything except config.yaml
+                            config_backup = None
+                            config_file = c4_dir / "config.yaml"
+                            if config_file.exists():
+                                config_backup = config_file.read_text()
+
+                            shutil.rmtree(c4_dir)
+                            deleted_items.append(str(c4_dir))
+
+                            # Restore config
+                            if config_backup:
+                                c4_dir.mkdir(parents=True, exist_ok=True)
+                                config_file.write_text(config_backup)
+                                deleted_items.append("(config.yaml preserved)")
+                        else:
+                            shutil.rmtree(c4_dir)
+                            deleted_items.append(str(c4_dir))
+
+                    # Clear daemon cache
+                    root_str = str(root.resolve())
+                    cache_cleared = clear_daemon_cache(root_str)
+
+                    result = {
+                        "success": True,
+                        "deleted": deleted_items,
+                        "cache_cleared": cache_cleared,
+                        "project_root": str(root),
+                        "message": "C4 state cleared. Run /c4-init to reinitialize.",
+                    }
             elif name == "c4_get_task":
                 result = daemon.c4_get_task(arguments["worker_id"])
                 if result:
