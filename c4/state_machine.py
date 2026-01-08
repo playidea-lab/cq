@@ -2,6 +2,7 @@
 
 from datetime import datetime
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from .models import (
     C4Config,
@@ -13,6 +14,9 @@ from .models import (
     ExecutionMode,
     ProjectStatus,
 )
+
+if TYPE_CHECKING:
+    from .store import StateStore
 
 
 class StateTransitionError(Exception):
@@ -71,35 +75,40 @@ ALLOWED_COMMANDS: dict[ProjectStatus, list[str]] = {
 class StateMachine:
     """C4 State Machine with transition validation and invariant enforcement"""
 
-    def __init__(self, c4_dir: Path):
+    def __init__(self, c4_dir: Path, store: "StateStore | None" = None):
         self.c4_dir = c4_dir
-        self.state_file = c4_dir / "state.json"
         self.events_dir = c4_dir / "events"
         self._state: C4State | None = None
         self._event_counter: int = 0
+
+        # Initialize store (default to LocalFileStateStore)
+        if store is None:
+            from .store import LocalFileStateStore
+
+            self._store = LocalFileStateStore(c4_dir)
+        else:
+            self._store = store
 
     # =========================================================================
     # State Management
     # =========================================================================
 
     def load_state(self) -> C4State:
-        """Load state from state.json"""
-        if self.state_file.exists():
-            import json
+        """Load state from store"""
+        from .store import StateNotFoundError
 
-            data = json.loads(self.state_file.read_text())
-            self._state = C4State.model_validate(data)
-        else:
-            raise FileNotFoundError(f"State file not found: {self.state_file}")
+        try:
+            self._state = self._store.load("")  # project_id from state
+        except StateNotFoundError:
+            raise FileNotFoundError(f"State file not found: {self.c4_dir / 'state.json'}")
         return self._state
 
     def save_state(self) -> None:
-        """Save state to state.json (flush immediately after every transition)"""
+        """Save state to store (flush immediately after every transition)"""
         if self._state is None:
             raise ValueError("No state to save")
 
-        self._state.updated_at = datetime.now()
-        self.state_file.write_text(self._state.model_dump_json(indent=2))
+        self._store.save(self._state)  # Store handles updated_at
 
     def initialize_state(self, project_id: str) -> C4State:
         """Initialize new state for a project"""

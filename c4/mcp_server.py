@@ -25,13 +25,18 @@ from .models import (
     ValidationResult,
 )
 from .state_machine import StateMachine, StateTransitionError
+from .store import StateStore
 from .validation import ValidationRunner
 
 
 class C4Daemon:
     """C4 Daemon - manages project state and task orchestration"""
 
-    def __init__(self, project_root: Path | None = None):
+    def __init__(
+        self,
+        project_root: Path | None = None,
+        state_store: StateStore | None = None,
+    ):
         self.root = project_root or Path.cwd()
         self.c4_dir = self.root / ".c4"
         self.state_machine: StateMachine | None = None
@@ -41,6 +46,7 @@ class C4Daemon:
         self._lock_manager: LockManager | None = None
         self._worker_manager: WorkerManager | None = None
         self._supervisor_loop_manager: SupervisorLoopManager | None = None
+        self._state_store = state_store
 
     # =========================================================================
     # Initialization
@@ -68,8 +74,8 @@ class C4Daemon:
         # Create docs directory
         (self.root / "docs").mkdir(exist_ok=True)
 
-        # Initialize state machine
-        self.state_machine = StateMachine(self.c4_dir)
+        # Initialize state machine (with optional custom store)
+        self.state_machine = StateMachine(self.c4_dir, store=self._state_store)
         state = self.state_machine.initialize_state(project_id)
 
         # Create default config
@@ -86,7 +92,7 @@ class C4Daemon:
         if not self.is_initialized():
             raise FileNotFoundError(f"C4 not initialized in {self.root}")
 
-        self.state_machine = StateMachine(self.c4_dir)
+        self.state_machine = StateMachine(self.c4_dir, store=self._state_store)
         self.state_machine.load_state()
         self._load_config()
         self._load_tasks()
