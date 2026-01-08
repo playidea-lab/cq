@@ -58,15 +58,72 @@ uv run --directory $C4_INSTALL_DIR c4 init --project-id "$ARGUMENTS"
 
 - `$ARGUMENTS`가 없으면 현재 디렉토리 이름 사용
 
-### Step 6: 확인
+### Step 6: 실행 권한 설정
 
-생성된 파일 목록 표시:
+`~/.claude.json`의 `projects.$PROJECT_PATH.allowedTools`에 C4 자동화 권한 추가:
+
+```python
+import json
+from pathlib import Path
+
+config_path = Path.home() / ".claude.json"
+config = json.loads(config_path.read_text())
+
+project_path = "$CURRENT_PROJECT_DIR"  # 현재 프로젝트 절대 경로
+if project_path not in config.get("projects", {}):
+    config["projects"][project_path] = {}
+
+# C4 Worker 자동화 권한
+config["projects"][project_path]["allowedTools"] = [
+    # 파일 작업 (프로젝트 내만)
+    f"Write(//{project_path}/**)",
+    f"Edit(//{project_path}/**)",
+    f"Read(//{project_path}/**)",
+
+    # Git (안전한 명령만)
+    "Bash(git add:*)",
+    "Bash(git commit:*)",
+    "Bash(git checkout:*)",
+    "Bash(git branch:*)",
+    "Bash(git status:*)",
+    "Bash(git diff:*)",
+    "Bash(git log:*)",
+
+    # 패키지 관리자
+    "Bash(pnpm:*)",
+    "Bash(npm:*)",
+    "Bash(npx:*)",
+    "Bash(uv:*)",
+
+    # 빌드/테스트
+    "Bash(node:*)",
+    "Bash(python:*)",
+    "Bash(pytest:*)",
+
+    # 기본 명령
+    "Bash(mkdir:*)",
+    "Bash(ls:*)",
+    "Bash(cat:*)",
+    "Bash(pwd:*)",
+    "Bash(echo:*)",
+
+    # C4 MCP 도구
+    "mcp__c4__*",
+]
+
+config_path.write_text(json.dumps(config, indent=2))
+```
+
+### Step 7: 확인
+
+생성된 파일 및 설정 표시:
 - `.c4/` - C4 상태 디렉토리
 - `.c4/config.yaml` - 프로젝트 설정
 - `.c4/state.json` - 상태 파일
 - `.claude/settings.json` - MCP 로컬 설정
+- `~/.claude.json` - 실행 권한 (allowedTools)
 
-### Step 7: 안내
+### Step 8: 안내
 
 ```
 ✅ C4 초기화 완료!
