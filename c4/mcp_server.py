@@ -37,7 +37,14 @@ class C4Daemon:
         project_root: Path | None = None,
         state_store: StateStore | None = None,
     ):
-        self.root = project_root or Path.cwd()
+        import os
+        # Priority: explicit param > env var > cwd
+        if project_root:
+            self.root = project_root
+        elif os.environ.get("C4_PROJECT_ROOT"):
+            self.root = Path(os.environ["C4_PROJECT_ROOT"])
+        else:
+            self.root = Path.cwd()
         self.c4_dir = self.root / ".c4"
         self.state_machine: StateMachine | None = None
         self._config: C4Config | None = None
@@ -868,13 +875,35 @@ class C4Daemon:
 
 def create_server(project_root: Path | None = None) -> Server:
     """Create the MCP server with all tools registered"""
+    import os
 
     server = Server("c4d")
-    daemon = C4Daemon(project_root)
 
-    # Try to load existing project
-    if daemon.is_initialized():
-        daemon.load()
+    # Cache of daemons per project root
+    _daemon_cache: dict[str, C4Daemon] = {}
+
+    def get_daemon() -> C4Daemon:
+        """Get or create a daemon for the current project root"""
+        # Determine project root: env var > param > cwd
+        if os.environ.get("C4_PROJECT_ROOT"):
+            root = Path(os.environ["C4_PROJECT_ROOT"])
+        elif project_root:
+            root = project_root
+        else:
+            root = Path.cwd()
+
+        root_str = str(root.resolve())
+
+        if root_str not in _daemon_cache:
+            daemon = C4Daemon(root)
+            if daemon.is_initialized():
+                daemon.load()
+            _daemon_cache[root_str] = daemon
+
+        return _daemon_cache[root_str]
+
+    # For backward compatibility
+    daemon = get_daemon()
 
     @server.list_tools()
     async def list_tools() -> list[Tool]:
@@ -1028,6 +1057,9 @@ def create_server(project_root: Path | None = None) -> Server:
     @server.call_tool()
     async def call_tool(name: str, arguments: dict) -> list[TextContent]:
         try:
+            # Get daemon dynamically for the current project
+            daemon = get_daemon()
+
             if name == "c4_status":
                 result = daemon.c4_status()
             elif name == "c4_get_task":
