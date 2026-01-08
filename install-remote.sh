@@ -22,7 +22,6 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-CLAUDE_CONFIG="$HOME/.claude.json"
 CLAUDE_COMMANDS="$HOME/.claude/commands"
 
 echo "🚀 Installing C4..."
@@ -55,34 +54,9 @@ echo "📋 Copying slash commands..."
 mkdir -p "$CLAUDE_COMMANDS"
 cp "$C4_INSTALL_DIR/.claude/commands/c4-"*.md "$CLAUDE_COMMANDS/"
 
-# Configure MCP server
-echo "🔧 Configuring MCP server..."
-
-if [ ! -f "$CLAUDE_CONFIG" ]; then
-    echo '{}' > "$CLAUDE_CONFIG"
-fi
-
-# Use Python to safely edit JSON
-python3 << EOF
-import json
-from pathlib import Path
-
-config_path = Path("$CLAUDE_CONFIG")
-try:
-    config = json.loads(config_path.read_text())
-except:
-    config = {}
-
-if "mcpServers" not in config:
-    config["mcpServers"] = {}
-
-config["mcpServers"]["c4"] = {
-    "command": "uv",
-    "args": ["--directory", "$C4_INSTALL_DIR", "run", "python", "-m", "c4.mcp_server"]
-}
-
-config_path.write_text(json.dumps(config, indent=2))
-EOF
+# Store install path for /c4-init
+echo "📝 Saving install path..."
+echo "$C4_INSTALL_DIR" > "$HOME/.c4-install-path"
 
 echo ""
 echo "✅ C4 installed successfully!"
@@ -91,4 +65,6 @@ echo "📌 Next steps:"
 echo "   1. Restart Claude Code"
 echo "   2. cd /path/to/your/project"
 echo "   3. /c4-init"
+echo ""
+echo "💡 /c4-init will configure the MCP server for each project automatically."
 echo ""
