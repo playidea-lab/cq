@@ -95,6 +95,9 @@ config["projects"][project_path]["allowedTools"] = [
     "Bash(npx:*)",
     "Bash(uv:*)",
 
+    # 환경변수 prefix (C4용)
+    "Bash(C4_PROJECT_ROOT=:*)",
+
     # 빌드/테스트
     "Bash(node:*)",
     "Bash(python:*)",
@@ -106,9 +109,13 @@ config["projects"][project_path]["allowedTools"] = [
     "Bash(cat:*)",
     "Bash(pwd:*)",
     "Bash(echo:*)",
+    "Bash(touch:*)",
+    "Bash(cp:*)",
 
-    # C4 MCP 도구
+    # MCP 도구
     "mcp__c4__*",
+    "mcp__serena__*",
+    "mcp__plugin_serena_serena__*",
 ]
 
 config_path.write_text(json.dumps(config, indent=2))
