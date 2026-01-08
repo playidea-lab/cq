@@ -179,15 +179,23 @@
 4. `dependencies`는 선후관계 고려
 5. `validations`는 인터뷰에서 결정된 도구
 
-**태스크 생성:**
+**태스크 생성 (MCP 도구 사용):**
 ```javascript
-// Phase 1 예시
 mcp__c4__c4_add_todo({
   task_id: "T-001",
   title: "MediaPipe Hands 연동",
   scope: "src/HandTracker.js",
   dod: "웹캠에서 손 인식, 검지 손끝(landmark 8) 좌표 추출 가능"
 })
+```
+
+**또는 CLI 사용:**
+```bash
+uv run --directory $C4_INSTALL_DIR c4 add-task \
+  --task-id "T-001" \
+  --title "MediaPipe Hands 연동" \
+  --scope "src/HandTracker.js" \
+  --dod "웹캠에서 손 인식, 검지 손끝(landmark 8) 좌표 추출 가능"
 ```
 
 **체크포인트 설정:**
