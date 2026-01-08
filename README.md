@@ -9,55 +9,115 @@ C4 (Codex-Claude-Completion Control) is an AI project orchestration system that 
 - **Multi-Worker**: Parallel task execution with scope-based locking
 - **Checkpoint Gates**: Human/supervisor review points between phases
 - **Auto-Validation**: Built-in lint and test runners
+- **Pluggable Architecture**: Extensible StateStore and SupervisorBackend
 
-## Installation
+## Documentation
 
-```bash
-git clone https://github.com/your-org/c4.git
-cd c4
-uv sync
-```
+### Getting Started
+
+| 문서 | 설명 |
+|------|------|
+| [설치 가이드](docs/getting-started/설치-가이드.md) | 설치 및 Claude Code 설정 |
+| [빠른 시작](docs/getting-started/빠른-시작.md) | 5분 퀵스타트 가이드 |
+| [예제: C4 셀프호스팅](docs/getting-started/예제-C4-셀프호스팅.md) | C4로 C4 개발하기 튜토리얼 |
+
+### User Guide
+
+| 문서 | 설명 |
+|------|------|
+| [워크플로우 개요](docs/user-guide/워크플로우-개요.md) | Plan → Execute → Checkpoint 흐름 |
+| [명령어 레퍼런스](docs/user-guide/명령어-레퍼런스.md) | 슬래시 명령어 상세 |
+| [문제 해결](docs/user-guide/문제-해결.md) | FAQ 및 트러블슈팅 |
+
+### Developer Guide
+
+| 문서 | 설명 |
+|------|------|
+| [아키텍처](docs/developer-guide/아키텍처.md) | 시스템 구조 및 컴포넌트 |
+| [StateStore 확장](docs/developer-guide/StateStore-확장.md) | 커스텀 저장소 구현 (Redis, Supabase 등) |
+| [SupervisorBackend 확장](docs/developer-guide/SupervisorBackend-확장.md) | 다른 LLM 연동 (OpenAI, Copilot 등) |
+| [커스텀 Validator](docs/developer-guide/커스텀-Validator.md) | 검증 명령 추가 |
+
+### API Reference
+
+| 문서 | 설명 |
+|------|------|
+| [MCP 도구 레퍼런스](docs/api/MCP-도구-레퍼런스.md) | 7개 MCP 도구 상세 스펙 |
+
+---
 
 ## Quick Start
 
-### 1. Initialize Project
+### 1. Installation (One-liner)
 
 ```bash
-uv run c4 init --project-id "my-project"
+curl -LsSf https://git.pilab.co.kr/pi/c4/-/raw/main/install-remote.sh | sh
 ```
 
-Creates `.c4/` directory with config and state files.
+That's it! The script will:
+- Install dependencies (`uv sync`)
+- Copy slash commands to `~/.claude/commands/`
+- Configure MCP server in `~/.claude.json`
 
-### 2. Configure MCP Server
+### 2. Restart Claude Code
 
-Add to your project's `.mcp.json`:
+Close and reopen Claude Code to load the new configuration.
 
-```json
-{
-  "mcpServers": {
-    "c4": {
-      "command": "uv",
-      "args": ["run", "python", "-m", "c4.mcp_server"],
-      "cwd": "/path/to/your/project"
-    }
-  }
+### 3. Initialize Your Project
+
+```bash
+cd /path/to/your/project
+claude
+```
+
+In Claude Code:
+```
+/c4-init
+```
+
+### 4. Start Working
+
+```
+/c4-plan       # Interpret docs and create tasks
+/c4-run        # Start automated execution
+/c4-status     # Check progress anytime
+```
+
+<details>
+<summary>Alternative: Clone & Install</summary>
+
+```bash
+git clone https://git.pilab.co.kr/pi/c4.git
+cd c4
+./install.sh
+```
+
+</details>
+
+<details>
+<summary>Alternative: Manual Setup</summary>
+
+```bash
+# 1. Clone and install dependencies
+git clone https://git.pilab.co.kr/pi/c4.git
+cd c4
+uv sync
+
+# 2. Copy commands
+cp .claude/commands/c4-*.md ~/.claude/commands/
+
+# 3. Add to ~/.claude.json mcpServers:
+"c4": {
+  "command": "uv",
+  "args": ["--directory", "/path/to/c4", "run", "python", "-m", "c4.mcp_server"]
 }
 ```
 
-### 3. Start Working
+</details>
 
-In Claude Code, use the slash commands:
-
-```bash
-/c4-status     # Check project state
-/c4-worker     # Get a task and start working
-/c4-validate   # Run lint/test validations
-/c4-submit     # Submit completed work
-```
+---
 
 ## Claude Code Slash Commands
-
-C4 provides slash commands for seamless Claude Code integration:
 
 | Command | Description |
 |---------|-------------|
@@ -72,18 +132,21 @@ C4 provides slash commands for seamless Claude Code integration:
 | `/c4-checkpoint` | Handle checkpoint review |
 | `/c4-add-task` | Add new task to queue |
 
-## MCP Tools
+---
 
-When connected via MCP, these tools are available:
+## MCP Tools
 
 | Tool | Description |
 |------|-------------|
-| `c4_status()` | Get project status, queue, workers |
-| `c4_get_task(worker_id)` | Get next task assignment |
-| `c4_submit(task_id, commit_sha, results)` | Submit completed task |
-| `c4_run_validation(names, timeout)` | Run validations |
-| `c4_checkpoint(id, decision, notes)` | Record supervisor decision |
-| `c4_add_todo(task_id, title, dod)` | Add new task |
+| `c4_status` | Get project status, queue, workers |
+| `c4_get_task` | Get next task assignment |
+| `c4_submit` | Submit completed task |
+| `c4_run_validation` | Run validations |
+| `c4_checkpoint` | Record supervisor decision |
+| `c4_add_todo` | Add new task |
+| `c4_mark_blocked` | Mark task as blocked |
+
+---
 
 ## Workflow
 
@@ -94,7 +157,7 @@ When connected via MCP, these tools are available:
                    │               │               │
                    │               ▼               │
                    │          ┌─────────┐          │
-                   └──────────│ REPLAN  │◀─────────┘
+                   └──────────│ HALTED  │◀─────────┘
                               └─────────┘
 ```
 
@@ -106,6 +169,7 @@ When connected via MCP, these tools are available:
 | **PLAN** | Planning tasks and checkpoints |
 | **EXECUTE** | Workers processing tasks |
 | **CHECKPOINT** | Awaiting supervisor review |
+| **HALTED** | Execution paused |
 | **COMPLETE** | All tasks done, project finished |
 
 ### Checkpoint Decisions
@@ -116,28 +180,52 @@ When connected via MCP, these tools are available:
 | `REQUEST_CHANGES` | Create fix tasks, continue execution |
 | `REPLAN` | Return to planning phase |
 
+---
+
 ## Architecture
 
 ```text
 ┌─────────────────────────────────────────────────────────────┐
-│                     C4 MCP Server                           │
-│  ┌────────────────────────────────────────────────────────┐ │
-│  │ State Machine │ Event Log │ Task Queue │ Validations   │ │
-│  │     (.c4/)    │  events/  │ state.json │   runner      │ │
-│  └────────────────────────────────────────────────────────┘ │
+│                       MCP Server                             │
+│  ┌─────────────────────────────────────────────────────────┐│
+│  │                     C4Daemon                             ││
+│  │  ┌──────────────┐  ┌──────────────┐  ┌───────────────┐  ││
+│  │  │ StateMachine │  │ TaskManager  │  │ LockManager   │  ││
+│  │  └──────┬───────┘  └──────────────┘  └───────────────┘  ││
+│  │         │                                                ││
+│  │         v                                                ││
+│  │  ┌──────────────┐         ┌────────────────────────┐    ││
+│  │  │  StateStore  │◄───────▶│  SupervisorBackend    │    ││
+│  │  │  (Protocol)  │         │     (Protocol)         │    ││
+│  │  └──────┬───────┘         └────────┬───────────────┘    ││
+│  │         │                          │                     ││
+│  │  ┌──────┴──────┐           ┌───────┴───────┐            ││
+│  │  │ LocalFile   │           │  ClaudeCLI    │            ││
+│  │  │ SQLite      │           │  Mock         │            ││
+│  │  │ (Extensible)│           │  (Extensible) │            ││
+│  │  └─────────────┘           └───────────────┘            ││
+│  └─────────────────────────────────────────────────────────┘│
 └─────────────────────────────────────────────────────────────┘
-                              │
-              ┌───────────────┴───────────────┐
-              ▼                               ▼
-   ┌─────────────────────┐         ┌─────────────────────┐
+              │                               │
+   ┌──────────┴──────────┐         ┌──────────┴──────────┐
    │   Worker Agents     │         │     Supervisor      │
    │   (Claude Code)     │         │   (Human/Claude)    │
-   │                     │         │                     │
-   │ • /c4-worker        │         │ • /c4-checkpoint    │
-   │ • /c4-submit        │         │ • Review bundles    │
-   │ • /c4-validate      │         │ • APPROVE/REJECT    │
    └─────────────────────┘         └─────────────────────┘
 ```
+
+### Pluggable Components
+
+**StateStore**: 상태 저장소 백엔드
+- `LocalFileStateStore`: 파일 기반 (기본)
+- `SQLiteStateStore`: SQLite 데이터베이스
+- 확장: Redis, Supabase, PostgreSQL 등
+
+**SupervisorBackend**: Supervisor 리뷰 백엔드
+- `ClaudeCliBackend`: Claude CLI 사용 (기본)
+- `MockBackend`: 테스트용
+- 확장: OpenAI, GitHub Copilot, Human Review 등
+
+---
 
 ## Configuration
 
@@ -148,57 +236,25 @@ project_id: my-project
 default_branch: main
 work_branch_prefix: "c4/w-"
 
-validation:
-  commands:
-    lint: uv run ruff check src/
-    unit: uv run pytest tests/ -v
-  required:
-    - lint
-    - unit
+validations:
+  lint:
+    command: "uv run ruff check"
+    description: "Code style check"
+  unit:
+    command: "uv run pytest tests/unit"
+    description: "Unit tests"
+  integration:
+    command: "uv run pytest tests/integration"
+    description: "Integration tests"
 
 checkpoints:
-  - id: CP1
+  - id: CP-001
     name: "Phase 1 Review"
     required_tasks: ["T-001", "T-002"]
     required_validations: ["lint", "unit"]
 ```
 
-## Example Session
-
-```bash
-# 1. Initialize
-$ uv run c4 init --project-id "feature-auth"
-
-# 2. In Claude Code with MCP connected:
-> /c4-status
-Project: feature-auth
-Status: PLAN
-Queue: 0 pending, 0 in_progress, 0 done
-
-> /c4-add-task T-001 "Implement login API"
-Added task T-001
-
-> /c4-run
-Status changed: PLAN → EXECUTE
-
-> /c4-worker
-Assigned: T-001 "Implement login API"
-Branch: c4/w-T-001
-DoD: Login endpoint with JWT
-
-# ... implement feature ...
-
-> /c4-validate
-Running: lint, unit
-Results: lint=pass, unit=pass
-
-> /c4-submit
-Submitted T-001 (commit: abc123)
-Checkpoint CP1 reached - awaiting review
-
-> /c4-checkpoint APPROVE "Code looks good"
-CP1 approved - project COMPLETE
-```
+---
 
 ## Development
 
@@ -211,6 +267,10 @@ uv run ruff check c4/ tests/
 
 # Type check
 uv run mypy c4/
+
+# Run specific test category
+uv run pytest tests/unit -v
+uv run pytest tests/integration -v
 ```
 
 ## Project Structure
@@ -221,14 +281,23 @@ c4/
 │   ├── mcp_server.py      # MCP server (C4Daemon)
 │   ├── state_machine.py   # State transitions
 │   ├── models/            # Pydantic schemas
+│   ├── store/             # StateStore implementations
+│   ├── supervisor/        # SupervisorBackend implementations
 │   ├── daemon/            # Manager classes
-│   └── bundle.py          # Checkpoint bundles
+│   └── validation.py      # Validation runner
 ├── tests/
 │   ├── unit/              # Unit tests
 │   ├── integration/       # Integration tests
 │   └── e2e/               # End-to-end tests
+├── docs/                  # Documentation (한국어)
+│   ├── getting-started/   # 시작 가이드
+│   ├── user-guide/        # 사용자 가이드
+│   ├── developer-guide/   # 개발자 가이드
+│   └── api/               # API 레퍼런스
 └── .claude/commands/      # Slash commands
 ```
+
+---
 
 ## License
 
