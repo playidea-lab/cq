@@ -96,67 +96,14 @@ config["projects"][project_path]["allowedTools"] = [
     f"Edit(/{project_path}/**)",
     f"Read(/{project_path}/**)",
 
-    # Git (읽기/안전한 쓰기)
-    "Bash(git add:*)",
-    "Bash(git commit:*)",
-    "Bash(git checkout:*)",
-    "Bash(git branch:*)",
-    "Bash(git status:*)",
-    "Bash(git diff:*)",
-    "Bash(git log:*)",
-    "Bash(git show:*)",
-    "Bash(git rev-parse:*)",
-    "Bash(git stash:*)",
-    "Bash(git fetch:*)",
-    "Bash(git pull:*)",
-    "Bash(git merge:*)",
-    "Bash(git rebase:*)",
-    "Bash(git reset:*)",       # soft/mixed reset
-    "Bash(git rm:*)",          # git tracked 파일만
-
-    # 패키지 관리자 (구체적 패턴)
-    "Bash(pnpm:*)",
-    "Bash(pnpm test:*)",
-    "Bash(pnpm build:*)",
-    "Bash(pnpm install:*)",
-    "Bash(pnpm run:*)",
-    "Bash(pnpm dev:*)",
-    "Bash(npm:*)",
-    "Bash(npm test:*)",
-    "Bash(npm run:*)",
-    "Bash(npm install:*)",
-    "Bash(npx:*)",
-    "Bash(uv:*)",
-    "Bash(uv run:*)",
-    "Bash(uv sync:*)",
-
-    # 환경변수 prefix (C4용)
-    "Bash(C4_PROJECT_ROOT=:*)",
-
-    # 빌드/테스트
-    "Bash(node:*)",
-    "Bash(python:*)",
-    "Bash(python3:*)",
-    "Bash(pytest:*)",
-    "Bash(vitest:*)",
-
-    # 기본 명령 (읽기 위주)
-    "Bash(mkdir:*)",
-    "Bash(ls:*)",
-    "Bash(cat:*)",
-    "Bash(pwd:*)",
-    "Bash(echo:*)",
-    "Bash(touch:*)",
-    "Bash(cp:*)",
-    "Bash(mv:*)",
-    "Bash(tail:*)",
-    "Bash(head:*)",
-    "Bash(tree:*)",
-    "Bash(wc:*)",
-    "Bash(grep:*)",
-    "Bash(find:*)",
-    "Bash(which:*)",
-    # NOTE: rm:* 제외 - 파일 삭제는 수동 승인 필요
+    # Bash 전체 허용 (Security Hook이 위험 명령 차단)
+    # Step 7.6에서 설치한 c4-bash-security-hook.sh가 다음을 차단:
+    #   - rm -rf /, rm -rf ~  (대량 삭제)
+    #   - chmod 777, sudo chmod (권한 변경)
+    #   - git push --force main (강제 푸시)
+    #   - curl|sh, wget|bash (원격 실행)
+    #   - npm publish (의도치 않은 배포)
+    "Bash(*)",
 
     # MCP 도구 (서버 이름만 - 와일드카드 아님!)
     # 참고: mcp__c4__* 안됨, mcp__c4 만 됨
@@ -216,6 +163,68 @@ chmod +x ~/.claude/hooks/c4-stop-hook.py
 - `CHECKPOINT` 상태 + queue 있음 → **종료 차단** (code 2)
 - `COMPLETE`, `BLOCKED`, `PLAN`, `HALTED` → 종료 허용 (code 0)
 
+### Step 7.6: Bash Security Hook 설치 (위험 명령 차단)
+
+`Bash(*)` 권한 사용 시 위험한 명령을 차단하는 보안 Hook을 설치합니다:
+
+```bash
+# Security hook 복사
+cp $C4_INSTALL_DIR/templates/c4-bash-security-hook.sh ~/.claude/hooks/
+chmod +x ~/.claude/hooks/c4-bash-security-hook.sh
+```
+
+**~/.claude/settings.json**에 hook 등록 추가:
+
+```python
+import json
+from pathlib import Path
+
+settings_path = Path.home() / ".claude" / "settings.json"
+settings_path.parent.mkdir(parents=True, exist_ok=True)
+
+# 기존 설정 로드 또는 새로 생성
+if settings_path.exists():
+    settings = json.loads(settings_path.read_text())
+else:
+    settings = {}
+
+# hooks 구조 초기화
+if "hooks" not in settings:
+    settings["hooks"] = {}
+if "pre-tool-use" not in settings["hooks"]:
+    settings["hooks"]["pre-tool-use"] = []
+
+# Bash security hook 추가 (중복 체크)
+bash_hook = {
+    "matcher": "Bash",
+    "hooks": [
+        {
+            "type": "command",
+            "command": "~/.claude/hooks/c4-bash-security-hook.sh"
+        }
+    ]
+}
+
+# 기존 Bash hook이 있으면 제거 후 새로 추가
+settings["hooks"]["pre-tool-use"] = [
+    h for h in settings["hooks"]["pre-tool-use"]
+    if h.get("matcher") != "Bash"
+]
+settings["hooks"]["pre-tool-use"].append(bash_hook)
+
+settings_path.write_text(json.dumps(settings, indent=2))
+```
+
+**차단되는 위험 명령**:
+| 카테고리 | 예시 | 이유 |
+|---------|------|------|
+| 대량 삭제 | `rm -rf /`, `rm -rf ~` | 시스템 파괴 방지 |
+| 권한 변경 | `chmod 777`, `sudo chmod` | 보안 유지 |
+| Git 강제 | `git push --force main` | 코드 손실 방지 |
+| 원격 실행 | `curl ... \| sh` | 악성코드 방지 |
+| 시스템 | `dd if=`, `mkfs` | 디스크 손상 방지 |
+| 퍼블리시 | `npm publish` | 의도치 않은 배포 방지 |
+
 ### Step 8: 확인
 
 생성된 파일 및 설정 표시:
@@ -225,13 +234,19 @@ chmod +x ~/.claude/hooks/c4-stop-hook.py
 - `.mcp.json` - MCP 서버 설정 (프로젝트 루트)
 - `.claude/settings.json` - MCP 자동 승인 설정
 - `~/.claude.json` - 실행 권한 (allowedTools)
+- `~/.claude/settings.json` - Hook 등록 설정
 - `~/.claude/hooks/stop.sh` - Stop Hook (연속 실행)
 - `~/.claude/hooks/c4-stop-hook.py` - 상태 체크 스크립트
+- `~/.claude/hooks/c4-bash-security-hook.sh` - Bash 보안 Hook
 
 ### Step 9: 안내
 
 ```
 ✅ C4 초기화 완료!
+
+🔒 보안 설정:
+   - Bash Security Hook: 위험 명령 자동 차단
+   - rm -rf /, chmod 777, git push --force main 등 차단
 
 🔄 Stop Hook 설치됨:
    - 작업 중 Claude 종료 차단
