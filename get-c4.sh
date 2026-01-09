@@ -3,8 +3,11 @@
 # C4 Quick Installer
 # =============================================================================
 #
-# Usage:
-#   curl -fsSL https://git.pilab.co.kr/pi/c4/-/raw/main/get-c4.sh | bash
+# Usage (public repo / GitHub):
+#   curl -fsSL https://raw.githubusercontent.com/ORG/c4/main/get-c4.sh | bash
+#
+# Usage (private GitLab - use git clone instead):
+#   git clone https://git.pilab.co.kr/pi/c4.git ~/.c4 && ~/.c4/install.sh
 #
 # =============================================================================
 
