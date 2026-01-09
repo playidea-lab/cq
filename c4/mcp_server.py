@@ -757,9 +757,7 @@ class C4Daemon:
             "success": True,
             "message": f"Transitioned from {current_status} to EXECUTE",
             "status": new_state.status.value,
-            "pending_tasks": len(
-                [t for t in new_state.tasks if t.status == TaskStatus.PENDING]
-            ),
+            "pending_tasks": len(new_state.queue.pending),
             "supervisor_loop_started": supervisor_started,
         }
 
