@@ -137,9 +137,63 @@ class LockStore(ABC):
 
 ## 기존 구현 예시
 
-### LocalFileStateStore
+### SQLiteStateStore (기본)
 
-파일 기반 저장소 (기본 구현):
+SQLite 기반 저장소 (v1.1부터 기본값):
+
+```python
+# c4/store/sqlite.py
+
+class SQLiteStateStore(StateStore):
+    def __init__(self, db_path: Path):
+        self.db_path = db_path
+        self._init_db()
+
+    def _get_connection(self):
+        conn = sqlite3.connect(
+            self.db_path,
+            timeout=30.0,  # 락 대기 30초
+        )
+        # WAL 모드: 동시 읽기 허용, 멀티워커 안전
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA busy_timeout=30000")
+        return conn
+
+    def load(self, project_id: str) -> C4State:
+        with self._get_connection() as conn:
+            if project_id:
+                cursor = conn.execute(
+                    "SELECT state_json FROM c4_state WHERE project_id = ?",
+                    (project_id,),
+                )
+            else:
+                # 단일 프로젝트 모드: 아무 프로젝트나 로드
+                cursor = conn.execute("SELECT state_json FROM c4_state LIMIT 1")
+            row = cursor.fetchone()
+
+        if row is None:
+            raise StateNotFoundError(f"State not found: {project_id}")
+
+        return C4State.model_validate(json.loads(row[0]))
+
+    def save(self, state: C4State) -> None:
+        state.updated_at = datetime.now()
+        with self._get_connection() as conn:
+            conn.execute(
+                "INSERT OR REPLACE INTO c4_state (project_id, state_json, updated_at) VALUES (?, ?, ?)",
+                (state.project_id, state.model_dump_json(), state.updated_at),
+            )
+            conn.commit()
+```
+
+**WAL 모드 장점:**
+- 동시 읽기 허용 (여러 Worker가 동시에 상태 조회 가능)
+- 쓰기 충돌 시 자동 대기 (30초)
+- Race condition 방지
+
+### LocalFileStateStore (레거시)
+
+파일 기반 저장소 (이전 기본값, 단일 Worker 전용):
 
 ```python
 # c4/store/local_file.py
@@ -169,58 +223,8 @@ class LocalFileStateStore(StateStore):
             self.state_file.unlink()
 ```
 
-### SQLiteStateStore
-
-SQLite 기반 저장소:
-
-```python
-# c4/store/sqlite.py
-
-class SQLiteStateStore(StateStore):
-    def __init__(self, db_path: Path):
-        self.db_path = db_path
-        self._init_db()
-
-    def _init_db(self) -> None:
-        with self._get_connection() as conn:
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS c4_state (
-                    project_id TEXT PRIMARY KEY,
-                    state_json TEXT NOT NULL,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
-            conn.commit()
-
-    def load(self, project_id: str) -> C4State:
-        with self._get_connection() as conn:
-            cursor = conn.execute(
-                "SELECT state_json FROM c4_state WHERE project_id = ?",
-                (project_id,),
-            )
-            row = cursor.fetchone()
-
-        if row is None:
-            raise StateNotFoundError(f"State not found: {project_id}")
-
-        data = json.loads(row[0])
-        return C4State.model_validate(data)
-
-    def save(self, state: C4State) -> None:
-        state.updated_at = datetime.now()
-        state_json = state.model_dump_json()
-
-        with self._get_connection() as conn:
-            conn.execute(
-                """
-                INSERT OR REPLACE INTO c4_state
-                (project_id, state_json, updated_at)
-                VALUES (?, ?, ?)
-                """,
-                (state.project_id, state_json, state.updated_at),
-            )
-            conn.commit()
-```
+> **Note:** LocalFileStateStore는 단일 Worker 환경에서만 안전합니다.
+> 멀티 Worker 환경에서는 SQLiteStateStore (기본값)를 사용하세요.
 
 ## 커스텀 Store 구현하기
 
@@ -398,7 +402,8 @@ class TestRedisStateStore:
 
 ### 1. 동시성
 - 여러 Worker가 동시에 상태를 수정할 수 있음
-- 낙관적 잠금 또는 트랜잭션 사용 권장
+- SQLite: WAL 모드로 동시 읽기 허용, busy_timeout으로 쓰기 충돌 처리
+- 다른 Store: 낙관적 잠금 또는 트랜잭션 사용 권장
 
 ### 2. 성능
 - 상태 크기가 클 수 있음 (많은 태스크, 이벤트)

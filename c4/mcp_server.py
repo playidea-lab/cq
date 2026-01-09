@@ -25,7 +25,7 @@ from .models import (
     ValidationResult,
 )
 from .state_machine import StateMachine, StateTransitionError
-from .store import StateStore
+from .store import SQLiteStateStore, StateStore
 from .validation import ValidationRunner
 
 
@@ -59,9 +59,16 @@ class C4Daemon:
     # Initialization
     # =========================================================================
 
+    def _get_default_store(self) -> StateStore:
+        """Get the default state store (SQLite)"""
+        if self._state_store is not None:
+            return self._state_store
+        return SQLiteStateStore(self.c4_dir / "c4.db")
+
     def is_initialized(self) -> bool:
         """Check if C4 is initialized in this project"""
-        return (self.c4_dir / "state.json").exists()
+        # Check both SQLite (new) and JSON (legacy) for backward compatibility
+        return (self.c4_dir / "c4.db").exists() or (self.c4_dir / "state.json").exists()
 
     def initialize(self, project_id: str | None = None) -> C4State:
         """Initialize C4 in the project directory"""
@@ -81,8 +88,8 @@ class C4Daemon:
         # Create docs directory
         (self.root / "docs").mkdir(exist_ok=True)
 
-        # Initialize state machine (with optional custom store)
-        self.state_machine = StateMachine(self.c4_dir, store=self._state_store)
+        # Initialize state machine with SQLite store (default)
+        self.state_machine = StateMachine(self.c4_dir, store=self._get_default_store())
         state = self.state_machine.initialize_state(project_id)
 
         # Create default config
@@ -99,10 +106,34 @@ class C4Daemon:
         if not self.is_initialized():
             raise FileNotFoundError(f"C4 not initialized in {self.root}")
 
-        self.state_machine = StateMachine(self.c4_dir, store=self._state_store)
+        # Migrate from state.json to SQLite if needed
+        self._migrate_to_sqlite_if_needed()
+
+        self.state_machine = StateMachine(self.c4_dir, store=self._get_default_store())
         self.state_machine.load_state()
         self._load_config()
         self._load_tasks()
+
+    def _migrate_to_sqlite_if_needed(self) -> None:
+        """Migrate from state.json to SQLite if needed"""
+        state_json = self.c4_dir / "state.json"
+        db_path = self.c4_dir / "c4.db"
+
+        # Only migrate if state.json exists and c4.db doesn't
+        if state_json.exists() and not db_path.exists():
+            import json
+
+            # 1. Read JSON state
+            data = json.loads(state_json.read_text())
+            state = C4State.model_validate(data)
+
+            # 2. Save to SQLite
+            store = SQLiteStateStore(db_path)
+            store.save(state)
+
+            # 3. Backup original (don't delete)
+            backup_path = self.c4_dir / "state.json.bak"
+            state_json.rename(backup_path)
 
     # =========================================================================
     # Config Management

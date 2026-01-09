@@ -70,7 +70,11 @@ class SQLiteStateStore(StateStore):
         conn = sqlite3.connect(
             self.db_path,
             detect_types=sqlite3.PARSE_DECLTYPES | sqlite3.PARSE_COLNAMES,
+            timeout=30.0,  # Wait up to 30s for lock
         )
+        # Enable WAL mode for concurrent reads
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA busy_timeout=30000")  # 30s in ms
         try:
             yield conn
         finally:
@@ -81,17 +85,21 @@ class SQLiteStateStore(StateStore):
         from c4.models import C4State
 
         with self._get_connection() as conn:
-            cursor = conn.execute(
-                "SELECT state_json FROM c4_state WHERE project_id = ?",
-                (project_id,) if project_id else ("",),
-            )
+            if project_id:
+                # Load specific project
+                cursor = conn.execute(
+                    "SELECT state_json FROM c4_state WHERE project_id = ?",
+                    (project_id,),
+                )
+            else:
+                # Load any available project (single-project case)
+                cursor = conn.execute(
+                    "SELECT state_json FROM c4_state LIMIT 1"
+                )
             row = cursor.fetchone()
 
         if row is None:
-            # Try loading with empty project_id for backward compatibility
-            if project_id:
-                return self.load("")
-            raise StateNotFoundError(f"State not found for project: {project_id}")
+            raise StateNotFoundError(f"State not found for project: {project_id or '(any)'}")
 
         import json
 
@@ -192,7 +200,11 @@ class SQLiteLockStore(LockStore):
         conn = sqlite3.connect(
             self.db_path,
             detect_types=sqlite3.PARSE_DECLTYPES | sqlite3.PARSE_COLNAMES,
+            timeout=30.0,  # Wait up to 30s for lock
         )
+        # Enable WAL mode for concurrent reads
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA busy_timeout=30000")  # 30s in ms
         try:
             yield conn
         finally:

@@ -35,7 +35,7 @@ class TestDaemonInitialization:
 
         c4_dir = temp_project / ".c4"
         assert c4_dir.exists()
-        assert (c4_dir / "state.json").exists()
+        assert (c4_dir / "c4.db").exists()  # SQLite database
         assert (c4_dir / "config.yaml").exists()
         assert (c4_dir / "locks").exists()
         assert (c4_dir / "events").exists()

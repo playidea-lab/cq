@@ -629,7 +629,7 @@ class TestScenario7CLIIntegration:
         # Check structure created
         assert (fresh_project / ".c4").exists()
         assert (fresh_project / ".c4" / "config.yaml").exists()
-        assert (fresh_project / ".c4" / "state.json").exists()
+        assert (fresh_project / ".c4" / "c4.db").exists()  # SQLite database
 
     def test_cli_status_shows_state(self, initialized_project):
         """

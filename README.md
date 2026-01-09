@@ -6,12 +6,13 @@ C4 (Codex-Claude-Completion Control) is an AI project orchestration system that 
 
 - **State Machine**: Structured workflow INIT → PLAN → EXECUTE → CHECKPOINT → COMPLETE
 - **MCP Server**: Native integration with Claude Code via Model Context Protocol
-- **Multi-Worker**: Parallel task execution with scope-based locking
+- **Multi-Worker**: Parallel task execution with SQLite WAL mode (race-condition free)
 - **Checkpoint Gates**: Human/supervisor review points between phases
 - **Auto-Validation**: Built-in lint and test runners
 - **Pluggable Architecture**: Extensible StateStore and SupervisorBackend
 - **Stop Hook**: Prevents Claude exit while tasks remain (continuous execution)
 - **Auto Supervisor**: Headless supervisor loop starts automatically on execution
+- **SQLite Storage**: Default storage with automatic migration from legacy JSON format
 
 ## Documentation
 
@@ -204,8 +205,8 @@ cp .claude/commands/c4-*.md ~/.claude/commands/
 │  │  └──────┬───────┘         └────────┬───────────────┘    ││
 │  │         │                          │                     ││
 │  │  ┌──────┴──────┐           ┌───────┴───────┐            ││
-│  │  │ LocalFile   │           │  ClaudeCLI    │            ││
-│  │  │ SQLite      │           │  Mock         │            ││
+│  │  │ SQLite(기본)│           │  ClaudeCLI    │            ││
+│  │  │ LocalFile   │           │  Mock         │            ││
 │  │  │ (Extensible)│           │  (Extensible) │            ││
 │  │  └─────────────┘           └───────────────┘            ││
 │  └─────────────────────────────────────────────────────────┘│
@@ -220,8 +221,8 @@ cp .claude/commands/c4-*.md ~/.claude/commands/
 ### Pluggable Components
 
 **StateStore**: 상태 저장소 백엔드
-- `LocalFileStateStore`: 파일 기반 (기본)
-- `SQLiteStateStore`: SQLite 데이터베이스
+- `SQLiteStateStore`: SQLite 데이터베이스 (기본, WAL 모드로 멀티워커 동시성 지원)
+- `LocalFileStateStore`: 파일 기반 (레거시)
 - 확장: Redis, Supabase, PostgreSQL 등
 
 **SupervisorBackend**: Supervisor 리뷰 백엔드
@@ -285,7 +286,7 @@ c4/
 │   ├── mcp_server.py      # MCP server (C4Daemon)
 │   ├── state_machine.py   # State transitions
 │   ├── models/            # Pydantic schemas
-│   ├── store/             # StateStore implementations
+│   ├── store/             # StateStore implementations (SQLite default)
 │   ├── supervisor/        # SupervisorBackend implementations
 │   ├── daemon/            # Manager classes
 │   └── validation.py      # Validation runner
@@ -299,6 +300,14 @@ c4/
 │   ├── developer-guide/   # 개발자 가이드
 │   └── api/               # API 레퍼런스
 └── .claude/commands/      # Slash commands
+
+# Per-project storage (.c4/ directory)
+your-project/
+└── .c4/
+    ├── c4.db              # SQLite database (state, locks)
+    ├── config.yaml        # Project configuration
+    ├── tasks.json         # Task definitions
+    └── events/            # Event logs
 ```
 
 ---
