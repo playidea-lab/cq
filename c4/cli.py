@@ -1,5 +1,6 @@
 """C4D CLI - Command line interface for c4d daemon and c4 project management"""
 
+import json
 import os
 import signal
 import subprocess
@@ -10,6 +11,7 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
+from .hooks import get_c4_install_dir, install_all_hooks
 from .mcp_server import C4Daemon
 from .models import ProjectStatus, Task
 from .state_machine import StateTransitionError
@@ -175,6 +177,86 @@ def status(
 # =============================================================================
 
 
+# =============================================================================
+# Init Helper Functions
+# =============================================================================
+
+
+def _create_mcp_config(project_path: Path) -> bool:
+    """Create .mcp.json in project root."""
+    mcp_file = project_path / ".mcp.json"
+    c4_install_dir = get_c4_install_dir()
+
+    config = {
+        "mcpServers": {
+            "c4": {
+                "type": "stdio",
+                "command": "uv",
+                "args": [
+                    "--directory",
+                    str(c4_install_dir),
+                    "run",
+                    "python",
+                    "-m",
+                    "c4.mcp_server",
+                ],
+                "env": {"C4_PROJECT_ROOT": str(project_path)},
+            }
+        }
+    }
+
+    mcp_file.write_text(json.dumps(config, indent=2))
+    return True
+
+
+def _create_project_settings(project_path: Path) -> bool:
+    """Create .claude/settings.json in project."""
+    settings_dir = project_path / ".claude"
+    settings_dir.mkdir(parents=True, exist_ok=True)
+
+    settings_file = settings_dir / "settings.json"
+    settings = {"enableAllProjectMcpServers": True}
+
+    settings_file.write_text(json.dumps(settings, indent=2))
+    return True
+
+
+def _setup_permissions(project_path: Path) -> bool:
+    """Set up allowedTools in ~/.claude.json"""
+    config_path = Path.home() / ".claude.json"
+
+    # Load existing config
+    if config_path.exists():
+        try:
+            config = json.loads(config_path.read_text())
+        except json.JSONDecodeError:
+            config = {}
+    else:
+        config = {}
+
+    # Ensure structure
+    if "projects" not in config:
+        config["projects"] = {}
+
+    project_key = str(project_path)
+    if project_key not in config["projects"]:
+        config["projects"][project_key] = {}
+
+    # Set allowedTools - EXACTLY these values, no modifications
+    config["projects"][project_key]["allowedTools"] = [
+        f"Write(/{project_path}/**)",
+        f"Edit(/{project_path}/**)",
+        f"Read(/{project_path}/**)",
+        "Bash(*)",
+        "mcp__c4",
+        "mcp__serena",
+        "mcp__plugin_serena_serena",
+    ]
+
+    config_path.write_text(json.dumps(config, indent=2))
+    return True
+
+
 @c4_app.command()
 def init(
     project_id: str = typer.Option(
@@ -182,31 +264,107 @@ def init(
         "--project-id",
         help="Project ID (defaults to directory name)",
     ),
+    project_path: Path = typer.Option(
+        None,
+        "--path",
+        "-p",
+        help="Project directory (defaults to current directory)",
+    ),
+    skip_hooks: bool = typer.Option(
+        False,
+        "--skip-hooks",
+        help="Skip installing Claude Code hooks",
+    ),
 ):
-    """Initialize C4 in the current project"""
-    daemon = C4Daemon()  # Uses C4_PROJECT_ROOT env var or cwd
+    """Initialize C4 in a project (all-in-one setup)
 
-    if daemon.is_initialized():
-        console.print("[yellow]Warning:[/yellow] C4 already initialized")
-        # Load and show status
-        daemon.load()
-        _show_status(daemon)
-        return
+    This command performs complete C4 initialization:
+    - Creates .c4/ directory with state files
+    - Creates .mcp.json for MCP server configuration
+    - Creates .claude/settings.json for MCP auto-approval
+    - Sets up ~/.claude.json allowedTools (with Bash(*))
+    - Installs Claude Code hooks (stop hook, security hook)
+    """
+    # Resolve project path
+    if project_path is None:
+        project_path = Path(os.environ.get("C4_PROJECT_ROOT", Path.cwd()))
+    project_path = project_path.resolve()
 
-    state = daemon.initialize(project_id)
+    # Temporarily set env for C4Daemon
+    old_env = os.environ.get("C4_PROJECT_ROOT")
+    os.environ["C4_PROJECT_ROOT"] = str(project_path)
 
-    console.print("[green]C4 initialized![/green]")
-    console.print(f"Project ID: {state.project_id}")
-    console.print(f"Status: {state.status.value}")
-    console.print()
-    console.print("Created:")
-    console.print("  .c4/           - C4 data directory")
-    console.print("  docs/          - Plan documents")
-    console.print()
-    console.print("Next steps:")
-    console.print("  1. Create docs/PLAN.md, docs/CHECKPOINTS.md, docs/DONE.md")
-    console.print("  2. Create todo.md with tasks")
-    console.print("  3. Run 'c4 run' to start execution")
+    try:
+        daemon = C4Daemon()
+
+        # Check if already initialized
+        mcp_existed = (project_path / ".mcp.json").exists()
+
+        if daemon.is_initialized():
+            console.print("[yellow]Warning:[/yellow] C4 already initialized")
+            console.print("[dim]Re-running setup to ensure all configurations are correct...[/dim]")
+        else:
+            # Step 1: Initialize .c4/ directory
+            console.print("[dim]Creating .c4/ directory...[/dim]")
+            daemon.initialize(project_id)
+
+        # Step 2: Create .mcp.json
+        console.print("[dim]Creating .mcp.json...[/dim]")
+        _create_mcp_config(project_path)
+
+        # Step 3: Create .claude/settings.json
+        console.print("[dim]Creating .claude/settings.json...[/dim]")
+        _create_project_settings(project_path)
+
+        # Step 4: Set up permissions in ~/.claude.json
+        console.print("[dim]Setting up permissions (Bash(*), MCP tools)...[/dim]")
+        _setup_permissions(project_path)
+
+        # Step 5: Install hooks (unless skipped)
+        if not skip_hooks:
+            console.print("[dim]Installing Claude Code hooks...[/dim]")
+            hook_results = install_all_hooks()
+            if not all(hook_results.values()):
+                console.print("[yellow]Warning:[/yellow] Some hooks may not have been installed")
+
+        # Success message
+        console.print()
+        console.print("[green bold]✅ C4 initialized![/green bold]")
+        console.print()
+        console.print(f"[bold]Project:[/bold] {project_path.name}")
+        console.print(f"[bold]Path:[/bold] {project_path}")
+        console.print()
+
+        console.print("[bold]Created/Updated:[/bold]")
+        console.print("  .c4/                    - C4 state directory")
+        console.print("  .mcp.json               - MCP server config")
+        console.print("  .claude/settings.json   - MCP auto-approval")
+        console.print("  ~/.claude.json          - Bash(*) permissions")
+        if not skip_hooks:
+            console.print("  ~/.claude/hooks/        - Stop & security hooks")
+        console.print()
+
+        console.print("[bold]🔒 Security:[/bold]")
+        console.print("  - Bash Security Hook: Blocks dangerous commands")
+        console.print("  - Stop Hook: Prevents exit during active work")
+        console.print()
+
+        # Restart notice if .mcp.json was newly created
+        if not mcp_existed:
+            console.print("[yellow bold]⚠️  Restart Claude Code to load MCP server[/yellow bold]")
+            console.print()
+
+        console.print("[bold]Next steps:[/bold]")
+        console.print("  /c4-plan    - Create execution plan from docs")
+        console.print("  /c4-status  - Check project status")
+        console.print("  /c4-run     - Start task execution")
+
+    finally:
+        # Restore environment
+        if old_env is not None:
+            os.environ["C4_PROJECT_ROOT"] = old_env
+        elif "C4_PROJECT_ROOT" in os.environ:
+            del os.environ["C4_PROJECT_ROOT"]
 
 
 @c4_app.command("status")
