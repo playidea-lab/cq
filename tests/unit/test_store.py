@@ -245,3 +245,152 @@ class TestLocalFileLockStore:
         # Now another can acquire
         result = lock_store.acquire_leader_lock("test", "daemon-2", 67890)
         assert result is True
+
+
+class TestSQLiteTaskStore:
+    """Tests for SQLiteTaskStore"""
+
+    @pytest.fixture
+    def db_path(self, tmp_path):
+        """Create a temporary database path"""
+        return tmp_path / "c4.db"
+
+    @pytest.fixture
+    def task_store(self, db_path):
+        """Create a SQLiteTaskStore"""
+        from c4.store import SQLiteTaskStore
+        return SQLiteTaskStore(db_path)
+
+    @pytest.fixture
+    def sample_task(self):
+        """Create a sample task"""
+        from c4.models import Task, TaskStatus
+        return Task(
+            id="T-001",
+            title="Test task",
+            scope="backend",
+            dod="Complete the test",
+            status=TaskStatus.PENDING,
+        )
+
+    def test_save_and_load_task(self, task_store, sample_task):
+        """Test saving and loading a single task"""
+        task_store.save("test-project", sample_task)
+
+        loaded = task_store.get("test-project", "T-001")
+        assert loaded is not None
+        assert loaded.id == "T-001"
+        assert loaded.title == "Test task"
+        assert loaded.scope == "backend"
+
+    def test_load_all_tasks(self, task_store, sample_task):
+        """Test loading all tasks for a project"""
+        from c4.models import Task
+
+        task_store.save("test-project", sample_task)
+        task2 = Task(id="T-002", title="Task 2", dod="Do it")
+        task_store.save("test-project", task2)
+
+        tasks = task_store.load_all("test-project")
+        assert len(tasks) == 2
+        assert "T-001" in tasks
+        assert "T-002" in tasks
+
+    def test_update_status(self, task_store, sample_task):
+        """Test updating task status"""
+        from c4.models import TaskStatus
+
+        task_store.save("test-project", sample_task)
+
+        result = task_store.update_status(
+            "test-project",
+            "T-001",
+            "in_progress",
+            assigned_to="worker-1",
+            branch="c4/T-001",
+        )
+        assert result is True
+
+        loaded = task_store.get("test-project", "T-001")
+        assert loaded.status == TaskStatus.IN_PROGRESS
+        assert loaded.assigned_to == "worker-1"
+        assert loaded.branch == "c4/T-001"
+
+    def test_update_status_nonexistent(self, task_store):
+        """Test updating non-existent task returns False"""
+        result = task_store.update_status("test-project", "T-999", "done")
+        assert result is False
+
+    def test_delete_task(self, task_store, sample_task):
+        """Test deleting a task"""
+        task_store.save("test-project", sample_task)
+
+        result = task_store.delete("test-project", "T-001")
+        assert result is True
+
+        loaded = task_store.get("test-project", "T-001")
+        assert loaded is None
+
+    def test_exists(self, task_store, sample_task):
+        """Test exists check"""
+        assert task_store.exists("test-project") is False
+
+        task_store.save("test-project", sample_task)
+        assert task_store.exists("test-project") is True
+
+    def test_migrate_from_json(self, task_store, tmp_path):
+        """Test migration from tasks.json"""
+        import json
+
+        # Create a tasks.json file
+        tasks_json = tmp_path / "tasks.json"
+        tasks_data = [
+            {"id": "T-001", "title": "Task 1", "dod": "Do 1", "status": "pending"},
+            {"id": "T-002", "title": "Task 2", "dod": "Do 2", "status": "done"},
+        ]
+        tasks_json.write_text(json.dumps(tasks_data))
+
+        # Migrate
+        count = task_store.migrate_from_json("test-project", tasks_json)
+        assert count == 2
+
+        # Verify tasks are in SQLite
+        tasks = task_store.load_all("test-project")
+        assert len(tasks) == 2
+        assert tasks["T-001"].title == "Task 1"
+        assert tasks["T-002"].title == "Task 2"
+
+    def test_save_all_tasks(self, task_store):
+        """Test bulk save of tasks"""
+        from c4.models import Task
+
+        tasks = {
+            "T-001": Task(id="T-001", title="Task 1", dod="Do 1"),
+            "T-002": Task(id="T-002", title="Task 2", dod="Do 2"),
+            "T-003": Task(id="T-003", title="Task 3", dod="Do 3"),
+        }
+
+        task_store.save_all("test-project", tasks)
+
+        loaded = task_store.load_all("test-project")
+        assert len(loaded) == 3
+
+    def test_project_isolation(self, task_store, sample_task):
+        """Test tasks are isolated by project"""
+        from c4.models import Task
+
+        # Save task to project A
+        task_store.save("project-a", sample_task)
+
+        # Save different task to project B
+        task_b = Task(id="T-002", title="Task B", dod="Project B task")
+        task_store.save("project-b", task_b)
+
+        # Verify isolation
+        tasks_a = task_store.load_all("project-a")
+        tasks_b = task_store.load_all("project-b")
+
+        assert len(tasks_a) == 1
+        assert len(tasks_b) == 1
+        assert "T-001" in tasks_a
+        assert "T-002" in tasks_b

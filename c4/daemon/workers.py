@@ -178,3 +178,75 @@ class WorkerManager:
             self.state_machine.save_state()
 
         return stale
+
+    def recover_stale_workers(
+        self,
+        stale_timeout_seconds: int,
+        lock_store: Any = None,
+    ) -> list[dict[str, Any]]:
+        """
+        Recover tasks from workers that have been inactive too long.
+
+        This handles workers that crashed while busy. The tasks are moved
+        back to pending queue and scope locks are released.
+
+        Args:
+            stale_timeout_seconds: Time in seconds after which a busy worker is considered stale
+            lock_store: Optional SQLite lock store for releasing scope locks
+
+        Returns:
+            List of recovery actions taken (for logging/monitoring)
+        """
+        from datetime import timedelta
+
+        now = datetime.now()
+        stale_threshold = timedelta(seconds=stale_timeout_seconds)
+        recoveries = []
+
+        state = self.state_machine.state
+        queue = state.queue
+
+        for worker_id, worker in list(self._workers.items()):
+            if worker.state != "busy":
+                continue
+
+            elapsed = now - worker.last_seen
+            if elapsed <= stale_threshold:
+                continue
+
+            # Worker is stale - recover task
+            task_id = worker.task_id
+            scope = worker.scope
+
+            recovery_info = {
+                "worker_id": worker_id,
+                "task_id": task_id,
+                "scope": scope,
+                "elapsed_seconds": elapsed.total_seconds(),
+            }
+
+            # Move task back to pending if it's in progress
+            if task_id and task_id in queue.in_progress:
+                del queue.in_progress[task_id]
+                queue.pending.insert(0, task_id)  # Add to front for priority
+                recovery_info["task_recovered"] = True
+
+            # Release scope lock
+            if scope and lock_store:
+                try:
+                    lock_store.release_scope_lock(state.project_id, scope)
+                    recovery_info["lock_released"] = True
+                except Exception as e:
+                    recovery_info["lock_release_error"] = str(e)
+
+            # Mark worker as disconnected (not idle - they didn't gracefully disconnect)
+            worker.state = "disconnected"
+            worker.task_id = None
+            worker.scope = None
+
+            recoveries.append(recovery_info)
+
+        if recoveries:
+            self.state_machine.save_state()
+
+        return recoveries

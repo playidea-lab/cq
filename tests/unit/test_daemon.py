@@ -328,18 +328,24 @@ class TestC4GetTaskExpiredLock:
         assert result1 is not None
         assert result1.task_id == "T-001"
 
-        # Manually expire the lock
-        state = daemon.state_machine.state
-        lock = state.locks.scopes.get("api")
-        assert lock is not None
-        lock.expires_at = datetime.now() - timedelta(seconds=1)  # Already expired
-        daemon.state_machine.save_state()
+        # Manually expire the lock in SQLite
+        import sqlite3
+        db_path = daemon.c4_dir / "c4.db"
+        conn = sqlite3.connect(db_path)
+        expired_time = (datetime.now() - timedelta(seconds=1)).isoformat()
+        conn.execute(
+            "UPDATE c4_locks SET expires_at = ? WHERE scope = ?",
+            (expired_time, "api"),
+        )
+        conn.commit()
+        conn.close()
 
         # Simulate worker restart: call get_task again
         result2 = daemon.c4_get_task("worker-1")
 
         # Task should have been moved back to pending due to expired lock
         # and then reassigned to the same worker from pending
+        state = daemon.state_machine.state
         assert "T-001" in state.queue.pending or "T-001" in state.queue.in_progress
 
     def test_resume_with_lock_stolen_by_another_worker(self, daemon):
@@ -870,3 +876,98 @@ class TestConcurrentOperations:
             "T-001", "def456", [{"name": "test", "status": "pass"}]
         )
         assert result2.success is False
+
+
+class TestStaleWorkerRecovery:
+    """Test stale worker detection and task recovery"""
+
+    def test_recover_stale_busy_worker(self, daemon):
+        """Test that stale busy worker's task is recovered to pending"""
+        task = Task(id="T-001", title="Stale test", dod="Test", scope="api")
+        daemon.add_task(task)
+        daemon.state_machine.transition("c4_run")
+
+        # Worker gets task
+        daemon.c4_get_task("worker-1")
+        state = daemon.state_machine.state
+        assert "T-001" in state.queue.in_progress
+        assert state.workers["worker-1"].state == "busy"
+
+        # Manually make the worker stale by setting last_seen to old time
+        old_time = datetime.now() - timedelta(minutes=35)  # 35 min old (stale timeout is 30)
+        state.workers["worker-1"].last_seen = old_time
+        daemon.state_machine.save_state()
+
+        # Run recovery with 30 minute timeout (1800 seconds)
+        recoveries = daemon.worker_manager.recover_stale_workers(
+            stale_timeout_seconds=1800,
+            lock_store=daemon.lock_store,
+        )
+
+        # Verify recovery happened
+        assert len(recoveries) == 1
+        assert recoveries[0]["worker_id"] == "worker-1"
+        assert recoveries[0]["task_id"] == "T-001"
+        assert recoveries[0].get("task_recovered") is True
+
+        # Verify task is back in pending
+        state = daemon.state_machine.state
+        assert "T-001" in state.queue.pending
+        assert "T-001" not in state.queue.in_progress
+
+        # Verify worker is marked as disconnected
+        assert state.workers["worker-1"].state == "disconnected"
+
+    def test_active_worker_not_recovered(self, daemon):
+        """Test that active workers are not recovered"""
+        task = Task(id="T-001", title="Active test", dod="Test", scope="api")
+        daemon.add_task(task)
+        daemon.state_machine.transition("c4_run")
+
+        # Worker gets task (last_seen is now)
+        daemon.c4_get_task("worker-1")
+
+        # Run recovery - should not recover anything
+        recoveries = daemon.worker_manager.recover_stale_workers(
+            stale_timeout_seconds=1800,
+            lock_store=daemon.lock_store,
+        )
+
+        # No recoveries
+        assert len(recoveries) == 0
+
+        # Task still in progress
+        state = daemon.state_machine.state
+        assert "T-001" in state.queue.in_progress
+        assert state.workers["worker-1"].state == "busy"
+
+    def test_implicit_heartbeat_prevents_recovery(self, daemon):
+        """Test that _touch_worker updates last_seen to prevent recovery"""
+        task = Task(id="T-001", title="Heartbeat test", dod="Test", scope="api")
+        daemon.add_task(task)
+        daemon.state_machine.transition("c4_run")
+
+        # Worker gets task
+        daemon.c4_get_task("worker-1")
+        state = daemon.state_machine.state
+
+        # Manually make worker appear stale
+        old_time = datetime.now() - timedelta(minutes=35)
+        state.workers["worker-1"].last_seen = old_time
+        daemon.state_machine.save_state()
+
+        # Simulate tool call that touches worker (implicit heartbeat)
+        daemon._touch_worker("worker-1")
+
+        # Now run recovery - should not recover because heartbeat updated last_seen
+        recoveries = daemon.worker_manager.recover_stale_workers(
+            stale_timeout_seconds=1800,
+            lock_store=daemon.lock_store,
+        )
+
+        # No recoveries
+        assert len(recoveries) == 0
+
+        # Worker still busy
+        state = daemon.state_machine.state
+        assert state.workers["worker-1"].state == "busy"

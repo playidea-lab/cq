@@ -105,10 +105,10 @@ class TestMultiWorkerTaskAssignment:
         assignment2 = daemon.c4_get_task("worker-2")
         assert assignment2 is None
 
-        # Verify lock exists
-        locks = daemon.state_machine.state.locks.scopes
-        assert "shared-scope" in locks
-        assert locks["shared-scope"].owner == "worker-1"
+        # Verify lock exists in SQLite (authoritative source)
+        project_id = daemon.state_machine.state.project_id
+        lock_owner = daemon.lock_store.get_lock_owner(project_id, "shared-scope")
+        assert lock_owner == "worker-1"
 
     def test_tasks_without_scope_can_run_parallel(self, multi_worker_daemon):
         """Tasks without scope should be assignable in parallel"""
@@ -181,17 +181,18 @@ class TestScopeLockManagement:
         daemon.add_task(task)
         daemon.state_machine.transition("c4_run")
 
-        # Before assignment - no lock
-        assert "ui" not in daemon.state_machine.state.locks.scopes
+        # Before assignment - no lock in SQLite
+        project_id = daemon.state_machine.state.project_id
+        assert daemon.lock_store.get_scope_lock(project_id, "ui") is None
 
         # Assign task
         daemon.c4_get_task("worker-1")
 
-        # After assignment - lock exists
-        assert "ui" in daemon.state_machine.state.locks.scopes
-        lock = daemon.state_machine.state.locks.scopes["ui"]
-        assert lock.owner == "worker-1"
-        assert lock.scope == "ui"
+        # After assignment - lock exists in SQLite
+        lock = daemon.lock_store.get_scope_lock(project_id, "ui")
+        assert lock is not None
+        owner, expires_at = lock
+        assert owner == "worker-1"
 
     def test_lock_released_on_task_completion(self, multi_worker_daemon):
         """Lock should be released when task is completed"""
@@ -201,8 +202,9 @@ class TestScopeLockManagement:
         daemon.add_task(task)
         daemon.state_machine.transition("c4_run")
 
+        project_id = daemon.state_machine.state.project_id
         daemon.c4_get_task("worker-1")
-        assert "api" in daemon.state_machine.state.locks.scopes
+        assert daemon.lock_store.get_scope_lock(project_id, "api") is not None
 
         # Complete task
         daemon.c4_submit(
@@ -212,7 +214,7 @@ class TestScopeLockManagement:
         )
 
         # Lock should be released
-        assert "api" not in daemon.state_machine.state.locks.scopes
+        assert daemon.lock_store.get_scope_lock(project_id, "api") is None
 
     def test_lock_expiration(self, multi_worker_daemon):
         """Expired locks should allow other workers to take over"""
@@ -228,8 +230,9 @@ class TestScopeLockManagement:
         daemon.state_machine.transition("c4_run")
 
         # Worker 1 gets task
+        project_id = daemon.state_machine.state.project_id
         daemon.c4_get_task("worker-1")
-        assert "db" in daemon.state_machine.state.locks.scopes
+        assert daemon.lock_store.get_scope_lock(project_id, "db") is not None
 
         # Wait for lock to expire
         time.sleep(1.1)
@@ -520,21 +523,27 @@ class TestLockManagement:
         daemon.add_task(task)
         daemon.state_machine.transition("c4_run")
 
+        project_id = daemon.state_machine.state.project_id
         daemon.c4_get_task("worker-1")
 
-        # Get initial expiry
-        initial_expiry = daemon.state_machine.state.locks.scopes["api"].expires_at
+        # Get initial expiry from SQLite
+        initial_lock = daemon.lock_store.get_scope_lock(project_id, "api")
+        assert initial_lock is not None
+        initial_expiry = initial_lock[1]
 
         # Wait a bit
         time.sleep(0.1)
 
-        # Refresh lock
-        result = daemon.lock_manager.refresh("api", "worker-1")
+        # Refresh lock using lock_store
+        result = daemon.lock_store.refresh_scope_lock(
+            project_id, "api", "worker-1", daemon.config.scope_lock_ttl_sec
+        )
         assert result is True
 
         # Expiry should be extended
-        new_expiry = daemon.state_machine.state.locks.scopes["api"].expires_at
-        assert new_expiry > initial_expiry
+        new_lock = daemon.lock_store.get_scope_lock(project_id, "api")
+        assert new_lock is not None
+        assert new_lock[1] > initial_expiry
 
     def test_refresh_lock_wrong_owner(self, multi_worker_daemon):
         """Cannot refresh lock owned by another worker"""
@@ -544,10 +553,13 @@ class TestLockManagement:
         daemon.add_task(task)
         daemon.state_machine.transition("c4_run")
 
+        project_id = daemon.state_machine.state.project_id
         daemon.c4_get_task("worker-1")
 
         # Worker 2 tries to refresh Worker 1's lock
-        result = daemon.lock_manager.refresh("api", "worker-2")
+        result = daemon.lock_store.refresh_scope_lock(
+            project_id, "api", "worker-2", daemon.config.scope_lock_ttl_sec
+        )
         assert result is False
 
     def test_cleanup_expired_locks(self, multi_worker_daemon):
@@ -559,19 +571,20 @@ class TestLockManagement:
         daemon.add_task(task)
         daemon.state_machine.transition("c4_run")
 
+        project_id = daemon.state_machine.state.project_id
         daemon.c4_get_task("worker-1")
-        assert "db" in daemon.state_machine.state.locks.scopes
+        assert daemon.lock_store.get_scope_lock(project_id, "db") is not None
 
         # Wait for expiration
         time.sleep(1.1)
 
-        # Cleanup
-        expired = daemon.lock_manager.cleanup_expired()
+        # Cleanup expired locks using lock_store
+        expired = daemon.lock_store.cleanup_expired(project_id)
         assert "db" in expired
-        assert "db" not in daemon.state_machine.state.locks.scopes
+        assert daemon.lock_store.get_scope_lock(project_id, "db") is None
 
     def test_get_lock_status(self, multi_worker_daemon):
-        """Get lock status shows detailed info"""
+        """Get lock status shows detailed info (SQLite authoritative source)"""
         daemon = multi_worker_daemon
 
         for i in range(2):
@@ -583,17 +596,18 @@ class TestLockManagement:
         daemon.c4_get_task("worker-a")
         daemon.c4_get_task("worker-b")
 
-        status = daemon.lock_manager.get_status()
+        # Verify locks exist in SQLite (authoritative source)
+        project_id = daemon.state_machine.state.project_id
+        lock_0 = daemon.lock_store.get_scope_lock(project_id, "scope-0")
+        lock_1 = daemon.lock_store.get_scope_lock(project_id, "scope-1")
 
-        assert status["total_locks"] == 2
-        assert "scope-0" in status["locks"]
-        assert "scope-1" in status["locks"]
-        assert status["locks"]["scope-0"]["owner"] == "worker-a"
-        assert status["locks"]["scope-1"]["owner"] == "worker-b"
-        assert status["locks"]["scope-0"]["remaining_seconds"] > 0
+        assert lock_0 is not None
+        assert lock_1 is not None
+        assert lock_0[0] == "worker-a"  # owner
+        assert lock_1[0] == "worker-b"  # owner
 
     def test_lock_status_shows_expired(self, multi_worker_daemon):
-        """Lock status shows when lock is expired"""
+        """Lock status shows when lock is expired (via SQLite check)"""
         daemon = multi_worker_daemon
         daemon._config.scope_lock_ttl_sec = 1
 
@@ -601,11 +615,12 @@ class TestLockManagement:
         daemon.add_task(task)
         daemon.state_machine.transition("c4_run")
 
+        project_id = daemon.state_machine.state.project_id
         daemon.c4_get_task("worker-1")
 
         # Wait for expiration
         time.sleep(1.1)
 
-        status = daemon.lock_manager.get_status()
-        assert status["locks"]["cache"]["expired"] is True
-        assert status["locks"]["cache"]["remaining_seconds"] == 0
+        # Check lock in SQLite - should be expired (cleanup will return it)
+        expired = daemon.lock_store.cleanup_expired(project_id)
+        assert "cache" in expired

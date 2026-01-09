@@ -1,5 +1,6 @@
-"""SQLite Store - SQLite-based state and lock storage"""
+"""SQLite Store - SQLite-based state, lock, and task storage"""
 
+import json
 import sqlite3
 from contextlib import contextmanager
 from datetime import datetime, timedelta
@@ -11,6 +12,7 @@ from .protocol import LockStore, StateStore
 
 if TYPE_CHECKING:
     from c4.models import C4State
+    from c4.models.task import Task
 
 
 # Python 3.12+ requires explicit adapters/converters for datetime
@@ -463,3 +465,250 @@ class SQLiteLockStore(LockStore):
             )
             conn.commit()
             return cursor.rowcount > 0
+
+
+class SQLiteTaskStore:
+    """
+    SQLite-based task storage.
+
+    Stores tasks in a dedicated table for atomic updates alongside state.
+    This prevents race conditions when multiple workers update tasks concurrently.
+
+    Schema:
+        c4_tasks (
+            project_id TEXT,
+            task_id TEXT,
+            task_json TEXT NOT NULL,
+            status TEXT NOT NULL,
+            assigned_to TEXT,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (project_id, task_id)
+        )
+    """
+
+    def __init__(self, db_path: Path):
+        """
+        Initialize SQLite task store.
+
+        Args:
+            db_path: Path to SQLite database file
+        """
+        self.db_path = db_path
+        self._init_db()
+
+    def _init_db(self) -> None:
+        """Create tables if they don't exist"""
+        with self._get_connection() as conn:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS c4_tasks (
+                    project_id TEXT,
+                    task_id TEXT,
+                    task_json TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    assigned_to TEXT,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (project_id, task_id)
+                )
+            """)
+            # Index for faster queries by status
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_c4_tasks_status
+                ON c4_tasks (project_id, status)
+            """)
+            conn.commit()
+
+    @contextmanager
+    def _get_connection(self) -> Generator[sqlite3.Connection, None, None]:
+        """Get a database connection with context management"""
+        self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        conn = sqlite3.connect(
+            self.db_path,
+            detect_types=sqlite3.PARSE_DECLTYPES | sqlite3.PARSE_COLNAMES,
+            timeout=30.0,
+        )
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA busy_timeout=30000")
+        try:
+            yield conn
+        finally:
+            conn.close()
+
+    def load_all(self, project_id: str) -> dict[str, "Task"]:
+        """Load all tasks for a project"""
+        from c4.models.task import Task
+
+        with self._get_connection() as conn:
+            cursor = conn.execute(
+                "SELECT task_id, task_json FROM c4_tasks WHERE project_id = ?",
+                (project_id,),
+            )
+            rows = cursor.fetchall()
+
+        return {row[0]: Task.model_validate(json.loads(row[1])) for row in rows}
+
+    def get(self, project_id: str, task_id: str) -> "Task | None":
+        """Get a single task by ID"""
+        from c4.models.task import Task
+
+        with self._get_connection() as conn:
+            cursor = conn.execute(
+                "SELECT task_json FROM c4_tasks WHERE project_id = ? AND task_id = ?",
+                (project_id, task_id),
+            )
+            row = cursor.fetchone()
+
+        if row is None:
+            return None
+        return Task.model_validate(json.loads(row[0]))
+
+    def save(self, project_id: str, task: "Task") -> None:
+        """Save a single task (insert or update)"""
+        with self._get_connection() as conn:
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO c4_tasks
+                    (project_id, task_id, task_json, status, assigned_to, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    project_id,
+                    task.id,
+                    task.model_dump_json(),
+                    task.status.value,
+                    task.assigned_to,
+                    datetime.now(),
+                ),
+            )
+            conn.commit()
+
+    def save_all(self, project_id: str, tasks: dict[str, "Task"]) -> None:
+        """Save multiple tasks (bulk insert/update)"""
+        with self._get_connection() as conn:
+            for task in tasks.values():
+                conn.execute(
+                    """
+                    INSERT OR REPLACE INTO c4_tasks
+                        (project_id, task_id, task_json, status, assigned_to, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        project_id,
+                        task.id,
+                        task.model_dump_json(),
+                        task.status.value,
+                        task.assigned_to,
+                        datetime.now(),
+                    ),
+                )
+            conn.commit()
+
+    def delete(self, project_id: str, task_id: str) -> bool:
+        """Delete a single task"""
+        with self._get_connection() as conn:
+            cursor = conn.execute(
+                "DELETE FROM c4_tasks WHERE project_id = ? AND task_id = ?",
+                (project_id, task_id),
+            )
+            conn.commit()
+            return cursor.rowcount > 0
+
+    def delete_all(self, project_id: str) -> int:
+        """Delete all tasks for a project"""
+        with self._get_connection() as conn:
+            cursor = conn.execute(
+                "DELETE FROM c4_tasks WHERE project_id = ?",
+                (project_id,),
+            )
+            conn.commit()
+            return cursor.rowcount
+
+    def update_status(
+        self,
+        project_id: str,
+        task_id: str,
+        status: str,
+        assigned_to: str | None = None,
+        branch: str | None = None,
+        commit_sha: str | None = None,
+    ) -> bool:
+        """
+        Update task status and related fields atomically.
+
+        This is the primary method for task state changes during execution.
+        It loads the task, updates fields, and saves in one operation.
+        """
+        from c4.models.task import Task
+        from c4.models.enums import TaskStatus
+
+        with self._get_connection() as conn:
+            # Load current task
+            cursor = conn.execute(
+                "SELECT task_json FROM c4_tasks WHERE project_id = ? AND task_id = ?",
+                (project_id, task_id),
+            )
+            row = cursor.fetchone()
+            if row is None:
+                return False
+
+            # Update task
+            task = Task.model_validate(json.loads(row[0]))
+            task.status = TaskStatus(status)
+            if assigned_to is not None:
+                task.assigned_to = assigned_to
+            if branch is not None:
+                task.branch = branch
+            if commit_sha is not None:
+                task.commit_sha = commit_sha
+
+            # Save updated task
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO c4_tasks
+                    (project_id, task_id, task_json, status, assigned_to, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    project_id,
+                    task_id,
+                    task.model_dump_json(),
+                    task.status.value,
+                    task.assigned_to,
+                    datetime.now(),
+                ),
+            )
+            conn.commit()
+            return True
+
+    def exists(self, project_id: str) -> bool:
+        """Check if any tasks exist for a project"""
+        with self._get_connection() as conn:
+            cursor = conn.execute(
+                "SELECT 1 FROM c4_tasks WHERE project_id = ? LIMIT 1",
+                (project_id,),
+            )
+            return cursor.fetchone() is not None
+
+    def migrate_from_json(self, project_id: str, tasks_json_path: Path) -> int:
+        """
+        Migrate tasks from tasks.json file to SQLite.
+
+        Args:
+            project_id: Project ID to associate tasks with
+            tasks_json_path: Path to the tasks.json file
+
+        Returns:
+            Number of tasks migrated
+        """
+        from c4.models.task import Task
+
+        if not tasks_json_path.exists():
+            return 0
+
+        data = json.loads(tasks_json_path.read_text())
+        tasks = {t["id"]: Task.model_validate(t) for t in data}
+
+        if not tasks:
+            return 0
+
+        self.save_all(project_id, tasks)
+        return len(tasks)

@@ -33,7 +33,7 @@ class C4Config(BaseModel):
     work_branch_prefix: str = "c4/w-"
     poll_interval_ms: int = 1000
     max_idle_minutes: int = 0  # 0 = unlimited
-    scope_lock_ttl_sec: int = 3600
+    scope_lock_ttl_sec: int = 1800  # 30 minutes, synchronized with WORKER_STALE_TIMEOUT
     validation: ValidationConfig = Field(default_factory=ValidationConfig)
     checkpoints: list[CheckpointConfig] = Field(default_factory=list)
     budgets: BudgetConfig = Field(default_factory=BudgetConfig)

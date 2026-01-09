@@ -16,6 +16,11 @@ from ..supervisor import Supervisor, SupervisorError
 logger = logging.getLogger(__name__)
 
 
+# Default stale worker timeout: 30 minutes (1800 seconds)
+# This is synchronized with scope_lock_ttl_sec for consistency
+WORKER_STALE_TIMEOUT_SEC = 1800
+
+
 class SupervisorLoop:
     """Background loop that processes checkpoint queue and repair queue"""
 
@@ -25,21 +30,27 @@ class SupervisorLoop:
         poll_interval: float = 1.0,
         max_retries: int = 3,
         supervisor_timeout: int = 300,
+        stale_worker_check_interval: float = 60.0,  # Check every minute
     ):
         self.daemon = daemon
         self.poll_interval = poll_interval
         self.max_retries = max_retries
         self.supervisor_timeout = supervisor_timeout
+        self.stale_worker_check_interval = stale_worker_check_interval
         self.running = False
         self._task: asyncio.Task | None = None
+        self._last_stale_check: float = 0
 
     async def start(self) -> None:
         """Start the supervisor loop"""
+        import time
+
         if self.running:
             logger.warning("Supervisor loop already running")
             return
 
         self.running = True
+        self._last_stale_check = time.time()
         logger.info("Supervisor loop started")
 
         while self.running:
@@ -51,12 +62,44 @@ class SupervisorLoop:
                 if not processed_cp:
                     await self._process_repair_queue()
 
+                # Periodically check for stale workers
+                await self._check_stale_workers()
+
             except Exception as e:
                 logger.error(f"Supervisor loop error: {e}")
 
             await asyncio.sleep(self.poll_interval)
 
         logger.info("Supervisor loop stopped")
+
+    async def _check_stale_workers(self) -> None:
+        """Check and recover stale workers periodically"""
+        import time
+
+        now = time.time()
+        if now - self._last_stale_check < self.stale_worker_check_interval:
+            return
+
+        self._last_stale_check = now
+
+        if self.daemon.state_machine is None:
+            return
+
+        try:
+            recoveries = self.daemon.worker_manager.recover_stale_workers(
+                stale_timeout_seconds=WORKER_STALE_TIMEOUT_SEC,
+                lock_store=self.daemon.lock_store,
+            )
+
+            if recoveries:
+                for recovery in recoveries:
+                    logger.warning(
+                        f"Recovered stale worker {recovery['worker_id']}: "
+                        f"task={recovery.get('task_id')}, "
+                        f"elapsed={recovery.get('elapsed_seconds', 0):.0f}s"
+                    )
+        except Exception as e:
+            logger.error(f"Error checking stale workers: {e}")
 
     def stop(self) -> None:
         """Stop the supervisor loop"""

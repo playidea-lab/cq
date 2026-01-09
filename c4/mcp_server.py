@@ -9,7 +9,7 @@ from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import TextContent, Tool
 
-from .daemon import LockManager, SupervisorLoopManager, WorkerManager
+from .daemon import SupervisorLoopManager, WorkerManager
 from .models import (
     C4Config,
     C4State,
@@ -25,7 +25,7 @@ from .models import (
     ValidationResult,
 )
 from .state_machine import StateMachine, StateTransitionError
-from .store import SQLiteLockStore, SQLiteStateStore, StateStore
+from .store import SQLiteLockStore, SQLiteStateStore, SQLiteTaskStore, StateStore
 from .validation import ValidationRunner
 
 
@@ -50,11 +50,11 @@ class C4Daemon:
         self._config: C4Config | None = None
         self._tasks: dict[str, Task] = {}
         self._validation_runner: ValidationRunner | None = None
-        self._lock_manager: LockManager | None = None
         self._worker_manager: WorkerManager | None = None
         self._supervisor_loop_manager: SupervisorLoopManager | None = None
         self._state_store = state_store
         self._lock_store: SQLiteLockStore | None = None
+        self._task_store: SQLiteTaskStore | None = None
 
     # =========================================================================
     # Initialization
@@ -176,15 +176,6 @@ class C4Daemon:
         return self._validation_runner
 
     @property
-    def lock_manager(self) -> LockManager:
-        """Get lock manager, creating if necessary"""
-        if self._lock_manager is None:
-            if self.state_machine is None:
-                raise RuntimeError("C4 not loaded")
-            self._lock_manager = LockManager(self.state_machine, self.config)
-        return self._lock_manager
-
-    @property
     def lock_store(self) -> SQLiteLockStore:
         """Get SQLite lock store for atomic lock operations"""
         if self._lock_store is None:
@@ -199,6 +190,21 @@ class C4Daemon:
                 raise RuntimeError("C4 not loaded")
             self._worker_manager = WorkerManager(self.state_machine, self.config)
         return self._worker_manager
+
+    def _touch_worker(self, worker_id: str | None) -> None:
+        """
+        Update worker's last_seen timestamp (implicit heartbeat).
+
+        This should be called on every MCP tool call that includes a worker_id
+        to keep the worker marked as active. Prevents stale worker recovery
+        from reclaiming tasks from active workers.
+        """
+        if worker_id and self._worker_manager is not None:
+            try:
+                self._worker_manager.heartbeat(worker_id)
+            except Exception:
+                # Don't fail tool calls if heartbeat fails
+                pass
 
     @property
     def supervisor_loop_manager(self) -> SupervisorLoopManager:
@@ -233,30 +239,66 @@ class C4Daemon:
     # Task Management
     # =========================================================================
 
+    @property
+    def task_store(self) -> SQLiteTaskStore:
+        """Get or create the task store"""
+        if self._task_store is None:
+            self._task_store = SQLiteTaskStore(self.c4_dir / "c4.db")
+        return self._task_store
+
     def _load_tasks(self) -> None:
-        """Load tasks from tasks.json"""
+        """Load tasks from SQLite (with migration from tasks.json if needed)"""
+        project_id = self.state_machine.state.project_id
+
+        # Migrate from tasks.json if SQLite is empty but tasks.json exists
         tasks_file = self.c4_dir / "tasks.json"
-        if tasks_file.exists():
-            data = json.loads(tasks_file.read_text())
-            self._tasks = {t["id"]: Task.model_validate(t) for t in data}
+        if not self.task_store.exists(project_id) and tasks_file.exists():
+            count = self.task_store.migrate_from_json(project_id, tasks_file)
+            if count > 0:
+                # Backup original tasks.json
+                backup_path = self.c4_dir / "tasks.json.bak"
+                if not backup_path.exists():
+                    tasks_file.rename(backup_path)
+
+        # Load from SQLite
+        self._tasks = self.task_store.load_all(project_id)
 
     def _save_tasks(self) -> None:
-        """Save tasks to tasks.json"""
-        tasks_file = self.c4_dir / "tasks.json"
-        tasks_file.write_text(
-            json.dumps([t.model_dump() for t in self._tasks.values()], indent=2)
-        )
+        """Save all tasks to SQLite"""
+        if self.state_machine is None:
+            return
+        project_id = self.state_machine.state.project_id
+        self.task_store.save_all(project_id, self._tasks)
+
+    def _save_task(self, task: Task) -> None:
+        """Save a single task to SQLite (more efficient than save_all)"""
+        if self.state_machine is None:
+            return
+        project_id = self.state_machine.state.project_id
+        self.task_store.save(project_id, task)
+        # Also update in-memory cache
+        self._tasks[task.id] = task
 
     def get_task(self, task_id: str) -> Task | None:
-        """Get a task by ID"""
-        return self._tasks.get(task_id)
+        """Get a task by ID (from cache, falls back to SQLite)"""
+        # Try cache first
+        if task_id in self._tasks:
+            return self._tasks[task_id]
+        # Fall back to SQLite
+        if self.state_machine is None:
+            return None
+        project_id = self.state_machine.state.project_id
+        task = self.task_store.get(project_id, task_id)
+        if task:
+            self._tasks[task_id] = task  # Update cache
+        return task
 
     def add_task(self, task: Task) -> None:
         """Add a task to the registry"""
         self._tasks[task.id] = task
         if task.id not in self.state_machine.state.queue.pending:
             self.state_machine.state.queue.pending.append(task.id)
-        self._save_tasks()
+        self._save_task(task)  # Use single-task save
         self.state_machine.save_state()
 
     # =========================================================================
@@ -307,6 +349,9 @@ class C4Daemon:
         if self.state_machine is None:
             raise RuntimeError("C4 not initialized")
 
+        # Implicit heartbeat - keep worker marked as active
+        self._touch_worker(worker_id)
+
         # Re-load state to get latest (prevent race conditions with other workers)
         self.state_machine.load_state()
         state = self.state_machine.state
@@ -337,7 +382,7 @@ class C4Daemon:
                             state.queue.pending.insert(0, task_id)  # Add to front of queue
                             task.status = TaskStatus.PENDING
                             task.assigned_to = None
-                            self._save_tasks()
+                            self._save_task(task)
                             # Also release SQLite lock if we owned it
                             self.lock_store.release_scope_lock(state.project_id, task.scope)
                             self.state_machine.save_state()
@@ -352,7 +397,7 @@ class C4Daemon:
                             state.queue.pending.insert(0, task_id)
                             task.status = TaskStatus.PENDING
                             task.assigned_to = None
-                            self._save_tasks()
+                            self._save_task(task)
                             self.state_machine.save_state()
                             continue
 
@@ -363,14 +408,16 @@ class C4Daemon:
 
                     # Refresh lock TTL for resumed work (with result check)
                     if task.scope:
-                        if not self.lock_manager.refresh(task.scope, worker_id):
+                        if not self.lock_store.refresh_scope_lock(
+                            state.project_id, task.scope, worker_id, self.config.scope_lock_ttl_sec
+                        ):
                             # Lock refresh failed - task may have been taken
                             # Move back to pending for safe reassignment
                             del state.queue.in_progress[task_id]
                             state.queue.pending.insert(0, task_id)
                             task.status = TaskStatus.PENDING
                             task.assigned_to = None
-                            self._save_tasks()
+                            self._save_task(task)
                             self.state_machine.save_state()
                             continue
 
@@ -455,15 +502,11 @@ class C4Daemon:
                     self.lock_store.release_scope_lock(project_id, task.scope)
                 continue
 
-            # Update task in tasks.json (outside atomic block)
+            # Update task in SQLite (outside atomic block but still atomic per-task)
             task.status = TaskStatus.IN_PROGRESS
             task.assigned_to = worker_id
             task.branch = task_branch
-            self._save_tasks()
-
-            # Sync in-memory lock state for consistency
-            if task.scope:
-                self.lock_manager.acquire(task.scope, worker_id)
+            self._save_task(task)
 
             # Emit event
             self.state_machine.emit_event(
@@ -497,6 +540,9 @@ class C4Daemon:
         """Report task completion with validation results"""
         if self.state_machine is None:
             raise RuntimeError("C4 not initialized")
+
+        # Implicit heartbeat - keep worker marked as active
+        self._touch_worker(worker_id)
 
         # Parse and validate results first (doesn't need state lock)
         results = [ValidationResult.model_validate(r) for r in validation_results]
@@ -586,16 +632,15 @@ class C4Daemon:
             return error_response
 
         # Non-atomic operations (safe to do outside the lock)
-        # Update task in tasks.json
+        # Update task in SQLite
         if task:
             task.status = TaskStatus.DONE
             task.commit_sha = commit_sha
-            self._save_tasks()
+            self._save_task(task)
 
-        # Release scope lock (both SQLite and in-memory)
+        # Release scope lock
         if task and task.scope:
             self.lock_store.release_scope_lock(project_id, task.scope)
-            self.lock_manager.release(task.scope)
 
         # Emit event
         self.state_machine.emit_event(
@@ -676,11 +721,10 @@ class C4Daemon:
         if task:
             task.status = TaskStatus.DONE
             task.commit_sha = commit_sha
-            self._save_tasks()
+            self._save_task(task)
 
         if task and task.scope:
             self.lock_store.release_scope_lock(state.project_id, task.scope)
-            self.lock_manager.release(task.scope)
 
         self.worker_manager.set_idle(actual_worker_id)
         state.metrics.tasks_completed += 1
@@ -871,6 +915,9 @@ class C4Daemon:
         if self.state_machine is None:
             raise RuntimeError("C4 not initialized")
 
+        # Implicit heartbeat - keep worker marked as active
+        self._touch_worker(worker_id)
+
         state = self.state_machine.state
 
         # Prevent infinite REPAIR nesting (max 2 levels: REPAIR-REPAIR-{task})
@@ -913,7 +960,7 @@ class C4Daemon:
         # Get task and release scope lock
         task = self.get_task(task_id)
         if task and task.scope:
-            self.lock_manager.release(task.scope)
+            self.lock_store.release_scope_lock(state.project_id, task.scope)
 
         # Update worker state
         if self.worker_manager.is_registered(worker_id):

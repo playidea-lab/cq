@@ -21,7 +21,7 @@ from .exceptions import (
 )
 from .local_file import LocalFileLockStore, LocalFileStateStore
 from .protocol import LockStore, StateStore
-from .sqlite import SQLiteLockStore, SQLiteStateStore
+from .sqlite import SQLiteLockStore, SQLiteStateStore, SQLiteTaskStore
 
 __all__ = [
     # Protocols
@@ -38,4 +38,5 @@ __all__ = [
     # Implementations - SQLite
     "SQLiteStateStore",
     "SQLiteLockStore",
+    "SQLiteTaskStore",
 ]
