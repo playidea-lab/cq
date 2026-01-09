@@ -99,10 +99,11 @@ mkdir -p "$HOOKS_DIR"
 # Stop hook (inline)
 cat > "$HOOKS_DIR/stop.sh" << 'HOOK'
 #!/bin/bash
-if [[ ! -f ".c4/state.json" ]]; then exit 0; fi
+# Check for C4 project (SQLite or legacy JSON)
+if [[ ! -f ".c4/c4.db" ]] && [[ ! -f ".c4/state.json" ]]; then exit 0; fi
 result=$(python3 ~/.claude/hooks/c4-stop-hook.py 2>/dev/null)
 if [[ $? -eq 2 ]]; then
-    echo "{\"decision\":\"block\",\"reason\":\"$result\",\"instructions\":\"Continue with /c4-worker\"}"
+    echo "{\"decision\":\"block\",\"reason\":\"$result\",\"instructions\":\"Continue with /c4-run\"}"
     exit 2
 fi
 exit 0

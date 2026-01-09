@@ -8,22 +8,48 @@ Exit codes:
 """
 
 import json
+import sqlite3
 import sys
 from pathlib import Path
 
 
+def load_state_from_sqlite(db_path: Path) -> dict | None:
+    """Load state from SQLite database."""
+    try:
+        conn = sqlite3.connect(db_path)
+        cursor = conn.execute("SELECT state_json FROM c4_state LIMIT 1")
+        row = cursor.fetchone()
+        conn.close()
+        if row:
+            return json.loads(row[0])
+    except (sqlite3.Error, json.JSONDecodeError):
+        pass
+    return None
+
+
+def load_state_from_json(json_path: Path) -> dict | None:
+    """Load state from JSON file (legacy)."""
+    try:
+        return json.loads(json_path.read_text())
+    except (json.JSONDecodeError, OSError):
+        pass
+    return None
+
+
 def main() -> None:
     """Check C4 state and determine if exit should be blocked."""
-    state_file = Path(".c4/state.json")
+    db_file = Path(".c4/c4.db")
+    json_file = Path(".c4/state.json")
 
-    # C4 not initialized - allow exit
-    if not state_file.exists():
-        sys.exit(0)
+    # Try SQLite first (new default), then JSON (legacy)
+    state = None
+    if db_file.exists():
+        state = load_state_from_sqlite(db_file)
+    elif json_file.exists():
+        state = load_state_from_json(json_file)
 
-    try:
-        state = json.loads(state_file.read_text())
-    except (json.JSONDecodeError, OSError):
-        # Can't read state - allow exit
+    # C4 not initialized or can't read state - allow exit
+    if state is None:
         sys.exit(0)
 
     status = state.get("status", "")
