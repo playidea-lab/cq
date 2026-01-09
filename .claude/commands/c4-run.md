@@ -24,6 +24,26 @@ WORKER_ID = f"worker-{uuid.uuid4().hex[:8]}"  # 예: "worker-a1b2c3d4"
 
 MCP 도구가 안 되면 Claude Code를 재시작하세요.
 
+## ⚡ Accept Edits 모드 확인
+
+자동화 작업 전에 **Accept Edits** 모드가 켜져 있는지 확인하세요.
+파일 편집마다 권한 요청이 뜨면 자동화가 중단됩니다.
+
+**확인 방법:**
+- 화면 하단 상태바에서 "Accept Edits" 표시 확인
+- 또는 `Shift+Tab` 눌러서 활성화
+
+**설정으로 기본값 지정** (`.claude/settings.json`):
+```json
+{
+  "permissions": {
+    "defaultMode": "acceptEdits"
+  }
+}
+```
+
+⚠️ Accept Edits가 꺼져있으면 매 파일 수정마다 승인 필요 → 자동화 불가!
+
 ## Instructions
 
 ### 1. 상태 확인

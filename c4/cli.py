@@ -233,7 +233,9 @@ def _create_project_settings(project_path: Path) -> bool:
                 f"Edit({project_path}/**)",
                 f"MultiEdit({project_path}/**)",
                 f"Read({project_path}/**)",
-            ]
+            ],
+            # Auto-accept file edits for autonomous C4 worker operations
+            "defaultMode": "acceptEdits",
         },
         "enableAllProjectMcpServers": True,
     }
