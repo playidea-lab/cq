@@ -297,15 +297,35 @@ class C4Daemon:
                             self._save_tasks()
                             self.state_machine.save_state()
                             continue  # Try to find another task
+                    else:
+                        # For scope=None tasks, verify task state consistency
+                        if task.assigned_to != worker_id or task.status != TaskStatus.IN_PROGRESS:
+                            # Task state inconsistent with queue - reset for reassignment
+                            del state.queue.in_progress[task_id]
+                            state.queue.pending.insert(0, task_id)
+                            task.status = TaskStatus.PENDING
+                            task.assigned_to = None
+                            self._save_tasks()
+                            self.state_machine.save_state()
+                            continue
 
                     # Re-sync worker state
                     self.worker_manager.set_busy(
                         worker_id, task_id, task.scope, task.branch
                     )
 
-                    # Refresh lock TTL for resumed work
+                    # Refresh lock TTL for resumed work (with result check)
                     if task.scope:
-                        self.lock_manager.refresh(task.scope, worker_id)
+                        if not self.lock_manager.refresh(task.scope, worker_id):
+                            # Lock refresh failed - task may have been taken
+                            # Move back to pending for safe reassignment
+                            del state.queue.in_progress[task_id]
+                            state.queue.pending.insert(0, task_id)
+                            task.status = TaskStatus.PENDING
+                            task.assigned_to = None
+                            self._save_tasks()
+                            self.state_machine.save_state()
+                            continue
 
                     return TaskAssignment(
                         task_id=task_id,

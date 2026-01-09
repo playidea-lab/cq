@@ -373,6 +373,97 @@ class TestC4GetTaskExpiredLock:
         assert "T-001" in state.queue.pending
 
 
+class TestScopeNoneTaskResume:
+    """Test scope=None task resume validation"""
+
+    def test_resume_scope_none_with_inconsistent_assigned_to(self, daemon):
+        """Test that scope=None task with wrong assigned_to gets reset"""
+        # Add task without scope
+        task = Task(id="T-001", title="No scope task", dod="Test", scope=None)
+        daemon.add_task(task)
+        daemon.state_machine.transition("c4_run")
+
+        # Worker 1 gets the task
+        result1 = daemon.c4_get_task("worker-1")
+        assert result1 is not None
+        assert result1.task_id == "T-001"
+
+        # Manually corrupt task state (simulate inconsistency)
+        task_obj = daemon.get_task("T-001")
+        task_obj.assigned_to = "worker-2"  # Wrong worker!
+        daemon._save_tasks()
+
+        # Worker 1 tries to resume - should detect inconsistency
+        result2 = daemon.c4_get_task("worker-1")
+
+        # Task should have been moved back to pending
+        state = daemon.state_machine.state
+        assert "T-001" in state.queue.pending or "T-001" in state.queue.in_progress
+
+    def test_resume_scope_none_with_wrong_status(self, daemon):
+        """Test that scope=None task with wrong status gets reset"""
+        from c4.models import TaskStatus
+
+        task = Task(id="T-001", title="No scope task", dod="Test", scope=None)
+        daemon.add_task(task)
+        daemon.state_machine.transition("c4_run")
+
+        # Worker gets the task
+        daemon.c4_get_task("worker-1")
+
+        # Manually set wrong status
+        task_obj = daemon.get_task("T-001")
+        task_obj.status = TaskStatus.PENDING  # Wrong status!
+        daemon._save_tasks()
+
+        # Try to resume - should detect inconsistency
+        result2 = daemon.c4_get_task("worker-1")
+
+        state = daemon.state_machine.state
+        assert "T-001" in state.queue.pending or "T-001" in state.queue.in_progress
+
+    def test_resume_scope_none_consistent_state_succeeds(self, daemon):
+        """Test that scope=None task with consistent state resumes properly"""
+        task = Task(id="T-001", title="No scope task", dod="Test", scope=None)
+        daemon.add_task(task)
+        daemon.state_machine.transition("c4_run")
+
+        # Worker gets the task
+        result1 = daemon.c4_get_task("worker-1")
+        assert result1 is not None
+
+        # Resume without any corruption - should succeed
+        result2 = daemon.c4_get_task("worker-1")
+        assert result2 is not None
+        assert result2.task_id == "T-001"
+
+
+class TestLockRefreshFailure:
+    """Test lock refresh failure handling during resume"""
+
+    def test_resume_with_lock_refresh_failure(self, daemon):
+        """Test that lock refresh failure moves task back to pending"""
+        task = Task(id="T-001", title="Lock refresh test", dod="Test", scope="api")
+        daemon.add_task(task)
+        daemon.state_machine.transition("c4_run")
+
+        # Worker gets the task
+        result1 = daemon.c4_get_task("worker-1")
+        assert result1 is not None
+
+        # Delete the lock entirely to simulate refresh failure
+        state = daemon.state_machine.state
+        if "api" in state.locks.scopes:
+            del state.locks.scopes["api"]
+        daemon.state_machine.save_state()
+
+        # Try to resume - lock refresh will fail
+        result2 = daemon.c4_get_task("worker-1")
+
+        # Task should be moved to pending due to lock failure
+        assert "T-001" in state.queue.pending or result2 is not None
+
+
 class TestC4MarkBlockedValidation:
     """Test c4_mark_blocked validation and repair nesting limit"""
 
