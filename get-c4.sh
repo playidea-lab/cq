@@ -40,9 +40,13 @@ fi
 # Clone or Update
 # =============================================================================
 
-if [[ -d "$C4_INSTALL_DIR" ]]; then
+if [[ -d "$C4_INSTALL_DIR/.git" ]]; then
     echo "📥 Updating existing installation..."
     (cd "$C4_INSTALL_DIR" && git pull --quiet)
+elif [[ -d "$C4_INSTALL_DIR" ]]; then
+    echo "📥 Reinstalling (removing old non-git directory)..."
+    rm -rf "$C4_INSTALL_DIR"
+    git clone --quiet "$REPO_URL" "$C4_INSTALL_DIR"
 else
     echo "📥 Cloning C4..."
     git clone --quiet "$REPO_URL" "$C4_INSTALL_DIR"
