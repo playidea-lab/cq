@@ -210,52 +210,34 @@ def _create_mcp_config(project_path: Path) -> bool:
 
 
 def _create_project_settings(project_path: Path) -> bool:
-    """Create .claude/settings.json in project."""
+    """Create .claude/settings.json with permissions.allow.
+
+    This uses project-local settings instead of ~/.claude.json to avoid
+    conflicts with Claude Code's runtime config management.
+    """
     settings_dir = project_path / ".claude"
     settings_dir.mkdir(parents=True, exist_ok=True)
 
     settings_file = settings_dir / "settings.json"
-    settings = {"enableAllProjectMcpServers": True}
+    settings = {
+        "permissions": {
+            "allow": [
+                # MCP tools (wildcard for all tools from each server)
+                "mcp__c4__*",
+                "mcp__serena__*",
+                "mcp__plugin_serena_serena__*",
+                # Shell commands
+                "Bash(*)",
+                # File operations for this project
+                f"Write({project_path}/**)",
+                f"Edit({project_path}/**)",
+                f"Read({project_path}/**)",
+            ]
+        },
+        "enableAllProjectMcpServers": True,
+    }
 
     settings_file.write_text(json.dumps(settings, indent=2))
-    return True
-
-
-def _setup_permissions(project_path: Path) -> bool:
-    """Set up allowedTools in ~/.claude.json"""
-    config_path = Path.home() / ".claude.json"
-
-    # Load existing config
-    if config_path.exists():
-        try:
-            config = json.loads(config_path.read_text())
-        except json.JSONDecodeError:
-            config = {}
-    else:
-        config = {}
-
-    # Ensure structure
-    if "projects" not in config:
-        config["projects"] = {}
-
-    project_key = str(project_path)
-    if project_key not in config["projects"]:
-        config["projects"][project_key] = {}
-
-    # Set allowedTools - EXACTLY these values, no modifications
-    # MCP tools need wildcard suffix to match all tool names (e.g., mcp__c4__c4_add_todo)
-    # Note: project_path already starts with /, so don't add another one
-    config["projects"][project_key]["allowedTools"] = [
-        f"Write({project_path}/**)",
-        f"Edit({project_path}/**)",
-        f"Read({project_path}/**)",
-        "Bash(*)",
-        "mcp__c4__*",
-        "mcp__serena__*",
-        "mcp__plugin_serena_serena__*",
-    ]
-
-    config_path.write_text(json.dumps(config, indent=2))
     return True
 
 
@@ -314,15 +296,11 @@ def init(
         console.print("[dim]Creating .mcp.json...[/dim]")
         _create_mcp_config(project_path)
 
-        # Step 3: Create .claude/settings.json
-        console.print("[dim]Creating .claude/settings.json...[/dim]")
+        # Step 3: Create .claude/settings.json with permissions
+        console.print("[dim]Creating .claude/settings.json (permissions)...[/dim]")
         _create_project_settings(project_path)
 
-        # Step 4: Set up permissions in ~/.claude.json
-        console.print("[dim]Setting up permissions (Bash(*), MCP tools)...[/dim]")
-        _setup_permissions(project_path)
-
-        # Step 5: Install hooks (unless skipped)
+        # Step 4: Install hooks (unless skipped)
         if not skip_hooks:
             console.print("[dim]Installing Claude Code hooks...[/dim]")
             hook_results = install_all_hooks()
@@ -340,8 +318,7 @@ def init(
         console.print("[bold]Created/Updated:[/bold]")
         console.print("  .c4/                    - C4 state directory")
         console.print("  .mcp.json               - MCP server config")
-        console.print("  .claude/settings.json   - MCP auto-approval")
-        console.print("  ~/.claude.json          - Bash(*) permissions")
+        console.print("  .claude/settings.json   - Permissions & MCP auto-approval")
         if not skip_hooks:
             console.print("  ~/.claude/hooks/        - Stop & security hooks")
         console.print()
