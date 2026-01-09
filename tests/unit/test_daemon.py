@@ -161,6 +161,53 @@ class TestC4GetTask:
         result = daemon.c4_get_task("worker-1")
         assert result is None
 
+    def test_get_task_resumes_existing_in_progress(self, daemon):
+        """Test that get_task returns existing in_progress task on worker restart"""
+        # Add task
+        task = Task(
+            id="T-001",
+            title="Resume test",
+            dod="Test resume behavior",
+            scope="api",
+        )
+        daemon.add_task(task)
+        daemon.state_machine.transition("c4_run")
+
+        # Worker gets task
+        result1 = daemon.c4_get_task("worker-1")
+        assert result1 is not None
+        assert result1.task_id == "T-001"
+        assert "T-001" in daemon.state_machine.state.queue.in_progress
+
+        # Simulate worker restart: call get_task again with same worker_id
+        result2 = daemon.c4_get_task("worker-1")
+
+        # Should return the same task (resume), not None or new task
+        assert result2 is not None
+        assert result2.task_id == "T-001"
+        assert result2.title == "Resume test"
+
+        # Still only one task in progress
+        assert len(daemon.state_machine.state.queue.in_progress) == 1
+
+    def test_get_task_different_worker_gets_different_task(self, daemon):
+        """Test that different worker doesn't get another worker's in_progress task"""
+        # Add two tasks
+        task1 = Task(id="T-001", title="Task 1", dod="Test 1")
+        task2 = Task(id="T-002", title="Task 2", dod="Test 2")
+        daemon.add_task(task1)
+        daemon.add_task(task2)
+        daemon.state_machine.transition("c4_run")
+
+        # Worker 1 gets task
+        result1 = daemon.c4_get_task("worker-1")
+        assert result1.task_id == "T-001"
+
+        # Worker 2 should get T-002, not T-001
+        result2 = daemon.c4_get_task("worker-2")
+        assert result2 is not None
+        assert result2.task_id == "T-002"
+
 
 class TestC4Submit:
     """Test c4_submit tool"""

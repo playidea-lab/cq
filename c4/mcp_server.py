@@ -278,7 +278,25 @@ class C4Daemon:
         if not self.worker_manager.is_registered(worker_id):
             self.worker_manager.register(worker_id)
 
-        # Find available task
+        # Check if worker already has an in_progress task (resume after crash/restart)
+        for task_id, assigned_worker in state.queue.in_progress.items():
+            if assigned_worker == worker_id:
+                task = self.get_task(task_id)
+                if task:
+                    # Re-sync worker state
+                    self.worker_manager.set_busy(
+                        worker_id, task_id, task.scope, task.branch
+                    )
+                    return TaskAssignment(
+                        task_id=task_id,
+                        title=task.title,
+                        scope=task.scope,
+                        dod=task.dod,
+                        validations=task.validations,
+                        branch=task.branch or "",
+                    )
+
+        # Find available task from pending
         for task_id in state.queue.pending[:]:  # Copy to avoid mutation during iteration
             task = self.get_task(task_id)
             if task is None:
