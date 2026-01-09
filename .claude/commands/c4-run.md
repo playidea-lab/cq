@@ -2,6 +2,17 @@
 
 PLAN → EXECUTE 상태 전환 후 **Worker Loop를 자동으로 시작**합니다.
 
+## 0. Worker ID 생성 (필수!)
+
+**루프 시작 전** 고유한 worker_id를 생성하세요:
+
+```python
+import uuid
+WORKER_ID = f"worker-{uuid.uuid4().hex[:8]}"  # 예: "worker-a1b2c3d4"
+```
+
+이 ID를 이 세션 전체에서 사용합니다. **절대로 "claude-worker" 같은 고정값 사용 금지!**
+
 ## ⚠️ 중요: MCP 도구만 사용
 
 **CLI(bash) 명령어를 사용하지 마세요!** 반드시 MCP 도구를 사용하세요:
@@ -56,7 +67,7 @@ status = mcp__c4__c4_status()
 
 ```
 LOOP:
-  task = c4_get_task("claude-worker")
+  task = c4_get_task(WORKER_ID)
   if task is null:
       exit("✅ COMPLETE")
 

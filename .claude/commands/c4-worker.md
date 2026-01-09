@@ -3,6 +3,17 @@
 자동으로 task를 받아 구현하고, 검증하고, 제출하는 루프를 실행합니다.
 **이 루프는 수동 확인 없이 자동으로 계속됩니다.**
 
+## 0. Worker ID 생성 (필수!)
+
+**루프 시작 전** 고유한 worker_id를 생성하세요:
+
+```python
+import uuid
+WORKER_ID = f"worker-{uuid.uuid4().hex[:8]}"  # 예: "worker-a1b2c3d4"
+```
+
+이 ID를 이 세션 전체에서 사용합니다. **절대로 "claude-worker" 같은 고정값 사용 금지!**
+
 ## ⚠️ 중요: MCP 도구만 사용
 
 **CLI(bash) 명령어를 사용하지 마세요!** 반드시 MCP 도구를 사용하세요:
@@ -27,7 +38,7 @@ while True:
 ### 1. Task 가져오기
 
 ```
-task = mcp__c4__c4_get_task("claude-worker")
+task = mcp__c4__c4_get_task(WORKER_ID)
 ```
 
 **분기 처리:**
@@ -67,7 +78,7 @@ result = mcp__c4__c4_run_validation()
 ```
 mcp__c4__c4_mark_blocked(
     task_id=task.task_id,
-    worker_id="claude-worker",
+    worker_id=WORKER_ID,
     failure_signature="validation failed after 10 attempts",
     attempts=10,
     last_error="<마지막 에러 메시지>"
