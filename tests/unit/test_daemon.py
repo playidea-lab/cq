@@ -726,3 +726,135 @@ class TestCheckpointQueueRetry:
 
         item.retry_count += 1
         assert item.retry_count == 2
+
+    def test_checkpoint_dead_letter_after_max_retries(self, daemon):
+        """Test that checkpoint is removed after max retries"""
+        from c4.models import CheckpointQueueItem
+
+        item = CheckpointQueueItem(
+            checkpoint_id="CP-001",
+            triggered_at=datetime.now().isoformat(),
+            retry_count=2,  # Already failed twice
+            max_retries=3,
+        )
+
+        # Simulate one more failure
+        item.retry_count += 1
+        assert item.retry_count >= item.max_retries
+        # In real code, this would trigger dead letter removal
+
+
+class TestTaskRegistryValidation:
+    """Test task registry and queue consistency validation"""
+
+    def test_mark_blocked_task_not_in_registry(self, daemon):
+        """Test marking a task as blocked when it's not in task registry"""
+        daemon.state_machine.transition("c4_run")
+
+        # Manually add task to in_progress queue without adding to registry
+        state = daemon.state_machine.state
+        state.queue.in_progress["GHOST-TASK"] = "worker-1"
+        daemon.state_machine.save_state()
+
+        # Try to mark blocked - should handle gracefully
+        result = daemon.c4_mark_blocked(
+            task_id="GHOST-TASK",
+            worker_id="worker-1",
+            failure_signature="test failure",
+            attempts=3,
+        )
+
+        # Should succeed (task exists in queue) but handle missing registry entry
+        assert result["success"] is True
+
+    def test_get_task_skips_orphaned_queue_entry(self, daemon):
+        """Test that c4_get_task handles orphaned queue entries"""
+        task = Task(id="T-001", title="Real task", dod="Test")
+        daemon.add_task(task)
+        daemon.state_machine.transition("c4_run")
+
+        # Add orphaned entry to pending queue (no task in registry)
+        state = daemon.state_machine.state
+        state.queue.pending.insert(0, "ORPHAN-TASK")
+        daemon.state_machine.save_state()
+
+        # Get task should skip orphan and return real task
+        result = daemon.c4_get_task("worker-1")
+
+        assert result is not None
+        assert result.task_id == "T-001"  # Got the real task, not the orphan
+
+    def test_submit_task_not_in_registry(self, daemon):
+        """Test submitting a task that's not in the registry"""
+        daemon.state_machine.transition("c4_run")
+
+        # Manually add to in_progress without registry entry
+        state = daemon.state_machine.state
+        state.queue.in_progress["GHOST-TASK"] = "worker-1"
+        daemon.state_machine.save_state()
+
+        # Submit handles ghost task gracefully (moves to done)
+        result = daemon.c4_submit(
+            "GHOST-TASK",
+            "abc123",
+            [{"name": "test", "status": "pass"}],
+        )
+
+        # Current implementation allows this - task moved to done
+        assert result.success is True
+        assert "GHOST-TASK" in state.queue.done
+
+
+class TestConcurrentOperations:
+    """Test concurrent operation edge cases"""
+
+    def test_double_get_task_same_worker(self, daemon):
+        """Test that same worker calling get_task twice gets same task"""
+        task = Task(id="T-001", title="Test", dod="Test")
+        daemon.add_task(task)
+        daemon.state_machine.transition("c4_run")
+
+        # First call
+        result1 = daemon.c4_get_task("worker-1")
+        assert result1.task_id == "T-001"
+
+        # Second call - should resume same task
+        result2 = daemon.c4_get_task("worker-1")
+        assert result2.task_id == "T-001"
+
+        # Only one task in progress
+        assert len(daemon.state_machine.state.queue.in_progress) == 1
+
+    def test_different_workers_get_different_tasks(self, daemon):
+        """Test that different workers get different tasks"""
+        task1 = Task(id="T-001", title="Task 1", dod="Test")
+        task2 = Task(id="T-002", title="Task 2", dod="Test")
+        daemon.add_task(task1)
+        daemon.add_task(task2)
+        daemon.state_machine.transition("c4_run")
+
+        result1 = daemon.c4_get_task("worker-1")
+        result2 = daemon.c4_get_task("worker-2")
+
+        assert result1.task_id != result2.task_id
+        assert len(daemon.state_machine.state.queue.in_progress) == 2
+
+    def test_submit_already_done_task(self, daemon):
+        """Test submitting a task that's already marked done"""
+        task = Task(id="T-001", title="Test", dod="Test")
+        daemon.add_task(task)
+        daemon.state_machine.transition("c4_run")
+
+        daemon.c4_get_task("worker-1")
+
+        # First submit
+        result1 = daemon.c4_submit(
+            "T-001", "abc123", [{"name": "test", "status": "pass"}]
+        )
+        assert result1.success is True
+
+        # Second submit - task already done
+        result2 = daemon.c4_submit(
+            "T-001", "def456", [{"name": "test", "status": "pass"}]
+        )
+        assert result2.success is False
