@@ -114,48 +114,64 @@ class SupervisorLoop:
             # Remove from queue on success
             if result.success:
                 state.checkpoint_queue.pop(0)
-                self.daemon.state_machine.save_state()
+                self._safe_save_state(f"checkpoint {item.checkpoint_id} success")
 
             return True
 
         except SupervisorError as e:
             logger.error(f"Supervisor failed for checkpoint {item.checkpoint_id}: {e}")
-            # Increment retry count
-            item.retry_count += 1
-
-            if item.retry_count >= item.max_retries:
-                # Dead letter - remove from queue after max retries
-                logger.error(
-                    f"Checkpoint {item.checkpoint_id} failed after {item.retry_count} retries. "
-                    f"Removing from queue. Manual intervention required."
-                )
-                state.checkpoint_queue.pop(0)
-                self.daemon.state_machine.save_state()
-            else:
-                # Save updated retry count
-                self.daemon.state_machine.save_state()
-                logger.warning(
-                    f"Checkpoint {item.checkpoint_id} retry {item.retry_count}/{item.max_retries}"
-                )
-
+            self._handle_checkpoint_retry(state, item, "supervisor error")
             return True
 
         except Exception as e:
             logger.error(f"Unexpected error processing checkpoint {item.checkpoint_id}: {e}")
-            # Increment retry count for unexpected errors too
-            item.retry_count += 1
-
-            if item.retry_count >= item.max_retries:
-                logger.error(
-                    f"Checkpoint {item.checkpoint_id} failed with unexpected error after "
-                    f"{item.retry_count} retries. Removing from queue."
-                )
-                state.checkpoint_queue.pop(0)
-                self.daemon.state_machine.save_state()
-            else:
-                self.daemon.state_machine.save_state()
-
+            self._handle_checkpoint_retry(state, item, "unexpected error")
             return True
+
+    def _handle_checkpoint_retry(self, state, item, error_type: str) -> None:
+        """
+        Handle retry logic for checkpoint processing failures.
+        Consolidated to avoid code duplication between SupervisorError and Exception handlers.
+        """
+        # Increment retry count (actual attempt number = retry_count + 1)
+        item.retry_count += 1
+
+        if item.retry_count >= item.max_retries:
+            # Dead letter - remove from queue after max retries
+            # Note: retry_count tracks retries after initial attempt
+            total_attempts = item.retry_count + 1
+            logger.error(
+                f"Checkpoint {item.checkpoint_id} failed after {total_attempts} attempts "
+                f"({item.retry_count} retries). Removing from queue. Manual intervention required."
+            )
+            state.checkpoint_queue.pop(0)
+            self._safe_save_state(f"checkpoint {item.checkpoint_id} dead letter")
+        else:
+            # Save updated retry count
+            self._safe_save_state(f"checkpoint {item.checkpoint_id} retry")
+            logger.warning(
+                f"Checkpoint {item.checkpoint_id} retry {item.retry_count}/{item.max_retries}"
+            )
+
+    def _safe_save_state(self, context: str) -> bool:
+        """
+        Safely save state with error handling.
+
+        Args:
+            context: Description of what operation triggered the save (for logging)
+
+        Returns:
+            True if save succeeded, False otherwise
+        """
+        try:
+            self.daemon.state_machine.save_state()
+            return True
+        except Exception as e:
+            logger.critical(
+                f"CRITICAL: Failed to persist state after {context}: {e}. "
+                f"State may be inconsistent. Manual intervention required."
+            )
+            return False
 
     async def _process_repair_queue(self) -> bool:
         """
@@ -193,7 +209,7 @@ class SupervisorLoop:
 
             # Remove from repair queue
             state.repair_queue.pop(0)
-            self.daemon.state_machine.save_state()
+            self._safe_save_state(f"repair queue item {item.task_id}")
 
             return True
 

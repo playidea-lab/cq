@@ -459,6 +459,153 @@ class TestC4MarkBlockedValidation:
         assert daemon.state_machine.state.repair_queue[0].task_id == "T-001"
 
 
+class TestWorkerOwnershipVerification:
+    """Test worker ownership verification in c4_mark_blocked"""
+
+    def test_mark_blocked_wrong_worker_fails(self, daemon):
+        """Test that a different worker cannot mark another worker's task as blocked"""
+        task = Task(id="T-001", title="Ownership test", dod="Test", scope="api")
+        daemon.add_task(task)
+        daemon.state_machine.transition("c4_run")
+
+        # Worker 1 gets the task
+        daemon.c4_get_task("worker-1")
+
+        # Worker 2 tries to mark it as blocked - should fail
+        result = daemon.c4_mark_blocked(
+            task_id="T-001",
+            worker_id="worker-2",  # Wrong worker!
+            failure_signature="test failure",
+            attempts=3,
+        )
+
+        assert result["success"] is False
+        assert "assigned to worker-1" in result["error"]
+        assert "worker-2" in result["error"]
+        # Task should still be in progress
+        assert "T-001" in daemon.state_machine.state.queue.in_progress
+
+    def test_mark_blocked_correct_worker_succeeds(self, daemon):
+        """Test that the assigned worker can mark their task as blocked"""
+        task = Task(id="T-001", title="Ownership test", dod="Test", scope="api")
+        daemon.add_task(task)
+        daemon.state_machine.transition("c4_run")
+
+        # Worker 1 gets the task
+        daemon.c4_get_task("worker-1")
+
+        # Worker 1 marks it as blocked - should succeed
+        result = daemon.c4_mark_blocked(
+            task_id="T-001",
+            worker_id="worker-1",
+            failure_signature="test failure",
+            attempts=3,
+        )
+
+        assert result["success"] is True
+        assert "T-001" not in daemon.state_machine.state.queue.in_progress
+
+
+class TestRepairDepthFalsePositive:
+    """Test repair depth calculation doesn't have false positives"""
+
+    def test_task_id_containing_repair_not_prefix(self, daemon):
+        """Test that task IDs containing REPAIR- (not as prefix) are not blocked"""
+        # Task ID that contains "REPAIR-" but not as a prefix
+        task = Task(id="MY-REPAIR-FEATURE", title="Fix repair feature", dod="Test")
+        daemon.add_task(task)
+        daemon.state_machine.transition("c4_run")
+
+        # Get the task
+        daemon.c4_get_task("worker-1")
+
+        # Should be able to mark as blocked (repair_depth should be 0)
+        result = daemon.c4_mark_blocked(
+            task_id="MY-REPAIR-FEATURE",
+            worker_id="worker-1",
+            failure_signature="test failure",
+            attempts=3,
+        )
+
+        assert result["success"] is True
+        assert len(daemon.state_machine.state.repair_queue) == 1
+
+    def test_task_id_with_repair_in_middle(self, daemon):
+        """Test that task IDs with REPAIR- in the middle are not blocked"""
+        task = Task(id="USER-REPAIR-API-FIX", title="API repair fix", dod="Test")
+        daemon.add_task(task)
+        daemon.state_machine.transition("c4_run")
+
+        daemon.c4_get_task("worker-1")
+
+        result = daemon.c4_mark_blocked(
+            task_id="USER-REPAIR-API-FIX",
+            worker_id="worker-1",
+            failure_signature="test failure",
+            attempts=3,
+        )
+
+        # Should succeed - repair_depth is 0 (no REPAIR- prefix)
+        assert result["success"] is True
+
+    def test_task_id_with_multiple_repair_not_prefix(self, daemon):
+        """Test task ID with multiple REPAIR- occurrences (not prefix) passes"""
+        task = Task(
+            id="API-REPAIR-REPAIR-BUG", title="Double repair string", dod="Test"
+        )
+        daemon.add_task(task)
+        daemon.state_machine.transition("c4_run")
+
+        daemon.c4_get_task("worker-1")
+
+        result = daemon.c4_mark_blocked(
+            task_id="API-REPAIR-REPAIR-BUG",
+            worker_id="worker-1",
+            failure_signature="test failure",
+            attempts=3,
+        )
+
+        # Should succeed - repair_depth is 0 (doesn't start with REPAIR-)
+        assert result["success"] is True
+
+    def test_actual_repair_prefix_depth_1(self, daemon):
+        """Test that actual REPAIR- prefix with depth 1 is allowed"""
+        task = Task(id="REPAIR-T-001", title="First repair", dod="Test")
+        daemon.add_task(task)
+        daemon.state_machine.transition("c4_run")
+
+        daemon.c4_get_task("worker-1")
+
+        result = daemon.c4_mark_blocked(
+            task_id="REPAIR-T-001",
+            worker_id="worker-1",
+            failure_signature="test failure",
+            attempts=3,
+        )
+
+        # Should succeed - repair_depth is 1, max is 2
+        assert result["success"] is True
+
+    def test_actual_repair_prefix_depth_2_blocked(self, daemon):
+        """Test that REPAIR-REPAIR- prefix (depth 2) is blocked"""
+        task = Task(id="REPAIR-REPAIR-T-001", title="Second repair", dod="Test")
+        daemon.add_task(task)
+        daemon.state_machine.transition("c4_run")
+
+        daemon.c4_get_task("worker-1")
+
+        result = daemon.c4_mark_blocked(
+            task_id="REPAIR-REPAIR-T-001",
+            worker_id="worker-1",
+            failure_signature="test failure",
+            attempts=3,
+        )
+
+        # Should fail - repair_depth is 2, max is 2
+        assert result["success"] is False
+        assert "Max repair nesting exceeded" in result["error"]
+
+
 class TestCheckpointQueueRetry:
     """Test checkpoint queue retry mechanism"""
 

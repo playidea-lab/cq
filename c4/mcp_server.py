@@ -619,7 +619,13 @@ class C4Daemon:
         state = self.state_machine.state
 
         # Prevent infinite REPAIR nesting (max 2 levels: REPAIR-REPAIR-{task})
-        repair_depth = task_id.count("REPAIR-")
+        # Use prefix-based check to avoid false positives like "MY-REPAIR-FEATURE"
+        repair_depth = 0
+        temp_id = task_id
+        while temp_id.startswith("REPAIR-"):
+            repair_depth += 1
+            temp_id = temp_id[7:]  # len("REPAIR-") = 7
+
         max_repair_depth = 2
         if repair_depth >= max_repair_depth:
             return {
@@ -635,6 +641,15 @@ class C4Daemon:
                 "success": False,
                 "error": f"Task {task_id} is not in progress",
                 "message": "Cannot mark a task as blocked if it's not currently in progress",
+            }
+
+        # Verify worker ownership - only the assigned worker can mark task as blocked
+        assigned_worker = state.queue.in_progress.get(task_id)
+        if assigned_worker != worker_id:
+            return {
+                "success": False,
+                "error": f"Task {task_id} is assigned to {assigned_worker}, not {worker_id}",
+                "message": "Cannot mark a task as blocked if you are not the assigned worker",
             }
 
         # Move task from in_progress (will be picked up after repair)
