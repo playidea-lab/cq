@@ -370,6 +370,8 @@ class TestC4GetTaskExpiredLock:
         result2 = daemon.c4_get_task("worker-1")
 
         # Task should have been moved back to pending
+        # Note: c4_get_task reloads state, so get fresh reference
+        state = daemon.state_machine.state
         assert "T-001" in state.queue.pending
 
 
@@ -802,6 +804,8 @@ class TestTaskRegistryValidation:
 
         # Current implementation allows this - task moved to done
         assert result.success is True
+        # Note: c4_submit reloads state, so get fresh reference
+        state = daemon.state_machine.state
         assert "GHOST-TASK" in state.queue.done
 
 

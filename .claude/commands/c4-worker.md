@@ -113,7 +113,8 @@ result = mcp__c4__c4_submit(
     validation_results=[
         {"name": "lint", "status": "pass"},
         {"name": "unit", "status": "pass"}
-    ]
+    ],
+    worker_id=WORKER_ID  # 중요: 소유권 검증을 위해 worker_id 포함
 )
 ```
 

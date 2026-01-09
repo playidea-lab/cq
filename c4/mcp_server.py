@@ -268,6 +268,8 @@ class C4Daemon:
         if self.state_machine is None:
             raise RuntimeError("C4 not initialized")
 
+        # Re-load state to get latest (prevent race conditions with other workers)
+        self.state_machine.load_state()
         state = self.state_machine.state
 
         # Ensure we're in EXECUTE state
@@ -391,19 +393,38 @@ class C4Daemon:
         task_id: str,
         commit_sha: str,
         validation_results: list[dict],
+        worker_id: str | None = None,
     ) -> SubmitResponse:
         """Report task completion with validation results"""
         if self.state_machine is None:
             raise RuntimeError("C4 not initialized")
 
+        # Re-load state to get latest (prevent race conditions)
+        self.state_machine.load_state()
         state = self.state_machine.state
 
         # Validate task exists and is in progress
         if task_id not in state.queue.in_progress:
+            # Check if already done (another worker submitted it)
+            if task_id in state.queue.done:
+                return SubmitResponse(
+                    success=False,
+                    next_action="get_next_task",
+                    message=f"Task {task_id} already completed by another worker",
+                )
             return SubmitResponse(
                 success=False,
                 next_action="fix_failures",
                 message=f"Task {task_id} is not in progress",
+            )
+
+        # Validate the task is assigned to this worker (if worker_id provided)
+        assigned_worker = state.queue.in_progress.get(task_id)
+        if worker_id and assigned_worker != worker_id:
+            return SubmitResponse(
+                success=False,
+                next_action="get_next_task",
+                message=f"Task {task_id} is assigned to {assigned_worker}, not {worker_id}",
             )
 
         # Parse validation results
@@ -1125,6 +1146,10 @@ def create_server(project_root: Path | None = None) -> Server:
                             },
                             "description": "Results of validation runs (lint, test, etc.)",
                         },
+                        "worker_id": {
+                            "type": "string",
+                            "description": "Worker ID submitting the task (for ownership verification)",
+                        },
                     },
                     "required": ["task_id", "commit_sha", "validation_results"],
                 },
@@ -1296,6 +1321,7 @@ def create_server(project_root: Path | None = None) -> Server:
                     arguments["task_id"],
                     arguments["commit_sha"],
                     arguments["validation_results"],
+                    arguments.get("worker_id"),  # Optional worker_id for ownership verification
                 )
                 result = result.model_dump()
             elif name == "c4_add_todo":
