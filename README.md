@@ -127,9 +127,8 @@ cp .claude/commands/c4-*.md ~/.claude/commands/
 | `/c4-init` | Initialize C4 in current directory (includes Stop Hook setup) |
 | `/c4-status` | Show project status and queue |
 | `/c4-plan` | Scan docs, interview preferences, generate tasks |
-| `/c4-run` | Start execution with auto supervisor loop |
+| `/c4-run` | Start worker loop (PLAN→EXECUTE or join existing) |
 | `/c4-stop` | Halt execution |
-| `/c4-worker` | Get task assignment |
 | `/c4-validate` | Run validations (lint, unit) |
 | `/c4-submit` | Submit completed task |
 | `/c4-checkpoint` | Handle checkpoint review |

@@ -1,6 +1,8 @@
-# C4 Start Execution (자동화)
+# C4 Run (자동화)
 
-PLAN → EXECUTE 상태 전환 후 **Worker Loop를 자동으로 시작**합니다.
+**Worker Loop를 실행**합니다. 상태에 따라 자동 처리:
+- PLAN/HALTED → EXECUTE 전환 후 작업 시작
+- EXECUTE → 바로 작업 참여 (멀티 워커 지원)
 
 ## 0. Worker ID 생성 (필수!)
 
@@ -54,10 +56,11 @@ status = mcp__c4__c4_status()
 
 상태에 따른 처리:
 
-- **EXECUTE**: "이미 실행 중입니다. /c4-worker로 작업을 시작하세요."
-- **CHECKPOINT**: "Checkpoint 리뷰 대기 중입니다."
-- **COMPLETE**: "프로젝트가 완료되었습니다."
-- **INIT**: "먼저 /c4-plan으로 계획을 수립하세요."
+- **PLAN/HALTED**: → Step 2로 (EXECUTE 전환)
+- **EXECUTE**: → Step 3으로 (바로 Worker Loop 시작)
+- **CHECKPOINT**: "Checkpoint 리뷰 대기 중입니다." 출력 후 종료
+- **COMPLETE**: "프로젝트가 완료되었습니다." 출력 후 종료
+- **INIT**: "먼저 /c4-plan으로 계획을 수립하세요." 출력 후 종료
 
 ### 2. PLAN 또는 HALTED 상태인 경우
 
@@ -69,21 +72,9 @@ result = mcp__c4__c4_start()
 
 성공 시 `result.success == true`, `result.status == "EXECUTE"`
 
-### 3. 상태 확인
+### 3. Worker Loop 시작
 
-```
-status = mcp__c4__c4_status()
-```
-
-전환 성공 시:
-- 새로운 상태 표시
-- 대기 중인 task 수 표시
-
-### 4. Worker Loop 자동 시작
-
-상태 전환 성공 후 **즉시** Worker Ralph Loop를 시작합니다.
-
-이는 `/c4-worker` 스킬과 동일한 루프입니다:
+EXECUTE 상태에서 Worker Loop를 시작합니다:
 
 ```
 LOOP:
@@ -118,22 +109,37 @@ LOOP:
 
 ## 예상 흐름
 
+### 첫 번째 워커 (PLAN 상태에서)
 ```
 /c4-run
 → 상태 확인: PLAN
 → mcp__c4__c4_start()로 EXECUTE 전환
-→ Worker Loop 시작 (자동)
+→ Worker Loop 시작
 → Task T-001 할당...
 → 구현... 검증... 제출...
-→ Task T-002 할당 (자동)...
-→ ...
-→ Checkpoint 대기... Supervisor 처리...
-→ ...
 → ✅ DONE: 프로젝트 완료
 ```
+
+### 추가 워커 (이미 EXECUTE 상태)
+```
+/c4-run
+→ 상태 확인: EXECUTE
+→ Worker Loop 바로 시작 (전환 없음)
+→ Task T-002 할당...
+→ 구현... 검증... 제출...
+→ ✅ DONE: 작업 완료
+```
+
+## 멀티 워커
+
+여러 Claude Code 창에서 동시에 `/c4-run` 실행 가능:
+- 첫 번째 창: PLAN → EXECUTE 전환 + 작업
+- 추가 창들: 바로 작업 참여
+
+SQLite WAL 모드로 race condition 없이 안전하게 동작합니다.
 
 ## 중요
 
 - `/c4-run` 실행 후에는 **루프가 종료될 때까지** 자동으로 진행됩니다
-- Supervisor Loop는 c4d daemon에서 백그라운드로 실행됩니다
+- Supervisor Loop는 백그라운드로 실행됩니다
 - Worker는 checkpoint 대기 중에도 폴링하며 대기합니다
