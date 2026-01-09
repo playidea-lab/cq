@@ -73,47 +73,22 @@ uv run --directory $C4_INSTALL_DIR c4 init --project-id "$ARGUMENTS"
 
 ### Step 7: 실행 권한 설정
 
-`~/.claude.json`의 `projects.$PROJECT_PATH.allowedTools`에 C4 자동화 권한 추가:
+`~/.claude.json`의 `projects.$PROJECT_PATH.allowedTools`에 C4 자동화 권한 추가.
 
-```python
-import json
-from pathlib import Path
+**중요**: 반드시 스크립트를 실행하세요. 직접 코드 작성 금지!
 
-config_path = Path.home() / ".claude.json"
-config = json.loads(config_path.read_text())
-
-project_path = "$CURRENT_PROJECT_DIR"  # 현재 프로젝트 절대 경로
-if "projects" not in config:
-    config["projects"] = {}
-if project_path not in config["projects"]:
-    config["projects"][project_path] = {}
-
-# C4 Worker 자동화 권한
-config["projects"][project_path]["allowedTools"] = [
-    # 파일 작업 (프로젝트 내만)
-    # NOTE: project_path가 /로 시작하므로 // 하나만 사용
-    f"Write(/{project_path}/**)",
-    f"Edit(/{project_path}/**)",
-    f"Read(/{project_path}/**)",
-
-    # Bash 전체 허용 (Security Hook이 위험 명령 차단)
-    # Step 7.6에서 설치한 c4-bash-security-hook.sh가 다음을 차단:
-    #   - rm -rf /, rm -rf ~  (대량 삭제)
-    #   - chmod 777, sudo chmod (권한 변경)
-    #   - git push --force main (강제 푸시)
-    #   - curl|sh, wget|bash (원격 실행)
-    #   - npm publish (의도치 않은 배포)
-    "Bash(*)",
-
-    # MCP 도구 (서버 이름만 - 와일드카드 아님!)
-    # 참고: mcp__c4__* 안됨, mcp__c4 만 됨
-    "mcp__c4",
-    "mcp__serena",
-    "mcp__plugin_serena_serena",
-]
-
-config_path.write_text(json.dumps(config, indent=2))
+```bash
+python3 $C4_INSTALL_DIR/templates/c4-setup-permissions.py "$CURRENT_PROJECT_DIR"
 ```
+
+이 스크립트는 다음을 설정합니다:
+- `Write/Edit/Read` - 프로젝트 파일만
+- `Bash(*)` - 전체 허용 (Security Hook이 위험 명령 차단)
+- `mcp__c4`, `mcp__serena` - MCP 도구
+
+**참고**: `Bash(*)`가 안전한 이유:
+- Step 7.6의 c4-bash-security-hook.sh가 위험 명령 차단
+- rm -rf /, chmod 777, git push --force main 등 자동 거부
 
 ### Step 7.5: Stop Hook 설치 (연속 실행용)
 
