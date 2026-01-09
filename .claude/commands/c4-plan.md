@@ -225,9 +225,37 @@ AskUserQuestion(questions=[
 **생성 규칙:**
 1. PRD의 체크리스트 항목 → 개별 태스크
 2. `scope`는 영향받는 파일/디렉토리
-3. `dod`는 구체적이고 검증 가능하게
+3. **`dod`는 반드시 구체적이고 검증 가능하게 작성** (아래 DoD 작성 원칙 참조)
 4. `dependencies`는 선후관계 고려
 5. `validations`는 인터뷰에서 결정된 도구
+
+---
+
+#### ⚠️ DoD (Definition of Done) 작성 원칙 - 필수!
+
+**모든 태스크는 명확한 DoD가 있어야 합니다.** DoD가 불분명하면 Worker가 완료 여부를 판단할 수 없습니다.
+
+**좋은 DoD의 조건:**
+1. **검증 가능**: "~가 동작한다", "~를 반환한다", "~테스트가 통과한다"
+2. **구체적**: 모호한 표현 금지 ("개선한다", "최적화한다" ❌)
+3. **독립적**: 이 태스크만으로 확인 가능 (다른 태스크 의존 ❌)
+
+**DoD 작성 예시:**
+
+| ❌ 나쁜 DoD | ✅ 좋은 DoD |
+|------------|------------|
+| "로그인 기능 구현" | "이메일/비밀번호로 로그인 시 JWT 토큰 반환, 잘못된 비밀번호 시 401 에러" |
+| "API 최적화" | "GET /users 응답시간 500ms → 100ms 이하, 기존 테스트 통과" |
+| "버그 수정" | "null 입력 시 에러 대신 빈 배열 반환, 관련 테스트 추가" |
+| "UI 개선" | "버튼 클릭 시 로딩 스피너 표시, 완료 시 성공 메시지" |
+| "코드 정리" | "미사용 함수 3개 삭제, lint 에러 0개" |
+
+**DoD 체크리스트:**
+- [ ] Worker가 읽고 바로 구현 가능한가?
+- [ ] 완료 여부를 객관적으로 판단 가능한가?
+- [ ] 테스트나 수동 확인으로 검증 가능한가?
+
+---
 
 **태스크 생성 (MCP 도구 사용):**
 ```javascript
@@ -235,7 +263,7 @@ mcp__c4__c4_add_todo({
   task_id: "T-001",
   title: "MediaPipe Hands 연동",
   scope: "src/HandTracker.js",
-  dod: "웹캠에서 손 인식, 검지 손끝(landmark 8) 좌표 추출 가능"
+  dod: "1) HandTracker 클래스 구현, 2) startTracking() 호출 시 웹캠 스트림 시작, 3) onFrame 콜백에서 검지 손끝(landmark 8) 좌표 {x, y, z} 반환, 4) stopTracking() 호출 시 리소스 해제"
 })
 ```
 
@@ -245,7 +273,7 @@ uv run --directory $C4_INSTALL_DIR c4 add-task \
   --task-id "T-001" \
   --title "MediaPipe Hands 연동" \
   --scope "src/HandTracker.js" \
-  --dod "웹캠에서 손 인식, 검지 손끝(landmark 8) 좌표 추출 가능"
+  --dod "1) HandTracker 클래스 구현, 2) startTracking() 호출 시 웹캠 스트림 시작, 3) onFrame 콜백에서 검지 손끝(landmark 8) 좌표 {x, y, z} 반환, 4) stopTracking() 호출 시 리소스 해제"
 ```
 
 **체크포인트 설정:**
