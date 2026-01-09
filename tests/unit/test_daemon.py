@@ -359,12 +359,17 @@ class TestC4GetTaskExpiredLock:
         assert result1 is not None
         assert result1.task_id == "T-001"
 
-        # Manually change lock owner to worker-2 (simulating lock takeover)
-        state = daemon.state_machine.state
-        lock = state.locks.scopes.get("api")
-        assert lock is not None
-        lock.owner = "worker-2"
-        daemon.state_machine.save_state()
+        # Manually change lock owner to worker-2 in SQLite (simulating lock takeover)
+        # Since we now use SQLite for locks, modify the lock store directly
+        import sqlite3
+        db_path = daemon.c4_dir / "c4.db"
+        conn = sqlite3.connect(db_path)
+        conn.execute(
+            "UPDATE c4_locks SET owner = ? WHERE scope = ?",
+            ("worker-2", "api"),
+        )
+        conn.commit()
+        conn.close()
 
         # Worker 1 tries to resume - should fail because lock is now owned by worker-2
         result2 = daemon.c4_get_task("worker-1")

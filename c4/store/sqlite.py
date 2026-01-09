@@ -139,6 +139,73 @@ class SQLiteStateStore(StateStore):
             )
             conn.commit()
 
+    @contextmanager
+    def atomic_modify(
+        self, project_id: str
+    ) -> Generator["C4State", None, None]:
+        """
+        Atomically load, modify, and save state.
+
+        Uses EXCLUSIVE transaction to prevent race conditions when
+        multiple workers modify state concurrently.
+
+        Usage:
+            with store.atomic_modify(project_id) as state:
+                state.queue.done.append(task_id)
+                del state.queue.in_progress[task_id]
+            # State is automatically saved on context exit
+        """
+        from c4.models import C4State
+        import json
+
+        self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        conn = sqlite3.connect(
+            self.db_path,
+            detect_types=sqlite3.PARSE_DECLTYPES | sqlite3.PARSE_COLNAMES,
+            timeout=30.0,
+            isolation_level=None,  # Manual transaction control
+        )
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA busy_timeout=30000")
+
+        try:
+            # Start EXCLUSIVE transaction - blocks all other connections
+            conn.execute("BEGIN EXCLUSIVE")
+
+            # Load current state
+            cursor = conn.execute(
+                "SELECT state_json FROM c4_state WHERE project_id = ?",
+                (project_id,),
+            )
+            row = cursor.fetchone()
+            if row is None:
+                conn.execute("ROLLBACK")
+                raise StateNotFoundError(f"State not found: {project_id}")
+
+            state = C4State.model_validate(json.loads(row[0]))
+
+            # Yield for modification
+            yield state
+
+            # Save modified state
+            state.updated_at = datetime.now()
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO c4_state (project_id, state_json, updated_at)
+                VALUES (?, ?, ?)
+                """,
+                (state.project_id, state.model_dump_json(), state.updated_at),
+            )
+            conn.execute("COMMIT")
+        except Exception:
+            try:
+                conn.execute("ROLLBACK")
+            except Exception:
+                pass
+            raise
+        finally:
+            conn.close()
+
 
 class SQLiteLockStore(LockStore):
     """
@@ -313,6 +380,25 @@ class SQLiteLockStore(LockStore):
         if isinstance(expires_at, str):
             expires_at = datetime.fromisoformat(expires_at)
         return (owner, expires_at)
+
+    def get_lock_owner(
+        self,
+        project_id: str,
+        scope: str,
+    ) -> str | None:
+        """Get owner of a valid (non-expired) lock, or None if no valid lock exists"""
+        now = datetime.now()
+        with self._get_connection() as conn:
+            cursor = conn.execute(
+                """
+                SELECT owner FROM c4_locks
+                WHERE project_id = ? AND scope = ? AND expires_at > ?
+                """,
+                (project_id, scope, now),
+            )
+            row = cursor.fetchone()
+
+        return row[0] if row else None
 
     def cleanup_expired(self, project_id: str) -> list[str]:
         """Remove expired locks"""

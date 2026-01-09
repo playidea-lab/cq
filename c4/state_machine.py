@@ -125,6 +125,11 @@ class StateMachine:
             self.load_state()
         return self._state  # type: ignore
 
+    @property
+    def store(self) -> "StateStore":
+        """Get the underlying state store"""
+        return self._store
+
     # =========================================================================
     # State Transitions
     # =========================================================================

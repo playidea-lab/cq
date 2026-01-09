@@ -326,9 +326,11 @@ class C4Daemon:
                 if task:
                     # Verify scope lock is still valid for this worker
                     if task.scope:
-                        lock = state.locks.scopes.get(task.scope)
-                        now = datetime.now()
-                        if lock is None or lock.owner != worker_id or lock.expires_at < now:
+                        # Check SQLite lock store (authoritative) for lock status
+                        lock_owner = self.lock_store.get_lock_owner(
+                            state.project_id, task.scope
+                        )
+                        if lock_owner is None or lock_owner != worker_id:
                             # Lock expired or taken by another worker - cannot resume
                             # Move task back to pending for reassignment by OTHER workers
                             del state.queue.in_progress[task_id]
@@ -408,35 +410,60 @@ class C4Daemon:
                     continue
 
             # Lock acquired (or no scope) - now safe to assign
-            # Re-load state to ensure we have latest queue state
-            self.state_machine.load_state()
-            state = self.state_machine.state
+            # Use atomic_modify to prevent race conditions with c4_submit
+            from c4.store import SQLiteStateStore
 
-            # Double-check task is still pending after re-load
-            if task_id not in state.queue.pending:
+            store = self.state_machine.store
+            task_branch = f"{self.config.work_branch_prefix}{task_id}"
+            assigned = False
+
+            if isinstance(store, SQLiteStateStore):
+                with store.atomic_modify(project_id) as state:
+                    # Double-check task is still pending
+                    if task_id in state.queue.pending:
+                        # Assign task (ATOMIC)
+                        state.queue.pending.remove(task_id)
+                        state.queue.in_progress[task_id] = worker_id
+
+                        # Update worker state in the same atomic operation
+                        if worker_id in state.workers:
+                            state.workers[worker_id].state = "busy"
+                            state.workers[worker_id].task_id = task_id
+                            state.workers[worker_id].scope = task.scope
+                            state.workers[worker_id].branch = task_branch
+
+                        assigned = True
+
+                    # Update cached state
+                    self.state_machine._state = state
+            else:
+                # Fallback for non-SQLite stores
+                self.state_machine.load_state()
+                state = self.state_machine.state
+                if task_id in state.queue.pending:
+                    state.queue.pending.remove(task_id)
+                    state.queue.in_progress[task_id] = worker_id
+                    self.worker_manager.set_busy(
+                        worker_id, task_id, task.scope, task_branch
+                    )
+                    self.state_machine.save_state()
+                    assigned = True
+
+            if not assigned:
                 # Task was assigned by another worker - release our lock
                 if task.scope:
                     self.lock_store.release_scope_lock(project_id, task.scope)
                 continue
 
-            # Assign task
-            state.queue.pending.remove(task_id)
-            state.queue.in_progress[task_id] = worker_id
-
-            # Update task
+            # Update task in tasks.json (outside atomic block)
             task.status = TaskStatus.IN_PROGRESS
             task.assigned_to = worker_id
-            task.branch = f"{self.config.work_branch_prefix}{task_id}"
+            task.branch = task_branch
             self._save_tasks()
 
             # Sync in-memory lock state for consistency
             if task.scope:
                 self.lock_manager.acquire(task.scope, worker_id)
-
-            # Update worker
-            self.worker_manager.set_busy(
-                worker_id, task_id, task.scope, task.branch
-            )
 
             # Emit event
             self.state_machine.emit_event(
@@ -449,15 +476,13 @@ class C4Daemon:
                 },
             )
 
-            self.state_machine.save_state()
-
             return TaskAssignment(
                 task_id=task_id,
                 title=task.title,
                 scope=task.scope,
                 dod=task.dod,
                 validations=task.validations,
-                branch=task.branch,
+                branch=task_branch,
             )
 
         return None
@@ -473,38 +498,8 @@ class C4Daemon:
         if self.state_machine is None:
             raise RuntimeError("C4 not initialized")
 
-        # Re-load state to get latest (prevent race conditions)
-        self.state_machine.load_state()
-        state = self.state_machine.state
-
-        # Validate task exists and is in progress
-        if task_id not in state.queue.in_progress:
-            # Check if already done (another worker submitted it)
-            if task_id in state.queue.done:
-                return SubmitResponse(
-                    success=False,
-                    next_action="get_next_task",
-                    message=f"Task {task_id} already completed by another worker",
-                )
-            return SubmitResponse(
-                success=False,
-                next_action="fix_failures",
-                message=f"Task {task_id} is not in progress",
-            )
-
-        # Validate the task is assigned to this worker (if worker_id provided)
-        assigned_worker = state.queue.in_progress.get(task_id)
-        if worker_id and assigned_worker != worker_id:
-            return SubmitResponse(
-                success=False,
-                next_action="get_next_task",
-                message=f"Task {task_id} is assigned to {assigned_worker}, not {worker_id}",
-            )
-
-        # Parse validation results
+        # Parse and validate results first (doesn't need state lock)
         results = [ValidationResult.model_validate(r) for r in validation_results]
-
-        # Check all validations passed
         all_passed = all(r.status == "pass" for r in results)
         if not all_passed:
             return SubmitResponse(
@@ -513,15 +508,85 @@ class C4Daemon:
                 message="Some validations failed",
             )
 
-        # Get worker and task
-        worker_id = state.queue.in_progress[task_id]
+        # Get task info (from tasks.json, not state)
         task = self.get_task(task_id)
+        project_id = self.state_machine.state.project_id
 
-        # Move to done
-        del state.queue.in_progress[task_id]
-        state.queue.done.append(task_id)
+        # Use atomic_modify for thread-safe state update
+        # This prevents race conditions when multiple workers submit concurrently
+        from c4.store import SQLiteStateStore
 
-        # Update task
+        store = self.state_machine.store
+        if not isinstance(store, SQLiteStateStore):
+            # Fallback for non-SQLite stores (e.g., tests with LocalFileStore)
+            return self._c4_submit_legacy(
+                task_id, commit_sha, results, worker_id, task
+            )
+
+        # Atomic state modification
+        error_response: SubmitResponse | None = None
+        actual_worker_id: str | None = None
+
+        with store.atomic_modify(project_id) as state:
+            # Validate task exists and is in progress
+            if task_id not in state.queue.in_progress:
+                if task_id in state.queue.done:
+                    error_response = SubmitResponse(
+                        success=False,
+                        next_action="get_next_task",
+                        message=f"Task {task_id} already completed by another worker",
+                    )
+                else:
+                    error_response = SubmitResponse(
+                        success=False,
+                        next_action="fix_failures",
+                        message=f"Task {task_id} is not in progress",
+                    )
+                # Still need to exit context properly - state will be saved as-is
+                if error_response:
+                    # Update cached state and return early
+                    self.state_machine._state = state
+                    # We can't return from inside context, so we'll check after
+
+            if error_response is None:
+                # Validate worker assignment
+                assigned_worker = state.queue.in_progress.get(task_id)
+                if worker_id and assigned_worker != worker_id:
+                    error_response = SubmitResponse(
+                        success=False,
+                        next_action="get_next_task",
+                        message=f"Task {task_id} is assigned to {assigned_worker}, not {worker_id}",
+                    )
+
+            if error_response is None:
+                # All validations passed - proceed with state modification
+                actual_worker_id = state.queue.in_progress[task_id]
+
+                # Move to done (ATOMIC - this is the critical section)
+                del state.queue.in_progress[task_id]
+                state.queue.done.append(task_id)
+
+                # Update worker state
+                if actual_worker_id in state.workers:
+                    state.workers[actual_worker_id].state = "idle"
+                    state.workers[actual_worker_id].task_id = None
+                    state.workers[actual_worker_id].scope = None
+
+                # Update metrics
+                state.metrics.tasks_completed += 1
+
+                # Update last validation
+                state.last_validation = {r.name: r.status for r in results}
+
+            # Update cached state in state_machine
+            self.state_machine._state = state
+
+        # Handle error responses after atomic block
+        if error_response:
+            return error_response
+
+        # Non-atomic operations (safe to do outside the lock)
+        # Update task in tasks.json
         if task:
             task.status = TaskStatus.DONE
             task.commit_sha = commit_sha
@@ -529,22 +594,13 @@ class C4Daemon:
 
         # Release scope lock (both SQLite and in-memory)
         if task and task.scope:
-            self.lock_store.release_scope_lock(state.project_id, task.scope)
+            self.lock_store.release_scope_lock(project_id, task.scope)
             self.lock_manager.release(task.scope)
-
-        # Update worker
-        self.worker_manager.set_idle(worker_id)
-
-        # Update metrics
-        state.metrics.tasks_completed += 1
-
-        # Update last validation
-        state.last_validation = {r.name: r.status for r in results}
 
         # Emit event
         self.state_machine.emit_event(
             EventType.WORKER_SUBMITTED,
-            worker_id,
+            actual_worker_id,
             {
                 "task_id": task_id,
                 "commit_sha": commit_sha,
@@ -552,14 +608,13 @@ class C4Daemon:
             },
         )
 
-        self.state_machine.save_state()
+        # Get fresh state reference for final checks
+        state = self.state_machine.state
 
         # Check if checkpoint reached
         cp_id = self.state_machine.check_gate_conditions(self.config)
         if cp_id:
-            # NON-BLOCKING: Add to checkpoint queue for async processing
             self._add_to_checkpoint_queue(cp_id, results)
-            # Enter checkpoint state
             self.state_machine.enter_checkpoint(cp_id)
             return SubmitResponse(
                 success=True,
@@ -568,6 +623,90 @@ class C4Daemon:
             )
 
         # Check if all done
+        if not state.queue.pending and not state.queue.in_progress:
+            return SubmitResponse(
+                success=True,
+                next_action="complete",
+                message="All tasks completed",
+            )
+
+        return SubmitResponse(
+            success=True,
+            next_action="get_next_task",
+            message="Task completed successfully",
+        )
+
+    def _c4_submit_legacy(
+        self,
+        task_id: str,
+        commit_sha: str,
+        results: list[ValidationResult],
+        worker_id: str | None,
+        task: Task | None,
+    ) -> SubmitResponse:
+        """Legacy submit for non-SQLite stores (backward compatibility)"""
+        self.state_machine.load_state()
+        state = self.state_machine.state
+
+        if task_id not in state.queue.in_progress:
+            if task_id in state.queue.done:
+                return SubmitResponse(
+                    success=False,
+                    next_action="get_next_task",
+                    message=f"Task {task_id} already completed",
+                )
+            return SubmitResponse(
+                success=False,
+                next_action="fix_failures",
+                message=f"Task {task_id} is not in progress",
+            )
+
+        assigned_worker = state.queue.in_progress.get(task_id)
+        if worker_id and assigned_worker != worker_id:
+            return SubmitResponse(
+                success=False,
+                next_action="get_next_task",
+                message=f"Task {task_id} is assigned to {assigned_worker}",
+            )
+
+        actual_worker_id = state.queue.in_progress[task_id]
+        del state.queue.in_progress[task_id]
+        state.queue.done.append(task_id)
+
+        if task:
+            task.status = TaskStatus.DONE
+            task.commit_sha = commit_sha
+            self._save_tasks()
+
+        if task and task.scope:
+            self.lock_store.release_scope_lock(state.project_id, task.scope)
+            self.lock_manager.release(task.scope)
+
+        self.worker_manager.set_idle(actual_worker_id)
+        state.metrics.tasks_completed += 1
+        state.last_validation = {r.name: r.status for r in results}
+
+        self.state_machine.emit_event(
+            EventType.WORKER_SUBMITTED,
+            actual_worker_id,
+            {
+                "task_id": task_id,
+                "commit_sha": commit_sha,
+                "validations": [r.model_dump() for r in results],
+            },
+        )
+        self.state_machine.save_state()
+
+        cp_id = self.state_machine.check_gate_conditions(self.config)
+        if cp_id:
+            self._add_to_checkpoint_queue(cp_id, results)
+            self.state_machine.enter_checkpoint(cp_id)
+            return SubmitResponse(
+                success=True,
+                next_action="await_checkpoint",
+                message=f"Checkpoint {cp_id} queued",
+            )
+
         if not state.queue.pending and not state.queue.in_progress:
             return SubmitResponse(
                 success=True,
