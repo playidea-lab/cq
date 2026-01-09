@@ -10,6 +10,8 @@ C4 (Codex-Claude-Completion Control) is an AI project orchestration system that 
 - **Checkpoint Gates**: Human/supervisor review points between phases
 - **Auto-Validation**: Built-in lint and test runners
 - **Pluggable Architecture**: Extensible StateStore and SupervisorBackend
+- **Stop Hook**: Prevents Claude exit while tasks remain (continuous execution)
+- **Auto Supervisor**: Headless supervisor loop starts automatically on execution
 
 ## Documentation
 
@@ -121,10 +123,10 @@ cp .claude/commands/c4-*.md ~/.claude/commands/
 
 | Command | Description |
 |---------|-------------|
-| `/c4-init` | Initialize C4 in current directory |
+| `/c4-init` | Initialize C4 in current directory (includes Stop Hook setup) |
 | `/c4-status` | Show project status and queue |
-| `/c4-plan` | Enter planning mode |
-| `/c4-run` | Start execution phase |
+| `/c4-plan` | Scan docs, interview preferences, generate tasks |
+| `/c4-run` | Start execution with auto supervisor loop |
 | `/c4-stop` | Halt execution |
 | `/c4-worker` | Get task assignment |
 | `/c4-validate` | Run validations (lint, unit) |
@@ -139,12 +141,14 @@ cp .claude/commands/c4-*.md ~/.claude/commands/
 | Tool | Description |
 |------|-------------|
 | `c4_status` | Get project status, queue, workers |
+| `c4_start` | Transition to EXECUTE and auto-start supervisor loop |
 | `c4_get_task` | Get next task assignment |
 | `c4_submit` | Submit completed task |
 | `c4_run_validation` | Run validations |
 | `c4_checkpoint` | Record supervisor decision |
 | `c4_add_todo` | Add new task |
 | `c4_mark_blocked` | Mark task as blocked |
+| `c4_clear` | Reset C4 state (delete .c4 directory) |
 
 ---
 

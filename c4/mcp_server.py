@@ -624,6 +624,54 @@ class C4Daemon:
             "repair_queue_size": len(state.repair_queue),
         }
 
+    def c4_start(self) -> dict[str, Any]:
+        """
+        Transition from PLAN/HALTED to EXECUTE state.
+        This starts the worker loop execution.
+        """
+        if self.state_machine is None:
+            return {"error": "C4 not initialized", "success": False}
+
+        state = self.state_machine.state
+        current_status = state.status.value if state.status else "unknown"
+
+        # Check if transition is valid
+        if not self.state_machine.can_transition("c4_run"):
+            return {
+                "error": f"Cannot start from current state: {current_status}",
+                "success": False,
+                "current_status": current_status,
+                "hint": "Must be in PLAN or HALTED state to start execution",
+            }
+
+        # Perform the transition
+        self.state_machine.transition("c4_run")
+        new_state = self.state_machine.state
+
+        # Auto-start supervisor loop for background checkpoint processing
+        supervisor_started = False
+        if not self.is_supervisor_loop_running:
+            try:
+                self.start_supervisor_loop()
+                supervisor_started = True
+            except Exception as e:
+                # Log but don't fail - supervisor can be started manually
+                import logging
+
+                logging.getLogger(__name__).warning(
+                    f"Failed to auto-start supervisor loop: {e}"
+                )
+
+        return {
+            "success": True,
+            "message": f"Transitioned from {current_status} to EXECUTE",
+            "status": new_state.status.value,
+            "pending_tasks": len(
+                [t for t in new_state.tasks if t.status == TaskStatus.PENDING]
+            ),
+            "supervisor_loop_started": supervisor_started,
+        }
+
     def c4_run_validation(
         self,
         names: list[str] | None = None,
@@ -1028,6 +1076,15 @@ def create_server(project_root: Path | None = None) -> Server:
                 },
             ),
             Tool(
+                name="c4_start",
+                description="Start execution by transitioning from PLAN/HALTED to EXECUTE state",
+                inputSchema={
+                    "type": "object",
+                    "properties": {},
+                    "required": [],
+                },
+            ),
+            Tool(
                 name="c4_run_validation",
                 description="Run validation commands (lint, test) and return results.",
                 inputSchema={
@@ -1168,6 +1225,8 @@ def create_server(project_root: Path | None = None) -> Server:
                     arguments.get("required_changes"),
                 )
                 result = result.model_dump()
+            elif name == "c4_start":
+                result = daemon.c4_start()
             elif name == "c4_run_validation":
                 result = daemon.c4_run_validation(
                     names=arguments.get("names"),

@@ -416,7 +416,7 @@ def worker_join(
         import uuid
         worker_id = f"worker-{uuid.uuid4().hex[:8]}"
 
-    _worker = daemon.register_worker(worker_id)
+    _worker = daemon.worker_manager.register(worker_id)
     console.print(f"[green]Joined as worker:[/green] {worker_id}")
     console.print()
     console.print("Ready to receive tasks. Use MCP tools:")

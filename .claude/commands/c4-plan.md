@@ -6,11 +6,16 @@
 
 ### Phase 0: 상태 확인
 
-1. `mcp__c4__c4_status` 호출하여 현재 상태 확인
-2. INIT/HALTED 상태가 아니면:
-   - PLAN: "이미 계획 모드입니다" 안내
-   - EXECUTE/CHECKPOINT: 실행 중단 경고 후 확인 요청
-3. INIT 상태면 `uv run c4 plan`으로 PLAN 모드 진입
+```
+status = mcp__c4__c4_status()
+```
+
+1. 현재 상태 확인
+2. 상태에 따른 처리:
+   - `INIT`: 계획 진행 가능
+   - `PLAN`: "이미 계획 모드입니다. 계속 진행하시겠습니까?" 질문
+   - `EXECUTE/CHECKPOINT`: "실행 중입니다. 계획을 수정하면 현재 진행이 초기화됩니다. 계속하시겠습니까?" 경고
+   - `COMPLETE`: "완료된 프로젝트입니다. 새 계획을 시작하시겠습니까?" 질문
 
 ---
 
@@ -88,83 +93,128 @@
 
 ### Phase 3: 구조화된 인터뷰
 
-문서에서 확인되지 않은 정보를 질문합니다.
+문서에서 확인되지 않은 정보를 **AskUserQuestion** 도구로 질문합니다.
 
-#### 3.1 개발 환경 (문서에 없으면 질문)
+**중요**: 각 카테고리별로 AskUserQuestion을 호출하여 선택지를 제공합니다.
 
-```
-❓ 개발 환경 확인:
+#### 3.1 개발 환경 질문
 
-1. 언어 선택:
-   - [ ] Vanilla JavaScript
-   - [ ] TypeScript (권장: 타입 안정성)
-
-2. 빌드 도구:
-   - [ ] 없음 (단순 프로젝트)
-   - [ ] Vite (권장: 빠른 개발)
-   - [ ] Webpack
-
-3. 패키지 매니저:
-   - [ ] npm
-   - [ ] pnpm (권장)
-```
-
-#### 3.2 테스트 전략
-
-```
-❓ 테스트 전략:
-
-1. 유닛 테스트:
-   - [ ] 필요 없음
-   - [ ] Vitest (권장)
-   - [ ] Jest
-
-2. E2E 테스트:
-   - [ ] 필요 없음
-   - [ ] Playwright
-   - [ ] Cypress
-
-3. 커버리지 목표: ___% (권장: 70%)
-```
-
-#### 3.3 품질 기준
-
-```
-❓ 코드 품질:
-
-1. 린터:
-   - [ ] ESLint (권장)
-   - [ ] 없음
-
-2. 포매터:
-   - [ ] Prettier (권장)
-   - [ ] 없음
-
-3. 타입 검사 (JS인 경우):
-   - [ ] JSDoc + TypeScript 검사
-   - [ ] 없음
+```python
+AskUserQuestion(questions=[
+    {
+        "question": "프로젝트에서 어떤 언어를 사용할까요?",
+        "header": "언어",
+        "options": [
+            {"label": "TypeScript (권장)", "description": "타입 안정성, IDE 지원 우수"},
+            {"label": "Vanilla JavaScript", "description": "단순하고 빠른 시작"},
+            {"label": "Python", "description": "백엔드/ML 프로젝트"}
+        ],
+        "multiSelect": False
+    },
+    {
+        "question": "빌드 도구를 선택해주세요",
+        "header": "빌드",
+        "options": [
+            {"label": "Vite (권장)", "description": "빠른 개발, HMR 지원"},
+            {"label": "없음", "description": "단순 프로젝트, CDN 사용"},
+            {"label": "Webpack", "description": "복잡한 설정 필요 시"}
+        ],
+        "multiSelect": False
+    },
+    {
+        "question": "패키지 매니저를 선택해주세요",
+        "header": "패키지",
+        "options": [
+            {"label": "pnpm (권장)", "description": "빠르고 디스크 효율적"},
+            {"label": "npm", "description": "기본 패키지 매니저"},
+            {"label": "uv (Python)", "description": "Python 프로젝트용"}
+        ],
+        "multiSelect": False
+    }
+])
 ```
 
-#### 3.4 C4 워크플로우
+#### 3.2 테스트 전략 질문
 
+```python
+AskUserQuestion(questions=[
+    {
+        "question": "유닛 테스트 프레임워크를 선택해주세요",
+        "header": "유닛테스트",
+        "options": [
+            {"label": "Vitest (권장)", "description": "Vite와 호환, 빠름"},
+            {"label": "Jest", "description": "React 프로젝트 표준"},
+            {"label": "pytest (Python)", "description": "Python 프로젝트용"},
+            {"label": "필요 없음", "description": "테스트 스킵"}
+        ],
+        "multiSelect": False
+    },
+    {
+        "question": "E2E 테스트 프레임워크를 선택해주세요",
+        "header": "E2E",
+        "options": [
+            {"label": "필요 없음", "description": "유닛 테스트만"},
+            {"label": "Playwright (권장)", "description": "빠르고 안정적"},
+            {"label": "Cypress", "description": "직관적 UI"}
+        ],
+        "multiSelect": False
+    }
+])
 ```
-❓ C4 설정:
 
-1. 체크포인트 위치:
-   - [ ] Phase별 (권장: Phase 1 완료 후 리뷰)
-   - [ ] 기능별 (주요 기능마다 리뷰)
-   - [ ] 없음 (마지막에 한번)
+#### 3.3 품질 기준 질문
 
-2. 태스크 크기:
-   - [ ] PRD 체크리스트 그대로 (권장)
-   - [ ] 더 작게 분할
-   - [ ] 더 크게 합침
-
-3. 자동 실행 범위:
-   - [ ] Phase 1만 (프로토타입까지)
-   - [ ] Phase 1~2
-   - [ ] 전체
+```python
+AskUserQuestion(questions=[
+    {
+        "question": "코드 품질 도구를 선택해주세요 (복수 선택 가능)",
+        "header": "품질도구",
+        "options": [
+            {"label": "ESLint + Prettier (권장)", "description": "린팅 + 포매팅"},
+            {"label": "ESLint만", "description": "린팅만"},
+            {"label": "Ruff (Python)", "description": "Python 린터/포매터"},
+            {"label": "없음", "description": "품질 도구 스킵"}
+        ],
+        "multiSelect": True
+    }
+])
 ```
+
+#### 3.4 C4 워크플로우 질문
+
+```python
+AskUserQuestion(questions=[
+    {
+        "question": "체크포인트를 어디에 설정할까요?",
+        "header": "체크포인트",
+        "options": [
+            {"label": "Phase별 (권장)", "description": "각 Phase 완료 시 Supervisor 리뷰"},
+            {"label": "기능별", "description": "주요 기능마다 리뷰"},
+            {"label": "없음", "description": "마지막에 한번만 리뷰"}
+        ],
+        "multiSelect": False
+    },
+    {
+        "question": "태스크 크기를 어떻게 설정할까요?",
+        "header": "태스크크기",
+        "options": [
+            {"label": "PRD 그대로 (권장)", "description": "문서의 체크리스트 항목 그대로"},
+            {"label": "더 작게", "description": "세부 단계로 분할"},
+            {"label": "더 크게", "description": "관련 항목 합침"}
+        ],
+        "multiSelect": False
+    },
+    {
+        "question": "자동 실행 범위는?",
+        "header": "실행범위",
+        "options": [
+            {"label": "Phase 1만", "description": "프로토타입까지만 자동"},
+            {"label": "Phase 1~2", "description": "기본 기능까지"},
+            {"label": "전체", "description": "모든 Phase 자동 실행"}
+        ],
+        "multiSelect": False
+    }
+])
 
 ---
 
@@ -206,6 +256,16 @@ checkpoints:
     description: "Phase 1 프로토타입 완료"
     required_tasks: [T-001, T-002, ..., T-008]
     required_validations: [lint, unit]
+```
+
+**검증 명령 설정 (인터뷰 결과 반영):**
+```yaml
+validation:
+  commands:
+    lint: "npm run lint"      # 또는 "pnpm lint", "uv run ruff check ."
+    unit: "npm test"          # 또는 "pnpm test", "uv run pytest"
+    e2e: "npm run e2e"        # 선택한 경우만
+  required: [lint, unit]      # 필수 검증
 ```
 
 ---
