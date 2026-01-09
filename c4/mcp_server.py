@@ -1188,9 +1188,8 @@ def create_server(project_root: Path | None = None) -> Server:
                             shutil.rmtree(c4_dir)
                             deleted_items.append(str(c4_dir))
 
-                    # Clear daemon cache
-                    root_str = str(root.resolve())
-                    cache_cleared = clear_daemon_cache(root_str)
+                    # Clear daemon cache (all projects - simpler and safer)
+                    cache_cleared = clear_daemon_cache()
 
                     result = {
                         "success": True,
