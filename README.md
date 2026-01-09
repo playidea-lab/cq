@@ -6,7 +6,7 @@ C4 (Codex-Claude-Completion Control) is an AI project orchestration system that 
 
 - **State Machine**: Structured workflow INIT → PLAN → EXECUTE → CHECKPOINT → COMPLETE
 - **MCP Server**: Native integration with Claude Code via Model Context Protocol
-- **Multi-Worker**: Parallel task execution with SQLite WAL mode (race-condition free)
+- **Multi-Worker**: Parallel task execution with SQLite WAL mode (race-condition free, 30-min stale recovery)
 - **Checkpoint Gates**: Human/supervisor review points between phases
 - **Auto-Validation**: Built-in lint and test runners
 - **Pluggable Architecture**: Extensible StateStore and SupervisorBackend
@@ -194,7 +194,7 @@ cp .claude/commands/c4-*.md ~/.claude/commands/
 │  ┌─────────────────────────────────────────────────────────┐│
 │  │                     C4Daemon                             ││
 │  │  ┌──────────────┐  ┌──────────────┐  ┌───────────────┐  ││
-│  │  │ StateMachine │  │ TaskManager  │  │ LockManager   │  ││
+│  │  │ StateMachine │  │ WorkerManager│  │ SQLiteLockStore│ ││
 │  │  └──────┬───────┘  └──────────────┘  └───────────────┘  ││
 │  │         │                                                ││
 │  │         v                                                ││
@@ -303,9 +303,8 @@ c4/
 # Per-project storage (.c4/ directory)
 your-project/
 └── .c4/
-    ├── c4.db              # SQLite database (state, locks)
+    ├── c4.db              # SQLite database (state, locks, tasks)
     ├── config.yaml        # Project configuration
-    ├── tasks.json         # Task definitions
     └── events/            # Event logs
 ```
 
