@@ -158,19 +158,11 @@ config["projects"][project_path]["allowedTools"] = [
     "Bash(which:*)",
     # NOTE: rm:* 제외 - 파일 삭제는 수동 승인 필요
 
-    # MCP 도구 (C4 - 개별 지정, 와일드카드 미지원)
-    "mcp__c4__c4_status",
-    "mcp__c4__c4_start",
-    "mcp__c4__c4_get_task",
-    "mcp__c4__c4_submit",
-    "mcp__c4__c4_add_todo",
-    "mcp__c4__c4_checkpoint",
-    "mcp__c4__c4_run_validation",
-    "mcp__c4__c4_mark_blocked",
-    "mcp__c4__c4_clear",
-    # Serena (와일드카드 시도)
-    "mcp__serena__*",
-    "mcp__plugin_serena_serena__*",
+    # MCP 도구 (서버 이름만 - 와일드카드 아님!)
+    # 참고: mcp__c4__* 안됨, mcp__c4 만 됨
+    "mcp__c4",
+    "mcp__serena",
+    "mcp__plugin_serena_serena",
 ]
 
 config_path.write_text(json.dumps(config, indent=2))
