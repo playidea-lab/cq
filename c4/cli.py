@@ -244,10 +244,11 @@ def _setup_permissions(project_path: Path) -> bool:
 
     # Set allowedTools - EXACTLY these values, no modifications
     # MCP tools need wildcard suffix to match all tool names (e.g., mcp__c4__c4_add_todo)
+    # Note: project_path already starts with /, so don't add another one
     config["projects"][project_key]["allowedTools"] = [
-        f"Write(/{project_path}/**)",
-        f"Edit(/{project_path}/**)",
-        f"Read(/{project_path}/**)",
+        f"Write({project_path}/**)",
+        f"Edit({project_path}/**)",
+        f"Read({project_path}/**)",
         "Bash(*)",
         "mcp__c4__*",
         "mcp__serena__*",
