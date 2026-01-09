@@ -184,7 +184,7 @@ def init(
     ),
 ):
     """Initialize C4 in the current project"""
-    daemon = C4Daemon(Path.cwd())
+    daemon = C4Daemon()  # Uses C4_PROJECT_ROOT env var or cwd
 
     if daemon.is_initialized():
         console.print("[yellow]Warning:[/yellow] C4 already initialized")
@@ -212,7 +212,7 @@ def init(
 @c4_app.command("status")
 def c4_status():
     """Show current C4 project status"""
-    daemon = C4Daemon(Path.cwd())
+    daemon = C4Daemon()  # Uses C4_PROJECT_ROOT env var or cwd
 
     if not daemon.is_initialized():
         console.print("[red]Error:[/red] C4 not initialized. Run 'c4 init' first.")
@@ -297,7 +297,7 @@ def _show_status(daemon: C4Daemon):
 @c4_app.command()
 def run():
     """Start execution (PLAN → EXECUTE)"""
-    daemon = C4Daemon(Path.cwd())
+    daemon = C4Daemon()  # Uses C4_PROJECT_ROOT env var or cwd
 
     if not daemon.is_initialized():
         console.print("[red]Error:[/red] C4 not initialized. Run 'c4 init' first.")
@@ -330,7 +330,7 @@ def run():
 @c4_app.command("stop")
 def halt():
     """Stop execution (→ HALTED)"""
-    daemon = C4Daemon(Path.cwd())
+    daemon = C4Daemon()  # Uses C4_PROJECT_ROOT env var or cwd
 
     if not daemon.is_initialized():
         console.print("[red]Error:[/red] C4 not initialized")
@@ -355,7 +355,7 @@ def halt():
 @c4_app.command()
 def plan():
     """Enter/re-enter PLAN mode"""
-    daemon = C4Daemon(Path.cwd())
+    daemon = C4Daemon()  # Uses C4_PROJECT_ROOT env var or cwd
 
     if not daemon.is_initialized():
         console.print("[red]Error:[/red] C4 not initialized. Run 'c4 init' first.")
@@ -397,7 +397,7 @@ def worker_join(
     ),
 ):
     """Join as a worker"""
-    daemon = C4Daemon(Path.cwd())
+    daemon = C4Daemon()  # Uses C4_PROJECT_ROOT env var or cwd
 
     if not daemon.is_initialized():
         console.print("[red]Error:[/red] C4 not initialized")
@@ -430,7 +430,7 @@ def worker_submit(
     commit: str = typer.Option(..., "--commit", "-c", help="Git commit SHA"),
 ):
     """Submit a completed task (manual mode)"""
-    daemon = C4Daemon(Path.cwd())
+    daemon = C4Daemon()  # Uses C4_PROJECT_ROOT env var or cwd
 
     if not daemon.is_initialized():
         console.print("[red]Error:[/red] C4 not initialized")
@@ -466,7 +466,7 @@ def add_task(
     scope: str = typer.Option(None, "--scope", "-s", help="Scope (for locking)"),
 ):
     """Add a task to the queue"""
-    daemon = C4Daemon(Path.cwd())
+    daemon = C4Daemon()  # Uses C4_PROJECT_ROOT env var or cwd
 
     if not daemon.is_initialized():
         console.print("[red]Error:[/red] C4 not initialized")
