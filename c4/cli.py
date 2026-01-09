@@ -226,8 +226,8 @@ def _create_project_settings(project_path: Path) -> bool:
                 "mcp__c4__*",
                 "mcp__serena__*",
                 "mcp__plugin_serena_serena__*",
-                # Shell commands
-                "Bash(*)",
+                # Shell commands (no parentheses = allow all)
+                "Bash",
                 # File operations for this project
                 f"Write({project_path}/**)",
                 f"Edit({project_path}/**)",
