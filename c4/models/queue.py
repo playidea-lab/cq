@@ -16,6 +16,8 @@ class CheckpointQueueItem(BaseModel):
     validation_results: list[ValidationResult] = Field(
         default_factory=list, description="Validation results at checkpoint time"
     )
+    retry_count: int = Field(default=0, description="Number of supervisor retry attempts")
+    max_retries: int = Field(default=3, description="Maximum retry attempts before dead letter")
 
 
 class RepairQueueItem(BaseModel):

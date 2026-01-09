@@ -279,14 +279,34 @@ class C4Daemon:
             self.worker_manager.register(worker_id)
 
         # Check if worker already has an in_progress task (resume after crash/restart)
-        for task_id, assigned_worker in state.queue.in_progress.items():
+        for task_id, assigned_worker in list(state.queue.in_progress.items()):  # list() to allow mutation
             if assigned_worker == worker_id:
                 task = self.get_task(task_id)
                 if task:
+                    # Verify scope lock is still valid for this worker
+                    if task.scope:
+                        lock = state.locks.scopes.get(task.scope)
+                        now = datetime.now()
+                        if lock is None or lock.owner != worker_id or lock.expires_at < now:
+                            # Lock expired or taken by another worker - cannot resume
+                            # Move task back to pending for reassignment
+                            del state.queue.in_progress[task_id]
+                            state.queue.pending.insert(0, task_id)  # Add to front of queue
+                            task.status = TaskStatus.PENDING
+                            task.assigned_to = None
+                            self._save_tasks()
+                            self.state_machine.save_state()
+                            continue  # Try to find another task
+
                     # Re-sync worker state
                     self.worker_manager.set_busy(
                         worker_id, task_id, task.scope, task.branch
                     )
+
+                    # Refresh lock TTL for resumed work
+                    if task.scope:
+                        self.lock_manager.refresh(task.scope, worker_id)
+
                     return TaskAssignment(
                         task_id=task_id,
                         title=task.title,
@@ -598,9 +618,27 @@ class C4Daemon:
 
         state = self.state_machine.state
 
-        # Move task from in_progress back to pending (will be picked up after repair)
-        if task_id in state.queue.in_progress:
-            del state.queue.in_progress[task_id]
+        # Prevent infinite REPAIR nesting (max 2 levels: REPAIR-REPAIR-{task})
+        repair_depth = task_id.count("REPAIR-")
+        max_repair_depth = 2
+        if repair_depth >= max_repair_depth:
+            return {
+                "success": False,
+                "error": f"Max repair nesting exceeded ({repair_depth} >= {max_repair_depth})",
+                "message": f"Task {task_id} has already been repaired {repair_depth} times. Manual intervention required.",
+                "task_id": task_id,
+            }
+
+        # Validate task is actually in progress before marking blocked
+        if task_id not in state.queue.in_progress:
+            return {
+                "success": False,
+                "error": f"Task {task_id} is not in progress",
+                "message": "Cannot mark a task as blocked if it's not currently in progress",
+            }
+
+        # Move task from in_progress (will be picked up after repair)
+        del state.queue.in_progress[task_id]
 
         # Get task and release scope lock
         task = self.get_task(task_id)

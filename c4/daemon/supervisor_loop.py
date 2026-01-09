@@ -120,11 +120,41 @@ class SupervisorLoop:
 
         except SupervisorError as e:
             logger.error(f"Supervisor failed for checkpoint {item.checkpoint_id}: {e}")
-            # Keep in queue for retry (will be retried on next loop)
+            # Increment retry count
+            item.retry_count += 1
+
+            if item.retry_count >= item.max_retries:
+                # Dead letter - remove from queue after max retries
+                logger.error(
+                    f"Checkpoint {item.checkpoint_id} failed after {item.retry_count} retries. "
+                    f"Removing from queue. Manual intervention required."
+                )
+                state.checkpoint_queue.pop(0)
+                self.daemon.state_machine.save_state()
+            else:
+                # Save updated retry count
+                self.daemon.state_machine.save_state()
+                logger.warning(
+                    f"Checkpoint {item.checkpoint_id} retry {item.retry_count}/{item.max_retries}"
+                )
+
             return True
 
         except Exception as e:
             logger.error(f"Unexpected error processing checkpoint {item.checkpoint_id}: {e}")
+            # Increment retry count for unexpected errors too
+            item.retry_count += 1
+
+            if item.retry_count >= item.max_retries:
+                logger.error(
+                    f"Checkpoint {item.checkpoint_id} failed with unexpected error after "
+                    f"{item.retry_count} retries. Removing from queue."
+                )
+                state.checkpoint_queue.pop(0)
+                self.daemon.state_machine.save_state()
+            else:
+                self.daemon.state_machine.save_state()
+
             return True
 
     async def _process_repair_queue(self) -> bool:

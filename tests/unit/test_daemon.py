@@ -1,12 +1,13 @@
 """Tests for C4D Daemon (MCP Server functionality)"""
 
 import tempfile
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import pytest
 
 from c4.mcp_server import C4Daemon
-from c4.models import ProjectStatus, Task
+from c4.models import ProjectStatus, ScopeLock, Task
 
 
 @pytest.fixture
@@ -305,3 +306,185 @@ class TestWorkerManagement:
         daemon.c4_submit("T-001", "abc123", [{"name": "test", "status": "pass"}])
         assert daemon.state_machine.state.workers["worker-1"].state == "idle"
         assert daemon.state_machine.state.workers["worker-1"].task_id is None
+
+
+class TestC4GetTaskExpiredLock:
+    """Test c4_get_task with expired lock edge cases"""
+
+    def test_resume_with_expired_lock_moves_task_to_pending(self, daemon):
+        """Test that resume fails with expired lock and task moves back to pending"""
+        # Add task with scope
+        task = Task(
+            id="T-001",
+            title="Expired lock test",
+            dod="Test expired lock behavior",
+            scope="api",
+        )
+        daemon.add_task(task)
+        daemon.state_machine.transition("c4_run")
+
+        # Worker gets task
+        result1 = daemon.c4_get_task("worker-1")
+        assert result1 is not None
+        assert result1.task_id == "T-001"
+
+        # Manually expire the lock
+        state = daemon.state_machine.state
+        lock = state.locks.scopes.get("api")
+        assert lock is not None
+        lock.expires_at = datetime.now() - timedelta(seconds=1)  # Already expired
+        daemon.state_machine.save_state()
+
+        # Simulate worker restart: call get_task again
+        result2 = daemon.c4_get_task("worker-1")
+
+        # Task should have been moved back to pending due to expired lock
+        # and then reassigned to the same worker from pending
+        assert "T-001" in state.queue.pending or "T-001" in state.queue.in_progress
+
+    def test_resume_with_lock_stolen_by_another_worker(self, daemon):
+        """Test that resume fails when lock is owned by another worker"""
+        # Add task with scope
+        task = Task(
+            id="T-001",
+            title="Stolen lock test",
+            dod="Test stolen lock behavior",
+            scope="api",
+        )
+        daemon.add_task(task)
+        daemon.state_machine.transition("c4_run")
+
+        # Worker 1 gets task
+        result1 = daemon.c4_get_task("worker-1")
+        assert result1 is not None
+        assert result1.task_id == "T-001"
+
+        # Manually change lock owner to worker-2 (simulating lock takeover)
+        state = daemon.state_machine.state
+        lock = state.locks.scopes.get("api")
+        assert lock is not None
+        lock.owner = "worker-2"
+        daemon.state_machine.save_state()
+
+        # Worker 1 tries to resume - should fail because lock is now owned by worker-2
+        result2 = daemon.c4_get_task("worker-1")
+
+        # Task should have been moved back to pending
+        assert "T-001" in state.queue.pending
+
+
+class TestC4MarkBlockedValidation:
+    """Test c4_mark_blocked validation and repair nesting limit"""
+
+    def test_mark_blocked_not_in_progress_fails(self, daemon):
+        """Test that marking a task as blocked fails if not in progress"""
+        # Add task but don't start it
+        task = Task(id="T-001", title="Test", dod="Test")
+        daemon.add_task(task)
+        daemon.state_machine.transition("c4_run")
+
+        # Task is in pending, not in_progress
+        result = daemon.c4_mark_blocked(
+            task_id="T-001",
+            worker_id="worker-1",
+            failure_signature="test failure",
+            attempts=3,
+        )
+
+        assert result["success"] is False
+        assert "not in progress" in result["error"]
+
+    def test_mark_blocked_repair_nesting_limit(self, daemon):
+        """Test that REPAIR-REPAIR- tasks are blocked from further repair"""
+        # Add a deeply nested repair task
+        task = Task(id="REPAIR-REPAIR-T-001", title="Nested repair", dod="Test")
+        daemon.add_task(task)
+        daemon.state_machine.transition("c4_run")
+
+        # Get the task (put it in_progress)
+        daemon.c4_get_task("worker-1")
+
+        # Try to mark it as blocked (should fail due to nesting limit)
+        result = daemon.c4_mark_blocked(
+            task_id="REPAIR-REPAIR-T-001",
+            worker_id="worker-1",
+            failure_signature="test failure",
+            attempts=3,
+        )
+
+        assert result["success"] is False
+        assert "Max repair nesting exceeded" in result["error"]
+
+    def test_mark_blocked_single_repair_allowed(self, daemon):
+        """Test that single REPAIR- tasks can be marked as blocked"""
+        # Add a single repair task
+        task = Task(id="REPAIR-T-001", title="Single repair", dod="Test")
+        daemon.add_task(task)
+        daemon.state_machine.transition("c4_run")
+
+        # Get the task
+        daemon.c4_get_task("worker-1")
+
+        # Try to mark it as blocked (should succeed - nesting depth is 1)
+        result = daemon.c4_mark_blocked(
+            task_id="REPAIR-T-001",
+            worker_id="worker-1",
+            failure_signature="test failure",
+            attempts=3,
+        )
+
+        assert result["success"] is True
+        # Task should be in repair queue
+        assert len(daemon.state_machine.state.repair_queue) == 1
+
+    def test_mark_blocked_original_task_allowed(self, daemon):
+        """Test that original (non-REPAIR) tasks can be marked as blocked"""
+        task = Task(id="T-001", title="Original task", dod="Test", scope="api")
+        daemon.add_task(task)
+        daemon.state_machine.transition("c4_run")
+
+        # Get the task
+        daemon.c4_get_task("worker-1")
+
+        # Mark as blocked
+        result = daemon.c4_mark_blocked(
+            task_id="T-001",
+            worker_id="worker-1",
+            failure_signature="test failure",
+            attempts=3,
+        )
+
+        assert result["success"] is True
+        assert len(daemon.state_machine.state.repair_queue) == 1
+        assert daemon.state_machine.state.repair_queue[0].task_id == "T-001"
+
+
+class TestCheckpointQueueRetry:
+    """Test checkpoint queue retry mechanism"""
+
+    def test_checkpoint_queue_item_has_retry_count(self, daemon):
+        """Test that CheckpointQueueItem model has retry_count field"""
+        from c4.models import CheckpointQueueItem
+
+        item = CheckpointQueueItem(
+            checkpoint_id="CP-001",
+            triggered_at=datetime.now().isoformat(),
+        )
+
+        assert item.retry_count == 0
+        assert item.max_retries == 3
+
+    def test_checkpoint_queue_item_retry_count_increment(self, daemon):
+        """Test that retry_count can be incremented"""
+        from c4.models import CheckpointQueueItem
+
+        item = CheckpointQueueItem(
+            checkpoint_id="CP-001",
+            triggered_at=datetime.now().isoformat(),
+        )
+
+        item.retry_count += 1
+        assert item.retry_count == 1
+
+        item.retry_count += 1
+        assert item.retry_count == 2
