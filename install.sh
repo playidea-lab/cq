@@ -135,18 +135,18 @@ settings = json.loads(settings_path.read_text()) if settings_path.exists() else 
 
 if "hooks" not in settings:
     settings["hooks"] = {}
-if "pre-tool-use" not in settings["hooks"]:
-    settings["hooks"]["pre-tool-use"] = []
+if "PreToolUse" not in settings["hooks"]:
+    settings["hooks"]["PreToolUse"] = []
 
 bash_hook = {
     "matcher": "Bash",
     "hooks": [{"type": "command", "command": "~/.claude/hooks/c4-bash-security-hook.sh"}]
 }
 
-settings["hooks"]["pre-tool-use"] = [
-    h for h in settings["hooks"]["pre-tool-use"] if h.get("matcher") != "Bash"
+settings["hooks"]["PreToolUse"] = [
+    h for h in settings["hooks"]["PreToolUse"] if h.get("matcher") != "Bash"
 ]
-settings["hooks"]["pre-tool-use"].append(bash_hook)
+settings["hooks"]["PreToolUse"].append(bash_hook)
 
 settings_path.write_text(json.dumps(settings, indent=2))
 PYTHON

@@ -144,11 +144,11 @@ def register_hooks() -> bool:
     else:
         settings = {}
 
-    # Initialize hooks structure
+    # Initialize hooks structure (use PascalCase for Claude Code)
     if "hooks" not in settings:
         settings["hooks"] = {}
-    if "pre-tool-use" not in settings["hooks"]:
-        settings["hooks"]["pre-tool-use"] = []
+    if "PreToolUse" not in settings["hooks"]:
+        settings["hooks"]["PreToolUse"] = []
 
     # Bash security hook config
     bash_hook = {
@@ -162,11 +162,11 @@ def register_hooks() -> bool:
     }
 
     # Remove existing Bash hook, add new one
-    settings["hooks"]["pre-tool-use"] = [
-        h for h in settings["hooks"]["pre-tool-use"]
+    settings["hooks"]["PreToolUse"] = [
+        h for h in settings["hooks"]["PreToolUse"]
         if h.get("matcher") != "Bash"
     ]
-    settings["hooks"]["pre-tool-use"].append(bash_hook)
+    settings["hooks"]["PreToolUse"].append(bash_hook)
 
     # Save settings
     settings_path.write_text(json.dumps(settings, indent=2))
