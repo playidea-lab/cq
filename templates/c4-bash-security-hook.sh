@@ -5,6 +5,21 @@
 # Exit codes:
 #   0 - Allow command
 #   2 - Block command (with JSON response)
+#
+# Customization:
+#   Create ~/.claude/hooks/c4-bash-security.conf to customize:
+#
+#   # Allow specific commands (regex patterns, one per line)
+#   ALLOW_PATTERNS=(
+#       "rm -rf /tmp/test"
+#       "npm publish --dry-run"
+#   )
+#
+#   # Block additional commands
+#   BLOCK_PATTERNS=(
+#       "docker rm"
+#       "kubectl delete"
+#   )
 
 COMMAND="$*"
 
@@ -12,6 +27,41 @@ COMMAND="$*"
 if [[ -z "$COMMAND" ]]; then
     exit 0
 fi
+
+# =============================================================================
+# User Configuration (optional)
+# =============================================================================
+CONFIG_FILE="$HOME/.claude/hooks/c4-bash-security.conf"
+
+# Initialize arrays
+ALLOW_PATTERNS=()
+BLOCK_PATTERNS=()
+
+# Load user config if exists
+if [[ -f "$CONFIG_FILE" ]]; then
+    source "$CONFIG_FILE"
+fi
+
+# Check user allow patterns first (whitelist takes priority)
+for pattern in "${ALLOW_PATTERNS[@]}"; do
+    if [[ "$COMMAND" =~ $pattern ]]; then
+        exit 0  # Explicitly allowed
+    fi
+done
+
+# Check user block patterns
+for pattern in "${BLOCK_PATTERNS[@]}"; do
+    if [[ "$COMMAND" =~ $pattern ]]; then
+        cat << EOF
+{
+    "decision": "block",
+    "reason": "Blocked by user config: matches '$pattern'",
+    "instructions": "This command is blocked by your c4-bash-security.conf. Remove the pattern to allow."
+}
+EOF
+        exit 2
+    fi
+done
 
 # =============================================================================
 # Dangerous Patterns - BLOCK these commands

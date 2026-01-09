@@ -1,0 +1,36 @@
+# C4 Bash Security Hook Configuration
+# Copy to ~/.claude/hooks/c4-bash-security.conf to customize
+#
+# Patterns are bash regex (=~ operator)
+# ALLOW_PATTERNS are checked first (whitelist priority)
+# BLOCK_PATTERNS add to the default blocked commands
+
+# =============================================================================
+# Allow specific commands that would otherwise be blocked
+# =============================================================================
+ALLOW_PATTERNS=(
+    # Example: Allow force push to specific branch
+    # "git push --force origin feature/"
+
+    # Example: Allow rm -rf for specific test directory
+    # "rm -rf /tmp/test-"
+
+    # Example: Allow npm publish with dry-run
+    # "npm publish --dry-run"
+)
+
+# =============================================================================
+# Block additional commands (project-specific)
+# =============================================================================
+BLOCK_PATTERNS=(
+    # Example: Block docker operations
+    # "docker rm"
+    # "docker rmi"
+
+    # Example: Block kubectl delete
+    # "kubectl delete"
+
+    # Example: Block deployment commands
+    # "fly deploy"
+    # "vercel --prod"
+)

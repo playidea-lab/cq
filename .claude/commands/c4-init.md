@@ -225,6 +225,31 @@ settings_path.write_text(json.dumps(settings, indent=2))
 | 시스템 | `dd if=`, `mkfs` | 디스크 손상 방지 |
 | 퍼블리시 | `npm publish` | 의도치 않은 배포 방지 |
 
+**커스터마이징** (선택):
+
+`~/.claude/hooks/c4-bash-security.conf` 파일로 패턴 추가/제외 가능:
+
+```bash
+# 샘플 복사
+cp $C4_INSTALL_DIR/templates/c4-bash-security.conf.example ~/.claude/hooks/c4-bash-security.conf
+```
+
+```bash
+# ~/.claude/hooks/c4-bash-security.conf
+# 특정 명령 허용 (화이트리스트 우선)
+ALLOW_PATTERNS=(
+    "git push --force origin feature/"  # feature 브랜치는 force push 허용
+    "rm -rf /tmp/test-"                 # 테스트 디렉토리는 삭제 허용
+)
+
+# 추가 차단 (프로젝트별)
+BLOCK_PATTERNS=(
+    "docker rm"
+    "kubectl delete"
+    "vercel --prod"
+)
+```
+
 ### Step 8: 확인
 
 생성된 파일 및 설정 표시:
