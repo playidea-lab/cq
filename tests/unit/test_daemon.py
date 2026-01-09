@@ -462,6 +462,9 @@ class TestLockRefreshFailure:
         # Try to resume - lock refresh will fail
         result2 = daemon.c4_get_task("worker-1")
 
+        # Get fresh state reference after c4_get_task reloads
+        state = daemon.state_machine.state
+
         # Task should be moved to pending due to lock failure
         assert "T-001" in state.queue.pending or result2 is not None
 

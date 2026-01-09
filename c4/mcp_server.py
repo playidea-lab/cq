@@ -25,7 +25,7 @@ from .models import (
     ValidationResult,
 )
 from .state_machine import StateMachine, StateTransitionError
-from .store import SQLiteStateStore, StateStore
+from .store import SQLiteLockStore, SQLiteStateStore, StateStore
 from .validation import ValidationRunner
 
 
@@ -54,6 +54,7 @@ class C4Daemon:
         self._worker_manager: WorkerManager | None = None
         self._supervisor_loop_manager: SupervisorLoopManager | None = None
         self._state_store = state_store
+        self._lock_store: SQLiteLockStore | None = None
 
     # =========================================================================
     # Initialization
@@ -182,6 +183,13 @@ class C4Daemon:
                 raise RuntimeError("C4 not loaded")
             self._lock_manager = LockManager(self.state_machine, self.config)
         return self._lock_manager
+
+    @property
+    def lock_store(self) -> SQLiteLockStore:
+        """Get SQLite lock store for atomic lock operations"""
+        if self._lock_store is None:
+            self._lock_store = SQLiteLockStore(self.c4_dir / "c4.db")
+        return self._lock_store
 
     @property
     def worker_manager(self) -> WorkerManager:
@@ -322,14 +330,18 @@ class C4Daemon:
                         now = datetime.now()
                         if lock is None or lock.owner != worker_id or lock.expires_at < now:
                             # Lock expired or taken by another worker - cannot resume
-                            # Move task back to pending for reassignment
+                            # Move task back to pending for reassignment by OTHER workers
                             del state.queue.in_progress[task_id]
                             state.queue.pending.insert(0, task_id)  # Add to front of queue
                             task.status = TaskStatus.PENDING
                             task.assigned_to = None
                             self._save_tasks()
+                            # Also release SQLite lock if we owned it
+                            self.lock_store.release_scope_lock(state.project_id, task.scope)
                             self.state_machine.save_state()
-                            continue  # Try to find another task
+                            # Return None - let another worker pick up the task
+                            # (don't try to re-acquire as same worker)
+                            return None
                     else:
                         # For scope=None tasks, verify task state consistency
                         if task.assigned_to != worker_id or task.status != TaskStatus.IN_PROGRESS:
@@ -370,52 +382,83 @@ class C4Daemon:
                     )
 
         # Find available task from pending
+        project_id = state.project_id
+        ttl = self.config.scope_lock_ttl_sec
+
         for task_id in state.queue.pending[:]:  # Copy to avoid mutation during iteration
             task = self.get_task(task_id)
             if task is None:
                 continue
 
-            if self.lock_manager.can_assign_task(task, worker_id):
-                # Assign task
-                state.queue.pending.remove(task_id)
-                state.queue.in_progress[task_id] = worker_id
+            # Check dependencies first (non-locking check)
+            deps_met = all(
+                dep_id in state.queue.done for dep_id in task.dependencies
+            )
+            if not deps_met:
+                continue
 
-                # Update task
-                task.status = TaskStatus.IN_PROGRESS
-                task.assigned_to = worker_id
-                task.branch = f"{self.config.work_branch_prefix}{task_id}"
-                self._save_tasks()
+            # Try to acquire scope lock ATOMICALLY using SQLite
+            # This prevents race conditions between workers
+            if task.scope:
+                lock_acquired = self.lock_store.acquire_scope_lock(
+                    project_id, task.scope, worker_id, ttl
+                )
+                if not lock_acquired:
+                    # Another worker has the lock - skip this task
+                    continue
 
-                # Acquire scope lock
+            # Lock acquired (or no scope) - now safe to assign
+            # Re-load state to ensure we have latest queue state
+            self.state_machine.load_state()
+            state = self.state_machine.state
+
+            # Double-check task is still pending after re-load
+            if task_id not in state.queue.pending:
+                # Task was assigned by another worker - release our lock
                 if task.scope:
-                    self.lock_manager.acquire(task.scope, worker_id)
+                    self.lock_store.release_scope_lock(project_id, task.scope)
+                continue
 
-                # Update worker
-                self.worker_manager.set_busy(
-                    worker_id, task_id, task.scope, task.branch
-                )
+            # Assign task
+            state.queue.pending.remove(task_id)
+            state.queue.in_progress[task_id] = worker_id
 
-                # Emit event
-                self.state_machine.emit_event(
-                    EventType.TASK_ASSIGNED,
-                    "c4d",
-                    {
-                        "task_id": task_id,
-                        "worker_id": worker_id,
-                        "scope": task.scope,
-                    },
-                )
+            # Update task
+            task.status = TaskStatus.IN_PROGRESS
+            task.assigned_to = worker_id
+            task.branch = f"{self.config.work_branch_prefix}{task_id}"
+            self._save_tasks()
 
-                self.state_machine.save_state()
+            # Sync in-memory lock state for consistency
+            if task.scope:
+                self.lock_manager.acquire(task.scope, worker_id)
 
-                return TaskAssignment(
-                    task_id=task_id,
-                    title=task.title,
-                    scope=task.scope,
-                    dod=task.dod,
-                    validations=task.validations,
-                    branch=task.branch,
-                )
+            # Update worker
+            self.worker_manager.set_busy(
+                worker_id, task_id, task.scope, task.branch
+            )
+
+            # Emit event
+            self.state_machine.emit_event(
+                EventType.TASK_ASSIGNED,
+                "c4d",
+                {
+                    "task_id": task_id,
+                    "worker_id": worker_id,
+                    "scope": task.scope,
+                },
+            )
+
+            self.state_machine.save_state()
+
+            return TaskAssignment(
+                task_id=task_id,
+                title=task.title,
+                scope=task.scope,
+                dod=task.dod,
+                validations=task.validations,
+                branch=task.branch,
+            )
 
         return None
 
@@ -484,8 +527,9 @@ class C4Daemon:
             task.commit_sha = commit_sha
             self._save_tasks()
 
-        # Release scope lock
+        # Release scope lock (both SQLite and in-memory)
         if task and task.scope:
+            self.lock_store.release_scope_lock(state.project_id, task.scope)
             self.lock_manager.release(task.scope)
 
         # Update worker
