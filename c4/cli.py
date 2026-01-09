@@ -231,7 +231,6 @@ def _create_project_settings(project_path: Path) -> bool:
                 # File operations for this project
                 f"Write({project_path}/**)",
                 f"Edit({project_path}/**)",
-                f"Update({project_path}/**)",
                 f"Read({project_path}/**)",
             ]
         },
