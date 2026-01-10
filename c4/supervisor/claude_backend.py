@@ -7,6 +7,46 @@ from pathlib import Path
 
 from .backend import SupervisorBackend, SupervisorError, SupervisorResponse
 
+# Patterns for sensitive information to mask
+SENSITIVE_PATTERNS = [
+    # API keys (various formats)
+    (r"sk-[a-zA-Z0-9]{20,}", "[MASKED_API_KEY]"),
+    (r"sk-ant-[a-zA-Z0-9-]{20,}", "[MASKED_ANTHROPIC_KEY]"),
+    (r"ANTHROPIC_API_KEY=[^\s]+", "ANTHROPIC_API_KEY=[MASKED]"),
+    (r"api[_-]?key[=:]\s*['\"]?[a-zA-Z0-9-_]{10,}['\"]?", "api_key=[MASKED]"),
+    # Tokens
+    (r"bearer\s+[a-zA-Z0-9-_.]+", "bearer [MASKED_TOKEN]"),
+    (r"token[=:]\s*['\"]?[a-zA-Z0-9-_]{10,}['\"]?", "token=[MASKED]"),
+]
+
+MAX_ERROR_MESSAGE_LENGTH = 500
+
+
+def _sanitize_stderr(stderr: str) -> str:
+    """
+    Sanitize stderr to remove sensitive information.
+
+    Args:
+        stderr: Raw stderr output
+
+    Returns:
+        Sanitized stderr with masked sensitive data and limited length
+    """
+    if not stderr:
+        return ""
+
+    sanitized = stderr
+
+    # Apply all masking patterns
+    for pattern, replacement in SENSITIVE_PATTERNS:
+        sanitized = re.sub(pattern, replacement, sanitized, flags=re.IGNORECASE)
+
+    # Limit length
+    if len(sanitized) > MAX_ERROR_MESSAGE_LENGTH:
+        sanitized = sanitized[:MAX_ERROR_MESSAGE_LENGTH] + "... [truncated]"
+
+    return sanitized
+
 
 class ClaudeCliBackend(SupervisorBackend):
     """
@@ -66,8 +106,9 @@ class ClaudeCliBackend(SupervisorBackend):
                 )
 
                 if result.returncode != 0:
+                    sanitized_err = _sanitize_stderr(result.stderr)
                     last_error = SupervisorError(
-                        f"Claude exited with code {result.returncode}: {result.stderr}"
+                        f"Claude exited with code {result.returncode}: {sanitized_err}"
                     )
                     continue
 
