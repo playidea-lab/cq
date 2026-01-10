@@ -21,6 +21,8 @@ def daemon_with_project(tmp_path):
     """Create a daemon with initialized project"""
     daemon = C4Daemon(tmp_path)
     daemon.initialize("test-project")
+    # Skip discovery phase to go directly to PLAN for testing
+    daemon.state_machine.transition("skip_discovery")
     return daemon
 
 

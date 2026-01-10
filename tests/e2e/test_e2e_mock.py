@@ -40,6 +40,8 @@ def configured_daemon(temp_project):
     """Create daemon with full configuration for E2E testing"""
     daemon = C4Daemon(temp_project)
     daemon.initialize("e2e-test-project")
+    # Skip discovery phase to go directly to PLAN for testing
+    daemon.state_machine.transition("skip_discovery")
 
     # Configure validations
     daemon._config.validation = ValidationConfig(

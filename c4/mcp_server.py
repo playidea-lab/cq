@@ -171,6 +171,69 @@ class C4Daemon:
         config_file = self.c4_dir / "config.yaml"
         config_file.write_text(yaml.dump(self._config.model_dump(), default_flow_style=False))
 
+    def _sync_verification_to_config(self, verification: "VerificationRequirement") -> None:
+        """Sync a verification requirement to config.yaml.
+
+        This ensures verifications collected during discovery are available
+        for runtime verification during checkpoint review.
+        """
+        from c4.models.config import VerificationItem
+
+        # Check if already exists (by name)
+        existing_names = {item.name for item in self.config.verifications.items}
+        if verification.name in existing_names:
+            return  # Already synced
+
+        # Add to config
+        item = VerificationItem(
+            type=verification.type,
+            name=verification.name,
+            config=verification.config,
+            enabled=verification.enabled,
+        )
+        self.config.verifications.items.append(item)
+
+        # Enable verifications if not already
+        if not self.config.verifications.enabled:
+            self.config.verifications.enabled = True
+
+        self._save_config()
+
+    def _apply_domain_default_verifications(self, domain: str) -> list[str]:
+        """Apply default verifications for a domain.
+
+        Returns list of verification names that were added.
+        """
+        from c4.models.config import VerificationItem
+        from c4.supervisor.verifier import DOMAIN_DEFAULT_VERIFICATIONS
+
+        defaults = DOMAIN_DEFAULT_VERIFICATIONS.get(domain, [])
+        if not defaults:
+            return []
+
+        added = []
+        existing_names = {item.name for item in self.config.verifications.items}
+
+        for default in defaults:
+            if default["name"] in existing_names:
+                continue
+
+            item = VerificationItem(
+                type=default["type"],
+                name=default["name"],
+                config=default.get("config", {}),
+                enabled=True,
+            )
+            self.config.verifications.items.append(item)
+            added.append(default["name"])
+
+        if added:
+            if not self.config.verifications.enabled:
+                self.config.verifications.enabled = True
+            self._save_config()
+
+        return added
+
     @property
     def config(self) -> C4Config:
         if self._config is None:
@@ -1327,6 +1390,9 @@ class C4Daemon:
             # Save updated spec
             self.spec_store.save(spec)
 
+            # Also sync to config.yaml for runtime verification
+            self._sync_verification_to_config(verification)
+
             return {
                 "success": True,
                 "feature": feature,
@@ -1338,7 +1404,8 @@ class C4Daemon:
                     "config": verification.config,
                 },
                 "total_verifications": len(spec.verification_requirements),
-                "message": f"Added {verification_type} verification: {name}",
+                "config_synced": True,
+                "message": f"Added {verification_type} verification: {name} (synced to config.yaml)",
             }
 
         except Exception as e:
@@ -1409,16 +1476,43 @@ class C4Daemon:
             }
 
         try:
+            # Collect unique domains from all specs and apply default verifications
+            domains_found: set[str] = set()
+            default_verifications_added: list[str] = []
+
+            for spec_name in specs:
+                spec = self.spec_store.load(spec_name)
+                if spec and spec.domain:
+                    domain_value = spec.domain.value if hasattr(spec.domain, "value") else str(spec.domain)
+                    domains_found.add(domain_value)
+
+            # Apply domain defaults for each unique domain
+            for domain in domains_found:
+                added = self._apply_domain_default_verifications(domain)
+                default_verifications_added.extend(added)
+
+            # Also set domain in config if single domain project
+            if len(domains_found) == 1:
+                self._config.domain = list(domains_found)[0]
+                self._save_config()
+
             # Transition to DESIGN
             self.state_machine.transition("discovery_complete")
 
-            return {
+            result = {
                 "success": True,
                 "previous_status": current_status,
                 "new_status": self.state_machine.state.status.value,
                 "specs_count": len(specs),
+                "domains": list(domains_found),
                 "message": "Discovery phase complete. Ready for design review.",
             }
+
+            if default_verifications_added:
+                result["default_verifications_added"] = default_verifications_added
+                result["message"] += f" Added {len(default_verifications_added)} domain default verification(s)."
+
+            return result
 
         except StateTransitionError as e:
             return {"success": False, "error": str(e)}

@@ -34,6 +34,9 @@ def multi_worker_daemon(temp_project):
     daemon = C4Daemon(temp_project)
     daemon.initialize("multi-worker-test")
 
+    # Skip discovery phase to go directly to PLAN for testing
+    daemon.state_machine.transition("skip_discovery")
+
     # Configure with short TTL for testing
     daemon._config.scope_lock_ttl_sec = 5  # 5 seconds for testing
     daemon._config.validation = ValidationConfig(

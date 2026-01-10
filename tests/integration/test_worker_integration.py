@@ -27,6 +27,8 @@ def daemon_with_validations(temp_project):
     """Create daemon with validation config"""
     d = C4Daemon(temp_project)
     d.initialize("test-project")
+    # Skip discovery phase to go directly to PLAN for testing
+    d.state_machine.transition("skip_discovery")
 
     # Configure validations
     d._config.validation = ValidationConfig(
@@ -46,6 +48,8 @@ def daemon_with_checkpoint(temp_project):
     """Create daemon with checkpoint config"""
     d = C4Daemon(temp_project)
     d.initialize("test-project")
+    # Skip discovery phase to go directly to PLAN for testing
+    d.state_machine.transition("skip_discovery")
 
     # Configure validations and checkpoint
     d._config.validation = ValidationConfig(
@@ -308,6 +312,8 @@ class TestPassedCheckpointTracking:
 
         daemon = C4Daemon(temp_project)
         daemon.initialize("test-project")
+        # Skip discovery phase to go directly to PLAN for testing
+        daemon.state_machine.transition("skip_discovery")
 
         # Configure two checkpoints
         daemon._config.checkpoints = [
