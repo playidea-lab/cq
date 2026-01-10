@@ -1,10 +1,13 @@
 """Supervisor - Orchestrates checkpoint review with pluggable backends"""
 
+import json
 from pathlib import Path
+from typing import Any
 
 from .backend import SupervisorBackend, SupervisorResponse
 from .claude_backend import ClaudeCliBackend
 from .prompt import PromptRenderer
+from .verifier import VerificationRunner
 
 
 class Supervisor:
@@ -58,11 +61,63 @@ class Supervisor:
             SupervisorResponse with decision
         """
         # Update backend max_retries if provided (backward compatibility)
-        if max_retries is not None and hasattr(self.backend, 'max_retries'):
+        if max_retries is not None and hasattr(self.backend, "max_retries"):
             self.backend.max_retries = max_retries
 
         # Render prompt from bundle
         prompt = self.renderer.render_from_bundle(bundle_dir)
+
+        # Run backend
+        return self.backend.run_review(
+            prompt=prompt,
+            bundle_dir=bundle_dir,
+            timeout=timeout,
+        )
+
+    def run_supervisor_strict(
+        self,
+        bundle_dir: Path,
+        verifications: list[dict[str, Any]] | None = None,
+        timeout: int = 300,
+        max_retries: int | None = None,
+    ) -> SupervisorResponse:
+        """
+        Run strict supervisor review with execution verification.
+
+        This is the enhanced review mode that:
+        1. Runs execution verifications (HTTP, CLI, etc.)
+        2. Saves verification results to bundle
+        3. Uses strict reviewer template with detailed checklist
+
+        Args:
+            bundle_dir: Path to bundle directory
+            verifications: List of verification configs from config.yaml
+            timeout: Timeout in seconds
+            max_retries: Maximum retry attempts
+
+        Returns:
+            SupervisorResponse with decision
+        """
+        # Update backend max_retries if provided
+        if max_retries is not None and hasattr(self.backend, "max_retries"):
+            self.backend.max_retries = max_retries
+
+        # Run verifications if configured
+        execution_results = None
+        if verifications:
+            runner = VerificationRunner(verifications)
+            results = runner.run_all()
+            execution_results = [r.to_dict() for r in results]
+
+            # Save to bundle
+            exec_file = bundle_dir / "execution_results.json"
+            exec_file.write_text(json.dumps(execution_results, indent=2))
+
+        # Render strict prompt with execution results
+        prompt = self.renderer.render_strict_from_bundle(
+            bundle_dir,
+            execution_results=execution_results,
+        )
 
         # Run backend
         return self.backend.run_review(

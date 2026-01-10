@@ -7,6 +7,8 @@ class ProjectStatus(str, Enum):
     """Top-level project states"""
 
     INIT = "INIT"
+    DISCOVERY = "DISCOVERY"  # New: Domain detection + interview
+    DESIGN = "DESIGN"  # New: Architecture design
     PLAN = "PLAN"
     EXECUTE = "EXECUTE"
     CHECKPOINT = "CHECKPOINT"

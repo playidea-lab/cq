@@ -33,22 +33,38 @@ def state_machine_init(temp_c4_dir):
 
 
 @pytest.fixture
+def state_machine_discovery(temp_c4_dir):
+    """Create a state machine in DISCOVERY state"""
+    sm = StateMachine(temp_c4_dir)
+    sm.initialize_state("test-project")
+    sm.transition("c4_init")  # INIT → DISCOVERY
+    return sm
+
+
+@pytest.fixture
 def state_machine(temp_c4_dir):
     """Create a state machine in PLAN state (most common starting point)"""
     sm = StateMachine(temp_c4_dir)
     sm.initialize_state("test-project")
-    sm.transition("c4_init")  # INIT → PLAN
+    sm.transition("c4_init")  # INIT → DISCOVERY
+    sm.transition("skip_discovery")  # DISCOVERY → PLAN (skip for tests)
     return sm
 
 
 class TestStateTransitions:
     """Test state transition logic"""
 
-    def test_init_to_plan(self, state_machine_init):
-        """Test INIT → PLAN transition"""
+    def test_init_to_discovery(self, state_machine_init):
+        """Test INIT → DISCOVERY transition"""
         assert state_machine_init.state.status == ProjectStatus.INIT
         state_machine_init.transition("c4_init")
-        assert state_machine_init.state.status == ProjectStatus.PLAN
+        assert state_machine_init.state.status == ProjectStatus.DISCOVERY
+
+    def test_discovery_to_plan(self, state_machine_discovery):
+        """Test DISCOVERY → PLAN transition (skip_discovery)"""
+        assert state_machine_discovery.state.status == ProjectStatus.DISCOVERY
+        state_machine_discovery.transition("skip_discovery")
+        assert state_machine_discovery.state.status == ProjectStatus.PLAN
 
     def test_plan_to_execute(self, state_machine):
         """Test PLAN → EXECUTE transition"""

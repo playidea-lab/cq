@@ -19,9 +19,30 @@ def temp_project():
 
 @pytest.fixture
 def daemon(temp_project):
-    """Create an initialized daemon"""
+    """Create an initialized daemon (starts in DISCOVERY state)"""
     d = C4Daemon(temp_project)
     d.initialize("test-project")
+    return d
+
+
+@pytest.fixture
+def daemon_in_plan(temp_project):
+    """Create a daemon in PLAN state (skip discovery/design)"""
+    d = C4Daemon(temp_project)
+    d.initialize("test-project")
+    # Transition through discovery and design
+    d.state_machine.transition("skip_discovery", "test")
+    return d
+
+
+@pytest.fixture
+def daemon_in_execute(temp_project):
+    """Create a daemon in EXECUTE state with tasks"""
+    d = C4Daemon(temp_project)
+    d.initialize("test-project")
+    # Skip to PLAN, then transition to EXECUTE
+    d.state_machine.transition("skip_discovery", "test")
+    d.state_machine.transition("c4_run", "test")
     return d
 
 
@@ -42,9 +63,10 @@ class TestDaemonInitialization:
         assert (c4_dir / "bundles").exists()
         assert (c4_dir / "workers").exists()
 
-    def test_initialize_sets_plan_state(self, daemon):
-        """Test that initialization transitions to PLAN state"""
-        assert daemon.state_machine.state.status == ProjectStatus.PLAN
+    def test_initialize_sets_discovery_state(self, daemon):
+        """Test that initialization transitions to DISCOVERY state (new workflow)"""
+        # New workflow: INIT → DISCOVERY → DESIGN → PLAN
+        assert daemon.state_machine.state.status == ProjectStatus.DISCOVERY
 
     def test_is_initialized(self, temp_project):
         """Test is_initialized detection"""
@@ -65,7 +87,8 @@ class TestDaemonInitialization:
         d2.load()
 
         assert d2.state_machine.state.project_id == "test-project"
-        assert d2.state_machine.state.status == ProjectStatus.PLAN
+        # After init, state is DISCOVERY (new workflow)
+        assert d2.state_machine.state.status == ProjectStatus.DISCOVERY
 
 
 class TestC4Status:
@@ -77,7 +100,8 @@ class TestC4Status:
 
         assert status["initialized"] is True
         assert status["project_id"] == "test-project"
-        assert status["status"] == "PLAN"
+        # New workflow starts with DISCOVERY
+        assert status["status"] == "DISCOVERY"
         assert "queue" in status
         assert "workers" in status
         assert "metrics" in status
@@ -131,8 +155,9 @@ class TestC4GetTask:
         )
         daemon.add_task(task)
 
-        # Transition to EXECUTE
-        daemon.state_machine.transition("c4_run")
+        # Transition to EXECUTE (DISCOVERY → PLAN → EXECUTE)
+        daemon.state_machine.transition("skip_discovery", "test")
+        daemon.state_machine.transition("c4_run", "test")
 
         # Get task
         result = daemon.c4_get_task("worker-1")
@@ -150,7 +175,8 @@ class TestC4GetTask:
         """Test that get_task registers new workers"""
         task = Task(id="T-001", title="Test", dod="Test")
         daemon.add_task(task)
-        daemon.state_machine.transition("c4_run")
+        daemon.state_machine.transition("skip_discovery", "test")
+        daemon.state_machine.transition("c4_run", "test")
 
         daemon.c4_get_task("worker-1")
 
@@ -158,7 +184,8 @@ class TestC4GetTask:
 
     def test_get_task_no_tasks_available(self, daemon):
         """Test get_task when no tasks are pending"""
-        daemon.state_machine.transition("c4_run")
+        daemon.state_machine.transition("skip_discovery", "test")
+        daemon.state_machine.transition("c4_run", "test")
         result = daemon.c4_get_task("worker-1")
         assert result is None
 
@@ -172,7 +199,8 @@ class TestC4GetTask:
             scope="api",
         )
         daemon.add_task(task)
-        daemon.state_machine.transition("c4_run")
+        daemon.state_machine.transition("skip_discovery", "test")
+        daemon.state_machine.transition("c4_run", "test")
 
         # Worker gets task
         result1 = daemon.c4_get_task("worker-1")
@@ -198,7 +226,8 @@ class TestC4GetTask:
         task2 = Task(id="T-002", title="Task 2", dod="Test 2")
         daemon.add_task(task1)
         daemon.add_task(task2)
-        daemon.state_machine.transition("c4_run")
+        daemon.state_machine.transition("skip_discovery", "test")
+        daemon.state_machine.transition("c4_run", "test")
 
         # Worker 1 gets task
         result1 = daemon.c4_get_task("worker-1")
@@ -218,7 +247,8 @@ class TestC4Submit:
         # Setup
         task = Task(id="T-001", title="Test", dod="Test")
         daemon.add_task(task)
-        daemon.state_machine.transition("c4_run")
+        daemon.state_machine.transition("skip_discovery", "test")
+        daemon.state_machine.transition("c4_run", "test")
         daemon.c4_get_task("worker-1")
 
         # Submit
@@ -239,7 +269,8 @@ class TestC4Submit:
         """Test submission with failed validations"""
         task = Task(id="T-001", title="Test", dod="Test")
         daemon.add_task(task)
-        daemon.state_machine.transition("c4_run")
+        daemon.state_machine.transition("skip_discovery", "test")
+        daemon.state_machine.transition("c4_run", "test")
         daemon.c4_get_task("worker-1")
 
         result = daemon.c4_submit(
@@ -253,7 +284,8 @@ class TestC4Submit:
 
     def test_submit_invalid_task(self, daemon):
         """Test submission of non-existent task"""
-        daemon.state_machine.transition("c4_run")
+        daemon.state_machine.transition("skip_discovery", "test")
+        daemon.state_machine.transition("c4_run", "test")
 
         result = daemon.c4_submit("T-999", "abc123", [])
 
@@ -295,7 +327,8 @@ class TestWorkerManagement:
         """Test that worker state updates during task lifecycle"""
         task = Task(id="T-001", title="Test", dod="Test")
         daemon.add_task(task)
-        daemon.state_machine.transition("c4_run")
+        daemon.state_machine.transition("skip_discovery", "test")
+        daemon.state_machine.transition("c4_run", "test")
 
         # Get task - worker should become busy
         daemon.c4_get_task("worker-1")
@@ -321,7 +354,8 @@ class TestC4GetTaskExpiredLock:
             scope="api",
         )
         daemon.add_task(task)
-        daemon.state_machine.transition("c4_run")
+        daemon.state_machine.transition("skip_discovery", "test")
+        daemon.state_machine.transition("c4_run", "test")
 
         # Worker gets task
         result1 = daemon.c4_get_task("worker-1")
@@ -358,7 +392,8 @@ class TestC4GetTaskExpiredLock:
             scope="api",
         )
         daemon.add_task(task)
-        daemon.state_machine.transition("c4_run")
+        daemon.state_machine.transition("skip_discovery", "test")
+        daemon.state_machine.transition("c4_run", "test")
 
         # Worker 1 gets task
         result1 = daemon.c4_get_task("worker-1")
@@ -394,7 +429,8 @@ class TestScopeNoneTaskResume:
         # Add task without scope
         task = Task(id="T-001", title="No scope task", dod="Test", scope=None)
         daemon.add_task(task)
-        daemon.state_machine.transition("c4_run")
+        daemon.state_machine.transition("skip_discovery", "test")
+        daemon.state_machine.transition("c4_run", "test")
 
         # Worker 1 gets the task
         result1 = daemon.c4_get_task("worker-1")
@@ -419,7 +455,8 @@ class TestScopeNoneTaskResume:
 
         task = Task(id="T-001", title="No scope task", dod="Test", scope=None)
         daemon.add_task(task)
-        daemon.state_machine.transition("c4_run")
+        daemon.state_machine.transition("skip_discovery", "test")
+        daemon.state_machine.transition("c4_run", "test")
 
         # Worker gets the task
         daemon.c4_get_task("worker-1")
@@ -439,7 +476,8 @@ class TestScopeNoneTaskResume:
         """Test that scope=None task with consistent state resumes properly"""
         task = Task(id="T-001", title="No scope task", dod="Test", scope=None)
         daemon.add_task(task)
-        daemon.state_machine.transition("c4_run")
+        daemon.state_machine.transition("skip_discovery", "test")
+        daemon.state_machine.transition("c4_run", "test")
 
         # Worker gets the task
         result1 = daemon.c4_get_task("worker-1")
@@ -458,7 +496,8 @@ class TestLockRefreshFailure:
         """Test that lock refresh failure moves task back to pending"""
         task = Task(id="T-001", title="Lock refresh test", dod="Test", scope="api")
         daemon.add_task(task)
-        daemon.state_machine.transition("c4_run")
+        daemon.state_machine.transition("skip_discovery", "test")
+        daemon.state_machine.transition("c4_run", "test")
 
         # Worker gets the task
         result1 = daemon.c4_get_task("worker-1")
@@ -488,7 +527,8 @@ class TestC4MarkBlockedValidation:
         # Add task but don't start it
         task = Task(id="T-001", title="Test", dod="Test")
         daemon.add_task(task)
-        daemon.state_machine.transition("c4_run")
+        daemon.state_machine.transition("skip_discovery", "test")
+        daemon.state_machine.transition("c4_run", "test")
 
         # Task is in pending, not in_progress
         result = daemon.c4_mark_blocked(
@@ -506,7 +546,8 @@ class TestC4MarkBlockedValidation:
         # Add a deeply nested repair task
         task = Task(id="REPAIR-REPAIR-T-001", title="Nested repair", dod="Test")
         daemon.add_task(task)
-        daemon.state_machine.transition("c4_run")
+        daemon.state_machine.transition("skip_discovery", "test")
+        daemon.state_machine.transition("c4_run", "test")
 
         # Get the task (put it in_progress)
         daemon.c4_get_task("worker-1")
@@ -527,7 +568,8 @@ class TestC4MarkBlockedValidation:
         # Add a single repair task
         task = Task(id="REPAIR-T-001", title="Single repair", dod="Test")
         daemon.add_task(task)
-        daemon.state_machine.transition("c4_run")
+        daemon.state_machine.transition("skip_discovery", "test")
+        daemon.state_machine.transition("c4_run", "test")
 
         # Get the task
         daemon.c4_get_task("worker-1")
@@ -548,7 +590,8 @@ class TestC4MarkBlockedValidation:
         """Test that original (non-REPAIR) tasks can be marked as blocked"""
         task = Task(id="T-001", title="Original task", dod="Test", scope="api")
         daemon.add_task(task)
-        daemon.state_machine.transition("c4_run")
+        daemon.state_machine.transition("skip_discovery", "test")
+        daemon.state_machine.transition("c4_run", "test")
 
         # Get the task
         daemon.c4_get_task("worker-1")
@@ -573,7 +616,8 @@ class TestWorkerOwnershipVerification:
         """Test that a different worker cannot mark another worker's task as blocked"""
         task = Task(id="T-001", title="Ownership test", dod="Test", scope="api")
         daemon.add_task(task)
-        daemon.state_machine.transition("c4_run")
+        daemon.state_machine.transition("skip_discovery", "test")
+        daemon.state_machine.transition("c4_run", "test")
 
         # Worker 1 gets the task
         daemon.c4_get_task("worker-1")
@@ -596,7 +640,8 @@ class TestWorkerOwnershipVerification:
         """Test that the assigned worker can mark their task as blocked"""
         task = Task(id="T-001", title="Ownership test", dod="Test", scope="api")
         daemon.add_task(task)
-        daemon.state_machine.transition("c4_run")
+        daemon.state_machine.transition("skip_discovery", "test")
+        daemon.state_machine.transition("c4_run", "test")
 
         # Worker 1 gets the task
         daemon.c4_get_task("worker-1")
@@ -621,7 +666,8 @@ class TestRepairDepthFalsePositive:
         # Task ID that contains "REPAIR-" but not as a prefix
         task = Task(id="MY-REPAIR-FEATURE", title="Fix repair feature", dod="Test")
         daemon.add_task(task)
-        daemon.state_machine.transition("c4_run")
+        daemon.state_machine.transition("skip_discovery", "test")
+        daemon.state_machine.transition("c4_run", "test")
 
         # Get the task
         daemon.c4_get_task("worker-1")
@@ -641,7 +687,8 @@ class TestRepairDepthFalsePositive:
         """Test that task IDs with REPAIR- in the middle are not blocked"""
         task = Task(id="USER-REPAIR-API-FIX", title="API repair fix", dod="Test")
         daemon.add_task(task)
-        daemon.state_machine.transition("c4_run")
+        daemon.state_machine.transition("skip_discovery", "test")
+        daemon.state_machine.transition("c4_run", "test")
 
         daemon.c4_get_task("worker-1")
 
@@ -661,7 +708,8 @@ class TestRepairDepthFalsePositive:
             id="API-REPAIR-REPAIR-BUG", title="Double repair string", dod="Test"
         )
         daemon.add_task(task)
-        daemon.state_machine.transition("c4_run")
+        daemon.state_machine.transition("skip_discovery", "test")
+        daemon.state_machine.transition("c4_run", "test")
 
         daemon.c4_get_task("worker-1")
 
@@ -679,7 +727,8 @@ class TestRepairDepthFalsePositive:
         """Test that actual REPAIR- prefix with depth 1 is allowed"""
         task = Task(id="REPAIR-T-001", title="First repair", dod="Test")
         daemon.add_task(task)
-        daemon.state_machine.transition("c4_run")
+        daemon.state_machine.transition("skip_discovery", "test")
+        daemon.state_machine.transition("c4_run", "test")
 
         daemon.c4_get_task("worker-1")
 
@@ -697,7 +746,8 @@ class TestRepairDepthFalsePositive:
         """Test that REPAIR-REPAIR- prefix (depth 2) is blocked"""
         task = Task(id="REPAIR-REPAIR-T-001", title="Second repair", dod="Test")
         daemon.add_task(task)
-        daemon.state_machine.transition("c4_run")
+        daemon.state_machine.transition("skip_discovery", "test")
+        daemon.state_machine.transition("c4_run", "test")
 
         daemon.c4_get_task("worker-1")
 
@@ -765,7 +815,8 @@ class TestTaskRegistryValidation:
 
     def test_mark_blocked_task_not_in_registry(self, daemon):
         """Test marking a task as blocked when it's not in task registry"""
-        daemon.state_machine.transition("c4_run")
+        daemon.state_machine.transition("skip_discovery", "test")
+        daemon.state_machine.transition("c4_run", "test")
 
         # Manually add task to in_progress queue without adding to registry
         state = daemon.state_machine.state
@@ -787,7 +838,8 @@ class TestTaskRegistryValidation:
         """Test that c4_get_task handles orphaned queue entries"""
         task = Task(id="T-001", title="Real task", dod="Test")
         daemon.add_task(task)
-        daemon.state_machine.transition("c4_run")
+        daemon.state_machine.transition("skip_discovery", "test")
+        daemon.state_machine.transition("c4_run", "test")
 
         # Add orphaned entry to pending queue (no task in registry)
         state = daemon.state_machine.state
@@ -802,7 +854,8 @@ class TestTaskRegistryValidation:
 
     def test_submit_task_not_in_registry(self, daemon):
         """Test submitting a task that's not in the registry"""
-        daemon.state_machine.transition("c4_run")
+        daemon.state_machine.transition("skip_discovery", "test")
+        daemon.state_machine.transition("c4_run", "test")
 
         # Manually add to in_progress without registry entry
         state = daemon.state_machine.state
@@ -830,7 +883,8 @@ class TestConcurrentOperations:
         """Test that same worker calling get_task twice gets same task"""
         task = Task(id="T-001", title="Test", dod="Test")
         daemon.add_task(task)
-        daemon.state_machine.transition("c4_run")
+        daemon.state_machine.transition("skip_discovery", "test")
+        daemon.state_machine.transition("c4_run", "test")
 
         # First call
         result1 = daemon.c4_get_task("worker-1")
@@ -849,7 +903,8 @@ class TestConcurrentOperations:
         task2 = Task(id="T-002", title="Task 2", dod="Test")
         daemon.add_task(task1)
         daemon.add_task(task2)
-        daemon.state_machine.transition("c4_run")
+        daemon.state_machine.transition("skip_discovery", "test")
+        daemon.state_machine.transition("c4_run", "test")
 
         result1 = daemon.c4_get_task("worker-1")
         result2 = daemon.c4_get_task("worker-2")
@@ -861,7 +916,8 @@ class TestConcurrentOperations:
         """Test submitting a task that's already marked done"""
         task = Task(id="T-001", title="Test", dod="Test")
         daemon.add_task(task)
-        daemon.state_machine.transition("c4_run")
+        daemon.state_machine.transition("skip_discovery", "test")
+        daemon.state_machine.transition("c4_run", "test")
 
         daemon.c4_get_task("worker-1")
 
@@ -885,7 +941,8 @@ class TestStaleWorkerRecovery:
         """Test that stale busy worker's task is recovered to pending"""
         task = Task(id="T-001", title="Stale test", dod="Test", scope="api")
         daemon.add_task(task)
-        daemon.state_machine.transition("c4_run")
+        daemon.state_machine.transition("skip_discovery", "test")
+        daemon.state_machine.transition("c4_run", "test")
 
         # Worker gets task
         daemon.c4_get_task("worker-1")
@@ -922,7 +979,8 @@ class TestStaleWorkerRecovery:
         """Test that active workers are not recovered"""
         task = Task(id="T-001", title="Active test", dod="Test", scope="api")
         daemon.add_task(task)
-        daemon.state_machine.transition("c4_run")
+        daemon.state_machine.transition("skip_discovery", "test")
+        daemon.state_machine.transition("c4_run", "test")
 
         # Worker gets task (last_seen is now)
         daemon.c4_get_task("worker-1")
@@ -945,7 +1003,8 @@ class TestStaleWorkerRecovery:
         """Test that _touch_worker updates last_seen to prevent recovery"""
         task = Task(id="T-001", title="Heartbeat test", dod="Test", scope="api")
         daemon.add_task(task)
-        daemon.state_machine.transition("c4_run")
+        daemon.state_machine.transition("skip_discovery", "test")
+        daemon.state_machine.transition("c4_run", "test")
 
         # Worker gets task
         daemon.c4_get_task("worker-1")

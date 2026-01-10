@@ -1,8 +1,19 @@
 {
   "mcpServers": {
     "c4": {
+      "type": "stdio",
       "command": "uv",
-      "args": ["run", "python", "-m", "c4.mcp_server"]
+      "args": [
+        "--directory",
+        "/Users/changmin/.c4",
+        "run",
+        "python",
+        "-m",
+        "c4.mcp_server"
+      ],
+      "env": {
+        "C4_PROJECT_ROOT": "/Users/changmin/git/c4"
+      }
     }
   }
 }

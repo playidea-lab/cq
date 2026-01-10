@@ -4,13 +4,11 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from ..mcp_server import C4Daemon
 
-from ..models import SupervisorDecision
 from ..supervisor import Supervisor, SupervisorError
 
 logger = logging.getLogger(__name__)
@@ -106,9 +104,48 @@ class SupervisorLoop:
         self.running = False
         logger.info("Supervisor loop stop requested")
 
+    def _get_verifications_config(self) -> list[dict] | None:
+        """
+        Get verifications configuration from project config.
+
+        Returns:
+            List of verification configs or None if not configured/disabled
+        """
+        if not hasattr(self.daemon, "config") or self.daemon.config is None:
+            return None
+
+        verifications_config = getattr(self.daemon.config, "verifications", None)
+        if verifications_config is None:
+            return None
+
+        if not verifications_config.enabled:
+            return None
+
+        # Convert VerificationItem models to dicts for VerificationRunner
+        result = []
+        base_url = verifications_config.base_url
+
+        for item in verifications_config.items:
+            if not item.enabled:
+                continue
+
+            config = dict(item.config)
+            if base_url:
+                config["base_url"] = base_url
+
+            result.append({
+                "type": item.type,
+                "name": item.name,
+                "config": config,
+            })
+
+        return result if result else None
+
     async def _process_checkpoint_queue(self) -> bool:
         """
         Process the next item in the checkpoint queue.
+
+        Uses strict review mode with execution verification when configured.
 
         Returns:
             True if an item was processed, False if queue is empty
@@ -134,9 +171,14 @@ class SupervisorLoop:
                 prompts_dir=self.daemon.root / "prompts",
             )
 
+            # Get verifications from config
+            verifications = self._get_verifications_config()
+
+            # Use strict mode if verifications are enabled or always for stricter review
             response = await asyncio.to_thread(
-                supervisor.run_supervisor,
+                supervisor.run_supervisor_strict,
                 bundle_dir,
+                verifications=verifications,
                 timeout=self.supervisor_timeout,
                 max_retries=self.max_retries,
             )

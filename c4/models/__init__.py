@@ -5,7 +5,13 @@
 from .checkpoint import CheckpointConfig, CheckpointState
 
 # Config models
-from .config import BudgetConfig, C4Config, ValidationConfig
+from .config import (
+    BudgetConfig,
+    C4Config,
+    ValidationConfig,
+    VerificationConfig,
+    VerificationItem,
+)
 from .enums import (
     EventType,
     ExecutionMode,
@@ -70,6 +76,8 @@ __all__ = [
     "BudgetConfig",
     "C4Config",
     "ValidationConfig",
+    "VerificationConfig",
+    "VerificationItem",
     # Responses
     "CheckpointResponse",
     "SubmitResponse",

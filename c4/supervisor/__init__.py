@@ -21,6 +21,15 @@ from .claude_backend import ClaudeCliBackend
 from .mock_backend import MockBackend
 from .prompt import PromptRenderer
 from .supervisor import Supervisor
+from .verifier import (
+    CliVerifier,
+    HttpVerifier,
+    VerificationResult,
+    VerificationRunner,
+    VerificationType,
+    Verifier,
+    VerifierRegistry,
+)
 
 __all__ = [
     # Main class
@@ -33,4 +42,12 @@ __all__ = [
     "SupervisorResponse",
     "SupervisorError",
     "PromptRenderer",
+    # Verification
+    "Verifier",
+    "VerifierRegistry",
+    "VerificationType",
+    "VerificationResult",
+    "VerificationRunner",
+    "HttpVerifier",
+    "CliVerifier",
 ]

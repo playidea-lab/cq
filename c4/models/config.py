@@ -1,12 +1,14 @@
 """C4 Config Models - Configuration schemas"""
 
+from typing import Any
+
 from pydantic import BaseModel, Field
 
 from .checkpoint import CheckpointConfig
 
 
 class ValidationConfig(BaseModel):
-    """Validation command configuration"""
+    """Validation command configuration (static analysis)."""
 
     commands: dict[str, str] = Field(
         default_factory=lambda: {
@@ -16,6 +18,49 @@ class ValidationConfig(BaseModel):
         }
     )
     required: list[str] = Field(default_factory=lambda: ["lint", "unit"])
+
+
+class VerificationItem(BaseModel):
+    """Single verification configuration.
+
+    Example:
+        - type: http
+          name: API Health Check
+          config:
+            url: http://localhost:8000/health
+            method: GET
+            expected_status: 200
+    """
+
+    type: str  # http, cli, browser, etc.
+    name: str
+    config: dict[str, Any] = Field(default_factory=dict)
+    enabled: bool = True
+
+
+class VerificationConfig(BaseModel):
+    """Verification configuration (runtime verification).
+
+    These are dynamic checks that run before supervisor review:
+    - HTTP: API calls
+    - CLI: Command execution
+    - Browser: E2E tests with Playwright
+
+    Example in config.yaml:
+        verifications:
+          items:
+            - type: http
+              name: API Health
+              config:
+                url: /api/health
+                expected_status: 200
+          base_url: http://localhost:8000
+          enabled: true
+    """
+
+    items: list[VerificationItem] = Field(default_factory=list)
+    base_url: str | None = None  # For HTTP verifications
+    enabled: bool = True  # Global enable/disable
 
 
 class BudgetConfig(BaseModel):
@@ -35,5 +80,7 @@ class C4Config(BaseModel):
     max_idle_minutes: int = 0  # 0 = unlimited
     scope_lock_ttl_sec: int = 1800  # 30 minutes, synchronized with WORKER_STALE_TIMEOUT
     validation: ValidationConfig = Field(default_factory=ValidationConfig)
+    verifications: VerificationConfig = Field(default_factory=VerificationConfig)
     checkpoints: list[CheckpointConfig] = Field(default_factory=list)
     budgets: BudgetConfig = Field(default_factory=BudgetConfig)
+    domain: str | None = None  # Project domain for default verifications

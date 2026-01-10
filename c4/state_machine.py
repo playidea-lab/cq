@@ -1,6 +1,5 @@
 """C4D State Machine - State transitions and invariant enforcement"""
 
-from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -36,12 +35,24 @@ class InvariantViolationError(Exception):
 # =============================================================================
 
 # (from_state, event) → to_state
+# Extended workflow: INIT → DISCOVERY → DESIGN → PLAN → EXECUTE → CHECKPOINT → COMPLETE
 TRANSITIONS: dict[tuple[ProjectStatus, str], ProjectStatus] = {
     # INIT transitions
-    (ProjectStatus.INIT, "c4_init"): ProjectStatus.PLAN,
+    (ProjectStatus.INIT, "c4_init"): ProjectStatus.DISCOVERY,  # Changed: now goes to DISCOVERY
+    (ProjectStatus.INIT, "c4_init_legacy"): ProjectStatus.PLAN,  # Legacy: direct to PLAN
+    # DISCOVERY transitions
+    (ProjectStatus.DISCOVERY, "discovery_complete"): ProjectStatus.DESIGN,
+    (ProjectStatus.DISCOVERY, "skip_discovery"): ProjectStatus.PLAN,  # Skip to PLAN (legacy mode)
+    (ProjectStatus.DISCOVERY, "c4_stop"): ProjectStatus.HALTED,
+    # DESIGN transitions
+    (ProjectStatus.DESIGN, "design_approved"): ProjectStatus.PLAN,
+    (ProjectStatus.DESIGN, "design_rejected"): ProjectStatus.DISCOVERY,  # Back to interview
+    (ProjectStatus.DESIGN, "skip_design"): ProjectStatus.PLAN,  # Skip design phase
+    (ProjectStatus.DESIGN, "c4_stop"): ProjectStatus.HALTED,
     # PLAN transitions
     (ProjectStatus.PLAN, "c4_run"): ProjectStatus.EXECUTE,
     (ProjectStatus.PLAN, "c4_stop"): ProjectStatus.HALTED,
+    (ProjectStatus.PLAN, "back_to_design"): ProjectStatus.DESIGN,  # Revise design
     # EXECUTE transitions
     (ProjectStatus.EXECUTE, "gate_reached"): ProjectStatus.CHECKPOINT,
     (ProjectStatus.EXECUTE, "c4_stop"): ProjectStatus.HALTED,
@@ -52,10 +63,12 @@ TRANSITIONS: dict[tuple[ProjectStatus, str], ProjectStatus] = {
     (ProjectStatus.CHECKPOINT, "approve_final"): ProjectStatus.COMPLETE,
     (ProjectStatus.CHECKPOINT, "request_changes"): ProjectStatus.EXECUTE,
     (ProjectStatus.CHECKPOINT, "replan"): ProjectStatus.PLAN,
+    (ProjectStatus.CHECKPOINT, "redesign"): ProjectStatus.DESIGN,  # New: back to design
     (ProjectStatus.CHECKPOINT, "fatal_error"): ProjectStatus.ERROR,
     # HALTED transitions
     (ProjectStatus.HALTED, "c4_run"): ProjectStatus.EXECUTE,
     (ProjectStatus.HALTED, "c4_plan"): ProjectStatus.PLAN,
+    (ProjectStatus.HALTED, "c4_discovery"): ProjectStatus.DISCOVERY,  # Resume discovery
     # COMPLETE - no transitions out
     # ERROR - no transitions out (manual intervention required)
 }
@@ -63,6 +76,8 @@ TRANSITIONS: dict[tuple[ProjectStatus, str], ProjectStatus] = {
 # Allowed CLI commands per state
 ALLOWED_COMMANDS: dict[ProjectStatus, list[str]] = {
     ProjectStatus.INIT: ["init"],
+    ProjectStatus.DISCOVERY: ["plan", "status", "stop"],  # New state
+    ProjectStatus.DESIGN: ["plan", "status", "stop"],  # New state
     ProjectStatus.PLAN: ["plan", "run", "stop", "status"],
     ProjectStatus.EXECUTE: ["status", "worker join", "worker submit", "stop"],
     ProjectStatus.CHECKPOINT: ["status"],
