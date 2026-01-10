@@ -480,8 +480,11 @@ class TestScenario4MultiWorker:
         assignment1 = daemon.c4_get_task("worker-1")
         assert assignment1.task_id == "T-001"
 
-        # Scope is locked
-        assert "src/shared/" in daemon.state_machine.state.locks.scopes
+        # Scope is locked in SQLite lock store (not in-memory state.locks.scopes)
+        lock_owner = daemon.lock_store.get_lock_owner(
+            daemon.state_machine.state.project_id, "src/shared/"
+        )
+        assert lock_owner == "worker-1"
 
         # Worker 2 cannot get task with same scope (gets None or different task)
         assignment2 = daemon.c4_get_task("worker-2")

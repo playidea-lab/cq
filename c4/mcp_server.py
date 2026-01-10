@@ -356,6 +356,9 @@ class C4Daemon:
         self.state_machine.load_state()
         state = self.state_machine.state
 
+        # Clean up expired scope locks (prevents stale locks from blocking task assignment)
+        self.lock_store.cleanup_expired(state.project_id)
+
         # Ensure we're in EXECUTE state
         if state.status != ProjectStatus.EXECUTE:
             return None
@@ -632,11 +635,14 @@ class C4Daemon:
             return error_response
 
         # Non-atomic operations (safe to do outside the lock)
-        # Update task in SQLite
-        if task:
-            task.status = TaskStatus.DONE
-            task.commit_sha = commit_sha
-            self._save_task(task)
+        # Update task in SQLite (always, even if task is None in memory)
+        # This ensures c4_tasks and c4_state stay in sync
+        self.task_store.update_status(
+            project_id,
+            task_id,
+            status="done",
+            commit_sha=commit_sha
+        )
 
         # Release scope lock
         if task and task.scope:
