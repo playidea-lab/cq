@@ -1,12 +1,32 @@
 #!/bin/bash
+# =============================================================================
 # C4 Remote Installation Script
-# Usage: curl -LsSf https://git.pilab.co.kr/pi/c4/-/raw/main/install-remote.sh | sh
-#    or: curl -LsSf https://git.pilab.co.kr/pi/c4/-/raw/main/install-remote.sh | sh -s -- --dir ~/tools/c4
+# =============================================================================
+#
+# Usage:
+#   curl -LsSf https://git.pilab.co.kr/pi/c4/-/raw/main/install-remote.sh | sh
+#
+# Options:
+#   --dir <path>   설치 경로 지정 (기본: ~/.c4)
+#   --update       기존 설치 업데이트만
+#
+# Examples:
+#   # 기본 설치 (~/.c4)
+#   curl -LsSf https://git.pilab.co.kr/pi/c4/-/raw/main/install-remote.sh | sh
+#
+#   # 경로 지정 설치
+#   curl -LsSf ... | sh -s -- --dir ~/tools/c4
+#
+#   # 업데이트만
+#   curl -LsSf ... | sh -s -- --update
+#
+# =============================================================================
 
 set -e
 
 # Default installation directory
 C4_INSTALL_DIR="${C4_DIR:-$HOME/.c4}"
+UPDATE_ONLY=false
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -15,56 +35,66 @@ while [[ $# -gt 0 ]]; do
             C4_INSTALL_DIR="$2"
             shift 2
             ;;
+        --update)
+            UPDATE_ONLY=true
+            shift
+            ;;
         *)
             echo "Unknown option: $1"
+            echo "Usage: curl ... | sh -s -- [--dir <path>] [--update]"
             exit 1
             ;;
     esac
 done
 
-CLAUDE_COMMANDS="$HOME/.claude/commands"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "🚀 C4 Remote Installer"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo ""
+echo "📁 Install directory: $C4_INSTALL_DIR"
+echo ""
 
-echo "🚀 Installing C4..."
-echo "   Install directory: $C4_INSTALL_DIR"
-
-# Check for uv
+# =============================================================================
+# Step 1: Check/Install uv
+# =============================================================================
 if ! command -v uv &> /dev/null; then
-    echo "📦 Installing uv..."
+    echo "📦 uv not found. Installing..."
     curl -LsSf https://astral.sh/uv/install.sh | sh
     export PATH="$HOME/.local/bin:$PATH"
+    echo "   ✅ uv installed"
+else
+    echo "✅ uv found"
 fi
 
-# Clone or update repository
+# =============================================================================
+# Step 2: Clone or Update repository
+# =============================================================================
 if [ -d "$C4_INSTALL_DIR" ]; then
-    echo "📥 Updating existing installation..."
-    cd "$C4_INSTALL_DIR"
-    git pull
+    if [ "$UPDATE_ONLY" = true ]; then
+        echo "📥 Updating existing installation..."
+        cd "$C4_INSTALL_DIR"
+        git pull
+        echo "   ✅ Updated"
+    else
+        echo "📥 Reinstalling (removing old installation)..."
+        rm -rf "$C4_INSTALL_DIR"
+        git clone https://git.pilab.co.kr/pi/c4.git "$C4_INSTALL_DIR"
+        echo "   ✅ Cloned"
+    fi
 else
     echo "📥 Cloning C4..."
     git clone https://git.pilab.co.kr/pi/c4.git "$C4_INSTALL_DIR"
-    cd "$C4_INSTALL_DIR"
+    echo "   ✅ Cloned"
 fi
 
-# Install dependencies
-echo "📦 Installing dependencies..."
-uv sync
+# =============================================================================
+# Step 3: Run full install.sh
+# =============================================================================
+echo ""
+echo "🔧 Running install.sh..."
+echo ""
 
-# Copy slash commands
-echo "📋 Copying slash commands..."
-mkdir -p "$CLAUDE_COMMANDS"
-cp "$C4_INSTALL_DIR/.claude/commands/c4-"*.md "$CLAUDE_COMMANDS/"
+cd "$C4_INSTALL_DIR"
+bash ./install.sh
 
-# Store install path for /c4-init
-echo "📝 Saving install path..."
-echo "$C4_INSTALL_DIR" > "$HOME/.c4-install-path"
-
-echo ""
-echo "✅ C4 installed successfully!"
-echo ""
-echo "📌 Next steps:"
-echo "   1. Restart Claude Code"
-echo "   2. cd /path/to/your/project"
-echo "   3. /c4-init"
-echo ""
-echo "💡 /c4-init will configure the MCP server for each project automatically."
-echo ""
+# install.sh already prints completion message
