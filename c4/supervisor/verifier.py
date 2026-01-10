@@ -426,6 +426,596 @@ class CliVerifier(Verifier):
 
 
 # =============================================================================
+# Browser Verifier - Uses Playwright (optional dependency)
+# =============================================================================
+
+
+@VerifierRegistry.register("browser")
+class BrowserVerifier(Verifier):
+    """Browser E2E test verifier using Playwright."""
+
+    @property
+    def verification_type(self) -> VerificationType:
+        return VerificationType.BROWSER
+
+    def verify(self, config: dict[str, Any]) -> VerificationResult:
+        """
+        Run browser E2E test with Playwright.
+
+        Config:
+            url: str - Starting URL (required)
+            steps: list - List of step dicts (optional)
+            screenshot: bool - Take screenshot at end (default: True)
+            screenshot_dir: str - Directory for screenshots (default: /tmp)
+            timeout: int - Timeout in milliseconds (default: 30000)
+            headless: bool - Run headless (default: True)
+
+        Step format:
+            - {"action": "goto", "url": "http://..."}
+            - {"action": "click", "selector": "#button"}
+            - {"action": "type", "selector": "#input", "value": "text"}
+            - {"action": "wait", "selector": ".element", "state": "visible"}
+            - {"action": "screenshot", "name": "step1.png"}
+            - {"action": "assert_text", "selector": ".msg", "text": "Success"}
+            - {"action": "assert_visible", "selector": ".element"}
+        """
+        import time
+
+        try:
+            from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout
+        except ImportError:
+            return VerificationResult(
+                type=self.verification_type.value,
+                name=config.get("name", "Browser E2E"),
+                status="skip",
+                summary="playwright not installed. Run: uv add playwright && playwright install",
+            )
+
+        url = config.get("url", "")
+        steps = config.get("steps", [])
+        take_screenshot = config.get("screenshot", True)
+        screenshot_dir = Path(config.get("screenshot_dir", "/tmp"))
+        timeout = config.get("timeout", 30000)
+        headless = config.get("headless", True)
+
+        if not url and not steps:
+            return VerificationResult(
+                type=self.verification_type.value,
+                name=config.get("name", "Browser E2E"),
+                status="error",
+                summary="No URL or steps specified",
+            )
+
+        start_time = time.time()
+        screenshot_path = None
+        step_results = []
+
+        try:
+            with sync_playwright() as p:
+                browser = p.chromium.launch(headless=headless)
+                context = browser.new_context()
+                page = context.new_page()
+                page.set_default_timeout(timeout)
+
+                # Navigate to initial URL if provided
+                if url:
+                    page.goto(url)
+                    step_results.append({"action": "goto", "url": url, "status": "ok"})
+
+                # Execute steps
+                for i, step in enumerate(steps):
+                    action = step.get("action", "")
+                    step_result = {"action": action, "index": i}
+
+                    try:
+                        if action == "goto":
+                            page.goto(step["url"])
+                            step_result["status"] = "ok"
+
+                        elif action == "click":
+                            page.click(step["selector"])
+                            step_result["status"] = "ok"
+
+                        elif action == "type":
+                            page.fill(step["selector"], step["value"])
+                            step_result["status"] = "ok"
+
+                        elif action == "wait":
+                            state = step.get("state", "visible")
+                            page.wait_for_selector(step["selector"], state=state)
+                            step_result["status"] = "ok"
+
+                        elif action == "screenshot":
+                            name = step.get("name", f"step_{i}.png")
+                            path = screenshot_dir / name
+                            page.screenshot(path=str(path))
+                            step_result["status"] = "ok"
+                            step_result["path"] = str(path)
+
+                        elif action == "assert_text":
+                            element = page.locator(step["selector"])
+                            actual_text = element.text_content()
+                            expected_text = step["text"]
+                            if expected_text in (actual_text or ""):
+                                step_result["status"] = "ok"
+                            else:
+                                step_result["status"] = "fail"
+                                step_result["expected"] = expected_text
+                                step_result["actual"] = actual_text[:100]
+
+                        elif action == "assert_visible":
+                            element = page.locator(step["selector"])
+                            if element.is_visible():
+                                step_result["status"] = "ok"
+                            else:
+                                step_result["status"] = "fail"
+                                step_result["message"] = "Element not visible"
+
+                        elif action == "press":
+                            page.keyboard.press(step["key"])
+                            step_result["status"] = "ok"
+
+                        elif action == "select":
+                            page.select_option(step["selector"], step["value"])
+                            step_result["status"] = "ok"
+
+                        else:
+                            step_result["status"] = "skip"
+                            step_result["message"] = f"Unknown action: {action}"
+
+                    except PlaywrightTimeout:
+                        step_result["status"] = "fail"
+                        step_result["message"] = "Timeout"
+                    except Exception as e:
+                        step_result["status"] = "fail"
+                        step_result["message"] = str(e)[:100]
+
+                    step_results.append(step_result)
+
+                    # Stop on first failure
+                    if step_result["status"] == "fail":
+                        break
+
+                # Take final screenshot if requested
+                if take_screenshot:
+                    screenshot_path = screenshot_dir / f"final_{int(time.time())}.png"
+                    page.screenshot(path=str(screenshot_path))
+
+                browser.close()
+
+            duration_ms = int((time.time() - start_time) * 1000)
+
+            # Check if any step failed
+            failed_steps = [s for s in step_results if s.get("status") == "fail"]
+            if failed_steps:
+                return VerificationResult(
+                    type=self.verification_type.value,
+                    name=config.get("name", "Browser E2E"),
+                    status="fail",
+                    summary=f"Step {failed_steps[0]['index']} failed: {failed_steps[0].get('message', 'assertion error')}",
+                    details={"steps": step_results},
+                    screenshot_path=screenshot_path,
+                    duration_ms=duration_ms,
+                )
+
+            return VerificationResult(
+                type=self.verification_type.value,
+                name=config.get("name", "Browser E2E"),
+                status="pass",
+                summary=f"All {len(step_results)} steps passed",
+                details={"steps": step_results},
+                screenshot_path=screenshot_path,
+                duration_ms=duration_ms,
+            )
+
+        except PlaywrightTimeout:
+            return VerificationResult(
+                type=self.verification_type.value,
+                name=config.get("name", "Browser E2E"),
+                status="fail",
+                summary=f"Browser test timed out after {timeout}ms",
+                details={"steps": step_results},
+            )
+        except Exception as e:
+            return VerificationResult(
+                type=self.verification_type.value,
+                name=config.get("name", "Browser E2E"),
+                status="error",
+                summary=f"Browser error: {e!s}",
+                details={"steps": step_results},
+            )
+
+
+# =============================================================================
+# Visual Verifier - Screenshot comparison (optional Pillow dependency)
+# =============================================================================
+
+
+@VerifierRegistry.register("visual")
+class VisualVerifier(Verifier):
+    """Visual comparison verifier using screenshot diff."""
+
+    @property
+    def verification_type(self) -> VerificationType:
+        return VerificationType.VISUAL
+
+    def verify(self, config: dict[str, Any]) -> VerificationResult:
+        """
+        Compare two screenshots for visual differences.
+
+        Config:
+            baseline: str - Path to baseline screenshot (required)
+            current: str - Path to current screenshot (required)
+            threshold: float - Difference threshold 0-1 (default: 0.05 = 5%)
+            output: str - Path to save diff image (optional)
+        """
+        try:
+            from PIL import Image, ImageChops
+            import math
+        except ImportError:
+            return VerificationResult(
+                type=self.verification_type.value,
+                name=config.get("name", "Visual Diff"),
+                status="skip",
+                summary="Pillow not installed. Run: uv add pillow",
+            )
+
+        baseline_path = config.get("baseline", "")
+        current_path = config.get("current", "")
+        threshold = config.get("threshold", 0.05)
+        output_path = config.get("output")
+
+        if not baseline_path or not current_path:
+            return VerificationResult(
+                type=self.verification_type.value,
+                name=config.get("name", "Visual Diff"),
+                status="error",
+                summary="Both baseline and current paths required",
+            )
+
+        try:
+            baseline = Image.open(baseline_path)
+            current = Image.open(current_path)
+
+            # Ensure same size
+            if baseline.size != current.size:
+                return VerificationResult(
+                    type=self.verification_type.value,
+                    name=config.get("name", "Visual Diff"),
+                    status="fail",
+                    summary=f"Size mismatch: {baseline.size} vs {current.size}",
+                    details={
+                        "baseline_size": baseline.size,
+                        "current_size": current.size,
+                    },
+                )
+
+            # Calculate difference
+            diff = ImageChops.difference(baseline, current)
+            diff_data = list(diff.getdata())
+
+            # Calculate difference percentage
+            total_pixels = len(diff_data)
+            diff_sum = sum(sum(pixel) if isinstance(pixel, tuple) else pixel for pixel in diff_data)
+            max_diff = total_pixels * 255 * (3 if baseline.mode == "RGB" else 1)
+            diff_percent = diff_sum / max_diff if max_diff > 0 else 0
+
+            # Save diff image if requested
+            if output_path:
+                diff.save(output_path)
+
+            if diff_percent > threshold:
+                return VerificationResult(
+                    type=self.verification_type.value,
+                    name=config.get("name", "Visual Diff"),
+                    status="fail",
+                    summary=f"Visual difference {diff_percent:.1%} exceeds threshold {threshold:.1%}",
+                    details={
+                        "diff_percent": round(diff_percent, 4),
+                        "threshold": threshold,
+                    },
+                    screenshot_path=Path(output_path) if output_path else None,
+                )
+
+            return VerificationResult(
+                type=self.verification_type.value,
+                name=config.get("name", "Visual Diff"),
+                status="pass",
+                summary=f"Visual difference {diff_percent:.1%} within threshold",
+                details={"diff_percent": round(diff_percent, 4)},
+            )
+
+        except FileNotFoundError as e:
+            return VerificationResult(
+                type=self.verification_type.value,
+                name=config.get("name", "Visual Diff"),
+                status="error",
+                summary=f"File not found: {e!s}",
+            )
+        except Exception as e:
+            return VerificationResult(
+                type=self.verification_type.value,
+                name=config.get("name", "Visual Diff"),
+                status="error",
+                summary=f"Visual comparison error: {e!s}",
+            )
+
+
+# =============================================================================
+# Metrics Verifier - ML/DL performance metrics
+# =============================================================================
+
+
+@VerifierRegistry.register("metrics")
+class MetricsVerifier(Verifier):
+    """Performance metrics verifier for ML/DL models."""
+
+    @property
+    def verification_type(self) -> VerificationType:
+        return VerificationType.METRICS
+
+    def verify(self, config: dict[str, Any]) -> VerificationResult:
+        """
+        Verify performance metrics against thresholds.
+
+        Config:
+            metrics_file: str - Path to JSON file with metrics (optional)
+            metrics: dict - Inline metrics dict (optional)
+            thresholds: dict - Metric thresholds (required)
+                - {metric_name: {"min": value} or {"max": value} or {"eq": value}}
+
+        Example:
+            thresholds:
+                accuracy: {"min": 0.95}
+                loss: {"max": 0.1}
+                inference_time_ms: {"max": 100}
+        """
+        import json
+
+        metrics_file = config.get("metrics_file")
+        metrics = config.get("metrics", {})
+        thresholds = config.get("thresholds", {})
+
+        if not thresholds:
+            return VerificationResult(
+                type=self.verification_type.value,
+                name=config.get("name", "Metrics Check"),
+                status="error",
+                summary="No thresholds specified",
+            )
+
+        # Load metrics from file if specified
+        if metrics_file:
+            try:
+                with open(metrics_file) as f:
+                    metrics = json.load(f)
+            except FileNotFoundError:
+                return VerificationResult(
+                    type=self.verification_type.value,
+                    name=config.get("name", "Metrics Check"),
+                    status="error",
+                    summary=f"Metrics file not found: {metrics_file}",
+                )
+            except json.JSONDecodeError as e:
+                return VerificationResult(
+                    type=self.verification_type.value,
+                    name=config.get("name", "Metrics Check"),
+                    status="error",
+                    summary=f"Invalid JSON in metrics file: {e!s}",
+                )
+
+        if not metrics:
+            return VerificationResult(
+                type=self.verification_type.value,
+                name=config.get("name", "Metrics Check"),
+                status="error",
+                summary="No metrics provided",
+            )
+
+        # Check each threshold
+        failures = []
+        passes = []
+
+        for metric_name, threshold in thresholds.items():
+            if metric_name not in metrics:
+                failures.append({
+                    "metric": metric_name,
+                    "reason": "missing",
+                })
+                continue
+
+            value = metrics[metric_name]
+
+            if "min" in threshold and value < threshold["min"]:
+                failures.append({
+                    "metric": metric_name,
+                    "value": value,
+                    "threshold": f"min {threshold['min']}",
+                    "reason": f"{value} < {threshold['min']}",
+                })
+            elif "max" in threshold and value > threshold["max"]:
+                failures.append({
+                    "metric": metric_name,
+                    "value": value,
+                    "threshold": f"max {threshold['max']}",
+                    "reason": f"{value} > {threshold['max']}",
+                })
+            elif "eq" in threshold and value != threshold["eq"]:
+                failures.append({
+                    "metric": metric_name,
+                    "value": value,
+                    "threshold": f"eq {threshold['eq']}",
+                    "reason": f"{value} != {threshold['eq']}",
+                })
+            else:
+                passes.append({
+                    "metric": metric_name,
+                    "value": value,
+                })
+
+        if failures:
+            return VerificationResult(
+                type=self.verification_type.value,
+                name=config.get("name", "Metrics Check"),
+                status="fail",
+                summary=f"{len(failures)} metric(s) failed: {failures[0]['metric']}",
+                details={
+                    "failures": failures,
+                    "passes": passes,
+                    "metrics": metrics,
+                },
+            )
+
+        return VerificationResult(
+            type=self.verification_type.value,
+            name=config.get("name", "Metrics Check"),
+            status="pass",
+            summary=f"All {len(passes)} metrics within thresholds",
+            details={
+                "passes": passes,
+                "metrics": metrics,
+            },
+        )
+
+
+# =============================================================================
+# Dryrun Verifier - Dry-run commands (terraform plan, etc.)
+# =============================================================================
+
+
+@VerifierRegistry.register("dryrun")
+class DryrunVerifier(Verifier):
+    """Dry-run command verifier for infrastructure changes."""
+
+    @property
+    def verification_type(self) -> VerificationType:
+        return VerificationType.DRYRUN
+
+    def verify(self, config: dict[str, Any]) -> VerificationResult:
+        """
+        Run a dry-run command and verify output.
+
+        Config:
+            command: str - Dry-run command (required)
+            success_patterns: list[str] - Patterns indicating success (optional)
+            failure_patterns: list[str] - Patterns indicating failure (optional)
+            timeout: int - Timeout in seconds (default: 120)
+            cwd: str - Working directory (optional)
+
+        Example:
+            command: "terraform plan -no-color"
+            success_patterns: ["No changes", "Plan:"]
+            failure_patterns: ["Error:", "Failed"]
+        """
+        import subprocess
+        import time
+        import re
+
+        command = config.get("command", "")
+        success_patterns = config.get("success_patterns", [])
+        failure_patterns = config.get("failure_patterns", ["Error:", "error:", "FAILED", "failed"])
+        timeout = config.get("timeout", 120)
+        cwd = config.get("cwd")
+
+        if not command:
+            return VerificationResult(
+                type=self.verification_type.value,
+                name=config.get("name", "Dry-run Check"),
+                status="error",
+                summary="No command specified",
+            )
+
+        start_time = time.time()
+
+        try:
+            result = subprocess.run(
+                command,
+                shell=True,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                cwd=cwd,
+            )
+            duration_ms = int((time.time() - start_time) * 1000)
+
+            output = result.stdout + result.stderr
+
+            # Check for failure patterns first
+            for pattern in failure_patterns:
+                if re.search(pattern, output):
+                    return VerificationResult(
+                        type=self.verification_type.value,
+                        name=config.get("name", "Dry-run Check"),
+                        status="fail",
+                        summary=f"Found failure pattern: {pattern}",
+                        details={
+                            "exit_code": result.returncode,
+                            "output": output[:2000],
+                            "matched_pattern": pattern,
+                        },
+                        duration_ms=duration_ms,
+                    )
+
+            # Check for success patterns if specified
+            if success_patterns:
+                matched = [p for p in success_patterns if re.search(p, output)]
+                if not matched:
+                    return VerificationResult(
+                        type=self.verification_type.value,
+                        name=config.get("name", "Dry-run Check"),
+                        status="fail",
+                        summary="No success patterns matched",
+                        details={
+                            "exit_code": result.returncode,
+                            "output": output[:2000],
+                            "expected_patterns": success_patterns,
+                        },
+                        duration_ms=duration_ms,
+                    )
+
+            # Check exit code
+            if result.returncode != 0:
+                return VerificationResult(
+                    type=self.verification_type.value,
+                    name=config.get("name", "Dry-run Check"),
+                    status="fail",
+                    summary=f"Exit code {result.returncode}",
+                    details={
+                        "exit_code": result.returncode,
+                        "output": output[:2000],
+                    },
+                    duration_ms=duration_ms,
+                )
+
+            return VerificationResult(
+                type=self.verification_type.value,
+                name=config.get("name", "Dry-run Check"),
+                status="pass",
+                summary="Dry-run completed successfully",
+                details={
+                    "exit_code": result.returncode,
+                    "output": output[:1000],
+                },
+                duration_ms=duration_ms,
+            )
+
+        except subprocess.TimeoutExpired:
+            return VerificationResult(
+                type=self.verification_type.value,
+                name=config.get("name", "Dry-run Check"),
+                status="fail",
+                summary=f"Command timed out after {timeout}s",
+            )
+        except Exception as e:
+            return VerificationResult(
+                type=self.verification_type.value,
+                name=config.get("name", "Dry-run Check"),
+                status="error",
+                summary=f"Execution error: {e!s}",
+            )
+
+
+# =============================================================================
 # Verification Runner
 # =============================================================================
 
