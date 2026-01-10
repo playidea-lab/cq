@@ -31,10 +31,86 @@ app = typer.Typer(
 c4_app = typer.Typer(
     name="c4",
     help="C4 Project management",
-    no_args_is_help=True,
+    no_args_is_help=False,  # Allow running without subcommand
+    invoke_without_command=True,
 )
 
 console = Console()
+
+
+# =============================================================================
+# c4 Smart Entry Point (no subcommand)
+# =============================================================================
+
+
+@c4_app.callback()
+def c4_main(
+    ctx: typer.Context,
+    path: Path = typer.Option(
+        None,
+        "--path",
+        "-p",
+        help="Project directory (defaults to current directory)",
+    ),
+):
+    """C4 - AI Project Orchestration.
+
+    Without subcommand: auto-init if needed, then start Claude Code.
+
+    Examples:
+        c4                    # Auto-init + start Claude Code
+        c4 --path /my/project # Specify project path
+        c4 status             # Show status (subcommand)
+        c4 init               # Just initialize (subcommand)
+    """
+    # If a subcommand is invoked, let it handle things
+    if ctx.invoked_subcommand is not None:
+        return
+
+    # Resolve project path
+    project_path = (path or Path.cwd()).resolve()
+    c4_dir = project_path / ".c4"
+
+    # Step 1: Auto-initialize if needed
+    if not c4_dir.exists():
+        console.print(f"[yellow]Initializing C4 in {project_path}...[/yellow]")
+        console.print()
+
+        # Temporarily set env for init
+        old_env = os.environ.get("C4_PROJECT_ROOT")
+        os.environ["C4_PROJECT_ROOT"] = str(project_path)
+
+        try:
+            # Call init logic directly (without invoking CLI)
+            daemon = C4Daemon()
+            daemon.initialize()
+            _create_mcp_config(project_path)
+            _create_project_settings(project_path)
+            install_all_hooks()
+
+            console.print("[green]✅ C4 initialized![/green]")
+            console.print()
+        finally:
+            if old_env is not None:
+                os.environ["C4_PROJECT_ROOT"] = old_env
+            elif "C4_PROJECT_ROOT" in os.environ:
+                del os.environ["C4_PROJECT_ROOT"]
+    else:
+        console.print(f"[green]C4 already initialized in {project_path}[/green]")
+        console.print()
+
+    # Step 2: Start Claude Code
+    console.print("[blue]Starting Claude Code...[/blue]")
+
+    # Change to project directory and start Claude
+    os.chdir(project_path)
+
+    try:
+        subprocess.run(["claude"], check=False)
+    except FileNotFoundError:
+        console.print("[red]Error:[/red] 'claude' command not found")
+        console.print("Make sure Claude Code CLI is installed")
+        raise typer.Exit(1)
 
 
 # =============================================================================

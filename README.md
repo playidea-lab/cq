@@ -62,29 +62,41 @@ That's it! The script will:
 - Copy slash commands to `~/.claude/commands/`
 - Configure MCP server in `~/.claude.json`
 
-### 2. Restart Claude Code
-
-Close and reopen Claude Code to load the new configuration.
-
-### 3. Initialize Your Project
+### 2. Start a Project (One Command)
 
 ```bash
 cd /path/to/your/project
-claude
+c4
 ```
+
+This single command:
+
+- Auto-initializes C4 if not already set up
+- Starts Claude Code with MCP server loaded
+- No restart needed!
+
+### 3. Start Working
 
 In Claude Code:
-```
-/c4-init
-```
 
-### 4. Start Working
-
-```
+```text
 /c4-plan       # Interpret docs and create tasks
 /c4-run        # Start automated execution
 /c4-status     # Check progress anytime
 ```
+
+<details>
+<summary>Alternative: Initialize from within Claude Code</summary>
+
+If already in Claude Code session:
+
+```text
+/c4-init
+```
+
+Note: Requires Claude Code restart to load MCP server.
+
+</details>
 
 <details>
 <summary>Alternative: Clone & Install</summary>
