@@ -5,9 +5,12 @@ C4 (Codex-Claude-Completion Control) is an AI project orchestration system that 
 ## Key Features
 
 - **State Machine**: Structured workflow INIT → DISCOVERY → DESIGN → PLAN → EXECUTE ↔ CHECKPOINT → COMPLETE
-- **MCP Server**: Native integration with Claude Code via Model Context Protocol
+- **MCP Server**: Native integration with Claude Code via Model Context Protocol (19 tools)
 - **Multi-Worker**: Parallel task execution with SQLite WAL mode (race-condition free, 30-min stale recovery)
 - **Agent Routing**: Domain-based agent selection with chaining (Phase 4)
+- **EARS Requirements**: 5-pattern requirements gathering (Ubiquitous, State/Event-driven, Optional, Unwanted)
+- **ADR (Architecture Decision Records)**: Structured design decision management
+- **Verification System**: 6 verifiers (HTTP, CLI, Browser, Visual, Metrics, Dryrun)
 - **Checkpoint Gates**: Human/supervisor review points between phases
 - **Auto-Validation**: Built-in lint and test runners
 - **Pluggable Architecture**: Extensible StateStore and SupervisorBackend
@@ -46,7 +49,7 @@ C4 (Codex-Claude-Completion Control) is an AI project orchestration system that 
 
 | 문서 | 설명 |
 |------|------|
-| [MCP 도구 레퍼런스](docs/api/MCP-도구-레퍼런스.md) | 7개 MCP 도구 상세 스펙 |
+| [MCP 도구 레퍼런스](docs/api/MCP-도구-레퍼런스.md) | 19개 MCP 도구 상세 스펙 |
 
 ---
 

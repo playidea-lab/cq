@@ -420,20 +420,36 @@ uv run pytest tests/integration/test_agent_routing.py -v
 
 ---
 
-## Phase 5: Enhanced Discovery & Design (계획)
+## Phase 5: Enhanced Discovery & Design ✅
 
-> **상태**: 📋 계획
-> **예상 버전**: v0.5.0
+> **완료일**: 2026-01-10
+> **버전**: v0.5.0
 
 ### 목표
 
-자동화된 요구사항 수집 및 아키텍처 설계
+자동화된 요구사항 수집, 아키텍처 설계, 런타임 검증
 
-### 예상 구현
+### 구현 내용
 
-#### 5.1 EARS Requirements
+#### 5.1 EARS Requirements (`c4/discovery/specs.py`)
 
-**Easy Approach to Requirements Syntax** 기반:
+**Easy Approach to Requirements Syntax** 기반 요구사항 수집:
+
+```python
+class EARSPattern(str, Enum):
+    UBIQUITOUS = "ubiquitous"      # The system shall...
+    STATE_DRIVEN = "state-driven"  # While X, the system shall...
+    EVENT_DRIVEN = "event-driven"  # When X, the system shall...
+    OPTIONAL = "optional"          # Where X, the system shall...
+    UNWANTED = "unwanted"          # The system shall not...
+
+class EARSRequirement(BaseModel):
+    id: str
+    pattern: EARSPattern
+    text: str
+    rationale: str | None = None
+    priority: str = "should"  # must, should, could
+```
 
 | 타입 | 패턴 | 예시 |
 |------|------|------|
@@ -443,52 +459,160 @@ uv run pytest tests/integration/test_agent_routing.py -v
 | Optional | Where X, the system shall... | "Where 2FA enabled, require code" |
 | Unwanted | The system shall not... | "The system shall not store plain-text" |
 
-#### 5.2 ADR (Architecture Decision Records)
+#### 5.2 ADR (Architecture Decision Records) (`c4/discovery/design.py`)
 
+```python
+class DesignDecision(BaseModel):
+    id: str                              # ADR-001
+    question: str                        # 무엇을 결정해야 하는가?
+    decision: str                        # 결정 내용
+    rationale: str                       # 이유
+    alternatives_considered: list[str]   # 검토한 대안들
+    timestamp: datetime
+
+class ArchitectureOption(BaseModel):
+    name: str
+    description: str
+    pros: list[str]
+    cons: list[str]
+    estimated_effort: str | None = None
+```
+
+**YAML 형식**:
 ```yaml
 decisions:
   - id: ADR-001
-    title: "Choose authentication method"
-    context: "Need stateless auth"
-    options:
-      - name: JWT
-        pros: ["Stateless"]
-        cons: ["Cannot revoke"]
-      - name: Session
-        pros: ["Easy revoke"]
-        cons: ["Stateful"]
-    decision: JWT
-    rationale: "Microservices architecture"
+    question: "Choose authentication method"
+    decision: "Use JWT"
+    rationale: "Microservices architecture requires stateless auth"
+    alternatives_considered: ["Session cookies", "OAuth only"]
 ```
 
-#### 5.3 Verification System
+#### 5.3 Component Specification (`c4/discovery/design.py`)
 
-```yaml
-verifications:
-  - type: http
-    name: "API Health"
-    config:
-      url: "/health"
-      expected_status: 200
-  - type: command
-    name: "DB Check"
-    config:
-      command: "uv run alembic current"
+```python
+class ComponentDesign(BaseModel):
+    name: str
+    type: str                    # service, repository, controller
+    responsibilities: list[str]
+    interfaces: list[dict]       # API 인터페이스
+    dependencies: list[str]
+    notes: str | None = None
+
+class DataFlowStep(BaseModel):
+    from_component: str
+    to_component: str
+    description: str
+    data_type: str | None = None
 ```
 
-### 예상 파일
+#### 5.4 Verification System (`c4/supervisor/verifier.py`)
+
+**6개 Verifier 구현**:
+
+| Verifier | 타입 | 설명 |
+|----------|------|------|
+| `HttpVerifier` | `http` | API 헬스체크, 응답 검증 |
+| `CliVerifier` | `cli` | 명령어 실행 및 출력 검증 |
+| `BrowserVerifier` | `browser` | Playwright E2E 테스트 |
+| `VisualVerifier` | `visual` | 스크린샷 비교 |
+| `MetricsVerifier` | `metrics` | ML/DL 성능 지표 검증 |
+| `DryrunVerifier` | `dryrun` | Terraform plan 등 dry-run |
+
+```python
+# HTTP Verifier 예시
+config = {
+    "url": "http://localhost:8000/health",
+    "method": "GET",
+    "expected_status": 200,
+    "expected_body": "ok"
+}
+result = HttpVerifier().verify(config)
+
+# CLI Verifier 예시
+config = {
+    "command": "uv run pytest tests/unit",
+    "expected_exit_code": 0
+}
+result = CliVerifier().verify(config)
+
+# Metrics Verifier 예시
+config = {
+    "metrics": {"accuracy": 0.95, "latency_ms": 50},
+    "thresholds": {
+        "accuracy": {"min": 0.90},
+        "latency_ms": {"max": 100}
+    }
+}
+result = MetricsVerifier().verify(config)
+```
+
+**도메인별 기본 검증**:
+```python
+DOMAIN_DEFAULT_VERIFICATIONS = {
+    "web-frontend": [{"type": "browser"}, {"type": "visual"}],
+    "web-backend": [{"type": "http"}, {"type": "cli"}],
+    "ml-dl": [{"type": "cli"}, {"type": "metrics"}],
+    "infra": [{"type": "cli"}, {"type": "dryrun"}],
+}
+```
+
+#### 5.5 State Machine 확장
+
+DISCOVERY와 DESIGN 상태 추가:
+
+```
+INIT → DISCOVERY → DESIGN → PLAN → EXECUTE ↔ CHECKPOINT → COMPLETE
+```
+
+**새로운 전이**:
+- `discovery_complete`: DISCOVERY → DESIGN
+- `design_approved`: DESIGN → PLAN
+- `design_rejected`: DESIGN → DISCOVERY (재인터뷰)
+- `redesign`: CHECKPOINT → DESIGN (설계 재검토)
+
+#### 5.6 MCP 도구 (10개 추가)
+
+| 도구 | 설명 |
+|------|------|
+| `c4_save_spec` | Feature 명세 저장 |
+| `c4_list_specs` | 모든 Feature 명세 목록 |
+| `c4_get_spec` | Feature 명세 조회 |
+| `c4_add_verification` | Feature에 검증 추가 |
+| `c4_get_feature_verifications` | Feature 검증 목록 |
+| `c4_discovery_complete` | Discovery → Design 전환 |
+| `c4_save_design` | Design 저장 |
+| `c4_get_design` | Design 조회 |
+| `c4_list_designs` | 모든 Design 목록 |
+| `c4_design_complete` | Design → Plan 전환 |
+
+### 파일
 
 ```
 c4/
 ├── discovery/
-│   ├── ears.py           # EARS 파서
-│   └── requirements.py   # 요구사항 모델
-├── design/
-│   ├── adr.py            # ADR 생성기
-│   └── components.py     # 컴포넌트 설계
-└── verification/
-    ├── http.py           # HTTP 검증
-    └── command.py        # 명령어 검증
+│   ├── __init__.py
+│   ├── models.py      # Domain, DomainSignal, ProjectOverview
+│   ├── specs.py       # EARSPattern, EARSRequirement, FeatureSpec, SpecStore
+│   └── design.py      # ArchitectureOption, ComponentDesign, DesignDecision, DesignStore
+├── supervisor/
+│   └── verifier.py    # VerifierRegistry, HttpVerifier, CliVerifier, BrowserVerifier, ...
+└── mcp_server.py      # 10개 Phase 5 MCP 도구
+
+tests/
+├── unit/
+│   ├── test_discovery.py  # EARS, FeatureSpec, SpecStore 테스트
+│   └── test_verifier.py   # 6개 Verifier 테스트
+```
+
+### 테스트
+
+```bash
+# Discovery 테스트 (30개)
+uv run pytest tests/unit/test_discovery.py -v
+
+# Verifier 테스트 (46개)
+uv run pytest tests/unit/test_verifier.py -v
 ```
 
 ---
@@ -537,6 +661,6 @@ c4/
 | v0.2.0 | 2 | Multi-Worker | 2026-01 |
 | v0.3.0 | 3 | Auto Supervisor | 2026-01 |
 | v0.4.0 | 4 | Agent Routing | 2026-01-10 |
-| v0.5.0 | 5 | Discovery & Design | (계획) |
+| v0.5.0 | 5 | Discovery & Design | 2026-01-10 |
 | v0.6.0 | 6 | Team Collaboration | (계획) |
 | v1.0.0 | 7 | C4 Cloud | (계획) |

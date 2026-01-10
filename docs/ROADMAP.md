@@ -1,15 +1,18 @@
 # C4 Roadmap
 
-## Current Version: v0.4.0 (Agent Routing)
+## Current Version: v0.5.0 (Discovery & Design)
 
-현재 버전은 **도메인 기반 에이전트 라우팅**을 지원합니다.
+현재 버전은 **자동화된 요구사항 수집, 아키텍처 설계, 런타임 검증**을 지원합니다.
 
 ### 지원 기능
 
-- MCP Server (Claude Code 통합) - 9개 도구
+- MCP Server (Claude Code 통합) - 19개 도구
 - State Machine (INIT → DISCOVERY → DESIGN → PLAN → EXECUTE ↔ CHECKPOINT → COMPLETE)
 - Multi-Worker (SQLite WAL 모드, race-condition free)
 - Agent Routing (Phase 4) - 도메인별 에이전트 자동 선택 및 체이닝
+- **EARS Requirements** - 5가지 패턴 기반 요구사항 수집
+- **ADR (Architecture Decision Records)** - 설계 결정 관리
+- **Verification System** - 6가지 Verifier (HTTP, CLI, Browser, Visual, Metrics, Dryrun)
 - Validation Runner (lint, unit tests)
 - Checkpoint System (APPROVE, REQUEST_CHANGES, REPLAN, REDESIGN)
 - Slash Commands (10개)
@@ -47,7 +50,7 @@
 - Stop Hook (작업 완료까지 유지)
 - Checkpoint Queue / Repair Queue
 
-### Phase 4: Agent Routing ✅ (Current)
+### Phase 4: Agent Routing ✅
 
 **목표**: 도메인별 특화 에이전트 자동 선택
 
@@ -69,15 +72,30 @@
 | library | python-pro | python → docs → test → reviewer |
 | unknown | general-purpose | general → reviewer |
 
----
+### Phase 5: Enhanced Discovery & Design ✅ (Current)
 
-## Phase 5: Enhanced Discovery & Design (계획)
+**목표**: 자동화된 요구사항 수집, 아키텍처 설계, 런타임 검증
 
-**목표**: 자동화된 요구사항 수집 및 아키텍처 설계
+**구현 완료**:
+- **EARS Requirements** (`c4/discovery/specs.py`)
+  - 5가지 패턴: Ubiquitous, State-driven, Event-driven, Optional, Unwanted
+  - SpecStore로 영속화
+- **ADR (Architecture Decision Records)** (`c4/discovery/design.py`)
+  - DesignDecision, ArchitectureOption 모델
+  - DesignStore로 영속화
+- **Component Specification**
+  - ComponentDesign, DataFlowStep 모델
+- **Verification System** (`c4/supervisor/verifier.py`)
+  - 6가지 Verifier: HTTP, CLI, Browser, Visual, Metrics, Dryrun
+  - VerifierRegistry로 플러그인 관리
+  - 도메인별 기본 검증 자동 설정
+- **MCP 도구** (10개 추가)
+  - `c4_save_spec`, `c4_list_specs`, `c4_get_spec`
+  - `c4_add_verification`, `c4_get_feature_verifications`
+  - `c4_discovery_complete`, `c4_design_complete`
+  - `c4_save_design`, `c4_get_design`, `c4_list_designs`
 
-### 5.1 EARS Requirements Gathering
-
-**Easy Approach to Requirements Syntax** 기반 요구사항 수집:
+**EARS 패턴 예시**:
 
 ```yaml
 # .c4/specs/{feature}/requirements.yaml
@@ -95,51 +113,7 @@ requirements:
     text: "The system shall not store plain-text passwords"
 ```
 
-### 5.2 Architecture Decision Records
-
-자동 ADR 생성 및 관리:
-
-```yaml
-# .c4/specs/{feature}/design.yaml
-architecture:
-  decisions:
-    - id: ADR-001
-      title: "Use JWT for authentication"
-      context: "Need stateless auth for microservices"
-      options:
-        - name: JWT
-          pros: ["Stateless", "Scalable"]
-          cons: ["Token size", "Cannot revoke"]
-        - name: Session
-          pros: ["Simple", "Easy revoke"]
-          cons: ["Stateful", "Scaling issues"]
-      decision: JWT
-      rationale: "Microservices architecture requires stateless auth"
-```
-
-### 5.3 Component Specification
-
-컴포넌트 설계 자동화:
-
-```yaml
-components:
-  - name: AuthService
-    type: service
-    responsibilities:
-      - "User authentication"
-      - "Token management"
-    dependencies:
-      - UserRepository
-      - TokenStore
-    interfaces:
-      - name: authenticate
-        input: { email: string, password: string }
-        output: { token: string, user: User }
-```
-
-### 5.4 Verification System
-
-체크포인트 시 자동 검증:
+**Verification 예시**:
 
 ```yaml
 # config.yaml
@@ -151,23 +125,23 @@ verifications:
       config:
         url: "http://localhost:8000/health"
         expected_status: 200
-    - type: command
-      name: "DB Migration"
+    - type: cli
+      name: "Unit Tests"
       config:
-        command: "uv run alembic current"
-        expected_output: "head"
+        command: "uv run pytest tests/unit"
+        expected_exit_code: 0
+    - type: metrics
+      name: "Model Performance"
+      config:
+        metrics: {"accuracy": 0.95}
+        thresholds: {"accuracy": {"min": 0.90}}
 ```
 
-### 예상 구현 항목
-
-| 기능 | 설명 | 우선순위 |
-|------|------|----------|
-| EARS Parser | 요구사항 템플릿 및 검증 | P0 |
-| ADR Generator | 아키텍처 결정 자동 기록 | P0 |
-| Component Designer | 컴포넌트 설계 템플릿 | P1 |
-| HTTP Verifier | API 헬스체크 | P1 |
-| Command Verifier | 명령어 기반 검증 | P1 |
-| Design Reviewer | 설계 품질 검토 | P2 |
+**테스트**:
+```bash
+uv run pytest tests/unit/test_discovery.py tests/unit/test_verifier.py -v
+# 76개 테스트 통과
+```
 
 ---
 
@@ -247,14 +221,14 @@ class StateStore(Protocol):
 ## Migration Path
 
 ```text
-v0.1-0.3        v0.4 (현재)       v0.5            v0.6+
+v0.1-0.3        v0.4           v0.5 (현재)     v0.6+
     │               │               │               │
-    │  Multi-Worker │  Agent Routing│  Team         │
-    │  SQLite       │  + Chaining   │  Collaboration│
+    │  Multi-Worker │  Agent Routing│  Discovery    │
+    │  SQLite       │  + Chaining   │  + Verifier   │
     ▼               ▼               ▼               ▼
 ┌─────────┐   ┌─────────┐    ┌─────────┐    ┌─────────┐
-│ Local   │──▶│ Agent   │───▶│ Supabase│───▶│ Cloud   │
-│ Files   │   │ Routing │    │ / Redis │    │ Managed │
+│ Local   │──▶│ Agent   │───▶│ EARS +  │───▶│ Cloud   │
+│ Files   │   │ Routing │    │ ADR     │    │ Managed │
 └─────────┘   └─────────┘    └─────────┘    └─────────┘
 ```
 
@@ -268,9 +242,9 @@ v0.1-0.3        v0.4 (현재)       v0.5            v0.6+
 | Multi-Worker | P0 | ✅ 완료 |
 | Auto Supervisor | P0 | ✅ 완료 |
 | Agent Routing | P0 | ✅ 완료 |
-| 문서화 | P0 | 🔄 진행중 |
-| EARS Requirements | P1 | 📋 Phase 5 |
-| ADR Generator | P1 | 📋 Phase 5 |
-| Verification System | P1 | 📋 Phase 5 |
-| Team Collaboration | P2 | 📋 Phase 6 |
-| Cloud API | P3 | 📋 Phase 7 |
+| EARS Requirements | P0 | ✅ 완료 |
+| ADR Generator | P0 | ✅ 완료 |
+| Verification System | P0 | ✅ 완료 |
+| 문서화 | P0 | ✅ 완료 |
+| Team Collaboration | P1 | 📋 Phase 6 |
+| Cloud API | P2 | 📋 Phase 7 |
