@@ -431,7 +431,7 @@ class C4Daemon:
     def c4_status(self) -> dict[str, Any]:
         """Get current C4 project status"""
         if self.state_machine is None:
-            return {"error": "C4 not initialized", "initialized": False}
+            return {"success": False, "error": "C4 not initialized", "initialized": False}
 
         state = self.state_machine.state
         return {
@@ -1140,7 +1140,7 @@ class C4Daemon:
         This starts the worker loop execution.
         """
         if self.state_machine is None:
-            return {"error": "C4 not initialized", "success": False}
+            return {"success": False, "error": "C4 not initialized"}
 
         state = self.state_machine.state
         current_status = state.status.value if state.status else "unknown"
@@ -1148,8 +1148,8 @@ class C4Daemon:
         # Check if transition is valid
         if not self.state_machine.can_transition("c4_run"):
             return {
-                "error": f"Cannot start from current state: {current_status}",
                 "success": False,
+                "error": f"Cannot start from current state: {current_status}",
                 "current_status": current_status,
                 "hint": "Must be in PLAN or HALTED state to start execution",
             }
