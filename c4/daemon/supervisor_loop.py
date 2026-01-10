@@ -9,14 +9,10 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from ..mcp_server import C4Daemon
 
+from ..constants import REPAIR_PREFIX, WORKER_STALE_TIMEOUT_SEC
 from ..supervisor import Supervisor, SupervisorError
 
 logger = logging.getLogger(__name__)
-
-
-# Default stale worker timeout: 30 minutes (1800 seconds)
-# This is synchronized with scope_lock_ttl_sec for consistency
-WORKER_STALE_TIMEOUT_SEC = 1800
 
 
 class SupervisorLoop:
@@ -282,7 +278,7 @@ class SupervisorLoop:
 
             if guidance:
                 # Create new task with supervisor guidance
-                repair_task_id = f"REPAIR-{item.task_id}"
+                repair_task_id = f"{REPAIR_PREFIX}{item.task_id}"
                 self.daemon.c4_add_todo(
                     task_id=repair_task_id,
                     title=f"Fix blocked task {item.task_id}",

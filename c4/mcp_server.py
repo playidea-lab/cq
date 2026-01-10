@@ -10,6 +10,7 @@ from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import TextContent, Tool
 
+from .constants import MAX_REPAIR_DEPTH, REPAIR_PREFIX, REPAIR_PREFIX_LEN
 from .daemon import SupervisorLoopManager, WorkerManager
 from .discovery import (
     DesignStore,
@@ -1061,15 +1062,14 @@ class C4Daemon:
         # Use prefix-based check to avoid false positives like "MY-REPAIR-FEATURE"
         repair_depth = 0
         temp_id = task_id
-        while temp_id.startswith("REPAIR-"):
+        while temp_id.startswith(REPAIR_PREFIX):
             repair_depth += 1
-            temp_id = temp_id[7:]  # len("REPAIR-") = 7
+            temp_id = temp_id[REPAIR_PREFIX_LEN:]
 
-        max_repair_depth = 2
-        if repair_depth >= max_repair_depth:
+        if repair_depth >= MAX_REPAIR_DEPTH:
             return {
                 "success": False,
-                "error": f"Max repair nesting exceeded ({repair_depth} >= {max_repair_depth})",
+                "error": f"Max repair nesting exceeded ({repair_depth} >= {MAX_REPAIR_DEPTH})",
                 "message": f"Task {task_id} has already been repaired {repair_depth} times. Manual intervention required.",
                 "task_id": task_id,
             }
