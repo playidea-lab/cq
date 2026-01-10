@@ -34,6 +34,7 @@ from .models import (
 )
 from .state_machine import StateMachine, StateTransitionError
 from .store import SQLiteLockStore, SQLiteStateStore, SQLiteTaskStore, StateStore
+from .supervisor.agent_router import get_recommended_agent
 from .validation import ValidationRunner
 
 
@@ -278,6 +279,45 @@ class C4Daemon:
                 # Don't fail tool calls if heartbeat fails
                 pass
 
+    def _get_effective_domain(self, task: Task) -> str | None:
+        """
+        Get effective domain for a task (Phase 4: Agent routing).
+
+        Priority:
+        1. Task-specific domain (task.domain)
+        2. Project config domain (self.config.domain)
+        3. None (will use 'unknown' in agent routing)
+
+        Returns:
+            Domain string or None
+        """
+        # Task-specific domain takes priority
+        if task.domain:
+            return task.domain
+
+        # Fall back to project config domain
+        if self._config and self._config.domain:
+            return self._config.domain
+
+        return None
+
+    def _get_agent_routing(self, task: Task) -> dict[str, Any]:
+        """
+        Get agent routing information for a task (Phase 4).
+
+        Returns:
+            Dict with agent routing fields for TaskAssignment
+        """
+        domain = self._get_effective_domain(task)
+        agent_config = get_recommended_agent(domain)
+
+        return {
+            "recommended_agent": agent_config.primary,
+            "agent_chain": agent_config.chain,
+            "domain": domain,
+            "handoff_instructions": agent_config.handoff_instructions,
+        }
+
     @property
     def supervisor_loop_manager(self) -> SupervisorLoopManager:
         """Get supervisor loop manager, creating if necessary"""
@@ -503,6 +543,9 @@ class C4Daemon:
                             self.state_machine.save_state()
                             continue
 
+                    # Get agent routing info (Phase 4)
+                    agent_routing = self._get_agent_routing(task)
+
                     return TaskAssignment(
                         task_id=task_id,
                         title=task.title,
@@ -510,6 +553,7 @@ class C4Daemon:
                         dod=task.dod,
                         validations=task.validations,
                         branch=task.branch or "",
+                        **agent_routing,
                     )
 
         # Find available task from pending
@@ -601,6 +645,9 @@ class C4Daemon:
                 },
             )
 
+            # Get agent routing info (Phase 4)
+            agent_routing = self._get_agent_routing(task)
+
             return TaskAssignment(
                 task_id=task_id,
                 title=task.title,
@@ -608,6 +655,7 @@ class C4Daemon:
                 dod=task.dod,
                 validations=task.validations,
                 branch=task_branch,
+                **agent_routing,
             )
 
         return None

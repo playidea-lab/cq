@@ -31,3 +31,5 @@ class Task(BaseModel):
     assigned_to: str | None = None
     branch: str | None = None
     commit_sha: str | None = None
+    # Phase 4: Agent routing - task-specific domain override
+    domain: str | None = None

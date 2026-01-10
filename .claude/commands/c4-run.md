@@ -82,7 +82,7 @@ LOOP:
   if task is null:
       exit("✅ COMPLETE")
 
-  implement(task)
+  implement_with_agent_routing(task)  # ← Phase 4: Agent Routing
   validate()
   if fail_count >= 10:
       mark_blocked(task)
@@ -98,6 +98,102 @@ LOOP:
   elif result.next_action == "complete":
       exit("✅ DONE")
 ```
+
+## 🤖 Agent Routing (Phase 4)
+
+`c4_get_task()` 응답에 에이전트 라우팅 정보가 포함됩니다:
+
+```python
+task = c4_get_task(WORKER_ID)
+# task.recommended_agent: "frontend-developer"   ← 사용할 에이전트
+# task.agent_chain: ["frontend-developer", "test-automator", "code-reviewer"]
+# task.domain: "web-frontend"
+# task.handoff_instructions: "Pass component specs and test requirements..."
+```
+
+### 사용 방법 (자동)
+
+**Worker(Claude)가 자동으로 판단합니다.** 사용자 개입 불필요.
+
+```python
+# Worker가 태스크를 받으면:
+task = c4_get_task(WORKER_ID)
+
+# 추천 에이전트로 구현
+Task(subagent_type=task.recommended_agent, prompt=f"""
+    Task: {task.title}
+    DoD: {task.dod}
+    Scope: {task.scope}
+    Branch: {task.branch}
+
+    Implement this task completely, following the DoD.
+""")
+```
+
+**기본 동작**:
+1. MCP가 도메인 기반으로 `recommended_agent` 제공
+2. Worker가 해당 에이전트로 Task 실행
+3. 필요시 `agent_chain`의 추가 에이전트 활용
+
+### 언제 agent_chain을 사용하는가?
+
+Worker가 다음 조건에서 **자동으로** 체인을 활용:
+
+| 조건 | 동작 |
+|------|------|
+| 구현 후 테스트 실패 | `test-automator` 호출 |
+| 코드 품질 이슈 발견 | `code-reviewer` 호출 |
+| 보안 관련 코드 | `security-auditor` 추가 |
+| 디버깅 필요 | `debugger` 사용 |
+
+```python
+# 예시: 구현 후 테스트 실패 시
+result = Task(subagent_type=task.recommended_agent, ...)
+
+if validation_failed:
+    # 체인에서 test-automator 찾아서 호출
+    Task(subagent_type="test-automator", prompt=f"""
+        Fix failing tests for: {task.title}
+        Error: {validation_error}
+    """)
+```
+
+### 도메인별 추천 에이전트
+
+| Domain | Primary Agent | 추가 Chain |
+|--------|--------------|-----------|
+| web-frontend | `frontend-developer` | test → reviewer |
+| web-backend | `backend-architect` | python → test → reviewer |
+| fullstack | `backend-architect` | frontend → test → reviewer |
+| ml-dl | `ml-engineer` | python → test |
+| mobile-app | `mobile-developer` | test → reviewer |
+| infra | `cloud-architect` | deployment |
+| library | `python-pro` | docs → test → reviewer |
+| unknown | `general-purpose` | reviewer |
+
+### Override 케이스 (특수 상황)
+
+Worker가 추천 대신 다른 에이전트 선택하는 경우:
+
+```python
+# 디버깅 태스크
+if "debug" in task.title.lower() or "fix bug" in task.title.lower():
+    agent = "debugger"  # 추천 무시, debugger 사용
+
+# 성능 최적화
+elif "performance" in task.dod.lower() or "optimize" in task.dod.lower():
+    agent = "performance-engineer"
+
+# 보안 민감
+elif "auth" in task.title.lower() or "security" in task.dod.lower():
+    agent = task.recommended_agent
+    # + 리뷰 단계에서 security-auditor 추가
+
+else:
+    agent = task.recommended_agent  # 기본: 추천 사용
+```
+
+**핵심**: 모든 판단은 Worker(Claude)가 자동으로 수행. 사용자는 `/c4-run` 실행만 하면 됩니다.
 
 ## Usage
 

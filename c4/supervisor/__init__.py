@@ -30,6 +30,16 @@ from .verifier import (
     Verifier,
     VerifierRegistry,
 )
+from .agent_router import (
+    AgentChainConfig,
+    AgentHandoff,
+    get_recommended_agent,
+    get_agent_for_task_type,
+    get_chain_for_domain,
+    get_handoff_instructions,
+    build_chain_prompt,
+    DOMAIN_AGENT_MAP,
+)
 
 __all__ = [
     # Main class
@@ -50,4 +60,13 @@ __all__ = [
     "VerificationRunner",
     "HttpVerifier",
     "CliVerifier",
+    # Agent routing
+    "AgentChainConfig",
+    "AgentHandoff",
+    "get_recommended_agent",
+    "get_agent_for_task_type",
+    "get_chain_for_domain",
+    "get_handoff_instructions",
+    "build_chain_prompt",
+    "DOMAIN_AGENT_MAP",
 ]

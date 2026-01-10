@@ -6,7 +6,11 @@ from pydantic import BaseModel
 
 
 class TaskAssignment(BaseModel):
-    """Response for c4_get_task()"""
+    """Response for c4_get_task()
+
+    Includes agent routing information (Phase 4) for automatic
+    agent selection and chaining based on task domain.
+    """
 
     task_id: str
     title: str
@@ -14,6 +18,11 @@ class TaskAssignment(BaseModel):
     dod: str
     validations: list[str]
     branch: str
+    # Phase 4: Agent routing fields
+    recommended_agent: str | None = None
+    agent_chain: list[str] | None = None
+    domain: str | None = None
+    handoff_instructions: str | None = None
 
 
 class SubmitResponse(BaseModel):
