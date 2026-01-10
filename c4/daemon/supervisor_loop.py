@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import threading
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -359,23 +360,24 @@ Respond with a clear, actionable guidance paragraph."""
 
 
 class SupervisorLoopManager:
-    """Manager for starting/stopping supervisor loop in background"""
+    """Manager for starting/stopping supervisor loop in background thread"""
 
     def __init__(self, daemon: C4Daemon):
         self.daemon = daemon
         self._loop: SupervisorLoop | None = None
-        self._task: asyncio.Task | None = None
+        self._thread: threading.Thread | None = None
+        self._event_loop: asyncio.AbstractEventLoop | None = None
 
-    def start(
+    def _run_in_thread(
         self,
-        poll_interval: float = 1.0,
-        max_retries: int = 3,
-        supervisor_timeout: int = 300,
+        poll_interval: float,
+        max_retries: int,
+        supervisor_timeout: int,
     ) -> None:
-        """Start supervisor loop in background"""
-        if self._loop is not None and self._loop.running:
-            logger.warning("Supervisor loop already running")
-            return
+        """Run supervisor loop in a dedicated thread with its own event loop"""
+        # Create a new event loop for this thread
+        self._event_loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(self._event_loop)
 
         self._loop = SupervisorLoop(
             self.daemon,
@@ -384,25 +386,53 @@ class SupervisorLoopManager:
             supervisor_timeout=supervisor_timeout,
         )
 
-        # Create task in current event loop
         try:
-            loop = asyncio.get_running_loop()
-            self._task = loop.create_task(self._loop.start())
-            logger.info("Supervisor loop started in background")
-        except RuntimeError:
-            # No event loop running, will need to be started externally
-            logger.warning("No event loop running, supervisor loop not started")
+            self._event_loop.run_until_complete(self._loop.start())
+        except Exception as e:
+            logger.error(f"Supervisor loop thread error: {e}")
+        finally:
+            self._event_loop.close()
+            self._event_loop = None
+
+    def start(
+        self,
+        poll_interval: float = 1.0,
+        max_retries: int = 3,
+        supervisor_timeout: int = 300,
+    ) -> None:
+        """Start supervisor loop in background thread"""
+        if self._thread is not None and self._thread.is_alive():
+            logger.warning("Supervisor loop already running")
+            return
+
+        self._thread = threading.Thread(
+            target=self._run_in_thread,
+            args=(poll_interval, max_retries, supervisor_timeout),
+            daemon=True,  # Thread will be killed when main process exits
+            name="c4-supervisor-loop",
+        )
+        self._thread.start()
+        logger.info("Supervisor loop started in background thread")
 
     def stop(self) -> None:
         """Stop the supervisor loop"""
         if self._loop is not None:
             self._loop.stop()
 
-        if self._task is not None:
-            self._task.cancel()
-            self._task = None
+        # Wait for thread to finish (with timeout)
+        if self._thread is not None and self._thread.is_alive():
+            self._thread.join(timeout=5.0)
+            if self._thread.is_alive():
+                logger.warning("Supervisor loop thread did not stop gracefully")
+
+        self._thread = None
 
     @property
     def is_running(self) -> bool:
         """Check if supervisor loop is running"""
-        return self._loop is not None and self._loop.running
+        return (
+            self._thread is not None
+            and self._thread.is_alive()
+            and self._loop is not None
+            and self._loop.running
+        )

@@ -117,7 +117,7 @@ class TestSupervisorLoopManager:
 
         assert manager.daemon is daemon_with_project
         assert manager._loop is None
-        assert manager._task is None
+        assert manager._thread is None
 
     def test_manager_is_running_initially_false(self, daemon_with_project):
         """Test is_running property initially False"""
