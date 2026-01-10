@@ -1161,3 +1161,93 @@ class TestStaleWorkerRecovery:
         # Worker still busy
         state = daemon.state_machine.state
         assert state.workers["worker-1"].state == "busy"
+
+
+class TestSupervisorAutoRestart:
+    """Tests for supervisor loop auto-restart after MCP server restart"""
+
+    def _wait_for_supervisor_start(self, daemon, timeout=1.0):
+        """Wait for supervisor loop to start (thread startup has a race condition)"""
+        import time
+
+        start = time.time()
+        while time.time() - start < timeout:
+            if daemon.is_supervisor_loop_running:
+                return True
+            time.sleep(0.05)
+        return False
+
+    def test_auto_restart_in_execute_state(self, temp_project):
+        """Test supervisor auto-restarts when daemon loads in EXECUTE state"""
+        # First daemon: initialize and transition to EXECUTE
+        daemon1 = C4Daemon(temp_project)
+        daemon1.initialize("test-project", with_default_checkpoints=False)
+        daemon1.state_machine.transition("skip_discovery", "test")
+        daemon1.state_machine.transition("c4_run", "test")
+
+        # Verify state is saved as EXECUTE
+        assert daemon1.state_machine.state.status == ProjectStatus.EXECUTE
+
+        # Stop daemon1's supervisor loop if running
+        self._wait_for_supervisor_start(daemon1)
+        if daemon1.is_supervisor_loop_running:
+            daemon1.stop_supervisor_loop()
+
+        # Second daemon: simulates MCP server restart
+        daemon2 = C4Daemon(temp_project)
+        daemon2.load()
+
+        # Verify state loaded correctly
+        assert daemon2.state_machine.state.status == ProjectStatus.EXECUTE
+
+        # Call auto-restart
+        restarted = daemon2._auto_restart_supervisor_if_needed()
+
+        # Supervisor should have restarted (wait for thread to start)
+        assert restarted is True
+        assert self._wait_for_supervisor_start(daemon2)
+
+        # Cleanup
+        daemon2.stop_supervisor_loop()
+
+    def test_no_restart_in_plan_state(self, temp_project):
+        """Test supervisor does NOT auto-restart in PLAN state"""
+        # Initialize in PLAN state
+        daemon1 = C4Daemon(temp_project)
+        daemon1.initialize("test-project", with_default_checkpoints=False)
+        daemon1.state_machine.transition("skip_discovery", "test")
+
+        # Verify state is PLAN
+        assert daemon1.state_machine.state.status == ProjectStatus.PLAN
+
+        # Second daemon: simulates MCP server restart
+        daemon2 = C4Daemon(temp_project)
+        daemon2.load()
+
+        # Call auto-restart
+        restarted = daemon2._auto_restart_supervisor_if_needed()
+
+        # Supervisor should NOT have restarted in PLAN state
+        assert restarted is False
+        assert daemon2.is_supervisor_loop_running is False
+
+    def test_no_restart_if_already_running(self, temp_project):
+        """Test supervisor is not restarted if already running"""
+        daemon = C4Daemon(temp_project)
+        daemon.initialize("test-project", with_default_checkpoints=False)
+        daemon.state_machine.transition("skip_discovery", "test")
+        daemon.state_machine.transition("c4_run", "test")
+
+        # Start supervisor and wait for it
+        daemon.start_supervisor_loop()
+        assert self._wait_for_supervisor_start(daemon)
+
+        # Call auto-restart - should return False (already running)
+        restarted = daemon._auto_restart_supervisor_if_needed()
+        assert restarted is False
+
+        # Still running
+        assert daemon.is_supervisor_loop_running
+
+        # Cleanup
+        daemon.stop_supervisor_loop()

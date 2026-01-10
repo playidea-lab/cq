@@ -368,6 +368,39 @@ class C4Daemon:
         """Check if supervisor loop is running"""
         return self._supervisor_loop_manager is not None and self._supervisor_loop_manager.is_running
 
+    def _auto_restart_supervisor_if_needed(self) -> bool:
+        """
+        Auto-restart supervisor loop if project is in EXECUTE or CHECKPOINT state.
+
+        Called after loading state to resume background processing
+        after MCP server restart.
+
+        Returns:
+            True if supervisor was restarted, False otherwise
+        """
+        if self.state_machine is None:
+            return False
+
+        state = self.state_machine.state
+
+        # Only restart if in EXECUTE or CHECKPOINT state
+        if state.status not in (ProjectStatus.EXECUTE, ProjectStatus.CHECKPOINT):
+            return False
+
+        # Only restart if not already running
+        if self.is_supervisor_loop_running:
+            return False
+
+        try:
+            self.start_supervisor_loop()
+            logger.info(
+                f"Auto-restarted supervisor loop for {state.status.value} state"
+            )
+            return True
+        except Exception as e:
+            logger.warning(f"Failed to auto-restart supervisor loop: {e}")
+            return False
+
     # =========================================================================
     # Task Management
     # =========================================================================
@@ -2113,6 +2146,8 @@ def create_server(project_root: Path | None = None) -> Server:
             daemon = C4Daemon(root)
             if daemon.is_initialized():
                 daemon.load()
+                # Auto-restart supervisor loop if in EXECUTE/CHECKPOINT state
+                daemon._auto_restart_supervisor_if_needed()
             _daemon_cache[root_str] = daemon
 
         return _daemon_cache[root_str]
