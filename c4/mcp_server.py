@@ -86,6 +86,55 @@ class C4Daemon:
         # Check both SQLite (new) and JSON (legacy) for backward compatibility
         return (self.c4_dir / "c4.db").exists() or (self.c4_dir / "state.json").exists()
 
+    def _ensure_git_initialized(self) -> bool:
+        """
+        Ensure git is initialized in the project directory.
+
+        Returns:
+            True if git was initialized, False if already existed
+        """
+        import subprocess
+
+        git_dir = self.root / ".git"
+        if git_dir.exists():
+            return False
+
+        # Initialize git
+        logger.info(f"Initializing git in {self.root}")
+        subprocess.run(
+            ["git", "init"],
+            cwd=self.root,
+            capture_output=True,
+            check=True,
+        )
+
+        # Create default .gitignore if not exists
+        gitignore = self.root / ".gitignore"
+        if not gitignore.exists():
+            gitignore.write_text(
+                """# C4
+.c4/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.env
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+"""
+            )
+            logger.info("Created default .gitignore")
+
+        return True
+
     def initialize(
         self,
         project_id: str | None = None,
@@ -100,6 +149,9 @@ class C4Daemon:
         """
         if project_id is None:
             project_id = self.root.name
+
+        # Initialize git if not exists
+        self._ensure_git_initialized()
 
         # Create directories
         self.c4_dir.mkdir(parents=True, exist_ok=True)
