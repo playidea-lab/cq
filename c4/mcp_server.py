@@ -401,6 +401,82 @@ class C4Daemon:
             logger.warning(f"Failed to auto-restart supervisor loop: {e}")
             return False
 
+    def _ensure_supervisor_running(self) -> None:
+        """
+        Non-blocking check to ensure supervisor loop is running if needed.
+        Called automatically from key MCP operations (c4_get_task, c4_submit).
+        """
+        if self.state_machine is None:
+            return
+
+        state = self.state_machine.state
+        should_run = state.status in (ProjectStatus.EXECUTE, ProjectStatus.CHECKPOINT)
+
+        if should_run and not self.is_supervisor_loop_running:
+            try:
+                self.start_supervisor_loop()
+                logger.info("Auto-started supervisor loop for AI review")
+            except Exception as e:
+                logger.warning(f"Failed to auto-start supervisor loop: {e}")
+
+    def c4_ensure_supervisor(self, force_restart: bool = False) -> dict[str, Any]:
+        """
+        Ensure supervisor loop is running for AI review.
+
+        Called automatically by workers or explicitly to ensure AI review is active.
+
+        Args:
+            force_restart: If True, stop and restart even if running
+
+        Returns:
+            Dictionary with status and action taken
+        """
+        if self.state_machine is None:
+            return {"success": False, "error": "C4 not initialized"}
+
+        state = self.state_machine.state
+
+        # Check if supervisor should be running
+        should_run = state.status in (ProjectStatus.EXECUTE, ProjectStatus.CHECKPOINT)
+
+        if not should_run:
+            return {
+                "success": True,
+                "action": "none",
+                "message": f"Supervisor not needed in {state.status.value} state",
+                "is_running": self.is_supervisor_loop_running,
+            }
+
+        # Force restart if requested
+        if force_restart and self.is_supervisor_loop_running:
+            self.stop_supervisor_loop()
+            logger.info("Supervisor loop stopped for force restart")
+
+        # Start if not running
+        if not self.is_supervisor_loop_running:
+            try:
+                self.start_supervisor_loop()
+                return {
+                    "success": True,
+                    "action": "started",
+                    "message": "Supervisor loop started for AI review",
+                    "is_running": True,
+                }
+            except Exception as e:
+                return {
+                    "success": False,
+                    "action": "failed",
+                    "error": str(e),
+                    "is_running": False,
+                }
+
+        return {
+            "success": True,
+            "action": "already_running",
+            "message": "Supervisor loop already running for AI review",
+            "is_running": True,
+        }
+
     # =========================================================================
     # Task Management
     # =========================================================================
@@ -515,12 +591,21 @@ class C4Daemon:
                 for item in state.repair_queue
             ],
             "supervisor_loop_running": self.is_supervisor_loop_running,
+            "supervisor": {
+                "loop_running": self.is_supervisor_loop_running,
+                "mode": "ai_review",  # Always AI review (not human approval)
+                "checkpoint_queue_size": len(state.checkpoint_queue),
+                "repair_queue_size": len(state.repair_queue),
+            },
         }
 
     def c4_get_task(self, worker_id: str) -> TaskAssignment | None:
         """Request next task assignment for a worker"""
         if self.state_machine is None:
             raise RuntimeError("C4 not initialized")
+
+        # Auto-ensure supervisor loop is running for AI review
+        self._ensure_supervisor_running()
 
         # Implicit heartbeat - keep worker marked as active
         self._touch_worker(worker_id)
@@ -746,6 +831,9 @@ class C4Daemon:
         if self.state_machine is None:
             raise RuntimeError("C4 not initialized")
 
+        # Auto-ensure supervisor loop is running for AI review
+        self._ensure_supervisor_running()
+
         # Implicit heartbeat - keep worker marked as active
         self._touch_worker(worker_id)
 
@@ -882,7 +970,7 @@ class C4Daemon:
             return SubmitResponse(
                 success=True,
                 next_action="await_checkpoint",
-                message=f"Checkpoint {cp_id} queued for review",
+                message=f"Checkpoint {cp_id} queued for AI review (automatic)",
             )
 
         # Check if all done
@@ -966,7 +1054,7 @@ class C4Daemon:
             return SubmitResponse(
                 success=True,
                 next_action="await_checkpoint",
-                message=f"Checkpoint {cp_id} queued",
+                message=f"Checkpoint {cp_id} queued for AI review (automatic)",
             )
 
         if not state.queue.pending and not state.queue.in_progress:
@@ -2301,6 +2389,21 @@ def create_server(project_root: Path | None = None) -> Server:
                 },
             ),
             Tool(
+                name="c4_ensure_supervisor",
+                description="Ensure supervisor loop is running for AI review. Auto-starts if in EXECUTE/CHECKPOINT state.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "force_restart": {
+                            "type": "boolean",
+                            "description": "Force restart even if already running (default: false)",
+                            "default": False,
+                        },
+                    },
+                    "required": [],
+                },
+            ),
+            Tool(
                 name="c4_run_validation",
                 description="Run validation commands (lint, test) and return results.",
                 inputSchema={
@@ -2641,6 +2744,10 @@ def create_server(project_root: Path | None = None) -> Server:
                 result = result.model_dump()
             elif name == "c4_start":
                 result = daemon.c4_start()
+            elif name == "c4_ensure_supervisor":
+                result = daemon.c4_ensure_supervisor(
+                    force_restart=arguments.get("force_restart", False)
+                )
             elif name == "c4_run_validation":
                 result = daemon.c4_run_validation(
                     names=arguments.get("names"),

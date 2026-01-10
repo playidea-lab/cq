@@ -104,7 +104,7 @@ if status == "EXECUTE":
 if status == "CHECKPOINT":
     cp_queue = state.get("checkpoint_queue", [])
     if cp_queue:
-        print(f"Checkpoint awaiting supervisor review")
+        print(f"Checkpoint - AI review in progress (automatic)")
         sys.exit(2)
 
 sys.exit(0)
