@@ -603,12 +603,27 @@ class C4Daemon:
                         state.queue.pending.remove(task_id)
                         state.queue.in_progress[task_id] = worker_id
 
-                        # Update worker state in the same atomic operation
-                        if worker_id in state.workers:
+                        # Ensure worker exists in state (fix race condition)
+                        if worker_id not in state.workers:
+                            from c4.models import WorkerInfo
+
+                            now = datetime.now()
+                            state.workers[worker_id] = WorkerInfo(
+                                worker_id=worker_id,
+                                state="busy",
+                                task_id=task_id,
+                                scope=task.scope,
+                                branch=task_branch,
+                                joined_at=now,
+                                last_seen=now,
+                            )
+                        else:
+                            # Update existing worker state
                             state.workers[worker_id].state = "busy"
                             state.workers[worker_id].task_id = task_id
                             state.workers[worker_id].scope = task.scope
                             state.workers[worker_id].branch = task_branch
+                            state.workers[worker_id].last_seen = datetime.now()
 
                         assigned = True
 
@@ -747,11 +762,22 @@ class C4Daemon:
                 del state.queue.in_progress[task_id]
                 state.queue.done.append(task_id)
 
-                # Update worker state
+                # Update worker state (ensure worker exists first)
                 if actual_worker_id in state.workers:
                     state.workers[actual_worker_id].state = "idle"
                     state.workers[actual_worker_id].task_id = None
                     state.workers[actual_worker_id].scope = None
+                    state.workers[actual_worker_id].last_seen = datetime.now()
+                else:
+                    # Worker not in state (shouldn't happen but handle gracefully)
+                    from c4.models import WorkerInfo
+
+                    state.workers[actual_worker_id] = WorkerInfo(
+                        worker_id=actual_worker_id,
+                        state="idle",
+                        joined_at=datetime.now(),
+                        last_seen=datetime.now(),
+                    )
 
                 # Update metrics
                 state.metrics.tasks_completed += 1

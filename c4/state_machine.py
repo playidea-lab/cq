@@ -94,7 +94,7 @@ class StateMachine:
         self.c4_dir = c4_dir
         self.events_dir = c4_dir / "events"
         self._state: C4State | None = None
-        self._event_counter: int = 0
+        self._event_counter: int = self._get_last_event_number()
 
         # Initialize store (default to LocalFileStateStore)
         if store is None:
@@ -103,6 +103,24 @@ class StateMachine:
             self._store = LocalFileStateStore(c4_dir)
         else:
             self._store = store
+
+    def _get_last_event_number(self) -> int:
+        """Get the last event number from existing event files."""
+        if not self.events_dir.exists():
+            return 0
+
+        max_num = 0
+        for event_file in self.events_dir.glob("*.json"):
+            try:
+                # Event files are named: {number}-{timestamp}-{type}.json
+                num_str = event_file.name.split("-")[0]
+                num = int(num_str)
+                if num > max_num:
+                    max_num = num
+            except (ValueError, IndexError):
+                continue
+
+        return max_num
 
     # =========================================================================
     # State Management
