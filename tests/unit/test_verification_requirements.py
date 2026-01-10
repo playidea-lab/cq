@@ -1,6 +1,5 @@
 """Tests for verification requirements in feature specs."""
 
-import pytest
 from c4.discovery.models import Domain
 from c4.discovery.specs import (
     FeatureSpec,

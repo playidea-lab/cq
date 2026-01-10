@@ -1,13 +1,12 @@
 """Unit tests for C4 Agent Router (Phase 4)"""
 
-import pytest
 
 from c4.discovery.models import Domain
 from c4.supervisor.agent_router import (
-    AgentChainConfig,
-    AgentHandoff,
     DOMAIN_AGENT_MAP,
     TASK_TYPE_AGENT_OVERRIDES,
+    AgentChainConfig,
+    AgentHandoff,
     build_chain_prompt,
     get_agent_for_task_type,
     get_all_domains,

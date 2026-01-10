@@ -1,18 +1,17 @@
 """E2E tests for C4 full automation scenario"""
 
-import pytest
-import asyncio
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
-from c4.mcp_server import C4Daemon
+import pytest
+
 from c4.daemon.supervisor_loop import SupervisorLoop
+from c4.mcp_server import C4Daemon
 from c4.models import (
     CheckpointConfig,
     CheckpointQueueItem,
     ProjectStatus,
     SupervisorDecision,
-    ValidationResult,
 )
 from c4.supervisor import SupervisorResponse
 

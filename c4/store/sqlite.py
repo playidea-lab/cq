@@ -157,8 +157,9 @@ class SQLiteStateStore(StateStore):
                 del state.queue.in_progress[task_id]
             # State is automatically saved on context exit
         """
-        from c4.models import C4State
         import json
+
+        from c4.models import C4State
 
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         conn = sqlite3.connect(
@@ -637,8 +638,8 @@ class SQLiteTaskStore:
         This is the primary method for task state changes during execution.
         It loads the task, updates fields, and saves in one operation.
         """
-        from c4.models.task import Task
         from c4.models.enums import TaskStatus
+        from c4.models.task import Task
 
         with self._get_connection() as conn:
             # Load current task

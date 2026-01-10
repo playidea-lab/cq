@@ -1,10 +1,9 @@
 """Unit tests for C4 queue models and safety guards"""
 
-import pytest
-from datetime import datetime, timedelta
 
-from c4.models import CheckpointQueueItem, RepairQueueItem, C4State, ValidationResult
-from c4.daemon.safety import SafetyGuard, RateLimiter
+from c4.constants import MAX_ITERATIONS_PER_TASK
+from c4.daemon.safety import SafetyGuard
+from c4.models import C4State, CheckpointQueueItem, RepairQueueItem, ValidationResult
 
 
 class TestCheckpointQueueItem:
@@ -133,7 +132,7 @@ class TestSafetyGuard:
         """Test safety guard initialization with defaults"""
         guard = SafetyGuard()
 
-        assert guard.max_iterations_per_task == 10
+        assert guard.max_iterations_per_task == MAX_ITERATIONS_PER_TASK
         assert guard.max_total_iterations == 100
         assert guard.max_consecutive_failures == 5
 
@@ -229,24 +228,3 @@ class TestSafetyGuard:
         assert status["consecutive_failures"] == 1
         assert "limits" in status
         assert "can_continue" in status
-
-
-class TestRateLimiter:
-    """Tests for RateLimiter"""
-
-    def test_rate_limiter_allows_calls_under_limit(self):
-        """Test rate limiter allows calls under limit"""
-        limiter = RateLimiter(max_calls=5, window_seconds=60)
-
-        for _ in range(4):
-            assert limiter.can_call() is True
-            limiter.record_call()
-
-    def test_rate_limiter_blocks_calls_over_limit(self):
-        """Test rate limiter blocks calls over limit"""
-        limiter = RateLimiter(max_calls=3, window_seconds=60)
-
-        for _ in range(3):
-            limiter.record_call()
-
-        assert limiter.can_call() is False

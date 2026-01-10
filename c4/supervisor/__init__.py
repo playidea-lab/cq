@@ -16,6 +16,16 @@ Usage:
     supervisor = Supervisor(project_root, backend=backend)
 """
 
+from .agent_router import (
+    DOMAIN_AGENT_MAP,
+    AgentChainConfig,
+    AgentHandoff,
+    build_chain_prompt,
+    get_agent_for_task_type,
+    get_chain_for_domain,
+    get_handoff_instructions,
+    get_recommended_agent,
+)
 from .backend import SupervisorBackend, SupervisorError, SupervisorResponse
 from .claude_backend import ClaudeCliBackend
 from .mock_backend import MockBackend
@@ -29,16 +39,6 @@ from .verifier import (
     VerificationType,
     Verifier,
     VerifierRegistry,
-)
-from .agent_router import (
-    AgentChainConfig,
-    AgentHandoff,
-    get_recommended_agent,
-    get_agent_for_task_type,
-    get_chain_for_domain,
-    get_handoff_instructions,
-    build_chain_prompt,
-    DOMAIN_AGENT_MAP,
 )
 
 __all__ = [

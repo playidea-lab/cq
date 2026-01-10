@@ -1,18 +1,16 @@
 """Tests for the verification system."""
 
-import pytest
 
 from c4.supervisor.verifier import (
+    DOMAIN_DEFAULT_VERIFICATIONS,
     BrowserVerifier,
     CliVerifier,
-    DOMAIN_DEFAULT_VERIFICATIONS,
     DryrunVerifier,
     HttpVerifier,
     MetricsVerifier,
     VerificationResult,
     VerificationRunner,
     VerificationType,
-    Verifier,
     VerifierRegistry,
     VisualVerifier,
 )

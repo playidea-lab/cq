@@ -462,7 +462,8 @@ class BrowserVerifier(Verifier):
         import time
 
         try:
-            from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout
+            from playwright.sync_api import TimeoutError as PlaywrightTimeout
+            from playwright.sync_api import sync_playwright
         except ImportError:
             return VerificationResult(
                 type=self.verification_type.value,
@@ -651,7 +652,6 @@ class VisualVerifier(Verifier):
         """
         try:
             from PIL import Image, ImageChops
-            import math
         except ImportError:
             return VerificationResult(
                 type=self.verification_type.value,
@@ -907,9 +907,9 @@ class DryrunVerifier(Verifier):
             success_patterns: ["No changes", "Plan:"]
             failure_patterns: ["Error:", "Failed"]
         """
+        import re
         import subprocess
         import time
-        import re
 
         command = config.get("command", "")
         success_patterns = config.get("success_patterns", [])

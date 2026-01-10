@@ -25,11 +25,9 @@ from c4.mcp_server import C4Daemon
 from c4.models import (
     CheckpointConfig,
     ProjectStatus,
-    SupervisorDecision,
     Task,
     ValidationConfig,
 )
-
 
 # =============================================================================
 # Fixtures

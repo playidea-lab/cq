@@ -1,13 +1,13 @@
 """Unit tests for C4 SQLite Store"""
 
-import pytest
 from datetime import datetime, timedelta
-from pathlib import Path
+
+import pytest
 
 from c4.models import C4State
 from c4.store import (
-    SQLiteStateStore,
     SQLiteLockStore,
+    SQLiteStateStore,
     StateNotFoundError,
 )
 

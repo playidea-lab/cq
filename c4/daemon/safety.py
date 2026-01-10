@@ -3,19 +3,20 @@
 from __future__ import annotations
 
 import logging
-import time
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Any
+
+from ..constants import MAX_ITERATIONS_PER_TASK, TASK_TIMEOUT_SEC
 
 logger = logging.getLogger(__name__)
 
 
-# Default limits
-MAX_ITERATIONS_PER_TASK = 10
+# Default limits (override from constants.py where applicable)
+DEFAULT_MAX_ITERATIONS_PER_TASK = MAX_ITERATIONS_PER_TASK
+DEFAULT_TASK_TIMEOUT_SEC = TASK_TIMEOUT_SEC
 MAX_TOTAL_ITERATIONS = 100
 MAX_CONSECUTIVE_FAILURES = 5
-TASK_TIMEOUT_SECONDS = 1800  # 30 minutes
 SESSION_TIMEOUT_SECONDS = 14400  # 4 hours
 
 
@@ -55,10 +56,10 @@ class SafetyGuard:
 
     def __init__(
         self,
-        max_iterations_per_task: int = MAX_ITERATIONS_PER_TASK,
+        max_iterations_per_task: int = DEFAULT_MAX_ITERATIONS_PER_TASK,
         max_total_iterations: int = MAX_TOTAL_ITERATIONS,
         max_consecutive_failures: int = MAX_CONSECUTIVE_FAILURES,
-        task_timeout_seconds: int = TASK_TIMEOUT_SECONDS,
+        task_timeout_seconds: int = DEFAULT_TASK_TIMEOUT_SEC,
         session_timeout_seconds: int = SESSION_TIMEOUT_SECONDS,
     ):
         self.max_iterations_per_task = max_iterations_per_task
@@ -171,53 +172,3 @@ class SafetyGuard:
             "task_count": len(self._state.task_stats),
             "can_continue": self.check_can_continue()[0],
         }
-
-
-class RateLimiter:
-    """Simple rate limiter for API calls"""
-
-    def __init__(
-        self,
-        max_calls: int = 60,
-        window_seconds: int = 60,
-    ):
-        self.max_calls = max_calls
-        self.window_seconds = window_seconds
-        self._calls: list[float] = []
-
-    def can_call(self) -> bool:
-        """Check if a call is allowed"""
-        now = time.time()
-        window_start = now - self.window_seconds
-
-        # Remove old calls
-        self._calls = [t for t in self._calls if t > window_start]
-
-        return len(self._calls) < self.max_calls
-
-    def record_call(self) -> None:
-        """Record a call"""
-        self._calls.append(time.time())
-
-    def wait_if_needed(self) -> float:
-        """
-        Wait if rate limit is exceeded.
-
-        Returns:
-            Time waited in seconds
-        """
-        if self.can_call():
-            return 0.0
-
-        # Calculate wait time
-        now = time.time()
-        window_start = now - self.window_seconds
-        oldest_call = min(self._calls)
-        wait_time = oldest_call - window_start + 0.1
-
-        if wait_time > 0:
-            logger.debug(f"Rate limited, waiting {wait_time:.2f}s")
-            time.sleep(wait_time)
-            return wait_time
-
-        return 0.0

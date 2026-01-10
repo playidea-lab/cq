@@ -1,16 +1,16 @@
 """Integration tests for C4 Supervisor Loop and checkpoint/repair queue processing"""
 
-import pytest
-import asyncio
 from pathlib import Path
-from unittest.mock import patch, MagicMock, AsyncMock
+from unittest.mock import MagicMock, patch
 
-from c4.mcp_server import C4Daemon
+import pytest
+
 from c4.daemon.supervisor_loop import SupervisorLoop, SupervisorLoopManager
+from c4.mcp_server import C4Daemon
 from c4.models import (
     CheckpointQueueItem,
-    RepairQueueItem,
     ProjectStatus,
+    RepairQueueItem,
     SupervisorDecision,
 )
 from c4.supervisor import SupervisorResponse
