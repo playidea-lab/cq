@@ -112,6 +112,62 @@ class PerformanceRequirement(BaseModel):
     condition: str  # e.g., "p95 < 500ms"
 
 
+class VerificationRequirement(BaseModel):
+    """Verification requirement collected from conversation context.
+
+    These are added when:
+    1. User explicitly requests verification (e.g., "성능 검증 필요해")
+    2. Discovery interview identifies verification needs
+    3. Domain-specific requirements suggest verification
+
+    Example:
+        - type: http
+          name: "API Response Time"
+          reason: "User requested performance verification"
+          config:
+            url: "/api/data"
+            max_response_time: 500
+    """
+
+    type: str  # http, browser, cli, metrics, visual, dryrun
+    name: str  # Human-readable name
+    reason: str  # Why this verification was added (conversation context)
+    config: dict[str, Any] = Field(default_factory=dict)
+    priority: int = Field(default=2, ge=1, le=3)  # 1=critical, 2=normal, 3=optional
+    enabled: bool = True
+
+    @classmethod
+    def from_user_request(
+        cls,
+        verification_type: str,
+        name: str,
+        reason: str,
+        **config: Any,
+    ) -> "VerificationRequirement":
+        """Create from user request in conversation."""
+        return cls(
+            type=verification_type,
+            name=name,
+            reason=f"User request: {reason}",
+            config=config,
+        )
+
+    @classmethod
+    def from_domain_default(
+        cls,
+        verification_type: str,
+        name: str,
+        domain: str,
+    ) -> "VerificationRequirement":
+        """Create from domain default."""
+        return cls(
+            type=verification_type,
+            name=name,
+            reason=f"Domain default for {domain}",
+            priority=3,  # Lower priority for defaults
+        )
+
+
 class FeatureSpec(BaseModel):
     """Complete feature specification."""
 
@@ -133,6 +189,9 @@ class FeatureSpec(BaseModel):
     experiments: list[ExperimentProtocol] = Field(default_factory=list)
     performance: list[PerformanceRequirement] = Field(default_factory=list)
 
+    # Verification requirements (from conversation context)
+    verification_requirements: list[VerificationRequirement] = Field(default_factory=list)
+
     def add_requirement(self, id: str, text: str) -> EARSRequirement:
         """Add a new EARS requirement."""
         req = EARSRequirement.parse(id, text)
@@ -140,6 +199,54 @@ class FeatureSpec(BaseModel):
         self.requirements.append(req)
         self.updated_at = _utc_now()
         return req
+
+    def add_verification(
+        self,
+        verification_type: str,
+        name: str,
+        reason: str,
+        priority: int = 2,
+        **config: Any,
+    ) -> VerificationRequirement:
+        """Add a verification requirement from conversation context.
+
+        Args:
+            verification_type: http, browser, cli, metrics, visual, dryrun
+            name: Human-readable name
+            reason: Why this verification is needed (from conversation)
+            priority: 1=critical, 2=normal, 3=optional
+            **config: Verification-specific configuration
+
+        Returns:
+            Created VerificationRequirement
+        """
+        req = VerificationRequirement(
+            type=verification_type,
+            name=name,
+            reason=reason,
+            priority=priority,
+            config=config,
+        )
+        self.verification_requirements.append(req)
+        self.updated_at = _utc_now()
+        return req
+
+    def get_verifications_for_config(self) -> list[dict[str, Any]]:
+        """Get verification requirements in config.yaml format.
+
+        Returns:
+            List ready to be merged into config.yaml verifications.items
+        """
+        return [
+            {
+                "type": v.type,
+                "name": v.name,
+                "config": v.config,
+                "enabled": v.enabled,
+            }
+            for v in self.verification_requirements
+            if v.enabled
+        ]
 
     def to_yaml(self) -> str:
         """Export to YAML format."""

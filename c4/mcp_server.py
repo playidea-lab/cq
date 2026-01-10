@@ -1260,6 +1260,124 @@ class C4Daemon:
         except Exception as e:
             return {"success": False, "error": str(e)}
 
+    def c4_add_verification(
+        self,
+        feature: str,
+        verification_type: str,
+        name: str,
+        reason: str,
+        priority: int = 2,
+        config: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """
+        Add a verification requirement to a feature spec from conversation context.
+
+        Use this when the user requests specific verification or when conversation
+        context suggests verification needs (e.g., "성능 검증 필요해", "보안 테스트 해줘").
+
+        Args:
+            feature: Feature name (must exist)
+            verification_type: One of: http, browser, cli, metrics, visual, dryrun
+            name: Human-readable name for the verification
+            reason: Why this verification is needed (from conversation context)
+            priority: 1=critical, 2=normal, 3=optional (default: 2)
+            config: Verification-specific configuration
+
+        Returns:
+            Dictionary with success status and verification details
+
+        Example:
+            c4_add_verification(
+                feature="user-auth",
+                verification_type="http",
+                name="Login API Response Time",
+                reason="User requested performance verification for login",
+                priority=1,
+                config={"url": "/api/login", "max_response_time": 500}
+            )
+        """
+        # Validate verification type
+        valid_types = ["http", "browser", "cli", "metrics", "visual", "dryrun"]
+        if verification_type not in valid_types:
+            return {
+                "success": False,
+                "error": f"Invalid verification type: {verification_type}",
+                "valid_types": valid_types,
+            }
+
+        # Load existing spec
+        spec = self.spec_store.load(feature)
+        if spec is None:
+            return {
+                "success": False,
+                "error": f"Feature '{feature}' not found",
+                "hint": "Create the feature with c4_save_spec first",
+            }
+
+        try:
+            # Add verification requirement
+            verification = spec.add_verification(
+                verification_type=verification_type,
+                name=name,
+                reason=reason,
+                priority=priority,
+                **(config or {}),
+            )
+
+            # Save updated spec
+            self.spec_store.save(spec)
+
+            return {
+                "success": True,
+                "feature": feature,
+                "verification": {
+                    "type": verification.type,
+                    "name": verification.name,
+                    "reason": verification.reason,
+                    "priority": verification.priority,
+                    "config": verification.config,
+                },
+                "total_verifications": len(spec.verification_requirements),
+                "message": f"Added {verification_type} verification: {name}",
+            }
+
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    def c4_get_feature_verifications(self, feature: str) -> dict[str, Any]:
+        """
+        Get all verification requirements for a feature.
+
+        Args:
+            feature: Feature name
+
+        Returns:
+            Dictionary with verification requirements
+        """
+        spec = self.spec_store.load(feature)
+        if spec is None:
+            return {
+                "success": False,
+                "error": f"Feature '{feature}' not found",
+            }
+
+        return {
+            "success": True,
+            "feature": feature,
+            "verifications": [
+                {
+                    "type": v.type,
+                    "name": v.name,
+                    "reason": v.reason,
+                    "priority": v.priority,
+                    "config": v.config,
+                    "enabled": v.enabled,
+                }
+                for v in spec.verification_requirements
+            ],
+            "config_format": spec.get_verifications_for_config(),
+        }
+
     def c4_discovery_complete(self) -> dict[str, Any]:
         """
         Mark discovery phase as complete, transition to DESIGN.
