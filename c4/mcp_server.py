@@ -1012,8 +1012,11 @@ Thumbs.db
             task_id,
             status="done",
             commit_sha=commit_sha,
-            assigned_to=None,  # Clear assignment after completion
         )
+
+        # Invalidate task cache to ensure get_task returns fresh data
+        if task_id in self._tasks:
+            del self._tasks[task_id]
 
         # Release scope lock
         if task and task.scope:

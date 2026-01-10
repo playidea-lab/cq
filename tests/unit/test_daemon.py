@@ -291,6 +291,43 @@ class TestC4Submit:
 
         assert result.success is False
 
+    def test_submit_updates_task_status_to_done(self, daemon):
+        """Test that c4_submit correctly updates task file status to 'done'.
+
+        Regression test for multi-worker interference bug where task status
+        was not synced from state queue to task file after completion.
+        """
+        from c4.models.task import Task
+        from c4.models.enums import TaskStatus
+
+        # Setup: Create and assign a task
+        task = Task(id="T-STATUS", title="Status Test", dod="Test status sync")
+        daemon.add_task(task)
+        daemon.state_machine.transition("skip_discovery", "test")
+        daemon.state_machine.transition("c4_run", "test")
+        daemon.c4_get_task("worker-1")
+
+        # Verify task is in_progress before submission
+        task_before = daemon.get_task("T-STATUS")
+        assert task_before.status == TaskStatus.IN_PROGRESS
+        assert task_before.assigned_to == "worker-1"
+
+        # Submit the task
+        result = daemon.c4_submit(
+            "T-STATUS",
+            "abc123",
+            [{"name": "lint", "status": "pass"}],
+        )
+
+        assert result.success is True
+
+        # Verify task status is updated to 'done' in task file
+        task_after = daemon.get_task("T-STATUS")
+        assert task_after.status == TaskStatus.DONE, (
+            f"Task status should be DONE, but got {task_after.status}"
+        )
+        assert task_after.commit_sha == "abc123"
+
 
 class TestC4AddTodo:
     """Test c4_add_todo tool"""
