@@ -1,6 +1,7 @@
 """C4D MCP Server - Main server implementation with MCP tools"""
 
 import json
+import logging
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -17,6 +18,7 @@ from .discovery import (
     EARSRequirement,
     FeatureSpec,
     SpecStore,
+    VerificationRequirement,
 )
 from .models import (
     C4Config,
@@ -36,6 +38,8 @@ from .state_machine import StateMachine, StateTransitionError
 from .store import SQLiteLockStore, SQLiteStateStore, SQLiteTaskStore, StateStore
 from .supervisor.agent_router import get_recommended_agent
 from .validation import ValidationRunner
+
+logger = logging.getLogger(__name__)
 
 
 class C4Daemon:
@@ -275,9 +279,9 @@ class C4Daemon:
         if worker_id and self._worker_manager is not None:
             try:
                 self._worker_manager.heartbeat(worker_id)
-            except Exception:
-                # Don't fail tool calls if heartbeat fails
-                pass
+            except Exception as e:
+                # Don't fail tool calls if heartbeat fails, but log the error
+                logger.warning(f"Worker heartbeat failed for {worker_id}: {e}")
 
     def _get_effective_domain(self, task: Task) -> str | None:
         """
@@ -1162,11 +1166,7 @@ class C4Daemon:
                 supervisor_started = True
             except Exception as e:
                 # Log but don't fail - supervisor can be started manually
-                import logging
-
-                logging.getLogger(__name__).warning(
-                    f"Failed to auto-start supervisor loop: {e}"
-                )
+                logger.warning(f"Failed to auto-start supervisor loop: {e}")
 
         return {
             "success": True,

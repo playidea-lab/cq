@@ -274,7 +274,8 @@ class DesignStore:
         # Resolve and verify path is still under specs_dir
         result_path = (self.specs_dir / safe_name).resolve()
         specs_dir_resolved = self.specs_dir.resolve()
-        if not str(result_path).startswith(str(specs_dir_resolved) + "/") and result_path != specs_dir_resolved:
+        is_subpath = str(result_path).startswith(str(specs_dir_resolved) + "/")
+        if not is_subpath and result_path != specs_dir_resolved:
             raise ValueError(f"Path traversal detected: {feature_name}")
 
         return result_path

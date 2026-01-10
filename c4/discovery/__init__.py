@@ -1,5 +1,13 @@
 """C4 Discovery System - Domain detection, interviews, and specifications."""
 
+from c4.discovery.design import (
+    ArchitectureOption,
+    ComponentDesign,
+    DataFlowStep,
+    DesignDecision,
+    DesignSpec,
+    DesignStore,
+)
 from c4.discovery.domain_detector import DomainDetector
 from c4.discovery.interview import (
     InterviewContext,
@@ -19,14 +27,7 @@ from c4.discovery.specs import (
     EARSRequirement,
     FeatureSpec,
     SpecStore,
-)
-from c4.discovery.design import (
-    ArchitectureOption,
-    ComponentDesign,
-    DataFlowStep,
-    DesignDecision,
-    DesignSpec,
-    DesignStore,
+    VerificationRequirement,
 )
 
 __all__ = [
@@ -48,6 +49,7 @@ __all__ = [
     "EARSRequirement",
     "FeatureSpec",
     "SpecStore",
+    "VerificationRequirement",
     # Design
     "ArchitectureOption",
     "ComponentDesign",
