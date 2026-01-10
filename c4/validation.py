@@ -1,6 +1,7 @@
 """C4D Validation Runner - Execute and capture validation results"""
 
 import json
+import shlex
 import subprocess
 import time
 from dataclasses import dataclass
@@ -65,9 +66,12 @@ class ValidationRunner:
         start = time.time()
 
         try:
+            # Security: Use shell=False with shlex.split() to prevent command injection
+            # The command is parsed into a list of arguments safely
+            args = shlex.split(command)
             result = subprocess.run(
-                command,
-                shell=True,
+                args,
+                shell=False,
                 cwd=self.root,
                 capture_output=True,
                 text=True,
