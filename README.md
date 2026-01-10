@@ -60,7 +60,7 @@ C4 (Codex-Claude-Completion Control) is an AI project orchestration system that 
 ### 1. Installation (One-liner)
 
 ```bash
-curl -LsSf https://git.pilab.co.kr/pi/c4/-/raw/main/install-remote.sh | sh
+rm -rf ~/.c4 && git clone https://git.pilab.co.kr/pi/c4.git ~/.c4 && ~/.c4/install.sh
 ```
 
 설치 완료! 스크립트가 자동으로:
@@ -95,27 +95,17 @@ Claude Code에서:
 <summary>설치 옵션</summary>
 
 ```bash
-# 기본 설치 (~/.c4)
-curl -LsSf https://git.pilab.co.kr/pi/c4/-/raw/main/install-remote.sh | sh
+# 신규 설치
+git clone https://git.pilab.co.kr/pi/c4.git ~/.c4 && ~/.c4/install.sh
 
-# 경로 지정
-curl -LsSf ... | sh -s -- --dir ~/tools/c4
+# 재설치 (기존 삭제 후)
+rm -rf ~/.c4 && git clone https://git.pilab.co.kr/pi/c4.git ~/.c4 && ~/.c4/install.sh
 
 # 업데이트만 (git pull)
-curl -LsSf ... | sh -s -- --update
+cd ~/.c4 && git pull && ./install.sh
 
-# 재설치
-rm -rf ~/.c4 && curl -LsSf ... | sh
-```
-
-</details>
-
-<details>
-<summary>수동 설치</summary>
-
-```bash
-git clone https://git.pilab.co.kr/pi/c4.git ~/.c4
-~/.c4/install.sh
+# 경로 지정 설치
+git clone https://git.pilab.co.kr/pi/c4.git ~/tools/c4 && ~/tools/c4/install.sh
 ```
 
 </details>
