@@ -258,12 +258,34 @@ class TestDesignStore:
         assert "feature-b" in features
 
     def test_path_traversal_protection(self, design_store):
-        """Test path traversal is blocked."""
-        with pytest.raises(ValueError, match="Invalid feature name"):
-            design_store.get_feature_dir("../etc/passwd")
+        """Test path traversal is blocked via normalization and resolve check."""
+        # Empty names should fail
+        with pytest.raises(ValueError, match="cannot be empty"):
+            design_store.get_feature_dir("")
 
-        with pytest.raises(ValueError, match="Invalid feature name"):
-            design_store.get_feature_dir("/absolute/path")
+        with pytest.raises(ValueError, match="cannot be empty"):
+            design_store.get_feature_dir("   ")
+
+        # Path traversal attempts are normalized safely
+        # "../etc/passwd" becomes "--etc-passwd" which is safe
+        path = design_store.get_feature_dir("../etc/passwd")
+        assert "--etc-passwd" in str(path)
+        assert str(path).startswith(str(design_store.specs_dir.resolve()))
+
+        # Absolute paths are normalized (/ becomes -)
+        path = design_store.get_feature_dir("/absolute/path")
+        assert "-absolute-path" in str(path)
+
+        # Dots are normalized to dashes
+        path = design_store.get_feature_dir(".")
+        assert str(path).endswith("-")
+
+        path = design_store.get_feature_dir("..")
+        assert str(path).endswith("--")
+
+        # Valid names should work
+        path = design_store.get_feature_dir("valid-feature")
+        assert "valid-feature" in str(path)
 
 
 class TestC4SaveDesign:

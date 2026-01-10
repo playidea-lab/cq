@@ -258,17 +258,26 @@ class DesignStore:
         """Get directory for a specific feature.
 
         Raises:
-            ValueError: If feature name contains path traversal attempts.
+            ValueError: If feature name is invalid or contains path traversal attempts.
         """
-        # Validate: reject path traversal attempts
-        if ".." in feature_name or feature_name.startswith("/"):
-            raise ValueError(f"Invalid feature name: {feature_name}")
-
-        # Normalize feature name for directory
         import re
 
-        safe_name = re.sub(r"[^\w\-]", "-", feature_name.lower())
-        return self.specs_dir / safe_name
+        # Validate: reject empty names
+        if not feature_name or not feature_name.strip():
+            raise ValueError("Feature name cannot be empty")
+
+        # Normalize and validate
+        safe_name = re.sub(r"[^\w\-]", "-", feature_name.lower().strip())
+        if not safe_name or safe_name in (".", ".."):
+            raise ValueError(f"Invalid feature name: {feature_name}")
+
+        # Resolve and verify path is still under specs_dir
+        result_path = (self.specs_dir / safe_name).resolve()
+        specs_dir_resolved = self.specs_dir.resolve()
+        if not str(result_path).startswith(str(specs_dir_resolved) + "/") and result_path != specs_dir_resolved:
+            raise ValueError(f"Path traversal detected: {feature_name}")
+
+        return result_path
 
     def save(self, spec: DesignSpec) -> tuple[Path, Path]:
         """Save design specification to both YAML and Markdown files atomically.

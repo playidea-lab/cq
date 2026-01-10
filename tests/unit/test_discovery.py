@@ -306,6 +306,39 @@ class TestSpecStore:
 
         assert store.load("to-delete") is None
 
+    def test_path_traversal_protection(self, temp_c4_dir):
+        """Test path traversal is blocked via normalization and resolve check."""
+        store = SpecStore(temp_c4_dir)
+        store.ensure_dir()
+
+        # Empty names should fail
+        with pytest.raises(ValueError, match="cannot be empty"):
+            store.get_feature_dir("")
+
+        with pytest.raises(ValueError, match="cannot be empty"):
+            store.get_feature_dir("   ")
+
+        # Path traversal attempts are normalized safely
+        # "../etc/passwd" becomes "--etc-passwd" which is safe
+        path = store.get_feature_dir("../etc/passwd")
+        assert "--etc-passwd" in str(path)
+        assert str(path).startswith(str(store.specs_dir.resolve()))
+
+        # Absolute paths are normalized (/ becomes -)
+        path = store.get_feature_dir("/absolute/path")
+        assert "-absolute-path" in str(path)
+
+        # Dots are normalized to dashes
+        path = store.get_feature_dir(".")
+        assert str(path).endswith("-")
+
+        path = store.get_feature_dir("..")
+        assert str(path).endswith("--")
+
+        # Valid names should work
+        path = store.get_feature_dir("valid-feature")
+        assert "valid-feature" in str(path)
+
 
 class TestInterviewEngine:
     """Test interview flow engine."""
