@@ -4,9 +4,10 @@ C4 (Codex-Claude-Completion Control) is an AI project orchestration system that 
 
 ## Key Features
 
-- **State Machine**: Structured workflow INIT → PLAN → EXECUTE → CHECKPOINT → COMPLETE
+- **State Machine**: Structured workflow INIT → DISCOVERY → DESIGN → PLAN → EXECUTE ↔ CHECKPOINT → COMPLETE
 - **MCP Server**: Native integration with Claude Code via Model Context Protocol
 - **Multi-Worker**: Parallel task execution with SQLite WAL mode (race-condition free, 30-min stale recovery)
+- **Agent Routing**: Domain-based agent selection with chaining (Phase 4)
 - **Checkpoint Gates**: Human/supervisor review points between phases
 - **Auto-Validation**: Built-in lint and test runners
 - **Pluggable Architecture**: Extensible StateStore and SupervisorBackend
@@ -167,23 +168,25 @@ cp .claude/commands/c4-*.md ~/.claude/commands/
 ## Workflow
 
 ```text
-┌─────────┐    ┌─────────┐    ┌──────────┐    ┌────────────┐    ┌──────────┐
-│  INIT   │───▶│  PLAN   │───▶│ EXECUTE  │───▶│ CHECKPOINT │───▶│ COMPLETE │
-└─────────┘    └─────────┘    └──────────┘    └────────────┘    └──────────┘
-                   │               │               │
-                   │               ▼               │
-                   │          ┌─────────┐          │
-                   └──────────│ HALTED  │◀─────────┘
-                              └─────────┘
+┌──────┐   ┌───────────┐   ┌────────┐   ┌──────┐   ┌─────────┐   ┌────────────┐   ┌──────────┐
+│ INIT │──▶│ DISCOVERY │──▶│ DESIGN │──▶│ PLAN │──▶│ EXECUTE │──▶│ CHECKPOINT │──▶│ COMPLETE │
+└──────┘   └───────────┘   └────────┘   └──────┘   └─────────┘   └────────────┘   └──────────┘
+                                            │           │               │
+                                            │           ▼               │
+                                            │      ┌─────────┐          │
+                                            └──────│ HALTED  │◀─────────┘
+                                                   └─────────┘
 ```
 
 ### States
 
 | State | Description |
 |-------|-------------|
-| **INIT** | Project created, awaiting plan |
-| **PLAN** | Planning tasks and checkpoints |
-| **EXECUTE** | Workers processing tasks |
+| **INIT** | Project created, awaiting initialization |
+| **DISCOVERY** | Domain detection + EARS requirements gathering |
+| **DESIGN** | Architecture design and decisions |
+| **PLAN** | Task creation and planning |
+| **EXECUTE** | Workers processing tasks (with Agent Routing) |
 | **CHECKPOINT** | Awaiting supervisor review |
 | **HALTED** | Execution paused |
 | **COMPLETE** | All tasks done, project finished |
@@ -195,38 +198,70 @@ cp .claude/commands/c4-*.md ~/.claude/commands/
 | `APPROVE` | Proceed to next phase or complete |
 | `REQUEST_CHANGES` | Create fix tasks, continue execution |
 | `REPLAN` | Return to planning phase |
+| `REDESIGN` | Return to design phase |
+
+### Agent Routing (Phase 4)
+
+When a worker requests a task via `c4_get_task()`, the system automatically provides agent routing information:
+
+| Domain | Primary Agent | Chain |
+|--------|--------------|-------|
+| `web-frontend` | frontend-developer | frontend → test → reviewer |
+| `web-backend` | backend-architect | architect → python → test → reviewer |
+| `fullstack` | backend-architect | backend → frontend → test → reviewer |
+| `ml-dl` | ml-engineer | ml → python → test |
+| `mobile-app` | mobile-developer | mobile → test → reviewer |
+| `infra` | cloud-architect | cloud → deployment |
+| `library` | python-pro | python → docs → test → reviewer |
+| `unknown` | general-purpose | general → reviewer |
+
+**Response includes:**
+```json
+{
+  "task_id": "T-001",
+  "recommended_agent": "frontend-developer",
+  "agent_chain": ["frontend-developer", "test-automator", "code-reviewer"],
+  "domain": "web-frontend",
+  "handoff_instructions": "Pass component specs and test requirements..."
+}
+```
 
 ---
 
 ## Architecture
 
 ```text
-┌─────────────────────────────────────────────────────────────┐
-│                       MCP Server                             │
-│  ┌─────────────────────────────────────────────────────────┐│
-│  │                     C4Daemon                             ││
-│  │  ┌──────────────┐  ┌──────────────┐  ┌───────────────┐  ││
-│  │  │ StateMachine │  │ WorkerManager│  │ SQLiteLockStore│ ││
-│  │  └──────┬───────┘  └──────────────┘  └───────────────┘  ││
-│  │         │                                                ││
-│  │         v                                                ││
-│  │  ┌──────────────┐         ┌────────────────────────┐    ││
-│  │  │  StateStore  │◄───────▶│  SupervisorBackend    │    ││
-│  │  │  (Protocol)  │         │     (Protocol)         │    ││
-│  │  └──────┬───────┘         └────────┬───────────────┘    ││
-│  │         │                          │                     ││
-│  │  ┌──────┴──────┐           ┌───────┴───────┐            ││
-│  │  │ SQLite(기본)│           │  ClaudeCLI    │            ││
-│  │  │ LocalFile   │           │  Mock         │            ││
-│  │  │ (Extensible)│           │  (Extensible) │            ││
-│  │  └─────────────┘           └───────────────┘            ││
-│  └─────────────────────────────────────────────────────────┘│
-└─────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│                         MCP Server                               │
+│  ┌───────────────────────────────────────────────────────────┐  │
+│  │                       C4Daemon                             │  │
+│  │  ┌──────────────┐  ┌──────────────┐  ┌───────────────┐    │  │
+│  │  │ StateMachine │  │ WorkerManager│  │ SQLiteLockStore│   │  │
+│  │  └──────┬───────┘  └──────────────┘  └───────────────┘    │  │
+│  │         │                                                  │  │
+│  │         v          ┌───────────────────────────────────┐  │  │
+│  │  ┌──────────────┐  │         AgentRouter (Phase 4)     │  │  │
+│  │  │  StateStore  │  │  ┌─────────────────────────────┐  │  │  │
+│  │  │  (Protocol)  │  │  │ Domain → Agent Mapping      │  │  │  │
+│  │  └──────┬───────┘  │  │ web-frontend → frontend-dev │  │  │  │
+│  │         │          │  │ web-backend → backend-arch  │  │  │  │
+│  │  ┌──────┴──────┐   │  │ ml-dl → ml-engineer         │  │  │  │
+│  │  │ SQLite(기본)│   │  │ + Agent Chaining            │  │  │  │
+│  │  │ (Extensible)│   │  └─────────────────────────────┘  │  │  │
+│  │  └─────────────┘   └───────────────────────────────────┘  │  │
+│  │                                                            │  │
+│  │  ┌────────────────────────┐                               │  │
+│  │  │   SupervisorBackend    │                               │  │
+│  │  │   ClaudeCLI / Mock     │                               │  │
+│  │  └────────────────────────┘                               │  │
+│  └───────────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────────┘
               │                               │
    ┌──────────┴──────────┐         ┌──────────┴──────────┐
    │   Worker Agents     │         │     Supervisor      │
    │   (Claude Code)     │         │   (Human/Claude)    │
-   └─────────────────────┘         └─────────────────────┘
+   │   + Agent Routing   │         └─────────────────────┘
+   └─────────────────────┘
 ```
 
 ### Pluggable Components
@@ -297,20 +332,27 @@ c4/
 │   ├── mcp_server.py      # MCP server (C4Daemon)
 │   ├── state_machine.py   # State transitions
 │   ├── models/            # Pydantic schemas
+│   │   ├── task.py        # Task with domain field
+│   │   └── responses.py   # TaskAssignment with agent routing
 │   ├── store/             # StateStore implementations (SQLite default)
-│   ├── supervisor/        # SupervisorBackend implementations
+│   ├── supervisor/        # SupervisorBackend + AgentRouter
+│   │   ├── agent_router.py    # Domain → Agent mapping (Phase 4)
+│   │   ├── claude_backend.py  # Claude CLI backend
+│   │   └── prompt.py          # Prompt renderer
 │   ├── daemon/            # Manager classes
+│   │   ├── workers.py     # WorkerManager (stale recovery)
+│   │   └── supervisor_loop.py # Checkpoint/repair processing
 │   └── validation.py      # Validation runner
 ├── tests/
-│   ├── unit/              # Unit tests
-│   ├── integration/       # Integration tests
+│   ├── unit/              # Unit tests (incl. test_agent_router.py)
+│   ├── integration/       # Integration tests (incl. test_agent_routing.py)
 │   └── e2e/               # End-to-end tests
 ├── docs/                  # Documentation (한국어)
 │   ├── getting-started/   # 시작 가이드
 │   ├── user-guide/        # 사용자 가이드
 │   ├── developer-guide/   # 개발자 가이드
 │   └── api/               # API 레퍼런스
-└── .claude/commands/      # Slash commands
+└── .claude/commands/      # Slash commands (10 commands)
 
 # Per-project storage (.c4/ directory)
 your-project/

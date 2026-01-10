@@ -4,17 +4,19 @@
 
 ## 개요
 
-C4 MCP 서버는 다음 7개의 도구를 제공합니다:
+C4 MCP 서버는 다음 9개의 도구를 제공합니다:
 
 | 도구 | 설명 | 주요 용도 |
 |------|------|-----------|
 | `c4_status` | 프로젝트 상태 조회 | 현재 상태 확인 |
-| `c4_get_task` | 태스크 할당 요청 | Worker가 작업 받기 |
+| `c4_start` | PLAN/HALTED → EXECUTE 전환 | 실행 시작 |
+| `c4_get_task` | 태스크 할당 요청 (+ 에이전트 라우팅) | Worker가 작업 받기 |
 | `c4_submit` | 태스크 완료 보고 | 작업 결과 제출 |
 | `c4_add_todo` | 태스크 추가 | REQUEST_CHANGES 시 |
 | `c4_checkpoint` | 체크포인트 결정 | Supervisor 리뷰 |
 | `c4_run_validation` | 검증 실행 | lint, test 등 |
 | `c4_mark_blocked` | 블로킹 보고 | 재시도 실패 시 |
+| `c4_clear` | 상태 초기화 | 개발/디버깅용 |
 
 ---
 
@@ -72,6 +74,51 @@ print(f"Pending tasks: {result['queue']['pending']}")
 
 ---
 
+## c4_start
+
+PLAN 또는 HALTED 상태에서 EXECUTE 상태로 전환합니다.
+
+### 파라미터
+
+없음
+
+### 응답
+
+```json
+{
+  "success": true,
+  "status": "EXECUTE",
+  "message": "Execution started"
+}
+```
+
+### 응답 필드
+
+| 필드 | 타입 | 설명 |
+|------|------|------|
+| `success` | boolean | 전환 성공 여부 |
+| `status` | string | 전환 후 상태 |
+| `message` | string | 결과 메시지 |
+
+### 동작
+
+1. 현재 상태가 PLAN 또는 HALTED인지 확인
+2. EXECUTE 상태로 전환
+3. Supervisor Loop 자동 시작
+4. 결과 반환
+
+### 예시
+
+```python
+# Worker Loop 시작 전
+result = mcp.call_tool("c4_start", {})
+if result["success"]:
+    print("Execution started!")
+    # Worker Loop 진입
+```
+
+---
+
 ## c4_get_task
 
 Worker가 다음 태스크 할당을 요청합니다.
@@ -92,11 +139,12 @@ Worker가 다음 태스크 할당을 요청합니다.
   "title": "API 엔드포인트 구현",
   "scope": "src/api",
   "dod": "GET /users 엔드포인트 구현 및 테스트",
-  "dependencies": ["T-001", "T-002"],
-  "context": {
-    "files": ["src/api/users.py"],
-    "related_tasks": ["T-001"]
-  }
+  "validations": ["lint", "unit"],
+  "branch": "c4/w-abc123/T-003",
+  "recommended_agent": "backend-architect",
+  "agent_chain": ["backend-architect", "python-pro", "test-automator", "code-reviewer"],
+  "domain": "web-backend",
+  "handoff_instructions": "Pass API specs and validation requirements to next agent..."
 }
 ```
 
@@ -114,8 +162,12 @@ null
 | `title` | string | 태스크 제목 |
 | `scope` | string | 작업 범위 (Scope Lock 대상) |
 | `dod` | string | Definition of Done (완료 조건) |
-| `dependencies` | array | 의존 태스크 ID 목록 |
-| `context` | object | 추가 컨텍스트 (파일, 관련 태스크 등) |
+| `validations` | array | 실행할 검증 명령어 목록 |
+| `branch` | string | 작업용 Git 브랜치 |
+| `recommended_agent` | string | 추천 에이전트 (Phase 4) |
+| `agent_chain` | array | 에이전트 체인 (Phase 4) |
+| `domain` | string | 태스크 도메인 (Phase 4) |
+| `handoff_instructions` | string | 에이전트 간 핸드오프 지침 (Phase 4) |
 
 ### 동작
 
@@ -126,7 +178,11 @@ null
    - `scope`가 다른 Worker에 의해 잠기지 않음
 3. 태스크의 `scope`에 대해 Lock 획득
 4. 태스크 상태를 `in_progress`로 변경
-5. `TaskAssignment` 반환
+5. **에이전트 라우팅 정보 계산 (Phase 4)**:
+   - 태스크 도메인 또는 프로젝트 도메인 확인
+   - 도메인에 맞는 추천 에이전트 결정
+   - 에이전트 체인 및 핸드오프 지침 생성
+6. `TaskAssignment` 반환
 
 ### 예시
 
@@ -136,7 +192,17 @@ assignment = mcp.call_tool("c4_get_task", {"worker_id": "worker-001"})
 if assignment:
     task_id = assignment["task_id"]
     dod = assignment["dod"]
-    # 작업 수행...
+
+    # Phase 4: 에이전트 라우팅 활용
+    agent = assignment["recommended_agent"]
+    chain = assignment["agent_chain"]
+
+    # 추천 에이전트로 작업 수행
+    Task(subagent_type=agent, prompt=f"""
+        Task: {assignment['title']}
+        DoD: {dod}
+        Branch: {assignment['branch']}
+    """)
 ```
 
 ---
@@ -499,6 +565,45 @@ else:
         "attempts": MAX_RETRIES,
         "last_error": "Expected 200, got 500"
     })
+```
+
+---
+
+## c4_clear
+
+C4 상태를 완전히 초기화합니다. 개발 및 디버깅용.
+
+### 파라미터
+
+| 이름 | 타입 | 필수 | 기본값 | 설명 |
+|------|------|------|--------|------|
+| `confirm` | boolean | O | - | 삭제 확인 (true 필수) |
+| `keep_config` | boolean | X | false | config.yaml 유지 여부 |
+
+### 응답
+
+```json
+{
+  "success": true,
+  "message": "C4 state cleared"
+}
+```
+
+### 동작
+
+1. `confirm`이 true인지 확인
+2. `.c4/` 디렉토리 삭제
+3. 데몬 캐시 초기화
+4. `keep_config`가 true면 config.yaml 복원
+
+### 예시
+
+```python
+# 완전 초기화
+mcp.call_tool("c4_clear", {"confirm": True})
+
+# 설정 유지하고 초기화
+mcp.call_tool("c4_clear", {"confirm": True, "keep_config": True})
 ```
 
 ---
