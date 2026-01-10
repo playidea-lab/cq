@@ -577,14 +577,20 @@ class C4Daemon:
                         **agent_routing,
                     )
 
-        # Find available task from pending
+        # Find available task from pending (sorted by priority, highest first)
         project_id = state.project_id
         ttl = self.config.scope_lock_ttl_sec
 
-        for task_id in state.queue.pending[:]:  # Copy to avoid mutation during iteration
+        # Get all pending tasks and sort by priority (descending)
+        pending_tasks = []
+        for task_id in state.queue.pending:
             task = self.get_task(task_id)
-            if task is None:
-                continue
+            if task:
+                pending_tasks.append(task)
+        pending_tasks.sort(key=lambda t: t.priority, reverse=True)
+
+        for task in pending_tasks:
+            task_id = task.id
 
             # Check dependencies first (non-locking check)
             deps_met = all(
@@ -971,8 +977,21 @@ class C4Daemon:
         title: str,
         scope: str | None,
         dod: str,
+        dependencies: list[str] | None = None,
+        domain: str | None = None,
+        priority: int = 0,
     ) -> dict[str, Any]:
-        """Add a new task (used by REQUEST_CHANGES)"""
+        """Add a new task with optional dependencies.
+
+        Args:
+            task_id: Unique task identifier (e.g., "T-001")
+            title: Task title
+            scope: File/directory scope for lock (e.g., "src/auth/")
+            dod: Definition of Done
+            dependencies: List of task IDs that must complete first
+            domain: Domain for agent routing (e.g., "web-frontend")
+            priority: Higher priority tasks are assigned first (default: 0)
+        """
         if self.state_machine is None:
             raise RuntimeError("C4 not initialized")
 
@@ -981,10 +1000,17 @@ class C4Daemon:
             title=title,
             scope=scope,
             dod=dod,
+            dependencies=dependencies or [],
+            domain=domain,
+            priority=priority,
         )
         self.add_task(task)
 
-        return {"success": True, "task_id": task_id}
+        return {
+            "success": True,
+            "task_id": task_id,
+            "dependencies": task.dependencies,
+        }
 
     def c4_checkpoint(
         self,
@@ -2184,14 +2210,27 @@ def create_server(project_root: Path | None = None) -> Server:
             ),
             Tool(
                 name="c4_add_todo",
-                description="Add a new task to the queue (used for REQUEST_CHANGES)",
+                description="Add a new task to the queue with optional dependencies",
                 inputSchema={
                     "type": "object",
                     "properties": {
-                        "task_id": {"type": "string"},
-                        "title": {"type": "string"},
-                        "scope": {"type": "string"},
+                        "task_id": {"type": "string", "description": "Unique task ID (e.g., T-001)"},
+                        "title": {"type": "string", "description": "Task title"},
+                        "scope": {"type": "string", "description": "File/directory scope for lock"},
                         "dod": {"type": "string", "description": "Definition of Done"},
+                        "dependencies": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Task IDs that must complete first (e.g., ['T-001', 'T-002'])",
+                        },
+                        "domain": {
+                            "type": "string",
+                            "description": "Domain for agent routing (web-frontend, web-backend, etc.)",
+                        },
+                        "priority": {
+                            "type": "integer",
+                            "description": "Higher priority tasks assigned first (default: 0)",
+                        },
                     },
                     "required": ["task_id", "title", "dod"],
                 },
@@ -2549,10 +2588,13 @@ def create_server(project_root: Path | None = None) -> Server:
                 result = result.model_dump()
             elif name == "c4_add_todo":
                 result = daemon.c4_add_todo(
-                    arguments["task_id"],
-                    arguments["title"],
-                    arguments.get("scope"),
-                    arguments["dod"],
+                    task_id=arguments["task_id"],
+                    title=arguments["title"],
+                    scope=arguments.get("scope"),
+                    dod=arguments["dod"],
+                    dependencies=arguments.get("dependencies"),
+                    domain=arguments.get("domain"),
+                    priority=arguments.get("priority", 0),
                 )
             elif name == "c4_checkpoint":
                 result = daemon.c4_checkpoint(
