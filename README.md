@@ -61,76 +61,73 @@ C4 (Codex-Claude-Completion Control) is an AI project orchestration system that 
 curl -LsSf https://git.pilab.co.kr/pi/c4/-/raw/main/install-remote.sh | sh
 ```
 
-That's it! The script will:
-- Install dependencies (`uv sync`)
-- Copy slash commands to `~/.claude/commands/`
-- Configure MCP server in `~/.claude.json`
+설치 완료! 스크립트가 자동으로:
+- C4를 `~/.c4`에 클론
+- 의존성 설치 (`uv sync`)
+- 글로벌 `c4` 명령어 생성 (`~/.local/bin/c4`)
+- 슬래시 명령어 복사 (`~/.claude/commands/`)
+- Hooks 설정 (Stop Hook, Security Hook)
 
-### 2. Start a Project (One Command)
+### 2. Start a Project
 
 ```bash
 cd /path/to/your/project
 c4
 ```
 
-This single command:
-
-- Auto-initializes C4 if not already set up
-- Starts Claude Code with MCP server loaded
-- No restart needed!
+이 명령어 하나로:
+- C4 자동 초기화
+- MCP 서버와 함께 Claude Code 시작
 
 ### 3. Start Working
 
-In Claude Code:
+Claude Code에서:
 
-```text
-/c4-plan       # Interpret docs and create tasks
-/c4-run        # Start automated execution
-/c4-status     # Check progress anytime
+```
+/c4-plan       # 문서 분석 → 태스크 생성 (대화형)
+/c4-run        # 자동 실행 시작
+/c4-status     # 진행 상황 확인
 ```
 
 <details>
-<summary>Alternative: Initialize from within Claude Code</summary>
+<summary>설치 옵션</summary>
 
-If already in Claude Code session:
+```bash
+# 기본 설치 (~/.c4)
+curl -LsSf https://git.pilab.co.kr/pi/c4/-/raw/main/install-remote.sh | sh
 
-```text
+# 경로 지정
+curl -LsSf ... | sh -s -- --dir ~/tools/c4
+
+# 업데이트만 (git pull)
+curl -LsSf ... | sh -s -- --update
+
+# 재설치
+rm -rf ~/.c4 && curl -LsSf ... | sh
+```
+
+</details>
+
+<details>
+<summary>수동 설치</summary>
+
+```bash
+git clone https://git.pilab.co.kr/pi/c4.git ~/.c4
+~/.c4/install.sh
+```
+
+</details>
+
+<details>
+<summary>Claude Code 내에서 초기화</summary>
+
+이미 Claude Code 세션에 있다면:
+
+```
 /c4-init
 ```
 
-Note: Requires Claude Code restart to load MCP server.
-
-</details>
-
-<details>
-<summary>Alternative: Clone & Install</summary>
-
-```bash
-git clone https://git.pilab.co.kr/pi/c4.git
-cd c4
-./install.sh
-```
-
-</details>
-
-<details>
-<summary>Alternative: Manual Setup</summary>
-
-```bash
-# 1. Clone and install dependencies
-git clone https://git.pilab.co.kr/pi/c4.git
-cd c4
-uv sync
-
-# 2. Copy commands
-cp .claude/commands/c4-*.md ~/.claude/commands/
-
-# 3. Add to ~/.claude.json mcpServers:
-"c4": {
-  "command": "uv",
-  "args": ["--directory", "/path/to/c4", "run", "python", "-m", "c4.mcp_server"]
-}
-```
+Note: MCP 서버 로드를 위해 Claude Code 재시작 필요.
 
 </details>
 
