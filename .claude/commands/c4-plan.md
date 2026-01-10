@@ -332,7 +332,127 @@ requirements:
 
 ---
 
-#### 2.5.5 Discovery 완료
+#### 2.5.5 검증 요구사항 수집 (Verification Requirements)
+
+**목표**: 대화 중 사용자가 언급한 검증 요구사항이나 도메인별 필수 검증을 수집합니다.
+
+##### 검증 요구사항이 필요한 경우
+
+1. **사용자 명시적 요청**:
+   - "성능 검증 필요해요"
+   - "API 응답 시간 500ms 이하인지 확인해줘"
+   - "로그인 플로우 E2E 테스트 해줘"
+   - "브라우저에서 실제로 동작하는지 확인"
+
+2. **도메인별 기본 검증**:
+   | 도메인 | 기본 검증 |
+   |--------|----------|
+   | `web-frontend` | browser (E2E), visual (스크린샷) |
+   | `web-backend` | http (API 호출), cli (서버 시작) |
+   | `ml-dl` | cli (추론), metrics (정확도) |
+   | `infra` | cli (terraform), dryrun (apply 시뮬레이션) |
+
+3. **대화 중 암시적 발견**:
+   - "API가 빨라야 해요" → performance 검증
+   - "화면이 예쁘게 나와야 해요" → visual 검증
+   - "모델 정확도가 95% 이상이어야 해요" → metrics 검증
+
+##### 검증 요구사항 질문 (선택적)
+
+```python
+# 도메인별 검증 옵션 제시
+AskUserQuestion(questions=[
+    {
+        "question": "추가적인 검증이 필요한가요?",
+        "header": "검증방식",
+        "options": [
+            {"label": "기본 검증만 (권장)", "description": f"도메인 기본: {domain_defaults}"},
+            {"label": "브라우저 E2E 테스트", "description": "실제 브라우저에서 시나리오 테스트"},
+            {"label": "API 성능 테스트", "description": "응답 시간, 상태 코드 검증"},
+            {"label": "시각적 회귀 테스트", "description": "스크린샷 비교"}
+        ],
+        "multiSelect": True
+    }
+])
+```
+
+##### 검증 요구사항 저장 (MCP 도구 사용)
+
+```python
+# 사용자가 E2E 테스트를 요청한 경우
+mcp__c4__c4_add_verification(
+    feature="user-auth",
+    verification_type="browser",
+    name="Login Flow E2E",
+    reason="사용자 요청: 로그인 플로우 E2E 테스트",
+    priority=1,  # 1=critical, 2=normal, 3=optional
+    config={
+        "url": "http://localhost:3000",
+        "steps": [
+            {"action": "goto", "url": "/login"},
+            {"action": "type", "selector": "#email", "value": "test@example.com"},
+            {"action": "type", "selector": "#password", "value": "password123"},
+            {"action": "click", "selector": "#submit"},
+            {"action": "wait", "selector": ".dashboard"}
+        ]
+    }
+)
+
+# API 성능 검증 요청
+mcp__c4__c4_add_verification(
+    feature="api-users",
+    verification_type="http",
+    name="User API Response Time",
+    reason="사용자 요청: API 응답 500ms 이하",
+    config={
+        "url": "/api/users",
+        "method": "GET",
+        "max_response_time": 500,
+        "expected_status": 200
+    }
+)
+
+# ML 메트릭 검증
+mcp__c4__c4_add_verification(
+    feature="model-training",
+    verification_type="metrics",
+    name="Model Accuracy Check",
+    reason="사용자 요구사항: 정확도 95% 이상",
+    config={
+        "thresholds": {
+            "accuracy": {"min": 0.95},
+            "loss": {"max": 0.1}
+        }
+    }
+)
+```
+
+##### 검증 타입 참조
+
+| Type | 용도 | 필수 config |
+|------|------|------------|
+| `http` | API 엔드포인트 검증 | `url`, `method`, `expected_status` |
+| `browser` | E2E 브라우저 테스트 | `url`, `steps` (action 배열) |
+| `cli` | CLI 명령 실행 검증 | `command`, `expected_output` 또는 `expected_exit_code` |
+| `metrics` | ML/DL 메트릭 검증 | `thresholds` (metric → {min, max, eq}) |
+| `visual` | 스크린샷 비교 | `baseline`, `current` |
+| `dryrun` | 인프라 dry-run | `command`, `success_patterns`, `failure_patterns` |
+
+##### 저장된 검증 확인
+
+```python
+# 저장된 검증 확인
+verifications = mcp__c4__c4_get_feature_verifications(feature="user-auth")
+print(f"📋 {verifications['feature']} 검증 요구사항:")
+for v in verifications['verifications']:
+    status = "✅" if v['enabled'] else "⏸️"
+    print(f"  {status} [{v['type']}] {v['name']} (P{v['priority']})")
+    print(f"      이유: {v['reason']}")
+```
+
+---
+
+#### 2.5.6 Discovery 완료
 
 모든 기능의 명세가 수집되면 DESIGN 단계로 전환합니다.
 
