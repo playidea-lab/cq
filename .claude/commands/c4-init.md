@@ -23,16 +23,18 @@ uv run --directory "$C4_DIR" c4 init --path "$(pwd)"
 uv run --directory "$C4_DIR" c4 init --path "$(pwd)" --project-id "$ARGUMENTS"
 ```
 
-### Step 3: 재시작 안내
+### Step 3: 완료 확인
 
-**중요**: `.mcp.json`이 새로 생성된 경우 Claude Code 재시작이 필요합니다.
+**재시작 필요 여부:**
 
-MCP 서버는 Claude Code 시작 시에만 로드되므로, 새 프로젝트에서는:
+| 상황 | 재시작 |
+|------|--------|
+| `.mcp.json`이 이미 존재 (c4 clear 후 재init) | **불필요** - MCP가 자동으로 새 상태 인식 |
+| `.mcp.json`이 새로 생성됨 (최초 init) | **필요** - MCP 서버 로드 필요 |
 
-1. Claude Code 종료
-2. 터미널에서 다시 시작
+**확인 방법**: `/c4-status` 실행하여 상태가 정상 표시되면 재시작 불필요.
 
-**권장 워크플로우 (재시작 불필요)**:
+**새 프로젝트 권장 워크플로우**:
 
 ```bash
 # 터미널에서 실행 - 자동 init + Claude Code 시작
