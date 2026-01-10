@@ -19,7 +19,7 @@ def temp_project():
 def daemon_in_discovery(temp_project):
     """Create a daemon in DISCOVERY state."""
     daemon = C4Daemon(temp_project)
-    daemon.initialize()
+    daemon.initialize(with_default_checkpoints=False)
     # Transition to DISCOVERY
     daemon.state_machine.transition("c4_init")
     return daemon

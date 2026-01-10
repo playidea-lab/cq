@@ -86,8 +86,18 @@ class C4Daemon:
         # Check both SQLite (new) and JSON (legacy) for backward compatibility
         return (self.c4_dir / "c4.db").exists() or (self.c4_dir / "state.json").exists()
 
-    def initialize(self, project_id: str | None = None) -> C4State:
-        """Initialize C4 in the project directory"""
+    def initialize(
+        self,
+        project_id: str | None = None,
+        with_default_checkpoints: bool = True,
+    ) -> C4State:
+        """
+        Initialize C4 in the project directory.
+
+        Args:
+            project_id: Project identifier (defaults to directory name)
+            with_default_checkpoints: If True, add default checkpoints (CP-REVIEW, CP-FINAL)
+        """
         if project_id is None:
             project_id = self.root.name
 
@@ -108,11 +118,17 @@ class C4Daemon:
         self.state_machine = StateMachine(self.c4_dir, store=self._get_default_store())
         state = self.state_machine.initialize_state(project_id)
 
-        # Create default config
-        self._config = C4Config(project_id=project_id)
+        # Create config with optional default checkpoints
+        checkpoints = []
+        if with_default_checkpoints:
+            from c4.models.checkpoint import DEFAULT_CHECKPOINTS
+
+            checkpoints = list(DEFAULT_CHECKPOINTS)  # Copy to avoid mutation
+
+        self._config = C4Config(project_id=project_id, checkpoints=checkpoints)
         self._save_config()
 
-        # Transition to PLAN
+        # Transition to DISCOVERY
         self.state_machine.transition("c4_init")
 
         return state
@@ -793,12 +809,11 @@ class C4Daemon:
             return error_response
 
         # Non-atomic operations (safe to do outside the lock)
-        # Update task in SQLite (always, even if task is None in memory)
-        # This ensures c4_tasks and c4_state stay in sync
-        self.task_store.update_status(
+        # Update commit info in SQLite - status is DERIVED from c4_state.queue
+        # (single source of truth), so we only update commit_sha here
+        self.task_store.update_commit_info(
             project_id,
             task_id,
-            status="done",
             commit_sha=commit_sha
         )
 

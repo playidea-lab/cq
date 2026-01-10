@@ -18,9 +18,9 @@ def temp_project():
 
 @pytest.fixture
 def daemon(temp_project):
-    """Create an initialized daemon"""
+    """Create an initialized daemon (without default checkpoints for test isolation)"""
     d = C4Daemon(temp_project)
-    d.initialize("test-project")
+    d.initialize("test-project", with_default_checkpoints=False)
     return d
 
 
@@ -28,7 +28,7 @@ def daemon(temp_project):
 def multi_worker_daemon(temp_project):
     """Create a daemon configured for multi-worker testing"""
     daemon = C4Daemon(temp_project)
-    daemon.initialize("test-project")
+    daemon.initialize("test-project", with_default_checkpoints=False)
     # Set short lock TTL for testing
     daemon._config.scope_lock_ttl_sec = 60
     return daemon
@@ -38,7 +38,7 @@ def multi_worker_daemon(temp_project):
 def daemon_with_checkpoints(temp_project):
     """Create a daemon with checkpoint configuration"""
     daemon = C4Daemon(temp_project)
-    daemon.initialize("test-project")
+    daemon.initialize("test-project", with_default_checkpoints=False)
 
     # Add checkpoint configuration
     daemon._config.checkpoints = [

@@ -94,7 +94,7 @@ class StateMachine:
         self.c4_dir = c4_dir
         self.events_dir = c4_dir / "events"
         self._state: C4State | None = None
-        self._event_counter: int = self._get_last_event_number()
+        self._project_id: str | None = None  # Cached for atomic operations
 
         # Initialize store (default to LocalFileStateStore)
         if store is None:
@@ -104,10 +104,34 @@ class StateMachine:
         else:
             self._store = store
 
-    def _get_last_event_number(self) -> int:
-        """Get the last event number from existing event files."""
+    def _get_next_event_id(self) -> str:
+        """
+        Get the next event ID atomically.
+
+        Uses SQLite atomic_modify if available (prevents race conditions).
+        Falls back to file-based counter for non-SQLite stores.
+        """
+        from .store import SQLiteStateStore
+
+        project_id = self._project_id or (self._state.project_id if self._state else None)
+
+        # Try SQLite atomic approach first
+        if isinstance(self._store, SQLiteStateStore) and project_id:
+            with self._store.atomic_modify(project_id) as state:
+                next_id = state.metrics.events_emitted + 1
+                state.metrics.events_emitted = next_id
+                # Update cached state
+                if self._state:
+                    self._state.metrics.events_emitted = next_id
+                return f"{next_id:06d}"
+
+        # Fallback: scan event files (for LocalFileStateStore or initial state)
+        return self._get_next_event_id_from_files()
+
+    def _get_next_event_id_from_files(self) -> str:
+        """Fallback: get next event ID by scanning event files."""
         if not self.events_dir.exists():
-            return 0
+            return "000001"
 
         max_num = 0
         for event_file in self.events_dir.glob("*.json"):
@@ -120,7 +144,7 @@ class StateMachine:
             except (ValueError, IndexError):
                 continue
 
-        return max_num
+        return f"{max_num + 1:06d}"
 
     # =========================================================================
     # State Management
@@ -132,6 +156,7 @@ class StateMachine:
 
         try:
             self._state = self._store.load("")  # project_id from state
+            self._project_id = self._state.project_id  # Cache for atomic operations
         except StateNotFoundError:
             raise FileNotFoundError(f"State file not found: {self.c4_dir / 'state.json'}")
         return self._state
@@ -146,6 +171,7 @@ class StateMachine:
     def initialize_state(self, project_id: str) -> C4State:
         """Initialize new state for a project"""
         self._state = C4State(project_id=project_id)
+        self._project_id = project_id  # Cache for atomic operations
         self.c4_dir.mkdir(parents=True, exist_ok=True)
         self.events_dir.mkdir(exist_ok=True)
         self.save_state()
@@ -284,8 +310,8 @@ class StateMachine:
 
     def _emit_event(self, event_type: EventType, actor: str, data: dict) -> Event:
         """Emit an event to the event log"""
-        self._event_counter += 1
-        event_id = f"{self._event_counter:06d}"
+        # Get next event ID atomically (prevents race conditions)
+        event_id = self._get_next_event_id()
 
         event = Event(
             id=event_id,
@@ -300,8 +326,12 @@ class StateMachine:
         event_file = self.events_dir / filename
         event_file.write_text(event.model_dump_json(indent=2))
 
-        # Update metrics
-        self.state.metrics.events_emitted += 1
+        # Note: metrics.events_emitted is already updated in _get_next_event_id()
+        # for SQLite stores. For file stores, sync from event_id.
+        from .store import SQLiteStateStore
+
+        if not isinstance(self._store, SQLiteStateStore):
+            self.state.metrics.events_emitted = int(event_id)
 
         return event
 

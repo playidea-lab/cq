@@ -20,7 +20,7 @@ def temp_project():
 def agent_routing_daemon(temp_project):
     """Create daemon configured for agent routing testing"""
     daemon = C4Daemon(temp_project)
-    daemon.initialize("agent-routing-test")
+    daemon.initialize("agent-routing-test", with_default_checkpoints=False)
 
     # Skip discovery phase to go directly to PLAN for testing
     daemon.state_machine.transition("skip_discovery")
@@ -121,7 +121,7 @@ class TestAgentRoutingIntegration:
     def test_get_task_with_project_config_domain(self, temp_project):
         """Test that project config domain is used when task has no domain"""
         daemon = C4Daemon(temp_project)
-        daemon.initialize("config-domain-test")
+        daemon.initialize("config-domain-test", with_default_checkpoints=False)
 
         # Skip discovery phase
         daemon.state_machine.transition("skip_discovery")
@@ -157,7 +157,7 @@ class TestAgentRoutingIntegration:
     def test_task_domain_overrides_config_domain(self, temp_project):
         """Test that task-level domain takes precedence over config domain"""
         daemon = C4Daemon(temp_project)
-        daemon.initialize("override-domain-test")
+        daemon.initialize("override-domain-test", with_default_checkpoints=False)
 
         # Skip discovery phase
         daemon.state_machine.transition("skip_discovery")

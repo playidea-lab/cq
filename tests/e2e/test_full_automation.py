@@ -26,7 +26,7 @@ def project_dir(tmp_path):
 def daemon(project_dir):
     """Create a daemon with initialized project"""
     d = C4Daemon(project_dir)
-    d.initialize("auto-test")
+    d.initialize("auto-test", with_default_checkpoints=False)
     # Skip discovery phase to go directly to PLAN for testing
     d.state_machine.transition("skip_discovery")
     return d

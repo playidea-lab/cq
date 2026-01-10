@@ -50,7 +50,7 @@ def fresh_project():
 def initialized_project(fresh_project):
     """Create an initialized C4 project"""
     daemon = C4Daemon(fresh_project)
-    daemon.initialize("test-project")
+    daemon.initialize("test-project", with_default_checkpoints=False)
     # Skip discovery phase to go directly to PLAN for testing
     daemon.state_machine.transition("skip_discovery")
     return fresh_project, daemon

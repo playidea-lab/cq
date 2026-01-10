@@ -32,7 +32,7 @@ def temp_project():
 def multi_worker_daemon(temp_project):
     """Create daemon configured for multi-worker testing"""
     daemon = C4Daemon(temp_project)
-    daemon.initialize("multi-worker-test")
+    daemon.initialize("multi-worker-test", with_default_checkpoints=False)
 
     # Skip discovery phase to go directly to PLAN for testing
     daemon.state_machine.transition("skip_discovery")

@@ -475,12 +475,16 @@ class SQLiteTaskStore:
     Stores tasks in a dedicated table for atomic updates alongside state.
     This prevents race conditions when multiple workers update tasks concurrently.
 
+    IMPORTANT: Task status is DERIVED from c4_state.queue, not stored directly.
+    This ensures single source of truth and prevents inconsistency between
+    c4_state and c4_tasks tables.
+
     Schema:
         c4_tasks (
             project_id TEXT,
             task_id TEXT,
             task_json TEXT NOT NULL,
-            status TEXT NOT NULL,
+            status TEXT NOT NULL,  -- Cached only, derived from c4_state.queue on read
             assigned_to TEXT,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (project_id, task_id)
@@ -534,8 +538,53 @@ class SQLiteTaskStore:
         finally:
             conn.close()
 
+    def _load_queue(self, project_id: str) -> "TaskQueue | None":
+        """Load queue from c4_state table (single source of truth for task status)"""
+        from c4.models import TaskQueue
+
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.execute(
+                    "SELECT state_json FROM c4_state WHERE project_id = ?",
+                    (project_id,),
+                )
+                row = cursor.fetchone()
+
+            if row is None:
+                # Also try loading without project_id (single-project case)
+                with self._get_connection() as conn:
+                    cursor = conn.execute("SELECT state_json FROM c4_state LIMIT 1")
+                    row = cursor.fetchone()
+
+            if row is None:
+                return None
+
+            state_data = json.loads(row[0])
+            queue_data = state_data.get("queue", {})
+            return TaskQueue.model_validate(queue_data)
+        except sqlite3.OperationalError:
+            # c4_state table doesn't exist yet (e.g., in isolated tests)
+            return None
+
+    def _derive_status(self, task_id: str, queue: "TaskQueue") -> str:
+        """
+        Derive task status from c4_state.queue (single source of truth).
+
+        This prevents inconsistency between c4_state and c4_tasks tables
+        by always computing status from the authoritative queue state.
+        """
+        if task_id in queue.done:
+            return "done"
+        elif task_id in queue.in_progress:
+            return "in_progress"
+        elif task_id in queue.pending:
+            return "pending"
+        else:
+            return "unknown"
+
     def load_all(self, project_id: str) -> dict[str, "Task"]:
-        """Load all tasks for a project"""
+        """Load all tasks for a project with status derived from c4_state.queue"""
+        from c4.models.enums import TaskStatus
         from c4.models.task import Task
 
         with self._get_connection() as conn:
@@ -545,10 +594,27 @@ class SQLiteTaskStore:
             )
             rows = cursor.fetchall()
 
-        return {row[0]: Task.model_validate(json.loads(row[1])) for row in rows}
+        # Load queue to derive status
+        queue = self._load_queue(project_id)
+
+        tasks = {}
+        for row in rows:
+            task_id, task_json_str = row
+            task = Task.model_validate(json.loads(task_json_str))
+
+            # Derive status from queue (single source of truth)
+            if queue is not None:
+                derived_status = self._derive_status(task_id, queue)
+                if derived_status != "unknown":
+                    task.status = TaskStatus(derived_status)
+
+            tasks[task_id] = task
+
+        return tasks
 
     def get(self, project_id: str, task_id: str) -> "Task | None":
-        """Get a single task by ID"""
+        """Get a single task by ID with status derived from c4_state.queue"""
+        from c4.models.enums import TaskStatus
         from c4.models.task import Task
 
         with self._get_connection() as conn:
@@ -560,7 +626,17 @@ class SQLiteTaskStore:
 
         if row is None:
             return None
-        return Task.model_validate(json.loads(row[0]))
+
+        task = Task.model_validate(json.loads(row[0]))
+
+        # Derive status from queue (single source of truth)
+        queue = self._load_queue(project_id)
+        if queue is not None:
+            derived_status = self._derive_status(task_id, queue)
+            if derived_status != "unknown":
+                task.status = TaskStatus(derived_status)
+
+        return task
 
     def save(self, project_id: str, task: "Task") -> None:
         """Save a single task (insert or update)"""
@@ -673,6 +749,58 @@ class SQLiteTaskStore:
                     task_id,
                     task.model_dump_json(),
                     task.status.value,
+                    task.assigned_to,
+                    datetime.now(),
+                ),
+            )
+            conn.commit()
+            return True
+
+    def update_commit_info(
+        self,
+        project_id: str,
+        task_id: str,
+        commit_sha: str,
+        branch: str | None = None,
+    ) -> bool:
+        """
+        Update commit info for a task WITHOUT changing status.
+
+        Status is derived from c4_state.queue (single source of truth),
+        so we only update commit_sha and branch here.
+
+        This is the recommended method for c4_submit() to use.
+        """
+        from c4.models.task import Task
+
+        with self._get_connection() as conn:
+            # Load current task
+            cursor = conn.execute(
+                "SELECT task_json FROM c4_tasks WHERE project_id = ? AND task_id = ?",
+                (project_id, task_id),
+            )
+            row = cursor.fetchone()
+            if row is None:
+                return False
+
+            # Update task (commit_sha and branch only, NOT status)
+            task = Task.model_validate(json.loads(row[0]))
+            task.commit_sha = commit_sha
+            if branch is not None:
+                task.branch = branch
+
+            # Save updated task - status column value is just a cache
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO c4_tasks
+                    (project_id, task_id, task_json, status, assigned_to, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    project_id,
+                    task_id,
+                    task.model_dump_json(),
+                    task.status.value,  # Cached, real status comes from queue
                     task.assigned_to,
                     datetime.now(),
                 ),

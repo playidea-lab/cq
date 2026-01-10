@@ -21,7 +21,7 @@ def temp_project():
 def daemon(temp_project):
     """Create an initialized daemon (starts in DISCOVERY state)"""
     d = C4Daemon(temp_project)
-    d.initialize("test-project")
+    d.initialize("test-project", with_default_checkpoints=False)
     return d
 
 
@@ -29,7 +29,7 @@ def daemon(temp_project):
 def daemon_in_plan(temp_project):
     """Create a daemon in PLAN state (skip discovery/design)"""
     d = C4Daemon(temp_project)
-    d.initialize("test-project")
+    d.initialize("test-project", with_default_checkpoints=False)
     # Transition through discovery and design
     d.state_machine.transition("skip_discovery", "test")
     return d
@@ -39,7 +39,7 @@ def daemon_in_plan(temp_project):
 def daemon_in_execute(temp_project):
     """Create a daemon in EXECUTE state with tasks"""
     d = C4Daemon(temp_project)
-    d.initialize("test-project")
+    d.initialize("test-project", with_default_checkpoints=False)
     # Skip to PLAN, then transition to EXECUTE
     d.state_machine.transition("skip_discovery", "test")
     d.state_machine.transition("c4_run", "test")
@@ -52,7 +52,7 @@ class TestDaemonInitialization:
     def test_initialize_creates_directories(self, temp_project):
         """Test that initialization creates all required directories"""
         daemon = C4Daemon(temp_project)
-        daemon.initialize("test-project")
+        daemon.initialize("test-project", with_default_checkpoints=False)
 
         c4_dir = temp_project / ".c4"
         assert c4_dir.exists()
@@ -73,14 +73,14 @@ class TestDaemonInitialization:
         daemon = C4Daemon(temp_project)
         assert not daemon.is_initialized()
 
-        daemon.initialize("test-project")
+        daemon.initialize("test-project", with_default_checkpoints=False)
         assert daemon.is_initialized()
 
     def test_load_existing_project(self, temp_project):
         """Test loading an existing project"""
         # Initialize
         d1 = C4Daemon(temp_project)
-        d1.initialize("test-project")
+        d1.initialize("test-project", with_default_checkpoints=False)
 
         # Load in new daemon instance
         d2 = C4Daemon(temp_project)
