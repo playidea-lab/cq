@@ -17,6 +17,8 @@ C4 (Codex-Claude-Completion Control) is an AI project orchestration system that 
 - **Stop Hook**: Prevents Claude exit while tasks remain (continuous execution)
 - **Auto Supervisor**: Headless supervisor loop starts automatically on execution
 - **SQLite Storage**: Default storage with automatic migration from legacy JSON format
+- **Default Checkpoints**: Auto-generated CP-REVIEW and CP-FINAL on init
+- **Review Parser**: Automatic review-report.md → task conversion
 
 ## Documentation
 
@@ -304,6 +306,17 @@ checkpoints:
     required_tasks: ["T-001", "T-002"]
     required_validations: ["lint", "unit"]
 ```
+
+### Default Checkpoints
+
+`c4 init` 시 기본 체크포인트가 자동 생성됩니다:
+
+| ID | 설명 | 필수 Validation |
+|----|------|----------------|
+| `CP-REVIEW` | 코드 리뷰 완료 후 Supervisor 검토 | lint |
+| `CP-FINAL` | 모든 작업 완료 후 최종 검토 | lint, unit |
+
+기본 체크포인트 없이 시작하려면 `with_default_checkpoints=False` 옵션 사용.
 
 ---
 

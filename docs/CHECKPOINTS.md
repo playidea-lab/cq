@@ -20,6 +20,19 @@ EXECUTE → [조건 충족] → CHECKPOINT → [결정] → 다음 단계
 
 ---
 
+## 기본 체크포인트
+
+`c4 init` 시 다음 기본 체크포인트가 자동 생성됩니다:
+
+| ID | 설명 | 필수 Validation |
+|----|------|----------------|
+| `CP-REVIEW` | 코드 리뷰 완료 후 Supervisor 검토 | lint |
+| `CP-FINAL` | 모든 작업 완료 후 최종 검토 | lint, unit |
+
+기본 체크포인트는 모든 태스크 완료 시 트리거됩니다 (`required_tasks: []`).
+
+---
+
 ## 체크포인트 설정
 
 `.c4/config.yaml`에서 정의:
@@ -28,6 +41,7 @@ EXECUTE → [조건 충족] → CHECKPOINT → [결정] → 다음 단계
 checkpoints:
   - id: CP1
     name: "Phase 1 Review"
+    description: "Phase 1 작업 리뷰"
     required_tasks:
       - T-001
       - T-002
@@ -37,6 +51,7 @@ checkpoints:
 
   - id: CP2
     name: "Final Review"
+    description: "최종 검토"
     required_tasks:
       - T-003
       - T-004

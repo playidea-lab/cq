@@ -617,6 +617,112 @@ uv run pytest tests/unit/test_verifier.py -v
 
 ---
 
+## Phase 5.1: Dogfooding Fixes ✅
+
+> **완료일**: 2026-01-10
+> **버전**: v0.5.1
+
+### 목표
+
+도그푸딩 테스트 결과 발견된 버그 수정 및 DX 개선
+
+### 구현 내용
+
+#### 5.1.1 Event ID 원자적 생성
+
+**문제**: 멀티 워커 환경에서 이벤트 ID 중복 발생 (race condition)
+
+**해결**: SQLite `atomic_modify` 사용
+
+```python
+# c4/state_machine.py
+def _get_next_event_id(self) -> str:
+    """SQLite를 통해 원자적으로 다음 이벤트 ID 획득"""
+    with self._store.atomic_modify(self._project_id) as state:
+        next_id = state.metrics.events_emitted + 1
+        state.metrics.events_emitted = next_id
+        return f"{next_id:06d}"
+```
+
+- Derived Status Pattern과 일관성 유지
+- 파일 기반 폴백 (SQLite 미사용 시)
+
+#### 5.1.2 기본 체크포인트 자동 생성
+
+**문제**: 체크포인트 미설정 시 Supervisor 리뷰 생략됨
+
+**해결**: `c4 init` 시 기본 체크포인트 자동 생성
+
+```python
+# c4/models/checkpoint.py
+DEFAULT_CHECKPOINTS = [
+    CheckpointConfig(
+        id="CP-REVIEW",
+        description="코드 리뷰 완료 후 Supervisor 검토",
+        required_tasks=[],
+        required_validations=["lint"],
+    ),
+    CheckpointConfig(
+        id="CP-FINAL",
+        description="모든 작업 완료 후 최종 검토",
+        required_tasks=[],
+        required_validations=["lint", "unit"],
+    ),
+]
+```
+
+- `with_default_checkpoints=False` 옵션으로 비활성화 가능
+- CheckpointConfig에 `description` 필드 추가
+
+#### 5.1.3 Review Parser 모듈
+
+**문제**: 리뷰 리포트의 이슈가 수동으로만 태스크로 변환됨
+
+**해결**: `c4/review_parser.py` 모듈 추가
+
+```python
+from c4.review_parser import parse_review_report, issues_to_task_titles
+
+# 리뷰 리포트 파싱
+issues = parse_review_report(Path(".c4/review-report.md"))
+
+# Critical/High 이슈만 태스크로 변환
+tasks = issues_to_task_titles(issues, min_severity="High")
+# ["[Critical] Security vulnerability in auth", "[High] Missing error handling"]
+
+# REQUEST_CHANGES용 형식
+changes = issues_to_required_changes(issues, min_severity="High")
+```
+
+**지원 기능**:
+- Markdown 리뷰 리포트 파싱
+- 심각도별 필터링 (Critical, High, Medium, Low)
+- 태스크 제목 또는 required_changes 형식 변환
+
+### 파일
+
+```
+c4/
+├── state_machine.py       # MODIFIED: atomic event ID
+├── models/
+│   └── checkpoint.py      # MODIFIED: DEFAULT_CHECKPOINTS, description
+├── mcp_server.py          # MODIFIED: with_default_checkpoints 옵션
+└── review_parser.py       # NEW: 리뷰 리포트 파서
+
+tests/
+└── unit/
+    └── test_review_parser.py  # NEW: 16개 테스트
+```
+
+### 테스트
+
+```bash
+# 리뷰 파서 테스트
+uv run pytest tests/unit/test_review_parser.py -v
+```
+
+---
+
 ## Phase 6: Team Collaboration (장기)
 
 > **상태**: 📋 계획
@@ -662,5 +768,6 @@ uv run pytest tests/unit/test_verifier.py -v
 | v0.3.0 | 3 | Auto Supervisor | 2026-01 |
 | v0.4.0 | 4 | Agent Routing | 2026-01-10 |
 | v0.5.0 | 5 | Discovery & Design | 2026-01-10 |
+| v0.5.1 | 5.1 | Dogfooding Fixes (Event ID, Checkpoints, Review Parser) | 2026-01-10 |
 | v0.6.0 | 6 | Team Collaboration | (계획) |
 | v1.0.0 | 7 | C4 Cloud | (계획) |
