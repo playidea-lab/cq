@@ -6,6 +6,61 @@ from pydantic import BaseModel, Field
 
 from .checkpoint import CheckpointConfig
 
+# =============================================================================
+# Agent Configuration Models
+# =============================================================================
+
+
+class AgentChainDef(BaseModel):
+    """Agent chain definition for YAML config.
+
+    Example:
+        web-frontend:
+          primary: frontend-developer
+          chain: [frontend-developer, test-automator, code-reviewer]
+          handoff: "Pass component specs and test requirements"
+    """
+
+    primary: str
+    chain: list[str] = Field(default_factory=list)
+    handoff: str = ""
+
+
+class AgentConfig(BaseModel):
+    """Agent configuration section for config.yaml.
+
+    Example:
+        agents:
+          chains:
+            web-frontend:
+              primary: frontend-developer
+              chain: [frontend-developer, test-automator]
+              handoff: "Pass specs"
+            my-custom-domain:
+              primary: custom-agent
+              chain: [custom-agent, reviewer]
+          task_overrides:
+            test: test-automator
+            review: code-reviewer
+          defaults:
+            fallback_domain: unknown
+            fallback_agent: general-purpose
+    """
+
+    chains: dict[str, AgentChainDef] = Field(default_factory=dict)
+    task_overrides: dict[str, str] = Field(default_factory=dict)
+    defaults: dict[str, str] = Field(
+        default_factory=lambda: {
+            "fallback_domain": "unknown",
+            "fallback_agent": "general-purpose",
+        }
+    )
+
+
+# =============================================================================
+# Validation & Verification Configuration
+# =============================================================================
+
 
 class ValidationConfig(BaseModel):
     """Validation command configuration (static analysis)."""
@@ -84,3 +139,4 @@ class C4Config(BaseModel):
     checkpoints: list[CheckpointConfig] = Field(default_factory=list)
     budgets: BudgetConfig = Field(default_factory=BudgetConfig)
     domain: str | None = None  # Project domain for default verifications
+    agents: AgentConfig | None = None  # Custom agent configuration

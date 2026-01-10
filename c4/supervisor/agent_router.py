@@ -11,11 +11,22 @@ Usage:
 
     # Get agent for specific task type (future)
     agent = get_agent_for_task_type("api-design", "web-backend")
+
+    # Using AgentRouter class with custom config
+    from c4.models.config import AgentConfig
+    router = AgentRouter(config=my_agent_config)
+    agent = router.get_recommended_agent("my-custom-domain")
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 from c4.discovery.models import Domain
+
+if TYPE_CHECKING:
+    from c4.models.config import AgentConfig
 
 
 @dataclass
@@ -429,3 +440,196 @@ def build_chain_prompt(
         ])
 
     return "\n".join(lines)
+
+
+# =============================================================================
+# AgentRouter Class - Extensible Agent Configuration
+# =============================================================================
+
+
+class AgentRouter:
+    """Extensible agent router with YAML-based configuration support.
+
+    Merges user-defined agent configurations (from config.yaml) with
+    built-in defaults, allowing project-specific customization.
+
+    Usage:
+        # With custom config from config.yaml
+        from c4.models.config import AgentConfig
+        config = AgentConfig(
+            chains={"my-domain": AgentChainDef(primary="my-agent", chain=["my-agent", "reviewer"])},
+            task_overrides={"my-task": "my-agent"},
+        )
+        router = AgentRouter(config=config)
+        agent = router.get_recommended_agent("my-domain")  # "my-agent"
+
+        # Without config - uses defaults
+        router = AgentRouter()
+        agent = router.get_recommended_agent("web-frontend")  # "frontend-developer"
+    """
+
+    def __init__(self, config: AgentConfig | None = None):
+        """Initialize router with optional custom configuration.
+
+        Args:
+            config: AgentConfig from config.yaml. If None, uses built-in defaults.
+        """
+        self._config = config
+        self._merged_chains: dict[str, AgentChainConfig] | None = None
+        self._merged_overrides: dict[str, str] | None = None
+
+    @property
+    def config(self) -> AgentConfig | None:
+        """Get the agent configuration."""
+        return self._config
+
+    @property
+    def merged_chains(self) -> dict[str, AgentChainConfig]:
+        """Get merged domain-agent chains (lazy loaded)."""
+        if self._merged_chains is None:
+            self._merged_chains = self._merge_chains()
+        return self._merged_chains
+
+    @property
+    def merged_overrides(self) -> dict[str, str]:
+        """Get merged task type overrides (lazy loaded)."""
+        if self._merged_overrides is None:
+            self._merged_overrides = self._merge_overrides()
+        return self._merged_overrides
+
+    def _merge_chains(self) -> dict[str, AgentChainConfig]:
+        """Merge built-in defaults with user configuration.
+
+        User configuration takes precedence over defaults.
+        """
+        # Start with built-in defaults
+        result = dict(DOMAIN_AGENT_MAP)
+
+        if self._config is None:
+            return result
+
+        # Import here to avoid circular dependency
+        from c4.models.config import AgentChainDef
+
+        # Override with user config
+        for domain, chain_def in self._config.chains.items():
+            if isinstance(chain_def, dict):
+                chain_def = AgentChainDef(**chain_def)
+
+            # Build chain list - ensure primary is first if not in chain
+            chain = chain_def.chain if chain_def.chain else [chain_def.primary]
+            if chain_def.primary not in chain:
+                chain = [chain_def.primary] + chain
+
+            result[domain] = AgentChainConfig(
+                primary=chain_def.primary,
+                chain=chain,
+                description=f"Custom agent chain for {domain}",
+                handoff_instructions=chain_def.handoff,
+            )
+
+        return result
+
+    def _merge_overrides(self) -> dict[str, str]:
+        """Merge built-in task type overrides with user configuration."""
+        result = dict(TASK_TYPE_AGENT_OVERRIDES)
+
+        if self._config is None:
+            return result
+
+        # User overrides take precedence
+        result.update(self._config.task_overrides)
+        return result
+
+    def get_recommended_agent(self, domain: str | Domain | None) -> AgentChainConfig:
+        """Get recommended agent chain configuration for a domain.
+
+        Args:
+            domain: Domain string or Domain enum, or None for unknown
+
+        Returns:
+            AgentChainConfig with primary agent and chain
+        """
+        if domain is None:
+            fallback = self._get_fallback_domain()
+            return self.merged_chains.get(fallback, DOMAIN_AGENT_MAP["unknown"])
+
+        domain_str = domain.value if isinstance(domain, Domain) else domain
+        domain_str = domain_str.lower().replace("_", "-")
+
+        fallback = self._get_fallback_domain()
+        return self.merged_chains.get(
+            domain_str, self.merged_chains.get(fallback, DOMAIN_AGENT_MAP["unknown"])
+        )
+
+    def get_agent_for_task_type(
+        self,
+        task_type: str | None,
+        domain: str | Domain | None = None,
+    ) -> str:
+        """Get specific agent for a task type, with domain fallback.
+
+        Args:
+            task_type: Type of task (e.g., "debug", "security", "refactor")
+            domain: Fallback domain if no task type match
+
+        Returns:
+            Agent name string
+        """
+        # Check task type overrides first
+        if task_type:
+            task_type_lower = task_type.lower().replace("_", "-")
+            if task_type_lower in self.merged_overrides:
+                return self.merged_overrides[task_type_lower]
+
+        # Fall back to domain primary agent
+        config = self.get_recommended_agent(domain)
+        return config.primary
+
+    def get_chain_for_domain(self, domain: str | Domain | None) -> list[str]:
+        """Get agent chain list for a domain."""
+        config = self.get_recommended_agent(domain)
+        return config.chain
+
+    def get_handoff_instructions(self, domain: str | Domain | None) -> str:
+        """Get handoff instructions for a domain's agent chain."""
+        config = self.get_recommended_agent(domain)
+        return config.handoff_instructions
+
+    def get_all_domains(self) -> list[str]:
+        """Get list of all supported domains (built-in + custom)."""
+        return list(self.merged_chains.keys())
+
+    def _get_fallback_domain(self) -> str:
+        """Get fallback domain from config or default."""
+        if self._config and self._config.defaults:
+            return self._config.defaults.get("fallback_domain", "unknown")
+        return "unknown"
+
+    def _get_fallback_agent(self) -> str:
+        """Get fallback agent from config or default."""
+        if self._config and self._config.defaults:
+            return self._config.defaults.get("fallback_agent", "general-purpose")
+        return "general-purpose"
+
+
+# =============================================================================
+# Default Router Instance (for backward compatibility)
+# =============================================================================
+
+# Module-level default router (uses built-in defaults)
+_default_router: AgentRouter | None = None
+
+
+def get_default_router() -> AgentRouter:
+    """Get or create the default agent router."""
+    global _default_router
+    if _default_router is None:
+        _default_router = AgentRouter()
+    return _default_router
+
+
+def set_default_router(router: AgentRouter) -> None:
+    """Set a custom router as the default (for testing or global config)."""
+    global _default_router
+    _default_router = router

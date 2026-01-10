@@ -2,17 +2,21 @@
 
 
 from c4.discovery.models import Domain
+from c4.models.config import AgentChainDef, AgentConfig
 from c4.supervisor.agent_router import (
     DOMAIN_AGENT_MAP,
     TASK_TYPE_AGENT_OVERRIDES,
     AgentChainConfig,
     AgentHandoff,
+    AgentRouter,
     build_chain_prompt,
     get_agent_for_task_type,
     get_all_domains,
     get_chain_for_domain,
+    get_default_router,
     get_handoff_instructions,
     get_recommended_agent,
+    set_default_router,
 )
 
 
@@ -429,3 +433,243 @@ class TestIntegration:
         )
         assert "ThemeToggle.tsx" in prompt2
         assert "Write unit tests" in prompt2
+
+
+# =============================================================================
+# AgentRouter Class Tests
+# =============================================================================
+
+
+class TestAgentRouter:
+    """Tests for AgentRouter class"""
+
+    def test_default_router_uses_builtin_defaults(self):
+        """Test router without config uses built-in defaults"""
+        router = AgentRouter()
+        config = router.get_recommended_agent("web-frontend")
+        assert config.primary == "frontend-developer"
+
+    def test_router_with_custom_domain(self):
+        """Test router with custom domain configuration"""
+        custom_config = AgentConfig(
+            chains={
+                "my-custom-domain": AgentChainDef(
+                    primary="custom-agent",
+                    chain=["custom-agent", "reviewer"],
+                    handoff="Custom handoff instructions",
+                )
+            }
+        )
+        router = AgentRouter(config=custom_config)
+
+        # Custom domain should work
+        config = router.get_recommended_agent("my-custom-domain")
+        assert config.primary == "custom-agent"
+        assert config.chain == ["custom-agent", "reviewer"]
+        assert config.handoff_instructions == "Custom handoff instructions"
+
+        # Built-in defaults should still work
+        config = router.get_recommended_agent("web-frontend")
+        assert config.primary == "frontend-developer"
+
+    def test_router_override_builtin_domain(self):
+        """Test that custom config can override built-in domain"""
+        custom_config = AgentConfig(
+            chains={
+                "web-frontend": AgentChainDef(
+                    primary="my-frontend-agent",
+                    chain=["my-frontend-agent", "my-tester"],
+                    handoff="My custom handoff",
+                )
+            }
+        )
+        router = AgentRouter(config=custom_config)
+
+        config = router.get_recommended_agent("web-frontend")
+        assert config.primary == "my-frontend-agent"
+        assert "my-tester" in config.chain
+
+    def test_router_custom_task_overrides(self):
+        """Test router with custom task type overrides"""
+        custom_config = AgentConfig(
+            task_overrides={
+                "my-task-type": "my-special-agent",
+                "debug": "my-debugger",  # Override built-in
+            }
+        )
+        router = AgentRouter(config=custom_config)
+
+        # Custom task type
+        agent = router.get_agent_for_task_type("my-task-type")
+        assert agent == "my-special-agent"
+
+        # Overridden built-in
+        agent = router.get_agent_for_task_type("debug")
+        assert agent == "my-debugger"
+
+        # Non-overridden built-in still works
+        agent = router.get_agent_for_task_type("security")
+        assert agent == "security-auditor"
+
+    def test_router_fallback_domain(self):
+        """Test custom fallback domain"""
+        custom_config = AgentConfig(
+            chains={
+                "my-fallback": AgentChainDef(
+                    primary="fallback-agent",
+                    chain=["fallback-agent"],
+                )
+            },
+            defaults={
+                "fallback_domain": "my-fallback",
+                "fallback_agent": "fallback-agent",
+            },
+        )
+        router = AgentRouter(config=custom_config)
+
+        # Unknown domain should use custom fallback
+        config = router.get_recommended_agent("nonexistent-domain")
+        assert config.primary == "fallback-agent"
+
+    def test_router_get_all_domains_includes_custom(self):
+        """Test get_all_domains includes custom domains"""
+        custom_config = AgentConfig(
+            chains={
+                "custom-domain-1": AgentChainDef(primary="agent1"),
+                "custom-domain-2": AgentChainDef(primary="agent2"),
+            }
+        )
+        router = AgentRouter(config=custom_config)
+
+        domains = router.get_all_domains()
+        assert "custom-domain-1" in domains
+        assert "custom-domain-2" in domains
+        assert "web-frontend" in domains  # Built-in still present
+
+    def test_router_get_chain_for_domain(self):
+        """Test get_chain_for_domain method"""
+        router = AgentRouter()
+        chain = router.get_chain_for_domain("web-frontend")
+        assert isinstance(chain, list)
+        assert "frontend-developer" in chain
+
+    def test_router_get_handoff_instructions(self):
+        """Test get_handoff_instructions method"""
+        router = AgentRouter()
+        instructions = router.get_handoff_instructions("web-backend")
+        assert isinstance(instructions, str)
+        assert len(instructions) > 0
+
+    def test_router_primary_added_to_chain(self):
+        """Test that primary is added to chain if missing"""
+        custom_config = AgentConfig(
+            chains={
+                "test-domain": AgentChainDef(
+                    primary="primary-agent",
+                    chain=["other-agent"],  # Primary not in chain
+                )
+            }
+        )
+        router = AgentRouter(config=custom_config)
+
+        config = router.get_recommended_agent("test-domain")
+        assert config.chain[0] == "primary-agent"
+        assert "other-agent" in config.chain
+
+
+class TestAgentRouterWithDomainEnum:
+    """Test AgentRouter with Domain enum"""
+
+    def test_with_domain_enum(self):
+        """Test router accepts Domain enum"""
+        router = AgentRouter()
+        config = router.get_recommended_agent(Domain.WEB_FRONTEND)
+        assert config.primary == "frontend-developer"
+
+    def test_custom_override_with_enum_lookup(self):
+        """Test custom config works when looking up via enum"""
+        custom_config = AgentConfig(
+            chains={
+                "web-frontend": AgentChainDef(
+                    primary="custom-frontend",
+                    chain=["custom-frontend"],
+                )
+            }
+        )
+        router = AgentRouter(config=custom_config)
+
+        # Lookup via enum (which gets converted to "web-frontend")
+        config = router.get_recommended_agent(Domain.WEB_FRONTEND)
+        assert config.primary == "custom-frontend"
+
+
+class TestDefaultRouterFunctions:
+    """Test get_default_router and set_default_router"""
+
+    def test_get_default_router(self):
+        """Test get_default_router returns router instance"""
+        router = get_default_router()
+        assert isinstance(router, AgentRouter)
+
+    def test_set_default_router(self):
+        """Test set_default_router changes default"""
+        custom_config = AgentConfig(
+            chains={
+                "test-domain": AgentChainDef(primary="test-agent")
+            }
+        )
+        custom_router = AgentRouter(config=custom_config)
+
+        # Save original for cleanup
+        original = get_default_router()
+
+        try:
+            set_default_router(custom_router)
+            router = get_default_router()
+            assert router is custom_router
+        finally:
+            # Restore original
+            set_default_router(original)
+
+
+class TestAgentConfigModels:
+    """Test AgentConfig and AgentChainDef models"""
+
+    def test_agent_chain_def_defaults(self):
+        """Test AgentChainDef default values"""
+        chain_def = AgentChainDef(primary="test-agent")
+        assert chain_def.primary == "test-agent"
+        assert chain_def.chain == []
+        assert chain_def.handoff == ""
+
+    def test_agent_chain_def_full(self):
+        """Test AgentChainDef with all fields"""
+        chain_def = AgentChainDef(
+            primary="test-agent",
+            chain=["test-agent", "reviewer"],
+            handoff="Test handoff",
+        )
+        assert chain_def.primary == "test-agent"
+        assert chain_def.chain == ["test-agent", "reviewer"]
+        assert chain_def.handoff == "Test handoff"
+
+    def test_agent_config_defaults(self):
+        """Test AgentConfig default values"""
+        config = AgentConfig()
+        assert config.chains == {}
+        assert config.task_overrides == {}
+        assert config.defaults["fallback_domain"] == "unknown"
+        assert config.defaults["fallback_agent"] == "general-purpose"
+
+    def test_agent_config_full(self):
+        """Test AgentConfig with all fields"""
+        config = AgentConfig(
+            chains={
+                "test": AgentChainDef(primary="agent1"),
+            },
+            task_overrides={"task1": "agent2"},
+            defaults={"fallback_domain": "test"},
+        )
+        assert "test" in config.chains
+        assert config.task_overrides["task1"] == "agent2"
+        assert config.defaults["fallback_domain"] == "test"

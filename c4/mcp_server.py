@@ -37,7 +37,7 @@ from .models import (
 )
 from .state_machine import StateMachine, StateTransitionError
 from .store import SQLiteLockStore, SQLiteStateStore, SQLiteTaskStore, StateStore
-from .supervisor.agent_router import get_recommended_agent
+from .supervisor.agent_router import AgentRouter
 from .validation import ValidationRunner
 
 logger = logging.getLogger(__name__)
@@ -70,6 +70,7 @@ class C4Daemon:
         self._lock_store: SQLiteLockStore | None = None
         self._task_store: SQLiteTaskStore | None = None
         self._spec_store: SpecStore | None = None
+        self._agent_router: AgentRouter | None = None
 
     # =========================================================================
     # Initialization
@@ -315,6 +316,18 @@ Thumbs.db
         return self._config  # type: ignore
 
     @property
+    def agent_router(self) -> AgentRouter:
+        """Get agent router with custom configuration from config.yaml.
+
+        The router merges built-in defaults with any custom agent
+        configuration defined in config.yaml under the 'agents' section.
+        """
+        if self._agent_router is None:
+            agent_config = self.config.agents if self._config else None
+            self._agent_router = AgentRouter(config=agent_config)
+        return self._agent_router
+
+    @property
     def validation_runner(self) -> ValidationRunner:
         """Get validation runner, creating if necessary"""
         if self._validation_runner is None:
@@ -378,11 +391,14 @@ Thumbs.db
         """
         Get agent routing information for a task (Phase 4).
 
+        Uses AgentRouter to merge built-in defaults with custom
+        configuration from config.yaml.
+
         Returns:
             Dict with agent routing fields for TaskAssignment
         """
         domain = self._get_effective_domain(task)
-        agent_config = get_recommended_agent(domain)
+        agent_config = self.agent_router.get_recommended_agent(domain)
 
         return {
             "recommended_agent": agent_config.primary,
@@ -988,12 +1004,15 @@ Thumbs.db
             return error_response
 
         # Non-atomic operations (safe to do outside the lock)
-        # Update commit info in SQLite - status is DERIVED from c4_state.queue
-        # (single source of truth), so we only update commit_sha here
-        self.task_store.update_commit_info(
+        # Update task status and commit info in SQLite
+        # Although status is derived from c4_state.queue (single source of truth),
+        # we sync the task file status for consistency with c4_get_task checks
+        self.task_store.update_status(
             project_id,
             task_id,
-            commit_sha=commit_sha
+            status="done",
+            commit_sha=commit_sha,
+            assigned_to=None,  # Clear assignment after completion
         )
 
         # Release scope lock
