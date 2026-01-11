@@ -2123,7 +2123,7 @@ Thumbs.db
         Examples:
             c4_test_agent_routing()  # All domains and overrides
             c4_test_agent_routing(domain="web-frontend")  # Specific domain
-            c4_test_agent_routing(domain="ml-dl", task_type="debug")  # With override
+            c4_test_agent_routing(domain="ml-dl", task_type="debug")  # Override
         """
         if domain:
             config = self.agent_router.get_recommended_agent(domain)
@@ -2135,7 +2135,9 @@ Thumbs.db
             }
 
             if task_type:
-                override = self.agent_router.get_agent_for_task_type(task_type, domain)
+                override = self.agent_router.get_agent_for_task_type(
+                    task_type, domain
+                )
                 result["task_type"] = task_type
                 result["overridden_agent"] = override
                 result["is_override"] = override != config.primary
@@ -2155,6 +2157,178 @@ Thumbs.db
             "custom_config_loaded": self._config is not None
             and self._config.agents is not None,
         }
+
+    def c4_query_agent_graph(
+        self,
+        query_type: str,
+        filter_by: str | None = None,
+        filter_value: str | None = None,
+        output_format: str = "json",
+    ) -> dict[str, Any]:
+        """
+        Query the agent graph for routing information.
+
+        Args:
+            query_type: Type of query to perform:
+                - "agents": List all agents (optionally filtered by skill or domain)
+                - "skills": List all skills (optionally filtered by agent)
+                - "domains": List all domains
+                - "path": Find handoff path between two agents (filter_value: "from_agent:to_agent")
+                - "chain": Build agent chain from primary agent
+            filter_by: Filter type: "skill", "domain", "agent", or None
+            filter_value: Value to filter by (skill_id, domain_id, or agent_id)
+            output_format: Output format: "json" or "mermaid"
+
+        Returns:
+            Dictionary with query results
+        """
+        try:
+            # Use the daemon's agent_router
+            router = self.agent_router
+
+            result: dict[str, Any] = {
+                "success": True,
+                "query_type": query_type,
+                "output_format": output_format,
+            }
+
+            if query_type == "agents":
+                # List agents, optionally filtered
+                if filter_by == "skill" and filter_value:
+                    # Skill-based filtering requires agent graph
+                    result["agents"] = []
+                    result["filter"] = {"by": "skill", "value": filter_value}
+                    result["note"] = "Skill-based agent filtering requires loaded graph"
+                elif filter_by == "domain" and filter_value:
+                    config = router.get_recommended_agent(filter_value)
+                    result["agents"] = config.chain
+                    result["filter"] = {"by": "domain", "value": filter_value}
+                else:
+                    # Return all domains with their primary agents
+                    domains = router.get_all_domains()
+                    agents_by_domain = {}
+                    for domain in domains:
+                        config = router.get_recommended_agent(domain)
+                        agents_by_domain[domain] = {
+                            "primary": config.primary,
+                            "chain": config.chain,
+                        }
+                    result["agents_by_domain"] = agents_by_domain
+
+            elif query_type == "skills":
+                # Skills query - limited without graph
+                result["skills"] = []
+                result["note"] = "Skill queries require loaded agent graph"
+                if filter_by == "agent" and filter_value:
+                    result["filter"] = {"by": "agent", "value": filter_value}
+
+            elif query_type == "domains":
+                # List all domains
+                domains = router.get_all_domains()
+                domain_info = {}
+                for domain in domains:
+                    config = router.get_recommended_agent(domain)
+                    domain_info[domain] = {
+                        "primary": config.primary,
+                        "chain": config.chain,
+                        "description": config.description,
+                        "handoff_instructions": config.handoff_instructions,
+                    }
+                result["domains"] = domain_info
+
+            elif query_type == "path":
+                # Find path between two agents (requires graph)
+                if not filter_value or ":" not in filter_value:
+                    return {
+                        "success": False,
+                        "error": "Path query requires filter_value as 'from_agent:to_agent'",
+                    }
+                from_agent, to_agent = filter_value.split(":", 1)
+                result["path"] = None
+                result["from_agent"] = from_agent
+                result["to_agent"] = to_agent
+                result["note"] = "Path queries require loaded agent graph"
+
+            elif query_type == "chain":
+                # Build chain from agent/domain
+                if filter_by == "domain" and filter_value:
+                    chain = router.get_chain_for_domain(filter_value)
+                    config = router.get_recommended_agent(filter_value)
+                    result["chain"] = chain
+                    result["primary"] = config.primary
+                    result["domain"] = filter_value
+                    result["handoff_instructions"] = config.handoff_instructions
+                elif filter_by == "agent" and filter_value:
+                    # For agent-based chain, we need domain context
+                    result["chain"] = [filter_value]
+                    result["primary"] = filter_value
+                    result["note"] = "Agent chain building requires domain context"
+                else:
+                    return {
+                        "success": False,
+                        "error": "Chain query requires filter_by='domain' or "
+                        "'agent' with filter_value",
+                    }
+
+            else:
+                return {
+                    "success": False,
+                    "error": f"Unknown query_type: {query_type}",
+                    "valid_types": ["agents", "skills", "domains", "path", "chain"],
+                }
+
+            # Convert to mermaid if requested
+            if output_format == "mermaid":
+                result["mermaid"] = self._generate_mermaid_from_result(result)
+
+            return result
+
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    def _generate_mermaid_from_result(self, result: dict[str, Any]) -> str:
+        """Generate Mermaid diagram from query result."""
+        lines = ["graph TD"]
+
+        query_type = result.get("query_type")
+
+        if query_type == "domains" and "domains" in result:
+            for domain, info in result["domains"].items():
+                lines.append(f"    {domain}[{domain}]:::domain")
+                if info.get("chain"):
+                    prev = domain
+                    for agent in info["chain"]:
+                        lines.append(f"    {agent}[{agent}]:::agent")
+                        lines.append(f"    {prev} --> {agent}")
+                        prev = agent
+
+        elif query_type == "chain" and "chain" in result:
+            chain = result["chain"]
+            for i, agent in enumerate(chain):
+                lines.append(f"    {agent}[{agent}]:::agent")
+                if i > 0:
+                    lines.append(f"    {chain[i-1]} --> {agent}")
+
+        elif query_type == "path" and result.get("path"):
+            path = result["path"]
+            for i, agent in enumerate(path):
+                lines.append(f"    {agent}[{agent}]:::agent")
+                if i > 0:
+                    lines.append(f"    {path[i-1]} -.-> {agent}")
+
+        elif query_type == "agents" and "agents_by_domain" in result:
+            for domain, info in result["agents_by_domain"].items():
+                lines.append(f"    {domain}[{domain}]:::domain")
+                primary = info.get("primary")
+                if primary:
+                    lines.append(f"    {primary}[{primary}]:::agent")
+                    lines.append(f"    {domain} --> {primary}")
+
+        # Add style definitions
+        lines.append("    classDef domain fill:#f3e5f5,stroke:#7b1fa2")
+        lines.append("    classDef agent fill:#fff3e0,stroke:#ef6c00")
+
+        return "\n".join(lines)
 
     def check_and_trigger_checkpoint(self) -> dict[str, Any] | None:
         """
@@ -2778,24 +2952,6 @@ def create_server(project_root: Path | None = None) -> Server:
                     "required": [],
                 },
             ),
-            Tool(
-                name="c4_test_agent_routing",
-                description="Test agent routing configuration. Debug which agent is assigned for domain/task_type combinations.",
-                inputSchema={
-                    "type": "object",
-                    "properties": {
-                        "domain": {
-                            "type": "string",
-                            "description": "Domain to test (e.g., 'web-frontend', 'ml-dl'). If not provided, shows all domains.",
-                        },
-                        "task_type": {
-                            "type": "string",
-                            "description": "Task type to test (e.g., 'debug', 'security'). Shows override if exists.",
-                        },
-                    },
-                    "required": [],
-                },
-            ),
         ]
 
     @server.call_tool()
@@ -2939,11 +3095,6 @@ def create_server(project_root: Path | None = None) -> Server:
                 result = daemon.c4_list_designs()
             elif name == "c4_design_complete":
                 result = daemon.c4_design_complete()
-            elif name == "c4_test_agent_routing":
-                result = daemon.c4_test_agent_routing(
-                    domain=arguments.get("domain"),
-                    task_type=arguments.get("task_type"),
-                )
             else:
                 result = {"error": f"Unknown tool: {name}"}
 

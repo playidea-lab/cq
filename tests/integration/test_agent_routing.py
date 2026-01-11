@@ -621,3 +621,144 @@ class TestMCPAgentRoutingTool:
         # Test incident
         result = daemon.c4_test_agent_routing(domain="web-backend", task_type="incident")
         assert result["overridden_agent"] == "incident-responder"
+
+
+class TestMCPQueryAgentGraph:
+    """Integration tests for c4_query_agent_graph MCP tool."""
+
+    @pytest.fixture
+    def mcp_daemon(self, temp_project):
+        """Create daemon configured for MCP query testing."""
+        daemon = C4Daemon(temp_project)
+        daemon.initialize("mcp-query-test", with_default_checkpoints=False)
+        daemon.state_machine.transition("skip_discovery")
+        daemon._config.validation = ValidationConfig(
+            commands={"lint": "echo 'ok'"},
+            required=["lint"],
+        )
+        daemon._save_config()
+        return daemon
+
+    def test_query_agents_returns_all_agents(self, mcp_daemon):
+        """Test query type 'agents' returns all available agents."""
+        result = mcp_daemon.c4_query_agent_graph(query_type="agents")
+
+        assert result["success"] is True
+        assert result["query_type"] == "agents"
+        assert "agents_by_domain" in result
+        assert isinstance(result["agents_by_domain"], dict)
+        # Should have agents from legacy router at minimum
+        assert len(result["agents_by_domain"]) > 0
+        # Check structure includes primary and chain
+        for domain, info in result["agents_by_domain"].items():
+            assert "primary" in info
+            assert "chain" in info
+
+    def test_query_skills_returns_list(self, mcp_daemon):
+        """Test query type 'skills' returns skills list."""
+        result = mcp_daemon.c4_query_agent_graph(query_type="skills")
+
+        assert result["success"] is True
+        assert result["query_type"] == "skills"
+        assert "skills" in result
+        assert isinstance(result["skills"], list)
+
+    def test_query_domains_returns_known_domains(self, mcp_daemon):
+        """Test query type 'domains' returns all known domains."""
+        result = mcp_daemon.c4_query_agent_graph(query_type="domains")
+
+        assert result["success"] is True
+        assert result["query_type"] == "domains"
+        assert "domains" in result
+        assert isinstance(result["domains"], dict)
+        # Known domains should be present as keys
+        known_domains = ["web-frontend", "web-backend", "ml-dl", "infra"]
+        for domain in known_domains:
+            assert domain in result["domains"]
+            # Each domain should have structured info
+            assert "primary" in result["domains"][domain]
+
+    def test_query_agents_filter_by_domain(self, mcp_daemon):
+        """Test filtering agents by domain."""
+        result = mcp_daemon.c4_query_agent_graph(
+            query_type="agents",
+            filter_by="domain",
+            filter_value="web-frontend",
+        )
+
+        assert result["success"] is True
+        assert "agents" in result
+        # web-frontend should include frontend-developer
+        assert "frontend-developer" in result["agents"]
+
+    def test_query_chain_for_domain(self, mcp_daemon):
+        """Test query type 'chain' returns agent chain for domain."""
+        result = mcp_daemon.c4_query_agent_graph(
+            query_type="chain",
+            filter_by="domain",
+            filter_value="web-backend",
+        )
+
+        assert result["success"] is True
+        assert result["query_type"] == "chain"
+        assert "chain" in result
+        assert isinstance(result["chain"], list)
+        assert len(result["chain"]) >= 1
+        # backend-architect should be primary
+        assert result["primary"] == "backend-architect"
+
+    def test_query_chain_requires_filter(self, mcp_daemon):
+        """Test query type 'chain' requires filter_by parameter."""
+        result = mcp_daemon.c4_query_agent_graph(query_type="chain")
+
+        assert result["success"] is False
+        assert "error" in result
+
+    def test_query_path_between_agents(self, mcp_daemon):
+        """Test query type 'path' finds handoff path between agents."""
+        # Note: Without a loaded graph, path returns None
+        result = mcp_daemon.c4_query_agent_graph(
+            query_type="path",
+            filter_by="agent",
+            filter_value="frontend-developer:code-reviewer",
+        )
+
+        assert result["success"] is True
+        assert result["query_type"] == "path"
+        # Path may be None without graph, but result should be valid
+        assert "path" in result
+
+    def test_query_mermaid_output_format(self, mcp_daemon):
+        """Test output_format='mermaid' generates Mermaid diagram."""
+        result = mcp_daemon.c4_query_agent_graph(
+            query_type="agents",
+            filter_by="domain",
+            filter_value="web-frontend",
+            output_format="mermaid",
+        )
+
+        assert result["success"] is True
+        assert "mermaid" in result
+        assert isinstance(result["mermaid"], str)
+        # Mermaid diagram should have graph declaration
+        assert "graph" in result["mermaid"] or "flowchart" in result["mermaid"]
+
+    def test_query_invalid_type_returns_error(self, mcp_daemon):
+        """Test invalid query type returns error."""
+        result = mcp_daemon.c4_query_agent_graph(query_type="invalid_type")
+
+        assert result["success"] is False
+        assert "error" in result
+
+    def test_query_domains_mermaid_format(self, mcp_daemon):
+        """Test domains query with mermaid format."""
+        result = mcp_daemon.c4_query_agent_graph(
+            query_type="domains",
+            output_format="mermaid",
+        )
+
+        assert result["success"] is True
+        assert "mermaid" in result
+        # Should contain domain nodes
+        mermaid = result["mermaid"]
+        assert "web-frontend" in mermaid or "web_frontend" in mermaid
