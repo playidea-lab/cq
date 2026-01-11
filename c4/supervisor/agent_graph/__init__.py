@@ -62,6 +62,11 @@ from c4.supervisor.agent_graph.rules import (
     evaluate,
     extend_chain,
 )
+from c4.supervisor.agent_graph.visualizer import (
+    GraphVisualizer,
+    highlight_path,
+    to_mermaid,
+)
 
 SCHEMA_DIR = Path(__file__).parent / "schema"
 EXAMPLES_DIR = Path(__file__).parent / "examples"
@@ -119,4 +124,8 @@ __all__ = [
     "apply_overrides",
     "evaluate",
     "extend_chain",
+    # Visualizer
+    "GraphVisualizer",
+    "highlight_path",
+    "to_mermaid",
 ]
