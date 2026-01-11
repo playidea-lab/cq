@@ -21,16 +21,6 @@ from c4.supervisor.agent_graph.loader import (
     SchemaValidationError,
     YAMLParseError,
 )
-from c4.supervisor.agent_graph.router import (
-    GraphRouter,
-    RoutingResult,
-)
-from c4.supervisor.agent_graph.skill_matcher import (
-    AgentMatch,
-    SkillMatcher,
-    TaskContext,
-    TaskLike,
-)
 from c4.supervisor.agent_graph.models import (
     # Agent models
     Agent,
@@ -63,6 +53,16 @@ from c4.supervisor.agent_graph.models import (
     SkillTriggers,
     WorkflowSelect,
     WorkflowStep,
+)
+from c4.supervisor.agent_graph.router import (
+    GraphRouter,
+    RoutingResult,
+)
+from c4.supervisor.agent_graph.skill_matcher import (
+    AgentMatch,
+    SkillMatcher,
+    TaskContext,
+    TaskLike,
 )
 
 SCHEMA_DIR = Path(__file__).parent / "schema"
