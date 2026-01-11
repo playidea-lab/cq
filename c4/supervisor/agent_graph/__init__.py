@@ -58,7 +58,9 @@ from c4.supervisor.agent_graph.rules import (
     RuleEngine,
     Task,
     TaskLike,
+    apply_overrides,
     evaluate,
+    extend_chain,
 )
 
 SCHEMA_DIR = Path(__file__).parent / "schema"
@@ -114,5 +116,7 @@ __all__ = [
     "RuleEngine",
     "Task",
     "TaskLike",
+    "apply_overrides",
     "evaluate",
+    "extend_chain",
 ]
