@@ -1,0 +1,38 @@
+domain:
+  id: infra
+  name: "Infrastructure"
+  description: "Terraform, AWS/GCP/Azure, infrastructure as code"
+
+  required_skills:
+    core:
+      - cloud-architecture
+      - terraform
+      - infrastructure-as-code
+    optional:
+      - aws
+      - gcp
+      - azure
+      - kubernetes
+
+  workflow:
+    - step: 1
+      role: primary
+      select:
+        by: skill
+        skills: [cloud-architecture, terraform]
+        prefer_agent: cloud-architect
+      purpose: "Design cloud infrastructure"
+
+    - step: 2
+      role: support
+      select:
+        by: skill
+        skills: [deployment, ci-cd]
+        prefer_agent: deployment-engineer
+      purpose: "Implement deployment automation"
+
+  rules:
+    - if: "task_has_keyword(['security', 'compliance', 'audit'])"
+      then: "add_to_chain(security-auditor, after=deployment-engineer)"
+    - if: "task_has_keyword(['cost', 'optimization'])"
+      then: "add_to_chain(cloud-architect, with_focus=cost-optimization)"
