@@ -821,3 +821,186 @@ class TestAgentRouterNewScenarios:
         router = AgentRouter(config=custom_config)
         config = router.get_recommended_agent("data-science")
         assert config.primary == "my-data-agent"
+
+
+# =============================================================================
+# T-160: GraphRouter Integration Tests
+# =============================================================================
+
+
+class TestGraphRouterAdapter:
+    """Tests for GraphRouterAdapter - feature flag integration."""
+
+    def test_adapter_returns_agent_chain_config(self):
+        """GraphRouterAdapter returns compatible AgentChainConfig."""
+        from c4.supervisor.agent_router import GraphRouterAdapter
+
+        adapter = GraphRouterAdapter()
+        config = adapter.get_recommended_agent("web-frontend")
+
+        assert isinstance(config, AgentChainConfig)
+        assert config.primary == "frontend-developer"
+        assert "frontend-developer" in config.chain
+
+    def test_adapter_get_agent_for_task_type(self):
+        """GraphRouterAdapter handles task type overrides."""
+        from c4.supervisor.agent_router import GraphRouterAdapter
+
+        adapter = GraphRouterAdapter()
+        agent = adapter.get_agent_for_task_type("debug", "web-backend")
+
+        assert agent == "debugger"
+
+    def test_adapter_get_chain_for_domain(self):
+        """GraphRouterAdapter returns chain for domain."""
+        from c4.supervisor.agent_router import GraphRouterAdapter
+
+        adapter = GraphRouterAdapter()
+        chain = adapter.get_chain_for_domain("web-frontend")
+
+        assert isinstance(chain, list)
+        assert "frontend-developer" in chain
+
+    def test_adapter_get_all_domains(self):
+        """GraphRouterAdapter returns all domains."""
+        from c4.supervisor.agent_router import GraphRouterAdapter
+
+        adapter = GraphRouterAdapter()
+        domains = adapter.get_all_domains()
+
+        assert isinstance(domains, list)
+        assert "web-frontend" in domains
+        assert "web-backend" in domains
+
+    def test_adapter_uses_legacy_fallback(self):
+        """GraphRouterAdapter uses legacy fallback for unknown domains."""
+        from c4.supervisor.agent_router import GraphRouterAdapter
+
+        adapter = GraphRouterAdapter()
+        config = adapter.get_recommended_agent("unknown")
+
+        assert config.primary == "general-purpose"
+
+
+class TestFeatureFlag:
+    """Tests for C4_USE_GRAPH_ROUTER feature flag."""
+
+    def test_use_graph_router_returns_false_by_default(self, monkeypatch):
+        """_use_graph_router returns False when env var not set."""
+        from c4.supervisor.agent_router import _use_graph_router
+
+        monkeypatch.delenv("C4_USE_GRAPH_ROUTER", raising=False)
+        assert _use_graph_router() is False
+
+    def test_use_graph_router_returns_true_when_set(self, monkeypatch):
+        """_use_graph_router returns True when env var is '1'."""
+        from c4.supervisor.agent_router import _use_graph_router
+
+        monkeypatch.setenv("C4_USE_GRAPH_ROUTER", "1")
+        assert _use_graph_router() is True
+
+    def test_use_graph_router_accepts_true_string(self, monkeypatch):
+        """_use_graph_router returns True for 'true' value."""
+        from c4.supervisor.agent_router import _use_graph_router
+
+        monkeypatch.setenv("C4_USE_GRAPH_ROUTER", "true")
+        assert _use_graph_router() is True
+
+    def test_use_graph_router_accepts_yes(self, monkeypatch):
+        """_use_graph_router returns True for 'yes' value."""
+        from c4.supervisor.agent_router import _use_graph_router
+
+        monkeypatch.setenv("C4_USE_GRAPH_ROUTER", "yes")
+        assert _use_graph_router() is True
+
+    def test_use_graph_router_ignores_invalid(self, monkeypatch):
+        """_use_graph_router returns False for invalid values."""
+        from c4.supervisor.agent_router import _use_graph_router
+
+        monkeypatch.setenv("C4_USE_GRAPH_ROUTER", "invalid")
+        assert _use_graph_router() is False
+
+    def test_get_default_router_with_flag(self, monkeypatch):
+        """get_default_router returns GraphRouterAdapter when flag is set."""
+        from c4.supervisor import agent_router
+        from c4.supervisor.agent_router import GraphRouterAdapter
+
+        # Reset the default router
+        agent_router._default_router = None
+
+        monkeypatch.setenv("C4_USE_GRAPH_ROUTER", "1")
+        router = agent_router.get_default_router()
+
+        assert isinstance(router, GraphRouterAdapter)
+
+        # Clean up
+        agent_router._default_router = None
+
+    def test_get_default_router_without_flag(self, monkeypatch):
+        """get_default_router returns AgentRouter when flag is not set."""
+        from c4.supervisor import agent_router
+        from c4.supervisor.agent_router import AgentRouter, GraphRouterAdapter
+
+        # Reset the default router
+        agent_router._default_router = None
+
+        monkeypatch.delenv("C4_USE_GRAPH_ROUTER", raising=False)
+        router = agent_router.get_default_router()
+
+        assert isinstance(router, AgentRouter)
+        assert not isinstance(router, GraphRouterAdapter)
+
+        # Clean up
+        agent_router._default_router = None
+
+
+class TestPerformanceBenchmark:
+    """Performance benchmarks for agent routing (T-160 requirement: <10ms)."""
+
+    def test_routing_performance_under_10ms(self):
+        """Routing queries should complete in under 10ms."""
+        import time
+
+        router = AgentRouter()
+
+        # Warm up
+        router.get_recommended_agent("web-frontend")
+
+        # Benchmark: 100 queries
+        start = time.perf_counter()
+        for _ in range(100):
+            router.get_recommended_agent("web-frontend")
+            router.get_recommended_agent("web-backend")
+            router.get_agent_for_task_type("debug", "ml-dl")
+        end = time.perf_counter()
+
+        total_ms = (end - start) * 1000
+        avg_ms = total_ms / 300  # 300 total calls
+
+        # Each query should be well under 10ms
+        assert avg_ms < 10, f"Average query time {avg_ms:.3f}ms exceeds 10ms"
+
+    def test_graph_router_performance_under_10ms(self):
+        """GraphRouter queries should complete in under 10ms."""
+        import time
+
+        from c4.supervisor.agent_router import GraphRouterAdapter
+
+        adapter = GraphRouterAdapter()
+
+        # Warm up
+        adapter.get_recommended_agent("web-frontend")
+
+        # Benchmark: 100 queries
+        start = time.perf_counter()
+        for _ in range(100):
+            adapter.get_recommended_agent("web-frontend")
+            adapter.get_recommended_agent("web-backend")
+            adapter.get_agent_for_task_type("debug", "ml-dl")
+        end = time.perf_counter()
+
+        total_ms = (end - start) * 1000
+        avg_ms = total_ms / 300  # 300 total calls
+
+        # Each query should be well under 10ms
+        assert avg_ms < 10, f"Average query time {avg_ms:.3f}ms exceeds 10ms"

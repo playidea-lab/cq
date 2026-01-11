@@ -20,6 +20,7 @@ Usage:
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
@@ -27,6 +28,17 @@ from c4.discovery.models import Domain
 
 if TYPE_CHECKING:
     from c4.models.config import AgentConfig
+
+
+def _use_graph_router() -> bool:
+    """Check if GraphRouter should be used instead of AgentRouter.
+
+    Enable with: export C4_USE_GRAPH_ROUTER=1
+
+    Returns:
+        True if GraphRouter should be used, False otherwise
+    """
+    return os.environ.get("C4_USE_GRAPH_ROUTER", "").lower() in ("1", "true", "yes")
 
 
 @dataclass
@@ -649,6 +661,71 @@ class AgentRouter:
 
 
 # =============================================================================
+# GraphRouter Adapter (for C4_USE_GRAPH_ROUTER feature flag)
+# =============================================================================
+
+
+class GraphRouterAdapter(AgentRouter):
+    """Adapter that wraps GraphRouter to provide AgentRouter interface.
+
+    This adapter allows using the new GraphRouter through the existing
+    AgentRouter interface, enabling gradual migration with feature flag.
+
+    Enable with: export C4_USE_GRAPH_ROUTER=1
+    """
+
+    def __init__(self, config: AgentConfig | None = None):
+        """Initialize adapter with GraphRouter backend."""
+        super().__init__(config)
+        # Lazy import to avoid circular dependency
+        from c4.supervisor.agent_graph.router import GraphRouter
+
+        self._graph_router = GraphRouter(use_legacy_fallback=True)
+
+    def get_recommended_agent(self, domain: str | Domain | None) -> AgentChainConfig:
+        """Get recommended agent using GraphRouter."""
+        domain_str = domain.value if isinstance(domain, Domain) else domain
+
+        # Use GraphRouter
+        graph_config = self._graph_router.get_recommended_agent(domain_str)
+
+        # Convert to AgentChainConfig (compatible dataclass)
+        return AgentChainConfig(
+            primary=graph_config.primary,
+            chain=list(graph_config.chain),
+            description=graph_config.description,
+            handoff_instructions=graph_config.handoff_instructions,
+        )
+
+    def get_agent_for_task_type(
+        self,
+        task_type: str | None,
+        domain: str | Domain | None = None,
+    ) -> str:
+        """Get agent for task type using GraphRouter."""
+        domain_str = domain.value if isinstance(domain, Domain) else domain
+
+        return self._graph_router.get_agent_for_task_type(
+            task_type=task_type,
+            domain=domain_str,
+        )
+
+    def get_chain_for_domain(self, domain: str | Domain | None) -> list[str]:
+        """Get agent chain using GraphRouter."""
+        domain_str = domain.value if isinstance(domain, Domain) else domain
+        return self._graph_router.get_chain_for_domain(domain_str)
+
+    def get_handoff_instructions(self, domain: str | Domain | None) -> str:
+        """Get handoff instructions using GraphRouter."""
+        domain_str = domain.value if isinstance(domain, Domain) else domain
+        return self._graph_router.get_handoff_instructions(domain_str)
+
+    def get_all_domains(self) -> list[str]:
+        """Get all domains using GraphRouter."""
+        return self._graph_router.get_all_domains()
+
+
+# =============================================================================
 # Default Router Instance (for backward compatibility)
 # =============================================================================
 
@@ -657,10 +734,20 @@ _default_router: AgentRouter | None = None
 
 
 def get_default_router() -> AgentRouter:
-    """Get or create the default agent router."""
+    """Get or create the default agent router.
+
+    Uses GraphRouter if C4_USE_GRAPH_ROUTER=1 environment variable is set,
+    otherwise uses the classic AgentRouter.
+
+    Returns:
+        AgentRouter instance (or GraphRouterAdapter if flag is set)
+    """
     global _default_router
     if _default_router is None:
-        _default_router = AgentRouter()
+        if _use_graph_router():
+            _default_router = GraphRouterAdapter()
+        else:
+            _default_router = AgentRouter()
     return _default_router
 
 
