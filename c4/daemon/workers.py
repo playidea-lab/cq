@@ -65,17 +65,41 @@ class WorkerManager:
 
     def heartbeat(self, worker_id: str) -> bool:
         """
-        Update worker's last_seen timestamp.
+        Update worker's last_seen timestamp atomically.
+
+        Uses atomic_modify to prevent overwriting other workers' queue changes.
+        This fixes a critical bug where heartbeat could overwrite task state
+        with stale cached data.
 
         Returns:
             True if updated, False if worker not found
         """
-        if worker_id not in self._workers:
-            return False
+        from c4.store import SQLiteStateStore
 
-        self._workers[worker_id].last_seen = datetime.now()
-        self.state_machine.save_state()
-        return True
+        store = self.state_machine.store
+        project_id = self.state_machine.state.project_id
+
+        if isinstance(store, SQLiteStateStore):
+            # Use atomic_modify to safely update only worker's last_seen
+            try:
+                with store.atomic_modify(project_id) as state:
+                    if worker_id not in state.workers:
+                        return False
+                    state.workers[worker_id].last_seen = datetime.now()
+                    # Update cached state
+                    self.state_machine._state = state
+                return True
+            except Exception:
+                # If atomic_modify fails, don't update anything
+                return False
+        else:
+            # Fallback for non-SQLite stores: load fresh state first
+            self.state_machine.load_state()
+            if worker_id not in self._workers:
+                return False
+            self._workers[worker_id].last_seen = datetime.now()
+            self.state_machine.save_state()
+            return True
 
     def get_worker(self, worker_id: str) -> "WorkerInfo | None":
         """Get worker info by ID"""
@@ -190,6 +214,8 @@ class WorkerManager:
         This handles workers that crashed while busy. The tasks are moved
         back to pending queue and scope locks are released.
 
+        Uses atomic_modify to prevent race conditions with task assignment.
+
         Args:
             stale_timeout_seconds: Time in seconds after which a busy worker is considered stale
             lock_store: Optional SQLite lock store for releasing scope locks
@@ -199,54 +225,106 @@ class WorkerManager:
         """
         from datetime import timedelta
 
+        from c4.store import SQLiteStateStore
+
         now = datetime.now()
         stale_threshold = timedelta(seconds=stale_timeout_seconds)
-        recoveries = []
+        recoveries: list[dict[str, Any]] = []
 
-        state = self.state_machine.state
-        queue = state.queue
+        store = self.state_machine.store
+        project_id = self.state_machine.state.project_id
 
-        for worker_id, worker in list(self._workers.items()):
-            if worker.state != "busy":
-                continue
+        if isinstance(store, SQLiteStateStore):
+            # Use atomic_modify to safely update queue and workers
+            with store.atomic_modify(project_id) as state:
+                queue = state.queue
 
-            elapsed = now - worker.last_seen
-            if elapsed <= stale_threshold:
-                continue
+                for worker_id, worker in list(state.workers.items()):
+                    if worker.state != "busy":
+                        continue
 
-            # Worker is stale - recover task
-            task_id = worker.task_id
-            scope = worker.scope
+                    elapsed = now - worker.last_seen
+                    if elapsed <= stale_threshold:
+                        continue
 
-            recovery_info = {
-                "worker_id": worker_id,
-                "task_id": task_id,
-                "scope": scope,
-                "elapsed_seconds": elapsed.total_seconds(),
-            }
+                    # Worker is stale - recover task
+                    task_id = worker.task_id
+                    scope = worker.scope
 
-            # Move task back to pending if it's in progress
-            if task_id and task_id in queue.in_progress:
-                del queue.in_progress[task_id]
-                queue.pending.insert(0, task_id)  # Add to front for priority
-                recovery_info["task_recovered"] = True
+                    recovery_info: dict[str, Any] = {
+                        "worker_id": worker_id,
+                        "task_id": task_id,
+                        "scope": scope,
+                        "elapsed_seconds": elapsed.total_seconds(),
+                    }
 
-            # Release scope lock
-            if scope and lock_store:
-                try:
-                    lock_store.release_scope_lock(state.project_id, scope)
-                    recovery_info["lock_released"] = True
-                except Exception as e:
-                    recovery_info["lock_release_error"] = str(e)
+                    # Move task back to pending if it's in progress
+                    if task_id and task_id in queue.in_progress:
+                        del queue.in_progress[task_id]
+                        queue.pending.insert(0, task_id)  # Add to front for priority
+                        recovery_info["task_recovered"] = True
 
-            # Mark worker as disconnected (not idle - they didn't gracefully disconnect)
-            worker.state = "disconnected"
-            worker.task_id = None
-            worker.scope = None
+                    # Release scope lock (outside atomic block is OK - lock store is separate)
+                    if scope and lock_store:
+                        try:
+                            lock_store.release_scope_lock(project_id, scope)
+                            recovery_info["lock_released"] = True
+                        except Exception as e:
+                            recovery_info["lock_release_error"] = str(e)
 
-            recoveries.append(recovery_info)
+                    # Mark worker as disconnected
+                    worker.state = "disconnected"
+                    worker.task_id = None
+                    worker.scope = None
 
-        if recoveries:
-            self.state_machine.save_state()
+                    recoveries.append(recovery_info)
+
+                # Update cached state
+                self.state_machine._state = state
+
+        else:
+            # Fallback for non-SQLite stores
+            self.state_machine.load_state()
+            state = self.state_machine.state
+            queue = state.queue
+
+            for worker_id, worker in list(self._workers.items()):
+                if worker.state != "busy":
+                    continue
+
+                elapsed = now - worker.last_seen
+                if elapsed <= stale_threshold:
+                    continue
+
+                task_id = worker.task_id
+                scope = worker.scope
+
+                recovery_info = {
+                    "worker_id": worker_id,
+                    "task_id": task_id,
+                    "scope": scope,
+                    "elapsed_seconds": elapsed.total_seconds(),
+                }
+
+                if task_id and task_id in queue.in_progress:
+                    del queue.in_progress[task_id]
+                    queue.pending.insert(0, task_id)
+                    recovery_info["task_recovered"] = True
+
+                if scope and lock_store:
+                    try:
+                        lock_store.release_scope_lock(state.project_id, scope)
+                        recovery_info["lock_released"] = True
+                    except Exception as e:
+                        recovery_info["lock_release_error"] = str(e)
+
+                worker.state = "disconnected"
+                worker.task_id = None
+                worker.scope = None
+
+                recoveries.append(recovery_info)
+
+            if recoveries:
+                self.state_machine.save_state()
 
         return recoveries
