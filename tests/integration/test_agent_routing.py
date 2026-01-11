@@ -346,3 +346,361 @@ class TestGraphRouterFallbackIntegration:
 
         assert graph_config.primary == legacy_config.primary
         assert graph_config.chain == legacy_config.chain
+
+
+class TestNewDomainsIntegration:
+    """Integration tests for newly added domains"""
+
+    def test_fullstack_domain_routing(self, agent_routing_daemon):
+        """Test agent routing for fullstack domain"""
+        daemon = agent_routing_daemon
+
+        task = Task(
+            id="T-101",
+            title="Build full-stack feature",
+            dod="API + React UI working",
+            scope="feature",
+            domain="fullstack",
+        )
+        daemon.add_task(task)
+        daemon.state_machine.transition("c4_run")
+
+        result = daemon.c4_get_task("worker-fullstack")
+
+        assert result is not None
+        assert result.domain == "fullstack"
+        assert result.recommended_agent == "backend-architect"
+        assert "backend-architect" in result.agent_chain
+        assert "frontend-developer" in result.agent_chain
+
+    def test_mobile_app_domain_routing(self, agent_routing_daemon):
+        """Test agent routing for mobile-app domain"""
+        daemon = agent_routing_daemon
+
+        task = Task(
+            id="T-102",
+            title="Create mobile login screen",
+            dod="Login works on iOS and Android",
+            scope="auth",
+            domain="mobile-app",
+        )
+        daemon.add_task(task)
+        daemon.state_machine.transition("c4_run")
+
+        result = daemon.c4_get_task("worker-mobile")
+
+        assert result is not None
+        assert result.domain == "mobile-app"
+        assert result.recommended_agent == "mobile-developer"
+        assert "mobile-developer" in result.agent_chain
+
+    def test_library_domain_routing(self, agent_routing_daemon):
+        """Test agent routing for library domain"""
+        daemon = agent_routing_daemon
+
+        task = Task(
+            id="T-103",
+            title="Create Python library",
+            dod="Library published with docs",
+            scope="lib",
+            domain="library",
+        )
+        daemon.add_task(task)
+        daemon.state_machine.transition("c4_run")
+
+        result = daemon.c4_get_task("worker-library")
+
+        assert result is not None
+        assert result.domain == "library"
+        assert result.recommended_agent == "python-pro"
+        assert "api-documenter" in result.agent_chain
+
+    def test_firmware_domain_routing(self, agent_routing_daemon):
+        """Test agent routing for firmware domain"""
+        daemon = agent_routing_daemon
+
+        task = Task(
+            id="T-104",
+            title="Write embedded driver",
+            dod="Driver works on target board",
+            scope="driver",
+            domain="firmware",
+        )
+        daemon.add_task(task)
+        daemon.state_machine.transition("c4_run")
+
+        result = daemon.c4_get_task("worker-firmware")
+
+        assert result is not None
+        assert result.domain == "firmware"
+        assert result.recommended_agent == "general-purpose"
+
+    def test_data_science_domain_routing(self, agent_routing_daemon):
+        """Test agent routing for data-science domain"""
+        daemon = agent_routing_daemon
+
+        task = Task(
+            id="T-105",
+            title="Analyze sales data",
+            dod="Analysis report generated",
+            scope="analysis",
+            domain="data-science",
+        )
+        daemon.add_task(task)
+        daemon.state_machine.transition("c4_run")
+
+        result = daemon.c4_get_task("worker-datascience")
+
+        assert result is not None
+        assert result.domain == "data-science"
+        assert result.recommended_agent == "data-scientist"
+        assert "data-scientist" in result.agent_chain
+        assert "python-pro" in result.agent_chain
+
+    def test_devops_domain_routing(self, agent_routing_daemon):
+        """Test agent routing for devops domain"""
+        daemon = agent_routing_daemon
+
+        task = Task(
+            id="T-106",
+            title="Setup CI/CD pipeline",
+            dod="Pipeline deploys to staging",
+            scope="cicd",
+            domain="devops",
+        )
+        daemon.add_task(task)
+        daemon.state_machine.transition("c4_run")
+
+        result = daemon.c4_get_task("worker-devops")
+
+        assert result is not None
+        assert result.domain == "devops"
+        assert result.recommended_agent == "deployment-engineer"
+        assert "cloud-architect" in result.agent_chain
+        assert "security-auditor" in result.agent_chain
+
+    def test_api_domain_routing(self, agent_routing_daemon):
+        """Test agent routing for api domain"""
+        daemon = agent_routing_daemon
+
+        task = Task(
+            id="T-107",
+            title="Design REST API",
+            dod="API documented with OpenAPI",
+            scope="api",
+            domain="api",
+        )
+        daemon.add_task(task)
+        daemon.state_machine.transition("c4_run")
+
+        result = daemon.c4_get_task("worker-api")
+
+        assert result is not None
+        assert result.domain == "api"
+        assert result.recommended_agent == "backend-architect"
+        assert "api-documenter" in result.agent_chain
+
+
+class TestCustomAgentConfigIntegration:
+    """Integration tests for custom agent configuration from config.yaml"""
+
+    def test_custom_domain_from_yaml_config(self, temp_project):
+        """Test that custom domains from config.yaml are loaded"""
+        from c4.models.config import AgentChainDef, AgentConfig
+
+        daemon = C4Daemon(temp_project)
+        daemon.initialize("custom-agents-test", with_default_checkpoints=False)
+        daemon.state_machine.transition("skip_discovery")
+
+        # Set custom agent configuration
+        daemon._config.agents = AgentConfig(
+            chains={
+                "my-custom-domain": AgentChainDef(
+                    primary="my-custom-agent",
+                    chain=["my-custom-agent", "test-automator"],
+                    handoff="Custom handoff instructions",
+                )
+            }
+        )
+        daemon._config.validation = ValidationConfig(
+            commands={"lint": "echo 'ok'", "unit": "echo 'ok'"},
+            required=["lint", "unit"],
+        )
+        daemon._save_config()
+
+        # Reset agent router to pick up new config
+        daemon._agent_router = None
+
+        # Add task with custom domain
+        task = Task(
+            id="T-201",
+            title="Custom domain task",
+            dod="Task done",
+            scope="custom",
+            domain="my-custom-domain",
+        )
+        daemon.add_task(task)
+        daemon.state_machine.transition("c4_run")
+
+        result = daemon.c4_get_task("worker-custom")
+
+        assert result is not None
+        assert result.recommended_agent == "my-custom-agent"
+        assert "my-custom-agent" in result.agent_chain
+
+    def test_custom_domain_overrides_builtin(self, temp_project):
+        """Test that custom config overrides built-in domains"""
+        from c4.models.config import AgentChainDef, AgentConfig
+
+        daemon = C4Daemon(temp_project)
+        daemon.initialize("override-builtin-test", with_default_checkpoints=False)
+        daemon.state_machine.transition("skip_discovery")
+
+        # Override web-frontend with custom agent
+        daemon._config.agents = AgentConfig(
+            chains={
+                "web-frontend": AgentChainDef(
+                    primary="my-frontend-agent",
+                    chain=["my-frontend-agent", "my-reviewer"],
+                    handoff="My custom handoff",
+                )
+            }
+        )
+        daemon._config.validation = ValidationConfig(
+            commands={"lint": "echo 'ok'", "unit": "echo 'ok'"},
+            required=["lint", "unit"],
+        )
+        daemon._save_config()
+
+        # Reset agent router to pick up new config
+        daemon._agent_router = None
+
+        # Add task with built-in domain
+        task = Task(
+            id="T-202",
+            title="Override test",
+            dod="Task done",
+            scope="frontend",
+            domain="web-frontend",
+        )
+        daemon.add_task(task)
+        daemon.state_machine.transition("c4_run")
+
+        result = daemon.c4_get_task("worker-override")
+
+        assert result is not None
+        # Should use custom agent, not built-in
+        assert result.recommended_agent == "my-frontend-agent"
+        assert "my-frontend-agent" in result.agent_chain
+
+    def test_custom_task_override_from_config(self, temp_project):
+        """Test that custom task overrides from config.yaml work"""
+        from c4.models.config import AgentConfig
+
+        daemon = C4Daemon(temp_project)
+        daemon.initialize("task-override-test", with_default_checkpoints=False)
+        daemon.state_machine.transition("skip_discovery")
+
+        # Set custom task override
+        daemon._config.agents = AgentConfig(
+            task_overrides={
+                "my-special-task": "my-special-agent",
+            }
+        )
+        daemon._config.validation = ValidationConfig(
+            commands={"lint": "echo 'ok'", "unit": "echo 'ok'"},
+            required=["lint", "unit"],
+        )
+        daemon._save_config()
+
+        # Reset agent router to pick up new config
+        daemon._agent_router = None
+
+        # Get agent for custom task type
+        agent = daemon.agent_router.get_agent_for_task_type("my-special-task", "unknown")
+        assert agent == "my-special-agent"
+
+
+class TestMCPAgentRoutingTool:
+    """Tests for c4_test_agent_routing MCP tool"""
+
+    def test_tool_returns_all_domains_when_no_args(self, agent_routing_daemon):
+        """Test that tool returns all domains when called without arguments"""
+        daemon = agent_routing_daemon
+
+        result = daemon.c4_test_agent_routing()
+
+        assert "total_domains" in result
+        assert result["total_domains"] >= 12  # 9 built-in + 3 new
+        assert "domains" in result
+        assert "web-frontend" in result["domains"]
+        assert "data-science" in result["domains"]
+        assert "task_type_overrides" in result
+        assert "custom_config_loaded" in result
+
+    def test_tool_returns_domain_details(self, agent_routing_daemon):
+        """Test that tool returns details for specific domain"""
+        daemon = agent_routing_daemon
+
+        result = daemon.c4_test_agent_routing(domain="web-frontend")
+
+        assert result["domain"] == "web-frontend"
+        assert result["primary_agent"] == "frontend-developer"
+        assert isinstance(result["agent_chain"], list)
+        assert "frontend-developer" in result["agent_chain"]
+        assert "handoff_instructions" in result
+
+    def test_tool_returns_task_type_override(self, agent_routing_daemon):
+        """Test that tool shows task type override"""
+        daemon = agent_routing_daemon
+
+        result = daemon.c4_test_agent_routing(domain="web-backend", task_type="debug")
+
+        assert result["domain"] == "web-backend"
+        assert result["task_type"] == "debug"
+        assert result["overridden_agent"] == "debugger"
+        assert result["is_override"] is True
+
+    def test_tool_shows_no_override_when_task_matches_primary(self, agent_routing_daemon):
+        """Test that is_override is False when no override applies"""
+        daemon = agent_routing_daemon
+
+        result = daemon.c4_test_agent_routing(
+            domain="web-frontend", task_type="unknown-task"
+        )
+
+        assert result["domain"] == "web-frontend"
+        assert result["overridden_agent"] == "frontend-developer"
+        assert result["is_override"] is False
+
+    def test_tool_new_domains(self, agent_routing_daemon):
+        """Test that new domains are accessible via tool"""
+        daemon = agent_routing_daemon
+
+        # Test data-science
+        result = daemon.c4_test_agent_routing(domain="data-science")
+        assert result["primary_agent"] == "data-scientist"
+
+        # Test devops
+        result = daemon.c4_test_agent_routing(domain="devops")
+        assert result["primary_agent"] == "deployment-engineer"
+
+        # Test api
+        result = daemon.c4_test_agent_routing(domain="api")
+        assert result["primary_agent"] == "backend-architect"
+
+    def test_tool_new_task_overrides(self, agent_routing_daemon):
+        """Test that new task overrides work via tool"""
+        daemon = agent_routing_daemon
+
+        # Test api-design
+        result = daemon.c4_test_agent_routing(domain="web-backend", task_type="api-design")
+        assert result["overridden_agent"] == "backend-architect"
+
+        # Test notebook
+        result = daemon.c4_test_agent_routing(domain="ml-dl", task_type="notebook")
+        assert result["overridden_agent"] == "data-scientist"
+
+        # Test incident
+        result = daemon.c4_test_agent_routing(domain="web-backend", task_type="incident")
+        assert result["overridden_agent"] == "incident-responder"
