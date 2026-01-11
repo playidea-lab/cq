@@ -21,6 +21,10 @@ from c4.supervisor.agent_graph.loader import (
     SchemaValidationError,
     YAMLParseError,
 )
+from c4.supervisor.agent_graph.router import (
+    GraphRouter,
+    RoutingResult,
+)
 from c4.supervisor.agent_graph.skill_matcher import (
     AgentMatch,
     SkillMatcher,
@@ -76,6 +80,9 @@ __all__ = [
     "SchemaValidationError",
     "YAMLParseError",
     "ModelValidationError",
+    # Router
+    "GraphRouter",
+    "RoutingResult",
     # Skill Matcher
     "SkillMatcher",
     "TaskContext",
