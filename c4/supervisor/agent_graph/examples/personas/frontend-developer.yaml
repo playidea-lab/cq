@@ -8,7 +8,7 @@ agent:
     personality:
       style: creative
       communication: visual
-      approach: user-centric
+      approach: iterative
 
   skills:
     primary:

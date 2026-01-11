@@ -7,8 +7,8 @@ agent:
     expertise: "Query optimization, index design, schema design, migrations, caching strategies"
     personality:
       style: analytical
-      communication: data-focused
-      approach: evidence-based
+      communication: precise
+      approach: systematic
 
   skills:
     primary:

@@ -7,8 +7,8 @@ agent:
     expertise: "AWS/GCP/Azure, Terraform, IaC, cost optimization, multi-region deployments"
     personality:
       style: strategic
-      communication: diagram-focused
-      approach: cost-aware
+      communication: visual
+      approach: trade-off
 
   skills:
     primary:
