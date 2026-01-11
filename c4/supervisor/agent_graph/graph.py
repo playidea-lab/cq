@@ -459,3 +459,59 @@ class AgentGraph:
                 agents.append(to_id)
 
         return agents
+
+    # =========================================================================
+    # Chain Builder
+    # =========================================================================
+
+    def build_chain(
+        self,
+        primary_agent: str,
+        max_chain_length: int = 10,
+        min_weight: float = 0.0,
+    ) -> list[str]:
+        """Build an agent chain starting from the primary agent.
+
+        Follows HANDS_OFF_TO edges in order of weight (highest first),
+        preventing cycles and respecting the maximum chain length.
+
+        Args:
+            primary_agent: The starting agent ID
+            max_chain_length: Maximum number of agents in the chain (default 10)
+            min_weight: Minimum weight threshold for following edges (default 0.0)
+
+        Returns:
+            List of agent IDs forming the chain, or empty list if agent doesn't exist
+
+        Example:
+            >>> chain = graph.build_chain("architect", max_chain_length=5)
+            ["architect", "backend-dev", "test-automator", "code-reviewer"]
+        """
+        if not self._graph.has_node(primary_agent):
+            return []
+
+        chain: list[str] = []
+        visited: set[str] = set()
+        current = primary_agent
+
+        while len(chain) < max_chain_length:
+            # Add current agent to chain
+            chain.append(current)
+            visited.add(current)
+
+            # Find handoff targets sorted by weight
+            targets = self.find_handoff_targets(current)
+
+            # Filter by min_weight and already visited
+            next_agent = None
+            for target_id, weight in targets:
+                if weight >= min_weight and target_id not in visited:
+                    next_agent = target_id
+                    break  # Take highest weight valid target
+
+            if next_agent is None:
+                break  # No more valid handoffs
+
+            current = next_agent
+
+        return chain

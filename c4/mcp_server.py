@@ -2105,6 +2105,57 @@ Thumbs.db
         except StateTransitionError as e:
             return {"success": False, "error": str(e)}
 
+    def c4_test_agent_routing(
+        self,
+        domain: str | None = None,
+        task_type: str | None = None,
+    ) -> dict[str, Any]:
+        """
+        Test agent routing configuration (for debugging/verification).
+
+        Args:
+            domain: Domain to test. If not provided, shows all domains.
+            task_type: Task type to test. Shows override if exists.
+
+        Returns:
+            Agent routing information
+
+        Examples:
+            c4_test_agent_routing()  # All domains and overrides
+            c4_test_agent_routing(domain="web-frontend")  # Specific domain
+            c4_test_agent_routing(domain="ml-dl", task_type="debug")  # With override
+        """
+        if domain:
+            config = self.agent_router.get_recommended_agent(domain)
+            result: dict[str, Any] = {
+                "domain": domain,
+                "primary_agent": config.primary,
+                "agent_chain": config.chain,
+                "handoff_instructions": config.handoff_instructions,
+            }
+
+            if task_type:
+                override = self.agent_router.get_agent_for_task_type(task_type, domain)
+                result["task_type"] = task_type
+                result["overridden_agent"] = override
+                result["is_override"] = override != config.primary
+
+            return result
+
+        # Return all domains and overrides summary
+        return {
+            "total_domains": len(self.agent_router.get_all_domains()),
+            "domains": self.agent_router.get_all_domains(),
+            "domain_configs": {
+                d: {"primary": c.primary, "chain_length": len(c.chain)}
+                for d, c in self.agent_router.merged_chains.items()
+            },
+            "total_task_overrides": len(self.agent_router.merged_overrides),
+            "task_type_overrides": self.agent_router.merged_overrides,
+            "custom_config_loaded": self._config is not None
+            and self._config.agents is not None,
+        }
+
     def check_and_trigger_checkpoint(self) -> dict[str, Any] | None:
         """
         Check if checkpoint conditions are met and trigger if so.
@@ -2727,6 +2778,24 @@ def create_server(project_root: Path | None = None) -> Server:
                     "required": [],
                 },
             ),
+            Tool(
+                name="c4_test_agent_routing",
+                description="Test agent routing configuration. Debug which agent is assigned for domain/task_type combinations.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "domain": {
+                            "type": "string",
+                            "description": "Domain to test (e.g., 'web-frontend', 'ml-dl'). If not provided, shows all domains.",
+                        },
+                        "task_type": {
+                            "type": "string",
+                            "description": "Task type to test (e.g., 'debug', 'security'). Shows override if exists.",
+                        },
+                    },
+                    "required": [],
+                },
+            ),
         ]
 
     @server.call_tool()
@@ -2870,6 +2939,11 @@ def create_server(project_root: Path | None = None) -> Server:
                 result = daemon.c4_list_designs()
             elif name == "c4_design_complete":
                 result = daemon.c4_design_complete()
+            elif name == "c4_test_agent_routing":
+                result = daemon.c4_test_agent_routing(
+                    domain=arguments.get("domain"),
+                    task_type=arguments.get("task_type"),
+                )
             else:
                 result = {"error": f"Unknown tool: {name}"}
 

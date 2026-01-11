@@ -144,6 +144,34 @@ DOMAIN_AGENT_MAP: dict[str, AgentChainConfig] = {
             "Request clarification if domain-specific knowledge is needed."
         ),
     ),
+    # Additional domains for specialized workflows
+    "data-science": AgentChainConfig(
+        primary="data-scientist",
+        chain=["data-scientist", "python-pro", "test-automator"],
+        description="Data analysis, visualization, ML experiments, Jupyter notebooks",
+        handoff_instructions=(
+            "Pass dataset specifications, analysis requirements, and evaluation metrics. "
+            "Include data preprocessing steps and reproducibility constraints."
+        ),
+    ),
+    "devops": AgentChainConfig(
+        primary="deployment-engineer",
+        chain=["deployment-engineer", "cloud-architect", "security-auditor"],
+        description="CI/CD, monitoring, infrastructure automation, Docker/K8s",
+        handoff_instructions=(
+            "Pass deployment environment, infrastructure requirements, and security checklist. "
+            "Include rollback procedures and monitoring configurations."
+        ),
+    ),
+    "api": AgentChainConfig(
+        primary="backend-architect",
+        chain=["backend-architect", "api-documenter", "test-automator"],
+        description="REST/GraphQL API design, documentation, client SDKs",
+        handoff_instructions=(
+            "Pass API specifications, authentication methods, and versioning strategy. "
+            "Include rate limiting and error handling patterns."
+        ),
+    ),
 }
 
 
@@ -195,6 +223,13 @@ TASK_TYPE_AGENT_OVERRIDES: dict[str, str] = {
     "data-pipeline": "data-engineer",
     "etl": "data-engineer",
     "analytics": "data-scientist",
+    # Additional task type overrides
+    "api-design": "backend-architect",
+    "data-analysis": "data-scientist",
+    "monitoring": "devops-troubleshooter",
+    "incident": "incident-responder",
+    "infra-setup": "cloud-architect",
+    "notebook": "data-scientist",
 }
 
 
