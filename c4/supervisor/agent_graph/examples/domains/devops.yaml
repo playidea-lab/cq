@@ -1,0 +1,48 @@
+domain:
+  id: devops
+  name: "DevOps & Infrastructure"
+  description: "CI/CD, 인프라 자동화, 모니터링, 배포, 컨테이너 오케스트레이션"
+
+  required_skills:
+    core:
+      - deployment
+      - infrastructure
+      - ci-cd
+    optional:
+      - monitoring
+      - security-hardening
+      - container-orchestration
+
+  workflow:
+    - step: 1
+      role: primary
+      select:
+        by: skill
+        skills: [deployment, ci-cd]
+        prefer_agent: deployment-engineer
+      purpose: "배포 파이프라인 구축"
+
+    - step: 2
+      role: infrastructure
+      select:
+        by: skill
+        skills: [infrastructure, cloud-architecture]
+        prefer_agent: cloud-architect
+      purpose: "인프라 설계 및 프로비저닝"
+
+    - step: 3
+      role: security
+      select:
+        by: skill
+        skills: [security-audit, compliance]
+        prefer_agent: security-auditor
+      purpose: "보안 검토"
+      condition: "when touches_production == true"
+
+  rules:
+    - if: "task_has_keyword(['production', 'prod'])"
+      then: "require_agent(security-auditor)"
+    - if: "task_has_keyword(['kubernetes', 'k8s', 'helm'])"
+      then: "prefer_agent(cloud-architect)"
+    - if: "task_has_keyword(['monitoring', 'alert', 'metrics'])"
+      then: "add_to_chain(devops-troubleshooter, after=primary)"

@@ -1,0 +1,45 @@
+skill:
+  id: deployment
+  name: "Deployment & CI/CD"
+  description: "애플리케이션 배포, CI/CD 파이프라인 구축, 컨테이너화, 인프라 자동화"
+
+  capabilities:
+    - ci-cd-pipeline
+    - container-orchestration
+    - infrastructure-automation
+    - zero-downtime-deployment
+    - rollback-strategy
+
+  triggers:
+    keywords:
+      - deploy
+      - ci
+      - cd
+      - pipeline
+      - docker
+      - kubernetes
+      - release
+    task_types:
+      - deploy
+      - ci-cd
+      - pipeline
+      - release
+    file_patterns:
+      - "Dockerfile"
+      - "docker-compose*.yaml"
+      - ".github/workflows/**"
+      - "**/k8s/**"
+
+  tools:
+    - docker
+    - kubernetes
+    - github-actions
+    - terraform
+    - helm
+
+  complementary_skills:
+    - infrastructure
+    - monitoring
+
+  prerequisites:
+    - testing

@@ -1,0 +1,42 @@
+skill:
+  id: api-design
+  name: "API Design & Architecture"
+  description: "REST/GraphQL API 설계, OpenAPI 스펙 작성, 버저닝 전략, 인증/인가 설계"
+
+  capabilities:
+    - rest-api-design
+    - graphql-schema
+    - openapi-spec
+    - api-versioning
+    - authentication-design
+    - rate-limiting
+
+  triggers:
+    keywords:
+      - api
+      - endpoint
+      - rest
+      - graphql
+      - swagger
+      - openapi
+    task_types:
+      - api-design
+      - api-implement
+    file_patterns:
+      - "**/api/**"
+      - "*.openapi.yaml"
+      - "**/routes/**"
+
+  tools:
+    - openapi-generator
+    - swagger-ui
+    - postman
+    - insomnia
+
+  complementary_skills:
+    - backend-architecture
+    - security
+
+  leads_to:
+    - api-documentation
+    - api-testing

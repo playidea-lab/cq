@@ -1,0 +1,42 @@
+skill:
+  id: testing
+  name: "Software Testing"
+  description: "단위 테스트, 통합 테스트, E2E 테스트 작성 및 테스트 커버리지 관리"
+
+  capabilities:
+    - unit-testing
+    - integration-testing
+    - e2e-testing
+    - test-coverage
+    - mocking
+    - fixture-design
+
+  triggers:
+    keywords:
+      - test
+      - coverage
+      - spec
+      - assert
+      - mock
+    task_types:
+      - test
+      - testing
+      - coverage
+      - tdd
+    file_patterns:
+      - "**/test_*.py"
+      - "**/*_test.py"
+      - "**/tests/**"
+
+  tools:
+    - pytest
+    - unittest
+    - coverage
+    - mock
+
+  complementary_skills:
+    - debugging
+    - code-review
+
+  prerequisites:
+    - coding

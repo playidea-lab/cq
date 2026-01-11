@@ -1,0 +1,43 @@
+skill:
+  id: data-analysis
+  name: "Data Analysis & Visualization"
+  description: "데이터 탐색, 통계 분석, 시각화, 인사이트 도출"
+
+  capabilities:
+    - exploratory-data-analysis
+    - statistical-analysis
+    - data-visualization
+    - data-cleaning
+    - feature-engineering
+
+  triggers:
+    keywords:
+      - data
+      - analysis
+      - visualization
+      - pandas
+      - statistics
+      - eda
+    task_types:
+      - data-analysis
+      - eda
+      - visualization
+    file_patterns:
+      - "*.ipynb"
+      - "**/notebooks/**"
+      - "**/data/**"
+
+  tools:
+    - pandas
+    - numpy
+    - matplotlib
+    - seaborn
+    - jupyter
+
+  complementary_skills:
+    - ml-training
+    - python-coding
+
+  leads_to:
+    - ml-training
+    - reporting

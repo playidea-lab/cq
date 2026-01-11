@@ -101,8 +101,6 @@ properties:
 
             action:
               type: object
-              required:
-                - add_to_chain
               properties:
                 add_to_chain:
                   type: string
@@ -123,6 +121,10 @@ properties:
                     type: string
                     pattern: "^[a-z][a-z0-9-]*$"
                   description: "Ensure these agents are in the chain"
+
+              anyOf:
+                - required: ["add_to_chain"]
+                - required: ["ensure_in_chain"]
 
         description: "Rules for extending the agent chain"
 

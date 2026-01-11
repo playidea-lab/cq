@@ -1,0 +1,44 @@
+skill:
+  id: debugging
+  name: "Debugging & Error Analysis"
+  description: "버그 식별, 루트 원인 분석, 에러 트레이싱, 스택 분석을 통한 문제 해결"
+
+  capabilities:
+    - error-tracing
+    - stack-analysis
+    - breakpoint-debugging
+    - log-analysis
+    - memory-debugging
+
+  triggers:
+    keywords:
+      - bug
+      - error
+      - crash
+      - exception
+      - fix
+      - broken
+      - failing
+    task_types:
+      - debug
+      - fix-bug
+      - debugging
+      - hotfix
+    file_patterns:
+      - "*.log"
+      - "*.trace"
+      - "**/errors/**"
+
+  tools:
+    - debugger
+    - profiler
+    - logger
+
+  complementary_skills:
+    - profiling
+    - logging
+    - testing
+
+  leads_to:
+    - testing
+    - code-review

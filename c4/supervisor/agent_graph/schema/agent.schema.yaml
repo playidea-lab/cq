@@ -78,6 +78,7 @@ properties:
                   - concise
                   - visual
                   - conversational
+                  - constructive
                 description: "Communication style"
 
               approach:
