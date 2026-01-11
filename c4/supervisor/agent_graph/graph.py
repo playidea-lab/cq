@@ -82,7 +82,7 @@ class AgentGraph:
 
     def __init__(self) -> None:
         """Initialize an empty agent graph."""
-        self._graph: nx.DiGraph = nx.DiGraph()
+        self._graph: nx.DiGraph[str] = nx.DiGraph()
 
     def add_skill(self, skill: SkillDefinition) -> None:
         """Add a skill node to the graph.
@@ -429,7 +429,7 @@ class AgentGraph:
         ]
 
         # Create a subgraph with only handoff edges
-        handoff_graph = nx.DiGraph()
+        handoff_graph: nx.DiGraph[str] = nx.DiGraph()
         handoff_graph.add_edges_from(handoff_edges)
 
         try:

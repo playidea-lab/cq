@@ -16,10 +16,11 @@ Directory structure expected:
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, cast
 
 import jsonschema
 import yaml
+from pydantic import BaseModel
 from pydantic import ValidationError as PydanticValidationError
 
 from c4.supervisor.agent_graph.models import (
@@ -151,7 +152,7 @@ class AgentGraphLoader:
 
         try:
             with open(schema_path, encoding="utf-8") as f:
-                schema = yaml.safe_load(f)
+                schema = cast(dict[str, Any], yaml.safe_load(f))
         except yaml.YAMLError as e:
             raise YAMLParseError(schema_path, e) from e
 
@@ -183,7 +184,7 @@ class AgentGraphLoader:
         if data is None:
             raise YAMLParseError(file_path, ValueError("Empty YAML file"))
 
-        return data
+        return cast(dict[str, Any], data)
 
     def _validate_against_schema(
         self,
@@ -222,7 +223,7 @@ class AgentGraphLoader:
         self,
         subdir: str,
         schema_filename: str,
-        model_class: type,
+        model_class: type[BaseModel],
     ) -> list[Any]:
         """Generic method to load definitions from a subdirectory.
 
