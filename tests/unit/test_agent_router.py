@@ -216,6 +216,11 @@ class TestTaskTypeOverrides:
             "payment-integration",
             "data-engineer",
             "data-scientist",
+            # New agents for additional task overrides
+            "backend-architect",
+            "devops-troubleshooter",
+            "incident-responder",
+            "cloud-architect",
         }
         for task_type, agent in TASK_TYPE_AGENT_OVERRIDES.items():
             assert agent in valid_agents, f"Unknown agent: {agent} for task type: {task_type}"
@@ -673,3 +678,146 @@ class TestAgentConfigModels:
         assert "test" in config.chains
         assert config.task_overrides["task1"] == "agent2"
         assert config.defaults["fallback_domain"] == "test"
+
+
+# =============================================================================
+# New Domain and Task Override Tests
+# =============================================================================
+
+
+class TestNewDomains:
+    """Tests for newly added domains (data-science, devops, api)"""
+
+    def test_data_science_domain_config(self):
+        """Test data-science domain configuration"""
+        config = DOMAIN_AGENT_MAP["data-science"]
+        assert config.primary == "data-scientist"
+        assert "data-scientist" in config.chain
+        assert "python-pro" in config.chain
+        assert "test-automator" in config.chain
+        assert "data" in config.description.lower() or "analysis" in config.description.lower()
+
+    def test_devops_domain_config(self):
+        """Test devops domain configuration"""
+        config = DOMAIN_AGENT_MAP["devops"]
+        assert config.primary == "deployment-engineer"
+        assert "deployment-engineer" in config.chain
+        assert "cloud-architect" in config.chain
+        assert "security-auditor" in config.chain
+        assert "ci" in config.description.lower() or "deploy" in config.description.lower()
+
+    def test_api_domain_config(self):
+        """Test api domain configuration"""
+        config = DOMAIN_AGENT_MAP["api"]
+        assert config.primary == "backend-architect"
+        assert "backend-architect" in config.chain
+        assert "api-documenter" in config.chain
+        assert "test-automator" in config.chain
+        assert "api" in config.description.lower()
+
+    def test_get_recommended_agent_data_science(self):
+        """Test get_recommended_agent for data-science domain"""
+        config = get_recommended_agent("data-science")
+        assert config.primary == "data-scientist"
+
+    def test_get_recommended_agent_devops(self):
+        """Test get_recommended_agent for devops domain"""
+        config = get_recommended_agent("devops")
+        assert config.primary == "deployment-engineer"
+
+    def test_get_recommended_agent_api(self):
+        """Test get_recommended_agent for api domain"""
+        config = get_recommended_agent("api")
+        assert config.primary == "backend-architect"
+
+    def test_get_all_domains_includes_new_domains(self):
+        """Test get_all_domains includes new domains"""
+        domains = get_all_domains()
+        assert "data-science" in domains
+        assert "devops" in domains
+        assert "api" in domains
+
+
+class TestNewTaskOverrides:
+    """Tests for newly added task type overrides"""
+
+    def test_api_design_task_type(self):
+        """Test api-design task type returns backend-architect"""
+        agent = get_agent_for_task_type("api-design", "web-frontend")
+        assert agent == "backend-architect"
+
+    def test_data_analysis_task_type(self):
+        """Test data-analysis task type returns data-scientist"""
+        agent = get_agent_for_task_type("data-analysis", "web-backend")
+        assert agent == "data-scientist"
+
+    def test_monitoring_task_type(self):
+        """Test monitoring task type returns devops-troubleshooter"""
+        agent = get_agent_for_task_type("monitoring", "infra")
+        assert agent == "devops-troubleshooter"
+
+    def test_incident_task_type(self):
+        """Test incident task type returns incident-responder"""
+        agent = get_agent_for_task_type("incident", "web-backend")
+        assert agent == "incident-responder"
+
+    def test_infra_setup_task_type(self):
+        """Test infra-setup task type returns cloud-architect"""
+        agent = get_agent_for_task_type("infra-setup", "web-backend")
+        assert agent == "cloud-architect"
+
+    def test_notebook_task_type(self):
+        """Test notebook task type returns data-scientist"""
+        agent = get_agent_for_task_type("notebook", "ml-dl")
+        assert agent == "data-scientist"
+
+    def test_new_overrides_in_task_type_map(self):
+        """Test new overrides are in TASK_TYPE_AGENT_OVERRIDES"""
+        assert "api-design" in TASK_TYPE_AGENT_OVERRIDES
+        assert "data-analysis" in TASK_TYPE_AGENT_OVERRIDES
+        assert "monitoring" in TASK_TYPE_AGENT_OVERRIDES
+        assert "incident" in TASK_TYPE_AGENT_OVERRIDES
+        assert "infra-setup" in TASK_TYPE_AGENT_OVERRIDES
+        assert "notebook" in TASK_TYPE_AGENT_OVERRIDES
+
+
+class TestAgentRouterNewScenarios:
+    """Tests for AgentRouter with new domains and overrides"""
+
+    def test_router_data_science_domain(self):
+        """Test router returns correct config for data-science domain"""
+        router = AgentRouter()
+        config = router.get_recommended_agent("data-science")
+        assert config.primary == "data-scientist"
+        assert "python-pro" in config.chain
+
+    def test_router_api_design_task_override(self):
+        """Test router returns correct agent for api-design task"""
+        router = AgentRouter()
+        agent = router.get_agent_for_task_type("api-design", "data-science")
+        assert agent == "backend-architect"  # Override takes precedence
+
+    def test_router_custom_override_new_task_type(self):
+        """Test custom config can override new task types"""
+        custom_config = AgentConfig(
+            task_overrides={
+                "api-design": "my-api-agent",  # Override built-in
+            }
+        )
+        router = AgentRouter(config=custom_config)
+        agent = router.get_agent_for_task_type("api-design", "web-backend")
+        assert agent == "my-api-agent"
+
+    def test_router_custom_override_new_domain(self):
+        """Test custom config can override new domain"""
+        custom_config = AgentConfig(
+            chains={
+                "data-science": AgentChainDef(
+                    primary="my-data-agent",
+                    chain=["my-data-agent", "my-reviewer"],
+                )
+            }
+        )
+        router = AgentRouter(config=custom_config)
+        config = router.get_recommended_agent("data-science")
+        assert config.primary == "my-data-agent"

@@ -1033,3 +1033,219 @@ class TestQueryFindTriggeringAgents:
         """find_triggering_agents should return empty for non-existent skill."""
         agents = graph.find_triggering_agents("nonexistent")
         assert agents == []
+
+
+# ============================================================================
+# Test Chain Builder - build_chain()
+# ============================================================================
+
+
+class TestBuildChain:
+    """Tests for AgentGraph.build_chain() method.
+
+    The chain builder creates an agent chain by:
+    1. Starting with a primary agent
+    2. Following HANDS_OFF_TO edges by weight (highest first)
+    3. Preventing cycles
+    4. Respecting max_chain_length
+    """
+
+    @pytest.fixture
+    def chain_graph(self) -> AgentGraph:
+        r"""Create a graph with a multi-agent chain.
+
+        Chain structure:
+        architect --0.9--> backend-dev --0.8--> test-automator --0.7--> code-reviewer
+                   \--0.5--> frontend-dev
+        """
+        graph = AgentGraph()
+
+        # Create agents
+        agents = [
+            AgentDefinition(
+                agent=Agent(
+                    id="architect",
+                    name="Architect",
+                    persona=AgentPersona(role="Architect", expertise="System design"),
+                    skills=AgentSkills(primary=["architecture"]),
+                    relationships=AgentRelationships(
+                        hands_off_to=[
+                            AgentHandsOffTo(
+                                agent="backend-dev",
+                                when="Design complete",
+                                passes="Architecture docs",
+                                weight=0.9,
+                            ),
+                            AgentHandsOffTo(
+                                agent="frontend-dev",
+                                when="Design complete",
+                                passes="UI specs",
+                                weight=0.5,
+                            ),
+                        ]
+                    ),
+                )
+            ),
+            AgentDefinition(
+                agent=Agent(
+                    id="backend-dev",
+                    name="Backend Developer",
+                    persona=AgentPersona(role="Backend Dev", expertise="Backend"),
+                    skills=AgentSkills(primary=["backend"]),
+                    relationships=AgentRelationships(
+                        hands_off_to=[
+                            AgentHandsOffTo(
+                                agent="test-automator",
+                                when="Implementation done",
+                                passes="Code",
+                                weight=0.8,
+                            ),
+                        ]
+                    ),
+                )
+            ),
+            AgentDefinition(
+                agent=Agent(
+                    id="frontend-dev",
+                    name="Frontend Developer",
+                    persona=AgentPersona(role="Frontend Dev", expertise="Frontend"),
+                    skills=AgentSkills(primary=["frontend"]),
+                    relationships=AgentRelationships(),
+                )
+            ),
+            AgentDefinition(
+                agent=Agent(
+                    id="test-automator",
+                    name="Test Automator",
+                    persona=AgentPersona(role="Test Automator", expertise="Testing"),
+                    skills=AgentSkills(primary=["testing"]),
+                    relationships=AgentRelationships(
+                        hands_off_to=[
+                            AgentHandsOffTo(
+                                agent="code-reviewer",
+                                when="Tests written",
+                                passes="Test results",
+                                weight=0.7,
+                            ),
+                        ]
+                    ),
+                )
+            ),
+            AgentDefinition(
+                agent=Agent(
+                    id="code-reviewer",
+                    name="Code Reviewer",
+                    persona=AgentPersona(role="Code Reviewer", expertise="Code review"),
+                    skills=AgentSkills(primary=["code-review"]),
+                    relationships=AgentRelationships(),
+                )
+            ),
+        ]
+
+        # Add agents in reverse order so handoff targets exist
+        for agent in reversed(agents):
+            graph.add_agent(agent)
+
+        return graph
+
+    def test_build_chain_follows_highest_weight(self, chain_graph: AgentGraph) -> None:
+        """build_chain should follow highest weight handoff edges."""
+        chain = chain_graph.build_chain("architect")
+
+        # architect -> backend-dev (0.9) -> test-automator (0.8) -> code-reviewer (0.7)
+        assert chain == ["architect", "backend-dev", "test-automator", "code-reviewer"]
+
+    def test_build_chain_respects_max_length(self, chain_graph: AgentGraph) -> None:
+        """build_chain should respect max_chain_length parameter."""
+        chain = chain_graph.build_chain("architect", max_chain_length=2)
+
+        # Should stop after 2 agents
+        assert chain == ["architect", "backend-dev"]
+
+    def test_build_chain_prevents_cycles(self, graph: AgentGraph) -> None:
+        """build_chain should prevent cycles in the chain."""
+        # Create a cycle: A -> B -> C -> A
+        agents = [
+            AgentDefinition(
+                agent=Agent(
+                    id="agent-a",
+                    name="Agent A",
+                    persona=AgentPersona(role="A", expertise="A"),
+                    skills=AgentSkills(primary=["skill"]),
+                    relationships=AgentRelationships(
+                        hands_off_to=[
+                            AgentHandsOffTo(agent="agent-b", when="w", passes="p", weight=1.0)
+                        ]
+                    ),
+                )
+            ),
+            AgentDefinition(
+                agent=Agent(
+                    id="agent-b",
+                    name="Agent B",
+                    persona=AgentPersona(role="B", expertise="B"),
+                    skills=AgentSkills(primary=["skill"]),
+                    relationships=AgentRelationships(
+                        hands_off_to=[
+                            AgentHandsOffTo(agent="agent-c", when="w", passes="p", weight=1.0)
+                        ]
+                    ),
+                )
+            ),
+            AgentDefinition(
+                agent=Agent(
+                    id="agent-c",
+                    name="Agent C",
+                    persona=AgentPersona(role="C", expertise="C"),
+                    skills=AgentSkills(primary=["skill"]),
+                    relationships=AgentRelationships(
+                        hands_off_to=[
+                            AgentHandsOffTo(agent="agent-a", when="w", passes="p", weight=1.0)
+                        ]
+                    ),
+                )
+            ),
+        ]
+
+        for agent in reversed(agents):
+            graph.add_agent(agent)
+
+        chain = graph.build_chain("agent-a")
+
+        # Should stop when cycle detected: A -> B -> C (no back to A)
+        assert chain == ["agent-a", "agent-b", "agent-c"]
+
+    def test_build_chain_single_agent(self, chain_graph: AgentGraph) -> None:
+        """build_chain should return single agent when no handoffs."""
+        chain = chain_graph.build_chain("code-reviewer")
+
+        # code-reviewer has no handoffs
+        assert chain == ["code-reviewer"]
+
+    def test_build_chain_nonexistent_agent(self, chain_graph: AgentGraph) -> None:
+        """build_chain should return empty list for non-existent agent."""
+        chain = chain_graph.build_chain("nonexistent")
+
+        assert chain == []
+
+    def test_build_chain_default_max_length(self, chain_graph: AgentGraph) -> None:
+        """build_chain should have a sensible default max_chain_length."""
+        chain = chain_graph.build_chain("architect")
+
+        # Default should allow the full chain (10 is reasonable default)
+        assert len(chain) == 4  # architect -> backend-dev -> test-automator -> code-reviewer
+
+    def test_build_chain_filters_by_min_weight(self, chain_graph: AgentGraph) -> None:
+        """build_chain should optionally filter edges by minimum weight."""
+        # Only follow edges with weight >= 0.8
+        chain = chain_graph.build_chain("architect", min_weight=0.8)
+
+        # Should stop at test-automator (weight 0.7 to code-reviewer is below threshold)
+        assert chain == ["architect", "backend-dev", "test-automator"]
+
+    def test_build_chain_returns_agent_ids(self, chain_graph: AgentGraph) -> None:
+        """build_chain should return list of agent IDs (strings)."""
+        chain = chain_graph.build_chain("architect")
+
+        assert all(isinstance(agent_id, str) for agent_id in chain)
+        assert chain[0] == "architect"

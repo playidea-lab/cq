@@ -54,6 +54,12 @@ from c4.supervisor.agent_graph.models import (
     WorkflowSelect,
     WorkflowStep,
 )
+from c4.supervisor.agent_graph.rules import (
+    RuleEngine,
+    Task,
+    TaskLike,
+    evaluate,
+)
 
 SCHEMA_DIR = Path(__file__).parent / "schema"
 EXAMPLES_DIR = Path(__file__).parent / "examples"
@@ -104,4 +110,9 @@ __all__ = [
     "RuleDefinition",
     "Rules",
     "Selection",
+    # Rules engine
+    "RuleEngine",
+    "Task",
+    "TaskLike",
+    "evaluate",
 ]
