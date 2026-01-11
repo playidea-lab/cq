@@ -1,0 +1,121 @@
+$schema: "https://json-schema.org/draft/2020-12/schema"
+$id: "https://c4.dev/schema/skill.schema.yaml"
+title: "Skill Definition"
+description: "Defines an atomic capability that agents can possess"
+type: object
+
+required:
+  - skill
+
+properties:
+  skill:
+    type: object
+    required:
+      - id
+      - name
+      - description
+      - capabilities
+      - triggers
+
+    properties:
+      id:
+        type: string
+        pattern: "^[a-z][a-z0-9-]*$"
+        description: "Unique identifier for the skill (kebab-case)"
+        examples:
+          - "debugging"
+          - "api-design"
+          - "data-analysis"
+
+      name:
+        type: string
+        minLength: 1
+        maxLength: 100
+        description: "Human-readable name of the skill"
+        examples:
+          - "Debugging & Error Analysis"
+          - "API Design & Architecture"
+
+      description:
+        type: string
+        minLength: 10
+        maxLength: 500
+        description: "Detailed description of what this skill enables"
+
+      capabilities:
+        type: array
+        minItems: 1
+        items:
+          type: string
+          pattern: "^[a-z][a-z0-9-]*$"
+        description: "List of specific capabilities this skill provides"
+        examples:
+          - ["error-tracing", "stack-analysis", "breakpoint-debugging"]
+
+      triggers:
+        type: object
+        description: "Conditions that trigger this skill"
+        properties:
+          keywords:
+            type: array
+            items:
+              type: string
+            description: "Keywords in task that trigger this skill"
+            examples:
+              - ["bug", "error", "crash", "exception"]
+
+          task_types:
+            type: array
+            items:
+              type: string
+              pattern: "^[a-z][a-z0-9-]*$"
+            description: "Task types that require this skill"
+            examples:
+              - ["debug", "fix-bug", "hotfix"]
+
+          file_patterns:
+            type: array
+            items:
+              type: string
+            description: "File patterns that indicate need for this skill"
+            examples:
+              - ["*.log", "*.trace", "**/errors/**"]
+
+        anyOf:
+          - required: ["keywords"]
+          - required: ["task_types"]
+          - required: ["file_patterns"]
+
+      # Optional fields
+      tools:
+        type: array
+        items:
+          type: string
+        description: "Tools or libraries commonly used with this skill"
+        examples:
+          - ["debugger", "profiler", "logger"]
+
+      complementary_skills:
+        type: array
+        items:
+          type: string
+          pattern: "^[a-z][a-z0-9-]*$"
+        description: "Skills that work well together with this one"
+        examples:
+          - ["profiling", "logging", "testing"]
+
+      prerequisites:
+        type: array
+        items:
+          type: string
+          pattern: "^[a-z][a-z0-9-]*$"
+        description: "Skills that should be applied before this one"
+
+      leads_to:
+        type: array
+        items:
+          type: string
+          pattern: "^[a-z][a-z0-9-]*$"
+        description: "Skills that typically follow this one"
+
+additionalProperties: false

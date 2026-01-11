@@ -1,0 +1,188 @@
+$schema: "https://json-schema.org/draft/2020-12/schema"
+$id: "https://c4.dev/schema/agent.schema.yaml"
+title: "Agent Definition"
+description: "Defines an agent persona with skills and relationships"
+type: object
+
+required:
+  - agent
+
+properties:
+  agent:
+    type: object
+    required:
+      - id
+      - name
+      - persona
+      - skills
+      - relationships
+
+    properties:
+      id:
+        type: string
+        pattern: "^[a-z][a-z0-9-]*$"
+        description: "Unique identifier for the agent (kebab-case)"
+        examples:
+          - "debugger"
+          - "backend-architect"
+          - "data-scientist"
+
+      name:
+        type: string
+        minLength: 1
+        maxLength: 100
+        description: "Human-readable name of the agent"
+        examples:
+          - "Debugger"
+          - "Backend Architect"
+
+      persona:
+        type: object
+        description: "Personality and behavior characteristics"
+        required:
+          - role
+          - expertise
+        properties:
+          role:
+            type: string
+            description: "The agent's role title"
+            examples:
+              - "Senior Debug Engineer"
+              - "Principal Backend Architect"
+
+          expertise:
+            type: string
+            description: "Area of expertise and experience level"
+            examples:
+              - "10년차 시스템 디버깅 전문가"
+              - "대규모 시스템 설계, API 아키텍처"
+
+          personality:
+            type: object
+            properties:
+              style:
+                type: string
+                enum:
+                  - methodical
+                  - creative
+                  - strategic
+                  - pragmatic
+                  - analytical
+                description: "Working style"
+
+              communication:
+                type: string
+                enum:
+                  - precise
+                  - verbose
+                  - concise
+                  - visual
+                  - conversational
+                description: "Communication style"
+
+              approach:
+                type: string
+                enum:
+                  - root-cause
+                  - trade-off
+                  - iterative
+                  - systematic
+                  - exploratory
+                description: "Problem-solving approach"
+
+      skills:
+        type: object
+        description: "Skills this agent possesses"
+        required:
+          - primary
+        properties:
+          primary:
+            type: array
+            minItems: 1
+            items:
+              type: string
+              pattern: "^[a-z][a-z0-9-]*$"
+            description: "Primary skills (core competencies)"
+
+          secondary:
+            type: array
+            items:
+              type: string
+              pattern: "^[a-z][a-z0-9-]*$"
+            description: "Secondary skills (supplementary)"
+
+      relationships:
+        type: object
+        description: "Relationships with other agents"
+        properties:
+          receives_from:
+            type: array
+            items:
+              type: object
+              required:
+                - agents
+                - context
+              properties:
+                agents:
+                  type: array
+                  items:
+                    type: string
+                  description: "Agents that can hand off to this one"
+                context:
+                  type: string
+                  description: "What context/information is passed"
+            description: "Who this agent receives work from"
+
+          hands_off_to:
+            type: array
+            items:
+              type: object
+              required:
+                - agent
+                - when
+                - passes
+              properties:
+                agent:
+                  type: string
+                  pattern: "^[a-z][a-z0-9-]*$"
+                  description: "Agent to hand off to"
+                when:
+                  type: string
+                  description: "Condition for handoff"
+                passes:
+                  type: string
+                  description: "What context/artifacts to pass"
+                weight:
+                  type: number
+                  minimum: 0
+                  maximum: 1
+                  default: 0.5
+                  description: "Preference weight for this handoff"
+            description: "Who this agent hands off to"
+
+      instructions:
+        type: object
+        description: "Behavioral instructions"
+        properties:
+          on_receive:
+            type: string
+            description: "Instructions when receiving a task"
+          on_handoff:
+            type: string
+            description: "Template for handoff summary"
+
+      behaviors:
+        type: object
+        description: "Special behaviors"
+        properties:
+          on_ambiguity:
+            type: string
+            description: "How to handle ambiguous requirements"
+          on_conflict:
+            type: string
+            description: "How to handle conflicting requirements"
+          diagram_preference:
+            type: string
+            description: "Preferred diagram type for visualization"
+
+additionalProperties: false
