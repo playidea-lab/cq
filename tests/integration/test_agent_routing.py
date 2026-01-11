@@ -263,3 +263,86 @@ class TestAgentRoutingIntegration:
         assert result.recommended_agent == "cloud-architect"
         assert "cloud-architect" in result.agent_chain
         assert "deployment-engineer" in result.agent_chain
+
+
+class TestGraphRouterFallbackIntegration:
+    """Integration tests for GraphRouter fallback to legacy AgentRouter."""
+
+    def test_graph_router_fallback_matches_legacy(self):
+        """GraphRouter without graph should match legacy AgentRouter exactly."""
+        from c4.supervisor.agent_graph.router import GraphRouter
+        from c4.supervisor.agent_router import AgentRouter
+
+        legacy_router = AgentRouter()
+        graph_router = GraphRouter()  # No graph - fallback mode
+
+        # Test all known domains
+        domains = ["web-frontend", "web-backend", "ml-dl", "infra", "library"]
+
+        for domain in domains:
+            legacy_config = legacy_router.get_recommended_agent(domain)
+            graph_config = graph_router.get_recommended_agent(domain)
+
+            assert graph_config.primary == legacy_config.primary, f"Primary mismatch for {domain}"
+            assert graph_config.chain == legacy_config.chain, f"Chain mismatch for {domain}"
+
+    def test_graph_router_task_type_fallback(self):
+        """GraphRouter task type overrides should match legacy behavior."""
+        from c4.supervisor.agent_graph.router import GraphRouter
+        from c4.supervisor.agent_router import AgentRouter
+
+        legacy_router = AgentRouter()
+        graph_router = GraphRouter()
+
+        # Test task type overrides
+        task_types = ["debug", "security", "test", "deploy", "refactor"]
+
+        for task_type in task_types:
+            legacy_agent = legacy_router.get_agent_for_task_type(task_type)
+            graph_agent = graph_router.get_agent_for_task_type(task_type)
+
+            assert graph_agent == legacy_agent, f"Task type override mismatch for {task_type}"
+
+    def test_graph_router_chain_fallback(self):
+        """GraphRouter chain should match legacy for fallback domains."""
+        from c4.supervisor.agent_graph.router import GraphRouter
+        from c4.supervisor.agent_router import AgentRouter
+
+        legacy_router = AgentRouter()
+        graph_router = GraphRouter()
+
+        domains = ["fullstack", "mobile-app", "firmware"]
+
+        for domain in domains:
+            legacy_chain = legacy_router.get_chain_for_domain(domain)
+            graph_chain = graph_router.get_chain_for_domain(domain)
+
+            assert graph_chain == legacy_chain, f"Chain mismatch for {domain}"
+
+    def test_graph_router_all_domains_includes_legacy(self):
+        """GraphRouter.get_all_domains() should include all legacy domains."""
+        from c4.supervisor.agent_graph.router import GraphRouter
+        from c4.supervisor.agent_router import AgentRouter
+
+        legacy_router = AgentRouter()
+        graph_router = GraphRouter()
+
+        legacy_domains = set(legacy_router.get_all_domains())
+        graph_domains = set(graph_router.get_all_domains())
+
+        # All legacy domains should be in graph router
+        assert legacy_domains.issubset(graph_domains), "Missing legacy domains"
+
+    def test_graph_router_unknown_domain_fallback(self):
+        """GraphRouter should handle unknown domain same as legacy."""
+        from c4.supervisor.agent_graph.router import GraphRouter
+        from c4.supervisor.agent_router import AgentRouter
+
+        legacy_router = AgentRouter()
+        graph_router = GraphRouter()
+
+        legacy_config = legacy_router.get_recommended_agent("completely-unknown-domain")
+        graph_config = graph_router.get_recommended_agent("completely-unknown-domain")
+
+        assert graph_config.primary == legacy_config.primary
+        assert graph_config.chain == legacy_config.chain
