@@ -1,13 +1,14 @@
-"""GraphRouter - Graph-based agent routing with skill matching.
+"""GraphRouter - Graph-based agent routing with skill matching and rules.
 
 This module provides a GraphRouter that extends AgentRouter with:
-1. Skill-based routing via SkillMatcher
-2. AgentGraph integration for relationship-aware routing
-3. Backward compatibility with legacy domain-based routing
+1. Rule-based routing via RuleEngine (highest priority)
+2. Skill-based routing via SkillMatcher
+3. AgentGraph integration for relationship-aware routing
+4. Backward compatibility with legacy domain-based routing
 
 Usage:
     >>> from c4.supervisor.agent_graph import GraphRouter, SkillMatcher, TaskContext
-    >>> router = GraphRouter(skill_matcher=matcher)
+    >>> router = GraphRouter(skill_matcher=matcher, rule_engine=engine)
     >>> config = router.get_recommended_agent("web-backend", task=task)
 """
 
@@ -16,15 +17,16 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from c4.discovery.models import Domain
 from c4.supervisor.agent_router import (
     AgentChainConfig,
     AgentRouter,
-    Domain,
 )
 
 if TYPE_CHECKING:
     from c4.models.config import AgentConfig
     from c4.supervisor.agent_graph.graph import AgentGraph
+    from c4.supervisor.agent_graph.rule_engine import RuleContext, RuleEngine
     from c4.supervisor.agent_graph.skill_matcher import SkillMatcher, TaskLike
 
 
@@ -34,43 +36,51 @@ class RoutingResult:
 
     Attributes:
         config: The agent chain configuration
-        routing_method: How the agent was selected ("skill", "domain", "task_type")
+        routing_method: How the agent was selected ("rule", "skill", "domain", "task_type")
         matched_skills: Skills that matched (if skill-based routing)
         skill_score: Score from skill matching (if applicable)
+        matched_rule: Name of matched rule (if rule-based routing)
+        rule_reason: Reason from matched rule (if rule-based routing)
     """
 
     config: AgentChainConfig
     routing_method: str
     matched_skills: list[str] | None = None
     skill_score: float | None = None
+    matched_rule: str | None = None
+    rule_reason: str | None = None
 
 
 class GraphRouter:
-    """Graph-based agent router with skill matching support.
+    """Graph-based agent router with skill matching and rule engine support.
 
     Extends AgentRouter functionality with:
+    - Rule-based routing: Evaluate override rules with complex conditions
     - Skill-based routing: Match tasks to agents via skill triggers
     - Domain fallback: Fall back to domain routing if no skill match
     - Task type overrides: Respect task type → agent mappings
-    - Full backward compatibility: Works without SkillMatcher
+    - Full backward compatibility: Works without SkillMatcher or RuleEngine
 
     Routing Priority:
-    1. Task type override (e.g., "debug" → "debugger")
-    2. Skill-based routing (if task and SkillMatcher provided)
-    3. Domain-based routing (fallback)
+    1. Rule override (if RuleEngine and task provided)
+    2. Task type override (e.g., "debug" → "debugger")
+    3. Skill-based routing (if task and SkillMatcher provided)
+    4. Domain-based routing (fallback)
 
     Args:
         config: Optional AgentConfig for custom chains/overrides
         skill_matcher: Optional SkillMatcher for skill-based routing
         graph: Optional AgentGraph (used by SkillMatcher if not provided)
+        rule_engine: Optional RuleEngine for rule-based routing
 
     Example:
-        >>> # With skill matching
+        >>> # With skill matching and rules
         >>> matcher = SkillMatcher(graph)
-        >>> router = GraphRouter(skill_matcher=matcher)
+        >>> engine = RuleEngine()
+        >>> router = GraphRouter(skill_matcher=matcher, rule_engine=engine)
         >>> task = TaskContext(title="Fix Python API bug", scope="api.py")
         >>> config = router.get_recommended_agent("web-backend", task=task)
-        >>> # Uses skill matching → backend-dev or debugger
+        >>> # Uses rules → skill matching → backend-dev or debugger
 
         >>> # Without skill matching (legacy behavior)
         >>> router = GraphRouter()
@@ -83,6 +93,7 @@ class GraphRouter:
         config: AgentConfig | None = None,
         skill_matcher: SkillMatcher | None = None,
         graph: AgentGraph | None = None,
+        rule_engine: RuleEngine | None = None,
     ) -> None:
         """Initialize GraphRouter.
 
@@ -90,10 +101,12 @@ class GraphRouter:
             config: Optional AgentConfig for custom domain chains
             skill_matcher: Optional SkillMatcher for skill-based routing
             graph: Optional AgentGraph (creates SkillMatcher if not provided)
+            rule_engine: Optional RuleEngine for rule-based routing
         """
         self._legacy_router = AgentRouter(config=config)
         self._skill_matcher = skill_matcher
         self._graph = graph
+        self._rule_engine = rule_engine
 
         # If graph provided but no matcher, create one
         if graph is not None and skill_matcher is None:
@@ -111,6 +124,93 @@ class GraphRouter:
         """Get the agent graph instance."""
         return self._graph
 
+    @property
+    def rule_engine(self) -> RuleEngine | None:
+        """Get the rule engine instance."""
+        return self._rule_engine
+
+    def _create_rule_context(
+        self,
+        task: TaskLike,
+        domain: str | Domain | None,
+    ) -> RuleContext:
+        """Create a RuleContext from task and domain.
+
+        Args:
+            task: Task information
+            domain: Domain string or enum
+
+        Returns:
+            RuleContext for rule evaluation
+        """
+        from c4.supervisor.agent_graph.rule_engine import RuleContext
+
+        domain_str = domain.value if isinstance(domain, Domain) else domain
+        return RuleContext(
+            task_type=getattr(task, "task_type", None),
+            domain=domain_str,
+            title=getattr(task, "title", ""),
+            description=getattr(task, "description", ""),
+            scope=getattr(task, "scope", ""),
+        )
+
+    def _apply_chain_extensions(
+        self,
+        config: AgentChainConfig,
+        task: TaskLike,
+        domain: str | Domain | None,
+    ) -> AgentChainConfig:
+        """Apply chain extension rules to a config.
+
+        Args:
+            config: Current config
+            task: Task for matching
+            domain: Domain for context
+
+        Returns:
+            Modified AgentChainConfig with extensions applied
+        """
+        if self._rule_engine is None:
+            return config
+
+        context = self._create_rule_context(task, domain)
+        extensions = self._rule_engine.find_matching_chain_extensions(context)
+
+        if not extensions:
+            return config
+
+        chain = list(config.chain)
+        for ext in extensions:
+            action = ext.action
+
+            # Handle add_to_chain
+            if action.add_to_chain and action.add_to_chain not in chain:
+                position = action.position or "before_last"
+                if position == "first":
+                    chain.insert(0, action.add_to_chain)
+                elif position == "after_primary":
+                    chain.insert(1, action.add_to_chain)
+                elif position == "before_last":
+                    if len(chain) > 1:
+                        chain.insert(-1, action.add_to_chain)
+                    else:
+                        chain.append(action.add_to_chain)
+                else:  # last
+                    chain.append(action.add_to_chain)
+
+            # Handle ensure_in_chain
+            if action.ensure_in_chain:
+                for agent in action.ensure_in_chain:
+                    if agent not in chain:
+                        chain.append(agent)
+
+        return AgentChainConfig(
+            primary=config.primary,
+            chain=chain,
+            description=config.description,
+            handoff_instructions=config.handoff_instructions,
+        )
+
     def get_recommended_agent(
         self,
         domain: str | Domain | None,
@@ -119,9 +219,12 @@ class GraphRouter:
         """Get recommended agent chain configuration.
 
         Routing priority:
-        1. If task has task_type that matches an override → use override agent
-        2. If task provided and SkillMatcher available → try skill matching
-        3. Fall back to domain-based routing
+        1. If RuleEngine has matching override → use rule-defined agent
+        2. If task has task_type that matches an override → use override agent
+        3. If task provided and SkillMatcher available → try skill matching
+        4. Fall back to domain-based routing
+
+        Chain extensions are applied after routing decision.
 
         Args:
             domain: Domain string, Domain enum, or None
@@ -138,20 +241,94 @@ class GraphRouter:
             >>> # Domain-only routing (legacy)
             >>> config = router.get_recommended_agent("web-backend")
         """
-        # 1. Check task type override first
+        # 1. Check rule engine overrides first
+        if task is not None and self._rule_engine is not None:
+            rule_result = self._try_rule_routing(task, domain)
+            if rule_result is not None:
+                return rule_result
+
+        # 2. Check task type override
         if task is not None and hasattr(task, "task_type") and task.task_type:
             override_agent = self._get_task_type_override(task.task_type)
             if override_agent:
-                return self._build_config_for_agent(override_agent, domain)
+                config = self._build_config_for_agent(override_agent, domain)
+                if task is not None and self._rule_engine is not None:
+                    config = self._apply_chain_extensions(config, task, domain)
+                return config
 
-        # 2. Try skill-based routing if task and matcher available
+        # 3. Try skill-based routing if task and matcher available
         if task is not None and self._skill_matcher is not None:
             skill_result = self._try_skill_routing(task, domain)
             if skill_result is not None:
+                if self._rule_engine is not None:
+                    skill_result = self._apply_chain_extensions(
+                        skill_result, task, domain
+                    )
                 return skill_result
 
-        # 3. Fall back to domain-based routing
-        return self._legacy_router.get_recommended_agent(domain)
+        # 4. Fall back to domain-based routing
+        config = self._legacy_router.get_recommended_agent(domain)
+        if task is not None and self._rule_engine is not None:
+            config = self._apply_chain_extensions(config, task, domain)
+        return config
+
+    def _try_rule_routing(
+        self,
+        task: TaskLike,
+        domain: str | Domain | None,
+    ) -> AgentChainConfig | None:
+        """Try to route based on rule engine.
+
+        Args:
+            task: Task to match
+            domain: Domain for context
+
+        Returns:
+            AgentChainConfig if rule match found, None otherwise
+        """
+        if self._rule_engine is None:
+            return None
+
+        context = self._create_rule_context(task, domain)
+        override = self._rule_engine.find_matching_override(context)
+
+        if override is None:
+            return None
+
+        # Build config from override action
+        if override.action.set_primary:
+            config = self._build_config_for_agent(override.action.set_primary, domain)
+        else:
+            # No set_primary, use domain default
+            config = self._legacy_router.get_recommended_agent(domain)
+
+        # Apply add_to_chain from override
+        if override.action.add_to_chain:
+            chain = list(config.chain)
+            if override.action.add_to_chain not in chain:
+                position = override.action.position or "before_last"
+                if position == "first":
+                    chain.insert(0, override.action.add_to_chain)
+                elif position == "after_primary":
+                    chain.insert(1, override.action.add_to_chain)
+                elif position == "before_last":
+                    if len(chain) > 1:
+                        chain.insert(-1, override.action.add_to_chain)
+                    else:
+                        chain.append(override.action.add_to_chain)
+                else:  # last
+                    chain.append(override.action.add_to_chain)
+            config = AgentChainConfig(
+                primary=config.primary,
+                chain=chain,
+                description=f"Rule override: {override.name}",
+                handoff_instructions=config.handoff_instructions,
+            )
+
+        # Apply chain extensions
+        config = self._apply_chain_extensions(config, task, domain)
+
+        return config
 
     def get_recommended_agent_with_details(
         self,
@@ -163,6 +340,12 @@ class GraphRouter:
         Same as get_recommended_agent but returns additional metadata
         about how the routing decision was made.
 
+        Routing priority:
+        1. Rule override (if RuleEngine and task provided)
+        2. Task type override (e.g., "debug" → "debugger")
+        3. Skill-based routing (if task and SkillMatcher provided)
+        4. Domain-based routing (fallback)
+
         Args:
             domain: Domain string, Domain enum, or None
             task: Optional task for skill-based routing
@@ -170,17 +353,33 @@ class GraphRouter:
         Returns:
             RoutingResult with config and routing metadata
         """
-        # 1. Check task type override first
+        # 1. Check rule engine overrides first
+        if task is not None and self._rule_engine is not None:
+            context = self._create_rule_context(task, domain)
+            override = self._rule_engine.find_matching_override(context)
+            if override is not None:
+                config = self._try_rule_routing(task, domain)
+                if config is not None:
+                    return RoutingResult(
+                        config=config,
+                        routing_method="rule",
+                        matched_rule=override.name,
+                        rule_reason=override.reason,
+                    )
+
+        # 2. Check task type override
         if task is not None and hasattr(task, "task_type") and task.task_type:
             override_agent = self._get_task_type_override(task.task_type)
             if override_agent:
                 config = self._build_config_for_agent(override_agent, domain)
+                if self._rule_engine is not None:
+                    config = self._apply_chain_extensions(config, task, domain)
                 return RoutingResult(
                     config=config,
                     routing_method="task_type",
                 )
 
-        # 2. Try skill-based routing
+        # 3. Try skill-based routing
         if task is not None and self._skill_matcher is not None:
             skills = self._skill_matcher.extract_required_skills(task)
             if skills:
@@ -188,6 +387,8 @@ class GraphRouter:
                 if agents:
                     best_match = agents[0]
                     config = self._build_config_for_agent(best_match.agent_id, domain)
+                    if self._rule_engine is not None:
+                        config = self._apply_chain_extensions(config, task, domain)
                     return RoutingResult(
                         config=config,
                         routing_method="skill",
@@ -195,8 +396,10 @@ class GraphRouter:
                         skill_score=best_match.score,
                     )
 
-        # 3. Fall back to domain-based routing
+        # 4. Fall back to domain-based routing
         config = self._legacy_router.get_recommended_agent(domain)
+        if task is not None and self._rule_engine is not None:
+            config = self._apply_chain_extensions(config, task, domain)
         return RoutingResult(
             config=config,
             routing_method="domain",

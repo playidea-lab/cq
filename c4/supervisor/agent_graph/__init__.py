@@ -58,6 +58,10 @@ from c4.supervisor.agent_graph.router import (
     GraphRouter,
     RoutingResult,
 )
+from c4.supervisor.agent_graph.rule_engine import (
+    RuleContext,
+    RuleEngine,
+)
 from c4.supervisor.agent_graph.skill_matcher import (
     AgentMatch,
     SkillMatcher,
@@ -83,6 +87,9 @@ __all__ = [
     # Router
     "GraphRouter",
     "RoutingResult",
+    # Rule Engine
+    "RuleEngine",
+    "RuleContext",
     # Skill Matcher
     "SkillMatcher",
     "TaskContext",
