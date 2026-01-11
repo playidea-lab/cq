@@ -37,6 +37,7 @@ from .models import (
 )
 from .state_machine import StateMachine, StateTransitionError
 from .store import SQLiteLockStore, SQLiteStateStore, SQLiteTaskStore, StateStore
+from .supervisor.agent_graph.router import GraphRouter
 from .supervisor.agent_router import AgentRouter
 from .validation import ValidationRunner
 
@@ -70,7 +71,7 @@ class C4Daemon:
         self._lock_store: SQLiteLockStore | None = None
         self._task_store: SQLiteTaskStore | None = None
         self._spec_store: SpecStore | None = None
-        self._agent_router: AgentRouter | None = None
+        self._agent_router: AgentRouter | GraphRouter | None = None
 
     # =========================================================================
     # Initialization
@@ -316,15 +317,29 @@ Thumbs.db
         return self._config  # type: ignore
 
     @property
-    def agent_router(self) -> AgentRouter:
+    def agent_router(self) -> AgentRouter | GraphRouter:
         """Get agent router with custom configuration from config.yaml.
 
         The router merges built-in defaults with any custom agent
         configuration defined in config.yaml under the 'agents' section.
+
+        Set C4_USE_GRAPH_ROUTER=1 to use the new GraphRouter.
         """
+        import os
+
         if self._agent_router is None:
             agent_config = self.config.agents if self._config else None
-            self._agent_router = AgentRouter(config=agent_config)
+            use_graph_router = os.environ.get("C4_USE_GRAPH_ROUTER", "0") == "1"
+
+            if use_graph_router:
+                # Use new GraphRouter (fallback mode - no graph loaded)
+                self._agent_router = GraphRouter()
+                logger.debug("Using GraphRouter (fallback mode)")
+            else:
+                # Use legacy AgentRouter
+                self._agent_router = AgentRouter(config=agent_config)
+                logger.debug("Using legacy AgentRouter")
+
         return self._agent_router
 
     @property
@@ -2145,17 +2160,36 @@ Thumbs.db
             return result
 
         # Return all domains and overrides summary
+        domains = self.agent_router.get_all_domains()
+        router = self.agent_router
+
+        # Build domain_configs using common interface
+        domain_configs = {}
+        for d in domains:
+            c = router.get_recommended_agent(d)
+            domain_configs[d] = {
+                "primary": c.primary,
+                "chain_length": len(c.chain),
+            }
+
+        # Handle router-specific attributes
+        if isinstance(router, AgentRouter):
+            task_overrides = router.merged_overrides
+        else:
+            # GraphRouter uses TASK_TYPE_AGENT_OVERRIDES internally
+            from c4.supervisor.agent_graph.router import TASK_TYPE_AGENT_OVERRIDES
+
+            task_overrides = TASK_TYPE_AGENT_OVERRIDES
+
         return {
-            "total_domains": len(self.agent_router.get_all_domains()),
-            "domains": self.agent_router.get_all_domains(),
-            "domain_configs": {
-                d: {"primary": c.primary, "chain_length": len(c.chain)}
-                for d, c in self.agent_router.merged_chains.items()
-            },
-            "total_task_overrides": len(self.agent_router.merged_overrides),
-            "task_type_overrides": self.agent_router.merged_overrides,
+            "total_domains": len(domains),
+            "domains": domains,
+            "domain_configs": domain_configs,
+            "total_task_overrides": len(task_overrides),
+            "task_type_overrides": task_overrides,
             "custom_config_loaded": self._config is not None
             and self._config.agents is not None,
+            "router_type": type(router).__name__,
         }
 
     def c4_query_agent_graph(
