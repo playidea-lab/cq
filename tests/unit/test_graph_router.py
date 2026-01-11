@@ -468,3 +468,78 @@ domain:
             # Should load and be functional
             config = router.get_recommended_agent("web-backend")
             assert config.primary == "backend-dev"
+
+
+# ============================================================================
+# Test Legacy Fallback Support
+# ============================================================================
+
+
+class TestLegacyFallback:
+    """Tests for GraphRouter legacy fallback to DOMAIN_AGENT_MAP."""
+
+    def test_empty_graph_uses_legacy(self) -> None:
+        """Empty graph uses DOMAIN_AGENT_MAP fallback."""
+        router = GraphRouter()  # Empty graph
+
+        # Should use legacy web-frontend config
+        config = router.get_recommended_agent("web-frontend")
+        assert config.primary == "frontend-developer"
+        assert "frontend-developer" in config.chain
+
+    def test_empty_graph_uses_legacy_task_overrides(self) -> None:
+        """Empty graph uses TASK_TYPE_AGENT_OVERRIDES fallback."""
+        router = GraphRouter()  # Empty graph
+
+        # Should use legacy debug override
+        agent = router.get_agent_for_task_type("debug", "web-backend")
+        assert agent == "debugger"
+
+    def test_fallback_disabled_returns_default(self) -> None:
+        """With fallback disabled, returns default agent."""
+        router = GraphRouter(use_legacy_fallback=False)
+
+        # Should not use legacy, returns default
+        config = router.get_recommended_agent("web-frontend")
+        assert config.primary == "general-purpose"
+
+    def test_graph_with_domains_no_fallback(
+        self, sample_graph: AgentGraph, sample_rule_engine: RuleEngine
+    ) -> None:
+        """Graph with domains doesn't use legacy fallback."""
+        router = GraphRouter(graph=sample_graph, rule_engine=sample_rule_engine)
+
+        # Should use graph domain, not legacy
+        config = router.get_recommended_agent("web-backend")
+        assert config.primary == "backend-dev"
+
+    def test_get_all_domains_includes_legacy(self) -> None:
+        """get_all_domains includes legacy domains when fallback enabled."""
+        router = GraphRouter()  # Empty graph
+
+        domains = router.get_all_domains()
+        assert "web-frontend" in domains
+        assert "web-backend" in domains
+        assert "ml-dl" in domains
+
+    def test_legacy_unknown_domain_fallback(self) -> None:
+        """Unknown domain falls back to 'unknown' legacy config."""
+        router = GraphRouter()  # Empty graph
+
+        config = router.get_recommended_agent("nonexistent-domain")
+        assert config.primary == "general-purpose"
+
+    def test_legacy_none_domain_fallback(self) -> None:
+        """None domain falls back to 'unknown' legacy config."""
+        router = GraphRouter()  # Empty graph
+
+        config = router.get_recommended_agent(None)
+        assert config.primary == "general-purpose"
+
+    def test_legacy_handoff_instructions(self) -> None:
+        """Handoff instructions are preserved from legacy."""
+        router = GraphRouter()  # Empty graph
+
+        instructions = router.get_handoff_instructions("web-frontend")
+        # Legacy has handoff instructions for web-frontend
+        assert len(instructions) > 0
