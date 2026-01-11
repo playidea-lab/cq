@@ -12,6 +12,14 @@ Example YAML files are in the examples/ subdirectory.
 
 from pathlib import Path
 
+from c4.supervisor.agent_graph.loader import (
+    AgentGraphLoader,
+    FileNotFoundError,
+    LoaderError,
+    ModelValidationError,
+    SchemaValidationError,
+    YAMLParseError,
+)
 from c4.supervisor.agent_graph.models import (
     # Agent models
     Agent,
@@ -50,6 +58,13 @@ SCHEMA_DIR = Path(__file__).parent / "schema"
 EXAMPLES_DIR = Path(__file__).parent / "examples"
 
 __all__ = [
+    # Loader
+    "AgentGraphLoader",
+    "LoaderError",
+    "FileNotFoundError",
+    "SchemaValidationError",
+    "YAMLParseError",
+    "ModelValidationError",
     # Directories
     "SCHEMA_DIR",
     "EXAMPLES_DIR",
