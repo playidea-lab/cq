@@ -1288,3 +1288,129 @@ class TestSupervisorAutoRestart:
 
         # Cleanup
         daemon.stop_supervisor_loop()
+
+
+# ============================================================================
+# Test c4_query_agent_graph
+# ============================================================================
+
+
+class TestQueryAgentGraph:
+    """Tests for c4_query_agent_graph MCP tool."""
+
+    def test_query_overview(self, daemon):
+        """Test overview query returns domain summary."""
+        result = daemon.c4_query_agent_graph(query_type="overview")
+
+        assert result["query_type"] == "overview"
+        assert "total_domains" in result
+        assert "domains" in result
+        assert "domain_configs" in result
+        assert result["total_domains"] >= 9  # At least built-in domains
+
+    def test_query_agents(self, daemon):
+        """Test agents query returns agent list."""
+        result = daemon.c4_query_agent_graph(query_type="agents")
+
+        assert result["query_type"] == "agents"
+        assert "agents" in result
+        assert "total" in result
+        assert result["total"] > 0
+
+    def test_query_agents_with_domain_filter(self, daemon):
+        """Test agents query with domain filter."""
+        result = daemon.c4_query_agent_graph(
+            query_type="agents",
+            filter_by="domain",
+            filter_value="web-frontend",
+        )
+
+        assert result["query_type"] == "agents"
+        assert "agents" in result
+        # Should include frontend-developer
+        agent_ids = [a["id"] for a in result["agents"]]
+        assert "frontend-developer" in agent_ids
+
+    def test_query_skills(self, daemon):
+        """Test skills query returns skill list."""
+        result = daemon.c4_query_agent_graph(query_type="skills")
+
+        assert result["query_type"] == "skills"
+        assert "skills" in result
+        assert "total" in result
+
+    def test_query_domains(self, daemon):
+        """Test domains query returns domain details."""
+        result = daemon.c4_query_agent_graph(query_type="domains")
+
+        assert result["query_type"] == "domains"
+        assert "domains" in result
+        assert "total" in result
+
+        # Check domain structure
+        if result["domains"]:
+            domain = result["domains"][0]
+            assert "id" in domain
+            assert "primary" in domain
+            assert "chain_length" in domain
+
+    def test_query_chain(self, daemon):
+        """Test chain query builds chain from agent."""
+        result = daemon.c4_query_agent_graph(
+            query_type="chain",
+            from_agent="frontend-developer",
+        )
+
+        assert result["query_type"] == "chain"
+        assert "chain" in result
+        assert "length" in result
+        # Chain should at least include the starting agent
+        assert result["length"] >= 1
+
+    def test_query_chain_missing_agent(self, daemon):
+        """Test chain query requires from_agent."""
+        result = daemon.c4_query_agent_graph(query_type="chain")
+
+        assert "error" in result
+        assert "from_agent" in result["error"]
+
+    def test_query_path(self, daemon):
+        """Test path query between agents."""
+        # Note: With legacy fallback, graph may be empty so path might not exist
+        result = daemon.c4_query_agent_graph(
+            query_type="path",
+            from_agent="backend-dev",
+            to_agent="code-reviewer",
+        )
+
+        assert result["query_type"] == "path"
+        # Path exists or shows no path message
+        assert "path" in result or "message" in result
+
+    def test_query_path_missing_params(self, daemon):
+        """Test path query requires both agents."""
+        result = daemon.c4_query_agent_graph(
+            query_type="path",
+            from_agent="backend-dev",
+        )
+
+        assert "error" in result
+        assert "to_agent" in result["error"]
+
+    def test_query_unknown_type(self, daemon):
+        """Test unknown query type returns error."""
+        result = daemon.c4_query_agent_graph(query_type="invalid")
+
+        assert "error" in result
+        assert "valid_types" in result
+
+    def test_mermaid_output_format(self, daemon):
+        """Test mermaid output format generates diagram."""
+        result = daemon.c4_query_agent_graph(
+            query_type="overview",
+            output_format="mermaid",
+        )
+
+        assert result["query_type"] == "overview"
+        # Either mermaid output or error if graph is empty
+        assert "mermaid" in result or "mermaid_error" in result

@@ -627,6 +627,8 @@ Thumbs.db
         if self.state_machine is None:
             return {"success": False, "error": "C4 not initialized", "initialized": False}
 
+        # Re-load state to get latest (multi-worker sync)
+        self.state_machine.load_state()
         state = self.state_machine.state
         return {
             "initialized": True,
@@ -2156,6 +2158,166 @@ Thumbs.db
             and self._config.agents is not None,
         }
 
+    def c4_query_agent_graph(
+        self,
+        query_type: str = "overview",
+        filter_by: str | None = None,
+        filter_value: str | None = None,
+        output_format: str = "json",
+        from_agent: str | None = None,
+        to_agent: str | None = None,
+    ) -> dict[str, Any]:
+        """
+        Query the agent graph for agents, skills, domains, paths, and chains.
+
+        This tool provides flexible querying of the agent routing graph,
+        replacing and extending c4_test_agent_routing.
+
+        Args:
+            query_type: Type of query:
+                - "overview": Summary of all nodes and edges
+                - "agents": List all agents (optionally filter by skill/domain)
+                - "skills": List all skills
+                - "domains": List all domains
+                - "path": Find path between two agents
+                - "chain": Build chain from an agent
+            filter_by: Filter type ("skill", "domain", "agent")
+            filter_value: Value to filter by
+            output_format: "json" or "mermaid"
+            from_agent: Source agent for path query
+            to_agent: Target agent for path query
+
+        Returns:
+            Query results in specified format
+
+        Examples:
+            c4_query_agent_graph(query_type="overview")
+            c4_query_agent_graph(query_type="agents", filter_by="skill",
+                                 filter_value="python-coding")
+            c4_query_agent_graph(query_type="path", from_agent="backend-dev",
+                                 to_agent="code-reviewer")
+            c4_query_agent_graph(query_type="chain", from_agent="architect")
+            c4_query_agent_graph(query_type="domains", output_format="mermaid")
+        """
+        from c4.supervisor.agent_graph.graph import AgentGraph
+        from c4.supervisor.agent_graph.router import GraphRouter
+        from c4.supervisor.agent_graph.visualizer import (
+            GraphVisualizer,
+            highlight_path,
+            to_mermaid,
+        )
+
+        # Create a GraphRouter (uses legacy fallback)
+        router = GraphRouter()
+        graph = router.graph
+
+        result: dict[str, Any] = {"query_type": query_type}
+
+        if query_type == "overview":
+            # Summary of the agent graph
+            result["agents"] = sorted(router.get_all_domains())
+            result["total_domains"] = len(router.get_all_domains())
+            result["domains"] = router.get_all_domains()
+            result["legacy_fallback"] = router.use_legacy_fallback
+
+            # Include domain configs
+            result["domain_configs"] = {}
+            for domain in router.get_all_domains():
+                config = router.get_recommended_agent(domain)
+                result["domain_configs"][domain] = {
+                    "primary": config.primary,
+                    "chain": config.chain,
+                }
+
+        elif query_type == "agents":
+            # List agents, optionally filtered
+            agents_data: list[dict[str, Any]] = []
+
+            # Get all unique agents from domain chains
+            all_agents: set[str] = set()
+            for domain in router.get_all_domains():
+                config = router.get_recommended_agent(domain)
+                all_agents.update(config.chain)
+
+            # Apply filter
+            for agent_id in sorted(all_agents):
+                if filter_by == "domain" and filter_value:
+                    config = router.get_recommended_agent(filter_value)
+                    if agent_id not in config.chain:
+                        continue
+
+                agents_data.append({"id": agent_id})
+
+            result["agents"] = agents_data
+            result["total"] = len(agents_data)
+
+        elif query_type == "skills":
+            # List skills from graph (if available)
+            skills = graph.skills if graph else []
+            result["skills"] = sorted(skills)
+            result["total"] = len(skills)
+
+        elif query_type == "domains":
+            # List domains with details
+            domains_data: list[dict[str, Any]] = []
+            for domain in sorted(router.get_all_domains()):
+                config = router.get_recommended_agent(domain)
+                domains_data.append({
+                    "id": domain,
+                    "primary": config.primary,
+                    "chain_length": len(config.chain),
+                    "description": config.description,
+                })
+            result["domains"] = domains_data
+            result["total"] = len(domains_data)
+
+        elif query_type == "path":
+            # Find path between two agents
+            if not from_agent or not to_agent:
+                result["error"] = "path query requires from_agent and to_agent"
+            else:
+                path = graph.get_path(from_agent, to_agent) if graph else None
+                if path:
+                    result["path"] = path
+                    result["length"] = len(path)
+                else:
+                    result["path"] = None
+                    result["message"] = f"No path found from {from_agent} to {to_agent}"
+
+        elif query_type == "chain":
+            # Build chain from an agent
+            if not from_agent:
+                result["error"] = "chain query requires from_agent"
+            else:
+                # Try graph first, then fallback to legacy router
+                chain = graph.build_chain(from_agent) if graph else []
+                if not chain:
+                    # Use legacy fallback if graph has no chain
+                    chain = router.get_chain_for_domain(filter_value) if filter_value else [from_agent]
+                result["chain"] = chain
+                result["length"] = len(chain)
+
+        else:
+            result["error"] = f"Unknown query_type: {query_type}"
+            result["valid_types"] = ["overview", "agents", "skills", "domains",
+                                     "path", "chain"]
+
+        # Convert to Mermaid if requested
+        if output_format == "mermaid" and "error" not in result:
+            try:
+                if query_type == "path" and result.get("path"):
+                    # Highlight path in Mermaid
+                    result["mermaid"] = highlight_path(
+                        graph, from_agent, to_agent
+                    ) if graph else ""
+                else:
+                    # Full graph as Mermaid
+                    result["mermaid"] = to_mermaid(graph) if graph else ""
+            except Exception as e:
+                result["mermaid_error"] = str(e)
+
+        return result
+
     def check_and_trigger_checkpoint(self) -> dict[str, Any] | None:
         """
         Check if checkpoint conditions are met and trigger if so.
@@ -2796,6 +2958,43 @@ def create_server(project_root: Path | None = None) -> Server:
                     "required": [],
                 },
             ),
+            Tool(
+                name="c4_query_agent_graph",
+                description="Query the agent graph for agents, skills, domains, paths, and chains. Supports filtering and Mermaid output.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "query_type": {
+                            "type": "string",
+                            "description": "Type of query: 'overview', 'agents', 'skills', 'domains', 'path', 'chain'",
+                            "enum": ["overview", "agents", "skills", "domains", "path", "chain"],
+                        },
+                        "filter_by": {
+                            "type": "string",
+                            "description": "Filter type: 'skill', 'domain', 'agent'",
+                            "enum": ["skill", "domain", "agent"],
+                        },
+                        "filter_value": {
+                            "type": "string",
+                            "description": "Value to filter by",
+                        },
+                        "output_format": {
+                            "type": "string",
+                            "description": "Output format: 'json' or 'mermaid'",
+                            "enum": ["json", "mermaid"],
+                        },
+                        "from_agent": {
+                            "type": "string",
+                            "description": "Source agent for path/chain queries",
+                        },
+                        "to_agent": {
+                            "type": "string",
+                            "description": "Target agent for path query",
+                        },
+                    },
+                    "required": [],
+                },
+            ),
         ]
 
     @server.call_tool()
@@ -2943,6 +3142,15 @@ def create_server(project_root: Path | None = None) -> Server:
                 result = daemon.c4_test_agent_routing(
                     domain=arguments.get("domain"),
                     task_type=arguments.get("task_type"),
+                )
+            elif name == "c4_query_agent_graph":
+                result = daemon.c4_query_agent_graph(
+                    query_type=arguments.get("query_type", "overview"),
+                    filter_by=arguments.get("filter_by"),
+                    filter_value=arguments.get("filter_value"),
+                    output_format=arguments.get("output_format", "json"),
+                    from_agent=arguments.get("from_agent"),
+                    to_agent=arguments.get("to_agent"),
                 )
             else:
                 result = {"error": f"Unknown tool: {name}"}
