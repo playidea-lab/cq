@@ -1,0 +1,261 @@
+"""GraphRouter - AgentRouter-compatible router using AgentGraph and RuleEngine.
+
+This module provides a graph-based router that is compatible with the existing
+AgentRouter interface but uses the AgentGraph for relationship-based routing
+and RuleEngine for rule-based overrides.
+
+The GraphRouter can be used as a drop-in replacement for AgentRouter while
+providing more flexible and configurable agent routing.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import TYPE_CHECKING
+
+from c4.supervisor.agent_graph.graph import AgentGraph
+from c4.supervisor.agent_graph.rules import RuleEngine, Task
+
+if TYPE_CHECKING:
+    pass
+
+
+@dataclass
+class AgentChainConfig:
+    """Configuration for an agent chain.
+
+    This matches the interface used by AgentRouter for compatibility.
+    """
+
+    primary: str
+    chain: list[str] = field(default_factory=list)
+    description: str = ""
+    handoff_instructions: str = ""
+
+    def __post_init__(self) -> None:
+        """Ensure primary is in chain."""
+        if self.primary and self.primary not in self.chain:
+            self.chain = [self.primary] + self.chain
+
+
+class GraphRouter:
+    """AgentRouter-compatible router using AgentGraph and RuleEngine.
+
+    This class provides the same interface as AgentRouter but uses:
+    - AgentGraph for relationship-based routing (skills, handoffs, preferences)
+    - RuleEngine for rule-based overrides and chain extensions
+
+    Example:
+        >>> graph = AgentGraph()
+        >>> # ... add skills, agents, domains ...
+        >>> router = GraphRouter(graph=graph)
+        >>> config = router.get_recommended_agent("web-backend")
+        >>> print(config.primary)  # "backend-dev"
+        >>> print(config.chain)    # ["backend-dev", "test-automator", "code-reviewer"]
+    """
+
+    def __init__(
+        self,
+        graph: AgentGraph | None = None,
+        rule_engine: RuleEngine | None = None,
+    ) -> None:
+        """Initialize the GraphRouter.
+
+        Args:
+            graph: AgentGraph to use for routing. If None, creates an empty graph.
+            rule_engine: RuleEngine to use for rules. If None, creates an empty engine.
+        """
+        self._graph = graph if graph is not None else AgentGraph()
+        self._rule_engine = rule_engine if rule_engine is not None else RuleEngine()
+
+    @property
+    def graph(self) -> AgentGraph:
+        """Get the underlying AgentGraph."""
+        return self._graph
+
+    @property
+    def rule_engine(self) -> RuleEngine:
+        """Get the underlying RuleEngine."""
+        return self._rule_engine
+
+    def get_recommended_agent(self, domain: str | None) -> AgentChainConfig:
+        """Get the recommended agent configuration for a domain.
+
+        This method:
+        1. Looks up the domain in the graph to find preferred agents
+        2. Builds an agent chain following handoff relationships
+        3. Applies any rule-based chain extensions
+
+        Args:
+            domain: The domain ID to get configuration for
+
+        Returns:
+            AgentChainConfig with primary agent and chain
+        """
+        # Handle None/unknown domain with fallback
+        if domain is None or not self._graph.get_node(domain):
+            return self._get_fallback_config()
+
+        # Get domain preferences from graph
+        domain_info = self._graph.find_agents_for_domain(domain)
+        primary = domain_info.get("primary")
+
+        if not primary:
+            return self._get_fallback_config()
+
+        # Build chain from primary agent using handoff relationships
+        chain = self._graph.build_chain(primary)
+
+        # Apply chain extensions from rules
+        task = Task(title="(domain routing)", domain=domain)
+        chain = self._rule_engine.extend_chain(chain, task)
+
+        # Get domain node for description
+        domain_node = self._graph.get_node(domain)
+        description = domain_node.get("description", "") if domain_node else ""
+
+        return AgentChainConfig(
+            primary=primary,
+            chain=chain,
+            description=description,
+            handoff_instructions=f"Domain: {domain}",
+        )
+
+    def get_agent_for_task_type(
+        self,
+        task_type: str | None,
+        domain: str | None,
+        title: str = "",
+        description: str = "",
+    ) -> str:
+        """Get the recommended agent for a specific task type.
+
+        This method:
+        1. Checks for rule-based overrides matching the task
+        2. Falls back to domain-based routing if no override matches
+
+        Args:
+            task_type: The type of task (e.g., "feature", "bugfix", "debug")
+            domain: The domain of the task
+            title: The task title (used for keyword matching)
+            description: The task description (used for keyword matching)
+
+        Returns:
+            Agent ID to assign to the task
+        """
+        # Create task for rule evaluation
+        task = Task(
+            title=title if title else "(task type routing)",
+            description=description,
+            task_type=task_type,
+            domain=domain,
+        )
+
+        # Check for rule-based overrides
+        override_agent = self._rule_engine.apply_overrides(task, self._graph)
+        if override_agent:
+            return override_agent
+
+        # Fall back to domain-based routing
+        config = self.get_recommended_agent(domain)
+        return config.primary
+
+    def get_chain_for_domain(self, domain: str | None) -> list[str]:
+        """Get the agent chain for a domain.
+
+        This is a convenience method that returns just the chain
+        from get_recommended_agent.
+
+        Args:
+            domain: The domain ID
+
+        Returns:
+            List of agent IDs in the chain
+        """
+        config = self.get_recommended_agent(domain)
+        return config.chain
+
+    def _get_fallback_config(self) -> AgentChainConfig:
+        """Get fallback configuration when domain is unknown.
+
+        Returns the first available agent or a default.
+        """
+        # Try to find any agent in the graph
+        agents = self._graph.agents
+        if agents:
+            primary = agents[0]
+            chain = self._graph.build_chain(primary)
+            return AgentChainConfig(
+                primary=primary,
+                chain=chain if chain else [primary],
+                description="Fallback agent",
+                handoff_instructions="Unknown domain, using fallback",
+            )
+
+        # No agents in graph - return a default
+        return AgentChainConfig(
+            primary="general-purpose",
+            chain=["general-purpose"],
+            description="Default fallback",
+            handoff_instructions="No agents available",
+        )
+
+    @classmethod
+    def from_directory(cls, directory: Path) -> GraphRouter:
+        """Load a GraphRouter from YAML files in a directory.
+
+        Expects the following structure:
+        - skills/*.yaml - Skill definitions
+        - personas/*.yaml - Agent definitions
+        - domains/*.yaml - Domain definitions
+        - rules/*.yaml - Rule definitions (optional)
+
+        Args:
+            directory: Path to the directory containing YAML files
+
+        Returns:
+            GraphRouter initialized with loaded definitions
+        """
+        import yaml
+
+        from c4.supervisor.agent_graph.models import (
+            AgentDefinition,
+            DomainDefinition,
+            SkillDefinition,
+        )
+
+        graph = AgentGraph()
+        rule_engine = RuleEngine()
+
+        # Load skills
+        skills_dir = directory / "skills"
+        if skills_dir.exists():
+            for yaml_file in skills_dir.glob("*.yaml"):
+                with open(yaml_file) as f:
+                    data = yaml.safe_load(f)
+                    if data and "skill" in data:
+                        skill = SkillDefinition.model_validate(data)
+                        graph.add_skill(skill)
+
+        # Load agents (personas)
+        agents_dir = directory / "personas"
+        if agents_dir.exists():
+            for yaml_file in agents_dir.glob("*.yaml"):
+                with open(yaml_file) as f:
+                    data = yaml.safe_load(f)
+                    if data and "agent" in data:
+                        agent = AgentDefinition.model_validate(data)
+                        graph.add_agent(agent)
+
+        # Load domains
+        domains_dir = directory / "domains"
+        if domains_dir.exists():
+            for yaml_file in domains_dir.glob("*.yaml"):
+                with open(yaml_file) as f:
+                    data = yaml.safe_load(f)
+                    if data and "domain" in data:
+                        domain = DomainDefinition.model_validate(data)
+                        graph.add_domain(domain)
+
+        return cls(graph=graph, rule_engine=rule_engine)
