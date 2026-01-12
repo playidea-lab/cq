@@ -43,6 +43,10 @@ testpaths = ["tests"]
 
 [dependency-groups]
 dev = [
+    "mypy>=1.19.1",
     "pytest>=9.0.2",
     "ruff>=0.14.10",
+    "types-jsonschema>=4.26.0.20260109",
+    "types-networkx>=3.6.1.20251220",
+    "types-pyyaml>=6.0.12.20250915",
 ]

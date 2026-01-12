@@ -15,19 +15,17 @@ from c4.supervisor.agent_graph import (
     AgentGraph,
     SkillMatcher,
     TaskContext,
-    AgentMatch,
 )
 from c4.supervisor.agent_graph.models import (
-    SkillDefinition,
-    Skill,
-    SkillTriggers,
-    AgentDefinition,
     Agent,
+    AgentDefinition,
     AgentPersona,
-    AgentSkills,
     AgentRelationships,
+    AgentSkills,
+    Skill,
+    SkillDefinition,
+    SkillTriggers,
 )
-
 
 # ============================================================================
 # Fixtures

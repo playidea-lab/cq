@@ -31,7 +31,8 @@ from c4.supervisor.agent_graph.models import (
 )
 
 if TYPE_CHECKING:
-    from typing import Any
+    from c4.supervisor.agent_graph.graph import AgentGraph
+    from c4.supervisor.agent_graph.rule_engine import RuleEngine
 
 # Schema directory relative to this file
 SCHEMA_DIR = Path(__file__).parent / "schema"
@@ -367,6 +368,56 @@ class AgentGraphLoader:
             "domains": self.load_domains(),
             "rules": self.load_rules(),
         }
+
+    def load_directory(self) -> tuple["AgentGraph", "RuleEngine"]:
+        """Load all definitions and return a ready-to-use AgentGraph and RuleEngine.
+
+        This is the recommended way to initialize the agent graph system.
+        It loads all YAML definitions, builds the graph, and creates a RuleEngine
+        with all the loaded rules.
+
+        Returns:
+            Tuple of (AgentGraph, RuleEngine) ready for use with GraphRouter
+
+        Raises:
+            FileNotFoundError: If base directory or subdirectories don't exist
+            YAMLParseError: If any YAML file is invalid
+            SchemaValidationError: If any file fails schema validation
+            ModelValidationError: If any file fails Pydantic validation
+
+        Example:
+            >>> loader = AgentGraphLoader(Path(".c4/agents"))
+            >>> graph, rule_engine = loader.load_directory()
+            >>> router = GraphRouter(graph=graph, rule_engine=rule_engine)
+            >>> config = router.get_recommended_agent("web-backend", task=task)
+        """
+        from c4.supervisor.agent_graph.graph import AgentGraph
+        from c4.supervisor.agent_graph.rule_engine import RuleEngine
+
+        # Create graph and rule engine
+        graph = AgentGraph()
+        rule_engine = RuleEngine()
+
+        # Load all definitions
+        all_defs = self.load_all()
+
+        # Add skills to graph first (agents reference skills)
+        for skill_def in all_defs["skills"]:
+            graph.add_skill(skill_def)
+
+        # Add agents to graph (domains reference agents)
+        for agent_def in all_defs["agents"]:
+            graph.add_agent(agent_def)
+
+        # Add domains to graph
+        for domain_def in all_defs["domains"]:
+            graph.add_domain(domain_def)
+
+        # Add rules to rule engine
+        for rule_def in all_defs["rules"]:
+            rule_engine.add_rules(rule_def)
+
+        return graph, rule_engine
 
     def load_skill_by_id(self, skill_id: str) -> SkillDefinition | None:
         """Load a specific skill by its ID.

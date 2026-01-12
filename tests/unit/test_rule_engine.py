@@ -21,11 +21,11 @@ from c4.supervisor.agent_graph import (
     TaskContext,
 )
 from c4.supervisor.agent_graph.models import (
-    AgentDefinition,
     Agent,
+    AgentDefinition,
     AgentPersona,
-    AgentSkills,
     AgentRelationships,
+    AgentSkills,
     ChainExtension,
     ChainExtensionAction,
     Condition,
@@ -33,11 +33,10 @@ from c4.supervisor.agent_graph.models import (
     OverrideAction,
     RuleDefinition,
     Rules,
-    SkillDefinition,
     Skill,
+    SkillDefinition,
     SkillTriggers,
 )
-
 
 # ============================================================================
 # Fixtures
@@ -556,3 +555,46 @@ class TestRuleEngineManagement:
 
         assert len(rule_engine.overrides) == 1
         assert len(rule_engine.chain_extensions) == 1
+
+
+# ============================================================================
+# Test AgentGraphLoader.load_directory()
+# ============================================================================
+
+
+class TestLoaderLoadDirectory:
+    """Tests for AgentGraphLoader.load_directory() method."""
+
+    def test_load_directory_returns_tuple(self) -> None:
+        """load_directory should return (AgentGraph, RuleEngine) tuple."""
+        from c4.supervisor.agent_graph import AgentGraph, AgentGraphLoader, RuleEngine
+
+        loader = AgentGraphLoader()  # Uses default examples/ directory
+        result = loader.load_directory()
+
+        assert isinstance(result, tuple)
+        assert len(result) == 2
+        assert isinstance(result[0], AgentGraph)
+        assert isinstance(result[1], RuleEngine)
+
+    def test_load_directory_populates_graph(self) -> None:
+        """load_directory should populate graph with skills, agents, domains."""
+        from c4.supervisor.agent_graph import AgentGraphLoader
+
+        loader = AgentGraphLoader()
+        graph, _ = loader.load_directory()
+
+        # Graph should have nodes (skills, agents, domains from examples/)
+        assert len(graph.skills) > 0
+        assert len(graph.agents) > 0
+
+    def test_load_directory_with_router(self) -> None:
+        """load_directory result should work with GraphRouter."""
+        from c4.supervisor.agent_graph import AgentGraphLoader, GraphRouter
+
+        loader = AgentGraphLoader()
+        graph, rule_engine = loader.load_directory()
+
+        router = GraphRouter(graph=graph, rule_engine=rule_engine)
+        assert router.graph is graph
+        assert router.rule_engine is rule_engine

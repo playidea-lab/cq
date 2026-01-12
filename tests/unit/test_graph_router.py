@@ -20,18 +20,17 @@ from c4.supervisor.agent_graph import (
     TaskContext,
 )
 from c4.supervisor.agent_graph.models import (
-    AgentDefinition,
     Agent,
-    AgentPersona,
-    AgentSkills,
-    AgentRelationships,
+    AgentDefinition,
     AgentHandsOffTo,
-    SkillDefinition,
+    AgentPersona,
+    AgentRelationships,
+    AgentSkills,
     Skill,
+    SkillDefinition,
     SkillTriggers,
 )
 from c4.supervisor.agent_router import AgentChainConfig
-
 
 # ============================================================================
 # Fixtures
