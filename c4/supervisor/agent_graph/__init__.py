@@ -12,6 +12,10 @@ Example YAML files are in the examples/ subdirectory.
 
 from pathlib import Path
 
+from c4.supervisor.agent_graph.chain_builder import (
+    ChainBuildContext,
+    DynamicChainBuilder,
+)
 from c4.supervisor.agent_graph.graph import AgentGraph, EdgeType, NodeType
 from c4.supervisor.agent_graph.loader import (
     AgentGraphLoader,
@@ -95,6 +99,9 @@ __all__ = [
     "TaskContext",
     "TaskLike",
     "AgentMatch",
+    # Chain Builder
+    "DynamicChainBuilder",
+    "ChainBuildContext",
     # Directories
     "SCHEMA_DIR",
     "EXAMPLES_DIR",
