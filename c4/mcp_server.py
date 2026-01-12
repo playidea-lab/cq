@@ -37,10 +37,33 @@ from .models import (
 )
 from .state_machine import StateMachine, StateTransitionError
 from .store import SQLiteLockStore, SQLiteStateStore, SQLiteTaskStore, StateStore
+from .supervisor.agent_graph import (
+    AgentGraph,
+    AgentGraphLoader,
+    GraphRouter,
+    RuleEngine,
+    SkillMatcher,
+    TaskContext,
+)
 from .supervisor.agent_router import AgentRouter
 from .validation import ValidationRunner
 
 logger = logging.getLogger(__name__)
+
+
+def _use_graph_router() -> bool:
+    """Check if GraphRouter should be used (feature flag).
+
+    The C4_USE_GRAPH_ROUTER environment variable controls which routing system to use:
+    - True (default): Use GraphRouter with skill matching and rule engine
+    - False: Use legacy AgentRouter with static domain mapping
+
+    Returns:
+        True if GraphRouter should be used, False for legacy AgentRouter.
+    """
+    import os
+    flag = os.environ.get("C4_USE_GRAPH_ROUTER", "true").lower()
+    return flag in ("true", "1", "yes", "on")
 
 
 class C4Daemon:
@@ -71,6 +94,10 @@ class C4Daemon:
         self._task_store: SQLiteTaskStore | None = None
         self._spec_store: SpecStore | None = None
         self._agent_router: AgentRouter | None = None
+        # GraphRouter components (used when C4_USE_GRAPH_ROUTER=true)
+        self._graph_router: GraphRouter | None = None
+        self._agent_graph: AgentGraph | None = None
+        self._rule_engine: RuleEngine | None = None
 
     # =========================================================================
     # Initialization
@@ -317,15 +344,50 @@ Thumbs.db
 
     @property
     def agent_router(self) -> AgentRouter:
-        """Get agent router with custom configuration from config.yaml.
+        """Get legacy agent router (deprecated).
 
-        The router merges built-in defaults with any custom agent
-        configuration defined in config.yaml under the 'agents' section.
+        .. deprecated::
+            Use graph_router instead. This property will be removed in a future version.
+            Set C4_USE_GRAPH_ROUTER=false to use this legacy router.
         """
+        import warnings
+        warnings.warn(
+            "agent_router is deprecated. Use graph_router with C4_USE_GRAPH_ROUTER=true (default).",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         if self._agent_router is None:
             agent_config = self.config.agents if self._config else None
             self._agent_router = AgentRouter(config=agent_config)
         return self._agent_router
+
+    @property
+    def graph_router(self) -> GraphRouter:
+        """Get GraphRouter with skill matching and rule engine.
+
+        The GraphRouter provides advanced routing features:
+        - Skill-based agent selection
+        - Rule engine with overrides and chain extensions
+        - Dynamic chain building based on task keywords
+        - Graph-based handoff relationships
+
+        This is the default router when C4_USE_GRAPH_ROUTER=true (default).
+        """
+        if self._graph_router is None:
+            # Load graph and rule engine from YAML definitions
+            loader = AgentGraphLoader()
+            self._agent_graph, self._rule_engine = loader.load_directory()
+
+            # Create skill matcher
+            skill_matcher = SkillMatcher(self._agent_graph)
+
+            # Create router with all components
+            self._graph_router = GraphRouter(
+                graph=self._agent_graph,
+                skill_matcher=skill_matcher,
+                rule_engine=self._rule_engine,
+            )
+        return self._graph_router
 
     @property
     def validation_runner(self) -> ValidationRunner:
@@ -391,21 +453,53 @@ Thumbs.db
         """
         Get agent routing information for a task (Phase 4).
 
-        Uses AgentRouter to merge built-in defaults with custom
-        configuration from config.yaml.
+        Uses GraphRouter (default) or legacy AgentRouter based on
+        C4_USE_GRAPH_ROUTER environment variable.
+
+        When using GraphRouter:
+        - Skill-based matching from task title/description
+        - Rule engine overrides based on task_type and keywords
+        - Dynamic chain building with required roles
 
         Returns:
             Dict with agent routing fields for TaskAssignment
         """
         domain = self._get_effective_domain(task)
-        agent_config = self.agent_router.get_recommended_agent(domain)
+
+        if _use_graph_router():
+            # Use new GraphRouter with skill matching and rules
+            task_context = TaskContext(
+                title=task.title,
+                description=task.dod,
+                task_type=task.task_type if hasattr(task, "task_type") else None,
+            )
+            agent_config = self.graph_router.get_recommended_agent(domain, task=task_context)
+        else:
+            # Legacy mode: use static AgentRouter
+            import warnings
+            warnings.warn(
+                "Using legacy AgentRouter. Set C4_USE_GRAPH_ROUTER=true for advanced routing.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            agent_config = self._get_legacy_agent_config(domain)
 
         return {
             "recommended_agent": agent_config.primary,
             "agent_chain": agent_config.chain,
             "domain": domain,
-            "handoff_instructions": agent_config.handoff_instructions,
+            "handoff_instructions": getattr(agent_config, "handoff_instructions", "") or "",
         }
+
+    def _get_legacy_agent_config(self, domain: str | None) -> Any:
+        """Get agent config from legacy AgentRouter (no deprecation warning).
+
+        Internal method to avoid double deprecation warnings.
+        """
+        if self._agent_router is None:
+            agent_config = self.config.agents if self._config else None
+            self._agent_router = AgentRouter(config=agent_config)
+        return self._agent_router.get_recommended_agent(domain)
 
     @property
     def supervisor_loop_manager(self) -> SupervisorLoopManager:
