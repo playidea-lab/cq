@@ -14,6 +14,15 @@ from rich.table import Table
 from .hooks import get_c4_install_dir, install_all_hooks
 from .mcp_server import C4Daemon
 from .models import ProjectStatus, Task
+from .platforms import (
+    PLATFORM_COMMANDS,
+    get_config_info,
+    get_default_platform,
+    get_platform_command,
+    list_platforms,
+    set_platform_config,
+    setup_platform,
+)
 from .state_machine import StateTransitionError
 
 # =============================================================================
@@ -52,16 +61,23 @@ def c4_main(
         "-p",
         help="Project directory (defaults to current directory)",
     ),
+    platform: str = typer.Option(
+        None,
+        "--platform",
+        help="Target platform (claude, cursor, codex, gemini, opencode)",
+    ),
 ):
     """C4 - AI Project Orchestration.
 
-    Without subcommand: auto-init if needed, then start Claude Code.
+    Without subcommand: auto-init if needed, then start the target platform.
 
     Examples:
-        c4                    # Auto-init + start Claude Code
-        c4 --path /my/project # Specify project path
-        c4 status             # Show status (subcommand)
-        c4 init               # Just initialize (subcommand)
+        c4                      # Auto-init + start default platform
+        c4 --platform cursor    # Start Cursor
+        c4 --path /my/project   # Specify project path
+        c4 status               # Show status (subcommand)
+        c4 init                 # Just initialize (subcommand)
+        c4 config platform cursor  # Set default platform
     """
     # If a subcommand is invoked, let it handle things
     if ctx.invoked_subcommand is not None:
@@ -88,7 +104,7 @@ def c4_main(
             _create_project_settings(project_path)
             install_all_hooks()
 
-            console.print("[green]✅ C4 initialized![/green]")
+            console.print("[green]C4 initialized![/green]")
             console.print()
         finally:
             if old_env is not None:
@@ -99,17 +115,26 @@ def c4_main(
         console.print(f"[green]C4 already initialized in {project_path}[/green]")
         console.print()
 
-    # Step 2: Start Claude Code
-    console.print("[blue]Starting Claude Code...[/blue]")
+    # Step 2: Determine target platform
+    target_platform = platform or get_default_platform(project_path)
+    cmd = get_platform_command(target_platform)
 
-    # Change to project directory and start Claude
+    if cmd is None:
+        console.print(f"[red]Error:[/red] Unknown platform: {target_platform}")
+        console.print(f"Supported platforms: {', '.join(list_platforms())}")
+        raise typer.Exit(1)
+
+    # Step 3: Start the platform
+    console.print(f"[blue]Starting {target_platform}...[/blue]")
+
+    # Change to project directory and start platform
     os.chdir(project_path)
 
     try:
-        subprocess.run(["claude"], check=False)
+        subprocess.run(cmd, check=False)
     except FileNotFoundError:
-        console.print("[red]Error:[/red] 'claude' command not found")
-        console.print("Make sure Claude Code CLI is installed")
+        console.print(f"[red]Error:[/red] '{cmd[0]}' command not found")
+        console.print(f"Make sure {target_platform} CLI is installed")
         raise typer.Exit(1)
 
 
@@ -703,6 +728,204 @@ def add_task(
     console.print(f"DoD: {dod}")
     if scope:
         console.print(f"Scope: {scope}")
+
+
+# =============================================================================
+# Config Commands
+# =============================================================================
+
+config_app = typer.Typer(help="Configuration management")
+c4_app.add_typer(config_app, name="config")
+
+
+@config_app.callback(invoke_without_command=True)
+def config_main(
+    ctx: typer.Context,
+    show: bool = typer.Option(
+        False,
+        "--show",
+        "-s",
+        help="Show current configuration",
+    ),
+):
+    """Manage C4 configuration.
+
+    Without arguments: show current configuration.
+
+    Examples:
+        c4 config --show              # Show all config
+        c4 config platform cursor     # Set project default platform
+        c4 config --global platform cursor  # Set global default
+    """
+    if ctx.invoked_subcommand is not None:
+        return
+
+    # Default action: show config
+    info = get_config_info()
+
+    console.print()
+    console.print("[bold]C4 Configuration[/bold]")
+    console.print()
+
+    table = Table(show_header=True)
+    table.add_column("Source", style="cyan")
+    table.add_column("Platform")
+    table.add_column("Active", style="green")
+
+    # Global
+    global_platform = info["global_platform"] or "[dim]-[/dim]"
+    global_active = "*" if info["source"] == "global" else ""
+    table.add_row("Global (~/.c4/config.yaml)", global_platform, global_active)
+
+    # Project
+    project_platform = info["project_platform"] or "[dim]-[/dim]"
+    project_active = "*" if info["source"] == "project" else ""
+    table.add_row("Project (.c4/config.yaml)", project_platform, project_active)
+
+    # Environment
+    env_platform = info["env_platform"] or "[dim]-[/dim]"
+    env_active = "*" if info["source"] == "environment" else ""
+    table.add_row("Environment (C4_PLATFORM)", env_platform, env_active)
+
+    # Default
+    default_active = "*" if info["source"] == "default" else ""
+    table.add_row("Default", "claude", default_active)
+
+    console.print(table)
+    console.print()
+    console.print(f"[bold]Effective platform:[/bold] {info['effective_platform']}")
+    console.print()
+    console.print(f"[dim]Supported platforms: {', '.join(list_platforms())}[/dim]")
+
+
+@config_app.command("platform")
+def config_platform(
+    platform_name: str = typer.Argument(..., help="Platform name to set as default"),
+    is_global: bool = typer.Option(
+        False,
+        "--global",
+        "-g",
+        help="Set in global config (~/.c4/config.yaml)",
+    ),
+):
+    """Set the default platform.
+
+    Examples:
+        c4 config platform cursor           # Project default
+        c4 config platform cursor --global  # Global default
+    """
+    try:
+        config_path = set_platform_config(
+            platform=platform_name,
+            global_config=is_global,
+        )
+        scope = "global" if is_global else "project"
+        console.print(f"[green]Set {scope} platform:[/green] {platform_name}")
+        console.print(f"[dim]Config: {config_path}[/dim]")
+    except ValueError as e:
+        console.print(f"[red]Error:[/red] {e}")
+        raise typer.Exit(1)
+
+
+# =============================================================================
+# Platform Setup Commands
+# =============================================================================
+
+
+@c4_app.command("platforms")
+def platforms_cmd(
+    setup: str = typer.Option(
+        None,
+        "--setup",
+        help="Set up a specific platform (creates templates)",
+    ),
+    validate: str = typer.Option(
+        None,
+        "--validate",
+        help="Validate commands for a platform",
+    ),
+    list_all: bool = typer.Option(
+        False,
+        "--list",
+        "-l",
+        help="List supported platforms",
+    ),
+):
+    """Manage platform configurations.
+
+    Examples:
+        c4 platforms --list                # List supported platforms
+        c4 platforms --validate cursor     # Check cursor commands
+        c4 platforms --setup cursor        # Set up cursor with templates
+    """
+    if list_all:
+        console.print()
+        console.print("[bold]Supported Platforms[/bold]")
+        console.print()
+        for name, cmd in PLATFORM_COMMANDS.items():
+            console.print(f"  [cyan]{name}[/cyan]: {' '.join(cmd)}")
+        console.print()
+        return
+
+    project_path = Path.cwd()
+
+    if validate:
+        from .platforms import validate_platform_commands
+
+        result = validate_platform_commands(project_path, validate)
+        console.print()
+        console.print(f"[bold]Platform: {validate}[/bold]")
+        console.print()
+
+        if result["found"]:
+            console.print("[green]Found commands:[/green]")
+            for cmd in result["found"]:
+                console.print(f"  [green]+[/green] {cmd}")
+
+        if result["missing"]:
+            console.print()
+            console.print("[yellow]Missing commands:[/yellow]")
+            for cmd in result["missing"]:
+                console.print(f"  [yellow]-[/yellow] {cmd}")
+            console.print()
+            console.print(f"[dim]Run 'c4 platforms --setup {validate}' to generate templates[/dim]")
+        else:
+            console.print()
+            console.print("[green]All required commands found![/green]")
+        return
+
+    if setup:
+        result = setup_platform(project_path, setup, generate_templates=True)
+        console.print()
+        console.print(f"[bold]Setting up platform: {setup}[/bold]")
+        console.print(f"Command directory: {result['command_dir']}")
+        console.print()
+
+        if result["generated"]:
+            console.print("[green]Generated templates:[/green]")
+            for cmd in result["generated"]:
+                console.print(f"  [green]+[/green] {cmd}.md")
+
+        if result["skipped"]:
+            console.print()
+            console.print("[yellow]Skipped (no reference):[/yellow]")
+            for cmd in result["skipped"]:
+                console.print(f"  [yellow]![/yellow] {cmd}")
+
+        if result["validation"]["found"]:
+            console.print()
+            console.print("[dim]Already existing:[/dim]")
+            for cmd in result["validation"]["found"]:
+                console.print(f"  [dim]=[/dim] {cmd}")
+
+        console.print()
+        console.print("[yellow]Note:[/yellow] Review and customize generated templates")
+        console.print("[dim]Reference: .claude/commands/ (Claude Code version)[/dim]")
+        return
+
+    # Default: show help
+    console.print("Use --list, --validate, or --setup option")
+    console.print("Run 'c4 platforms --help' for details")
 
 
 # =============================================================================

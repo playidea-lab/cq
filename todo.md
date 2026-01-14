@@ -1,5 +1,20 @@
 # C4D Self Review Tasks
 
+## Phase 0: 다중 플랫폼 지원 (완료)
+
+### T-000: 플랫폼 추상화
+- **Scope**: c4/platforms/, c4/cli.py
+- **DoD**: 
+  - [x] c4/platforms/ 모듈 생성 (SPEC.md, __init__.py)
+  - [x] CLI --platform 옵션 추가
+  - [x] c4 config 명령 추가 (글로벌/프로젝트 설정)
+  - [x] 플랫폼 커맨드 검증 + 템플릿 생성
+  - [x] tests/unit/test_platforms.py 테스트 작성
+- **Validations**: lint, unit
+- **Refs**: [c4/platforms/SPEC.md](c4/platforms/SPEC.md)
+
+---
+
 ## Phase 1: 코드 리뷰
 
 ### T-001: MCP Server 리뷰
