@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from c4.mcp_server import C4Daemon, _get_workflow_guide
-from c4.models import ProjectStatus, Task
+from c4.models import ProjectStatus, RepairQueueItem, Task
 
 
 @pytest.fixture
@@ -286,6 +286,119 @@ class TestC4GetTask:
         result2 = daemon.c4_get_task("worker-2")
         assert result2 is not None
         assert result2.task_id == "T-002"
+
+    def test_get_task_peer_review_excludes_original_worker(self, daemon):
+        """Test that repair tasks are not assigned to the original worker who blocked them"""
+        # Add a repair task
+        repair_task = Task(
+            id="REPAIR-T-001",
+            title="Repair task",
+            dod="Fix the blocked task",
+        )
+        daemon.add_task(repair_task)
+
+        # Add the original task to repair_queue (simulating it was blocked by worker-1)
+        repair_item = RepairQueueItem(
+            task_id="T-001",  # Original task ID without REPAIR- prefix
+            worker_id="worker-1",  # Worker who blocked the task
+            failure_signature="test_failure",
+            attempts=1,
+            blocked_at=datetime.now().isoformat(),
+            last_error="Test error",
+        )
+        daemon.state_machine.state.repair_queue.append(repair_item)
+        daemon.state_machine.save_state()
+
+        # Transition to EXECUTE
+        daemon.state_machine.transition("skip_discovery", "test")
+        daemon.state_machine.transition("c4_run", "test")
+
+        # Original worker (worker-1) should NOT get the repair task
+        result = daemon.c4_get_task("worker-1")
+        assert result is None  # No task available for original worker
+
+    def test_get_task_peer_review_allows_different_worker(self, daemon):
+        """Test that repair tasks CAN be assigned to a different worker"""
+        # Add a repair task
+        repair_task = Task(
+            id="REPAIR-T-001",
+            title="Repair task",
+            dod="Fix the blocked task",
+        )
+        daemon.add_task(repair_task)
+
+        # Add the original task to repair_queue (blocked by worker-1)
+        repair_item = RepairQueueItem(
+            task_id="T-001",
+            worker_id="worker-1",
+            failure_signature="test_failure",
+            attempts=1,
+            blocked_at=datetime.now().isoformat(),
+            last_error="Test error",
+        )
+        daemon.state_machine.state.repair_queue.append(repair_item)
+        daemon.state_machine.save_state()
+
+        # Transition to EXECUTE
+        daemon.state_machine.transition("skip_discovery", "test")
+        daemon.state_machine.transition("c4_run", "test")
+
+        # Different worker (worker-2) SHOULD get the repair task
+        result = daemon.c4_get_task("worker-2")
+        assert result is not None
+        assert result.task_id == "REPAIR-T-001"
+
+    def test_get_task_peer_review_does_not_affect_normal_tasks(self, daemon):
+        """Test that non-repair tasks are not affected by peer review logic"""
+        # Add a normal task (not REPAIR-)
+        normal_task = Task(
+            id="T-001",
+            title="Normal task",
+            dod="Do something",
+        )
+        daemon.add_task(normal_task)
+
+        # Transition to EXECUTE
+        daemon.state_machine.transition("skip_discovery", "test")
+        daemon.state_machine.transition("c4_run", "test")
+
+        # Any worker should get the normal task
+        result = daemon.c4_get_task("worker-1")
+        assert result is not None
+        assert result.task_id == "T-001"
+
+    def test_get_task_peer_review_with_multiple_pending_tasks(self, daemon):
+        """Test peer review with multiple tasks - original worker gets non-repair task"""
+        # Add a normal task and a repair task
+        normal_task = Task(id="T-002", title="Normal task", dod="Do something")
+        repair_task = Task(
+            id="REPAIR-T-001",
+            title="Repair task",
+            dod="Fix the blocked task",
+        )
+        daemon.add_task(normal_task)
+        daemon.add_task(repair_task)
+
+        # Add to repair_queue (T-001 was blocked by worker-1)
+        repair_item = RepairQueueItem(
+            task_id="T-001",
+            worker_id="worker-1",
+            failure_signature="test_failure",
+            attempts=1,
+            blocked_at=datetime.now().isoformat(),
+            last_error="Test error",
+        )
+        daemon.state_machine.state.repair_queue.append(repair_item)
+        daemon.state_machine.save_state()
+
+        # Transition to EXECUTE
+        daemon.state_machine.transition("skip_discovery", "test")
+        daemon.state_machine.transition("c4_run", "test")
+
+        # Original worker (worker-1) should get the normal task, not the repair task
+        result = daemon.c4_get_task("worker-1")
+        assert result is not None
+        assert result.task_id == "T-002"  # Gets normal task, not REPAIR-T-001
 
 
 class TestC4Submit:
