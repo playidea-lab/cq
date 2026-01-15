@@ -1145,7 +1145,7 @@ def ui_server(
         console.print("[dim]The UI will show an error until you run 'c4 init'[/dim]")
         console.print()
 
-    console.print(f"[green]Starting C4 Dashboard...[/green]")
+    console.print("[green]Starting C4 Dashboard...[/green]")
     console.print(f"[bold]URL:[/bold] http://{host}:{port}")
     console.print()
     console.print("[dim]Press Ctrl+C to stop the server[/dim]")
@@ -1153,8 +1153,8 @@ def ui_server(
 
     # Open browser if requested
     if open_browser:
-        import webbrowser
         import threading
+        import webbrowser
 
         def open_browser_delayed():
             import time

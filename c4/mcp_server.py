@@ -612,7 +612,8 @@ Thumbs.db
     @property
     def is_supervisor_loop_running(self) -> bool:
         """Check if supervisor loop is running"""
-        return self._supervisor_loop_manager is not None and self._supervisor_loop_manager.is_running
+        manager = self._supervisor_loop_manager
+        return manager is not None and manager.is_running
 
     def _auto_restart_supervisor_if_needed(self) -> bool:
         """

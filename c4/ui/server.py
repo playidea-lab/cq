@@ -1,14 +1,11 @@
 """C4 UI Server - FastAPI web server for local UI."""
 
-import asyncio
-import signal
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any
 
 import uvicorn
 from fastapi import FastAPI, Request
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 # Default port for UI server
@@ -237,7 +234,11 @@ def _get_default_html() -> str:
         .status-value.plan { color: #58a6ff; }
         .status-value.halted { color: #f85149; }
         .status-value.checkpoint { color: #d29922; }
-        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1.5rem; }
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 1.5rem;
+        }
         .task-list {
             list-style: none;
             max-height: 300px;
@@ -322,15 +323,18 @@ def _get_default_html() -> str:
                     document.getElementById('status').innerHTML =
                         '<span class="error">' + status.error + '</span>';
                 } else {
-                    const statusClass = status.status.toLowerCase();
-                    document.getElementById('status').innerHTML =
-                        '<div class="status-value ' + statusClass + '">' + status.status + '</div>' +
-                        '<div style="margin-top: 0.5rem; color: #8b949e;">' +
+                    const cls = status.status.toLowerCase();
+                    const el = document.getElementById('status');
+                    el.innerHTML = '<div class="status-value ' + cls + '">' +
+                        status.status + '</div>' +
+                        '<div style="margin-top:0.5rem;color:#8b949e">' +
                         'Project: ' + status.project_id + '</div>';
 
-                    document.getElementById('queue').innerHTML =
+                    const qEl = document.getElementById('queue');
+                    qEl.innerHTML =
                         '<div>Pending: <strong>' + status.queue.pending + '</strong></div>' +
-                        '<div>In Progress: <strong>' + status.queue.in_progress + '</strong></div>' +
+                        '<div>In Progress: <strong>' + status.queue.in_progress +
+                        '</strong></div>' +
                         '<div>Done: <strong>' + status.queue.done + '</strong></div>';
                 }
 
@@ -345,24 +349,29 @@ def _get_default_html() -> str:
                     });
                 } else {
                     // Pending
+                    const empty = '<li class="task-item" style="color:#8b949e">';
                     const pendingHtml = tasks.pending.length ? tasks.pending.map(t =>
-                        '<li class="task-item"><span class="badge pending">PENDING</span> ' +
+                        '<li class="task-item">' +
+                        '<span class="badge pending">PENDING</span> ' +
                         t.id + ' - ' + t.title + '</li>'
-                    ).join('') : '<li class="task-item" style="color: #8b949e;">No pending tasks</li>';
+                    ).join('') : empty + 'No pending tasks</li>';
                     document.getElementById('pending-tasks').innerHTML = pendingHtml;
 
                     // In Progress
                     const progressHtml = tasks.in_progress.length ? tasks.in_progress.map(t =>
-                        '<li class="task-item"><span class="badge progress">IN PROGRESS</span> ' +
+                        '<li class="task-item">' +
+                        '<span class="badge progress">IN PROGRESS</span> ' +
                         t.task_id + ' (Worker: ' + t.worker_id + ')</li>'
-                    ).join('') : '<li class="task-item" style="color: #8b949e;">No tasks in progress</li>';
+                    ).join('') : empty + 'No tasks in progress</li>';
                     document.getElementById('progress-tasks').innerHTML = progressHtml;
 
                     // Done
-                    const doneHtml = tasks.done.length ? tasks.done.slice(-10).reverse().map(t =>
-                        '<li class="task-item"><span class="badge done">DONE</span> ' +
+                    const doneHtml = tasks.done.length ?
+                        tasks.done.slice(-10).reverse().map(t =>
+                        '<li class="task-item">' +
+                        '<span class="badge done">DONE</span> ' +
                         t.id + ' - ' + t.title + '</li>'
-                    ).join('') : '<li class="task-item" style="color: #8b949e;">No completed tasks</li>';
+                    ).join('') : empty + 'No completed tasks</li>';
                     document.getElementById('done-tasks').innerHTML = doneHtml;
                 }
             } catch (err) {
