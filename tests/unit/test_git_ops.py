@@ -354,3 +354,129 @@ class TestBranchOperations:
 
         assert result.success is True
         assert "existing branch" in result.message.lower()
+
+
+class TestRollbackOperations:
+    """Test rollback functionality."""
+
+    @pytest.fixture
+    def git_project(self, tmp_path: Path) -> Path:
+        """Create a temporary Git repository with history."""
+        project = tmp_path / "git_project"
+        project.mkdir()
+        subprocess.run(["git", "init"], cwd=project, capture_output=True)
+        subprocess.run(
+            ["git", "config", "user.email", "test@test.com"],
+            cwd=project,
+            capture_output=True,
+        )
+        subprocess.run(
+            ["git", "config", "user.name", "Test User"],
+            cwd=project,
+            capture_output=True,
+        )
+        (project / "README.md").write_text("# Test\n")
+        subprocess.run(["git", "add", "."], cwd=project, capture_output=True)
+        subprocess.run(
+            ["git", "commit", "-m", "Initial"],
+            cwd=project,
+            capture_output=True,
+        )
+        return project
+
+    @pytest.fixture
+    def git_ops(self, git_project: Path) -> GitOperations:
+        """Create GitOperations instance."""
+        return GitOperations(git_project)
+
+    def test_get_tag_info(self, git_ops: GitOperations) -> None:
+        """Test getting detailed tag information."""
+        # Create a checkpoint
+        git_ops.create_checkpoint_tag("CP-001", "Test checkpoint")
+
+        info = git_ops.get_tag_info("c4/CP-001")
+
+        assert info is not None
+        assert "sha" in info
+        assert "date" in info
+        assert "message" in info
+        assert "Test checkpoint" in info["message"]
+
+    def test_get_tag_info_nonexistent(self, git_ops: GitOperations) -> None:
+        """Test getting info for non-existent tag."""
+        info = git_ops.get_tag_info("c4/CP-999")
+        assert info is None
+
+    def test_list_checkpoint_tags(self, git_ops: GitOperations) -> None:
+        """Test listing checkpoint tags with details."""
+        # Create checkpoints
+        git_ops.create_checkpoint_tag("CP-001", "First")
+        git_ops.create_checkpoint_tag("CP-002", "Second")
+
+        tags = git_ops.list_checkpoint_tags()
+
+        assert len(tags) == 2
+        assert all("tag" in t for t in tags)
+        assert all("sha" in t for t in tags)
+        assert all("date" in t for t in tags)
+
+    def test_rollback_to_checkpoint_hard(
+        self, git_ops: GitOperations, git_project: Path
+    ) -> None:
+        """Test hard rollback to checkpoint."""
+        # Create checkpoint
+        git_ops.create_checkpoint_tag("CP-001", "Stable")
+        stable_sha = git_ops.get_current_sha()
+
+        # Add more work
+        (git_project / "new_file.py").write_text("# New\n")
+        git_ops.commit_task_completion("T-001", "New feature")
+
+        # Verify file exists
+        assert (git_project / "new_file.py").exists()
+
+        # Rollback
+        result = git_ops.rollback_to_checkpoint("c4/CP-001", hard=True)
+
+        assert result.success is True
+        assert result.sha == stable_sha
+        assert not (git_project / "new_file.py").exists()
+
+    def test_rollback_to_checkpoint_soft(
+        self, git_ops: GitOperations, git_project: Path
+    ) -> None:
+        """Test soft rollback to checkpoint."""
+        # Create checkpoint
+        git_ops.create_checkpoint_tag("CP-001", "Stable")
+
+        # Add more work
+        (git_project / "new_file.py").write_text("# New\n")
+        git_ops.commit_task_completion("T-001", "New feature")
+
+        # Soft rollback
+        result = git_ops.rollback_to_checkpoint("c4/CP-001", hard=False)
+
+        assert result.success is True
+        # File should still exist (soft reset keeps working directory)
+        assert (git_project / "new_file.py").exists()
+
+    def test_rollback_nonexistent_tag(self, git_ops: GitOperations) -> None:
+        """Test rollback to non-existent tag fails."""
+        result = git_ops.rollback_to_checkpoint("c4/CP-999")
+
+        assert result.success is False
+        assert "not found" in result.message.lower()
+
+    def test_rollback_returns_correct_message(
+        self, git_ops: GitOperations, git_project: Path
+    ) -> None:
+        """Test rollback message contains useful info."""
+        git_ops.create_checkpoint_tag("CP-001")
+        (git_project / "file.py").write_text("# File\n")
+        git_ops.commit_task_completion("T-001", "Task")
+
+        result = git_ops.rollback_to_checkpoint("c4/CP-001")
+
+        assert result.success is True
+        assert "c4/CP-001" in result.message
+        assert result.tag == "c4/CP-001"
