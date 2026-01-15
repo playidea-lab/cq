@@ -4,6 +4,12 @@ from .events import EventBus
 from .git_ops import GitOperations, GitResult
 from .safety import SafetyGuard
 from .supervisor_loop import SupervisorLoop, SupervisorLoopManager
+from .task_dispatcher import (
+    AssignmentResult,
+    TaskAssignment,
+    TaskDispatcher,
+    TaskPriority,
+)
 from .workers import WorkerManager
 
 __all__ = [
@@ -13,5 +19,9 @@ __all__ = [
     "SafetyGuard",
     "SupervisorLoop",
     "SupervisorLoopManager",
+    "TaskAssignment",
+    "AssignmentResult",
+    "TaskDispatcher",
+    "TaskPriority",
     "WorkerManager",
 ]
