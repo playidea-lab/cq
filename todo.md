@@ -1,5 +1,16 @@
 # C4D Self Review Tasks
 
+## Hotfix
+
+### HF-001: --path 옵션 버그 수정
+- **Scope**: c4/cli.py
+- **DoD**:
+  - [x] `c4 --path /path status` 형태로 실행시 경로 인식 버그 수정
+  - [x] `c4_main` 콜백에서 서브커맨드 호출 전 `C4_PROJECT_ROOT` 환경변수 설정
+- **Validations**: 수동 테스트
+
+---
+
 ## Phase 0: 다중 플랫폼 지원 (완료)
 
 ### T-000: 플랫폼 추상화
