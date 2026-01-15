@@ -287,6 +287,123 @@ def status(
 # =============================================================================
 
 
+def _init_git_repo(project_path: Path) -> dict[str, bool]:
+    """Initialize Git repository with .gitignore and initial commit.
+
+    Returns:
+        Dict with status of each operation:
+        - git_init: True if git init was executed (or repo already existed)
+        - gitignore: True if .gitignore was created/updated
+        - initial_commit: True if initial commit was created
+    """
+    result = {"git_init": False, "gitignore": False, "initial_commit": False}
+    git_dir = project_path / ".git"
+
+    # Step 1: git init (if not already a repo)
+    if not git_dir.exists():
+        try:
+            subprocess.run(
+                ["git", "init"],
+                cwd=project_path,
+                capture_output=True,
+                check=True,
+            )
+            result["git_init"] = True
+        except subprocess.CalledProcessError as e:
+            console.print(f"[yellow]Warning:[/yellow] git init failed: {e.stderr}")
+            return result
+        except FileNotFoundError:
+            console.print("[yellow]Warning:[/yellow] git not found, skipping Git setup")
+            return result
+    else:
+        result["git_init"] = True  # Already initialized
+
+    # Step 2: Create .gitignore (if not exists)
+    gitignore_path = project_path / ".gitignore"
+    c4_ignore_patterns = [
+        "# C4 local files",
+        ".c4/locks/",
+        ".c4/daemon.pid",
+        ".c4/daemon.log",
+        ".c4/workers/",
+        "",
+        "# Common patterns",
+        "__pycache__/",
+        "*.pyc",
+        ".venv/",
+        "venv/",
+        ".env",
+        ".env.local",
+        "*.log",
+        ".DS_Store",
+        "node_modules/",
+        "dist/",
+        "build/",
+    ]
+
+    if not gitignore_path.exists():
+        gitignore_path.write_text("\n".join(c4_ignore_patterns) + "\n")
+        result["gitignore"] = True
+    else:
+        # Check if C4 patterns are already in .gitignore
+        existing = gitignore_path.read_text()
+        if ".c4/locks/" not in existing:
+            # Append C4 patterns
+            with gitignore_path.open("a") as f:
+                f.write("\n\n# C4 local files (auto-added)\n")
+                f.write(".c4/locks/\n")
+                f.write(".c4/daemon.pid\n")
+                f.write(".c4/daemon.log\n")
+                f.write(".c4/workers/\n")
+            result["gitignore"] = True
+        else:
+            result["gitignore"] = True  # Already has C4 patterns
+
+    # Step 3: Initial commit (if no commits exist)
+    try:
+        # Check if there are any commits
+        check_commits = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=project_path,
+            capture_output=True,
+        )
+
+        if check_commits.returncode != 0:
+            # No commits yet, create initial commit
+            # Stage .gitignore at minimum
+            subprocess.run(
+                ["git", "add", ".gitignore"],
+                cwd=project_path,
+                capture_output=True,
+                check=True,
+            )
+
+            # Check if .c4 exists and add config (not db)
+            c4_config = project_path / ".c4" / "config.yaml"
+            if c4_config.exists():
+                subprocess.run(
+                    ["git", "add", ".c4/config.yaml"],
+                    cwd=project_path,
+                    capture_output=True,
+                )
+
+            # Create initial commit
+            subprocess.run(
+                ["git", "commit", "-m", "Initial commit (C4 initialized)"],
+                cwd=project_path,
+                capture_output=True,
+                check=True,
+            )
+            result["initial_commit"] = True
+        else:
+            result["initial_commit"] = True  # Already has commits
+    except subprocess.CalledProcessError:
+        # Commit might fail if nothing to commit, that's OK
+        result["initial_commit"] = True
+
+    return result
+
+
 def _create_mcp_config(project_path: Path) -> bool:
     """Create .mcp.json in project root."""
     mcp_file = project_path / ".mcp.json"
@@ -400,15 +517,24 @@ def init(
             console.print("[dim]Creating .c4/ directory...[/dim]")
             daemon.initialize(project_id)
 
-        # Step 2: Create .mcp.json
+        # Step 2: Initialize Git repository
+        console.print("[dim]Setting up Git repository...[/dim]")
+        git_result = _init_git_repo(project_path)
+        if git_result["git_init"]:
+            if git_result["initial_commit"]:
+                console.print("[dim]  Git initialized with initial commit[/dim]")
+            else:
+                console.print("[dim]  Git repository ready[/dim]")
+
+        # Step 3: Create .mcp.json
         console.print("[dim]Creating .mcp.json...[/dim]")
         _create_mcp_config(project_path)
 
-        # Step 3: Create .claude/settings.json with permissions
+        # Step 4: Create .claude/settings.json with permissions
         console.print("[dim]Creating .claude/settings.json (permissions)...[/dim]")
         _create_project_settings(project_path)
 
-        # Step 4: Install hooks (unless skipped)
+        # Step 5: Install hooks (unless skipped)
         if not skip_hooks:
             console.print("[dim]Installing Claude Code hooks...[/dim]")
             hook_results = install_all_hooks()
@@ -425,6 +551,10 @@ def init(
 
         console.print("[bold]Created/Updated:[/bold]")
         console.print("  .c4/                    - C4 state directory")
+        if git_result["git_init"]:
+            console.print("  .git/                   - Git repository")
+        if git_result["gitignore"]:
+            console.print("  .gitignore              - Git ignore patterns")
         console.print("  .mcp.json               - MCP server config")
         console.print("  .claude/settings.json   - Permissions & MCP auto-approval")
         if not skip_hooks:
