@@ -19,7 +19,86 @@
 
 set -e
 
-echo "🚀 Installing C4..."
+echo "C4 Installer"
+echo "============"
+echo ""
+
+# =============================================================================
+# Step 0: Check & Install Git (required)
+# =============================================================================
+echo "[0/7] Checking Git..."
+
+if command -v git &> /dev/null; then
+    GIT_VERSION=$(git --version | cut -d' ' -f3)
+    echo "   OK: Git $GIT_VERSION found"
+else
+    echo "   Git not found. Attempting to install..."
+    echo ""
+    
+    # Detect OS and install Git
+    install_git() {
+        if [[ "$OSTYPE" == "darwin"* ]]; then
+            # macOS
+            if command -v brew &> /dev/null; then
+                echo "   Installing Git via Homebrew..."
+                brew install git
+            else
+                echo "   ERROR: Git is required but Homebrew is not installed."
+                echo ""
+                echo "   Install options:"
+                echo "     1. Install Xcode Command Line Tools:"
+                echo "        xcode-select --install"
+                echo "     2. Or install Homebrew first:"
+                echo "        /bin/bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""
+                echo "        brew install git"
+                return 1
+            fi
+        elif [[ -f /etc/debian_version ]]; then
+            # Debian/Ubuntu
+            echo "   Installing Git via apt..."
+            sudo apt-get update && sudo apt-get install -y git
+        elif [[ -f /etc/redhat-release ]]; then
+            # RHEL/CentOS/Fedora
+            echo "   Installing Git via dnf/yum..."
+            if command -v dnf &> /dev/null; then
+                sudo dnf install -y git
+            else
+                sudo yum install -y git
+            fi
+        elif [[ -f /etc/arch-release ]]; then
+            # Arch Linux
+            echo "   Installing Git via pacman..."
+            sudo pacman -S --noconfirm git
+        elif [[ -f /etc/alpine-release ]]; then
+            # Alpine
+            echo "   Installing Git via apk..."
+            sudo apk add git
+        else
+            echo "   ERROR: Unknown OS. Please install Git manually:"
+            echo ""
+            echo "   macOS:   brew install git"
+            echo "   Ubuntu:  sudo apt install git"
+            echo "   Fedora:  sudo dnf install git"
+            echo "   Arch:    sudo pacman -S git"
+            return 1
+        fi
+    }
+    
+    if install_git; then
+        if command -v git &> /dev/null; then
+            GIT_VERSION=$(git --version | cut -d' ' -f3)
+            echo "   OK: Git $GIT_VERSION installed successfully"
+        else
+            echo "   ERROR: Git installation failed."
+            exit 1
+        fi
+    else
+        echo ""
+        echo "   Git is required for C4 to manage code versions."
+        exit 1
+    fi
+fi
+
 echo ""
 
 # Determine C4 directory
@@ -37,7 +116,7 @@ echo ""
 # =============================================================================
 # Step 1: Install dependencies
 # =============================================================================
-echo "1️⃣  Installing dependencies..."
+echo "[1/7] Installing dependencies..."
 if command -v uv &> /dev/null; then
     (cd "$C4_DIR" && uv sync --quiet)
     echo "   ✅ Dependencies installed"
@@ -50,7 +129,7 @@ fi
 # =============================================================================
 # Step 2: Save install path & detect platforms
 # =============================================================================
-echo "2️⃣  Saving install path & detecting platforms..."
+echo "[2/7] Saving install path & detecting platforms..."
 echo "$C4_DIR" > ~/.c4-install-path
 echo "   → ~/.c4-install-path"
 
@@ -97,7 +176,7 @@ fi
 # =============================================================================
 # Step 3: Create global 'c4' command
 # =============================================================================
-echo "3️⃣  Creating global 'c4' command..."
+echo "[3/7] Creating global 'c4' command..."
 
 BIN_DIR="$HOME/.local/bin"
 mkdir -p "$BIN_DIR"
@@ -115,7 +194,7 @@ echo "   → $BIN_DIR/c4"
 # =============================================================================
 # Step 4: Install /c4-* slash commands globally
 # =============================================================================
-echo "4️⃣  Installing Claude Code slash commands..."
+echo "[4/7] Installing Claude Code slash commands..."
 
 CLAUDE_COMMANDS="$HOME/.claude/commands"
 mkdir -p "$CLAUDE_COMMANDS"
@@ -133,7 +212,7 @@ echo "   ✅ $count commands installed"
 # =============================================================================
 # Step 5: Install Cursor commands & MCP
 # =============================================================================
-echo "5️⃣  Installing Cursor commands & MCP..."
+echo "[5/7] Installing Cursor commands & MCP..."
 
 # 5a. Cursor slash commands (global)
 CURSOR_COMMANDS="$HOME/.cursor/commands"
@@ -196,7 +275,7 @@ fi
 # =============================================================================
 # Step 6: Install Claude Code hooks
 # =============================================================================
-echo "6️⃣  Installing Claude Code hooks..."
+echo "[6/7] Installing Claude Code hooks..."
 
 HOOKS_DIR="$HOME/.claude/hooks"
 mkdir -p "$HOOKS_DIR"
@@ -228,7 +307,7 @@ done
 # =============================================================================
 # Step 7: Register hooks in settings
 # =============================================================================
-echo "7️⃣  Registering hooks..."
+echo "[7/7] Registering hooks..."
 
 python3 << 'PYTHON'
 import json
