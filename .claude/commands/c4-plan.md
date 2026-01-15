@@ -1,25 +1,242 @@
 # C4 Plan Mode (Enhanced)
 
-기획 문서를 해석하고, 구조화된 인터뷰를 통해 C4 태스크를 생성합니다.
+프로젝트 현황을 파악하고, 사용자 선택에 따라 계획을 수립/수정합니다.
 
 ## Instructions
 
-### Phase 0: 상태 확인
+### Phase 0: 현황 파악 (Context Display)
 
-```
+**먼저 전체 현황을 수집하고 출력합니다.**
+
+#### 0.1 데이터 수집
+
+```python
+# 1. 상태 확인
 status = mcp__c4__c4_status()
+
+# 2. 기존 Specs 확인
+specs = mcp__c4__c4_list_specs()
+
+# 3. 기존 Designs 확인
+designs = mcp__c4__c4_list_designs()
+
+# 4. 기획 문서 스캔
+# Glob으로 docs/**/*.md 검색
+# PRD, requirements, spec, plan 키워드 포함 파일 식별
 ```
 
-1. 현재 상태 확인
-2. 상태에 따른 처리:
-   - `INIT`: 계획 진행 가능
-   - `PLAN`: "이미 계획 모드입니다. 계속 진행하시겠습니까?" 질문
-   - `EXECUTE/CHECKPOINT`: "실행 중입니다. 계획을 수정하면 현재 진행이 초기화됩니다. 계속하시겠습니까?" 경고
-   - `COMPLETE`: "완료된 프로젝트입니다. 새 계획을 시작하시겠습니까?" 질문
+#### 0.2 현황 출력
+
+```
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📊 C4 프로젝트: {project_id}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🔹 상태: {status} ({execution_mode})
+🔹 도메인: {domain}
+
+┌─────────────────────────────────────────────────────┐
+│ 📋 태스크 현황                                       │
+├─────────────────────────────────────────────────────┤
+│  ✅ 완료: {done}개  |  🔄 진행: {in_progress}개  |  ⏳ 대기: {pending}개  │
+└─────────────────────────────────────────────────────┘
+
+📈 태스크 의존성 그래프:
+┌─────────────────────────────────────────────────────┐
+│                                                     │
+│  {의존성 기반 태스크 트리 시각화}                    │
+│                                                     │
+│  예시:                                              │
+│  ✅ T-501 ─┬→ ✅ T-502 ─→ ✅ T-503 ─→ ✅ T-504     │
+│            └→ ⏳ T-505: 실시간 이벤트 스트리밍      │
+│                                                     │
+│  ✅ T-601 ─┬→ ✅ T-605 ─→ ⏳ T-608: Cloud Metrics  │
+│            ├→ ✅ T-606 ─→ ⏳ T-609: Cloud Alerts   │
+│            └→ ✅ T-607 ─→ ⏳ T-610: Cloud Dashboard │
+│                                                     │
+│  범례: ✅완료  🔄진행중  ⏳대기  ❌블록             │
+└─────────────────────────────────────────────────────┘
+
+📐 Specs ({specs_count}개):
+   {각 spec: feature (domain) - N requirements}
+
+🏗️ Designs ({designs_count}개):
+   {각 design: feature - option 선택, N components}
+
+📄 기획 문서:
+   {발견된 PRD, spec 문서 목록}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+
+#### 0.3 의존성 그래프 렌더링 로직
+
+```python
+def render_dependency_graph(tasks, pending_ids):
+    """
+    태스크 의존성을 시각적으로 표현합니다.
+
+    1. 대기 중인 태스크와 관련된 의존성 체인만 표시
+    2. 루트 태스크(의존성 없음)부터 시작
+    3. 상태별 아이콘: ✅완료 🔄진행 ⏳대기 ❌블록
+    """
+    # pending_ids에 있는 태스크들의 의존성 역추적
+    # 트리 형태로 렌더링
+    # 최근 완료된 태스크도 컨텍스트로 포함
+```
+
+---
+
+### Phase 0.5: 행동 선택 (Action Selection)
+
+현황을 확인한 후 사용자가 다음 행동을 선택합니다.
+
+```python
+AskUserQuestion(questions=[
+    {
+        "question": "무엇을 하시겠습니까?",
+        "header": "작업선택",
+        "options": [
+            {"label": "새 기능 계획", "description": "Discovery → Design → Tasks 전체 플로우"},
+            {"label": "기존 계획 검토/수정", "description": "저장된 Spec/Design 상세 보기 및 수정"},
+            {"label": "태스크만 추가", "description": "기존 설계 기반 태스크 생성"},
+            {"label": "현황만 확인", "description": "출력 후 종료"}
+        ],
+        "multiSelect": False
+    }
+])
+```
+
+#### 0.4 선택에 따른 분기
+
+| 선택 | 다음 단계 |
+|------|----------|
+| **새 기능 계획** | → Phase 1 (문서 스캔)으로 이동 |
+| **기존 계획 검토/수정** | → Phase R (검토/수정)로 이동 |
+| **태스크만 추가** | → Phase 4 (태스크 생성)로 직행 |
+| **현황만 확인** | → "현황 파악 완료" 메시지 후 종료 |
+
+---
+
+### Phase R: 기존 계획 검토/수정 (Review/Modify)
+
+기존에 저장된 Spec 또는 Design을 검토하고 수정합니다.
+
+#### R.1 대상 선택
+
+```python
+# specs와 designs 목록에서 선택
+options = []
+for spec in specs['features']:
+    options.append({
+        "label": f"{spec['feature']} (Spec)",
+        "description": f"{spec['domain']} - {spec['requirements_count']} requirements"
+    })
+for design in designs['designs']:
+    options.append({
+        "label": f"{design['feature']} (Design)",
+        "description": f"Option: {design['selected_option']}, {design['components_count']} components"
+    })
+
+AskUserQuestion(questions=[
+    {
+        "question": "어떤 것을 검토하시겠습니까?",
+        "header": "대상선택",
+        "options": options,
+        "multiSelect": False
+    }
+])
+```
+
+#### R.2 상세 출력
+
+선택한 Spec 또는 Design의 전체 내용을 출력합니다.
+
+```python
+# Spec 선택 시
+spec = mcp__c4__c4_get_spec(feature=selected_feature)
+print(f"""
+📐 Spec: {spec['feature']}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+도메인: {spec['domain']}
+설명: {spec['description']}
+
+요구사항:
+{각 requirement를 EARS 패턴과 함께 출력}
+""")
+
+# Design 선택 시
+design = mcp__c4__c4_get_design(feature=selected_feature)
+print(f"""
+🏗️ Design: {design['feature']}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+선택된 옵션: {design['selected_option']}
+
+컴포넌트:
+{각 component 정보}
+
+설계 결정:
+{각 decision 정보}
+
+다이어그램:
+{mermaid_diagram if exists}
+""")
+```
+
+#### R.3 수정 여부
+
+```python
+AskUserQuestion(questions=[
+    {
+        "question": "수정하시겠습니까?",
+        "header": "수정여부",
+        "options": [
+            {"label": "요구사항 추가/수정", "description": "Spec의 requirements 변경"},
+            {"label": "컴포넌트 변경", "description": "Design의 components 수정"},
+            {"label": "아키텍처 결정 변경", "description": "Design의 decisions 수정"},
+            {"label": "수정 없음", "description": "검토만 하고 종료"}
+        ],
+        "multiSelect": False
+    }
+])
+```
+
+#### R.4 수정 진행
+
+선택에 따라 대화형으로 수정을 진행합니다.
+
+- **요구사항 추가/수정**: EARS 패턴 인터뷰 → `c4_save_spec()` 호출
+- **컴포넌트 변경**: 컴포넌트 정보 질문 → `c4_save_design()` 호출
+- **아키텍처 결정 변경**: 결정 사항 질문 → `c4_save_design()` 호출
+
+```python
+# 수정 완료 후 저장
+if is_spec:
+    mcp__c4__c4_save_spec(
+        feature=feature,
+        domain=domain,
+        requirements=updated_requirements,
+        description=description
+    )
+else:
+    mcp__c4__c4_save_design(
+        feature=feature,
+        domain=domain,
+        components=updated_components,
+        decisions=updated_decisions,
+        ...
+    )
+
+print("✅ 수정이 저장되었습니다.")
+```
 
 ---
 
 ### Phase 1: 기획 문서 스캔
+
+> **진입 조건**: Phase 0.5에서 "새 기능 계획" 선택 시
 
 프로젝트 루트와 `docs/` 폴더에서 기획 문서를 찾습니다.
 
@@ -1066,9 +1283,31 @@ validation:
 ## 빠른 참조
 
 ```
-/c4-plan              # 전체 워크플로우 시작
-/c4-plan --scan       # 문서 스캔만
-/c4-plan --interview  # 인터뷰만 다시
+/c4-plan    현황 파악 → 행동 선택 → 적절한 플로우 진행
+```
+
+### 플로우 요약
+
+```
+/c4-plan 실행
+    ↓
+Phase 0: 현황 출력 (상태, 태스크, specs, designs, docs)
+    ↓
+Phase 0.5: 행동 선택
+    ├→ "새 기능 계획"      → Phase 1~5 (Discovery → Design → Tasks)
+    ├→ "기존 계획 검토/수정" → Phase R (상세 보기 → 수정)
+    ├→ "태스크만 추가"      → Phase 4~5 (Tasks 직행)
+    └→ "현황만 확인"       → 종료
+```
+
+### 태스크 의존성 그래프 범례
+
+```
+✅ 완료    🔄 진행중    ⏳ 대기    ❌ 블록
+
+예시:
+✅ T-001 ─┬→ ✅ T-002 ─→ ⏳ T-003
+          └→ 🔄 T-004
 ```
 
 ## 관련 명령어

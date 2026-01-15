@@ -115,7 +115,9 @@ c4 config --global --platform cursor
 c4 config --platform claude
 ```
 
-**지원 플랫폼**: Claude Code, Cursor (추가 예정: Codex, Gemini, OpenCode)
+**지원 플랫폼**: Claude Code, Cursor, Codex CLI, Gemini CLI, OpenCode
+
+> **Cursor 사용 시 알려진 제한**: Cursor는 25회 tool call 제한이 있어 `/c4-run` 실행 중 중단될 수 있습니다. "계속" 버튼을 눌러 재개하세요. MAX 모드에서는 200회까지 가능합니다. 완전 자동화가 필요하면 Claude Code, OpenCode, 또는 Codex CLI 사용을 권장합니다.
 
 ### LLM Provider 설정
 
