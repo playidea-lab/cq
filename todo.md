@@ -13,6 +13,17 @@
 - **Validations**: lint, unit
 - **Refs**: [c4/platforms/SPEC.md](c4/platforms/SPEC.md)
 
+### T-006: Cursor 커맨드 준비
+- **Scope**: .cursor/commands/, .claude/commands/
+- **DoD**:
+  - [x] .cursor/commands/ 디렉토리 생성
+  - [x] 단순 커맨드 6개 복제 (status, init, stop, clear, validate, add-task)
+  - [x] 복잡한 커맨드 4개 복제 (plan, run, checkpoint, submit)
+  - [x] Cursor 커맨드 검증 (c4 platforms --validate cursor)
+  - [x] tests/unit/test_cursor_commands.py 테스트 작성
+- **Validations**: unit
+- **Refs**: [c4/platforms/SPEC.md](c4/platforms/SPEC.md), [.claude/commands/](.claude/commands/), [.cursor/commands/](.cursor/commands/), [tests/unit/test_cursor_commands.py](tests/unit/test_cursor_commands.py)
+
 ---
 
 ## Phase 1: 코드 리뷰
