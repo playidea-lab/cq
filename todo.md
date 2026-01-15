@@ -122,28 +122,29 @@
 
 ---
 
-## Phase 4: 인증 시스템
+## Phase 4: 인증 시스템 (Supabase Auth)
 
-### T-401: Keycloak 서버 설정
-- **Scope**: infra/keycloak/
+### T-401: Supabase 프로젝트 설정
+- **Scope**: infra/supabase/
 - **DoD**:
-  - [ ] Docker Compose 구성
-  - [ ] Identity Provider 연동 (GitHub, Google)
+  - [ ] Supabase 프로젝트 생성
+  - [ ] Auth Provider 설정 (GitHub, Google)
+  - [ ] 환경변수 관리
 - **Refs**: [docs/cloud/DEVELOPMENT_PLAN.md](docs/cloud/DEVELOPMENT_PLAN.md)
 
 ### T-402: CLI 로그인 구현
 - **Scope**: c4/cli.py, c4/auth/
 - **DoD**:
-  - [ ] `c4 login` 명령
-  - [ ] 브라우저 OAuth 플로우
-  - [ ] JWT 토큰 저장
+  - [ ] `c4 login` 명령 (PKCE 플로우)
+  - [ ] 세션 저장 (~/.c4/session.json)
+  - [ ] `c4 logout` 명령
 - **Refs**: [docs/cloud/DEVELOPMENT_PLAN.md](docs/cloud/DEVELOPMENT_PLAN.md)
 
-### T-403: 토큰 관리
-- **Scope**: c4/auth/token.py
+### T-403: Supabase 클라이언트
+- **Scope**: c4/auth/supabase_client.py
 - **DoD**:
+  - [ ] supabase-py 클라이언트 래퍼
   - [ ] 토큰 자동 갱신
-  - [ ] 만료 시 재로그인 프롬프트
 - **Refs**: [docs/cloud/DEVELOPMENT_PLAN.md](docs/cloud/DEVELOPMENT_PLAN.md)
 
 ---
@@ -174,31 +175,55 @@
 
 ---
 
-## Phase 6: 팀 협업
+## Phase 6: 팀 협업 (Supabase)
 
-### T-601: Supabase StateStore
+### T-601: Supabase 스키마 구축
+- **Scope**: infra/supabase/migrations/
+- **DoD**:
+  - [ ] teams, team_members, projects 테이블
+  - [ ] c4_state, c4_tasks, c4_workers, c4_events 테이블
+  - [ ] RLS 정책 설정
+- **Refs**: [docs/cloud/DEVELOPMENT_PLAN.md](docs/cloud/DEVELOPMENT_PLAN.md)
+
+### T-602: SupabaseStateStore
 - **Scope**: c4/store/supabase.py
 - **DoD**:
   - [ ] `SupabaseStateStore` 클래스
+  - [ ] StateStore 프로토콜 준수
   - [ ] Realtime 구독 지원
 - **Refs**: [docs/cloud/DEVELOPMENT_PLAN.md](docs/cloud/DEVELOPMENT_PLAN.md), [c4/store/protocol.py](c4/store/protocol.py)
 
-### T-602: 중앙 Supervisor
+### T-603: SupabaseLockStore
+- **Scope**: c4/store/supabase.py
+- **DoD**:
+  - [ ] `SupabaseLockStore` 클래스
+  - [ ] Row-level lock
+  - [ ] TTL 자동 해제
+- **Refs**: [docs/cloud/DEVELOPMENT_PLAN.md](docs/cloud/DEVELOPMENT_PLAN.md)
+
+### T-604: 팀/프로젝트 관리
+- **Scope**: c4/cli.py, c4/team/
+- **DoD**:
+  - [ ] `c4 team create/list/invite` 명령
+  - [ ] `c4 init --team` 옵션
+- **Refs**: [docs/cloud/DEVELOPMENT_PLAN.md](docs/cloud/DEVELOPMENT_PLAN.md)
+
+### T-605: 중앙 Supervisor
 - **Scope**: c4/supervisor/cloud_supervisor.py
 - **DoD**:
-  - [ ] 클라우드에서 실행되는 Supervisor
+  - [ ] 팀장 개인키로 리뷰 실행
   - [ ] 체크포인트 리뷰 처리
   - [ ] GitHub PR 리뷰 코멘트
 - **Refs**: [docs/cloud/DEVELOPMENT_PLAN.md](docs/cloud/DEVELOPMENT_PLAN.md)
 
-### T-603: 태스크 분배 로직
+### T-606: 태스크 분배 로직 (Peer Review)
 - **Scope**: c4/daemon/task_distributor.py
 - **DoD**:
   - [ ] 우선순위 기반 태스크 할당
-  - [ ] 수정 태스크는 다른 워커에게 (Peer Review)
+  - [ ] 수정 태스크는 original_worker 제외
 - **Refs**: [docs/cloud/DEVELOPMENT_PLAN.md](docs/cloud/DEVELOPMENT_PLAN.md)
 
-### T-604: GitHub 권한 관리
+### T-607: GitHub 권한 관리
 - **Scope**: c4/integrations/github.py
 - **DoD**:
   - [ ] Organization 멤버십 확인
