@@ -34,6 +34,13 @@ from .agent_router import (
 from .backend import SupervisorBackend, SupervisorError, SupervisorResponse
 from .backend_factory import create_backend, create_backend_from_config_file
 from .claude_backend import ClaudeCliBackend
+from .cloud_supervisor import (
+    CloudSupervisor,
+    ReviewRequest,
+    ReviewResult,
+    ReviewStatus,
+    ReviewType,
+)
 from .litellm_backend import LiteLLMBackend
 from .mock_backend import MockBackend
 from .prompt import PromptRenderer
@@ -52,6 +59,12 @@ from .verifier import (
 __all__ = [
     # Main class
     "Supervisor",
+    # Cloud Supervisor
+    "CloudSupervisor",
+    "ReviewRequest",
+    "ReviewResult",
+    "ReviewStatus",
+    "ReviewType",
     # Backends
     "SupervisorBackend",
     "ClaudeCliBackend",

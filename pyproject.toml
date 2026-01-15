@@ -14,6 +14,8 @@ dependencies = [
     "jsonschema>=4.0.0",
     "networkx>=3.0.0",
     "litellm>=1.50.0",
+    "fastapi>=0.128.0",
+    "uvicorn>=0.40.0",
 ]
 
 [project.optional-dependencies]
