@@ -239,12 +239,14 @@
 - **DoD**:
   - [ ] Fly.io Machines 설정
   - [ ] 워커 Docker 이미지
+  - [ ] 동적 스케일링
 - **Refs**: [docs/cloud/DEVELOPMENT_PLAN.md](docs/cloud/DEVELOPMENT_PLAN.md)
 
 ### T-702: 샌드박스 환경
 - **Scope**: c4/sandbox/
 - **DoD**:
-  - [ ] 격리된 실행 환경
+  - [ ] gVisor 런타임
+  - [ ] 네트워크 Egress 제한
   - [ ] 리소스 제한
 - **Refs**: [docs/cloud/DEVELOPMENT_PLAN.md](docs/cloud/DEVELOPMENT_PLAN.md)
 
@@ -252,5 +254,34 @@
 - **Scope**: c4/billing/
 - **DoD**:
   - [ ] Stripe 연동
-  - [ ] 사용량 추적
+  - [ ] BYOK/Managed 선택
+  - [ ] 플랜별 제한
+- **Refs**: [docs/cloud/DEVELOPMENT_PLAN.md](docs/cloud/DEVELOPMENT_PLAN.md)
+
+### T-704: Managed API 프록시
+- **Scope**: c4/api/llm_proxy.py
+- **DoD**:
+  - [ ] LLM API 프록시
+  - [ ] 사용량 미터링
+  - [ ] Rate limiting
+- **Refs**: [docs/cloud/DEVELOPMENT_PLAN.md](docs/cloud/DEVELOPMENT_PLAN.md)
+
+### T-705: 결과물 전달
+- **Scope**: c4/api/delivery.py
+- **DoD**:
+  - [ ] ZIP/PR 생성
+  - [ ] 다운로드 링크
+- **Refs**: [docs/cloud/DEVELOPMENT_PLAN.md](docs/cloud/DEVELOPMENT_PLAN.md)
+
+### T-706: 클라우드 모니터링
+- **Scope**: infra/monitoring/
+- **DoD**:
+  - [ ] Sentry/Prometheus/Grafana
+  - [ ] 알림 설정
+- **Refs**: [docs/cloud/DEVELOPMENT_PLAN.md](docs/cloud/DEVELOPMENT_PLAN.md)
+
+### T-707: 클라우드 테스트
+- **Scope**: tests/e2e/
+- **DoD**:
+  - [ ] 워커/샌드박스/과금 테스트
 - **Refs**: [docs/cloud/DEVELOPMENT_PLAN.md](docs/cloud/DEVELOPMENT_PLAN.md)
