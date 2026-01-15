@@ -1,0 +1,8 @@
+# Environment files with secrets
+.env
+
+# TLS certificates
+certs/
+
+# Local development data
+data/

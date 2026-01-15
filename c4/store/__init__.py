@@ -11,6 +11,10 @@ Usage:
     from c4.store import SQLiteStateStore, SQLiteLockStore
     state_store = SQLiteStateStore(db_path)
     lock_store = SQLiteLockStore(db_path)
+
+    # Supabase (cloud)
+    from c4.store import SupabaseStateStore
+    state_store = SupabaseStateStore()  # Uses SUPABASE_URL/KEY env vars
 """
 
 from .exceptions import (
@@ -22,6 +26,7 @@ from .exceptions import (
 from .local_file import LocalFileLockStore, LocalFileStateStore
 from .protocol import LockStore, StateStore
 from .sqlite import SQLiteLockStore, SQLiteStateStore, SQLiteTaskStore
+from .supabase import SupabaseStateStore, create_supabase_store
 
 __all__ = [
     # Protocols
@@ -39,4 +44,7 @@ __all__ = [
     "SQLiteStateStore",
     "SQLiteLockStore",
     "SQLiteTaskStore",
+    # Implementations - Supabase
+    "SupabaseStateStore",
+    "create_supabase_store",
 ]
