@@ -1094,6 +1094,58 @@ def config_platform(
 
 
 # =============================================================================
+# UI Server Command
+# =============================================================================
+
+
+@c4_app.command("ui")
+def ui_server(
+    port: int = typer.Option(
+        4000,
+        "--port",
+        "-p",
+        help="Server port",
+    ),
+    host: str = typer.Option(
+        "localhost",
+        "--host",
+        "-h",
+        help="Server host",
+    ),
+    no_browser: bool = typer.Option(
+        False,
+        "--no-browser",
+        help="Don't open browser automatically",
+    ),
+):
+    """Start local UI server.
+
+    Starts a web-based dashboard for C4 at http://localhost:4000.
+
+    Examples:
+        c4 ui                   # Start on default port 4000
+        c4 ui --port 8080       # Use custom port
+        c4 ui --no-browser      # Don't open browser
+    """
+    from .ui import run_ui_server
+
+    console.print(f"[blue]Starting C4 UI server on http://{host}:{port}[/blue]")
+
+    if not no_browser:
+        console.print("[dim]Opening browser...[/dim]")
+
+    try:
+        run_ui_server(
+            port=port,
+            host=host,
+            open_browser=not no_browser,
+        )
+    except KeyboardInterrupt:
+        console.print()
+        console.print("[yellow]UI server stopped[/yellow]")
+
+
+# =============================================================================
 # Platform Setup Commands
 # =============================================================================
 

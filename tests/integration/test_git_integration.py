@@ -446,3 +446,213 @@ class TestTaskBranchWorkflow:
         )
         assert (project / "t2.py").exists()
         assert not (project / "t1.py").exists()
+
+
+class TestRollbackMethods:
+    """Test new GitOperations rollback methods."""
+
+    @pytest.fixture
+    def project_with_checkpoints(self, tmp_path: Path) -> tuple[Path, GitOperations]:
+        """Create a project with multiple checkpoints for rollback testing."""
+        project = tmp_path / "c4_project"
+        project.mkdir()
+
+        subprocess.run(["git", "init"], cwd=project, capture_output=True, check=True)
+        subprocess.run(
+            ["git", "config", "user.email", "test@c4.local"],
+            cwd=project,
+            capture_output=True,
+        )
+        subprocess.run(
+            ["git", "config", "user.name", "C4 Test"],
+            cwd=project,
+            capture_output=True,
+        )
+
+        (project / "README.md").write_text("# Project\n")
+        subprocess.run(["git", "add", "."], cwd=project, capture_output=True, check=True)
+        subprocess.run(
+            ["git", "commit", "-m", "Initial"],
+            cwd=project,
+            capture_output=True,
+            check=True,
+        )
+
+        git_ops = GitOperations(project)
+
+        # Create first checkpoint
+        (project / "v1.py").write_text("# Version 1\n")
+        git_ops.commit_task_completion("T-001", "Version 1")
+        git_ops.create_checkpoint_tag("CP-001", "Phase 1 complete")
+
+        # Create second checkpoint
+        (project / "v2.py").write_text("# Version 2\n")
+        git_ops.commit_task_completion("T-002", "Version 2")
+        git_ops.create_checkpoint_tag("CP-002", "Phase 2 complete")
+
+        # Add more work after last checkpoint
+        (project / "v3.py").write_text("# Version 3\n")
+        git_ops.commit_task_completion("T-003", "Version 3")
+
+        return project, git_ops
+
+    def test_get_tag_info(
+        self, project_with_checkpoints: tuple[Path, GitOperations]
+    ) -> None:
+        """Test getting detailed tag information."""
+        project, git_ops = project_with_checkpoints
+
+        info = git_ops.get_tag_info("c4/CP-001")
+
+        assert info is not None
+        assert "sha" in info
+        assert len(info["sha"]) == 7  # Short SHA
+        assert "date" in info
+        assert "message" in info
+        assert "Phase 1" in info["message"]
+
+    def test_get_tag_info_nonexistent(
+        self, project_with_checkpoints: tuple[Path, GitOperations]
+    ) -> None:
+        """Test getting info for non-existent tag returns None."""
+        project, git_ops = project_with_checkpoints
+
+        info = git_ops.get_tag_info("c4/CP-999")
+
+        assert info is None
+
+    def test_list_checkpoint_tags(
+        self, project_with_checkpoints: tuple[Path, GitOperations]
+    ) -> None:
+        """Test listing all checkpoint tags with details."""
+        project, git_ops = project_with_checkpoints
+
+        tags = git_ops.list_checkpoint_tags()
+
+        assert len(tags) == 2
+        # Should be sorted reverse (most recent first)
+        assert tags[0]["tag"] == "c4/CP-002"
+        assert tags[1]["tag"] == "c4/CP-001"
+
+        # Each tag should have all info
+        for tag_info in tags:
+            assert "tag" in tag_info
+            assert "sha" in tag_info
+            assert "date" in tag_info
+            assert "message" in tag_info
+
+    def test_list_checkpoint_tags_empty(self, tmp_path: Path) -> None:
+        """Test listing tags when no checkpoints exist."""
+        project = tmp_path / "empty_project"
+        project.mkdir()
+
+        subprocess.run(["git", "init"], cwd=project, capture_output=True, check=True)
+        subprocess.run(
+            ["git", "config", "user.email", "test@c4.local"],
+            cwd=project,
+            capture_output=True,
+        )
+        subprocess.run(
+            ["git", "config", "user.name", "C4 Test"],
+            cwd=project,
+            capture_output=True,
+        )
+        (project / "README.md").write_text("# Empty\n")
+        subprocess.run(["git", "add", "."], cwd=project, capture_output=True, check=True)
+        subprocess.run(
+            ["git", "commit", "-m", "Initial"],
+            cwd=project,
+            capture_output=True,
+            check=True,
+        )
+
+        git_ops = GitOperations(project)
+        tags = git_ops.list_checkpoint_tags()
+
+        assert tags == []
+
+    def test_rollback_to_checkpoint_hard(
+        self, project_with_checkpoints: tuple[Path, GitOperations]
+    ) -> None:
+        """Test hard rollback using the new method."""
+        project, git_ops = project_with_checkpoints
+
+        # Verify v3 exists before rollback
+        assert (project / "v3.py").exists()
+
+        # Rollback to CP-002 (hard)
+        result = git_ops.rollback_to_checkpoint("c4/CP-002", hard=True)
+
+        assert result.success is True
+        assert result.tag == "c4/CP-002"
+        assert result.sha is not None
+
+        # v3 should be gone (hard reset)
+        assert not (project / "v3.py").exists()
+        # v1 and v2 should still exist
+        assert (project / "v1.py").exists()
+        assert (project / "v2.py").exists()
+
+    def test_rollback_to_checkpoint_soft(
+        self, project_with_checkpoints: tuple[Path, GitOperations]
+    ) -> None:
+        """Test soft rollback keeps files staged."""
+        project, git_ops = project_with_checkpoints
+
+        # Rollback to CP-002 (soft)
+        result = git_ops.rollback_to_checkpoint("c4/CP-002", hard=False)
+
+        assert result.success is True
+
+        # v3 should still exist (soft reset)
+        assert (project / "v3.py").exists()
+
+        # But git status should show it as staged
+        status = subprocess.run(
+            ["git", "status", "--porcelain"],
+            cwd=project,
+            capture_output=True,
+            text=True,
+        )
+        assert "v3.py" in status.stdout
+
+    def test_rollback_to_earlier_checkpoint(
+        self, project_with_checkpoints: tuple[Path, GitOperations]
+    ) -> None:
+        """Test rollback to an earlier checkpoint."""
+        project, git_ops = project_with_checkpoints
+
+        # Rollback all the way to CP-001
+        result = git_ops.rollback_to_checkpoint("c4/CP-001", hard=True)
+
+        assert result.success is True
+
+        # Only v1 should exist
+        assert (project / "v1.py").exists()
+        assert not (project / "v2.py").exists()
+        assert not (project / "v3.py").exists()
+
+    def test_rollback_nonexistent_tag(
+        self, project_with_checkpoints: tuple[Path, GitOperations]
+    ) -> None:
+        """Test rollback to non-existent tag fails gracefully."""
+        project, git_ops = project_with_checkpoints
+
+        result = git_ops.rollback_to_checkpoint("c4/CP-999", hard=True)
+
+        assert result.success is False
+        assert "not found" in result.message.lower()
+
+    def test_rollback_preserves_other_checkpoints(
+        self, project_with_checkpoints: tuple[Path, GitOperations]
+    ) -> None:
+        """Test that rollback preserves checkpoint tags."""
+        project, git_ops = project_with_checkpoints
+
+        # Rollback to CP-001
+        git_ops.rollback_to_checkpoint("c4/CP-001", hard=True)
+
+        # Both checkpoint tags should still exist
+        tags = git_ops.get_checkpoint_tags()
+        assert "c4/CP-001" in tags
+        assert "c4/CP-002" in tags
