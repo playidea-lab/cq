@@ -1,13 +1,17 @@
 """Supervisor - Orchestrates checkpoint review with pluggable backends"""
 
+from __future__ import annotations
+
 import json
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from .backend import SupervisorBackend, SupervisorResponse
-from .claude_backend import ClaudeCliBackend
 from .prompt import PromptRenderer
 from .verifier import VerificationRunner
+
+if TYPE_CHECKING:
+    from ..models.config import LLMConfig
 
 
 class Supervisor:
@@ -15,15 +19,22 @@ class Supervisor:
     Supervisor for checkpoint review.
 
     Uses pluggable backends to support different LLM providers:
-    - ClaudeCliBackend (default)
-    - MockBackend (testing)
-    - Future: OpenAIBackend, CodexBackend, MCPBackend
+    - ClaudeCliBackend (default): Uses `claude -p` CLI with user's subscription
+    - LiteLLMBackend: 100+ providers via LiteLLM (OpenAI, Anthropic, Azure, etc.)
+    - MockBackend: For testing
+
+    Backend selection priority:
+    1. Explicitly provided backend
+    2. Created from llm_config parameter
+    3. Loaded from .c4/config.yaml
+    4. Default ClaudeCliBackend
     """
 
     def __init__(
         self,
         project_root: Path,
         backend: SupervisorBackend | None = None,
+        llm_config: LLMConfig | None = None,
         prompts_dir: Path | None = None,
         template_name: str = "supervisor.md.j2",
     ):
@@ -32,16 +43,56 @@ class Supervisor:
 
         Args:
             project_root: Project root directory
-            backend: Supervisor backend (default: ClaudeCliBackend)
+            backend: Explicit backend (takes precedence)
+            llm_config: LLM configuration (used if backend not provided)
             prompts_dir: Directory containing prompt templates
             template_name: Template file name
         """
         self.root = project_root
-        self.backend = backend or ClaudeCliBackend(working_dir=project_root)
+        self.backend = self._resolve_backend(backend, llm_config)
         self.renderer = PromptRenderer(
             prompts_dir=prompts_dir or (project_root / "prompts"),
             template_name=template_name,
         )
+
+    def _resolve_backend(
+        self,
+        backend: SupervisorBackend | None,
+        llm_config: LLMConfig | None,
+    ) -> SupervisorBackend:
+        """
+        Resolve backend using priority order.
+
+        Priority:
+        1. Explicitly provided backend
+        2. Created from llm_config parameter
+        3. Loaded from .c4/config.yaml
+        4. Default ClaudeCliBackend
+
+        Args:
+            backend: Explicit backend (takes precedence)
+            llm_config: LLM configuration
+
+        Returns:
+            Resolved SupervisorBackend instance
+        """
+        if backend is not None:
+            return backend
+
+        if llm_config is not None:
+            from .backend_factory import create_backend
+
+            return create_backend(llm_config, working_dir=self.root)
+
+        c4_dir = self.root / ".c4"
+        if c4_dir.exists():
+            from .backend_factory import create_backend_from_config_file
+
+            return create_backend_from_config_file(c4_dir, self.root)
+
+        from .claude_backend import ClaudeCliBackend
+
+        return ClaudeCliBackend(working_dir=self.root)
 
     def run_supervisor(
         self,
@@ -161,14 +212,9 @@ class Supervisor:
         Returns:
             Parsed SupervisorResponse
         """
-        # Delegate to backend if it has the method
-        if hasattr(self.backend, '_parse_decision'):
-            return self.backend._parse_decision(output)
+        from .response_parser import ResponseParser
 
-        # Otherwise use ClaudeCliBackend's parsing logic
-        from .claude_backend import ClaudeCliBackend
-        parser = ClaudeCliBackend()
-        return parser._parse_decision(output)
+        return ResponseParser.parse(output)
 
     # Backward compatibility aliases
     def run_supervisor_mock(self, *args, **kwargs) -> SupervisorResponse:

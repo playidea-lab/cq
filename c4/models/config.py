@@ -125,6 +125,90 @@ class BudgetConfig(BaseModel):
     max_failures_same_signature: int = 3
 
 
+# =============================================================================
+# LLM Configuration
+# =============================================================================
+
+
+class LLMConfig(BaseModel):
+    """LLM configuration for supervisor backend.
+
+    Supports two modes:
+    1. claude-cli (default): Uses `claude -p` CLI with user's Claude subscription
+    2. LiteLLM: Direct API calls to 100+ providers (OpenAI, Anthropic, etc.)
+
+    Example in config.yaml:
+        # Default - uses Claude Code (your subscription)
+        llm:
+          model: claude-cli
+
+        # OpenAI
+        llm:
+          model: gpt-4o
+          api_key_env: OPENAI_API_KEY
+
+        # Anthropic API (separate from Claude Code)
+        llm:
+          model: claude-3-opus-20240229
+          api_key_env: ANTHROPIC_API_KEY
+
+        # Ollama (local)
+        llm:
+          model: ollama/llama3
+          api_base: http://localhost:11434
+
+        # Azure OpenAI
+        llm:
+          model: azure/gpt-4o-deployment
+          api_base: https://my-resource.openai.azure.com
+          api_key_env: AZURE_OPENAI_API_KEY
+    """
+
+    model: str = Field(
+        default="claude-cli",
+        description="LiteLLM model identifier or 'claude-cli' for CLI backend",
+    )
+    api_key_env: str | None = Field(
+        default=None,
+        description="Environment variable name containing API key",
+    )
+    timeout: int = Field(
+        default=300,
+        ge=30,
+        le=600,
+        description="Request timeout in seconds",
+    )
+    max_retries: int = Field(
+        default=3,
+        ge=1,
+        le=10,
+        description="Maximum retry attempts",
+    )
+    temperature: float = Field(
+        default=0.0,
+        ge=0.0,
+        le=2.0,
+        description="Sampling temperature",
+    )
+    max_tokens: int = Field(
+        default=4096,
+        ge=256,
+        description="Maximum output tokens",
+    )
+    api_base: str | None = Field(
+        default=None,
+        description="Custom API base URL (for Azure, Ollama, etc.)",
+    )
+    drop_params: bool = Field(
+        default=True,
+        description="Drop unsupported parameters for the model",
+    )
+
+    def is_claude_cli(self) -> bool:
+        """Check if using Claude CLI backend (user's subscription)."""
+        return self.model == "claude-cli"
+
+
 class C4Config(BaseModel):
     """config.yaml schema"""
 
@@ -140,3 +224,4 @@ class C4Config(BaseModel):
     budgets: BudgetConfig = Field(default_factory=BudgetConfig)
     domain: str | None = None  # Project domain for default verifications
     agents: AgentConfig | None = None  # Custom agent configuration
+    llm: LLMConfig = Field(default_factory=LLMConfig)  # LLM provider configuration

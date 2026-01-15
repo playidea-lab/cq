@@ -53,7 +53,7 @@ def daemon_in_checkpoint(daemon_with_project):
     # Manually create checkpoint state for testing
     state.status = ProjectStatus.CHECKPOINT
     state.checkpoint.current = "CP1"
-    state.checkpoint.state = "reviewing"
+    state.checkpoint.state = "in_progress"  # Valid state: pending/in_progress/passed/failed
 
     # Set worker to idle
     if "worker-1" in state.workers:
@@ -192,7 +192,7 @@ class TestCheckpointQueueProcessing:
                 "c4.daemon.supervisor_loop.Supervisor"
             ) as mock_supervisor_class:
                 mock_supervisor = MagicMock()
-                mock_supervisor.run_supervisor.return_value = mock_response
+                mock_supervisor.run_supervisor_strict.return_value = mock_response
                 mock_supervisor_class.return_value = mock_supervisor
 
                 result = await loop._process_checkpoint_queue()

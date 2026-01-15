@@ -301,7 +301,7 @@ class TestSupervisorLoopAutomation:
                 "c4.daemon.supervisor_loop.Supervisor"
             ) as mock_supervisor_class:
                 mock_supervisor = MagicMock()
-                mock_supervisor.run_supervisor.return_value = mock_response
+                mock_supervisor.run_supervisor_strict.return_value = mock_response
                 mock_supervisor_class.return_value = mock_supervisor
 
                 # Process checkpoint

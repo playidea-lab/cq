@@ -6,8 +6,11 @@ from .checkpoint import CheckpointConfig, CheckpointState
 
 # Config models
 from .config import (
+    AgentChainDef,
+    AgentConfig,
     BudgetConfig,
     C4Config,
+    LLMConfig,
     ValidationConfig,
     VerificationConfig,
     VerificationItem,
@@ -73,8 +76,11 @@ __all__ = [
     "ScopeLock",
     "TaskQueue",
     # Config
+    "AgentChainDef",
+    "AgentConfig",
     "BudgetConfig",
     "C4Config",
+    "LLMConfig",
     "ValidationConfig",
     "VerificationConfig",
     "VerificationItem",

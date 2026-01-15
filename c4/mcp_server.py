@@ -66,6 +66,90 @@ def _use_graph_router() -> bool:
     return flag in ("true", "1", "yes", "on")
 
 
+def _get_workflow_guide(status: str) -> dict[str, str]:
+    """Get workflow guide for current project status.
+
+    Provides hints for next actions, useful for all MCP clients
+    (Claude Code, Codex CLI, Gemini CLI, etc.)
+
+    Args:
+        status: Current project status (e.g., "INIT", "EXECUTE")
+
+    Returns:
+        Dict with phase, next action, and hint for the LLM
+    """
+    guides: dict[str, dict[str, str]] = {
+        "INIT": {
+            "phase": "init",
+            "next": "discovery",
+            "hint": (
+                "Start planning: scan docs/*.md for requirements, "
+                "detect project domain, collect EARS requirements, "
+                "call c4_save_spec() for each feature, "
+                "then c4_discovery_complete() when done"
+            ),
+        },
+        "DISCOVERY": {
+            "phase": "discovery",
+            "next": "design",
+            "hint": (
+                "Continue collecting requirements using EARS patterns. "
+                "Call c4_save_spec() for each feature, "
+                "then c4_discovery_complete() to proceed to design"
+            ),
+        },
+        "DESIGN": {
+            "phase": "design",
+            "next": "plan",
+            "hint": (
+                "Define architecture options for each feature. "
+                "Call c4_save_design() with components and decisions, "
+                "then c4_design_complete() to proceed to planning"
+            ),
+        },
+        "PLAN": {
+            "phase": "plan",
+            "next": "execute",
+            "hint": (
+                "Tasks are ready. Call c4_start() to begin execution, "
+                "then use c4_get_task(worker_id) in a loop to process tasks"
+            ),
+        },
+        "EXECUTE": {
+            "phase": "execute",
+            "next": "worker_loop",
+            "hint": (
+                "Worker loop: call c4_get_task(worker_id) to get a task, "
+                "implement it, run validations with c4_run_validation(), "
+                "then c4_submit(task_id, commit_sha, validation_results)"
+            ),
+        },
+        "CHECKPOINT": {
+            "phase": "checkpoint",
+            "next": "review",
+            "hint": (
+                "Supervisor review in progress. "
+                "Wait for c4_ensure_supervisor() to complete the review, "
+                "or call c4_checkpoint() to manually process"
+            ),
+        },
+        "HALTED": {
+            "phase": "halted",
+            "next": "resume",
+            "hint": (
+                "Execution is paused. Call c4_start() to resume, "
+                "or review repair_queue for blocked tasks"
+            ),
+        },
+        "COMPLETE": {
+            "phase": "complete",
+            "next": "done",
+            "hint": "Project is complete. All tasks have been processed.",
+        },
+    }
+    return guides.get(status, {"phase": "unknown", "next": "unknown", "hint": "Unknown status"})
+
+
 class C4Daemon:
     """C4 Daemon - manages project state and task orchestration"""
 
@@ -719,13 +803,19 @@ Thumbs.db
     def c4_status(self) -> dict[str, Any]:
         """Get current C4 project status"""
         if self.state_machine is None:
-            return {"success": False, "error": "C4 not initialized", "initialized": False}
+            return {
+                "success": False,
+                "error": "C4 not initialized",
+                "initialized": False,
+                "workflow": _get_workflow_guide("INIT"),
+            }
 
         state = self.state_machine.state
+        status_value = state.status.value
         return {
             "initialized": True,
             "project_id": state.project_id,
-            "status": state.status.value,
+            "status": status_value,
             "execution_mode": state.execution_mode.value if state.execution_mode else None,
             "checkpoint": {
                 "current": state.checkpoint.current,
@@ -759,6 +849,8 @@ Thumbs.db
                 "checkpoint_queue_size": len(state.checkpoint_queue),
                 "repair_queue_size": len(state.repair_queue),
             },
+            # Workflow guide for all MCP clients (Claude Code, Codex, Gemini, etc.)
+            "workflow": _get_workflow_guide(status_value),
         }
 
     def c4_get_task(self, worker_id: str) -> TaskAssignment | None:
