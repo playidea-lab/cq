@@ -4,12 +4,16 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .chat import router as chat_router
+from .proxy import router as proxy_router
+from .rate_limit import RateLimitConfig, RateLimitMiddleware, RateLimitStore
 
 
 def create_app(
     title: str = "C4 Cloud API",
     version: str = "0.1.0",
     cors_origins: list[str] | None = None,
+    enable_rate_limit: bool = True,
+    rate_limit_config: RateLimitConfig | None = None,
 ) -> FastAPI:
     """Create and configure FastAPI application.
 
@@ -17,6 +21,8 @@ def create_app(
         title: API title
         version: API version
         cors_origins: Allowed CORS origins (default: localhost)
+        enable_rate_limit: Enable rate limiting middleware
+        rate_limit_config: Rate limit configuration
 
     Returns:
         Configured FastAPI app
@@ -47,8 +53,18 @@ def create_app(
         allow_headers=["*"],
     )
 
+    # Rate limiting middleware
+    if enable_rate_limit:
+        rate_store = RateLimitStore(config=rate_limit_config)
+        app.add_middleware(
+            RateLimitMiddleware,
+            store=rate_store,
+            exclude_paths=["/api/health", "/api/docs", "/api/redoc", "/api/openapi.json"],
+        )
+
     # Include routers
     app.include_router(chat_router, prefix="/api/chat", tags=["chat"])
+    app.include_router(proxy_router, prefix="/api/llm", tags=["llm-proxy"])
 
     # Health check endpoint
     @app.get("/api/health")
