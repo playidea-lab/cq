@@ -1094,6 +1094,88 @@ def config_platform(
 
 
 # =============================================================================
+# UI Server Command
+# =============================================================================
+
+
+@c4_app.command("ui")
+def ui_server(
+    port: int = typer.Option(
+        4000,
+        "--port",
+        "-p",
+        help="Port to run the UI server on",
+    ),
+    host: str = typer.Option(
+        "127.0.0.1",
+        "--host",
+        "-h",
+        help="Host to bind to",
+    ),
+    static_dir: Path = typer.Option(
+        None,
+        "--static",
+        "-s",
+        help="Static files directory to serve",
+    ),
+    open_browser: bool = typer.Option(
+        True,
+        "--open/--no-open",
+        help="Open browser automatically",
+    ),
+):
+    """Start the C4 Dashboard UI server.
+
+    Starts a local web server on localhost:4000 (default) that provides
+    a dashboard view of the C4 project status, tasks, and workers.
+
+    Examples:
+        c4 ui                     # Start on localhost:4000
+        c4 ui --port 8080         # Use custom port
+        c4 ui --no-open           # Don't open browser
+        c4 ui --static ./dist     # Serve static files from ./dist
+    """
+    from .ui import run_ui_server
+
+    project_path = Path.cwd()
+    c4_dir = project_path / ".c4"
+
+    if not c4_dir.exists():
+        console.print("[yellow]Warning:[/yellow] C4 not initialized in this directory")
+        console.print("[dim]The UI will show an error until you run 'c4 init'[/dim]")
+        console.print()
+
+    console.print(f"[green]Starting C4 Dashboard...[/green]")
+    console.print(f"[bold]URL:[/bold] http://{host}:{port}")
+    console.print()
+    console.print("[dim]Press Ctrl+C to stop the server[/dim]")
+    console.print()
+
+    # Open browser if requested
+    if open_browser:
+        import webbrowser
+        import threading
+
+        def open_browser_delayed():
+            import time
+            time.sleep(1)  # Wait for server to start
+            webbrowser.open(f"http://{host}:{port}")
+
+        threading.Thread(target=open_browser_delayed, daemon=True).start()
+
+    try:
+        run_ui_server(
+            host=host,
+            port=port,
+            project_root=project_path,
+            static_dir=static_dir,
+        )
+    except KeyboardInterrupt:
+        console.print()
+        console.print("[yellow]Server stopped[/yellow]")
+
+
+# =============================================================================
 # Platform Setup Commands
 # =============================================================================
 
