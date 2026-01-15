@@ -1,25 +1,114 @@
 # SupervisorBackend 확장 가이드
 
-이 문서는 커스텀 Supervisor 백엔드를 구현하는 방법을 설명합니다.
+이 문서는 Supervisor 백엔드의 구조와 커스텀 백엔드 구현 방법을 설명합니다.
 
 ## 개요
 
 C4는 플러그인 가능한 Supervisor 아키텍처를 제공합니다:
 
 ```
-┌─────────────────────────────────────┐
-│           Supervisor                │
-│              │                      │
-│              v                      │
-│    ┌─────────────────────┐          │
-│    │ SupervisorBackend   │ ◄─────── Protocol (ABC)
-│    │     (Protocol)      │          │
-│    └─────────────────────┘          │
-│              │                      │
-│     ┌────────┼────────┐             │
-│     v        v        v             │
-│ ClaudeCLI  OpenAI   Mock            │
-└─────────────────────────────────────┘
+┌─────────────────────────────────────────────────────┐
+│                    Supervisor                        │
+│                        │                             │
+│                        v                             │
+│    ┌────────────────────────────────────┐           │
+│    │       SupervisorBackend (ABC)       │          │
+│    └────────────────────────────────────┘           │
+│                        │                             │
+│         ┌──────────────┼──────────────┐             │
+│         v              v              v             │
+│    ClaudeCLI      LiteLLM         Mock             │
+│    (기본값)      (100+ LLM)     (테스트용)          │
+└─────────────────────────────────────────────────────┘
+```
+
+## 내장 백엔드
+
+### 1. ClaudeCliBackend (기본값)
+
+Claude Code CLI를 사용하는 기본 구현:
+
+```python
+from c4.supervisor import ClaudeCliBackend
+
+backend = ClaudeCliBackend(
+    working_dir=Path("."),
+    max_retries=3,
+    model=None,  # CLI 기본값 사용
+)
+```
+
+**특징:**
+- Claude Code 구독 사용
+- 별도 API 키 불필요
+- `claude -p` CLI 호출
+
+### 2. LiteLLMBackend (Multi-Provider)
+
+LiteLLM을 통해 100+ LLM Provider 지원:
+
+```python
+from c4.supervisor import LiteLLMBackend
+
+backend = LiteLLMBackend(
+    model="gpt-4o",
+    api_key="sk-...",
+    max_retries=3,
+    timeout=300,
+    temperature=0.0,
+    max_tokens=4096,
+)
+```
+
+**지원 Provider:**
+- OpenAI (gpt-4o, o1)
+- Anthropic (claude-3-opus)
+- Azure OpenAI
+- Ollama (로컬)
+- Bedrock, Groq, Together, ZhipuAI 등
+
+### 3. MockBackend (테스트용)
+
+테스트를 위한 Mock 구현:
+
+```python
+from c4.supervisor import MockBackend
+from c4.models import SupervisorDecision
+
+backend = MockBackend(
+    decision=SupervisorDecision.APPROVE,
+    notes="Auto-approved for testing",
+)
+```
+
+## Backend Factory
+
+설정 기반 백엔드 생성:
+
+```python
+from c4.supervisor import create_backend
+from c4.models import LLMConfig
+
+# OpenAI 백엔드 생성
+config = LLMConfig(model="gpt-4o", api_key_env="OPENAI_API_KEY")
+backend = create_backend(config)
+
+# Claude CLI 백엔드 (기본값)
+config = LLMConfig()  # model="claude-cli"
+backend = create_backend(config)
+```
+
+설정 파일에서 자동 로드:
+
+```python
+from c4.supervisor import create_backend_from_config_file
+from pathlib import Path
+
+# .c4/config.yaml에서 llm 섹션 읽어서 백엔드 생성
+backend = create_backend_from_config_file(
+    c4_dir=Path(".c4"),
+    working_dir=Path(".")
+)
 ```
 
 ## Protocol 정의
@@ -27,33 +116,24 @@ C4는 플러그인 가능한 Supervisor 아키텍처를 제공합니다:
 ### SupervisorResponse
 
 ```python
-# c4/supervisor/backend.py
-
 from dataclasses import dataclass
 from c4.models import SupervisorDecision
 
 @dataclass
 class SupervisorResponse:
     """Supervisor 리뷰 결과"""
-
     decision: SupervisorDecision  # APPROVE, REQUEST_CHANGES, REPLAN
     checkpoint_id: str            # 리뷰한 체크포인트 ID
     notes: str                    # 리뷰 코멘트
-    required_changes: list[str]   # 요청된 변경사항 (REQUEST_CHANGES 시)
+    required_changes: list[str]   # 요청된 변경사항
 
     @classmethod
     def from_dict(cls, data: dict) -> "SupervisorResponse":
         """딕셔너리에서 생성"""
-        decision = SupervisorDecision(data["decision"].upper())
-        return cls(
-            decision=decision,
-            checkpoint_id=data.get("checkpoint", ""),
-            notes=data.get("notes", ""),
-            required_changes=data.get("required_changes", []),
-        )
+        ...
 ```
 
-### SupervisorBackend
+### SupervisorBackend (ABC)
 
 ```python
 from abc import ABC, abstractmethod
@@ -69,257 +149,27 @@ class SupervisorBackend(ABC):
         bundle_dir: Path,
         timeout: int = 300,
     ) -> SupervisorResponse:
-        """
-        Supervisor 리뷰를 실행합니다.
-
-        Args:
-            prompt: 렌더링된 리뷰 프롬프트
-            bundle_dir: 번들 디렉토리 (아티팩트 저장용)
-            timeout: 타임아웃 (초)
-
-        Returns:
-            SupervisorResponse (결정, 노트, 변경사항)
-
-        Raises:
-            SupervisorError: 리뷰 실패 시
-        """
+        """Supervisor 리뷰를 실행합니다."""
         pass
 
     @property
     @abstractmethod
     def name(self) -> str:
-        """백엔드 이름 (로깅/디버깅용)"""
+        """백엔드 이름 (로깅용)"""
         pass
 
     def save_response(
         self, bundle_dir: Path, response: SupervisorResponse
     ) -> None:
         """응답을 번들 디렉토리에 저장 (기본 구현)"""
-        import json
-        (bundle_dir / "response.json").write_text(
-            json.dumps(response.to_dict(), indent=2)
-        )
-```
-
-## 기존 구현 예시
-
-### ClaudeCliBackend
-
-Claude CLI를 사용하는 기본 구현:
-
-```python
-# c4/supervisor/claude_backend.py
-
-class ClaudeCliBackend(SupervisorBackend):
-    def __init__(
-        self,
-        working_dir: Path | None = None,
-        max_retries: int = 3,
-        model: str | None = None,
-    ):
-        self.working_dir = working_dir or Path.cwd()
-        self.max_retries = max_retries
-        self.model = model
-
-    @property
-    def name(self) -> str:
-        return "claude-cli"
-
-    def run_review(
-        self,
-        prompt: str,
-        bundle_dir: Path,
-        timeout: int = 300,
-    ) -> SupervisorResponse:
-        # 프롬프트 저장
-        (bundle_dir / "prompt.md").write_text(prompt)
-
-        # Claude CLI 실행
-        cmd = ["claude", "-p", prompt]
-        if self.model:
-            cmd.extend(["--model", self.model])
-
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-            cwd=self.working_dir,
-        )
-
-        # 응답 파싱
-        response = self._parse_decision(result.stdout)
-        self.save_response(bundle_dir, response)
-
-        return response
-```
-
-### MockBackend
-
-테스트용 Mock 구현:
-
-```python
-# c4/supervisor/mock_backend.py
-
-class MockBackend(SupervisorBackend):
-    def __init__(
-        self,
-        decision: SupervisorDecision = SupervisorDecision.APPROVE,
-        notes: str = "Auto-approved by mock",
-    ):
-        self._decision = decision
-        self._notes = notes
-
-    @property
-    def name(self) -> str:
-        return "mock"
-
-    def run_review(
-        self,
-        prompt: str,
-        bundle_dir: Path,
-        timeout: int = 300,
-    ) -> SupervisorResponse:
-        response = SupervisorResponse(
-            decision=self._decision,
-            checkpoint_id="",  # Supervisor가 설정
-            notes=self._notes,
-            required_changes=[],
-        )
-        self.save_response(bundle_dir, response)
-        return response
-```
-
-## 커스텀 Backend 구현하기
-
-### 예시: OpenAI Backend
-
-```python
-# my_project/openai_backend.py
-
-import json
-from pathlib import Path
-from openai import OpenAI
-from c4.supervisor.backend import (
-    SupervisorBackend,
-    SupervisorResponse,
-    SupervisorError,
-)
-
-class OpenAIBackend(SupervisorBackend):
-    """OpenAI GPT-4를 사용하는 Supervisor 백엔드"""
-
-    def __init__(
-        self,
-        api_key: str | None = None,
-        model: str = "gpt-4-turbo-preview",
-    ):
-        self.client = OpenAI(api_key=api_key)
-        self.model = model
-
-    @property
-    def name(self) -> str:
-        return f"openai-{self.model}"
-
-    def run_review(
-        self,
-        prompt: str,
-        bundle_dir: Path,
-        timeout: int = 300,
-    ) -> SupervisorResponse:
-        # 프롬프트 저장
-        (bundle_dir / "prompt.md").write_text(prompt)
-
-        try:
-            # OpenAI API 호출
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": (
-                            "You are a code reviewer. "
-                            "Respond with a JSON object containing: "
-                            "decision (APPROVE/REQUEST_CHANGES/REPLAN), "
-                            "notes (your review comments), "
-                            "required_changes (list of changes if any)."
-                        ),
-                    },
-                    {"role": "user", "content": prompt},
-                ],
-                response_format={"type": "json_object"},
-                timeout=timeout,
-            )
-
-            # 응답 파싱
-            content = response.choices[0].message.content
-            data = json.loads(content)
-            result = SupervisorResponse.from_dict(data)
-
-            # 응답 저장
-            self.save_response(bundle_dir, result)
-
-            return result
-
-        except Exception as e:
-            raise SupervisorError(f"OpenAI review failed: {e}")
-```
-
-### 예시: GitHub Copilot Backend
-
-```python
-# my_project/copilot_backend.py
-
-import subprocess
-from pathlib import Path
-from c4.supervisor.backend import (
-    SupervisorBackend,
-    SupervisorResponse,
-    SupervisorError,
-)
-
-class CopilotBackend(SupervisorBackend):
-    """GitHub Copilot CLI를 사용하는 Supervisor 백엔드"""
-
-    @property
-    def name(self) -> str:
-        return "copilot"
-
-    def run_review(
-        self,
-        prompt: str,
-        bundle_dir: Path,
-        timeout: int = 300,
-    ) -> SupervisorResponse:
-        # 프롬프트 저장
-        (bundle_dir / "prompt.md").write_text(prompt)
-
-        # Copilot CLI 실행 (예시)
-        result = subprocess.run(
-            ["gh", "copilot", "suggest", "-t", "code"],
-            input=prompt,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-        )
-
-        # 응답 파싱 (Copilot 출력 형식에 맞게 구현)
-        response = self._parse_response(result.stdout)
-        self.save_response(bundle_dir, response)
-
-        return response
-
-    def _parse_response(self, output: str) -> SupervisorResponse:
-        # Copilot 출력을 파싱하여 SupervisorResponse 생성
-        # 실제 구현은 Copilot 출력 형식에 따라 다름
         ...
 ```
+
+## 커스텀 Backend 구현
 
 ### 예시: Human Review Backend
 
 ```python
-# my_project/human_backend.py
-
 from pathlib import Path
 from c4.supervisor.backend import (
     SupervisorBackend,
@@ -329,7 +179,7 @@ from c4.supervisor.backend import (
 from c4.models import SupervisorDecision
 
 class HumanReviewBackend(SupervisorBackend):
-    """사람이 직접 리뷰하는 백엔드 (CLI 입력)"""
+    """사람이 직접 리뷰하는 백엔드"""
 
     @property
     def name(self) -> str:
@@ -357,7 +207,7 @@ class HumanReviewBackend(SupervisorBackend):
 
         changes = []
         if decision_str == "REQUEST_CHANGES":
-            print("\nRequired changes (one per line, empty to finish):")
+            print("\nRequired changes (empty to finish):")
             while True:
                 change = input("> ").strip()
                 if not change:
@@ -380,34 +230,120 @@ class HumanReviewBackend(SupervisorBackend):
         return response
 ```
 
-## Backend 사용하기
+### 예시: Webhook Backend
 
-### Supervisor에 주입
+```python
+import requests
+from pathlib import Path
+from c4.supervisor.backend import (
+    SupervisorBackend,
+    SupervisorResponse,
+    SupervisorError,
+)
+
+class WebhookBackend(SupervisorBackend):
+    """외부 서비스로 리뷰 요청을 보내는 백엔드"""
+
+    def __init__(self, webhook_url: str, api_key: str):
+        self.webhook_url = webhook_url
+        self.api_key = api_key
+
+    @property
+    def name(self) -> str:
+        return "webhook"
+
+    def run_review(
+        self,
+        prompt: str,
+        bundle_dir: Path,
+        timeout: int = 300,
+    ) -> SupervisorResponse:
+        (bundle_dir / "prompt.md").write_text(prompt)
+
+        try:
+            response = requests.post(
+                self.webhook_url,
+                headers={"Authorization": f"Bearer {self.api_key}"},
+                json={"prompt": prompt},
+                timeout=timeout,
+            )
+            response.raise_for_status()
+            data = response.json()
+
+            result = SupervisorResponse.from_dict(data)
+            self.save_response(bundle_dir, result)
+            return result
+
+        except Exception as e:
+            raise SupervisorError(f"Webhook failed: {e}")
+```
+
+## ResponseParser
+
+공통 JSON 파싱 로직:
+
+```python
+from c4.supervisor import ResponseParser
+
+# LLM 출력에서 응답 파싱
+output = '''
+```json
+{"decision": "APPROVE", "checkpoint": "CP-001", "notes": "LGTM"}
+```
+'''
+
+response = ResponseParser.parse(output)
+# SupervisorResponse(decision=APPROVE, ...)
+```
+
+**파싱 전략:**
+1. ```json 코드 블록에서 JSON 추출
+2. `"decision"` 키가 있는 raw JSON 찾기
+3. 전체 출력을 JSON으로 파싱
+
+## Supervisor 사용
+
+### 백엔드 직접 주입
+
+```python
+from c4.supervisor import Supervisor, LiteLLMBackend
+
+backend = LiteLLMBackend(model="gpt-4o", api_key="sk-...")
+supervisor = Supervisor(
+    project_root=Path("."),
+    backend=backend,
+)
+
+response = supervisor.run_supervisor(bundle_dir)
+```
+
+### LLMConfig로 주입
 
 ```python
 from c4.supervisor import Supervisor
-from my_project.openai_backend import OpenAIBackend
+from c4.models import LLMConfig
 
-# 커스텀 백엔드 생성
-backend = OpenAIBackend(model="gpt-4")
-
-# Supervisor에 주입
+config = LLMConfig(model="gpt-4o", api_key_env="OPENAI_API_KEY")
 supervisor = Supervisor(
-    state_machine=daemon.state_machine,
-    backend=backend,
+    project_root=Path("."),
+    llm_config=config,
 )
 ```
 
-### 설정 파일로 전환
+### 설정 파일 자동 로드
 
-`.c4/config.yaml`:
-```yaml
-supervisor:
-  backend: openai
-  openai:
-    model: gpt-4-turbo-preview
-    # api_key는 환경 변수에서
+```python
+from c4.supervisor import Supervisor
+
+# .c4/config.yaml의 llm 섹션 자동 로드
+supervisor = Supervisor(project_root=Path("."))
 ```
+
+**우선순위:**
+1. `backend` 파라미터 (명시적)
+2. `llm_config` 파라미터
+3. `.c4/config.yaml`의 llm 섹션
+4. 기본값: ClaudeCliBackend
 
 ## 응답 형식
 
@@ -422,12 +358,12 @@ Supervisor는 다음 JSON 형식으로 응답해야 합니다:
 }
 ```
 
-REQUEST_CHANGES 예시:
+**REQUEST_CHANGES 예시:**
 ```json
 {
   "decision": "REQUEST_CHANGES",
   "checkpoint": "CP-001",
-  "notes": "몇 가지 수정이 필요합니다.",
+  "notes": "수정이 필요합니다.",
   "required_changes": [
     "테스트 커버리지 80% 이상으로 증가",
     "에러 핸들링 추가"
@@ -437,33 +373,25 @@ REQUEST_CHANGES 예시:
 
 ## 테스트
 
-### Backend 테스트 패턴
-
 ```python
-# tests/test_my_backend.py
-
 import pytest
 from pathlib import Path
-from my_project.openai_backend import OpenAIBackend
 from c4.models import SupervisorDecision
 
 @pytest.fixture
 def backend():
-    return OpenAIBackend()
+    return MyCustomBackend()
 
-@pytest.fixture
-def bundle_dir(tmp_path):
-    return tmp_path / "bundle"
-
-class TestOpenAIBackend:
+class TestMyBackend:
     def test_name(self, backend):
-        assert "openai" in backend.name
+        assert backend.name == "my-backend"
 
-    def test_review_approve(self, backend, bundle_dir):
+    def test_review_approve(self, backend, tmp_path):
+        bundle_dir = tmp_path / "bundle"
         bundle_dir.mkdir()
 
         response = backend.run_review(
-            prompt="Review this: LGTM",
+            prompt="Review this code",
             bundle_dir=bundle_dir,
             timeout=30,
         )
@@ -476,25 +404,21 @@ class TestOpenAIBackend:
 
 ### 1. 에러 처리
 - 네트워크 오류, 타임아웃 처리
-- 재시도 로직 (ClaudeCliBackend 참조)
+- 재시도 로직 구현
 - `SupervisorError` 발생
 
-### 2. 응답 파싱
-- JSON 형식 강제 (response_format 사용)
-- 다양한 출력 형식 처리
-- 실패 시 명확한 에러 메시지
+### 2. 비용 관리
+- API 호출 비용 모니터링
+- LiteLLMBackend의 `last_usage` 속성 활용
+- 캐싱 전략 고려
 
-### 3. 비용 관리
-- API 호출 비용 고려
-- 캐싱 전략
-- 토큰 사용량 모니터링
-
-### 4. 보안
-- API 키 환경 변수 사용
+### 3. 보안
+- API 키는 환경 변수 사용
 - 프롬프트 인젝션 방지
 - 민감 정보 로깅 주의
 
 ## 다음 단계
 
+- [LLM 설정](../user-guide/LLM-설정.md) - Provider별 설정 방법
 - [StateStore 확장](StateStore-확장.md) - 커스텀 저장소 구현
 - [아키텍처](아키텍처.md) - 전체 시스템 구조

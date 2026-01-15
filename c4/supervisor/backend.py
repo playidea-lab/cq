@@ -8,6 +8,20 @@ from ..models import SupervisorDecision
 
 
 @dataclass
+class TokenUsage:
+    """Token usage statistics from LLM call.
+
+    Tracks token counts and optionally estimated cost.
+    Used by LiteLLM and other backends for usage monitoring.
+    """
+
+    prompt_tokens: int
+    completion_tokens: int
+    total_tokens: int
+    cost: float | None = None
+
+
+@dataclass
 class SupervisorResponse:
     """Response from Supervisor review"""
 

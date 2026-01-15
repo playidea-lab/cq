@@ -1,5 +1,13 @@
 """Agent Routing System - Domain-based agent selection and chaining.
 
+.. deprecated::
+    This module is deprecated in favor of c4.supervisor.agent_graph.router.GraphRouter.
+    Set C4_USE_GRAPH_ROUTER=true (default) to use the new GraphRouter with:
+    - Skill-based agent selection
+    - Rule engine with overrides and chain extensions
+    - Dynamic chain building based on task keywords
+    - Graph-based handoff relationships
+
 This module provides automatic agent selection based on project domain,
 with support for agent chaining (sequential execution of multiple agents).
 
@@ -16,10 +24,14 @@ Usage:
     from c4.models.config import AgentConfig
     router = AgentRouter(config=my_agent_config)
     agent = router.get_recommended_agent("my-custom-domain")
+
+Note:
+    Consider migrating to GraphRouter for advanced routing features.
 """
 
 from __future__ import annotations
 
+import warnings
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
@@ -207,6 +219,10 @@ def get_recommended_agent(domain: str | Domain | None) -> AgentChainConfig:
     """
     Get recommended agent chain configuration for a domain.
 
+    .. deprecated::
+        Use c4.supervisor.agent_graph.GraphRouter.get_recommended_agent() instead.
+        Set C4_USE_GRAPH_ROUTER=true (default) for advanced routing features.
+
     Args:
         domain: Domain string or Domain enum, or None for unknown
 
@@ -220,6 +236,12 @@ def get_recommended_agent(domain: str | Domain | None) -> AgentChainConfig:
         >>> config.chain
         ['frontend-developer', 'test-automator', 'code-reviewer']
     """
+    warnings.warn(
+        "get_recommended_agent is deprecated. Use GraphRouter.get_recommended_agent() "
+        "with C4_USE_GRAPH_ROUTER=true (default) for advanced routing.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     if domain is None:
         return DOMAIN_AGENT_MAP["unknown"]
 
@@ -450,6 +472,15 @@ def build_chain_prompt(
 class AgentRouter:
     """Extensible agent router with YAML-based configuration support.
 
+    .. deprecated::
+        Use c4.supervisor.agent_graph.GraphRouter instead for advanced features:
+        - Skill-based agent selection
+        - Rule engine with overrides and chain extensions
+        - Dynamic chain building based on task keywords
+        - Graph-based handoff relationships
+
+        Set C4_USE_GRAPH_ROUTER=true (default) to use GraphRouter.
+
     Merges user-defined agent configurations (from config.yaml) with
     built-in defaults, allowing project-specific customization.
 
@@ -471,9 +502,18 @@ class AgentRouter:
     def __init__(self, config: AgentConfig | None = None):
         """Initialize router with optional custom configuration.
 
+        .. deprecated::
+            Consider using GraphRouter instead for advanced features.
+
         Args:
             config: AgentConfig from config.yaml. If None, uses built-in defaults.
         """
+        warnings.warn(
+            "AgentRouter is deprecated. Use GraphRouter with C4_USE_GRAPH_ROUTER=true (default) "
+            "for skill-based matching, rule engine, and dynamic chain building.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         self._config = config
         self._merged_chains: dict[str, AgentChainConfig] | None = None
         self._merged_overrides: dict[str, str] | None = None

@@ -13,6 +13,7 @@ dependencies = [
     "jinja2>=3.0.0",
     "jsonschema>=4.0.0",
     "networkx>=3.0.0",
+    "litellm>=1.50.0",
 ]
 
 [project.optional-dependencies]
@@ -41,10 +42,30 @@ select = ["E", "F", "I", "W"]
 asyncio_mode = "auto"
 testpaths = ["tests"]
 
+[tool.coverage.run]
+source = ["c4"]
+omit = [
+    "*/tests/*",
+    "*/__pycache__/*",
+    "c4/cli.py",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+]
+fail_under = 80
+show_missing = true
+
 [dependency-groups]
 dev = [
     "mypy>=1.19.1",
     "pytest>=9.0.2",
+    "pytest-asyncio>=1.3.0",
+    "pytest-cov>=7.0.0",
     "ruff>=0.14.10",
     "types-jsonschema>=4.26.0.20260109",
     "types-networkx>=3.6.1.20251220",

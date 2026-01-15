@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from c4.mcp_server import C4Daemon
+from c4.mcp_server import C4Daemon, _get_workflow_guide
 from c4.models import ProjectStatus, Task
 
 
@@ -91,6 +91,48 @@ class TestDaemonInitialization:
         assert d2.state_machine.state.status == ProjectStatus.DISCOVERY
 
 
+class TestWorkflowGuide:
+    """Test _get_workflow_guide function for multi-LLM CLI support"""
+
+    def test_workflow_guide_init(self):
+        """Test workflow guide for INIT status"""
+        guide = _get_workflow_guide("INIT")
+        assert guide["phase"] == "init"
+        assert guide["next"] == "discovery"
+        assert "hint" in guide
+        assert "c4_save_spec" in guide["hint"]
+
+    def test_workflow_guide_discovery(self):
+        """Test workflow guide for DISCOVERY status"""
+        guide = _get_workflow_guide("DISCOVERY")
+        assert guide["phase"] == "discovery"
+        assert guide["next"] == "design"
+        assert "c4_discovery_complete" in guide["hint"]
+
+    def test_workflow_guide_execute(self):
+        """Test workflow guide for EXECUTE status"""
+        guide = _get_workflow_guide("EXECUTE")
+        assert guide["phase"] == "execute"
+        assert guide["next"] == "worker_loop"
+        assert "c4_get_task" in guide["hint"]
+        assert "c4_submit" in guide["hint"]
+
+    def test_workflow_guide_all_statuses(self):
+        """Test that all project statuses have workflow guides"""
+        statuses = ["INIT", "DISCOVERY", "DESIGN", "PLAN", "EXECUTE", "CHECKPOINT", "HALTED", "COMPLETE"]
+        for status in statuses:
+            guide = _get_workflow_guide(status)
+            assert "phase" in guide
+            assert "next" in guide
+            assert "hint" in guide
+
+    def test_workflow_guide_unknown_status(self):
+        """Test workflow guide for unknown status"""
+        guide = _get_workflow_guide("UNKNOWN")
+        assert guide["phase"] == "unknown"
+        assert "hint" in guide
+
+
 class TestC4Status:
     """Test c4_status tool"""
 
@@ -105,6 +147,10 @@ class TestC4Status:
         assert "queue" in status
         assert "workers" in status
         assert "metrics" in status
+        # Workflow guide for multi-LLM CLI support
+        assert "workflow" in status
+        assert status["workflow"]["phase"] == "discovery"
+        assert "hint" in status["workflow"]
 
     def test_status_uninitialized(self, temp_project):
         """Test status on uninitialized project"""
@@ -112,6 +158,9 @@ class TestC4Status:
         status = daemon.c4_status()
 
         assert status["initialized"] is False
+        # Even uninitialized projects should have workflow guide
+        assert "workflow" in status
+        assert status["workflow"]["phase"] == "init"
 
 
 class TestTaskManagement:

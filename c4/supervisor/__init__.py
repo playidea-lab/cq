@@ -11,6 +11,11 @@ Usage:
     backend = ClaudeCliBackend(model="claude-3-opus")
     supervisor = Supervisor(project_root, backend=backend)
 
+    # With LLM config (OpenAI, Anthropic, etc.)
+    from c4.models import LLMConfig
+    config = LLMConfig(model="gpt-4o", api_key_env="OPENAI_API_KEY")
+    supervisor = Supervisor(project_root, llm_config=config)
+
     # For testing
     backend = MockBackend(decision=SupervisorDecision.APPROVE)
     supervisor = Supervisor(project_root, backend=backend)
@@ -27,9 +32,12 @@ from .agent_router import (
     get_recommended_agent,
 )
 from .backend import SupervisorBackend, SupervisorError, SupervisorResponse
+from .backend_factory import create_backend, create_backend_from_config_file
 from .claude_backend import ClaudeCliBackend
+from .litellm_backend import LiteLLMBackend
 from .mock_backend import MockBackend
 from .prompt import PromptRenderer
+from .response_parser import ResponseParser
 from .supervisor import Supervisor
 from .verifier import (
     CliVerifier,
@@ -47,11 +55,16 @@ __all__ = [
     # Backends
     "SupervisorBackend",
     "ClaudeCliBackend",
+    "LiteLLMBackend",
     "MockBackend",
+    # Backend factory
+    "create_backend",
+    "create_backend_from_config_file",
     # Supporting classes
     "SupervisorResponse",
     "SupervisorError",
     "PromptRenderer",
+    "ResponseParser",
     # Verification
     "Verifier",
     "VerifierRegistry",

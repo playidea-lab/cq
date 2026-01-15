@@ -1,11 +1,11 @@
 """Claude CLI Backend - Uses `claude -p` for supervisor review"""
 
-import json
 import re
 import subprocess
 from pathlib import Path
 
 from .backend import SupervisorBackend, SupervisorError, SupervisorResponse
+from .response_parser import ResponseParser
 
 # Patterns for sensitive information to mask
 SENSITIVE_PATTERNS = [
@@ -132,65 +132,8 @@ class ClaudeCliBackend(SupervisorBackend):
         raise last_error or SupervisorError("Supervisor failed after retries")
 
     def _parse_decision(self, output: str) -> SupervisorResponse:
-        """Parse supervisor decision from Claude output"""
-        # Method 1: Try to find JSON in code block
-        match = re.search(r"```json\s*(\{.*?\})\s*```", output, re.DOTALL)
-        if match:
-            try:
-                data = json.loads(match.group(1))
-                return SupervisorResponse.from_dict(data)
-            except (json.JSONDecodeError, ValueError):
-                pass
+        """Parse supervisor decision from Claude output.
 
-        # Method 2: Try to find raw JSON with decision key
-        match = re.search(r'\{\s*"decision"\s*:.*?\}', output, re.DOTALL)
-        if match:
-            try:
-                json_str = self._extract_json_object(output, match.start())
-                data = json.loads(json_str)
-                return SupervisorResponse.from_dict(data)
-            except (json.JSONDecodeError, ValueError):
-                pass
-
-        # Method 3: Try to parse the entire output as JSON
-        try:
-            data = json.loads(output.strip())
-            return SupervisorResponse.from_dict(data)
-        except (json.JSONDecodeError, ValueError):
-            pass
-
-        raise ValueError(f"No valid JSON found in supervisor output: {output[:200]}...")
-
-    def _extract_json_object(self, text: str, start: int, max_length: int = 10000) -> str:
-        """Extract a complete JSON object starting at given position"""
-        depth = 0
-        in_string = False
-        escape = False
-        result = []
-
-        for i, char in enumerate(text[start:start + max_length], start):
-            result.append(char)
-
-            if escape:
-                escape = False
-                continue
-
-            if char == "\\":
-                escape = True
-                continue
-
-            if char == '"' and not escape:
-                in_string = not in_string
-                continue
-
-            if in_string:
-                continue
-
-            if char == "{":
-                depth += 1
-            elif char == "}":
-                depth -= 1
-                if depth == 0:
-                    return "".join(result)
-
-        return "".join(result)
+        Delegates to ResponseParser for consistent parsing across backends.
+        """
+        return ResponseParser.parse(output)
