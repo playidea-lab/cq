@@ -1145,7 +1145,7 @@ def ui_server(
         console.print("[dim]The UI will show an error until you run 'c4 init'[/dim]")
         console.print()
 
-    console.print(f"[green]Starting C4 Dashboard...[/green]")
+    console.print("[green]Starting C4 Dashboard...[/green]")
     console.print(f"[bold]URL:[/bold] http://{host}:{port}")
     console.print()
     console.print("[dim]Press Ctrl+C to stop the server[/dim]")
@@ -1153,8 +1153,8 @@ def ui_server(
 
     # Open browser if requested
     if open_browser:
-        import webbrowser
         import threading
+        import webbrowser
 
         def open_browser_delayed():
             import time
@@ -1173,6 +1173,185 @@ def ui_server(
     except KeyboardInterrupt:
         console.print()
         console.print("[yellow]Server stopped[/yellow]")
+
+
+# =============================================================================
+# Connect Command (WebSocket)
+# =============================================================================
+
+
+@c4_app.command("connect")
+def connect_cmd(
+    host: str = typer.Option(
+        "127.0.0.1",
+        "--host",
+        "-h",
+        help="Host to connect to",
+    ),
+    port: int = typer.Option(
+        4000,
+        "--port",
+        "-p",
+        help="Port to connect to",
+    ),
+    subscribe: list[str] = typer.Option(
+        None,
+        "--subscribe",
+        "-s",
+        help="Topics to subscribe to (status, tasks, workers, checkpoints)",
+    ),
+    watch: bool = typer.Option(
+        False,
+        "--watch",
+        "-w",
+        help="Watch mode - show real-time updates",
+    ),
+    once: bool = typer.Option(
+        False,
+        "--once",
+        help="Connect, get status once, and exit",
+    ),
+):
+    """Connect to a C4 daemon via WebSocket.
+
+    Establishes a WebSocket connection to receive real-time updates
+    from a running C4 daemon.
+
+    Examples:
+        c4 connect                        # Connect to localhost:4000
+        c4 connect --host 192.168.1.10    # Connect to remote host
+        c4 connect --watch                # Watch mode with live updates
+        c4 connect -s status -s tasks     # Subscribe to specific topics
+        c4 connect --once                 # Get status and exit
+    """
+    import asyncio
+
+    from .connection import ConnectionConfig, WebSocketClient
+
+    # Determine topics to subscribe
+    topics = list(subscribe) if subscribe else ["status"]
+
+    async def run_connection():
+        config = ConnectionConfig(
+            host=host,
+            port=port,
+            reconnect=watch,
+            max_reconnect_attempts=3 if watch else 1,
+        )
+
+        client = WebSocketClient(config)
+
+        # Message handlers
+        def on_status(msg):
+            console.print()
+            console.print("[bold cyan]Status Update:[/bold cyan]")
+            _print_status_payload(msg.payload)
+
+        def on_task(msg):
+            console.print()
+            console.print("[bold green]Task Update:[/bold green]")
+            payload = msg.payload
+            task_id = payload.get("task_id", "unknown")
+            action = payload.get("action", "update")
+            console.print(f"  Task: {task_id}")
+            console.print(f"  Action: {action}")
+            if "worker_id" in payload:
+                console.print(f"  Worker: {payload['worker_id']}")
+
+        def on_worker(msg):
+            console.print()
+            console.print("[bold yellow]Worker Update:[/bold yellow]")
+            payload = msg.payload
+            worker_id = payload.get("worker_id", "unknown")
+            state = payload.get("state", "unknown")
+            console.print(f"  Worker: {worker_id}")
+            console.print(f"  State: {state}")
+
+        def on_checkpoint(msg):
+            console.print()
+            console.print("[bold magenta]Checkpoint Update:[/bold magenta]")
+            payload = msg.payload
+            cp_id = payload.get("checkpoint_id", "unknown")
+            decision = payload.get("decision", "pending")
+            console.print(f"  Checkpoint: {cp_id}")
+            console.print(f"  Decision: {decision}")
+
+        def on_error(msg):
+            console.print(f"[red]Error:[/red] {msg.payload.get('message', 'Unknown error')}")
+
+        # Register handlers
+        from .connection.websocket_client import MessageType
+
+        client.on_message(MessageType.STATUS_UPDATE, on_status)
+        client.on_message(MessageType.TASK_UPDATE, on_task)
+        client.on_message(MessageType.WORKER_UPDATE, on_worker)
+        client.on_message(MessageType.CHECKPOINT_UPDATE, on_checkpoint)
+        client.on_message(MessageType.ERROR, on_error)
+
+        # Connect
+        console.print(f"[dim]Connecting to {config.url}...[/dim]")
+        connected = await client.connect()
+
+        if not connected:
+            console.print("[red]Error:[/red] Failed to connect")
+            raise typer.Exit(1)
+
+        console.print(f"[green]Connected to {host}:{port}[/green]")
+
+        # Subscribe to topics
+        for topic in topics:
+            await client.subscribe(topic)
+            console.print(f"[dim]Subscribed to: {topic}[/dim]")
+
+        if once:
+            # Wait for one status update then exit
+            console.print("[dim]Waiting for status...[/dim]")
+            await asyncio.sleep(2)
+            await client.disconnect()
+            return
+
+        if watch:
+            console.print()
+            console.print("[dim]Watch mode - Press Ctrl+C to exit[/dim]")
+            console.print()
+
+            try:
+                # Keep running until interrupted
+                while client.is_connected:
+                    await asyncio.sleep(1)
+            except asyncio.CancelledError:
+                pass
+        else:
+            # Wait briefly then disconnect
+            await asyncio.sleep(2)
+
+        await client.disconnect()
+        console.print("[dim]Disconnected[/dim]")
+
+    try:
+        asyncio.run(run_connection())
+    except KeyboardInterrupt:
+        console.print()
+        console.print("[yellow]Connection closed[/yellow]")
+
+
+def _print_status_payload(payload: dict) -> None:
+    """Helper to print status payload."""
+    project_id = payload.get("project_id", "unknown")
+    status = payload.get("status", "unknown")
+
+    console.print(f"  Project: {project_id}")
+    console.print(f"  Status: {status}")
+
+    if "queue" in payload:
+        queue = payload["queue"]
+        console.print(f"  Queue: {queue.get('pending', 0)} pending, "
+                      f"{queue.get('in_progress', 0)} in progress, "
+                      f"{queue.get('done', 0)} done")
+
+    if "workers" in payload:
+        workers = payload["workers"]
+        console.print(f"  Workers: {len(workers)} active")
 
 
 # =============================================================================
