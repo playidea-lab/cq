@@ -120,6 +120,14 @@
   - [ ] 롤백 전 확인 프롬프트
 - **Refs**: [c4/cli.py](c4/cli.py)
 
+### T-305: Git 통합 테스트
+- **Scope**: tests/integration/test_git_integration.py
+- **DoD**:
+  - [ ] 자동 커밋 테스트
+  - [ ] 체크포인트 태그 테스트
+  - [ ] 롤백 테스트
+- **Refs**: [docs/cloud/DEVELOPMENT_PLAN.md](docs/cloud/DEVELOPMENT_PLAN.md)
+
 ---
 
 ## Phase 4: 인증 시스템 (Supabase Auth)
@@ -147,6 +155,22 @@
   - [ ] 토큰 자동 갱신
 - **Refs**: [docs/cloud/DEVELOPMENT_PLAN.md](docs/cloud/DEVELOPMENT_PLAN.md)
 
+### T-404: GitHub 토큰 연동
+- **Scope**: c4/auth/github.py
+- **DoD**:
+  - [ ] Supabase provider_token으로 GitHub 접근
+  - [ ] Git 작업 시 토큰 자동 사용
+  - [ ] 토큰 갱신 로직
+- **Refs**: [docs/cloud/DEVELOPMENT_PLAN.md](docs/cloud/DEVELOPMENT_PLAN.md)
+
+### T-405: 인증 테스트
+- **Scope**: tests/integration/test_auth.py
+- **DoD**:
+  - [ ] 로그인 플로우 테스트
+  - [ ] 토큰 갱신 테스트
+  - [ ] GitHub 토큰 연동 테스트
+- **Refs**: [docs/cloud/DEVELOPMENT_PLAN.md](docs/cloud/DEVELOPMENT_PLAN.md)
+
 ---
 
 ## Phase 5: 채팅 UI
@@ -171,6 +195,22 @@
   - [ ] Next.js 프로젝트
   - [ ] 채팅 UI 컴포넌트
   - [ ] 프로젝트 목록/상세 페이지
+- **Refs**: [docs/cloud/DEVELOPMENT_PLAN.md](docs/cloud/DEVELOPMENT_PLAN.md)
+
+### T-504: 로컬 연결 기능
+- **Scope**: c4/cli.py
+- **DoD**:
+  - [ ] `c4 connect <project_id>` 명령
+  - [ ] 웹 프로젝트와 로컬 워커 연결
+  - [ ] WebSocket으로 명령 수신
+- **Refs**: [docs/cloud/DEVELOPMENT_PLAN.md](docs/cloud/DEVELOPMENT_PLAN.md)
+
+### T-505: 채팅 UI 테스트
+- **Scope**: tests/e2e/test_chat_ui.py
+- **DoD**:
+  - [ ] Chat API 테스트
+  - [ ] 로컬 연결 테스트
+  - [ ] E2E 플로우 테스트
 - **Refs**: [docs/cloud/DEVELOPMENT_PLAN.md](docs/cloud/DEVELOPMENT_PLAN.md)
 
 ---
@@ -228,6 +268,31 @@
 - **DoD**:
   - [ ] Organization 멤버십 확인
   - [ ] Collaborator 자동 초대
+- **Refs**: [docs/cloud/DEVELOPMENT_PLAN.md](docs/cloud/DEVELOPMENT_PLAN.md)
+
+### T-608: 팀 대시보드
+- **Scope**: web/
+- **DoD**:
+  - [ ] 팀 프로젝트 목록
+  - [ ] 실시간 진행 상황 (Supabase Realtime)
+  - [ ] 워커별 태스크 현황
+  - [ ] 체크포인트 리뷰 상태
+- **Refs**: [docs/cloud/DEVELOPMENT_PLAN.md](docs/cloud/DEVELOPMENT_PLAN.md)
+
+### T-609: 팀 협업 테스트
+- **Scope**: tests/integration/test_team_collaboration.py
+- **DoD**:
+  - [ ] 다중 워커 태스크 분배 테스트
+  - [ ] Peer Review 로직 테스트
+  - [ ] 중앙 리뷰 플로우 테스트
+- **Refs**: [docs/cloud/DEVELOPMENT_PLAN.md](docs/cloud/DEVELOPMENT_PLAN.md)
+
+### T-610: SQLite → Supabase 마이그레이션
+- **Scope**: c4/store/migration.py
+- **DoD**:
+  - [ ] 로컬 프로젝트 → 팀 전환 시 데이터 이관
+  - [ ] c4_state, c4_tasks 마이그레이션
+  - [ ] 롤백 지원
 - **Refs**: [docs/cloud/DEVELOPMENT_PLAN.md](docs/cloud/DEVELOPMENT_PLAN.md)
 
 ---
