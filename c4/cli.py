@@ -888,6 +888,201 @@ def rollback(
 
 
 # =============================================================================
+# Authentication Commands
+# =============================================================================
+
+auth_app = typer.Typer(help="Authentication commands")
+c4_app.add_typer(auth_app, name="auth")
+
+
+@c4_app.command()
+def login(
+    provider: str = typer.Option(
+        "github",
+        "--provider",
+        "-p",
+        help="OAuth provider (github, google)",
+    ),
+    no_browser: bool = typer.Option(
+        False,
+        "--no-browser",
+        help="Don't open browser automatically",
+    ),
+):
+    """Login to C4 Cloud.
+
+    Opens browser for OAuth authentication with the selected provider.
+
+    Examples:
+        c4 login                    # Login with GitHub (default)
+        c4 login --provider google  # Login with Google
+        c4 login --no-browser       # Print URL instead of opening
+    """
+    import os
+
+    from .auth import SessionManager
+    from .auth.oauth import OAuthConfig, OAuthFlow
+    from .auth.session import Session
+
+    # Check for Supabase URL
+    supabase_url = os.environ.get("SUPABASE_URL")
+    if not supabase_url:
+        # Try loading from config
+        config_path = Path.home() / ".c4" / "cloud.yaml"
+        if config_path.exists():
+            import yaml
+
+            try:
+                config = yaml.safe_load(config_path.read_text())
+                supabase_url = config.get("supabase_url")
+            except Exception:
+                pass
+
+    if not supabase_url:
+        console.print("[red]Error:[/red] Supabase URL not configured")
+        console.print()
+        console.print("Set SUPABASE_URL environment variable or create ~/.c4/cloud.yaml:")
+        console.print('  supabase_url: "https://your-project.supabase.co"')
+        raise typer.Exit(1)
+
+    # Check if already logged in
+    session_manager = SessionManager()
+    if session_manager.is_logged_in():
+        session = session_manager.load()
+        console.print(f"[yellow]Already logged in as:[/yellow] {session.email}")
+        if not typer.confirm("Login again?"):
+            raise typer.Exit(0)
+
+    # Configure OAuth
+    oauth_config = OAuthConfig(
+        supabase_url=supabase_url,
+        scopes=["repo"] if provider == "github" else None,
+    )
+    oauth_flow = OAuthFlow(oauth_config)
+
+    auth_url = oauth_flow.get_authorization_url(provider)
+
+    if no_browser:
+        console.print()
+        console.print("[bold]Open this URL in your browser:[/bold]")
+        console.print()
+        console.print(f"  {auth_url}")
+        console.print()
+    else:
+        console.print(f"[blue]Opening browser for {provider} login...[/blue]")
+
+    def on_waiting() -> None:
+        console.print()
+        console.print("[dim]Waiting for authentication...[/dim]")
+        console.print("[dim]Press Ctrl+C to cancel[/dim]")
+
+    try:
+        result = oauth_flow.run(
+            provider=provider,
+            open_browser=not no_browser,
+            on_waiting=on_waiting,
+        )
+    except KeyboardInterrupt:
+        console.print()
+        console.print("[yellow]Login cancelled[/yellow]")
+        raise typer.Exit(0)
+
+    if not result.success:
+        console.print(f"[red]Login failed:[/red] {result.error}")
+        raise typer.Exit(1)
+
+    # Create and save session
+    if result.access_token:
+        session = Session(
+            access_token=result.access_token,
+            refresh_token=result.refresh_token or "",
+            provider=provider,
+        )
+        session_manager.save(session)
+
+        console.print()
+        console.print("[green bold]Login successful![/green bold]")
+        console.print()
+        console.print(f"[dim]Provider: {provider}[/dim]")
+        console.print("[dim]Session saved to ~/.c4/session.json[/dim]")
+    else:
+        console.print("[red]Error:[/red] No access token received")
+        raise typer.Exit(1)
+
+
+@c4_app.command()
+def logout():
+    """Logout from C4 Cloud.
+
+    Clears the stored session and tokens.
+    """
+    from .auth import SessionManager
+
+    session_manager = SessionManager()
+
+    if not session_manager.is_logged_in():
+        console.print("[yellow]Not logged in[/yellow]")
+        return
+
+    session = session_manager.load()
+    email = session.email if session else "unknown"
+
+    if session_manager.clear():
+        console.print(f"[green]Logged out:[/green] {email}")
+    else:
+        console.print("[red]Error:[/red] Failed to clear session")
+        raise typer.Exit(1)
+
+
+@auth_app.command("status")
+def auth_status():
+    """Check authentication status."""
+    from .auth import SessionManager
+
+    session_manager = SessionManager()
+    session = session_manager.load()
+
+    console.print()
+    if session is None:
+        console.print("[yellow]Not logged in[/yellow]")
+        console.print()
+        console.print("[dim]Run 'c4 login' to authenticate[/dim]")
+        return
+
+    if session.is_expired:
+        console.print("[red]Session expired[/red]")
+        console.print()
+        console.print("[dim]Run 'c4 login' to re-authenticate[/dim]")
+        return
+
+    console.print("[green]Logged in[/green]")
+    console.print()
+    console.print(f"[bold]Email:[/bold] {session.email or 'N/A'}")
+    console.print(f"[bold]Provider:[/bold] {session.provider or 'N/A'}")
+    console.print(f"[bold]User ID:[/bold] {session.user_id or 'N/A'}")
+
+    if session.expires_at:
+        expires_in = session.expires_in_seconds
+        if expires_in > 3600:
+            expires_str = f"{expires_in // 3600}h {(expires_in % 3600) // 60}m"
+        elif expires_in > 60:
+            expires_str = f"{expires_in // 60}m"
+        else:
+            expires_str = f"{expires_in}s"
+        console.print(f"[bold]Expires in:[/bold] {expires_str}")
+
+    console.print()
+    console.print(f"[dim]Session file: {session_manager.session_file}[/dim]")
+
+
+@auth_app.command("refresh")
+def auth_refresh():
+    """Refresh authentication token."""
+    console.print("[yellow]Token refresh not yet implemented[/yellow]")
+    console.print("[dim]Use 'c4 login' to re-authenticate[/dim]")
+
+
+# =============================================================================
 # Worker Subcommands
 # =============================================================================
 
