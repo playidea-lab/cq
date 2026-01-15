@@ -24,6 +24,14 @@
 - **Validations**: unit
 - **Refs**: [c4/platforms/SPEC.md](c4/platforms/SPEC.md), [.claude/commands/](.claude/commands/), [.cursor/commands/](.cursor/commands/), [tests/unit/test_cursor_commands.py](tests/unit/test_cursor_commands.py)
 
+### T-007: Cursor 커맨드 테스트 실행
+- **Scope**: .cursor/commands/, tests/unit/test_cursor_commands.py
+- **DoD**:
+  - [x] c4 platforms --validate cursor 실행
+  - [x] uv run pytest tests/unit/test_cursor_commands.py -v 실행
+- **Validations**: unit
+- **Refs**: [.cursor/commands/](.cursor/commands/), [tests/unit/test_cursor_commands.py](tests/unit/test_cursor_commands.py)
+
 ---
 
 ## Phase 1: 코드 리뷰
