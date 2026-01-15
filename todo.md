@@ -36,8 +36,8 @@
 - **Scope**: README.md, docs/, c4/supervisor/, tests/, pyproject.toml, uv.lock
 - **DoD**:
   - [x] 변경 사항 22개 항목 확인 (diff 검토)
-  - [ ] 관련 파일 전부 커밋
-  - [ ] 원격 푸시 완료
+  - [x] 관련 파일 전부 커밋
+  - [x] 원격 푸시 완료
 - **Validations**: lint, unit
 - **Refs**: [docs/](docs/), [README.md](README.md)
 
