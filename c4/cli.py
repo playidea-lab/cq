@@ -79,6 +79,10 @@ def c4_main(
         c4 init                 # Just initialize (subcommand)
         c4 config platform cursor  # Set default platform
     """
+    # Set C4_PROJECT_ROOT for subcommands if --path is provided
+    if path is not None:
+        os.environ["C4_PROJECT_ROOT"] = str(path.resolve())
+
     # If a subcommand is invoked, let it handle things
     if ctx.invoked_subcommand is not None:
         return
