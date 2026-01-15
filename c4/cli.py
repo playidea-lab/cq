@@ -755,6 +755,138 @@ def plan():
         raise typer.Exit(1)
 
 
+@c4_app.command()
+def rollback(
+    checkpoint: str = typer.Argument(
+        None,
+        help="Checkpoint tag to rollback to (e.g., c4/CP-001)",
+    ),
+    list_checkpoints: bool = typer.Option(
+        False,
+        "--list",
+        "-l",
+        help="List available checkpoints",
+    ),
+    force: bool = typer.Option(
+        False,
+        "--force",
+        "-f",
+        help="Skip confirmation prompt",
+    ),
+    soft: bool = typer.Option(
+        False,
+        "--soft",
+        help="Use soft reset (keep changes staged)",
+    ),
+):
+    """Rollback to a checkpoint.
+
+    Lists available checkpoints and allows rollback to a specific point.
+
+    Examples:
+        c4 rollback --list              # List checkpoints
+        c4 rollback c4/CP-001           # Rollback to checkpoint (with confirmation)
+        c4 rollback c4/CP-001 --force   # Skip confirmation
+        c4 rollback c4/CP-001 --soft    # Keep changes staged
+    """
+    from .daemon.git_ops import GitOperations
+
+    project_path = Path.cwd()
+    git_ops = GitOperations(project_path)
+
+    if not git_ops.is_git_repo():
+        console.print("[red]Error:[/red] Not a Git repository")
+        raise typer.Exit(1)
+
+    # List checkpoints
+    if list_checkpoints or checkpoint is None:
+        checkpoints = git_ops.list_checkpoint_tags()
+
+        if not checkpoints:
+            console.print("[yellow]No checkpoints found[/yellow]")
+            console.print()
+            console.print("[dim]Checkpoints are created when supervisors approve work.[/dim]")
+            console.print("[dim]Use supervisor approval to create checkpoints.[/dim]")
+            return
+
+        console.print()
+        console.print("[bold]Available Checkpoints[/bold]")
+        console.print()
+
+        table = Table(show_header=True)
+        table.add_column("Tag", style="cyan")
+        table.add_column("SHA", style="dim")
+        table.add_column("Date")
+        table.add_column("Description")
+
+        for cp in checkpoints:
+            table.add_row(
+                cp["tag"],
+                cp["sha"],
+                cp["date"][:19] if len(cp["date"]) > 19 else cp["date"],
+                cp["message"],
+            )
+
+        console.print(table)
+        console.print()
+        console.print("[dim]Usage: c4 rollback <tag> [--force][/dim]")
+        return
+
+    # Validate checkpoint exists
+    tag_info = git_ops.get_tag_info(checkpoint)
+    if not tag_info:
+        console.print(f"[red]Error:[/red] Checkpoint '{checkpoint}' not found")
+        console.print()
+        console.print("Use 'c4 rollback --list' to see available checkpoints")
+        raise typer.Exit(1)
+
+    # Show what will be rolled back
+    console.print()
+    console.print(f"[bold]Rollback to:[/bold] {checkpoint}")
+    console.print(f"[bold]Target SHA:[/bold] {tag_info['sha']}")
+    console.print(f"[bold]Description:[/bold] {tag_info['message']}")
+    console.print()
+
+    # Show commits that will be undone
+    commits = git_ops.get_commits_since_tag(checkpoint)
+    if commits:
+        console.print(f"[yellow]⚠ {len(commits)} commit(s) will be undone:[/yellow]")
+        console.print()
+        for commit in commits[:10]:  # Show max 10
+            console.print(f"  [dim]{commit['sha']}[/dim] {commit['message']}")
+        if len(commits) > 10:
+            console.print(f"  [dim]... and {len(commits) - 10} more[/dim]")
+        console.print()
+    else:
+        console.print("[green]Already at this checkpoint[/green]")
+        return
+
+    # Confirmation
+    if not force:
+        reset_type = "soft" if soft else "hard"
+        console.print(f"[bold red]This will perform a {reset_type} reset![/bold red]")
+        if not soft:
+            console.print("[red]All uncommitted changes will be lost.[/red]")
+        console.print()
+
+        confirm = typer.confirm("Are you sure you want to rollback?")
+        if not confirm:
+            console.print("[yellow]Rollback cancelled[/yellow]")
+            raise typer.Exit(0)
+
+    # Perform rollback
+    result = git_ops.rollback_to_checkpoint(checkpoint, hard=not soft)
+
+    if result.success:
+        console.print()
+        console.print(f"[green bold]✅ {result.message}[/green bold]")
+        console.print()
+        console.print("[dim]Note: You may need to restart Claude Code to sync state.[/dim]")
+    else:
+        console.print(f"[red]Error:[/red] {result.message}")
+        raise typer.Exit(1)
+
+
 # =============================================================================
 # Worker Subcommands
 # =============================================================================

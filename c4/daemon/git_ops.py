@@ -345,3 +345,102 @@ class GitOperations:
             return GitResult(False, f"Branch creation failed: {result.stderr}")
 
         return GitResult(True, f"Created branch {branch_name}")
+
+    def get_tag_info(self, tag: str) -> dict[str, str] | None:
+        """Get detailed information about a tag.
+
+        Args:
+            tag: Tag name
+
+        Returns:
+            Dict with sha, date, message or None if tag doesn't exist
+        """
+        if not self.is_git_repo():
+            return None
+
+        # Get tag target SHA
+        sha_result = self._run_git("rev-list", "-1", tag)
+        if sha_result.returncode != 0:
+            return None
+
+        sha = sha_result.stdout.strip()[:7]
+
+        # Get tag date and message
+        date_result = self._run_git("log", "-1", "--format=%ci", tag)
+        date = date_result.stdout.strip() if date_result.returncode == 0 else "unknown"
+
+        msg_result = self._run_git("tag", "-l", "-n1", tag)
+        # Output format: "tag_name    message"
+        message = ""
+        if msg_result.returncode == 0 and msg_result.stdout.strip():
+            parts = msg_result.stdout.strip().split(maxsplit=1)
+            message = parts[1] if len(parts) > 1 else ""
+
+        return {"sha": sha, "date": date, "message": message}
+
+    def list_checkpoint_tags(self) -> list[dict[str, str]]:
+        """List all C4 checkpoint tags with details.
+
+        Returns:
+            List of dicts with tag, sha, date, message
+        """
+        tags = self.get_checkpoint_tags()
+        result = []
+
+        for tag in sorted(tags, reverse=True):  # Most recent first
+            info = self.get_tag_info(tag)
+            if info:
+                result.append({
+                    "tag": tag,
+                    "sha": info["sha"],
+                    "date": info["date"],
+                    "message": info["message"],
+                })
+
+        return result
+
+    def rollback_to_checkpoint(
+        self,
+        checkpoint_tag: str,
+        hard: bool = True,
+    ) -> GitResult:
+        """Rollback to a specific checkpoint tag.
+
+        Args:
+            checkpoint_tag: Tag name to rollback to (e.g., "c4/CP-001")
+            hard: If True, discard all changes (git reset --hard)
+
+        Returns:
+            GitResult with success status
+        """
+        if not self.is_git_repo():
+            return GitResult(False, "Not a Git repository")
+
+        if not self.is_git_available():
+            return GitResult(False, "Git not available")
+
+        # Verify the tag exists
+        check_result = self._run_git("tag", "-l", checkpoint_tag)
+        if not check_result.stdout.strip():
+            return GitResult(False, f"Tag '{checkpoint_tag}' not found")
+
+        # Get current SHA before rollback for reference
+        current_sha = self.get_current_sha()
+
+        # Perform rollback
+        reset_mode = "--hard" if hard else "--soft"
+        result = self._run_git("reset", reset_mode, checkpoint_tag)
+
+        if result.returncode != 0:
+            return GitResult(
+                False,
+                f"Rollback failed: {result.stderr}",
+            )
+
+        new_sha = self.get_current_sha()
+        return GitResult(
+            True,
+            f"Rolled back from {current_sha} to {new_sha} ({checkpoint_tag})",
+            sha=new_sha,
+            tag=checkpoint_tag,
+        )
