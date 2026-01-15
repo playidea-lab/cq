@@ -10,9 +10,10 @@
 #   1. Install dependencies (uv sync)
 #   2. Save C4 install path (~/.c4-install-path)
 #   3. Create global 'c4' command (~/.local/bin/c4)
-#   4. Install /c4-* slash commands (~/.claude/commands/)
-#   5. Install security & stop hooks (~/.claude/hooks/)
-#   6. Register hooks in Claude settings
+#   4. Install Claude Code slash commands (~/.claude/commands/)
+#   5. Install Cursor commands & MCP (~/.cursor/)
+#   6. Install security & stop hooks (~/.claude/hooks/)
+#   7. Register hooks in Claude settings
 #
 # =============================================================================
 
@@ -90,9 +91,72 @@ done
 echo "   ✅ $count commands installed"
 
 # =============================================================================
-# Step 5: Install hooks
+# Step 5: Install Cursor commands & MCP
 # =============================================================================
-echo "5️⃣  Installing Claude Code hooks..."
+echo "5️⃣  Installing Cursor commands & MCP..."
+
+# 5a. Cursor slash commands (global)
+CURSOR_COMMANDS="$HOME/.cursor/commands"
+mkdir -p "$CURSOR_COMMANDS"
+
+cursor_count=0
+for cmd in "$C4_DIR/.cursor/commands"/c4-*.md; do
+    if [[ -f "$cmd" ]]; then
+        cp "$cmd" "$CURSOR_COMMANDS/"
+        ((cursor_count++))
+    fi
+done
+echo "   → $cursor_count Cursor commands installed"
+
+# 5b. Cursor MCP configuration
+CURSOR_MCP="$HOME/.cursor/mcp.json"
+
+if [[ -f "$CURSOR_MCP" ]]; then
+    # Check if c4 already configured
+    if grep -q '"c4"' "$CURSOR_MCP" 2>/dev/null; then
+        echo "   → MCP already configured (skipped)"
+    else
+        # Add c4 to existing config using Python
+        python3 << PYTHON
+import json
+from pathlib import Path
+
+mcp_path = Path("$CURSOR_MCP")
+config = json.loads(mcp_path.read_text())
+
+if "mcpServers" not in config:
+    config["mcpServers"] = {}
+
+config["mcpServers"]["c4"] = {
+    "command": "uv",
+    "args": ["run", "--directory", "$C4_DIR", "python", "-m", "c4.mcp_server"],
+    "cwd": "\${workspaceFolder}"
+}
+
+mcp_path.write_text(json.dumps(config, indent=2))
+PYTHON
+        echo "   → MCP server added to existing config"
+    fi
+else
+    # Create new config
+    cat > "$CURSOR_MCP" << EOF
+{
+  "mcpServers": {
+    "c4": {
+      "command": "uv",
+      "args": ["run", "--directory", "$C4_DIR", "python", "-m", "c4.mcp_server"],
+      "cwd": "\${workspaceFolder}"
+    }
+  }
+}
+EOF
+    echo "   → MCP config created"
+fi
+
+# =============================================================================
+# Step 6: Install Claude Code hooks
+# =============================================================================
+echo "6️⃣  Installing Claude Code hooks..."
 
 HOOKS_DIR="$HOME/.claude/hooks"
 mkdir -p "$HOOKS_DIR"
@@ -122,9 +186,9 @@ for script in c4-stop-hook.py c4-bash-security-hook.sh; do
 done
 
 # =============================================================================
-# Step 6: Register hooks in settings
+# Step 7: Register hooks in settings
 # =============================================================================
-echo "6️⃣  Registering hooks..."
+echo "7️⃣  Registering hooks..."
 
 python3 << 'PYTHON'
 import json
@@ -168,7 +232,7 @@ echo "   Terminal:"
 echo "     c4 init --path /path/to/project"
 echo "     c4 status"
 echo ""
-echo "   Claude Code:"
+echo "   Claude Code / Cursor:"
 echo "     /c4-init      # Initialize project"
 echo "     /c4-plan      # Parse docs & create tasks"
 echo "     /c4-run       # Start execution"
@@ -196,5 +260,5 @@ if [[ ":$PATH:" != *":$BIN_DIR:"* ]]; then
 fi
 
 echo ""
-echo "🔄 Restart Claude Code to activate slash commands"
+echo "🔄 Restart Claude Code / Cursor to activate slash commands"
 echo ""
