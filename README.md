@@ -15,7 +15,9 @@ rm -rf ~/.c4 && git clone https://git.pilab.co.kr/pi/c4.git ~/.c4 && ~/.c4/insta
 - `~/.c4`에 C4 설치
 - 의존성 설치 (`uv sync`)
 - 글로벌 `c4` 명령어 생성
-- Claude Code에 슬래시 명령어 등록
+- **플랫폼 자동 감지** (Claude Code, Cursor)
+- 슬래시 명령어 등록 (Claude Code: `~/.claude/commands/`, Cursor: `~/.cursor/commands/`)
+- Cursor MCP 서버 설정 (`~/.cursor/mcp.json`)
 
 ### 2. 프로젝트 시작
 
@@ -24,11 +26,11 @@ cd /your/project
 c4
 ```
 
-이 명령어 하나로 C4가 초기화되고 Claude Code가 시작됩니다.
+이 명령어 하나로 C4가 초기화되고 기본 IDE(Claude Code 또는 Cursor)가 시작됩니다.
 
 ### 3. 작업 실행
 
-Claude Code에서:
+Claude Code 또는 Cursor에서:
 
 ```
 /c4-plan       # 문서 분석 → 태스크 생성
@@ -98,6 +100,23 @@ checkpoints:
     required_validations: ["lint", "unit"]
 ```
 
+### 플랫폼 설정
+
+C4는 여러 IDE를 지원합니다. 설치 시 자동 감지되며, 수동 변경도 가능합니다:
+
+```bash
+# 현재 설정 확인
+c4 config
+
+# 글로벌 기본값 변경
+c4 config --global --platform cursor
+
+# 프로젝트별 설정
+c4 config --platform claude
+```
+
+**지원 플랫폼**: Claude Code, Cursor (추가 예정: Codex, Gemini, OpenCode)
+
 ### LLM Provider 설정
 
 C4는 다양한 LLM Provider를 지원합니다:
@@ -157,7 +176,7 @@ your-project/
 | 기능 | 설명 |
 |------|------|
 | **State Machine** | 구조화된 워크플로우 관리 |
-| **MCP Server** | Claude Code 네이티브 통합 (19개 도구) |
+| **MCP Server** | Claude Code / Cursor 네이티브 통합 (19개 도구) |
 | **Multi-Worker** | SQLite WAL 기반 병렬 실행 |
 | **Agent Routing** | 도메인별 에이전트 자동 선택 |
 | **EARS Requirements** | 5가지 패턴의 요구사항 수집 |
