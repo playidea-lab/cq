@@ -79,7 +79,7 @@ class AgentPersona(BaseModel):
 class AgentSkills(BaseModel):
     """Skills this agent possesses."""
 
-    primary: list[str] = Field(..., min_length=1)
+    primary: list[str] = Field(default_factory=list)
     secondary: list[str] | None = None
 
 
@@ -149,7 +149,7 @@ class AgentDefinition(BaseModel):
 class DomainRequiredSkills(BaseModel):
     """Skills needed for this domain."""
 
-    core: list[str] = Field(..., min_length=1)
+    core: list[str] = Field(default_factory=list)
     optional: list[str] | None = None
 
 
