@@ -1,10 +1,8 @@
 """Tests for Claude CLI backend, especially sensitive data sanitization."""
 
-import pytest
 
 from c4.supervisor.claude_backend import (
     MAX_ERROR_MESSAGE_LENGTH,
-    SENSITIVE_PATTERNS,
     _sanitize_stderr,
 )
 

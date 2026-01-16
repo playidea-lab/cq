@@ -6,12 +6,9 @@ as the existing DOMAIN_AGENT_MAP and TASK_TYPE_AGENT_OVERRIDES.
 
 from pathlib import Path
 
-import pytest
-
 from c4.supervisor.agent_router import (
     DOMAIN_AGENT_MAP,
     TASK_TYPE_AGENT_OVERRIDES,
-    get_recommended_agent,
 )
 
 

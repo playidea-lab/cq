@@ -346,8 +346,8 @@ class TestC4Submit:
         Regression test for multi-worker interference bug where task status
         was not synced from state queue to task file after completion.
         """
-        from c4.models.task import Task
         from c4.models.enums import TaskStatus
+        from c4.models.task import Task
 
         # Setup: Create and assign a task
         task = Task(id="T-STATUS", title="Status Test", dod="Test status sync")
