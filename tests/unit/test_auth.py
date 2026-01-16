@@ -1,0 +1,296 @@
+"""Tests for C4 Authentication module."""
+
+import json
+from datetime import datetime, timedelta
+from pathlib import Path
+
+import pytest
+
+from c4.auth import Session, SessionManager
+from c4.auth.oauth import OAuthConfig, OAuthResult
+
+
+class TestSession:
+    """Test Session dataclass."""
+
+    def test_create_session(self) -> None:
+        """Test creating a session."""
+        session = Session(
+            access_token="test_token",
+            refresh_token="refresh_token",
+        )
+        assert session.access_token == "test_token"
+        assert session.refresh_token == "refresh_token"
+        assert session.token_type == "bearer"
+
+    def test_session_not_expired(self) -> None:
+        """Test session expiration check when not expired."""
+        session = Session(
+            access_token="test",
+            refresh_token="refresh",
+            expires_at=datetime.now() + timedelta(hours=1),
+        )
+        assert session.is_expired is False
+
+    def test_session_expired(self) -> None:
+        """Test session expiration check when expired."""
+        session = Session(
+            access_token="test",
+            refresh_token="refresh",
+            expires_at=datetime.now() - timedelta(hours=1),
+        )
+        assert session.is_expired is True
+
+    def test_session_no_expiry(self) -> None:
+        """Test session with no expiry is never expired."""
+        session = Session(
+            access_token="test",
+            refresh_token="refresh",
+        )
+        assert session.is_expired is False
+
+    def test_expires_in_seconds(self) -> None:
+        """Test calculating seconds until expiration."""
+        session = Session(
+            access_token="test",
+            refresh_token="refresh",
+            expires_at=datetime.now() + timedelta(minutes=30),
+        )
+        # Should be around 1800 seconds (30 minutes)
+        assert 1750 < session.expires_in_seconds < 1850
+
+    def test_to_dict(self) -> None:
+        """Test serializing session to dictionary."""
+        session = Session(
+            access_token="token",
+            refresh_token="refresh",
+            user_id="user123",
+            email="test@example.com",
+            provider="github",
+        )
+        data = session.to_dict()
+
+        assert data["access_token"] == "token"
+        assert data["refresh_token"] == "refresh"
+        assert data["user_id"] == "user123"
+        assert data["email"] == "test@example.com"
+        assert data["provider"] == "github"
+
+    def test_from_dict(self) -> None:
+        """Test deserializing session from dictionary."""
+        data = {
+            "access_token": "token",
+            "refresh_token": "refresh",
+            "user_id": "user123",
+            "email": "test@example.com",
+            "provider": "google",
+            "expires_at": (datetime.now() + timedelta(hours=1)).isoformat(),
+        }
+        session = Session.from_dict(data)
+
+        assert session.access_token == "token"
+        assert session.user_id == "user123"
+        assert session.provider == "google"
+        assert not session.is_expired
+
+    def test_from_supabase_response(self) -> None:
+        """Test creating session from Supabase response."""
+        response = {
+            "session": {
+                "access_token": "sb_token",
+                "refresh_token": "sb_refresh",
+                "expires_in": 3600,
+            },
+            "user": {
+                "id": "user-uuid",
+                "email": "user@example.com",
+                "identities": [
+                    {"provider": "github", "identity_data": {}}
+                ],
+            },
+        }
+        session = Session.from_supabase_response(response)
+
+        assert session.access_token == "sb_token"
+        assert session.user_id == "user-uuid"
+        assert session.email == "user@example.com"
+        assert session.provider == "github"
+
+
+class TestSessionManager:
+    """Test SessionManager class."""
+
+    @pytest.fixture
+    def temp_config_dir(self, tmp_path: Path) -> Path:
+        """Create temporary config directory."""
+        config_dir = tmp_path / ".c4"
+        config_dir.mkdir()
+        return config_dir
+
+    @pytest.fixture
+    def manager(self, temp_config_dir: Path) -> SessionManager:
+        """Create SessionManager with temp directory."""
+        return SessionManager(temp_config_dir)
+
+    def test_save_session(self, manager: SessionManager) -> None:
+        """Test saving session to file."""
+        session = Session(
+            access_token="test_token",
+            refresh_token="refresh_token",
+            email="test@example.com",
+        )
+        result = manager.save(session)
+
+        assert result is True
+        assert manager.session_file.exists()
+
+    def test_load_session(self, manager: SessionManager) -> None:
+        """Test loading session from file."""
+        # Save first
+        session = Session(
+            access_token="saved_token",
+            refresh_token="saved_refresh",
+            user_id="user123",
+        )
+        manager.save(session)
+
+        # Load
+        loaded = manager.load()
+
+        assert loaded is not None
+        assert loaded.access_token == "saved_token"
+        assert loaded.user_id == "user123"
+
+    def test_load_nonexistent(self, manager: SessionManager) -> None:
+        """Test loading when no session exists."""
+        loaded = manager.load()
+        assert loaded is None
+
+    def test_clear_session(self, manager: SessionManager) -> None:
+        """Test clearing session."""
+        # Save first
+        session = Session(access_token="token", refresh_token="refresh")
+        manager.save(session)
+        assert manager.session_file.exists()
+
+        # Clear
+        result = manager.clear()
+
+        assert result is True
+        assert not manager.session_file.exists()
+
+    def test_clear_nonexistent(self, manager: SessionManager) -> None:
+        """Test clearing when no session exists."""
+        result = manager.clear()
+        assert result is True
+
+    def test_is_logged_in(self, manager: SessionManager) -> None:
+        """Test checking login status."""
+        assert manager.is_logged_in() is False
+
+        # Login
+        session = Session(
+            access_token="token",
+            refresh_token="refresh",
+            expires_at=datetime.now() + timedelta(hours=1),
+        )
+        manager.save(session)
+
+        assert manager.is_logged_in() is True
+
+    def test_is_logged_in_expired(self, manager: SessionManager) -> None:
+        """Test that expired session is not logged in."""
+        session = Session(
+            access_token="token",
+            refresh_token="refresh",
+            expires_at=datetime.now() - timedelta(hours=1),
+        )
+        manager.save(session)
+
+        assert manager.is_logged_in() is False
+
+    def test_get_valid_session(self, manager: SessionManager) -> None:
+        """Test getting valid session only."""
+        # Valid session
+        session = Session(
+            access_token="token",
+            refresh_token="refresh",
+            expires_at=datetime.now() + timedelta(hours=1),
+        )
+        manager.save(session)
+
+        valid = manager.get_valid_session()
+        assert valid is not None
+        assert valid.access_token == "token"
+
+    def test_get_valid_session_expired(self, manager: SessionManager) -> None:
+        """Test that expired session returns None."""
+        session = Session(
+            access_token="token",
+            refresh_token="refresh",
+            expires_at=datetime.now() - timedelta(hours=1),
+        )
+        manager.save(session)
+
+        valid = manager.get_valid_session()
+        assert valid is None
+
+    def test_session_file_permissions(
+        self, manager: SessionManager, temp_config_dir: Path
+    ) -> None:
+        """Test that session file has restrictive permissions."""
+        import os
+        import stat
+
+        session = Session(access_token="secret", refresh_token="refresh")
+        manager.save(session)
+
+        # Check file mode (owner read/write only)
+        mode = os.stat(manager.session_file).st_mode
+        # On Unix, should be 0o600 (rw-------)
+        assert stat.S_IMODE(mode) == 0o600
+
+
+class TestOAuthConfig:
+    """Test OAuthConfig dataclass."""
+
+    def test_default_config(self) -> None:
+        """Test default OAuth configuration."""
+        config = OAuthConfig(supabase_url="https://test.supabase.co")
+
+        assert config.redirect_port == 8765
+        assert config.redirect_path == "/auth/callback"
+        assert config.redirect_uri == "http://localhost:8765/auth/callback"
+
+    def test_custom_port(self) -> None:
+        """Test custom redirect port."""
+        config = OAuthConfig(
+            supabase_url="https://test.supabase.co",
+            redirect_port=9000,
+        )
+        assert config.redirect_uri == "http://localhost:9000/auth/callback"
+
+
+class TestOAuthResult:
+    """Test OAuthResult dataclass."""
+
+    def test_success_result(self) -> None:
+        """Test successful OAuth result."""
+        result = OAuthResult(
+            success=True,
+            access_token="token123",
+            refresh_token="refresh123",
+        )
+        assert result.success is True
+        assert result.access_token == "token123"
+        assert result.error is None
+
+    def test_error_result(self) -> None:
+        """Test failed OAuth result."""
+        result = OAuthResult(
+            success=False,
+            error="access_denied",
+        )
+        assert result.success is False
+        assert result.error == "access_denied"
+        assert result.access_token is None
