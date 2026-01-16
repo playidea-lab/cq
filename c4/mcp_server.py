@@ -585,6 +585,32 @@ Thumbs.db
             self._agent_router = AgentRouter(config=agent_config)
         return self._agent_router.get_recommended_agent(domain)
 
+    def _get_original_worker_for_repair(self, task_id: str) -> str | None:
+        """Get the original worker who blocked a repair task.
+
+        Args:
+            task_id: The repair task ID (e.g., "REPAIR-T-001")
+
+        Returns:
+            The worker_id of the original worker, or None if not found
+        """
+        if not task_id.startswith(REPAIR_PREFIX):
+            return None
+
+        # Extract original task ID by removing REPAIR- prefix
+        original_task_id = task_id[REPAIR_PREFIX_LEN:]
+
+        # Look up in repair_queue
+        if self.state_machine is None:
+            return None
+
+        state = self.state_machine.state
+        for item in state.repair_queue:
+            if item.task_id == original_task_id:
+                return item.worker_id
+
+        return None
+
     @property
     def supervisor_loop_manager(self) -> SupervisorLoopManager:
         """Get supervisor loop manager, creating if necessary"""
@@ -971,6 +997,12 @@ Thumbs.db
                 dep_id in state.queue.done for dep_id in task.dependencies
             )
             if not deps_met:
+                continue
+
+            # Peer Review: exclude original worker from repair tasks
+            # This ensures repairs are reviewed by a different worker
+            original_worker = self._get_original_worker_for_repair(task_id)
+            if original_worker and original_worker == worker_id:
                 continue
 
             # Try to acquire scope lock ATOMICALLY using SQLite
