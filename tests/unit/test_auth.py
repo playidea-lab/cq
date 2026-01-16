@@ -294,3 +294,209 @@ class TestOAuthResult:
         assert result.success is False
         assert result.error == "access_denied"
         assert result.access_token is None
+
+
+class TestTokenManager:
+    """Test TokenManager class."""
+
+    @pytest.fixture
+    def temp_config_dir(self, tmp_path: Path) -> Path:
+        """Create temporary config directory."""
+        config_dir = tmp_path / ".c4"
+        config_dir.mkdir()
+        return config_dir
+
+    @pytest.fixture
+    def session_manager(self, temp_config_dir: Path) -> SessionManager:
+        """Create SessionManager with temp directory."""
+        return SessionManager(temp_config_dir)
+
+    @pytest.fixture
+    def token_manager(self, session_manager: SessionManager) -> "TokenManager":
+        """Create TokenManager with session manager."""
+        from c4.auth.token_manager import TokenManager
+
+        return TokenManager(session_manager=session_manager)
+
+    def test_get_session_not_logged_in(self, token_manager: "TokenManager") -> None:
+        """Test getting session when not logged in."""
+        from c4.auth.token_manager import NotAuthenticatedError
+
+        with pytest.raises(NotAuthenticatedError):
+            token_manager.get_session()
+
+    def test_get_session_valid(
+        self, token_manager: "TokenManager", session_manager: SessionManager
+    ) -> None:
+        """Test getting valid session."""
+        session = Session(
+            access_token="valid_token",
+            refresh_token="refresh",
+            expires_at=datetime.now() + timedelta(hours=1),
+        )
+        session_manager.save(session)
+
+        result = token_manager.get_session()
+        assert result.access_token == "valid_token"
+
+    def test_get_access_token(
+        self, token_manager: "TokenManager", session_manager: SessionManager
+    ) -> None:
+        """Test getting access token."""
+        session = Session(
+            access_token="my_token",
+            refresh_token="refresh",
+            expires_at=datetime.now() + timedelta(hours=1),
+        )
+        session_manager.save(session)
+
+        token = token_manager.get_access_token()
+        assert token == "my_token"
+
+    def test_get_auth_headers(
+        self, token_manager: "TokenManager", session_manager: SessionManager
+    ) -> None:
+        """Test getting authorization headers."""
+        session = Session(
+            access_token="bearer_token",
+            refresh_token="refresh",
+            expires_at=datetime.now() + timedelta(hours=1),
+        )
+        session_manager.save(session)
+
+        headers = token_manager.get_auth_headers()
+        assert headers == {"Authorization": "Bearer bearer_token"}
+
+    def test_needs_refresh_false(self, token_manager: "TokenManager") -> None:
+        """Test that refresh is not needed for fresh session."""
+        session = Session(
+            access_token="token",
+            refresh_token="refresh",
+            expires_at=datetime.now() + timedelta(hours=1),
+        )
+        assert token_manager._needs_refresh(session) is False
+
+    def test_needs_refresh_true(self, token_manager: "TokenManager") -> None:
+        """Test that refresh is needed when near expiry."""
+        session = Session(
+            access_token="token",
+            refresh_token="refresh",
+            expires_at=datetime.now() + timedelta(seconds=60),  # 1 minute left
+        )
+        assert token_manager._needs_refresh(session) is True
+
+    def test_relogin_callback(
+        self, token_manager: "TokenManager", session_manager: SessionManager
+    ) -> None:
+        """Test re-login callback is called on expired token."""
+        from c4.auth.token_manager import TokenExpiredError
+
+        # Create expired session
+        session = Session(
+            access_token="expired",
+            refresh_token="",  # No refresh token
+            expires_at=datetime.now() - timedelta(hours=1),
+        )
+        session_manager.save(session)
+
+        # Set up callback that creates new session
+        callback_called = [False]
+
+        def relogin_callback() -> bool:
+            callback_called[0] = True
+            new_session = Session(
+                access_token="new_token",
+                refresh_token="new_refresh",
+                expires_at=datetime.now() + timedelta(hours=1),
+            )
+            session_manager.save(new_session)
+            return True
+
+        token_manager.set_relogin_callback(relogin_callback)
+
+        result = token_manager.get_session()
+        assert callback_called[0] is True
+        assert result.access_token == "new_token"
+
+    def test_expired_no_callback_raises(
+        self, token_manager: "TokenManager", session_manager: SessionManager
+    ) -> None:
+        """Test that expired token without callback raises error."""
+        from c4.auth.token_manager import TokenExpiredError
+
+        session = Session(
+            access_token="expired",
+            refresh_token="",
+            expires_at=datetime.now() - timedelta(hours=1),
+        )
+        session_manager.save(session)
+
+        with pytest.raises(TokenExpiredError):
+            token_manager.get_session()
+
+
+class TestAuthenticatedClient:
+    """Test AuthenticatedClient class."""
+
+    @pytest.fixture
+    def temp_config_dir(self, tmp_path: Path) -> Path:
+        """Create temporary config directory."""
+        config_dir = tmp_path / ".c4"
+        config_dir.mkdir()
+        return config_dir
+
+    def test_get_headers(self, temp_config_dir: Path) -> None:
+        """Test getting headers with auth token."""
+        from c4.auth.token_manager import AuthenticatedClient, TokenManager
+
+        session_manager = SessionManager(temp_config_dir)
+        session = Session(
+            access_token="client_token",
+            refresh_token="refresh",
+            expires_at=datetime.now() + timedelta(hours=1),
+        )
+        session_manager.save(session)
+
+        token_manager = TokenManager(session_manager=session_manager)
+        client = AuthenticatedClient(token_manager=token_manager)
+
+        headers = client._get_headers()
+        assert headers["Authorization"] == "Bearer client_token"
+
+    def test_get_headers_with_extra(self, temp_config_dir: Path) -> None:
+        """Test getting headers with extra headers."""
+        from c4.auth.token_manager import AuthenticatedClient, TokenManager
+
+        session_manager = SessionManager(temp_config_dir)
+        session = Session(
+            access_token="token",
+            refresh_token="refresh",
+            expires_at=datetime.now() + timedelta(hours=1),
+        )
+        session_manager.save(session)
+
+        token_manager = TokenManager(session_manager=session_manager)
+        client = AuthenticatedClient(token_manager=token_manager)
+
+        headers = client._get_headers({"X-Custom": "value"})
+        assert headers["Authorization"] == "Bearer token"
+        assert headers["X-Custom"] == "value"
+
+    def test_context_manager(self, temp_config_dir: Path) -> None:
+        """Test client as context manager."""
+        from c4.auth.token_manager import AuthenticatedClient, TokenManager
+
+        session_manager = SessionManager(temp_config_dir)
+        session = Session(
+            access_token="token",
+            refresh_token="refresh",
+            expires_at=datetime.now() + timedelta(hours=1),
+        )
+        session_manager.save(session)
+
+        token_manager = TokenManager(session_manager=session_manager)
+
+        with AuthenticatedClient(token_manager=token_manager) as client:
+            assert client is not None
+            # Client should work within context
+            assert client._client is None  # Lazy initialization
