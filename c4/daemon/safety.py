@@ -144,7 +144,8 @@ class SafetyGuard:
 
             # Task iterations
             if stats.iterations >= self.max_iterations_per_task:
-                return False, f"Max iterations per task ({self.max_iterations_per_task}) reached for {task_id}"
+                max_iter = self.max_iterations_per_task
+                return False, f"Max iterations per task ({max_iter}) reached for {task_id}"
 
             # Task timeout
             task_elapsed = datetime.now() - stats.started_at
