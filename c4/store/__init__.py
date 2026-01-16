@@ -16,10 +16,18 @@ Usage:
 from .exceptions import (
     ConcurrentModificationError,
     LockConflictError,
+    MigrationError,
     StateNotFoundError,
     StoreError,
 )
 from .local_file import LocalFileLockStore, LocalFileStateStore
+from .migration import (
+    ExportData,
+    MigrationManager,
+    MigrationSnapshot,
+    migrate_local_to_team,
+    migrate_team_to_local,
+)
 from .protocol import LockStore, StateStore
 from .sqlite import SQLiteLockStore, SQLiteStateStore, SQLiteTaskStore
 
@@ -32,6 +40,7 @@ __all__ = [
     "StateNotFoundError",
     "LockConflictError",
     "ConcurrentModificationError",
+    "MigrationError",
     # Implementations - Local File
     "LocalFileStateStore",
     "LocalFileLockStore",
@@ -39,4 +48,10 @@ __all__ = [
     "SQLiteStateStore",
     "SQLiteLockStore",
     "SQLiteTaskStore",
+    # Migration
+    "MigrationManager",
+    "MigrationSnapshot",
+    "ExportData",
+    "migrate_local_to_team",
+    "migrate_team_to_local",
 ]

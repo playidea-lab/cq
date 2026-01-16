@@ -23,3 +23,9 @@ class ConcurrentModificationError(StoreError):
     """Raised when state was modified by another process."""
 
     pass
+
+
+class MigrationError(StoreError):
+    """Raised when migration operation fails."""
+
+    pass
