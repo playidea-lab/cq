@@ -1,0 +1,34 @@
+domain:
+  id: unknown
+  name: "General Purpose"
+  description: "General purpose for undetected or mixed domains"
+
+  required_skills:
+    core:
+      - general-programming
+      - problem-solving
+    optional:
+      - code-review
+      - documentation
+
+  workflow:
+    - step: 1
+      role: primary
+      select:
+        by: agent
+        prefer_agent: general-purpose
+      purpose: "Analyze and implement"
+
+    - step: 2
+      role: quality
+      select:
+        by: skill
+        skills: [code-review]
+        prefer_agent: code-reviewer
+      purpose: "Code review"
+
+  rules:
+    - if: "task_has_keyword(['debug', 'fix', 'bug'])"
+      then: "set_primary(debugger)"
+    - if: "task_has_keyword(['test', 'testing'])"
+      then: "add_to_chain(test-automator, after=primary)"

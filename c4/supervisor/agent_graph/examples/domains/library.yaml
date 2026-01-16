@@ -1,0 +1,53 @@
+domain:
+  id: library
+  name: "Library/Package Development"
+  description: "Library/package development, public API design, documentation"
+
+  required_skills:
+    core:
+      - python-coding
+      - api-design
+      - documentation
+    optional:
+      - testing
+      - packaging
+      - versioning
+
+  workflow:
+    - step: 1
+      role: primary
+      select:
+        by: skill
+        skills: [python-coding, api-design]
+        prefer_agent: python-pro
+      purpose: "Design and implement library API"
+
+    - step: 2
+      role: support
+      select:
+        by: skill
+        skills: [documentation, api-documentation]
+        prefer_agent: api-documenter
+      purpose: "Write comprehensive documentation"
+
+    - step: 3
+      role: quality
+      select:
+        by: skill
+        skills: [testing]
+        prefer_agent: test-automator
+      purpose: "Write tests for public API"
+
+    - step: 4
+      role: quality
+      select:
+        by: skill
+        skills: [code-review]
+        prefer_agent: code-reviewer
+      purpose: "Code review"
+
+  rules:
+    - if: "task_has_keyword(['breaking', 'deprecate'])"
+      then: "add_to_chain(api-documenter, with_focus=migration-guide)"
+    - if: "task_has_keyword(['performance', 'benchmark'])"
+      then: "add_to_chain(performance-engineer, after=python-pro)"

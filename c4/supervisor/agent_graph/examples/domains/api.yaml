@@ -1,0 +1,47 @@
+domain:
+  id: api
+  name: "API Development"
+  description: "REST/GraphQL API design, documentation, client SDKs"
+
+  required_skills:
+    core:
+      - api-design
+      - backend-architecture
+      - documentation
+    optional:
+      - graphql
+      - openapi
+      - sdk-generation
+
+  workflow:
+    - step: 1
+      role: primary
+      select:
+        by: skill
+        skills: [api-design, backend-architecture]
+        prefer_agent: backend-architect
+      purpose: "Design API architecture"
+
+    - step: 2
+      role: support
+      select:
+        by: skill
+        skills: [documentation, api-documentation]
+        prefer_agent: api-documenter
+      purpose: "Generate OpenAPI documentation"
+
+    - step: 3
+      role: quality
+      select:
+        by: skill
+        skills: [testing]
+        prefer_agent: test-automator
+      purpose: "Write API tests"
+
+  rules:
+    - if: "task_has_keyword(['graphql'])"
+      then: "set_primary(graphql-architect)"
+    - if: "task_has_keyword(['versioning', 'deprecation'])"
+      then: "add_to_chain(api-documenter, with_focus=versioning)"
+    - if: "task_has_keyword(['auth', 'oauth', 'jwt'])"
+      then: "add_to_chain(security-auditor, before=test-automator)"
