@@ -552,3 +552,234 @@ class TestTaskLikeProtocol:
         custom = CustomTask()
         cond = Condition(task_type="feature", domain="web-frontend")
         assert evaluate(cond, custom) is True
+
+
+# ============================================================================
+# Action Application Tests
+# ============================================================================
+
+
+class TestApplyOverrides:
+    """Tests for RuleEngine.apply_overrides() action application."""
+
+    def test_apply_overrides_set_primary(self) -> None:
+        """set_primary action returns the specified agent."""
+        engine = RuleEngine()
+        override = Override(
+            name="debug-override",
+            priority=90,
+            condition=Condition(has_keyword=["debug"]),
+            action=OverrideAction(set_primary="debugger"),
+            reason="Debug tasks use debugger",
+        )
+        engine.add_override(override)
+
+        task = Task(title="Debug login issue")
+        result = engine.apply_overrides(task)
+        assert result == "debugger"
+
+    def test_apply_overrides_no_match_returns_none(self) -> None:
+        """No matching override returns None."""
+        engine = RuleEngine()
+        override = Override(
+            name="debug-override",
+            priority=90,
+            condition=Condition(has_keyword=["debug"]),
+            action=OverrideAction(set_primary="debugger"),
+            reason="Debug tasks use debugger",
+        )
+        engine.add_override(override)
+
+        task = Task(title="Add new feature")
+        result = engine.apply_overrides(task)
+        assert result is None
+
+    def test_apply_overrides_require_agent(self) -> None:
+        """require_agent action returns the specified agent."""
+        engine = RuleEngine()
+        override = Override(
+            name="test-required",
+            priority=90,
+            condition=Condition(file_pattern=["tests/*"]),
+            action=OverrideAction(require_agent="test-automator"),
+            reason="Test files need test-automator",
+        )
+        engine.add_override(override)
+
+        task = Task(title="Add tests", scope="tests/unit/test_login.py")
+        result = engine.apply_overrides(task)
+        assert result == "test-automator"
+
+
+class TestExtendChain:
+    """Tests for RuleEngine.extend_chain() action application."""
+
+    def test_extend_chain_adds_agent_at_end(self) -> None:
+        """Chain extension adds agent at 'last' position."""
+        engine = RuleEngine()
+        extension = ChainExtension(
+            name="reviewer-check",
+            condition=Condition(task_type="feature"),
+            action=ChainExtensionAction(
+                add_to_chain="code-reviewer",
+                position="last",
+            ),
+        )
+        engine.add_chain_extension(extension)
+
+        task = Task(title="Add login", task_type="feature")
+        original_chain = ["backend-dev", "test-automator"]
+        result = engine.extend_chain(original_chain, task)
+
+        assert result == ["backend-dev", "test-automator", "code-reviewer"]
+
+    def test_extend_chain_adds_agent_at_first(self) -> None:
+        """Chain extension adds agent at 'first' position."""
+        engine = RuleEngine()
+        extension = ChainExtension(
+            name="architect-first",
+            condition=Condition(has_keyword=["architecture"]),
+            action=ChainExtensionAction(
+                add_to_chain="architect",
+                position="first",
+            ),
+        )
+        engine.add_chain_extension(extension)
+
+        task = Task(title="Redesign architecture")
+        original_chain = ["backend-dev", "code-reviewer"]
+        result = engine.extend_chain(original_chain, task)
+
+        assert result == ["architect", "backend-dev", "code-reviewer"]
+
+    def test_extend_chain_adds_agent_after_primary(self) -> None:
+        """Chain extension adds agent at 'after_primary' position."""
+        engine = RuleEngine()
+        extension = ChainExtension(
+            name="security-after-primary",
+            condition=Condition(has_keyword=["auth"]),
+            action=ChainExtensionAction(
+                add_to_chain="security-auditor",
+                position="after_primary",
+            ),
+        )
+        engine.add_chain_extension(extension)
+
+        task = Task(title="Implement auth flow")
+        original_chain = ["backend-dev", "test-automator", "code-reviewer"]
+        result = engine.extend_chain(original_chain, task)
+
+        assert result == ["backend-dev", "security-auditor", "test-automator", "code-reviewer"]
+
+    def test_extend_chain_adds_agent_before_last(self) -> None:
+        """Chain extension adds agent at 'before_last' position."""
+        engine = RuleEngine()
+        extension = ChainExtension(
+            name="test-before-review",
+            condition=Condition(domain="web-backend"),
+            action=ChainExtensionAction(
+                add_to_chain="test-automator",
+                position="before_last",
+            ),
+        )
+        engine.add_chain_extension(extension)
+
+        task = Task(title="Add API", domain="web-backend")
+        original_chain = ["backend-dev", "code-reviewer"]
+        result = engine.extend_chain(original_chain, task)
+
+        assert result == ["backend-dev", "test-automator", "code-reviewer"]
+
+    def test_extend_chain_no_matching_extensions(self) -> None:
+        """No matching extensions returns original chain unchanged."""
+        engine = RuleEngine()
+        extension = ChainExtension(
+            name="test-check",
+            condition=Condition(has_keyword=["test"]),
+            action=ChainExtensionAction(add_to_chain="test-automator"),
+        )
+        engine.add_chain_extension(extension)
+
+        task = Task(title="Add feature")  # No 'test' keyword
+        original_chain = ["backend-dev", "code-reviewer"]
+        result = engine.extend_chain(original_chain, task)
+
+        assert result == original_chain
+
+    def test_extend_chain_multiple_extensions(self) -> None:
+        """Multiple matching extensions all apply."""
+        engine = RuleEngine()
+        ext1 = ChainExtension(
+            name="security-check",
+            condition=Condition(has_keyword=["auth"]),
+            action=ChainExtensionAction(add_to_chain="security-auditor", position="last"),
+        )
+        ext2 = ChainExtension(
+            name="test-check",
+            condition=Condition(has_keyword=["auth"]),
+            action=ChainExtensionAction(add_to_chain="test-automator", position="last"),
+        )
+        engine.add_chain_extension(ext1)
+        engine.add_chain_extension(ext2)
+
+        task = Task(title="Implement auth")
+        original_chain = ["backend-dev"]
+        result = engine.extend_chain(original_chain, task)
+
+        # Both extensions add to 'last', so order depends on extension order
+        assert result == ["backend-dev", "security-auditor", "test-automator"]
+
+    def test_extend_chain_avoids_duplicates(self) -> None:
+        """Chain extension avoids adding duplicate agents."""
+        engine = RuleEngine()
+        extension = ChainExtension(
+            name="reviewer-check",
+            condition=Condition(task_type="feature"),
+            action=ChainExtensionAction(add_to_chain="code-reviewer", position="last"),
+        )
+        engine.add_chain_extension(extension)
+
+        task = Task(title="Add login", task_type="feature")
+        original_chain = ["backend-dev", "code-reviewer"]  # Already has code-reviewer
+        result = engine.extend_chain(original_chain, task)
+
+        # Should not add duplicate
+        assert result == ["backend-dev", "code-reviewer"]
+
+    def test_extend_chain_ensure_in_chain(self) -> None:
+        """ensure_in_chain action ensures agents are present."""
+        engine = RuleEngine()
+        extension = ChainExtension(
+            name="require-reviewers",
+            condition=Condition(domain="library"),
+            action=ChainExtensionAction(
+                ensure_in_chain=["code-reviewer", "api-documenter"],
+            ),
+        )
+        engine.add_chain_extension(extension)
+
+        task = Task(title="Update library", domain="library")
+        original_chain = ["python-pro", "code-reviewer"]  # Already has code-reviewer
+        result = engine.extend_chain(original_chain, task)
+
+        # Should add api-documenter but not duplicate code-reviewer
+        assert "python-pro" in result
+        assert "code-reviewer" in result
+        assert "api-documenter" in result
+        assert result.count("code-reviewer") == 1
+
+    def test_extend_chain_empty_chain(self) -> None:
+        """Chain extension on empty chain works."""
+        engine = RuleEngine()
+        extension = ChainExtension(
+            name="add-first",
+            condition=Condition(task_type="feature"),
+            action=ChainExtensionAction(add_to_chain="backend-dev", position="first"),
+        )
+        engine.add_chain_extension(extension)
+
+        task = Task(title="Add login", task_type="feature")
+        original_chain: list[str] = []
+        result = engine.extend_chain(original_chain, task)
+
+        assert result == ["backend-dev"]

@@ -18,10 +18,12 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
+    from c4.supervisor.agent_graph.graph import AgentGraph
     from c4.supervisor.agent_graph.models import (
         ChainExtension,
         Condition,
         Override,
+        Rules,
     )
 
 
@@ -371,3 +373,188 @@ class RuleEngine:
             True if the condition matches, False otherwise
         """
         return evaluate(condition, task)
+
+    def apply_overrides(
+        self,
+        task: TaskLike,
+        graph: AgentGraph | None = None,
+    ) -> str | None:
+        """Apply override rules to determine the primary agent.
+
+        Finds the highest-priority matching override and applies its action.
+        Supports: set_primary, require_agent.
+
+        Args:
+            task: The task to match against
+            graph: Optional AgentGraph to validate agent existence
+
+        Returns:
+            Agent ID to use as primary, or None if no override matches
+        """
+        override = self.find_matching_override(task)
+        if override is None:
+            return None
+
+        action = override.action
+
+        # set_primary takes highest priority
+        if action.set_primary:
+            if graph is None or graph.get_node(action.set_primary):
+                return action.set_primary
+
+        # require_agent also sets the primary
+        if action.require_agent:
+            if graph is None or graph.get_node(action.require_agent):
+                return action.require_agent
+
+        return None
+
+    def extend_chain(
+        self,
+        chain: list[str],
+        task: TaskLike,
+    ) -> list[str]:
+        """Extend an agent chain based on matching chain extension rules.
+
+        Applies all matching chain extensions to add agents to the chain.
+        Supports positions: first, after_primary, before_last, last.
+        Also supports ensure_in_chain for guaranteeing agent presence.
+
+        Args:
+            chain: The current agent chain (list of agent IDs)
+            task: The task to match against
+
+        Returns:
+            Extended agent chain with additional agents
+        """
+        result = list(chain)  # Make a copy
+        extensions = self.find_matching_chain_extensions(task)
+
+        for ext in extensions:
+            action = ext.action
+
+            # Handle ensure_in_chain first
+            if action.ensure_in_chain:
+                for agent_id in action.ensure_in_chain:
+                    if agent_id not in result:
+                        # Add at default position (before_last)
+                        if len(result) >= 2:
+                            result.insert(-1, agent_id)
+                        else:
+                            result.append(agent_id)
+
+            # Handle add_to_chain with position
+            if action.add_to_chain and action.add_to_chain not in result:
+                agent_id = action.add_to_chain
+                position = action.position or "before_last"
+
+                if position == "first":
+                    result.insert(0, agent_id)
+                elif position == "after_primary":
+                    if len(result) >= 1:
+                        result.insert(1, agent_id)
+                    else:
+                        result.append(agent_id)
+                elif position == "before_last":
+                    if len(result) >= 1:
+                        result.insert(-1, agent_id)
+                    else:
+                        result.append(agent_id)
+                elif position == "last":
+                    result.append(agent_id)
+
+        return result
+
+
+def apply_overrides(
+    rules: Rules | RuleEngine,
+    task: TaskLike,
+    graph: AgentGraph | None = None,
+) -> str | None:
+    """Apply override rules to determine the primary agent.
+
+    This is a module-level convenience function that works with
+    both Rules model and RuleEngine instance.
+
+    Args:
+        rules: Either a Rules model or a RuleEngine instance
+        task: The task to match against
+        graph: Optional AgentGraph to validate agent existence
+
+    Returns:
+        Agent ID to use as primary, or None if no override matches
+
+    Example:
+        >>> from c4.supervisor.agent_graph.models import Rules, Override, OverrideAction, Condition
+        >>> rules = Rules(overrides=[
+        ...     Override(
+        ...         name="debug",
+        ...         priority=90,
+        ...         condition=Condition(has_keyword=["debug"]),
+        ...         action=OverrideAction(set_primary="debugger"),
+        ...         reason="Use debugger for debug tasks"
+        ...     )
+        ... ])
+        >>> task = Task(title="Debug login issue")
+        >>> apply_overrides(rules, task)
+        'debugger'
+    """
+    if isinstance(rules, RuleEngine):
+        return rules.apply_overrides(task, graph)
+
+    # Rules model - create a temporary engine
+    engine = RuleEngine()
+    if rules.overrides:
+        for override in rules.overrides:
+            engine.add_override(override)
+
+    return engine.apply_overrides(task, graph)
+
+
+def extend_chain(
+    rules: Rules | RuleEngine,
+    chain: list[str],
+    task: TaskLike,
+) -> list[str]:
+    """Extend an agent chain based on chain extension rules.
+
+    This is a module-level convenience function that works with
+    both Rules model and RuleEngine instance.
+
+    Args:
+        rules: Either a Rules model or a RuleEngine instance
+        chain: The current agent chain (list of agent IDs)
+        task: The task to match against
+
+    Returns:
+        Extended agent chain
+
+    Example:
+        >>> from c4.supervisor.agent_graph.models import (
+        ...     Rules, ChainExtension, ChainExtensionAction, Condition
+        ... )
+        >>> action = ChainExtensionAction(
+        ...     add_to_chain="security-auditor", position="before_last"
+        ... )
+        >>> rules = Rules(chain_extensions=[
+        ...     ChainExtension(
+        ...         name="security",
+        ...         condition=Condition(has_keyword=["auth", "security"]),
+        ...         action=action
+        ...     )
+        ... ])
+        >>> chain = ["backend-dev", "code-reviewer"]
+        >>> task = Task(title="Add authentication")
+        >>> extend_chain(rules, chain, task)
+        ['backend-dev', 'security-auditor', 'code-reviewer']
+    """
+    if isinstance(rules, RuleEngine):
+        return rules.extend_chain(chain, task)
+
+    # Rules model - create a temporary engine
+    engine = RuleEngine()
+    if rules.chain_extensions:
+        for ext in rules.chain_extensions:
+            engine.add_chain_extension(ext)
+
+    return engine.extend_chain(chain, task)
