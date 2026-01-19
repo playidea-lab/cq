@@ -504,9 +504,11 @@ class TestC4AddTodo:
         )
 
         assert result["success"] is True
+        # Task ID is normalized to T-NEW-0 (version 0 appended)
+        assert result["task_id"] == "T-NEW-0"
 
-        # Verify task was added
-        task = daemon.get_task("T-NEW")
+        # Verify task was added (use normalized ID)
+        task = daemon.get_task(result["task_id"])
         assert task is not None
         assert task.title == "New task"
 
@@ -523,19 +525,20 @@ class TestC4AddTodo:
         assert result["success"] is True
         assert result["dependencies"] == ["T-001"]
 
-        task = daemon.get_task("T-002")
+        # Use normalized ID (T-002 -> T-002-0)
+        task = daemon.get_task(result["task_id"])
         assert task.dependencies == ["T-001"]
 
     def test_add_todo_with_priority(self, daemon):
         """Test adding a task with priority"""
-        daemon.c4_add_todo(
+        result_low = daemon.c4_add_todo(
             task_id="T-LOW",
             title="Low priority",
             scope=None,
             dod="Low",
             priority=0,
         )
-        daemon.c4_add_todo(
+        result_high = daemon.c4_add_todo(
             task_id="T-HIGH",
             title="High priority",
             scope=None,
@@ -543,8 +546,9 @@ class TestC4AddTodo:
             priority=10,
         )
 
-        task_low = daemon.get_task("T-LOW")
-        task_high = daemon.get_task("T-HIGH")
+        # Use normalized IDs
+        task_low = daemon.get_task(result_low["task_id"])
+        task_high = daemon.get_task(result_high["task_id"])
         assert task_low.priority == 0
         assert task_high.priority == 10
 
@@ -559,7 +563,8 @@ class TestC4AddTodo:
         )
 
         assert result["success"] is True
-        task = daemon.get_task("T-FE")
+        # Use normalized ID
+        task = daemon.get_task(result["task_id"])
         assert task.domain == "web-frontend"
 
 
@@ -570,16 +575,16 @@ class TestTaskDependencies:
         """Test that tasks with unmet dependencies are not assigned"""
         daemon = daemon_in_execute
 
-        # Add tasks with dependencies
-        daemon.c4_add_todo("T-001", "Base task", None, "Base")
-        daemon.c4_add_todo("T-002", "Dependent", None, "Depends on T-001", dependencies=["T-001"])
+        # Add tasks with dependencies (IDs normalized to T-XXX-0)
+        result1 = daemon.c4_add_todo("T-001", "Base task", None, "Base")
+        result2 = daemon.c4_add_todo("T-002", "Dependent", None, "Depends on T-001", dependencies=[result1["task_id"]])
 
-        # Worker should only get T-001 (T-002 has unmet deps)
+        # Worker should only get T-001-0 (T-002-0 has unmet deps)
         task = daemon.c4_get_task("worker-1")
         assert task is not None
-        assert task.task_id == "T-001"
+        assert task.task_id == result1["task_id"]  # T-001-0
 
-        # Another worker should get nothing (T-002 blocked, T-001 assigned)
+        # Another worker should get nothing (T-002-0 blocked, T-001-0 assigned)
         task2 = daemon.c4_get_task("worker-2")
         assert task2 is None
 
@@ -587,59 +592,59 @@ class TestTaskDependencies:
         """Test that tasks are assigned after dependencies complete"""
         daemon = daemon_in_execute
 
-        daemon.c4_add_todo("T-001", "Base", None, "Base")
-        daemon.c4_add_todo("T-002", "Dependent", None, "After T-001", dependencies=["T-001"])
+        result1 = daemon.c4_add_todo("T-001", "Base", None, "Base")
+        result2 = daemon.c4_add_todo("T-002", "Dependent", None, "After T-001", dependencies=[result1["task_id"]])
 
-        # Get and complete T-001
+        # Get and complete T-001-0
         daemon.c4_get_task("worker-1")
-        daemon.c4_submit("T-001", "sha123", [{"name": "lint", "status": "pass"}])
+        daemon.c4_submit(result1["task_id"], "sha123", [{"name": "lint", "status": "pass"}])
 
-        # Now T-002 should be available
+        # Now T-002-0 should be available
         task = daemon.c4_get_task("worker-1")
         assert task is not None
-        assert task.task_id == "T-002"
+        assert task.task_id == result2["task_id"]  # T-002-0
 
     def test_parallel_tasks_after_common_dependency(self, daemon_in_execute):
         """Test parallel tasks can be assigned after common dependency"""
         daemon = daemon_in_execute
 
-        daemon.c4_add_todo("T-000", "Setup", "setup/", "Setup")
-        daemon.c4_add_todo("T-001", "Module A", "src/a/", "A", dependencies=["T-000"])
-        daemon.c4_add_todo("T-002", "Module B", "src/b/", "B", dependencies=["T-000"])
-        daemon.c4_add_todo("T-003", "Module C", "src/c/", "C", dependencies=["T-000"])
+        r0 = daemon.c4_add_todo("T-000", "Setup", "setup/", "Setup")
+        r1 = daemon.c4_add_todo("T-001", "Module A", "src/a/", "A", dependencies=[r0["task_id"]])
+        r2 = daemon.c4_add_todo("T-002", "Module B", "src/b/", "B", dependencies=[r0["task_id"]])
+        r3 = daemon.c4_add_todo("T-003", "Module C", "src/c/", "C", dependencies=[r0["task_id"]])
 
-        # Only T-000 available initially
+        # Only T-000-0 available initially
         task = daemon.c4_get_task("worker-1")
-        assert task.task_id == "T-000"
+        assert task.task_id == r0["task_id"]
 
-        # Complete T-000
-        daemon.c4_submit("T-000", "sha1", [{"name": "lint", "status": "pass"}])
+        # Complete T-000-0
+        daemon.c4_submit(r0["task_id"], "sha1", [{"name": "lint", "status": "pass"}])
 
-        # Now 3 workers can get T-001, T-002, T-003 in parallel
+        # Now 3 workers can get T-001-0, T-002-0, T-003-0 in parallel
         t1 = daemon.c4_get_task("worker-1")
         t2 = daemon.c4_get_task("worker-2")
         t3 = daemon.c4_get_task("worker-3")
 
         assigned = {t1.task_id, t2.task_id, t3.task_id}
-        assert assigned == {"T-001", "T-002", "T-003"}
+        assert assigned == {r1["task_id"], r2["task_id"], r3["task_id"]}
 
     def test_priority_ordering(self, daemon_in_execute):
         """Test high priority tasks are assigned first"""
         daemon = daemon_in_execute
 
-        daemon.c4_add_todo("T-LOW", "Low", "low/", "Low", priority=0)
-        daemon.c4_add_todo("T-MED", "Med", "med/", "Med", priority=5)
-        daemon.c4_add_todo("T-HIGH", "High", "high/", "High", priority=10)
+        r_low = daemon.c4_add_todo("T-LOW", "Low", "low/", "Low", priority=0)
+        r_med = daemon.c4_add_todo("T-MED", "Med", "med/", "Med", priority=5)
+        r_high = daemon.c4_add_todo("T-HIGH", "High", "high/", "High", priority=10)
 
         # Should get highest priority first
         task1 = daemon.c4_get_task("worker-1")
-        assert task1.task_id == "T-HIGH"
+        assert task1.task_id == r_high["task_id"]
 
         task2 = daemon.c4_get_task("worker-2")
-        assert task2.task_id == "T-MED"
+        assert task2.task_id == r_med["task_id"]
 
         task3 = daemon.c4_get_task("worker-3")
-        assert task3.task_id == "T-LOW"
+        assert task3.task_id == r_low["task_id"]
 
 
 class TestWorkerManagement:

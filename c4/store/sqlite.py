@@ -808,6 +808,58 @@ class SQLiteTaskStore:
             conn.commit()
             return True
 
+    def update_review_decision(
+        self,
+        project_id: str,
+        task_id: str,
+        review_decision: str,
+    ) -> bool:
+        """
+        Update review_decision field for a review/checkpoint task.
+
+        Args:
+            project_id: Project ID
+            task_id: Task ID (R-XXX-N or CP-XXX)
+            review_decision: APPROVE, REQUEST_CHANGES, or REPLAN
+
+        Returns:
+            True if updated successfully, False if task not found
+        """
+        from c4.models.task import Task
+
+        with self._get_connection() as conn:
+            # Load current task
+            cursor = conn.execute(
+                "SELECT task_json FROM c4_tasks WHERE project_id = ? AND task_id = ?",
+                (project_id, task_id),
+            )
+            row = cursor.fetchone()
+            if row is None:
+                return False
+
+            # Update review_decision
+            task = Task.model_validate(json.loads(row[0]))
+            task.review_decision = review_decision
+
+            # Save updated task
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO c4_tasks
+                    (project_id, task_id, task_json, status, assigned_to, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    project_id,
+                    task_id,
+                    task.model_dump_json(),
+                    task.status.value,
+                    task.assigned_to,
+                    datetime.now(),
+                ),
+            )
+            conn.commit()
+            return True
+
     def exists(self, project_id: str) -> bool:
         """Check if any tasks exist for a project"""
         with self._get_connection() as conn:

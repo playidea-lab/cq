@@ -24,6 +24,7 @@ from .discovery import (
 from .models import (
     C4Config,
     C4State,
+    CheckpointConfig,
     CheckpointQueueItem,
     CheckpointResponse,
     EventType,
@@ -1368,6 +1369,14 @@ Thumbs.db
             if review_response:
                 return review_response
 
+        # Checkpoint-as-Task: Handle checkpoint task completion
+        if self.config.checkpoint_as_task and task and task.type == TaskType.CHECKPOINT:
+            cp_response = self._handle_checkpoint_completion(
+                task, review_result, review_comments, actual_worker_id
+            )
+            if cp_response:
+                return cp_response
+
         # Get fresh state reference for final checks
         state = self.state_machine.state
 
@@ -1682,6 +1691,18 @@ Thumbs.db
                 f"Review {task.id} APPROVED by {worker_id}. "
                 f"Parent task {task.parent_id} confirmed complete."
             )
+
+            # Update review_decision on the task
+            self.task_store.update_review_decision(
+                self.state_machine.state.project_id,
+                task.id,
+                "APPROVE",
+            )
+
+            # Check if all reviews in this phase are approved -> create CP task
+            if self.config.checkpoint_as_task:
+                self._check_and_create_checkpoint_task(task)
+
             return None  # Continue with normal completion
 
         elif review_result == "REQUEST_CHANGES":
@@ -1774,6 +1795,443 @@ Thumbs.db
                     "Use 'APPROVE' or 'REQUEST_CHANGES'"
                 ),
             )
+
+    def _check_and_create_checkpoint_task(self, completed_review: Task) -> Task | None:
+        """Check if all reviews in a checkpoint are approved and create CP task.
+
+        This is called after a review task is approved. It checks if all tasks
+        in the checkpoint config have their reviews approved, and if so,
+        creates a checkpoint task (CP-XXX).
+
+        Args:
+            completed_review: The review task that was just approved
+
+        Returns:
+            The created checkpoint task, or None if not all reviews are approved
+        """
+        if self.state_machine is None:
+            return None
+
+        # Find the checkpoint config that includes this task's parent
+        parent_task_id = completed_review.parent_id
+        if not parent_task_id:
+            return None
+
+        # Find which checkpoint this task belongs to
+        matching_checkpoint: CheckpointConfig | None = None
+        for cp_config in self.config.checkpoints:
+            # Check if parent task (T-XXX-N) or base ID matches required_tasks
+            base_id = completed_review.base_id
+            for required in cp_config.required_tasks:
+                # Match by full ID (T-001-0) or base ID pattern (T-001)
+                if required == parent_task_id or required.rstrip("-0123456789") == f"T-{base_id}".rstrip("-0123456789"):
+                    matching_checkpoint = cp_config
+                    break
+            if matching_checkpoint:
+                break
+
+        if not matching_checkpoint:
+            # No checkpoint config includes this task
+            logger.debug(f"No checkpoint config found for task {parent_task_id}")
+            return None
+
+        # Check if CP task already exists
+        cp_task_id = f"CP-{matching_checkpoint.id}"
+        if self._task_exists(cp_task_id):
+            logger.debug(f"Checkpoint task {cp_task_id} already exists")
+            return None
+
+        # Check if this checkpoint was already passed
+        if matching_checkpoint.id in self.state_machine.state.passed_checkpoints:
+            logger.debug(f"Checkpoint {matching_checkpoint.id} already passed")
+            return None
+
+        # Check if all required tasks have their latest review approved
+        all_approved = True
+        required_impl_tasks: list[str] = []
+        review_task_ids: list[str] = []
+
+        for required_task_pattern in matching_checkpoint.required_tasks:
+            # Find all implementation tasks matching this pattern
+            impl_tasks = self._find_tasks_by_pattern(required_task_pattern, TaskType.IMPLEMENTATION)
+
+            for impl_task in impl_tasks:
+                required_impl_tasks.append(impl_task.id)
+
+                # Find the latest review for this impl task
+                latest_review = self._get_latest_review_for_impl(impl_task.base_id)
+
+                if latest_review is None:
+                    all_approved = False
+                    break
+
+                # Check if review is done and approved
+                state = self.state_machine.state
+                if latest_review.id not in state.queue.done:
+                    all_approved = False
+                    break
+
+                if latest_review.review_decision != "APPROVE":
+                    all_approved = False
+                    break
+
+                review_task_ids.append(latest_review.id)
+
+            if not all_approved:
+                break
+
+        if not all_approved:
+            logger.debug(
+                f"Not all reviews approved for checkpoint {matching_checkpoint.id}"
+            )
+            return None
+
+        # All reviews approved! Create checkpoint task
+        logger.info(
+            f"All reviews approved for checkpoint {matching_checkpoint.id}. "
+            f"Creating checkpoint task {cp_task_id}"
+        )
+
+        # Build DoD from checkpoint config and design verifications
+        checkpoint_dod = self._build_checkpoint_dod(matching_checkpoint)
+
+        # Calculate priority (lower than reviews)
+        base_priority = min(
+            (self.get_task(t).priority for t in required_impl_tasks if self.get_task(t)),
+            default=0,
+        )
+        cp_priority = base_priority - self.config.checkpoint_priority_offset
+
+        cp_task = Task(
+            id=cp_task_id,
+            title=f"Checkpoint: {matching_checkpoint.description or matching_checkpoint.id}",
+            dod=checkpoint_dod,
+            dependencies=review_task_ids,  # Depends on all reviews
+            priority=cp_priority,
+            type=TaskType.CHECKPOINT,
+            phase_id=matching_checkpoint.id,
+            required_tasks=required_impl_tasks,
+        )
+
+        try:
+            self.add_task(cp_task)
+            logger.info(
+                f"Created checkpoint task {cp_task_id} "
+                f"(required_tasks={required_impl_tasks}, priority={cp_priority})"
+            )
+            return cp_task
+        except Exception as e:
+            logger.error(f"Failed to create checkpoint task {cp_task_id}: {e}")
+            return None
+
+    def _find_tasks_by_pattern(
+        self, pattern: str, task_type: TaskType | None = None
+    ) -> list[Task]:
+        """Find tasks matching a pattern.
+
+        Patterns:
+        - "T-001-0": Exact match
+        - "T-001": Match any version (T-001-0, T-001-1, etc.)
+
+        Args:
+            pattern: Task ID or base ID pattern
+            task_type: Optional filter by task type
+
+        Returns:
+            List of matching tasks
+        """
+        import re
+
+        tasks = self.get_all_tasks()
+        matching = []
+
+        for task in tasks.values():
+            if task_type and task.type != task_type:
+                continue
+
+            # Exact match
+            if task.id == pattern:
+                matching.append(task)
+                continue
+
+            # Base ID pattern match (e.g., "T-001" matches "T-001-0", "T-001-1")
+            if task.base_id and pattern == f"T-{task.base_id}":
+                matching.append(task)
+                continue
+
+            # Regex pattern for more complex matching
+            if re.match(f"^{pattern.replace('-', r'-')}(-\\d+)?$", task.id):
+                matching.append(task)
+
+        return matching
+
+    def _get_latest_review_for_impl(self, base_id: str) -> Task | None:
+        """Get the latest review task for an implementation task base ID.
+
+        Args:
+            base_id: Base task ID (e.g., "001")
+
+        Returns:
+            The latest version review task (R-001-N with highest N), or None
+        """
+        tasks = self.get_all_tasks()
+        latest_review: Task | None = None
+        latest_version = -1
+
+        for task in tasks.values():
+            if task.type != TaskType.REVIEW:
+                continue
+            if task.base_id != base_id:
+                continue
+            if task.version > latest_version:
+                latest_version = task.version
+                latest_review = task
+
+        return latest_review
+
+    def _build_checkpoint_dod(self, cp_config: CheckpointConfig) -> str:
+        """Build DoD for checkpoint task from config and design verifications.
+
+        Args:
+            cp_config: Checkpoint configuration
+
+        Returns:
+            Markdown DoD string
+        """
+        dod = f"""## Checkpoint: {cp_config.description or cp_config.id}
+
+### 1. Build & Test
+- [ ] Full build succeeds
+- [ ] All unit tests pass
+- [ ] Lint errors: 0
+
+### 2. Integration Verification
+- [ ] E2E tests pass (if configured)
+- [ ] Component interfaces work correctly
+
+### 3. Required Validations
+"""
+        for validation in cp_config.required_validations:
+            dod += f"- [ ] {validation}: pass\n"
+
+        # Add design verifications if available
+        if self.config.verifications.enabled and self.config.verifications.items:
+            dod += "\n### 4. Runtime Verifications\n"
+            for item in self.config.verifications.items:
+                if item.enabled:
+                    dod += f"- [ ] [{item.type}] {item.name}\n"
+
+        dod += """
+### Decision
+- **APPROVE**: All verifications pass, phase complete
+- **REQUEST_CHANGES**: Specific tasks need fixes (list task IDs)
+- **REPLAN**: Major issues require replanning
+"""
+        return dod
+
+    def _task_exists(self, task_id: str) -> bool:
+        """Check if a task with given ID exists."""
+        return task_id in self._tasks or task_id in self.get_all_tasks()
+
+    def _handle_checkpoint_completion(
+        self,
+        task: Task,
+        review_result: str | None,
+        review_comments: str | None,
+        worker_id: str | None,
+    ) -> SubmitResponse | None:
+        """Handle checkpoint task completion with APPROVE, REQUEST_CHANGES, or REPLAN.
+
+        Args:
+            task: The checkpoint task being completed
+            review_result: "APPROVE", "REQUEST_CHANGES", or "REPLAN"
+            review_comments: Comments (required for REQUEST_CHANGES/REPLAN)
+            worker_id: The worker completing the checkpoint
+
+        Returns:
+            SubmitResponse if there's special handling needed,
+            None to continue with normal completion flow
+        """
+        if not task.phase_id:
+            logger.warning(f"Checkpoint task {task.id} missing phase_id")
+            return None
+
+        # Determine result based on comments if not explicitly provided
+        if review_result is None:
+            if review_comments:
+                review_result = "REQUEST_CHANGES"
+            else:
+                review_result = "APPROVE"
+
+        # Update review_decision on the task
+        self.task_store.update_review_decision(
+            self.state_machine.state.project_id,
+            task.id,
+            review_result,
+        )
+
+        if review_result == "APPROVE":
+            logger.info(
+                f"Checkpoint {task.id} APPROVED by {worker_id}. "
+                f"Phase {task.phase_id} complete."
+            )
+
+            # Mark checkpoint as passed
+            if self.state_machine:
+                self.state_machine.state.passed_checkpoints.append(task.phase_id)
+                self.state_machine.save_state()
+
+            # Perform completion action (merge/pr) if this was the final checkpoint
+            # Check if all checkpoints are now passed
+            all_passed = all(
+                cp.id in self.state_machine.state.passed_checkpoints
+                for cp in self.config.checkpoints
+            )
+            if all_passed:
+                self._perform_completion_action()
+
+            return None  # Continue with normal completion
+
+        elif review_result == "REQUEST_CHANGES":
+            if not review_comments:
+                return SubmitResponse(
+                    success=False,
+                    next_action="fix_failures",
+                    message="REQUEST_CHANGES requires review_comments with task IDs to fix",
+                )
+
+            # Parse problem task IDs from comments
+            # Expected format: "T-001, T-003: <description of issues>"
+            problem_task_ids = self._parse_problem_task_ids(review_comments)
+
+            if not problem_task_ids:
+                logger.warning(
+                    f"No task IDs found in checkpoint comments: {review_comments}"
+                )
+                # Create a generic fix task
+                problem_task_ids = task.required_tasks[:1] if task.required_tasks else []
+
+            created_tasks = []
+            for problem_task_id in problem_task_ids:
+                original_task = self.get_task(problem_task_id)
+                if not original_task:
+                    logger.warning(f"Problem task {problem_task_id} not found")
+                    continue
+
+                # Create next version of the problem task
+                next_version = original_task.version + 1
+                if next_version > self.config.max_revision:
+                    logger.warning(
+                        f"Task {original_task.base_id} exceeded max_revision. "
+                        "Adding to repair queue."
+                    )
+                    # Add to repair queue
+                    from c4.models import RepairQueueItem
+
+                    repair_item = RepairQueueItem(
+                        task_id=problem_task_id,
+                        worker_id=worker_id or "unknown",
+                        failure_signature=f"checkpoint_request_changes:{task.id}",
+                        last_error=review_comments,
+                        attempts=next_version,
+                        blocked_at=datetime.now().isoformat(),
+                    )
+                    if self.state_machine:
+                        self.state_machine.state.repair_queue.append(repair_item)
+                        self.state_machine.save_state()
+                    continue
+
+                new_task_id = f"T-{original_task.base_id}-{next_version}"
+                new_task = Task(
+                    id=new_task_id,
+                    title=original_task.title,
+                    scope=original_task.scope,
+                    dod=review_comments,  # Checkpoint comments become new DoD
+                    dependencies=[],
+                    domain=original_task.domain,
+                    priority=original_task.priority,
+                    type=TaskType.IMPLEMENTATION,
+                    base_id=original_task.base_id,
+                    version=next_version,
+                    parent_id=task.id,  # Points to checkpoint task
+                    phase_id=task.phase_id,
+                    review_comments=review_comments,
+                )
+
+                try:
+                    self.add_task(new_task)
+                    created_tasks.append(new_task_id)
+                    logger.info(
+                        f"Created fix task {new_task_id} from checkpoint {task.id}"
+                    )
+                except Exception as e:
+                    logger.error(f"Failed to create fix task {new_task_id}: {e}")
+
+            if created_tasks:
+                return SubmitResponse(
+                    success=True,
+                    next_action="get_next_task",
+                    message=f"Checkpoint requested changes. Created fix tasks: {created_tasks}",
+                )
+            return None
+
+        elif review_result == "REPLAN":
+            logger.warning(
+                f"Checkpoint {task.id} requires REPLAN. "
+                f"Adding to repair queue for supervisor guidance."
+            )
+
+            # Add to repair queue for escalation
+            from c4.models import RepairQueueItem
+
+            repair_item = RepairQueueItem(
+                task_id=task.id,
+                worker_id=worker_id or "unknown",
+                failure_signature=f"checkpoint_replan:{task.phase_id}",
+                last_error=review_comments or "Checkpoint requires replanning",
+                attempts=1,
+                blocked_at=datetime.now().isoformat(),
+            )
+            if self.state_machine:
+                self.state_machine.state.repair_queue.append(repair_item)
+                self.state_machine.save_state()
+
+            return SubmitResponse(
+                success=True,
+                next_action="escalate",
+                message=f"Checkpoint {task.id} requires replanning. Escalated to repair queue.",
+            )
+
+        else:
+            return SubmitResponse(
+                success=False,
+                next_action="fix_failures",
+                message=(
+                    f"Invalid review_result: {review_result}. "
+                    "Use 'APPROVE', 'REQUEST_CHANGES', or 'REPLAN'"
+                ),
+            )
+
+    def _parse_problem_task_ids(self, comments: str) -> list[str]:
+        """Parse task IDs from checkpoint comments.
+
+        Expected formats:
+        - "T-001, T-003: description"
+        - "Fix T-001-0 and T-003-0"
+        - "Issues with T-001"
+
+        Args:
+            comments: Review comments
+
+        Returns:
+            List of task IDs found
+        """
+        import re
+
+        # Match T-XXX-N or T-XXX patterns
+        pattern = r"T-\d+(?:-\d+)?"
+        matches = re.findall(pattern, comments, re.IGNORECASE)
+        return list(set(matches))  # Dedupe
 
     def _perform_completion_action(self) -> dict[str, Any] | None:
         """Perform completion action when plan is finished.

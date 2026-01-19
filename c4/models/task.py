@@ -46,3 +46,8 @@ class Task(BaseModel):
     parent_id: str | None = None  # Parent task ID (R-001-0 -> T-001-0)
     completed_by: str | None = None  # Worker who completed parent task
     review_comments: str | None = None  # Comments from REQUEST_CHANGES
+
+    # Checkpoint-as-Task fields
+    phase_id: str | None = None  # Phase identifier (e.g., "001", "phase-1")
+    required_tasks: list[str] = Field(default_factory=list)  # Tasks to verify (CP only)
+    review_decision: str | None = None  # APPROVE, REQUEST_CHANGES, REPLAN (R/CP only)

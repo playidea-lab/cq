@@ -58,6 +58,25 @@ INIT → DISCOVERY → DESIGN → PLAN → EXECUTE ↔ CHECKPOINT → COMPLETE
 | **CHECKPOINT** | Supervisor 리뷰 |
 | **COMPLETE** | 프로젝트 완료 |
 
+### 태스크 라이프사이클 (Review-as-Task)
+
+```
+T-001-0 (구현) → R-001-0 (리뷰)
+                    ↓
+          ├─ APPROVE → 완료
+          └─ REQUEST_CHANGES → T-001-1 → R-001-1 → ...
+```
+
+| 태스크 유형 | ID 형식 | 설명 |
+|-------------|---------|------|
+| **Implementation** | T-XXX-N | 구현 태스크 (N=버전) |
+| **Review** | R-XXX-N | 코드 리뷰 태스크 |
+| **Checkpoint** | CP-XXX | Phase 통합 검증 |
+
+- 구현 태스크 완료 시 리뷰 태스크 자동 생성
+- REQUEST_CHANGES 시 다음 버전 태스크 생성
+- Phase 내 모든 리뷰 APPROVE 시 체크포인트 태스크 생성
+
 ### 슬래시 명령어
 
 | 명령어 | 설명 |
@@ -98,6 +117,11 @@ checkpoints:
   - id: CP-FINAL
     name: "최종 검토"
     required_validations: ["lint", "unit"]
+
+# Review-as-Task (기본: 활성화)
+review_as_task: true        # 리뷰를 태스크로 생성
+checkpoint_as_task: true    # 체크포인트를 태스크로 처리
+max_revision: 3             # 최대 수정 횟수
 ```
 
 ### 플랫폼 설정
@@ -183,7 +207,8 @@ your-project/
 | **Agent Routing** | 도메인별 에이전트 자동 선택 |
 | **EARS Requirements** | 5가지 패턴의 요구사항 수집 |
 | **Multi-LLM** | 100+ LLM Provider 지원 (LiteLLM) |
-| **Checkpoint Gates** | 단계별 리뷰 포인트 |
+| **Review-as-Task** | 리뷰를 태스크로 관리, 자동 버전 관리 |
+| **Checkpoint-as-Task** | 체크포인트를 워커가 처리 |
 | **Auto-Validation** | 자동 lint/test 실행 |
 
 ---
@@ -235,6 +260,7 @@ npx ccusage@latest monthly
 | 문서 | 설명 |
 |------|------|
 | [MCP 도구](docs/api/MCP-도구-레퍼런스.md) | 19개 MCP 도구 스펙 |
+| [CHANGELOG](CHANGELOG.md) | 버전별 변경 사항 |
 
 ---
 

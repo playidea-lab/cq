@@ -39,6 +39,7 @@ class TaskType(str, Enum):
 
     IMPLEMENTATION = "impl"  # Implementation task (T-XXX-N)
     REVIEW = "review"  # Review task (R-XXX-N)
+    CHECKPOINT = "checkpoint"  # Checkpoint task (CP-XXX)
 
 
 class SupervisorDecision(str, Enum):

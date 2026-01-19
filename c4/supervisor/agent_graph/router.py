@@ -129,6 +129,15 @@ class GraphRouter:
         """Get the rule engine instance."""
         return self._rule_engine
 
+    @property
+    def use_legacy_fallback(self) -> bool:
+        """Check if using legacy domain-only routing.
+
+        Returns True if no skill matcher or rule engine is configured,
+        meaning the router will only use domain-based routing.
+        """
+        return self._skill_matcher is None and self._rule_engine is None
+
     def _create_rule_context(
         self,
         task: TaskLike,

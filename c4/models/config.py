@@ -243,6 +243,17 @@ class C4Config(BaseModel):
         description="Priority reduction for review tasks (lower priority = later in queue)",
     )
 
+    # Checkpoint-as-Task configuration
+    checkpoint_as_task: bool = Field(
+        default=True,
+        description="Auto-generate checkpoint tasks (CP-XXX) when all phase reviews complete",
+    )
+    checkpoint_priority_offset: int = Field(
+        default=20,
+        ge=0,
+        description="Priority reduction for checkpoint tasks (lower than review tasks)",
+    )
+
     # Branch strategy configuration
     work_branch: str | None = Field(
         default=None,

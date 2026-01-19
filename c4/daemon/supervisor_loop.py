@@ -142,7 +142,13 @@ class SupervisorLoop:
         """
         Process the next item in the checkpoint queue.
 
-        Uses strict review mode with execution verification when configured.
+        If checkpoint_as_task is enabled:
+          - Checkpoints are handled as tasks (CP-XXX) by workers
+          - This method just clears the queue
+
+        If checkpoint_as_task is disabled:
+          - Uses strict review mode with execution verification
+          - Runs supervisor directly
 
         Returns:
             True if an item was processed, False if queue is empty
@@ -156,6 +162,21 @@ class SupervisorLoop:
 
         # Get the first item (FIFO)
         item = state.checkpoint_queue[0]
+
+        # Check if checkpoint_as_task is enabled
+        config = getattr(self.daemon, "config", None)
+        if config and getattr(config, "checkpoint_as_task", False):
+            # Checkpoint is handled as a task (CP-XXX)
+            # Just clear the queue item - the CP task is created by _check_and_create_checkpoint_task
+            logger.info(
+                f"Checkpoint {item.checkpoint_id} handled as task. "
+                f"Removing from checkpoint_queue."
+            )
+            state.checkpoint_queue.pop(0)
+            self._safe_save_state(f"checkpoint {item.checkpoint_id} moved to task")
+            return True
+
+        # Legacy mode: process checkpoint directly
         logger.info(f"Processing checkpoint: {item.checkpoint_id}")
 
         try:
