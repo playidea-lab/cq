@@ -1116,8 +1116,15 @@ Thumbs.db
         commit_sha: str,
         validation_results: list[dict],
         worker_id: str | None = None,
+        review_result: str | None = None,
+        review_comments: str | None = None,
     ) -> SubmitResponse:
-        """Report task completion with validation results"""
+        """Report task completion with validation results.
+
+        For review tasks (TaskType.REVIEW), additional parameters:
+        - review_result: "APPROVE" or "REQUEST_CHANGES"
+        - review_comments: Comments for REQUEST_CHANGES (becomes DoD for next version)
+        """
         if self.state_machine is None:
             raise RuntimeError("C4 not initialized")
 
@@ -1258,6 +1265,14 @@ Thumbs.db
         # Review-as-Task: Generate review task for implementation tasks
         if self.config.review_as_task and task and task.type == TaskType.IMPLEMENTATION:
             self._generate_review_task(task, actual_worker_id)
+
+        # Review-as-Task: Handle review task completion
+        if self.config.review_as_task and task and task.type == TaskType.REVIEW:
+            review_response = self._handle_review_completion(
+                task, review_result, review_comments, actual_worker_id
+            )
+            if review_response:
+                return review_response
 
         # Get fresh state reference for final checks
         state = self.state_machine.state
@@ -1535,6 +1550,135 @@ Thumbs.db
             )
         except Exception as e:
             logger.error(f"Failed to generate review task for {task.id}: {e}")
+
+    def _handle_review_completion(
+        self,
+        task: Task,
+        review_result: str | None,
+        review_comments: str | None,
+        worker_id: str | None,
+    ) -> SubmitResponse | None:
+        """Handle review task completion with APPROVE or REQUEST_CHANGES.
+
+        Args:
+            task: The review task being completed
+            review_result: "APPROVE" or "REQUEST_CHANGES"
+            review_comments: Comments for REQUEST_CHANGES (becomes new DoD)
+            worker_id: The worker completing the review
+
+        Returns:
+            SubmitResponse if there's an error or special handling needed,
+            None to continue with normal completion flow
+        """
+        if not task.base_id or not task.parent_id:
+            logger.warning(f"Review task {task.id} missing base_id or parent_id")
+            return None
+
+        # Determine result based on comments if not explicitly provided
+        if review_result is None:
+            if review_comments:
+                review_result = "REQUEST_CHANGES"
+            else:
+                review_result = "APPROVE"
+
+        if review_result == "APPROVE":
+            # Mark parent implementation task as truly done
+            # (it's already in done queue, just log the approval)
+            logger.info(
+                f"Review {task.id} APPROVED by {worker_id}. "
+                f"Parent task {task.parent_id} confirmed complete."
+            )
+            return None  # Continue with normal completion
+
+        elif review_result == "REQUEST_CHANGES":
+            if not review_comments:
+                return SubmitResponse(
+                    success=False,
+                    next_action="fix_failures",
+                    message="REQUEST_CHANGES requires review_comments",
+                )
+
+            # Check max_revision limit
+            next_version = task.version + 1
+            if next_version > self.config.max_revision:
+                # Mark as BLOCKED
+                logger.warning(
+                    f"Task {task.base_id} exceeded max_revision ({self.config.max_revision}). "
+                    "Marking as BLOCKED."
+                )
+                # Add to repair queue for escalation
+                from c4.models import RepairQueueItem
+
+                repair_item = RepairQueueItem(
+                    task_id=f"T-{task.base_id}-{task.version}",
+                    worker_id=worker_id or "unknown",
+                    failure_signature=f"max_revision_exceeded:{self.config.max_revision}",
+                    last_error=f"Exceeded maximum revision count ({self.config.max_revision})",
+                    attempts=next_version,
+                )
+                if self.state_machine:
+                    state = self.state_machine.state
+                    state.repair_queue.append(repair_item)
+                    self.state_machine._save_state()
+
+                return SubmitResponse(
+                    success=True,
+                    next_action="escalate",
+                    message=(
+                        f"Task {task.base_id} exceeded max_revision limit. "
+                        "Escalated to repair queue."
+                    ),
+                )
+
+            # Create next version implementation task
+            new_task_id = f"T-{task.base_id}-{next_version}"
+
+            # Get original task's info for priority and scope
+            parent_task = self.get_task(task.parent_id)
+            parent_priority = parent_task.priority if parent_task else task.priority
+            parent_scope = parent_task.scope if parent_task else task.scope
+
+            new_task = Task(
+                id=new_task_id,
+                title=parent_task.title if parent_task else f"Fix: {task.base_id}",
+                scope=parent_scope,
+                dod=review_comments,  # Review comments become new DoD
+                dependencies=[],
+                domain=task.domain,
+                priority=parent_priority,  # Same priority as original
+                # Review-as-Task fields
+                type=TaskType.IMPLEMENTATION,
+                base_id=task.base_id,
+                version=next_version,
+                parent_id=task.id,  # Points to the review that requested changes
+                review_comments=review_comments,
+            )
+
+            try:
+                self.add_task(new_task)
+                logger.info(
+                    f"Created revision task {new_task_id} from review {task.id}. "
+                    f"Version {next_version}/{self.config.max_revision}"
+                )
+            except Exception as e:
+                logger.error(f"Failed to create revision task {new_task_id}: {e}")
+                return SubmitResponse(
+                    success=False,
+                    next_action="fix_failures",
+                    message=f"Failed to create revision task: {e}",
+                )
+
+            return None  # Continue with normal completion
+
+        else:
+            return SubmitResponse(
+                success=False,
+                next_action="fix_failures",
+                message=(
+                    f"Invalid review_result: {review_result}. "
+                    "Use 'APPROVE' or 'REQUEST_CHANGES'"
+                ),
+            )
 
     def c4_checkpoint(
         self,
