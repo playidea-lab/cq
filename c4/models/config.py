@@ -225,3 +225,20 @@ class C4Config(BaseModel):
     domain: str | None = None  # Project domain for default verifications
     agents: AgentConfig | None = None  # Custom agent configuration
     llm: LLMConfig = Field(default_factory=LLMConfig)  # LLM provider configuration
+
+    # Review-as-Task configuration
+    review_as_task: bool = Field(
+        default=True,
+        description="Auto-generate review tasks (R-XXX-N) when implementation tasks complete",
+    )
+    max_revision: int = Field(
+        default=3,
+        ge=1,
+        le=10,
+        description="Maximum revision count before task is marked BLOCKED",
+    )
+    review_priority_offset: int = Field(
+        default=10,
+        ge=0,
+        description="Priority reduction for review tasks (lower priority = later in queue)",
+    )
