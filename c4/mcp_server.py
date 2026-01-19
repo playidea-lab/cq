@@ -38,7 +38,14 @@ from .models import (
     ValidationResult,
 )
 from .state_machine import StateMachine, StateTransitionError
-from .store import SQLiteLockStore, SQLiteStateStore, SQLiteTaskStore, StateStore
+from .store import (
+    LockStore,
+    SQLiteStateStore,
+    SQLiteTaskStore,
+    StateStore,
+    create_lock_store,
+    create_state_store,
+)
 from .supervisor.agent_graph import (
     AgentGraph,
     AgentGraphLoader,
@@ -176,7 +183,7 @@ class C4Daemon:
         self._worker_manager: WorkerManager | None = None
         self._supervisor_loop_manager: SupervisorLoopManager | None = None
         self._state_store = state_store
-        self._lock_store: SQLiteLockStore | None = None
+        self._lock_store: "LockStore | None" = None
         self._task_store: SQLiteTaskStore | None = None
         self._spec_store: SpecStore | None = None
         self._agent_router: AgentRouter | None = None
@@ -190,10 +197,23 @@ class C4Daemon:
     # =========================================================================
 
     def _get_default_store(self) -> StateStore:
-        """Get the default state store (SQLite)"""
+        """Get the default state store.
+
+        Uses factory to create store based on:
+        1. Explicitly provided state_store
+        2. config.yaml store settings
+        3. C4_STORE_BACKEND environment variable
+        4. Default: SQLite
+        """
         if self._state_store is not None:
             return self._state_store
-        return SQLiteStateStore(self.c4_dir / "c4.db")
+
+        # Get store config from config.yaml if available
+        store_config = None
+        if hasattr(self, "_config") and self._config is not None:
+            store_config = self._config.store
+
+        return create_state_store(self.c4_dir, store_config)
 
     def is_initialized(self) -> bool:
         """Check if C4 is initialized in this project"""
@@ -498,8 +518,34 @@ Thumbs.db
         """
         if self._graph_router is None:
             # Load graph and rule engine from YAML definitions
-            loader = AgentGraphLoader()
-            self._agent_graph, self._rule_engine = loader.load_directory()
+            # Use EXAMPLES_DIR for personas/domains/rules, SKILLS_DIR for skills
+            from c4.supervisor.agent_graph import EXAMPLES_DIR, SKILLS_DIR
+            from c4.supervisor.agent_graph.graph import AgentGraph
+            from c4.supervisor.agent_graph.rule_engine import RuleEngine
+
+            # Load personas, domains, rules from EXAMPLES_DIR
+            examples_loader = AgentGraphLoader(base_dir=EXAMPLES_DIR)
+
+            # Load skills from SKILLS_DIR (new domain-specific skills)
+            skills_loader = AgentGraphLoader(base_dir=SKILLS_DIR.parent)
+
+            # Build graph manually
+            self._agent_graph = AgentGraph()
+            self._rule_engine = RuleEngine()
+
+            # Add skills from SKILLS_DIR (14 domain-specific skills)
+            for skill_def in skills_loader.load_skills(recursive=True):
+                self._agent_graph.add_skill(skill_def)
+
+            # Add agents, domains, rules from EXAMPLES_DIR
+            for agent_def in examples_loader.load_agents():
+                self._agent_graph.add_agent(agent_def)
+
+            for domain_def in examples_loader.load_domains():
+                self._agent_graph.add_domain(domain_def)
+
+            for rule_def in examples_loader.load_rules():
+                self._rule_engine.add_rules(rule_def)
 
             # Create skill matcher
             skill_matcher = SkillMatcher(self._agent_graph)
@@ -520,10 +566,16 @@ Thumbs.db
         return self._validation_runner
 
     @property
-    def lock_store(self) -> SQLiteLockStore:
-        """Get SQLite lock store for atomic lock operations"""
+    def lock_store(self) -> LockStore:
+        """Get lock store for atomic lock operations.
+
+        Uses factory to create store based on config or environment.
+        """
         if self._lock_store is None:
-            self._lock_store = SQLiteLockStore(self.c4_dir / "c4.db")
+            store_config = None
+            if hasattr(self, "_config") and self._config is not None:
+                store_config = self._config.store
+            self._lock_store = create_lock_store(self.c4_dir, config=store_config)
         return self._lock_store
 
     @property
@@ -978,6 +1030,8 @@ Thumbs.db
 
         # Re-load state to get latest (prevent race conditions with other workers)
         self.state_machine.load_state()
+        # Also refresh task cache from SQLite (fixes stale cache after direct DB edits)
+        self._load_tasks()
         state = self.state_machine.state
 
         # Clean up expired scope locks (prevents stale locks from blocking task assignment)
@@ -1101,58 +1155,43 @@ Thumbs.db
 
             # Lock acquired (or no scope) - now safe to assign
             # Use atomic_modify to prevent race conditions with c4_submit
-            from c4.store import SQLiteStateStore
-
             store = self.state_machine.store
             task_branch = f"{self.config.work_branch_prefix}{task_id}"
             assigned = False
 
-            if isinstance(store, SQLiteStateStore):
-                with store.atomic_modify(project_id) as state:
-                    # Double-check task is still pending
-                    if task_id in state.queue.pending:
-                        # Assign task (ATOMIC)
-                        state.queue.pending.remove(task_id)
-                        state.queue.in_progress[task_id] = worker_id
-
-                        # Ensure worker exists in state (fix race condition)
-                        if worker_id not in state.workers:
-                            from c4.models import WorkerInfo
-
-                            now = datetime.now()
-                            state.workers[worker_id] = WorkerInfo(
-                                worker_id=worker_id,
-                                state="busy",
-                                task_id=task_id,
-                                scope=task.scope,
-                                branch=task_branch,
-                                joined_at=now,
-                                last_seen=now,
-                            )
-                        else:
-                            # Update existing worker state
-                            state.workers[worker_id].state = "busy"
-                            state.workers[worker_id].task_id = task_id
-                            state.workers[worker_id].scope = task.scope
-                            state.workers[worker_id].branch = task_branch
-                            state.workers[worker_id].last_seen = datetime.now()
-
-                        assigned = True
-
-                    # Update cached state
-                    self.state_machine._state = state
-            else:
-                # Fallback for non-SQLite stores
-                self.state_machine.load_state()
-                state = self.state_machine.state
+            with store.atomic_modify(project_id) as state:
+                # Double-check task is still pending
                 if task_id in state.queue.pending:
+                    # Assign task (ATOMIC)
                     state.queue.pending.remove(task_id)
                     state.queue.in_progress[task_id] = worker_id
-                    self.worker_manager.set_busy(
-                        worker_id, task_id, task.scope, task_branch
-                    )
-                    self.state_machine.save_state()
+
+                    # Ensure worker exists in state (fix race condition)
+                    if worker_id not in state.workers:
+                        from c4.models import WorkerInfo
+
+                        now = datetime.now()
+                        state.workers[worker_id] = WorkerInfo(
+                            worker_id=worker_id,
+                            state="busy",
+                            task_id=task_id,
+                            scope=task.scope,
+                            branch=task_branch,
+                            joined_at=now,
+                            last_seen=now,
+                        )
+                    else:
+                        # Update existing worker state
+                        state.workers[worker_id].state = "busy"
+                        state.workers[worker_id].task_id = task_id
+                        state.workers[worker_id].scope = task.scope
+                        state.workers[worker_id].branch = task_branch
+                        state.workers[worker_id].last_seen = datetime.now()
+
                     assigned = True
+
+                # Update cached state
+                self.state_machine._state = state
 
             if not assigned:
                 # Task was assigned by another worker - release our lock
@@ -1245,16 +1284,9 @@ Thumbs.db
 
         # Use atomic_modify for thread-safe state update
         # This prevents race conditions when multiple workers submit concurrently
-        from c4.store import SQLiteStateStore
-
         store = self.state_machine.store
-        if not isinstance(store, SQLiteStateStore):
-            # Fallback for non-SQLite stores (e.g., tests with LocalFileStore)
-            return self._c4_submit_legacy(
-                task_id, commit_sha, results, worker_id, task
-            )
 
-        # Atomic state modification
+        # Atomic state modification (all stores support atomic_modify)
         error_response: SubmitResponse | None = None
         actual_worker_id: str | None = None
 
@@ -3421,9 +3453,9 @@ Thumbs.db
             to_mermaid,
         )
 
-        # Create a GraphRouter (uses legacy fallback)
-        router = GraphRouter()
-        graph = router.graph
+        # Use the daemon's graph router (with loaded skills)
+        router = self.graph_router
+        graph = self._agent_graph
 
         result: dict[str, Any] = {"query_type": query_type}
 
