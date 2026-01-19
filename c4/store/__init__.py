@@ -23,6 +23,15 @@ from .exceptions import (
     StateNotFoundError,
     StoreError,
 )
+from .factory import (
+    BACKEND_LOCAL_FILE,
+    BACKEND_SQLITE,
+    BACKEND_SUPABASE,
+    create_lock_store,
+    create_state_store,
+    create_task_store,
+    get_backend,
+)
 from .local_file import LocalFileLockStore, LocalFileStateStore
 from .protocol import LockStore, StateStore
 from .sqlite import SQLiteLockStore, SQLiteStateStore, SQLiteTaskStore
@@ -47,4 +56,13 @@ __all__ = [
     # Implementations - Supabase
     "SupabaseStateStore",
     "create_supabase_store",
+    # Factory functions
+    "create_state_store",
+    "create_lock_store",
+    "create_task_store",
+    "get_backend",
+    # Backend constants
+    "BACKEND_SQLITE",
+    "BACKEND_LOCAL_FILE",
+    "BACKEND_SUPABASE",
 ]

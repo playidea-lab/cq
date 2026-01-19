@@ -26,16 +26,35 @@ C4 Cloud는 C4의 호스팅 SaaS 버전입니다.
 
 ## 개발 단계
 
-### Phase 1: State Store 추상화 (v0.2.0)
+### Phase 1: State Store 추상화 (v0.2.0) ✅ 완료
 
-로컬 버전에서 원격 state 지원 준비:
+로컬 버전에서 원격 state 지원:
 
 ```yaml
 # .c4/config.yaml
-sync:
-  backend: supabase  # or redis, postgresql
-  url: https://xxx.supabase.co
+store:
+  backend: supabase  # sqlite (기본), local_file, supabase
+  supabase_url: https://xxx.supabase.co
+  supabase_key: your-anon-key
 ```
+
+**또는 환경 변수:**
+```bash
+export C4_STORE_BACKEND=supabase
+export SUPABASE_URL=https://xxx.supabase.co
+export SUPABASE_KEY=your-anon-key
+```
+
+**설치:**
+```bash
+uv add "c4[cloud]"  # supabase 의존성 설치
+```
+
+**구현된 기능:**
+- ✅ StateStore Protocol + atomic_modify
+- ✅ SupabaseStateStore (PostgreSQL + Real-time)
+- ✅ Store Factory (환경변수/config.yaml 지원)
+- ✅ Optimistic locking (동시성 제어)
 
 ### Phase 2: Cloud MVP (v1.0.0)
 

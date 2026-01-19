@@ -18,10 +18,11 @@ class TestTaskType:
         assert TaskType.REVIEW.value == "review"
 
     def test_enum_members(self):
-        """TaskType has exactly 2 members."""
-        assert len(TaskType) == 2
+        """TaskType has exactly 3 members (impl, review, checkpoint)."""
+        assert len(TaskType) == 3
         assert TaskType.IMPLEMENTATION in TaskType
         assert TaskType.REVIEW in TaskType
+        assert TaskType.CHECKPOINT in TaskType
 
 
 class TestTaskVersionFields:
@@ -237,3 +238,60 @@ class TestAddTodoNormalization:
         )
         task = daemon.get_task(result["task_id"])
         assert task.type == TaskType.IMPLEMENTATION
+
+
+class TestReviewTaskRouting:
+    """Test review tasks are routed to code-reviewer agent."""
+
+    @pytest.fixture
+    def daemon(self, tmp_path):
+        """Create initialized C4Daemon for testing."""
+        from c4.mcp_server import C4Daemon
+        from c4.models import ProjectStatus
+
+        daemon = C4Daemon(project_root=tmp_path)
+        daemon.initialize(project_id="test")
+        # Set to EXECUTE state for adding/generating tasks
+        daemon.state_machine._state.status = ProjectStatus.EXECUTE
+        daemon.state_machine.save_state()
+        return daemon
+
+    def test_review_task_has_task_type_review(self, daemon):
+        """Review tasks should have task_type='review' for skill matching."""
+        from c4.models import Task
+
+        impl_task = Task(
+            id="T-001-0",
+            title="Test task",
+            dod="Test DoD",
+            base_id="001",
+            version=0,
+        )
+        # Manually call _generate_review_task
+        daemon._generate_review_task(impl_task, "worker-1")
+
+        # Verify review task was created with task_type
+        review_task = daemon.get_task("R-001-0")
+        assert review_task is not None
+        assert review_task.task_type == "review"
+        assert review_task.type == TaskType.REVIEW
+
+    def test_review_task_routed_to_code_reviewer(self, daemon):
+        """Review tasks should be routed to code-reviewer agent."""
+        from c4.models import Task
+
+        # Create a review task with task_type
+        review_task = Task(
+            id="R-001-0",
+            title="Review: Test implementation",
+            dod="Review implementation of T-001-0.",
+            domain="web-backend",
+            task_type="review",
+            type=TaskType.REVIEW,
+        )
+
+        # Get agent routing
+        routing = daemon._get_agent_routing(review_task)
+
+        # Verify code-reviewer is the primary agent
+        assert routing["recommended_agent"] == "code-reviewer"

@@ -9,6 +9,22 @@
   - [x] `c4_main` 콜백에서 서브커맨드 호출 전 `C4_PROJECT_ROOT` 환경변수 설정
 - **Validations**: 수동 테스트
 
+### HF-002: Cursor CLI Headless 지원 검토 (2026-01-19)
+- **Scope**: docs/, .cursor/
+- **테스트 환경**: Cursor 2.3.34, cursor-agent 2026.01.17-d239e66
+- **테스트 결과**:
+  - [x] cursor-agent 설치 및 로그인 성공
+  - [x] 파일 읽기/쓰기 작동 (`--force` 필요)
+  - [x] Bash 명령어 실행 작동 (`--force` 필요)
+  - [x] **c4 CLI 호출 성공** - `c4 status`, `c4 plan` 등
+  - [ ] MCP 서버 spawn 실패 (`spawn ENOENT` 버그)
+- **결론**: MCP 대신 **c4 CLI 직접 호출** 방식으로 Cursor headless 자동화 가능
+- **사용법**:
+  ```bash
+  cursor-agent -p --force "c4 status를 실행해줘" --output-format text
+  ```
+- **Refs**: [docs/user-guide/문제-해결.md](docs/user-guide/문제-해결.md)
+
 ---
 
 ## Phase 0: 다중 플랫폼 지원 (완료)

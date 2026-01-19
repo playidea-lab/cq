@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - 구현 태스크 완료 시 자동으로 리뷰 태스크(R-XXX-N) 생성
   - REQUEST_CHANGES 시 다음 버전 태스크 자동 생성 (T-XXX-1)
   - `max_revision` 설정으로 최대 수정 횟수 제한 (기본값: 3)
+  - **리뷰 태스크 자동 라우팅**: `task_type="review"` 설정으로 `code-reviewer` 에이전트 자동 할당
 
 - **Checkpoint-as-Task**: 체크포인트가 태스크로 처리됩니다
   - Phase의 모든 리뷰가 APPROVE되면 CP-XXX 태스크 자동 생성
@@ -31,6 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `base_id`: 기본 태스크 ID ("001")
   - `version`: 버전 번호 (0, 1, 2...)
   - `type`: TaskType enum
+  - `task_type`: 스킬 매칭용 태스크 유형 ("review", "debug", "security" 등)
   - `phase_id`: Phase 식별자
   - `required_tasks`: CP가 검증할 태스크 목록
   - `review_decision`: 리뷰 결정 (APPROVE/REQUEST_CHANGES)

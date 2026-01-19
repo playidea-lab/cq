@@ -1,8 +1,9 @@
 """Store Protocols - Abstract interfaces for state and lock storage"""
 
 from abc import ABC, abstractmethod
+from contextlib import contextmanager
 from datetime import datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Generator
 
 if TYPE_CHECKING:
     from c4.models import C4State
@@ -15,7 +16,7 @@ class StateStore(ABC):
     Implementations:
     - LocalFileStateStore: File-based (.c4/state.json)
     - SQLiteStateStore: SQLite database
-    - SupabaseStateStore: Supabase (future)
+    - SupabaseStateStore: Supabase cloud storage
     """
 
     @abstractmethod
@@ -55,6 +56,43 @@ class StateStore(ABC):
     @abstractmethod
     def delete(self, project_id: str) -> None:
         """Delete state for project."""
+        pass
+
+    @abstractmethod
+    @contextmanager
+    def atomic_modify(
+        self, project_id: str
+    ) -> Generator["C4State", None, None]:
+        """
+        Atomically load, modify, and save state.
+
+        This method provides transaction-like semantics:
+        - Load current state
+        - Yield for modification
+        - Save modified state on successful exit
+        - Rollback on exception
+
+        Usage:
+            with store.atomic_modify(project_id) as state:
+                state.queue.done.append(task_id)
+                del state.queue.in_progress[task_id]
+            # State is automatically saved on context exit
+
+        Implementations must ensure:
+        - No concurrent modifications can interleave
+        - Failure during yield does not persist partial changes
+        - Success commits all changes atomically
+
+        Args:
+            project_id: Project identifier
+
+        Yields:
+            C4State instance for modification
+
+        Raises:
+            StateNotFoundError: If no state exists
+            ConcurrentModificationError: If state was modified by another process
+        """
         pass
 
 

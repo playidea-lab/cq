@@ -1,6 +1,16 @@
 rules:
   # 절대적 오버라이드 - 항상 먼저 체크
   overrides:
+    - name: review-always-code-reviewer
+      priority: 100
+      condition:
+        task_type:
+          - review
+          - code-review
+      action:
+        set_primary: code-reviewer
+      reason: "리뷰 작업은 항상 code-reviewer가 시작"
+
     - name: debug-always-debugger
       priority: 100
       condition:

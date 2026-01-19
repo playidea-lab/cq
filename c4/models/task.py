@@ -38,6 +38,7 @@ class Task(BaseModel):
     commit_sha: str | None = None
     # Phase 4: Agent routing - task-specific domain override
     domain: str | None = None
+    task_type: str | None = None  # For skill matching (e.g., "review", "debug", "security")
 
     # Review-as-Task fields
     type: TaskType = TaskType.IMPLEMENTATION

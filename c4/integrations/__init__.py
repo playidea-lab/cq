@@ -1,5 +1,17 @@
 """C4 Integrations - External service integrations for C4."""
 
-from .github import GitHubClient, GitHubResult
+from .github import (
+    CommitResult,
+    GitHubAutomation,
+    GitHubClient,
+    GitHubResult,
+    PRResult,
+)
 
-__all__ = ["GitHubClient", "GitHubResult"]
+__all__ = [
+    "CommitResult",
+    "GitHubAutomation",
+    "GitHubClient",
+    "GitHubResult",
+    "PRResult",
+]

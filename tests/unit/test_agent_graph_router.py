@@ -27,16 +27,16 @@ from c4.supervisor.agent_graph.models import (
     WorkflowSelect,
     WorkflowStep,
 )
-from c4.supervisor.agent_graph.router import (
+from c4.supervisor.agent_router import (
     TASK_TYPE_AGENT_OVERRIDES,
     AgentChainConfig,
-    GraphRouter,
     get_agent_for_task_type,
     get_chain_for_domain,
     get_default_router,
     get_recommended_agent,
     set_default_router,
 )
+from c4.supervisor.agent_graph.router import GraphRouter
 
 
 # ============================================================================

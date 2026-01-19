@@ -130,6 +130,54 @@ class BudgetConfig(BaseModel):
 # =============================================================================
 
 
+class StoreConfig(BaseModel):
+    """Store backend configuration.
+
+    Supports three backends:
+    - sqlite (default): Local SQLite database in .c4/c4.db
+    - local_file: JSON file in .c4/state.json
+    - supabase: Cloud-based Supabase storage
+
+    Example in config.yaml:
+        # Default SQLite
+        store:
+          backend: sqlite
+
+        # Supabase for team collaboration
+        store:
+          backend: supabase
+          supabase_url: https://xxx.supabase.co
+          supabase_key: your-anon-key
+
+        # Or use environment variables
+        # C4_STORE_BACKEND=supabase
+        # SUPABASE_URL=https://xxx.supabase.co
+        # SUPABASE_KEY=your-anon-key
+    """
+
+    backend: str | None = Field(
+        default=None,
+        pattern="^(sqlite|local_file|supabase)$",
+        description="Store backend: sqlite, local_file, or supabase",
+    )
+    supabase_url: str | None = Field(
+        default=None,
+        description="Supabase project URL (or use SUPABASE_URL env)",
+    )
+    supabase_key: str | None = Field(
+        default=None,
+        description="Supabase anon key (or use SUPABASE_KEY env)",
+    )
+    team_id: str | None = Field(
+        default=None,
+        description="Team ID for RLS isolation (or use C4_TEAM_ID env)",
+    )
+    access_token: str | None = Field(
+        default=None,
+        description="Supabase Auth JWT token for RLS (or use SUPABASE_ACCESS_TOKEN env)",
+    )
+
+
 class LLMConfig(BaseModel):
     """LLM configuration for supervisor backend.
 
@@ -209,6 +257,60 @@ class LLMConfig(BaseModel):
         return self.model == "claude-cli"
 
 
+class GitHubConfig(BaseModel):
+    """GitHub integration configuration for auto commit/PR.
+
+    Example in config.yaml:
+        # Default - disabled
+        github:
+          enabled: false
+
+        # Full automation
+        github:
+          enabled: true
+          auto_commit: true
+          auto_pr: true
+          base_branch: main
+          reviewers: ["user1", "user2"]
+
+        # Or use environment variable for token
+        # GITHUB_TOKEN=ghp_xxx
+    """
+
+    enabled: bool = Field(
+        default=False,
+        description="Enable GitHub integration",
+    )
+    auto_commit: bool = Field(
+        default=True,
+        description="Auto-commit when task completes with validation pass",
+    )
+    auto_pr: bool = Field(
+        default=True,
+        description="Auto-create PR when all tasks complete",
+    )
+    base_branch: str = Field(
+        default="main",
+        description="Base branch for PRs",
+    )
+    reviewers: list[str] = Field(
+        default_factory=list,
+        description="GitHub usernames to request review from",
+    )
+    labels: list[str] = Field(
+        default_factory=lambda: ["c4-generated"],
+        description="Labels to add to PRs",
+    )
+    draft: bool = Field(
+        default=False,
+        description="Create PRs as drafts",
+    )
+    commit_prefix: str = Field(
+        default="[C4]",
+        description="Prefix for auto-commit messages",
+    )
+
+
 class C4Config(BaseModel):
     """config.yaml schema"""
 
@@ -225,6 +327,8 @@ class C4Config(BaseModel):
     domain: str | None = None  # Project domain for default verifications
     agents: AgentConfig | None = None  # Custom agent configuration
     llm: LLMConfig = Field(default_factory=LLMConfig)  # LLM provider configuration
+    store: StoreConfig = Field(default_factory=StoreConfig)  # Store backend config
+    github: GitHubConfig = Field(default_factory=GitHubConfig)  # GitHub integration
 
     # Review-as-Task configuration
     review_as_task: bool = Field(

@@ -212,6 +212,9 @@ TASK_TYPE_AGENT_OVERRIDES: dict[str, str] = {
     "docs": "api-documenter",
     "documentation": "api-documenter",
     "readme": "api-documenter",
+    # Code review tasks
+    "review": "code-reviewer",
+    "code-review": "code-reviewer",
     # Refactoring tasks
     "refactor": "code-refactorer",
     "cleanup": "code-refactorer",

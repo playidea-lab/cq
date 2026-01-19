@@ -327,6 +327,8 @@ TASK_TYPE_AGENT_OVERRIDES = {
     "debug": "debugger",
     "security": "security-auditor",
     "performance": "performance-engineer",
+    "review": "code-reviewer",        # Review-as-Task 지원
+    "code-review": "code-reviewer",
     "refactor": "code-refactorer",
     "test": "test-automator",
     "deploy": "deployment-engineer",

@@ -73,6 +73,31 @@ class StateStore(ABC):
     def delete(self, project_id: str) -> None:
         """프로젝트 상태를 삭제합니다."""
         pass
+
+    @abstractmethod
+    @contextmanager
+    def atomic_modify(
+        self, project_id: str
+    ) -> Generator[C4State, None, None]:
+        """
+        원자적으로 상태를 로드, 수정, 저장합니다.
+
+        동시성 제어를 위한 필수 메서드:
+        - SQLite: WAL 모드 + 파일 락
+        - Supabase: Optimistic locking (version 기반)
+        - LocalFile: fcntl 파일 락
+
+        Usage:
+            with store.atomic_modify(project_id) as state:
+                state.queue.done.append(task_id)
+                del state.queue.in_progress[task_id]
+            # 컨텍스트 종료 시 자동 저장
+
+        Raises:
+            StateNotFoundError: 상태가 존재하지 않을 때
+            ConcurrentModificationError: 동시 수정 충돌
+        """
+        pass
 ```
 
 ### LockStore
@@ -322,7 +347,55 @@ class SupabaseStateStore(StateStore):
 
 ## Store 사용하기
 
-### C4Daemon에 주입
+### 방법 1: Factory 사용 (권장)
+
+C4는 내장된 Store Factory를 제공합니다:
+
+```python
+from pathlib import Path
+from c4.store import create_state_store, create_lock_store
+
+# 환경 변수 또는 기본값 사용
+c4_dir = Path(".c4")
+state_store = create_state_store(c4_dir)
+lock_store = create_lock_store(c4_dir)
+```
+
+**환경 변수:**
+```bash
+# SQLite (기본값)
+export C4_STORE_BACKEND=sqlite
+
+# 로컬 파일 (레거시)
+export C4_STORE_BACKEND=local_file
+
+# Supabase
+export C4_STORE_BACKEND=supabase
+export SUPABASE_URL=https://xxx.supabase.co
+export SUPABASE_KEY=your-anon-key
+```
+
+**config.yaml:**
+```yaml
+# .c4/config.yaml
+project_id: my-project
+
+# Store 설정
+store:
+  backend: supabase
+  supabase_url: https://xxx.supabase.co
+  supabase_key: your-anon-key
+```
+
+**설치:**
+```bash
+# Supabase 사용 시
+uv add "c4[cloud]"
+# 또는
+uv add supabase
+```
+
+### 방법 2: 직접 주입
 
 ```python
 from c4.mcp_server import C4Daemon

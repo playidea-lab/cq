@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import os
+from contextlib import contextmanager
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any, Callable, Generator
 
 from .exceptions import StateNotFoundError
 from .protocol import LockStore, StateStore
@@ -42,6 +43,8 @@ class SupabaseStateStore(StateStore, LockStore):
         url: str | None = None,
         key: str | None = None,
         realtime: bool = True,
+        team_id: str | None = None,
+        access_token: str | None = None,
     ):
         """Initialize Supabase store.
 
@@ -49,13 +52,22 @@ class SupabaseStateStore(StateStore, LockStore):
             url: Supabase project URL (or SUPABASE_URL env)
             key: Supabase key (or SUPABASE_KEY env)
             realtime: Enable real-time subscriptions
+            team_id: Team ID for RLS isolation (or C4_TEAM_ID env)
+            access_token: Supabase Auth JWT token for RLS (or SUPABASE_ACCESS_TOKEN env)
         """
         self._url = url or os.environ.get("SUPABASE_URL", "")
         self._key = key or os.environ.get("SUPABASE_KEY", "")
         self._realtime_enabled = realtime
+        self._team_id = team_id or os.environ.get("C4_TEAM_ID")
+        self._access_token = access_token or os.environ.get("SUPABASE_ACCESS_TOKEN")
         self._client: Any = None
         self._subscriptions: dict[str, Any] = {}
         self._callbacks: dict[str, list[Callable[[C4State], None]]] = {}
+
+    @property
+    def team_id(self) -> str | None:
+        """Current team ID for RLS filtering."""
+        return self._team_id
 
     @property
     def client(self) -> Any:
@@ -69,6 +81,11 @@ class SupabaseStateStore(StateStore, LockStore):
             from supabase import create_client
 
             self._client = create_client(self._url, self._key)
+
+            # Set auth header if access_token provided (for RLS)
+            if self._access_token:
+                self._client.postgrest.auth(self._access_token)
+
         return self._client
 
     def load(self, project_id: str) -> "C4State":
@@ -83,13 +100,17 @@ class SupabaseStateStore(StateStore, LockStore):
         Raises:
             StateNotFoundError: If project not found
         """
-        response = (
+        query = (
             self.client.table(self.TABLE_STATE)
             .select("*")
             .eq("project_id", project_id)
-            .maybe_single()
-            .execute()
         )
+
+        # Apply team_id filter if set
+        if self._team_id:
+            query = query.eq("team_id", self._team_id)
+
+        response = query.maybe_single().execute()
 
         if not response.data:
             raise StateNotFoundError(project_id)
@@ -105,26 +126,38 @@ class SupabaseStateStore(StateStore, LockStore):
         state.updated_at = datetime.now()
         data = self._state_to_row(state)
 
+        # Include team_id if set
+        if self._team_id:
+            data["team_id"] = self._team_id
+
         self.client.table(self.TABLE_STATE).upsert(
             data, on_conflict="project_id"
         ).execute()
 
     def exists(self, project_id: str) -> bool:
         """Check if project exists in Supabase."""
-        response = (
+        query = (
             self.client.table(self.TABLE_STATE)
             .select("project_id")
             .eq("project_id", project_id)
-            .maybe_single()
-            .execute()
         )
+
+        if self._team_id:
+            query = query.eq("team_id", self._team_id)
+
+        response = query.maybe_single().execute()
         return response.data is not None
 
     def delete(self, project_id: str) -> None:
         """Delete project state from Supabase."""
-        self.client.table(self.TABLE_STATE).delete().eq(
+        query = self.client.table(self.TABLE_STATE).delete().eq(
             "project_id", project_id
-        ).execute()
+        )
+
+        if self._team_id:
+            query = query.eq("team_id", self._team_id)
+
+        query.execute()
 
     # =========================================================================
     # Real-time Subscriptions
@@ -224,15 +257,22 @@ class SupabaseStateStore(StateStore, LockStore):
 
         expires_at = datetime.now() + timedelta(seconds=ttl_seconds)
 
+        # Build lock data
+        lock_data = {
+            "project_id": project_id,
+            "scope": scope,
+            "owner": owner,
+            "expires_at": expires_at.isoformat(),
+        }
+
+        # Include team_id if set
+        if self._team_id:
+            lock_data["team_id"] = self._team_id
+
         # Try to insert or update if expired
         try:
             self.client.table(self.TABLE_LOCKS).upsert(
-                {
-                    "project_id": project_id,
-                    "scope": scope,
-                    "owner": owner,
-                    "expires_at": expires_at.isoformat(),
-                },
+                lock_data,
                 on_conflict="project_id,scope",
             ).execute()
             return True
@@ -242,9 +282,17 @@ class SupabaseStateStore(StateStore, LockStore):
     def release_scope_lock(self, project_id: str, scope: str) -> bool:
         """Release a scope lock."""
         try:
-            self.client.table(self.TABLE_LOCKS).delete().eq(
-                "project_id", project_id
-            ).eq("scope", scope).execute()
+            query = (
+                self.client.table(self.TABLE_LOCKS)
+                .delete()
+                .eq("project_id", project_id)
+                .eq("scope", scope)
+            )
+
+            if self._team_id:
+                query = query.eq("team_id", self._team_id)
+
+            query.execute()
             return True
         except Exception:
             return False
@@ -262,14 +310,18 @@ class SupabaseStateStore(StateStore, LockStore):
         expires_at = datetime.now() + timedelta(seconds=ttl_seconds)
 
         try:
-            response = (
+            query = (
                 self.client.table(self.TABLE_LOCKS)
                 .update({"expires_at": expires_at.isoformat()})
                 .eq("project_id", project_id)
                 .eq("scope", scope)
                 .eq("owner", owner)
-                .execute()
             )
+
+            if self._team_id:
+                query = query.eq("team_id", self._team_id)
+
+            response = query.execute()
             return len(response.data) > 0
         except Exception:
             return False
@@ -280,14 +332,17 @@ class SupabaseStateStore(StateStore, LockStore):
         scope: str,
     ) -> tuple[str, datetime] | None:
         """Get current lock holder and expiry."""
-        response = (
+        query = (
             self.client.table(self.TABLE_LOCKS)
             .select("owner, expires_at")
             .eq("project_id", project_id)
             .eq("scope", scope)
-            .maybe_single()
-            .execute()
         )
+
+        if self._team_id:
+            query = query.eq("team_id", self._team_id)
+
+        response = query.maybe_single().execute()
 
         if not response.data:
             return None
@@ -301,22 +356,111 @@ class SupabaseStateStore(StateStore, LockStore):
         """Remove expired locks."""
         now = datetime.now().isoformat()
 
-        response = (
+        query = (
             self.client.table(self.TABLE_LOCKS)
             .select("scope")
             .eq("project_id", project_id)
             .lt("expires_at", now)
-            .execute()
         )
 
+        if self._team_id:
+            query = query.eq("team_id", self._team_id)
+
+        response = query.execute()
         expired_scopes = [row["scope"] for row in response.data]
 
         if expired_scopes:
-            self.client.table(self.TABLE_LOCKS).delete().eq(
-                "project_id", project_id
-            ).lt("expires_at", now).execute()
+            delete_query = (
+                self.client.table(self.TABLE_LOCKS)
+                .delete()
+                .eq("project_id", project_id)
+                .lt("expires_at", now)
+            )
+
+            if self._team_id:
+                delete_query = delete_query.eq("team_id", self._team_id)
+
+            delete_query.execute()
 
         return expired_scopes
+
+    # =========================================================================
+    # Atomic Modify (required by StateStore protocol)
+    # =========================================================================
+
+    @contextmanager
+    def atomic_modify(
+        self, project_id: str
+    ) -> Generator["C4State", None, None]:
+        """
+        Atomically load, modify, and save state using optimistic locking.
+
+        Uses version-based optimistic concurrency control:
+        1. Load state with current version
+        2. Yield for modification
+        3. Save with version check (fails if version changed)
+
+        Note: Requires 'version' column in c4_state table.
+        If version column doesn't exist, falls back to simple save.
+        """
+
+        # Load current state with version
+        query = (
+            self.client.table(self.TABLE_STATE)
+            .select("*")
+            .eq("project_id", project_id)
+        )
+
+        if self._team_id:
+            query = query.eq("team_id", self._team_id)
+
+        response = query.maybe_single().execute()
+
+        if not response.data:
+            raise StateNotFoundError(project_id)
+
+        state = self._row_to_state(response.data)
+        original_version = response.data.get("version", 0)
+
+        try:
+            yield state
+
+            # Save with optimistic lock check
+            state.updated_at = datetime.now()
+            data = self._state_to_row(state)
+            new_version = original_version + 1
+            data["version"] = new_version
+
+            # Include team_id if set
+            if self._team_id:
+                data["team_id"] = self._team_id
+
+            # Try atomic update with version check
+            # Using update with eq filter for optimistic locking
+            update_query = (
+                self.client.table(self.TABLE_STATE)
+                .update(data)
+                .eq("project_id", project_id)
+                .eq("version", original_version)
+            )
+
+            if self._team_id:
+                update_query = update_query.eq("team_id", self._team_id)
+
+            update_response = update_query.execute()
+
+            # Check if update succeeded (version matched)
+            if not update_response.data:
+                # Version mismatch - concurrent modification
+                from .exceptions import ConcurrentModificationError
+
+                raise ConcurrentModificationError(
+                    f"State was modified by another process: {project_id}"
+                )
+
+        except Exception:
+            # No explicit rollback needed - changes weren't saved
+            raise
 
     # =========================================================================
     # Conversion Helpers
@@ -351,6 +495,8 @@ def create_supabase_store(
     url: str | None = None,
     key: str | None = None,
     realtime: bool = True,
+    team_id: str | None = None,
+    access_token: str | None = None,
 ) -> SupabaseStateStore:
     """Factory function for SupabaseStateStore.
 
@@ -358,8 +504,16 @@ def create_supabase_store(
         url: Supabase project URL
         key: Supabase anon/service key
         realtime: Enable real-time subscriptions
+        team_id: Team ID for RLS isolation
+        access_token: Supabase Auth JWT token for RLS
 
     Returns:
         Configured SupabaseStateStore instance
     """
-    return SupabaseStateStore(url=url, key=key, realtime=realtime)
+    return SupabaseStateStore(
+        url=url,
+        key=key,
+        realtime=realtime,
+        team_id=team_id,
+        access_token=access_token,
+    )

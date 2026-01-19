@@ -1,4 +1,10 @@
-"""C4 GitHub Integration - GitHub API operations for permission management."""
+"""C4 GitHub Integration - GitHub API operations and automation.
+
+Features:
+- Permission management (collaborators, org membership)
+- Auto commit on task completion
+- Auto PR creation on project completion
+"""
 
 from __future__ import annotations
 
@@ -7,10 +13,15 @@ import logging
 import os
 import subprocess
 from dataclasses import dataclass
+from datetime import datetime
 from enum import Enum
-from typing import Any
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
+
+if TYPE_CHECKING:
+    from c4.models.config import GitHubConfig
 
 logger = logging.getLogger(__name__)
 
@@ -601,3 +612,484 @@ class GitHubClient:
                 "failed": failed,
             },
         )
+
+
+# =============================================================================
+# GitHub Automation
+# =============================================================================
+
+
+@dataclass
+class CommitResult:
+    """Result of a git commit operation."""
+
+    success: bool
+    message: str
+    commit_sha: str | None = None
+    files_changed: int = 0
+
+
+@dataclass
+class PRResult:
+    """Result of a PR creation operation."""
+
+    success: bool
+    message: str
+    pr_number: int | None = None
+    pr_url: str | None = None
+
+
+class GitHubAutomation:
+    """Automates GitHub operations for C4 workflow.
+
+    Features:
+    - Auto commit on task completion
+    - Auto PR creation on project completion
+    - Commit message formatting
+    - PR body generation
+
+    Example:
+        automation = GitHubAutomation(config, repo_path)
+        result = automation.auto_commit(
+            task_id="T-001",
+            title="Add user authentication",
+            files=["src/auth.py", "tests/test_auth.py"],
+        )
+
+        if result.success:
+            print(f"Committed: {result.commit_sha}")
+    """
+
+    def __init__(
+        self,
+        config: "GitHubConfig",
+        repo_path: Path | str,
+        client: GitHubClient | None = None,
+    ):
+        """Initialize automation.
+
+        Args:
+            config: GitHub configuration
+            repo_path: Path to git repository
+            client: Optional GitHubClient for API operations
+        """
+        self.config = config
+        self.repo_path = Path(repo_path)
+        self.client = client or GitHubClient()
+        self._repo_info: dict[str, str] | None = None
+
+    @property
+    def repo_info(self) -> dict[str, str]:
+        """Get repository owner and name from git remote."""
+        if self._repo_info is None:
+            self._repo_info = self._get_repo_info()
+        return self._repo_info
+
+    def _get_repo_info(self) -> dict[str, str]:
+        """Parse repository info from git remote URL."""
+        try:
+            result = subprocess.run(
+                ["git", "remote", "get-url", "origin"],
+                capture_output=True,
+                text=True,
+                cwd=self.repo_path,
+            )
+            if result.returncode != 0:
+                return {"owner": "", "repo": ""}
+
+            url = result.stdout.strip()
+
+            # Parse git@github.com:owner/repo.git or https://github.com/owner/repo.git
+            if url.startswith("git@"):
+                # git@github.com:owner/repo.git
+                parts = url.split(":")[-1].replace(".git", "").split("/")
+            else:
+                # https://github.com/owner/repo.git
+                parts = url.replace(".git", "").split("/")[-2:]
+
+            if len(parts) >= 2:
+                return {"owner": parts[-2], "repo": parts[-1]}
+
+        except Exception as e:
+            logger.warning(f"Failed to get repo info: {e}")
+
+        return {"owner": "", "repo": ""}
+
+    def _run_git(self, *args: str) -> subprocess.CompletedProcess[str]:
+        """Run a git command in the repository."""
+        return subprocess.run(
+            ["git", *args],
+            capture_output=True,
+            text=True,
+            cwd=self.repo_path,
+        )
+
+    # =========================================================================
+    # Auto Commit
+    # =========================================================================
+
+    def auto_commit(
+        self,
+        task_id: str,
+        title: str,
+        files: list[str] | None = None,
+        body: str | None = None,
+    ) -> CommitResult:
+        """Create an auto-commit for a completed task.
+
+        Args:
+            task_id: Task identifier (e.g., "T-001")
+            title: Task title
+            files: Specific files to commit, or None for all changes
+            body: Optional commit body
+
+        Returns:
+            CommitResult with commit details
+        """
+        if not self.config.enabled:
+            return CommitResult(
+                success=False,
+                message="GitHub integration disabled",
+            )
+
+        if not self.config.auto_commit:
+            return CommitResult(
+                success=False,
+                message="Auto-commit disabled",
+            )
+
+        try:
+            # Stage files
+            if files:
+                for f in files:
+                    result = self._run_git("add", f)
+                    if result.returncode != 0:
+                        logger.warning(f"Failed to stage {f}: {result.stderr}")
+            else:
+                # Stage all changes
+                self._run_git("add", "-A")
+
+            # Check if there are changes to commit
+            status = self._run_git("status", "--porcelain")
+            if not status.stdout.strip():
+                return CommitResult(
+                    success=True,
+                    message="No changes to commit",
+                    files_changed=0,
+                )
+
+            # Count staged files
+            diff_stat = self._run_git("diff", "--cached", "--stat")
+            files_changed = len(
+                [line for line in diff_stat.stdout.split("\n") if line.strip() and "|" in line]
+            )
+
+            # Build commit message
+            prefix = self.config.commit_prefix
+            commit_msg = f"{prefix} {task_id}: {title}"
+
+            if body:
+                commit_msg += f"\n\n{body}"
+
+            # Add timestamp
+            commit_msg += f"\n\nGenerated by C4 at {datetime.now().isoformat()}"
+
+            # Create commit
+            result = self._run_git("commit", "-m", commit_msg)
+
+            if result.returncode != 0:
+                return CommitResult(
+                    success=False,
+                    message=f"Commit failed: {result.stderr}",
+                )
+
+            # Get commit SHA
+            sha_result = self._run_git("rev-parse", "HEAD")
+            commit_sha = sha_result.stdout.strip() if sha_result.returncode == 0 else None
+
+            logger.info(f"Auto-commit created: {commit_sha} for {task_id}")
+
+            return CommitResult(
+                success=True,
+                message=f"Committed {files_changed} files",
+                commit_sha=commit_sha,
+                files_changed=files_changed,
+            )
+
+        except Exception as e:
+            logger.error(f"Auto-commit failed: {e}")
+            return CommitResult(
+                success=False,
+                message=f"Error: {e}",
+            )
+
+    # =========================================================================
+    # Auto PR
+    # =========================================================================
+
+    def auto_pr(
+        self,
+        project_id: str,
+        title: str,
+        tasks_completed: list[dict[str, str]],
+        source_branch: str,
+        target_branch: str | None = None,
+    ) -> PRResult:
+        """Create an auto-PR for completed project.
+
+        Args:
+            project_id: Project identifier
+            title: PR title
+            tasks_completed: List of completed tasks with id and title
+            source_branch: Branch to create PR from
+            target_branch: Target branch for PR (defaults to config.base_branch)
+
+        Returns:
+            PRResult with PR details
+        """
+        if not self.config.enabled:
+            return PRResult(
+                success=False,
+                message="GitHub integration disabled",
+            )
+
+        if not self.config.auto_pr:
+            return PRResult(
+                success=False,
+                message="Auto-PR disabled",
+            )
+
+        target = target_branch or self.config.base_branch
+
+        # Build PR body
+        body = self._build_pr_body(project_id, tasks_completed)
+
+        try:
+            # Use gh CLI for PR creation (most reliable)
+            if self.client.is_gh_available():
+                return self._create_pr_with_gh(
+                    title=title,
+                    body=body,
+                    source_branch=source_branch,
+                    target_branch=target,
+                )
+            else:
+                # Fallback to API
+                return self._create_pr_with_api(
+                    title=title,
+                    body=body,
+                    source_branch=source_branch,
+                    target_branch=target,
+                )
+
+        except Exception as e:
+            logger.error(f"Auto-PR failed: {e}")
+            return PRResult(
+                success=False,
+                message=f"Error: {e}",
+            )
+
+    def _build_pr_body(
+        self,
+        project_id: str,
+        tasks_completed: list[dict[str, str]],
+    ) -> str:
+        """Build PR body from completed tasks."""
+        lines = [
+            "## Summary",
+            f"Automated PR for C4 project: `{project_id}`",
+            "",
+            "## Completed Tasks",
+        ]
+
+        for task in tasks_completed:
+            task_id = task.get("id", "Unknown")
+            task_title = task.get("title", "No title")
+            lines.append(f"- [x] **{task_id}**: {task_title}")
+
+        lines.extend([
+            "",
+            "## Verification",
+            "- [ ] All validations passed",
+            "- [ ] Code reviewed",
+            "",
+            "---",
+            f"🤖 Generated by C4 at {datetime.now().isoformat()}",
+        ])
+
+        return "\n".join(lines)
+
+    def _create_pr_with_gh(
+        self,
+        title: str,
+        body: str,
+        source_branch: str,
+        target_branch: str,
+    ) -> PRResult:
+        """Create PR using gh CLI."""
+        args = [
+            "pr", "create",
+            "--title", title,
+            "--body", body,
+            "--base", target_branch,
+            "--head", source_branch,
+        ]
+
+        # Add reviewers
+        for reviewer in self.config.reviewers:
+            args.extend(["--reviewer", reviewer])
+
+        # Add labels
+        for label in self.config.labels:
+            args.extend(["--label", label])
+
+        # Draft PR
+        if self.config.draft:
+            args.append("--draft")
+
+        result = subprocess.run(
+            ["gh", *args],
+            capture_output=True,
+            text=True,
+            cwd=self.repo_path,
+        )
+
+        if result.returncode != 0:
+            # Check if PR already exists
+            if "already exists" in result.stderr.lower():
+                return PRResult(
+                    success=True,
+                    message="PR already exists",
+                )
+            return PRResult(
+                success=False,
+                message=f"gh pr create failed: {result.stderr}",
+            )
+
+        # Parse PR URL from output
+        pr_url = result.stdout.strip()
+        pr_number = None
+
+        if pr_url:
+            # Extract PR number from URL
+            try:
+                pr_number = int(pr_url.split("/")[-1])
+            except (ValueError, IndexError):
+                pass
+
+        logger.info(f"Auto-PR created: {pr_url}")
+
+        return PRResult(
+            success=True,
+            message="PR created successfully",
+            pr_number=pr_number,
+            pr_url=pr_url,
+        )
+
+    def _create_pr_with_api(
+        self,
+        title: str,
+        body: str,
+        source_branch: str,
+        target_branch: str,
+    ) -> PRResult:
+        """Create PR using GitHub API."""
+        owner = self.repo_info["owner"]
+        repo = self.repo_info["repo"]
+
+        if not owner or not repo:
+            return PRResult(
+                success=False,
+                message="Could not determine repository owner/name",
+            )
+
+        # Push branch first
+        push_result = self._run_git("push", "-u", "origin", source_branch)
+        if push_result.returncode != 0:
+            logger.warning(f"Push may have failed: {push_result.stderr}")
+
+        # Create PR via API
+        data = {
+            "title": title,
+            "body": body,
+            "head": source_branch,
+            "base": target_branch,
+            "draft": self.config.draft,
+        }
+
+        status, response = self.client._api_request(
+            "POST",
+            f"/repos/{owner}/{repo}/pulls",
+            data,
+        )
+
+        if status == 201 and response:
+            pr_number = response.get("number")
+            pr_url = response.get("html_url")
+
+            # Add reviewers if configured
+            if self.config.reviewers and pr_number:
+                self.client._api_request(
+                    "POST",
+                    f"/repos/{owner}/{repo}/pulls/{pr_number}/requested_reviewers",
+                    {"reviewers": self.config.reviewers},
+                )
+
+            # Add labels if configured
+            if self.config.labels and pr_number:
+                self.client._api_request(
+                    "POST",
+                    f"/repos/{owner}/{repo}/issues/{pr_number}/labels",
+                    {"labels": self.config.labels},
+                )
+
+            logger.info(f"Auto-PR created via API: {pr_url}")
+
+            return PRResult(
+                success=True,
+                message="PR created successfully",
+                pr_number=pr_number,
+                pr_url=pr_url,
+            )
+        elif status == 422 and response:
+            # PR might already exist
+            errors = response.get("errors", [])
+            for err in errors:
+                if "pull request already exists" in str(err).lower():
+                    return PRResult(
+                        success=True,
+                        message="PR already exists",
+                    )
+
+        return PRResult(
+            success=False,
+            message=f"API error {status}: {response}",
+        )
+
+    # =========================================================================
+    # Utility
+    # =========================================================================
+
+    def push_branch(self, branch: str) -> bool:
+        """Push a branch to origin.
+
+        Args:
+            branch: Branch name to push
+
+        Returns:
+            True if successful
+        """
+        result = self._run_git("push", "-u", "origin", branch)
+        return result.returncode == 0
+
+    def get_current_branch(self) -> str | None:
+        """Get current git branch name."""
+        result = self._run_git("rev-parse", "--abbrev-ref", "HEAD")
+        if result.returncode == 0:
+            return result.stdout.strip()
+        return None
+
+    def has_uncommitted_changes(self) -> bool:
+        """Check if there are uncommitted changes."""
+        result = self._run_git("status", "--porcelain")
+        return bool(result.stdout.strip())

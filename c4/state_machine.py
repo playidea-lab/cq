@@ -108,24 +108,26 @@ class StateMachine:
         """
         Get the next event ID atomically.
 
-        Uses SQLite atomic_modify if available (prevents race conditions).
-        Falls back to file-based counter for non-SQLite stores.
+        Uses store.atomic_modify to prevent race conditions.
+        Falls back to file-based counter when project_id is not available.
         """
-        from .store import SQLiteStateStore
-
         project_id = self._project_id or (self._state.project_id if self._state else None)
 
-        # Try SQLite atomic approach first
-        if isinstance(self._store, SQLiteStateStore) and project_id:
-            with self._store.atomic_modify(project_id) as state:
-                next_id = state.metrics.events_emitted + 1
-                state.metrics.events_emitted = next_id
-                # Update cached state
-                if self._state:
-                    self._state.metrics.events_emitted = next_id
-                return f"{next_id:06d}"
+        # Use atomic_modify for all stores that support it
+        if project_id and self._store:
+            try:
+                with self._store.atomic_modify(project_id) as state:
+                    next_id = state.metrics.events_emitted + 1
+                    state.metrics.events_emitted = next_id
+                    # Update cached state
+                    if self._state:
+                        self._state.metrics.events_emitted = next_id
+                    return f"{next_id:06d}"
+            except Exception:
+                # Fallback if atomic_modify fails
+                pass
 
-        # Fallback: scan event files (for LocalFileStateStore or initial state)
+        # Fallback: scan event files (for initial state or error cases)
         return self._get_next_event_id_from_files()
 
     def _get_next_event_id_from_files(self) -> str:
@@ -327,11 +329,7 @@ class StateMachine:
         event_file.write_text(event.model_dump_json(indent=2))
 
         # Note: metrics.events_emitted is already updated in _get_next_event_id()
-        # for SQLite stores. For file stores, sync from event_id.
-        from .store import SQLiteStateStore
-
-        if not isinstance(self._store, SQLiteStateStore):
-            self.state.metrics.events_emitted = int(event_id)
+        # via atomic_modify for all stores.
 
         return event
 

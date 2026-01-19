@@ -1,9 +1,10 @@
 """Local File Store - File-based state and lock storage"""
 
 import json
+from contextlib import contextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Generator
 
 from .exceptions import StateNotFoundError
 from .protocol import LockStore, StateStore
@@ -53,6 +54,64 @@ class LocalFileStateStore(StateStore):
         """Delete state file"""
         if self.state_file.exists():
             self.state_file.unlink()
+
+    @contextmanager
+    def atomic_modify(
+        self, project_id: str
+    ) -> Generator["C4State", None, None]:
+        """
+        Atomically load, modify, and save state.
+
+        Uses file-based locking for atomicity:
+        1. Acquire lock file
+        2. Load state
+        3. Yield for modification
+        4. Save state
+        5. Release lock
+
+        Note: On systems without fcntl (Windows), falls back to simple
+        load-modify-save without true atomicity.
+        """
+        from c4.models import C4State
+
+        lock_file = self.c4_dir / ".state.lock"
+        self.c4_dir.mkdir(parents=True, exist_ok=True)
+
+        # Try to use file locking (Unix)
+        lock_fd = None
+        try:
+            import fcntl
+
+            lock_fd = open(lock_file, "w")
+            fcntl.flock(lock_fd.fileno(), fcntl.LOCK_EX)
+        except (ImportError, OSError):
+            # fcntl not available or failed - continue without locking
+            pass
+
+        try:
+            # Load current state
+            if not self.state_file.exists():
+                raise StateNotFoundError(f"State file not found: {self.state_file}")
+
+            data = json.loads(self.state_file.read_text())
+            state = C4State.model_validate(data)
+
+            yield state
+
+            # Save modified state
+            state.updated_at = datetime.now()
+            self.state_file.write_text(state.model_dump_json(indent=2))
+
+        finally:
+            # Release lock
+            if lock_fd is not None:
+                try:
+                    import fcntl
+
+                    fcntl.flock(lock_fd.fileno(), fcntl.LOCK_UN)
+                    lock_fd.close()
+                except (ImportError, OSError):
+                    pass
 
 
 class LocalFileLockStore(LockStore):

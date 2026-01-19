@@ -1669,6 +1669,7 @@ Thumbs.db
             dependencies=[],  # Review doesn't depend on other tasks
             domain=task.domain,
             priority=review_priority,
+            task_type="review",  # Enable code-reviewer agent routing
             # Review-as-Task fields
             type=TaskType.REVIEW,
             base_id=task.base_id,
