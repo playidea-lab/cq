@@ -33,6 +33,7 @@ from .models import (
     Task,
     TaskAssignment,
     TaskStatus,
+    TaskType,
     ValidationResult,
 )
 from .state_machine import StateMachine, StateTransitionError
@@ -1399,8 +1400,13 @@ Thumbs.db
     ) -> dict[str, Any]:
         """Add a new task with optional dependencies.
 
+        Supports versioned task IDs for Review-as-Task workflow:
+        - T-001 -> T-001-0 (auto-append version 0)
+        - T-001-0 -> T-001-0 (keep as-is)
+        - R-001-0 -> R-001-0 (review tasks)
+
         Args:
-            task_id: Unique task identifier (e.g., "T-001")
+            task_id: Unique task identifier (e.g., "T-001" or "T-001-0")
             title: Task title
             scope: File/directory scope for lock (e.g., "src/auth/")
             dod: Definition of Done
@@ -1411,22 +1417,73 @@ Thumbs.db
         if self.state_machine is None:
             raise RuntimeError("C4 not initialized")
 
+        # Parse and normalize task ID for Review-as-Task
+        normalized_id, base_id, version, task_type = self._parse_task_id(task_id)
+
         task = Task(
-            id=task_id,
+            id=normalized_id,
             title=title,
             scope=scope,
             dod=dod,
             dependencies=dependencies or [],
             domain=domain,
             priority=priority,
+            # Review-as-Task fields
+            type=task_type,
+            base_id=base_id,
+            version=version,
         )
         self.add_task(task)
 
         return {
             "success": True,
-            "task_id": task_id,
+            "task_id": normalized_id,
             "dependencies": task.dependencies,
         }
+
+    def _parse_task_id(self, task_id: str) -> tuple[str, str, int, TaskType]:
+        """Parse task ID and extract base_id, version, and type.
+
+        Supports backward compatibility:
+        - T-001 -> T-001-0, base_id="001", version=0, IMPLEMENTATION
+        - T-001-0 -> T-001-0, base_id="001", version=0, IMPLEMENTATION
+        - T-001-2 -> T-001-2, base_id="001", version=2, IMPLEMENTATION
+        - R-001-0 -> R-001-0, base_id="001", version=0, REVIEW
+
+        Returns:
+            Tuple of (normalized_id, base_id, version, task_type)
+        """
+        import re
+
+        # Determine task type from prefix
+        if task_id.startswith("R-"):
+            task_type = TaskType.REVIEW
+            prefix = "R-"
+        else:
+            task_type = TaskType.IMPLEMENTATION
+            prefix = "T-"
+
+        # Remove prefix for parsing
+        without_prefix = task_id[len(prefix):]
+
+        # Check if already has version (e.g., "001-0" or "001-2")
+        match = re.match(r"^(\d+)-(\d+)$", without_prefix)
+        if match:
+            base_id = match.group(1)
+            version = int(match.group(2))
+            normalized_id = task_id  # Already normalized
+        else:
+            # No version, assume version 0 (e.g., "001" or "T-001")
+            match = re.match(r"^(\d+)$", without_prefix)
+            if match:
+                base_id = match.group(1)
+            else:
+                # Non-numeric base (e.g., "FEAT-001"), keep as-is
+                base_id = without_prefix
+            version = 0
+            normalized_id = f"{prefix}{base_id}-{version}"
+
+        return normalized_id, base_id, version, task_type
 
     def c4_checkpoint(
         self,
