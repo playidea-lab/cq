@@ -1,100 +1,83 @@
 #!/bin/bash
 # =============================================================================
-# C4 Remote Installation Script
+# C4 Remote Installer (curl | bash style)
 # =============================================================================
 #
 # Usage:
-#   curl -LsSf https://git.pilab.co.kr/pi/c4/-/raw/main/install-remote.sh | sh
+#   curl -fsSL https://git.pilab.co.kr/pi/c4/raw/main/install-remote.sh | bash
 #
-# Options:
-#   --dir <path>   설치 경로 지정 (기본: ~/.c4)
-#   --update       기존 설치 업데이트만
-#
-# Examples:
-#   # 기본 설치 (~/.c4)
-#   curl -LsSf https://git.pilab.co.kr/pi/c4/-/raw/main/install-remote.sh | sh
-#
-#   # 경로 지정 설치
-#   curl -LsSf ... | sh -s -- --dir ~/tools/c4
-#
-#   # 업데이트만
-#   curl -LsSf ... | sh -s -- --update
+# What it does:
+#   1. Check/Install uv (if missing)
+#   2. Clone C4 to ~/.c4
+#   3. Run install.sh
 #
 # =============================================================================
 
 set -e
 
-# Default installation directory
-C4_INSTALL_DIR="${C4_DIR:-$HOME/.c4}"
-UPDATE_ONLY=false
+C4_REPO="https://git.pilab.co.kr/pi/c4.git"
+C4_DIR="$HOME/.c4"
 
-# Parse arguments
-while [[ $# -gt 0 ]]; do
-    case $1 in
-        --dir)
-            C4_INSTALL_DIR="$2"
-            shift 2
-            ;;
-        --update)
-            UPDATE_ONLY=true
-            shift
-            ;;
-        *)
-            echo "Unknown option: $1"
-            echo "Usage: curl ... | sh -s -- [--dir <path>] [--update]"
-            exit 1
-            ;;
-    esac
-done
-
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "🚀 C4 Remote Installer"
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
-echo "📁 Install directory: $C4_INSTALL_DIR"
+echo "  ██████╗██╗  ██╗"
+echo " ██╔════╝██║  ██║"
+echo " ██║     ███████║"
+echo " ██║     ╚════██║"
+echo " ╚██████╗     ██║"
+echo "  ╚═════╝     ╚═╝"
+echo ""
+echo " AI Project Orchestration"
 echo ""
 
 # =============================================================================
 # Step 1: Check/Install uv
 # =============================================================================
-if ! command -v uv &> /dev/null; then
-    echo "📦 uv not found. Installing..."
+echo "[1/3] Checking uv..."
+
+if command -v uv &> /dev/null; then
+    UV_VERSION=$(uv --version 2>/dev/null | head -1)
+    echo "   OK: $UV_VERSION"
+else
+    echo "   Installing uv..."
     curl -LsSf https://astral.sh/uv/install.sh | sh
-    export PATH="$HOME/.local/bin:$PATH"
-    echo "   ✅ uv installed"
-else
-    echo "✅ uv found"
-fi
 
-# =============================================================================
-# Step 2: Clone or Update repository
-# =============================================================================
-if [ -d "$C4_INSTALL_DIR" ]; then
-    if [ "$UPDATE_ONLY" = true ]; then
-        echo "📥 Updating existing installation..."
-        cd "$C4_INSTALL_DIR"
-        git pull
-        echo "   ✅ Updated"
+    # Add to current session
+    export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
+
+    if command -v uv &> /dev/null; then
+        UV_VERSION=$(uv --version 2>/dev/null | head -1)
+        echo "   OK: $UV_VERSION installed"
     else
-        echo "📥 Reinstalling (removing old installation)..."
-        rm -rf "$C4_INSTALL_DIR"
-        git clone https://git.pilab.co.kr/pi/c4.git "$C4_INSTALL_DIR"
-        echo "   ✅ Cloned"
+        echo "   ERROR: uv installation failed"
+        echo "   Try manually: curl -LsSf https://astral.sh/uv/install.sh | sh"
+        exit 1
     fi
-else
-    echo "📥 Cloning C4..."
-    git clone https://git.pilab.co.kr/pi/c4.git "$C4_INSTALL_DIR"
-    echo "   ✅ Cloned"
 fi
 
 # =============================================================================
-# Step 3: Run full install.sh
+# Step 2: Clone or update C4
 # =============================================================================
-echo ""
-echo "🔧 Running install.sh..."
+echo "[2/3] Installing C4..."
+
+if [[ -d "$C4_DIR/.git" ]]; then
+    echo "   Updating existing installation..."
+    (cd "$C4_DIR" && git pull --quiet)
+else
+    if [[ -d "$C4_DIR" ]]; then
+        echo "   Removing old installation..."
+        rm -rf "$C4_DIR"
+    fi
+    echo "   Cloning C4..."
+    git clone --quiet "$C4_REPO" "$C4_DIR"
+fi
+
+echo "   OK: $C4_DIR"
+
+# =============================================================================
+# Step 3: Run installer
+# =============================================================================
+echo "[3/3] Running installer..."
 echo ""
 
-cd "$C4_INSTALL_DIR"
-bash ./install.sh
-
-# install.sh already prints completion message
+cd "$C4_DIR"
+exec ./install.sh
