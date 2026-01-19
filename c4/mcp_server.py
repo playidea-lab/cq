@@ -11,7 +11,7 @@ from mcp.server.stdio import stdio_server
 from mcp.types import TextContent, Tool
 
 from .constants import MAX_REPAIR_DEPTH, REPAIR_PREFIX, REPAIR_PREFIX_LEN
-from .daemon import SupervisorLoopManager, WorkerManager
+from .daemon import GitOperations, SupervisorLoopManager, WorkerManager
 from .discovery import (
     DesignStore,
     Domain,
@@ -1911,6 +1911,9 @@ Thumbs.db
         """
         Transition from PLAN/HALTED to EXECUTE state.
         This starts the worker loop execution.
+
+        Also ensures the C4 work branch exists (created from default_branch if needed).
+        Branch strategy: main → c4/{project_id} → c4/w-T-XXX
         """
         if self.state_machine is None:
             return {"success": False, "error": "C4 not initialized"}
@@ -1926,6 +1929,26 @@ Thumbs.db
                 "current_status": current_status,
                 "hint": "Must be in PLAN or HALTED state to start execution",
             }
+
+        # Ensure C4 work branch exists (Convention over Configuration)
+        # Branch strategy: main → c4/{project_id} → task branches
+        git_ops = GitOperations(self.root)
+        work_branch = self.config.get_work_branch()
+        default_branch = self.config.default_branch
+
+        branch_message = None
+        if git_ops.is_git_repo():
+            branch_result = git_ops.ensure_work_branch(work_branch, default_branch)
+            if not branch_result.success:
+                return {
+                    "success": False,
+                    "error": f"Failed to setup work branch: {branch_result.message}",
+                    "current_status": current_status,
+                    "hint": f"Ensure '{default_branch}' branch exists and is clean",
+                }
+            branch_message = branch_result.message
+        else:
+            logger.info("Not a git repository, skipping work branch setup")
 
         # Perform the transition
         self.state_machine.transition("c4_run")
@@ -1947,6 +1970,8 @@ Thumbs.db
             "status": new_state.status.value,
             "pending_tasks": len(new_state.queue.pending),
             "supervisor_loop_started": supervisor_started,
+            "work_branch": work_branch,
+            "branch_message": branch_message,
         }
 
     def c4_run_validation(

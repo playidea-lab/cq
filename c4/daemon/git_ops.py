@@ -346,6 +346,61 @@ class GitOperations:
 
         return GitResult(True, f"Created branch {branch_name}")
 
+    def ensure_work_branch(
+        self, work_branch: str, default_branch: str = "main"
+    ) -> GitResult:
+        """Ensure work branch exists and checkout to it.
+
+        Creates the work branch from default_branch if it doesn't exist.
+        This is called at c4_start to set up the C4 working environment.
+
+        Args:
+            work_branch: Name of the work branch (e.g., 'c4/my-project')
+            default_branch: Branch to create work branch from (default: 'main')
+
+        Returns:
+            GitResult with branch setup status
+        """
+        if not self.is_git_repo():
+            return GitResult(False, "Not a Git repository")
+
+        # Check if work branch exists
+        check_result = self._run_git("branch", "--list", work_branch)
+        if check_result.stdout.strip():
+            # Branch exists, checkout to it
+            result = self._run_git("checkout", work_branch)
+            if result.returncode != 0:
+                return GitResult(False, f"Checkout failed: {result.stderr}")
+            return GitResult(True, f"Switched to existing work branch {work_branch}")
+
+        # Check if default_branch exists
+        default_check = self._run_git("branch", "--list", default_branch)
+        if not default_check.stdout.strip():
+            # Default branch doesn't exist (fresh repo with no commits)
+            # Create work branch from current HEAD (or create initial commit if needed)
+            result = self._run_git("checkout", "-b", work_branch)
+            if result.returncode != 0:
+                return GitResult(False, f"Branch creation failed: {result.stderr}")
+            return GitResult(True, f"Created work branch {work_branch} (no base branch)")
+
+        # Need to create work branch from default_branch
+        # First, ensure we're on default_branch
+        current_branch = self.get_branch_name()
+        if current_branch != default_branch:
+            checkout_result = self._run_git("checkout", default_branch)
+            if checkout_result.returncode != 0:
+                return GitResult(
+                    False,
+                    f"Cannot checkout {default_branch}: {checkout_result.stderr}",
+                )
+
+        # Create and checkout work branch
+        result = self._run_git("checkout", "-b", work_branch)
+        if result.returncode != 0:
+            return GitResult(False, f"Branch creation failed: {result.stderr}")
+
+        return GitResult(True, f"Created work branch {work_branch} from {default_branch}")
+
     def get_tag_info(self, tag: str) -> dict[str, str] | None:
         """Get detailed information about a tag.
 
