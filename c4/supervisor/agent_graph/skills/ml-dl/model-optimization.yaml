@@ -1,0 +1,114 @@
+skill:
+  id: model-optimization
+  name: "Model Optimization & Deployment"
+  description: "모델 양자화, 프루닝, 지식 증류, ONNX 변환을 통한 추론 최적화 및 배포 준비"
+
+  impact: high
+  category: performance
+  domains:
+    - ml-dl
+
+  domain_specific:
+    ml-dl:
+      priority_boost: 0.5
+
+  metadata:
+    version: "1.0.0"
+    author: "c4-team"
+    license: MIT
+    tags: [optimization, quantization, pruning, onnx, inference, deployment]
+
+  capabilities:
+    - quantization
+    - pruning
+    - knowledge-distillation
+    - onnx-conversion
+    - inference-optimization
+    - model-compression
+
+  triggers:
+    keywords:
+      - optimization
+      - quantization
+      - pruning
+      - distillation
+      - ONNX
+      - inference
+      - deploy model
+      - model size
+      - latency
+      - throughput
+    task_types:
+      - optimize
+      - model-optimization
+      - deploy
+      - inference
+    file_patterns:
+      - "*.onnx"
+      - "*.tflite"
+      - "**/optimized/**"
+
+  rules:
+    - id: OPT-001
+      description: "양자화 전후 정확도 차이 검증 (허용 범위 설정)"
+      impact: critical
+      example_bad: |
+        quantized_model = quantize(model)
+        # 정확도 검증 없이 배포
+        deploy(quantized_model)
+      example_good: |
+        quantized_model = quantize(model)
+        orig_acc = evaluate(model, test_data)
+        quant_acc = evaluate(quantized_model, test_data)
+        assert orig_acc - quant_acc < 0.01, "Accuracy drop too high"
+
+    - id: OPT-002
+      description: "추론 최적화 시 레이턴시와 처리량 벤치마크 필수"
+      impact: high
+      example_bad: |
+        optimized = optimize(model)
+        save(optimized)
+      example_good: |
+        optimized = optimize(model)
+        latency_ms = benchmark_latency(optimized, n_samples=100)
+        throughput = benchmark_throughput(optimized)
+        assert latency_ms < TARGET_LATENCY, f"Latency {latency_ms}ms > {TARGET_LATENCY}ms"
+
+    - id: OPT-003
+      description: "ONNX 변환 시 입력/출력 텐서 형태 명시 및 검증"
+      impact: high
+      example_bad: |
+        torch.onnx.export(model, dummy_input, "model.onnx")
+      example_good: |
+        torch.onnx.export(
+            model, dummy_input, "model.onnx",
+            input_names=["input"],
+            output_names=["output"],
+            dynamic_axes={"input": {0: "batch_size"}}
+        )
+        # Validate exported model
+        onnx_model = onnx.load("model.onnx")
+        onnx.checker.check_model(onnx_model)
+
+  dependencies:
+    required:
+      - experiment-tracking
+
+  tools:
+    - pytorch-quantization
+    - tensorflow-lite
+    - onnx
+    - tensorrt
+    - openvino
+
+  complementary_skills:
+    - experiment-tracking
+    - deployment
+    - monitoring
+
+  prerequisites:
+    - experiment-tracking
+
+  leads_to:
+    - deployment
+    - monitoring

@@ -51,9 +51,15 @@ from c4.supervisor.agent_graph.models import (
     RuleDefinition,
     Rules,
     Selection,
-    # Skill models
+    # Skill models (V2 extended)
+    DomainSpecificConfig,
+    ImpactLevel,
     Skill,
+    SkillCategory,
     SkillDefinition,
+    SkillDependencies,
+    SkillMetadata,
+    SkillRule,
     SkillTriggers,
     WorkflowSelect,
     WorkflowStep,
@@ -68,13 +74,35 @@ from c4.supervisor.agent_graph.rule_engine import (
 )
 from c4.supervisor.agent_graph.skill_matcher import (
     AgentMatch,
+    SkillMatch,
     SkillMatcher,
     TaskContext,
     TaskLike,
 )
+from c4.supervisor.agent_graph.skill_validator import (
+    SkillValidator,
+    ValidationIssue,
+    ValidationLevel,
+    ValidationResult,
+)
+from c4.supervisor.agent_graph.skill_md_parser import (
+    ParsedSkillMd,
+    SkillMdParser,
+    parse_skill_md,
+)
+from c4.supervisor.agent_graph.external_loader import (
+    ConflictResolution,
+    ExternalLoaderConfig,
+    ExternalSkillLoader,
+    LoadedSkill,
+    SkillLoadResult,
+    SkillSource,
+    load_all_skills,
+)
 
 SCHEMA_DIR = Path(__file__).parent / "schema"
 EXAMPLES_DIR = Path(__file__).parent / "examples"
+SKILLS_DIR = Path(__file__).parent / "skills"
 
 __all__ = [
     # Graph
@@ -96,6 +124,7 @@ __all__ = [
     "RuleContext",
     # Skill Matcher
     "SkillMatcher",
+    "SkillMatch",
     "TaskContext",
     "TaskLike",
     "AgentMatch",
@@ -105,9 +134,33 @@ __all__ = [
     # Directories
     "SCHEMA_DIR",
     "EXAMPLES_DIR",
-    # Skill models
+    "SKILLS_DIR",
+    # Skill Validator
+    "SkillValidator",
+    "ValidationIssue",
+    "ValidationLevel",
+    "ValidationResult",
+    # SKILL.md Parser
+    "ParsedSkillMd",
+    "SkillMdParser",
+    "parse_skill_md",
+    # External Loader
+    "ConflictResolution",
+    "ExternalLoaderConfig",
+    "ExternalSkillLoader",
+    "LoadedSkill",
+    "SkillLoadResult",
+    "SkillSource",
+    "load_all_skills",
+    # Skill models (V2 extended)
+    "DomainSpecificConfig",
+    "ImpactLevel",
     "Skill",
+    "SkillCategory",
     "SkillDefinition",
+    "SkillDependencies",
+    "SkillMetadata",
+    "SkillRule",
     "SkillTriggers",
     # Agent models
     "Agent",

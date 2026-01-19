@@ -143,6 +143,54 @@ uv run pytest tests/unit/test_discovery.py tests/unit/test_verifier.py -v
 # 76개 테스트 통과
 ```
 
+### Phase 5.5: Skill System Enhancement ✅
+
+**목표**: 확장 가능한 스킬 시스템으로 에이전트 라우팅 고도화
+
+**구현 완료**:
+- **스킬 스키마 V2** (`c4/supervisor/agent_graph/schema/skill.schema.yaml`)
+  - Impact 우선순위: critical, high, medium, low
+  - 다중 도메인 지원: `domains`, `domain_specific`
+  - 메타데이터: version, author, license, tags
+  - 임베디드 규칙: rules with example_bad/example_good
+  - 의존성: dependencies (required, optional)
+- **Impact 기반 스코어링** (`c4/supervisor/agent_graph/skill_matcher.py`)
+  - 공식: `score = impact_weight × (1 + domain_boost) + rule_bonus`
+  - impact_weight: critical=2.0, high=1.5, medium=1.0, low=0.5
+- **도메인별 스킬 (18개)**
+  - 범용: debugging, testing, code-review, error-handling, security-scanning
+  - ML/DL: experiment-tracking, model-optimization
+  - Data Science: data-analysis, feature-engineering, statistical-testing
+  - Frontend: react-optimization, accessibility
+  - Backend: api-design, database-optimization, authentication, caching-strategy
+  - Infra: deployment, monitoring, container-orchestration
+- **스킬 관리 CLI**
+  - `c4 skill list` - 스킬 목록
+  - `c4 skill validate` - 스킬 검증
+  - `c4 skill info` - 스킬 상세
+- **외부 스킬 호환**
+  - SKILL.md 파서 (Vercel 포맷 호환)
+  - 다중 소스 로더 (built-in → project → external)
+  - 충돌 해결 전략
+
+**디렉토리 구조**:
+```
+c4/supervisor/agent_graph/skills/
+├── _meta/           # 범용 스킬
+├── frontend/        # 프론트엔드 도메인
+├── backend/         # 백엔드 도메인
+├── ml-dl/           # ML/DL 도메인
+├── data-science/    # 데이터 사이언스
+├── infra/           # 인프라
+└── _groups.yaml     # 스킬 그룹 정의
+```
+
+**테스트**:
+```bash
+uv run pytest tests/unit/test_skill_matcher.py tests/unit/test_agent_graph_loader.py -v
+# 61개 테스트 통과
+```
+
 ---
 
 ## Phase 6: Team Collaboration (장기 계획)
@@ -245,6 +293,7 @@ v0.1-0.3        v0.4           v0.5 (현재)     v0.6+
 | EARS Requirements | P0 | ✅ 완료 |
 | ADR Generator | P0 | ✅ 완료 |
 | Verification System | P0 | ✅ 완료 |
+| Skill System Enhancement | P0 | ✅ 완료 |
 | 문서화 | P0 | ✅ 완료 |
 | Team Collaboration | P1 | 📋 Phase 6 |
 | Cloud API | P2 | 📋 Phase 7 |

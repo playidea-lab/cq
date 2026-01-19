@@ -1,0 +1,102 @@
+skill:
+  id: feature-engineering
+  name: "Feature Engineering & Transformation"
+  description: "피처 생성, 변환, 선택, 인코딩을 통한 ML 모델 성능 향상"
+
+  impact: high
+  category: data-processing
+  domains:
+    - data-science
+    - ml-dl
+
+  domain_specific:
+    data-science:
+      priority_boost: 0.5
+    ml-dl:
+      priority_boost: 0.3
+
+  metadata:
+    version: "1.0.0"
+    author: "c4-team"
+    license: MIT
+    tags: [feature-engineering, preprocessing, transformation, encoding]
+
+  capabilities:
+    - feature-creation
+    - feature-selection
+    - encoding
+    - scaling
+    - binning
+    - interaction-features
+
+  triggers:
+    keywords:
+      - feature
+      - feature engineering
+      - encoding
+      - scaling
+      - preprocessing
+      - transform
+      - one-hot
+      - normalization
+      - standardization
+    task_types:
+      - feature-engineering
+      - preprocessing
+      - transform
+    file_patterns:
+      - "**/features/**"
+      - "**/preprocessing/**"
+      - "feature_*.py"
+
+  rules:
+    - id: FE-001
+      description: "테스트 데이터 정보 누출 방지: 스케일링은 학습 데이터로만 fit"
+      impact: critical
+      example_bad: |
+        scaler = StandardScaler()
+        X_all = scaler.fit_transform(pd.concat([X_train, X_test]))
+      example_good: |
+        scaler = StandardScaler()
+        X_train_scaled = scaler.fit_transform(X_train)
+        X_test_scaled = scaler.transform(X_test)
+
+    - id: FE-002
+      description: "피처 파이프라인은 재사용 가능하게 저장"
+      impact: high
+      example_bad: |
+        X_train['age_scaled'] = (X_train['age'] - X_train['age'].mean()) / X_train['age'].std()
+      example_good: |
+        from sklearn.pipeline import Pipeline
+        pipeline = Pipeline([
+            ('scaler', StandardScaler()),
+            ('model', LogisticRegression())
+        ])
+        joblib.dump(pipeline, 'pipeline.pkl')
+
+    - id: FE-003
+      description: "결측치 처리 전략을 명시적으로 문서화하고 일관되게 적용"
+      impact: medium
+      example_bad: |
+        df.fillna(0, inplace=True)
+      example_good: |
+        # Missing value strategy: median for numeric, mode for categorical
+        imputer = ColumnTransformer([
+            ('num', SimpleImputer(strategy='median'), numeric_cols),
+            ('cat', SimpleImputer(strategy='most_frequent'), categorical_cols)
+        ])
+
+  tools:
+    - sklearn
+    - feature-engine
+    - featuretools
+    - pandas
+
+  complementary_skills:
+    - data-analysis
+    - statistical-testing
+    - experiment-tracking
+
+  leads_to:
+    - experiment-tracking
+    - model-optimization

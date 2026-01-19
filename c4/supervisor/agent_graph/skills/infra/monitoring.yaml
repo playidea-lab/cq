@@ -1,0 +1,129 @@
+skill:
+  id: monitoring
+  name: "Monitoring & Observability"
+  description: "메트릭 수집, 로깅, 트레이싱, 알림 설정을 통한 시스템 관찰 가능성 확보"
+
+  impact: high
+  category: operations
+  domains:
+    - infra
+    - devops
+
+  domain_specific:
+    infra:
+      priority_boost: 0.5
+    devops:
+      priority_boost: 0.4
+
+  metadata:
+    version: "1.0.0"
+    author: "c4-team"
+    license: MIT
+    tags: [monitoring, observability, metrics, logging, tracing, alerting]
+
+  capabilities:
+    - metric-collection
+    - log-aggregation
+    - distributed-tracing
+    - alert-configuration
+    - dashboard-creation
+    - sli-slo-definition
+
+  triggers:
+    keywords:
+      - monitoring
+      - observability
+      - metrics
+      - logging
+      - tracing
+      - alert
+      - Prometheus
+      - Grafana
+      - Datadog
+      - SLI
+      - SLO
+    task_types:
+      - monitoring
+      - observability
+      - alerting
+      - logging
+    file_patterns:
+      - "**/monitoring/**"
+      - "**/observability/**"
+      - "prometheus*.yml"
+      - "grafana/**"
+
+  rules:
+    - id: MON-001
+      description: "핵심 메트릭 정의: 레이턴시, 트래픽, 에러율, 포화도 (RED/USE)"
+      impact: critical
+      example_bad: |
+        # 메트릭 없이 배포
+        app.run()
+      example_good: |
+        from prometheus_client import Counter, Histogram
+
+        REQUEST_LATENCY = Histogram('http_request_latency_seconds', 'Request latency')
+        REQUEST_COUNT = Counter('http_request_total', 'Total requests', ['method', 'status'])
+        ERROR_COUNT = Counter('http_errors_total', 'Total errors')
+
+    - id: MON-002
+      description: "알림은 실행 가능한 수준으로 설정 (알림 피로 방지)"
+      impact: high
+      example_bad: |
+        alert: HighCPU
+        expr: cpu_usage > 50  # 너무 민감
+        for: 1m
+      example_good: |
+        alert: HighCPU
+        expr: cpu_usage > 90
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          runbook_url: "https://wiki/runbook/high-cpu"
+
+    - id: MON-003
+      description: "구조화된 로그 사용 및 상관 관계 ID 포함"
+      impact: high
+      example_bad: |
+        print(f"Error: {error}")
+      example_good: |
+        logger.error(
+            "Request failed",
+            extra={
+                "error": str(error),
+                "request_id": request.id,
+                "user_id": user.id,
+                "trace_id": trace.id
+            }
+        )
+
+    - id: MON-004
+      description: "SLI/SLO 기반 알림 설정으로 사용자 영향 중심 모니터링"
+      impact: high
+      example_bad: |
+        # 인프라 메트릭만 알림
+        alert: PodCrashing
+      example_good: |
+        # SLO 기반 알림
+        alert: HighErrorRate
+        expr: sum(rate(http_errors_total[5m])) / sum(rate(http_requests_total[5m])) > 0.01
+        annotations:
+          description: "Error rate exceeds 1% SLO"
+
+  tools:
+    - prometheus
+    - grafana
+    - datadog
+    - opentelemetry
+    - jaeger
+
+  complementary_skills:
+    - error-handling
+    - deployment
+    - container-orchestration
+
+  leads_to:
+    - deployment
+    - error-handling

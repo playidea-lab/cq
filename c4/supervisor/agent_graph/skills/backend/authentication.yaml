@@ -1,0 +1,119 @@
+skill:
+  id: authentication
+  name: "Authentication & Authorization"
+  description: "JWT, OAuth, 세션 관리, RBAC/ABAC 권한 제어 구현 및 보안 베스트 프랙티스"
+
+  impact: critical
+  category: security
+  domains:
+    - web-backend
+    - api
+
+  domain_specific:
+    web-backend:
+      priority_boost: 0.5
+    api:
+      priority_boost: 0.5
+
+  metadata:
+    version: "1.0.0"
+    author: "c4-team"
+    license: MIT
+    tags: [authentication, authorization, jwt, oauth, security, rbac]
+
+  capabilities:
+    - jwt-implementation
+    - oauth-integration
+    - session-management
+    - rbac-implementation
+    - password-hashing
+    - token-refresh
+
+  triggers:
+    keywords:
+      - authentication
+      - authorization
+      - JWT
+      - OAuth
+      - login
+      - session
+      - token
+      - permission
+      - RBAC
+      - password
+    task_types:
+      - authentication
+      - authorization
+      - security
+      - login
+    file_patterns:
+      - "**/auth/**"
+      - "**/authentication/**"
+      - "**/security/**"
+
+  rules:
+    - id: AUTH-001
+      description: "비밀번호는 반드시 안전한 해시 알고리즘으로 저장 (bcrypt, argon2)"
+      impact: critical
+      example_bad: |
+        user.password = hashlib.md5(password).hexdigest()
+      example_good: |
+        from passlib.hash import argon2
+        user.password_hash = argon2.hash(password)
+
+    - id: AUTH-002
+      description: "JWT에 민감한 정보 포함 금지, 짧은 만료 시간 설정"
+      impact: critical
+      example_bad: |
+        payload = {"user_id": 1, "password": "secret", "exp": far_future}
+      example_good: |
+        payload = {
+            "sub": user_id,
+            "exp": datetime.utcnow() + timedelta(minutes=15),
+            "iat": datetime.utcnow()
+        }
+
+    - id: AUTH-003
+      description: "리프레시 토큰은 데이터베이스에 저장하고 재사용 탐지 구현"
+      impact: high
+      example_bad: |
+        refresh_token = jwt.encode({"user_id": user_id}, secret)
+        return refresh_token  # 상태 비저장, 탈취 위험
+      example_good: |
+        refresh_token = secrets.token_urlsafe(32)
+        RefreshToken.objects.create(
+            user=user, token=refresh_token, expires_at=future
+        )
+        return refresh_token
+
+    - id: AUTH-004
+      description: "권한 검사는 모든 보호된 엔드포인트에서 수행"
+      impact: critical
+      example_bad: |
+        @app.route('/admin/users')
+        def admin_users():
+            return get_all_users()  # 권한 검사 없음
+      example_good: |
+        @app.route('/admin/users')
+        @require_role('admin')
+        def admin_users():
+            return get_all_users()
+
+  dependencies:
+    optional:
+      - security-scanning
+
+  tools:
+    - pyjwt
+    - passlib
+    - authlib
+    - python-jose
+
+  complementary_skills:
+    - security-scanning
+    - api-design
+    - error-handling
+
+  leads_to:
+    - security-scanning
+    - deployment

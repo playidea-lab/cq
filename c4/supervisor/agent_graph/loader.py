@@ -225,6 +225,7 @@ class AgentGraphLoader:
         subdir: str,
         schema_filename: str,
         model_class: type[BaseModel],
+        recursive: bool = False,
     ) -> list[Any]:
         """Generic method to load definitions from a subdirectory.
 
@@ -232,6 +233,7 @@ class AgentGraphLoader:
             subdir: Subdirectory name (e.g., "skills")
             schema_filename: Schema file name (e.g., "skill.schema.yaml")
             model_class: Pydantic model class to parse into
+            recursive: Whether to search subdirectories recursively
 
         Returns:
             List of parsed model instances
@@ -249,8 +251,14 @@ class AgentGraphLoader:
         if not dir_path.is_dir():
             raise FileNotFoundError(dir_path, f"Path is not a directory: {dir_path}")
 
-        # Get all YAML files
-        yaml_files = list(dir_path.glob("*.yaml")) + list(dir_path.glob("*.yml"))
+        # Get all YAML files (optionally recursive)
+        pattern = "**/*.yaml" if recursive else "*.yaml"
+        yaml_files = list(dir_path.glob(pattern))
+        yaml_files += list(dir_path.glob(pattern.replace(".yaml", ".yml")))
+
+        # Filter out files starting with underscore (meta files like _groups.yaml, _domain.yaml)
+        yaml_files = [f for f in yaml_files if not f.name.startswith("_")]
+
         if not yaml_files:
             return []  # Empty directory is valid
 
@@ -277,8 +285,12 @@ class AgentGraphLoader:
 
         return results
 
-    def load_skills(self) -> list[SkillDefinition]:
+    def load_skills(self, recursive: bool = True) -> list[SkillDefinition]:
         """Load all skill definitions from the skills/ subdirectory.
+
+        Args:
+            recursive: Whether to search subdirectories recursively (default: True).
+                This allows loading skills organized in domain folders.
 
         Returns:
             List of SkillDefinition objects
@@ -293,6 +305,7 @@ class AgentGraphLoader:
             self.SKILLS_DIR,
             self.SKILL_SCHEMA,
             SkillDefinition,
+            recursive=recursive,
         )
 
     def load_agents(self) -> list[AgentDefinition]:

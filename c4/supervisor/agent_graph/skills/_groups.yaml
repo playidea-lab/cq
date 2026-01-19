@@ -1,0 +1,84 @@
+# Skill Groups - Predefined skill bundles for common use cases
+# Use with: c4 config skills.enabled_groups: [group-name]
+
+groups:
+  # Essential skills for any project
+  core-essential:
+    skills:
+      - code-review
+      - error-handling
+      - debugging
+      - testing
+    description: "Core skills every project needs"
+
+  # Security-focused bundle
+  security-basic:
+    skills:
+      - security-scanning
+      - authentication
+      - error-handling
+    description: "Basic security skills for production systems"
+
+  # ML/DL project essentials
+  ml-essential:
+    skills:
+      - experiment-tracking
+      - data-analysis
+      - feature-engineering
+      - statistical-testing
+    description: "Essential skills for ML/DL projects"
+
+  # ML production deployment
+  ml-production:
+    skills:
+      - experiment-tracking
+      - model-optimization
+      - monitoring
+      - deployment
+    description: "Skills for deploying ML models to production"
+
+  # Frontend web development
+  frontend-essential:
+    skills:
+      - react-optimization
+      - accessibility
+      - testing
+      - code-review
+    description: "Essential skills for frontend development"
+
+  # Backend API development
+  backend-essential:
+    skills:
+      - database-optimization
+      - authentication
+      - caching-strategy
+      - api-design
+    description: "Essential skills for backend API development"
+
+  # Infrastructure & DevOps
+  infra-essential:
+    skills:
+      - container-orchestration
+      - monitoring
+      - deployment
+      - security-scanning
+    description: "Essential skills for infrastructure management"
+
+  # Full-stack web development
+  fullstack-essential:
+    skills:
+      - react-optimization
+      - database-optimization
+      - authentication
+      - api-design
+      - testing
+    description: "Essential skills for full-stack development"
+
+  # Data Science projects
+  data-science-essential:
+    skills:
+      - data-analysis
+      - feature-engineering
+      - statistical-testing
+      - experiment-tracking
+    description: "Essential skills for data science projects"

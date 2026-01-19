@@ -1442,6 +1442,316 @@ def platforms_cmd(
 
 
 # =============================================================================
+# Skill Management Commands
+# =============================================================================
+
+skill_app = typer.Typer(help="Skill management commands")
+c4_app.add_typer(skill_app, name="skill")
+
+
+@skill_app.command("list")
+def skill_list(
+    directory: Path = typer.Option(
+        None,
+        "--dir",
+        "-d",
+        help="Skill directory (defaults to built-in skills)",
+    ),
+    domain: str = typer.Option(
+        None,
+        "--domain",
+        help="Filter by domain (e.g., ml-dl, web-frontend)",
+    ),
+    show_all: bool = typer.Option(
+        False,
+        "--all",
+        "-a",
+        help="Show all skills including deprecated",
+    ),
+):
+    """List available skills.
+
+    Examples:
+        c4 skill list                      # List all built-in skills
+        c4 skill list --domain ml-dl       # Filter by domain
+        c4 skill list --dir .c4/skills     # List project skills
+    """
+    from c4.supervisor.agent_graph import EXAMPLES_DIR
+    from c4.supervisor.agent_graph.loader import AgentGraphLoader
+
+    skill_dir = directory or (EXAMPLES_DIR / "skills")
+
+    if not skill_dir.exists():
+        console.print(f"[red]Error:[/red] Directory not found: {skill_dir}")
+        raise typer.Exit(1)
+
+    loader = AgentGraphLoader(skill_dir.parent)
+
+    try:
+        skills = loader.load_skills()
+    except Exception as e:
+        console.print(f"[red]Error loading skills:[/red] {e}")
+        raise typer.Exit(1)
+
+    if not skills:
+        console.print("[yellow]No skills found[/yellow]")
+        return
+
+    # Filter by domain
+    if domain:
+        skills = [s for s in skills if domain in s.skill.domains or "universal" in s.skill.domains]
+
+    # Filter deprecated
+    if not show_all:
+        skills = [s for s in skills if not (s.skill.metadata and s.skill.metadata.deprecated)]
+
+    console.print()
+    console.print(f"[bold]Skills ({len(skills)})[/bold]")
+    console.print()
+
+    table = Table(show_header=True)
+    table.add_column("ID", style="cyan")
+    table.add_column("Name")
+    table.add_column("Impact", style="yellow")
+    table.add_column("Domains")
+    table.add_column("Version", style="dim")
+
+    for skill_def in sorted(skills, key=lambda s: s.skill.id):
+        skill = skill_def.skill
+        domains_str = ", ".join(skill.domains[:3])
+        if len(skill.domains) > 3:
+            domains_str += f" (+{len(skill.domains) - 3})"
+
+        version = skill.metadata.version if skill.metadata else "1.0.0"
+        deprecated = " (deprecated)" if skill.metadata and skill.metadata.deprecated else ""
+
+        table.add_row(
+            skill.id + deprecated,
+            skill.name,
+            skill.impact.value,
+            domains_str,
+            version,
+        )
+
+    console.print(table)
+    console.print()
+    console.print(f"[dim]Source: {skill_dir}[/dim]")
+
+
+@skill_app.command("validate")
+def skill_validate(
+    path: Path = typer.Argument(
+        ...,
+        help="Path to skill file or directory to validate",
+    ),
+    check_deps: bool = typer.Option(
+        False,
+        "--check-deps",
+        help="Check skill dependencies (Level 3)",
+    ),
+    verbose: bool = typer.Option(
+        False,
+        "--verbose",
+        "-v",
+        help="Show all issues including info level",
+    ),
+):
+    """Validate skill definitions.
+
+    Runs multi-level validation:
+    - Level 1 (Required): Schema + Pydantic validation, triggers
+    - Level 2 (Recommended): Rules, description quality, examples
+    - Level 3 (Optional): Dependencies (--check-deps)
+
+    Examples:
+        c4 skill validate skills/debugging.yaml
+        c4 skill validate skills/ --check-deps
+        c4 skill validate .c4/skills/ --verbose
+    """
+    from c4.supervisor.agent_graph.skill_validator import (
+        SkillValidator,
+        ValidationLevel,
+    )
+
+    validator = SkillValidator()
+
+    if path.is_file():
+        result = validator.validate_file(path, check_deps=check_deps)
+
+        status = "[green]PASS[/green]" if result.is_valid else "[red]FAIL[/red]"
+        console.print()
+        console.print(f"{status} {result.skill_id or path.name}")
+        console.print()
+
+        for issue in result.issues:
+            if not verbose and issue.level == ValidationLevel.INFO:
+                continue
+            color = {"error": "red", "warning": "yellow", "info": "dim"}[issue.level.value]
+            console.print(f"  [{color}]{issue}[/{color}]")
+            if issue.suggestion:
+                console.print(f"    [dim]Suggestion: {issue.suggestion}[/dim]")
+
+        if result.is_valid:
+            console.print()
+            console.print("[green]All required checks passed[/green]")
+        raise typer.Exit(0 if result.is_valid else 1)
+
+    elif path.is_dir():
+        results = validator.validate_directory(path, check_deps=check_deps)
+
+        if not results:
+            console.print("[yellow]No skill files found[/yellow]")
+            return
+
+        total_errors = sum(r.error_count for r in results)
+        total_warnings = sum(r.warning_count for r in results)
+        valid_count = sum(1 for r in results if r.is_valid)
+
+        console.print()
+        console.print(f"[bold]Validation Results ({len(results)} skills)[/bold]")
+        console.print()
+
+        for result in results:
+            status = "[green]+[/green]" if result.is_valid else "[red]x[/red]"
+            console.print(f"  {status} {result.skill_id or result.skill_path}")
+
+            for issue in result.issues:
+                if not verbose and issue.level == ValidationLevel.INFO:
+                    continue
+                if issue.level == ValidationLevel.ERROR:
+                    console.print(f"      [red]{issue}[/red]")
+                elif issue.level == ValidationLevel.WARNING:
+                    console.print(f"      [yellow]{issue}[/yellow]")
+                elif verbose:
+                    console.print(f"      [dim]{issue}[/dim]")
+
+        console.print()
+        console.print(f"Summary: {valid_count}/{len(results)} passed, {total_errors} errors, {total_warnings} warnings")
+
+        # Check for circular dependencies
+        cycles = validator.check_circular_dependencies(path)
+        if cycles:
+            console.print()
+            console.print("[red]Circular dependencies detected:[/red]")
+            for skill_id, cycle in cycles:
+                console.print(f"  {' -> '.join(cycle)}")
+
+        raise typer.Exit(0 if total_errors == 0 else 1)
+
+    else:
+        console.print(f"[red]Error:[/red] Path not found: {path}")
+        raise typer.Exit(1)
+
+
+@skill_app.command("info")
+def skill_info(
+    skill_id: str = typer.Argument(..., help="Skill ID to show info for"),
+    directory: Path = typer.Option(
+        None,
+        "--dir",
+        "-d",
+        help="Skill directory (defaults to built-in skills)",
+    ),
+):
+    """Show detailed information about a skill.
+
+    Examples:
+        c4 skill info debugging
+        c4 skill info experiment-tracking --dir .c4/skills
+    """
+    from c4.supervisor.agent_graph import EXAMPLES_DIR
+    from c4.supervisor.agent_graph.loader import AgentGraphLoader
+
+    skill_dir = directory or (EXAMPLES_DIR / "skills")
+
+    if not skill_dir.exists():
+        console.print(f"[red]Error:[/red] Directory not found: {skill_dir}")
+        raise typer.Exit(1)
+
+    loader = AgentGraphLoader(skill_dir.parent)
+    skill_def = loader.load_skill_by_id(skill_id)
+
+    if not skill_def:
+        console.print(f"[red]Error:[/red] Skill not found: {skill_id}")
+        console.print()
+        console.print("[dim]Use 'c4 skill list' to see available skills[/dim]")
+        raise typer.Exit(1)
+
+    skill = skill_def.skill
+
+    console.print()
+    console.print(f"[bold cyan]{skill.id}[/bold cyan] - {skill.name}")
+    console.print()
+    console.print(f"[bold]Description:[/bold]")
+    console.print(f"  {skill.description}")
+    console.print()
+
+    # Impact & Category
+    console.print(f"[bold]Impact:[/bold] {skill.impact.value}")
+    if skill.category:
+        console.print(f"[bold]Category:[/bold] {skill.category.value}")
+    console.print(f"[bold]Domains:[/bold] {', '.join(skill.domains)}")
+    console.print()
+
+    # Capabilities
+    console.print(f"[bold]Capabilities:[/bold]")
+    for cap in skill.capabilities:
+        console.print(f"  - {cap}")
+    console.print()
+
+    # Triggers
+    console.print(f"[bold]Triggers:[/bold]")
+    if skill.triggers.keywords:
+        console.print(f"  Keywords: {', '.join(skill.triggers.keywords)}")
+    if skill.triggers.task_types:
+        console.print(f"  Task Types: {', '.join(skill.triggers.task_types)}")
+    if skill.triggers.file_patterns:
+        console.print(f"  File Patterns: {', '.join(skill.triggers.file_patterns)}")
+    console.print()
+
+    # Rules
+    if skill.rules:
+        console.print(f"[bold]Rules ({len(skill.rules)}):[/bold]")
+        for rule in skill.rules:
+            impact_color = {"critical": "red", "high": "yellow", "medium": "white", "low": "dim"}
+            console.print(f"  [{impact_color[rule.impact.value]}]{rule.id}[/{impact_color[rule.impact.value]}]: {rule.description[:60]}...")
+        console.print()
+
+    # Dependencies
+    if skill.dependencies:
+        console.print(f"[bold]Dependencies:[/bold]")
+        if skill.dependencies.required:
+            console.print(f"  Required: {', '.join(skill.dependencies.required)}")
+        if skill.dependencies.optional:
+            console.print(f"  Optional: {', '.join(skill.dependencies.optional)}")
+        console.print()
+
+    # Metadata
+    if skill.metadata:
+        console.print(f"[bold]Metadata:[/bold]")
+        console.print(f"  Version: {skill.metadata.version}")
+        if skill.metadata.author:
+            console.print(f"  Author: {skill.metadata.author}")
+        if skill.metadata.tags:
+            console.print(f"  Tags: {', '.join(skill.metadata.tags)}")
+        if skill.metadata.deprecated:
+            console.print(f"  [red]DEPRECATED[/red]")
+            if skill.metadata.deprecated_by:
+                console.print(f"  Replaced by: {skill.metadata.deprecated_by}")
+
+    # Related skills
+    if skill.complementary_skills or skill.leads_to or skill.prerequisites:
+        console.print()
+        console.print(f"[bold]Related Skills:[/bold]")
+        if skill.prerequisites:
+            console.print(f"  Prerequisites: {', '.join(skill.prerequisites)}")
+        if skill.complementary_skills:
+            console.print(f"  Complementary: {', '.join(skill.complementary_skills)}")
+        if skill.leads_to:
+            console.print(f"  Leads to: {', '.join(skill.leads_to)}")
+
+
+# =============================================================================
 # Main entry points
 # =============================================================================
 

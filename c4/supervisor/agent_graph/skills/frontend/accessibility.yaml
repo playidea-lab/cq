@@ -1,0 +1,116 @@
+skill:
+  id: accessibility
+  name: "Web Accessibility (WCAG)"
+  description: "WCAG 가이드라인 준수, 스크린 리더 호환성, 키보드 내비게이션, 색상 대비 검사"
+
+  impact: critical
+  category: quality
+  domains:
+    - web-frontend
+
+  domain_specific:
+    web-frontend:
+      priority_boost: 0.5
+
+  metadata:
+    version: "1.0.0"
+    author: "c4-team"
+    license: MIT
+    tags: [accessibility, a11y, wcag, aria, screen-reader]
+
+  capabilities:
+    - wcag-compliance
+    - aria-labeling
+    - keyboard-navigation
+    - color-contrast
+    - focus-management
+    - semantic-html
+
+  triggers:
+    keywords:
+      - accessibility
+      - a11y
+      - WCAG
+      - screen reader
+      - ARIA
+      - keyboard
+      - focus
+      - contrast
+      - alt text
+    task_types:
+      - accessibility
+      - a11y
+      - audit
+    file_patterns:
+      - "*.tsx"
+      - "*.jsx"
+      - "*.html"
+
+  rules:
+    - id: A11Y-001
+      description: "이미지에 의미있는 alt 텍스트 제공 (장식용은 빈 alt)"
+      impact: critical
+      example_bad: |
+        <img src="chart.png" />
+        <img src="decoration.svg" alt="decoration" />
+      example_good: |
+        <img src="chart.png" alt="Sales increased 50% in Q4 2024" />
+        <img src="decoration.svg" alt="" role="presentation" />
+
+    - id: A11Y-002
+      description: "인터랙티브 요소에 적절한 ARIA 레이블 및 역할 부여"
+      impact: critical
+      example_bad: |
+        <div onClick={handleClick}>클릭하세요</div>
+      example_good: |
+        <button onClick={handleClick} aria-label="Submit form">
+          클릭하세요
+        </button>
+
+    - id: A11Y-003
+      description: "색상만으로 정보를 전달하지 않음 (색각 이상 고려)"
+      impact: high
+      example_bad: |
+        <span style={{ color: 'red' }}>에러 발생</span>
+      example_good: |
+        <span style={{ color: 'red' }} role="alert">
+          ⚠️ 에러 발생
+        </span>
+
+    - id: A11Y-004
+      description: "폼 입력에 연결된 레이블 필수"
+      impact: high
+      example_bad: |
+        <input type="email" placeholder="이메일" />
+      example_good: |
+        <label htmlFor="email">이메일</label>
+        <input id="email" type="email" aria-describedby="email-hint" />
+        <span id="email-hint">예: user@example.com</span>
+
+    - id: A11Y-005
+      description: "키보드 내비게이션 및 포커스 관리 지원"
+      impact: high
+      example_bad: |
+        <div tabIndex={-1} onClick={handleClick}>메뉴</div>
+      example_good: |
+        <button
+          onClick={handleClick}
+          onKeyDown={(e) => e.key === 'Enter' && handleClick()}
+        >
+          메뉴
+        </button>
+
+  tools:
+    - axe-core
+    - pa11y
+    - lighthouse
+    - eslint-plugin-jsx-a11y
+
+  complementary_skills:
+    - react-optimization
+    - testing
+    - code-review
+
+  leads_to:
+    - testing
+    - code-review

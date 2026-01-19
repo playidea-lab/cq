@@ -9,13 +9,34 @@ Models correspond 1:1 with JSON schemas in the schema/ directory:
 
 from __future__ import annotations
 
+from enum import Enum
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
 # ============================================================================
-# Skill Models (skill.schema.yaml)
+# Skill Models V2 (skill.schema.yaml) - Extended with impact, domains, rules
 # ============================================================================
+
+
+class ImpactLevel(str, Enum):
+    """Priority level for skills and rules."""
+
+    CRITICAL = "critical"
+    HIGH = "high"
+    MEDIUM = "medium"
+    LOW = "low"
+
+
+class SkillCategory(str, Enum):
+    """Category of skills for grouping."""
+
+    PERFORMANCE = "performance"
+    SECURITY = "security"
+    QUALITY = "quality"
+    ARCHITECTURE = "architecture"
+    DATA_PROCESSING = "data-processing"
+    OPERATIONS = "operations"
 
 
 class SkillTriggers(BaseModel):
@@ -29,8 +50,47 @@ class SkillTriggers(BaseModel):
     file_patterns: list[str] | None = None
 
 
+class SkillMetadata(BaseModel):
+    """Metadata for versioning and discovery."""
+
+    version: str = Field(default="1.0.0", pattern=r"^\d+\.\d+\.\d+$")
+    author: str | None = None
+    license: Literal["MIT", "Apache-2.0", "proprietary", "unlicensed"] = "unlicensed"
+    tags: list[str] = Field(default_factory=list)
+    deprecated: bool = False
+    deprecated_by: str | None = Field(default=None, pattern=r"^[a-z][a-z0-9-]*$")
+
+
+class SkillRule(BaseModel):
+    """Embedded rule for a skill (impact guideline)."""
+
+    id: str = Field(..., pattern=r"^[A-Z0-9]+-\d{3}$")  # e.g., PERF-001, SEC-002, A11Y-001
+    description: str = Field(..., min_length=10, max_length=500)
+    impact: ImpactLevel = ImpactLevel.MEDIUM
+    example_bad: str | None = None
+    example_good: str | None = None
+
+
+class SkillDependencies(BaseModel):
+    """Skill dependencies."""
+
+    required: list[str] = Field(default_factory=list)
+    optional: list[str] = Field(default_factory=list)
+
+
+class DomainSpecificConfig(BaseModel):
+    """Domain-specific configuration for a skill."""
+
+    triggers: SkillTriggers | None = None
+    priority_boost: float = Field(default=0.0, ge=0.0, le=2.0)
+
+
 class Skill(BaseModel):
-    """Defines an atomic capability that agents can possess."""
+    """Defines an atomic capability that agents can possess.
+
+    V2 extension adds: impact, category, domains, domain_specific,
+    metadata, rules, dependencies.
+    """
 
     id: str = Field(..., pattern=r"^[a-z][a-z0-9-]*$")
     name: str = Field(..., min_length=1, max_length=100)
@@ -38,7 +98,24 @@ class Skill(BaseModel):
     capabilities: list[str] = Field(..., min_length=1)
     triggers: SkillTriggers
 
-    # Optional fields
+    # V2 New Fields: Impact & Category
+    impact: ImpactLevel = ImpactLevel.MEDIUM
+    category: SkillCategory | None = None
+
+    # V2 New Fields: Multi-domain Support
+    domains: list[str] = Field(default_factory=lambda: ["universal"])
+    domain_specific: dict[str, DomainSpecificConfig] | None = None
+
+    # V2 New Fields: Metadata
+    metadata: SkillMetadata | None = None
+
+    # V2 New Fields: Embedded Rules
+    rules: list[SkillRule] | None = None
+
+    # V2 New Fields: Dependencies
+    dependencies: SkillDependencies | None = None
+
+    # Original Optional fields
     tools: list[str] | None = None
     complementary_skills: list[str] | None = None
     prerequisites: list[str] | None = None

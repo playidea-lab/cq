@@ -1,0 +1,107 @@
+skill:
+  id: experiment-tracking
+  name: "ML Experiment Tracking & Management"
+  description: "MLflow, Weights & Biases 등을 활용한 실험 추적, 하이퍼파라미터 로깅, 모델 버전 관리, 재현성 보장"
+
+  impact: critical
+  category: data-processing
+  domains:
+    - ml-dl
+    - data-science
+
+  domain_specific:
+    ml-dl:
+      priority_boost: 0.5
+    data-science:
+      priority_boost: 0.3
+
+  metadata:
+    version: "1.0.0"
+    author: "c4-team"
+    license: MIT
+    tags: [mlops, experiment, tracking, reproducibility, mlflow, wandb]
+
+  capabilities:
+    - experiment-logging
+    - hyperparameter-tracking
+    - metric-visualization
+    - model-versioning
+    - artifact-management
+    - reproducibility
+
+  triggers:
+    keywords:
+      - experiment
+      - tracking
+      - mlflow
+      - wandb
+      - weights and biases
+      - hyperparameter
+      - metric
+      - run
+      - model version
+      - reproducibility
+    task_types:
+      - train
+      - experiment
+      - ml-training
+      - model-training
+    file_patterns:
+      - "**/experiments/**"
+      - "**/mlruns/**"
+      - "mlflow.db"
+      - "*.mlmodel"
+
+  rules:
+    - id: EXP-001
+      description: "모든 실험에 데이터 버전(해시), 코드 커밋, 랜덤 시드를 로깅"
+      impact: critical
+      example_bad: |
+        model.fit(X_train, y_train)
+        print(f"Accuracy: {accuracy}")
+      example_good: |
+        mlflow.log_param("data_hash", get_data_hash(X_train))
+        mlflow.log_param("code_commit", get_git_commit())
+        mlflow.log_param("random_seed", 42)
+        mlflow.log_metric("accuracy", accuracy)
+
+    - id: EXP-002
+      description: "모델 아티팩트를 실험 결과와 함께 저장"
+      impact: high
+      example_bad: |
+        model.save("model.pkl")
+      example_good: |
+        with mlflow.start_run():
+            mlflow.sklearn.log_model(model, "model")
+            mlflow.log_artifact("config.yaml")
+
+    - id: EXP-003
+      description: "실험 비교를 위해 일관된 메트릭 네이밍 컨벤션 사용"
+      impact: medium
+      example_bad: |
+        mlflow.log_metric("acc", 0.95)
+        mlflow.log_metric("accuracy_score", 0.95)
+      example_good: |
+        mlflow.log_metric("val/accuracy", 0.95)
+        mlflow.log_metric("val/loss", 0.05)
+        mlflow.log_metric("train/accuracy", 0.98)
+
+  dependencies:
+    optional:
+      - data-validation
+
+  tools:
+    - mlflow
+    - wandb
+    - tensorboard
+    - neptune
+    - comet
+
+  complementary_skills:
+    - data-validation
+    - model-optimization
+    - statistical-testing
+
+  leads_to:
+    - model-optimization
+    - deployment

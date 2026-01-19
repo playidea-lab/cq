@@ -1,0 +1,107 @@
+skill:
+  id: database-optimization
+  name: "Database Query Optimization"
+  description: "SQL 쿼리 최적화, 인덱스 설계, N+1 문제 해결, 쿼리 실행 계획 분석"
+
+  impact: critical
+  category: performance
+  domains:
+    - web-backend
+    - api
+
+  domain_specific:
+    web-backend:
+      priority_boost: 0.5
+    api:
+      priority_boost: 0.3
+
+  metadata:
+    version: "1.0.0"
+    author: "c4-team"
+    license: MIT
+    tags: [database, sql, optimization, index, query, n+1]
+
+  capabilities:
+    - query-optimization
+    - index-design
+    - n-plus-one-detection
+    - execution-plan-analysis
+    - connection-pooling
+    - caching-strategy
+
+  triggers:
+    keywords:
+      - database
+      - SQL
+      - query
+      - index
+      - N+1
+      - slow query
+      - optimization
+      - performance
+      - ORM
+    task_types:
+      - optimization
+      - database
+      - performance
+      - query
+    file_patterns:
+      - "*.sql"
+      - "**/migrations/**"
+      - "**/models/**"
+
+  rules:
+    - id: DB-001
+      description: "N+1 쿼리 문제 방지: eager loading 또는 join 사용"
+      impact: critical
+      example_bad: |
+        users = User.objects.all()
+        for user in users:
+            print(user.posts.count())  # N+1 queries
+      example_good: |
+        users = User.objects.prefetch_related('posts').all()
+        for user in users:
+            print(len(user.posts.all()))  # 2 queries total
+
+    - id: DB-002
+      description: "자주 조회되는 컬럼에 적절한 인덱스 생성"
+      impact: critical
+      example_bad: |
+        -- 인덱스 없이 자주 조회
+        SELECT * FROM orders WHERE status = 'pending' AND created_at > '2024-01-01';
+      example_good: |
+        CREATE INDEX idx_orders_status_created ON orders(status, created_at);
+        -- 복합 인덱스로 쿼리 최적화
+
+    - id: DB-003
+      description: "SELECT *를 피하고 필요한 컬럼만 조회"
+      impact: high
+      example_bad: |
+        SELECT * FROM users WHERE id = 1;
+      example_good: |
+        SELECT id, name, email FROM users WHERE id = 1;
+
+    - id: DB-004
+      description: "큰 테이블 조회 시 페이지네이션 또는 LIMIT 적용"
+      impact: high
+      example_bad: |
+        orders = Order.objects.filter(status='pending').all()
+      example_good: |
+        orders = Order.objects.filter(status='pending')[:100]
+        # 또는 커서 기반 페이지네이션
+        orders = Order.objects.filter(id__gt=last_id).order_by('id')[:100]
+
+  tools:
+    - explain-analyze
+    - pg-stat-statements
+    - django-debug-toolbar
+    - sqlalchemy-profiler
+
+  complementary_skills:
+    - caching-strategy
+    - api-design
+    - monitoring
+
+  leads_to:
+    - caching-strategy
+    - deployment

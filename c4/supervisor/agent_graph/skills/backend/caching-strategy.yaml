@@ -1,0 +1,101 @@
+skill:
+  id: caching-strategy
+  name: "Caching Strategy & Implementation"
+  description: "Redis, Memcached를 활용한 캐싱 전략 설계, 캐시 무효화, TTL 관리"
+
+  impact: high
+  category: performance
+  domains:
+    - web-backend
+    - api
+
+  domain_specific:
+    web-backend:
+      priority_boost: 0.4
+    api:
+      priority_boost: 0.3
+
+  metadata:
+    version: "1.0.0"
+    author: "c4-team"
+    license: MIT
+    tags: [caching, redis, memcached, performance, ttl]
+
+  capabilities:
+    - cache-design
+    - cache-invalidation
+    - ttl-management
+    - cache-aside-pattern
+    - write-through-cache
+    - distributed-caching
+
+  triggers:
+    keywords:
+      - cache
+      - caching
+      - Redis
+      - Memcached
+      - TTL
+      - invalidation
+      - cache miss
+      - cache hit
+    task_types:
+      - caching
+      - performance
+      - optimization
+    file_patterns:
+      - "**/cache/**"
+      - "**/redis/**"
+
+  rules:
+    - id: CACHE-001
+      description: "캐시 키는 유일하고 예측 가능한 네이밍 컨벤션 사용"
+      impact: high
+      example_bad: |
+        cache.set(f"user_{id}", data)
+        cache.set(f"u{id}", other_data)  # 일관성 없음
+      example_good: |
+        CACHE_KEY = "user:{user_id}:profile"
+        cache.set(CACHE_KEY.format(user_id=id), data, ttl=3600)
+
+    - id: CACHE-002
+      description: "데이터 변경 시 관련 캐시 무효화 로직 구현"
+      impact: critical
+      example_bad: |
+        user.save()  # 캐시 무효화 없음
+      example_good: |
+        user.save()
+        cache.delete(f"user:{user.id}:profile")
+        cache.delete(f"user:{user.id}:posts")
+
+    - id: CACHE-003
+      description: "캐시 장애 시 폴백 전략 구현 (캐시 없이도 동작)"
+      impact: high
+      example_bad: |
+        data = cache.get(key)
+        return data  # 캐시 미스 시 None 반환
+      example_good: |
+        data = cache.get(key)
+        if data is None:
+            data = fetch_from_db()
+            cache.set(key, data, ttl=3600)
+        return data
+
+  dependencies:
+    optional:
+      - database-optimization
+
+  tools:
+    - redis
+    - memcached
+    - django-redis
+    - cachetools
+
+  complementary_skills:
+    - database-optimization
+    - monitoring
+    - api-design
+
+  leads_to:
+    - monitoring
+    - deployment

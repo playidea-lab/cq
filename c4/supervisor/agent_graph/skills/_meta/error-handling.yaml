@@ -1,0 +1,95 @@
+skill:
+  id: error-handling
+  name: "Error Handling & Resilience"
+  description: "에러 처리 패턴, 예외 관리, 폴백 전략, 재시도 로직 구현을 통한 애플리케이션 안정성 향상"
+
+  impact: high
+  category: quality
+  domains:
+    - universal
+
+  metadata:
+    version: "1.0.0"
+    author: "c4-team"
+    license: MIT
+    tags: [error-handling, resilience, exception, fault-tolerance]
+
+  capabilities:
+    - exception-handling
+    - retry-logic
+    - fallback-strategy
+    - circuit-breaker
+    - graceful-degradation
+
+  triggers:
+    keywords:
+      - error handling
+      - exception
+      - try catch
+      - retry
+      - fallback
+      - resilience
+      - fault tolerance
+    task_types:
+      - error-handling
+      - resilience
+      - stability
+    file_patterns:
+      - "**/exceptions/**"
+      - "**/errors/**"
+
+  rules:
+    - id: ERR-001
+      description: "구체적인 예외 타입을 catch하고, 포괄적인 Exception은 피함"
+      impact: critical
+      example_bad: |
+        try:
+            data = fetch_data()
+        except Exception:
+            pass
+      example_good: |
+        try:
+            data = fetch_data()
+        except ConnectionError as e:
+            logger.error(f"Connection failed: {e}")
+            raise
+        except ValidationError as e:
+            return default_data()
+
+    - id: ERR-002
+      description: "에러 컨텍스트를 보존하며 재발생시킴"
+      impact: high
+      example_bad: |
+        except SomeError:
+            raise NewError("Failed")
+      example_good: |
+        except SomeError as e:
+            raise NewError("Failed") from e
+
+    - id: ERR-003
+      description: "재시도 로직에는 지수 백오프와 최대 시도 횟수 적용"
+      impact: high
+      example_bad: |
+        while True:
+            try:
+                return api_call()
+            except:
+                time.sleep(1)
+      example_good: |
+        @retry(max_attempts=3, backoff=exponential(base=2))
+        def api_call():
+            return requests.get(url)
+
+  tools:
+    - sentry
+    - datadog
+    - tenacity
+
+  complementary_skills:
+    - debugging
+    - monitoring
+    - logging
+
+  leads_to:
+    - monitoring
+    - testing
