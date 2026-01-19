@@ -1255,6 +1255,10 @@ Thumbs.db
             },
         )
 
+        # Review-as-Task: Generate review task for implementation tasks
+        if self.config.review_as_task and task and task.type == TaskType.IMPLEMENTATION:
+            self._generate_review_task(task, actual_worker_id)
+
         # Get fresh state reference for final checks
         state = self.state_machine.state
 
@@ -1484,6 +1488,53 @@ Thumbs.db
             normalized_id = f"{prefix}{base_id}-{version}"
 
         return normalized_id, base_id, version, task_type
+
+    def _generate_review_task(self, task: Task, worker_id: str | None) -> None:
+        """Generate a review task for a completed implementation task.
+
+        Creates R-{base_id}-{version} with lower priority to encourage
+        peer review (or delayed self-review for solo workers).
+
+        Args:
+            task: The completed implementation task
+            worker_id: The worker who completed the task
+        """
+        if not task.base_id:
+            # Legacy task without base_id, skip review generation
+            logger.warning(f"Task {task.id} has no base_id, skipping review generation")
+            return
+
+        review_task_id = f"R-{task.base_id}-{task.version}"
+        review_priority = max(0, task.priority - self.config.review_priority_offset)
+
+        review_task = Task(
+            id=review_task_id,
+            title=f"Review: {task.title}",
+            scope=task.scope,
+            dod=(
+                f"Review implementation of {task.id}. "
+                "Check code quality, correctness, and alignment with DoD. "
+                "Submit with APPROVE (no comments) or REQUEST_CHANGES (with comments)."
+            ),
+            dependencies=[],  # Review doesn't depend on other tasks
+            domain=task.domain,
+            priority=review_priority,
+            # Review-as-Task fields
+            type=TaskType.REVIEW,
+            base_id=task.base_id,
+            version=task.version,
+            parent_id=task.id,
+            completed_by=worker_id,
+        )
+
+        try:
+            self.add_task(review_task)
+            logger.info(
+                f"Generated review task {review_task_id} for {task.id} "
+                f"(priority={review_priority}, completed_by={worker_id})"
+            )
+        except Exception as e:
+            logger.error(f"Failed to generate review task for {task.id}: {e}")
 
     def c4_checkpoint(
         self,
