@@ -242,3 +242,29 @@ class C4Config(BaseModel):
         ge=0,
         description="Priority reduction for review tasks (lower priority = later in queue)",
     )
+
+    # Branch strategy configuration
+    work_branch: str | None = Field(
+        default=None,
+        description=(
+            "Main working branch for C4 tasks. "
+            "Defaults to 'c4/{project_id}' if not specified. "
+            "All task branches (c4/w-T-XXX) are created from this branch."
+        ),
+    )
+    completion_action: str = Field(
+        default="merge",
+        pattern="^(merge|pr|manual)$",
+        description=(
+            "Action when all tasks complete: "
+            "'merge' = auto squash-merge to default_branch, "
+            "'pr' = create pull request, "
+            "'manual' = do nothing (user handles)"
+        ),
+    )
+
+    def get_work_branch(self) -> str:
+        """Get the effective work branch name."""
+        if self.work_branch:
+            return self.work_branch
+        return f"c4/{self.project_id}"
