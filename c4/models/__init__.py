@@ -21,6 +21,7 @@ from .enums import (
     ProjectStatus,
     SupervisorDecision,
     TaskStatus,
+    TaskType,
 )
 
 # Event models
@@ -55,6 +56,7 @@ __all__ = [
     "ProjectStatus",
     "SupervisorDecision",
     "TaskStatus",
+    "TaskType",
     # Task
     "Task",
     "ValidationResult",
