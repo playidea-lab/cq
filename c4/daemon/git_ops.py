@@ -401,6 +401,58 @@ class GitOperations:
 
         return GitResult(True, f"Created work branch {work_branch} from {default_branch}")
 
+    def merge_branch_to_target(
+        self, source_branch: str, target_branch: str, squash: bool = False
+    ) -> GitResult:
+        """Merge source branch into target branch.
+
+        Used for merging task branches into work branch (on checkpoint APPROVE)
+        and for merging work branch into default branch (on plan completion).
+
+        Args:
+            source_branch: Branch to merge from (e.g., 'c4/w-T-001-0')
+            target_branch: Branch to merge into (e.g., 'c4/my-project')
+            squash: If True, squash merge (combines all commits into one)
+
+        Returns:
+            GitResult with merge status
+        """
+        if not self.is_git_repo():
+            return GitResult(False, "Not a Git repository")
+
+        # Checkout target branch
+        checkout_result = self._run_git("checkout", target_branch)
+        if checkout_result.returncode != 0:
+            return GitResult(
+                False, f"Cannot checkout {target_branch}: {checkout_result.stderr}"
+            )
+
+        # Merge source branch
+        if squash:
+            merge_result = self._run_git("merge", "--squash", source_branch)
+            if merge_result.returncode != 0:
+                # Abort merge on conflict
+                self._run_git("merge", "--abort")
+                return GitResult(
+                    False, f"Squash merge failed: {merge_result.stderr}"
+                )
+            # Commit the squashed changes
+            commit_result = self._run_git(
+                "commit", "-m", f"Squash merge {source_branch}"
+            )
+            if commit_result.returncode != 0:
+                return GitResult(False, f"Commit failed: {commit_result.stderr}")
+        else:
+            merge_result = self._run_git(
+                "merge", "--no-ff", source_branch, "-m", f"Merge {source_branch}"
+            )
+            if merge_result.returncode != 0:
+                # Abort merge on conflict
+                self._run_git("merge", "--abort")
+                return GitResult(False, f"Merge failed: {merge_result.stderr}")
+
+        return GitResult(True, f"Merged {source_branch} into {target_branch}")
+
     def get_tag_info(self, tag: str) -> dict[str, str] | None:
         """Get detailed information about a tag.
 

@@ -1775,6 +1775,61 @@ Thumbs.db
                 ),
             )
 
+    def _merge_completed_task_branches(
+        self, state: "C4State"
+    ) -> list[dict[str, str]]:
+        """Merge completed task branches into work branch.
+
+        Called on checkpoint APPROVE to consolidate approved work.
+
+        Args:
+            state: Current C4 state
+
+        Returns:
+            List of merge results with task_id and status
+        """
+        from .daemon import GitResult
+
+        results = []
+        git_ops = GitOperations(self.root)
+
+        if not git_ops.is_git_repo():
+            return results
+
+        work_branch = self.config.get_work_branch()
+
+        # Get completed tasks from done queue
+        for task_id in state.queue.done:
+            task = self.get_task(task_id)
+            if not task or not task.branch:
+                continue
+
+            # Skip if already merged (no branch exists)
+            check_result = git_ops._run_git("branch", "--list", task.branch)
+            if not check_result.stdout.strip():
+                continue
+
+            # Merge task branch into work branch
+            merge_result = git_ops.merge_branch_to_target(
+                source_branch=task.branch,
+                target_branch=work_branch,
+                squash=False,  # Keep history for now
+            )
+
+            if merge_result.success:
+                results.append({"task_id": task_id, "status": "merged"})
+                # Optionally delete the task branch after merge
+                git_ops._run_git("branch", "-d", task.branch)
+            else:
+                results.append(
+                    {"task_id": task_id, "status": f"failed: {merge_result.message}"}
+                )
+                logger.warning(
+                    f"Failed to merge {task.branch}: {merge_result.message}"
+                )
+
+        return results
+
     def c4_checkpoint(
         self,
         checkpoint_id: str,
@@ -1813,6 +1868,14 @@ Thumbs.db
                 # Add to passed checkpoints to prevent re-triggering
                 if checkpoint_id not in state.passed_checkpoints:
                     state.passed_checkpoints.append(checkpoint_id)
+
+                # Merge completed task branches into work branch
+                # Branch strategy: task branches → work branch on checkpoint APPROVE
+                merge_results = self._merge_completed_task_branches(state)
+                if merge_results:
+                    logger.info(
+                        f"Checkpoint {checkpoint_id}: merged {len(merge_results)} branches"
+                    )
 
                 # Check if this is the final checkpoint
                 is_final = not state.queue.pending
