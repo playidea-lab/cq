@@ -1389,6 +1389,15 @@ Thumbs.db
             },
         )
 
+        # GitHub Auto-Commit: Trigger on task completion
+        if (
+            self.config.github.enabled
+            and self.config.github.auto_commit
+            and task
+            and task.type == TaskType.IMPLEMENTATION
+        ):
+            self._trigger_auto_commit(task_id, task.title, actual_worker_id)
+
         # Review-as-Task: Generate review task for implementation tasks
         if self.config.review_as_task and task and task.type == TaskType.IMPLEMENTATION:
             self._generate_review_task(task, actual_worker_id)
@@ -1496,6 +1505,15 @@ Thumbs.db
             },
         )
         self.state_machine.save_state()
+
+        # GitHub Auto-Commit: Trigger on task completion (legacy)
+        if (
+            self.config.github.enabled
+            and self.config.github.auto_commit
+            and task
+            and task.type == TaskType.IMPLEMENTATION
+        ):
+            self._trigger_auto_commit(task_id, task.title, actual_worker_id)
 
         cp_id = self.state_machine.check_gate_conditions(self.config)
         if cp_id:
@@ -1638,6 +1656,62 @@ Thumbs.db
             normalized_id = f"{prefix}{base_id}-{version}"
 
         return normalized_id, base_id, version, task_type
+
+    def _trigger_auto_commit(
+        self, task_id: str, title: str, worker_id: str | None
+    ) -> None:
+        """Trigger GitHub auto-commit for completed task.
+
+        Args:
+            task_id: Task identifier
+            title: Task title for commit message
+            worker_id: Worker who completed the task
+        """
+        try:
+            from c4.integrations import GitHubAutomation
+
+            automation = GitHubAutomation(
+                config=self.config.github,
+                repo_path=self.root,
+            )
+
+            body = f"Task completed by worker: {worker_id}" if worker_id else None
+            result = automation.auto_commit(
+                task_id=task_id,
+                title=title,
+                body=body,
+            )
+
+            if result.success:
+                logger.info(
+                    f"Auto-commit for {task_id}: {result.commit_sha} "
+                    f"({result.files_changed} files)"
+                )
+            else:
+                logger.warning(f"Auto-commit failed for {task_id}: {result.message}")
+
+        except Exception as e:
+            # Don't block workflow on auto-commit errors
+            logger.error(f"Auto-commit error for {task_id}: {e}")
+
+    def _get_completed_tasks(self) -> list[dict[str, str]]:
+        """Get list of completed implementation tasks for PR body.
+
+        Returns:
+            List of dicts with 'id' and 'title' for each completed task
+        """
+        state = self.state_machine.load()
+        tasks_completed = []
+
+        for task_id in state.queue.done:
+            task = self.get_task(task_id)
+            if task and task.type == TaskType.IMPLEMENTATION:
+                tasks_completed.append({
+                    "id": task_id,
+                    "title": task.title,
+                })
+
+        return tasks_completed
 
     def _generate_review_task(self, task: Task, worker_id: str | None) -> None:
         """Generate a review task for a completed implementation task.
@@ -2316,10 +2390,18 @@ Thumbs.db
                 }
 
         elif completion_action == "pr":
-            # Create pull request using gh CLI
-            import subprocess
+            # Create pull request using GitHubAutomation
+            if not self.config.github.enabled:
+                logger.warning("GitHub integration disabled, skipping PR creation")
+                return {
+                    "action": "pr",
+                    "status": "skipped",
+                    "message": "GitHub integration disabled",
+                }
 
             try:
+                from c4.integrations import GitHubAutomation
+
                 # Push work branch to remote first
                 push_result = git_ops._run_git("push", "-u", "origin", work_branch)
                 if push_result.returncode != 0:
@@ -2329,37 +2411,43 @@ Thumbs.db
                         "message": f"Failed to push: {push_result.stderr}",
                     }
 
-                # Create PR using gh CLI
-                pr_result = subprocess.run(
-                    [
-                        "gh", "pr", "create",
-                        "--base", default_branch,
-                        "--head", work_branch,
-                        "--title", f"C4: {self.config.project_id}",
-                        "--body", "Automated PR created by C4 orchestration system.",
-                    ],
-                    cwd=self.root,
-                    capture_output=True,
-                    text=True,
+                # Get completed tasks for PR body
+                tasks_completed = self._get_completed_tasks()
+
+                # Create PR using GitHubAutomation
+                automation = GitHubAutomation(
+                    config=self.config.github,
+                    repo_path=self.root,
                 )
-                if pr_result.returncode == 0:
-                    pr_url = pr_result.stdout.strip()
+
+                pr_result = automation.auto_pr(
+                    project_id=self.config.project_id,
+                    title=f"[C4] {self.config.project_id}",
+                    tasks_completed=tasks_completed,
+                    source_branch=work_branch,
+                    target_branch=default_branch,
+                )
+
+                if pr_result.success:
                     return {
                         "action": "pr",
                         "status": "success",
-                        "pr_url": pr_url,
+                        "pr_url": pr_result.pr_url,
+                        "pr_number": pr_result.pr_number,
                     }
                 else:
                     return {
                         "action": "pr",
                         "status": "failed",
-                        "message": pr_result.stderr,
+                        "message": pr_result.message,
                     }
-            except FileNotFoundError:
+
+            except Exception as e:
+                logger.error(f"PR creation error: {e}")
                 return {
                     "action": "pr",
                     "status": "failed",
-                    "message": "gh CLI not found. Install GitHub CLI to create PRs.",
+                    "message": str(e),
                 }
 
         return None
@@ -2377,7 +2465,6 @@ Thumbs.db
         Returns:
             List of merge results with task_id and status
         """
-        from .daemon import GitResult
 
         results = []
         git_ops = GitOperations(self.root)
@@ -3446,10 +3533,7 @@ Thumbs.db
             c4_query_agent_graph(query_type="chain", from_agent="architect")
             c4_query_agent_graph(query_type="domains", output_format="mermaid")
         """
-        from c4.supervisor.agent_graph.graph import AgentGraph
-        from c4.supervisor.agent_graph.router import GraphRouter
         from c4.supervisor.agent_graph.visualizer import (
-            GraphVisualizer,
             highlight_path,
             to_mermaid,
         )
