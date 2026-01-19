@@ -920,6 +920,50 @@ Thumbs.db
             "workflow": _get_workflow_guide(status_value),
         }
 
+    def _create_task_branch_from_work(
+        self, git_ops: GitOperations, task_branch: str, work_branch: str
+    ) -> "GitResult":
+        """Create task branch from work branch.
+
+        Ensures task branches are created from the C4 work branch,
+        not from arbitrary git HEAD states.
+
+        Args:
+            git_ops: GitOperations instance
+            task_branch: Name of the task branch (e.g., 'c4/w-T-001-0')
+            work_branch: Name of the work branch (e.g., 'c4/my-project')
+
+        Returns:
+            GitResult with branch creation status
+        """
+        from .daemon import GitResult
+
+        # Check if task branch already exists
+        check_result = git_ops._run_git("branch", "--list", task_branch)
+        if check_result.stdout.strip():
+            # Branch exists, checkout to it
+            result = git_ops._run_git("checkout", task_branch)
+            if result.returncode != 0:
+                return GitResult(False, f"Checkout failed: {result.stderr}")
+            return GitResult(True, f"Switched to existing task branch {task_branch}")
+
+        # Checkout to work branch first
+        checkout_work = git_ops._run_git("checkout", work_branch)
+        if checkout_work.returncode != 0:
+            # Try to create work branch if it doesn't exist
+            create_work = git_ops._run_git("checkout", "-b", work_branch)
+            if create_work.returncode != 0:
+                return GitResult(
+                    False, f"Cannot checkout/create work branch: {checkout_work.stderr}"
+                )
+
+        # Create task branch from work branch
+        result = git_ops._run_git("checkout", "-b", task_branch)
+        if result.returncode != 0:
+            return GitResult(False, f"Task branch creation failed: {result.stderr}")
+
+        return GitResult(True, f"Created task branch {task_branch} from {work_branch}")
+
     def c4_get_task(self, worker_id: str) -> TaskAssignment | None:
         """Request next task assignment for a worker"""
         if self.state_machine is None:
@@ -1120,6 +1164,19 @@ Thumbs.db
             task.assigned_to = worker_id
             task.branch = task_branch
             self._save_task(task)
+
+            # Create task branch from work branch (if git repo)
+            # Branch strategy: work_branch (c4/{project_id}) → task_branch (c4/w-T-XXX)
+            git_ops = GitOperations(self.root)
+            if git_ops.is_git_repo():
+                work_branch = self.config.get_work_branch()
+                branch_result = self._create_task_branch_from_work(
+                    git_ops, task_branch, work_branch
+                )
+                if not branch_result.success:
+                    logger.warning(
+                        f"Failed to create task branch {task_branch}: {branch_result.message}"
+                    )
 
             # Emit event
             self.state_machine.emit_event(
