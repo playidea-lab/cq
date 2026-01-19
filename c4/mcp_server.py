@@ -248,6 +248,40 @@ Thumbs.db
 
         return True
 
+    def _ensure_gitignore_has_c4(self) -> bool:
+        """Ensure .gitignore contains .c4/ entry.
+
+        Returns:
+            True if .gitignore was modified, False if already contained .c4/
+        """
+        gitignore = self.root / ".gitignore"
+        c4_entry = ".c4/"
+
+        if not gitignore.exists():
+            # Create new .gitignore with .c4/
+            gitignore.write_text(f"# C4 local state (auto-generated)\n{c4_entry}\n")
+            logger.info("Created .gitignore with .c4/ entry")
+            return True
+
+        # Read existing content
+        content = gitignore.read_text()
+
+        # Check if .c4/ is already present (as line or with variations)
+        lines = content.splitlines()
+        for line in lines:
+            stripped = line.strip()
+            # Match .c4, .c4/, /.c4, /.c4/ (with or without comments)
+            if stripped in (".c4", ".c4/", "/.c4", "/.c4/"):
+                return False  # Already present
+
+        # Append .c4/ entry
+        if not content.endswith("\n"):
+            content += "\n"
+        content += f"\n# C4 local state\n{c4_entry}\n"
+        gitignore.write_text(content)
+        logger.info("Added .c4/ to existing .gitignore")
+        return True
+
     def initialize(
         self,
         project_id: str | None = None,
@@ -295,6 +329,9 @@ Thumbs.db
 
         # Transition to DISCOVERY
         self.state_machine.transition("c4_init")
+
+        # Add .c4/ to .gitignore
+        self._ensure_gitignore_has_c4()
 
         return state
 
