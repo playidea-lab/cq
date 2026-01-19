@@ -1615,11 +1615,12 @@ Thumbs.db
                     failure_signature=f"max_revision_exceeded:{self.config.max_revision}",
                     last_error=f"Exceeded maximum revision count ({self.config.max_revision})",
                     attempts=next_version,
+                    blocked_at=datetime.now().isoformat(),
                 )
                 if self.state_machine:
                     state = self.state_machine.state
                     state.repair_queue.append(repair_item)
-                    self.state_machine._save_state()
+                    self.state_machine.save_state()
 
                 return SubmitResponse(
                     success=True,
