@@ -1775,6 +1775,104 @@ Thumbs.db
                 ),
             )
 
+    def _perform_completion_action(self) -> dict[str, Any] | None:
+        """Perform completion action when plan is finished.
+
+        Based on config.completion_action:
+        - 'merge': Squash-merge work branch into default_branch
+        - 'pr': Create pull request (requires GitHub auth)
+        - 'manual': Do nothing, user handles
+
+        Returns:
+            Result dict with action taken and status, or None if manual
+        """
+        completion_action = self.config.completion_action
+        work_branch = self.config.get_work_branch()
+        default_branch = self.config.default_branch
+
+        if completion_action == "manual":
+            logger.info(
+                f"Completion action: manual. "
+                f"Merge {work_branch} to {default_branch} when ready."
+            )
+            return None
+
+        git_ops = GitOperations(self.root)
+        if not git_ops.is_git_repo():
+            logger.warning("Not a git repository, skipping completion action")
+            return {"action": completion_action, "status": "skipped", "reason": "not a git repo"}
+
+        if completion_action == "merge":
+            # Squash-merge work branch into default branch
+            merge_result = git_ops.merge_branch_to_target(
+                source_branch=work_branch,
+                target_branch=default_branch,
+                squash=True,  # Squash all commits into one
+            )
+            if merge_result.success:
+                # Delete work branch after successful merge
+                git_ops._run_git("branch", "-D", work_branch)
+                return {
+                    "action": "merge",
+                    "status": "success",
+                    "message": f"Merged {work_branch} into {default_branch}",
+                }
+            else:
+                return {
+                    "action": "merge",
+                    "status": "failed",
+                    "message": merge_result.message,
+                }
+
+        elif completion_action == "pr":
+            # Create pull request using gh CLI
+            import subprocess
+
+            try:
+                # Push work branch to remote first
+                push_result = git_ops._run_git("push", "-u", "origin", work_branch)
+                if push_result.returncode != 0:
+                    return {
+                        "action": "pr",
+                        "status": "failed",
+                        "message": f"Failed to push: {push_result.stderr}",
+                    }
+
+                # Create PR using gh CLI
+                pr_result = subprocess.run(
+                    [
+                        "gh", "pr", "create",
+                        "--base", default_branch,
+                        "--head", work_branch,
+                        "--title", f"C4: {self.config.project_id}",
+                        "--body", "Automated PR created by C4 orchestration system.",
+                    ],
+                    cwd=self.root,
+                    capture_output=True,
+                    text=True,
+                )
+                if pr_result.returncode == 0:
+                    pr_url = pr_result.stdout.strip()
+                    return {
+                        "action": "pr",
+                        "status": "success",
+                        "pr_url": pr_url,
+                    }
+                else:
+                    return {
+                        "action": "pr",
+                        "status": "failed",
+                        "message": pr_result.stderr,
+                    }
+            except FileNotFoundError:
+                return {
+                    "action": "pr",
+                    "status": "failed",
+                    "message": "gh CLI not found. Install GitHub CLI to create PRs.",
+                }
+
+        return None
+
     def _merge_completed_task_branches(
         self, state: "C4State"
     ) -> list[dict[str, str]]:
@@ -1881,6 +1979,10 @@ Thumbs.db
                 is_final = not state.queue.pending
                 if is_final:
                     self.state_machine.transition("approve_final")
+                    # Perform completion action (merge, pr, or manual)
+                    completion_result = self._perform_completion_action()
+                    if completion_result:
+                        logger.info(f"Plan completed: {completion_result}")
                 else:
                     self.state_machine.transition("approve")
                 state.metrics.checkpoints_passed += 1
