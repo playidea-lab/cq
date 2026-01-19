@@ -29,7 +29,9 @@ class SubmitResponse(BaseModel):
     """Response for c4_submit()"""
 
     success: bool
-    next_action: Literal["get_next_task", "await_checkpoint", "fix_failures", "complete"]
+    next_action: Literal[
+        "get_next_task", "await_checkpoint", "fix_failures", "complete", "escalate"
+    ]
     message: str | None = None
 
 

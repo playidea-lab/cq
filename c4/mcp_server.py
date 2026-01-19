@@ -11,7 +11,7 @@ from mcp.server.stdio import stdio_server
 from mcp.types import TextContent, Tool
 
 from .constants import MAX_REPAIR_DEPTH, REPAIR_PREFIX, REPAIR_PREFIX_LEN
-from .daemon import SupervisorLoopManager, WorkerManager
+from .daemon import GitOperations, SupervisorLoopManager, WorkerManager
 from .discovery import (
     DesignStore,
     Domain,
@@ -33,6 +33,7 @@ from .models import (
     Task,
     TaskAssignment,
     TaskStatus,
+    TaskType,
     ValidationResult,
 )
 from .state_machine import StateMachine, StateTransitionError
@@ -247,6 +248,40 @@ Thumbs.db
 
         return True
 
+    def _ensure_gitignore_has_c4(self) -> bool:
+        """Ensure .gitignore contains .c4/ entry.
+
+        Returns:
+            True if .gitignore was modified, False if already contained .c4/
+        """
+        gitignore = self.root / ".gitignore"
+        c4_entry = ".c4/"
+
+        if not gitignore.exists():
+            # Create new .gitignore with .c4/
+            gitignore.write_text(f"# C4 local state (auto-generated)\n{c4_entry}\n")
+            logger.info("Created .gitignore with .c4/ entry")
+            return True
+
+        # Read existing content
+        content = gitignore.read_text()
+
+        # Check if .c4/ is already present (as line or with variations)
+        lines = content.splitlines()
+        for line in lines:
+            stripped = line.strip()
+            # Match .c4, .c4/, /.c4, /.c4/ (with or without comments)
+            if stripped in (".c4", ".c4/", "/.c4", "/.c4/"):
+                return False  # Already present
+
+        # Append .c4/ entry
+        if not content.endswith("\n"):
+            content += "\n"
+        content += f"\n# C4 local state\n{c4_entry}\n"
+        gitignore.write_text(content)
+        logger.info("Added .c4/ to existing .gitignore")
+        return True
+
     def initialize(
         self,
         project_id: str | None = None,
@@ -294,6 +329,9 @@ Thumbs.db
 
         # Transition to DISCOVERY
         self.state_machine.transition("c4_init")
+
+        # Add .c4/ to .gitignore
+        self._ensure_gitignore_has_c4()
 
         return state
 
@@ -882,6 +920,50 @@ Thumbs.db
             "workflow": _get_workflow_guide(status_value),
         }
 
+    def _create_task_branch_from_work(
+        self, git_ops: GitOperations, task_branch: str, work_branch: str
+    ) -> "GitResult":
+        """Create task branch from work branch.
+
+        Ensures task branches are created from the C4 work branch,
+        not from arbitrary git HEAD states.
+
+        Args:
+            git_ops: GitOperations instance
+            task_branch: Name of the task branch (e.g., 'c4/w-T-001-0')
+            work_branch: Name of the work branch (e.g., 'c4/my-project')
+
+        Returns:
+            GitResult with branch creation status
+        """
+        from .daemon import GitResult
+
+        # Check if task branch already exists
+        check_result = git_ops._run_git("branch", "--list", task_branch)
+        if check_result.stdout.strip():
+            # Branch exists, checkout to it
+            result = git_ops._run_git("checkout", task_branch)
+            if result.returncode != 0:
+                return GitResult(False, f"Checkout failed: {result.stderr}")
+            return GitResult(True, f"Switched to existing task branch {task_branch}")
+
+        # Checkout to work branch first
+        checkout_work = git_ops._run_git("checkout", work_branch)
+        if checkout_work.returncode != 0:
+            # Try to create work branch if it doesn't exist
+            create_work = git_ops._run_git("checkout", "-b", work_branch)
+            if create_work.returncode != 0:
+                return GitResult(
+                    False, f"Cannot checkout/create work branch: {checkout_work.stderr}"
+                )
+
+        # Create task branch from work branch
+        result = git_ops._run_git("checkout", "-b", task_branch)
+        if result.returncode != 0:
+            return GitResult(False, f"Task branch creation failed: {result.stderr}")
+
+        return GitResult(True, f"Created task branch {task_branch} from {work_branch}")
+
     def c4_get_task(self, worker_id: str) -> TaskAssignment | None:
         """Request next task assignment for a worker"""
         if self.state_machine is None:
@@ -1083,6 +1165,19 @@ Thumbs.db
             task.branch = task_branch
             self._save_task(task)
 
+            # Create task branch from work branch (if git repo)
+            # Branch strategy: work_branch (c4/{project_id}) → task_branch (c4/w-T-XXX)
+            git_ops = GitOperations(self.root)
+            if git_ops.is_git_repo():
+                work_branch = self.config.get_work_branch()
+                branch_result = self._create_task_branch_from_work(
+                    git_ops, task_branch, work_branch
+                )
+                if not branch_result.success:
+                    logger.warning(
+                        f"Failed to create task branch {task_branch}: {branch_result.message}"
+                    )
+
             # Emit event
             self.state_machine.emit_event(
                 EventType.TASK_ASSIGNED,
@@ -1115,8 +1210,15 @@ Thumbs.db
         commit_sha: str,
         validation_results: list[dict],
         worker_id: str | None = None,
+        review_result: str | None = None,
+        review_comments: str | None = None,
     ) -> SubmitResponse:
-        """Report task completion with validation results"""
+        """Report task completion with validation results.
+
+        For review tasks (TaskType.REVIEW), additional parameters:
+        - review_result: "APPROVE" or "REQUEST_CHANGES"
+        - review_comments: Comments for REQUEST_CHANGES (becomes DoD for next version)
+        """
         if self.state_machine is None:
             raise RuntimeError("C4 not initialized")
 
@@ -1253,6 +1355,18 @@ Thumbs.db
                 "validations": [r.model_dump() for r in results],
             },
         )
+
+        # Review-as-Task: Generate review task for implementation tasks
+        if self.config.review_as_task and task and task.type == TaskType.IMPLEMENTATION:
+            self._generate_review_task(task, actual_worker_id)
+
+        # Review-as-Task: Handle review task completion
+        if self.config.review_as_task and task and task.type == TaskType.REVIEW:
+            review_response = self._handle_review_completion(
+                task, review_result, review_comments, actual_worker_id
+            )
+            if review_response:
+                return review_response
 
         # Get fresh state reference for final checks
         state = self.state_machine.state
@@ -1399,8 +1513,13 @@ Thumbs.db
     ) -> dict[str, Any]:
         """Add a new task with optional dependencies.
 
+        Supports versioned task IDs for Review-as-Task workflow:
+        - T-001 -> T-001-0 (auto-append version 0)
+        - T-001-0 -> T-001-0 (keep as-is)
+        - R-001-0 -> R-001-0 (review tasks)
+
         Args:
-            task_id: Unique task identifier (e.g., "T-001")
+            task_id: Unique task identifier (e.g., "T-001" or "T-001-0")
             title: Task title
             scope: File/directory scope for lock (e.g., "src/auth/")
             dod: Definition of Done
@@ -1411,22 +1530,403 @@ Thumbs.db
         if self.state_machine is None:
             raise RuntimeError("C4 not initialized")
 
+        # Parse and normalize task ID for Review-as-Task
+        normalized_id, base_id, version, task_type = self._parse_task_id(task_id)
+
         task = Task(
-            id=task_id,
+            id=normalized_id,
             title=title,
             scope=scope,
             dod=dod,
             dependencies=dependencies or [],
             domain=domain,
             priority=priority,
+            # Review-as-Task fields
+            type=task_type,
+            base_id=base_id,
+            version=version,
         )
         self.add_task(task)
 
         return {
             "success": True,
-            "task_id": task_id,
+            "task_id": normalized_id,
             "dependencies": task.dependencies,
         }
+
+    def _parse_task_id(self, task_id: str) -> tuple[str, str, int, TaskType]:
+        """Parse task ID and extract base_id, version, and type.
+
+        Supports backward compatibility:
+        - T-001 -> T-001-0, base_id="001", version=0, IMPLEMENTATION
+        - T-001-0 -> T-001-0, base_id="001", version=0, IMPLEMENTATION
+        - T-001-2 -> T-001-2, base_id="001", version=2, IMPLEMENTATION
+        - R-001-0 -> R-001-0, base_id="001", version=0, REVIEW
+
+        Returns:
+            Tuple of (normalized_id, base_id, version, task_type)
+        """
+        import re
+
+        # Determine task type from prefix
+        if task_id.startswith("R-"):
+            task_type = TaskType.REVIEW
+            prefix = "R-"
+        else:
+            task_type = TaskType.IMPLEMENTATION
+            prefix = "T-"
+
+        # Remove prefix for parsing
+        without_prefix = task_id[len(prefix):]
+
+        # Check if already has version (e.g., "001-0" or "001-2")
+        match = re.match(r"^(\d+)-(\d+)$", without_prefix)
+        if match:
+            base_id = match.group(1)
+            version = int(match.group(2))
+            normalized_id = task_id  # Already normalized
+        else:
+            # No version, assume version 0 (e.g., "001" or "T-001")
+            match = re.match(r"^(\d+)$", without_prefix)
+            if match:
+                base_id = match.group(1)
+            else:
+                # Non-numeric base (e.g., "FEAT-001"), keep as-is
+                base_id = without_prefix
+            version = 0
+            normalized_id = f"{prefix}{base_id}-{version}"
+
+        return normalized_id, base_id, version, task_type
+
+    def _generate_review_task(self, task: Task, worker_id: str | None) -> None:
+        """Generate a review task for a completed implementation task.
+
+        Creates R-{base_id}-{version} with lower priority to encourage
+        peer review (or delayed self-review for solo workers).
+
+        Args:
+            task: The completed implementation task
+            worker_id: The worker who completed the task
+        """
+        if not task.base_id:
+            # Legacy task without base_id, skip review generation
+            logger.warning(f"Task {task.id} has no base_id, skipping review generation")
+            return
+
+        review_task_id = f"R-{task.base_id}-{task.version}"
+        review_priority = max(0, task.priority - self.config.review_priority_offset)
+
+        review_task = Task(
+            id=review_task_id,
+            title=f"Review: {task.title}",
+            scope=task.scope,
+            dod=(
+                f"Review implementation of {task.id}. "
+                "Check code quality, correctness, and alignment with DoD. "
+                "Submit with APPROVE (no comments) or REQUEST_CHANGES (with comments)."
+            ),
+            dependencies=[],  # Review doesn't depend on other tasks
+            domain=task.domain,
+            priority=review_priority,
+            # Review-as-Task fields
+            type=TaskType.REVIEW,
+            base_id=task.base_id,
+            version=task.version,
+            parent_id=task.id,
+            completed_by=worker_id,
+        )
+
+        try:
+            self.add_task(review_task)
+            logger.info(
+                f"Generated review task {review_task_id} for {task.id} "
+                f"(priority={review_priority}, completed_by={worker_id})"
+            )
+        except Exception as e:
+            logger.error(f"Failed to generate review task for {task.id}: {e}")
+
+    def _handle_review_completion(
+        self,
+        task: Task,
+        review_result: str | None,
+        review_comments: str | None,
+        worker_id: str | None,
+    ) -> SubmitResponse | None:
+        """Handle review task completion with APPROVE or REQUEST_CHANGES.
+
+        Args:
+            task: The review task being completed
+            review_result: "APPROVE" or "REQUEST_CHANGES"
+            review_comments: Comments for REQUEST_CHANGES (becomes new DoD)
+            worker_id: The worker completing the review
+
+        Returns:
+            SubmitResponse if there's an error or special handling needed,
+            None to continue with normal completion flow
+        """
+        if not task.base_id or not task.parent_id:
+            logger.warning(f"Review task {task.id} missing base_id or parent_id")
+            return None
+
+        # Determine result based on comments if not explicitly provided
+        if review_result is None:
+            if review_comments:
+                review_result = "REQUEST_CHANGES"
+            else:
+                review_result = "APPROVE"
+
+        if review_result == "APPROVE":
+            # Mark parent implementation task as truly done
+            # (it's already in done queue, just log the approval)
+            logger.info(
+                f"Review {task.id} APPROVED by {worker_id}. "
+                f"Parent task {task.parent_id} confirmed complete."
+            )
+            return None  # Continue with normal completion
+
+        elif review_result == "REQUEST_CHANGES":
+            if not review_comments:
+                return SubmitResponse(
+                    success=False,
+                    next_action="fix_failures",
+                    message="REQUEST_CHANGES requires review_comments",
+                )
+
+            # Check max_revision limit
+            next_version = task.version + 1
+            if next_version > self.config.max_revision:
+                # Mark as BLOCKED
+                logger.warning(
+                    f"Task {task.base_id} exceeded max_revision ({self.config.max_revision}). "
+                    "Marking as BLOCKED."
+                )
+                # Add to repair queue for escalation
+                from c4.models import RepairQueueItem
+
+                repair_item = RepairQueueItem(
+                    task_id=f"T-{task.base_id}-{task.version}",
+                    worker_id=worker_id or "unknown",
+                    failure_signature=f"max_revision_exceeded:{self.config.max_revision}",
+                    last_error=f"Exceeded maximum revision count ({self.config.max_revision})",
+                    attempts=next_version,
+                    blocked_at=datetime.now().isoformat(),
+                )
+                if self.state_machine:
+                    state = self.state_machine.state
+                    state.repair_queue.append(repair_item)
+                    self.state_machine.save_state()
+
+                return SubmitResponse(
+                    success=True,
+                    next_action="escalate",
+                    message=(
+                        f"Task {task.base_id} exceeded max_revision limit. "
+                        "Escalated to repair queue."
+                    ),
+                )
+
+            # Create next version implementation task
+            new_task_id = f"T-{task.base_id}-{next_version}"
+
+            # Get original task's info for priority and scope
+            parent_task = self.get_task(task.parent_id)
+            parent_priority = parent_task.priority if parent_task else task.priority
+            parent_scope = parent_task.scope if parent_task else task.scope
+
+            new_task = Task(
+                id=new_task_id,
+                title=parent_task.title if parent_task else f"Fix: {task.base_id}",
+                scope=parent_scope,
+                dod=review_comments,  # Review comments become new DoD
+                dependencies=[],
+                domain=task.domain,
+                priority=parent_priority,  # Same priority as original
+                # Review-as-Task fields
+                type=TaskType.IMPLEMENTATION,
+                base_id=task.base_id,
+                version=next_version,
+                parent_id=task.id,  # Points to the review that requested changes
+                review_comments=review_comments,
+            )
+
+            try:
+                self.add_task(new_task)
+                logger.info(
+                    f"Created revision task {new_task_id} from review {task.id}. "
+                    f"Version {next_version}/{self.config.max_revision}"
+                )
+            except Exception as e:
+                logger.error(f"Failed to create revision task {new_task_id}: {e}")
+                return SubmitResponse(
+                    success=False,
+                    next_action="fix_failures",
+                    message=f"Failed to create revision task: {e}",
+                )
+
+            return None  # Continue with normal completion
+
+        else:
+            return SubmitResponse(
+                success=False,
+                next_action="fix_failures",
+                message=(
+                    f"Invalid review_result: {review_result}. "
+                    "Use 'APPROVE' or 'REQUEST_CHANGES'"
+                ),
+            )
+
+    def _perform_completion_action(self) -> dict[str, Any] | None:
+        """Perform completion action when plan is finished.
+
+        Based on config.completion_action:
+        - 'merge': Squash-merge work branch into default_branch
+        - 'pr': Create pull request (requires GitHub auth)
+        - 'manual': Do nothing, user handles
+
+        Returns:
+            Result dict with action taken and status, or None if manual
+        """
+        completion_action = self.config.completion_action
+        work_branch = self.config.get_work_branch()
+        default_branch = self.config.default_branch
+
+        if completion_action == "manual":
+            logger.info(
+                f"Completion action: manual. "
+                f"Merge {work_branch} to {default_branch} when ready."
+            )
+            return None
+
+        git_ops = GitOperations(self.root)
+        if not git_ops.is_git_repo():
+            logger.warning("Not a git repository, skipping completion action")
+            return {"action": completion_action, "status": "skipped", "reason": "not a git repo"}
+
+        if completion_action == "merge":
+            # Squash-merge work branch into default branch
+            merge_result = git_ops.merge_branch_to_target(
+                source_branch=work_branch,
+                target_branch=default_branch,
+                squash=True,  # Squash all commits into one
+            )
+            if merge_result.success:
+                # Delete work branch after successful merge
+                git_ops._run_git("branch", "-D", work_branch)
+                return {
+                    "action": "merge",
+                    "status": "success",
+                    "message": f"Merged {work_branch} into {default_branch}",
+                }
+            else:
+                return {
+                    "action": "merge",
+                    "status": "failed",
+                    "message": merge_result.message,
+                }
+
+        elif completion_action == "pr":
+            # Create pull request using gh CLI
+            import subprocess
+
+            try:
+                # Push work branch to remote first
+                push_result = git_ops._run_git("push", "-u", "origin", work_branch)
+                if push_result.returncode != 0:
+                    return {
+                        "action": "pr",
+                        "status": "failed",
+                        "message": f"Failed to push: {push_result.stderr}",
+                    }
+
+                # Create PR using gh CLI
+                pr_result = subprocess.run(
+                    [
+                        "gh", "pr", "create",
+                        "--base", default_branch,
+                        "--head", work_branch,
+                        "--title", f"C4: {self.config.project_id}",
+                        "--body", "Automated PR created by C4 orchestration system.",
+                    ],
+                    cwd=self.root,
+                    capture_output=True,
+                    text=True,
+                )
+                if pr_result.returncode == 0:
+                    pr_url = pr_result.stdout.strip()
+                    return {
+                        "action": "pr",
+                        "status": "success",
+                        "pr_url": pr_url,
+                    }
+                else:
+                    return {
+                        "action": "pr",
+                        "status": "failed",
+                        "message": pr_result.stderr,
+                    }
+            except FileNotFoundError:
+                return {
+                    "action": "pr",
+                    "status": "failed",
+                    "message": "gh CLI not found. Install GitHub CLI to create PRs.",
+                }
+
+        return None
+
+    def _merge_completed_task_branches(
+        self, state: "C4State"
+    ) -> list[dict[str, str]]:
+        """Merge completed task branches into work branch.
+
+        Called on checkpoint APPROVE to consolidate approved work.
+
+        Args:
+            state: Current C4 state
+
+        Returns:
+            List of merge results with task_id and status
+        """
+        from .daemon import GitResult
+
+        results = []
+        git_ops = GitOperations(self.root)
+
+        if not git_ops.is_git_repo():
+            return results
+
+        work_branch = self.config.get_work_branch()
+
+        # Get completed tasks from done queue
+        for task_id in state.queue.done:
+            task = self.get_task(task_id)
+            if not task or not task.branch:
+                continue
+
+            # Skip if already merged (no branch exists)
+            check_result = git_ops._run_git("branch", "--list", task.branch)
+            if not check_result.stdout.strip():
+                continue
+
+            # Merge task branch into work branch
+            merge_result = git_ops.merge_branch_to_target(
+                source_branch=task.branch,
+                target_branch=work_branch,
+                squash=False,  # Keep history for now
+            )
+
+            if merge_result.success:
+                results.append({"task_id": task_id, "status": "merged"})
+                # Optionally delete the task branch after merge
+                git_ops._run_git("branch", "-d", task.branch)
+            else:
+                results.append(
+                    {"task_id": task_id, "status": f"failed: {merge_result.message}"}
+                )
+                logger.warning(
+                    f"Failed to merge {task.branch}: {merge_result.message}"
+                )
+
+        return results
 
     def c4_checkpoint(
         self,
@@ -1467,10 +1967,22 @@ Thumbs.db
                 if checkpoint_id not in state.passed_checkpoints:
                     state.passed_checkpoints.append(checkpoint_id)
 
+                # Merge completed task branches into work branch
+                # Branch strategy: task branches → work branch on checkpoint APPROVE
+                merge_results = self._merge_completed_task_branches(state)
+                if merge_results:
+                    logger.info(
+                        f"Checkpoint {checkpoint_id}: merged {len(merge_results)} branches"
+                    )
+
                 # Check if this is the final checkpoint
                 is_final = not state.queue.pending
                 if is_final:
                     self.state_machine.transition("approve_final")
+                    # Perform completion action (merge, pr, or manual)
+                    completion_result = self._perform_completion_action()
+                    if completion_result:
+                        logger.info(f"Plan completed: {completion_result}")
                 else:
                     self.state_machine.transition("approve")
                 state.metrics.checkpoints_passed += 1
@@ -1621,6 +2133,9 @@ Thumbs.db
         """
         Transition from PLAN/HALTED to EXECUTE state.
         This starts the worker loop execution.
+
+        Also ensures the C4 work branch exists (created from default_branch if needed).
+        Branch strategy: main → c4/{project_id} → c4/w-T-XXX
         """
         if self.state_machine is None:
             return {"success": False, "error": "C4 not initialized"}
@@ -1636,6 +2151,26 @@ Thumbs.db
                 "current_status": current_status,
                 "hint": "Must be in PLAN or HALTED state to start execution",
             }
+
+        # Ensure C4 work branch exists (Convention over Configuration)
+        # Branch strategy: main → c4/{project_id} → task branches
+        git_ops = GitOperations(self.root)
+        work_branch = self.config.get_work_branch()
+        default_branch = self.config.default_branch
+
+        branch_message = None
+        if git_ops.is_git_repo():
+            branch_result = git_ops.ensure_work_branch(work_branch, default_branch)
+            if not branch_result.success:
+                return {
+                    "success": False,
+                    "error": f"Failed to setup work branch: {branch_result.message}",
+                    "current_status": current_status,
+                    "hint": f"Ensure '{default_branch}' branch exists and is clean",
+                }
+            branch_message = branch_result.message
+        else:
+            logger.info("Not a git repository, skipping work branch setup")
 
         # Perform the transition
         self.state_machine.transition("c4_run")
@@ -1657,6 +2192,8 @@ Thumbs.db
             "status": new_state.status.value,
             "pending_tasks": len(new_state.queue.pending),
             "supervisor_loop_started": supervisor_started,
+            "work_branch": work_branch,
+            "branch_message": branch_message,
         }
 
     def c4_run_validation(

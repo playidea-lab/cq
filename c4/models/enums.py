@@ -34,6 +34,13 @@ class TaskStatus(str, Enum):
     BLOCKED = "blocked"
 
 
+class TaskType(str, Enum):
+    """Task type for Review-as-Task system"""
+
+    IMPLEMENTATION = "impl"  # Implementation task (T-XXX-N)
+    REVIEW = "review"  # Review task (R-XXX-N)
+
+
 class SupervisorDecision(str, Enum):
     """Supervisor checkpoint decisions"""
 

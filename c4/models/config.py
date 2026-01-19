@@ -225,3 +225,46 @@ class C4Config(BaseModel):
     domain: str | None = None  # Project domain for default verifications
     agents: AgentConfig | None = None  # Custom agent configuration
     llm: LLMConfig = Field(default_factory=LLMConfig)  # LLM provider configuration
+
+    # Review-as-Task configuration
+    review_as_task: bool = Field(
+        default=True,
+        description="Auto-generate review tasks (R-XXX-N) when implementation tasks complete",
+    )
+    max_revision: int = Field(
+        default=3,
+        ge=1,
+        le=10,
+        description="Maximum revision count before task is marked BLOCKED",
+    )
+    review_priority_offset: int = Field(
+        default=10,
+        ge=0,
+        description="Priority reduction for review tasks (lower priority = later in queue)",
+    )
+
+    # Branch strategy configuration
+    work_branch: str | None = Field(
+        default=None,
+        description=(
+            "Main working branch for C4 tasks. "
+            "Defaults to 'c4/{project_id}' if not specified. "
+            "All task branches (c4/w-T-XXX) are created from this branch."
+        ),
+    )
+    completion_action: str = Field(
+        default="merge",
+        pattern="^(merge|pr|manual)$",
+        description=(
+            "Action when all tasks complete: "
+            "'merge' = auto squash-merge to default_branch, "
+            "'pr' = create pull request, "
+            "'manual' = do nothing (user handles)"
+        ),
+    )
+
+    def get_work_branch(self) -> str:
+        """Get the effective work branch name."""
+        if self.work_branch:
+            return self.work_branch
+        return f"c4/{self.project_id}"

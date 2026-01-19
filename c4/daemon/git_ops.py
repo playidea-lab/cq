@@ -346,6 +346,113 @@ class GitOperations:
 
         return GitResult(True, f"Created branch {branch_name}")
 
+    def ensure_work_branch(
+        self, work_branch: str, default_branch: str = "main"
+    ) -> GitResult:
+        """Ensure work branch exists and checkout to it.
+
+        Creates the work branch from default_branch if it doesn't exist.
+        This is called at c4_start to set up the C4 working environment.
+
+        Args:
+            work_branch: Name of the work branch (e.g., 'c4/my-project')
+            default_branch: Branch to create work branch from (default: 'main')
+
+        Returns:
+            GitResult with branch setup status
+        """
+        if not self.is_git_repo():
+            return GitResult(False, "Not a Git repository")
+
+        # Check if work branch exists
+        check_result = self._run_git("branch", "--list", work_branch)
+        if check_result.stdout.strip():
+            # Branch exists, checkout to it
+            result = self._run_git("checkout", work_branch)
+            if result.returncode != 0:
+                return GitResult(False, f"Checkout failed: {result.stderr}")
+            return GitResult(True, f"Switched to existing work branch {work_branch}")
+
+        # Check if default_branch exists
+        default_check = self._run_git("branch", "--list", default_branch)
+        if not default_check.stdout.strip():
+            # Default branch doesn't exist (fresh repo with no commits)
+            # Create work branch from current HEAD (or create initial commit if needed)
+            result = self._run_git("checkout", "-b", work_branch)
+            if result.returncode != 0:
+                return GitResult(False, f"Branch creation failed: {result.stderr}")
+            return GitResult(True, f"Created work branch {work_branch} (no base branch)")
+
+        # Need to create work branch from default_branch
+        # First, ensure we're on default_branch
+        current_branch = self.get_branch_name()
+        if current_branch != default_branch:
+            checkout_result = self._run_git("checkout", default_branch)
+            if checkout_result.returncode != 0:
+                return GitResult(
+                    False,
+                    f"Cannot checkout {default_branch}: {checkout_result.stderr}",
+                )
+
+        # Create and checkout work branch
+        result = self._run_git("checkout", "-b", work_branch)
+        if result.returncode != 0:
+            return GitResult(False, f"Branch creation failed: {result.stderr}")
+
+        return GitResult(True, f"Created work branch {work_branch} from {default_branch}")
+
+    def merge_branch_to_target(
+        self, source_branch: str, target_branch: str, squash: bool = False
+    ) -> GitResult:
+        """Merge source branch into target branch.
+
+        Used for merging task branches into work branch (on checkpoint APPROVE)
+        and for merging work branch into default branch (on plan completion).
+
+        Args:
+            source_branch: Branch to merge from (e.g., 'c4/w-T-001-0')
+            target_branch: Branch to merge into (e.g., 'c4/my-project')
+            squash: If True, squash merge (combines all commits into one)
+
+        Returns:
+            GitResult with merge status
+        """
+        if not self.is_git_repo():
+            return GitResult(False, "Not a Git repository")
+
+        # Checkout target branch
+        checkout_result = self._run_git("checkout", target_branch)
+        if checkout_result.returncode != 0:
+            return GitResult(
+                False, f"Cannot checkout {target_branch}: {checkout_result.stderr}"
+            )
+
+        # Merge source branch
+        if squash:
+            merge_result = self._run_git("merge", "--squash", source_branch)
+            if merge_result.returncode != 0:
+                # Abort merge on conflict
+                self._run_git("merge", "--abort")
+                return GitResult(
+                    False, f"Squash merge failed: {merge_result.stderr}"
+                )
+            # Commit the squashed changes
+            commit_result = self._run_git(
+                "commit", "-m", f"Squash merge {source_branch}"
+            )
+            if commit_result.returncode != 0:
+                return GitResult(False, f"Commit failed: {commit_result.stderr}")
+        else:
+            merge_result = self._run_git(
+                "merge", "--no-ff", source_branch, "-m", f"Merge {source_branch}"
+            )
+            if merge_result.returncode != 0:
+                # Abort merge on conflict
+                self._run_git("merge", "--abort")
+                return GitResult(False, f"Merge failed: {merge_result.stderr}")
+
+        return GitResult(True, f"Merged {source_branch} into {target_branch}")
+
     def get_tag_info(self, tag: str) -> dict[str, str] | None:
         """Get detailed information about a tag.
 
