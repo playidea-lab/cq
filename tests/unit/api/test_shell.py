@@ -7,7 +7,6 @@ TDD-driven tests for shell command execution:
 - Streaming: SSE for real-time output (optional)
 """
 
-import asyncio
 import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -15,7 +14,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
-from c4.api.routes.files import WorkspaceManager, set_workspace_manager
+from c4.api.routes.shell import WorkspaceManager, set_workspace_manager
 
 
 @pytest.fixture
@@ -429,8 +428,9 @@ class TestShellRunEndpoint:
             },
         )
 
-        # Should either cap at 300 or return error
-        assert response.status_code in [200, 400]
+        # Pydantic validation rejects values > 300
+        # Returns 422 (Unprocessable Entity)
+        assert response.status_code == 422
 
     def test_run_command_invalid_workspace(self, client):
         """Test running command with invalid workspace_id."""
@@ -456,7 +456,9 @@ class TestShellRunEndpoint:
             },
         )
 
-        assert response.status_code == 400
+        # Pydantic validation rejects empty string (min_length=1)
+        # Returns 422 (Unprocessable Entity)
+        assert response.status_code == 422
 
     def test_run_multiline_command(self, client, workspace_manager):
         """Test running multiline command."""

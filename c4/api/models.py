@@ -298,6 +298,62 @@ class CheckpointResponse(BaseModel):
 
 
 # ============================================================================
+# Shell Execution Models
+# ============================================================================
+
+
+class ShellRunRequest(BaseModel):
+    """Request to run a shell command in workspace."""
+
+    workspace_id: str = Field(..., description="Workspace identifier")
+    command: str = Field(..., description="Shell command to execute", min_length=1)
+    timeout: int = Field(
+        60,
+        description="Timeout in seconds (default: 60, max: 300)",
+        ge=1,
+        le=300,
+    )
+
+
+class ShellRunResponse(BaseModel):
+    """Response from shell command execution."""
+
+    success: bool = Field(
+        ..., description="Whether command executed successfully (exit_code == 0)"
+    )
+    stdout: str = Field(..., description="Standard output from command")
+    stderr: str = Field(..., description="Standard error from command")
+    exit_code: int = Field(..., description="Command exit code")
+    timed_out: bool = Field(False, description="Whether command timed out")
+    duration_seconds: float = Field(..., description="Execution time in seconds")
+
+
+class ShellValidationRequest(BaseModel):
+    """Request to run workspace validations."""
+
+    workspace_id: str = Field(..., description="Workspace identifier")
+    names: list[str] = Field(
+        default_factory=list,
+        description="Validation names to run (empty = all)",
+    )
+    fail_fast: bool = Field(True, description="Stop on first failure")
+    timeout: int = Field(
+        300,
+        description="Timeout per validation in seconds (default: 300)",
+        ge=1,
+        le=300,
+    )
+
+
+class ShellValidationResponse(BaseModel):
+    """Response from workspace validation execution."""
+
+    results: list[ValidationResult] = Field(..., description="Validation results")
+    all_passed: bool = Field(..., description="Whether all validations passed")
+    duration_seconds: float = Field(..., description="Total execution time in seconds")
+
+
+# ============================================================================
 # Error Models
 # ============================================================================
 

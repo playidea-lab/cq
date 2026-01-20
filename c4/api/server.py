@@ -43,6 +43,10 @@ Endpoints:
         GET  /api/git/log                  - Get log
         GET  /api/git/diff                 - Get diff
 
+    Shell:
+        POST /api/shell/run                - Run shell command
+        POST /api/shell/run-validation     - Run validations
+
     Health:
         GET  /health                       - Health check
         GET  /                             - API info
@@ -55,7 +59,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .deps import clear_daemon_cache
-from .routes import c4, design, discovery, git, validation
+from .routes import c4, design, discovery, git, shell, validation
 
 logger = logging.getLogger(__name__)
 
@@ -117,6 +121,7 @@ def create_app(
     app.include_router(design.router, prefix="/api")
     app.include_router(validation.router, prefix="/api")
     app.include_router(git.router, prefix="/api")
+    app.include_router(shell.router, prefix="/api")
 
     # Health check endpoint
     @app.get("/health", tags=["Health"])
@@ -139,6 +144,7 @@ def create_app(
                 "design": "/api/design",
                 "validation": "/api/validation",
                 "git": "/api/git",
+                "shell": "/api/shell",
             },
         }
 
