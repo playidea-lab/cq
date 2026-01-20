@@ -2,16 +2,34 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from contextlib import contextmanager
 from datetime import datetime
+from enum import Enum
 from typing import TYPE_CHECKING, Any, Callable, Generator
 
 from .exceptions import StateNotFoundError
 from .protocol import LockStore, StateStore
 
 if TYPE_CHECKING:
+    from c4.auth import SupabaseAuth
     from c4.models import C4State
+    from c4.realtime.manager import RealtimeManager
+
+logger = logging.getLogger(__name__)
+
+
+class ChangeType(Enum):
+    """Type of state change event."""
+
+    INSERT = "INSERT"
+    UPDATE = "UPDATE"
+    DELETE = "DELETE"
+
+
+# Callback type for state changes
+StateChangeCallback = Callable[["C4State", ChangeType], None]
 
 
 class SupabaseStateStore(StateStore, LockStore):
@@ -45,6 +63,7 @@ class SupabaseStateStore(StateStore, LockStore):
         realtime: bool = True,
         team_id: str | None = None,
         access_token: str | None = None,
+        auth: "SupabaseAuth | None" = None,
     ):
         """Initialize Supabase store.
 
@@ -54,15 +73,22 @@ class SupabaseStateStore(StateStore, LockStore):
             realtime: Enable real-time subscriptions
             team_id: Team ID for RLS isolation (or C4_TEAM_ID env)
             access_token: Supabase Auth JWT token for RLS (or SUPABASE_ACCESS_TOKEN env)
+            auth: SupabaseAuth instance for full auth integration
         """
         self._url = url or os.environ.get("SUPABASE_URL", "")
         self._key = key or os.environ.get("SUPABASE_KEY", "")
         self._realtime_enabled = realtime
         self._team_id = team_id or os.environ.get("C4_TEAM_ID")
         self._access_token = access_token or os.environ.get("SUPABASE_ACCESS_TOKEN")
+        self._auth = auth
         self._client: Any = None
         self._subscriptions: dict[str, Any] = {}
         self._callbacks: dict[str, list[Callable[[C4State], None]]] = {}
+
+        # RealtimeManager integration
+        self._realtime_manager: "RealtimeManager | None" = None
+        self._change_callbacks: dict[str, list[StateChangeCallback]] = {}
+        self._global_change_callbacks: list[StateChangeCallback] = []
 
     @property
     def team_id(self) -> str | None:
@@ -82,11 +108,29 @@ class SupabaseStateStore(StateStore, LockStore):
 
             self._client = create_client(self._url, self._key)
 
-            # Set auth header if access_token provided (for RLS)
-            if self._access_token:
-                self._client.postgrest.auth(self._access_token)
+            # Apply auth token (priority: SupabaseAuth > explicit access_token > env var)
+            self._apply_auth_token()
 
         return self._client
+
+    def _apply_auth_token(self) -> None:
+        """Apply auth token to client for RLS.
+
+        Priority:
+        1. SupabaseAuth instance (if provided)
+        2. Explicit access_token parameter
+        3. SUPABASE_ACCESS_TOKEN env var
+        """
+        token = None
+
+        if self._auth:
+            # Get token from SupabaseAuth (handles auto-refresh)
+            token = self._auth.get_access_token()
+        elif self._access_token:
+            token = self._access_token
+
+        if token and self._client:
+            self._client.postgrest.auth(token)
 
     def load(self, project_id: str) -> "C4State":
         """Load state from Supabase.
@@ -240,6 +284,236 @@ class SupabaseStateStore(StateStore, LockStore):
                     callback(state)
         except Exception:
             pass  # Silently ignore parse errors
+
+    # =========================================================================
+    # Enhanced Realtime with RealtimeManager (on_change API)
+    # =========================================================================
+
+    def on_change(
+        self,
+        callback: StateChangeCallback,
+        project_id: str | None = None,
+        event: str = "*",
+    ) -> str:
+        """Subscribe to state changes with change type information.
+
+        This is the enhanced API that provides change type (INSERT/UPDATE/DELETE)
+        in addition to the state data.
+
+        Args:
+            callback: Function called on state change with (state, change_type)
+            project_id: Optional project ID to filter changes (None = all projects)
+            event: Event type: INSERT, UPDATE, DELETE, or * for all
+
+        Returns:
+            Subscription ID for unsubscribing
+
+        Example:
+            def on_task_update(state: C4State, change_type: ChangeType):
+                if change_type == ChangeType.UPDATE:
+                    print(f"Project {state.project_id} updated")
+
+            sub_id = store.on_change(on_task_update, project_id="my-project")
+            # Later: store.off_change(sub_id)
+        """
+        if not self._realtime_enabled:
+            raise RuntimeError("Real-time disabled for this store")
+
+        # Initialize RealtimeManager if not done
+        self._ensure_realtime_manager()
+
+        if project_id:
+            # Project-specific subscription
+            if project_id not in self._change_callbacks:
+                self._change_callbacks[project_id] = []
+            self._change_callbacks[project_id].append(callback)
+
+            # Subscribe via RealtimeManager with filter
+            self._realtime_manager.subscribe_table(
+                table=self.TABLE_STATE,
+                event=event,
+                callback=lambda payload: self._dispatch_change(payload),
+                filter_column="project_id",
+                filter_value=project_id,
+            )
+
+            subscription_id = f"change:{project_id}:{id(callback)}"
+        else:
+            # Global subscription (all projects)
+            self._global_change_callbacks.append(callback)
+
+            # Subscribe via RealtimeManager without filter
+            self._realtime_manager.subscribe_table(
+                table=self.TABLE_STATE,
+                event=event,
+                callback=lambda payload: self._dispatch_change(payload),
+            )
+
+            subscription_id = f"change:*:{id(callback)}"
+
+        logger.debug(f"Registered on_change callback: {subscription_id}")
+        return subscription_id
+
+    def off_change(self, subscription_id: str) -> bool:
+        """Unsubscribe from state changes.
+
+        Args:
+            subscription_id: ID from on_change()
+
+        Returns:
+            True if unsubscribed, False if not found
+        """
+        parts = subscription_id.split(":")
+        if len(parts) != 3 or parts[0] != "change":
+            logger.warning(f"Invalid subscription ID: {subscription_id}")
+            return False
+
+        project_id = parts[1]
+        callback_id = int(parts[2])
+
+        if project_id == "*":
+            # Global callback
+            self._global_change_callbacks = [
+                cb for cb in self._global_change_callbacks if id(cb) != callback_id
+            ]
+            return True
+        else:
+            # Project-specific callback
+            if project_id in self._change_callbacks:
+                self._change_callbacks[project_id] = [
+                    cb
+                    for cb in self._change_callbacks[project_id]
+                    if id(cb) != callback_id
+                ]
+                if not self._change_callbacks[project_id]:
+                    del self._change_callbacks[project_id]
+                return True
+
+        return False
+
+    def _ensure_realtime_manager(self) -> None:
+        """Ensure RealtimeManager is initialized and connected."""
+        if self._realtime_manager is not None:
+            return
+
+        from c4.realtime.manager import RealtimeConfig, RealtimeManager
+
+        config = RealtimeConfig(
+            supabase_url=self._url,
+            supabase_key=self._key,
+            access_token=self._auth.get_access_token() if self._auth else None,
+            auto_reconnect=True,
+        )
+
+        self._realtime_manager = RealtimeManager(config)
+        self._realtime_manager.on_error(
+            lambda e: logger.error(f"Realtime error: {e}")
+        )
+        self._realtime_manager.connect()
+
+    def _dispatch_change(self, payload: dict[str, Any]) -> None:
+        """Dispatch change event to registered callbacks.
+
+        Args:
+            payload: Supabase realtime payload with eventType, new, old
+        """
+        try:
+            event_type = payload.get("eventType", "").upper()
+            change_type = ChangeType(event_type) if event_type else ChangeType.UPDATE
+
+            # Get state from payload
+            new_data = payload.get("new")
+            old_data = payload.get("old")
+
+            if change_type == ChangeType.DELETE:
+                # For deletes, use old data
+                if not old_data:
+                    return
+                state = self._row_to_state(old_data)
+            else:
+                # For inserts/updates, use new data
+                if not new_data:
+                    return
+                state = self._row_to_state(new_data)
+
+            project_id = state.project_id
+
+            # Call project-specific callbacks
+            if project_id in self._change_callbacks:
+                for callback in self._change_callbacks[project_id]:
+                    try:
+                        callback(state, change_type)
+                    except Exception as e:
+                        logger.error(f"Change callback error: {e}")
+
+            # Call global callbacks
+            for callback in self._global_change_callbacks:
+                try:
+                    callback(state, change_type)
+                except Exception as e:
+                    logger.error(f"Global change callback error: {e}")
+
+        except Exception as e:
+            logger.error(f"Error dispatching change: {e}")
+
+    def get_user_id(self) -> str | None:
+        """Get current user ID from auth.
+
+        Returns:
+            User ID if authenticated, None otherwise
+        """
+        if self._auth:
+            session = self._auth.get_session(auto_refresh=False)
+            return session.user_id if session else None
+        return None
+
+    def refresh_auth(self) -> bool:
+        """Refresh authentication token.
+
+        Returns:
+            True if refresh successful
+        """
+        if self._auth:
+            result = self._auth.refresh_token()
+            if result:
+                # Re-apply token to client
+                self._apply_auth_token()
+            return result
+        return False
+
+    def verify_rls_access(self, project_id: str) -> bool:
+        """Verify RLS allows access to project.
+
+        Args:
+            project_id: Project to check
+
+        Returns:
+            True if access allowed
+        """
+        try:
+            query = (
+                self.client.table(self.TABLE_STATE)
+                .select("project_id")
+                .eq("project_id", project_id)
+            )
+
+            if self._team_id:
+                query = query.eq("team_id", self._team_id)
+
+            response = query.maybe_single().execute()
+            return response.data is not None
+        except Exception as e:
+            logger.warning(f"RLS access check failed: {e}")
+            return False
+
+    def disconnect_realtime(self) -> None:
+        """Disconnect RealtimeManager and cleanup subscriptions."""
+        if self._realtime_manager:
+            self._realtime_manager.disconnect()
+            self._realtime_manager = None
+
+        self._change_callbacks.clear()
+        self._global_change_callbacks.clear()
 
     # =========================================================================
     # Lock Store Implementation
@@ -497,6 +771,7 @@ def create_supabase_store(
     realtime: bool = True,
     team_id: str | None = None,
     access_token: str | None = None,
+    auth: "SupabaseAuth | None" = None,
 ) -> SupabaseStateStore:
     """Factory function for SupabaseStateStore.
 
@@ -506,6 +781,7 @@ def create_supabase_store(
         realtime: Enable real-time subscriptions
         team_id: Team ID for RLS isolation
         access_token: Supabase Auth JWT token for RLS
+        auth: SupabaseAuth instance for full auth integration
 
     Returns:
         Configured SupabaseStateStore instance
@@ -516,4 +792,41 @@ def create_supabase_store(
         realtime=realtime,
         team_id=team_id,
         access_token=access_token,
+        auth=auth,
+    )
+
+
+def create_authenticated_store(
+    auth: "SupabaseAuth",
+    realtime: bool = True,
+) -> SupabaseStateStore:
+    """Create SupabaseStateStore with full auth integration.
+
+    This factory creates a store that:
+    - Uses SupabaseAuth for automatic token management
+    - Supports RLS with authenticated user context
+    - Auto-refreshes tokens when needed
+
+    Args:
+        auth: SupabaseAuth instance (must be logged in)
+        realtime: Enable real-time subscriptions
+
+    Returns:
+        Configured SupabaseStateStore instance
+
+    Example:
+        from c4.auth import create_supabase_auth
+        from c4.store.supabase import create_authenticated_store
+
+        auth = create_supabase_auth()
+        auth.login(provider="github")
+
+        store = create_authenticated_store(auth)
+        state = store.load("my-project")
+    """
+    return SupabaseStateStore(
+        url=auth.supabase_url,
+        key=auth._key,
+        realtime=realtime,
+        auth=auth,
     )
