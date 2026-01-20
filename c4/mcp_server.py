@@ -1,10 +1,15 @@
 """C4D MCP Server - Main server implementation with MCP tools"""
 
+from __future__ import annotations
+
 import json
 import logging
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from .daemon import GitResult
 
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
@@ -71,6 +76,7 @@ def _use_graph_router() -> bool:
         True if GraphRouter should be used, False for legacy AgentRouter.
     """
     import os
+
     flag = os.environ.get("C4_USE_GRAPH_ROUTER", "true").lower()
     return flag in ("true", "1", "yes", "on")
 
@@ -168,6 +174,7 @@ class C4Daemon:
         state_store: StateStore | None = None,
     ):
         import os
+
         # Priority: explicit param > env var > cwd
         if project_root:
             self.root = project_root
@@ -494,6 +501,7 @@ Thumbs.db
             Set C4_USE_GRAPH_ROUTER=false to use this legacy router.
         """
         import warnings
+
         warnings.warn(
             "agent_router is deprecated. Use graph_router with C4_USE_GRAPH_ROUTER=true (default).",
             DeprecationWarning,
@@ -652,6 +660,7 @@ Thumbs.db
         else:
             # Legacy mode: use static AgentRouter
             import warnings
+
             warnings.warn(
                 "Using legacy AgentRouter. Set C4_USE_GRAPH_ROUTER=true for advanced routing.",
                 DeprecationWarning,
@@ -757,9 +766,7 @@ Thumbs.db
 
         try:
             self.start_supervisor_loop()
-            logger.info(
-                f"Auto-restarted supervisor loop for {state.status.value} state"
-            )
+            logger.info(f"Auto-restarted supervisor loop for {state.status.value} state")
             return True
         except Exception as e:
             logger.warning(f"Failed to auto-restart supervisor loop: {e}")
@@ -949,8 +956,7 @@ Thumbs.db
                 "in_progress_map": state.queue.in_progress,
             },
             "workers": {
-                wid: {"state": w.state, "task_id": w.task_id}
-                for wid, w in state.workers.items()
+                wid: {"state": w.state, "task_id": w.task_id} for wid, w in state.workers.items()
             },
             "metrics": state.metrics.model_dump(),
             # Async queues for automation
@@ -959,8 +965,7 @@ Thumbs.db
                 for item in state.checkpoint_queue
             ],
             "repair_queue": [
-                {"task_id": item.task_id, "attempts": item.attempts}
-                for item in state.repair_queue
+                {"task_id": item.task_id, "attempts": item.attempts} for item in state.repair_queue
             ],
             "supervisor_loop_running": self.is_supervisor_loop_running,
             "supervisor": {
@@ -1046,16 +1051,16 @@ Thumbs.db
             self.worker_manager.register(worker_id)
 
         # Check if worker already has an in_progress task (resume after crash/restart)
-        for task_id, assigned_worker in list(state.queue.in_progress.items()):  # list() to allow mutation
+        for task_id, assigned_worker in list(
+            state.queue.in_progress.items()
+        ):  # list() to allow mutation
             if assigned_worker == worker_id:
                 task = self.get_task(task_id)
                 if task:
                     # Verify scope lock is still valid for this worker
                     if task.scope:
                         # Check SQLite lock store (authoritative) for lock status
-                        lock_owner = self.lock_store.get_lock_owner(
-                            state.project_id, task.scope
-                        )
+                        lock_owner = self.lock_store.get_lock_owner(state.project_id, task.scope)
                         if lock_owner is None or lock_owner != worker_id:
                             # Lock expired or taken by another worker - cannot resume
                             # Move task back to pending for reassignment by OTHER workers
@@ -1083,9 +1088,7 @@ Thumbs.db
                             continue
 
                     # Re-sync worker state
-                    self.worker_manager.set_busy(
-                        worker_id, task_id, task.scope, task.branch
-                    )
+                    self.worker_manager.set_busy(worker_id, task_id, task.scope, task.branch)
 
                     # Refresh lock TTL for resumed work (with result check)
                     if task.scope:
@@ -1131,9 +1134,7 @@ Thumbs.db
             task_id = task.id
 
             # Check dependencies first (non-locking check)
-            deps_met = all(
-                dep_id in state.queue.done for dep_id in task.dependencies
-            )
+            deps_met = all(dep_id in state.queue.done for dep_id in task.dependencies)
             if not deps_met:
                 continue
 
@@ -1643,7 +1644,7 @@ Thumbs.db
             prefix = "T-"
 
         # Remove prefix for parsing
-        without_prefix = task_id[len(prefix):]
+        without_prefix = task_id[len(prefix) :]
 
         # Check if already has version (e.g., "001-0" or "001-2")
         match = re.match(r"^(\d+)-(\d+)$", without_prefix)
@@ -1664,9 +1665,7 @@ Thumbs.db
 
         return normalized_id, base_id, version, task_type
 
-    def _trigger_auto_commit(
-        self, task_id: str, title: str, worker_id: str | None
-    ) -> None:
+    def _trigger_auto_commit(self, task_id: str, title: str, worker_id: str | None) -> None:
         """Trigger GitHub auto-commit for completed task.
 
         Args:
@@ -1691,8 +1690,7 @@ Thumbs.db
 
             if result.success:
                 logger.info(
-                    f"Auto-commit for {task_id}: {result.commit_sha} "
-                    f"({result.files_changed} files)"
+                    f"Auto-commit for {task_id}: {result.commit_sha} ({result.files_changed} files)"
                 )
             else:
                 logger.warning(f"Auto-commit failed for {task_id}: {result.message}")
@@ -1713,10 +1711,12 @@ Thumbs.db
         for task_id in state.queue.done:
             task = self.get_task(task_id)
             if task and task.type == TaskType.IMPLEMENTATION:
-                tasks_completed.append({
-                    "id": task_id,
-                    "title": task.title,
-                })
+                tasks_completed.append(
+                    {
+                        "id": task_id,
+                        "title": task.title,
+                    }
+                )
 
         return tasks_completed
 
@@ -1905,8 +1905,7 @@ Thumbs.db
                 success=False,
                 next_action="fix_failures",
                 message=(
-                    f"Invalid review_result: {review_result}. "
-                    "Use 'APPROVE' or 'REQUEST_CHANGES'"
+                    f"Invalid review_result: {review_result}. Use 'APPROVE' or 'REQUEST_CHANGES'"
                 ),
             )
 
@@ -1938,7 +1937,9 @@ Thumbs.db
             base_id = completed_review.base_id
             for required in cp_config.required_tasks:
                 # Match by full ID (T-001-0) or base ID pattern (T-001)
-                if required == parent_task_id or required.rstrip("-0123456789") == f"T-{base_id}".rstrip("-0123456789"):
+                if required == parent_task_id or required.rstrip(
+                    "-0123456789"
+                ) == f"T-{base_id}".rstrip("-0123456789"):
                     matching_checkpoint = cp_config
                     break
             if matching_checkpoint:
@@ -1995,9 +1996,7 @@ Thumbs.db
                 break
 
         if not all_approved:
-            logger.debug(
-                f"Not all reviews approved for checkpoint {matching_checkpoint.id}"
-            )
+            logger.debug(f"Not all reviews approved for checkpoint {matching_checkpoint.id}")
             return None
 
         # All reviews approved! Create checkpoint task
@@ -2038,9 +2037,7 @@ Thumbs.db
             logger.error(f"Failed to create checkpoint task {cp_task_id}: {e}")
             return None
 
-    def _find_tasks_by_pattern(
-        self, pattern: str, task_type: TaskType | None = None
-    ) -> list[Task]:
+    def _find_tasks_by_pattern(self, pattern: str, task_type: TaskType | None = None) -> list[Task]:
         """Find tasks matching a pattern.
 
         Patterns:
@@ -2186,8 +2183,7 @@ Thumbs.db
 
         if review_result == "APPROVE":
             logger.info(
-                f"Checkpoint {task.id} APPROVED by {worker_id}. "
-                f"Phase {task.phase_id} complete."
+                f"Checkpoint {task.id} APPROVED by {worker_id}. Phase {task.phase_id} complete."
             )
 
             # Mark checkpoint as passed
@@ -2219,9 +2215,7 @@ Thumbs.db
             problem_task_ids = self._parse_problem_task_ids(review_comments)
 
             if not problem_task_ids:
-                logger.warning(
-                    f"No task IDs found in checkpoint comments: {review_comments}"
-                )
+                logger.warning(f"No task IDs found in checkpoint comments: {review_comments}")
                 # Create a generic fix task
                 problem_task_ids = task.required_tasks[:1] if task.required_tasks else []
 
@@ -2275,9 +2269,7 @@ Thumbs.db
                 try:
                     self.add_task(new_task)
                     created_tasks.append(new_task_id)
-                    logger.info(
-                        f"Created fix task {new_task_id} from checkpoint {task.id}"
-                    )
+                    logger.info(f"Created fix task {new_task_id} from checkpoint {task.id}")
                 except Exception as e:
                     logger.error(f"Failed to create fix task {new_task_id}: {e}")
 
@@ -2364,8 +2356,7 @@ Thumbs.db
 
         if completion_action == "manual":
             logger.info(
-                f"Completion action: manual. "
-                f"Merge {work_branch} to {default_branch} when ready."
+                f"Completion action: manual. Merge {work_branch} to {default_branch} when ready."
             )
             return None
 
@@ -2459,9 +2450,7 @@ Thumbs.db
 
         return None
 
-    def _merge_completed_task_branches(
-        self, state: "C4State"
-    ) -> list[dict[str, str]]:
+    def _merge_completed_task_branches(self, state: "C4State") -> list[dict[str, str]]:
         """Merge completed task branches into work branch.
 
         Called on checkpoint APPROVE to consolidate approved work.
@@ -2504,12 +2493,8 @@ Thumbs.db
                 # Optionally delete the task branch after merge
                 git_ops._run_git("branch", "-d", task.branch)
             else:
-                results.append(
-                    {"task_id": task_id, "status": f"failed: {merge_result.message}"}
-                )
-                logger.warning(
-                    f"Failed to merge {task.branch}: {merge_result.message}"
-                )
+                results.append({"task_id": task_id, "status": f"failed: {merge_result.message}"})
+                logger.warning(f"Failed to merge {task.branch}: {merge_result.message}")
 
         return results
 
@@ -2556,9 +2541,7 @@ Thumbs.db
                 # Branch strategy: task branches → work branch on checkpoint APPROVE
                 merge_results = self._merge_completed_task_branches(state)
                 if merge_results:
-                    logger.info(
-                        f"Checkpoint {checkpoint_id}: merged {len(merge_results)} branches"
-                    )
+                    logger.info(f"Checkpoint {checkpoint_id}: merged {len(merge_results)} branches")
 
                 # Check if this is the final checkpoint
                 is_final = not state.queue.pending
@@ -2581,7 +2564,7 @@ Thumbs.db
                 # Add required changes as tasks
                 if required_changes:
                     for i, change in enumerate(required_changes):
-                        task_id = f"RC-{checkpoint_id}-{i+1:02d}"
+                        task_id = f"RC-{checkpoint_id}-{i + 1:02d}"
                         self.c4_add_todo(
                             task_id=task_id,
                             title=change,
@@ -2807,9 +2790,7 @@ Thumbs.db
                     names, fail_fast=fail_fast, timeout=timeout
                 )
             else:
-                runs = self.validation_runner.run_all_required(
-                    timeout_per_validation=timeout
-                )
+                runs = self.validation_runner.run_all_required(timeout_per_validation=timeout)
 
             # Convert to results
             results = []
@@ -2821,9 +2802,7 @@ Thumbs.db
                     all_passed = False
 
             # Update state with last validation results
-            self.state_machine.state.last_validation = {
-                r["name"]: r["status"] for r in results
-            }
+            self.state_machine.state.last_validation = {r["name"]: r["status"] for r in results}
             self.state_machine.save_state()
 
             # Emit event
@@ -2927,12 +2906,14 @@ Thumbs.db
             for feature in features:
                 spec = self.spec_store.load(feature)
                 if spec:
-                    specs_summary.append({
-                        "feature": spec.feature,
-                        "domain": spec.domain.value,
-                        "requirements_count": len(spec.requirements),
-                        "description": spec.description,
-                    })
+                    specs_summary.append(
+                        {
+                            "feature": spec.feature,
+                            "domain": spec.domain.value,
+                            "requirements_count": len(spec.requirements),
+                            "description": spec.description,
+                        }
+                    )
 
             return {
                 "success": True,
@@ -3136,7 +3117,9 @@ Thumbs.db
             for spec_name in specs:
                 spec = self.spec_store.load(spec_name)
                 if spec and spec.domain:
-                    domain_value = spec.domain.value if hasattr(spec.domain, "value") else str(spec.domain)
+                    domain_value = (
+                        spec.domain.value if hasattr(spec.domain, "value") else str(spec.domain)
+                    )
                     domains_found.add(domain_value)
 
             # Apply domain defaults for each unique domain
@@ -3163,7 +3146,9 @@ Thumbs.db
 
             if default_verifications_added:
                 result["default_verifications_added"] = default_verifications_added
-                result["message"] += f" Added {len(default_verifications_added)} domain default verification(s)."
+                result["message"] += (
+                    f" Added {len(default_verifications_added)} domain default verification(s)."
+                )
 
             return result
 
@@ -3239,7 +3224,7 @@ Thumbs.db
             if options:
                 for opt_data in options:
                     opt = ArchitectureOption(
-                        id=opt_data.get("id", f"option-{len(spec.architecture_options)+1}"),
+                        id=opt_data.get("id", f"option-{len(spec.architecture_options) + 1}"),
                         name=opt_data.get("name", "Unnamed Option"),
                         description=opt_data.get("description", ""),
                         complexity=opt_data.get("complexity", "medium"),
@@ -3266,7 +3251,7 @@ Thumbs.db
             if decisions:
                 for dec_data in decisions:
                     spec.add_decision(
-                        id=dec_data.get("id", f"DEC-{len(spec.decisions)+1}"),
+                        id=dec_data.get("id", f"DEC-{len(spec.decisions) + 1}"),
                         question=dec_data.get("question", ""),
                         decision=dec_data.get("decision", ""),
                         rationale=dec_data.get("rationale", ""),
@@ -3371,14 +3356,16 @@ Thumbs.db
             for feature_name in features:
                 spec = self.design_store.load(feature_name)
                 if spec:
-                    designs.append({
-                        "feature": spec.feature,
-                        "domain": spec.domain.value,
-                        "selected_option": spec.selected_option,
-                        "has_diagram": spec.mermaid_diagram is not None,
-                        "components_count": len(spec.components),
-                        "decisions_count": len(spec.decisions),
-                    })
+                    designs.append(
+                        {
+                            "feature": spec.feature,
+                            "domain": spec.domain.value,
+                            "selected_option": spec.selected_option,
+                            "has_diagram": spec.mermaid_diagram is not None,
+                            "components_count": len(spec.components),
+                            "decisions_count": len(spec.decisions),
+                        }
+                    )
 
             return {
                 "success": True,
@@ -3495,8 +3482,7 @@ Thumbs.db
             },
             "total_task_overrides": len(self.agent_router.merged_overrides),
             "task_type_overrides": self.agent_router.merged_overrides,
-            "custom_config_loaded": self._config is not None
-            and self._config.agents is not None,
+            "custom_config_loaded": self._config is not None and self._config.agents is not None,
         }
 
     def c4_query_agent_graph(
@@ -3600,12 +3586,14 @@ Thumbs.db
             domains_data: list[dict[str, Any]] = []
             for domain in sorted(router.get_all_domains()):
                 config = router.get_recommended_agent(domain)
-                domains_data.append({
-                    "id": domain,
-                    "primary": config.primary,
-                    "chain_length": len(config.chain),
-                    "description": config.description,
-                })
+                domains_data.append(
+                    {
+                        "id": domain,
+                        "primary": config.primary,
+                        "chain_length": len(config.chain),
+                        "description": config.description,
+                    }
+                )
             result["domains"] = domains_data
             result["total"] = len(domains_data)
 
@@ -3631,23 +3619,22 @@ Thumbs.db
                 chain = graph.build_chain(from_agent) if graph else []
                 if not chain:
                     # Use legacy fallback if graph has no chain
-                    chain = router.get_chain_for_domain(filter_value) if filter_value else [from_agent]
+                    chain = (
+                        router.get_chain_for_domain(filter_value) if filter_value else [from_agent]
+                    )
                 result["chain"] = chain
                 result["length"] = len(chain)
 
         else:
             result["error"] = f"Unknown query_type: {query_type}"
-            result["valid_types"] = ["overview", "agents", "skills", "domains",
-                                     "path", "chain"]
+            result["valid_types"] = ["overview", "agents", "skills", "domains", "path", "chain"]
 
         # Convert to Mermaid if requested
         if output_format == "mermaid" and "error" not in result:
             try:
                 if query_type == "path" and result.get("path"):
                     # Highlight path in Mermaid
-                    result["mermaid"] = highlight_path(
-                        graph, from_agent, to_agent
-                    ) if graph else ""
+                    result["mermaid"] = highlight_path(graph, from_agent, to_agent) if graph else ""
                 else:
                     # Full graph as Mermaid
                     result["mermaid"] = to_mermaid(graph) if graph else ""
@@ -3962,7 +3949,10 @@ def create_server(project_root: Path | None = None) -> Server:
                 inputSchema={
                     "type": "object",
                     "properties": {
-                        "task_id": {"type": "string", "description": "Unique task ID (e.g., T-001)"},
+                        "task_id": {
+                            "type": "string",
+                            "description": "Unique task ID (e.g., T-001)",
+                        },
                         "title": {"type": "string", "description": "Task title"},
                         "scope": {"type": "string", "description": "File/directory scope for lock"},
                         "dod": {"type": "string", "description": "Definition of Done"},
@@ -4099,13 +4089,25 @@ def create_server(project_root: Path | None = None) -> Server:
                             "items": {
                                 "type": "object",
                                 "properties": {
-                                    "id": {"type": "string", "description": "Requirement ID (e.g., 'REQ-001')"},
+                                    "id": {
+                                        "type": "string",
+                                        "description": "Requirement ID (e.g., 'REQ-001')",
+                                    },
                                     "pattern": {
                                         "type": "string",
-                                        "enum": ["ubiquitous", "state-driven", "event-driven", "optional", "unwanted"],
+                                        "enum": [
+                                            "ubiquitous",
+                                            "state-driven",
+                                            "event-driven",
+                                            "optional",
+                                            "unwanted",
+                                        ],
                                         "description": "EARS pattern type",
                                     },
-                                    "text": {"type": "string", "description": "Full EARS requirement text"},
+                                    "text": {
+                                        "type": "string",
+                                        "description": "Full EARS requirement text",
+                                    },
                                 },
                                 "required": ["id", "text"],
                             },
@@ -4113,7 +4115,16 @@ def create_server(project_root: Path | None = None) -> Server:
                         },
                         "domain": {
                             "type": "string",
-                            "enum": ["web-frontend", "web-backend", "fullstack", "ml-dl", "mobile-app", "infra", "library", "unknown"],
+                            "enum": [
+                                "web-frontend",
+                                "web-backend",
+                                "fullstack",
+                                "ml-dl",
+                                "mobile-app",
+                                "infra",
+                                "library",
+                                "unknown",
+                            ],
                             "description": "Project domain",
                         },
                         "description": {
@@ -4149,7 +4160,7 @@ def create_server(project_root: Path | None = None) -> Server:
             ),
             Tool(
                 name="c4_discovery_complete",
-                description="Mark discovery phase as complete and transition to DESIGN state. Requires at least one specification to be saved.",
+                description="Mark discovery complete and transition to DESIGN. Requires at least one spec saved.",
                 inputSchema={
                     "type": "object",
                     "properties": {},
@@ -4169,7 +4180,16 @@ def create_server(project_root: Path | None = None) -> Server:
                         },
                         "domain": {
                             "type": "string",
-                            "enum": ["web-frontend", "web-backend", "fullstack", "ml-dl", "mobile-app", "infra", "library", "unknown"],
+                            "enum": [
+                                "web-frontend",
+                                "web-backend",
+                                "fullstack",
+                                "ml-dl",
+                                "mobile-app",
+                                "infra",
+                                "library",
+                                "unknown",
+                            ],
                             "description": "Project domain",
                         },
                         "description": {
@@ -4188,7 +4208,10 @@ def create_server(project_root: Path | None = None) -> Server:
                                     "id": {"type": "string"},
                                     "name": {"type": "string"},
                                     "description": {"type": "string"},
-                                    "complexity": {"type": "string", "enum": ["low", "medium", "high"]},
+                                    "complexity": {
+                                        "type": "string",
+                                        "enum": ["low", "medium", "high"],
+                                    },
                                     "pros": {"type": "array", "items": {"type": "string"}},
                                     "cons": {"type": "array", "items": {"type": "string"}},
                                     "recommended": {"type": "boolean"},
@@ -4205,7 +4228,10 @@ def create_server(project_root: Path | None = None) -> Server:
                                     "name": {"type": "string"},
                                     "type": {"type": "string"},
                                     "description": {"type": "string"},
-                                    "responsibilities": {"type": "array", "items": {"type": "string"}},
+                                    "responsibilities": {
+                                        "type": "array",
+                                        "items": {"type": "string"},
+                                    },
                                     "dependencies": {"type": "array", "items": {"type": "string"}},
                                     "interfaces": {"type": "array", "items": {"type": "string"}},
                                 },
@@ -4222,7 +4248,10 @@ def create_server(project_root: Path | None = None) -> Server:
                                     "question": {"type": "string"},
                                     "decision": {"type": "string"},
                                     "rationale": {"type": "string"},
-                                    "alternatives_considered": {"type": "array", "items": {"type": "string"}},
+                                    "alternatives_considered": {
+                                        "type": "array",
+                                        "items": {"type": "string"},
+                                    },
                                 },
                                 "required": ["id", "question", "decision", "rationale"],
                             },
@@ -4271,7 +4300,7 @@ def create_server(project_root: Path | None = None) -> Server:
             ),
             Tool(
                 name="c4_design_complete",
-                description="Mark design phase as complete and transition to PLAN state. Requires at least one design with selected option.",
+                description="Mark design complete and transition to PLAN. Requires at least one design with selected option.",
                 inputSchema={
                     "type": "object",
                     "properties": {},

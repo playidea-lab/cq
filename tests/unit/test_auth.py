@@ -1,13 +1,18 @@
 """Tests for C4 Authentication module."""
 
-import json
+from __future__ import annotations
+
 from datetime import datetime, timedelta
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
 from c4.auth import Session, SessionManager
 from c4.auth.oauth import OAuthConfig, OAuthResult
+
+if TYPE_CHECKING:
+    from c4.auth.token_manager import TokenManager
 
 
 class TestSession:
@@ -104,9 +109,7 @@ class TestSession:
             "user": {
                 "id": "user-uuid",
                 "email": "user@example.com",
-                "identities": [
-                    {"provider": "github", "identity_data": {}}
-                ],
+                "identities": [{"provider": "github", "identity_data": {}}],
             },
         }
         session = Session.from_supabase_response(response)
@@ -235,9 +238,7 @@ class TestSessionManager:
         valid = manager.get_valid_session()
         assert valid is None
 
-    def test_session_file_permissions(
-        self, manager: SessionManager, temp_config_dir: Path
-    ) -> None:
+    def test_session_file_permissions(self, manager: SessionManager, temp_config_dir: Path) -> None:
         """Test that session file has restrictive permissions."""
         import os
         import stat
@@ -389,7 +390,6 @@ class TestTokenManager:
         self, token_manager: "TokenManager", session_manager: SessionManager
     ) -> None:
         """Test re-login callback is called on expired token."""
-        from c4.auth.token_manager import TokenExpiredError
 
         # Create expired session
         session = Session(

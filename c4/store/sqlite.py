@@ -11,7 +11,7 @@ from .exceptions import StateNotFoundError
 from .protocol import LockStore, StateStore
 
 if TYPE_CHECKING:
-    from c4.models import C4State
+    from c4.models import C4State, TaskQueue
     from c4.models.task import Task
 
 
@@ -95,9 +95,7 @@ class SQLiteStateStore(StateStore):
                 )
             else:
                 # Load any available project (single-project case)
-                cursor = conn.execute(
-                    "SELECT state_json FROM c4_state LIMIT 1"
-                )
+                cursor = conn.execute("SELECT state_json FROM c4_state LIMIT 1")
             row = cursor.fetchone()
 
         if row is None:
@@ -142,9 +140,7 @@ class SQLiteStateStore(StateStore):
             conn.commit()
 
     @contextmanager
-    def atomic_modify(
-        self, project_id: str
-    ) -> Generator["C4State", None, None]:
+    def atomic_modify(self, project_id: str) -> Generator["C4State", None, None]:
         """
         Atomically load, modify, and save state.
 
