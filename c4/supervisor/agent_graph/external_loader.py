@@ -15,7 +15,6 @@ import logging
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Any
 
 import yaml
 
@@ -133,17 +132,13 @@ class ExternalSkillLoader:
 
         # Layer 1: Built-in skills (lowest priority)
         if self.config.builtin_path and self.config.builtin_path.exists():
-            self._load_from_directory(
-                self.config.builtin_path, SkillSource.BUILTIN, result
-            )
+            self._load_from_directory(self.config.builtin_path, SkillSource.BUILTIN, result)
 
         # Layer 2: Project skills (medium priority)
         for rel_path in self.config.project_paths or self.DEFAULT_PROJECT_PATHS:
             project_skill_path = project_root / rel_path
             if project_skill_path.exists():
-                self._load_from_directory(
-                    project_skill_path, SkillSource.PROJECT, result
-                )
+                self._load_from_directory(project_skill_path, SkillSource.PROJECT, result)
 
         # Layer 3: External skills (highest priority)
         for ext_path in self.config.external_paths or self.DEFAULT_EXTERNAL_PATHS:
@@ -181,8 +176,7 @@ class ExternalSkillLoader:
         skill_files = [
             f
             for f in skill_files
-            if not f.name.startswith("_")
-            and f.name not in ("_domain.yaml", "_groups.yaml")
+            if not f.name.startswith("_") and f.name not in ("_domain.yaml", "_groups.yaml")
         ]
 
         for skill_path in skill_files:
@@ -223,9 +217,7 @@ class ExternalSkillLoader:
                     else:
                         for issue in validation.issues:
                             if issue.level == "error":
-                                result.warnings.append(
-                                    f"{skill_path}: {issue.message}"
-                                )
+                                result.warnings.append(f"{skill_path}: {issue.message}")
 
             # Handle conflicts
             skill_id = skill.id

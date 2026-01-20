@@ -84,13 +84,13 @@ class TestGetDefaultPlatform:
         old_env = os.environ.get("C4_PLATFORM")
         try:
             os.environ["C4_PLATFORM"] = "cursor"
-            
+
             # Create project config
             config_dir = tmp_path / ".c4"
             config_dir.mkdir()
             config_file = config_dir / "config.yaml"
             config_file.write_text("platform: codex\n")
-            
+
             result = get_default_platform(tmp_path)
             assert result == "codex"
         finally:
@@ -102,21 +102,21 @@ class TestGetDefaultPlatform:
     def test_respects_global_config(self, tmp_path: Path, monkeypatch):
         """Should use global config when project config doesn't exist."""
         old_env = os.environ.pop("C4_PLATFORM", None)
-        
+
         # Create fake home with global config
         fake_home = tmp_path / "home"
         fake_home.mkdir()
         monkeypatch.setenv("HOME", str(fake_home))
-        
+
         global_config_dir = fake_home / ".c4"
         global_config_dir.mkdir()
         global_config = global_config_dir / "config.yaml"
         global_config.write_text("platform: gemini\n")
-        
+
         # Use a different path for project (no config there)
         project_path = tmp_path / "project"
         project_path.mkdir()
-        
+
         try:
             result = get_default_platform(project_path)
             assert result == "gemini"
@@ -159,12 +159,12 @@ class TestSetPlatformConfig:
         """Should create project config file."""
         c4_dir = tmp_path / ".c4"
         c4_dir.mkdir()
-        
+
         result = set_platform_config("cursor", global_config=False, project_path=tmp_path)
-        
+
         assert result == c4_dir / "config.yaml"
         assert result.exists()
-        
+
         config = yaml.safe_load(result.read_text())
         assert config["platform"] == "cursor"
 
@@ -173,13 +173,13 @@ class TestSetPlatformConfig:
         fake_home = tmp_path / "home"
         fake_home.mkdir()
         monkeypatch.setenv("HOME", str(fake_home))
-        
+
         result = set_platform_config("codex", global_config=True)
-        
+
         expected = fake_home / ".c4" / "config.yaml"
         assert result == expected
         assert result.exists()
-        
+
         config = yaml.safe_load(result.read_text())
         assert config["platform"] == "codex"
 
@@ -194,9 +194,9 @@ class TestSetPlatformConfig:
         c4_dir.mkdir()
         config_file = c4_dir / "config.yaml"
         config_file.write_text("other_setting: value\nplatform: old\n")
-        
+
         set_platform_config("cursor", global_config=False, project_path=tmp_path)
-        
+
         config = yaml.safe_load(config_file.read_text())
         assert config["platform"] == "cursor"
         assert config["other_setting"] == "value"
@@ -210,7 +210,7 @@ class TestGetConfigInfo:
         old_env = os.environ.pop("C4_PLATFORM", None)
         try:
             info = get_config_info(tmp_path)
-            
+
             assert info["global_platform"] is None
             assert info["project_platform"] is None
             assert info["env_platform"] is None
@@ -227,9 +227,9 @@ class TestGetConfigInfo:
             c4_dir = tmp_path / ".c4"
             c4_dir.mkdir()
             (c4_dir / "config.yaml").write_text("platform: cursor\n")
-            
+
             info = get_config_info(tmp_path)
-            
+
             assert info["project_platform"] == "cursor"
             assert info["effective_platform"] == "cursor"
             assert info["source"] == "project"
@@ -244,7 +244,7 @@ class TestValidatePlatformCommands:
     def test_reports_missing_commands(self, tmp_path: Path):
         """Should report all commands as missing when dir doesn't exist."""
         result = validate_platform_commands(tmp_path, "cursor")
-        
+
         assert len(result["missing"]) == len(REQUIRED_COMMANDS)
         assert len(result["found"]) == 0
 
@@ -254,9 +254,9 @@ class TestValidatePlatformCommands:
         cmd_dir.mkdir(parents=True)
         (cmd_dir / "c4-status.md").write_text("# Status")
         (cmd_dir / "c4-run.md").write_text("# Run")
-        
+
         result = validate_platform_commands(tmp_path, "cursor")
-        
+
         assert "c4-status" in result["found"]
         assert "c4-run" in result["found"]
         assert "c4-plan" in result["missing"]
@@ -268,11 +268,11 @@ class TestGenerateCommandTemplate:
     def test_generates_simple_template(self, tmp_path: Path):
         """Should generate template for simple commands."""
         result = generate_command_template(tmp_path, "cursor", "c4-status")
-        
+
         assert result is not None
         assert result.exists()
         assert "c4-status" in str(result)
-        
+
         content = result.read_text()
         assert "C4 Project Status" in content
         assert "c4_status()" in content
@@ -284,12 +284,12 @@ class TestGenerateCommandTemplate:
         ref_dir.mkdir(parents=True)
         ref_content = "# Complex Plan Command\n\nLots of instructions..."
         (ref_dir / "c4-plan.md").write_text(ref_content)
-        
+
         result = generate_command_template(tmp_path, "cursor", "c4-plan")
-        
+
         assert result is not None
         assert result.exists()
-        
+
         content = result.read_text()
         assert "TODO: Customize" in content
         assert "Complex Plan Command" in content
@@ -310,9 +310,9 @@ class TestSetupPlatform:
         ref_dir.mkdir(parents=True)
         (ref_dir / "c4-plan.md").write_text("# Plan")
         (ref_dir / "c4-run.md").write_text("# Run")
-        
+
         result = setup_platform(tmp_path, "cursor", generate_templates=True)
-        
+
         assert result["platform"] == "cursor"
         assert ".cursor/commands" in result["command_dir"]
         assert len(result["generated"]) > 0
@@ -320,6 +320,6 @@ class TestSetupPlatform:
     def test_skips_template_generation_when_disabled(self, tmp_path: Path):
         """Should not generate templates when disabled."""
         result = setup_platform(tmp_path, "cursor", generate_templates=False)
-        
+
         assert result["generated"] == []
         assert result["skipped"] == []

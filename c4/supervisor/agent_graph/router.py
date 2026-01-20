@@ -270,9 +270,7 @@ class GraphRouter:
             skill_result = self._try_skill_routing(task, domain)
             if skill_result is not None:
                 if self._rule_engine is not None:
-                    skill_result = self._apply_chain_extensions(
-                        skill_result, task, domain
-                    )
+                    skill_result = self._apply_chain_extensions(skill_result, task, domain)
                 return skill_result
 
         # 4. Fall back to domain-based routing

@@ -53,12 +53,14 @@ class WebSocketMessage:
 
     def to_json(self) -> str:
         """Convert to JSON string."""
-        return json.dumps({
-            "type": self.type.value,
-            "payload": self.payload,
-            "timestamp": self.timestamp.isoformat(),
-            "message_id": self.message_id,
-        })
+        return json.dumps(
+            {
+                "type": self.type.value,
+                "payload": self.payload,
+                "timestamp": self.timestamp.isoformat(),
+                "message_id": self.message_id,
+            }
+        )
 
     @classmethod
     def from_json(cls, data: str) -> WebSocketMessage:
@@ -227,9 +229,7 @@ class WebSocketClient:
 
         self._state = ConnectionState.RECONNECTING
         self._reconnect_count += 1
-        logger.info(
-            f"Reconnecting ({self._reconnect_count}/{self.config.max_reconnect_attempts})"
-        )
+        logger.info(f"Reconnecting ({self._reconnect_count}/{self.config.max_reconnect_attempts})")
 
         await asyncio.sleep(self.config.reconnect_interval)
         await self.connect()

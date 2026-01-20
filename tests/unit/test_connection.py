@@ -110,12 +110,14 @@ class TestWebSocketMessage:
 
     def test_from_json(self):
         """Test JSON deserialization."""
-        json_str = json.dumps({
-            "type": "task_update",
-            "payload": {"task_id": "T-001", "action": "completed"},
-            "timestamp": "2025-06-15T12:00:00",
-            "message_id": "msg-789",
-        })
+        json_str = json.dumps(
+            {
+                "type": "task_update",
+                "payload": {"task_id": "T-001", "action": "completed"},
+                "timestamp": "2025-06-15T12:00:00",
+                "message_id": "msg-789",
+            }
+        )
 
         msg = WebSocketMessage.from_json(json_str)
 

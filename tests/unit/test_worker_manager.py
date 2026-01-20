@@ -258,12 +258,30 @@ class TestAutoScaling:
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.json.return_value = [
-            {"id": "1", "name": "w1", "state": "started", "region": "nrt",
-             "created_at": "2024-01-01T00:00:00Z", "config": {"env": {}}},
-            {"id": "2", "name": "w2", "state": "started", "region": "nrt",
-             "created_at": "2024-01-01T00:00:00Z", "config": {"env": {}}},
-            {"id": "3", "name": "w3", "state": "stopped", "region": "nrt",
-             "created_at": "2024-01-01T00:00:00Z", "config": {"env": {}}},
+            {
+                "id": "1",
+                "name": "w1",
+                "state": "started",
+                "region": "nrt",
+                "created_at": "2024-01-01T00:00:00Z",
+                "config": {"env": {}},
+            },
+            {
+                "id": "2",
+                "name": "w2",
+                "state": "started",
+                "region": "nrt",
+                "created_at": "2024-01-01T00:00:00Z",
+                "config": {"env": {}},
+            },
+            {
+                "id": "3",
+                "name": "w3",
+                "state": "stopped",
+                "region": "nrt",
+                "created_at": "2024-01-01T00:00:00Z",
+                "config": {"env": {}},
+            },
         ]
         scaler._client.get.return_value = mock_response
 

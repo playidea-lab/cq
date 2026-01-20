@@ -178,9 +178,7 @@ class TokenManager:
                 access_token=data["access_token"],
                 refresh_token=data.get("refresh_token", session.refresh_token),
                 token_type=data.get("token_type", "bearer"),
-                expires_at=(
-                    datetime.now() + timedelta(seconds=data.get("expires_in", 3600))
-                ),
+                expires_at=(datetime.now() + timedelta(seconds=data.get("expires_in", 3600))),
                 user_id=session.user_id,
                 email=session.email,
                 provider=session.provider,

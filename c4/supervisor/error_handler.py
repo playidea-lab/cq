@@ -77,35 +77,25 @@ ERROR_MESSAGES = {
         "Please check your billing settings or upgrade your plan."
     ),
     ClaudeErrorType.OVERLOADED: (
-        "The Claude API is temporarily overloaded. "
-        "Please wait a moment and try again."
+        "The Claude API is temporarily overloaded. Please wait a moment and try again."
     ),
-    ClaudeErrorType.INVALID_REQUEST: (
-        "Invalid request. Please check your request parameters."
-    ),
+    ClaudeErrorType.INVALID_REQUEST: ("Invalid request. Please check your request parameters."),
     ClaudeErrorType.AUTHENTICATION: (
         "Invalid API key. Please check your ANTHROPIC_API_KEY environment variable."
     ),
     ClaudeErrorType.PERMISSION: (
         "Permission denied. Your API key doesn't have access to this resource."
     ),
-    ClaudeErrorType.NOT_FOUND: (
-        "Model not found. Please check the model ID is correct."
-    ),
+    ClaudeErrorType.NOT_FOUND: ("Model not found. Please check the model ID is correct."),
     ClaudeErrorType.TIMEOUT: (
         "Request timed out. The API took too long to respond. "
         "Consider increasing the timeout or simplifying your request."
     ),
-    ClaudeErrorType.CONNECTION: (
-        "Connection error. Please check your network connection."
-    ),
+    ClaudeErrorType.CONNECTION: ("Connection error. Please check your network connection."),
     ClaudeErrorType.SERVER: (
-        "Server error. The Claude API is experiencing issues. "
-        "Please try again later."
+        "Server error. The Claude API is experiencing issues. Please try again later."
     ),
-    ClaudeErrorType.UNKNOWN: (
-        "An unexpected error occurred. Please try again."
-    ),
+    ClaudeErrorType.UNKNOWN: ("An unexpected error occurred. Please try again."),
 }
 
 
@@ -159,10 +149,7 @@ class ClaudeErrorHandler:
             return ClaudeErrorType.TIMEOUT
 
         # Check for connection errors
-        if any(
-            x in error_str
-            for x in ("connection", "network", "dns", "socket", "refused")
-        ):
+        if any(x in error_str for x in ("connection", "network", "dns", "socket", "refused")):
             return ClaudeErrorType.CONNECTION
 
         # Check for rate limit indicators
@@ -350,13 +337,11 @@ class ClaudeErrorHandler:
         else:
             if action.is_transient:
                 logger.error(
-                    f"[{action.error_type.value}] Max retries exceeded. "
-                    f"{action.user_message}"
+                    f"[{action.error_type.value}] Max retries exceeded. {action.user_message}"
                 )
             else:
                 logger.error(
-                    f"[{action.error_type.value}] Permanent error (no retry): "
-                    f"{action.user_message}"
+                    f"[{action.error_type.value}] Permanent error (no retry): {action.user_message}"
                 )
 
 

@@ -92,12 +92,12 @@ class TestDesignSpec:
         """Test selecting an architecture option."""
         spec = DesignSpec(feature="auth", domain=Domain.WEB_BACKEND)
 
-        spec.add_option(ArchitectureOption(
-            id="option-a", name="Option A", description="First option"
-        ))
-        spec.add_option(ArchitectureOption(
-            id="option-b", name="Option B", description="Second option"
-        ))
+        spec.add_option(
+            ArchitectureOption(id="option-a", name="Option A", description="First option")
+        )
+        spec.add_option(
+            ArchitectureOption(id="option-b", name="Option B", description="Second option")
+        )
 
         # Select valid option
         assert spec.select_option("option-b") is True
@@ -147,9 +147,7 @@ class TestDesignSpec:
             domain=Domain.WEB_FRONTEND,
             description="Test feature",
         )
-        spec.add_option(ArchitectureOption(
-            id="opt-1", name="Option 1", description="First"
-        ))
+        spec.add_option(ArchitectureOption(id="opt-1", name="Option 1", description="First"))
 
         yaml_str = spec.to_yaml()
 
@@ -164,14 +162,16 @@ class TestDesignSpec:
             domain=Domain.WEB_BACKEND,
             description="Authentication feature",
         )
-        spec.add_option(ArchitectureOption(
-            id="opt-1",
-            name="JWT Auth",
-            description="Token-based",
-            recommended=True,
-            pros=["Stateless"],
-            cons=["Token size"],
-        ))
+        spec.add_option(
+            ArchitectureOption(
+                id="opt-1",
+                name="JWT Auth",
+                description="Token-based",
+                recommended=True,
+                pros=["Stateless"],
+                cons=["Token size"],
+            )
+        )
         spec.select_option("opt-1")
         spec.mermaid_diagram = "sequenceDiagram\n  User->>API: Login"
 
@@ -191,9 +191,7 @@ class TestDesignSpec:
             domain=Domain.ML_DL,
             description="Test roundtrip",
         )
-        spec.add_option(ArchitectureOption(
-            id="opt-1", name="Option 1", description="First"
-        ))
+        spec.add_option(ArchitectureOption(id="opt-1", name="Option 1", description="First"))
         spec.select_option("opt-1")
 
         yaml_str = spec.to_yaml()
@@ -215,9 +213,7 @@ class TestDesignStore:
             domain=Domain.WEB_FRONTEND,
             description="Test",
         )
-        spec.add_option(ArchitectureOption(
-            id="opt-1", name="Option 1", description="First"
-        ))
+        spec.add_option(ArchitectureOption(id="opt-1", name="Option 1", description="First"))
 
         yaml_path, md_path = design_store.save(spec)
 

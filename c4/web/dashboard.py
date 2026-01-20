@@ -197,9 +197,7 @@ class DashboardService:
         review = self._get_review_status(state)
 
         total_tasks = (
-            len(state.queue.pending)
-            + len(state.queue.in_progress)
-            + len(state.queue.done)
+            len(state.queue.pending) + len(state.queue.in_progress) + len(state.queue.done)
         )
         progress = len(state.queue.done) / total_tasks if total_tasks > 0 else 0.0
 
@@ -255,22 +253,14 @@ class DashboardService:
         except Exception:
             return None
 
-    def _build_project_summary(
-        self, project_id: str, state: C4State
-    ) -> ProjectSummary:
+    def _build_project_summary(self, project_id: str, state: C4State) -> ProjectSummary:
         """Build project summary from state."""
-        workers_active = sum(
-            1 for w in state.workers.values() if w.state == "busy"
-        )
-        workers_idle = sum(
-            1 for w in state.workers.values() if w.state == "idle"
-        )
+        workers_active = sum(1 for w in state.workers.values() if w.state == "busy")
+        workers_idle = sum(1 for w in state.workers.values() if w.state == "idle")
 
         last_activity = None
         if state.workers:
-            last_seen_times = [
-                w.last_seen for w in state.workers.values() if w.last_seen
-            ]
+            last_seen_times = [w.last_seen for w in state.workers.values() if w.last_seen]
             if last_seen_times:
                 last_activity = max(last_seen_times).isoformat()
 
@@ -308,9 +298,7 @@ class DashboardService:
     def _get_review_status(self, state: C4State) -> ReviewStatus:
         """Get review status from project state."""
         # Count total checkpoints from config gates
-        checkpoints_total = len(state.passed_checkpoints) + (
-            1 if state.checkpoint.current else 0
-        )
+        checkpoints_total = len(state.passed_checkpoints) + (1 if state.checkpoint.current else 0)
 
         # Determine review state
         review_state = "idle"
@@ -330,9 +318,7 @@ class DashboardService:
             repair_queue_size=len(state.repair_queue),
         )
 
-    def _get_recent_events(
-        self, state: C4State, limit: int = 10
-    ) -> list[dict[str, Any]]:
+    def _get_recent_events(self, state: C4State, limit: int = 10) -> list[dict[str, Any]]:
         """Get recent events from project state."""
         events: list[dict[str, Any]] = []
 

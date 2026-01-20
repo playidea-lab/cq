@@ -303,14 +303,16 @@ class CloudSupervisor:
         )
 
         # Update in database
-        self._store.client.table(self.TABLE_REVIEWS).update({
-            "status": status.value,
-            "decision": decision,
-            "notes": notes,
-            "required_changes": required_changes,
-            "reviewer_id": reviewer_id,
-            "reviewed_at": result.reviewed_at.isoformat(),
-        }).eq("id", request_id).execute()
+        self._store.client.table(self.TABLE_REVIEWS).update(
+            {
+                "status": status.value,
+                "decision": decision,
+                "notes": notes,
+                "required_changes": required_changes,
+                "reviewer_id": reviewer_id,
+                "reviewed_at": result.reviewed_at.isoformat(),
+            }
+        ).eq("id", request_id).execute()
 
         return result
 
@@ -426,11 +428,13 @@ class CloudSupervisor:
             for change in result.required_changes:
                 lines.append(f"- {change}")
 
-        lines.extend([
-            "",
-            "---",
-            f"*Reviewed at {result.reviewed_at.isoformat() if result.reviewed_at else 'N/A'}*",
-        ])
+        lines.extend(
+            [
+                "",
+                "---",
+                f"*Reviewed at {result.reviewed_at.isoformat() if result.reviewed_at else 'N/A'}*",
+            ]
+        )
 
         return "\n".join(lines)
 
@@ -440,21 +444,23 @@ class CloudSupervisor:
 
     def _save_review_request(self, request: ReviewRequest) -> None:
         """Save review request to database."""
-        self._store.client.table(self.TABLE_REVIEWS).insert({
-            "id": request.id,
-            "project_id": request.project_id,
-            "team_id": request.team_id,
-            "review_type": request.review_type.value,
-            "checkpoint_id": request.checkpoint_id,
-            "task_id": request.task_id,
-            "pr_number": request.pr_number,
-            "pr_url": request.pr_url,
-            "bundle_path": request.bundle_path,
-            "requester_id": request.requester_id,
-            "status": ReviewStatus.PENDING.value,
-            "created_at": request.created_at.isoformat(),
-            "metadata": request.metadata,
-        }).execute()
+        self._store.client.table(self.TABLE_REVIEWS).insert(
+            {
+                "id": request.id,
+                "project_id": request.project_id,
+                "team_id": request.team_id,
+                "review_type": request.review_type.value,
+                "checkpoint_id": request.checkpoint_id,
+                "task_id": request.task_id,
+                "pr_number": request.pr_number,
+                "pr_url": request.pr_url,
+                "bundle_path": request.bundle_path,
+                "requester_id": request.requester_id,
+                "status": ReviewStatus.PENDING.value,
+                "created_at": request.created_at.isoformat(),
+                "metadata": request.metadata,
+            }
+        ).execute()
 
     def _row_to_request(self, row: dict[str, Any]) -> ReviewRequest:
         """Convert database row to ReviewRequest."""

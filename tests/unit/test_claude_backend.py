@@ -1,6 +1,5 @@
 """Tests for Claude CLI backend, especially sensitive data sanitization."""
 
-
 from c4.supervisor.claude_backend import (
     MAX_ERROR_MESSAGE_LENGTH,
     _sanitize_stderr,

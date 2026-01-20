@@ -76,9 +76,7 @@ class TestWorkerValidationWorkflow:
     """Test Worker → Validation → Submit workflow"""
 
     @patch("subprocess.run")
-    def test_worker_runs_validation_before_submit(
-        self, mock_run, daemon_with_validations
-    ):
+    def test_worker_runs_validation_before_submit(self, mock_run, daemon_with_validations):
         """Test complete worker validation workflow"""
         daemon = daemon_with_validations
 
@@ -121,9 +119,7 @@ class TestWorkerValidationWorkflow:
         assert submit_result.success is True
 
     @patch("subprocess.run")
-    def test_worker_validation_failure_blocks_submit(
-        self, mock_run, daemon_with_validations
-    ):
+    def test_worker_validation_failure_blocks_submit(self, mock_run, daemon_with_validations):
         """Test that failed validation blocks submission"""
         daemon = daemon_with_validations
 
@@ -158,9 +154,7 @@ class TestWorkerValidationWorkflow:
         assert submit_result.next_action == "fix_failures"
 
     @patch("subprocess.run")
-    def test_worker_can_run_specific_validations(
-        self, mock_run, daemon_with_validations
-    ):
+    def test_worker_can_run_specific_validations(self, mock_run, daemon_with_validations):
         """Test running specific validations"""
         daemon = daemon_with_validations
 
@@ -200,9 +194,7 @@ class TestCheckpointTrigger:
     """Test checkpoint auto-trigger after task completion"""
 
     @patch("subprocess.run")
-    def test_checkpoint_triggered_after_task_complete(
-        self, mock_run, daemon_with_checkpoint
-    ):
+    def test_checkpoint_triggered_after_task_complete(self, mock_run, daemon_with_checkpoint):
         """Test checkpoint triggers when conditions are met"""
         daemon = daemon_with_checkpoint
 
@@ -243,9 +235,7 @@ class TestCheckpointTrigger:
         assert result.success is True
         assert result.next_action == "await_checkpoint"
 
-    def test_checkpoint_not_triggered_without_validations(
-        self, daemon_with_checkpoint
-    ):
+    def test_checkpoint_not_triggered_without_validations(self, daemon_with_checkpoint):
         """Test checkpoint not triggered if validations not run"""
         daemon = daemon_with_checkpoint
 
@@ -370,9 +360,7 @@ class TestMultipleTaskWorkflow:
     """Test workflow with multiple tasks"""
 
     @patch("subprocess.run")
-    def test_worker_processes_multiple_tasks(
-        self, mock_run, daemon_with_validations
-    ):
+    def test_worker_processes_multiple_tasks(self, mock_run, daemon_with_validations):
         """Test worker processing multiple tasks in sequence"""
         daemon = daemon_with_validations
 
@@ -411,9 +399,7 @@ class TestMultipleTaskWorkflow:
         assert len(daemon.state_machine.state.queue.pending) == 0
 
     @patch("subprocess.run")
-    def test_multiple_workers_parallel_tasks(
-        self, mock_run, daemon_with_validations
-    ):
+    def test_multiple_workers_parallel_tasks(self, mock_run, daemon_with_validations):
         """Test multiple workers processing tasks in parallel"""
         daemon = daemon_with_validations
 

@@ -10,10 +10,9 @@ Run with:
 
 import os
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime
 
 import pytest
-
 
 # Skip all tests if Supabase credentials not available
 pytestmark = pytest.mark.skipif(
@@ -134,7 +133,7 @@ class TestSupabaseAtomicModify:
         from c4.store.exceptions import StateNotFoundError
 
         with pytest.raises(StateNotFoundError):
-            with supabase_store.atomic_modify("nonexistent-12345") as state:
+            with supabase_store.atomic_modify("nonexistent-12345"):
                 pass
 
 

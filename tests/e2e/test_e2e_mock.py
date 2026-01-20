@@ -82,9 +82,7 @@ class TestE2EHappyPath:
     """Scenario 1: Complete workflow with APPROVE decision"""
 
     @patch("subprocess.run")
-    def test_full_workflow_approve(
-        self, mock_run, configured_daemon, bundle_creator, supervisor
-    ):
+    def test_full_workflow_approve(self, mock_run, configured_daemon, bundle_creator, supervisor):
         """Test complete workflow: Task → Checkpoint → APPROVE → COMPLETE"""
         daemon = configured_daemon
 
@@ -293,9 +291,7 @@ class TestE2EReplan:
     """Scenario 3: REPLAN workflow"""
 
     @patch("subprocess.run")
-    def test_full_workflow_replan(
-        self, mock_run, configured_daemon, bundle_creator, supervisor
-    ):
+    def test_full_workflow_replan(self, mock_run, configured_daemon, bundle_creator, supervisor):
         """Test REPLAN: Task → Checkpoint → REPLAN → Back to PLAN"""
         daemon = configured_daemon
 
@@ -465,7 +461,7 @@ class TestSupervisor:
         """Test parsing JSON from code block"""
         supervisor = Supervisor(temp_project)
 
-        output = '''
+        output = """
         I've reviewed the checkpoint and here is my decision:
 
         ```json
@@ -476,7 +472,7 @@ class TestSupervisor:
           "required_changes": []
         }
         ```
-        '''
+        """
 
         response = supervisor.parse_decision(output)
         assert response.decision == SupervisorDecision.APPROVE

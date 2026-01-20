@@ -65,7 +65,7 @@ class TestRunSupervisor:
         # Mock Claude CLI output
         mock_run.return_value = MagicMock(
             returncode=0,
-            stdout='''I've reviewed the checkpoint. Here is my decision:
+            stdout="""I've reviewed the checkpoint. Here is my decision:
 
 ```json
 {
@@ -75,7 +75,7 @@ class TestRunSupervisor:
   "required_changes": []
 }
 ```
-''',
+""",
             stderr="",
         )
 
@@ -105,14 +105,14 @@ class TestRunSupervisor:
 
         mock_run.return_value = MagicMock(
             returncode=0,
-            stdout='''```json
+            stdout="""```json
 {
   "decision": "REQUEST_CHANGES",
   "checkpoint": "CP1",
   "notes": "Found some issues",
   "required_changes": ["Fix lint error", "Add tests"]
 }
-```''',
+```""",
             stderr="",
         )
 
@@ -325,7 +325,7 @@ class TestSupervisorResponseParsing:
         """Test parsing JSON with nested structures"""
         supervisor = Supervisor(temp_project)
 
-        output = '''```json
+        output = """```json
 {
   "decision": "REQUEST_CHANGES",
   "checkpoint": "CP1",
@@ -336,7 +336,7 @@ class TestSupervisorResponseParsing:
     "Update documentation in README.md"
   ]
 }
-```'''
+```"""
 
         response = supervisor.parse_decision(output)
         assert response.decision == SupervisorDecision.REQUEST_CHANGES
@@ -347,14 +347,14 @@ class TestSupervisorResponseParsing:
         supervisor = Supervisor(temp_project)
 
         # Use raw JSON without problematic escapes in the test
-        output = '''```json
+        output = """```json
 {
   "decision": "REQUEST_CHANGES",
   "checkpoint": "CP1",
   "notes": "Found issues with special characters: <>&",
   "required_changes": ["Fix the issue with 'single quotes'"]
 }
-```'''
+```"""
 
         response = supervisor.parse_decision(output)
         assert response.decision == SupervisorDecision.REQUEST_CHANGES
@@ -364,14 +364,14 @@ class TestSupervisorResponseParsing:
         """Test parsing JSON with unicode characters"""
         supervisor = Supervisor(temp_project)
 
-        output = '''```json
+        output = """```json
 {
   "decision": "APPROVE",
   "checkpoint": "CP1",
   "notes": "코드가 잘 작성되었습니다 ✅",
   "required_changes": []
 }
-```'''
+```"""
 
         response = supervisor.parse_decision(output)
         assert response.decision == SupervisorDecision.APPROVE
@@ -381,7 +381,7 @@ class TestSupervisorResponseParsing:
         """Test parsing JSON with extra whitespace"""
         supervisor = Supervisor(temp_project)
 
-        output = '''
+        output = """
 
         ```json
 
@@ -394,7 +394,7 @@ class TestSupervisorResponseParsing:
 
         ```
 
-        '''
+        """
 
         response = supervisor.parse_decision(output)
         assert response.decision == SupervisorDecision.APPROVE
@@ -403,7 +403,7 @@ class TestSupervisorResponseParsing:
         """Test that first valid JSON block is used"""
         supervisor = Supervisor(temp_project)
 
-        output = '''Here's an example of wrong format:
+        output = """Here's an example of wrong format:
 ```json
 {"wrong": "format"}
 ```
@@ -416,7 +416,7 @@ And here's the correct decision:
   "notes": "Correct one",
   "required_changes": []
 }
-```'''
+```"""
 
         # First JSON block doesn't have "decision" key, so it should fail
         # and fall through to find the valid one

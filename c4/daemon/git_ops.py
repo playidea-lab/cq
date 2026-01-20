@@ -292,11 +292,13 @@ class GitOperations:
         for line in result.stdout.splitlines():
             parts = line.split("|", 2)
             if len(parts) >= 3:
-                commits.append({
-                    "sha": parts[0],
-                    "message": parts[1],
-                    "date": parts[2],
-                })
+                commits.append(
+                    {
+                        "sha": parts[0],
+                        "message": parts[1],
+                        "date": parts[2],
+                    }
+                )
 
         return commits
 
@@ -346,9 +348,7 @@ class GitOperations:
 
         return GitResult(True, f"Created branch {branch_name}")
 
-    def ensure_work_branch(
-        self, work_branch: str, default_branch: str = "main"
-    ) -> GitResult:
+    def ensure_work_branch(self, work_branch: str, default_branch: str = "main") -> GitResult:
         """Ensure work branch exists and checkout to it.
 
         Creates the work branch from default_branch if it doesn't exist.
@@ -423,9 +423,7 @@ class GitOperations:
         # Checkout target branch
         checkout_result = self._run_git("checkout", target_branch)
         if checkout_result.returncode != 0:
-            return GitResult(
-                False, f"Cannot checkout {target_branch}: {checkout_result.stderr}"
-            )
+            return GitResult(False, f"Cannot checkout {target_branch}: {checkout_result.stderr}")
 
         # Merge source branch
         if squash:
@@ -433,13 +431,9 @@ class GitOperations:
             if merge_result.returncode != 0:
                 # Abort merge on conflict
                 self._run_git("merge", "--abort")
-                return GitResult(
-                    False, f"Squash merge failed: {merge_result.stderr}"
-                )
+                return GitResult(False, f"Squash merge failed: {merge_result.stderr}")
             # Commit the squashed changes
-            commit_result = self._run_git(
-                "commit", "-m", f"Squash merge {source_branch}"
-            )
+            commit_result = self._run_git("commit", "-m", f"Squash merge {source_branch}")
             if commit_result.returncode != 0:
                 return GitResult(False, f"Commit failed: {commit_result.stderr}")
         else:
@@ -497,12 +491,14 @@ class GitOperations:
         for tag in sorted(tags, reverse=True):  # Most recent first
             info = self.get_tag_info(tag)
             if info:
-                result.append({
-                    "tag": tag,
-                    "sha": info["sha"],
-                    "date": info["date"],
-                    "message": info["message"],
-                })
+                result.append(
+                    {
+                        "tag": tag,
+                        "sha": info["sha"],
+                        "date": info["date"],
+                        "message": info["message"],
+                    }
+                )
 
         return result
 

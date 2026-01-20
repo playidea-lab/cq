@@ -146,9 +146,7 @@ class SessionManager:
             self.config_dir.mkdir(parents=True, exist_ok=True)
 
             # Set restrictive permissions on session file
-            self.session_file.write_text(
-                json.dumps(session.to_dict(), indent=2)
-            )
+            self.session_file.write_text(json.dumps(session.to_dict(), indent=2))
             # Make file readable only by owner
             os.chmod(self.session_file, 0o600)
 

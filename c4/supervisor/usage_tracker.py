@@ -284,9 +284,7 @@ class UsageTracker:
         )
 
         # Log cumulative session stats
-        logger.debug(
-            f"Session total: {self.session_tokens:,} tokens, ${self.session_cost:.4f}"
-        )
+        logger.debug(f"Session total: {self.session_tokens:,} tokens, ${self.session_cost:.4f}")
 
     def _check_budget(self) -> None:
         """Check if budget threshold is reached."""
@@ -304,13 +302,11 @@ class UsageTracker:
                 if percentage >= 1.0:
                     self._budget_exceeded_notified = True
                     logger.warning(
-                        f"Budget EXCEEDED: ${current:.2f} / ${self.budget:.2f} "
-                        f"({percentage:.0%})"
+                        f"Budget EXCEEDED: ${current:.2f} / ${self.budget:.2f} ({percentage:.0%})"
                     )
                 else:
                     logger.warning(
-                        f"Budget warning: ${current:.2f} / ${self.budget:.2f} "
-                        f"({percentage:.0%})"
+                        f"Budget warning: ${current:.2f} / ${self.budget:.2f} ({percentage:.0%})"
                     )
 
     def reset_session(self) -> UsageSummary:
@@ -371,9 +367,7 @@ class UsageTracker:
         try:
             data = json.loads(self.persistent_file.read_text())
             if "records" in data:
-                self._persistent_records = [
-                    UsageRecord.from_dict(r) for r in data["records"]
-                ]
+                self._persistent_records = [UsageRecord.from_dict(r) for r in data["records"]]
                 logger.debug(f"Loaded {len(self._persistent_records)} persistent records")
         except (json.JSONDecodeError, KeyError) as e:
             logger.warning(f"Failed to load persistent records: {e}")

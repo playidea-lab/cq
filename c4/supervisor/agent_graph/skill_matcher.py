@@ -216,9 +216,7 @@ class SkillMatcher:
 
         return required_skills
 
-    def _skill_matches_task(
-        self, skill_id: str, task: TaskLike, text: str
-    ) -> bool:
+    def _skill_matches_task(self, skill_id: str, task: TaskLike, text: str) -> bool:
         """Check if a skill matches the task based on its triggers.
 
         Args:
@@ -306,12 +304,8 @@ class SkillMatcher:
 
         # Rule bonus from critical rules
         if skill.rules:
-            critical_rules = sum(
-                1 for rule in skill.rules if rule.impact == ImpactLevel.CRITICAL
-            )
-            skill_match.rule_bonus = min(
-                critical_rules * 0.1, self.MAX_RULE_BONUS
-            )
+            critical_rules = sum(1 for rule in skill.rules if rule.impact == ImpactLevel.CRITICAL)
+            skill_match.rule_bonus = min(critical_rules * 0.1, self.MAX_RULE_BONUS)
 
         return skill_match
 
@@ -382,9 +376,7 @@ class SkillMatcher:
                 secondary_matched = matched - primary_matched
 
                 # Calculate score using V2 impact-based scoring
-                matched_skill_scores = {
-                    sid: skill_scores[sid] for sid in matched
-                }
+                matched_skill_scores = {sid: skill_scores[sid] for sid in matched}
                 base_score = sum(matched_skill_scores.values())
                 primary_bonus = len(primary_matched) * self.PRIMARY_SKILL_BONUS
                 score = base_score + primary_bonus

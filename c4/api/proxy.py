@@ -513,11 +513,13 @@ async def list_models() -> dict[str, Any]:
 
     models = []
     for name, costs in MODEL_COSTS.items():
-        models.append({
-            "id": name,
-            "input_cost_per_1k": costs["input"],
-            "output_cost_per_1k": costs["output"],
-        })
+        models.append(
+            {
+                "id": name,
+                "input_cost_per_1k": costs["input"],
+                "output_cost_per_1k": costs["output"],
+            }
+        )
 
     return {
         "models": models,

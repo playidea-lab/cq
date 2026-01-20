@@ -1,6 +1,5 @@
 """Unit tests for C4 Agent Router (Phase 4)"""
 
-
 from c4.discovery.models import Domain
 from c4.models.config import AgentChainDef, AgentConfig
 from c4.supervisor.agent_router import (
@@ -618,11 +617,7 @@ class TestDefaultRouterFunctions:
 
     def test_set_default_router(self):
         """Test set_default_router changes default"""
-        custom_config = AgentConfig(
-            chains={
-                "test-domain": AgentChainDef(primary="test-agent")
-            }
-        )
+        custom_config = AgentConfig(chains={"test-domain": AgentChainDef(primary="test-agent")})
         custom_router = AgentRouter(config=custom_config)
 
         # Save original for cleanup

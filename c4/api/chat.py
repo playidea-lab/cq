@@ -263,10 +263,12 @@ async def _stream_response(
     # Send start event
     start_event = SSEEvent(
         event="start",
-        data=json.dumps({
-            "id": response_id,
-            "conversation_id": conversation_id,
-        }),
+        data=json.dumps(
+            {
+                "id": response_id,
+                "conversation_id": conversation_id,
+            }
+        ),
     )
     yield start_event.encode()
 
@@ -289,12 +291,14 @@ async def _stream_response(
     # Send done event
     done_event = SSEEvent(
         event="done",
-        data=json.dumps({
-            "id": response_id,
-            "conversation_id": conversation_id,
-            "content": full_content,
-            "done": True,
-        }),
+        data=json.dumps(
+            {
+                "id": response_id,
+                "conversation_id": conversation_id,
+                "content": full_content,
+                "done": True,
+            }
+        ),
     )
     yield done_event.encode()
 

@@ -147,9 +147,7 @@ class RateLimiter:
             "requests_per_minute_available": (
                 self.minute_bucket.available if self.minute_bucket else 0
             ),
-            "requests_per_hour_available": (
-                self.hour_bucket.available if self.hour_bucket else 0
-            ),
+            "requests_per_hour_available": (self.hour_bucket.available if self.hour_bucket else 0),
             "tokens_per_minute_available": (
                 self.token_minute_bucket.available if self.token_minute_bucket else 0
             ),
@@ -273,9 +271,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                 },
                 headers={
                     "Retry-After": "60",
-                    "X-RateLimit-Remaining": str(
-                        int(status["requests_per_minute_available"])
-                    ),
+                    "X-RateLimit-Remaining": str(int(status["requests_per_minute_available"])),
                 },
             )
 
@@ -285,8 +281,6 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         response.headers["X-RateLimit-Remaining"] = str(
             int(status["requests_per_minute_available"])
         )
-        response.headers["X-RateLimit-Limit"] = str(
-            self.store.config.requests_per_minute
-        )
+        response.headers["X-RateLimit-Limit"] = str(self.store.config.requests_per_minute)
 
         return response

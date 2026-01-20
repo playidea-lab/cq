@@ -76,18 +76,14 @@ class BundleCreator:
         )
 
         # Save summary.json
-        (bundle_dir / "summary.json").write_text(
-            json.dumps(summary.to_dict(), indent=2)
-        )
+        (bundle_dir / "summary.json").write_text(json.dumps(summary.to_dict(), indent=2))
 
         # Save changes.diff
         diff_content = self._get_diff_content(base_branch)
         (bundle_dir / "changes.diff").write_text(diff_content)
 
         # Save test_results.json
-        (bundle_dir / "test_results.json").write_text(
-            json.dumps(validation_results, indent=2)
-        )
+        (bundle_dir / "test_results.json").write_text(json.dumps(validation_results, indent=2))
 
         return bundle_dir
 

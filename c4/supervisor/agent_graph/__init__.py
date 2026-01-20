@@ -16,6 +16,15 @@ from c4.supervisor.agent_graph.chain_builder import (
     ChainBuildContext,
     DynamicChainBuilder,
 )
+from c4.supervisor.agent_graph.external_loader import (
+    ConflictResolution,
+    ExternalLoaderConfig,
+    ExternalSkillLoader,
+    LoadedSkill,
+    SkillLoadResult,
+    SkillSource,
+    load_all_skills,
+)
 from c4.supervisor.agent_graph.graph import AgentGraph, EdgeType, NodeType
 from c4.supervisor.agent_graph.loader import (
     AgentGraphLoader,
@@ -46,14 +55,14 @@ from c4.supervisor.agent_graph.models import (
     DomainDefinition,
     DomainRequiredSkills,
     DomainRule,
+    # Skill models (V2 extended)
+    DomainSpecificConfig,
+    ImpactLevel,
     Override,
     OverrideAction,
     RuleDefinition,
     Rules,
     Selection,
-    # Skill models (V2 extended)
-    DomainSpecificConfig,
-    ImpactLevel,
     Skill,
     SkillCategory,
     SkillDefinition,
@@ -79,25 +88,16 @@ from c4.supervisor.agent_graph.skill_matcher import (
     TaskContext,
     TaskLike,
 )
-from c4.supervisor.agent_graph.skill_validator import (
-    SkillValidator,
-    ValidationIssue,
-    ValidationLevel,
-    ValidationResult,
-)
 from c4.supervisor.agent_graph.skill_md_parser import (
     ParsedSkillMd,
     SkillMdParser,
     parse_skill_md,
 )
-from c4.supervisor.agent_graph.external_loader import (
-    ConflictResolution,
-    ExternalLoaderConfig,
-    ExternalSkillLoader,
-    LoadedSkill,
-    SkillLoadResult,
-    SkillSource,
-    load_all_skills,
+from c4.supervisor.agent_graph.skill_validator import (
+    SkillValidator,
+    ValidationIssue,
+    ValidationLevel,
+    ValidationResult,
 )
 
 SCHEMA_DIR = Path(__file__).parent / "schema"

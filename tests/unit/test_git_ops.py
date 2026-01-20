@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from c4.daemon.git_ops import GitOperations, GitResult
+from c4.daemon.git_ops import GitOperations
 
 
 class TestGitOperations:
@@ -70,9 +70,7 @@ class TestGitOperations:
         """Test detecting no uncommitted changes."""
         assert git_ops.has_uncommitted_changes() is False
 
-    def test_has_uncommitted_changes_true(
-        self, git_ops: GitOperations, git_project: Path
-    ) -> None:
+    def test_has_uncommitted_changes_true(self, git_ops: GitOperations, git_project: Path) -> None:
         """Test detecting uncommitted changes."""
         # Create a new file
         (git_project / "new_file.txt").write_text("content")
@@ -126,9 +124,7 @@ class TestCommitTaskCompletion:
         """Create GitOperations instance."""
         return GitOperations(git_project)
 
-    def test_commit_with_changes(
-        self, git_ops: GitOperations, git_project: Path
-    ) -> None:
+    def test_commit_with_changes(self, git_ops: GitOperations, git_project: Path) -> None:
         """Test committing task completion with changes."""
         # Create changes
         (git_project / "task_output.py").write_text("# Task output\n")
@@ -277,9 +273,7 @@ class TestCheckpointTag:
         assert result.success is True
         assert "already exists" in result.message
 
-    def test_get_checkpoint_tags(
-        self, git_ops: GitOperations, git_project: Path
-    ) -> None:
+    def test_get_checkpoint_tags(self, git_ops: GitOperations, git_project: Path) -> None:
         """Test getting checkpoint tags."""
         # Create some tags
         git_ops.create_checkpoint_tag("CP-001")
@@ -420,9 +414,7 @@ class TestRollbackOperations:
         assert all("sha" in t for t in tags)
         assert all("date" in t for t in tags)
 
-    def test_rollback_to_checkpoint_hard(
-        self, git_ops: GitOperations, git_project: Path
-    ) -> None:
+    def test_rollback_to_checkpoint_hard(self, git_ops: GitOperations, git_project: Path) -> None:
         """Test hard rollback to checkpoint."""
         # Create checkpoint
         git_ops.create_checkpoint_tag("CP-001", "Stable")
@@ -442,9 +434,7 @@ class TestRollbackOperations:
         assert result.sha == stable_sha
         assert not (git_project / "new_file.py").exists()
 
-    def test_rollback_to_checkpoint_soft(
-        self, git_ops: GitOperations, git_project: Path
-    ) -> None:
+    def test_rollback_to_checkpoint_soft(self, git_ops: GitOperations, git_project: Path) -> None:
         """Test soft rollback to checkpoint."""
         # Create checkpoint
         git_ops.create_checkpoint_tag("CP-001", "Stable")

@@ -144,11 +144,7 @@ class SupabaseStateStore(StateStore, LockStore):
         Raises:
             StateNotFoundError: If project not found
         """
-        query = (
-            self.client.table(self.TABLE_STATE)
-            .select("*")
-            .eq("project_id", project_id)
-        )
+        query = self.client.table(self.TABLE_STATE).select("*").eq("project_id", project_id)
 
         # Apply team_id filter if set
         if self._team_id:
@@ -174,16 +170,12 @@ class SupabaseStateStore(StateStore, LockStore):
         if self._team_id:
             data["team_id"] = self._team_id
 
-        self.client.table(self.TABLE_STATE).upsert(
-            data, on_conflict="project_id"
-        ).execute()
+        self.client.table(self.TABLE_STATE).upsert(data, on_conflict="project_id").execute()
 
     def exists(self, project_id: str) -> bool:
         """Check if project exists in Supabase."""
         query = (
-            self.client.table(self.TABLE_STATE)
-            .select("project_id")
-            .eq("project_id", project_id)
+            self.client.table(self.TABLE_STATE).select("project_id").eq("project_id", project_id)
         )
 
         if self._team_id:
@@ -194,9 +186,7 @@ class SupabaseStateStore(StateStore, LockStore):
 
     def delete(self, project_id: str) -> None:
         """Delete project state from Supabase."""
-        query = self.client.table(self.TABLE_STATE).delete().eq(
-            "project_id", project_id
-        )
+        query = self.client.table(self.TABLE_STATE).delete().eq("project_id", project_id)
 
         if self._team_id:
             query = query.eq("team_id", self._team_id)
@@ -238,9 +228,7 @@ class SupabaseStateStore(StateStore, LockStore):
                     schema="public",
                     table=self.TABLE_STATE,
                     filter=f"project_id=eq.{project_id}",
-                    callback=lambda payload: self._handle_change(
-                        project_id, payload
-                    ),
+                    callback=lambda payload: self._handle_change(project_id, payload),
                 )
                 .subscribe()
             )
@@ -259,9 +247,7 @@ class SupabaseStateStore(StateStore, LockStore):
 
         if project_id in self._callbacks:
             self._callbacks[project_id] = [
-                cb
-                for cb in self._callbacks[project_id]
-                if id(cb) != callback_id_int
+                cb for cb in self._callbacks[project_id] if id(cb) != callback_id_int
             ]
 
             # Remove channel if no more callbacks
@@ -381,9 +367,7 @@ class SupabaseStateStore(StateStore, LockStore):
             # Project-specific callback
             if project_id in self._change_callbacks:
                 self._change_callbacks[project_id] = [
-                    cb
-                    for cb in self._change_callbacks[project_id]
-                    if id(cb) != callback_id
+                    cb for cb in self._change_callbacks[project_id] if id(cb) != callback_id
                 ]
                 if not self._change_callbacks[project_id]:
                     del self._change_callbacks[project_id]
@@ -406,9 +390,7 @@ class SupabaseStateStore(StateStore, LockStore):
         )
 
         self._realtime_manager = RealtimeManager(config)
-        self._realtime_manager.on_error(
-            lambda e: logger.error(f"Realtime error: {e}")
-        )
+        self._realtime_manager.on_error(lambda e: logger.error(f"Realtime error: {e}"))
         self._realtime_manager.connect()
 
     def _dispatch_change(self, payload: dict[str, Any]) -> None:
@@ -621,9 +603,7 @@ class SupabaseStateStore(StateStore, LockStore):
         if not response.data:
             return None
 
-        expires_at = datetime.fromisoformat(
-            response.data["expires_at"].replace("Z", "+00:00")
-        )
+        expires_at = datetime.fromisoformat(response.data["expires_at"].replace("Z", "+00:00"))
         return (response.data["owner"], expires_at)
 
     def cleanup_expired(self, project_id: str) -> list[str]:
@@ -663,9 +643,7 @@ class SupabaseStateStore(StateStore, LockStore):
     # =========================================================================
 
     @contextmanager
-    def atomic_modify(
-        self, project_id: str
-    ) -> Generator["C4State", None, None]:
+    def atomic_modify(self, project_id: str) -> Generator["C4State", None, None]:
         """
         Atomically load, modify, and save state using optimistic locking.
 
@@ -679,11 +657,7 @@ class SupabaseStateStore(StateStore, LockStore):
         """
 
         # Load current state with version
-        query = (
-            self.client.table(self.TABLE_STATE)
-            .select("*")
-            .eq("project_id", project_id)
-        )
+        query = self.client.table(self.TABLE_STATE).select("*").eq("project_id", project_id)
 
         if self._team_id:
             query = query.eq("team_id", self._team_id)

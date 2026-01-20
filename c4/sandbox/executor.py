@@ -393,9 +393,19 @@ class SandboxExecutor:
 
         # Block dangerous commands
         blocked = [
-            "rm", "dd", "mkfs", "fdisk", "mount",
-            "shutdown", "reboot", "kill", "pkill",
-            "chmod", "chown", "sudo", "su",
+            "rm",
+            "dd",
+            "mkfs",
+            "fdisk",
+            "mount",
+            "shutdown",
+            "reboot",
+            "kill",
+            "pkill",
+            "chmod",
+            "chown",
+            "sudo",
+            "su",
         ]
 
         if executable in blocked:

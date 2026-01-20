@@ -346,9 +346,7 @@ class TestReviewPriority:
     def test_review_has_lower_priority(self, daemon):
         """Review task has priority reduced by review_priority_offset."""
         daemon.config.review_priority_offset = 10
-        daemon.c4_add_todo(
-            task_id="T-001", title="Feature", scope=None, dod="Impl", priority=50
-        )
+        daemon.c4_add_todo(task_id="T-001", title="Feature", scope=None, dod="Impl", priority=50)
         daemon.c4_start()
 
         # Implement
@@ -367,9 +365,7 @@ class TestReviewPriority:
     def test_review_priority_not_negative(self, daemon):
         """Review priority doesn't go below 0."""
         daemon.config.review_priority_offset = 100
-        daemon.c4_add_todo(
-            task_id="T-001", title="Feature", scope=None, dod="Impl", priority=5
-        )
+        daemon.c4_add_todo(task_id="T-001", title="Feature", scope=None, dod="Impl", priority=5)
         daemon.c4_start()
 
         impl = daemon.c4_get_task(worker_id="w1")

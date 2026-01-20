@@ -392,7 +392,7 @@ SUGGESTIONS:
             ReviewDecision.PENDING: "[PENDING]",
         }
 
-        comment = f"""## C4 Team Lead Review {emoji.get(result.decision, '')}
+        comment = f"""## C4 Team Lead Review {emoji.get(result.decision, "")}
 
 **Decision:** {result.decision.value.upper()}
 
@@ -488,11 +488,10 @@ SUGGESTIONS:
         """
         if task_id:
             return [
-                r for r in self._completed_reviews
+                r
+                for r in self._completed_reviews
                 if any(
-                    req.task_id == task_id
-                    for req in [self.get_review_request(r.request_id)]
-                    if req
+                    req.task_id == task_id for req in [self.get_review_request(r.request_id)] if req
                 )
             ]
         return list(self._completed_reviews)
@@ -509,7 +508,5 @@ SUGGESTIONS:
             "total_reviews": total,
             "pending": len(self._pending_reviews),
             "by_decision": by_decision,
-            "approval_rate": (
-                by_decision["approved"] / total if total > 0 else 0
-            ),
+            "approval_rate": (by_decision["approved"] / total if total > 0 else 0),
         }

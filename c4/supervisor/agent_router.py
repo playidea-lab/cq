@@ -445,59 +445,71 @@ def build_chain_prompt(
     ]
 
     if is_first:
-        lines.extend([
-            "## Your Role",
-            f"You are the **primary implementer** ({agent}) for this task.",
-            "Implement the core functionality according to the DoD.",
-            "",
-        ])
+        lines.extend(
+            [
+                "## Your Role",
+                f"You are the **primary implementer** ({agent}) for this task.",
+                "Implement the core functionality according to the DoD.",
+                "",
+            ]
+        )
     elif agent == "code-reviewer":
-        lines.extend([
-            "## Your Role",
-            "You are the **code reviewer** for this task.",
-            "Review the implementation for:",
-            "- Code quality and best practices",
-            "- Test coverage",
-            "- Security concerns",
-            "- Performance issues",
-            "",
-        ])
+        lines.extend(
+            [
+                "## Your Role",
+                "You are the **code reviewer** for this task.",
+                "Review the implementation for:",
+                "- Code quality and best practices",
+                "- Test coverage",
+                "- Security concerns",
+                "- Performance issues",
+                "",
+            ]
+        )
     elif agent == "test-automator":
-        lines.extend([
-            "## Your Role",
-            "You are the **test engineer** for this task.",
-            "Your responsibilities:",
-            "- Write unit tests for new functionality",
-            "- Add integration tests if applicable",
-            "- Ensure edge cases are covered",
-            "",
-        ])
+        lines.extend(
+            [
+                "## Your Role",
+                "You are the **test engineer** for this task.",
+                "Your responsibilities:",
+                "- Write unit tests for new functionality",
+                "- Add integration tests if applicable",
+                "- Ensure edge cases are covered",
+                "",
+            ]
+        )
     else:
-        lines.extend([
-            "## Your Role",
-            f"You are the **{agent}** in this chain.",
-            "Continue building on previous work.",
-            "",
-        ])
+        lines.extend(
+            [
+                "## Your Role",
+                f"You are the **{agent}** in this chain.",
+                "Continue building on previous work.",
+                "",
+            ]
+        )
 
     if handoff:
         lines.append(handoff.to_prompt())
 
     if handoff_instructions and not is_first:
-        lines.extend([
-            "## Handoff Guidelines",
-            handoff_instructions,
-            "",
-        ])
+        lines.extend(
+            [
+                "## Handoff Guidelines",
+                handoff_instructions,
+                "",
+            ]
+        )
 
     if not is_last:
         next_agent = agent_chain[agent_index + 1]
-        lines.extend([
-            "## Next Steps",
-            f"After completing your work, the **{next_agent}** will continue.",
-            "Prepare a clear handoff summary.",
-            "",
-        ])
+        lines.extend(
+            [
+                "## Next Steps",
+                f"After completing your work, the **{next_agent}** will continue.",
+                "Prepare a clear handoff summary.",
+                "",
+            ]
+        )
 
     return "\n".join(lines)
 

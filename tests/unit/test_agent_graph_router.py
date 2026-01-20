@@ -27,6 +27,7 @@ from c4.supervisor.agent_graph.models import (
     WorkflowSelect,
     WorkflowStep,
 )
+from c4.supervisor.agent_graph.router import GraphRouter
 from c4.supervisor.agent_router import (
     TASK_TYPE_AGENT_OVERRIDES,
     AgentChainConfig,
@@ -36,8 +37,6 @@ from c4.supervisor.agent_router import (
     get_recommended_agent,
     set_default_router,
 )
-from c4.supervisor.agent_graph.router import GraphRouter
-
 
 # ============================================================================
 # Fixtures
@@ -213,36 +212,28 @@ class TestGraphRouterInit:
 class TestGetRecommendedAgentGraph:
     """Tests for get_recommended_agent() with graph."""
 
-    def test_get_recommended_agent_finds_domain(
-        self, router_with_graph: GraphRouter
-    ) -> None:
+    def test_get_recommended_agent_finds_domain(self, router_with_graph: GraphRouter) -> None:
         """get_recommended_agent should return correct agent for known domain."""
         config = router_with_graph.get_recommended_agent("web-backend")
 
         assert config.primary == "backend-architect"
         assert "backend-architect" in config.chain
 
-    def test_get_recommended_agent_builds_chain(
-        self, router_with_graph: GraphRouter
-    ) -> None:
+    def test_get_recommended_agent_builds_chain(self, router_with_graph: GraphRouter) -> None:
         """get_recommended_agent should build agent chain from graph."""
         config = router_with_graph.get_recommended_agent("web-backend")
 
         # Chain should follow handoffs
         assert config.chain == ["backend-architect", "code-reviewer"]
 
-    def test_get_recommended_agent_none_domain(
-        self, router_with_graph: GraphRouter
-    ) -> None:
+    def test_get_recommended_agent_none_domain(self, router_with_graph: GraphRouter) -> None:
         """get_recommended_agent should return default for None domain."""
         config = router_with_graph.get_recommended_agent(None)
 
         assert config.primary == "general-purpose"
         assert config.chain == ["general-purpose"]
 
-    def test_get_recommended_agent_normalizes_domain(
-        self, router_with_graph: GraphRouter
-    ) -> None:
+    def test_get_recommended_agent_normalizes_domain(self, router_with_graph: GraphRouter) -> None:
         """get_recommended_agent should normalize domain strings."""
         # Test with underscores (should convert to dashes)
         config = router_with_graph.get_recommended_agent("web_backend")
@@ -295,9 +286,7 @@ class TestGetAgentForTaskType:
 
         assert agent == "debugger"
 
-    def test_task_type_with_domain_fallback(
-        self, router_with_graph: GraphRouter
-    ) -> None:
+    def test_task_type_with_domain_fallback(self, router_with_graph: GraphRouter) -> None:
         """get_agent_for_task_type should use domain when no task match."""
         agent = router_with_graph.get_agent_for_task_type(
             "unknown-task",
@@ -341,9 +330,7 @@ class TestGraphRouterMethods:
         assert "web-backend" in domains
         assert isinstance(domains, list)
 
-    def test_find_agents_for_skill_with_graph(
-        self, router_with_graph: GraphRouter
-    ) -> None:
+    def test_find_agents_for_skill_with_graph(self, router_with_graph: GraphRouter) -> None:
         """find_agents_for_skill should use graph when available."""
         # Need to add skill to graph first
         agents = router_with_graph.find_agents_for_skill("api-design")
@@ -357,19 +344,13 @@ class TestGraphRouterMethods:
 
         assert agents == []
 
-    def test_get_path_between_agents_with_graph(
-        self, router_with_graph: GraphRouter
-    ) -> None:
+    def test_get_path_between_agents_with_graph(self, router_with_graph: GraphRouter) -> None:
         """get_path_between_agents should use graph when available."""
-        path = router_with_graph.get_path_between_agents(
-            "backend-architect", "code-reviewer"
-        )
+        path = router_with_graph.get_path_between_agents("backend-architect", "code-reviewer")
 
         assert path == ["backend-architect", "code-reviewer"]
 
-    def test_get_path_between_agents_no_graph(
-        self, router_fallback: GraphRouter
-    ) -> None:
+    def test_get_path_between_agents_no_graph(self, router_fallback: GraphRouter) -> None:
         """get_path_between_agents should return None without graph."""
         path = router_fallback.get_path_between_agents("a", "b")
 

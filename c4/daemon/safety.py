@@ -91,10 +91,7 @@ class SafetyGuard:
             stats.iterations += 1
             stats.last_activity = datetime.now()
 
-        logger.debug(
-            f"Iteration recorded. Task: {task_id}, "
-            f"Total: {self._state.total_iterations}"
-        )
+        logger.debug(f"Iteration recorded. Task: {task_id}, Total: {self._state.total_iterations}")
 
     def record_failure(self, task_id: str | None = None) -> None:
         """Record a failure"""
@@ -104,9 +101,7 @@ class SafetyGuard:
         if task_id and task_id in self._state.task_stats:
             self._state.task_stats[task_id].failures += 1
 
-        logger.debug(
-            f"Failure recorded. Consecutive: {self._state.consecutive_failures}"
-        )
+        logger.debug(f"Failure recorded. Consecutive: {self._state.consecutive_failures}")
 
     def record_success(self) -> None:
         """Record a success (resets consecutive failure counter)"""

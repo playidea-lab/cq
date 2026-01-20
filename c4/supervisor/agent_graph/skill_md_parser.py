@@ -229,9 +229,7 @@ class SkillMdParser:
         frontmatter = parsed.frontmatter
 
         # Generate skill ID from name or filename
-        skill_id = frontmatter.get("id") or self._name_to_id(
-            parsed.name or skill_path.stem
-        )
+        skill_id = frontmatter.get("id") or self._name_to_id(parsed.name or skill_path.stem)
 
         # Extract triggers from "When to Use"
         keywords = self._extract_keywords(parsed.when_to_use + [parsed.description])
@@ -262,8 +260,7 @@ class SkillMdParser:
         domain_specific = None
         if "domain_config" in frontmatter:
             domain_specific = {
-                k: DomainSpecificConfig(**v)
-                for k, v in frontmatter["domain_config"].items()
+                k: DomainSpecificConfig(**v) for k, v in frontmatter["domain_config"].items()
             }
 
         # Metadata

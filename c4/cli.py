@@ -623,8 +623,8 @@ def _show_status(daemon: C4Daemon):
         console.print(f"[bold]Mode:[/bold] {status['execution_mode']}")
 
     if status["checkpoint"]["current"]:
-        cp_current = status['checkpoint']['current']
-        cp_state = status['checkpoint']['state']
+        cp_current = status["checkpoint"]["current"]
+        cp_state = status["checkpoint"]["state"]
         console.print(f"[bold]Checkpoint:[/bold] {cp_current} ({cp_state})")
 
     console.print()
@@ -664,9 +664,11 @@ def _show_status(daemon: C4Daemon):
         console.print()
 
     # Metrics
-    console.print(f"[dim]Events: {status['metrics']['events_emitted']} | "
-                  f"Tasks completed: {status['metrics']['tasks_completed']} | "
-                  f"Checkpoints passed: {status['metrics']['checkpoints_passed']}[/dim]")
+    console.print(
+        f"[dim]Events: {status['metrics']['events_emitted']} | "
+        f"Tasks completed: {status['metrics']['tasks_completed']} | "
+        f"Checkpoints passed: {status['metrics']['checkpoints_passed']}[/dim]"
+    )
 
 
 @c4_app.command()
@@ -1116,6 +1118,7 @@ def worker_join(
     # Generate worker ID if not provided
     if worker_id is None:
         import uuid
+
         worker_id = f"worker-{uuid.uuid4().hex[:8]}"
 
     _worker = daemon.worker_manager.register(worker_id)
@@ -1626,7 +1629,9 @@ def skill_validate(
                     console.print(f"      [dim]{issue}[/dim]")
 
         console.print()
-        console.print(f"Summary: {valid_count}/{len(results)} passed, {total_errors} errors, {total_warnings} warnings")
+        console.print(
+            f"Summary: {valid_count}/{len(results)} passed, {total_errors} errors, {total_warnings} warnings"
+        )
 
         # Check for circular dependencies
         cycles = validator.check_circular_dependencies(path)
@@ -1682,7 +1687,7 @@ def skill_info(
     console.print()
     console.print(f"[bold cyan]{skill.id}[/bold cyan] - {skill.name}")
     console.print()
-    console.print(f"[bold]Description:[/bold]")
+    console.print("[bold]Description:[/bold]")
     console.print(f"  {skill.description}")
     console.print()
 
@@ -1694,13 +1699,13 @@ def skill_info(
     console.print()
 
     # Capabilities
-    console.print(f"[bold]Capabilities:[/bold]")
+    console.print("[bold]Capabilities:[/bold]")
     for cap in skill.capabilities:
         console.print(f"  - {cap}")
     console.print()
 
     # Triggers
-    console.print(f"[bold]Triggers:[/bold]")
+    console.print("[bold]Triggers:[/bold]")
     if skill.triggers.keywords:
         console.print(f"  Keywords: {', '.join(skill.triggers.keywords)}")
     if skill.triggers.task_types:
@@ -1714,12 +1719,14 @@ def skill_info(
         console.print(f"[bold]Rules ({len(skill.rules)}):[/bold]")
         for rule in skill.rules:
             impact_color = {"critical": "red", "high": "yellow", "medium": "white", "low": "dim"}
-            console.print(f"  [{impact_color[rule.impact.value]}]{rule.id}[/{impact_color[rule.impact.value]}]: {rule.description[:60]}...")
+            console.print(
+                f"  [{impact_color[rule.impact.value]}]{rule.id}[/{impact_color[rule.impact.value]}]: {rule.description[:60]}..."
+            )
         console.print()
 
     # Dependencies
     if skill.dependencies:
-        console.print(f"[bold]Dependencies:[/bold]")
+        console.print("[bold]Dependencies:[/bold]")
         if skill.dependencies.required:
             console.print(f"  Required: {', '.join(skill.dependencies.required)}")
         if skill.dependencies.optional:
@@ -1728,21 +1735,21 @@ def skill_info(
 
     # Metadata
     if skill.metadata:
-        console.print(f"[bold]Metadata:[/bold]")
+        console.print("[bold]Metadata:[/bold]")
         console.print(f"  Version: {skill.metadata.version}")
         if skill.metadata.author:
             console.print(f"  Author: {skill.metadata.author}")
         if skill.metadata.tags:
             console.print(f"  Tags: {', '.join(skill.metadata.tags)}")
         if skill.metadata.deprecated:
-            console.print(f"  [red]DEPRECATED[/red]")
+            console.print("  [red]DEPRECATED[/red]")
             if skill.metadata.deprecated_by:
                 console.print(f"  Replaced by: {skill.metadata.deprecated_by}")
 
     # Related skills
     if skill.complementary_skills or skill.leads_to or skill.prerequisites:
         console.print()
-        console.print(f"[bold]Related Skills:[/bold]")
+        console.print("[bold]Related Skills:[/bold]")
         if skill.prerequisites:
             console.print(f"  Prerequisites: {', '.join(skill.prerequisites)}")
         if skill.complementary_skills:

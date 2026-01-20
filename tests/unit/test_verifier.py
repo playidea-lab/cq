@@ -1,6 +1,5 @@
 """Tests for the verification system."""
 
-
 from c4.supervisor.verifier import (
     DOMAIN_DEFAULT_VERIFICATIONS,
     BrowserVerifier,
@@ -107,10 +106,12 @@ class TestHttpVerifier:
     def test_unsupported_method(self):
         """Test unsupported HTTP method."""
         verifier = HttpVerifier()
-        result = verifier.verify({
-            "url": "http://example.com",
-            "method": "TRACE",
-        })
+        result = verifier.verify(
+            {
+                "url": "http://example.com",
+                "method": "TRACE",
+            }
+        )
         assert result.status == "error"
         assert "Unsupported" in result.summary
 
@@ -118,11 +119,13 @@ class TestHttpVerifier:
         """Test base_url is prepended correctly."""
         verifier = HttpVerifier()
         # This will fail to connect, but we can check the URL handling
-        result = verifier.verify({
-            "url": "/api/health",
-            "base_url": "http://localhost:9999",
-            "timeout": 1,
-        })
+        result = verifier.verify(
+            {
+                "url": "/api/health",
+                "base_url": "http://localhost:9999",
+                "timeout": 1,
+            }
+        )
         # Should attempt connection (fail is expected)
         assert result.status in ["fail", "error"]
 
@@ -145,49 +148,59 @@ class TestCliVerifier:
     def test_successful_command(self):
         """Test successful command execution."""
         verifier = CliVerifier()
-        result = verifier.verify({
-            "command": "echo hello",
-            "expected_output": "hello",
-        })
+        result = verifier.verify(
+            {
+                "command": "echo hello",
+                "expected_output": "hello",
+            }
+        )
         assert result.status == "pass"
         assert result.duration_ms is not None
 
     def test_failed_command_exit_code(self):
         """Test command with non-zero exit code."""
         verifier = CliVerifier()
-        result = verifier.verify({
-            "command": "exit 1",
-            "expected_exit_code": 0,
-        })
+        result = verifier.verify(
+            {
+                "command": "exit 1",
+                "expected_exit_code": 0,
+            }
+        )
         assert result.status == "fail"
         assert "Exit code 1" in result.summary
 
     def test_expected_output_not_found(self):
         """Test expected output not found."""
         verifier = CliVerifier()
-        result = verifier.verify({
-            "command": "echo foo",
-            "expected_output": "bar",
-        })
+        result = verifier.verify(
+            {
+                "command": "echo foo",
+                "expected_output": "bar",
+            }
+        )
         assert result.status == "fail"
         assert "Expected output not found" in result.summary
 
     def test_custom_exit_code(self):
         """Test command with custom expected exit code."""
         verifier = CliVerifier()
-        result = verifier.verify({
-            "command": "exit 42",
-            "expected_exit_code": 42,
-        })
+        result = verifier.verify(
+            {
+                "command": "exit 42",
+                "expected_exit_code": 42,
+            }
+        )
         assert result.status == "pass"
 
     def test_command_timeout(self):
         """Test command timeout."""
         verifier = CliVerifier()
-        result = verifier.verify({
-            "command": "sleep 10",
-            "timeout": 1,
-        })
+        result = verifier.verify(
+            {
+                "command": "sleep 10",
+                "timeout": 1,
+            }
+        )
         assert result.status == "fail"
         assert "timed out" in result.summary
 
@@ -227,15 +240,17 @@ class TestVerificationRunner:
 
     def test_run_cli_verification(self):
         """Test running a CLI verification."""
-        runner = VerificationRunner([
-            {
-                "type": "cli",
-                "name": "Echo Test",
-                "config": {
-                    "command": "echo test",
-                },
-            }
-        ])
+        runner = VerificationRunner(
+            [
+                {
+                    "type": "cli",
+                    "name": "Echo Test",
+                    "config": {
+                        "command": "echo test",
+                    },
+                }
+            ]
+        )
         results = runner.run_all()
         assert len(results) == 1
         assert results[0].status == "pass"
@@ -243,12 +258,14 @@ class TestVerificationRunner:
 
     def test_unknown_verifier_type(self):
         """Test handling of unknown verifier type."""
-        runner = VerificationRunner([
-            {
-                "type": "unknown_type",
-                "name": "Unknown Test",
-            }
-        ])
+        runner = VerificationRunner(
+            [
+                {
+                    "type": "unknown_type",
+                    "name": "Unknown Test",
+                }
+            ]
+        )
         results = runner.run_all()
         assert len(results) == 1
         assert results[0].status == "skip"
@@ -256,18 +273,20 @@ class TestVerificationRunner:
 
     def test_run_multiple_verifications(self):
         """Test running multiple verifications."""
-        runner = VerificationRunner([
-            {
-                "type": "cli",
-                "name": "Test 1",
-                "config": {"command": "echo 1"},
-            },
-            {
-                "type": "cli",
-                "name": "Test 2",
-                "config": {"command": "echo 2"},
-            },
-        ])
+        runner = VerificationRunner(
+            [
+                {
+                    "type": "cli",
+                    "name": "Test 1",
+                    "config": {"command": "echo 1"},
+                },
+                {
+                    "type": "cli",
+                    "name": "Test 2",
+                    "config": {"command": "echo 2"},
+                },
+            ]
+        )
         results = runner.run_all()
         assert len(results) == 2
         assert all(r.status == "pass" for r in results)
@@ -291,10 +310,12 @@ class TestVisualVerifier:
     def test_skip_when_pillow_not_installed(self):
         """Test skip when Pillow is not installed."""
         verifier = VisualVerifier()
-        result = verifier.verify({
-            "baseline": "/path/to/baseline.png",
-            "current": "/path/to/current.png",
-        })
+        result = verifier.verify(
+            {
+                "baseline": "/path/to/baseline.png",
+                "current": "/path/to/current.png",
+            }
+        )
         # Either skip (no pillow) or error (file not found)
         assert result.status in ["skip", "error"]
 
@@ -317,54 +338,64 @@ class TestMetricsVerifier:
     def test_no_metrics_error(self):
         """Test error when no metrics provided."""
         verifier = MetricsVerifier()
-        result = verifier.verify({
-            "thresholds": {"accuracy": {"min": 0.9}},
-        })
+        result = verifier.verify(
+            {
+                "thresholds": {"accuracy": {"min": 0.9}},
+            }
+        )
         assert result.status == "error"
         assert "No metrics" in result.summary
 
     def test_metrics_pass(self):
         """Test metrics within thresholds pass."""
         verifier = MetricsVerifier()
-        result = verifier.verify({
-            "metrics": {"accuracy": 0.95, "loss": 0.05},
-            "thresholds": {
-                "accuracy": {"min": 0.9},
-                "loss": {"max": 0.1},
-            },
-        })
+        result = verifier.verify(
+            {
+                "metrics": {"accuracy": 0.95, "loss": 0.05},
+                "thresholds": {
+                    "accuracy": {"min": 0.9},
+                    "loss": {"max": 0.1},
+                },
+            }
+        )
         assert result.status == "pass"
         assert "2 metrics" in result.summary
 
     def test_metrics_fail_min(self):
         """Test metrics below min threshold fail."""
         verifier = MetricsVerifier()
-        result = verifier.verify({
-            "metrics": {"accuracy": 0.8},
-            "thresholds": {"accuracy": {"min": 0.9}},
-        })
+        result = verifier.verify(
+            {
+                "metrics": {"accuracy": 0.8},
+                "thresholds": {"accuracy": {"min": 0.9}},
+            }
+        )
         assert result.status == "fail"
         assert "accuracy" in result.summary
 
     def test_metrics_fail_max(self):
         """Test metrics above max threshold fail."""
         verifier = MetricsVerifier()
-        result = verifier.verify({
-            "metrics": {"loss": 0.5},
-            "thresholds": {"loss": {"max": 0.1}},
-        })
+        result = verifier.verify(
+            {
+                "metrics": {"loss": 0.5},
+                "thresholds": {"loss": {"max": 0.1}},
+            }
+        )
         assert result.status == "fail"
 
     def test_missing_metric(self):
         """Test missing metric is reported as failure."""
         verifier = MetricsVerifier()
-        result = verifier.verify({
-            "metrics": {"accuracy": 0.95},
-            "thresholds": {
-                "accuracy": {"min": 0.9},
-                "f1_score": {"min": 0.8},  # Not in metrics
-            },
-        })
+        result = verifier.verify(
+            {
+                "metrics": {"accuracy": 0.95},
+                "thresholds": {
+                    "accuracy": {"min": 0.9},
+                    "f1_score": {"min": 0.8},  # Not in metrics
+                },
+            }
+        )
         assert result.status == "fail"
         assert "f1_score" in result.details["failures"][0]["metric"]
 
@@ -387,29 +418,35 @@ class TestDryrunVerifier:
     def test_successful_dryrun(self):
         """Test successful dry-run."""
         verifier = DryrunVerifier()
-        result = verifier.verify({
-            "command": "echo 'Plan: 0 to add, 0 to change'",
-            "success_patterns": ["Plan:"],
-        })
+        result = verifier.verify(
+            {
+                "command": "echo 'Plan: 0 to add, 0 to change'",
+                "success_patterns": ["Plan:"],
+            }
+        )
         assert result.status == "pass"
 
     def test_failure_pattern_detected(self):
         """Test failure pattern detection."""
         verifier = DryrunVerifier()
-        result = verifier.verify({
-            "command": "echo 'Error: something failed'",
-            "failure_patterns": ["Error:"],
-        })
+        result = verifier.verify(
+            {
+                "command": "echo 'Error: something failed'",
+                "failure_patterns": ["Error:"],
+            }
+        )
         assert result.status == "fail"
         assert "Error:" in result.summary
 
     def test_success_pattern_not_matched(self):
         """Test when success pattern not matched."""
         verifier = DryrunVerifier()
-        result = verifier.verify({
-            "command": "echo 'hello world'",
-            "success_patterns": ["Plan:"],
-        })
+        result = verifier.verify(
+            {
+                "command": "echo 'hello world'",
+                "success_patterns": ["Plan:"],
+            }
+        )
         assert result.status == "fail"
         assert "No success patterns" in result.summary
 

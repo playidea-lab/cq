@@ -60,15 +60,15 @@ class TestMockedAPIFlow:
     def test_successful_review_flow(self, mock_completion, tmp_path: Path):
         """Test complete successful review flow."""
         # Setup mock
-        response_json = json.dumps({
-            "decision": "APPROVE",
-            "checkpoint": "CP-001",
-            "notes": "All tests pass, code looks good",
-            "required_changes": [],
-        })
-        mock_completion.return_value = self.create_mock_response(
-            f"```json\n{response_json}\n```"
+        response_json = json.dumps(
+            {
+                "decision": "APPROVE",
+                "checkpoint": "CP-001",
+                "notes": "All tests pass, code looks good",
+                "required_changes": [],
+            }
         )
+        mock_completion.return_value = self.create_mock_response(f"```json\n{response_json}\n```")
 
         # Create backend and run review
         backend = LiteLLMBackend(
@@ -95,18 +95,18 @@ class TestMockedAPIFlow:
     @patch("litellm.completion")
     def test_request_changes_flow(self, mock_completion, tmp_path: Path):
         """Test review flow that requests changes."""
-        response_json = json.dumps({
-            "decision": "REQUEST_CHANGES",
-            "checkpoint": "CP-002",
-            "notes": "Several issues found",
-            "required_changes": [
-                "Fix type error in line 42",
-                "Add missing test coverage",
-            ],
-        })
-        mock_completion.return_value = self.create_mock_response(
-            f"```json\n{response_json}\n```"
+        response_json = json.dumps(
+            {
+                "decision": "REQUEST_CHANGES",
+                "checkpoint": "CP-002",
+                "notes": "Several issues found",
+                "required_changes": [
+                    "Fix type error in line 42",
+                    "Add missing test coverage",
+                ],
+            }
         )
+        mock_completion.return_value = self.create_mock_response(f"```json\n{response_json}\n```")
 
         backend = LiteLLMBackend(model="claude-sonnet-4-20250514", api_key="test-key")
         bundle_dir = tmp_path / "bundle"
@@ -121,15 +121,15 @@ class TestMockedAPIFlow:
     @patch("litellm.completion")
     def test_replan_flow(self, mock_completion, tmp_path: Path):
         """Test review flow that requires replanning."""
-        response_json = json.dumps({
-            "decision": "REPLAN",
-            "checkpoint": "CP-003",
-            "notes": "Current approach is not scalable",
-            "required_changes": [],
-        })
-        mock_completion.return_value = self.create_mock_response(
-            f"```json\n{response_json}\n```"
+        response_json = json.dumps(
+            {
+                "decision": "REPLAN",
+                "checkpoint": "CP-003",
+                "notes": "Current approach is not scalable",
+                "required_changes": [],
+            }
         )
+        mock_completion.return_value = self.create_mock_response(f"```json\n{response_json}\n```")
 
         backend = LiteLLMBackend(model="claude-sonnet-4-20250514", api_key="test-key")
         bundle_dir = tmp_path / "bundle"
@@ -145,7 +145,7 @@ class TestResponseParsing:
 
     def test_parse_json_in_code_block(self):
         """Parse JSON within markdown code block."""
-        response = '''Here's my review:
+        response = """Here's my review:
 
 ```json
 {
@@ -155,28 +155,28 @@ class TestResponseParsing:
     "required_changes": []
 }
 ```
-'''
+"""
         result = ResponseParser.parse(response)
         assert result.decision == SupervisorDecision.APPROVE
 
     def test_parse_raw_json(self):
         """Parse raw JSON without code block."""
-        response = '''{
+        response = """{
     "decision": "REQUEST_CHANGES",
     "checkpoint": "CP-002",
     "notes": "Needs work",
     "required_changes": ["Fix bug"]
-}'''
+}"""
         result = ResponseParser.parse(response)
         assert result.decision == SupervisorDecision.REQUEST_CHANGES
 
     def test_parse_json_with_extra_text(self):
         """Parse JSON with surrounding text."""
-        response = '''After reviewing the code, here's my assessment:
+        response = """After reviewing the code, here's my assessment:
 
 {"decision": "APPROVE", "checkpoint": "CP-001", "notes": "OK", "required_changes": []}
 
-Please let me know if you have questions.'''
+Please let me know if you have questions."""
         result = ResponseParser.parse(response)
         assert result.decision == SupervisorDecision.APPROVE
 
@@ -262,6 +262,7 @@ class TestErrorHandlingScenarios:
     @patch("time.sleep")
     def test_retry_with_backoff_permanent_failure(self, mock_sleep):
         """Permanent errors fail immediately."""
+
         def auth_error():
             raise Exception("401 Invalid API Key")
 
@@ -279,12 +280,14 @@ class TestUsageTracking:
         mock_response.choices = [
             MagicMock(
                 message=MagicMock(
-                    content=json.dumps({
-                        "decision": "APPROVE",
-                        "checkpoint": "CP-001",
-                        "notes": "OK",
-                        "required_changes": [],
-                    })
+                    content=json.dumps(
+                        {
+                            "decision": "APPROVE",
+                            "checkpoint": "CP-001",
+                            "notes": "OK",
+                            "required_changes": [],
+                        }
+                    )
                 )
             )
         ]
@@ -457,18 +460,18 @@ class TestEndToEndIntegration:
         assert optimizer.check_budget(estimate.estimated_cost) is True
 
         # 4. Setup mock response
-        response_content = json.dumps({
-            "decision": "REQUEST_CHANGES",
-            "checkpoint": "CP-001",
-            "notes": "Found potential SQL injection vulnerability",
-            "required_changes": [
-                "Use parameterized queries in user_service.py",
-            ],
-        })
+        response_content = json.dumps(
+            {
+                "decision": "REQUEST_CHANGES",
+                "checkpoint": "CP-001",
+                "notes": "Found potential SQL injection vulnerability",
+                "required_changes": [
+                    "Use parameterized queries in user_service.py",
+                ],
+            }
+        )
         mock_response = MagicMock()
-        mock_response.choices = [
-            MagicMock(message=MagicMock(content=response_content))
-        ]
+        mock_response.choices = [MagicMock(message=MagicMock(content=response_content))]
         mock_usage = MagicMock()
         mock_usage.prompt_tokens = 500
         mock_usage.completion_tokens = 200
@@ -520,18 +523,18 @@ class TestEndToEndIntegration:
                 choices=[
                     MagicMock(
                         message=MagicMock(
-                            content=json.dumps({
-                                "decision": "APPROVE",
-                                "checkpoint": "CP-001",
-                                "notes": "OK",
-                                "required_changes": [],
-                            })
+                            content=json.dumps(
+                                {
+                                    "decision": "APPROVE",
+                                    "checkpoint": "CP-001",
+                                    "notes": "OK",
+                                    "required_changes": [],
+                                }
+                            )
                         )
                     )
                 ],
-                usage=MagicMock(
-                    prompt_tokens=100, completion_tokens=50, total_tokens=150
-                ),
+                usage=MagicMock(prompt_tokens=100, completion_tokens=50, total_tokens=150),
                 _hidden_params={"response_cost": 0.001},
             ),
         ]
@@ -569,7 +572,7 @@ class TestRealAPI:
 
         # Simple prompt to minimize cost
         result = backend.run_review(
-            prompt='''Review this simple code:
+            prompt="""Review this simple code:
 ```python
 def add(a, b):
     return a + b
@@ -578,7 +581,7 @@ def add(a, b):
 Respond with JSON:
 {"decision": "APPROVE", "checkpoint": "CP-001",
 "notes": "Simple addition function", "required_changes": []}
-''',
+""",
             bundle_dir=bundle_dir,
             timeout=30,
         )

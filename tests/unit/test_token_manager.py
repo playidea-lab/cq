@@ -303,31 +303,27 @@ class TestAuthenticatedClient:
         assert auth_client._client is None
 
     @patch.object(AuthenticatedClient, "client", new_callable=lambda: MagicMock())
-    def test_get_request(
-        self, mock_client: MagicMock, auth_client: AuthenticatedClient
-    ) -> None:
+    def test_get_request(self, mock_client: MagicMock, auth_client: AuthenticatedClient) -> None:
         """Test GET request includes auth headers."""
         # Setup mock
         mock_response = MagicMock()
         mock_client.get.return_value = mock_response
 
         auth_client._client = mock_client
-        result = auth_client.get("/test")
+        auth_client.get("/test")
 
         mock_client.get.assert_called_once()
         call_kwargs = mock_client.get.call_args[1]
         assert "Authorization" in call_kwargs["headers"]
 
     @patch.object(AuthenticatedClient, "client", new_callable=lambda: MagicMock())
-    def test_post_request(
-        self, mock_client: MagicMock, auth_client: AuthenticatedClient
-    ) -> None:
+    def test_post_request(self, mock_client: MagicMock, auth_client: AuthenticatedClient) -> None:
         """Test POST request includes auth headers."""
         mock_response = MagicMock()
         mock_client.post.return_value = mock_response
 
         auth_client._client = mock_client
-        result = auth_client.post("/test", json={"key": "value"})
+        auth_client.post("/test", json={"key": "value"})
 
         mock_client.post.assert_called_once()
         call_kwargs = mock_client.post.call_args[1]
@@ -335,30 +331,26 @@ class TestAuthenticatedClient:
         assert call_kwargs["json"] == {"key": "value"}
 
     @patch.object(AuthenticatedClient, "client", new_callable=lambda: MagicMock())
-    def test_put_request(
-        self, mock_client: MagicMock, auth_client: AuthenticatedClient
-    ) -> None:
+    def test_put_request(self, mock_client: MagicMock, auth_client: AuthenticatedClient) -> None:
         """Test PUT request includes auth headers."""
         mock_response = MagicMock()
         mock_client.put.return_value = mock_response
 
         auth_client._client = mock_client
-        result = auth_client.put("/test", json={"data": "update"})
+        auth_client.put("/test", json={"data": "update"})
 
         mock_client.put.assert_called_once()
         call_kwargs = mock_client.put.call_args[1]
         assert "Authorization" in call_kwargs["headers"]
 
     @patch.object(AuthenticatedClient, "client", new_callable=lambda: MagicMock())
-    def test_delete_request(
-        self, mock_client: MagicMock, auth_client: AuthenticatedClient
-    ) -> None:
+    def test_delete_request(self, mock_client: MagicMock, auth_client: AuthenticatedClient) -> None:
         """Test DELETE request includes auth headers."""
         mock_response = MagicMock()
         mock_client.delete.return_value = mock_response
 
         auth_client._client = mock_client
-        result = auth_client.delete("/test")
+        auth_client.delete("/test")
 
         mock_client.delete.assert_called_once()
         call_kwargs = mock_client.delete.call_args[1]

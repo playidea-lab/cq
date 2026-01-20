@@ -232,9 +232,11 @@ class TestLoadRules:
 
         # Check routing rules
         routing_rules = rules[0]
-        assert routing_rules.rules.overrides is not None or \
-               routing_rules.rules.chain_extensions is not None or \
-               routing_rules.rules.selection is not None
+        assert (
+            routing_rules.rules.overrides is not None
+            or routing_rules.rules.chain_extensions is not None
+            or routing_rules.rules.selection is not None
+        )
 
 
 class TestLoadAll:
@@ -309,8 +311,10 @@ class TestSchemaValidation:
         with pytest.raises(SchemaValidationError) as exc_info:
             loader.load_skills()
 
-        assert "pattern" in str(exc_info.value.errors).lower() or \
-               "id" in str(exc_info.value.errors).lower()
+        assert (
+            "pattern" in str(exc_info.value.errors).lower()
+            or "id" in str(exc_info.value.errors).lower()
+        )
 
 
 class TestYAMLParseErrors:

@@ -6,7 +6,6 @@ from unittest.mock import MagicMock
 import pytest
 
 from c4.daemon.task_dispatcher import (
-    AssignmentResult,
     TaskAssignment,
     TaskDispatcher,
     TaskPriority,
@@ -185,9 +184,7 @@ class TestFindEligibleTask:
         task = dispatcher.find_eligible_task("worker-1")
         assert task == "T-001"
 
-    def test_skip_repair_for_original_worker(
-        self, dispatcher: TaskDispatcher
-    ) -> None:
+    def test_skip_repair_for_original_worker(self, dispatcher: TaskDispatcher) -> None:
         """Test skipping repair task for original worker."""
         # Mark T-001 as previously attempted by worker-1
         dispatcher.record_assignment("T-001", "worker-1")
@@ -196,9 +193,7 @@ class TestFindEligibleTask:
         task = dispatcher.find_eligible_task("worker-1")
         assert task == "T-002"
 
-    def test_repair_task_for_different_worker(
-        self, dispatcher: TaskDispatcher
-    ) -> None:
+    def test_repair_task_for_different_worker(self, dispatcher: TaskDispatcher) -> None:
         """Test repair task eligible for different worker."""
         dispatcher.record_assignment("T-001", "worker-1")
 
@@ -226,9 +221,7 @@ class TestAssignNextTask:
         assert result.success is False
         assert "not registered" in result.reason
 
-    def test_busy_worker(
-        self, dispatcher: TaskDispatcher, mock_state: C4State
-    ) -> None:
+    def test_busy_worker(self, dispatcher: TaskDispatcher, mock_state: C4State) -> None:
         """Test assignment fails for busy worker."""
         mock_state.workers["worker-1"].state = "busy"
 
@@ -237,9 +230,7 @@ class TestAssignNextTask:
         assert result.success is False
         assert "not idle" in result.reason
 
-    def test_no_pending_tasks(
-        self, dispatcher: TaskDispatcher, mock_state: C4State
-    ) -> None:
+    def test_no_pending_tasks(self, dispatcher: TaskDispatcher, mock_state: C4State) -> None:
         """Test assignment fails when no tasks."""
         mock_state.queue.pending = []
 
@@ -302,9 +293,7 @@ class TestPeerReview:
 class TestLoadBalancing:
     """Test load balancing features."""
 
-    def test_get_worker_load(
-        self, dispatcher: TaskDispatcher, mock_state: C4State
-    ) -> None:
+    def test_get_worker_load(self, dispatcher: TaskDispatcher, mock_state: C4State) -> None:
         """Test getting worker load."""
         mock_state.workers["worker-1"].state = "busy"
 
@@ -319,9 +308,7 @@ class TestLoadBalancing:
 
         assert worker in ["worker-1", "worker-2"]
 
-    def test_no_idle_workers(
-        self, dispatcher: TaskDispatcher, mock_state: C4State
-    ) -> None:
+    def test_no_idle_workers(self, dispatcher: TaskDispatcher, mock_state: C4State) -> None:
         """Test no least loaded when all busy."""
         mock_state.workers["worker-1"].state = "busy"
         mock_state.workers["worker-2"].state = "busy"

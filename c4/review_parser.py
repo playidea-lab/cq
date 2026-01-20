@@ -144,11 +144,7 @@ def filter_issues_by_severity(
         raise ValueError(f"Invalid severity: {min_severity}. Must be one of {SEVERITY_ORDER}")
 
     threshold = SEVERITY_ORDER.index(min_severity)
-    return [
-        issue
-        for issue in issues
-        if SEVERITY_ORDER.index(issue.severity) <= threshold
-    ]
+    return [issue for issue in issues if SEVERITY_ORDER.index(issue.severity) <= threshold]
 
 
 def issues_to_task_titles(

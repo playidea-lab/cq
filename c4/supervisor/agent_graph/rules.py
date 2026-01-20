@@ -356,9 +356,7 @@ class RuleEngine:
         Returns:
             List of all matching chain extensions
         """
-        return [
-            ext for ext in self._chain_extensions if evaluate(ext.condition, task)
-        ]
+        return [ext for ext in self._chain_extensions if evaluate(ext.condition, task)]
 
     def evaluate_condition(self, condition: Condition, task: TaskLike) -> bool:
         """Evaluate a condition against a task.

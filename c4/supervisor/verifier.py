@@ -818,40 +818,50 @@ class MetricsVerifier(Verifier):
 
         for metric_name, threshold in thresholds.items():
             if metric_name not in metrics:
-                failures.append({
-                    "metric": metric_name,
-                    "reason": "missing",
-                })
+                failures.append(
+                    {
+                        "metric": metric_name,
+                        "reason": "missing",
+                    }
+                )
                 continue
 
             value = metrics[metric_name]
 
             if "min" in threshold and value < threshold["min"]:
-                failures.append({
-                    "metric": metric_name,
-                    "value": value,
-                    "threshold": f"min {threshold['min']}",
-                    "reason": f"{value} < {threshold['min']}",
-                })
+                failures.append(
+                    {
+                        "metric": metric_name,
+                        "value": value,
+                        "threshold": f"min {threshold['min']}",
+                        "reason": f"{value} < {threshold['min']}",
+                    }
+                )
             elif "max" in threshold and value > threshold["max"]:
-                failures.append({
-                    "metric": metric_name,
-                    "value": value,
-                    "threshold": f"max {threshold['max']}",
-                    "reason": f"{value} > {threshold['max']}",
-                })
+                failures.append(
+                    {
+                        "metric": metric_name,
+                        "value": value,
+                        "threshold": f"max {threshold['max']}",
+                        "reason": f"{value} > {threshold['max']}",
+                    }
+                )
             elif "eq" in threshold and value != threshold["eq"]:
-                failures.append({
-                    "metric": metric_name,
-                    "value": value,
-                    "threshold": f"eq {threshold['eq']}",
-                    "reason": f"{value} != {threshold['eq']}",
-                })
+                failures.append(
+                    {
+                        "metric": metric_name,
+                        "value": value,
+                        "threshold": f"eq {threshold['eq']}",
+                        "reason": f"{value} != {threshold['eq']}",
+                    }
+                )
             else:
-                passes.append({
-                    "metric": metric_name,
-                    "value": value,
-                })
+                passes.append(
+                    {
+                        "metric": metric_name,
+                        "value": value,
+                    }
+                )
 
         if failures:
             return VerificationResult(

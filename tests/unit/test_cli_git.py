@@ -32,7 +32,7 @@ class TestInitGitRepo:
 
         # Initialize git first
         subprocess.run(["git", "init"], cwd=temp_project, capture_output=True)
-        
+
         result = _init_git_repo(temp_project)
 
         assert result["git_init"] is True
@@ -72,7 +72,7 @@ class TestInitGitRepo:
         # Create .gitignore with C4 patterns already
         gitignore = temp_project / ".gitignore"
         gitignore.write_text(".c4/locks/\n.c4/daemon.pid\n")
-        original_content = gitignore.read_text()
+        gitignore.read_text()
 
         result = _init_git_repo(temp_project)
 
@@ -88,7 +88,7 @@ class TestInitGitRepo:
         result = _init_git_repo(temp_project)
 
         assert result["initial_commit"] is True
-        
+
         # Verify commit exists
         log_result = subprocess.run(
             ["git", "log", "--oneline", "-1"],
@@ -129,9 +129,7 @@ class TestInitGitRepo:
         assert result["initial_commit"] is True
 
     @patch("c4.cli.subprocess.run")
-    def test_handles_git_not_found(
-        self, mock_run: MagicMock, temp_project: Path
-    ) -> None:
+    def test_handles_git_not_found(self, mock_run: MagicMock, temp_project: Path) -> None:
         """Test graceful handling when git is not installed."""
         from c4.cli import _init_git_repo
 

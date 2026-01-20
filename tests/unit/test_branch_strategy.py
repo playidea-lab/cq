@@ -10,11 +10,10 @@ These tests verify:
 """
 
 import subprocess
-from pathlib import Path
 
 import pytest
 
-from c4.daemon.git_ops import GitOperations, GitResult
+from c4.daemon.git_ops import GitOperations
 from c4.mcp_server import C4Daemon
 from c4.models import ProjectStatus
 from c4.models.config import C4Config

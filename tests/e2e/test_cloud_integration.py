@@ -673,9 +673,7 @@ print(f"Result: {result}")
 
     def test_sandbox_security_boundaries(self, tmp_path):
         """Test sandbox security boundaries are enforced."""
-        sandbox = SandboxExecutor(
-            SandboxConfig(work_dir=tmp_path, limits=ResourceLimits())
-        )
+        sandbox = SandboxExecutor(SandboxConfig(work_dir=tmp_path, limits=ResourceLimits()))
 
         # Test blocked commands
         blocked = ["rm", "sudo", "chmod", "kill", "pkill"]

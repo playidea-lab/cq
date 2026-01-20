@@ -50,9 +50,7 @@ class TestDomainDetector:
     def test_detect_web_backend_fastapi(self, temp_project):
         """Test detection of FastAPI project."""
         pyproject = temp_project / "pyproject.toml"
-        pyproject.write_text(
-            '[project]\nname = "myapi"\ndependencies = ["fastapi"]'
-        )
+        pyproject.write_text('[project]\nname = "myapi"\ndependencies = ["fastapi"]')
 
         detector = DomainDetector(temp_project)
         result = detector.detect()
@@ -63,9 +61,7 @@ class TestDomainDetector:
     def test_detect_ml_pytorch(self, temp_project):
         """Test detection of PyTorch ML project."""
         pyproject = temp_project / "pyproject.toml"
-        pyproject.write_text(
-            '[project]\nname = "mlproject"\ndependencies = ["torch"]'
-        )
+        pyproject.write_text('[project]\nname = "mlproject"\ndependencies = ["torch"]')
 
         detector = DomainDetector(temp_project)
         result = detector.detect()
@@ -97,21 +93,25 @@ class TestDomainDetector:
         """Test inferring domain from description."""
         detector = DomainDetector(temp_project)
 
-        assert detector.infer_domain_from_description(
-            "웹 대시보드를 React로 만들고 싶어"
-        ) == Domain.WEB_FRONTEND
+        assert (
+            detector.infer_domain_from_description("웹 대시보드를 React로 만들고 싶어")
+            == Domain.WEB_FRONTEND
+        )
 
-        assert detector.infer_domain_from_description(
-            "FastAPI로 REST API 서버를 구축하려고 해"
-        ) == Domain.WEB_BACKEND
+        assert (
+            detector.infer_domain_from_description("FastAPI로 REST API 서버를 구축하려고 해")
+            == Domain.WEB_BACKEND
+        )
 
-        assert detector.infer_domain_from_description(
-            "PyTorch로 이미지 분류 모델을 학습할 거야"
-        ) == Domain.ML_DL
+        assert (
+            detector.infer_domain_from_description("PyTorch로 이미지 분류 모델을 학습할 거야")
+            == Domain.ML_DL
+        )
 
-        assert detector.infer_domain_from_description(
-            "AWS 인프라를 Terraform으로 관리하고 싶어"
-        ) == Domain.INFRA
+        assert (
+            detector.infer_domain_from_description("AWS 인프라를 Terraform으로 관리하고 싶어")
+            == Domain.INFRA
+        )
 
 
 class TestEARSRequirement:
@@ -382,9 +382,7 @@ class TestInterviewEngine:
         """Test fullstack domain from multiple selections."""
         engine = InterviewEngine()
 
-        engine.process_answers({
-            "domain": ["웹 프론트엔드", "웹 백엔드"]
-        })
+        engine.process_answers({"domain": ["웹 프론트엔드", "웹 백엔드"]})
 
         assert engine.context.domain == Domain.FULLSTACK
 
@@ -402,10 +400,12 @@ class TestInterviewEngine:
         assert engine.get_current_phase() == InterviewPhase.CORE_FEATURES
 
         # Phase 3: Core features
-        engine.process_answers({
-            "ui_features": ["인증/로그인", "대시보드"],
-            "interactions": ["없음"],
-        })
+        engine.process_answers(
+            {
+                "ui_features": ["인증/로그인", "대시보드"],
+                "interactions": ["없음"],
+            }
+        )
         assert engine.get_current_phase() == InterviewPhase.FEATURE_DETAILS
         assert len(engine.context.core_features) > 0
 
@@ -418,10 +418,12 @@ class TestInterviewEngine:
         assert engine.get_current_phase() == InterviewPhase.TECH_STACK
 
         # Phase 5: Tech stack
-        engine.process_answers({
-            "framework": "React (권장)",
-            "language": "TypeScript (권장)",
-        })
+        engine.process_answers(
+            {
+                "framework": "React (권장)",
+                "language": "TypeScript (권장)",
+            }
+        )
         assert engine.get_current_phase() == InterviewPhase.VALIDATION
 
         # Phase 6: Validation

@@ -119,7 +119,16 @@ class TestWorkflowGuide:
 
     def test_workflow_guide_all_statuses(self):
         """Test that all project statuses have workflow guides"""
-        statuses = ["INIT", "DISCOVERY", "DESIGN", "PLAN", "EXECUTE", "CHECKPOINT", "HALTED", "COMPLETE"]
+        statuses = [
+            "INIT",
+            "DISCOVERY",
+            "DESIGN",
+            "PLAN",
+            "EXECUTE",
+            "CHECKPOINT",
+            "HALTED",
+            "COMPLETE",
+        ]
         for status in statuses:
             guide = _get_workflow_guide(status)
             assert "phase" in guide
@@ -412,9 +421,7 @@ class TestC4GetTask:
 
         # Add two tasks, second depends on first (with normalized dependency)
         daemon.c4_add_todo("T-001", "First task", None, "First DoD")
-        daemon.c4_add_todo(
-            "T-002", "Second task", None, "Second DoD", dependencies=["T-001-0"]
-        )
+        daemon.c4_add_todo("T-002", "Second task", None, "Second DoD", dependencies=["T-001-0"])
 
         # Worker 1 gets T-001 (the only one without deps)
         task1 = daemon.c4_get_task("worker-1")
@@ -617,7 +624,9 @@ class TestTaskDependencies:
 
         # Add tasks with dependencies (IDs normalized to T-XXX-0)
         result1 = daemon.c4_add_todo("T-001", "Base task", None, "Base")
-        result2 = daemon.c4_add_todo("T-002", "Dependent", None, "Depends on T-001", dependencies=[result1["task_id"]])
+        daemon.c4_add_todo(
+            "T-002", "Dependent", None, "Depends on T-001", dependencies=[result1["task_id"]]
+        )
 
         # Worker should only get T-001-0 (T-002-0 has unmet deps)
         task = daemon.c4_get_task("worker-1")
@@ -633,7 +642,9 @@ class TestTaskDependencies:
         daemon = daemon_in_execute
 
         result1 = daemon.c4_add_todo("T-001", "Base", None, "Base")
-        result2 = daemon.c4_add_todo("T-002", "Dependent", None, "After T-001", dependencies=[result1["task_id"]])
+        result2 = daemon.c4_add_todo(
+            "T-002", "Dependent", None, "After T-001", dependencies=[result1["task_id"]]
+        )
 
         # Get and complete T-001-0
         daemon.c4_get_task("worker-1")
@@ -739,6 +750,7 @@ class TestC4GetTaskExpiredLock:
 
         # Manually expire the lock in SQLite
         import sqlite3
+
         db_path = daemon.c4_dir / "c4.db"
         conn = sqlite3.connect(db_path)
         expired_time = (datetime.now() - timedelta(seconds=1)).isoformat()
@@ -750,7 +762,7 @@ class TestC4GetTaskExpiredLock:
         conn.close()
 
         # Simulate worker restart: call get_task again
-        result2 = daemon.c4_get_task("worker-1")
+        daemon.c4_get_task("worker-1")
 
         # Task should have been moved back to pending due to expired lock
         # and then reassigned to the same worker from pending
@@ -778,6 +790,7 @@ class TestC4GetTaskExpiredLock:
         # Manually change lock owner to worker-2 in SQLite (simulating lock takeover)
         # Since we now use SQLite for locks, modify the lock store directly
         import sqlite3
+
         db_path = daemon.c4_dir / "c4.db"
         conn = sqlite3.connect(db_path)
         conn.execute(
@@ -788,7 +801,7 @@ class TestC4GetTaskExpiredLock:
         conn.close()
 
         # Worker 1 tries to resume - should fail because lock is now owned by worker-2
-        result2 = daemon.c4_get_task("worker-1")
+        daemon.c4_get_task("worker-1")
 
         # Task should have been moved back to pending
         # Note: c4_get_task reloads state, so get fresh reference
@@ -818,7 +831,7 @@ class TestScopeNoneTaskResume:
         daemon._save_tasks()
 
         # Worker 1 tries to resume - should detect inconsistency
-        result2 = daemon.c4_get_task("worker-1")
+        daemon.c4_get_task("worker-1")
 
         # Task should have been moved back to pending
         state = daemon.state_machine.state
@@ -842,7 +855,7 @@ class TestScopeNoneTaskResume:
         daemon._save_tasks()
 
         # Try to resume - should detect inconsistency
-        result2 = daemon.c4_get_task("worker-1")
+        daemon.c4_get_task("worker-1")
 
         state = daemon.state_machine.state
         assert "T-001" in state.queue.pending or "T-001" in state.queue.in_progress
@@ -1079,9 +1092,7 @@ class TestRepairDepthFalsePositive:
 
     def test_task_id_with_multiple_repair_not_prefix(self, daemon):
         """Test task ID with multiple REPAIR- occurrences (not prefix) passes"""
-        task = Task(
-            id="API-REPAIR-REPAIR-BUG", title="Double repair string", dod="Test"
-        )
+        task = Task(id="API-REPAIR-REPAIR-BUG", title="Double repair string", dod="Test")
         daemon.add_task(task)
         daemon.state_machine.transition("skip_discovery", "test")
         daemon.state_machine.transition("c4_run", "test")
@@ -1297,15 +1308,11 @@ class TestConcurrentOperations:
         daemon.c4_get_task("worker-1")
 
         # First submit
-        result1 = daemon.c4_submit(
-            "T-001", "abc123", [{"name": "test", "status": "pass"}]
-        )
+        result1 = daemon.c4_submit("T-001", "abc123", [{"name": "test", "status": "pass"}])
         assert result1.success is True
 
         # Second submit - task already done
-        result2 = daemon.c4_submit(
-            "T-001", "def456", [{"name": "test", "status": "pass"}]
-        )
+        result2 = daemon.c4_submit("T-001", "def456", [{"name": "test", "status": "pass"}])
         assert result2.success is False
 
 

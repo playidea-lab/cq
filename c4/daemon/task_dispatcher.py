@@ -218,9 +218,7 @@ class TaskDispatcher:
 
         # Create assignment
         is_repair = self.is_repair_task(task_id)
-        original_worker = (
-            self.get_previous_workers(task_id)[0] if is_repair else None
-        )
+        original_worker = self.get_previous_workers(task_id)[0] if is_repair else None
 
         assignment = TaskAssignment(
             task_id=task_id,
@@ -309,11 +307,7 @@ class TaskDispatcher:
         Returns:
             Worker ID or None if no idle workers
         """
-        idle_workers = [
-            w_id
-            for w_id, w in self.state.workers.items()
-            if w.state == "idle"
-        ]
+        idle_workers = [w_id for w_id, w in self.state.workers.items() if w.state == "idle"]
 
         if not idle_workers:
             return None
@@ -339,22 +333,26 @@ class TaskDispatcher:
             "repair_tasks": len(repairs),
             "peer_review_enabled": self._peer_review_enabled,
             "priorities": {
-                "critical": len([
-                    t for t in pending
-                    if self.get_priority(t) >= TaskPriority.CRITICAL.value
-                ]),
-                "high": len([
-                    t for t in pending
-                    if TaskPriority.HIGH.value <= self.get_priority(t) < TaskPriority.CRITICAL.value
-                ]),
-                "normal": len([
-                    t for t in pending
-                    if TaskPriority.LOW.value < self.get_priority(t) < TaskPriority.HIGH.value
-                ]),
-                "low": len([
-                    t for t in pending
-                    if self.get_priority(t) <= TaskPriority.LOW.value
-                ]),
+                "critical": len(
+                    [t for t in pending if self.get_priority(t) >= TaskPriority.CRITICAL.value]
+                ),
+                "high": len(
+                    [
+                        t
+                        for t in pending
+                        if TaskPriority.HIGH.value
+                        <= self.get_priority(t)
+                        < TaskPriority.CRITICAL.value
+                    ]
+                ),
+                "normal": len(
+                    [
+                        t
+                        for t in pending
+                        if TaskPriority.LOW.value < self.get_priority(t) < TaskPriority.HIGH.value
+                    ]
+                ),
+                "low": len([t for t in pending if self.get_priority(t) <= TaskPriority.LOW.value]),
             },
             "worker_load": self.get_worker_load(),
         }

@@ -65,15 +65,15 @@ class TestResponseParser:
     def test_parse_json_code_block(self):
         """Parse JSON from code block."""
         output = (
-            'Here is my review:\n\n'
-            '```json\n'
-            '{\n'
+            "Here is my review:\n\n"
+            "```json\n"
+            "{\n"
             '    "decision": "APPROVE",\n'
             '    "checkpoint": "CP-001",\n'
             '    "notes": "All tests pass",\n'
             '    "required_changes": []\n'
-            '}\n'
-            '```'
+            "}\n"
+            "```"
         )
         result = ResponseParser.parse(output)
         assert result.decision == SupervisorDecision.APPROVE
@@ -257,9 +257,7 @@ class TestLiteLLMBackend:
         """Retry on parse errors."""
         # First call returns invalid JSON, second returns valid
         mock_response_bad = MagicMock()
-        mock_response_bad.choices = [
-            MagicMock(message=MagicMock(content="Invalid JSON"))
-        ]
+        mock_response_bad.choices = [MagicMock(message=MagicMock(content="Invalid JSON"))]
         mock_response_bad.usage = None
 
         mock_response_good = MagicMock()

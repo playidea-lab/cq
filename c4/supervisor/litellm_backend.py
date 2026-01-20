@@ -102,9 +102,7 @@ class LiteLLMBackend(SupervisorBackend):
             self.max_tokens = max_tokens
         elif preset:
             self.max_tokens = preset.max_output_tokens
-            logger.debug(
-                f"Using max_tokens={self.max_tokens} from {preset.display_name} preset"
-            )
+            logger.debug(f"Using max_tokens={self.max_tokens} from {preset.display_name} preset")
         else:
             self.max_tokens = 4096
 
@@ -149,9 +147,7 @@ class LiteLLMBackend(SupervisorBackend):
         try:
             import litellm
         except ImportError:
-            raise SupervisorError(
-                "litellm package not installed. Run: uv add litellm"
-            )
+            raise SupervisorError("litellm package not installed. Run: uv add litellm")
 
         # Save prompt to bundle
         (bundle_dir / "prompt.md").write_text(prompt)
@@ -188,9 +184,7 @@ class LiteLLMBackend(SupervisorBackend):
             except Exception as e:
                 error_type = type(e).__name__
                 last_error = SupervisorError(f"{error_type}: {str(e)[:200]}")
-                logger.warning(
-                    f"Attempt {attempt + 1}/{self.max_retries} failed: {error_type}"
-                )
+                logger.warning(f"Attempt {attempt + 1}/{self.max_retries} failed: {error_type}")
 
         raise last_error or SupervisorError("LiteLLM failed after retries")
 
@@ -266,11 +260,7 @@ class LiteLLMBackend(SupervisorBackend):
             if self._last_usage.cost is not None:
                 cost_str = f", ~${self._last_usage.cost:.4f}"
 
-            logger.info(
-                f"LiteLLM [{self.model}]: "
-                f"{self._last_usage.total_tokens} tokens"
-                f"{cost_str}"
-            )
+            logger.info(f"LiteLLM [{self.model}]: {self._last_usage.total_tokens} tokens{cost_str}")
 
 
 def create_claude_backend(

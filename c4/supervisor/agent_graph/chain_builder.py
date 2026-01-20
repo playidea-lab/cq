@@ -234,8 +234,7 @@ class DynamicChainBuilder:
             candidates = [
                 (agent_id, weight)
                 for agent_id, weight in targets
-                if agent_id not in visited
-                and agent_id not in context.exclude_agents
+                if agent_id not in visited and agent_id not in context.exclude_agents
             ]
 
             if not candidates:

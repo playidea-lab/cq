@@ -82,9 +82,7 @@ class ValidationResult:
         self, code: str, message: str, path: str = "", suggestion: str | None = None
     ) -> None:
         """Add an error (Level 1)."""
-        self.issues.append(
-            ValidationIssue(ValidationLevel.ERROR, code, message, path, suggestion)
-        )
+        self.issues.append(ValidationIssue(ValidationLevel.ERROR, code, message, path, suggestion))
 
     def add_warning(
         self, code: str, message: str, path: str = "", suggestion: str | None = None
@@ -98,16 +96,16 @@ class ValidationResult:
         self, code: str, message: str, path: str = "", suggestion: str | None = None
     ) -> None:
         """Add an info message (Level 3)."""
-        self.issues.append(
-            ValidationIssue(ValidationLevel.INFO, code, message, path, suggestion)
-        )
+        self.issues.append(ValidationIssue(ValidationLevel.INFO, code, message, path, suggestion))
 
     def summary(self) -> str:
         """Generate a summary string."""
         if not self.issues:
             return f"[{self.skill_id or 'unknown'}] All checks passed"
 
-        lines = [f"[{self.skill_id or 'unknown'}] {self.error_count} errors, {self.warning_count} warnings"]
+        lines = [
+            f"[{self.skill_id or 'unknown'}] {self.error_count} errors, {self.warning_count} warnings"
+        ]
         for issue in self.issues:
             lines.append(f"  {issue}")
         return "\n".join(lines)
@@ -403,9 +401,7 @@ class SkillValidator:
 
         return results
 
-    def check_circular_dependencies(
-        self, skill_dir: Path
-    ) -> list[tuple[str, list[str]]]:
+    def check_circular_dependencies(self, skill_dir: Path) -> list[tuple[str, list[str]]]:
         """Check for circular dependencies in skills.
 
         Args:
@@ -500,7 +496,9 @@ def validate_skill_cli(skill_path: Path, check_deps: bool = False) -> tuple[bool
         total_warnings = sum(r.warning_count for r in results)
         valid_count = sum(1 for r in results if r.is_valid)
 
-        lines = [f"Validated {len(results)} skill(s): {valid_count} passed, {total_errors} errors, {total_warnings} warnings"]
+        lines = [
+            f"Validated {len(results)} skill(s): {valid_count} passed, {total_errors} errors, {total_warnings} warnings"
+        ]
         lines.append("")
 
         for result in results:

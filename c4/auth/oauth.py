@@ -95,9 +95,7 @@ class OAuthCallbackHandler(http.server.BaseHTTPRequestHandler):
                 refresh_token=refresh_token,
                 raw_params=params,
             )
-            self._send_response(
-                "Authentication successful! You can close this window."
-            )
+            self._send_response("Authentication successful! You can close this window.")
         else:
             # Tokens might be in fragment, need client-side handling
             OAuthCallbackHandler.result = OAuthResult(
@@ -105,9 +103,7 @@ class OAuthCallbackHandler(http.server.BaseHTTPRequestHandler):
                 error="No access token received",
                 raw_params=params,
             )
-            self._send_response(
-                "Authentication incomplete. Please check the console."
-            )
+            self._send_response("Authentication incomplete. Please check the console.")
 
         # Signal that callback was received
         if OAuthCallbackHandler.callback_received:

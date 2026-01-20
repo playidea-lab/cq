@@ -325,10 +325,12 @@ class TestComplexConditions:
         # (type=feature OR type=enhancement) AND domain=web-frontend
         cond = Condition(
             all=[
-                Condition(any=[
-                    Condition(task_type="feature"),
-                    Condition(task_type="enhancement"),
-                ]),
+                Condition(
+                    any=[
+                        Condition(task_type="feature"),
+                        Condition(task_type="enhancement"),
+                    ]
+                ),
                 Condition(domain="web-frontend"),
             ]
         )
@@ -340,14 +342,18 @@ class TestComplexConditions:
         # (type=feature AND domain=frontend) OR (type=bugfix AND has "urgent")
         cond = Condition(
             any=[
-                Condition(all=[
-                    Condition(task_type="feature"),
-                    Condition(domain="web-frontend"),
-                ]),
-                Condition(all=[
-                    Condition(task_type="bugfix"),
-                    Condition(has_keyword=["urgent"]),
-                ]),
+                Condition(
+                    all=[
+                        Condition(task_type="feature"),
+                        Condition(domain="web-frontend"),
+                    ]
+                ),
+                Condition(
+                    all=[
+                        Condition(task_type="bugfix"),
+                        Condition(has_keyword=["urgent"]),
+                    ]
+                ),
             ]
         )
         # First branch matches
@@ -528,6 +534,7 @@ class TestTaskLikeProtocol:
 
     def test_custom_task_like_object(self) -> None:
         """Custom object implementing TaskLike works."""
+
         class CustomTask:
             @property
             def task_type(self) -> str:

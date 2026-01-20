@@ -56,9 +56,7 @@ class LocalFileStateStore(StateStore):
             self.state_file.unlink()
 
     @contextmanager
-    def atomic_modify(
-        self, project_id: str
-    ) -> Generator["C4State", None, None]:
+    def atomic_modify(self, project_id: str) -> Generator["C4State", None, None]:
         """
         Atomically load, modify, and save state.
 

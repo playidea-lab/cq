@@ -259,12 +259,14 @@ class TestSQLiteTaskStore:
     def task_store(self, db_path):
         """Create a SQLiteTaskStore"""
         from c4.store import SQLiteTaskStore
+
         return SQLiteTaskStore(db_path)
 
     @pytest.fixture
     def sample_task(self):
         """Create a sample task"""
         from c4.models import Task, TaskStatus
+
         return Task(
             id="T-001",
             title="Test task",

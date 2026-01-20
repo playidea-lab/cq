@@ -1,7 +1,6 @@
 """Tests for C4 Chat API."""
 
 import json
-from datetime import datetime
 
 import pytest
 from fastapi.testclient import TestClient
@@ -145,9 +144,7 @@ class TestChatService:
         assert "Test message" in full_response
 
     @pytest.mark.asyncio
-    async def test_generate_response_with_project(
-        self, chat_service: ChatService
-    ) -> None:
+    async def test_generate_response_with_project(self, chat_service: ChatService) -> None:
         """Test generating response with project context."""
         chunks = []
         async for chunk in chat_service.generate_response(

@@ -168,8 +168,7 @@ class TestRoleDetection:
     def test_detect_multiple_roles(self, builder: DynamicChainBuilder) -> None:
         """Should detect multiple roles from combined keywords."""
         task = TaskContext(
-            title="Add payment feature",
-            description="Include security review and tests"
+            title="Add payment feature", description="Include security review and tests"
         )
         roles = builder.detect_required_roles(task)
         assert "payment-integration" in roles
@@ -178,10 +177,7 @@ class TestRoleDetection:
 
     def test_detect_from_description(self, builder: DynamicChainBuilder) -> None:
         """Should detect roles from description field."""
-        task = TaskContext(
-            title="Add feature",
-            description="Must pass security audit"
-        )
+        task = TaskContext(title="Add feature", description="Must pass security audit")
         roles = builder.detect_required_roles(task)
         assert "security-auditor" in roles
 
@@ -208,9 +204,7 @@ class TestRoleDetection:
 class TestBasicChainBuilding:
     """Tests for basic chain building following handoffs."""
 
-    def test_build_chain_follows_handoffs(
-        self, builder: DynamicChainBuilder
-    ) -> None:
+    def test_build_chain_follows_handoffs(self, builder: DynamicChainBuilder) -> None:
         """Should follow handoff edges by weight."""
         chain = builder.build_chain("backend-architect")
 
@@ -219,17 +213,13 @@ class TestBasicChainBuilding:
         assert "python-pro" in chain  # weight 0.9
         assert len(chain) > 1
 
-    def test_build_chain_respects_max_length(
-        self, builder: DynamicChainBuilder
-    ) -> None:
+    def test_build_chain_respects_max_length(self, builder: DynamicChainBuilder) -> None:
         """Should respect max_length limit."""
         context = ChainBuildContext(max_length=2)
         chain = builder.build_chain("backend-architect", context)
         assert len(chain) <= 2
 
-    def test_build_chain_prevents_cycles(
-        self, builder: DynamicChainBuilder
-    ) -> None:
+    def test_build_chain_prevents_cycles(self, builder: DynamicChainBuilder) -> None:
         """Should not include same agent twice."""
         chain = builder.build_chain("backend-architect")
         assert len(chain) == len(set(chain))  # No duplicates
@@ -252,26 +242,18 @@ class TestChainWithRequiredRoles:
 
     def test_include_required_role(self, builder: DynamicChainBuilder) -> None:
         """Should include required role in chain."""
-        context = ChainBuildContext(
-            required_roles={"security-auditor"}
-        )
+        context = ChainBuildContext(required_roles={"security-auditor"})
         chain = builder.build_chain("backend-architect", context)
         assert "security-auditor" in chain
 
-    def test_include_multiple_required_roles(
-        self, builder: DynamicChainBuilder
-    ) -> None:
+    def test_include_multiple_required_roles(self, builder: DynamicChainBuilder) -> None:
         """Should include all required roles."""
-        context = ChainBuildContext(
-            required_roles={"security-auditor", "test-automator"}
-        )
+        context = ChainBuildContext(required_roles={"security-auditor", "test-automator"})
         chain = builder.build_chain("backend-architect", context)
         assert "security-auditor" in chain
         assert "test-automator" in chain
 
-    def test_required_role_from_task_detection(
-        self, builder: DynamicChainBuilder
-    ) -> None:
+    def test_required_role_from_task_detection(self, builder: DynamicChainBuilder) -> None:
         """Should auto-detect required roles from task."""
         task = TaskContext(title="Add payment with security review")
         context = ChainBuildContext(task=task)
@@ -281,9 +263,7 @@ class TestChainWithRequiredRoles:
 
     def test_exclude_agents(self, builder: DynamicChainBuilder) -> None:
         """Should exclude specified agents from chain."""
-        context = ChainBuildContext(
-            exclude_agents={"python-pro"}
-        )
+        context = ChainBuildContext(exclude_agents={"python-pro"})
         chain = builder.build_chain("backend-architect", context)
         assert "python-pro" not in chain
 
@@ -296,36 +276,24 @@ class TestChainWithRequiredRoles:
 class TestPathBuilding:
     """Tests for building chains to specific targets."""
 
-    def test_build_chain_with_path_direct(
-        self, builder: DynamicChainBuilder
-    ) -> None:
+    def test_build_chain_with_path_direct(self, builder: DynamicChainBuilder) -> None:
         """Should find direct path to target."""
-        chain = builder.build_chain_with_path(
-            "backend-architect", "python-pro"
-        )
+        chain = builder.build_chain_with_path("backend-architect", "python-pro")
         assert chain is not None
         assert chain[0] == "backend-architect"
         assert "python-pro" in chain
 
-    def test_build_chain_with_path_indirect(
-        self, builder: DynamicChainBuilder
-    ) -> None:
+    def test_build_chain_with_path_indirect(self, builder: DynamicChainBuilder) -> None:
         """Should find indirect path to target."""
-        chain = builder.build_chain_with_path(
-            "backend-architect", "code-reviewer"
-        )
+        chain = builder.build_chain_with_path("backend-architect", "code-reviewer")
         assert chain is not None
         assert chain[0] == "backend-architect"
         assert "code-reviewer" in chain
 
-    def test_build_chain_with_no_path(
-        self, builder: DynamicChainBuilder
-    ) -> None:
+    def test_build_chain_with_no_path(self, builder: DynamicChainBuilder) -> None:
         """Should still include target as required role if no direct path."""
         # code-reviewer has no outgoing edges, so no path to backend-architect
-        chain = builder.build_chain_with_path(
-            "code-reviewer", "payment-integration"
-        )
+        chain = builder.build_chain_with_path("code-reviewer", "payment-integration")
         assert chain is not None
         assert "payment-integration" in chain
 
@@ -344,19 +312,13 @@ class TestChainOptimization:
         optimized = builder.optimize_chain(chain)
         assert optimized[0] == "backend-architect"
 
-    def test_optimize_keeps_required_roles(
-        self, builder: DynamicChainBuilder
-    ) -> None:
+    def test_optimize_keeps_required_roles(self, builder: DynamicChainBuilder) -> None:
         """Should keep required roles."""
         chain = ["backend-architect", "python-pro", "security-auditor"]
-        optimized = builder.optimize_chain(
-            chain, required_roles={"security-auditor"}
-        )
+        optimized = builder.optimize_chain(chain, required_roles={"security-auditor"})
         assert "security-auditor" in optimized
 
-    def test_optimize_respects_max_length(
-        self, builder: DynamicChainBuilder
-    ) -> None:
+    def test_optimize_respects_max_length(self, builder: DynamicChainBuilder) -> None:
         """Should respect max_length."""
         chain = ["a", "b", "c", "d", "e"]
         optimized = builder.optimize_chain(chain, max_length=3)
@@ -390,9 +352,7 @@ class TestRoleKeywords:
         assert "custom-agent" in keywords
         assert "custom" in keywords["custom-agent"]
 
-    def test_add_role_keywords_existing(
-        self, builder: DynamicChainBuilder
-    ) -> None:
+    def test_add_role_keywords_existing(self, builder: DynamicChainBuilder) -> None:
         """Should merge keywords for existing role."""
         builder.add_role_keywords("security-auditor", ["owasp"])
         keywords = builder.role_keywords

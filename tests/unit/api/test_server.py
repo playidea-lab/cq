@@ -26,6 +26,7 @@ def client(mock_daemon):
     """Create test client with mocked daemon."""
     with patch("c4.api.deps.get_daemon_singleton", return_value=mock_daemon):
         from c4.api.server import create_app
+
         app = create_app()
         yield TestClient(app)
 

@@ -232,9 +232,7 @@ class TestLogicalOperators:
 
     def test_not_operator(self, rule_engine: RuleEngine) -> None:
         """NOT operator should negate condition."""
-        condition = Condition(
-            not_=Condition(task_type="debug")
-        )
+        condition = Condition(not_=Condition(task_type="debug"))
         context = RuleContext(task_type="feature")
 
         result = rule_engine._evaluate_condition(condition, context)
@@ -242,9 +240,7 @@ class TestLogicalOperators:
 
     def test_not_operator_negates_match(self, rule_engine: RuleEngine) -> None:
         """NOT operator should negate matching condition."""
-        condition = Condition(
-            not_=Condition(task_type="debug")
-        )
+        condition = Condition(not_=Condition(task_type="debug"))
         context = RuleContext(task_type="debug")
 
         result = rule_engine._evaluate_condition(condition, context)
@@ -526,9 +522,7 @@ class TestRuleEngineManagement:
         assert len(rule_engine.overrides) == 0
         assert len(rule_engine.chain_extensions) == 0
 
-    def test_add_rules_from_definition(
-        self, rule_engine: RuleEngine
-    ) -> None:
+    def test_add_rules_from_definition(self, rule_engine: RuleEngine) -> None:
         """Should add rules from RuleDefinition."""
         rule_def = RuleDefinition(
             rules=Rules(

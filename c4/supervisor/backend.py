@@ -105,6 +105,5 @@ class SupervisorBackend(ABC):
     def save_response(self, bundle_dir: Path, response: SupervisorResponse) -> None:
         """Save response to bundle directory"""
         import json
-        (bundle_dir / "response.json").write_text(
-            json.dumps(response.to_dict(), indent=2)
-        )
+
+        (bundle_dir / "response.json").write_text(json.dumps(response.to_dict(), indent=2))

@@ -212,10 +212,7 @@ class TestAgentRoutingIntegration:
         assert result.handoff_instructions is not None
         assert len(result.handoff_instructions) > 0
         # web-backend should mention API
-        assert (
-            "API" in result.handoff_instructions
-            or "api" in result.handoff_instructions.lower()
-        )
+        assert "API" in result.handoff_instructions or "api" in result.handoff_instructions.lower()
 
     def test_unknown_domain_uses_general_purpose(self, agent_routing_daemon):
         """Test that unknown domain falls back to general-purpose agent"""
@@ -582,9 +579,7 @@ class TestMCPAgentRoutingTool:
         """Test that is_override is False when no override applies"""
         daemon = agent_routing_daemon
 
-        result = daemon.c4_test_agent_routing(
-            domain="web-frontend", task_type="unknown-task"
-        )
+        result = daemon.c4_test_agent_routing(domain="web-frontend", task_type="unknown-task")
 
         assert result["domain"] == "web-frontend"
         assert result["overridden_agent"] == "frontend-developer"

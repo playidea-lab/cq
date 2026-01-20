@@ -7,14 +7,14 @@ Checkpoint-as-Task:
 - Decisions: APPROVE, REQUEST_CHANGES, REPLAN
 """
 
-import pytest
 from unittest.mock import MagicMock, patch
+
+import pytest
 
 from c4.models import (
     C4Config,
     CheckpointConfig,
     Task,
-    TaskStatus,
     TaskType,
     ValidationConfig,
 )
@@ -33,6 +33,7 @@ class TestParsePromblemTaskIds:
             d.root = tmp_path
             # Import the method
             from c4.mcp_server import C4Daemon as RealDaemon
+
             d._parse_problem_task_ids = RealDaemon._parse_problem_task_ids.__get__(d)
         return d
 
@@ -95,6 +96,7 @@ class TestBuildCheckpointDod:
                 ),
             )
             from c4.mcp_server import C4Daemon as RealDaemon
+
             d._build_checkpoint_dod = RealDaemon._build_checkpoint_dod.__get__(d)
         return d
 
@@ -141,14 +143,43 @@ class TestFindTasksByPattern:
             d = C4Daemon.__new__(C4Daemon)
             d.root = tmp_path
             d._tasks = {
-                "T-001-0": Task(id="T-001-0", title="Task 1", dod="...", base_id="001", version=0, type=TaskType.IMPLEMENTATION),
-                "T-001-1": Task(id="T-001-1", title="Task 1 v1", dod="...", base_id="001", version=1, type=TaskType.IMPLEMENTATION),
-                "T-002-0": Task(id="T-002-0", title="Task 2", dod="...", base_id="002", version=0, type=TaskType.IMPLEMENTATION),
-                "R-001-0": Task(id="R-001-0", title="Review 1", dod="...", base_id="001", version=0, type=TaskType.REVIEW),
+                "T-001-0": Task(
+                    id="T-001-0",
+                    title="Task 1",
+                    dod="...",
+                    base_id="001",
+                    version=0,
+                    type=TaskType.IMPLEMENTATION,
+                ),
+                "T-001-1": Task(
+                    id="T-001-1",
+                    title="Task 1 v1",
+                    dod="...",
+                    base_id="001",
+                    version=1,
+                    type=TaskType.IMPLEMENTATION,
+                ),
+                "T-002-0": Task(
+                    id="T-002-0",
+                    title="Task 2",
+                    dod="...",
+                    base_id="002",
+                    version=0,
+                    type=TaskType.IMPLEMENTATION,
+                ),
+                "R-001-0": Task(
+                    id="R-001-0",
+                    title="Review 1",
+                    dod="...",
+                    base_id="001",
+                    version=0,
+                    type=TaskType.REVIEW,
+                ),
             }
             d.get_all_tasks = MagicMock(return_value=d._tasks)
 
             from c4.mcp_server import C4Daemon as RealDaemon
+
             d._find_tasks_by_pattern = RealDaemon._find_tasks_by_pattern.__get__(d)
         return d
 
@@ -195,14 +226,43 @@ class TestGetLatestReviewForImpl:
             d = C4Daemon.__new__(C4Daemon)
             d.root = tmp_path
             d._tasks = {
-                "T-001-0": Task(id="T-001-0", title="Task 1", dod="...", base_id="001", version=0, type=TaskType.IMPLEMENTATION),
-                "R-001-0": Task(id="R-001-0", title="Review 1 v0", dod="...", base_id="001", version=0, type=TaskType.REVIEW),
-                "R-001-1": Task(id="R-001-1", title="Review 1 v1", dod="...", base_id="001", version=1, type=TaskType.REVIEW),
-                "R-002-0": Task(id="R-002-0", title="Review 2", dod="...", base_id="002", version=0, type=TaskType.REVIEW),
+                "T-001-0": Task(
+                    id="T-001-0",
+                    title="Task 1",
+                    dod="...",
+                    base_id="001",
+                    version=0,
+                    type=TaskType.IMPLEMENTATION,
+                ),
+                "R-001-0": Task(
+                    id="R-001-0",
+                    title="Review 1 v0",
+                    dod="...",
+                    base_id="001",
+                    version=0,
+                    type=TaskType.REVIEW,
+                ),
+                "R-001-1": Task(
+                    id="R-001-1",
+                    title="Review 1 v1",
+                    dod="...",
+                    base_id="001",
+                    version=1,
+                    type=TaskType.REVIEW,
+                ),
+                "R-002-0": Task(
+                    id="R-002-0",
+                    title="Review 2",
+                    dod="...",
+                    base_id="002",
+                    version=0,
+                    type=TaskType.REVIEW,
+                ),
             }
             d.get_all_tasks = MagicMock(return_value=d._tasks)
 
             from c4.mcp_server import C4Daemon as RealDaemon
+
             d._get_latest_review_for_impl = RealDaemon._get_latest_review_for_impl.__get__(d)
         return d
 
@@ -242,6 +302,7 @@ class TestTaskExists:
             d.get_all_tasks = MagicMock(return_value=d._tasks)
 
             from c4.mcp_server import C4Daemon as RealDaemon
+
             d._task_exists = RealDaemon._task_exists.__get__(d)
         return d
 
@@ -284,10 +345,44 @@ class TestCheckpointTaskCreation:
 
             # Tasks
             d._tasks = {
-                "T-001-0": Task(id="T-001-0", title="Task 1", dod="...", base_id="001", version=0, type=TaskType.IMPLEMENTATION, priority=100),
-                "T-002-0": Task(id="T-002-0", title="Task 2", dod="...", base_id="002", version=0, type=TaskType.IMPLEMENTATION, priority=100),
-                "R-001-0": Task(id="R-001-0", title="Review 1", dod="...", base_id="001", version=0, type=TaskType.REVIEW, parent_id="T-001-0", review_decision="APPROVE"),
-                "R-002-0": Task(id="R-002-0", title="Review 2", dod="...", base_id="002", version=0, type=TaskType.REVIEW, parent_id="T-002-0", review_decision="APPROVE"),
+                "T-001-0": Task(
+                    id="T-001-0",
+                    title="Task 1",
+                    dod="...",
+                    base_id="001",
+                    version=0,
+                    type=TaskType.IMPLEMENTATION,
+                    priority=100,
+                ),
+                "T-002-0": Task(
+                    id="T-002-0",
+                    title="Task 2",
+                    dod="...",
+                    base_id="002",
+                    version=0,
+                    type=TaskType.IMPLEMENTATION,
+                    priority=100,
+                ),
+                "R-001-0": Task(
+                    id="R-001-0",
+                    title="Review 1",
+                    dod="...",
+                    base_id="001",
+                    version=0,
+                    type=TaskType.REVIEW,
+                    parent_id="T-001-0",
+                    review_decision="APPROVE",
+                ),
+                "R-002-0": Task(
+                    id="R-002-0",
+                    title="Review 2",
+                    dod="...",
+                    base_id="002",
+                    version=0,
+                    type=TaskType.REVIEW,
+                    parent_id="T-002-0",
+                    review_decision="APPROVE",
+                ),
             }
 
             # State machine mock
@@ -307,7 +402,10 @@ class TestCheckpointTaskCreation:
 
             # Bind methods
             from c4.mcp_server import C4Daemon as RealDaemon
-            d._check_and_create_checkpoint_task = RealDaemon._check_and_create_checkpoint_task.__get__(d)
+
+            d._check_and_create_checkpoint_task = (
+                RealDaemon._check_and_create_checkpoint_task.__get__(d)
+            )
             d._find_tasks_by_pattern = RealDaemon._find_tasks_by_pattern.__get__(d)
             d._get_latest_review_for_impl = RealDaemon._get_latest_review_for_impl.__get__(d)
             d._build_checkpoint_dod = RealDaemon._build_checkpoint_dod.__get__(d)
@@ -401,13 +499,21 @@ class TestCheckpointCompletion:
 
             d._tasks = {
                 "T-001-0": Task(
-                    id="T-001-0", title="Task 1", dod="original",
-                    base_id="001", version=0, type=TaskType.IMPLEMENTATION, priority=100
+                    id="T-001-0",
+                    title="Task 1",
+                    dod="original",
+                    base_id="001",
+                    version=0,
+                    type=TaskType.IMPLEMENTATION,
+                    priority=100,
                 ),
                 "CP-001": Task(
-                    id="CP-001", title="Checkpoint 1", dod="...",
-                    type=TaskType.CHECKPOINT, phase_id="001",
-                    required_tasks=["T-001-0"]
+                    id="CP-001",
+                    title="Checkpoint 1",
+                    dod="...",
+                    type=TaskType.CHECKPOINT,
+                    phase_id="001",
+                    required_tasks=["T-001-0"],
                 ),
             }
 
@@ -424,6 +530,7 @@ class TestCheckpointCompletion:
             d.add_task = MagicMock(side_effect=lambda t: d._tasks.update({t.id: t}))
 
             from c4.mcp_server import C4Daemon as RealDaemon
+
             d._handle_checkpoint_completion = RealDaemon._handle_checkpoint_completion.__get__(d)
             d._parse_problem_task_ids = RealDaemon._parse_problem_task_ids.__get__(d)
             d._perform_completion_action = MagicMock()
@@ -480,14 +587,18 @@ class TestCheckpointCompletion:
         """REQUEST_CHANGES respects max_revision limit."""
         # Create task at max version
         daemon_for_completion._tasks["T-001-3"] = Task(
-            id="T-001-3", title="Task 1 v3", dod="...",
-            base_id="001", version=3, type=TaskType.IMPLEMENTATION
+            id="T-001-3",
+            title="Task 1 v3",
+            dod="...",
+            base_id="001",
+            version=3,
+            type=TaskType.IMPLEMENTATION,
         )
         daemon_for_completion._tasks["CP-001"].required_tasks = ["T-001-3"]
 
         cp_task = daemon_for_completion._tasks["CP-001"]
 
-        result = daemon_for_completion._handle_checkpoint_completion(
+        daemon_for_completion._handle_checkpoint_completion(
             cp_task, "REQUEST_CHANGES", "T-001-3: Still broken", "worker-1"
         )
 

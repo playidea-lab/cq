@@ -294,9 +294,7 @@ class TestDashboardService:
         assert review.state == "in_review"
         assert review.checkpoint_id == "CP-002"
 
-    def test_recent_events_from_checkpoint_queue(
-        self, dashboard_service, mock_store
-    ):
+    def test_recent_events_from_checkpoint_queue(self, dashboard_service, mock_store):
         """Test that checkpoint queue items become events."""
         state = C4State(
             project_id="test",

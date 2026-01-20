@@ -222,9 +222,7 @@ class GitHubTokenManager:
         """
         self._supabase_url = supabase_url or os.environ.get("SUPABASE_URL", "")
         self._supabase_key = supabase_key or os.environ.get("SUPABASE_KEY", "")
-        self._github_client_id = github_client_id or os.environ.get(
-            "GITHUB_CLIENT_ID", ""
-        )
+        self._github_client_id = github_client_id or os.environ.get("GITHUB_CLIENT_ID", "")
         self._github_client_secret = github_client_secret or os.environ.get(
             "GITHUB_CLIENT_SECRET", ""
         )
@@ -479,9 +477,7 @@ class GitHubTokenManager:
                 error=str(e),
             )
 
-    def _update_supabase_token(
-        self, user_id: str, token: GitHubOAuthToken
-    ) -> bool:
+    def _update_supabase_token(self, user_id: str, token: GitHubOAuthToken) -> bool:
         """Update token in Supabase after refresh.
 
         Args:
@@ -502,11 +498,13 @@ class GitHubTokenManager:
                 "Content-Type": "application/json",
             }
 
-            data = json.dumps({
-                "user_id_param": user_id,
-                "provider_param": "github",
-                "token_data": token.to_dict(),
-            })
+            data = json.dumps(
+                {
+                    "user_id_param": user_id,
+                    "provider_param": "github",
+                    "token_data": token.to_dict(),
+                }
+            )
             req = Request(url, data=data.encode(), headers=headers, method="POST")
 
             with urlopen(req, timeout=10) as response:

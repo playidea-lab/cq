@@ -1,6 +1,5 @@
 """Unit tests for Claude model presets and auto-detection."""
 
-
 import pytest
 
 from c4.supervisor.claude_models import (

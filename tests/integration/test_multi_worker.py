@@ -433,9 +433,7 @@ class TestConcurrentCompletion:
         assert len(daemon.state_machine.state.queue.in_progress) == 0
 
     @patch("subprocess.run")
-    def test_validation_failure_doesnt_affect_other_workers(
-        self, mock_run, multi_worker_daemon
-    ):
+    def test_validation_failure_doesnt_affect_other_workers(self, mock_run, multi_worker_daemon):
         """One worker's validation failure shouldn't affect others"""
         daemon = multi_worker_daemon
 

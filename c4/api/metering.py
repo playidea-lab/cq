@@ -170,7 +170,7 @@ class UsageMeter:
             with open(self.storage_path) as f:
                 data = json.load(f)
 
-            for item in data[-self.max_records:]:
+            for item in data[-self.max_records :]:
                 record = UsageRecord(
                     timestamp=datetime.fromisoformat(item["timestamp"]),
                     model=item["model"],
@@ -263,7 +263,7 @@ class UsageMeter:
 
             # Trim if over limit
             if len(self._records) > self.max_records:
-                self._records = self._records[-self.max_records:]
+                self._records = self._records[-self.max_records :]
 
             self._save_records()
 

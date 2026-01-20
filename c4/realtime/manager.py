@@ -415,9 +415,7 @@ class RealtimeManager:
             try:
                 # Schedule close in the event loop
                 if self._loop and self._loop.is_running():
-                    asyncio.run_coroutine_threadsafe(
-                        self._ws.close(), self._loop
-                    )
+                    asyncio.run_coroutine_threadsafe(self._ws.close(), self._loop)
             except Exception as e:
                 logger.warning(f"Error closing WebSocket: {e}")
 
@@ -536,9 +534,7 @@ class RealtimeManager:
         try:
             import websockets.sync.client as ws_sync
         except ImportError:
-            logger.error(
-                "websockets package required. Install with: uv add websockets"
-            )
+            logger.error("websockets package required. Install with: uv add websockets")
             with self._lock:
                 self._state = ChannelState.ERROR
             return
@@ -654,9 +650,7 @@ class RealtimeManager:
             response = message.get("payload", {}).get("response", {})
             logger.error(f"Message {ref} error: {response}")
 
-    def _handle_postgres_change(
-        self, topic: str, payload: dict[str, Any]
-    ) -> None:
+    def _handle_postgres_change(self, topic: str, payload: dict[str, Any]) -> None:
         """Handle postgres_changes event."""
         with self._lock:
             for channel in self._channels.values():
@@ -687,9 +681,7 @@ class RealtimeManager:
                 try:
                     channel.callback(payload)
                 except Exception as e:
-                    logger.error(
-                        f"Callback error for {channel.name}: {e}"
-                    )
+                    logger.error(f"Callback error for {channel.name}: {e}")
 
     def _handle_broadcast(self, topic: str, payload: dict[str, Any]) -> None:
         """Handle broadcast message."""
@@ -833,9 +825,7 @@ class RealtimeManager:
         self._reconnect_attempts += 1
 
         if self._reconnect_attempts > self._config.max_reconnect_attempts:
-            logger.error(
-                f"Max reconnect attempts ({self._config.max_reconnect_attempts}) reached"
-            )
+            logger.error(f"Max reconnect attempts ({self._config.max_reconnect_attempts}) reached")
             with self._lock:
                 self._state = ChannelState.DISCONNECTED
             return

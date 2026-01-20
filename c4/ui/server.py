@@ -107,7 +107,7 @@ class UIServer:
 
     def _get_embedded_ui(self) -> str:
         """Get embedded minimal UI when no static files exist."""
-        return '''<!DOCTYPE html>
+        return """<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -345,7 +345,7 @@ class UIServer:
         setInterval(checkStatus, 5000);
     </script>
 </body>
-</html>'''
+</html>"""
 
     def run(self) -> None:
         """Run the UI server."""

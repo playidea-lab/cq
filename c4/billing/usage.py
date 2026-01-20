@@ -330,18 +330,10 @@ class UsageTracker:
                 "end": until.isoformat(),
             },
             "totals": {
-                "tasks_completed": self.get_total(
-                    UsageMetric.TASKS_COMPLETED, since, until
-                ),
-                "tokens_used": self.get_total(
-                    UsageMetric.TOKENS_USED, since, until
-                ),
-                "workers_spawned": self.get_total(
-                    UsageMetric.WORKERS_SPAWNED, since, until
-                ),
-                "api_calls": self.get_total(
-                    UsageMetric.API_CALLS, since, until
-                ),
+                "tasks_completed": self.get_total(UsageMetric.TASKS_COMPLETED, since, until),
+                "tokens_used": self.get_total(UsageMetric.TOKENS_USED, since, until),
+                "workers_spawned": self.get_total(UsageMetric.WORKERS_SPAWNED, since, until),
+                "api_calls": self.get_total(UsageMetric.API_CALLS, since, until),
             },
             "record_count": len(self.get_records(since=since, until=until)),
         }

@@ -8,7 +8,7 @@ from pathlib import Path
 # Stop Hook Content (inline to avoid template dependency)
 # =============================================================================
 
-STOP_HOOK_SH = '''#!/bin/bash
+STOP_HOOK_SH = """#!/bin/bash
 # C4 Stop Hook - Block exit if work remains
 
 # C4 not initialized -> allow exit
@@ -32,7 +32,7 @@ EOF
 fi
 
 exit 0
-'''
+"""
 
 
 def get_c4_install_dir() -> Path:
@@ -153,18 +153,12 @@ def register_hooks() -> bool:
     # Bash security hook config
     bash_hook = {
         "matcher": "Bash",
-        "hooks": [
-            {
-                "type": "command",
-                "command": "~/.claude/hooks/c4-bash-security-hook.sh"
-            }
-        ]
+        "hooks": [{"type": "command", "command": "~/.claude/hooks/c4-bash-security-hook.sh"}],
     }
 
     # Remove existing Bash hook, add new one
     settings["hooks"]["PreToolUse"] = [
-        h for h in settings["hooks"]["PreToolUse"]
-        if h.get("matcher") != "Bash"
+        h for h in settings["hooks"]["PreToolUse"] if h.get("matcher") != "Bash"
     ]
     settings["hooks"]["PreToolUse"].append(bash_hook)
 

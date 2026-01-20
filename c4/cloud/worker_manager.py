@@ -159,9 +159,7 @@ class WorkerScaler:
                     name=data["name"],
                     state=MachineState(data["state"]),
                     region=data["region"],
-                    created_at=datetime.fromisoformat(
-                        data["created_at"].replace("Z", "+00:00")
-                    ),
+                    created_at=datetime.fromisoformat(data["created_at"].replace("Z", "+00:00")),
                     task_id=task_id,
                     project_id=project_id,
                 )
@@ -199,9 +197,7 @@ class WorkerScaler:
             True if stopped successfully
         """
         try:
-            response = self.client.post(
-                f"/apps/{self._app}/machines/{machine_id}/stop"
-            )
+            response = self.client.post(f"/apps/{self._app}/machines/{machine_id}/stop")
             return response.status_code == 200
         except Exception:
             return False
@@ -216,9 +212,7 @@ class WorkerScaler:
             True if started successfully
         """
         try:
-            response = self.client.post(
-                f"/apps/{self._app}/machines/{machine_id}/start"
-            )
+            response = self.client.post(f"/apps/{self._app}/machines/{machine_id}/start")
             return response.status_code == 200
         except Exception:
             return False
@@ -269,9 +263,7 @@ class WorkerScaler:
             WorkerInstance if found, None otherwise
         """
         try:
-            response = self.client.get(
-                f"/apps/{self._app}/machines/{machine_id}"
-            )
+            response = self.client.get(f"/apps/{self._app}/machines/{machine_id}")
 
             if response.status_code != 200:
                 return None
@@ -283,9 +275,7 @@ class WorkerScaler:
                 name=machine["name"],
                 state=MachineState(machine["state"]),
                 region=machine["region"],
-                created_at=datetime.fromisoformat(
-                    machine["created_at"].replace("Z", "+00:00")
-                ),
+                created_at=datetime.fromisoformat(machine["created_at"].replace("Z", "+00:00")),
                 task_id=env.get("C4_TASK_ID"),
                 project_id=env.get("C4_PROJECT_ID"),
             )
@@ -332,10 +322,7 @@ class WorkerScaler:
         elif target_count < current:
             # Scale down - destroy idle workers
             workers = self.list_workers()
-            idle_workers = [
-                w for w in workers
-                if w.state == MachineState.STARTED and not w.task_id
-            ]
+            idle_workers = [w for w in workers if w.state == MachineState.STARTED and not w.task_id]
 
             for worker in idle_workers[: current - target_count]:
                 if self.destroy_worker(worker.id):

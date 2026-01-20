@@ -25,9 +25,7 @@ class RepairQueueItem(BaseModel):
 
     task_id: str = Field(..., description="ID of the blocked task")
     worker_id: str = Field(..., description="Worker that was working on this task")
-    failure_signature: str = Field(
-        ..., description="Error signature from validation failures"
-    )
+    failure_signature: str = Field(..., description="Error signature from validation failures")
     attempts: int = Field(..., description="Number of fix attempts made")
     blocked_at: str = Field(..., description="ISO timestamp when task was blocked")
     last_error: str = Field(default="", description="Last error message")

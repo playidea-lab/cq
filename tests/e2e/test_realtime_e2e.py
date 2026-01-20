@@ -78,9 +78,7 @@ class TestRealtimeManagerE2E:
         manager.disconnect()
         assert manager.state == ChannelState.DISCONNECTED
 
-    def test_subscribe_multiple_tables(
-        self, realtime_config: RealtimeConfig
-    ) -> None:
+    def test_subscribe_multiple_tables(self, realtime_config: RealtimeConfig) -> None:
         """Test subscribing to multiple tables."""
         manager = RealtimeManager(realtime_config)
 
@@ -104,9 +102,7 @@ class TestRealtimeManagerE2E:
         assert "projects" in ch2
         assert "workers" in ch3
 
-    def test_subscribe_broadcast_and_presence(
-        self, realtime_config: RealtimeConfig
-    ) -> None:
+    def test_subscribe_broadcast_and_presence(self, realtime_config: RealtimeConfig) -> None:
         """Test broadcast and presence subscriptions."""
         manager = RealtimeManager(realtime_config)
 
@@ -120,9 +116,7 @@ class TestRealtimeManagerE2E:
         assert "presence" in ch2
         assert len(manager.channels) == 2
 
-    def test_message_dispatch_postgres_changes(
-        self, realtime_config: RealtimeConfig
-    ) -> None:
+    def test_message_dispatch_postgres_changes(self, realtime_config: RealtimeConfig) -> None:
         """Test postgres_changes message dispatch."""
         manager = RealtimeManager(realtime_config)
 
@@ -142,9 +136,7 @@ class TestRealtimeManagerE2E:
 
         callback.assert_called_once_with(payload)
 
-    def test_message_dispatch_with_filter(
-        self, realtime_config: RealtimeConfig
-    ) -> None:
+    def test_message_dispatch_with_filter(self, realtime_config: RealtimeConfig) -> None:
         """Test message dispatch respects filters."""
         manager = RealtimeManager(realtime_config)
 
@@ -181,9 +173,7 @@ class TestRealtimeManagerE2E:
         # Only matching should trigger callback
         assert callback.call_count == 1
 
-    def test_reconnection_backoff(
-        self, realtime_config: RealtimeConfig
-    ) -> None:
+    def test_reconnection_backoff(self, realtime_config: RealtimeConfig) -> None:
         """Test reconnection with exponential backoff."""
         realtime_config.auto_reconnect = True
         manager = RealtimeManager(realtime_config)
@@ -191,22 +181,20 @@ class TestRealtimeManagerE2E:
         # Simulate reconnection attempts
         manager._reconnect_attempts = 0
         backoff1 = min(
-            realtime_config.reconnect_interval * (2 ** 0),
+            realtime_config.reconnect_interval * (2**0),
             60.0,
         )
 
         manager._reconnect_attempts = 3
         backoff2 = min(
-            realtime_config.reconnect_interval * (2 ** 2),
+            realtime_config.reconnect_interval * (2**2),
             60.0,
         )
 
         assert backoff1 == 0.1
         assert backoff2 == 0.4
 
-    def test_callbacks_registration(
-        self, realtime_config: RealtimeConfig
-    ) -> None:
+    def test_callbacks_registration(self, realtime_config: RealtimeConfig) -> None:
         """Test callback registration methods."""
         manager = RealtimeManager(realtime_config)
 
@@ -243,9 +231,7 @@ class TestStateStoreRealtimeE2E:
 
             assert sub_id.startswith("change:test-project:")
 
-    def test_on_change_without_project_filter(
-        self, mock_store: SupabaseStateStore
-    ) -> None:
+    def test_on_change_without_project_filter(self, mock_store: SupabaseStateStore) -> None:
         """Test global on_change callback."""
         callback = MagicMock()
 
@@ -259,9 +245,7 @@ class TestStateStoreRealtimeE2E:
             assert sub_id.startswith("change:*:")
             assert callback in mock_store._global_change_callbacks
 
-    def test_dispatch_change_to_callbacks(
-        self, mock_store: SupabaseStateStore
-    ) -> None:
+    def test_dispatch_change_to_callbacks(self, mock_store: SupabaseStateStore) -> None:
         """Test change dispatch to registered callbacks."""
         callback = MagicMock()
         mock_store._change_callbacks["test-project"] = [callback]
@@ -304,9 +288,7 @@ class TestStateStoreRealtimeE2E:
         assert args[0].project_id == "test-project"
         assert args[1] == ChangeType.UPDATE
 
-    def test_off_change_unregisters(
-        self, mock_store: SupabaseStateStore
-    ) -> None:
+    def test_off_change_unregisters(self, mock_store: SupabaseStateStore) -> None:
         """Test off_change removes callback."""
         callback = MagicMock()
 
@@ -321,9 +303,7 @@ class TestStateStoreRealtimeE2E:
             assert result is True
             assert "test-project" not in mock_store._change_callbacks
 
-    def test_disconnect_realtime_cleanup(
-        self, mock_store: SupabaseStateStore
-    ) -> None:
+    def test_disconnect_realtime_cleanup(self, mock_store: SupabaseStateStore) -> None:
         """Test disconnect_realtime cleans up resources."""
         mock_manager = MagicMock()
         mock_store._realtime_manager = mock_manager
@@ -385,11 +365,13 @@ class TestWorkerSyncE2E:
         )
 
         # Simulate another worker joining
-        sync._handle_worker_event({
-            "event_type": SyncEvent.WORKER_JOINED.value,
-            "worker_id": "worker-2",
-            "project_id": "test-project",
-        })
+        sync._handle_worker_event(
+            {
+                "event_type": SyncEvent.WORKER_JOINED.value,
+                "worker_id": "worker-2",
+                "project_id": "test-project",
+            }
+        )
 
         assert len(sync.workers) == 2
         assert "worker-1" in sync.workers
@@ -482,11 +464,13 @@ class TestWorkerSyncE2E:
         state_handler.assert_called_once()
 
         # Simulate worker join
-        sync._handle_worker_event({
-            "event_type": SyncEvent.WORKER_JOINED.value,
-            "worker_id": "worker-2",
-            "project_id": "test-project",
-        })
+        sync._handle_worker_event(
+            {
+                "event_type": SyncEvent.WORKER_JOINED.value,
+                "worker_id": "worker-2",
+                "project_id": "test-project",
+            }
+        )
         worker_joined_handler.assert_called_once()
 
     def test_heartbeat_updates_timestamp(
@@ -509,11 +493,13 @@ class TestWorkerSyncE2E:
         )
 
         # Simulate heartbeat
-        sync._handle_worker_event({
-            "event_type": SyncEvent.WORKER_HEARTBEAT.value,
-            "worker_id": "worker-2",
-            "current_task": "T-005",
-        })
+        sync._handle_worker_event(
+            {
+                "event_type": SyncEvent.WORKER_HEARTBEAT.value,
+                "worker_id": "worker-2",
+                "current_task": "T-005",
+            }
+        )
 
         assert sync._workers["worker-2"].last_heartbeat > old_time
         assert sync._workers["worker-2"].current_task == "T-005"
@@ -551,18 +537,22 @@ class TestTwoClientSimulation:
         )
 
         # Simulate worker1 receiving worker2's join event
-        worker1._handle_worker_event({
-            "event_type": SyncEvent.WORKER_JOINED.value,
-            "worker_id": "worker-2",
-            "project_id": "test-project",
-        })
+        worker1._handle_worker_event(
+            {
+                "event_type": SyncEvent.WORKER_JOINED.value,
+                "worker_id": "worker-2",
+                "project_id": "test-project",
+            }
+        )
 
         # Simulate worker2 receiving worker1's join event
-        worker2._handle_worker_event({
-            "event_type": SyncEvent.WORKER_JOINED.value,
-            "worker_id": "worker-1",
-            "project_id": "test-project",
-        })
+        worker2._handle_worker_event(
+            {
+                "event_type": SyncEvent.WORKER_JOINED.value,
+                "worker_id": "worker-1",
+                "project_id": "test-project",
+            }
+        )
 
         # Both workers should see each other
         assert "worker-2" in worker1.workers
@@ -596,11 +586,13 @@ class TestTwoClientSimulation:
         worker1.broadcast_task_assigned("T-001")
 
         # Simulate worker1's heartbeat received by worker2
-        worker2._handle_worker_event({
-            "event_type": SyncEvent.WORKER_HEARTBEAT.value,
-            "worker_id": "worker-1",
-            "current_task": "T-001",
-        })
+        worker2._handle_worker_event(
+            {
+                "event_type": SyncEvent.WORKER_HEARTBEAT.value,
+                "worker_id": "worker-1",
+                "current_task": "T-001",
+            }
+        )
 
         # Worker2 should see worker1's current task
         assert worker2._workers["worker-1"].current_task == "T-001"
@@ -624,10 +616,12 @@ class TestTwoClientSimulation:
         )
 
         # Simulate worker2 leaving
-        worker1._handle_worker_event({
-            "event_type": SyncEvent.WORKER_LEFT.value,
-            "worker_id": "worker-2",
-        })
+        worker1._handle_worker_event(
+            {
+                "event_type": SyncEvent.WORKER_LEFT.value,
+                "worker_id": "worker-2",
+            }
+        )
 
         # Worker2 should be removed
         assert "worker-2" not in worker1.workers
@@ -648,9 +642,7 @@ class TestReconnection:
         assert manager._config.max_reconnect_attempts == 5
         assert manager._config.reconnect_interval == 2.0
 
-    def test_max_reconnect_attempts(
-        self, realtime_config: RealtimeConfig
-    ) -> None:
+    def test_max_reconnect_attempts(self, realtime_config: RealtimeConfig) -> None:
         """Test that reconnection stops after max attempts."""
         realtime_config.max_reconnect_attempts = 3
         manager = RealtimeManager(realtime_config)
@@ -660,9 +652,7 @@ class TestReconnection:
 
         assert manager._reconnect_attempts > realtime_config.max_reconnect_attempts
 
-    def test_on_reconnect_callback(
-        self, realtime_config: RealtimeConfig
-    ) -> None:
+    def test_on_reconnect_callback(self, realtime_config: RealtimeConfig) -> None:
         """Test reconnect callback is called."""
         manager = RealtimeManager(realtime_config)
 
@@ -749,9 +739,7 @@ class TestFactoryFunctions:
         assert sync.project_id == "factory-project"
         assert sync._config.heartbeat_interval == 10.0
 
-    def test_create_worker_sync_default_config(
-        self, mock_store: SupabaseStateStore
-    ) -> None:
+    def test_create_worker_sync_default_config(self, mock_store: SupabaseStateStore) -> None:
         """Test factory with default config."""
         sync = create_worker_sync(
             store=mock_store,

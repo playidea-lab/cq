@@ -116,9 +116,7 @@ class StripeClient:
             webhook_secret: Webhook secret (or STRIPE_WEBHOOK_SECRET env)
         """
         self._api_key = api_key or os.environ.get("STRIPE_API_KEY", "")
-        self._webhook_secret = webhook_secret or os.environ.get(
-            "STRIPE_WEBHOOK_SECRET", ""
-        )
+        self._webhook_secret = webhook_secret or os.environ.get("STRIPE_WEBHOOK_SECRET", "")
         self._stripe: Any = None
 
     @property

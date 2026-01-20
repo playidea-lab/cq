@@ -370,7 +370,7 @@ class TestPerformanceBenchmarks:
         elapsed = time.perf_counter() - start
 
         # Should load in under 500ms
-        assert elapsed < 0.5, f"Loading took {elapsed*1000:.2f}ms (should be < 500ms)"
+        assert elapsed < 0.5, f"Loading took {elapsed * 1000:.2f}ms (should be < 500ms)"
 
 
 # ============================================================================

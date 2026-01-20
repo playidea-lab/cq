@@ -533,9 +533,7 @@ class TestRuleEngine:
         assert "add-tester" in names
         assert "add-security" in names
 
-    def test_evaluate_condition(
-        self, engine: RuleEngine, debug_override: Override
-    ) -> None:
+    def test_evaluate_condition(self, engine: RuleEngine, debug_override: Override) -> None:
         """evaluate_condition should delegate to module evaluate()."""
         condition = Condition(task_type="feature")
         task = Task(title="Add feature", task_type="feature")

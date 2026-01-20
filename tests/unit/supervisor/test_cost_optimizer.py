@@ -205,9 +205,7 @@ class TestModelSelectionLogic:
     def test_select_model_includes_estimate(self):
         """Model selection includes cost estimate."""
         optimizer = CostOptimizer()
-        selection = optimizer.select_model(
-            "Review this code", complexity=TaskComplexity.MEDIUM
-        )
+        selection = optimizer.select_model("Review this code", complexity=TaskComplexity.MEDIUM)
         assert selection.estimated_cost is not None
         assert selection.estimated_cost >= 0
 

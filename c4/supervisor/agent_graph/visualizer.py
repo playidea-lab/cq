@@ -107,9 +107,7 @@ class GraphVisualizer:
         elif filter_type == "agents":
             lines.extend(self._generate_filtered_graph(NodeType.AGENT, include_labels))
         elif filter_type == "domains":
-            lines.extend(
-                self._generate_filtered_graph(NodeType.DOMAIN, include_labels)
-            )
+            lines.extend(self._generate_filtered_graph(NodeType.DOMAIN, include_labels))
 
         return "\n".join(lines)
 

@@ -1,7 +1,7 @@
 """Tests for Cloud Supervisor."""
 
 from datetime import datetime
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -170,9 +170,7 @@ class TestReviewProcessing:
                 "metadata": {},
             }
         ]
-        supervisor._store.client.table.return_value.select.return_value.eq.return_value.eq.return_value.order.return_value.execute.return_value = (
-            mock_response
-        )
+        supervisor._store.client.table.return_value.select.return_value.eq.return_value.eq.return_value.order.return_value.execute.return_value = mock_response
 
         reviews = supervisor.get_pending_reviews("team-1")
 

@@ -183,14 +183,10 @@ class TestCheckpointQueueProcessing:
             required_changes=[],
         )
 
-        with patch.object(
-            loop.daemon, "create_checkpoint_bundle"
-        ) as mock_bundle:
+        with patch.object(loop.daemon, "create_checkpoint_bundle") as mock_bundle:
             mock_bundle.return_value = Path("/tmp/bundle")
 
-            with patch(
-                "c4.daemon.supervisor_loop.Supervisor"
-            ) as mock_supervisor_class:
+            with patch("c4.daemon.supervisor_loop.Supervisor") as mock_supervisor_class:
                 mock_supervisor = MagicMock()
                 mock_supervisor.run_supervisor_strict.return_value = mock_response
                 mock_supervisor_class.return_value = mock_supervisor

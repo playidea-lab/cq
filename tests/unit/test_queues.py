@@ -1,6 +1,5 @@
 """Unit tests for C4 queue models and safety guards"""
 
-
 from c4.constants import MAX_ITERATIONS_PER_TASK
 from c4.daemon.safety import SafetyGuard
 from c4.models import C4State, CheckpointQueueItem, RepairQueueItem, ValidationResult

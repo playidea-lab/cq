@@ -159,13 +159,15 @@ class DesignSpec(BaseModel):
                 selected = " (Selected)" if opt.id == self.selected_option else ""
                 recommended = " **(Recommended)**" if opt.recommended else ""
                 lines.append(f"### {opt.name}{recommended}{selected}")
-                lines.extend([
-                    "",
-                    f"**Complexity**: {opt.complexity}",
-                    "",
-                    opt.description,
-                    "",
-                ])
+                lines.extend(
+                    [
+                        "",
+                        f"**Complexity**: {opt.complexity}",
+                        "",
+                        opt.description,
+                        "",
+                    ]
+                )
                 if opt.pros:
                     lines.append("**Pros:**")
                     for pro in opt.pros:
@@ -181,12 +183,14 @@ class DesignSpec(BaseModel):
         if self.components:
             lines.extend(["## Components", ""])
             for comp in self.components:
-                lines.extend([
-                    f"### {comp.name} ({comp.type})",
-                    "",
-                    comp.description,
-                    "",
-                ])
+                lines.extend(
+                    [
+                        f"### {comp.name} ({comp.type})",
+                        "",
+                        comp.description,
+                        "",
+                    ]
+                )
                 if comp.responsibilities:
                     lines.append("**Responsibilities:**")
                     for resp in comp.responsibilities:
@@ -198,27 +202,31 @@ class DesignSpec(BaseModel):
 
         # Mermaid Diagram
         if self.mermaid_diagram:
-            lines.extend([
-                "## Architecture Diagram",
-                "",
-                "```mermaid",
-                self.mermaid_diagram,
-                "```",
-                "",
-            ])
+            lines.extend(
+                [
+                    "## Architecture Diagram",
+                    "",
+                    "```mermaid",
+                    self.mermaid_diagram,
+                    "```",
+                    "",
+                ]
+            )
 
         # Design Decisions
         if self.decisions:
             lines.extend(["## Design Decisions", ""])
             for dec in self.decisions:
-                lines.extend([
-                    f"### {dec.id}: {dec.question}",
-                    "",
-                    f"**Decision:** {dec.decision}",
-                    "",
-                    f"**Rationale:** {dec.rationale}",
-                    "",
-                ])
+                lines.extend(
+                    [
+                        f"### {dec.id}: {dec.question}",
+                        "",
+                        f"**Decision:** {dec.decision}",
+                        "",
+                        f"**Rationale:** {dec.rationale}",
+                        "",
+                    ]
+                )
                 if dec.alternatives_considered:
                     lines.append("**Alternatives Considered:**")
                     for alt in dec.alternatives_considered:

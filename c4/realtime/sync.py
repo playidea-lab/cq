@@ -266,10 +266,13 @@ class WorkerSync:
             self._running = True
 
         # Broadcast join event
-        self._broadcast_event(SyncEvent.WORKER_JOINED, {
-            "worker_id": self._worker_id,
-            "project_id": self._project_id,
-        })
+        self._broadcast_event(
+            SyncEvent.WORKER_JOINED,
+            {
+                "worker_id": self._worker_id,
+                "project_id": self._project_id,
+            },
+        )
 
         logger.info(f"WorkerSync started for {self._worker_id}")
 
@@ -284,9 +287,12 @@ class WorkerSync:
         logger.info(f"Stopping WorkerSync for worker {self._worker_id}")
 
         # Broadcast leave event
-        self._broadcast_event(SyncEvent.WORKER_LEFT, {
-            "worker_id": self._worker_id,
-        })
+        self._broadcast_event(
+            SyncEvent.WORKER_LEFT,
+            {
+                "worker_id": self._worker_id,
+            },
+        )
 
         # Stop heartbeat thread
         self._stop_event.set()
@@ -315,10 +321,13 @@ class WorkerSync:
             if self._worker_id in self._workers:
                 self._workers[self._worker_id].current_task = task_id
 
-        self._broadcast_event(SyncEvent.TASK_ASSIGNED, {
-            "task_id": task_id,
-            "worker_id": self._worker_id,
-        })
+        self._broadcast_event(
+            SyncEvent.TASK_ASSIGNED,
+            {
+                "task_id": task_id,
+                "worker_id": self._worker_id,
+            },
+        )
 
     def broadcast_task_completed(self, task_id: str) -> None:
         """Broadcast that this worker completed a task.
@@ -330,10 +339,13 @@ class WorkerSync:
             if self._worker_id in self._workers:
                 self._workers[self._worker_id].current_task = None
 
-        self._broadcast_event(SyncEvent.TASK_COMPLETED, {
-            "task_id": task_id,
-            "worker_id": self._worker_id,
-        })
+        self._broadcast_event(
+            SyncEvent.TASK_COMPLETED,
+            {
+                "task_id": task_id,
+                "worker_id": self._worker_id,
+            },
+        )
 
     def broadcast_task_blocked(self, task_id: str, reason: str = "") -> None:
         """Broadcast that a task is blocked.
@@ -342,11 +354,14 @@ class WorkerSync:
             task_id: ID of the blocked task
             reason: Why the task is blocked
         """
-        self._broadcast_event(SyncEvent.TASK_BLOCKED, {
-            "task_id": task_id,
-            "worker_id": self._worker_id,
-            "reason": reason,
-        })
+        self._broadcast_event(
+            SyncEvent.TASK_BLOCKED,
+            {
+                "task_id": task_id,
+                "worker_id": self._worker_id,
+                "reason": reason,
+            },
+        )
 
     def broadcast_checkpoint_reached(self, checkpoint_id: str) -> None:
         """Broadcast that a checkpoint has been reached.
@@ -354,14 +369,15 @@ class WorkerSync:
         Args:
             checkpoint_id: ID of the checkpoint
         """
-        self._broadcast_event(SyncEvent.CHECKPOINT_REACHED, {
-            "checkpoint_id": checkpoint_id,
-            "worker_id": self._worker_id,
-        })
+        self._broadcast_event(
+            SyncEvent.CHECKPOINT_REACHED,
+            {
+                "checkpoint_id": checkpoint_id,
+                "worker_id": self._worker_id,
+            },
+        )
 
-    def _broadcast_event(
-        self, event: SyncEvent, data: dict[str, Any]
-    ) -> None:
+    def _broadcast_event(self, event: SyncEvent, data: dict[str, Any]) -> None:
         """Broadcast an event to all workers.
 
         Uses atomic_modify to update state and trigger realtime notifications.
@@ -419,9 +435,7 @@ class WorkerSync:
                     if task_id in state.queue.in_progress:
                         assigned_to = state.queue.in_progress[task_id]
                         if assigned_to != self._worker_id:
-                            logger.info(
-                                f"Task {task_id} already assigned to {assigned_to}"
-                            )
+                            logger.info(f"Task {task_id} already assigned to {assigned_to}")
                             return False
 
                     # Try to acquire scope lock if needed
@@ -462,15 +476,14 @@ class WorkerSync:
                         return False
 
                     # Exponential backoff
-                    delay = self._config.conflict_retry_delay * (2 ** attempt)
+                    delay = self._config.conflict_retry_delay * (2**attempt)
                     time.sleep(delay)
                 else:
                     logger.error(f"Error acquiring task {task_id}: {e}")
                     return False
 
         logger.warning(
-            f"Failed to acquire task {task_id} after "
-            f"{self._config.conflict_retry_max} attempts"
+            f"Failed to acquire task {task_id} after {self._config.conflict_retry_max} attempts"
         )
         return False
 
@@ -499,9 +512,7 @@ class WorkerSync:
 
                         return True
                     else:
-                        logger.warning(
-                            f"Task {task_id} not owned by this worker"
-                        )
+                        logger.warning(f"Task {task_id} not owned by this worker")
                         return False
 
             return False
@@ -514,9 +525,7 @@ class WorkerSync:
     # Internal Handlers
     # =========================================================================
 
-    def _handle_state_change(
-        self, state: "C4State", change_type: "ChangeType"
-    ) -> None:
+    def _handle_state_change(self, state: "C4State", change_type: "ChangeType") -> None:
         """Handle state change from realtime subscription.
 
         Args:
@@ -564,12 +573,15 @@ class WorkerSync:
                         self._workers[self._worker_id].last_heartbeat = datetime.now()
 
                 # Broadcast heartbeat
-                self._broadcast_event(SyncEvent.WORKER_HEARTBEAT, {
-                    "worker_id": self._worker_id,
-                    "current_task": self._workers.get(
-                        self._worker_id, WorkerInfo(self._worker_id, self._project_id)
-                    ).current_task,
-                })
+                self._broadcast_event(
+                    SyncEvent.WORKER_HEARTBEAT,
+                    {
+                        "worker_id": self._worker_id,
+                        "current_task": self._workers.get(
+                            self._worker_id, WorkerInfo(self._worker_id, self._project_id)
+                        ).current_task,
+                    },
+                )
 
                 # Check for dead workers
                 self._check_dead_workers()
@@ -649,9 +661,7 @@ class WorkerSync:
                 # Update heartbeat
                 if worker_id in self._workers:
                     self._workers[worker_id].last_heartbeat = datetime.now()
-                    self._workers[worker_id].current_task = payload.get(
-                        "current_task"
-                    )
+                    self._workers[worker_id].current_task = payload.get("current_task")
                 else:
                     # New worker we didn't know about
                     self._workers[worker_id] = WorkerInfo(

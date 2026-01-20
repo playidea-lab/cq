@@ -1,8 +1,5 @@
 """Tests for Team Supervisor."""
 
-from datetime import datetime
-from unittest.mock import MagicMock
-
 import pytest
 
 from c4.supervisor.team_supervisor import (

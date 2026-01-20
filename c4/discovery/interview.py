@@ -616,9 +616,7 @@ class InterviewEngine:
 
     def _process_checkpoints(self, answers: dict[str, Any]) -> None:
         """Process checkpoint answers."""
-        self.context.checkpoint_strategy = answers.get(
-            "checkpoint_strategy", "기능별 (권장)"
-        )
+        self.context.checkpoint_strategy = answers.get("checkpoint_strategy", "기능별 (권장)")
         self._advance_phase()
 
     # =========================================================================
@@ -657,12 +655,14 @@ class InterviewEngine:
             if f in self.context.feature_details:
                 features.append(self.context.feature_details[f])
             else:
-                features.append(FeatureInfo(
-                    name=f,
-                    description="",
-                    priority=2,
-                    domain=self.context.domain,
-                ))
+                features.append(
+                    FeatureInfo(
+                        name=f,
+                        description="",
+                        priority=2,
+                        domain=self.context.domain,
+                    )
+                )
         return features
 
     def restore_from_state_dict(self, state: dict[str, Any]) -> None:
@@ -674,8 +674,6 @@ class InterviewEngine:
         self.context.core_features = state.get("core_features", [])
         self.context.tech_stack = state.get("tech_stack", {})
         self.context.validation_tools = state.get("validation_tools", [])
-        self.context.checkpoint_strategy = state.get(
-            "checkpoint_strategy", "feature"
-        )
+        self.context.checkpoint_strategy = state.get("checkpoint_strategy", "feature")
         self.context.additional_context = state.get("additional_context", {})
         self.current_feature_index = state.get("current_feature_index", 0)

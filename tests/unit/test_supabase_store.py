@@ -1,7 +1,7 @@
 """Tests for Supabase StateStore."""
 
 from datetime import datetime, timedelta
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -94,9 +94,7 @@ class TestSupabaseStateStoreOperations:
 
         mock_response = MagicMock()
         mock_response.data = state_data
-        store._client.table.return_value.select.return_value.eq.return_value.maybe_single.return_value.execute.return_value = (
-            mock_response
-        )
+        store._client.table.return_value.select.return_value.eq.return_value.maybe_single.return_value.execute.return_value = mock_response
 
         state = store.load("test-project")
 
@@ -107,9 +105,7 @@ class TestSupabaseStateStoreOperations:
         """Test loading non-existent state."""
         mock_response = MagicMock()
         mock_response.data = None
-        store._client.table.return_value.select.return_value.eq.return_value.maybe_single.return_value.execute.return_value = (
-            mock_response
-        )
+        store._client.table.return_value.select.return_value.eq.return_value.maybe_single.return_value.execute.return_value = mock_response
 
         with pytest.raises(StateNotFoundError):
             store.load("nonexistent")
@@ -127,9 +123,7 @@ class TestSupabaseStateStoreOperations:
         """Test exists returns True for existing project."""
         mock_response = MagicMock()
         mock_response.data = {"project_id": "test"}
-        store._client.table.return_value.select.return_value.eq.return_value.maybe_single.return_value.execute.return_value = (
-            mock_response
-        )
+        store._client.table.return_value.select.return_value.eq.return_value.maybe_single.return_value.execute.return_value = mock_response
 
         assert store.exists("test") is True
 
@@ -137,9 +131,7 @@ class TestSupabaseStateStoreOperations:
         """Test exists returns False for non-existent project."""
         mock_response = MagicMock()
         mock_response.data = None
-        store._client.table.return_value.select.return_value.eq.return_value.maybe_single.return_value.execute.return_value = (
-            mock_response
-        )
+        store._client.table.return_value.select.return_value.eq.return_value.maybe_single.return_value.execute.return_value = mock_response
 
         assert store.exists("nonexistent") is False
 
@@ -188,9 +180,7 @@ class TestSupabaseLockStore:
         """Test refreshing lock TTL."""
         mock_response = MagicMock()
         mock_response.data = [{"scope": "src/api"}]
-        store._client.table.return_value.update.return_value.eq.return_value.eq.return_value.eq.return_value.execute.return_value = (
-            mock_response
-        )
+        store._client.table.return_value.update.return_value.eq.return_value.eq.return_value.eq.return_value.execute.return_value = mock_response
 
         result = store.refresh_scope_lock("test", "src/api", "worker-1", 300)
 
@@ -204,9 +194,7 @@ class TestSupabaseLockStore:
             "owner": "worker-1",
             "expires_at": expires.isoformat(),
         }
-        store._client.table.return_value.select.return_value.eq.return_value.eq.return_value.maybe_single.return_value.execute.return_value = (
-            mock_response
-        )
+        store._client.table.return_value.select.return_value.eq.return_value.eq.return_value.maybe_single.return_value.execute.return_value = mock_response
 
         result = store.get_scope_lock("test", "src/api")
 
@@ -217,9 +205,7 @@ class TestSupabaseLockStore:
         """Test getting non-existent lock."""
         mock_response = MagicMock()
         mock_response.data = None
-        store._client.table.return_value.select.return_value.eq.return_value.eq.return_value.maybe_single.return_value.execute.return_value = (
-            mock_response
-        )
+        store._client.table.return_value.select.return_value.eq.return_value.eq.return_value.maybe_single.return_value.execute.return_value = mock_response
 
         result = store.get_scope_lock("test", "src/api")
 
@@ -229,9 +215,7 @@ class TestSupabaseLockStore:
         """Test cleaning up expired locks."""
         mock_response = MagicMock()
         mock_response.data = [{"scope": "old-scope"}]
-        store._client.table.return_value.select.return_value.eq.return_value.lt.return_value.execute.return_value = (
-            mock_response
-        )
+        store._client.table.return_value.select.return_value.eq.return_value.lt.return_value.execute.return_value = mock_response
 
         result = store.cleanup_expired("test")
 

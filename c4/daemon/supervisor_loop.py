@@ -130,11 +130,13 @@ class SupervisorLoop:
             if base_url:
                 config["base_url"] = base_url
 
-            result.append({
-                "type": item.type,
-                "name": item.name,
-                "config": config,
-            })
+            result.append(
+                {
+                    "type": item.type,
+                    "name": item.name,
+                    "config": config,
+                }
+            )
 
         return result if result else None
 
@@ -169,8 +171,7 @@ class SupervisorLoop:
             # Checkpoint is handled as a task (CP-XXX)
             # Just clear the queue item - the CP task is created by _check_and_create_checkpoint_task
             logger.info(
-                f"Checkpoint {item.checkpoint_id} handled as task. "
-                f"Removing from checkpoint_queue."
+                f"Checkpoint {item.checkpoint_id} handled as task. Removing from checkpoint_queue."
             )
             state.checkpoint_queue.pop(0)
             self._safe_save_state(f"checkpoint {item.checkpoint_id} moved to task")

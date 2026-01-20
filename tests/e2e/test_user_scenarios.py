@@ -209,14 +209,18 @@ class TestScenario1HappyPath:
         daemon.c4_get_task("worker-1")
         daemon.c4_run_validation()
         daemon.c4_submit(
-            "T-001", "commit1", [{"name": "lint", "status": "pass"}, {"name": "unit", "status": "pass"}]
+            "T-001",
+            "commit1",
+            [{"name": "lint", "status": "pass"}, {"name": "unit", "status": "pass"}],
         )
 
         # Complete T-002
         daemon.c4_get_task("worker-1")
         daemon.c4_run_validation()
         submit_result = daemon.c4_submit(
-            "T-002", "commit2", [{"name": "lint", "status": "pass"}, {"name": "unit", "status": "pass"}]
+            "T-002",
+            "commit2",
+            [{"name": "lint", "status": "pass"}, {"name": "unit", "status": "pass"}],
         )
 
         # Checkpoint 1 should trigger (auto-triggered by c4_submit)
@@ -231,7 +235,9 @@ class TestScenario1HappyPath:
         daemon.c4_get_task("worker-1")
         daemon.c4_run_validation()
         submit_result = daemon.c4_submit(
-            "T-003", "commit3", [{"name": "lint", "status": "pass"}, {"name": "unit", "status": "pass"}]
+            "T-003",
+            "commit3",
+            [{"name": "lint", "status": "pass"}, {"name": "unit", "status": "pass"}],
         )
 
         # Checkpoint 2 should trigger (auto-triggered by c4_submit)
@@ -271,8 +277,12 @@ class TestScenario2RequestChanges:
         mock_run.return_value = MagicMock(returncode=0, stdout="ok", stderr="")
 
         # Setup: Add tasks for CP1
-        daemon.add_task(Task(id="T-001", title="Feature 1", dod="DoD", validations=["lint", "unit"]))
-        daemon.add_task(Task(id="T-002", title="Feature 2", dod="DoD", validations=["lint", "unit"]))
+        daemon.add_task(
+            Task(id="T-001", title="Feature 1", dod="DoD", validations=["lint", "unit"])
+        )
+        daemon.add_task(
+            Task(id="T-002", title="Feature 2", dod="DoD", validations=["lint", "unit"])
+        )
 
         # Execute and complete tasks
         daemon.state_machine.transition("c4_run")
@@ -281,8 +291,9 @@ class TestScenario2RequestChanges:
             daemon.c4_get_task("worker-1")
             daemon.c4_run_validation()
             daemon.c4_submit(
-                task_id, f"commit-{task_id}",
-                [{"name": "lint", "status": "pass"}, {"name": "unit", "status": "pass"}]
+                task_id,
+                f"commit-{task_id}",
+                [{"name": "lint", "status": "pass"}, {"name": "unit", "status": "pass"}],
             )
 
         # Reach checkpoint
@@ -328,22 +339,27 @@ class TestScenario2RequestChanges:
 
         # Setup and reach checkpoint
         daemon.add_task(Task(id="T-001", title="Feature", dod="DoD", validations=["lint", "unit"]))
-        daemon.add_task(Task(id="T-002", title="Feature 2", dod="DoD", validations=["lint", "unit"]))
+        daemon.add_task(
+            Task(id="T-002", title="Feature 2", dod="DoD", validations=["lint", "unit"])
+        )
         daemon.state_machine.transition("c4_run")
 
         for task_id in ["T-001", "T-002"]:
             daemon.c4_get_task("worker-1")
             daemon.c4_submit(
-                task_id, f"commit-{task_id}",
-                [{"name": "lint", "status": "pass"}, {"name": "unit", "status": "pass"}]
+                task_id,
+                f"commit-{task_id}",
+                [{"name": "lint", "status": "pass"}, {"name": "unit", "status": "pass"}],
             )
 
         daemon.check_and_trigger_checkpoint()
 
         # Request changes
         daemon.c4_checkpoint(
-            "CP1", "REQUEST_CHANGES", "Issues found",
-            required_changes=["Fix issue 1", "Fix issue 2"]
+            "CP1",
+            "REQUEST_CHANGES",
+            "Issues found",
+            required_changes=["Fix issue 1", "Fix issue 2"],
         )
 
         # Worker fixes issues
@@ -351,8 +367,9 @@ class TestScenario2RequestChanges:
             assignment = daemon.c4_get_task("worker-1")
             assert assignment.task_id.startswith("RC-CP1")
             daemon.c4_submit(
-                assignment.task_id, f"fix-commit-{i}",
-                [{"name": "lint", "status": "pass"}, {"name": "unit", "status": "pass"}]
+                assignment.task_id,
+                f"fix-commit-{i}",
+                [{"name": "lint", "status": "pass"}, {"name": "unit", "status": "pass"}],
             )
 
         # All tasks done
@@ -385,14 +402,17 @@ class TestScenario3Replan:
 
         # Setup and reach checkpoint
         daemon.add_task(Task(id="T-001", title="Feature", dod="DoD", validations=["lint", "unit"]))
-        daemon.add_task(Task(id="T-002", title="Feature 2", dod="DoD", validations=["lint", "unit"]))
+        daemon.add_task(
+            Task(id="T-002", title="Feature 2", dod="DoD", validations=["lint", "unit"])
+        )
         daemon.state_machine.transition("c4_run")
 
         for task_id in ["T-001", "T-002"]:
             daemon.c4_get_task("worker-1")
             daemon.c4_submit(
-                task_id, f"commit-{task_id}",
-                [{"name": "lint", "status": "pass"}, {"name": "unit", "status": "pass"}]
+                task_id,
+                f"commit-{task_id}",
+                [{"name": "lint", "status": "pass"}, {"name": "unit", "status": "pass"}],
             )
 
         daemon.check_and_trigger_checkpoint()
@@ -546,8 +566,9 @@ class TestScenario5StopResume:
         # Complete first task
         daemon.c4_get_task("worker-1")
         daemon.c4_submit(
-            "T-001", "commit1",
-            [{"name": "lint", "status": "pass"}, {"name": "unit", "status": "pass"}]
+            "T-001",
+            "commit1",
+            [{"name": "lint", "status": "pass"}, {"name": "unit", "status": "pass"}],
         )
 
         # Stop
@@ -683,8 +704,7 @@ class TestScenario8EventLogging:
         daemon.c4_get_task("worker-1")
         daemon.c4_run_validation()
         daemon.c4_submit(
-            "T-001", "abc",
-            [{"name": "lint", "status": "pass"}, {"name": "unit", "status": "pass"}]
+            "T-001", "abc", [{"name": "lint", "status": "pass"}, {"name": "unit", "status": "pass"}]
         )
 
         # Check events logged

@@ -6,8 +6,6 @@ Target: < 10ms per query as per DoD.
 
 import time
 
-import pytest
-
 from c4.supervisor.agent_graph.router import GraphRouter
 from c4.supervisor.agent_router import AgentRouter
 
@@ -121,8 +119,6 @@ class TestRouterComparisonPerformance:
         # Both should be fast enough - main requirement is < 10ms per query
         # GraphRouter with fallback has some overhead but should still be fast
         assert graph_time < 0.5, (  # 500ms for 250 queries = ~2ms per query
-            f"GraphRouter took {graph_time*1000:.2f}ms for 250 queries"
+            f"GraphRouter took {graph_time * 1000:.2f}ms for 250 queries"
         )
-        assert legacy_time < 0.5, (
-            f"AgentRouter took {legacy_time*1000:.2f}ms for 250 queries"
-        )
+        assert legacy_time < 0.5, f"AgentRouter took {legacy_time * 1000:.2f}ms for 250 queries"

@@ -430,15 +430,17 @@ class TestGitHubTokenManager:
         mock_response = MagicMock()
         mock_response.__enter__ = MagicMock(return_value=mock_response)
         mock_response.__exit__ = MagicMock(return_value=False)
-        mock_response.read.return_value = json.dumps({
-            "id": "prov_123",
-            "user_id": "user_123",
-            "provider": "github",
-            "identity_data": {
-                "provider_token": "supabase_token",
-                "scope": "repo",
-            },
-        }).encode()
+        mock_response.read.return_value = json.dumps(
+            {
+                "id": "prov_123",
+                "user_id": "user_123",
+                "provider": "github",
+                "identity_data": {
+                    "provider_token": "supabase_token",
+                    "scope": "repo",
+                },
+            }
+        ).encode()
         mock_urlopen.return_value = mock_response
 
         manager = GitHubTokenManager(
@@ -539,13 +541,15 @@ class TestGitHubTokenManager:
         mock_response = MagicMock()
         mock_response.__enter__ = MagicMock(return_value=mock_response)
         mock_response.__exit__ = MagicMock(return_value=False)
-        mock_response.read.return_value = json.dumps({
-            "access_token": "new_access_token",
-            "token_type": "bearer",
-            "expires_in": 3600,
-            "refresh_token": "new_refresh_token",
-            "scope": "repo",
-        }).encode()
+        mock_response.read.return_value = json.dumps(
+            {
+                "access_token": "new_access_token",
+                "token_type": "bearer",
+                "expires_in": 3600,
+                "refresh_token": "new_refresh_token",
+                "scope": "repo",
+            }
+        ).encode()
         mock_urlopen.return_value = mock_response
 
         manager = GitHubTokenManager(
@@ -572,10 +576,12 @@ class TestGitHubTokenManager:
         mock_response = MagicMock()
         mock_response.__enter__ = MagicMock(return_value=mock_response)
         mock_response.__exit__ = MagicMock(return_value=False)
-        mock_response.read.return_value = json.dumps({
-            "error": "invalid_grant",
-            "error_description": "The refresh token is invalid",
-        }).encode()
+        mock_response.read.return_value = json.dumps(
+            {
+                "error": "invalid_grant",
+                "error_description": "The refresh token is invalid",
+            }
+        ).encode()
         mock_urlopen.return_value = mock_response
 
         manager = GitHubTokenManager(

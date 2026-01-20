@@ -124,9 +124,7 @@ class RuleEngine:
                 return override
         return None
 
-    def find_matching_chain_extensions(
-        self, context: RuleContext
-    ) -> list[ChainExtension]:
+    def find_matching_chain_extensions(self, context: RuleContext) -> list[ChainExtension]:
         """Find all matching chain extension rules.
 
         Args:
@@ -162,14 +160,10 @@ class RuleEngine:
         """
         # Handle logical operators first
         if condition.all is not None:
-            return all(
-                self._evaluate_condition(sub, context) for sub in condition.all
-            )
+            return all(self._evaluate_condition(sub, context) for sub in condition.all)
 
         if condition.any is not None:
-            return any(
-                self._evaluate_condition(sub, context) for sub in condition.any
-            )
+            return any(self._evaluate_condition(sub, context) for sub in condition.any)
 
         if condition.not_ is not None:
             return not self._evaluate_condition(condition.not_, context)
@@ -196,18 +190,14 @@ class RuleEngine:
                 results.append(False)
             else:
                 domains = (
-                    condition.domain
-                    if isinstance(condition.domain, list)
-                    else [condition.domain]
+                    condition.domain if isinstance(condition.domain, list) else [condition.domain]
                 )
                 results.append(context.domain.lower() in [d.lower() for d in domains])
 
         # Keyword matching
         if condition.has_keyword is not None:
             text = context.get_text()
-            has_any_keyword = any(
-                kw.lower() in text for kw in condition.has_keyword
-            )
+            has_any_keyword = any(kw.lower() in text for kw in condition.has_keyword)
             results.append(has_any_keyword)
 
         # File pattern matching
@@ -216,8 +206,7 @@ class RuleEngine:
                 results.append(False)
             else:
                 matches_pattern = any(
-                    fnmatch.fnmatch(context.scope, pattern)
-                    for pattern in condition.file_pattern
+                    fnmatch.fnmatch(context.scope, pattern) for pattern in condition.file_pattern
                 )
                 results.append(matches_pattern)
 

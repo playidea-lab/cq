@@ -73,9 +73,7 @@ class TestOrgMembership:
 
             assert result.success is True
             assert result.data["is_member"] is True
-            mock_api.assert_called_once_with(
-                "GET", "/orgs/test-org/members/test-user"
-            )
+            mock_api.assert_called_once_with("GET", "/orgs/test-org/members/test-user")
 
     def test_check_org_membership_not_member(self, client):
         """Test checking membership when user is not a member."""
@@ -147,9 +145,7 @@ class TestCollaboratorManagement:
         with patch.object(client, "_api_request") as mock_api:
             mock_api.return_value = (204, None)
 
-            result = client.invite_collaborator(
-                "owner", "repo", "existing-user"
-            )
+            result = client.invite_collaborator("owner", "repo", "existing-user")
 
             assert result.success is True
             assert result.data["already_collaborator"] is True
@@ -162,9 +158,7 @@ class TestCollaboratorManagement:
                 {"message": "User does not exist"},
             )
 
-            result = client.invite_collaborator(
-                "owner", "repo", "invalid-user"
-            )
+            result = client.invite_collaborator("owner", "repo", "invalid-user")
 
             assert result.success is False
             assert "Cannot invite" in result.message
@@ -248,9 +242,7 @@ class TestAutoInviteTeamMembers:
                 (201, {"id": 2}),  # invite user2
             ]
 
-            result = client.auto_invite_team_members(
-                "owner", "repo", "test-org"
-            )
+            result = client.auto_invite_team_members("owner", "repo", "test-org")
 
             assert result.success is True
             assert len(result.data["invited"]) == 2
@@ -266,9 +258,7 @@ class TestAutoInviteTeamMembers:
                 (204, None),  # user2 already collaborator
             ]
 
-            result = client.auto_invite_team_members(
-                "owner", "repo", "test-org"
-            )
+            result = client.auto_invite_team_members("owner", "repo", "test-org")
 
             assert result.success is True
             assert len(result.data["invited"]) == 1
@@ -279,9 +269,7 @@ class TestAutoInviteTeamMembers:
         with patch.object(client, "_api_request") as mock_api:
             mock_api.return_value = (401, {"message": "Bad credentials"})
 
-            result = client.auto_invite_team_members(
-                "owner", "repo", "test-org"
-            )
+            result = client.auto_invite_team_members("owner", "repo", "test-org")
 
             assert result.success is False
             assert "Failed to get organization members" in result.message
@@ -325,10 +313,12 @@ class TestGhCliUsage:
         with patch.object(client, "_run_gh") as mock_gh:
             mock_gh.return_value = MagicMock(
                 returncode=0,
-                stdout=json.dumps([
-                    {"login": "user1", "permissions": {}},
-                    {"login": "user2", "permissions": {}},
-                ]),
+                stdout=json.dumps(
+                    [
+                        {"login": "user1", "permissions": {}},
+                        {"login": "user2", "permissions": {}},
+                    ]
+                ),
             )
 
             result = client.list_collaborators("owner", "repo")

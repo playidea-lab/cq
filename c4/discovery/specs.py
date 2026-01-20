@@ -366,21 +366,13 @@ EARS_TEMPLATES: dict[Domain, dict[str, str]] = {
     },
     Domain.WEB_BACKEND: {
         "api_endpoint": (
-            "When {http_method} request to {endpoint}, "
-            "the system shall {response_action}"
+            "When {http_method} request to {endpoint}, the system shall {response_action}"
         ),
-        "auth_check": (
-            "If user is not authenticated, "
-            "the system shall return 401 Unauthorized"
-        ),
+        "auth_check": ("If user is not authenticated, the system shall return 401 Unauthorized"),
         "validation": (
-            "If request body is invalid, "
-            "the system shall return 400 with validation errors"
+            "If request body is invalid, the system shall return 400 with validation errors"
         ),
-        "rate_limit": (
-            "When rate limit exceeded, "
-            "the system shall return 429 Too Many Requests"
-        ),
+        "rate_limit": ("When rate limit exceeded, the system shall return 429 Too Many Requests"),
     },
     Domain.ML_DL: {
         "model_accuracy": "The model shall achieve {metric} >= {threshold} on {dataset}",
@@ -393,8 +385,7 @@ EARS_TEMPLATES: dict[Domain, dict[str, str]] = {
         "background_sync": "When app enters foreground, the system shall sync pending changes",
         "permission_denied": "If user denies {permission}, the system shall {fallback_action}",
         "push_notification": (
-            "When push notification received, "
-            "the system shall {notification_action}"
+            "When push notification received, the system shall {notification_action}"
         ),
     },
     Domain.INFRA: {

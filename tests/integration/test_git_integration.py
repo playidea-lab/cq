@@ -79,9 +79,7 @@ class TestAutoCommitWorkflow:
         assert "[T-001]" in log.stdout
         assert "Implement feature" in log.stdout
 
-    def test_multiple_tasks_create_separate_commits(
-        self, project_with_c4: Path
-    ) -> None:
+    def test_multiple_tasks_create_separate_commits(self, project_with_c4: Path) -> None:
         """Test that multiple tasks create separate commits."""
         git_ops = GitOperations(project_with_c4)
 
@@ -172,9 +170,7 @@ class TestCheckpointTagWorkflow:
 
         return project, git_ops
 
-    def test_checkpoint_creates_tag(
-        self, project_with_tasks: tuple[Path, GitOperations]
-    ) -> None:
+    def test_checkpoint_creates_tag(self, project_with_tasks: tuple[Path, GitOperations]) -> None:
         """Test that checkpoint creates an annotated tag."""
         project, git_ops = project_with_tasks
 
@@ -195,9 +191,7 @@ class TestCheckpointTagWorkflow:
         )
         assert "c4/CP-001" in tags.stdout
 
-    def test_multiple_checkpoints(
-        self, project_with_tasks: tuple[Path, GitOperations]
-    ) -> None:
+    def test_multiple_checkpoints(self, project_with_tasks: tuple[Path, GitOperations]) -> None:
         """Test creating multiple checkpoints."""
         project, git_ops = project_with_tasks
 
@@ -294,9 +288,7 @@ class TestRollbackWorkflow:
         assert len(commits) == 1
         assert "T-002" in commits[0]["message"]
 
-    def test_rollback_to_checkpoint(
-        self, project_with_history: tuple[Path, GitOperations]
-    ) -> None:
+    def test_rollback_to_checkpoint(self, project_with_history: tuple[Path, GitOperations]) -> None:
         """Test rolling back to a checkpoint using git reset."""
         project, git_ops = project_with_history
 
@@ -394,9 +386,7 @@ class TestTaskBranchWorkflow:
 
         return project, GitOperations(project)
 
-    def test_create_task_branch(
-        self, git_project: tuple[Path, GitOperations]
-    ) -> None:
+    def test_create_task_branch(self, git_project: tuple[Path, GitOperations]) -> None:
         """Test creating a branch for a task."""
         project, git_ops = git_project
 
@@ -405,9 +395,7 @@ class TestTaskBranchWorkflow:
         assert result.success is True
         assert git_ops.get_branch_name() == "c4/w-T-001"
 
-    def test_switch_between_task_branches(
-        self, git_project: tuple[Path, GitOperations]
-    ) -> None:
+    def test_switch_between_task_branches(self, git_project: tuple[Path, GitOperations]) -> None:
         """Test switching between multiple task branches."""
         project, git_ops = git_project
 

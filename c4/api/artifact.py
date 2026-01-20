@@ -60,10 +60,7 @@ class DownloadToken:
 
     def is_valid(self) -> bool:
         """Check if token is still valid."""
-        return (
-            datetime.now() < self.expires_at
-            and self.download_count < self.max_downloads
-        )
+        return datetime.now() < self.expires_at and self.download_count < self.max_downloads
 
 
 @dataclass
@@ -462,9 +459,7 @@ class ArtifactService:
             self._content.pop(artifact_id, None)
 
         # Clean up expired tokens
-        expired_tokens = [
-            token for token, dt in self._tokens.items() if not dt.is_valid()
-        ]
+        expired_tokens = [token for token, dt in self._tokens.items() if not dt.is_valid()]
         for token in expired_tokens:
             self._tokens.pop(token, None)
 

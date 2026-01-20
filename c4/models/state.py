@@ -100,10 +100,7 @@ class TaskQueue(BaseModel):
         """Extract worker IDs from dict, handling corrupt dict entries."""
         if not isinstance(v, dict):
             return {}
-        return {
-            _extract_task_id(k): _extract_worker_id(val)
-            for k, val in v.items()
-        }
+        return {_extract_task_id(k): _extract_worker_id(val) for k, val in v.items()}
 
 
 class Metrics(BaseModel):

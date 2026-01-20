@@ -218,8 +218,7 @@ def create_task_store(
 
     if backend != BACKEND_SQLITE:
         raise ValueError(
-            f"TaskStore is only available for SQLite backend, "
-            f"current backend: {backend}"
+            f"TaskStore is only available for SQLite backend, current backend: {backend}"
         )
 
     from .sqlite import SQLiteTaskStore

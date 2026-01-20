@@ -45,10 +45,7 @@ def main() -> int:
             # Clone repository
             clone_url = repo_url
             if github_token and "github.com" in repo_url:
-                clone_url = repo_url.replace(
-                    "https://",
-                    f"https://{github_token}@"
-                )
+                clone_url = repo_url.replace("https://", f"https://{github_token}@")
 
             result = subprocess.run(
                 ["git", "clone", "--depth", "1", clone_url, str(project_dir)],

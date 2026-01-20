@@ -45,17 +45,19 @@ class TestLoginFlow:
         mock_response = MagicMock()
         mock_response.__enter__ = MagicMock(return_value=mock_response)
         mock_response.__exit__ = MagicMock(return_value=False)
-        mock_response.read.return_value = json.dumps({
-            "id": "identity_123",
-            "user_id": "user_456",
-            "provider": "github",
-            "identity_data": {
-                "provider_token": "supabase_github_token",
-                "provider_refresh_token": "refresh_token_789",
-                "scope": "repo,user",
-                "expires_in": 7200,
-            },
-        }).encode()
+        mock_response.read.return_value = json.dumps(
+            {
+                "id": "identity_123",
+                "user_id": "user_456",
+                "provider": "github",
+                "identity_data": {
+                    "provider_token": "supabase_github_token",
+                    "provider_refresh_token": "refresh_token_789",
+                    "scope": "repo,user",
+                    "expires_in": 7200,
+                },
+            }
+        ).encode()
         mock_urlopen.return_value = mock_response
 
         manager = GitHubTokenManager(
@@ -87,12 +89,14 @@ class TestLoginFlow:
         mock_response = MagicMock()
         mock_response.__enter__ = MagicMock(return_value=mock_response)
         mock_response.__exit__ = MagicMock(return_value=False)
-        mock_response.read.return_value = json.dumps({
-            "identity_data": {
-                "provider_token": "cached_token",
-                "expires_in": 3600,
-            },
-        }).encode()
+        mock_response.read.return_value = json.dumps(
+            {
+                "identity_data": {
+                    "provider_token": "cached_token",
+                    "expires_in": 3600,
+                },
+            }
+        ).encode()
         mock_urlopen.return_value = mock_response
 
         manager = GitHubTokenManager(
@@ -119,13 +123,15 @@ class TestTokenRefreshFlow:
         mock_response = MagicMock()
         mock_response.__enter__ = MagicMock(return_value=mock_response)
         mock_response.__exit__ = MagicMock(return_value=False)
-        mock_response.read.return_value = json.dumps({
-            "access_token": "new_access_token",
-            "token_type": "bearer",
-            "expires_in": 7200,
-            "refresh_token": "new_refresh_token",
-            "scope": "repo,user",
-        }).encode()
+        mock_response.read.return_value = json.dumps(
+            {
+                "access_token": "new_access_token",
+                "token_type": "bearer",
+                "expires_in": 7200,
+                "refresh_token": "new_refresh_token",
+                "scope": "repo,user",
+            }
+        ).encode()
         mock_urlopen.return_value = mock_response
 
         manager = GitHubTokenManager(
@@ -156,10 +162,12 @@ class TestTokenRefreshFlow:
         mock_response = MagicMock()
         mock_response.__enter__ = MagicMock(return_value=mock_response)
         mock_response.__exit__ = MagicMock(return_value=False)
-        mock_response.read.return_value = json.dumps({
-            "access_token": "refreshed_token",
-            "expires_in": 3600,
-        }).encode()
+        mock_response.read.return_value = json.dumps(
+            {
+                "access_token": "refreshed_token",
+                "expires_in": 3600,
+            }
+        ).encode()
         mock_urlopen.return_value = mock_response
 
         manager = GitHubTokenManager(
@@ -217,10 +225,12 @@ class TestTokenRefreshFlow:
         mock_response = MagicMock()
         mock_response.__enter__ = MagicMock(return_value=mock_response)
         mock_response.__exit__ = MagicMock(return_value=False)
-        mock_response.read.return_value = json.dumps({
-            "error": "invalid_grant",
-            "error_description": "The refresh token has expired",
-        }).encode()
+        mock_response.read.return_value = json.dumps(
+            {
+                "error": "invalid_grant",
+                "error_description": "The refresh token has expired",
+            }
+        ).encode()
         mock_urlopen.return_value = mock_response
 
         manager = GitHubTokenManager(
@@ -254,19 +264,23 @@ class TestTokenRefreshFlow:
 
             if call_count[0] == 1:
                 # Supabase returns expiring token
-                mock_response.read.return_value = json.dumps({
-                    "identity_data": {
-                        "provider_token": "expiring_token",
-                        "provider_refresh_token": "refresh_token",
-                        "expires_in": 60,  # Expiring in 1 minute
-                    },
-                }).encode()
+                mock_response.read.return_value = json.dumps(
+                    {
+                        "identity_data": {
+                            "provider_token": "expiring_token",
+                            "provider_refresh_token": "refresh_token",
+                            "expires_in": 60,  # Expiring in 1 minute
+                        },
+                    }
+                ).encode()
             else:
                 # GitHub returns refreshed token
-                mock_response.read.return_value = json.dumps({
-                    "access_token": "fresh_token",
-                    "expires_in": 3600,
-                }).encode()
+                mock_response.read.return_value = json.dumps(
+                    {
+                        "access_token": "fresh_token",
+                        "expires_in": 3600,
+                    }
+                ).encode()
             return mock_response
 
         mock_urlopen.side_effect = mock_urlopen_impl
@@ -346,9 +360,7 @@ class TestGitHubIntegration:
         mock_urlopen.side_effect = HTTPError(
             url="test", code=404, msg="Not Found", hdrs={}, fp=MagicMock()
         )
-        mock_urlopen.side_effect.read = MagicMock(
-            return_value=b'{"message": "Not Found"}'
-        )
+        mock_urlopen.side_effect.read = MagicMock(return_value=b'{"message": "Not Found"}')
 
         client = GitHubClient(token="test_token")
         client._gh_available = False
@@ -366,9 +378,7 @@ class TestGitHubIntegration:
         mock_urlopen.side_effect = HTTPError(
             url="test", code=401, msg="Unauthorized", hdrs={}, fp=MagicMock()
         )
-        mock_urlopen.side_effect.read = MagicMock(
-            return_value=b'{"message": "Bad credentials"}'
-        )
+        mock_urlopen.side_effect.read = MagicMock(return_value=b'{"message": "Bad credentials"}')
 
         client = GitHubClient(token="invalid_token")
         client._gh_available = False
@@ -403,12 +413,14 @@ class TestAuthWithGitHub:
         mock_auth_response = MagicMock()
         mock_auth_response.__enter__ = MagicMock(return_value=mock_auth_response)
         mock_auth_response.__exit__ = MagicMock(return_value=False)
-        mock_auth_response.read.return_value = json.dumps({
-            "identity_data": {
-                "provider_token": "github_token_from_supabase",
-                "scope": "repo,user",
-            },
-        }).encode()
+        mock_auth_response.read.return_value = json.dumps(
+            {
+                "identity_data": {
+                    "provider_token": "github_token_from_supabase",
+                    "scope": "repo,user",
+                },
+            }
+        ).encode()
         mock_auth_urlopen.return_value = mock_auth_response
 
         # Get token from auth manager
@@ -439,10 +451,12 @@ class TestAuthWithGitHub:
         mock_response.__enter__ = MagicMock(return_value=mock_response)
         mock_response.__exit__ = MagicMock(return_value=False)
         mock_response.status = 200
-        mock_response.read.return_value = json.dumps({
-            "login": "test-user",
-            "id": 123456,
-        }).encode()
+        mock_response.read.return_value = json.dumps(
+            {
+                "login": "test-user",
+                "id": 123456,
+            }
+        ).encode()
         mock_urlopen.return_value = mock_response
 
         manager = GitHubTokenManager()

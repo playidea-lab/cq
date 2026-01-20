@@ -396,8 +396,7 @@ class MigrationManager:
         if snapshot_id is None:
             # Get most recent completed snapshot with backup
             valid_snapshots = [
-                s for s in self._snapshots
-                if s.status == "completed" and s.backup_path
+                s for s in self._snapshots if s.status == "completed" and s.backup_path
             ]
             if not valid_snapshots:
                 raise MigrationError("No valid snapshots available for rollback")
@@ -452,12 +451,14 @@ class MigrationManager:
                 continue
 
             stat = path.stat()
-            backups.append({
-                "name": path.stem,
-                "path": str(path),
-                "size_bytes": stat.st_size,
-                "created_at": datetime.fromtimestamp(stat.st_mtime).isoformat(),
-            })
+            backups.append(
+                {
+                    "name": path.stem,
+                    "path": str(path),
+                    "size_bytes": stat.st_size,
+                    "created_at": datetime.fromtimestamp(stat.st_mtime).isoformat(),
+                }
+            )
 
         return sorted(backups, key=lambda x: x["created_at"], reverse=True)
 

@@ -197,10 +197,10 @@ class TestMultiWorkerAutomation:
         # Add multiple tasks
         for i in range(3):
             daemon.c4_add_todo(
-                task_id=f"T-00{i+1}",
-                title=f"Task {i+1}",
-                scope=f"src/module{i+1}/",
-                dod=f"Complete task {i+1}",
+                task_id=f"T-00{i + 1}",
+                title=f"Task {i + 1}",
+                scope=f"src/module{i + 1}/",
+                dod=f"Complete task {i + 1}",
             )
 
         # Start execution
@@ -297,9 +297,7 @@ class TestSupervisorLoopAutomation:
         with patch.object(daemon, "create_checkpoint_bundle") as mock_bundle:
             mock_bundle.return_value = Path("/tmp/bundle")
 
-            with patch(
-                "c4.daemon.supervisor_loop.Supervisor"
-            ) as mock_supervisor_class:
+            with patch("c4.daemon.supervisor_loop.Supervisor") as mock_supervisor_class:
                 mock_supervisor = MagicMock()
                 mock_supervisor.run_supervisor_strict.return_value = mock_response
                 mock_supervisor_class.return_value = mock_supervisor

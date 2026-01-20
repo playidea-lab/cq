@@ -1,6 +1,6 @@
 """Tests for GitHub Integration."""
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -182,9 +182,7 @@ class TestRepoCollaborators:
         mock_response.json.return_value = {"id": 99999}
         client._client.put.return_value = mock_response
 
-        result = client.add_repo_collaborator(
-            "owner", "repo", "user1", PermissionLevel.WRITE
-        )
+        result = client.add_repo_collaborator("owner", "repo", "user1", PermissionLevel.WRITE)
 
         assert result is not None
         assert result.invitation_id == 99999
@@ -255,9 +253,7 @@ class TestPermissionManager:
         assert result["user1"] == MembershipStatus.ACTIVE
         assert result["user2"] == MembershipStatus.NOT_MEMBER
 
-    def test_invite_to_org(
-        self, manager: GitHubPermissionManager, mock_client: MagicMock
-    ) -> None:
+    def test_invite_to_org(self, manager: GitHubPermissionManager, mock_client: MagicMock) -> None:
         """Test inviting multiple users."""
         mock_client.check_org_membership.return_value = OrgMembership(
             "org", "user1", MembershipStatus.NOT_MEMBER
@@ -292,9 +288,7 @@ class TestPermissionManager:
             permission=PermissionLevel.WRITE,
         )
 
-        result = manager.ensure_repo_access(
-            "owner", "repo", ["user1"], PermissionLevel.WRITE
-        )
+        result = manager.ensure_repo_access("owner", "repo", ["user1"], PermissionLevel.WRITE)
 
         assert result["user1"] is True
         mock_client.add_repo_collaborator.assert_not_called()
@@ -333,19 +327,11 @@ class TestPermissionManager:
         assert result["user2"] is False  # Only has read
         assert result["user3"] is False  # Not a collaborator
 
-    def test_permission_comparison(
-        self, manager: GitHubPermissionManager
-    ) -> None:
+    def test_permission_comparison(self, manager: GitHubPermissionManager) -> None:
         """Test permission level comparison."""
-        assert manager._has_sufficient_permission(
-            PermissionLevel.ADMIN, PermissionLevel.WRITE
-        )
-        assert manager._has_sufficient_permission(
-            PermissionLevel.WRITE, PermissionLevel.WRITE
-        )
-        assert not manager._has_sufficient_permission(
-            PermissionLevel.READ, PermissionLevel.WRITE
-        )
+        assert manager._has_sufficient_permission(PermissionLevel.ADMIN, PermissionLevel.WRITE)
+        assert manager._has_sufficient_permission(PermissionLevel.WRITE, PermissionLevel.WRITE)
+        assert not manager._has_sufficient_permission(PermissionLevel.READ, PermissionLevel.WRITE)
 
     def test_context_manager(self, mock_client: MagicMock) -> None:
         """Test context manager protocol."""

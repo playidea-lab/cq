@@ -2,8 +2,6 @@
 
 from pathlib import Path
 
-import pytest
-
 from c4.sandbox.executor import (
     ExecutionResult,
     ResourceLimits,
@@ -294,8 +292,6 @@ class TestEnvironment:
         config = SandboxConfig(limits=ResourceLimits(network_enabled=False))
 
         with SandboxExecutor(config) as executor:
-            result = executor.run(
-                ["bash", "-c", "echo $C4_NETWORK_DISABLED"]
-            )
+            result = executor.run(["bash", "-c", "echo $C4_NETWORK_DISABLED"])
 
             assert "1" in result.stdout

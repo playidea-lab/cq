@@ -558,12 +558,12 @@ class TestPanelTarget:
     def test_to_dict(self):
         """Test converting target to dict."""
         target = PanelTarget(
-            expr='rate(http_requests_total[5m])',
+            expr="rate(http_requests_total[5m])",
             legend_format="{{method}}",
         )
         data = target.to_dict()
 
-        assert data["expr"] == 'rate(http_requests_total[5m])'
+        assert data["expr"] == "rate(http_requests_total[5m])"
         assert data["legendFormat"] == "{{method}}"
 
 
@@ -576,9 +576,7 @@ class TestPanel:
             id=1,
             title="Request Rate",
             type=PanelType.TIMESERIES,
-            targets=[
-                PanelTarget(expr='rate(http_requests_total[5m])')
-            ],
+            targets=[PanelTarget(expr="rate(http_requests_total[5m])")],
         )
 
         assert panel.id == 1
@@ -590,7 +588,7 @@ class TestPanel:
             id=1,
             title="Test Panel",
             type=PanelType.STAT,
-            targets=[PanelTarget(expr='sum(requests)')],
+            targets=[PanelTarget(expr="sum(requests)")],
             unit="reqps",
         )
         data = panel.to_dict()
@@ -644,7 +642,7 @@ class TestDashboard:
                     id=1,
                     title="Test Panel",
                     type=PanelType.STAT,
-                    targets=[PanelTarget(expr='test')],
+                    targets=[PanelTarget(expr="test")],
                 )
             ],
         )
@@ -684,7 +682,7 @@ class TestDashboardBuilder:
         dashboard = (
             DashboardBuilder("test", "Test")
             .row("Overview")
-            .stat("Requests", 'sum(requests)')
+            .stat("Requests", "sum(requests)")
             .build()
         )
 
@@ -696,9 +694,9 @@ class TestDashboardBuilder:
         """Test adding multiple panels."""
         dashboard = (
             DashboardBuilder("test", "Test")
-            .stat("Stat 1", 'expr1')
-            .timeseries("Graph 1", 'expr2')
-            .gauge("Gauge 1", 'expr3')
+            .stat("Stat 1", "expr1")
+            .timeseries("Graph 1", "expr2")
+            .gauge("Gauge 1", "expr3")
             .build()
         )
 
