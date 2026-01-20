@@ -375,19 +375,28 @@ class TestCostOptimization:
         )
         assert "sonnet" in selection.model_id.lower()
 
-    def test_auto_complexity_detection(self):
-        """Auto-detect complexity from prompt content."""
-        optimizer = create_cost_optimizer()
+    def test_budget_alert_creation(self):
+        """Create alerts when budget exceeded or near threshold."""
+        from c4.supervisor.cost_optimizer import CostAlert
 
-        # Simple prompt
-        complexity = optimizer.detect_complexity("Format this code")
-        assert complexity == TaskComplexity.LOW
+        optimizer = create_cost_optimizer(budget=0.10)
 
-        # Complex prompt
-        complexity = optimizer.detect_complexity(
-            "Design the distributed cache architecture"
-        )
-        assert complexity == TaskComplexity.HIGH
+        # No alert when within budget
+        alert = optimizer.create_budget_alert(0.01)
+        assert alert is None
+
+        # Use most of budget
+        optimizer.record_usage(0.085)
+
+        # Warning alert when approaching threshold
+        alert = optimizer.create_budget_alert(0.01)
+        assert alert is not None
+        assert alert.alert_type == CostAlert.BUDGET_WARNING
+
+        # Exceeded alert when over budget
+        alert = optimizer.create_budget_alert(0.05)
+        assert alert is not None
+        assert alert.alert_type == CostAlert.BUDGET_EXCEEDED
 
     def test_prompt_optimization(self):
         """Optimize long prompts to reduce tokens."""

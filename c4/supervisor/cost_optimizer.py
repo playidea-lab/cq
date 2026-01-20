@@ -5,8 +5,13 @@ Provides cost optimization strategies including:
 - Token limits and budget constraints
 - Prompt caching hints for repeated content
 
+NOTE: Complexity analysis should be done during Discovery phase using LLM,
+not pattern matching. The complexity value should be stored in task spec
+and passed to select_model() directly.
+
 Example:
     >>> optimizer = CostOptimizer()
+    >>> # Complexity comes from Discovery phase (LLM-analyzed)
     >>> model = optimizer.select_model(prompt, complexity="medium")
     >>> optimized = optimizer.optimize_prompt(prompt, max_tokens=4000)
 """
@@ -29,12 +34,33 @@ logger = logging.getLogger(__name__)
 
 
 class TaskComplexity(str, Enum):
-    """Task complexity levels for model selection."""
+    """Task complexity levels for model selection.
+
+    These values should be determined during Discovery phase
+    by LLM analysis, not runtime pattern matching.
+    """
 
     LOW = "low"  # Simple tasks: formatting, basic Q&A
     MEDIUM = "medium"  # Standard tasks: code review, summaries
     HIGH = "high"  # Complex tasks: architecture, deep analysis
-    AUTO = "auto"  # Automatically detect complexity
+
+
+class CostAlert(str, Enum):
+    """Types of cost-related alerts for user notification."""
+
+    BUDGET_WARNING = "budget_warning"  # Approaching budget limit
+    BUDGET_EXCEEDED = "budget_exceeded"  # Budget limit reached
+    MODEL_UNAVAILABLE = "model_unavailable"  # Requested model not available
+    RATE_LIMITED = "rate_limited"  # Hit rate limit
+
+
+@dataclass
+class CostAlertInfo:
+    """Information about a cost alert."""
+
+    alert_type: CostAlert
+    message: str
+    details: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -45,7 +71,6 @@ class ModelSelection:
     tier: ClaudeModelTier
     reason: str
     estimated_cost: float | None = None
-    fallback_model: str | None = None
 
 
 @dataclass
@@ -71,46 +96,6 @@ class CostEstimate:
     estimated_cost: float
     budget_percentage: float | None = None
 
-
-# Complexity detection patterns
-COMPLEXITY_PATTERNS = {
-    TaskComplexity.HIGH: [
-        r"architect",
-        r"design.*system",
-        r"refactor.*entire",
-        r"complex.*implementation",
-        r"deep.*analysis",
-        r"critical.*review",
-        r"security.*audit",
-        r"performance.*optimization",
-        r"multi-?service",
-        r"distributed",
-    ],
-    TaskComplexity.MEDIUM: [
-        r"review",
-        r"implement",
-        r"fix.*bug",
-        r"add.*feature",
-        r"test",
-        r"document",
-        r"explain",
-        r"analyze",
-        r"debug",
-        r"improve",
-    ],
-    TaskComplexity.LOW: [
-        r"format",
-        r"lint",
-        r"typo",
-        r"rename",
-        r"simple",
-        r"basic",
-        r"minor",
-        r"small",
-        r"quick",
-        r"straightforward",
-    ],
-}
 
 # Model selection by complexity
 COMPLEXITY_TO_MODEL = {
@@ -169,63 +154,21 @@ class CostOptimizer:
         self._prompt_cache: dict[str, str] = {}
         self._session_cost: float = 0.0
 
-    def detect_complexity(
-        self, prompt: str, context: dict[str, Any] | None = None
-    ) -> TaskComplexity:
-        """Detect task complexity from prompt content.
-
-        Args:
-            prompt: The prompt text
-            context: Optional context (file count, code size, etc.)
-
-        Returns:
-            Detected complexity level
-        """
-        prompt_lower = prompt.lower()
-
-        # Check context hints first
-        if context:
-            file_count = context.get("file_count", 0)
-            code_lines = context.get("code_lines", 0)
-            has_architecture = context.get("architecture", False)
-
-            if has_architecture or file_count > 10 or code_lines > 1000:
-                return TaskComplexity.HIGH
-            if file_count > 3 or code_lines > 200:
-                return TaskComplexity.MEDIUM
-
-        # Check for high complexity patterns
-        for pattern in COMPLEXITY_PATTERNS[TaskComplexity.HIGH]:
-            if re.search(pattern, prompt_lower):
-                return TaskComplexity.HIGH
-
-        # Check for low complexity patterns
-        for pattern in COMPLEXITY_PATTERNS[TaskComplexity.LOW]:
-            if re.search(pattern, prompt_lower):
-                return TaskComplexity.LOW
-
-        # Check for medium complexity patterns
-        for pattern in COMPLEXITY_PATTERNS[TaskComplexity.MEDIUM]:
-            if re.search(pattern, prompt_lower):
-                return TaskComplexity.MEDIUM
-
-        # Default to medium
-        return TaskComplexity.MEDIUM
-
     def select_model(
         self,
         prompt: str,
-        complexity: TaskComplexity | str = TaskComplexity.AUTO,
-        context: dict[str, Any] | None = None,
+        complexity: TaskComplexity | str = TaskComplexity.MEDIUM,
         min_tier: ClaudeModelTier | None = None,
         max_tier: ClaudeModelTier | None = None,
     ) -> ModelSelection:
         """Select optimal model based on task complexity.
 
+        NOTE: Complexity should be determined during Discovery phase using LLM,
+        not at runtime. Pass the pre-analyzed complexity value here.
+
         Args:
-            prompt: The prompt text
-            complexity: Task complexity (or AUTO to detect)
-            context: Optional context for better detection
+            prompt: The prompt text (used for token estimation)
+            complexity: Task complexity (from Discovery phase LLM analysis)
             min_tier: Minimum model tier to use
             max_tier: Maximum model tier to use
 
@@ -236,16 +179,10 @@ class CostOptimizer:
         if isinstance(complexity, str):
             complexity = TaskComplexity(complexity)
 
-        # Auto-detect complexity if requested
-        if complexity == TaskComplexity.AUTO:
-            detected = self.detect_complexity(prompt, context)
-            reason_prefix = f"Auto-detected {detected.value} complexity. "
-        else:
-            detected = complexity
-            reason_prefix = f"Requested {detected.value} complexity. "
+        reason_prefix = f"Complexity: {complexity.value}. "
 
         # Get base model for complexity
-        model_id = COMPLEXITY_TO_MODEL.get(detected, self.default_model)
+        model_id = COMPLEXITY_TO_MODEL.get(complexity, self.default_model)
 
         # Apply tier constraints
         preset = get_model_preset(model_id)
@@ -263,10 +200,10 @@ class CostOptimizer:
                 reason_prefix += f"Capped at {max_tier.value} (maximum tier). "
 
         # Cost savings preference
-        if self.prefer_cost_savings and detected == TaskComplexity.MEDIUM:
+        if self.prefer_cost_savings and complexity == TaskComplexity.MEDIUM:
             # Try haiku for medium tasks
             model_id = COMPLEXITY_TO_MODEL[TaskComplexity.LOW]
-            reason_prefix += "Cost savings: trying cheaper model. "
+            reason_prefix += "Cost savings: using cheaper model. "
 
         # Get final preset and estimate
         final_preset = get_model_preset(model_id)
@@ -274,15 +211,8 @@ class CostOptimizer:
 
         # Estimate tokens and cost
         input_tokens = self._estimate_tokens(prompt)
-        output_tokens = self._estimate_output_tokens(detected)
+        output_tokens = self._estimate_output_tokens(complexity)
         estimated_cost = estimate_cost(model_id, input_tokens, output_tokens)
-
-        # Determine fallback
-        fallback = None
-        if tier == ClaudeModelTier.HAIKU:
-            fallback = COMPLEXITY_TO_MODEL[TaskComplexity.MEDIUM]
-        elif tier == ClaudeModelTier.SONNET:
-            fallback = COMPLEXITY_TO_MODEL[TaskComplexity.LOW]
 
         display_name = final_preset.display_name if final_preset else model_id
         reason = f"{reason_prefix}Selected {display_name}."
@@ -292,7 +222,6 @@ class CostOptimizer:
             tier=tier,
             reason=reason,
             estimated_cost=estimated_cost,
-            fallback_model=fallback,
         )
 
     def _tier_order(self, tier: ClaudeModelTier) -> int:
@@ -487,34 +416,105 @@ class CostOptimizer:
             "is_exceeded": remaining < 0,
         }
 
-    def suggest_model_downgrade(
+    def create_budget_alert(
         self,
-        current_model: str,
-        error_reason: str | None = None,
-    ) -> str | None:
-        """Suggest a cheaper model after failure.
+        estimated_cost: float,
+        threshold_percentage: float = 80.0,
+    ) -> CostAlertInfo | None:
+        """Create alert if budget threshold exceeded.
 
         Args:
-            current_model: Current model that failed/is too expensive
-            error_reason: Reason for downgrade
+            estimated_cost: Estimated cost for next request
+            threshold_percentage: Warning threshold (default 80%)
 
         Returns:
-            Suggested cheaper model or None
+            CostAlertInfo if alert needed, None otherwise
         """
-        preset = get_model_preset(current_model)
-        if not preset:
+        if self.budget is None:
             return None
 
-        tier = preset.tier
+        status = self.get_budget_status()
+        remaining = status["remaining"]
 
-        if tier == ClaudeModelTier.OPUS:
-            logger.info(f"Suggesting Sonnet instead of Opus: {error_reason}")
-            return self._get_model_for_tier(ClaudeModelTier.SONNET)
-        elif tier == ClaudeModelTier.SONNET:
-            logger.info(f"Suggesting Haiku instead of Sonnet: {error_reason}")
-            return self._get_model_for_tier(ClaudeModelTier.HAIKU)
+        # Budget exceeded
+        if remaining < estimated_cost:
+            return CostAlertInfo(
+                alert_type=CostAlert.BUDGET_EXCEEDED,
+                message=f"Budget exceeded. Remaining: ${remaining:.4f}, "
+                f"Estimated cost: ${estimated_cost:.4f}",
+                details={
+                    "budget": self.budget,
+                    "used": status["used"],
+                    "remaining": remaining,
+                    "estimated_cost": estimated_cost,
+                },
+            )
+
+        # Budget warning (approaching threshold)
+        if status["percentage_used"] >= threshold_percentage:
+            return CostAlertInfo(
+                alert_type=CostAlert.BUDGET_WARNING,
+                message=f"Budget warning: {status['percentage_used']:.1f}% used. "
+                f"Remaining: ${remaining:.4f}",
+                details={
+                    "budget": self.budget,
+                    "used": status["used"],
+                    "remaining": remaining,
+                    "percentage_used": status["percentage_used"],
+                },
+            )
 
         return None
+
+    def create_model_unavailable_alert(
+        self,
+        model: str,
+        reason: str,
+    ) -> CostAlertInfo:
+        """Create alert when requested model is unavailable.
+
+        Args:
+            model: The unavailable model ID
+            reason: Reason for unavailability
+
+        Returns:
+            CostAlertInfo for user notification
+        """
+        return CostAlertInfo(
+            alert_type=CostAlert.MODEL_UNAVAILABLE,
+            message=f"Model '{model}' is unavailable: {reason}",
+            details={
+                "model": model,
+                "reason": reason,
+            },
+        )
+
+    def create_rate_limit_alert(
+        self,
+        model: str,
+        retry_after: float | None = None,
+    ) -> CostAlertInfo:
+        """Create alert when rate limited.
+
+        Args:
+            model: The rate-limited model ID
+            retry_after: Suggested retry delay in seconds
+
+        Returns:
+            CostAlertInfo for user notification
+        """
+        msg = f"Rate limited on model '{model}'."
+        if retry_after:
+            msg += f" Retry after {retry_after:.1f}s."
+
+        return CostAlertInfo(
+            alert_type=CostAlert.RATE_LIMITED,
+            message=msg,
+            details={
+                "model": model,
+                "retry_after": retry_after,
+            },
+        )
 
 
 def create_cost_optimizer(

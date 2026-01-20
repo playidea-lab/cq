@@ -2,6 +2,8 @@
 
 from c4.supervisor.claude_models import ClaudeModelTier
 from c4.supervisor.cost_optimizer import (
+    CostAlert,
+    CostAlertInfo,
     CostEstimate,
     CostOptimizer,
     ModelSelection,
@@ -19,7 +21,32 @@ class TestTaskComplexity:
         assert TaskComplexity.LOW == "low"
         assert TaskComplexity.MEDIUM == "medium"
         assert TaskComplexity.HIGH == "high"
-        assert TaskComplexity.AUTO == "auto"
+
+
+class TestCostAlert:
+    """Tests for CostAlert enum."""
+
+    def test_alert_types(self):
+        """All expected alert types exist."""
+        assert CostAlert.BUDGET_WARNING == "budget_warning"
+        assert CostAlert.BUDGET_EXCEEDED == "budget_exceeded"
+        assert CostAlert.MODEL_UNAVAILABLE == "model_unavailable"
+        assert CostAlert.RATE_LIMITED == "rate_limited"
+
+
+class TestCostAlertInfo:
+    """Tests for CostAlertInfo dataclass."""
+
+    def test_create_alert_info(self):
+        """Test creating an alert info."""
+        alert = CostAlertInfo(
+            alert_type=CostAlert.BUDGET_EXCEEDED,
+            message="Budget exceeded",
+            details={"remaining": 0.0, "estimated_cost": 0.5},
+        )
+        assert alert.alert_type == CostAlert.BUDGET_EXCEEDED
+        assert alert.message == "Budget exceeded"
+        assert alert.details["remaining"] == 0.0
 
 
 class TestModelSelection:
@@ -32,7 +59,6 @@ class TestModelSelection:
             tier=ClaudeModelTier.SONNET,
             reason="Selected for medium complexity",
             estimated_cost=0.05,
-            fallback_model="claude-3-5-haiku-20241022",
         )
         assert selection.model_id == "claude-sonnet-4-20250514"
         assert selection.tier == ClaudeModelTier.SONNET
@@ -96,81 +122,6 @@ class TestCostOptimizer:
         assert optimizer.cache_prompts is False
 
 
-class TestComplexityDetection:
-    """Tests for complexity detection."""
-
-    def test_detect_low_complexity(self):
-        """Detect low complexity tasks."""
-        optimizer = CostOptimizer()
-
-        prompts = [
-            "Fix the typo in this file",
-            "Format this code",
-            "Simple rename of variable",
-            "Quick lint fix",
-        ]
-
-        for prompt in prompts:
-            complexity = optimizer.detect_complexity(prompt)
-            assert complexity == TaskComplexity.LOW, f"Failed for: {prompt}"
-
-    def test_detect_medium_complexity(self):
-        """Detect medium complexity tasks."""
-        optimizer = CostOptimizer()
-
-        prompts = [
-            "Review this pull request",
-            "Implement the login feature",
-            "Fix the bug in the payment module",
-            "Add unit tests for the service",
-        ]
-
-        for prompt in prompts:
-            complexity = optimizer.detect_complexity(prompt)
-            assert complexity == TaskComplexity.MEDIUM, f"Failed for: {prompt}"
-
-    def test_detect_high_complexity(self):
-        """Detect high complexity tasks."""
-        optimizer = CostOptimizer()
-
-        prompts = [
-            "Architect the new microservice system",
-            "Design the distributed cache system",
-            "Refactor the entire authentication module",
-            "Deep analysis of the performance bottlenecks",
-            "Security audit of the payment flow",
-        ]
-
-        for prompt in prompts:
-            complexity = optimizer.detect_complexity(prompt)
-            assert complexity == TaskComplexity.HIGH, f"Failed for: {prompt}"
-
-    def test_detect_complexity_with_context(self):
-        """Detect complexity using context hints."""
-        optimizer = CostOptimizer()
-
-        # Large file count suggests high complexity
-        complexity = optimizer.detect_complexity(
-            "Review these changes",
-            context={"file_count": 15},
-        )
-        assert complexity == TaskComplexity.HIGH
-
-        # Many lines of code suggests high complexity
-        complexity = optimizer.detect_complexity(
-            "Review these changes",
-            context={"code_lines": 2000},
-        )
-        assert complexity == TaskComplexity.HIGH
-
-        # Architecture flag
-        complexity = optimizer.detect_complexity(
-            "Review these changes",
-            context={"architecture": True},
-        )
-        assert complexity == TaskComplexity.HIGH
-
-
 class TestModelSelectionLogic:
     """Tests for model selection logic."""
 
@@ -202,13 +153,13 @@ class TestModelSelectionLogic:
         # High complexity uses Sonnet by default (Opus for critical only)
         assert selection.tier == ClaudeModelTier.SONNET
 
-    def test_select_model_auto_detection(self):
-        """Auto-detect complexity and select model."""
+    def test_select_model_default_complexity(self):
+        """Default complexity is MEDIUM."""
         optimizer = CostOptimizer()
-
-        selection = optimizer.select_model("Format this file")
-        assert selection.tier == ClaudeModelTier.HAIKU
-        assert "Auto-detected" in selection.reason
+        selection = optimizer.select_model("Some task")
+        # Default is MEDIUM -> Sonnet
+        assert selection.tier == ClaudeModelTier.SONNET
+        assert "Complexity: medium" in selection.reason
 
     def test_select_model_string_complexity(self):
         """Accept string complexity value."""
@@ -254,20 +205,11 @@ class TestModelSelectionLogic:
     def test_select_model_includes_estimate(self):
         """Model selection includes cost estimate."""
         optimizer = CostOptimizer()
-        selection = optimizer.select_model("Review this code")
+        selection = optimizer.select_model(
+            "Review this code", complexity=TaskComplexity.MEDIUM
+        )
         assert selection.estimated_cost is not None
         assert selection.estimated_cost >= 0
-
-    def test_select_model_includes_fallback(self):
-        """Model selection includes fallback suggestion."""
-        optimizer = CostOptimizer()
-        selection = optimizer.select_model(
-            "Review code",
-            complexity=TaskComplexity.MEDIUM,
-        )
-        # Sonnet should have Haiku as fallback
-        assert selection.fallback_model is not None
-        assert "haiku" in selection.fallback_model.lower()
 
 
 class TestPromptOptimization:
@@ -435,46 +377,104 @@ class TestBudgetManagement:
         assert status["remaining"] < 0
 
 
-class TestModelDowngrade:
-    """Tests for model downgrade suggestions."""
+class TestBudgetAlerts:
+    """Tests for budget alert creation."""
 
-    def test_downgrade_opus_to_sonnet(self):
-        """Suggest Sonnet when Opus fails."""
-        optimizer = CostOptimizer()
-        suggestion = optimizer.suggest_model_downgrade(
-            "claude-opus-4-20250514",
-            error_reason="Rate limited",
-        )
-        assert suggestion is not None
-        assert "sonnet" in suggestion.lower()
+    def test_no_alert_without_budget(self):
+        """No alert when no budget set."""
+        optimizer = CostOptimizer()  # No budget
+        alert = optimizer.create_budget_alert(0.5)
+        assert alert is None
 
-    def test_downgrade_sonnet_to_haiku(self):
-        """Suggest Haiku when Sonnet fails."""
-        optimizer = CostOptimizer()
-        suggestion = optimizer.suggest_model_downgrade(
-            "claude-sonnet-4-20250514",
-            error_reason="Budget exceeded",
-        )
-        assert suggestion is not None
-        assert "haiku" in suggestion.lower()
+    def test_no_alert_within_budget(self):
+        """No alert when within budget threshold."""
+        optimizer = CostOptimizer(budget=1.0)
+        alert = optimizer.create_budget_alert(0.1)
+        assert alert is None
 
-    def test_no_downgrade_from_haiku(self):
-        """No downgrade suggestion from Haiku."""
-        optimizer = CostOptimizer()
-        suggestion = optimizer.suggest_model_downgrade(
-            "claude-3-5-haiku-20241022",
-            error_reason="Rate limited",
-        )
-        assert suggestion is None
+    def test_budget_warning_alert(self):
+        """Create warning alert when approaching threshold."""
+        optimizer = CostOptimizer(budget=1.0)
+        optimizer.record_usage(0.85)  # 85% used
 
-    def test_no_downgrade_unknown_model(self):
-        """No downgrade for unknown model."""
+        alert = optimizer.create_budget_alert(0.05)
+        assert alert is not None
+        assert alert.alert_type == CostAlert.BUDGET_WARNING
+        assert "warning" in alert.message.lower()
+        assert alert.details["percentage_used"] >= 80.0
+
+    def test_budget_exceeded_alert(self):
+        """Create exceeded alert when over budget."""
+        optimizer = CostOptimizer(budget=0.1)
+        optimizer.record_usage(0.08)
+
+        # Estimated cost exceeds remaining budget
+        alert = optimizer.create_budget_alert(0.05)
+        assert alert is not None
+        assert alert.alert_type == CostAlert.BUDGET_EXCEEDED
+        assert "exceeded" in alert.message.lower()
+        assert alert.details["estimated_cost"] == 0.05
+
+    def test_custom_threshold(self):
+        """Use custom threshold for warning."""
+        optimizer = CostOptimizer(budget=1.0)
+        optimizer.record_usage(0.55)  # 55% used
+
+        # Default threshold (80%) - no alert
+        alert = optimizer.create_budget_alert(0.1)
+        assert alert is None
+
+        # Custom threshold (50%) - alert
+        alert = optimizer.create_budget_alert(0.1, threshold_percentage=50.0)
+        assert alert is not None
+        assert alert.alert_type == CostAlert.BUDGET_WARNING
+
+
+class TestModelUnavailableAlert:
+    """Tests for model unavailable alerts."""
+
+    def test_create_model_unavailable_alert(self):
+        """Create alert for unavailable model."""
         optimizer = CostOptimizer()
-        suggestion = optimizer.suggest_model_downgrade(
-            "unknown-model",
-            error_reason="Error",
+        alert = optimizer.create_model_unavailable_alert(
+            model="claude-opus-4-20250514",
+            reason="Quota exceeded",
         )
-        assert suggestion is None
+
+        assert alert.alert_type == CostAlert.MODEL_UNAVAILABLE
+        assert "claude-opus-4-20250514" in alert.message
+        assert "Quota exceeded" in alert.message
+        assert alert.details["model"] == "claude-opus-4-20250514"
+        assert alert.details["reason"] == "Quota exceeded"
+
+
+class TestRateLimitAlert:
+    """Tests for rate limit alerts."""
+
+    def test_create_rate_limit_alert(self):
+        """Create alert for rate limiting."""
+        optimizer = CostOptimizer()
+        alert = optimizer.create_rate_limit_alert(
+            model="claude-sonnet-4-20250514",
+            retry_after=30.0,
+        )
+
+        assert alert.alert_type == CostAlert.RATE_LIMITED
+        assert "claude-sonnet-4-20250514" in alert.message
+        assert "30.0" in alert.message
+        assert alert.details["model"] == "claude-sonnet-4-20250514"
+        assert alert.details["retry_after"] == 30.0
+
+    def test_rate_limit_alert_without_retry_after(self):
+        """Create alert without retry_after."""
+        optimizer = CostOptimizer()
+        alert = optimizer.create_rate_limit_alert(
+            model="claude-sonnet-4-20250514",
+        )
+
+        assert alert.alert_type == CostAlert.RATE_LIMITED
+        assert "Retry after" not in alert.message
+        assert alert.details["retry_after"] is None
 
 
 class TestCreateCostOptimizer:
@@ -504,9 +504,10 @@ class TestIntegration:
         """Test complete cost optimization workflow."""
         optimizer = CostOptimizer(budget=1.0)
 
-        # 1. Select model
+        # 1. Select model with explicit complexity
         selection = optimizer.select_model(
-            "Review this pull request for security issues"
+            "Review this pull request for security issues",
+            complexity=TaskComplexity.MEDIUM,
         )
         assert selection.model_id is not None
 
@@ -522,13 +523,35 @@ class TestIntegration:
         )
         assert estimate.estimated_cost > 0
 
-        # 4. Check budget
+        # 4. Check budget alert
+        alert = optimizer.create_budget_alert(estimate.estimated_cost)
+        assert alert is None  # Should be within budget
+
+        # 5. Check budget
         assert optimizer.check_budget(estimate.estimated_cost) is True
 
-        # 5. Record usage
+        # 6. Record usage
         optimizer.record_usage(estimate.estimated_cost)
 
-        # 6. Check status
+        # 7. Check status
         status = optimizer.get_budget_status()
         assert status["used"] > 0
         assert status["is_exceeded"] is False
+
+    def test_budget_exceeded_workflow(self):
+        """Test workflow when budget is exceeded."""
+        optimizer = CostOptimizer(budget=0.01)  # Very small budget
+
+        # Try to make a request that exceeds budget
+        estimate = optimizer.estimate_cost(
+            "A long prompt " * 100,
+            model="claude-sonnet-4-20250514",
+        )
+
+        # Should get budget exceeded alert
+        alert = optimizer.create_budget_alert(estimate.estimated_cost)
+        assert alert is not None
+        assert alert.alert_type == CostAlert.BUDGET_EXCEEDED
+
+        # Should fail budget check
+        assert optimizer.check_budget(estimate.estimated_cost) is False

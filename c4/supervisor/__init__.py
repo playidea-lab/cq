@@ -72,6 +72,8 @@ from .error_handler import (
     retry_with_backoff,
 )
 from .cost_optimizer import (
+    CostAlert,
+    CostAlertInfo,
     CostEstimate,
     CostOptimizer,
     ModelSelection,
@@ -136,6 +138,8 @@ __all__ = [
     "RateLimitTracker",
     "retry_with_backoff",
     # Cost optimization
+    "CostAlert",
+    "CostAlertInfo",
     "CostEstimate",
     "CostOptimizer",
     "ModelSelection",
