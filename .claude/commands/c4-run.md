@@ -195,6 +195,137 @@ else:
 
 **핵심**: 모든 판단은 Worker(Claude)가 자동으로 수행. 사용자는 `/c4-run` 실행만 하면 됩니다.
 
+---
+
+## 🔄 자동 활성화 메커니즘
+
+Worker는 태스크 내용을 분석하여 **자동으로 적절한 에이전트를 선택**합니다.
+
+### 활성화 트리거
+
+| 트리거 | 감지 방법 | 활성화 에이전트 |
+|--------|----------|----------------|
+| **구현 작업** | 기본 | `recommended_agent` (도메인 기반) |
+| **테스트 실패** | validation_results에 fail | `test-automator` |
+| **타입 에러** | TypeScript/mypy 에러 | `debugger` |
+| **보안 코드** | "auth", "security", "password" 키워드 | `security-auditor` (추가) |
+| **성능 이슈** | "optimize", "performance" 키워드 | `performance-engineer` |
+| **디버깅 필요** | "debug", "fix bug" 키워드 | `debugger` |
+
+### 자동 선택 로직
+
+```python
+def select_agent(task, validation_result=None):
+    # 1. 검증 실패 시 → 전문 에이전트
+    if validation_result and not validation_result.success:
+        if "test" in validation_result.failed:
+            return "test-automator"
+        if "lint" in validation_result.failed or "type" in validation_result.failed:
+            return "debugger"
+
+    # 2. 키워드 기반 오버라이드
+    title_lower = task.title.lower()
+    dod_lower = task.dod.lower()
+
+    if any(kw in title_lower for kw in ["debug", "fix bug", "fix error"]):
+        return "debugger"
+    if any(kw in dod_lower for kw in ["optimize", "performance", "latency"]):
+        return "performance-engineer"
+
+    # 3. 기본: 도메인 기반 추천
+    return task.recommended_agent
+```
+
+### 체인 활용 시점
+
+```
+구현 완료 → 검증 실패 → 체인에서 적합한 에이전트 선택 → 수정 → 재검증
+```
+
+예시:
+1. `frontend-developer`가 React 컴포넌트 구현
+2. `lint` 검증 실패 (TypeScript 에러)
+3. `debugger` 에이전트로 에러 수정
+4. 재검증 → 통과 → 제출
+
+---
+
+## ⚠️ 에러 핸들링 가이드
+
+### 일반 에러 처리 플로우
+
+```
+에러 발생
+    ↓
+에러 유형 분류 (검증/구현/시스템)
+    ↓
+재시도 (최대 3회)
+    ↓
+실패 시 → 체인 에이전트 호출
+    ↓
+여전히 실패 (10회) → BLOCKED 처리
+```
+
+### 검증 실패 대응
+
+| 검증 유형 | 일반적 원인 | 대응 방법 |
+|----------|------------|----------|
+| **lint** | 코드 스타일, 미사용 변수 | `debugger` → 자동 수정 |
+| **unit** | 테스트 실패, 로직 에러 | `test-automator` → 테스트 수정 또는 코드 수정 |
+| **type** | 타입 불일치 | `debugger` → 타입 수정 |
+| **e2e** | UI 변경, 타이밍 이슈 | 수동 확인 권장 |
+
+### 재시도 전략
+
+```python
+MAX_RETRIES = 3
+BLOCKED_THRESHOLD = 10
+
+for attempt in range(MAX_RETRIES):
+    result = implement_task(task)
+    validation = run_validation()
+
+    if validation.success:
+        return submit(task, result)
+
+    # 에러 유형에 따른 수정 시도
+    if "lint" in validation.failed:
+        fix_with_agent("debugger", validation.errors)
+    elif "unit" in validation.failed:
+        fix_with_agent("test-automator", validation.errors)
+
+# 모든 재시도 실패
+if total_attempts >= BLOCKED_THRESHOLD:
+    mark_blocked(task, reason=validation.errors)
+```
+
+### 시스템 에러 대응
+
+| 에러 | 원인 | 대응 |
+|------|------|------|
+| `MCP connection failed` | MCP 서버 다운 | Claude Code 재시작 |
+| `Task not found` | 상태 동기화 오류 | `c4_status()` 재호출 |
+| `Branch conflict` | Git 충돌 | `git fetch && git rebase` |
+| `Permission denied` | 파일 권한 | Accept Edits 모드 확인 |
+
+### BLOCKED 처리
+
+10회 이상 실패 시 태스크를 BLOCKED로 표시:
+
+```python
+mcp__c4__c4_mark_blocked(
+    task_id=task.id,
+    worker_id=WORKER_ID,
+    failure_signature="lint:unused-variable,unit:assertion-error",
+    attempts=10,
+    last_error="Expected 5 but got 3"
+)
+```
+
+**BLOCKED 태스크는 Supervisor 또는 사용자가 검토 후 재시작합니다.**
+
+---
+
 ## Usage
 
 ```
