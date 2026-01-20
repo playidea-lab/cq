@@ -64,6 +64,13 @@ from .usage_tracker import (
     UsageTracker,
     create_usage_tracker,
 )
+from .error_handler import (
+    ClaudeErrorHandler,
+    ClaudeErrorType,
+    ErrorAction,
+    RateLimitTracker,
+    retry_with_backoff,
+)
 from .prompt import PromptRenderer
 from .response_parser import ResponseParser
 from .supervisor import Supervisor
@@ -114,6 +121,12 @@ __all__ = [
     "UsageSummary",
     "UsageTracker",
     "create_usage_tracker",
+    # Error handling
+    "ClaudeErrorHandler",
+    "ClaudeErrorType",
+    "ErrorAction",
+    "RateLimitTracker",
+    "retry_with_backoff",
     # Supporting classes
     "SupervisorResponse",
     "SupervisorError",
