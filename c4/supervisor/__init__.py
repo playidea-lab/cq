@@ -58,6 +58,12 @@ from .cloud_supervisor import (
 )
 from .litellm_backend import LiteLLMBackend, create_claude_backend
 from .mock_backend import MockBackend
+from .usage_tracker import (
+    UsageRecord,
+    UsageSummary,
+    UsageTracker,
+    create_usage_tracker,
+)
 from .prompt import PromptRenderer
 from .response_parser import ResponseParser
 from .supervisor import Supervisor
@@ -103,6 +109,11 @@ __all__ = [
     "list_available_models",
     "resolve_model_id",
     "validate_model_id",
+    # Usage tracking
+    "UsageRecord",
+    "UsageSummary",
+    "UsageTracker",
+    "create_usage_tracker",
     # Supporting classes
     "SupervisorResponse",
     "SupervisorError",
