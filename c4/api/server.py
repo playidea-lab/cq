@@ -43,6 +43,13 @@ Endpoints:
         GET  /api/git/log                  - Get log
         GET  /api/git/diff                 - Get diff
 
+    Files:
+        POST /api/files/read               - Read file
+        POST /api/files/write              - Write file
+        POST /api/files/list               - List directory
+        POST /api/files/search             - Search files (glob/grep)
+        DELETE /api/files/delete           - Delete file
+
     Health:
         GET  /health                       - Health check
         GET  /                             - API info
@@ -55,7 +62,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .deps import clear_daemon_cache
-from .routes import c4, design, discovery, git, validation
+from .routes import c4, design, discovery, files, git, validation
 
 logger = logging.getLogger(__name__)
 
@@ -117,6 +124,7 @@ def create_app(
     app.include_router(design.router, prefix="/api")
     app.include_router(validation.router, prefix="/api")
     app.include_router(git.router, prefix="/api")
+    app.include_router(files.router, prefix="/api")
 
     # Health check endpoint
     @app.get("/health", tags=["Health"])
@@ -139,6 +147,7 @@ def create_app(
                 "design": "/api/design",
                 "validation": "/api/validation",
                 "git": "/api/git",
+                "files": "/api/files",
             },
         }
 
