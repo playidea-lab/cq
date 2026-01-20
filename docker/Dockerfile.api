@@ -1,0 +1,61 @@
+# C4 API Server Image
+#
+# This image runs the C4 API server for workspace management.
+#
+# Build: docker build -t c4-api:latest -f docker/Dockerfile.api .
+
+FROM python:3.12-slim
+
+LABEL maintainer="C4 Team"
+LABEL description="C4 API Server"
+LABEL version="1.0.0"
+
+# Environment variables
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    # UV settings
+    UV_SYSTEM_PYTHON=1 \
+    # App settings
+    C4_ENV=production \
+    C4_HOST=0.0.0.0 \
+    C4_PORT=8000
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git \
+    curl \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
+
+# Install uv
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh \
+    && mv /root/.local/bin/uv /usr/local/bin/uv \
+    && chmod +x /usr/local/bin/uv
+
+# Create app directory
+WORKDIR /app
+
+# Copy dependency files first (for layer caching)
+COPY pyproject.toml uv.lock ./
+
+# Install dependencies
+RUN uv sync --frozen --no-dev
+
+# Copy application code
+COPY c4/ ./c4/
+
+# Create data directory
+RUN mkdir -p /data
+
+# Expose port
+EXPOSE 8000
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
+    CMD curl -f http://localhost:8000/health || exit 1
+
+# Run the API server
+CMD ["uv", "run", "uvicorn", "c4.api.server:app", "--host", "0.0.0.0", "--port", "8000"]

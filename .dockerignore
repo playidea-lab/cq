@@ -1,0 +1,56 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv
+venv
+env
+.eggs
+*.egg-info
+*.egg
+dist
+build
+
+# IDE
+.idea
+.vscode
+*.swp
+*.swo
+*~
+
+# Testing
+.coverage
+htmlcov
+.pytest_cache
+.tox
+.nox
+
+# Documentation
+docs/_build
+
+# C4 specific
+.c4
+*.db
+*.sqlite
+
+# Docker
+docker/data
+docker/logs
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Misc
+*.log
+*.tmp
+*.temp
+.env
+.env.*
+!.env.example
