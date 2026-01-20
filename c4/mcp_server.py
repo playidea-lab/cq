@@ -1592,12 +1592,19 @@ Thumbs.db
         # Parse and normalize task ID for Review-as-Task
         normalized_id, base_id, version, task_type = self._parse_task_id(task_id)
 
+        # Normalize dependency IDs as well (fixes T-001 vs T-001-0 mismatch bug)
+        normalized_deps: list[str] = []
+        if dependencies:
+            for dep_id in dependencies:
+                norm_dep_id, _, _, _ = self._parse_task_id(dep_id)
+                normalized_deps.append(norm_dep_id)
+
         task = Task(
             id=normalized_id,
             title=title,
             scope=scope,
             dod=dod,
-            dependencies=dependencies or [],
+            dependencies=normalized_deps,
             domain=domain,
             priority=priority,
             # Review-as-Task fields

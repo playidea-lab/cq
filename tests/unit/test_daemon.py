@@ -400,6 +400,45 @@ class TestC4GetTask:
         assert result is not None
         assert result.task_id == "T-002"  # Gets normal task, not REPAIR-T-001
 
+    def test_get_task_refreshes_cache_from_sqlite(self, daemon_in_execute):
+        """c4_get_task refreshes cache after direct SQLite modifications.
+
+        This tests the fix for BUG #1: Task Cache 무효화 버그
+        Previously, direct SQLite modifications (e.g., fixing dependencies)
+        were not reflected in subsequent c4_get_task calls because the
+        in-memory cache was stale.
+        """
+        daemon = daemon_in_execute
+
+        # Add two tasks, second depends on first (with normalized dependency)
+        daemon.c4_add_todo("T-001", "First task", None, "First DoD")
+        daemon.c4_add_todo(
+            "T-002", "Second task", None, "Second DoD", dependencies=["T-001-0"]
+        )
+
+        # Worker 1 gets T-001 (the only one without deps)
+        task1 = daemon.c4_get_task("worker-1")
+        assert task1.task_id == "T-001-0"
+
+        # Complete T-001
+        daemon.c4_submit(
+            task_id="T-001-0",
+            worker_id="worker-1",
+            commit_sha="abc123",
+            validation_results=[{"name": "lint", "status": "pass"}],
+        )
+
+        # Access task from SQLite (simulates direct DB read scenario)
+        # This would previously cause cache staleness issues
+        task = daemon.get_task("T-002-0")
+        assert task is not None
+        assert task.dependencies == ["T-001-0"]
+
+        # Verify the task can be assigned after dependency is completed
+        task2 = daemon.c4_get_task("worker-2")
+        assert task2 is not None
+        assert task2.task_id == "T-002-0"
+
 
 class TestC4Submit:
     """Test c4_submit tool"""
@@ -523,11 +562,12 @@ class TestC4AddTodo:
         )
 
         assert result["success"] is True
-        assert result["dependencies"] == ["T-001"]
+        # Dependencies are normalized: T-001 -> T-001-0
+        assert result["dependencies"] == ["T-001-0"]
 
         # Use normalized ID (T-002 -> T-002-0)
         task = daemon.get_task(result["task_id"])
-        assert task.dependencies == ["T-001"]
+        assert task.dependencies == ["T-001-0"]
 
     def test_add_todo_with_priority(self, daemon):
         """Test adding a task with priority"""

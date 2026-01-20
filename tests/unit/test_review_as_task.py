@@ -239,6 +239,74 @@ class TestAddTodoNormalization:
         task = daemon.get_task(result["task_id"])
         assert task.type == TaskType.IMPLEMENTATION
 
+    def test_add_todo_normalizes_dependencies(self, daemon):
+        """Dependencies like T-001 become T-001-0."""
+        # Add base task first
+        daemon.c4_add_todo(
+            task_id="T-001",
+            title="Base task",
+            scope=None,
+            dod="Base DoD",
+        )
+
+        # Add dependent task with non-normalized dependency
+        result = daemon.c4_add_todo(
+            task_id="T-002",
+            title="Dependent task",
+            scope=None,
+            dod="Dependent DoD",
+            dependencies=["T-001"],  # Not normalized
+        )
+        assert result["success"] is True
+        # Dependencies should be normalized to T-001-0
+        assert result["dependencies"] == ["T-001-0"]
+
+        # Verify task stored with normalized dependency
+        task = daemon.get_task(result["task_id"])
+        assert task.dependencies == ["T-001-0"]
+
+    def test_add_todo_keeps_normalized_dependencies(self, daemon):
+        """Dependencies like T-001-0 stay as T-001-0."""
+        # Add base task first
+        daemon.c4_add_todo(
+            task_id="T-001-0",
+            title="Base task",
+            scope=None,
+            dod="Base DoD",
+        )
+
+        # Add dependent task with already-normalized dependency
+        result = daemon.c4_add_todo(
+            task_id="T-002",
+            title="Dependent task",
+            scope=None,
+            dod="Dependent DoD",
+            dependencies=["T-001-0"],  # Already normalized
+        )
+        assert result["success"] is True
+        assert result["dependencies"] == ["T-001-0"]
+
+    def test_add_todo_normalizes_review_dependencies(self, daemon):
+        """Review dependencies like R-001 become R-001-0."""
+        # Add base implementation task
+        daemon.c4_add_todo(
+            task_id="T-001",
+            title="Base task",
+            scope=None,
+            dod="Base DoD",
+        )
+
+        # Add task depending on review (simulating review dependency)
+        result = daemon.c4_add_todo(
+            task_id="T-002",
+            title="After review task",
+            scope=None,
+            dod="After review DoD",
+            dependencies=["R-001"],  # Non-normalized review dep
+        )
+        assert result["success"] is True
+        assert result["dependencies"] == ["R-001-0"]
+
 
 class TestReviewTaskRouting:
     """Test review tasks are routed to code-reviewer agent."""
