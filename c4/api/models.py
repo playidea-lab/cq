@@ -1,5 +1,6 @@
 """Pydantic models for C4 API request/response schemas."""
 
+from datetime import datetime
 from enum import Enum
 from typing import Any
 
@@ -356,6 +357,72 @@ class ShellValidationResponse(BaseModel):
 # ============================================================================
 # Error Models
 # ============================================================================
+
+
+
+# ============================================================================
+# Workspace Models
+# ============================================================================
+
+
+class WorkspaceCreateRequest(BaseModel):
+    """Request to create a new workspace."""
+
+    git_url: str = Field(..., description="Git repository URL to clone")
+    branch: str = Field("main", description="Branch to checkout")
+
+
+class WorkspaceResponse(BaseModel):
+    """Response containing workspace details."""
+
+    id: str = Field(..., description="Unique workspace identifier")
+    user_id: str = Field(..., description="Owner user ID")
+    git_url: str = Field(..., description="Git repository URL")
+    branch: str = Field(..., description="Git branch name")
+    status: str = Field(..., description="Workspace status (creating, ready, running, stopped, error)")
+    created_at: datetime = Field(..., description="When the workspace was created")
+    container_id: str | None = Field(None, description="Container/process ID")
+    error_message: str | None = Field(None, description="Error details if status is error")
+
+
+class WorkspaceListResponse(BaseModel):
+    """Response containing list of workspaces."""
+
+    workspaces: list[WorkspaceResponse] = Field(..., description="List of workspaces")
+    total: int = Field(..., description="Total count of workspaces")
+
+
+class WorkspaceStatusResponse(BaseModel):
+    """Response containing workspace status and resource usage."""
+
+    id: str = Field(..., description="Workspace identifier")
+    status: str = Field(..., description="Workspace status")
+    cpu_percent: float | None = Field(None, description="CPU usage percentage")
+    memory_mb: float | None = Field(None, description="Memory usage in MB")
+    disk_mb: float | None = Field(None, description="Disk usage in MB")
+    is_healthy: bool = Field(..., description="Whether workspace is healthy")
+
+
+class WorkspaceExecRequest(BaseModel):
+    """Request to execute a command in workspace."""
+
+    command: str = Field(..., description="Command to execute", min_length=1)
+    timeout: int = Field(
+        60,
+        ge=1,
+        le=300,
+        description="Timeout in seconds (default: 60, max: 300)",
+    )
+
+
+class WorkspaceExecResponse(BaseModel):
+    """Response from command execution."""
+
+    exit_code: int = Field(..., description="Process exit code")
+    stdout: str = Field(..., description="Standard output")
+    stderr: str = Field(..., description="Standard error")
+    timed_out: bool = Field(..., description="Whether execution timed out")
+    duration_seconds: float = Field(..., description="Execution time in seconds")
 
 
 class ErrorResponse(BaseModel):

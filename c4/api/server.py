@@ -47,6 +47,14 @@ Endpoints:
         POST /api/shell/run                - Run shell command
         POST /api/shell/run-validation     - Run validations
 
+    Workspace:
+        POST /api/workspace/create         - Create workspace from git repo
+        GET  /api/workspace/list           - List user's workspaces
+        GET  /api/workspace/{id}           - Get workspace details
+        DELETE /api/workspace/{id}         - Delete workspace
+        GET  /api/workspace/{id}/status    - Get workspace status/resources
+        POST /api/workspace/{id}/exec      - Execute command in workspace
+
     Health:
         GET  /health                       - Health check
         GET  /                             - API info
@@ -59,7 +67,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .deps import clear_daemon_cache
-from .routes import c4, design, discovery, git, shell, validation
+from .routes import c4, design, discovery, git, shell, validation, workspace
 
 logger = logging.getLogger(__name__)
 
@@ -122,6 +130,7 @@ def create_app(
     app.include_router(validation.router, prefix="/api")
     app.include_router(git.router, prefix="/api")
     app.include_router(shell.router, prefix="/api")
+    app.include_router(workspace.router, prefix="/api")
 
     # Health check endpoint
     @app.get("/health", tags=["Health"])
@@ -145,6 +154,7 @@ def create_app(
                 "validation": "/api/validation",
                 "git": "/api/git",
                 "shell": "/api/shell",
+                "workspace": "/api/workspace",
             },
         }
 

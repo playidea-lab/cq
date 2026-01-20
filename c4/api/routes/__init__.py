@@ -7,8 +7,9 @@ Provides modular route handlers for different C4 phases:
 - validation: Validation execution
 - git: Git operations
 - shell: Shell command execution
+- workspace: Workspace management
 """
 
-from . import c4, design, discovery, git, shell, validation
+from . import c4, design, discovery, git, shell, validation, workspace
 
-__all__ = ["c4", "discovery", "design", "validation", "git", "shell"]
+__all__ = ["c4", "discovery", "design", "validation", "git", "shell", "workspace"]
