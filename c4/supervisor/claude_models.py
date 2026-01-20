@@ -86,6 +86,7 @@ CLAUDE_MODELS: dict[str, ClaudeModelPreset] = {
         context_window=200000,
         input_cost_per_1m=0.80,
         output_cost_per_1m=4.0,
+        is_latest=True,
     ),
     # Claude 3 models (Legacy)
     "claude-3-opus-20240229": ClaudeModelPreset(

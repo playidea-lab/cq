@@ -71,6 +71,14 @@ from .error_handler import (
     RateLimitTracker,
     retry_with_backoff,
 )
+from .cost_optimizer import (
+    CostEstimate,
+    CostOptimizer,
+    ModelSelection,
+    OptimizedPrompt,
+    TaskComplexity,
+    create_cost_optimizer,
+)
 from .prompt import PromptRenderer
 from .response_parser import ResponseParser
 from .supervisor import Supervisor
@@ -127,6 +135,13 @@ __all__ = [
     "ErrorAction",
     "RateLimitTracker",
     "retry_with_backoff",
+    # Cost optimization
+    "CostEstimate",
+    "CostOptimizer",
+    "ModelSelection",
+    "OptimizedPrompt",
+    "TaskComplexity",
+    "create_cost_optimizer",
     # Supporting classes
     "SupervisorResponse",
     "SupervisorError",
