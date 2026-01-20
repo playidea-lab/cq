@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "C4 Project Automation Hooks - Based on everything-claude-code best practices",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "id": "security-check-before-commit",
+        "matcher": "Bash(git commit:*)",
+        "command": "echo '🔒 Security check before commit...' && ! grep -rn --include='*.py' --include='*.ts' --include='*.js' -E '(password|api_key|secret|token)\\s*=\\s*[\"'\\'][^\"'\\']+(\"'\\'']' . 2>/dev/null | grep -v -E '(test_|_test\\.py|spec\\.ts|\\.env\\.example)' | head -5",
+        "description": "Scan for hardcoded secrets before committing",
+        "onFailure": "warn",
+        "enabled": true
+      },
+      {
+        "id": "prevent-force-push-main",
+        "matcher": "Bash(git push --force:*main*)|Bash(git push -f:*main*)",
+        "command": "echo '❌ Force push to main/master is BLOCKED!' && exit 1",
+        "description": "Block force push to main branch",
+        "onFailure": "block",
+        "enabled": true
+      }
+    ],
+    "PostToolUse": [
+      {
+        "id": "auto-lint-python",
+        "matcher": "Edit(*.py)|Write(*.py)",
+        "command": "uv run ruff check --fix $FILE 2>/dev/null && uv run ruff format $FILE 2>/dev/null || true",
+        "description": "Auto-lint and format Python files after edit",
+        "onFailure": "warn",
+        "enabled": true
+      },
+      {
+        "id": "auto-lint-typescript",
+        "matcher": "Edit(*.ts)|Write(*.ts)|Edit(*.tsx)|Write(*.tsx)",
+        "command": "npx eslint --fix $FILE 2>/dev/null && npx prettier --write $FILE 2>/dev/null || true",
+        "description": "Auto-lint and format TypeScript files after edit",
+        "onFailure": "warn",
+        "enabled": true
+      },
+      {
+        "id": "type-check-typescript",
+        "matcher": "Edit(*.ts)|Write(*.ts)|Edit(*.tsx)|Write(*.tsx)",
+        "command": "npx tsc --noEmit 2>/dev/null || echo '⚠️ TypeScript type errors detected'",
+        "description": "Run TypeScript type check after edit",
+        "onFailure": "warn",
+        "enabled": true
+      },
+      {
+        "id": "warn-console-log",
+        "matcher": "Edit(*.ts)|Write(*.ts)|Edit(*.js)|Write(*.js)",
+        "command": "grep -n 'console.log' $FILE 2>/dev/null && echo '⚠️ console.log found - consider removing before commit' || true",
+        "description": "Warn about console.log statements",
+        "onFailure": "ignore",
+        "enabled": true
+      }
+    ],
+    "Stop": [
+      {
+        "id": "final-cleanup-check",
+        "command": "echo '🔍 Final session cleanup check...' && (grep -rn --include='*.py' --include='*.ts' --include='*.js' 'TODO: remove' . 2>/dev/null | head -5 && echo '⚠️ Found TODO: remove markers - please clean up') || echo '✅ No cleanup markers found'",
+        "description": "Check for cleanup markers at session end",
+        "onFailure": "warn",
+        "enabled": true
+      }
+    ]
+  },
+  "settings": {
+    "logLevel": "info",
+    "parallelExecution": false,
+    "timeoutMs": 30000
+  }
+}
