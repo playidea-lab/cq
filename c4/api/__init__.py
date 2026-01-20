@@ -1,32 +1,21 @@
-"""C4 Cloud API - FastAPI server for Chat UI and cloud features."""
+"""C4 API Server - FastAPI wrapper for MCP tools.
 
-from .app import create_app
-from .artifact import Artifact, ArtifactService, ArtifactType
-from .artifact import router as artifact_router
-from .chat import ChatMessage, ChatResponse
-from .chat import router as chat_router
-from .metering import UsageMeter, UsageRecord, UsageSummary
-from .proxy import LLMProxyService, LLMRequest, LLMResponse
-from .proxy import router as proxy_router
-from .rate_limit import RateLimitConfig, RateLimiter, RateLimitMiddleware
+Provides HTTP endpoints for C4 orchestration:
+- /api/c4/* - Core orchestration (status, tasks, submit)
+- /api/discovery/* - Discovery phase (specs, requirements)
+- /api/design/* - Design phase (architecture, decisions)
+- /api/validation/* - Validation execution
+- /api/git/* - Git operations (commit, status)
 
-__all__ = [
-    "Artifact",
-    "ArtifactService",
-    "ArtifactType",
-    "ChatMessage",
-    "ChatResponse",
-    "LLMProxyService",
-    "LLMRequest",
-    "LLMResponse",
-    "RateLimitConfig",
-    "RateLimiter",
-    "RateLimitMiddleware",
-    "UsageMeter",
-    "UsageRecord",
-    "UsageSummary",
-    "artifact_router",
-    "chat_router",
-    "create_app",
-    "proxy_router",
-]
+Usage:
+    # Start server
+    uvicorn c4.api.server:app --reload
+
+    # Or programmatically
+    from c4.api import create_app
+    app = create_app()
+"""
+
+from .server import app, create_app
+
+__all__ = ["app", "create_app"]

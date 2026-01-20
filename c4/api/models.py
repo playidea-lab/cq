@@ -1,82 +1,310 @@
-"""C4 API Models - Request and response models for Chat API."""
+"""Pydantic models for C4 API request/response schemas."""
 
-from datetime import datetime
 from enum import Enum
 from typing import Any
 
 from pydantic import BaseModel, Field
 
-
-class MessageRole(str, Enum):
-    """Message role types."""
-
-    USER = "user"
-    ASSISTANT = "assistant"
-    SYSTEM = "system"
+# ============================================================================
+# Common Models
+# ============================================================================
 
 
-class ChatMessage(BaseModel):
-    """A single chat message."""
+class ValidationStatus(str, Enum):
+    """Status of a validation result."""
 
-    role: MessageRole
-    content: str
-    timestamp: datetime = Field(default_factory=datetime.now)
-    metadata: dict[str, Any] = Field(default_factory=dict)
+    PASS = "pass"
+    FAIL = "fail"
 
 
-class ChatRequest(BaseModel):
-    """Request body for chat message endpoint."""
+class ValidationResult(BaseModel):
+    """Result of a single validation."""
 
-    message: str = Field(..., min_length=1, max_length=32000)
-    conversation_id: str | None = Field(
-        None,
-        description="Conversation ID for context continuity",
+    name: str = Field(..., description="Validation name (e.g., 'lint', 'test')")
+    status: ValidationStatus = Field(..., description="Pass or fail")
+    message: str | None = Field(None, description="Optional message or error")
+
+
+# ============================================================================
+# C4 Core Models
+# ============================================================================
+
+
+class StatusResponse(BaseModel):
+    """Response from c4_status endpoint."""
+
+    state: str = Field(
+        ..., description="Current C4 state (INIT, DISCOVERY, DESIGN, etc.)"
     )
-    context: list[ChatMessage] = Field(
-        default_factory=list,
-        description="Previous messages for context",
+    queue: dict[str, Any] = Field(default_factory=dict, description="Task queue summary")
+    workers: dict[str, Any] = Field(default_factory=dict, description="Active workers")
+    project_root: str | None = Field(None, description="Project root path")
+
+
+class GetTaskRequest(BaseModel):
+    """Request to get a task assignment."""
+
+    worker_id: str = Field(..., description="Unique worker identifier")
+
+
+class GetTaskResponse(BaseModel):
+    """Response with assigned task details."""
+
+    task_id: str | None = Field(None, description="Assigned task ID")
+    title: str | None = Field(None, description="Task title")
+    dod: str | None = Field(None, description="Definition of Done")
+    scope: str | None = Field(None, description="File/directory scope")
+    domain: str | None = Field(None, description="Task domain")
+    dependencies: list[str] = Field(default_factory=list, description="Task dependencies")
+    message: str | None = Field(None, description="Status message if no task available")
+
+
+class SubmitRequest(BaseModel):
+    """Request to submit task completion."""
+
+    task_id: str = Field(..., description="ID of the completed task")
+    commit_sha: str = Field(..., description="Git commit SHA of the work")
+    validation_results: list[ValidationResult] = Field(..., description="Validation results")
+    worker_id: str = Field(..., description="Worker ID for ownership verification")
+
+
+class SubmitResponse(BaseModel):
+    """Response from task submission."""
+
+    success: bool = Field(..., description="Whether submission was successful")
+    message: str = Field(..., description="Status message")
+    next_task: dict[str, Any] | None = Field(None, description="Next task if available")
+
+
+class AddTaskRequest(BaseModel):
+    """Request to add a new task."""
+
+    task_id: str = Field(..., description="Unique task ID (e.g., T-001)")
+    title: str = Field(..., description="Task title")
+    dod: str = Field(..., description="Definition of Done")
+    scope: str | None = Field(None, description="File/directory scope for lock")
+    domain: str | None = Field(None, description="Domain for agent routing")
+    priority: int = Field(0, description="Priority (higher = first)")
+    dependencies: list[str] = Field(
+        default_factory=list, description="Task IDs that must complete first"
     )
-    stream: bool = Field(
-        True,
-        description="Whether to stream response via SSE",
-    )
-    model: str = Field(
-        "default",
-        description="Model to use for response",
-    )
-    options: dict[str, Any] = Field(
-        default_factory=dict,
-        description="Additional options for the chat",
-    )
 
 
-class ChatResponse(BaseModel):
-    """Response body for chat message (non-streaming)."""
+class StartResponse(BaseModel):
+    """Response from c4_start endpoint."""
 
-    message: ChatMessage
-    conversation_id: str
-    usage: dict[str, int] = Field(default_factory=dict)
-
-
-class StreamChunk(BaseModel):
-    """A chunk in SSE stream response."""
-
-    type: str = Field(
-        ...,
-        description="Chunk type: content, done, error",
-    )
-    content: str = Field(
-        "",
-        description="Content text for this chunk",
-    )
-    conversation_id: str | None = None
-    usage: dict[str, int] | None = None
-    error: str | None = None
+    success: bool = Field(..., description="Whether state transition was successful")
+    new_state: str = Field(..., description="New C4 state")
+    message: str = Field(..., description="Status message")
 
 
-class HealthResponse(BaseModel):
-    """Health check response."""
+# ============================================================================
+# Discovery Phase Models
+# ============================================================================
 
-    status: str = "ok"
-    version: str = "0.1.0"
-    timestamp: datetime = Field(default_factory=datetime.now)
+
+class EarsPattern(str, Enum):
+    """EARS requirement pattern types."""
+
+    UBIQUITOUS = "ubiquitous"
+    STATE_DRIVEN = "state-driven"
+    EVENT_DRIVEN = "event-driven"
+    OPTIONAL = "optional"
+    UNWANTED = "unwanted"
+
+
+class Requirement(BaseModel):
+    """An EARS-format requirement."""
+
+    id: str = Field(..., description="Requirement ID (e.g., REQ-001)")
+    text: str = Field(..., description="Full EARS requirement text")
+    pattern: EarsPattern | None = Field(None, description="EARS pattern type")
+
+
+class SaveSpecRequest(BaseModel):
+    """Request to save a feature specification."""
+
+    feature: str = Field(..., description="Feature name (e.g., 'user-auth')")
+    requirements: list[Requirement] = Field(..., description="List of EARS requirements")
+    domain: str = Field(..., description="Project domain")
+    description: str | None = Field(None, description="Optional feature description")
+
+
+class SpecResponse(BaseModel):
+    """Response containing a feature specification."""
+
+    feature: str
+    requirements: list[Requirement]
+    domain: str
+    description: str | None = None
+
+
+class ListSpecsResponse(BaseModel):
+    """Response listing all specifications."""
+
+    specs: list[str] = Field(..., description="List of feature names")
+
+
+# ============================================================================
+# Design Phase Models
+# ============================================================================
+
+
+class ArchitectureOption(BaseModel):
+    """An architecture option for design decisions."""
+
+    id: str = Field(..., description="Option ID")
+    name: str = Field(..., description="Option name")
+    description: str = Field(..., description="Option description")
+    pros: list[str] = Field(default_factory=list, description="Advantages")
+    cons: list[str] = Field(default_factory=list, description="Disadvantages")
+    complexity: str | None = Field(None, description="low/medium/high")
+    recommended: bool = Field(False, description="Whether this is recommended")
+
+
+class ComponentDesign(BaseModel):
+    """Design specification for a component."""
+
+    name: str = Field(..., description="Component name")
+    type: str = Field(..., description="Component type (service, repository, etc.)")
+    description: str = Field(..., description="Component description")
+    responsibilities: list[str] = Field(default_factory=list)
+    interfaces: list[str] = Field(default_factory=list)
+    dependencies: list[str] = Field(default_factory=list)
+
+
+class DesignDecision(BaseModel):
+    """A design decision."""
+
+    id: str = Field(..., description="Decision ID")
+    question: str = Field(..., description="The question being decided")
+    decision: str = Field(..., description="The decision made")
+    rationale: str = Field(..., description="Why this decision was made")
+    alternatives_considered: list[str] = Field(default_factory=list)
+
+
+class SaveDesignRequest(BaseModel):
+    """Request to save a design specification."""
+
+    feature: str = Field(..., description="Feature name")
+    domain: str = Field(..., description="Project domain")
+    description: str | None = Field(None)
+    options: list[ArchitectureOption] = Field(default_factory=list)
+    selected_option: str | None = Field(None, description="ID of selected option")
+    components: list[ComponentDesign] = Field(default_factory=list)
+    decisions: list[DesignDecision] = Field(default_factory=list)
+    constraints: list[str] = Field(default_factory=list)
+    nfr: dict[str, str] = Field(default_factory=dict, description="Non-functional requirements")
+    mermaid_diagram: str | None = Field(None)
+
+
+class DesignResponse(BaseModel):
+    """Response containing a design specification."""
+
+    feature: str
+    domain: str
+    description: str | None = None
+    options: list[ArchitectureOption] = Field(default_factory=list)
+    selected_option: str | None = None
+    components: list[ComponentDesign] = Field(default_factory=list)
+    decisions: list[DesignDecision] = Field(default_factory=list)
+
+
+class ListDesignsResponse(BaseModel):
+    """Response listing all designs."""
+
+    designs: list[str] = Field(..., description="List of feature names with designs")
+
+
+# ============================================================================
+# Validation Models
+# ============================================================================
+
+
+class RunValidationRequest(BaseModel):
+    """Request to run validations."""
+
+    names: list[str] | None = Field(None, description="Validation names to run (None = all)")
+    fail_fast: bool = Field(True, description="Stop on first failure")
+    timeout: int = Field(300, description="Timeout per validation in seconds")
+
+
+class RunValidationResponse(BaseModel):
+    """Response from validation run."""
+
+    results: list[ValidationResult]
+    all_passed: bool
+    duration_seconds: float
+
+
+# ============================================================================
+# Git Models
+# ============================================================================
+
+
+class GitCommitRequest(BaseModel):
+    """Request to create a git commit."""
+
+    task_id: str = Field(..., description="Task ID for commit message")
+    message: str | None = Field(None, description="Optional custom message")
+
+
+class GitCommitResponse(BaseModel):
+    """Response from git commit."""
+
+    success: bool
+    commit_sha: str | None = None
+    message: str = ""
+
+
+class GitStatusResponse(BaseModel):
+    """Response from git status."""
+
+    branch: str
+    is_clean: bool
+    staged: list[str] = Field(default_factory=list)
+    modified: list[str] = Field(default_factory=list)
+    untracked: list[str] = Field(default_factory=list)
+
+
+# ============================================================================
+# Checkpoint Models
+# ============================================================================
+
+
+class CheckpointDecision(str, Enum):
+    """Supervisor checkpoint decisions."""
+
+    APPROVE = "APPROVE"
+    REQUEST_CHANGES = "REQUEST_CHANGES"
+    REPLAN = "REPLAN"
+
+
+class CheckpointRequest(BaseModel):
+    """Request to record a checkpoint decision."""
+
+    checkpoint_id: str = Field(..., description="Checkpoint ID")
+    decision: CheckpointDecision = Field(..., description="Decision")
+    notes: str = Field(..., description="Decision notes")
+    required_changes: list[str] = Field(default_factory=list, description="Changes required")
+
+
+class CheckpointResponse(BaseModel):
+    """Response from checkpoint recording."""
+
+    success: bool
+    message: str
+    new_state: str | None = None
+
+
+# ============================================================================
+# Error Models
+# ============================================================================
+
+
+class ErrorResponse(BaseModel):
+    """Standard error response."""
+
+    error: str = Field(..., description="Error type")
+    message: str = Field(..., description="Error message")
+    details: dict[str, Any] = Field(default_factory=dict, description="Additional details")
