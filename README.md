@@ -211,6 +211,67 @@ your-project/
 | **Review-as-Task** | 리뷰를 태스크로 관리, 자동 버전 관리 |
 | **Checkpoint-as-Task** | 체크포인트를 워커가 처리 |
 | **Auto-Validation** | 자동 lint/test 실행 |
+| **Rules System** | 보안, 코딩 스타일, 테스트 규칙 자동 적용 |
+| **Hooks Automation** | Pre/Post 도구 호출 자동화 |
+
+---
+
+## Rules (코드 품질 규칙)
+
+`.claude/rules/` 디렉토리에서 코드 품질 규칙을 관리합니다:
+
+| 규칙 파일 | 설명 |
+|-----------|------|
+| `security.md` | 8가지 보안 체크 (시크릿, SQL 인젝션, XSS 등) |
+| `coding-style.md` | 파일 크기(200-400줄), 함수(<50줄), 네이밍 규칙 |
+| `testing.md` | TDD 사이클, 커버리지 요구사항 (80%+) |
+| `git-workflow.md` | 커밋 메시지 형식, PR 규칙, 금지 행위 |
+| `context-management.md` | MCP 서버 제한 (≤10개), 도구 제한 (≤80개) |
+
+### 심각도 체계
+
+모든 규칙은 3단계 심각도로 분류됩니다:
+
+| 심각도 | 동작 | 예시 |
+|--------|------|------|
+| **CRITICAL** | 커밋 차단 | 하드코딩된 시크릿, SQL 인젝션 |
+| **HIGH** | 경고 후 수정 요청 | 커버리지 부족, 긴 함수 |
+| **MEDIUM** | 권장 사항 | 문서화 부족, 네이밍 개선 |
+
+---
+
+## Hooks (자동화)
+
+`.claude/hooks.json`에서 도구 호출 전후 자동화를 설정합니다:
+
+```json
+{
+  "hooks": [
+    {
+      "matcher": { "tool_name": "Edit" },
+      "hooks": [{
+        "type": "post_tool_use",
+        "command": "uv run ruff format $file"
+      }]
+    }
+  ]
+}
+```
+
+### 지원되는 훅 타입
+
+| 타입 | 시점 | 용도 |
+|------|------|------|
+| `pre_tool_use` | 도구 실행 전 | 검증, 권한 체크 |
+| `post_tool_use` | 도구 실행 후 | 포맷팅, 린트 자동 수정 |
+| `stop` | 세션 종료 시 | 최종 검증, 정리 |
+
+### 기본 제공 자동화
+
+- **TypeScript 수정 후**: 자동 타입 검사
+- **Python 수정 후**: 자동 ruff 포맷팅
+- **Git push 전**: 리뷰 단계 추가
+- **console.log 사용 시**: 경고
 
 ---
 
