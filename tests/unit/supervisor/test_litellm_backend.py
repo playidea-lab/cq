@@ -1,6 +1,5 @@
 """Tests for LiteLLM backend and backend factory."""
 
-import os
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -11,7 +10,6 @@ from c4.supervisor import (
     ClaudeCliBackend,
     LiteLLMBackend,
     ResponseParser,
-    SupervisorResponse,
     create_backend,
 )
 
@@ -84,16 +82,24 @@ class TestResponseParser:
 
     def test_parse_raw_json(self):
         """Parse raw JSON with decision key."""
-        output = '''
-{"decision": "REQUEST_CHANGES", "checkpoint": "CP-002", "notes": "Need fixes", "required_changes": ["Fix lint"]}
-'''
+        output = """{
+            "decision": "REQUEST_CHANGES",
+            "checkpoint": "CP-002",
+            "notes": "Need fixes",
+            "required_changes": ["Fix lint"]
+        }"""
         result = ResponseParser.parse(output)
         assert result.decision == SupervisorDecision.REQUEST_CHANGES
         assert "Fix lint" in result.required_changes
 
     def test_parse_full_json(self):
         """Parse entire output as JSON."""
-        output = '{"decision": "REPLAN", "checkpoint": "CP-003", "notes": "Need new approach", "required_changes": []}'
+        output = """{
+            "decision": "REPLAN",
+            "checkpoint": "CP-003",
+            "notes": "Need new approach",
+            "required_changes": []
+        }"""
         result = ResponseParser.parse(output)
         assert result.decision == SupervisorDecision.REPLAN
 
@@ -105,7 +111,12 @@ class TestResponseParser:
 
     def test_extract_nested_json(self):
         """Extract JSON with nested braces."""
-        output = '{"decision": "APPROVE", "checkpoint": "CP-001", "notes": "Config: {\\"key\\": \\"value\\"}", "required_changes": []}'
+        output = """{
+            "decision": "APPROVE",
+            "checkpoint": "CP-001",
+            "notes": "Config: {\\"key\\": \\"value\\"}",
+            "required_changes": []
+        }"""
         result = ResponseParser.parse(output)
         assert result.decision == SupervisorDecision.APPROVE
 
@@ -152,8 +163,9 @@ class TestLiteLLMBackend:
 
     def test_backend_initialization(self):
         """Backend stores all parameters."""
+        # Use gpt-4o since it doesn't get resolved like Claude models
         backend = LiteLLMBackend(
-            model="claude-3-opus",
+            model="gpt-4o",
             api_key="test-key",
             max_retries=5,
             timeout=600,
@@ -162,7 +174,7 @@ class TestLiteLLMBackend:
             api_base="https://api.example.com",
             drop_params=False,
         )
-        assert backend.model == "claude-3-opus"
+        assert backend.model == "gpt-4o"
         assert backend.api_key == "test-key"
         assert backend.max_retries == 5
         assert backend.timeout == 600
@@ -170,6 +182,25 @@ class TestLiteLLMBackend:
         assert backend.max_tokens == 8192
         assert backend.api_base == "https://api.example.com"
         assert backend.drop_params is False
+
+    def test_backend_claude_model_resolution(self):
+        """Backend resolves Claude model aliases."""
+        backend = LiteLLMBackend(
+            model="claude-3-opus",
+            api_key="test-key",
+        )
+        # Alias is resolved to full model ID
+        assert backend.model == "claude-3-opus-20240229"
+        assert backend._original_model == "claude-3-opus"
+
+    def test_backend_claude_tier_alias(self):
+        """Backend resolves Claude tier aliases."""
+        backend = LiteLLMBackend(
+            model="sonnet",
+            api_key="test-key",
+        )
+        assert backend.model == "claude-sonnet-4-20250514"
+        assert backend._original_model == "sonnet"
 
     @patch("litellm.completion")
     def test_run_review_success(self, mock_completion, tmp_path: Path):
@@ -179,7 +210,12 @@ class TestLiteLLMBackend:
         mock_response.choices = [
             MagicMock(
                 message=MagicMock(
-                    content='{"decision": "APPROVE", "checkpoint": "CP-001", "notes": "LGTM", "required_changes": []}'
+                    content="""{
+                        "decision": "APPROVE",
+                        "checkpoint": "CP-001",
+                        "notes": "LGTM",
+                        "required_changes": []
+                    }"""
                 )
             )
         ]
@@ -230,7 +266,12 @@ class TestLiteLLMBackend:
         mock_response_good.choices = [
             MagicMock(
                 message=MagicMock(
-                    content='{"decision": "APPROVE", "checkpoint": "CP-001", "notes": "OK", "required_changes": []}'
+                    content="""{
+                        "decision": "APPROVE",
+                        "checkpoint": "CP-001",
+                        "notes": "OK",
+                        "required_changes": []
+                    }"""
                 )
             )
         ]
@@ -247,11 +288,11 @@ class TestLiteLLMBackend:
         assert mock_completion.call_count == 2
 
     def test_missing_litellm_import(self, tmp_path: Path):
-        """Raise error if litellm is not installed."""
-        with patch.dict("sys.modules", {"litellm": None}):
-            backend = LiteLLMBackend(model="gpt-4o")
-            bundle_dir = tmp_path / "bundle"
-            bundle_dir.mkdir()
-
-            # This would normally raise ImportError but our mock prevents it
-            # The actual behavior is tested in integration tests
+        """Backend can be created without litellm installed."""
+        # Backend initialization doesn't require litellm
+        # Import only happens when run_review is called
+        backend = LiteLLMBackend(model="gpt-4o")
+        assert backend.model == "gpt-4o"
+        bundle_dir = tmp_path / "bundle"
+        bundle_dir.mkdir()
+        # Actual import error is tested in integration tests

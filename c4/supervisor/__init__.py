@@ -34,6 +34,21 @@ from .agent_router import (
 from .backend import SupervisorBackend, SupervisorError, SupervisorResponse
 from .backend_factory import create_backend, create_backend_from_config_file
 from .claude_backend import ClaudeCliBackend
+from .claude_models import (
+    CLAUDE_MODELS,
+    DEFAULT_CLAUDE_MODEL,
+    ClaudeModelPreset,
+    ClaudeModelTier,
+    detect_anthropic_api_key,
+    estimate_cost,
+    get_api_key,
+    get_model_preset,
+    get_recommended_model,
+    is_claude_model,
+    list_available_models,
+    resolve_model_id,
+    validate_model_id,
+)
 from .cloud_supervisor import (
     CloudSupervisor,
     ReviewRequest,
@@ -41,7 +56,7 @@ from .cloud_supervisor import (
     ReviewStatus,
     ReviewType,
 )
-from .litellm_backend import LiteLLMBackend
+from .litellm_backend import LiteLLMBackend, create_claude_backend
 from .mock_backend import MockBackend
 from .prompt import PromptRenderer
 from .response_parser import ResponseParser
@@ -73,6 +88,21 @@ __all__ = [
     # Backend factory
     "create_backend",
     "create_backend_from_config_file",
+    "create_claude_backend",
+    # Claude models
+    "CLAUDE_MODELS",
+    "DEFAULT_CLAUDE_MODEL",
+    "ClaudeModelPreset",
+    "ClaudeModelTier",
+    "detect_anthropic_api_key",
+    "estimate_cost",
+    "get_api_key",
+    "get_model_preset",
+    "get_recommended_model",
+    "is_claude_model",
+    "list_available_models",
+    "resolve_model_id",
+    "validate_model_id",
     # Supporting classes
     "SupervisorResponse",
     "SupervisorError",
