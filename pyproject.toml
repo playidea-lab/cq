@@ -29,6 +29,9 @@ dev = [
 cloud = [
     "supabase>=2.0.0",
 ]
+docker = [
+    "docker>=7.0.0",
+]
 
 [project.scripts]
 c4d = "c4.cli:app"
