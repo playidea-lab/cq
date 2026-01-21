@@ -1,0 +1,78 @@
+# C4 Development Docker Compose
+#
+# Usage:
+#   docker compose -f docker/docker-compose.yml up -d
+#   docker compose -f docker/docker-compose.yml logs -f
+#   docker compose -f docker/docker-compose.yml down
+
+services:
+  # C4 API Server
+  c4-api:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.api
+    ports:
+      - "8000:8000"
+    environment:
+      - C4_ENV=development
+      - C4_DEBUG=true
+      - DATABASE_URL=sqlite:///data/c4.db
+      - SUPABASE_URL=${SUPABASE_URL:-}
+      - SUPABASE_KEY=${SUPABASE_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+    volumes:
+      - c4-data:/data
+      - ../:/app:ro
+    depends_on:
+      - workspace-manager
+    networks:
+      - c4-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Workspace Manager (manages workspace containers)
+  workspace-manager:
+    image: docker:dind
+    privileged: true
+    environment:
+      - DOCKER_TLS_CERTDIR=/certs
+    volumes:
+      - docker-certs:/certs
+      - workspaces:/data/c4-workspaces
+    networks:
+      - c4-network
+    restart: unless-stopped
+
+  # Example workspace (for testing)
+  workspace-example:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    environment:
+      - WORKSPACE_ID=example-workspace
+      - GIT_URL=https://github.com/anthropics/anthropic-cookbook
+      - GIT_BRANCH=main
+    volumes:
+      - workspace-example:/workspace
+    networks:
+      - c4-network
+    profiles:
+      - test
+
+volumes:
+  c4-data:
+    driver: local
+  docker-certs:
+    driver: local
+  workspaces:
+    driver: local
+  workspace-example:
+    driver: local
+
+networks:
+  c4-network:
+    driver: bridge
