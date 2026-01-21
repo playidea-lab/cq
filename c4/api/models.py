@@ -33,9 +33,7 @@ class ValidationResult(BaseModel):
 class StatusResponse(BaseModel):
     """Response from c4_status endpoint."""
 
-    state: str = Field(
-        ..., description="Current C4 state (INIT, DISCOVERY, DESIGN, etc.)"
-    )
+    state: str = Field(..., description="Current C4 state (INIT, DISCOVERY, DESIGN, etc.)")
     queue: dict[str, Any] = Field(default_factory=dict, description="Task queue summary")
     workers: dict[str, Any] = Field(default_factory=dict, description="Active workers")
     project_root: str | None = Field(None, description="Project root path")
@@ -364,3 +362,114 @@ class ErrorResponse(BaseModel):
     error: str = Field(..., description="Error type")
     message: str = Field(..., description="Error message")
     details: dict[str, Any] = Field(default_factory=dict, description="Additional details")
+
+
+# ============================================================================
+# File Operations Models
+# ============================================================================
+
+
+class FileReadRequest(BaseModel):
+    """Request to read a file from workspace."""
+
+    workspace_id: str = Field(..., description="Workspace identifier")
+    path: str = Field(..., description="Relative path to file within workspace")
+
+
+class FileReadResponse(BaseModel):
+    """Response containing file content."""
+
+    success: bool = Field(..., description="Whether read was successful")
+    path: str = Field(..., description="File path that was read")
+    content: str | None = Field(None, description="File content (utf-8)")
+    size: int | None = Field(None, description="File size in bytes")
+    error: str | None = Field(None, description="Error message if failed")
+
+
+class FileWriteRequest(BaseModel):
+    """Request to write a file to workspace."""
+
+    workspace_id: str = Field(..., description="Workspace identifier")
+    path: str = Field(..., description="Relative path to file within workspace")
+    content: str = Field(..., description="File content to write (utf-8)")
+    create_dirs: bool = Field(True, description="Create parent directories if needed")
+
+
+class FileWriteResponse(BaseModel):
+    """Response from file write operation."""
+
+    success: bool = Field(..., description="Whether write was successful")
+    path: str = Field(..., description="File path that was written")
+    size: int | None = Field(None, description="Written file size in bytes")
+    error: str | None = Field(None, description="Error message if failed")
+
+
+class DirectoryListRequest(BaseModel):
+    """Request to list directory contents."""
+
+    workspace_id: str = Field(..., description="Workspace identifier")
+    path: str = Field(".", description="Relative path to directory (default: root)")
+    recursive: bool = Field(False, description="List recursively")
+    include_hidden: bool = Field(False, description="Include hidden files (starting with .)")
+
+
+class FileInfo(BaseModel):
+    """Information about a file or directory."""
+
+    name: str = Field(..., description="File/directory name")
+    path: str = Field(..., description="Relative path from workspace root")
+    is_dir: bool = Field(..., description="Whether this is a directory")
+    size: int | None = Field(None, description="File size in bytes (None for directories)")
+
+
+class DirectoryListResponse(BaseModel):
+    """Response containing directory listing."""
+
+    success: bool = Field(..., description="Whether listing was successful")
+    path: str = Field(..., description="Directory path that was listed")
+    entries: list[FileInfo] = Field(default_factory=list, description="Directory entries")
+    error: str | None = Field(None, description="Error message if failed")
+
+
+class FileSearchRequest(BaseModel):
+    """Request to search files using glob or grep."""
+
+    workspace_id: str = Field(..., description="Workspace identifier")
+    pattern: str = Field(..., description="Search pattern (glob for files, regex for content)")
+    path: str = Field(".", description="Starting directory for search")
+    search_type: str = Field("glob", description="Search type: 'glob' or 'grep'")
+    max_results: int = Field(100, description="Maximum results to return")
+
+
+class SearchMatch(BaseModel):
+    """A search result match."""
+
+    path: str = Field(..., description="File path")
+    line_number: int | None = Field(None, description="Line number (for grep)")
+    line_content: str | None = Field(None, description="Matching line content (for grep)")
+
+
+class FileSearchResponse(BaseModel):
+    """Response containing search results."""
+
+    success: bool = Field(..., description="Whether search was successful")
+    pattern: str = Field(..., description="Search pattern used")
+    search_type: str = Field(..., description="Search type used")
+    matches: list[SearchMatch] = Field(default_factory=list, description="Search matches")
+    truncated: bool = Field(False, description="Whether results were truncated")
+    error: str | None = Field(None, description="Error message if failed")
+
+
+class FileDeleteRequest(BaseModel):
+    """Request to delete a file."""
+
+    workspace_id: str = Field(..., description="Workspace identifier")
+    path: str = Field(..., description="Relative path to file within workspace")
+
+
+class FileDeleteResponse(BaseModel):
+    """Response from file delete operation."""
+
+    success: bool = Field(..., description="Whether delete was successful")
+    path: str = Field(..., description="File path that was deleted")
+    error: str | None = Field(None, description="Error message if failed")

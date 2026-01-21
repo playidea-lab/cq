@@ -6,9 +6,10 @@ Provides modular route handlers for different C4 phases:
 - design: Design phase (architecture, decisions)
 - validation: Validation execution
 - git: Git operations
+- files: File operations (read, write, list, search, delete)
 - shell: Shell command execution
 """
 
-from . import c4, design, discovery, git, shell, validation
+from . import c4, design, discovery, files, git, shell, validation
 
-__all__ = ["c4", "discovery", "design", "validation", "git", "shell"]
+__all__ = ["c4", "discovery", "design", "validation", "git", "files", "shell"]
