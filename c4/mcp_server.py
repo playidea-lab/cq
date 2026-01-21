@@ -1422,16 +1422,19 @@ Thumbs.db
         # Get fresh state reference for final checks
         state = self.state_machine.state
 
-        # Check if checkpoint reached
-        cp_id = self.state_machine.check_gate_conditions(self.config)
-        if cp_id:
-            self._add_to_checkpoint_queue(cp_id, results)
-            self.state_machine.enter_checkpoint(cp_id)
-            return SubmitResponse(
-                success=True,
-                next_action="await_checkpoint",
-                message=f"Checkpoint {cp_id} queued for AI review (automatic)",
-            )
+        # Check if checkpoint reached (legacy mode only)
+        # When checkpoint_as_task is enabled, CP tasks are created by _check_and_create_checkpoint_task
+        # and workers pick them up without state transition to CHECKPOINT
+        if not self.config.checkpoint_as_task:
+            cp_id = self.state_machine.check_gate_conditions(self.config)
+            if cp_id:
+                self._add_to_checkpoint_queue(cp_id, results)
+                self.state_machine.enter_checkpoint(cp_id)
+                return SubmitResponse(
+                    success=True,
+                    next_action="await_checkpoint",
+                    message=f"Checkpoint {cp_id} queued for AI review (automatic)",
+                )
 
         # Check if all done
         if not state.queue.pending and not state.queue.in_progress:
@@ -1516,15 +1519,17 @@ Thumbs.db
         ):
             self._trigger_auto_commit(task_id, task.title, actual_worker_id)
 
-        cp_id = self.state_machine.check_gate_conditions(self.config)
-        if cp_id:
-            self._add_to_checkpoint_queue(cp_id, results)
-            self.state_machine.enter_checkpoint(cp_id)
-            return SubmitResponse(
-                success=True,
-                next_action="await_checkpoint",
-                message=f"Checkpoint {cp_id} queued for AI review (automatic)",
-            )
+        # Check if checkpoint reached (legacy mode only)
+        if not self.config.checkpoint_as_task:
+            cp_id = self.state_machine.check_gate_conditions(self.config)
+            if cp_id:
+                self._add_to_checkpoint_queue(cp_id, results)
+                self.state_machine.enter_checkpoint(cp_id)
+                return SubmitResponse(
+                    success=True,
+                    next_action="await_checkpoint",
+                    message=f"Checkpoint {cp_id} queued for AI review (automatic)",
+                )
 
         if not state.queue.pending and not state.queue.in_progress:
             return SubmitResponse(
@@ -3647,10 +3652,17 @@ Thumbs.db
         """
         Check if checkpoint conditions are met and trigger if so.
 
+        NOTE: This is legacy mode. When checkpoint_as_task is enabled,
+        checkpoints are handled as tasks (CP-XXX) without state transition.
+
         Returns:
             Checkpoint info if triggered, None otherwise
         """
         if self.state_machine is None:
+            return None
+
+        # Skip when checkpoint_as_task is enabled - CP tasks are created automatically
+        if self.config.checkpoint_as_task:
             return None
 
         state = self.state_machine.state
