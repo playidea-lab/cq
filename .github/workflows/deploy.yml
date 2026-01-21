@@ -1,0 +1,202 @@
+# C4 Deployment Pipeline
+#
+# Triggers:
+#   - Push to main branch
+#   - Manual workflow_dispatch
+#
+# Jobs:
+#   1. Test: Run unit tests
+#   2. Build: Build and push Docker image to GHCR
+#   3. Deploy: Deploy to production environment
+
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Deployment environment'
+        required: true
+        default: 'production'
+        type: choice
+        options:
+          - production
+          - staging
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync --frozen --dev
+
+      - name: Run linting
+        run: uv run ruff check c4/
+
+      - name: Run type checking
+        run: uv run mypy c4/ --ignore-missing-imports
+
+      - name: Run unit tests
+        run: uv run pytest tests/unit -v --tb=short
+
+  build:
+    name: Build Docker Image
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image_tag: ${{ steps.meta.outputs.tags }}
+      image_digest: ${{ steps.build.outputs.digest }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=sha,prefix=
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+
+      - name: Build and push
+        id: build
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: docker/Dockerfile.api
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          platforms: linux/amd64,linux/arm64
+
+      - name: Generate artifact attestation
+        uses: actions/attest-build-provenance@v1
+        with:
+          subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+
+  deploy:
+    name: Deploy
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: ${{ github.event.inputs.environment || 'production' }}
+      url: ${{ vars.DEPLOY_URL }}
+    concurrency:
+      group: deploy-${{ github.event.inputs.environment || 'production' }}
+      cancel-in-progress: false
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Display deployment info
+        run: |
+          echo "Deploying to: ${{ github.event.inputs.environment || 'production' }}"
+          echo "Image: ${{ needs.build.outputs.image_tag }}"
+          echo "Commit: ${{ github.sha }}"
+
+      # Option 1: Deploy via SSH
+      # Uncomment and configure for SSH-based deployment
+      # - name: Deploy via SSH
+      #   uses: appleboy/ssh-action@v1.0.3
+      #   with:
+      #     host: ${{ secrets.DEPLOY_HOST }}
+      #     username: ${{ secrets.DEPLOY_USER }}
+      #     key: ${{ secrets.DEPLOY_SSH_KEY }}
+      #     script: |
+      #       docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+      #       docker compose -f /opt/c4/docker-compose.yml up -d
+
+      # Option 2: Deploy to Kubernetes
+      # Uncomment and configure for Kubernetes deployment
+      # - name: Set up kubectl
+      #   uses: azure/setup-kubectl@v3
+      #
+      # - name: Configure kubectl
+      #   run: |
+      #     echo "${{ secrets.KUBECONFIG }}" | base64 -d > kubeconfig
+      #     export KUBECONFIG=kubeconfig
+      #
+      # - name: Deploy to Kubernetes
+      #   run: |
+      #     kubectl set image deployment/c4-api \
+      #       c4-api=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ needs.build.outputs.image_digest }} \
+      #       --namespace c4
+
+      # Option 3: Deploy via Docker Compose (remote)
+      # Uncomment and configure for docker-compose deployment
+      # - name: Deploy via Docker Context
+      #   run: |
+      #     docker context create remote --docker "host=ssh://${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}"
+      #     docker --context remote compose -f docker-compose.prod.yml up -d
+
+      # Placeholder deployment step
+      - name: Deploy (placeholder)
+        run: |
+          echo "========================================"
+          echo "  DEPLOYMENT PLACEHOLDER"
+          echo "========================================"
+          echo ""
+          echo "To enable actual deployment, configure one of:"
+          echo "  1. SSH deployment (DEPLOY_HOST, DEPLOY_USER, DEPLOY_SSH_KEY)"
+          echo "  2. Kubernetes deployment (KUBECONFIG)"
+          echo "  3. Docker context deployment"
+          echo ""
+          echo "Image ready: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest"
+          echo "Digest: ${{ needs.build.outputs.image_digest }}"
+
+      - name: Create deployment summary
+        run: |
+          cat >> $GITHUB_STEP_SUMMARY << 'EOF'
+          ## Deployment Summary
+
+          | Item | Value |
+          |------|-------|
+          | Environment | ${{ github.event.inputs.environment || 'production' }} |
+          | Image | `${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest` |
+          | Commit | `${{ github.sha }}` |
+          | Deployed by | @${{ github.actor }} |
+
+          ### Pull the image
+          ```bash
+          docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          ```
+          EOF
