@@ -124,6 +124,63 @@ class TestConversationStore:
         store = ConversationStore()
         assert store.delete("nonexistent") is False
 
+    def test_create_with_user_id(self):
+        """Test creating conversation with user_id."""
+        store = ConversationStore()
+        conv = store.create("conv-1", "workspace-1", "user-1")
+
+        assert conv.id == "conv-1"
+        assert conv.workspace_id == "workspace-1"
+        assert conv.user_id == "user-1"
+
+    def test_get_for_user_success(self):
+        """Test getting conversation for correct user."""
+        store = ConversationStore()
+        store.create("conv-1", "workspace-1", "user-1")
+
+        conv = store.get_for_user("conv-1", "user-1")
+        assert conv is not None
+        assert conv.id == "conv-1"
+        assert conv.user_id == "user-1"
+
+    def test_get_for_user_wrong_user(self):
+        """Test getting conversation for wrong user returns None."""
+        store = ConversationStore()
+        store.create("conv-1", "workspace-1", "user-1")
+
+        conv = store.get_for_user("conv-1", "user-2")
+        assert conv is None
+
+    def test_get_for_user_nonexistent(self):
+        """Test getting nonexistent conversation for user."""
+        store = ConversationStore()
+        assert store.get_for_user("nonexistent", "user-1") is None
+
+    def test_get_or_create_user_isolation(self):
+        """Test that get_or_create respects user isolation."""
+        store = ConversationStore()
+        # User 1 creates conversation
+        conv1 = store.create("conv-1", "workspace-1", "user-1")
+
+        # User 2 tries to access same conversation_id
+        conv2 = store.get_or_create("conv-1", "workspace-2", "user-2")
+
+        # Should create new conversation for user 2
+        assert conv2.id != conv1.id
+        assert conv2.user_id == "user-2"
+
+    def test_get_or_create_sets_user_id(self):
+        """Test that get_or_create sets user_id on existing conversation."""
+        store = ConversationStore()
+        # Create without user_id
+        conv = store.create("conv-1", "workspace-1")
+        assert conv.user_id is None
+
+        # get_or_create with user_id
+        conv2 = store.get_or_create("conv-1", None, "user-1")
+        assert conv2 is conv
+        assert conv.user_id == "user-1"
+
 
 # =============================================================================
 # ChatMessage Tests

@@ -18,6 +18,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
+from .auth import CurrentUser, OptionalUser, User
+
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
@@ -110,6 +112,7 @@ class Conversation:
     """Represents a conversation with its history and workspace."""
 
     id: str
+    user_id: str | None = None
     workspace_id: str | None = None
     messages: list[ChatMessage] = field(default_factory=list)
     created_at: datetime = field(default_factory=datetime.now)
@@ -126,26 +129,54 @@ class ConversationStore:
         """Get conversation by ID."""
         return self._conversations.get(conversation_id)
 
+    def get_for_user(self, conversation_id: str, user_id: str) -> Conversation | None:
+        """Get conversation by ID, verifying user ownership.
+
+        Args:
+            conversation_id: Conversation ID
+            user_id: User ID to verify ownership
+
+        Returns:
+            Conversation if found and owned by user, None otherwise
+        """
+        conv = self._conversations.get(conversation_id)
+        if conv and conv.user_id == user_id:
+            return conv
+        return None
+
     def create(
-        self, conversation_id: str | None = None, workspace_id: str | None = None
+        self,
+        conversation_id: str | None = None,
+        workspace_id: str | None = None,
+        user_id: str | None = None,
     ) -> Conversation:
         """Create a new conversation."""
         conv_id = conversation_id or str(uuid.uuid4())
-        conv = Conversation(id=conv_id, workspace_id=workspace_id)
+        conv = Conversation(id=conv_id, user_id=user_id, workspace_id=workspace_id)
         self._conversations[conv_id] = conv
         return conv
 
     def get_or_create(
-        self, conversation_id: str | None, workspace_id: str | None = None
+        self,
+        conversation_id: str | None,
+        workspace_id: str | None = None,
+        user_id: str | None = None,
     ) -> Conversation:
         """Get existing conversation or create new one."""
         if conversation_id and conversation_id in self._conversations:
             conv = self._conversations[conversation_id]
+            # Verify ownership
+            if user_id and conv.user_id and conv.user_id != user_id:
+                # Different user, create new conversation
+                return self.create(None, workspace_id, user_id)
+            # Update user_id if not set
+            if user_id and not conv.user_id:
+                conv.user_id = user_id
             # Update workspace if provided
             if workspace_id and not conv.workspace_id:
                 conv.workspace_id = workspace_id
             return conv
-        return self.create(conversation_id, workspace_id)
+        return self.create(conversation_id, workspace_id, user_id)
 
     def add_message(self, conversation_id: str, message: ChatMessage) -> None:
         """Add message to conversation."""
@@ -205,6 +236,7 @@ class AgenticChatService:
         user_message: str,
         workspace_id: str | None = None,
         context: dict[str, Any] | None = None,
+        user_id: str | None = None,
     ) -> AsyncGenerator[dict[str, Any], None]:
         """Generate streaming response with tool use.
 
@@ -221,12 +253,13 @@ class AgenticChatService:
             user_message: User's message
             workspace_id: Workspace for tool execution
             context: Additional context
+            user_id: Authenticated user ID for ownership
 
         Yields:
             Event dictionaries for SSE streaming
         """
         # Get or create conversation
-        conv = self._store.get_or_create(conversation_id, workspace_id)
+        conv = self._store.get_or_create(conversation_id, workspace_id, user_id)
 
         # Add user message
         user_msg = ChatMessage(role=MessageRole.USER, content=user_message)
@@ -481,9 +514,12 @@ def get_chat_service() -> AgenticChatService:
 @router.post("/message", response_model=None)
 async def send_message(
     request: ChatRequest,
+    user: CurrentUser,
     chat_service: AgenticChatService = Depends(get_chat_service),
 ) -> StreamingResponse | ChatResponse:
     """Send a chat message and receive response.
+
+    Requires authentication via JWT Bearer token or API key.
 
     When workspace_id is provided, the agent will use tools to execute
     file operations and shell commands in the workspace.
@@ -505,6 +541,7 @@ async def send_message(
 
     Args:
         request: Chat request with message and options
+        user: Authenticated user
 
     Returns:
         Streaming SSE response or complete ChatResponse
@@ -519,6 +556,7 @@ async def send_message(
                 request.message,
                 request.workspace_id,
                 request.context,
+                user.user_id,
             ),
             media_type="text/event-stream",
             headers={
@@ -537,6 +575,7 @@ async def send_message(
             request.message,
             request.workspace_id,
             request.context,
+            user.user_id,
         ):
             if event["event"] == "chunk":
                 response_content += event["data"]["content"]
@@ -560,6 +599,7 @@ async def _stream_response(
     message: str,
     workspace_id: str | None,
     context: dict[str, Any] | None,
+    user_id: str | None = None,
 ) -> AsyncGenerator[str, None]:
     """Generate SSE stream for chat response."""
     async for event in chat_service.generate_response(
@@ -567,6 +607,7 @@ async def _stream_response(
         message,
         workspace_id,
         context,
+        user_id,
     ):
         sse = SSEEvent(
             event=event["event"],
@@ -578,19 +619,36 @@ async def _stream_response(
 @router.get("/history/{conversation_id}")
 async def get_history(
     conversation_id: str,
+    user: CurrentUser,
     chat_service: AgenticChatService = Depends(get_chat_service),
 ) -> list[ChatMessage]:
-    """Get conversation history."""
-    return chat_service.get_conversation(conversation_id)
+    """Get conversation history.
+
+    Requires authentication. Only returns history for conversations
+    owned by the authenticated user.
+    """
+    store = chat_service._store
+    conv = store.get_for_user(conversation_id, user.user_id)
+    if not conv:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    return conv.messages
 
 
 @router.delete("/history/{conversation_id}")
 async def clear_history(
     conversation_id: str,
+    user: CurrentUser,
     chat_service: AgenticChatService = Depends(get_chat_service),
 ) -> dict[str, bool]:
-    """Clear conversation history."""
+    """Clear conversation history.
+
+    Requires authentication. Only allows deletion of conversations
+    owned by the authenticated user.
+    """
     store = chat_service._store
+    conv = store.get_for_user(conversation_id, user.user_id)
+    if not conv:
+        raise HTTPException(status_code=404, detail="Conversation not found")
     success = store.delete(conversation_id)
     return {"success": success}
 
@@ -599,9 +657,13 @@ async def clear_history(
 async def bind_workspace(
     conversation_id: str,
     workspace_id: str,
+    user: CurrentUser,
     chat_service: AgenticChatService = Depends(get_chat_service),
 ) -> dict[str, Any]:
     """Bind a workspace to a conversation.
+
+    Requires authentication. Creates conversation if not exists
+    or verifies ownership if exists.
 
     Once bound, the chat will use agentic mode with tools to
     execute file and shell operations in the workspace.
@@ -609,14 +671,16 @@ async def bind_workspace(
     Args:
         conversation_id: Conversation to bind
         workspace_id: Workspace to bind
+        user: Authenticated user
 
     Returns:
         Updated conversation info
     """
-    conv = chat_service._store.get_or_create(conversation_id, workspace_id)
+    conv = chat_service._store.get_or_create(conversation_id, workspace_id, user.user_id)
     conv.workspace_id = workspace_id
     return {
         "conversation_id": conv.id,
         "workspace_id": conv.workspace_id,
+        "user_id": conv.user_id,
         "message_count": len(conv.messages),
     }
