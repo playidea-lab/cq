@@ -45,3 +45,7 @@ htmlcov/
 .DS_Store
 Thumbs.db
 .env
+
+# Local files
+C4-Guide.pptx
+workspace/
