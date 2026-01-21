@@ -11,9 +11,10 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 try:
-    import docker
     from docker.errors import APIError, ContainerError, ImageNotFound, NotFound
     from docker.models.containers import Container
+
+    import docker
 
     DOCKER_AVAILABLE = True
 except ImportError:
@@ -25,6 +26,7 @@ except ImportError:
     NotFound = Exception  # type: ignore[assignment, misc]
     Container = None  # type: ignore[assignment, misc]
 
+from .limits import ResourceLimits
 from .manager import (
     WorkspaceCreationError,
     WorkspaceManager,
@@ -88,6 +90,7 @@ class DockerWorkspaceManager(WorkspaceManager):
         cpu_quota: int = 100000,  # 1 CPU (100000 microseconds per 100000 period)
         cleanup_after_seconds: int = 3600,  # 1 hour
         docker_client: "DockerClient | None" = None,
+        resource_limits: ResourceLimits | None = None,
     ) -> None:
         """Initialize Docker workspace manager.
 
@@ -95,10 +98,12 @@ class DockerWorkspaceManager(WorkspaceManager):
             base_image: Docker image to use for workspaces
             data_dir: Base directory for workspace data volumes
             network_mode: Docker network mode (bridge, host, none)
-            mem_limit: Memory limit (e.g., "2g", "512m")
-            cpu_quota: CPU quota in microseconds (100000 = 1 CPU)
+            mem_limit: Memory limit (e.g., "2g", "512m") - deprecated, use resource_limits
+            cpu_quota: CPU quota in microseconds (100000 = 1 CPU) - deprecated, use resource_limits
             cleanup_after_seconds: Seconds after which inactive workspaces are cleaned up
             docker_client: Optional pre-configured Docker client (for testing)
+            resource_limits: ResourceLimits object for CPU, memory, disk, and timeout settings.
+                           If provided, overrides mem_limit and cpu_quota.
         """
         if docker_client is not None:
             self.client = docker_client
@@ -110,9 +115,19 @@ class DockerWorkspaceManager(WorkspaceManager):
         self.base_image = base_image
         self.data_dir = Path(data_dir)
         self.network_mode = network_mode
-        self.mem_limit = mem_limit
-        self.cpu_quota = cpu_quota
-        self.cleanup_after_seconds = cleanup_after_seconds
+
+        # Use ResourceLimits if provided, otherwise fall back to legacy params
+        if resource_limits is not None:
+            self.resource_limits = resource_limits
+            docker_config = resource_limits.to_docker_config()
+            self.mem_limit = docker_config["mem_limit"]
+            self.cpu_quota = docker_config["nano_cpus"] // 10000  # Convert back to quota
+            self.cleanup_after_seconds = resource_limits.idle_timeout_seconds
+        else:
+            self.resource_limits = None
+            self.mem_limit = mem_limit
+            self.cpu_quota = cpu_quota
+            self.cleanup_after_seconds = cleanup_after_seconds
 
         # In-memory tracking (replace with DB in production)
         self.workspaces: dict[str, Workspace] = {}
@@ -211,6 +226,7 @@ class DockerWorkspaceManager(WorkspaceManager):
                     },
                     mem_limit=self.mem_limit,
                     cpu_quota=self.cpu_quota,
+                    nano_cpus=self.resource_limits.to_docker_config()["nano_cpus"] if self.resource_limits else None,
                     network_mode=self.network_mode,
                     labels={
                         "c4.workspace_id": workspace_id,

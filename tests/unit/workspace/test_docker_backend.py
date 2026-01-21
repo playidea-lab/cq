@@ -917,3 +917,117 @@ class TestContainerLabels:
         assert labels["c4.user_id"] == "test-user-123"
         assert labels["c4.git_url"] == "https://github.com/org/project"
         assert labels["c4.branch"] == "feature-branch"
+
+
+class TestResourceLimitsIntegration:
+    """Tests for ResourceLimits integration with DockerWorkspaceManager."""
+
+    @pytest.mark.asyncio
+    async def test_init_with_resource_limits(
+        self, mock_docker_client, temp_data_dir
+    ):
+        """Test initialization with ResourceLimits object."""
+        from c4.workspace.limits import ResourceLimits
+
+        limits = ResourceLimits(
+            cpu_cores=2.0,
+            memory_mb=4096,
+            idle_timeout_minutes=120,
+        )
+
+        manager = DockerWorkspaceManager(
+            data_dir=temp_data_dir,
+            resource_limits=limits,
+            docker_client=mock_docker_client,
+        )
+
+        assert manager.resource_limits is limits
+        assert manager.mem_limit == "4096m"
+        assert manager.cleanup_after_seconds == 7200  # 120 minutes
+
+    @pytest.mark.asyncio
+    async def test_resource_limits_overrides_legacy_params(
+        self, mock_docker_client, temp_data_dir
+    ):
+        """Test that resource_limits takes precedence over legacy parameters."""
+        from c4.workspace.limits import ResourceLimits
+
+        limits = ResourceLimits.small()  # 0.5 CPU, 1024m
+
+        manager = DockerWorkspaceManager(
+            data_dir=temp_data_dir,
+            mem_limit="8g",  # Should be overridden
+            cpu_quota=400000,  # Should be overridden
+            resource_limits=limits,
+            docker_client=mock_docker_client,
+        )
+
+        assert manager.mem_limit == "1024m"  # From ResourceLimits.small()
+
+    @pytest.mark.asyncio
+    async def test_create_with_resource_limits_nano_cpus(
+        self, mock_docker_client, mock_container, temp_data_dir
+    ):
+        """Test that nano_cpus is passed to container when using ResourceLimits."""
+        from c4.workspace.limits import ResourceLimits
+
+        mock_docker_client.containers.run.return_value = mock_container
+        mock_container.exec_run.return_value = (0, (b"", b""))
+
+        limits = ResourceLimits(cpu_cores=1.5)
+
+        manager = DockerWorkspaceManager(
+            data_dir=temp_data_dir,
+            resource_limits=limits,
+            docker_client=mock_docker_client,
+        )
+
+        await manager.create("user-1", "https://github.com/test/repo")
+
+        call_kwargs = mock_docker_client.containers.run.call_args[1]
+        # 1.5 CPU = 1_500_000_000 nanoseconds
+        assert call_kwargs["nano_cpus"] == 1_500_000_000
+
+    @pytest.mark.asyncio
+    async def test_create_without_resource_limits_no_nano_cpus(
+        self, mock_docker_client, mock_container, temp_data_dir
+    ):
+        """Test that nano_cpus is None when not using ResourceLimits."""
+        mock_docker_client.containers.run.return_value = mock_container
+        mock_container.exec_run.return_value = (0, (b"", b""))
+
+        manager = DockerWorkspaceManager(
+            data_dir=temp_data_dir,
+            docker_client=mock_docker_client,
+        )
+
+        await manager.create("user-1", "https://github.com/test/repo")
+
+        call_kwargs = mock_docker_client.containers.run.call_args[1]
+        assert call_kwargs["nano_cpus"] is None
+
+    @pytest.mark.asyncio
+    async def test_resource_limits_presets(
+        self, mock_docker_client, mock_container, temp_data_dir
+    ):
+        """Test using ResourceLimits presets."""
+        from c4.workspace.limits import ResourceLimits
+
+        mock_docker_client.containers.run.return_value = mock_container
+        mock_container.exec_run.return_value = (0, (b"", b""))
+
+        # Test small preset
+        small_manager = DockerWorkspaceManager(
+            data_dir=temp_data_dir,
+            resource_limits=ResourceLimits.small(),
+            docker_client=mock_docker_client,
+        )
+        assert small_manager.mem_limit == "1024m"
+
+        # Test large preset
+        large_manager = DockerWorkspaceManager(
+            data_dir=temp_data_dir,
+            resource_limits=ResourceLimits.large(),
+            docker_client=mock_docker_client,
+        )
+        assert large_manager.mem_limit == "4096m"

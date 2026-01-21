@@ -1,5 +1,6 @@
 """C4 Workspace - Isolated workspace management for cloud workers."""
 
+from .limits import ResourceLimits
 from .local import LocalWorkspaceManager
 from .manager import (
     WorkspaceCreationError,
@@ -25,6 +26,7 @@ except ImportError:
 __all__ = [
     "ExecResult",
     "LocalWorkspaceManager",
+    "ResourceLimits",
     "Workspace",
     "WorkspaceCreationError",
     "WorkspaceError",
