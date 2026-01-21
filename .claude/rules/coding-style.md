@@ -380,6 +380,107 @@ def process_order(
 
 ---
 
+## 가독성 원칙 (Code Simplification)
+
+> 명시적이고 읽기 쉬운 코드가 간결한 코드보다 낫다.
+
+### CRITICAL - 차단
+
+| 규칙 | 설명 |
+|------|------|
+| **중첩 삼항 연산자 금지** | switch/if-else 사용 |
+| **중첩 깊이 최대 3단계** | if/for/try 등 중첩 제한 |
+
+```python
+# ❌ BAD: 중첩 삼항 연산자
+status = "admin" if is_admin else "member" if is_member else "guest"
+
+# ✅ GOOD: 명시적 조건문
+if is_admin:
+    status = "admin"
+elif is_member:
+    status = "member"
+else:
+    status = "guest"
+```
+
+```python
+# ❌ BAD: 4단계 중첩
+def process(data):
+    for item in data:                    # 1단계
+        if item.is_valid():              # 2단계
+            for sub in item.children:    # 3단계
+                if sub.active:           # 4단계 ← 초과!
+                    handle(sub)
+
+# ✅ GOOD: Early return + 함수 분리
+def process(data):
+    for item in data:
+        if not item.is_valid():
+            continue
+        process_children(item.children)
+
+def process_children(children):
+    for sub in children:
+        if sub.active:
+            handle(sub)
+```
+
+### HIGH - 경고
+
+| 규칙 | 설명 |
+|------|------|
+| **명시성 > 간결함** | 한 줄 압축 지양 |
+| **단일 책임** | 한 함수에 한 관심사 |
+
+```python
+# ❌ BAD: 과도한 압축
+result = [x.upper() for x in data if x and len(x) > 3 and x[0].isalpha()]
+
+# ✅ GOOD: 명시적 단계
+filtered = [x for x in data if x]
+filtered = [x for x in filtered if len(x) > 3]
+filtered = [x for x in filtered if x[0].isalpha()]
+result = [x.upper() for x in filtered]
+```
+
+```typescript
+// ❌ BAD: 한 줄에 여러 로직
+const result = data?.items?.filter(x => x.active)?.map(x => x.name)?.join(", ") ?? "none";
+
+// ✅ GOOD: 단계별 처리
+const items = data?.items ?? [];
+const activeItems = items.filter(x => x.active);
+const names = activeItems.map(x => x.name);
+const result = names.length > 0 ? names.join(", ") : "none";
+```
+
+### 리뷰 원칙
+
+| 원칙 | 설명 |
+|------|------|
+| **기능 보존** | 동작 변경 없이 구현만 개선 |
+| **과도한 단순화 경계** | 유용한 추상화 제거 주의 |
+
+```python
+# ⚠️ 기능 보존 위반 예시
+# 원본: 빈 리스트일 때 None 반환
+def get_first(items):
+    return items[0] if items else None
+
+# ❌ BAD 리팩토링: 동작 변경됨 (IndexError 발생)
+def get_first(items):
+    return items[0]
+
+# ✅ GOOD 리팩토링: 동작 유지
+def get_first(items):
+    if not items:
+        return None
+    return items[0]
+```
+
+---
+
 ## 위반 시 처리
 
 ```
