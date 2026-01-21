@@ -115,9 +115,11 @@ checkpoints:
   - id: CP-REVIEW
     name: "코드 리뷰"
     required_validations: ["lint"]
+    auto_approve: true      # 기본값: AI 자동 리뷰
   - id: CP-FINAL
     name: "최종 검토"
     required_validations: ["lint", "unit"]
+    auto_approve: false     # 사람 리뷰 필수 (/c4-checkpoint)
 
 # Review-as-Task (기본: 활성화)
 review_as_task: true        # 리뷰를 태스크로 생성

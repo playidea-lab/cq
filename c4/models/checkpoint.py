@@ -19,7 +19,7 @@ class CheckpointConfig(BaseModel):
     description: str = ""  # Human-readable description
     required_tasks: list[str] = Field(default_factory=list)
     required_validations: list[str] = Field(default_factory=lambda: ["lint", "unit"])
-    auto_approve: bool = False
+    auto_approve: bool = True  # Default: AI auto-review. Set False for human review
 
 
 # Default checkpoints created on c4 init

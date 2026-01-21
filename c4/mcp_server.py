@@ -2004,7 +2004,22 @@ Thumbs.db
             logger.debug(f"Not all reviews approved for checkpoint {matching_checkpoint.id}")
             return None
 
-        # All reviews approved! Create checkpoint task
+        # Check auto_approve setting
+        # If auto_approve=True (default), create CP task for automated AI review
+        # If auto_approve=False, enter CHECKPOINT state and wait for human review
+        if not matching_checkpoint.auto_approve:
+            # Human review required - enter CHECKPOINT state
+            logger.info(
+                f"Checkpoint {matching_checkpoint.id} requires human review (auto_approve=false). "
+                "Entering CHECKPOINT state. Use /c4-checkpoint to proceed."
+            )
+            # Add to checkpoint queue for tracking
+            self._add_to_checkpoint_queue(matching_checkpoint.id, [])
+            # Enter checkpoint state (blocks further task execution)
+            self.state_machine.enter_checkpoint(matching_checkpoint.id)
+            return None  # Don't create CP task - wait for human
+
+        # All reviews approved and auto_approve=True! Create checkpoint task
         logger.info(
             f"All reviews approved for checkpoint {matching_checkpoint.id}. "
             f"Creating checkpoint task {cp_task_id}"

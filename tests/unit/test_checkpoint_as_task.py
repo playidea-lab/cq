@@ -328,7 +328,7 @@ class TestCheckpointTaskCreation:
             d = C4Daemon.__new__(C4Daemon)
             d.root = tmp_path
 
-            # Config with checkpoint
+            # Config with checkpoint (auto_approve=True for automated testing)
             d._config = C4Config(
                 project_id="test",
                 checkpoints=[
@@ -337,6 +337,7 @@ class TestCheckpointTaskCreation:
                         description="Phase 1",
                         required_tasks=["T-001", "T-002"],
                         required_validations=["lint", "unit"],
+                        auto_approve=True,  # Enable automatic CP task creation
                     )
                 ],
                 checkpoint_as_task=True,
@@ -635,3 +636,266 @@ class TestCheckpointCompletion:
         assert result is not None
         assert result.success is False
         assert "Invalid review_result" in result.message
+
+
+class TestAutoApproveCheckpoint:
+    """Test auto_approve field behavior for checkpoints.
+
+    When auto_approve=True (default):
+    - Creates CP task automatically
+    - Worker processes CP task
+    - Automated AI review flow
+
+    When auto_approve=False:
+    - Enters CHECKPOINT state
+    - Waits for human review via /c4-checkpoint
+    - Does NOT create CP task
+    """
+
+    @pytest.fixture
+    def daemon_auto_approve_false(self, tmp_path):
+        """Create daemon with auto_approve=False checkpoint."""
+        from c4.mcp_server import C4Daemon
+        from c4.models import C4State, TaskQueue
+
+        with patch.object(C4Daemon, "__init__", lambda self, root: None):
+            d = C4Daemon.__new__(C4Daemon)
+            d.root = tmp_path
+
+            # Config with auto_approve=False (human review required)
+            d._config = C4Config(
+                project_id="test",
+                checkpoints=[
+                    CheckpointConfig(
+                        id="001",
+                        description="Phase 1 - Human Review",
+                        required_tasks=["T-001"],
+                        required_validations=["lint"],
+                        auto_approve=False,  # Requires human review via /c4-checkpoint
+                    )
+                ],
+                checkpoint_as_task=True,
+                checkpoint_priority_offset=20,
+            )
+
+            # Tasks
+            d._tasks = {
+                "T-001-0": Task(
+                    id="T-001-0",
+                    title="Task 1",
+                    dod="...",
+                    base_id="001",
+                    version=0,
+                    type=TaskType.IMPLEMENTATION,
+                    priority=100,
+                ),
+                "R-001-0": Task(
+                    id="R-001-0",
+                    title="Review 1",
+                    dod="...",
+                    base_id="001",
+                    version=0,
+                    type=TaskType.REVIEW,
+                    parent_id="T-001-0",
+                    review_decision="APPROVE",
+                ),
+            }
+
+            # State machine mock
+            d.state_machine = MagicMock()
+            d.state_machine.state = C4State(
+                project_id="test",
+                queue=TaskQueue(
+                    pending=[],
+                    in_progress={},
+                    done=["T-001-0", "R-001-0"],
+                ),
+                passed_checkpoints=[],
+                checkpoint_queue=[],
+            )
+
+            d.get_all_tasks = MagicMock(return_value=d._tasks)
+            d.get_task = MagicMock(side_effect=lambda tid: d._tasks.get(tid))
+            d.add_task = MagicMock()
+
+            # Bind methods
+            from c4.mcp_server import C4Daemon as RealDaemon
+
+            d._check_and_create_checkpoint_task = (
+                RealDaemon._check_and_create_checkpoint_task.__get__(d)
+            )
+            d._find_tasks_by_pattern = RealDaemon._find_tasks_by_pattern.__get__(d)
+            d._get_latest_review_for_impl = RealDaemon._get_latest_review_for_impl.__get__(d)
+            d._build_checkpoint_dod = RealDaemon._build_checkpoint_dod.__get__(d)
+            d._task_exists = RealDaemon._task_exists.__get__(d)
+            d._add_to_checkpoint_queue = RealDaemon._add_to_checkpoint_queue.__get__(d)
+
+        return d
+
+    @pytest.fixture
+    def daemon_auto_approve_true(self, tmp_path):
+        """Create daemon with auto_approve=True checkpoint."""
+        from c4.mcp_server import C4Daemon
+        from c4.models import C4State, TaskQueue
+
+        with patch.object(C4Daemon, "__init__", lambda self, root: None):
+            d = C4Daemon.__new__(C4Daemon)
+            d.root = tmp_path
+
+            # Config with auto_approve=True
+            d._config = C4Config(
+                project_id="test",
+                checkpoints=[
+                    CheckpointConfig(
+                        id="001",
+                        description="Phase 1 - Auto Review",
+                        required_tasks=["T-001"],
+                        required_validations=["lint"],
+                        auto_approve=True,  # Automated processing
+                    )
+                ],
+                checkpoint_as_task=True,
+                checkpoint_priority_offset=20,
+            )
+
+            # Tasks
+            d._tasks = {
+                "T-001-0": Task(
+                    id="T-001-0",
+                    title="Task 1",
+                    dod="...",
+                    base_id="001",
+                    version=0,
+                    type=TaskType.IMPLEMENTATION,
+                    priority=100,
+                ),
+                "R-001-0": Task(
+                    id="R-001-0",
+                    title="Review 1",
+                    dod="...",
+                    base_id="001",
+                    version=0,
+                    type=TaskType.REVIEW,
+                    parent_id="T-001-0",
+                    review_decision="APPROVE",
+                ),
+            }
+
+            # State machine mock
+            d.state_machine = MagicMock()
+            d.state_machine.state = C4State(
+                project_id="test",
+                queue=TaskQueue(
+                    pending=[],
+                    in_progress={},
+                    done=["T-001-0", "R-001-0"],
+                ),
+                passed_checkpoints=[],
+                checkpoint_queue=[],
+            )
+
+            d.get_all_tasks = MagicMock(return_value=d._tasks)
+            d.get_task = MagicMock(side_effect=lambda tid: d._tasks.get(tid))
+            d.add_task = MagicMock()
+
+            # Bind methods
+            from c4.mcp_server import C4Daemon as RealDaemon
+
+            d._check_and_create_checkpoint_task = (
+                RealDaemon._check_and_create_checkpoint_task.__get__(d)
+            )
+            d._find_tasks_by_pattern = RealDaemon._find_tasks_by_pattern.__get__(d)
+            d._get_latest_review_for_impl = RealDaemon._get_latest_review_for_impl.__get__(d)
+            d._build_checkpoint_dod = RealDaemon._build_checkpoint_dod.__get__(d)
+            d._task_exists = RealDaemon._task_exists.__get__(d)
+            d._add_to_checkpoint_queue = RealDaemon._add_to_checkpoint_queue.__get__(d)
+
+        return d
+
+    def test_auto_approve_false_enters_checkpoint_state(self, daemon_auto_approve_false):
+        """When auto_approve=False, enter CHECKPOINT state without creating CP task."""
+        completed_review = daemon_auto_approve_false._tasks["R-001-0"]
+
+        result = daemon_auto_approve_false._check_and_create_checkpoint_task(completed_review)
+
+        # Should return None (no CP task created)
+        assert result is None
+
+        # Should NOT have called add_task (no CP task)
+        daemon_auto_approve_false.add_task.assert_not_called()
+
+        # Should have entered checkpoint state
+        daemon_auto_approve_false.state_machine.enter_checkpoint.assert_called_once_with("001")
+
+        # Should have added to checkpoint queue
+        assert len(daemon_auto_approve_false.state_machine.state.checkpoint_queue) == 1
+        queue_item = daemon_auto_approve_false.state_machine.state.checkpoint_queue[0]
+        assert queue_item.checkpoint_id == "001"
+
+    def test_auto_approve_true_creates_cp_task(self, daemon_auto_approve_true):
+        """When auto_approve=True, create CP task for automated processing."""
+        completed_review = daemon_auto_approve_true._tasks["R-001-0"]
+
+        result = daemon_auto_approve_true._check_and_create_checkpoint_task(completed_review)
+
+        # Should return CP task
+        assert result is not None
+        assert result.id == "CP-001"
+        assert result.type == TaskType.CHECKPOINT
+        assert result.phase_id == "001"
+
+        # Should have called add_task
+        daemon_auto_approve_true.add_task.assert_called_once()
+
+        # Should NOT have entered checkpoint state directly
+        daemon_auto_approve_true.state_machine.enter_checkpoint.assert_not_called()
+
+    def test_auto_approve_false_blocks_worker(self, daemon_auto_approve_false):
+        """When in CHECKPOINT state (auto_approve=False), workers cannot get tasks."""
+
+        # Simulate entering CHECKPOINT state
+        completed_review = daemon_auto_approve_false._tasks["R-001-0"]
+        daemon_auto_approve_false._check_and_create_checkpoint_task(completed_review)
+
+        # In real flow, c4_get_task returns None when status != EXECUTE
+        # This test verifies the state transition happened
+        daemon_auto_approve_false.state_machine.enter_checkpoint.assert_called_once()
+
+    def test_default_is_auto_approve_true(self):
+        """Verify default auto_approve value is True (AI auto-review)."""
+        cp_config = CheckpointConfig(
+            id="CP1",
+            required_tasks=["T-001"],
+        )
+        assert cp_config.auto_approve is True
+
+    def test_mixed_checkpoints(self, tmp_path):
+        """Support different auto_approve settings per checkpoint."""
+        from c4.mcp_server import C4Daemon
+
+        with patch.object(C4Daemon, "__init__", lambda self, root: None):
+            d = C4Daemon.__new__(C4Daemon)
+            d.root = tmp_path
+
+            # Config with mixed auto_approve settings
+            d._config = C4Config(
+                project_id="test",
+                checkpoints=[
+                    CheckpointConfig(
+                        id="001",
+                        description="Quick check - auto",
+                        required_tasks=["T-001"],
+                        auto_approve=True,  # Automated
+                    ),
+                    CheckpointConfig(
+                        id="002",
+                        description="Final review - human",
+                        required_tasks=["T-002"],
+                        auto_approve=False,  # Human required
+                    ),
+                ],
+            )
+
+            # Verify configs
+            assert d._config.checkpoints[0].auto_approve is True
+            assert d._config.checkpoints[1].auto_approve is False

@@ -17,6 +17,25 @@
 
 대화형으로 체크포인트 리뷰를 진행합니다.
 
+## auto_approve 설정
+
+체크포인트는 `auto_approve` 설정에 따라 동작이 다릅니다:
+
+| 설정 | 동작 |
+|------|------|
+| `auto_approve: true` (기본값) | Worker(AI)가 자동으로 리뷰. `/c4-checkpoint` 불필요 |
+| `auto_approve: false` | CHECKPOINT 상태에서 대기. **사람이 `/c4-checkpoint` 호출 필수** |
+
+```yaml
+# config.yaml 예시
+checkpoints:
+  - id: CP-QUICK
+    auto_approve: true   # AI 자동 리뷰
+
+  - id: CP-FINAL
+    auto_approve: false  # 사람 리뷰 필수 ← 이 경우 /c4-checkpoint 필요
+```
+
 ## Instructions
 
 ### 1. 현재 상태 확인

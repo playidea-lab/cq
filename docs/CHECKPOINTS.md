@@ -48,10 +48,11 @@ checkpoints:
     required_validations:
       - lint
       - unit
+    auto_approve: true   # 기본값: AI 자동 리뷰
 
   - id: CP2
     name: "Final Review"
-    description: "최종 검토"
+    description: "최종 검토 - 사람 리뷰 필수"
     required_tasks:
       - T-003
       - T-004
@@ -59,7 +60,15 @@ checkpoints:
       - lint
       - unit
       - e2e
+    auto_approve: false  # 사람 리뷰 필수 (/c4-checkpoint 호출 필요)
 ```
+
+### auto_approve 옵션
+
+| 값 | 동작 | 사용 시점 |
+|----|------|----------|
+| `true` (기본값) | CP 태스크 생성 → Worker(AI)가 자동 리뷰 | 일반적인 체크포인트 |
+| `false` | CHECKPOINT 상태 진입 → 사람이 `/c4-checkpoint` 호출 | 중요한 결정, 최종 릴리스 |
 
 ---
 
