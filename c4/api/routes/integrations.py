@@ -26,6 +26,13 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import RedirectResponse
 
 from c4.integrations.registry import IntegrationRegistry, auto_discover_providers
+from c4.services.activity import ActivityCollector, create_activity_collector
+from c4.services.audit import (
+    ActorType,
+    AuditAction,
+    AuditLogger,
+    create_audit_logger,
+)
 from c4.services.integrations import (
     Integration,
     IntegrationService,
@@ -35,8 +42,8 @@ from c4.services.teams import TeamService, create_team_service
 
 from ..auth import User, get_current_user
 from ..models import (
-    IntegrationResponse,
     IntegrationProviderResponse,
+    IntegrationResponse,
     IntegrationSettingsUpdate,
     IntegrationsListResponse,
     OAuthUrlResponse,
@@ -66,9 +73,21 @@ def get_team_service() -> TeamService:
     return create_team_service()
 
 
+def get_audit_logger() -> AuditLogger:
+    """Get AuditLogger instance."""
+    return create_audit_logger()
+
+
+def get_activity_collector() -> ActivityCollector:
+    """Get ActivityCollector instance."""
+    return create_activity_collector()
+
+
 CurrentUser = Annotated[User, Depends(get_current_user)]
 IntegrationSvc = Annotated[IntegrationService, Depends(get_integration_service)]
 TeamSvc = Annotated[TeamService, Depends(get_team_service)]
+AuditLog = Annotated[AuditLogger, Depends(get_audit_logger)]
+Activity = Annotated[ActivityCollector, Depends(get_activity_collector)]
 
 
 # ============================================================================
@@ -292,6 +311,8 @@ async def get_oauth_url(
 async def oauth_callback(
     provider_id: str,
     integration_service: IntegrationSvc,
+    audit: AuditLog,
+    activity: Activity,
     code: str = Query(..., description="Authorization code"),
     state: str = Query(..., description="State parameter"),
     installation_id: str | None = Query(None, description="GitHub installation ID"),
@@ -366,6 +387,34 @@ async def oauth_callback(
             external_name=result.external_name,
             credentials=result.credentials,
             connected_by=user_id,
+        )
+
+        # Audit log: Integration connected
+        await audit.log(
+            team_id=team_id,
+            action=AuditAction.INTEGRATION_CONNECTED,
+            resource_type="integration",
+            resource_id=integration.id,
+            actor_type=ActorType.USER,
+            actor_id=user_id,
+            new_value={
+                "provider_id": provider_id,
+                "external_id": integration.external_id,
+                "external_name": integration.external_name,
+            },
+        )
+
+        # Activity tracking
+        await activity.log_activity(
+            team_id=team_id,
+            activity_type="integration_connected",
+            user_id=user_id,
+            resource_type="integration",
+            resource_id=integration.id,
+            metadata={
+                "provider_id": provider_id,
+                "external_name": integration.external_name,
+            },
         )
 
         logger.info(
@@ -480,6 +529,8 @@ async def update_integration(
     user: CurrentUser,
     integration_service: IntegrationSvc,
     team_service: TeamSvc,
+    audit: AuditLog,
+    activity: Activity,
 ) -> IntegrationResponse:
     """Update integration settings.
 
@@ -490,6 +541,7 @@ async def update_integration(
         user: Current authenticated user
         integration_service: Integration service for updating
         team_service: Team service for permission check
+        audit: Audit logger
 
     Returns:
         Updated integration
@@ -507,6 +559,10 @@ async def update_integration(
             detail="Only team admins can update integrations",
         )
 
+    # Get old settings for audit
+    old_integration = await integration_service.get_integration(team_id, integration_id)
+    old_settings = old_integration.settings if old_integration else {}
+
     integration = await integration_service.update_integration_settings(
         team_id, integration_id, request.settings
     )
@@ -516,6 +572,32 @@ async def update_integration(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Integration not found: {integration_id}",
         )
+
+    # Audit log: Integration updated
+    await audit.log(
+        team_id=team_id,
+        action=AuditAction.INTEGRATION_UPDATED,
+        resource_type="integration",
+        resource_id=integration_id,
+        actor_type=ActorType.USER,
+        actor_id=user.user_id,
+        actor_email=user.email,
+        old_value={"settings": old_settings},
+        new_value={"settings": integration.settings},
+    )
+
+    # Activity tracking
+    await activity.log_activity(
+        team_id=team_id,
+        activity_type="integration_updated",
+        user_id=user.user_id,
+        resource_type="integration",
+        resource_id=integration_id,
+        metadata={
+            "provider_id": integration.provider_id,
+            "settings_changed": list(request.settings.keys()),
+        },
+    )
 
     return integration_to_response(integration)
 
@@ -531,6 +613,8 @@ async def disconnect_integration(
     user: CurrentUser,
     integration_service: IntegrationSvc,
     team_service: TeamSvc,
+    audit: AuditLog,
+    activity: Activity,
 ) -> dict[str, Any]:
     """Disconnect an integration from a team.
 
@@ -543,6 +627,7 @@ async def disconnect_integration(
         user: Current authenticated user
         integration_service: Integration service for deletion
         team_service: Team service for permission check
+        audit: Audit logger
 
     Returns:
         Success message
@@ -568,6 +653,13 @@ async def disconnect_integration(
             detail=f"Integration not found: {integration_id}",
         )
 
+    # Store info for audit before deletion
+    old_value = {
+        "provider_id": integration.provider_id,
+        "external_id": integration.external_id,
+        "external_name": integration.external_name,
+    }
+
     # Call provider disconnect if available
     provider = IntegrationRegistry.get(integration.provider_id)
     if provider:
@@ -584,6 +676,28 @@ async def disconnect_integration(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to disconnect integration",
         )
+
+    # Audit log: Integration disconnected
+    await audit.log(
+        team_id=team_id,
+        action=AuditAction.INTEGRATION_DISCONNECTED,
+        resource_type="integration",
+        resource_id=integration_id,
+        actor_type=ActorType.USER,
+        actor_id=user.user_id,
+        actor_email=user.email,
+        old_value=old_value,
+    )
+
+    # Activity tracking
+    await activity.log_activity(
+        team_id=team_id,
+        activity_type="integration_disconnected",
+        user_id=user.user_id,
+        resource_type="integration",
+        resource_id=integration_id,
+        metadata=old_value,
+    )
 
     logger.info(
         f"Disconnected {integration.provider_id} integration "

@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from supabase import Client
+    from c4.services.audit import AuditLogger
 
 logger = logging.getLogger(__name__)
 
@@ -207,6 +208,7 @@ class TeamService:
         url: str | None = None,
         key: str | None = None,
         service_key: str | None = None,
+        audit_logger: AuditLogger | None = None,
     ) -> None:
         """Initialize team service.
 
@@ -214,12 +216,14 @@ class TeamService:
             url: Supabase project URL (or SUPABASE_URL env)
             key: Supabase anon key (or SUPABASE_KEY env)
             service_key: Supabase service key for admin ops (or SUPABASE_SERVICE_KEY env)
+            audit_logger: Optional audit logger for compliance logging
         """
         self._url = url or os.environ.get("SUPABASE_URL", "")
         self._key = key or os.environ.get("SUPABASE_KEY", "")
         self._service_key = service_key or os.environ.get("SUPABASE_SERVICE_KEY", "")
         self._client: Client | None = None
         self._service_client: Client | None = None
+        self._audit_logger = audit_logger
 
     @property
     def client(self) -> Client:
@@ -309,6 +313,17 @@ class TeamService:
             role=TeamRole.OWNER,
         )
 
+        # Audit log
+        if self._audit_logger:
+            await self._audit_logger.log(
+                team_id=team.id,
+                action="team.created",
+                resource_type="team",
+                resource_id=team.id,
+                actor_id=owner_id,
+                new_value={"name": name, "slug": slug, "settings": settings},
+            )
+
         logger.info(f"Created team: {team.name} ({team.slug}) by {owner_id}")
         return team
 
@@ -367,6 +382,7 @@ class TeamService:
         team_id: str,
         name: str | None = None,
         settings: dict[str, Any] | None = None,
+        actor_id: str | None = None,
     ) -> Team:
         """Update team details.
 
@@ -374,10 +390,15 @@ class TeamService:
             team_id: Team identifier
             name: New team name
             settings: Settings to merge
+            actor_id: User performing the update (for audit)
 
         Returns:
             Updated Team entity
         """
+        # Get current state for audit
+        current = await self.get_team(team_id)
+        old_value = {"name": current.name, "settings": current.settings}
+
         update_data: dict[str, Any] = {"updated_at": datetime.now().isoformat()}
 
         if name is not None:
@@ -385,7 +406,6 @@ class TeamService:
 
         if settings is not None:
             # Merge settings
-            current = await self.get_team(team_id)
             merged = {**(current.settings or {}), **settings}
             update_data["settings"] = merged
 
@@ -399,19 +419,43 @@ class TeamService:
         if not response.data:
             raise TeamNotFoundError(team_id)
 
-        return self._row_to_team(response.data[0])
+        team = self._row_to_team(response.data[0])
 
-    async def delete_team(self, team_id: str) -> bool:
+        # Audit log
+        if self._audit_logger and actor_id:
+            await self._audit_logger.log(
+                team_id=team_id,
+                action="team.updated",
+                resource_type="team",
+                resource_id=team_id,
+                actor_id=actor_id,
+                old_value=old_value,
+                new_value={"name": team.name, "settings": team.settings},
+            )
+
+        return team
+
+    async def delete_team(self, team_id: str, actor_id: str | None = None) -> bool:
         """Delete a team.
 
         This will cascade delete all members and invites.
 
         Args:
             team_id: Team identifier
+            actor_id: User performing the deletion (for audit)
 
         Returns:
             True if deleted
         """
+        # Get current state for audit before deletion
+        old_value = None
+        try:
+            current = await self.get_team(team_id)
+            old_value = {"name": current.name, "slug": current.slug}
+        except Exception:
+            # Don't fail deletion if we can't get team info for audit
+            pass
+
         response = (
             self.client.table(self.TABLE_TEAMS)
             .delete()
@@ -421,6 +465,17 @@ class TeamService:
 
         deleted = len(response.data) > 0
         if deleted:
+            # Audit log
+            if self._audit_logger and actor_id and old_value:
+                await self._audit_logger.log(
+                    team_id=team_id,
+                    action="team.deleted",
+                    resource_type="team",
+                    resource_id=team_id,
+                    actor_id=actor_id,
+                    old_value=old_value,
+                )
+
             logger.info(f"Deleted team: {team_id}")
 
         return deleted
@@ -560,8 +615,10 @@ class TeamService:
         if not target_member or target_member.team_id != team_id:
             raise MemberNotFoundError(member_id)
 
+        old_role = target_member.role
+
         # Cannot demote owner (must transfer ownership first)
-        if target_member.role == TeamRole.OWNER and new_role != TeamRole.OWNER:
+        if old_role == TeamRole.OWNER and new_role != TeamRole.OWNER:
             raise TeamPermissionError("demote team owner")
 
         # Update role
@@ -575,12 +632,26 @@ class TeamService:
         if not response.data:
             raise MemberNotFoundError(member_id)
 
+        member = self._row_to_member(response.data[0])
+
+        # Audit log
+        if self._audit_logger:
+            await self._audit_logger.log(
+                team_id=team_id,
+                action="member.role_changed",
+                resource_type="team_member",
+                resource_id=member_id,
+                actor_id=actor_id,
+                old_value={"role": old_role.value, "user_id": target_member.user_id},
+                new_value={"role": new_role.value, "user_id": target_member.user_id},
+            )
+
         logger.info(
             f"Updated member role: {member_id} -> {new_role.value} "
             f"in team {team_id} by {actor_id}"
         )
 
-        return self._row_to_member(response.data[0])
+        return member
 
     async def remove_member(
         self,
@@ -621,6 +692,13 @@ class TeamService:
         if target_member.role == TeamRole.OWNER:
             raise TeamPermissionError("remove team owner")
 
+        # Store info for audit before removal
+        old_value = {
+            "user_id": target_member.user_id,
+            "role": target_member.role.value,
+            "email": target_member.email,
+        }
+
         # Remove member
         response = (
             self.client.table(self.TABLE_MEMBERS)
@@ -631,6 +709,17 @@ class TeamService:
 
         removed = len(response.data) > 0
         if removed:
+            # Audit log
+            if self._audit_logger:
+                await self._audit_logger.log(
+                    team_id=team_id,
+                    action="member.removed",
+                    resource_type="team_member",
+                    resource_id=member_id,
+                    actor_id=actor_id,
+                    old_value=old_value,
+                )
+
             logger.info(
                 f"Removed member: {member_id} from team {team_id} by {actor_id}"
             )
@@ -729,6 +818,17 @@ class TeamService:
 
         invite = self._row_to_invite(response.data[0])
 
+        # Audit log
+        if self._audit_logger:
+            await self._audit_logger.log(
+                team_id=team_id,
+                action="member.invited",
+                resource_type="team_invite",
+                resource_id=invite.id,
+                actor_id=invited_by,
+                new_value={"email": email.lower(), "role": role.value},
+            )
+
         logger.info(
             f"Created invite: {email} -> team {team_id} "
             f"as {role.value} by {invited_by}"
@@ -821,6 +921,18 @@ class TeamService:
         self.client.table(self.TABLE_INVITES).update(
             {"status": InviteStatus.ACCEPTED.value}
         ).eq("id", invite.id).execute()
+
+        # Audit log
+        if self._audit_logger:
+            await self._audit_logger.log(
+                team_id=invite.team_id,
+                action="member.joined",
+                resource_type="team_member",
+                resource_id=member.id,
+                actor_id=user_id,
+                actor_email=user_email,
+                new_value={"email": user_email, "role": invite.role.value},
+            )
 
         logger.info(
             f"Invite accepted: {user_email} joined team {invite.team_id} "

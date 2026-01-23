@@ -20,6 +20,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
+from c4.services.activity import ActivityCollector, create_activity_collector
 from c4.workspace import (
     LocalWorkspaceManager,
     WorkspaceCreationError,
@@ -76,6 +77,14 @@ def set_workspace_manager(manager: WorkspaceManager) -> None:
 # Type aliases for dependency injection
 CurrentUser = Annotated[User, Depends(get_current_user)]
 Manager = Annotated[WorkspaceManager, Depends(get_workspace_manager)]
+
+
+def get_activity_collector() -> ActivityCollector:
+    """Get ActivityCollector instance."""
+    return create_activity_collector()
+
+
+Activity = Annotated[ActivityCollector, Depends(get_activity_collector)]
 
 
 # ============================================================================

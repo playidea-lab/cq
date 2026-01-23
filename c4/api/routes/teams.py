@@ -25,13 +25,19 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
+from c4.services.activity import ActivityCollector, create_activity_collector
+from c4.services.audit import (
+    ActorType,
+    AuditAction,
+    AuditLogger,
+    create_audit_logger,
+)
 from c4.services.teams import (
     DuplicateMemberError,
     DuplicateSlugError,
     InviteExpiredError,
     InviteNotFoundError,
     MemberNotFoundError,
-    TeamError,
     TeamNotFoundError,
     TeamPermissionError,
     TeamRole,
@@ -64,8 +70,20 @@ def get_team_service() -> TeamService:
     return create_team_service()
 
 
+def get_audit_logger() -> AuditLogger:
+    """Get AuditLogger instance."""
+    return create_audit_logger()
+
+
+def get_activity_collector() -> ActivityCollector:
+    """Get ActivityCollector instance."""
+    return create_activity_collector()
+
+
 CurrentUser = Annotated[User, Depends(get_current_user)]
 TeamSvc = Annotated[TeamService, Depends(get_team_service)]
+AuditLog = Annotated[AuditLogger, Depends(get_audit_logger)]
+Activity = Annotated[ActivityCollector, Depends(get_activity_collector)]
 
 
 # ============================================================================
@@ -84,6 +102,8 @@ async def create_team(
     request: TeamCreateRequest,
     user: CurrentUser,
     service: TeamSvc,
+    audit: AuditLog,
+    activity: Activity,
 ) -> TeamResponse:
     """Create a new team.
 
@@ -93,6 +113,7 @@ async def create_team(
         request: Team creation data
         user: Current authenticated user
         service: Team service
+        audit: Audit logger
 
     Returns:
         Created team details
@@ -106,6 +127,28 @@ async def create_team(
             name=request.name,
             slug=request.slug,
             settings=request.settings,
+        )
+
+        # Audit log: Team created
+        await audit.log(
+            team_id=team.id,
+            action=AuditAction.TEAM_CREATED,
+            resource_type="team",
+            resource_id=team.id,
+            actor_type=ActorType.USER,
+            actor_id=user.user_id,
+            actor_email=user.email,
+            new_value={"name": team.name, "slug": team.slug},
+        )
+
+        # Activity tracking
+        await activity.log_activity(
+            team_id=team.id,
+            activity_type="team_created",
+            user_id=user.user_id,
+            resource_type="team",
+            resource_id=team.id,
+            metadata={"name": team.name, "slug": team.slug},
         )
 
         return TeamResponse(
@@ -226,6 +269,8 @@ async def update_team(
     request: TeamUpdateRequest,
     user: CurrentUser,
     service: TeamSvc,
+    audit: AuditLog,
+    activity: Activity,
 ) -> TeamResponse:
     """Update team details.
 
@@ -236,6 +281,7 @@ async def update_team(
         request: Update data
         user: Current authenticated user
         service: Team service
+        audit: Audit logger
 
     Returns:
         Updated team details
@@ -246,10 +292,37 @@ async def update_team(
     try:
         await service.require_permission(team_id, user.user_id, "manage_settings")
 
+        # Get old values for audit
+        old_team = await service.get_team(team_id)
+        old_value = {"name": old_team.name, "settings": old_team.settings}
+
         team = await service.update_team(
             team_id=team_id,
             name=request.name,
             settings=request.settings,
+        )
+
+        # Audit log: Team updated
+        await audit.log(
+            team_id=team_id,
+            action=AuditAction.TEAM_UPDATED,
+            resource_type="team",
+            resource_id=team_id,
+            actor_type=ActorType.USER,
+            actor_id=user.user_id,
+            actor_email=user.email,
+            old_value=old_value,
+            new_value={"name": team.name, "settings": team.settings},
+        )
+
+        # Activity tracking
+        await activity.log_activity(
+            team_id=team_id,
+            activity_type="team_updated",
+            user_id=user.user_id,
+            resource_type="team",
+            resource_id=team_id,
+            metadata={"name": team.name},
         )
 
         return TeamResponse(
@@ -285,6 +358,8 @@ async def delete_team(
     team_id: str,
     user: CurrentUser,
     service: TeamSvc,
+    audit: AuditLog,
+    activity: Activity,
 ) -> None:
     """Delete a team.
 
@@ -295,13 +370,41 @@ async def delete_team(
         team_id: Team identifier
         user: Current authenticated user
         service: Team service
+        audit: Audit logger
 
     Raises:
         HTTPException: 404 if not found, 403 if not owner
     """
     try:
         await service.require_permission(team_id, user.user_id, "delete_team")
+
+        # Get team info for audit before deletion
+        team = await service.get_team(team_id)
+        old_value = {"name": team.name, "slug": team.slug}
+
         await service.delete_team(team_id)
+
+        # Audit log: Team deleted
+        await audit.log(
+            team_id=team_id,
+            action=AuditAction.TEAM_DELETED,
+            resource_type="team",
+            resource_id=team_id,
+            actor_type=ActorType.USER,
+            actor_id=user.user_id,
+            actor_email=user.email,
+            old_value=old_value,
+        )
+
+        # Activity tracking
+        await activity.log_activity(
+            team_id=team_id,
+            activity_type="team_deleted",
+            user_id=user.user_id,
+            resource_type="team",
+            resource_id=team_id,
+            metadata=old_value,
+        )
 
     except TeamPermissionError as e:
         raise HTTPException(
@@ -381,6 +484,8 @@ async def invite_member(
     request: TeamInviteRequest,
     user: CurrentUser,
     service: TeamSvc,
+    audit: AuditLog,
+    activity: Activity,
 ) -> dict[str, Any]:
     """Invite a user to join the team.
 
@@ -392,6 +497,7 @@ async def invite_member(
         request: Invite data (email, role)
         user: Current authenticated user
         service: Team service
+        audit: Audit logger
 
     Returns:
         Invite details including token
@@ -407,6 +513,28 @@ async def invite_member(
             email=request.email,
             role=role,
             invited_by=user.user_id,
+        )
+
+        # Audit log: Member invited
+        await audit.log(
+            team_id=team_id,
+            action=AuditAction.MEMBER_INVITED,
+            resource_type="invite",
+            resource_id=invite.id,
+            actor_type=ActorType.USER,
+            actor_id=user.user_id,
+            actor_email=user.email,
+            new_value={"email": invite.email, "role": role.value},
+        )
+
+        # Activity tracking
+        await activity.log_activity(
+            team_id=team_id,
+            activity_type="member_invited",
+            user_id=user.user_id,
+            resource_type="invite",
+            resource_id=invite.id,
+            metadata={"email": invite.email, "role": role.value},
         )
 
         return {
@@ -494,6 +622,8 @@ async def update_member_role(
     request: TeamMemberUpdateRequest,
     user: CurrentUser,
     service: TeamSvc,
+    audit: AuditLog,
+    activity: Activity,
 ) -> TeamMemberResponse:
     """Update a member's role.
 
@@ -506,6 +636,7 @@ async def update_member_role(
         request: New role
         user: Current authenticated user
         service: Team service
+        audit: Audit logger
 
     Returns:
         Updated member details
@@ -516,11 +647,38 @@ async def update_member_role(
     try:
         new_role = TeamRole(request.role)
 
+        # Get old role for audit
+        old_member = await service.get_member_by_id(member_id)
+        old_role = old_member.role.value if old_member else None
+
         member = await service.update_member_role(
             team_id=team_id,
             member_id=member_id,
             new_role=new_role,
             actor_id=user.user_id,
+        )
+
+        # Audit log: Member role changed
+        await audit.log(
+            team_id=team_id,
+            action=AuditAction.MEMBER_ROLE_CHANGED,
+            resource_type="member",
+            resource_id=member_id,
+            actor_type=ActorType.USER,
+            actor_id=user.user_id,
+            actor_email=user.email,
+            old_value={"role": old_role, "user_id": member.user_id},
+            new_value={"role": new_role.value, "user_id": member.user_id},
+        )
+
+        # Activity tracking
+        await activity.log_activity(
+            team_id=team_id,
+            activity_type="member_role_changed",
+            user_id=user.user_id,
+            resource_type="member",
+            resource_id=member_id,
+            metadata={"old_role": old_role, "new_role": new_role.value},
         )
 
         return TeamMemberResponse(
@@ -555,6 +713,8 @@ async def remove_member(
     member_id: str,
     user: CurrentUser,
     service: TeamSvc,
+    audit: AuditLog,
+    activity: Activity,
 ) -> None:
     """Remove a member from the team.
 
@@ -566,15 +726,46 @@ async def remove_member(
         member_id: Member record identifier
         user: Current authenticated user
         service: Team service
+        audit: Audit logger
 
     Raises:
         HTTPException: 403 if not authorized, 404 if not found
     """
     try:
+        # Get member info for audit before removal
+        member = await service.get_member_by_id(member_id)
+        old_value = {
+            "user_id": member.user_id if member else None,
+            "email": member.email if member else None,
+            "role": member.role.value if member else None,
+        }
+
         await service.remove_member(
             team_id=team_id,
             member_id=member_id,
             actor_id=user.user_id,
+        )
+
+        # Audit log: Member removed
+        await audit.log(
+            team_id=team_id,
+            action=AuditAction.MEMBER_REMOVED,
+            resource_type="member",
+            resource_id=member_id,
+            actor_type=ActorType.USER,
+            actor_id=user.user_id,
+            actor_email=user.email,
+            old_value=old_value,
+        )
+
+        # Activity tracking
+        await activity.log_activity(
+            team_id=team_id,
+            activity_type="member_removed",
+            user_id=user.user_id,
+            resource_type="member",
+            resource_id=member_id,
+            metadata=old_value,
         )
 
     except TeamPermissionError as e:
@@ -757,6 +948,8 @@ async def accept_invite(
     token: str,
     user: CurrentUser,
     service: TeamSvc,
+    audit: AuditLog,
+    activity: Activity,
 ) -> TeamMemberResponse:
     """Accept an invitation to join a team.
 
@@ -766,6 +959,7 @@ async def accept_invite(
         token: Invite token
         user: Current authenticated user
         service: Team service
+        audit: Audit logger
 
     Returns:
         New team membership details
@@ -778,6 +972,28 @@ async def accept_invite(
             token=token,
             user_id=user.user_id,
             user_email=user.email,
+        )
+
+        # Audit log: Member joined
+        await audit.log(
+            team_id=member.team_id,
+            action=AuditAction.MEMBER_JOINED,
+            resource_type="member",
+            resource_id=member.id,
+            actor_type=ActorType.USER,
+            actor_id=user.user_id,
+            actor_email=user.email,
+            new_value={"role": member.role.value, "email": member.email},
+        )
+
+        # Activity tracking
+        await activity.log_activity(
+            team_id=member.team_id,
+            activity_type="member_joined",
+            user_id=user.user_id,
+            resource_type="member",
+            resource_id=member.id,
+            metadata={"role": member.role.value, "email": member.email},
         )
 
         return TeamMemberResponse(

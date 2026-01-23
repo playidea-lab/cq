@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from supabase import Client
+    from c4.services.audit import AuditLogger
 
 logger = logging.getLogger(__name__)
 
@@ -88,16 +89,19 @@ class IntegrationService:
         self,
         url: str | None = None,
         key: str | None = None,
+        audit_logger: AuditLogger | None = None,
     ) -> None:
         """Initialize integration service.
 
         Args:
             url: Supabase project URL (or SUPABASE_URL env)
             key: Supabase anon key (or SUPABASE_KEY env)
+            audit_logger: Optional audit logger for compliance logging
         """
         self._url = url or os.environ.get("SUPABASE_URL", "")
         self._key = key or os.environ.get("SUPABASE_KEY", "")
         self._client: Client | None = None
+        self._audit_logger = audit_logger
 
     @property
     def client(self) -> Client:
@@ -252,6 +256,21 @@ class IntegrationService:
 
         integration = self._row_to_integration(response.data[0])
 
+        # Audit log
+        if self._audit_logger and connected_by:
+            await self._audit_logger.log(
+                team_id=team_id,
+                action="integration.connected",
+                resource_type="integration",
+                resource_id=integration.id,
+                actor_id=connected_by,
+                new_value={
+                    "provider_id": provider_id,
+                    "external_id": external_id,
+                    "external_name": external_name,
+                },
+            )
+
         logger.info(
             f"Saved integration: {provider_id} ({external_name}) for team {team_id}"
         )
@@ -263,6 +282,7 @@ class IntegrationService:
         team_id: str,
         integration_id: str,
         settings: dict[str, Any],
+        actor_id: str | None = None,
     ) -> Integration | None:
         """Update integration settings.
 
@@ -270,6 +290,7 @@ class IntegrationService:
             team_id: Team identifier
             integration_id: Integration identifier
             settings: Settings to merge
+            actor_id: User performing the update (for audit)
 
         Returns:
             Updated Integration or None if not found
@@ -279,8 +300,10 @@ class IntegrationService:
         if not current:
             return None
 
+        old_settings = current.settings or {}
+
         # Merge settings
-        merged = {**(current.settings or {}), **settings}
+        merged = {**old_settings, **settings}
 
         response = (
             self.client.table(self.TABLE_INTEGRATIONS)
@@ -293,7 +316,21 @@ class IntegrationService:
         if not response.data:
             return None
 
-        return self._row_to_integration(response.data[0])
+        integration = self._row_to_integration(response.data[0])
+
+        # Audit log
+        if self._audit_logger and actor_id:
+            await self._audit_logger.log(
+                team_id=team_id,
+                action="integration.updated",
+                resource_type="integration",
+                resource_id=integration_id,
+                actor_id=actor_id,
+                old_value={"settings": old_settings},
+                new_value={"settings": merged},
+            )
+
+        return integration
 
     async def update_last_used(self, integration_id: str) -> None:
         """Update the last_used_at timestamp.
@@ -309,16 +346,29 @@ class IntegrationService:
         self,
         team_id: str,
         integration_id: str,
+        actor_id: str | None = None,
     ) -> bool:
         """Delete an integration.
 
         Args:
             team_id: Team identifier
             integration_id: Integration identifier
+            actor_id: User performing the deletion (for audit)
 
         Returns:
             True if deleted
         """
+        # Get integration info for audit before deletion
+        try:
+            integration = await self.get_integration(team_id, integration_id)
+            old_value = {
+                "provider_id": integration.provider_id,
+                "external_id": integration.external_id,
+                "external_name": integration.external_name,
+            }
+        except IntegrationNotFoundError:
+            old_value = None
+
         response = (
             self.client.table(self.TABLE_INTEGRATIONS)
             .delete()
@@ -329,6 +379,17 @@ class IntegrationService:
 
         deleted = len(response.data) > 0
         if deleted:
+            # Audit log
+            if self._audit_logger and actor_id and old_value:
+                await self._audit_logger.log(
+                    team_id=team_id,
+                    action="integration.disconnected",
+                    resource_type="integration",
+                    resource_id=integration_id,
+                    actor_id=actor_id,
+                    old_value=old_value,
+                )
+
             logger.info(f"Deleted integration: {integration_id} from team {team_id}")
 
         return deleted
