@@ -10,7 +10,7 @@ Tests for:
 import hashlib
 import hmac
 import json
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -19,10 +19,7 @@ from c4.integrations.github_app import (
     GitHubAppClient,
     PRInfo,
     ReviewComment,
-    ReviewResult,
-    WebhookResult,
 )
-
 
 # =============================================================================
 # Configuration Tests
