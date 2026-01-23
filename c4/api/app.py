@@ -7,6 +7,7 @@ from .artifact import router as artifact_router
 from .chat import router as chat_router
 from .proxy import router as proxy_router
 from .rate_limit import RateLimitConfig, RateLimitMiddleware, RateLimitStore
+from .routes.reports import router as reports_router
 from .routes.webhooks import router as webhooks_router
 
 
@@ -69,6 +70,7 @@ def create_app(
     app.include_router(proxy_router, prefix="/api/llm", tags=["llm-proxy"])
     app.include_router(artifact_router, prefix="/api/artifacts", tags=["artifacts"])
     app.include_router(webhooks_router, prefix="/api", tags=["webhooks"])
+    app.include_router(reports_router, prefix="/api", tags=["reports"])
 
     # Health check endpoint
     @app.get("/api/health")
