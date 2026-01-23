@@ -1134,7 +1134,12 @@ Thumbs.db
             task_id = task.id
 
             # Check dependencies first (non-locking check)
-            deps_met = all(dep_id in state.queue.done for dep_id in task.dependencies)
+            # Normalize dependency IDs to handle version suffix mismatch
+            # e.g., "T-1200" -> "T-1200-0" to match done queue entries
+            deps_met = all(
+                self._parse_task_id(dep_id)[0] in state.queue.done
+                for dep_id in task.dependencies
+            )
             if not deps_met:
                 continue
 
