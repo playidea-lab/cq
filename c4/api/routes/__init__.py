@@ -9,9 +9,10 @@ Provides modular route handlers for different C4 phases:
 - files: File operations (read, write, list, search, delete)
 - shell: Shell command execution
 - workspace: Workspace management
+- webhooks: External webhook handlers (GitHub App)
 """
 
-from . import c4, design, discovery, files, git, shell, validation, workspace
+from . import c4, design, discovery, files, git, shell, validation, webhooks, workspace
 
 __all__ = [
     "c4",
@@ -21,5 +22,6 @@ __all__ = [
     "git",
     "files",
     "shell",
+    "webhooks",
     "workspace",
 ]
