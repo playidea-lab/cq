@@ -540,3 +540,194 @@ class FileDeleteResponse(BaseModel):
     success: bool = Field(..., description="Whether delete was successful")
     path: str = Field(..., description="File path that was deleted")
     error: str | None = Field(None, description="Error message if failed")
+
+
+# ============================================================================
+# Team Models
+# ============================================================================
+
+
+class TeamRole(str, Enum):
+    """Team member roles for RBAC."""
+
+    OWNER = "owner"
+    ADMIN = "admin"
+    MEMBER = "member"
+    VIEWER = "viewer"
+
+
+class TeamPlan(str, Enum):
+    """Team subscription plans."""
+
+    FREE = "free"
+    PRO = "pro"
+    TEAM = "team"
+    AGENCY = "agency"
+    ENTERPRISE = "enterprise"
+
+
+class InviteStatus(str, Enum):
+    """Team invitation status."""
+
+    PENDING = "pending"
+    ACCEPTED = "accepted"
+    EXPIRED = "expired"
+
+
+class TeamCreateRequest(BaseModel):
+    """Request to create a new team."""
+
+    name: str = Field(..., description="Team display name", min_length=1, max_length=100)
+    slug: str | None = Field(
+        None,
+        description="URL-friendly identifier (auto-generated if not provided)",
+        pattern="^[a-z0-9-]+$",
+        min_length=1,
+        max_length=50,
+    )
+    settings: dict[str, Any] | None = Field(None, description="Initial team settings")
+
+
+class TeamUpdateRequest(BaseModel):
+    """Request to update team settings."""
+
+    name: str | None = Field(None, description="New team name", min_length=1, max_length=100)
+    settings: dict[str, Any] | None = Field(None, description="Team settings to update")
+
+
+class TeamResponse(BaseModel):
+    """Response containing team details."""
+
+    id: str = Field(..., description="Unique team identifier")
+    name: str = Field(..., description="Team display name")
+    slug: str = Field(..., description="URL-friendly identifier")
+    owner_id: str = Field(..., description="Team owner's user ID")
+    plan: TeamPlan = Field(TeamPlan.FREE, description="Team subscription plan")
+    settings: dict[str, Any] = Field(default_factory=dict, description="Team settings")
+    created_at: datetime = Field(..., description="When the team was created")
+    updated_at: datetime = Field(..., description="When the team was last updated")
+
+
+class TeamListResponse(BaseModel):
+    """Response containing list of teams."""
+
+    teams: list[TeamResponse] = Field(..., description="List of teams")
+    total: int = Field(..., description="Total count of teams")
+
+
+class TeamMemberResponse(BaseModel):
+    """Response containing team member details."""
+
+    id: str = Field(..., description="Unique member record ID")
+    team_id: str = Field(..., description="Team ID")
+    user_id: str = Field(..., description="User ID")
+    email: str | None = Field(None, description="Member's email")
+    role: TeamRole = Field(..., description="Member's role in the team")
+    joined_at: datetime = Field(..., description="When the member joined")
+
+
+class TeamMemberListResponse(BaseModel):
+    """Response containing list of team members."""
+
+    members: list[TeamMemberResponse] = Field(..., description="List of team members")
+    total: int = Field(..., description="Total count of members")
+
+
+class TeamInviteRequest(BaseModel):
+    """Request to invite a member to a team."""
+
+    email: str = Field(..., description="Email of the person to invite")
+    role: TeamRole = Field(TeamRole.MEMBER, description="Role to assign to the invitee")
+
+
+class TeamInviteResponse(BaseModel):
+    """Response from team invitation."""
+
+    id: str = Field(..., description="Invite ID")
+    team_id: str = Field(..., description="Team ID")
+    email: str = Field(..., description="Invited email")
+    role: TeamRole = Field(..., description="Assigned role")
+    status: InviteStatus = Field(..., description="Invite status")
+    invited_by: str = Field(..., description="User who sent the invite")
+    invited_at: datetime = Field(..., description="When the invite was sent")
+    expires_at: datetime | None = Field(None, description="When the invite expires")
+
+
+class TeamMemberUpdateRequest(BaseModel):
+    """Request to update a team member's role."""
+
+    role: TeamRole = Field(..., description="New role for the member")
+
+
+# ============================================================================
+# Integration Models
+# ============================================================================
+
+
+class IntegrationProviderResponse(BaseModel):
+    """Response containing integration provider information."""
+
+    id: str = Field(..., description="Provider ID (e.g., 'github', 'discord')")
+    name: str = Field(..., description="Provider display name")
+    category: str = Field(..., description="Provider category")
+    capabilities: list[str] = Field(default_factory=list, description="Provider capabilities")
+    description: str | None = Field(None, description="Provider description")
+    icon_url: str | None = Field(None, description="Provider icon URL")
+    docs_url: str | None = Field(None, description="Documentation URL")
+
+
+class ProvidersListResponse(BaseModel):
+    """Response containing list of integration providers."""
+
+    providers: list[IntegrationProviderResponse] = Field(..., description="Available providers")
+    total: int = Field(..., description="Total count of providers")
+
+
+class OAuthUrlResponse(BaseModel):
+    """Response containing OAuth URL for integration connection."""
+
+    url: str = Field(..., description="OAuth authorization URL")
+    state: str = Field(..., description="State parameter for CSRF protection")
+
+
+class OAuthCallbackRequest(BaseModel):
+    """Request parameters from OAuth callback."""
+
+    code: str = Field(..., description="Authorization code")
+    state: str = Field(..., description="State parameter")
+
+
+class IntegrationResponse(BaseModel):
+    """Response containing integration details."""
+
+    id: str = Field(..., description="Integration ID")
+    team_id: str = Field(..., description="Team ID")
+    provider_id: str = Field(..., description="Provider ID")
+    external_id: str = Field(..., description="External service ID")
+    external_name: str | None = Field(None, description="External service name")
+    status: str = Field("active", description="Integration status")
+    settings: dict[str, Any] = Field(default_factory=dict, description="Integration settings")
+    connected_by: str | None = Field(None, description="User who connected")
+    connected_at: datetime | None = Field(None, description="When connected")
+    last_used_at: datetime | None = Field(None, description="Last activity time")
+
+
+class IntegrationsListResponse(BaseModel):
+    """Response containing list of integrations."""
+
+    integrations: list[IntegrationResponse] = Field(..., description="List of integrations")
+    total: int = Field(..., description="Total count of integrations")
+
+
+class IntegrationSettingsUpdate(BaseModel):
+    """Request to update integration settings."""
+
+    settings: dict[str, Any] = Field(..., description="New settings to apply")
+
+
+class IntegrationConnectResponse(BaseModel):
+    """Response from integration connection."""
+
+    success: bool = Field(..., description="Whether connection was successful")
+    integration_id: str | None = Field(None, description="New integration ID")
+    message: str = Field(..., description="Status message")

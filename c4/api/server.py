@@ -81,7 +81,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .chat import router as chat_router
 from .deps import clear_daemon_cache
-from .routes import c4, design, discovery, files, git, shell, validation, workspace
+from .routes import c4, design, discovery, files, git, integrations, shell, teams, validation, workspace
 
 logger = logging.getLogger(__name__)
 
@@ -147,6 +147,9 @@ def create_app(
     app.include_router(shell.router, prefix="/api")
     app.include_router(workspace.router, prefix="/api")
     app.include_router(chat_router, prefix="/api/chat", tags=["Chat"])
+    app.include_router(teams.router, prefix="/api")
+    app.include_router(teams.invite_router, prefix="/api")
+    app.include_router(integrations.router, prefix="/api")
 
     # Health check endpoint
     @app.get("/health", tags=["Health"])
@@ -173,6 +176,9 @@ def create_app(
                 "shell": "/api/shell",
                 "workspace": "/api/workspace",
                 "chat": "/api/chat",
+                "teams": "/api/teams",
+                "invites": "/api/invites",
+                "integrations": "/api/integrations",
             },
         }
 
