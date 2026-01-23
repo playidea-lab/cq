@@ -6,15 +6,13 @@ Provides notifications, slash commands, and interactive approvals.
 
 from __future__ import annotations
 
-import hashlib
-import hmac
 import json
 import logging
 import os
 from typing import Any
+from urllib.error import HTTPError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
-from urllib.error import HTTPError, URLError
 
 from .base import (
     ConnectionResult,
@@ -579,8 +577,8 @@ class DiscordProvider(MessagingProvider):
         public_key = self._get_public_key() or secret
 
         try:
-            from nacl.signing import VerifyKey
             from nacl.exceptions import BadSignature
+            from nacl.signing import VerifyKey
 
             verify_key = VerifyKey(bytes.fromhex(public_key))
             message = timestamp.encode() + payload

@@ -18,7 +18,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from .auth import CurrentUser, OptionalUser, User
+from .auth import CurrentUser
 
 router = APIRouter()
 logger = logging.getLogger(__name__)

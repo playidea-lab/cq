@@ -8,14 +8,13 @@ and connecting integrations.
 from __future__ import annotations
 
 from datetime import datetime, timedelta
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from c4.services.audit import AuditLogger, AuditAction
-from c4.services.integrations import IntegrationService, IntegrationStatus
-from c4.services.teams import TeamService, TeamRole
-
+from c4.services.audit import AuditLogger
+from c4.services.integrations import IntegrationService
+from c4.services.teams import TeamRole, TeamService
 
 # =============================================================================
 # Fixtures
@@ -149,7 +148,7 @@ class TestTeamServiceAuditIntegration:
         ]
 
         # Create team
-        team = await team_service_with_audit.create_team(
+        await team_service_with_audit.create_team(
             name="Test Team",
             owner_id="user-owner",
         )
@@ -187,7 +186,7 @@ class TestTeamServiceAuditIntegration:
         mock_supabase_client.table.return_value.update.return_value.eq.return_value.execute.return_value = update_response
 
         # Update team
-        team = await team_service_with_audit.update_team(
+        await team_service_with_audit.update_team(
             team_id="team-123",
             name="Updated Team",
             actor_id="user-admin",
@@ -234,7 +233,7 @@ class TestTeamServiceAuditIntegration:
         mock_supabase_client.table.return_value.insert.return_value.execute.return_value = invite_response
 
         # Create invite
-        invite = await team_service_with_audit.create_invite(
+        await team_service_with_audit.create_invite(
             team_id="team-123",
             email="new@example.com",
             role=TeamRole.MEMBER,
@@ -287,7 +286,7 @@ class TestIntegrationServiceAuditIntegration:
         mock_supabase_client.table.return_value.insert.return_value.execute.return_value = insert_response
 
         # Save integration
-        integration = await integration_service_with_audit.save_integration(
+        await integration_service_with_audit.save_integration(
             team_id="team-123",
             provider_id="github",
             external_id="12345",
@@ -329,7 +328,7 @@ class TestIntegrationServiceAuditIntegration:
         mock_supabase_client.table.return_value.update.return_value.eq.return_value.eq.return_value.execute.return_value = update_response
 
         # Update settings
-        integration = await integration_service_with_audit.update_integration_settings(
+        await integration_service_with_audit.update_integration_settings(
             team_id="team-123",
             integration_id="int-123",
             settings={"auto_assign": False},
@@ -368,7 +367,7 @@ class TestIntegrationServiceAuditIntegration:
         mock_supabase_client.table.return_value.delete.return_value.eq.return_value.eq.return_value.execute.return_value = delete_response
 
         # Delete integration
-        success = await integration_service_with_audit.delete_integration(
+        await integration_service_with_audit.delete_integration(
             team_id="team-123",
             integration_id="int-123",
             actor_id="user-admin",

@@ -2,16 +2,13 @@
 
 from __future__ import annotations
 
-from datetime import datetime, date
-from unittest.mock import AsyncMock, MagicMock, patch
+from datetime import date
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from c4.services.activity import (
     ActivityCollector,
-    ActivityLog,
-    UsageSummary,
-    UsageReport,
     ActivityError,
     create_activity_collector,
 )

@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 
 from c4.api.server import create_app
 from c4.services.activity import ActivityLog, UsageReport, UsageSummary
-from c4.services.audit import AuditLog, ActorType
+from c4.services.audit import ActorType, AuditLog
 
 
 @pytest.fixture

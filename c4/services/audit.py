@@ -15,14 +15,14 @@ import io
 import json
 import logging
 import os
-from dataclasses import dataclass, field
-from datetime import datetime, date
+from dataclasses import dataclass
+from datetime import date, datetime
 from enum import Enum
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from supabase import Client
     from fastapi import Request
+    from supabase import Client
 
 logger = logging.getLogger(__name__)
 

@@ -7,7 +7,7 @@ and permission checks using mocked Supabase client.
 from __future__ import annotations
 
 from datetime import datetime, timedelta
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -18,9 +18,6 @@ from c4.services.teams import (
     InviteNotFoundError,
     InviteStatus,
     MemberNotFoundError,
-    Team,
-    TeamInvite,
-    TeamMember,
     TeamNotFoundError,
     TeamPermissionError,
     TeamPlan,
@@ -28,7 +25,6 @@ from c4.services.teams import (
     TeamService,
     create_team_service,
 )
-
 
 # =============================================================================
 # Fixtures

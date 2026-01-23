@@ -19,13 +19,10 @@ from pydantic import BaseModel
 
 from c4.services.activity import (
     ActivityCollector,
-    ActivityLog,
-    UsageReport,
     create_activity_collector,
 )
 from c4.services.audit import (
     AuditFilter,
-    AuditLog,
     AuditLogger,
     create_audit_logger,
 )

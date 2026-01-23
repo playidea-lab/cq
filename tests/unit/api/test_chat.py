@@ -1,7 +1,8 @@
 """Tests for C4 Chat API with AgenticWorker integration."""
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 from c4.api.chat import (
     AgenticChatService,
@@ -13,7 +14,6 @@ from c4.api.chat import (
     SSEEvent,
     ToolCallInfo,
 )
-
 
 # =============================================================================
 # SSEEvent Tests

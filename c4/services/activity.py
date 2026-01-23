@@ -13,7 +13,7 @@ import logging
 import os
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
-from datetime import datetime, date
+from datetime import date, datetime
 from typing import TYPE_CHECKING, Any, AsyncIterator
 
 if TYPE_CHECKING:

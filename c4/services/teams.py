@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from supabase import Client
+
     from c4.services.audit import AuditLogger
 
 logger = logging.getLogger(__name__)

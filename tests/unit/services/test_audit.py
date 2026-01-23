@@ -2,18 +2,18 @@
 
 from __future__ import annotations
 
-from datetime import datetime, date
-from unittest.mock import AsyncMock, MagicMock, patch
+from datetime import datetime
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from c4.services.audit import (
-    AuditLogger,
-    AuditLog,
-    AuditFilter,
     ActorType,
     AuditAction,
     AuditError,
+    AuditFilter,
+    AuditLog,
+    AuditLogger,
     create_audit_logger,
 )
 

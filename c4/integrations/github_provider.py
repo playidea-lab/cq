@@ -174,8 +174,8 @@ class GitHubProvider(SourceControlProvider):
 
         # Fetch installation info to get repository/organization name
         try:
-            from urllib.request import Request, urlopen
             import json
+            from urllib.request import Request, urlopen
 
             jwt_token = client._generate_jwt()
             url = f"{self.API_BASE}/app/installations/{installation_id}"

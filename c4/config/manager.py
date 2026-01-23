@@ -17,8 +17,6 @@ import yaml
 
 from .credentials import CredentialsManager
 from .models import (
-    BOOLEAN_KEYS,
-    INTEGER_KEYS,
     VALID_CONFIG_KEYS,
     C4Config,
     parse_config_value,
