@@ -2,6 +2,7 @@
 
 import json
 import os
+import shlex
 import signal
 import subprocess
 import sys
@@ -11,6 +12,7 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
+from .config.credentials import ENV_VAR_MAPPING, SUPPORTED_PROVIDERS, CredentialsManager
 from .hooks import get_c4_install_dir, install_all_hooks
 from .mcp_server import C4Daemon
 from .models import ProjectStatus, Task
@@ -1289,6 +1291,310 @@ def config_platform(
     except ValueError as e:
         console.print(f"[red]Error:[/red] {e}")
         raise typer.Exit(1)
+
+
+# =============================================================================
+# API Key Management
+# =============================================================================
+
+api_key_app = typer.Typer(help="API key management")
+config_app.add_typer(api_key_app, name="api-key")
+
+
+@api_key_app.command("set")
+def api_key_set(
+    provider: str = typer.Argument(
+        ...,
+        help=f"Provider name ({', '.join(SUPPORTED_PROVIDERS)})",
+    ),
+    api_key: str = typer.Option(
+        ...,
+        "--key",
+        "-k",
+        prompt="API Key",
+        hide_input=True,
+        help="API key value (prompted if not provided)",
+    ),
+    is_global: bool = typer.Option(
+        True,
+        "--global/--project",
+        "-g/-p",
+        help="Store in global (~/.c4) or project (.c4) config",
+    ),
+):
+    """Set an API key for a provider.
+
+    API keys are stored securely with restricted file permissions (600).
+    Priority: environment variable > project config > global config.
+
+    Examples:
+        c4 config api-key set anthropic --key sk-ant-xxx
+        c4 config api-key set anthropic  # Prompts for key
+        c4 config api-key set openai --project --key sk-xxx
+    """
+    creds = CredentialsManager()
+
+    try:
+        creds_path = creds.set_api_key(provider, api_key, is_global=is_global)
+        scope = "global" if is_global else "project"
+        masked = creds.mask_api_key(api_key)
+        console.print(f"[green]Set {provider} API key ({scope}):[/green] {masked}")
+        console.print(f"[dim]Stored in: {creds_path}[/dim]")
+    except ValueError as e:
+        console.print(f"[red]Error:[/red] {e}")
+        raise typer.Exit(1)
+
+
+@api_key_app.command("list")
+def api_key_list():
+    """List configured API keys.
+
+    Shows all configured providers and their source (env, project, global).
+    API keys are masked for security.
+
+    Examples:
+        c4 config api-key list
+    """
+    creds = CredentialsManager()
+    providers = creds.list_configured_providers()
+
+    console.print()
+    console.print("[bold]Configured API Keys[/bold]")
+    console.print()
+
+    if not providers:
+        console.print("[yellow]No API keys configured[/yellow]")
+        console.print()
+        console.print("[dim]Set an API key with:[/dim]")
+        console.print("  c4 config api-key set anthropic --key YOUR_KEY")
+        console.print()
+        console.print(f"[dim]Supported providers: {', '.join(SUPPORTED_PROVIDERS)}[/dim]")
+        return
+
+    table = Table(show_header=True)
+    table.add_column("Provider", style="cyan")
+    table.add_column("Source")
+    table.add_column("Key (masked)")
+    table.add_column("Active", style="green")
+
+    for provider, source in sorted(providers.items()):
+        masked_key = creds.get_masked_api_key(provider) or "[dim]-[/dim]"
+        source_color = {"env": "yellow", "project": "blue", "global": "dim"}
+        source_display = f"[{source_color.get(source, 'white')}]{source}[/{source_color.get(source, 'white')}]"
+
+        # Check if this provider is actually active (highest priority)
+        is_active = creds.get_api_key(provider) is not None
+        active_mark = "*" if is_active else ""
+
+        table.add_row(provider, source_display, masked_key, active_mark)
+
+    console.print(table)
+    console.print()
+    console.print("[dim]Priority: env > project > global[/dim]")
+    console.print(f"[dim]Supported: {', '.join(SUPPORTED_PROVIDERS)}[/dim]")
+
+
+@api_key_app.command("delete")
+def api_key_delete(
+    provider: str = typer.Argument(
+        ...,
+        help=f"Provider name ({', '.join(SUPPORTED_PROVIDERS)})",
+    ),
+    is_global: bool = typer.Option(
+        True,
+        "--global/--project",
+        "-g/-p",
+        help="Delete from global (~/.c4) or project (.c4) config",
+    ),
+    force: bool = typer.Option(
+        False,
+        "--force",
+        "-f",
+        help="Skip confirmation prompt",
+    ),
+):
+    """Delete an API key.
+
+    Note: This only deletes from config files, not environment variables.
+
+    Examples:
+        c4 config api-key delete anthropic
+        c4 config api-key delete openai --project
+        c4 config api-key delete anthropic --force
+    """
+    creds = CredentialsManager()
+    scope = "global" if is_global else "project"
+
+    # Check if key exists
+    creds_path = creds.global_path if is_global else creds.project_path
+    if not creds_path.exists():
+        console.print(f"[yellow]No {scope} credentials file found[/yellow]")
+        return
+
+    if not force:
+        confirm = typer.confirm(f"Delete {provider} API key from {scope} config?")
+        if not confirm:
+            console.print("[yellow]Cancelled[/yellow]")
+            raise typer.Exit(0)
+
+    if creds.delete_api_key(provider, is_global=is_global):
+        console.print(f"[green]Deleted {provider} API key from {scope} config[/green]")
+    else:
+        console.print(f"[yellow]No {provider} API key found in {scope} config[/yellow]")
+
+
+@api_key_app.command("get")
+def api_key_get(
+    provider: str = typer.Argument(
+        "anthropic",
+        help=f"Provider name ({', '.join(SUPPORTED_PROVIDERS)})",
+    ),
+    show_full: bool = typer.Option(
+        False,
+        "--full",
+        help="Show full API key (use with caution)",
+    ),
+):
+    """Get an API key (masked by default).
+
+    Shows the effective API key considering priority:
+    env > project > global
+
+    Examples:
+        c4 config api-key get anthropic
+        c4 config api-key get openai --full
+    """
+    creds = CredentialsManager()
+    providers = creds.list_configured_providers()
+
+    if provider not in providers:
+        console.print(f"[yellow]No {provider} API key configured[/yellow]")
+        console.print()
+        console.print(f"[dim]Set with: c4 config api-key set {provider}[/dim]")
+        raise typer.Exit(1)
+
+    source = providers[provider]
+    if show_full:
+        api_key = creds.get_api_key(provider)
+        console.print(f"[cyan]{provider}[/cyan] ({source}): {api_key}")
+    else:
+        masked = creds.get_masked_api_key(provider)
+        console.print(f"[cyan]{provider}[/cyan] ({source}): {masked}")
+        console.print("[dim]Use --full to show complete key[/dim]")
+
+
+# =============================================================================
+# Environment Variable Export Command
+# =============================================================================
+
+
+@c4_app.command("env")
+def env_export(
+    provider: str = typer.Argument(
+        None,
+        help="Specific provider to export (defaults to all)",
+    ),
+    output_format: str = typer.Option(
+        "export",
+        "--format",
+        "-f",
+        help="Output format: export, json, dotenv, fish",
+    ),
+    quiet: bool = typer.Option(
+        False,
+        "--quiet",
+        "-q",
+        help="Output only the export statements (for eval)",
+    ),
+):
+    """Export API keys as environment variables.
+
+    Exports stored API keys as shell environment variable statements.
+    Use with eval to set them in your current shell:
+
+        eval $(c4 env)
+
+    Or add to your shell profile for permanent setup:
+
+        echo 'eval $(c4 env 2>/dev/null)' >> ~/.bashrc
+
+    Examples:
+        c4 env                          # Export all keys (bash/zsh)
+        c4 env anthropic                # Export specific provider
+        c4 env --format=dotenv > .env   # Create .env file
+        c4 env --format=fish            # Fish shell format
+        c4 env --format=json            # JSON format
+        eval $(c4 env)                  # Apply to current shell
+    """
+    # Create stderr console for messages that shouldn't interfere with eval
+    err_console = Console(stderr=True, force_terminal=False)
+
+    creds = CredentialsManager()
+    providers = creds.list_configured_providers()
+
+    # Filter to specific provider if requested
+    if provider:
+        provider = provider.lower()
+        if provider not in providers:
+            if not quiet:
+                err_console.print(f"[yellow]No {provider} API key configured[/yellow]")
+            raise typer.Exit(1)
+        providers = {provider: providers[provider]}
+
+    if not providers:
+        if not quiet:
+            err_console.print("[yellow]No API keys configured[/yellow]")
+            err_console.print("[dim]Set an API key with: c4 config api-key set anthropic[/dim]")
+        raise typer.Exit(0)
+
+    # Build key-value pairs (only from config files, not env)
+    exports: dict[str, str] = {}
+    for prov, source in providers.items():
+        # Only export keys stored in config files (not already in env)
+        if source in ("project", "global"):
+            api_key = creds.get_api_key(prov)
+            if api_key:
+                env_var = ENV_VAR_MAPPING.get(prov)
+                if env_var:
+                    exports[env_var] = api_key
+
+    if not exports:
+        if not quiet:
+            err_console.print("[yellow]No API keys to export (all from env or none configured)[/yellow]")
+        raise typer.Exit(0)
+
+    # Output based on format
+    if output_format == "export":
+        # Bash/Zsh format - use shlex.quote() to prevent shell injection
+        for env_var, api_key in exports.items():
+            print(f"export {env_var}={shlex.quote(api_key)}")
+
+    elif output_format == "fish":
+        # Fish shell format - use single quotes with escaping
+        for env_var, api_key in exports.items():
+            # In fish, single quotes prevent variable expansion
+            # Escape backslashes and single quotes
+            escaped = api_key.replace("\\", "\\\\").replace("'", "\\'")
+            print(f"set -gx {env_var} '{escaped}'")
+
+    elif output_format == "dotenv":
+        # .env file format - escape backslashes and double quotes
+        for env_var, api_key in exports.items():
+            escaped = api_key.replace("\\", "\\\\").replace('"', '\\"')
+            print(f'{env_var}="{escaped}"')
+
+    elif output_format == "json":
+        # JSON format
+        print(json.dumps(exports, indent=2))
+
+    else:
+        err_console.print(f"[red]Unknown format: {output_format}[/red]")
+        err_console.print("[dim]Supported: export, fish, dotenv, json[/dim]")
+        raise typer.Exit(1)
+
+    # Show info message to stderr (won't affect eval)
+    if not quiet:
+        err_console.print(f"[dim]# Exported {len(exports)} API key(s)[/dim]")
 
 
 # =============================================================================
