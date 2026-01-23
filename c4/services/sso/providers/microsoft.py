@@ -70,8 +70,13 @@ class MicrosoftOIDCProvider(OIDCProviderBase):
             base = config.issuer_url.rstrip("/")
             return f"{base}/oauth2/v2.0/{endpoint}"
 
-        # Default to common tenant
-        return getattr(self, f"{endpoint.upper()}_URL")
+        # Default to common tenant - map endpoint names to URL attributes
+        url_map = {
+            "authorize": "AUTH_URL",
+            "token": "TOKEN_URL",
+        }
+        attr_name = url_map.get(endpoint, f"{endpoint.upper()}_URL")
+        return getattr(self, attr_name)
 
     def get_authorization_url(
         self,

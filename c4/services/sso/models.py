@@ -133,6 +133,22 @@ class SSOSession:
 
     created_at: datetime | None = None
 
+    def is_valid(self) -> bool:
+        """Check if the session is valid (not expired and not revoked).
+
+        Returns:
+            True if session is valid
+        """
+        if self.revoked:
+            return False
+
+        if self.expires_at is None:
+            return True
+
+        from datetime import UTC, datetime
+
+        return datetime.now(UTC) < self.expires_at
+
 
 @dataclass
 class SSOUserInfo:
