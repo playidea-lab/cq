@@ -547,6 +547,11 @@ async def invite_member(
             "expires_at": invite.expires_at.isoformat() if invite.expires_at else None,
         }
 
+    except TeamNotFoundError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e),
+        ) from e
     except TeamPermissionError as e:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
