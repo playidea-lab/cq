@@ -1628,3 +1628,139 @@ class TestQueryAgentGraph:
         assert result["query_type"] == "overview"
         # Either mermaid output or error if graph is empty
         assert "mermaid" in result or "mermaid_error" in result
+
+
+class TestWorkerUnregisterTaskRecovery:
+    """Test worker unregister recovers assigned tasks (zombie task fix)."""
+
+    def test_unregister_idle_worker_no_task_recovery(self, daemon_in_execute):
+        """Test that unregistering an idle worker doesn't affect tasks."""
+        daemon = daemon_in_execute
+        queue = daemon.state_machine.state.queue
+
+        # Register a worker
+        worker_id = "test-worker-idle"
+        daemon.worker_manager.register(worker_id)
+
+        # Add a task to pending directly (avoid c4_add_todo ID transformation)
+        queue.pending.append("T-TEST-001")
+        daemon.state_machine.save_state()
+
+        # Verify initial state
+        assert "T-TEST-001" in queue.pending
+
+        # Unregister the idle worker
+        result = daemon.worker_manager.unregister(worker_id)
+
+        assert result is True
+        # Task should still be in pending (not affected)
+        assert "T-TEST-001" in queue.pending
+
+    def test_unregister_busy_worker_recovers_task(self, daemon_in_execute):
+        """Test that unregistering a busy worker moves task back to pending."""
+        daemon = daemon_in_execute
+        queue = daemon.state_machine.state.queue
+
+        # Register a worker
+        worker_id = "test-worker-busy"
+        daemon.worker_manager.register(worker_id)
+
+        # Simulate task assignment (directly manipulate state)
+        task_id = "T-TEST-002"
+        queue.in_progress[task_id] = worker_id
+        daemon.worker_manager.set_busy(worker_id, task_id, scope="src/")
+        daemon.state_machine.save_state()
+
+        # Verify task is in_progress and worker is busy
+        assert task_id in queue.in_progress
+        assert queue.in_progress[task_id] == worker_id
+        worker = daemon.worker_manager.get_worker(worker_id)
+        assert worker.state == "busy"
+        assert worker.task_id == task_id
+
+        # Unregister the busy worker
+        result = daemon.worker_manager.unregister(worker_id)
+
+        assert result is True
+        # Task should be moved back to pending (front of queue)
+        queue = daemon.state_machine.state.queue
+        assert task_id not in queue.in_progress
+        assert task_id in queue.pending
+        assert queue.pending[0] == task_id  # Should be at front (priority)
+
+    def test_unregister_nonexistent_worker_returns_false(self, daemon_in_execute):
+        """Test that unregistering a nonexistent worker returns False."""
+        daemon = daemon_in_execute
+
+        result = daemon.worker_manager.unregister("nonexistent-worker")
+
+        assert result is False
+
+
+class TestSupervisorAutoRestartOnStatus:
+    """Test supervisor auto-restart triggered by c4_status() call (bug fix tests)."""
+
+    def test_c4_status_calls_auto_restart(self, daemon_in_execute, monkeypatch):
+        """Test that c4_status() triggers auto-restart check."""
+        daemon = daemon_in_execute
+        call_count = {"count": 0}
+
+        def mock_auto_restart():
+            call_count["count"] += 1
+            return False
+
+        monkeypatch.setattr(
+            daemon, "_auto_restart_supervisor_if_needed", mock_auto_restart
+        )
+
+        # Call c4_status
+        daemon.c4_status()
+
+        # Verify auto-restart was called
+        assert call_count["count"] == 1
+
+    def test_auto_restart_only_in_execute_or_checkpoint(self, daemon_in_plan, monkeypatch):
+        """Test that auto-restart only happens in EXECUTE/CHECKPOINT states."""
+        daemon = daemon_in_plan
+        start_called = {"called": False}
+
+        # Verify we're in PLAN state
+        assert daemon.state_machine.state.status == ProjectStatus.PLAN
+
+        # Mock start_supervisor_loop
+        def mock_start():
+            start_called["called"] = True
+
+        monkeypatch.setattr(daemon, "start_supervisor_loop", mock_start)
+
+        # Call auto-restart
+        result = daemon._auto_restart_supervisor_if_needed()
+
+        # Should not start in PLAN state
+        assert result is False
+        assert not start_called["called"]
+
+    def test_auto_restart_does_not_start_if_already_running(
+        self, daemon_in_execute, monkeypatch
+    ):
+        """Test that auto-restart doesn't start if supervisor already running."""
+        daemon = daemon_in_execute
+        start_called = {"called": False}
+
+        # Mock is_supervisor_loop_running to return True
+        monkeypatch.setattr(
+            type(daemon), "is_supervisor_loop_running", property(lambda self: True)
+        )
+
+        # Mock start_supervisor_loop
+        def mock_start():
+            start_called["called"] = True
+
+        monkeypatch.setattr(daemon, "start_supervisor_loop", mock_start)
+
+        # Call auto-restart
+        result = daemon._auto_restart_supervisor_if_needed()
+
+        # Should not start if already running
+        assert result is False
+        assert not start_called["called"]

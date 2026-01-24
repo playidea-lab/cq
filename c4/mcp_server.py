@@ -939,6 +939,10 @@ Thumbs.db
         self.state_machine.load_state()
         state = self.state_machine.state
         status_value = state.status.value
+
+        # Auto-restart supervisor if in EXECUTE/CHECKPOINT state but not running
+        # This handles MCP server restarts and stale supervisor flags
+        self._auto_restart_supervisor_if_needed()
         return {
             "initialized": True,
             "project_id": state.project_id,
@@ -3881,6 +3885,12 @@ def create_server(project_root: Path | None = None) -> Server:
                 # Auto-restart supervisor loop if in EXECUTE/CHECKPOINT state
                 daemon._auto_restart_supervisor_if_needed()
             _daemon_cache[root_str] = daemon
+        else:
+            # For cached daemon, also check supervisor state
+            # This handles cases where supervisor died or MCP server context changed
+            daemon = _daemon_cache[root_str]
+            if daemon.is_initialized():
+                daemon._auto_restart_supervisor_if_needed()
 
         return _daemon_cache[root_str]
 

@@ -42,9 +42,16 @@ class WorkerManager:
 
         return worker
 
-    def unregister(self, worker_id: str) -> bool:
+    def unregister(self, worker_id: str, lock_store: "Any | None" = None) -> bool:
         """
-        Unregister a worker.
+        Unregister a worker and release any assigned tasks.
+
+        If the worker was busy with a task, the task is moved back to the
+        pending queue to prevent zombie assignments.
+
+        Args:
+            worker_id: The worker ID to unregister
+            lock_store: Optional lock store for releasing scope locks
 
         Returns:
             True if worker was removed, False if not found
@@ -54,11 +61,34 @@ class WorkerManager:
         if worker_id not in self._workers:
             return False
 
+        worker = self._workers[worker_id]
+        recovered_task = None
+
+        # If worker was busy, recover the task
+        if worker.state == "busy" and worker.task_id:
+            recovered_task = worker.task_id
+            scope = worker.scope
+            queue = self.state_machine.state.queue
+
+            # Move task from in_progress back to pending
+            if worker.task_id in queue.in_progress:
+                del queue.in_progress[worker.task_id]
+                queue.pending.insert(0, worker.task_id)  # Priority: front of queue
+
+            # Release scope lock if applicable
+            if scope and lock_store:
+                try:
+                    lock_store.release_scope_lock(
+                        self.state_machine.state.project_id, scope
+                    )
+                except Exception:
+                    pass  # Best effort
+
         del self._workers[worker_id]
         self.state_machine.emit_event(
             EventType.WORKER_LEFT,
             worker_id,
-            {"worker_id": worker_id},
+            {"worker_id": worker_id, "recovered_task": recovered_task},
         )
         self.state_machine.save_state()
         return True
