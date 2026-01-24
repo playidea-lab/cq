@@ -28,13 +28,8 @@ CREATE TABLE IF NOT EXISTS activity_logs (
     -- Timing
     started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     ended_at TIMESTAMPTZ,
-    duration_seconds INTEGER GENERATED ALWAYS AS (
-        CASE
-            WHEN ended_at IS NOT NULL
-            THEN EXTRACT(EPOCH FROM (ended_at - started_at))::INTEGER
-            ELSE NULL
-        END
-    ) STORED,
+    -- Note: duration_seconds calculated on-the-fly in queries for PostgreSQL compatibility
+    -- Use: EXTRACT(EPOCH FROM (ended_at - started_at))::INTEGER
 
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -53,13 +48,20 @@ CREATE INDEX IF NOT EXISTS idx_activity_logs_type
 ON activity_logs(activity_type);
 
 -- View for aggregated usage (billing reports)
+-- Note: Calculate duration directly instead of using GENERATED column for compatibility
 CREATE OR REPLACE VIEW team_usage_summary AS
 SELECT
     team_id,
     DATE_TRUNC('day', started_at) as date,
     activity_type,
     COUNT(*) as activity_count,
-    SUM(duration_seconds) as total_seconds,
+    SUM(
+        CASE
+            WHEN ended_at IS NOT NULL
+            THEN EXTRACT(EPOCH FROM (ended_at - started_at))::INTEGER
+            ELSE 0
+        END
+    ) as total_seconds,
     COUNT(DISTINCT user_id) as unique_users
 FROM activity_logs
 GROUP BY team_id, DATE_TRUNC('day', started_at), activity_type;
