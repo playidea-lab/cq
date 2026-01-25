@@ -73,15 +73,22 @@ Endpoints:
         GET  /                             - API info
 """
 
+from __future__ import annotations
+
 import logging
 from contextlib import asynccontextmanager
+from typing import TYPE_CHECKING
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .chat import router as chat_router
 from .deps import clear_daemon_cache
+from .middleware import BrandingMiddleware
 from .routes import branding, c4, design, discovery, docs, files, git, integrations, reports, shell, sso, teams, validation, workspace
+
+if TYPE_CHECKING:
+    from c4.services.branding import BrandingService
 
 logger = logging.getLogger(__name__)
 
@@ -102,6 +109,8 @@ def create_app(
     description: str = "HTTP API for C4 AI Orchestration System",
     version: str = "0.1.0",
     cors_origins: list[str] | None = None,
+    branding_service: BrandingService | None = None,
+    branding_cache_ttl: float = 60.0,
 ) -> FastAPI:
     """Create and configure the FastAPI application.
 
@@ -110,6 +119,8 @@ def create_app(
         description: API description for docs
         version: API version
         cors_origins: Allowed CORS origins (None = allow all in dev)
+        branding_service: Optional branding service for white-label support
+        branding_cache_ttl: TTL for branding cache in seconds (default 60)
 
     Returns:
         Configured FastAPI application
@@ -136,6 +147,15 @@ def create_app(
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    # Add branding middleware if service is provided
+    if branding_service is not None:
+        app.add_middleware(
+            BrandingMiddleware,
+            branding_service=branding_service,
+            cache_ttl=branding_cache_ttl,
+        )
+        logger.info("Branding middleware enabled with TTL=%s seconds", branding_cache_ttl)
 
     # Include routers
     app.include_router(c4.router, prefix="/api")
