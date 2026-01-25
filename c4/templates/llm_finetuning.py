@@ -658,7 +658,9 @@ def load_and_prepare_dataset(config: dict, tokenizer):
 
     def _generate_inference_script(self, params: dict[str, Any]) -> str:
         """Generate inference script."""
-        return f'''"""Inference script for fine-tuned LLM."""
+        # Note: This script is mostly static, but we use a regular string
+        # since f-string placeholders are escaped for runtime use
+        return '''"""Inference script for fine-tuned LLM."""
 
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
