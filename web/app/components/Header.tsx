@@ -9,6 +9,7 @@ export default function Header() {
   const navItems = [
     { href: '/', label: 'Chat' },
     { href: '/projects', label: 'Projects' },
+    { href: '/teams', label: 'Teams' },
   ];
 
   return (
