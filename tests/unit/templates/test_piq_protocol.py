@@ -415,6 +415,93 @@ class TestPIQClient:
             result = await client.health_check()
             assert result is True
 
+    @pytest.mark.asyncio
+    async def test_sync_experiment_when_disabled(self):
+        """Test sync_experiment when PIQ is disabled."""
+        config = PIQConfig(enabled=False)
+        client = PIQClient(config)
+
+        result = await client.sync_experiment(
+            experiment_id="exp-001",
+            template_id="image-classification",
+            params={"learning_rate": 0.001},
+            metrics={"accuracy": 0.95},
+        )
+
+        assert result.success is False
+        assert "disabled" in result.error.lower()
+
+    @pytest.mark.asyncio
+    async def test_sync_experiment_success(self, client):
+        """Test successful experiment sync."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "insights": [
+                {
+                    "id": "insight-001",
+                    "knowledge_type": "technique",
+                    "title": "Consider lower learning rate",
+                    "content": "Based on your metrics...",
+                    "source": "experiment",
+                    "confidence": 0.8,
+                }
+            ],
+            "suggestions": ["Try batch size 64"],
+        }
+
+        with patch.object(client, "_client") as mock_client:
+            mock_client.post = AsyncMock(return_value=mock_response)
+            client._client = mock_client
+
+            result = await client.sync_experiment(
+                experiment_id="exp-001",
+                template_id="image-classification",
+                params={"learning_rate": 0.001, "batch_size": 32},
+                metrics={"accuracy": 0.95, "loss": 0.05},
+                status="completed",
+                metadata={"dataset": "imagenet", "gpu": "A100"},
+            )
+
+            assert result.success is True
+            assert len(result.knowledge) == 1
+            assert result.knowledge[0].title == "Consider lower learning rate"
+            assert len(result.suggestions) == 1
+
+    @pytest.mark.asyncio
+    async def test_sync_experiment_created(self, client):
+        """Test first experiment sync (201 created)."""
+        mock_response = MagicMock()
+        mock_response.status_code = 201
+
+        with patch.object(client, "_client") as mock_client:
+            mock_client.post = AsyncMock(return_value=mock_response)
+            client._client = mock_client
+
+            result = await client.sync_experiment(
+                experiment_id="exp-new",
+                status="running",
+            )
+
+            assert result.success is True
+
+    @pytest.mark.asyncio
+    async def test_sync_experiment_error(self, client):
+        """Test experiment sync error handling."""
+        mock_response = MagicMock()
+        mock_response.status_code = 500
+
+        with patch.object(client, "_client") as mock_client:
+            mock_client.post = AsyncMock(return_value=mock_response)
+            client._client = mock_client
+
+            result = await client.sync_experiment(
+                experiment_id="exp-001",
+            )
+
+            assert result.success is False
+            assert "500" in result.error
+
 
 class TestGetPIQClient:
     """Tests for get_piq_client factory function."""

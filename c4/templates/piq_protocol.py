@@ -12,7 +12,6 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from typing import Any
-from urllib.parse import urljoin
 
 import httpx
 from pydantic import BaseModel, Field
@@ -455,6 +454,90 @@ class PIQClient:
         )
 
         return result.knowledge if result.success else []
+
+    # =========================================================================
+    # Experiment Sync
+    # =========================================================================
+
+    async def sync_experiment(
+        self,
+        experiment_id: str,
+        template_id: str | None = None,
+        params: dict[str, Any] | None = None,
+        metrics: dict[str, Any] | None = None,
+        status: str = "running",
+        metadata: dict[str, Any] | None = None,
+    ) -> PIQKnowledgeResult:
+        """Sync experiment data to PIQ Hub.
+
+        This allows PIQ to learn from experiment results and provide
+        better recommendations for future experiments.
+
+        Args:
+            experiment_id: Unique experiment identifier
+            template_id: Template used for the experiment
+            params: Hyperparameters and configuration
+            metrics: Experiment metrics (loss, accuracy, etc.)
+            status: Experiment status (running, completed, failed)
+            metadata: Additional metadata (dataset, hardware, etc.)
+
+        Returns:
+            PIQKnowledgeResult with sync status and any generated insights
+        """
+        if not self.config.enabled:
+            return PIQKnowledgeResult(
+                success=False,
+                error="PIQ integration is disabled",
+            )
+
+        if not self._client:
+            await self.connect()
+
+        try:
+            response = await self._client.post(
+                "/api/experiments/sync",
+                json={
+                    "experiment_id": experiment_id,
+                    "template_id": template_id,
+                    "params": params or {},
+                    "metrics": metrics or {},
+                    "status": status,
+                    "metadata": metadata or {},
+                    "synced_at": datetime.now().isoformat(),
+                },
+            )
+
+            if response.status_code == 200:
+                data = response.json()
+                return PIQKnowledgeResult(
+                    success=True,
+                    knowledge=[
+                        self._parse_knowledge(k)
+                        for k in data.get("insights", [])
+                    ],
+                    suggestions=data.get("suggestions", []),
+                )
+            elif response.status_code == 201:
+                # Created - first sync
+                return PIQKnowledgeResult(success=True)
+            else:
+                return PIQKnowledgeResult(
+                    success=False,
+                    error=f"Experiment sync failed: {response.status_code}",
+                )
+
+        except httpx.ConnectError:
+            logger.warning("Cannot connect to PIQ Hub for experiment sync")
+            return PIQKnowledgeResult(
+                success=False,
+                error="Cannot connect to PIQ Hub",
+            )
+        except Exception as e:
+            logger.error(f"Experiment sync error: {e}")
+            return PIQKnowledgeResult(
+                success=False,
+                error=str(e),
+            )
 
     # =========================================================================
     # Seeds Integration
