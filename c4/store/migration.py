@@ -545,3 +545,271 @@ def migrate_team_to_local(
     """
     manager = MigrationManager(db_path)
     return manager.import_from_file(input_path, create_backup)
+
+
+# =============================================================================
+# Direct Supabase Migration
+# =============================================================================
+
+
+async def export_to_supabase(
+    db_path: Path,
+    project_id: str,
+    team_id: str,
+    supabase_url: str | None = None,
+    supabase_key: str | None = None,
+) -> MigrationSnapshot:
+    """Export local SQLite data directly to Supabase.
+
+    Args:
+        db_path: Path to local SQLite database
+        project_id: Project identifier
+        team_id: Target team ID in Supabase
+        supabase_url: Supabase URL (default: from env)
+        supabase_key: Supabase API key (default: from env)
+
+    Returns:
+        MigrationSnapshot for tracking
+
+    Raises:
+        MigrationError: If export fails
+    """
+    import os
+
+    from .supabase import SupabaseStateStore
+
+    # Get credentials
+    url = supabase_url or os.environ.get("SUPABASE_URL")
+    key = supabase_key or os.environ.get("SUPABASE_KEY")
+
+    if not url or not key:
+        raise MigrationError(
+            "Supabase credentials not provided. "
+            "Set SUPABASE_URL and SUPABASE_KEY environment variables."
+        )
+
+    # Export from SQLite
+    manager = MigrationManager(db_path)
+    export_data = manager.export_to_team(project_id)
+
+    # Create snapshot
+    snapshot_id = f"to-supabase-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+    backup_path = str(manager.create_backup(f"pre-export-{snapshot_id}"))
+
+    snapshot = MigrationSnapshot(
+        snapshot_id=snapshot_id,
+        source="local",
+        target="supabase",
+        timestamp=datetime.now().isoformat(),
+        backup_path=backup_path,
+        state_data=export_data.state,
+        tasks_count=len(export_data.tasks),
+        locks_count=len(export_data.locks),
+        status="pending",
+    )
+
+    try:
+        # Initialize Supabase store
+        store = SupabaseStateStore(
+            project_id=project_id,
+            team_id=team_id,
+            supabase_url=url,
+            supabase_key=key,
+        )
+
+        # Upload state
+        await store.save(export_data.state)
+
+        # Upload tasks to c4_tasks table
+        for task in export_data.tasks:
+            task_id = task.get("id")
+            await store._supabase.table("c4_tasks").upsert(
+                {
+                    "project_id": project_id,
+                    "team_id": team_id,
+                    "task_id": task_id,
+                    "task_json": json.dumps(task),
+                    "status": task.get("status", "pending"),
+                    "assigned_to": task.get("assigned_to"),
+                }
+            ).execute()
+
+        # Upload locks to c4_locks table
+        for lock in export_data.locks:
+            await store._supabase.table("c4_locks").upsert(
+                {
+                    "project_id": project_id,
+                    "team_id": team_id,
+                    "scope": lock["scope"],
+                    "owner": lock["owner"],
+                    "expires_at": lock.get("expires_at"),
+                }
+            ).execute()
+
+        snapshot.status = "completed"
+    except Exception as e:
+        snapshot.status = "failed"
+        manager._snapshots.append(snapshot)
+        manager._save_snapshots()
+        raise MigrationError(f"Supabase export failed: {e}") from e
+
+    manager._snapshots.append(snapshot)
+    manager._save_snapshots()
+    return snapshot
+
+
+async def import_from_supabase(
+    db_path: Path,
+    project_id: str,
+    team_id: str,
+    supabase_url: str | None = None,
+    supabase_key: str | None = None,
+    create_backup: bool = True,
+) -> MigrationSnapshot:
+    """Import data from Supabase to local SQLite.
+
+    Args:
+        db_path: Path to local SQLite database
+        project_id: Project identifier
+        team_id: Source team ID in Supabase
+        supabase_url: Supabase URL (default: from env)
+        supabase_key: Supabase API key (default: from env)
+        create_backup: Whether to create backup before import
+
+    Returns:
+        MigrationSnapshot for rollback
+
+    Raises:
+        MigrationError: If import fails
+    """
+    import os
+
+    from .supabase import SupabaseStateStore
+
+    # Get credentials
+    url = supabase_url or os.environ.get("SUPABASE_URL")
+    key = supabase_key or os.environ.get("SUPABASE_KEY")
+
+    if not url or not key:
+        raise MigrationError(
+            "Supabase credentials not provided. "
+            "Set SUPABASE_URL and SUPABASE_KEY environment variables."
+        )
+
+    manager = MigrationManager(db_path)
+
+    # Create backup if requested
+    backup_path = None
+    if create_backup and db_path.exists():
+        snapshot_id = f"from-supabase-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+        backup_path = str(manager.create_backup(f"pre-import-{snapshot_id}"))
+    else:
+        snapshot_id = f"from-supabase-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+
+    try:
+        # Initialize Supabase store
+        store = SupabaseStateStore(
+            project_id=project_id,
+            team_id=team_id,
+            supabase_url=url,
+            supabase_key=key,
+        )
+
+        # Load state from Supabase
+        state_data = await store.load()
+        if state_data is None:
+            raise MigrationError(f"No state found for project: {project_id}")
+
+        # Load tasks from Supabase
+        tasks_result = await store._supabase.table("c4_tasks").select("*").eq(
+            "project_id", project_id
+        ).eq("team_id", team_id).execute()
+
+        tasks = [json.loads(row["task_json"]) for row in tasks_result.data]
+
+        # Load locks from Supabase
+        locks_result = await store._supabase.table("c4_locks").select("*").eq(
+            "project_id", project_id
+        ).eq("team_id", team_id).execute()
+
+        locks = [
+            {
+                "scope": row["scope"],
+                "owner": row["owner"],
+                "expires_at": row.get("expires_at"),
+            }
+            for row in locks_result.data
+        ]
+
+        # Create export data
+        export_data = ExportData(
+            project_id=project_id,
+            exported_at=datetime.now().isoformat(),
+            version=MigrationManager.EXPORT_VERSION,
+            state=state_data,
+            tasks=tasks,
+            locks=locks,
+        )
+
+        # Import to local SQLite
+        snapshot = manager.import_from_team(export_data, create_backup=False)
+        snapshot.snapshot_id = snapshot_id
+        snapshot.source = "supabase"
+        snapshot.backup_path = backup_path
+
+        return snapshot
+
+    except Exception as e:
+        snapshot = MigrationSnapshot(
+            snapshot_id=snapshot_id,
+            source="supabase",
+            target="local",
+            timestamp=datetime.now().isoformat(),
+            backup_path=backup_path,
+            state_data=None,
+            tasks_count=0,
+            locks_count=0,
+            status="failed",
+        )
+        manager._snapshots.append(snapshot)
+        manager._save_snapshots()
+        raise MigrationError(f"Supabase import failed: {e}") from e
+
+
+def sync_with_supabase(
+    db_path: Path,
+    project_id: str,
+    team_id: str,
+    direction: str = "upload",
+    supabase_url: str | None = None,
+    supabase_key: str | None = None,
+) -> MigrationSnapshot:
+    """Synchronous wrapper for Supabase migration.
+
+    Args:
+        db_path: Path to local SQLite database
+        project_id: Project identifier
+        team_id: Team ID in Supabase
+        direction: "upload" (local→cloud) or "download" (cloud→local)
+        supabase_url: Supabase URL (default: from env)
+        supabase_key: Supabase API key (default: from env)
+
+    Returns:
+        MigrationSnapshot for tracking
+    """
+    import asyncio
+
+    if direction == "upload":
+        return asyncio.run(
+            export_to_supabase(
+                db_path, project_id, team_id, supabase_url, supabase_key
+            )
+        )
+    elif direction == "download":
+        return asyncio.run(
+            import_from_supabase(
+                db_path, project_id, team_id, supabase_url, supabase_key
+            )
+        )
+    else:
+        raise MigrationError(f"Invalid direction: {direction}. Use 'upload' or 'download'.")
