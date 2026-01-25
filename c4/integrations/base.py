@@ -65,6 +65,27 @@ class WebhookEvent:
 
 
 @dataclass
+class MergeRequestInfo:
+    """Provider-agnostic merge/pull request information.
+
+    This unified data class abstracts GitHub PRs and GitLab MRs,
+    allowing services to work with both providers.
+    """
+
+    provider: str  # "github" | "gitlab"
+    owner: str  # Organization/user (GitHub) or namespace (GitLab)
+    repo: str  # Repository name
+    number: int  # PR number (GitHub) or MR IID (GitLab)
+    title: str
+    head_sha: str  # Latest commit SHA
+    base_branch: str  # Target branch
+    head_branch: str  # Source branch
+    author: str  # Author username
+    diff_url: str  # URL to get diff
+    project_id: int | str  # installation_id (GitHub) or project_id (GitLab)
+
+
+@dataclass
 class IntegrationInfo:
     """Information about an integration provider."""
 

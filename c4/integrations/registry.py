@@ -218,6 +218,13 @@ def auto_discover_providers() -> None:
         logger.debug(f"github_provider not available: {e}")
 
     try:
+        from . import gitlab_provider  # noqa: F401
+
+        logger.debug("Loaded gitlab_provider")
+    except ImportError as e:
+        logger.debug(f"gitlab_provider not available: {e}")
+
+    try:
         from . import discord_provider  # noqa: F401
 
         logger.debug("Loaded discord_provider")
