@@ -192,13 +192,16 @@ chmod +x "$BIN_DIR/c4"
 echo "   → $BIN_DIR/c4"
 
 # =============================================================================
-# Step 4: Install /c4-* slash commands globally
+# Step 4: Install /c4-* slash commands & rules globally (Claude Code)
 # =============================================================================
-echo "[4/7] Installing Claude Code slash commands..."
+echo "[4/7] Installing Claude Code slash commands & rules..."
 
 CLAUDE_COMMANDS="$HOME/.claude/commands"
+CLAUDE_RULES="$HOME/.claude/rules"
 mkdir -p "$CLAUDE_COMMANDS"
+mkdir -p "$CLAUDE_RULES"
 
+# 4a. Slash commands
 count=0
 for cmd in "$C4_DIR/.claude/commands"/c4-*.md; do
     if [[ -f "$cmd" ]]; then
@@ -209,14 +212,22 @@ for cmd in "$C4_DIR/.claude/commands"/c4-*.md; do
 done
 echo "   ✅ $count commands installed"
 
+# 4b. C4 rules for AI agents
+if [[ -f "$C4_DIR/CLAUDE.md" ]]; then
+    cp "$C4_DIR/CLAUDE.md" "$CLAUDE_RULES/c4.md"
+    echo "   ✅ C4 rules installed: ~/.claude/rules/c4.md"
+fi
+
 # =============================================================================
-# Step 5: Install Cursor commands & MCP
+# Step 5: Install Cursor commands, rules & MCP
 # =============================================================================
-echo "[5/7] Installing Cursor commands & MCP..."
+echo "[5/7] Installing Cursor commands, rules & MCP..."
 
 # 5a. Cursor slash commands (global)
 CURSOR_COMMANDS="$HOME/.cursor/commands"
+CURSOR_RULES="$HOME/.cursor/rules"
 mkdir -p "$CURSOR_COMMANDS"
+mkdir -p "$CURSOR_RULES"
 
 cursor_count=0
 for cmd in "$C4_DIR/.cursor/commands"/c4-*.md; do
@@ -227,7 +238,13 @@ for cmd in "$C4_DIR/.cursor/commands"/c4-*.md; do
 done
 echo "   → $cursor_count Cursor commands installed"
 
-# 5b. Cursor MCP configuration
+# 5b. C4 rules for AI agents (Cursor)
+if [[ -f "$C4_DIR/CLAUDE.md" ]]; then
+    cp "$C4_DIR/CLAUDE.md" "$CURSOR_RULES/c4.md"
+    echo "   ✅ C4 rules installed: ~/.cursor/rules/c4.md"
+fi
+
+# 5c. Cursor MCP configuration
 CURSOR_MCP="$HOME/.cursor/mcp.json"
 
 if [[ -f "$CURSOR_MCP" ]]; then
