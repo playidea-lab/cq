@@ -193,6 +193,35 @@ c4d는 모든 상태 변화를 **이벤트로 기록**한다.
 3. priority 높은 순 + scope lock 확보 가능한 것 선택
 4. 워커에 할당 및 이벤트 기록
 
+### 6.3 원자적 태스크 할당 (Race Condition 방지)
+
+멀티 워커 환경에서 동일 태스크가 여러 워커에게 중복 할당되는 것을 방지하기 위해 **2단계 원자적 할당**을 사용한다:
+
+**Phase 1: Scope Lock 획득**
+- SQLite 기반 `acquire_scope_lock()`으로 락 획득
+- scope가 있는 태스크: scope 값을 락 키로 사용
+- scope가 없는 태스크: `__task__:{task_id}`를 락 키로 사용
+- 락 획득 실패 시 다음 태스크로 이동
+
+**Phase 2: Atomic State Modification**
+- `atomic_modify()` 블록 내에서 상태 변경
+- Double-check: 태스크가 여전히 pending 상태인지 재확인
+- pending에서 제거 → in_progress에 worker_id와 함께 추가
+- 할당 실패 시 락 해제 후 다음 태스크 시도
+
+```
+[Worker A]                    [Worker B]
+    |                             |
+    +-- acquire_scope_lock() ---> OK
+    |                             +-- acquire_scope_lock() ---> FAIL (skip)
+    +-- atomic_modify() -------->
+    |   (remove from pending)
+    |   (add to in_progress)
+    +-- return TaskAssignment
+```
+
+이 방식은 락 획득과 상태 변경 사이의 경쟁 상태를 방지하며, 워커가 불필요한 작업을 수행하는 것을 원천 차단한다.
+
 ---
 
 ## 7. 검증(Validation) 실행

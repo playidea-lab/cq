@@ -913,6 +913,17 @@ Thumbs.db
             self._tasks[task_id] = task  # Update cache
         return task
 
+    def get_all_tasks(self) -> dict[str, Task]:
+        """Get all tasks from SQLite store (authoritative source).
+
+        This method always reads from SQLite to ensure consistency,
+        as the in-memory _tasks cache may be stale after task completions.
+        """
+        if self.state_machine is None:
+            return {}
+        project_id = self.state_machine.state.project_id
+        return self.task_store.load_all(project_id)
+
     def add_task(self, task: Task) -> None:
         """Add a task to the registry"""
         self._tasks[task.id] = task
@@ -1123,21 +1134,23 @@ Thumbs.db
                     )
 
         # Find available task from pending (sorted by priority, highest first)
+        # Two-phase allocation: 1) Lock acquisition 2) Atomic state modification
         project_id = state.project_id
         ttl = self.config.scope_lock_ttl_sec
+        store = self.state_machine.store
 
         # Get all pending tasks and sort by priority (descending)
         pending_tasks = []
-        for task_id in state.queue.pending:
-            task = self.get_task(task_id)
-            if task:
-                pending_tasks.append(task)
+        for tid in state.queue.pending:
+            t = self.get_task(tid)
+            if t:
+                pending_tasks.append(t)
         pending_tasks.sort(key=lambda t: t.priority, reverse=True)
 
         for task in pending_tasks:
             task_id = task.id
 
-            # Check dependencies first (non-locking check)
+            # Check dependencies first (read-only check, no lock needed)
             # Normalize dependency IDs to handle version suffix mismatch
             # e.g., "T-1200" -> "T-1200-0" to match done queue entries
             deps_met = all(
@@ -1153,30 +1166,30 @@ Thumbs.db
             if original_worker and original_worker == worker_id:
                 continue
 
-            # Try to acquire scope lock ATOMICALLY using SQLite
-            # This prevents race conditions between workers
-            if task.scope:
-                lock_acquired = self.lock_store.acquire_scope_lock(
-                    project_id, task.scope, worker_id, ttl
-                )
-                if not lock_acquired:
-                    # Another worker has the lock - skip this task
-                    continue
+            # Phase 1: Try to acquire scope lock ATOMICALLY using SQLite
+            # For tasks with scope, this prevents multiple workers on same scope
+            # For tasks without scope, use task ID as lock key
+            lock_scope = task.scope if task.scope else f"__task__:{task_id}"
+            lock_acquired = self.lock_store.acquire_scope_lock(
+                project_id, lock_scope, worker_id, ttl
+            )
+            if not lock_acquired:
+                # Another worker has the lock - skip this task
+                continue
 
-            # Lock acquired (or no scope) - now safe to assign
-            # Use atomic_modify to prevent race conditions with c4_submit
-            store = self.state_machine.store
+            # Phase 2: Lock acquired - now atomically modify state
+            # This ensures no race between lock acquisition and state update
             task_branch = f"{self.config.work_branch_prefix}{task_id}"
             assigned = False
 
             with store.atomic_modify(project_id) as state:
-                # Double-check task is still pending
+                # Double-check task is still pending (critical for race prevention)
                 if task_id in state.queue.pending:
-                    # Assign task (ATOMIC)
+                    # Remove from pending and add to in_progress (ATOMIC)
                     state.queue.pending.remove(task_id)
                     state.queue.in_progress[task_id] = worker_id
 
-                    # Ensure worker exists in state (fix race condition)
+                    # Ensure worker exists in state
                     if worker_id not in state.workers:
                         from c4.models import WorkerInfo
 
@@ -1204,55 +1217,66 @@ Thumbs.db
                 self.state_machine._state = state
 
             if not assigned:
-                # Task was assigned by another worker - release our lock
-                if task.scope:
-                    self.lock_store.release_scope_lock(project_id, task.scope)
+                # Task was assigned by another worker between lock and atomic_modify
+                # Release our lock and try next task
+                self.lock_store.release_scope_lock(project_id, lock_scope)
                 continue
 
-            # Update task in SQLite (outside atomic block but still atomic per-task)
-            task.status = TaskStatus.IN_PROGRESS
-            task.assigned_to = worker_id
-            task.branch = task_branch
-            self._save_task(task)
+            # Successfully assigned - break out of loop
+            break
+        else:
+            # No task was assigned (loop completed without break)
+            return None
 
-            # Create task branch from work branch (if git repo)
-            # Branch strategy: work_branch (c4/{project_id}) → task_branch (c4/w-T-XXX)
-            git_ops = GitOperations(self.root)
-            if git_ops.is_git_repo():
-                work_branch = self.config.get_work_branch()
-                branch_result = self._create_task_branch_from_work(
-                    git_ops, task_branch, work_branch
+        # Set assigned_task for post-assignment work
+        assigned_task = task
+
+        # Task was assigned - now do post-assignment work outside atomic block
+        task = assigned_task
+        task_id = task.id
+
+        # Update task in SQLite (outside atomic block but still atomic per-task)
+        task.status = TaskStatus.IN_PROGRESS
+        task.assigned_to = worker_id
+        task.branch = task_branch
+        self._save_task(task)
+
+        # Create task branch from work branch (if git repo)
+        # Branch strategy: work_branch (c4/{project_id}) → task_branch (c4/w-T-XXX)
+        git_ops = GitOperations(self.root)
+        if git_ops.is_git_repo():
+            work_branch = self.config.get_work_branch()
+            branch_result = self._create_task_branch_from_work(
+                git_ops, task_branch, work_branch
+            )
+            if not branch_result.success:
+                logger.warning(
+                    f"Failed to create task branch {task_branch}: {branch_result.message}"
                 )
-                if not branch_result.success:
-                    logger.warning(
-                        f"Failed to create task branch {task_branch}: {branch_result.message}"
-                    )
 
-            # Emit event
-            self.state_machine.emit_event(
-                EventType.TASK_ASSIGNED,
-                "c4d",
-                {
-                    "task_id": task_id,
-                    "worker_id": worker_id,
-                    "scope": task.scope,
-                },
-            )
+        # Emit event
+        self.state_machine.emit_event(
+            EventType.TASK_ASSIGNED,
+            "c4d",
+            {
+                "task_id": task_id,
+                "worker_id": worker_id,
+                "scope": task.scope,
+            },
+        )
 
-            # Get agent routing info (Phase 4)
-            agent_routing = self._get_agent_routing(task)
+        # Get agent routing info (Phase 4)
+        agent_routing = self._get_agent_routing(task)
 
-            return TaskAssignment(
-                task_id=task_id,
-                title=task.title,
-                scope=task.scope,
-                dod=task.dod,
-                validations=task.validations,
-                branch=task_branch,
-                **agent_routing,
-            )
-
-        return None
+        return TaskAssignment(
+            task_id=task_id,
+            title=task.title,
+            scope=task.scope,
+            dod=task.dod,
+            validations=task.validations,
+            branch=task_branch,
+            **agent_routing,
+        )
 
     def c4_submit(
         self,
