@@ -81,7 +81,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .chat import router as chat_router
 from .deps import clear_daemon_cache
-from .routes import c4, design, discovery, files, git, integrations, reports, shell, sso, teams, validation, workspace
+from .routes import branding, c4, design, discovery, files, git, integrations, reports, shell, sso, teams, validation, workspace
 
 logger = logging.getLogger(__name__)
 
@@ -149,6 +149,8 @@ def create_app(
     app.include_router(chat_router, prefix="/api/chat", tags=["Chat"])
     app.include_router(teams.router, prefix="/api")
     app.include_router(teams.invite_router, prefix="/api")
+    app.include_router(branding.router, prefix="/api")
+    app.include_router(branding.public_router, prefix="/api")
     app.include_router(integrations.router, prefix="/api")
     app.include_router(reports.router, prefix="/api")
     app.include_router(sso.router, prefix="/api")
@@ -180,6 +182,7 @@ def create_app(
                 "chat": "/api/chat",
                 "teams": "/api/teams",
                 "invites": "/api/invites",
+                "branding": "/api/teams/{team_id}/branding",
                 "integrations": "/api/integrations",
                 "reports": "/api/reports",
                 "sso": "/api/sso",

@@ -7,7 +7,10 @@ from .artifact import router as artifact_router
 from .chat import router as chat_router
 from .proxy import router as proxy_router
 from .rate_limit import RateLimitConfig, RateLimitMiddleware, RateLimitStore
+from .routes.integrations import router as integrations_router
 from .routes.reports import router as reports_router
+from .routes.sso import router as sso_router
+from .routes.teams import invite_router, router as teams_router
 from .routes.webhooks import router as webhooks_router
 
 
@@ -71,6 +74,14 @@ def create_app(
     app.include_router(artifact_router, prefix="/api/artifacts", tags=["artifacts"])
     app.include_router(webhooks_router, prefix="/api", tags=["webhooks"])
     app.include_router(reports_router, prefix="/api", tags=["reports"])
+
+    # Team management routers
+    app.include_router(teams_router, prefix="/api", tags=["teams"])
+    app.include_router(invite_router, prefix="/api", tags=["invites"])
+
+    # Integration and SSO routers
+    app.include_router(integrations_router, prefix="/api", tags=["integrations"])
+    app.include_router(sso_router, prefix="/api", tags=["sso"])
 
     # Health check endpoint
     @app.get("/api/health")

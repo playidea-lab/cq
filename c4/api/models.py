@@ -731,3 +731,125 @@ class IntegrationConnectResponse(BaseModel):
     success: bool = Field(..., description="Whether connection was successful")
     integration_id: str | None = Field(None, description="New integration ID")
     message: str = Field(..., description="Status message")
+
+
+# ============================================================================
+# Branding Models
+# ============================================================================
+
+
+class BrandingResponse(BaseModel):
+    """Response containing team branding details."""
+
+    id: str = Field(..., description="Branding record ID")
+    team_id: str = Field(..., description="Team ID")
+
+    # Basic Branding
+    logo_url: str | None = Field(None, description="Main logo URL (for light backgrounds)")
+    logo_dark_url: str | None = Field(None, description="Logo URL for dark backgrounds")
+    favicon_url: str | None = Field(None, description="Favicon/browser icon URL")
+    brand_name: str | None = Field(None, description="Display name (overrides team name)")
+
+    # Color Scheme
+    primary_color: str = Field("#2563EB", description="Main brand color")
+    secondary_color: str = Field("#64748B", description="Secondary color")
+    accent_color: str = Field("#F59E0B", description="Accent/highlight color")
+    background_color: str = Field("#FFFFFF", description="Background color")
+    text_color: str = Field("#1F2937", description="Primary text color")
+
+    # Typography
+    heading_font: str | None = Field(None, description="Font for headings (Google Fonts name)")
+    body_font: str | None = Field(None, description="Font for body text")
+    font_scale: float = Field(1.0, description="Font size multiplier")
+
+    # Custom Domain
+    custom_domain: str | None = Field(None, description="Custom domain (e.g., 'projects.agency.com')")
+    custom_domain_verified: bool = Field(False, description="Whether custom domain is verified")
+
+    # Email Branding
+    email_from_name: str | None = Field(None, description="'From' name in emails")
+    email_footer_text: str | None = Field(None, description="Custom email footer")
+
+    # Advanced
+    meta_description: str | None = Field(None, description="SEO meta description")
+    social_preview_image_url: str | None = Field(None, description="OG image for link previews")
+    hide_powered_by: bool = Field(False, description="Hide 'Powered by C4' (Enterprise)")
+    custom_login_background_url: str | None = Field(None, description="Custom login page background")
+
+    # Metadata
+    created_at: datetime | None = Field(None, description="When branding was created")
+    updated_at: datetime | None = Field(None, description="When branding was last updated")
+
+
+class BrandingUpdateRequest(BaseModel):
+    """Request to update team branding."""
+
+    # Basic Branding
+    logo_url: str | None = Field(None, description="Main logo URL")
+    logo_dark_url: str | None = Field(None, description="Logo URL for dark backgrounds")
+    favicon_url: str | None = Field(None, description="Favicon URL")
+    brand_name: str | None = Field(None, description="Display name", max_length=100)
+
+    # Color Scheme
+    primary_color: str | None = Field(None, description="Main brand color", pattern="^#[0-9A-Fa-f]{6}$")
+    secondary_color: str | None = Field(None, description="Secondary color", pattern="^#[0-9A-Fa-f]{6}$")
+    accent_color: str | None = Field(None, description="Accent color", pattern="^#[0-9A-Fa-f]{6}$")
+    background_color: str | None = Field(None, description="Background color", pattern="^#[0-9A-Fa-f]{6}$")
+    text_color: str | None = Field(None, description="Text color", pattern="^#[0-9A-Fa-f]{6}$")
+
+    # Typography
+    heading_font: str | None = Field(None, description="Heading font name", max_length=100)
+    body_font: str | None = Field(None, description="Body font name", max_length=100)
+    font_scale: float | None = Field(None, description="Font scale", ge=0.5, le=2.0)
+
+    # Email Branding
+    email_from_name: str | None = Field(None, description="Email 'From' name", max_length=100)
+    email_footer_text: str | None = Field(None, description="Email footer text", max_length=500)
+
+    # Advanced
+    meta_description: str | None = Field(None, description="SEO meta description", max_length=300)
+    social_preview_image_url: str | None = Field(None, description="Social preview image URL")
+    custom_login_background_url: str | None = Field(None, description="Login background URL")
+
+
+class DomainVerificationRequest(BaseModel):
+    """Request to initiate custom domain verification."""
+
+    domain: str = Field(
+        ...,
+        description="Custom domain to verify (e.g., 'projects.agency.com')",
+        pattern=r"^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$",
+    )
+
+
+class DomainVerificationResponse(BaseModel):
+    """Response from domain verification initiation."""
+
+    success: bool = Field(..., description="Whether initiation was successful")
+    verification_token: str | None = Field(None, description="Token for DNS TXT record")
+    instructions: dict[str, str] | None = Field(None, description="DNS setup instructions")
+    error: str | None = Field(None, description="Error message if failed")
+
+
+class DomainVerifyResponse(BaseModel):
+    """Response from domain verification check."""
+
+    success: bool = Field(..., description="Whether domain is now verified")
+    domain: str | None = Field(None, description="Verified domain")
+    verified_at: datetime | None = Field(None, description="When domain was verified")
+    error: str | None = Field(None, description="Error message if verification failed")
+
+
+class PublicBrandingResponse(BaseModel):
+    """Public branding info accessible without authentication (for login pages)."""
+
+    brand_name: str | None = Field(None, description="Display name")
+    logo_url: str | None = Field(None, description="Logo URL")
+    logo_dark_url: str | None = Field(None, description="Logo for dark backgrounds")
+    favicon_url: str | None = Field(None, description="Favicon URL")
+    primary_color: str = Field("#2563EB", description="Primary color")
+    background_color: str = Field("#FFFFFF", description="Background color")
+    text_color: str = Field("#1F2937", description="Text color")
+    heading_font: str | None = Field(None, description="Heading font")
+    body_font: str | None = Field(None, description="Body font")
+    custom_login_background_url: str | None = Field(None, description="Login background")
