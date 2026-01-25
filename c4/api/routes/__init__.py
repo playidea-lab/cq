@@ -14,12 +14,14 @@ Provides modular route handlers for different C4 phases:
 - teams: Team management and member invitations
 - reports: Usage reports and audit logs
 - sso: SSO/SAML authentication (Enterprise)
+- docs: Documentation snapshots and public API
 """
 
 from . import (
     c4,
     design,
     discovery,
+    docs,
     files,
     git,
     integrations,
@@ -36,6 +38,7 @@ __all__ = [
     "c4",
     "discovery",
     "design",
+    "docs",
     "validation",
     "git",
     "files",
