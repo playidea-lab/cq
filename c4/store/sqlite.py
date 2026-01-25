@@ -283,27 +283,44 @@ class SQLiteLockStore(LockStore):
         owner: str,
         ttl_seconds: int,
     ) -> bool:
-        """Acquire scope lock with TTL"""
+        """Acquire scope lock with TTL using atomic operations.
+
+        Uses a single atomic transaction to prevent race conditions:
+        1. Delete expired locks
+        2. Try INSERT (fails if lock exists)
+        3. If INSERT fails, check if we own the lock and refresh it
+        """
         now = datetime.now()
         expires_at = now + timedelta(seconds=ttl_seconds)
 
         with self._get_connection() as conn:
-            # Check existing lock
-            cursor = conn.execute(
-                "SELECT owner, expires_at FROM c4_locks WHERE project_id = ? AND scope = ?",
-                (project_id, scope),
-            )
-            row = cursor.fetchone()
+            # Use IMMEDIATE transaction for write lock from the start
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                # Step 1: Delete expired locks atomically
+                conn.execute(
+                    "DELETE FROM c4_locks WHERE project_id = ? AND scope = ? AND expires_at <= ?",
+                    (project_id, scope, now),
+                )
 
-            if row:
-                existing_owner, existing_expires = row
-                # Parse timestamp if needed
-                if isinstance(existing_expires, str):
-                    existing_expires = datetime.fromisoformat(existing_expires)
+                # Step 2: Try to INSERT (will fail if lock exists due to UNIQUE constraint)
+                try:
+                    conn.execute(
+                        "INSERT INTO c4_locks (project_id, scope, owner, expires_at) VALUES (?, ?, ?, ?)",
+                        (project_id, scope, owner, expires_at),
+                    )
+                    conn.commit()
+                    return True
+                except Exception:
+                    # Lock exists - check if we own it
+                    cursor = conn.execute(
+                        "SELECT owner FROM c4_locks WHERE project_id = ? AND scope = ?",
+                        (project_id, scope),
+                    )
+                    row = cursor.fetchone()
 
-                if existing_expires > now:
-                    if existing_owner == owner:
-                        # Same owner - refresh TTL
+                    if row and row[0] == owner:
+                        # We own the lock - refresh TTL
                         conn.execute(
                             "UPDATE c4_locks SET expires_at = ? WHERE project_id = ? AND scope = ?",
                             (expires_at, project_id, scope),
@@ -311,20 +328,12 @@ class SQLiteLockStore(LockStore):
                         conn.commit()
                         return True
                     else:
-                        # Different owner - conflict
+                        # Different owner holds the lock
+                        conn.rollback()
                         return False
-                # Expired - delete and continue
-
-            # Acquire or update lock
-            conn.execute(
-                """
-                INSERT OR REPLACE INTO c4_locks (project_id, scope, owner, expires_at)
-                VALUES (?, ?, ?, ?)
-            """,
-                (project_id, scope, owner, expires_at),
-            )
-            conn.commit()
-            return True
+            except Exception:
+                conn.rollback()
+                raise
 
     def release_scope_lock(self, project_id: str, scope: str) -> bool:
         """Release scope lock"""

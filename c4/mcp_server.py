@@ -954,7 +954,17 @@ Thumbs.db
         # Auto-restart supervisor if in EXECUTE/CHECKPOINT state but not running
         # This handles MCP server restarts and stale supervisor flags
         self._auto_restart_supervisor_if_needed()
-        return {
+
+        # Check for long-running worker alerts
+        long_running_alerts: list[dict[str, Any]] = []
+        if self._config is not None:
+            long_running_config = self._config.long_running
+            long_running_alerts = self.worker_manager.get_long_running_alerts(
+                warning_timeout_seconds=long_running_config.warning_timeout_sec,
+                stale_timeout_seconds=long_running_config.stale_timeout_sec,
+            )
+
+        result: dict[str, Any] = {
             "initialized": True,
             "project_id": state.project_id,
             "status": status_value,
@@ -992,6 +1002,73 @@ Thumbs.db
             # Workflow guide for all MCP clients (Claude Code, Codex, Gemini, etc.)
             "workflow": _get_workflow_guide(status_value),
         }
+
+        # Add alerts if any workers are long-running
+        if long_running_alerts:
+            result["alerts"] = long_running_alerts
+            result["user_action_required"] = True
+
+        return result
+
+
+    def c4_handle_long_running(
+        self,
+        worker_id: str,
+        action: str,
+    ) -> dict[str, Any]:
+        """
+        Handle a long-running worker alert.
+
+        When a worker has been unresponsive for longer than the warning timeout
+        (but not yet reached stale timeout), this tool allows users to decide
+        how to proceed.
+
+        Args:
+            worker_id: The worker ID from the alert
+            action: One of:
+                - "continue": Acknowledge the warning, keep waiting (no change)
+                - "extend": Reset the worker's last_seen, extending timeout by 60 minutes
+                - "kill": Mark worker as stale and recover the task
+
+        Returns:
+            Result dict with status and action taken
+        """
+        if self.state_machine is None:
+            return {
+                "success": False,
+                "error": "C4 not initialized",
+            }
+
+        valid_actions = {"continue", "extend", "kill"}
+        if action not in valid_actions:
+            return {
+                "success": False,
+                "error": f"Invalid action '{action}'. Must be one of: {valid_actions}",
+            }
+
+        if action == "continue":
+            # Just acknowledge - no state change needed
+            return {
+                "success": True,
+                "action": "continue",
+                "worker_id": worker_id,
+                "message": "Alert acknowledged. Continuing to wait for worker.",
+            }
+
+        elif action == "extend":
+            # Extend the worker's timeout by resetting last_seen
+            result = self.worker_manager.extend_worker_timeout(worker_id)
+            result["action"] = "extend"
+            return result
+
+        else:  # action == "kill"
+            # Force-kill the worker and recover its task
+            result = self.worker_manager.kill_worker(
+                worker_id,
+                lock_store=self.lock_store,
+            )
+            result["action"] = "kill"
+            return result
 
     def _create_task_branch_from_work(
         self, git_ops: GitOperations, task_branch: str, work_branch: str
@@ -3942,6 +4019,30 @@ def create_server(project_root: Path | None = None) -> Server:
                 },
             ),
             Tool(
+                name="c4_handle_long_running",
+                description="Handle a long-running worker alert. Use when c4_status shows alerts for unresponsive workers.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "worker_id": {
+                            "type": "string",
+                            "description": "The worker ID from the alert",
+                        },
+                        "action": {
+                            "type": "string",
+                            "enum": ["continue", "extend", "kill"],
+                            "description": (
+                                "Action to take: "
+                                "'continue' = acknowledge, keep waiting; "
+                                "'extend' = reset timeout (+60 min); "
+                                "'kill' = recover task"
+                            ),
+                        },
+                    },
+                    "required": ["worker_id", "action"],
+                },
+            ),
+            Tool(
                 name="c4_clear",
                 description="Clear C4 state completely. Deletes .c4 directory and clears daemon cache. Use for development/debugging.",
                 inputSchema={
@@ -4438,6 +4539,11 @@ def create_server(project_root: Path | None = None) -> Server:
 
             if name == "c4_status":
                 result = daemon.c4_status()
+            elif name == "c4_handle_long_running":
+                result = daemon.c4_handle_long_running(
+                    worker_id=arguments["worker_id"],
+                    action=arguments["action"],
+                )
             elif name == "c4_clear":
                 if not arguments.get("confirm"):
                     result = {"error": "Must set confirm=true to clear C4 state"}
