@@ -35,6 +35,9 @@ docker = [
 gitlab = [
     "python-gitlab>=4.0.0",
 ]
+monitoring = [
+    "prometheus-client>=0.19.0",
+]
 
 [project.scripts]
 c4d = "c4.cli:app"

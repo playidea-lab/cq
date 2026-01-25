@@ -4,19 +4,71 @@
 
 ## 개요
 
-C4 MCP 서버는 다음 9개의 도구를 제공합니다:
+C4 MCP 서버는 다음 32개의 도구를 제공합니다:
 
+### Core (3개)
 | 도구 | 설명 | 주요 용도 |
 |------|------|-----------|
 | `c4_status` | 프로젝트 상태 조회 | 현재 상태 확인 |
 | `c4_start` | PLAN/HALTED → EXECUTE 전환 | 실행 시작 |
+| `c4_clear` | 상태 초기화 | 개발/디버깅용 |
+
+### Task Management (4개)
+| 도구 | 설명 | 주요 용도 |
+|------|------|-----------|
 | `c4_get_task` | 태스크 할당 요청 (+ 에이전트 라우팅) | Worker가 작업 받기 |
 | `c4_submit` | 태스크 완료 보고 | 작업 결과 제출 |
 | `c4_add_todo` | 태스크 추가 | REQUEST_CHANGES 시 |
-| `c4_checkpoint` | 체크포인트 결정 | Supervisor 리뷰 |
-| `c4_run_validation` | 검증 실행 | lint, test 등 |
 | `c4_mark_blocked` | 블로킹 보고 | 재시도 실패 시 |
-| `c4_clear` | 상태 초기화 | 개발/디버깅용 |
+
+### Validation & Checkpoint (2개)
+| 도구 | 설명 | 주요 용도 |
+|------|------|-----------|
+| `c4_run_validation` | 검증 실행 | lint, test 등 |
+| `c4_checkpoint` | 체크포인트 결정 | Supervisor 리뷰 |
+
+### Discovery Phase (4개)
+| 도구 | 설명 | 주요 용도 |
+|------|------|-----------|
+| `c4_save_spec` | EARS 요구사항 저장 | 요구사항 정의 |
+| `c4_list_specs` | 요구사항 목록 조회 | 진행 상황 확인 |
+| `c4_get_spec` | 요구사항 상세 조회 | 상세 내용 확인 |
+| `c4_discovery_complete` | Discovery 완료 | Design으로 전환 |
+
+### Design Phase (4개)
+| 도구 | 설명 | 주요 용도 |
+|------|------|-----------|
+| `c4_save_design` | 설계 저장 | 아키텍처 정의 |
+| `c4_get_design` | 설계 조회 | 설계 확인 |
+| `c4_list_designs` | 설계 목록 조회 | 전체 설계 현황 |
+| `c4_design_complete` | Design 완료 | Plan으로 전환 |
+
+### Agent Routing (2개)
+| 도구 | 설명 | 주요 용도 |
+|------|------|-----------|
+| `c4_test_agent_routing` | 라우팅 테스트 | 에이전트 선택 확인 |
+| `c4_query_agent_graph` | 그래프 쿼리 | 스킬/도메인 조회 |
+
+### Code Analysis (12개) - NEW!
+| 도구 | 설명 | 주요 용도 |
+|------|------|-----------|
+| `c4_semantic_search` | 자연어 코드 검색 | "authentication" 같은 쿼리 |
+| `c4_find_related_symbols` | 관련 심볼 찾기 | 연관 코드 탐색 |
+| `c4_search_by_type` | 타입별 심볼 검색 | 모든 클래스 찾기 등 |
+| `c4_get_callers` | 호출자 찾기 | 영향 범위 분석 |
+| `c4_get_callees` | 피호출자 찾기 | 의존성 분석 |
+| `c4_find_call_paths` | 호출 경로 찾기 | 실행 흐름 추적 |
+| `c4_call_graph_stats` | 호출 그래프 통계 | 핫스팟 분석 |
+| `c4_call_graph_diagram` | Mermaid 다이어그램 | 시각화 |
+| `c4_find_definition` | 심볼 정의 찾기 | Go to Definition |
+| `c4_find_references` | 참조 찾기 | 사용처 추적 |
+| `c4_analyze_file` | 파일 심볼 분석 | 구조 파악 |
+| `c4_get_dependencies` | 의존성 분석 | import 관계 |
+
+### Documentation (1개)
+| 도구 | 설명 | 주요 용도 |
+|------|------|-----------|
+| `c4_query_docs` | 문서 검색 | API 문서 조회 |
 
 ---
 

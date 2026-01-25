@@ -11,7 +11,7 @@ skill:
     @piqr 데코레이터 사용, key: value 메트릭 출력, 재현성 보장.
 
   impact: critical
-  category: ml-experiment
+  category: operations
   domains:
     - ml-dl
     - data-science
