@@ -125,6 +125,11 @@ class GraphRouter:
         return self._graph
 
     @property
+    def has_graph(self) -> bool:
+        """Check if a graph is loaded."""
+        return self._graph is not None
+
+    @property
     def rule_engine(self) -> RuleEngine | None:
         """Get the rule engine instance."""
         return self._rule_engine

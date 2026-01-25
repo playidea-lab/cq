@@ -722,7 +722,10 @@ class TestRuleModels:
             data = yaml.safe_load(f)
         rule_def = RuleDefinition.model_validate(data)
         assert len(rule_def.rules.overrides) >= 1
-        assert rule_def.rules.overrides[0].name == "debug-always-debugger"
+        # Check that expected rules exist (order-independent)
+        override_names = [o.name for o in rule_def.rules.overrides]
+        assert "debug-always-debugger" in override_names
+        assert "review-always-code-reviewer" in override_names
 
 
 # ============================================================================

@@ -66,18 +66,16 @@ class TestGetDefaultPlatform:
             if old_env:
                 os.environ["C4_PLATFORM"] = old_env
 
-    def test_respects_environment_variable(self, tmp_path: Path):
+    def test_respects_environment_variable(self, tmp_path: Path, monkeypatch):
         """Should use C4_PLATFORM environment variable."""
-        old_env = os.environ.get("C4_PLATFORM")
-        try:
-            os.environ["C4_PLATFORM"] = "cursor"
-            result = get_default_platform(tmp_path)
-            assert result == "cursor"
-        finally:
-            if old_env:
-                os.environ["C4_PLATFORM"] = old_env
-            else:
-                os.environ.pop("C4_PLATFORM", None)
+        # Use fake home to avoid real global config
+        fake_home = tmp_path / "home"
+        fake_home.mkdir()
+        monkeypatch.setenv("HOME", str(fake_home))
+        monkeypatch.setenv("C4_PLATFORM", "cursor")
+
+        result = get_default_platform(tmp_path)
+        assert result == "cursor"
 
     def test_respects_project_config(self, tmp_path: Path):
         """Should use project config over environment."""
@@ -205,20 +203,21 @@ class TestSetPlatformConfig:
 class TestGetConfigInfo:
     """Test get_config_info function."""
 
-    def test_returns_default_info(self, tmp_path: Path):
+    def test_returns_default_info(self, tmp_path: Path, monkeypatch):
         """Should return default info when no config exists."""
-        old_env = os.environ.pop("C4_PLATFORM", None)
-        try:
-            info = get_config_info(tmp_path)
+        # Use fake home to avoid real global config
+        fake_home = tmp_path / "home"
+        fake_home.mkdir()
+        monkeypatch.setenv("HOME", str(fake_home))
+        monkeypatch.delenv("C4_PLATFORM", raising=False)
 
-            assert info["global_platform"] is None
-            assert info["project_platform"] is None
-            assert info["env_platform"] is None
-            assert info["effective_platform"] == "claude"
-            assert info["source"] == "default"
-        finally:
-            if old_env:
-                os.environ["C4_PLATFORM"] = old_env
+        info = get_config_info(tmp_path)
+
+        assert info["global_platform"] is None
+        assert info["project_platform"] is None
+        assert info["env_platform"] is None
+        assert info["effective_platform"] == "claude"
+        assert info["source"] == "default"
 
     def test_detects_project_config(self, tmp_path: Path):
         """Should detect project config as source."""

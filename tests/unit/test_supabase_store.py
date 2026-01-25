@@ -36,8 +36,12 @@ class TestSupabaseStateStoreInit:
         assert store._url == "https://env.supabase.co"
         assert store._key == "env-key"
 
-    def test_client_requires_credentials(self) -> None:
+    def test_client_requires_credentials(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Test that accessing client without credentials raises error."""
+        # Clear environment variables to ensure no fallback
+        monkeypatch.delenv("SUPABASE_URL", raising=False)
+        monkeypatch.delenv("SUPABASE_KEY", raising=False)
+
         store = SupabaseStateStore(url="", key="")
 
         with pytest.raises(ValueError, match="URL and key required"):

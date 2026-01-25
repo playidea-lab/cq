@@ -299,3 +299,216 @@ class WorkerManager:
             self.state_machine._state = state
 
         return recoveries
+
+
+    def get_long_running_alerts(
+        self,
+        warning_timeout_seconds: int,
+        stale_timeout_seconds: int,
+    ) -> list[dict[str, Any]]:
+        """
+        Get alerts for workers that have exceeded the warning timeout.
+
+        These are workers that are still busy but haven't sent a heartbeat
+        for longer than warning_timeout_seconds (but less than stale_timeout_seconds).
+
+        Users can respond to these alerts via c4_handle_long_running with:
+        - "continue": Acknowledge and keep waiting
+        - "extend": Reset the worker's last_seen (extend timeout by another cycle)
+        - "kill": Mark worker as stale and recover the task
+
+        Args:
+            warning_timeout_seconds: Time after which to show warning
+            stale_timeout_seconds: Time after which worker is auto-recovered
+
+        Returns:
+            List of alert objects with worker/task info and available actions
+        """
+        from datetime import timedelta
+
+        now = datetime.now()
+        warning_threshold = timedelta(seconds=warning_timeout_seconds)
+        stale_threshold = timedelta(seconds=stale_timeout_seconds)
+        alerts: list[dict[str, Any]] = []
+
+        for worker_id, worker in self._workers.items():
+            if worker.state != "busy":
+                continue
+
+            if worker.last_seen is None:
+                continue
+
+            elapsed = now - worker.last_seen
+            elapsed_seconds = elapsed.total_seconds()
+
+            # Only alert if in warning zone (between warning and stale)
+            if warning_threshold < elapsed <= stale_threshold:
+                remaining_seconds = stale_timeout_seconds - elapsed_seconds
+                alerts.append({
+                    "type": "long_running_worker",
+                    "worker_id": worker_id,
+                    "task_id": worker.task_id,
+                    "scope": worker.scope,
+                    "elapsed_minutes": int(elapsed_seconds / 60),
+                    "elapsed_seconds": int(elapsed_seconds),
+                    "remaining_seconds": int(remaining_seconds),
+                    "remaining_minutes": int(remaining_seconds / 60),
+                    "message": (
+                        f"Worker '{worker_id}' has been unresponsive for "
+                        f"{int(elapsed_seconds / 60)} minutes while working on {worker.task_id}. "
+                        f"Auto-recovery in {int(remaining_seconds / 60)} minutes."
+                    ),
+                    "actions": [
+                        {
+                            "action": "continue",
+                            "description": "Normal long-running task - keep waiting",
+                        },
+                        {
+                            "action": "extend",
+                            "description": "Extend timeout by 60 minutes",
+                        },
+                        {
+                            "action": "kill",
+                            "description": "Worker is stuck - recover task",
+                        },
+                    ],
+                })
+
+        return alerts
+
+    def extend_worker_timeout(
+        self,
+        worker_id: str,
+        extension_seconds: int = 3600,
+    ) -> dict[str, Any]:
+        """
+        Extend a worker's timeout by resetting its last_seen timestamp.
+
+        This effectively gives the worker more time to complete its task
+        without being marked as stale.
+
+        Args:
+            worker_id: The worker to extend
+            extension_seconds: How many seconds to extend (default 60 minutes)
+
+        Returns:
+            Result dict with status and new timeout info
+        """
+        store = self.state_machine.store
+        project_id = self.state_machine.state.project_id
+
+        try:
+            with store.atomic_modify(project_id) as state:
+                if worker_id not in state.workers:
+                    return {
+                        "success": False,
+                        "error": f"Worker '{worker_id}' not found",
+                    }
+
+                worker = state.workers[worker_id]
+                if worker.state != "busy":
+                    return {
+                        "success": False,
+                        "error": f"Worker '{worker_id}' is not busy (state: {worker.state})",
+                    }
+
+                # Reset last_seen to now (effectively extending the timeout)
+                old_last_seen = worker.last_seen
+                worker.last_seen = datetime.now()
+
+                # Update cached state
+                self.state_machine._state = state
+
+            return {
+                "success": True,
+                "worker_id": worker_id,
+                "task_id": worker.task_id,
+                "old_last_seen": old_last_seen.isoformat() if old_last_seen else None,
+                "new_last_seen": worker.last_seen.isoformat(),
+                "extension_minutes": extension_seconds // 60,
+                "message": f"Timeout extended by {extension_seconds // 60} minutes",
+            }
+
+        except Exception as e:
+            return {
+                "success": False,
+                "error": str(e),
+            }
+
+    def kill_worker(
+        self,
+        worker_id: str,
+        lock_store: Any = None,
+    ) -> dict[str, Any]:
+        """
+        Force-kill a worker and recover its task.
+
+        This is used when a user determines that a worker is truly stuck
+        and wants to recover the task for reassignment.
+
+        Args:
+            worker_id: The worker to kill
+            lock_store: Optional lock store for releasing scope locks
+
+        Returns:
+            Result dict with status and recovery info
+        """
+        store = self.state_machine.store
+        project_id = self.state_machine.state.project_id
+
+        try:
+            with store.atomic_modify(project_id) as state:
+                if worker_id not in state.workers:
+                    return {
+                        "success": False,
+                        "error": f"Worker '{worker_id}' not found",
+                    }
+
+                worker = state.workers[worker_id]
+                task_id = worker.task_id
+                scope = worker.scope
+                queue = state.queue
+
+                recovery_info: dict[str, Any] = {
+                    "success": True,
+                    "worker_id": worker_id,
+                    "task_id": task_id,
+                    "scope": scope,
+                    "previous_state": worker.state,
+                }
+
+                # Move task back to pending if it's in progress
+                if task_id and task_id in queue.in_progress:
+                    del queue.in_progress[task_id]
+                    queue.pending.insert(0, task_id)  # Add to front for priority
+                    recovery_info["task_recovered"] = True
+                    recovery_info["message"] = (
+                        f"Worker killed. Task {task_id} moved back to pending queue."
+                    )
+                else:
+                    recovery_info["task_recovered"] = False
+                    recovery_info["message"] = "Worker killed. No task to recover."
+
+                # Mark worker as disconnected
+                worker.state = "disconnected"
+                worker.task_id = None
+                worker.scope = None
+
+                # Update cached state
+                self.state_machine._state = state
+
+            # Release scope lock (outside atomic block - lock store is separate)
+            if scope and lock_store:
+                try:
+                    lock_store.release_scope_lock(project_id, scope)
+                    recovery_info["lock_released"] = True
+                except Exception as e:
+                    recovery_info["lock_release_error"] = str(e)
+
+            return recovery_info
+
+        except Exception as e:
+            return {
+                "success": False,
+                "error": str(e),
+            }

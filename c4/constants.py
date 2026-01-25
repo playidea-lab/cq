@@ -25,14 +25,17 @@ DEFAULT_SUPERVISOR_TIMEOUT_SEC = 300
 SQLITE_BUSY_TIMEOUT_SEC = 30
 SQLITE_BUSY_TIMEOUT_MS = SQLITE_BUSY_TIMEOUT_SEC * 1000
 
-# Worker stale timeout (when to consider worker disconnected)
-WORKER_STALE_TIMEOUT_SEC = 1800  # 30 minutes
+# Worker timeout thresholds (3-stage: healthy → warning → stale)
+# - Warning: User notified via c4_status, task continues
+# - Stale: Worker marked disconnected, task recovered
+WORKER_WARNING_TIMEOUT_SEC = 2400  # 40 minutes: warning notification
+WORKER_STALE_TIMEOUT_SEC = 3600  # 60 minutes: stale judgment
 
 # Task execution timeout
-TASK_TIMEOUT_SEC = 1800  # 30 minutes
+TASK_TIMEOUT_SEC = 3600  # 60 minutes
 
 # Scope lock TTL (should match WORKER_STALE_TIMEOUT_SEC)
-SCOPE_LOCK_TTL_SEC = 1800  # 30 minutes
+SCOPE_LOCK_TTL_SEC = 3600  # 60 minutes, synchronized with WORKER_STALE_TIMEOUT
 
 # ============================================================================
 # Retry Constants

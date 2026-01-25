@@ -725,28 +725,422 @@ uv run pytest tests/unit/test_review_parser.py -v
 
 ---
 
-## Phase 6: Team Collaboration (장기)
+## Phase 5.5: Skill System Enhancement ✅
 
-> **상태**: 📋 계획
-> **예상 버전**: v0.6.0
+> **완료일**: 2026-01-15
+> **버전**: v0.5.5
 
 ### 목표
 
-팀원 간 실시간 협업
+확장 가능한 스킬 시스템으로 에이전트 라우팅 고도화
 
-### 예상 기능
+### 구현 내용
 
-- Supabase/Redis StateStore
-- 분산 Lock
-- 실시간 상태 동기화
-- 팀 대시보드
+#### 5.5.1 스킬 스키마 V2
+
+```python
+# c4/supervisor/agent_graph/schema/skill.schema.yaml
+class SkillConfig:
+    name: str
+    impact: str  # critical, high, medium, low
+    domains: list[str]  # 적용 도메인
+    rules: list[Rule]  # 임베딩 규칙
+    dependencies: Dependencies  # required, optional
+```
+
+**Impact 우선순위**:
+- `critical`: 2.0 (보안, 데이터 무결성)
+- `high`: 1.5 (핵심 기능)
+- `medium`: 1.0 (일반 개선)
+- `low`: 0.5 (선택적)
+
+#### 5.5.2 도메인별 스킬 (18개)
+
+| 카테고리 | 스킬 |
+|----------|------|
+| **범용** | debugging, testing, code-review, error-handling, security-scanning |
+| **ML/DL** | experiment-tracking, model-optimization |
+| **Data Science** | data-analysis, feature-engineering, statistical-testing |
+| **Frontend** | react-optimization, accessibility |
+| **Backend** | api-design, database-optimization, authentication, caching-strategy |
+| **Infra** | deployment, monitoring, container-orchestration |
+
+#### 5.5.3 스킬 매처
+
+```python
+# c4/supervisor/agent_graph/skill_matcher.py
+class SkillMatcher:
+    def match(self, task: Task, context: Context) -> list[MatchedSkill]:
+        # 공식: score = impact_weight × (1 + domain_boost) + rule_bonus
+```
+
+#### 5.5.4 스킬 CLI
+
+```bash
+c4 skill list              # 스킬 목록
+c4 skill validate          # 스킬 검증
+c4 skill info <name>       # 스킬 상세
+```
+
+### 파일
+
+```
+c4/supervisor/agent_graph/
+├── schema/
+│   └── skill.schema.yaml     # 스킬 스키마 V2
+├── skills/
+│   ├── _meta/                # 범용 스킬
+│   ├── frontend/             # 프론트엔드
+│   ├── backend/              # 백엔드
+│   ├── ml-dl/                # ML/DL
+│   ├── data-science/         # 데이터 사이언스
+│   ├── infra/                # 인프라
+│   └── _groups.yaml          # 스킬 그룹
+└── skill_matcher.py          # SkillMatcher
+```
+
+---
+
+## Phase 6: Team Collaboration ✅
+
+> **완료일**: 2026-01-25
+> **버전**: v0.6.0
+
+### 목표
+
+Supabase 기반 팀원 간 실시간 협업
+
+### 구현 내용
+
+#### 6.1 Supabase State Store
+
+```python
+# c4/store/supabase.py
+class SupabaseStateStore:
+    """분산 프로젝트 상태 관리 (RLS 적용)"""
+    async def load(self, project_id: str) -> C4State: ...
+    async def save(self, state: C4State) -> None: ...
+    async def atomic_modify(self, project_id: str, modifier: Callable) -> C4State: ...
+
+class SupabaseLockStore:
+    """분산 잠금 관리 (RLS 적용)"""
+    async def acquire_scope_lock(self, project_id: str, scope: str, owner: str) -> bool: ...
+    async def release_scope_lock(self, project_id: str, scope: str) -> bool: ...
+```
+
+#### 6.2 팀 관리 서비스
+
+```python
+# c4/services/teams.py
+class TeamService:
+    async def create_team(self, name: str, owner_id: str) -> Team: ...
+    async def add_member(self, team_id: str, user_id: str, role: Role) -> Member: ...
+    async def update_member_role(self, team_id: str, user_id: str, role: Role) -> None: ...
+```
+
+**역할 (RBAC)**:
+- `owner`: 전체 권한
+- `admin`: 멤버 관리, 설정 변경
+- `member`: 태스크 실행, 리뷰
+- `viewer`: 읽기 전용
+
+#### 6.3 Cloud Supervisor
+
+```python
+# c4/supervisor/cloud_supervisor.py
+class CloudSupervisor:
+    """팀 전체 리뷰 및 체크포인트 관리"""
+    async def process_team_checkpoints(self, team_id: str) -> None: ...
+    async def distribute_reviews(self, team_id: str) -> None: ...
+```
+
+#### 6.4 Task Dispatcher
+
+```python
+# c4/daemon/task_dispatcher.py
+class TaskDispatcher:
+    """우선순위 기반 태스크 분배"""
+    async def dispatch(self, team_id: str) -> list[TaskAssignment]: ...
+    async def balance_workload(self, team_id: str) -> None: ...
+```
+
+#### 6.5 GitHub 권한 통합
+
+```python
+# c4/integrations/github.py
+class GitHubClient:
+    async def sync_team_permissions(self, team_id: str) -> None: ...
+    async def create_pr(self, repo: str, branch: str, title: str) -> PR: ...
+
+class GitHubAutomation:
+    async def auto_create_issue(self, task: Task) -> Issue: ...
+```
+
+#### 6.6 Branding Middleware
+
+```python
+# c4/api/middleware/branding.py
+class BrandingMiddleware:
+    """커스텀 도메인 기반 브랜딩 적용"""
+    async def __call__(self, request: Request, call_next) -> Response:
+        domain = self._extract_domain(request.headers.get("host"))
+        branding = await self.cache.get(domain) or await self._fetch_branding(domain)
+        request.state.branding = branding
+        return await call_next(request)
+
+class BrandingCache:
+    """TTL 캐시 (기본 60초)"""
+```
+
+### DB 마이그레이션
+
+```
+infra/supabase/migrations/
+├── 00001_c4_projects.sql      # 프로젝트 테이블
+├── 00002_c4_tasks.sql         # 태스크 테이블
+├── 00003_c4_events.sql        # 이벤트 로그
+├── 00004_teams_and_members.sql # 팀/멤버 테이블
+├── 00005_team_settings.sql    # 팀 설정
+└── 00006_team_branding.sql    # 브랜딩 설정
+```
+
+### 파일
+
+```
+c4/
+├── store/
+│   └── supabase.py           # SupabaseStateStore, SupabaseLockStore
+├── services/
+│   ├── teams.py              # TeamService
+│   └── branding.py           # BrandingService
+├── supervisor/
+│   └── cloud_supervisor.py   # CloudSupervisor
+├── daemon/
+│   └── task_dispatcher.py    # TaskDispatcher
+├── integrations/
+│   ├── github.py             # GitHubClient, GitHubAutomation
+│   └── gitlab.py             # GitLabClient, MRReviewService
+└── api/
+    ├── middleware/
+    │   └── branding.py       # BrandingMiddleware
+    └── routes/
+        ├── teams.py          # Team API
+        └── branding.py       # Branding API
+```
+
+---
+
+## Phase 6.5: MCP Advanced Tools ✅
+
+> **완료일**: 2026-01-25
+> **버전**: v0.6.0
+
+### 목표
+
+코드 분석 및 문서화 자동화
+
+### 구현 내용
+
+#### 6.5.1 Code Analysis Engine
+
+```python
+# c4/services/code_analysis/
+class PythonParser:
+    """Python AST 분석"""
+    def parse(self, source: str) -> SymbolTable: ...
+    def get_dependencies(self, source: str) -> DependencyGraph: ...
+
+class TypeScriptParser:
+    """TypeScript 구문 분석"""
+    def parse(self, source: str) -> SymbolTable: ...
+```
+
+**분석 기능**:
+- 심볼 테이블 추출 (클래스, 함수, 변수)
+- 의존성 그래프 생성
+- 호출 관계 분석
+
+#### 6.5.2 Documentation Server (MCP)
+
+```python
+# c4/mcp/docs_server.py
+@mcp.tool()
+def query_docs(query: str, scope: str | None = None) -> list[DocResult]:
+    """문서 검색/쿼리"""
+
+@mcp.tool()
+def create_snapshot(name: str) -> Snapshot:
+    """코드베이스 스냅샷 생성"""
+
+@mcp.tool()
+def get_usage_examples(symbol: str) -> list[Example]:
+    """심볼 사용 예시 추출"""
+```
+
+#### 6.5.3 Gap Analyzer (MCP)
+
+```python
+# c4/mcp/gap_analyzer.py
+@mcp.tool()
+def analyze_spec_gaps(feature: str) -> GapReport:
+    """EARS 요구사항 갭 분석"""
+
+@mcp.tool()
+def generate_tests_from_spec(feature: str) -> list[TestCase]:
+    """명세 → 테스트 생성"""
+
+@mcp.tool()
+def link_impl_to_spec(impl_file: str, spec_id: str) -> LinkResult:
+    """구현-명세 연결"""
+
+@mcp.tool()
+def verify_spec_completion(feature: str) -> CompletionReport:
+    """완료 검증"""
+```
+
+#### 6.5.4 Public Docs API
+
+```python
+# c4/api/routes/docs.py
+# Context7 스타일 REST API
+
+@router.get("/api/docs/search")
+async def search_docs(q: str) -> list[DocResult]: ...
+
+@router.post("/api/docs/snapshots")
+async def create_snapshot(name: str) -> Snapshot: ...
+
+@router.get("/api/docs/snapshots/{snapshot_id}")
+async def get_snapshot(snapshot_id: str) -> Snapshot: ...
+```
+
+#### 6.5.5 Semantic Search Engine
+
+```python
+# c4/docs/semantic_search.py
+class SemanticSearcher:
+    """TF-IDF 기반 자연어 코드 검색"""
+
+    def search(self, query: str, scope: str | None = None) -> list[SearchResult]:
+        """자연어 쿼리로 코드 검색"""
+
+    def find_related_symbols(self, symbol: str) -> list[RelatedSymbol]:
+        """관련 심볼 찾기"""
+
+    def search_by_type(self, symbol_type: str) -> list[Symbol]:
+        """타입별 심볼 검색"""
+```
+
+**기능**:
+- 프로그래밍 동의어 확장 (auth → authentication, db → database 등)
+- 범위 지정 검색 (symbols, docs, code, files)
+- TF-IDF 기반 관련도 랭킹
+
+**MCP 도구**:
+- `c4_semantic_search`: 자연어 코드 검색
+- `c4_find_related_symbols`: 관련 심볼 찾기
+- `c4_search_by_type`: 타입별 심볼 검색
+
+#### 6.5.6 Call Graph Analyzer
+
+```python
+# c4/docs/call_graph.py
+class CallGraphAnalyzer:
+    """함수 호출 관계 분석"""
+
+    def get_callers(self, symbol: str) -> list[Caller]:
+        """호출자 찾기"""
+
+    def get_callees(self, symbol: str) -> list[Callee]:
+        """피호출자 찾기"""
+
+    def find_call_paths(self, from_symbol: str, to_symbol: str) -> list[Path]:
+        """호출 경로 찾기"""
+
+    def get_stats(self) -> CallGraphStats:
+        """호출 그래프 통계 (핫스팟, 진입점, 고립 함수)"""
+
+    def generate_diagram(self, symbol: str, depth: int = 2) -> str:
+        """Mermaid 다이어그램 생성"""
+```
+
+**MCP 도구**:
+- `c4_get_callers`: 호출자 찾기
+- `c4_get_callees`: 피호출자 찾기
+- `c4_find_call_paths`: 호출 경로 찾기
+- `c4_call_graph_stats`: 호출 그래프 통계
+- `c4_call_graph_diagram`: Mermaid 다이어그램
+
+#### 6.5.7 Long-Running Worker Detection
+
+```python
+# c4/daemon/workers.py
+class WorkerManager:
+    """Worker 관리 + 이상 탐지"""
+
+    def detect_long_running(self, threshold_minutes: int = 30) -> list[WorkerInfo]:
+        """장기 실행 Worker 탐지"""
+
+    def check_heartbeat_anomaly(self) -> list[AnomalyReport]:
+        """Heartbeat 이상 탐지"""
+
+    def recover_stale_workers(self) -> int:
+        """Stale Worker 복구"""
+```
+
+**기능**:
+- Worker heartbeat 모니터링
+- 장기 실행 태스크 자동 감지
+- Stale worker 복구 메커니즘
+
+### 파일
+
+```
+c4/
+├── services/
+│   └── code_analysis/
+│       ├── __init__.py
+│       ├── python_parser.py    # PythonParser
+│       ├── typescript_parser.py # TypeScriptParser
+│       ├── symbol_table.py     # SymbolTable
+│       └── dependency_graph.py # DependencyGraph
+├── docs/
+│   ├── semantic_search.py      # SemanticSearcher (TF-IDF)
+│   └── call_graph.py           # CallGraphAnalyzer
+├── daemon/
+│   └── workers.py              # Long-Running Worker Detection
+├── mcp/
+│   ├── docs_server.py          # Documentation MCP
+│   ├── gap_analyzer.py         # Gap Analyzer MCP
+│   └── code_tools.py           # Code Analysis MCP (12개 도구)
+└── api/
+    └── routes/
+        └── docs.py             # Public Docs API
+```
+
+### MCP 도구 (12개 신규)
+
+| 도구 | 설명 |
+|------|------|
+| `c4_semantic_search` | 자연어 코드 검색 |
+| `c4_find_related_symbols` | 관련 심볼 찾기 |
+| `c4_search_by_type` | 타입별 심볼 검색 |
+| `c4_get_callers` | 호출자 찾기 |
+| `c4_get_callees` | 피호출자 찾기 |
+| `c4_find_call_paths` | 호출 경로 찾기 |
+| `c4_call_graph_stats` | 호출 그래프 통계 |
+| `c4_call_graph_diagram` | Mermaid 다이어그램 |
+| `c4_find_definition` | 심볼 정의 찾기 |
+| `c4_find_references` | 참조 찾기 |
+| `c4_analyze_file` | 파일 심볼 분석 |
+| `c4_get_dependencies` | 의존성 분석 |
 
 ---
 
 ## Phase 7: C4 Cloud (장기)
 
 > **상태**: 📋 계획
-> **예상 버전**: v1.0.0
+> **예상 버전**: v0.7.0
 
 ### 목표
 
@@ -756,8 +1150,9 @@ uv run pytest tests/unit/test_review_parser.py -v
 
 - Web Dashboard
 - 원격 Worker Pool
-- GitHub 통합
-- 과금 시스템
+- GitHub 통합 강화
+- 사용량 기반 과금
+- 팀/조직 관리
 
 ---
 
@@ -770,6 +1165,7 @@ uv run pytest tests/unit/test_review_parser.py -v
 | v0.3.0 | 3 | Auto Supervisor | 2026-01 |
 | v0.4.0 | 4 | Agent Routing | 2026-01-10 |
 | v0.5.0 | 5 | Discovery & Design | 2026-01-10 |
-| v0.5.1 | 5.1 | Dogfooding Fixes (Event ID, Checkpoints, Review Parser) | 2026-01-10 |
-| v0.6.0 | 6 | Team Collaboration | (계획) |
-| v1.0.0 | 7 | C4 Cloud | (계획) |
+| v0.5.1 | 5.1 | Dogfooding Fixes | 2026-01-10 |
+| v0.5.5 | 5.5 | Skill System Enhancement | 2026-01-15 |
+| v0.6.0 | 6 + 6.5 | Team Collaboration + MCP Advanced Tools | 2026-01-25 |
+| v0.7.0 | 7 | C4 Cloud | (계획) |

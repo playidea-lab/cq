@@ -3773,6 +3773,238 @@ Thumbs.db
 
         return result
 
+    # =========================================================================
+    # PIQ Integration
+    # =========================================================================
+
+    async def c4_piq_query(
+        self,
+        knowledge_type: str | None = None,
+        task_type: str | None = None,
+        dataset: str | None = None,
+        template_id: str | None = None,
+        limit: int = 10,
+    ) -> dict[str, Any]:
+        """
+        Query PIQ Knowledge Hub for ML/DL knowledge.
+
+        Args:
+            knowledge_type: Type of knowledge (backbone, optimizer, etc.)
+            task_type: Task type for context (classification, detection, etc.)
+            dataset: Dataset name for context
+            template_id: C4 template ID for context
+            limit: Maximum results to return
+
+        Returns:
+            Query results with knowledge items and suggestions
+        """
+        from .templates import PIQClient, PIQConfig, get_piq_client
+
+        try:
+            # Get PIQ config from C4 config if available
+            piq_config = None
+            if self.config and hasattr(self.config, "piq"):
+                piq_config = self.config.piq
+
+            client = get_piq_client(piq_config)
+
+            # Ensure connected
+            if not client.is_connected:
+                await client.connect()
+
+            result = await client.query(
+                knowledge_type=knowledge_type,
+                task_type=task_type,
+                dataset=dataset,
+                template_id=template_id,
+                limit=limit,
+            )
+
+            if result.success:
+                return {
+                    "success": True,
+                    "knowledge": [
+                        {
+                            "id": k.id,
+                            "type": k.knowledge_type.value,
+                            "title": k.title,
+                            "content": k.content,
+                            "source": k.source.value,
+                            "confidence": k.confidence,
+                            "paper_title": k.paper_title,
+                            "tags": k.tags,
+                        }
+                        for k in result.knowledge
+                    ],
+                    "suggestions": result.suggestions,
+                    "total_count": result.total_count,
+                    "query_time_ms": result.query_time_ms,
+                }
+            else:
+                return {
+                    "success": False,
+                    "error": result.error,
+                }
+
+        except Exception as e:
+            logger.error(f"PIQ query error: {e}")
+            return {
+                "success": False,
+                "error": str(e),
+            }
+
+    async def c4_piq_suggest(
+        self,
+        template_id: str,
+        param_name: str,
+        current_params: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """
+        Get parameter suggestions from PIQ for a template parameter.
+
+        Args:
+            template_id: Template ID
+            param_name: Parameter name to get suggestions for
+            current_params: Current parameter values for context
+
+        Returns:
+            List of suggested values with confidence
+        """
+        from .templates import get_piq_client
+
+        try:
+            client = get_piq_client()
+
+            if not client.is_connected:
+                await client.connect()
+
+            suggestions = await client.get_suggestions(
+                template_id=template_id,
+                param_name=param_name,
+                current_params=current_params,
+            )
+
+            return {
+                "success": True,
+                "template_id": template_id,
+                "param_name": param_name,
+                "suggestions": suggestions,
+            }
+
+        except Exception as e:
+            logger.error(f"PIQ suggest error: {e}")
+            return {
+                "success": False,
+                "error": str(e),
+            }
+
+    async def c4_piq_sync(
+        self,
+        experiment_id: str,
+        template_id: str | None = None,
+        params: dict[str, Any] | None = None,
+        metrics: dict[str, Any] | None = None,
+        status: str = "completed",
+    ) -> dict[str, Any]:
+        """
+        Sync experiment results to PIQ Hub.
+
+        Args:
+            experiment_id: Unique experiment identifier
+            template_id: Template used for the experiment
+            params: Hyperparameters and configuration
+            metrics: Experiment metrics
+            status: Experiment status (running, completed, failed)
+
+        Returns:
+            Sync result with any generated insights
+        """
+        from .templates import get_piq_client
+
+        try:
+            client = get_piq_client()
+
+            if not client.is_connected:
+                await client.connect()
+
+            result = await client.sync_experiment(
+                experiment_id=experiment_id,
+                template_id=template_id,
+                params=params,
+                metrics=metrics,
+                status=status,
+                metadata={
+                    "project_root": str(self.root),
+                    "synced_from": "c4_mcp",
+                },
+            )
+
+            if result.success:
+                return {
+                    "success": True,
+                    "experiment_id": experiment_id,
+                    "insights": [
+                        {
+                            "id": k.id,
+                            "title": k.title,
+                            "content": k.content,
+                        }
+                        for k in result.knowledge
+                    ],
+                    "suggestions": result.suggestions,
+                }
+            else:
+                return {
+                    "success": False,
+                    "error": result.error,
+                }
+
+        except Exception as e:
+            logger.error(f"PIQ sync error: {e}")
+            return {
+                "success": False,
+                "error": str(e),
+            }
+
+    async def c4_piq_status(self) -> dict[str, Any]:
+        """
+        Check PIQ Hub connection status and configuration.
+
+        Returns:
+            PIQ status including connection health and config
+        """
+        from .templates import PIQConfig, get_piq_client
+
+        try:
+            client = get_piq_client()
+
+            # Check health
+            if not client.is_connected:
+                await client.connect()
+
+            is_healthy = await client.health_check()
+
+            return {
+                "success": True,
+                "connected": client.is_connected,
+                "healthy": is_healthy,
+                "config": {
+                    "base_url": client.config.base_url,
+                    "enabled": client.config.enabled,
+                    "cache_ttl": client.config.cache_ttl,
+                    "timeout": client.config.timeout,
+                },
+            }
+
+        except Exception as e:
+            logger.error(f"PIQ status error: {e}")
+            return {
+                "success": False,
+                "connected": False,
+                "healthy": False,
+                "error": str(e),
+            }
+
     def check_and_trigger_checkpoint(self) -> dict[str, Any] | None:
         """
         Check if checkpoint conditions are met and trigger if so.
@@ -4529,6 +4761,118 @@ def create_server(project_root: Path | None = None) -> Server:
                     "required": [],
                 },
             ),
+            # PIQ Integration Tools
+            Tool(
+                name="c4_piq_query",
+                description="Query PIQ Knowledge Hub for ML/DL knowledge (architectures, optimizers, best practices, papers)",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "knowledge_type": {
+                            "type": "string",
+                            "description": "Type of knowledge to query",
+                            "enum": [
+                                "architecture",
+                                "backbone",
+                                "optimizer",
+                                "scheduler",
+                                "augmentation",
+                                "regularization",
+                                "learning_rate",
+                                "batch_size",
+                                "hyperparameter",
+                                "loss_function",
+                                "metric",
+                                "benchmark",
+                                "paper",
+                                "technique",
+                                "best_practice",
+                            ],
+                        },
+                        "task_type": {
+                            "type": "string",
+                            "description": "Task type for context (classification, detection, segmentation, llm_finetuning)",
+                        },
+                        "dataset": {
+                            "type": "string",
+                            "description": "Dataset name for context (imagenet, coco, cifar10, etc.)",
+                        },
+                        "template_id": {
+                            "type": "string",
+                            "description": "C4 template ID for context",
+                        },
+                        "limit": {
+                            "type": "integer",
+                            "description": "Maximum results to return (default: 10)",
+                            "default": 10,
+                        },
+                    },
+                    "required": [],
+                },
+            ),
+            Tool(
+                name="c4_piq_suggest",
+                description="Get parameter suggestions from PIQ for a template parameter",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "template_id": {
+                            "type": "string",
+                            "description": "Template ID (e.g., image_classification, object_detection)",
+                        },
+                        "param_name": {
+                            "type": "string",
+                            "description": "Parameter name to get suggestions for (e.g., backbone, learning_rate, optimizer)",
+                        },
+                        "current_params": {
+                            "type": "object",
+                            "description": "Current parameter values for context",
+                        },
+                    },
+                    "required": ["template_id", "param_name"],
+                },
+            ),
+            Tool(
+                name="c4_piq_sync",
+                description="Sync experiment results to PIQ Hub for learning and future recommendations",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "experiment_id": {
+                            "type": "string",
+                            "description": "Unique experiment identifier",
+                        },
+                        "template_id": {
+                            "type": "string",
+                            "description": "Template used for the experiment",
+                        },
+                        "params": {
+                            "type": "object",
+                            "description": "Hyperparameters and configuration used",
+                        },
+                        "metrics": {
+                            "type": "object",
+                            "description": "Experiment metrics (accuracy, loss, mAP, etc.)",
+                        },
+                        "status": {
+                            "type": "string",
+                            "description": "Experiment status",
+                            "enum": ["running", "completed", "failed"],
+                            "default": "completed",
+                        },
+                    },
+                    "required": ["experiment_id"],
+                },
+            ),
+            Tool(
+                name="c4_piq_status",
+                description="Check PIQ Hub connection status and configuration",
+                inputSchema={
+                    "type": "object",
+                    "properties": {},
+                    "required": [],
+                },
+            ),
         ]
 
     @server.call_tool()
@@ -4691,6 +5035,31 @@ def create_server(project_root: Path | None = None) -> Server:
                     from_agent=arguments.get("from_agent"),
                     to_agent=arguments.get("to_agent"),
                 )
+            # PIQ Integration Tools
+            elif name == "c4_piq_query":
+                result = await daemon.c4_piq_query(
+                    knowledge_type=arguments.get("knowledge_type"),
+                    task_type=arguments.get("task_type"),
+                    dataset=arguments.get("dataset"),
+                    template_id=arguments.get("template_id"),
+                    limit=arguments.get("limit", 10),
+                )
+            elif name == "c4_piq_suggest":
+                result = await daemon.c4_piq_suggest(
+                    template_id=arguments["template_id"],
+                    param_name=arguments["param_name"],
+                    current_params=arguments.get("current_params"),
+                )
+            elif name == "c4_piq_sync":
+                result = await daemon.c4_piq_sync(
+                    experiment_id=arguments["experiment_id"],
+                    template_id=arguments.get("template_id"),
+                    params=arguments.get("params"),
+                    metrics=arguments.get("metrics"),
+                    status=arguments.get("status", "completed"),
+                )
+            elif name == "c4_piq_status":
+                result = await daemon.c4_piq_status()
             else:
                 result = {"error": f"Unknown tool: {name}"}
 

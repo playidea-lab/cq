@@ -1,12 +1,12 @@
 # C4 Roadmap
 
-## Current Version: v0.5.0 (Discovery & Design)
+## Current Version: v0.6.0 (Team Collaboration)
 
-현재 버전은 **자동화된 요구사항 수집, 아키텍처 설계, 런타임 검증**을 지원합니다.
+현재 버전은 **팀 협업, 화이트라벨 브랜딩, 코드 분석 엔진**을 지원합니다.
 
 ### 지원 기능
 
-- MCP Server (Claude Code 통합) - 19개 도구
+- MCP Server (Claude Code 통합) - 25+ 도구
 - State Machine (INIT → DISCOVERY → DESIGN → PLAN → EXECUTE ↔ CHECKPOINT → COMPLETE)
 - Multi-Worker (SQLite WAL 모드, race-condition free)
 - Agent Routing (Phase 4) - 도메인별 에이전트 자동 선택 및 체이닝
@@ -15,9 +15,14 @@
 - **Verification System** - 6가지 Verifier (HTTP, CLI, Browser, Visual, Metrics, Dryrun)
 - Validation Runner (lint, unit tests)
 - Checkpoint System (APPROVE, REQUEST_CHANGES, REPLAN, REDESIGN)
-- Slash Commands (10개)
+- Slash Commands (11개)
 - Stop Hook (자동 실행 유지)
 - Auto Supervisor Loop
+- **Team Collaboration** - Supabase 기반 팀 상태 공유
+- **Branding Middleware** - 화이트라벨 커스텀 도메인 지원
+- **Code Analysis Engine** - Python/TypeScript AST 분석
+- **Documentation Snapshots** - Context7 스타일 문서 API
+- **Gap Analyzer** - EARS 요구사항 ↔ 구현 매핑
 
 ---
 
@@ -193,30 +198,41 @@ uv run pytest tests/unit/test_skill_matcher.py tests/unit/test_agent_graph_loade
 
 ---
 
-## Phase 6: Team Collaboration (장기 계획)
+### Phase 6: Team Collaboration ✅
 
 **목표**: 팀원 간 협업 지원
 
-### State Store 추상화
+**구현 완료**:
+- **Supabase State Store** (`c4/store/supabase.py`)
+  - `SupabaseStateStore` - 프로젝트 상태 저장/조회
+  - `SupabaseLockStore` - 분산 잠금 관리
+  - RLS (Row Level Security) 적용
+- **Team Management** (`c4/services/teams.py`)
+  - 팀 생성/수정/삭제
+  - 멤버 초대/권한 관리 (RBAC)
+  - 팀 설정 관리
+- **Cloud Supervisor** (`c4/supervisor/cloud_supervisor.py`)
+  - 팀 전체 리뷰 관리
+  - 분산 체크포인트 처리
+- **Task Dispatcher** (`c4/daemon/task_dispatcher.py`)
+  - 우선순위 기반 태스크 분배
+  - Peer Review 워크플로우
+- **GitHub Integration** (`c4/integrations/github.py`)
+  - 팀 권한 동기화
+  - 자동 PR/Issue 생성
+- **Branding Middleware** (`c4/api/middleware/branding.py`)
+  - 커스텀 도메인 브랜딩
+  - TTL 캐시 (60초 기본)
 
-```python
-class StateStore(Protocol):
-    def load(self, project_id: str) -> C4State: ...
-    def save(self, state: C4State) -> None: ...
-    def acquire_lock(self, scope: str, ttl: int) -> bool: ...
-    def release_lock(self, scope: str) -> None: ...
-```
+**DB 스키마** (`infra/supabase/migrations/`):
+- `00001_c4_projects.sql` - 프로젝트 테이블
+- `00002_c4_tasks.sql` - 태스크 테이블
+- `00003_c4_events.sql` - 이벤트 로그
+- `00004_teams_and_members.sql` - 팀/멤버 테이블
+- `00005_team_settings.sql` - 팀 설정
+- `00006_team_branding.sql` - 브랜딩 설정
 
-### 지원 Backend
-
-| Backend | 용도 | 복잡도 |
-|---------|------|--------|
-| SQLite | 현재 (기본) | 낮음 |
-| Supabase | 팀 협업 | 중간 |
-| Redis | 고성능 | 중간 |
-| PostgreSQL | Cloud 준비 | 높음 |
-
-### 아키텍처
+**아키텍처**:
 
 ```text
 ┌─────────────┐        ┌─────────────┐
@@ -231,6 +247,45 @@ class StateStore(Protocol):
            │  (State)   │
            └────────────┘
 ```
+
+### Phase 6.5: MCP Advanced Tools ✅
+
+**목표**: 코드 분석 및 문서화 자동화
+
+**구현 완료**:
+- **Code Analysis Engine** (`c4/services/code_analysis/`)
+  - `PythonParser` - Python AST 분석
+  - `TypeScriptParser` - TypeScript 구문 분석
+  - 심볼 테이블, 의존성 그래프
+- **Semantic Search Engine** (`c4/docs/semantic_search.py`)
+  - TF-IDF 기반 자연어 코드 검색
+  - 프로그래밍 동의어 확장 (auth → authentication 등)
+  - 범위 지정 검색 (symbols, docs, code, files)
+- **Call Graph Analyzer** (`c4/docs/call_graph.py`)
+  - 호출자/피호출자 분석
+  - 함수 간 호출 경로 찾기
+  - 호출 그래프 통계 및 Mermaid 다이어그램 생성
+- **Long-Running Worker Detection** (`c4/daemon/workers.py`)
+  - Worker heartbeat 모니터링
+  - 장기 실행 태스크 자동 감지
+  - Stale worker 복구 메커니즘
+- **Documentation Server** (`c4/mcp/docs_server.py`)
+  - `query_docs` - 문서 쿼리
+  - `create_snapshot` - 스냅샷 생성
+  - `get_usage_examples` - 사용 예시 추출
+- **Gap Analyzer** (`c4/mcp/gap_analyzer.py`)
+  - `analyze_spec_gaps` - 명세-구현 갭 분석
+  - `generate_tests_from_spec` - 명세→테스트 생성
+  - `link_impl_to_spec` - 구현-명세 연결
+- **12개 신규 MCP 도구** (`c4/mcp/code_tools.py`)
+  - `c4_semantic_search`, `c4_find_related_symbols`, `c4_search_by_type`
+  - `c4_get_callers`, `c4_get_callees`, `c4_find_call_paths`
+  - `c4_call_graph_stats`, `c4_call_graph_diagram`
+  - `c4_find_definition`, `c4_find_references`, `c4_analyze_file`, `c4_get_dependencies`
+- **Public Docs API** (`c4/api/routes/docs.py`)
+  - Context7 스타일 REST API
+  - 스냅샷 생성/조회
+  - 검색 기능
 
 ---
 
@@ -269,15 +324,15 @@ class StateStore(Protocol):
 ## Migration Path
 
 ```text
-v0.1-0.3        v0.4           v0.5 (현재)     v0.6+
-    │               │               │               │
-    │  Multi-Worker │  Agent Routing│  Discovery    │
-    │  SQLite       │  + Chaining   │  + Verifier   │
-    ▼               ▼               ▼               ▼
-┌─────────┐   ┌─────────┐    ┌─────────┐    ┌─────────┐
-│ Local   │──▶│ Agent   │───▶│ EARS +  │───▶│ Cloud   │
-│ Files   │   │ Routing │    │ ADR     │    │ Managed │
-└─────────┘   └─────────┘    └─────────┘    └─────────┘
+v0.1-0.3        v0.4           v0.5           v0.6 (현재)    v0.7+
+    │               │               │               │               │
+    │  Multi-Worker │  Agent Routing│  Discovery    │  Team Collab  │
+    │  SQLite       │  + Chaining   │  + Verifier   │  + MCP Tools  │
+    ▼               ▼               ▼               ▼               ▼
+┌─────────┐   ┌─────────┐    ┌─────────┐    ┌─────────┐    ┌─────────┐
+│ Local   │──▶│ Agent   │───▶│ EARS +  │───▶│ Supabase│───▶│ Cloud   │
+│ Files   │   │ Routing │    │ ADR     │    │ + Code  │    │ SaaS    │
+└─────────┘   └─────────┘    └─────────┘    └─────────┘    └─────────┘
 ```
 
 ---
@@ -295,5 +350,12 @@ v0.1-0.3        v0.4           v0.5 (현재)     v0.6+
 | Verification System | P0 | ✅ 완료 |
 | Skill System Enhancement | P0 | ✅ 완료 |
 | 문서화 | P0 | ✅ 완료 |
-| Team Collaboration | P1 | 📋 Phase 6 |
-| Cloud API | P2 | 📋 Phase 7 |
+| Team Collaboration | P0 | ✅ 완료 |
+| Branding Middleware | P0 | ✅ 완료 |
+| Code Analysis Engine | P0 | ✅ 완료 |
+| Documentation API | P0 | ✅ 완료 |
+| Gap Analyzer | P0 | ✅ 완료 |
+| Semantic Search Engine | P0 | ✅ 완료 |
+| Call Graph Analyzer | P0 | ✅ 완료 |
+| Long-Running Worker Detection | P0 | ✅ 완료 |
+| Cloud API | P1 | 📋 Phase 7 |

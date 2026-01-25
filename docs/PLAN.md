@@ -1,25 +1,64 @@
 # C4 Project Plan
 
-## 현재 상태: v0.1.0 릴리즈 준비
+## 현재 상태: v0.6.0 (Team Collaboration)
 
-### 완료된 작업
+### 완료된 Phase
 
-#### Phase 5: 리팩토링 ✅
-- T-R01: 패키지 리네임 c4d → c4
-- T-R02: daemon/ 서브패키지 추출 (LockManager, WorkerManager, EventBus)
-- T-R03: models/ 분리 (8개 파일로 분할)
-- T-R04: 테스트 재편성 (unit/, integration/, e2e/)
+| Phase | 제목 | 상태 |
+|-------|------|------|
+| Phase 1 | Core Foundation | ✅ 완료 |
+| Phase 2 | Multi-Worker Support | ✅ 완료 |
+| Phase 3 | Auto Supervisor | ✅ 완료 |
+| Phase 4 | Agent Routing | ✅ 완료 |
+| Phase 5 | Enhanced Discovery & Design | ✅ 완료 |
+| Phase 5.5 | Skill System Enhancement | ✅ 완료 |
+| Phase 6 | Team Collaboration | ✅ 완료 |
+| Phase 6.5 | MCP Advanced Tools | ✅ 완료 |
 
-#### 버그 수정 ✅
-- 중복 체크포인트 트리거 방지 (`passed_checkpoints` 추가)
-- `c4_submit`에서 체크포인트 자동 진입
+### Phase 6: Team Collaboration ✅
 
-### 현재 작업
+**Supabase 기반 팀 협업**:
+- T-601: Supabase 스키마 (`infra/supabase/migrations/`)
+- T-602: SupabaseStateStore (`c4/store/supabase.py`)
+- T-603: SupabaseLockStore (`c4/store/supabase.py`)
+- T-604: 팀 관리 서비스 (`c4/services/teams.py`)
+- T-605: CloudSupervisor (`c4/supervisor/cloud_supervisor.py`)
+- T-606: TaskDispatcher (`c4/daemon/task_dispatcher.py`)
+- T-607: GitHub 권한 통합 (`c4/integrations/github.py`)
 
-#### 문서 현행화 🔄
-- README.md 업데이트 ✅
-- ROADMAP.md 작성 ✅
-- 기존 문서 현행화 🔄
+**Branding Middleware**:
+- T-614: BrandingMiddleware (`c4/api/middleware/branding.py`)
+
+### Phase 6.5: MCP Advanced Tools ✅
+
+**코드 분석 엔진**:
+- T-7001: Code Analysis Engine (`c4/services/code_analysis/`)
+  - PythonParser, TypeScriptParser
+  - 심볼 테이블, 의존성 그래프
+
+**Semantic Search Engine** (TF-IDF 기반):
+- T-7009: SemanticSearcher (`c4/docs/semantic_search.py`)
+  - 자연어 쿼리로 코드 검색
+  - 프로그래밍 동의어 확장
+
+**Call Graph Analyzer**:
+- T-7010: CallGraphAnalyzer (`c4/docs/call_graph.py`)
+  - 호출자/피호출자 분석
+  - Mermaid 다이어그램 생성
+
+**MCP 도구** (12개 신규):
+- T-7005: Code Analysis MCP (`c4/mcp/code_tools.py`)
+- T-7006: Documentation MCP (`c4/mcp/docs_server.py`)
+- T-7007: Gap Analyzer MCP (`c4/mcp/gap_analyzer.py`)
+- T-7008: Public Docs API (`c4/api/routes/docs.py`)
+
+**명세-구현 매핑**:
+- T-7002: Spec-Implementation Mapper
+- T-7003: Gap Analyzer
+- T-7004: Test Generator
+
+**Long-Running Worker Detection**:
+- T-7011: Heartbeat 기반 이상 탐지 (`c4/daemon/workers.py`)
 
 ---
 
@@ -31,20 +70,32 @@ c4/
 │   ├── mcp_server.py      # MCP 서버 (C4Daemon)
 │   ├── state_machine.py   # 상태 머신
 │   ├── models/            # Pydantic 스키마
-│   │   ├── enums.py
-│   │   ├── task.py
-│   │   ├── worker.py
-│   │   ├── checkpoint.py
-│   │   ├── event.py
-│   │   ├── state.py
-│   │   ├── config.py
-│   │   └── responses.py
 │   ├── daemon/            # 매니저 클래스
-│   │   ├── locks.py       # LockManager
-│   │   ├── workers.py     # WorkerManager
-│   │   └── events.py      # EventBus
-│   ├── bundle.py          # 체크포인트 번들
-│   └── supervisor.py      # 슈퍼바이저
+│   ├── store/             # State/Lock Store
+│   │   ├── sqlite.py      # SQLite 구현 (기본)
+│   │   └── supabase.py    # Supabase 구현 (팀)
+│   ├── services/          # 비즈니스 로직
+│   │   ├── teams.py       # 팀 관리
+│   │   ├── branding.py    # 브랜딩
+│   │   └── code_analysis/ # 코드 분석
+│   ├── supervisor/        # Supervisor 컴포넌트
+│   │   ├── supervisor_loop.py
+│   │   ├── cloud_supervisor.py
+│   │   └── agent_graph/   # 에이전트 라우팅
+│   ├── integrations/      # 외부 연동
+│   │   ├── github.py
+│   │   └── gitlab.py
+│   ├── api/               # REST API
+│   │   ├── server.py
+│   │   ├── routes/
+│   │   └── middleware/
+│   │       └── branding.py
+│   └── mcp/               # MCP 도구
+│       ├── docs_server.py
+│       └── gap_analyzer.py
+├── infra/
+│   └── supabase/          # Supabase 설정
+│       └── migrations/    # DB 마이그레이션
 ├── tests/
 │   ├── unit/              # 단위 테스트
 │   ├── integration/       # 통합 테스트
@@ -58,10 +109,10 @@ c4/
 
 | 카테고리 | 테스트 수 | 상태 |
 |----------|----------|------|
-| Unit | 80+ | ✅ |
-| Integration | 30+ | ✅ |
-| E2E | 20+ | ✅ |
-| **Total** | **128** | ✅ |
+| Unit | 2700+ | ✅ |
+| Integration | 300+ | ✅ |
+| E2E | 30+ | ✅ |
+| **Total** | **3030+** | ✅ |
 
 ---
 
@@ -69,7 +120,7 @@ c4/
 
 [ROADMAP.md](./ROADMAP.md) 참조
 
-1. v0.1.0 릴리즈
-2. State Store 추상화 (v0.2.0)
-3. 팀 협업 지원 (Supabase/Redis)
-4. C4 Cloud (v1.0.0)
+1. ~~v0.1.0 릴리즈~~ ✅
+2. ~~팀 협업 지원 (Supabase)~~ ✅
+3. ~~MCP Advanced Tools~~ ✅
+4. C4 Cloud (v0.7.0) - Phase 7

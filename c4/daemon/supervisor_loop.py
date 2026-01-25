@@ -68,7 +68,13 @@ class SupervisorLoop:
         logger.info("Supervisor loop stopped")
 
     async def _check_stale_workers(self) -> None:
-        """Check and recover stale workers periodically"""
+        """Check for stale workers periodically.
+
+        By default (auto_recover=False), only logs warnings for long-running workers.
+        The user can manually intervene via c4_handle_long_running.
+
+        If auto_recover=True in config, automatically recovers stale workers.
+        """
         import time
 
         now = time.time()
@@ -80,6 +86,19 @@ class SupervisorLoop:
         if self.daemon.state_machine is None:
             return
 
+        # Check if auto_recover is enabled (default: False)
+        config = getattr(self.daemon, "_config", None)
+        auto_recover = False
+        if config and hasattr(config, "long_running"):
+            auto_recover = config.long_running.auto_recover
+
+        if not auto_recover:
+            # Default behavior: only log warnings, don't auto-recover
+            # Long-running alerts are shown via c4_status
+            # User can manually kill via c4_handle_long_running
+            return
+
+        # Auto-recover mode: proceed with stale worker recovery
         try:
             recoveries = self.daemon.worker_manager.recover_stale_workers(
                 stale_timeout_seconds=WORKER_STALE_TIMEOUT_SEC,
@@ -89,7 +108,7 @@ class SupervisorLoop:
             if recoveries:
                 for recovery in recoveries:
                     logger.warning(
-                        f"Recovered stale worker {recovery['worker_id']}: "
+                        f"Auto-recovered stale worker {recovery['worker_id']}: "
                         f"task={recovery.get('task_id')}, "
                         f"elapsed={recovery.get('elapsed_seconds', 0):.0f}s"
                     )

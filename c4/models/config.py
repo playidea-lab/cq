@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationInfo, field_validator
 
 from .checkpoint import CheckpointConfig
 
@@ -123,6 +123,46 @@ class BudgetConfig(BaseModel):
 
     max_iterations_per_task: int = 7
     max_failures_same_signature: int = 3
+
+
+class LongRunningConfig(BaseModel):
+    """Long-running task handling configuration.
+
+    When a worker has been unresponsive (no heartbeat) for longer than
+    warning_timeout_sec, a warning is shown in c4_status. The user can
+    then decide to continue, extend the timeout, or kill the worker.
+
+    By default, the system only warns and waits for user decision.
+    Set auto_recover=True to enable automatic stale recovery after stale_timeout_sec.
+    """
+
+    warning_timeout_sec: int = Field(
+        default=2400,  # 40 minutes
+        ge=60,
+        description="Seconds before showing warning in c4_status",
+    )
+    stale_timeout_sec: int = Field(
+        default=3600,  # 60 minutes
+        ge=120,
+        description="Seconds threshold for stale detection (only used if auto_recover=True)",
+    )
+    auto_extend: bool = Field(
+        default=False,
+        description="If true, auto-extend timeout on warning instead of requiring user action",
+    )
+    auto_recover: bool = Field(
+        default=False,
+        description="If true, automatically recover stale workers. If false (default), only warn and wait for user decision.",
+    )
+
+    @field_validator("stale_timeout_sec")
+    @classmethod
+    def stale_must_exceed_warning(cls, v: int, info: ValidationInfo) -> int:
+        """Ensure stale timeout is greater than warning timeout."""
+        warning = info.data.get("warning_timeout_sec", 2400)
+        if v <= warning:
+            raise ValueError("stale_timeout_sec must be greater than warning_timeout_sec")
+        return v
 
 
 # =============================================================================
@@ -319,7 +359,7 @@ class C4Config(BaseModel):
     work_branch_prefix: str = "c4/w-"
     poll_interval_ms: int = 1000
     max_idle_minutes: int = 0  # 0 = unlimited
-    scope_lock_ttl_sec: int = 1800  # 30 minutes, synchronized with WORKER_STALE_TIMEOUT
+    scope_lock_ttl_sec: int = 3600  # 60 minutes, synchronized with WORKER_STALE_TIMEOUT
     validation: ValidationConfig = Field(default_factory=ValidationConfig)
     verifications: VerificationConfig = Field(default_factory=VerificationConfig)
     checkpoints: list[CheckpointConfig] = Field(default_factory=list)
@@ -329,6 +369,10 @@ class C4Config(BaseModel):
     llm: LLMConfig = Field(default_factory=LLMConfig)  # LLM provider configuration
     store: StoreConfig = Field(default_factory=StoreConfig)  # Store backend config
     github: GitHubConfig = Field(default_factory=GitHubConfig)  # GitHub integration
+    long_running: LongRunningConfig = Field(
+        default_factory=LongRunningConfig,
+        description="Long-running task timeout and recovery settings",
+    )
 
     # Review-as-Task configuration
     review_as_task: bool = Field(

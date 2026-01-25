@@ -4,8 +4,10 @@ RED Phase: Tests written before implementation.
 These tests define the expected behavior for Prometheus metrics integration.
 """
 
-
 import pytest
+
+# Skip all tests in this module if prometheus_client is not installed
+pytest.importorskip("prometheus_client")
 
 
 class TestPrometheusMetrics:
