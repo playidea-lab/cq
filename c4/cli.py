@@ -406,8 +406,45 @@ def _init_git_repo(project_path: Path) -> dict[str, bool]:
     return result
 
 
+def _detect_piq_project(project_path: Path) -> Path | None:
+    """Detect if this is a PIQ-enabled project and find PIQ installation.
+
+    Returns:
+        Path to PIQ installation directory, or None if not a PIQ project.
+    """
+    # Check 1: pyproject.toml has piq dependency
+    pyproject = project_path / "pyproject.toml"
+    if pyproject.exists():
+        content = pyproject.read_text()
+        if "piq" in content.lower():
+            # Check if piq is installed in this project's venv
+            piq_path = project_path / ".venv" / "lib"
+            if piq_path.exists():
+                return project_path
+
+    # Check 2: packages/piq exists (monorepo structure)
+    piq_pkg = project_path / "packages" / "piq"
+    if piq_pkg.exists():
+        return piq_pkg
+
+    # Check 3: PIQ_ROOT environment variable
+    piq_root = os.environ.get("PIQ_ROOT")
+    if piq_root and Path(piq_root).exists():
+        return Path(piq_root)
+
+    # Check 4: Common sibling location (../piq)
+    sibling_piq = project_path.parent / "piq"
+    if (sibling_piq / "packages" / "piq").exists():
+        return sibling_piq / "packages" / "piq"
+
+    return None
+
+
 def _create_mcp_config(project_path: Path) -> bool:
-    """Create .mcp.json in project root."""
+    """Create .mcp.json in project root.
+
+    Includes C4 MCP server, and optionally PIQ MCP server if detected.
+    """
     mcp_file = project_path / ".mcp.json"
     c4_install_dir = get_c4_install_dir()
 
@@ -428,6 +465,25 @@ def _create_mcp_config(project_path: Path) -> bool:
             }
         }
     }
+
+    # Auto-detect and add PIQ MCP server if this is a PIQ project
+    piq_path = _detect_piq_project(project_path)
+    if piq_path:
+        config["mcpServers"]["piq"] = {
+            "type": "stdio",
+            "command": "uv",
+            "args": [
+                "--directory",
+                str(piq_path),
+                "run",
+                "python",
+                "-m",
+                "piq.mcp.server",
+            ],
+            "env": {
+                "PIQ_PROJECT_ROOT": str(project_path),
+            },
+        }
 
     mcp_file.write_text(json.dumps(config, indent=2))
     return True
@@ -451,6 +507,7 @@ def _create_project_settings(project_path: Path) -> bool:
             "allow": [
                 # MCP tools (wildcard for all tools from each server)
                 "mcp__c4__*",
+                "mcp__piq__*",
                 "mcp__serena__*",
                 "mcp__plugin_serena_serena__*",
                 # Package managers
@@ -570,6 +627,12 @@ def init(
         "--skip-hooks",
         help="Skip installing Claude Code hooks",
     ),
+    template: str = typer.Option(
+        None,
+        "--template",
+        "-t",
+        help="Initialize with a template (e.g., image-classification, llm-finetuning)",
+    ),
 ):
     """Initialize C4 in a project (all-in-one setup)
 
@@ -579,6 +642,8 @@ def init(
     - Creates .claude/settings.json for MCP auto-approval
     - Sets up ~/.claude.json allowedTools (with Bash(*))
     - Installs Claude Code hooks (stop hook, security hook)
+
+    Use --template to initialize with a pre-configured ML project template.
     """
     # Resolve project path
     if project_path is None:
@@ -627,6 +692,37 @@ def init(
             if not all(hook_results.values()):
                 console.print("[yellow]Warning:[/yellow] Some hooks may not have been installed")
 
+        # Step 6: Apply template if specified
+        template_applied = False
+        if template:
+            console.print(f"[dim]Applying template '{template}'...[/dim]")
+            try:
+                from c4.templates import TemplateRegistry
+
+                template_class = TemplateRegistry.get(template)
+                if template_class is None:
+                    console.print(f"[yellow]Warning:[/yellow] Template '{template}' not found")
+                    console.print("[dim]Available templates: c4 template list[/dim]")
+                else:
+                    # Create template instance and generate project
+                    template_instance = template_class()
+
+                    # Generate with defaults
+                    result = template_instance.generate_project(
+                        output_dir=project_path,
+                        project_name=project_id or project_path.name,
+                    )
+                    if result.success:
+                        template_applied = True
+                        console.print(f"[green]✓[/green] Template '{template}' applied")
+                    else:
+                        console.print(
+                            f"[yellow]Warning:[/yellow] Template generation failed: "
+                            f"{result.message}"
+                        )
+            except Exception as e:
+                console.print(f"[yellow]Warning:[/yellow] Template error: {e}")
+
         # Success message
         console.print()
         console.print("[green bold]✅ C4 initialized![/green bold]")
@@ -645,6 +741,8 @@ def init(
         console.print("  .claude/settings.json   - Permissions & MCP auto-approval")
         if not skip_hooks:
             console.print("  ~/.claude/hooks/        - Stop & security hooks")
+        if template_applied:
+            console.print(f"  (template files)        - From '{template}' template")
         console.print()
 
         console.print("[bold]🔒 Security:[/bold]")
@@ -2200,10 +2298,16 @@ def template_list(
     table.add_column("Version", style="dim")
 
     for info in sorted(templates, key=lambda t: t.id):
+        # Handle both enum and string category values
+        category = (
+            info.category.value
+            if hasattr(info.category, "value")
+            else str(info.category)
+        )
         table.add_row(
             info.id,
             info.name,
-            info.category.value,
+            category,
             info.version,
         )
 
@@ -2253,18 +2357,24 @@ def template_info(
         console.print(f"  {required}{param.name}: {param.description}{default}")
     console.print()
 
-    # Supported features
-    console.print("[bold]Supported Features:[/bold]")
-    console.print(f"  Architectures: {', '.join(config.supported_architectures[:5])}")
-    if len(config.supported_architectures) > 5:
-        console.print(f"    ... and {len(config.supported_architectures) - 5} more")
+    # PIQ Knowledge and Tags
+    if config.piq_knowledge_refs:
+        console.print("[bold]PIQ Knowledge References:[/bold]")
+        console.print(f"  {', '.join(config.piq_knowledge_refs)}")
+        console.print()
 
-    if config.supported_frameworks:
-        console.print(f"  Frameworks: {', '.join(config.supported_frameworks)}")
+    if config.tags:
+        console.print("[bold]Tags:[/bold]")
+        console.print(f"  {', '.join(config.tags)}")
+        console.print()
 
-    if config.supported_datasets:
-        console.print(f"  Datasets: {', '.join(config.supported_datasets[:5])}")
-    console.print()
+    if config.dependencies:
+        console.print("[bold]Dependencies:[/bold]")
+        for dep in config.dependencies[:5]:
+            console.print(f"  - {dep}")
+        if len(config.dependencies) > 5:
+            console.print(f"  ... and {len(config.dependencies) - 5} more")
+        console.print()
 
     console.print("[dim]Use 'c4 template create <id>' to create a project[/dim]")
 
