@@ -16,6 +16,10 @@ class DomainDetector:
 
     # Detection rules: (file_pattern, content_pattern, domain, confidence, reason)
     DETECTION_RULES: list[tuple[str, Optional[str], Domain, float, str]] = [
+        # PiQ ML Experiment System (higher priority than generic ML/DL)
+        ("pyproject.toml", r"piq", Domain.ML_DL, 0.95, "PiQ experiment system detected"),
+        (".c4/config.yaml", r"piq", Domain.ML_DL, 0.95, "PiQ C4 config detected"),
+        ("**/piqr.py", None, Domain.ML_DL, 0.9, "PiQ piqr module detected"),
         # Web Frontend
         ("package.json", r'"react"', Domain.WEB_FRONTEND, 0.9, "React detected"),
         ("package.json", r'"vue"', Domain.WEB_FRONTEND, 0.9, "Vue detected"),
@@ -73,6 +77,24 @@ class DomainDetector:
 
     # Files that indicate jupyter notebooks (ML/DL signal)
     NOTEBOOK_PATTERN = "*.ipynb"
+
+    # Framework detection for domain-specific tooling
+    # Returns framework name if detected (e.g., "piq", "mlflow", "wandb")
+    FRAMEWORK_RULES: list[tuple[str, Optional[str], str, float, str]] = [
+        # PiQ ML Experiment System
+        ("pyproject.toml", r"piq", "piq", 0.95, "PiQ dependency detected"),
+        (".c4/config.yaml", r"piq", "piq", 0.95, "PiQ C4 config detected"),
+        ("**/piqr.py", None, "piq", 0.9, "PiQ piqr module detected"),
+        ("packages/piq/**", None, "piq", 0.95, "PiQ monorepo structure"),
+        # MLflow
+        ("mlruns/**", None, "mlflow", 0.9, "MLflow runs directory"),
+        ("mlflow.db", None, "mlflow", 0.9, "MLflow database"),
+        # Weights & Biases
+        ("wandb/**", None, "wandb", 0.85, "W&B directory"),
+        # Hydra
+        ("config/**/*.yaml", r"defaults:", "hydra", 0.8, "Hydra config"),
+        ("outputs/**/.hydra", None, "hydra", 0.9, "Hydra outputs"),
+    ]
 
     def __init__(self, project_root: Path):
         self.project_root = project_root
@@ -151,13 +173,33 @@ class DomainDetector:
                     domain_scores[Domain.WEB_FRONTEND], domain_scores[Domain.WEB_BACKEND]
                 )
 
+        # Detect frameworks for domain-specific tooling
+        detected_frameworks = self.detect_frameworks()
+
         return DomainDetectionResult(
             primary_domain=primary_domain,
             confidence=primary_confidence,
             signals=signals,
             detected_domains=detected_domains,
             is_empty_project=False,
+            detected_frameworks=detected_frameworks,
         )
+
+    def detect_frameworks(self) -> list[str]:
+        """Detect ML/DL frameworks and tools used in the project.
+
+        Returns list of framework names like ["piq", "hydra", "mlflow"].
+        """
+        frameworks: dict[str, float] = {}
+
+        for file_pattern, content_pattern, framework, confidence, _reason in self.FRAMEWORK_RULES:
+            matched = self._check_rule(file_pattern, content_pattern)
+            if matched:
+                current = frameworks.get(framework, 0.0)
+                frameworks[framework] = max(current, confidence)
+
+        # Return frameworks with confidence >= 0.7
+        return [f for f, c in sorted(frameworks.items(), key=lambda x: -x[1]) if c >= 0.7]
 
     def _is_empty_project(self) -> bool:
         """Check if project directory is essentially empty."""

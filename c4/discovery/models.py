@@ -45,12 +45,18 @@ class DomainDetectionResult(BaseModel):
     confidence: float = Field(ge=0.0, le=1.0)
     signals: list[DomainSignal] = Field(default_factory=list)
     detected_domains: list[Domain] = Field(default_factory=list)
+    detected_frameworks: list[str] = Field(default_factory=list)
     is_empty_project: bool = False
 
     @property
     def is_mixed_domain(self) -> bool:
         """Check if multiple domains were detected with high confidence."""
         return len(self.detected_domains) > 1
+
+    @property
+    def is_piq_project(self) -> bool:
+        """Check if this is a PiQ ML experiment project."""
+        return "piq" in self.detected_frameworks
 
 
 class ProjectOverview(BaseModel):
