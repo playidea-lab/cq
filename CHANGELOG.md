@@ -40,6 +40,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **GraphRouter.use_legacy_fallback** 속성 추가
   - skill matcher와 rule engine 미설정 시 도메인 기반 라우팅만 사용
 
+- **GitLab Integration**: GitLab MR 웹훅 및 AI 코드 리뷰
+  - `GitLabClient`: REST API 클라이언트 (diff 조회, 노트/토론 생성, 라벨)
+  - `GitLabProvider`: 통합 프로바이더 (OAuth, 웹훅 검증)
+  - `MRReviewService`: AI 기반 코드 리뷰 서비스 (LiteLLM/Anthropic)
+  - `/webhooks/gitlab` 엔드포인트 추가
+  - X-Gitlab-Token 헤더 기반 웹훅 검증
+  - 환경 변수: `GITLAB_PRIVATE_TOKEN`, `GITLAB_WEBHOOK_SECRET`, `GITLAB_URL`
+
 ### Changed
 
 - `c4_add_todo`가 정규화된 태스크 ID 반환 (T-XXX → T-XXX-0)

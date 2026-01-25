@@ -184,6 +184,34 @@ llm:
 
 **지원 Provider**: OpenAI, Anthropic, Azure, Ollama, Bedrock, Groq, Together, ZhipuAI 등 100+ ([전체 목록](https://docs.litellm.ai/docs/providers))
 
+### GitLab/GitHub 통합
+
+C4는 GitLab과 GitHub의 MR/PR 웹훅을 받아 AI 코드 리뷰를 자동 실행할 수 있습니다.
+
+**GitLab 환경 변수**:
+```bash
+# 인증 (택일)
+GITLAB_PRIVATE_TOKEN=<personal_access_token>
+GITLAB_OAUTH_TOKEN=<oauth_token>
+
+# 웹훅 검증 (권장)
+GITLAB_WEBHOOK_SECRET=<webhook_secret>
+
+# Self-hosted GitLab (선택)
+GITLAB_URL=https://gitlab.example.com
+```
+
+**GitHub 환경 변수**:
+```bash
+GITHUB_APP_ID=<app_id>
+GITHUB_APP_PRIVATE_KEY=<private_key>
+GITHUB_WEBHOOK_SECRET=<webhook_secret>
+```
+
+**웹훅 엔드포인트**:
+- GitLab: `POST /webhooks/gitlab`
+- GitHub: `POST /webhooks/github`
+
 ---
 
 ## 프로젝트 구조
@@ -215,6 +243,8 @@ your-project/
 | **Auto-Validation** | 자동 lint/test 실행 |
 | **Rules System** | 보안, 코딩 스타일, 테스트 규칙 자동 적용 |
 | **Hooks Automation** | Pre/Post 도구 호출 자동화 |
+| **GitLab Integration** | MR 웹훅 및 AI 코드 리뷰 |
+| **GitHub Integration** | PR 웹훅 및 AI 코드 리뷰 |
 
 ---
 
