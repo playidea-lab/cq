@@ -438,6 +438,9 @@ def _create_project_settings(project_path: Path) -> bool:
 
     This uses project-local settings instead of ~/.claude.json to avoid
     conflicts with Claude Code's runtime config management.
+
+    Pattern-based Bash permissions prevent settings.local.json bloat
+    by pre-approving common commands for autonomous execution.
     """
     settings_dir = project_path / ".claude"
     settings_dir.mkdir(parents=True, exist_ok=True)
@@ -450,8 +453,89 @@ def _create_project_settings(project_path: Path) -> bool:
                 "mcp__c4__*",
                 "mcp__serena__*",
                 "mcp__plugin_serena_serena__*",
-                # Shell commands (no parentheses = allow all)
-                "Bash",
+                # Package managers
+                "Bash(uv:*)",
+                "Bash(pip:*)",
+                "Bash(npm:*)",
+                "Bash(npx:*)",
+                "Bash(pnpm:*)",
+                "Bash(yarn:*)",
+                "Bash(cargo:*)",
+                "Bash(go:*)",
+                # Git operations
+                "Bash(git:*)",
+                # Python/Testing
+                "Bash(python:*)",
+                "Bash(python3:*)",
+                "Bash(pytest:*)",
+                # File system (read)
+                "Bash(ls:*)",
+                "Bash(cat:*)",
+                "Bash(head:*)",
+                "Bash(tail:*)",
+                "Bash(find:*)",
+                "Bash(grep:*)",
+                "Bash(rg:*)",
+                "Bash(tree:*)",
+                "Bash(wc:*)",
+                "Bash(file:*)",
+                "Bash(stat:*)",
+                "Bash(readlink:*)",
+                "Bash(realpath:*)",
+                "Bash(which:*)",
+                "Bash(whereis:*)",
+                # File system (write)
+                "Bash(mkdir:*)",
+                "Bash(touch:*)",
+                "Bash(cp:*)",
+                "Bash(mv:*)",
+                "Bash(rm:*)",
+                "Bash(chmod:*)",
+                "Bash(chown:*)",
+                # Text processing
+                "Bash(echo:*)",
+                "Bash(printf:*)",
+                "Bash(sort:*)",
+                "Bash(uniq:*)",
+                "Bash(cut:*)",
+                "Bash(awk:*)",
+                "Bash(sed:*)",
+                "Bash(tr:*)",
+                "Bash(diff:*)",
+                "Bash(jq:*)",
+                # Utilities
+                "Bash(xargs:*)",
+                "Bash(timeout:*)",
+                "Bash(date:*)",
+                "Bash(env:*)",
+                "Bash(export:*)",
+                "Bash(source:*)",
+                "Bash(basename:*)",
+                "Bash(dirname:*)",
+                # Network
+                "Bash(curl:*)",
+                "Bash(wget:*)",
+                # Process
+                "Bash(ps:*)",
+                "Bash(lsof:*)",
+                "Bash(pkill:*)",
+                "Bash(kill:*)",
+                # Archive
+                "Bash(tar:*)",
+                "Bash(zip:*)",
+                "Bash(unzip:*)",
+                "Bash(gzip:*)",
+                # Database
+                "Bash(sqlite3:*)",
+                "Bash(psql:*)",
+                # Docker
+                "Bash(docker:*)",
+                "Bash(docker-compose:*)",
+                # Web search/fetch
+                "WebSearch",
+                "WebFetch(domain:github.com)",
+                "WebFetch(domain:raw.githubusercontent.com)",
+                "WebFetch(domain:api.github.com)",
                 # File operations for this project
                 f"Write({project_path}/**)",
                 f"Edit({project_path}/**)",
@@ -2062,6 +2146,989 @@ def skill_info(
             console.print(f"  Complementary: {', '.join(skill.complementary_skills)}")
         if skill.leads_to:
             console.print(f"  Leads to: {', '.join(skill.leads_to)}")
+
+
+# =============================================================================
+# Template Management Commands
+# =============================================================================
+
+template_app = typer.Typer(help="ML/DL template management")
+c4_app.add_typer(template_app, name="template")
+
+
+@template_app.command("list")
+def template_list(
+    category: str = typer.Option(
+        None,
+        "--category",
+        "-c",
+        help="Filter by category (image, text, detection, generative)",
+    ),
+    show_all: bool = typer.Option(
+        False,
+        "--all",
+        "-a",
+        help="Show all templates including experimental",
+    ),
+):
+    """List available ML/DL templates.
+
+    Examples:
+        c4 template list                    # List all templates
+        c4 template list --category image   # Filter by category
+    """
+    from c4.templates import TemplateRegistry
+
+    templates = TemplateRegistry.list_all()
+
+    if not templates:
+        console.print("[yellow]No templates registered[/yellow]")
+        return
+
+    # Filter by category
+    if category:
+        templates = [t for t in templates if category.lower() in t.category.value.lower()]
+
+    console.print()
+    console.print(f"[bold]ML/DL Templates ({len(templates)})[/bold]")
+    console.print()
+
+    table = Table(show_header=True)
+    table.add_column("ID", style="cyan")
+    table.add_column("Name")
+    table.add_column("Category", style="yellow")
+    table.add_column("Version", style="dim")
+
+    for info in sorted(templates, key=lambda t: t.id):
+        table.add_row(
+            info.id,
+            info.name,
+            info.category.value,
+            info.version,
+        )
+
+    console.print(table)
+    console.print()
+    console.print("[dim]Use 'c4 template info <id>' for details[/dim]")
+
+
+@template_app.command("info")
+def template_info(
+    template_id: str = typer.Argument(..., help="Template ID to show info for"),
+):
+    """Show detailed information about a template.
+
+    Examples:
+        c4 template info image-classification
+        c4 template info llm-finetuning
+    """
+    from c4.templates import TemplateRegistry
+
+    template = TemplateRegistry.get(template_id)
+
+    if not template:
+        console.print(f"[red]Error:[/red] Template not found: {template_id}")
+        console.print()
+        console.print("[dim]Use 'c4 template list' to see available templates[/dim]")
+        raise typer.Exit(1)
+
+    config = template.config
+
+    console.print()
+    console.print(f"[bold cyan]{config.id}[/bold cyan] - {config.name}")
+    console.print()
+    console.print("[bold]Description:[/bold]")
+    console.print(f"  {config.description}")
+    console.print()
+
+    console.print(f"[bold]Category:[/bold] {config.category.value}")
+    console.print(f"[bold]Version:[/bold] {config.version}")
+    console.print()
+
+    # Parameters
+    console.print("[bold]Parameters:[/bold]")
+    for param in config.parameters:
+        required = "[red]*[/red]" if param.required else ""
+        default = f" (default: {param.default})" if param.default is not None else ""
+        console.print(f"  {required}{param.name}: {param.description}{default}")
+    console.print()
+
+    # Supported features
+    console.print("[bold]Supported Features:[/bold]")
+    console.print(f"  Architectures: {', '.join(config.supported_architectures[:5])}")
+    if len(config.supported_architectures) > 5:
+        console.print(f"    ... and {len(config.supported_architectures) - 5} more")
+
+    if config.supported_frameworks:
+        console.print(f"  Frameworks: {', '.join(config.supported_frameworks)}")
+
+    if config.supported_datasets:
+        console.print(f"  Datasets: {', '.join(config.supported_datasets[:5])}")
+    console.print()
+
+    console.print("[dim]Use 'c4 template create <id>' to create a project[/dim]")
+
+
+@template_app.command("create")
+def template_create(
+    template_id: str = typer.Argument(..., help="Template ID to use"),
+    output_dir: Path = typer.Option(
+        Path.cwd(),
+        "--output",
+        "-o",
+        help="Output directory for the project",
+    ),
+    project_name: str = typer.Option(
+        None,
+        "--name",
+        "-n",
+        help="Project name (defaults to template default)",
+    ),
+    architecture: str = typer.Option(
+        None,
+        "--arch",
+        "-a",
+        help="Model architecture to use",
+    ),
+    dataset: str = typer.Option(
+        None,
+        "--dataset",
+        "-d",
+        help="Dataset name or path",
+    ),
+    num_classes: int = typer.Option(
+        None,
+        "--num-classes",
+        help="Number of output classes",
+    ),
+    pretrained: bool = typer.Option(
+        True,
+        "--pretrained/--no-pretrained",
+        help="Use pretrained weights",
+    ),
+    piq_enabled: bool = typer.Option(
+        False,
+        "--piq",
+        help="Enable PIQ knowledge integration",
+    ),
+    force: bool = typer.Option(
+        False,
+        "--force",
+        "-f",
+        help="Overwrite existing files",
+    ),
+):
+    """Create a new ML/DL project from a template.
+
+    Examples:
+        c4 template create image-classification --name my-classifier
+        c4 template create object-detection --arch yolov8n --dataset coco
+        c4 template create llm-finetuning --arch llama-2-7b --piq
+    """
+    from c4.templates import TemplateRegistry
+
+    template = TemplateRegistry.get(template_id)
+
+    if not template:
+        console.print(f"[red]Error:[/red] Template not found: {template_id}")
+        raise typer.Exit(1)
+
+    # Build parameters
+    params = {
+        "pretrained": pretrained,
+        "piq_enabled": piq_enabled,
+    }
+
+    if project_name:
+        params["project_name"] = project_name
+    if architecture:
+        params["architecture"] = architecture
+    if dataset:
+        params["dataset"] = dataset
+    if num_classes:
+        params["num_classes"] = num_classes
+
+    # Validate parameters
+    validation = template.validate(params)
+    if not validation.is_valid:
+        console.print("[red]Validation errors:[/red]")
+        for error in validation.errors:
+            console.print(f"  - {error}")
+        raise typer.Exit(1)
+
+    if validation.warnings:
+        console.print("[yellow]Warnings:[/yellow]")
+        for warning in validation.warnings:
+            console.print(f"  - {warning}")
+        console.print()
+
+    # Generate project
+    console.print(f"[blue]Creating project from template: {template_id}[/blue]")
+    console.print()
+
+    try:
+        project = template.generate_project(output_dir, params)
+
+        console.print("[green bold]✅ Project created![/green bold]")
+        console.print()
+        console.print(f"[bold]Directory:[/bold] {output_dir}")
+        console.print()
+        console.print("[bold]Generated files:[/bold]")
+        for file_path in sorted(project.files.keys()):
+            console.print(f"  - {file_path}")
+        console.print()
+
+        # Show tasks
+        tasks = template.generate_tasks(params)
+        console.print(f"[bold]C4 Tasks ({len(tasks)}):[/bold]")
+        for task in tasks[:5]:
+            console.print(f"  - {task.id}: {task.title}")
+        if len(tasks) > 5:
+            console.print(f"  ... and {len(tasks) - 5} more")
+        console.print()
+
+        console.print("[bold]Next steps:[/bold]")
+        console.print("  1. cd " + str(output_dir))
+        console.print("  2. pip install -r requirements.txt")
+        console.print("  3. c4 init && c4 run")
+
+    except Exception as e:
+        console.print(f"[red]Error:[/red] {e}")
+        raise typer.Exit(1)
+
+
+@template_app.command("validate")
+def template_validate(
+    template_id: str = typer.Argument(..., help="Template ID to validate"),
+    config_file: Path = typer.Option(
+        None,
+        "--config",
+        "-c",
+        help="Path to config YAML file to validate",
+    ),
+):
+    """Validate a template configuration.
+
+    Examples:
+        c4 template validate image-classification
+        c4 template validate llm-finetuning --config config.yaml
+    """
+    from c4.templates import TemplateRegistry
+
+    template = TemplateRegistry.get(template_id)
+
+    if not template:
+        console.print(f"[red]Error:[/red] Template not found: {template_id}")
+        raise typer.Exit(1)
+
+    # Load config if provided
+    params = {}
+    if config_file:
+        import yaml
+
+        if not config_file.exists():
+            console.print(f"[red]Error:[/red] Config file not found: {config_file}")
+            raise typer.Exit(1)
+
+        with open(config_file) as f:
+            params = yaml.safe_load(f) or {}
+
+    # Validate
+    validation = template.validate(params)
+
+    console.print()
+    console.print(f"[bold]Validating template: {template_id}[/bold]")
+    console.print()
+
+    if validation.errors:
+        console.print("[red]Errors:[/red]")
+        for error in validation.errors:
+            console.print(f"  ✗ {error}")
+
+    if validation.warnings:
+        console.print("[yellow]Warnings:[/yellow]")
+        for warning in validation.warnings:
+            console.print(f"  ⚠ {warning}")
+
+    if validation.suggestions:
+        console.print("[blue]Suggestions:[/blue]")
+        for suggestion in validation.suggestions:
+            console.print(f"  💡 {suggestion}")
+
+    console.print()
+    if validation.is_valid:
+        console.print("[green bold]✅ Validation passed[/green bold]")
+    else:
+        console.print("[red bold]✗ Validation failed[/red bold]")
+        raise typer.Exit(1)
+
+
+# =============================================================================
+# Team Management Commands
+# =============================================================================
+
+team_app = typer.Typer(help="Team collaboration commands")
+c4_app.add_typer(team_app, name="team")
+
+
+@team_app.command("list")
+def team_list():
+    """List your teams.
+
+    Shows all teams you are a member of.
+
+    Examples:
+        c4 team list
+    """
+    try:
+        from .services.teams import create_team_service
+    except ImportError as e:
+        console.print(f"[red]Error:[/red] Supabase not configured: {e}")
+        console.print("[dim]Set SUPABASE_URL and SUPABASE_KEY in .env[/dim]")
+        raise typer.Exit(1)
+
+    try:
+        service = create_team_service()
+        # For now, show placeholder - need user auth context
+        console.print("[yellow]Note:[/yellow] Team listing requires authentication")
+        console.print()
+        console.print("To configure team access:")
+        console.print("  1. Set SUPABASE_URL and SUPABASE_KEY in .env")
+        console.print("  2. Run 'c4 login' to authenticate")
+        console.print("  3. Use 'c4 team list' to see your teams")
+    except Exception as e:
+        console.print(f"[red]Error:[/red] {e}")
+        raise typer.Exit(1)
+
+
+@team_app.command("create")
+def team_create(
+    name: str = typer.Argument(..., help="Team name"),
+    slug: str = typer.Option(
+        None,
+        "--slug",
+        "-s",
+        help="URL-friendly team identifier (auto-generated if not provided)",
+    ),
+):
+    """Create a new team.
+
+    Creates a team and makes you the owner.
+
+    Examples:
+        c4 team create "My Team"
+        c4 team create "My Team" --slug my-team
+    """
+    try:
+        from .services.teams import create_team_service
+    except ImportError as e:
+        console.print(f"[red]Error:[/red] Supabase not configured: {e}")
+        raise typer.Exit(1)
+
+    try:
+        service = create_team_service()
+        team = service.create_team(name=name, slug=slug)
+        console.print(f"[green]Team created:[/green] {team.name}")
+        console.print(f"  ID: {team.id}")
+        console.print(f"  Slug: {team.slug}")
+        console.print(f"  Plan: {team.plan.value}")
+        console.print()
+        console.print("[dim]Invite members with:[/dim]")
+        console.print(f"  c4 team invite {team.id} <email>")
+    except Exception as e:
+        console.print(f"[red]Error creating team:[/red] {e}")
+        raise typer.Exit(1)
+
+
+@team_app.command("info")
+def team_info(
+    team_id: str = typer.Argument(..., help="Team ID or slug"),
+):
+    """Show team details.
+
+    Examples:
+        c4 team info <team-id>
+        c4 team info my-team-slug
+    """
+    try:
+        from .services.teams import create_team_service
+    except ImportError as e:
+        console.print(f"[red]Error:[/red] Supabase not configured: {e}")
+        raise typer.Exit(1)
+
+    try:
+        service = create_team_service()
+
+        # Try by ID first, then by slug
+        try:
+            team = service.get_team(team_id)
+        except Exception:
+            team = service.get_team_by_slug(team_id)
+
+        console.print()
+        console.print(f"[bold]{team.name}[/bold]")
+        console.print(f"  ID: {team.id}")
+        console.print(f"  Slug: {team.slug}")
+        console.print(f"  Owner: {team.owner_id}")
+        console.print(f"  Plan: {team.plan.value}")
+        console.print(f"  Created: {team.created_at}")
+
+        # Show members
+        members = service.get_team_members(team.id)
+        console.print()
+        console.print(f"[bold]Members ({len(members)})[/bold]")
+
+        table = Table(show_header=True)
+        table.add_column("Email")
+        table.add_column("Role")
+        table.add_column("Joined")
+
+        for member in members:
+            table.add_row(
+                member.email or member.user_id,
+                member.role.value,
+                member.joined_at[:10] if member.joined_at else "-",
+            )
+
+        console.print(table)
+    except Exception as e:
+        console.print(f"[red]Error:[/red] {e}")
+        raise typer.Exit(1)
+
+
+@team_app.command("members")
+def team_members(
+    team_id: str = typer.Argument(..., help="Team ID"),
+):
+    """List team members.
+
+    Examples:
+        c4 team members <team-id>
+    """
+    try:
+        from .services.teams import create_team_service
+    except ImportError as e:
+        console.print(f"[red]Error:[/red] Supabase not configured: {e}")
+        raise typer.Exit(1)
+
+    try:
+        service = create_team_service()
+        members = service.get_team_members(team_id)
+
+        console.print()
+        console.print(f"[bold]Team Members ({len(members)})[/bold]")
+
+        table = Table(show_header=True)
+        table.add_column("ID", style="dim")
+        table.add_column("Email")
+        table.add_column("Role", style="cyan")
+        table.add_column("Joined")
+
+        for member in members:
+            table.add_row(
+                member.id[:8] + "...",
+                member.email or member.user_id,
+                member.role.value,
+                member.joined_at[:10] if member.joined_at else "-",
+            )
+
+        console.print(table)
+    except Exception as e:
+        console.print(f"[red]Error:[/red] {e}")
+        raise typer.Exit(1)
+
+
+@team_app.command("invite")
+def team_invite(
+    team_id: str = typer.Argument(..., help="Team ID"),
+    email: str = typer.Argument(..., help="Email to invite"),
+    role: str = typer.Option(
+        "member",
+        "--role",
+        "-r",
+        help="Role: owner, admin, member, viewer",
+    ),
+):
+    """Invite a member to the team.
+
+    Examples:
+        c4 team invite <team-id> user@example.com
+        c4 team invite <team-id> user@example.com --role admin
+    """
+    try:
+        from .services.teams import TeamRole, create_team_service
+    except ImportError as e:
+        console.print(f"[red]Error:[/red] Supabase not configured: {e}")
+        raise typer.Exit(1)
+
+    try:
+        # Parse role
+        try:
+            team_role = TeamRole(role.lower())
+        except ValueError:
+            console.print(f"[red]Invalid role:[/red] {role}")
+            console.print("[dim]Valid roles: owner, admin, member, viewer[/dim]")
+            raise typer.Exit(1)
+
+        service = create_team_service()
+        invite = service.create_invite(team_id, email, team_role)
+
+        console.print(f"[green]Invitation sent to:[/green] {email}")
+        console.print(f"  Role: {invite.role.value}")
+        console.print(f"  Token: {invite.token[:8]}...")
+        console.print(f"  Expires: {invite.expires_at}")
+        console.print()
+        console.print("[dim]Share this invite link:[/dim]")
+        console.print(f"  https://c4.dev/invite/{invite.token}")
+    except Exception as e:
+        console.print(f"[red]Error:[/red] {e}")
+        raise typer.Exit(1)
+
+
+@team_app.command("join")
+def team_join(
+    token: str = typer.Argument(..., help="Invitation token"),
+):
+    """Accept a team invitation.
+
+    Examples:
+        c4 team join <invite-token>
+    """
+    try:
+        from .services.teams import create_team_service
+    except ImportError as e:
+        console.print(f"[red]Error:[/red] Supabase not configured: {e}")
+        raise typer.Exit(1)
+
+    try:
+        service = create_team_service()
+        member = service.accept_invite(token)
+
+        console.print("[green]Successfully joined team![/green]")
+        console.print(f"  Team ID: {member.team_id}")
+        console.print(f"  Role: {member.role.value}")
+        console.print()
+        console.print("[dim]View team details with:[/dim]")
+        console.print(f"  c4 team info {member.team_id}")
+    except Exception as e:
+        console.print(f"[red]Error joining team:[/red] {e}")
+        raise typer.Exit(1)
+
+
+@team_app.command("leave")
+def team_leave(
+    team_id: str = typer.Argument(..., help="Team ID"),
+    confirm: bool = typer.Option(
+        False,
+        "--yes",
+        "-y",
+        help="Skip confirmation",
+    ),
+):
+    """Leave a team.
+
+    Examples:
+        c4 team leave <team-id>
+        c4 team leave <team-id> --yes
+    """
+    try:
+        from .services.teams import create_team_service
+    except ImportError as e:
+        console.print(f"[red]Error:[/red] Supabase not configured: {e}")
+        raise typer.Exit(1)
+
+    if not confirm:
+        confirm = typer.confirm(f"Are you sure you want to leave team {team_id}?")
+        if not confirm:
+            console.print("[yellow]Cancelled[/yellow]")
+            raise typer.Exit(0)
+
+    try:
+        service = create_team_service()
+        # Note: This requires knowing the current user's member ID
+        console.print("[yellow]Note:[/yellow] Team leave requires user authentication context")
+        console.print("[dim]Use the web UI to leave teams for now[/dim]")
+    except Exception as e:
+        console.print(f"[red]Error:[/red] {e}")
+        raise typer.Exit(1)
+
+
+# =============================================================================
+# Migration Commands
+# =============================================================================
+
+migrate_app = typer.Typer(help="Data migration commands")
+c4_app.add_typer(migrate_app, name="migrate")
+
+
+@migrate_app.command("export")
+def migrate_export(
+    output: Path = typer.Option(
+        None,
+        "--output",
+        "-o",
+        help="Output file path (default: .c4/export.json)",
+    ),
+    project_id: str = typer.Option(
+        None,
+        "--project-id",
+        help="Project ID (auto-detected from .c4)",
+    ),
+):
+    """Export local project data for migration.
+
+    Exports state, tasks, and locks to a JSON file that can be
+    imported to another backend (e.g., Supabase).
+
+    Examples:
+        c4 migrate export
+        c4 migrate export --output backup.json
+    """
+    from .store.migration import MigrationManager
+
+    # Find .c4 directory
+    c4_dir = Path(os.environ.get("C4_PROJECT_ROOT", ".")) / ".c4"
+    if not c4_dir.exists():
+        console.print("[red]Error:[/red] No .c4 directory found")
+        console.print("[dim]Run 'c4 init' first[/dim]")
+        raise typer.Exit(1)
+
+    db_path = c4_dir / "c4.db"
+    if not db_path.exists():
+        console.print("[red]Error:[/red] No local database found")
+        raise typer.Exit(1)
+
+    # Determine project ID
+    if not project_id:
+        project_id = str(c4_dir.parent.resolve())
+
+    # Set output path
+    if not output:
+        output = c4_dir / "export.json"
+
+    try:
+        manager = MigrationManager(db_path)
+        export_data = manager.export_to_file(project_id, output)
+
+        console.print("[green]Export successful![/green]")
+        console.print(f"  Project: {export_data.project_id}")
+        console.print(f"  Tasks: {len(export_data.tasks)}")
+        console.print(f"  Locks: {len(export_data.locks)}")
+        console.print(f"  Output: {output}")
+        console.print()
+        console.print("[dim]Import with:[/dim]")
+        console.print(f"  c4 migrate import {output}")
+    except Exception as e:
+        console.print(f"[red]Export failed:[/red] {e}")
+        raise typer.Exit(1)
+
+
+@migrate_app.command("import")
+def migrate_import(
+    input_file: Path = typer.Argument(..., help="Input JSON file"),
+    no_backup: bool = typer.Option(
+        False,
+        "--no-backup",
+        help="Skip backup before import",
+    ),
+):
+    """Import project data from export file.
+
+    Imports state, tasks, and locks from a JSON export file.
+    Creates a backup before import by default.
+
+    Examples:
+        c4 migrate import backup.json
+        c4 migrate import backup.json --no-backup
+    """
+    from .store.migration import MigrationManager
+
+    if not input_file.exists():
+        console.print(f"[red]Error:[/red] File not found: {input_file}")
+        raise typer.Exit(1)
+
+    # Find .c4 directory
+    c4_dir = Path(os.environ.get("C4_PROJECT_ROOT", ".")) / ".c4"
+    if not c4_dir.exists():
+        console.print("[red]Error:[/red] No .c4 directory found")
+        console.print("[dim]Run 'c4 init' first[/dim]")
+        raise typer.Exit(1)
+
+    db_path = c4_dir / "c4.db"
+
+    try:
+        manager = MigrationManager(db_path)
+        snapshot = manager.import_from_file(input_file, create_backup=not no_backup)
+
+        console.print("[green]Import successful![/green]")
+        console.print(f"  Snapshot: {snapshot.snapshot_id}")
+        console.print(f"  Tasks imported: {snapshot.tasks_count}")
+        console.print(f"  Locks imported: {snapshot.locks_count}")
+        console.print(f"  Status: {snapshot.status}")
+        if snapshot.backup_path:
+            console.print(f"  Backup: {snapshot.backup_path}")
+        console.print()
+        console.print("[dim]Rollback with:[/dim]")
+        console.print(f"  c4 migrate rollback {snapshot.snapshot_id}")
+    except Exception as e:
+        console.print(f"[red]Import failed:[/red] {e}")
+        raise typer.Exit(1)
+
+
+@migrate_app.command("rollback")
+def migrate_rollback(
+    snapshot_id: str = typer.Argument(
+        None,
+        help="Snapshot ID to rollback to (default: most recent)",
+    ),
+):
+    """Rollback to a previous state.
+
+    Restores the database from a backup created during import.
+
+    Examples:
+        c4 migrate rollback                    # Most recent
+        c4 migrate rollback import-20250124-1  # Specific snapshot
+    """
+    from .store.migration import MigrationManager
+
+    # Find .c4 directory
+    c4_dir = Path(os.environ.get("C4_PROJECT_ROOT", ".")) / ".c4"
+    if not c4_dir.exists():
+        console.print("[red]Error:[/red] No .c4 directory found")
+        raise typer.Exit(1)
+
+    db_path = c4_dir / "c4.db"
+
+    try:
+        manager = MigrationManager(db_path)
+
+        if manager.rollback(snapshot_id):
+            console.print("[green]Rollback successful![/green]")
+            if snapshot_id:
+                console.print(f"  Restored to: {snapshot_id}")
+            else:
+                console.print("  Restored to: most recent backup")
+        else:
+            console.print("[red]Rollback failed[/red]")
+            raise typer.Exit(1)
+    except Exception as e:
+        console.print(f"[red]Rollback failed:[/red] {e}")
+        raise typer.Exit(1)
+
+
+@migrate_app.command("backups")
+def migrate_backups():
+    """List available backups.
+
+    Shows all migration backups that can be used for rollback.
+
+    Examples:
+        c4 migrate backups
+    """
+    from .store.migration import MigrationManager
+
+    # Find .c4 directory
+    c4_dir = Path(os.environ.get("C4_PROJECT_ROOT", ".")) / ".c4"
+    if not c4_dir.exists():
+        console.print("[red]Error:[/red] No .c4 directory found")
+        raise typer.Exit(1)
+
+    db_path = c4_dir / "c4.db"
+
+    try:
+        manager = MigrationManager(db_path)
+        backups = manager.list_backups()
+        snapshots = manager.list_snapshots()
+
+        if not backups and not snapshots:
+            console.print("[yellow]No backups found[/yellow]")
+            return
+
+        console.print()
+        console.print("[bold]Backups[/bold]")
+
+        if backups:
+            table = Table(show_header=True)
+            table.add_column("Name")
+            table.add_column("Size")
+            table.add_column("Created")
+
+            for backup in backups:
+                size_mb = backup["size_bytes"] / (1024 * 1024)
+                table.add_row(
+                    backup["name"],
+                    f"{size_mb:.2f} MB",
+                    backup["created_at"][:19],
+                )
+
+            console.print(table)
+        else:
+            console.print("[dim]No backup files[/dim]")
+
+        console.print()
+        console.print("[bold]Snapshots[/bold]")
+
+        if snapshots:
+            table = Table(show_header=True)
+            table.add_column("ID")
+            table.add_column("Direction")
+            table.add_column("Status")
+            table.add_column("Tasks")
+            table.add_column("Created")
+
+            for snap in snapshots:
+                table.add_row(
+                    snap.snapshot_id,
+                    f"{snap.source} → {snap.target}",
+                    snap.status,
+                    str(snap.tasks_count),
+                    snap.timestamp[:19],
+                )
+
+            console.print(table)
+        else:
+            console.print("[dim]No migration snapshots[/dim]")
+    except Exception as e:
+        console.print(f"[red]Error:[/red] {e}")
+        raise typer.Exit(1)
+
+
+@migrate_app.command("to-cloud")
+def migrate_to_cloud(
+    team_id: str = typer.Argument(..., help="Target team ID"),
+    project_id: str = typer.Option(
+        None,
+        "--project-id",
+        help="Project ID (auto-detected from .c4)",
+    ),
+):
+    """Migrate local project to Supabase cloud.
+
+    Exports local SQLite data and uploads to team's cloud storage.
+    Includes state, tasks, and locks.
+
+    Examples:
+        c4 migrate to-cloud <team-id>
+    """
+    from .store.migration import sync_with_supabase
+
+    # Find .c4 directory
+    c4_dir = Path(os.environ.get("C4_PROJECT_ROOT", ".")) / ".c4"
+    if not c4_dir.exists():
+        console.print("[red]Error:[/red] No .c4 directory found")
+        raise typer.Exit(1)
+
+    db_path = c4_dir / "c4.db"
+    if not db_path.exists():
+        console.print("[red]Error:[/red] No local database found")
+        raise typer.Exit(1)
+
+    # Determine project ID
+    if not project_id:
+        project_id = str(c4_dir.parent.resolve())
+
+    console.print("[bold]Migrating local project to Supabase cloud...[/bold]")
+    console.print()
+
+    try:
+        # Use the synchronous wrapper for direct migration
+        console.print("[blue]Step 1/2:[/blue] Creating backup and exporting data...")
+        snapshot = sync_with_supabase(
+            db_path=db_path,
+            project_id=project_id,
+            team_id=team_id,
+            direction="upload",
+        )
+
+        console.print(f"  ✓ Backup created: {snapshot.backup_path}")
+        console.print(f"  ✓ Exported {snapshot.tasks_count} tasks, {snapshot.locks_count} locks")
+
+        console.print("[blue]Step 2/2:[/blue] Uploading to Supabase...")
+        console.print(f"  ✓ Status: {snapshot.status}")
+
+        console.print()
+        console.print("[green]Migration complete![/green]")
+        console.print(f"  Project: {project_id}")
+        console.print(f"  Team: {team_id}")
+        console.print(f"  Snapshot ID: {snapshot.snapshot_id}")
+        console.print()
+        console.print("[dim]Update .c4/config.yaml to use Supabase backend:[/dim]")
+        console.print("  store:")
+        console.print("    backend: supabase")
+        console.print(f"    team_id: {team_id}")
+        console.print()
+        console.print("[dim]To rollback if needed:[/dim]")
+        console.print(f"  c4 migrate rollback {snapshot.snapshot_id}")
+
+    except ImportError:
+        console.print("[red]Error:[/red] Supabase not installed")
+        console.print("[dim]Install with: uv add 'c4[cloud]'[/dim]")
+        raise typer.Exit(1)
+    except Exception as e:
+        console.print(f"[red]Migration failed:[/red] {e}")
+        raise typer.Exit(1)
+
+
+@migrate_app.command("from-cloud")
+def migrate_from_cloud(
+    team_id: str = typer.Argument(..., help="Source team ID"),
+    project_id: str = typer.Option(
+        None,
+        "--project-id",
+        help="Project ID (auto-detected from .c4)",
+    ),
+    no_backup: bool = typer.Option(False, "--no-backup", help="Skip backup"),
+):
+    """Download project from Supabase cloud to local.
+
+    Downloads state, tasks, and locks from team's cloud storage.
+
+    Examples:
+        c4 migrate from-cloud <team-id>
+    """
+    from .store.migration import sync_with_supabase
+
+    # Find .c4 directory
+    c4_dir = Path(os.environ.get("C4_PROJECT_ROOT", ".")) / ".c4"
+    c4_dir.mkdir(parents=True, exist_ok=True)
+
+    db_path = c4_dir / "c4.db"
+
+    # Determine project ID
+    if not project_id:
+        project_id = str(c4_dir.parent.resolve())
+
+    console.print("[bold]Downloading project from Supabase cloud...[/bold]")
+    console.print()
+
+    try:
+        console.print("[blue]Step 1/2:[/blue] Connecting to Supabase...")
+        snapshot = sync_with_supabase(
+            db_path=db_path,
+            project_id=project_id,
+            team_id=team_id,
+            direction="download",
+        )
+
+        console.print("[blue]Step 2/2:[/blue] Importing data...")
+        console.print(f"  ✓ Imported {snapshot.tasks_count} tasks, {snapshot.locks_count} locks")
+        if snapshot.backup_path:
+            console.print(f"  ✓ Backup created: {snapshot.backup_path}")
+
+        console.print()
+        console.print("[green]Download complete![/green]")
+        console.print(f"  Project: {project_id}")
+        console.print(f"  Team: {team_id}")
+        console.print(f"  Snapshot ID: {snapshot.snapshot_id}")
+
+    except ImportError:
+        console.print("[red]Error:[/red] Supabase not installed")
+        console.print("[dim]Install with: uv add 'c4[cloud]'[/dim]")
+        raise typer.Exit(1)
+    except Exception as e:
+        console.print(f"[red]Download failed:[/red] {e}")
+        raise typer.Exit(1)
 
 
 # =============================================================================
