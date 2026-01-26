@@ -46,6 +46,22 @@ from .state import (
 # Task models
 from .task import Task, ValidationResult
 
+# DDD-CLEANCODE models
+from .ddd import (
+    ApiSpec,
+    BoundaryMap,
+    CheckpointDefinition,
+    CodePlacement,
+    ContractSpec,
+    DoDItem,
+    Goal,
+    QualityGate,
+    STANDARD_REVIEW_PROMPTS,
+    RequiredTests,
+    WorkBreakdownCriteria,
+    WorkerPacket,
+)
+
 # Worker models
 from .worker import WorkerInfo
 
@@ -60,6 +76,19 @@ __all__ = [
     # Task
     "Task",
     "ValidationResult",
+    # DDD-CLEANCODE
+    "ApiSpec",
+    "BoundaryMap",
+    "CheckpointDefinition",
+    "CodePlacement",
+    "ContractSpec",
+    "DoDItem",
+    "Goal",
+    "QualityGate",
+    "STANDARD_REVIEW_PROMPTS",
+    "RequiredTests",
+    "WorkBreakdownCriteria",
+    "WorkerPacket",
     # Worker
     "WorkerInfo",
     # Checkpoint
