@@ -7,9 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.6.0] - 2026-01-25
+## [0.6.0] - 2026-01-26
 
 ### Added
+
+- **DDD-CLEANCODE Worker Packet (Phase 6)**: 구조화된 태스크 명세
+  - `Goal`: 완료 조건 + 범위 외 명시
+  - `ContractSpec`: API 계약 (input/output/errors) + 테스트 요구사항 (success/failure/boundary)
+  - `BoundaryMap`: DDD 레이어 제약 (target_domain, allowed/forbidden_imports)
+  - `CodePlacement`: 파일 위치 명세 (create/modify/tests)
+  - `QualityGate`: 검증 명령어 (name/command/required)
+  - `CheckpointDefinition`: CP1/CP2/CP3 마일스톤 정의
+  - `c4_add_todo` MCP 도구에 DDD-CLEANCODE 필드 지원 추가
+  - `dod` 필드 deprecated 경고 (goal 미사용 시)
+  - 12개 통합 테스트로 저장/로드 검증 완료
+
+- **c4-plan/c4-submit 스킬 강화**
+  - Worker Packet 구조화된 입력 UI (4.1~4.5절)
+  - 경계 검증 자동 실행 (forbidden imports)
+  - 작업 분해 검증 (max 2일, max 3 APIs)
+  - ContractSpec 검증 (테스트 커버리지)
 
 - **Semantic Search Engine (Phase 6.5)**: TF-IDF 기반 자연어 코드 검색
   - `SemanticSearcher`: 자연어 쿼리로 코드 검색
