@@ -1685,6 +1685,13 @@ Thumbs.db
         dependencies: list[str] | None = None,
         domain: str | None = None,
         priority: int = 0,
+        # DDD-CLEANCODE fields (Phase 7+)
+        goal: dict[str, Any] | None = None,
+        contract_spec: dict[str, Any] | None = None,
+        boundary_map: dict[str, Any] | None = None,
+        code_placement: dict[str, Any] | None = None,
+        quality_gates: list[dict[str, Any]] | None = None,
+        checkpoints: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Add a new task with optional dependencies.
 
@@ -1697,13 +1704,37 @@ Thumbs.db
             task_id: Unique task identifier (e.g., "T-001" or "T-001-0")
             title: Task title
             scope: File/directory scope for lock (e.g., "src/auth/")
-            dod: Definition of Done
+            dod: Definition of Done (legacy, use goal for new tasks)
             dependencies: List of task IDs that must complete first
             domain: Domain for agent routing (e.g., "web-frontend")
             priority: Higher priority tasks are assigned first (default: 0)
+            goal: Goal specification with done/out_of_scope (DDD-CLEANCODE)
+            contract_spec: API contracts and test requirements (DDD-CLEANCODE)
+            boundary_map: DDD layer constraints and import rules (DDD-CLEANCODE)
+            code_placement: File locations for implementation and tests (DDD-CLEANCODE)
+            quality_gates: Validation commands with requirements (DDD-CLEANCODE)
+            checkpoints: CP1/CP2/CP3 milestone definitions (DDD-CLEANCODE)
         """
+        import warnings
+        from c4.models.ddd import (
+            Goal,
+            ContractSpec,
+            BoundaryMap,
+            CodePlacement,
+            QualityGate,
+            CheckpointDefinition,
+        )
+
         if self.state_machine is None:
             raise RuntimeError("C4 not initialized")
+
+        # Emit deprecation warning if using dod without goal
+        if dod and not goal:
+            warnings.warn(
+                "The 'dod' field is deprecated. Use 'goal' with 'done' and 'out_of_scope' instead.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
 
         # Parse and normalize task ID for Review-as-Task
         normalized_id, base_id, version, task_type = self._parse_task_id(task_id)
@@ -1714,6 +1745,14 @@ Thumbs.db
             for dep_id in dependencies:
                 norm_dep_id, _, _, _ = self._parse_task_id(dep_id)
                 normalized_deps.append(norm_dep_id)
+
+        # Build DDD-CLEANCODE objects if provided
+        goal_obj = Goal(**goal) if goal else None
+        contract_spec_obj = ContractSpec(**contract_spec) if contract_spec else None
+        boundary_map_obj = BoundaryMap(**boundary_map) if boundary_map else None
+        code_placement_obj = CodePlacement(**code_placement) if code_placement else None
+        quality_gates_obj = [QualityGate(**g) for g in quality_gates] if quality_gates else []
+        checkpoints_obj = CheckpointDefinition(**checkpoints) if checkpoints else None
 
         task = Task(
             id=normalized_id,
@@ -1727,6 +1766,13 @@ Thumbs.db
             type=task_type,
             base_id=base_id,
             version=version,
+            # DDD-CLEANCODE fields
+            goal=goal_obj,
+            contract_spec=contract_spec_obj,
+            boundary_map=boundary_map_obj,
+            code_placement=code_placement_obj,
+            quality_gates=quality_gates_obj,
+            checkpoints=checkpoints_obj,
         )
         self.add_task(task)
 
@@ -1734,6 +1780,7 @@ Thumbs.db
             "success": True,
             "task_id": normalized_id,
             "dependencies": task.dependencies,
+            "fully_specified": task.is_fully_specified(),
         }
 
     def _parse_task_id(self, task_id: str) -> tuple[str, str, int, TaskType]:
@@ -4354,7 +4401,7 @@ def create_server(project_root: Path | None = None) -> Server:
                         },
                         "title": {"type": "string", "description": "Task title"},
                         "scope": {"type": "string", "description": "File/directory scope for lock"},
-                        "dod": {"type": "string", "description": "Definition of Done"},
+                        "dod": {"type": "string", "description": "Definition of Done (legacy, use goal for new tasks)"},
                         "dependencies": {
                             "type": "array",
                             "items": {"type": "string"},
@@ -4367,6 +4414,83 @@ def create_server(project_root: Path | None = None) -> Server:
                         "priority": {
                             "type": "integer",
                             "description": "Higher priority tasks assigned first (default: 0)",
+                        },
+                        # DDD-CLEANCODE fields
+                        "goal": {
+                            "type": "object",
+                            "description": "Goal specification (DDD-CLEANCODE)",
+                            "properties": {
+                                "done": {"type": "string", "description": "What 'done' looks like"},
+                                "out_of_scope": {"type": "string", "description": "What is explicitly excluded"},
+                            },
+                        },
+                        "contract_spec": {
+                            "type": "object",
+                            "description": "API contracts and test requirements (DDD-CLEANCODE)",
+                            "properties": {
+                                "apis": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "object",
+                                        "properties": {
+                                            "name": {"type": "string"},
+                                            "input": {"type": "string"},
+                                            "output": {"type": "string"},
+                                            "errors": {"type": "array", "items": {"type": "string"}},
+                                            "side_effects": {"type": "string"},
+                                        },
+                                    },
+                                },
+                                "tests": {
+                                    "type": "object",
+                                    "properties": {
+                                        "success": {"type": "array", "items": {"type": "string"}},
+                                        "failure": {"type": "array", "items": {"type": "string"}},
+                                        "boundary": {"type": "array", "items": {"type": "string"}},
+                                    },
+                                },
+                            },
+                        },
+                        "boundary_map": {
+                            "type": "object",
+                            "description": "DDD layer constraints and import rules (DDD-CLEANCODE)",
+                            "properties": {
+                                "target_domain": {"type": "string"},
+                                "target_layer": {"type": "string", "enum": ["domain", "app", "infra", "api"]},
+                                "allowed_imports": {"type": "array", "items": {"type": "string"}},
+                                "forbidden_imports": {"type": "array", "items": {"type": "string"}},
+                                "public_export": {"type": "string"},
+                            },
+                        },
+                        "code_placement": {
+                            "type": "object",
+                            "description": "File locations for implementation and tests (DDD-CLEANCODE)",
+                            "properties": {
+                                "create": {"type": "array", "items": {"type": "string"}},
+                                "modify": {"type": "array", "items": {"type": "string"}},
+                                "tests": {"type": "array", "items": {"type": "string"}},
+                            },
+                        },
+                        "quality_gates": {
+                            "type": "array",
+                            "description": "Validation commands with requirements (DDD-CLEANCODE)",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "name": {"type": "string"},
+                                    "command": {"type": "string"},
+                                    "required": {"type": "boolean"},
+                                },
+                            },
+                        },
+                        "checkpoints": {
+                            "type": "object",
+                            "description": "CP1/CP2/CP3 milestone definitions (DDD-CLEANCODE)",
+                            "properties": {
+                                "cp1_skeleton": {"type": "string"},
+                                "cp2_green": {"type": "string"},
+                                "cp3_harden": {"type": "string"},
+                            },
                         },
                     },
                     "required": ["task_id", "title", "dod"],
@@ -4958,6 +5082,13 @@ def create_server(project_root: Path | None = None) -> Server:
                     dependencies=arguments.get("dependencies"),
                     domain=arguments.get("domain"),
                     priority=arguments.get("priority", 0),
+                    # DDD-CLEANCODE fields
+                    goal=arguments.get("goal"),
+                    contract_spec=arguments.get("contract_spec"),
+                    boundary_map=arguments.get("boundary_map"),
+                    code_placement=arguments.get("code_placement"),
+                    quality_gates=arguments.get("quality_gates"),
+                    checkpoints=arguments.get("checkpoints"),
                 )
             elif name == "c4_checkpoint":
                 result = daemon.c4_checkpoint(
