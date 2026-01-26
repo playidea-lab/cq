@@ -1296,6 +1296,211 @@ AskUserQuestion(questions=[
 3. **`dod`는 반드시 구체적이고 검증 가능하게 작성** (아래 DoD 작성 원칙 참조)
 4. `dependencies`는 선후관계 고려
 5. `validations`는 인터뷰에서 결정된 도구
+6. **DDD-CLEANCODE 구조화된 명세 추가** (아래 Worker Packet 섹션 참조)
+
+---
+
+#### ⚠️ Worker Packet (DDD-CLEANCODE 구조화된 명세) - 권장!
+
+**모든 태스크는 가능하면 Worker Packet 형태로 명세를 포함해야 합니다.**
+
+Worker Packet은 다음 요소로 구성됩니다:
+
+| 요소 | 필수 | 설명 |
+|------|------|------|
+| **Goal** | ✅ | 완료 조건 + 범위 외 명시 |
+| **ContractSpec** | ✅ | API 명세 + 테스트 명세 |
+| **BoundaryMap** | ⚠️ | DDD 레이어 제약 |
+| **CodePlacement** | ⚠️ | 생성/수정 파일 목록 |
+| **QualityGates** | ⚠️ | 검증 명령어 |
+| **Checkpoints** | ⚠️ | CP1/CP2/CP3 마일스톤 |
+
+##### 4.1 ContractSpec 입력 (API + 테스트)
+
+각 태스크에 대해 API 명세와 필수 테스트를 정의합니다.
+
+```python
+AskUserQuestion(questions=[
+    {
+        "question": "이 태스크의 주요 API는 무엇인가요?",
+        "header": "API명세",
+        "options": [
+            {"label": "서비스 메서드", "description": "예: UserService.register()"},
+            {"label": "REST 엔드포인트", "description": "예: POST /api/users"},
+            {"label": "CLI 명령", "description": "예: c4 add-task"},
+            {"label": "없음 (리팩토링/버그픽스)", "description": "공개 API 변경 없음"}
+        ],
+        "multiSelect": False
+    }
+])
+```
+
+**API 상세 정보 수집:**
+```python
+# API 명세 구조화
+api_spec = {
+    "name": "UserService.register",
+    "input": "email: str, password: str",
+    "output": "User | None",
+    "errors": ["DuplicateEmail", "WeakPassword"],
+    "side_effects": "DB에 user 레코드 생성"
+}
+```
+
+**필수 테스트 정의 (최소 요구사항):**
+```python
+AskUserQuestion(questions=[
+    {
+        "question": "이 API의 테스트 케이스를 정의해주세요",
+        "header": "테스트명세",
+        "options": [
+            {"label": "기본 3종 (권장)", "description": "성공 1 + 실패 1 + 경계 1"},
+            {"label": "상세 테스트", "description": "직접 테스트 케이스 정의"},
+            {"label": "기존 테스트 활용", "description": "테스트 파일 지정"}
+        ],
+        "multiSelect": False
+    }
+])
+
+# 테스트 명세 구조화
+required_tests = {
+    "success": ["test_register_creates_user"],
+    "failure": ["test_register_duplicate_email", "test_register_weak_password"],
+    "boundary": ["test_register_max_email_length"]
+}
+```
+
+##### 4.2 BoundaryMap 입력 (DDD 레이어 제약)
+
+클린 아키텍처 경계를 정의합니다.
+
+```python
+AskUserQuestion(questions=[
+    {
+        "question": "이 코드가 속하는 도메인과 레이어는?",
+        "header": "경계정의",
+        "options": [
+            {"label": "domain 레이어 (권장)", "description": "비즈니스 로직, 외부 의존성 없음"},
+            {"label": "app 레이어", "description": "유스케이스, domain 참조 가능"},
+            {"label": "infra 레이어", "description": "DB/외부 API, 모든 레이어 참조 가능"},
+            {"label": "api 레이어", "description": "컨트롤러/라우터"}
+        ],
+        "multiSelect": False
+    },
+    {
+        "question": "허용되지 않는 import가 있나요?",
+        "header": "금지import",
+        "options": [
+            {"label": "도메인 기본 (권장)", "description": "sqlalchemy, httpx, fastapi 금지"},
+            {"label": "없음", "description": "제한 없음"},
+            {"label": "커스텀", "description": "직접 지정"}
+        ],
+        "multiSelect": False
+    }
+])
+
+# BoundaryMap 구조화
+boundary_map = {
+    "target_domain": "auth",
+    "target_layer": "app",
+    "allowed_imports": ["stdlib", "pydantic", "domain.user"],
+    "forbidden_imports": ["sqlalchemy", "httpx", "fastapi"],
+    "public_export": "src/api/v1/users.py"
+}
+```
+
+##### 4.3 CodePlacement 입력 (파일 위치)
+
+생성/수정할 파일을 명시합니다.
+
+```python
+# 코드 배치 구조화
+code_placement = {
+    "create": ["src/auth/service.py", "src/auth/domain/user.py"],
+    "modify": ["src/api/v1/users.py"],
+    "tests": ["tests/unit/auth/test_service.py"]
+}
+```
+
+##### 4.4 QualityGates 입력 (검증 명령)
+
+태스크별 검증 명령을 정의합니다.
+
+```python
+# 품질 게이트 구조화
+quality_gates = [
+    {"name": "lint", "command": "uv run ruff check .", "required": True},
+    {"name": "unit", "command": "uv run pytest tests/unit/auth/ -v", "required": True},
+    {"name": "forbidden_imports", "command": "uv run python scripts/check_imports.py src/auth/", "required": True}
+]
+```
+
+##### 4.5 Work Breakdown 검증
+
+태스크 생성 전에 크기가 적절한지 검증합니다.
+
+**기준 (DDD-CLEANCODE 가이드):**
+| 항목 | 최대 | 초과 시 |
+|------|------|---------|
+| 소요 시간 | 2일 | 분할 필수 |
+| 공개 API | 3개 | 분할 권장 |
+| 테스트 | 9개 | 분할 권장 |
+| 수정 파일 | 5개 | 분할 권장 |
+| 도메인 | 1개 | **분할 필수** |
+
+```python
+# 분할 필요 여부 검사
+if api_count > 3 or file_count > 5 or domain_count > 1:
+    AskUserQuestion(questions=[
+        {
+            "question": f"태스크가 너무 큽니다 (API {api_count}개, 파일 {file_count}개). 분할할까요?",
+            "header": "태스크분할",
+            "options": [
+                {"label": "분할 (권장)", "description": "작은 태스크 여러 개로 나누기"},
+                {"label": "유지", "description": "큰 태스크로 진행"},
+            ],
+            "multiSelect": False
+        }
+    ])
+```
+
+##### 4.6 Worker Packet 저장
+
+모든 명세를 포함한 완전한 태스크를 생성합니다.
+
+```python
+# 완전한 Worker Packet으로 태스크 생성
+mcp__c4__c4_add_todo({
+    "task_id": "T-001",
+    "title": "Implement user registration",
+    "scope": "src/auth/",
+    "dod": """
+Goal: POST /v1/users 호출 시 User가 생성된다
+
+ContractSpec:
+  API: UserService.register(email: str, password: str) -> User | None
+  Errors: DuplicateEmail, WeakPassword
+  Tests:
+    - success: test_register_creates_user
+    - failure: test_register_duplicate_email
+    - boundary: test_register_max_email_length
+
+BoundaryMap:
+  Domain: auth / Layer: app
+  Forbidden: sqlalchemy, httpx
+
+CodePlacement:
+  Create: src/auth/service.py
+  Modify: src/api/v1/users.py
+  Tests: tests/unit/auth/test_service.py
+
+Checkpoints:
+  CP1: 파일 배치 + 테스트 골격
+  CP2: register() 성공 테스트 통과
+  CP3: 실패/경계 테스트 추가
+"""
+})
+```
 
 ---
 
