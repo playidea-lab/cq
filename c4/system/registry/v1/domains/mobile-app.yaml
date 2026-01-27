@@ -1,0 +1,45 @@
+domain:
+  id: mobile-app
+  name: "Mobile App Development"
+  description: "React Native, Flutter, iOS/Android native integrations"
+
+  required_skills:
+    core:
+      - mobile-development
+      - react-native
+      - flutter
+    optional:
+      - ios-native
+      - android-native
+      - offline-sync
+
+  workflow:
+    - step: 1
+      role: primary
+      select:
+        by: skill
+        skills: [mobile-development, react-native, flutter]
+        prefer_agent: mobile-developer
+      purpose: "Implement mobile features"
+
+    - step: 2
+      role: quality
+      select:
+        by: skill
+        skills: [testing]
+        prefer_agent: test-automator
+      purpose: "Write tests"
+
+    - step: 3
+      role: quality
+      select:
+        by: skill
+        skills: [code-review]
+        prefer_agent: code-reviewer
+      purpose: "Code review"
+
+  rules:
+    - if: "task_has_keyword(['push', 'notification'])"
+      then: "add_to_chain(mobile-developer, with_focus=notifications)"
+    - if: "task_has_keyword(['offline', 'sync'])"
+      then: "add_to_chain(mobile-developer, with_focus=offline)"

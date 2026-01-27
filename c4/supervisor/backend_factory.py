@@ -46,9 +46,38 @@ def create_backend(
 
     # LiteLLM for all other providers
     api_key = None
-    if config.api_key_env:
-        api_key = os.environ.get(config.api_key_env)
+    target_env = config.api_key_env
+
+    # Auto-detect API key env if not specified
+    if not target_env:
+        model_lower = config.model.lower()
+        if "gemini" in model_lower:
+            target_env = "GOOGLE_API_KEY"
+        elif "gpt" in model_lower or "o1-" in model_lower or "openai" in model_lower:
+            target_env = "OPENAI_API_KEY"
+        elif "mistral" in model_lower:
+            target_env = "MISTRAL_API_KEY"
+        elif "command" in model_lower:
+            target_env = "COHERE_API_KEY"
+
+    if target_env:
+        # 1. Try environment variable directly
+        api_key = os.environ.get(target_env)
+        
+        # 2. Try CredentialsManager if not in env
         if not api_key:
+            from ..config.credentials import ENV_VAR_MAPPING, CredentialsManager
+            
+            # Find provider name from env var name (e.g., GOOGLE_API_KEY -> gemini)
+            provider = next(
+                (p for p, env in ENV_VAR_MAPPING.items() if env == target_env),
+                None
+            )
+            
+            if provider:
+                api_key = CredentialsManager().get_api_key(provider)
+
+        if not api_key and config.api_key_env:
             raise SupervisorError(
                 f"API key not found in environment variable: {config.api_key_env}"
             )

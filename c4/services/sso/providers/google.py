@@ -9,6 +9,8 @@ import logging
 from urllib.parse import urlencode
 
 import httpx
+import jwt
+from jwt import PyJWKClient
 
 from c4.services.sso.base import OIDCProviderBase
 from c4.services.sso.models import (
@@ -19,6 +21,10 @@ from c4.services.sso.models import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Google's public key endpoint for JWT verification
+GOOGLE_JWKS_URL = "https://www.googleapis.com/oauth2/v3/certs"
+GOOGLE_ISSUERS = ["https://accounts.google.com", "accounts.google.com"]
 
 
 class GoogleOIDCProvider(OIDCProviderBase):
@@ -141,7 +147,7 @@ class GoogleOIDCProvider(OIDCProviderBase):
                 token_data = token_response.json()
                 access_token = token_data.get("access_token")
                 refresh_token = token_data.get("refresh_token")
-                _id_token = token_data.get("id_token")  # TODO: Validate ID token
+                id_token = token_data.get("id_token")
                 expires_in = token_data.get("expires_in", 3600)
 
                 if not access_token:
@@ -151,10 +157,23 @@ class GoogleOIDCProvider(OIDCProviderBase):
                         error_code="no_access_token",
                     )
 
+                # Validate ID token if present
+                id_token_claims = None
+                if id_token:
+                    id_token_claims = self._verify_id_token(
+                        id_token=id_token,
+                        client_id=config.client_id,
+                        nonce=nonce,
+                    )
+                    if id_token_claims is None:
+                        return SSOAuthResult(
+                            success=False,
+                            error="ID token verification failed",
+                            error_code="id_token_invalid",
+                        )
+
                 # Get user info
                 user_info = await self.get_user_info(config, access_token)
-
-                # TODO: Validate ID token and nonce
 
                 from datetime import UTC, datetime, timedelta
 
@@ -293,6 +312,71 @@ class GoogleOIDCProvider(OIDCProviderBase):
         except httpx.HTTPError as e:
             logger.error(f"Google token revocation error: {e}")
             return False
+
+    def _verify_id_token(
+        self,
+        id_token: str,
+        client_id: str,
+        nonce: str | None = None,
+    ) -> dict | None:
+        """Verify Google ID token using JWKS.
+
+        Args:
+            id_token: The JWT ID token from Google
+            client_id: Expected audience (client_id)
+            nonce: Expected nonce value for replay protection
+
+        Returns:
+            Decoded token claims if valid, None if verification fails
+        """
+        try:
+            # Get signing key from Google's JWKS endpoint
+            jwks_client = PyJWKClient(GOOGLE_JWKS_URL)
+            signing_key = jwks_client.get_signing_key_from_jwt(id_token)
+
+            # Decode and verify the token
+            claims = jwt.decode(
+                id_token,
+                signing_key.key,
+                algorithms=["RS256"],
+                audience=client_id,
+                issuer=GOOGLE_ISSUERS,
+                options={
+                    "verify_exp": True,
+                    "verify_iat": True,
+                    "verify_aud": True,
+                    "verify_iss": True,
+                },
+            )
+
+            # Verify nonce if provided (replay attack protection)
+            if nonce is not None:
+                token_nonce = claims.get("nonce")
+                if token_nonce != nonce:
+                    logger.warning(
+                        "Google ID token nonce mismatch: "
+                        f"expected={nonce}, got={token_nonce}"
+                    )
+                    return None
+
+            logger.debug(f"Google ID token verified for sub={claims.get('sub')}")
+            return claims
+
+        except jwt.ExpiredSignatureError:
+            logger.warning("Google ID token has expired")
+            return None
+        except jwt.InvalidAudienceError:
+            logger.warning("Google ID token has invalid audience")
+            return None
+        except jwt.InvalidIssuerError:
+            logger.warning("Google ID token has invalid issuer")
+            return None
+        except jwt.PyJWTError as e:
+            logger.warning(f"Google ID token verification failed: {e}")
+            return None
+        except Exception as e:
+            logger.error(f"Unexpected error verifying Google ID token: {e}")
+            return None
 
     def validate_config(self, config: SSOConfig) -> list[str]:
         """Validate Google OIDC configuration."""

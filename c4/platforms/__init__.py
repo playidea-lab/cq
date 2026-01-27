@@ -31,7 +31,7 @@ PLATFORM_COMMAND_DIRS: dict[str, str] = {
     "claude": ".claude/commands",
     "cursor": ".cursor/commands",
     "codex": ".codex/agents",
-    "gemini": ".gemini",
+    "gemini": ".gemini/commands",
 }
 
 # Required commands that each platform should implement

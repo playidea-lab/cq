@@ -1,0 +1,132 @@
+skill:
+  id: testing
+  name: "Software Testing"
+  description: "단위 테스트, 통합 테스트, E2E 테스트 작성 및 테스트 커버리지 관리"
+
+  impact: high
+  category: quality
+  domains:
+    - universal
+
+  metadata:
+    version: "1.0.0"
+    author: "c4-team"
+    license: MIT
+    tags: [testing, unit-test, integration-test, e2e, coverage, tdd]
+
+  capabilities:
+    - unit-testing
+    - integration-testing
+    - e2e-testing
+    - test-coverage
+    - mocking
+    - fixture-design
+
+  triggers:
+    keywords:
+      - test
+      - coverage
+      - spec
+      - assert
+      - mock
+      - pytest
+      - jest
+      - vitest
+    task_types:
+      - test
+      - testing
+      - coverage
+      - tdd
+    file_patterns:
+      - "**/test_*.py"
+      - "**/*_test.py"
+      - "**/tests/**"
+      - "**/*.test.ts"
+      - "**/*.spec.ts"
+
+  rules:
+    - id: TEST-001
+      description: "각 테스트는 단일 동작만 검증 (Single Assertion Principle)"
+      impact: high
+      example_bad: |
+        def test_user():
+            user = create_user("test@example.com")
+            assert user.email == "test@example.com"
+            assert user.is_active == True
+            assert user.created_at is not None
+            assert len(user.roles) == 1
+      example_good: |
+        def test_user_has_email():
+            user = create_user("test@example.com")
+            assert user.email == "test@example.com"
+
+        def test_user_is_active_by_default():
+            user = create_user("test@example.com")
+            assert user.is_active == True
+
+    - id: TEST-002
+      description: "테스트 이름은 행동과 기대 결과를 명확히 표현"
+      impact: medium
+      example_bad: |
+        def test_user():  # 무엇을 테스트하는지 불명확
+            ...
+      example_good: |
+        def test_user_creation_sets_active_status_to_true():
+            ...
+
+    - id: TEST-003
+      description: "외부 의존성은 Mock으로 격리하여 단위 테스트 독립성 보장"
+      impact: high
+      example_bad: |
+        def test_get_user():
+            # 실제 DB 호출 - 느리고 불안정
+            user = db.get_user(1)
+            assert user.name == "Test"
+      example_good: |
+        def test_get_user(mocker):
+            mock_db = mocker.patch('app.db.get_user')
+            mock_db.return_value = User(name="Test")
+            user = get_user(1)
+            assert user.name == "Test"
+
+    - id: TEST-004
+      description: "테스트 데이터는 fixture로 관리하여 재사용성 확보"
+      impact: medium
+      example_bad: |
+        def test_order_total():
+            user = User(id=1, name="Test")
+            product = Product(id=1, price=100)
+            order = Order(user=user, products=[product])
+            ...
+      example_good: |
+        @pytest.fixture
+        def sample_user():
+            return User(id=1, name="Test")
+
+        @pytest.fixture
+        def sample_product():
+            return Product(id=1, price=100)
+
+        def test_order_total(sample_user, sample_product):
+            order = Order(user=sample_user, products=[sample_product])
+            ...
+
+  tools:
+    - pytest
+    - unittest
+    - coverage
+    - mock
+    - jest
+    - vitest
+
+  complementary_skills:
+    - debugging
+    - code-review
+    - error-handling
+
+  prerequisites:
+    - coding
+
+  leads_to:
+    - deployment
+    - code-review

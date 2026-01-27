@@ -5,7 +5,7 @@
       "command": "uv",
       "args": [
         "--directory",
-        "/Users/changmin/.c4",
+        "/Users/changmin/git/c4",
         "run",
         "python",
         "-m",
@@ -13,6 +13,21 @@
       ],
       "env": {
         "C4_PROJECT_ROOT": "/Users/changmin/git/c4"
+      }
+    },
+    "piq": {
+      "type": "stdio",
+      "command": "uv",
+      "args": [
+        "--directory",
+        "/Users/changmin/git/piq/packages/piq",
+        "run",
+        "python",
+        "-m",
+        "piq.mcp.server"
+      ],
+      "env": {
+        "PIQ_PROJECT_ROOT": "/Users/changmin/git/c4"
       }
     }
   }

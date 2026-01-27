@@ -2,6 +2,7 @@
 
 import json
 import os
+import shutil
 import shlex
 import signal
 import subprocess
@@ -609,6 +610,45 @@ def _create_project_settings(project_path: Path) -> bool:
     return True
 
 
+def _setup_standards_symlinks(project_path: Path) -> None:
+    """Link .c4/standards to .claude/rules for backward compatibility."""
+    standards_dir = project_path / ".c4" / "standards"
+    rules_dir = project_path / ".claude" / "rules"
+
+    if not standards_dir.exists():
+        return
+
+    rules_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Check if standards_dir contains any .md files
+    md_files = list(standards_dir.glob("*.md"))
+    if not md_files:
+        return
+
+    console.print("[dim]Linking .c4/standards to .claude/rules...[/dim]")
+
+    for standard_file in md_files:
+        rule_link = rules_dir / standard_file.name
+        
+        # Remove existing link/file to update
+        if rule_link.exists() or rule_link.is_symlink():
+            try:
+                if rule_link.is_symlink() or rule_link.is_file():
+                     rule_link.unlink()
+            except OSError:
+                continue
+
+        try:
+            # Try relative symlink
+            os.symlink(
+                os.path.relpath(standard_file, rules_dir),
+                rule_link
+            )
+        except OSError:
+            # Fallback to copy
+            shutil.copy2(standard_file, rule_link)
+
+
 @c4_app.command()
 def init(
     project_id: str = typer.Option(
@@ -684,6 +724,7 @@ def init(
         # Step 4: Create .claude/settings.json with permissions
         console.print("[dim]Creating .claude/settings.json (permissions)...[/dim]")
         _create_project_settings(project_path)
+        _setup_standards_symlinks(project_path)
 
         # Step 5: Install hooks (unless skipped)
         if not skip_hooks:
@@ -1930,6 +1971,56 @@ def platforms_cmd(
     # Default: show help
     console.print("Use --list, --validate, or --setup option")
     console.print("Run 'c4 platforms --help' for details")
+
+
+# =============================================================================
+# Registry Commands
+# =============================================================================
+
+registry_app = typer.Typer(help="Registry management commands")
+c4_app.add_typer(registry_app, name="registry")
+
+
+@registry_app.command("build")
+def registry_build(
+    project_path: Path = typer.Option(
+        None,
+        "--path",
+        "-p",
+        help="Project directory (defaults to current directory)",
+    ),
+    target: str = typer.Option(
+        "claude",
+        "--target",
+        "-t",
+        help="Target platform (claude, all)",
+    ),
+):
+    """Build registry artifacts for specific platforms.
+    
+    Converts YAML definitions into platform-specific formats (e.g., Markdown for Claude).
+    """
+    from c4.system.registry.builder import RegistryBuilder
+    
+    root = (project_path or Path.cwd()).resolve()
+    console.print(f"[bold]Building registry for {root.name}...[/bold]")
+    
+    builder = RegistryBuilder(root)
+    generated = []
+    
+    if target in ("claude", "all"):
+        console.print("[dim]Building for Claude Code...[/dim]")
+        files = builder.build_for_claude()
+        generated.extend(files)
+        
+    if generated:
+        console.print(f"[green]Successfully generated {len(generated)} files:[/green]")
+        for f in generated[:5]:
+            console.print(f"  - {f}")
+        if len(generated) > 5:
+            console.print(f"  ... and {len(generated) - 5} more")
+    else:
+        console.print("[yellow]No files generated (check logs or definitions).[/yellow]")
 
 
 # =============================================================================

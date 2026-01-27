@@ -9,6 +9,8 @@ import logging
 from urllib.parse import urlencode
 
 import httpx
+import jwt
+from jwt import PyJWKClient
 
 from c4.services.sso.base import OIDCProviderBase
 from c4.services.sso.models import (
@@ -19,6 +21,10 @@ from c4.services.sso.models import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Microsoft's public key endpoint for JWT verification
+MICROSOFT_JWKS_URL = "https://login.microsoftonline.com/common/discovery/v2.0/keys"
+MICROSOFT_ISSUER_PATTERN = "https://login.microsoftonline.com/{tenant}/v2.0"
 
 
 class MicrosoftOIDCProvider(OIDCProviderBase):
@@ -178,10 +184,23 @@ class MicrosoftOIDCProvider(OIDCProviderBase):
                         error_code="no_access_token",
                     )
 
+                # Validate ID token if present
+                id_token_claims = None
+                if id_token:
+                    id_token_claims = self._verify_id_token(
+                        id_token=id_token,
+                        client_id=config.client_id,
+                        nonce=nonce,
+                    )
+                    if id_token_claims is None:
+                        return SSOAuthResult(
+                            success=False,
+                            error="ID token verification failed",
+                            error_code="id_token_invalid",
+                        )
+
                 # Get user info from Microsoft Graph
                 user_info = await self.get_user_info(config, access_token)
-
-                # TODO: Validate ID token and nonce
 
                 from datetime import UTC, datetime, timedelta
 
@@ -320,6 +339,75 @@ class MicrosoftOIDCProvider(OIDCProviderBase):
             "Token will expire naturally."
         )
         return True
+
+    def _verify_id_token(
+        self,
+        id_token: str,
+        client_id: str,
+        nonce: str | None = None,
+    ) -> dict | None:
+        """Verify Microsoft ID token using JWKS.
+
+        Args:
+            id_token: The JWT ID token from Microsoft
+            client_id: Expected audience (client_id)
+            nonce: Expected nonce value for replay protection
+
+        Returns:
+            Decoded token claims if valid, None if verification fails
+        """
+        try:
+            # Get signing key from Microsoft's JWKS endpoint
+            jwks_client = PyJWKClient(MICROSOFT_JWKS_URL)
+            signing_key = jwks_client.get_signing_key_from_jwt(id_token)
+
+            # Decode and verify the token
+            # Microsoft uses tenant-specific issuers, so we skip issuer verification
+            # and validate it manually after decoding
+            claims = jwt.decode(
+                id_token,
+                signing_key.key,
+                algorithms=["RS256"],
+                audience=client_id,
+                options={
+                    "verify_exp": True,
+                    "verify_iat": True,
+                    "verify_aud": True,
+                    "verify_iss": False,  # Validate manually due to tenant variation
+                },
+            )
+
+            # Validate issuer format (Microsoft uses tenant-specific issuers)
+            issuer = claims.get("iss", "")
+            if not issuer.startswith("https://login.microsoftonline.com/"):
+                logger.warning(f"Microsoft ID token has invalid issuer: {issuer}")
+                return None
+
+            # Verify nonce if provided (replay attack protection)
+            if nonce is not None:
+                token_nonce = claims.get("nonce")
+                if token_nonce != nonce:
+                    logger.warning(
+                        "Microsoft ID token nonce mismatch: "
+                        f"expected={nonce}, got={token_nonce}"
+                    )
+                    return None
+
+            logger.debug(f"Microsoft ID token verified for sub={claims.get('sub')}")
+            return claims
+
+        except jwt.ExpiredSignatureError:
+            logger.warning("Microsoft ID token has expired")
+            return None
+        except jwt.InvalidAudienceError:
+            logger.warning("Microsoft ID token has invalid audience")
+            return None
+        except jwt.PyJWTError as e:
+            logger.warning(f"Microsoft ID token verification failed: {e}")
+            return None
+        except Exception as e:
+            logger.error(f"Unexpected error verifying Microsoft ID token: {e}")
+            return None
 
     def validate_config(self, config: SSOConfig) -> list[str]:
         """Validate Microsoft OIDC configuration."""

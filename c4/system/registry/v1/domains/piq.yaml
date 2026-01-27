@@ -1,0 +1,167 @@
+# PiQ ML Experiment System Domain
+#
+# PiQ is a knowledge orchestration and experiment automation system.
+# C4 generates experiment code that runs through PiQ for ML/DL experiments.
+#
+# Key characteristics:
+# - All experiments use @piqr decorator
+# - Metrics output in key: value format for automatic capture
+# - Reproducibility via seed fixing, data versioning
+# - Integration with PiQHub for distributed experiments
+
+domain:
+  id: piq
+  name: "PiQ ML Experiment System"
+  description: "ML experiment automation with @piqr decorator, metric capture, and distributed training"
+  extends: ml-dl  # Inherits from ml-dl domain
+
+  required_skills:
+    core:
+      - piq-experiment      # @piqr decorator usage
+      - machine-learning
+      - python-coding
+    optional:
+      - deep-learning
+      - model-optimization
+      - hydra-config
+      - distributed-training
+
+  # PiQ-specific coding rules
+  rules:
+    # Always use @piqr decorator
+    - if: "is_experiment_function"
+      then: "require_piqr_decorator"
+      reason: "PiQ captures metrics automatically via @piqr"
+
+    # Metrics output format
+    - if: "has_metric_output"
+      then: "enforce_key_value_format"
+      reason: "piqr parses 'key: value' format, not prose"
+
+    # Seed fixing
+    - if: "uses_random"
+      then: "require_set_seed"
+      reason: "Reproducibility is mandatory in PiQ"
+
+    # Data versioning
+    - if: "loads_data"
+      then: "require_data_version"
+      reason: "Data version must be tracked for reproducibility"
+
+    # Config as argument
+    - if: "has_config"
+      then: "pass_config_as_argument"
+      reason: "No global config; pass as function argument"
+
+    # Return dict
+    - if: "is_experiment_function"
+      then: "return_dict_result"
+      reason: "Final results must be dict for PiQ tracking"
+
+  # Workflow for PiQ experiments
+  workflow:
+    - step: 1
+      role: primary
+      select:
+        by: skill
+        skills: [piq-experiment, machine-learning]
+        prefer_agent: piq-experiment-engineer
+      purpose: "Design and implement ML experiments with @piqr"
+
+    - step: 2
+      role: support
+      select:
+        by: skill
+        skills: [python-coding]
+        prefer_agent: python-pro
+      purpose: "Ensure code quality and patterns"
+
+    - step: 3
+      role: quality
+      select:
+        by: skill
+        skills: [testing]
+        prefer_agent: test-automator
+      purpose: "Validate experiment reproducibility"
+
+  # Code templates
+  templates:
+    experiment_function: |
+      from piq.piqr import piqr
+
+      @piqr
+      def train_model(config: TrainConfig):
+          """Experiment function with @piqr decorator."""
+          # 1. Set seed for reproducibility
+          set_seed(config.seed)
+
+          # 2. Output config (auto-captured)
+          print(f"seed: {config.seed}")
+          print(f"data_version: {config.data_version}")
+
+          # 3. Training loop with metric output
+          for epoch in range(config.epochs):
+              loss, acc = train_epoch(...)
+              print(f"epoch: {epoch}, loss: {loss:.4f}, accuracy: {acc:.4f}")
+
+          # 4. Return final results as dict
+          return {"final_loss": loss, "final_accuracy": acc}
+
+    set_seed_function: |
+      import random
+      import numpy as np
+      import torch
+
+      def set_seed(seed: int = 42):
+          """Fix all random seeds for reproducibility."""
+          random.seed(seed)
+          np.random.seed(seed)
+          torch.manual_seed(seed)
+          if torch.cuda.is_available():
+              torch.cuda.manual_seed_all(seed)
+
+    config_class: |
+      from pydantic import BaseModel
+
+      class TrainConfig(BaseModel):
+          """Experiment configuration."""
+          seed: int = 42
+          epochs: int = 100
+          lr: float = 0.001
+          batch_size: int = 32
+          data_version: str = "v1"
+          output_dir: str = "outputs"
+
+  # Anti-patterns to avoid
+  anti_patterns:
+    - pattern: "print(f\"The loss is {loss}\")"
+      fix: "print(f\"loss: {loss:.4f}\")"
+      reason: "Use key: value format for piqr parsing"
+
+    - pattern: "CONFIG = load_config()"
+      fix: "def train(config: Config): ..."
+      reason: "No global config; pass as argument"
+
+    - pattern: "model.fit(X, y)"
+      fix: "set_seed(seed); model.fit(X, y)"
+      reason: "Must set seed before training"
+
+    - pattern: "data = pd.read_csv('data.csv')"
+      fix: "data = load_data(version='sha256:abc123')"
+      reason: "Data must be versioned"
+
+  # Libraries
+  recommended_libraries:
+    config: ["hydra-core", "pydantic"]
+    ml_framework: ["torch", "pytorch-lightning"]
+    experiment_tracking: ["piq.piqr"]
+    data_validation: ["pandera"]
+    logging: ["logging", "rich"]
+
+  # File structure
+  expected_structure:
+    - "experiments/"
+    - "config/"
+    - "src/models/"
+    - "src/data/"
+    - "tests/"

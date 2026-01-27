@@ -1,0 +1,37 @@
+domain:
+  id: firmware
+  name: "Firmware/Embedded Systems"
+  description: "Embedded systems, low-level code, hardware interfaces"
+
+  required_skills:
+    core:
+      - embedded-systems
+      - low-level-programming
+      - hardware-interfaces
+    optional:
+      - c-programming
+      - real-time-systems
+      - interrupt-handling
+
+  workflow:
+    - step: 1
+      role: primary
+      select:
+        by: skill
+        skills: [embedded-systems, low-level-programming]
+        prefer_agent: general-purpose
+      purpose: "Implement firmware logic"
+
+    - step: 2
+      role: quality
+      select:
+        by: skill
+        skills: [testing]
+        prefer_agent: test-automator
+      purpose: "Write tests"
+
+  rules:
+    - if: "task_has_keyword(['timing', 'real-time', 'rtos'])"
+      then: "add_to_chain(general-purpose, with_focus=real-time)"
+    - if: "task_has_keyword(['memory', 'optimization'])"
+      then: "add_to_chain(performance-engineer, after=primary)"

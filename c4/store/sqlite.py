@@ -168,8 +168,10 @@ class SQLiteStateStore(StateStore):
         conn.execute("PRAGMA busy_timeout=30000")
 
         try:
-            # Start EXCLUSIVE transaction - blocks all other connections
-            conn.execute("BEGIN EXCLUSIVE")
+            # Start IMMEDIATE transaction - acquires write lock immediately
+            # but allows concurrent readers (unlike EXCLUSIVE which blocks all)
+            # This reduces lock contention while maintaining atomicity
+            conn.execute("BEGIN IMMEDIATE")
 
             # Load current state
             cursor = conn.execute(

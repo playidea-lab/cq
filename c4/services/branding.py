@@ -2,14 +2,12 @@
 
 from __future__ import annotations
 
-import hashlib
 import secrets
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
 from c4.services.audit import AuditLogger, create_audit_logger
-
 
 # =============================================================================
 # Exceptions
@@ -505,10 +503,10 @@ class BrandingService:
         team_id: str,
         user_id: str | None = None,
     ) -> bool:
-        """Verify custom domain (called after DNS is set up).
+        """Verify custom domain via DNS TXT record.
 
-        In production, this should verify the DNS TXT record.
-        For now, it marks the domain as verified.
+        Checks for a DNS TXT record at _c4-verification.{domain} containing
+        the verification token.
 
         Args:
             team_id: Team ID
@@ -516,7 +514,13 @@ class BrandingService:
 
         Returns:
             True if verification successful
+
+        Raises:
+            BrandingNotFoundError: If no branding exists for team
+            DomainVerificationError: If no domain configured or verification fails
         """
+        from c4.services.dns import verify_dns_txt_record
+
         branding = await self.get_branding(team_id)
         if not branding:
             raise BrandingNotFoundError(f"No branding found for team {team_id}")
@@ -524,13 +528,21 @@ class BrandingService:
         if not branding.custom_domain:
             raise DomainVerificationError("No custom domain configured")
 
-        # TODO: In production, verify DNS TXT record
-        # dns_verified = await verify_dns_txt_record(
-        #     f"_c4-verification.{branding.custom_domain}",
-        #     branding.custom_domain_verification_token,
-        # )
-        # if not dns_verified:
-        #     raise DomainVerificationError("DNS verification failed")
+        if not branding.custom_domain_verification_token:
+            raise DomainVerificationError("No verification token configured")
+
+        # Verify DNS TXT record
+        dns_verified = await verify_dns_txt_record(
+            domain=branding.custom_domain,
+            expected_token=branding.custom_domain_verification_token,
+            record_prefix="_c4-verification",  # Match existing prefix
+        )
+
+        if not dns_verified:
+            raise DomainVerificationError(
+                f"DNS verification failed for {branding.custom_domain}. "
+                "Please ensure the TXT record is correctly configured."
+            )
 
         # Mark as verified
         from datetime import timezone

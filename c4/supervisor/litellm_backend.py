@@ -13,6 +13,7 @@ Full list: https://docs.litellm.ai/docs/providers
 
 import logging
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from .backend import SupervisorBackend, SupervisorError, SupervisorResponse, TokenUsage
 from .claude_models import (
@@ -22,7 +23,12 @@ from .claude_models import (
     is_claude_model,
     resolve_model_id,
 )
+from .context_loader import ContextLoader
 from .response_parser import ResponseParser
+from .strategies import get_strategy_for_model
+
+if TYPE_CHECKING:
+    from c4.supervisor.agent_graph.models import AgentDefinition
 
 logger = logging.getLogger(__name__)
 
@@ -76,6 +82,7 @@ class LiteLLMBackend(SupervisorBackend):
         # Resolve model alias to full ID
         self.model = resolve_model_id(model)
         self._original_model = model
+        self.strategy = get_strategy_for_model(self.model)
 
         # Auto-detect API key for Claude models
         if api_key:
@@ -128,6 +135,7 @@ class LiteLLMBackend(SupervisorBackend):
         prompt: str,
         bundle_dir: Path,
         timeout: int = 300,
+        agent: "AgentDefinition | None" = None,
     ) -> SupervisorResponse:
         """
         Run supervisor review using LiteLLM.
@@ -136,6 +144,7 @@ class LiteLLMBackend(SupervisorBackend):
             prompt: Rendered review prompt
             bundle_dir: Path to bundle directory for saving artifacts
             timeout: Timeout in seconds (overrides instance default)
+            agent: Optional agent definition for persona injection
 
         Returns:
             SupervisorResponse with decision
@@ -158,7 +167,7 @@ class LiteLLMBackend(SupervisorBackend):
         for attempt in range(self.max_retries):
             try:
                 # Build request parameters
-                kwargs = self._build_request_kwargs(prompt, effective_timeout)
+                kwargs = self._build_request_kwargs(prompt, effective_timeout, agent)
 
                 # Call LiteLLM
                 response = litellm.completion(**kwargs)
@@ -167,7 +176,7 @@ class LiteLLMBackend(SupervisorBackend):
                 self._track_usage(response)
 
                 # Parse response
-                output = response.choices[0].message.content or ""
+                output = self.strategy.parse_response(response)
                 result = ResponseParser.parse(output)
 
                 # Save artifacts
@@ -188,43 +197,91 @@ class LiteLLMBackend(SupervisorBackend):
 
         raise last_error or SupervisorError("LiteLLM failed after retries")
 
-    def _build_request_kwargs(self, prompt: str, timeout: int) -> dict:
+    def _build_request_kwargs(
+        self,
+        prompt: str,
+        timeout: int,
+        agent: "AgentDefinition | None" = None,
+    ) -> dict:
         """Build request parameters for LiteLLM.
 
         Args:
             prompt: User prompt
             timeout: Request timeout
+            agent: Optional agent definition
 
         Returns:
             Dictionary of request parameters
         """
-        # System message optimized for the task
-        system_message = (
-            "You are a code review supervisor. "
+        # Load dynamic context (standards/rules)
+        dynamic_context = ContextLoader.load_standards()
+
+        # Build system message parts
+        system_parts = []
+
+        # 1. Agent Persona (Dynamic) or Default
+        if agent:
+            system_parts.append(self._format_agent_persona(agent))
+        else:
+            system_parts.append("You are a code review supervisor.")
+
+        # 2. Standards/Rules (Context)
+        if dynamic_context:
+            system_parts.append(dynamic_context)
+
+        # 3. Output Format Instruction (Required)
+        system_parts.append(
             "Always respond with a JSON object containing: "
             "decision (APPROVE/REQUEST_CHANGES/REPLAN), "
             "checkpoint, notes, and required_changes array."
         )
+        
+        system_message = "\n\n".join(system_parts)
 
-        kwargs = {
-            "model": self.model,
-            "messages": [
-                {"role": "system", "content": system_message},
-                {"role": "user", "content": prompt},
-            ],
-            "temperature": self.temperature,
-            "max_tokens": self.max_tokens,
-            "timeout": timeout,
-            "drop_params": self.drop_params,
-        }
+        return self.strategy.get_request_params(
+            model=self.model,
+            system_message=system_message,
+            user_message=prompt,
+            temperature=self.temperature,
+            max_tokens=self.max_tokens,
+            timeout=timeout,
+            drop_params=self.drop_params,
+            api_key=self.api_key,
+            api_base=self.api_base,
+        )
 
-        # Add optional parameters
-        if self.api_key:
-            kwargs["api_key"] = self.api_key
-        if self.api_base:
-            kwargs["api_base"] = self.api_base
+    def _format_agent_persona(self, agent: "AgentDefinition") -> str:
+        """Format AgentDefinition into a text persona description.
 
-        return kwargs
+        Args:
+            agent: Agent definition model
+
+        Returns:
+            Formatted string describing the agent's role and behavior
+        """
+        a = agent.agent
+        persona = a.persona
+        
+        lines = [
+            f"You are {a.name} ({a.id}).",
+            f"Role: {persona.role}",
+            f"Expertise: {persona.expertise}",
+        ]
+
+        if persona.personality:
+            p = persona.personality
+            traits = []
+            if p.style: traits.append(f"Style: {p.style}")
+            if p.communication: traits.append(f"Communication: {p.communication}")
+            if p.approach: traits.append(f"Approach: {p.approach}")
+            if traits:
+                lines.append("Personality: " + ", ".join(traits))
+
+        if a.instructions and a.instructions.on_receive:
+            lines.append("\nInstructions:")
+            lines.append(a.instructions.on_receive)
+
+        return "\n".join(lines)
 
     def _track_usage(self, response) -> None:
         """Track token usage from response.

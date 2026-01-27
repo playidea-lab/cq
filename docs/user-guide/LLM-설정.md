@@ -91,6 +91,21 @@ llm:
   # AWS 자격 증명은 환경 변수 또는 ~/.aws/credentials 사용
 ```
 
+### Google AI Studio (Gemini)
+
+`gemini-pro`, `gemini-1.5-pro` 등을 Google AI Studio API 키로 사용:
+
+```yaml
+llm:
+  model: gemini/gemini-1.5-pro-latest
+  api_key_env: GOOGLE_API_KEY
+```
+
+```bash
+# API 키 설정 (추천)
+c4 config api-key set gemini
+```
+
 ### Google Vertex AI
 
 ```yaml

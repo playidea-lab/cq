@@ -119,17 +119,23 @@ class AgentGraphLoader:
 
         Args:
             base_dir: Base directory containing skills/, personas/, domains/, rules/.
-                      Defaults to the examples/ directory.
+                      Defaults to c4/system/registry/v1/.
             schema_dir: Directory containing JSON schema files.
                        Defaults to the schema/ directory in the package.
         """
-        from c4.supervisor.agent_graph import EXAMPLES_DIR
+        # Default to system registry v1
+        default_dir = Path(__file__).parent.parent.parent / "system" / "registry" / "v1"
 
-        self.base_dir = base_dir or EXAMPLES_DIR
+        self.base_dir = base_dir or default_dir
         self.schema_dir = schema_dir or SCHEMA_DIR
 
         # Cache loaded schemas
         self._schema_cache: dict[str, dict[str, Any]] = {}
+
+        # Cache loaded definitions (keyed by ID for fast lookup)
+        self._skill_cache: dict[str, SkillDefinition] | None = None
+        self._agent_cache: dict[str, AgentDefinition] | None = None
+        self._domain_cache: dict[str, DomainDefinition] | None = None
 
     def _get_schema(self, schema_filename: str) -> dict[str, Any]:
         """Load and cache a JSON schema from YAML file.
@@ -435,20 +441,23 @@ class AgentGraphLoader:
     def load_skill_by_id(self, skill_id: str) -> SkillDefinition | None:
         """Load a specific skill by its ID.
 
+        Uses caching to avoid reloading all skills for repeated lookups.
+
         Args:
             skill_id: The skill ID to search for
 
         Returns:
             SkillDefinition if found, None otherwise
         """
-        skills = self.load_skills()
-        for skill in skills:
-            if skill.skill.id == skill_id:
-                return skill
-        return None
+        if self._skill_cache is None:
+            skills = self.load_skills()
+            self._skill_cache = {s.skill.id: s for s in skills}
+        return self._skill_cache.get(skill_id)
 
     def load_agent_by_id(self, agent_id: str) -> AgentDefinition | None:
         """Load a specific agent by its ID.
+
+        Uses caching to avoid reloading all agents for repeated lookups.
 
         Args:
             agent_id: The agent ID to search for
@@ -456,14 +465,15 @@ class AgentGraphLoader:
         Returns:
             AgentDefinition if found, None otherwise
         """
-        agents = self.load_agents()
-        for agent in agents:
-            if agent.agent.id == agent_id:
-                return agent
-        return None
+        if self._agent_cache is None:
+            agents = self.load_agents()
+            self._agent_cache = {a.agent.id: a for a in agents}
+        return self._agent_cache.get(agent_id)
 
     def load_domain_by_id(self, domain_id: str) -> DomainDefinition | None:
         """Load a specific domain by its ID.
+
+        Uses caching to avoid reloading all domains for repeated lookups.
 
         Args:
             domain_id: The domain ID to search for
@@ -471,8 +481,17 @@ class AgentGraphLoader:
         Returns:
             DomainDefinition if found, None otherwise
         """
-        domains = self.load_domains()
-        for domain in domains:
-            if domain.domain.id == domain_id:
-                return domain
-        return None
+        if self._domain_cache is None:
+            domains = self.load_domains()
+            self._domain_cache = {d.domain.id: d for d in domains}
+        return self._domain_cache.get(domain_id)
+
+    def clear_cache(self) -> None:
+        """Clear all cached definitions.
+
+        Call this if the underlying YAML files have changed.
+        """
+        self._skill_cache = None
+        self._agent_cache = None
+        self._domain_cache = None
+        self._schema_cache.clear()

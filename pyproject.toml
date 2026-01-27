@@ -18,6 +18,7 @@ dependencies = [
     "uvicorn>=0.40.0",
     "python-dotenv>=1.2.1",
     "supabase>=2.27.2",
+    "dnspython>=2.8.0",
 ]
 
 [project.optional-dependencies]

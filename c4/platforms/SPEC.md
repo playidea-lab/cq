@@ -14,7 +14,7 @@ C4는 MCP(Model Context Protocol) 서버를 통해 플랫폼 독립적인 기능
 | Claude Code | `.claude/commands/` | Markdown |
 | Cursor | `.cursor/commands/` | Markdown |
 | Codex CLI | `.codex/agents/` | AGENTS.md 형식 |
-| Gemini CLI | `.gemini/` | 참조 문서 |
+| Gemini CLI | `.gemini/commands/` | Markdown |
 
 ## 필수 커맨드
 

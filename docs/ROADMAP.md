@@ -250,42 +250,24 @@ uv run pytest tests/unit/test_skill_matcher.py tests/unit/test_agent_graph_loade
 
 ### Phase 6.5: MCP Advanced Tools ✅
 
-**목표**: 코드 분석 및 문서화 자동화
+**목표**: 코드 분석 및 문서화 자동화 (완료)
 
-**구현 완료**:
-- **Code Analysis Engine** (`c4/services/code_analysis/`)
-  - `PythonParser` - Python AST 분석
-  - `TypeScriptParser` - TypeScript 구문 분석
-  - 심볼 테이블, 의존성 그래프
-- **Semantic Search Engine** (`c4/docs/semantic_search.py`)
-  - TF-IDF 기반 자연어 코드 검색
-  - 프로그래밍 동의어 확장 (auth → authentication 등)
-  - 범위 지정 검색 (symbols, docs, code, files)
-- **Call Graph Analyzer** (`c4/docs/call_graph.py`)
-  - 호출자/피호출자 분석
-  - 함수 간 호출 경로 찾기
-  - 호출 그래프 통계 및 Mermaid 다이어그램 생성
-- **Long-Running Worker Detection** (`c4/daemon/workers.py`)
-  - Worker heartbeat 모니터링
-  - 장기 실행 태스크 자동 감지
-  - Stale worker 복구 메커니즘
-- **Documentation Server** (`c4/mcp/docs_server.py`)
-  - `query_docs` - 문서 쿼리
-  - `create_snapshot` - 스냅샷 생성
-  - `get_usage_examples` - 사용 예시 추출
-- **Gap Analyzer** (`c4/mcp/gap_analyzer.py`)
-  - `analyze_spec_gaps` - 명세-구현 갭 분석
-  - `generate_tests_from_spec` - 명세→테스트 생성
-  - `link_impl_to_spec` - 구현-명세 연결
-- **12개 신규 MCP 도구** (`c4/mcp/code_tools.py`)
-  - `c4_semantic_search`, `c4_find_related_symbols`, `c4_search_by_type`
-  - `c4_get_callers`, `c4_get_callees`, `c4_find_call_paths`
-  - `c4_call_graph_stats`, `c4_call_graph_diagram`
-  - `c4_find_definition`, `c4_find_references`, `c4_analyze_file`, `c4_get_dependencies`
-- **Public Docs API** (`c4/api/routes/docs.py`)
-  - Context7 스타일 REST API
-  - 스냅샷 생성/조회
-  - 검색 기능
+... (생략) ...
+
+### Phase 6.6: UX & Platform Excellence ✅
+
+**목표**: 사용자 경험 최적화 및 멀티 플랫폼 지원 강화
+
+- **Gemini CLI Full Support**:
+  - `.gemini/commands/` 구조 최적화 (Slash Commands 11개)
+  - `~/.gemini/settings.json` 자동 설정 가이드
+  - `GEMINI.md`를 통한 컨텍스트 최적화
+- **Project Sanitization**:
+  - 루트 디렉토리 정리 (Debug 스크립트 이동: `tests/debug/`)
+  - 플랫폼별 커맨드 위치 현행화 (`SPEC.md`)
+- **Documentation Refinement**:
+  - README.md 최신화 (Gemini CLI 지원 명시)
+  - 통합 개발 가이드 업데이트
 
 ---
 

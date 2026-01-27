@@ -166,18 +166,25 @@ class ExternalSkillLoader:
         if not directory.exists():
             return
 
-        # Find all skill files (.yaml, .yml, .md)
-        skill_files = list(directory.glob("**/*.yaml"))
-        skill_files += list(directory.glob("**/*.yml"))
-        skill_files += list(directory.glob("**/SKILL.md"))
-        skill_files += list(directory.glob("**/*.skill.md"))
+        import os
 
-        # Filter out meta files
-        skill_files = [
-            f
-            for f in skill_files
-            if not f.name.startswith("_") and f.name not in ("_domain.yaml", "_groups.yaml")
-        ]
+        # Find all skill files with a single directory traversal
+        # instead of 4 separate glob calls (performance optimization)
+        skill_files: list[Path] = []
+        for root, _dirs, files in os.walk(directory):
+            root_path = Path(root)
+            for filename in files:
+                # Check if file matches skill patterns
+                is_yaml = filename.endswith((".yaml", ".yml"))
+                is_skill_md = filename == "SKILL.md" or filename.endswith(".skill.md")
+
+                if is_yaml or is_skill_md:
+                    # Filter out meta files
+                    if not filename.startswith("_") and filename not in (
+                        "_domain.yaml",
+                        "_groups.yaml",
+                    ):
+                        skill_files.append(root_path / filename)
 
         for skill_path in skill_files:
             self._load_skill_file(skill_path, source, result)

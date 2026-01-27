@@ -1,0 +1,133 @@
+skill:
+  id: data-analysis
+  name: "Data Analysis & Visualization"
+  description: "데이터 탐색, 통계 분석, 시각화, 인사이트 도출을 통한 데이터 기반 의사결정 지원"
+
+  impact: high
+  category: data-processing
+  domains:
+    - data-science
+    - ml-dl
+
+  domain_specific:
+    data-science:
+      priority_boost: 0.5
+    ml-dl:
+      priority_boost: 0.3
+
+  metadata:
+    version: "1.0.0"
+    author: "c4-team"
+    license: MIT
+    tags: [data-analysis, eda, visualization, statistics, pandas, numpy]
+
+  capabilities:
+    - exploratory-data-analysis
+    - statistical-analysis
+    - data-visualization
+    - data-cleaning
+    - feature-engineering
+    - data-profiling
+
+  triggers:
+    keywords:
+      - data
+      - analysis
+      - visualization
+      - pandas
+      - statistics
+      - eda
+      - dataframe
+      - plot
+      - chart
+    task_types:
+      - data-analysis
+      - eda
+      - visualization
+      - data-exploration
+    file_patterns:
+      - "*.ipynb"
+      - "**/notebooks/**"
+      - "**/data/**"
+      - "**/analysis/**"
+
+  rules:
+    - id: DATA-001
+      description: "EDA 시작 전 데이터 형태와 결측치 현황 반드시 확인"
+      impact: critical
+      example_bad: |
+        # 바로 분석 시작
+        df.groupby('category').mean()
+      example_good: |
+        # 데이터 이해 먼저
+        print(df.shape)
+        print(df.info())
+        print(df.isnull().sum())
+        print(df.describe())
+
+    - id: DATA-002
+      description: "시각화는 목적에 맞는 차트 유형 선택 및 적절한 레이블링"
+      impact: high
+      example_bad: |
+        plt.plot(categories, values)  # 범주형 데이터에 line plot
+        plt.show()
+      example_good: |
+        plt.figure(figsize=(10, 6))
+        plt.bar(categories, values)
+        plt.xlabel('Category')
+        plt.ylabel('Value')
+        plt.title('Sales by Category')
+        plt.xticks(rotation=45)
+        plt.tight_layout()
+        plt.show()
+
+    - id: DATA-003
+      description: "통계적 검정 결과는 유의수준과 함께 해석 제공"
+      impact: high
+      example_bad: |
+        from scipy import stats
+        t_stat, p_value = stats.ttest_ind(group_a, group_b)
+        print(f"p-value: {p_value}")  # 해석 없음
+      example_good: |
+        from scipy import stats
+        t_stat, p_value = stats.ttest_ind(group_a, group_b)
+        alpha = 0.05
+        print(f"t-statistic: {t_stat:.4f}")
+        print(f"p-value: {p_value:.4f}")
+        if p_value < alpha:
+            print(f"✓ 유의수준 {alpha}에서 통계적으로 유의한 차이가 있음")
+        else:
+            print(f"✗ 유의수준 {alpha}에서 통계적으로 유의한 차이가 없음")
+
+    - id: DATA-004
+      description: "이상치 처리 전 원본 데이터 보존 및 처리 방법 문서화"
+      impact: medium
+      example_bad: |
+        df = df[df['value'] < 1000]  # 원본 손실, 이유 불명
+      example_good: |
+        # 이상치 탐지
+        Q1, Q3 = df['value'].quantile([0.25, 0.75])
+        IQR = Q3 - Q1
+        outlier_mask = (df['value'] < Q1 - 1.5*IQR) | (df['value'] > Q3 + 1.5*IQR)
+        print(f"이상치 개수: {outlier_mask.sum()}")
+
+        # 원본 보존
+        df_clean = df[~outlier_mask].copy()
+        df_outliers = df[outlier_mask].copy()  # 이상치 별도 저장
+
+  tools:
+    - pandas
+    - numpy
+    - matplotlib
+    - seaborn
+    - jupyter
+    - plotly
+
+  complementary_skills:
+    - feature-engineering
+    - statistical-testing
+    - experiment-tracking
+
+  leads_to:
+    - feature-engineering
+    - experiment-tracking

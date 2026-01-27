@@ -622,7 +622,10 @@ class SSOService:
         team_id: str,
         domain: str,
     ) -> bool:
-        """Verify domain ownership.
+        """Verify domain ownership via DNS TXT record.
+
+        Checks for a DNS TXT record at _c4-verify.{domain} containing
+        the verification token.
 
         Args:
             team_id: Team identifier
@@ -631,13 +634,24 @@ class SSOService:
         Returns:
             True if verified
         """
+        from c4.services.dns import verify_dns_txt_record
+
         key = f"{team_id}:{domain}"
         verification = self._domain_verifications.get(key)
         if not verification:
             return False
 
-        # TODO: Implement actual DNS/meta tag verification
-        # For now, just mark as verified
+        # Verify DNS TXT record
+        dns_verified = await verify_dns_txt_record(
+            domain=domain,
+            expected_token=verification.token,
+        )
+
+        if not dns_verified:
+            logger.warning(f"DNS verification failed for domain {domain}")
+            return False
+
+        # Mark as verified
         verification.verified = True
         verification.verified_at = datetime.now(UTC)
 

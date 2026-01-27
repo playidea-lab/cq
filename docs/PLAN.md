@@ -1,6 +1,6 @@
 # C4 Project Plan
 
-## 현재 상태: v0.6.0 (Team Collaboration)
+## 현재 상태: v0.6.6 (UX & Platform Refinement)
 
 ### 완료된 Phase
 
@@ -14,8 +14,18 @@
 | Phase 5.5 | Skill System Enhancement | ✅ 완료 |
 | Phase 6 | Team Collaboration | ✅ 완료 |
 | Phase 6.5 | MCP Advanced Tools | ✅ 완료 |
+| Phase 6.6 | UX & Platform Refinement | ✅ 완료 |
 
-### Phase 6: Team Collaboration ✅
+### Phase 6.6: UX & Platform Refinement ✅
+
+**플랫폼 최적화**:
+- T-661: Gemini CLI 전용 가이드 (`GEMINI.md`) 생성
+- T-662: Gemini 슬래시 커맨드 경로 수정 (`.gemini/commands/`)
+- T-663: 전역 MCP 설정 가이드 업데이트 (`~/.gemini/settings.json`)
+- T-664: 프로젝트 구조 클린업 (Debug 스크립트 → `tests/debug/`)
+- T-665: README.md 및 공식 문서 현행화
+
+### Phase 6.5: MCP Advanced Tools ✅
 
 **Supabase 기반 팀 협업**:
 - T-601: Supabase 스키마 (`infra/supabase/migrations/`)

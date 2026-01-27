@@ -49,3 +49,10 @@ Thumbs.db
 # Local files
 C4-Guide.pptx
 workspace/
+
+
+# C4 local files (auto-added)
+.c4/locks/
+.c4/daemon.pid
+.c4/daemon.log
+.c4/workers/

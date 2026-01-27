@@ -3,8 +3,12 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from ..models import SupervisorDecision
+
+if TYPE_CHECKING:
+    from .agent_graph.models import AgentDefinition
 
 
 @dataclass
@@ -79,6 +83,7 @@ class SupervisorBackend(ABC):
         prompt: str,
         bundle_dir: Path,
         timeout: int = 300,
+        agent: "AgentDefinition | None" = None,
     ) -> SupervisorResponse:
         """
         Run supervisor review with the given prompt.
@@ -87,6 +92,7 @@ class SupervisorBackend(ABC):
             prompt: Rendered review prompt
             bundle_dir: Path to bundle directory (for saving artifacts)
             timeout: Timeout in seconds
+            agent: Optional agent definition for persona injection
 
         Returns:
             SupervisorResponse with decision
