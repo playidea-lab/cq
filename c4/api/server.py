@@ -85,7 +85,24 @@ from fastapi.middleware.cors import CORSMiddleware
 from .chat import router as chat_router
 from .deps import clear_daemon_cache
 from .middleware import BrandingMiddleware
-from .routes import branding, c4, design, discovery, docs, files, git, integrations, reports, shell, sso, teams, validation, workspace
+from .routes import (
+    branding,
+    c4,
+    design,
+    discovery,
+    docs,
+    files,
+    git,
+    integrations,
+    reports,
+    shell,
+    sso,
+    teams,
+    validation,
+    workspace,
+)
+from c4.monitoring import MetricsMiddleware, tracing
+from c4.monitoring.routes import router as monitoring_router
 
 if TYPE_CHECKING:
     from c4.services.branding import BrandingService
@@ -125,6 +142,9 @@ def create_app(
     Returns:
         Configured FastAPI application
     """
+    # Initialize tracing
+    tracing.setup_tracing(service_name="c4-api", version=version)
+
     app = FastAPI(
         title=title,
         description=description,
@@ -134,6 +154,9 @@ def create_app(
         redoc_url="/redoc",
         openapi_url="/openapi.json",
     )
+
+    # Instrument app with OpenTelemetry
+    tracing.instrument_app(app)
 
     # Configure CORS
     if cors_origins is None:
@@ -147,6 +170,9 @@ def create_app(
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    # Add metrics middleware
+    app.add_middleware(MetricsMiddleware)
 
     # Add branding middleware if service is provided
     if branding_service is not None:
@@ -175,6 +201,7 @@ def create_app(
     app.include_router(reports.router, prefix="/api")
     app.include_router(sso.router, prefix="/api")
     app.include_router(docs.router, prefix="/api")
+    app.include_router(monitoring_router)
 
     # Health check endpoint
     @app.get("/health", tags=["Health"])

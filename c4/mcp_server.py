@@ -43,6 +43,7 @@ from .models import (
     ValidationResult,
 )
 from .state_machine import StateMachine, StateTransitionError
+from .utils.slimmer import ContextSlimmer
 from .store import (
     LockStore,
     SQLiteStateStore,
@@ -5010,6 +5011,10 @@ def create_server(project_root: Path | None = None) -> Server:
 
             if name == "c4_status":
                 result = daemon.c4_status()
+                # Apply slimming to large JSON status responses
+                if len(json.dumps(result)) > 10000:
+                    result = json.loads(ContextSlimmer.slim_json(result, max_list_len=10))
+                    result["_note"] = "Response slimmed for token efficiency. Use specific tools for details."
             elif name == "c4_handle_long_running":
                 result = daemon.c4_handle_long_running(
                     worker_id=arguments["worker_id"],
@@ -5113,6 +5118,12 @@ def create_server(project_root: Path | None = None) -> Server:
                     fail_fast=arguments.get("fail_fast", True),
                     timeout=arguments.get("timeout", 300),
                 )
+                # Slim down large validation logs
+                if isinstance(result, list):
+                    for r in result:
+                        if isinstance(r, dict) and "message" in r and len(r["message"]) > 5000:
+                            r["message"] = ContextSlimmer.slim_log(r["message"])
+                            r["message"] += "\n\n... (log truncated for slimming) ..."
             elif name == "c4_mark_blocked":
                 result = daemon.c4_mark_blocked(
                     task_id=arguments["task_id"],

@@ -34,9 +34,8 @@ The State Machine is the single source of truth for the project's progress.
 ### 3.4 Token Optimization (CRITICAL)
 Efficiency is paramount. Follow these "Token Slimming" rules:
 - **Prompt Caching**: Keep the structure of system prompts and tool definitions consistent to maximize LLM prompt cache hits.
-- **Context Slimming**: Do not read entire large files if only a specific section is needed. Use `read_file` with `offset` and `limit`.
-- **Sparse Output**: Avoid verbose explanations. Use monospaced markdown and be direct.
-- **No Redundant Reading**: Check if the information is already in the current context before calling `read_file` or `ls` again.
+- **Context Slimming**: C4 automatically slims down large status reports and logs. If you see `(SLIMMED)` or `(truncated)`, it means the content was shortened to save tokens. Use specific tools (like `read_file` with ranges) to see details of a specific section.
+- **Efficient Retrieval**: Prefer `read_file` with `offset` and `limit` for files > 10KB. Avoid reading the same large file multiple times.
 
 ---
 
