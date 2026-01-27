@@ -263,7 +263,7 @@ uv run pytest tests/unit/test_skill_matcher.py tests/unit/test_agent_graph_loade
 **목표**: 시스템 안정성 강화 및 운영 가시성 확보
 
 - **Advanced Telemetry**:
-  - OpenTelemetry 기반 분산 트레이싱 (워커 간 호출 추적)
+  - OpenTelemetry 기반 분산 트레이싱 (워커 간 호출 추적) ✅ 완료
   - Prometheus 메트릭 확장 (태스크 처리 시간, 성공률, 비용 추적)
 - **Self-Healing Queue**:
   - 타임아웃 발생 시 자동 롤백 및 재시도 전략 (Exponential Backoff)
