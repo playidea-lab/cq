@@ -62,6 +62,7 @@ from .supervisor.agent_graph import (
 )
 from .supervisor.agent_router import AgentRouter
 from .validation import ValidationRunner
+from .monitoring import tracing
 
 logger = logging.getLogger(__name__)
 
@@ -199,6 +200,9 @@ class C4Daemon:
         self._graph_router: GraphRouter | None = None
         self._agent_graph: AgentGraph | None = None
         self._rule_engine: RuleEngine | None = None
+
+        # Initialize tracing
+        tracing.setup_tracing(service_name="c4-daemon")
 
     # =========================================================================
     # Initialization
@@ -849,6 +853,42 @@ Thumbs.db
             "is_running": True,
         }
 
+    def update_metrics(
+        self,
+        prompt_tokens: int = 0,
+        completion_tokens: int = 0,
+        cost_usd: float = 0.0,
+        validations_run: int = 0,
+        tasks_completed: int = 0,
+        checkpoints_passed: int = 0,
+    ) -> None:
+        """Update project metrics atomically.
+
+        Args:
+            prompt_tokens: Number of prompt tokens to add
+            completion_tokens: Number of completion tokens to add
+            cost_usd: Estimated cost in USD to add
+            validations_run: Number of validations run to add
+            tasks_completed: Number of tasks completed to add
+            checkpoints_passed: Number of checkpoints passed to add
+        """
+        if self.state_machine is None:
+            return
+
+        project_id = self.state_machine.state.project_id
+        store = self.state_machine.store
+
+        with store.atomic_modify(project_id) as state:
+            state.metrics.total_prompt_tokens += prompt_tokens
+            state.metrics.total_completion_tokens += completion_tokens
+            state.metrics.total_cost_usd += cost_usd
+            state.metrics.validations_run += validations_run
+            state.metrics.tasks_completed += tasks_completed
+            state.metrics.checkpoints_passed += checkpoints_passed
+            
+            # Update cached state
+            self.state_machine._state = state
+
     # =========================================================================
     # Task Management
     # =========================================================================
@@ -1117,57 +1157,64 @@ Thumbs.db
 
     def c4_get_task(self, worker_id: str) -> TaskAssignment | None:
         """Request next task assignment for a worker"""
-        if self.state_machine is None:
-            raise RuntimeError("C4 not initialized")
+        tracer = tracing.get_tracer()
+        with tracer.start_as_current_span("c4_get_task") as span:
+            span.set_attribute("worker_id", worker_id)
+            
+            if self.state_machine is None:
+                raise RuntimeError("C4 not initialized")
 
-        # Auto-ensure supervisor loop is running for AI review
-        self._ensure_supervisor_running()
+            # Auto-ensure supervisor loop is running for AI review
+            self._ensure_supervisor_running()
 
-        # Implicit heartbeat - keep worker marked as active
-        self._touch_worker(worker_id)
+            # Implicit heartbeat - keep worker marked as active
+            self._touch_worker(worker_id)
 
-        # Re-load state to get latest (prevent race conditions with other workers)
-        self.state_machine.load_state()
-        # Also refresh task cache from SQLite (fixes stale cache after direct DB edits)
-        self._load_tasks()
-        state = self.state_machine.state
+            # Re-load state to get latest (prevent race conditions with other workers)
+            self.state_machine.load_state()
+            # Also refresh task cache from SQLite (fixes stale cache after direct DB edits)
+            self._load_tasks()
+            state = self.state_machine.state
 
-        # Clean up expired scope locks (prevents stale locks from blocking task assignment)
-        self.lock_store.cleanup_expired(state.project_id)
+            # Clean up expired scope locks (prevents stale locks from blocking task assignment)
+            self.lock_store.cleanup_expired(state.project_id)
 
-        # Ensure we're in EXECUTE state
-        if state.status != ProjectStatus.EXECUTE:
-            return None
+            # Ensure we're in EXECUTE state
+            if state.status != ProjectStatus.EXECUTE:
+                span.set_attribute("status", "not_in_execute_state")
+                return None
 
-        # Register worker if not exists
-        if not self.worker_manager.is_registered(worker_id):
-            self.worker_manager.register(worker_id)
+            # Register worker if not exists
+            if not self.worker_manager.is_registered(worker_id):
+                self.worker_manager.register(worker_id)
 
-        # Check if worker already has an in_progress task (resume after crash/restart)
-        for task_id, assigned_worker in list(
-            state.queue.in_progress.items()
-        ):  # list() to allow mutation
-            if assigned_worker == worker_id:
-                task = self.get_task(task_id)
-                if task:
-                    # Verify scope lock is still valid for this worker
-                    if task.scope:
-                        # Check SQLite lock store (authoritative) for lock status
-                        lock_owner = self.lock_store.get_lock_owner(state.project_id, task.scope)
-                        if lock_owner is None or lock_owner != worker_id:
-                            # Lock expired or taken by another worker - cannot resume
-                            # Move task back to pending for reassignment by OTHER workers
-                            del state.queue.in_progress[task_id]
-                            state.queue.pending.insert(0, task_id)  # Add to front of queue
-                            task.status = TaskStatus.PENDING
-                            task.assigned_to = None
-                            self._save_task(task)
-                            # Also release SQLite lock if we owned it
-                            self.lock_store.release_scope_lock(state.project_id, task.scope)
-                            self.state_machine.save_state()
-                            # Return None - let another worker pick up the task
-                            # (don't try to re-acquire as same worker)
-                            return None
+            # Check if worker already has an in_progress task (resume after crash/restart)
+            for task_id, assigned_worker in list(
+                state.queue.in_progress.items()
+            ):  # list() to allow mutation
+                if assigned_worker == worker_id:
+                    task = self.get_task(task_id)
+                    if task:
+                        span.set_attribute("task_id", task_id)
+                        span.set_attribute("resume", True)
+                        # Verify scope lock is still valid for this worker
+                        if task.scope:
+                            # Check SQLite lock store (authoritative) for lock status
+                            lock_owner = self.lock_store.get_lock_owner(state.project_id, task.scope)
+                            if lock_owner is None or lock_owner != worker_id:
+                                # Lock expired or taken by another worker - cannot resume
+                                # Move task back to pending for reassignment by OTHER workers
+                                del state.queue.in_progress[task_id]
+                                state.queue.pending.insert(0, task_id)  # Add to front of queue
+                                task.status = TaskStatus.PENDING
+                                task.assigned_to = None
+                                self._save_task(task)
+                                # Also release SQLite lock if we owned it
+                                self.lock_store.release_scope_lock(state.project_id, task.scope)
+                                self.state_machine.save_state()
+                                # Return None - let another worker pick up the task
+                                # (don't try to re-acquire as same worker)
+                                return None
                     else:
                         # For scope=None tasks, verify task state consistency
                         if task.assigned_to != worker_id or task.status != TaskStatus.IN_PROGRESS:
@@ -1304,6 +1351,7 @@ Thumbs.db
             break
         else:
             # No task was assigned (loop completed without break)
+            span.set_attribute("task_assigned", False)
             return None
 
         # Set assigned_task for post-assignment work
@@ -1312,6 +1360,9 @@ Thumbs.db
         # Task was assigned - now do post-assignment work outside atomic block
         task = assigned_task
         task_id = task.id
+
+        span.set_attribute("task_id", task_id)
+        span.set_attribute("task_assigned", True)
 
         # Update task in SQLite (outside atomic block but still atomic per-task)
         task.status = TaskStatus.IN_PROGRESS
@@ -1371,8 +1422,14 @@ Thumbs.db
         - review_result: "APPROVE" or "REQUEST_CHANGES"
         - review_comments: Comments for REQUEST_CHANGES (becomes DoD for next version)
         """
-        if self.state_machine is None:
-            raise RuntimeError("C4 not initialized")
+        tracer = tracing.get_tracer()
+        with tracer.start_as_current_span("c4_submit") as span:
+            span.set_attribute("task_id", task_id)
+            span.set_attribute("worker_id", worker_id or "unknown")
+            span.set_attribute("commit_sha", commit_sha)
+            
+            if self.state_machine is None:
+                raise RuntimeError("C4 not initialized")
 
         # Auto-ensure supervisor loop is running for AI review
         self._ensure_supervisor_running()
@@ -1383,6 +1440,8 @@ Thumbs.db
         # Parse and validate results first (doesn't need state lock)
         results = [ValidationResult.model_validate(r) for r in validation_results]
         all_passed = all(r.status == "pass" for r in results)
+        span.set_attribute("all_passed", all_passed)
+        
         if not all_passed:
             return SubmitResponse(
                 success=False,

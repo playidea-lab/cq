@@ -12,22 +12,13 @@ from .verifier import VerificationRunner
 
 if TYPE_CHECKING:
     from ..models.config import LLMConfig
+    from ..mcp_server import C4Daemon
 
 
 class Supervisor:
     """
     Supervisor for checkpoint review.
-
-    Uses pluggable backends to support different LLM providers:
-    - ClaudeCliBackend (default): Uses `claude -p` CLI with user's subscription
-    - LiteLLMBackend: 100+ providers via LiteLLM (OpenAI, Anthropic, Azure, etc.)
-    - MockBackend: For testing
-
-    Backend selection priority:
-    1. Explicitly provided backend
-    2. Created from llm_config parameter
-    3. Loaded from .c4/config.yaml
-    4. Default ClaudeCliBackend
+    ...
     """
 
     def __init__(
@@ -37,19 +28,22 @@ class Supervisor:
         llm_config: LLMConfig | None = None,
         prompts_dir: Path | None = None,
         template_name: str = "supervisor.md.j2",
+        daemon: "C4Daemon | None" = None,
     ):
         """
         Initialize Supervisor.
 
         Args:
             project_root: Project root directory
-            backend: Explicit backend (takes precedence)
-            llm_config: LLM configuration (used if backend not provided)
-            prompts_dir: Directory containing prompt templates
+            backend: Explicit backend
+            llm_config: LLM configuration
+            prompts_dir: Directory containing templates
             template_name: Template file name
+            daemon: Optional C4Daemon instance for metrics
         """
         self.root = project_root
-        self.backend = self._resolve_backend(backend, llm_config)
+        self.daemon = daemon
+        self.backend = self._resolve_backend(backend, llm_config, daemon)
         self.renderer = PromptRenderer(
             prompts_dir=prompts_dir or (project_root / "prompts"),
             template_name=template_name,
@@ -59,22 +53,10 @@ class Supervisor:
         self,
         backend: SupervisorBackend | None,
         llm_config: LLMConfig | None,
+        daemon: "C4Daemon | None" = None,
     ) -> SupervisorBackend:
         """
         Resolve backend using priority order.
-
-        Priority:
-        1. Explicitly provided backend
-        2. Created from llm_config parameter
-        3. Loaded from .c4/config.yaml
-        4. Default ClaudeCliBackend
-
-        Args:
-            backend: Explicit backend (takes precedence)
-            llm_config: LLM configuration
-
-        Returns:
-            Resolved SupervisorBackend instance
         """
         if backend is not None:
             return backend
@@ -82,13 +64,13 @@ class Supervisor:
         if llm_config is not None:
             from .backend_factory import create_backend
 
-            return create_backend(llm_config, working_dir=self.root)
+            return create_backend(llm_config, working_dir=self.root, daemon=daemon)
 
         c4_dir = self.root / ".c4"
         if c4_dir.exists():
             from .backend_factory import create_backend_from_config_file
 
-            return create_backend_from_config_file(c4_dir, self.root)
+            return create_backend_from_config_file(c4_dir, self.root, daemon=daemon)
 
         from .claude_backend import ClaudeCliBackend
 

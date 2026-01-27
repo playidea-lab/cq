@@ -889,11 +889,22 @@ def _show_status(daemon: C4Daemon):
         console.print()
 
     # Metrics
+    metrics = status['metrics']
     console.print(
-        f"[dim]Events: {status['metrics']['events_emitted']} | "
-        f"Tasks completed: {status['metrics']['tasks_completed']} | "
-        f"Checkpoints passed: {status['metrics']['checkpoints_passed']}[/dim]"
+        f"[dim]Events: {metrics['events_emitted']} | "
+        f"Tasks completed: {metrics['tasks_completed']} | "
+        f"Checkpoints passed: {metrics['checkpoints_passed']}[/dim]"
     )
+    
+    # Token & Cost summary
+    if metrics.get('total_prompt_tokens', 0) > 0:
+        cost_color = "green" if metrics['total_cost_usd'] < 1.0 else "yellow"
+        if metrics['total_cost_usd'] > 10.0: cost_color = "red"
+        
+        console.print(
+            f"[dim]Tokens: {metrics['total_prompt_tokens']:,} (in) / {metrics['total_completion_tokens']:,} (out) | "
+            f"Est. Cost: [{cost_color}]${metrics['total_cost_usd']:.4f}[/{cost_color}][/dim]"
+        )
 
 
 @c4_app.command()

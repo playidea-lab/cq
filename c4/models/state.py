@@ -104,12 +104,16 @@ class TaskQueue(BaseModel):
 
 
 class Metrics(BaseModel):
-    """Runtime metrics"""
+    """Runtime metrics including token usage and cost tracking"""
 
     events_emitted: int = 0
     validations_run: int = 0
     tasks_completed: int = 0
     checkpoints_passed: int = 0
+    # Token & Cost tracking
+    total_prompt_tokens: int = 0
+    total_completion_tokens: int = 0
+    total_cost_usd: float = 0.0
 
 
 class C4State(BaseModel):

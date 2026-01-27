@@ -12,6 +12,7 @@ if TYPE_CHECKING:
 
 from ..constants import REPAIR_PREFIX, WORKER_STALE_TIMEOUT_SEC
 from ..supervisor import Supervisor, SupervisorError
+from ..monitoring import tracing
 
 logger = logging.getLogger(__name__)
 
@@ -162,29 +163,24 @@ class SupervisorLoop:
     async def _process_checkpoint_queue(self) -> bool:
         """
         Process the next item in the checkpoint queue.
-
-        If checkpoint_as_task is enabled:
-          - Checkpoints are handled as tasks (CP-XXX) by workers
-          - This method just clears the queue
-
-        If checkpoint_as_task is disabled:
-          - Uses strict review mode with execution verification
-          - Runs supervisor directly
-
+        ...
         Returns:
             True if an item was processed, False if queue is empty
         """
-        if self.daemon.state_machine is None:
-            return False
+        tracer = tracing.get_tracer()
+        with tracer.start_as_current_span("supervisor_process_checkpoint") as span:
+            if self.daemon.state_machine is None:
+                return False
 
-        state = self.daemon.state_machine.state
-        if not state.checkpoint_queue:
-            return False
+            state = self.daemon.state_machine.state
+            if not state.checkpoint_queue:
+                return False
 
-        # Get the first item (FIFO)
-        item = state.checkpoint_queue[0]
-
-        # Check if checkpoint_as_task is enabled
+            # Get the first item (FIFO)
+            item = state.checkpoint_queue[0]
+            span.set_attribute("checkpoint_id", item.checkpoint_id)
+            
+            # Check if checkpoint_as_task is enabled
         config = getattr(self.daemon, "config", None)
         if config and getattr(config, "checkpoint_as_task", False):
             # Checkpoint is handled as a task (CP-XXX)
@@ -207,6 +203,7 @@ class SupervisorLoop:
             supervisor = Supervisor(
                 self.daemon.root,
                 prompts_dir=self.daemon.root / "prompts",
+                daemon=self.daemon,
             )
 
             # Get verifications from config
@@ -303,16 +300,19 @@ class SupervisorLoop:
         Returns:
             True if an item was processed, False if queue is empty
         """
-        if self.daemon.state_machine is None:
-            return False
+        tracer = tracing.get_tracer()
+        with tracer.start_as_current_span("supervisor_process_repair") as span:
+            if self.daemon.state_machine is None:
+                return False
 
-        state = self.daemon.state_machine.state
-        if not state.repair_queue:
-            return False
+            state = self.daemon.state_machine.state
+            if not state.repair_queue:
+                return False
 
-        # Get the first item (FIFO)
-        item = state.repair_queue[0]
-        logger.info(f"Processing repair for task: {item.task_id}")
+            # Get the first item (FIFO)
+            item = state.repair_queue[0]
+            span.set_attribute("task_id", item.task_id)
+            logger.info(f"Processing repair for task: {item.task_id}")
 
         try:
             # Create repair prompt for supervisor guidance

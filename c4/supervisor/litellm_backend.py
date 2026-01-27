@@ -63,6 +63,7 @@ class LiteLLMBackend(SupervisorBackend):
         max_tokens: int | None = None,
         api_base: str | None = None,
         drop_params: bool = True,
+        daemon: "C4Daemon | None" = None,
     ):
         """
         Initialize LiteLLM backend.
@@ -78,11 +79,13 @@ class LiteLLMBackend(SupervisorBackend):
             max_tokens: Maximum output tokens (auto-detected for Claude models)
             api_base: Custom API base URL (for Azure, Ollama, etc.)
             drop_params: Drop unsupported parameters for the model
+            daemon: Optional C4Daemon instance for metrics tracking
         """
         # Resolve model alias to full ID
         self.model = resolve_model_id(model)
         self._original_model = model
         self.strategy = get_strategy_for_model(self.model)
+        self.daemon = daemon
 
         # Auto-detect API key for Claude models
         if api_key:
@@ -315,6 +318,18 @@ class LiteLLMBackend(SupervisorBackend):
             total_tokens=response.usage.total_tokens,
             cost=cost,
         )
+
+        # Update daemon metrics if available
+        if self.daemon:
+            try:
+                self.daemon.update_metrics(
+                    prompt_tokens=response.usage.prompt_tokens,
+                    completion_tokens=response.usage.completion_tokens,
+                    cost_usd=cost or 0.0,
+                )
+            except Exception as e:
+                logger.warning(f"Failed to update daemon metrics: {e}")
+
         self._log_usage()
 
     def _log_usage(self) -> None:

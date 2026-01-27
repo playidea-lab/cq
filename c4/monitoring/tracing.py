@@ -9,7 +9,7 @@ from typing import Optional
 
 from opentelemetry import trace
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
-from opentelemetry.sdk.resources import RESOURCE_ATTRIBUTES, Resource
+from opentelemetry.sdk.resources import SERVICE_NAME, SERVICE_VERSION, Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor, ConsoleSpanExporter
 
@@ -29,8 +29,8 @@ def setup_tracing(service_name: str = "c4", version: str = "0.1.0") -> None:
 
     # Create resource with service name
     resource = Resource.create({
-        RESOURCE_ATTRIBUTES.SERVICE_NAME: service_name,
-        RESOURCE_ATTRIBUTES.SERVICE_VERSION: version,
+        SERVICE_NAME: service_name,
+        SERVICE_VERSION: version,
         "deployment.environment": os.getenv("C4_ENV", "development"),
     })
 
