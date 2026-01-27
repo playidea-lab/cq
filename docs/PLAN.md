@@ -23,6 +23,8 @@
 - T-671: OpenTelemetry 통합 및 메트릭 대시보드 기초 구축
 - T-672: 자동 재시도 및 AI 기반 실패 원인 분석 (Error Diagnosis)
 - T-673: 비용 최적화 모델 라우터 (Cost-Aware Router) 구현
+- T-675: Prompt Caching 최적화 (도구 정의 및 시스템 메시지 순서 고정)
+- T-676: Context Slimming 인터페이스 (파일 부분 읽기 및 요약 압축)
 - T-674: 워커 하트비트 이상 탐지 및 자동 복구 고도화
 
 ### Phase 6.6: UX & Platform Refinement ✅

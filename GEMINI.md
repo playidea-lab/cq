@@ -31,6 +31,13 @@ The State Machine is the single source of truth for the project's progress.
 | **CHECKPOINT** | `c4-status`, `c4-checkpoint` | AI/Human review of the milestone |
 | **HALTED** | `c4-run`, `c4-plan` | Investigate logs/repair queue and resume |
 
+### 3.4 Token Optimization (CRITICAL)
+Efficiency is paramount. Follow these "Token Slimming" rules:
+- **Prompt Caching**: Keep the structure of system prompts and tool definitions consistent to maximize LLM prompt cache hits.
+- **Context Slimming**: Do not read entire large files if only a specific section is needed. Use `read_file` with `offset` and `limit`.
+- **Sparse Output**: Avoid verbose explanations. Use monospaced markdown and be direct.
+- **No Redundant Reading**: Check if the information is already in the current context before calling `read_file` or `ls` again.
+
 ---
 
 ## 4. Operational Protocol (Mandatory)

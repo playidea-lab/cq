@@ -270,6 +270,10 @@ uv run pytest tests/unit/test_skill_matcher.py tests/unit/test_agent_graph_loade
   - 반복 실패 태스크에 대한 AI 원인 분석 및 수정 제안
 - **Cost-Aware Routing**:
   - 태스크 난이도 측정 및 최적 모델 자동 선택 (GPT-4o vs Flash-1.5 등)
+- **Token Slimming Engine**:
+  - `Context-Aware Truncation`: 긴 로그나 소스코드에서 불필요한 부분 자동 제거
+  - `Prompt Caching Strategy`: 시스템 메시지 및 자주 사용되는 도구 정의의 고정화를 통한 캐시 효율 극대화 (비용 90% 절감 목표)
+  - `Incremental Context`: 변경된 부분만 컨텍스트에 추가하는 증분 로딩 방식 도입
 
 ---
 
