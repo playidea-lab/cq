@@ -42,8 +42,8 @@ def setup_permissions(project_path: str) -> None:
     # Save config
     config_path.write_text(json.dumps(config, indent=2))
     print(f"✅ Permissions set for {project_path}")
-    print(f"   - Bash(*) enabled (Security Hook protects dangerous commands)")
-    print(f"   - MCP tools: mcp__c4, mcp__serena")
+    print("   - Bash(*) enabled (Security Hook protects dangerous commands)")
+    print("   - MCP tools: mcp__c4, mcp__serena")
 
 
 if __name__ == "__main__":

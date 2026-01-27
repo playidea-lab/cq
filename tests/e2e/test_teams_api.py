@@ -25,7 +25,6 @@ from c4.services.teams import (
     DuplicateSlugError,
     InviteExpiredError,
     InviteNotFoundError,
-    MemberNotFoundError,
     Team,
     TeamInvite,
     TeamMember,
@@ -34,7 +33,6 @@ from c4.services.teams import (
     TeamPlan,
     TeamRole,
 )
-
 
 # =============================================================================
 # Fixtures

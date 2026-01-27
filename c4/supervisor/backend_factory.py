@@ -2,15 +2,14 @@
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from .backend import SupervisorBackend, SupervisorError
+from .backend import SupervisorBackend
 
 if TYPE_CHECKING:
-    from ..models.config import LLMConfig
     from ..mcp_server import C4Daemon
+    from ..models.config import LLMConfig
 
 
 def create_backend(

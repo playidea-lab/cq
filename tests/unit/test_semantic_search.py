@@ -1,15 +1,14 @@
 """Tests for semantic search functionality."""
 
-import tempfile
 from pathlib import Path
 
 import pytest
 
 from c4.docs.semantic_search import (
-    SemanticSearcher,
-    SearchScope,
-    SearchResult,
     SearchHit,
+    SearchResult,
+    SearchScope,
+    SemanticSearcher,
 )
 
 

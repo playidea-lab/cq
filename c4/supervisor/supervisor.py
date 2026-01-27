@@ -11,8 +11,8 @@ from .prompt import PromptRenderer
 from .verifier import VerificationRunner
 
 if TYPE_CHECKING:
-    from ..models.config import LLMConfig
     from ..mcp_server import C4Daemon
+    from ..models.config import LLMConfig
 
 
 class Supervisor:

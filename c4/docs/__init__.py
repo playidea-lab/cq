@@ -10,24 +10,18 @@ Provides comprehensive code analysis, spec mapping, gap analysis, and documentat
 
 from .analyzer import (
     CodeAnalyzer,
-    Symbol,
-    SymbolKind,
-    Reference,
     Dependency,
     Location,
-)
-from .semantic_search import (
-    SemanticSearcher,
-    SearchResult,
-    SearchHit,
-    SearchScope,
+    Reference,
+    Symbol,
+    SymbolKind,
 )
 from .call_graph import (
-    CallGraphAnalyzer,
-    CallNode,
     CallEdge,
-    CallPath,
+    CallGraphAnalyzer,
     CallGraphStats,
+    CallNode,
+    CallPath,
     RelationType,
 )
 from .gap import (
@@ -36,6 +30,12 @@ from .gap import (
     ImplementationStatus,
     Priority,
     RequirementGap,
+)
+from .semantic_search import (
+    SearchHit,
+    SearchResult,
+    SearchScope,
+    SemanticSearcher,
 )
 from .testgen import (
     EarsPattern,

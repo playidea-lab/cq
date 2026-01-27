@@ -3,8 +3,7 @@
 from __future__ import annotations
 
 import warnings
-from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 

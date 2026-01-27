@@ -2,8 +2,8 @@
 
 import json
 import os
-import shutil
 import shlex
+import shutil
 import signal
 import subprocess
 import sys
@@ -619,7 +619,7 @@ def _setup_standards_symlinks(project_path: Path) -> None:
         return
 
     rules_dir.mkdir(parents=True, exist_ok=True)
-    
+
     # Check if standards_dir contains any .md files
     md_files = list(standards_dir.glob("*.md"))
     if not md_files:
@@ -629,7 +629,7 @@ def _setup_standards_symlinks(project_path: Path) -> None:
 
     for standard_file in md_files:
         rule_link = rules_dir / standard_file.name
-        
+
         # Remove existing link/file to update
         if rule_link.exists() or rule_link.is_symlink():
             try:
@@ -895,12 +895,12 @@ def _show_status(daemon: C4Daemon):
         f"Tasks completed: {metrics['tasks_completed']} | "
         f"Checkpoints passed: {metrics['checkpoints_passed']}[/dim]"
     )
-    
+
     # Token & Cost summary
     if metrics.get('total_prompt_tokens', 0) > 0:
         cost_color = "green" if metrics['total_cost_usd'] < 1.0 else "yellow"
         if metrics['total_cost_usd'] > 10.0: cost_color = "red"
-        
+
         console.print(
             f"[dim]Tokens: {metrics['total_prompt_tokens']:,} (in) / {metrics['total_completion_tokens']:,} (out) | "
             f"Est. Cost: [{cost_color}]${metrics['total_cost_usd']:.4f}[/{cost_color}][/dim]"
@@ -2012,18 +2012,18 @@ def registry_build(
     Converts YAML definitions into platform-specific formats (e.g., Markdown for Claude).
     """
     from c4.system.registry.builder import RegistryBuilder
-    
+
     root = (project_path or Path.cwd()).resolve()
     console.print(f"[bold]Building registry for {root.name}...[/bold]")
-    
+
     builder = RegistryBuilder(root)
     generated = []
-    
+
     if target in ("claude", "all"):
         console.print("[dim]Building for Claude Code...[/dim]")
         files = builder.build_for_claude()
         generated.extend(files)
-        
+
     if generated:
         console.print(f"[green]Successfully generated {len(generated)} files:[/green]")
         for f in generated[:5]:

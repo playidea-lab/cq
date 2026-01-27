@@ -42,8 +42,8 @@ from .models import (
     TaskType,
     ValidationResult,
 )
+from .monitoring import tracing
 from .state_machine import StateMachine, StateTransitionError
-from .utils.slimmer import ContextSlimmer
 from .store import (
     LockStore,
     SQLiteStateStore,
@@ -61,8 +61,8 @@ from .supervisor.agent_graph import (
     TaskContext,
 )
 from .supervisor.agent_router import AgentRouter
+from .utils.slimmer import ContextSlimmer
 from .validation import ValidationRunner
-from .monitoring import tracing
 
 logger = logging.getLogger(__name__)
 
@@ -885,7 +885,7 @@ Thumbs.db
             state.metrics.validations_run += validations_run
             state.metrics.tasks_completed += tasks_completed
             state.metrics.checkpoints_passed += checkpoints_passed
-            
+
             # Update cached state
             self.state_machine._state = state
 
@@ -1160,7 +1160,7 @@ Thumbs.db
         tracer = tracing.get_tracer()
         with tracer.start_as_current_span("c4_get_task") as span:
             span.set_attribute("worker_id", worker_id)
-            
+
             if self.state_machine is None:
                 raise RuntimeError("C4 not initialized")
 
@@ -1427,7 +1427,7 @@ Thumbs.db
             span.set_attribute("task_id", task_id)
             span.set_attribute("worker_id", worker_id or "unknown")
             span.set_attribute("commit_sha", commit_sha)
-            
+
             if self.state_machine is None:
                 raise RuntimeError("C4 not initialized")
 
@@ -1441,7 +1441,7 @@ Thumbs.db
         results = [ValidationResult.model_validate(r) for r in validation_results]
         all_passed = all(r.status == "pass" for r in results)
         span.set_attribute("all_passed", all_passed)
-        
+
         if not all_passed:
             return SubmitResponse(
                 success=False,
@@ -1776,13 +1776,14 @@ Thumbs.db
             checkpoints: CP1/CP2/CP3 milestone definitions (DDD-CLEANCODE)
         """
         import warnings
+
         from c4.models.ddd import (
-            Goal,
-            ContractSpec,
             BoundaryMap,
-            CodePlacement,
-            QualityGate,
             CheckpointDefinition,
+            CodePlacement,
+            ContractSpec,
+            Goal,
+            QualityGate,
         )
 
         if self.state_machine is None:
@@ -3905,7 +3906,7 @@ Thumbs.db
         Returns:
             Query results with knowledge items and suggestions
         """
-        from .templates import PIQClient, PIQConfig, get_piq_client
+        from .templates import get_piq_client
 
         try:
             # Get PIQ config from C4 config if available
@@ -4080,7 +4081,7 @@ Thumbs.db
         Returns:
             PIQ status including connection health and config
         """
-        from .templates import PIQConfig, get_piq_client
+        from .templates import get_piq_client
 
         try:
             client = get_piq_client()

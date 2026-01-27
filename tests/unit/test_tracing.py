@@ -2,7 +2,9 @@
 
 import os
 from unittest.mock import patch
-from c4.monitoring.tracing import setup_tracing, get_tracer
+
+from c4.monitoring.tracing import get_tracer, setup_tracing
+
 
 def test_setup_tracing():
     """Test that tracing can be setup without errors."""

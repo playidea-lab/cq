@@ -1,5 +1,7 @@
 import unittest
+
 from c4.utils.slimmer import ContextSlimmer
+
 
 class TestContextSlimmer(unittest.TestCase):
     def test_slim_log(self):

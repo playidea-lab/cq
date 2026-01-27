@@ -2,7 +2,7 @@
 
 import pytest
 
-from c4.services.code_analysis import TypeScriptParser, SymbolKind
+from c4.services.code_analysis import SymbolKind, TypeScriptParser
 
 
 class TestTypeScriptParser:

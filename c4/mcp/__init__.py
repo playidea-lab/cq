@@ -6,14 +6,14 @@ Provides MCP (Model Context Protocol) tools for Claude integration:
 - Code analysis tools (semantic search, call graph)
 """
 
+from .code_tools import (
+    CodeToolsHandler,
+    get_code_tools,
+)
 from .docs_server import (
     DocGenerator,
     DocumentationEntry,
     ExampleEntry,
-)
-from .code_tools import (
-    CodeToolsHandler,
-    get_code_tools,
 )
 
 __all__ = [

@@ -14,7 +14,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
-from c4.docs.analyzer import CodeAnalyzer, Symbol, SymbolKind, Reference
+from c4.docs.analyzer import CodeAnalyzer, Symbol, SymbolKind
 
 
 class RelationType(Enum):

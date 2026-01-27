@@ -3,9 +3,8 @@
 Provides distributed tracing for workers, daemon, and API.
 """
 
-import os
 import logging
-from typing import Optional
+import os
 
 from opentelemetry import trace
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
@@ -63,7 +62,7 @@ def instrument_app(app):
         app: FastAPI application instance
     """
     from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
-    
+
     FastAPIInstrumentor.instrument_app(app)
     logger.info("FastAPI application instrumented with OpenTelemetry")
 

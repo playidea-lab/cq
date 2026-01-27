@@ -14,7 +14,7 @@ Key principle: "사용자가 별다른 응답없으면 그냥 기다리는거임
 import tempfile
 from datetime import datetime, timedelta
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 

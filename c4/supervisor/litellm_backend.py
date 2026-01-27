@@ -236,7 +236,7 @@ class LiteLLMBackend(SupervisorBackend):
             system_parts.append("# AGENT PERSONA\n" + self._format_agent_persona(agent))
         else:
             system_parts.append("# ROLE\nYou are a code review supervisor.")
-        
+
         system_message = "\n\n".join(system_parts)
 
         kwargs = self.strategy.get_request_params(
@@ -271,7 +271,7 @@ class LiteLLMBackend(SupervisorBackend):
         """
         a = agent.agent
         persona = a.persona
-        
+
         lines = [
             f"You are {a.name} ({a.id}).",
             f"Role: {persona.role}",

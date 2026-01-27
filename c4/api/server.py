@@ -82,6 +82,9 @@ from typing import TYPE_CHECKING
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from c4.monitoring import MetricsMiddleware, tracing
+from c4.monitoring.routes import router as monitoring_router
+
 from .chat import router as chat_router
 from .deps import clear_daemon_cache
 from .middleware import BrandingMiddleware
@@ -101,8 +104,6 @@ from .routes import (
     validation,
     workspace,
 )
-from c4.monitoring import MetricsMiddleware, tracing
-from c4.monitoring.routes import router as monitoring_router
 
 if TYPE_CHECKING:
     from c4.services.branding import BrandingService

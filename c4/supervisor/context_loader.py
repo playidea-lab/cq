@@ -1,5 +1,5 @@
-import os
 import logging
+import os
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -17,7 +17,7 @@ class ContextLoader:
         """
         # 1. System Registry (Primary)
         system_standards = Path(__file__).parent.parent / "system" / "registry" / "standards"
-        
+
         # 2. Project Override (Optional)
         project_standards = None
         if project_root is None:
@@ -32,14 +32,14 @@ class ContextLoader:
 
         if not target_dir.exists():
             return ""
-            
+
         files = sorted(target_dir.glob("*.md"))
         if not files:
             return ""
 
         content_parts = []
         total_chars = 0
-        
+
         # Initial pass to check size
         temp_contents = []
         for file in files:
@@ -55,7 +55,7 @@ class ContextLoader:
         if slim and total_chars > ContextLoader.MAX_CONTEXT_CHARS:
             is_slimmed = True
             logger.info(f"Context slimming active: {total_chars} chars exceeded limit")
-            
+
             # Slimming strategy: Take only the first 2000 chars of each file (Core sections)
             for name, text in temp_contents:
                 if len(text) > 3000:
@@ -66,10 +66,10 @@ class ContextLoader:
         else:
             for name, text in temp_contents:
                 content_parts.append(f"## {name}\n{text}")
-                
+
         header = "# PROJECT STANDARDS & RULES\n"
         if is_slimmed:
             header += "> NOTE: Some standards have been truncated to save tokens. Use read_file on full path if needed.\n"
         header += "Follow these rules strictly when reviewing code:\n\n"
-        
+
         return header + "\n\n".join(content_parts)

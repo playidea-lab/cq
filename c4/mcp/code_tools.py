@@ -14,11 +14,11 @@ from typing import Any
 from mcp.types import Tool
 
 from c4.docs.analyzer import CodeAnalyzer, SymbolKind
-from c4.docs.call_graph import CallGraphAnalyzer, MCP_CALL_GRAPH_TOOLS
+from c4.docs.call_graph import MCP_CALL_GRAPH_TOOLS, CallGraphAnalyzer
 from c4.docs.semantic_search import (
+    MCP_SEMANTIC_TOOLS,
     SearchScope,
     SemanticSearcher,
-    MCP_SEMANTIC_TOOLS,
 )
 
 

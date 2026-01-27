@@ -7,9 +7,10 @@ differences between providers (Claude, Gemini, OpenAI).
 from abc import ABC, abstractmethod
 from typing import Any, Dict, Optional
 
+
 class ProviderStrategy(ABC):
     """Abstract base class for LLM provider strategies."""
-    
+
     @abstractmethod
     def get_request_params(
         self,
@@ -33,7 +34,7 @@ class ProviderStrategy(ABC):
 
 class ClaudeStrategy(ProviderStrategy):
     """Strategy for Anthropic Claude models."""
-    
+
     def get_request_params(
         self,
         model: str,
@@ -68,7 +69,7 @@ class ClaudeStrategy(ProviderStrategy):
 
 class GeminiStrategy(ProviderStrategy):
     """Strategy for Google Gemini models."""
-    
+
     def get_request_params(
         self,
         model: str,
@@ -124,7 +125,7 @@ class GeminiStrategy(ProviderStrategy):
 
 class OpenAIStrategy(ProviderStrategy):
     """Strategy for OpenAI models."""
-    
+
     def get_request_params(
         self,
         model: str,

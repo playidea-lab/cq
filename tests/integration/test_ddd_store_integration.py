@@ -8,11 +8,11 @@ from pathlib import Path
 import pytest
 
 from c4.models.ddd import (
+    ApiSpec,
     BoundaryMap,
     CheckpointDefinition,
     CodePlacement,
     ContractSpec,
-    ApiSpec,
     Goal,
     QualityGate,
     RequiredTests,

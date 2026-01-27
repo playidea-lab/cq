@@ -1,8 +1,9 @@
 """Context Slimmer - Utility for compressing large text contexts."""
 
-import re
 import json
+import re
 from typing import Any
+
 
 class ContextSlimmer:
     @staticmethod
@@ -14,25 +15,25 @@ class ContextSlimmer:
 
         # Patterns that indicate important info
         important_patterns = [
-            r"ERROR", r"FAIL", r"FAILED", r"Exception", r"Traceback", 
+            r"ERROR", r"FAIL", r"FAILED", r"Exception", r"Traceback",
             r"[\d+/\d+]", r"step \d+", r"Building", r"Summary"
         ] # Note: The original regex patterns were already correctly escaped for Python raw strings.
-        
+
         keep_indices = set()
-        
+
         # Always keep first 10 and last 10 lines
         for i in range(min(10, len(lines))):
             keep_indices.add(i)
         for i in range(max(0, len(lines) - 10), len(lines)):
             keep_indices.add(i)
-            
+
         # Keep lines matching important patterns + context
         for i, line in enumerate(lines):
             if any(re.search(p, line, re.IGNORECASE) for p in important_patterns):
                 # Keep 2 lines before and 5 lines after for context
                 for j in range(max(0, i-2), min(len(lines), i+6)):
                     keep_indices.add(j)
-        
+
         result_lines = []
         last_idx = -1
         for i in sorted(list(keep_indices)):
@@ -40,7 +41,7 @@ class ContextSlimmer:
                 result_lines.append(f"\n... (truncated {i - last_idx - 1} lines) ...\n")
             result_lines.append(lines[i])
             last_idx = i
-            
+
         return "\n".join(result_lines)
 
     @staticmethod
@@ -54,7 +55,7 @@ class ContextSlimmer:
             elif isinstance(obj, dict):
                 return {k: _slim(v) for k, v in obj.items()}
             return obj
-            
+
         slimmed = _slim(data)
         return json.dumps(slimmed, indent=2, default=str)
 
@@ -70,8 +71,8 @@ class ContextSlimmer:
             elif re.match(r"^import\s+|from\s+\w+\s+import", line):
                 # Optional: keep imports? Let's skip for now to save max tokens
                 pass
-                
+
         if not signatures:
             return code[:1000] + "\n... (content truncated) ..."
-            
+
         return "\n".join(signatures) + "\n\n... (bodies omitted for slimming) ..."

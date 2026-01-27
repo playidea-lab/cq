@@ -1,6 +1,5 @@
 """Tests for Code Analysis Engine."""
 
-import tempfile
 from pathlib import Path
 
 import pytest
@@ -8,8 +7,8 @@ import pytest
 from c4.services.code_analysis import (
     CodeAnalysisEngine,
     CodebaseIndex,
-    SymbolKind,
     SymbolInfo,
+    SymbolKind,
     SymbolLocation,
     SymbolTable,
     analyze_codebase,

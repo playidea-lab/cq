@@ -10,7 +10,8 @@ from .rate_limit import RateLimitConfig, RateLimitMiddleware, RateLimitStore
 from .routes.integrations import router as integrations_router
 from .routes.reports import router as reports_router
 from .routes.sso import router as sso_router
-from .routes.teams import invite_router, router as teams_router
+from .routes.teams import invite_router
+from .routes.teams import router as teams_router
 from .routes.webhooks import router as webhooks_router
 
 

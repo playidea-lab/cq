@@ -2,8 +2,6 @@
 
 from datetime import datetime
 
-import pytest
-
 from c4.templates.models import (
     CheckpointInfo,
     DataConfig,

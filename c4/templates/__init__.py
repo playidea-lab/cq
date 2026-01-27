@@ -13,6 +13,10 @@ from c4.templates.base import (
     TemplateRegistry,
     TemplateValidation,
 )
+
+# Import templates to register them
+from c4.templates.image_classification import ImageClassificationTemplate
+from c4.templates.llm_finetuning import LLMFinetuningTemplate
 from c4.templates.models import (
     DataConfig,
     ExperimentConfig,
@@ -22,6 +26,7 @@ from c4.templates.models import (
     ModelConfig,
     TrainingConfig,
 )
+from c4.templates.object_detection import ObjectDetectionTemplate
 from c4.templates.piq_protocol import (
     KnowledgeSource,
     KnowledgeType,
@@ -32,11 +37,6 @@ from c4.templates.piq_protocol import (
     PIQKnowledgeResult,
     get_piq_client,
 )
-
-# Import templates to register them
-from c4.templates.image_classification import ImageClassificationTemplate
-from c4.templates.llm_finetuning import LLMFinetuningTemplate
-from c4.templates.object_detection import ObjectDetectionTemplate
 
 __all__ = [
     # Base

@@ -12,14 +12,12 @@ from __future__ import annotations
 import asyncio
 import os
 import uuid
-from datetime import date, datetime, timedelta, UTC
-from typing import AsyncGenerator
+from datetime import UTC, date, datetime, timedelta
 
 import pytest
 
 from c4.services.activity import (
     ActivityCollector,
-    ActivityLog,
     UsageReport,
     create_activity_collector,
 )
@@ -27,11 +25,9 @@ from c4.services.audit import (
     ActorType,
     AuditAction,
     AuditFilter,
-    AuditLog,
     AuditLogger,
     create_audit_logger,
 )
-
 
 # =============================================================================
 # Skip if no Supabase credentials

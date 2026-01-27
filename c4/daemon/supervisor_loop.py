@@ -11,8 +11,8 @@ if TYPE_CHECKING:
     from ..mcp_server import C4Daemon
 
 from ..constants import REPAIR_PREFIX, WORKER_STALE_TIMEOUT_SEC
-from ..supervisor import Supervisor, SupervisorError
 from ..monitoring import tracing
+from ..supervisor import Supervisor, SupervisorError
 
 logger = logging.getLogger(__name__)
 
@@ -179,7 +179,7 @@ class SupervisorLoop:
             # Get the first item (FIFO)
             item = state.checkpoint_queue[0]
             span.set_attribute("checkpoint_id", item.checkpoint_id)
-            
+
             # Check if checkpoint_as_task is enabled
         config = getattr(self.daemon, "config", None)
         if config and getattr(config, "checkpoint_as_task", False):

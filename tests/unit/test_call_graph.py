@@ -5,11 +5,11 @@ from pathlib import Path
 import pytest
 
 from c4.docs.call_graph import (
-    CallGraphAnalyzer,
-    CallNode,
     CallEdge,
-    CallPath,
+    CallGraphAnalyzer,
     CallGraphStats,
+    CallNode,
+    CallPath,
     RelationType,
 )
 
