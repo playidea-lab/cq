@@ -15,6 +15,15 @@
 | Phase 6 | Team Collaboration | ✅ 완료 |
 | Phase 6.5 | MCP Advanced Tools | ✅ 완료 |
 | Phase 6.6 | UX & Platform Refinement | ✅ 완료 |
+| Phase 6.7 | Reliability & Observability | 🚧 진행 중 |
+
+### Phase 6.7: Reliability & Observability 🚧
+
+**가시성 및 복구 자동화**:
+- T-671: OpenTelemetry 통합 및 메트릭 대시보드 기초 구축
+- T-672: 자동 재시도 및 AI 기반 실패 원인 분석 (Error Diagnosis)
+- T-673: 비용 최적화 모델 라우터 (Cost-Aware Router) 구현
+- T-674: 워커 하트비트 이상 탐지 및 자동 복구 고도화
 
 ### Phase 6.6: UX & Platform Refinement ✅
 

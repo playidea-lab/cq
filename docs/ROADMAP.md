@@ -256,22 +256,36 @@ uv run pytest tests/unit/test_skill_matcher.py tests/unit/test_agent_graph_loade
 
 ### Phase 6.6: UX & Platform Excellence ✅
 
-**목표**: 사용자 경험 최적화 및 멀티 플랫폼 지원 강화
+... (생략) ...
 
-- **Gemini CLI Full Support**:
-  - `.gemini/commands/` 구조 최적화 (Slash Commands 11개)
-  - `~/.gemini/settings.json` 자동 설정 가이드
-  - `GEMINI.md`를 통한 컨텍스트 최적화
-- **Project Sanitization**:
-  - 루트 디렉토리 정리 (Debug 스크립트 이동: `tests/debug/`)
-  - 플랫폼별 커맨드 위치 현행화 (`SPEC.md`)
-- **Documentation Refinement**:
-  - README.md 최신화 (Gemini CLI 지원 명시)
-  - 통합 개발 가이드 업데이트
+### Phase 6.7: Reliability & Observability 🚧 (Next)
+
+**목표**: 시스템 안정성 강화 및 운영 가시성 확보
+
+- **Advanced Telemetry**:
+  - OpenTelemetry 기반 분산 트레이싱 (워커 간 호출 추적)
+  - Prometheus 메트릭 확장 (태스크 처리 시간, 성공률, 비용 추적)
+- **Self-Healing Queue**:
+  - 타임아웃 발생 시 자동 롤백 및 재시도 전략 (Exponential Backoff)
+  - 반복 실패 태스크에 대한 AI 원인 분석 및 수정 제안
+- **Cost-Aware Routing**:
+  - 태스크 난이도 측정 및 최적 모델 자동 선택 (GPT-4o vs Flash-1.5 등)
 
 ---
 
-## Phase 7: C4 Cloud (장기 계획)
+## Phase 7: C4 Cloud MVP (v0.7.0) 📋
+
+**목표**: 관리형 SaaS 서비스의 핵심 기능 구축
+
+- **Secure Sandbox Execution**:
+  - Firecracker 또는 gVisor 기반 격리 실행 환경
+  - 세션별 일회성 실행 환경 제공 (Ephemeral Workspace)
+- **Multi-Tenant Architecture**:
+  - Supabase 기반 테넌트 격리 및 데이터 암호화
+  - 팀별/프로젝트별 리소스 할당 제한 (Quotas)
+- **Cloud Console**:
+  - 웹 기반 실시간 워크플로우 모니터링 대시보드
+  - 사용자 인증 및 권한 관리 (RBAC) 연동
 
 **목표**: 완전 관리형 SaaS 버전
 
