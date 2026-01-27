@@ -203,42 +203,40 @@ class LiteLLMBackend(SupervisorBackend):
         timeout: int,
         agent: "AgentDefinition | None" = None,
     ) -> dict:
-        """Build request parameters for LiteLLM.
+        """Build request parameters for LiteLLM with Prompt Caching optimization.
 
-        Args:
-            prompt: User prompt
-            timeout: Request timeout
-            agent: Optional agent definition
-
-        Returns:
-            Dictionary of request parameters
+        Rearranges system message components to maximize cache hits:
+        [Standards/Rules] -> [Output Format] -> [Agent Persona] -> [Dynamic Prompt]
         """
-        # Load dynamic context (standards/rules)
+        # Load dynamic context (standards/rules) - Fixed block
         dynamic_context = ContextLoader.load_standards()
 
-        # Build system message parts
+        # Build system message parts in deterministic order for caching
         system_parts = []
 
-        # 1. Agent Persona (Dynamic) or Default
-        if agent:
-            system_parts.append(self._format_agent_persona(agent))
-        else:
-            system_parts.append("You are a code review supervisor.")
-
-        # 2. Standards/Rules (Context)
+        # 1. Standards/Rules (Largest fixed block, should be at the top)
         if dynamic_context:
             system_parts.append(dynamic_context)
 
-        # 3. Output Format Instruction (Required)
+        # 2. Output Format Instruction (Fixed instruction)
         system_parts.append(
-            "Always respond with a JSON object containing: "
-            "decision (APPROVE/REQUEST_CHANGES/REPLAN), "
-            "checkpoint, notes, and required_changes array."
+            "# OUTPUT FORMAT\n"
+            "Always respond with a JSON object containing:\n"
+            "- decision: APPROVE, REQUEST_CHANGES, or REPLAN\n"
+            "- checkpoint: Current checkpoint ID\n"
+            "- notes: Detailed explanation of your decision\n"
+            "- required_changes: List of specific changes needed if not approved"
         )
+
+        # 3. Agent Persona (Fixed per agent/worker)
+        if agent:
+            system_parts.append("# AGENT PERSONA\n" + self._format_agent_persona(agent))
+        else:
+            system_parts.append("# ROLE\nYou are a code review supervisor.")
         
         system_message = "\n\n".join(system_parts)
 
-        return self.strategy.get_request_params(
+        kwargs = self.strategy.get_request_params(
             model=self.model,
             system_message=system_message,
             user_message=prompt,
@@ -249,6 +247,15 @@ class LiteLLMBackend(SupervisorBackend):
             api_key=self.api_key,
             api_base=self.api_base,
         )
+
+        # Add Prompt Caching headers for Claude if applicable
+        if self._is_claude:
+            if "extra_headers" not in kwargs:
+                kwargs["extra_headers"] = {}
+            # Standard Anthropic Prompt Caching header
+            kwargs["extra_headers"]["anthropic-beta"] = "prompt-caching-2024-07-31"
+
+        return kwargs
 
     def _format_agent_persona(self, agent: "AgentDefinition") -> str:
         """Format AgentDefinition into a text persona description.

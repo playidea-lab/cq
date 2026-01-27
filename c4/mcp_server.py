@@ -4287,7 +4287,7 @@ def create_server(project_root: Path | None = None) -> Server:
 
     @server.list_tools()
     async def list_tools() -> list[Tool]:
-        return [
+        tools = [
             Tool(
                 name="c4_status",
                 description="Get current C4 project status including state, queue, and workers",
@@ -4998,6 +4998,9 @@ def create_server(project_root: Path | None = None) -> Server:
                 },
             ),
         ]
+        # Sort tools by name to ensure deterministic order for prompt caching
+        tools.sort(key=lambda x: x.name)
+        return tools
 
     @server.call_tool()
     async def call_tool(name: str, arguments: dict) -> list[TextContent]:

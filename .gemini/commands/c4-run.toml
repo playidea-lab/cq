@@ -1,0 +1,7 @@
+description = "Start the autonomous execution loop (PLAN -> EXECUTE)."
+
+prompt = """
+1. Verify the current state with `c4_status()`.
+2. Transition to EXECUTE state by calling `c4_run()`.
+3. Inform the user that the worker loop has started and progress can be tracked via `/c4-status`.
+"""

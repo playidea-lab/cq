@@ -26,7 +26,7 @@ echo ""
 # =============================================================================
 # Step 0: Check & Install Git (required)
 # =============================================================================
-echo "[0/7] Checking Git..."
+echo "[0/8] Checking Git..."
 
 if command -v git &> /dev/null; then
     GIT_VERSION=$(git --version | cut -d' ' -f3)
@@ -116,7 +116,7 @@ echo ""
 # =============================================================================
 # Step 1: Install dependencies
 # =============================================================================
-echo "[1/7] Installing dependencies..."
+echo "[1/8] Installing dependencies..."
 if command -v uv &> /dev/null; then
     (cd "$C4_DIR" && uv sync --quiet)
     echo "   ✅ Dependencies installed"
@@ -129,7 +129,7 @@ fi
 # =============================================================================
 # Step 2: Save install path & detect platforms
 # =============================================================================
-echo "[2/7] Saving install path & detecting platforms..."
+echo "[2/8] Saving install path & detecting platforms..."
 echo "$C4_DIR" > ~/.c4-install-path
 echo "   → ~/.c4-install-path"
 
@@ -176,7 +176,7 @@ fi
 # =============================================================================
 # Step 3: Create global 'c4' command
 # =============================================================================
-echo "[3/7] Creating global 'c4' command..."
+echo "[3/8] Creating global 'c4' command..."
 
 BIN_DIR="$HOME/.local/bin"
 mkdir -p "$BIN_DIR"
@@ -194,7 +194,7 @@ echo "   → $BIN_DIR/c4"
 # =============================================================================
 # Step 4: Install /c4-* slash commands & rules globally (Claude Code)
 # =============================================================================
-echo "[4/7] Installing Claude Code slash commands & rules..."
+echo "[4/8] Installing Claude Code slash commands & rules..."
 
 CLAUDE_COMMANDS="$HOME/.claude/commands"
 CLAUDE_RULES="$HOME/.claude/rules"
@@ -221,7 +221,7 @@ fi
 # =============================================================================
 # Step 5: Install Cursor commands, rules & MCP
 # =============================================================================
-echo "[5/7] Installing Cursor commands, rules & MCP..."
+echo "[5/8] Installing Cursor commands, rules & MCP..."
 
 # 5a. Cursor slash commands (global)
 CURSOR_COMMANDS="$HOME/.cursor/commands"
@@ -244,55 +244,27 @@ if [[ -f "$C4_DIR/CLAUDE.md" ]]; then
     echo "   ✅ C4 rules installed: ~/.cursor/rules/c4.md"
 fi
 
-# 5c. Cursor MCP configuration
-CURSOR_MCP="$HOME/.cursor/mcp.json"
+# =============================================================================
+# Step 6: Install Gemini CLI slash commands & rules
+# =============================================================================
+echo "[6/8] Installing Gemini CLI slash commands & rules..."
 
-if [[ -f "$CURSOR_MCP" ]]; then
-    # Check if c4 already configured
-    if grep -q '"c4"' "$CURSOR_MCP" 2>/dev/null; then
-        echo "   → MCP already configured (skipped)"
-    else
-        # Add c4 to existing config using Python
-        python3 << PYTHON
-import json
-from pathlib import Path
+GEMINI_COMMANDS="$HOME/.gemini/commands"
+mkdir -p "$GEMINI_COMMANDS"
 
-mcp_path = Path("$CURSOR_MCP")
-config = json.loads(mcp_path.read_text())
-
-if "mcpServers" not in config:
-    config["mcpServers"] = {}
-
-config["mcpServers"]["c4"] = {
-    "command": "uv",
-    "args": ["run", "--directory", "$C4_DIR", "python", "-m", "c4.mcp_server"],
-    "cwd": "\${workspaceFolder}"
-}
-
-mcp_path.write_text(json.dumps(config, indent=2))
-PYTHON
-        echo "   → MCP server added to existing config"
+gemini_count=0
+for cmd in "$C4_DIR/.gemini/commands"/c4-*.md; do
+    if [[ -f "$cmd" ]]; then
+        cp "$cmd" "$GEMINI_COMMANDS/"
+        ((gemini_count++))
     fi
-else
-    # Create new config
-    cat > "$CURSOR_MCP" << EOF
-{
-  "mcpServers": {
-    "c4": {
-      "command": "uv",
-      "args": ["run", "--directory", "$C4_DIR", "python", "-m", "c4.mcp_server"],
-      "cwd": "\${workspaceFolder}"
-    }
-  }
-}
-EOF
-    echo "   → MCP config created"
-fi
+done
+echo "   → $gemini_count Gemini commands installed"
 
 # =============================================================================
-# Step 6: Install Claude Code hooks
+# Step 7: Install Claude Code hooks
 # =============================================================================
-echo "[6/7] Installing Claude Code hooks..."
+echo "[7/8] Installing Claude Code hooks..."
 
 HOOKS_DIR="$HOME/.claude/hooks"
 mkdir -p "$HOOKS_DIR"
@@ -322,9 +294,9 @@ for script in c4-stop-hook.py c4-bash-security-hook.sh; do
 done
 
 # =============================================================================
-# Step 7: Register hooks in settings
+# Step 8: Register hooks in settings
 # =============================================================================
-echo "[7/7] Registering hooks..."
+echo "[8/8] Registering hooks..."
 
 python3 << 'PYTHON'
 import json
@@ -368,7 +340,7 @@ echo "   Terminal:"
 echo "     c4 init --path /path/to/project"
 echo "     c4 status"
 echo ""
-echo "   Claude Code / Cursor:"
+echo "   Claude Code / Cursor / Gemini CLI:"
 echo "     /c4-init      # Initialize project"
 echo "     /c4-plan      # Parse docs & create tasks"
 echo "     /c4-run       # Start execution"
@@ -396,5 +368,5 @@ if [[ ":$PATH:" != *":$BIN_DIR:"* ]]; then
 fi
 
 echo ""
-echo "🔄 Restart Claude Code / Cursor to activate slash commands"
+echo "🔄 Restart Claude Code / Cursor / Gemini CLI to activate slash commands"
 echo ""
