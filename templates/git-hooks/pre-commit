@@ -1,0 +1,121 @@
+#!/bin/bash
+# C4 Git Hook: pre-commit
+# Runs lint validation before allowing commit
+#
+# Features:
+# - Attempts to communicate with C4 Daemon via Unix Domain Socket
+# - Falls back to direct ruff check if Daemon not running
+# - Respects --no-verify (handled by Git itself)
+# - Blocks commit on validation failure (exit 1)
+# - Allows commit on success (exit 0)
+
+set -e
+
+# =============================================================================
+# Configuration
+# =============================================================================
+
+# C4 Daemon socket path (in .c4 directory)
+C4_SOCKET="${C4_SOCKET:-.c4/c4.sock}"
+
+# Validation command (fallback if daemon not running)
+FALLBACK_LINT_CMD="${C4_LINT_CMD:-uv run ruff check .}"
+
+# Timeout for socket communication (seconds)
+SOCKET_TIMEOUT="${C4_SOCKET_TIMEOUT:-5}"
+
+# =============================================================================
+# Utility Functions
+# =============================================================================
+
+log_info() {
+    echo "C4: $1" >&2
+}
+
+log_error() {
+    echo "C4 ERROR: $1" >&2
+}
+
+# =============================================================================
+# Pre-commit Check
+# =============================================================================
+
+# Skip if not in a C4 project
+if [[ ! -f ".c4/state.json" ]] && [[ ! -f ".c4/config.yaml" ]]; then
+    exit 0
+fi
+
+log_info "Running pre-commit validation..."
+
+# =============================================================================
+# Try Unix Domain Socket Communication with Daemon
+# =============================================================================
+
+# Check if socket exists and try to communicate
+if [[ -S "$C4_SOCKET" ]]; then
+    log_info "Connecting to C4 Daemon..."
+    
+    # Send validation request to daemon via socat or nc
+    VALIDATION_RESULT=""
+    if command -v socat &> /dev/null; then
+        # Use socat for Unix domain socket communication
+        VALIDATION_RESULT=$(echo '{"action": "validate", "type": "lint"}' | \
+            timeout "$SOCKET_TIMEOUT" socat - "UNIX-CONNECT:$C4_SOCKET" 2>/dev/null || echo "")
+    elif command -v nc &> /dev/null && nc -h 2>&1 | grep -q "\-U"; then
+        # Use netcat with Unix socket support
+        VALIDATION_RESULT=$(echo '{"action": "validate", "type": "lint"}' | \
+            timeout "$SOCKET_TIMEOUT" nc -U "$C4_SOCKET" 2>/dev/null || echo "")
+    fi
+    
+    # Parse daemon response
+    if [[ -n "$VALIDATION_RESULT" ]]; then
+        # Check if validation passed (JSON response parsing)
+        if echo "$VALIDATION_RESULT" | grep -q '"status":\s*"pass"'; then
+            log_info "Pre-commit validation passed (via Daemon)."
+            exit 0
+        elif echo "$VALIDATION_RESULT" | grep -q '"status":\s*"fail"'; then
+            log_error "Pre-commit validation failed (via Daemon)."
+            # Extract and display error message if available
+            ERROR_MSG=$(echo "$VALIDATION_RESULT" | grep -o '"message":\s*"[^"]*"' | cut -d'"' -f4 || echo "")
+            if [[ -n "$ERROR_MSG" ]]; then
+                echo "$ERROR_MSG" >&2
+            fi
+            exit 1
+        fi
+        # If we got a response but couldn't parse it, fall through to fallback
+        log_info "Daemon response unclear, using fallback validation..."
+    else
+        log_info "Daemon not responding, using fallback validation..."
+    fi
+else
+    log_info "Daemon not running, using fallback validation..."
+fi
+
+# =============================================================================
+# Fallback: Direct Lint Execution
+# =============================================================================
+
+# Run lint directly
+if command -v uv &> /dev/null; then
+    # Use uv if available
+    if uv run ruff check . 2>/dev/null; then
+        log_info "Pre-commit validation passed."
+        exit 0
+    else
+        log_error "Lint failed. Please fix the issues and try again."
+        exit 1
+    fi
+elif command -v ruff &> /dev/null; then
+    # Fallback to direct ruff
+    if ruff check . 2>/dev/null; then
+        log_info "Pre-commit validation passed."
+        exit 0
+    else
+        log_error "Lint failed. Please fix the issues and try again."
+        exit 1
+    fi
+else
+    # No linting tool available - warn but allow commit
+    log_info "Warning - ruff not found, skipping lint validation."
+    exit 0
+fi
