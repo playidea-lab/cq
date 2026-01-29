@@ -3348,6 +3348,108 @@ def migrate_from_cloud(
 # =============================================================================
 
 
+
+# =============================================================================
+# Git Hooks Commands
+# =============================================================================
+
+hooks_app = typer.Typer(help="Git hooks management for C4 workflow")
+c4_app.add_typer(hooks_app, name="hooks")
+
+
+@hooks_app.command("install")
+def hooks_install(
+    force: bool = typer.Option(False, "--force", "-f", help="Overwrite existing hooks"),
+):
+    """Install C4 Git hooks.
+
+    Installs pre-commit (lint), commit-msg (Task ID validation), and post-commit hooks.
+
+    Examples:
+        c4 hooks install
+        c4 hooks install --force
+    """
+    from .git_hooks import install_all_hooks
+
+    console.print("[bold]Installing C4 Git hooks...[/bold]")
+    console.print()
+
+    results = install_all_hooks(force=force)
+
+    success_count = 0
+    for hook_name, (success, message) in results.items():
+        if success:
+            console.print(f"  [green]✓[/green] {message}")
+            success_count += 1
+        else:
+            console.print(f"  [yellow]![/yellow] {message}")
+
+    console.print()
+    if success_count == len(results):
+        console.print("[green]All hooks installed successfully![/green]")
+    else:
+        console.print(f"[yellow]{success_count}/{len(results)} hooks installed[/yellow]")
+
+
+@hooks_app.command("uninstall")
+def hooks_uninstall():
+    """Uninstall C4 Git hooks.
+
+    Only removes hooks that were installed by C4.
+
+    Examples:
+        c4 hooks uninstall
+    """
+    from .git_hooks import uninstall_all_hooks
+
+    console.print("[bold]Uninstalling C4 Git hooks...[/bold]")
+    console.print()
+
+    results = uninstall_all_hooks()
+
+    for hook_name, (success, message) in results.items():
+        if success:
+            console.print(f"  [green]✓[/green] {message}")
+        else:
+            console.print(f"  [yellow]![/yellow] {message}")
+
+    console.print()
+    console.print("[green]Done![/green]")
+
+
+@hooks_app.command("status")
+def hooks_status():
+    """Show status of C4 Git hooks.
+
+    Examples:
+        c4 hooks status
+    """
+    from .git_hooks import get_all_hook_status, get_git_hooks_dir
+
+    hooks_dir = get_git_hooks_dir()
+    if hooks_dir is None:
+        console.print("[red]Error:[/red] Not in a git repository")
+        raise typer.Exit(1)
+
+    console.print("[bold]C4 Git Hooks Status[/bold]")
+    console.print(f"[dim]Hooks directory: {hooks_dir}[/dim]")
+    console.print()
+
+    results = get_all_hook_status()
+
+    for hook_name, status in results.items():
+        if not status.get("installed"):
+            console.print(f"  {hook_name}: [dim]Not installed[/dim]")
+        elif status.get("is_c4"):
+            exec_status = "[green]executable[/green]" if status.get("executable") else "[yellow]not executable[/yellow]"
+            console.print(f"  {hook_name}: [green]Installed (C4)[/green] - {exec_status}")
+        else:
+            console.print(f"  {hook_name}: [yellow]Installed (external)[/yellow]")
+
+    console.print()
+    console.print("[dim]Use 'c4 hooks install' to install missing hooks[/dim]")
+
+
 def main_c4d():
     """Entry point for c4d command"""
     app()
