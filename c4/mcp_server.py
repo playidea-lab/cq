@@ -12,6 +12,7 @@ from mcp.types import TextContent, Tool
 
 from .constants import MAX_REPAIR_DEPTH, REPAIR_PREFIX, REPAIR_PREFIX_LEN
 from .daemon import GitOperations, SupervisorLoopManager, WorkerManager
+from .notification import NotificationManager
 from .discovery import (
     DesignStore,
     Domain,
@@ -1458,6 +1459,14 @@ Thumbs.db
             },
         )
 
+        # Send notification for task completion
+        task_title = task.title if task else task_id
+        NotificationManager.notify(
+            title="C4 Task Complete",
+            message=f"{task_id}: {task_title}",
+            urgency="normal",
+        )
+
         # GitHub Auto-Commit: Trigger on task completion
         if (
             self.config.github.enabled
@@ -2671,6 +2680,14 @@ Thumbs.db
             # Clear checkpoint state
             state.checkpoint.current = None
             state.checkpoint.state = "pending"
+
+            # Send notification for checkpoint decision
+            urgency = "normal" if decision == "APPROVE" else "critical"
+            NotificationManager.notify(
+                title="C4 Checkpoint Decision",
+                message=f"{checkpoint_id}: {decision}",
+                urgency=urgency,
+            )
 
             return CheckpointResponse(success=True)
 

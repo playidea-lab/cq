@@ -9,6 +9,7 @@ from datetime import datetime
 from pathlib import Path
 
 from .models import C4Config, ValidationResult
+from .utils.slimmer import ContextSlimmer
 
 
 @dataclass
@@ -29,11 +30,17 @@ class ValidationRun:
 
     def to_result(self) -> ValidationResult:
         """Convert to ValidationResult model"""
+        message = None
+        if not self.passed:
+            # Combine stderr and stdout for better error context
+            combined = f"{self.stderr}\n{self.stdout}".strip()
+            # Use ContextSlimmer to extract relevant error info
+            message = ContextSlimmer.format_validation_error(combined, max_chars=1000)
         return ValidationResult(
             name=self.name,
             status="pass" if self.passed else "fail",
             duration_ms=self.duration_ms,
-            message=self.stderr[:500] if not self.passed else None,
+            message=message,
         )
 
 

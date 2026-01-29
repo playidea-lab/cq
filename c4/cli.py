@@ -13,6 +13,7 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
+from . import git_hooks
 from .config.credentials import ENV_VAR_MAPPING, SUPPORTED_PROVIDERS, CredentialsManager
 from .hooks import get_c4_install_dir, install_all_hooks
 from .mcp_server import C4Daemon
@@ -731,7 +732,18 @@ def init(
             console.print("[dim]Installing Claude Code hooks...[/dim]")
             hook_results = install_all_hooks()
             if not all(hook_results.values()):
-                console.print("[yellow]Warning:[/yellow] Some hooks may not have been installed")
+                console.print(
+                    "[yellow]Warning:[/yellow] Some Claude Code hooks may not have been installed"
+                )
+
+            # Install Git hooks
+            console.print("[dim]Installing Git hooks...[/dim]")
+            git_hook_results = git_hooks.install_all_hooks(project_path)
+            for hook_name, (success, msg) in git_hook_results.items():
+                if success:
+                    console.print(f"  [green]✓[/green] {hook_name}")
+                else:
+                    console.print(f"  [yellow]![/yellow] {hook_name}: {msg}")
 
         # Step 6: Apply template if specified
         template_applied = False
@@ -782,13 +794,18 @@ def init(
         console.print("  .claude/settings.json   - Permissions & MCP auto-approval")
         if not skip_hooks:
             console.print("  ~/.claude/hooks/        - Stop & security hooks")
+<<<<<<< HEAD
         if template_applied:
             console.print(f"  (template files)        - From '{template}' template")
+=======
+            console.print("  .git/hooks/             - Git hooks (pre-commit, commit-msg)")
+>>>>>>> c4/w-R-IDE-008-0
         console.print()
 
-        console.print("[bold]🔒 Security:[/bold]")
+        console.print("[bold]🔒 Security & Workflow:[/bold]")
         console.print("  - Bash Security Hook: Blocks dangerous commands")
         console.print("  - Stop Hook: Prevents exit during active work")
+        console.print("  - Git Hooks: Lint validation, Task ID tracking")
         console.print()
 
         # Restart notice if .mcp.json was newly created
