@@ -1,15 +1,10 @@
 """C4D MCP Server - Main server implementation with MCP tools"""
 
-from __future__ import annotations
-
 import json
 import logging
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
-
-if TYPE_CHECKING:
-    from .daemon import GitResult
+from typing import Any
 
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
@@ -42,7 +37,6 @@ from .models import (
     TaskType,
     ValidationResult,
 )
-from .monitoring import tracing
 from .state_machine import StateMachine, StateTransitionError
 from .store import (
     LockStore,
@@ -61,7 +55,6 @@ from .supervisor.agent_graph import (
     TaskContext,
 )
 from .supervisor.agent_router import AgentRouter
-from .utils.slimmer import ContextSlimmer
 from .validation import ValidationRunner
 
 logger = logging.getLogger(__name__)
@@ -78,7 +71,6 @@ def _use_graph_router() -> bool:
         True if GraphRouter should be used, False for legacy AgentRouter.
     """
     import os
-
     flag = os.environ.get("C4_USE_GRAPH_ROUTER", "true").lower()
     return flag in ("true", "1", "yes", "on")
 
@@ -176,7 +168,6 @@ class C4Daemon:
         state_store: StateStore | None = None,
     ):
         import os
-
         # Priority: explicit param > env var > cwd
         if project_root:
             self.root = project_root
@@ -200,13 +191,6 @@ class C4Daemon:
         self._graph_router: GraphRouter | None = None
         self._agent_graph: AgentGraph | None = None
         self._rule_engine: RuleEngine | None = None
-
-        # LSP Server (lazy initialization)
-        self._lsp_server: Any = None
-        self._lsp_thread: Any = None
-
-        # Initialize tracing
-        tracing.setup_tracing(service_name="c4-daemon")
 
     # =========================================================================
     # Initialization
@@ -510,7 +494,6 @@ Thumbs.db
             Set C4_USE_GRAPH_ROUTER=false to use this legacy router.
         """
         import warnings
-
         warnings.warn(
             "agent_router is deprecated. Use graph_router with C4_USE_GRAPH_ROUTER=true (default).",
             DeprecationWarning,
@@ -669,7 +652,6 @@ Thumbs.db
         else:
             # Legacy mode: use static AgentRouter
             import warnings
-
             warnings.warn(
                 "Using legacy AgentRouter. Set C4_USE_GRAPH_ROUTER=true for advanced routing.",
                 DeprecationWarning,
@@ -775,7 +757,9 @@ Thumbs.db
 
         try:
             self.start_supervisor_loop()
-            logger.info(f"Auto-restarted supervisor loop for {state.status.value} state")
+            logger.info(
+                f"Auto-restarted supervisor loop for {state.status.value} state"
+            )
             return True
         except Exception as e:
             logger.warning(f"Failed to auto-restart supervisor loop: {e}")
@@ -857,42 +841,6 @@ Thumbs.db
             "is_running": True,
         }
 
-    def update_metrics(
-        self,
-        prompt_tokens: int = 0,
-        completion_tokens: int = 0,
-        cost_usd: float = 0.0,
-        validations_run: int = 0,
-        tasks_completed: int = 0,
-        checkpoints_passed: int = 0,
-    ) -> None:
-        """Update project metrics atomically.
-
-        Args:
-            prompt_tokens: Number of prompt tokens to add
-            completion_tokens: Number of completion tokens to add
-            cost_usd: Estimated cost in USD to add
-            validations_run: Number of validations run to add
-            tasks_completed: Number of tasks completed to add
-            checkpoints_passed: Number of checkpoints passed to add
-        """
-        if self.state_machine is None:
-            return
-
-        project_id = self.state_machine.state.project_id
-        store = self.state_machine.store
-
-        with store.atomic_modify(project_id) as state:
-            state.metrics.total_prompt_tokens += prompt_tokens
-            state.metrics.total_completion_tokens += completion_tokens
-            state.metrics.total_cost_usd += cost_usd
-            state.metrics.validations_run += validations_run
-            state.metrics.tasks_completed += tasks_completed
-            state.metrics.checkpoints_passed += checkpoints_passed
-
-            # Update cached state
-            self.state_machine._state = state
-
     # =========================================================================
     # Task Management
     # =========================================================================
@@ -958,17 +906,6 @@ Thumbs.db
             self._tasks[task_id] = task  # Update cache
         return task
 
-    def get_all_tasks(self) -> dict[str, Task]:
-        """Get all tasks from SQLite store (authoritative source).
-
-        This method always reads from SQLite to ensure consistency,
-        as the in-memory _tasks cache may be stale after task completions.
-        """
-        if self.state_machine is None:
-            return {}
-        project_id = self.state_machine.state.project_id
-        return self.task_store.load_all(project_id)
-
     def add_task(self, task: Task) -> None:
         """Add a task to the registry"""
         self._tasks[task.id] = task
@@ -995,21 +932,7 @@ Thumbs.db
         self.state_machine.load_state()
         state = self.state_machine.state
         status_value = state.status.value
-
-        # Auto-restart supervisor if in EXECUTE/CHECKPOINT state but not running
-        # This handles MCP server restarts and stale supervisor flags
-        self._auto_restart_supervisor_if_needed()
-
-        # Check for long-running worker alerts
-        long_running_alerts: list[dict[str, Any]] = []
-        if self._config is not None:
-            long_running_config = self._config.long_running
-            long_running_alerts = self.worker_manager.get_long_running_alerts(
-                warning_timeout_seconds=long_running_config.warning_timeout_sec,
-                stale_timeout_seconds=long_running_config.stale_timeout_sec,
-            )
-
-        result: dict[str, Any] = {
+        return {
             "initialized": True,
             "project_id": state.project_id,
             "status": status_value,
@@ -1026,7 +949,8 @@ Thumbs.db
                 "in_progress_map": state.queue.in_progress,
             },
             "workers": {
-                wid: {"state": w.state, "task_id": w.task_id} for wid, w in state.workers.items()
+                wid: {"state": w.state, "task_id": w.task_id}
+                for wid, w in state.workers.items()
             },
             "metrics": state.metrics.model_dump(),
             # Async queues for automation
@@ -1035,7 +959,8 @@ Thumbs.db
                 for item in state.checkpoint_queue
             ],
             "repair_queue": [
-                {"task_id": item.task_id, "attempts": item.attempts} for item in state.repair_queue
+                {"task_id": item.task_id, "attempts": item.attempts}
+                for item in state.repair_queue
             ],
             "supervisor_loop_running": self.is_supervisor_loop_running,
             "supervisor": {
@@ -1047,73 +972,6 @@ Thumbs.db
             # Workflow guide for all MCP clients (Claude Code, Codex, Gemini, etc.)
             "workflow": _get_workflow_guide(status_value),
         }
-
-        # Add alerts if any workers are long-running
-        if long_running_alerts:
-            result["alerts"] = long_running_alerts
-            result["user_action_required"] = True
-
-        return result
-
-
-    def c4_handle_long_running(
-        self,
-        worker_id: str,
-        action: str,
-    ) -> dict[str, Any]:
-        """
-        Handle a long-running worker alert.
-
-        When a worker has been unresponsive for longer than the warning timeout
-        (but not yet reached stale timeout), this tool allows users to decide
-        how to proceed.
-
-        Args:
-            worker_id: The worker ID from the alert
-            action: One of:
-                - "continue": Acknowledge the warning, keep waiting (no change)
-                - "extend": Reset the worker's last_seen, extending timeout by 60 minutes
-                - "kill": Mark worker as stale and recover the task
-
-        Returns:
-            Result dict with status and action taken
-        """
-        if self.state_machine is None:
-            return {
-                "success": False,
-                "error": "C4 not initialized",
-            }
-
-        valid_actions = {"continue", "extend", "kill"}
-        if action not in valid_actions:
-            return {
-                "success": False,
-                "error": f"Invalid action '{action}'. Must be one of: {valid_actions}",
-            }
-
-        if action == "continue":
-            # Just acknowledge - no state change needed
-            return {
-                "success": True,
-                "action": "continue",
-                "worker_id": worker_id,
-                "message": "Alert acknowledged. Continuing to wait for worker.",
-            }
-
-        elif action == "extend":
-            # Extend the worker's timeout by resetting last_seen
-            result = self.worker_manager.extend_worker_timeout(worker_id)
-            result["action"] = "extend"
-            return result
-
-        else:  # action == "kill"
-            # Force-kill the worker and recover its task
-            result = self.worker_manager.kill_worker(
-                worker_id,
-                lock_store=self.lock_store,
-            )
-            result["action"] = "kill"
-            return result
 
     def _create_task_branch_from_work(
         self, git_ops: GitOperations, task_branch: str, work_branch: str
@@ -1161,64 +1019,57 @@ Thumbs.db
 
     def c4_get_task(self, worker_id: str) -> TaskAssignment | None:
         """Request next task assignment for a worker"""
-        tracer = tracing.get_tracer()
-        with tracer.start_as_current_span("c4_get_task") as span:
-            span.set_attribute("worker_id", worker_id)
+        if self.state_machine is None:
+            raise RuntimeError("C4 not initialized")
 
-            if self.state_machine is None:
-                raise RuntimeError("C4 not initialized")
+        # Auto-ensure supervisor loop is running for AI review
+        self._ensure_supervisor_running()
 
-            # Auto-ensure supervisor loop is running for AI review
-            self._ensure_supervisor_running()
+        # Implicit heartbeat - keep worker marked as active
+        self._touch_worker(worker_id)
 
-            # Implicit heartbeat - keep worker marked as active
-            self._touch_worker(worker_id)
+        # Re-load state to get latest (prevent race conditions with other workers)
+        self.state_machine.load_state()
+        # Also refresh task cache from SQLite (fixes stale cache after direct DB edits)
+        self._load_tasks()
+        state = self.state_machine.state
 
-            # Re-load state to get latest (prevent race conditions with other workers)
-            self.state_machine.load_state()
-            # Also refresh task cache from SQLite (fixes stale cache after direct DB edits)
-            self._load_tasks()
-            state = self.state_machine.state
+        # Clean up expired scope locks (prevents stale locks from blocking task assignment)
+        self.lock_store.cleanup_expired(state.project_id)
 
-            # Clean up expired scope locks (prevents stale locks from blocking task assignment)
-            self.lock_store.cleanup_expired(state.project_id)
+        # Ensure we're in EXECUTE state
+        if state.status != ProjectStatus.EXECUTE:
+            return None
 
-            # Ensure we're in EXECUTE state
-            if state.status != ProjectStatus.EXECUTE:
-                span.set_attribute("status", "not_in_execute_state")
-                return None
+        # Register worker if not exists
+        if not self.worker_manager.is_registered(worker_id):
+            self.worker_manager.register(worker_id)
 
-            # Register worker if not exists
-            if not self.worker_manager.is_registered(worker_id):
-                self.worker_manager.register(worker_id)
-
-            # Check if worker already has an in_progress task (resume after crash/restart)
-            for task_id, assigned_worker in list(
-                state.queue.in_progress.items()
-            ):  # list() to allow mutation
-                if assigned_worker == worker_id:
-                    task = self.get_task(task_id)
-                    if task:
-                        span.set_attribute("task_id", task_id)
-                        span.set_attribute("resume", True)
-                        # Verify scope lock is still valid for this worker
-                        if task.scope:
-                            # Check SQLite lock store (authoritative) for lock status
-                            lock_owner = self.lock_store.get_lock_owner(state.project_id, task.scope)
-                            if lock_owner is None or lock_owner != worker_id:
-                                # Lock expired or taken by another worker - cannot resume
-                                # Move task back to pending for reassignment by OTHER workers
-                                del state.queue.in_progress[task_id]
-                                state.queue.pending.insert(0, task_id)  # Add to front of queue
-                                task.status = TaskStatus.PENDING
-                                task.assigned_to = None
-                                self._save_task(task)
-                                # Also release SQLite lock if we owned it
-                                self.lock_store.release_scope_lock(state.project_id, task.scope)
-                                self.state_machine.save_state()
-                                # Return None - let another worker pick up the task
-                                # (don't try to re-acquire as same worker)
-                                return None
+        # Check if worker already has an in_progress task (resume after crash/restart)
+        for task_id, assigned_worker in list(state.queue.in_progress.items()):  # list() to allow mutation
+            if assigned_worker == worker_id:
+                task = self.get_task(task_id)
+                if task:
+                    # Verify scope lock is still valid for this worker
+                    if task.scope:
+                        # Check SQLite lock store (authoritative) for lock status
+                        lock_owner = self.lock_store.get_lock_owner(
+                            state.project_id, task.scope
+                        )
+                        if lock_owner is None or lock_owner != worker_id:
+                            # Lock expired or taken by another worker - cannot resume
+                            # Move task back to pending for reassignment by OTHER workers
+                            del state.queue.in_progress[task_id]
+                            state.queue.pending.insert(0, task_id)  # Add to front of queue
+                            task.status = TaskStatus.PENDING
+                            task.assigned_to = None
+                            self._save_task(task)
+                            # Also release SQLite lock if we owned it
+                            self.lock_store.release_scope_lock(state.project_id, task.scope)
+                            self.state_machine.save_state()
+                            # Return None - let another worker pick up the task
+                            # (don't try to re-acquire as same worker)
+                            return None
                     else:
                         # For scope=None tasks, verify task state consistency
                         if task.assigned_to != worker_id or task.status != TaskStatus.IN_PROGRESS:
@@ -1232,7 +1083,9 @@ Thumbs.db
                             continue
 
                     # Re-sync worker state
-                    self.worker_manager.set_busy(worker_id, task_id, task.scope, task.branch)
+                    self.worker_manager.set_busy(
+                        worker_id, task_id, task.scope, task.branch
+                    )
 
                     # Refresh lock TTL for resumed work (with result check)
                     if task.scope:
@@ -1252,7 +1105,7 @@ Thumbs.db
                     # Get agent routing info (Phase 4)
                     agent_routing = self._get_agent_routing(task)
 
-                    # Get existing worktree path for resumed task
+                    # Check for existing worktree for resumed task
                     git_ops = GitOperations(self.root)
                     worktree_path: str | None = None
                     if git_ops.is_git_repo():
@@ -1280,28 +1133,23 @@ Thumbs.db
                     )
 
         # Find available task from pending (sorted by priority, highest first)
-        # Two-phase allocation: 1) Lock acquisition 2) Atomic state modification
         project_id = state.project_id
         ttl = self.config.scope_lock_ttl_sec
-        store = self.state_machine.store
 
         # Get all pending tasks and sort by priority (descending)
         pending_tasks = []
-        for tid in state.queue.pending:
-            t = self.get_task(tid)
-            if t:
-                pending_tasks.append(t)
+        for task_id in state.queue.pending:
+            task = self.get_task(task_id)
+            if task:
+                pending_tasks.append(task)
         pending_tasks.sort(key=lambda t: t.priority, reverse=True)
 
         for task in pending_tasks:
             task_id = task.id
 
-            # Check dependencies first (read-only check, no lock needed)
-            # Normalize dependency IDs to handle version suffix mismatch
-            # e.g., "T-1200" -> "T-1200-0" to match done queue entries
+            # Check dependencies first (non-locking check)
             deps_met = all(
-                self._parse_task_id(dep_id)[0] in state.queue.done
-                for dep_id in task.dependencies
+                dep_id in state.queue.done for dep_id in task.dependencies
             )
             if not deps_met:
                 continue
@@ -1312,30 +1160,44 @@ Thumbs.db
             if original_worker and original_worker == worker_id:
                 continue
 
-            # Phase 1: Try to acquire scope lock ATOMICALLY using SQLite
-            # For tasks with scope, this prevents multiple workers on same scope
-            # For tasks without scope, use task ID as lock key
-            lock_scope = task.scope if task.scope else f"__task__:{task_id}"
-            lock_acquired = self.lock_store.acquire_scope_lock(
-                project_id, lock_scope, worker_id, ttl
-            )
-            if not lock_acquired:
-                # Another worker has the lock - skip this task
-                continue
+            # Try to acquire scope lock ATOMICALLY using SQLite
+            # This prevents race conditions between workers
+            if task.scope:
+                lock_acquired = self.lock_store.acquire_scope_lock(
+                    project_id, task.scope, worker_id, ttl
+                )
+                if not lock_acquired:
+                    # Another worker has the lock - skip this task
+                    continue
 
-            # Phase 2: Lock acquired - now atomically modify state
-            # This ensures no race between lock acquisition and state update
-            task_branch = f"{self.config.work_branch_prefix}{task_id}"
+            # Lock acquired (or no scope) - now safe to assign
+            # Use atomic_modify to prevent race conditions with c4_submit
+            store = self.state_machine.store
+
+            # Determine branch: Review tasks use parent's branch
+            if task.type == TaskType.REVIEW and task.parent_id:
+                parent_task = self.get_task(task.parent_id)
+                if parent_task and parent_task.branch:
+                    task_branch = parent_task.branch
+                    is_review_using_parent_branch = True
+                else:
+                    # Fallback: compute parent branch name from parent_id
+                    task_branch = f"{self.config.work_branch_prefix}{task.parent_id}"
+                    is_review_using_parent_branch = True
+            else:
+                task_branch = f"{self.config.work_branch_prefix}{task_id}"
+                is_review_using_parent_branch = False
+
             assigned = False
 
             with store.atomic_modify(project_id) as state:
-                # Double-check task is still pending (critical for race prevention)
+                # Double-check task is still pending
                 if task_id in state.queue.pending:
-                    # Remove from pending and add to in_progress (ATOMIC)
+                    # Assign task (ATOMIC)
                     state.queue.pending.remove(task_id)
                     state.queue.in_progress[task_id] = worker_id
 
-                    # Ensure worker exists in state
+                    # Ensure worker exists in state (fix race condition)
                     if worker_id not in state.workers:
                         from c4.models import WorkerInfo
 
@@ -1363,91 +1225,93 @@ Thumbs.db
                 self.state_machine._state = state
 
             if not assigned:
-                # Task was assigned by another worker between lock and atomic_modify
-                # Release our lock and try next task
-                self.lock_store.release_scope_lock(project_id, lock_scope)
+                # Task was assigned by another worker - release our lock
+                if task.scope:
+                    self.lock_store.release_scope_lock(project_id, task.scope)
                 continue
 
-            # Successfully assigned - break out of loop
-            break
-        else:
-            # No task was assigned (loop completed without break)
-            span.set_attribute("task_assigned", False)
-            return None
+            # Update task in SQLite (outside atomic block but still atomic per-task)
+            task.status = TaskStatus.IN_PROGRESS
+            task.assigned_to = worker_id
+            task.branch = task_branch
+            self._save_task(task)
 
-        # Set assigned_task for post-assignment work
-        assigned_task = task
+            # Create worktree for isolated multi-worker support
+            # Each worker gets their own working directory to avoid conflicts
+            git_ops = GitOperations(self.root)
+            worktree_path: str | None = None
 
-        # Task was assigned - now do post-assignment work outside atomic block
-        task = assigned_task
-        task_id = task.id
+            if git_ops.is_git_repo():
+                work_branch = self.config.get_work_branch()
 
-        span.set_attribute("task_id", task_id)
-        span.set_attribute("task_assigned", True)
-
-        # Update task in SQLite (outside atomic block but still atomic per-task)
-        task.status = TaskStatus.IN_PROGRESS
-        task.assigned_to = worker_id
-        task.branch = task_branch
-        self._save_task(task)
-
-        # Create task branch from work branch (if git repo)
-        # Branch strategy: work_branch (c4/{project_id}) → task_branch (c4/w-T-XXX)
-        git_ops = GitOperations(self.root)
-        worktree_path: str | None = None
-
-        if git_ops.is_git_repo():
-            work_branch = self.config.get_work_branch()
-
-            # Try to create worktree first for worker isolation
-            # If worktree creation succeeds, we don't need to checkout in main repo
-            worktree_result = git_ops.create_worktree(
-                worker_id=worker_id,
-                branch=task_branch,
-                base_branch=work_branch,
-            )
-            if worktree_result.success:
-                worktree_path = str(git_ops.get_worktree_path(worker_id))
-                logger.info(f"Created worktree for {worker_id} at {worktree_path}")
-            else:
-                # Worktree creation failed - fall back to main repo branch
-                logger.warning(
-                    f"Failed to create worktree for {worker_id}: {worktree_result.message}"
-                )
-                # Only create branch in main repo if worktree failed
-                branch_result = self._create_task_branch_from_work(
-                    git_ops, task_branch, work_branch
-                )
-                if not branch_result.success:
-                    logger.warning(
-                        f"Failed to create task branch {task_branch}: {branch_result.message}"
+                if not is_review_using_parent_branch:
+                    # Create worktree with new branch from work_branch
+                    worktree_result = git_ops.create_worktree(
+                        worker_id=worker_id,
+                        branch=task_branch,
+                        base_branch=work_branch,
                     )
+                    if worktree_result.success:
+                        wt_path = git_ops.get_worktree_path(worker_id)
+                        worktree_path = str(wt_path)
+                        logger.info(
+                            f"Created worktree for {worker_id} at {worktree_path}"
+                        )
+                    else:
+                        # Fallback: create branch only (legacy behavior)
+                        logger.warning(
+                            f"Worktree creation failed for {worker_id}: "
+                            f"{worktree_result.message}. Using branch only."
+                        )
+                        branch_result = self._create_task_branch_from_work(
+                            git_ops, task_branch, work_branch
+                        )
+                        if not branch_result.success:
+                            logger.warning(
+                                f"Failed to create task branch {task_branch}: "
+                                f"{branch_result.message}"
+                            )
+                else:
+                    # Review task: reuse worker's existing worktree if exists
+                    wt_path = git_ops.get_worktree_path(worker_id)
+                    if wt_path.exists():
+                        worktree_path = str(wt_path)
+                        logger.info(
+                            f"Review task {task_id} using worktree {worktree_path}"
+                        )
+                    else:
+                        logger.info(
+                            f"Review task {task_id} using parent branch "
+                            f"{task_branch} (no worktree)"
+                        )
 
-        # Emit event
-        self.state_machine.emit_event(
-            EventType.TASK_ASSIGNED,
-            "c4d",
-            {
-                "task_id": task_id,
-                "worker_id": worker_id,
-                "scope": task.scope,
-                "worktree_path": worktree_path,
-            },
-        )
+            # Emit event
+            self.state_machine.emit_event(
+                EventType.TASK_ASSIGNED,
+                "c4d",
+                {
+                    "task_id": task_id,
+                    "worker_id": worker_id,
+                    "scope": task.scope,
+                    "worktree_path": worktree_path,
+                },
+            )
 
-        # Get agent routing info (Phase 4)
-        agent_routing = self._get_agent_routing(task)
+            # Get agent routing info (Phase 4)
+            agent_routing = self._get_agent_routing(task)
 
-        return TaskAssignment(
-            task_id=task_id,
-            title=task.title,
-            scope=task.scope,
-            dod=task.dod,
-            validations=task.validations,
-            branch=task_branch,
-            worktree_path=worktree_path,
-            **agent_routing,
-        )
+            return TaskAssignment(
+                task_id=task_id,
+                title=task.title,
+                scope=task.scope,
+                dod=task.dod,
+                validations=task.validations,
+                branch=task_branch,
+                worktree_path=worktree_path,
+                **agent_routing,
+            )
+
+        return None
 
     def c4_submit(
         self,
@@ -1464,14 +1328,8 @@ Thumbs.db
         - review_result: "APPROVE" or "REQUEST_CHANGES"
         - review_comments: Comments for REQUEST_CHANGES (becomes DoD for next version)
         """
-        tracer = tracing.get_tracer()
-        with tracer.start_as_current_span("c4_submit") as span:
-            span.set_attribute("task_id", task_id)
-            span.set_attribute("worker_id", worker_id or "unknown")
-            span.set_attribute("commit_sha", commit_sha)
-
-            if self.state_machine is None:
-                raise RuntimeError("C4 not initialized")
+        if self.state_machine is None:
+            raise RuntimeError("C4 not initialized")
 
         # Auto-ensure supervisor loop is running for AI review
         self._ensure_supervisor_running()
@@ -1482,8 +1340,6 @@ Thumbs.db
         # Parse and validate results first (doesn't need state lock)
         results = [ValidationResult.model_validate(r) for r in validation_results]
         all_passed = all(r.status == "pass" for r in results)
-        span.set_attribute("all_passed", all_passed)
-
         if not all_passed:
             return SubmitResponse(
                 success=False,
@@ -1634,19 +1490,16 @@ Thumbs.db
         # Get fresh state reference for final checks
         state = self.state_machine.state
 
-        # Check if checkpoint reached (legacy mode only)
-        # When checkpoint_as_task is enabled, CP tasks are created by _check_and_create_checkpoint_task
-        # and workers pick them up without state transition to CHECKPOINT
-        if not self.config.checkpoint_as_task:
-            cp_id = self.state_machine.check_gate_conditions(self.config)
-            if cp_id:
-                self._add_to_checkpoint_queue(cp_id, results)
-                self.state_machine.enter_checkpoint(cp_id)
-                return SubmitResponse(
-                    success=True,
-                    next_action="await_checkpoint",
-                    message=f"Checkpoint {cp_id} queued for AI review (automatic)",
-                )
+        # Check if checkpoint reached
+        cp_id = self.state_machine.check_gate_conditions(self.config)
+        if cp_id:
+            self._add_to_checkpoint_queue(cp_id, results)
+            self.state_machine.enter_checkpoint(cp_id)
+            return SubmitResponse(
+                success=True,
+                next_action="await_checkpoint",
+                message=f"Checkpoint {cp_id} queued for AI review (automatic)",
+            )
 
         # Check if all done
         if not state.queue.pending and not state.queue.in_progress:
@@ -1731,17 +1584,15 @@ Thumbs.db
         ):
             self._trigger_auto_commit(task_id, task.title, actual_worker_id)
 
-        # Check if checkpoint reached (legacy mode only)
-        if not self.config.checkpoint_as_task:
-            cp_id = self.state_machine.check_gate_conditions(self.config)
-            if cp_id:
-                self._add_to_checkpoint_queue(cp_id, results)
-                self.state_machine.enter_checkpoint(cp_id)
-                return SubmitResponse(
-                    success=True,
-                    next_action="await_checkpoint",
-                    message=f"Checkpoint {cp_id} queued for AI review (automatic)",
-                )
+        cp_id = self.state_machine.check_gate_conditions(self.config)
+        if cp_id:
+            self._add_to_checkpoint_queue(cp_id, results)
+            self.state_machine.enter_checkpoint(cp_id)
+            return SubmitResponse(
+                success=True,
+                next_action="await_checkpoint",
+                message=f"Checkpoint {cp_id} queued for AI review (automatic)",
+            )
 
         if not state.queue.pending and not state.queue.in_progress:
             return SubmitResponse(
@@ -1787,13 +1638,6 @@ Thumbs.db
         dependencies: list[str] | None = None,
         domain: str | None = None,
         priority: int = 0,
-        # DDD-CLEANCODE fields (Phase 7+)
-        goal: dict[str, Any] | None = None,
-        contract_spec: dict[str, Any] | None = None,
-        boundary_map: dict[str, Any] | None = None,
-        code_placement: dict[str, Any] | None = None,
-        quality_gates: list[dict[str, Any]] | None = None,
-        checkpoints: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Add a new task with optional dependencies.
 
@@ -1806,38 +1650,13 @@ Thumbs.db
             task_id: Unique task identifier (e.g., "T-001" or "T-001-0")
             title: Task title
             scope: File/directory scope for lock (e.g., "src/auth/")
-            dod: Definition of Done (legacy, use goal for new tasks)
+            dod: Definition of Done
             dependencies: List of task IDs that must complete first
             domain: Domain for agent routing (e.g., "web-frontend")
             priority: Higher priority tasks are assigned first (default: 0)
-            goal: Goal specification with done/out_of_scope (DDD-CLEANCODE)
-            contract_spec: API contracts and test requirements (DDD-CLEANCODE)
-            boundary_map: DDD layer constraints and import rules (DDD-CLEANCODE)
-            code_placement: File locations for implementation and tests (DDD-CLEANCODE)
-            quality_gates: Validation commands with requirements (DDD-CLEANCODE)
-            checkpoints: CP1/CP2/CP3 milestone definitions (DDD-CLEANCODE)
         """
-        import warnings
-
-        from c4.models.ddd import (
-            BoundaryMap,
-            CheckpointDefinition,
-            CodePlacement,
-            ContractSpec,
-            Goal,
-            QualityGate,
-        )
-
         if self.state_machine is None:
             raise RuntimeError("C4 not initialized")
-
-        # Emit deprecation warning if using dod without goal
-        if dod and not goal:
-            warnings.warn(
-                "The 'dod' field is deprecated. Use 'goal' with 'done' and 'out_of_scope' instead.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
 
         # Parse and normalize task ID for Review-as-Task
         normalized_id, base_id, version, task_type = self._parse_task_id(task_id)
@@ -1848,14 +1667,6 @@ Thumbs.db
             for dep_id in dependencies:
                 norm_dep_id, _, _, _ = self._parse_task_id(dep_id)
                 normalized_deps.append(norm_dep_id)
-
-        # Build DDD-CLEANCODE objects if provided
-        goal_obj = Goal(**goal) if goal else None
-        contract_spec_obj = ContractSpec(**contract_spec) if contract_spec else None
-        boundary_map_obj = BoundaryMap(**boundary_map) if boundary_map else None
-        code_placement_obj = CodePlacement(**code_placement) if code_placement else None
-        quality_gates_obj = [QualityGate(**g) for g in quality_gates] if quality_gates else []
-        checkpoints_obj = CheckpointDefinition(**checkpoints) if checkpoints else None
 
         task = Task(
             id=normalized_id,
@@ -1869,13 +1680,6 @@ Thumbs.db
             type=task_type,
             base_id=base_id,
             version=version,
-            # DDD-CLEANCODE fields
-            goal=goal_obj,
-            contract_spec=contract_spec_obj,
-            boundary_map=boundary_map_obj,
-            code_placement=code_placement_obj,
-            quality_gates=quality_gates_obj,
-            checkpoints=checkpoints_obj,
         )
         self.add_task(task)
 
@@ -1883,7 +1687,6 @@ Thumbs.db
             "success": True,
             "task_id": normalized_id,
             "dependencies": task.dependencies,
-            "fully_specified": task.is_fully_specified(),
         }
 
     def _parse_task_id(self, task_id: str) -> tuple[str, str, int, TaskType]:
@@ -1909,7 +1712,7 @@ Thumbs.db
             prefix = "T-"
 
         # Remove prefix for parsing
-        without_prefix = task_id[len(prefix) :]
+        without_prefix = task_id[len(prefix):]
 
         # Check if already has version (e.g., "001-0" or "001-2")
         match = re.match(r"^(\d+)-(\d+)$", without_prefix)
@@ -1930,7 +1733,9 @@ Thumbs.db
 
         return normalized_id, base_id, version, task_type
 
-    def _trigger_auto_commit(self, task_id: str, title: str, worker_id: str | None) -> None:
+    def _trigger_auto_commit(
+        self, task_id: str, title: str, worker_id: str | None
+    ) -> None:
         """Trigger GitHub auto-commit for completed task.
 
         Args:
@@ -1955,7 +1760,8 @@ Thumbs.db
 
             if result.success:
                 logger.info(
-                    f"Auto-commit for {task_id}: {result.commit_sha} ({result.files_changed} files)"
+                    f"Auto-commit for {task_id}: {result.commit_sha} "
+                    f"({result.files_changed} files)"
                 )
             else:
                 logger.warning(f"Auto-commit failed for {task_id}: {result.message}")
@@ -1976,12 +1782,10 @@ Thumbs.db
         for task_id in state.queue.done:
             task = self.get_task(task_id)
             if task and task.type == TaskType.IMPLEMENTATION:
-                tasks_completed.append(
-                    {
-                        "id": task_id,
-                        "title": task.title,
-                    }
-                )
+                tasks_completed.append({
+                    "id": task_id,
+                    "title": task.title,
+                })
 
         return tasks_completed
 
@@ -2170,7 +1974,8 @@ Thumbs.db
                 success=False,
                 next_action="fix_failures",
                 message=(
-                    f"Invalid review_result: {review_result}. Use 'APPROVE' or 'REQUEST_CHANGES'"
+                    f"Invalid review_result: {review_result}. "
+                    "Use 'APPROVE' or 'REQUEST_CHANGES'"
                 ),
             )
 
@@ -2202,9 +2007,7 @@ Thumbs.db
             base_id = completed_review.base_id
             for required in cp_config.required_tasks:
                 # Match by full ID (T-001-0) or base ID pattern (T-001)
-                if required == parent_task_id or required.rstrip(
-                    "-0123456789"
-                ) == f"T-{base_id}".rstrip("-0123456789"):
+                if required == parent_task_id or required.rstrip("-0123456789") == f"T-{base_id}".rstrip("-0123456789"):
                     matching_checkpoint = cp_config
                     break
             if matching_checkpoint:
@@ -2261,25 +2064,12 @@ Thumbs.db
                 break
 
         if not all_approved:
-            logger.debug(f"Not all reviews approved for checkpoint {matching_checkpoint.id}")
+            logger.debug(
+                f"Not all reviews approved for checkpoint {matching_checkpoint.id}"
+            )
             return None
 
-        # Check auto_approve setting
-        # If auto_approve=True (default), create CP task for automated AI review
-        # If auto_approve=False, enter CHECKPOINT state and wait for human review
-        if not matching_checkpoint.auto_approve:
-            # Human review required - enter CHECKPOINT state
-            logger.info(
-                f"Checkpoint {matching_checkpoint.id} requires human review (auto_approve=false). "
-                "Entering CHECKPOINT state. Use /c4-checkpoint to proceed."
-            )
-            # Add to checkpoint queue for tracking
-            self._add_to_checkpoint_queue(matching_checkpoint.id, [])
-            # Enter checkpoint state (blocks further task execution)
-            self.state_machine.enter_checkpoint(matching_checkpoint.id)
-            return None  # Don't create CP task - wait for human
-
-        # All reviews approved and auto_approve=True! Create checkpoint task
+        # All reviews approved! Create checkpoint task
         logger.info(
             f"All reviews approved for checkpoint {matching_checkpoint.id}. "
             f"Creating checkpoint task {cp_task_id}"
@@ -2317,7 +2107,9 @@ Thumbs.db
             logger.error(f"Failed to create checkpoint task {cp_task_id}: {e}")
             return None
 
-    def _find_tasks_by_pattern(self, pattern: str, task_type: TaskType | None = None) -> list[Task]:
+    def _find_tasks_by_pattern(
+        self, pattern: str, task_type: TaskType | None = None
+    ) -> list[Task]:
         """Find tasks matching a pattern.
 
         Patterns:
@@ -2463,7 +2255,8 @@ Thumbs.db
 
         if review_result == "APPROVE":
             logger.info(
-                f"Checkpoint {task.id} APPROVED by {worker_id}. Phase {task.phase_id} complete."
+                f"Checkpoint {task.id} APPROVED by {worker_id}. "
+                f"Phase {task.phase_id} complete."
             )
 
             # Mark checkpoint as passed
@@ -2495,7 +2288,9 @@ Thumbs.db
             problem_task_ids = self._parse_problem_task_ids(review_comments)
 
             if not problem_task_ids:
-                logger.warning(f"No task IDs found in checkpoint comments: {review_comments}")
+                logger.warning(
+                    f"No task IDs found in checkpoint comments: {review_comments}"
+                )
                 # Create a generic fix task
                 problem_task_ids = task.required_tasks[:1] if task.required_tasks else []
 
@@ -2549,7 +2344,9 @@ Thumbs.db
                 try:
                     self.add_task(new_task)
                     created_tasks.append(new_task_id)
-                    logger.info(f"Created fix task {new_task_id} from checkpoint {task.id}")
+                    logger.info(
+                        f"Created fix task {new_task_id} from checkpoint {task.id}"
+                    )
                 except Exception as e:
                     logger.error(f"Failed to create fix task {new_task_id}: {e}")
 
@@ -2636,7 +2433,8 @@ Thumbs.db
 
         if completion_action == "manual":
             logger.info(
-                f"Completion action: manual. Merge {work_branch} to {default_branch} when ready."
+                f"Completion action: manual. "
+                f"Merge {work_branch} to {default_branch} when ready."
             )
             return None
 
@@ -2730,7 +2528,9 @@ Thumbs.db
 
         return None
 
-    def _merge_completed_task_branches(self, state: "C4State") -> list[dict[str, str]]:
+    def _merge_completed_task_branches(
+        self, state: "C4State"
+    ) -> list[dict[str, str]]:
         """Merge completed task branches into work branch.
 
         Called on checkpoint APPROVE to consolidate approved work.
@@ -2773,8 +2573,12 @@ Thumbs.db
                 # Optionally delete the task branch after merge
                 git_ops._run_git("branch", "-d", task.branch)
             else:
-                results.append({"task_id": task_id, "status": f"failed: {merge_result.message}"})
-                logger.warning(f"Failed to merge {task.branch}: {merge_result.message}")
+                results.append(
+                    {"task_id": task_id, "status": f"failed: {merge_result.message}"}
+                )
+                logger.warning(
+                    f"Failed to merge {task.branch}: {merge_result.message}"
+                )
 
         return results
 
@@ -2821,7 +2625,9 @@ Thumbs.db
                 # Branch strategy: task branches → work branch on checkpoint APPROVE
                 merge_results = self._merge_completed_task_branches(state)
                 if merge_results:
-                    logger.info(f"Checkpoint {checkpoint_id}: merged {len(merge_results)} branches")
+                    logger.info(
+                        f"Checkpoint {checkpoint_id}: merged {len(merge_results)} branches"
+                    )
 
                 # Check if this is the final checkpoint
                 is_final = not state.queue.pending
@@ -2844,7 +2650,7 @@ Thumbs.db
                 # Add required changes as tasks
                 if required_changes:
                     for i, change in enumerate(required_changes):
-                        task_id = f"RC-{checkpoint_id}-{i + 1:02d}"
+                        task_id = f"RC-{checkpoint_id}-{i+1:02d}"
                         self.c4_add_todo(
                             task_id=task_id,
                             title=change,
@@ -3034,28 +2840,12 @@ Thumbs.db
                 # Log but don't fail - supervisor can be started manually
                 logger.warning(f"Failed to auto-start supervisor loop: {e}")
 
-        # Auto-start LSP server for code intelligence
-        lsp_started = False
-        lsp_port = None
-        if self._lsp_server is None or self._lsp_thread is None or not self._lsp_thread.is_alive():
-            try:
-                lsp_result = self.c4_lsp_start()
-                if lsp_result.get("success"):
-                    lsp_started = True
-                    lsp_port = lsp_result.get("port")
-                    logger.info(f"LSP server auto-started on port {lsp_port}")
-            except Exception as e:
-                # Log but don't fail - LSP can be started manually
-                logger.warning(f"Failed to auto-start LSP server: {e}")
-
         return {
             "success": True,
             "message": f"Transitioned from {current_status} to EXECUTE",
             "status": new_state.status.value,
             "pending_tasks": len(new_state.queue.pending),
             "supervisor_loop_started": supervisor_started,
-            "lsp_server_started": lsp_started,
-            "lsp_port": lsp_port,
             "work_branch": work_branch,
             "branch_message": branch_message,
         }
@@ -3086,7 +2876,9 @@ Thumbs.db
                     names, fail_fast=fail_fast, timeout=timeout
                 )
             else:
-                runs = self.validation_runner.run_all_required(timeout_per_validation=timeout)
+                runs = self.validation_runner.run_all_required(
+                    timeout_per_validation=timeout
+                )
 
             # Convert to results
             results = []
@@ -3098,7 +2890,9 @@ Thumbs.db
                     all_passed = False
 
             # Update state with last validation results
-            self.state_machine.state.last_validation = {r["name"]: r["status"] for r in results}
+            self.state_machine.state.last_validation = {
+                r["name"]: r["status"] for r in results
+            }
             self.state_machine.save_state()
 
             # Emit event
@@ -3202,14 +2996,12 @@ Thumbs.db
             for feature in features:
                 spec = self.spec_store.load(feature)
                 if spec:
-                    specs_summary.append(
-                        {
-                            "feature": spec.feature,
-                            "domain": spec.domain.value,
-                            "requirements_count": len(spec.requirements),
-                            "description": spec.description,
-                        }
-                    )
+                    specs_summary.append({
+                        "feature": spec.feature,
+                        "domain": spec.domain.value,
+                        "requirements_count": len(spec.requirements),
+                        "description": spec.description,
+                    })
 
             return {
                 "success": True,
@@ -3413,9 +3205,7 @@ Thumbs.db
             for spec_name in specs:
                 spec = self.spec_store.load(spec_name)
                 if spec and spec.domain:
-                    domain_value = (
-                        spec.domain.value if hasattr(spec.domain, "value") else str(spec.domain)
-                    )
+                    domain_value = spec.domain.value if hasattr(spec.domain, "value") else str(spec.domain)
                     domains_found.add(domain_value)
 
             # Apply domain defaults for each unique domain
@@ -3442,9 +3232,7 @@ Thumbs.db
 
             if default_verifications_added:
                 result["default_verifications_added"] = default_verifications_added
-                result["message"] += (
-                    f" Added {len(default_verifications_added)} domain default verification(s)."
-                )
+                result["message"] += f" Added {len(default_verifications_added)} domain default verification(s)."
 
             return result
 
@@ -3520,7 +3308,7 @@ Thumbs.db
             if options:
                 for opt_data in options:
                     opt = ArchitectureOption(
-                        id=opt_data.get("id", f"option-{len(spec.architecture_options) + 1}"),
+                        id=opt_data.get("id", f"option-{len(spec.architecture_options)+1}"),
                         name=opt_data.get("name", "Unnamed Option"),
                         description=opt_data.get("description", ""),
                         complexity=opt_data.get("complexity", "medium"),
@@ -3547,7 +3335,7 @@ Thumbs.db
             if decisions:
                 for dec_data in decisions:
                     spec.add_decision(
-                        id=dec_data.get("id", f"DEC-{len(spec.decisions) + 1}"),
+                        id=dec_data.get("id", f"DEC-{len(spec.decisions)+1}"),
                         question=dec_data.get("question", ""),
                         decision=dec_data.get("decision", ""),
                         rationale=dec_data.get("rationale", ""),
@@ -3652,16 +3440,14 @@ Thumbs.db
             for feature_name in features:
                 spec = self.design_store.load(feature_name)
                 if spec:
-                    designs.append(
-                        {
-                            "feature": spec.feature,
-                            "domain": spec.domain.value,
-                            "selected_option": spec.selected_option,
-                            "has_diagram": spec.mermaid_diagram is not None,
-                            "components_count": len(spec.components),
-                            "decisions_count": len(spec.decisions),
-                        }
-                    )
+                    designs.append({
+                        "feature": spec.feature,
+                        "domain": spec.domain.value,
+                        "selected_option": spec.selected_option,
+                        "has_diagram": spec.mermaid_diagram is not None,
+                        "components_count": len(spec.components),
+                        "decisions_count": len(spec.decisions),
+                    })
 
             return {
                 "success": True,
@@ -3778,7 +3564,8 @@ Thumbs.db
             },
             "total_task_overrides": len(self.agent_router.merged_overrides),
             "task_type_overrides": self.agent_router.merged_overrides,
-            "custom_config_loaded": self._config is not None and self._config.agents is not None,
+            "custom_config_loaded": self._config is not None
+            and self._config.agents is not None,
         }
 
     def c4_query_agent_graph(
@@ -3882,14 +3669,12 @@ Thumbs.db
             domains_data: list[dict[str, Any]] = []
             for domain in sorted(router.get_all_domains()):
                 config = router.get_recommended_agent(domain)
-                domains_data.append(
-                    {
-                        "id": domain,
-                        "primary": config.primary,
-                        "chain_length": len(config.chain),
-                        "description": config.description,
-                    }
-                )
+                domains_data.append({
+                    "id": domain,
+                    "primary": config.primary,
+                    "chain_length": len(config.chain),
+                    "description": config.description,
+                })
             result["domains"] = domains_data
             result["total"] = len(domains_data)
 
@@ -3915,22 +3700,23 @@ Thumbs.db
                 chain = graph.build_chain(from_agent) if graph else []
                 if not chain:
                     # Use legacy fallback if graph has no chain
-                    chain = (
-                        router.get_chain_for_domain(filter_value) if filter_value else [from_agent]
-                    )
+                    chain = router.get_chain_for_domain(filter_value) if filter_value else [from_agent]
                 result["chain"] = chain
                 result["length"] = len(chain)
 
         else:
             result["error"] = f"Unknown query_type: {query_type}"
-            result["valid_types"] = ["overview", "agents", "skills", "domains", "path", "chain"]
+            result["valid_types"] = ["overview", "agents", "skills", "domains",
+                                     "path", "chain"]
 
         # Convert to Mermaid if requested
         if output_format == "mermaid" and "error" not in result:
             try:
                 if query_type == "path" and result.get("path"):
                     # Highlight path in Mermaid
-                    result["mermaid"] = highlight_path(graph, from_agent, to_agent) if graph else ""
+                    result["mermaid"] = highlight_path(
+                        graph, from_agent, to_agent
+                    ) if graph else ""
                 else:
                     # Full graph as Mermaid
                     result["mermaid"] = to_mermaid(graph) if graph else ""
@@ -3939,566 +3725,14 @@ Thumbs.db
 
         return result
 
-    # =========================================================================
-    # PIQ Integration
-    # =========================================================================
-
-    async def c4_piq_query(
-        self,
-        knowledge_type: str | None = None,
-        task_type: str | None = None,
-        dataset: str | None = None,
-        template_id: str | None = None,
-        limit: int = 10,
-    ) -> dict[str, Any]:
-        """
-        Query PIQ Knowledge Hub for ML/DL knowledge.
-
-        Args:
-            knowledge_type: Type of knowledge (backbone, optimizer, etc.)
-            task_type: Task type for context (classification, detection, etc.)
-            dataset: Dataset name for context
-            template_id: C4 template ID for context
-            limit: Maximum results to return
-
-        Returns:
-            Query results with knowledge items and suggestions
-        """
-        from .templates import get_piq_client
-
-        try:
-            # Get PIQ config from C4 config if available
-            piq_config = None
-            if self.config and hasattr(self.config, "piq"):
-                piq_config = self.config.piq
-
-            client = get_piq_client(piq_config)
-
-            # Ensure connected
-            if not client.is_connected:
-                await client.connect()
-
-            result = await client.query(
-                knowledge_type=knowledge_type,
-                task_type=task_type,
-                dataset=dataset,
-                template_id=template_id,
-                limit=limit,
-            )
-
-            if result.success:
-                return {
-                    "success": True,
-                    "knowledge": [
-                        {
-                            "id": k.id,
-                            "type": k.knowledge_type.value,
-                            "title": k.title,
-                            "content": k.content,
-                            "source": k.source.value,
-                            "confidence": k.confidence,
-                            "paper_title": k.paper_title,
-                            "tags": k.tags,
-                        }
-                        for k in result.knowledge
-                    ],
-                    "suggestions": result.suggestions,
-                    "total_count": result.total_count,
-                    "query_time_ms": result.query_time_ms,
-                }
-            else:
-                return {
-                    "success": False,
-                    "error": result.error,
-                }
-
-        except Exception as e:
-            logger.error(f"PIQ query error: {e}")
-            return {
-                "success": False,
-                "error": str(e),
-            }
-
-    async def c4_piq_suggest(
-        self,
-        template_id: str,
-        param_name: str,
-        current_params: dict[str, Any] | None = None,
-    ) -> dict[str, Any]:
-        """
-        Get parameter suggestions from PIQ for a template parameter.
-
-        Args:
-            template_id: Template ID
-            param_name: Parameter name to get suggestions for
-            current_params: Current parameter values for context
-
-        Returns:
-            List of suggested values with confidence
-        """
-        from .templates import get_piq_client
-
-        try:
-            client = get_piq_client()
-
-            if not client.is_connected:
-                await client.connect()
-
-            suggestions = await client.get_suggestions(
-                template_id=template_id,
-                param_name=param_name,
-                current_params=current_params,
-            )
-
-            return {
-                "success": True,
-                "template_id": template_id,
-                "param_name": param_name,
-                "suggestions": suggestions,
-            }
-
-        except Exception as e:
-            logger.error(f"PIQ suggest error: {e}")
-            return {
-                "success": False,
-                "error": str(e),
-            }
-
-    async def c4_piq_sync(
-        self,
-        experiment_id: str,
-        template_id: str | None = None,
-        params: dict[str, Any] | None = None,
-        metrics: dict[str, Any] | None = None,
-        status: str = "completed",
-    ) -> dict[str, Any]:
-        """
-        Sync experiment results to PIQ Hub.
-
-        Args:
-            experiment_id: Unique experiment identifier
-            template_id: Template used for the experiment
-            params: Hyperparameters and configuration
-            metrics: Experiment metrics
-            status: Experiment status (running, completed, failed)
-
-        Returns:
-            Sync result with any generated insights
-        """
-        from .templates import get_piq_client
-
-        try:
-            client = get_piq_client()
-
-            if not client.is_connected:
-                await client.connect()
-
-            result = await client.sync_experiment(
-                experiment_id=experiment_id,
-                template_id=template_id,
-                params=params,
-                metrics=metrics,
-                status=status,
-                metadata={
-                    "project_root": str(self.root),
-                    "synced_from": "c4_mcp",
-                },
-            )
-
-            if result.success:
-                return {
-                    "success": True,
-                    "experiment_id": experiment_id,
-                    "insights": [
-                        {
-                            "id": k.id,
-                            "title": k.title,
-                            "content": k.content,
-                        }
-                        for k in result.knowledge
-                    ],
-                    "suggestions": result.suggestions,
-                }
-            else:
-                return {
-                    "success": False,
-                    "error": result.error,
-                }
-
-        except Exception as e:
-            logger.error(f"PIQ sync error: {e}")
-            return {
-                "success": False,
-                "error": str(e),
-            }
-
-    async def c4_piq_status(self) -> dict[str, Any]:
-        """
-        Check PIQ Hub connection status and configuration.
-
-        Returns:
-            PIQ status including connection health and config
-        """
-        from .templates import get_piq_client
-
-        try:
-            client = get_piq_client()
-
-            # Check health
-            if not client.is_connected:
-                await client.connect()
-
-            is_healthy = await client.health_check()
-
-            return {
-                "success": True,
-                "connected": client.is_connected,
-                "healthy": is_healthy,
-                "config": {
-                    "base_url": client.config.base_url,
-                    "enabled": client.config.enabled,
-                    "cache_ttl": client.config.cache_ttl,
-                    "timeout": client.config.timeout,
-                },
-            }
-
-        except Exception as e:
-            logger.error(f"PIQ status error: {e}")
-            return {
-                "success": False,
-                "connected": False,
-                "healthy": False,
-                "error": str(e),
-            }
-
-    # ========== LSP Server Integration ==========
-
-    def c4_lsp_start(
-        self,
-        port: int = 2087,
-        host: str = "localhost",
-    ) -> dict[str, Any]:
-        """
-        Start the LSP server in TCP mode.
-
-        Args:
-            port: Port to listen on (default: 2087)
-            host: Host to bind to (default: localhost)
-
-        Returns:
-            Status of LSP server startup
-        """
-        import threading
-
-        try:
-            from c4.lsp import C4LSPServer
-        except ImportError:
-            return {
-                "success": False,
-                "error": "pygls not installed. Run: uv add pygls",
-            }
-
-        # Check if already running
-        if self._lsp_server is not None and self._lsp_thread is not None:
-            if self._lsp_thread.is_alive():
-                return {
-                    "success": False,
-                    "error": f"LSP server already running on port {port}",
-                    "status": "running",
-                }
-
-        try:
-            # Create LSP server
-            self._lsp_server = C4LSPServer()
-
-            # Set workspace root for async indexing (triggered on initialized)
-            self._lsp_server._workspace_root = self.root
-
-            # Start in background thread
-            def run_server():
-                try:
-                    self._lsp_server.start_tcp(host, port)
-                except Exception as e:
-                    logger.error(f"LSP server error: {e}")
-
-            self._lsp_thread = threading.Thread(
-                target=run_server,
-                daemon=True,
-                name="c4-lsp-server",
-            )
-            self._lsp_thread.start()
-
-            logger.info(f"LSP server started on {host}:{port}")
-
-            return {
-                "success": True,
-                "host": host,
-                "port": port,
-                "status": "started",
-                "message": f"LSP server running on {host}:{port}",
-            }
-
-        except Exception as e:
-            logger.error(f"Failed to start LSP server: {e}")
-            return {
-                "success": False,
-                "error": str(e),
-            }
-
-    def c4_lsp_status(self) -> dict[str, Any]:
-        """
-        Get LSP server status.
-
-        Returns:
-            LSP server status information
-        """
-        if self._lsp_server is None:
-            return {
-                "running": False,
-                "status": "not_started",
-                "message": "LSP server not started. Use c4_lsp_start to start.",
-            }
-
-        is_alive = self._lsp_thread is not None and self._lsp_thread.is_alive()
-
-        if not is_alive:
-            return {
-                "running": False,
-                "status": "stopped",
-                "message": "LSP server stopped.",
-            }
-
-        # Get indexed file count
-        indexed_files = len(self._lsp_server.analyzer._file_contents)
-        total_symbols = len(self._lsp_server.analyzer.get_all_symbols())
-
-        return {
-            "running": True,
-            "status": "running",
-            "indexed_files": indexed_files,
-            "total_symbols": total_symbols,
-            "features": [
-                "textDocument/hover",
-                "textDocument/definition",
-                "textDocument/references",
-                "textDocument/documentSymbol",
-                "textDocument/completion",
-                "workspace/symbol",
-            ],
-        }
-
-    def c4_lsp_stop(self) -> dict[str, Any]:
-        """
-        Stop the LSP server.
-
-        Returns:
-            Status of LSP server shutdown
-        """
-        if self._lsp_server is None:
-            return {
-                "success": False,
-                "error": "LSP server not running",
-            }
-
-        try:
-            # pygls doesn't have a clean stop method for TCP mode
-            # We rely on daemon thread termination
-            self._lsp_server = None
-            self._lsp_thread = None
-
-            return {
-                "success": True,
-                "status": "stopped",
-                "message": "LSP server stopped",
-            }
-
-        except Exception as e:
-            return {
-                "success": False,
-                "error": str(e),
-            }
-
-    # ========== Git Worktree Integration ==========
-
-    def c4_worktree_status(self, worker_id: str | None = None) -> dict[str, Any]:
-        """
-        Get Git worktree status.
-
-        Args:
-            worker_id: Specific worker to check (None = list all)
-
-        Returns:
-            Worktree status information
-        """
-        git_ops = GitOperations(self.root)
-
-        if not git_ops.is_git_repo():
-            return {
-                "success": False,
-                "error": "Not a Git repository",
-            }
-
-        if worker_id:
-            # Get specific worktree status
-            status = git_ops.get_worktree_status(worker_id)
-            return {
-                "success": True,
-                "worker_id": worker_id,
-                **status,
-            }
-        else:
-            # List all worktrees
-            worktrees = git_ops.list_worktrees()
-            c4_worktrees = [
-                wt for wt in worktrees
-                if ".c4/worktrees" in wt.get("path", "")
-            ]
-            return {
-                "success": True,
-                "total_worktrees": len(worktrees),
-                "c4_worktrees": len(c4_worktrees),
-                "worktrees": c4_worktrees,
-            }
-
-    def c4_worktree_create(
-        self,
-        worker_id: str,
-        branch: str | None = None,
-        task_id: str | None = None,
-    ) -> dict[str, Any]:
-        """
-        Create a Git worktree for a worker.
-
-        Args:
-            worker_id: Worker identifier for the worktree directory
-            branch: Branch name (default: c4/w-{worker_id} or c4/w-{task_id})
-            task_id: Optional task ID for branch naming
-
-        Returns:
-            Worktree creation result
-        """
-        git_ops = GitOperations(self.root)
-
-        if not git_ops.is_git_repo():
-            return {
-                "success": False,
-                "error": "Not a Git repository",
-            }
-
-        # Determine branch name
-        if branch is None:
-            if task_id:
-                branch = f"c4/w-{task_id}"
-            else:
-                branch = f"c4/w-{worker_id}"
-
-        # Get base branch from config
-        base_branch = self.config.get_work_branch() if self.config else "main"
-
-        result = git_ops.create_worktree(worker_id, branch, base_branch=base_branch)
-
-        if result.success:
-            worktree_path = git_ops.get_worktree_path(worker_id)
-            return {
-                "success": True,
-                "worker_id": worker_id,
-                "branch": branch,
-                "path": str(worktree_path),
-                "sha": result.sha,
-                "message": result.message,
-            }
-        else:
-            return {
-                "success": False,
-                "error": result.message,
-            }
-
-    def c4_worktree_remove(
-        self,
-        worker_id: str,
-        force: bool = False,
-    ) -> dict[str, Any]:
-        """
-        Remove a Git worktree.
-
-        Args:
-            worker_id: Worker identifier
-            force: Force removal even with uncommitted changes
-
-        Returns:
-            Removal result
-        """
-        git_ops = GitOperations(self.root)
-
-        if not git_ops.is_git_repo():
-            return {
-                "success": False,
-                "error": "Not a Git repository",
-            }
-
-        result = git_ops.remove_worktree(worker_id, force=force)
-
-        return {
-            "success": result.success,
-            "worker_id": worker_id,
-            "message": result.message,
-        }
-
-    def c4_worktree_cleanup(
-        self,
-        keep_active: bool = True,
-    ) -> dict[str, Any]:
-        """
-        Clean up unused worktrees.
-
-        Args:
-            keep_active: If True, keep worktrees for active workers
-
-        Returns:
-            Cleanup result
-        """
-        git_ops = GitOperations(self.root)
-
-        if not git_ops.is_git_repo():
-            return {
-                "success": False,
-                "error": "Not a Git repository",
-            }
-
-        # Get active workers if keeping them
-        keep_workers = None
-        if keep_active and self.state_machine:
-            state = self.state_machine.state
-            # Keep workers that have assigned tasks
-            keep_workers = [
-                task.assigned_to
-                for task in state.queue.in_progress
-                if task.assigned_to
-            ]
-
-        result = git_ops.cleanup_worktrees(keep_workers=keep_workers)
-
-        return {
-            "success": result.success,
-            "message": result.message,
-            "kept_workers": keep_workers or [],
-        }
-
     def check_and_trigger_checkpoint(self) -> dict[str, Any] | None:
         """
         Check if checkpoint conditions are met and trigger if so.
-
-        NOTE: This is legacy mode. When checkpoint_as_task is enabled,
-        checkpoints are handled as tasks (CP-XXX) without state transition.
 
         Returns:
             Checkpoint info if triggered, None otherwise
         """
         if self.state_machine is None:
-            return None
-
-        # Skip when checkpoint_as_task is enabled - CP tasks are created automatically
-        if self.config.checkpoint_as_task:
             return None
 
         state = self.state_machine.state
@@ -4697,12 +3931,6 @@ def create_server(project_root: Path | None = None) -> Server:
                 # Auto-restart supervisor loop if in EXECUTE/CHECKPOINT state
                 daemon._auto_restart_supervisor_if_needed()
             _daemon_cache[root_str] = daemon
-        else:
-            # For cached daemon, also check supervisor state
-            # This handles cases where supervisor died or MCP server context changed
-            daemon = _daemon_cache[root_str]
-            if daemon.is_initialized():
-                daemon._auto_restart_supervisor_if_needed()
 
         return _daemon_cache[root_str]
 
@@ -4719,7 +3947,7 @@ def create_server(project_root: Path | None = None) -> Server:
 
     @server.list_tools()
     async def list_tools() -> list[Tool]:
-        tools = [
+        return [
             Tool(
                 name="c4_status",
                 description="Get current C4 project status including state, queue, and workers",
@@ -4727,30 +3955,6 @@ def create_server(project_root: Path | None = None) -> Server:
                     "type": "object",
                     "properties": {},
                     "required": [],
-                },
-            ),
-            Tool(
-                name="c4_handle_long_running",
-                description="Handle a long-running worker alert. Use when c4_status shows alerts for unresponsive workers.",
-                inputSchema={
-                    "type": "object",
-                    "properties": {
-                        "worker_id": {
-                            "type": "string",
-                            "description": "The worker ID from the alert",
-                        },
-                        "action": {
-                            "type": "string",
-                            "enum": ["continue", "extend", "kill"],
-                            "description": (
-                                "Action to take: "
-                                "'continue' = acknowledge, keep waiting; "
-                                "'extend' = reset timeout (+60 min); "
-                                "'kill' = recover task"
-                            ),
-                        },
-                    },
-                    "required": ["worker_id", "action"],
                 },
             ),
             Tool(
@@ -4827,13 +4031,10 @@ def create_server(project_root: Path | None = None) -> Server:
                 inputSchema={
                     "type": "object",
                     "properties": {
-                        "task_id": {
-                            "type": "string",
-                            "description": "Unique task ID (e.g., T-001)",
-                        },
+                        "task_id": {"type": "string", "description": "Unique task ID (e.g., T-001)"},
                         "title": {"type": "string", "description": "Task title"},
                         "scope": {"type": "string", "description": "File/directory scope for lock"},
-                        "dod": {"type": "string", "description": "Definition of Done (legacy, use goal for new tasks)"},
+                        "dod": {"type": "string", "description": "Definition of Done"},
                         "dependencies": {
                             "type": "array",
                             "items": {"type": "string"},
@@ -4846,83 +4047,6 @@ def create_server(project_root: Path | None = None) -> Server:
                         "priority": {
                             "type": "integer",
                             "description": "Higher priority tasks assigned first (default: 0)",
-                        },
-                        # DDD-CLEANCODE fields
-                        "goal": {
-                            "type": "object",
-                            "description": "Goal specification (DDD-CLEANCODE)",
-                            "properties": {
-                                "done": {"type": "string", "description": "What 'done' looks like"},
-                                "out_of_scope": {"type": "string", "description": "What is explicitly excluded"},
-                            },
-                        },
-                        "contract_spec": {
-                            "type": "object",
-                            "description": "API contracts and test requirements (DDD-CLEANCODE)",
-                            "properties": {
-                                "apis": {
-                                    "type": "array",
-                                    "items": {
-                                        "type": "object",
-                                        "properties": {
-                                            "name": {"type": "string"},
-                                            "input": {"type": "string"},
-                                            "output": {"type": "string"},
-                                            "errors": {"type": "array", "items": {"type": "string"}},
-                                            "side_effects": {"type": "string"},
-                                        },
-                                    },
-                                },
-                                "tests": {
-                                    "type": "object",
-                                    "properties": {
-                                        "success": {"type": "array", "items": {"type": "string"}},
-                                        "failure": {"type": "array", "items": {"type": "string"}},
-                                        "boundary": {"type": "array", "items": {"type": "string"}},
-                                    },
-                                },
-                            },
-                        },
-                        "boundary_map": {
-                            "type": "object",
-                            "description": "DDD layer constraints and import rules (DDD-CLEANCODE)",
-                            "properties": {
-                                "target_domain": {"type": "string"},
-                                "target_layer": {"type": "string", "enum": ["domain", "app", "infra", "api"]},
-                                "allowed_imports": {"type": "array", "items": {"type": "string"}},
-                                "forbidden_imports": {"type": "array", "items": {"type": "string"}},
-                                "public_export": {"type": "string"},
-                            },
-                        },
-                        "code_placement": {
-                            "type": "object",
-                            "description": "File locations for implementation and tests (DDD-CLEANCODE)",
-                            "properties": {
-                                "create": {"type": "array", "items": {"type": "string"}},
-                                "modify": {"type": "array", "items": {"type": "string"}},
-                                "tests": {"type": "array", "items": {"type": "string"}},
-                            },
-                        },
-                        "quality_gates": {
-                            "type": "array",
-                            "description": "Validation commands with requirements (DDD-CLEANCODE)",
-                            "items": {
-                                "type": "object",
-                                "properties": {
-                                    "name": {"type": "string"},
-                                    "command": {"type": "string"},
-                                    "required": {"type": "boolean"},
-                                },
-                            },
-                        },
-                        "checkpoints": {
-                            "type": "object",
-                            "description": "CP1/CP2/CP3 milestone definitions (DDD-CLEANCODE)",
-                            "properties": {
-                                "cp1_skeleton": {"type": "string"},
-                                "cp2_green": {"type": "string"},
-                                "cp3_harden": {"type": "string"},
-                            },
                         },
                     },
                     "required": ["task_id", "title", "dod"],
@@ -5044,25 +4168,13 @@ def create_server(project_root: Path | None = None) -> Server:
                             "items": {
                                 "type": "object",
                                 "properties": {
-                                    "id": {
-                                        "type": "string",
-                                        "description": "Requirement ID (e.g., 'REQ-001')",
-                                    },
+                                    "id": {"type": "string", "description": "Requirement ID (e.g., 'REQ-001')"},
                                     "pattern": {
                                         "type": "string",
-                                        "enum": [
-                                            "ubiquitous",
-                                            "state-driven",
-                                            "event-driven",
-                                            "optional",
-                                            "unwanted",
-                                        ],
+                                        "enum": ["ubiquitous", "state-driven", "event-driven", "optional", "unwanted"],
                                         "description": "EARS pattern type",
                                     },
-                                    "text": {
-                                        "type": "string",
-                                        "description": "Full EARS requirement text",
-                                    },
+                                    "text": {"type": "string", "description": "Full EARS requirement text"},
                                 },
                                 "required": ["id", "text"],
                             },
@@ -5070,16 +4182,7 @@ def create_server(project_root: Path | None = None) -> Server:
                         },
                         "domain": {
                             "type": "string",
-                            "enum": [
-                                "web-frontend",
-                                "web-backend",
-                                "fullstack",
-                                "ml-dl",
-                                "mobile-app",
-                                "infra",
-                                "library",
-                                "unknown",
-                            ],
+                            "enum": ["web-frontend", "web-backend", "fullstack", "ml-dl", "mobile-app", "infra", "library", "unknown"],
                             "description": "Project domain",
                         },
                         "description": {
@@ -5115,7 +4218,7 @@ def create_server(project_root: Path | None = None) -> Server:
             ),
             Tool(
                 name="c4_discovery_complete",
-                description="Mark discovery complete and transition to DESIGN. Requires at least one spec saved.",
+                description="Mark discovery phase as complete and transition to DESIGN state. Requires at least one specification to be saved.",
                 inputSchema={
                     "type": "object",
                     "properties": {},
@@ -5135,16 +4238,7 @@ def create_server(project_root: Path | None = None) -> Server:
                         },
                         "domain": {
                             "type": "string",
-                            "enum": [
-                                "web-frontend",
-                                "web-backend",
-                                "fullstack",
-                                "ml-dl",
-                                "mobile-app",
-                                "infra",
-                                "library",
-                                "unknown",
-                            ],
+                            "enum": ["web-frontend", "web-backend", "fullstack", "ml-dl", "mobile-app", "infra", "library", "unknown"],
                             "description": "Project domain",
                         },
                         "description": {
@@ -5163,10 +4257,7 @@ def create_server(project_root: Path | None = None) -> Server:
                                     "id": {"type": "string"},
                                     "name": {"type": "string"},
                                     "description": {"type": "string"},
-                                    "complexity": {
-                                        "type": "string",
-                                        "enum": ["low", "medium", "high"],
-                                    },
+                                    "complexity": {"type": "string", "enum": ["low", "medium", "high"]},
                                     "pros": {"type": "array", "items": {"type": "string"}},
                                     "cons": {"type": "array", "items": {"type": "string"}},
                                     "recommended": {"type": "boolean"},
@@ -5183,10 +4274,7 @@ def create_server(project_root: Path | None = None) -> Server:
                                     "name": {"type": "string"},
                                     "type": {"type": "string"},
                                     "description": {"type": "string"},
-                                    "responsibilities": {
-                                        "type": "array",
-                                        "items": {"type": "string"},
-                                    },
+                                    "responsibilities": {"type": "array", "items": {"type": "string"}},
                                     "dependencies": {"type": "array", "items": {"type": "string"}},
                                     "interfaces": {"type": "array", "items": {"type": "string"}},
                                 },
@@ -5203,10 +4291,7 @@ def create_server(project_root: Path | None = None) -> Server:
                                     "question": {"type": "string"},
                                     "decision": {"type": "string"},
                                     "rationale": {"type": "string"},
-                                    "alternatives_considered": {
-                                        "type": "array",
-                                        "items": {"type": "string"},
-                                    },
+                                    "alternatives_considered": {"type": "array", "items": {"type": "string"}},
                                 },
                                 "required": ["id", "question", "decision", "rationale"],
                             },
@@ -5255,7 +4340,7 @@ def create_server(project_root: Path | None = None) -> Server:
             ),
             Tool(
                 name="c4_design_complete",
-                description="Mark design complete and transition to PLAN. Requires at least one design with selected option.",
+                description="Mark design phase as complete and transition to PLAN state. Requires at least one design with selected option.",
                 inputSchema={
                     "type": "object",
                     "properties": {},
@@ -5317,161 +4402,7 @@ def create_server(project_root: Path | None = None) -> Server:
                     "required": [],
                 },
             ),
-            # PIQ Integration Tools
-            Tool(
-                name="c4_piq_query",
-                description="Query PIQ Knowledge Hub for ML/DL knowledge (architectures, optimizers, best practices, papers)",
-                inputSchema={
-                    "type": "object",
-                    "properties": {
-                        "knowledge_type": {
-                            "type": "string",
-                            "description": "Type of knowledge to query",
-                            "enum": [
-                                "architecture",
-                                "backbone",
-                                "optimizer",
-                                "scheduler",
-                                "augmentation",
-                                "regularization",
-                                "learning_rate",
-                                "batch_size",
-                                "hyperparameter",
-                                "loss_function",
-                                "metric",
-                                "benchmark",
-                                "paper",
-                                "technique",
-                                "best_practice",
-                            ],
-                        },
-                        "task_type": {
-                            "type": "string",
-                            "description": "Task type for context (classification, detection, segmentation, llm_finetuning)",
-                        },
-                        "dataset": {
-                            "type": "string",
-                            "description": "Dataset name for context (imagenet, coco, cifar10, etc.)",
-                        },
-                        "template_id": {
-                            "type": "string",
-                            "description": "C4 template ID for context",
-                        },
-                        "limit": {
-                            "type": "integer",
-                            "description": "Maximum results to return (default: 10)",
-                            "default": 10,
-                        },
-                    },
-                    "required": [],
-                },
-            ),
-            Tool(
-                name="c4_piq_suggest",
-                description="Get parameter suggestions from PIQ for a template parameter",
-                inputSchema={
-                    "type": "object",
-                    "properties": {
-                        "template_id": {
-                            "type": "string",
-                            "description": "Template ID (e.g., image_classification, object_detection)",
-                        },
-                        "param_name": {
-                            "type": "string",
-                            "description": "Parameter name to get suggestions for (e.g., backbone, learning_rate, optimizer)",
-                        },
-                        "current_params": {
-                            "type": "object",
-                            "description": "Current parameter values for context",
-                        },
-                    },
-                    "required": ["template_id", "param_name"],
-                },
-            ),
-            Tool(
-                name="c4_piq_sync",
-                description="Sync experiment results to PIQ Hub for learning and future recommendations",
-                inputSchema={
-                    "type": "object",
-                    "properties": {
-                        "experiment_id": {
-                            "type": "string",
-                            "description": "Unique experiment identifier",
-                        },
-                        "template_id": {
-                            "type": "string",
-                            "description": "Template used for the experiment",
-                        },
-                        "params": {
-                            "type": "object",
-                            "description": "Hyperparameters and configuration used",
-                        },
-                        "metrics": {
-                            "type": "object",
-                            "description": "Experiment metrics (accuracy, loss, mAP, etc.)",
-                        },
-                        "status": {
-                            "type": "string",
-                            "description": "Experiment status",
-                            "enum": ["running", "completed", "failed"],
-                            "default": "completed",
-                        },
-                    },
-                    "required": ["experiment_id"],
-                },
-            ),
-            Tool(
-                name="c4_piq_status",
-                description="Check PIQ Hub connection status and configuration",
-                inputSchema={
-                    "type": "object",
-                    "properties": {},
-                    "required": [],
-                },
-            ),
-            # LSP Server Tools
-            Tool(
-                name="c4_lsp_start",
-                description="Start the C4 LSP server for code intelligence features (hover, definition, references, completion). The LSP server provides IDE-like features to editors.",
-                inputSchema={
-                    "type": "object",
-                    "properties": {
-                        "port": {
-                            "type": "integer",
-                            "description": "TCP port for LSP server (default: 2087)",
-                            "default": 2087,
-                        },
-                        "host": {
-                            "type": "string",
-                            "description": "Host address to bind (default: 127.0.0.1)",
-                            "default": "127.0.0.1",
-                        },
-                    },
-                    "required": [],
-                },
-            ),
-            Tool(
-                name="c4_lsp_status",
-                description="Get status of the C4 LSP server including running state, indexed files, and supported features.",
-                inputSchema={
-                    "type": "object",
-                    "properties": {},
-                    "required": [],
-                },
-            ),
-            Tool(
-                name="c4_lsp_stop",
-                description="Stop the running C4 LSP server.",
-                inputSchema={
-                    "type": "object",
-                    "properties": {},
-                    "required": [],
-                },
-            ),
         ]
-        # Sort tools by name to ensure deterministic order for prompt caching
-        tools.sort(key=lambda x: x.name)
-        return tools
 
     @server.call_tool()
     async def call_tool(name: str, arguments: dict) -> list[TextContent]:
@@ -5481,15 +4412,6 @@ def create_server(project_root: Path | None = None) -> Server:
 
             if name == "c4_status":
                 result = daemon.c4_status()
-                # Apply slimming to large JSON status responses
-                if len(json.dumps(result)) > 10000:
-                    result = json.loads(ContextSlimmer.slim_json(result, max_list_len=10))
-                    result["_note"] = "Response slimmed for token efficiency. Use specific tools for details."
-            elif name == "c4_handle_long_running":
-                result = daemon.c4_handle_long_running(
-                    worker_id=arguments["worker_id"],
-                    action=arguments["action"],
-                )
             elif name == "c4_clear":
                 if not arguments.get("confirm"):
                     result = {"error": "Must set confirm=true to clear C4 state"}
@@ -5560,13 +4482,6 @@ def create_server(project_root: Path | None = None) -> Server:
                     dependencies=arguments.get("dependencies"),
                     domain=arguments.get("domain"),
                     priority=arguments.get("priority", 0),
-                    # DDD-CLEANCODE fields
-                    goal=arguments.get("goal"),
-                    contract_spec=arguments.get("contract_spec"),
-                    boundary_map=arguments.get("boundary_map"),
-                    code_placement=arguments.get("code_placement"),
-                    quality_gates=arguments.get("quality_gates"),
-                    checkpoints=arguments.get("checkpoints"),
                 )
             elif name == "c4_checkpoint":
                 result = daemon.c4_checkpoint(
@@ -5588,12 +4503,6 @@ def create_server(project_root: Path | None = None) -> Server:
                     fail_fast=arguments.get("fail_fast", True),
                     timeout=arguments.get("timeout", 300),
                 )
-                # Slim down large validation logs
-                if isinstance(result, list):
-                    for r in result:
-                        if isinstance(r, dict) and "message" in r and len(r["message"]) > 5000:
-                            r["message"] = ContextSlimmer.slim_log(r["message"])
-                            r["message"] += "\n\n... (log truncated for slimming) ..."
             elif name == "c4_mark_blocked":
                 result = daemon.c4_mark_blocked(
                     task_id=arguments["task_id"],
@@ -5650,41 +4559,6 @@ def create_server(project_root: Path | None = None) -> Server:
                     from_agent=arguments.get("from_agent"),
                     to_agent=arguments.get("to_agent"),
                 )
-            # PIQ Integration Tools
-            elif name == "c4_piq_query":
-                result = await daemon.c4_piq_query(
-                    knowledge_type=arguments.get("knowledge_type"),
-                    task_type=arguments.get("task_type"),
-                    dataset=arguments.get("dataset"),
-                    template_id=arguments.get("template_id"),
-                    limit=arguments.get("limit", 10),
-                )
-            elif name == "c4_piq_suggest":
-                result = await daemon.c4_piq_suggest(
-                    template_id=arguments["template_id"],
-                    param_name=arguments["param_name"],
-                    current_params=arguments.get("current_params"),
-                )
-            elif name == "c4_piq_sync":
-                result = await daemon.c4_piq_sync(
-                    experiment_id=arguments["experiment_id"],
-                    template_id=arguments.get("template_id"),
-                    params=arguments.get("params"),
-                    metrics=arguments.get("metrics"),
-                    status=arguments.get("status", "completed"),
-                )
-            elif name == "c4_piq_status":
-                result = await daemon.c4_piq_status()
-            # LSP Server handlers
-            elif name == "c4_lsp_start":
-                result = daemon.c4_lsp_start(
-                    port=arguments.get("port", 2087),
-                    host=arguments.get("host", "127.0.0.1"),
-                )
-            elif name == "c4_lsp_status":
-                result = daemon.c4_lsp_status()
-            elif name == "c4_lsp_stop":
-                result = daemon.c4_lsp_stop()
             else:
                 result = {"error": f"Unknown tool: {name}"}
 

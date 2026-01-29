@@ -2,6 +2,7 @@
 
 from .events import EventBus
 from .git_ops import GitOperations, GitResult
+from .lifecycle import DaemonInfo, DaemonLifecycle, DaemonStatus
 from .safety import SafetyGuard
 from .supervisor_loop import SupervisorLoop, SupervisorLoopManager
 from .task_dispatcher import (
@@ -13,6 +14,9 @@ from .task_dispatcher import (
 from .workers import WorkerManager
 
 __all__ = [
+    "DaemonInfo",
+    "DaemonLifecycle",
+    "DaemonStatus",
     "EventBus",
     "GitOperations",
     "GitResult",
