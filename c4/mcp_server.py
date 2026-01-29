@@ -1105,6 +1105,22 @@ Thumbs.db
                     # Get agent routing info (Phase 4)
                     agent_routing = self._get_agent_routing(task)
 
+                    # Check for existing worktree for resumed task
+                    git_ops = GitOperations(self.root)
+                    worktree_path: str | None = None
+                    if git_ops.is_git_repo():
+                        wt_path = git_ops.get_worktree_path(worker_id)
+                        if wt_path.exists():
+                            worktree_path = str(wt_path)
+                        else:
+                            # Try to create worktree for resumed task
+                            worktree_result = git_ops.create_worktree(
+                                worker_id=worker_id,
+                                branch=task.branch or "",
+                            )
+                            if worktree_result.success:
+                                worktree_path = str(wt_path)
+
                     return TaskAssignment(
                         task_id=task_id,
                         title=task.title,
@@ -1112,6 +1128,7 @@ Thumbs.db
                         dod=task.dod,
                         validations=task.validations,
                         branch=task.branch or "",
+                        worktree_path=worktree_path,
                         **agent_routing,
                     )
 
@@ -1219,23 +1236,54 @@ Thumbs.db
             task.branch = task_branch
             self._save_task(task)
 
-            # Create task branch from work branch (if git repo)
-            # Branch strategy: work_branch (c4/{project_id}) → task_branch (c4/w-T-XXX)
-            # NOTE: Review tasks reuse parent's branch - no need to create new branch
+            # Create worktree for isolated multi-worker support
+            # Each worker gets their own working directory to avoid conflicts
             git_ops = GitOperations(self.root)
-            if git_ops.is_git_repo() and not is_review_using_parent_branch:
+            worktree_path: str | None = None
+
+            if git_ops.is_git_repo():
                 work_branch = self.config.get_work_branch()
-                branch_result = self._create_task_branch_from_work(
-                    git_ops, task_branch, work_branch
-                )
-                if not branch_result.success:
-                    logger.warning(
-                        f"Failed to create task branch {task_branch}: {branch_result.message}"
+
+                if not is_review_using_parent_branch:
+                    # Create worktree with new branch from work_branch
+                    worktree_result = git_ops.create_worktree(
+                        worker_id=worker_id,
+                        branch=task_branch,
+                        base_branch=work_branch,
                     )
-            elif is_review_using_parent_branch:
-                logger.info(
-                    f"Review task {task_id} using parent branch {task_branch}"
-                )
+                    if worktree_result.success:
+                        wt_path = git_ops.get_worktree_path(worker_id)
+                        worktree_path = str(wt_path)
+                        logger.info(
+                            f"Created worktree for {worker_id} at {worktree_path}"
+                        )
+                    else:
+                        # Fallback: create branch only (legacy behavior)
+                        logger.warning(
+                            f"Worktree creation failed for {worker_id}: "
+                            f"{worktree_result.message}. Using branch only."
+                        )
+                        branch_result = self._create_task_branch_from_work(
+                            git_ops, task_branch, work_branch
+                        )
+                        if not branch_result.success:
+                            logger.warning(
+                                f"Failed to create task branch {task_branch}: "
+                                f"{branch_result.message}"
+                            )
+                else:
+                    # Review task: reuse worker's existing worktree if exists
+                    wt_path = git_ops.get_worktree_path(worker_id)
+                    if wt_path.exists():
+                        worktree_path = str(wt_path)
+                        logger.info(
+                            f"Review task {task_id} using worktree {worktree_path}"
+                        )
+                    else:
+                        logger.info(
+                            f"Review task {task_id} using parent branch "
+                            f"{task_branch} (no worktree)"
+                        )
 
             # Emit event
             self.state_machine.emit_event(
@@ -1245,6 +1293,7 @@ Thumbs.db
                     "task_id": task_id,
                     "worker_id": worker_id,
                     "scope": task.scope,
+                    "worktree_path": worktree_path,
                 },
             )
 
@@ -1258,6 +1307,7 @@ Thumbs.db
                 dod=task.dod,
                 validations=task.validations,
                 branch=task_branch,
+                worktree_path=worktree_path,
                 **agent_routing,
             )
 
