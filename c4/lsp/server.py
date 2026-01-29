@@ -20,6 +20,7 @@ except ImportError:
     PYGLS_AVAILABLE = False
 
 from c4.docs.analyzer import CodeAnalyzer, SymbolKind
+from c4.lsp.jedi_provider import JEDI_AVAILABLE, JediSymbolProvider
 
 if TYPE_CHECKING:
     from c4.docs.analyzer import Location, Symbol
@@ -117,6 +118,9 @@ class C4LSPServer:
         self._workspace_root: Path | None = None
         self._indexed_files: set[str] = set()
 
+        # Jedi provider for semantic analysis
+        self._jedi_provider: JediSymbolProvider | None = None
+
         # Async indexing state
         self._indexing_in_progress: bool = False
         self._indexed_count: int = 0
@@ -133,6 +137,12 @@ class C4LSPServer:
         """Get the code analyzer."""
         return self._analyzer
 
+    @property
+    def jedi_provider(self) -> JediSymbolProvider | None:
+        """Get the jedi symbol provider."""
+        return self._jedi_provider
+        return self._analyzer
+
     def _register_features(self) -> None:
         """Register LSP feature handlers."""
         server = self._server
@@ -144,6 +154,16 @@ class C4LSPServer:
                 root = params.root_uri.replace("file://", "")
                 self._workspace_root = Path(root)
                 logger.info(f"Workspace root: {self._workspace_root}")
+
+                # Initialize jedi provider
+                if JEDI_AVAILABLE:
+                    try:
+                        self._jedi_provider = JediSymbolProvider(
+                            project_path=self._workspace_root
+                        )
+                        logger.info("Jedi symbol provider initialized")
+                    except Exception as e:
+                        logger.warning(f"Failed to initialize jedi provider: {e}")
 
             return lsp.InitializeResult(
                 capabilities=lsp.ServerCapabilities(
@@ -611,7 +631,8 @@ class C4LSPServer:
             parts.append(f"\n{symbol.docstring}")
 
         # Location
-        parts.append(f"\n---\n*Defined in {symbol.location.file_path}:{symbol.location.start_line}*")
+        loc = symbol.location
+        parts.append(f"\n---\n*Defined in {loc.file_path}:{loc.start_line}*")
 
         if parts:
             item.documentation = lsp.MarkupContent(
@@ -635,6 +656,98 @@ class C4LSPServer:
         """
         logger.info(f"Starting C4 LSP server (TCP {host}:{port})")
         self._server.start_tcp(host, port)
+
+    # MCP Tool Methods
+
+    def find_symbol(
+        self,
+        name_path_pattern: str,
+        relative_path: str = "",
+        include_body: bool = False,
+    ) -> list[dict]:
+        """Find symbols matching the name path pattern.
+
+        This is an MCP tool method for symbol search using jedi.
+
+        Name path patterns:
+        - Simple name: "method_name" - matches any symbol with that name
+        - Relative path: "ClassName/method_name" - matches method in class
+        - Absolute path: "/ClassName/method_name" - exact match from root
+
+        Args:
+            name_path_pattern: Pattern to match (e.g., "MyClass/my_method")
+            relative_path: Restrict search to this file or directory
+            include_body: Include symbol body in results
+
+        Returns:
+            List of symbol info dictionaries
+        """
+        if not self._jedi_provider:
+            return []
+
+        if relative_path and self._workspace_root:
+            full_path = self._workspace_root / relative_path
+            if full_path.is_file():
+                try:
+                    source = full_path.read_text(encoding="utf-8")
+                    symbols = self._jedi_provider.find_symbol(
+                        name_path_pattern,
+                        source=source,
+                        file_path=str(full_path),
+                        include_body=include_body,
+                    )
+                except Exception as e:
+                    logger.warning(f"Error reading file {full_path}: {e}")
+                    return []
+            else:
+                symbols = self._jedi_provider.find_symbol(name_path_pattern)
+        else:
+            symbols = self._jedi_provider.find_symbol(name_path_pattern)
+
+        return [s.to_dict() for s in symbols]
+
+    def get_symbols_overview(
+        self,
+        relative_path: str,
+        depth: int = 0,
+    ) -> dict:
+        """Get an overview of symbols in a file.
+
+        This is an MCP tool method for getting file symbol overview using jedi.
+
+        Args:
+            relative_path: Path to the file (relative to workspace root)
+            depth: Depth of children to include (0 = top-level only)
+
+        Returns:
+            Dictionary with symbols grouped by kind
+        """
+        if not self._jedi_provider:
+            return {"error": "jedi provider not available"}
+
+        if not self._workspace_root:
+            return {"error": "workspace root not set"}
+
+        full_path = self._workspace_root / relative_path
+
+        if not full_path.exists():
+            return {"error": f"File not found: {relative_path}"}
+
+        symbols = self._jedi_provider.get_symbols_overview(str(full_path), depth=depth)
+
+        # Group by kind
+        grouped: dict[str, list[dict]] = {}
+        for symbol in symbols:
+            kind = symbol.kind.value
+            if kind not in grouped:
+                grouped[kind] = []
+            grouped[kind].append(symbol.to_dict())
+
+        return {
+            "file": relative_path,
+            "symbols_by_kind": grouped,
+            "total_count": len(symbols),
+        }
 
 
 def main() -> None:
