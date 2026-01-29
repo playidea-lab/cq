@@ -10,6 +10,10 @@ class TaskAssignment(BaseModel):
 
     Includes agent routing information (Phase 4) for automatic
     agent selection and chaining based on task domain.
+
+    Includes worktree path for multi-worker isolation.
+    Each worker gets its own isolated working directory at:
+    .c4/worktrees/{worker_id}/
     """
 
     task_id: str
@@ -23,6 +27,8 @@ class TaskAssignment(BaseModel):
     agent_chain: list[str] | None = None
     domain: str | None = None
     handoff_instructions: str | None = None
+    # Worktree isolation field
+    worktree_path: str | None = None
 
 
 class SubmitResponse(BaseModel):
