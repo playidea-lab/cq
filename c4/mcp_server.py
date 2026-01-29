@@ -1156,7 +1156,21 @@ Thumbs.db
             # Lock acquired (or no scope) - now safe to assign
             # Use atomic_modify to prevent race conditions with c4_submit
             store = self.state_machine.store
-            task_branch = f"{self.config.work_branch_prefix}{task_id}"
+
+            # Determine branch: Review tasks use parent's branch
+            if task.type == TaskType.REVIEW and task.parent_id:
+                parent_task = self.get_task(task.parent_id)
+                if parent_task and parent_task.branch:
+                    task_branch = parent_task.branch
+                    is_review_using_parent_branch = True
+                else:
+                    # Fallback: compute parent branch name from parent_id
+                    task_branch = f"{self.config.work_branch_prefix}{task.parent_id}"
+                    is_review_using_parent_branch = True
+            else:
+                task_branch = f"{self.config.work_branch_prefix}{task_id}"
+                is_review_using_parent_branch = False
+
             assigned = False
 
             with store.atomic_modify(project_id) as state:
@@ -1207,8 +1221,9 @@ Thumbs.db
 
             # Create task branch from work branch (if git repo)
             # Branch strategy: work_branch (c4/{project_id}) → task_branch (c4/w-T-XXX)
+            # NOTE: Review tasks reuse parent's branch - no need to create new branch
             git_ops = GitOperations(self.root)
-            if git_ops.is_git_repo():
+            if git_ops.is_git_repo() and not is_review_using_parent_branch:
                 work_branch = self.config.get_work_branch()
                 branch_result = self._create_task_branch_from_work(
                     git_ops, task_branch, work_branch
@@ -1217,6 +1232,10 @@ Thumbs.db
                     logger.warning(
                         f"Failed to create task branch {task_branch}: {branch_result.message}"
                     )
+            elif is_review_using_parent_branch:
+                logger.info(
+                    f"Review task {task_id} using parent branch {task_branch}"
+                )
 
             # Emit event
             self.state_machine.emit_event(
