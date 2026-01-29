@@ -11,6 +11,7 @@ if TYPE_CHECKING:
     from ..mcp_server import C4Daemon
 
 from ..constants import REPAIR_PREFIX, WORKER_STALE_TIMEOUT_SEC
+from ..notification import NotificationManager
 from ..supervisor import Supervisor, SupervisorError
 
 logger = logging.getLogger(__name__)
@@ -93,6 +94,12 @@ class SupervisorLoop:
                         f"task={recovery.get('task_id')}, "
                         f"elapsed={recovery.get('elapsed_seconds', 0):.0f}s"
                     )
+                # Send notification for stale worker recovery
+                NotificationManager.notify(
+                    title="C4 Worker Recovery",
+                    message=f"Recovered {len(recoveries)} stale worker(s)",
+                    urgency="critical",
+                )
         except Exception as e:
             logger.error(f"Error checking stale workers: {e}")
 
@@ -212,6 +219,13 @@ class SupervisorLoop:
             logger.info(
                 f"Checkpoint {item.checkpoint_id} processed: "
                 f"decision={response.decision.value}, success={result.success}"
+            )
+
+            # Send notification for checkpoint completion
+            NotificationManager.notify(
+                title="C4 Checkpoint",
+                message=f"{item.checkpoint_id}: {response.decision.value}",
+                urgency="normal" if response.decision.value == "APPROVE" else "critical",
             )
 
             # Remove from queue on success
