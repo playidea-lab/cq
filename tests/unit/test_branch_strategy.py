@@ -302,15 +302,28 @@ class TestC4GetTaskBranch:
         return daemon
 
     def test_c4_get_task_creates_task_branch(self, git_daemon):
-        """c4_get_task creates c4/w-T-XXX branch from work branch."""
+        """c4_get_task creates c4/w-T-XXX branch (in worktree or main repo)."""
         assignment = git_daemon.c4_get_task(worker_id="worker-1")
 
         assert assignment is not None
         assert assignment.branch == "c4/w-T-001-0"
 
-        # Verify branch was created
+        # Verify branch was created - either in worktree or main repo
         git_ops = GitOperations(git_daemon.root)
-        assert git_ops.get_branch_name() == "c4/w-T-001-0"
+        if assignment.worktree_path:
+            # Worktree created - check branch exists there
+            import subprocess
+
+            result = subprocess.run(
+                ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+                cwd=assignment.worktree_path,
+                capture_output=True,
+                text=True,
+            )
+            assert result.stdout.strip() == "c4/w-T-001-0"
+        else:
+            # Fallback - main repo should have the branch
+            assert git_ops.get_branch_name() == "c4/w-T-001-0"
 
 
 class TestCompletionAction:

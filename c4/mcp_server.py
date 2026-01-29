@@ -1252,6 +1252,22 @@ Thumbs.db
                     # Get agent routing info (Phase 4)
                     agent_routing = self._get_agent_routing(task)
 
+                    # Get existing worktree path for resumed task
+                    git_ops = GitOperations(self.root)
+                    worktree_path: str | None = None
+                    if git_ops.is_git_repo():
+                        wt_path = git_ops.get_worktree_path(worker_id)
+                        if wt_path.exists():
+                            worktree_path = str(wt_path)
+                        else:
+                            # Try to create worktree for resumed task
+                            worktree_result = git_ops.create_worktree(
+                                worker_id=worker_id,
+                                branch=task.branch or "",
+                            )
+                            if worktree_result.success:
+                                worktree_path = str(wt_path)
+
                     return TaskAssignment(
                         task_id=task_id,
                         title=task.title,
@@ -1259,6 +1275,7 @@ Thumbs.db
                         dod=task.dod,
                         validations=task.validations,
                         branch=task.branch or "",
+                        worktree_path=worktree_path,
                         **agent_routing,
                     )
 
@@ -1377,15 +1394,34 @@ Thumbs.db
         # Create task branch from work branch (if git repo)
         # Branch strategy: work_branch (c4/{project_id}) → task_branch (c4/w-T-XXX)
         git_ops = GitOperations(self.root)
+        worktree_path: str | None = None
+
         if git_ops.is_git_repo():
             work_branch = self.config.get_work_branch()
-            branch_result = self._create_task_branch_from_work(
-                git_ops, task_branch, work_branch
+
+            # Try to create worktree first for worker isolation
+            # If worktree creation succeeds, we don't need to checkout in main repo
+            worktree_result = git_ops.create_worktree(
+                worker_id=worker_id,
+                branch=task_branch,
+                base_branch=work_branch,
             )
-            if not branch_result.success:
+            if worktree_result.success:
+                worktree_path = str(git_ops.get_worktree_path(worker_id))
+                logger.info(f"Created worktree for {worker_id} at {worktree_path}")
+            else:
+                # Worktree creation failed - fall back to main repo branch
                 logger.warning(
-                    f"Failed to create task branch {task_branch}: {branch_result.message}"
+                    f"Failed to create worktree for {worker_id}: {worktree_result.message}"
                 )
+                # Only create branch in main repo if worktree failed
+                branch_result = self._create_task_branch_from_work(
+                    git_ops, task_branch, work_branch
+                )
+                if not branch_result.success:
+                    logger.warning(
+                        f"Failed to create task branch {task_branch}: {branch_result.message}"
+                    )
 
         # Emit event
         self.state_machine.emit_event(
@@ -1395,6 +1431,7 @@ Thumbs.db
                 "task_id": task_id,
                 "worker_id": worker_id,
                 "scope": task.scope,
+                "worktree_path": worktree_path,
             },
         )
 
@@ -1408,6 +1445,7 @@ Thumbs.db
             dod=task.dod,
             validations=task.validations,
             branch=task_branch,
+            worktree_path=worktree_path,
             **agent_routing,
         )
 
