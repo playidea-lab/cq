@@ -19,11 +19,15 @@ try:
 except ImportError:
     PYGLS_AVAILABLE = False
 
+import re
+
 from c4.docs.analyzer import CodeAnalyzer, SymbolKind
 from c4.lsp.jedi_provider import JEDI_AVAILABLE, JediSymbolProvider
 
 if TYPE_CHECKING:
     from c4.docs.analyzer import Location, Symbol
+    from c4.models.task import Task
+    from c4.store.sqlite import SQLiteTaskStore
 
 logger = logging.getLogger(__name__)
 
@@ -51,18 +55,18 @@ def _symbol_kind_to_completion_kind(kind: SymbolKind) -> int:
     """Convert C4 SymbolKind to LSP CompletionItemKind."""
     # LSP CompletionItemKind values
     mapping = {
-        SymbolKind.MODULE: 9,      # Module
-        SymbolKind.CLASS: 7,       # Class
-        SymbolKind.METHOD: 2,      # Method
-        SymbolKind.PROPERTY: 10,   # Property
-        SymbolKind.FUNCTION: 3,    # Function
-        SymbolKind.VARIABLE: 6,    # Variable
-        SymbolKind.CONSTANT: 21,   # Constant
-        SymbolKind.INTERFACE: 8,   # Interface
-        SymbolKind.ENUM: 13,       # Enum
-        SymbolKind.TYPE_ALIAS: 25, # TypeParameter
-        SymbolKind.IMPORT: 9,      # Module
-        SymbolKind.PARAMETER: 6,   # Variable
+        SymbolKind.MODULE: 9,  # Module
+        SymbolKind.CLASS: 7,  # Class
+        SymbolKind.METHOD: 2,  # Method
+        SymbolKind.PROPERTY: 10,  # Property
+        SymbolKind.FUNCTION: 3,  # Function
+        SymbolKind.VARIABLE: 6,  # Variable
+        SymbolKind.CONSTANT: 21,  # Constant
+        SymbolKind.INTERFACE: 8,  # Interface
+        SymbolKind.ENUM: 13,  # Enum
+        SymbolKind.TYPE_ALIAS: 25,  # TypeParameter
+        SymbolKind.IMPORT: 9,  # Module
+        SymbolKind.PARAMETER: 6,  # Variable
     }
     return mapping.get(kind, 6)  # Default to Variable
 
@@ -108,10 +112,7 @@ class C4LSPServer:
             version: Server version
         """
         if not PYGLS_AVAILABLE:
-            raise ImportError(
-                "pygls is required for LSP support. "
-                "Install with: uv add pygls"
-            )
+            raise ImportError("pygls is required for LSP support. Install with: uv add pygls")
 
         self._server = LanguageServer(name, version)
         self._analyzer = CodeAnalyzer()
@@ -124,6 +125,13 @@ class C4LSPServer:
         # Async indexing state
         self._indexing_in_progress: bool = False
         self._indexed_count: int = 0
+
+        # C4 Task Store (lazy initialized)
+        self._task_store: "SQLiteTaskStore | None" = None
+        self._c4_project_id: str | None = None
+
+        # Task ID pattern: T-XXX, T-XXX-N, R-XXX, R-XXX-N, CP-XXX
+        self._task_id_pattern = re.compile(r"\b(T-\d{3}(?:-\d+)?|R-\d{3}(?:-\d+)?|CP-\d{3})\b")
 
         self._register_features()
 
@@ -158,9 +166,7 @@ class C4LSPServer:
                 # Initialize jedi provider
                 if JEDI_AVAILABLE:
                     try:
-                        self._jedi_provider = JediSymbolProvider(
-                            project_path=self._workspace_root
-                        )
+                        self._jedi_provider = JediSymbolProvider(project_path=self._workspace_root)
                         logger.info("Jedi symbol provider initialized")
                     except Exception as e:
                         logger.warning(f"Failed to initialize jedi provider: {e}")
@@ -384,8 +390,156 @@ class C4LSPServer:
 
         return line[start:end]
 
+    def _get_task_id_at_position(self, uri: str, position: "lsp.Position") -> str | None:
+        """Extract task ID at the given position if present.
+
+        Looks for patterns like T-001, T-001-0, R-001, R-001-0, CP-001.
+        """
+        file_path = uri.replace("file://", "")
+
+        # Get file content from analyzer
+        content = self._analyzer._file_contents.get(file_path)
+        if not content:
+            return None
+
+        lines = content.split("\n")
+        if position.line >= len(lines):
+            return None
+
+        line = lines[position.line]
+        char_pos = position.character
+
+        # Find all task ID matches in the line
+        for match in self._task_id_pattern.finditer(line):
+            start, end = match.span()
+            if start <= char_pos <= end:
+                return match.group(1)
+
+        return None
+
+    def _get_task_store(self) -> "SQLiteTaskStore | None":
+        """Lazy initialize and return the task store."""
+        if self._task_store is None:
+            try:
+                from c4.store.sqlite import SQLiteTaskStore
+
+                # Find .c4 directory from workspace root
+                c4_dir = None
+                if self._workspace_root:
+                    c4_dir = self._workspace_root / ".c4"
+                    if not c4_dir.exists():
+                        c4_dir = None
+
+                if c4_dir is None:
+                    # Try current directory
+                    c4_dir = Path.cwd() / ".c4"
+                    if not c4_dir.exists():
+                        return None
+
+                db_path = c4_dir / "c4.db"
+                if not db_path.exists():
+                    return None
+
+                self._task_store = SQLiteTaskStore(str(db_path))
+
+                # Load project_id from config
+                config_path = c4_dir / "config.yaml"
+                if config_path.exists():
+                    import yaml
+
+                    with open(config_path) as f:
+                        config = yaml.safe_load(f)
+                        self._c4_project_id = config.get("project_id", "")
+            except Exception as e:
+                logger.debug(f"Failed to initialize task store: {e}")
+                return None
+
+        return self._task_store
+
+    def _get_task_info(self, task_id: str) -> "Task | None":
+        """Get task information from C4 store."""
+        store = self._get_task_store()
+        if store is None or self._c4_project_id is None:
+            return None
+
+        try:
+            return store.get(self._c4_project_id, task_id)
+        except Exception as e:
+            logger.debug(f"Failed to get task {task_id}: {e}")
+            return None
+
+    def _format_task_hover(self, task_id: str) -> str:
+        """Format task information as Markdown hover content."""
+        task = self._get_task_info(task_id)
+
+        if task is None:
+            return f"**Task**: `{task_id}`\n\n*Task not found*"
+
+        parts = []
+
+        # Task ID and title
+        parts.append(f"**Task**: `{task.id}`")
+        parts.append(f"# {task.title}")
+
+        # Status
+        status_emoji = {
+            "pending": "⏳",
+            "in_progress": "🔄",
+            "done": "✅",
+            "blocked": "❌",
+        }
+        status = task.status.value if hasattr(task.status, "value") else str(task.status)
+        emoji = status_emoji.get(status, "❓")
+        parts.append(f"\n**Status**: {emoji} {status}")
+
+        # Assignee
+        if task.assigned_to:
+            parts.append(f"**Assigned to**: {task.assigned_to}")
+
+        # Domain and type
+        if task.domain:
+            parts.append(f"**Domain**: {task.domain}")
+        if task.task_type:
+            parts.append(f"**Type**: {task.task_type}")
+
+        # DoD (truncated if too long)
+        if task.dod:
+            dod_preview = task.dod[:500]
+            if len(task.dod) > 500:
+                dod_preview += "..."
+            parts.append(f"\n---\n**Definition of Done**:\n{dod_preview}")
+
+        # Dependencies
+        if task.dependencies:
+            deps = ", ".join(f"`{d}`" for d in task.dependencies[:5])
+            if len(task.dependencies) > 5:
+                deps += f" (+{len(task.dependencies) - 5} more)"
+            parts.append(f"\n**Dependencies**: {deps}")
+
+        return "\n".join(parts)
+
     def _handle_hover(self, params: lsp.HoverParams) -> lsp.Hover | None:
-        """Handle textDocument/hover request."""
+        """Handle textDocument/hover request.
+
+        Supports:
+        - C4 Task IDs (T-XXX, R-XXX, CP-XXX patterns)
+        - Code symbols (classes, functions, variables)
+        """
+        # First, check for task ID at position
+        task_id = self._get_task_id_at_position(
+            params.text_document.uri,
+            params.position,
+        )
+        if task_id:
+            content = self._format_task_hover(task_id)
+            return lsp.Hover(
+                contents=lsp.MarkupContent(
+                    kind=lsp.MarkupKind.Markdown,
+                    value=content,
+                ),
+            )
+
+        # Fall back to symbol hover
         word = self._get_word_at_position(
             params.text_document.uri,
             params.position,
@@ -540,7 +694,7 @@ class C4LSPServer:
         while start > 0 and (line[start - 1].isalnum() or line[start - 1] == "_"):
             start -= 1
 
-        return line[start:position.character]
+        return line[start : position.character]
 
     def _handle_completion(
         self,
@@ -578,7 +732,9 @@ class C4LSPServer:
                 documentation=lsp.MarkupContent(
                     kind=lsp.MarkupKind.Markdown,
                     value=symbol.docstring or "",
-                ) if symbol.docstring else None,
+                )
+                if symbol.docstring
+                else None,
                 insert_text=symbol.name,
                 data={
                     "name": symbol.name,
