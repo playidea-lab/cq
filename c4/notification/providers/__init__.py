@@ -1,4 +1,4 @@
-"""Platform-specific notification providers"""
+"""Platform-specific notification providers."""
 
 from .linux import LinuxProvider
 from .macos import MacOSProvider

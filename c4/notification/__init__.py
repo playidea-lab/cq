@@ -1,4 +1,4 @@
-"""C4 Notification System - Cross-platform desktop notifications"""
+"""C4 Notification System - Cross-platform desktop notifications."""
 
 from .base import Notification, NotificationProvider
 from .manager import NotificationManager
