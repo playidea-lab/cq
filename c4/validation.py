@@ -11,6 +11,10 @@ from pathlib import Path
 from .models import C4Config, ValidationResult
 from .utils.slimmer import ContextSlimmer
 
+# ContextSlimmer thresholds for validation error output
+SLIM_THRESHOLD = 2000  # Characters threshold to trigger slimming
+SLIM_MAX_LINES = 30  # Maximum lines after slimming
+
 
 @dataclass
 class ValidationRun:
@@ -34,8 +38,13 @@ class ValidationRun:
         if not self.passed:
             # Combine stderr and stdout for better error context
             combined = f"{self.stderr}\n{self.stdout}".strip()
-            # Use ContextSlimmer to extract relevant error info
-            message = ContextSlimmer.format_validation_error(combined, max_chars=1000)
+            # Use ContextSlimmer to extract relevant error info when output exceeds threshold
+            if len(combined) > SLIM_THRESHOLD:
+                message = ContextSlimmer.slim_log(
+                    combined, max_lines=SLIM_MAX_LINES, include_summary=True
+                )
+            else:
+                message = combined
         return ValidationResult(
             name=self.name,
             status="pass" if self.passed else "fail",
