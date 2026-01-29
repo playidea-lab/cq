@@ -2,11 +2,12 @@
 
 ## Current Version: v0.6.0 (Team Collaboration)
 
-현재 버전은 **팀 협업, 화이트라벨 브랜딩, 코드 분석 엔진**을 지원합니다.
+현재 버전은 **팀 협업, 화이트라벨 브랜딩, 코드 분석 엔진, LSP 서버**를 지원합니다.
 
 ### 지원 기능
 
 - MCP Server (Claude Code 통합) - 25+ 도구
+- **LSP Server** (VS Code 등 에디터 통합) - pygls 기반
 - State Machine (INIT → DISCOVERY → DESIGN → PLAN → EXECUTE ↔ CHECKPOINT → COMPLETE)
 - Multi-Worker (SQLite WAL 모드, race-condition free)
 - Agent Routing (Phase 4) - 도메인별 에이전트 자동 선택 및 체이닝
@@ -275,6 +276,67 @@ uv run pytest tests/unit/test_skill_matcher.py tests/unit/test_agent_graph_loade
   - `Prompt Caching Strategy`: 시스템 메시지 및 자주 사용되는 도구 정의의 고정화를 통한 캐시 효율 극대화 (비용 90% 절감 목표)
   - `Incremental Context`: 변경된 부분만 컨텍스트에 추가하는 증분 로딩 방식 도입
 
+### Phase 6.8: LSP Server ✅
+
+**목표**: 에디터에서 직접 코드 인텔리전스 제공 (MCP와 독립)
+
+**구현 완료 (Phase 1)**:
+- **pygls 기반 LSP 서버** (`c4/lsp/server.py`)
+  - `C4LSPServer` 클래스 - CodeAnalyzer 통합
+  - stdio 및 TCP 모드 지원
+- **핵심 LSP 기능**:
+  - `textDocument/hover` - 심볼 정보 (docstring, signature)
+  - `textDocument/definition` - 정의로 이동
+  - `textDocument/references` - 참조 찾기
+  - `textDocument/documentSymbol` - 파일 아웃라인
+  - `workspace/symbol` - 전역 심볼 검색
+- **CLI 엔트리포인트**: `uv run c4-lsp` 또는 `uv run python -m c4.lsp`
+
+**아키텍처**:
+
+```text
+┌─────────────────────────────────────┐
+│         c4d (single process)        │
+│                                     │
+│  ┌─────────────┐  ┌──────────────┐  │
+│  │ LSP Server  │  │  MCP Server  │  │
+│  │  (pygls)    │  │   (기존)     │  │
+│  └──────┬──────┘  └──────┬───────┘  │
+│         │                │          │
+│         └───────┬────────┘          │
+│                 ▼                   │
+│        ┌──────────────┐             │
+│        │ CodeAnalyzer │             │
+│        │ (tree-sitter)│             │
+│        └──────────────┘             │
+└─────────────────────────────────────┘
+          │               │
+          ▼               ▼
+     VS Code/IDE     Claude Code
+```
+
+**사용법**:
+
+```bash
+# stdio 모드 (에디터 연동)
+uv run python -m c4.lsp
+
+# TCP 모드 (디버깅용)
+uv run c4-lsp --tcp --port 2087
+```
+
+**테스트**:
+
+```bash
+uv run pytest tests/unit/lsp/ -v
+# 22개 테스트 통과
+```
+
+**향후 계획 (Phase 2-3)**:
+- `textDocument/completion` - 자동 완성
+- MCP 통합 (`c4_lsp_start`, `c4_lsp_status`)
+- Go, Rust 언어 확장 (tree-sitter 플러그인)
+
 ---
 
 ## Phase 7: C4 Cloud MVP (v0.7.0) 📋
@@ -358,4 +420,5 @@ v0.1-0.3        v0.4           v0.5           v0.6 (현재)    v0.7+
 | Semantic Search Engine | P0 | ✅ 완료 |
 | Call Graph Analyzer | P0 | ✅ 완료 |
 | Long-Running Worker Detection | P0 | ✅ 완료 |
+| **LSP Server** | P0 | ✅ 완료 (Phase 1) |
 | Cloud API | P1 | 📋 Phase 7 |
