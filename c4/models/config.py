@@ -351,6 +351,55 @@ class GitHubConfig(BaseModel):
     )
 
 
+
+class HooksConfig(BaseModel):
+    """Git hooks configuration for C4 workflow."""
+
+    enabled: bool = Field(
+        default=True,
+        description="Enable C4 Git hooks integration",
+    )
+    install_on_init: bool = Field(
+        default=False,
+        description="Auto-install hooks when running 'c4 init'",
+    )
+
+    # Pre-commit hook settings
+    pre_commit_enabled: bool = Field(
+        default=True,
+        description="Enable pre-commit hook (runs lint)",
+    )
+    pre_commit_validations: list[str] = Field(
+        default_factory=lambda: ["lint"],
+        description="Validations to run in pre-commit hook",
+    )
+
+    # Commit-msg hook settings
+    commit_msg_enabled: bool = Field(
+        default=True,
+        description="Enable commit-msg hook (validates Task ID)",
+    )
+    commit_msg_mode: str = Field(
+        default="warn",
+        pattern="^(warn|strict)$",
+        description="Mode for Task ID validation: 'warn' or 'strict'",
+    )
+    commit_msg_pattern: str = Field(
+        default=r"\[T-\d+-\d+\]|\[R-\d+-\d+\]|\[CP-\d+\]",
+        description="Regex pattern for valid Task IDs in commit messages",
+    )
+
+    # Post-commit hook settings
+    post_commit_enabled: bool = Field(
+        default=True,
+        description="Enable post-commit hook (state sync)",
+    )
+    post_commit_sync_state: bool = Field(
+        default=False,
+        description="Sync C4 state after commit (experimental)",
+    )
+
+
 class C4Config(BaseModel):
     """config.yaml schema"""
 
@@ -369,6 +418,7 @@ class C4Config(BaseModel):
     llm: LLMConfig = Field(default_factory=LLMConfig)  # LLM provider configuration
     store: StoreConfig = Field(default_factory=StoreConfig)  # Store backend config
     github: GitHubConfig = Field(default_factory=GitHubConfig)  # GitHub integration
+    hooks: HooksConfig = Field(default_factory=HooksConfig)  # Git hooks configuration
     long_running: LongRunningConfig = Field(
         default_factory=LongRunningConfig,
         description="Long-running task timeout and recovery settings",

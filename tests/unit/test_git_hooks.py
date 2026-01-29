@@ -283,3 +283,52 @@ class TestInstallAllHooks:
             for hook_name, status in results.items():
                 assert status["installed"] is True
                 assert status["is_c4"] is True
+
+
+
+class TestHooksConfig:
+    """Tests for HooksConfig model."""
+
+    def test_default_config(self):
+        """Should have sensible defaults."""
+        from c4.models.config import HooksConfig
+
+        config = HooksConfig()
+
+        assert config.enabled is True
+        assert config.install_on_init is False
+        assert config.pre_commit_enabled is True
+        assert config.commit_msg_enabled is True
+        assert config.commit_msg_mode == "warn"
+        assert config.post_commit_enabled is True
+
+    def test_strict_mode(self):
+        """Should support strict commit-msg mode."""
+        from c4.models.config import HooksConfig
+
+        config = HooksConfig(commit_msg_mode="strict")
+        assert config.commit_msg_mode == "strict"
+
+    def test_invalid_mode_rejected(self):
+        """Should reject invalid commit-msg modes."""
+        from pydantic import ValidationError
+
+        from c4.models.config import HooksConfig
+
+        with pytest.raises(ValidationError):
+            HooksConfig(commit_msg_mode="invalid")
+
+    def test_custom_validations(self):
+        """Should support custom pre-commit validations."""
+        from c4.models.config import HooksConfig
+
+        config = HooksConfig(pre_commit_validations=["lint", "unit"])
+        assert config.pre_commit_validations == ["lint", "unit"]
+
+    def test_c4_config_includes_hooks(self):
+        """C4Config should include hooks field."""
+        from c4.models.config import C4Config
+
+        config = C4Config(project_id="test")
+        assert hasattr(config, "hooks")
+        assert config.hooks.enabled is True
