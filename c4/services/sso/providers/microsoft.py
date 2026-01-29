@@ -174,7 +174,7 @@ class MicrosoftOIDCProvider(OIDCProviderBase):
                 token_data = token_response.json()
                 access_token = token_data.get("access_token")
                 refresh_token = token_data.get("refresh_token")
-                _id_token = token_data.get("id_token")  # TODO: Validate ID token
+                id_token = token_data.get("id_token")
                 expires_in = token_data.get("expires_in", 3600)
 
                 if not access_token:
