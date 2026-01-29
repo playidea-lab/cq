@@ -644,7 +644,7 @@ class SSOService:
         # Verify DNS TXT record
         dns_verified = await verify_dns_txt_record(
             domain=domain,
-            expected_token=verification.token,
+            expected_token=verification.verification_token,
         )
 
         if not dns_verified:

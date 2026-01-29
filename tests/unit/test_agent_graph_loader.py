@@ -41,8 +41,13 @@ class TestAgentGraphLoaderInit:
 
     def test_default_directories(self):
         """Test that loader uses default directories when none provided."""
+        from pathlib import Path
+
+        # Default is now c4/system/registry/v1
+        expected_base = Path(__file__).parent.parent.parent / "c4" / "system" / "registry" / "v1"
+
         loader = AgentGraphLoader()
-        assert loader.base_dir == EXAMPLES_DIR
+        assert loader.base_dir == expected_base
         assert loader.schema_dir == SCHEMA_DIR
 
     def test_custom_directories(self, tmp_path: Path):

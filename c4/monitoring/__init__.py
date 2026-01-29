@@ -39,6 +39,8 @@ from .prometheus import (
     workspace_active,
     workspace_operations_total,
 )
+from .middleware import MetricsMiddleware
+from . import tracing
 
 __all__ = [
     # Metrics
@@ -60,4 +62,8 @@ __all__ = [
     "get_metrics",
     # Constants
     "CONTENT_TYPE_LATEST",
+    # Middleware
+    "MetricsMiddleware",
+    # Tracing
+    "tracing",
 ]

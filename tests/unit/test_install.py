@@ -57,15 +57,16 @@ class TestInstallShellScript:
     def test_all_steps_present(self, install_script: Path) -> None:
         """Verify all installation steps are present."""
         content = install_script.read_text()
-        # Check for all 8 steps (0-7)
-        assert "[0/7] Checking Git" in content, "Step 0 missing"
-        assert "[1/7] Installing dependencies" in content, "Step 1 missing"
-        assert "[2/7] Saving install path" in content, "Step 2 missing"
-        assert "[3/7] Creating global 'c4' command" in content, "Step 3 missing"
-        assert "[4/7] Installing Claude Code slash commands" in content, "Step 4 missing"
-        assert "[5/7] Installing Cursor commands" in content, "Step 5 missing"
-        assert "[6/7] Installing Claude Code hooks" in content, "Step 6 missing"
-        assert "[7/7] Registering hooks" in content, "Step 7 missing"
+        # Check for all 9 steps (0-8)
+        assert "[0/8] Checking Git" in content, "Step 0 missing"
+        assert "[1/8] Installing dependencies" in content, "Step 1 missing"
+        assert "[2/8] Saving install path" in content, "Step 2 missing"
+        assert "[3/8] Creating global 'c4' command" in content, "Step 3 missing"
+        assert "[4/8] Installing Claude Code slash commands" in content, "Step 4 missing"
+        assert "[5/8] Installing Cursor commands" in content, "Step 5 missing"
+        assert "[6/8] Installing Gemini CLI slash commands" in content, "Step 6 missing"
+        assert "[7/8] Installing Claude Code hooks" in content, "Step 7 missing"
+        assert "[8/8] Registering hooks" in content, "Step 8 missing"
 
 
 class TestGitDetection:

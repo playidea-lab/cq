@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from unittest.mock import patch
 
 import pytest
 
@@ -342,7 +343,9 @@ class TestSSOService:
             domain="example.com",
         )
 
-        result = await service.verify_domain("team-123", "example.com")
+        # Mock DNS verification to return True
+        with patch("c4.services.dns.verify_dns_txt_record", return_value=True):
+            result = await service.verify_domain("team-123", "example.com")
         assert result is True
 
     @pytest.mark.asyncio

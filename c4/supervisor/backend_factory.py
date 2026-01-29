@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from .backend import SupervisorBackend
+from .backend import SupervisorBackend, SupervisorError
 
 if TYPE_CHECKING:
     from ..mcp_server import C4Daemon
@@ -13,7 +14,7 @@ if TYPE_CHECKING:
 
 
 def create_backend(
-    config: LLMConfig,
+    config: "LLMConfig",
     working_dir: Path | None = None,
     daemon: "C4Daemon | None" = None,
 ) -> SupervisorBackend:
@@ -27,8 +28,34 @@ def create_backend(
 
     Returns:
         Configured SupervisorBackend instance
+
+    Raises:
+        SupervisorError: If API key is missing or provider not supported
+
+    Example:
+        >>> from c4.models.config import LLMConfig
+        >>> config = LLMConfig(model="gpt-4o", api_key_env="OPENAI_API_KEY")
+        >>> backend = create_backend(config)
     """
-    # ... (기존 로직) ...
+    # Legacy Claude CLI support (default)
+    if config.is_claude_cli():
+        from .claude_backend import ClaudeCliBackend
+
+        return ClaudeCliBackend(
+            working_dir=working_dir,
+            max_retries=config.max_retries,
+            model=None,  # Uses default from CLI
+        )
+
+    # LiteLLM for all other providers
+    api_key = None
+    if config.api_key_env:
+        api_key = os.environ.get(config.api_key_env)
+        if not api_key:
+            raise SupervisorError(
+                f"API key not found in environment variable: {config.api_key_env}"
+            )
+
     from .litellm_backend import LiteLLMBackend
 
     return LiteLLMBackend(
@@ -52,10 +79,15 @@ def create_backend_from_config_file(
     """
     Create backend by loading config from .c4/config.yaml.
 
+    Falls back to ClaudeCliBackend if no config or llm section exists.
+
     Args:
         c4_dir: Path to .c4 directory
         working_dir: Working directory for CLI backends
         daemon: Optional C4Daemon instance for metrics tracking
+
+    Returns:
+        Configured SupervisorBackend instance
     """
     import yaml
 
@@ -69,6 +101,7 @@ def create_backend_from_config_file(
             c4_config = C4Config.model_validate(data)
             return create_backend(c4_config.llm, working_dir, daemon=daemon)
         except Exception:
+            # Fall back to default on any config error
             pass
 
     # No config or error, use default (Claude CLI)

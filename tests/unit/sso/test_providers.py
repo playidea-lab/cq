@@ -124,11 +124,15 @@ class TestGoogleOIDCProvider:
             mock_instance.__aexit__ = AsyncMock()
             mock_client.return_value = mock_instance
 
-            result = await provider.exchange_code(
-                config=config,
-                code="auth-code",
-                redirect_uri="https://app.example.com/callback",
-            )
+            # Mock ID token verification
+            with patch.object(
+                provider, "_verify_id_token", return_value={"sub": "google-user-123"}
+            ):
+                result = await provider.exchange_code(
+                    config=config,
+                    code="auth-code",
+                    redirect_uri="https://app.example.com/callback",
+                )
 
         assert result.success is True
         assert result.access_token == "access-token"
