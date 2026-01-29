@@ -4,8 +4,10 @@ import json
 import os
 import socket
 import subprocess
+import tempfile
 import threading
 import time
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -13,36 +15,44 @@ import pytest
 from c4.hooks import HookClient, install_pre_commit_hook
 
 
+# Use short temp dir for Unix socket tests (macOS has 104 char path limit)
+@pytest.fixture
+def short_tmp_path():
+    """Create a short temporary path for Unix socket tests."""
+    with tempfile.TemporaryDirectory(dir="/tmp", prefix="c4t_") as tmpdir:
+        yield Path(tmpdir)
+
+
 class TestPreCommitHookIntegration:
     """Integration tests for pre-commit hook behavior."""
 
     @pytest.fixture
-    def git_repo(self, tmp_path):
+    def git_repo(self, short_tmp_path):
         """Create a real git repository for testing."""
         # Initialize git repo
-        subprocess.run(["git", "init"], cwd=tmp_path, capture_output=True)
+        subprocess.run(["git", "init"], cwd=short_tmp_path, capture_output=True)
         subprocess.run(
             ["git", "config", "user.email", "test@test.com"],
-            cwd=tmp_path,
+            cwd=short_tmp_path,
             capture_output=True,
         )
         subprocess.run(
             ["git", "config", "user.name", "Test User"],
-            cwd=tmp_path,
+            cwd=short_tmp_path,
             capture_output=True,
         )
 
         # Create .c4 directory to make it a C4 project
-        c4_dir = tmp_path / ".c4"
+        c4_dir = short_tmp_path / ".c4"
         c4_dir.mkdir()
         (c4_dir / "config.yaml").write_text("project_id: test\n")
 
-        return tmp_path
+        return short_tmp_path
 
     @pytest.fixture
-    def mock_daemon_server(self, tmp_path):
+    def mock_daemon_server(self, short_tmp_path):
         """Create a mock daemon server that responds to validation requests."""
-        socket_path = tmp_path / ".c4" / "c4.sock"
+        socket_path = short_tmp_path / ".c4" / "c4.sock"
         socket_path.parent.mkdir(parents=True, exist_ok=True)
 
         server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
@@ -200,9 +210,9 @@ class TestPreCommitHookIntegration:
 class TestHookClientEdgeCases:
     """Test edge cases for HookClient."""
 
-    def test_stale_socket_file(self, tmp_path):
+    def test_stale_socket_file(self, short_tmp_path):
         """Should handle stale socket files gracefully."""
-        socket_path = tmp_path / ".c4" / "c4.sock"
+        socket_path = short_tmp_path / ".c4" / "c4.sock"
         socket_path.parent.mkdir(parents=True)
 
         # Create socket, bind, then close (simulating crashed daemon)
@@ -210,14 +220,14 @@ class TestHookClientEdgeCases:
         server.bind(str(socket_path))
         server.close()
 
-        client = HookClient(project_root=tmp_path)
+        client = HookClient(project_root=short_tmp_path)
 
         # Should return False for stale socket
         assert client.is_daemon_running() is False
 
-    def test_socket_timeout(self, tmp_path):
+    def test_socket_timeout(self, short_tmp_path):
         """Should handle slow daemon responses."""
-        socket_path = tmp_path / ".c4" / "c4.sock"
+        socket_path = short_tmp_path / ".c4" / "c4.sock"
         socket_path.parent.mkdir(parents=True)
 
         server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
@@ -233,7 +243,7 @@ class TestHookClientEdgeCases:
         thread.start()
 
         try:
-            client = HookClient(project_root=tmp_path, timeout=0.5)
+            client = HookClient(project_root=short_tmp_path, timeout=0.5)
 
             # Should fall back due to timeout
             with patch("subprocess.run") as mock_run:
@@ -247,9 +257,9 @@ class TestHookClientEdgeCases:
             server.close()
             thread.join(timeout=1)
 
-    def test_invalid_json_response(self, tmp_path):
+    def test_invalid_json_response(self, short_tmp_path):
         """Should handle invalid JSON from daemon."""
-        socket_path = tmp_path / ".c4" / "c4.sock"
+        socket_path = short_tmp_path / ".c4" / "c4.sock"
         socket_path.parent.mkdir(parents=True)
 
         server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
@@ -266,7 +276,7 @@ class TestHookClientEdgeCases:
         thread.start()
 
         try:
-            client = HookClient(project_root=tmp_path, timeout=2.0)
+            client = HookClient(project_root=short_tmp_path, timeout=2.0)
 
             # Should fall back due to invalid JSON
             with patch("subprocess.run") as mock_run:
