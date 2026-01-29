@@ -794,12 +794,9 @@ def init(
         console.print("  .claude/settings.json   - Permissions & MCP auto-approval")
         if not skip_hooks:
             console.print("  ~/.claude/hooks/        - Stop & security hooks")
-<<<<<<< HEAD
+            console.print("  .git/hooks/             - Git hooks (pre-commit, commit-msg)")
         if template_applied:
             console.print(f"  (template files)        - From '{template}' template")
-=======
-            console.print("  .git/hooks/             - Git hooks (pre-commit, commit-msg)")
->>>>>>> c4/w-R-IDE-008-0
         console.print()
 
         console.print("[bold]🔒 Security & Workflow:[/bold]")
