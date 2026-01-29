@@ -4103,6 +4103,97 @@ Thumbs.db
         except Exception as e:
             return {"success": False, "error": str(e)}
 
+    def c4_find_symbol(
+        self,
+        name_path_pattern: str,
+        relative_path: str = "",
+        include_body: bool = False,
+        depth: int = 0,
+    ) -> dict[str, Any]:
+        """Find symbols matching the name path pattern.
+
+        Name path patterns:
+        - Simple name: "method_name" - matches any symbol with that name
+        - Relative path: "ClassName/method_name" - matches method in class
+        - Absolute path: "/ClassName/method_name" - exact match from root
+
+        Args:
+            name_path_pattern: Pattern to match (e.g., "MyClass/my_method")
+            relative_path: Restrict search to this file or directory
+            include_body: Whether to include symbol body in results
+            depth: Depth of children to include (0 = symbol only)
+
+        Returns:
+            Dict with list of matching symbols
+        """
+        try:
+            from c4.lsp.jedi_provider import find_symbol_mcp
+
+            symbols = find_symbol_mcp(
+                name_path_pattern=name_path_pattern,
+                relative_path=relative_path,
+                include_body=include_body,
+                project_path=str(self.root),
+            )
+
+            return {
+                "success": True,
+                "pattern": name_path_pattern,
+                "relative_path": relative_path,
+                "symbols": symbols,
+                "count": len(symbols),
+            }
+
+        except ImportError:
+            return {
+                "success": False,
+                "error": "jedi not available. Install with: uv add jedi",
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    def c4_get_symbols_overview(
+        self,
+        relative_path: str,
+        depth: int = 0,
+    ) -> dict[str, Any]:
+        """Get an overview of symbols in a file.
+
+        This should be the first tool to call when you want to understand a new file,
+        unless you already know what you are looking for.
+
+        Args:
+            relative_path: Path to the file (relative to project root)
+            depth: Depth of children to include (0 = top-level only)
+
+        Returns:
+            Dictionary with symbols grouped by kind
+        """
+        try:
+            from c4.lsp.jedi_provider import get_symbols_overview_mcp
+
+            result = get_symbols_overview_mcp(
+                relative_path=relative_path,
+                depth=depth,
+                project_path=str(self.root),
+            )
+
+            if "error" in result:
+                return {"success": False, "error": result["error"]}
+
+            return {
+                "success": True,
+                **result,
+            }
+
+        except ImportError:
+            return {
+                "success": False,
+                "error": "jedi not available. Install with: uv add jedi",
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
     def check_and_trigger_checkpoint(self) -> dict[str, Any] | None:
         """
         Check if checkpoint conditions are met and trigger if so.
@@ -4876,6 +4967,59 @@ def create_server(project_root: Path | None = None) -> Server:
                     "required": ["name_path", "new_name"],
                 },
             ),
+            Tool(
+                name="c4_find_symbol",
+                description=(
+                    "Find symbols matching a name path pattern. "
+                    "Use 'ClassName/method' for methods, simple name for any symbol."
+                ),
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "name_path_pattern": {
+                            "type": "string",
+                            "description": "Pattern to match (e.g., 'MyClass/my_method', 'function_name')",
+                        },
+                        "relative_path": {
+                            "type": "string",
+                            "description": "Restrict search to this file or directory (optional)",
+                        },
+                        "include_body": {
+                            "type": "boolean",
+                            "description": "Include symbol body in results (default: false)",
+                            "default": False,
+                        },
+                        "depth": {
+                            "type": "integer",
+                            "description": "Depth of children to include (default: 0)",
+                            "default": 0,
+                        },
+                    },
+                    "required": ["name_path_pattern"],
+                },
+            ),
+            Tool(
+                name="c4_get_symbols_overview",
+                description=(
+                    "Get an overview of symbols in a file. "
+                    "Use this first to understand a file's structure."
+                ),
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "relative_path": {
+                            "type": "string",
+                            "description": "Path to the file (relative to project root)",
+                        },
+                        "depth": {
+                            "type": "integer",
+                            "description": "Depth of children to include (0 = top-level only)",
+                            "default": 0,
+                        },
+                    },
+                    "required": ["relative_path"],
+                },
+            ),
         ]
 
     @server.call_tool()
@@ -5056,6 +5200,18 @@ def create_server(project_root: Path | None = None) -> Server:
                     name_path=arguments.get("name_path", ""),
                     file_path=arguments.get("file_path"),
                     new_name=arguments.get("new_name", ""),
+                )
+            elif name == "c4_find_symbol":
+                result = daemon.c4_find_symbol(
+                    name_path_pattern=arguments.get("name_path_pattern", ""),
+                    relative_path=arguments.get("relative_path", ""),
+                    include_body=arguments.get("include_body", False),
+                    depth=arguments.get("depth", 0),
+                )
+            elif name == "c4_get_symbols_overview":
+                result = daemon.c4_get_symbols_overview(
+                    relative_path=arguments.get("relative_path", ""),
+                    depth=arguments.get("depth", 0),
                 )
             else:
                 result = {"error": f"Unknown tool: {name}"}
