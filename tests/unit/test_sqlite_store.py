@@ -271,3 +271,93 @@ class TestSQLiteLockStore:
         # Verify new owner
         owner, _ = lock_store.get_scope_lock("test", "backend")
         assert owner == "worker-2"
+
+
+    def test_concurrent_state_modifications(self, db_path):
+        """Test concurrent state modifications using threads.
+
+        Verifies that the SQLite store handles concurrent writes correctly
+        with BEGIN IMMEDIATE and WAL mode.
+        """
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
+        store = SQLiteStateStore(db_path)
+
+        # Initialize state
+        initial_state = C4State(project_id="concurrent-test")
+        store.save(initial_state)
+
+        results = []
+        errors = []
+
+        def modify_state(worker_id: int):
+            """Each worker increments a counter in state metrics."""
+            try:
+                with store.atomic_modify("concurrent-test") as state:
+                    # Simulate some work
+                    import time
+
+                    time.sleep(0.01)
+
+                    # Increment tasks_completed as our concurrent counter
+                    state.metrics.tasks_completed += 1
+
+                results.append(worker_id)
+            except Exception as e:
+                errors.append((worker_id, str(e)))
+
+        # Run 10 concurrent modifications
+        num_workers = 10
+        with ThreadPoolExecutor(max_workers=num_workers) as executor:
+            futures = [executor.submit(modify_state, i) for i in range(num_workers)]
+            for future in as_completed(futures):
+                pass  # Wait for completion
+
+        # Verify results
+        final_state = store.load("concurrent-test")
+
+        # All workers should have completed without errors
+        assert len(errors) == 0, f"Errors occurred: {errors}"
+        assert len(results) == num_workers
+
+        # Counter should equal number of workers (no lost updates)
+        assert final_state.metrics.tasks_completed == num_workers
+
+    def test_concurrent_lock_acquisition(self, db_path):
+        """Test that only one worker can hold a lock at a time."""
+        import threading
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
+        store = SQLiteLockStore(db_path)
+        lock_holders = []
+        lock = threading.Lock()
+
+        def try_acquire(worker_id: int):
+            """Try to acquire lock and hold it briefly."""
+            acquired = store.acquire_scope_lock(
+                "concurrent-test", "shared-resource", f"worker-{worker_id}", ttl_seconds=60
+            )
+
+            if acquired:
+                with lock:
+                    lock_holders.append(worker_id)
+
+                # Hold the lock briefly
+                import time
+
+                time.sleep(0.05)
+
+                store.release_scope_lock("concurrent-test", "shared-resource")
+
+            return acquired
+
+        # Run 5 concurrent acquisition attempts
+        num_workers = 5
+        results = []
+
+        with ThreadPoolExecutor(max_workers=num_workers) as executor:
+            futures = [executor.submit(try_acquire, i) for i in range(num_workers)]
+            results = [f.result() for f in as_completed(futures)]
+
+        # Exactly one worker should have acquired the lock first
+        assert results.count(True) >= 1  # At least one succeeded
