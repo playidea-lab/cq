@@ -3725,9 +3725,105 @@ Thumbs.db
 
         return result
 
-    def check_and_trigger_checkpoint(self) -> dict[str, Any] | None:
+    def c4_find_referencing_symbols(
+        self,
+        name_path: str,
+        file_path: str | None = None,
+    ) -> dict[str, Any]:
+        """Find all references to a symbol in the codebase.
+
+        Uses the CodeAnalyzer to find all usages of a symbol, returning
+        locations with file paths, line numbers, and code snippets.
+
+        Args:
+            name_path: Name or path of the symbol to find references for
+                       (e.g., "MyClass", "MyClass.my_method", "my_function")
+            file_path: Optional file path to restrict search to a single file.
+                       If not provided, searches the entire workspace.
+
+        Returns:
+            Dictionary with:
+                - success: Boolean indicating if search completed
+                - references: List of reference objects with:
+                    - file_path: Path to the file containing the reference
+                    - line: Line number (1-indexed)
+                    - column: Column number (0-indexed)
+                    - context: Code snippet around the reference
+                    - ref_kind: Type of reference ("usage", "import", "definition")
+                - total: Total number of references found
+                - symbol: The symbol name that was searched
         """
-        Check if checkpoint conditions are met and trigger if so.
+        from c4.docs.analyzer import CodeAnalyzer
+
+        try:
+            analyzer = CodeAnalyzer()
+
+            if file_path:
+                abs_file_path = Path(file_path)
+                if not abs_file_path.is_absolute():
+                    abs_file_path = self.root / file_path
+                if abs_file_path.exists():
+                    analyzer.add_file(abs_file_path)
+                else:
+                    return {
+                        "success": False,
+                        "error": f"File not found: {file_path}",
+                        "references": [],
+                        "total": 0,
+                        "symbol": name_path,
+                    }
+            else:
+                count = analyzer.add_directory(
+                    self.root,
+                    recursive=True,
+                    exclude_patterns=[
+                        "**/node_modules/**",
+                        "**/__pycache__/**",
+                        "**/.git/**",
+                        "**/venv/**",
+                        "**/.venv/**",
+                        "**/.c4/**",
+                        "**/.claude/**",
+                        "**/dist/**",
+                        "**/build/**",
+                    ],
+                )
+                logger.info(f"Indexed {count} files for reference search")
+
+            file_filter = str(file_path) if file_path else None
+            refs = analyzer.find_references(name_path, file_path=file_filter)
+
+            results = []
+            for ref in refs:
+                results.append({
+                    "file_path": ref.location.file_path,
+                    "line": ref.location.start_line,
+                    "column": ref.location.start_column,
+                    "end_line": ref.location.end_line,
+                    "end_column": ref.location.end_column,
+                    "context": ref.context,
+                    "ref_kind": ref.ref_kind,
+                })
+
+            return {
+                "success": True,
+                "references": results,
+                "total": len(results),
+                "symbol": name_path,
+            }
+
+        except Exception as e:
+            logger.error(f"Error finding references for {name_path}: {e}")
+            return {
+                "success": False,
+                "error": str(e),
+                "references": [],
+                "total": 0,
+                "symbol": name_path,
+            }
+
+    def check_and_trigger_checkpoint(self) -> dict[str, Any] | None:
+        """Check if checkpoint conditions are met and trigger if so.
 
         Returns:
             Checkpoint info if triggered, None otherwise
@@ -4408,6 +4504,24 @@ def create_server(project_root: Path | None = None) -> Server:
                     "required": [],
                 },
             ),
+            Tool(
+                name="c4_find_referencing_symbols",
+                description="Find all references to a symbol in the codebase. Returns file paths, line numbers, and code snippets.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "name_path": {
+                            "type": "string",
+                            "description": "Name or path of the symbol to find references for (e.g., 'MyClass', 'my_function')",
+                        },
+                        "file_path": {
+                            "type": "string",
+                            "description": "Optional file path to restrict search to a single file",
+                        },
+                    },
+                    "required": ["name_path"],
+                },
+            ),
         ]
 
     @server.call_tool()
@@ -4564,6 +4678,11 @@ def create_server(project_root: Path | None = None) -> Server:
                     output_format=arguments.get("output_format", "json"),
                     from_agent=arguments.get("from_agent"),
                     to_agent=arguments.get("to_agent"),
+                )
+            elif name == "c4_find_referencing_symbols":
+                result = daemon.c4_find_referencing_symbols(
+                    name_path=arguments["name_path"],
+                    file_path=arguments.get("file_path"),
                 )
             else:
                 result = {"error": f"Unknown tool: {name}"}

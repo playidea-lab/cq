@@ -160,3 +160,175 @@ class TestLSPMCPIntegration:
         finally:
             # Cleanup
             daemon.c4_lsp_stop()
+
+
+class TestFindReferencingSymbols:
+    """Tests for c4_find_referencing_symbols MCP tool."""
+
+    def test_find_referencing_symbols_basic(self, tmp_path):
+        """Should find references to a symbol in a file."""
+        from c4.mcp_server import C4Daemon
+
+        # Create a test file with references
+        test_file = tmp_path / "test_module.py"
+        test_file.write_text(
+            """def my_function():
+    \"\"\"A simple function.\"\"\"
+    return 42
+
+result = my_function()
+value = my_function()
+"""
+        )
+
+        daemon = C4Daemon(project_root=tmp_path)
+        result = daemon.c4_find_referencing_symbols(
+            name_path="my_function",
+            file_path=str(test_file),
+        )
+
+        assert result["success"] is True
+        assert result["symbol"] == "my_function"
+        assert result["total"] >= 3  # definition + 2 calls (at least)
+        assert len(result["references"]) >= 3
+
+        # Check reference structure
+        for ref in result["references"]:
+            assert "file_path" in ref
+            assert "line" in ref
+            assert "column" in ref
+            assert "context" in ref
+            assert "ref_kind" in ref
+
+    def test_find_referencing_symbols_not_found(self, tmp_path):
+        """Should return empty list when symbol not found."""
+        from c4.mcp_server import C4Daemon
+
+        # Create a test file without the symbol
+        test_file = tmp_path / "test_module.py"
+        test_file.write_text(
+            """def other_function():
+    pass
+"""
+        )
+
+        daemon = C4Daemon(project_root=tmp_path)
+        result = daemon.c4_find_referencing_symbols(
+            name_path="nonexistent_symbol",
+            file_path=str(test_file),
+        )
+
+        assert result["success"] is True
+        assert result["total"] == 0
+        assert result["references"] == []
+
+    def test_find_referencing_symbols_file_not_found(self, tmp_path):
+        """Should return error when file not found."""
+        from c4.mcp_server import C4Daemon
+
+        daemon = C4Daemon(project_root=tmp_path)
+        result = daemon.c4_find_referencing_symbols(
+            name_path="my_function",
+            file_path="/nonexistent/path/file.py",
+        )
+
+        assert result["success"] is False
+        assert "not found" in result["error"].lower()
+
+    def test_find_referencing_symbols_across_workspace(self, tmp_path):
+        """Should find references across multiple files in workspace."""
+        from c4.mcp_server import C4Daemon
+
+        # Create multiple files
+        (tmp_path / "module_a.py").write_text(
+            """def shared_function():
+    \"\"\"Shared function.\"\"\"
+    return 1
+"""
+        )
+
+        (tmp_path / "module_b.py").write_text(
+            """from module_a import shared_function
+
+result = shared_function()
+"""
+        )
+
+        (tmp_path / "module_c.py").write_text(
+            """from module_a import shared_function
+
+def wrapper():
+    return shared_function()
+"""
+        )
+
+        daemon = C4Daemon(project_root=tmp_path)
+        result = daemon.c4_find_referencing_symbols(
+            name_path="shared_function",
+            # No file_path - search entire workspace
+        )
+
+        assert result["success"] is True
+        assert result["total"] >= 4  # definition + imports + calls
+
+        # Check that references come from multiple files
+        file_paths = {ref["file_path"] for ref in result["references"]}
+        assert len(file_paths) >= 3  # module_a, module_b, module_c
+
+    def test_find_referencing_symbols_includes_context(self, tmp_path):
+        """Should include code context/snippet in results."""
+        from c4.mcp_server import C4Daemon
+
+        test_file = tmp_path / "test_module.py"
+        test_file.write_text(
+            """class MyClass:
+    def my_method(self):
+        return self
+
+instance = MyClass()
+"""
+        )
+
+        daemon = C4Daemon(project_root=tmp_path)
+        result = daemon.c4_find_referencing_symbols(
+            name_path="MyClass",
+            file_path=str(test_file),
+        )
+
+        assert result["success"] is True
+        assert result["total"] >= 2  # class definition + instantiation
+
+        # Check that context contains the actual code
+        contexts = [ref["context"] for ref in result["references"]]
+        assert any("class MyClass" in ctx for ctx in contexts)
+        assert any("MyClass()" in ctx for ctx in contexts)
+
+    def test_find_referencing_symbols_result_structure(self, tmp_path):
+        """Should return properly structured reference objects."""
+        from c4.mcp_server import C4Daemon
+
+        test_file = tmp_path / "test_module.py"
+        test_file.write_text(
+            """CONSTANT = 42
+value = CONSTANT + 1
+"""
+        )
+
+        daemon = C4Daemon(project_root=tmp_path)
+        result = daemon.c4_find_referencing_symbols(
+            name_path="CONSTANT",
+            file_path=str(test_file),
+        )
+
+        assert result["success"] is True
+        assert result["total"] >= 2
+
+        # Check all required fields are present
+        for ref in result["references"]:
+            assert isinstance(ref["file_path"], str)
+            assert isinstance(ref["line"], int)
+            assert isinstance(ref["column"], int)
+            assert isinstance(ref["end_line"], int)
+            assert isinstance(ref["end_column"], int)
+            assert isinstance(ref["context"], str)
+            assert isinstance(ref["ref_kind"], str)
