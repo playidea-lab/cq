@@ -90,7 +90,7 @@ exit 0
 
 POST_COMMIT_HOOK = """#!/bin/bash
 # C4 Git Hook: post-commit
-# Sync C4 state after commit (optional)
+# Sync C4 state after commit and generate event file for daemon processing
 
 # Skip if not in a C4 project
 if [[ ! -f ".c4/state.json" ]] && [[ ! -f ".c4/config.yaml" ]]; then
@@ -100,13 +100,44 @@ fi
 # Get commit info
 COMMIT_SHA=$(git rev-parse HEAD)
 COMMIT_MSG=$(git log -1 --pretty=%B)
+CHANGED_FILES=$(git diff-tree --no-commit-id --name-only -r HEAD | tr '\\n' ',' | sed 's/,$//')
+TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
-# Extract task ID if present
-TASK_ID=$(echo "$COMMIT_MSG" | grep -oE '\\[T-[0-9]+-[0-9]+\\]' | head -1 | tr -d '[]')
+# Extract task ID if present (supports T-XXX-N, R-XXX-N, CP-XXX formats)
+TASK_PATTERN='\\[T-[0-9A-Za-z]+-[0-9]+(-[0-9]+)?\\]'
+TASK_PATTERN="${TASK_PATTERN}|\\[R-[0-9A-Za-z]+-[0-9]+(-[0-9]+)?\\]"
+TASK_PATTERN="${TASK_PATTERN}|\\[CP-[0-9]+\\]"
+TASK_ID=$(echo "$COMMIT_MSG" | grep -oE "$TASK_PATTERN" | head -1 | tr -d '[]')
 
 if [[ -n "$TASK_ID" ]]; then
     echo "C4: Commit associated with task $TASK_ID"
 fi
+
+# Create events directory if it doesn't exist
+mkdir -p .c4/events
+
+# Generate event file for daemon processing
+SHORT_SHA="${COMMIT_SHA:0:7}"
+EVENT_FILE=".c4/events/git-${SHORT_SHA}.json"
+
+# Write event JSON (null if TASK_ID is empty)
+if [[ -n "$TASK_ID" ]]; then
+    TASK_ID_JSON="\"$TASK_ID\""
+else
+    TASK_ID_JSON="null"
+fi
+
+cat > "$EVENT_FILE" << EOF
+{
+  "type": "git_commit",
+  "sha": "$COMMIT_SHA",
+  "task_id": $TASK_ID_JSON,
+  "files": "$CHANGED_FILES",
+  "timestamp": "$TIMESTAMP"
+}
+EOF
+
+echo "C4: Event file created at $EVENT_FILE"
 
 exit 0
 """

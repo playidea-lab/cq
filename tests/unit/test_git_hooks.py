@@ -286,6 +286,52 @@ class TestInstallAllHooks:
 
 
 
+class TestPostCommitHookEventGeneration:
+    """Tests for post-commit hook event file generation."""
+
+    def test_post_commit_hook_creates_events_directory(self):
+        """Post-commit hook should create .c4/events directory."""
+        assert "mkdir -p .c4/events" in POST_COMMIT_HOOK
+
+    def test_post_commit_hook_generates_event_file(self):
+        """Post-commit hook should generate git event JSON file."""
+        assert 'EVENT_FILE=".c4/events/git-${SHORT_SHA}.json"' in POST_COMMIT_HOOK
+
+    def test_post_commit_hook_includes_required_fields(self):
+        """Post-commit hook event should include required JSON fields."""
+        # Check for type field
+        assert '"type": "git_commit"' in POST_COMMIT_HOOK
+        # Check for sha field
+        assert '"sha": "$COMMIT_SHA"' in POST_COMMIT_HOOK
+        # Check for task_id field
+        assert '"task_id":' in POST_COMMIT_HOOK
+        # Check for files field
+        assert '"files": "$CHANGED_FILES"' in POST_COMMIT_HOOK
+        # Check for timestamp field
+        assert '"timestamp": "$TIMESTAMP"' in POST_COMMIT_HOOK
+
+    def test_post_commit_hook_extracts_changed_files(self):
+        """Post-commit hook should extract changed files list."""
+        assert "git diff-tree --no-commit-id --name-only -r HEAD" in POST_COMMIT_HOOK
+
+    def test_post_commit_hook_generates_iso_timestamp(self):
+        """Post-commit hook should generate ISO8601 timestamp."""
+        assert 'date -u +"%Y-%m-%dT%H:%M:%SZ"' in POST_COMMIT_HOOK
+
+    def test_post_commit_hook_handles_null_task_id(self):
+        """Post-commit hook should handle null task ID gracefully."""
+        assert "TASK_ID_JSON=\"null\"" in POST_COMMIT_HOOK or 'TASK_ID_JSON="null"' in POST_COMMIT_HOOK
+
+    def test_post_commit_hook_supports_extended_task_id_patterns(self):
+        """Post-commit hook should support T-XXX-N, R-XXX-N, CP-XXX patterns."""
+        # T-XXX-N pattern (e.g., T-BGM-001-0)
+        assert "T-[0-9A-Za-z]+-[0-9]+(-[0-9]+)?" in POST_COMMIT_HOOK
+        # R-XXX-N pattern
+        assert "R-[0-9A-Za-z]+-[0-9]+(-[0-9]+)?" in POST_COMMIT_HOOK
+        # CP-XXX pattern
+        assert "CP-[0-9]+" in POST_COMMIT_HOOK
+
+
 class TestHooksConfig:
     """Tests for HooksConfig model."""
 
