@@ -11,7 +11,7 @@ from mcp.server.stdio import stdio_server
 from mcp.types import TextContent, Tool
 
 from .constants import MAX_REPAIR_DEPTH, REPAIR_PREFIX, REPAIR_PREFIX_LEN
-from .daemon import GitOperations, SupervisorLoopManager, WorkerManager
+from .daemon import GitOperations, GitResult, SupervisorLoopManager, WorkerManager
 from .discovery import (
     DesignStore,
     Domain,
@@ -4218,7 +4218,10 @@ def create_server(project_root: Path | None = None) -> Server:
             ),
             Tool(
                 name="c4_discovery_complete",
-                description="Mark discovery phase as complete and transition to DESIGN state. Requires at least one specification to be saved.",
+                description=(
+                    "Mark discovery complete and transition to DESIGN. "
+                    "Requires at least one spec saved."
+                ),
                 inputSchema={
                     "type": "object",
                     "properties": {},
@@ -4340,7 +4343,10 @@ def create_server(project_root: Path | None = None) -> Server:
             ),
             Tool(
                 name="c4_design_complete",
-                description="Mark design phase as complete and transition to PLAN state. Requires at least one design with selected option.",
+                description=(
+                    "Mark design complete and transition to PLAN. "
+                    "Requires at least one design with selected option."
+                ),
                 inputSchema={
                     "type": "object",
                     "properties": {},
