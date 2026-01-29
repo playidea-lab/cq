@@ -21,6 +21,8 @@ Usage:
     metrics_bytes = get_metrics()
 """
 
+from . import tracing
+from .middleware import MetricsMiddleware
 from .prometheus import (
     CONTENT_TYPE_LATEST,
     api_requests_total,
@@ -39,8 +41,6 @@ from .prometheus import (
     workspace_active,
     workspace_operations_total,
 )
-from .middleware import MetricsMiddleware
-from . import tracing
 
 __all__ = [
     # Metrics

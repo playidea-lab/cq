@@ -21,9 +21,9 @@ class RegistryBuilder:
 
     def build_for_claude(self) -> List[str]:
         """Build registry artifacts for Claude Code.
-        
+
         Generates .claude/rules/persona-{id}.md files from agent definitions.
-        
+
         Returns:
             List of generated file paths (relative to project root).
         """
@@ -64,9 +64,12 @@ class RegistryBuilder:
         if p.personality:
             lines.append("## Personality")
             traits = p.personality
-            if traits.style: lines.append(f"- **Style**: {traits.style}")
-            if traits.communication: lines.append(f"- **Communication**: {traits.communication}")
-            if traits.approach: lines.append(f"- **Approach**: {traits.approach}")
+            if traits.style:
+                lines.append(f"- **Style**: {traits.style}")
+            if traits.communication:
+                lines.append(f"- **Communication**: {traits.communication}")
+            if traits.approach:
+                lines.append(f"- **Approach**: {traits.approach}")
             lines.append("")
 
         # Skills

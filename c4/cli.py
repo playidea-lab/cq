@@ -899,7 +899,8 @@ def _show_status(daemon: C4Daemon):
     # Token & Cost summary
     if metrics.get('total_prompt_tokens', 0) > 0:
         cost_color = "green" if metrics['total_cost_usd'] < 1.0 else "yellow"
-        if metrics['total_cost_usd'] > 10.0: cost_color = "red"
+        if metrics['total_cost_usd'] > 10.0:
+            cost_color = "red"
 
         console.print(
             f"[dim]Tokens: {metrics['total_prompt_tokens']:,} (in) / {metrics['total_completion_tokens']:,} (out) | "
@@ -2008,7 +2009,7 @@ def registry_build(
     ),
 ):
     """Build registry artifacts for specific platforms.
-    
+
     Converts YAML definitions into platform-specific formats (e.g., Markdown for Claude).
     """
     from c4.system.registry.builder import RegistryBuilder
@@ -2700,7 +2701,7 @@ def team_list():
         raise typer.Exit(1)
 
     try:
-        service = create_team_service()
+        _service = create_team_service()  # Reserved for future use
         # For now, show placeholder - need user auth context
         console.print("[yellow]Note:[/yellow] Team listing requires authentication")
         console.print()
@@ -2956,7 +2957,7 @@ def team_leave(
             raise typer.Exit(0)
 
     try:
-        service = create_team_service()
+        _service = create_team_service()  # Reserved for future use
         # Note: This requires knowing the current user's member ID
         console.print("[yellow]Note:[/yellow] Team leave requires user authentication context")
         console.print("[dim]Use the web UI to leave teams for now[/dim]")

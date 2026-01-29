@@ -10,7 +10,7 @@ class ContextLoader:
     @staticmethod
     def load_standards(project_root: Path | None = None, slim: bool = True) -> str:
         """Load and merge all standards files from registry.
-        
+
         Args:
             project_root: Optional project root path
             slim: If True, applies context slimming when content is too large

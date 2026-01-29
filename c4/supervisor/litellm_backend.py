@@ -28,6 +28,7 @@ from .response_parser import ResponseParser
 from .strategies import get_strategy_for_model
 
 if TYPE_CHECKING:
+    from c4.daemon import C4Daemon
     from c4.supervisor.agent_graph.models import AgentDefinition
 
 logger = logging.getLogger(__name__)
@@ -281,9 +282,12 @@ class LiteLLMBackend(SupervisorBackend):
         if persona.personality:
             p = persona.personality
             traits = []
-            if p.style: traits.append(f"Style: {p.style}")
-            if p.communication: traits.append(f"Communication: {p.communication}")
-            if p.approach: traits.append(f"Approach: {p.approach}")
+            if p.style:
+                traits.append(f"Style: {p.style}")
+            if p.communication:
+                traits.append(f"Communication: {p.communication}")
+            if p.approach:
+                traits.append(f"Approach: {p.approach}")
             if traits:
                 lines.append("Personality: " + ", ".join(traits))
 
