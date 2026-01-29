@@ -457,3 +457,80 @@ class TestSchemaCache:
 
         # loader2 should have empty cache
         assert AgentGraphLoader.SKILL_SCHEMA not in loader2._schema_cache
+
+
+
+class TestSkillCache:
+    """Tests for skill caching behavior."""
+
+    def test_skill_cache_populated_on_first_lookup(self):
+        """Test that skill cache is populated on first load_skill_by_id call."""
+        loader = AgentGraphLoader()
+
+        # Cache should be None initially
+        assert loader._skill_cache is None
+
+        # Load a skill by ID
+        skill = loader.load_skill_by_id("debugging")
+        assert skill is not None
+
+        # Cache should now be populated
+        assert loader._skill_cache is not None
+        assert "debugging" in loader._skill_cache
+
+    def test_skill_cache_reused_on_subsequent_lookups(self):
+        """Test that subsequent lookups use the cache without reloading."""
+        loader = AgentGraphLoader()
+
+        # First lookup populates cache
+        skill1 = loader.load_skill_by_id("debugging")
+        cache_after_first = loader._skill_cache
+
+        # Second lookup should use same cache
+        skill2 = loader.load_skill_by_id("debugging")
+
+        # Same cache object should be used
+        assert loader._skill_cache is cache_after_first
+        assert skill1 is skill2
+
+    def test_skill_cache_cleared_by_clear_cache(self):
+        """Test that clear_cache invalidates the skill cache."""
+        loader = AgentGraphLoader()
+
+        # Populate cache
+        loader.load_skill_by_id("debugging")
+        assert loader._skill_cache is not None
+
+        # Clear cache
+        loader.clear_cache()
+
+        # Cache should be None again
+        assert loader._skill_cache is None
+
+    def test_agent_cache_populated_on_first_lookup(self):
+        """Test that agent cache is populated on first load_agent_by_id call."""
+        loader = AgentGraphLoader()
+
+        # Cache should be None initially
+        assert loader._agent_cache is None
+
+        # Load an agent by ID
+        agent = loader.load_agent_by_id("debugger")
+        assert agent is not None
+
+        # Cache should now be populated
+        assert loader._agent_cache is not None
+
+    def test_domain_cache_populated_on_first_lookup(self):
+        """Test that domain cache is populated on first load_domain_by_id call."""
+        loader = AgentGraphLoader()
+
+        # Cache should be None initially
+        assert loader._domain_cache is None
+
+        # Load a domain by ID
+        domain = loader.load_domain_by_id("web-backend")
+        assert domain is not None
+
+        # Cache should now be populated
+        assert loader._domain_cache is not None
