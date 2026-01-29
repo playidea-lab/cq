@@ -534,3 +534,80 @@ class TestGetPrefixAtPosition:
         prefix = server._get_prefix_at_position("file:///nonexistent.py", position)
 
         assert prefix == ""
+
+
+class TestAsyncIndexing:
+    """Tests for async workspace indexing."""
+
+    def test_indexing_flags_initialization(self):
+        """Server should initialize with indexing flags."""
+        server = C4LSPServer()
+
+        assert server._indexing_in_progress is False
+        assert server._indexed_count == 0
+
+    @pytest.mark.asyncio
+    async def test_async_index_workspace_sets_flags(self, tmp_path):
+        """Async indexing should set and clear flags correctly."""
+        server = C4LSPServer()
+        server._workspace_root = tmp_path
+
+        # Create a test Python file
+        (tmp_path / "test.py").write_text("def hello(): pass")
+
+        await server._index_workspace_async()
+
+        assert server._indexing_in_progress is False
+        assert server._indexed_count == 1
+
+    @pytest.mark.asyncio
+    async def test_async_index_excludes_directories(self, tmp_path):
+        """Async indexing should exclude common directories."""
+        server = C4LSPServer()
+        server._workspace_root = tmp_path
+
+        # Create files in various directories
+        (tmp_path / "main.py").write_text("def main(): pass")
+
+        # These should be excluded
+        (tmp_path / ".venv").mkdir()
+        (tmp_path / ".venv" / "lib.py").write_text("def lib(): pass")
+
+        (tmp_path / "node_modules").mkdir()
+        (tmp_path / "node_modules" / "dep.py").write_text("def dep(): pass")
+
+        (tmp_path / "__pycache__").mkdir()
+        (tmp_path / "__pycache__" / "cache.py").write_text("def cache(): pass")
+
+        await server._index_workspace_async()
+
+        # Only main.py should be indexed
+        assert server._indexed_count == 1
+
+    @pytest.mark.asyncio
+    async def test_async_index_skips_if_already_in_progress(self, tmp_path):
+        """Should skip indexing if already in progress."""
+        server = C4LSPServer()
+        server._workspace_root = tmp_path
+        server._indexing_in_progress = True
+
+        (tmp_path / "test.py").write_text("def test(): pass")
+
+        await server._index_workspace_async()
+
+        # Should not have indexed (skipped)
+        assert server._indexed_count == 0
+
+    @pytest.mark.asyncio
+    async def test_async_index_handles_empty_workspace(self, tmp_path):
+        """Should handle workspace with no Python files."""
+        server = C4LSPServer()
+        server._workspace_root = tmp_path
+
+        # No Python files
+        (tmp_path / "readme.md").write_text("# Readme")
+
+        await server._index_workspace_async()
+
+        assert server._indexing_in_progress is False
+        assert server._indexed_count == 0

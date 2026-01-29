@@ -6,6 +6,7 @@ C4's tree-sitter based CodeAnalyzer.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -116,6 +117,10 @@ class C4LSPServer:
         self._workspace_root: Path | None = None
         self._indexed_files: set[str] = set()
 
+        # Async indexing state
+        self._indexing_in_progress: bool = False
+        self._indexed_count: int = 0
+
         self._register_features()
 
     @property
@@ -167,9 +172,9 @@ class C4LSPServer:
         def initialized(params: lsp.InitializedParams) -> None:
             """Handle initialized notification."""
             logger.info("LSP server initialized")
-            # Index workspace on startup
+            # Index workspace asynchronously on startup
             if self._workspace_root:
-                self._index_workspace()
+                asyncio.create_task(self._index_workspace_async())
 
         @server.feature(lsp.TEXT_DOCUMENT_DID_OPEN)
         def did_open(params: lsp.DidOpenTextDocumentParams) -> None:
@@ -257,14 +262,71 @@ class C4LSPServer:
             """Handle completion item resolve request."""
             return self._handle_completion_resolve(item)
 
-    def _index_workspace(self) -> None:
-        """Index all files in the workspace."""
+    async def _index_workspace_async(self) -> None:
+        """Index all files in the workspace asynchronously.
+
+        Uses non-blocking approach to allow LSP to respond to requests
+        while indexing is in progress.
+        """
         if not self._workspace_root:
             return
 
-        logger.info(f"Indexing workspace: {self._workspace_root}")
-        count = self._analyzer.add_directory(self._workspace_root)
-        logger.info(f"Indexed {count} files")
+        if self._indexing_in_progress:
+            logger.warning("Indexing already in progress, skipping")
+            return
+
+        self._indexing_in_progress = True
+        self._indexed_count = 0
+
+        # Directories to exclude from indexing
+        exclude_dirs = {
+            "node_modules",
+            "__pycache__",
+            ".git",
+            "venv",
+            ".venv",
+            ".pytest_cache",
+            ".mypy_cache",
+            ".ruff_cache",
+            ".tox",
+            "dist",
+            "build",
+            ".eggs",
+            ".c4",
+            ".claude",
+        }
+
+        logger.info(f"Indexing workspace (async): {self._workspace_root}")
+
+        try:
+            # Collect files to index (with exclusions)
+            files_to_index: list[Path] = []
+            for path in self._workspace_root.rglob("*.py"):
+                # Check if any part of the path is in exclude_dirs
+                if set(path.parts) & exclude_dirs:
+                    continue
+                files_to_index.append(path)
+
+            logger.info(f"Found {len(files_to_index)} Python files to index")
+
+            # Index in batches to yield control
+            batch_size = 10
+            for i, path in enumerate(files_to_index):
+                try:
+                    self._analyzer.add_file(path)
+                    self._indexed_count += 1
+                except Exception as e:
+                    logger.warning(f"Failed to index {path}: {e}")
+
+                # Yield to event loop periodically
+                if (i + 1) % batch_size == 0:
+                    await asyncio.sleep(0)
+
+            logger.info(f"Indexing complete: {self._indexed_count} files indexed")
+        except Exception as e:
+            logger.error(f"Indexing failed: {e}")
+        finally:
+            self._indexing_in_progress = False
 
     def _get_word_at_position(
         self,
