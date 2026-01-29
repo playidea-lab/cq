@@ -551,3 +551,313 @@ class GitOperations:
             sha=new_sha,
             tag=checkpoint_tag,
         )
+
+    # ========== Git Worktree Operations ==========
+    # For multi-worker isolation - each worker gets an independent working directory
+
+    def get_worktrees_dir(self) -> Path:
+        """Get the directory where worktrees are stored.
+
+        Returns:
+            Path to .c4/worktrees/ directory
+        """
+        return self.root / ".c4" / "worktrees"
+
+    def get_worktree_path(self, worker_id: str) -> Path:
+        """Get the worktree path for a specific worker.
+
+        Args:
+            worker_id: Worker identifier
+
+        Returns:
+            Path to the worker's worktree directory
+        """
+        # Sanitize worker_id for filesystem
+        safe_id = worker_id.replace("/", "-").replace("\\", "-")
+        return self.get_worktrees_dir() / safe_id
+
+    def list_worktrees(self) -> list[dict[str, str]]:
+        """List all git worktrees.
+
+        Returns:
+            List of dicts with path, branch, head info
+        """
+        if not self.is_git_repo():
+            return []
+
+        result = self._run_git("worktree", "list", "--porcelain")
+        if result.returncode != 0:
+            return []
+
+        worktrees: list[dict[str, str]] = []
+        current: dict[str, str] = {}
+
+        for line in result.stdout.splitlines():
+            if line.startswith("worktree "):
+                if current:
+                    worktrees.append(current)
+                current = {"path": line[9:]}
+            elif line.startswith("HEAD "):
+                current["head"] = line[5:]
+            elif line.startswith("branch "):
+                current["branch"] = line[7:]
+            elif line == "bare":
+                current["bare"] = "true"
+            elif line == "detached":
+                current["detached"] = "true"
+
+        if current:
+            worktrees.append(current)
+
+        return worktrees
+
+    def create_worktree(
+        self,
+        worker_id: str,
+        branch: str,
+        base_branch: str | None = None,
+    ) -> GitResult:
+        """Create a worktree for a worker.
+
+        Creates a new worktree at .c4/worktrees/{worker_id} with the specified branch.
+        If the branch doesn't exist, creates it from base_branch (or current HEAD).
+
+        Args:
+            worker_id: Worker identifier for the worktree directory
+            branch: Branch name for the worktree (e.g., 'c4/w-T-001-0')
+            base_branch: Branch to create from if branch doesn't exist
+
+        Returns:
+            GitResult with worktree path on success
+        """
+        if not self.is_git_repo():
+            return GitResult(False, "Not a Git repository")
+
+        # Prune stale worktree entries before creating
+        # This cleans up entries where the directory was removed but git still tracks it
+        self._run_git("worktree", "prune")
+
+        worktree_path = self.get_worktree_path(worker_id)
+
+        # Check if worktree already exists
+        if worktree_path.exists():
+            # Verify it's a valid worktree
+            # Resolve paths to handle symlinks (e.g., /var -> /private/var on macOS)
+            resolved_worktree = worktree_path.resolve()
+            existing = self.list_worktrees()
+            for wt in existing:
+                wt_path = Path(wt.get("path", ""))
+                if wt_path.exists() and wt_path.resolve() == resolved_worktree:
+                    return GitResult(
+                        True,
+                        f"Worktree already exists at {worktree_path}",
+                        sha=wt.get("head", "")[:7] if wt.get("head") else None,
+                    )
+            # Directory exists but not a worktree - remove it
+            import shutil
+
+            shutil.rmtree(worktree_path)
+
+        # Ensure worktrees directory exists
+        self.get_worktrees_dir().mkdir(parents=True, exist_ok=True)
+
+        # Check if branch exists
+        branch_check = self._run_git("branch", "--list", branch)
+        branch_exists = bool(branch_check.stdout.strip())
+
+        if branch_exists:
+            # Branch exists - create worktree with existing branch
+            result = self._run_git("worktree", "add", str(worktree_path), branch)
+        else:
+            # Branch doesn't exist - create new branch in worktree
+            if base_branch:
+                result = self._run_git(
+                    "worktree", "add", "-b", branch, str(worktree_path), base_branch
+                )
+            else:
+                result = self._run_git(
+                    "worktree", "add", "-b", branch, str(worktree_path)
+                )
+
+        if result.returncode != 0:
+            return GitResult(False, f"Worktree creation failed: {result.stderr}")
+
+        return GitResult(
+            True,
+            f"Created worktree at {worktree_path}",
+            sha=self._get_worktree_head(worktree_path),
+        )
+
+    def _get_worktree_head(self, worktree_path: Path) -> str | None:
+        """Get HEAD SHA of a worktree.
+
+        Args:
+            worktree_path: Path to the worktree
+
+        Returns:
+            Short SHA or None
+        """
+        result = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            cwd=worktree_path,
+            capture_output=True,
+            text=True,
+        )
+        return result.stdout.strip() if result.returncode == 0 else None
+
+    def remove_worktree(self, worker_id: str, force: bool = False) -> GitResult:
+        """Remove a worker's worktree.
+
+        Args:
+            worker_id: Worker identifier
+            force: If True, remove even with uncommitted changes
+
+        Returns:
+            GitResult with success status
+        """
+        if not self.is_git_repo():
+            return GitResult(False, "Not a Git repository")
+
+        worktree_path = self.get_worktree_path(worker_id)
+
+        if not worktree_path.exists():
+            return GitResult(True, f"Worktree {worker_id} does not exist")
+
+        # Remove the worktree
+        args = ["worktree", "remove"]
+        if force:
+            args.append("--force")
+        args.append(str(worktree_path))
+
+        result = self._run_git(*args)
+
+        if result.returncode != 0:
+            return GitResult(False, f"Worktree removal failed: {result.stderr}")
+
+        # Prune stale worktree references
+        self._run_git("worktree", "prune")
+
+        return GitResult(True, f"Removed worktree {worker_id}")
+
+    def get_worktree_status(self, worker_id: str) -> dict[str, str | bool | None]:
+        """Get status of a worker's worktree.
+
+        Args:
+            worker_id: Worker identifier
+
+        Returns:
+            Dict with exists, branch, has_changes info
+        """
+        worktree_path = self.get_worktree_path(worker_id)
+
+        if not worktree_path.exists():
+            return {"exists": False, "branch": None, "has_changes": None}
+
+        # Get branch name
+        branch_result = subprocess.run(
+            ["git", "branch", "--show-current"],
+            cwd=worktree_path,
+            capture_output=True,
+            text=True,
+        )
+        branch = branch_result.stdout.strip() if branch_result.returncode == 0 else None
+
+        # Check for uncommitted changes
+        status_result = subprocess.run(
+            ["git", "status", "--porcelain"],
+            cwd=worktree_path,
+            capture_output=True,
+            text=True,
+        )
+        has_changes = bool(status_result.stdout.strip())
+
+        return {"exists": True, "branch": branch, "has_changes": has_changes}
+
+    def commit_in_worktree(self, worker_id: str, message: str) -> GitResult:
+        """Commit changes in a worker's worktree.
+
+        Args:
+            worker_id: Worker identifier
+            message: Commit message
+
+        Returns:
+            GitResult with commit SHA
+        """
+        worktree_path = self.get_worktree_path(worker_id)
+
+        if not worktree_path.exists():
+            return GitResult(False, f"Worktree {worker_id} does not exist")
+
+        # Stage all changes
+        subprocess.run(
+            ["git", "add", "-A"],
+            cwd=worktree_path,
+            capture_output=True,
+        )
+
+        # Check if there are changes to commit
+        status_result = subprocess.run(
+            ["git", "status", "--porcelain"],
+            cwd=worktree_path,
+            capture_output=True,
+            text=True,
+        )
+
+        if not status_result.stdout.strip():
+            return GitResult(True, "No changes to commit", sha=None)
+
+        # Commit
+        commit_result = subprocess.run(
+            ["git", "commit", "-m", message],
+            cwd=worktree_path,
+            capture_output=True,
+            text=True,
+        )
+
+        if commit_result.returncode != 0:
+            return GitResult(False, f"Commit failed: {commit_result.stderr}")
+
+        # Get commit SHA
+        sha = self._get_worktree_head(worktree_path)
+
+        return GitResult(True, f"Committed with SHA {sha}", sha=sha)
+
+    def cleanup_worktrees(
+        self, keep_workers: list[str] | None = None
+    ) -> GitResult:
+        """Clean up worktrees, optionally keeping specific workers.
+
+        Args:
+            keep_workers: List of worker IDs to keep. If None, removes all.
+
+        Returns:
+            GitResult with cleanup status
+        """
+        if not self.is_git_repo():
+            return GitResult(False, "Not a Git repository")
+
+        worktrees_dir = self.get_worktrees_dir()
+        if not worktrees_dir.exists():
+            return GitResult(True, "No worktrees directory")
+
+        keep_workers = keep_workers or []
+        removed = []
+        errors = []
+
+        for entry in worktrees_dir.iterdir():
+            if entry.is_dir():
+                worker_id = entry.name
+                if worker_id not in keep_workers:
+                    result = self.remove_worktree(worker_id, force=True)
+                    if result.success:
+                        removed.append(worker_id)
+                    else:
+                        errors.append(f"{worker_id}: {result.message}")
+
+        if errors:
+            return GitResult(
+                False,
+                f"Removed {len(removed)} worktrees, {len(errors)} errors: {errors}",
+            )
+
+        return GitResult(True, f"Removed {len(removed)} worktrees")

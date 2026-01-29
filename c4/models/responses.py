@@ -23,6 +23,8 @@ class TaskAssignment(BaseModel):
     agent_chain: list[str] | None = None
     domain: str | None = None
     handoff_instructions: str | None = None
+    # Phase 5: Worktree path for multi-worker isolation
+    worktree_path: str | None = None
 
 
 class SubmitResponse(BaseModel):
