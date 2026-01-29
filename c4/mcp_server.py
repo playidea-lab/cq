@@ -12,7 +12,6 @@ from mcp.types import TextContent, Tool
 
 from .constants import MAX_REPAIR_DEPTH, REPAIR_PREFIX, REPAIR_PREFIX_LEN
 from .daemon import GitOperations, SupervisorLoopManager, WorkerManager
-from .notification import NotificationManager
 from .discovery import (
     DesignStore,
     Domain,
@@ -38,6 +37,7 @@ from .models import (
     TaskType,
     ValidationResult,
 )
+from .notification import NotificationManager
 from .state_machine import StateMachine, StateTransitionError
 from .store import (
     LockStore,
@@ -976,7 +976,7 @@ Thumbs.db
 
     def _create_task_branch_from_work(
         self, git_ops: GitOperations, task_branch: str, work_branch: str
-    ) -> "GitResult":
+    ) -> Any:
         """Create task branch from work branch.
 
         Ensures task branches are created from the C4 work branch,
@@ -3742,6 +3742,367 @@ Thumbs.db
 
         return result
 
+    # =========================================================================
+    # Symbol Editing MCP Tools
+    # =========================================================================
+
+    def _get_symbol_by_name_path(
+        self,
+        name_path: str,
+        file_path: str | None = None,
+    ) -> tuple[Any | None, str | None, str | None]:
+        """Find a symbol by name path.
+
+        Args:
+            name_path: Symbol name or qualified name (e.g., "MyClass" or "MyClass.method")
+            file_path: Optional file path to restrict search
+
+        Returns:
+            Tuple of (symbol, file_path, error_message)
+        """
+        from c4.docs.analyzer import CodeAnalyzer
+
+        try:
+            analyzer = CodeAnalyzer()
+
+            if file_path:
+                abs_file_path = Path(file_path)
+                if not abs_file_path.is_absolute():
+                    abs_file_path = self.root / file_path
+                if not abs_file_path.exists():
+                    return None, None, f"File not found: {file_path}"
+                analyzer.add_file(abs_file_path)
+                search_path = str(abs_file_path)
+            else:
+                analyzer.add_directory(
+                    self.root,
+                    recursive=True,
+                    exclude_patterns=[
+                        "**/node_modules/**",
+                        "**/__pycache__/**",
+                        "**/.git/**",
+                        "**/venv/**",
+                        "**/.venv/**",
+                        "**/.c4/**",
+                        "**/.claude/**",
+                    ],
+                )
+                search_path = None
+
+            # Parse name_path to get symbol name and parent
+            parts = name_path.split(".")
+            symbol_name = parts[-1]
+
+            # Find the symbol
+            symbols = analyzer.find_symbol(
+                symbol_name, file_path=search_path, exact_match=True
+            )
+
+            if not symbols:
+                return None, None, f"Symbol not found: {name_path}"
+
+            # If qualified name, filter by parent
+            if len(parts) > 1:
+                parent_name = ".".join(parts[:-1])
+                matching = [
+                    s for s in symbols
+                    if s.parent == parent_name or s.qualified_name == name_path
+                ]
+                if not matching:
+                    return None, None, f"Symbol with parent '{parent_name}' not found"
+                symbols = matching
+
+            # Return the first match
+            symbol = symbols[0]
+
+            # Find which file contains this symbol
+            symbol_file = symbol.location.file_path
+
+            return symbol, symbol_file, None
+
+        except Exception as e:
+            return None, None, str(e)
+
+    def c4_replace_symbol_body(
+        self,
+        name_path: str,
+        file_path: str | None,
+        new_body: str,
+    ) -> dict[str, Any]:
+        """Replace the body of a symbol (function, class, method).
+
+        Args:
+            name_path: Symbol name or qualified name (e.g., "MyClass.method")
+            file_path: File containing the symbol (optional for single-file search)
+            new_body: New source code for the symbol body
+
+        Returns:
+            Dict with success status and details about the edit
+        """
+        symbol, symbol_file, error = self._get_symbol_by_name_path(name_path, file_path)
+        if error:
+            return {"success": False, "error": error}
+
+        try:
+            # Read the file
+            file_path_obj = Path(symbol_file)
+            content = file_path_obj.read_text(encoding="utf-8")
+            lines = content.splitlines(keepends=True)
+
+            # Get symbol location (1-indexed in Location)
+            start_line = symbol.location.start_line - 1  # Convert to 0-indexed
+            end_line = symbol.location.end_line - 1
+
+            # Preserve leading indentation from original
+            original_first_line = lines[start_line] if start_line < len(lines) else ""
+            indent = len(original_first_line) - len(original_first_line.lstrip())
+            indent_str = original_first_line[:indent]
+
+            # Ensure new_body lines have proper indentation
+            new_lines = new_body.splitlines(keepends=True)
+            if new_lines and not new_lines[-1].endswith("\n"):
+                new_lines[-1] += "\n"
+
+            # Apply indentation to new body (except first line if it already has it)
+            indented_lines = []
+            for i, line in enumerate(new_lines):
+                if i == 0 or not line.strip():
+                    indented_lines.append(line)
+                else:
+                    indented_lines.append(indent_str + line.lstrip())
+
+            # Replace the lines
+            new_content_lines = (
+                lines[:start_line] + indented_lines + lines[end_line + 1:]
+            )
+            new_content = "".join(new_content_lines)
+
+            # Write back
+            file_path_obj.write_text(new_content, encoding="utf-8")
+
+            return {
+                "success": True,
+                "file_path": symbol_file,
+                "symbol": name_path,
+                "start_line": start_line + 1,
+                "end_line": end_line + 1,
+                "lines_replaced": end_line - start_line + 1,
+                "new_lines": len(indented_lines),
+            }
+
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    def c4_insert_before_symbol(
+        self,
+        name_path: str,
+        file_path: str | None,
+        content: str,
+    ) -> dict[str, Any]:
+        """Insert content before a symbol.
+
+        Args:
+            name_path: Symbol name or qualified name
+            file_path: File containing the symbol
+            content: Content to insert before the symbol
+
+        Returns:
+            Dict with success status and details
+        """
+        symbol, symbol_file, error = self._get_symbol_by_name_path(name_path, file_path)
+        if error:
+            return {"success": False, "error": error}
+
+        try:
+            file_path_obj = Path(symbol_file)
+            file_content = file_path_obj.read_text(encoding="utf-8")
+            lines = file_content.splitlines(keepends=True)
+
+            # Get insertion point (line before the symbol)
+            insert_line = symbol.location.start_line - 1  # 0-indexed
+
+            # Ensure content ends with newline
+            if content and not content.endswith("\n"):
+                content += "\n"
+
+            # Insert the content
+            content_lines = content.splitlines(keepends=True)
+            new_lines = lines[:insert_line] + content_lines + lines[insert_line:]
+            new_content = "".join(new_lines)
+
+            # Write back
+            file_path_obj.write_text(new_content, encoding="utf-8")
+
+            return {
+                "success": True,
+                "file_path": symbol_file,
+                "symbol": name_path,
+                "inserted_at_line": insert_line + 1,
+                "lines_inserted": len(content_lines),
+            }
+
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    def c4_insert_after_symbol(
+        self,
+        name_path: str,
+        file_path: str | None,
+        content: str,
+    ) -> dict[str, Any]:
+        """Insert content after a symbol.
+
+        Args:
+            name_path: Symbol name or qualified name
+            file_path: File containing the symbol
+            content: Content to insert after the symbol
+
+        Returns:
+            Dict with success status and details
+        """
+        symbol, symbol_file, error = self._get_symbol_by_name_path(name_path, file_path)
+        if error:
+            return {"success": False, "error": error}
+
+        try:
+            file_path_obj = Path(symbol_file)
+            file_content = file_path_obj.read_text(encoding="utf-8")
+            lines = file_content.splitlines(keepends=True)
+
+            # Get insertion point (line after the symbol ends)
+            # end_line is 1-indexed, so this gives us the 0-indexed line after
+            insert_line = symbol.location.end_line
+
+            # Ensure content starts with newline for separation and ends with newline
+            if content and not content.startswith("\n"):
+                content = "\n" + content
+            if content and not content.endswith("\n"):
+                content += "\n"
+
+            # Insert the content
+            content_lines = content.splitlines(keepends=True)
+            new_lines = lines[:insert_line] + content_lines + lines[insert_line:]
+            new_content = "".join(new_lines)
+
+            # Write back
+            file_path_obj.write_text(new_content, encoding="utf-8")
+
+            return {
+                "success": True,
+                "file_path": symbol_file,
+                "symbol": name_path,
+                "inserted_at_line": insert_line + 1,
+                "lines_inserted": len(content_lines),
+            }
+
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    def c4_rename_symbol(
+        self,
+        name_path: str,
+        file_path: str | None,
+        new_name: str,
+    ) -> dict[str, Any]:
+        """Rename a symbol across the entire codebase.
+
+        This finds all references to the symbol and renames them.
+
+        Args:
+            name_path: Current symbol name or qualified name
+            file_path: File containing the symbol definition (optional)
+            new_name: New name for the symbol
+
+        Returns:
+            Dict with success status and list of files modified
+        """
+        import re
+
+        from c4.docs.analyzer import CodeAnalyzer
+
+        try:
+            # First, find the symbol definition
+            symbol, symbol_file, error = self._get_symbol_by_name_path(
+                name_path, file_path
+            )
+            if error:
+                return {"success": False, "error": error}
+
+            # Get the simple name (last part of qualified name)
+            old_name = name_path.split(".")[-1]
+
+            # Validate new name
+            if not new_name.isidentifier():
+                return {"success": False, "error": f"Invalid identifier: {new_name}"}
+
+            # Create analyzer for finding references
+            analyzer = CodeAnalyzer()
+            analyzer.add_directory(
+                self.root,
+                recursive=True,
+                exclude_patterns=[
+                    "**/node_modules/**",
+                    "**/__pycache__/**",
+                    "**/.git/**",
+                    "**/venv/**",
+                    "**/.venv/**",
+                    "**/.c4/**",
+                    "**/.claude/**",
+                ],
+            )
+
+            # Find all references
+            references = analyzer.find_references(old_name)
+
+            # Group references by file
+            refs_by_file: dict[str, list] = {}
+            for ref in references:
+                fp = ref.location.file_path
+                if fp not in refs_by_file:
+                    refs_by_file[fp] = []
+                refs_by_file[fp].append(ref)
+
+            # Also include the definition file
+            if symbol_file not in refs_by_file:
+                refs_by_file[symbol_file] = []
+
+            # Perform replacements file by file
+            files_modified = []
+            total_replacements = 0
+
+            for fp in refs_by_file:
+                try:
+                    file_path_obj = Path(fp)
+                    file_content = file_path_obj.read_text(encoding="utf-8")
+
+                    # Use word boundary replacement to avoid partial matches
+                    pattern = r"\b" + re.escape(old_name) + r"\b"
+                    new_content, count = re.subn(pattern, new_name, file_content)
+
+                    if count > 0:
+                        file_path_obj.write_text(new_content, encoding="utf-8")
+                        files_modified.append({
+                            "file_path": fp,
+                            "replacements": count,
+                        })
+                        total_replacements += count
+
+                except Exception:
+                    # Log but continue with other files
+                    pass
+
+            return {
+                "success": True,
+                "old_name": old_name,
+                "new_name": new_name,
+                "files_modified": files_modified,
+                "total_files": len(files_modified),
+                "total_replacements": total_replacements,
+            }
+
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
     def check_and_trigger_checkpoint(self) -> dict[str, Any] | None:
         """
         Check if checkpoint conditions are met and trigger if so.
@@ -4235,7 +4596,8 @@ def create_server(project_root: Path | None = None) -> Server:
             ),
             Tool(
                 name="c4_discovery_complete",
-                description="Mark discovery phase as complete and transition to DESIGN state. Requires at least one specification to be saved.",
+                description="Mark discovery phase as complete and transition to DESIGN state. "
+                "Requires at least one specification to be saved.",
                 inputSchema={
                     "type": "object",
                     "properties": {},
@@ -4357,7 +4719,8 @@ def create_server(project_root: Path | None = None) -> Server:
             ),
             Tool(
                 name="c4_design_complete",
-                description="Mark design phase as complete and transition to PLAN state. Requires at least one design with selected option.",
+                description="Mark design phase as complete and transition to PLAN state. "
+                "Requires at least one design with selected option.",
                 inputSchema={
                     "type": "object",
                     "properties": {},
@@ -4417,6 +4780,100 @@ def create_server(project_root: Path | None = None) -> Server:
                         },
                     },
                     "required": [],
+                },
+            ),
+            Tool(
+                name="c4_replace_symbol_body",
+                description=(
+                    "Replace the body of a symbol (function, class, method). "
+                    "Returns details about the edit performed."
+                ),
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "name_path": {
+                            "type": "string",
+                            "description": "Symbol name or qualified name (e.g., 'MyClass.method')",
+                        },
+                        "file_path": {
+                            "type": "string",
+                            "description": "File containing the symbol (optional)",
+                        },
+                        "new_body": {
+                            "type": "string",
+                            "description": "New source code for the symbol body",
+                        },
+                    },
+                    "required": ["name_path", "new_body"],
+                },
+            ),
+            Tool(
+                name="c4_insert_before_symbol",
+                description="Insert content before a symbol definition.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "name_path": {
+                            "type": "string",
+                            "description": "Symbol name or qualified name",
+                        },
+                        "file_path": {
+                            "type": "string",
+                            "description": "File containing the symbol (optional)",
+                        },
+                        "content": {
+                            "type": "string",
+                            "description": "Content to insert before the symbol",
+                        },
+                    },
+                    "required": ["name_path", "content"],
+                },
+            ),
+            Tool(
+                name="c4_insert_after_symbol",
+                description="Insert content after a symbol definition.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "name_path": {
+                            "type": "string",
+                            "description": "Symbol name or qualified name",
+                        },
+                        "file_path": {
+                            "type": "string",
+                            "description": "File containing the symbol (optional)",
+                        },
+                        "content": {
+                            "type": "string",
+                            "description": "Content to insert after the symbol",
+                        },
+                    },
+                    "required": ["name_path", "content"],
+                },
+            ),
+            Tool(
+                name="c4_rename_symbol",
+                description=(
+                    "Rename a symbol across the entire codebase. "
+                    "Finds all references and renames them."
+                ),
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "name_path": {
+                            "type": "string",
+                            "description": "Current symbol name or qualified name",
+                        },
+                        "file_path": {
+                            "type": "string",
+                            "description": "File containing the symbol definition (optional)",
+                        },
+                        "new_name": {
+                            "type": "string",
+                            "description": "New name for the symbol",
+                        },
+                    },
+                    "required": ["name_path", "new_name"],
                 },
             ),
         ]
@@ -4575,6 +5032,30 @@ def create_server(project_root: Path | None = None) -> Server:
                     output_format=arguments.get("output_format", "json"),
                     from_agent=arguments.get("from_agent"),
                     to_agent=arguments.get("to_agent"),
+                )
+            elif name == "c4_replace_symbol_body":
+                result = daemon.c4_replace_symbol_body(
+                    name_path=arguments.get("name_path", ""),
+                    file_path=arguments.get("file_path"),
+                    new_body=arguments.get("new_body", ""),
+                )
+            elif name == "c4_insert_before_symbol":
+                result = daemon.c4_insert_before_symbol(
+                    name_path=arguments.get("name_path", ""),
+                    file_path=arguments.get("file_path"),
+                    content=arguments.get("content", ""),
+                )
+            elif name == "c4_insert_after_symbol":
+                result = daemon.c4_insert_after_symbol(
+                    name_path=arguments.get("name_path", ""),
+                    file_path=arguments.get("file_path"),
+                    content=arguments.get("content", ""),
+                )
+            elif name == "c4_rename_symbol":
+                result = daemon.c4_rename_symbol(
+                    name_path=arguments.get("name_path", ""),
+                    file_path=arguments.get("file_path"),
+                    new_name=arguments.get("new_name", ""),
                 )
             else:
                 result = {"error": f"Unknown tool: {name}"}
