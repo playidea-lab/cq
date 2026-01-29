@@ -280,7 +280,7 @@ uv run pytest tests/unit/test_skill_matcher.py tests/unit/test_agent_graph_loade
 
 **목표**: 에디터에서 직접 코드 인텔리전스 제공 (MCP와 독립)
 
-**구현 완료 (Phase 1)**:
+**구현 완료 (Phase 1 & 2)**:
 - **pygls 기반 LSP 서버** (`c4/lsp/server.py`)
   - `C4LSPServer` 클래스 - CodeAnalyzer 통합
   - stdio 및 TCP 모드 지원
@@ -290,6 +290,12 @@ uv run pytest tests/unit/test_skill_matcher.py tests/unit/test_agent_graph_loade
   - `textDocument/references` - 참조 찾기
   - `textDocument/documentSymbol` - 파일 아웃라인
   - `workspace/symbol` - 전역 심볼 검색
+  - `textDocument/completion` - 자동 완성 (Phase 2)
+  - `completionItem/resolve` - 완성 항목 상세 정보 (Phase 2)
+- **MCP 통합 도구** (Phase 2):
+  - `c4_lsp_start` - LSP 서버 시작 (TCP 모드, 백그라운드 스레드)
+  - `c4_lsp_status` - LSP 서버 상태 조회
+  - `c4_lsp_stop` - LSP 서버 중지
 - **CLI 엔트리포인트**: `uv run c4-lsp` 또는 `uv run python -m c4.lsp`
 
 **아키텍처**:

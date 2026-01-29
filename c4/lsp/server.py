@@ -45,6 +45,26 @@ def _symbol_kind_to_lsp(kind: SymbolKind) -> int:
     return mapping.get(kind, 13)  # Default to Variable
 
 
+def _symbol_kind_to_completion_kind(kind: SymbolKind) -> int:
+    """Convert C4 SymbolKind to LSP CompletionItemKind."""
+    # LSP CompletionItemKind values
+    mapping = {
+        SymbolKind.MODULE: 9,      # Module
+        SymbolKind.CLASS: 7,       # Class
+        SymbolKind.METHOD: 2,      # Method
+        SymbolKind.PROPERTY: 10,   # Property
+        SymbolKind.FUNCTION: 3,    # Function
+        SymbolKind.VARIABLE: 6,    # Variable
+        SymbolKind.CONSTANT: 21,   # Constant
+        SymbolKind.INTERFACE: 8,   # Interface
+        SymbolKind.ENUM: 13,       # Enum
+        SymbolKind.TYPE_ALIAS: 25, # TypeParameter
+        SymbolKind.IMPORT: 9,      # Module
+        SymbolKind.PARAMETER: 6,   # Variable
+    }
+    return mapping.get(kind, 6)  # Default to Variable
+
+
 def _location_to_lsp_range(loc: Location) -> "lsp.Range":
     """Convert C4 Location to LSP Range."""
     return lsp.Range(
@@ -132,6 +152,10 @@ class C4LSPServer:
                     references_provider=True,
                     document_symbol_provider=True,
                     workspace_symbol_provider=True,
+                    completion_provider=lsp.CompletionOptions(
+                        trigger_characters=[".", "_"],
+                        resolve_provider=True,
+                    ),
                 ),
                 server_info=lsp.ServerInfo(
                     name=server.name,
@@ -218,6 +242,20 @@ class C4LSPServer:
         ) -> list[lsp.SymbolInformation] | None:
             """Handle workspace symbol request."""
             return self._handle_workspace_symbol(params)
+
+        @server.feature(lsp.TEXT_DOCUMENT_COMPLETION)
+        def completion(
+            params: lsp.CompletionParams,
+        ) -> lsp.CompletionList | None:
+            """Handle completion request."""
+            return self._handle_completion(params)
+
+        @server.feature(lsp.COMPLETION_ITEM_RESOLVE)
+        def completion_resolve(
+            item: lsp.CompletionItem,
+        ) -> lsp.CompletionItem:
+            """Handle completion item resolve request."""
+            return self._handle_completion_resolve(item)
 
     def _index_workspace(self) -> None:
         """Index all files in the workspace."""
@@ -394,6 +432,132 @@ class C4LSPServer:
             )
 
         return result
+
+    def _get_prefix_at_position(
+        self,
+        uri: str,
+        position: lsp.Position,
+    ) -> str:
+        """Get the word prefix at a given position (for completion)."""
+        file_path = uri.replace("file://", "")
+
+        content = self._analyzer._file_contents.get(file_path)
+        if not content:
+            return ""
+
+        lines = content.split("\n")
+        if position.line >= len(lines):
+            return ""
+
+        line = lines[position.line]
+        if position.character > len(line):
+            return ""
+
+        # Find prefix start (walk backwards)
+        start = position.character
+        while start > 0 and (line[start - 1].isalnum() or line[start - 1] == "_"):
+            start -= 1
+
+        return line[start:position.character]
+
+    def _handle_completion(
+        self,
+        params: lsp.CompletionParams,
+    ) -> lsp.CompletionList | None:
+        """Handle textDocument/completion request."""
+        prefix = self._get_prefix_at_position(
+            params.text_document.uri,
+            params.position,
+        )
+
+        # Get all symbols and filter by prefix
+        all_symbols = self._analyzer.get_all_symbols()
+        if not all_symbols:
+            return None
+
+        items = []
+        seen = set()  # Avoid duplicates
+
+        for symbol in all_symbols:
+            # Filter by prefix (case-insensitive)
+            if prefix and not symbol.name.lower().startswith(prefix.lower()):
+                continue
+
+            # Skip duplicates
+            if symbol.name in seen:
+                continue
+            seen.add(symbol.name)
+
+            # Create completion item
+            item = lsp.CompletionItem(
+                label=symbol.name,
+                kind=lsp.CompletionItemKind(_symbol_kind_to_completion_kind(symbol.kind)),
+                detail=symbol.signature or f"{symbol.kind.value} in {symbol.location.file_path}",
+                documentation=lsp.MarkupContent(
+                    kind=lsp.MarkupKind.Markdown,
+                    value=symbol.docstring or "",
+                ) if symbol.docstring else None,
+                insert_text=symbol.name,
+                data={
+                    "name": symbol.name,
+                    "file_path": symbol.location.file_path,
+                    "line": symbol.location.start_line,
+                },
+            )
+            items.append(item)
+
+            # Limit results
+            if len(items) >= 50:
+                break
+
+        return lsp.CompletionList(
+            is_incomplete=len(items) >= 50,
+            items=items,
+        )
+
+    def _handle_completion_resolve(
+        self,
+        item: lsp.CompletionItem,
+    ) -> lsp.CompletionItem:
+        """Handle completionItem/resolve request.
+
+        Provides additional details for a completion item.
+        """
+        if not item.data:
+            return item
+
+        name = item.data.get("name")
+        if not name:
+            return item
+
+        # Find the symbol for more details
+        symbols = self._analyzer.find_symbol(name, exact_match=True)
+        if not symbols:
+            return item
+
+        symbol = symbols[0]
+
+        # Build detailed documentation
+        parts = []
+
+        # Signature
+        if symbol.signature:
+            parts.append(f"```python\n{symbol.signature}\n```")
+
+        # Docstring
+        if symbol.docstring:
+            parts.append(f"\n{symbol.docstring}")
+
+        # Location
+        parts.append(f"\n---\n*Defined in {symbol.location.file_path}:{symbol.location.start_line}*")
+
+        if parts:
+            item.documentation = lsp.MarkupContent(
+                kind=lsp.MarkupKind.Markdown,
+                value="\n".join(parts),
+            )
+
+        return item
 
     def start_io(self) -> None:
         """Start the server in stdio mode."""

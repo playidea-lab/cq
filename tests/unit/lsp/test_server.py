@@ -14,6 +14,7 @@ try:
         C4LSPServer,
         _location_to_lsp_location,
         _location_to_lsp_range,
+        _symbol_kind_to_completion_kind,
         _symbol_kind_to_lsp,
     )
 
@@ -325,3 +326,211 @@ class TestWorkspaceSymbolHandler:
         result = server._handle_workspace_symbol(params)
 
         assert result is None
+
+
+class TestCompletionKindConversion:
+    """Tests for CompletionItemKind conversion."""
+
+    def test_function_to_completion_kind(self):
+        """Function should map to CompletionItemKind.Function (3)."""
+        assert _symbol_kind_to_completion_kind(SymbolKind.FUNCTION) == 3
+
+    def test_class_to_completion_kind(self):
+        """Class should map to CompletionItemKind.Class (7)."""
+        assert _symbol_kind_to_completion_kind(SymbolKind.CLASS) == 7
+
+    def test_method_to_completion_kind(self):
+        """Method should map to CompletionItemKind.Method (2)."""
+        assert _symbol_kind_to_completion_kind(SymbolKind.METHOD) == 2
+
+    def test_variable_to_completion_kind(self):
+        """Variable should map to CompletionItemKind.Variable (6)."""
+        assert _symbol_kind_to_completion_kind(SymbolKind.VARIABLE) == 6
+
+    def test_constant_to_completion_kind(self):
+        """Constant should map to CompletionItemKind.Constant (21)."""
+        assert _symbol_kind_to_completion_kind(SymbolKind.CONSTANT) == 21
+
+
+class TestCompletionHandler:
+    """Tests for completion request handling."""
+
+    def test_completion_basic(self):
+        """Completion should return matching symbols."""
+        server = C4LSPServer()
+
+        test_content = '''def process_data():
+    pass
+
+def process_file():
+    pass
+
+def other_func():
+    pass
+'''
+        server.analyzer.add_file("/test/file.py", test_content)
+
+        params = lsp.CompletionParams(
+            text_document=lsp.TextDocumentIdentifier(uri="file:///test/file.py"),
+            position=lsp.Position(line=9, character=4),  # After typing "proc"
+        )
+
+        # Simulate typing "proc"
+        server.analyzer._file_contents["/test/file.py"] += "\nproc"
+
+        result = server._handle_completion(params)
+
+        assert result is not None
+        assert isinstance(result, lsp.CompletionList)
+
+        # Should find process_data and process_file
+        names = [item.label for item in result.items]
+        assert "process_data" in names
+        assert "process_file" in names
+
+    def test_completion_empty_prefix(self):
+        """Completion with empty prefix should return all symbols."""
+        server = C4LSPServer()
+
+        test_content = '''def alpha(): pass
+def beta(): pass
+'''
+        server.analyzer.add_file("/test/file.py", test_content)
+
+        params = lsp.CompletionParams(
+            text_document=lsp.TextDocumentIdentifier(uri="file:///test/file.py"),
+            position=lsp.Position(line=2, character=0),
+        )
+
+        result = server._handle_completion(params)
+
+        assert result is not None
+        names = [item.label for item in result.items]
+        assert "alpha" in names
+        assert "beta" in names
+
+    def test_completion_case_insensitive(self):
+        """Completion should be case-insensitive."""
+        server = C4LSPServer()
+
+        test_content = '''def MyFunction(): pass
+def myfunction(): pass
+'''
+        server.analyzer.add_file("/test/file.py", test_content)
+
+        # Simulate typing "my"
+        server.analyzer._file_contents["/test/file.py"] += "\nmy"
+
+        params = lsp.CompletionParams(
+            text_document=lsp.TextDocumentIdentifier(uri="file:///test/file.py"),
+            position=lsp.Position(line=2, character=2),
+        )
+
+        result = server._handle_completion(params)
+
+        assert result is not None
+        names = [item.label for item in result.items]
+        # Both should match (case-insensitive)
+        assert "MyFunction" in names
+        assert "myfunction" in names
+
+    def test_completion_with_detail(self):
+        """Completion items should have detail info."""
+        server = C4LSPServer()
+
+        test_content = '''def greet(name):
+    """Say hello."""
+    pass
+'''
+        server.analyzer.add_file("/test/file.py", test_content)
+
+        params = lsp.CompletionParams(
+            text_document=lsp.TextDocumentIdentifier(uri="file:///test/file.py"),
+            position=lsp.Position(line=3, character=0),
+        )
+
+        result = server._handle_completion(params)
+
+        assert result is not None
+        greet_item = next((i for i in result.items if i.label == "greet"), None)
+        assert greet_item is not None
+        assert greet_item.detail is not None
+
+    def test_completion_resolve(self):
+        """Completion resolve should add documentation."""
+        server = C4LSPServer()
+
+        test_content = '''def greet(name):
+    """Say hello to someone."""
+    pass
+'''
+        server.analyzer.add_file("/test/file.py", test_content)
+
+        # Create a completion item to resolve
+        item = lsp.CompletionItem(
+            label="greet",
+            data={"name": "greet", "file_path": "/test/file.py", "line": 1},
+        )
+
+        resolved = server._handle_completion_resolve(item)
+
+        assert resolved.documentation is not None
+        assert "greet" in resolved.documentation.value or "Say hello" in resolved.documentation.value
+
+    def test_completion_limit_results(self):
+        """Completion should limit results to avoid performance issues."""
+        server = C4LSPServer()
+
+        # Create many symbols
+        funcs = "\n".join([f"def func_{i}(): pass" for i in range(100)])
+        server.analyzer.add_file("/test/file.py", funcs)
+
+        params = lsp.CompletionParams(
+            text_document=lsp.TextDocumentIdentifier(uri="file:///test/file.py"),
+            position=lsp.Position(line=100, character=0),
+        )
+
+        result = server._handle_completion(params)
+
+        assert result is not None
+        # Should be limited to 50
+        assert len(result.items) <= 50
+        assert result.is_incomplete is True
+
+
+class TestGetPrefixAtPosition:
+    """Tests for _get_prefix_at_position helper."""
+
+    def test_get_prefix_basic(self):
+        """Should get prefix at cursor."""
+        server = C4LSPServer()
+
+        test_content = "hello_world"
+        server.analyzer.add_file("/test/file.py", test_content)
+
+        # Cursor after "hello"
+        position = lsp.Position(line=0, character=5)
+        prefix = server._get_prefix_at_position("file:///test/file.py", position)
+
+        assert prefix == "hello"
+
+    def test_get_prefix_empty(self):
+        """Should return empty string at line start."""
+        server = C4LSPServer()
+
+        test_content = "hello"
+        server.analyzer.add_file("/test/file.py", test_content)
+
+        position = lsp.Position(line=0, character=0)
+        prefix = server._get_prefix_at_position("file:///test/file.py", position)
+
+        assert prefix == ""
+
+    def test_get_prefix_nonexistent_file(self):
+        """Should return empty string for non-existent file."""
+        server = C4LSPServer()
+
+        position = lsp.Position(line=0, character=5)
+        prefix = server._get_prefix_at_position("file:///nonexistent.py", position)
+
+        assert prefix == ""

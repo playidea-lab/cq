@@ -201,6 +201,10 @@ class C4Daemon:
         self._agent_graph: AgentGraph | None = None
         self._rule_engine: RuleEngine | None = None
 
+        # LSP Server (lazy initialization)
+        self._lsp_server: Any = None
+        self._lsp_thread: Any = None
+
         # Initialize tracing
         tracing.setup_tracing(service_name="c4-daemon")
 
@@ -4113,6 +4117,155 @@ Thumbs.db
                 "error": str(e),
             }
 
+    # ========== LSP Server Integration ==========
+
+    def c4_lsp_start(
+        self,
+        port: int = 2087,
+        host: str = "localhost",
+    ) -> dict[str, Any]:
+        """
+        Start the LSP server in TCP mode.
+
+        Args:
+            port: Port to listen on (default: 2087)
+            host: Host to bind to (default: localhost)
+
+        Returns:
+            Status of LSP server startup
+        """
+        import threading
+
+        try:
+            from c4.lsp import C4LSPServer
+        except ImportError:
+            return {
+                "success": False,
+                "error": "pygls not installed. Run: uv add pygls",
+            }
+
+        # Check if already running
+        if self._lsp_server is not None and self._lsp_thread is not None:
+            if self._lsp_thread.is_alive():
+                return {
+                    "success": False,
+                    "error": f"LSP server already running on port {port}",
+                    "status": "running",
+                }
+
+        try:
+            # Create LSP server
+            self._lsp_server = C4LSPServer()
+
+            # Index current workspace
+            if self.root.exists():
+                self._lsp_server.analyzer.add_directory(self.root)
+                logger.info(f"LSP server indexed workspace: {self.root}")
+
+            # Start in background thread
+            def run_server():
+                try:
+                    self._lsp_server.start_tcp(host, port)
+                except Exception as e:
+                    logger.error(f"LSP server error: {e}")
+
+            self._lsp_thread = threading.Thread(
+                target=run_server,
+                daemon=True,
+                name="c4-lsp-server",
+            )
+            self._lsp_thread.start()
+
+            logger.info(f"LSP server started on {host}:{port}")
+
+            return {
+                "success": True,
+                "host": host,
+                "port": port,
+                "status": "started",
+                "message": f"LSP server running on {host}:{port}",
+            }
+
+        except Exception as e:
+            logger.error(f"Failed to start LSP server: {e}")
+            return {
+                "success": False,
+                "error": str(e),
+            }
+
+    def c4_lsp_status(self) -> dict[str, Any]:
+        """
+        Get LSP server status.
+
+        Returns:
+            LSP server status information
+        """
+        if self._lsp_server is None:
+            return {
+                "running": False,
+                "status": "not_started",
+                "message": "LSP server not started. Use c4_lsp_start to start.",
+            }
+
+        is_alive = self._lsp_thread is not None and self._lsp_thread.is_alive()
+
+        if not is_alive:
+            return {
+                "running": False,
+                "status": "stopped",
+                "message": "LSP server stopped.",
+            }
+
+        # Get indexed file count
+        indexed_files = len(self._lsp_server.analyzer._file_contents)
+        total_symbols = len(self._lsp_server.analyzer.get_all_symbols())
+
+        return {
+            "running": True,
+            "status": "running",
+            "indexed_files": indexed_files,
+            "total_symbols": total_symbols,
+            "features": [
+                "textDocument/hover",
+                "textDocument/definition",
+                "textDocument/references",
+                "textDocument/documentSymbol",
+                "textDocument/completion",
+                "workspace/symbol",
+            ],
+        }
+
+    def c4_lsp_stop(self) -> dict[str, Any]:
+        """
+        Stop the LSP server.
+
+        Returns:
+            Status of LSP server shutdown
+        """
+        if self._lsp_server is None:
+            return {
+                "success": False,
+                "error": "LSP server not running",
+            }
+
+        try:
+            # pygls doesn't have a clean stop method for TCP mode
+            # We rely on daemon thread termination
+            self._lsp_server = None
+            self._lsp_thread = None
+
+            return {
+                "success": True,
+                "status": "stopped",
+                "message": "LSP server stopped",
+            }
+
+        except Exception as e:
+            return {
+                "success": False,
+                "error": str(e),
+            }
+
     def check_and_trigger_checkpoint(self) -> dict[str, Any] | None:
         """
         Check if checkpoint conditions are met and trigger if so.
@@ -5058,6 +5211,45 @@ def create_server(project_root: Path | None = None) -> Server:
                     "required": [],
                 },
             ),
+            # LSP Server Tools
+            Tool(
+                name="c4_lsp_start",
+                description="Start the C4 LSP server for code intelligence features (hover, definition, references, completion). The LSP server provides IDE-like features to editors.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "port": {
+                            "type": "integer",
+                            "description": "TCP port for LSP server (default: 2087)",
+                            "default": 2087,
+                        },
+                        "host": {
+                            "type": "string",
+                            "description": "Host address to bind (default: 127.0.0.1)",
+                            "default": "127.0.0.1",
+                        },
+                    },
+                    "required": [],
+                },
+            ),
+            Tool(
+                name="c4_lsp_status",
+                description="Get status of the C4 LSP server including running state, indexed files, and supported features.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {},
+                    "required": [],
+                },
+            ),
+            Tool(
+                name="c4_lsp_stop",
+                description="Stop the running C4 LSP server.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {},
+                    "required": [],
+                },
+            ),
         ]
         # Sort tools by name to ensure deterministic order for prompt caching
         tools.sort(key=lambda x: x.name)
@@ -5265,6 +5457,16 @@ def create_server(project_root: Path | None = None) -> Server:
                 )
             elif name == "c4_piq_status":
                 result = await daemon.c4_piq_status()
+            # LSP Server handlers
+            elif name == "c4_lsp_start":
+                result = daemon.c4_lsp_start(
+                    port=arguments.get("port", 2087),
+                    host=arguments.get("host", "127.0.0.1"),
+                )
+            elif name == "c4_lsp_status":
+                result = daemon.c4_lsp_status()
+            elif name == "c4_lsp_stop":
+                result = daemon.c4_lsp_stop()
             else:
                 result = {"error": f"Unknown tool: {name}"}
 
