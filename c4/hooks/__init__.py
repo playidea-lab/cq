@@ -50,6 +50,8 @@ SOCKET_BUFFER_SIZE = 8192
 FALLBACK_COMMANDS = {
     "lint": "uv run ruff check .",
     "format": "uv run ruff format --check .",
+    "unit": "uv run pytest tests/unit/ -x -q",
+    "test": "uv run pytest tests/unit/ -x -q",
 }
 
 
@@ -485,16 +487,170 @@ def get_pre_commit_status() -> dict[str, Any]:
 
 
 # =============================================================================
+# Post-Commit Hook Installation
+# =============================================================================
+
+
+def get_post_commit_template() -> str:
+    """Get the post-commit hook template content.
+
+    First tries to read from templates/git-hooks/post-commit,
+    then falls back to embedded template.
+
+    Returns:
+        Post-commit hook script content.
+    """
+    # Try to read from templates directory
+    c4_install_dir = get_c4_install_dir()
+    template_path = c4_install_dir / "templates" / "git-hooks" / "post-commit"
+
+    if template_path.exists():
+        return template_path.read_text()
+
+    # Fallback to embedded template
+    return '''#!/bin/bash
+# C4 Git Hook: post-commit
+# Runs tests after commit completion
+
+# Skip if not in a C4 project
+if [[ ! -f ".c4/state.json" ]] && [[ ! -f ".c4/config.yaml" ]]; then
+    exit 0
+fi
+
+echo "C4: Running post-commit tests..." >&2
+
+# Background execution option
+C4_POST_COMMIT_BACKGROUND="${C4_POST_COMMIT_BACKGROUND:-false}"
+
+# Try uv first, then pytest directly
+if command -v uv &> /dev/null; then
+    if uv run pytest tests/unit/ -x -q 2>/dev/null; then
+        echo "C4 SUCCESS: Tests passed." >&2
+    else
+        echo "C4 WARNING: Tests failed. Commit completed, but tests need attention." >&2
+    fi
+elif command -v pytest &> /dev/null; then
+    if pytest tests/unit/ -x -q 2>/dev/null; then
+        echo "C4 SUCCESS: Tests passed." >&2
+    else
+        echo "C4 WARNING: Tests failed. Commit completed, but tests need attention." >&2
+    fi
+else
+    echo "C4: pytest not found, skipping post-commit tests." >&2
+fi
+
+# Always exit 0 - commit is already done
+exit 0
+'''
+
+
+def install_post_commit_hook(force: bool = False) -> tuple[bool, str]:
+    """Install the post-commit hook to the git repository.
+
+    Args:
+        force: If True, overwrite existing hooks.
+
+    Returns:
+        Tuple of (success, message).
+    """
+    hooks_dir = get_git_hooks_dir()
+    if hooks_dir is None:
+        return False, "Not in a git repository"
+
+    hooks_dir.mkdir(parents=True, exist_ok=True)
+    hook_path = hooks_dir / "post-commit"
+
+    # Check for existing hook
+    if hook_path.exists() and not force:
+        existing_content = hook_path.read_text()
+        if "C4 Git Hook" in existing_content or "C4:" in existing_content:
+            return True, "post-commit: Already installed (C4)"
+        else:
+            return False, "post-commit: Existing hook found (use --force to overwrite)"
+
+    # Get template content
+    content = get_post_commit_template()
+
+    # Write hook
+    hook_path.write_text(content)
+
+    # Make executable
+    hook_path.chmod(hook_path.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+
+    return True, "post-commit: Installed"
+
+
+def uninstall_post_commit_hook() -> tuple[bool, str]:
+    """Uninstall the post-commit hook from the git repository.
+
+    Only removes hooks installed by C4.
+
+    Returns:
+        Tuple of (success, message).
+    """
+    hooks_dir = get_git_hooks_dir()
+    if hooks_dir is None:
+        return False, "Not in a git repository"
+
+    hook_path = hooks_dir / "post-commit"
+
+    if not hook_path.exists():
+        return True, "post-commit: Not installed"
+
+    # Check if it's our hook
+    content = hook_path.read_text()
+    if "C4 Git Hook" not in content and "C4:" not in content:
+        return False, "post-commit: Not a C4 hook (skipped)"
+
+    hook_path.unlink()
+    return True, "post-commit: Uninstalled"
+
+
+def get_post_commit_status() -> dict[str, Any]:
+    """Get the status of the post-commit hook.
+
+    Returns:
+        Dict with status information.
+    """
+    hooks_dir = get_git_hooks_dir()
+    if hooks_dir is None:
+        return {"installed": False, "is_c4": False, "error": "Not in git repo"}
+
+    hook_path = hooks_dir / "post-commit"
+
+    if not hook_path.exists():
+        return {"installed": False, "is_c4": False}
+
+    content = hook_path.read_text()
+    is_c4 = "C4 Git Hook" in content or "C4:" in content
+    is_executable = os.access(hook_path, os.X_OK)
+
+    return {
+        "installed": True,
+        "is_c4": is_c4,
+        "executable": is_executable,
+        "path": str(hook_path),
+    }
+
+
+# =============================================================================
 # Module Exports
 # =============================================================================
 
 __all__ = [
     "HookClient",
     "ValidationResult",
+    # Pre-commit hook
     "install_pre_commit_hook",
     "uninstall_pre_commit_hook",
     "get_pre_commit_status",
     "get_pre_commit_template",
+    # Post-commit hook
+    "install_post_commit_hook",
+    "uninstall_post_commit_hook",
+    "get_post_commit_status",
+    "get_post_commit_template",
+    # Utilities
     "get_git_hooks_dir",
     "get_c4_install_dir",
     "DEFAULT_SOCKET_PATH",
