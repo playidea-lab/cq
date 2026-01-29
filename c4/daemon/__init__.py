@@ -2,6 +2,15 @@
 
 from .events import EventBus
 from .git_ops import GitOperations, GitResult
+from .health import (
+    HealthMonitor,
+    HealthMonitorConfig,
+    OverallHealth,
+    ServiceHealth,
+    ServiceStatus,
+    check_port_available,
+    check_service_reachable,
+)
 from .lifecycle import DaemonInfo, DaemonLifecycle, DaemonStatus
 from .safety import SafetyGuard
 from .supervisor_loop import SupervisorLoop, SupervisorLoopManager
@@ -20,7 +29,12 @@ __all__ = [
     "EventBus",
     "GitOperations",
     "GitResult",
+    "HealthMonitor",
+    "HealthMonitorConfig",
+    "OverallHealth",
     "SafetyGuard",
+    "ServiceHealth",
+    "ServiceStatus",
     "SupervisorLoop",
     "SupervisorLoopManager",
     "TaskAssignment",
@@ -28,4 +42,6 @@ __all__ = [
     "TaskDispatcher",
     "TaskPriority",
     "WorkerManager",
+    "check_port_available",
+    "check_service_reachable",
 ]
