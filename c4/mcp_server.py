@@ -4280,6 +4280,172 @@ Thumbs.db
                 "error": str(e),
             }
 
+    # ========== Git Worktree Integration ==========
+
+    def c4_worktree_status(self, worker_id: str | None = None) -> dict[str, Any]:
+        """
+        Get Git worktree status.
+
+        Args:
+            worker_id: Specific worker to check (None = list all)
+
+        Returns:
+            Worktree status information
+        """
+        git_ops = GitOperations(self.root)
+
+        if not git_ops.is_git_repo():
+            return {
+                "success": False,
+                "error": "Not a Git repository",
+            }
+
+        if worker_id:
+            # Get specific worktree status
+            status = git_ops.get_worktree_status(worker_id)
+            return {
+                "success": True,
+                "worker_id": worker_id,
+                **status,
+            }
+        else:
+            # List all worktrees
+            worktrees = git_ops.list_worktrees()
+            c4_worktrees = [
+                wt for wt in worktrees
+                if ".c4/worktrees" in wt.get("path", "")
+            ]
+            return {
+                "success": True,
+                "total_worktrees": len(worktrees),
+                "c4_worktrees": len(c4_worktrees),
+                "worktrees": c4_worktrees,
+            }
+
+    def c4_worktree_create(
+        self,
+        worker_id: str,
+        branch: str | None = None,
+        task_id: str | None = None,
+    ) -> dict[str, Any]:
+        """
+        Create a Git worktree for a worker.
+
+        Args:
+            worker_id: Worker identifier for the worktree directory
+            branch: Branch name (default: c4/w-{worker_id} or c4/w-{task_id})
+            task_id: Optional task ID for branch naming
+
+        Returns:
+            Worktree creation result
+        """
+        git_ops = GitOperations(self.root)
+
+        if not git_ops.is_git_repo():
+            return {
+                "success": False,
+                "error": "Not a Git repository",
+            }
+
+        # Determine branch name
+        if branch is None:
+            if task_id:
+                branch = f"c4/w-{task_id}"
+            else:
+                branch = f"c4/w-{worker_id}"
+
+        # Get base branch from config
+        base_branch = self.config.get_work_branch() if self.config else "main"
+
+        result = git_ops.create_worktree(worker_id, branch, base_branch=base_branch)
+
+        if result.success:
+            worktree_path = git_ops.get_worktree_path(worker_id)
+            return {
+                "success": True,
+                "worker_id": worker_id,
+                "branch": branch,
+                "path": str(worktree_path),
+                "sha": result.sha,
+                "message": result.message,
+            }
+        else:
+            return {
+                "success": False,
+                "error": result.message,
+            }
+
+    def c4_worktree_remove(
+        self,
+        worker_id: str,
+        force: bool = False,
+    ) -> dict[str, Any]:
+        """
+        Remove a Git worktree.
+
+        Args:
+            worker_id: Worker identifier
+            force: Force removal even with uncommitted changes
+
+        Returns:
+            Removal result
+        """
+        git_ops = GitOperations(self.root)
+
+        if not git_ops.is_git_repo():
+            return {
+                "success": False,
+                "error": "Not a Git repository",
+            }
+
+        result = git_ops.remove_worktree(worker_id, force=force)
+
+        return {
+            "success": result.success,
+            "worker_id": worker_id,
+            "message": result.message,
+        }
+
+    def c4_worktree_cleanup(
+        self,
+        keep_active: bool = True,
+    ) -> dict[str, Any]:
+        """
+        Clean up unused worktrees.
+
+        Args:
+            keep_active: If True, keep worktrees for active workers
+
+        Returns:
+            Cleanup result
+        """
+        git_ops = GitOperations(self.root)
+
+        if not git_ops.is_git_repo():
+            return {
+                "success": False,
+                "error": "Not a Git repository",
+            }
+
+        # Get active workers if keeping them
+        keep_workers = None
+        if keep_active and self.state_machine:
+            state = self.state_machine.state
+            # Keep workers that have assigned tasks
+            keep_workers = [
+                task.assigned_to
+                for task in state.queue.in_progress
+                if task.assigned_to
+            ]
+
+        result = git_ops.cleanup_worktrees(keep_workers=keep_workers)
+
+        return {
+            "success": result.success,
+            "message": result.message,
+            "kept_workers": keep_workers or [],
+        }
+
     def check_and_trigger_checkpoint(self) -> dict[str, Any] | None:
         """
         Check if checkpoint conditions are met and trigger if so.
