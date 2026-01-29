@@ -11,6 +11,7 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
+from . import git_hooks
 from .hooks import get_c4_install_dir, install_all_hooks
 from .mcp_server import C4Daemon
 from .models import ProjectStatus, Task
@@ -539,7 +540,18 @@ def init(
             console.print("[dim]Installing Claude Code hooks...[/dim]")
             hook_results = install_all_hooks()
             if not all(hook_results.values()):
-                console.print("[yellow]Warning:[/yellow] Some hooks may not have been installed")
+                console.print(
+                    "[yellow]Warning:[/yellow] Some Claude Code hooks may not have been installed"
+                )
+
+            # Install Git hooks
+            console.print("[dim]Installing Git hooks...[/dim]")
+            git_hook_results = git_hooks.install_all_hooks(project_path)
+            for hook_name, (success, msg) in git_hook_results.items():
+                if success:
+                    console.print(f"  [green]✓[/green] {hook_name}")
+                else:
+                    console.print(f"  [yellow]![/yellow] {hook_name}: {msg}")
 
         # Success message
         console.print()
@@ -559,11 +571,13 @@ def init(
         console.print("  .claude/settings.json   - Permissions & MCP auto-approval")
         if not skip_hooks:
             console.print("  ~/.claude/hooks/        - Stop & security hooks")
+            console.print("  .git/hooks/             - Git hooks (pre-commit, commit-msg)")
         console.print()
 
-        console.print("[bold]🔒 Security:[/bold]")
+        console.print("[bold]🔒 Security & Workflow:[/bold]")
         console.print("  - Bash Security Hook: Blocks dangerous commands")
         console.print("  - Stop Hook: Prevents exit during active work")
+        console.print("  - Git Hooks: Lint validation, Task ID tracking")
         console.print()
 
         # Restart notice if .mcp.json was newly created
@@ -1682,7 +1696,7 @@ def skill_info(
     console.print()
     console.print(f"[bold cyan]{skill.id}[/bold cyan] - {skill.name}")
     console.print()
-    console.print(f"[bold]Description:[/bold]")
+    console.print("[bold]Description:[/bold]")
     console.print(f"  {skill.description}")
     console.print()
 
@@ -1694,13 +1708,13 @@ def skill_info(
     console.print()
 
     # Capabilities
-    console.print(f"[bold]Capabilities:[/bold]")
+    console.print("[bold]Capabilities:[/bold]")
     for cap in skill.capabilities:
         console.print(f"  - {cap}")
     console.print()
 
     # Triggers
-    console.print(f"[bold]Triggers:[/bold]")
+    console.print("[bold]Triggers:[/bold]")
     if skill.triggers.keywords:
         console.print(f"  Keywords: {', '.join(skill.triggers.keywords)}")
     if skill.triggers.task_types:
@@ -1719,7 +1733,7 @@ def skill_info(
 
     # Dependencies
     if skill.dependencies:
-        console.print(f"[bold]Dependencies:[/bold]")
+        console.print("[bold]Dependencies:[/bold]")
         if skill.dependencies.required:
             console.print(f"  Required: {', '.join(skill.dependencies.required)}")
         if skill.dependencies.optional:
@@ -1728,21 +1742,21 @@ def skill_info(
 
     # Metadata
     if skill.metadata:
-        console.print(f"[bold]Metadata:[/bold]")
+        console.print("[bold]Metadata:[/bold]")
         console.print(f"  Version: {skill.metadata.version}")
         if skill.metadata.author:
             console.print(f"  Author: {skill.metadata.author}")
         if skill.metadata.tags:
             console.print(f"  Tags: {', '.join(skill.metadata.tags)}")
         if skill.metadata.deprecated:
-            console.print(f"  [red]DEPRECATED[/red]")
+            console.print("  [red]DEPRECATED[/red]")
             if skill.metadata.deprecated_by:
                 console.print(f"  Replaced by: {skill.metadata.deprecated_by}")
 
     # Related skills
     if skill.complementary_skills or skill.leads_to or skill.prerequisites:
         console.print()
-        console.print(f"[bold]Related Skills:[/bold]")
+        console.print("[bold]Related Skills:[/bold]")
         if skill.prerequisites:
             console.print(f"  Prerequisites: {', '.join(skill.prerequisites)}")
         if skill.complementary_skills:
