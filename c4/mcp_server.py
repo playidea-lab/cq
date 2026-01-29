@@ -2996,12 +2996,28 @@ Thumbs.db
                 # Log but don't fail - supervisor can be started manually
                 logger.warning(f"Failed to auto-start supervisor loop: {e}")
 
+        # Auto-start LSP server for code intelligence
+        lsp_started = False
+        lsp_port = None
+        if self._lsp_server is None or self._lsp_thread is None or not self._lsp_thread.is_alive():
+            try:
+                lsp_result = self.c4_lsp_start()
+                if lsp_result.get("success"):
+                    lsp_started = True
+                    lsp_port = lsp_result.get("port")
+                    logger.info(f"LSP server auto-started on port {lsp_port}")
+            except Exception as e:
+                # Log but don't fail - LSP can be started manually
+                logger.warning(f"Failed to auto-start LSP server: {e}")
+
         return {
             "success": True,
             "message": f"Transitioned from {current_status} to EXECUTE",
             "status": new_state.status.value,
             "pending_tasks": len(new_state.queue.pending),
             "supervisor_loop_started": supervisor_started,
+            "lsp_server_started": lsp_started,
+            "lsp_port": lsp_port,
             "work_branch": work_branch,
             "branch_message": branch_message,
         }
@@ -4157,10 +4173,8 @@ Thumbs.db
             # Create LSP server
             self._lsp_server = C4LSPServer()
 
-            # Index current workspace
-            if self.root.exists():
-                self._lsp_server.analyzer.add_directory(self.root)
-                logger.info(f"LSP server indexed workspace: {self.root}")
+            # Set workspace root for async indexing (triggered on initialized)
+            self._lsp_server._workspace_root = self.root
 
             # Start in background thread
             def run_server():

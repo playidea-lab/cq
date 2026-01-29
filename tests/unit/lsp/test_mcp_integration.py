@@ -139,3 +139,24 @@ class TestLSPMCPIntegration:
 
         assert result["running"] is False
         assert result["status"] == "stopped"
+
+    @pytest.mark.skipif(not PYGLS_AVAILABLE, reason="pygls not installed")
+    def test_c4_lsp_start_sets_workspace_root(self):
+        """Should set workspace root for async indexing."""
+        from pathlib import Path
+
+        from c4.mcp_server import C4Daemon
+
+        daemon = C4Daemon()
+        # Ensure root exists
+        daemon.root = Path(".")
+
+        result = daemon.c4_lsp_start(port=2099)
+
+        try:
+            assert result["success"] is True
+            assert daemon._lsp_server is not None
+            assert daemon._lsp_server._workspace_root == daemon.root
+        finally:
+            # Cleanup
+            daemon.c4_lsp_stop()
