@@ -400,6 +400,48 @@ class HooksConfig(BaseModel):
     )
 
 
+class WorktreeConfig(BaseModel):
+    """Worktree configuration for isolated parallel execution.
+
+    When enabled, each worker operates in an isolated Git worktree,
+    preventing file conflicts during parallel execution.
+
+    Example in config.yaml:
+        worktree:
+          enabled: true
+          base_branch: work
+          work_dir: .c4/worktrees
+          auto_cleanup: true
+          completion_action: pr
+    """
+
+    enabled: bool = Field(
+        default=False,
+        description="Enable worktree-based isolation for parallel workers",
+    )
+    base_branch: str = Field(
+        default="work",
+        description="Base branch name for worktrees (relative to project)",
+    )
+    work_dir: str | None = Field(
+        default=None,
+        description="Directory for worktrees. Defaults to '.c4/worktrees' if not specified.",
+    )
+    auto_cleanup: bool = Field(
+        default=True,
+        description="Automatically clean up worktrees after task completion",
+    )
+    completion_action: str = Field(
+        default="pr",
+        pattern="^(merge|pr)$",
+        description="Action when task completes: 'merge' = merge to base, 'pr' = create PR",
+    )
+
+    def get_work_dir(self) -> str:
+        """Get the effective worktree directory path."""
+        return self.work_dir or ".c4/worktrees"
+
+
 class C4Config(BaseModel):
     """config.yaml schema"""
 
@@ -419,6 +461,10 @@ class C4Config(BaseModel):
     store: StoreConfig = Field(default_factory=StoreConfig)  # Store backend config
     github: GitHubConfig = Field(default_factory=GitHubConfig)  # GitHub integration
     hooks: HooksConfig = Field(default_factory=HooksConfig)  # Git hooks configuration
+    worktree: WorktreeConfig = Field(
+        default_factory=WorktreeConfig,
+        description="Worktree configuration for isolated parallel execution",
+    )
     long_running: LongRunningConfig = Field(
         default_factory=LongRunningConfig,
         description="Long-running task timeout and recovery settings",
