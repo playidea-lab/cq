@@ -13,6 +13,7 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
+from . import commands as c4_commands
 from . import git_hooks
 from .config.credentials import ENV_VAR_MAPPING, SUPPORTED_PROVIDERS, CredentialsManager
 from .hooks import get_c4_install_dir, install_all_hooks
@@ -668,6 +669,11 @@ def init(
         "--skip-hooks",
         help="Skip installing Claude Code hooks",
     ),
+    skip_commands: bool = typer.Option(
+        False,
+        "--skip-commands",
+        help="Skip installing C4 slash commands to ~/.claude/commands/",
+    ),
     template: str = typer.Option(
         None,
         "--template",
@@ -683,8 +689,10 @@ def init(
     - Creates .claude/settings.json for MCP auto-approval
     - Sets up ~/.claude.json allowedTools (with Bash(*))
     - Installs Claude Code hooks (stop hook, security hook)
+    - Installs C4 slash commands to ~/.claude/commands/ (global)
 
     Use --template to initialize with a pre-configured ML project template.
+    Use --skip-commands to skip installing global slash commands.
     """
     # Resolve project path
     if project_path is None:
@@ -745,7 +753,23 @@ def init(
                 else:
                     console.print(f"  [yellow]![/yellow] {hook_name}: {msg}")
 
-        # Step 6: Apply template if specified
+        # Step 6: Install C4 slash commands (unless skipped)
+        if not skip_commands:
+            console.print("[dim]Installing C4 slash commands to ~/.claude/commands/...[/dim]")
+            cmd_results = c4_commands.install_all_commands()
+            installed_count = sum(1 for success, _ in cmd_results.values() if success)
+            updated_count = sum(
+                1 for success, msg in cmd_results.values() if success and "Installed:" in msg
+            )
+            if installed_count > 0:
+                console.print(
+                    f"  [green]✓[/green] {installed_count} commands "
+                    f"({updated_count} updated, {installed_count - updated_count} already up to date)"
+                )
+            else:
+                console.print("[yellow]Warning:[/yellow] No C4 commands were installed")
+
+        # Step 7: Apply template if specified
         template_applied = False
         if template:
             console.print(f"[dim]Applying template '{template}'...[/dim]")
