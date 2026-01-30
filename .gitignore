@@ -56,3 +56,4 @@ workspace/
 .c4/daemon.pid
 .c4/daemon.log
 .c4/workers/
+.c4/worktrees/

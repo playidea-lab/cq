@@ -218,6 +218,78 @@ cat .c4/logs/health.log
 
 ---
 
+## 7. Worktree Mode (Parallel Isolation)
+
+### 개요
+
+Worktree 모드는 각 Worker가 독립된 Git Worktree에서 작업하도록 하여 파일 충돌 없이 병렬 작업을 가능하게 합니다.
+
+| 기능 | 설명 |
+|------|------|
+| **독립된 작업 공간** | 각 Worker가 별도의 디렉토리에서 작업 |
+| **브랜치 격리** | 각 태스크별 브랜치 자동 생성 |
+| **자동 PR 생성** | 모든 태스크 완료 시 PR 자동 생성 |
+
+### 설정
+
+`.c4/config.yaml`에서 worktree 설정을 활성화합니다:
+
+```yaml
+# .c4/config.yaml
+project_id: my-project
+default_branch: main
+
+worktree:
+  enabled: true                # Worktree 모드 활성화
+  base_branch: work            # 작업 기준 브랜치 (main이 아닌 별도 브랜치)
+  work_dir: .c4/worktrees      # Worktree 저장 디렉토리
+  auto_cleanup: true           # 태스크 완료 후 자동 정리
+  completion_action: pr        # 완료 시 동작: 'pr' 또는 'merge'
+```
+
+### 워크플로우
+
+```
+main (기본 브랜치)
+  │
+  └── work (base_branch) ← 모든 태스크의 기준 브랜치
+        │
+        ├── c4/w-T-001-0 (Worker 1)
+        │     └── .c4/worktrees/worker-1/
+        │
+        ├── c4/w-T-002-0 (Worker 2)
+        │     └── .c4/worktrees/worker-2/
+        │
+        └── c4/w-T-003-0 (Worker 3)
+              └── .c4/worktrees/worker-3/
+```
+
+### 완료 시 동작
+
+- **`completion_action: pr`**: 모든 태스크 완료 시 `work` → `main` PR 자동 생성
+- **`completion_action: merge`**: 자동으로 `work` 브랜치를 `main`에 병합
+
+### Worktree 관리 명령어
+
+```bash
+# Worktree 상태 확인
+c4 status  # MCP tool: c4_worktree_status
+
+# 특정 Worker 상태
+# MCP tool: c4_worktree_status(worker_id="worker-1")
+
+# 완료된 Worktree 정리
+# MCP tool: c4_worktree_cleanup(keep_active=True)
+```
+
+### 주의사항
+
+- Worktree 디렉토리 (`.c4/worktrees/`)는 `.gitignore`에 자동 추가됩니다
+- `base_branch`가 `main`과 같으면 PR이 생성되지 않습니다
+- PR 생성에는 `gh` CLI가 필요합니다 (https://cli.github.com/)
+
+---
+
 ## 관련 문서
 
 - [Getting Started](./getting-started/README.md)
