@@ -15,8 +15,8 @@ from rich.table import Table
 
 from . import commands as c4_commands
 from . import git_hooks
+from .claude_hooks import get_c4_install_dir, install_all_hooks
 from .config.credentials import ENV_VAR_MAPPING, SUPPORTED_PROVIDERS, CredentialsManager
-from .hooks import get_c4_install_dir, install_all_hooks
 from .mcp_server import C4Daemon
 from .models import ProjectStatus, Task
 from .platforms import (
@@ -50,6 +50,23 @@ c4_app = typer.Typer(
 )
 
 console = Console()
+
+
+def _get_original_cwd() -> Path:
+    """Get the original current working directory.
+
+    When running via `uv --directory`, Path.cwd() returns the uv directory,
+    not the user's actual working directory. This function checks PWD env var
+    (set by the shell) first, then falls back to Path.cwd().
+
+    Returns:
+        The original working directory as a Path.
+    """
+    # PWD is set by the shell and preserved across uv --directory
+    pwd = os.environ.get("PWD")
+    if pwd:
+        return Path(pwd)
+    return Path.cwd()
 
 
 # =============================================================================
@@ -92,8 +109,8 @@ def c4_main(
     if ctx.invoked_subcommand is not None:
         return
 
-    # Resolve project path
-    project_path = (path or Path.cwd()).resolve()
+    # Resolve project path (use _get_original_cwd for uv --directory compatibility)
+    project_path = (path or _get_original_cwd()).resolve()
     c4_dir = project_path / ".c4"
 
     # Step 1: Auto-initialize if needed
@@ -667,6 +684,47 @@ def _setup_standards_symlinks(project_path: Path) -> None:
             shutil.copy2(standard_file, rule_link)
 
 
+def _install_soul(project_path: Path) -> bool:
+    """Install C4 SOUL.md to project.
+
+    SOUL.md defines C4's core philosophy and non-negotiable rules.
+    It is installed to:
+    - .c4/SOUL.md (project reference)
+    - .claude/rules/C4_SOUL.md (Claude reads this)
+    """
+    # Find SOUL.md in package data
+    soul_source = Path(__file__).parent / "data" / "SOUL.md"
+    if not soul_source.exists():
+        return False
+
+    # Copy to .c4/
+    c4_dir = project_path / ".c4"
+    c4_dir.mkdir(parents=True, exist_ok=True)
+    soul_dest = c4_dir / "SOUL.md"
+    shutil.copy2(soul_source, soul_dest)
+
+    # Symlink to .claude/rules/ for Claude to read
+    rules_dir = project_path / ".claude" / "rules"
+    rules_dir.mkdir(parents=True, exist_ok=True)
+    rule_link = rules_dir / "C4_SOUL.md"
+
+    # Remove existing
+    if rule_link.exists() or rule_link.is_symlink():
+        try:
+            rule_link.unlink()
+        except OSError:
+            pass
+
+    try:
+        # Relative symlink
+        os.symlink(os.path.relpath(soul_dest, rules_dir), rule_link)
+    except OSError:
+        # Fallback to copy
+        shutil.copy2(soul_dest, rule_link)
+
+    return True
+
+
 @c4_app.command()
 def init(
     project_id: str = typer.Option(
@@ -725,9 +783,9 @@ def init(
     Use --template to initialize with a pre-configured ML project template.
     Use --skip-commands to skip installing global slash commands.
     """
-    # Resolve project path
+    # Resolve project path (use _get_original_cwd for uv --directory compatibility)
     if project_path is None:
-        project_path = Path(os.environ.get("C4_PROJECT_ROOT", Path.cwd()))
+        project_path = Path(os.environ.get("C4_PROJECT_ROOT") or str(_get_original_cwd()))
     project_path = project_path.resolve()
 
     # Temporarily set env for C4Daemon
@@ -765,6 +823,11 @@ def init(
         console.print("[dim]Creating .claude/settings.json (permissions)...[/dim]")
         _create_project_settings(project_path)
         _setup_standards_symlinks(project_path)
+
+        # Step 4.5: Install C4 SOUL
+        console.print("[dim]Installing C4 SOUL...[/dim]")
+        if _install_soul(project_path):
+            console.print("  [green]✓[/green] C4 SOUL installed")
 
         # Step 5: Install hooks (unless skipped)
         if not skip_hooks:
@@ -844,6 +907,7 @@ def init(
 
         console.print("[bold]Created/Updated:[/bold]")
         console.print("  .c4/                    - C4 state directory")
+        console.print("  .c4/SOUL.md             - C4 core philosophy")
         if git_result["git_init"]:
             console.print("  .git/                   - Git repository")
         if git_result["gitignore"]:
