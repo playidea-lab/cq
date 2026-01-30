@@ -289,80 +289,80 @@ class SupervisorLoop:
             item = state.checkpoint_queue[0]
             span.set_attribute("checkpoint_id", item.checkpoint_id)
 
-            # Check if checkpoint_as_task is enabled
-        config = getattr(self.daemon, "config", None)
-        if config and getattr(config, "checkpoint_as_task", False):
-            # Checkpoint is handled as a task (CP-XXX)
-            # Just clear the queue item - the CP task is created by _check_and_create_checkpoint_task
-            logger.info(
-                f"Checkpoint {item.checkpoint_id} handled as task. Removing from checkpoint_queue."
-            )
-            state.checkpoint_queue.pop(0)
-            self._safe_save_state(f"checkpoint {item.checkpoint_id} moved to task")
-            return True
-
-        # Legacy mode: process checkpoint directly
-        logger.info(f"Processing checkpoint: {item.checkpoint_id}")
-
-        try:
-            # Create bundle
-            bundle_dir = self.daemon.create_checkpoint_bundle(item.checkpoint_id)
-
-            # Run supervisor
-            supervisor = Supervisor(
-                self.daemon.root,
-                prompts_dir=self.daemon.root / "prompts",
-                daemon=self.daemon,
-            )
-
-            # Get verifications from config
-            verifications = self._get_verifications_config()
-
-            # Use strict mode if verifications are enabled or always for stricter review
-            response = await asyncio.to_thread(
-                supervisor.run_supervisor_strict,
-                bundle_dir,
-                verifications=verifications,
-                timeout=self.supervisor_timeout,
-                max_retries=self.max_retries,
-            )
-
-            # Apply decision via c4_checkpoint
-            result = self.daemon.c4_checkpoint(
-                checkpoint_id=response.checkpoint_id,
-                decision=response.decision.value,
-                notes=response.notes,
-                required_changes=response.required_changes if response.required_changes else None,
-            )
-
-            logger.info(
-                f"Checkpoint {item.checkpoint_id} processed: "
-                f"decision={response.decision.value}, success={result.success}"
-            )
-
-            # Send notification for checkpoint completion
-            NotificationManager.notify(
-                title="C4 Checkpoint",
-                message=f"{item.checkpoint_id}: {response.decision.value}",
-                urgency="normal" if response.decision.value == "APPROVE" else "critical",
-            )
-
-            # Remove from queue on success
-            if result.success:
+            # Check if checkpoint_as_task is enabled (default: True for AI auto-review)
+            config = getattr(self.daemon, "config", None)
+            if config and getattr(config, "checkpoint_as_task", True):
+                # Checkpoint is handled as a task (CP-XXX)
+                # Just clear the queue item - the CP task is created by _check_and_create_checkpoint_task
+                logger.info(
+                    f"Checkpoint {item.checkpoint_id} handled as task. Removing from checkpoint_queue."
+                )
                 state.checkpoint_queue.pop(0)
-                self._safe_save_state(f"checkpoint {item.checkpoint_id} success")
+                self._safe_save_state(f"checkpoint {item.checkpoint_id} moved to task")
+                return True
 
-            return True
+            # Legacy mode: process checkpoint directly
+            logger.info(f"Processing checkpoint: {item.checkpoint_id}")
 
-        except SupervisorError as e:
-            logger.error(f"Supervisor failed for checkpoint {item.checkpoint_id}: {e}")
-            self._handle_checkpoint_retry(state, item, "supervisor error")
-            return True
+            try:
+                # Create bundle
+                bundle_dir = self.daemon.create_checkpoint_bundle(item.checkpoint_id)
 
-        except Exception as e:
-            logger.error(f"Unexpected error processing checkpoint {item.checkpoint_id}: {e}")
-            self._handle_checkpoint_retry(state, item, "unexpected error")
-            return True
+                # Run supervisor
+                supervisor = Supervisor(
+                    self.daemon.root,
+                    prompts_dir=self.daemon.root / "prompts",
+                    daemon=self.daemon,
+                )
+
+                # Get verifications from config
+                verifications = self._get_verifications_config()
+
+                # Use strict mode if verifications are enabled or always for stricter review
+                response = await asyncio.to_thread(
+                    supervisor.run_supervisor_strict,
+                    bundle_dir,
+                    verifications=verifications,
+                    timeout=self.supervisor_timeout,
+                    max_retries=self.max_retries,
+                )
+
+                # Apply decision via c4_checkpoint
+                result = self.daemon.c4_checkpoint(
+                    checkpoint_id=response.checkpoint_id,
+                    decision=response.decision.value,
+                    notes=response.notes,
+                    required_changes=response.required_changes if response.required_changes else None,
+                )
+
+                logger.info(
+                    f"Checkpoint {item.checkpoint_id} processed: "
+                    f"decision={response.decision.value}, success={result.success}"
+                )
+
+                # Send notification for checkpoint completion
+                NotificationManager.notify(
+                    title="C4 Checkpoint",
+                    message=f"{item.checkpoint_id}: {response.decision.value}",
+                    urgency="normal" if response.decision.value == "APPROVE" else "critical",
+                )
+
+                # Remove from queue on success
+                if result.success:
+                    state.checkpoint_queue.pop(0)
+                    self._safe_save_state(f"checkpoint {item.checkpoint_id} success")
+
+                return True
+
+            except SupervisorError as e:
+                logger.error(f"Supervisor failed for checkpoint {item.checkpoint_id}: {e}")
+                self._handle_checkpoint_retry(state, item, "supervisor error")
+                return True
+
+            except Exception as e:
+                logger.error(f"Unexpected error processing checkpoint {item.checkpoint_id}: {e}")
+                self._handle_checkpoint_retry(state, item, "unexpected error")
+                return True
 
     def _handle_checkpoint_retry(self, state, item, error_type: str) -> None:
         """

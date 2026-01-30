@@ -765,6 +765,60 @@ Thumbs.db
             except Exception as e:
                 logger.warning(f"Failed to auto-start supervisor loop: {e}")
 
+    def _sync_merged_tasks(self) -> int:
+        """Sync tasks whose branches have been merged to main.
+
+        Checks all pending/in_progress tasks and marks them as done
+        if their c4/w-{task_id} branch has been merged to main.
+
+        Returns:
+            Number of tasks synced
+        """
+        if self.state_machine is None:
+            return 0
+
+        state = self.state_machine.state
+        synced = 0
+
+        # Get merged branches
+        merged_branches = self.git_ops.get_merged_task_branches()
+        if not merged_branches:
+            return 0
+
+        # Check pending tasks
+        for task_id in list(state.queue.pending):
+            branch = f"c4/w-{task_id}"
+            if branch in merged_branches:
+                task = self.get_task(task_id)
+                if task:
+                    logger.info(f"Syncing merged task {task_id} (branch {branch} merged)")
+                    state.queue.pending.remove(task_id)
+                    state.queue.done.append(task_id)
+                    task.status = TaskStatus.DONE
+                    task.assigned_to = None
+                    self._save_task(task)
+                    synced += 1
+
+        # Check in_progress tasks
+        for task_id in list(state.queue.in_progress.keys()):
+            branch = f"c4/w-{task_id}"
+            if branch in merged_branches:
+                task = self.get_task(task_id)
+                if task:
+                    logger.info(f"Syncing merged task {task_id} (branch {branch} merged)")
+                    del state.queue.in_progress[task_id]
+                    state.queue.done.append(task_id)
+                    task.status = TaskStatus.DONE
+                    task.assigned_to = None
+                    self._save_task(task)
+                    synced += 1
+
+        if synced > 0:
+            self.state_machine.save_state()
+            logger.info(f"Synced {synced} merged tasks")
+
+        return synced
+
     def c4_ensure_supervisor(self, force_restart: bool = False) -> dict[str, Any]:
         """
         Ensure supervisor loop is running for AI review.
@@ -910,8 +964,9 @@ Thumbs.db
                 "workflow": _get_workflow_guide("INIT"),
             }
 
-        # Re-load state to get latest (multi-worker sync)
+        # Re-load state and tasks to get latest (multi-worker sync)
         self.state_machine.load_state()
+        self._load_tasks()  # Refresh task cache for consistency
         state = self.state_machine.state
         status_value = state.status.value
         return {
@@ -1153,6 +1208,9 @@ Thumbs.db
         # Also refresh task cache from SQLite (fixes stale cache after direct DB edits)
         self._load_tasks()
         state = self.state_machine.state
+
+        # Sync tasks whose branches have been merged (fixes Git-C4 state sync)
+        self._sync_merged_tasks()
 
         # Clean up expired scope locks (prevents stale locks from blocking task assignment)
         self.lock_store.cleanup_expired(state.project_id)

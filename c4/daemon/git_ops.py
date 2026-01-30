@@ -321,6 +321,50 @@ class GitOperations:
         branch = result.stdout.strip()
         return None if branch == "HEAD" else branch
 
+    def is_branch_merged(self, branch: str, target: str = "main") -> bool:
+        """Check if a branch has been merged into target branch.
+
+        Args:
+            branch: Branch to check (e.g., 'c4/w-T-001-0')
+            target: Target branch to check against (default: 'main')
+
+        Returns:
+            True if branch is merged into target, False otherwise
+        """
+        if not self.is_git_repo():
+            return False
+
+        # List all branches merged into target
+        result = self._run_git("branch", "--merged", target)
+        if result.returncode != 0:
+            return False
+
+        merged_branches = [b.strip().lstrip("* ") for b in result.stdout.strip().split("\n")]
+        return branch in merged_branches
+
+    def get_merged_task_branches(self, target: str = "main") -> list[str]:
+        """Get all c4/w-* branches that have been merged into target.
+
+        Args:
+            target: Target branch to check against (default: 'main')
+
+        Returns:
+            List of merged task branch names
+        """
+        if not self.is_git_repo():
+            return []
+
+        result = self._run_git("branch", "--merged", target)
+        if result.returncode != 0:
+            return []
+
+        merged = []
+        for line in result.stdout.strip().split("\n"):
+            branch = line.strip().lstrip("* ")
+            if branch.startswith("c4/w-"):
+                merged.append(branch)
+        return merged
+
     def create_task_branch(self, task_id: str) -> GitResult:
         """Create a branch for a task.
 

@@ -483,6 +483,8 @@ def find_symbol_mcp(
     relative_path: str = "",
     include_body: bool = False,
     project_path: str | None = None,
+    timeout: int = 30,
+    max_file_lines: int = 10000,
 ) -> list[dict]:
     """MCP tool wrapper for find_symbol.
 
@@ -491,37 +493,59 @@ def find_symbol_mcp(
         relative_path: Restrict search to this path
         include_body: Include symbol body in results
         project_path: Project root path
+        timeout: Maximum execution time in seconds (default: 30)
+        max_file_lines: Skip files larger than this (default: 10000)
 
     Returns:
         List of symbol info dictionaries
     """
+    import concurrent.futures
+
     if not JEDI_AVAILABLE:
         return []
 
-    provider = JediSymbolProvider(project_path=project_path)
+    def _find_symbols():
+        provider = JediSymbolProvider(project_path=project_path)
 
-    if relative_path:
-        full_path = Path(project_path or ".") / relative_path
-        if full_path.is_file():
-            source = full_path.read_text(encoding="utf-8")
-            symbols = provider.find_symbol(
-                name_path_pattern,
-                source=source,
-                file_path=str(full_path),
-                include_body=include_body,
-            )
+        if relative_path:
+            full_path = Path(project_path or ".") / relative_path
+            if full_path.is_file():
+                # Skip large files
+                line_count = sum(1 for _ in full_path.open(encoding="utf-8", errors="ignore"))
+                if line_count > max_file_lines:
+                    logger.warning(f"Skipping large file ({line_count} lines): {relative_path}")
+                    return []
+
+                source = full_path.read_text(encoding="utf-8")
+                symbols = provider.find_symbol(
+                    name_path_pattern,
+                    source=source,
+                    file_path=str(full_path),
+                    include_body=include_body,
+                )
+            else:
+                symbols = provider.find_symbol(name_path_pattern)
         else:
             symbols = provider.find_symbol(name_path_pattern)
-    else:
-        symbols = provider.find_symbol(name_path_pattern)
 
-    return [s.to_dict() for s in symbols]
+        return [s.to_dict() for s in symbols]
+
+    # Execute with timeout
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(_find_symbols)
+        try:
+            return future.result(timeout=timeout)
+        except concurrent.futures.TimeoutError:
+            logger.error(f"find_symbol_mcp timed out after {timeout}s for pattern: {name_path_pattern}")
+            return []
 
 
 def get_symbols_overview_mcp(
     relative_path: str,
     depth: int = 0,
     project_path: str | None = None,
+    timeout: int = 30,
+    max_file_lines: int = 10000,
 ) -> dict:
     """MCP tool wrapper for get_symbols_overview.
 
@@ -529,31 +553,50 @@ def get_symbols_overview_mcp(
         relative_path: Path to the file (relative to project root)
         depth: Depth of children to include
         project_path: Project root path
+        timeout: Maximum execution time in seconds (default: 30)
+        max_file_lines: Skip files larger than this (default: 10000)
 
     Returns:
         Dictionary with symbols grouped by kind
     """
+    import concurrent.futures
+
     if not JEDI_AVAILABLE:
         return {"error": "jedi not available"}
 
-    provider = JediSymbolProvider(project_path=project_path)
     full_path = Path(project_path or ".") / relative_path
 
     if not full_path.exists():
         return {"error": f"File not found: {relative_path}"}
 
-    symbols = provider.get_symbols_overview(str(full_path), depth=depth)
+    # Skip large files
+    line_count = sum(1 for _ in full_path.open(encoding="utf-8", errors="ignore"))
+    if line_count > max_file_lines:
+        return {"error": f"File too large ({line_count} lines). Max: {max_file_lines}"}
 
-    # Group by kind
-    grouped: dict[str, list[dict]] = {}
-    for symbol in symbols:
-        kind = symbol.kind.value
-        if kind not in grouped:
-            grouped[kind] = []
-        grouped[kind].append(symbol.to_dict())
+    def _get_overview():
+        provider = JediSymbolProvider(project_path=project_path)
+        symbols = provider.get_symbols_overview(str(full_path), depth=depth)
 
-    return {
-        "file": relative_path,
-        "symbols_by_kind": grouped,
-        "total_count": len(symbols),
-    }
+        # Group by kind
+        grouped: dict[str, list[dict]] = {}
+        for symbol in symbols:
+            kind = symbol.kind.value
+            if kind not in grouped:
+                grouped[kind] = []
+            grouped[kind].append(symbol.to_dict())
+
+        return {
+            "file": relative_path,
+            "symbols_by_kind": grouped,
+            "total_count": len(symbols),
+        }
+
+    # Execute with timeout
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(_get_overview)
+        try:
+            return future.result(timeout=timeout)
+        except concurrent.futures.TimeoutError:
+            logger.error(f"get_symbols_overview_mcp timed out after {timeout}s for: {relative_path}")
+            return {"error": f"Operation timed out after {timeout} seconds"}
