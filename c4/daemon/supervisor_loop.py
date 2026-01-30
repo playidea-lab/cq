@@ -11,11 +11,23 @@ if TYPE_CHECKING:
     from ..mcp_server import C4Daemon
 
 from ..constants import REPAIR_PREFIX, WORKER_STALE_TIMEOUT_SEC
+from ..models.enums import EventType
 from ..monitoring import tracing
 from ..notification import NotificationManager
 from ..supervisor import Supervisor, SupervisorError
 
 logger = logging.getLogger(__name__)
+
+
+class GitCommitEvent:
+    """Represents a Git commit event from post-commit hook."""
+
+    def __init__(self, data: dict):
+        self.type = data.get("type", "git_commit")
+        self.sha = data.get("sha", "")
+        self.task_id = data.get("task_id")  # May be None
+        self.files = data.get("files", "").split(",") if data.get("files") else []
+        self.timestamp = data.get("timestamp", "")
 
 
 class SupervisorLoop:
@@ -52,6 +64,9 @@ class SupervisorLoop:
 
         while self.running:
             try:
+                # Process git events from post-commit hooks
+                await self._process_git_events()
+
                 # Process checkpoint queue first (higher priority)
                 processed_cp = await self._process_checkpoint_queue()
 
@@ -68,6 +83,70 @@ class SupervisorLoop:
             await asyncio.sleep(self.poll_interval)
 
         logger.info("Supervisor loop stopped")
+
+    async def _process_git_events(self) -> bool:
+        """Process git commit events from post-commit hooks.
+
+        Reads event files from .c4/events/git-*.json, emits events,
+        and triggers LSP reindexing for changed files.
+
+        Returns:
+            True if any events were processed, False otherwise
+        """
+        import json
+        from pathlib import Path
+
+        if self.daemon.state_machine is None:
+            return False
+
+        events_dir = Path(self.daemon.root) / ".c4" / "events"
+        if not events_dir.exists():
+            return False
+
+        processed = False
+        for event_file in sorted(events_dir.glob("git-*.json")):
+            try:
+                event_data = json.loads(event_file.read_text())
+                event = GitCommitEvent(event_data)
+
+                logger.debug(
+                    f"Processing git event: sha={event.sha[:7]}, "
+                    f"task_id={event.task_id}, files={len(event.files)}"
+                )
+
+                # Emit GIT_COMMIT event for tracking
+                self.daemon.state_machine.emit_event(
+                    EventType.GIT_COMMIT,
+                    "git-hook",
+                    {
+                        "sha": event.sha,
+                        "task_id": event.task_id,
+                        "files": event.files,
+                        "timestamp": event.timestamp,
+                    },
+                )
+
+                # Trigger LSP reindex for changed Python files
+                python_files = [f for f in event.files if f.endswith(".py")]
+                if python_files and hasattr(self.daemon, "trigger_lsp_reindex"):
+                    await asyncio.to_thread(
+                        self.daemon.trigger_lsp_reindex, python_files
+                    )
+                    logger.debug(f"Triggered LSP reindex for {len(python_files)} files")
+
+                # Delete processed event file
+                event_file.unlink()
+                processed = True
+
+            except json.JSONDecodeError as e:
+                logger.warning(f"Invalid JSON in git event file {event_file}: {e}")
+                # Remove corrupted file
+                event_file.unlink()
+            except Exception as e:
+                logger.error(f"Error processing git event {event_file}: {e}")
+                # Don't delete on unexpected errors - may need investigation
+
+        return processed
 
     async def _check_stale_workers(self) -> None:
         """Check for stale workers periodically.
