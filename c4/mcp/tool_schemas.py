@@ -782,4 +782,65 @@ def get_tool_definitions() -> list[Tool]:
                 "required": [],
             },
         ),
+        # Memory tools
+        Tool(
+            name="c4_write_memory",
+            description="Write content to a memory. Persists across sessions for architecture decisions, patterns.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "description": "Memory name (e.g., 'architecture-decisions'). Sanitized for file storage.",
+                    },
+                    "content": {
+                        "type": "string",
+                        "description": "Content to write (markdown format recommended)",
+                    },
+                },
+                "required": ["name", "content"],
+            },
+        ),
+        Tool(
+            name="c4_read_memory",
+            description="Read content from a memory. Returns the content if found, or indicates not found.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "description": "Memory name to read",
+                    },
+                },
+                "required": ["name"],
+            },
+        ),
+        Tool(
+            name="c4_list_memories",
+            description="List all available memories. Can optionally filter by pattern.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "pattern": {
+                        "type": "string",
+                        "description": "Optional search pattern to filter memories (e.g., 'adr' to find all ADR memories)",
+                    },
+                },
+                "required": [],
+            },
+        ),
+        Tool(
+            name="c4_delete_memory",
+            description="Delete a memory by name.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "description": "Memory name to delete",
+                    },
+                },
+                "required": ["name"],
+            },
+        ),
     ]

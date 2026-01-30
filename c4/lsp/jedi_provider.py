@@ -16,6 +16,32 @@ from typing import TYPE_CHECKING
 
 try:
     import jedi
+    import jedi.cache
+    import jedi.settings
+
+    # Disable subprocess caching to prevent recursion errors during GC cleanup
+    # The InferenceStateSubprocess.__del__ method can trigger recursion errors
+    # when Python's garbage collector cleans up the cache
+    jedi.settings.call_signatures_validity = 0.0  # Disable signature caching
+    jedi.settings.auto_import_modules = []  # Don't auto-import standard library
+
+    # Monkey-patch InferenceStateSubprocess.__del__ to prevent GC recursion errors
+    # This is necessary because Jedi's subprocess cleanup can trigger recursion
+    # when Python's garbage collector runs during low recursion limit periods
+    try:
+        from jedi.inference.compiled.subprocess import InferenceStateSubprocess
+
+        # Replace __del__ with a no-op to prevent GC recursion errors
+        InferenceStateSubprocess.__del__ = lambda self: None  # type: ignore[method-assign]
+    except (ImportError, AttributeError):
+        pass  # Jedi version doesn't have this class or attribute
+
+    def _clear_jedi_cache() -> None:
+        """Clear Jedi's internal caches to prevent GC recursion errors."""
+        try:
+            jedi.cache.clear_time_caches()
+        except Exception:
+            pass
 
     JEDI_AVAILABLE = True
 except ImportError:
@@ -25,7 +51,33 @@ except ImportError:
 if TYPE_CHECKING:
     from jedi.api.classes import Name
 
+from .cache import SymbolCache, get_symbol_cache
+
 logger = logging.getLogger(__name__)
+
+
+# Operation-specific timeout configuration (in seconds)
+# These are tiered based on expected operation complexity
+TIMEOUT_CONFIG = {
+    "completion": 0.5,       # Fast: autocomplete suggestions
+    "definition": 2.0,       # Medium: go to definition
+    "references": 5.0,       # Slower: find all references
+    "workspace_symbol": 10.0, # Slowest: search across workspace
+    "document_symbols": 3.0,  # Medium: symbols in current file
+    "find_symbol": 30.0,     # Variable: depends on scope
+}
+
+def get_timeout(operation: str, default: float = 30.0) -> float:
+    """Get the timeout for a specific operation.
+
+    Args:
+        operation: The operation name (e.g., "completion", "references")
+        default: Default timeout if operation not found
+
+    Returns:
+        Timeout in seconds
+    """
+    return TIMEOUT_CONFIG.get(operation, default)
 
 
 class SymbolType(str, Enum):
@@ -159,13 +211,22 @@ class JediSymbolProvider:
     - find_symbol: Find symbols by name path pattern
     - get_symbols_overview: Get all symbols in a file
     - workspace_symbols: Search symbols across the workspace
+
+    Uses a two-stage cache for performance:
+    - Stage 1: Raw symbols from Jedi (content-hash based)
+    - Stage 2: Processed symbols for MCP output
     """
 
-    def __init__(self, project_path: str | Path | None = None) -> None:
+    def __init__(
+        self,
+        project_path: str | Path | None = None,
+        cache: SymbolCache | None = None,
+    ) -> None:
         """Initialize the Jedi symbol provider.
 
         Args:
             project_path: Root path for the project (for proper import resolution)
+            cache: Optional symbol cache (uses global cache if not provided)
         """
         if not JEDI_AVAILABLE:
             raise ImportError(
@@ -174,10 +235,20 @@ class JediSymbolProvider:
 
         self._project_path = Path(project_path) if project_path else None
         self._project: jedi.Project | None = None
+        self._cache = cache or get_symbol_cache()
 
         if self._project_path:
             try:
-                self._project = jedi.Project(path=str(self._project_path))
+                # Disable caching at module level to prevent GC recursion errors
+                jedi.settings.cache_directory = None  # No disk cache
+
+                # Disable smart_sys_path to prevent Jedi from following
+                # external library imports (causes recursion issues)
+                self._project = jedi.Project(
+                    path=str(self._project_path),
+                    added_sys_path=[],  # Don't add extra paths
+                    smart_sys_path=False,  # Don't analyze sys.path
+                )
                 logger.info(f"Jedi project initialized at {self._project_path}")
             except Exception as e:
                 logger.warning(f"Failed to create jedi project: {e}")
@@ -315,8 +386,12 @@ class JediSymbolProvider:
                     if symbol:
                         results.append(symbol)
 
+            except RecursionError:
+                # Jedi can hit recursion limits on complex import chains
+                logger.debug(f"Recursion limit hit for {file_path}, skipping")
             except Exception as e:
-                logger.warning(f"Error searching symbols: {e}")
+                # Log at debug level to avoid log spam during workspace search
+                logger.debug(f"Error searching symbols in {file_path}: {e}")
 
         # If no source, search in project files
         elif self._project_path:
@@ -329,32 +404,87 @@ class JediSymbolProvider:
         target_name: str,
         parent_names: list[str],
         is_absolute: bool,
+        max_files: int = 500,
+        max_file_lines: int = 5000,
+        max_consecutive_errors: int = 10,
     ) -> list[SymbolInfo]:
-        """Search for symbols across workspace files."""
+        """Search for symbols across workspace files.
+
+        Args:
+            target_name: Symbol name to find
+            parent_names: Parent path components
+            is_absolute: Whether pattern is absolute
+            max_files: Maximum files to search (prevents runaway)
+            max_file_lines: Skip files larger than this
+            max_consecutive_errors: Stop after this many consecutive errors
+        """
         results: list[SymbolInfo] = []
 
         if not self._project_path:
             return results
 
+        files_searched = 0
+        consecutive_errors = 0
+        skip_dirs = {"__pycache__", ".git", "node_modules", ".venv", "venv", ".tox", "build", "dist", ".eggs", "*.egg-info"}
+
         # Search Python files
         for py_file in self._project_path.rglob("*.py"):
+            # Limit total files searched
+            if files_searched >= max_files:
+                logger.debug(f"Reached max files limit ({max_files}), stopping search")
+                break
+
             # Skip common directories
-            if any(
-                part in py_file.parts
-                for part in ["__pycache__", ".git", "node_modules", ".venv", "venv"]
-            ):
+            if any(part in py_file.parts for part in skip_dirs):
                 continue
 
             try:
+                # Check file size first (quick check)
+                stat = py_file.stat()
+                if stat.st_size > max_file_lines * 100:  # Rough estimate: 100 bytes/line
+                    logger.debug(f"Skipping large file: {py_file}")
+                    continue
+
                 source = py_file.read_text(encoding="utf-8")
+
+                # More accurate line count check
+                if source.count('\n') > max_file_lines:
+                    logger.debug(f"Skipping file with too many lines: {py_file}")
+                    continue
+
+                files_searched += 1
+
+                # Search for symbols in this file
+                # Note: We don't lower recursion limit as Jedi needs the default limit
+                # Protection is via: 1) timeout, 2) consecutive error counter
                 file_results = self.find_symbol(
                     f"{'/' if is_absolute else ''}{'/'.join(parent_names + [target_name])}",
                     source=source,
                     file_path=str(py_file),
                 )
                 results.extend(file_results)
+                consecutive_errors = 0  # Reset on success
+
+            except RecursionError:
+                consecutive_errors += 1
+                logger.debug(f"Recursion limit hit searching {py_file}")
+                if consecutive_errors >= max_consecutive_errors:
+                    logger.warning(
+                        f"Too many consecutive errors ({consecutive_errors}), stopping search"
+                    )
+                    break
             except Exception as e:
+                consecutive_errors += 1
                 logger.debug(f"Error searching {py_file}: {e}")
+                if consecutive_errors >= max_consecutive_errors:
+                    logger.warning(
+                        f"Too many consecutive errors ({consecutive_errors}), stopping search"
+                    )
+                    break
+
+        # Clear Jedi cache to prevent GC recursion errors
+        if JEDI_AVAILABLE:
+            _clear_jedi_cache()
 
         return results
 
@@ -363,13 +493,19 @@ class JediSymbolProvider:
         file_path: str,
         source: str | None = None,
         depth: int = 0,
+        use_cache: bool = True,
     ) -> list[SymbolInfo]:
         """Get an overview of symbols in a file.
+
+        Uses a two-stage cache for performance:
+        1. Stage 1 (raw): Cached symbols from Jedi (content-hash based)
+        2. Stage 2 (processed): Ready-to-use SymbolInfo objects
 
         Args:
             file_path: Path to the file
             source: Source code (if not provided, reads from file)
             depth: Depth of children to include (0 = top-level only)
+            use_cache: Whether to use the symbol cache (default: True)
 
         Returns:
             List of SymbolInfo objects
@@ -384,6 +520,17 @@ class JediSymbolProvider:
                 logger.warning(f"Failed to read file {file_path}: {e}")
                 return []
 
+        # Check cache if enabled
+        content_hash = self._cache.compute_hash(source) if use_cache else ""
+
+        if use_cache:
+            # Try to get from cache (stage 2: processed)
+            cached = self._cache.get(file_path, content_hash, stage="processed")
+            if cached is not None:
+                # Reconstruct SymbolInfo objects from cached dicts
+                return self._dicts_to_symbols(cached, depth)
+
+        # Cache miss - compute symbols
         results: list[SymbolInfo] = []
         script = self._get_script(source, file_path)
 
@@ -416,8 +563,67 @@ class JediSymbolProvider:
                     symbol.parent_name = parent_name
                     results.append(symbol)
 
+            # Store in cache
+            if use_cache and results:
+                raw_dicts = [s.to_dict() for s in results]
+                self._cache.put(
+                    file_path,
+                    content_hash,
+                    raw_symbols=raw_dicts,
+                    processed_symbols=raw_dicts,
+                )
+
         except Exception as e:
             logger.warning(f"Error getting symbols overview: {e}")
+
+        return results
+
+    def _dicts_to_symbols(
+        self, cached: list[dict], depth: int
+    ) -> list[SymbolInfo]:
+        """Convert cached dictionaries back to SymbolInfo objects.
+
+        Args:
+            cached: List of cached symbol dictionaries
+            depth: Depth filter to apply
+
+        Returns:
+            List of SymbolInfo objects
+        """
+        results: list[SymbolInfo] = []
+        for d in cached:
+            # Filter by depth if needed
+            if depth == 0 and d.get("parent_name"):
+                # Skip nested symbols for depth=0
+                parent_kind = d.get("parent_kind")
+                if parent_kind in ("class", "function"):
+                    continue
+
+            loc = d.get("location", {})
+            location = SymbolLocation(
+                file_path=loc.get("file_path", ""),
+                line=loc.get("line", 0),
+                column=loc.get("column", 0),
+                end_line=loc.get("end_line"),
+                end_column=loc.get("end_column"),
+            )
+
+            kind_str = d.get("kind", "unknown")
+            try:
+                kind = SymbolType(kind_str)
+            except ValueError:
+                kind = SymbolType.UNKNOWN
+
+            symbol = SymbolInfo(
+                name=d.get("name", ""),
+                kind=kind,
+                location=location,
+                qualified_name=d.get("qualified_name"),
+                parent_name=d.get("parent_name"),
+                signature=d.get("signature"),
+                docstring=d.get("docstring"),
+            )
+            results.append(symbol)
 
         return results
 
@@ -483,7 +689,7 @@ def find_symbol_mcp(
     relative_path: str = "",
     include_body: bool = False,
     project_path: str | None = None,
-    timeout: int = 30,
+    timeout: float | None = None,
     max_file_lines: int = 10000,
 ) -> list[dict]:
     """MCP tool wrapper for find_symbol.
@@ -493,12 +699,15 @@ def find_symbol_mcp(
         relative_path: Restrict search to this path
         include_body: Include symbol body in results
         project_path: Project root path
-        timeout: Maximum execution time in seconds (default: 30)
+        timeout: Maximum execution time in seconds (default from TIMEOUT_CONFIG)
         max_file_lines: Skip files larger than this (default: 10000)
 
     Returns:
         List of symbol info dictionaries
     """
+    # Use tiered timeout: workspace search vs single file
+    if timeout is None:
+        timeout = get_timeout("workspace_symbol" if not relative_path else "find_symbol")
     import concurrent.futures
 
     if not JEDI_AVAILABLE:
@@ -544,7 +753,7 @@ def get_symbols_overview_mcp(
     relative_path: str,
     depth: int = 0,
     project_path: str | None = None,
-    timeout: int = 30,
+    timeout: float | None = None,
     max_file_lines: int = 10000,
 ) -> dict:
     """MCP tool wrapper for get_symbols_overview.
@@ -553,12 +762,15 @@ def get_symbols_overview_mcp(
         relative_path: Path to the file (relative to project root)
         depth: Depth of children to include
         project_path: Project root path
-        timeout: Maximum execution time in seconds (default: 30)
+        timeout: Maximum execution time in seconds (default from TIMEOUT_CONFIG)
         max_file_lines: Skip files larger than this (default: 10000)
 
     Returns:
         Dictionary with symbols grouped by kind
     """
+    # Use tiered timeout for document symbols
+    if timeout is None:
+        timeout = get_timeout("document_symbols")
     import concurrent.futures
 
     if not JEDI_AVAILABLE:

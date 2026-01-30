@@ -7,39 +7,7 @@ import pytest
 
 from c4.daemon.worktree_manager import WorktreeInfo, WorktreeManager
 
-
-@pytest.fixture
-def git_repo(tmp_path: Path) -> Path:
-    """Create a temporary git repository."""
-    # Initialize git repo
-    subprocess.run(["git", "init"], cwd=tmp_path, capture_output=True, check=True)
-    subprocess.run(
-        ["git", "config", "user.email", "test@example.com"],
-        cwd=tmp_path,
-        capture_output=True,
-        check=True,
-    )
-    subprocess.run(
-        ["git", "config", "user.name", "Test User"],
-        cwd=tmp_path,
-        capture_output=True,
-        check=True,
-    )
-
-    # Create initial commit
-    (tmp_path / "README.md").write_text("# Test Project")
-    subprocess.run(["git", "add", "README.md"], cwd=tmp_path, capture_output=True, check=True)
-    subprocess.run(
-        ["git", "commit", "-m", "Initial commit"],
-        cwd=tmp_path,
-        capture_output=True,
-        check=True,
-    )
-
-    # Create .c4 directory
-    (tmp_path / ".c4").mkdir()
-
-    return tmp_path
+# git_repo fixture is provided by tests/conftest.py
 
 
 @pytest.fixture

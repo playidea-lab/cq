@@ -18,9 +18,32 @@ import yaml
 from .credentials import CredentialsManager
 from .models import (
     VALID_CONFIG_KEYS,
-    C4Config,
+    UserConfig,
     parse_config_value,
 )
+
+# Environment variable to config key mapping
+# Format: config_key -> (env_var_name, type)
+# type: "str", "bool", "int"
+ENV_VAR_MAPPING: dict[str, tuple[str, str]] = {
+    # Platform
+    "platform": ("C4_PLATFORM", "str"),
+    # Git settings
+    "git.user": ("C4_GIT_USER", "str"),
+    "git.email": ("C4_GIT_EMAIL", "str"),
+    "git.auto_commit": ("C4_GIT_AUTO_COMMIT", "bool"),
+    "git.auto_pr": ("C4_GIT_AUTO_PR", "bool"),
+    # Validation settings
+    "validation.lint": ("C4_VALIDATION_LINT", "str"),
+    "validation.test": ("C4_VALIDATION_TEST", "str"),
+    "validation.typecheck": ("C4_VALIDATION_TYPECHECK", "str"),
+    # Worker settings
+    "worker.max_retries": ("C4_WORKER_MAX_RETRIES", "int"),
+    "worker.timeout": ("C4_WORKER_TIMEOUT", "int"),
+    # Team settings
+    "team.id": ("C4_TEAM_ID", "str"),
+    "team.name": ("C4_TEAM_NAME", "str"),
+}
 
 
 class ConfigManager:
@@ -44,7 +67,7 @@ class ConfigManager:
         self.project_config_path = self.project_path / ".c4" / "config.yaml"
         self.credentials = CredentialsManager(self.project_path)
 
-    def load(self) -> C4Config:
+    def load(self) -> UserConfig:
         """Load merged configuration (global + project + env).
 
         Priority (highest to lowest):
@@ -54,22 +77,22 @@ class ConfigManager:
         4. Default values
 
         Returns:
-            Merged C4Config
+            Merged UserConfig
         """
         # Start with defaults
-        config = C4Config()
+        config = UserConfig()
 
         # Load global config
         if self.global_config_path.exists():
             global_config = self._load_yaml(self.global_config_path)
             if global_config:
-                config = config.merge_with(C4Config(**global_config))
+                config = config.merge_with(UserConfig(**global_config))
 
         # Load project config
         if self.project_config_path.exists():
             project_config = self._load_yaml(self.project_config_path)
             if project_config:
-                config = config.merge_with(C4Config(**project_config))
+                config = config.merge_with(UserConfig(**project_config))
 
         # Apply environment variable overrides
         config = self._apply_env_overrides(config)
@@ -152,8 +175,8 @@ class ConfigManager:
         # Get sources
         global_config = self._load_yaml(self.global_config_path) if self.global_config_path.exists() else {}
         project_config = self._load_yaml(self.project_config_path) if self.project_config_path.exists() else {}
-        global_flat = C4Config(**global_config).to_flat_dict() if global_config else {}
-        project_flat = C4Config(**project_config).to_flat_dict() if project_config else {}
+        global_flat = UserConfig(**global_config).to_flat_dict() if global_config else {}
+        project_flat = UserConfig(**project_config).to_flat_dict() if project_config else {}
 
         for key in VALID_CONFIG_KEYS:
             result["values"][key] = flat.get(key)
@@ -161,9 +184,9 @@ class ConfigManager:
             # Determine source
             if self._is_from_env(key):
                 result["sources"][key] = "env"
-            elif key in project_flat and project_flat[key] != C4Config().to_flat_dict().get(key):
+            elif key in project_flat and project_flat[key] != UserConfig().to_flat_dict().get(key):
                 result["sources"][key] = "project"
-            elif key in global_flat and global_flat[key] != C4Config().to_flat_dict().get(key):
+            elif key in global_flat and global_flat[key] != UserConfig().to_flat_dict().get(key):
                 result["sources"][key] = "global"
             else:
                 result["sources"][key] = "default"
@@ -218,29 +241,58 @@ class ConfigManager:
 
     def _is_from_env(self, key: str) -> bool:
         """Check if a config key is overridden by environment variable."""
-        env_mapping = {
-            "platform": "C4_PLATFORM",
-            "git.user": "C4_GIT_USER",
-            "git.email": "C4_GIT_EMAIL",
-        }
-        env_var = env_mapping.get(key)
-        return env_var is not None and os.environ.get(env_var) is not None
+        mapping = ENV_VAR_MAPPING.get(key)
+        if mapping is None:
+            return False
+        env_var, _ = mapping
+        return os.environ.get(env_var) is not None
 
-    def _apply_env_overrides(self, config: C4Config) -> C4Config:
-        """Apply environment variable overrides to config."""
+    def _apply_env_overrides(self, config: UserConfig) -> UserConfig:
+        """Apply environment variable overrides to config.
+
+        Supports all keys defined in ENV_VAR_MAPPING with proper type conversion.
+        """
         data = config.model_dump()
 
-        # Platform
-        if platform := os.environ.get("C4_PLATFORM"):
-            data["platform"] = platform
+        for config_key, (env_var, value_type) in ENV_VAR_MAPPING.items():
+            env_value = os.environ.get(env_var)
+            if env_value is None:
+                continue
 
-        # Git
-        if git_user := os.environ.get("C4_GIT_USER"):
-            data["git"]["user"] = git_user
-        if git_email := os.environ.get("C4_GIT_EMAIL"):
-            data["git"]["email"] = git_email
+            # Parse value based on type
+            parsed_value = self._parse_env_value(env_value, value_type)
 
-        return C4Config(**data)
+            # Set nested value
+            parts = config_key.split(".")
+            if len(parts) == 1:
+                data[parts[0]] = parsed_value
+            else:
+                section, field = parts[0], parts[1]
+                if section not in data:
+                    data[section] = {}
+                data[section][field] = parsed_value
+
+        return UserConfig(**data)
+
+    def _parse_env_value(self, value: str, value_type: str) -> str | bool | int:
+        """Parse environment variable value to appropriate type.
+
+        Args:
+            value: Raw string value from environment
+            value_type: Expected type ("str", "bool", "int")
+
+        Returns:
+            Parsed value
+        """
+        if value_type == "bool":
+            return value.lower() in ("true", "1", "yes", "on")
+        elif value_type == "int":
+            try:
+                return int(value)
+            except ValueError:
+                return 0  # Default to 0 for invalid int
+        else:
+            return value
 
 
 def ensure_credentials_gitignore(project_path: Path) -> bool:

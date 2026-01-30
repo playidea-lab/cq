@@ -1,5 +1,6 @@
 """Shared test fixtures for C4 tests"""
 
+import subprocess
 import tempfile
 from pathlib import Path
 
@@ -7,6 +8,159 @@ import pytest
 
 from c4.mcp_server import C4Daemon
 from c4.models import CheckpointConfig, Task
+
+# =============================================================================
+# Git Repository Fixtures
+# =============================================================================
+
+
+@pytest.fixture
+def git_repo(tmp_path: Path) -> Path:
+    """Create a temporary git repository with initial commit.
+
+    This fixture creates a real git repository with:
+    - Git initialized with 'main' as default branch
+    - User config (email and name)
+    - Initial commit with README.md
+    - .c4 directory created
+
+    Use this for tests that need a real git repository.
+
+    Returns:
+        Path to the git repository root
+    """
+    # Initialize git repo with main as default branch
+    subprocess.run(
+        ["git", "init", "-b", "main"],
+        cwd=tmp_path,
+        capture_output=True,
+        check=True,
+    )
+    subprocess.run(
+        ["git", "config", "user.email", "test@example.com"],
+        cwd=tmp_path,
+        capture_output=True,
+        check=True,
+    )
+    subprocess.run(
+        ["git", "config", "user.name", "Test User"],
+        cwd=tmp_path,
+        capture_output=True,
+        check=True,
+    )
+
+    # Create initial commit
+    (tmp_path / "README.md").write_text("# Test Project")
+    subprocess.run(
+        ["git", "add", "README.md"],
+        cwd=tmp_path,
+        capture_output=True,
+        check=True,
+    )
+    subprocess.run(
+        ["git", "commit", "-m", "Initial commit"],
+        cwd=tmp_path,
+        capture_output=True,
+        check=True,
+    )
+
+    # Create .c4 directory
+    (tmp_path / ".c4").mkdir()
+
+    return tmp_path
+
+
+@pytest.fixture
+def mock_git_repo(tmp_path: Path) -> Path:
+    """Create a mock git repository structure without real git.
+
+    This fixture creates a minimal .git directory structure:
+    - .git/hooks directory
+
+    Use this for tests that only need git directory structure
+    but don't need actual git functionality.
+
+    Returns:
+        Path to the mock git repository root
+    """
+    git_dir = tmp_path / ".git"
+    git_dir.mkdir()
+    hooks_dir = git_dir / "hooks"
+    hooks_dir.mkdir()
+    return tmp_path
+
+
+@pytest.fixture
+def git_repo_with_feature_branch(git_repo: Path) -> tuple[Path, str]:
+    """Create a git repository with a feature branch.
+
+    This fixture extends git_repo with:
+    - A feature branch named 'feature/test'
+    - A commit on the feature branch
+
+    Returns:
+        Tuple of (repo_path, branch_name)
+    """
+    branch_name = "feature/test"
+
+    # Create and checkout feature branch
+    subprocess.run(
+        ["git", "checkout", "-b", branch_name],
+        cwd=git_repo,
+        capture_output=True,
+        check=True,
+    )
+
+    # Add a commit on the feature branch
+    (git_repo / "feature.txt").write_text("Feature content")
+    subprocess.run(
+        ["git", "add", "feature.txt"],
+        cwd=git_repo,
+        capture_output=True,
+        check=True,
+    )
+    subprocess.run(
+        ["git", "commit", "-m", "Add feature"],
+        cwd=git_repo,
+        capture_output=True,
+        check=True,
+    )
+
+    # Return to main branch
+    subprocess.run(
+        ["git", "checkout", "main"],
+        cwd=git_repo,
+        capture_output=True,
+        check=True,
+    )
+
+    return git_repo, branch_name
+
+
+# =============================================================================
+# Short Path Fixture (for systems with path length limits)
+# =============================================================================
+
+
+@pytest.fixture
+def short_tmp_path(tmp_path: Path) -> Path:
+    """Create a temporary directory with a shorter path.
+
+    Some git operations (especially on macOS) can fail with very long paths.
+    This fixture creates a directory directly under /tmp to avoid path length issues.
+
+    Returns:
+        Path to a temporary directory with shorter path
+    """
+    import tempfile
+
+    short_dir = tempfile.mkdtemp(prefix="c4_")
+    short_path = Path(short_dir)
+    yield short_path
+    # Cleanup
+    import shutil
+
+    shutil.rmtree(short_path, ignore_errors=True)
 
 
 @pytest.fixture

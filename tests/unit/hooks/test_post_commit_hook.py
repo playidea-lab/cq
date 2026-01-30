@@ -20,24 +20,16 @@ from c4.hooks import (
 # Test Fixtures
 # =============================================================================
 
-
-@pytest.fixture
-def git_repo(tmp_path: Path) -> Path:
-    """Create a mock git repository."""
-    git_dir = tmp_path / ".git"
-    git_dir.mkdir()
-    hooks_dir = git_dir / "hooks"
-    hooks_dir.mkdir()
-    return tmp_path
+# mock_git_repo fixture is provided by tests/conftest.py
 
 
 @pytest.fixture
-def c4_project(git_repo: Path) -> Path:
+def c4_project(mock_git_repo: Path) -> Path:
     """Create a C4 project structure."""
-    c4_dir = git_repo / ".c4"
+    c4_dir = mock_git_repo / ".c4"
     c4_dir.mkdir()
     (c4_dir / "state.json").write_text('{"status": "EXECUTE"}')
-    return git_repo
+    return mock_git_repo
 
 
 # =============================================================================
@@ -94,58 +86,58 @@ class TestPostCommitTemplate:
 class TestInstallPostCommitHook:
     """Tests for post-commit hook installation."""
 
-    def test_install_creates_hook(self, git_repo: Path) -> None:
+    def test_install_creates_hook(self, mock_git_repo: Path) -> None:
         """Installing hook should create the file."""
-        with patch("c4.hooks.get_git_hooks_dir", return_value=git_repo / ".git" / "hooks"):
+        with patch("c4.hooks.get_git_hooks_dir", return_value=mock_git_repo / ".git" / "hooks"):
             success, message = install_post_commit_hook()
 
             assert success is True
             assert "Installed" in message
 
-            hook_path = git_repo / ".git" / "hooks" / "post-commit"
+            hook_path = mock_git_repo / ".git" / "hooks" / "post-commit"
             assert hook_path.exists()
 
-    def test_install_makes_executable(self, git_repo: Path) -> None:
+    def test_install_makes_executable(self, mock_git_repo: Path) -> None:
         """Installed hook should be executable."""
-        with patch("c4.hooks.get_git_hooks_dir", return_value=git_repo / ".git" / "hooks"):
+        with patch("c4.hooks.get_git_hooks_dir", return_value=mock_git_repo / ".git" / "hooks"):
             install_post_commit_hook()
 
-            hook_path = git_repo / ".git" / "hooks" / "post-commit"
+            hook_path = mock_git_repo / ".git" / "hooks" / "post-commit"
             assert os.access(hook_path, os.X_OK)
 
-    def test_install_idempotent_for_c4_hooks(self, git_repo: Path) -> None:
+    def test_install_idempotent_for_c4_hooks(self, mock_git_repo: Path) -> None:
         """Installing same hook twice should report already installed."""
-        with patch("c4.hooks.get_git_hooks_dir", return_value=git_repo / ".git" / "hooks"):
+        with patch("c4.hooks.get_git_hooks_dir", return_value=mock_git_repo / ".git" / "hooks"):
             install_post_commit_hook()
             success, message = install_post_commit_hook()
 
             assert success is True
             assert "Already installed" in message
 
-    def test_install_skips_existing_non_c4_hook(self, git_repo: Path) -> None:
+    def test_install_skips_existing_non_c4_hook(self, mock_git_repo: Path) -> None:
         """Should not overwrite existing non-C4 hooks."""
-        hook_path = git_repo / ".git" / "hooks" / "post-commit"
+        hook_path = mock_git_repo / ".git" / "hooks" / "post-commit"
         hook_path.write_text("#!/bin/bash\necho 'custom hook'")
 
-        with patch("c4.hooks.get_git_hooks_dir", return_value=git_repo / ".git" / "hooks"):
+        with patch("c4.hooks.get_git_hooks_dir", return_value=mock_git_repo / ".git" / "hooks"):
             success, message = install_post_commit_hook()
 
             assert success is False
             assert "Existing hook" in message
             assert hook_path.read_text() == "#!/bin/bash\necho 'custom hook'"
 
-    def test_install_force_overwrites(self, git_repo: Path) -> None:
+    def test_install_force_overwrites(self, mock_git_repo: Path) -> None:
         """Force should overwrite existing hooks."""
-        hook_path = git_repo / ".git" / "hooks" / "post-commit"
+        hook_path = mock_git_repo / ".git" / "hooks" / "post-commit"
         hook_path.write_text("#!/bin/bash\necho 'custom hook'")
 
-        with patch("c4.hooks.get_git_hooks_dir", return_value=git_repo / ".git" / "hooks"):
+        with patch("c4.hooks.get_git_hooks_dir", return_value=mock_git_repo / ".git" / "hooks"):
             success, message = install_post_commit_hook(force=True)
 
             assert success is True
             assert "C4 Git Hook" in hook_path.read_text() or "C4:" in hook_path.read_text()
 
-    def test_install_fails_outside_git_repo(self, tmp_path: Path) -> None:
+    def test_install_fails_outside_mock_git_repo(self, tmp_path: Path) -> None:
         """Should fail when not in a git repository."""
         with patch("c4.hooks.get_git_hooks_dir", return_value=None):
             success, message = install_post_commit_hook()
@@ -162,33 +154,33 @@ class TestInstallPostCommitHook:
 class TestUninstallPostCommitHook:
     """Tests for post-commit hook uninstallation."""
 
-    def test_uninstall_removes_c4_hook(self, git_repo: Path) -> None:
+    def test_uninstall_removes_c4_hook(self, mock_git_repo: Path) -> None:
         """Should remove C4 hooks."""
-        hook_path = git_repo / ".git" / "hooks" / "post-commit"
+        hook_path = mock_git_repo / ".git" / "hooks" / "post-commit"
         hook_path.write_text("#!/bin/bash\n# C4 Git Hook: post-commit\necho test")
 
-        with patch("c4.hooks.get_git_hooks_dir", return_value=git_repo / ".git" / "hooks"):
+        with patch("c4.hooks.get_git_hooks_dir", return_value=mock_git_repo / ".git" / "hooks"):
             success, message = uninstall_post_commit_hook()
 
             assert success is True
             assert "Uninstalled" in message
             assert not hook_path.exists()
 
-    def test_uninstall_skips_non_c4_hook(self, git_repo: Path) -> None:
+    def test_uninstall_skips_non_c4_hook(self, mock_git_repo: Path) -> None:
         """Should not remove non-C4 hooks."""
-        hook_path = git_repo / ".git" / "hooks" / "post-commit"
+        hook_path = mock_git_repo / ".git" / "hooks" / "post-commit"
         hook_path.write_text("#!/bin/bash\necho 'custom hook'")
 
-        with patch("c4.hooks.get_git_hooks_dir", return_value=git_repo / ".git" / "hooks"):
+        with patch("c4.hooks.get_git_hooks_dir", return_value=mock_git_repo / ".git" / "hooks"):
             success, message = uninstall_post_commit_hook()
 
             assert success is False
             assert "Not a C4 hook" in message
             assert hook_path.exists()
 
-    def test_uninstall_succeeds_when_not_installed(self, git_repo: Path) -> None:
+    def test_uninstall_succeeds_when_not_installed(self, mock_git_repo: Path) -> None:
         """Should succeed if hook was never installed."""
-        with patch("c4.hooks.get_git_hooks_dir", return_value=git_repo / ".git" / "hooks"):
+        with patch("c4.hooks.get_git_hooks_dir", return_value=mock_git_repo / ".git" / "hooks"):
             success, message = uninstall_post_commit_hook()
 
             assert success is True
@@ -203,33 +195,33 @@ class TestUninstallPostCommitHook:
 class TestGetPostCommitStatus:
     """Tests for post-commit hook status checking."""
 
-    def test_status_not_installed(self, git_repo: Path) -> None:
+    def test_status_not_installed(self, mock_git_repo: Path) -> None:
         """Should report not installed for missing hooks."""
-        with patch("c4.hooks.get_git_hooks_dir", return_value=git_repo / ".git" / "hooks"):
+        with patch("c4.hooks.get_git_hooks_dir", return_value=mock_git_repo / ".git" / "hooks"):
             status = get_post_commit_status()
 
             assert status["installed"] is False
             assert status["is_c4"] is False
 
-    def test_status_c4_hook_installed(self, git_repo: Path) -> None:
+    def test_status_c4_hook_installed(self, mock_git_repo: Path) -> None:
         """Should identify C4 hooks."""
-        hook_path = git_repo / ".git" / "hooks" / "post-commit"
+        hook_path = mock_git_repo / ".git" / "hooks" / "post-commit"
         hook_path.write_text("#!/bin/bash\n# C4 Git Hook: post-commit\necho test")
         hook_path.chmod(hook_path.stat().st_mode | stat.S_IXUSR)
 
-        with patch("c4.hooks.get_git_hooks_dir", return_value=git_repo / ".git" / "hooks"):
+        with patch("c4.hooks.get_git_hooks_dir", return_value=mock_git_repo / ".git" / "hooks"):
             status = get_post_commit_status()
 
             assert status["installed"] is True
             assert status["is_c4"] is True
             assert status["executable"] is True
 
-    def test_status_external_hook(self, git_repo: Path) -> None:
+    def test_status_external_hook(self, mock_git_repo: Path) -> None:
         """Should identify non-C4 hooks."""
-        hook_path = git_repo / ".git" / "hooks" / "post-commit"
+        hook_path = mock_git_repo / ".git" / "hooks" / "post-commit"
         hook_path.write_text("#!/bin/bash\necho 'external'")
 
-        with patch("c4.hooks.get_git_hooks_dir", return_value=git_repo / ".git" / "hooks"):
+        with patch("c4.hooks.get_git_hooks_dir", return_value=mock_git_repo / ".git" / "hooks"):
             status = get_post_commit_status()
 
             assert status["installed"] is True
@@ -300,9 +292,9 @@ class TestPostCommitBackgroundExecution:
 class TestPostCommitHookIntegration:
     """Integration-like tests for post-commit hook."""
 
-    def test_install_and_uninstall_cycle(self, git_repo: Path) -> None:
+    def test_install_and_uninstall_cycle(self, mock_git_repo: Path) -> None:
         """Full install and uninstall cycle should work."""
-        with patch("c4.hooks.get_git_hooks_dir", return_value=git_repo / ".git" / "hooks"):
+        with patch("c4.hooks.get_git_hooks_dir", return_value=mock_git_repo / ".git" / "hooks"):
             # Install
             success, _ = install_post_commit_hook()
             assert success is True
@@ -320,12 +312,12 @@ class TestPostCommitHookIntegration:
             status = get_post_commit_status()
             assert status["installed"] is False
 
-    def test_hook_content_matches_template(self, git_repo: Path) -> None:
+    def test_hook_content_matches_template(self, mock_git_repo: Path) -> None:
         """Installed hook content should match template."""
-        with patch("c4.hooks.get_git_hooks_dir", return_value=git_repo / ".git" / "hooks"):
+        with patch("c4.hooks.get_git_hooks_dir", return_value=mock_git_repo / ".git" / "hooks"):
             install_post_commit_hook()
 
-            hook_path = git_repo / ".git" / "hooks" / "post-commit"
+            hook_path = mock_git_repo / ".git" / "hooks" / "post-commit"
             installed_content = hook_path.read_text()
             template_content = get_post_commit_template()
 

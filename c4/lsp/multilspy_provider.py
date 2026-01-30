@@ -442,26 +442,68 @@ class MultilspyProvider:
         return Path("")
 
     def _extract_line(self, location: Any) -> int:
-        """Extract line number from LSP location."""
-        if hasattr(location, "range"):
-            return location.range.start.line
-        return 0
+        """Extract line number from LSP location.
+
+        Defensively handles None values at any level of the location hierarchy.
+        """
+        try:
+            if location is None:
+                return 0
+            range_obj = getattr(location, "range", None)
+            if range_obj is None:
+                return 0
+            start = getattr(range_obj, "start", None)
+            if start is None:
+                return 0
+            return getattr(start, "line", 0) or 0
+        except Exception:
+            return 0
 
     def _extract_column(self, location: Any) -> int:
-        """Extract column number from LSP location."""
-        if hasattr(location, "range"):
-            return location.range.start.character
-        return 0
+        """Extract column number from LSP location.
+
+        Defensively handles None values at any level of the location hierarchy.
+        """
+        try:
+            if location is None:
+                return 0
+            range_obj = getattr(location, "range", None)
+            if range_obj is None:
+                return 0
+            start = getattr(range_obj, "start", None)
+            if start is None:
+                return 0
+            return getattr(start, "character", 0) or 0
+        except Exception:
+            return 0
 
     def _extract_symbol_line(self, sym: Any) -> int:
-        """Extract line number from document symbol."""
-        if hasattr(sym, "range"):
-            return sym.range.start.line
-        if hasattr(sym, "selection_range"):
-            return sym.selection_range.start.line
-        if hasattr(sym, "location"):
-            return self._extract_line(sym.location)
-        return 0
+        """Extract line number from document symbol.
+
+        Tries multiple attributes in order of preference.
+        """
+        try:
+            if sym is None:
+                return 0
+            # Try range first
+            range_obj = getattr(sym, "range", None)
+            if range_obj is not None:
+                start = getattr(range_obj, "start", None)
+                if start is not None:
+                    return getattr(start, "line", 0) or 0
+            # Try selection_range
+            sel_range = getattr(sym, "selection_range", None)
+            if sel_range is not None:
+                start = getattr(sel_range, "start", None)
+                if start is not None:
+                    return getattr(start, "line", 0) or 0
+            # Try location
+            location = getattr(sym, "location", None)
+            if location is not None:
+                return self._extract_line(location)
+            return 0
+        except Exception:
+            return 0
 
     def cleanup_idle_servers(self) -> int:
         """Shutdown servers that have been idle for longer than idle_timeout.

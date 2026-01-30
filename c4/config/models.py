@@ -9,6 +9,10 @@ Note:
     This module defines the user-configuration layer (git, validation commands,
     worker settings, team settings). For system-internal configuration models
     (LLM, store, github integration, worktree, etc.), see c4.models.config.
+
+    Class naming:
+    - UserConfig: User-facing configuration (this module)
+    - C4Config: System-internal configuration (c4.models.config)
 """
 
 from __future__ import annotations
@@ -27,8 +31,12 @@ class GitConfig(BaseModel):
     auto_pr: bool = Field(default=True, description="Auto-create PR on project completion")
 
 
-class ValidationConfig(BaseModel):
-    """Validation settings for lint, test, typecheck."""
+class UserValidationConfig(BaseModel):
+    """Validation settings for lint, test, typecheck (user-facing).
+
+    Note: This is distinct from c4.models.config.ValidationConfig which
+    defines system-internal validation command configuration.
+    """
 
     lint: bool = Field(default=True, description="Run linting")
     test: bool = Field(default=True, description="Run tests")
@@ -49,14 +57,17 @@ class TeamConfig(BaseModel):
     name: str | None = Field(default=None, description="Team name")
 
 
-class C4Config(BaseModel):
-    """Main C4 configuration model.
+class UserConfig(BaseModel):
+    """Main user-facing C4 configuration model.
 
     Supports hierarchical config:
     - Environment variables (highest priority)
     - Project config (.c4/config.yaml)
     - Global config (~/.c4/config.yaml)
     - Default values (lowest priority)
+
+    Note: This is distinct from c4.models.config.C4Config which defines
+    system-internal configuration (LLM, store, agents, etc.).
     """
 
     platform: Literal["claude", "cursor", "codex", "gemini", "opencode"] = Field(
@@ -64,11 +75,11 @@ class C4Config(BaseModel):
         description="Default platform",
     )
     git: GitConfig = Field(default_factory=GitConfig)
-    validation: ValidationConfig = Field(default_factory=ValidationConfig)
+    validation: UserValidationConfig = Field(default_factory=UserValidationConfig)
     worker: WorkerConfig = Field(default_factory=WorkerConfig)
     team: TeamConfig = Field(default_factory=TeamConfig)
 
-    def merge_with(self, other: C4Config) -> C4Config:
+    def merge_with(self, other: "UserConfig") -> "UserConfig":
         """Merge with another config (other takes precedence for non-None values).
 
         Args:
@@ -109,7 +120,7 @@ class C4Config(BaseModel):
             "name": other.team.name or self.team.name,
         }
 
-        return C4Config(**merged_data)
+        return UserConfig(**merged_data)
 
     def to_flat_dict(self) -> dict[str, Any]:
         """Convert to flat dictionary with dot notation keys.
@@ -141,14 +152,14 @@ class C4Config(BaseModel):
         return flat
 
     @classmethod
-    def from_flat_dict(cls, flat: dict[str, Any]) -> C4Config:
+    def from_flat_dict(cls, flat: dict[str, Any]) -> "UserConfig":
         """Create from flat dictionary with dot notation keys.
 
         Args:
             flat: Flat dictionary like {"git.user": "value"}
 
         Returns:
-            C4Config instance
+            UserConfig instance
         """
         data: dict[str, Any] = {}
 
