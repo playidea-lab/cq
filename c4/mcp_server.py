@@ -948,6 +948,11 @@ Thumbs.db
                 "done": len(state.queue.done),
                 "pending_ids": state.queue.pending[:5],  # First 5
                 "in_progress_map": state.queue.in_progress,
+                # Economic mode: model info for pending tasks
+                "pending_tasks": [
+                    {"id": tid, "model": self.get_task(tid).model if self.get_task(tid) else "opus"}
+                    for tid in state.queue.pending
+                ],
             },
             "workers": {
                 wid: {"state": w.state, "task_id": w.task_id}
@@ -1143,8 +1148,16 @@ Thumbs.db
 
         return GitResult(True, f"Created task branch {task_branch} from {work_branch}")
 
-    def c4_get_task(self, worker_id: str) -> TaskAssignment | None:
-        """Request next task assignment for a worker"""
+    def c4_get_task(
+        self, worker_id: str, model_filter: str | None = None
+    ) -> TaskAssignment | None:
+        """Request next task assignment for a worker.
+
+        Args:
+            worker_id: Unique worker identifier
+            model_filter: Only return tasks with this model (sonnet, opus, haiku).
+                If None, returns any available task (default behavior).
+        """
         if self.state_machine is None:
             raise RuntimeError("C4 not initialized")
 
@@ -1255,6 +1268,7 @@ Thumbs.db
                         validations=task.validations,
                         branch=task.branch or "",
                         worktree_path=worktree_path,
+                        model=task.model,
                         **agent_routing,
                     )
 
@@ -1272,6 +1286,10 @@ Thumbs.db
 
         for task in pending_tasks:
             task_id = task.id
+
+            # Economic mode: filter by model if specified
+            if model_filter and task.model != model_filter:
+                continue
 
             # Check dependencies first (non-locking check)
             deps_met = all(
@@ -1434,6 +1452,7 @@ Thumbs.db
                 validations=task.validations,
                 branch=task_branch,
                 worktree_path=worktree_path,
+                model=task.model,
                 **agent_routing,
             )
 
@@ -1788,6 +1807,7 @@ Thumbs.db
         dependencies: list[str] | None = None,
         domain: str | None = None,
         priority: int = 0,
+        model: str = "opus",
     ) -> dict[str, Any]:
         """Add a new task with optional dependencies.
 
@@ -1804,6 +1824,7 @@ Thumbs.db
             dependencies: List of task IDs that must complete first
             domain: Domain for agent routing (e.g., "web-frontend")
             priority: Higher priority tasks are assigned first (default: 0)
+            model: Claude model for this task (sonnet, opus, haiku). Default: opus
         """
         if self.state_machine is None:
             raise RuntimeError("C4 not initialized")
@@ -1826,6 +1847,7 @@ Thumbs.db
             dependencies=normalized_deps,
             domain=domain,
             priority=priority,
+            model=model,
             # Review-as-Task fields
             type=task_type,
             base_id=base_id,
@@ -1837,6 +1859,7 @@ Thumbs.db
             "success": True,
             "task_id": normalized_id,
             "dependencies": task.dependencies,
+            "model": task.model,
         }
 
     def _parse_task_id(self, task_id: str) -> tuple[str, str, int, TaskType]:

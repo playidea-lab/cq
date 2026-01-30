@@ -29,6 +29,8 @@ class TaskAssignment(BaseModel):
     handoff_instructions: str | None = None
     # Worktree isolation field
     worktree_path: str | None = None
+    # Economic mode: model assigned to this task
+    model: str = "opus"
 
 
 class SubmitResponse(BaseModel):

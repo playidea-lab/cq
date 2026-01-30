@@ -67,6 +67,13 @@ class Task(BaseModel):
     completed_by: str | None = None  # Worker who completed parent task
     review_comments: str | None = None  # Comments from REQUEST_CHANGES
 
+    # Economic mode: model selection for cost optimization
+    model: str = Field(
+        default="opus",
+        pattern="^(sonnet|opus|haiku)$",
+        description="Claude model for this task (sonnet, opus, haiku). Default: opus",
+    )
+
     # Checkpoint-as-Task fields
     phase_id: str | None = None  # Phase identifier (e.g., "001", "phase-1")
     required_tasks: list[str] = Field(default_factory=list)  # Tasks to verify (CP only)
