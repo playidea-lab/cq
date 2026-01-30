@@ -78,6 +78,34 @@ T-001-0 (구현) → R-001-0 (리뷰)
 - REQUEST_CHANGES 시 다음 버전 태스크 생성
 - Phase 내 모든 리뷰 APPROVE 시 체크포인트 태스크 생성
 
+### Economic Mode (비용 최적화)
+
+태스크별 모델 선택으로 비용을 최적화합니다:
+
+| 모델 | 용도 | 예시 |
+|------|------|------|
+| **opus** | 복잡한 아키텍처, 설계 결정 | 시스템 설계, 어려운 버그 |
+| **sonnet** | 일반 구현, 리뷰 (기본값) | 기능 구현, 코드 리뷰 |
+| **haiku** | 단순 반복, 린트 수정 | 포맷팅, 간단한 수정 |
+
+```yaml
+# 태스크 추가 시 모델 지정
+c4_add_todo:
+  task_id: "T-001-0"
+  title: "아키텍처 설계"
+  model: "opus"        # 복잡한 작업은 opus
+
+c4_add_todo:
+  task_id: "T-002-0"
+  title: "린트 수정"
+  model: "haiku"       # 단순 작업은 haiku
+```
+
+```bash
+# Swarm 모드에서 모델별 Worker 스폰
+/c4-swarm --opus 1 --sonnet 3 --haiku 2
+```
+
 ### 슬래시 명령어
 
 | 명령어 | 설명 |
@@ -91,6 +119,7 @@ T-001-0 (구현) → R-001-0 (리뷰)
 | `/c4-submit` | 완료된 태스크 제출 |
 | `/c4-checkpoint` | 체크포인트 리뷰 |
 | `/c4-add-task` | 새 태스크 추가 |
+| `/c4-swarm` | 병렬 Worker 스폰 |
 
 ---
 
@@ -105,12 +134,33 @@ C4는 개발 워크플로우를 향상시키는 여러 기능을 제공합니다
 - **commit-msg**: Task ID 형식 검증 (`[T-XXX-N] message`)
 - **post-commit**: C4 이벤트 로깅
 
-### IDE 통합 (LSP)
+### IDE 통합 (LSP) & 코드 분석
 
-LSP 서버를 통한 IDE 기능:
+C4는 내장 LSP 서버와 코드 분석 도구를 제공합니다:
+
+**LSP 기능**:
 - **Hover**: `T-XXX` 위에 마우스를 올리면 태스크 정보 표시
 - **Completion**: `T-` 입력 시 사용 가능한 태스크 자동완성
-- **Diagnostics**: 잘못된 태스크 참조 경고
+- **Definition**: 심볼 정의 위치로 이동
+- **References**: 모든 참조 찾기
+- **Document/Workspace Symbols**: 심볼 검색
+
+**코드 분석 MCP 도구** (Serena 대체):
+
+| 도구 | 설명 |
+|------|------|
+| `c4_find_symbol` | 심볼 검색 (클래스, 함수, 메서드) |
+| `c4_get_symbols_overview` | 파일 내 심볼 개요 |
+| `c4_read_file` | 파일 읽기 (라인 범위 지원) |
+| `c4_find_file` | 파일 검색 (glob 패턴) |
+| `c4_search_for_pattern` | 정규식 패턴 검색 |
+| `c4_replace_symbol_body` | 심볼 본문 교체 |
+| `c4_insert_before_symbol` | 심볼 앞에 코드 삽입 |
+| `c4_insert_after_symbol` | 심볼 뒤에 코드 삽입 |
+| `c4_rename_symbol` | 심볼 이름 변경 (전체 참조 업데이트) |
+
+> **Note**: C4의 코드 분석 도구는 Serena MCP 서버를 완전히 대체합니다.
+> 추가 장점: Task ID 통합, C4 프로젝트 컨텍스트 자동 인식
 
 ### Health Monitoring (Daemon)
 
@@ -278,6 +328,8 @@ your-project/
 | 기능 | 설명 |
 |------|------|
 | **State Machine** | 구조화된 워크플로우 관리 (v0.6.6 최적화) |
+| **Economic Mode** | 태스크별 모델 선택 (opus/sonnet/haiku) |
+| **Code Analysis** | 내장 LSP + 심볼 편집 도구 (Serena 대체) |
 | **Multi-Platform** | Claude Code, Cursor, Gemini CLI, Codex, OpenCode 완벽 지원 |
 | **Multi-Worker** | SQLite WAL 기반 병렬 실행 및 동기화 |
 | **Agent Routing** | GraphRouter 기반 스킬 매칭 및 에이전트 체이닝 |
