@@ -4364,13 +4364,14 @@ Thumbs.db
             Dict with list of matching symbols
         """
         try:
-            from c4.lsp.jedi_provider import find_symbol_mcp
+            from c4.lsp.unified_provider import find_symbol_unified
 
-            symbols = find_symbol_mcp(
+            symbols = find_symbol_unified(
                 name_path_pattern=name_path_pattern,
                 relative_path=relative_path,
                 include_body=include_body,
                 project_path=str(self.root),
+                timeout=30,
             )
 
             return {
@@ -4384,7 +4385,7 @@ Thumbs.db
         except ImportError:
             return {
                 "success": False,
-                "error": "jedi not available. Install with: uv add jedi",
+                "error": "LSP providers not available. Install with: uv add multilspy jedi",
             }
         except Exception as e:
             return {"success": False, "error": str(e)}
@@ -4407,12 +4408,13 @@ Thumbs.db
             Dictionary with symbols grouped by kind
         """
         try:
-            from c4.lsp.jedi_provider import get_symbols_overview_mcp
+            from c4.lsp.unified_provider import get_symbols_overview_unified
 
-            result = get_symbols_overview_mcp(
+            result = get_symbols_overview_unified(
                 relative_path=relative_path,
                 depth=depth,
                 project_path=str(self.root),
+                timeout=30,
             )
 
             if "error" in result:
@@ -4426,7 +4428,7 @@ Thumbs.db
         except ImportError:
             return {
                 "success": False,
-                "error": "jedi not available. Install with: uv add jedi",
+                "error": "LSP providers not available. Install with: uv add multilspy jedi",
             }
         except Exception as e:
             return {"success": False, "error": str(e)}
