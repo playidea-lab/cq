@@ -4194,6 +4194,149 @@ Thumbs.db
         except Exception as e:
             return {"success": False, "error": str(e)}
 
+    # =========================================================================
+    # File Operation Tools
+    # =========================================================================
+
+    def _get_file_tools(self):
+        """Get or create FileTools instance."""
+        if not hasattr(self, "_file_tools"):
+            from c4.lsp.file_tools import FileTools
+            self._file_tools = FileTools(self.root)
+        return self._file_tools
+
+    def c4_read_file(
+        self,
+        relative_path: str,
+        start_line: int = 0,
+        end_line: int | None = None,
+    ) -> dict[str, Any]:
+        """Read a file or portion of it.
+
+        Args:
+            relative_path: Path relative to project root
+            start_line: 0-based index of first line to read
+            end_line: 0-based index of last line (inclusive), None for end
+
+        Returns:
+            Dictionary with content, total_lines, start_line, end_line
+        """
+        return self._get_file_tools().read_file(
+            relative_path=relative_path,
+            start_line=start_line,
+            end_line=end_line,
+        )
+
+    def c4_create_text_file(
+        self,
+        relative_path: str,
+        content: str,
+    ) -> dict[str, Any]:
+        """Create or overwrite a text file.
+
+        Args:
+            relative_path: Path relative to project root
+            content: Content to write
+
+        Returns:
+            Dictionary with success status and message
+        """
+        return self._get_file_tools().create_text_file(
+            relative_path=relative_path,
+            content=content,
+        )
+
+    def c4_list_dir(
+        self,
+        relative_path: str = ".",
+        recursive: bool = False,
+    ) -> dict[str, Any]:
+        """List files and directories.
+
+        Args:
+            relative_path: Path relative to project root
+            recursive: Whether to scan subdirectories
+
+        Returns:
+            Dictionary with directories and files lists
+        """
+        return self._get_file_tools().list_dir(
+            relative_path=relative_path,
+            recursive=recursive,
+        )
+
+    def c4_find_file(
+        self,
+        file_mask: str,
+        relative_path: str = ".",
+    ) -> dict[str, Any]:
+        """Find files matching a pattern.
+
+        Args:
+            file_mask: Filename or glob pattern
+            relative_path: Directory to search in
+
+        Returns:
+            Dictionary with matches list
+        """
+        return self._get_file_tools().find_file(
+            file_mask=file_mask,
+            relative_path=relative_path,
+        )
+
+    def c4_search_for_pattern(
+        self,
+        pattern: str,
+        relative_path: str = ".",
+        glob_pattern: str | None = None,
+        context_lines: int = 0,
+    ) -> dict[str, Any]:
+        """Search for a regex pattern in files.
+
+        Args:
+            pattern: Regular expression pattern
+            relative_path: Directory or file to search in
+            glob_pattern: Optional glob to filter files
+            context_lines: Number of context lines before/after match
+
+        Returns:
+            Dictionary with matches list
+        """
+        return self._get_file_tools().search_for_pattern(
+            pattern=pattern,
+            relative_path=relative_path,
+            glob_pattern=glob_pattern,
+            context_lines=context_lines,
+        )
+
+    def c4_replace_content(
+        self,
+        relative_path: str,
+        needle: str,
+        replacement: str,
+        mode: str = "literal",
+        allow_multiple: bool = False,
+    ) -> dict[str, Any]:
+        """Replace content in a file.
+
+        Args:
+            relative_path: Path relative to project root
+            needle: String or regex pattern to search for
+            replacement: Replacement string
+            mode: 'literal' for exact match, 'regex' for regex
+            allow_multiple: Whether to allow multiple replacements
+
+        Returns:
+            Dictionary with success status and replacements_made count
+        """
+        return self._get_file_tools().replace_content(
+            relative_path=relative_path,
+            needle=needle,
+            replacement=replacement,
+            mode=mode,
+            allow_multiple=allow_multiple,
+        )
+
     def check_and_trigger_checkpoint(self) -> dict[str, Any] | None:
         """
         Check if checkpoint conditions are met and trigger if so.
@@ -5053,6 +5196,150 @@ def create_server(project_root: Path | None = None) -> Server:
                     "required": ["relative_path"],
                 },
             ),
+            # File operation tools
+            Tool(
+                name="c4_read_file",
+                description=(
+                    "Read a file or portion of it. Returns file content with line numbers."
+                ),
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "relative_path": {
+                            "type": "string",
+                            "description": "Path to the file (relative to project root)",
+                        },
+                        "start_line": {
+                            "type": "integer",
+                            "description": "0-based index of first line to read",
+                            "default": 0,
+                        },
+                        "end_line": {
+                            "type": "integer",
+                            "description": "0-based index of last line (inclusive), null for end",
+                        },
+                    },
+                    "required": ["relative_path"],
+                },
+            ),
+            Tool(
+                name="c4_create_text_file",
+                description="Create or overwrite a text file",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "relative_path": {
+                            "type": "string",
+                            "description": "Path to the file (relative to project root)",
+                        },
+                        "content": {
+                            "type": "string",
+                            "description": "Content to write to the file",
+                        },
+                    },
+                    "required": ["relative_path", "content"],
+                },
+            ),
+            Tool(
+                name="c4_list_dir",
+                description="List files and directories",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "relative_path": {
+                            "type": "string",
+                            "description": "Path relative to project root (use '.' for root)",
+                            "default": ".",
+                        },
+                        "recursive": {
+                            "type": "boolean",
+                            "description": "Whether to scan subdirectories",
+                            "default": False,
+                        },
+                    },
+                    "required": [],
+                },
+            ),
+            Tool(
+                name="c4_find_file",
+                description="Find files matching a glob pattern",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "file_mask": {
+                            "type": "string",
+                            "description": "Filename or glob pattern (e.g., '*.py', 'test_*.py')",
+                        },
+                        "relative_path": {
+                            "type": "string",
+                            "description": "Directory to search in",
+                            "default": ".",
+                        },
+                    },
+                    "required": ["file_mask"],
+                },
+            ),
+            Tool(
+                name="c4_search_for_pattern",
+                description="Search for a regex pattern in files",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "pattern": {
+                            "type": "string",
+                            "description": "Regular expression pattern to search for",
+                        },
+                        "relative_path": {
+                            "type": "string",
+                            "description": "Directory or file to search in",
+                            "default": ".",
+                        },
+                        "glob_pattern": {
+                            "type": "string",
+                            "description": "Optional glob to filter files (e.g., '*.py')",
+                        },
+                        "context_lines": {
+                            "type": "integer",
+                            "description": "Number of context lines before/after match",
+                            "default": 0,
+                        },
+                    },
+                    "required": ["pattern"],
+                },
+            ),
+            Tool(
+                name="c4_replace_content",
+                description="Replace content in a file using literal or regex matching",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "relative_path": {
+                            "type": "string",
+                            "description": "Path to the file (relative to project root)",
+                        },
+                        "needle": {
+                            "type": "string",
+                            "description": "String or regex pattern to search for",
+                        },
+                        "replacement": {
+                            "type": "string",
+                            "description": "Replacement string",
+                        },
+                        "mode": {
+                            "type": "string",
+                            "enum": ["literal", "regex"],
+                            "description": "'literal' for exact match, 'regex' for regex",
+                            "default": "literal",
+                        },
+                        "allow_multiple": {
+                            "type": "boolean",
+                            "description": "Whether to allow multiple replacements",
+                            "default": False,
+                        },
+                    },
+                    "required": ["relative_path", "needle", "replacement"],
+                },
+            ),
         ]
 
     @server.call_tool()
@@ -5245,6 +5532,43 @@ def create_server(project_root: Path | None = None) -> Server:
                 result = daemon.c4_get_symbols_overview(
                     relative_path=arguments.get("relative_path", ""),
                     depth=arguments.get("depth", 0),
+                )
+            # File operation tools
+            elif name == "c4_read_file":
+                result = daemon.c4_read_file(
+                    relative_path=arguments.get("relative_path", ""),
+                    start_line=arguments.get("start_line", 0),
+                    end_line=arguments.get("end_line"),
+                )
+            elif name == "c4_create_text_file":
+                result = daemon.c4_create_text_file(
+                    relative_path=arguments.get("relative_path", ""),
+                    content=arguments.get("content", ""),
+                )
+            elif name == "c4_list_dir":
+                result = daemon.c4_list_dir(
+                    relative_path=arguments.get("relative_path", "."),
+                    recursive=arguments.get("recursive", False),
+                )
+            elif name == "c4_find_file":
+                result = daemon.c4_find_file(
+                    file_mask=arguments.get("file_mask", "*"),
+                    relative_path=arguments.get("relative_path", "."),
+                )
+            elif name == "c4_search_for_pattern":
+                result = daemon.c4_search_for_pattern(
+                    pattern=arguments.get("pattern", ""),
+                    relative_path=arguments.get("relative_path", "."),
+                    glob_pattern=arguments.get("glob_pattern"),
+                    context_lines=arguments.get("context_lines", 0),
+                )
+            elif name == "c4_replace_content":
+                result = daemon.c4_replace_content(
+                    relative_path=arguments.get("relative_path", ""),
+                    needle=arguments.get("needle", ""),
+                    replacement=arguments.get("replacement", ""),
+                    mode=arguments.get("mode", "literal"),
+                    allow_multiple=arguments.get("allow_multiple", False),
                 )
             else:
                 result = {"error": f"Unknown tool: {name}"}
