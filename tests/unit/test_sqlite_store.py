@@ -361,3 +361,111 @@ class TestSQLiteLockStore:
 
         # Exactly one worker should have acquired the lock first
         assert results.count(True) >= 1  # At least one succeeded
+
+
+class TestSQLiteTaskHistory:
+    """Tests for task history persistence in SQLiteTaskStore"""
+
+    @pytest.fixture
+    def task_store(self, db_path):
+        """Create a SQLiteTaskStore"""
+        from c4.store import SQLiteTaskStore
+
+        return SQLiteTaskStore(db_path)
+
+    def test_record_and_get_history(self, task_store):
+        """Test recording and retrieving task assignment history"""
+        project_id = "test-project"
+        task_id = "T-001-0"
+
+        # Initially empty
+        history = task_store.get_task_history(project_id, task_id)
+        assert history == []
+
+        # Record first assignment
+        task_store.record_assignment(project_id, task_id, "worker-1")
+        history = task_store.get_task_history(project_id, task_id)
+        assert history == ["worker-1"]
+
+        # Record second assignment
+        task_store.record_assignment(project_id, task_id, "worker-2")
+        history = task_store.get_task_history(project_id, task_id)
+        assert history == ["worker-1", "worker-2"]
+
+    def test_no_duplicate_records(self, task_store):
+        """Test that duplicate assignments are ignored"""
+        project_id = "test-project"
+        task_id = "T-001-0"
+
+        # Record same worker twice
+        task_store.record_assignment(project_id, task_id, "worker-1")
+        task_store.record_assignment(project_id, task_id, "worker-1")
+
+        history = task_store.get_task_history(project_id, task_id)
+        assert history == ["worker-1"]
+
+    def test_separate_projects(self, task_store):
+        """Test that history is separate per project"""
+        task_id = "T-001-0"
+
+        task_store.record_assignment("project-a", task_id, "worker-1")
+        task_store.record_assignment("project-b", task_id, "worker-2")
+
+        assert task_store.get_task_history("project-a", task_id) == ["worker-1"]
+        assert task_store.get_task_history("project-b", task_id) == ["worker-2"]
+
+    def test_separate_tasks(self, task_store):
+        """Test that history is separate per task"""
+        project_id = "test-project"
+
+        task_store.record_assignment(project_id, "T-001-0", "worker-1")
+        task_store.record_assignment(project_id, "T-002-0", "worker-2")
+
+        assert task_store.get_task_history(project_id, "T-001-0") == ["worker-1"]
+        assert task_store.get_task_history(project_id, "T-002-0") == ["worker-2"]
+
+    def test_clear_task_history_specific_task(self, task_store):
+        """Test clearing history for a specific task"""
+        project_id = "test-project"
+
+        task_store.record_assignment(project_id, "T-001-0", "worker-1")
+        task_store.record_assignment(project_id, "T-002-0", "worker-2")
+
+        # Clear only T-001-0
+        deleted = task_store.clear_task_history(project_id, "T-001-0")
+        assert deleted == 1
+
+        assert task_store.get_task_history(project_id, "T-001-0") == []
+        assert task_store.get_task_history(project_id, "T-002-0") == ["worker-2"]
+
+    def test_clear_task_history_all_project(self, task_store):
+        """Test clearing all history for a project"""
+        project_id = "test-project"
+
+        task_store.record_assignment(project_id, "T-001-0", "worker-1")
+        task_store.record_assignment(project_id, "T-002-0", "worker-2")
+        task_store.record_assignment(project_id, "T-002-0", "worker-3")
+
+        # Clear all for project
+        deleted = task_store.clear_task_history(project_id)
+        assert deleted == 3
+
+        assert task_store.get_task_history(project_id, "T-001-0") == []
+        assert task_store.get_task_history(project_id, "T-002-0") == []
+
+    def test_history_persists_across_connections(self, db_path):
+        """Test that history survives store recreation (simulating restart)"""
+        from c4.store import SQLiteTaskStore
+
+        project_id = "test-project"
+        task_id = "T-001-0"
+
+        # First store instance
+        store1 = SQLiteTaskStore(db_path)
+        store1.record_assignment(project_id, task_id, "worker-1")
+        del store1
+
+        # Second store instance (simulating restart)
+        store2 = SQLiteTaskStore(db_path)
+        history = store2.get_task_history(project_id, task_id)
+        assert history == ["worker-1"]

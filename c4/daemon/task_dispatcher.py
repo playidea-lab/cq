@@ -5,11 +5,26 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
     from c4.models import C4State
     from c4.state_machine import StateMachine
+
+
+@runtime_checkable
+class TaskHistoryStore(Protocol):
+    """Protocol for task history persistence."""
+
+    def record_assignment(
+        self, project_id: str, task_id: str, worker_id: str
+    ) -> None:
+        """Record that a worker was assigned to a task."""
+        ...
+
+    def get_task_history(self, project_id: str, task_id: str) -> list[str]:
+        """Get list of workers who have been assigned a task."""
+        ...
 
 
 class TaskPriority(int, Enum):
@@ -64,17 +79,23 @@ class TaskDispatcher:
         self,
         state_machine: "StateMachine",
         enable_peer_review: bool = True,
+        history_store: TaskHistoryStore | None = None,
     ):
         """Initialize dispatcher.
 
         Args:
             state_machine: State machine for state access
             enable_peer_review: Enable peer review for repair tasks
+            history_store: Optional persistent store for task history.
+                          If provided, history survives daemon restarts.
+                          SQLiteTaskStore implements this protocol.
         """
         self._state_machine = state_machine
         self._peer_review_enabled = enable_peer_review
         self._task_priorities: dict[str, int] = {}
-        self._task_history: dict[str, list[str]] = {}  # task_id -> [worker_ids]
+        # In-memory cache, synced with persistent store if available
+        self._task_history: dict[str, list[str]] = {}
+        self._history_store = history_store
 
     @property
     def state(self) -> "C4State":
@@ -111,18 +132,42 @@ class TaskDispatcher:
     def record_assignment(self, task_id: str, worker_id: str) -> None:
         """Record that a worker attempted a task.
 
+        If a history_store is configured, persists to database.
+        Also updates in-memory cache for fast access.
+
         Args:
             task_id: Task identifier
             worker_id: Worker who attempted the task
         """
+        # Update in-memory cache
         if task_id not in self._task_history:
             self._task_history[task_id] = []
         if worker_id not in self._task_history[task_id]:
             self._task_history[task_id].append(worker_id)
 
+        # Persist to store if available
+        if self._history_store:
+            project_id = self.state.project_id
+            self._history_store.record_assignment(project_id, task_id, worker_id)
+
     def get_previous_workers(self, task_id: str) -> list[str]:
-        """Get list of workers who previously attempted a task."""
-        return self._task_history.get(task_id, [])
+        """Get list of workers who previously attempted a task.
+
+        Checks in-memory cache first, falls back to persistent store.
+        """
+        # Check in-memory cache first
+        if task_id in self._task_history:
+            return self._task_history[task_id]
+
+        # Load from persistent store if available
+        if self._history_store:
+            project_id = self.state.project_id
+            workers = self._history_store.get_task_history(project_id, task_id)
+            # Cache for future lookups
+            self._task_history[task_id] = workers
+            return workers
+
+        return []
 
     def is_repair_task(self, task_id: str) -> bool:
         """Check if a task is a repair (previously attempted)."""

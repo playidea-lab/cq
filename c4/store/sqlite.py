@@ -537,6 +537,22 @@ class SQLiteTaskStore:
                 CREATE INDEX IF NOT EXISTS idx_c4_tasks_status
                 ON c4_tasks (project_id, status)
             """)
+            # Task history for peer review support
+            # Records which workers have previously attempted each task
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS c4_task_history (
+                    project_id TEXT,
+                    task_id TEXT,
+                    worker_id TEXT,
+                    assigned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (project_id, task_id, worker_id)
+                )
+            """)
+            # Index for faster queries by task
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_c4_task_history_task
+                ON c4_task_history (project_id, task_id)
+            """)
             conn.commit()
 
     @contextmanager
@@ -910,3 +926,75 @@ class SQLiteTaskStore:
 
         self.save_all(project_id, tasks)
         return len(tasks)
+
+    # =========================================================================
+    # Task History (for peer review support)
+    # =========================================================================
+
+    def record_assignment(
+        self, project_id: str, task_id: str, worker_id: str
+    ) -> None:
+        """Record that a worker was assigned to a task.
+
+        Used for peer review: repair tasks should go to different workers.
+
+        Args:
+            project_id: Project identifier
+            task_id: Task identifier
+            worker_id: Worker who was assigned
+        """
+        with self._get_connection() as conn:
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO c4_task_history
+                    (project_id, task_id, worker_id, assigned_at)
+                VALUES (?, ?, ?, ?)
+                """,
+                (project_id, task_id, worker_id, datetime.now()),
+            )
+            conn.commit()
+
+    def get_task_history(self, project_id: str, task_id: str) -> list[str]:
+        """Get list of workers who have previously been assigned a task.
+
+        Args:
+            project_id: Project identifier
+            task_id: Task identifier
+
+        Returns:
+            List of worker IDs in order of assignment
+        """
+        with self._get_connection() as conn:
+            cursor = conn.execute(
+                """
+                SELECT worker_id FROM c4_task_history
+                WHERE project_id = ? AND task_id = ?
+                ORDER BY assigned_at ASC
+                """,
+                (project_id, task_id),
+            )
+            return [row[0] for row in cursor.fetchall()]
+
+    def clear_task_history(self, project_id: str, task_id: str | None = None) -> int:
+        """Clear task history for a project or specific task.
+
+        Args:
+            project_id: Project identifier
+            task_id: Optional task ID (if None, clears all history for project)
+
+        Returns:
+            Number of records deleted
+        """
+        with self._get_connection() as conn:
+            if task_id:
+                cursor = conn.execute(
+                    "DELETE FROM c4_task_history WHERE project_id = ? AND task_id = ?",
+                    (project_id, task_id),
+                )
+            else:
+                cursor = conn.execute(
+                    "DELETE FROM c4_task_history WHERE project_id = ?",
+                    (project_id,),
+                )
+            conn.commit()
+            return cursor.rowcount
