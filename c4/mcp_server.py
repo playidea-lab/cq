@@ -1109,7 +1109,7 @@ Thumbs.db
                     # Check for existing worktree for resumed task
                     git_ops = GitOperations(self.root)
                     worktree_path: str | None = None
-                    if git_ops.is_git_repo():
+                    if git_ops.is_git_repo() and self.config.worktree.enabled:
                         wt_path = git_ops.get_worktree_path(worker_id)
                         if wt_path.exists():
                             worktree_path = str(wt_path)
@@ -1242,7 +1242,7 @@ Thumbs.db
             git_ops = GitOperations(self.root)
             worktree_path: str | None = None
 
-            if git_ops.is_git_repo():
+            if git_ops.is_git_repo() and self.config.worktree.enabled:
                 work_branch = self.config.get_work_branch()
 
                 if not is_review_using_parent_branch:
@@ -1495,6 +1495,22 @@ Thumbs.db
             )
             if cp_response:
                 return cp_response
+
+        # Auto-cleanup worktree if enabled
+        if self.config.worktree.enabled and self.config.worktree.auto_cleanup:
+            if actual_worker_id:
+                git_ops = GitOperations(self.root)
+                if git_ops.is_git_repo():
+                    cleanup_result = git_ops.remove_worktree(actual_worker_id)
+                    if cleanup_result.success:
+                        logger.info(
+                            f"Auto-cleaned worktree for {actual_worker_id} after task {task_id}"
+                        )
+                    else:
+                        logger.warning(
+                            f"Failed to cleanup worktree for {actual_worker_id}: "
+                            f"{cleanup_result.message}"
+                        )
 
         # Get fresh state reference for final checks
         state = self.state_machine.state
