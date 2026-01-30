@@ -312,7 +312,8 @@ class TestPostCommitHookEventGeneration:
 
     def test_post_commit_hook_extracts_changed_files(self):
         """Post-commit hook should extract changed files list."""
-        assert "git diff-tree --no-commit-id --name-only -r HEAD" in POST_COMMIT_HOOK
+        # --root is needed for initial commits (no parent)
+        assert "git diff-tree --root --no-commit-id --name-only -r HEAD" in POST_COMMIT_HOOK
 
     def test_post_commit_hook_generates_iso_timestamp(self):
         """Post-commit hook should generate ISO8601 timestamp."""

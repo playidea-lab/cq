@@ -100,7 +100,11 @@ fi
 # Get commit info
 COMMIT_SHA=$(git rev-parse HEAD)
 COMMIT_MSG=$(git log -1 --pretty=%B)
-CHANGED_FILES=$(git diff-tree --no-commit-id --name-only -r HEAD | tr '\\n' ',' | sed 's/,$//')
+# Escape backslashes and quotes for JSON, then join with commas
+# --root is needed to show files for the initial commit
+CHANGED_FILES=$(git diff-tree --root --no-commit-id --name-only -r HEAD | \\
+    sed 's/\\\\/\\\\\\\\/g; s/"/\\\\"/g' | \\
+    tr '\\n' ',' | sed 's/,$//')
 TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
 # Extract task ID if present (supports T-XXX-N, R-XXX-N, CP-XXX formats)
