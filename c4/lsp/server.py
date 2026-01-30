@@ -518,6 +518,124 @@ class C4LSPServer:
 
         return "\n".join(parts)
 
+    def _get_task_completion_prefix(self, uri: str, position: "lsp.Position") -> str | None:
+        """Check if cursor is at a task ID prefix for completion.
+
+        Returns the prefix (e.g., 'T-', 'T-00', 'R-', 'CP-') if found, None otherwise.
+        """
+        # Convert URI to path
+        if uri.startswith("file://"):
+            file_path = uri[7:]
+        else:
+            file_path = uri
+
+        # Get file content from analyzer
+        content = self._analyzer._file_contents.get(file_path)
+        if content is None:
+            return None
+
+        lines = content.split("\n")
+        if position.line >= len(lines):
+            return None
+
+        line = lines[position.line]
+        if position.character > len(line):
+            return None
+
+        # Look backward from cursor to find prefix
+        text_before = line[: position.character]
+
+        # Match T-, T-XXX, R-, R-XXX, CP-, CP-XXX patterns at end
+        task_prefix_pattern = re.compile(r"(T-\d*|R-\d*|CP-\d*)$")
+        match = task_prefix_pattern.search(text_before)
+
+        if match:
+            return match.group(1)
+
+        return None
+
+    def _get_task_completions(self, prefix: str) -> list["lsp.CompletionItem"]:
+        """Get task completion items matching the prefix.
+
+        Args:
+            prefix: Task ID prefix (e.g., 'T-', 'T-00', 'R-', 'CP-')
+
+        Returns:
+            List of completion items for matching tasks
+        """
+        store = self._get_task_store()
+        if store is None or self._c4_project_id is None:
+            return []
+
+        try:
+            tasks = store.load_all(self._c4_project_id)
+        except Exception as e:
+            logger.debug(f"Failed to load tasks: {e}")
+            return []
+
+        items = []
+        prefix_upper = prefix.upper()
+
+        for task in tasks:
+            # Filter by prefix
+            if not task.id.upper().startswith(prefix_upper):
+                continue
+
+            # Only show pending and in_progress tasks (most relevant for completion)
+            status = task.status.value if hasattr(task.status, "value") else str(task.status)
+            if status not in ("pending", "in_progress"):
+                continue
+
+            # Status emoji for detail
+            status_emoji = {
+                "pending": "⏳",
+                "in_progress": "🔄",
+            }.get(status, "")
+
+            item = lsp.CompletionItem(
+                label=task.id,
+                kind=lsp.CompletionItemKind.Reference,
+                detail=f"{status_emoji} {task.title}",
+                sort_text=f"0_{task.id}",  # Sort tasks before symbols
+                insert_text=task.id,
+                data={
+                    "type": "c4_task",
+                    "task_id": task.id,
+                },
+            )
+            items.append(item)
+
+        return items
+
+    def _format_task_completion_doc(self, task: "Task") -> str:
+        """Format task details for completion documentation."""
+        parts = []
+
+        parts.append(f"**{task.id}**: {task.title}")
+
+        status = task.status.value if hasattr(task.status, "value") else str(task.status)
+        status_emoji = {
+            "pending": "⏳",
+            "in_progress": "🔄",
+            "done": "✅",
+            "blocked": "❌",
+        }.get(status, "")
+        parts.append(f"\n**Status**: {status_emoji} {status}")
+
+        if task.assigned_to:
+            parts.append(f"**Assigned to**: {task.assigned_to}")
+
+        if task.domain:
+            parts.append(f"**Domain**: {task.domain}")
+
+        if task.dod:
+            dod_preview = task.dod[:300]
+            if len(task.dod) > 300:
+                dod_preview += "..."
+            parts.append(f"\n---\n**DoD**:\n{dod_preview}")
+
+        return "\n".join(parts)
+
     def _handle_hover(self, params: lsp.HoverParams) -> lsp.Hover | None:
         """Handle textDocument/hover request.
 
@@ -701,6 +819,18 @@ class C4LSPServer:
         params: lsp.CompletionParams,
     ) -> lsp.CompletionList | None:
         """Handle textDocument/completion request."""
+        items = []
+
+        # Check for task ID prefix (T-, R-, CP-)
+        task_prefix = self._get_task_completion_prefix(
+            params.text_document.uri,
+            params.position,
+        )
+        if task_prefix:
+            task_items = self._get_task_completions(task_prefix)
+            items.extend(task_items)
+
+        # Get symbol prefix
         prefix = self._get_prefix_at_position(
             params.text_document.uri,
             params.position,
@@ -708,10 +838,7 @@ class C4LSPServer:
 
         # Get all symbols and filter by prefix
         all_symbols = self._analyzer.get_all_symbols()
-        if not all_symbols:
-            return None
 
-        items = []
         seen = set()  # Avoid duplicates
 
         for symbol in all_symbols:
@@ -748,6 +875,10 @@ class C4LSPServer:
             if len(items) >= 50:
                 break
 
+        # Return None if no items
+        if not items:
+            return None
+
         return lsp.CompletionList(
             is_incomplete=len(items) >= 50,
             items=items,
@@ -764,6 +895,19 @@ class C4LSPServer:
         if not item.data:
             return item
 
+        # Handle C4 task completion items
+        if item.data.get("type") == "c4_task":
+            task_id = item.data.get("task_id")
+            if task_id:
+                task = self._get_task_info(task_id)
+                if task:
+                    item.documentation = lsp.MarkupContent(
+                        kind=lsp.MarkupKind.Markdown,
+                        value=self._format_task_completion_doc(task),
+                    )
+            return item
+
+        # Handle symbol completion items
         name = item.data.get("name")
         if not name:
             return item
