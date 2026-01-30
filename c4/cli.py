@@ -443,13 +443,29 @@ def _detect_piq_project(project_path: Path) -> Path | None:
     return None
 
 
-def _create_mcp_config(project_path: Path) -> bool:
+def _create_mcp_config(
+    project_path: Path,
+    with_lsp: bool = True,
+    with_daemon: bool = True,
+) -> bool:
     """Create .mcp.json in project root.
 
     Includes C4 MCP server, and optionally PIQ MCP server if detected.
+
+    Args:
+        project_path: Project directory path
+        with_lsp: Enable LSP server for IDE features (hover, completion)
+        with_daemon: Enable daemon mode for health monitoring
     """
     mcp_file = project_path / ".mcp.json"
     c4_install_dir = get_c4_install_dir()
+
+    # Build environment variables
+    env = {"C4_PROJECT_ROOT": str(project_path)}
+    if with_lsp:
+        env["C4_LSP_ENABLED"] = "true"
+    if with_daemon:
+        env["C4_DAEMON_ENABLED"] = "true"
 
     config = {
         "mcpServers": {
@@ -464,7 +480,7 @@ def _create_mcp_config(project_path: Path) -> bool:
                     "-m",
                     "c4.mcp_server",
                 ],
-                "env": {"C4_PROJECT_ROOT": str(project_path)},
+                "env": env,
             }
         }
     }
@@ -680,6 +696,21 @@ def init(
         "-t",
         help="Initialize with a template (e.g., image-classification, llm-finetuning)",
     ),
+    with_git_hooks: bool = typer.Option(
+        True,
+        "--with-git-hooks/--no-git-hooks",
+        help="Install Git hooks (pre-commit, commit-msg) for validation",
+    ),
+    with_lsp: bool = typer.Option(
+        True,
+        "--with-lsp/--no-lsp",
+        help="Configure LSP server for IDE integration (hover, completion)",
+    ),
+    with_daemon: bool = typer.Option(
+        True,
+        "--with-daemon/--no-daemon",
+        help="Enable daemon mode for background health monitoring",
+    ),
 ):
     """Initialize C4 in a project (all-in-one setup)
 
@@ -728,7 +759,7 @@ def init(
 
         # Step 3: Create .mcp.json
         console.print("[dim]Creating .mcp.json...[/dim]")
-        _create_mcp_config(project_path)
+        _create_mcp_config(project_path, with_lsp=with_lsp, with_daemon=with_daemon)
 
         # Step 4: Create .claude/settings.json with permissions
         console.print("[dim]Creating .claude/settings.json (permissions)...[/dim]")
@@ -744,14 +775,17 @@ def init(
                     "[yellow]Warning:[/yellow] Some Claude Code hooks may not have been installed"
                 )
 
-            # Install Git hooks
-            console.print("[dim]Installing Git hooks...[/dim]")
-            git_hook_results = git_hooks.install_all_hooks(project_path)
-            for hook_name, (success, msg) in git_hook_results.items():
-                if success:
-                    console.print(f"  [green]✓[/green] {hook_name}")
-                else:
-                    console.print(f"  [yellow]![/yellow] {hook_name}: {msg}")
+            # Install Git hooks (if enabled)
+            if with_git_hooks:
+                console.print("[dim]Installing Git hooks...[/dim]")
+                git_hook_results = git_hooks.install_all_hooks(project_path)
+                for hook_name, (success, msg) in git_hook_results.items():
+                    if success:
+                        console.print(f"  [green]✓[/green] {hook_name}")
+                    else:
+                        console.print(f"  [yellow]![/yellow] {hook_name}: {msg}")
+            else:
+                console.print("[dim]Skipping Git hooks (--no-git-hooks)[/dim]")
 
         # Step 6: Install C4 slash commands (unless skipped)
         if not skip_commands:
@@ -818,15 +852,22 @@ def init(
         console.print("  .claude/settings.json   - Permissions & MCP auto-approval")
         if not skip_hooks:
             console.print("  ~/.claude/hooks/        - Stop & security hooks")
+        if with_git_hooks:
             console.print("  .git/hooks/             - Git hooks (pre-commit, commit-msg)")
         if template_applied:
             console.print(f"  (template files)        - From '{template}' template")
         console.print()
 
-        console.print("[bold]🔒 Security & Workflow:[/bold]")
-        console.print("  - Bash Security Hook: Blocks dangerous commands")
-        console.print("  - Stop Hook: Prevents exit during active work")
-        console.print("  - Git Hooks: Lint validation, Task ID tracking")
+        console.print("[bold]🔧 Features Enabled:[/bold]")
+        if not skip_hooks:
+            console.print("  ✓ Bash Security Hook: Blocks dangerous commands")
+            console.print("  ✓ Stop Hook: Prevents exit during active work")
+        if with_git_hooks:
+            console.print("  ✓ Git Hooks: Lint validation, Task ID tracking")
+        if with_lsp:
+            console.print("  ✓ LSP Server: Hover docs, task completion")
+        if with_daemon:
+            console.print("  ✓ Daemon Mode: Background health monitoring")
         console.print()
 
         # Restart notice if .mcp.json was newly created

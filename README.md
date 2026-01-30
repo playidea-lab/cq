@@ -94,6 +94,47 @@ T-001-0 (구현) → R-001-0 (리뷰)
 
 ---
 
+## 개발자 경험 (DX)
+
+C4는 개발 워크플로우를 향상시키는 여러 기능을 제공합니다:
+
+### Git Hooks 통합
+
+자동 설치되는 Git hooks:
+- **pre-commit**: Lint 검증, staged 파일 체크
+- **commit-msg**: Task ID 형식 검증 (`[T-XXX-N] message`)
+- **post-commit**: C4 이벤트 로깅
+
+### IDE 통합 (LSP)
+
+LSP 서버를 통한 IDE 기능:
+- **Hover**: `T-XXX` 위에 마우스를 올리면 태스크 정보 표시
+- **Completion**: `T-` 입력 시 사용 가능한 태스크 자동완성
+- **Diagnostics**: 잘못된 태스크 참조 경고
+
+### Health Monitoring (Daemon)
+
+백그라운드 상태 모니터링:
+- MCP 서버 연결 상태
+- Worker 상태 추적
+- 태스크 큐 모니터링
+
+### 초기화 옵션
+
+```bash
+# 전체 기능 (기본)
+c4 init
+
+# 선택적 비활성화
+c4 init --no-git-hooks    # Git hooks 제외
+c4 init --no-lsp          # LSP 서버 제외
+c4 init --no-daemon       # Daemon 모드 제외
+```
+
+자세한 내용: [Developer Experience Guide](./docs/developer-experience.md)
+
+---
+
 ## 설정
 
 ### 기본 설정 (.c4/config.yaml)
