@@ -41,6 +41,8 @@ class LanguageServerInfo:
     language: str
     started: bool = False
     lock: threading.Lock = field(default_factory=threading.Lock)
+    last_used: float = field(default_factory=lambda: __import__("time").time())
+    request_count: int = 0
 
 
 class MultilspyProvider:
@@ -81,18 +83,21 @@ class MultilspyProvider:
         self,
         project_path: str | Path,
         timeout: int = 30,
+        idle_timeout: int = 300,
     ):
         """Initialize the multilspy provider.
 
         Args:
             project_path: Root path of the project to analyze.
             timeout: Timeout in seconds for LSP operations.
+            idle_timeout: Seconds of inactivity before shutting down a server (default: 5 min).
         """
         if not MULTILSPY_AVAILABLE:
             raise ImportError("multilspy is not installed. Install with: uv add multilspy")
 
         self.project_path = Path(project_path).resolve()
         self.timeout = timeout
+        self.idle_timeout = idle_timeout
         self._servers: dict[str, LanguageServerInfo] = {}
         self._global_lock = threading.Lock()
 
@@ -132,7 +137,14 @@ class MultilspyProvider:
                     logger.error(f"Failed to create LSP server for {language}: {e}")
                     raise RuntimeError(f"LSP server creation failed: {e}") from e
 
-            return self._servers[language].server
+            # Update usage tracking
+            import time
+
+            info = self._servers[language]
+            info.last_used = time.time()
+            info.request_count += 1
+
+            return info.server
 
     def _detect_language(self, file_path: Path | str) -> str | None:
         """Detect programming language from file extension.
@@ -450,6 +462,52 @@ class MultilspyProvider:
         if hasattr(sym, "location"):
             return self._extract_line(sym.location)
         return 0
+
+    def cleanup_idle_servers(self) -> int:
+        """Shutdown servers that have been idle for longer than idle_timeout.
+
+        Returns:
+            Number of servers shut down.
+        """
+        import time
+
+        now = time.time()
+        to_remove: list[str] = []
+
+        with self._global_lock:
+            for lang, info in self._servers.items():
+                if now - info.last_used > self.idle_timeout:
+                    to_remove.append(lang)
+
+            for lang in to_remove:
+                info = self._servers.pop(lang)
+                logger.info(f"Shutting down idle {lang} server (unused for {self.idle_timeout}s)")
+
+        return len(to_remove)
+
+    def get_stats(self) -> dict[str, Any]:
+        """Get statistics about active servers.
+
+        Returns:
+            Dictionary with server statistics.
+        """
+        import time
+
+        now = time.time()
+        stats: dict[str, Any] = {
+            "active_servers": len(self._servers),
+            "servers": {},
+        }
+
+        with self._global_lock:
+            for lang, info in self._servers.items():
+                stats["servers"][lang] = {
+                    "started": info.started,
+                    "request_count": info.request_count,
+                    "idle_seconds": int(now - info.last_used),
+                }
+
+        return stats
 
     def shutdown(self) -> None:
         """Shutdown all LSP servers."""
