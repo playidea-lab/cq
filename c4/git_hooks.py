@@ -122,7 +122,7 @@ EVENT_FILE=".c4/events/git-${SHORT_SHA}.json"
 
 # Write event JSON (null if TASK_ID is empty)
 if [[ -n "$TASK_ID" ]]; then
-    TASK_ID_JSON="\"$TASK_ID\""
+    TASK_ID_JSON="\\"$TASK_ID\\""
 else
     TASK_ID_JSON="null"
 fi
