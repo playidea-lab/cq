@@ -262,3 +262,32 @@ class TestC4AddTodoDeprecation:
             # Filter only DeprecationWarning related to dod
             dod_warnings = [x for x in w if "dod" in str(x.message).lower()]
             assert len(dod_warnings) == 0
+
+
+class TestTriggerLspReindex:
+    """Tests for trigger_lsp_reindex method."""
+
+    def test_trigger_lsp_reindex_with_python_files(self, daemon: C4Daemon) -> None:
+        """Should process Python files for LSP reindexing."""
+        # Should not raise any exceptions
+        daemon.trigger_lsp_reindex(["src/main.py", "src/utils.py"])
+
+    def test_trigger_lsp_reindex_ignores_non_python(self, daemon: C4Daemon) -> None:
+        """Should ignore non-Python files."""
+        # Should not raise any exceptions
+        daemon.trigger_lsp_reindex(["README.md", "package.json", "config.yaml"])
+
+    def test_trigger_lsp_reindex_empty_list(self, daemon: C4Daemon) -> None:
+        """Should handle empty file list."""
+        # Should not raise any exceptions
+        daemon.trigger_lsp_reindex([])
+
+    def test_trigger_lsp_reindex_mixed_files(self, daemon: C4Daemon) -> None:
+        """Should filter out non-Python from mixed file list."""
+        # Should not raise any exceptions
+        daemon.trigger_lsp_reindex([
+            "src/main.py",
+            "README.md",
+            "tests/test_main.py",
+            "config.yaml",
+        ])

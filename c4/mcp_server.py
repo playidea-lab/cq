@@ -4366,6 +4366,39 @@ Thumbs.db
             "message": checkpoint_response.message,
         }
 
+    def trigger_lsp_reindex(self, files: list[str]) -> None:
+        """Trigger LSP symbol cache invalidation for changed files.
+
+        Called by SupervisorLoop when git commit events are processed.
+        This method invalidates the symbol cache for the specified files,
+        ensuring that subsequent symbol lookups return fresh data.
+
+        Args:
+            files: List of relative file paths that were changed.
+                   Only Python files (.py) are processed for symbol indexing.
+
+        Note:
+            Currently, symbol resolution via Jedi is stateless and always
+            reads the latest file content. This method serves as a hook
+            for future caching implementations and logs the reindex trigger.
+        """
+        python_files = [f for f in files if f.endswith(".py")]
+        if not python_files:
+            return
+
+        logger.debug(
+            f"LSP reindex triggered for {len(python_files)} files: "
+            f"{', '.join(python_files[:5])}{'...' if len(python_files) > 5 else ''}"
+        )
+
+        # Jedi-based symbol resolution is stateless (reads file on each call)
+        # No explicit cache invalidation needed currently.
+        # This method serves as a hook for future caching implementations.
+
+        # If we had a symbol cache, we would invalidate it here:
+        # for file in python_files:
+        #     self._symbol_cache.invalidate(file)
+
 
 # =============================================================================
 # MCP Server Setup
