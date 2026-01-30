@@ -1030,6 +1030,75 @@ Thumbs.db
                 "has_changes": info.has_changes,
             }
 
+    def c4_worktree_cleanup(self, keep_active: bool = True) -> dict[str, Any]:
+        """Clean up worktrees, optionally keeping active workers.
+
+        Args:
+            keep_active: If True, keep worktrees for workers with in_progress tasks.
+                        If False, remove all worktrees.
+
+        Returns:
+            Dict with cleanup results including deleted count.
+        """
+        from c4.daemon.worktree_manager import WorktreeManager
+
+        git_ops = GitOperations(self.root)
+        if not git_ops.is_git_repo():
+            return {
+                "success": False,
+                "error": "Not a git repository",
+            }
+
+        if not self.config.worktree.enabled:
+            return {
+                "success": False,
+                "error": "Worktree feature is disabled in config",
+                "hint": "Set worktree.enabled=true in .c4/config.yaml",
+            }
+
+        manager = WorktreeManager(self.root)
+
+        # Get current worker IDs with worktrees
+        all_worker_ids = manager.get_all_worker_ids()
+        if not all_worker_ids:
+            return {
+                "success": True,
+                "deleted_count": 0,
+                "kept_count": 0,
+                "message": "No worktrees to clean up",
+            }
+
+        # Determine which workers to keep
+        keep_workers: list[str] = []
+        if keep_active:
+            # Keep workers with in_progress tasks
+            if self.state_machine:
+                self.state_machine.load_state()
+                state = self.state_machine.state
+                # Get workers that have assigned tasks
+                keep_workers = list(state.queue.in_progress.values())
+
+        # Perform cleanup
+        result = manager.cleanup(keep_workers=keep_workers if keep_workers else None)
+
+        if not result.success:
+            return {
+                "success": False,
+                "error": result.message,
+            }
+
+        # Calculate deleted count
+        remaining_workers = manager.get_all_worker_ids()
+        deleted_count = len(all_worker_ids) - len(remaining_workers)
+
+        return {
+            "success": True,
+            "deleted_count": deleted_count,
+            "kept_count": len(remaining_workers),
+            "kept_workers": remaining_workers,
+            "message": result.message,
+        }
+
     def _create_task_branch_from_work(
         self, git_ops: GitOperations, task_branch: str, work_branch: str
     ) -> Any:
@@ -5426,6 +5495,21 @@ def create_server(project_root: Path | None = None) -> Server:
                     "required": [],
                 },
             ),
+            Tool(
+                name="c4_worktree_cleanup",
+                description="Clean up worktrees, optionally keeping active workers. Returns the count of deleted worktrees.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "keep_active": {
+                            "type": "boolean",
+                            "description": "If True, keep worktrees for workers with in_progress tasks. If False, remove all worktrees.",
+                            "default": True,
+                        },
+                    },
+                    "required": [],
+                },
+            ),
         ]
 
     @server.call_tool()
@@ -5659,6 +5743,10 @@ def create_server(project_root: Path | None = None) -> Server:
             elif name == "c4_worktree_status":
                 result = daemon.c4_worktree_status(
                     worker_id=arguments.get("worker_id"),
+                )
+            elif name == "c4_worktree_cleanup":
+                result = daemon.c4_worktree_cleanup(
+                    keep_active=arguments.get("keep_active", True),
                 )
             else:
                 result = {"error": f"Unknown tool: {name}"}
