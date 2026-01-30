@@ -1,5 +1,6 @@
 """C4 Daemon - Core daemon components for multi-worker orchestration"""
 
+from .c4_daemon import C4Daemon
 from .events import EventBus
 from .git_ops import GitOperations, GitResult
 from .lifecycle import DaemonInfo, DaemonLifecycle, DaemonStatus
@@ -15,6 +16,7 @@ from .task_dispatcher import (
 from .workers import WorkerManager
 
 __all__ = [
+    "C4Daemon",
     "DaemonInfo",
     "DaemonLifecycle",
     "DaemonStatus",
