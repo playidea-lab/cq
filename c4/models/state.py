@@ -136,5 +136,8 @@ class C4State(BaseModel):
     repair_queue: list[RepairQueueItem] = Field(
         default_factory=list, description="Blocked tasks awaiting supervisor guidance"
     )
+    completion_result: dict[str, Any] | None = Field(
+        default=None, description="Result of completion action (PR creation, merge, etc.)"
+    )
     created_at: datetime = Field(default_factory=datetime.now)
     updated_at: datetime = Field(default_factory=datetime.now)

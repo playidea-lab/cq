@@ -3,6 +3,7 @@
 from .events import EventBus
 from .git_ops import GitOperations, GitResult
 from .lifecycle import DaemonInfo, DaemonLifecycle, DaemonStatus
+from .pr_manager import PRManager, PRResult
 from .safety import SafetyGuard
 from .supervisor_loop import SupervisorLoop, SupervisorLoopManager
 from .task_dispatcher import (
@@ -20,6 +21,8 @@ __all__ = [
     "EventBus",
     "GitOperations",
     "GitResult",
+    "PRManager",
+    "PRResult",
     "SafetyGuard",
     "SupervisorLoop",
     "SupervisorLoopManager",

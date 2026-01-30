@@ -11,7 +11,7 @@ from mcp.server.stdio import stdio_server
 from mcp.types import TextContent, Tool
 
 from .constants import MAX_REPAIR_DEPTH, REPAIR_PREFIX, REPAIR_PREFIX_LEN
-from .daemon import GitOperations, SupervisorLoopManager, WorkerManager
+from .daemon import GitOperations, PRManager, SupervisorLoopManager, WorkerManager
 from .discovery import (
     DesignStore,
     Domain,
@@ -2569,15 +2569,19 @@ Thumbs.db
     def _perform_completion_action(self) -> dict[str, Any] | None:
         """Perform completion action when plan is finished.
 
-        Based on config.completion_action:
+        Based on config.completion_action (or worktree.completion_action in worktree mode):
         - 'merge': Squash-merge work branch into default_branch
-        - 'pr': Create pull request (requires GitHub auth)
+        - 'pr': Create pull request (requires GitHub auth or gh CLI)
         - 'manual': Do nothing, user handles
 
         Returns:
             Result dict with action taken and status, or None if manual
         """
-        completion_action = self.config.completion_action
+        # Use worktree.completion_action if worktree is enabled, else top-level
+        if self.config.worktree.enabled:
+            completion_action = self.config.worktree.completion_action
+        else:
+            completion_action = self.config.completion_action
         work_branch = self.config.get_work_branch()
         default_branch = self.config.default_branch
 
@@ -2616,20 +2620,38 @@ Thumbs.db
                 }
 
         elif completion_action == "pr":
-            # Create pull request using GitHubAutomation
-            if not self.config.github.enabled:
-                logger.warning("GitHub integration disabled, skipping PR creation")
+            # Check worktree mode - only create PR if base_branch != main
+            if self.config.worktree.enabled:
+                base_branch = self.config.worktree.base_branch
+                if base_branch == "main" or base_branch == default_branch:
+                    logger.info(
+                        f"Worktree base_branch is '{base_branch}', no PR needed"
+                    )
+                    return {
+                        "action": "pr",
+                        "status": "skipped",
+                        "message": f"base_branch '{base_branch}' is same as target, no PR needed",
+                    }
+                # In worktree mode, PR from base_branch to default_branch
+                source_branch = base_branch
+            else:
+                # Non-worktree mode: PR from work_branch to default_branch
+                source_branch = work_branch
+
+            # Use PRManager (gh CLI based) for PR creation
+            pr_manager = PRManager(self.root)
+
+            if not pr_manager.is_gh_available():
+                logger.warning("gh CLI not available, skipping PR creation")
                 return {
                     "action": "pr",
                     "status": "skipped",
-                    "message": "GitHub integration disabled",
+                    "message": "gh CLI not installed. Install from https://cli.github.com/",
                 }
 
             try:
-                from c4.integrations import GitHubAutomation
-
-                # Push work branch to remote first
-                push_result = git_ops._run_git("push", "-u", "origin", work_branch)
+                # Push source branch to remote first
+                push_result = git_ops._run_git("push", "-u", "origin", source_branch)
                 if push_result.returncode != 0:
                     return {
                         "action": "pr",
@@ -2639,22 +2661,34 @@ Thumbs.db
 
                 # Get completed tasks for PR body
                 tasks_completed = self._get_completed_tasks()
-
-                # Create PR using GitHubAutomation
-                automation = GitHubAutomation(
-                    config=self.config.github,
-                    repo_path=self.root,
+                pr_body = pr_manager.get_completed_tasks_summary(
+                    tasks_completed, include_dod=True
                 )
 
-                pr_result = automation.auto_pr(
-                    project_id=self.config.project_id,
+                # Create PR using PRManager
+                pr_result = pr_manager.create_or_update_pr(
+                    branch=source_branch,
                     title=f"[C4] {self.config.project_id}",
-                    tasks_completed=tasks_completed,
-                    source_branch=work_branch,
-                    target_branch=default_branch,
+                    body=pr_body,
+                    base_branch=default_branch,
                 )
 
+                # Record result in state (best effort)
                 if pr_result.success:
+                    try:
+                        if self.state_machine and self.state_machine.state:
+                            state = self.state_machine.state
+                            state.completion_result = {
+                                "action": "pr",
+                                "status": "success",
+                                "pr_url": pr_result.pr_url,
+                                "pr_number": pr_result.pr_number,
+                                "timestamp": datetime.utcnow().isoformat(),
+                            }
+                            self._get_default_store().save(self.config.project_id, state)
+                    except Exception as e:
+                        logger.warning(f"Failed to record PR result in state: {e}")
+
                     return {
                         "action": "pr",
                         "status": "success",
