@@ -21,7 +21,7 @@ class TestGitCommitEvent:
             "timestamp": "2026-01-30T10:00:00Z",
         }
 
-        event = GitCommitEvent(data)
+        event = GitCommitEvent.model_validate(data)
 
         assert event.type == "git_commit"
         assert event.sha == "abc123def456"
@@ -39,7 +39,7 @@ class TestGitCommitEvent:
             "timestamp": "2026-01-30T10:00:00Z",
         }
 
-        event = GitCommitEvent(data)
+        event = GitCommitEvent.model_validate(data)
 
         assert event.task_id is None
         assert event.files == ["README.md"]
@@ -54,7 +54,7 @@ class TestGitCommitEvent:
             "timestamp": "2026-01-30T10:00:00Z",
         }
 
-        event = GitCommitEvent(data)
+        event = GitCommitEvent.model_validate(data)
 
         assert event.files == []
 
@@ -62,7 +62,7 @@ class TestGitCommitEvent:
         """Should handle minimal event data with defaults."""
         data = {}
 
-        event = GitCommitEvent(data)
+        event = GitCommitEvent.model_validate(data)
 
         assert event.type == "git_commit"
         assert event.sha == ""
