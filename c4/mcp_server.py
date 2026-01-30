@@ -974,6 +974,62 @@ Thumbs.db
             "workflow": _get_workflow_guide(status_value),
         }
 
+    def c4_worktree_status(self, worker_id: str | None = None) -> dict[str, Any]:
+        """Get worktree status for all workers or a specific worker.
+
+        Args:
+            worker_id: If provided, return info for specific worker.
+                       If None, return list of all worktrees.
+
+        Returns:
+            Dict with worktree information:
+            - If worker_id is None: list of all worktrees with basic info
+            - If worker_id is provided: detailed info for that worktree
+        """
+        from c4.daemon.worktree_manager import WorktreeManager
+
+        git_ops = GitOperations(self.root)
+        if not git_ops.is_git_repo():
+            return {
+                "success": False,
+                "error": "Not a git repository",
+            }
+
+        if not self.config.worktree.enabled:
+            return {
+                "success": False,
+                "error": "Worktree feature is disabled in config",
+                "hint": "Set worktree.enabled=true in .c4/config.yaml",
+            }
+
+        manager = WorktreeManager(self.root)
+
+        if worker_id is None:
+            # Return list of all worktrees
+            worktrees = manager.list_worktrees()
+            worker_ids = manager.get_all_worker_ids()
+
+            return {
+                "success": True,
+                "worktrees_dir": str(manager.worktrees_dir),
+                "worker_count": len(worker_ids),
+                "worker_ids": worker_ids,
+                "all_worktrees": worktrees,
+            }
+        else:
+            # Return detailed info for specific worker
+            info = manager.get_worktree_info(worker_id)
+
+            return {
+                "success": True,
+                "worker_id": info.worker_id,
+                "exists": info.exists,
+                "path": str(info.path),
+                "branch": info.branch,
+                "head": info.head,
+                "has_changes": info.has_changes,
+            }
+
     def _create_task_branch_from_work(
         self, git_ops: GitOperations, task_branch: str, work_branch: str
     ) -> Any:
@@ -5356,6 +5412,20 @@ def create_server(project_root: Path | None = None) -> Server:
                     "required": ["relative_path", "needle", "replacement"],
                 },
             ),
+            Tool(
+                name="c4_worktree_status",
+                description="Get worktree status for all workers or a specific worker. Returns worktree paths, branches, and status.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "worker_id": {
+                            "type": "string",
+                            "description": "Worker ID to get status for. If not provided, returns all worktrees.",
+                        },
+                    },
+                    "required": [],
+                },
+            ),
         ]
 
     @server.call_tool()
@@ -5585,6 +5655,10 @@ def create_server(project_root: Path | None = None) -> Server:
                     replacement=arguments.get("replacement", ""),
                     mode=arguments.get("mode", "literal"),
                     allow_multiple=arguments.get("allow_multiple", False),
+                )
+            elif name == "c4_worktree_status":
+                result = daemon.c4_worktree_status(
+                    worker_id=arguments.get("worker_id"),
                 )
             else:
                 result = {"error": f"Unknown tool: {name}"}
