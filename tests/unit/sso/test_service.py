@@ -301,12 +301,12 @@ class TestSSOService:
     async def test_revoke_user_sessions(self, service, sample_user_info):
         """Test revoking all sessions for a user."""
         # Create multiple sessions
-        session1 = await service._create_session(
+        _session1 = await service._create_session(
             team_id="team-123",
             provider=SSOProvider.GOOGLE,
             user_info=sample_user_info,
         )
-        session2 = await service._create_session(
+        _session2 = await service._create_session(
             team_id="team-456",
             provider=SSOProvider.GOOGLE,
             user_info=sample_user_info,

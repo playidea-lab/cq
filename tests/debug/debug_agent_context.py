@@ -9,10 +9,10 @@ sys.path.insert(0, str(project_root))
 # Set C4_PROJECT_ROOT for ContextLoader
 os.environ["C4_PROJECT_ROOT"] = str(project_root)
 
-from c4.models.config import LLMConfig
-from c4.supervisor.agent_graph.loader import AgentGraphLoader
-from c4.supervisor.backend_factory import create_backend
-from c4.supervisor.context_loader import ContextLoader
+from c4.models.config import LLMConfig  # noqa: E402
+from c4.supervisor.agent_graph.loader import AgentGraphLoader  # noqa: E402
+from c4.supervisor.backend_factory import create_backend  # noqa: E402
+from c4.supervisor.context_loader import ContextLoader  # noqa: E402
 
 
 def test_agent_context():

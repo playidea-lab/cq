@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from c4.models import C4Config, WorkerInfo
+    from c4.models import C4Config, TaskQueue, WorkerInfo
     from c4.state_machine import StateMachine
 
 
@@ -19,6 +19,27 @@ class WorkerManager:
     def _workers(self) -> dict[str, "WorkerInfo"]:
         """Get the workers dict from state"""
         return self.state_machine.state.workers
+
+    def _recover_task_to_pending(
+        self, queue: "TaskQueue", task_id: str | None
+    ) -> bool:
+        """Move a task from in_progress back to pending queue.
+
+        This is a common pattern used when a worker crashes, is killed,
+        or becomes stale while processing a task.
+
+        Args:
+            queue: The task queue to modify
+            task_id: The task ID to recover (None is safe - returns False)
+
+        Returns:
+            True if task was recovered, False if task_id was None or not in progress
+        """
+        if task_id and task_id in queue.in_progress:
+            del queue.in_progress[task_id]
+            queue.pending.insert(0, task_id)  # Add to front for priority
+            return True
+        return False
 
     def register(self, worker_id: str) -> "WorkerInfo":
         """Register a new worker"""
@@ -71,9 +92,7 @@ class WorkerManager:
             queue = self.state_machine.state.queue
 
             # Move task from in_progress back to pending
-            if worker.task_id in queue.in_progress:
-                del queue.in_progress[worker.task_id]
-                queue.pending.insert(0, worker.task_id)  # Priority: front of queue
+            self._recover_task_to_pending(queue, worker.task_id)
 
             # Release scope lock if applicable
             if scope and lock_store:
@@ -275,9 +294,7 @@ class WorkerManager:
                 }
 
                 # Move task back to pending if it's in progress
-                if task_id and task_id in queue.in_progress:
-                    del queue.in_progress[task_id]
-                    queue.pending.insert(0, task_id)  # Add to front for priority
+                if self._recover_task_to_pending(queue, task_id):
                     recovery_info["task_recovered"] = True
 
                 # Release scope lock (outside atomic block is OK - lock store is separate)
@@ -478,9 +495,7 @@ class WorkerManager:
                 }
 
                 # Move task back to pending if it's in progress
-                if task_id and task_id in queue.in_progress:
-                    del queue.in_progress[task_id]
-                    queue.pending.insert(0, task_id)  # Add to front for priority
+                if self._recover_task_to_pending(queue, task_id):
                     recovery_info["task_recovered"] = True
                     recovery_info["message"] = (
                         f"Worker killed. Task {task_id} moved back to pending queue."

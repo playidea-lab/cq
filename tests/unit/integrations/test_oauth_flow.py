@@ -161,7 +161,6 @@ class TestStateSecurityProperties:
         # Find a character that's not padding
         for i in range(len(chars)):
             if chars[i] not in "=":
-                original = chars[i]
                 # Change to a different valid base64 char
                 chars[i] = "A" if chars[i] != "A" else "B"
                 break

@@ -1,9 +1,14 @@
-"""C4 Configuration Models.
+"""C4 User Configuration Models.
 
-Pydantic models for C4 configuration with support for:
+Pydantic models for user-facing C4 configuration with support for:
 - Global config (~/.c4/config.yaml)
 - Project config (.c4/config.yaml)
 - Environment variable overrides
+
+Note:
+    This module defines the user-configuration layer (git, validation commands,
+    worker settings, team settings). For system-internal configuration models
+    (LLM, store, github integration, worktree, etc.), see c4.models.config.
 """
 
 from __future__ import annotations

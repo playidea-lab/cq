@@ -1,4 +1,17 @@
-"""C4 Config Models - Configuration schemas"""
+"""C4 System Configuration Models.
+
+Comprehensive configuration schemas for internal C4 operations:
+- Agent configuration (chains, task overrides)
+- Validation and verification settings
+- Store backend configuration (SQLite, Supabase)
+- LLM configuration (Claude CLI, LiteLLM)
+- GitHub integration
+- Worktree configuration
+
+Note:
+    For user-facing configuration models (git, worker settings, etc.),
+    see c4.config.models. This module is for system-internal configuration.
+"""
 
 from typing import Any
 

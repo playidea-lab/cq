@@ -152,7 +152,7 @@ class TestWarningWithoutAutoRecovery:
         self, mock_state_machine, config_no_auto_recover
     ):
         """Worker that takes long time but completes should work fine."""
-        worker_manager = WorkerManager(mock_state_machine, config_no_auto_recover)
+        _worker_manager = WorkerManager(mock_state_machine, config_no_auto_recover)
 
         # Add a worker that's been busy for 90 minutes
         worker = WorkerInfo(

@@ -1,14 +1,17 @@
 """SQLite Store - SQLite-based state, lock, and task storage"""
 
 import json
+import logging
 import sqlite3
 from contextlib import contextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Generator
 
-from .exceptions import StateNotFoundError
+from .exceptions import StateNotFoundError, TransactionError
 from .protocol import LockStore, StateStore
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from c4.models import C4State, TaskQueue
@@ -198,11 +201,18 @@ class SQLiteStateStore(StateStore):
                 (state.project_id, state.model_dump_json(), state.updated_at),
             )
             conn.execute("COMMIT")
-        except Exception:
+        except sqlite3.Error as e:
             try:
                 conn.execute("ROLLBACK")
-            except Exception:
-                pass
+            except sqlite3.Error as rollback_err:
+                logger.error(
+                    "Failed to rollback transaction for project %s: %s",
+                    self.project_id,
+                    rollback_err,
+                )
+                raise TransactionError(
+                    f"Transaction failed and rollback also failed: {rollback_err}"
+                ) from e
             raise
         finally:
             conn.close()
@@ -313,7 +323,7 @@ class SQLiteLockStore(LockStore):
                     )
                     conn.commit()
                     return True
-                except Exception:
+                except sqlite3.IntegrityError:
                     # Lock exists - check if we own it
                     cursor = conn.execute(
                         "SELECT owner FROM c4_locks WHERE project_id = ? AND scope = ?",
@@ -333,7 +343,7 @@ class SQLiteLockStore(LockStore):
                         # Different owner holds the lock
                         conn.rollback()
                         return False
-            except Exception:
+            except sqlite3.Error:
                 conn.rollback()
                 raise
 

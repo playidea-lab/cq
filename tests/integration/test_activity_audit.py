@@ -642,7 +642,7 @@ class TestCrossServiceIntegration:
         audit_logs = await audit_logger.get_logs(team_id=team_id)
 
         assert any(a.resource_id == "PR-1" for a in activities)
-        assert any(l.action == "member.joined" for l in audit_logs)
+        assert any(log.action == "member.joined" for log in audit_logs)
 
         # Step 3: Get usage report
         today = date.today()

@@ -29,3 +29,12 @@ class MigrationError(StoreError):
     """Raised when migration operation fails."""
 
     pass
+
+
+class TransactionError(StoreError):
+    """Raised when a database transaction fails (commit/rollback).
+
+    This indicates a serious database error that may require attention.
+    """
+
+    pass

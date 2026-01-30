@@ -6,9 +6,9 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent.parent.absolute()
 sys.path.insert(0, str(project_root))
 
-from c4.models.config import LLMConfig
-from c4.supervisor.agent_graph.loader import AgentGraphLoader
-from c4.supervisor.backend_factory import create_backend
+from c4.models.config import LLMConfig  # noqa: E402
+from c4.supervisor.agent_graph.loader import AgentGraphLoader  # noqa: E402
+from c4.supervisor.backend_factory import create_backend  # noqa: E402
 
 
 def test_persona_injection():
@@ -62,7 +62,8 @@ def test_persona_injection():
     for name, result in checks.items():
         status = "✅" if result else "❌"
         print(f"{status} {name}")
-        if not result: all_pass = False
+        if not result:
+            all_pass = False
 
     if all_pass:
         print("\n🎉 SUCCESS: Dynamic Persona Injection Working!")

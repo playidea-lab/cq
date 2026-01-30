@@ -244,7 +244,7 @@ class TestAgenticChatService:
         service = AgenticChatService()
 
         # Add messages through store
-        conv = service._store.create("conv-1")
+        service._store.create("conv-1")
         msg = ChatMessage(role=MessageRole.USER, content="Test")
         service._store.add_message("conv-1", msg)
 

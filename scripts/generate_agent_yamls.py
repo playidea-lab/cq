@@ -424,7 +424,6 @@ def write_rules_yaml() -> None:
 
     overrides = []
     for task_type, (agent, keywords) in TASK_OVERRIDES.items():
-        keywords_str = ", ".join(keywords)
         overrides.append(f"""  - name: {task_type}-override
     priority: 90
     condition:
