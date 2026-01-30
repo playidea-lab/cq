@@ -18,7 +18,6 @@ import pytest
 import yaml
 
 from c4.supervisor.agent_graph import (
-    EXAMPLES_DIR,
     SCHEMA_DIR,
     AgentDefinition,
     AgentGraphLoader,

@@ -1,9 +1,6 @@
 """Tests for c4.notification module"""
 
-import sys
 from unittest.mock import MagicMock, patch
-
-import pytest
 
 from c4.notification import Notification, NotificationManager, NotificationProvider
 from c4.notification.providers import LinuxProvider, MacOSProvider, WindowsProvider

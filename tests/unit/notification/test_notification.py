@@ -3,8 +3,6 @@
 import sys
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from c4.notification.base import Notification, Urgency
 from c4.notification.manager import (
     NotificationManager,

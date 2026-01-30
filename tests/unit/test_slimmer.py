@@ -2,9 +2,7 @@
 
 import json
 
-import pytest
-
-from c4.utils.slimmer import ContextSlimmer, SlimResult
+from c4.utils.slimmer import ContextSlimmer
 
 
 class TestSlimLog:
