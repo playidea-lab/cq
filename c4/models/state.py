@@ -129,12 +129,16 @@ class C4State(BaseModel):
     locks: LocksState = Field(default_factory=LocksState)
     last_validation: dict[str, str] | None = None  # validation_name → "pass"/"fail"
     metrics: Metrics = Field(default_factory=Metrics)
-    # Async queues for automation
+    # DEPRECATED: Legacy queues - replaced by unified task queue
+    # These are kept for backward compatibility during migration.
+    # New code should use Task with TaskType.CHECKPOINT and TaskType.REPAIR instead.
     checkpoint_queue: list[CheckpointQueueItem] = Field(
-        default_factory=list, description="Pending checkpoints awaiting supervisor review"
+        default_factory=list,
+        description="DEPRECATED: Use CP-XXX tasks instead. Kept for migration.",
     )
     repair_queue: list[RepairQueueItem] = Field(
-        default_factory=list, description="Blocked tasks awaiting supervisor guidance"
+        default_factory=list,
+        description="DEPRECATED: Use RPR-XXX tasks instead. Kept for migration.",
     )
     created_at: datetime = Field(default_factory=datetime.now)
     updated_at: datetime = Field(default_factory=datetime.now)

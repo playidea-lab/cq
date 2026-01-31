@@ -679,19 +679,30 @@ Thumbs.db
     def _get_original_worker_for_repair(self, task_id: str) -> str | None:
         """Get the original worker who blocked a repair task.
 
+        Supports both legacy (REPAIR-T-001) and new (RPR-001) formats.
+
         Args:
-            task_id: The repair task ID (e.g., "REPAIR-T-001")
+            task_id: The repair task ID (e.g., "REPAIR-T-001" or "RPR-001")
 
         Returns:
             The worker_id of the original worker, or None if not found
         """
+        # Check for new RPR-XXX format first
+        if task_id.startswith("RPR-"):
+            task = self.get_task(task_id)
+            if task and task.type == TaskType.REPAIR:
+                # completed_by field stores the original worker for RPR tasks
+                return task.completed_by
+            return None
+
+        # Legacy REPAIR-T-XXX format
         if not task_id.startswith(REPAIR_PREFIX):
             return None
 
         # Extract original task ID by removing REPAIR- prefix
         original_task_id = task_id[REPAIR_PREFIX_LEN:]
 
-        # Look up in repair_queue
+        # Look up in repair_queue (deprecated but kept for backward compat)
         if self.state_machine is None:
             return None
 
@@ -769,6 +780,16 @@ Thumbs.db
         """
         Non-blocking check to ensure supervisor loop is running if needed.
         Called automatically from key MCP operations (c4_get_task, c4_submit).
+
+        Note (Unified Queue Architecture):
+        The supervisor loop's role has been reduced with the unified queue:
+        - Checkpoint processing: Now handled via CP-XXX tasks in the worker loop
+        - Repair processing: Now handled via RPR-XXX tasks in the worker loop
+        - Stale worker checks: Still handled by supervisor loop (if auto_recover=True)
+
+        The supervisor loop is kept for backward compatibility and optional
+        auto-recovery of stale workers. Most checkpoint/repair work now happens
+        in the regular worker loop through unified task types.
         """
         if self.state_machine is None:
             return
@@ -779,7 +800,7 @@ Thumbs.db
         if should_run and not self.is_supervisor_loop_running:
             try:
                 self.start_supervisor_loop()
-                logger.info("Auto-started supervisor loop for AI review")
+                logger.info("Auto-started supervisor loop (stale worker monitoring)")
             except Exception as e:
                 logger.warning(f"Failed to auto-start supervisor loop: {e}")
 
@@ -1154,6 +1175,30 @@ Thumbs.db
             if not deps_met:
                 continue
 
+            # Unified Queue: CP tasks require multiple completions
+            # Skip if not ready for final completion (let other tasks go first)
+            if task.type == TaskType.CHECKPOINT:
+                required = task.required_completions
+                current = task.completion_count
+
+                # If not at final completion round, defer to other tasks
+                if current < required - 1:
+                    # Still need more completions - but only assign if no other work
+                    # Check if there are other non-CP tasks available
+                    has_other_tasks = any(
+                        t.type != TaskType.CHECKPOINT
+                        and all(d in state.queue.done for d in t.dependencies)
+                        for t in pending_tasks
+                        if t.id != task_id
+                    )
+                    if has_other_tasks:
+                        continue  # Defer CP task, work on other tasks first
+
+                # Check if same worker already completed this CP task
+                if self.config.task_system.checkpoint_require_different_workers:
+                    if worker_id in task.completed_by_sessions:
+                        continue  # Same worker can't complete twice
+
             # Peer Review: exclude original worker from repair tasks
             # This ensures repairs are reviewed by a different worker
             original_worker = self._get_original_worker_for_repair(task_id)
@@ -1487,6 +1532,12 @@ Thumbs.db
             if cp_response:
                 return cp_response
 
+        # Repair-as-Task: Handle repair task completion (restore original task)
+        if task and task.type == TaskType.REPAIR:
+            rpr_response = self._handle_repair_completion(task, actual_worker_id)
+            if rpr_response:
+                return rpr_response
+
         # Get fresh state reference for final checks
         state = self.state_machine.state
 
@@ -1697,6 +1748,8 @@ Thumbs.db
         - T-001-0 -> T-001-0, base_id="001", version=0, IMPLEMENTATION
         - T-001-2 -> T-001-2, base_id="001", version=2, IMPLEMENTATION
         - R-001-0 -> R-001-0, base_id="001", version=0, REVIEW
+        - CP-001 -> CP-001, base_id="001", version=0, CHECKPOINT
+        - RPR-001 -> RPR-001, base_id="001", version=0, REPAIR
 
         Returns:
             Tuple of (normalized_id, base_id, version, task_type)
@@ -1707,6 +1760,20 @@ Thumbs.db
         if task_id.startswith("R-"):
             task_type = TaskType.REVIEW
             prefix = "R-"
+        elif task_id.startswith("CP-"):
+            task_type = TaskType.CHECKPOINT
+            prefix = "CP-"
+            # CP tasks don't have versions
+            without_prefix = task_id[3:]
+            base_id = without_prefix
+            return task_id, base_id, 0, task_type
+        elif task_id.startswith("RPR-"):
+            task_type = TaskType.REPAIR
+            prefix = "RPR-"
+            # RPR tasks don't have versions
+            without_prefix = task_id[4:]
+            base_id = without_prefix
+            return task_id, base_id, 0, task_type
         else:
             task_type = TaskType.IMPLEMENTATION
             prefix = "T-"
@@ -1788,6 +1855,44 @@ Thumbs.db
                 })
 
         return tasks_completed
+
+    def _generate_repair_task_id(self) -> str:
+        """Generate a unique RPR task ID.
+
+        Scans existing tasks and generates the next sequential RPR-XXX ID.
+
+        Returns:
+            New RPR task ID (e.g., "RPR-001", "RPR-002")
+        """
+        # Find the highest existing RPR number
+        max_num = 0
+        for task_id in self._tasks.keys():
+            if task_id.startswith("RPR-"):
+                try:
+                    # Extract number from RPR-XXX
+                    num_str = task_id[4:]  # Remove "RPR-" prefix
+                    num = int(num_str)
+                    max_num = max(max_num, num)
+                except ValueError:
+                    continue
+
+        # Also check pending/in_progress/done queues in state
+        if self.state_machine:
+            state = self.state_machine.state
+            all_task_ids = (
+                list(state.queue.pending)
+                + list(state.queue.in_progress.keys())
+                + list(state.queue.done)
+            )
+            for task_id in all_task_ids:
+                if task_id.startswith("RPR-"):
+                    try:
+                        num = int(task_id[4:])
+                        max_num = max(max_num, num)
+                    except ValueError:
+                        continue
+
+        return f"RPR-{max_num + 1:03d}"
 
     def _generate_review_task(self, task: Task, worker_id: str | None) -> None:
         """Generate a review task for a completed implementation task.
@@ -1979,6 +2084,58 @@ Thumbs.db
                 ),
             )
 
+    def _handle_repair_completion(
+        self, task: Task, worker_id: str | None
+    ) -> SubmitResponse | None:
+        """Handle repair task completion - restore original task to pending.
+
+        When a RPR-XXX task is completed, the original blocked task should be
+        moved back to pending for re-processing.
+
+        Args:
+            task: The repair task being completed
+            worker_id: The worker who completed the repair
+
+        Returns:
+            SubmitResponse if there's special handling needed,
+            None to continue with normal completion flow
+        """
+        if not task.original_task_id:
+            logger.warning(f"Repair task {task.id} missing original_task_id")
+            return None
+
+        original_task_id = task.original_task_id
+        original_task = self.get_task(original_task_id)
+
+        if not original_task:
+            logger.warning(f"Original task {original_task_id} not found for repair {task.id}")
+            return None
+
+        # Restore original task to pending
+        if original_task.status == TaskStatus.BLOCKED:
+            original_task.status = TaskStatus.PENDING
+            self._save_task(original_task)
+
+            # Add to pending queue if not already there
+            state = self.state_machine.state
+            if original_task_id not in state.queue.pending:
+                state.queue.pending.append(original_task_id)
+                self.state_machine.save_state()
+
+            logger.info(
+                f"Repair task {task.id} completed by {worker_id}. "
+                f"Original task {original_task_id} restored to pending."
+            )
+
+            # Also remove from repair_queue (deprecated, for backward compat)
+            state.repair_queue = [
+                item for item in state.repair_queue
+                if item.task_id != original_task_id
+            ]
+            self.state_machine.save_state()
+
+        return None  # Continue with normal completion flow
+
     def _check_and_create_checkpoint_task(self, completed_review: Task) -> Task | None:
         """Check if all reviews in a checkpoint are approved and create CP task.
 
@@ -2085,6 +2242,9 @@ Thumbs.db
         )
         cp_priority = base_priority - self.config.checkpoint_priority_offset
 
+        # Get required completions from config (Unified Queue)
+        required_completions = self.config.task_system.checkpoint_required_completions
+
         cp_task = Task(
             id=cp_task_id,
             title=f"Checkpoint: {matching_checkpoint.description or matching_checkpoint.id}",
@@ -2094,6 +2254,10 @@ Thumbs.db
             type=TaskType.CHECKPOINT,
             phase_id=matching_checkpoint.id,
             required_tasks=required_impl_tasks,
+            # Unified Queue: Multiple completion support
+            required_completions=required_completions,
+            completion_count=0,
+            completed_by_sessions=[],
         )
 
         try:
@@ -2254,10 +2418,47 @@ Thumbs.db
         )
 
         if review_result == "APPROVE":
+            # Unified Queue: Track multiple completions for CP tasks
+            task.completion_count += 1
+            if worker_id and worker_id not in task.completed_by_sessions:
+                task.completed_by_sessions.append(worker_id)
+
+            # Check if CP task has reached required completions
+            if task.completion_count < task.required_completions:
+                # Not fully complete yet - move back to pending for another round
+                logger.info(
+                    f"Checkpoint {task.id} completion {task.completion_count}/"
+                    f"{task.required_completions} by {worker_id}. Needs more reviews."
+                )
+
+                # Update task in store
+                self._save_task(task)
+
+                # Move back to pending (will be re-processed)
+                state = self.state_machine.state
+                if task.id in state.queue.done:
+                    state.queue.done.remove(task.id)
+                if task.id not in state.queue.pending:
+                    state.queue.pending.append(task.id)
+                self.state_machine.save_state()
+
+                return SubmitResponse(
+                    success=True,
+                    next_action="get_next_task",
+                    message=(
+                        f"Checkpoint {task.id} needs {task.required_completions - task.completion_count} "
+                        "more completion(s). Task moved back to pending."
+                    ),
+                )
+
+            # Fully complete - proceed with normal APPROVE flow
             logger.info(
-                f"Checkpoint {task.id} APPROVED by {worker_id}. "
-                f"Phase {task.phase_id} complete."
+                f"Checkpoint {task.id} APPROVED ({task.completion_count} completions) "
+                f"by {worker_id}. Phase {task.phase_id} complete."
             )
+
+            # Update task in store
+            self._save_task(task)
 
             # Mark checkpoint as passed
             if self.state_machine:
@@ -2687,7 +2888,12 @@ Thumbs.db
     ) -> dict[str, Any]:
         """
         Mark a task as blocked after max retry attempts.
-        Adds the task to repair queue for supervisor guidance.
+        Creates a RPR-XXX repair task in the unified task queue.
+
+        Unified Queue Architecture:
+        - Instead of adding to repair_queue, creates RPR-XXX task directly
+        - RPR task contains repair guidance and original task reference
+        - Worker loop processes RPR tasks like any other task
 
         Args:
             task_id: ID of the blocked task
@@ -2707,19 +2913,25 @@ Thumbs.db
 
         state = self.state_machine.state
 
-        # Prevent infinite REPAIR nesting (max 2 levels: REPAIR-REPAIR-{task})
-        # Use prefix-based check to avoid false positives like "MY-REPAIR-FEATURE"
+        # Prevent infinite REPAIR nesting (max 2 levels: RPR-RPR-{task})
+        # Use prefix-based check to avoid false positives like "MY-RPR-FEATURE"
         repair_depth = 0
         temp_id = task_id
-        while temp_id.startswith(REPAIR_PREFIX):
+        while temp_id.startswith(REPAIR_PREFIX) or temp_id.startswith("RPR-"):
             repair_depth += 1
-            temp_id = temp_id[REPAIR_PREFIX_LEN:]
+            if temp_id.startswith(REPAIR_PREFIX):
+                temp_id = temp_id[REPAIR_PREFIX_LEN:]
+            else:
+                temp_id = temp_id[4:]  # len("RPR-")
 
         if repair_depth >= MAX_REPAIR_DEPTH:
             return {
                 "success": False,
                 "error": f"Max repair nesting exceeded ({repair_depth} >= {MAX_REPAIR_DEPTH})",
-                "message": f"Task {task_id} has already been repaired {repair_depth} times. Manual intervention required.",
+                "message": (
+                    f"Task {task_id} has already been repaired {repair_depth} times. "
+                    "Manual intervention required."
+                ),
                 "task_id": task_id,
             }
 
@@ -2740,28 +2952,82 @@ Thumbs.db
                 "message": "Cannot mark a task as blocked if you are not the assigned worker",
             }
 
-        # Move task from in_progress (will be picked up after repair)
+        # Move task from in_progress to blocked (out of queue until repaired)
         del state.queue.in_progress[task_id]
 
-        # Get task and release scope lock
+        # Update task status to BLOCKED
         task = self.get_task(task_id)
-        if task and task.scope:
-            self.lock_store.release_scope_lock(state.project_id, task.scope)
+        if task:
+            task.status = TaskStatus.BLOCKED
+            self._save_task(task)
+
+            # Release scope lock
+            if task.scope:
+                self.lock_store.release_scope_lock(state.project_id, task.scope)
 
         # Update worker state
         if self.worker_manager.is_registered(worker_id):
             self.worker_manager.set_idle(worker_id)
 
-        # Add to repair queue
-        item = RepairQueueItem(
-            task_id=task_id,
-            worker_id=worker_id,
-            failure_signature=failure_signature,
-            attempts=attempts,
-            blocked_at=datetime.now().isoformat(),
-            last_error=last_error,
-        )
-        state.repair_queue.append(item)
+        # Check if auto_create is enabled (default: True)
+        auto_create = self.config.task_system.repair_auto_create
+
+        rpr_task_id = None
+        if auto_create:
+            # Create RPR task in the unified queue (NEW UNIFIED QUEUE APPROACH)
+            # Generate RPR task ID
+            rpr_task_id = self._generate_repair_task_id()
+
+            # Create repair guidance DoD
+            repair_dod = f"""# Repair Task for {task_id}
+
+## Failure Signature
+{failure_signature}
+
+## Last Error
+{last_error}
+
+## Attempts Made
+{attempts}
+
+## Instructions
+1. Analyze the root cause of the failure
+2. Fix the issue in the original code
+3. Run validations to verify the fix
+4. Once fixed, the original task {task_id} will be moved back to pending
+
+## Original Task
+After completing this repair, submit normally. The system will
+automatically move {task_id} back to pending for re-processing.
+"""
+
+            rpr_task = Task(
+                id=rpr_task_id,
+                title=f"Fix blocked task {task_id}",
+                scope=task.scope if task else None,
+                dod=repair_dod,
+                type=TaskType.REPAIR,
+                base_id=rpr_task_id[4:],  # Remove "RPR-" prefix
+                version=0,
+                priority=100,  # High priority to fix blocked tasks quickly
+                original_task_id=task_id,
+                failure_signature=failure_signature,
+                repair_guidance=repair_dod,
+                # Exclude original worker from repair (peer review principle)
+                completed_by=worker_id,  # Reuse field to track original worker
+            )
+            self.add_task(rpr_task)
+
+            # Also keep in repair_queue for backward compatibility (deprecated)
+            item = RepairQueueItem(
+                task_id=task_id,
+                worker_id=worker_id,
+                failure_signature=failure_signature,
+                attempts=attempts,
+                blocked_at=datetime.now().isoformat(),
+                last_error=last_error,
+            )
+            state.repair_queue.append(item)
 
         # Emit event
         self.state_machine.emit_event(
@@ -2772,15 +3038,21 @@ Thumbs.db
                 "blocked": True,
                 "failure_signature": failure_signature,
                 "attempts": attempts,
+                "rpr_task_id": rpr_task_id,
             },
         )
 
         self.state_machine.save_state()
 
+        message = f"Task {task_id} marked as blocked"
+        if rpr_task_id:
+            message += f". Created repair task {rpr_task_id}"
+
         return {
             "success": True,
-            "message": f"Task {task_id} marked as blocked and added to repair queue",
-            "repair_queue_size": len(state.repair_queue),
+            "message": message,
+            "rpr_task_id": rpr_task_id,
+            "repair_queue_size": len(state.repair_queue),  # Deprecated
         }
 
     def c4_start(self) -> dict[str, Any]:

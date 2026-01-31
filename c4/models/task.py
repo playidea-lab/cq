@@ -72,6 +72,36 @@ class Task(BaseModel):
     required_tasks: list[str] = Field(default_factory=list)  # Tasks to verify (CP only)
     review_decision: str | None = None  # APPROVE, REQUEST_CHANGES, REPLAN (R/CP only)
 
+    # Unified Queue: Multiple completion support (for CHECKPOINT type)
+    required_completions: int = Field(
+        default=1,
+        ge=1,
+        description="Number of completions required (CP tasks default to 2)",
+    )
+    completion_count: int = Field(
+        default=0,
+        ge=0,
+        description="Current completion count",
+    )
+    completed_by_sessions: list[str] = Field(
+        default_factory=list,
+        description="Session/worker IDs that completed this task",
+    )
+
+    # Repair-as-Task fields
+    original_task_id: str | None = Field(
+        None,
+        description="Original blocked task ID (for REPAIR type)",
+    )
+    failure_signature: str | None = Field(
+        None,
+        description="Error signature from validation failures (for REPAIR type)",
+    )
+    repair_guidance: str | None = Field(
+        None,
+        description="AI-generated repair guidance (for REPAIR type)",
+    )
+
     # ==========================================================================
     # DDD-CLEANCODE Fields (Phase 7+)
     # ==========================================================================

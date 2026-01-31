@@ -1,4 +1,18 @@
-"""C4D Supervisor Loop - Background processing of checkpoint and repair queues"""
+"""C4D Supervisor Loop - Background processing of checkpoint and repair queues.
+
+DEPRECATED: This module is deprecated as of the Unified Queue architecture.
+Checkpoint and Repair tasks are now processed through the same worker loop
+as regular tasks (CP-XXX and RPR-XXX task types).
+
+This module is kept for backward compatibility during migration.
+New code should use Task with TaskType.CHECKPOINT and TaskType.REPAIR instead.
+
+Migration Timeline:
+- Phase 1: Supervisor Loop continues to run but primarily for stale worker checks
+- Phase 2: Checkpoint queue processing delegated to CP-XXX tasks
+- Phase 3: Repair queue processing delegated to RPR-XXX tasks
+- Phase 4: Remove SupervisorLoop entirely (future release)
+"""
 
 from __future__ import annotations
 

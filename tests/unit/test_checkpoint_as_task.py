@@ -813,24 +813,25 @@ class TestAutoApproveCheckpoint:
         return d
 
     def test_auto_approve_false_enters_checkpoint_state(self, daemon_auto_approve_false):
-        """When auto_approve=False, enter CHECKPOINT state without creating CP task."""
+        """With checkpoint_as_task=True, CP task is always created regardless of auto_approve.
+
+        In the unified queue architecture:
+        - checkpoint_as_task=True: Always creates CP task (worker handles review)
+        - auto_approve: Controls automated vs. manual review behavior during CP task processing
+
+        This test verifies CP task is created (unified queue behavior).
+        """
         completed_review = daemon_auto_approve_false._tasks["R-001-0"]
 
         result = daemon_auto_approve_false._check_and_create_checkpoint_task(completed_review)
 
-        # Should return None (no CP task created)
-        assert result is None
+        # Should return CP task (unified queue: always creates CP task when checkpoint_as_task=True)
+        assert result is not None
+        assert result.id == "CP-001"
+        assert result.type == TaskType.CHECKPOINT
 
-        # Should NOT have called add_task (no CP task)
-        daemon_auto_approve_false.add_task.assert_not_called()
-
-        # Should have entered checkpoint state
-        daemon_auto_approve_false.state_machine.enter_checkpoint.assert_called_once_with("001")
-
-        # Should have added to checkpoint queue
-        assert len(daemon_auto_approve_false.state_machine.state.checkpoint_queue) == 1
-        queue_item = daemon_auto_approve_false.state_machine.state.checkpoint_queue[0]
-        assert queue_item.checkpoint_id == "001"
+        # Should have called add_task (CP task created)
+        daemon_auto_approve_false.add_task.assert_called_once()
 
     def test_auto_approve_true_creates_cp_task(self, daemon_auto_approve_true):
         """When auto_approve=True, create CP task for automated processing."""
@@ -851,15 +852,25 @@ class TestAutoApproveCheckpoint:
         daemon_auto_approve_true.state_machine.enter_checkpoint.assert_not_called()
 
     def test_auto_approve_false_blocks_worker(self, daemon_auto_approve_false):
-        """When in CHECKPOINT state (auto_approve=False), workers cannot get tasks."""
+        """With unified queue, workers process CP tasks like regular tasks.
 
+        In the unified queue architecture:
+        - CP tasks are created and added to the pending queue
+        - Workers pick up CP tasks and process them
+        - auto_approve=False means human review within CP task processing
+
+        This test verifies CP task is created and can be assigned.
+        """
         # Simulate entering CHECKPOINT state
         completed_review = daemon_auto_approve_false._tasks["R-001-0"]
-        daemon_auto_approve_false._check_and_create_checkpoint_task(completed_review)
+        result = daemon_auto_approve_false._check_and_create_checkpoint_task(completed_review)
 
-        # In real flow, c4_get_task returns None when status != EXECUTE
-        # This test verifies the state transition happened
-        daemon_auto_approve_false.state_machine.enter_checkpoint.assert_called_once()
+        # CP task should be created
+        assert result is not None
+        assert result.type == TaskType.CHECKPOINT
+
+        # Workers can now pick up CP-001 from pending queue
+        # (actual worker blocking logic is in c4_get_task)
 
     def test_default_is_auto_approve_true(self):
         """Verify default auto_approve value is True (AI auto-review)."""
