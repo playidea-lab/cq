@@ -561,7 +561,8 @@ def get_tool_definitions() -> list[Tool]:
             description=(
                 "Find symbols matching a name path pattern. "
                 "Use 'ClassName/method' for methods, simple name for any symbol. "
-                "IMPORTANT: relative_path is required to avoid timeout issues."
+                "Supports both single file (e.g., 'src/main.py') and directory search (e.g., 'src/'). "
+                "Directory search finds all .py files recursively."
             ),
             inputSchema={
                 "type": "object",
@@ -572,7 +573,10 @@ def get_tool_definitions() -> list[Tool]:
                     },
                     "relative_path": {
                         "type": "string",
-                        "description": "File or directory to search in (REQUIRED for reliable search)",
+                        "description": (
+                            "File or directory path to search in (REQUIRED). "
+                            "Examples: 'c4/lsp/provider.py' (single file), 'c4/lsp/' (all .py in directory)"
+                        ),
                     },
                     "include_body": {
                         "type": "boolean",
