@@ -215,8 +215,8 @@ class UnifiedSymbolProvider:
                     )
                     if isolated_results:
                         results = isolated_results
-                else:
-                    # Fallback to thread-based MCP wrapper
+                elif relative_path:
+                    # Fallback to thread-based MCP wrapper (only with specific path)
                     jedi_results = jedi_find_symbol(
                         name_path_pattern=name_path_pattern,
                         relative_path=relative_path,
@@ -226,6 +226,15 @@ class UnifiedSymbolProvider:
                     )
                     if jedi_results:
                         results = jedi_results
+                else:
+                    # Workspace-wide search without relative_path is disabled
+                    # because thread-based timeout cannot be enforced reliably.
+                    # Use relative_path to limit search scope.
+                    logger.warning(
+                        f"Workspace-wide symbol search disabled (no relative_path). "
+                        f"Pattern: {name_path_pattern}. Please provide a relative_path."
+                    )
+                    return []
 
                 if results:
                     logger.debug(f"Jedi found {len(results)} symbols")

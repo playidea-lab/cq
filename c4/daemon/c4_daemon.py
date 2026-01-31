@@ -4367,6 +4367,18 @@ Thumbs.db
         Returns:
             Dict with list of matching symbols
         """
+        # Warn if relative_path is not provided (workspace-wide search is slow/unreliable)
+        if not relative_path:
+            return {
+                "success": False,
+                "error": (
+                    "relative_path is required for reliable symbol search. "
+                    "Workspace-wide search is disabled due to timeout issues. "
+                    "Please provide a file or directory path to limit the search scope."
+                ),
+                "hint": "Use relative_path parameter, e.g., relative_path='c4/lsp/provider.py'",
+            }
+
         try:
             from c4.lsp.unified_provider import find_symbol_unified
 

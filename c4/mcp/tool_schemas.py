@@ -560,7 +560,8 @@ def get_tool_definitions() -> list[Tool]:
             name="c4_find_symbol",
             description=(
                 "Find symbols matching a name path pattern. "
-                "Use 'ClassName/method' for methods, simple name for any symbol."
+                "Use 'ClassName/method' for methods, simple name for any symbol. "
+                "IMPORTANT: relative_path is required to avoid timeout issues."
             ),
             inputSchema={
                 "type": "object",
@@ -571,7 +572,7 @@ def get_tool_definitions() -> list[Tool]:
                     },
                     "relative_path": {
                         "type": "string",
-                        "description": "Restrict search to this file or directory (optional)",
+                        "description": "File or directory to search in (REQUIRED for reliable search)",
                     },
                     "include_body": {
                         "type": "boolean",
@@ -584,7 +585,7 @@ def get_tool_definitions() -> list[Tool]:
                         "default": 0,
                     },
                 },
-                "required": ["name_path_pattern"],
+                "required": ["name_path_pattern", "relative_path"],
             },
         ),
         Tool(
