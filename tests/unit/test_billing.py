@@ -47,6 +47,7 @@ class TestPlanLimits:
             max_workers=2,
             max_tasks_per_day=50,
             max_tokens_per_month=500000,
+            max_execution_minutes_per_month=1000,
             max_team_members=3,
             cloud_execution=True,
             priority_support=False,

@@ -1791,11 +1791,13 @@ Thumbs.db
     def _parse_task_id(self, task_id: str) -> tuple[str, str, int, TaskType]:
         """Parse task ID and extract base_id, version, and type.
 
-        Supports backward compatibility:
+        Supports various ID patterns:
         - T-001 -> T-001-0, base_id="001", version=0, IMPLEMENTATION
         - T-001-0 -> T-001-0, base_id="001", version=0, IMPLEMENTATION
         - T-001-2 -> T-001-2, base_id="001", version=2, IMPLEMENTATION
         - R-001-0 -> R-001-0, base_id="001", version=0, REVIEW
+        - T-SBX-001-0 -> T-SBX-001-0, base_id="SBX-001", version=0, IMPLEMENTATION
+        - T-SBX-001-0-0 -> T-SBX-001-0-0, base_id="SBX-001-0", version=0, IMPLEMENTATION
 
         Returns:
             Tuple of (normalized_id, base_id, version, task_type)
@@ -1806,6 +1808,9 @@ Thumbs.db
         if task_id.startswith("R-"):
             task_type = TaskType.REVIEW
             prefix = "R-"
+        elif task_id.startswith("CP-"):
+            task_type = TaskType.CHECKPOINT
+            prefix = "CP-"
         else:
             task_type = TaskType.IMPLEMENTATION
             prefix = "T-"
@@ -1813,23 +1818,34 @@ Thumbs.db
         # Remove prefix for parsing
         without_prefix = task_id[len(prefix):]
 
-        # Check if already has version (e.g., "001-0" or "001-2")
+        # Pattern 1: Simple numeric "001-0" or "001-2"
         match = re.match(r"^(\d+)-(\d+)$", without_prefix)
         if match:
             base_id = match.group(1)
             version = int(match.group(2))
-            normalized_id = task_id  # Already normalized
-        else:
-            # No version, assume version 0 (e.g., "001" or "T-001")
-            match = re.match(r"^(\d+)$", without_prefix)
-            if match:
-                base_id = match.group(1)
-            else:
-                # Non-numeric base (e.g., "FEAT-001"), keep as-is
-                base_id = without_prefix
+            return task_id, base_id, version, task_type
+
+        # Pattern 2: Simple numeric "001" (no version)
+        match = re.match(r"^(\d+)$", without_prefix)
+        if match:
+            base_id = match.group(1)
             version = 0
             normalized_id = f"{prefix}{base_id}-{version}"
+            return normalized_id, base_id, version, task_type
 
+        # Pattern 3: Complex ID ending with version "-N" (e.g., "SBX-001-0", "DEP-001-0-0")
+        # Check if last segment is a single digit (version)
+        match = re.match(r"^(.+)-(\d)$", without_prefix)
+        if match:
+            base_id = match.group(1)
+            version = int(match.group(2))
+            return task_id, base_id, version, task_type
+
+        # Pattern 4: Complex ID without version (e.g., "SBX-001")
+        # Append -0 for version
+        base_id = without_prefix
+        version = 0
+        normalized_id = f"{prefix}{base_id}-{version}"
         return normalized_id, base_id, version, task_type
 
     def _trigger_auto_commit(
@@ -2102,6 +2118,15 @@ Thumbs.db
         # Find which checkpoint this task belongs to
         matching_checkpoint: CheckpointConfig | None = None
         for cp_config in self.config.checkpoints:
+            # Skip already passed checkpoints
+            if cp_config.id in self.state_machine.state.passed_checkpoints:
+                continue
+
+            # If required_tasks is empty, this checkpoint applies to ALL tasks
+            if not cp_config.required_tasks:
+                matching_checkpoint = cp_config
+                break
+
             # Check if parent task (T-XXX-N) or base ID matches required_tasks
             base_id = completed_review.base_id
             for required in cp_config.required_tasks:
@@ -2132,10 +2157,15 @@ Thumbs.db
         all_approved = True
         required_impl_tasks: list[str] = []
         review_task_ids: list[str] = []
+        state = self.state_machine.state
 
-        for required_task_pattern in matching_checkpoint.required_tasks:
-            # Find all implementation tasks matching this pattern
-            impl_tasks = self._find_tasks_by_pattern(required_task_pattern, TaskType.IMPLEMENTATION)
+        # If required_tasks is empty, check ALL implementation tasks in done queue
+        if not matching_checkpoint.required_tasks:
+            # Get all done implementation tasks
+            impl_tasks = self._get_all_done_impl_tasks()
+            if not impl_tasks:
+                logger.debug("No completed implementation tasks found")
+                return None
 
             for impl_task in impl_tasks:
                 required_impl_tasks.append(impl_task.id)
@@ -2144,11 +2174,11 @@ Thumbs.db
                 latest_review = self._get_latest_review_for_impl(impl_task.base_id)
 
                 if latest_review is None:
+                    # No review yet - not all approved
                     all_approved = False
                     break
 
                 # Check if review is done and approved
-                state = self.state_machine.state
                 if latest_review.id not in state.queue.done:
                     all_approved = False
                     break
@@ -2158,9 +2188,35 @@ Thumbs.db
                     break
 
                 review_task_ids.append(latest_review.id)
+        else:
+            # Check specific required tasks
+            for required_task_pattern in matching_checkpoint.required_tasks:
+                # Find all implementation tasks matching this pattern
+                impl_tasks = self._find_tasks_by_pattern(required_task_pattern, TaskType.IMPLEMENTATION)
 
-            if not all_approved:
-                break
+                for impl_task in impl_tasks:
+                    required_impl_tasks.append(impl_task.id)
+
+                    # Find the latest review for this impl task
+                    latest_review = self._get_latest_review_for_impl(impl_task.base_id)
+
+                    if latest_review is None:
+                        all_approved = False
+                        break
+
+                    # Check if review is done and approved
+                    if latest_review.id not in state.queue.done:
+                        all_approved = False
+                        break
+
+                    if latest_review.review_decision != "APPROVE":
+                        all_approved = False
+                        break
+
+                    review_task_ids.append(latest_review.id)
+
+                if not all_approved:
+                    break
 
         if not all_approved:
             logger.debug(
@@ -2246,6 +2302,28 @@ Thumbs.db
                 matching.append(task)
 
         return matching
+
+    def _get_all_done_impl_tasks(self) -> list[Task]:
+        """Get all completed implementation tasks.
+
+        Returns:
+            List of implementation tasks that are in the done queue
+        """
+        if self.state_machine is None:
+            return []
+
+        done_ids = set(self.state_machine.state.queue.done)
+        tasks = self.get_all_tasks()
+        impl_tasks = []
+
+        for task in tasks.values():
+            if task.type != TaskType.IMPLEMENTATION:
+                continue
+            if task.id not in done_ids:
+                continue
+            impl_tasks.append(task)
+
+        return impl_tasks
 
     def _get_latest_review_for_impl(self, base_id: str) -> Task | None:
         """Get the latest review task for an implementation task base ID.
