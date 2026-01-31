@@ -1,10 +1,8 @@
 """C4 Daemon - Core daemon components for multi-worker orchestration.
 
 Note (Unified Queue Architecture):
-SupervisorLoop and SupervisorLoopManager are deprecated. Checkpoint and
-repair tasks are now processed through the unified task queue as CP-XXX
-and RPR-XXX task types. The supervisor loop is kept for backward
-compatibility and optional stale worker recovery.
+SupervisorLoop has been removed. Checkpoint and repair tasks are now
+processed through the unified task queue as CP-XXX and RPR-XXX task types.
 """
 
 from .events import EventBus
@@ -20,9 +18,6 @@ from .health import (
 )
 from .lifecycle import DaemonInfo, DaemonLifecycle, DaemonStatus
 from .safety import SafetyGuard
-
-# DEPRECATED: Use CP-XXX and RPR-XXX tasks instead
-from .supervisor_loop import SupervisorLoop, SupervisorLoopManager
 from .task_dispatcher import (
     AssignmentResult,
     TaskAssignment,
@@ -44,8 +39,6 @@ __all__ = [
     "SafetyGuard",
     "ServiceHealth",
     "ServiceStatus",
-    "SupervisorLoop",
-    "SupervisorLoopManager",
     "TaskAssignment",
     "AssignmentResult",
     "TaskDispatcher",

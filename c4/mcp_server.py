@@ -11,7 +11,7 @@ from mcp.server.stdio import stdio_server
 from mcp.types import TextContent, Tool
 
 from .constants import MAX_REPAIR_DEPTH, REPAIR_PREFIX, REPAIR_PREFIX_LEN
-from .daemon import GitOperations, GitResult, SupervisorLoopManager, WorkerManager
+from .daemon import GitOperations, GitResult, WorkerManager
 from .discovery import (
     DesignStore,
     Domain,
@@ -137,9 +137,8 @@ def _get_workflow_guide(status: str) -> dict[str, str]:
             "phase": "checkpoint",
             "next": "review",
             "hint": (
-                "Supervisor review in progress. "
-                "Wait for c4_ensure_supervisor() to complete the review, "
-                "or call c4_checkpoint() to manually process"
+                "Checkpoint review in progress. "
+                "Call c4_checkpoint() to process the review decision"
             ),
         },
         "HALTED": {
@@ -181,7 +180,6 @@ class C4Daemon:
         self._tasks: dict[str, Task] = {}
         self._validation_runner: ValidationRunner | None = None
         self._worker_manager: WorkerManager | None = None
-        self._supervisor_loop_manager: SupervisorLoopManager | None = None
         self._state_store = state_store
         self._lock_store: "LockStore | None" = None
         self._task_store: SQLiteTaskStore | None = None
@@ -718,158 +716,13 @@ Thumbs.db
 
         return None
 
-    @property
-    def supervisor_loop_manager(self) -> SupervisorLoopManager:
-        """Get supervisor loop manager, creating if necessary"""
-        if self._supervisor_loop_manager is None:
-            self._supervisor_loop_manager = SupervisorLoopManager(self)
-        return self._supervisor_loop_manager
-
-    def start_supervisor_loop(
-        self,
-        poll_interval: float = 1.0,
-        max_retries: int = 3,
-        supervisor_timeout: int = 300,
-    ) -> None:
-        """Start the background supervisor loop"""
-        self.supervisor_loop_manager.start(
-            poll_interval=poll_interval,
-            max_retries=max_retries,
-            supervisor_timeout=supervisor_timeout,
-        )
-
-    def stop_supervisor_loop(self) -> None:
-        """Stop the background supervisor loop"""
-        self.supervisor_loop_manager.stop()
-
-    @property
-    def is_supervisor_loop_running(self) -> bool:
-        """Check if supervisor loop is running"""
-        manager = self._supervisor_loop_manager
-        return manager is not None and manager.is_running
-
-    def _auto_restart_supervisor_if_needed(self) -> bool:
-        """
-        Auto-restart supervisor loop if project is in EXECUTE or CHECKPOINT state.
-
-        Called after loading state to resume background processing
-        after MCP server restart.
-
-        Returns:
-            True if supervisor was restarted, False otherwise
-        """
-        if self.state_machine is None:
-            return False
-
-        state = self.state_machine.state
-
-        # Only restart if in EXECUTE or CHECKPOINT state
-        if state.status not in (ProjectStatus.EXECUTE, ProjectStatus.CHECKPOINT):
-            return False
-
-        # Only restart if not already running
-        if self.is_supervisor_loop_running:
-            return False
-
-        try:
-            self.start_supervisor_loop()
-            logger.info(
-                f"Auto-restarted supervisor loop for {state.status.value} state"
-            )
-            return True
-        except Exception as e:
-            logger.warning(f"Failed to auto-restart supervisor loop: {e}")
-            return False
-
-    def _ensure_supervisor_running(self) -> None:
-        """
-        Non-blocking check to ensure supervisor loop is running if needed.
-        Called automatically from key MCP operations (c4_get_task, c4_submit).
-
-        Note (Unified Queue Architecture):
-        The supervisor loop's role has been reduced with the unified queue:
-        - Checkpoint processing: Now handled via CP-XXX tasks in the worker loop
-        - Repair processing: Now handled via RPR-XXX tasks in the worker loop
-        - Stale worker checks: Still handled by supervisor loop (if auto_recover=True)
-
-        The supervisor loop is kept for backward compatibility and optional
-        auto-recovery of stale workers. Most checkpoint/repair work now happens
-        in the regular worker loop through unified task types.
-        """
-        if self.state_machine is None:
-            return
-
-        state = self.state_machine.state
-        should_run = state.status in (ProjectStatus.EXECUTE, ProjectStatus.CHECKPOINT)
-
-        if should_run and not self.is_supervisor_loop_running:
-            try:
-                self.start_supervisor_loop()
-                logger.info("Auto-started supervisor loop (stale worker monitoring)")
-            except Exception as e:
-                logger.warning(f"Failed to auto-start supervisor loop: {e}")
-
-    def c4_ensure_supervisor(self, force_restart: bool = False) -> dict[str, Any]:
-        """
-        Ensure supervisor loop is running for AI review.
-
-        Called automatically by workers or explicitly to ensure AI review is active.
-
-        Args:
-            force_restart: If True, stop and restart even if running
-
-        Returns:
-            Dictionary with status and action taken
-        """
-        if self.state_machine is None:
-            return {"success": False, "error": "C4 not initialized"}
-
-        state = self.state_machine.state
-
-        # Check if supervisor should be running
-        should_run = state.status in (ProjectStatus.EXECUTE, ProjectStatus.CHECKPOINT)
-
-        if not should_run:
-            return {
-                "success": True,
-                "action": "none",
-                "message": f"Supervisor not needed in {state.status.value} state",
-                "is_running": self.is_supervisor_loop_running,
-            }
-
-        # Force restart if requested
-        if force_restart and self.is_supervisor_loop_running:
-            self.stop_supervisor_loop()
-            logger.info("Supervisor loop stopped for force restart")
-
-        # Start if not running
-        if not self.is_supervisor_loop_running:
-            try:
-                self.start_supervisor_loop()
-                return {
-                    "success": True,
-                    "action": "started",
-                    "message": "Supervisor loop started for AI review",
-                    "is_running": True,
-                }
-            except Exception as e:
-                return {
-                    "success": False,
-                    "action": "failed",
-                    "error": str(e),
-                    "is_running": False,
-                }
-
-        return {
-            "success": True,
-            "action": "already_running",
-            "message": "Supervisor loop already running for AI review",
-            "is_running": True,
-        }
-
     # =========================================================================
     # Task Management
     # =========================================================================
+    # NOTE: SupervisorLoop has been removed.
+    # - Checkpoint processing: Now handled via CP-XXX tasks in the worker loop
+    # - Repair processing: Now handled via RPR-XXX tasks in the worker loop
+    # See unified queue architecture in the plan.
 
     @property
     def task_store(self) -> SQLiteTaskStore:
@@ -959,8 +812,6 @@ Thumbs.db
         state = self.state_machine.state
         status_value = state.status.value
 
-        # Check if supervisor needs auto-restart (for EXECUTE/CHECKPOINT states)
-        self._auto_restart_supervisor_if_needed()
         return {
             "initialized": True,
             "project_id": state.project_id,
@@ -991,13 +842,6 @@ Thumbs.db
                 {"task_id": item.task_id, "attempts": item.attempts}
                 for item in state.repair_queue
             ],
-            "supervisor_loop_running": self.is_supervisor_loop_running,
-            "supervisor": {
-                "loop_running": self.is_supervisor_loop_running,
-                "mode": "ai_review",  # Always AI review (not human approval)
-                "checkpoint_queue_size": len(state.checkpoint_queue),
-                "repair_queue_size": len(state.repair_queue),
-            },
             # Workflow guide for all MCP clients (Claude Code, Codex, Gemini, etc.)
             "workflow": _get_workflow_guide(status_value),
         }
@@ -1050,9 +894,6 @@ Thumbs.db
         """Request next task assignment for a worker"""
         if self.state_machine is None:
             raise RuntimeError("C4 not initialized")
-
-        # Auto-ensure supervisor loop is running for AI review
-        self._ensure_supervisor_running()
 
         # Implicit heartbeat - keep worker marked as active
         self._touch_worker(worker_id)
@@ -1383,9 +1224,6 @@ Thumbs.db
         """
         if self.state_machine is None:
             raise RuntimeError("C4 not initialized")
-
-        # Auto-ensure supervisor loop is running for AI review
-        self._ensure_supervisor_running()
 
         # Implicit heartbeat - keep worker marked as active
         self._touch_worker(worker_id)
@@ -3110,22 +2948,11 @@ automatically move {task_id} back to pending for re-processing.
         self.state_machine.transition("c4_run")
         new_state = self.state_machine.state
 
-        # Auto-start supervisor loop for background checkpoint processing
-        supervisor_started = False
-        if not self.is_supervisor_loop_running:
-            try:
-                self.start_supervisor_loop()
-                supervisor_started = True
-            except Exception as e:
-                # Log but don't fail - supervisor can be started manually
-                logger.warning(f"Failed to auto-start supervisor loop: {e}")
-
         return {
             "success": True,
             "message": f"Transitioned from {current_status} to EXECUTE",
             "status": new_state.status.value,
             "pending_tasks": len(new_state.queue.pending),
-            "supervisor_loop_started": supervisor_started,
             "work_branch": work_branch,
             "branch_message": branch_message,
         }
@@ -4459,8 +4286,6 @@ def create_server(project_root: Path | None = None) -> Server:
             daemon = C4Daemon(root)
             if daemon.is_initialized():
                 daemon.load()
-                # Auto-restart supervisor loop if in EXECUTE/CHECKPOINT state
-                daemon._auto_restart_supervisor_if_needed()
             _daemon_cache[root_str] = daemon
 
         return _daemon_cache[root_str]
@@ -4610,21 +4435,6 @@ def create_server(project_root: Path | None = None) -> Server:
                 inputSchema={
                     "type": "object",
                     "properties": {},
-                    "required": [],
-                },
-            ),
-            Tool(
-                name="c4_ensure_supervisor",
-                description="Ensure supervisor loop is running for AI review. Auto-starts if in EXECUTE/CHECKPOINT state.",
-                inputSchema={
-                    "type": "object",
-                    "properties": {
-                        "force_restart": {
-                            "type": "boolean",
-                            "description": "Force restart even if already running (default: false)",
-                            "default": False,
-                        },
-                    },
                     "required": [],
                 },
             ),
@@ -5048,10 +4858,6 @@ def create_server(project_root: Path | None = None) -> Server:
                 result = result.model_dump()
             elif name == "c4_start":
                 result = daemon.c4_start()
-            elif name == "c4_ensure_supervisor":
-                result = daemon.c4_ensure_supervisor(
-                    force_restart=arguments.get("force_restart", False)
-                )
             elif name == "c4_run_validation":
                 result = daemon.c4_run_validation(
                     names=arguments.get("names"),

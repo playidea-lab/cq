@@ -257,23 +257,7 @@ async def mark_blocked(
         ) from e
 
 
-@router.post(
-    "/ensure-supervisor",
-    responses={400: {"model": ErrorResponse}},
-    summary="Ensure Supervisor Running",
-    description="Ensure supervisor loop is running for AI review.",
-)
-async def ensure_supervisor(
-    force_restart: bool = False,
-    daemon: C4Daemon = Depends(require_initialized_project),
-) -> dict[str, Any]:
-    """Ensure supervisor loop is running."""
-    try:
-        result = daemon.c4_ensure_supervisor(force_restart=force_restart)
-        return result
-    except Exception as e:
-        logger.error(f"Failed to ensure supervisor: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e),
-        ) from e
+# NOTE: /ensure-supervisor endpoint removed
+# SupervisorLoop has been replaced by unified queue architecture.
+# Checkpoint processing is now handled via CP-XXX tasks.
+# Repair processing is now handled via RPR-XXX tasks.
