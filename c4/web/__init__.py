@@ -4,6 +4,7 @@ Provides team dashboard functionality:
 - Team project list
 - Realtime progress status
 - Worker/review status
+- WebSocket metrics streaming
 """
 
 from c4.web.dashboard import (
@@ -13,11 +14,21 @@ from c4.web.dashboard import (
     ReviewStatus,
     WorkerStatus,
 )
+from c4.web.metrics_ws import (
+    MetricsMessage,
+    MetricsWebSocket,
+    create_state_change_callback,
+    get_metrics_ws,
+)
 
 __all__ = [
     "DashboardService",
+    "MetricsMessage",
+    "MetricsWebSocket",
     "ProjectSummary",
     "RealtimeStatus",
-    "WorkerStatus",
     "ReviewStatus",
+    "WorkerStatus",
+    "create_state_change_callback",
+    "get_metrics_ws",
 ]
