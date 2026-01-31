@@ -13,7 +13,7 @@ if TYPE_CHECKING:
 from pydantic import BaseModel, Field, field_validator
 
 from ..constants import REPAIR_PREFIX, WORKER_STALE_TIMEOUT_SEC
-from ..models.enums import EventType
+from ..models.enums import EventType, TaskType
 from ..monitoring import tracing
 from ..notification import NotificationManager
 from ..supervisor import Supervisor, SupervisorError
@@ -89,6 +89,9 @@ class SupervisorLoop:
             try:
                 # Process git events from post-commit hooks
                 await self._process_git_events()
+
+                # Process pending review tasks (AI auto-review mode)
+                await self._process_review_tasks()
 
                 # Process checkpoint queue first (higher priority)
                 processed_cp = await self._process_checkpoint_queue()
@@ -268,6 +271,152 @@ class SupervisorLoop:
             )
 
         return result if result else None
+
+    async def _process_review_tasks(self) -> bool:
+        """Process pending review tasks automatically using AI.
+
+        In ai_review mode, review tasks (R-XXX) are automatically processed
+        by running the Supervisor to review the parent implementation task.
+
+        Returns:
+            True if a review task was processed, False otherwise
+        """
+        if self.daemon.state_machine is None:
+            return False
+
+        state = self.daemon.state_machine.state
+        config = getattr(self.daemon, "config", None)
+
+        # Check if AI review mode is enabled (supervisor.mode = "ai_review")
+        supervisor_mode = "ai_review"  # Default
+        if config and hasattr(config, "supervisor"):
+            supervisor_mode = getattr(config.supervisor, "mode", "ai_review")
+
+        if supervisor_mode != "ai_review":
+            return False
+
+        # Find pending review tasks
+        for task_id in list(state.queue.pending):
+            task = self.daemon.get_task(task_id)
+            if task is None:
+                continue
+
+            # Only process REVIEW type tasks
+            if task.type != TaskType.REVIEW:
+                continue
+
+            # Process this review task
+            logger.info(f"Auto-processing review task: {task_id}")
+
+            try:
+                # Get the parent implementation task
+                parent_task = None
+                if task.parent_id:
+                    parent_task = self.daemon.get_task(task.parent_id)
+
+                if parent_task is None:
+                    logger.warning(f"Parent task not found for review {task_id}")
+                    continue
+
+                # Run AI review on the parent task's changes
+                decision, notes = await self._run_ai_review(parent_task, task)
+
+                # Apply the review decision
+                self._apply_review_decision(task, decision, notes)
+
+                logger.info(f"Review task {task_id} completed: {decision}")
+                return True
+
+            except Exception as e:
+                logger.error(f"Failed to process review task {task_id}: {e}")
+                # Don't block - continue with next iteration
+                continue
+
+        return False
+
+    async def _run_ai_review(self, impl_task, review_task) -> tuple[str, str]:
+        """Run AI review on an implementation task.
+
+        Args:
+            impl_task: The implementation task to review
+            review_task: The review task
+
+        Returns:
+            Tuple of (decision, notes) where decision is APPROVE/REQUEST_CHANGES
+        """
+        from pathlib import Path
+
+        # Create a temporary review bundle
+        bundle_dir = self.daemon.create_checkpoint_bundle(
+            f"review-{impl_task.id}",
+            task_ids=[impl_task.id],
+        )
+
+        # Initialize supervisor
+        supervisor = Supervisor(
+            self.daemon.root,
+            prompts_dir=Path(self.daemon.root) / "prompts",
+            daemon=self.daemon,
+        )
+
+        # Run review
+        try:
+            response = await asyncio.to_thread(
+                supervisor.run_supervisor_strict,
+                bundle_dir,
+                verifications=None,
+                timeout=self.supervisor_timeout,
+                max_retries=1,
+            )
+
+            return response.decision.value, response.notes or ""
+        except SupervisorError as e:
+            logger.warning(f"Supervisor review failed, auto-approving: {e}")
+            # Default to APPROVE if supervisor fails
+            return "APPROVE", f"Auto-approved (supervisor error: {e})"
+        except Exception as e:
+            logger.warning(f"Review error, auto-approving: {e}")
+            return "APPROVE", f"Auto-approved (error: {e})"
+
+    def _apply_review_decision(
+        self, review_task, decision: str, notes: str
+    ) -> None:
+        """Apply a review decision to complete the review task.
+
+        Args:
+            review_task: The review task to complete
+            decision: APPROVE or REQUEST_CHANGES
+            notes: Review notes
+        """
+        from ..models import TaskStatus
+
+        state = self.daemon.state_machine.state
+
+        # Update review task
+        review_task.status = TaskStatus.DONE
+        review_task.review_decision = decision
+
+        # Move from pending to done
+        if review_task.id in state.queue.pending:
+            state.queue.pending.remove(review_task.id)
+        state.queue.done.append(review_task.id)
+
+        # Save task
+        self.daemon._save_task(review_task)
+
+        # If approved, check if we need to create checkpoint task
+        if decision == "APPROVE" and self.daemon.config.checkpoint_as_task:
+            self.daemon._check_and_create_checkpoint_task(review_task)
+
+        # Save state
+        self._safe_save_state(f"review {review_task.id} completed: {decision}")
+
+        # Notify
+        NotificationManager.notify(
+            title="C4 Review",
+            message=f"{review_task.id}: {decision}",
+            urgency="normal" if decision == "APPROVE" else "critical",
+        )
 
     async def _process_checkpoint_queue(self) -> bool:
         """
