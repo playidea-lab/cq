@@ -254,9 +254,13 @@ class UnifiedSymbolProvider:
         This method provides reliable timeout handling by running Jedi
         in a separate process that can be killed on timeout.
 
+        Supports both files and directories:
+        - File: searches in that file
+        - Directory: searches in all Python files within (with limits)
+
         Args:
             name_path_pattern: Pattern to match.
-            relative_path: File path relative to project root.
+            relative_path: File or directory path relative to project root.
             include_body: Include symbol body (not yet implemented).
 
         Returns:
@@ -264,22 +268,93 @@ class UnifiedSymbolProvider:
         """
         path = self.project_path / relative_path
 
-        if not path.is_file():
+        if path.is_file():
+            return self._find_symbol_in_file(name_path_pattern, path)
+        elif path.is_dir():
+            return self._find_symbol_in_directory(name_path_pattern, path)
+        else:
             return []
 
+    def _find_symbol_in_file(
+        self,
+        name_path_pattern: str,
+        file_path: Path,
+    ) -> list[dict[str, Any]]:
+        """Find symbols in a single file."""
         try:
-            source = path.read_text(encoding="utf-8")
+            source = file_path.read_text(encoding="utf-8")
         except Exception as e:
-            logger.debug(f"Failed to read file {path}: {e}")
+            logger.debug(f"Failed to read file {file_path}: {e}")
             return []
 
         return find_symbol_isolated(
             name_path_pattern=name_path_pattern,
             source=source,
-            file_path=str(path),
+            file_path=str(file_path),
             project_path=str(self.project_path),
             timeout=self.JEDI_TIMEOUT,
         )
+
+    def _find_symbol_in_directory(
+        self,
+        name_path_pattern: str,
+        dir_path: Path,
+        max_files: int = 100,
+    ) -> list[dict[str, Any]]:
+        """Find symbols in all Python files within a directory.
+
+        Uses parallel processing with per-file timeout for reliability.
+
+        Args:
+            name_path_pattern: Pattern to match.
+            dir_path: Directory to search in.
+            max_files: Maximum files to search (prevents runaway).
+
+        Returns:
+            List of symbol dictionaries from all matching files.
+        """
+        import concurrent.futures
+
+        skip_dirs = {
+            "__pycache__", ".git", "node_modules", ".venv", "venv",
+            ".tox", "build", "dist", ".eggs", ".mypy_cache", ".pytest_cache",
+        }
+
+        # Collect Python files
+        py_files: list[Path] = []
+        for py_file in dir_path.rglob("*.py"):
+            if len(py_files) >= max_files:
+                logger.debug(f"Reached max files limit ({max_files})")
+                break
+            if any(part in py_file.parts for part in skip_dirs):
+                continue
+            py_files.append(py_file)
+
+        if not py_files:
+            return []
+
+        logger.debug(f"Searching {len(py_files)} files for pattern: {name_path_pattern}")
+
+        # Search files in parallel with individual timeouts
+        results: list[dict[str, Any]] = []
+        with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+            future_to_file = {
+                executor.submit(self._find_symbol_in_file, name_path_pattern, f): f
+                for f in py_files
+            }
+
+            for future in concurrent.futures.as_completed(future_to_file, timeout=30):
+                try:
+                    file_results = future.result(timeout=self.JEDI_TIMEOUT + 1)
+                    results.extend(file_results)
+                except concurrent.futures.TimeoutError:
+                    file = future_to_file[future]
+                    logger.debug(f"Timeout searching {file}")
+                except Exception as e:
+                    file = future_to_file[future]
+                    logger.debug(f"Error searching {file}: {e}")
+
+        return results
 
     def get_symbols_overview(
         self,
