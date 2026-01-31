@@ -4005,8 +4005,9 @@ automatically move {task_id} back to pending for re-processing.
                 }
 
         try:
-            from c4.lsp.server import C4LSPServer
             import threading
+
+            from c4.lsp.server import C4LSPServer
 
             # Create LSP server
             self._lsp_server = C4LSPServer()
