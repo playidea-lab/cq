@@ -915,6 +915,9 @@ Thumbs.db
                 "workflow": _get_workflow_guide("INIT"),
             }
 
+        # Plan file sync: Check for changes from plan file
+        self._sync_from_plan_file()
+
         # Auto-sync state consistency on status check
         sync_result = self._sync_state_consistency()
         if sync_result["fixed"]:
@@ -1585,6 +1588,9 @@ Thumbs.db
             commit_sha=commit_sha,
         )
 
+        # Plan file sync: Update task checkbox to done
+        self._update_plan_task_status(task_id, "done")
+
         # Invalidate task cache to ensure get_task returns fresh data
         if task_id in self._tasks:
             del self._tasks[task_id]
@@ -1855,6 +1861,9 @@ Thumbs.db
             version=version,
         )
         self.add_task(task)
+
+        # Plan file sync: Regenerate plan file with new task
+        self._sync_to_plan_file()
 
         return {
             "success": True,
@@ -5159,6 +5168,158 @@ Thumbs.db
             "indexed_files": indexed_files,
             "total_symbols": total_symbols,
         }
+
+    # =========================================================================
+    # Plan File Sync Helpers
+    # =========================================================================
+
+    def _sync_to_plan_file(self) -> None:
+        """Sync C4 tasks to plan file (C4 → Plan).
+
+        Regenerates the plan file with current task state.
+        Only runs if plan_sync is enabled in config.
+        """
+        if not self._is_plan_sync_enabled():
+            return
+
+        try:
+            from pathlib import Path
+
+            from .plan_sync import PlanFileSync
+
+            plan_dir = None
+            if self.config.plan_sync.plan_dir:
+                plan_dir = Path(self.config.plan_sync.plan_dir)
+
+            sync = PlanFileSync(plan_dir=plan_dir)
+            project_id = self.state_machine.state.project_id
+
+            # Get all tasks
+            tasks = list(self.task_store.get_all_tasks(project_id).values())
+
+            # Generate plan file
+            sync.generate_plan_file(project_id, tasks)
+            logger.debug(f"Plan file synced for project {project_id}")
+        except Exception as e:
+            logger.warning(f"Failed to sync plan file: {e}")
+
+    def _sync_from_plan_file(self) -> None:
+        """Sync changes from plan file to C4 (Plan → C4).
+
+        Checks plan file for status changes and new tasks.
+        Only runs if plan_sync is enabled in config.
+        """
+        if not self._is_plan_sync_enabled():
+            return
+
+        try:
+            from pathlib import Path
+
+            from .plan_sync import PlanFileSync
+
+            plan_dir = None
+            if self.config.plan_sync.plan_dir:
+                plan_dir = Path(self.config.plan_sync.plan_dir)
+
+            sync = PlanFileSync(plan_dir=plan_dir)
+            project_id = self.state_machine.state.project_id
+
+            if not sync.has_plan_file(project_id):
+                return
+
+            # Get current C4 tasks
+            c4_tasks = self.task_store.get_all_tasks(project_id)
+
+            # Detect changes
+            changes = sync.sync_from_plan_file(project_id, c4_tasks)
+
+            # Apply status updates (plan file → C4)
+            for update in changes["status_updates"]:
+                task_id = update["task_id"]
+                new_status = update["new_status"]
+                if new_status == "done":
+                    # Mark task as done in C4 state
+                    self._mark_task_done_from_plan(task_id)
+                    logger.info(f"Plan sync: marked {task_id} as done")
+
+            # Apply plan file updates (C4 → plan file)
+            for plan_update in changes["plan_updates"]:
+                sync.update_task_status(
+                    project_id,
+                    plan_update["task_id"],
+                    plan_update["new_status"],
+                )
+
+            # Note: new_tasks from plan file are logged but not auto-added
+            # This requires manual c4_add_todo to maintain task ID consistency
+            if changes["new_tasks"]:
+                logger.info(
+                    f"Plan sync: {len(changes['new_tasks'])} new tasks detected "
+                    "in plan file (use c4_add_todo to add them)"
+                )
+        except Exception as e:
+            logger.warning(f"Failed to sync from plan file: {e}")
+
+    def _update_plan_task_status(self, task_id: str, status: str) -> None:
+        """Update a single task's status in plan file.
+
+        Args:
+            task_id: The task ID to update
+            status: New status ("done" or "pending")
+        """
+        if not self._is_plan_sync_enabled():
+            return
+
+        if not self.config.plan_sync.auto_update_status:
+            return
+
+        try:
+            from pathlib import Path
+
+            from .plan_sync import PlanFileSync
+
+            plan_dir = None
+            if self.config.plan_sync.plan_dir:
+                plan_dir = Path(self.config.plan_sync.plan_dir)
+
+            sync = PlanFileSync(plan_dir=plan_dir)
+            project_id = self.state_machine.state.project_id
+
+            sync.update_task_status(project_id, task_id, status)
+            logger.debug(f"Plan file: updated {task_id} to {status}")
+        except Exception as e:
+            logger.warning(f"Failed to update plan task status: {e}")
+
+    def _is_plan_sync_enabled(self) -> bool:
+        """Check if plan sync is enabled in config."""
+        if self.state_machine is None:
+            return False
+        if not hasattr(self.config, "plan_sync"):
+            return False
+        return self.config.plan_sync.enabled
+
+    def _mark_task_done_from_plan(self, task_id: str) -> None:
+        """Mark a task as done based on plan file change.
+
+        This is a simplified version - doesn't run validations.
+        Used for syncing from plan file edits.
+        """
+        project_id = self.state_machine.state.project_id
+        state = self.state_machine.state
+
+        # Move from pending/in_progress to done
+        if task_id in state.queue.pending:
+            state.queue.pending.remove(task_id)
+            state.queue.done.append(task_id)
+        elif task_id in state.queue.in_progress:
+            del state.queue.in_progress[task_id]
+            state.queue.done.append(task_id)
+
+        # Update task store
+        self.task_store.update_status(project_id, task_id, status="done")
+
+        # Save state
+        self.state_machine.save_state()
 
 
 # =============================================================================

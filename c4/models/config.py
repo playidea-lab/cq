@@ -448,6 +448,37 @@ class HooksConfig(BaseModel):
     )
 
 
+class PlanSyncConfig(BaseModel):
+    """Plan file synchronization configuration.
+
+    Enables bidirectional sync between Claude plan files (~/.claude/plans/)
+    and C4 task queue.
+
+    Example in config.yaml:
+        plan_sync:
+          enabled: true
+          auto_generate: true
+          auto_update_status: true
+    """
+
+    enabled: bool = Field(
+        default=True,
+        description="Enable plan file synchronization with Claude",
+    )
+    auto_generate: bool = Field(
+        default=True,
+        description="Auto-generate plan file when tasks are added",
+    )
+    auto_update_status: bool = Field(
+        default=True,
+        description="Auto-update plan file checkbox when task completes",
+    )
+    plan_dir: str | None = Field(
+        default=None,
+        description="Custom plan directory (default: ~/.claude/plans)",
+    )
+
+
 class WorktreeConfig(BaseModel):
     """Worktree configuration for isolated parallel execution.
 
@@ -520,6 +551,10 @@ class C4Config(BaseModel):
     task_system: TaskSystemConfig = Field(
         default_factory=TaskSystemConfig,
         description="Unified task system settings (checkpoint/repair)",
+    )
+    plan_sync: PlanSyncConfig = Field(
+        default_factory=PlanSyncConfig,
+        description="Claude plan file synchronization settings",
     )
 
     # Review-as-Task configuration
