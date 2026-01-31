@@ -17,6 +17,11 @@ from ..models.enums import EventType, TaskType
 from ..monitoring import tracing
 from ..notification import NotificationManager
 from ..supervisor import Supervisor, SupervisorError
+from .repair_analyzer import (
+    FailureAnalyzer,
+    RepairMetrics,
+    RepairSuggestionGenerator,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -63,15 +68,24 @@ class SupervisorLoop:
         max_retries: int = 3,
         supervisor_timeout: int = 300,
         stale_worker_check_interval: float = 60.0,  # Check every minute
+        enable_auto_repair: bool = False,  # Auto-repair mode (default: off)
     ):
         self.daemon = daemon
         self.poll_interval = poll_interval
         self.max_retries = max_retries
         self.supervisor_timeout = supervisor_timeout
         self.stale_worker_check_interval = stale_worker_check_interval
+        self.enable_auto_repair = enable_auto_repair
         self.running = False
         self._task: asyncio.Task | None = None
         self._last_stale_check: float = 0
+
+        # Repair analysis components
+        self._failure_analyzer = FailureAnalyzer(
+            daemon.root, use_ai_fallback=True, ai_timeout=60
+        )
+        self._suggestion_generator = RepairSuggestionGenerator(daemon.root)
+        self._repair_metrics = RepairMetrics()
 
     async def start(self) -> None:
         """Start the supervisor loop"""
@@ -537,6 +551,9 @@ class SupervisorLoop:
         """
         Process the next item in the repair queue.
 
+        Uses FailureAnalyzer for intelligent root cause analysis and
+        RepairSuggestionGenerator for structured DoD generation.
+
         Returns:
             True if an item was processed, False if queue is empty
         """
@@ -552,27 +569,55 @@ class SupervisorLoop:
             # Get the first item (FIFO)
             item = state.repair_queue[0]
             span.set_attribute("task_id", item.task_id)
+            span.set_attribute("attempts", item.attempts)
             logger.info(f"Processing repair for task: {item.task_id}")
 
         try:
-            # Create repair prompt for supervisor guidance
-            guidance = await self._get_repair_guidance(item)
+            # Analyze the failure
+            analysis = await asyncio.to_thread(
+                self._failure_analyzer.analyze, item
+            )
+            span.set_attribute("failure_category", analysis.category.value)
+            span.set_attribute("confidence", analysis.confidence)
 
-            if guidance:
-                # Create new task with supervisor guidance
-                repair_task_id = f"{REPAIR_PREFIX}{item.task_id}"
-                self.daemon.c4_add_todo(
-                    task_id=repair_task_id,
-                    title=f"Fix blocked task {item.task_id}",
-                    scope=None,
-                    dod=guidance,
-                )
+            logger.info(
+                f"Failure analysis for {item.task_id}: "
+                f"category={analysis.category.value}, "
+                f"confidence={analysis.confidence:.0%}"
+            )
 
-                logger.info(f"Created repair task {repair_task_id} for {item.task_id}")
+            # Generate DoD for repair task
+            dod = self._suggestion_generator.generate_dod(analysis, item.task_id)
+
+            # Create new task with analysis-based guidance
+            repair_task_id = f"{REPAIR_PREFIX}{item.task_id}"
+            self.daemon.c4_add_todo(
+                task_id=repair_task_id,
+                title=f"[{analysis.category.value}] Fix blocked task {item.task_id}",
+                scope=analysis.affected_files[0] if analysis.affected_files else None,
+                dod=dod,
+            )
+
+            logger.info(f"Created repair task {repair_task_id} for {item.task_id}")
+
+            # Track metrics
+            self._repair_metrics.record_repair(
+                success=False,  # Will be updated when repair completes
+                category=analysis.category,
+                worker_id=item.worker_id,
+                attempts=item.attempts,
+            )
 
             # Remove from repair queue
             state.repair_queue.pop(0)
             self._safe_save_state(f"repair queue item {item.task_id}")
+
+            # Send notification
+            NotificationManager.notify(
+                title="C4 Repair Task Created",
+                message=f"{repair_task_id}: {analysis.category.value}",
+                urgency="normal",
+            )
 
             return True
 
@@ -584,60 +629,40 @@ class SupervisorLoop:
         """
         Get supervisor guidance for a blocked task.
 
+        Uses FailureAnalyzer for pattern-based analysis with AI fallback.
+
         Args:
             item: RepairQueueItem
 
         Returns:
             Guidance string or None if failed
         """
-        # Create a repair prompt
-        prompt = f"""# Repair Guidance Request
-
-A task has been blocked after {item.attempts} failed attempts.
-
-## Task ID
-{item.task_id}
-
-## Failure Signature
-{item.failure_signature}
-
-## Last Error
-{item.last_error}
-
-## Your Task
-
-Provide specific guidance on how to fix this issue. Include:
-1. Root cause analysis
-2. Specific steps to resolve
-3. Code changes if applicable
-
-Respond with a clear, actionable guidance paragraph."""
-
         try:
-            import subprocess
-
-            result = await asyncio.to_thread(
-                subprocess.run,
-                ["claude", "-p", prompt],
-                capture_output=True,
-                text=True,
-                timeout=60,
-                cwd=self.daemon.root,
+            # Use the failure analyzer
+            analysis = await asyncio.to_thread(
+                self._failure_analyzer.analyze, item
             )
 
-            if result.returncode == 0:
-                return result.stdout.strip()
-            else:
-                logger.error(f"Claude CLI error: {result.stderr}")
-                return f"Fix the issue in task {item.task_id}: {item.failure_signature}"
+            # Generate repair prompt with context
+            return self._suggestion_generator.generate_repair_prompt(
+                analysis,
+                item.task_id,
+                context=f"Worker {item.worker_id} failed after {item.attempts} attempts.",
+            )
 
-        except subprocess.TimeoutExpired:
-            logger.error("Repair guidance request timed out")
+        except Exception as e:
+            logger.error(f"Error generating repair guidance: {e}")
+            # Fallback to simple guidance
             return f"Fix the issue in task {item.task_id}: {item.failure_signature}"
 
-        except FileNotFoundError:
-            logger.warning("Claude CLI not found, using fallback guidance")
-            return f"Fix the issue in task {item.task_id}: {item.failure_signature}"
+    @property
+    def repair_metrics(self) -> RepairMetrics:
+        """Get current repair metrics."""
+        return self._repair_metrics
+
+    def get_repair_metrics_dict(self) -> dict:
+        """Get repair metrics as dictionary."""
+        return self._repair_metrics.to_dict()
 
 
 class SupervisorLoopManager:
