@@ -128,9 +128,10 @@ class TestGetPlatformCommand:
 
     def test_returns_command_for_known_platform(self):
         """Should return command list for known platforms."""
-        assert get_platform_command("claude") == ["claude"]
+        # All platforms now include "." to open current directory
+        assert get_platform_command("claude") == ["claude", "."]
         assert get_platform_command("cursor") == ["cursor", "."]
-        assert get_platform_command("codex") == ["codex"]
+        assert get_platform_command("codex") == ["codex", "."]
 
     def test_returns_none_for_unknown_platform(self):
         """Should return None for unknown platforms."""
