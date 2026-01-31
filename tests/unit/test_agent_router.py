@@ -4,7 +4,7 @@ import pytest
 
 from c4.discovery.models import Domain
 from c4.models.config import AgentChainDef, AgentConfig
-from c4.supervisor.agent_router import (
+from c4.supervisor._legacy.agent_router import (
     DOMAIN_AGENT_MAP,
     TASK_TYPE_AGENT_OVERRIDES,
     AgentChainConfig,
@@ -832,7 +832,7 @@ class TestGraphRouterAdapter:
 
     def test_adapter_returns_agent_chain_config(self):
         """GraphRouterAdapter returns compatible AgentChainConfig."""
-        from c4.supervisor.agent_router import GraphRouterAdapter
+        from c4.supervisor._legacy.agent_router import GraphRouterAdapter
 
         adapter = GraphRouterAdapter()
         config = adapter.get_recommended_agent("web-frontend")
@@ -843,7 +843,7 @@ class TestGraphRouterAdapter:
 
     def test_adapter_get_agent_for_task_type(self):
         """GraphRouterAdapter handles task type overrides."""
-        from c4.supervisor.agent_router import GraphRouterAdapter
+        from c4.supervisor._legacy.agent_router import GraphRouterAdapter
 
         adapter = GraphRouterAdapter()
         agent = adapter.get_agent_for_task_type("debug", "web-backend")
@@ -852,7 +852,7 @@ class TestGraphRouterAdapter:
 
     def test_adapter_get_chain_for_domain(self):
         """GraphRouterAdapter returns chain for domain."""
-        from c4.supervisor.agent_router import GraphRouterAdapter
+        from c4.supervisor._legacy.agent_router import GraphRouterAdapter
 
         adapter = GraphRouterAdapter()
         chain = adapter.get_chain_for_domain("web-frontend")
@@ -862,7 +862,7 @@ class TestGraphRouterAdapter:
 
     def test_adapter_get_all_domains(self):
         """GraphRouterAdapter returns all domains."""
-        from c4.supervisor.agent_router import GraphRouterAdapter
+        from c4.supervisor._legacy.agent_router import GraphRouterAdapter
 
         adapter = GraphRouterAdapter()
         domains = adapter.get_all_domains()
@@ -873,7 +873,7 @@ class TestGraphRouterAdapter:
 
     def test_adapter_uses_legacy_fallback(self):
         """GraphRouterAdapter uses legacy fallback for unknown domains."""
-        from c4.supervisor.agent_router import GraphRouterAdapter
+        from c4.supervisor._legacy.agent_router import GraphRouterAdapter
 
         adapter = GraphRouterAdapter()
         config = adapter.get_recommended_agent("unknown")
@@ -887,43 +887,43 @@ class TestFeatureFlag:
 
     def test_use_graph_router_returns_false_by_default(self, monkeypatch):
         """_use_graph_router returns False when env var not set."""
-        from c4.supervisor.agent_router import _use_graph_router
+        from c4.supervisor._legacy.agent_router import _use_graph_router
 
         monkeypatch.delenv("C4_USE_GRAPH_ROUTER", raising=False)
         assert _use_graph_router() is False
 
     def test_use_graph_router_returns_true_when_set(self, monkeypatch):
         """_use_graph_router returns True when env var is '1'."""
-        from c4.supervisor.agent_router import _use_graph_router
+        from c4.supervisor._legacy.agent_router import _use_graph_router
 
         monkeypatch.setenv("C4_USE_GRAPH_ROUTER", "1")
         assert _use_graph_router() is True
 
     def test_use_graph_router_accepts_true_string(self, monkeypatch):
         """_use_graph_router returns True for 'true' value."""
-        from c4.supervisor.agent_router import _use_graph_router
+        from c4.supervisor._legacy.agent_router import _use_graph_router
 
         monkeypatch.setenv("C4_USE_GRAPH_ROUTER", "true")
         assert _use_graph_router() is True
 
     def test_use_graph_router_accepts_yes(self, monkeypatch):
         """_use_graph_router returns True for 'yes' value."""
-        from c4.supervisor.agent_router import _use_graph_router
+        from c4.supervisor._legacy.agent_router import _use_graph_router
 
         monkeypatch.setenv("C4_USE_GRAPH_ROUTER", "yes")
         assert _use_graph_router() is True
 
     def test_use_graph_router_ignores_invalid(self, monkeypatch):
         """_use_graph_router returns False for invalid values."""
-        from c4.supervisor.agent_router import _use_graph_router
+        from c4.supervisor._legacy.agent_router import _use_graph_router
 
         monkeypatch.setenv("C4_USE_GRAPH_ROUTER", "invalid")
         assert _use_graph_router() is False
 
     def test_get_default_router_with_flag(self, monkeypatch):
         """get_default_router returns GraphRouterAdapter when flag is set."""
-        from c4.supervisor import agent_router
-        from c4.supervisor.agent_router import GraphRouterAdapter
+        from c4.supervisor._legacy import agent_router
+        from c4.supervisor._legacy.agent_router import GraphRouterAdapter
 
         # Reset the default router
         agent_router._default_router = None
@@ -938,8 +938,8 @@ class TestFeatureFlag:
 
     def test_get_default_router_without_flag(self, monkeypatch):
         """get_default_router returns AgentRouter when flag is not set."""
-        from c4.supervisor import agent_router
-        from c4.supervisor.agent_router import AgentRouter, GraphRouterAdapter
+        from c4.supervisor._legacy import agent_router
+        from c4.supervisor._legacy.agent_router import AgentRouter, GraphRouterAdapter
 
         # Reset the default router
         agent_router._default_router = None
@@ -985,7 +985,7 @@ class TestPerformanceBenchmark:
         """GraphRouter queries should complete in under 10ms."""
         import time
 
-        from c4.supervisor.agent_router import GraphRouterAdapter
+        from c4.supervisor._legacy.agent_router import GraphRouterAdapter
 
         adapter = GraphRouterAdapter()
 

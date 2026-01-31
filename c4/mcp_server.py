@@ -54,7 +54,7 @@ from .supervisor.agent_graph import (
     SkillMatcher,
     TaskContext,
 )
-from .supervisor.agent_router import AgentRouter
+from .supervisor._legacy.agent_router import AgentRouter
 from .validation import ValidationRunner
 
 logger = logging.getLogger(__name__)

@@ -6,7 +6,7 @@ as the existing DOMAIN_AGENT_MAP and TASK_TYPE_AGENT_OVERRIDES.
 
 from pathlib import Path
 
-from c4.supervisor.agent_router import (
+from c4.supervisor._legacy.agent_router import (
     DOMAIN_AGENT_MAP,
     TASK_TYPE_AGENT_OVERRIDES,
 )

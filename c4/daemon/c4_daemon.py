@@ -49,7 +49,7 @@ from ..supervisor.agent_graph import (
     SkillMatcher,
     TaskContext,
 )
-from ..supervisor.agent_router import AgentRouter
+from ..supervisor._legacy.agent_router import AgentRouter
 from ..validation import ValidationRunner
 from .git_ops import GitOperations
 from .pr_manager import PRManager

@@ -18,7 +18,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from c4.discovery.models import Domain
-from c4.supervisor.agent_router import (
+from c4.supervisor._legacy.agent_router import (
     AgentChainConfig,
     AgentRouter,
 )

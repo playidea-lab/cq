@@ -21,7 +21,7 @@ Usage:
     supervisor = Supervisor(project_root, backend=backend)
 """
 
-from .agent_router import (
+from ._legacy.agent_router import (
     DOMAIN_AGENT_MAP,
     AgentChainConfig,
     AgentHandoff,

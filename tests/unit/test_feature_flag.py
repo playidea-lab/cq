@@ -58,7 +58,7 @@ class TestFeatureFlagIntegration:
 
     def test_legacy_router_deprecation_warning(self) -> None:
         """Legacy AgentRouter should emit deprecation warning."""
-        from c4.supervisor.agent_router import AgentRouter
+        from c4.supervisor._legacy.agent_router import AgentRouter
 
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
@@ -71,7 +71,7 @@ class TestFeatureFlagIntegration:
 
     def test_legacy_function_deprecation_warning(self) -> None:
         """Legacy get_recommended_agent function should emit deprecation warning."""
-        from c4.supervisor.agent_router import get_recommended_agent
+        from c4.supervisor._legacy.agent_router import get_recommended_agent
 
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")

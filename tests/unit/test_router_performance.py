@@ -7,7 +7,7 @@ Target: < 10ms per query as per DoD.
 import time
 
 from c4.supervisor.agent_graph.router import GraphRouter
-from c4.supervisor.agent_router import AgentRouter
+from c4.supervisor._legacy.agent_router import AgentRouter
 
 
 class TestAgentRouterPerformance:
