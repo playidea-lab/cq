@@ -5195,7 +5195,7 @@ Thumbs.db
             project_id = self.state_machine.state.project_id
 
             # Get all tasks
-            tasks = list(self.task_store.get_all_tasks(project_id).values())
+            tasks = list(self.task_store.load_all(project_id).values())
 
             # Generate plan file
             sync.generate_plan_file(project_id, tasks)
@@ -5228,7 +5228,7 @@ Thumbs.db
                 return
 
             # Get current C4 tasks
-            c4_tasks = self.task_store.get_all_tasks(project_id)
+            c4_tasks = self.task_store.load_all(project_id)
 
             # Detect changes
             changes = sync.sync_from_plan_file(project_id, c4_tasks)
