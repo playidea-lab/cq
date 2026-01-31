@@ -41,6 +41,7 @@ from ..store import (
     create_lock_store,
     create_state_store,
 )
+from ..supervisor._legacy.agent_router import AgentRouter
 from ..supervisor.agent_graph import (
     AgentGraph,
     AgentGraphLoader,
@@ -49,7 +50,6 @@ from ..supervisor.agent_graph import (
     SkillMatcher,
     TaskContext,
 )
-from ..supervisor._legacy.agent_router import AgentRouter
 from ..validation import ValidationRunner
 from .git_ops import GitOperations
 from .pr_manager import PRManager
@@ -837,6 +837,74 @@ Thumbs.db
     # MCP Tool Implementations
     # =========================================================================
 
+    def _sync_state_consistency(self) -> dict[str, list[str]]:
+        """Synchronize c4_state with c4_tasks to fix any inconsistencies.
+
+        c4_state.queue is the source of truth. This method:
+        1. Detects tasks in c4_state.in_progress that are done in c4_tasks
+        2. Detects tasks in c4_state.in_progress that don't exist
+        3. Fixes worker states for completed/missing tasks
+
+        Returns:
+            Dict with lists of fixed task IDs by category
+        """
+        if self.state_machine is None:
+            return {"fixed": [], "errors": []}
+
+        fixed_tasks: list[str] = []
+        error_tasks: list[str] = []
+        project_id = self.state_machine.state.project_id
+
+        try:
+            store = self.state_machine.store
+            with store.atomic_modify(project_id) as state:
+                # Check in_progress tasks
+                tasks_to_remove = []
+                for task_id, worker_id in list(state.queue.in_progress.items()):
+                    task = self.get_task(task_id)
+
+                    # Case 1: Task doesn't exist
+                    if task is None:
+                        tasks_to_remove.append((task_id, worker_id, "not_found"))
+                        continue
+
+                    # Case 2: Task is already done in c4_tasks but still in in_progress
+                    if task.status == TaskStatus.DONE:
+                        tasks_to_remove.append((task_id, worker_id, "already_done"))
+                        continue
+
+                # Apply fixes
+                for task_id, worker_id, reason in tasks_to_remove:
+                    # Remove from in_progress
+                    del state.queue.in_progress[task_id]
+
+                    # Add to done if task exists and was already done
+                    if reason == "already_done" and task_id not in state.queue.done:
+                        state.queue.done.append(task_id)
+
+                    # Reset worker state
+                    if worker_id and worker_id in state.workers:
+                        worker = state.workers[worker_id]
+                        if worker.task_id == task_id:
+                            worker.state = "idle"
+                            worker.task_id = None
+                            worker.scope = None
+
+                    fixed_tasks.append(task_id)
+                    logger.warning(
+                        f"State sync: Fixed task {task_id} ({reason}), "
+                        f"was assigned to {worker_id}"
+                    )
+
+                # Update cached state
+                self.state_machine._state = state
+
+        except Exception as e:
+            logger.error(f"State sync failed: {e}")
+            error_tasks.append(str(e))
+
+        return {"fixed": fixed_tasks, "errors": error_tasks}
+
     def c4_status(self) -> dict[str, Any]:
         """Get current C4 project status"""
         if self.state_machine is None:
@@ -846,6 +914,11 @@ Thumbs.db
                 "initialized": False,
                 "workflow": _get_workflow_guide("INIT"),
             }
+
+        # Auto-sync state consistency on status check
+        sync_result = self._sync_state_consistency()
+        if sync_result["fixed"]:
+            logger.info(f"Auto-fixed {len(sync_result['fixed'])} inconsistent tasks")
 
         # Re-load state and tasks to get latest (multi-worker sync)
         self.state_machine.load_state()

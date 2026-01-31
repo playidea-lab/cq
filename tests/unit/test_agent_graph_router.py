@@ -13,6 +13,16 @@ from __future__ import annotations
 
 import pytest
 
+from c4.supervisor._legacy.agent_router import (
+    TASK_TYPE_AGENT_OVERRIDES,
+    AgentChainConfig,
+    AgentRouter,
+    get_agent_for_task_type,
+    get_chain_for_domain,
+    get_default_router,
+    get_recommended_agent,
+    set_default_router,
+)
 from c4.supervisor.agent_graph.graph import AgentGraph
 from c4.supervisor.agent_graph.models import (
     Agent,
@@ -28,16 +38,6 @@ from c4.supervisor.agent_graph.models import (
     WorkflowStep,
 )
 from c4.supervisor.agent_graph.router import GraphRouter
-from c4.supervisor._legacy.agent_router import (
-    TASK_TYPE_AGENT_OVERRIDES,
-    AgentChainConfig,
-    AgentRouter,
-    get_agent_for_task_type,
-    get_chain_for_domain,
-    get_default_router,
-    get_recommended_agent,
-    set_default_router,
-)
 
 # ============================================================================
 # Fixtures

@@ -46,6 +46,7 @@ from .store import (
     create_lock_store,
     create_state_store,
 )
+from .supervisor._legacy.agent_router import AgentRouter
 from .supervisor.agent_graph import (
     AgentGraph,
     AgentGraphLoader,
@@ -54,7 +55,6 @@ from .supervisor.agent_graph import (
     SkillMatcher,
     TaskContext,
 )
-from .supervisor._legacy.agent_router import AgentRouter
 from .validation import ValidationRunner
 
 logger = logging.getLogger(__name__)

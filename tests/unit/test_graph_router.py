@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import pytest
 
+from c4.supervisor._legacy.agent_router import AgentChainConfig
 from c4.supervisor.agent_graph import (
     AgentGraph,
     GraphRouter,
@@ -30,7 +31,6 @@ from c4.supervisor.agent_graph.models import (
     SkillDefinition,
     SkillTriggers,
 )
-from c4.supervisor._legacy.agent_router import AgentChainConfig
 
 # ============================================================================
 # Fixtures

@@ -4,8 +4,8 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
-
 from c4.daemon.supervisor_loop import SupervisorLoop
+
 from c4.mcp_server import C4Daemon
 from c4.models import (
     CheckpointConfig,
