@@ -73,9 +73,11 @@ class TestMacOSProvider:
         assert result is False
 
     def test_escape_special_characters(self):
-        """Test escaping special characters"""
-        assert MacOSProvider._escape('Test "quoted"') == 'Test \\"quoted\\"'
-        assert MacOSProvider._escape("Test \\backslash") == "Test \\\\backslash"
+        """Test escaping special characters for AppleScript"""
+        assert MacOSProvider._escape_applescript('Test "quoted"') == 'Test \\"quoted\\"'
+        assert (
+            MacOSProvider._escape_applescript("Test \\backslash") == "Test \\\\backslash"
+        )
 
 
 class TestLinuxProvider:
@@ -99,16 +101,19 @@ class TestLinuxProvider:
         provider = LinuxProvider()
         notification = Notification(title="Test", message="Hello", urgency="critical")
 
-        with patch("subprocess.run") as mock_run:
+        with (
+            patch.object(provider, "is_available", return_value=True),
+            patch("c4.notification.providers.linux.subprocess.run") as mock_run,
+        ):
             mock_run.return_value = MagicMock(returncode=0)
             result = provider.send(notification)
 
-        assert result is True
-        mock_run.assert_called_once()
-        # Verify urgency flag is passed
-        call_args = mock_run.call_args[0][0]
-        assert "--urgency" in call_args
-        assert "critical" in call_args
+            assert result is True
+            mock_run.assert_called_once()
+            # Verify urgency flag is passed
+            call_args = mock_run.call_args[0][0]
+            assert "--urgency" in call_args
+            assert "critical" in call_args
 
 
 class TestWindowsProvider:
@@ -127,11 +132,12 @@ class TestWindowsProvider:
         with patch("sys.platform", "linux"):
             assert provider.is_available() is False
 
-    def test_escape_xml_characters(self):
-        """Test escaping XML special characters"""
-        assert WindowsProvider._escape("<test>") == "&lt;test&gt;"
-        assert WindowsProvider._escape("a & b") == "a &amp; b"
-        assert WindowsProvider._escape('"quoted"') == "&quot;quoted&quot;"
+    def test_escape_powershell_characters(self):
+        """Test escaping PowerShell special characters"""
+        # PowerShell escapes: backtick, double quote, dollar sign
+        assert WindowsProvider._escape_powershell('Test "quoted"') == 'Test `"quoted`"'
+        assert WindowsProvider._escape_powershell("Test $var") == "Test `$var"
+        assert WindowsProvider._escape_powershell("Test `backtick") == "Test ``backtick"
 
 
 class TestNotificationManager:
@@ -145,13 +151,20 @@ class TestNotificationManager:
         """Test that get_provider returns available provider"""
 
         class MockProvider(NotificationProvider):
+            @property
+            def platform_name(self) -> str:
+                return "Mock"
+
             def is_available(self) -> bool:
                 return True
 
             def send(self, notification: Notification) -> bool:
                 return True
 
-        NotificationManager.register_provider(MockProvider(), priority=0)
+        NotificationManager.reset()
+        NotificationManager._providers = [MockProvider()]
+        NotificationManager._initialized = False
+
         provider = NotificationManager.get_provider()
 
         assert provider is not None
@@ -161,6 +174,10 @@ class TestNotificationManager:
         """Test that unavailable providers are skipped"""
 
         class UnavailableProvider(NotificationProvider):
+            @property
+            def platform_name(self) -> str:
+                return "Unavailable"
+
             def is_available(self) -> bool:
                 return False
 
@@ -168,6 +185,10 @@ class TestNotificationManager:
                 return True
 
         class AvailableProvider(NotificationProvider):
+            @property
+            def platform_name(self) -> str:
+                return "Available"
+
             def is_available(self) -> bool:
                 return True
 
@@ -186,6 +207,10 @@ class TestNotificationManager:
 
         class MockProvider(NotificationProvider):
             sent = False
+
+            @property
+            def platform_name(self) -> str:
+                return "Mock"
 
             def is_available(self) -> bool:
                 return True
@@ -206,6 +231,10 @@ class TestNotificationManager:
         """Test notification when no provider available"""
 
         class UnavailableProvider(NotificationProvider):
+            @property
+            def platform_name(self) -> str:
+                return "Unavailable"
+
             def is_available(self) -> bool:
                 return False
 
@@ -224,6 +253,10 @@ class TestNotificationManager:
         received_notification = None
 
         class CaptureProvider(NotificationProvider):
+            @property
+            def platform_name(self) -> str:
+                return "Capture"
+
             def is_available(self) -> bool:
                 return True
 
@@ -249,4 +282,7 @@ class TestNotificationManager:
         assert received_notification.message == "Message"
         assert received_notification.subtitle == "Subtitle"
         assert received_notification.sound is False
-        assert received_notification.urgency == "critical"
+        # Urgency is converted to Urgency enum
+        from c4.notification.base import Urgency
+
+        assert received_notification.urgency == Urgency.CRITICAL
