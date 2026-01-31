@@ -6,7 +6,7 @@ import sqlite3
 from contextlib import contextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import TYPE_CHECKING, Generator
+from typing import TYPE_CHECKING, Any, Generator
 
 from .exceptions import StateNotFoundError, TransactionError
 from .protocol import LockStore, StateStore
@@ -731,6 +731,124 @@ class SQLiteTaskStore:
             )
             conn.commit()
             return cursor.rowcount
+
+    def get_queue_stats(self, project_id: str) -> dict[str, Any]:
+        """Get queue statistics directly from c4_tasks table.
+
+        This provides accurate counts that don't rely on c4_state.queue,
+        which can get out of sync. Use this for c4_status() to ensure
+        consistent reporting.
+
+        Returns:
+            Dict with pending_count, in_progress_count, done_count,
+            pending_ids (first 5), and in_progress_map.
+        """
+        with self._get_connection() as conn:
+            # Get counts by status
+            cursor = conn.execute(
+                """
+                SELECT status, COUNT(*) as count
+                FROM c4_tasks
+                WHERE project_id = ?
+                GROUP BY status
+                """,
+                (project_id,),
+            )
+            counts = {row[0]: row[1] for row in cursor.fetchall()}
+
+            # Get pending task IDs (first 5)
+            cursor = conn.execute(
+                """
+                SELECT task_id FROM c4_tasks
+                WHERE project_id = ? AND status = 'pending'
+                ORDER BY task_id
+                LIMIT 5
+                """,
+                (project_id,),
+            )
+            pending_ids = [row[0] for row in cursor.fetchall()]
+
+            # Get in_progress map (task_id -> worker_id)
+            cursor = conn.execute(
+                """
+                SELECT task_id, assigned_to FROM c4_tasks
+                WHERE project_id = ? AND status = 'in_progress'
+                """,
+                (project_id,),
+            )
+            in_progress_map = {
+                row[0]: row[1] or "unknown" for row in cursor.fetchall()
+            }
+
+        return {
+            "pending_count": counts.get("pending", 0),
+            "in_progress_count": counts.get("in_progress", 0),
+            "done_count": counts.get("done", 0),
+            "pending_ids": pending_ids,
+            "in_progress_map": in_progress_map,
+        }
+
+    def sync_state_queue(self, project_id: str) -> bool:
+        """Sync c4_state.queue with actual task statuses from c4_tasks.
+
+        This fixes inconsistencies where c4_state.queue and c4_tasks.status
+        have diverged. Call this when state appears stale.
+
+        Returns:
+            True if sync was performed, False if nothing to sync.
+        """
+        with self._get_connection() as conn:
+            # Get all task IDs by status
+            cursor = conn.execute(
+                """
+                SELECT task_id, status FROM c4_tasks
+                WHERE project_id = ?
+                """,
+                (project_id,),
+            )
+            tasks = cursor.fetchall()
+
+            if not tasks:
+                return False
+
+            pending = []
+            in_progress = {}
+            done = []
+
+            for task_id, status in tasks:
+                if status == "pending":
+                    pending.append(task_id)
+                elif status == "in_progress":
+                    # Get assigned_to for in_progress tasks
+                    cursor2 = conn.execute(
+                        "SELECT assigned_to FROM c4_tasks WHERE project_id = ? AND task_id = ?",
+                        (project_id, task_id),
+                    )
+                    row = cursor2.fetchone()
+                    worker_id = row[0] if row and row[0] else "unknown"
+                    in_progress[task_id] = worker_id
+                elif status == "done":
+                    done.append(task_id)
+
+            # Build new queue JSON
+            queue_json = json.dumps({
+                "pending": pending,
+                "in_progress": in_progress,
+                "done": done,
+            })
+
+            # Update state
+            conn.execute(
+                """
+                UPDATE c4_state
+                SET state_json = json_set(state_json, '$.queue', json(?))
+                WHERE project_id = ?
+                """,
+                (queue_json, project_id),
+            )
+            conn.commit()
+
+        return True
 
     def update_status(
         self,

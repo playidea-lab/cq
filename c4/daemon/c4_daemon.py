@@ -974,6 +974,11 @@ Thumbs.db
         self._load_tasks()  # Refresh task cache for consistency
         state = self.state_machine.state
         status_value = state.status.value
+
+        # Get queue stats directly from tasks table (authoritative source)
+        # This avoids stale data in c4_state.queue
+        queue_stats = self.task_store.get_queue_stats(state.project_id)
+
         return {
             "initialized": True,
             "project_id": state.project_id,
@@ -984,15 +989,15 @@ Thumbs.db
                 "state": state.checkpoint.state,
             },
             "queue": {
-                "pending": len(state.queue.pending),
-                "in_progress": len(state.queue.in_progress),
-                "done": len(state.queue.done),
-                "pending_ids": state.queue.pending[:5],  # First 5
-                "in_progress_map": state.queue.in_progress,
+                "pending": queue_stats["pending_count"],
+                "in_progress": queue_stats["in_progress_count"],
+                "done": queue_stats["done_count"],
+                "pending_ids": queue_stats["pending_ids"],
+                "in_progress_map": queue_stats["in_progress_map"],
                 # Economic mode: model info for pending tasks
                 "pending_tasks": [
                     {"id": tid, "model": self.get_task(tid).model if self.get_task(tid) else "opus"}
-                    for tid in state.queue.pending
+                    for tid in queue_stats["pending_ids"]
                 ],
             },
             "workers": {
