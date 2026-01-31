@@ -263,3 +263,73 @@ class TestGlobalCache:
 
         assert cache1._max_entries == 500
         assert cache1 is cache2  # Same instance
+
+
+class TestCacheTTL:
+    """Tests for cache TTL functionality."""
+
+    def test_default_ttl_is_one_hour(self):
+        """Test that default TTL is 1 hour (3600 seconds)."""
+        from c4.lsp.cache import DEFAULT_TTL_SECONDS
+
+        assert DEFAULT_TTL_SECONDS == 3600.0
+
+        # New cache should have default TTL
+        cache = SymbolCache()
+        assert cache._ttl_seconds == 3600.0
+
+    def test_cache_with_custom_ttl(self):
+        """Test creating cache with custom TTL."""
+        cache = SymbolCache(ttl_seconds=60.0)
+        assert cache._ttl_seconds == 60.0
+
+    def test_cache_with_no_ttl(self):
+        """Test creating cache with no TTL (infinite)."""
+        cache = SymbolCache(ttl_seconds=None)
+        assert cache._ttl_seconds is None
+
+    def test_ttl_expiration(self):
+        """Test that entries expire after TTL."""
+        import time
+
+        # Very short TTL for testing
+        cache = SymbolCache(ttl_seconds=0.1)
+
+        cache.put("/test/file.py", "hash123", [{"name": "symbol"}])
+
+        # Should be available immediately
+        result = cache.get("/test/file.py", "hash123")
+        assert result is not None
+
+        # Wait for TTL to expire
+        time.sleep(0.15)
+
+        # Should be expired now
+        result = cache.get("/test/file.py", "hash123")
+        assert result is None
+
+    def test_ttl_not_expired(self):
+        """Test that entries are available before TTL expires."""
+        # Long TTL
+        cache = SymbolCache(ttl_seconds=3600.0)
+
+        cache.put("/test/file.py", "hash123", [{"name": "symbol"}])
+
+        # Should be available
+        result = cache.get("/test/file.py", "hash123")
+        assert result == [{"name": "symbol"}]
+
+    def test_ttl_status_reporting(self):
+        """Test that TTL is included in status."""
+        cache = SymbolCache(ttl_seconds=120.0)
+        status = cache.get_status()
+
+        assert status["ttl_seconds"] == 120.0
+
+    def test_global_cache_default_ttl(self):
+        """Test that global cache uses default TTL."""
+        reset_global_cache()
+        cache = get_symbol_cache()
+
+        # Should have default TTL (1 hour)
+        assert cache._ttl_seconds == 3600.0

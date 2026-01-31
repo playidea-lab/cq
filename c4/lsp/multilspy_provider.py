@@ -35,6 +35,52 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+# Language server installation guides
+# Used to provide helpful messages when a language server is not available
+LANGUAGE_SERVER_INSTALL_GUIDE: dict[str, dict[str, str | list[str]]] = {
+    "python": {
+        "package": "jedi-language-server or pylsp",
+        "commands": ["uv add jedi-language-server", "# or: uv add python-lsp-server"],
+        "note": "Jedi fallback is available for Python",
+    },
+    "typescript": {
+        "package": "typescript-language-server",
+        "commands": ["npm install -g typescript-language-server typescript"],
+        "requires": "Node.js",
+    },
+    "javascript": {
+        "package": "typescript-language-server",
+        "commands": ["npm install -g typescript-language-server typescript"],
+        "requires": "Node.js",
+    },
+    "go": {
+        "package": "gopls",
+        "commands": ["go install golang.org/x/tools/gopls@latest"],
+        "requires": "Go toolchain",
+    },
+    "rust": {
+        "package": "rust-analyzer",
+        "commands": ["rustup component add rust-analyzer"],
+        "requires": "Rust toolchain (rustup)",
+    },
+    "java": {
+        "package": "jdtls (Eclipse JDT Language Server)",
+        "commands": ["# Install via your IDE or package manager"],
+        "requires": "JDK 11+",
+    },
+    "ruby": {
+        "package": "solargraph",
+        "commands": ["gem install solargraph"],
+        "requires": "Ruby",
+    },
+    "csharp": {
+        "package": "OmniSharp",
+        "commands": ["# Install via your IDE or dotnet tool"],
+        "requires": ".NET SDK",
+    },
+}
+
+
 @dataclass
 class LanguageServerInfo:
     """Information about a language server instance."""
@@ -138,8 +184,19 @@ class MultilspyProvider:
                     )
                     logger.info(f"Created LSP server for {language}")
                 except Exception as e:
-                    logger.error(f"Failed to create LSP server for {language}: {e}")
-                    raise RuntimeError(f"LSP server creation failed: {e}") from e
+                    # Provide helpful installation guide
+                    guide = LANGUAGE_SERVER_INSTALL_GUIDE.get(language, {})
+                    install_hint = ""
+                    if guide:
+                        commands = guide.get("commands", [])
+                        requires = guide.get("requires", "")
+                        install_hint = f" Install with: {commands[0] if commands else 'see documentation'}"
+                        if requires:
+                            install_hint += f" (requires {requires})"
+
+                    error_msg = f"LSP server not available for {language}.{install_hint}"
+                    logger.warning(error_msg)
+                    raise RuntimeError(error_msg) from e
 
             # Update usage tracking
             import time
@@ -149,6 +206,57 @@ class MultilspyProvider:
             info.request_count += 1
 
             return info.server
+
+    def diagnose_language_servers(self) -> dict[str, dict[str, Any]]:
+        """Diagnose available language servers.
+
+        Returns a dictionary with status and installation info for each
+        supported language.
+
+        Returns:
+            Dictionary mapping language to diagnosis info:
+            - available: bool - whether server is available
+            - error: str | None - error message if not available
+            - install_guide: dict - installation instructions
+        """
+        results: dict[str, dict[str, Any]] = {}
+
+        for language in self.LANGUAGE_MAP.values():
+            if language in results:
+                continue  # Skip duplicates (e.g., .js and .jsx both map to javascript)
+
+            diagnosis: dict[str, Any] = {
+                "available": False,
+                "error": None,
+                "install_guide": LANGUAGE_SERVER_INSTALL_GUIDE.get(language, {}),
+            }
+
+            try:
+                # Try to create server (will fail if not installed)
+                self._get_server(language)
+                diagnosis["available"] = True
+                # Clean up immediately
+                if language in self._servers:
+                    del self._servers[language]
+            except RuntimeError as e:
+                diagnosis["error"] = str(e)
+            except Exception as e:
+                diagnosis["error"] = f"Unexpected error: {e}"
+
+            results[language] = diagnosis
+
+        return results
+
+    def get_install_guide(self, language: str) -> dict[str, Any]:
+        """Get installation guide for a specific language server.
+
+        Args:
+            language: Language identifier (e.g., "python", "typescript").
+
+        Returns:
+            Dictionary with installation instructions, or empty dict if unknown.
+        """
+        return dict(LANGUAGE_SERVER_INSTALL_GUIDE.get(language, {}))
 
     def _detect_language(self, file_path: Path | str) -> str | None:
         """Detect programming language from file extension.

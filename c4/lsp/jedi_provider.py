@@ -52,6 +52,7 @@ if TYPE_CHECKING:
     from jedi.api.classes import Name
 
 from .cache import SymbolCache, get_symbol_cache
+from .worker_pool import TaskPriority, get_lsp_worker_pool
 
 logger = logging.getLogger(__name__)
 
@@ -461,8 +462,11 @@ class JediSymbolProvider:
         max_files: int = 500,
         max_file_lines: int = 5000,
         max_consecutive_errors: int = 10,
+        parallel: bool = True,
     ) -> list[SymbolInfo]:
         """Search for symbols across workspace files.
+
+        Uses parallel processing for improved performance when parallel=True.
 
         Args:
             target_name: Symbol name to find
@@ -471,21 +475,18 @@ class JediSymbolProvider:
             max_files: Maximum files to search (prevents runaway)
             max_file_lines: Skip files larger than this
             max_consecutive_errors: Stop after this many consecutive errors
+            parallel: Whether to use parallel processing (default: True)
         """
-        results: list[SymbolInfo] = []
-
         if not self._project_path:
-            return results
+            return []
 
-        files_searched = 0
-        consecutive_errors = 0
         skip_dirs = {"__pycache__", ".git", "node_modules", ".venv", "venv", ".tox", "build", "dist", ".eggs", "*.egg-info"}
 
-        # Search Python files
+        # Collect files to search
+        files_to_search: list[Path] = []
         for py_file in self._project_path.rglob("*.py"):
-            # Limit total files searched
-            if files_searched >= max_files:
-                logger.debug(f"Reached max files limit ({max_files}), stopping search")
+            if len(files_to_search) >= max_files:
+                logger.debug(f"Reached max files limit ({max_files}), stopping collection")
                 break
 
             # Skip common directories
@@ -498,7 +499,46 @@ class JediSymbolProvider:
                 if stat.st_size > max_file_lines * 100:  # Rough estimate: 100 bytes/line
                     logger.debug(f"Skipping large file: {py_file}")
                     continue
+                files_to_search.append(py_file)
+            except OSError:
+                continue
 
+        if not files_to_search:
+            return []
+
+        # Build pattern string
+        pattern = f"{'/' if is_absolute else ''}{'/'.join(parent_names + [target_name])}"
+
+        if parallel and len(files_to_search) > 10:
+            # Use parallel processing for larger searches
+            return self._search_files_parallel(
+                files_to_search,
+                pattern,
+                max_file_lines,
+                max_consecutive_errors,
+            )
+        else:
+            # Use sequential processing for smaller searches
+            return self._search_files_sequential(
+                files_to_search,
+                pattern,
+                max_file_lines,
+                max_consecutive_errors,
+            )
+
+    def _search_files_sequential(
+        self,
+        files: list[Path],
+        pattern: str,
+        max_file_lines: int,
+        max_consecutive_errors: int,
+    ) -> list[SymbolInfo]:
+        """Search files sequentially (original implementation)."""
+        results: list[SymbolInfo] = []
+        consecutive_errors = 0
+
+        for py_file in files:
+            try:
                 source = py_file.read_text(encoding="utf-8")
 
                 # More accurate line count check
@@ -506,13 +546,8 @@ class JediSymbolProvider:
                     logger.debug(f"Skipping file with too many lines: {py_file}")
                     continue
 
-                files_searched += 1
-
-                # Search for symbols in this file
-                # Note: We don't lower recursion limit as Jedi needs the default limit
-                # Protection is via: 1) timeout, 2) consecutive error counter
                 file_results = self.find_symbol(
-                    f"{'/' if is_absolute else ''}{'/'.join(parent_names + [target_name])}",
+                    pattern,
                     source=source,
                     file_path=str(py_file),
                 )
@@ -541,6 +576,107 @@ class JediSymbolProvider:
             _clear_jedi_cache()
 
         return results
+
+    def _search_files_parallel(
+        self,
+        files: list[Path],
+        pattern: str,
+        max_file_lines: int,
+        max_consecutive_errors: int,
+    ) -> list[SymbolInfo]:
+        """Search files in parallel using LSPWorkerPool.
+
+        Submits each file analysis as a separate task to the thread pool.
+        Collects results with timeout handling per file.
+        """
+        import concurrent.futures
+
+        results: list[SymbolInfo] = []
+        pool = get_lsp_worker_pool()
+
+        # Ensure pool is started
+        if not pool.is_running:
+            pool.start()
+
+        # Submit all files to the pool
+        futures: list[tuple[Path, concurrent.futures.Future]] = []
+
+        for py_file in files:
+            future = pool.submit(
+                self._analyze_single_file,
+                py_file,
+                pattern,
+                max_file_lines,
+                priority=TaskPriority.NORMAL,
+                timeout=5.0,
+            )
+            futures.append((py_file, future))
+
+        # Collect results with individual timeouts
+        errors = 0
+        for py_file, future in futures:
+            try:
+                file_results = future.result(timeout=5.0)
+                if file_results:
+                    results.extend(file_results)
+                errors = 0  # Reset on success
+            except concurrent.futures.TimeoutError:
+                logger.debug(f"Timeout analyzing {py_file}")
+                errors += 1
+            except Exception as e:
+                logger.debug(f"Error analyzing {py_file}: {e}")
+                errors += 1
+
+            if errors >= max_consecutive_errors:
+                logger.warning(f"Too many errors ({errors}), stopping parallel search")
+                # Cancel remaining futures
+                for _, remaining_future in futures:
+                    remaining_future.cancel()
+                break
+
+        # Clear Jedi cache to prevent GC recursion errors
+        if JEDI_AVAILABLE:
+            _clear_jedi_cache()
+
+        return results
+
+    def _analyze_single_file(
+        self,
+        py_file: Path,
+        pattern: str,
+        max_file_lines: int,
+    ) -> list[SymbolInfo]:
+        """Analyze a single file for symbol matches.
+
+        This method is designed to be called from a worker thread.
+        It is stateless and thread-safe.
+
+        Args:
+            py_file: Path to Python file
+            pattern: Name path pattern to search for
+            max_file_lines: Skip files larger than this
+
+        Returns:
+            List of matching SymbolInfo objects
+        """
+        try:
+            source = py_file.read_text(encoding="utf-8")
+
+            # Line count check
+            if source.count('\n') > max_file_lines:
+                return []
+
+            return self.find_symbol(
+                pattern,
+                source=source,
+                file_path=str(py_file),
+            )
+        except RecursionError:
+            logger.debug(f"Recursion limit hit in worker: {py_file}")
+            return []
+        except Exception as e:
+            logger.debug(f"Worker error for {py_file}: {e}")
+            return []
 
     def get_symbols_overview(
         self,

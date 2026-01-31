@@ -19,6 +19,7 @@ Usage:
 from __future__ import annotations
 
 import logging
+import os
 import queue
 import threading
 import time
@@ -28,6 +29,9 @@ from enum import IntEnum
 from typing import Any, Callable, TypeVar
 
 logger = logging.getLogger(__name__)
+
+# Default worker count: based on CPU cores, capped at 8
+DEFAULT_MAX_WORKERS = min(os.cpu_count() or 4, 8)
 
 T = TypeVar("T")
 
@@ -239,10 +243,18 @@ class LSPWorkerPool:
 
                 # Submit to executor
                 if self._executor and task.future and not task.future.done():
-                    self._executor.submit(self._execute_task, task)
+                    try:
+                        self._executor.submit(self._execute_task, task)
+                    except RuntimeError:
+                        # Executor already shut down (e.g., during interpreter exit)
+                        if task.future and not task.future.done():
+                            task.future.cancel()
+                        break
 
             except Exception as e:
-                logger.error(f"Dispatcher error: {e}")
+                # Only log if not shutting down (avoid noise during cleanup)
+                if not self._shutdown.is_set():
+                    logger.error(f"Dispatcher error: {e}")
 
     def _execute_task(self, task: WorkerTask) -> None:
         """Execute a single task.
@@ -366,13 +378,13 @@ _pool_lock = threading.RLock()
 
 
 def get_lsp_worker_pool(
-    max_workers: int = 4,
+    max_workers: int | None = None,
     default_timeout: float = 30.0,
 ) -> LSPWorkerPool:
     """Get or create the global LSP worker pool.
 
     Args:
-        max_workers: Maximum workers (only used on first call)
+        max_workers: Maximum workers (only used on first call, defaults to DEFAULT_MAX_WORKERS)
         default_timeout: Default timeout (only used on first call)
 
     Returns:
@@ -380,12 +392,16 @@ def get_lsp_worker_pool(
     """
     global _global_pool
 
+    if max_workers is None:
+        max_workers = DEFAULT_MAX_WORKERS
+
     with _pool_lock:
         if _global_pool is None:
             _global_pool = LSPWorkerPool(
                 max_workers=max_workers,
                 default_timeout=default_timeout,
             )
+            logger.info(f"Created LSP worker pool with {max_workers} workers")
 
     return _global_pool
 

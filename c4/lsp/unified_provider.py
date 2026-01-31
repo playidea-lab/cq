@@ -14,6 +14,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
+from c4.lsp.cache import get_symbol_cache
 from c4.lsp.jedi_provider import (
     JEDI_AVAILABLE,
     JediSymbolProvider,
@@ -395,6 +396,56 @@ class UnifiedSymbolProvider:
             depth=depth,
             timeout=self.JEDI_TIMEOUT,
         )
+
+    def invalidate_cache(self, file_path: str | None = None) -> int:
+        """Invalidate cache entries.
+
+        This method should be called when files change externally
+        (e.g., git checkout, external editor saves).
+
+        Args:
+            file_path: Specific file to invalidate. If None, invalidates all entries.
+
+        Returns:
+            Number of entries invalidated.
+        """
+        cache = get_symbol_cache()
+
+        if file_path:
+            # Resolve to absolute path
+            abs_path = str((self.project_path / file_path).resolve())
+            invalidated = 1 if cache.invalidate(abs_path) else 0
+            if invalidated:
+                logger.debug(f"Invalidated cache for {file_path}")
+            return invalidated
+        else:
+            # Invalidate all entries
+            count = cache.clear()
+            logger.info(f"Invalidated all cache entries ({count} cleared)")
+            return count
+
+    def invalidate_all(self) -> int:
+        """Invalidate all cache entries.
+
+        Convenience method that calls invalidate_cache(None).
+        Useful for:
+        - git checkout/switch operations
+        - External file system changes
+        - Manual cache reset
+
+        Returns:
+            Number of entries cleared.
+        """
+        return self.invalidate_cache(None)
+
+    def get_cache_status(self) -> dict[str, Any]:
+        """Get cache status for monitoring.
+
+        Returns:
+            Dictionary with cache statistics.
+        """
+        cache = get_symbol_cache()
+        return cache.get_status()
 
     def shutdown(self) -> None:
         """Shutdown all providers including worker pools."""

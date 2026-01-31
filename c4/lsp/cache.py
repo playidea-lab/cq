@@ -78,6 +78,11 @@ class CacheStats:
         }
 
 
+# Default TTL: 1 hour (3600 seconds)
+# This prevents stale cache entries from accumulating indefinitely
+DEFAULT_TTL_SECONDS: float = 3600.0
+
+
 class SymbolCache:
     """Thread-safe LRU cache for symbol data.
 
@@ -86,13 +91,13 @@ class SymbolCache:
 
     Args:
         max_entries: Maximum number of files to cache (default: 1000)
-        ttl_seconds: Optional TTL for entries (default: None = no TTL)
+        ttl_seconds: TTL for entries in seconds (default: 3600 = 1 hour)
     """
 
     def __init__(
         self,
         max_entries: int = 1000,
-        ttl_seconds: float | None = None,
+        ttl_seconds: float | None = DEFAULT_TTL_SECONDS,
     ) -> None:
         self._max_entries = max_entries
         self._ttl_seconds = ttl_seconds
@@ -264,13 +269,13 @@ _global_cache_lock = threading.Lock()
 
 def get_symbol_cache(
     max_entries: int = 1000,
-    ttl_seconds: float | None = None,
+    ttl_seconds: float | None = DEFAULT_TTL_SECONDS,
 ) -> SymbolCache:
     """Get or create the global symbol cache.
 
     Args:
         max_entries: Maximum entries (only used on first call)
-        ttl_seconds: TTL in seconds (only used on first call)
+        ttl_seconds: TTL in seconds (only used on first call, default: 1 hour)
 
     Returns:
         Global SymbolCache instance

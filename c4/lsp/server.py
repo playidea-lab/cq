@@ -22,6 +22,7 @@ except ImportError:
 import re
 
 from c4.docs.analyzer import CodeAnalyzer, SymbolKind
+from c4.lsp.cache import get_symbol_cache
 from c4.lsp.jedi_provider import JEDI_AVAILABLE, JediSymbolProvider
 
 if TYPE_CHECKING:
@@ -219,6 +220,10 @@ class C4LSPServer:
             uri = params.text_document.uri
             file_path = uri.replace("file://", "")
 
+            # Invalidate symbol cache for this file
+            cache = get_symbol_cache()
+            cache.invalidate(file_path)
+
             # Get the full text (we're using Full sync)
             if params.content_changes:
                 text = params.content_changes[-1].text
@@ -229,6 +234,10 @@ class C4LSPServer:
             """Handle document save."""
             uri = params.text_document.uri
             file_path = uri.replace("file://", "")
+
+            # Invalidate symbol cache for this file
+            cache = get_symbol_cache()
+            cache.invalidate(file_path)
 
             if params.text:
                 self._analyzer.add_file(file_path, params.text)
