@@ -408,6 +408,174 @@ class TestGetAllDoneImplTasks:
             assert result == []
 
 
+class TestCalculateOptimalWorkers:
+    """Test _calculate_optimal_workers method."""
+
+    @pytest.fixture
+    def daemon_with_deps(self, tmp_path):
+        """Create daemon with tasks that have dependencies."""
+        from c4.daemon.c4_daemon import C4Daemon
+
+        with patch.object(C4Daemon, "__init__", lambda self, root: None):
+            d = C4Daemon.__new__(C4Daemon)
+            d.root = tmp_path
+
+            # Tasks with dependency structure:
+            # T-001, T-002, T-003 have no deps (can run in parallel)
+            # T-004 depends on T-001
+            # T-005 depends on T-002, T-003
+            d._tasks = {
+                "T-001-0": Task(
+                    id="T-001-0",
+                    title="Task 1",
+                    dod="...",
+                    dependencies=[],
+                    model="opus",
+                    type=TaskType.IMPLEMENTATION,
+                ),
+                "T-002-0": Task(
+                    id="T-002-0",
+                    title="Task 2",
+                    dod="...",
+                    dependencies=[],
+                    model="sonnet",
+                    type=TaskType.IMPLEMENTATION,
+                ),
+                "T-003-0": Task(
+                    id="T-003-0",
+                    title="Task 3",
+                    dod="...",
+                    dependencies=[],
+                    model="sonnet",
+                    type=TaskType.IMPLEMENTATION,
+                ),
+                "T-004-0": Task(
+                    id="T-004-0",
+                    title="Task 4",
+                    dod="...",
+                    dependencies=["T-001-0"],
+                    model="opus",
+                    type=TaskType.IMPLEMENTATION,
+                ),
+                "T-005-0": Task(
+                    id="T-005-0",
+                    title="Task 5",
+                    dod="...",
+                    dependencies=["T-002-0", "T-003-0"],
+                    model="opus",
+                    type=TaskType.IMPLEMENTATION,
+                ),
+            }
+
+            d.state_machine = MagicMock()
+            d.state_machine.state = C4State(
+                project_id="test",
+                queue=TaskQueue(
+                    pending=["T-001-0", "T-002-0", "T-003-0", "T-004-0", "T-005-0"],
+                    in_progress={},
+                    done=[],
+                ),
+            )
+
+            d.get_all_tasks = MagicMock(return_value=d._tasks)
+
+            from c4.daemon.c4_daemon import C4Daemon as RealDaemon
+            d._calculate_optimal_workers = RealDaemon._calculate_optimal_workers.__get__(d)
+            d._calculate_dag_max_width = RealDaemon._calculate_dag_max_width.__get__(d)
+
+        return d
+
+    def test_calculates_ready_tasks(self, daemon_with_deps):
+        """Calculate number of tasks ready to run (no pending deps)."""
+        result = daemon_with_deps._calculate_optimal_workers()
+
+        # T-001, T-002, T-003 have no deps, so 3 ready
+        assert result["ready_now"] == 3
+
+    def test_calculates_max_parallelism(self, daemon_with_deps):
+        """Calculate max parallelism from DAG width."""
+        result = daemon_with_deps._calculate_optimal_workers()
+
+        # DAG levels:
+        # Level 0: T-001, T-002, T-003 (3 tasks)
+        # Level 1: T-004, T-005 (2 tasks)
+        # Max width = 3
+        assert result["max_parallelism"] == 3
+
+    def test_groups_by_model(self, daemon_with_deps):
+        """Group ready tasks by model type."""
+        result = daemon_with_deps._calculate_optimal_workers()
+
+        # Ready tasks: T-001 (opus), T-002 (sonnet), T-003 (sonnet)
+        assert result["by_model"]["opus"] == 1
+        assert result["by_model"]["sonnet"] == 2
+
+    def test_recommends_capped_workers(self, daemon_with_deps):
+        """Recommend min(ready, max_parallelism, MAX_WORKERS)."""
+        result = daemon_with_deps._calculate_optimal_workers()
+
+        # ready=3, max_parallelism=3, MAX_WORKERS=7
+        # recommended = min(3, 3, 7) = 3
+        assert result["recommended"] == 3
+
+    def test_handles_partially_done(self, daemon_with_deps):
+        """Handle case where some dependencies are already done."""
+        # Mark T-001 and T-002 as done
+        daemon_with_deps.state_machine.state.queue.done = ["T-001-0", "T-002-0"]
+        daemon_with_deps.state_machine.state.queue.pending = ["T-003-0", "T-004-0", "T-005-0"]
+
+        result = daemon_with_deps._calculate_optimal_workers()
+
+        # Now T-003 (no deps), T-004 (T-001 done) are ready
+        # T-005 waits for T-003 (pending)
+        assert result["ready_now"] == 2
+        assert result["blocked_count"] == 1
+
+    def test_empty_queue(self, tmp_path):
+        """Return sensible values for empty queue."""
+        from c4.daemon.c4_daemon import C4Daemon
+
+        with patch.object(C4Daemon, "__init__", lambda self, root: None):
+            d = C4Daemon.__new__(C4Daemon)
+            d.root = tmp_path
+            d._tasks = {}
+
+            d.state_machine = MagicMock()
+            d.state_machine.state = C4State(
+                project_id="test",
+                queue=TaskQueue(pending=[], in_progress={}, done=[]),
+            )
+
+            d.get_all_tasks = MagicMock(return_value=d._tasks)
+
+            from c4.daemon.c4_daemon import C4Daemon as RealDaemon
+            d._calculate_optimal_workers = RealDaemon._calculate_optimal_workers.__get__(d)
+            d._calculate_dag_max_width = RealDaemon._calculate_dag_max_width.__get__(d)
+
+            result = d._calculate_optimal_workers()
+
+            assert result["recommended"] == 1
+            assert result["ready_now"] == 0
+            assert result["max_parallelism"] == 0
+
+    def test_no_state_machine(self, tmp_path):
+        """Return default values without state machine."""
+        from c4.daemon.c4_daemon import C4Daemon
+
+        with patch.object(C4Daemon, "__init__", lambda self, root: None):
+            d = C4Daemon.__new__(C4Daemon)
+            d.root = tmp_path
+            d.state_machine = None
+
+            from c4.daemon.c4_daemon import C4Daemon as RealDaemon
+            d._calculate_optimal_workers = RealDaemon._calculate_optimal_workers.__get__(d)
+
+            result = d._calculate_optimal_workers()
+
+            assert result["recommended"] == 1
+            assert result["reason"] == "C4 not initialized"
+
+
 class TestCheckpointWithEmptyRequiredTasks:
     """Test checkpoint creation when required_tasks is empty (applies to ALL tasks)."""
 

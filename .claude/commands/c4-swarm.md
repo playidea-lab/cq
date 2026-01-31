@@ -1,166 +1,42 @@
-# C4 Swarm - 병렬 Worker 스폰
+# C4 Swarm (Deprecated)
 
-**N개의 Worker를 Task tool subagent로 병렬 실행**합니다.
+> ⚠️ **DEPRECATED**: `/c4-swarm`은 `/c4-run`으로 통합되었습니다.
 
-Claude Code의 Task tool을 활용하여 최대 7개의 Worker를 동시에 스폰하고, 태스크 큐를 병렬로 소비합니다.
+## 마이그레이션
 
-## Economic Mode
+```bash
+# 이전
+/c4-swarm 4      # 4개 Worker 스폰
 
-태스크별 `model` 필드를 지원합니다. Worker는 자신의 모델에 맞는 태스크만 처리합니다.
-
-- **sonnet**: 빠르고 저렴한 모델 (단순 구현 태스크)
-- **opus**: 고성능 모델 (복잡한 구현, 리뷰, 체크포인트)
-- **haiku**: 가장 빠른 모델 (간단한 작업)
-
-## Usage
-
-```
-/c4-swarm [N]
+# 이후 (동일한 기능)
+/c4-run 4        # 4개 Worker 스폰
+/c4-run          # 자동 분석 후 최적 Worker 수 스폰 (권장)
+/c4-run --max 4  # 최대 4개로 제한하여 자동 스폰
 ```
 
-- **N**: Worker 수 (기본: pending 태스크 수, 최대: 7)
+## /c4-run의 새 기능
+
+- **자동 병렬도 분석**: 의존성 그래프를 분석하여 최적 Worker 수 추천
+- **기본값 = 자동**: 인자 없이 실행하면 자동으로 최적 수 스폰
+- **통합된 UX**: 단일/멀티 Worker 모두 하나의 명령어로
 
 ## Instructions
 
-### 1. 상태 확인
+사용자가 `/c4-swarm`을 호출하면:
 
 ```python
-status = mcp__c4__c4_status()
+print("""
+⚠️ /c4-swarm은 /c4-run으로 통합되었습니다.
 
-if status.state not in ["EXECUTE", "PLAN", "HALTED"]:
-    print(f"❌ 현재 상태 {status.state}에서는 실행할 수 없습니다.")
-    exit()
+사용법:
+  /c4-run        # 자동 분석 후 최적 Worker 수 스폰 (권장)
+  /c4-run 4      # 4개 Worker 스폰
+  /c4-run --max 4  # 최대 4개로 제한
 
-# PLAN/HALTED면 EXECUTE로 전환
-if status.state in ["PLAN", "HALTED"]:
-    mcp__c4__c4_start()
+지금 /c4-run을 실행할까요? [Y/n]
+""")
 
-pending_count = status.queue.pending
-if pending_count == 0:
-    print("⚠️ 실행 가능한 태스크가 없습니다.")
-    exit()
+# 사용자 확인 후 /c4-run 실행
 ```
 
-### 2. 모델별 태스크 그룹화 (Economic Mode)
-
-```python
-from collections import defaultdict
-
-# pending 태스크를 모델별로 그룹화
-model_groups = defaultdict(list)
-
-for task_id in status.queue.pending_ids:
-    # 각 태스크의 model 정보 확인 (status에 포함됨)
-    task_info = next(
-        (t for t in status.queue.tasks if t["id"] == task_id),
-        None
-    )
-    if task_info:
-        model = task_info.get("model", "opus")  # 기본값 opus
-        model_groups[model].append(task_id)
-
-print(f"📊 Pending tasks by model:")
-for model, task_ids in model_groups.items():
-    print(f"   {model}: {len(task_ids)} ({', '.join(task_ids[:3])}{'...' if len(task_ids) > 3 else ''})")
-```
-
-### 3. 모델별 Worker 스폰
-
-```python
-import uuid
-
-WORKER_PROMPT = """
-You are C4 Worker {worker_id}.
-
-## Mission
-Execute C4 tasks with model={model_filter} until no tasks remain.
-
-## MCP Tools (MUST USE)
-- `mcp__c4__c4_get_task(worker_id="{worker_id}", model_filter="{model_filter}")` - 내 모델 태스크만 요청
-- `mcp__c4__c4_run_validation(names=["lint", "unit"])` - 검증
-- `mcp__c4__c4_submit(task_id, worker_id, commit_sha, validation_results)` - 제출
-
-## Worker Loop
-1. task = c4_get_task(worker_id="{worker_id}", model_filter="{model_filter}")
-2. if no task: exit (다른 모델 태스크만 남음)
-3. Implement following DoD
-4. Run validations, fix issues (max 3 retries)
-5. git commit
-6. c4_submit()
-7. Go to step 1
-
-## Your Worker ID: {worker_id}
-## Your Model Filter: {model_filter}
-
-START: Call `mcp__c4__c4_get_task(worker_id="{worker_id}", model_filter="{model_filter}")`
-"""
-
-workers = []
-total_spawned = 0
-
-for model, task_ids in model_groups.items():
-    # 모델당 Worker 수 결정 (태스크 수 또는 최대 3개)
-    worker_count = min(len(task_ids), 3)
-
-    for i in range(worker_count):
-        if total_spawned >= 7:  # 전체 최대 7개
-            break
-
-        worker_id = f"{model[:3]}-{uuid.uuid4().hex[:8]}"
-
-        result = Task(
-            subagent_type="general-purpose",
-            description=f"C4 {model.title()} Worker {i+1}/{worker_count}",
-            prompt=WORKER_PROMPT.format(worker_id=worker_id, model_filter=model),
-            model=model,  # Worker 모델 = 태스크 모델
-            run_in_background=True
-        )
-
-        workers.append({"id": worker_id, "model": model, "output": result.output_file})
-        total_spawned += 1
-        print(f"🚀 {model.title()} Worker {i+1}/{worker_count} spawned: {worker_id}")
-
-    if total_spawned >= 7:
-        break
-```
-
-### 4. 결과 출력
-
-```
-🐝 C4 Swarm: {N} workers spawned (Economic Mode)
-
-📊 Workers by model:
-  Sonnet: {count} workers
-  Opus: {count} workers
-
-Workers:
-  • {worker_id_1} (sonnet): {output_file_1}
-  • {worker_id_2} (opus): {output_file_2}
-  ...
-
-Monitor:
-  /c4-status - 전체 진행 상황
-  tail -f {output_file} - 개별 Worker 로그
-```
-
-## 비용 최적화
-
-| 모델 | 상대 비용 | 권장 용도 |
-|------|----------|----------|
-| haiku | 0.2x | 간단한 수정, 문서화 |
-| sonnet | 1x | 일반 구현 태스크 |
-| opus | 5x | 복잡한 구현, 리뷰, 체크포인트 |
-
-## 제약사항
-
-| 제약 | 설명 |
-|------|------|
-| 최대 Worker | 7개 (모델 합산) |
-| 모델당 최대 | 3개 |
-| Subagent 중첩 | 불가 |
-
-## 관련 명령어
-
-- `/c4-status` - 상태 확인
-- `/c4-run` - 단일 Worker 실행
-- `/c4-stop` - 실행 중지
+실제로는 **사용자에게 `/c4-run` 사용을 안내**하고, 원하면 바로 실행해줍니다.

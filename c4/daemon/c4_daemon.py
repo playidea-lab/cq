@@ -971,6 +971,8 @@ Thumbs.db
                 "checkpoint_queue_size": len(state.checkpoint_queue),
                 "repair_queue_size": len(state.repair_queue),
             },
+            # Parallelism analysis for smart worker spawning
+            "parallelism": self._calculate_optimal_workers(),
             # Workflow guide for all MCP clients (Claude Code, Codex, Gemini, etc.)
             "workflow": _get_workflow_guide(status_value),
         }
@@ -2397,6 +2399,175 @@ Thumbs.db
             impl_tasks.append(task)
 
         return impl_tasks
+
+    def _calculate_optimal_workers(self) -> dict[str, Any]:
+        """Calculate optimal number of workers based on dependency graph.
+
+        Analyzes the pending task queue to determine:
+        1. ready_now: Tasks with all dependencies satisfied
+        2. max_parallelism: Maximum width of the dependency DAG
+        3. model_distribution: Tasks grouped by model type
+
+        Returns:
+            Dict with parallelism analysis:
+            - recommended: Recommended number of workers
+            - ready_now: Number of tasks ready to run
+            - max_parallelism: Max theoretical parallelism
+            - by_model: Dict[model, count] of ready tasks per model
+            - reason: Explanation of the recommendation
+        """
+        if self.state_machine is None:
+            return {
+                "recommended": 1,
+                "ready_now": 0,
+                "max_parallelism": 1,
+                "by_model": {},
+                "reason": "C4 not initialized",
+            }
+
+        state = self.state_machine.state
+        tasks = self.get_all_tasks()
+
+        # Get pending task IDs from queue
+        pending_ids = set(state.queue.pending)
+        done_ids = set(state.queue.done)
+
+        if not pending_ids:
+            return {
+                "recommended": 1,
+                "ready_now": 0,
+                "max_parallelism": 0,
+                "by_model": {},
+                "reason": "No pending tasks",
+            }
+
+        # Find tasks ready to run (all dependencies satisfied)
+        ready_tasks: list[Task] = []
+        blocked_tasks: list[Task] = []
+
+        for task_id in pending_ids:
+            task = tasks.get(task_id)
+            if task is None:
+                continue
+
+            # Check if all dependencies are done
+            deps_satisfied = all(dep in done_ids for dep in (task.dependencies or []))
+
+            if deps_satisfied:
+                ready_tasks.append(task)
+            else:
+                blocked_tasks.append(task)
+
+        # Group ready tasks by model
+        by_model: dict[str, int] = {}
+        for task in ready_tasks:
+            model = task.model or "opus"
+            by_model[model] = by_model.get(model, 0) + 1
+
+        ready_count = len(ready_tasks)
+
+        # Calculate max parallelism by analyzing dependency DAG
+        # Use level-order (BFS) to find max width at any level
+        max_parallelism = self._calculate_dag_max_width(tasks, pending_ids, done_ids)
+
+        # Recommended = min(ready_now, max_parallelism, MAX_WORKERS)
+        MAX_WORKERS = 7  # Claude Code subagent limit
+        recommended = min(ready_count, max_parallelism, MAX_WORKERS)
+
+        # At least 1 if there are pending tasks
+        if pending_ids and recommended == 0:
+            recommended = 1
+
+        # Build reason explanation
+        if ready_count == 0:
+            reason = "All pending tasks have unmet dependencies"
+        elif ready_count <= 2:
+            reason = f"{ready_count} tasks ready, minimal parallelism"
+        elif ready_count == recommended:
+            reason = f"All {ready_count} ready tasks can run in parallel"
+        else:
+            reason = f"{ready_count} tasks ready, capped at {recommended} workers"
+
+        return {
+            "recommended": recommended,
+            "ready_now": ready_count,
+            "max_parallelism": max_parallelism,
+            "by_model": by_model,
+            "pending_total": len(pending_ids),
+            "blocked_count": len(blocked_tasks),
+            "reason": reason,
+        }
+
+    def _calculate_dag_max_width(
+        self,
+        tasks: dict[str, Task],
+        pending_ids: set[str],
+        done_ids: set[str],
+    ) -> int:
+        """Calculate maximum width (parallelism) of the task dependency DAG.
+
+        Uses topological level assignment to find max concurrent tasks.
+
+        Args:
+            tasks: All tasks
+            pending_ids: Set of pending task IDs
+            done_ids: Set of done task IDs
+
+        Returns:
+            Maximum number of tasks that can run in parallel
+        """
+        if not pending_ids:
+            return 0
+
+        # Build dependency graph for pending tasks only
+        # level[task_id] = earliest level this task can start
+        levels: dict[str, int] = {}
+
+        # Tasks with no pending dependencies start at level 0
+        def get_level(task_id: str, visited: set[str]) -> int:
+            if task_id in levels:
+                return levels[task_id]
+
+            if task_id in visited:
+                # Cycle detected, treat as level 0
+                return 0
+
+            visited.add(task_id)
+
+            task = tasks.get(task_id)
+            if task is None:
+                levels[task_id] = 0
+                return 0
+
+            # Find max level of dependencies (only pending ones matter)
+            max_dep_level = -1
+            for dep_id in task.dependencies or []:
+                if dep_id in done_ids:
+                    # Already done, doesn't affect level
+                    continue
+                if dep_id in pending_ids:
+                    dep_level = get_level(dep_id, visited)
+                    max_dep_level = max(max_dep_level, dep_level)
+
+            # This task's level is one after its latest dependency
+            my_level = max_dep_level + 1
+            levels[task_id] = my_level
+            return my_level
+
+        # Calculate levels for all pending tasks
+        for task_id in pending_ids:
+            get_level(task_id, set())
+
+        if not levels:
+            return 1
+
+        # Count tasks at each level
+        level_counts: dict[int, int] = {}
+        for level in levels.values():
+            level_counts[level] = level_counts.get(level, 0) + 1
+
+        # Return max width
+        return max(level_counts.values()) if level_counts else 1
 
     def _get_latest_review_for_impl(self, base_id: str) -> Task | None:
         """Get the latest review task for an implementation task base ID.
