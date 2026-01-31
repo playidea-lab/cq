@@ -191,6 +191,11 @@ class C4Daemon:
         self._graph_router: GraphRouter | None = None
         self._agent_graph: AgentGraph | None = None
         self._rule_engine: RuleEngine | None = None
+        # LSP server components
+        self._lsp_server: Any = None
+        self._lsp_thread: Any = None
+        self._lsp_port: int | None = None
+        self._lsp_host: str | None = None
 
     # =========================================================================
     # Initialization
@@ -953,6 +958,9 @@ Thumbs.db
         self.state_machine.load_state()
         state = self.state_machine.state
         status_value = state.status.value
+
+        # Check if supervisor needs auto-restart (for EXECUTE/CHECKPOINT states)
+        self._auto_restart_supervisor_if_needed()
         return {
             "initialized": True,
             "project_id": state.project_id,
@@ -4092,6 +4100,161 @@ automatically move {task_id} back to pending for re-processing.
                 "references": [],
                 "total": 0,
                 "symbol": name_path,
+            }
+
+    # =========================================================================
+    # LSP Server Management
+    # =========================================================================
+
+    def c4_lsp_status(self) -> dict[str, Any]:
+        """Get LSP server status.
+
+        Returns:
+            Dictionary with:
+                - running: Boolean indicating if server is running
+                - status: Status string ("running", "not_started", "stopped")
+                - message: Human-readable status message
+                - features: List of supported LSP features (when running)
+                - indexed_files: Number of indexed files (when running)
+                - total_symbols: Total number of symbols (when running)
+        """
+        # Check if server exists and thread is alive
+        if self._lsp_server is None or self._lsp_thread is None:
+            return {
+                "running": False,
+                "status": "not_started",
+                "message": "LSP server not started",
+            }
+
+        if not self._lsp_thread.is_alive():
+            return {
+                "running": False,
+                "status": "stopped",
+                "message": "LSP server thread has stopped",
+            }
+
+        # Server is running
+        try:
+            indexed_files = len(self._lsp_server.analyzer._file_contents)
+            total_symbols = len(self._lsp_server.analyzer.get_all_symbols())
+        except Exception:
+            indexed_files = 0
+            total_symbols = 0
+
+        return {
+            "running": True,
+            "status": "running",
+            "message": f"LSP server running on {self._lsp_host}:{self._lsp_port}",
+            "host": self._lsp_host,
+            "port": self._lsp_port,
+            "indexed_files": indexed_files,
+            "total_symbols": total_symbols,
+            "features": [
+                "textDocument/hover",
+                "textDocument/definition",
+                "textDocument/references",
+                "textDocument/documentSymbol",
+                "workspace/symbol",
+                "textDocument/completion",
+            ],
+        }
+
+    def c4_lsp_start(self, port: int = 2087, host: str = "127.0.0.1") -> dict[str, Any]:
+        """Start the LSP server.
+
+        Args:
+            port: Port to listen on (default: 2087)
+            host: Host to bind to (default: 127.0.0.1)
+
+        Returns:
+            Dictionary with success status and server info
+        """
+        # Check if already running
+        if self._lsp_server is not None and self._lsp_thread is not None:
+            if self._lsp_thread.is_alive():
+                return {
+                    "success": False,
+                    "error": f"LSP server already running on {self._lsp_host}:{self._lsp_port}",
+                }
+
+        try:
+            from c4.lsp.server import C4LSPServer
+            import threading
+
+            # Create LSP server
+            self._lsp_server = C4LSPServer()
+            self._lsp_server._workspace_root = self.root
+            self._lsp_port = port
+            self._lsp_host = host
+
+            # Start in background thread
+            def run_server():
+                self._lsp_server.start_tcp(host, port)
+
+            self._lsp_thread = threading.Thread(target=run_server, daemon=True)
+            self._lsp_thread.start()
+
+            return {
+                "success": True,
+                "message": f"LSP server started on {host}:{port}",
+                "host": host,
+                "port": port,
+            }
+
+        except ImportError as e:
+            return {
+                "success": False,
+                "error": f"LSP dependencies not installed: {e}",
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "error": f"Failed to start LSP server: {e}",
+            }
+
+    def c4_lsp_stop(self) -> dict[str, Any]:
+        """Stop the LSP server.
+
+        Returns:
+            Dictionary with success status
+        """
+        if self._lsp_server is None or self._lsp_thread is None:
+            return {
+                "success": False,
+                "error": "LSP server not running",
+            }
+
+        if not self._lsp_thread.is_alive():
+            # Thread is dead, just clean up
+            self._lsp_server = None
+            self._lsp_thread = None
+            return {
+                "success": False,
+                "error": "LSP server not running (thread dead)",
+            }
+
+        try:
+            # Shutdown the server
+            if hasattr(self._lsp_server, "shutdown"):
+                self._lsp_server.shutdown()
+
+            # Clear references
+            self._lsp_server = None
+            self._lsp_thread = None
+            self._lsp_port = None
+            self._lsp_host = None
+
+            return {
+                "success": True,
+                "message": "LSP server stopped",
+            }
+        except Exception as e:
+            # Still clear references on error
+            self._lsp_server = None
+            self._lsp_thread = None
+            return {
+                "success": False,
+                "error": f"Error stopping LSP server: {e}",
             }
 
     def check_and_trigger_checkpoint(self) -> dict[str, Any] | None:
