@@ -785,7 +785,8 @@ Thumbs.db
         synced = 0
 
         # Get merged branches
-        merged_branches = self.git_ops.get_merged_task_branches()
+        git_ops = GitOperations(self.root)
+        merged_branches = git_ops.get_merged_task_branches()
         if not merged_branches:
             return 0
 
