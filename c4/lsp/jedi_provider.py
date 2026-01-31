@@ -56,6 +56,11 @@ from .cache import SymbolCache, get_symbol_cache
 logger = logging.getLogger(__name__)
 
 
+# Global worker pool for process-isolated Jedi operations
+_jedi_worker_pool = None
+_jedi_worker_pool_lock = __import__("threading").Lock()
+
+
 # Operation-specific timeout configuration (in seconds)
 # These are tiered based on expected operation complexity
 TIMEOUT_CONFIG = {
@@ -78,6 +83,55 @@ def get_timeout(operation: str, default: float = 30.0) -> float:
         Timeout in seconds
     """
     return TIMEOUT_CONFIG.get(operation, default)
+
+
+# Track active timed-out operations for debugging
+_active_timed_out_operations: list[str] = []
+_timeout_lock = __import__("threading").Lock()
+
+
+def _run_with_timeout(func, timeout: float, operation_name: str, default_result):
+    """Execute a function with timeout, with proper cleanup tracking.
+
+    Note on thread termination:
+    Python's ThreadPoolExecutor cannot forcefully terminate threads.
+    When a timeout occurs, the thread continues running in the background
+    until it completes naturally. This is a known limitation.
+
+    For operations that may hang indefinitely, consider:
+    1. Using multiprocessing (requires picklable functions)
+    2. Adding internal cancellation checks within the function
+    3. Setting appropriate timeouts based on expected operation time
+
+    Args:
+        func: The function to execute
+        timeout: Maximum execution time in seconds
+        operation_name: Name for logging purposes
+        default_result: Result to return on timeout
+
+    Returns:
+        Function result or default_result on timeout
+    """
+    import concurrent.futures
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(func)
+        try:
+            return future.result(timeout=timeout)
+        except concurrent.futures.TimeoutError:
+            # Track timed out operations for debugging
+            with _timeout_lock:
+                _active_timed_out_operations.append(operation_name)
+                # Keep only last 10 entries
+                if len(_active_timed_out_operations) > 10:
+                    _active_timed_out_operations.pop(0)
+
+            logger.warning(
+                f"{operation_name} timed out after {timeout}s. "
+                f"Thread continues in background until completion. "
+                f"Consider increasing timeout or reducing scope."
+            )
+            return default_result
 
 
 class SymbolType(str, Enum):
@@ -708,7 +762,6 @@ def find_symbol_mcp(
     # Use tiered timeout: workspace search vs single file
     if timeout is None:
         timeout = get_timeout("workspace_symbol" if not relative_path else "find_symbol")
-    import concurrent.futures
 
     if not JEDI_AVAILABLE:
         return []
@@ -732,6 +785,25 @@ def find_symbol_mcp(
                     file_path=str(full_path),
                     include_body=include_body,
                 )
+            elif full_path.is_dir():
+                # Directory search: iterate through Python files in directory
+                symbols = []
+                py_files = list(full_path.glob("**/*.py"))[:50]  # Limit to 50 files
+                for py_file in py_files:
+                    try:
+                        line_count = sum(1 for _ in py_file.open(encoding="utf-8", errors="ignore"))
+                        if line_count > max_file_lines:
+                            continue
+                        source = py_file.read_text(encoding="utf-8")
+                        file_symbols = provider.find_symbol(
+                            name_path_pattern,
+                            source=source,
+                            file_path=str(py_file),
+                            include_body=include_body,
+                        )
+                        symbols.extend(file_symbols)
+                    except Exception as e:
+                        logger.debug(f"Skipping {py_file}: {e}")
             else:
                 symbols = provider.find_symbol(name_path_pattern)
         else:
@@ -739,14 +811,13 @@ def find_symbol_mcp(
 
         return [s.to_dict() for s in symbols]
 
-    # Execute with timeout
-    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-        future = executor.submit(_find_symbols)
-        try:
-            return future.result(timeout=timeout)
-        except concurrent.futures.TimeoutError:
-            logger.error(f"find_symbol_mcp timed out after {timeout}s for pattern: {name_path_pattern}")
-            return []
+    # Execute with timeout using helper that tracks timed-out operations
+    return _run_with_timeout(
+        func=_find_symbols,
+        timeout=timeout,
+        operation_name=f"find_symbol_mcp(pattern={name_path_pattern})",
+        default_result=[],
+    )
 
 
 def get_symbols_overview_mcp(
@@ -771,7 +842,6 @@ def get_symbols_overview_mcp(
     # Use tiered timeout for document symbols
     if timeout is None:
         timeout = get_timeout("document_symbols")
-    import concurrent.futures
 
     if not JEDI_AVAILABLE:
         return {"error": "jedi not available"}
@@ -804,11 +874,232 @@ def get_symbols_overview_mcp(
             "total_count": len(symbols),
         }
 
-    # Execute with timeout
-    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-        future = executor.submit(_get_overview)
-        try:
-            return future.result(timeout=timeout)
-        except concurrent.futures.TimeoutError:
-            logger.error(f"get_symbols_overview_mcp timed out after {timeout}s for: {relative_path}")
-            return {"error": f"Operation timed out after {timeout} seconds"}
+    # Execute with timeout using helper that tracks timed-out operations
+    return _run_with_timeout(
+        func=_get_overview,
+        timeout=timeout,
+        operation_name=f"get_symbols_overview_mcp(path={relative_path})",
+        default_result={"error": f"Operation timed out after {timeout} seconds"},
+    )
+
+
+# ============================================================================
+# Process-Isolated Worker Pool Functions
+# ============================================================================
+#
+# These functions use the JediWorkerPool for process-isolated execution.
+# Benefits:
+# - No ghost threads (process can be killed)
+# - No GC recursion errors (isolated process)
+# - Reliable timeout handling (SIGKILL)
+#
+# Use these for production workloads where reliability is critical.
+# ============================================================================
+
+
+def get_jedi_worker_pool(repo_root: str):
+    """Get or create a global Jedi worker pool.
+
+    Thread-safe singleton pattern. The pool is created lazily on first use.
+
+    Args:
+        repo_root: Project root path for Jedi context.
+
+    Returns:
+        JediWorkerPool instance.
+    """
+    global _jedi_worker_pool
+
+    from c4.lsp.jedi_worker import JediWorkerPool
+
+    with _jedi_worker_pool_lock:
+        if _jedi_worker_pool is None:
+            _jedi_worker_pool = JediWorkerPool(
+                repo_root=repo_root,
+                max_workers=2,
+                timeout=3.0,  # Best-effort: short timeout
+            )
+            logger.info(f"Created Jedi worker pool for {repo_root}")
+        return _jedi_worker_pool
+
+
+def shutdown_jedi_worker_pool() -> None:
+    """Shutdown the global Jedi worker pool.
+
+    Should be called during application shutdown.
+    """
+    global _jedi_worker_pool
+
+    with _jedi_worker_pool_lock:
+        if _jedi_worker_pool is not None:
+            _jedi_worker_pool.shutdown()
+            _jedi_worker_pool = None
+            logger.info("Jedi worker pool shut down")
+
+
+def find_symbol_isolated(
+    name_path_pattern: str,
+    source: str,
+    file_path: str | None = None,
+    project_path: str | None = None,
+    timeout: float = 3.0,
+) -> list[dict]:
+    """Find symbols using process-isolated worker.
+
+    This function uses the JediWorkerPool for safe, timeout-able execution.
+    Unlike find_symbol_mcp, timeouts actually terminate the worker process,
+    preventing ghost threads and GC recursion errors.
+
+    Args:
+        name_path_pattern: Pattern to match (e.g., "MyClass/my_method")
+        source: Source code to search in
+        file_path: Optional file path for context
+        project_path: Project root path
+        timeout: Maximum execution time (default: 3.0s)
+
+    Returns:
+        List of symbol info dictionaries. Empty list on timeout/error.
+    """
+    if not JEDI_AVAILABLE:
+        return []
+
+    repo_root = project_path or "."
+
+    try:
+        pool = get_jedi_worker_pool(repo_root)
+        result = pool.execute({
+            "op": "get_names",
+            "source": source,
+            "path": file_path,
+            "options": {"all_scopes": True, "definitions": True},
+        })
+
+        if not result.get("ok"):
+            error = result.get("error", {})
+            logger.debug(f"Jedi worker error: {error.get('message', 'unknown')}")
+            return []
+
+        # Filter results by pattern
+        raw_symbols = result.get("result", [])
+        return _filter_symbols_by_pattern(raw_symbols, name_path_pattern)
+
+    except TimeoutError:
+        logger.warning(f"find_symbol_isolated timed out for pattern={name_path_pattern}")
+        return []
+    except Exception as e:
+        logger.debug(f"find_symbol_isolated error: {e}")
+        return []
+
+
+def get_symbols_overview_isolated(
+    source: str,
+    file_path: str | None = None,
+    project_path: str | None = None,
+    depth: int = 0,
+    timeout: float = 3.0,
+) -> dict:
+    """Get symbols overview using process-isolated worker.
+
+    This function uses the JediWorkerPool for safe, timeout-able execution.
+
+    Args:
+        source: Source code to analyze
+        file_path: Optional file path for context
+        project_path: Project root path
+        depth: Depth of children to include (0 = top-level only)
+        timeout: Maximum execution time (default: 3.0s)
+
+    Returns:
+        Dictionary with symbols grouped by kind.
+    """
+    if not JEDI_AVAILABLE:
+        return {"error": "jedi not available"}
+
+    repo_root = project_path or "."
+
+    try:
+        pool = get_jedi_worker_pool(repo_root)
+        result = pool.execute({
+            "op": "get_names",
+            "source": source,
+            "path": file_path,
+            "options": {"all_scopes": True, "definitions": True},
+        })
+
+        if not result.get("ok"):
+            error = result.get("error", {})
+            return {"error": error.get("message", "unknown error")}
+
+        # Group by kind
+        raw_symbols = result.get("result", [])
+        grouped: dict[str, list[dict]] = {}
+
+        for symbol in raw_symbols:
+            # Filter by depth
+            if depth == 0 and symbol.get("parent_type") in ("class", "function"):
+                continue
+
+            kind = symbol.get("type", "unknown")
+            if kind not in grouped:
+                grouped[kind] = []
+            grouped[kind].append(symbol)
+
+        return {
+            "file": file_path,
+            "symbols_by_kind": grouped,
+            "total_count": len(raw_symbols),
+        }
+
+    except TimeoutError:
+        logger.warning(f"get_symbols_overview_isolated timed out for {file_path}")
+        return {"error": "Operation timed out"}
+    except Exception as e:
+        logger.debug(f"get_symbols_overview_isolated error: {e}")
+        return {"error": str(e)}
+
+
+def _filter_symbols_by_pattern(
+    symbols: list[dict],
+    pattern: str,
+) -> list[dict]:
+    """Filter symbols by name path pattern.
+
+    Pattern matching rules:
+    - Simple name: "method_name" - matches any symbol with that name
+    - Relative path: "ClassName/method_name" - matches method in class
+    - Absolute path: "/ClassName/method_name" - exact match from root
+
+    Args:
+        symbols: List of symbol dictionaries from worker.
+        pattern: Name path pattern to match.
+
+    Returns:
+        Filtered list of symbols.
+    """
+    pattern_parts = pattern.strip("/").split("/")
+    is_absolute = pattern.startswith("/")
+    target_name = pattern_parts[-1]
+    parent_names = pattern_parts[:-1] if len(pattern_parts) > 1 else []
+
+    results = []
+    for symbol in symbols:
+        # Match target name
+        if symbol.get("name") != target_name:
+            continue
+
+        # Check parent if pattern has parents
+        if parent_names:
+            parent_name = symbol.get("parent_name")
+            if is_absolute:
+                # For absolute paths, we need exact parent match
+                # (simplified: just check immediate parent)
+                if parent_name != parent_names[-1]:
+                    continue
+            else:
+                # Relative: check immediate parent
+                if parent_name != parent_names[-1]:
+                    continue
+
+        results.append(symbol)
+
+    return results

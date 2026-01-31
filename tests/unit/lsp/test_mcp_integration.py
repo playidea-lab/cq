@@ -10,7 +10,7 @@ import pytest
 def _check_pygls_available() -> bool:
     """Check if pygls is available."""
     try:
-        from pygls.lsp.server import LanguageServer  # noqa: F401
+        from pygls.server import LanguageServer  # noqa: F401
 
         return True
     except ImportError:

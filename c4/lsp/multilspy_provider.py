@@ -20,12 +20,14 @@ from typing import TYPE_CHECKING, Any
 try:
     from multilspy import SyncLanguageServer
     from multilspy.multilspy_config import MultilspyConfig
+    from multilspy.multilspy_logger import MultilspyLogger
 
     MULTILSPY_AVAILABLE = True
 except ImportError:
     MULTILSPY_AVAILABLE = False
     SyncLanguageServer = None  # type: ignore[assignment, misc]
     MultilspyConfig = None  # type: ignore[assignment, misc]
+    MultilspyLogger = None  # type: ignore[assignment, misc]
 
 if TYPE_CHECKING:
     pass
@@ -122,9 +124,11 @@ class MultilspyProvider:
                             "trace_lsp_communication": False,
                         }
                     )
+                    # multilspy requires its own logger type, not Python's logging.Logger
+                    multilspy_logger = MultilspyLogger()
                     server = SyncLanguageServer.create(
                         config,
-                        logger,
+                        multilspy_logger,
                         str(self.project_path),
                         timeout=self.timeout,
                     )
@@ -189,8 +193,9 @@ class MultilspyProvider:
                 language = self._detect_language(file_path)
                 languages = [language] if language else []
             else:
-                # Directory - query all available languages
-                languages = list(set(self.LANGUAGE_MAP.values()))
+                # Directory - query Python only to avoid timeout
+                # Other languages can be slow to start and often not needed
+                languages = ["python"]
         else:
             # No restriction - query Python by default (most common)
             languages = ["python"]
@@ -203,7 +208,7 @@ class MultilspyProvider:
                 server = self._get_server(lang)
                 with server.start_server():
                     # Use workspace/symbol for global search
-                    symbols = server.request_workspace_symbol(query)
+                    symbols = server.request_workspace_symbol(query) or []
 
                     for sym in symbols:
                         result = self._convert_workspace_symbol(sym, include_body)
@@ -247,7 +252,7 @@ class MultilspyProvider:
                 server.open_file(str(file_path))
 
                 # Request document symbols
-                symbols = server.request_document_symbol(str(file_path))
+                symbols = server.request_document_symbols(str(file_path))
 
                 return self._format_document_symbols(symbols, depth)
 
@@ -552,18 +557,31 @@ class MultilspyProvider:
         return stats
 
     def shutdown(self) -> None:
-        """Shutdown all LSP servers."""
+        """Shutdown all LSP servers.
+
+        Note: In the current architecture, servers are managed via context managers
+        (start_server()) on each request. This method clears the server registry
+        and logs the shutdown. If servers were kept running persistently, this
+        method would need to explicitly stop them.
+        """
         with self._global_lock:
-            for info in self._servers.values():
+            server_count = len(self._servers)
+            languages = list(self._servers.keys())
+
+            for lang, info in self._servers.items():
                 try:
-                    if info.started and info.server:
-                        # Server shutdown is handled by context manager
-                        pass
+                    if info.server:
+                        # Currently servers are ephemeral (started/stopped per request)
+                        # If we move to persistent servers, add explicit shutdown here:
+                        # - Stop event loop if running
+                        # - Call server cleanup methods
+                        logger.debug(f"Clearing {lang} server registry entry")
                 except Exception as e:
-                    logger.warning(f"Error shutting down {info.language} server: {e}")
+                    logger.warning(f"Error cleaning up {info.language} server: {e}")
 
             self._servers.clear()
-            logger.info("All LSP servers shut down")
+            if server_count > 0:
+                logger.info(f"Cleared {server_count} LSP server(s): {languages}")
 
     def __enter__(self) -> "MultilspyProvider":
         """Context manager entry."""

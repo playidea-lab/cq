@@ -17,6 +17,9 @@ from typing import Any
 from c4.lsp.jedi_provider import (
     JEDI_AVAILABLE,
     JediSymbolProvider,
+    find_symbol_isolated,
+    get_symbols_overview_isolated,
+    shutdown_jedi_worker_pool,
 )
 from c4.lsp.jedi_provider import (
     find_symbol_mcp as jedi_find_symbol,
@@ -64,11 +67,16 @@ class UnifiedSymbolProvider:
         ".cs": "csharp",
     }
 
+    # Jedi timeout: best-effort, short timeout
+    # Process-isolated workers can be killed on timeout, so short is safe
+    JEDI_TIMEOUT = 2.0
+
     def __init__(
         self,
         project_path: str | Path,
         timeout: int = 30,
-        prefer_multilspy: bool = True,
+        prefer_multilspy: bool = True,  # Try multilspy first, fallback to Jedi
+        use_isolated_jedi: bool = True,  # Use process-isolated Jedi workers
     ):
         """Initialize the unified provider.
 
@@ -76,10 +84,12 @@ class UnifiedSymbolProvider:
             project_path: Root path of the project to analyze.
             timeout: Timeout in seconds for operations.
             prefer_multilspy: If True, try multilspy first; if False, always use Jedi.
+            use_isolated_jedi: If True, use process-isolated Jedi workers (recommended).
         """
         self.project_path = Path(project_path).resolve()
         self.timeout = timeout
         self.prefer_multilspy = prefer_multilspy
+        self.use_isolated_jedi = use_isolated_jedi
 
         # Initialize multilspy if available and preferred
         self._multilspy: MultilspyProvider | None = None
@@ -95,10 +105,14 @@ class UnifiedSymbolProvider:
                 self._multilspy = None
 
         # Initialize Jedi provider (always available for Python)
+        # For isolated mode, we don't need JediSymbolProvider instance
         self._jedi: JediSymbolProvider | None = None
-        if JEDI_AVAILABLE:
+        if JEDI_AVAILABLE and not use_isolated_jedi:
             self._jedi = JediSymbolProvider(project_path=str(self.project_path))
-            logger.info("Jedi provider initialized")
+            logger.info("Jedi provider initialized (thread-based)")
+        elif JEDI_AVAILABLE and use_isolated_jedi:
+            # Initialize the worker pool lazily on first use
+            logger.info("Jedi provider configured (process-isolated)")
 
     @property
     def multilspy_available(self) -> bool:
@@ -150,6 +164,7 @@ class UnifiedSymbolProvider:
         """Find symbols matching the pattern.
 
         Uses multilspy first if available, falls back to Jedi for Python.
+        Jedi fallback uses process-isolated workers for reliable timeout handling.
 
         Args:
             name_path_pattern: Pattern to match (e.g., "MyClass", "MyClass/method").
@@ -165,7 +180,7 @@ class UnifiedSymbolProvider:
         # Determine if we should use Jedi directly
         use_jedi_only = not self.multilspy_available or not self.prefer_multilspy or self._is_python_only(relative_path)
 
-        # Try multilspy first
+        # Try multilspy first (Tier 1: real LSP, fast, accurate)
         if self.multilspy_available and not use_jedi_only:
             try:
                 results = self._multilspy.find_symbol(  # type: ignore[union-attr]
@@ -180,7 +195,7 @@ class UnifiedSymbolProvider:
             except Exception as e:
                 logger.warning(f"multilspy find_symbol failed, trying Jedi: {e}")
 
-        # Fallback to Jedi (Python only)
+        # Tier 2: Jedi fallback (Python only)
         if JEDI_AVAILABLE:
             try:
                 # Jedi only works for Python files
@@ -190,21 +205,71 @@ class UnifiedSymbolProvider:
                         logger.debug(f"Skipping Jedi for non-Python file: {path}")
                         return results
 
-                # Use the MCP wrapper which handles the interface differences
-                jedi_results = jedi_find_symbol(
-                    name_path_pattern=name_path_pattern,
-                    relative_path=relative_path,
-                    include_body=include_body,
-                    project_path=str(self.project_path),
-                    timeout=self.timeout,
-                )
-                if jedi_results:
-                    results = jedi_results
+                # Use process-isolated worker if configured (recommended)
+                if self.use_isolated_jedi and relative_path:
+                    isolated_results = self._find_symbol_isolated(
+                        name_path_pattern=name_path_pattern,
+                        relative_path=relative_path,
+                        include_body=include_body,
+                    )
+                    if isolated_results:
+                        results = isolated_results
+                else:
+                    # Fallback to thread-based MCP wrapper
+                    jedi_results = jedi_find_symbol(
+                        name_path_pattern=name_path_pattern,
+                        relative_path=relative_path,
+                        include_body=include_body,
+                        project_path=str(self.project_path),
+                        timeout=self.timeout,
+                    )
+                    if jedi_results:
+                        results = jedi_results
+
+                if results:
                     logger.debug(f"Jedi found {len(results)} symbols")
             except Exception as e:
                 logger.warning(f"Jedi find_symbol failed: {e}")
 
         return results
+
+    def _find_symbol_isolated(
+        self,
+        name_path_pattern: str,
+        relative_path: str,
+        include_body: bool = False,
+    ) -> list[dict[str, Any]]:
+        """Find symbols using process-isolated Jedi worker.
+
+        This method provides reliable timeout handling by running Jedi
+        in a separate process that can be killed on timeout.
+
+        Args:
+            name_path_pattern: Pattern to match.
+            relative_path: File path relative to project root.
+            include_body: Include symbol body (not yet implemented).
+
+        Returns:
+            List of symbol dictionaries.
+        """
+        path = self.project_path / relative_path
+
+        if not path.is_file():
+            return []
+
+        try:
+            source = path.read_text(encoding="utf-8")
+        except Exception as e:
+            logger.debug(f"Failed to read file {path}: {e}")
+            return []
+
+        return find_symbol_isolated(
+            name_path_pattern=name_path_pattern,
+            source=source,
+            file_path=str(path),
+            project_path=str(self.project_path),
+            timeout=self.JEDI_TIMEOUT,
+        )
 
     def get_symbols_overview(
         self,
@@ -237,40 +302,114 @@ class UnifiedSymbolProvider:
                     relative_path=relative_path,
                     depth=depth,
                 )
+                # Check if result has meaningful content (not just empty/unknown symbols)
                 if result and "error" not in result:
-                    logger.debug(f"multilspy returned overview for {relative_path}")
-                    return result
+                    has_meaningful_content = any(
+                        len(items) > 0 and any(s.get("name") for s in items)
+                        for key, items in result.items()
+                        if isinstance(items, list)
+                    )
+                    if has_meaningful_content:
+                        logger.debug(f"multilspy returned overview for {relative_path}")
+                        return result
+                    logger.debug("multilspy returned empty/invalid result, trying Jedi fallback")
             except Exception as e:
                 logger.warning(f"multilspy get_symbols_overview failed: {e}")
 
-        # Fallback to Jedi (Python only)
+        # Tier 2: Jedi fallback (Python only)
         if is_python and JEDI_AVAILABLE:
             try:
-                # Use the MCP wrapper which handles the interface differences
-                result = jedi_get_symbols_overview(
-                    relative_path=relative_path,
-                    depth=depth,
-                    project_path=str(self.project_path),
-                )
-                if result:
+                # Use process-isolated worker if configured (recommended)
+                if self.use_isolated_jedi:
+                    result = self._get_symbols_overview_isolated(
+                        relative_path=relative_path,
+                        depth=depth,
+                    )
+                else:
+                    # Fallback to thread-based MCP wrapper
+                    result = jedi_get_symbols_overview(
+                        relative_path=relative_path,
+                        depth=depth,
+                        project_path=str(self.project_path),
+                    )
+
+                if result and "error" not in result:
+                    # Convert Jedi format (symbols_by_kind) to standard format
+                    symbols_by_kind = result.get("symbols_by_kind", {})
+                    normalized = {
+                        "classes": symbols_by_kind.get("class", []),
+                        "functions": symbols_by_kind.get("function", []),
+                        "methods": symbols_by_kind.get("method", []),
+                        "variables": symbols_by_kind.get("variable", []),
+                        "constants": symbols_by_kind.get("constant", []),
+                    }
+                    # Add any other kinds to 'other'
+                    other = []
+                    for kind, items in symbols_by_kind.items():
+                        if kind not in ("class", "function", "method", "variable", "constant"):
+                            other.extend(items)
+                    if other:
+                        normalized["other"] = other
+                    # Remove empty categories
+                    normalized = {k: v for k, v in normalized.items() if v}
                     logger.debug(f"Jedi returned overview for {relative_path}")
-                    return result
+                    return normalized
             except Exception as e:
                 logger.warning(f"Jedi get_symbols_overview failed: {e}")
                 return {"error": str(e)}
 
+        # No provider available for this language
         if not is_python and not self.multilspy_available:
             return {"error": f"No provider available for {language} files"}
 
         return {"error": "No symbols found"}
 
+    def _get_symbols_overview_isolated(
+        self,
+        relative_path: str,
+        depth: int = 0,
+    ) -> dict[str, Any]:
+        """Get symbols overview using process-isolated Jedi worker.
+
+        Args:
+            relative_path: File path relative to project root.
+            depth: Depth of children to include.
+
+        Returns:
+            Dictionary with symbols grouped by kind.
+        """
+        path = self.project_path / relative_path
+
+        if not path.is_file():
+            return {"error": f"File not found: {relative_path}"}
+
+        try:
+            source = path.read_text(encoding="utf-8")
+        except Exception as e:
+            return {"error": f"Failed to read file: {e}"}
+
+        return get_symbols_overview_isolated(
+            source=source,
+            file_path=str(path),
+            project_path=str(self.project_path),
+            depth=depth,
+            timeout=self.JEDI_TIMEOUT,
+        )
+
     def shutdown(self) -> None:
-        """Shutdown all providers."""
+        """Shutdown all providers including worker pools."""
         if self._multilspy:
             try:
                 self._multilspy.shutdown()
             except Exception as e:
                 logger.warning(f"Error shutting down multilspy: {e}")
+
+        # Shutdown Jedi worker pool if we're using isolated mode
+        if self.use_isolated_jedi:
+            try:
+                shutdown_jedi_worker_pool()
+            except Exception as e:
+                logger.warning(f"Error shutting down Jedi worker pool: {e}")
 
         self._multilspy = None
         self._jedi = None
@@ -287,10 +426,13 @@ class UnifiedSymbolProvider:
 
 # Singleton instance for MCP tools
 _provider_instance: UnifiedSymbolProvider | None = None
+_provider_lock = __import__("threading").Lock()
 
 
 def get_provider(project_path: str | None = None, timeout: int = 30) -> UnifiedSymbolProvider:
     """Get or create the unified provider singleton.
+
+    Thread-safe singleton pattern using double-checked locking.
 
     Args:
         project_path: Project root path. Uses current directory if not specified.
@@ -303,13 +445,21 @@ def get_provider(project_path: str | None = None, timeout: int = 30) -> UnifiedS
 
     path = Path(project_path or ".").resolve()
 
-    # Create new instance if needed
-    if _provider_instance is None or _provider_instance.project_path != path:
-        if _provider_instance:
+    # Fast path: check without lock if instance exists and matches
+    if _provider_instance is not None and _provider_instance.project_path == path:
+        return _provider_instance
+
+    # Slow path: acquire lock and check again (double-checked locking)
+    with _provider_lock:
+        # Re-check after acquiring lock (another thread may have created it)
+        if _provider_instance is not None and _provider_instance.project_path == path:
+            return _provider_instance
+
+        # Create new instance
+        if _provider_instance is not None:
             _provider_instance.shutdown()
         _provider_instance = UnifiedSymbolProvider(project_path=path, timeout=timeout)
-
-    return _provider_instance
+        return _provider_instance
 
 
 # MCP tool wrapper functions

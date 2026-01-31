@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 
 try:
     from lsprotocol import types as lsp
-    from pygls.lsp.server import LanguageServer
+    from pygls.server import LanguageServer  # pygls 1.3.x API
 
     PYGLS_AVAILABLE = True
 except ImportError:
@@ -956,6 +956,41 @@ class C4LSPServer:
         """
         logger.info(f"Starting C4 LSP server (TCP {host}:{port})")
         self._server.start_tcp(host, port)
+
+    def stop(self) -> None:
+        """Stop the LSP server.
+
+        Signals the server to shut down gracefully.
+        """
+        logger.info("Stopping C4 LSP server")
+        try:
+            # pygls server shutdown
+            if hasattr(self._server, "shutdown"):
+                self._server.shutdown()
+            elif hasattr(self._server, "stop"):
+                self._server.stop()
+        except Exception as e:
+            logger.warning(f"Error during server shutdown: {e}")
+
+    def set_workspace_root(self, root: Path) -> None:
+        """Set the workspace root directory.
+
+        This is used when starting the server programmatically
+        without going through the LSP initialize handshake.
+
+        Args:
+            root: Path to the workspace root
+        """
+        self._workspace_root = Path(root)
+        logger.info(f"Workspace root set to: {self._workspace_root}")
+
+        # Initialize Jedi provider with workspace
+        if JEDI_AVAILABLE:
+            try:
+                self._jedi_provider = JediSymbolProvider(project_path=self._workspace_root)
+                logger.info("Jedi provider initialized")
+            except Exception as e:
+                logger.warning(f"Failed to initialize Jedi provider: {e}")
 
     # MCP Tool Methods
 

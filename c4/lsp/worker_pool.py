@@ -301,6 +301,9 @@ class LSPWorkerPool:
     def _update_timing_stats(self, wait_time: float, exec_time: float) -> None:
         """Update timing statistics.
 
+        IMPORTANT: This method must be called while holding self._lock.
+        It modifies _wait_times, _exec_times, and _stats without internal locking.
+
         Args:
             wait_time: Queue wait time in ms
             exec_time: Execution time in ms
@@ -314,6 +317,7 @@ class LSPWorkerPool:
         if len(self._exec_times) > 100:
             self._exec_times = self._exec_times[-100:]
 
+        # Calculate averages (safe: we're inside _lock)
         self._stats.avg_wait_time_ms = sum(self._wait_times) / len(self._wait_times)
         self._stats.avg_execution_time_ms = sum(self._exec_times) / len(self._exec_times)
 

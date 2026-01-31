@@ -2,7 +2,6 @@
 
 import threading
 import time
-from concurrent.futures import TimeoutError as FutureTimeoutError
 
 import pytest
 

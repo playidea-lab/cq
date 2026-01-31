@@ -173,6 +173,10 @@ class C4Daemon:
         self._graph_router: GraphRouter | None = None
         self._agent_graph: AgentGraph | None = None
         self._rule_engine: RuleEngine | None = None
+        # LSP server components
+        self._lsp_server: Any = None
+        self._lsp_thread: Any = None
+        self._lsp_port: int | None = None
 
     # =========================================================================
     # Initialization
@@ -4780,6 +4784,173 @@ Thumbs.db
         # If we had a symbol cache, we would invalidate it here:
         # for file in python_files:
         #     self._symbol_cache.invalidate(file)
+
+    # =========================================================================
+    # LSP Server Control
+    # =========================================================================
+
+    def c4_lsp_start(self, port: int = 2088) -> dict[str, Any]:
+        """Start the C4 LSP server in a background thread.
+
+        Args:
+            port: Port to run the LSP server on (default: 2088)
+
+        Returns:
+            Dictionary with success status and server info
+        """
+        import threading
+
+        # Check if already running
+        if self._lsp_thread is not None and self._lsp_thread.is_alive():
+            return {
+                "success": False,
+                "error": f"LSP server already running on port {self._lsp_port}",
+            }
+
+        try:
+            from c4.lsp.server import PYGLS_AVAILABLE, C4LSPServer
+
+            if not PYGLS_AVAILABLE:
+                return {
+                    "success": False,
+                    "error": "pygls is required for LSP support. Install with: uv add pygls",
+                }
+
+            # Create server instance
+            self._lsp_server = C4LSPServer()
+            self._lsp_server.set_workspace_root(self.root)
+            self._lsp_port = port
+
+            # Start server in background thread
+            def run_server():
+                try:
+                    self._lsp_server.start_tcp("localhost", port)
+                except Exception as e:
+                    logger.error(f"LSP server error: {e}")
+
+            self._lsp_thread = threading.Thread(
+                target=run_server,
+                name="c4-lsp-server",
+                daemon=True,
+            )
+            self._lsp_thread.start()
+
+            logger.info(f"LSP server started on port {port}")
+            return {
+                "success": True,
+                "port": port,
+                "message": f"LSP server started on localhost:{port}",
+            }
+
+        except ImportError as e:
+            return {
+                "success": False,
+                "error": f"Failed to import LSP server: {e}",
+            }
+        except Exception as e:
+            logger.error(f"Failed to start LSP server: {e}")
+            return {
+                "success": False,
+                "error": str(e),
+            }
+
+    def c4_lsp_stop(self) -> dict[str, Any]:
+        """Stop the running C4 LSP server.
+
+        Returns:
+            Dictionary with success status
+        """
+        if self._lsp_thread is None or not self._lsp_thread.is_alive():
+            return {
+                "success": False,
+                "error": "LSP server is not running",
+            }
+
+        try:
+            # Signal server to stop
+            if self._lsp_server is not None:
+                self._lsp_server.stop()
+
+            # Wait for thread to finish (with timeout)
+            self._lsp_thread.join(timeout=5.0)
+
+            port = self._lsp_port
+            self._lsp_server = None
+            self._lsp_thread = None
+            self._lsp_port = None
+
+            logger.info("LSP server stopped")
+            return {
+                "success": True,
+                "message": f"LSP server stopped (was on port {port})",
+            }
+
+        except Exception as e:
+            logger.error(f"Failed to stop LSP server: {e}")
+            return {
+                "success": False,
+                "error": str(e),
+            }
+
+    def c4_lsp_status(self) -> dict[str, Any]:
+        """Get the status of the C4 LSP server.
+
+        Returns:
+            Dictionary with server status information
+        """
+        if self._lsp_thread is None:
+            return {
+                "running": False,
+                "status": "not_started",
+                "message": "LSP server not started",
+            }
+
+        if not self._lsp_thread.is_alive():
+            # Thread existed but died
+            self._lsp_server = None
+            self._lsp_thread = None
+            old_port = self._lsp_port
+            self._lsp_port = None
+            return {
+                "running": False,
+                "status": "stopped",
+                "message": f"LSP server stopped (was on port {old_port})",
+            }
+
+        # Server is running - gather stats
+        features = [
+            "textDocument/hover",
+            "textDocument/definition",
+            "textDocument/references",
+            "textDocument/documentSymbol",
+            "workspace/symbol",
+            "textDocument/completion",
+        ]
+
+        indexed_files = 0
+        total_symbols = 0
+
+        # Try to get stats from server's analyzer if available
+        if self._lsp_server is not None:
+            try:
+                analyzer = getattr(self._lsp_server, "analyzer", None)
+                if analyzer:
+                    file_contents = getattr(analyzer, "_file_contents", {})
+                    indexed_files = len(file_contents)
+                    all_symbols = analyzer.get_all_symbols() if hasattr(analyzer, "get_all_symbols") else []
+                    total_symbols = len(all_symbols)
+            except Exception:
+                pass  # Stats unavailable, use defaults
+
+        return {
+            "running": True,
+            "status": "running",
+            "port": self._lsp_port,
+            "message": f"LSP server running on localhost:{self._lsp_port}",
+            "features": features,
+            "indexed_files": indexed_files,
+            "total_symbols": total_symbols,
+        }
 
 
 # =============================================================================
