@@ -308,6 +308,7 @@ class TestDefaultMaxWorkers:
     def test_default_max_workers_value(self):
         """Test DEFAULT_MAX_WORKERS is set based on CPU cores."""
         import os
+
         from c4.lsp.worker_pool import DEFAULT_MAX_WORKERS
 
         expected = min(os.cpu_count() or 4, 8)
@@ -361,7 +362,7 @@ class Class_{i}:
     def test_parallel_search_enabled_for_large_searches(self, temp_workspace):
         """Test that parallel search is used for many files."""
         try:
-            from c4.lsp.jedi_provider import JediSymbolProvider, JEDI_AVAILABLE
+            from c4.lsp.jedi_provider import JEDI_AVAILABLE, JediSymbolProvider
         except ImportError:
             pytest.skip("jedi not available")
 
@@ -385,7 +386,7 @@ class Class_{i}:
     def test_sequential_search_for_small_searches(self, temp_workspace):
         """Test that sequential search is used for few files."""
         try:
-            from c4.lsp.jedi_provider import JediSymbolProvider, JEDI_AVAILABLE
+            from c4.lsp.jedi_provider import JEDI_AVAILABLE, JediSymbolProvider
         except ImportError:
             pytest.skip("jedi not available")
 
@@ -407,7 +408,7 @@ class Class_{i}:
     def test_analyze_single_file_thread_safe(self, tmp_path):
         """Test that _analyze_single_file is thread-safe."""
         try:
-            from c4.lsp.jedi_provider import JediSymbolProvider, JEDI_AVAILABLE
+            from c4.lsp.jedi_provider import JEDI_AVAILABLE, JediSymbolProvider
         except ImportError:
             pytest.skip("jedi not available")
 
