@@ -53,7 +53,6 @@ from ..supervisor.agent_router import AgentRouter
 from ..validation import ValidationRunner
 from .git_ops import GitOperations
 from .pr_manager import PRManager
-from .supervisor_loop import SupervisorLoopManager
 from .workers import WorkerManager
 
 logger = logging.getLogger(__name__)
@@ -163,7 +162,6 @@ class C4Daemon:
         self._tasks: dict[str, Task] = {}
         self._validation_runner: ValidationRunner | None = None
         self._worker_manager: WorkerManager | None = None
-        self._supervisor_loop_manager: SupervisorLoopManager | None = None
         self._state_store = state_store
         self._lock_store: "LockStore | None" = None
         self._task_store: SQLiteTaskStore | None = None
@@ -688,86 +686,8 @@ Thumbs.db
 
         return None
 
-    @property
-    def supervisor_loop_manager(self) -> SupervisorLoopManager:
-        """Get supervisor loop manager, creating if necessary"""
-        if self._supervisor_loop_manager is None:
-            self._supervisor_loop_manager = SupervisorLoopManager(self)
-        return self._supervisor_loop_manager
-
-    def start_supervisor_loop(
-        self,
-        poll_interval: float = 1.0,
-        max_retries: int = 3,
-        supervisor_timeout: int = 300,
-    ) -> None:
-        """Start the background supervisor loop"""
-        self.supervisor_loop_manager.start(
-            poll_interval=poll_interval,
-            max_retries=max_retries,
-            supervisor_timeout=supervisor_timeout,
-        )
-
-    def stop_supervisor_loop(self) -> None:
-        """Stop the background supervisor loop"""
-        self.supervisor_loop_manager.stop()
-
-    @property
-    def is_supervisor_loop_running(self) -> bool:
-        """Check if supervisor loop is running"""
-        manager = self._supervisor_loop_manager
-        return manager is not None and manager.is_running
-
-    def _auto_restart_supervisor_if_needed(self) -> bool:
-        """
-        Auto-restart supervisor loop if project is in EXECUTE or CHECKPOINT state.
-
-        Called after loading state to resume background processing
-        after MCP server restart.
-
-        Returns:
-            True if supervisor was restarted, False otherwise
-        """
-        if self.state_machine is None:
-            return False
-
-        state = self.state_machine.state
-
-        # Only restart if in EXECUTE or CHECKPOINT state
-        if state.status not in (ProjectStatus.EXECUTE, ProjectStatus.CHECKPOINT):
-            return False
-
-        # Only restart if not already running
-        if self.is_supervisor_loop_running:
-            return False
-
-        try:
-            self.start_supervisor_loop()
-            logger.info(
-                f"Auto-restarted supervisor loop for {state.status.value} state"
-            )
-            return True
-        except Exception as e:
-            logger.warning(f"Failed to auto-restart supervisor loop: {e}")
-            return False
-
-    def _ensure_supervisor_running(self) -> None:
-        """
-        Non-blocking check to ensure supervisor loop is running if needed.
-        Called automatically from key MCP operations (c4_get_task, c4_submit).
-        """
-        if self.state_machine is None:
-            return
-
-        state = self.state_machine.state
-        should_run = state.status in (ProjectStatus.EXECUTE, ProjectStatus.CHECKPOINT)
-
-        if should_run and not self.is_supervisor_loop_running:
-            try:
-                self.start_supervisor_loop()
-                logger.info("Auto-started supervisor loop for AI review")
-            except Exception as e:
-                logger.warning(f"Failed to auto-start supervisor loop: {e}")
+    # Note: SupervisorLoop has been removed in favor of unified task queue.
+    # CP-XXX tasks handle checkpoint processing, RPR-XXX tasks handle repairs.
 
     def _sync_merged_tasks(self) -> int:
         """Sync tasks whose branches have been merged to main.
@@ -826,60 +746,18 @@ Thumbs.db
 
     def c4_ensure_supervisor(self, force_restart: bool = False) -> dict[str, Any]:
         """
-        Ensure supervisor loop is running for AI review.
+        Deprecated: SupervisorLoop has been removed.
 
-        Called automatically by workers or explicitly to ensure AI review is active.
+        Checkpoint and repair processing is now handled via unified task queue:
+        - CP-XXX tasks for checkpoint processing
+        - RPR-XXX tasks for repair processing
 
-        Args:
-            force_restart: If True, stop and restart even if running
-
-        Returns:
-            Dictionary with status and action taken
+        This method is kept for backward compatibility but is a no-op.
         """
-        if self.state_machine is None:
-            return {"success": False, "error": "C4 not initialized"}
-
-        state = self.state_machine.state
-
-        # Check if supervisor should be running
-        should_run = state.status in (ProjectStatus.EXECUTE, ProjectStatus.CHECKPOINT)
-
-        if not should_run:
-            return {
-                "success": True,
-                "action": "none",
-                "message": f"Supervisor not needed in {state.status.value} state",
-                "is_running": self.is_supervisor_loop_running,
-            }
-
-        # Force restart if requested
-        if force_restart and self.is_supervisor_loop_running:
-            self.stop_supervisor_loop()
-            logger.info("Supervisor loop stopped for force restart")
-
-        # Start if not running
-        if not self.is_supervisor_loop_running:
-            try:
-                self.start_supervisor_loop()
-                return {
-                    "success": True,
-                    "action": "started",
-                    "message": "Supervisor loop started for AI review",
-                    "is_running": True,
-                }
-            except Exception as e:
-                return {
-                    "success": False,
-                    "action": "failed",
-                    "error": str(e),
-                    "is_running": False,
-                }
-
         return {
             "success": True,
-            "action": "already_running",
-            "message": "Supervisor loop already running for AI review",
-            "is_running": True,
+            "action": "deprecated",
+            "message": "SupervisorLoop removed. Use unified task queue (CP-XXX, RPR-XXX).",
         }
 
     # =========================================================================
@@ -1014,10 +892,9 @@ Thumbs.db
                 {"task_id": item.task_id, "attempts": item.attempts}
                 for item in state.repair_queue
             ],
-            "supervisor_loop_running": self.is_supervisor_loop_running,
+            # Note: SupervisorLoop removed - CP/RPR tasks processed via unified queue
             "supervisor": {
-                "loop_running": self.is_supervisor_loop_running,
-                "mode": "ai_review",  # Always AI review (not human approval)
+                "mode": "unified_queue",
                 "checkpoint_queue_size": len(state.checkpoint_queue),
                 "repair_queue_size": len(state.repair_queue),
             },
@@ -3094,22 +2971,13 @@ Thumbs.db
         self.state_machine.transition("c4_run")
         new_state = self.state_machine.state
 
-        # Auto-start supervisor loop for background checkpoint processing
-        supervisor_started = False
-        if not self.is_supervisor_loop_running:
-            try:
-                self.start_supervisor_loop()
-                supervisor_started = True
-            except Exception as e:
-                # Log but don't fail - supervisor can be started manually
-                logger.warning(f"Failed to auto-start supervisor loop: {e}")
+        # Note: SupervisorLoop removed - CP/RPR tasks processed via unified queue
 
         return {
             "success": True,
             "message": f"Transitioned from {current_status} to EXECUTE",
             "status": new_state.status.value,
             "pending_tasks": len(new_state.queue.pending),
-            "supervisor_loop_started": supervisor_started,
             "work_branch": work_branch,
             "branch_message": branch_message,
         }
