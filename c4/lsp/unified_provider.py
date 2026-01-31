@@ -303,7 +303,7 @@ class UnifiedSymbolProvider:
     ) -> list[dict[str, Any]]:
         """Find symbols in all Python files within a directory.
 
-        Uses parallel processing with per-file timeout for reliability.
+        Uses sequential processing with per-file timeout for reliability.
 
         Args:
             name_path_pattern: Pattern to match.
@@ -313,8 +313,6 @@ class UnifiedSymbolProvider:
         Returns:
             List of symbol dictionaries from all matching files.
         """
-        import concurrent.futures
-
         skip_dirs = {
             "__pycache__", ".git", "node_modules", ".venv", "venv",
             ".tox", "build", "dist", ".eggs", ".mypy_cache", ".pytest_cache",
@@ -335,24 +333,15 @@ class UnifiedSymbolProvider:
 
         logger.debug(f"Searching {len(py_files)} files for pattern: {name_path_pattern}")
 
-        # Search files in parallel with individual timeouts
+        # Search files sequentially to avoid overwhelming the Jedi worker pool
+        # Process isolation already provides timeout safety per file
         results: list[dict[str, Any]] = []
-        with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
-            future_to_file = {
-                executor.submit(self._find_symbol_in_file, name_path_pattern, f): f
-                for f in py_files
-            }
-
-            for future in concurrent.futures.as_completed(future_to_file, timeout=30):
-                try:
-                    file_results = future.result(timeout=self.JEDI_TIMEOUT + 1)
-                    results.extend(file_results)
-                except concurrent.futures.TimeoutError:
-                    file = future_to_file[future]
-                    logger.debug(f"Timeout searching {file}")
-                except Exception as e:
-                    file = future_to_file[future]
-                    logger.debug(f"Error searching {file}: {e}")
+        for py_file in py_files:
+            try:
+                file_results = self._find_symbol_in_file(name_path_pattern, py_file)
+                results.extend(file_results)
+            except Exception as e:
+                logger.debug(f"Error searching {py_file}: {e}")
 
         return results
 
