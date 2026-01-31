@@ -18,11 +18,12 @@ class TestTaskType:
         assert TaskType.REVIEW.value == "review"
 
     def test_enum_members(self):
-        """TaskType has exactly 3 members (impl, review, checkpoint)."""
-        assert len(TaskType) == 3
+        """TaskType has exactly 4 members (impl, review, checkpoint, repair)."""
+        assert len(TaskType) == 4
         assert TaskType.IMPLEMENTATION in TaskType
         assert TaskType.REVIEW in TaskType
         assert TaskType.CHECKPOINT in TaskType
+        assert TaskType.REPAIR in TaskType
 
 
 class TestTaskVersionFields:

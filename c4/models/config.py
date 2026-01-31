@@ -365,6 +365,41 @@ class GitHubConfig(BaseModel):
 
 
 
+class TaskSystemConfig(BaseModel):
+    """Unified task system configuration.
+
+    Controls behavior of checkpoint and repair tasks in the single queue model.
+    """
+
+    # Checkpoint settings
+    checkpoint_required_completions: int = Field(
+        default=2,
+        ge=1,
+        le=5,
+        description="Number of completions required for CP tasks (default: 2)",
+    )
+    checkpoint_require_different_workers: bool = Field(
+        default=False,
+        description=(
+            "If true, each completion must be by a different worker. "
+            "If false (default), same worker OK after context clear. "
+            "Automatically false if only 1 worker available."
+        ),
+    )
+
+    # Repair settings
+    repair_failure_threshold: int = Field(
+        default=3,
+        ge=1,
+        le=10,
+        description="Number of failures before auto-creating RPR task",
+    )
+    repair_auto_create: bool = Field(
+        default=True,
+        description="Auto-create RPR tasks on failure threshold. If false, manual only.",
+    )
+
+
 class HooksConfig(BaseModel):
     """Git hooks configuration for C4 workflow."""
 
@@ -481,6 +516,10 @@ class C4Config(BaseModel):
     long_running: LongRunningConfig = Field(
         default_factory=LongRunningConfig,
         description="Long-running task timeout and recovery settings",
+    )
+    task_system: TaskSystemConfig = Field(
+        default_factory=TaskSystemConfig,
+        description="Unified task system settings (checkpoint/repair)",
     )
 
     # Review-as-Task configuration

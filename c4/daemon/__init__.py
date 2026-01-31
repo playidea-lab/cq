@@ -1,8 +1,22 @@
-"""C4 Daemon - Core daemon components for multi-worker orchestration"""
+"""C4 Daemon - Core daemon components for multi-worker orchestration.
+
+Note (Unified Queue Architecture):
+SupervisorLoop has been removed. Checkpoint and repair tasks are now
+processed through the unified task queue as CP-XXX and RPR-XXX task types.
+"""
 
 from .c4_daemon import C4Daemon
 from .events import EventBus
 from .git_ops import GitOperations, GitResult
+from .health import (
+    HealthMonitor,
+    HealthMonitorConfig,
+    OverallHealth,
+    ServiceHealth,
+    ServiceStatus,
+    check_port_available,
+    check_service_reachable,
+)
 from .lifecycle import DaemonInfo, DaemonLifecycle, DaemonStatus
 from .pr_manager import PRManager, PRResult
 from .repair_analyzer import (
@@ -13,7 +27,6 @@ from .repair_analyzer import (
     RepairSuggestionGenerator,
 )
 from .safety import SafetyGuard
-from .supervisor_loop import SupervisorLoop, SupervisorLoopManager
 from .task_dispatcher import (
     AssignmentResult,
     TaskAssignment,
@@ -34,15 +47,20 @@ __all__ = [
     "FailureCategory",
     "GitOperations",
     "GitResult",
+    "HealthMonitor",
+    "HealthMonitorConfig",
+    "OverallHealth",
     "PRManager",
     "PRResult",
     "RepairMetrics",
     "RepairSuggestionGenerator",
     "SafetyGuard",
-    "SupervisorLoop",
-    "SupervisorLoopManager",
+    "ServiceHealth",
+    "ServiceStatus",
     "TaskAssignment",
     "TaskDispatcher",
     "TaskPriority",
     "WorkerManager",
+    "check_port_available",
+    "check_service_reachable",
 ]

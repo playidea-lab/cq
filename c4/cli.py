@@ -725,6 +725,59 @@ def _install_soul(project_path: Path) -> bool:
     return True
 
 
+C4_USAGE_RULES = """
+---
+
+## C4 사용 규칙
+
+> C4가 이 프로젝트에 활성화되었습니다.
+
+### C4 필수 (기본값)
+- 2개 이상 파일 수정
+- 테스트가 필요한 변경
+- 리뷰가 필요한 코드
+- 롤백 가능해야 하는 작업
+
+### Edit OK (예외)
+- 단순 타이포 수정
+- 로그/디버그 추가
+- 1줄 수정
+- 탐색/실험 중
+
+### Quick Start
+```
+/c4-quick "작업 설명"   # 태스크 생성 + 할당
+# 작업...
+/c4-submit              # 검증 + 리뷰
+```
+"""
+
+
+def _update_claude_md(project_path: Path) -> bool:
+    """Add C4 usage rules to CLAUDE.md.
+
+    If CLAUDE.md exists, append C4 rules section.
+    If not, create with C4 rules.
+
+    Returns True if updated, False if already has C4 rules.
+    """
+    claude_md = project_path / "CLAUDE.md"
+
+    if claude_md.exists():
+        content = claude_md.read_text()
+        # Check if C4 rules already exist
+        if "## C4 사용 규칙" in content:
+            return False
+        # Append C4 rules
+        new_content = content.rstrip() + "\n" + C4_USAGE_RULES
+        claude_md.write_text(new_content)
+    else:
+        # Create new CLAUDE.md with C4 rules
+        claude_md.write_text(f"# {project_path.name}\n" + C4_USAGE_RULES)
+
+    return True
+
+
 @c4_app.command()
 def init(
     project_id: str = typer.Option(
@@ -866,7 +919,11 @@ def init(
             else:
                 console.print("[yellow]Warning:[/yellow] No C4 commands were installed")
 
-        # Step 7: Apply template if specified
+        # Step 7: Update CLAUDE.md with C4 usage rules
+        console.print("[dim]Adding C4 rules to CLAUDE.md...[/dim]")
+        claude_md_updated = _update_claude_md(project_path)
+
+        # Step 8: Apply template if specified
         template_applied = False
         if template:
             console.print(f"[dim]Applying template '{template}'...[/dim]")
@@ -918,6 +975,8 @@ def init(
             console.print("  ~/.claude/hooks/        - Stop & security hooks")
         if with_git_hooks:
             console.print("  .git/hooks/             - Git hooks (pre-commit, commit-msg)")
+        if claude_md_updated:
+            console.print("  CLAUDE.md               - C4 사용 규칙 추가")
         if template_applied:
             console.print(f"  (template files)        - From '{template}' template")
         console.print()
@@ -934,15 +993,24 @@ def init(
             console.print("  ✓ Daemon Mode: Background health monitoring")
         console.print()
 
+        # C4 usage rules notice
+        console.print("[bold]📋 C4 사용 규칙:[/bold]")
+        console.print("  C4 필수: 2개+ 파일 수정, 테스트/리뷰 필요한 변경")
+        console.print("  Edit OK: 타이포, 로그 추가, 1줄 수정")
+        console.print()
+        console.print("  [cyan]/c4-quick \"작업\"[/cyan]  - 빠른 시작")
+        console.print("  [cyan]/c4-submit[/cyan]        - 완료 후 제출")
+        console.print()
+
         # Restart notice if .mcp.json was newly created
         if not mcp_existed:
             console.print("[yellow bold]⚠️  Restart Claude Code to load MCP server[/yellow bold]")
             console.print()
 
         console.print("[bold]Next steps:[/bold]")
+        console.print("  /c4-quick   - Quick start: 태스크 생성+할당")
         console.print("  /c4-plan    - Create execution plan from docs")
         console.print("  /c4-status  - Check project status")
-        console.print("  /c4-run     - Start task execution")
 
     finally:
         # Restore environment

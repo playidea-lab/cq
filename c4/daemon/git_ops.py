@@ -676,14 +676,21 @@ class GitOperations:
         if not self.is_git_repo():
             return GitResult(False, "Not a Git repository")
 
+        # Prune stale worktree entries before creating
+        # This cleans up entries where the directory was removed but git still tracks it
+        self._run_git("worktree", "prune")
+
         worktree_path = self.get_worktree_path(worker_id)
 
         # Check if worktree already exists
         if worktree_path.exists():
             # Verify it's a valid worktree
+            # Resolve paths to handle symlinks (e.g., /var -> /private/var on macOS)
+            resolved_worktree = worktree_path.resolve()
             existing = self.list_worktrees()
             for wt in existing:
-                if Path(wt.get("path", "")) == worktree_path:
+                wt_path = Path(wt.get("path", ""))
+                if wt_path.exists() and wt_path.resolve() == resolved_worktree:
                     return GitResult(
                         True,
                         f"Worktree already exists at {worktree_path}",
@@ -718,7 +725,6 @@ class GitOperations:
         if result.returncode != 0:
             return GitResult(False, f"Worktree creation failed: {result.stderr}")
 
-        logger.info(f"Created worktree for {worker_id} at {worktree_path}")
         return GitResult(
             True,
             f"Created worktree at {worktree_path}",
@@ -772,7 +778,6 @@ class GitOperations:
         # Prune stale worktree references
         self._run_git("worktree", "prune")
 
-        logger.info(f"Removed worktree for {worker_id}")
         return GitResult(True, f"Removed worktree {worker_id}")
 
     def get_worktree_status(self, worker_id: str) -> dict[str, str | bool | None]:

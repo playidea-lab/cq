@@ -166,8 +166,13 @@ class TestHealthMonitor:
     ):
         """Should report healthy when service is running."""
         # Start a simple TCP server
+                # Callback that properly handles connections
+        async def handle_client(reader, writer):
+            writer.close()
+            await writer.wait_closed()
+
         server = await asyncio.start_server(
-            lambda r, w: None, "127.0.0.1", 0  # Port 0 = random available port
+            handle_client, "127.0.0.1", 0  # Port 0 = random available port
         )
         port = server.sockets[0].getsockname()[1]
 
@@ -300,8 +305,13 @@ class TestHealthMonitor:
     async def test_wait_for_healthy_success(self, c4_dir: Path):
         """Should return True when services become healthy."""
         # Start a server
+                # Callback that properly handles connections
+        async def handle_client(reader, writer):
+            writer.close()
+            await writer.wait_closed()
+
         server = await asyncio.start_server(
-            lambda r, w: None, "127.0.0.1", 0
+            handle_client, "127.0.0.1", 0
         )
         port = server.sockets[0].getsockname()[1]
 
@@ -342,8 +352,13 @@ class TestCheckPortAvailable:
     async def test_port_not_available_when_in_use(self):
         """Should return False when port is in use."""
         # Start a server to occupy the port
+                # Callback that properly handles connections
+        async def handle_client(reader, writer):
+            writer.close()
+            await writer.wait_closed()
+
         server = await asyncio.start_server(
-            lambda r, w: None, "127.0.0.1", 0
+            handle_client, "127.0.0.1", 0
         )
         port = server.sockets[0].getsockname()[1]
 
@@ -361,8 +376,13 @@ class TestCheckServiceReachable:
     @pytest.mark.asyncio
     async def test_service_reachable_when_running(self):
         """Should return True when service is reachable."""
+                # Callback that properly handles connections
+        async def handle_client(reader, writer):
+            writer.close()
+            await writer.wait_closed()
+
         server = await asyncio.start_server(
-            lambda r, w: None, "127.0.0.1", 0
+            handle_client, "127.0.0.1", 0
         )
         port = server.sockets[0].getsockname()[1]
 
@@ -392,7 +412,9 @@ class TestHealthMonitorLogging:
 
     def test_logs_directory_created(self, c4_dir: Path):
         """Should create logs directory."""
-        config = HealthMonitorConfig(enable_mcp=False, enable_lsp=False, enable_socket=False)
+        config = HealthMonitorConfig(
+            enable_mcp=False, enable_lsp=False, enable_socket=False
+        )
         HealthMonitor(c4_dir, config=config)
 
         logs_dir = c4_dir / "logs"

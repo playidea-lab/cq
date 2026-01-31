@@ -35,11 +35,19 @@ class TaskStatus(str, Enum):
 
 
 class TaskType(str, Enum):
-    """Task type for Review-as-Task system"""
+    """Task type for unified task queue system.
+
+    All task types are processed through the same worker loop:
+    - IMPLEMENTATION: T-XXX-N (구현 작업)
+    - REVIEW: R-XXX-N (단일 태스크 검토, 수직적)
+    - CHECKPOINT: CP-XXX (줄기 합류점 검토, 수평적, 2회 완료 필요)
+    - REPAIR: RPR-XXX (실패 태스크 수정)
+    """
 
     IMPLEMENTATION = "impl"  # Implementation task (T-XXX-N)
     REVIEW = "review"  # Review task (R-XXX-N)
     CHECKPOINT = "checkpoint"  # Checkpoint task (CP-XXX)
+    REPAIR = "repair"  # Repair task (RPR-XXX)
 
 
 class SupervisorDecision(str, Enum):
