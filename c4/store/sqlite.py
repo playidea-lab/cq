@@ -86,19 +86,29 @@ class SQLiteStateStore(StateStore):
             conn.close()
 
     def load(self, project_id: str) -> "C4State":
-        """Load state from SQLite"""
+        """Load state from SQLite.
+
+        Args:
+            project_id: The project ID to load. Must be non-empty.
+
+        Raises:
+            ValueError: If project_id is empty or whitespace-only.
+            StateNotFoundError: If no state exists for the project.
+        """
         from c4.models import C4State
 
+        # Validate project_id to prevent loading wrong state
+        if not project_id or not project_id.strip():
+            raise ValueError(
+                f"project_id must be non-empty, got: '{project_id}'. "
+                "Check config.yaml has a valid project_id."
+            )
+
         with self._get_connection() as conn:
-            if project_id:
-                # Load specific project
-                cursor = conn.execute(
-                    "SELECT state_json FROM c4_state WHERE project_id = ?",
-                    (project_id,),
-                )
-            else:
-                # Load any available project (single-project case)
-                cursor = conn.execute("SELECT state_json FROM c4_state LIMIT 1")
+            cursor = conn.execute(
+                "SELECT state_json FROM c4_state WHERE project_id = ?",
+                (project_id,),
+            )
             row = cursor.fetchone()
 
         if row is None:
@@ -110,7 +120,21 @@ class SQLiteStateStore(StateStore):
         return C4State.model_validate(data)
 
     def save(self, state: "C4State") -> None:
-        """Save state to SQLite"""
+        """Save state to SQLite.
+
+        Args:
+            state: The C4State to save.
+
+        Raises:
+            ValueError: If state.project_id is empty or whitespace-only.
+        """
+        # Validate project_id to prevent creating invalid state rows
+        if not state.project_id or not state.project_id.strip():
+            raise ValueError(
+                f"Cannot save state with empty project_id: '{state.project_id}'. "
+                "Set project_id in config.yaml or during initialization."
+            )
+
         state.updated_at = datetime.now()
         state_json = state.model_dump_json()
 

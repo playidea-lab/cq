@@ -113,6 +113,28 @@ class TestSQLiteStateStore:
         loaded = state_store.load("test")
         assert loaded.status == ProjectStatus.EXECUTE
 
+    def test_load_empty_project_id_raises_error(self, state_store):
+        """Test that loading with empty project_id raises ValueError"""
+        with pytest.raises(ValueError, match="project_id must be non-empty"):
+            state_store.load("")
+
+    def test_load_whitespace_project_id_raises_error(self, state_store):
+        """Test that loading with whitespace-only project_id raises ValueError"""
+        with pytest.raises(ValueError, match="project_id must be non-empty"):
+            state_store.load("   ")
+
+    def test_save_empty_project_id_raises_error(self, state_store):
+        """Test that saving with empty project_id raises ValueError"""
+        state = C4State(project_id="")
+        with pytest.raises(ValueError, match="Cannot save state with empty project_id"):
+            state_store.save(state)
+
+    def test_save_whitespace_project_id_raises_error(self, state_store):
+        """Test that saving with whitespace-only project_id raises ValueError"""
+        state = C4State(project_id="   ")
+        with pytest.raises(ValueError, match="Cannot save state with empty project_id"):
+            state_store.save(state)
+
 
 class TestSQLiteLockStore:
     """Tests for SQLiteLockStore"""

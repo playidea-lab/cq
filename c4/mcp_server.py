@@ -360,16 +360,34 @@ Thumbs.db
         return state
 
     def load(self) -> None:
-        """Load existing C4 project"""
+        """Load existing C4 project.
+
+        Load order is critical to prevent empty project_id bug:
+        1. Load config first to get project_id
+        2. Load state with explicit project_id
+        3. Load tasks
+        """
         if not self.is_initialized():
             raise FileNotFoundError(f"C4 not initialized in {self.root}")
 
         # Migrate from state.json to SQLite if needed
         self._migrate_to_sqlite_if_needed()
 
-        self.state_machine = StateMachine(self.c4_dir, store=self._get_default_store())
-        self.state_machine.load_state()
+        # 1. Load config FIRST to get project_id
         self._load_config()
+
+        # 2. Determine project_id (from config or directory name as fallback)
+        project_id = self._config.project_id or self.root.name
+        if not project_id or not project_id.strip():
+            raise ValueError(
+                f"project_id is empty. Set it in {self.c4_dir / 'config.yaml'}"
+            )
+
+        # 3. Load state with explicit project_id
+        self.state_machine = StateMachine(self.c4_dir, store=self._get_default_store())
+        self.state_machine.load_state(project_id)
+
+        # 4. Load tasks
         self._load_tasks()
 
     def _migrate_to_sqlite_if_needed(self) -> None:

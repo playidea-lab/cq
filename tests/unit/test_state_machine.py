@@ -95,9 +95,9 @@ class TestStateTransitions:
         """Test that transitions are persisted to state.json"""
         state_machine.transition("c4_run")
 
-        # Load fresh state machine and check
+        # Load fresh state machine and check (must provide project_id on first load)
         sm2 = StateMachine(temp_c4_dir)
-        sm2.load_state()
+        sm2.load_state("test-project")
         assert sm2.state.status == ProjectStatus.EXECUTE
 
 

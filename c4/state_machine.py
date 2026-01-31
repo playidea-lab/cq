@@ -152,15 +152,32 @@ class StateMachine:
     # State Management
     # =========================================================================
 
-    def load_state(self) -> C4State:
-        """Load state from store"""
+    def load_state(self, project_id: str | None = None) -> C4State:
+        """Load state from store.
+
+        Args:
+            project_id: The project ID to load. If None, uses cached _project_id.
+                       Must be provided on first call.
+
+        Raises:
+            ValueError: If project_id is empty and no cached project_id exists.
+            FileNotFoundError: If state file not found.
+        """
         from .store import StateNotFoundError
 
+        # Determine project_id to use
+        pid = project_id or self._project_id
+        if not pid or not pid.strip():
+            raise ValueError(
+                "project_id must be provided on first load. "
+                "Call load_state(project_id) with a valid project ID."
+            )
+
         try:
-            self._state = self._store.load("")  # project_id from state
+            self._state = self._store.load(pid)
             self._project_id = self._state.project_id  # Cache for atomic operations
         except StateNotFoundError:
-            raise FileNotFoundError(f"State file not found: {self.c4_dir / 'state.json'}")
+            raise FileNotFoundError(f"State not found for project: {pid}")
         return self._state
 
     def save_state(self) -> None:
