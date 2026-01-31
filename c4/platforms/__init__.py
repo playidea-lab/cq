@@ -18,12 +18,13 @@ import yaml
 # =============================================================================
 
 # Supported platforms and their launch commands
+# Note: "." means current directory (passed after os.chdir to project_path)
 PLATFORM_COMMANDS: dict[str, list[str]] = {
-    "claude": ["claude"],
+    "claude": ["claude", "."],
     "cursor": ["cursor", "."],
-    "codex": ["codex"],
-    "gemini": ["gemini"],
-    "opencode": ["opencode"],
+    "codex": ["codex", "."],
+    "gemini": ["gemini", "."],
+    "opencode": ["opencode", "."],
 }
 
 # Platform-specific command directories
