@@ -42,10 +42,10 @@ def get_c4_install_dir() -> Path:
     if install_path_file.exists():
         return Path(install_path_file.read_text().strip())
 
-    # Default locations
+    # Default locations (prefer ~/git/c4 over ~/.c4 which may be a project config dir)
     default_paths = [
-        Path.home() / ".c4",
         Path.home() / "git" / "c4",
+        Path.home() / ".c4",
     ]
     for p in default_paths:
         if (p / "c4").is_dir():
