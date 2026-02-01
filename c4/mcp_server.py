@@ -29,3 +29,9 @@ __all__ = [
     "_get_workflow_guide",
     "_use_graph_router",
 ]
+
+
+if __name__ == "__main__":
+    import asyncio
+
+    asyncio.run(main())

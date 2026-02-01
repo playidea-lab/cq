@@ -81,7 +81,7 @@ class DataRequirement(BaseModel):
     """ML/DL data requirement."""
 
     name: str
-    schema: dict[str, Any]
+    data_schema: dict[str, Any]
     distribution: Optional[str] = None
     quality: Optional[str] = None
 
