@@ -521,6 +521,62 @@ class WorktreeConfig(BaseModel):
         return self.work_dir or ".c4/worktrees"
 
 
+# =============================================================================
+# Enforce Mode Configuration (AI Agent Hints)
+# =============================================================================
+
+
+class EnforceModeHints(BaseModel):
+    """Hints configuration for enforce_mode."""
+
+    message: str = Field(
+        default="ENFORCE MODE active",
+        description="Message shown to AI agents in MCP responses",
+    )
+
+
+class EnforceModeDocs(BaseModel):
+    """Document patterns to block in enforce_mode."""
+
+    blocked_patterns: list[str] = Field(
+        default_factory=lambda: ["PLAN.md", "TODO.md", "PHASES.md", "DONE.md"],
+        description="File patterns that AI agents should not create",
+    )
+    redirect_message: str = Field(
+        default="Use docs/ROADMAP.md for roadmap, .c4/tasks.db for tasks",
+        description="Message explaining where to store information instead",
+    )
+
+
+class EnforceModeTools(BaseModel):
+    """Tool preference hints for enforce_mode."""
+
+    prefer_c4_tools: bool = Field(
+        default=True,
+        description="Whether to prefer C4 tools over generic Read/Write",
+    )
+    redirect_message: str = Field(
+        default="Prefer c4_* tools for task management",
+        description="Message explaining tool preferences",
+    )
+
+
+class EnforceModeConfig(BaseModel):
+    """Configuration for AI agent enforcement hints.
+
+    When enabled, MCP responses include hints that guide AI agents
+    to use C4 tools and avoid creating duplicate planning documents.
+    """
+
+    enabled: bool = Field(
+        default=False,
+        description="Enable enforce mode hints in MCP responses",
+    )
+    hints: EnforceModeHints = Field(default_factory=EnforceModeHints)
+    docs: EnforceModeDocs = Field(default_factory=EnforceModeDocs)
+    tools: EnforceModeTools = Field(default_factory=EnforceModeTools)
+
+
 class C4Config(BaseModel):
     """config.yaml schema"""
 
@@ -603,6 +659,12 @@ class C4Config(BaseModel):
             "'pr' = create pull request, "
             "'manual' = do nothing (user handles)"
         ),
+    )
+
+    # Enforce Mode - AI Agent Hints
+    enforce_mode: EnforceModeConfig = Field(
+        default_factory=EnforceModeConfig,
+        description="AI agent enforcement hints for tool usage and document creation",
     )
 
     def get_work_branch(self) -> str:

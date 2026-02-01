@@ -13,7 +13,22 @@ from ..registry import register_tool
 @register_tool("c4_status")
 def handle_status(daemon: Any, arguments: dict[str, Any]) -> dict[str, Any]:
     """Get current C4 project status."""
-    return daemon.c4_status()
+    result = daemon.c4_status()
+
+    # Add enforce_mode hints if enabled (from Pydantic config model)
+    if hasattr(daemon, "config") and hasattr(daemon.config, "enforce_mode"):
+        enforce_mode = daemon.config.enforce_mode
+        if enforce_mode.enabled:
+            result["enforce_mode"] = {
+                "enabled": True,
+                "message": enforce_mode.hints.message,
+                "blocked_patterns": enforce_mode.docs.blocked_patterns,
+                "docs_redirect": enforce_mode.docs.redirect_message,
+                "prefer_c4_tools": enforce_mode.tools.prefer_c4_tools,
+                "tools_redirect": enforce_mode.tools.redirect_message,
+            }
+
+    return result
 
 
 @register_tool("c4_clear")

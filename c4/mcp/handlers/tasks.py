@@ -8,12 +8,32 @@ from typing import Any
 from ..registry import register_tool
 
 
+def _get_enforce_mode_hint(daemon: Any) -> dict[str, Any] | None:
+    """Get enforce_mode hint from config (Pydantic model)."""
+    if not hasattr(daemon, "config") or not hasattr(daemon.config, "enforce_mode"):
+        return None
+
+    enforce_mode = daemon.config.enforce_mode
+    if not enforce_mode.enabled:
+        return None
+
+    return {
+        "message": enforce_mode.hints.message,
+        "blocked_patterns": enforce_mode.docs.blocked_patterns,
+    }
+
+
 @register_tool("c4_get_task")
 def handle_get_task(daemon: Any, arguments: dict[str, Any]) -> dict[str, Any]:
     """Request next task assignment for a worker."""
     result = daemon.c4_get_task(arguments["worker_id"])
     if result:
-        return result.model_dump()
+        response = result.model_dump()
+        # Add enforce_mode hint
+        hint = _get_enforce_mode_hint(daemon)
+        if hint:
+            response["enforce_mode"] = hint
+        return response
     return {}
 
 
