@@ -370,17 +370,13 @@ def _get_gemini_command_template(command: str) -> str:
     templates: dict[str, dict[str, str]] = {
         "c4-status": {
             "description": "Show the current C4 project status.",
-            "instructions": """Call `c4_status()` to get the current project status.
-Then query the SQLite database to get task details if needed:
-`sqlite3 -json .c4/c4.db "SELECT task_id, status, task_json FROM c4_tasks ORDER BY task_id"`
-
-Display the status with:
-1. Basic Info (State, execution mode)
-2. Overall Progress Bar
-3. Phase-wise Progress with status icons (✅, 🔄, ⏸)
-4. Queue Summary Table
-5. Workers Table
-6. Key Metrics""",
+            "instructions": """Activate `c4-supervisor` skill using `activate_skill("c4-supervisor")`.
+Then call `c4_status()` to analyze the project state.
+Report on:
+1. Current Phase & Execution Mode
+2. Task Queue (Pending/Blocked)
+3. Active Workers (Are they stuck?)
+4. Metrics & Next Steps""",
         },
         "c4-init": {
             "description": "Initialize C4 in the current project directory.",
@@ -396,18 +392,17 @@ Confirm the state changed to HALTED.""",
         },
         "c4-validate": {
             "description": "Run validation commands for the current task.",
-            "instructions": """Call `c4_run_validation(names=["lint", "unit"])` to run validations.
-Display the results clearly.""",
+            "instructions": """Activate `c4-developer` skill using `activate_skill("c4-developer")`.
+Call `c4_run_validation(names=["lint", "unit"])`.
+If validation fails, analyze the output and suggest fixes based on the skill's guidelines.""",
         },
         "c4-add-task": {
             "description": "Add a new task to the C4 queue.",
-            "instructions": """Collect task information from the user:
-- task_id (e.g. T-001)
-- title
-- dod (Definition of Done)
-- scope (optional)
-
-Then call `c4_add_todo(task_id=..., title=..., dod=..., scope=...)`.""",
+            "instructions": """Activate `c4-planner` skill using `activate_skill("c4-planner")`.
+Follow the 'Tasking' workflow in the skill:
+1. Define clear Definition of Done (DoD).
+2. Determine dependencies.
+3. Call `c4_add_todo(task_id=..., title=..., dod=..., scope=...)`.""",
         },
         "c4-clear": {
             "description": "Clear C4 state and start fresh.",
@@ -415,17 +410,20 @@ Then call `c4_add_todo(task_id=..., title=..., dod=..., scope=...)`.""",
 Call `c4_clear(confirm=True)` to wipe state.
 Optionally keep config with `keep_config=True`.""",
         },
-        # Complex commands mapped to simple instructions for now
         "c4-plan": {
             "description": "Create execution plan from docs.",
-            "instructions": """Call `c4_plan()` to enter PLAN mode.
-Analyze `docs/PLAN.md` or requirements.
-Use `c4_add_todo` to create tasks based on the plan.""",
+            "instructions": """Activate `c4-planner` skill using `activate_skill("c4-planner")`.
+Strictly follow the Planner workflow:
+1. **Discovery**: Read docs and save specs (`c4_save_spec`).
+2. **Design**: Create architecture/ADRs (`c4_save_design`).
+3. **Tasking**: Generate tasks (`c4_add_todo`).""",
         },
         "c4-run": {
             "description": "Start execution (PLAN -> EXECUTE).",
-            "instructions": """Call `c4_run()` to transition to EXECUTE state.
-Verify the state change using `c4_status()`.""",
+            "instructions": """Activate `c4-supervisor` skill using `activate_skill("c4-supervisor")`.
+1. Call `c4_run()` to start the engine.
+2. Monitor `c4_status()` to ensure workers pick up tasks.
+3. If tasks are blocked or need review, handle them according to the Supervisor skill.""",
         },
         "c4-checkpoint": {
             "description": "Create a checkpoint.",
@@ -434,7 +432,8 @@ Require a message or tag from the user.""",
         },
         "c4-submit": {
             "description": "Submit a completed task.",
-            "instructions": """1. Ensure validations pass with `c4_run_validation()`.
+            "instructions": """Activate `c4-developer` skill using `activate_skill("c4-developer")`.
+1. Ensure `c4_run_validation()` passes.
 2. Get the current git commit SHA.
 3. Call `c4_submit(task_id=..., commit_sha=..., validation_results=...)`.""",
         },
