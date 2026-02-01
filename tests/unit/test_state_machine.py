@@ -184,3 +184,49 @@ class TestTransitionTable:
         """Test that all states have defined allowed commands"""
         for status in ProjectStatus:
             assert status in ALLOWED_COMMANDS, f"{status} missing from ALLOWED_COMMANDS"
+
+
+class TestLoadState:
+    """Test load_state validation"""
+
+    def test_load_state_empty_project_id_raises_error(self, temp_c4_dir):
+        """Test that load_state with empty project_id raises ValueError"""
+        sm = StateMachine(temp_c4_dir)
+        with pytest.raises(ValueError, match="project_id must be provided"):
+            sm.load_state("")
+
+    def test_load_state_whitespace_project_id_raises_error(self, temp_c4_dir):
+        """Test that load_state with whitespace-only project_id raises ValueError"""
+        sm = StateMachine(temp_c4_dir)
+        with pytest.raises(ValueError, match="project_id must be provided"):
+            sm.load_state("   ")
+
+    def test_load_state_none_without_cache_raises_error(self, temp_c4_dir):
+        """Test that load_state(None) raises error when no cached project_id"""
+        sm = StateMachine(temp_c4_dir)
+        with pytest.raises(ValueError, match="project_id must be provided"):
+            sm.load_state(None)
+
+    def test_load_state_uses_cached_project_id(self, temp_c4_dir):
+        """Test that load_state(None) uses cached project_id after first call"""
+        sm = StateMachine(temp_c4_dir)
+        sm.initialize_state("test-project")
+        sm.save_state()
+
+        # Create new state machine and load
+        sm2 = StateMachine(temp_c4_dir)
+        sm2.load_state("test-project")
+
+        # Now load_state(None) should use cached project_id
+        sm2.load_state(None)  # Should not raise
+        assert sm2.state.project_id == "test-project"
+
+    def test_load_state_with_explicit_project_id(self, temp_c4_dir):
+        """Test that load_state with explicit project_id works"""
+        sm = StateMachine(temp_c4_dir)
+        sm.initialize_state("my-project")
+        sm.save_state()
+
+        sm2 = StateMachine(temp_c4_dir)
+        sm2.load_state("my-project")
+        assert sm2.state.project_id == "my-project"

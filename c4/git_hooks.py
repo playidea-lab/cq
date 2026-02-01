@@ -90,7 +90,7 @@ exit 0
 
 POST_COMMIT_HOOK = """#!/bin/bash
 # C4 Git Hook: post-commit
-# Sync C4 state after commit and generate event file for daemon processing
+# Analyze commit and sync C4 tasks (enables Claude Code ↔ C4 sync)
 
 # Skip if not in a C4 project
 if [[ ! -f ".c4/state.json" ]] && [[ ! -f ".c4/config.yaml" ]]; then
@@ -142,6 +142,13 @@ cat > "$EVENT_FILE" << EOF
 EOF
 
 echo "C4: Event file created at $EVENT_FILE"
+
+# Notify C4 of the commit (async, non-blocking)
+# This enables Claude Code work to be reflected in C4 tasks
+if command -v c4 &> /dev/null; then
+    # Run in background to avoid blocking the commit
+    (c4 notify-commit "$COMMIT_SHA" 2>/dev/null || true) &
+fi
 
 exit 0
 """

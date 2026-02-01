@@ -3662,6 +3662,127 @@ def hooks_status():
     console.print("[dim]Use 'c4 hooks install' to install missing hooks[/dim]")
 
 
+# =============================================================================
+# Commit Analysis Commands (Claude Code ↔ C4 Sync)
+# =============================================================================
+
+
+@c4_app.command("notify-commit")
+def notify_commit(
+    commit_sha: str = typer.Argument(
+        ...,
+        help="The commit SHA to analyze",
+    ),
+    min_confidence: float = typer.Option(
+        0.7,
+        "--confidence",
+        "-c",
+        help="Minimum confidence for auto-update (0.0-1.0)",
+    ),
+):
+    """Analyze a commit and update matching C4 tasks.
+
+    Called automatically by post-commit hook or manually after
+    working with Claude Code without C4.
+
+    Examples:
+        c4 notify-commit abc123         # Analyze specific commit
+        c4 notify-commit HEAD           # Analyze latest commit
+        c4 notify-commit abc123 -c 0.5  # Lower confidence threshold
+    """
+    daemon = C4Daemon()
+
+    if not daemon.is_initialized():
+        console.print("[red]Error:[/red] C4 not initialized. Run 'c4 init' first.")
+        raise typer.Exit(1)
+
+    daemon.load()
+    result = daemon.notify_commit(commit_sha, min_confidence)
+
+    if not result.get("success"):
+        console.print(f"[red]Error:[/red] {result.get('error', 'Unknown error')}")
+        raise typer.Exit(1)
+
+    matches = result.get("matches", [])
+    updated = result.get("updated", [])
+
+    if not matches:
+        console.print(f"[dim]No task matches found for commit {commit_sha[:8]}[/dim]")
+        return
+
+    console.print(f"[bold]Commit {commit_sha[:8]} analysis:[/bold]")
+    console.print()
+
+    for match in matches:
+        task_id = match["task_id"]
+        confidence = match["confidence"]
+        reason = match["reason"]
+
+        was_updated = any(u["task_id"] == task_id for u in updated)
+        status = "[green]✓ Updated[/green]" if was_updated else "[yellow]⊘ Skipped (already done)[/yellow]"
+
+        console.print(f"  {task_id}: {status}")
+        console.print(f"    [dim]Confidence: {confidence:.0%} - {reason}[/dim]")
+
+    if updated:
+        console.print()
+        console.print(f"[green]Updated {len(updated)} task(s) → plan file synced[/green]")
+
+
+@c4_app.command("sync-commits")
+def sync_commits(
+    since: str = typer.Option(
+        None,
+        "--since",
+        "-s",
+        help="Starting commit SHA (exclusive). Defaults to last synced.",
+    ),
+    min_confidence: float = typer.Option(
+        0.7,
+        "--confidence",
+        "-c",
+        help="Minimum confidence for auto-update (0.0-1.0)",
+    ),
+):
+    """Sync recent commits to C4 tasks.
+
+    Analyzes commits since the last sync and updates matching tasks.
+    Useful after working with Claude Code without C4.
+
+    Examples:
+        c4 sync-commits                 # Sync since last known commit
+        c4 sync-commits --since abc123  # Sync since specific commit
+    """
+    daemon = C4Daemon()
+
+    if not daemon.is_initialized():
+        console.print("[red]Error:[/red] C4 not initialized. Run 'c4 init' first.")
+        raise typer.Exit(1)
+
+    daemon.load()
+    result = daemon.analyze_recent_commits(since, min_confidence)
+
+    if not result.get("success"):
+        console.print(f"[red]Error:[/red] {result.get('error', 'Unknown error')}")
+        raise typer.Exit(1)
+
+    console.print(f"[bold]Analyzed {result['commits_analyzed']} commit(s)[/bold]")
+
+    if result["tasks_updated"]:
+        console.print(f"[green]Updated {result['tasks_updated']} task(s)[/green]")
+    else:
+        console.print("[dim]No tasks updated[/dim]")
+
+    # Show details
+    for commit_result in result.get("results", []):
+        matches = commit_result.get("matches", [])
+        if matches:
+            commit = commit_result.get("commit", "?")[:8]
+            console.print(f"\n  Commit {commit}:")
+            for match in matches:
+                console.print(f"    - {match['task_id']} ({match['confidence']:.0%})")
+
+
 def main_c4d():
     """Entry point for c4d command"""
     app()

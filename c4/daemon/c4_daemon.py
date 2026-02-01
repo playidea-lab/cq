@@ -5321,6 +5321,136 @@ Thumbs.db
         # Save state
         self.state_machine.save_state()
 
+    # =========================================================================
+    # Commit Analysis (Claude Code ↔ C4 Sync)
+    # =========================================================================
+
+    def notify_commit(
+        self, commit_sha: str, min_confidence: float = 0.7
+    ) -> dict[str, Any]:
+        """Analyze a commit and update matching tasks.
+
+        This enables work done by Claude Code outside C4 to be reflected
+        in C4's task tracking. Called via post-commit hook or manually.
+
+        Flow:
+        1. Analyze commit → match to C4 tasks
+        2. Update matched tasks to done
+        3. PlanFileSync propagates to Claude Code plan file
+
+        Args:
+            commit_sha: The commit SHA to analyze
+            min_confidence: Minimum confidence for auto-update (default 0.7)
+
+        Returns:
+            Dictionary with:
+                - success: Whether the operation succeeded
+                - matches: List of matched tasks
+                - updated: List of tasks that were updated
+        """
+        from .commit_analyzer import CommitAnalyzer
+
+        try:
+            if self.state_machine is None:
+                return {"success": False, "error": "C4 not initialized"}
+
+            project_id = self.state_machine.state.project_id
+            analyzer = CommitAnalyzer(self.root)
+
+            # Get current tasks
+            c4_tasks = self.task_store.load_all(project_id)
+
+            # Analyze commit
+            matches = analyzer.analyze_and_suggest(
+                commit_sha, c4_tasks, min_confidence
+            )
+
+            if not matches:
+                logger.debug(f"No task matches found for commit {commit_sha}")
+                return {
+                    "success": True,
+                    "matches": [],
+                    "updated": [],
+                    "commit": commit_sha,
+                }
+
+            # Update matched tasks
+            updated = []
+            for match in matches:
+                task = c4_tasks.get(match.task_id)
+                if task and task.status.value != "done":
+                    self._mark_task_done_from_plan(match.task_id)
+                    updated.append({
+                        "task_id": match.task_id,
+                        "confidence": match.confidence,
+                        "reason": match.reason,
+                    })
+                    logger.info(
+                        f"Commit {commit_sha[:8]}: marked {match.task_id} as done "
+                        f"(confidence: {match.confidence:.0%}, reason: {match.reason})"
+                    )
+
+            # Sync to plan file if enabled
+            self._sync_to_plan_file()
+
+            return {
+                "success": True,
+                "commit": commit_sha,
+                "matches": [
+                    {
+                        "task_id": m.task_id,
+                        "confidence": m.confidence,
+                        "reason": m.reason,
+                    }
+                    for m in matches
+                ],
+                "updated": updated,
+            }
+
+        except Exception as e:
+            logger.error(f"Failed to analyze commit: {e}")
+            return {"success": False, "error": str(e)}
+
+    def analyze_recent_commits(
+        self, since_sha: str | None = None, min_confidence: float = 0.7
+    ) -> dict[str, Any]:
+        """Analyze commits since a given SHA and update tasks.
+
+        Useful for catching up after working without C4.
+
+        Args:
+            since_sha: Start commit (exclusive). If None, analyzes last commit.
+            min_confidence: Minimum confidence for auto-update
+
+        Returns:
+            Dictionary with analysis results per commit
+        """
+        from .commit_analyzer import CommitAnalyzer
+
+        try:
+            if self.state_machine is None:
+                return {"success": False, "error": "C4 not initialized"}
+
+            analyzer = CommitAnalyzer(self.root)
+            commits = analyzer.get_commits_since(since_sha)
+
+            results = []
+            for commit_sha in commits:
+                result = self.notify_commit(commit_sha, min_confidence)
+                results.append(result)
+
+            total_updated = sum(len(r.get("updated", [])) for r in results)
+            return {
+                "success": True,
+                "commits_analyzed": len(commits),
+                "tasks_updated": total_updated,
+                "results": results,
+            }
+
+        except Exception as e:
+            logger.error(f"Failed to analyze recent commits: {e}")
+            return {"success": False, "error": str(e)}
+
 
 # =============================================================================
 # MCP Server Setup
