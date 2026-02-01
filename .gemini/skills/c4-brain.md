@@ -2,22 +2,19 @@
 
 This skill enhances your ability to understand code and context. **Stop reading files blindly.** Use the specialized tools to "see" the code structure and "remember" the project history.
 
+## Mandatory Rules (No Exceptions)
+1. **Overview First**: Before calling `read_file` on any Python/TypeScript file you haven't seen in this session, you **MUST** call `c4_get_symbols_overview(relative_path="...")`. Use this to target your reading.
+2. **Precision Navigation**: Use `c4_find_symbol(name_path_pattern="...")` to jump directly to definitions across the codebase.
+3. **Memory Context**: Always call `c4_list_memories()` at the start of a deep investigation to see if there are relevant architectural constraints.
+
 ## Core Capabilities
 
 ### 1. Code Intelligence (LSP)
-Instead of `read_file` on large files, use:
-- **`c4_get_symbols_overview`**: "Give me the outline of this file." (Classes, methods)
-- **`c4_find_symbol`**: "Where is `UserAuth` defined?" or "Who calls `process_payment`?"
-- **`c4_read_file`**: Use this for reading code with line numbers (better for diffs).
+- **`c4_get_symbols_overview`**: Get the class/method outline of a file.
+- **`c4_find_symbol`**: Find definitions (e.g., `C4Daemon.initialize`).
+- **`c4_read_file`**: Read specific line ranges with line numbers.
 
 ### 2. Project Memory
-Access the collective knowledge of the project:
-- **`c4_read_memory`**: Retrieve architecture decisions (ADR), style guides, or "lessons learned".
-  - Examples: `c4_read_memory("style-guide")`, `c4_read_memory("gemini-rules")`.
-- **`c4_list_memories`**: See what knowledge is available.
+- **`c4_read_memory(name="...")`**: Retrieve specific project knowledge (e.g., "coding-standards").
+- **`c4_write_memory(name="...", content="...")`**: Save new lessons learned or decisions.
 
-## Usage Rule
-**ALWAYS** activate this skill when:
-- You are debugging a complex issue.
-- You are entering a new codebase area.
-- You need to understand the "Why" behind a code block.
