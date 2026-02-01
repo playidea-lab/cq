@@ -33,11 +33,11 @@ def install_gemini_commands(force: bool = False) -> dict[str, tuple[bool, str]]:
 
     for cmd in REQUIRED_COMMANDS:
         target_file = target_dir / f"{cmd}.toml"
-        
+
         try:
             # Generate TOML content dynamically
             content = _get_gemini_command_template(cmd)
-            
+
             if target_file.exists() and not force:
                 # Simple check: if exists, skip unless forced
                 # (Can implement hash check later if needed, but TOML generation is fast)
@@ -46,7 +46,7 @@ def install_gemini_commands(force: bool = False) -> dict[str, tuple[bool, str]]:
 
             target_file.write_text(content)
             results[cmd] = (True, "Installed")
-            
+
         except Exception as e:
             results[cmd] = (False, f"Failed: {e}")
 
