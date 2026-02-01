@@ -2,6 +2,8 @@
 
 import json
 import logging
+import sqlite3
+import subprocess
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -619,7 +621,7 @@ Thumbs.db
         if worker_id and self._worker_manager is not None:
             try:
                 self._worker_manager.heartbeat(worker_id)
-            except Exception as e:
+            except (OSError, sqlite3.Error, RuntimeError) as e:
                 # Don't fail tool calls if heartbeat fails, but log the error
                 logger.warning(f"Worker heartbeat failed for {worker_id}: {e}")
 
@@ -2030,7 +2032,7 @@ Thumbs.db
             else:
                 logger.warning(f"Auto-commit failed for {task_id}: {result.message}")
 
-        except Exception as e:
+        except (OSError, subprocess.SubprocessError, ImportError, RuntimeError) as e:
             # Don't block workflow on auto-commit errors
             logger.error(f"Auto-commit error for {task_id}: {e}")
 
@@ -2136,7 +2138,7 @@ Thumbs.db
                 f"Generated review task {review_task_id} for {task.id} "
                 f"(priority={review_priority}, completed_by={worker_id})"
             )
-        except Exception as e:
+        except (OSError, sqlite3.Error, ValueError, RuntimeError) as e:
             logger.error(f"Failed to generate review task for {task.id}: {e}")
 
     def _handle_review_completion(
@@ -2261,7 +2263,7 @@ Thumbs.db
                     f"Created revision task {new_task_id} from review {task.id}. "
                     f"Version {next_version}/{self.config.max_revision}"
                 )
-            except Exception as e:
+            except (OSError, sqlite3.Error, ValueError, RuntimeError) as e:
                 logger.error(f"Failed to create revision task {new_task_id}: {e}")
                 return SubmitResponse(
                     success=False,
@@ -2464,7 +2466,7 @@ Thumbs.db
                 f"(required_tasks={required_impl_tasks}, priority={cp_priority})"
             )
             return cp_task
-        except Exception as e:
+        except (OSError, sqlite3.Error, ValueError, RuntimeError) as e:
             logger.error(f"Failed to create checkpoint task {cp_task_id}: {e}")
             return None
 
@@ -2745,7 +2747,7 @@ Thumbs.db
                     logger.info(
                         f"Created fix task {new_task_id} from checkpoint {task.id}"
                     )
-                except Exception as e:
+                except (OSError, sqlite3.Error, ValueError, RuntimeError) as e:
                     logger.error(f"Failed to create fix task {new_task_id}: {e}")
 
             if created_tasks:
@@ -2916,7 +2918,7 @@ Thumbs.db
                         "message": pr_result.message,
                     }
 
-            except Exception as e:
+            except (OSError, subprocess.SubprocessError, RuntimeError, ImportError) as e:
                 logger.error(f"PR creation error: {e}")
                 return {
                     "action": "pr",
@@ -3376,7 +3378,7 @@ automatically move {task_id} back to pending for re-processing.
 
         except ValueError as e:
             return {"success": False, "error": str(e), "results": []}
-        except Exception as e:
+        except (OSError, subprocess.SubprocessError, TimeoutError) as e:
             return {"success": False, "error": str(e), "results": []}
 
     # =========================================================================
@@ -3436,7 +3438,7 @@ automatically move {task_id} back to pending for re-processing.
 
         except ValueError as e:
             return {"success": False, "error": f"Invalid domain: {e}"}
-        except Exception as e:
+        except (OSError, KeyError, TypeError) as e:
             return {"success": False, "error": str(e)}
 
     def c4_list_specs(self) -> dict[str, Any]:
@@ -3467,7 +3469,7 @@ automatically move {task_id} back to pending for re-processing.
                 "features": specs_summary,
             }
 
-        except Exception as e:
+        except (OSError, KeyError, TypeError) as e:
             return {"success": False, "error": str(e), "features": []}
 
     def c4_get_spec(self, feature: str) -> dict[str, Any]:
@@ -3500,7 +3502,7 @@ automatically move {task_id} back to pending for re-processing.
                 ],
             }
 
-        except Exception as e:
+        except (OSError, KeyError, TypeError) as e:
             return {"success": False, "error": str(e)}
 
     def c4_add_verification(
@@ -3588,7 +3590,7 @@ automatically move {task_id} back to pending for re-processing.
                 "message": f"Added {verification_type} verification: {name} (synced to config.yaml)",
             }
 
-        except Exception as e:
+        except (OSError, KeyError, TypeError, ValueError) as e:
             return {"success": False, "error": str(e)}
 
     def c4_get_feature_verifications(self, feature: str) -> dict[str, Any]:
@@ -3816,7 +3818,7 @@ automatically move {task_id} back to pending for re-processing.
 
         except ValueError as e:
             return {"success": False, "error": f"Invalid domain: {e}"}
-        except Exception as e:
+        except (OSError, KeyError, TypeError) as e:
             return {"success": False, "error": str(e)}
 
     def c4_get_design(self, feature: str) -> dict[str, Any]:
@@ -3881,7 +3883,7 @@ automatically move {task_id} back to pending for re-processing.
                 "nfr": spec.nfr,
             }
 
-        except Exception as e:
+        except (OSError, KeyError, TypeError) as e:
             return {"success": False, "error": str(e)}
 
     def c4_list_designs(self) -> dict[str, Any]:
@@ -3913,7 +3915,7 @@ automatically move {task_id} back to pending for re-processing.
                 "designs": designs,
             }
 
-        except Exception as e:
+        except (OSError, KeyError, TypeError) as e:
             return {"success": False, "error": str(e)}
 
     def c4_design_complete(self) -> dict[str, Any]:
@@ -4178,7 +4180,7 @@ automatically move {task_id} back to pending for re-processing.
                 else:
                     # Full graph as Mermaid
                     result["mermaid"] = to_mermaid(graph) if graph else ""
-            except Exception as e:
+            except (ValueError, AttributeError, TypeError) as e:
                 result["mermaid_error"] = str(e)
 
         return result
@@ -4270,7 +4272,7 @@ automatically move {task_id} back to pending for re-processing.
                 "symbol": name_path,
             }
 
-        except Exception as e:
+        except (OSError, KeyError, AttributeError, RuntimeError) as e:
             logger.error(f"Error finding references for {name_path}: {e}")
             return {
                 "success": False,
@@ -4358,7 +4360,7 @@ automatically move {task_id} back to pending for re-processing.
 
             return symbol, symbol_file, None
 
-        except Exception as e:
+        except (OSError, KeyError, AttributeError, IndexError) as e:
             return None, None, str(e)
 
     def c4_replace_symbol_body(
@@ -4428,7 +4430,7 @@ automatically move {task_id} back to pending for re-processing.
                 "new_lines": len(indented_lines),
             }
 
-        except Exception as e:
+        except (OSError, KeyError, AttributeError, ValueError) as e:
             return {"success": False, "error": str(e)}
 
     def c4_insert_before_symbol(
@@ -4479,7 +4481,7 @@ automatically move {task_id} back to pending for re-processing.
                 "lines_inserted": len(content_lines),
             }
 
-        except Exception as e:
+        except (OSError, KeyError, AttributeError, ValueError) as e:
             return {"success": False, "error": str(e)}
 
     def c4_insert_after_symbol(
@@ -4533,7 +4535,7 @@ automatically move {task_id} back to pending for re-processing.
                 "lines_inserted": len(content_lines),
             }
 
-        except Exception as e:
+        except (OSError, KeyError, AttributeError, ValueError) as e:
             return {"success": False, "error": str(e)}
 
     def c4_rename_symbol(
@@ -4625,7 +4627,7 @@ automatically move {task_id} back to pending for re-processing.
                         })
                         total_replacements += count
 
-                except Exception:
+                except (OSError, UnicodeDecodeError):
                     # Log but continue with other files
                     pass
 
@@ -4638,7 +4640,7 @@ automatically move {task_id} back to pending for re-processing.
                 "total_replacements": total_replacements,
             }
 
-        except Exception as e:
+        except (OSError, KeyError, AttributeError, ValueError) as e:
             return {"success": False, "error": str(e)}
 
     # =========================================================================
@@ -4676,7 +4678,7 @@ automatically move {task_id} back to pending for re-processing.
         try:
             indexed_files = len(self._lsp_server.analyzer._file_contents)
             total_symbols = len(self._lsp_server.analyzer.get_all_symbols())
-        except Exception:
+        except (AttributeError, RuntimeError):
             indexed_files = 0
             total_symbols = 0
 
@@ -4746,7 +4748,7 @@ automatically move {task_id} back to pending for re-processing.
                 "success": False,
                 "error": f"LSP dependencies not installed: {e}",
             }
-        except Exception as e:
+        except (OSError, RuntimeError, AttributeError) as e:
             return {
                 "success": False,
                 "error": f"Failed to start LSP server: {e}",
@@ -4788,7 +4790,7 @@ automatically move {task_id} back to pending for re-processing.
                 "success": True,
                 "message": "LSP server stopped",
             }
-        except Exception as e:
+        except (OSError, RuntimeError, AttributeError) as e:
             # Still clear references on error
             self._lsp_server = None
             self._lsp_thread = None
@@ -5672,7 +5674,18 @@ def create_server(project_root: Path | None = None) -> Server:
 
             return [TextContent(type="text", text=json.dumps(result, indent=2, default=str))]
 
-        except Exception as e:
+        except (
+            OSError,
+            sqlite3.Error,
+            subprocess.SubprocessError,
+            ValueError,
+            KeyError,
+            AttributeError,
+            RuntimeError,
+            TypeError,
+            json.JSONDecodeError,
+        ) as e:
+            logger.error(f"MCP tool call error: {e}")
             return [TextContent(type="text", text=json.dumps({"error": str(e)}))]
 
     return server
