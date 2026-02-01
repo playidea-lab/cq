@@ -5,7 +5,7 @@ SupervisorLoop has been removed. Checkpoint and repair tasks are now
 processed through the unified task queue as CP-XXX and RPR-XXX task types.
 """
 
-from .c4_daemon import C4Daemon
+from .c4_daemon import C4Daemon, _get_workflow_guide, _use_graph_router
 from .events import EventBus
 from .git_ops import GitOperations, GitResult
 from .health import (
@@ -38,6 +38,8 @@ from .workers import WorkerManager
 __all__ = [
     "AssignmentResult",
     "C4Daemon",
+    "_get_workflow_guide",
+    "_use_graph_router",
     "DaemonInfo",
     "DaemonLifecycle",
     "DaemonStatus",
