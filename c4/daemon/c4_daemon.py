@@ -352,9 +352,12 @@ Thumbs.db
         # Migrate from state.json to SQLite if needed
         self._migrate_to_sqlite_if_needed()
 
-        self.state_machine = StateMachine(self.c4_dir, store=self._get_default_store())
-        self.state_machine.load_state()
+        # Load config first to get project_id
         self._load_config()
+
+        # Initialize state machine with project_id from config
+        self.state_machine = StateMachine(self.c4_dir, store=self._get_default_store())
+        self.state_machine.load_state(self.config.project_id)
         self._load_tasks()
 
     def _migrate_to_sqlite_if_needed(self) -> None:
@@ -786,6 +789,10 @@ Thumbs.db
 
         # Load from SQLite
         self._tasks = self.task_store.load_all(project_id)
+
+    def get_all_tasks(self) -> dict[str, Task]:
+        """Get all tasks (public accessor for _tasks)."""
+        return self._tasks
 
     def _save_tasks(self) -> None:
         """Save all tasks to SQLite"""
