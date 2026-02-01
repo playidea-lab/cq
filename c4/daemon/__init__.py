@@ -33,6 +33,7 @@ from .task_dispatcher import (
     TaskDispatcher,
     TaskPriority,
 )
+from .task_ops import TaskOps
 from .workers import WorkerManager
 
 __all__ = [
@@ -40,6 +41,7 @@ __all__ = [
     "C4Daemon",
     "_get_workflow_guide",
     "_use_graph_router",
+    "TaskOps",
     "DaemonInfo",
     "DaemonLifecycle",
     "DaemonStatus",
