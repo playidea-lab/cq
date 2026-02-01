@@ -134,25 +134,37 @@ else:
 You are C4 Worker {worker_id}.
 
 ## Mission
-Execute C4 tasks until no tasks remain.
+Execute C4 tasks in a **CONTINUOUS LOOP** until no tasks remain.
 
 ## MCP Tools (MUST USE)
 - `mcp__c4__c4_get_task(worker_id="{worker_id}")` - 태스크 요청
 - `mcp__c4__c4_run_validation(names=["lint", "unit"])` - 검증
 - `mcp__c4__c4_submit(task_id, worker_id, commit_sha, validation_results)` - 제출
 
-## Worker Loop
-1. task = c4_get_task(worker_id="{worker_id}")
-2. if no task: exit (모든 태스크 완료)
-3. Implement following DoD
-4. Run validations, fix issues (max 3 retries)
-5. git commit
-6. c4_submit()
-7. Go to step 1
+## ⚠️ CRITICAL: Worker Loop (반드시 루프!)
+
+```
+WHILE TRUE:
+    1. task = c4_get_task(worker_id="{worker_id}")
+    2. IF task is None or no task_id:
+           PRINT "✅ No more tasks"
+           EXIT
+    3. Implement the task (follow DoD)
+    4. Run validations, fix issues (max 3 retries)
+    5. git commit
+    6. result = c4_submit(task_id, ...)
+    7. CHECK result.next_action:
+           - "get_next_task" → CONTINUE TO STEP 1 (⚠️ 반드시!)
+           - "await_checkpoint" → POLL or EXIT
+           - "complete" → EXIT
+```
+
+**중요**: `next_action`이 `"get_next_task"`이면 **반드시** 다시 `c4_get_task()`를 호출하세요!
+**절대로** 태스크 하나 완료 후 종료하지 마세요!
 
 ## Your Worker ID: {worker_id}
 
-START: Call `mcp__c4__c4_get_task(worker_id="{worker_id}")`
+START NOW: Call `mcp__c4__c4_get_task(worker_id="{worker_id}")` and keep looping!
 """
 
     workers = []
@@ -194,34 +206,57 @@ Monitor:
 
 EXECUTE 상태에서 Worker Loop를 시작합니다:
 
+```python
+# ⚠️ CRITICAL: 반드시 WHILE TRUE로 루프!
+task_count = 0
+
+while True:  # ← 무한 루프!
+    # 1. 태스크 요청
+    task = c4_get_task(WORKER_ID)
+
+    if task is None or task.get("task_id") is None:
+        print(f"✅ COMPLETE: {task_count}개 태스크 완료")
+        break
+
+    task_id = task["task_id"]
+    task_count += 1
+    print(f"📋 Task {task_count}: {task_id}")
+
+    # 2. Worktree 설정
+    if task.get("worktree_path"):
+        WORK_DIR = task["worktree_path"]  # 이 경로에서만 작업!
+    else:
+        WORK_DIR = "."
+
+    # 3. 구현 (Agent Routing 활용)
+    implement_with_agent_routing(task)
+
+    # 4. 검증
+    validation = c4_run_validation(["lint", "unit"])
+    if not validation["success"]:
+        # 재시도 또는 blocked 처리
+        ...
+
+    # 5. 커밋 & 제출
+    commit_sha = git_commit()
+    result = c4_submit(task_id, WORKER_ID, commit_sha, validation)
+
+    # 6. ⚠️ CRITICAL: next_action 확인!
+    next_action = result.get("next_action", "get_next_task")
+
+    if next_action == "get_next_task":
+        print("→ 다음 태스크 요청...")
+        continue  # ← 반드시 다음 루프로!
+    elif next_action == "await_checkpoint":
+        print("⏸️ Checkpoint 대기")
+        # TODO: 폴링 또는 종료
+        break
+    elif next_action == "complete":
+        print(f"✅ DONE: {task_count}개 태스크 완료")
+        break
 ```
-LOOP:
-  task = c4_get_task(WORKER_ID)
-  if task is null:
-      exit("✅ COMPLETE")
 
-  # ⚠️ CRITICAL: Worktree 사용
-  if task.worktree_path:
-      WORK_DIR = task.worktree_path  # 이 경로에서만 작업!
-  else:
-      WORK_DIR = "."  # 폴백
-
-  implement_with_agent_routing(task)  # ← Agent Routing
-  validate()
-  if fail_count >= 10:
-      mark_blocked(task)
-      exit("⏸️ BLOCKED")
-
-  commit()
-  result = submit(task)
-
-  if result.next_action == "get_next_task":
-      continue LOOP
-  elif result.next_action == "await_checkpoint":
-      poll until EXECUTE or exit
-  elif result.next_action == "complete":
-      exit("✅ DONE")
-```
+**절대로 하나의 태스크만 처리하고 종료하지 마세요!**
 
 ---
 

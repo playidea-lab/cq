@@ -1,10 +1,19 @@
-# C4 Run (자동화)
+# C4 Run (Smart Auto Mode)
 
-**Worker Loop를 실행**합니다. 상태에 따라 자동 처리:
-- PLAN/HALTED → EXECUTE 전환 후 작업 시작
-- EXECUTE → 바로 작업 참여 (멀티 워커 지원)
+**의존성 그래프를 분석하여 최적의 Worker 수를 자동 계산하고 실행**합니다.
 
-## 0. Worker ID 생성 (필수!)
+## Usage
+
+```
+/c4-run           # 자동: 분석 후 최적 Worker 수로 실행 (기본)
+/c4-run 1         # 강제 1개: 이 세션에서만 실행 (디버깅용)
+/c4-run 3         # 강제 3개: 지정된 수의 Worker 스폰
+/c4-run --max 4   # 자동이지만 최대 4개로 제한
+```
+
+## Instructions
+
+### 0. Worker ID 생성 (필수!)
 
 **루프 시작 전** 고유한 worker_id를 생성하세요:
 
@@ -18,7 +27,7 @@ WORKER_ID = f"worker-{uuid.uuid4().hex[:8]}"  # 예: "worker-a1b2c3d4"
 ## ⚠️ 중요: MCP 도구만 사용
 
 **CLI(bash) 명령어를 사용하지 마세요!** 반드시 MCP 도구를 사용하세요:
-- `mcp__c4__c4_status()` - 상태 확인
+- `mcp__c4__c4_status()` - 상태 확인 + 병렬도 분석
 - `mcp__c4__c4_start()` - PLAN/HALTED → EXECUTE 전환
 - `mcp__c4__c4_get_task(worker_id)` - 태스크 할당
 - `mcp__c4__c4_submit(task_id, commit_sha, validation_results)` - 태스크 제출
@@ -35,29 +44,32 @@ MCP 도구가 안 되면 Claude Code를 재시작하세요.
 - 화면 하단 상태바에서 "Accept Edits" 표시 확인
 - 또는 `Shift+Tab` 눌러서 활성화
 
-**설정으로 기본값 지정** (`.claude/settings.json`):
-```json
-{
-  "permissions": {
-    "defaultMode": "acceptEdits"
-  }
-}
-```
-
 ⚠️ Accept Edits가 꺼져있으면 매 파일 수정마다 승인 필요 → 자동화 불가!
 
-## Instructions
+---
 
-### 1. 상태 확인
+### 1. 상태 확인 및 병렬도 분석
 
-```
+```python
 status = mcp__c4__c4_status()
+
+# 병렬도 정보 확인
+parallelism = status["parallelism"]
+# parallelism = {
+#   "recommended": 4,        # 추천 Worker 수
+#   "ready_now": 6,          # 현재 실행 가능한 태스크
+#   "max_parallelism": 5,    # DAG 최대 너비
+#   "by_model": {"opus": 3, "sonnet": 3},  # 모델별 분포
+#   "pending_total": 10,     # 전체 pending
+#   "blocked_count": 4,      # 의존성 미충족
+#   "reason": "6 tasks ready, capped at 4 workers"
+# }
 ```
 
 상태에 따른 처리:
 
 - **PLAN/HALTED**: → Step 2로 (EXECUTE 전환)
-- **EXECUTE**: → Step 3으로 (바로 Worker Loop 시작)
+- **EXECUTE**: → Step 3으로 (바로 Worker 스폰)
 - **CHECKPOINT**: "Checkpoint 리뷰 대기 중입니다." 출력 후 종료
 - **COMPLETE**: "프로젝트가 완료되었습니다." 출력 후 종료
 - **INIT**: "먼저 /c4-plan으로 계획을 수립하세요." 출력 후 종료
@@ -66,307 +78,261 @@ status = mcp__c4__c4_status()
 
 MCP 도구로 상태 전환:
 
-```
+```python
 result = mcp__c4__c4_start()
 ```
 
 성공 시 `result.success == true`, `result.status == "EXECUTE"`
 
-### 3. Worker Loop 시작
+### 3. Worker 수 결정 (Smart Auto)
+
+```python
+# ARGUMENTS 파싱
+args = "$ARGUMENTS".strip()
+
+if args == "" or args == "--auto":
+    # 자동 모드: 추천 값 사용
+    worker_count = parallelism["recommended"]
+elif args.startswith("--max"):
+    # 최대값 제한
+    max_workers = int(args.split()[-1])
+    worker_count = min(parallelism["recommended"], max_workers)
+else:
+    # 숫자 직접 지정
+    worker_count = int(args)
+
+# 최대 7개 제한 (Claude Code subagent 한계)
+worker_count = min(worker_count, 7)
+
+# 분석 결과 출력
+print(f"""
+📊 병렬도 분석:
+   총 {parallelism['pending_total']}개 태스크
+   현재 실행 가능: {parallelism['ready_now']}개
+   의존성 대기: {parallelism['blocked_count']}개
+   DAG 최대 너비: {parallelism['max_parallelism']}
+
+💡 추천: {parallelism['recommended']}개 Worker
+   이유: {parallelism['reason']}
+
+🚀 실행: {worker_count}개 Worker
+""")
+```
+
+### 4. Worker 스폰 (1개 또는 N개)
+
+```python
+import uuid
+
+if worker_count == 1:
+    # 단일 Worker: 이 세션에서 직접 실행
+    print("🔧 이 세션에서 Worker Loop 시작...")
+    # → Step 5 (Worker Loop) 실행
+else:
+    # 멀티 Worker: Task subagent로 스폰
+    WORKER_PROMPT = """
+You are C4 Worker {worker_id}.
+
+## Mission
+Execute C4 tasks in a **CONTINUOUS LOOP** until no tasks remain.
+
+## MCP Tools (MUST USE)
+- `mcp__c4__c4_get_task(worker_id="{worker_id}")` - 태스크 요청
+- `mcp__c4__c4_run_validation(names=["lint", "unit"])` - 검증
+- `mcp__c4__c4_submit(task_id, worker_id, commit_sha, validation_results)` - 제출
+
+## ⚠️ CRITICAL: Worker Loop (반드시 루프!)
+
+```
+WHILE TRUE:
+    1. task = c4_get_task(worker_id="{worker_id}")
+    2. IF task is None or no task_id:
+           PRINT "✅ No more tasks"
+           EXIT
+    3. Implement the task (follow DoD)
+    4. Run validations, fix issues (max 3 retries)
+    5. git commit
+    6. result = c4_submit(task_id, ...)
+    7. CHECK result.next_action:
+           - "get_next_task" → CONTINUE TO STEP 1 (⚠️ 반드시!)
+           - "await_checkpoint" → POLL or EXIT
+           - "complete" → EXIT
+```
+
+**중요**: `next_action`이 `"get_next_task"`이면 **반드시** 다시 `c4_get_task()`를 호출하세요!
+**절대로** 태스크 하나 완료 후 종료하지 마세요!
+
+## Your Worker ID: {worker_id}
+
+START NOW: Call `mcp__c4__c4_get_task(worker_id="{worker_id}")` and keep looping!
+"""
+
+    workers = []
+    for i in range(worker_count):
+        worker_id = f"worker-{uuid.uuid4().hex[:8]}"
+
+        # 모델 결정 (by_model 분포 기반 또는 기본 opus)
+        model = "opus"  # 기본값
+
+        result = Task(
+            subagent_type="general-purpose",
+            description=f"C4 Worker {i+1}/{worker_count}",
+            prompt=WORKER_PROMPT.format(worker_id=worker_id),
+            model=model,
+            run_in_background=True
+        )
+
+        workers.append({"id": worker_id, "output": result.output_file})
+        print(f"🚀 Worker {i+1}/{worker_count} spawned: {worker_id}")
+
+    print(f"""
+🐝 C4 Run: {worker_count} workers spawned
+
+Workers:
+""")
+    for w in workers:
+        print(f"  • {w['id']}: {w['output']}")
+
+    print("""
+Monitor:
+  /c4-status - 전체 진행 상황
+  tail -f {output_file} - 개별 Worker 로그
+""")
+
+    exit()  # 스폰 후 종료 (Worker들이 작업)
+```
+
+### 5. Worker Loop (단일 모드)
 
 EXECUTE 상태에서 Worker Loop를 시작합니다:
 
+```python
+# ⚠️ CRITICAL: 반드시 WHILE TRUE로 루프!
+task_count = 0
+
+while True:  # ← 무한 루프!
+    # 1. 태스크 요청
+    task = c4_get_task(WORKER_ID)
+
+    if task is None or task.get("task_id") is None:
+        print(f"✅ COMPLETE: {task_count}개 태스크 완료")
+        break
+
+    task_id = task["task_id"]
+    task_count += 1
+    print(f"📋 Task {task_count}: {task_id}")
+
+    # 2. Worktree 설정
+    if task.get("worktree_path"):
+        WORK_DIR = task["worktree_path"]  # 이 경로에서만 작업!
+    else:
+        WORK_DIR = "."
+
+    # 3. 구현 (Agent Routing 활용)
+    implement_with_agent_routing(task)
+
+    # 4. 검증
+    validation = c4_run_validation(["lint", "unit"])
+    if not validation["success"]:
+        # 재시도 또는 blocked 처리
+        ...
+
+    # 5. 커밋 & 제출
+    commit_sha = git_commit()
+    result = c4_submit(task_id, WORKER_ID, commit_sha, validation)
+
+    # 6. ⚠️ CRITICAL: next_action 확인!
+    next_action = result.get("next_action", "get_next_task")
+
+    if next_action == "get_next_task":
+        print("→ 다음 태스크 요청...")
+        continue  # ← 반드시 다음 루프로!
+    elif next_action == "await_checkpoint":
+        print("⏸️ Checkpoint 대기")
+        # TODO: 폴링 또는 종료
+        break
+    elif next_action == "complete":
+        print(f"✅ DONE: {task_count}개 태스크 완료")
+        break
 ```
-LOOP:
-  task = c4_get_task(WORKER_ID)
-  if task is null:
-      exit("✅ COMPLETE")
 
-  implement_with_agent_routing(task)  # ← Phase 4: Agent Routing
-  validate()
-  if fail_count >= 10:
-      mark_blocked(task)
-      exit("⏸️ BLOCKED")
+**절대로 하나의 태스크만 처리하고 종료하지 마세요!**
 
-  commit()
-  result = submit(task)
+---
 
-  if result.next_action == "get_next_task":
-      continue LOOP
-  elif result.next_action == "await_checkpoint":
-      poll until EXECUTE or exit
-  elif result.next_action == "complete":
-      exit("✅ DONE")
+## 🌲 Worktree 격리 (멀티 Worker 필수!)
+
+**여러 Worker가 같은 프로젝트에서 작업할 때 브랜치 충돌을 방지합니다.**
+
+`c4_get_task()` 응답에 `worktree_path`가 포함됩니다:
+
+```python
+task = c4_get_task(WORKER_ID)
+# task.worktree_path: ".c4/worktrees/worker-abc123"  ← 이 경로 사용!
+# task.branch: "c4/w-T-001-0"
 ```
 
-## 🤖 Agent Routing (Phase 4)
+**모든 파일 작업은 worktree_path 내에서 수행**:
+
+```python
+if task.worktree_path:
+    work_dir = Path(task.worktree_path)
+    file_to_edit = work_dir / "src" / "module.py"
+    Read(file_to_edit)
+    Edit(file_to_edit, ...)
+```
+
+---
+
+## 🤖 Agent Routing
 
 `c4_get_task()` 응답에 에이전트 라우팅 정보가 포함됩니다:
 
 ```python
 task = c4_get_task(WORKER_ID)
-# task.recommended_agent: "frontend-developer"   ← 사용할 에이전트
+# task.recommended_agent: "frontend-developer"
 # task.agent_chain: ["frontend-developer", "test-automator", "code-reviewer"]
-# task.domain: "web-frontend"
-# task.handoff_instructions: "Pass component specs and test requirements..."
 ```
 
-### 사용 방법 (자동)
-
-**Worker(Claude)가 자동으로 판단합니다.** 사용자 개입 불필요.
-
-```python
-# Worker가 태스크를 받으면:
-task = c4_get_task(WORKER_ID)
-
-# 추천 에이전트로 구현
-Task(subagent_type=task.recommended_agent, prompt=f"""
-    Task: {task.title}
-    DoD: {task.dod}
-    Scope: {task.scope}
-    Branch: {task.branch}
-
-    Implement this task completely, following the DoD.
-""")
-```
-
-**기본 동작**:
-1. MCP가 도메인 기반으로 `recommended_agent` 제공
-2. Worker가 해당 에이전트로 Task 실행
-3. 필요시 `agent_chain`의 추가 에이전트 활용
-
-### 언제 agent_chain을 사용하는가?
-
-Worker가 다음 조건에서 **자동으로** 체인을 활용:
-
-| 조건 | 동작 |
-|------|------|
-| 구현 후 테스트 실패 | `test-automator` 호출 |
-| 코드 품질 이슈 발견 | `code-reviewer` 호출 |
-| 보안 관련 코드 | `security-auditor` 추가 |
-| 디버깅 필요 | `debugger` 사용 |
-
-```python
-# 예시: 구현 후 테스트 실패 시
-result = Task(subagent_type=task.recommended_agent, ...)
-
-if validation_failed:
-    # 체인에서 test-automator 찾아서 호출
-    Task(subagent_type="test-automator", prompt=f"""
-        Fix failing tests for: {task.title}
-        Error: {validation_error}
-    """)
-```
-
-### 도메인별 추천 에이전트
-
-| Domain | Primary Agent | 추가 Chain |
-|--------|--------------|-----------|
-| web-frontend | `frontend-developer` | test → reviewer |
-| web-backend | `backend-architect` | python → test → reviewer |
-| fullstack | `backend-architect` | frontend → test → reviewer |
-| ml-dl | `ml-engineer` | python → test |
-| mobile-app | `mobile-developer` | test → reviewer |
-| infra | `cloud-architect` | deployment |
-| library | `python-pro` | docs → test → reviewer |
-| unknown | `general-purpose` | reviewer |
-
-### Override 케이스 (특수 상황)
-
-Worker가 추천 대신 다른 에이전트 선택하는 경우:
-
-```python
-# 디버깅 태스크
-if "debug" in task.title.lower() or "fix bug" in task.title.lower():
-    agent = "debugger"  # 추천 무시, debugger 사용
-
-# 성능 최적화
-elif "performance" in task.dod.lower() or "optimize" in task.dod.lower():
-    agent = "performance-engineer"
-
-# 보안 민감
-elif "auth" in task.title.lower() or "security" in task.dod.lower():
-    agent = task.recommended_agent
-    # + 리뷰 단계에서 security-auditor 추가
-
-else:
-    agent = task.recommended_agent  # 기본: 추천 사용
-```
-
-**핵심**: 모든 판단은 Worker(Claude)가 자동으로 수행. 사용자는 `/c4-run` 실행만 하면 됩니다.
+Worker는 자동으로 판단하여 적절한 에이전트를 선택합니다.
 
 ---
-
-## 🔄 자동 활성화 메커니즘
-
-Worker는 태스크 내용을 분석하여 **자동으로 적절한 에이전트를 선택**합니다.
-
-### 활성화 트리거
-
-| 트리거 | 감지 방법 | 활성화 에이전트 |
-|--------|----------|----------------|
-| **구현 작업** | 기본 | `recommended_agent` (도메인 기반) |
-| **테스트 실패** | validation_results에 fail | `test-automator` |
-| **타입 에러** | TypeScript/mypy 에러 | `debugger` |
-| **보안 코드** | "auth", "security", "password" 키워드 | `security-auditor` (추가) |
-| **성능 이슈** | "optimize", "performance" 키워드 | `performance-engineer` |
-| **디버깅 필요** | "debug", "fix bug" 키워드 | `debugger` |
-
-### 자동 선택 로직
-
-```python
-def select_agent(task, validation_result=None):
-    # 1. 검증 실패 시 → 전문 에이전트
-    if validation_result and not validation_result.success:
-        if "test" in validation_result.failed:
-            return "test-automator"
-        if "lint" in validation_result.failed or "type" in validation_result.failed:
-            return "debugger"
-
-    # 2. 키워드 기반 오버라이드
-    title_lower = task.title.lower()
-    dod_lower = task.dod.lower()
-
-    if any(kw in title_lower for kw in ["debug", "fix bug", "fix error"]):
-        return "debugger"
-    if any(kw in dod_lower for kw in ["optimize", "performance", "latency"]):
-        return "performance-engineer"
-
-    # 3. 기본: 도메인 기반 추천
-    return task.recommended_agent
-```
-
-### 체인 활용 시점
-
-```
-구현 완료 → 검증 실패 → 체인에서 적합한 에이전트 선택 → 수정 → 재검증
-```
-
-예시:
-1. `frontend-developer`가 React 컴포넌트 구현
-2. `lint` 검증 실패 (TypeScript 에러)
-3. `debugger` 에이전트로 에러 수정
-4. 재검증 → 통과 → 제출
-
----
-
-## ⚠️ 에러 핸들링 가이드
-
-### 일반 에러 처리 플로우
-
-```
-에러 발생
-    ↓
-에러 유형 분류 (검증/구현/시스템)
-    ↓
-재시도 (최대 3회)
-    ↓
-실패 시 → 체인 에이전트 호출
-    ↓
-여전히 실패 (10회) → BLOCKED 처리
-```
-
-### 검증 실패 대응
-
-| 검증 유형 | 일반적 원인 | 대응 방법 |
-|----------|------------|----------|
-| **lint** | 코드 스타일, 미사용 변수 | `debugger` → 자동 수정 |
-| **unit** | 테스트 실패, 로직 에러 | `test-automator` → 테스트 수정 또는 코드 수정 |
-| **type** | 타입 불일치 | `debugger` → 타입 수정 |
-| **e2e** | UI 변경, 타이밍 이슈 | 수동 확인 권장 |
-
-### 재시도 전략
-
-```python
-MAX_RETRIES = 3
-BLOCKED_THRESHOLD = 10
-
-for attempt in range(MAX_RETRIES):
-    result = implement_task(task)
-    validation = run_validation()
-
-    if validation.success:
-        return submit(task, result)
-
-    # 에러 유형에 따른 수정 시도
-    if "lint" in validation.failed:
-        fix_with_agent("debugger", validation.errors)
-    elif "unit" in validation.failed:
-        fix_with_agent("test-automator", validation.errors)
-
-# 모든 재시도 실패
-if total_attempts >= BLOCKED_THRESHOLD:
-    mark_blocked(task, reason=validation.errors)
-```
-
-### 시스템 에러 대응
-
-| 에러 | 원인 | 대응 |
-|------|------|------|
-| `MCP connection failed` | MCP 서버 다운 | Claude Code 재시작 |
-| `Task not found` | 상태 동기화 오류 | `c4_status()` 재호출 |
-| `Branch conflict` | Git 충돌 | `git fetch && git rebase` |
-| `Permission denied` | 파일 권한 | Accept Edits 모드 확인 |
-
-### BLOCKED 처리
-
-10회 이상 실패 시 태스크를 BLOCKED로 표시:
-
-```python
-mcp__c4__c4_mark_blocked(
-    task_id=task.id,
-    worker_id=WORKER_ID,
-    failure_signature="lint:unused-variable,unit:assertion-error",
-    attempts=10,
-    last_error="Expected 5 but got 3"
-)
-```
-
-**BLOCKED 태스크는 Supervisor 또는 사용자가 검토 후 재시작합니다.**
-
----
-
-## Usage
-
-```
-/c4-run
-```
-
-실행 후 **사람 개입 없이** 자동으로 모든 task를 처리합니다.
 
 ## 예상 흐름
 
-### 첫 번째 워커 (PLAN 상태에서)
-```
-/c4-run
-→ 상태 확인: PLAN
-→ mcp__c4__c4_start()로 EXECUTE 전환
-→ Worker Loop 시작
-→ Task T-001 할당...
-→ 구현... 검증... 제출...
-→ ✅ DONE: 프로젝트 완료
-```
-
-### 추가 워커 (이미 EXECUTE 상태)
+### 자동 모드 (기본)
 ```
 /c4-run
 → 상태 확인: EXECUTE
-→ Worker Loop 바로 시작 (전환 없음)
-→ Task T-002 할당...
-→ 구현... 검증... 제출...
-→ ✅ DONE: 작업 완료
+→ 병렬도 분석: 5개 태스크 실행 가능, DAG 너비 4
+→ 추천: 4개 Worker
+→ 🚀 4개 Worker 스폰
+→ 각 Worker가 병렬로 태스크 처리
+→ ✅ 모든 태스크 완료
 ```
 
-## 멀티 워커
+### 단일 모드 (디버깅)
+```
+/c4-run 1
+→ 상태 확인: EXECUTE
+→ 병렬도 분석: (표시만)
+→ 이 세션에서 Worker Loop 직접 실행
+→ Task T-001 할당... 구현... 검증... 제출...
+→ ✅ DONE
+```
 
-여러 Claude Code 창에서 동시에 `/c4-run` 실행 가능:
-- 첫 번째 창: PLAN → EXECUTE 전환 + 작업
-- 추가 창들: 바로 작업 참여
+---
 
-SQLite WAL 모드로 race condition 없이 안전하게 동작합니다.
+## 제약사항
 
-## 중요
+| 제약 | 설명 |
+|------|------|
+| 최대 Worker | 7개 (Claude Code subagent 한계) |
+| Worktree | 멀티 Worker 시 필수 |
+| Accept Edits | 자동화에 필수 |
 
-- `/c4-run` 실행 후에는 **루프가 종료될 때까지** 자동으로 진행됩니다
-- Supervisor Loop는 백그라운드로 실행됩니다
-- Worker는 checkpoint 대기 중에도 폴링하며 대기합니다
+## 관련 명령어
+
+- `/c4-status` - 상태 확인 (병렬도 분석 포함)
+- `/c4-stop` - 실행 중지
+- `/c4-submit` - 수동 제출
