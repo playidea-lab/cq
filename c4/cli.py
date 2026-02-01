@@ -134,28 +134,28 @@ def gemini(
             elif "C4_PROJECT_ROOT" in os.environ:
                 del os.environ["C4_PROJECT_ROOT"]
 
-            # 3. Launch Gemini
-            console.print("[blue]Starting Gemini...[/blue]")
-            os.chdir(project_path)
-            
-            # Check if gemini is installed
-            if not shutil.which("gemini"):
-                console.print("[red]Error:[/red] 'gemini' command not found")
-                console.print("Please install it via: npm install -g @google/gemini-cli")
-                raise typer.Exit(1)
-        
-            # Use os.system to launch interactive CLI
-            # This is often more reliable than subprocess or execvp for retaining TTY interaction
-            exit_code = os.system("gemini .")
-            
-            if exit_code != 0:
-                console.print(f"[yellow]Gemini exited with code {exit_code}[/yellow]")
-                raise typer.Exit(1)
-        
-        
-        # =============================================================================
-        # c4 Smart Entry Point (no subcommand)
-        # =============================================================================
+    # 3. Launch Gemini
+    console.print("[blue]Starting Gemini...[/blue]")
+    os.chdir(project_path)
+
+    # Check if gemini is installed
+    if not shutil.which("gemini"):
+        console.print("[red]Error:[/red] 'gemini' command not found")
+        console.print("Please install it via: npm install -g @google/gemini-cli")
+        raise typer.Exit(1)
+
+    # Use os.system to launch interactive CLI
+    # This is often more reliable than subprocess or execvp for retaining TTY interaction
+    exit_code = os.system("gemini")
+
+    if exit_code != 0:
+        console.print(f"[yellow]Gemini exited with code {exit_code}[/yellow]")
+        raise typer.Exit(1)
+
+
+# =============================================================================
+# c4 Smart Entry Point (no subcommand)
+# =============================================================================
 @c4_app.callback()
 def c4_main(
     ctx: typer.Context,
