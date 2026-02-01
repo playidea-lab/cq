@@ -120,11 +120,13 @@ def gemini(
             _create_project_settings(project_path)
             install_all_hooks()
 
-            # Ensure platform config is set to gemini
-            set_platform_config("gemini", project_path=project_path)
-
-            console.print("[green]C4 initialized for Gemini![/green]")
-        except Exception as e:
+                        # Ensure platform config is set to gemini
+                        set_platform_config("gemini", project_path=project_path)
+                        
+                        # Create local .gemini directory and commands
+                        setup_platform(project_path, "gemini", generate_templates=True)
+                        
+                        console.print("[green]C4 initialized for Gemini![/green]")        except Exception as e:
             console.print(f"[red]Initialization failed:[/red] {e}")
             if not typer.confirm("Continue launch anyway?"):
                 raise typer.Exit(1)
@@ -1011,6 +1013,10 @@ def init(
                     g_installed = sum(1 for success, _ in gemini_results.values() if success)
                     if g_installed > 0:
                         console.print(f"  [green]✓[/green] {g_installed} Gemini commands installed")
+                    
+                    # Also set up local .gemini directory
+                    setup_platform(project_path, "gemini", generate_templates=True)
+                    console.print("  [green]✓[/green] Local .gemini directory created")
                 except ImportError:
                     console.print("[yellow]Warning:[/yellow] Gemini installer not found")
                 except Exception as e:
