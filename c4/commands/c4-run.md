@@ -6,10 +6,12 @@
 
 ```
 /c4-run           # 자동: 분석 후 최적 Worker 수로 실행 (기본)
-/c4-run 1         # 강제 1개: 이 세션에서만 실행 (디버깅용)
-/c4-run 3         # 강제 3개: 지정된 수의 Worker 스폰
+/c4-run 1         # 1개 Worker 스폰 (백그라운드)
+/c4-run 3         # 3개 Worker 스폰 (백그라운드)
 /c4-run --max 4   # 자동이지만 최대 4개로 제한
 ```
+
+**모든 Worker는 백그라운드에서 실행됩니다.** 메인 세션은 사용자와 대화를 계속할 수 있습니다.
 
 ## Instructions
 
@@ -119,18 +121,14 @@ print(f"""
 """)
 ```
 
-### 4. Worker 스폰 (1개 또는 N개)
+### 4. Worker 스폰
+
+**모든 Worker는 subagent로 spawn됩니다** (메인 세션은 사용자 대화용).
 
 ```python
 import uuid
 
-if worker_count == 1:
-    # 단일 Worker: 이 세션에서 직접 실행
-    print("🔧 이 세션에서 Worker Loop 시작...")
-    # → Step 5 (Worker Loop) 실행
-else:
-    # 멀티 Worker: Task subagent로 스폰
-    WORKER_PROMPT = """
+WORKER_PROMPT = """
 You are C4 Worker {worker_id}.
 
 ## Mission
@@ -167,96 +165,40 @@ WHILE TRUE:
 START NOW: Call `mcp__c4__c4_get_task(worker_id="{worker_id}")` and keep looping!
 """
 
-    workers = []
-    for i in range(worker_count):
-        worker_id = f"worker-{uuid.uuid4().hex[:8]}"
+workers = []
+for i in range(worker_count):
+    worker_id = f"worker-{uuid.uuid4().hex[:8]}"
 
-        # 모델 결정 (by_model 분포 기반 또는 기본 opus)
-        model = "opus"  # 기본값
+    # 모델 결정 (by_model 분포 기반 또는 기본 opus)
+    model = "opus"  # 기본값
 
-        result = Task(
-            subagent_type="general-purpose",
-            description=f"C4 Worker {i+1}/{worker_count}",
-            prompt=WORKER_PROMPT.format(worker_id=worker_id),
-            model=model,
-            run_in_background=True
-        )
+    result = Task(
+        subagent_type="general-purpose",
+        description=f"C4 Worker {i+1}/{worker_count}",
+        prompt=WORKER_PROMPT.format(worker_id=worker_id),
+        model=model,
+        run_in_background=True
+    )
 
-        workers.append({"id": worker_id, "output": result.output_file})
-        print(f"🚀 Worker {i+1}/{worker_count} spawned: {worker_id}")
+    workers.append({"id": worker_id, "output": result.output_file})
+    print(f"🚀 Worker {i+1}/{worker_count} spawned: {worker_id}")
 
-    print(f"""
-🐝 C4 Run: {worker_count} workers spawned
+print(f"""
+🐝 C4 Run: {worker_count} workers spawned (백그라운드)
 
 Workers:
 """)
-    for w in workers:
-        print(f"  • {w['id']}: {w['output']}")
+for w in workers:
+    print(f"  • {w['id']}: {w['output']}")
 
-    print("""
+print("""
 Monitor:
   /c4-status - 전체 진행 상황
   tail -f {output_file} - 개별 Worker 로그
+
+⚠️ Worker가 백그라운드에서 실행 중입니다.
+   이 세션에서 다른 작업을 하거나 대화를 계속할 수 있습니다.
 """)
-
-    exit()  # 스폰 후 종료 (Worker들이 작업)
-```
-
-### 5. Worker Loop (단일 모드)
-
-EXECUTE 상태에서 Worker Loop를 시작합니다:
-
-```python
-# ⚠️ CRITICAL: 반드시 WHILE TRUE로 루프!
-task_count = 0
-
-while True:  # ← 무한 루프!
-    # 1. 태스크 요청
-    task = c4_get_task(WORKER_ID)
-
-    if task is None or task.get("task_id") is None:
-        print(f"✅ COMPLETE: {task_count}개 태스크 완료")
-        break
-
-    task_id = task["task_id"]
-    task_count += 1
-    print(f"📋 Task {task_count}: {task_id}")
-
-    # 2. Worktree 설정
-    if task.get("worktree_path"):
-        WORK_DIR = task["worktree_path"]  # 이 경로에서만 작업!
-    else:
-        WORK_DIR = "."
-
-    # 3. 구현 (Agent Routing 활용)
-    implement_with_agent_routing(task)
-
-    # 4. 검증
-    validation = c4_run_validation(["lint", "unit"])
-    if not validation["success"]:
-        # 재시도 또는 blocked 처리
-        ...
-
-    # 5. 커밋 & 제출
-    commit_sha = git_commit()
-    result = c4_submit(task_id, WORKER_ID, commit_sha, validation)
-
-    # 6. ⚠️ CRITICAL: next_action 확인!
-    next_action = result.get("next_action", "get_next_task")
-
-    if next_action == "get_next_task":
-        print("→ 다음 태스크 요청...")
-        continue  # ← 반드시 다음 루프로!
-    elif next_action == "await_checkpoint":
-        print("⏸️ Checkpoint 대기")
-        # TODO: 폴링 또는 종료
-        break
-    elif next_action == "complete":
-        print(f"✅ DONE: {task_count}개 태스크 완료")
-        break
-```
-
-**절대로 하나의 태스크만 처리하고 종료하지 마세요!**
 
 ---
 
@@ -311,14 +253,15 @@ Worker는 자동으로 판단하여 적절한 에이전트를 선택합니다.
 → ✅ 모든 태스크 완료
 ```
 
-### 단일 모드 (디버깅)
+### 단일 모드
 ```
 /c4-run 1
 → 상태 확인: EXECUTE
 → 병렬도 분석: (표시만)
-→ 이 세션에서 Worker Loop 직접 실행
-→ Task T-001 할당... 구현... 검증... 제출...
-→ ✅ DONE
+→ 🚀 1개 Worker 스폰 (백그라운드)
+→ Worker가 백그라운드에서 태스크 처리
+→ 메인 세션에서 다른 작업 가능
+→ ✅ 모든 태스크 완료
 ```
 
 ---
