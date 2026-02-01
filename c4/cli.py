@@ -919,6 +919,21 @@ def init(
             else:
                 console.print("[yellow]Warning:[/yellow] No C4 commands were installed")
 
+            # Gemini-specific global install
+            target_platform = get_default_platform(project_path)
+            if target_platform == "gemini":
+                console.print("[dim]Installing Gemini global commands to ~/.gemini/commands/...[/dim]")
+                try:
+                    from .commands.gemini_installer import install_gemini_commands
+                    gemini_results = install_gemini_commands()
+                    g_installed = sum(1 for success, _ in gemini_results.values() if success)
+                    if g_installed > 0:
+                        console.print(f"  [green]✓[/green] {g_installed} Gemini commands installed")
+                except ImportError:
+                    console.print("[yellow]Warning:[/yellow] Gemini installer not found")
+                except Exception as e:
+                    console.print(f"[yellow]Warning:[/yellow] Gemini install failed: {e}")
+
         # Step 7: Update CLAUDE.md with C4 usage rules
         console.print("[dim]Adding C4 rules to CLAUDE.md...[/dim]")
         claude_md_updated = _update_claude_md(project_path)
