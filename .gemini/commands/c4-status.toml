@@ -1,9 +1,9 @@
-description = "Show the current C4 project status with visual task graph progress."
+description = "Show the current C4 project status."
 
 prompt = """
 Call `c4_status()` to get the current project status.
-Then query the SQLite database to get task details:
-`sqlite3 -json .c4/c4.db \"SELECT task_id, status, task_json FROM c4_tasks ORDER BY task_id\"`
+Then query the SQLite database to get task details if needed:
+`sqlite3 -json .c4/c4.db "SELECT task_id, status, task_json FROM c4_tasks ORDER BY task_id"`
 
 Display the status with:
 1. Basic Info (State, execution mode)

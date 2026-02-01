@@ -1,6 +1,7 @@
-description = "Initialize C4 in a project (all-in-one setup)."
+description = "Initialize C4 in the current project directory."
 
 prompt = """
-Asks the user for project details and initializes C4 by calling `c4_init()` or the appropriate setup commands.
-This includes setting up directories, git initialization, and creating core files like GEMINI.md and PLAN.md.
+Run `c4-init` to initialize the project.
+Verify that `.c4/` directory is created.
+Check if a restart is needed.
 """

@@ -1,12 +1,6 @@
-description = "Review checkpoint status and make decisions (Approve, Request Changes, Replan, Redesign)."
+description = "Create a checkpoint."
 
 prompt = """
-1. Check current status using `c4_status()`.
-2. If in CHECKPOINT state, present the completed tasks and validation results to the user.
-3. Ask the user for a decision:
-   - 1. Approve (APPROVE)
-   - 2. Request Changes (REQUEST_CHANGES)
-   - 3. Replan (REPLAN)
-   - 4. Redesign (REDESIGN)
-4. Call `c4_checkpoint()` with the user's decision and notes.
+Call `c4_checkpoint()` to create a snapshot of the current state.
+Require a message or tag from the user.
 """

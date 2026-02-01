@@ -1,9 +1,7 @@
-description = "Submit the currently active task for review."
+description = "Submit a completed task."
 
 prompt = """
-1. Call `c4_status()` to identify the task currently in progress.
-2. Run mandatory validations using `c4_run_validation(["lint", "unit"])`.
-3. If the task has DDD-CLEANCODE specs (BoundaryMap, ContractSpec), perform additional boundary and contract checks.
-4. Get the current Git commit SHA.
-5. If all checks pass, call `c4_submit()` with the task_id, commit_sha, and validation results.
+1. Ensure validations pass with `c4_run_validation()`.
+2. Get the current git commit SHA.
+3. Call `c4_submit(task_id=..., commit_sha=..., validation_results=...)`.
 """

@@ -1,6 +1,7 @@
-description = "Clear C4 state completely (Reset project)."
+description = "Clear C4 state and start fresh."
 
 prompt = """
-1. Ask the user for confirmation (this action is destructive).
-2. Call `c4_clear(confirm=true)` to delete the .c4 directory and clear the daemon cache.
+Confirm with the user before clearing.
+Call `c4_clear(confirm=True)` to wipe state.
+Optionally keep config with `keep_config=True`.
 """

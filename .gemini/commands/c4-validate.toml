@@ -1,7 +1,6 @@
-description = "Run project validations (lint, tests, etc.)."
+description = "Run validation commands for the current task."
 
 prompt = """
-1. Parse validation names from user arguments (defaults to ["lint", "unit"]).
-2. Call `c4_run_validation(names)` with the selected validations.
-3. Display the results clearly, highlighting any failures or critical issues.
+Call `c4_run_validation(names=["lint", "unit"])` to run validations.
+Display the results clearly.
 """

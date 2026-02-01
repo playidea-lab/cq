@@ -1,6 +1,11 @@
 description = "Add a new task to the C4 queue."
 
 prompt = """
-Collect task information from the user (task_id, title, dod, scope) and call the `c4_add_todo()` MCP tool.
-Ensure the Definition of Done (DoD) is specific and verifiable.
+Collect task information from the user:
+- task_id (e.g. T-001)
+- title
+- dod (Definition of Done)
+- scope (optional)
+
+Then call `c4_add_todo(task_id=..., title=..., dod=..., scope=...)`.
 """

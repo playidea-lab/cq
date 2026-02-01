@@ -1,6 +1,7 @@
-description = "Stop execution and transition to HALTED state."
+description = "Stop the current C4 execution."
 
 prompt = """
-Call `c4_stop()` to pause the execution loop and transition the project state to HALTED.
-Useful for manual intervention or debugging.
+Call `c4_status()` to check the current state.
+If in EXECUTE state, call `c4_stop()` to halt execution.
+Confirm the state changed to HALTED.
 """

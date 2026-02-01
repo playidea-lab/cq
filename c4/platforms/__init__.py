@@ -273,6 +273,8 @@ def validate_platform_commands(
     # For codex, command files might have different extensions
     if platform == "codex":
         extensions = [".md", ".yaml", ".yml"]
+    elif platform == "gemini":
+        extensions = [".toml"]
     else:
         extensions = [".md"]
 
@@ -317,10 +319,16 @@ def generate_command_template(
     target_dir = get_command_dir(project_path, platform)
     target_dir.mkdir(parents=True, exist_ok=True)
 
-    target_file = target_dir / f"{command}.md"
+    extension = ".md"
+    if platform == "gemini":
+        extension = ".toml"
+    elif platform == "codex":
+        extension = ".yaml"
+
+    target_file = target_dir / f"{command}{extension}"
 
     # Check if reference exists for complex commands
-    if command in COMPLEX_COMMANDS:
+    if command in COMPLEX_COMMANDS and platform != "gemini": # Gemini needs TOML conversion, so skip direct copy for now
         ref_dir = get_command_dir(project_path, reference_platform)
         ref_file = ref_dir / f"{command}.md"
 
@@ -344,9 +352,101 @@ def generate_command_template(
             return None
 
     # For simple commands, generate basic template
-    template = _get_simple_command_template(command, platform)
+    if platform == "gemini":
+        template = _get_gemini_command_template(command)
+    else:
+        template = _get_simple_command_template(command, platform)
+
     target_file.write_text(template)
     return target_file
+
+
+def _get_gemini_command_template(command: str) -> str:
+    """Get TOML template content for Gemini commands."""
+
+    # Common preamble
+    toml_template = 'description = "{description}"\n\nprompt = """\n{instructions}\n"""'
+
+    templates: dict[str, dict[str, str]] = {
+        "c4-status": {
+            "description": "Show the current C4 project status.",
+            "instructions": """Call `c4_status()` to get the current project status.
+Then query the SQLite database to get task details if needed:
+`sqlite3 -json .c4/c4.db "SELECT task_id, status, task_json FROM c4_tasks ORDER BY task_id"`
+
+Display the status with:
+1. Basic Info (State, execution mode)
+2. Overall Progress Bar
+3. Phase-wise Progress with status icons (✅, 🔄, ⏸)
+4. Queue Summary Table
+5. Workers Table
+6. Key Metrics""",
+        },
+        "c4-init": {
+            "description": "Initialize C4 in the current project directory.",
+            "instructions": """Run `c4-init` to initialize the project.
+Verify that `.c4/` directory is created.
+Check if a restart is needed.""",
+        },
+        "c4-stop": {
+            "description": "Stop the current C4 execution.",
+            "instructions": """Call `c4_status()` to check the current state.
+If in EXECUTE state, call `c4_stop()` to halt execution.
+Confirm the state changed to HALTED.""",
+        },
+        "c4-validate": {
+            "description": "Run validation commands for the current task.",
+            "instructions": """Call `c4_run_validation(names=["lint", "unit"])` to run validations.
+Display the results clearly.""",
+        },
+        "c4-add-task": {
+            "description": "Add a new task to the C4 queue.",
+            "instructions": """Collect task information from the user:
+- task_id (e.g. T-001)
+- title
+- dod (Definition of Done)
+- scope (optional)
+
+Then call `c4_add_todo(task_id=..., title=..., dod=..., scope=...)`.""",
+        },
+        "c4-clear": {
+            "description": "Clear C4 state and start fresh.",
+            "instructions": """Confirm with the user before clearing.
+Call `c4_clear(confirm=True)` to wipe state.
+Optionally keep config with `keep_config=True`.""",
+        },
+        # Complex commands mapped to simple instructions for now
+        "c4-plan": {
+            "description": "Create execution plan from docs.",
+            "instructions": """Call `c4_plan()` to enter PLAN mode.
+Analyze `docs/PLAN.md` or requirements.
+Use `c4_add_todo` to create tasks based on the plan.""",
+        },
+        "c4-run": {
+            "description": "Start execution (PLAN -> EXECUTE).",
+            "instructions": """Call `c4_run()` to transition to EXECUTE state.
+Verify the state change using `c4_status()`.""",
+        },
+        "c4-checkpoint": {
+            "description": "Create a checkpoint.",
+            "instructions": """Call `c4_checkpoint()` to create a snapshot of the current state.
+Require a message or tag from the user.""",
+        },
+        "c4-submit": {
+            "description": "Submit a completed task.",
+            "instructions": """1. Ensure validations pass with `c4_run_validation()`.
+2. Get the current git commit SHA.
+3. Call `c4_submit(task_id=..., commit_sha=..., validation_results=...)`.""",
+        },
+    }
+
+    if command in templates:
+        return toml_template.format(**templates[command])
+
+    return toml_template.format(
+        description=f"Execute {command}",
+        instructions=f"TODO: Implement instructions for {command}",
+    )
 
 
 def _get_simple_command_template(command: str, platform: str) -> str:

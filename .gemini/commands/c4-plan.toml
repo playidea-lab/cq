@@ -1,9 +1,7 @@
-description = "Analyze project documentation and generate an execution plan (tasks)."
+description = "Create execution plan from docs."
 
 prompt = """
-1. Scan project documents (README.md, specs/, etc.).
-2. Call `c4_plan()` to transition the project state to PLAN.
-3. Identify features and constraints to generate tasks.
-4. For each task, call `c4_add_todo()` with clear DoD and dependencies.
-5. Use `c4_status()` to show the final plan to the user.
+Call `c4_plan()` to enter PLAN mode.
+Analyze `docs/PLAN.md` or requirements.
+Use `c4_add_todo` to create tasks based on the plan.
 """
