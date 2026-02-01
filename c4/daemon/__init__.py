@@ -6,6 +6,7 @@ processed through the unified task queue as CP-XXX and RPR-XXX task types.
 """
 
 from .c4_daemon import C4Daemon, _get_workflow_guide, _use_graph_router
+from .checkpoint_ops import CheckpointOps
 from .code_ops import CodeOps
 from .design_ops import DesignOps
 from .discovery_ops import DiscoveryOps
@@ -44,6 +45,7 @@ __all__ = [
     "C4Daemon",
     "_get_workflow_guide",
     "_use_graph_router",
+    "CheckpointOps",
     "CodeOps",
     "DesignOps",
     "DiscoveryOps",
