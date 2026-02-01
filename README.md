@@ -49,6 +49,8 @@ Claude Code 또는 Cursor에서:
 INIT → DISCOVERY → DESIGN → PLAN → EXECUTE ↔ CHECKPOINT → COMPLETE
 ```
 
+> **v0.6.6 신규**: `/c4-run`이 **Smart Auto Mode**를 기본으로 사용합니다. 태스크 의존성을 분석하여 자동으로 병렬 Worker를 스폰합니다.
+
 | 상태 | 설명 |
 |------|------|
 | **INIT** | 프로젝트 초기화 |
@@ -102,8 +104,11 @@ c4_add_todo:
 ```
 
 ```bash
-# Swarm 모드에서 모델별 Worker 스폰
-/c4-swarm --opus 1 --sonnet 3 --haiku 2
+# Smart Auto Mode (권장) - 자동으로 최적 Worker 수 결정
+/c4-run
+
+# 수동 모드 (필요 시) - 모델별 Worker 수 지정
+/c4-run --parallel 4  # 4개 Worker
 ```
 
 ### 슬래시 명령어
@@ -113,13 +118,13 @@ c4_add_todo:
 | `/c4-init` | 현재 디렉토리에서 C4 초기화 |
 | `/c4-status` | 프로젝트 상태 및 큐 확인 |
 | `/c4-plan` | 문서 분석 후 태스크 생성 |
-| `/c4-run` | 실행 시작 (자동 루프) |
+| `/c4-run` | 실행 시작 (**Smart Auto Mode**: 자동 병렬화) |
 | `/c4-stop` | 실행 중지 |
 | `/c4-validate` | 검증 실행 (lint, test) |
 | `/c4-submit` | 완료된 태스크 제출 |
 | `/c4-checkpoint` | 체크포인트 리뷰 |
 | `/c4-add-task` | 새 태스크 추가 |
-| `/c4-swarm` | 병렬 Worker 스폰 |
+| `/c4-swarm` | (Deprecated) 수동 병렬 Worker 스폰 - `/c4-run` 사용 권장 |
 
 ---
 
@@ -193,6 +198,12 @@ c4 init --no-daemon       # Daemon 모드 제외
 project_id: my-project
 default_branch: main
 work_branch_prefix: "c4/w-"
+
+# Worktree 격리 (v0.6.6 신규)
+worktree:
+  enabled: true              # Worker별 독립 worktree 사용
+  base_branch: main          # worktree 기준 브랜치
+  completion_action: merge   # pr: PR 생성, merge: 직접 병합
 
 # 검증 명령어
 validation:
@@ -318,7 +329,9 @@ your-project/
     ├── config.yaml        # 프로젝트 설정
     ├── specs/             # EARS 요구사항
     ├── designs/           # 설계 문서
-    └── bundles/           # 체크포인트 번들
+    ├── bundles/           # 체크포인트 번들
+    └── worktrees/         # Worker별 격리된 작업 공간 (v0.6.6)
+        └── worktree-{id}/ # 독립된 git worktree
 ```
 
 ---
@@ -328,6 +341,8 @@ your-project/
 | 기능 | 설명 |
 |------|------|
 | **State Machine** | 구조화된 워크플로우 관리 (v0.6.6 최적화) |
+| **Smart Auto Mode** | 태스크 의존성 분석 후 자동 병렬화 ⭐ NEW |
+| **Worktree 격리** | Worker별 독립 Git worktree로 충돌 방지 ⭐ NEW |
 | **Economic Mode** | 태스크별 모델 선택 (opus/sonnet/haiku) |
 | **Code Analysis** | 내장 LSP + 심볼 편집 도구 (Serena 대체) |
 | **Multi-Platform** | Claude Code, Cursor, Gemini CLI, Codex, OpenCode 완벽 지원 |
@@ -336,6 +351,32 @@ your-project/
 | **Git Automation** | 자동 커밋, 체크포인트 태깅, 롤백 시스템 |
 | **Advanced MCP** | 코드 분석, 시맨틱 검색, 호출 그래프 분석 등 30+ 도구 |
 | **Team Collab** | Supabase 기반 상태 공유 및 팀 관리 (Phase 6) |
+
+### Smart Auto Mode (v0.6.6)
+
+`/c4-run` 실행 시 자동으로 병렬 Worker를 스폰합니다:
+
+```bash
+/c4-run
+# 자동으로:
+# 1. 태스크 의존성 분석
+# 2. 병렬화 가능한 태스크 식별
+# 3. 적절한 수의 Worker 스폰 (기본: 2~4)
+# 4. 각 Worker는 독립된 Worktree에서 작업
+```
+
+**Worktree 격리**:
+- 각 Worker는 `.c4/worktrees/worktree-{id}/`에서 독립 작업
+- 브랜치 충돌 없이 병렬 개발 가능
+- 체크포인트에서 자동 병합
+
+```yaml
+# .c4/config.yaml에서 활성화
+worktree:
+  enabled: true
+  base_branch: main
+  completion_action: merge  # pr 또는 merge
+```
 
 ---
 
