@@ -5,7 +5,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from ..constants import MAX_REPAIR_DEPTH, REPAIR_PREFIX, REPAIR_PREFIX_LEN
+from ..constants import REPAIR_PREFIX, REPAIR_PREFIX_LEN
 from ..discovery import (
     DesignStore,
     SpecStore,
@@ -18,8 +18,6 @@ from ..models import (
     CheckpointQueueItem,
     CheckpointResponse,
     EventType,
-    ProjectStatus,
-    RepairQueueItem,
     SubmitResponse,
     Task,
     TaskAssignment,
@@ -27,7 +25,6 @@ from ..models import (
     TaskType,
     ValidationResult,
 )
-from ..notification import NotificationManager
 from ..state_machine import StateMachine
 from ..store import (
     LockStore,
