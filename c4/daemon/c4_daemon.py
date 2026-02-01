@@ -53,6 +53,7 @@ from ..supervisor.agent_graph import (
 from ..validation import ValidationRunner
 from .git_ops import GitOperations
 from .pr_manager import PRManager
+from .task_ops import TaskOps
 from .workers import WorkerManager
 
 logger = logging.getLogger(__name__)
@@ -175,6 +176,15 @@ class C4Daemon:
         self._lsp_server: Any = None
         self._lsp_thread: Any = None
         self._lsp_port: int | None = None
+        # Task operations handler (extracted for modularity)
+        self._task_ops: TaskOps | None = None
+
+    @property
+    def task_ops(self) -> TaskOps:
+        """Get TaskOps handler (lazy initialization)."""
+        if self._task_ops is None:
+            self._task_ops = TaskOps(self)
+        return self._task_ops
 
     # =========================================================================
     # Initialization
@@ -218,7 +228,7 @@ class C4Daemon:
             return False
 
         # Initialize git
-        logger.info(f"Initializing git in {self.root}")
+        logger.info("Initializing git in %s", self.root)
         subprocess.run(
             ["git", "init"],
             cwd=self.root,
@@ -584,7 +594,7 @@ Thumbs.db
                 self._worker_manager.heartbeat(worker_id)
             except Exception as e:
                 # Don't fail tool calls if heartbeat fails, but log the error
-                logger.warning(f"Worker heartbeat failed for {worker_id}: {e}")
+                logger.warning("Worker heartbeat failed for %s: %s", worker_id, e)
 
     def _get_effective_domain(self, task: Task) -> str | None:
         """
@@ -716,7 +726,7 @@ Thumbs.db
             if branch in merged_branches:
                 task = self.get_task(task_id)
                 if task:
-                    logger.info(f"Syncing merged task {task_id} (branch {branch} merged)")
+                    logger.info("Syncing merged task %s (branch %s merged)", task_id, branch)
                     state.queue.pending.remove(task_id)
                     state.queue.done.append(task_id)
                     task.status = TaskStatus.DONE
@@ -730,7 +740,7 @@ Thumbs.db
             if branch in merged_branches:
                 task = self.get_task(task_id)
                 if task:
-                    logger.info(f"Syncing merged task {task_id} (branch {branch} merged)")
+                    logger.info("Syncing merged task %s (branch %s merged)", task_id, branch)
                     del state.queue.in_progress[task_id]
                     state.queue.done.append(task_id)
                     task.status = TaskStatus.DONE
@@ -740,7 +750,7 @@ Thumbs.db
 
         if synced > 0:
             self.state_machine.save_state()
-            logger.info(f"Synced {synced} merged tasks")
+            logger.info("Synced %d merged tasks", synced)
 
         return synced
 
@@ -779,37 +789,25 @@ Thumbs.db
         return self._spec_store
 
     def _load_tasks(self) -> None:
-        """Load tasks from SQLite (with migration from tasks.json if needed)"""
-        project_id = self.state_machine.state.project_id
+        """Load tasks from SQLite (with migration from tasks.json if needed).
 
-        # Migrate from tasks.json if SQLite is empty but tasks.json exists
-        tasks_file = self.c4_dir / "tasks.json"
-        if not self.task_store.exists(project_id) and tasks_file.exists():
-            count = self.task_store.migrate_from_json(project_id, tasks_file)
-            if count > 0:
-                # Backup original tasks.json
-                backup_path = self.c4_dir / "tasks.json.bak"
-                if not backup_path.exists():
-                    tasks_file.rename(backup_path)
-
-        # Load from SQLite
-        self._tasks = self.task_store.load_all(project_id)
+        Delegates to TaskOps.load_tasks().
+        """
+        self.task_ops.load_tasks()
 
     def _save_tasks(self) -> None:
-        """Save all tasks to SQLite"""
-        if self.state_machine is None:
-            return
-        project_id = self.state_machine.state.project_id
-        self.task_store.save_all(project_id, self._tasks)
+        """Save all tasks to SQLite.
+
+        Delegates to TaskOps.save_tasks().
+        """
+        self.task_ops.save_tasks()
 
     def _save_task(self, task: Task) -> None:
-        """Save a single task to SQLite (more efficient than save_all)"""
-        if self.state_machine is None:
-            return
-        project_id = self.state_machine.state.project_id
-        self.task_store.save(project_id, task)
-        # Also update in-memory cache
-        self._tasks[task.id] = task
+        """Save a single task to SQLite (more efficient than save_all).
+
+        Delegates to TaskOps.save_task().
+        """
+        self.task_ops.save_task(task)
 
     def get_task(self, task_id: str) -> Task | None:
         """Get a task by ID (from cache, falls back to SQLite)"""
@@ -900,7 +898,7 @@ Thumbs.db
                 self.state_machine._state = state
 
         except Exception as e:
-            logger.error(f"State sync failed: {e}")
+            logger.error("State sync failed: %s", e)
             error_tasks.append(str(e))
 
         return {"fixed": fixed_tasks, "errors": error_tasks}
@@ -921,7 +919,7 @@ Thumbs.db
         # Auto-sync state consistency on status check
         sync_result = self._sync_state_consistency()
         if sync_result["fixed"]:
-            logger.info(f"Auto-fixed {len(sync_result['fixed'])} inconsistent tasks")
+            logger.info("Auto-fixed %d inconsistent tasks", len(sync_result["fixed"]))
 
         # Re-load state and tasks to get latest (multi-worker sync)
         self.state_machine.load_state()
@@ -1154,11 +1152,19 @@ Thumbs.db
     ) -> TaskAssignment | None:
         """Request next task assignment for a worker.
 
+        Delegates to TaskOps.get_task().
+
         Args:
             worker_id: Unique worker identifier
             model_filter: Only return tasks with this model (sonnet, opus, haiku).
                 If None, returns any available task (default behavior).
         """
+        return self.task_ops.get_task(worker_id, model_filter)
+
+    def _c4_get_task_original(
+        self, worker_id: str, model_filter: str | None = None
+    ) -> TaskAssignment | None:
+        """Original c4_get_task implementation (kept for reference during migration)."""
         if self.state_machine is None:
             raise RuntimeError("C4 not initialized")
 
@@ -1473,10 +1479,27 @@ Thumbs.db
     ) -> SubmitResponse:
         """Report task completion with validation results.
 
+        Delegates to TaskOps.submit().
+
         For review tasks (TaskType.REVIEW), additional parameters:
         - review_result: "APPROVE" or "REQUEST_CHANGES"
         - review_comments: Comments for REQUEST_CHANGES (becomes DoD for next version)
         """
+        return self.task_ops.submit(
+            task_id, commit_sha, validation_results,
+            worker_id, review_result, review_comments
+        )
+
+    def _c4_submit_original(
+        self,
+        task_id: str,
+        commit_sha: str,
+        validation_results: list[dict],
+        worker_id: str | None = None,
+        review_result: str | None = None,
+        review_comments: str | None = None,
+    ) -> SubmitResponse:
+        """Original c4_submit implementation (kept for reference during migration)."""
         if self.state_machine is None:
             raise RuntimeError("C4 not initialized")
 
@@ -1818,6 +1841,8 @@ Thumbs.db
     ) -> dict[str, Any]:
         """Add a new task with optional dependencies.
 
+        Delegates to TaskOps.add_todo().
+
         Supports versioned task IDs for Review-as-Task workflow:
         - T-001 -> T-001-0 (auto-append version 0)
         - T-001-0 -> T-001-0 (keep as-is)
@@ -1833,6 +1858,22 @@ Thumbs.db
             priority: Higher priority tasks are assigned first (default: 0)
             model: Claude model for this task (sonnet, opus, haiku). Default: opus
         """
+        return self.task_ops.add_todo(
+            task_id, title, scope, dod, dependencies, domain, priority, model
+        )
+
+    def _c4_add_todo_original(
+        self,
+        task_id: str,
+        title: str,
+        scope: str | None,
+        dod: str,
+        dependencies: list[str] | None = None,
+        domain: str | None = None,
+        priority: int = 0,
+        model: str = "opus",
+    ) -> dict[str, Any]:
+        """Original c4_add_todo implementation (kept for reference during migration)."""
         if self.state_machine is None:
             raise RuntimeError("C4 not initialized")
 
@@ -2007,11 +2048,11 @@ Thumbs.db
                     f"({result.files_changed} files)"
                 )
             else:
-                logger.warning(f"Auto-commit failed for {task_id}: {result.message}")
+                logger.warning("Auto-commit failed for %s: %s", task_id, result.message)
 
         except Exception as e:
             # Don't block workflow on auto-commit errors
-            logger.error(f"Auto-commit error for {task_id}: {e}")
+            logger.error("Auto-commit error for %s: %s", task_id, e)
 
     def _get_completed_tasks(self) -> list[dict[str, str]]:
         """Get list of completed implementation tasks for PR body.
@@ -2044,7 +2085,7 @@ Thumbs.db
         """
         if not task.base_id:
             # Legacy task without base_id, skip review generation
-            logger.warning(f"Task {task.id} has no base_id, skipping review generation")
+            logger.warning("Task %s has no base_id, skipping review generation", task.id)
             return
 
         review_task_id = f"R-{task.base_id}-{task.version}"
@@ -2074,11 +2115,11 @@ Thumbs.db
         try:
             self.add_task(review_task)
             logger.info(
-                f"Generated review task {review_task_id} for {task.id} "
-                f"(priority={review_priority}, completed_by={worker_id})"
+                "Generated review task %s for %s (priority=%d, completed_by=%s)",
+                review_task_id, task.id, review_priority, worker_id
             )
         except Exception as e:
-            logger.error(f"Failed to generate review task for {task.id}: {e}")
+            logger.error("Failed to generate review task for %s: %s", task.id, e)
 
     def _handle_review_completion(
         self,
@@ -2100,7 +2141,7 @@ Thumbs.db
             None to continue with normal completion flow
         """
         if not task.base_id or not task.parent_id:
-            logger.warning(f"Review task {task.id} missing base_id or parent_id")
+            logger.warning("Review task %s missing base_id or parent_id", task.id)
             return None
 
         # Determine result based on comments if not explicitly provided
@@ -2114,8 +2155,8 @@ Thumbs.db
             # Mark parent implementation task as truly done
             # (it's already in done queue, just log the approval)
             logger.info(
-                f"Review {task.id} APPROVED by {worker_id}. "
-                f"Parent task {task.parent_id} confirmed complete."
+                "Review %s APPROVED by %s. Parent task %s confirmed complete.",
+                task.id, worker_id, task.parent_id
             )
 
             # Update review_decision on the task
@@ -2199,11 +2240,11 @@ Thumbs.db
             try:
                 self.add_task(new_task)
                 logger.info(
-                    f"Created revision task {new_task_id} from review {task.id}. "
-                    f"Version {next_version}/{self.config.max_revision}"
+                    "Created revision task %s from review %s. Version %d/%d",
+                    new_task_id, task.id, next_version, self.config.max_revision
                 )
             except Exception as e:
-                logger.error(f"Failed to create revision task {new_task_id}: {e}")
+                logger.error("Failed to create revision task %s: %s", new_task_id, e)
                 return SubmitResponse(
                     success=False,
                     next_action="fix_failures",
@@ -2267,18 +2308,18 @@ Thumbs.db
 
         if not matching_checkpoint:
             # No checkpoint config includes this task
-            logger.debug(f"No checkpoint config found for task {parent_task_id}")
+            logger.debug("No checkpoint config found for task %s", parent_task_id)
             return None
 
         # Check if CP task already exists
         cp_task_id = f"CP-{matching_checkpoint.id}"
         if self._task_exists(cp_task_id):
-            logger.debug(f"Checkpoint task {cp_task_id} already exists")
+            logger.debug("Checkpoint task %s already exists", cp_task_id)
             return None
 
         # Check if this checkpoint was already passed
         if matching_checkpoint.id in self.state_machine.state.passed_checkpoints:
-            logger.debug(f"Checkpoint {matching_checkpoint.id} already passed")
+            logger.debug("Checkpoint %s already passed", matching_checkpoint.id)
             return None
 
         # Check if all required tasks have their latest review approved
@@ -2387,7 +2428,7 @@ Thumbs.db
             )
             return cp_task
         except Exception as e:
-            logger.error(f"Failed to create checkpoint task {cp_task_id}: {e}")
+            logger.error("Failed to create checkpoint task %s: %s", cp_task_id, e)
             return None
 
     def _find_tasks_by_pattern(
@@ -2710,7 +2751,7 @@ Thumbs.db
             None to continue with normal completion flow
         """
         if not task.phase_id:
-            logger.warning(f"Checkpoint task {task.id} missing phase_id")
+            logger.warning("Checkpoint task %s missing phase_id", task.id)
             return None
 
         # Determine result based on comments if not explicitly provided
@@ -2772,7 +2813,7 @@ Thumbs.db
             for problem_task_id in problem_task_ids:
                 original_task = self.get_task(problem_task_id)
                 if not original_task:
-                    logger.warning(f"Problem task {problem_task_id} not found")
+                    logger.warning("Problem task %s not found", problem_task_id)
                     continue
 
                 # Create next version of the problem task
@@ -2822,7 +2863,7 @@ Thumbs.db
                         f"Created fix task {new_task_id} from checkpoint {task.id}"
                     )
                 except Exception as e:
-                    logger.error(f"Failed to create fix task {new_task_id}: {e}")
+                    logger.error("Failed to create fix task %s: %s", new_task_id, e)
 
             if created_tasks:
                 return SubmitResponse(
@@ -3011,7 +3052,7 @@ Thumbs.db
                             }
                             self._get_default_store().save(self.config.project_id, state)
                     except Exception as e:
-                        logger.warning(f"Failed to record PR result in state: {e}")
+                        logger.warning("Failed to record PR result in state: %s", e)
 
                     return {
                         "action": "pr",
@@ -3027,7 +3068,7 @@ Thumbs.db
                     }
 
             except Exception as e:
-                logger.error(f"PR creation error: {e}")
+                logger.error("PR creation error: %s", e)
                 return {
                     "action": "pr",
                     "status": "failed",
@@ -3144,7 +3185,7 @@ Thumbs.db
                     # Perform completion action (merge, pr, or manual)
                     completion_result = self._perform_completion_action()
                     if completion_result:
-                        logger.info(f"Plan completed: {completion_result}")
+                        logger.info("Plan completed: %s", completion_result)
                 else:
                     self.state_machine.transition("approve")
                 state.metrics.checkpoints_passed += 1
@@ -3203,7 +3244,8 @@ Thumbs.db
     ) -> dict[str, Any]:
         """
         Mark a task as blocked after max retry attempts.
-        Adds the task to repair queue for supervisor guidance.
+
+        Delegates to TaskOps.mark_blocked().
 
         Args:
             task_id: ID of the blocked task
@@ -3215,6 +3257,19 @@ Thumbs.db
         Returns:
             Dictionary with success status and message
         """
+        return self.task_ops.mark_blocked(
+            task_id, worker_id, failure_signature, attempts, last_error
+        )
+
+    def _c4_mark_blocked_original(
+        self,
+        task_id: str,
+        worker_id: str,
+        failure_signature: str,
+        attempts: int,
+        last_error: str = "",
+    ) -> dict[str, Any]:
+        """Original c4_mark_blocked implementation (kept for reference during migration)."""
         if self.state_machine is None:
             raise RuntimeError("C4 not initialized")
 
@@ -5087,7 +5142,7 @@ Thumbs.db
                 try:
                     self._lsp_server.start_tcp("localhost", port)
                 except Exception as e:
-                    logger.error(f"LSP server error: {e}")
+                    logger.error("LSP server error: %s", e)
 
             self._lsp_thread = threading.Thread(
                 target=run_server,
@@ -5096,7 +5151,7 @@ Thumbs.db
             )
             self._lsp_thread.start()
 
-            logger.info(f"LSP server started on port {port}")
+            logger.info("LSP server started on port %d", port)
             return {
                 "success": True,
                 "port": port,
@@ -5109,7 +5164,7 @@ Thumbs.db
                 "error": f"Failed to import LSP server: {e}",
             }
         except Exception as e:
-            logger.error(f"Failed to start LSP server: {e}")
+            logger.error("Failed to start LSP server: %s", e)
             return {
                 "success": False,
                 "error": str(e),
@@ -5147,7 +5202,7 @@ Thumbs.db
             }
 
         except Exception as e:
-            logger.error(f"Failed to stop LSP server: {e}")
+            logger.error("Failed to stop LSP server: %s", e)
             return {
                 "success": False,
                 "error": str(e),
