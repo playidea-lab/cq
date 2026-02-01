@@ -70,6 +70,88 @@ def _get_original_cwd() -> Path:
 
 
 # =============================================================================
+# Platform Shortcuts
+# =============================================================================
+
+
+@c4_app.command()
+def gemini(
+    ctx: typer.Context,
+    init_project: bool = typer.Option(
+        True,
+        "--init/--no-init",
+        help="Auto-initialize project if needed",
+    ),
+):
+    """Start Gemini CLI with C4 integration (One-step setup).
+
+    1. Installs C4 global commands to ~/.gemini/commands/
+    2. Initializes C4 in the current directory if needed
+    3. Launches Gemini CLI
+    """
+    project_path = Path(os.environ.get("C4_PROJECT_ROOT") or str(_get_original_cwd())).resolve()
+    
+    # 1. Install Global Commands
+    try:
+        from .commands.gemini_installer import install_gemini_commands
+        
+        # Check if we should be verbose (only if installing)
+        results = install_gemini_commands()
+        installed = sum(1 for success, msg in results.values() if success and "Installed" in msg)
+        
+        if installed > 0:
+            console.print(f"[green]✓[/green] Installed {installed} C4 commands to ~/.gemini/commands/")
+    except Exception as e:
+        console.print(f"[yellow]Warning:[/yellow] Failed to check Gemini commands: {e}")
+
+    # 2. Auto-initialize Project
+    c4_dir = project_path / ".c4"
+    if init_project and not c4_dir.exists():
+        console.print(f"[yellow]Initializing C4 in {project_path}...[/yellow]")
+        
+        # Temporarily set env for init
+        old_env = os.environ.get("C4_PROJECT_ROOT")
+        os.environ["C4_PROJECT_ROOT"] = str(project_path)
+
+        try:
+            daemon = C4Daemon()
+            daemon.initialize()
+            _create_mcp_config(project_path, with_lsp=True, with_daemon=True)
+            _create_project_settings(project_path)
+            install_all_hooks()
+            
+            # Ensure platform config is set to gemini
+            set_platform_config("gemini", project_path=project_path)
+            
+            console.print("[green]C4 initialized for Gemini![/green]")
+        except Exception as e:
+            console.print(f"[red]Initialization failed:[/red] {e}")
+            if not typer.confirm("Continue launch anyway?"):
+                raise typer.Exit(1)
+        finally:
+            if old_env is not None:
+                os.environ["C4_PROJECT_ROOT"] = old_env
+            elif "C4_PROJECT_ROOT" in os.environ:
+                del os.environ["C4_PROJECT_ROOT"]
+
+    # 3. Launch Gemini
+    console.print("[blue]Starting Gemini...[/blue]")
+    os.chdir(project_path)
+    
+    try:
+        # Check if gemini is installed
+        subprocess.run(["gemini", "--version"], capture_output=True, check=True)
+        subprocess.run(["gemini", "."], check=False)
+    except FileNotFoundError:
+        console.print("[red]Error:[/red] 'gemini' command not found")
+        console.print("Please install it via: npm install -g @google/gemini-cli")
+        raise typer.Exit(1)
+    except subprocess.CalledProcessError:
+        console.print("[red]Error:[/red] Failed to check Gemini version")
+        raise typer.Exit(1)
+
+
+# =============================================================================
 # c4 Smart Entry Point (no subcommand)
 # =============================================================================
 
