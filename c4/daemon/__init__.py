@@ -6,6 +6,7 @@ processed through the unified task queue as CP-XXX and RPR-XXX task types.
 """
 
 from .c4_daemon import C4Daemon, _get_workflow_guide, _use_graph_router
+from .code_ops import CodeOps
 from .events import EventBus
 from .git_ops import GitOperations, GitResult
 from .health import (
@@ -41,6 +42,7 @@ __all__ = [
     "C4Daemon",
     "_get_workflow_guide",
     "_use_graph_router",
+    "CodeOps",
     "TaskOps",
     "DaemonInfo",
     "DaemonLifecycle",
