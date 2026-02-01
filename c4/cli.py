@@ -220,7 +220,7 @@ def start(
         console.print("[green]Starting C4 daemon...[/green]")
 
         # Start as subprocess
-        cmd = [sys.executable, "-m", "c4d.mcp_server"]
+        cmd = [sys.executable, "-m", "c4.mcp_server"]
         env = os.environ.copy()
         env["C4_PROJECT_ROOT"] = str(project)
 
