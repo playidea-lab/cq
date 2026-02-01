@@ -1,5 +1,8 @@
 """C4D Validation Runner - Execute and capture validation results"""
 
+from __future__ import annotations
+
+import asyncio
 import json
 import shlex
 import subprocess
@@ -145,19 +148,28 @@ class ValidationRunner:
         return results
 
     def run_validations(
-        self, names: list[str], fail_fast: bool = True, timeout: int = 300
+        self,
+        names: list[str],
+        fail_fast: bool = True,
+        timeout: int = 300,
+        parallel: bool = False,
     ) -> list[ValidationRun]:
         """
         Run specific validations.
 
         Args:
             names: List of validation names to run
-            fail_fast: Stop on first failure
+            fail_fast: Stop on first failure (ignored when parallel=True)
             timeout: Timeout per validation in seconds
+            parallel: Run validations in parallel using asyncio
 
         Returns:
             List of ValidationRun results
         """
+        if parallel:
+            return asyncio.run(self._run_validations_parallel(names, timeout))
+
+        # Sequential mode (backwards compatible)
         results = []
 
         for name in names:
@@ -168,6 +180,88 @@ class ValidationRunner:
                 break
 
         return results
+
+    async def _run_validations_parallel(
+        self, names: list[str], timeout: int = 300
+    ) -> list[ValidationRun]:
+        """
+        Run validations in parallel using asyncio.
+
+        Args:
+            names: List of validation names to run
+            timeout: Timeout per validation in seconds
+
+        Returns:
+            List of ValidationRun results (in same order as names)
+        """
+        tasks = [
+            self._run_validation_async(name, timeout) for name in names
+        ]
+        results = await asyncio.gather(*tasks)
+        return list(results)
+
+    async def _run_validation_async(self, name: str, timeout: int = 300) -> ValidationRun:
+        """
+        Run a single validation asynchronously.
+
+        Args:
+            name: Validation name (e.g., "lint", "unit")
+            timeout: Timeout in seconds
+
+        Returns:
+            ValidationRun with results
+        """
+        commands = self.config.validation.commands
+        if name not in commands:
+            raise ValueError(f"Unknown validation: {name}. Available: {list(commands.keys())}")
+
+        command = commands[name]
+        start = time.time()
+
+        try:
+            args = shlex.split(command)
+            proc = await asyncio.create_subprocess_exec(
+                *args,
+                cwd=self.root,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+
+            try:
+                stdout_bytes, stderr_bytes = await asyncio.wait_for(
+                    proc.communicate(), timeout=timeout
+                )
+                exit_code = proc.returncode or 0
+                stdout = stdout_bytes.decode("utf-8", errors="replace")
+                stderr = stderr_bytes.decode("utf-8", errors="replace")
+            except asyncio.TimeoutError:
+                proc.kill()
+                await proc.wait()
+                exit_code = -1
+                stdout = ""
+                stderr = f"Timeout after {timeout}s"
+
+        except Exception as e:
+            exit_code = -2
+            stdout = ""
+            stderr = str(e)
+
+        duration_ms = int((time.time() - start) * 1000)
+
+        run = ValidationRun(
+            name=name,
+            command=command,
+            exit_code=exit_code,
+            duration_ms=duration_ms,
+            stdout=stdout,
+            stderr=stderr,
+            timestamp=datetime.now(),
+        )
+
+        # Save run to logs
+        self._save_run(run)
+
+        return run
 
     def _save_run(self, run: ValidationRun) -> Path:
         """Save validation run to file"""

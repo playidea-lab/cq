@@ -298,6 +298,97 @@ class TestValidationRunner:
         assert results["unit"] == "pass"
 
 
+class TestValidationRunnerParallel:
+    """Test ValidationRunner parallel execution"""
+
+    @pytest.mark.asyncio
+    @patch("asyncio.create_subprocess_exec")
+    async def test_run_validation_async_success(self, mock_exec, runner):
+        """Test async validation runs successfully"""
+        mock_proc = MagicMock()
+        mock_proc.communicate = MagicMock(
+            return_value=(b"lint ok", b"")
+        )
+        mock_proc.returncode = 0
+        mock_exec.return_value = mock_proc
+
+        # Make communicate a coroutine
+        async def mock_communicate():
+            return (b"lint ok", b"")
+
+        mock_proc.communicate = mock_communicate
+
+        result = await runner._run_validation_async("lint")
+
+        assert result.name == "lint"
+        assert result.exit_code == 0
+        assert result.passed is True
+        assert result.stdout == "lint ok"
+
+    @pytest.mark.asyncio
+    @patch("asyncio.create_subprocess_exec")
+    async def test_run_validation_async_failure(self, mock_exec, runner):
+        """Test async validation failure"""
+        mock_proc = MagicMock()
+        mock_proc.returncode = 1
+
+        async def mock_communicate():
+            return (b"", b"lint error")
+
+        mock_proc.communicate = mock_communicate
+        mock_exec.return_value = mock_proc
+
+        result = await runner._run_validation_async("lint")
+
+        assert result.exit_code == 1
+        assert result.passed is False
+        assert "lint error" in result.stderr
+
+    @pytest.mark.asyncio
+    @patch("asyncio.create_subprocess_exec")
+    async def test_run_validations_parallel(self, mock_exec, runner):
+        """Test parallel validation execution"""
+        mock_proc = MagicMock()
+        mock_proc.returncode = 0
+
+        async def mock_communicate():
+            return (b"ok", b"")
+
+        mock_proc.communicate = mock_communicate
+        mock_exec.return_value = mock_proc
+
+        results = await runner._run_validations_parallel(["lint", "unit"])
+
+        assert len(results) == 2
+        assert results[0].name == "lint"
+        assert results[1].name == "unit"
+        assert all(r.passed for r in results)
+
+    @patch("asyncio.run")
+    def test_run_validations_parallel_flag(self, mock_asyncio_run, runner):
+        """Test that parallel=True triggers async execution"""
+        mock_asyncio_run.return_value = []
+
+        runner.run_validations(["lint", "unit"], parallel=True)
+
+        mock_asyncio_run.assert_called_once()
+
+    @patch("subprocess.run")
+    def test_run_validations_sequential_default(self, mock_run, runner):
+        """Test that sequential mode is default (backwards compatibility)"""
+        mock_run.return_value = MagicMock(
+            returncode=0,
+            stdout="ok",
+            stderr="",
+        )
+
+        results = runner.run_validations(["lint", "unit"])
+
+        # Sequential mode uses subprocess.run
+        assert mock_run.call_count == 2
+        assert len(results) == 2
+
+
 class TestParseTestOutput:
     """Test parse_test_output function"""
 
