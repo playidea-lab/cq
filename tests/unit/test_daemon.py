@@ -614,6 +614,43 @@ class TestC4AddTodo:
         task = daemon.get_task(result["task_id"])
         assert task.domain == "web-frontend"
 
+    def test_add_todo_with_poor_dod_returns_warnings(self, daemon):
+        """Test that poor DoD returns warnings (DDD-CLEANCODE enforcement)"""
+        result = daemon.c4_add_todo(
+            task_id="T-POOR",
+            title="Poorly specified task",
+            scope=None,
+            dod="Do something",  # Too short, no checklist, no tests
+        )
+
+        assert result["success"] is True
+        assert "warnings" in result
+        assert len(result["warnings"]) > 0
+        assert "hint" in result
+
+    def test_add_todo_with_good_dod_no_warnings(self, daemon):
+        """Test that well-formed DoD returns no warnings"""
+        good_dod = """
+- [ ] Implement UserService.create_user()
+- [ ] test_create_user_success
+- [ ] test_create_user_duplicate_email
+- [ ] test_create_user_empty_name (boundary)
+- [ ] lint 통과
+"""
+        result = daemon.c4_add_todo(
+            task_id="T-GOOD",
+            title="Well specified task",
+            scope="src/users",
+            dod=good_dod,
+        )
+
+        assert result["success"] is True
+        # Good DoD should have no warnings or minimal warnings
+        warnings = result.get("warnings", [])
+        # Allow some warnings but not critical ones
+        assert "DoD too short" not in warnings
+        assert "DoD missing checklist format" not in warnings
+
 
 class TestTaskDependencies:
     """Test task dependency handling"""

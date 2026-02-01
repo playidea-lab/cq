@@ -1865,12 +1865,56 @@ Thumbs.db
         # Plan file sync: Regenerate plan file with new task
         self._sync_to_plan_file()
 
-        return {
+        # Validate DoD quality (DDD-CLEANCODE requirement)
+        warnings = self._validate_dod_quality(dod)
+
+        result: dict[str, Any] = {
             "success": True,
             "task_id": normalized_id,
             "dependencies": task.dependencies,
             "model": task.model,
         }
+
+        if warnings:
+            result["warnings"] = warnings
+            result["hint"] = (
+                "Use Worker Packet format for better task specification. "
+                "See docs/PLAN-DDD-CLEANCODE-guide.md"
+            )
+
+        return result
+
+    def _validate_dod_quality(self, dod: str) -> list[str]:
+        """Validate DoD quality according to DDD-CLEANCODE requirements.
+
+        Returns:
+            List of warning messages (empty if DoD is well-formed)
+        """
+        from c4.utils.dod_parser import parse_dod, validate_dod_requirements
+
+        warnings: list[str] = []
+
+        # Basic checks
+        if len(dod.strip()) < 20:
+            warnings.append("DoD too short (< 20 chars)")
+
+        if "- [ ]" not in dod and "- [x]" not in dod:
+            warnings.append("DoD missing checklist format (use '- [ ] item')")
+
+        # Parse and validate
+        items = parse_dod(dod)
+        if items:
+            errors = validate_dod_requirements(items)
+            warnings.extend(errors)
+        else:
+            warnings.append("DoD could not be parsed into checklist items")
+
+        # Check for test requirements
+        dod_lower = dod.lower()
+        if "test" not in dod_lower and "테스트" not in dod_lower:
+            warnings.append("DoD missing test requirements")
+
+        return warnings
 
     def _parse_task_id(self, task_id: str) -> tuple[str, str, int, TaskType]:
         """Parse task ID and extract base_id, version, and type.
