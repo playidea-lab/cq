@@ -1033,8 +1033,450 @@ Thumbs.db
 
         return GitResult(True, f"Created task branch {task_branch} from {work_branch}")
 
+    # =========================================================================
+    # Task Assignment Helpers (c4_get_task decomposition - Phase 1)
+    # =========================================================================
+
+    def _reset_task_to_pending(
+        self, task: Task, task_id: str, state: C4State, reason: str = "reset"
+    ) -> None:
+        """Reset a task from in_progress back to pending queue.
+
+        Used when task assignment becomes invalid (e.g., scope lock expired,
+        state inconsistency, or lock refresh failure).
+
+        Args:
+            task: The task object to reset
+            task_id: Task identifier
+            state: Current project state
+            reason: Reason for reset (for logging)
+        """
+        if task_id in state.queue.in_progress:
+            del state.queue.in_progress[task_id]
+        if task_id not in state.queue.pending:
+            state.queue.pending.insert(0, task_id)  # Add to front of queue
+        task.status = TaskStatus.PENDING
+        task.assigned_to = None
+        self._save_task(task)
+        if task.scope:
+            self.lock_store.release_scope_lock(state.project_id, task.scope)
+        self.state_machine.save_state()
+        logger.debug(f"Task {task_id} reset to pending: {reason}")
+
+    def _get_or_create_worktree(self, worker_id: str, branch: str) -> str | None:
+        """Get existing worktree or create a new one for the worker.
+
+        Args:
+            worker_id: Worker identifier
+            branch: Branch name for the worktree
+
+        Returns:
+            Worktree path as string, or None if worktree creation failed
+        """
+        git_ops = GitOperations(self.root)
+        if not git_ops.is_git_repo():
+            return None
+
+        wt_path = git_ops.get_worktree_path(worker_id)
+        if wt_path.exists():
+            return str(wt_path)
+
+        # Try to create worktree
+        worktree_result = git_ops.create_worktree(
+            worker_id=worker_id,
+            branch=branch,
+        )
+        if worktree_result.success:
+            return str(wt_path)
+
+        return None
+
+    def _try_resume_task(
+        self, task: Task, task_id: str, worker_id: str, state: C4State
+    ) -> TaskAssignment | None:
+        """Try to resume an in-progress task for the given worker.
+
+        Handles scope lock validation, lock refresh, and worktree setup.
+
+        Args:
+            task: The task to resume
+            task_id: Task identifier
+            worker_id: Worker requesting the task
+            state: Current project state
+
+        Returns:
+            TaskAssignment if resume successful, None if task should be reassigned
+        """
+        # Verify scope lock is still valid for this worker
+        if task.scope:
+            lock_owner = self.lock_store.get_lock_owner(state.project_id, task.scope)
+            if lock_owner is None or lock_owner != worker_id:
+                # Lock expired or taken by another worker
+                self._reset_task_to_pending(task, task_id, state, "scope lock invalid")
+                return None  # Let another worker pick up the task
+        else:
+            # For scope=None tasks, verify task state consistency
+            if task.assigned_to != worker_id or task.status != TaskStatus.IN_PROGRESS:
+                self._reset_task_to_pending(task, task_id, state, "state inconsistency")
+                return None
+
+        # Re-sync worker state
+        self.worker_manager.set_busy(worker_id, task_id, task.scope, task.branch)
+
+        # Refresh lock TTL for resumed work
+        if task.scope:
+            if not self.lock_store.refresh_scope_lock(
+                state.project_id, task.scope, worker_id, self.config.scope_lock_ttl_sec
+            ):
+                # Lock refresh failed
+                self._reset_task_to_pending(task, task_id, state, "lock refresh failed")
+                return None
+
+        # Setup worktree for resumed task
+        worktree_path = self._get_or_create_worktree(worker_id, task.branch or "")
+
+        # Get agent routing info
+        agent_routing = self._get_agent_routing(task)
+
+        return TaskAssignment(
+            task_id=task_id,
+            title=task.title,
+            scope=task.scope,
+            dod=task.dod,
+            validations=task.validations,
+            branch=task.branch or "",
+            worktree_path=worktree_path,
+            **agent_routing,
+        )
+
+    def _is_task_eligible_for_worker(
+        self, task: Task, worker_id: str, state: C4State, pending_tasks: list[Task]
+    ) -> bool:
+        """Check if a task can be assigned to the given worker.
+
+        Checks dependencies, checkpoint requirements, and peer review rules.
+
+        Args:
+            task: The task to check
+            worker_id: Worker requesting assignment
+            state: Current project state
+            pending_tasks: All pending tasks (for checkpoint deferral check)
+
+        Returns:
+            True if task can be assigned, False otherwise
+        """
+        task_id = task.id
+
+        # Check dependencies
+        if not all(dep_id in state.queue.done for dep_id in task.dependencies):
+            return False
+
+        # Unified Queue: CP tasks may require multiple completions
+        if task.type == TaskType.CHECKPOINT:
+            required = task.required_completions
+            current = task.completion_count
+
+            # Defer CP task if not at final completion round and other work exists
+            if current < required - 1:
+                has_other_tasks = any(
+                    t.type != TaskType.CHECKPOINT
+                    and all(d in state.queue.done for d in t.dependencies)
+                    for t in pending_tasks
+                    if t.id != task_id
+                )
+                if has_other_tasks:
+                    return False
+
+            # Check if same worker already completed this CP task
+            if self.config.task_system.checkpoint_require_different_workers:
+                if worker_id in task.completed_by_sessions:
+                    return False
+
+        # Peer Review: exclude original worker from repair tasks
+        original_worker = self._get_original_worker_for_repair(task_id)
+        if original_worker and original_worker == worker_id:
+            return False
+
+        return True
+
+    def _determine_task_branch(self, task: Task, task_id: str) -> tuple[str, bool]:
+        """Determine the branch name for a task.
+
+        Review tasks use their parent's branch, other tasks get new branches.
+
+        Args:
+            task: The task to determine branch for
+            task_id: Task identifier
+
+        Returns:
+            Tuple of (branch_name, is_review_using_parent_branch)
+        """
+        if task.type == TaskType.REVIEW and task.parent_id:
+            parent_task = self.get_task(task.parent_id)
+            if parent_task and parent_task.branch:
+                return parent_task.branch, True
+            # Fallback: compute parent branch name from parent_id
+            return f"{self.config.work_branch_prefix}{task.parent_id}", True
+
+        return f"{self.config.work_branch_prefix}{task_id}", False
+
+    def _assign_task_atomically(
+        self, task: Task, task_id: str, worker_id: str, task_branch: str, state: C4State
+    ) -> bool:
+        """Atomically assign a task to a worker.
+
+        Uses atomic_modify to prevent race conditions with other workers.
+
+        Args:
+            task: The task to assign
+            task_id: Task identifier
+            worker_id: Worker to assign to
+            task_branch: Branch for the task
+            state: Current project state
+
+        Returns:
+            True if assignment successful, False if task was taken by another worker
+        """
+        store = self.state_machine.store
+        project_id = state.project_id
+        assigned = False
+
+        with store.atomic_modify(project_id) as mod_state:
+            if task_id in mod_state.queue.pending:
+                # Assign task (ATOMIC)
+                mod_state.queue.pending.remove(task_id)
+                mod_state.queue.in_progress[task_id] = worker_id
+
+                # Ensure worker exists in state
+                if worker_id not in mod_state.workers:
+                    from c4.models import WorkerInfo
+
+                    now = datetime.now()
+                    mod_state.workers[worker_id] = WorkerInfo(
+                        worker_id=worker_id,
+                        state="busy",
+                        task_id=task_id,
+                        scope=task.scope,
+                        branch=task_branch,
+                        joined_at=now,
+                        last_seen=now,
+                    )
+                else:
+                    # Update existing worker state
+                    mod_state.workers[worker_id].state = "busy"
+                    mod_state.workers[worker_id].task_id = task_id
+                    mod_state.workers[worker_id].scope = task.scope
+                    mod_state.workers[worker_id].branch = task_branch
+                    mod_state.workers[worker_id].last_seen = datetime.now()
+
+                assigned = True
+
+            # Update cached state
+            self.state_machine._state = mod_state
+
+        return assigned
+
+    def _setup_worktree_for_new_task(
+        self, worker_id: str, task_branch: str, is_review_using_parent_branch: bool
+    ) -> str | None:
+        """Setup worktree for a newly assigned task.
+
+        Creates a new worktree with the task branch, or reuses existing
+        worktree for review tasks.
+
+        Args:
+            worker_id: Worker identifier
+            task_branch: Branch name for the task
+            is_review_using_parent_branch: True if this is a review task using parent branch
+
+        Returns:
+            Worktree path as string, or None if setup failed
+        """
+        git_ops = GitOperations(self.root)
+        if not git_ops.is_git_repo():
+            return None
+
+        worktree_path: str | None = None
+        work_branch = self.config.get_work_branch()
+
+        if not is_review_using_parent_branch:
+            # Create worktree with new branch from work_branch
+            worktree_result = git_ops.create_worktree(
+                worker_id=worker_id,
+                branch=task_branch,
+                base_branch=work_branch,
+            )
+            if worktree_result.success:
+                wt_path = git_ops.get_worktree_path(worker_id)
+                worktree_path = str(wt_path)
+                logger.info(f"Created worktree for {worker_id} at {worktree_path}")
+            else:
+                # Fallback: create branch only (legacy behavior)
+                logger.warning(
+                    f"Worktree creation failed for {worker_id}: "
+                    f"{worktree_result.message}. Using branch only."
+                )
+                branch_result = self._create_task_branch_from_work(
+                    git_ops, task_branch, work_branch
+                )
+                if not branch_result.success:
+                    logger.warning(
+                        f"Failed to create task branch {task_branch}: "
+                        f"{branch_result.message}"
+                    )
+        else:
+            # Review task: reuse worker's existing worktree if exists
+            wt_path = git_ops.get_worktree_path(worker_id)
+            if wt_path.exists():
+                worktree_path = str(wt_path)
+                logger.info(f"Review task using worktree {worktree_path}")
+            else:
+                logger.info(f"Review task using parent branch {task_branch} (no worktree)")
+
+        return worktree_path
+
+    def _try_resume_in_progress_task(
+        self, worker_id: str, state: C4State
+    ) -> tuple[TaskAssignment | None, bool]:
+        """Try to resume an in-progress task for the worker.
+
+        Checks if the worker has any tasks in the in_progress queue and
+        attempts to resume them (e.g., after crash/restart).
+
+        Args:
+            worker_id: Worker identifier
+            state: Current project state
+
+        Returns:
+            Tuple of (TaskAssignment or None, should_continue_to_pending):
+            - (TaskAssignment, True): Successfully resumed task
+            - (None, True): No in-progress task for this worker, can continue to pending
+            - (None, False): Task was reset, should not continue (let other workers handle it)
+        """
+        for task_id, assigned_worker in list(state.queue.in_progress.items()):
+            if assigned_worker != worker_id:
+                continue
+
+            task = self.get_task(task_id)
+            if not task:
+                continue
+
+            result = self._try_resume_task(task, task_id, worker_id, state)
+            if result is not None:
+                return result, True
+            # If result is None, the task was reset - don't continue to pending
+            # Let another worker pick it up
+            return None, False
+
+        # No in-progress task found for this worker
+        return None, True
+
+    def _find_and_assign_pending_task(
+        self, worker_id: str, state: C4State
+    ) -> TaskAssignment | None:
+        """Find and assign a task from the pending queue.
+
+        Iterates through pending tasks (sorted by priority) and tries to
+        assign the first eligible one to the worker.
+
+        Args:
+            worker_id: Worker identifier
+            state: Current project state
+
+        Returns:
+            TaskAssignment if task assigned, None if no eligible tasks
+        """
+        project_id = state.project_id
+        ttl = self.config.scope_lock_ttl_sec
+
+        # Get all pending tasks and sort by priority (descending)
+        pending_tasks: list[Task] = []
+        for task_id in state.queue.pending:
+            task = self.get_task(task_id)
+            if task:
+                pending_tasks.append(task)
+        pending_tasks.sort(key=lambda t: t.priority, reverse=True)
+
+        for task in pending_tasks:
+            task_id = task.id
+
+            # Check if task is eligible for this worker
+            if not self._is_task_eligible_for_worker(task, worker_id, state, pending_tasks):
+                continue
+
+            # Try to acquire scope lock ATOMICALLY using SQLite
+            if task.scope:
+                lock_acquired = self.lock_store.acquire_scope_lock(
+                    project_id, task.scope, worker_id, ttl
+                )
+                if not lock_acquired:
+                    continue  # Another worker has the lock
+
+            # Determine branch name
+            task_branch, is_review_using_parent_branch = self._determine_task_branch(
+                task, task_id
+            )
+
+            # Atomically assign task to worker
+            if not self._assign_task_atomically(
+                task, task_id, worker_id, task_branch, state
+            ):
+                # Task was assigned by another worker - release our lock
+                if task.scope:
+                    self.lock_store.release_scope_lock(project_id, task.scope)
+                continue
+
+            # Update task in SQLite
+            task.status = TaskStatus.IN_PROGRESS
+            task.assigned_to = worker_id
+            task.branch = task_branch
+            self._save_task(task)
+
+            # Setup worktree for isolated multi-worker support
+            worktree_path = self._setup_worktree_for_new_task(
+                worker_id, task_branch, is_review_using_parent_branch
+            )
+
+            # Emit event
+            self.state_machine.emit_event(
+                EventType.TASK_ASSIGNED,
+                "c4d",
+                {
+                    "task_id": task_id,
+                    "worker_id": worker_id,
+                    "scope": task.scope,
+                    "worktree_path": worktree_path,
+                },
+            )
+
+            # Get agent routing info
+            agent_routing = self._get_agent_routing(task)
+
+            return TaskAssignment(
+                task_id=task_id,
+                title=task.title,
+                scope=task.scope,
+                dod=task.dod,
+                validations=task.validations,
+                branch=task_branch,
+                worktree_path=worktree_path,
+                **agent_routing,
+            )
+
+        return None
+
     def c4_get_task(self, worker_id: str) -> TaskAssignment | None:
-        """Request next task assignment for a worker"""
+        """Request next task assignment for a worker.
+
+        Handles both resuming in-progress tasks and assigning new tasks.
+        Uses atomic operations to prevent race conditions between workers.
+
+        Args:
+            worker_id: Unique identifier for the worker requesting a task
+
+        Returns:
+            TaskAssignment with task details and worktree info, or None if no tasks available
+        """
         if self.state_machine is None:
             raise RuntimeError("C4 not initialized")
 
@@ -1058,297 +1500,16 @@ Thumbs.db
         if not self.worker_manager.is_registered(worker_id):
             self.worker_manager.register(worker_id)
 
-        # Check if worker already has an in_progress task (resume after crash/restart)
-        for task_id, assigned_worker in list(state.queue.in_progress.items()):  # list() to allow mutation
-            if assigned_worker == worker_id:
-                task = self.get_task(task_id)
-                if task:
-                    # Verify scope lock is still valid for this worker
-                    if task.scope:
-                        # Check SQLite lock store (authoritative) for lock status
-                        lock_owner = self.lock_store.get_lock_owner(
-                            state.project_id, task.scope
-                        )
-                        if lock_owner is None or lock_owner != worker_id:
-                            # Lock expired or taken by another worker - cannot resume
-                            # Move task back to pending for reassignment by OTHER workers
-                            del state.queue.in_progress[task_id]
-                            state.queue.pending.insert(0, task_id)  # Add to front of queue
-                            task.status = TaskStatus.PENDING
-                            task.assigned_to = None
-                            self._save_task(task)
-                            # Also release SQLite lock if we owned it
-                            self.lock_store.release_scope_lock(state.project_id, task.scope)
-                            self.state_machine.save_state()
-                            # Return None - let another worker pick up the task
-                            # (don't try to re-acquire as same worker)
-                            return None
-                    else:
-                        # For scope=None tasks, verify task state consistency
-                        if task.assigned_to != worker_id or task.status != TaskStatus.IN_PROGRESS:
-                            # Task state inconsistent with queue - reset for reassignment
-                            del state.queue.in_progress[task_id]
-                            state.queue.pending.insert(0, task_id)
-                            task.status = TaskStatus.PENDING
-                            task.assigned_to = None
-                            self._save_task(task)
-                            self.state_machine.save_state()
-                            continue
+        # Phase 1: Try to resume an in-progress task for this worker
+        result, should_continue = self._try_resume_in_progress_task(worker_id, state)
+        if result is not None:
+            return result
+        if not should_continue:
+            # Task was reset due to lock issue - don't continue to pending
+            return None
 
-                    # Re-sync worker state
-                    self.worker_manager.set_busy(
-                        worker_id, task_id, task.scope, task.branch
-                    )
-
-                    # Refresh lock TTL for resumed work (with result check)
-                    if task.scope:
-                        if not self.lock_store.refresh_scope_lock(
-                            state.project_id, task.scope, worker_id, self.config.scope_lock_ttl_sec
-                        ):
-                            # Lock refresh failed - task may have been taken
-                            # Move back to pending for safe reassignment
-                            del state.queue.in_progress[task_id]
-                            state.queue.pending.insert(0, task_id)
-                            task.status = TaskStatus.PENDING
-                            task.assigned_to = None
-                            self._save_task(task)
-                            self.state_machine.save_state()
-                            continue
-
-                    # Get agent routing info (Phase 4)
-                    agent_routing = self._get_agent_routing(task)
-
-                    # Check for existing worktree for resumed task
-                    git_ops = GitOperations(self.root)
-                    worktree_path: str | None = None
-                    if git_ops.is_git_repo():
-                        wt_path = git_ops.get_worktree_path(worker_id)
-                        if wt_path.exists():
-                            worktree_path = str(wt_path)
-                        else:
-                            # Try to create worktree for resumed task
-                            worktree_result = git_ops.create_worktree(
-                                worker_id=worker_id,
-                                branch=task.branch or "",
-                            )
-                            if worktree_result.success:
-                                worktree_path = str(wt_path)
-
-                    return TaskAssignment(
-                        task_id=task_id,
-                        title=task.title,
-                        scope=task.scope,
-                        dod=task.dod,
-                        validations=task.validations,
-                        branch=task.branch or "",
-                        worktree_path=worktree_path,
-                        **agent_routing,
-                    )
-
-        # Find available task from pending (sorted by priority, highest first)
-        project_id = state.project_id
-        ttl = self.config.scope_lock_ttl_sec
-
-        # Get all pending tasks and sort by priority (descending)
-        pending_tasks = []
-        for task_id in state.queue.pending:
-            task = self.get_task(task_id)
-            if task:
-                pending_tasks.append(task)
-        pending_tasks.sort(key=lambda t: t.priority, reverse=True)
-
-        for task in pending_tasks:
-            task_id = task.id
-
-            # Check dependencies first (non-locking check)
-            deps_met = all(
-                dep_id in state.queue.done for dep_id in task.dependencies
-            )
-            if not deps_met:
-                continue
-
-            # Unified Queue: CP tasks require multiple completions
-            # Skip if not ready for final completion (let other tasks go first)
-            if task.type == TaskType.CHECKPOINT:
-                required = task.required_completions
-                current = task.completion_count
-
-                # If not at final completion round, defer to other tasks
-                if current < required - 1:
-                    # Still need more completions - but only assign if no other work
-                    # Check if there are other non-CP tasks available
-                    has_other_tasks = any(
-                        t.type != TaskType.CHECKPOINT
-                        and all(d in state.queue.done for d in t.dependencies)
-                        for t in pending_tasks
-                        if t.id != task_id
-                    )
-                    if has_other_tasks:
-                        continue  # Defer CP task, work on other tasks first
-
-                # Check if same worker already completed this CP task
-                if self.config.task_system.checkpoint_require_different_workers:
-                    if worker_id in task.completed_by_sessions:
-                        continue  # Same worker can't complete twice
-
-            # Peer Review: exclude original worker from repair tasks
-            # This ensures repairs are reviewed by a different worker
-            original_worker = self._get_original_worker_for_repair(task_id)
-            if original_worker and original_worker == worker_id:
-                continue
-
-            # Try to acquire scope lock ATOMICALLY using SQLite
-            # This prevents race conditions between workers
-            if task.scope:
-                lock_acquired = self.lock_store.acquire_scope_lock(
-                    project_id, task.scope, worker_id, ttl
-                )
-                if not lock_acquired:
-                    # Another worker has the lock - skip this task
-                    continue
-
-            # Lock acquired (or no scope) - now safe to assign
-            # Use atomic_modify to prevent race conditions with c4_submit
-            store = self.state_machine.store
-
-            # Determine branch: Review tasks use parent's branch
-            if task.type == TaskType.REVIEW and task.parent_id:
-                parent_task = self.get_task(task.parent_id)
-                if parent_task and parent_task.branch:
-                    task_branch = parent_task.branch
-                    is_review_using_parent_branch = True
-                else:
-                    # Fallback: compute parent branch name from parent_id
-                    task_branch = f"{self.config.work_branch_prefix}{task.parent_id}"
-                    is_review_using_parent_branch = True
-            else:
-                task_branch = f"{self.config.work_branch_prefix}{task_id}"
-                is_review_using_parent_branch = False
-
-            assigned = False
-
-            with store.atomic_modify(project_id) as state:
-                # Double-check task is still pending
-                if task_id in state.queue.pending:
-                    # Assign task (ATOMIC)
-                    state.queue.pending.remove(task_id)
-                    state.queue.in_progress[task_id] = worker_id
-
-                    # Ensure worker exists in state (fix race condition)
-                    if worker_id not in state.workers:
-                        from c4.models import WorkerInfo
-
-                        now = datetime.now()
-                        state.workers[worker_id] = WorkerInfo(
-                            worker_id=worker_id,
-                            state="busy",
-                            task_id=task_id,
-                            scope=task.scope,
-                            branch=task_branch,
-                            joined_at=now,
-                            last_seen=now,
-                        )
-                    else:
-                        # Update existing worker state
-                        state.workers[worker_id].state = "busy"
-                        state.workers[worker_id].task_id = task_id
-                        state.workers[worker_id].scope = task.scope
-                        state.workers[worker_id].branch = task_branch
-                        state.workers[worker_id].last_seen = datetime.now()
-
-                    assigned = True
-
-                # Update cached state
-                self.state_machine._state = state
-
-            if not assigned:
-                # Task was assigned by another worker - release our lock
-                if task.scope:
-                    self.lock_store.release_scope_lock(project_id, task.scope)
-                continue
-
-            # Update task in SQLite (outside atomic block but still atomic per-task)
-            task.status = TaskStatus.IN_PROGRESS
-            task.assigned_to = worker_id
-            task.branch = task_branch
-            self._save_task(task)
-
-            # Create worktree for isolated multi-worker support
-            # Each worker gets their own working directory to avoid conflicts
-            git_ops = GitOperations(self.root)
-            worktree_path: str | None = None
-
-            if git_ops.is_git_repo():
-                work_branch = self.config.get_work_branch()
-
-                if not is_review_using_parent_branch:
-                    # Create worktree with new branch from work_branch
-                    worktree_result = git_ops.create_worktree(
-                        worker_id=worker_id,
-                        branch=task_branch,
-                        base_branch=work_branch,
-                    )
-                    if worktree_result.success:
-                        wt_path = git_ops.get_worktree_path(worker_id)
-                        worktree_path = str(wt_path)
-                        logger.info(
-                            f"Created worktree for {worker_id} at {worktree_path}"
-                        )
-                    else:
-                        # Fallback: create branch only (legacy behavior)
-                        logger.warning(
-                            f"Worktree creation failed for {worker_id}: "
-                            f"{worktree_result.message}. Using branch only."
-                        )
-                        branch_result = self._create_task_branch_from_work(
-                            git_ops, task_branch, work_branch
-                        )
-                        if not branch_result.success:
-                            logger.warning(
-                                f"Failed to create task branch {task_branch}: "
-                                f"{branch_result.message}"
-                            )
-                else:
-                    # Review task: reuse worker's existing worktree if exists
-                    wt_path = git_ops.get_worktree_path(worker_id)
-                    if wt_path.exists():
-                        worktree_path = str(wt_path)
-                        logger.info(
-                            f"Review task {task_id} using worktree {worktree_path}"
-                        )
-                    else:
-                        logger.info(
-                            f"Review task {task_id} using parent branch "
-                            f"{task_branch} (no worktree)"
-                        )
-
-            # Emit event
-            self.state_machine.emit_event(
-                EventType.TASK_ASSIGNED,
-                "c4d",
-                {
-                    "task_id": task_id,
-                    "worker_id": worker_id,
-                    "scope": task.scope,
-                    "worktree_path": worktree_path,
-                },
-            )
-
-            # Get agent routing info (Phase 4)
-            agent_routing = self._get_agent_routing(task)
-
-            return TaskAssignment(
-                task_id=task_id,
-                title=task.title,
-                scope=task.scope,
-                dod=task.dod,
-                validations=task.validations,
-                branch=task_branch,
-                worktree_path=worktree_path,
-                **agent_routing,
-            )
-
-        return None
+        # Phase 2: Find and assign a new task from pending queue
+        return self._find_and_assign_pending_task(worker_id, state)
 
     def c4_submit(
         self,
