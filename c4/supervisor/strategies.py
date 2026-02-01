@@ -4,8 +4,10 @@ Defines model-specific parameters and handling logic to abstract
 differences between providers (Claude, Gemini, OpenAI).
 """
 
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Optional
+from typing import Any
 
 
 class ProviderStrategy(ABC):
@@ -21,9 +23,9 @@ class ProviderStrategy(ABC):
         max_tokens: int,
         timeout: int,
         drop_params: bool,
-        api_key: Optional[str] = None,
-        api_base: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        api_key: str | None = None,
+        api_base: str | None = None,
+    ) -> dict[str, Any]:
         """Get parameters for litellm.completion."""
         pass
 
@@ -44,9 +46,9 @@ class ClaudeStrategy(ProviderStrategy):
         max_tokens: int,
         timeout: int,
         drop_params: bool,
-        api_key: Optional[str] = None,
-        api_base: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        api_key: str | None = None,
+        api_base: str | None = None,
+    ) -> dict[str, Any]:
         kwargs = {
             "model": model,
             "messages": [
@@ -79,9 +81,9 @@ class GeminiStrategy(ProviderStrategy):
         max_tokens: int,
         timeout: int,
         drop_params: bool,
-        api_key: Optional[str] = None,
-        api_base: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        api_key: str | None = None,
+        api_base: str | None = None,
+    ) -> dict[str, Any]:
         kwargs = {
             "model": model,
             "messages": [
@@ -135,9 +137,9 @@ class OpenAIStrategy(ProviderStrategy):
         max_tokens: int,
         timeout: int,
         drop_params: bool,
-        api_key: Optional[str] = None,
-        api_base: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        api_key: str | None = None,
+        api_base: str | None = None,
+    ) -> dict[str, Any]:
         kwargs = {
             "model": model,
             "messages": [
