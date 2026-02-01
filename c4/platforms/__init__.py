@@ -419,11 +419,11 @@ Strictly follow the Planner workflow:
 3. **Tasking**: Generate tasks (`c4_add_todo`).""",
         },
         "c4-run": {
-            "description": "Start execution (PLAN -> EXECUTE).",
+            "description": "Start the C4 Engine (Supervisor Mode).",
             "instructions": """Activate `c4-supervisor` skill using `activate_skill("c4-supervisor")`.
-1. Call `c4_run()` to start the engine.
-2. Monitor `c4_status()` to ensure workers pick up tasks.
-3. If tasks are blocked or need review, handle them according to the Supervisor skill.""",
+1. Call `c4_run()` to start the autonomous execution engine.
+2. The system will assign tasks to workers automatically.
+3. Your role is to **MONITOR** via `c4_status()`. Do not implement tasks manually unless the engine halts.""",
         },
         "c4-checkpoint": {
             "description": "Create a checkpoint.",
