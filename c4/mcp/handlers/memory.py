@@ -1,6 +1,7 @@
 """Memory management tool handlers.
 
-Handles: c4_write_memory, c4_read_memory, c4_list_memories, c4_delete_memory, c4_search_memory
+Handles: c4_write_memory, c4_read_memory, c4_list_memories, c4_delete_memory,
+         c4_search_memory, c4_get_memory_detail
 """
 
 import os
@@ -298,3 +299,202 @@ def _generate_search_hint(count: int, total_tokens: int, limit: int) -> str:
         )
 
     return f"Found {count} results totaling ~{total_tokens} tokens."
+
+
+def _get_auto_capture_handler(project_id: str | None = None) -> Any:
+    """Get auto capture handler instance.
+
+    Args:
+        project_id: Optional project ID, defaults to current directory name.
+
+    Returns:
+        AutoCaptureHandler instance.
+    """
+    from c4.memory.auto_capture import get_auto_capture_handler
+
+    # Get project root
+    if os.environ.get("C4_PROJECT_ROOT"):
+        root = Path(os.environ["C4_PROJECT_ROOT"])
+    else:
+        root = Path.cwd()
+
+    # Use directory name as project ID if not provided
+    if project_id is None:
+        project_id = root.name
+
+    db_path = root / ".c4" / "tasks.db"
+
+    return get_auto_capture_handler(
+        project_id=project_id,
+        db_path=db_path,
+        enable_embeddings=False,
+    )
+
+
+def _update_access_stats(db_path: Path, observation_id: str) -> None:
+    """Update access_count and accessed_at for an observation.
+
+    Args:
+        db_path: Path to the SQLite database.
+        observation_id: ID of the observation to update.
+    """
+    import sqlite3
+
+    conn = sqlite3.connect(db_path)
+    try:
+        # Check if columns exist, add if needed
+        cursor = conn.execute("PRAGMA table_info(c4_observations)")
+        columns = [row[1] for row in cursor.fetchall()]
+
+        if "access_count" not in columns:
+            conn.execute(
+                "ALTER TABLE c4_observations ADD COLUMN access_count INTEGER DEFAULT 0"
+            )
+        if "accessed_at" not in columns:
+            conn.execute(
+                "ALTER TABLE c4_observations ADD COLUMN accessed_at TIMESTAMP"
+            )
+
+        # Update access stats
+        conn.execute(
+            """
+            UPDATE c4_observations
+            SET access_count = COALESCE(access_count, 0) + 1,
+                accessed_at = ?
+            WHERE id = ?
+            """,
+            (datetime.now().isoformat(), observation_id),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _estimate_tokens(text: str) -> int:
+    """Estimate token count for text.
+
+    Args:
+        text: The text to estimate.
+
+    Returns:
+        Estimated token count (~4 chars per token).
+    """
+    if not text:
+        return 0
+    return max(1, len(text) // 4)
+
+
+@register_tool("c4_get_memory_detail")
+def handle_get_memory_detail(daemon: Any, arguments: dict[str, Any]) -> dict[str, Any]:
+    """Get full details of a specific memory.
+
+    Args (via arguments):
+        memory_id: ID of the memory/observation to retrieve
+        include_related: Whether to include related memories (default: false)
+
+    Returns:
+        Full memory details including content, metadata, and optionally related memories
+    """
+    memory_id = arguments.get("memory_id")
+    include_related = arguments.get("include_related", False)
+
+    if not memory_id:
+        return {"error": "memory_id is required"}
+
+    try:
+        # Get project root and db path
+        if os.environ.get("C4_PROJECT_ROOT"):
+            root = Path(os.environ["C4_PROJECT_ROOT"])
+        else:
+            root = Path.cwd()
+        db_path = root / ".c4" / "tasks.db"
+
+        # Get the observation
+        handler = _get_auto_capture_handler()
+        observation = handler.get_observation(memory_id)
+
+        if observation is None:
+            return {
+                "found": False,
+                "memory_id": memory_id,
+                "message": f"Memory '{memory_id}' not found",
+            }
+
+        # Update access stats
+        _update_access_stats(db_path, memory_id)
+
+        # Calculate content tokens
+        content_tokens = _estimate_tokens(observation.content)
+
+        # Build response
+        result: dict[str, Any] = {
+            "found": True,
+            "id": observation.id,
+            "title": observation.source,
+            "content": observation.content,
+            "content_tokens": content_tokens,
+            "metadata": {
+                "source": observation.source,
+                "importance": observation.importance,
+                "tags": observation.tags,
+                "created_at": observation.created_at.isoformat() if observation.created_at else None,
+                **observation.metadata,
+            },
+        }
+
+        # Find related memories if requested
+        if include_related:
+            related = _find_related_memories(memory_id, observation.content, limit=5)
+            result["related"] = related
+
+        return result
+
+    except Exception as e:
+        return {"error": f"Failed to get memory detail: {e}"}
+
+
+def _find_related_memories(
+    memory_id: str, content: str, limit: int = 5
+) -> list[dict[str, Any]]:
+    """Find memories related to the given content.
+
+    Args:
+        memory_id: ID of the current memory (to exclude from results).
+        content: Content to find related memories for.
+        limit: Maximum number of related memories to return.
+
+    Returns:
+        List of related memory summaries.
+    """
+    try:
+        searcher = _get_memory_searcher()
+
+        # Extract key terms from content for search
+        # Use first 100 words as the query
+        words = content.split()[:100]
+        query = " ".join(words)
+
+        if not query.strip():
+            return []
+
+        # Search for related memories
+        results = searcher.search(query, limit=limit + 1)  # +1 to account for self
+
+        # Filter out the current memory and format results
+        related = []
+        for r in results:
+            if r.id != memory_id:
+                related.append({
+                    "id": r.id,
+                    "title": r.title,
+                    "preview": r.preview,
+                    "score": round(r.score, 4),
+                })
+                if len(related) >= limit:
+                    break
+
+        return related
+
+    except Exception:
+        # Return empty list on any error (non-critical feature)
+        return []

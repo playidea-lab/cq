@@ -886,4 +886,23 @@ def get_tool_definitions() -> list[Tool]:
                 "required": ["query"],
             },
         ),
+        Tool(
+            name="c4_get_memory_detail",
+            description="Get full details of a specific memory including content, metadata, and optionally related memories.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "memory_id": {
+                        "type": "string",
+                        "description": "ID of the memory to retrieve (e.g., 'obs-abc123')",
+                    },
+                    "include_related": {
+                        "type": "boolean",
+                        "description": "Include related memories based on content similarity (default: false)",
+                        "default": False,
+                    },
+                },
+                "required": ["memory_id"],
+            },
+        ),
     ]
