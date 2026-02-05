@@ -848,4 +848,42 @@ def get_tool_definitions() -> list[Tool]:
                 "required": ["name"],
             },
         ),
+        Tool(
+            name="c4_search_memory",
+            description="Search memories using hybrid semantic and keyword search. Returns relevant memories with previews and scores.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Search query to find relevant memories",
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Maximum number of results to return (default: 10)",
+                        "default": 10,
+                    },
+                    "filters": {
+                        "type": "object",
+                        "description": "Optional filters to narrow search",
+                        "properties": {
+                            "memory_type": {
+                                "type": "string",
+                                "description": "Filter by memory source/type (e.g., 'read_file', 'user_message')",
+                            },
+                            "tags": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "Filter by tags (OR logic)",
+                            },
+                            "since": {
+                                "type": "string",
+                                "description": "Filter by creation date (ISO format, e.g., '2024-01-01T00:00:00')",
+                            },
+                        },
+                    },
+                },
+                "required": ["query"],
+            },
+        ),
     ]
