@@ -259,22 +259,32 @@ uv run pytest tests/unit/test_skill_matcher.py tests/unit/test_agent_graph_loade
 
 ... (생략) ...
 
-### Phase 6.7: Reliability & Observability 🚧 (Next)
+### Phase 6.7: Reliability & Observability ✅
 
 **목표**: 시스템 안정성 강화 및 운영 가시성 확보
 
-- **Advanced Telemetry**:
-  - OpenTelemetry 기반 분산 트레이싱 (워커 간 호출 추적) ✅ 완료
-  - Prometheus 메트릭 확장 (태스크 처리 시간, 성공률, 비용 추적)
-- **Self-Healing Queue**:
-  - 타임아웃 발생 시 자동 롤백 및 재시도 전략 (Exponential Backoff)
-  - 반복 실패 태스크에 대한 AI 원인 분석 및 수정 제안
-- **Cost-Aware Routing**:
-  - 태스크 난이도 측정 및 최적 모델 자동 선택 (GPT-4o vs Flash-1.5 등)
-- **Token Slimming Engine**:
-  - `Context-Aware Truncation`: 긴 로그나 소스코드에서 불필요한 부분 자동 제거
-  - `Prompt Caching Strategy`: 시스템 메시지 및 자주 사용되는 도구 정의의 고정화를 통한 캐시 효율 극대화 (비용 90% 절감 목표)
-  - `Incremental Context`: 변경된 부분만 컨텍스트에 추가하는 증분 로딩 방식 도입
+**구현 완료**:
+- **OpenTelemetry Tracing** (`c4/monitoring/tracing.py`)
+  - 분산 트레이싱 (워커 간 호출 추적)
+  - OTLP Exporter 지원
+  - FastAPI 자동 계측
+- **Prometheus Metrics** (`c4/monitoring/prometheus.py`)
+  - 6개 핵심 메트릭: API 요청, 활성 워크스페이스, LLM 토큰, 태스크 처리 시간
+  - Counter, Gauge, Histogram 타입 지원
+- **Self-Healing Queue** (`c4/daemon/repair_analyzer.py`)
+  - AI 기반 실패 원인 분석 (8개 카테고리)
+  - 자동 수정 제안 및 auto_fixable 판단
+  - RepairQueueItem으로 복구 추적
+- **Cost-Aware Routing** (`c4/supervisor/cost_optimizer.py`)
+  - 복잡도 기반 모델 선택 (haiku/sonnet/opus)
+  - 예산 관리 및 알림 (BudgetWarning, BudgetExceeded)
+  - 사용량 추적 (`c4/supervisor/usage_tracker.py`)
+- **Context Slimmer** (`c4/utils/slimmer.py`)
+  - 로그 슬리밍 (에러 패턴 추출)
+  - JSON 압축 (배열/깊이 제한)
+  - 코드 시그니처 추출
+
+**테스트**: 80 passed (cost_optimizer 38, tracing 2, usage_tracker 40)
 
 ### Phase 6.8: LSP Server ✅
 
@@ -345,46 +355,98 @@ uv run pytest tests/unit/lsp/ -v
 
 ---
 
-## Phase 7: C4 Cloud MVP (v0.7.0) 📋
+## Phase 7: C4 Cloud (v0.7.0) 📋 Next
 
-**목표**: 관리형 SaaS 서비스의 핵심 기능 구축
+**목표**: LLM 오케스트레이션 플랫폼으로서의 완전 관리형 SaaS
 
-- **Secure Sandbox Execution**:
-  - Firecracker 또는 gVisor 기반 격리 실행 환경
-  - 세션별 일회성 실행 환경 제공 (Ephemeral Workspace)
-- **Multi-Tenant Architecture**:
-  - Supabase 기반 테넌트 격리 및 데이터 암호화
-  - 팀별/프로젝트별 리소스 할당 제한 (Quotas)
-- **Cloud Console**:
-  - 웹 기반 실시간 워크플로우 모니터링 대시보드
-  - 사용자 인증 및 권한 관리 (RBAC) 연동
+### Phase 7.1: Cloud Foundation
 
-**목표**: 완전 관리형 SaaS 버전
+**목표**: 웹 기반 프로젝트 관리 및 모니터링
 
-### 주요 기능
+- **Web Console**
+  - 실시간 워크플로우 대시보드
+  - 프로젝트/팀 관리 UI
+  - 태스크 상태 시각화
+- **Remote State Sync**
+  - 로컬 Worker + Supabase 상태 동기화 (이미 구현됨)
+  - 웹에서 실시간 모니터링
+- **Authentication**
+  - Supabase Auth 연동
+  - GitHub OAuth
 
-- Web Dashboard
-- 원격 Worker Pool
-- GitHub 통합 (Auto PR)
-- 사용량 기반 과금
-- 팀/조직 관리
+### Phase 7.2: LLM Gateway ⭐ 핵심 차별화
+
+**목표**: 멀티 LLM 오케스트레이션 플랫폼
+
+- **Multi-LLM Support**
+  - Claude, Gemini, GPT, Ollama 연결
+  - 사용자 API 키 관리 (Vault)
+  - C4 호스팅 API 옵션 (마진 모델)
+- **Smart Routing**
+  - 태스크별 최적 모델 자동 선택 (Economic Mode 확장)
+  - 모델 간 협업 (Claude 계획 → Gemini 실행 → Claude 리뷰)
+  - 비용/성능 트레이드오프 설정
+- **Cost Dashboard**
+  - 모델별 사용량 추적
+  - 예산 알림 및 제한
+  - 비용 분석 리포트
+
+### Phase 7.3: Hosted Workers
+
+**목표**: 서버에서 Worker 실행
+
+- **Sandbox Execution**
+  - gVisor 기반 격리 실행 환경
+  - Ephemeral Workspace (세션별 일회성)
+- **Auto Scaling**
+  - 수요 기반 Worker 자동 확장
+  - 리소스 할당 제한 (Quotas)
+- **Billing**
+  - 사용량 기반 과금
+  - Stripe 연동
+
+### 수익 모델
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  Tier        │ 가격      │ 기능                             │
+├─────────────────────────────────────────────────────────────┤
+│  Free        │ $0        │ 자기 API 키, 로컬 Worker, 대시보드│
+│  Pro         │ $20/월    │ + 호스팅 Worker, C4 API 크레딧,  │
+│              │           │   멀티 LLM 라우팅, 팀 기능       │
+│  Enterprise  │ 문의      │ + On-premise, 커스텀 모델, SLA   │
+└─────────────────────────────────────────────────────────────┘
+```
 
 ### 아키텍처
 
 ```text
-┌─────────────────────────────────────────────────────────────┐
-│                      C4 Cloud                                │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────┐  │
-│  │ Web Console │  │ API Gateway │  │ Worker Orchestrator │  │
-│  └─────────────┘  └─────────────┘  └─────────────────────┘  │
-│                          │                                   │
-│              ┌───────────┴───────────┐                      │
-│              ▼                       ▼                      │
-│       ┌────────────┐          ┌────────────┐               │
-│       │ PostgreSQL │          │   Redis    │               │
-│       │  (State)   │          │  (Locks)   │               │
-│       └────────────┘          └────────────┘               │
-└─────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│                         C4 Cloud                                 │
+│                                                                  │
+│  ┌──────────────┐  ┌──────────────┐  ┌────────────────────┐     │
+│  │ Web Console  │  │ API Gateway  │  │  LLM Gateway       │     │
+│  │ (React/Next) │  │ (FastAPI)    │  │  ┌──────────────┐  │     │
+│  └──────────────┘  └──────────────┘  │  │ Claude API   │  │     │
+│                                       │  │ Gemini API   │  │     │
+│                                       │  │ OpenAI API   │  │     │
+│                                       │  │ Ollama       │  │     │
+│                                       │  └──────────────┘  │     │
+│                                       └────────────────────┘     │
+│                                                                  │
+│  ┌──────────────────────────────────────────────────────────┐   │
+│  │                   Worker Orchestrator                     │   │
+│  │  ┌─────────┐  ┌─────────┐  ┌─────────┐  ┌─────────┐     │   │
+│  │  │ Worker  │  │ Worker  │  │ Worker  │  │ Worker  │     │   │
+│  │  │ (gVisor)│  │ (gVisor)│  │ (gVisor)│  │ (gVisor)│     │   │
+│  │  └─────────┘  └─────────┘  └─────────┘  └─────────┘     │   │
+│  └──────────────────────────────────────────────────────────┘   │
+│                                                                  │
+│  ┌────────────┐  ┌────────────┐  ┌────────────┐                 │
+│  │ Supabase   │  │   Redis    │  │  Stripe    │                 │
+│  │ (State/DB) │  │  (Locks)   │  │ (Billing)  │                 │
+│  └────────────┘  └────────────┘  └────────────┘                 │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -392,15 +454,17 @@ uv run pytest tests/unit/lsp/ -v
 ## Migration Path
 
 ```text
-v0.1-0.3        v0.4           v0.5           v0.6 (현재)    v0.7+
-    │               │               │               │               │
-    │  Multi-Worker │  Agent Routing│  Discovery    │  Team Collab  │
-    │  SQLite       │  + Chaining   │  + Verifier   │  + MCP Tools  │
-    ▼               ▼               ▼               ▼               ▼
-┌─────────┐   ┌─────────┐    ┌─────────┐    ┌─────────┐    ┌─────────┐
-│ Local   │──▶│ Agent   │───▶│ EARS +  │───▶│ Supabase│───▶│ Cloud   │
-│ Files   │   │ Routing │    │ ADR     │    │ + Code  │    │ SaaS    │
-└─────────┘   └─────────┘    └─────────┘    └─────────┘    └─────────┘
+v0.1-0.3        v0.4           v0.5           v0.6 (현재)         v0.7+
+    │               │               │               │                  │
+    │  Multi-Worker │  Agent Routing│  Discovery    │  Team + LSP      │
+    │  SQLite       │  + Chaining   │  + Verifier   │  + Observability │
+    ▼               ▼               ▼               ▼                  ▼
+┌─────────┐   ┌─────────┐    ┌─────────┐    ┌─────────┐    ┌────────────────┐
+│ Local   │──▶│ Agent   │───▶│ EARS +  │───▶│ Supabase│───▶│ C4 Cloud       │
+│ Files   │   │ Routing │    │ ADR     │    │ + Code  │    │ ├─ 7.1 Console │
+└─────────┘   └─────────┘    └─────────┘    └─────────┘    │ ├─ 7.2 LLM GW  │
+                                                           │ └─ 7.3 Workers │
+                                                           └────────────────┘
 ```
 
 ---
@@ -426,5 +490,8 @@ v0.1-0.3        v0.4           v0.5           v0.6 (현재)    v0.7+
 | Semantic Search Engine | P0 | ✅ 완료 |
 | Call Graph Analyzer | P0 | ✅ 완료 |
 | Long-Running Worker Detection | P0 | ✅ 완료 |
-| **LSP Server** | P0 | ✅ 완료 (Phase 1) |
-| Cloud API | P1 | 📋 Phase 7 |
+| LSP Server | P0 | ✅ 완료 |
+| **Reliability & Observability** | P0 | ✅ 완료 |
+| Cloud Foundation (7.1) | P1 | 📋 Next |
+| LLM Gateway (7.2) | P1 | 📋 Phase 7 |
+| Hosted Workers (7.3) | P2 | 📋 Phase 7 |
