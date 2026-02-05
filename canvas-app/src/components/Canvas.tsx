@@ -118,6 +118,7 @@ function updateArrowsForNode(editor: Editor, nodeShapeId: string) {
 
 export function Canvas({ onNodeSelect, onEditorMount, onNodePositionChange }: CanvasProps) {
   const editorRef = useRef<Editor | null>(null);
+  const updateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const handleMount = useCallback((editor: Editor) => {
     editorRef.current = editor;
@@ -125,7 +126,7 @@ export function Canvas({ onNodeSelect, onEditorMount, onNodePositionChange }: Ca
 
     // Listen for shape changes to update arrow positions
     editor.store.listen((entry) => {
-      // Handle selection changes
+      // Handle selection changes (immediate - no debounce for better UX)
       if (entry.changes.updated) {
         const selectedIds = editor.getSelectedShapeIds();
         if (selectedIds.length === 1) {
@@ -141,21 +142,36 @@ export function Canvas({ onNodeSelect, onEditorMount, onNodePositionChange }: Ca
           onNodeSelect(null);
         }
 
-        // Update arrows when frame shapes move
-        Object.values(entry.changes.updated).forEach((record) => {
-          const [_from, to] = record;
-          if (to && to.typeName === 'shape' && to.type === 'frame') {
-            updateArrowsForNode(editor, to.id);
+        // Debounce arrow updates and position changes (300ms)
+        // This prevents excessive re-renders during drag
+        if (updateTimerRef.current) {
+          clearTimeout(updateTimerRef.current);
+        }
 
-            // Notify parent of position change
-            if (onNodePositionChange && to.meta?.nodeId) {
-              const nodeId = to.meta.nodeId as string;
-              onNodePositionChange(nodeId, to.x, to.y);
+        updateTimerRef.current = setTimeout(() => {
+          // Update arrows when frame shapes move
+          Object.values(entry.changes.updated).forEach((record) => {
+            const [_from, to] = record;
+            if (to && to.typeName === 'shape' && to.type === 'frame') {
+              updateArrowsForNode(editor, to.id);
+
+              // Notify parent of position change
+              if (onNodePositionChange && to.meta?.nodeId) {
+                const nodeId = to.meta.nodeId as string;
+                onNodePositionChange(nodeId, to.x, to.y);
+              }
             }
-          }
-        });
+          });
+        }, 300);
       }
     });
+
+    // Cleanup debounce timer on unmount
+    return () => {
+      if (updateTimerRef.current) {
+        clearTimeout(updateTimerRef.current);
+      }
+    };
   }, [onEditorMount, onNodeSelect, onNodePositionChange]);
 
   return (
