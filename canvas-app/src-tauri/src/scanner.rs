@@ -1,0 +1,437 @@
+//! Project scanner - extracts nodes and edges from a C4 project
+
+use anyhow::{Context, Result};
+use regex::Regex;
+use std::collections::{HashMap, HashSet};
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::time::SystemTime;
+use walkdir::WalkDir;
+
+use crate::layout::{apply_time_layout, resolve_overlaps};
+use crate::models::{CanvasData, CanvasEdge, CanvasNode, NodeType, Position, RelationType};
+
+/// Patterns to scan for different node types
+const SCAN_PATTERNS: &[(&str, &[&str])] = &[
+    (".claude", &["**/*.md", "**/*.yaml", "**/*.json"]),
+    (".c4", &["**/*.yaml", "**/*.json", "state.json", "tasks.db"]),
+    ("docs", &["**/*.md"]),
+    (".env", &[]),
+    (".mcp.json", &[]),
+];
+
+/// Files/directories to ignore
+const IGNORE_PATTERNS: &[&str] = &[
+    "node_modules",
+    ".git",
+    ".venv",
+    "__pycache__",
+    "target",
+    "dist",
+    ".pytest_cache",
+    ".mypy_cache",
+    ".ruff_cache",
+];
+
+/// Maximum depth for directory scanning
+const MAX_DEPTH: usize = 5;
+
+/// Scan a project and extract canvas data
+pub fn scan_project(project_path: &Path) -> Result<CanvasData> {
+    let mut nodes = Vec::new();
+    let mut edges = Vec::new();
+    let mut node_ids: HashSet<String> = HashSet::new();
+
+    // Scan different source directories/files
+    for (pattern, _sub_patterns) in SCAN_PATTERNS {
+        let target_path = project_path.join(pattern);
+        if target_path.exists() {
+            if target_path.is_file() {
+                if let Some(node) = scan_file(&target_path, project_path)? {
+                    if node_ids.insert(node.id.clone()) {
+                        nodes.push(node);
+                    }
+                }
+            } else if target_path.is_dir() {
+                scan_directory(&target_path, project_path, &mut nodes, &mut node_ids)?;
+            }
+        }
+    }
+
+    // Scan for Claude session files
+    scan_sessions(project_path, &mut nodes, &mut node_ids)?;
+
+    // Extract relationships between nodes
+    extract_relationships(&nodes, &mut edges)?;
+
+    // Apply time-based layout
+    apply_time_layout(&mut nodes);
+    resolve_overlaps(&mut nodes);
+
+    Ok(CanvasData {
+        nodes,
+        edges,
+        viewport: Default::default(),
+    })
+}
+
+/// Scan a directory recursively
+fn scan_directory(
+    dir_path: &Path,
+    project_root: &Path,
+    nodes: &mut Vec<CanvasNode>,
+    node_ids: &mut HashSet<String>,
+) -> Result<()> {
+    for entry in WalkDir::new(dir_path)
+        .max_depth(MAX_DEPTH)
+        .into_iter()
+        .filter_entry(|e| !should_ignore(e.path()))
+    {
+        let entry = entry?;
+        if entry.file_type().is_file() {
+            if let Some(node) = scan_file(entry.path(), project_root)? {
+                if node_ids.insert(node.id.clone()) {
+                    nodes.push(node);
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Check if a path should be ignored
+fn should_ignore(path: &Path) -> bool {
+    path.components().any(|c| {
+        let name = c.as_os_str().to_string_lossy();
+        IGNORE_PATTERNS.iter().any(|p| name == *p)
+    })
+}
+
+/// Scan a single file and create a node
+fn scan_file(file_path: &Path, project_root: &Path) -> Result<Option<CanvasNode>> {
+    let extension = file_path.extension().and_then(|e| e.to_str()).unwrap_or("");
+
+    // Only process supported file types
+    if !["md", "yaml", "yml", "json", "toml", "jsonl", "db"].contains(&extension) {
+        // Check for dotfiles without extension
+        let file_name = file_path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+        if !file_name.starts_with('.') || !file_name.contains("env") && !file_name.contains("mcp") {
+            return Ok(None);
+        }
+    }
+
+    let relative_path = file_path
+        .strip_prefix(project_root)
+        .unwrap_or(file_path)
+        .to_string_lossy()
+        .to_string();
+
+    let file_name = file_path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("unknown")
+        .to_string();
+
+    let node_type = NodeType::from_path(&relative_path);
+
+    // Get file metadata
+    let metadata = fs::metadata(file_path)?;
+    let timestamp = metadata
+        .modified()
+        .ok()
+        .and_then(|t| t.duration_since(SystemTime::UNIX_EPOCH).ok())
+        .map(|d| d.as_millis() as i64);
+
+    // Extract additional metadata based on file type
+    let mut node_metadata = HashMap::new();
+    extract_file_metadata(file_path, extension, &mut node_metadata)?;
+
+    let id = generate_node_id(&relative_path);
+
+    Ok(Some(CanvasNode {
+        id,
+        node_type,
+        label: file_name,
+        path: Some(relative_path),
+        metadata: node_metadata,
+        position: Position { x: 0.0, y: 0.0 }, // Will be set by layout
+        timestamp,
+    }))
+}
+
+/// Extract metadata from file contents
+fn extract_file_metadata(
+    file_path: &Path,
+    extension: &str,
+    metadata: &mut HashMap<String, serde_json::Value>,
+) -> Result<()> {
+    match extension {
+        "md" => {
+            // Extract title from markdown
+            if let Ok(content) = fs::read_to_string(file_path) {
+                if let Some(title) = extract_markdown_title(&content) {
+                    metadata.insert("title".to_string(), serde_json::json!(title));
+                }
+                // Count lines
+                metadata.insert("lines".to_string(), serde_json::json!(content.lines().count()));
+            }
+        }
+        "yaml" | "yml" => {
+            // Parse YAML and extract top-level keys
+            if let Ok(content) = fs::read_to_string(file_path) {
+                if let Ok(yaml) = serde_yaml::from_str::<serde_json::Value>(&content) {
+                    if let Some(obj) = yaml.as_object() {
+                        let keys: Vec<_> = obj.keys().cloned().collect();
+                        metadata.insert("keys".to_string(), serde_json::json!(keys));
+                    }
+                }
+            }
+        }
+        "json" => {
+            // Parse JSON and extract top-level keys
+            if let Ok(content) = fs::read_to_string(file_path) {
+                if let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) {
+                    if let Some(obj) = json.as_object() {
+                        let keys: Vec<_> = obj.keys().cloned().collect();
+                        metadata.insert("keys".to_string(), serde_json::json!(keys));
+                    }
+                }
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+/// Extract title from markdown content
+fn extract_markdown_title(content: &str) -> Option<String> {
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("# ") {
+            return Some(trimmed[2..].trim().to_string());
+        }
+    }
+    None
+}
+
+/// Scan for Claude session files
+fn scan_sessions(
+    project_root: &Path,
+    nodes: &mut Vec<CanvasNode>,
+    node_ids: &mut HashSet<String>,
+) -> Result<()> {
+    // Look for session files in ~/.claude/projects/
+    let home = dirs::home_dir().context("Could not find home directory")?;
+    let sessions_base = home.join(".claude").join("projects");
+
+    if !sessions_base.exists() {
+        return Ok(());
+    }
+
+    // Try to find sessions related to this project
+    let project_name = project_root
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("");
+
+    for entry in fs::read_dir(&sessions_base)? {
+        let entry = entry?;
+        let dir_name = entry.file_name().to_string_lossy().to_string();
+
+        // Match project-related session directories
+        if dir_name.contains(project_name) || dir_name.contains(&project_root.to_string_lossy().replace('/', "-").replace('\\', "-")) {
+            // Scan session files
+            for session_entry in fs::read_dir(entry.path())? {
+                let session_entry = session_entry?;
+                let session_path = session_entry.path();
+
+                if session_path.extension().and_then(|e| e.to_str()) == Some("jsonl") {
+                    if let Some(node) = create_session_node(&session_path, project_root)? {
+                        if node_ids.insert(node.id.clone()) {
+                            nodes.push(node);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Create a session node from a session file
+fn create_session_node(session_path: &Path, _project_root: &Path) -> Result<Option<CanvasNode>> {
+    let file_name = session_path
+        .file_stem()
+        .and_then(|n| n.to_str())
+        .unwrap_or("session")
+        .to_string();
+
+    let metadata = fs::metadata(session_path)?;
+    let timestamp = metadata
+        .modified()
+        .ok()
+        .and_then(|t| t.duration_since(SystemTime::UNIX_EPOCH).ok())
+        .map(|d| d.as_millis() as i64);
+
+    // Try to extract last message from session
+    let mut node_metadata = HashMap::new();
+    if let Ok(content) = fs::read_to_string(session_path) {
+        let lines: Vec<_> = content.lines().collect();
+        node_metadata.insert("messages".to_string(), serde_json::json!(lines.len()));
+    }
+
+    let id = generate_node_id(&format!("session:{}", file_name));
+
+    Ok(Some(CanvasNode {
+        id,
+        node_type: NodeType::Session,
+        label: format!("Session {}", &file_name[..8.min(file_name.len())]),
+        path: Some(session_path.to_string_lossy().to_string()),
+        metadata: node_metadata,
+        position: Position { x: 0.0, y: 0.0 },
+        timestamp,
+    }))
+}
+
+/// Generate a unique node ID from a path
+fn generate_node_id(path: &str) -> String {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+
+    let mut hasher = DefaultHasher::new();
+    path.hash(&mut hasher);
+    format!("node_{:x}", hasher.finish())
+}
+
+/// Extract relationships between nodes
+fn extract_relationships(nodes: &[CanvasNode], edges: &mut Vec<CanvasEdge>) -> Result<()> {
+    let node_map: HashMap<&str, &CanvasNode> = nodes
+        .iter()
+        .filter_map(|n| n.path.as_ref().map(|p| (p.as_str(), n)))
+        .collect();
+
+    let reference_pattern = Regex::new(r#"(?:import|from|require|include|source)\s+['"](\.?[^'"]+)['"]"#)?;
+    let markdown_link_pattern = Regex::new(r#"\[([^\]]+)\]\(([^)]+)\)"#)?;
+
+    for node in nodes {
+        if let Some(path) = &node.path {
+            let full_path = if path.starts_with('/') {
+                PathBuf::from(path)
+            } else {
+                // This is a relative path, we'd need the project root
+                continue;
+            };
+
+            if let Ok(content) = fs::read_to_string(&full_path) {
+                // Check for import/reference patterns
+                for cap in reference_pattern.captures_iter(&content) {
+                    if let Some(referenced) = cap.get(1) {
+                        let referenced_path = referenced.as_str();
+                        if let Some(target_node) = find_matching_node(&node_map, referenced_path) {
+                            let edge_id = format!("edge_{}_{}", node.id, target_node.id);
+                            edges.push(CanvasEdge {
+                                id: edge_id,
+                                source: node.id.clone(),
+                                target: target_node.id.clone(),
+                                relation: RelationType::References,
+                            });
+                        }
+                    }
+                }
+
+                // Check for markdown links
+                for cap in markdown_link_pattern.captures_iter(&content) {
+                    if let Some(link_target) = cap.get(2) {
+                        let link_path = link_target.as_str();
+                        if !link_path.starts_with("http") {
+                            if let Some(target_node) = find_matching_node(&node_map, link_path) {
+                                let edge_id = format!("edge_{}_{}", node.id, target_node.id);
+                                edges.push(CanvasEdge {
+                                    id: edge_id,
+                                    source: node.id.clone(),
+                                    target: target_node.id.clone(),
+                                    relation: RelationType::Mentions,
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Add C4 task dependencies
+    add_c4_task_edges(nodes, edges);
+
+    Ok(())
+}
+
+/// Find a node matching a referenced path
+fn find_matching_node<'a>(
+    node_map: &'a HashMap<&str, &'a CanvasNode>,
+    reference: &str,
+) -> Option<&'a CanvasNode> {
+    // Direct match
+    if let Some(node) = node_map.get(reference) {
+        return Some(*node);
+    }
+
+    // Try with common extensions
+    for ext in &["", ".md", ".yaml", ".json"] {
+        let with_ext = format!("{}{}", reference, ext);
+        if let Some(node) = node_map.get(with_ext.as_str()) {
+            return Some(*node);
+        }
+    }
+
+    // Try partial match (filename only)
+    let ref_filename = Path::new(reference)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or(reference);
+
+    for (path, node) in node_map.iter() {
+        if path.ends_with(ref_filename) {
+            return Some(*node);
+        }
+    }
+
+    None
+}
+
+/// Add edges for C4 task dependencies
+fn add_c4_task_edges(nodes: &[CanvasNode], edges: &mut Vec<CanvasEdge>) {
+    // Find task nodes and extract dependency information from metadata
+    let task_nodes: Vec<_> = nodes
+        .iter()
+        .filter(|n| n.node_type == NodeType::Task || n.path.as_ref().map(|p| p.contains("tasks")).unwrap_or(false))
+        .collect();
+
+    for node in &task_nodes {
+        if let Some(deps) = node.metadata.get("dependencies") {
+            if let Some(dep_array) = deps.as_array() {
+                for dep in dep_array {
+                    if let Some(dep_id) = dep.as_str() {
+                        // Find matching task node
+                        if let Some(dep_node) = task_nodes.iter().find(|n| {
+                            n.metadata
+                                .get("id")
+                                .and_then(|v| v.as_str())
+                                .map(|id| id == dep_id)
+                                .unwrap_or(false)
+                        }) {
+                            let edge_id = format!("edge_{}_{}", node.id, dep_node.id);
+                            edges.push(CanvasEdge {
+                                id: edge_id,
+                                source: node.id.clone(),
+                                target: dep_node.id.clone(),
+                                relation: RelationType::Depends,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
