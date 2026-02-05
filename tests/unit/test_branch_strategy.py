@@ -17,6 +17,7 @@ from c4.daemon.git_ops import GitOperations
 from c4.mcp_server import C4Daemon
 from c4.models import ProjectStatus
 from c4.models.config import C4Config
+from tests.conftest import WORKER_1
 
 
 class TestC4ConfigBranchStrategy:
@@ -303,7 +304,7 @@ class TestC4GetTaskBranch:
 
     def test_c4_get_task_creates_task_branch(self, git_daemon):
         """c4_get_task creates c4/w-T-XXX branch (in worktree or main repo)."""
-        assignment = git_daemon.c4_get_task(worker_id="worker-1")
+        assignment = git_daemon.c4_get_task(worker_id=WORKER_1)
 
         assert assignment is not None
         assert assignment.branch == "c4/w-T-001-0"

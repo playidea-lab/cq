@@ -7,6 +7,7 @@ import pytest
 
 from c4.mcp_server import C4Daemon
 from c4.models import TaskType
+from tests.conftest import WORKER_1, WORKER_2
 
 
 @pytest.fixture
@@ -43,7 +44,7 @@ class TestReviewTaskBranchReference:
         )
 
         # Assign implementation task to worker
-        assignment1 = daemon.c4_get_task(worker_id="impl-worker")
+        assignment1 = daemon.c4_get_task(worker_id=WORKER_1)
         assert assignment1 is not None
         assert assignment1.task_id == "T-001-0"
         impl_branch = assignment1.branch
@@ -54,11 +55,11 @@ class TestReviewTaskBranchReference:
             task_id="T-001-0",
             commit_sha="abc123",
             validation_results=[],
-            worker_id="impl-worker",
+            worker_id=WORKER_1,
         )
 
         # Get the review task
-        assignment2 = daemon.c4_get_task(worker_id="review-worker")
+        assignment2 = daemon.c4_get_task(worker_id=WORKER_2)
         assert assignment2 is not None
         assert assignment2.task_id == "R-001-0"
 
@@ -79,7 +80,7 @@ class TestReviewTaskBranchReference:
             dod="Create another file",
         )
 
-        assignment = daemon.c4_get_task(worker_id="worker-1")
+        assignment = daemon.c4_get_task(worker_id=WORKER_1)
         assert assignment is not None
         assert "T-002-0" in assignment.branch
         # Should not use parent branch (it's an implementation task)
@@ -97,12 +98,12 @@ class TestReviewTaskBranchReference:
         )
 
         # Complete implementation
-        assignment = daemon.c4_get_task(worker_id="worker-1")
+        assignment = daemon.c4_get_task(worker_id=WORKER_1)
         daemon.c4_submit(
             task_id=assignment.task_id,
             commit_sha="def456",
             validation_results=[],
-            worker_id="worker-1",
+            worker_id=WORKER_1,
         )
 
         # Get review task
@@ -124,7 +125,7 @@ class TestReviewTaskBranchReference:
         )
 
         # Get and complete implementation
-        assignment = daemon.c4_get_task(worker_id="worker-1")
+        assignment = daemon.c4_get_task(worker_id=WORKER_1)
         impl_task_id = assignment.task_id
 
         # Clear the parent task's branch to simulate edge case
@@ -137,11 +138,11 @@ class TestReviewTaskBranchReference:
             task_id=impl_task_id,
             commit_sha="ghi789",
             validation_results=[],
-            worker_id="worker-1",
+            worker_id=WORKER_1,
         )
 
         # Review task should fall back to computing branch from parent_id
-        review_assignment = daemon.c4_get_task(worker_id="review-worker")
+        review_assignment = daemon.c4_get_task(worker_id=WORKER_2)
         assert review_assignment is not None
         # Should compute from parent_id (T-004-0)
         assert "T-004-0" in review_assignment.branch

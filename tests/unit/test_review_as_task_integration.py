@@ -11,6 +11,7 @@ import pytest
 
 from c4.mcp_server import C4Daemon
 from c4.models import ProjectStatus, TaskType
+from tests.conftest import WORKER_1, WORKER_2
 
 
 @pytest.fixture
@@ -39,7 +40,7 @@ class TestApproveFlow:
         daemon.c4_start()
 
         # Worker implements
-        assignment = daemon.c4_get_task(worker_id="worker-1")
+        assignment = daemon.c4_get_task(worker_id=WORKER_1)
         assert assignment.task_id == "T-001-0"
 
         # Submit implementation
@@ -47,7 +48,7 @@ class TestApproveFlow:
             task_id="T-001-0",
             commit_sha="abc123",
             validation_results=[{"name": "lint", "status": "pass"}],
-            worker_id="worker-1",
+            worker_id=WORKER_1,
         )
         assert result.success is True
 
@@ -56,7 +57,7 @@ class TestApproveFlow:
         assert review is not None
         assert review.type == TaskType.REVIEW
         assert review.parent_id == "T-001-0"
-        assert review.completed_by == "worker-1"
+        assert review.completed_by == WORKER_1
 
     def test_approve_completes_workflow(self, daemon):
         """APPROVE completes both tasks."""
@@ -65,23 +66,23 @@ class TestApproveFlow:
         daemon.c4_start()
 
         # Implement
-        impl_task = daemon.c4_get_task(worker_id="worker-1")
+        impl_task = daemon.c4_get_task(worker_id=WORKER_1)
         daemon.c4_submit(
             task_id=impl_task.task_id,
             commit_sha="abc123",
             validation_results=[{"name": "lint", "status": "pass"}],
-            worker_id="worker-1",
+            worker_id=WORKER_1,
         )
 
         # Review (different worker for peer review)
-        review_task = daemon.c4_get_task(worker_id="worker-2")
+        review_task = daemon.c4_get_task(worker_id=WORKER_2)
         assert review_task.task_id == "R-001-0"
 
         result = daemon.c4_submit(
             task_id="R-001-0",
             commit_sha="def456",
             validation_results=[{"name": "lint", "status": "pass"}],
-            worker_id="worker-2",
+            worker_id=WORKER_2,
             review_result="APPROVE",
         )
 
@@ -100,21 +101,21 @@ class TestApproveFlow:
         daemon.c4_start()
 
         # Implement
-        impl = daemon.c4_get_task(worker_id="w1")
+        impl = daemon.c4_get_task(worker_id=WORKER_1)
         daemon.c4_submit(
             task_id=impl.task_id,
             commit_sha="abc",
             validation_results=[{"name": "lint", "status": "pass"}],
-            worker_id="w1",
+            worker_id=WORKER_1,
         )
 
         # Review without review_result or comments -> APPROVE
-        review = daemon.c4_get_task(worker_id="w2")
+        review = daemon.c4_get_task(worker_id=WORKER_2)
         result = daemon.c4_submit(
             task_id=review.task_id,
             commit_sha="def",
             validation_results=[{"name": "lint", "status": "pass"}],
-            worker_id="w2",
+            worker_id=WORKER_2,
             # No review_result, no review_comments
         )
 
@@ -131,21 +132,21 @@ class TestRequestChangesFlow:
         daemon.c4_start()
 
         # Implement T-001-0
-        impl = daemon.c4_get_task(worker_id="w1")
+        impl = daemon.c4_get_task(worker_id=WORKER_1)
         daemon.c4_submit(
             task_id=impl.task_id,
             commit_sha="abc",
             validation_results=[{"name": "lint", "status": "pass"}],
-            worker_id="w1",
+            worker_id=WORKER_1,
         )
 
         # Review R-001-0 with REQUEST_CHANGES
-        review = daemon.c4_get_task(worker_id="w2")
+        review = daemon.c4_get_task(worker_id=WORKER_2)
         result = daemon.c4_submit(
             task_id=review.task_id,
             commit_sha="def",
             validation_results=[{"name": "lint", "status": "pass"}],
-            worker_id="w2",
+            worker_id=WORKER_2,
             review_result="REQUEST_CHANGES",
             review_comments="Fix the typo in variable name",
         )
@@ -167,21 +168,21 @@ class TestRequestChangesFlow:
         daemon.c4_start()
 
         # Implement
-        impl = daemon.c4_get_task(worker_id="w1")
+        impl = daemon.c4_get_task(worker_id=WORKER_1)
         daemon.c4_submit(
             task_id=impl.task_id,
             commit_sha="abc",
             validation_results=[{"name": "lint", "status": "pass"}],
-            worker_id="w1",
+            worker_id=WORKER_1,
         )
 
         # Review with REQUEST_CHANGES but no comments
-        review = daemon.c4_get_task(worker_id="w2")
+        review = daemon.c4_get_task(worker_id=WORKER_2)
         result = daemon.c4_submit(
             task_id=review.task_id,
             commit_sha="def",
             validation_results=[{"name": "lint", "status": "pass"}],
-            worker_id="w2",
+            worker_id=WORKER_2,
             review_result="REQUEST_CHANGES",
             # No review_comments
         )
@@ -195,41 +196,41 @@ class TestRequestChangesFlow:
         daemon.c4_start()
 
         # Round 1: Implement -> Review -> REQUEST_CHANGES
-        impl0 = daemon.c4_get_task(worker_id="w1")
+        impl0 = daemon.c4_get_task(worker_id=WORKER_1)
         daemon.c4_submit(
             task_id=impl0.task_id,
             commit_sha="v0",
             validation_results=[{"name": "lint", "status": "pass"}],
-            worker_id="w1",
+            worker_id=WORKER_1,
         )
 
-        review0 = daemon.c4_get_task(worker_id="w2")
+        review0 = daemon.c4_get_task(worker_id=WORKER_2)
         daemon.c4_submit(
             task_id=review0.task_id,
             commit_sha="r0",
             validation_results=[{"name": "lint", "status": "pass"}],
-            worker_id="w2",
+            worker_id=WORKER_2,
             review_result="REQUEST_CHANGES",
             review_comments="Fix bug",
         )
 
         # Round 2: Fix -> Review -> APPROVE
-        impl1 = daemon.c4_get_task(worker_id="w1")
+        impl1 = daemon.c4_get_task(worker_id=WORKER_1)
         assert impl1.task_id == "T-001-1"
         daemon.c4_submit(
             task_id=impl1.task_id,
             commit_sha="v1",
             validation_results=[{"name": "lint", "status": "pass"}],
-            worker_id="w1",
+            worker_id=WORKER_1,
         )
 
-        review1 = daemon.c4_get_task(worker_id="w2")
+        review1 = daemon.c4_get_task(worker_id=WORKER_2)
         assert review1.task_id == "R-001-1"
         result = daemon.c4_submit(
             task_id=review1.task_id,
             commit_sha="r1",
             validation_results=[{"name": "lint", "status": "pass"}],
-            worker_id="w2",
+            worker_id=WORKER_2,
             review_result="APPROVE",
         )
 
@@ -248,7 +249,7 @@ class TestMaxRevisionBlocked:
 
         # Cycle through versions until max_revision exceeded
         for version in range(3):  # 0, 1, 2 -> 3 would exceed
-            impl = daemon.c4_get_task(worker_id="w1")
+            impl = daemon.c4_get_task(worker_id=WORKER_1)
             if impl is None:
                 break
 
@@ -256,10 +257,10 @@ class TestMaxRevisionBlocked:
                 task_id=impl.task_id,
                 commit_sha=f"v{version}",
                 validation_results=[{"name": "lint", "status": "pass"}],
-                worker_id="w1",
+                worker_id=WORKER_1,
             )
 
-            review = daemon.c4_get_task(worker_id="w2")
+            review = daemon.c4_get_task(worker_id=WORKER_2)
             if review is None:
                 break
 
@@ -267,7 +268,7 @@ class TestMaxRevisionBlocked:
                 task_id=review.task_id,
                 commit_sha=f"r{version}",
                 validation_results=[{"name": "lint", "status": "pass"}],
-                worker_id="w2",
+                worker_id=WORKER_2,
                 review_result="REQUEST_CHANGES",
                 review_comments=f"Issue {version + 1}",
             )
@@ -292,39 +293,39 @@ class TestMaxRevisionBlocked:
         daemon.c4_start()
 
         # Version 0
-        impl0 = daemon.c4_get_task(worker_id="w1")
+        impl0 = daemon.c4_get_task(worker_id=WORKER_1)
         daemon.c4_submit(
             task_id=impl0.task_id,
             commit_sha="v0",
             validation_results=[{"name": "lint", "status": "pass"}],
-            worker_id="w1",
+            worker_id=WORKER_1,
         )
 
-        review0 = daemon.c4_get_task(worker_id="w2")
+        review0 = daemon.c4_get_task(worker_id=WORKER_2)
         daemon.c4_submit(
             task_id=review0.task_id,
             commit_sha="r0",
             validation_results=[{"name": "lint", "status": "pass"}],
-            worker_id="w2",
+            worker_id=WORKER_2,
             review_result="REQUEST_CHANGES",
             review_comments="Fix v0",
         )
 
         # Version 1
-        impl1 = daemon.c4_get_task(worker_id="w1")
+        impl1 = daemon.c4_get_task(worker_id=WORKER_1)
         daemon.c4_submit(
             task_id=impl1.task_id,
             commit_sha="v1",
             validation_results=[{"name": "lint", "status": "pass"}],
-            worker_id="w1",
+            worker_id=WORKER_1,
         )
 
-        review1 = daemon.c4_get_task(worker_id="w2")
+        review1 = daemon.c4_get_task(worker_id=WORKER_2)
         result = daemon.c4_submit(
             task_id=review1.task_id,
             commit_sha="r1",
             validation_results=[{"name": "lint", "status": "pass"}],
-            worker_id="w2",
+            worker_id=WORKER_2,
             review_result="REQUEST_CHANGES",
             review_comments="Fix v1",
         )
@@ -350,12 +351,12 @@ class TestReviewPriority:
         daemon.c4_start()
 
         # Implement
-        impl = daemon.c4_get_task(worker_id="w1")
+        impl = daemon.c4_get_task(worker_id=WORKER_1)
         daemon.c4_submit(
             task_id=impl.task_id,
             commit_sha="abc",
             validation_results=[{"name": "lint", "status": "pass"}],
-            worker_id="w1",
+            worker_id=WORKER_1,
         )
 
         # Check review priority
@@ -368,12 +369,12 @@ class TestReviewPriority:
         daemon.c4_add_todo(task_id="T-001", title="Feature", scope=None, dod="Impl", priority=5)
         daemon.c4_start()
 
-        impl = daemon.c4_get_task(worker_id="w1")
+        impl = daemon.c4_get_task(worker_id=WORKER_1)
         daemon.c4_submit(
             task_id=impl.task_id,
             commit_sha="abc",
             validation_results=[{"name": "lint", "status": "pass"}],
-            worker_id="w1",
+            worker_id=WORKER_1,
         )
 
         review = daemon.get_task("R-001-0")
@@ -389,12 +390,12 @@ class TestReviewDisabled:
         daemon.c4_add_todo(task_id="T-001", title="Feature", scope=None, dod="Impl")
         daemon.c4_start()
 
-        impl = daemon.c4_get_task(worker_id="w1")
+        impl = daemon.c4_get_task(worker_id=WORKER_1)
         result = daemon.c4_submit(
             task_id=impl.task_id,
             commit_sha="abc",
             validation_results=[{"name": "lint", "status": "pass"}],
-            worker_id="w1",
+            worker_id=WORKER_1,
         )
 
         # Should complete directly
