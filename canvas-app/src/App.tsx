@@ -98,6 +98,104 @@ export default function App() {
 
       <Legend />
 
+      {/* Empty state: No project selected */}
+      {!projectPath && !loading && (
+        <div style={{
+          position: 'absolute',
+          top: '50%',
+          left: '50%',
+          transform: 'translate(-50%, -50%)',
+          textAlign: 'center',
+          zIndex: 100,
+          padding: '32px',
+          background: 'rgba(255, 255, 255, 0.95)',
+          borderRadius: '12px',
+          boxShadow: '0 4px 12px rgba(0, 0, 0, 0.1)',
+          maxWidth: '400px',
+        }}>
+          <h2 style={{ margin: '0 0 16px', fontSize: '24px', color: '#333' }}>
+            Welcome to C4 Canvas
+          </h2>
+          <p style={{ margin: '0 0 24px', color: '#666', lineHeight: '1.5' }}>
+            Select a project folder to visualize your C4 project structure, tasks, and dependencies.
+          </p>
+          <button
+            onClick={handleOpenFolder}
+            style={{
+              padding: '12px 24px',
+              fontSize: '16px',
+              background: '#0066cc',
+              color: '#fff',
+              border: 'none',
+              borderRadius: '8px',
+              cursor: 'pointer',
+              fontWeight: 500,
+              transition: 'background 0.2s',
+            }}
+            onMouseOver={(e) => e.currentTarget.style.background = '#0052a3'}
+            onMouseOut={(e) => e.currentTarget.style.background = '#0066cc'}
+          >
+            📁 Open Project Folder
+          </button>
+        </div>
+      )}
+
+      {/* Empty state: No nodes in scanned project */}
+      {projectPath && data && data.nodes.length === 0 && !loading && !error && (
+        <div style={{
+          position: 'absolute',
+          top: '50%',
+          left: '50%',
+          transform: 'translate(-50%, -50%)',
+          textAlign: 'center',
+          zIndex: 100,
+          padding: '32px',
+          background: 'rgba(255, 255, 255, 0.95)',
+          borderRadius: '12px',
+          boxShadow: '0 4px 12px rgba(0, 0, 0, 0.1)',
+          maxWidth: '400px',
+        }}>
+          <h3 style={{ margin: '0 0 12px', fontSize: '20px', color: '#333' }}>
+            No Nodes Found
+          </h3>
+          <p style={{ margin: '0 0 16px', color: '#666', lineHeight: '1.5' }}>
+            The selected project doesn't contain any C4 data yet. Try refreshing or select a different folder.
+          </p>
+          <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+            <button
+              onClick={handleRefresh}
+              style={{
+                padding: '10px 20px',
+                fontSize: '14px',
+                background: '#0066cc',
+                color: '#fff',
+                border: 'none',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                fontWeight: 500,
+              }}
+            >
+              🔄 Refresh
+            </button>
+            <button
+              onClick={handleOpenFolder}
+              style={{
+                padding: '10px 20px',
+                fontSize: '14px',
+                background: '#666',
+                color: '#fff',
+                border: 'none',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                fontWeight: 500,
+              }}
+            >
+              📁 Change Folder
+            </button>
+          </div>
+        </div>
+      )}
+
       {selectedNode && (
         <DetailPanel
           node={selectedNode}
