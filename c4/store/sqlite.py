@@ -577,7 +577,75 @@ class SQLiteTaskStore:
                 CREATE INDEX IF NOT EXISTS idx_c4_task_history_task
                 ON c4_task_history (project_id, task_id)
             """)
+
+            # Memory system tables
+            self._init_memory_tables(conn)
+
             conn.commit()
+
+    def _init_memory_tables(self, conn: sqlite3.Connection) -> None:
+        """Initialize memory system tables for semantic search and observations.
+
+        Tables:
+            c4_observations: Stores observations/memories with metadata
+            c4_memory_index: Index for semantic search (vector store reference)
+        """
+        # Observations table - stores memory content with metadata
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS c4_observations (
+                id TEXT PRIMARY KEY,
+                project_id TEXT NOT NULL,
+                source TEXT NOT NULL,           -- file path, conversation, user, etc.
+                content TEXT NOT NULL,          -- the actual observation text
+                importance INTEGER DEFAULT 5,   -- 1-10 scale
+                tags TEXT,                      -- JSON array of tags
+                metadata TEXT,                  -- JSON object for extra data
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        # Indexes for efficient queries
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_c4_observations_project
+            ON c4_observations (project_id)
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_c4_observations_source
+            ON c4_observations (project_id, source)
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_c4_observations_importance
+            ON c4_observations (project_id, importance DESC)
+        """)
+
+        # Memory index table - links observations to vector embeddings
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS c4_memory_index (
+                id TEXT PRIMARY KEY,
+                project_id TEXT NOT NULL,
+                observation_id TEXT NOT NULL REFERENCES c4_observations(id),
+                embedding_id TEXT NOT NULL,     -- ID in vector store
+                chunk_index INTEGER DEFAULT 0,  -- for chunked content
+                chunk_text TEXT,                -- the chunked text that was embedded
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE (observation_id, chunk_index)
+            )
+        """)
+
+        # Indexes for memory_index
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_c4_memory_index_project
+            ON c4_memory_index (project_id)
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_c4_memory_index_observation
+            ON c4_memory_index (observation_id)
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_c4_memory_index_embedding
+            ON c4_memory_index (embedding_id)
+        """)
 
     @contextmanager
     def _get_connection(self) -> Generator[sqlite3.Connection, None, None]:
