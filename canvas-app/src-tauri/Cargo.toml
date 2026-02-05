@@ -1,0 +1,40 @@
+[package]
+name = "c4-canvas"
+version = "0.1.0"
+description = "C4 Canvas - Auto-Map Project Visualizer"
+authors = ["C4 Project"]
+license = "MIT"
+repository = ""
+edition = "2021"
+rust-version = "1.70"
+
+[lib]
+name = "c4_canvas_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+tauri-plugin-shell = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yaml = "0.9"
+walkdir = "2"
+chrono = "0.4"
+regex = "1"
+anyhow = "1"
+dirs = "5"
+
+[features]
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]
+
+[profile.release]
+panic = "abort"
+codegen-units = 1
+lto = true
+opt-level = "s"
+strip = true

@@ -1,0 +1,238 @@
+/* Custom node styles for tldraw shapes */
+
+.c4-node {
+  padding: 12px 16px;
+  border-radius: 8px;
+  font-size: 13px;
+  min-width: 140px;
+  max-width: 200px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.c4-node:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+}
+
+.c4-node--document {
+  background: linear-gradient(135deg, #3a506b, #2c3e50);
+  border: 2px solid #5c8fbd;
+}
+
+.c4-node--config {
+  background: linear-gradient(135deg, #6b3a6b, #4a2c4a);
+  border: 2px solid #b55cb5;
+}
+
+.c4-node--session {
+  background: linear-gradient(135deg, #3a6b5c, #2c4a42);
+  border: 2px solid #5cb58f;
+}
+
+.c4-node--task {
+  background: linear-gradient(135deg, #6b5c3a, #4a422c);
+  border: 2px solid #b5a55c;
+}
+
+.c4-node--connection {
+  background: linear-gradient(135deg, #3a5c6b, #2c424a);
+  border: 2px solid #5ca5b5;
+}
+
+.c4-node__header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.c4-node__icon {
+  width: 20px;
+  height: 20px;
+  opacity: 0.8;
+}
+
+.c4-node__label {
+  font-weight: 600;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.c4-node__path {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.6);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Detail panel styles */
+.detail-panel {
+  position: fixed;
+  right: 16px;
+  top: 16px;
+  width: 320px;
+  max-height: calc(100vh - 32px);
+  background: #1e1e2e;
+  border-radius: 12px;
+  border: 1px solid #333;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+  z-index: 1000;
+}
+
+.detail-panel__header {
+  padding: 16px;
+  background: #252535;
+  border-bottom: 1px solid #333;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.detail-panel__title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #fff;
+}
+
+.detail-panel__close {
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: transparent;
+  color: #888;
+  cursor: pointer;
+  border-radius: 4px;
+  font-size: 18px;
+}
+
+.detail-panel__close:hover {
+  background: #333;
+  color: #fff;
+}
+
+.detail-panel__content {
+  padding: 16px;
+  overflow-y: auto;
+  max-height: calc(100vh - 100px);
+}
+
+.detail-panel__section {
+  margin-bottom: 16px;
+}
+
+.detail-panel__label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #666;
+  margin-bottom: 4px;
+}
+
+.detail-panel__value {
+  font-size: 14px;
+  color: #ddd;
+  word-break: break-all;
+}
+
+.detail-panel__metadata {
+  background: #16161e;
+  border-radius: 6px;
+  padding: 12px;
+  font-family: 'Menlo', 'Monaco', monospace;
+  font-size: 12px;
+  color: #8be9fd;
+  white-space: pre-wrap;
+  overflow-x: auto;
+}
+
+/* Toolbar styles */
+.toolbar {
+  position: fixed;
+  left: 16px;
+  top: 16px;
+  display: flex;
+  gap: 8px;
+  z-index: 1000;
+}
+
+.toolbar__button {
+  padding: 10px 16px;
+  border-radius: 8px;
+  border: 1px solid #444;
+  background: #252535;
+  color: #ddd;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.toolbar__button:hover {
+  background: #333;
+  border-color: #555;
+}
+
+.toolbar__button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.toolbar__button--primary {
+  background: #5c8fbd;
+  border-color: #5c8fbd;
+  color: #fff;
+}
+
+.toolbar__button--primary:hover {
+  background: #4a7aa8;
+}
+
+/* Legend */
+.legend {
+  position: fixed;
+  left: 16px;
+  bottom: 16px;
+  background: #1e1e2e;
+  border-radius: 8px;
+  border: 1px solid #333;
+  padding: 12px 16px;
+  z-index: 1000;
+}
+
+.legend__title {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #666;
+  margin-bottom: 8px;
+}
+
+.legend__items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.legend__item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #aaa;
+}
+
+.legend__dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+}
+
+.legend__dot--document { background: #5c8fbd; }
+.legend__dot--config { background: #b55cb5; }
+.legend__dot--session { background: #5cb58f; }
+.legend__dot--task { background: #b5a55c; }
+.legend__dot--connection { background: #5ca5b5; }
