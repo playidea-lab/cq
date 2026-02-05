@@ -294,6 +294,9 @@ class TestC4GetTaskBranch:
         daemon = C4Daemon(project_root=tmp_path)
         daemon.initialize(project_id="test-branch")
 
+        # Enable worktree for parallel execution
+        daemon.config.worktree.enabled = True
+
         # Skip to PLAN and add task
         daemon.state_machine._state.status = ProjectStatus.PLAN
         daemon.state_machine.save_state()
