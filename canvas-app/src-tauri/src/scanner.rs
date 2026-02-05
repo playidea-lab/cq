@@ -555,11 +555,73 @@ struct C4TaskRow {
     updated_at: Option<String>,
 }
 
-/// Truncate a string to a maximum length
+/// Truncate a string to a maximum length (UTF-8 safe)
+///
+/// Uses char_indices() to ensure we only cut at valid UTF-8 boundaries.
 fn truncate_string(s: &str, max_len: usize) -> String {
     if s.len() <= max_len {
         s.to_string()
     } else {
-        format!("{}...", &s[..max_len])
+        // Find the last valid char boundary at or before max_len
+        let mut cut_pos = 0;
+        for (idx, _) in s.char_indices() {
+            if idx > max_len {
+                break;
+            }
+            cut_pos = idx;
+        }
+
+        // If we found a valid position, truncate there
+        if cut_pos > 0 {
+            format!("{}...", &s[..cut_pos])
+        } else {
+            // String starts with a character longer than max_len
+            "...".to_string()
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_truncate_string_ascii() {
+        assert_eq!(truncate_string("hello world", 5), "hello...");
+        assert_eq!(truncate_string("hello", 5), "hello");
+        assert_eq!(truncate_string("hello", 10), "hello");
+    }
+
+    #[test]
+    fn test_truncate_string_korean() {
+        // Korean text: "task_ops.py 모델 라우팅 적용"
+        let korean_text = "task_ops.py 모델 라우팅 적용";
+        let result = truncate_string(korean_text, 30);
+
+        // Should not panic and should be valid UTF-8
+        assert!(result.len() <= 33); // 30 + "..." (3 bytes)
+        assert!(std::str::from_utf8(result.as_bytes()).is_ok());
+    }
+
+    #[test]
+    fn test_truncate_string_emoji() {
+        // Emoji are multi-byte UTF-8 characters
+        let emoji_text = "Hello 👋 World 🌍";
+        let result = truncate_string(emoji_text, 10);
+
+        // Should not panic and should be valid UTF-8
+        assert!(std::str::from_utf8(result.as_bytes()).is_ok());
+    }
+
+    #[test]
+    fn test_truncate_string_empty() {
+        assert_eq!(truncate_string("", 10), "");
+        assert_eq!(truncate_string("", 0), "");
+    }
+
+    #[test]
+    fn test_truncate_string_exact_length() {
+        let text = "exactly10!";
+        assert_eq!(truncate_string(text, 10), "exactly10!");
     }
 }

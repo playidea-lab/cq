@@ -1,7 +1,7 @@
-import { useCallback } from 'react';
+import { useCallback, useRef } from 'react';
 import { Tldraw, Editor, createShapeId, TLComponents, JsonObject } from 'tldraw';
 import 'tldraw/tldraw.css';
-import type { CanvasData, CanvasNode } from '../types';
+import type { CanvasData, CanvasNode, CanvasEdge } from '../types';
 
 interface CanvasProps {
   data: CanvasData | null;
@@ -52,13 +52,60 @@ const components: TLComponents = {
 
 // Store nodes separately for lookup (tldraw meta only accepts JsonObject)
 const nodeStore = new Map<string, CanvasNode>();
+// Store edges for position updates
+const edgeStore = new Map<string, CanvasEdge>();
+
+// Constants for node dimensions
+const NODE_WIDTH = 180;
+const NODE_HEIGHT = 80;
+
+// Helper function to update arrows connected to a node
+function updateArrowsForNode(editor: Editor, nodeShapeId: string) {
+  edgeStore.forEach((edge, edgeId) => {
+    const sourceShapeId = createShapeId(edge.source);
+    const targetShapeId = createShapeId(edge.target);
+
+    // Check if this edge is connected to the moved node
+    if (sourceShapeId === nodeShapeId || targetShapeId === nodeShapeId) {
+      const arrowId = createShapeId(`edge-${edgeId}`);
+      const arrow = editor.getShape(arrowId);
+      if (!arrow) return;
+
+      const sourceShape = editor.getShape(sourceShapeId);
+      const targetShape = editor.getShape(targetShapeId);
+      if (!sourceShape || !targetShape) return;
+
+      // Calculate new arrow position
+      const startX = sourceShape.x + NODE_WIDTH;
+      const startY = sourceShape.y + NODE_HEIGHT / 2;
+      const endX = targetShape.x;
+      const endY = targetShape.y + NODE_HEIGHT / 2;
+
+      // Update arrow
+      editor.updateShape({
+        id: arrowId,
+        type: 'arrow',
+        x: startX,
+        y: startY,
+        props: {
+          start: { x: 0, y: 0 },
+          end: { x: endX - startX, y: endY - startY },
+        },
+      });
+    }
+  });
+}
 
 export function Canvas({ onNodeSelect, onEditorMount }: CanvasProps) {
+  const editorRef = useRef<Editor | null>(null);
+
   const handleMount = useCallback((editor: Editor) => {
+    editorRef.current = editor;
     onEditorMount(editor);
 
-    // Listen for selection changes
+    // Listen for shape changes to update arrow positions
     editor.store.listen((entry) => {
+      // Handle selection changes
       if (entry.changes.updated) {
         const selectedIds = editor.getSelectedShapeIds();
         if (selectedIds.length === 1) {
@@ -73,6 +120,14 @@ export function Canvas({ onNodeSelect, onEditorMount }: CanvasProps) {
         } else {
           onNodeSelect(null);
         }
+
+        // Update arrows when frame shapes move
+        Object.values(entry.changes.updated).forEach((record) => {
+          const [_from, to] = record;
+          if (to && to.typeName === 'shape' && to.type === 'frame') {
+            updateArrowsForNode(editor, to.id);
+          }
+        });
       }
     });
   }, [onEditorMount, onNodeSelect]);
@@ -90,10 +145,16 @@ export function Canvas({ onNodeSelect, onEditorMount }: CanvasProps) {
 export function renderCanvasData(editor: Editor, data: CanvasData) {
   // Clear stores
   nodeStore.clear();
+  edgeStore.clear();
 
   // Store nodes for later lookup
   data.nodes.forEach(node => {
     nodeStore.set(node.id, node);
+  });
+
+  // Store edges for position updates
+  data.edges.forEach(edge => {
+    edgeStore.set(edge.id, edge);
   });
 
   // Clear existing shapes
@@ -126,17 +187,14 @@ export function renderCanvasData(editor: Editor, data: CanvasData) {
 
   editor.createShapes(nodeShapes);
 
-  // Create arrows for edges with calculated start/end points
-  const NODE_WIDTH = 180;
-  const NODE_HEIGHT = 80;
-
+  // Create arrows for edges
   const arrowShapes = data.edges.map((edge) => {
     const sourceNode = data.nodes.find(n => n.id === edge.source);
     const targetNode = data.nodes.find(n => n.id === edge.target);
 
     if (!sourceNode || !targetNode) return null;
 
-    // Calculate edge start (right side of source) and end (left side of target)
+    // Calculate initial arrow position
     const startX = sourceNode.position.x + NODE_WIDTH;
     const startY = sourceNode.position.y + NODE_HEIGHT / 2;
     const endX = targetNode.position.x;
