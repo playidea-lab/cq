@@ -25,6 +25,8 @@ dependencies = [
     "opentelemetry-exporter-otlp>=1.39.1",
     "prometheus-client>=0.24.1",
     "multilspy>=0.0.15",
+    "sqlite-vec>=0.1.0",
+    "tiktoken>=0.5.0",
 ]
 
 [project.optional-dependencies]
@@ -52,6 +54,10 @@ gitlab = [
 ]
 monitoring = [
     "prometheus-client>=0.19.0",
+]
+embeddings = [
+    "openai>=1.0.0",
+    "sentence-transformers>=2.0.0",
 ]
 
 [project.scripts]
