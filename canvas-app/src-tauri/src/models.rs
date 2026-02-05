@@ -17,17 +17,134 @@ pub enum NodeType {
 impl NodeType {
     pub fn from_path(path: &str) -> Self {
         let lower = path.to_lowercase();
-        if lower.contains(".claude") || lower.contains(".c4") || lower.ends_with(".yaml") || lower.ends_with(".json") || lower.ends_with(".toml") {
-            Self::Config
-        } else if lower.contains("session") || lower.contains("history") || lower.ends_with(".jsonl") {
-            Self::Session
-        } else if lower.contains("task") {
-            Self::Task
-        } else if lower.contains("mcp") || lower.contains("env") || lower.contains("connection") {
-            Self::Connection
-        } else {
-            Self::Document
+
+        // Directory context classification
+        if lower.contains("docs/") || lower.starts_with("docs/") {
+            return Self::Document;
         }
+        if lower.contains(".claude/") || lower.starts_with(".claude/") {
+            return Self::Config;
+        }
+        if lower.contains(".c4/") || lower.starts_with(".c4/") {
+            // Special handling for .c4 subdirectories
+            if lower.contains(".c4/tasks") || lower.contains(".c4/events") {
+                return Self::Task;
+            }
+            return Self::Config;
+        }
+
+        // Build configuration files
+        if lower.ends_with("package.json")
+            || lower.ends_with("cargo.toml")
+            || lower.ends_with("pyproject.toml")
+            || lower.ends_with("tsconfig.json")
+            || lower.ends_with("build.gradle") {
+            return Self::Config;
+        }
+
+        // Environment and connection files
+        if lower.ends_with(".env")
+            || lower.ends_with(".env.local")
+            || lower.ends_with(".env.production")
+            || lower.ends_with(".env.development") {
+            return Self::Connection;
+        }
+
+        // MCP and connection configurations
+        if lower.contains("mcp") || lower.contains("connection") {
+            return Self::Connection;
+        }
+
+        // Session and history files
+        if lower.contains("session") || lower.contains("history") || lower.ends_with(".jsonl") {
+            return Self::Session;
+        }
+
+        // Task-related files
+        if lower.contains("task") {
+            return Self::Task;
+        }
+
+        // General configuration files
+        if lower.ends_with(".yaml") || lower.ends_with(".yml") || lower.ends_with(".json") || lower.ends_with(".toml") {
+            return Self::Config;
+        }
+
+        // Default to Document
+        Self::Document
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_directory_context_classification() {
+        // docs/ directory should be Document
+        assert_eq!(NodeType::from_path("docs/README.md"), NodeType::Document);
+        assert_eq!(NodeType::from_path("docs/api.yaml"), NodeType::Document);
+
+        // .claude/ directory should be Config
+        assert_eq!(NodeType::from_path(".claude/rules/test.md"), NodeType::Config);
+        assert_eq!(NodeType::from_path(".claude/CLAUDE.md"), NodeType::Config);
+
+        // .c4/ directory subdivisions
+        assert_eq!(NodeType::from_path(".c4/config.yaml"), NodeType::Config);
+        assert_eq!(NodeType::from_path(".c4/tasks.db"), NodeType::Task);
+        assert_eq!(NodeType::from_path(".c4/events/event.json"), NodeType::Task);
+    }
+
+    #[test]
+    fn test_build_config_classification() {
+        assert_eq!(NodeType::from_path("package.json"), NodeType::Config);
+        assert_eq!(NodeType::from_path("Cargo.toml"), NodeType::Config);
+        assert_eq!(NodeType::from_path("pyproject.toml"), NodeType::Config);
+        assert_eq!(NodeType::from_path("tsconfig.json"), NodeType::Config);
+        assert_eq!(NodeType::from_path("build.gradle"), NodeType::Config);
+        assert_eq!(NodeType::from_path("src/package.json"), NodeType::Config);
+    }
+
+    #[test]
+    fn test_env_file_classification() {
+        assert_eq!(NodeType::from_path(".env"), NodeType::Connection);
+        assert_eq!(NodeType::from_path(".env.local"), NodeType::Connection);
+        assert_eq!(NodeType::from_path(".env.production"), NodeType::Connection);
+        assert_eq!(NodeType::from_path(".env.development"), NodeType::Connection);
+        assert_eq!(NodeType::from_path("config/.env"), NodeType::Connection);
+    }
+
+    #[test]
+    fn test_session_classification() {
+        assert_eq!(NodeType::from_path("session.jsonl"), NodeType::Session);
+        assert_eq!(NodeType::from_path("history/chat.jsonl"), NodeType::Session);
+        assert_eq!(NodeType::from_path("logs/session-123.jsonl"), NodeType::Session);
+    }
+
+    #[test]
+    fn test_task_classification() {
+        assert_eq!(NodeType::from_path("tasks/TODO.md"), NodeType::Task);
+        assert_eq!(NodeType::from_path("task-list.txt"), NodeType::Task);
+    }
+
+    #[test]
+    fn test_connection_classification() {
+        assert_eq!(NodeType::from_path("mcp-config.json"), NodeType::Connection);
+        assert_eq!(NodeType::from_path("connection-settings.yaml"), NodeType::Connection);
+    }
+
+    #[test]
+    fn test_general_config_classification() {
+        assert_eq!(NodeType::from_path("config.yaml"), NodeType::Config);
+        assert_eq!(NodeType::from_path("settings.json"), NodeType::Config);
+        assert_eq!(NodeType::from_path("app.toml"), NodeType::Config);
+    }
+
+    #[test]
+    fn test_document_classification() {
+        assert_eq!(NodeType::from_path("README.md"), NodeType::Document);
+        assert_eq!(NodeType::from_path("src/main.rs"), NodeType::Document);
+        assert_eq!(NodeType::from_path("index.html"), NodeType::Document);
     }
 }
 
