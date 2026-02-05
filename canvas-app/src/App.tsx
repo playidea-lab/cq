@@ -13,7 +13,7 @@ export default function App() {
   const [selectedNode, setSelectedNode] = useState<CanvasNode | null>(null);
   const [errorVisible, setErrorVisible] = useState<boolean>(true);
   const editorRef = useRef<Editor | null>(null);
-  const { loading, error, data, scanProject, loadCanvas, saveCanvas } = useScanner();
+  const { loading, error, data, scanProject, loadCanvas, saveCanvas, setData } = useScanner();
 
   // Handle editor mount
   const handleEditorMount = useCallback((editor: Editor) => {
@@ -74,6 +74,23 @@ export default function App() {
     setSelectedNode(node);
   }, []);
 
+  // Handle node position change from drag
+  const handleNodePositionChange = useCallback((nodeId: string, x: number, y: number) => {
+    if (!data) return;
+
+    // Update the node's position in data
+    const updatedNodes = data.nodes.map(node =>
+      node.id === nodeId
+        ? { ...node, position: { x, y } }
+        : node
+    );
+
+    setData({
+      ...data,
+      nodes: updatedNodes,
+    });
+  }, [data, setData]);
+
   // Close detail panel
   const handleCloseDetail = useCallback(() => {
     setSelectedNode(null);
@@ -105,6 +122,7 @@ export default function App() {
         data={data}
         onNodeSelect={handleNodeSelect}
         onEditorMount={handleEditorMount}
+        onNodePositionChange={handleNodePositionChange}
       />
 
       <Toolbar
