@@ -11,11 +11,14 @@ from c4.supervisor._legacy.agent_router import (
     TASK_TYPE_AGENT_OVERRIDES,
 )
 
+# Path to YAML files in the package (not .c4/agents which doesn't exist)
+EXAMPLES_DIR = Path(__file__).parent.parent.parent / "c4" / "supervisor" / "agent_graph" / "examples"
+
 
 class TestYAMLFilesExist:
     """Test that all required YAML files were generated."""
 
-    AGENTS_DIR = Path(".c4/agents")
+    AGENTS_DIR = EXAMPLES_DIR
 
     def test_domains_directory_has_files(self):
         """Domains directory should have YAML files for each domain."""
@@ -59,7 +62,7 @@ class TestYAMLFilesExist:
 class TestYAMLFormatValidity:
     """Test that YAML files are valid and parseable."""
 
-    AGENTS_DIR = Path(".c4/agents")
+    AGENTS_DIR = EXAMPLES_DIR
 
     def test_domain_yaml_is_valid(self):
         """All domain YAML files should be valid."""
@@ -106,7 +109,7 @@ class TestRoutingCompatibility:
 
     def test_all_domains_covered(self):
         """All domains in DOMAIN_AGENT_MAP should have YAML files."""
-        domains_dir = Path(".c4/agents/domains")
+        domains_dir = EXAMPLES_DIR / "domains"
         yaml_domains = {f.stem for f in domains_dir.glob("*.yaml")}
 
         for domain in DOMAIN_AGENT_MAP.keys():
@@ -114,7 +117,7 @@ class TestRoutingCompatibility:
 
     def test_all_agents_covered(self):
         """All agents referenced in routing should have YAML files."""
-        personas_dir = Path(".c4/agents/personas")
+        personas_dir = EXAMPLES_DIR / "personas"
         yaml_agents = {f.stem for f in personas_dir.glob("*.yaml")}
 
         # Collect all agents from domain chains
@@ -132,7 +135,7 @@ class TestRoutingCompatibility:
         """Domain primary agents in YAML should match legacy config."""
         import yaml
 
-        domains_dir = Path(".c4/agents/domains")
+        domains_dir = EXAMPLES_DIR / "domains"
 
         for domain, legacy_config in DOMAIN_AGENT_MAP.items():
             yaml_file = domains_dir / f"{domain}.yaml"
@@ -163,7 +166,7 @@ class TestAgentGraphLoading:
         from c4.supervisor.agent_graph.models import AgentDefinition
 
         graph = AgentGraph()
-        personas_dir = Path(".c4/agents/personas")
+        personas_dir = EXAMPLES_DIR / "personas"
 
         for yaml_file in personas_dir.glob("*.yaml"):
             with open(yaml_file) as f:
@@ -185,7 +188,7 @@ class TestAgentGraphLoading:
         graph = AgentGraph()
 
         # Load personas first (domains reference them)
-        personas_dir = Path(".c4/agents/personas")
+        personas_dir = EXAMPLES_DIR / "personas"
         for yaml_file in personas_dir.glob("*.yaml"):
             with open(yaml_file) as f:
                 data = yaml.safe_load(f)
@@ -193,7 +196,7 @@ class TestAgentGraphLoading:
             graph.add_agent(agent_def)
 
         # Load domains
-        domains_dir = Path(".c4/agents/domains")
+        domains_dir = EXAMPLES_DIR / "domains"
         for yaml_file in domains_dir.glob("*.yaml"):
             with open(yaml_file) as f:
                 data = yaml.safe_load(f)
@@ -214,7 +217,7 @@ class TestAgentGraphLoading:
         graph = AgentGraph()
 
         # Load personas first
-        personas_dir = Path(".c4/agents/personas")
+        personas_dir = EXAMPLES_DIR / "personas"
         for yaml_file in personas_dir.glob("*.yaml"):
             with open(yaml_file) as f:
                 data = yaml.safe_load(f)
@@ -222,7 +225,7 @@ class TestAgentGraphLoading:
             graph.add_agent(agent_def)
 
         # Load domains
-        domains_dir = Path(".c4/agents/domains")
+        domains_dir = EXAMPLES_DIR / "domains"
         for yaml_file in domains_dir.glob("*.yaml"):
             with open(yaml_file) as f:
                 data = yaml.safe_load(f)

@@ -1120,7 +1120,7 @@ Thumbs.db
         Returns:
             GitResult with branch creation status
         """
-        from .daemon import GitResult
+        from .git_ops import GitResult
 
         # Check if task branch already exists
         check_result = git_ops._run_git("branch", "--list", task_branch)

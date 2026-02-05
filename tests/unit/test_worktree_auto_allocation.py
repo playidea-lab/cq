@@ -46,9 +46,12 @@ class TestWorktreeAutoAllocation:
 
     @pytest.fixture
     def daemon(self, git_repo: Path) -> C4Daemon:
-        """Create C4Daemon with git repo."""
+        """Create C4Daemon with git repo and worktree enabled."""
         daemon = C4Daemon(project_root=git_repo)
         daemon.initialize(project_id="test-worktree")
+
+        # Enable worktree for parallel execution
+        daemon.config.worktree.enabled = True
 
         # Skip to PLAN and start
         daemon.state_machine._state.status = ProjectStatus.PLAN
@@ -162,6 +165,9 @@ class TestWorktreeAutoAllocationEdgeCases:
 
         daemon = C4Daemon(project_root=tmp_path)
         daemon.initialize(project_id="test-no-git")
+
+        # Enable worktree (will fail for non-git repo)
+        daemon.config.worktree.enabled = True
 
         # Skip to PLAN
         daemon.state_machine._state.status = ProjectStatus.PLAN
