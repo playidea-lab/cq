@@ -148,6 +148,9 @@ class TaskOps:
     def _try_resume_task(self, worker_id: str, state: Any) -> TaskAssignment | None:
         """Try to resume an in_progress task for a worker.
 
+        Detects instance collision: if another process is actively using
+        the same worker_id, rejects resume to prevent state corruption.
+
         Returns:
             TaskAssignment if task was resumed, None otherwise
         """
@@ -160,6 +163,24 @@ class TaskOps:
             task = daemon.get_task(task_id)
             if not task:
                 continue
+
+            # Instance collision detection: Check if another process is using this worker_id
+            # A worker trying to resume should be in the workers dict with matching state
+            worker_info = daemon.worker_manager.get_worker(worker_id)
+            if worker_info:
+                # Check if worker's last_seen is very recent (< 5 seconds)
+                # This indicates another instance is actively using this ID
+                from datetime import timedelta
+                now = datetime.now()
+                if worker_info.last_seen and (now - worker_info.last_seen) < timedelta(seconds=5):
+                    logger.warning(
+                        f"Instance collision detected: Worker '{worker_id}' has recent activity "
+                        f"(last_seen: {worker_info.last_seen}). "
+                        f"Another process may be using the same worker ID. "
+                        f"Rejecting resume to prevent state corruption."
+                    )
+                    # Don't release task - let the active instance handle it
+                    return None
 
             # Verify scope lock is still valid for this worker
             if task.scope:

@@ -24,7 +24,12 @@ import uuid
 WORKER_ID = f"worker-{uuid.uuid4().hex[:8]}"  # 예: "worker-a1b2c3d4"
 ```
 
-이 ID를 이 세션 전체에서 사용합니다. **절대로 "claude-worker" 같은 고정값 사용 금지!**
+⚠️ **CRITICAL**:
+- **ALWAYS** use `uuid.uuid4().hex[:8]` for worker ID generation
+- **NEVER** use fixed values like "claude-worker" or "worker-1"
+- **NEVER** reuse worker IDs across sessions
+- Worker ID format is validated: must match `worker-[a-f0-9]{8}` pattern
+- Duplicate worker IDs will be rejected to prevent instance collision
 
 ## ⚠️ 중요: MCP 도구만 사용
 
@@ -167,7 +172,13 @@ START NOW: Call `mcp__c4__c4_get_task(worker_id="{worker_id}")` and keep looping
 
 workers = []
 for i in range(worker_count):
+    # CRITICAL: Generate unique UUID-based worker ID
+    # This MUST use uuid.uuid4().hex[:8] to ensure uniqueness
     worker_id = f"worker-{uuid.uuid4().hex[:8]}"
+
+    # Validate format (extra safety check)
+    if not re.match(r"^worker-[a-f0-9]{8}$", worker_id):
+        raise ValueError(f"Invalid worker_id format: {worker_id}")
 
     # 모델 결정 (by_model 분포 기반 또는 기본 opus)
     model = "opus"  # 기본값

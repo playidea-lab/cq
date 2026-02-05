@@ -1,11 +1,18 @@
 """C4 Worker Manager - Worker lifecycle management for multi-worker support"""
 
+import logging
+import re
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from c4.models import C4Config, TaskQueue, WorkerInfo
     from c4.state_machine import StateMachine
+
+logger = logging.getLogger(__name__)
+
+# Worker ID format: worker-[8 hex chars from uuid]
+WORKER_ID_PATTERN = re.compile(r"^worker-[a-f0-9]{8}$")
 
 
 class WorkerManager:
@@ -42,8 +49,41 @@ class WorkerManager:
         return False
 
     def register(self, worker_id: str) -> "WorkerInfo":
-        """Register a new worker"""
+        """Register a new worker.
+
+        Validates worker ID format and detects duplicate registrations.
+
+        Args:
+            worker_id: Worker ID in format "worker-[a-f0-9]{8}" (uuid-based)
+
+        Returns:
+            WorkerInfo for the registered worker
+
+        Raises:
+            ValueError: If worker_id format is invalid or already registered
+        """
         from c4.models import EventType, WorkerInfo
+
+        # Validate worker ID format (must be UUID-based)
+        if not WORKER_ID_PATTERN.match(worker_id):
+            raise ValueError(
+                f"Invalid worker_id format: '{worker_id}'. "
+                f"Must match pattern 'worker-[a-f0-9]{{8}}' (generated from uuid.uuid4().hex[:8]). "
+                f"Example: 'worker-a1b2c3d4'"
+            )
+
+        # Detect duplicate worker ID registration
+        if worker_id in self._workers:
+            existing = self._workers[worker_id]
+            logger.warning(
+                f"Worker ID collision detected: '{worker_id}' already registered. "
+                f"State: {existing.state}, Last seen: {existing.last_seen}"
+            )
+            raise ValueError(
+                f"Worker ID '{worker_id}' is already registered. "
+                f"This likely indicates multiple instances using the same ID. "
+                f"Each worker MUST generate a unique ID using uuid.uuid4().hex[:8]"
+            )
 
         now = datetime.now()
         worker = WorkerInfo(
@@ -61,6 +101,7 @@ class WorkerManager:
         )
         self.state_machine.save_state()
 
+        logger.info(f"Worker registered successfully: {worker_id}")
         return worker
 
     def unregister(self, worker_id: str, lock_store: "Any | None" = None) -> bool:
