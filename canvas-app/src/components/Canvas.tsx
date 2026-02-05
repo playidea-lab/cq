@@ -7,6 +7,7 @@ interface CanvasProps {
   data: CanvasData | null;
   onNodeSelect: (node: CanvasNode | null) => void;
   onEditorMount: (editor: Editor) => void;
+  onNodePositionChange?: (nodeId: string, x: number, y: number) => void;
 }
 
 // Map node types to icons (emojis for simplicity)
@@ -18,12 +19,31 @@ const typeIcons: Record<string, string> = {
   connection: '🔗',
 };
 
-// tldraw arrow color type
-type ArrowColor = 'black' | 'blue' | 'green' | 'grey' | 'light-blue' | 'light-green' |
+// tldraw color type (used for both arrows and frames)
+type TldrawColor = 'black' | 'blue' | 'green' | 'grey' | 'light-blue' | 'light-green' |
   'light-red' | 'light-violet' | 'orange' | 'red' | 'violet' | 'white' | 'yellow';
 
+// Map node types to colors (matching Legend CSS)
+// Config=violet, Document=blue, Task=yellow, Session=green, Connection=light-blue
+const getNodeColor = (nodeType: string): TldrawColor => {
+  switch (nodeType) {
+    case 'config':
+      return 'violet';     // purple/violet (#b55cb5)
+    case 'document':
+      return 'blue';        // blue (#5c8fbd)
+    case 'task':
+      return 'yellow';      // yellow (#b5a55c)
+    case 'session':
+      return 'green';       // green (#5cb58f)
+    case 'connection':
+      return 'light-blue';  // cyan/light-blue (#5ca5b5)
+    default:
+      return 'grey';
+  }
+};
+
 // Map edge relations to colors
-const getEdgeColor = (relation: string): ArrowColor => {
+const getEdgeColor = (relation: string): TldrawColor => {
   switch (relation) {
     case 'references':
       return 'blue';
@@ -96,7 +116,7 @@ function updateArrowsForNode(editor: Editor, nodeShapeId: string) {
   });
 }
 
-export function Canvas({ onNodeSelect, onEditorMount }: CanvasProps) {
+export function Canvas({ onNodeSelect, onEditorMount, onNodePositionChange }: CanvasProps) {
   const editorRef = useRef<Editor | null>(null);
 
   const handleMount = useCallback((editor: Editor) => {
@@ -126,11 +146,17 @@ export function Canvas({ onNodeSelect, onEditorMount }: CanvasProps) {
           const [_from, to] = record;
           if (to && to.typeName === 'shape' && to.type === 'frame') {
             updateArrowsForNode(editor, to.id);
+
+            // Notify parent of position change
+            if (onNodePositionChange && to.meta?.nodeId) {
+              const nodeId = to.meta.nodeId as string;
+              onNodePositionChange(nodeId, to.x, to.y);
+            }
           }
         });
       }
     });
-  }, [onEditorMount, onNodeSelect]);
+  }, [onEditorMount, onNodeSelect, onNodePositionChange]);
 
   return (
     <Tldraw
@@ -180,6 +206,7 @@ export function renderCanvasData(editor: Editor, data: CanvasData) {
         w: 180,
         h: 80,
         name: `${typeIcons[node.type] || '📦'} ${node.label}`,
+        color: getNodeColor(node.type),
       },
       meta,
     };
