@@ -224,6 +224,100 @@ class CodeOps:
         except Exception as e:
             return {"success": False, "error": str(e)}
 
+    def find_referencing_symbols(
+        self,
+        name_path: str,
+        file_path: str | None = None,
+    ) -> dict[str, Any]:
+        """Find all references to a symbol in the codebase.
+
+        Args:
+            name_path: Name of the symbol to find references for.
+            file_path: Optional file path to restrict the search.
+
+        Returns:
+            Dict containing:
+                - success: True if search completed successfully
+                - references: List of reference objects
+                - total: Number of references found
+                - symbol: The symbol name that was searched
+        """
+        try:
+            from c4.docs.analyzer import CodeAnalyzer
+
+            analyzer = CodeAnalyzer()
+
+            if file_path:
+                abs_file_path = Path(file_path)
+                if not abs_file_path.is_absolute():
+                    abs_file_path = self._daemon.root / file_path
+
+                if abs_file_path.exists():
+                    analyzer.add_file(abs_file_path)
+                else:
+                    return {
+                        "success": False,
+                        "error": f"File not found: {file_path}",
+                        "references": [],
+                        "total": 0,
+                        "symbol": name_path,
+                    }
+            else:
+                analyzer.add_directory(
+                    self._daemon.root,
+                    recursive=True,
+                    exclude_patterns=[
+                        "**/node_modules/**",
+                        "**/__pycache__/**",
+                        "**/.git/**",
+                        "**/venv/**",
+                        "**/.venv/**",
+                        "**/.c4/**",
+                        "**/.claude/**",
+                        "**/dist/**",
+                        "**/build/**",
+                    ],
+                )
+
+            file_filter = str(file_path) if file_path else None
+            refs = analyzer.find_references(name_path, file_path=file_filter)
+
+            results = []
+            for ref in refs:
+                results.append({
+                    "file_path": ref.location.file_path,
+                    "line": ref.location.start_line,
+                    "column": ref.location.start_column,
+                    "end_line": ref.location.end_line,
+                    "end_column": ref.location.end_column,
+                    "context": ref.context,
+                    "ref_kind": ref.ref_kind,
+                })
+
+            return {
+                "success": True,
+                "references": results,
+                "total": len(results),
+                "symbol": name_path,
+            }
+
+        except ImportError:
+            return {
+                "success": False,
+                "error": "CodeAnalyzer not available",
+                "references": [],
+                "total": 0,
+                "symbol": name_path,
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "error": str(e),
+                "references": [],
+                "total": 0,
+                "symbol": name_path,
+            }
+
     def replace_symbol_body(
         self,
         name_path: str,
