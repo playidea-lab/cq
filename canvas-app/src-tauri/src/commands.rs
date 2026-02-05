@@ -11,9 +11,10 @@ const CANVAS_FILE: &str = ".c4/canvas.json";
 
 /// Scan a project directory and return canvas data
 #[tauri::command(rename_all = "snake_case")]
-pub fn scan_project_cmd(path: String) -> ScanResult {
-    let project_path = Path::new(&path);
+pub async fn scan_project_cmd(path: String) -> ScanResult {
+    let project_path = Path::new(&path).to_path_buf();
 
+    // Quick sync checks before spawning blocking task
     if !project_path.exists() {
         return ScanResult::err(format!("Path does not exist: {}", path));
     }
@@ -22,9 +23,11 @@ pub fn scan_project_cmd(path: String) -> ScanResult {
         return ScanResult::err(format!("Path is not a directory: {}", path));
     }
 
-    match scan_project(project_path) {
-        Ok(data) => ScanResult::ok(data),
-        Err(e) => ScanResult::err(format!("Scan failed: {}", e)),
+    // Wrap heavy I/O operations in spawn_blocking to prevent UI freeze
+    match tokio::task::spawn_blocking(move || scan_project(&project_path)).await {
+        Ok(Ok(data)) => ScanResult::ok(data),
+        Ok(Err(e)) => ScanResult::err(format!("Scan failed: {}", e)),
+        Err(e) => ScanResult::err(format!("Task execution failed: {}", e)),
     }
 }
 
