@@ -2,6 +2,7 @@
 
 use anyhow::{Context, Result};
 use regex::Regex;
+use rusqlite::Connection;
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -60,6 +61,9 @@ pub fn scan_project(project_path: &Path) -> Result<CanvasData> {
 
     // Scan for Claude session files
     scan_sessions(project_path, &mut nodes, &mut node_ids)?;
+
+    // Scan C4 tasks from SQLite database
+    scan_c4_tasks(project_path, &mut nodes, &mut edges, &mut node_ids)?;
 
     // Extract relationships between nodes
     extract_relationships(&nodes, &mut edges)?;
@@ -400,7 +404,7 @@ fn find_matching_node<'a>(
     None
 }
 
-/// Add edges for C4 task dependencies
+/// Add edges for C4 task dependencies (from metadata)
 fn add_c4_task_edges(nodes: &[CanvasNode], edges: &mut Vec<CanvasEdge>) {
     // Find task nodes and extract dependency information from metadata
     let task_nodes: Vec<_> = nodes
@@ -433,5 +437,129 @@ fn add_c4_task_edges(nodes: &[CanvasNode], edges: &mut Vec<CanvasEdge>) {
                 }
             }
         }
+    }
+}
+
+/// Scan C4 tasks from the SQLite database
+fn scan_c4_tasks(
+    project_root: &Path,
+    nodes: &mut Vec<CanvasNode>,
+    edges: &mut Vec<CanvasEdge>,
+    node_ids: &mut HashSet<String>,
+) -> Result<()> {
+    let db_path = project_root.join(".c4").join("c4.db");
+
+    if !db_path.exists() {
+        return Ok(());
+    }
+
+    let conn = Connection::open(&db_path)
+        .context("Failed to open C4 database")?;
+
+    // Query tasks from c4_tasks table
+    let mut stmt = conn.prepare(
+        "SELECT task_id, task_json, status, updated_at FROM c4_tasks WHERE project_id = 'c4'"
+    )?;
+
+    let task_iter = stmt.query_map([], |row| {
+        Ok(C4TaskRow {
+            task_id: row.get(0)?,
+            task_json: row.get(1)?,
+            status: row.get(2)?,
+            updated_at: row.get::<_, Option<String>>(3)?,
+        })
+    })?;
+
+    // Build a map of task_id -> node_id for dependency resolution
+    let mut task_node_map: HashMap<String, String> = HashMap::new();
+
+    for task_result in task_iter {
+        let task_row = task_result?;
+
+        // Parse task JSON
+        let task_data: serde_json::Value = serde_json::from_str(&task_row.task_json)
+            .unwrap_or_default();
+
+        let title = task_data.get("title")
+            .and_then(|v| v.as_str())
+            .unwrap_or(&task_row.task_id)
+            .to_string();
+
+        // Create metadata from task data
+        let mut metadata = HashMap::new();
+        metadata.insert("id".to_string(), serde_json::json!(task_row.task_id));
+        metadata.insert("status".to_string(), serde_json::json!(task_row.status));
+
+        if let Some(dod) = task_data.get("dod") {
+            metadata.insert("dod".to_string(), dod.clone());
+        }
+        if let Some(deps) = task_data.get("dependencies") {
+            metadata.insert("dependencies".to_string(), deps.clone());
+        }
+        if let Some(domain) = task_data.get("domain") {
+            metadata.insert("domain".to_string(), domain.clone());
+        }
+
+        // Parse timestamp from updated_at
+        let timestamp = task_row.updated_at
+            .and_then(|s| chrono::DateTime::parse_from_rfc3339(&s).ok())
+            .map(|dt| dt.timestamp_millis());
+
+        let node_id = generate_node_id(&format!("c4task:{}", task_row.task_id));
+
+        // Store mapping for dependency resolution
+        task_node_map.insert(task_row.task_id.clone(), node_id.clone());
+
+        if node_ids.insert(node_id.clone()) {
+            nodes.push(CanvasNode {
+                id: node_id,
+                node_type: NodeType::Task,
+                label: format!("{} {}", task_row.task_id, truncate_string(&title, 30)),
+                path: None,
+                metadata,
+                position: Position { x: 0.0, y: 0.0 },
+                timestamp,
+            });
+        }
+    }
+
+    // Add dependency edges between tasks
+    for node in nodes.iter().filter(|n| n.node_type == NodeType::Task) {
+        if let Some(deps) = node.metadata.get("dependencies") {
+            if let Some(dep_array) = deps.as_array() {
+                for dep in dep_array {
+                    if let Some(dep_task_id) = dep.as_str() {
+                        if let Some(dep_node_id) = task_node_map.get(dep_task_id) {
+                            let edge_id = format!("edge_{}_{}", node.id, dep_node_id);
+                            edges.push(CanvasEdge {
+                                id: edge_id,
+                                source: node.id.clone(),
+                                target: dep_node_id.clone(),
+                                relation: RelationType::Depends,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Helper struct for reading C4 task rows
+struct C4TaskRow {
+    task_id: String,
+    task_json: String,
+    status: String,
+    updated_at: Option<String>,
+}
+
+/// Truncate a string to a maximum length
+fn truncate_string(s: &str, max_len: usize) -> String {
+    if s.len() <= max_len {
+        s.to_string()
+    } else {
+        format!("{}...", &s[..max_len])
     }
 }
