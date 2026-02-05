@@ -164,24 +164,6 @@ class TaskOps:
             if not task:
                 continue
 
-            # Instance collision detection: Check if another process is using this worker_id
-            # A worker trying to resume should be in the workers dict with matching state
-            worker_info = daemon.worker_manager.get_worker(worker_id)
-            if worker_info:
-                # Check if worker's last_seen is very recent (< 5 seconds)
-                # This indicates another instance is actively using this ID
-                from datetime import timedelta
-                now = datetime.now()
-                if worker_info.last_seen and (now - worker_info.last_seen) < timedelta(seconds=5):
-                    logger.warning(
-                        f"Instance collision detected: Worker '{worker_id}' has recent activity "
-                        f"(last_seen: {worker_info.last_seen}). "
-                        f"Another process may be using the same worker ID. "
-                        f"Rejecting resume to prevent state corruption."
-                    )
-                    # Don't release task - let the active instance handle it
-                    return None
-
             # Verify scope lock is still valid for this worker
             if task.scope:
                 lock_owner = daemon.lock_store.get_lock_owner(
@@ -189,7 +171,9 @@ class TaskOps:
                 )
                 if lock_owner is None or lock_owner != worker_id:
                     # Lock expired or taken by another worker - cannot resume
-                    self._release_task_to_pending(task_id, task, state)
+                    # Don't release lock if it's owned by another worker
+                    release_lock = lock_owner is None  # Only release if lock expired
+                    self._release_task_to_pending(task_id, task, state, release_lock)
                     return None
             else:
                 # For scope=None tasks, verify task state consistency
@@ -207,7 +191,8 @@ class TaskOps:
                 if not daemon.lock_store.refresh_scope_lock(
                     state.project_id, task.scope, worker_id, daemon.config.scope_lock_ttl_sec
                 ):
-                    self._release_task_to_pending(task_id, task, state)
+                    # Refresh failed - we don't own the lock anymore
+                    self._release_task_to_pending(task_id, task, state, release_lock=False)
                     continue
 
             # Get agent routing info
@@ -230,8 +215,18 @@ class TaskOps:
 
         return None
 
-    def _release_task_to_pending(self, task_id: str, task: Task, state: Any) -> None:
-        """Release a task back to pending for reassignment."""
+    def _release_task_to_pending(
+        self, task_id: str, task: Task, state: Any, release_lock: bool = True
+    ) -> None:
+        """Release a task back to pending for reassignment.
+
+        Args:
+            task_id: Task ID to release
+            task: Task object
+            state: Current C4 state
+            release_lock: If True, release the scope lock. Set to False when the lock
+                is not owned by the current worker (e.g., stolen by another worker).
+        """
         daemon = self._daemon
 
         del state.queue.in_progress[task_id]
@@ -240,7 +235,7 @@ class TaskOps:
         task.assigned_to = None
         self.save_task(task)
 
-        if task.scope:
+        if release_lock and task.scope:
             daemon.lock_store.release_scope_lock(state.project_id, task.scope)
 
         daemon.state_machine.save_state()

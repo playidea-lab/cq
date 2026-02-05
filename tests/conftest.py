@@ -2,12 +2,36 @@
 
 import subprocess
 import tempfile
+import uuid
 from pathlib import Path
 
 import pytest
 
 from c4.mcp_server import C4Daemon
 from c4.models import CheckpointConfig, Task
+
+# =============================================================================
+# Worker ID Constants (valid UUID-based format)
+# =============================================================================
+
+# Standard worker IDs for tests (matches pattern: worker-[a-f0-9]{8})
+WORKER_1 = "worker-a1b2c3d4"
+WORKER_2 = "worker-b2c3d4e5"
+WORKER_3 = "worker-c3d4e5f6"
+WORKER_4 = "worker-d4e5f6a7"
+SUPERVISOR_WORKER = "worker-00000000"
+
+
+def make_worker_id(suffix: str = "") -> str:
+    """Generate a unique valid worker ID.
+
+    Args:
+        suffix: Optional suffix to append for debugging (ignored in actual ID)
+
+    Returns:
+        Valid worker ID in format "worker-[a-f0-9]{8}"
+    """
+    return f"worker-{uuid.uuid4().hex[:8]}"
 
 # =============================================================================
 # Git Repository Fixtures

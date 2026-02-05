@@ -8,6 +8,7 @@ import pytest
 
 from c4.mcp_server import C4Daemon, _get_workflow_guide
 from c4.models import ProjectStatus, RepairQueueItem, Task
+from tests.conftest import WORKER_1, WORKER_2, WORKER_3, make_worker_id
 
 
 @pytest.fixture
@@ -199,7 +200,7 @@ class TestC4GetTask:
 
     def test_get_task_not_in_execute(self, daemon):
         """Test that get_task returns None when not in EXECUTE state"""
-        result = daemon.c4_get_task("worker-1")
+        result = daemon.c4_get_task(WORKER_1)
         assert result is None
 
     def test_get_task_assigns_task(self, daemon):
@@ -218,7 +219,7 @@ class TestC4GetTask:
         daemon.state_machine.transition("c4_run", "test")
 
         # Get task
-        result = daemon.c4_get_task("worker-1")
+        result = daemon.c4_get_task(WORKER_1)
 
         assert result is not None
         assert result.task_id == "T-001"
@@ -236,15 +237,15 @@ class TestC4GetTask:
         daemon.state_machine.transition("skip_discovery", "test")
         daemon.state_machine.transition("c4_run", "test")
 
-        daemon.c4_get_task("worker-1")
+        daemon.c4_get_task(WORKER_1)
 
-        assert "worker-1" in daemon.state_machine.state.workers
+        assert WORKER_1 in daemon.state_machine.state.workers
 
     def test_get_task_no_tasks_available(self, daemon):
         """Test get_task when no tasks are pending"""
         daemon.state_machine.transition("skip_discovery", "test")
         daemon.state_machine.transition("c4_run", "test")
-        result = daemon.c4_get_task("worker-1")
+        result = daemon.c4_get_task(WORKER_1)
         assert result is None
 
     def test_get_task_resumes_existing_in_progress(self, daemon):
@@ -261,13 +262,13 @@ class TestC4GetTask:
         daemon.state_machine.transition("c4_run", "test")
 
         # Worker gets task
-        result1 = daemon.c4_get_task("worker-1")
+        result1 = daemon.c4_get_task(WORKER_1)
         assert result1 is not None
         assert result1.task_id == "T-001"
         assert "T-001" in daemon.state_machine.state.queue.in_progress
 
         # Simulate worker restart: call get_task again with same worker_id
-        result2 = daemon.c4_get_task("worker-1")
+        result2 = daemon.c4_get_task(WORKER_1)
 
         # Should return the same task (resume), not None or new task
         assert result2 is not None
@@ -288,11 +289,11 @@ class TestC4GetTask:
         daemon.state_machine.transition("c4_run", "test")
 
         # Worker 1 gets task
-        result1 = daemon.c4_get_task("worker-1")
+        result1 = daemon.c4_get_task(WORKER_1)
         assert result1.task_id == "T-001"
 
         # Worker 2 should get T-002, not T-001
-        result2 = daemon.c4_get_task("worker-2")
+        result2 = daemon.c4_get_task(WORKER_2)
         assert result2 is not None
         assert result2.task_id == "T-002"
 
@@ -309,7 +310,7 @@ class TestC4GetTask:
         # Add the original task to repair_queue (simulating it was blocked by worker-1)
         repair_item = RepairQueueItem(
             task_id="T-001",  # Original task ID without REPAIR- prefix
-            worker_id="worker-1",  # Worker who blocked the task
+            worker_id=WORKER_1,  # Worker who blocked the task
             failure_signature="test_failure",
             attempts=1,
             blocked_at=datetime.now().isoformat(),
@@ -323,7 +324,7 @@ class TestC4GetTask:
         daemon.state_machine.transition("c4_run", "test")
 
         # Original worker (worker-1) should NOT get the repair task
-        result = daemon.c4_get_task("worker-1")
+        result = daemon.c4_get_task(WORKER_1)
         assert result is None  # No task available for original worker
 
     def test_get_task_peer_review_allows_different_worker(self, daemon):
@@ -339,7 +340,7 @@ class TestC4GetTask:
         # Add the original task to repair_queue (blocked by worker-1)
         repair_item = RepairQueueItem(
             task_id="T-001",
-            worker_id="worker-1",
+            worker_id=WORKER_1,
             failure_signature="test_failure",
             attempts=1,
             blocked_at=datetime.now().isoformat(),
@@ -353,7 +354,7 @@ class TestC4GetTask:
         daemon.state_machine.transition("c4_run", "test")
 
         # Different worker (worker-2) SHOULD get the repair task
-        result = daemon.c4_get_task("worker-2")
+        result = daemon.c4_get_task(WORKER_2)
         assert result is not None
         assert result.task_id == "REPAIR-T-001"
 
@@ -372,7 +373,7 @@ class TestC4GetTask:
         daemon.state_machine.transition("c4_run", "test")
 
         # Any worker should get the normal task
-        result = daemon.c4_get_task("worker-1")
+        result = daemon.c4_get_task(WORKER_1)
         assert result is not None
         assert result.task_id == "T-001"
 
@@ -391,7 +392,7 @@ class TestC4GetTask:
         # Add to repair_queue (T-001 was blocked by worker-1)
         repair_item = RepairQueueItem(
             task_id="T-001",
-            worker_id="worker-1",
+            worker_id=WORKER_1,
             failure_signature="test_failure",
             attempts=1,
             blocked_at=datetime.now().isoformat(),
@@ -405,7 +406,7 @@ class TestC4GetTask:
         daemon.state_machine.transition("c4_run", "test")
 
         # Original worker (worker-1) should get the normal task, not the repair task
-        result = daemon.c4_get_task("worker-1")
+        result = daemon.c4_get_task(WORKER_1)
         assert result is not None
         assert result.task_id == "T-002"  # Gets normal task, not REPAIR-T-001
 
@@ -424,13 +425,13 @@ class TestC4GetTask:
         daemon.c4_add_todo("T-002", "Second task", None, "Second DoD", dependencies=["T-001-0"])
 
         # Worker 1 gets T-001 (the only one without deps)
-        task1 = daemon.c4_get_task("worker-1")
+        task1 = daemon.c4_get_task(WORKER_1)
         assert task1.task_id == "T-001-0"
 
         # Complete T-001
         daemon.c4_submit(
             task_id="T-001-0",
-            worker_id="worker-1",
+            worker_id=WORKER_1,
             commit_sha="abc123",
             validation_results=[{"name": "lint", "status": "pass"}],
         )
@@ -442,7 +443,7 @@ class TestC4GetTask:
         assert task.dependencies == ["T-001-0"]
 
         # Verify the task can be assigned after dependency is completed
-        task2 = daemon.c4_get_task("worker-2")
+        task2 = daemon.c4_get_task(WORKER_2)
         assert task2 is not None
         assert task2.task_id == "T-002-0"
 
@@ -457,7 +458,7 @@ class TestC4Submit:
         daemon.add_task(task)
         daemon.state_machine.transition("skip_discovery", "test")
         daemon.state_machine.transition("c4_run", "test")
-        daemon.c4_get_task("worker-1")
+        daemon.c4_get_task(WORKER_1)
 
         # Submit
         result = daemon.c4_submit(
@@ -479,7 +480,7 @@ class TestC4Submit:
         daemon.add_task(task)
         daemon.state_machine.transition("skip_discovery", "test")
         daemon.state_machine.transition("c4_run", "test")
-        daemon.c4_get_task("worker-1")
+        daemon.c4_get_task(WORKER_1)
 
         result = daemon.c4_submit(
             "T-001",
@@ -513,12 +514,12 @@ class TestC4Submit:
         daemon.add_task(task)
         daemon.state_machine.transition("skip_discovery", "test")
         daemon.state_machine.transition("c4_run", "test")
-        daemon.c4_get_task("worker-1")
+        daemon.c4_get_task(WORKER_1)
 
         # Verify task is in_progress before submission
         task_before = daemon.get_task("T-STATUS")
         assert task_before.status == TaskStatus.IN_PROGRESS
-        assert task_before.assigned_to == "worker-1"
+        assert task_before.assigned_to == WORKER_1
 
         # Submit the task
         result = daemon.c4_submit(
@@ -666,12 +667,12 @@ class TestTaskDependencies:
         )
 
         # Worker should only get T-001-0 (T-002-0 has unmet deps)
-        task = daemon.c4_get_task("worker-1")
+        task = daemon.c4_get_task(WORKER_1)
         assert task is not None
         assert task.task_id == result1["task_id"]  # T-001-0
 
         # Another worker should get nothing (T-002-0 blocked, T-001-0 assigned)
-        task2 = daemon.c4_get_task("worker-2")
+        task2 = daemon.c4_get_task(WORKER_2)
         assert task2 is None
 
     def test_dependent_task_assigned_after_deps_complete(self, daemon_in_execute):
@@ -684,11 +685,11 @@ class TestTaskDependencies:
         )
 
         # Get and complete T-001-0
-        daemon.c4_get_task("worker-1")
+        daemon.c4_get_task(WORKER_1)
         daemon.c4_submit(result1["task_id"], "sha123", [{"name": "lint", "status": "pass"}])
 
         # Now T-002-0 should be available
-        task = daemon.c4_get_task("worker-1")
+        task = daemon.c4_get_task(WORKER_1)
         assert task is not None
         assert task.task_id == result2["task_id"]  # T-002-0
 
@@ -702,16 +703,16 @@ class TestTaskDependencies:
         r3 = daemon.c4_add_todo("T-003", "Module C", "src/c/", "C", dependencies=[r0["task_id"]])
 
         # Only T-000-0 available initially
-        task = daemon.c4_get_task("worker-1")
+        task = daemon.c4_get_task(WORKER_1)
         assert task.task_id == r0["task_id"]
 
         # Complete T-000-0
         daemon.c4_submit(r0["task_id"], "sha1", [{"name": "lint", "status": "pass"}])
 
         # Now 3 workers can get T-001-0, T-002-0, T-003-0 in parallel
-        t1 = daemon.c4_get_task("worker-1")
-        t2 = daemon.c4_get_task("worker-2")
-        t3 = daemon.c4_get_task("worker-3")
+        t1 = daemon.c4_get_task(WORKER_1)
+        t2 = daemon.c4_get_task(WORKER_2)
+        t3 = daemon.c4_get_task(WORKER_3)
 
         assigned = {t1.task_id, t2.task_id, t3.task_id}
         assert assigned == {r1["task_id"], r2["task_id"], r3["task_id"]}
@@ -725,13 +726,13 @@ class TestTaskDependencies:
         r_high = daemon.c4_add_todo("T-HIGH", "High", "high/", "High", priority=10)
 
         # Should get highest priority first
-        task1 = daemon.c4_get_task("worker-1")
+        task1 = daemon.c4_get_task(WORKER_1)
         assert task1.task_id == r_high["task_id"]
 
-        task2 = daemon.c4_get_task("worker-2")
+        task2 = daemon.c4_get_task(WORKER_2)
         assert task2.task_id == r_med["task_id"]
 
-        task3 = daemon.c4_get_task("worker-3")
+        task3 = daemon.c4_get_task(WORKER_3)
         assert task3.task_id == r_low["task_id"]
 
 
@@ -740,11 +741,11 @@ class TestWorkerManagement:
 
     def test_register_worker(self, daemon):
         """Test worker registration"""
-        worker = daemon.worker_manager.register("worker-1")
+        worker = daemon.worker_manager.register(WORKER_1)
 
-        assert worker.worker_id == "worker-1"
+        assert worker.worker_id == WORKER_1
         assert worker.state == "idle"
-        assert "worker-1" in daemon.state_machine.state.workers
+        assert WORKER_1 in daemon.state_machine.state.workers
 
     def test_worker_state_updates(self, daemon):
         """Test that worker state updates during task lifecycle"""
@@ -754,14 +755,14 @@ class TestWorkerManagement:
         daemon.state_machine.transition("c4_run", "test")
 
         # Get task - worker should become busy
-        daemon.c4_get_task("worker-1")
-        assert daemon.state_machine.state.workers["worker-1"].state == "busy"
-        assert daemon.state_machine.state.workers["worker-1"].task_id == "T-001"
+        daemon.c4_get_task(WORKER_1)
+        assert daemon.state_machine.state.workers[WORKER_1].state == "busy"
+        assert daemon.state_machine.state.workers[WORKER_1].task_id == "T-001"
 
         # Submit task - worker should become idle
         daemon.c4_submit("T-001", "abc123", [{"name": "test", "status": "pass"}])
-        assert daemon.state_machine.state.workers["worker-1"].state == "idle"
-        assert daemon.state_machine.state.workers["worker-1"].task_id is None
+        assert daemon.state_machine.state.workers[WORKER_1].state == "idle"
+        assert daemon.state_machine.state.workers[WORKER_1].task_id is None
 
 
 class TestC4GetTaskExpiredLock:
@@ -781,7 +782,7 @@ class TestC4GetTaskExpiredLock:
         daemon.state_machine.transition("c4_run", "test")
 
         # Worker gets task
-        result1 = daemon.c4_get_task("worker-1")
+        result1 = daemon.c4_get_task(WORKER_1)
         assert result1 is not None
         assert result1.task_id == "T-001"
 
@@ -799,7 +800,7 @@ class TestC4GetTaskExpiredLock:
         conn.close()
 
         # Simulate worker restart: call get_task again
-        daemon.c4_get_task("worker-1")
+        daemon.c4_get_task(WORKER_1)
 
         # Task should have been moved back to pending due to expired lock
         # and then reassigned to the same worker from pending
@@ -820,7 +821,7 @@ class TestC4GetTaskExpiredLock:
         daemon.state_machine.transition("c4_run", "test")
 
         # Worker 1 gets task
-        result1 = daemon.c4_get_task("worker-1")
+        result1 = daemon.c4_get_task(WORKER_1)
         assert result1 is not None
         assert result1.task_id == "T-001"
 
@@ -832,13 +833,13 @@ class TestC4GetTaskExpiredLock:
         conn = sqlite3.connect(db_path)
         conn.execute(
             "UPDATE c4_locks SET owner = ? WHERE scope = ?",
-            ("worker-2", "api"),
+            (WORKER_2, "api"),
         )
         conn.commit()
         conn.close()
 
         # Worker 1 tries to resume - should fail because lock is now owned by worker-2
-        daemon.c4_get_task("worker-1")
+        daemon.c4_get_task(WORKER_1)
 
         # Task should have been moved back to pending
         # Note: c4_get_task reloads state, so get fresh reference
@@ -858,17 +859,17 @@ class TestScopeNoneTaskResume:
         daemon.state_machine.transition("c4_run", "test")
 
         # Worker 1 gets the task
-        result1 = daemon.c4_get_task("worker-1")
+        result1 = daemon.c4_get_task(WORKER_1)
         assert result1 is not None
         assert result1.task_id == "T-001"
 
         # Manually corrupt task state (simulate inconsistency)
         task_obj = daemon.get_task("T-001")
-        task_obj.assigned_to = "worker-2"  # Wrong worker!
+        task_obj.assigned_to = WORKER_2  # Wrong worker!
         daemon._save_tasks()
 
         # Worker 1 tries to resume - should detect inconsistency
-        daemon.c4_get_task("worker-1")
+        daemon.c4_get_task(WORKER_1)
 
         # Task should have been moved back to pending
         state = daemon.state_machine.state
@@ -884,7 +885,7 @@ class TestScopeNoneTaskResume:
         daemon.state_machine.transition("c4_run", "test")
 
         # Worker gets the task
-        daemon.c4_get_task("worker-1")
+        daemon.c4_get_task(WORKER_1)
 
         # Manually set wrong status
         task_obj = daemon.get_task("T-001")
@@ -892,7 +893,7 @@ class TestScopeNoneTaskResume:
         daemon._save_tasks()
 
         # Try to resume - should detect inconsistency
-        daemon.c4_get_task("worker-1")
+        daemon.c4_get_task(WORKER_1)
 
         state = daemon.state_machine.state
         assert "T-001" in state.queue.pending or "T-001" in state.queue.in_progress
@@ -905,11 +906,11 @@ class TestScopeNoneTaskResume:
         daemon.state_machine.transition("c4_run", "test")
 
         # Worker gets the task
-        result1 = daemon.c4_get_task("worker-1")
+        result1 = daemon.c4_get_task(WORKER_1)
         assert result1 is not None
 
         # Resume without any corruption - should succeed
-        result2 = daemon.c4_get_task("worker-1")
+        result2 = daemon.c4_get_task(WORKER_1)
         assert result2 is not None
         assert result2.task_id == "T-001"
 
@@ -925,7 +926,7 @@ class TestLockRefreshFailure:
         daemon.state_machine.transition("c4_run", "test")
 
         # Worker gets the task
-        result1 = daemon.c4_get_task("worker-1")
+        result1 = daemon.c4_get_task(WORKER_1)
         assert result1 is not None
 
         # Delete the lock entirely to simulate refresh failure
@@ -935,7 +936,7 @@ class TestLockRefreshFailure:
         daemon.state_machine.save_state()
 
         # Try to resume - lock refresh will fail
-        result2 = daemon.c4_get_task("worker-1")
+        result2 = daemon.c4_get_task(WORKER_1)
 
         # Get fresh state reference after c4_get_task reloads
         state = daemon.state_machine.state
@@ -958,7 +959,7 @@ class TestC4MarkBlockedValidation:
         # Task is in pending, not in_progress
         result = daemon.c4_mark_blocked(
             task_id="T-001",
-            worker_id="worker-1",
+            worker_id=WORKER_1,
             failure_signature="test failure",
             attempts=3,
         )
@@ -975,12 +976,12 @@ class TestC4MarkBlockedValidation:
         daemon.state_machine.transition("c4_run", "test")
 
         # Get the task (put it in_progress)
-        daemon.c4_get_task("worker-1")
+        daemon.c4_get_task(WORKER_1)
 
         # Try to mark it as blocked (should fail due to nesting limit)
         result = daemon.c4_mark_blocked(
             task_id="REPAIR-REPAIR-T-001",
-            worker_id="worker-1",
+            worker_id=WORKER_1,
             failure_signature="test failure",
             attempts=3,
         )
@@ -997,12 +998,12 @@ class TestC4MarkBlockedValidation:
         daemon.state_machine.transition("c4_run", "test")
 
         # Get the task
-        daemon.c4_get_task("worker-1")
+        daemon.c4_get_task(WORKER_1)
 
         # Try to mark it as blocked (should succeed - nesting depth is 1)
         result = daemon.c4_mark_blocked(
             task_id="REPAIR-T-001",
-            worker_id="worker-1",
+            worker_id=WORKER_1,
             failure_signature="test failure",
             attempts=3,
         )
@@ -1019,12 +1020,12 @@ class TestC4MarkBlockedValidation:
         daemon.state_machine.transition("c4_run", "test")
 
         # Get the task
-        daemon.c4_get_task("worker-1")
+        daemon.c4_get_task(WORKER_1)
 
         # Mark as blocked
         result = daemon.c4_mark_blocked(
             task_id="T-001",
-            worker_id="worker-1",
+            worker_id=WORKER_1,
             failure_signature="test failure",
             attempts=3,
         )
@@ -1045,19 +1046,19 @@ class TestWorkerOwnershipVerification:
         daemon.state_machine.transition("c4_run", "test")
 
         # Worker 1 gets the task
-        daemon.c4_get_task("worker-1")
+        daemon.c4_get_task(WORKER_1)
 
         # Worker 2 tries to mark it as blocked - should fail
         result = daemon.c4_mark_blocked(
             task_id="T-001",
-            worker_id="worker-2",  # Wrong worker!
+            worker_id=WORKER_2,  # Wrong worker!
             failure_signature="test failure",
             attempts=3,
         )
 
         assert result["success"] is False
-        assert "assigned to worker-1" in result["error"]
-        assert "worker-2" in result["error"]
+        assert f"assigned to {WORKER_1}" in result["error"]
+        assert WORKER_2 in result["error"]
         # Task should still be in progress
         assert "T-001" in daemon.state_machine.state.queue.in_progress
 
@@ -1069,12 +1070,12 @@ class TestWorkerOwnershipVerification:
         daemon.state_machine.transition("c4_run", "test")
 
         # Worker 1 gets the task
-        daemon.c4_get_task("worker-1")
+        daemon.c4_get_task(WORKER_1)
 
         # Worker 1 marks it as blocked - should succeed
         result = daemon.c4_mark_blocked(
             task_id="T-001",
-            worker_id="worker-1",
+            worker_id=WORKER_1,
             failure_signature="test failure",
             attempts=3,
         )
@@ -1095,12 +1096,12 @@ class TestRepairDepthFalsePositive:
         daemon.state_machine.transition("c4_run", "test")
 
         # Get the task
-        daemon.c4_get_task("worker-1")
+        daemon.c4_get_task(WORKER_1)
 
         # Should be able to mark as blocked (repair_depth should be 0)
         result = daemon.c4_mark_blocked(
             task_id="MY-REPAIR-FEATURE",
-            worker_id="worker-1",
+            worker_id=WORKER_1,
             failure_signature="test failure",
             attempts=3,
         )
@@ -1115,11 +1116,11 @@ class TestRepairDepthFalsePositive:
         daemon.state_machine.transition("skip_discovery", "test")
         daemon.state_machine.transition("c4_run", "test")
 
-        daemon.c4_get_task("worker-1")
+        daemon.c4_get_task(WORKER_1)
 
         result = daemon.c4_mark_blocked(
             task_id="USER-REPAIR-API-FIX",
-            worker_id="worker-1",
+            worker_id=WORKER_1,
             failure_signature="test failure",
             attempts=3,
         )
@@ -1134,11 +1135,11 @@ class TestRepairDepthFalsePositive:
         daemon.state_machine.transition("skip_discovery", "test")
         daemon.state_machine.transition("c4_run", "test")
 
-        daemon.c4_get_task("worker-1")
+        daemon.c4_get_task(WORKER_1)
 
         result = daemon.c4_mark_blocked(
             task_id="API-REPAIR-REPAIR-BUG",
-            worker_id="worker-1",
+            worker_id=WORKER_1,
             failure_signature="test failure",
             attempts=3,
         )
@@ -1153,11 +1154,11 @@ class TestRepairDepthFalsePositive:
         daemon.state_machine.transition("skip_discovery", "test")
         daemon.state_machine.transition("c4_run", "test")
 
-        daemon.c4_get_task("worker-1")
+        daemon.c4_get_task(WORKER_1)
 
         result = daemon.c4_mark_blocked(
             task_id="REPAIR-T-001",
-            worker_id="worker-1",
+            worker_id=WORKER_1,
             failure_signature="test failure",
             attempts=3,
         )
@@ -1172,11 +1173,11 @@ class TestRepairDepthFalsePositive:
         daemon.state_machine.transition("skip_discovery", "test")
         daemon.state_machine.transition("c4_run", "test")
 
-        daemon.c4_get_task("worker-1")
+        daemon.c4_get_task(WORKER_1)
 
         result = daemon.c4_mark_blocked(
             task_id="REPAIR-REPAIR-T-001",
-            worker_id="worker-1",
+            worker_id=WORKER_1,
             failure_signature="test failure",
             attempts=3,
         )
@@ -1243,13 +1244,13 @@ class TestTaskRegistryValidation:
 
         # Manually add task to in_progress queue without adding to registry
         state = daemon.state_machine.state
-        state.queue.in_progress["GHOST-TASK"] = "worker-1"
+        state.queue.in_progress["GHOST-TASK"] = WORKER_1
         daemon.state_machine.save_state()
 
         # Try to mark blocked - should handle gracefully
         result = daemon.c4_mark_blocked(
             task_id="GHOST-TASK",
-            worker_id="worker-1",
+            worker_id=WORKER_1,
             failure_signature="test failure",
             attempts=3,
         )
@@ -1270,7 +1271,7 @@ class TestTaskRegistryValidation:
         daemon.state_machine.save_state()
 
         # Get task should skip orphan and return real task
-        result = daemon.c4_get_task("worker-1")
+        result = daemon.c4_get_task(WORKER_1)
 
         assert result is not None
         assert result.task_id == "T-001"  # Got the real task, not the orphan
@@ -1282,7 +1283,7 @@ class TestTaskRegistryValidation:
 
         # Manually add to in_progress without registry entry
         state = daemon.state_machine.state
-        state.queue.in_progress["GHOST-TASK"] = "worker-1"
+        state.queue.in_progress["GHOST-TASK"] = WORKER_1
         daemon.state_machine.save_state()
 
         # Submit handles ghost task gracefully (moves to done)
@@ -1310,11 +1311,11 @@ class TestConcurrentOperations:
         daemon.state_machine.transition("c4_run", "test")
 
         # First call
-        result1 = daemon.c4_get_task("worker-1")
+        result1 = daemon.c4_get_task(WORKER_1)
         assert result1.task_id == "T-001"
 
         # Second call - should resume same task
-        result2 = daemon.c4_get_task("worker-1")
+        result2 = daemon.c4_get_task(WORKER_1)
         assert result2.task_id == "T-001"
 
         # Only one task in progress
@@ -1329,8 +1330,8 @@ class TestConcurrentOperations:
         daemon.state_machine.transition("skip_discovery", "test")
         daemon.state_machine.transition("c4_run", "test")
 
-        result1 = daemon.c4_get_task("worker-1")
-        result2 = daemon.c4_get_task("worker-2")
+        result1 = daemon.c4_get_task(WORKER_1)
+        result2 = daemon.c4_get_task(WORKER_2)
 
         assert result1.task_id != result2.task_id
         assert len(daemon.state_machine.state.queue.in_progress) == 2
@@ -1342,7 +1343,7 @@ class TestConcurrentOperations:
         daemon.state_machine.transition("skip_discovery", "test")
         daemon.state_machine.transition("c4_run", "test")
 
-        daemon.c4_get_task("worker-1")
+        daemon.c4_get_task(WORKER_1)
 
         # First submit
         result1 = daemon.c4_submit("T-001", "abc123", [{"name": "test", "status": "pass"}])
@@ -1364,14 +1365,14 @@ class TestStaleWorkerRecovery:
         daemon.state_machine.transition("c4_run", "test")
 
         # Worker gets task
-        daemon.c4_get_task("worker-1")
+        daemon.c4_get_task(WORKER_1)
         state = daemon.state_machine.state
         assert "T-001" in state.queue.in_progress
-        assert state.workers["worker-1"].state == "busy"
+        assert state.workers[WORKER_1].state == "busy"
 
         # Manually make the worker stale by setting last_seen to old time
         old_time = datetime.now() - timedelta(minutes=35)  # 35 min old (stale timeout is 30)
-        state.workers["worker-1"].last_seen = old_time
+        state.workers[WORKER_1].last_seen = old_time
         daemon.state_machine.save_state()
 
         # Run recovery with 30 minute timeout (1800 seconds)
@@ -1382,7 +1383,7 @@ class TestStaleWorkerRecovery:
 
         # Verify recovery happened
         assert len(recoveries) == 1
-        assert recoveries[0]["worker_id"] == "worker-1"
+        assert recoveries[0]["worker_id"] == WORKER_1
         assert recoveries[0]["task_id"] == "T-001"
         assert recoveries[0].get("task_recovered") is True
 
@@ -1392,7 +1393,7 @@ class TestStaleWorkerRecovery:
         assert "T-001" not in state.queue.in_progress
 
         # Verify worker is marked as disconnected
-        assert state.workers["worker-1"].state == "disconnected"
+        assert state.workers[WORKER_1].state == "disconnected"
 
     def test_active_worker_not_recovered(self, daemon):
         """Test that active workers are not recovered"""
@@ -1402,7 +1403,7 @@ class TestStaleWorkerRecovery:
         daemon.state_machine.transition("c4_run", "test")
 
         # Worker gets task (last_seen is now)
-        daemon.c4_get_task("worker-1")
+        daemon.c4_get_task(WORKER_1)
 
         # Run recovery - should not recover anything
         recoveries = daemon.worker_manager.recover_stale_workers(
@@ -1416,7 +1417,7 @@ class TestStaleWorkerRecovery:
         # Task still in progress
         state = daemon.state_machine.state
         assert "T-001" in state.queue.in_progress
-        assert state.workers["worker-1"].state == "busy"
+        assert state.workers[WORKER_1].state == "busy"
 
     def test_implicit_heartbeat_prevents_recovery(self, daemon):
         """Test that _touch_worker updates last_seen to prevent recovery"""
@@ -1426,16 +1427,16 @@ class TestStaleWorkerRecovery:
         daemon.state_machine.transition("c4_run", "test")
 
         # Worker gets task
-        daemon.c4_get_task("worker-1")
+        daemon.c4_get_task(WORKER_1)
         state = daemon.state_machine.state
 
         # Manually make worker appear stale
         old_time = datetime.now() - timedelta(minutes=35)
-        state.workers["worker-1"].last_seen = old_time
+        state.workers[WORKER_1].last_seen = old_time
         daemon.state_machine.save_state()
 
         # Simulate tool call that touches worker (implicit heartbeat)
-        daemon._touch_worker("worker-1")
+        daemon._touch_worker(WORKER_1)
 
         # Now run recovery - should not recover because heartbeat updated last_seen
         recoveries = daemon.worker_manager.recover_stale_workers(
@@ -1448,7 +1449,7 @@ class TestStaleWorkerRecovery:
 
         # Worker still busy
         state = daemon.state_machine.state
-        assert state.workers["worker-1"].state == "busy"
+        assert state.workers[WORKER_1].state == "busy"
 
 
 # ============================================================================
@@ -1586,7 +1587,7 @@ class TestWorkerUnregisterTaskRecovery:
         queue = daemon.state_machine.state.queue
 
         # Register a worker
-        worker_id = "test-worker-idle"
+        worker_id = make_worker_id()
         daemon.worker_manager.register(worker_id)
 
         # Add a task to pending directly (avoid c4_add_todo ID transformation)
@@ -1609,7 +1610,7 @@ class TestWorkerUnregisterTaskRecovery:
         queue = daemon.state_machine.state.queue
 
         # Register a worker
-        worker_id = "test-worker-busy"
+        worker_id = make_worker_id()
         daemon.worker_manager.register(worker_id)
 
         # Simulate task assignment (directly manipulate state)
