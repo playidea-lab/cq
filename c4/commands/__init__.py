@@ -24,6 +24,7 @@ CORE_COMMANDS = [
     "c4-clear.md",
     "c4-swarm.md",
     "c4-release.md",
+    "c4-interview.md",
 ]
 
 # C4 command version - increment when commands are updated
