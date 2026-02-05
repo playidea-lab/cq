@@ -526,6 +526,246 @@ class WorktreeConfig(BaseModel):
 # =============================================================================
 
 
+# =============================================================================
+# Economic Mode Configuration
+# =============================================================================
+
+
+class ModelRoutingConfig(BaseModel):
+    """Model routing for different task types.
+
+    Maps task types to model names (haiku, sonnet, opus).
+    """
+
+    implementation: str = Field(
+        default="sonnet",
+        description="Model for implementation tasks (T-XXX)",
+    )
+    review: str = Field(
+        default="sonnet",
+        description="Model for review tasks (R-XXX)",
+    )
+    checkpoint: str = Field(
+        default="sonnet",
+        description="Model for checkpoint tasks (CP-XXX)",
+    )
+    scout: str = Field(
+        default="haiku",
+        description="Model for exploration/search tasks",
+    )
+    debug: str = Field(
+        default="haiku",
+        description="Model for debugging tasks",
+    )
+    planning: str = Field(
+        default="sonnet",
+        description="Model for planning tasks",
+    )
+
+
+class ExtendedThinkingConfig(BaseModel):
+    """Extended thinking configuration for Sonnet.
+
+    When enabled, Sonnet uses extended thinking for specified task types,
+    providing deeper reasoning at ~$0.135/task vs Opus ~$0.30/task.
+
+    Example in config.yaml:
+        economic_mode:
+          extended_thinking:
+            enabled: true
+            budget_tokens: 10000
+            task_types: [review, checkpoint, planning]
+    """
+
+    enabled: bool = Field(
+        default=False,
+        description="Enable extended thinking for Sonnet",
+    )
+    budget_tokens: int = Field(
+        default=10000,
+        ge=1000,
+        le=100000,
+        description="Maximum thinking tokens budget",
+    )
+    task_types: list[str] = Field(
+        default_factory=lambda: ["review", "checkpoint", "planning"],
+        description="Task types that should use extended thinking",
+    )
+
+
+class ContextCompressionConfig(BaseModel):
+    """Context compression settings for token optimization."""
+
+    enabled: bool = Field(
+        default=False,
+        description="Enable context compression",
+    )
+    max_context_tokens: int = Field(
+        default=50000,
+        ge=10000,
+        description="Maximum context tokens before compression",
+    )
+    scout_budget: int = Field(
+        default=5000,
+        ge=1000,
+        description="Token budget for scout/exploration tasks",
+    )
+    compression_ratio: float = Field(
+        default=0.3,
+        ge=0.1,
+        le=0.9,
+        description="Target compression ratio",
+    )
+
+
+# Preset configurations for economic mode
+PRESET_CONFIGS: dict[str, dict[str, str]] = {
+    "standard": {
+        "implementation": "sonnet",
+        "review": "opus",
+        "checkpoint": "opus",
+        "scout": "haiku",
+        "debug": "haiku",
+        "planning": "sonnet",
+    },
+    "economic": {
+        "implementation": "sonnet",
+        "review": "sonnet",
+        "checkpoint": "sonnet",
+        "scout": "haiku",
+        "debug": "haiku",
+        "planning": "sonnet",
+    },
+    "ultra-economic": {
+        "implementation": "haiku",
+        "review": "sonnet",
+        "checkpoint": "sonnet",
+        "scout": "haiku",
+        "debug": "haiku",
+        "planning": "haiku",
+    },
+    "quality": {
+        "implementation": "opus",
+        "review": "opus",
+        "checkpoint": "opus",
+        "scout": "sonnet",
+        "debug": "sonnet",
+        "planning": "opus",
+    },
+    "economic-thinking": {
+        "implementation": "haiku",
+        "review": "sonnet",  # + extended thinking
+        "checkpoint": "sonnet",  # + extended thinking
+        "scout": "haiku",
+        "debug": "haiku",
+        "planning": "sonnet",  # + extended thinking
+    },
+}
+
+
+class EconomicModeConfig(BaseModel):
+    """Economic mode configuration for cost optimization.
+
+    Provides preset configurations for different cost/quality tradeoffs:
+    - standard: Opus for reviews, Sonnet for implementation (~$15/M tokens)
+    - economic: Sonnet for everything (~$3.6/M tokens, 76% savings)
+    - ultra-economic: Haiku for implementation (~$1.5/M tokens, 90% savings)
+    - quality: Opus for everything (~$45/M tokens)
+    - economic-thinking: Haiku + Sonnet with Extended Thinking (~$2/M tokens)
+
+    Example in config.yaml:
+        economic_mode:
+          enabled: true
+          preset: economic-thinking
+          extended_thinking:
+            enabled: true
+            budget_tokens: 10000
+            task_types: [review, checkpoint, planning]
+    """
+
+    enabled: bool = Field(
+        default=False,
+        description="Enable economic mode",
+    )
+    preset: str = Field(
+        default="economic",
+        pattern="^(standard|economic|ultra-economic|quality|economic-thinking)$",
+        description="Preset configuration name",
+    )
+    model_routing: ModelRoutingConfig = Field(
+        default_factory=ModelRoutingConfig,
+        description="Custom model routing (overrides preset)",
+    )
+    context_compression: ContextCompressionConfig = Field(
+        default_factory=ContextCompressionConfig,
+        description="Context compression settings",
+    )
+    extended_thinking: ExtendedThinkingConfig = Field(
+        default_factory=ExtendedThinkingConfig,
+        description="Extended thinking settings for Sonnet",
+    )
+
+    def get_model_for_task_type(self, task_type: str) -> str:
+        """Get the appropriate model for a task type.
+
+        Args:
+            task_type: One of 'implementation', 'review', 'checkpoint', 'scout', 'debug', 'planning'
+
+        Returns:
+            Model name (haiku, sonnet, opus)
+        """
+        routing = self.model_routing.model_dump()
+        return routing.get(task_type, "sonnet")
+
+    def should_use_extended_thinking(self, task_type: str) -> bool:
+        """Check if extended thinking should be used for a task type.
+
+        Args:
+            task_type: Task type to check
+
+        Returns:
+            True if extended thinking should be enabled
+        """
+        if not self.extended_thinking.enabled:
+            return False
+        return task_type in self.extended_thinking.task_types
+
+    def get_thinking_budget(self) -> int:
+        """Get the extended thinking token budget."""
+        return self.extended_thinking.budget_tokens
+
+    @classmethod
+    def from_preset(cls, preset: str, enabled: bool = True) -> "EconomicModeConfig":
+        """Create config from a preset name.
+
+        Args:
+            preset: One of 'standard', 'economic', 'ultra-economic', 'quality', 'economic-thinking'
+            enabled: Whether to enable economic mode
+
+        Returns:
+            Configured EconomicModeConfig instance
+        """
+        if preset not in PRESET_CONFIGS:
+            raise ValueError(f"Unknown preset: {preset}. Available: {list(PRESET_CONFIGS.keys())}")
+
+        routing_config = PRESET_CONFIGS[preset]
+
+        # Enable extended thinking for economic-thinking preset
+        thinking_enabled = preset == "economic-thinking"
+
+        return cls(
+            enabled=enabled,
+            preset=preset,
+            model_routing=ModelRoutingConfig(**routing_config),
+            extended_thinking=ExtendedThinkingConfig(enabled=thinking_enabled),
+        )
+
+
+# =============================================================================
+# Enforce Mode Configuration (AI Agent Hints)
+# =============================================================================
+
+
 class EnforceModeHints(BaseModel):
     """Hints configuration for enforce_mode."""
 
@@ -665,6 +905,12 @@ class C4Config(BaseModel):
     enforce_mode: EnforceModeConfig = Field(
         default_factory=EnforceModeConfig,
         description="AI agent enforcement hints for tool usage and document creation",
+    )
+
+    # Economic Mode - Cost Optimization
+    economic_mode: EconomicModeConfig = Field(
+        default_factory=EconomicModeConfig,
+        description="Economic mode settings for cost optimization and model routing",
     )
 
     def get_work_branch(self) -> str:
