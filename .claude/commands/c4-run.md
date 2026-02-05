@@ -5,11 +5,39 @@
 ## Usage
 
 ```
-/c4-run           # 자동: 분석 후 최적 Worker 수로 실행 (기본)
-/c4-run 1         # 1개 Worker 스폰 (백그라운드)
-/c4-run 3         # 3개 Worker 스폰 (백그라운드)
-/c4-run --max 4   # 자동이지만 최대 4개로 제한
+/c4-run             # 자동: 분석 후 최적 Worker 수로 실행 (1회)
+/c4-run 1           # 1개 Worker 스폰 (백그라운드)
+/c4-run 3           # 3개 Worker 스폰 (백그라운드)
+/c4-run --max 4     # 자동이지만 최대 4개로 제한
+/c4-run --continuous  # 🔄 연속 모드: 태스크 소진까지 자동 재스폰
 ```
+
+## 🔄 Single-Task Worker Model
+
+**각 Worker는 1개 태스크만 처리하고 종료합니다.**
+
+```
+┌──────────────────────────────────────────────────┐
+│  Orchestrator (/c4-run)                          │
+│  ┌─────────┐  ┌─────────┐  ┌─────────┐          │
+│  │Worker 1 │  │Worker 2 │  │Worker 3 │  ...     │
+│  │ Task A  │  │ Task B  │  │ Task C  │          │
+│  │  EXIT   │  │  EXIT   │  │  EXIT   │          │
+│  └─────────┘  └─────────┘  └─────────┘          │
+│       ↓            ↓            ↓               │
+│  [Fresh Context] [Fresh Context] [Fresh Context]│
+│       ↓            ↓            ↓               │
+│  ┌─────────┐  ┌─────────┐  ┌─────────┐          │
+│  │Worker 4 │  │Worker 5 │  │Worker 6 │  ...     │
+│  │ Task D  │  │ Task E  │  │ Task F  │          │
+│  └─────────┘  └─────────┘  └─────────┘          │
+└──────────────────────────────────────────────────┘
+```
+
+**왜 이렇게?**
+- 컨텍스트 누적 방지 (12+ 태스크 처리 시 Worker 사망)
+- 각 태스크가 fresh context에서 시작
+- 실패한 태스크가 다른 태스크에 영향 안 줌
 
 **모든 Worker는 백그라운드에서 실행됩니다.** 메인 세션은 사용자와 대화를 계속할 수 있습니다.
 
@@ -24,12 +52,7 @@ import uuid
 WORKER_ID = f"worker-{uuid.uuid4().hex[:8]}"  # 예: "worker-a1b2c3d4"
 ```
 
-⚠️ **CRITICAL**:
-- **ALWAYS** use `uuid.uuid4().hex[:8]` for worker ID generation
-- **NEVER** use fixed values like "claude-worker" or "worker-1"
-- **NEVER** reuse worker IDs across sessions
-- Worker ID format is validated: must match `worker-[a-f0-9]{8}` pattern
-- Duplicate worker IDs will be rejected to prevent instance collision
+이 ID를 이 세션 전체에서 사용합니다. **절대로 "claude-worker" 같은 고정값 사용 금지!**
 
 ## ⚠️ 중요: MCP 도구만 사용
 
@@ -96,10 +119,14 @@ result = mcp__c4__c4_start()
 ```python
 # ARGUMENTS 파싱
 args = "$ARGUMENTS".strip()
+continuous_mode = "--continuous" in args
 
 if args == "" or args == "--auto":
     # 자동 모드: 추천 값 사용
     worker_count = parallelism["recommended"]
+elif "--continuous" in args:
+    # 연속 모드: ready_now 만큼 스폰
+    worker_count = parallelism["ready_now"]
 elif args.startswith("--max"):
     # 최대값 제한
     max_workers = int(args.split()[-1])
@@ -137,48 +164,39 @@ WORKER_PROMPT = """
 You are C4 Worker {worker_id}.
 
 ## Mission
-Execute C4 tasks in a **CONTINUOUS LOOP** until no tasks remain.
+Execute **ONE** C4 task and exit. (Context isolation principle)
 
 ## MCP Tools (MUST USE)
 - `mcp__c4__c4_get_task(worker_id="{worker_id}")` - 태스크 요청
 - `mcp__c4__c4_run_validation(names=["lint", "unit"])` - 검증
 - `mcp__c4__c4_submit(task_id, worker_id, commit_sha, validation_results)` - 제출
 
-## ⚠️ CRITICAL: Worker Loop (반드시 루프!)
+## ⚠️ Single Task Protocol (컨텍스트 격리!)
 
 ```
-WHILE TRUE:
-    1. task = c4_get_task(worker_id="{worker_id}")
-    2. IF task is None or no task_id:
-           PRINT "✅ No more tasks"
-           EXIT
-    3. Implement the task (follow DoD)
-    4. Run validations, fix issues (max 3 retries)
-    5. git commit
-    6. result = c4_submit(task_id, ...)
-    7. CHECK result.next_action:
-           - "get_next_task" → CONTINUE TO STEP 1 (⚠️ 반드시!)
-           - "await_checkpoint" → POLL or EXIT
-           - "complete" → EXIT
+1. task = c4_get_task(worker_id="{worker_id}")
+2. IF task is None or no task_id:
+       PRINT "✅ No tasks available"
+       EXIT
+3. Implement the task (follow DoD)
+4. Run validations, fix issues (max 3 retries)
+5. git commit
+6. c4_submit(task_id, ...)
+7. EXIT (✅ Task complete - fresh context for next task!)
 ```
 
-**중요**: `next_action`이 `"get_next_task"`이면 **반드시** 다시 `c4_get_task()`를 호출하세요!
-**절대로** 태스크 하나 완료 후 종료하지 마세요!
+**중요**: 태스크 하나 완료 후 **반드시 종료**하세요!
+다음 태스크는 새 Worker가 fresh context로 처리합니다.
+이렇게 해야 컨텍스트 누적으로 인한 사망을 방지합니다.
 
 ## Your Worker ID: {worker_id}
 
-START NOW: Call `mcp__c4__c4_get_task(worker_id="{worker_id}")` and keep looping!
+START NOW: Call `mcp__c4__c4_get_task(worker_id="{worker_id}")`, complete ONE task, then exit!
 """
 
 workers = []
 for i in range(worker_count):
-    # CRITICAL: Generate unique UUID-based worker ID
-    # This MUST use uuid.uuid4().hex[:8] to ensure uniqueness
     worker_id = f"worker-{uuid.uuid4().hex[:8]}"
-
-    # Validate format (extra safety check)
-    if not re.match(r"^worker-[a-f0-9]{8}$", worker_id):
-        raise ValueError(f"Invalid worker_id format: {worker_id}")
 
     # 모델 결정 (by_model 분포 기반 또는 기본 opus)
     model = "opus"  # 기본값
@@ -202,14 +220,74 @@ Workers:
 for w in workers:
     print(f"  • {w['id']}: {w['output']}")
 
-print("""
+if not continuous_mode:
+    print("""
+## ⚠️ Single-Task Worker Model
+
+각 Worker는 **1개 태스크만** 처리하고 종료합니다.
+(컨텍스트 누적 방지 → Worker 사망 방지)
+
 Monitor:
   /c4-status - 전체 진행 상황
   tail -f {output_file} - 개별 Worker 로그
 
-⚠️ Worker가 백그라운드에서 실행 중입니다.
-   이 세션에서 다른 작업을 하거나 대화를 계속할 수 있습니다.
+Next Steps:
+  • Worker 완료 후 태스크가 남아있으면 `/c4-run` 다시 실행
+  • 또는 `/c4-run --continuous`로 자동 재스폰 모드 사용
 """)
+else:
+    # 🔄 Continuous Mode: Monitor and respawn
+    print("""
+## 🔄 Continuous Mode Active
+
+태스크가 소진될 때까지 자동으로 Worker를 재스폰합니다.
+Ctrl+C로 중단할 수 있습니다.
+""")
+
+    import time
+
+    while True:
+        # 30초 대기 (Worker 작업 시간)
+        time.sleep(30)
+
+        # 상태 재확인
+        status = mcp__c4__c4_status()
+
+        # 완료 조건 확인
+        if status["status"] == "COMPLETE":
+            print("🎉 모든 태스크 완료!")
+            break
+
+        if status["status"] == "CHECKPOINT":
+            print("⏸️ Checkpoint 리뷰 대기 중. /c4-checkpoint 실행 필요.")
+            break
+
+        # 실행 가능한 태스크 확인
+        ready = status["parallelism"]["ready_now"]
+        if ready == 0:
+            if status["queue"]["pending"] == 0:
+                print("✅ 모든 태스크 처리 완료!")
+                break
+            else:
+                print(f"⏳ {status['queue']['pending']}개 태스크 대기 중 (의존성 미충족)...")
+                continue
+
+        # 새 Worker 스폰 (ready 만큼)
+        spawn_count = min(ready, 7 - len([w for w in status["workers"].values() if w["state"] == "busy"]))
+        if spawn_count > 0:
+            print(f"🚀 {spawn_count}개 Worker 추가 스폰...")
+            for i in range(spawn_count):
+                worker_id = f"worker-{uuid.uuid4().hex[:8]}"
+                Task(
+                    subagent_type="general-purpose",
+                    description=f"C4 Worker (continuous)",
+                    prompt=WORKER_PROMPT.format(worker_id=worker_id),
+                    model="opus",
+                    run_in_background=True
+                )
+                print(f"  • {worker_id}")
+
+    print("🏁 Continuous mode 종료")
 
 ---
 
