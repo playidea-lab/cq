@@ -440,6 +440,31 @@ fn add_c4_task_edges(nodes: &[CanvasNode], edges: &mut Vec<CanvasEdge>) {
     }
 }
 
+/// Get project_id from .c4/config.yaml or use directory name as fallback
+fn get_project_id(project_root: &Path) -> Result<String> {
+    let config_path = project_root.join(".c4").join("config.yaml");
+
+    // Try to read project_id from config.yaml
+    if config_path.exists() {
+        if let Ok(content) = fs::read_to_string(&config_path) {
+            if let Ok(yaml) = serde_yaml::from_str::<serde_json::Value>(&content) {
+                if let Some(project_id) = yaml.get("project_id").and_then(|v| v.as_str()) {
+                    return Ok(project_id.to_string());
+                }
+            }
+        }
+    }
+
+    // Fallback: use directory name
+    let dir_name = project_root
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("default")
+        .to_string();
+
+    Ok(dir_name)
+}
+
 /// Scan C4 tasks from the SQLite database
 fn scan_c4_tasks(
     project_root: &Path,
@@ -453,15 +478,18 @@ fn scan_c4_tasks(
         return Ok(());
     }
 
+    // Get project_id from config.yaml or use directory name as fallback
+    let project_id = get_project_id(project_root)?;
+
     let conn = Connection::open(&db_path)
         .context("Failed to open C4 database")?;
 
-    // Query tasks from c4_tasks table
+    // Query tasks from c4_tasks table using parameterized query
     let mut stmt = conn.prepare(
-        "SELECT task_id, task_json, status, updated_at FROM c4_tasks WHERE project_id = 'c4'"
+        "SELECT task_id, task_json, status, updated_at FROM c4_tasks WHERE project_id = ?"
     )?;
 
-    let task_iter = stmt.query_map([], |row| {
+    let task_iter = stmt.query_map([&project_id], |row| {
         Ok(C4TaskRow {
             task_id: row.get(0)?,
             task_json: row.get(1)?,
@@ -623,5 +651,64 @@ mod tests {
     fn test_truncate_string_exact_length() {
         let text = "exactly10!";
         assert_eq!(truncate_string(text, 10), "exactly10!");
+    }
+
+    #[test]
+    fn test_get_project_id_from_config() {
+        // Test with actual project root
+        let project_root = Path::new("/Users/changmin/git/c4");
+        let result = get_project_id(project_root);
+
+        assert!(result.is_ok());
+        let project_id = result.unwrap();
+
+        // Should read from config.yaml (which has project_id: c4)
+        assert_eq!(project_id, "c4");
+    }
+
+    #[test]
+    fn test_get_project_id_fallback_to_dirname() {
+        use std::env;
+
+        // Create a temporary directory without .c4/config.yaml
+        let temp_dir = env::temp_dir().join("test_project_fallback");
+        std::fs::create_dir_all(&temp_dir).ok();
+
+        let result = get_project_id(&temp_dir);
+
+        // Clean up
+        std::fs::remove_dir_all(&temp_dir).ok();
+
+        assert!(result.is_ok());
+        let project_id = result.unwrap();
+
+        // Should fall back to directory name
+        assert_eq!(project_id, "test_project_fallback");
+    }
+
+    #[test]
+    fn test_get_project_id_with_invalid_yaml() {
+        use std::env;
+        use std::fs;
+
+        // Create a temporary directory with invalid YAML
+        let temp_dir = env::temp_dir().join("test_project_invalid_yaml");
+        let c4_dir = temp_dir.join(".c4");
+        fs::create_dir_all(&c4_dir).ok();
+
+        // Write invalid YAML
+        let config_path = c4_dir.join("config.yaml");
+        fs::write(&config_path, "invalid: yaml: content: [[[").ok();
+
+        let result = get_project_id(&temp_dir);
+
+        // Clean up
+        fs::remove_dir_all(&temp_dir).ok();
+
+        assert!(result.is_ok());
+        let project_id = result.unwrap();
+
+        // Should fall back to directory name
+        assert_eq!(project_id, "test_project_invalid_yaml");
     }
 }
