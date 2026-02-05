@@ -11,6 +11,7 @@ import type { CanvasNode } from './types';
 export default function App() {
   const [projectPath, setProjectPath] = useState<string | null>(null);
   const [selectedNode, setSelectedNode] = useState<CanvasNode | null>(null);
+  const [errorVisible, setErrorVisible] = useState<boolean>(true);
   const editorRef = useRef<Editor | null>(null);
   const { loading, error, data, scanProject, loadCanvas, saveCanvas } = useScanner();
 
@@ -79,6 +80,23 @@ export default function App() {
     if (editorRef.current) {
       editorRef.current.selectNone();
     }
+  }, []);
+
+  // Auto-dismiss error toast after 5 seconds
+  useEffect(() => {
+    if (error) {
+      setErrorVisible(true);
+      const timer = setTimeout(() => {
+        setErrorVisible(false);
+      }, 5000);
+
+      return () => clearTimeout(timer);
+    }
+  }, [error]);
+
+  // Handle manual error close
+  const handleCloseError = useCallback(() => {
+    setErrorVisible(false);
   }, []);
 
   return (
@@ -203,7 +221,7 @@ export default function App() {
         />
       )}
 
-      {error && (
+      {error && errorVisible && (
         <div style={{
           position: 'fixed',
           bottom: '80px',
@@ -214,8 +232,26 @@ export default function App() {
           borderRadius: '8px',
           maxWidth: '400px',
           zIndex: 1000,
+          display: 'flex',
+          alignItems: 'center',
+          gap: '12px',
         }}>
-          {error}
+          <span style={{ flex: 1 }}>{error}</span>
+          <button
+            onClick={handleCloseError}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              color: '#fff',
+              cursor: 'pointer',
+              fontSize: '18px',
+              padding: '0',
+              lineHeight: '1',
+            }}
+            aria-label="Close error notification"
+          >
+            ×
+          </button>
         </div>
       )}
     </div>
