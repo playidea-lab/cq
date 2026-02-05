@@ -3040,6 +3040,20 @@ Thumbs.db
             depth=depth,
         )
 
+    def c4_find_referencing_symbols(
+        self,
+        name_path: str,
+        file_path: str | None = None,
+    ) -> dict[str, Any]:
+        """Find all references to a symbol in the codebase.
+
+        Delegates to CodeOps.find_referencing_symbols().
+        """
+        return self.code_ops.find_referencing_symbols(
+            name_path=name_path,
+            file_path=file_path,
+        )
+
     # =========================================================================
     # File Operation Tools (delegates to CodeOps)
     # =========================================================================
