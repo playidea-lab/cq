@@ -18,6 +18,28 @@ const typeIcons: Record<string, string> = {
   connection: '🔗',
 };
 
+// tldraw arrow color type
+type ArrowColor = 'black' | 'blue' | 'green' | 'grey' | 'light-blue' | 'light-green' |
+  'light-red' | 'light-violet' | 'orange' | 'red' | 'violet' | 'white' | 'yellow';
+
+// Map edge relations to colors
+const getEdgeColor = (relation: string): ArrowColor => {
+  switch (relation) {
+    case 'references':
+      return 'blue';
+    case 'creates':
+      return 'green';
+    case 'depends':
+      return 'red';
+    case 'applies':
+      return 'orange';
+    case 'mentions':
+      return 'grey';
+    default:
+      return 'black';
+  }
+};
+
 // Hide default tldraw UI components we don't need
 const components: TLComponents = {
   DebugPanel: null,
@@ -104,8 +126,42 @@ export function renderCanvasData(editor: Editor, data: CanvasData) {
 
   editor.createShapes(nodeShapes);
 
-  // TODO: Add edge rendering in v2 with proper tldraw v4 binding API
-  // For MVP, edges are stored but not visually rendered
+  // Create arrows for edges with calculated start/end points
+  const NODE_WIDTH = 180;
+  const NODE_HEIGHT = 80;
+
+  const arrowShapes = data.edges.map((edge) => {
+    const sourceNode = data.nodes.find(n => n.id === edge.source);
+    const targetNode = data.nodes.find(n => n.id === edge.target);
+
+    if (!sourceNode || !targetNode) return null;
+
+    // Calculate edge start (right side of source) and end (left side of target)
+    const startX = sourceNode.position.x + NODE_WIDTH;
+    const startY = sourceNode.position.y + NODE_HEIGHT / 2;
+    const endX = targetNode.position.x;
+    const endY = targetNode.position.y + NODE_HEIGHT / 2;
+
+    return {
+      id: createShapeId(`edge-${edge.id}`),
+      type: 'arrow' as const,
+      x: startX,
+      y: startY,
+      props: {
+        start: { x: 0, y: 0 },
+        end: { x: endX - startX, y: endY - startY },
+        color: getEdgeColor(edge.relation),
+        size: 's' as const,
+        arrowheadEnd: 'arrow' as const,
+        arrowheadStart: 'none' as const,
+      },
+    };
+  }).filter(Boolean);
+
+  // Create arrows after nodes
+  if (arrowShapes.length > 0) {
+    editor.createShapes(arrowShapes as NonNullable<typeof arrowShapes[number]>[]);
+  }
 
   // Zoom to fit all content
   setTimeout(() => {
