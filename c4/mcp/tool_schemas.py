@@ -905,4 +905,67 @@ def get_tool_definitions() -> list[Tool]:
                 "required": ["memory_id"],
             },
         ),
+        # Git history analysis tool
+        Tool(
+            name="c4_analyze_history",
+            description="Analyze git commit history, cluster related commits, and generate narrative stories. "
+            "Returns stories with titles, commits, and dependencies, plus a dependency graph.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "since": {
+                        "type": "string",
+                        "description": "Start date in ISO format (e.g., '2025-01-01'). Required.",
+                    },
+                    "until": {
+                        "type": "string",
+                        "description": "End date in ISO format (optional). If not provided, includes all commits since 'since'.",
+                    },
+                    "branch": {
+                        "type": "string",
+                        "description": "Branch to analyze (default: HEAD).",
+                        "default": "HEAD",
+                    },
+                },
+                "required": ["since"],
+            },
+        ),
+        # Git commit search tool
+        Tool(
+            name="c4_search_commits",
+            description="Search git commits using semantic matching. "
+            "Returns relevant commits with scores based on query similarity.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Semantic search query to find relevant commits. Required.",
+                    },
+                    "filters": {
+                        "type": "object",
+                        "description": "Optional filters to narrow search results.",
+                        "properties": {
+                            "author": {
+                                "type": "string",
+                                "description": "Filter by commit author name.",
+                            },
+                            "since": {
+                                "type": "string",
+                                "description": "Start date in ISO format (e.g., '2025-01-01').",
+                            },
+                            "path": {
+                                "type": "string",
+                                "description": "Filter by file/directory path (e.g., 'src/auth/').",
+                            },
+                            "story_id": {
+                                "type": "string",
+                                "description": "Filter by story ID to find related commits.",
+                            },
+                        },
+                    },
+                },
+                "required": ["query"],
+            },
+        ),
     ]
