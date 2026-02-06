@@ -769,6 +769,35 @@ def _setup_standards_symlinks(project_path: Path) -> None:
             shutil.copy2(standard_file, rule_link)
 
 
+def _install_agents(project_path: Path) -> int:
+    """Install C4 agent definitions to .claude/agents/.
+
+    Agents provide specialized sub-agent personas with persistent memory
+    for Claude Code's Task tool. Each agent has `memory: project` for
+    accumulating project-specific knowledge across sessions.
+
+    Returns the number of agents installed/updated.
+    """
+    agents_source = Path(__file__).parent / "data" / "agents"
+    if not agents_source.exists():
+        return 0
+
+    agents_dest = project_path / ".claude" / "agents"
+    agents_dest.mkdir(parents=True, exist_ok=True)
+
+    installed = 0
+    for agent_file in sorted(agents_source.glob("*.md")):
+        dest_file = agents_dest / agent_file.name
+        # Skip if destination is newer (user customized)
+        if dest_file.exists():
+            if dest_file.stat().st_mtime > agent_file.stat().st_mtime:
+                continue
+        shutil.copy2(agent_file, dest_file)
+        installed += 1
+
+    return installed
+
+
 def _install_soul(project_path: Path) -> bool:
     """Install C4 SOUL.md to project.
 
@@ -967,6 +996,12 @@ def init(
         if _install_soul(project_path):
             console.print("  [green]✓[/green] C4 SOUL installed")
 
+        # Step 4.7: Install C4 agents
+        console.print("[dim]Installing C4 agents...[/dim]")
+        agents_installed = _install_agents(project_path)
+        if agents_installed > 0:
+            console.print(f"  [green]✓[/green] {agents_installed} agents installed (memory: project)")
+
         # Step 5: Install hooks (unless skipped)
         if not skip_hooks:
             console.print("[dim]Installing Claude Code hooks...[/dim]")
@@ -1075,6 +1110,8 @@ def init(
             console.print("  .gitignore              - Git ignore patterns")
         console.print("  .mcp.json               - MCP server config")
         console.print("  .claude/settings.json   - Permissions & MCP auto-approval")
+        if agents_installed > 0:
+            console.print(f"  .claude/agents/         - {agents_installed} specialized agents")
         if not skip_hooks:
             console.print("  ~/.claude/hooks/        - Stop & security hooks")
         if with_git_hooks:
@@ -1091,6 +1128,8 @@ def init(
             console.print("  ✓ Stop Hook: Prevents exit during active work")
         if with_git_hooks:
             console.print("  ✓ Git Hooks: Lint validation, Task ID tracking")
+        if agents_installed > 0:
+            console.print(f"  ✓ {agents_installed} Agents: Persistent memory across sessions")
         if with_lsp:
             console.print("  ✓ LSP Server: Hover docs, task completion")
         if with_daemon:

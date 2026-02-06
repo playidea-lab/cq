@@ -27,6 +27,7 @@ dependencies = [
     "multilspy>=0.0.15",
     "sqlite-vec>=0.1.0",
     "tiktoken>=0.5.0",
+    "pillow>=12.1.0",
 ]
 
 [project.optional-dependencies]
@@ -74,6 +75,7 @@ packages = ["c4"]
 
 [tool.hatch.build.targets.wheel.force-include]
 "c4/data" = "c4/data"
+"c4/data/agents" = "c4/data/agents"
 
 [tool.ruff]
 line-length = 140
