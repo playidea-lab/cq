@@ -87,3 +87,22 @@ def handle_clear(daemon: Any, arguments: dict[str, Any]) -> dict[str, Any]:
 def handle_start(daemon: Any, arguments: dict[str, Any]) -> dict[str, Any]:
     """Start execution (PLAN/HALTED -> EXECUTE)."""
     return daemon.c4_start()
+
+
+@register_tool("c4_cleanup_workers")
+def handle_cleanup_workers(daemon: Any, arguments: dict[str, Any]) -> dict[str, Any]:
+    """Purge all stale/zombie workers (one-time cleanup).
+
+    This removes:
+    - Idle workers inactive beyond threshold
+    - Zombie busy workers (task already done/missing)
+    - Workers exceeding TTL
+
+    Args:
+        max_idle_minutes: Optional override for idle threshold (uses config default if not provided)
+
+    Returns:
+        Dict with cleanup results and counts
+    """
+    max_idle_minutes = arguments.get("max_idle_minutes")
+    return daemon.purge_stale_workers(max_idle_minutes=max_idle_minutes)

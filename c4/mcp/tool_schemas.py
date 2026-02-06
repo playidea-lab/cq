@@ -146,6 +146,23 @@ def get_tool_definitions() -> list[Tool]:
             },
         ),
         Tool(
+            name="c4_cleanup_workers",
+            description=(
+                "Purge all stale/zombie workers (one-time cleanup). "
+                "Removes idle workers, zombie busy workers, and TTL-expired workers."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "max_idle_minutes": {
+                        "type": "number",
+                        "description": "Override for idle worker threshold (uses config default if not provided)",
+                    },
+                },
+                "required": [],
+            },
+        ),
+        Tool(
             name="c4_ensure_supervisor",
             description="Ensure supervisor loop is running for AI review. Auto-starts if in EXECUTE/CHECKPOINT state.",
             inputSchema={

@@ -986,6 +986,52 @@ Thumbs.db
 
         return {"fixed": fixed_tasks, "errors": error_tasks}
 
+    def purge_stale_workers(
+        self, max_idle_minutes: int | None = None
+    ) -> dict[str, Any]:
+        """Purge all stale workers (one-time cleanup).
+
+        This method removes:
+        1. Idle workers inactive beyond max_idle_minutes
+        2. Busy workers with tasks already done or missing (zombie workers)
+        3. Workers exceeding TTL (last_seen too old)
+
+        Args:
+            max_idle_minutes: Override for idle worker threshold (uses config default if None)
+
+        Returns:
+            Dict with counts and details of removed workers
+        """
+        if self.state_machine is None:
+            return {"success": False, "error": "C4 not initialized"}
+
+        if max_idle_minutes is None:
+            max_idle_minutes = self.config.max_idle_minutes
+
+        # Run state consistency sync (fixes zombie workers)
+        sync_result = self._sync_state_consistency()
+        # Save state after sync to persist changes
+        self.state_machine.save_state()
+
+        # Run idle worker cleanup
+        removed_idle = []
+        if max_idle_minutes > 0:
+            removed_idle = self.worker_manager.cleanup_stale(max_idle_minutes)
+
+        # Run stale busy worker recovery
+        recoveries = self.worker_manager.recover_stale_workers(
+            stale_timeout_seconds=self.config.scope_lock_ttl_sec,
+            lock_store=self.lock_store,
+        )
+
+        return {
+            "success": True,
+            "zombie_fixes": sync_result["fixed"],
+            "idle_removed": removed_idle,
+            "stale_recovered": [r["worker_id"] for r in recoveries],
+            "total_cleaned": len(sync_result["fixed"]) + len(removed_idle) + len(recoveries),
+        }
+
     def c4_status(self) -> dict[str, Any]:
         """Get current C4 project status"""
         if self.state_machine is None:

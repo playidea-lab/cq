@@ -305,3 +305,107 @@ def test_last_seen_updated_on_get_task(daemon: C4Daemon):
     # Verify last_seen was updated
     worker = daemon.worker_manager.get_worker(worker_id)
     assert worker.last_seen > initial_last_seen
+
+
+def test_purge_removes_all_stale_workers(daemon: C4Daemon):
+    """Test that purge_stale_workers() performs comprehensive cleanup."""
+    from datetime import datetime, timedelta
+
+    from c4.models import Task, TaskStatus
+
+    # Register multiple workers with different states
+    worker_idle_stale = "worker-a1a1a1a1"  # Idle, stale
+    worker_idle_active = "worker-b2b2b2b2"  # Idle, active
+    worker_busy_zombie = "worker-c3c3c3c3"  # Busy but task is done (zombie)
+    worker_busy_stale = "worker-d4d4d4d4"  # Busy, stale (unresponsive)
+    worker_busy_active = "worker-e5e5e5e5"  # Busy, active
+
+    daemon.worker_manager.register(worker_idle_stale)
+    daemon.worker_manager.register(worker_idle_active)
+    daemon.worker_manager.register(worker_busy_zombie)
+    daemon.worker_manager.register(worker_busy_stale)
+    daemon.worker_manager.register(worker_busy_active)
+
+    # Set up idle stale worker (91 minutes idle)
+    w1 = daemon.worker_manager.get_worker(worker_idle_stale)
+    w1.state = "idle"
+    w1.last_seen = datetime.now() - timedelta(minutes=91)
+
+    # idle_active is recent (default)
+
+    # Set up busy zombie worker (task is done)
+    task_done = Task(
+        id="T-100-0",
+        title="Done task",
+        dod="Done",
+        status=TaskStatus.DONE,
+    )
+    daemon._save_task(task_done)
+    daemon.state_machine.state.queue.done.append("T-100-0")
+    daemon.worker_manager.set_busy(worker_busy_zombie, "T-100-0")
+
+    # Set up busy stale worker (task exists but worker unresponsive)
+    task_active = Task(
+        id="T-101-0",
+        title="Active task",
+        dod="Active",
+        status=TaskStatus.IN_PROGRESS,
+        assigned_to=worker_busy_stale,
+    )
+    daemon._save_task(task_active)
+    daemon.state_machine.state.queue.in_progress["T-101-0"] = worker_busy_stale
+    daemon.worker_manager.set_busy(worker_busy_stale, "T-101-0")
+    w4 = daemon.worker_manager.get_worker(worker_busy_stale)
+    w4.last_seen = datetime.now() - timedelta(hours=2)  # Stale
+
+    # Set up busy active worker
+    task_active2 = Task(
+        id="T-102-0",
+        title="Active task 2",
+        dod="Active",
+        status=TaskStatus.IN_PROGRESS,
+        assigned_to=worker_busy_active,
+    )
+    daemon._save_task(task_active2)
+    daemon.state_machine.state.queue.in_progress["T-102-0"] = worker_busy_active
+    daemon.worker_manager.set_busy(worker_busy_active, "T-102-0")
+
+    # Save state
+    daemon.state_machine.save_state()
+
+    # Run purge
+    result = daemon.purge_stale_workers(max_idle_minutes=90)
+
+    # Verify results
+    assert result["success"] is True
+
+    # worker_idle_stale (91 mins old) is removed by TTL eviction (30 min threshold) not idle cleanup
+    assert (
+        worker_idle_stale in result["idle_removed"]
+        or f"{worker_idle_stale}:ttl-evict-idle" in result["zombie_fixes"]
+    ), f"Expected {worker_idle_stale} to be removed, got: {result}"
+
+    # Zombie worker should be fixed
+    assert f"{worker_busy_zombie}:done" in result["zombie_fixes"]
+
+    # Stale busy worker is recovered by either TTL eviction or recover_stale_workers
+    assert (
+        worker_busy_stale in result["stale_recovered"]
+        or f"{worker_busy_stale}:ttl-evict-busy" in result["zombie_fixes"]
+    ), f"Expected {worker_busy_stale} to be recovered, got: {result}"
+
+    # Verify workers removed or fixed
+    assert daemon.worker_manager.get_worker(worker_idle_stale) is None  # Removed by TTL
+    # Zombie worker is set to idle (not removed - could continue working)
+    zombie = daemon.worker_manager.get_worker(worker_busy_zombie)
+    assert zombie is not None and zombie.state == "idle"
+    # Stale worker is disconnected or removed
+    stale = daemon.worker_manager.get_worker(worker_busy_stale)
+    assert stale is None or stale.state == "disconnected"
+
+    # Verify active workers still exist
+    assert daemon.worker_manager.get_worker(worker_idle_active) is not None
+    assert daemon.worker_manager.get_worker(worker_busy_active) is not None
+
+    # Verify total count (3+ cleanups)
+    assert result["total_cleaned"] >= 3  # At least 3 workers cleaned
