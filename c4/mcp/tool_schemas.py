@@ -106,6 +106,11 @@ def get_tool_definitions() -> list[Tool]:
                         "type": "integer",
                         "description": "Higher priority tasks assigned first (default: 0)",
                     },
+                    "model": {
+                        "type": "string",
+                        "enum": ["opus", "sonnet", "haiku"],
+                        "description": "Claude model tier for this task (default: opus). Use sonnet for simpler tasks to reduce cost.",
+                    },
                 },
                 "required": ["task_id", "title", "dod"],
             },
@@ -966,6 +971,206 @@ def get_tool_definitions() -> list[Tool]:
                     },
                 },
                 "required": ["query"],
+            },
+        ),
+        # GPU tools
+        Tool(
+            name="c4_gpu_status",
+            description="Get GPU status - available GPUs, VRAM, utilization. Returns GPU count, backend, and per-GPU details.",
+            inputSchema={
+                "type": "object",
+                "properties": {},
+                "required": [],
+            },
+        ),
+        Tool(
+            name="c4_job_submit",
+            description="Submit a GPU job for execution. Allocates GPU and runs the command.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "command": {
+                        "type": "string",
+                        "description": "Command to execute (e.g., 'python train.py')",
+                    },
+                    "task_id": {
+                        "type": "string",
+                        "description": "Optional C4 task ID to link the job to",
+                    },
+                    "gpu_count": {
+                        "type": "integer",
+                        "description": "Number of GPUs to allocate (default: 1)",
+                        "default": 1,
+                    },
+                    "working_dir": {
+                        "type": "string",
+                        "description": "Working directory for the job",
+                    },
+                },
+                "required": ["command"],
+            },
+        ),
+        Tool(
+            name="c4_job_status",
+            description="Get GPU job status. Returns details for a specific job or lists all jobs.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "job_id": {
+                        "type": "string",
+                        "description": "Job ID to check. If omitted, returns all jobs.",
+                    },
+                },
+                "required": [],
+            },
+        ),
+        # Knowledge tools
+        Tool(
+            name="c4_experiment_search",
+            description="Search experiment knowledge base by keyword. Returns matching experiments with titles, hypotheses, and results.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Search query (keywords matched against title, hypothesis, lessons, tags)",
+                    },
+                    "top_k": {
+                        "type": "integer",
+                        "description": "Maximum results to return (default: 5)",
+                        "default": 5,
+                    },
+                    "domain": {
+                        "type": "string",
+                        "description": "Optional domain filter (e.g., 'ml-dl')",
+                    },
+                },
+                "required": ["query"],
+            },
+        ),
+        Tool(
+            name="c4_experiment_record",
+            description="Record an experiment result to the knowledge store. Stores hypothesis, config, metrics, and lessons.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "title": {
+                        "type": "string",
+                        "description": "Experiment title",
+                    },
+                    "task_id": {
+                        "type": "string",
+                        "description": "Related C4 task ID",
+                    },
+                    "hypothesis": {
+                        "type": "string",
+                        "description": "Hypothesis being tested",
+                    },
+                    "config": {
+                        "type": "object",
+                        "description": "Experiment configuration (algorithm, hyperparams, etc.)",
+                    },
+                    "result": {
+                        "type": "object",
+                        "description": "Result dict with 'metrics', 'success', 'error_message'",
+                    },
+                    "lessons_learned": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Lessons learned from this experiment",
+                    },
+                    "tags": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Tags for categorization",
+                    },
+                    "domain": {
+                        "type": "string",
+                        "description": "Domain (e.g., 'ml-dl', 'web-backend')",
+                    },
+                },
+                "required": ["title"],
+            },
+        ),
+        Tool(
+            name="c4_pattern_suggest",
+            description="Get pattern-based suggestions from experiment knowledge. "
+            "Returns discovered patterns, success rates, and best practices.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "domain": {
+                        "type": "string",
+                        "description": "Domain to get patterns for (optional)",
+                    },
+                    "include_best_practices": {
+                        "type": "boolean",
+                        "description": "Include best practice recommendations (default: true)",
+                        "default": True,
+                    },
+                },
+                "required": [],
+            },
+        ),
+        # Artifact tools
+        Tool(
+            name="c4_artifact_list",
+            description="List artifacts for a task. Returns artifact names, types, sizes, and content hashes.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "task_id": {
+                        "type": "string",
+                        "description": "Task ID to list artifacts for",
+                    },
+                },
+                "required": ["task_id"],
+            },
+        ),
+        Tool(
+            name="c4_artifact_save",
+            description="Save a file as a content-addressable artifact. Deduplicates by SHA256 hash.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "task_id": {
+                        "type": "string",
+                        "description": "Related task ID",
+                    },
+                    "path": {
+                        "type": "string",
+                        "description": "Local file path to save as artifact",
+                    },
+                    "artifact_type": {
+                        "type": "string",
+                        "enum": ["source", "data", "output"],
+                        "description": "Artifact type (default: output)",
+                        "default": "output",
+                    },
+                },
+                "required": ["task_id", "path"],
+            },
+        ),
+        Tool(
+            name="c4_artifact_get",
+            description="Get artifact path and metadata by task ID and name.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "task_id": {
+                        "type": "string",
+                        "description": "Task ID",
+                    },
+                    "name": {
+                        "type": "string",
+                        "description": "Artifact name",
+                    },
+                    "version": {
+                        "type": "integer",
+                        "description": "Specific version (optional, latest if omitted)",
+                    },
+                },
+                "required": ["task_id", "name"],
             },
         ),
     ]
