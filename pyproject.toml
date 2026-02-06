@@ -60,6 +60,13 @@ embeddings = [
     "openai>=1.0.0",
     "sentence-transformers>=2.0.0",
 ]
+gpu = [
+    "pynvml>=11.0.0",
+    "psutil>=5.9.0",
+]
+tracker = [
+    "psutil>=5.9.0",
+]
 
 [project.scripts]
 c4d = "c4.cli:app"
