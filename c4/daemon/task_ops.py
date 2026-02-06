@@ -860,6 +860,8 @@ class TaskOps:
         domain: str | None = None,
         priority: int = 0,
         model: str | None = None,
+        execution_mode: str = "worker",
+        review_required: bool = True,
     ) -> dict[str, Any]:
         """Add a new task with optional dependencies.
 
@@ -913,6 +915,9 @@ class TaskOps:
             type=task_type,
             base_id=base_id,
             version=version,
+            # Direct mode fields
+            execution_mode=execution_mode,
+            review_required=review_required,
         )
         daemon.add_task(task)
 
@@ -1047,3 +1052,240 @@ class TaskOps:
             "message": f"Task {task_id} marked as blocked and added to repair queue",
             "repair_queue_size": len(state.repair_queue),
         }
+
+    # =========================================================================
+    # c4_claim (Direct Mode)
+    # =========================================================================
+
+    def claim(self, task_id: str) -> dict[str, Any]:
+        """Claim a task for direct execution (no worker protocol).
+
+        Lightweight alternative to get_task for main-session work.
+        Sets task to in_progress without worker registration or branch creation.
+        Creates .c4/active_claim.json for hook enforcement.
+
+        Args:
+            task_id: ID of the task to claim
+
+        Returns:
+            Dict with success status and task info
+        """
+        import json
+
+        daemon = self._daemon
+        if daemon.state_machine is None:
+            raise RuntimeError("C4 not initialized")
+
+        state = daemon.state_machine.state
+
+        # Reload latest state
+        daemon.state_machine.load_state()
+        self.load_tasks()
+
+        # Check if there's already an active claim
+        claim_file = daemon.c4_dir / "active_claim.json"
+        if claim_file.exists():
+            try:
+                existing = json.loads(claim_file.read_text())
+                return {
+                    "success": False,
+                    "error": f"Active claim exists: {existing.get('task_id')}",
+                    "message": "Complete or abandon the current claim first (c4_report or delete .c4/active_claim.json)",
+                }
+            except Exception:
+                pass  # Corrupted file, allow override
+
+        # Find the task
+        task = daemon.get_task(task_id)
+        if not task:
+            return {
+                "success": False,
+                "error": f"Task {task_id} not found",
+            }
+
+        # Verify task is pending
+        if task.status != TaskStatus.PENDING:
+            return {
+                "success": False,
+                "error": f"Task {task_id} is {task.status.value}, expected pending",
+            }
+
+        # Check dependencies are met
+        for dep_id in task.dependencies:
+            dep_task = daemon.get_task(dep_id)
+            if dep_task and dep_task.status != TaskStatus.DONE:
+                return {
+                    "success": False,
+                    "error": f"Dependency {dep_id} is not done (status: {dep_task.status.value})",
+                }
+
+        # Claim the task
+        task.status = TaskStatus.IN_PROGRESS
+        task.assigned_to = "main-session"
+        self.save_task(task)
+
+        # Update state machine queue
+        if task_id in state.queue.pending:
+            state.queue.pending.remove(task_id)
+        state.queue.in_progress[task_id] = "main-session"
+        daemon.state_machine.save_state()
+
+        # Emit event
+        daemon.state_machine.emit_event(
+            EventType.TASK_ASSIGNED,
+            "main-session",
+            {
+                "task_id": task_id,
+                "worker_id": "main-session",
+                "mode": "direct",
+            },
+        )
+
+        # Write active claim file (for hook enforcement)
+        claim_data = {
+            "task_id": task_id,
+            "title": task.title,
+            "started_at": datetime.now().isoformat(),
+        }
+        claim_file.write_text(json.dumps(claim_data, indent=2))
+
+        return {
+            "success": True,
+            "task_id": task_id,
+            "title": task.title,
+            "dod": task.dod,
+            "scope": task.scope,
+            "mode": "direct",
+        }
+
+    # =========================================================================
+    # c4_report (Direct Mode)
+    # =========================================================================
+
+    def report(
+        self,
+        task_id: str,
+        summary: str,
+        files_changed: list[str] | None = None,
+    ) -> dict[str, Any]:
+        """Report task completion for direct mode (no worker protocol).
+
+        Lightweight alternative to submit. Marks task as done,
+        records summary, and optionally creates review task.
+        Deletes .c4/active_claim.json.
+
+        Args:
+            task_id: ID of the completed task
+            summary: Summary of work done
+            files_changed: List of files changed
+
+        Returns:
+            Dict with success status
+        """
+        import subprocess
+
+        daemon = self._daemon
+        if daemon.state_machine is None:
+            raise RuntimeError("C4 not initialized")
+
+        state = daemon.state_machine.state
+
+        # Find the task
+        task = daemon.get_task(task_id)
+        if not task:
+            return {
+                "success": False,
+                "error": f"Task {task_id} not found",
+            }
+
+        # Verify task is in_progress and claimed by main-session
+        if task.status != TaskStatus.IN_PROGRESS:
+            return {
+                "success": False,
+                "error": f"Task {task_id} is {task.status.value}, expected in_progress",
+            }
+
+        if task.assigned_to != "main-session":
+            return {
+                "success": False,
+                "error": f"Task {task_id} is assigned to {task.assigned_to}, not main-session",
+            }
+
+        # Get current commit SHA
+        commit_sha = "direct-mode"
+        try:
+            result = subprocess.run(
+                ["git", "rev-parse", "HEAD"],
+                capture_output=True, text=True,
+                cwd=str(daemon.root),
+                timeout=5,
+            )
+            if result.returncode == 0:
+                commit_sha = result.stdout.strip()[:8]
+        except Exception:
+            pass
+
+        # Update task
+        task.status = TaskStatus.DONE
+        task.commit_sha = commit_sha
+        task.completion_summary = summary
+        task.files_changed = files_changed or []
+        self.save_task(task)
+
+        # Update state machine queue
+        if task_id in state.queue.in_progress:
+            del state.queue.in_progress[task_id]
+        daemon.state_machine.save_state()
+
+        # Emit event
+        daemon.state_machine.emit_event(
+            EventType.WORKER_SUBMITTED,
+            "main-session",
+            {
+                "task_id": task_id,
+                "worker_id": "main-session",
+                "commit_sha": commit_sha,
+                "mode": "direct",
+                "summary": summary,
+            },
+        )
+
+        # Create review task if required
+        review_created = None
+        if task.review_required and task.type == TaskType.IMPLEMENTATION:
+            review_id = f"R-{task.base_id}-{task.version}"
+            review_model = daemon.config.economic_mode.get_model_for_task_type("review")
+            review_task = Task(
+                id=review_id,
+                title=f"Review: {task.title}",
+                dod=f"Review implementation of {task_id}:\n- Summary: {summary}\n- Files: {', '.join(task.files_changed)}",
+                dependencies=[task_id],
+                type=TaskType.REVIEW,
+                base_id=task.base_id,
+                version=task.version,
+                parent_id=task_id,
+                completed_by=task.assigned_to,
+                model=review_model,
+                execution_mode=task.execution_mode,
+                review_required=False,
+            )
+            daemon.add_task(review_task)
+            review_created = review_id
+
+        # Delete active claim file
+        claim_file = daemon.c4_dir / "active_claim.json"
+        if claim_file.exists():
+            claim_file.unlink()
+
+        result_dict: dict[str, Any] = {
+            "success": True,
+            "task_id": task_id,
+            "status": "done",
+            "commit_sha": commit_sha,
+            "summary": summary,
+        }
+
+        if review_created:
+            result_dict["review_task_created"] = review_created
+
+        return result_dict

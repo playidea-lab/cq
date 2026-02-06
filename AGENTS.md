@@ -589,38 +589,47 @@ RPR-001-1: 첫 번째 수리 태스크, 깊이 1
 
 > C4가 이 프로젝트에 활성화되었습니다.
 
-### 핵심 원칙: 메인 세션은 계획하고, Worker가 실행한다
+### 두 가지 실행 모드
 
+| 모드 | 언제 | 도구 |
+|------|------|------|
+| **Worker** | 독립적, 병렬 가능한 태스크 | `c4_get_task` → `c4_submit` |
+| **Direct** | 파일 간 의존성 높은 작업, 전체 리팩토링 | `c4_claim` → `c4_report` |
+
+### Worker 모드 (기존)
 ```
-✅ 올바른 흐름:
-   메인: /c4-plan → 태스크 생성 → /c4-run → Worker들이 실행
-   메인: 진행 상황 모니터링, 리뷰, 의사결정
-
-❌ 잘못된 흐름:
-   메인: /c4-plan → 태스크 생성 → "직접 하겠습니다" → 코드 작성
-   (Worker와 충돌 가능, submit 실패 가능)
-```
-
-**메인 세션의 역할:**
-- 계획 수립 (`/c4-plan`)
-- 태스크 생성 (`c4_add_todo`)
-- Worker 스폰 (`/c4-run`)
-- 진행 상황 확인 (`/c4-status`)
-- 체크포인트 리뷰 (`/c4-checkpoint`)
-
-**구현 작업은 Worker에게 맡겨라:**
-```
-/c4-run           # Worker 스폰 → Worker가 알아서 태스크 처리
-/c4-run 3         # 3개 Worker 병렬 스폰
+c4_add_todo(mode="worker") → /c4-run → Worker 스폰 → 자동 실행
 ```
 
-### C4 필수 (기본값)
-- 2개 이상 파일 수정
-- 테스트가 필요한 변경
-- 리뷰가 필요한 코드
-- 롤백 가능해야 하는 작업
+### Direct 모드 (신규)
+```
+c4_add_todo(mode="direct", review_required=False)
+→ c4_claim(task_id)     # 태스크 시작 선언 (.c4/active_claim.json 생성)
+→ 직접 작업 (Edit, Write, Bash...)
+→ c4_report(task_id, summary, files_changed)  # 완료 보고
+```
 
-### Edit OK (예외)
+### CRITICAL: 모든 작업은 반드시 C4로 추적
+```
+c4_claim 없이 Edit/Write 시 → Hook이 WARNING 출력
+```
+
+**어떤 모드든 C4에 기록되어야 한다:**
+- 태스크 계획 → `c4_add_todo`
+- 작업 시작 → `c4_claim` (direct) 또는 `c4_get_task` (worker)
+- 작업 완료 → `c4_report` (direct) 또는 `c4_submit` (worker)
+
+### Worker 모드가 나은 경우
+- 독립적 파일 10개 수정
+- 병렬 가능한 테스트/린트
+- 반복적 CRUD 작업
+
+### Direct 모드가 나은 경우
+- 파일 간 의존성 높은 리팩토링
+- 전체 아키텍처 변경
+- 탐색 + 설계 + 구현이 얽힌 작업
+
+### Edit OK (예외 - C4 추적 불필요)
 - 단순 타이포 수정
 - 로그/디버그 추가
 - 1줄 수정

@@ -61,6 +61,8 @@ def handle_add_todo(daemon: Any, arguments: dict[str, Any]) -> dict[str, Any]:
         domain=arguments.get("domain"),
         priority=arguments.get("priority", 0),
         model=arguments.get("model"),  # None = use economic_mode config
+        execution_mode=arguments.get("execution_mode", "worker"),
+        review_required=arguments.get("review_required", True),
     )
 
 

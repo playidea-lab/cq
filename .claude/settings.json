@@ -84,6 +84,18 @@
   },
   "enableAllProjectMcpServers": true,
   "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "C4DIR=\"/Users/changmin/git/c4/.c4\"; if [ -d \"$C4DIR\" ] && [ ! -f \"$C4DIR/active_claim.json\" ]; then echo 'WARNING: No active C4 claim. Use c4_claim(task_id) before editing files.'; fi",
+            "statusMessage": "C4 claim check"
+          }
+        ]
+      }
+    ],
     "PostToolUse": [
       {
         "matcher": "Edit|Write",

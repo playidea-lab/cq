@@ -18,6 +18,7 @@ from . import (
     supervisor,
     symbols,
     tasks,
+    tracking,
     validation,
     worktree,
 )
@@ -33,6 +34,7 @@ __all__ = [
     "supervisor",
     "symbols",
     "tasks",
+    "tracking",
     "validation",
     "worktree",
 ]

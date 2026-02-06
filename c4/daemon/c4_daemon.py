@@ -1357,6 +1357,8 @@ Thumbs.db
         domain: str | None = None,
         priority: int = 0,
         model: str = "opus",
+        execution_mode: str = "worker",
+        review_required: bool = True,
     ) -> dict[str, Any]:
         """Add a new task with optional dependencies.
 
@@ -1374,6 +1376,8 @@ Thumbs.db
             domain: Domain for agent routing (e.g., "web-frontend")
             priority: Higher priority tasks are assigned first (default: 0)
             model: Claude model for this task (sonnet, opus, haiku). Default: opus
+            execution_mode: worker (full protocol), direct (c4_claim/report), auto
+            review_required: Whether to auto-create review task on completion
 
         Returns:
             Dictionary with success status and task details
@@ -1381,7 +1385,8 @@ Thumbs.db
         Delegates to: TaskOps.add_todo()
         """
         return self.task_ops.add_todo(
-            task_id, title, scope, dod, dependencies, domain, priority, model
+            task_id, title, scope, dod, dependencies, domain, priority, model,
+            execution_mode, review_required,
         )
 
     def _validate_dod_quality(self, dod: str) -> list[str]:
@@ -2633,6 +2638,25 @@ Thumbs.db
         return self.task_ops.mark_blocked(
             task_id, worker_id, failure_signature, attempts, last_error
         )
+
+    def c4_claim(self, task_id: str) -> dict[str, Any]:
+        """Claim a task for direct execution (no worker protocol).
+
+        Delegates to: TaskOps.claim()
+        """
+        return self.task_ops.claim(task_id)
+
+    def c4_report(
+        self,
+        task_id: str,
+        summary: str,
+        files_changed: list[str] | None = None,
+    ) -> dict[str, Any]:
+        """Report task completion for direct mode.
+
+        Delegates to: TaskOps.report()
+        """
+        return self.task_ops.report(task_id, summary, files_changed)
 
     def c4_start(self) -> dict[str, Any]:
         """

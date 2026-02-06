@@ -111,6 +111,17 @@ def get_tool_definitions() -> list[Tool]:
                         "enum": ["opus", "sonnet", "haiku"],
                         "description": "Claude model tier for this task (default: opus). Use sonnet for simpler tasks to reduce cost.",
                     },
+                    "execution_mode": {
+                        "type": "string",
+                        "enum": ["worker", "direct", "auto"],
+                        "description": "Execution mode: worker (full protocol), direct (lightweight claim/report), auto. Default: worker.",
+                        "default": "worker",
+                    },
+                    "review_required": {
+                        "type": "boolean",
+                        "description": "Whether to auto-generate review task on completion. Default: true.",
+                        "default": True,
+                    },
                 },
                 "required": ["task_id", "title", "dod"],
             },
@@ -230,6 +241,52 @@ def get_tool_definitions() -> list[Tool]:
                     },
                 },
                 "required": ["task_id", "worker_id", "failure_signature", "attempts"],
+            },
+        ),
+        # Direct Mode Tools (c4_claim / c4_report)
+        Tool(
+            name="c4_claim",
+            description=(
+                "Claim a task for direct execution by the main session (no worker protocol). "
+                "Lightweight alternative to c4_get_task: no branch creation, no worker registration. "
+                "Creates .c4/active_claim.json for hook enforcement."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "task_id": {
+                        "type": "string",
+                        "description": "ID of the task to claim (e.g., T-DASH-001-0)",
+                    },
+                },
+                "required": ["task_id"],
+            },
+        ),
+        Tool(
+            name="c4_report",
+            description=(
+                "Report task completion for direct mode. "
+                "Lightweight alternative to c4_submit: records summary, marks done, "
+                "optionally creates review task. Deletes .c4/active_claim.json."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "task_id": {
+                        "type": "string",
+                        "description": "ID of the completed task",
+                    },
+                    "summary": {
+                        "type": "string",
+                        "description": "Summary of work done",
+                    },
+                    "files_changed": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "List of files changed during the work",
+                    },
+                },
+                "required": ["task_id", "summary"],
             },
         ),
         # Discovery & Specification Tools

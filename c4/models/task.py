@@ -233,6 +233,26 @@ class Task(BaseModel):
     )
 
     # ==========================================================================
+    # Direct Mode Fields (c4_claim / c4_report)
+    # ==========================================================================
+
+    execution_mode: Literal["worker", "direct", "auto"] = Field(
+        default="worker",
+        description="Execution mode: worker (full protocol), direct (lightweight claim/report), auto (C4 decides)",
+    )
+    review_required: bool = Field(
+        default=True,
+        description="Whether to auto-generate review task on completion. Set False for direct mode lightweight tasks.",
+    )
+    completion_summary: str | None = Field(
+        None, description="Summary of work done (populated by c4_report)"
+    )
+    files_changed: list[str] = Field(
+        default_factory=list,
+        description="List of files changed (populated by c4_report)",
+    )
+
+    # ==========================================================================
     # Methods
     # ==========================================================================
 
