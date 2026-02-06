@@ -60,7 +60,14 @@ from .state import (
 )
 
 # Task models
-from .task import Task, ValidationResult
+from .task import (
+    ArtifactRef,
+    ArtifactSpec,
+    ExecutionStats,
+    GpuTaskConfig,
+    Task,
+    ValidationResult,
+)
 
 # Worker models
 from .worker import WorkerInfo
@@ -74,6 +81,10 @@ __all__ = [
     "TaskStatus",
     "TaskType",
     # Task
+    "ArtifactRef",
+    "ArtifactSpec",
+    "ExecutionStats",
+    "GpuTaskConfig",
     "Task",
     "ValidationResult",
     # DDD-CLEANCODE

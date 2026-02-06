@@ -16,6 +16,73 @@ from .ddd import (
 )
 from .enums import TaskStatus, TaskType
 
+# ==========================================================================
+# GPU/ML Extension Models (PiQ absorption)
+# ==========================================================================
+
+
+class GpuTaskConfig(BaseModel):
+    """GPU 요구사항 for ML/DL tasks."""
+
+    gpu_count: int = Field(default=1, ge=0, description="Required GPU count (0 = CPU only)")
+    min_vram_gb: float = Field(default=8.0, ge=0, description="Minimum VRAM per GPU in GB")
+    gpu_model_pattern: str | None = Field(
+        None, description="GPU model regex pattern (e.g., 'A100', 'V100')"
+    )
+    parallelism: str = Field(
+        default="single",
+        pattern="^(single|ddp|fsdp|deepspeed)$",
+        description="Parallelism strategy: single, ddp, fsdp, deepspeed",
+    )
+    timeout_minutes: int = Field(default=60, ge=1, description="Job timeout in minutes")
+
+
+class ExecutionStats(BaseModel):
+    """실험 실행 통계 - @c4_track에서 자동 수집."""
+
+    queue_time_sec: float = 0
+    run_time_sec: float = 0
+    gpu_utilization: float = 0
+    peak_memory_gb: float = 0
+    metrics: dict = Field(default_factory=dict)
+    code_features: dict = Field(
+        default_factory=dict,
+        description="AST analysis: imports, algorithm, hyperparams",
+    )
+    data_profile: dict = Field(
+        default_factory=dict,
+        description="Data shape, dtype, hash",
+    )
+    git_context: dict = Field(
+        default_factory=dict,
+        description="Commit SHA, branch, dirty files",
+    )
+    env_context: dict = Field(
+        default_factory=dict,
+        description="Python version, OS, GPU info",
+    )
+
+
+class ArtifactRef(BaseModel):
+    """아티팩트 참조."""
+
+    name: str
+    type: str = Field(
+        default="output",
+        pattern="^(source|data|output)$",
+        description="Artifact type: source, data, output",
+    )
+    content_hash: str = Field(default="", description="SHA256 content hash")
+    size_bytes: int = Field(default=0, ge=0)
+    version: int = Field(default=1, ge=1)
+    local_path: str = Field(default="", description="Local path under .c4/artifacts/")
+
+
+class ArtifactSpec(BaseModel):
+    """태스크 관련 아티팩트 명세."""
+
+    artifacts: list[ArtifactRef] = Field(default_factory=list)
+
 
 class ValidationResult(BaseModel):
     """Result of a validation run"""
@@ -107,6 +174,20 @@ class Task(BaseModel):
     repair_guidance: str | None = Field(
         None,
         description="AI-generated repair guidance (for REPAIR type)",
+    )
+
+    # ==========================================================================
+    # GPU/ML Extension Fields (PiQ absorption)
+    # ==========================================================================
+
+    gpu_config: GpuTaskConfig | None = Field(
+        None, description="GPU requirements for ML/DL tasks"
+    )
+    execution_stats: ExecutionStats | None = Field(
+        None, description="Experiment execution statistics (auto-collected by @c4_track)"
+    )
+    artifact_spec: ArtifactSpec | None = Field(
+        None, description="Task-related artifacts"
     )
 
     # ==========================================================================

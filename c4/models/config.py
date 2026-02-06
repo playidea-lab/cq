@@ -766,6 +766,101 @@ class EconomicModeConfig(BaseModel):
 # =============================================================================
 
 
+# =============================================================================
+# GPU/ML Configuration (PiQ absorption)
+# =============================================================================
+
+
+class GpuConfig(BaseModel):
+    """GPU configuration for ML/DL workloads.
+
+    Example in config.yaml:
+        gpu:
+          enabled: true
+          default_vram_gb: 8
+          max_concurrent_jobs: 4
+    """
+
+    enabled: bool = Field(default=False, description="Enable GPU support")
+    default_vram_gb: float = Field(default=8.0, ge=0, description="Default minimum VRAM in GB")
+    max_concurrent_jobs: int = Field(default=4, ge=1, description="Max concurrent GPU jobs")
+
+
+class TrackerConfig(BaseModel):
+    """Experiment tracker configuration for @c4_track decorator.
+
+    Example in config.yaml:
+        tracker:
+          enabled: true
+          capture_stdout: true
+          capture_code: true
+          llm_review: false
+    """
+
+    enabled: bool = Field(default=False, description="Enable experiment tracking")
+    capture_stdout: bool = Field(default=True, description="Capture and parse stdout metrics")
+    capture_code: bool = Field(default=True, description="AST code analysis")
+    capture_data: bool = Field(default=True, description="Data profiling")
+    capture_git: bool = Field(default=True, description="Git context capture")
+    llm_review: bool = Field(default=False, description="LLM experiment review (optional)")
+    snapshot_interval: int = Field(
+        default=0, ge=0, description="Snapshot interval in steps (0=disabled)"
+    )
+
+
+class ArtifactsConfig(BaseModel):
+    """Local artifact store configuration.
+
+    Example in config.yaml:
+        artifacts:
+          enabled: true
+          store_path: ".c4/artifacts"
+          auto_detect: true
+    """
+
+    enabled: bool = Field(default=False, description="Enable artifact tracking")
+    store_path: str = Field(default=".c4/artifacts", description="Local artifact storage path")
+    content_addressable: bool = Field(
+        default=True, description="Use SHA256 content-addressable storage"
+    )
+    auto_detect: bool = Field(
+        default=True, description="Auto-detect artifacts on task completion"
+    )
+    detect_patterns: list[str] = Field(
+        default_factory=lambda: [
+            "outputs/**",
+            "checkpoints/**",
+            "*.pt",
+            "*.pkl",
+            "metrics.json",
+        ],
+        description="Glob patterns for auto-detection",
+    )
+    max_size_mb: int = Field(default=500, ge=1, description="Max artifact size in MB")
+    remote: str | None = Field(
+        None, description="Remote storage URL (future: dvc://, git-lfs://, s3://)"
+    )
+
+
+class ExperimentsConfig(BaseModel):
+    """Experiment knowledge system configuration.
+
+    Example in config.yaml:
+        experiments:
+          knowledge_enabled: true
+          embedding_model: "text-embedding-3-small"
+    """
+
+    knowledge_enabled: bool = Field(default=False, description="Enable knowledge store")
+    embedding_model: str = Field(
+        default="text-embedding-3-small",
+        description="Embedding model: 'text-embedding-3-small' (remote) or 'local'",
+    )
+    auto_pattern_mining: bool = Field(
+        default=True, description="Auto-mine patterns from completed experiments"
+    )
+
+
 class EnforceModeHints(BaseModel):
     """Hints configuration for enforce_mode."""
 
@@ -911,6 +1006,24 @@ class C4Config(BaseModel):
     economic_mode: EconomicModeConfig = Field(
         default_factory=EconomicModeConfig,
         description="Economic mode settings for cost optimization and model routing",
+    )
+
+    # GPU/ML Support (PiQ absorption)
+    gpu: GpuConfig = Field(
+        default_factory=GpuConfig,
+        description="GPU configuration for ML/DL workloads",
+    )
+    tracker: TrackerConfig = Field(
+        default_factory=TrackerConfig,
+        description="Experiment tracker (@c4_track) settings",
+    )
+    artifacts: ArtifactsConfig = Field(
+        default_factory=ArtifactsConfig,
+        description="Local artifact store settings",
+    )
+    experiments: ExperimentsConfig = Field(
+        default_factory=ExperimentsConfig,
+        description="Experiment knowledge system settings",
     )
 
     def get_work_branch(self) -> str:
