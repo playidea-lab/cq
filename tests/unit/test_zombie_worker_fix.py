@@ -165,3 +165,86 @@ def test_sync_fixes_busy_worker_with_missing_task(daemon: C4Daemon):
 
     # Check that fix was recorded
     assert f"{worker_id}:missing" in result["fixed"]
+
+
+def test_max_idle_minutes_default_is_60(daemon: C4Daemon):
+    """Test that max_idle_minutes defaults to 60 minutes."""
+    assert daemon.config.max_idle_minutes == 60
+
+
+def test_cleanup_stale_removes_old_idle_workers(daemon: C4Daemon):
+    """Test that cleanup_stale() removes idle workers after max_idle_minutes."""
+    from datetime import datetime, timedelta
+
+    # Register workers (must use hex-only IDs)
+    worker1 = "worker-aaaaaaaa"
+    worker2 = "worker-bbbbbbbb"
+
+    daemon.worker_manager.register(worker1)
+    daemon.worker_manager.register(worker2)
+
+    # Make worker1 old (91 minutes idle)
+    w1 = daemon.worker_manager.get_worker(worker1)
+    w1.last_seen = datetime.now() - timedelta(minutes=91)
+    w1.state = "idle"
+    daemon.state_machine.save_state()
+
+    # worker2 is recent
+    daemon.worker_manager.heartbeat(worker2)
+
+    # Run cleanup with 90 minute threshold
+    removed = daemon.worker_manager.cleanup_stale(max_idle_minutes=90)
+
+    # Verify worker1 was removed
+    assert worker1 in removed
+    assert daemon.worker_manager.get_worker(worker1) is None
+
+    # Verify worker2 still exists
+    assert daemon.worker_manager.get_worker(worker2) is not None
+
+
+def test_recover_stale_busy_workers(daemon: C4Daemon):
+    """Test that recover_stale_workers() recovers tasks from unresponsive busy workers."""
+    from datetime import datetime, timedelta
+
+    # Register worker and assign a task (must use hex-only ID)
+    worker_id = "worker-cccccccc"
+    daemon.worker_manager.register(worker_id)
+
+    # Create and assign a task
+    from c4.models import Task, TaskStatus
+    task = Task(
+        id="T-999-0",
+        title="Test task",
+        dod="Complete test",
+        status=TaskStatus.IN_PROGRESS,
+        assigned_to=worker_id,
+    )
+    daemon._save_task(task)
+    daemon.state_machine.state.queue.in_progress["T-999-0"] = worker_id
+    daemon.worker_manager.set_busy(worker_id, "T-999-0")
+
+    # Make worker stale (last seen 2 hours ago)
+    worker = daemon.worker_manager.get_worker(worker_id)
+    worker.last_seen = datetime.now() - timedelta(hours=2)
+    daemon.state_machine.save_state()
+
+    # Run recovery with 1 hour timeout
+    recoveries = daemon.worker_manager.recover_stale_workers(
+        stale_timeout_seconds=3600,  # 1 hour
+        lock_store=daemon.lock_store,
+    )
+
+    # Verify task was recovered
+    assert len(recoveries) == 1
+    assert recoveries[0]["worker_id"] == worker_id
+    assert recoveries[0]["task_id"] == "T-999-0"
+    assert recoveries[0]["task_recovered"] is True
+
+    # Verify task is back in pending queue
+    assert "T-999-0" not in daemon.state_machine.state.queue.in_progress
+    assert "T-999-0" in daemon.state_machine.state.queue.pending
+
+    # Verify worker is marked as disconnected
+    worker = daemon.worker_manager.get_worker(worker_id)
+    assert worker.state == "disconnected"

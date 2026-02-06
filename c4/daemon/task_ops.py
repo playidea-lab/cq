@@ -128,6 +128,22 @@ class TaskOps:
         # Clean up expired scope locks (prevents stale locks from blocking task assignment)
         daemon.lock_store.cleanup_expired(state.project_id)
 
+        # BUG FIX: Periodic cleanup of stale workers
+        # 1. Remove idle workers that have been inactive too long
+        if daemon.config.max_idle_minutes > 0:
+            removed = daemon.worker_manager.cleanup_stale(daemon.config.max_idle_minutes)
+            if removed:
+                logger.info(f"Cleaned up {len(removed)} idle workers: {removed}")
+
+        # 2. Recover tasks from busy workers that have been unresponsive
+        # Use scope_lock_ttl_sec as the timeout (same as lock expiry)
+        recoveries = daemon.worker_manager.recover_stale_workers(
+            stale_timeout_seconds=daemon.config.scope_lock_ttl_sec,
+            lock_store=daemon.lock_store,
+        )
+        if recoveries:
+            logger.warning(f"Recovered {len(recoveries)} stale workers: {recoveries}")
+
         # Ensure we're in EXECUTE state
         from ..models import ProjectStatus
         if state.status != ProjectStatus.EXECUTE:
