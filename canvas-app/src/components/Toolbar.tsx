@@ -9,7 +9,7 @@ interface ToolbarProps {
 
 export function Toolbar({ onRefresh, onOpenFolder, loading, projectPath }: ToolbarProps) {
   return (
-    <div className="toolbar">
+    <div className="toolbar" aria-label="Project toolbar">
       <button
         className="toolbar__button"
         onClick={onOpenFolder}
@@ -25,16 +25,7 @@ export function Toolbar({ onRefresh, onOpenFolder, loading, projectPath }: Toolb
         {loading ? 'Scanning...' : 'Refresh'}
       </button>
       {projectPath && (
-        <span style={{
-          color: '#888',
-          fontSize: '12px',
-          alignSelf: 'center',
-          marginLeft: '8px',
-          maxWidth: '300px',
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          whiteSpace: 'nowrap'
-        }}>
+        <span className="toolbar__path">
           {projectPath}
         </span>
       )}

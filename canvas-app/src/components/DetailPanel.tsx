@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import type { CanvasNode } from '../types';
 import '../styles/nodes.css';
 
@@ -15,6 +16,16 @@ const typeLabels: Record<string, string> = {
 };
 
 export function DetailPanel({ node, onClose }: DetailPanelProps) {
+  // Keyboard dismiss with Escape key
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
   const formatMetadata = (meta: Record<string, unknown>): string => {
     try {
       return JSON.stringify(meta, null, 2);

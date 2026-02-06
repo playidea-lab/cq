@@ -10,13 +10,13 @@ interface CanvasProps {
   onNodePositionChange?: (nodeId: string, x: number, y: number) => void;
 }
 
-// Map node types to icons (emojis for simplicity)
-const typeIcons: Record<string, string> = {
-  document: '📄',
-  config: '⚙️',
-  session: '💬',
-  task: '✅',
-  connection: '🔗',
+// Node type labels for tldraw frame names
+const typeLabels: Record<string, string> = {
+  document: 'DOC',
+  config: 'CFG',
+  session: 'SES',
+  task: 'TSK',
+  connection: 'CON',
 };
 
 // tldraw color type (used for both arrows and frames)
@@ -221,7 +221,7 @@ export function renderCanvasData(editor: Editor, data: CanvasData) {
       props: {
         w: 180,
         h: 80,
-        name: `${typeIcons[node.type] || '📦'} ${node.label}`,
+        name: `[${typeLabels[node.type] || '???'}] ${node.label}`,
         color: getNodeColor(node.type),
       },
       meta,

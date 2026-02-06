@@ -1,0 +1,209 @@
+skill:
+  id: ui-design
+  name: "UI/UX Design Intelligence"
+  description: "UI 스타일, 색상, 타이포그래피, UX 가이드라인, 접근성 규칙을 적용하여 프로덕션급 UI 구현"
+
+  impact: critical
+  category: quality
+  domains:
+    - web-frontend
+    - mobile-app
+    - fullstack
+
+  domain_specific:
+    web-frontend:
+      priority_boost: 0.5
+    mobile-app:
+      priority_boost: 0.3
+
+  metadata:
+    version: "1.0.0"
+    author: "c4-team"
+    license: MIT
+    tags: [ui, ux, design, accessibility, responsive, color, typography, wcag]
+
+  capabilities:
+    - design-system-creation
+    - color-palette-selection
+    - typography-pairing
+    - accessibility-compliance
+    - responsive-layout
+    - component-styling
+    - dark-mode-implementation
+
+  triggers:
+    keywords:
+      - ui
+      - design
+      - style
+      - color
+      - theme
+      - layout
+      - responsive
+      - accessibility
+      - dark mode
+      - component
+      - button
+      - form
+      - modal
+      - card
+      - navigation
+      - typography
+      - font
+    task_types:
+      - frontend
+      - ui-design
+      - redesign
+      - styling
+    file_patterns:
+      - "**/*.css"
+      - "**/*.scss"
+      - "**/*.tsx"
+      - "**/*.jsx"
+      - "**/components/**"
+      - "**/styles/**"
+
+  rules:
+    # CRITICAL (P1) - Accessibility
+    - id: UI-001
+      description: "최소 4.5:1 대비율 (WCAG AA). 7:1 권장 (AAA)"
+      impact: critical
+      example_bad: |
+        color: #888;
+        background: #333;
+        /* contrast ratio: 2.9:1 - FAIL */
+      example_good: |
+        color: #e0e0e0;
+        background: #333;
+        /* contrast ratio: 8.1:1 - PASS */
+
+    - id: UI-002
+      description: "터치 타겟 최소 44x44px, 간격 최소 8px"
+      impact: critical
+      example_bad: |
+        .icon-btn { width: 24px; height: 24px; }
+      example_good: |
+        .icon-btn { min-width: 44px; min-height: 44px; }
+
+    - id: UI-003
+      description: "키보드 네비게이션: focus-visible 링 3-4px, tabindex 순서"
+      impact: critical
+      example_bad: |
+        button:focus { outline: none; }
+      example_good: |
+        button:focus-visible {
+          outline: 3px solid var(--color-focus-ring);
+          outline-offset: 2px;
+        }
+
+    - id: UI-004
+      description: "색상만으로 정보 전달 금지 - 아이콘/텍스트 병행"
+      impact: critical
+      example_bad: |
+        <span style="color: red">Error</span>
+        <span style="color: green">Success</span>
+      example_good: |
+        <span class="status-error"><AlertIcon /> Error</span>
+        <span class="status-success"><CheckIcon /> Success</span>
+
+    # HIGH (P2) - Interaction
+    - id: UI-005
+      description: "이모지를 UI 아이콘으로 사용 금지 - SVG 아이콘 사용 (lucide-react 등)"
+      impact: high
+      example_bad: |
+        <button>📁 Open</button>
+      example_good: |
+        import { FolderOpen } from 'lucide-react';
+        <button><FolderOpen size={16} /> Open</button>
+
+    - id: UI-006
+      description: "cursor: pointer를 모든 클릭 가능한 요소에 적용"
+      impact: high
+      example_bad: |
+        .clickable-card { /* no cursor */ }
+      example_good: |
+        .clickable-card { cursor: pointer; }
+
+    - id: UI-007
+      description: "hover/active/disabled 상태 모두 정의 - 200-300ms transition"
+      impact: high
+      example_bad: |
+        .btn { background: blue; }
+      example_good: |
+        .btn {
+          background: var(--color-primary);
+          transition: background 200ms ease;
+        }
+        .btn:hover { background: var(--color-primary-hover); }
+        .btn:active { background: var(--color-primary-active); }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    - id: UI-008
+      description: "로딩 상태에 skeleton/spinner 표시 - 빈 화면 금지"
+      impact: high
+
+    # HIGH (P3) - Layout
+    - id: UI-009
+      description: "CSS 디자인 시스템 변수 사용 (--spacing, --radius, --color-*)"
+      impact: high
+      example_bad: |
+        .card { padding: 16px; border-radius: 8px; color: #333; }
+      example_good: |
+        .card {
+          padding: var(--space-md);
+          border-radius: var(--radius-md);
+          color: var(--color-text-primary);
+        }
+
+    - id: UI-010
+      description: "반응형: mobile-first (min-width breakpoints)"
+      impact: high
+      example_bad: |
+        @media (max-width: 768px) { /* desktop-first */ }
+      example_good: |
+        @media (min-width: 768px) { /* mobile-first */ }
+
+    - id: UI-011
+      description: "본문 max-width: 65-75ch, line-height: 1.5-1.75"
+      impact: medium
+
+    # MEDIUM (P4) - Visual Quality
+    - id: UI-012
+      description: "일관된 border-radius (0, 4, 8, 12, 16px 중 선택)"
+      impact: medium
+
+    - id: UI-013
+      description: "그림자 계층 시스템 (sm/md/lg/xl elevation)"
+      impact: medium
+
+    - id: UI-014
+      description: "라이트/다크 모드 대비 확인"
+      impact: medium
+
+    - id: UI-015
+      description: "인라인 스타일 금지 - CSS 클래스 또는 디자인 토큰 사용"
+      impact: medium
+      example_bad: |
+        <div style="padding: 16px; color: red;">Content</div>
+      example_good: |
+        <div className="card-body error">Content</div>
+
+  tools:
+    - lucide-react
+    - heroicons
+    - css-variables
+    - postcss
+    - tailwindcss
+
+  complementary_skills:
+    - frontend-development
+    - accessibility
+    - responsive-design
+
+  prerequisites:
+    - css
+    - frontend-development
+
+  leads_to:
+    - testing
+    - code-review

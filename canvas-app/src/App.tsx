@@ -27,8 +27,26 @@ export default function App() {
     }
   }, [data]);
 
+  // Check if running inside Tauri
+  const isTauri = Boolean(
+    typeof window !== 'undefined' && (window as any).__TAURI_INTERNALS__
+  );
+
   // Open folder dialog
   const handleOpenFolder = useCallback(async () => {
+    if (!isTauri) {
+      // Fallback: prompt for path when not in Tauri webview
+      const path = window.prompt('Enter project path (Tauri dialog not available in browser):');
+      if (path) {
+        setProjectPath(path);
+        const savedCanvas = await loadCanvas(path);
+        if (!savedCanvas) {
+          await scanProject(path);
+        }
+      }
+      return;
+    }
+
     try {
       const selected = await open({
         directory: true,
@@ -49,7 +67,7 @@ export default function App() {
     } catch (err) {
       console.error('Failed to open folder:', err);
     }
-  }, [loadCanvas, scanProject]);
+  }, [isTauri, loadCanvas, scanProject]);
 
   // Refresh scan
   const handleRefresh = useCallback(async () => {
@@ -117,7 +135,7 @@ export default function App() {
   }, []);
 
   return (
-    <div style={{ width: '100%', height: '100%', position: 'relative' }}>
+    <div className="app-container">
       <Canvas
         data={data}
         onNodeSelect={handleNodeSelect}
@@ -136,97 +154,43 @@ export default function App() {
 
       {/* Empty state: No project selected */}
       {!projectPath && !loading && (
-        <div style={{
-          position: 'absolute',
-          top: '50%',
-          left: '50%',
-          transform: 'translate(-50%, -50%)',
-          textAlign: 'center',
-          zIndex: 100,
-          padding: '32px',
-          background: 'rgba(255, 255, 255, 0.95)',
-          borderRadius: '12px',
-          boxShadow: '0 4px 12px rgba(0, 0, 0, 0.1)',
-          maxWidth: '400px',
-        }}>
-          <h2 style={{ margin: '0 0 16px', fontSize: '24px', color: '#333' }}>
+        <div className="empty-state">
+          <h2 className="empty-state__title">
             Welcome to C4 Canvas
           </h2>
-          <p style={{ margin: '0 0 24px', color: '#666', lineHeight: '1.5' }}>
+          <p className="empty-state__description">
             Select a project folder to visualize your C4 project structure, tasks, and dependencies.
           </p>
           <button
+            className="btn btn--primary"
             onClick={handleOpenFolder}
-            style={{
-              padding: '12px 24px',
-              fontSize: '16px',
-              background: '#0066cc',
-              color: '#fff',
-              border: 'none',
-              borderRadius: '8px',
-              cursor: 'pointer',
-              fontWeight: 500,
-              transition: 'background 0.2s',
-            }}
-            onMouseOver={(e) => e.currentTarget.style.background = '#0052a3'}
-            onMouseOut={(e) => e.currentTarget.style.background = '#0066cc'}
           >
-            📁 Open Project Folder
+            Open Project Folder
           </button>
         </div>
       )}
 
       {/* Empty state: No nodes in scanned project */}
       {projectPath && data && data.nodes.length === 0 && !loading && !error && (
-        <div style={{
-          position: 'absolute',
-          top: '50%',
-          left: '50%',
-          transform: 'translate(-50%, -50%)',
-          textAlign: 'center',
-          zIndex: 100,
-          padding: '32px',
-          background: 'rgba(255, 255, 255, 0.95)',
-          borderRadius: '12px',
-          boxShadow: '0 4px 12px rgba(0, 0, 0, 0.1)',
-          maxWidth: '400px',
-        }}>
-          <h3 style={{ margin: '0 0 12px', fontSize: '20px', color: '#333' }}>
+        <div className="empty-state">
+          <h3 className="empty-state__title empty-state__title--sm">
             No Nodes Found
           </h3>
-          <p style={{ margin: '0 0 16px', color: '#666', lineHeight: '1.5' }}>
+          <p className="empty-state__description empty-state__description--compact">
             The selected project doesn't contain any C4 data yet. Try refreshing or select a different folder.
           </p>
-          <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+          <div className="empty-state__actions">
             <button
+              className="btn btn--primary btn--sm"
               onClick={handleRefresh}
-              style={{
-                padding: '10px 20px',
-                fontSize: '14px',
-                background: '#0066cc',
-                color: '#fff',
-                border: 'none',
-                borderRadius: '6px',
-                cursor: 'pointer',
-                fontWeight: 500,
-              }}
             >
-              🔄 Refresh
+              Refresh
             </button>
             <button
+              className="btn btn--secondary btn--sm"
               onClick={handleOpenFolder}
-              style={{
-                padding: '10px 20px',
-                fontSize: '14px',
-                background: '#666',
-                color: '#fff',
-                border: 'none',
-                borderRadius: '6px',
-                cursor: 'pointer',
-                fontWeight: 500,
-              }}
             >
-              📁 Change Folder
+              Change Folder
             </button>
           </div>
         </div>
@@ -240,32 +204,11 @@ export default function App() {
       )}
 
       {error && errorVisible && (
-        <div style={{
-          position: 'fixed',
-          bottom: '80px',
-          left: '16px',
-          background: '#8b1a1a',
-          color: '#fff',
-          padding: '12px 16px',
-          borderRadius: '8px',
-          maxWidth: '400px',
-          zIndex: 1000,
-          display: 'flex',
-          alignItems: 'center',
-          gap: '12px',
-        }}>
-          <span style={{ flex: 1 }}>{error}</span>
+        <div className="error-toast" role="alert" aria-live="assertive">
+          <span className="error-toast__message">{error}</span>
           <button
+            className="error-toast__close"
             onClick={handleCloseError}
-            style={{
-              background: 'transparent',
-              border: 'none',
-              color: '#fff',
-              cursor: 'pointer',
-              fontSize: '18px',
-              padding: '0',
-              lineHeight: '1',
-            }}
             aria-label="Close error notification"
           >
             ×
