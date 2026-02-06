@@ -950,9 +950,13 @@ def init(
     Use --template to initialize with a pre-configured ML project template.
     Use --skip-commands to skip installing global slash commands.
     """
-    # Resolve project path (use _get_original_cwd for uv --directory compatibility)
+    # Resolve project path
+    # NOTE: For init, prefer _get_original_cwd() over C4_PROJECT_ROOT env.
+    # C4_PROJECT_ROOT may be stale from a previous MCP session pointing to
+    # the C4 package directory instead of the user's project.
+    # --path flag (project_path param) takes highest priority.
     if project_path is None:
-        project_path = Path(os.environ.get("C4_PROJECT_ROOT") or str(_get_original_cwd()))
+        project_path = _get_original_cwd()
     project_path = project_path.resolve()
 
     # Temporarily set env for C4Daemon
