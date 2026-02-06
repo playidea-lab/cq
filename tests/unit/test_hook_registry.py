@@ -1,6 +1,6 @@
 """Tests for C4 task lifecycle hook registry."""
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 from c4.hooks.base import BaseHook, HookContext, HookPhase
 from c4.hooks.registry import HookRegistry

@@ -1435,6 +1435,7 @@ Thumbs.db
             domain=task.domain,
             priority=review_priority,
             task_type="review",  # Enable code-reviewer agent routing
+            model=self.config.economic_mode.get_model_for_task_type("review"),  # Economic mode
             # Review-as-Task fields
             type=TaskType.REVIEW,
             base_id=task.base_id,

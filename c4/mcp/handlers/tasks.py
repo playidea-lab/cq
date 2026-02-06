@@ -60,6 +60,7 @@ def handle_add_todo(daemon: Any, arguments: dict[str, Any]) -> dict[str, Any]:
         dependencies=arguments.get("dependencies"),
         domain=arguments.get("domain"),
         priority=arguments.get("priority", 0),
+        model=arguments.get("model"),  # None = use economic_mode config
     )
 
 
