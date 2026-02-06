@@ -1,12 +1,12 @@
 # C4 Roadmap
 
-## Current Version: v0.6.0 (Team Collaboration)
+## Current Version: v0.6.10 (GPU/ML Native + Worker Hardening)
 
-현재 버전은 **팀 협업, 화이트라벨 브랜딩, 코드 분석 엔진, LSP 서버**를 지원합니다.
+현재 버전은 **GPU/ML 네이티브 지원, 실험 추적, 아티팩트 관리, 워커 생명주기 강화**를 포함합니다.
 
 ### 지원 기능
 
-- MCP Server (Claude Code 통합) - 25+ 도구
+- MCP Server (Claude Code 통합) - 30+ 도구
 - **LSP Server** (VS Code 등 에디터 통합) - pygls 기반
 - State Machine (INIT → DISCOVERY → DESIGN → PLAN → EXECUTE ↔ CHECKPOINT → COMPLETE)
 - Multi-Worker (SQLite WAL 모드, race-condition free)
@@ -24,6 +24,12 @@
 - **Code Analysis Engine** - Python/TypeScript AST 분석
 - **Documentation Snapshots** - Context7 스타일 문서 API
 - **Gap Analyzer** - EARS 요구사항 ↔ 구현 매핑
+- **GPU/ML Native** - GPU 감지, 스케줄링, DAG→Task 변환
+- **Experiment Tracker** - @c4_track 데코레이터, 메트릭 자동 캡처
+- **Artifact Store** - Content-addressable 로컬 저장소
+- **Knowledge Store** - 실험 지식 + 임베딩 유사도 검색
+- **Hook Registry** - 태스크 생명주기 훅 시스템
+- **Worker Lifecycle** - 좀비 워커 자동 감지/정리, TTL 기반 제거
 
 ---
 
@@ -353,6 +359,56 @@ uv run pytest tests/unit/lsp/ -v
 - MCP 통합 (`c4_lsp_start`, `c4_lsp_status`)
 - Go, Rust 언어 확장 (tree-sitter 플러그인)
 
+### Phase 6.9: PiQ 완전 흡수 - Native GPU/ML Support ✅
+
+**목표**: piq 프로젝트를 C4에 완전 흡수하여 GPU/ML 워크로드를 네이티브 지원
+
+**흡수 범위**: ~14,750줄 흡수, ~58,520줄 폐기 (Hub, PiDrive, Data, Templates)
+
+**구현 완료**:
+- **GPU Monitor** (`c4/gpu/monitor.py`) - CUDA/MPS/CPU 백엔드 감지, VRAM 기반 할당
+- **GPU Scheduler** (`c4/gpu/scheduler.py`) - Multi-GPU 스케줄링 (DDP/FSDP)
+- **DAG→Task 변환** (`c4/gpu/dag.py`) - DAG 정의, 검증, 위상정렬, C4 태스크 변환
+- **Experiment Tracker** (`c4/tracker/`) - `@c4_track` 데코레이터
+  - stdout 메트릭 파싱 (regex), AST 코드 분석, 데이터 프로파일링
+  - Git 컨텍스트, 실행 환경 캡처
+- **Local Artifact Store** (`c4/artifacts/`) - Content-addressable (SHA256) 로컬 저장소
+  - 3-Tier 분류 (SOURCE/DATA/OUTPUT), 자동 감지 (*.pt, *.pkl 등)
+- **Knowledge Store** (`c4/knowledge/`) - 실험 지식 저장 + 임베딩 유사도 검색
+  - 패턴 마이닝, 가설 추적
+- **Hook Registry** (`c4/hooks/`) - 생명주기 훅 (BEFORE_SUBMIT, AFTER_COMPLETE, ON_FAILURE)
+  - 빌트인: KnowledgeHook, ArtifactHook
+- **Task 모델 확장** - `GpuTaskConfig`, `ExecutionStats`, `ArtifactSpec` 필드 추가
+- **Config 확장** - `gpu`, `tracker`, `artifacts`, `experiments` 섹션 추가
+- **MCP Tools** - `c4_gpu_status`, `c4_job_submit`, `c4_experiment_search`, `c4_artifact_list` 등
+- **Worker GPU 타입** - GPU 요구사항 매칭, `is_piq_project` 자동 활성화
+- **ABC 인터페이스** - Cloud 확장 포인트 (ArtifactStore, KnowledgeStore, GpuScheduler, ExperimentTracker)
+
+**테스트**: 155+ tests (unit + integration + E2E)
+
+```
+c4/
+├── gpu/          # GPU 감지, 스케줄링, DAG 변환
+├── tracker/      # @c4_track 데코레이터, 메트릭 캡처
+├── artifacts/    # 로컬 아티팩트 저장소
+├── knowledge/    # 실험 지식 + 임베딩 검색
+└── hooks/        # 생명주기 훅 레지스트리
+```
+
+### Phase 6.10: Worker Lifecycle Hardening ✅
+
+**목표**: 좀비 워커 버그 수정 및 워커 생명주기 강화
+
+**근본 원인 6가지 수정**:
+1. **`_sync_merged_tasks()` worker 상태 미업데이트** → merge 시 worker idle 전환 추가
+2. **`_sync_state_consistency()` done queue 누락** → busy worker 중 task 완료/누락 감지 추가
+3. **`cleanup_stale()` 미호출** → `c4_get_task` 경로에서 주기적 호출 추가
+4. **`max_idle_minutes` 기본값 0** → 60분으로 변경
+5. **MCP 세션 종료 시 정리 없음** → TTL 30분 기반 자동 제거
+6. **수동 정리 방법 부재** → `c4_cleanup_workers` MCP tool 추가
+
+**테스트**: 10 passed (`tests/unit/test_zombie_worker_fix.py`)
+
 ---
 
 ## Phase 7: C4 Cloud (v0.7.0) 📋 Next
@@ -454,17 +510,17 @@ uv run pytest tests/unit/lsp/ -v
 ## Migration Path
 
 ```text
-v0.1-0.3        v0.4           v0.5           v0.6 (현재)         v0.7+
-    │               │               │               │                  │
-    │  Multi-Worker │  Agent Routing│  Discovery    │  Team + LSP      │
-    │  SQLite       │  + Chaining   │  + Verifier   │  + Observability │
-    ▼               ▼               ▼               ▼                  ▼
-┌─────────┐   ┌─────────┐    ┌─────────┐    ┌─────────┐    ┌────────────────┐
-│ Local   │──▶│ Agent   │───▶│ EARS +  │───▶│ Supabase│───▶│ C4 Cloud       │
-│ Files   │   │ Routing │    │ ADR     │    │ + Code  │    │ ├─ 7.1 Console │
-└─────────┘   └─────────┘    └─────────┘    └─────────┘    │ ├─ 7.2 LLM GW  │
-                                                           │ └─ 7.3 Workers │
-                                                           └────────────────┘
+v0.1-0.3        v0.4           v0.5           v0.6             v0.6.10 (현재)    v0.7+
+    │               │               │               │               │               │
+    │  Multi-Worker │  Agent Routing│  Discovery    │  Team + LSP   │  GPU/ML +     │
+    │  SQLite       │  + Chaining   │  + Verifier   │  + Observ.    │  Worker Fix   │
+    ▼               ▼               ▼               ▼               ▼               ▼
+┌─────────┐   ┌─────────┐    ┌─────────┐    ┌─────────┐    ┌─────────┐    ┌────────────────┐
+│ Local   │──▶│ Agent   │───▶│ EARS +  │───▶│ Supabase│───▶│ PiQ     │───▶│ C4 Cloud       │
+│ Files   │   │ Routing │    │ ADR     │    │ + Code  │    │ Absorb  │    │ ├─ 7.1 Console │
+└─────────┘   └─────────┘    └─────────┘    └─────────┘    └─────────┘    │ ├─ 7.2 LLM GW  │
+                                                                          │ └─ 7.3 Workers │
+                                                                          └────────────────┘
 ```
 
 ---
@@ -492,6 +548,8 @@ v0.1-0.3        v0.4           v0.5           v0.6 (현재)         v0.7+
 | Long-Running Worker Detection | P0 | ✅ 완료 |
 | LSP Server | P0 | ✅ 완료 |
 | **Reliability & Observability** | P0 | ✅ 완료 |
+| **PiQ 완전 흡수 (GPU/ML)** | P0 | ✅ 완료 |
+| **Worker Lifecycle Hardening** | P0 | ✅ 완료 |
 | Cloud Foundation (7.1) | P1 | 📋 Next |
 | LLM Gateway (7.2) | P1 | 📋 Phase 7 |
 | Hosted Workers (7.3) | P2 | 📋 Phase 7 |
