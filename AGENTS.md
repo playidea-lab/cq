@@ -632,3 +632,61 @@ RPR-001-1: 첫 번째 수리 태스크, 깊이 1
 /c4-run                 # Worker 스폰 → 자동 실행
 /c4-status              # 진행 상황 확인
 ```
+
+---
+
+## CRITICAL: C4 Operation Pre-conditions
+
+> 보고서 분석 결과 462건의 wrong_approach 중 상당수가 상태 미확인으로 인한 실패.
+> 아래 규칙은 반드시 지켜야 합니다.
+
+### c4_submit 전 필수 체크
+```
+c4_submit 호출 전에 반드시:
+1. c4_status로 태스크 상태 확인
+2. 태스크가 in_progress 상태인지 검증
+3. pending 상태면 → c4_get_task로 먼저 할당받기
+4. 절대로 pending 상태의 태스크를 submit하지 않는다
+5. 직접 DB 업데이트는 금지 — 반드시 MCP API 사용
+```
+
+### 검증 후 진행 (Validate-Then-Proceed)
+```
+모든 코드 수정 후:
+1. Python 파일 → uv run python -m py_compile <file> 또는 관련 테스트
+2. Config 파일 → 형식 검증
+3. TypeScript → npx tsc --noEmit
+4. 검증 실패 시 → 다음 단계 진행 금지, 즉시 수정
+```
+
+### Bulk Operation Protocol
+```
+10개 이상 파일 일괄 수정 시:
+1. 대상 파일 목록을 먼저 나열
+2. 사용자 확인 후 진행
+3. 수정 후 전체 검증 (lint + test)
+4. 실패 시 어떤 파일이 문제인지 식별
+```
+
+### TodoWrite 사용 금지
+```
+이 프로젝트에서는:
+- ❌ TodoWrite 사용 금지 (C4와 이중 트래킹)
+- ✅ c4_add_todo로 태스크 관리
+- ✅ c4_write_memory로 인사이트 기록
+```
+
+### Session Handoff Protocol
+```
+장시간 디버깅 세션 종료 시 반드시:
+1. 발견한 문제 + 적용한 수정 요약
+2. 아직 미해결 이슈 목록
+3. 다음 세션 시작 지점 명시
+→ c4_write_memory에 기록하여 다음 세션에서 컨텍스트 유지
+
+예시:
+  c4_write_memory(
+    key="session-handoff-2026-02-06",
+    content="Fixed: API format mismatch. Remaining: tensor shape in SAM3 input. Next: check input_boxes nesting level."
+  )
+```
