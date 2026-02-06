@@ -293,11 +293,19 @@ class TaskOps:
                 pending_tasks.append(task)
         pending_tasks.sort(key=lambda t: t.priority, reverse=True)
 
+        # Check if this worker is GPU-capable
+        worker_info = state.workers.get(worker_id)
+        worker_gpu_capable = worker_info.gpu_capable if worker_info else False
+
         for task in pending_tasks:
             task_id = task.id
 
             # Economic mode: filter by model if specified
             if model_filter and task.model != model_filter:
+                continue
+
+            # GPU requirement: skip GPU tasks for non-GPU workers
+            if task.gpu_config and task.gpu_config.gpu_count > 0 and not worker_gpu_capable:
                 continue
 
             # Check dependencies first (non-locking check)
@@ -835,7 +843,7 @@ class TaskOps:
         dependencies: list[str] | None = None,
         domain: str | None = None,
         priority: int = 0,
-        model: str = "opus",
+        model: str | None = None,
     ) -> dict[str, Any]:
         """Add a new task with optional dependencies.
 
@@ -852,7 +860,8 @@ class TaskOps:
             dependencies: List of task IDs that must complete first
             domain: Domain for agent routing (e.g., "web-frontend")
             priority: Higher priority tasks are assigned first (default: 0)
-            model: Claude model for this task (sonnet, opus, haiku). Default: opus
+            model: Claude model for this task (sonnet, opus, haiku).
+                   If None, uses economic_mode config (implementation task type).
 
         Returns:
             Dict with success status and task info
@@ -860,6 +869,10 @@ class TaskOps:
         daemon = self._daemon
         if daemon.state_machine is None:
             raise RuntimeError("C4 not initialized")
+
+        # Use economic_mode config if model not specified
+        if model is None:
+            model = daemon.config.economic_mode.get_model_for_task_type("implementation")
 
         # Parse and normalize task ID for Review-as-Task
         normalized_id, base_id, version, task_type = daemon._parse_task_id(task_id)

@@ -86,11 +86,16 @@ class WorkerManager:
             )
 
         now = datetime.now()
+
+        # Auto-detect GPU capability
+        gpu_capable = self._detect_gpu_capability()
+
         worker = WorkerInfo(
             worker_id=worker_id,
             state="idle",
             joined_at=now,
             last_seen=now,
+            gpu_capable=gpu_capable,
         )
 
         self._workers[worker_id] = worker
@@ -103,6 +108,18 @@ class WorkerManager:
 
         logger.info(f"Worker registered successfully: {worker_id}")
         return worker
+
+    @staticmethod
+    def _detect_gpu_capability() -> bool:
+        """Detect if the current machine has GPU capability."""
+        try:
+            from c4.gpu.monitor import GpuMonitor
+
+            monitor = GpuMonitor()
+            gpus = monitor.detect()
+            return any(g.backend != "cpu" for g in gpus)
+        except Exception:
+            return False
 
     def unregister(self, worker_id: str, lock_store: "Any | None" = None) -> bool:
         """

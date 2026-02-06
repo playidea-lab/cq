@@ -16,3 +16,4 @@ class WorkerInfo(BaseModel):
     branch: str | None = None
     joined_at: datetime
     last_seen: datetime | None = None
+    gpu_capable: bool = False
