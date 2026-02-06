@@ -905,6 +905,44 @@ Thumbs.db
                         f"was assigned to {worker_id}"
                     )
 
+                # BUG FIX: Scan all busy workers for orphaned tasks
+                # A worker may be busy but its task is already done or missing
+                for worker_id, worker in list(state.workers.items()):
+                    if worker.state != "busy":
+                        continue
+
+                    task_id = worker.task_id
+                    if not task_id:
+                        continue
+
+                    # Check if task is in done queue
+                    if task_id in state.queue.done:
+                        worker.state = "idle"
+                        worker.task_id = None
+                        worker.scope = None
+                        fixed_tasks.append(f"{worker_id}:done")
+                        logger.warning(
+                            f"State sync: Fixed zombie worker {worker_id}, "
+                            f"task {task_id} was already done"
+                        )
+                        continue
+
+                    # Check if task exists anywhere
+                    task_exists = (
+                        task_id in state.queue.pending
+                        or task_id in state.queue.in_progress
+                        or task_id in state.queue.done
+                    )
+                    if not task_exists:
+                        worker.state = "idle"
+                        worker.task_id = None
+                        worker.scope = None
+                        fixed_tasks.append(f"{worker_id}:missing")
+                        logger.warning(
+                            f"State sync: Fixed zombie worker {worker_id}, "
+                            f"task {task_id} does not exist"
+                        )
+
                 # Update cached state
                 self.state_machine._state = state
 

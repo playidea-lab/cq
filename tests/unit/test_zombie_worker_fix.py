@@ -94,3 +94,74 @@ def test_sync_merged_tasks_worker_not_found(daemon: C4Daemon):
         assert task is not None
         assert task.status == TaskStatus.DONE
         assert task.assigned_to is None
+
+
+def test_sync_fixes_busy_worker_with_done_task(daemon: C4Daemon):
+    """Test that _sync_state_consistency() fixes busy worker when task is already done."""
+    # Register a worker
+    worker_id = "worker-cafe1234"
+    daemon.worker_manager.register(worker_id)
+
+    # Create a task that's already done
+    task = Task(
+        id="T-003-0",
+        title="Done task",
+        dod="Complete test",
+        status=TaskStatus.DONE,
+        assigned_to=None,
+        branch="c4/w-T-003-0",
+    )
+    daemon._save_task(task)
+    # Task is in done queue
+    daemon.state_machine.state.queue.done.append("T-003-0")
+
+    # But worker is still busy with this task (zombie state)
+    daemon.worker_manager.set_busy(worker_id, "T-003-0", branch="c4/w-T-003-0")
+    daemon.state_machine.save_state()  # Persist worker state to database
+
+    # Verify worker is busy (zombie)
+    worker = daemon.worker_manager.get_worker(worker_id)
+    assert worker is not None
+    assert worker.state == "busy"
+    assert worker.task_id == "T-003-0"
+
+    # Run consistency sync
+    result = daemon._sync_state_consistency()
+
+    # Verify worker is now idle
+    worker = daemon.worker_manager.get_worker(worker_id)
+    assert worker is not None
+    assert worker.state == "idle", "Worker should be idle when task is done"
+    assert worker.task_id is None
+
+    # Check that fix was recorded
+    assert f"{worker_id}:done" in result["fixed"]
+
+
+def test_sync_fixes_busy_worker_with_missing_task(daemon: C4Daemon):
+    """Test that _sync_state_consistency() fixes busy worker when task doesn't exist."""
+    # Register a worker
+    worker_id = "worker-beef1234"
+    daemon.worker_manager.register(worker_id)
+
+    # Worker is busy with a task that doesn't exist anywhere
+    daemon.worker_manager.set_busy(worker_id, "T-999-0", branch="c4/w-T-999-0")
+    daemon.state_machine.save_state()  # Persist worker state to database
+
+    # Verify worker is busy (zombie)
+    worker = daemon.worker_manager.get_worker(worker_id)
+    assert worker is not None
+    assert worker.state == "busy"
+    assert worker.task_id == "T-999-0"
+
+    # Run consistency sync
+    result = daemon._sync_state_consistency()
+
+    # Verify worker is now idle
+    worker = daemon.worker_manager.get_worker(worker_id)
+    assert worker is not None
+    assert worker.state == "idle", "Worker should be idle when task is missing"
+    assert worker.task_id is None
+
+    # Check that fix was recorded
+    assert f"{worker_id}:missing" in result["fixed"]
