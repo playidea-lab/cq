@@ -920,6 +920,7 @@ class C4Config(BaseModel):
     work_branch_prefix: str = "c4/w-"
     poll_interval_ms: int = 1000
     max_idle_minutes: int = 60  # Default: remove idle workers after 60 minutes
+    worker_ttl_minutes: int = 30  # Default: evict workers with no heartbeat for 30 minutes
     scope_lock_ttl_sec: int = 3600  # 60 minutes, synchronized with WORKER_STALE_TIMEOUT
     validation: ValidationConfig = Field(default_factory=ValidationConfig)
     verifications: VerificationConfig = Field(default_factory=VerificationConfig)

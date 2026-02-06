@@ -248,3 +248,60 @@ def test_recover_stale_busy_workers(daemon: C4Daemon):
     # Verify worker is marked as disconnected
     worker = daemon.worker_manager.get_worker(worker_id)
     assert worker.state == "disconnected"
+
+
+def test_worker_ttl_eviction(daemon: C4Daemon):
+    """Test that TTL-based eviction removes workers with expired last_seen."""
+    from datetime import datetime, timedelta
+
+    # Register workers (must use hex-only IDs)
+    worker1 = "worker-eeeeeeee"
+    worker2 = "worker-ffffffff"
+
+    daemon.worker_manager.register(worker1)
+    daemon.worker_manager.register(worker2)
+
+    # Make worker1 expired (last seen 35 minutes ago, TTL is 30 minutes)
+    w1 = daemon.worker_manager.get_worker(worker1)
+    w1.last_seen = datetime.now() - timedelta(minutes=35)
+    daemon.state_machine.save_state()
+
+    # worker2 is recent
+    daemon.worker_manager.heartbeat(worker2)
+
+    # Run consistency sync (should trigger TTL eviction)
+    result = daemon._sync_state_consistency()
+
+    # Verify worker1 was evicted
+    assert f"{worker1}:ttl-evict-idle" in result["fixed"]
+    assert daemon.worker_manager.get_worker(worker1) is None
+
+    # Verify worker2 still exists
+    assert daemon.worker_manager.get_worker(worker2) is not None
+
+
+def test_last_seen_updated_on_get_task(daemon: C4Daemon):
+    """Test that last_seen is updated when worker calls c4_get_task."""
+
+    # Register a worker
+    worker_id = "worker-dddddddd"
+    daemon.worker_manager.register(worker_id)
+
+    # Get initial last_seen
+    worker = daemon.worker_manager.get_worker(worker_id)
+    initial_last_seen = worker.last_seen
+
+    # Wait a bit and call get_task (which triggers heartbeat)
+    import time
+    time.sleep(0.1)
+
+    # Transition to EXECUTE state so get_task works
+    daemon.state_machine.transition("skip_discovery", "test")
+    daemon.state_machine.transition("c4_run", "test")
+
+    # Call get_task (should update last_seen via heartbeat)
+    daemon.c4_get_task(worker_id)
+
+    # Verify last_seen was updated
+    worker = daemon.worker_manager.get_worker(worker_id)
+    assert worker.last_seen > initial_last_seen

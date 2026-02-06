@@ -943,6 +943,40 @@ Thumbs.db
                             f"task {task_id} does not exist"
                         )
 
+                # BUG FIX: TTL-based worker eviction
+                # Remove workers that haven't sent heartbeat within TTL
+                if self.config.worker_ttl_minutes > 0:
+                    from datetime import timedelta
+                    now = datetime.now()
+                    ttl_threshold = timedelta(minutes=self.config.worker_ttl_minutes)
+
+                    workers_to_evict = []
+                    for worker_id, worker in list(state.workers.items()):
+                        elapsed = now - worker.last_seen
+                        if elapsed > ttl_threshold:
+                            workers_to_evict.append((worker_id, worker))
+
+                    for worker_id, worker in workers_to_evict:
+                        # Recover task if worker was busy
+                        if worker.state == "busy" and worker.task_id:
+                            if self.worker_manager._recover_task_to_pending(
+                                state.queue, worker.task_id
+                            ):
+                                fixed_tasks.append(f"{worker_id}:ttl-evict-busy")
+                                logger.warning(
+                                    f"TTL eviction: Recovered task {worker.task_id} "
+                                    f"from worker {worker_id} (last seen: {worker.last_seen})"
+                                )
+                        else:
+                            fixed_tasks.append(f"{worker_id}:ttl-evict-idle")
+
+                        # Remove worker
+                        del state.workers[worker_id]
+                        logger.info(
+                            f"TTL eviction: Removed worker {worker_id} "
+                            f"(last seen: {worker.last_seen})"
+                        )
+
                 # Update cached state
                 self.state_machine._state = state
 
