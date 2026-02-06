@@ -18,24 +18,44 @@ body {
   color: var(--color-text-primary);
 }
 
-.tldraw__editor {
-  position: absolute !important;
-  inset: 0;
-  z-index: var(--z-canvas);
-}
-
-/* Ensure our custom UI overlays appear above tldraw */
-.toolbar,
-.legend,
-.detail-panel {
-  z-index: var(--z-overlay) !important;
-  pointer-events: auto;
-}
-
 /* --- App Layout --- */
-.app-container {
+.app-layout {
+  display: flex;
   width: 100%;
   height: 100%;
+}
+
+.app-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-width: 0;
+}
+
+.app-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-sm) var(--space-lg);
+  background: var(--color-bg-secondary);
+  border-bottom: 1px solid var(--color-border-default);
+  flex-shrink: 0;
+}
+
+.app-header__path {
+  font-size: var(--font-size-sm);
+  font-family: var(--font-family-mono);
+  color: var(--color-text-tertiary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.app-content {
+  flex: 1;
+  overflow: auto;
   position: relative;
 }
 
@@ -46,10 +66,10 @@ body {
   left: 50%;
   transform: translate(-50%, -50%);
   text-align: center;
-  z-index: var(--z-overlay);
   padding: var(--space-2xl);
-  background: var(--color-bg-overlay);
+  background: var(--color-bg-secondary);
   border-radius: var(--radius-lg);
+  border: 1px solid var(--color-border-default);
   box-shadow: var(--shadow-md);
   max-width: 400px;
 }
@@ -58,7 +78,7 @@ body {
   margin: 0 0 var(--space-lg);
   font-size: var(--font-size-2xl);
   font-weight: var(--font-weight-semibold);
-  color: var(--color-text-inverse);
+  color: var(--color-text-primary);
 }
 
 .empty-state__title--sm {
@@ -68,7 +88,7 @@ body {
 
 .empty-state__description {
   margin: 0 0 var(--space-xl);
-  color: var(--color-text-inverse-secondary);
+  color: var(--color-text-secondary);
   line-height: var(--line-height-normal);
 }
 
@@ -85,7 +105,7 @@ body {
 /* --- Buttons --- */
 .btn {
   padding: var(--space-md) var(--space-xl);
-  font-size: var(--font-size-lg);
+  font-size: var(--font-size-md);
   font-weight: var(--font-weight-medium);
   border: none;
   border-radius: var(--radius-md);
@@ -120,21 +140,32 @@ body {
 }
 
 .btn--secondary {
-  background: var(--color-text-muted);
-  color: var(--color-text-white);
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-secondary);
+  border: 1px solid var(--color-border-subtle);
 }
 
 .btn--secondary:hover:not(:disabled) {
-  background: #777;
+  background: var(--color-border-default);
 }
 
 .btn--secondary:active:not(:disabled) {
-  background: #555;
+  background: var(--color-border-subtle);
 }
 
 .btn--sm {
-  padding: 10px 20px;
-  font-size: var(--font-size-md);
+  padding: var(--space-xs) var(--space-md);
+  font-size: var(--font-size-sm);
+}
+
+/* --- Placeholder View --- */
+.placeholder-view {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-lg);
 }
 
 /* --- Error Toast --- */
@@ -147,7 +178,7 @@ body {
   padding: var(--space-md) var(--space-lg);
   border-radius: var(--radius-md);
   max-width: 400px;
-  z-index: var(--z-overlay);
+  z-index: var(--z-toast);
   display: flex;
   align-items: center;
   gap: var(--space-md);
