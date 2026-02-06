@@ -704,12 +704,17 @@ Thumbs.db
                 task = self.get_task(task_id)
                 if task:
                     logger.info(f"Syncing merged task {task_id} (branch {branch} merged)")
+                    # Save worker_id before clearing task.assigned_to
+                    worker_id = task.assigned_to
                     state.queue.pending.remove(task_id)
                     state.queue.done.append(task_id)
                     task.status = TaskStatus.DONE
                     task.assigned_to = None
                     self._save_task(task)
                     synced += 1
+                    # BUG FIX: Set worker to idle when task is merged
+                    if worker_id:
+                        self.worker_manager.set_idle(worker_id)
 
         # Check in_progress tasks
         for task_id in list(state.queue.in_progress.keys()):
@@ -718,12 +723,17 @@ Thumbs.db
                 task = self.get_task(task_id)
                 if task:
                     logger.info(f"Syncing merged task {task_id} (branch {branch} merged)")
+                    # Save worker_id before clearing task.assigned_to
+                    worker_id = task.assigned_to
                     del state.queue.in_progress[task_id]
                     state.queue.done.append(task_id)
                     task.status = TaskStatus.DONE
                     task.assigned_to = None
                     self._save_task(task)
                     synced += 1
+                    # BUG FIX: Set worker to idle when task is merged
+                    if worker_id:
+                        self.worker_manager.set_idle(worker_id)
 
         if synced > 0:
             self.state_machine.save_state()
