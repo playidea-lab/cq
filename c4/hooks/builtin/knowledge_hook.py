@@ -60,6 +60,7 @@ def _build_experiment_record(
     return {
         "task_id": task_id,
         "title": task_data.get("title", task_id),
+        "domain": task_data.get("domain", "unknown"),
         "metrics": execution_stats.get("metrics", {}),
         "code_features": execution_stats.get("code_features", {}),
         "data_profile": execution_stats.get("data_profile", {}),
@@ -78,9 +79,32 @@ def _save_to_knowledge_store(record: dict[str, Any]) -> None:
     metrics_lines = [f"- {k}: {v}" for k, v in metrics.items()]
     body = f"# {record['title']}\n\n## Metrics\n" + "\n".join(metrics_lines) if metrics_lines else f"# {record['title']}"
 
-    store.create("experiment", {
+    # Determine domain from task data or fall back to "unknown"
+    domain = record.get("domain", "unknown")
+
+    # Check for existing document with same task_id to avoid duplicates
+    existing = store.list_documents(limit=1000)
+    existing_doc = next((d for d in existing if d.get("task_id") == record["task_id"]), None)
+
+    # Build metadata including code_features and data_profile in body
+    code_features = record.get("code_features", {})
+    data_profile = record.get("data_profile", {})
+
+    if code_features:
+        cf_lines = [f"- {k}: {v}" for k, v in code_features.items()]
+        body += "\n\n## Code Features\n" + "\n".join(cf_lines)
+    if data_profile:
+        dp_lines = [f"- {k}: {v}" for k, v in data_profile.items()]
+        body += "\n\n## Data Profile\n" + "\n".join(dp_lines)
+
+    metadata = {
         "title": record["title"],
         "task_id": record["task_id"],
-        "domain": "ml",
-        "tags": list(record.get("code_features", {}).get("imports", []))[:5],
-    }, body=body)
+        "domain": domain,
+        "tags": list(code_features.get("imports", []))[:5],
+    }
+
+    if existing_doc:
+        store.update(existing_doc["id"], metadata=metadata, body=body)
+    else:
+        store.create("experiment", metadata, body=body)

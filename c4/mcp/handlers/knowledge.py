@@ -11,14 +11,6 @@ from typing import Any
 from ..registry import register_tool
 
 
-def _get_knowledge_store():
-    """Get legacy knowledge store instance."""
-    from c4.knowledge.store import LocalKnowledgeStore
-
-    root = Path(os.environ.get("C4_PROJECT_ROOT", "."))
-    return LocalKnowledgeStore(base_path=root / ".c4" / "knowledge")
-
-
 def _get_document_store():
     """Get Obsidian-style document store."""
     from c4.knowledge.documents import DocumentStore
@@ -33,13 +25,6 @@ def _get_searcher():
 
     root = Path(os.environ.get("C4_PROJECT_ROOT", "."))
     return KnowledgeSearcher(base_path=root / ".c4" / "knowledge")
-
-
-def _get_aggregator():
-    """Get knowledge aggregator."""
-    from c4.knowledge.aggregator import KnowledgeAggregator
-
-    return KnowledgeAggregator()
 
 
 # =============================================================================
@@ -103,7 +88,21 @@ def handle_knowledge_record(daemon: Any, arguments: dict[str, Any]) -> dict[str,
         return {"error": f"Invalid doc_type: {doc_type}. Must be one of {valid_types}"}
 
     body = arguments.get("body", "")
-    metadata = {k: v for k, v in arguments.items() if k not in ("doc_type", "body")}
+
+    # Whitelist: only known KnowledgeDocument fields are accepted as metadata
+    _VALID_METADATA_FIELDS = {
+        "title", "domain", "tags", "task_id",
+        "hypothesis", "hypothesis_status", "parent_experiment",
+        "compared_to", "builds_on",
+        "confidence", "evidence_count", "evidence_ids",
+        "insight_type", "source_count",
+        "status", "evidence_for", "evidence_against",
+        "id", "created_at",
+    }
+    metadata = {
+        k: v for k, v in arguments.items()
+        if k in _VALID_METADATA_FIELDS
+    }
 
     try:
         store = _get_document_store()
@@ -172,20 +171,8 @@ def handle_experiment_search(daemon: Any, arguments: dict[str, Any]) -> dict[str
             "count": len(results),
             "experiments": results,
         }
-    except Exception:
-        # Fall back to legacy store
-        try:
-            import asyncio
-
-            store = _get_knowledge_store()
-            results = asyncio.get_event_loop().run_until_complete(
-                store.search(query, top_k=top_k)
-            )
-            if domain:
-                results = [r for r in results if r.get("domain") == domain]
-            return {"count": len(results), "experiments": results}
-        except Exception as e2:
-            return {"error": f"Search failed: {e2}"}
+    except Exception as e:
+        return {"error": f"Search failed: {e}"}
 
 
 @register_tool("c4_experiment_record")
@@ -212,35 +199,22 @@ def handle_experiment_record(daemon: Any, arguments: dict[str, Any]) -> dict[str
 
 @register_tool("c4_pattern_suggest")
 def handle_pattern_suggest(daemon: Any, arguments: dict[str, Any]) -> dict[str, Any]:
-    """Get pattern-based suggestions (legacy - uses v2 search + legacy aggregator)."""
+    """Get pattern-based suggestions (uses v2 search for patterns)."""
     domain = arguments.get("domain")
-    include_best = arguments.get("include_best_practices", True)
+    limit = arguments.get("limit", 10)
 
     try:
-        import asyncio
+        searcher = _get_searcher()
+        filters: dict[str, str] = {"type": "pattern"}
+        if domain:
+            filters["domain"] = domain
 
-        store = _get_knowledge_store()
-        aggregator = _get_aggregator()
+        results = searcher.search("pattern", top_k=limit, filters=filters)
 
-        patterns = asyncio.get_event_loop().run_until_complete(
-            store.get_patterns(domain=domain)
-        )
-
-        result: dict[str, Any] = {
-            "pattern_count": len(patterns),
-            "patterns": patterns[:10],
+        return {
+            "pattern_count": len(results),
+            "patterns": results,
         }
-
-        if include_best:
-            experiments = asyncio.get_event_loop().run_until_complete(
-                store.list_experiments(domain=domain, limit=100)
-            )
-            stats = aggregator.compute_success_rate(experiments, domain=domain)
-            recommendations = aggregator.get_best_practices(experiments)
-            result["success_rate"] = stats
-            result["recommendations"] = recommendations[:5]
-
-        return result
     except Exception as e:
         return {"error": f"Pattern suggestion failed: {e}"}
 

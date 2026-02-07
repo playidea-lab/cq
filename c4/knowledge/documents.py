@@ -241,13 +241,17 @@ class DocumentStore:
             body=body,
         )
 
-        # Write Markdown file
+        # Write Markdown file, then index. Rollback file on index failure.
         md_content = _doc_to_markdown(doc)
         file_path = self.docs_dir / f"{doc_id}.md"
         file_path.write_text(md_content, encoding="utf-8")
 
-        # Index in DB
-        self._index_document(doc, file_path, md_content)
+        try:
+            self._index_document(doc, file_path, md_content)
+        except Exception:
+            # Rollback: remove file if indexing failed
+            file_path.unlink(missing_ok=True)
+            raise
 
         logger.debug("Created document: %s (%s)", doc_id, doc_type)
         return doc_id
@@ -324,13 +328,21 @@ class DocumentStore:
         doc.updated_at = now
         doc.version += 1
 
-        # Write updated Markdown
+        # Write updated Markdown, rollback on index failure
         md_content = _doc_to_markdown(doc)
         file_path = self.docs_dir / f"{doc_id}.md"
+        old_content = file_path.read_text(encoding="utf-8") if file_path.exists() else None
         file_path.write_text(md_content, encoding="utf-8")
 
-        # Re-index
-        self._index_document(doc, file_path, md_content)
+        try:
+            self._index_document(doc, file_path, md_content)
+        except Exception:
+            # Rollback: restore previous file content
+            if old_content is not None:
+                file_path.write_text(old_content, encoding="utf-8")
+            else:
+                file_path.unlink(missing_ok=True)
+            raise
 
         return True
 
@@ -410,8 +422,9 @@ class DocumentStore:
                     """,
                     (query, top_k),
                 ).fetchall()
-            except sqlite3.OperationalError:
+            except sqlite3.OperationalError as fts_err:
                 # Bad FTS query syntax - fall back to simple LIKE
+                logger.warning("FTS5 query failed, falling back to LIKE: %s", fts_err)
                 like_q = f"%{query}%"
                 rows = conn.execute(
                     """

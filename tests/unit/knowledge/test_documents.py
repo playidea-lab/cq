@@ -1,14 +1,10 @@
 """Tests for DocumentStore - Obsidian-style knowledge document CRUD."""
 
-import json
-import tempfile
-from pathlib import Path
 
 import pytest
 
 from c4.knowledge.documents import (
     DocumentStore,
-    _content_hash,
     _doc_to_markdown,
     _generate_id,
     _parse_frontmatter,
@@ -286,6 +282,59 @@ class TestDocumentStoreRebuild:
         # Verify FTS still works after rebuild
         results = store.search_fts("Exp")
         assert len(results) >= 1
+
+
+class TestTransactionProtection:
+    """B1-fix: File + index transaction protection."""
+
+    def test_create_rolls_back_file_on_index_failure(self, store, monkeypatch):
+        """If indexing fails during create, the Markdown file should be removed."""
+
+        def failing_index(self, doc, file_path, md_content):
+            raise RuntimeError("Simulated index failure")
+
+        monkeypatch.setattr(DocumentStore, "_index_document", failing_index)
+
+        with pytest.raises(RuntimeError, match="Simulated index failure"):
+            store.create("experiment", {"title": "Should Not Persist"})
+
+        # No orphan Markdown files should exist
+        md_files = list(store.docs_dir.glob("*.md"))
+        assert len(md_files) == 0
+
+    def test_update_rolls_back_file_on_index_failure(self, store, monkeypatch):
+        """If indexing fails during update, the file should revert to previous content."""
+        doc_id = store.create("experiment", {"title": "Original"}, body="Original body")
+
+        def failing_index(self, doc, file_path, md_content):
+            raise RuntimeError("Simulated index failure")
+
+        monkeypatch.setattr(DocumentStore, "_index_document", failing_index)
+
+        with pytest.raises(RuntimeError, match="Simulated index failure"):
+            store.update(doc_id, metadata={"title": "Updated"}, body="New body")
+
+        # File should still have original content
+        doc = store.get(doc_id)
+        assert doc.title == "Original"
+        assert doc.body == "Original body"
+
+
+class TestFTSFallbackWarning:
+    """B3-fix: FTS fallback should log a warning."""
+
+    def test_fts_bad_syntax_falls_back_to_like(self, store, caplog):
+        """Bad FTS5 syntax should fall back to LIKE and log a warning."""
+        import logging
+
+        store.create("experiment", {"title": "Test Doc", "domain": "ml"})
+
+        with caplog.at_level(logging.WARNING, logger="c4.knowledge.documents"):
+            # Syntax that's invalid for FTS5 (unbalanced quotes)
+            store.search_fts('"unclosed')
+
+        # Should have logged a warning about fallback
+        assert any("FTS5 query failed" in msg for msg in caplog.messages)
 
 
 class TestMarkdownFileSSoT:

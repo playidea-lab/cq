@@ -110,9 +110,8 @@ class KnowledgeSearcher:
         # 3. RRF merge
         merged = rrf_merge(vector_results, fts_results, k=60)
 
-        # 4. Apply metadata filters
-        if filters:
-            merged = self._apply_filters(merged, filters)
+        # 4. Enrich results with metadata and apply filters
+        merged = self._enrich_and_filter(merged, filters)
 
         return merged[:top_k]
 
@@ -128,44 +127,41 @@ class KnowledgeSearcher:
         """
         return self.search(query, top_k=top_k, filters={"type": doc_type})
 
-    def _apply_filters(
+    def _enrich_and_filter(
         self,
         results: list[dict[str, Any]],
-        filters: dict[str, str],
+        filters: dict[str, str] | None,
     ) -> list[dict[str, Any]]:
-        """Apply metadata filters to search results.
+        """Enrich results with metadata and optionally filter.
 
-        Loads document metadata from index for filtering.
+        Always adds title/type/domain to results.
+        Loads document metadata once via dict lookup (O(m+n)).
         """
-        filtered = []
-        for result in results:
-            doc_id = result["id"]
-            # Load metadata from index for filtering
-            docs = self._doc_store.list_documents()
-            doc_meta = None
-            for d in docs:
-                if d["id"] == doc_id:
-                    doc_meta = d
-                    break
+        all_docs = {d["id"]: d for d in self._doc_store.list_documents(limit=10000)}
 
+        enriched = []
+        for result in results:
+            doc_meta = all_docs.get(result["id"])
             if doc_meta is None:
-                # Document in vector store but not in index - skip
                 continue
 
-            match = True
-            for key, value in filters.items():
-                if doc_meta.get(key, "") != value:
-                    match = False
-                    break
+            # Always enrich with metadata
+            result["title"] = doc_meta.get("title", result.get("title", ""))
+            result["type"] = doc_meta.get("type", result.get("type", ""))
+            result["domain"] = doc_meta.get("domain", "")
 
-            if match:
-                # Enrich result with metadata
-                result["title"] = doc_meta.get("title", result.get("title", ""))
-                result["type"] = doc_meta.get("type", result.get("type", ""))
-                result["domain"] = doc_meta.get("domain", "")
-                filtered.append(result)
+            # Apply filters if provided
+            if filters:
+                match = all(
+                    doc_meta.get(key, "") == value
+                    for key, value in filters.items()
+                )
+                if not match:
+                    continue
 
-        return filtered
+            enriched.append(result)
+
+        return enriched
 
     def close(self) -> None:
         """Close resources."""

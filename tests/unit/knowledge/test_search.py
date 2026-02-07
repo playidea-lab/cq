@@ -173,3 +173,45 @@ class TestKnowledgeSearcherWithEmbeddings:
     def test_close_is_safe(self, searcher):
         searcher.close()
         searcher.close()  # Double close should not error
+
+
+class TestEnrichAndFilter:
+    """Tests for A1-fix (O(m+n) caching) and A3-fix (metadata always enriched)."""
+
+    def test_results_always_have_metadata_without_filter(self, populated_searcher):
+        """A3-fix: results should have title/type/domain even without filters."""
+        results = populated_searcher.search("RandomForest")
+        for r in results:
+            assert "title" in r
+            assert "type" in r
+            assert "domain" in r
+
+    def test_results_have_metadata_with_filter(self, populated_searcher):
+        results = populated_searcher.search("classification", filters={"domain": "ml"})
+        for r in results:
+            assert r["domain"] == "ml"
+            assert "title" in r
+            assert "type" in r
+
+    def test_filter_performance_many_docs(self, tmp_path):
+        """A1-fix: verify filter doesn't call list_documents per result."""
+        import time
+
+        base = tmp_path / "knowledge"
+        searcher = KnowledgeSearcher(base_path=base, embedding_model="mock")
+        store = searcher._doc_store
+
+        # Create 100 documents
+        for i in range(100):
+            store.create("experiment", {
+                "title": f"Exp {i}",
+                "domain": "ml" if i % 2 == 0 else "web",
+            }, body=f"Experiment number {i}")
+
+        t0 = time.time()
+        results = searcher.search("Exp", top_k=10, filters={"domain": "ml"})
+        elapsed = time.time() - t0
+
+        assert elapsed < 2.0  # Should be fast with O(m+n)
+        assert all(r["domain"] == "ml" for r in results)
+        searcher.close()
