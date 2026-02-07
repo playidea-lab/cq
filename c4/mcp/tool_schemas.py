@@ -1005,6 +1005,11 @@ def get_tool_definitions() -> list[Tool]:
                         "description": "Branch to analyze (default: HEAD).",
                         "default": "HEAD",
                     },
+                    "save_to_knowledge": {
+                        "type": "boolean",
+                        "description": "Save generated stories as knowledge insight documents (default: false).",
+                        "default": False,
+                    },
                 },
                 "required": ["since"],
             },

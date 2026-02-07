@@ -26,7 +26,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from c4.memory.story_builder import Cluster
+    from c4.analysis.git.story_builder import Cluster
 
 from ..registry import register_tool
 
@@ -230,8 +230,8 @@ class GitHistoryAnalyzer:
             }
 
         # Import here to avoid circular imports
-        from c4.memory.commit_analyzer import get_commit_analyzer
-        from c4.memory.story_builder import (
+        from c4.analysis.git.commit_analyzer import get_commit_analyzer
+        from c4.analysis.git.story_builder import (
             CommitEmbedding,
             HeuristicStoryGenerator,
             cluster_agglomerative,
@@ -427,6 +427,7 @@ def handle_analyze_history(daemon: Any, arguments: dict[str, Any]) -> dict[str, 
 
     until = arguments.get("until")
     branch = arguments.get("branch", "HEAD")
+    save_to_knowledge = arguments.get("save_to_knowledge", False)
 
     # Get project root from daemon
     project_root = Path(daemon.project_root)
@@ -442,6 +443,33 @@ def handle_analyze_history(daemon: Any, arguments: dict[str, Any]) -> dict[str, 
 
     # Analyze and generate stories
     result = analyzer.analyze_commits(commits)
+
+    # Optionally save stories as knowledge documents
+    if save_to_knowledge and result.get("stories"):
+        try:
+            from c4.knowledge.documents import DocumentStore
+
+            knowledge_path = project_root / ".c4" / "knowledge"
+            store = DocumentStore(base_path=knowledge_path)
+            saved_count = 0
+            for story in result["stories"]:
+                commit_lines = []
+                for c in story.get("commits", []):
+                    commit_lines.append(f"- {c.get('sha', '')[:7]} {c.get('message', '')}")
+                body = f"# {story.get('title', 'Untitled')}\n\n## Commits\n" + "\n".join(commit_lines)
+
+                store.create("insight", {
+                    "title": story.get("title", "Git Story"),
+                    "domain": "git-analysis",
+                    "insight_type": "commit-story",
+                    "tags": story.get("domains", []),
+                    "source_count": len(story.get("commits", [])),
+                }, body=body)
+                saved_count += 1
+            result["knowledge_docs_saved"] = saved_count
+        except Exception:
+            logger.exception("Failed to save stories to knowledge")
+            result["knowledge_docs_saved"] = 0
 
     return result
 
@@ -586,7 +614,7 @@ class CommitSearcher:
         Returns:
             List of scored commit results.
         """
-        from c4.memory.commit_analyzer import get_commit_analyzer
+        from c4.analysis.git.commit_analyzer import get_commit_analyzer
 
         analyzer = get_commit_analyzer(provider="heuristic")
         query_lower = query.lower()
