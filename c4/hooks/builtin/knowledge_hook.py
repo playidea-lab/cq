@@ -69,28 +69,18 @@ def _build_experiment_record(
 
 
 def _save_to_knowledge_store(record: dict[str, Any]) -> None:
-    """Save record to the local knowledge store."""
-    import asyncio
+    """Save record to the knowledge store as a Markdown document."""
+    from c4.knowledge.documents import DocumentStore
 
-    from c4.knowledge.models import ExperimentKnowledge, ExperimentResult
-    from c4.knowledge.store import LocalKnowledgeStore
+    store = DocumentStore()
 
-    experiment = ExperimentKnowledge(
-        experiment_id=record["task_id"],
-        title=record["title"],
-        domain="ml",
-        result=ExperimentResult(
-            metrics=record["metrics"],
-            success=True,
-        ),
-        observations=[],
-        tags=list(record.get("code_features", {}).get("imports", []))[:5],
-    )
+    metrics = record.get("metrics", {})
+    metrics_lines = [f"- {k}: {v}" for k, v in metrics.items()]
+    body = f"# {record['title']}\n\n## Metrics\n" + "\n".join(metrics_lines) if metrics_lines else f"# {record['title']}"
 
-    store = LocalKnowledgeStore()
-
-    loop = asyncio.new_event_loop()
-    try:
-        loop.run_until_complete(store.save_experiment(experiment))
-    finally:
-        loop.close()
+    store.create("experiment", {
+        "title": record["title"],
+        "task_id": record["task_id"],
+        "domain": "ml",
+        "tags": list(record.get("code_features", {}).get("imports", []))[:5],
+    }, body=body)

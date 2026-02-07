@@ -86,9 +86,10 @@ class ArtifactStore(ABC):
 
 
 class KnowledgeStore(ABC):
-    """실험 지식 저장소 인터페이스.
+    """지식 저장소 인터페이스.
 
     현재: LocalKnowledgeStore (SQLite + 벡터 검색)
+    v2: DocumentStore (Obsidian-style Markdown + FTS5 + Vector)
     Cloud: SharedKnowledgeStore (팀간 공유, 중앙 서버)
     """
 
@@ -132,6 +133,41 @@ class KnowledgeStore(ABC):
             패턴 목록
         """
         ...
+
+    # v2 확장 메서드 (선택적 구현)
+
+    def create_document(
+        self, doc_type: str, metadata: dict[str, Any], body: str = ""
+    ) -> str:
+        """Obsidian-style 문서 생성.
+
+        Args:
+            doc_type: experiment, pattern, insight, hypothesis
+            metadata: frontmatter 메타데이터
+            body: Markdown 본문
+
+        Returns:
+            생성된 문서 ID
+        """
+        raise NotImplementedError("v2 DocumentStore required")
+
+    def search_hybrid(
+        self,
+        query: str,
+        top_k: int = 10,
+        filters: dict[str, Any] | None = None,
+    ) -> list[dict[str, Any]]:
+        """하이브리드 검색 (Vector + FTS5 RRF).
+
+        Args:
+            query: 검색 쿼리
+            top_k: 최대 반환 수
+            filters: type, domain, hypothesis_status 필터
+
+        Returns:
+            검색 결과 목록 (score 포함)
+        """
+        raise NotImplementedError("v2 KnowledgeSearcher required")
 
 
 class GpuScheduler(ABC):

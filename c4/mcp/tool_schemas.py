@@ -1191,6 +1191,101 @@ def get_tool_definitions() -> list[Tool]:
                 "required": [],
             },
         ),
+        # Knowledge v2 tools
+        Tool(
+            name="c4_knowledge_search",
+            description="Hybrid search over knowledge documents (vector + FTS5 with RRF). "
+            "Supports filtering by document type, domain, and hypothesis status.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Search query string",
+                    },
+                    "top_k": {
+                        "type": "integer",
+                        "description": "Maximum results to return (default: 10)",
+                        "default": 10,
+                    },
+                    "filters": {
+                        "type": "object",
+                        "description": "Optional filters: type (experiment/pattern/insight/hypothesis), domain, hypothesis_status",
+                        "properties": {
+                            "type": {"type": "string"},
+                            "domain": {"type": "string"},
+                            "hypothesis_status": {"type": "string"},
+                        },
+                    },
+                },
+                "required": ["query"],
+            },
+        ),
+        Tool(
+            name="c4_knowledge_record",
+            description="Create a knowledge document (experiment, pattern, insight, or hypothesis). "
+            "Stored as Obsidian-style Markdown with YAML frontmatter.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "doc_type": {
+                        "type": "string",
+                        "enum": ["experiment", "pattern", "insight", "hypothesis"],
+                        "description": "Document type",
+                    },
+                    "title": {
+                        "type": "string",
+                        "description": "Document title",
+                    },
+                    "body": {
+                        "type": "string",
+                        "description": "Markdown body content",
+                    },
+                    "domain": {
+                        "type": "string",
+                        "description": "Knowledge domain (e.g. ml, web, infra)",
+                    },
+                    "tags": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Tags for categorization",
+                    },
+                    "task_id": {
+                        "type": "string",
+                        "description": "Related task ID (for experiments)",
+                    },
+                    "hypothesis": {
+                        "type": "string",
+                        "description": "Hypothesis text (for experiments)",
+                    },
+                    "hypothesis_status": {
+                        "type": "string",
+                        "enum": ["proposed", "testing", "supported", "refuted", "inconclusive"],
+                        "description": "Hypothesis evaluation status",
+                    },
+                    "confidence": {
+                        "type": "number",
+                        "description": "Confidence score 0.0-1.0 (for patterns/hypotheses)",
+                    },
+                },
+                "required": ["doc_type", "title"],
+            },
+        ),
+        Tool(
+            name="c4_knowledge_get",
+            description="Get a knowledge document by ID. Returns full Markdown content, "
+            "frontmatter metadata, and backlinks to related documents.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "doc_id": {
+                        "type": "string",
+                        "description": "Document ID (e.g. exp-a1b2c3d4, pat-b2c3d4e5)",
+                    },
+                },
+                "required": ["doc_id"],
+            },
+        ),
         # Artifact tools
         Tool(
             name="c4_artifact_list",
