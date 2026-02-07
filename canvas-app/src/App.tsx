@@ -1,14 +1,32 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { open } from '@tauri-apps/plugin-dialog';
 import { Sidebar } from './components/Sidebar';
 import { SessionsView } from './components/sessions/SessionsView';
 import { DashboardView } from './components/dashboard/DashboardView';
 import { ConfigView } from './components/config/ConfigView';
+import { ErrorBoundary } from './components/shared/ErrorBoundary';
 import type { ViewType } from './types';
+
+const VIEW_SHORTCUTS: Record<string, ViewType> = {
+  '1': 'sessions',
+  '2': 'dashboard',
+  '3': 'config',
+};
 
 export default function App() {
   const [currentView, setCurrentView] = useState<ViewType>('sessions');
   const [projectPath, setProjectPath] = useState<string | null>(null);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && VIEW_SHORTCUTS[e.key]) {
+        e.preventDefault();
+        setCurrentView(VIEW_SHORTCUTS[e.key]);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   const isTauri = Boolean(
     typeof window !== 'undefined' && (window as any).__TAURI_INTERNALS__
@@ -75,7 +93,9 @@ export default function App() {
           </header>
         )}
         <div className="app-content">
-          {renderView()}
+          <ErrorBoundary>
+            {renderView()}
+          </ErrorBoundary>
         </div>
       </main>
     </div>
