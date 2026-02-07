@@ -480,13 +480,18 @@ pub async fn get_session_messages(
     tokio::task::spawn_blocking(move || {
         use std::io::{BufRead, BufReader};
 
+        // Validate session path is within ~/.claude/projects/
+        let home = dirs::home_dir().ok_or("Could not find home directory")?;
+        let allowed = vec![home.join(".claude").join("projects")];
+        validate_allowed_path(&session_path, &allowed)?;
+
         let file = fs::File::open(&session_path)
             .map_err(|e| format!("Failed to open session: {}", e))?;
 
         let reader = BufReader::new(file);
         let mut messages = Vec::new();
         let mut total_lines: u32 = 0;
-        let mut collected: u32 = 0;
+        let mut displayable_count: u32 = 0;
 
         for line in reader.lines() {
             let line = match line {
@@ -502,19 +507,17 @@ pub async fn get_session_messages(
                 // Only include displayable messages
                 match msg_type {
                     "user" | "assistant" | "summary" | "system" => {
+                        displayable_count += 1;
+
                         // Skip to offset
-                        if collected < offset {
-                            collected += 1;
+                        if displayable_count <= offset {
                             continue;
                         }
 
                         // Stop collecting after limit
                         if messages.len() >= limit as usize {
-                            collected += 1;
                             continue;
                         }
-
-                        collected += 1;
 
                         if let Some(msg) = parse_session_message(&obj, msg_type) {
                             messages.push(msg);
@@ -525,7 +528,7 @@ pub async fn get_session_messages(
             }
         }
 
-        let has_more = messages.len() == limit as usize && collected > offset + limit;
+        let has_more = displayable_count > offset + messages.len() as u32;
 
         Ok(SessionPage {
             messages,
@@ -650,6 +653,11 @@ fn parse_content_blocks(blocks: &[serde_json::Value]) -> Vec<ContentBlock> {
 pub async fn get_session_file_changes(session_path: String) -> Result<Vec<FileChange>, String> {
     tokio::task::spawn_blocking(move || {
         use std::io::{BufRead, BufReader};
+
+        // Validate session path is within ~/.claude/projects/
+        let home = dirs::home_dir().ok_or("Could not find home directory")?;
+        let allowed = vec![home.join(".claude").join("projects")];
+        validate_allowed_path(&session_path, &allowed)?;
 
         let file = fs::File::open(&session_path)
             .map_err(|e| format!("Failed to open session: {}", e))?;
@@ -797,12 +805,36 @@ fn collect_glob(dir: &Path, ext: &str, category: &str, entries: &mut Vec<ConfigF
     }
 }
 
+/// Validate that a path falls within allowed directories
+fn validate_allowed_path(file_path: &str, allowed_prefixes: &[std::path::PathBuf]) -> Result<std::path::PathBuf, String> {
+    let path = Path::new(file_path);
+    if !path.exists() {
+        return Err(format!("File not found: {}", file_path));
+    }
+    let canonical = fs::canonicalize(path)
+        .map_err(|e| format!("Cannot resolve path: {}", e))?;
+    for prefix in allowed_prefixes {
+        if let Ok(canonical_prefix) = fs::canonicalize(prefix) {
+            if canonical.starts_with(&canonical_prefix) {
+                return Ok(canonical);
+            }
+        }
+    }
+    Err(format!("Access denied: path outside allowed directories"))
+}
+
 /// Read a config file content
 #[tauri::command(rename_all = "snake_case")]
-pub async fn read_config_file(file_path: String) -> Result<ConfigFileContent, String> {
+pub async fn read_config_file(project_path: String, file_path: String) -> Result<ConfigFileContent, String> {
     tokio::task::spawn_blocking(move || {
-        let path = Path::new(&file_path);
+        let home = dirs::home_dir().ok_or("Could not find home directory")?;
+        let allowed = vec![
+            Path::new(&project_path).to_path_buf(),
+            home.join(".claude"),
+        ];
+        validate_allowed_path(&file_path, &allowed)?;
 
+        let path = Path::new(&file_path);
         if !path.exists() {
             return Err(format!("File not found: {}", file_path));
         }

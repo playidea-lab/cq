@@ -18,10 +18,12 @@ export function useConfig() {
   const [loading, setLoading] = useState(false);
   const [contentLoading, setContentLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [currentProject, setCurrentProject] = useState<string>('');
 
   const loadFiles = useCallback(async (projectPath: string) => {
     setLoading(true);
     setError(null);
+    setCurrentProject(projectPath);
     try {
       const result = await invoke<ConfigFileEntry[]>('list_config_files', { path: projectPath });
       setFiles(result);
@@ -35,14 +37,14 @@ export function useConfig() {
   const loadContent = useCallback(async (filePath: string) => {
     setContentLoading(true);
     try {
-      const result = await invoke<ConfigFileContent>('read_config_file', { filePath });
+      const result = await invoke<ConfigFileContent>('read_config_file', { projectPath: currentProject, filePath });
       setSelectedFile(result);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setContentLoading(false);
     }
-  }, []);
+  }, [currentProject]);
 
   const grouped = useMemo(() => {
     const groups: Record<string, { label: string; files: ConfigFileEntry[] }> = {};
