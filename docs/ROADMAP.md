@@ -27,7 +27,7 @@
 - **GPU/ML Native** - GPU 감지, 스케줄링, DAG→Task 변환
 - **Experiment Tracker** - @c4_track 데코레이터, 메트릭 자동 캡처
 - **Artifact Store** - Content-addressable 로컬 저장소
-- **Knowledge Store** - 실험 지식 + 임베딩 유사도 검색
+- **Knowledge Store v2** - Obsidian Markdown SSOT + FTS5 + Vector hybrid search
 - **Hook Registry** - 태스크 생명주기 훅 시스템
 - **Worker Lifecycle** - 좀비 워커 자동 감지/정리, TTL 기반 제거
 
@@ -389,8 +389,9 @@ uv run pytest tests/unit/lsp/ -v
 - **MCP Tools** - `c4_gpu_status`, `c4_job_submit`, `c4_knowledge_search`/`record`/`get`, `c4_artifact_list` 등
 - **Worker GPU 타입** - GPU 요구사항 매칭, `is_piq_project` 자동 활성화
 - **ABC 인터페이스** - Cloud 확장 포인트 (ArtifactStore, KnowledgeStore, GpuScheduler, ExperimentTracker)
+- **Legacy 완전 정리** - store.py/aggregator.py/miner.py 삭제 (-1,158 LOC), DocumentStore→KnowledgeStore ABC 상속
 
-**테스트**: 186+ tests (knowledge 123 + gpu/tracker/artifacts/hooks)
+**테스트**: 358+ tests (knowledge 92 + search/embeddings 25 + mcp 20 + hooks 8 + migration 18 + e2e 10 + gpu/tracker/artifacts 185)
 
 ```
 c4/
