@@ -348,6 +348,46 @@ class TestSymbolProxy:
         assert proxy.parent == "ClassName"
 
 
+class TestSymbolProxyJediFormat:
+    """Test _SymbolProxy with Jedi worker flat dict format."""
+
+    def test_jedi_flat_dict_1indexed(self):
+        from c4.daemon.code_ops import _SymbolProxy
+
+        d = {
+            "name": "Calculator",
+            "type": "class",
+            "line": 1,           # Jedi: 1-indexed
+            "column": 0,
+            "end_line": 10,      # Jedi: 1-indexed
+            "end_column": 0,
+            "module_path": "/fake/test.py",
+            "parent_name": None,
+        }
+        proxy = _SymbolProxy(d)
+
+        assert proxy.name == "Calculator"
+        assert proxy.location.start_line == 1   # stays 1-indexed
+        assert proxy.location.end_line == 10    # stays 1-indexed
+        assert proxy.location.file_path == "/fake/test.py"
+
+    def test_jedi_flat_dict_no_end_line_uses_line(self):
+        from c4.daemon.code_ops import _SymbolProxy
+
+        d = {
+            "name": "x",
+            "type": "variable",
+            "line": 5,
+            "column": 0,
+            # no end_line
+            "module_path": "/fake/test.py",
+        }
+        proxy = _SymbolProxy(d)
+
+        assert proxy.location.start_line == 5
+        assert proxy.location.end_line == 5  # falls back to line
+
+
 class TestCodeOpsLSPIntegration:
     """Test CodeOps methods with LSP-first, Tree-sitter fallback."""
 
@@ -419,6 +459,32 @@ class TestCodeOpsLSPIntegration:
                 ops._get_symbol_by_name_path("my_func", "test.py")
 
         mock_ts.assert_called_once()
+
+    def test_get_symbol_by_name_path_jedi_flat_dict(self):
+        """Jedi flat dict with end_line should be usable via LSP path."""
+        ops = self._make_code_ops()
+
+        # Jedi returns flat dict (no "location" key)
+        mock_symbols = [{
+            "name": "Calculator",
+            "type": "class",
+            "line": 1,
+            "column": 0,
+            "end_line": 10,
+            "end_column": 0,
+            "module_path": "/fake/project/test.py",
+            "parent_name": None,
+        }]
+
+        with patch("c4.lsp.unified_provider.find_symbol_unified", return_value=mock_symbols):
+            symbol, file_path, error = ops._get_symbol_by_name_path("Calculator", "test.py")
+
+        assert error is None
+        assert symbol is not None
+        assert symbol.name == "Calculator"
+        assert symbol.location.start_line == 1   # Jedi: already 1-indexed
+        assert symbol.location.end_line == 10
+        assert file_path == "/fake/project/test.py"
 
     def test_find_referencing_symbols_lsp_first(self):
         ops = self._make_code_ops()

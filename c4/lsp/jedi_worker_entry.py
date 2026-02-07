@@ -316,11 +316,24 @@ def _serialize_name(name: Any) -> dict[str, Any]:
         except Exception:
             pass
 
+        # Get end position for editing support
+        end_line = None
+        end_column = None
+        try:
+            end_pos = name.get_definition_end_position()
+            if end_pos:
+                end_line = end_pos[0]    # 1-indexed (same as name.line)
+                end_column = end_pos[1]  # 0-indexed (same as name.column)
+        except Exception:
+            pass
+
         return {
             "name": name.name,
             "type": name.type,
             "line": name.line,
             "column": name.column,
+            "end_line": end_line,
+            "end_column": end_column,
             "module_path": str(name.module_path) if name.module_path else None,
             "full_name": name.full_name,
             "description": name.description,

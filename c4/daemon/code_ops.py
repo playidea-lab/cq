@@ -44,25 +44,39 @@ class _LocationProxy:
 
 
 class _SymbolProxy:
-    """Adapts LSP symbol dict to Tree-sitter Symbol interface.
+    """Adapts LSP/Jedi symbol dict to Tree-sitter Symbol interface.
 
-    LSP returns 0-indexed lines; Tree-sitter Location uses 1-indexed lines.
-    This proxy converts on construction.
+    Handles two formats:
+    - multilspy: nested {"location": {"line": 0, "end_line": 10, ...}} (0-indexed)
+    - Jedi worker: flat {"line": 1, "end_line": 10, ...} (1-indexed)
+
+    Tree-sitter Location uses 1-indexed lines.
     """
 
     def __init__(self, d: dict[str, Any]):
         self.name = d["name"]
         self.parent = d.get("parent_name")
         self.qualified_name = d.get("qualified_name", d.get("name_path", d["name"]))
-        loc = d["location"]
-        # LSP lines are 0-indexed → convert to 1-indexed for Location interface
-        self.location = _LocationProxy(
-            file_path=loc["file_path"],
-            start_line=loc["line"] + 1,
-            start_column=loc.get("column", 0),
-            end_line=loc.get("end_line", loc["line"]) + 1,
-            end_column=loc.get("end_column", 0),
-        )
+
+        loc = d.get("location")
+        if loc:
+            # multilspy format: location sub-dict with 0-indexed lines
+            self.location = _LocationProxy(
+                file_path=loc["file_path"],
+                start_line=loc["line"] + 1,
+                start_column=loc.get("column", 0),
+                end_line=loc.get("end_line", loc["line"]) + 1,
+                end_column=loc.get("end_column", 0),
+            )
+        else:
+            # Jedi worker flat format: 1-indexed lines already
+            self.location = _LocationProxy(
+                file_path=d.get("module_path", ""),
+                start_line=d.get("line", 0),
+                start_column=d.get("column", 0),
+                end_line=d.get("end_line", d.get("line", 0)),
+                end_column=d.get("end_column", 0),
+            )
 
 
 class CodeOps:
@@ -155,10 +169,16 @@ class CodeOps:
                     symbols = matching
 
             sym = symbols[0]
-            loc = sym.get("location", {})
 
-            # Only use LSP result if we have end_line (needed for editing)
-            end_line = loc.get("end_line")
+            # Check for end_line in either format (needed for editing)
+            loc = sym.get("location")
+            if loc:
+                # multilspy format
+                end_line = loc.get("end_line")
+            else:
+                # Jedi flat format
+                end_line = sym.get("end_line")
+
             if end_line is None or end_line == 0:
                 return None, None, None  # No end_line → try fallback
 
