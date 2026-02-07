@@ -374,24 +374,31 @@ uv run pytest tests/unit/lsp/ -v
   - Git 컨텍스트, 실행 환경 캡처
 - **Local Artifact Store** (`c4/artifacts/`) - Content-addressable (SHA256) 로컬 저장소
   - 3-Tier 분류 (SOURCE/DATA/OUTPUT), 자동 감지 (*.pt, *.pkl 등)
-- **Knowledge Store** (`c4/knowledge/`) - 실험 지식 저장 + 임베딩 유사도 검색
-  - 패턴 마이닝, 가설 추적
+- **Knowledge Store v2** (`c4/knowledge/`) - Obsidian-style Markdown SSOT + Hybrid Search
+  - **DocumentStore**: `.c4/knowledge/docs/*.md` YAML frontmatter + body
+  - **4가지 문서 유형**: experiment(`exp-`), pattern(`pat-`), insight(`ins-`), hypothesis(`hyp-`)
+  - **Hybrid Search**: sqlite-vec(Vector) + FTS5(Keyword), RRF merge
+  - **Backlink**: `[[doc-id]]` 참조로 지식 그래프 구성
+  - **MCP Tools**: `c4_knowledge_search`/`record`/`get` (v2) + legacy 위임(`c4_experiment_*`, `c4_pattern_suggest`)
+  - **c4/memory/ 완전 삭제**: -12,878 LOC, `c4/analysis/git/`로 git 분석 분리
+  - **P0/P1 수정**: 필터 O(m+n) 최적화, 트랜잭션 보호, asyncio crash 제거, 메타데이터 검증
 - **Hook Registry** (`c4/hooks/`) - 생명주기 훅 (BEFORE_SUBMIT, AFTER_COMPLETE, ON_FAILURE)
   - 빌트인: KnowledgeHook, ArtifactHook
 - **Task 모델 확장** - `GpuTaskConfig`, `ExecutionStats`, `ArtifactSpec` 필드 추가
 - **Config 확장** - `gpu`, `tracker`, `artifacts`, `experiments` 섹션 추가
-- **MCP Tools** - `c4_gpu_status`, `c4_job_submit`, `c4_experiment_search`, `c4_artifact_list` 등
+- **MCP Tools** - `c4_gpu_status`, `c4_job_submit`, `c4_knowledge_search`/`record`/`get`, `c4_artifact_list` 등
 - **Worker GPU 타입** - GPU 요구사항 매칭, `is_piq_project` 자동 활성화
 - **ABC 인터페이스** - Cloud 확장 포인트 (ArtifactStore, KnowledgeStore, GpuScheduler, ExperimentTracker)
 
-**테스트**: 155+ tests (unit + integration + E2E)
+**테스트**: 186+ tests (knowledge 123 + gpu/tracker/artifacts/hooks)
 
 ```
 c4/
 ├── gpu/          # GPU 감지, 스케줄링, DAG 변환
 ├── tracker/      # @c4_track 데코레이터, 메트릭 캡처
 ├── artifacts/    # 로컬 아티팩트 저장소
-├── knowledge/    # 실험 지식 + 임베딩 검색
+├── knowledge/    # Obsidian Markdown + FTS5 + Vector hybrid search
+├── analysis/git/ # Git 분석 (commit_analyzer, story_builder, dependency_inferrer)
 └── hooks/        # 생명주기 훅 레지스트리
 ```
 
