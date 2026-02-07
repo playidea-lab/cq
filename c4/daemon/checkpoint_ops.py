@@ -314,7 +314,7 @@ class CheckpointOps:
         """Non-destructive profile learning + persona rebuild on APPROVE.
 
         Analyzes accumulated observations, updates ~/.c4/profile.yaml,
-        and regenerates persona-*.md files.
+        and regenerates .c4/personas/persona-*.md files.
         Failures are logged but never block checkpoint processing.
         """
         try:
@@ -339,7 +339,7 @@ class CheckpointOps:
                     f"Profile: {len(deltas)} updates at {checkpoint_id}"
                 )
 
-                # Rebuild persona-*.md (static path C)
+                # Rebuild .c4/personas/persona-*.md (static path C)
                 try:
                     from ..system.registry.builder import RegistryBuilder
 

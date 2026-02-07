@@ -1,8 +1,12 @@
 """Registry Builder - Converts structured registry data to platform-specific formats.
 
 Currently supports:
-- Building Markdown personas for Claude Code (.claude/rules/persona-*.md)
+- Building Markdown personas for C4 workers (.c4/personas/persona-*.md)
 - Injecting user profile context into generated personas
+
+NOTE: Persona files are stored in .c4/personas/, NOT .claude/rules/.
+      .claude/rules/ is auto-loaded into every Claude Code session context,
+      causing ~29K chars of unnecessary context dilution.
 """
 
 import logging
@@ -21,16 +25,16 @@ class RegistryBuilder:
         self.loader = AgentGraphLoader()
 
     def build_for_claude(self) -> List[str]:
-        """Build registry artifacts for Claude Code.
+        """Build registry artifacts for C4 workers.
 
-        Generates .claude/rules/persona-{id}.md files from agent definitions.
+        Generates .c4/personas/persona-{id}.md files from agent definitions.
         Injects user profile context if available.
 
         Returns:
             List of generated file paths (relative to project root).
         """
         generated_files = []
-        rules_dir = self.project_root / ".claude" / "rules"
+        rules_dir = self.project_root / ".c4" / "personas"
         rules_dir.mkdir(parents=True, exist_ok=True)
 
         # Load all agents
