@@ -179,39 +179,27 @@ class TestArtifactStoreE2E:
 
 
 class TestKnowledgeStoreE2E:
-    """Test knowledge store save and search."""
+    """Test knowledge store save and search (v2 DocumentStore)."""
 
     def test_save_and_search_experiment(self):
         """Save experiment and search by keyword."""
-        from c4.knowledge.models import ExperimentKnowledge, ExperimentResult
-        from c4.knowledge.store import LocalKnowledgeStore
+        from c4.knowledge.documents import DocumentStore
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            store = LocalKnowledgeStore(base_path=Path(tmpdir) / "knowledge")
+            base = Path(tmpdir) / ".c4" / "knowledge"
+            store = DocumentStore(base_path=base)
 
-            experiment = ExperimentKnowledge(
-                task_id="T-E2E-020",
-                title="Random Forest baseline for classification",
-                domain="ml",
-                result=ExperimentResult(
-                    metrics={"accuracy": 0.85, "f1": 0.82},
-                    success=True,
-                ),
-                observations=[],
-                tags=["sklearn", "random_forest"],
-            )
+            doc_id = store.create("experiment", {
+                "title": "Random Forest baseline for classification",
+                "task_id": "T-E2E-020",
+                "domain": "ml",
+                "tags": ["sklearn", "random_forest"],
+            }, body="# Random Forest\nAccuracy: 0.85, F1: 0.82")
 
-            loop = asyncio.new_event_loop()
-            try:
-                exp_id = loop.run_until_complete(store.save_experiment(experiment))
-                assert exp_id is not None
+            assert doc_id.startswith("exp-")
 
-                results = loop.run_until_complete(store.search("random forest", top_k=5))
-                assert len(results) >= 1
-                # search returns list[dict]
-                assert results[0]["task_id"] == "T-E2E-020"
-            finally:
-                loop.close()
+            results = store.search_fts("random forest")
+            assert len(results) >= 1
 
 
 class TestHookRegistryE2E:
@@ -244,9 +232,8 @@ class TestFullPipelineE2E:
     """Test the complete pipeline: track -> detect -> store knowledge."""
 
     def test_track_then_knowledge_save(self):
-        """Run @c4_track, then save results to knowledge store."""
-        from c4.knowledge.models import ExperimentKnowledge, ExperimentResult
-        from c4.knowledge.store import LocalKnowledgeStore
+        """Run @c4_track, then save results to knowledge store (v2)."""
+        from c4.knowledge.documents import DocumentStore
         from c4.tracker.decorator import c4_track
 
         @c4_track(task_id="T-PIPE-001", capture_git=False)
@@ -264,27 +251,23 @@ class TestFullPipelineE2E:
         assert "accuracy" in stats.metrics
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            store = LocalKnowledgeStore(base_path=Path(tmpdir) / "knowledge")
+            base = Path(tmpdir) / ".c4" / "knowledge"
+            store = DocumentStore(base_path=base)
 
-            experiment = ExperimentKnowledge(
-                task_id="T-PIPE-001",
-                title="Pipeline test model training",
-                domain="ml",
-                result=ExperimentResult(
-                    metrics=stats.metrics,
-                    success=True,
-                ),
-                observations=[],
-                tags=["test"],
-            )
+            metrics_lines = [f"- {k}: {v}" for k, v in stats.metrics.items()]
+            body = "# Pipeline test model training\n\n## Metrics\n" + "\n".join(metrics_lines)
 
-            loop = asyncio.new_event_loop()
-            try:
-                loop.run_until_complete(store.save_experiment(experiment))
-                results = loop.run_until_complete(store.search("pipeline model", top_k=5))
-                assert len(results) >= 1
-            finally:
-                loop.close()
+            doc_id = store.create("experiment", {
+                "title": "Pipeline test model training",
+                "task_id": "T-PIPE-001",
+                "domain": "ml",
+                "tags": ["test"],
+            }, body=body)
+
+            assert doc_id.startswith("exp-")
+
+            results = store.search_fts("pipeline model")
+            assert len(results) >= 1
 
     def test_track_then_artifact_detect(self):
         """Run @c4_track, then detect artifacts in workspace."""

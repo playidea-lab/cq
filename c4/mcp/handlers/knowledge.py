@@ -27,6 +27,14 @@ def _get_searcher():
     return KnowledgeSearcher(base_path=root / ".c4" / "knowledge")
 
 
+def _get_embedder():
+    """Get knowledge embedder for vector indexing."""
+    from c4.knowledge.embeddings import KnowledgeEmbedder
+
+    root = Path(os.environ.get("C4_PROJECT_ROOT", "."))
+    return KnowledgeEmbedder(base_path=root / ".c4" / "knowledge")
+
+
 # =============================================================================
 # New v2 handlers
 # =============================================================================
@@ -107,6 +115,17 @@ def handle_knowledge_record(daemon: Any, arguments: dict[str, Any]) -> dict[str,
     try:
         store = _get_document_store()
         doc_id = store.create(doc_type, metadata, body=body)
+
+        # Auto-index embedding for semantic search (best-effort)
+        try:
+            embedder = _get_embedder()
+            doc = store.get(doc_id)
+            if doc:
+                embedder.index_document(doc_id, doc.model_dump())
+            embedder.close()
+        except Exception:
+            pass  # Embedding failure doesn't block document creation
+
         return {
             "success": True,
             "doc_id": doc_id,

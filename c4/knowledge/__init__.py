@@ -1,6 +1,5 @@
-"""C4 Knowledge System - experiment knowledge storage and pattern mining.
+"""C4 Knowledge System - Obsidian-style document store with hybrid search.
 
-Absorbed from piq/knowledge/ modules.
-Provides local SQLite-based experiment knowledge storage,
-keyword search, pattern mining, and aggregation.
+v2: Markdown SSOT + FTS5 + Vector (sqlite-vec) hybrid search.
+Document types: experiment, pattern, insight, hypothesis.
 """

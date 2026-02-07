@@ -88,58 +88,17 @@ class ArtifactStore(ABC):
 class KnowledgeStore(ABC):
     """지식 저장소 인터페이스.
 
-    현재: LocalKnowledgeStore (SQLite + 벡터 검색)
-    v2: DocumentStore (Obsidian-style Markdown + FTS5 + Vector)
+    현재: DocumentStore (Obsidian-style Markdown + FTS5)
     Cloud: SharedKnowledgeStore (팀간 공유, 중앙 서버)
+
+    Note: 검색은 KnowledgeSearcher (별도 클래스)가 담당.
     """
 
     @abstractmethod
-    async def save_experiment(self, experiment: dict[str, Any]) -> str:
-        """실험 지식 저장.
-
-        Args:
-            experiment: ExperimentKnowledge dict
-
-        Returns:
-            저장된 실험 ID
-        """
-        ...
-
-    @abstractmethod
-    async def search(
-        self, query: str, top_k: int = 5
-    ) -> list[dict[str, Any]]:
-        """실험 지식 검색.
-
-        Args:
-            query: 검색 쿼리
-            top_k: 최대 반환 수
-
-        Returns:
-            유사 실험 목록
-        """
-        ...
-
-    @abstractmethod
-    async def get_patterns(
-        self, domain: str | None = None
-    ) -> list[dict[str, Any]]:
-        """도메인별 패턴 조회.
-
-        Args:
-            domain: 필터링할 도메인 (None이면 전체)
-
-        Returns:
-            패턴 목록
-        """
-        ...
-
-    # v2 확장 메서드 (선택적 구현)
-
-    def create_document(
+    def create(
         self, doc_type: str, metadata: dict[str, Any], body: str = ""
     ) -> str:
-        """Obsidian-style 문서 생성.
+        """문서 생성.
 
         Args:
             doc_type: experiment, pattern, insight, hypothesis
@@ -147,27 +106,49 @@ class KnowledgeStore(ABC):
             body: Markdown 본문
 
         Returns:
-            생성된 문서 ID
+            생성된 문서 ID (exp-xxxx, pat-xxxx 등)
         """
-        raise NotImplementedError("v2 DocumentStore required")
+        ...
 
-    def search_hybrid(
-        self,
-        query: str,
-        top_k: int = 10,
-        filters: dict[str, Any] | None = None,
-    ) -> list[dict[str, Any]]:
-        """하이브리드 검색 (Vector + FTS5 RRF).
+    @abstractmethod
+    def get(self, doc_id: str) -> Any:
+        """문서 조회.
 
         Args:
-            query: 검색 쿼리
-            top_k: 최대 반환 수
-            filters: type, domain, hypothesis_status 필터
+            doc_id: 문서 ID
 
         Returns:
-            검색 결과 목록 (score 포함)
+            KnowledgeDocument 또는 None
         """
-        raise NotImplementedError("v2 KnowledgeSearcher required")
+        ...
+
+    @abstractmethod
+    def update(
+        self, doc_id: str, metadata: dict[str, Any] | None = None, body: str | None = None
+    ) -> bool:
+        """문서 업데이트.
+
+        Args:
+            doc_id: 문서 ID
+            metadata: 업데이트할 메타데이터
+            body: 업데이트할 본문
+
+        Returns:
+            성공 여부
+        """
+        ...
+
+    @abstractmethod
+    def delete(self, doc_id: str) -> bool:
+        """문서 삭제.
+
+        Args:
+            doc_id: 문서 ID
+
+        Returns:
+            삭제 성공 여부
+        """
+        ...
 
 
 class GpuScheduler(ABC):

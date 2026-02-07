@@ -105,6 +105,19 @@ def _save_to_knowledge_store(record: dict[str, Any]) -> None:
     }
 
     if existing_doc:
-        store.update(existing_doc["id"], metadata=metadata, body=body)
+        doc_id = existing_doc["id"]
+        store.update(doc_id, metadata=metadata, body=body)
     else:
-        store.create("experiment", metadata, body=body)
+        doc_id = store.create("experiment", metadata, body=body)
+
+    # Auto-index embedding for semantic search (best-effort)
+    try:
+        from c4.knowledge.embeddings import KnowledgeEmbedder
+
+        embedder = KnowledgeEmbedder()
+        doc = store.get(doc_id)
+        if doc:
+            embedder.index_document(doc_id, doc.model_dump())
+        embedder.close()
+    except Exception:
+        pass  # Embedding failure doesn't block hook

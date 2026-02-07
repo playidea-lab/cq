@@ -31,6 +31,8 @@ from typing import Any
 
 import yaml
 
+from c4.interfaces import KnowledgeStore
+
 from .models import BACKLINK_RE, DOC_TYPE_PREFIXES, DocumentType, KnowledgeDocument
 
 logger = logging.getLogger(__name__)
@@ -166,7 +168,7 @@ def _doc_to_markdown(doc: KnowledgeDocument) -> str:
     return f"---\n{_render_frontmatter(fm)}\n---\n\n{doc.body}"
 
 
-class DocumentStore:
+class DocumentStore(KnowledgeStore):
     """Obsidian-style knowledge document store.
 
     - CRUD over Markdown files in docs/
