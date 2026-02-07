@@ -18,8 +18,19 @@ def handle_claim(daemon: Any, arguments: dict[str, Any]) -> dict[str, Any]:
 @register_tool("c4_report")
 def handle_report(daemon: Any, arguments: dict[str, Any]) -> dict[str, Any]:
     """Report task completion for direct mode."""
-    return daemon.c4_report(
+    result = daemon.c4_report(
         task_id=arguments["task_id"],
         summary=arguments["summary"],
         files_changed=arguments.get("files_changed"),
     )
+
+    # Record observation for profile learning
+    try:
+        daemon.profile_observer.record_report(
+            summary=arguments["summary"],
+            files_changed=arguments.get("files_changed"),
+        )
+    except Exception:
+        pass  # Non-critical
+
+    return result

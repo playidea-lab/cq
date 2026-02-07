@@ -214,6 +214,12 @@ class TaskOps:
             # Get agent routing info
             agent_routing = daemon._get_agent_routing(task)
 
+            # Build user context from profile
+            user_context = self._build_user_context(
+                agent_id=agent_routing.get("recommended_agent"),
+                task=task,
+            )
+
             # Check for existing worktree for resumed task
             worktree_path = self._get_or_create_worktree(worker_id, task)
 
@@ -226,6 +232,7 @@ class TaskOps:
                 branch=task.branch or "",
                 worktree_path=worktree_path,
                 model=task.model,
+                user_context=user_context,
                 **agent_routing,
             )
 

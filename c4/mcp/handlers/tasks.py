@@ -46,6 +46,16 @@ def handle_submit(daemon: Any, arguments: dict[str, Any]) -> dict[str, Any]:
         arguments["validation_results"],
         arguments.get("worker_id"),  # Optional for ownership verification
     )
+
+    # Record observation for profile learning (domain frequency)
+    try:
+        task = daemon.get_task(arguments["task_id"])
+        daemon.profile_observer.record_submit(
+            task_domain=task.domain if task else None,
+        )
+    except Exception:
+        pass  # Non-critical
+
     return result.model_dump()
 
 
