@@ -348,6 +348,77 @@ service C4Python {
 - **Phase 2**: Realtime 구독 Go 이전, Python sidecar에서 Supabase 의존성 제거
 - **Phase 3**: 팀 격리 (RLS) + Auth 토큰 관리 Go 이전
 
+### 5.6 c4cloud 서버 아키텍처 (팀 협업 모드)
+
+#### 배포 토폴로지: CLI 직접 연결 + 선택적 c4cloud
+
+```
+                         ┌───────────┐
+                         │ Supabase  │
+                         │ (DB+Auth+ │
+                         │  Realtime)│
+                         └─────┬─────┘
+                ┌──────────────┼──────────────────┐
+                ▼              ▼                  ▼
+          ┌──────────┐   ┌──────────┐      ┌──────────────┐
+          │ dev1     │   │ dev2     │      │ c4cloud      │
+          │ Go Core  │   │ Go Core  │      │ (Go Server)  │
+          │ (CLI)    │   │ (CLI)    │      │              │
+          │          │   │          │      │ ┌──────────┐ │
+          │ SQLite   │   │ SQLite   │      │ │Chat/LLM  │ │
+          │ (offline │   │ (offline │      │ │Workers   │ │
+          │  cache)  │   │  cache)  │      │ │Webhook   │ │
+          │          │   │          │      │ └──────────┘ │
+          │ gRPC→Py  │   │ gRPC→Py  │      │              │
+          └──────────┘   └──────────┘      │ Web Dashboard│
+                                           │ (Next.js)    │
+                                           └──────────────┘
+```
+
+- **CLI 사용자** (dev1, dev2): Go Core가 Supabase에 직접 연결. c4cloud 불필요.
+- **웹 사용자**: 브라우저 → c4cloud (Chat, Worker 관리) + Supabase (Auth, DB 직접).
+- **오프라인**: SQLite로 로컬 동작, 온라인 시 Supabase에 동기화.
+
+#### 3계층 분리
+
+| 계층 | 기술 | 담당 |
+|------|------|------|
+| **Layer 1: Supabase** | 매니지드 | Auth, DB (Teams/Members/State/Tasks), RLS, Realtime, Storage |
+| **Layer 2: Go Server** | `c4 serve` | Chat/LLM 프록시, Cloud Worker(Fly.io), Webhook, C4 오케스트레이션 |
+| **Layer 3: Frontend** | Next.js | Web Dashboard, Supabase JS 직접 연결 |
+
+#### Supabase가 대체하는 범위
+
+현재 FastAPI 10K LOC 중:
+
+| 현재 Python 코드 | LOC | Go 전환 후 |
+|-----------------|-----|-----------|
+| SaaS routes (Teams/SSO/Branding/Reports) | ~4K | **삭제** — Supabase Auth + RLS + Edge Fn |
+| Chat (LLM proxy, SSE) | ~1.5K | Go 서버 (~800 LOC) |
+| Workspace/Workers (Fly.io) | ~1.5K | Go 서버 (~1K LOC) |
+| C4 프록시 routes | ~2K | Go Core에 내장 |
+| Auth/Models/Middleware | ~1.5K | **삭제** — Supabase Auth |
+| **합계** | ~10K | **Go ~2K + Supabase 설정** |
+
+#### 왜 Go 서버인가
+
+| 대안 | 평가 |
+|------|------|
+| FastAPI 유지 | Go Core와 별도 Python 런타임 필요 — 배포 복잡도 ↑ |
+| Supabase Edge Functions 전용 | Chat/Worker 로직이 Edge Function 한계(실행시간, 메모리) 초과 |
+| Next.js API Routes | Node.js 런타임 추가 — 런타임 3개(Go+Python+Node) |
+| **Go 서버** | Go Core와 **동일 바이너리** (`c4 serve` 서브커맨드), 런타임 추가 없음 |
+
+#### 통신 흐름
+
+| 시나리오 | 경로 |
+|----------|------|
+| dev1이 태스크 생성 | Go Core → Supabase 직접 → Realtime → dev2에 알림 |
+| 웹 대시보드 조회 | Browser → Supabase JS 직접 → DB 쿼리 |
+| 웹에서 Chat | Browser → c4cloud (Go) → Claude API → SSE 응답 |
+| Cloud Worker 스폰 | c4cloud (Go) → Fly.io API → Worker 시작 |
+| GitHub Webhook | GitHub → c4cloud (Go) → 이벤트 처리 → Supabase |
+
 ---
 
 ## 6. 장단점 종합
