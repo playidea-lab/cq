@@ -1,5 +1,10 @@
-"""Tests for User Profile system: models, observer, learner, loader."""
+"""Tests for User Profile system: models, observer, learner, loader.
 
+Covers: unit tests, integration tests for MCP handler hooks,
+_build_user_context, _load_user_profile_context, _learn_and_rebuild.
+"""
+
+from unittest.mock import MagicMock, patch
 
 import pytest
 import yaml
@@ -457,3 +462,330 @@ class TestProfileLoader:
         ProfileLoader.install_template(target)
         # Should NOT overwrite
         assert yaml.safe_load(target.read_text())["name"] == "existing"
+
+
+# =============================================================================
+# Learner: apply() defensive guard tests
+# =============================================================================
+
+
+class TestProfileLearnerApplyDefensive:
+    """Test that apply() handles invalid field paths gracefully."""
+
+    def test_apply_invalid_field_path_skipped(self, tmp_path):
+        """Invalid delta should be skipped, valid ones applied."""
+        profile_path = tmp_path / "profile.yaml"
+        learner = ProfileLearner(profile_path)
+        current = learner.load_or_default()
+
+        deltas = [
+            ProfileDelta(
+                field_path="nonexistent.field",
+                old_value=None,
+                new_value="bad",
+                reason="test invalid path",
+            ),
+            ProfileDelta(
+                field_path="review.strictness",
+                old_value=0.5,
+                new_value=0.9,
+                reason="test valid path",
+            ),
+        ]
+
+        updated = learner.apply(current, deltas)
+        # Valid delta applied, invalid skipped
+        assert updated.review.strictness == 0.9
+
+    def test_apply_empty_deltas(self, tmp_path):
+        profile_path = tmp_path / "profile.yaml"
+        learner = ProfileLearner(profile_path)
+        current = UserProfile(name="test")
+
+        updated = learner.apply(current, [])
+        assert updated.name == "test"
+
+
+# =============================================================================
+# Integration: MCP handler → observer hook tests
+# =============================================================================
+
+
+class TestMCPHandlerObserverIntegration:
+    """Test that MCP handlers correctly call profile observer."""
+
+    def test_handle_add_todo_records_observation(self, tmp_path):
+        from c4.mcp.handlers.tasks import handle_add_todo
+
+        daemon = MagicMock()
+        daemon.c4_add_todo.return_value = {"status": "ok"}
+        daemon.profile_observer = ProfileObserver(tmp_path)
+
+        handle_add_todo(daemon, {
+            "task_id": "T-001-0",
+            "title": "Add security tests",
+            "dod": "Write unit tests for auth module, coverage > 80%",
+            "domain": "web-backend",
+        })
+
+        obs = daemon.profile_observer.get_all()
+        assert len(obs) == 1
+        assert obs[0].event_type == "add_todo"
+        assert obs[0].task_domain == "web-backend"
+        assert "testing" in obs[0].dod_keywords
+
+    def test_handle_checkpoint_records_observation(self, tmp_path):
+        from c4.mcp.handlers.supervisor import handle_checkpoint
+
+        daemon = MagicMock()
+        result_mock = MagicMock()
+        result_mock.model_dump.return_value = {"success": True}
+        daemon.c4_checkpoint.return_value = result_mock
+        daemon.profile_observer = ProfileObserver(tmp_path)
+
+        handle_checkpoint(daemon, {
+            "checkpoint_id": "CP-001",
+            "decision": "REQUEST_CHANGES",
+            "notes": "Need reproducibility verification",
+            "required_changes": ["Add seeds"],
+        })
+
+        obs = daemon.profile_observer.get_all()
+        assert len(obs) == 1
+        assert obs[0].checkpoint_decision == "REQUEST_CHANGES"
+        assert "reproducibility" in obs[0].dod_keywords
+
+    def test_handle_report_records_observation(self, tmp_path):
+        from c4.mcp.handlers.tracking import handle_report
+
+        daemon = MagicMock()
+        daemon.c4_report.return_value = {"status": "ok"}
+        daemon.profile_observer = ProfileObserver(tmp_path)
+
+        handle_report(daemon, {
+            "task_id": "T-001-0",
+            "summary": "Implemented auth module with 5 files",
+            "files_changed": ["a.py", "b.py", "c.py", "d.py", "e.py"],
+        })
+
+        obs = daemon.profile_observer.get_all()
+        assert len(obs) == 1
+        assert obs[0].event_type == "report"
+        assert obs[0].summary_length == len("Implemented auth module with 5 files")
+        assert obs[0].files_changed_count == 5
+
+    def test_handle_submit_records_observation(self, tmp_path):
+        from c4.mcp.handlers.tasks import handle_submit
+
+        daemon = MagicMock()
+        result_mock = MagicMock()
+        result_mock.model_dump.return_value = {"success": True}
+        daemon.c4_submit.return_value = result_mock
+
+        task_mock = MagicMock()
+        task_mock.domain = "ml-dl"
+        daemon.get_task.return_value = task_mock
+        daemon.profile_observer = ProfileObserver(tmp_path)
+
+        handle_submit(daemon, {
+            "task_id": "T-001-0",
+            "commit_sha": "abc123",
+            "validation_results": {"lint": "pass"},
+        })
+
+        obs = daemon.profile_observer.get_all()
+        assert len(obs) == 1
+        assert obs[0].event_type == "submit"
+        assert obs[0].task_domain == "ml-dl"
+
+    def test_handler_continues_on_observer_failure(self, tmp_path):
+        """Observer failure should never crash the MCP handler."""
+        from c4.mcp.handlers.tasks import handle_add_todo
+
+        daemon = MagicMock()
+        daemon.c4_add_todo.return_value = {"status": "ok"}
+        # Simulate observer failure
+        daemon.profile_observer.record_add_todo.side_effect = RuntimeError("disk full")
+
+        result = handle_add_todo(daemon, {
+            "task_id": "T-001-0",
+            "title": "Test",
+            "dod": "DoD",
+        })
+        # Handler still returns successfully
+        assert result == {"status": "ok"}
+
+
+# =============================================================================
+# Integration: _build_user_context tests
+# =============================================================================
+
+
+class TestBuildUserContext:
+    """Test TaskOps._build_user_context with mock profiles."""
+
+    def _make_task_ops(self, tmp_path):
+        """Create TaskOps with mock daemon pointing to tmp profile."""
+        from c4.daemon.task_ops import TaskOps
+
+        daemon = MagicMock()
+        daemon.c4_dir = tmp_path / ".c4"
+        daemon.c4_dir.mkdir(parents=True)
+
+        ops = TaskOps.__new__(TaskOps)
+        ops._daemon = daemon
+        return ops
+
+    def _install_profile(self, c4_dir, **overrides):
+        """Install a profile.yaml for testing."""
+        profile = UserProfile(
+            name="test-user",
+            review=ReviewStyle(
+                focus=["correctness", "testing"],
+                strictness=0.7,
+                paper_criteria=["reproducibility"],
+            ),
+            writing=WritingStyle(language="ko", formality="academic"),
+            expertise=DomainExpertise(
+                domains={"ml-dl": "expert"},
+                research_fields=["pose-estimation"],
+            ),
+            persona_overrides={"paper-reviewer": "Focus on statistical rigor"},
+            **overrides,
+        )
+        # Use project-level profile instead of touching global
+        profiles_dir = c4_dir / "profiles"
+        profiles_dir.mkdir(parents=True, exist_ok=True)
+        profile_path = profiles_dir / "test-user.yaml"
+        profile_path.write_text(
+            yaml.dump(profile.model_dump(), allow_unicode=True)
+        )
+        return profile_path
+
+    def test_reviewer_gets_review_context(self, tmp_path):
+        ops = self._make_task_ops(tmp_path)
+        self._install_profile(ops._daemon.c4_dir)
+
+        with patch(
+            "c4.system.registry.profile_loader._get_git_user_name",
+            return_value="test-user",
+        ):
+            ctx = ops._build_user_context(agent_id="paper-reviewer", task=MagicMock())
+
+        assert ctx is not None
+        assert "Review focus:" in ctx
+        assert "testing" in ctx
+        assert "Strictness: 0.7" in ctx
+        assert "Paper criteria:" in ctx
+        assert "reproducibility" in ctx
+        assert "Special instructions:" in ctx
+        assert "statistical rigor" in ctx
+
+    def test_writer_gets_writing_context(self, tmp_path):
+        ops = self._make_task_ops(tmp_path)
+        self._install_profile(ops._daemon.c4_dir)
+
+        with patch(
+            "c4.system.registry.profile_loader._get_git_user_name",
+            return_value="test-user",
+        ):
+            ctx = ops._build_user_context(agent_id="paper-writer", task=MagicMock())
+
+        assert ctx is not None
+        assert "Language: ko" in ctx
+        assert "Formality: academic" in ctx
+
+    def test_generic_agent_gets_expertise(self, tmp_path):
+        ops = self._make_task_ops(tmp_path)
+        self._install_profile(ops._daemon.c4_dir)
+
+        with patch(
+            "c4.system.registry.profile_loader._get_git_user_name",
+            return_value="test-user",
+        ):
+            ctx = ops._build_user_context(agent_id="ml-engineer", task=MagicMock())
+
+        assert ctx is not None
+        assert "Expertise:" in ctx
+        assert "ml-dl(expert)" in ctx
+        assert "Research fields:" in ctx
+
+    def test_no_profile_returns_none(self, tmp_path):
+        ops = self._make_task_ops(tmp_path)
+        # No profile installed
+
+        with patch(
+            "c4.system.registry.profile_loader._get_git_user_name",
+            return_value="nobody",
+        ):
+            ctx = ops._build_user_context(agent_id="debugger", task=MagicMock())
+
+        assert ctx is None
+
+
+# =============================================================================
+# Integration: _learn_and_rebuild tests
+# =============================================================================
+
+
+class TestLearnAndRebuild:
+    """Test CheckpointOps._learn_and_rebuild integration."""
+
+    def test_learn_updates_profile_on_sufficient_observations(self, tmp_path):
+        from c4.daemon.checkpoint_ops import CheckpointOps
+
+        # Setup daemon mock
+        daemon = MagicMock()
+        daemon.c4_dir = tmp_path / ".c4"
+        daemon.c4_dir.mkdir(parents=True)
+        daemon.root = tmp_path
+
+        # Setup observer with enough data
+        observer = ProfileObserver(daemon.c4_dir)
+        for _ in range(3):
+            observer.record_checkpoint(
+                decision="REQUEST_CHANGES",
+                notes="Need more test coverage",
+            )
+        daemon.profile_observer = observer
+
+        ops = CheckpointOps.__new__(CheckpointOps)
+        ops._daemon = daemon
+
+        # Mock RegistryBuilder (lazy import inside _learn_and_rebuild)
+        with patch("c4.system.registry.builder.RegistryBuilder"):
+            ops._learn_and_rebuild("CP-001")
+
+        # Observations should be cleared after learning
+        assert len(observer.get_all()) == 0
+
+    def test_learn_skips_with_few_observations(self, tmp_path):
+        from c4.daemon.checkpoint_ops import CheckpointOps
+
+        daemon = MagicMock()
+        daemon.c4_dir = tmp_path / ".c4"
+        daemon.c4_dir.mkdir(parents=True)
+
+        observer = ProfileObserver(daemon.c4_dir)
+        observer.record_checkpoint(decision="APPROVE", notes="ok")
+        daemon.profile_observer = observer
+
+        ops = CheckpointOps.__new__(CheckpointOps)
+        ops._daemon = daemon
+
+        ops._learn_and_rebuild("CP-001")
+
+        # Not cleared because <3 observations
+        assert len(observer.get_all()) == 1
+
+    def test_learn_does_not_crash_on_failure(self, tmp_path):
+        from c4.daemon.checkpoint_ops import CheckpointOps
+
+        daemon = MagicMock()
+        daemon.profile_observer.get_all.side_effect = RuntimeError("boom")
+
+        ops = CheckpointOps.__new__(CheckpointOps)
+        ops._daemon = daemon
+
+        # Should not raise
+        ops._learn_and_rebuild("CP-001")

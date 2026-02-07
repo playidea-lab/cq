@@ -79,7 +79,8 @@ def _extract_keywords(text: str) -> list[str]:
 class ProfileObserver:
     """Records user behavior observations to disk.
 
-    Thread-safe via atomic file writes.
+    Note: Not thread-safe. Uses simple read-modify-write on JSON file.
+    Safe for single-process MCP server (current architecture).
     """
 
     def __init__(self, c4_dir: Path):

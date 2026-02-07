@@ -93,14 +93,22 @@ class ProfileLearner:
     def apply(
         self, current: UserProfile, deltas: list[ProfileDelta]
     ) -> UserProfile:
-        """Apply deltas to produce updated profile."""
+        """Apply deltas to produce updated profile.
+
+        Skips deltas with invalid field paths instead of crashing.
+        """
         data = current.model_dump()
         for delta in deltas:
-            parts = delta.field_path.split(".")
-            obj = data
-            for part in parts[:-1]:
-                obj = obj[part]
-            obj[parts[-1]] = delta.new_value
+            try:
+                parts = delta.field_path.split(".")
+                obj = data
+                for part in parts[:-1]:
+                    obj = obj[part]
+                obj[parts[-1]] = delta.new_value
+            except (KeyError, TypeError) as e:
+                logger.warning(
+                    f"Skipping invalid delta {delta.field_path}: {e}"
+                )
         return UserProfile(**data)
 
     def _analyze_domains(
