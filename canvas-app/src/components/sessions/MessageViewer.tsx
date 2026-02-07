@@ -1,5 +1,6 @@
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import rehypeSanitize from 'rehype-sanitize';
 import { CollapsibleSection } from '../shared/CollapsibleSection';
 import type { SessionMessage, ContentBlock } from '../../types';
 
@@ -15,7 +16,7 @@ function renderBlock(block: ContentBlock, index: number) {
     case 'text':
       return (
         <div key={index} className="msg__text">
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>
+          <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeSanitize]}>
             {block.text || ''}
           </ReactMarkdown>
         </div>

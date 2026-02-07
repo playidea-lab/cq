@@ -286,7 +286,7 @@ pub struct SessionMeta {
     pub slug: String,
     pub title: Option<String>,
     pub path: String,
-    pub message_count: u32,
+    pub line_count: u32,
     pub file_size: u64,
     pub timestamp: Option<i64>,
     pub git_branch: Option<String>,

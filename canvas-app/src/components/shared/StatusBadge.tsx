@@ -25,7 +25,7 @@ export function StatusBadge({ status, className = '' }: StatusBadgeProps) {
   const colorClass = STATUS_COLORS[status] || 'badge--gray';
   return (
     <span className={`badge ${colorClass} ${className}`}>
-      {status.replace('_', ' ')}
+      {status.replace(/_/g, ' ')}
     </span>
   );
 }

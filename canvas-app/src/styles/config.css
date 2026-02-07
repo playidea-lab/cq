@@ -20,7 +20,7 @@
 }
 
 .config__error {
-  color: #e03131;
+  color: var(--color-error);
 }
 
 .config__tree-panel {

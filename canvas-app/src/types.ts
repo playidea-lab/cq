@@ -107,7 +107,7 @@ export interface SessionMeta {
   slug: string;
   title: string | null;
   path: string;
-  message_count: number;
+  line_count: number;
   file_size: number;
   timestamp: number | null;
   git_branch: string | null;

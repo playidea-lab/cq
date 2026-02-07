@@ -28,7 +28,7 @@
 
 .dashboard__error-detail {
   font-size: var(--font-size-sm);
-  color: #e03131;
+  color: var(--color-error);
   font-family: var(--font-family-mono);
 }
 
@@ -106,11 +106,15 @@
 }
 
 .progress-bar__segment--done {
-  background: #099268;
+  background: var(--color-success);
 }
 
 .progress-bar__segment--in-progress {
   background: var(--color-accent-primary);
+}
+
+.progress-bar__segment--blocked {
+  background: var(--color-error);
 }
 
 .progress-bar__segment--pending {
@@ -129,11 +133,15 @@
 }
 
 .progress-bar__label--done {
-  color: #099268;
+  color: var(--color-success);
 }
 
 .progress-bar__label--in-progress {
   color: var(--color-accent-primary);
+}
+
+.progress-bar__label--blocked {
+  color: var(--color-error);
 }
 
 /* Badge */
@@ -150,13 +158,13 @@
 }
 
 .badge--green {
-  background: rgba(9, 146, 104, 0.15);
-  color: #099268;
+  background: var(--color-badge-green-bg);
+  color: var(--color-success);
 }
 
 .badge--blue {
-  background: rgba(0, 102, 204, 0.15);
-  color: #4a9eff;
+  background: var(--color-badge-blue-bg);
+  color: var(--color-info);
 }
 
 .badge--gray {
@@ -165,23 +173,23 @@
 }
 
 .badge--red {
-  background: rgba(224, 49, 49, 0.15);
-  color: #e03131;
+  background: var(--color-badge-red-bg);
+  color: var(--color-error);
 }
 
 .badge--orange {
-  background: rgba(247, 103, 7, 0.15);
-  color: #f76707;
+  background: var(--color-badge-orange-bg);
+  color: var(--color-warning);
 }
 
 .badge--purple {
-  background: rgba(181, 92, 181, 0.15);
-  color: #b55cb5;
+  background: var(--color-badge-purple-bg);
+  color: var(--color-purple);
 }
 
 .badge--cyan {
-  background: rgba(92, 165, 181, 0.15);
-  color: #5ca5b5;
+  background: var(--color-badge-cyan-bg);
+  color: var(--color-cyan);
 }
 
 .badge--outline {

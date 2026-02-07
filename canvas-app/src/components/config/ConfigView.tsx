@@ -1,15 +1,11 @@
 import { useEffect } from 'react';
 import { useConfig } from '../../hooks/useConfig';
 import { MarkdownViewer } from '../shared/MarkdownViewer';
+import { formatSize } from '../../utils/format';
 import '../../styles/config.css';
 
 interface ConfigViewProps {
   projectPath: string;
-}
-
-function formatSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes}B`;
-  return `${(bytes / 1024).toFixed(1)}KB`;
 }
 
 export function ConfigView({ projectPath }: ConfigViewProps) {

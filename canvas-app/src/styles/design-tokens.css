@@ -53,6 +53,28 @@
   --color-edge-applies: #f76707;
   --color-edge-mentions: #868e96;
 
+  /* --- Colors: Semantic --- */
+  --color-error: #e03131;
+  --color-success: #099268;
+  --color-warning: #f76707;
+  --color-info: #4a9eff;
+  --color-purple: #b55cb5;
+  --color-cyan: #5ca5b5;
+
+  /* --- Colors: Badge Variants --- */
+  --color-badge-green-bg: rgba(9, 146, 104, 0.15);
+  --color-badge-blue-bg: rgba(0, 102, 204, 0.15);
+  --color-badge-red-bg: rgba(224, 49, 49, 0.15);
+  --color-badge-orange-bg: rgba(247, 103, 7, 0.15);
+  --color-badge-purple-bg: rgba(181, 92, 181, 0.15);
+  --color-badge-cyan-bg: rgba(92, 165, 181, 0.15);
+
+  /* --- Colors: Message Variants --- */
+  --color-msg-summary-bg: rgba(92, 143, 189, 0.1);
+  --color-msg-summary-border: rgba(92, 143, 189, 0.3);
+  --color-msg-system-bg: rgba(181, 165, 92, 0.1);
+  --color-msg-system-border: rgba(181, 165, 92, 0.3);
+
   /* --- Colors: States --- */
   --color-focus-ring: #5c8fbd;
   --color-disabled-opacity: 0.5;

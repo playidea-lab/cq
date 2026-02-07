@@ -441,7 +441,7 @@ fn add_c4_task_edges(nodes: &[CanvasNode], edges: &mut Vec<CanvasEdge>) {
 }
 
 /// Get project_id from .c4/config.yaml or use directory name as fallback
-fn get_project_id(project_root: &Path) -> Result<String> {
+pub fn get_project_id(project_root: &Path) -> Result<String> {
     let config_path = project_root.join(".c4").join("config.yaml");
 
     // Try to read project_id from config.yaml

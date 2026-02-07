@@ -20,8 +20,8 @@ export function useDashboard() {
       setState(projectState);
       // Sort: in_progress first, then pending, then done
       const order: Record<string, number> = { in_progress: 0, pending: 1, blocked: 2, done: 3 };
-      taskList.sort((a, b) => (order[a.status] ?? 9) - (order[b.status] ?? 9) || b.priority - a.priority);
-      setTasks(taskList);
+      const sorted = [...taskList].sort((a, b) => (order[a.status] ?? 9) - (order[b.status] ?? 9) || b.priority - a.priority);
+      setTasks(sorted);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {

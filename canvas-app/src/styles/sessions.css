@@ -50,7 +50,7 @@
 }
 
 .sessions__error {
-  color: #e03131;
+  color: var(--color-error);
 }
 
 .sessions__detail-panel {
@@ -211,13 +211,13 @@
 }
 
 .msg--summary {
-  background: rgba(92, 143, 189, 0.1);
-  border: 1px solid rgba(92, 143, 189, 0.3);
+  background: var(--color-msg-summary-bg);
+  border: 1px solid var(--color-msg-summary-border);
 }
 
 .msg--system {
-  background: rgba(181, 165, 92, 0.1);
-  border: 1px solid rgba(181, 165, 92, 0.3);
+  background: var(--color-msg-system-bg);
+  border: 1px solid var(--color-msg-system-border);
   font-size: var(--font-size-sm);
 }
 

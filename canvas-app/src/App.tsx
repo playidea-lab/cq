@@ -52,11 +52,11 @@ export default function App() {
 
     switch (currentView) {
       case 'sessions':
-        return <SessionsView projectPath={projectPath} />;
+        return <SessionsView key={`sessions-${projectPath}`} projectPath={projectPath} />;
       case 'dashboard':
-        return <DashboardView projectPath={projectPath} />;
+        return <DashboardView key={`dashboard-${projectPath}`} projectPath={projectPath} />;
       case 'config':
-        return <ConfigView projectPath={projectPath} />;
+        return <ConfigView key={`config-${projectPath}`} projectPath={projectPath} />;
     }
   };
 

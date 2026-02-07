@@ -389,8 +389,8 @@ pub async fn list_sessions(path: String) -> Result<Vec<SessionMeta>, String> {
                 .and_then(|t| t.duration_since(std::time::SystemTime::UNIX_EPOCH).ok())
                 .map(|d| d.as_millis() as i64);
 
-            // Read first and last few lines to extract metadata
-            let (message_count, title, git_branch, session_slug) =
+            // Read first/last lines to extract metadata (does NOT read entire file)
+            let (title, git_branch, session_slug) =
                 extract_session_meta(&file_path);
 
             sessions.push(SessionMeta {
@@ -398,7 +398,7 @@ pub async fn list_sessions(path: String) -> Result<Vec<SessionMeta>, String> {
                 slug: session_slug.unwrap_or_else(|| slug.clone()),
                 title,
                 path: file_path.to_string_lossy().to_string(),
-                message_count,
+                line_count: 0,  // not computed for performance; use file_size
                 file_size,
                 timestamp: modified,
                 git_branch,
@@ -414,60 +414,92 @@ pub async fn list_sessions(path: String) -> Result<Vec<SessionMeta>, String> {
     .map_err(|e| format!("Task execution failed: {}", e))?
 }
 
-/// Extract metadata from a session file by reading first and last lines
-fn extract_session_meta(path: &Path) -> (u32, Option<String>, Option<String>, Option<String>) {
-    use std::io::{BufRead, BufReader};
+/// Extract metadata from a session file efficiently.
+/// Reads first 20 lines for slug/branch, then last 64KB for summary title.
+/// No longer counts total lines (use file_size instead).
+fn extract_session_meta(path: &Path) -> (Option<String>, Option<String>, Option<String>) {
+    use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};
 
     let file = match fs::File::open(path) {
         Ok(f) => f,
-        Err(_) => return (0, None, None, None),
+        Err(_) => return (None, None, None),
     };
 
-    let reader = BufReader::new(file);
-    let mut count: u32 = 0;
     let mut title: Option<String> = None;
     let mut git_branch: Option<String> = None;
     let mut slug: Option<String> = None;
 
-    for line in reader.lines() {
-        let line = match line {
-            Ok(l) => l,
-            Err(_) => break,
-        };
-        count += 1;
-
-        // Only parse first few lines and summary lines for efficiency
-        if count <= 5 || title.is_none() {
-            if let Ok(obj) = serde_json::from_str::<serde_json::Value>(&line) {
-                let msg_type = obj.get("type").and_then(|v| v.as_str()).unwrap_or("");
-
-                match msg_type {
-                    "system" | "user" | "assistant" => {
-                        if git_branch.is_none() {
-                            git_branch = obj.get("gitBranch")
-                                .and_then(|v| v.as_str())
-                                .map(String::from);
-                        }
-                        if slug.is_none() {
-                            slug = obj.get("slug")
-                                .and_then(|v| v.as_str())
-                                .map(String::from);
-                        }
+    // Phase 1: Read first 20 lines for slug and branch
+    let mut reader = BufReader::new(file);
+    let mut line_buf = String::new();
+    for _ in 0..20 {
+        line_buf.clear();
+        match reader.read_line(&mut line_buf) {
+            Ok(0) | Err(_) => break,
+            _ => {}
+        }
+        if let Ok(obj) = serde_json::from_str::<serde_json::Value>(&line_buf) {
+            let msg_type = obj.get("type").and_then(|v| v.as_str()).unwrap_or("");
+            match msg_type {
+                "system" | "user" | "assistant" => {
+                    if git_branch.is_none() {
+                        git_branch = obj.get("gitBranch")
+                            .and_then(|v| v.as_str())
+                            .map(String::from);
                     }
-                    "summary" => {
-                        if title.is_none() {
+                    if slug.is_none() {
+                        slug = obj.get("slug")
+                            .and_then(|v| v.as_str())
+                            .map(String::from);
+                    }
+                }
+                "summary" => {
+                    title = obj.get("summary")
+                        .and_then(|v| v.as_str())
+                        .map(String::from);
+                }
+                _ => {}
+            }
+        }
+        if git_branch.is_some() && slug.is_some() && title.is_some() {
+            return (title, git_branch, slug);
+        }
+    }
+
+    // Phase 2: Read last 64KB for summary title (summaries are typically near EOF)
+    if title.is_none() {
+        let inner = reader.into_inner();
+        let file_len = inner.metadata().map(|m| m.len()).unwrap_or(0);
+        if file_len > 0 {
+            let mut file = inner;
+            let tail_size: u64 = 65536;
+            let seek_pos = if file_len > tail_size { file_len - tail_size } else { 0 };
+            if file.seek(SeekFrom::Start(seek_pos)).is_ok() {
+                let mut tail_buf = Vec::new();
+                let _ = file.read_to_end(&mut tail_buf);
+                let tail_str = String::from_utf8_lossy(&tail_buf);
+                // Skip partial first line if we seeked mid-file
+                let lines = if seek_pos > 0 {
+                    tail_str.splitn(2, '\n').nth(1).unwrap_or("")
+                } else {
+                    &tail_str
+                };
+                // Scan lines in reverse order for the last summary
+                for line in lines.lines().rev() {
+                    if let Ok(obj) = serde_json::from_str::<serde_json::Value>(line) {
+                        if obj.get("type").and_then(|v| v.as_str()) == Some("summary") {
                             title = obj.get("summary")
                                 .and_then(|v| v.as_str())
                                 .map(String::from);
+                            break;
                         }
                     }
-                    _ => {}
                 }
             }
         }
     }
 
-    (count, title, git_branch, slug)
+    (title, git_branch, slug)
 }
 
 /// Get paginated session messages
@@ -492,6 +524,7 @@ pub async fn get_session_messages(
         let mut messages = Vec::new();
         let mut total_lines: u32 = 0;
         let mut displayable_count: u32 = 0;
+        let page_filled = |msgs: &Vec<SessionMessage>| msgs.len() >= limit as usize;
 
         for line in reader.lines() {
             let line = match line {
@@ -500,30 +533,38 @@ pub async fn get_session_messages(
             };
             total_lines += 1;
 
-            // Parse the message
+            // Lightweight type check: avoid full JSON parse when possible
+            // Check if line contains a displayable type via string search first
+            let is_displayable = line.contains("\"type\":\"user\"")
+                || line.contains("\"type\":\"assistant\"")
+                || line.contains("\"type\":\"summary\"")
+                || line.contains("\"type\":\"system\"")
+                || line.contains("\"type\": \"user\"")
+                || line.contains("\"type\": \"assistant\"")
+                || line.contains("\"type\": \"summary\"")
+                || line.contains("\"type\": \"system\"");
+
+            if !is_displayable {
+                continue;
+            }
+
+            displayable_count += 1;
+
+            // Before offset: count only, skip parsing
+            if displayable_count <= offset {
+                continue;
+            }
+
+            // After page filled: count only for has_more detection
+            if page_filled(&messages) {
+                continue;
+            }
+
+            // Within page: full parse
             if let Ok(obj) = serde_json::from_str::<serde_json::Value>(&line) {
                 let msg_type = obj.get("type").and_then(|v| v.as_str()).unwrap_or("unknown");
-
-                // Only include displayable messages
-                match msg_type {
-                    "user" | "assistant" | "summary" | "system" => {
-                        displayable_count += 1;
-
-                        // Skip to offset
-                        if displayable_count <= offset {
-                            continue;
-                        }
-
-                        // Stop collecting after limit
-                        if messages.len() >= limit as usize {
-                            continue;
-                        }
-
-                        if let Some(msg) = parse_session_message(&obj, msg_type) {
-                            messages.push(msg);
-                        }
-                    }
-                    _ => {}
+                if let Some(msg) = parse_session_message(&obj, msg_type) {
+                    messages.push(msg);
                 }
             }
         }
