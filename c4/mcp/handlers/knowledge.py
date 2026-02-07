@@ -195,7 +195,7 @@ def handle_experiment_record(daemon: Any, arguments: dict[str, Any]) -> dict[str
     if not title:
         return {"error": "title is required"}
 
-    return handle_knowledge_record(daemon, {
+    result = handle_knowledge_record(daemon, {
         "doc_type": "experiment",
         "title": title,
         "task_id": arguments.get("task_id", ""),
@@ -204,6 +204,10 @@ def handle_experiment_record(daemon: Any, arguments: dict[str, Any]) -> dict[str
         "domain": arguments.get("domain", ""),
         "body": _build_experiment_body(arguments),
     })
+    # Backward compat: legacy callers expect "experiment_id"
+    if "doc_id" in result:
+        result["experiment_id"] = result["doc_id"]
+    return result
 
 
 @register_tool("c4_pattern_suggest")

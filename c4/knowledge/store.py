@@ -53,12 +53,17 @@ CREATE INDEX IF NOT EXISTS idx_pat_domain ON patterns(domain);
 
 
 class LocalKnowledgeStore(KnowledgeStore):
-    """Local SQLite-based knowledge store."""
+    """Local SQLite-based knowledge store.
+
+    Legacy: uses experiments.db for backward compatibility.
+    v2 methods (create_document, search_hybrid) delegate to DocumentStore.
+    """
 
     def __init__(self, base_path: str | Path = ".c4/knowledge") -> None:
         self.base_path = Path(base_path)
         self.base_path.mkdir(parents=True, exist_ok=True)
         self._db_path = self.base_path / "experiments.db"
+        self._doc_store = None
         self._init_db()
 
     def _init_db(self) -> None:
@@ -174,6 +179,30 @@ class LocalKnowledgeStore(KnowledgeStore):
         if not row:
             return None
         return _row_to_dict(row)
+
+    def _get_doc_store(self):
+        """Lazy-init DocumentStore for v2 operations."""
+        if self._doc_store is None:
+            from .documents import DocumentStore
+            self._doc_store = DocumentStore(base_path=self.base_path)
+        return self._doc_store
+
+    def create_document(
+        self, doc_type: str, metadata: dict[str, Any], body: str = ""
+    ) -> str:
+        """Create an Obsidian-style knowledge document (v2)."""
+        return self._get_doc_store().create(doc_type, metadata, body=body)
+
+    def search_hybrid(
+        self,
+        query: str,
+        top_k: int = 10,
+        filters: dict[str, Any] | None = None,
+    ) -> list[dict[str, Any]]:
+        """Hybrid search via v2 KnowledgeSearcher."""
+        from .search import KnowledgeSearcher
+        searcher = KnowledgeSearcher(base_path=self.base_path)
+        return searcher.search(query, top_k=top_k, filters=filters)
 
     async def list_experiments(
         self, task_id: str | None = None, domain: str | None = None, limit: int = 50
