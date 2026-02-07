@@ -1,11 +1,11 @@
 """Knowledge Embeddings - Semantic search for experiment knowledge.
 
-Bridges c4.memory embedding infrastructure with the Knowledge Store,
+Bridges embedding infrastructure with the Knowledge Store,
 enabling vector-based similarity search over experiment records.
 
 Uses:
-- c4.memory.embeddings: EmbeddingProvider (OpenAI, local, mock)
-- c4.memory.vector_store: VectorStore (sqlite-vec)
+- c4.knowledge.embeddings_provider: EmbeddingProvider (OpenAI, local, mock)
+- c4.knowledge.vector_store: VectorStore (sqlite-vec)
 """
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from c4.memory.embeddings import get_embeddings_provider
+from c4.knowledge.embeddings_provider import get_embeddings_provider
 
 logger = logging.getLogger(__name__)
 
@@ -74,7 +74,7 @@ class ExperimentEmbedder:
         """Lazy-init vector store (requires sqlite-vec)."""
         if self._vector_store is None:
             try:
-                from c4.memory.vector_store import VectorStore
+                from c4.knowledge.vector_store import VectorStore
 
                 self._vector_store = VectorStore(
                     db_path=str(self._db_path),
