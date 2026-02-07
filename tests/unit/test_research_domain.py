@@ -5,7 +5,6 @@ from pathlib import Path
 import pytest
 import yaml
 
-
 REGISTRY_V1 = Path(__file__).parent.parent.parent / "c4" / "system" / "registry" / "v1"
 
 

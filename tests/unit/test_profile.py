@@ -1,13 +1,10 @@
 """Tests for User Profile system: models, observer, learner, loader."""
 
-import json
-from pathlib import Path
 
 import pytest
 import yaml
 
 from c4.system.registry.profile import (
-    CommunicationPreferences,
     DomainExpertise,
     ReviewStyle,
     UserProfile,
@@ -20,7 +17,6 @@ from c4.system.registry.profile_observer import (
     ProfileObserver,
     _extract_keywords,
 )
-
 
 # =============================================================================
 # Profile Model Tests
