@@ -1,7 +1,7 @@
-"""Knowledge Embeddings - Semantic search for experiment knowledge.
+"""Knowledge Embeddings - Semantic search for knowledge documents.
 
 Bridges embedding infrastructure with the Knowledge Store,
-enabling vector-based similarity search over experiment records.
+enabling vector-based similarity search over all document types.
 
 Uses:
 - c4.knowledge.embeddings_provider: EmbeddingProvider (OpenAI, local, mock)
@@ -19,36 +19,46 @@ from c4.knowledge.embeddings_provider import get_embeddings_provider
 logger = logging.getLogger(__name__)
 
 
-def _experiment_to_text(exp: dict[str, Any]) -> str:
-    """Convert an experiment dict to searchable text for embedding.
+def _document_to_text(doc: dict[str, Any]) -> str:
+    """Convert a knowledge document dict to searchable text for embedding.
 
-    Combines title, hypothesis, lessons, tags, and domain into
-    a single text representation for embedding generation.
+    Handles all 4 document types: experiment, pattern, insight, hypothesis.
     """
     parts = []
-    if exp.get("title"):
-        parts.append(exp["title"])
-    if exp.get("hypothesis"):
-        parts.append(exp["hypothesis"])
-    if exp.get("domain"):
-        parts.append(f"domain: {exp['domain']}")
-    for lesson in exp.get("lessons_learned", []):
+    if doc.get("title"):
+        parts.append(doc["title"])
+    if doc.get("hypothesis"):
+        parts.append(doc["hypothesis"])
+    if doc.get("description"):
+        parts.append(doc["description"])
+    if doc.get("domain"):
+        parts.append(f"domain: {doc['domain']}")
+    for lesson in doc.get("lessons_learned", []):
         parts.append(lesson)
-    for tag in exp.get("tags", []):
+    for tag in doc.get("tags", []):
         parts.append(tag)
+    if doc.get("body"):
+        parts.append(doc["body"][:500])  # Limit body to avoid huge embeddings
+    if doc.get("insight_type"):
+        parts.append(f"type: {doc['insight_type']}")
+    if doc.get("status"):
+        parts.append(f"status: {doc['status']}")
     return " | ".join(parts) if parts else ""
 
 
-class ExperimentEmbedder:
-    """Manages embeddings for experiment knowledge records.
+# Backward compat alias
+_experiment_to_text = _document_to_text
 
-    Wraps the c4.memory embedding and vector store infrastructure
-    to provide semantic search over experiments.
+
+class KnowledgeEmbedder:
+    """Manages embeddings for all knowledge document types.
+
+    Wraps embedding and vector store infrastructure to provide
+    semantic search over experiments, patterns, insights, and hypotheses.
 
     Args:
         base_path: Directory for the vector store DB file.
         embedding_model: Provider name ('openai', 'local', 'mock').
-            Defaults to config.experiments.embedding_model.
     """
 
     def __init__(
@@ -89,12 +99,12 @@ class ExperimentEmbedder:
                 return None
         return self._vector_store
 
-    def index_experiment(self, exp_id: str, experiment: dict[str, Any]) -> bool:
-        """Generate and store embedding for an experiment.
+    def index_document(self, doc_id: str, document: dict[str, Any]) -> bool:
+        """Generate and store embedding for a knowledge document.
 
         Args:
-            exp_id: Experiment ID.
-            experiment: Experiment dict.
+            doc_id: Document ID (exp-xxx, pat-xxx, ins-xxx, hyp-xxx).
+            document: Document dict with title, body, tags, etc.
 
         Returns:
             True if indexed successfully, False if vector store unavailable.
@@ -103,30 +113,34 @@ class ExperimentEmbedder:
         if store is None:
             return False
 
-        text = _experiment_to_text(experiment)
+        text = _document_to_text(document)
         if not text:
-            logger.debug("Skipping empty experiment text for %s", exp_id)
+            logger.debug("Skipping empty document text for %s", doc_id)
             return False
 
         try:
-            # Remove existing if updating
-            if store.exists(exp_id):
-                store.delete(exp_id)
+            if store.exists(doc_id):
+                store.delete(doc_id)
 
             embedding = self._provider.embed(text)
-            store.add(exp_id, embedding)
-            logger.debug("Indexed experiment %s (%d dims)", exp_id, len(embedding))
+            store.add(doc_id, embedding)
+            logger.debug("Indexed document %s (%d dims)", doc_id, len(embedding))
             return True
         except Exception:
-            logger.exception("Failed to index experiment %s", exp_id)
+            logger.exception("Failed to index document %s", doc_id)
             return False
+
+    # Backward compat alias
+    def index_experiment(self, exp_id: str, experiment: dict[str, Any]) -> bool:
+        """Backward-compatible alias for index_document."""
+        return self.index_document(exp_id, experiment)
 
     def search_similar(
         self,
         query: str,
         top_k: int = 5,
     ) -> list[dict[str, Any]]:
-        """Search for experiments semantically similar to query.
+        """Search for documents semantically similar to query.
 
         Args:
             query: Natural language search query.
@@ -150,23 +164,16 @@ class ExperimentEmbedder:
             logger.exception("Semantic search failed for query: %s", query)
             return []
 
-    def remove(self, exp_id: str) -> bool:
-        """Remove experiment embedding from the index.
-
-        Args:
-            exp_id: Experiment ID to remove.
-
-        Returns:
-            True if removed, False if not found or store unavailable.
-        """
+    def remove(self, doc_id: str) -> bool:
+        """Remove document embedding from the index."""
         store = self._get_vector_store()
         if store is None:
             return False
-        return store.delete(exp_id)
+        return store.delete(doc_id)
 
     @property
     def count(self) -> int:
-        """Number of indexed experiments."""
+        """Number of indexed documents."""
         store = self._get_vector_store()
         if store is None:
             return 0
@@ -177,3 +184,7 @@ class ExperimentEmbedder:
         if self._vector_store is not None:
             self._vector_store.close()
             self._vector_store = None
+
+
+# Backward compat: ExperimentEmbedder = KnowledgeEmbedder
+ExperimentEmbedder = KnowledgeEmbedder
