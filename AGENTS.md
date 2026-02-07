@@ -95,3 +95,29 @@ T-001-0: 구현 태스크 (버전 0)
 R-001-0: 리뷰 태스크
 CP-001:  체크포인트
 ```
+
+---
+
+## Canvas App (Project Explorer)
+
+> `canvas-app/` — Tauri 2.x 데스크톱 앱. Claude Code 프로젝트 탐색기.
+
+### 아키텍처
+- **Rust 백엔드**: `src-tauri/src/{commands,models,scanner,lib}.rs`
+- **React 프론트엔드**: `src/components/`, `src/hooks/`, `src/styles/`
+- **CSS**: BEM 패턴 + `styles/tokens.css` 디자인 토큰
+
+### 3개 뷰
+| 뷰 | 데이터 소스 | Rust 커맨드 |
+|-----|-------------|-------------|
+| Sessions | `~/.claude/projects/{slug}/*.jsonl` | `list_sessions`, `get_session_messages` |
+| Dashboard | `.c4/tasks.db` (rusqlite) | `get_project_state`, `get_tasks`, `get_task_detail` |
+| Config | `~/.claude/`, `.claude/`, `.c4/` 파일 | `list_config_files`, `read_config_file` |
+
+### 빌드/실행
+```bash
+cd canvas-app && pnpm install
+cd src-tauri && cargo check && cargo test
+pnpm build            # 프론트엔드 빌드
+cargo tauri dev       # 개발 서버
+```
