@@ -1,4 +1,4 @@
-//! C4 Canvas - Auto-Map Project Visualizer
+//! C1 (See) — Claude Code Project Explorer
 //!
 //! This library provides the backend functionality for scanning C4 projects
 //! and generating canvas visualizations.
@@ -16,7 +16,7 @@ pub fn run() {
     std::panic::set_hook(Box::new(|info| {
         let msg = format!("[PANIC] {}\n{:?}", info, std::backtrace::Backtrace::capture());
         eprintln!("{}", msg);
-        let _ = std::fs::write("/tmp/c4-canvas-crash.log", &msg);
+        let _ = std::fs::write("/tmp/c1-crash.log", &msg);
     }));
 
     tauri::Builder::default()

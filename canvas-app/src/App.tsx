@@ -57,7 +57,7 @@ export default function App() {
     if (!projectPath) {
       return (
         <div className="empty-state">
-          <h2 className="empty-state__title">Claude Code Explorer</h2>
+          <h2 className="empty-state__title">C1 — See</h2>
           <p className="empty-state__description">
             Browse your Claude Code sessions, C4 workflow status, and project configuration.
           </p>
