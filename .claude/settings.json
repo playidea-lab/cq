@@ -1,6 +1,8 @@
 {
   "permissions": {
     "allow": [
+      "Skill(c4-*)",
+      "Skill(cycle-*)",
       "mcp__c4__*",
       "mcp__piq__*",
       "mcp__serena__*",

@@ -626,6 +626,9 @@ def _create_project_settings(project_path: Path) -> bool:
     settings = {
         "permissions": {
             "allow": [
+                # C4 Skills (slash commands)
+                "Skill(c4-*)",
+                "Skill(cycle-*)",
                 # MCP tools (wildcard for all tools from each server)
                 "mcp__c4__*",
                 "mcp__piq__*",
