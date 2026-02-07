@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useSessions } from '../../hooks/useSessions';
 import { SessionList } from './SessionList';
 import { MessageViewer } from './MessageViewer';
@@ -21,24 +21,47 @@ export function SessionsView({ projectPath }: SessionsViewProps) {
     loadMore,
   } = useSessions();
 
+  const [searchQuery, setSearchQuery] = useState('');
+
   useEffect(() => {
     listSessions(projectPath);
   }, [projectPath, listSessions]);
+
+  const filteredSessions = useMemo(() => {
+    if (!searchQuery.trim()) return sessions;
+    const q = searchQuery.toLowerCase();
+    return sessions.filter(s =>
+      (s.title && s.title.toLowerCase().includes(q)) ||
+      s.id.toLowerCase().includes(q) ||
+      (s.git_branch && s.git_branch.toLowerCase().includes(q))
+    );
+  }, [sessions, searchQuery]);
 
   return (
     <div className="sessions">
       <div className="sessions__list-panel">
         <div className="sessions__list-header">
           <h3 className="sessions__list-title">Sessions</h3>
-          <span className="sessions__count">{sessions.length}</span>
+          <span className="sessions__count">{filteredSessions.length}</span>
         </div>
+        {sessions.length > 0 && (
+          <div className="sessions__search">
+            <input
+              className="sessions__search-input"
+              type="text"
+              placeholder="Search sessions..."
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+            />
+          </div>
+        )}
         {loading ? (
           <div className="sessions__loading">Loading sessions...</div>
         ) : error ? (
           <div className="sessions__error">{error}</div>
         ) : (
           <SessionList
-            sessions={sessions}
+            sessions={filteredSessions}
             selected={currentSession}
             onSelect={loadMessages}
           />

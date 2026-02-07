@@ -17,7 +17,7 @@ use crate::scanner::{get_project_id, scan_project};
 const CANVAS_FILE: &str = ".c4/canvas.json";
 
 /// Scan a project directory and return canvas data
-#[tauri::command(rename_all = "snake_case")]
+#[tauri::command(rename_all = "camelCase")]
 pub async fn scan_project_cmd(path: String) -> ScanResult {
     let project_path = Path::new(&path).to_path_buf();
 
@@ -102,7 +102,7 @@ fn json_string_array(val: Option<&serde_json::Value>) -> Vec<String> {
 }
 
 /// Get project state including status, workers, and progress
-#[tauri::command(rename_all = "snake_case")]
+#[tauri::command(rename_all = "camelCase")]
 pub async fn get_project_state(path: String) -> Result<ProjectState, String> {
     let project_path = path.clone();
     tokio::task::spawn_blocking(move || {
@@ -216,7 +216,7 @@ pub async fn get_project_state(path: String) -> Result<ProjectState, String> {
 }
 
 /// Get all tasks as a list
-#[tauri::command(rename_all = "snake_case")]
+#[tauri::command(rename_all = "camelCase")]
 pub async fn get_tasks(path: String) -> Result<Vec<TaskItem>, String> {
     let project_path = path.clone();
     tokio::task::spawn_blocking(move || {
@@ -281,7 +281,7 @@ pub async fn get_tasks(path: String) -> Result<Vec<TaskItem>, String> {
 }
 
 /// Get detailed info for a single task
-#[tauri::command(rename_all = "snake_case")]
+#[tauri::command(rename_all = "camelCase")]
 pub async fn get_task_detail(path: String, task_id: String) -> Result<Option<TaskDetail>, String> {
     let project_path = path.clone();
     tokio::task::spawn_blocking(move || {
@@ -349,7 +349,7 @@ fn path_to_slug(path: &str) -> String {
 }
 
 /// List all sessions for a project
-#[tauri::command(rename_all = "snake_case")]
+#[tauri::command(rename_all = "camelCase")]
 pub async fn list_sessions(path: String) -> Result<Vec<SessionMeta>, String> {
     let project_path = path.clone();
     tokio::task::spawn_blocking(move || {
@@ -503,7 +503,7 @@ fn extract_session_meta(path: &Path) -> (Option<String>, Option<String>, Option<
 }
 
 /// Get paginated session messages
-#[tauri::command(rename_all = "snake_case")]
+#[tauri::command(rename_all = "camelCase")]
 pub async fn get_session_messages(
     session_path: String,
     offset: u32,
@@ -690,7 +690,7 @@ fn parse_content_blocks(blocks: &[serde_json::Value]) -> Vec<ContentBlock> {
 }
 
 /// Get file changes from a session
-#[tauri::command(rename_all = "snake_case")]
+#[tauri::command(rename_all = "camelCase")]
 pub async fn get_session_file_changes(session_path: String) -> Result<Vec<FileChange>, String> {
     tokio::task::spawn_blocking(move || {
         use std::io::{BufRead, BufReader};
@@ -755,7 +755,7 @@ pub async fn get_session_file_changes(session_path: String) -> Result<Vec<FileCh
 const MAX_CONFIG_FILE_SIZE: u64 = 1_048_576;
 
 /// List config files for the project explorer
-#[tauri::command(rename_all = "snake_case")]
+#[tauri::command(rename_all = "camelCase")]
 pub async fn list_config_files(path: String) -> Result<Vec<ConfigFileEntry>, String> {
     let project_path = path.clone();
     tokio::task::spawn_blocking(move || {
@@ -865,7 +865,7 @@ fn validate_allowed_path(file_path: &str, allowed_prefixes: &[std::path::PathBuf
 }
 
 /// Read a config file content
-#[tauri::command(rename_all = "snake_case")]
+#[tauri::command(rename_all = "camelCase")]
 pub async fn read_config_file(project_path: String, file_path: String) -> Result<ConfigFileContent, String> {
     tokio::task::spawn_blocking(move || {
         let home = dirs::home_dir().ok_or("Could not find home directory")?;
