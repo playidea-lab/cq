@@ -19,6 +19,14 @@ pub fn run() {
             commands::scan_project_cmd,
             commands::save_canvas,
             commands::load_canvas,
+            commands::get_project_state,
+            commands::get_tasks,
+            commands::get_task_detail,
+            commands::list_sessions,
+            commands::get_session_messages,
+            commands::get_session_file_changes,
+            commands::list_config_files,
+            commands::read_config_file,
         ])
         .setup(|app| {
             // Log startup

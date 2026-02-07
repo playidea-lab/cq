@@ -98,4 +98,62 @@ export interface TaskDetail extends TaskItem {
 
 // --- View types ---
 
-export type ViewType = 'dashboard' | 'registry' | 'timeline';
+export type ViewType = 'sessions' | 'dashboard' | 'config';
+
+// --- Session types ---
+
+export interface SessionMeta {
+  id: string;
+  slug: string;
+  title: string | null;
+  path: string;
+  message_count: number;
+  file_size: number;
+  timestamp: number | null;
+  git_branch: string | null;
+}
+
+export interface SessionPage {
+  messages: SessionMessage[];
+  total_lines: number;
+  has_more: boolean;
+}
+
+export interface SessionMessage {
+  msg_type: string;
+  timestamp: string | null;
+  uuid: string | null;
+  content: ContentBlock[];
+}
+
+export interface ContentBlock {
+  block_type: string;
+  text: string | null;
+  tool_name: string | null;
+  tool_input: unknown | null;
+}
+
+export interface FileChange {
+  path: string;
+  backup_file: string | null;
+  version: number | null;
+  timestamp: string | null;
+}
+
+// --- Config types ---
+
+export type ConfigCategory = 'global' | 'project' | 'persona' | 'c4' | 'memory';
+
+export interface ConfigFileEntry {
+  path: string;
+  name: string;
+  category: ConfigCategory;
+  size: number;
+  modified: number | null;
+}
+
+export interface ConfigFileContent {
+  path: string;
+  content: string;
+  truncated: boolean;
+}

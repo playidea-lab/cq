@@ -1,4 +1,4 @@
-import { LayoutDashboard, BookOpen, Clock } from 'lucide-react';
+import { LayoutDashboard, MessageSquare, Settings } from 'lucide-react';
 import type { ViewType } from '../types';
 import '../styles/sidebar.css';
 
@@ -8,9 +8,9 @@ interface SidebarProps {
 }
 
 const navItems: { view: ViewType; label: string; icon: typeof LayoutDashboard }[] = [
+  { view: 'sessions', label: 'Sessions', icon: MessageSquare },
   { view: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { view: 'registry', label: 'Registry', icon: BookOpen },
-  { view: 'timeline', label: 'Timeline', icon: Clock },
+  { view: 'config', label: 'Config', icon: Settings },
 ];
 
 export function Sidebar({ currentView, onViewChange }: SidebarProps) {

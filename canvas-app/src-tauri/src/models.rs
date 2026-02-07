@@ -218,6 +218,135 @@ impl Default for CanvasData {
     }
 }
 
+// --- Dashboard API types ---
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProjectState {
+    pub status: String,
+    pub project_id: String,
+    pub workers: Vec<WorkerInfo>,
+    pub progress: TaskProgress,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkerInfo {
+    pub id: String,
+    pub status: String,
+    pub current_task: Option<String>,
+    pub last_seen: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TaskProgress {
+    pub total: u32,
+    pub done: u32,
+    pub in_progress: u32,
+    pub pending: u32,
+    pub blocked: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TaskItem {
+    pub id: String,
+    pub title: String,
+    pub status: String,
+    pub task_type: String,
+    pub dependencies: Vec<String>,
+    pub assigned_to: Option<String>,
+    pub domain: Option<String>,
+    pub priority: i32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TaskDetail {
+    pub id: String,
+    pub title: String,
+    pub status: String,
+    pub task_type: String,
+    pub dependencies: Vec<String>,
+    pub assigned_to: Option<String>,
+    pub domain: Option<String>,
+    pub priority: i32,
+    pub dod: String,
+    pub scope: Option<String>,
+    pub branch: Option<String>,
+    pub commit_sha: Option<String>,
+    pub version: i32,
+    pub parent_id: Option<String>,
+    pub review_decision: Option<String>,
+    pub validations: Vec<String>,
+}
+
+// --- Session API types ---
+
+/// Metadata for a single Claude Code session
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SessionMeta {
+    pub id: String,
+    pub slug: String,
+    pub title: Option<String>,
+    pub path: String,
+    pub message_count: u32,
+    pub file_size: u64,
+    pub timestamp: Option<i64>,
+    pub git_branch: Option<String>,
+}
+
+/// Paginated session messages
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SessionPage {
+    pub messages: Vec<SessionMessage>,
+    pub total_lines: u32,
+    pub has_more: bool,
+}
+
+/// A single message in a session
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SessionMessage {
+    pub msg_type: String,
+    pub timestamp: Option<String>,
+    pub uuid: Option<String>,
+    pub content: Vec<ContentBlock>,
+}
+
+/// A content block within a message
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ContentBlock {
+    pub block_type: String,
+    pub text: Option<String>,
+    pub tool_name: Option<String>,
+    pub tool_input: Option<serde_json::Value>,
+}
+
+/// A file change recorded in a session
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FileChange {
+    pub path: String,
+    pub backup_file: Option<String>,
+    pub version: Option<i32>,
+    pub timestamp: Option<String>,
+}
+
+// --- Config API types ---
+
+/// A config file entry for the explorer
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConfigFileEntry {
+    pub path: String,
+    pub name: String,
+    pub category: String,
+    pub size: u64,
+    pub modified: Option<i64>,
+}
+
+/// Content of a config file
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConfigFileContent {
+    pub path: String,
+    pub content: String,
+    pub truncated: bool,
+}
+
 /// Result of scanning a project
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScanResult {

@@ -1,13 +1,13 @@
 import { useState, useCallback } from 'react';
 import { open } from '@tauri-apps/plugin-dialog';
 import { Sidebar } from './components/Sidebar';
+import { SessionsView } from './components/sessions/SessionsView';
 import { DashboardView } from './components/dashboard/DashboardView';
-import { RegistryView } from './components/registry/RegistryView';
-import { TimelineView } from './components/timeline/TimelineView';
+import { ConfigView } from './components/config/ConfigView';
 import type { ViewType } from './types';
 
 export default function App() {
-  const [currentView, setCurrentView] = useState<ViewType>('dashboard');
+  const [currentView, setCurrentView] = useState<ViewType>('sessions');
   const [projectPath, setProjectPath] = useState<string | null>(null);
 
   const isTauri = Boolean(
@@ -39,9 +39,9 @@ export default function App() {
     if (!projectPath) {
       return (
         <div className="empty-state">
-          <h2 className="empty-state__title">C4 Dashboard</h2>
+          <h2 className="empty-state__title">Claude Code Explorer</h2>
           <p className="empty-state__description">
-            Select a project folder to view your C4 workflow status, tasks, and dependencies.
+            Browse your Claude Code sessions, C4 workflow status, and project configuration.
           </p>
           <button className="btn btn--primary" onClick={handleOpenFolder}>
             Open Project Folder
@@ -51,12 +51,12 @@ export default function App() {
     }
 
     switch (currentView) {
+      case 'sessions':
+        return <SessionsView projectPath={projectPath} />;
       case 'dashboard':
         return <DashboardView projectPath={projectPath} />;
-      case 'registry':
-        return <RegistryView projectPath={projectPath} />;
-      case 'timeline':
-        return <TimelineView projectPath={projectPath} />;
+      case 'config':
+        return <ConfigView projectPath={projectPath} />;
     }
   };
 
