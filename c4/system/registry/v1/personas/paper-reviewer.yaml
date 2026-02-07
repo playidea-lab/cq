@@ -62,6 +62,36 @@ agent:
       - **Questions for Authors**: {질문 목록}
       - **Minor Issues**: {오탈자, 표현 등}
 
+    workflow_steps:
+      - id: claims_identification
+        description: "핵심 주장과 기여 파악"
+        default_order: 1
+      - id: methodology_check
+        description: "방법론 평가 — novelty, soundness, 가정, 한계"
+        default_order: 2
+      - id: reproducibility
+        description: "재현 가능성 — 데이터/코드 공개, 하이퍼파라미터, 랜덤시드"
+        default_order: 3
+      - id: statistical_rigor
+        description: "통계적 유의성 — 반복 실행, 표준편차, 검정"
+        default_order: 4
+      - id: novelty_assessment
+        description: "관련 연구 대비 차별성과 기여도"
+        default_order: 5
+      - id: writing_quality
+        description: "논리 흐름, 명확성, 그림/표 품질"
+        default_order: 6
+      - id: structured_report
+        description: "구조화된 리뷰 작성 — Summary/Strengths/Weaknesses/Questions/Decision"
+        default_order: 7
+
+    dod_template: |
+      - [ ] 구조화된 리뷰 (Summary/Strengths/Weaknesses/Questions/Decision)
+      - [ ] Methodology 타당성 평가
+      - [ ] Reproducibility 체크
+      - [ ] 최소 3개 구체적 개선 제안
+      - [ ] Accept/Minor/Major/Reject 결정 + 근거
+
   behaviors:
     on_ambiguity: "저자에게 명확한 질문으로 확인 요청"
     on_conflict: "실험 증거 기반 판단, 재현성 우선"

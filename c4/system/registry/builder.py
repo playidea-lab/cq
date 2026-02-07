@@ -166,4 +166,63 @@ class RegistryBuilder:
             lines.append(f"- **Special Instructions**: {profile.persona_overrides[agent_id]}")
             has_content = True
 
+        # Adapted Workflow (when workflow weights exist for this agent)
+        if hasattr(profile, 'workflow_weights') and agent_id in profile.workflow_weights:
+            agent_weights = profile.workflow_weights[agent_id]
+            if agent_weights:
+                steps = self._get_workflow_steps(agent_id)
+                if steps:
+                    from c4.system.registry.profile import WorkflowWeight
+
+                    def _step_order(step: dict) -> int:
+                        w = agent_weights.get(step["id"])
+                        if isinstance(w, WorkflowWeight) and w.order > 0:
+                            return w.order
+                        elif isinstance(w, dict) and w.get("order", 0) > 0:
+                            return w["order"]
+                        return step.get("default_order", 99)
+
+                    sorted_steps = sorted(steps, key=_step_order)
+                    lines.append("")
+                    lines.append("### Adapted Workflow")
+                    for i, step in enumerate(sorted_steps, 1):
+                        w = agent_weights.get(step["id"])
+                        if isinstance(w, dict):
+                            w = WorkflowWeight(**w)
+                        elif not isinstance(w, WorkflowWeight):
+                            w = WorkflowWeight()
+                        emphasis = (
+                            "HIGH" if w.weight > 0.7
+                            else "MEDIUM" if w.weight > 0.4
+                            else "LOW"
+                        )
+                        desc = step["description"]
+                        if w.custom_substeps:
+                            desc += f" (+ {', '.join(w.custom_substeps)})"
+                        lines.append(f"- Step {i} [{emphasis}]: {desc}")
+                    has_content = True
+
         return "\n".join(lines) if has_content else None
+
+    def _get_workflow_steps(self, agent_id: str) -> list[dict] | None:
+        """Get workflow_steps for a specific agent."""
+        try:
+            agents = self.loader.load_agents()
+            for agent_def in agents:
+                if agent_def.agent.id == agent_id:
+                    steps = (
+                        agent_def.agent.instructions
+                        and agent_def.agent.instructions.workflow_steps
+                    )
+                    if steps:
+                        return [
+                            {
+                                "id": s.id,
+                                "description": s.description,
+                                "default_order": s.default_order,
+                            }
+                            for s in steps
+                        ]
+        except Exception:
+            pass
+        return None

@@ -13,6 +13,7 @@ from c4.system.registry.profile import (
     DomainExpertise,
     ReviewStyle,
     UserProfile,
+    WorkflowWeight,
     WritingStyle,
 )
 from c4.system.registry.profile_learner import ProfileDelta, ProfileLearner
@@ -72,6 +73,29 @@ class TestUserProfile:
         restored = UserProfile(**data)
         assert restored.name == "test"
         assert restored.review.paper_criteria == ["reproducibility"]
+
+    def test_workflow_weights_default_empty(self):
+        profile = UserProfile()
+        assert profile.workflow_weights == {}
+
+    def test_workflow_weights_serialization_roundtrip(self):
+        profile = UserProfile(
+            name="test",
+            workflow_weights={
+                "paper-reviewer": {
+                    "methodology_check": WorkflowWeight(
+                        weight=0.9, order=1, mention_count=2,
+                        custom_substeps=["ablation"],
+                    ),
+                },
+            },
+        )
+        data = profile.model_dump()
+        restored = UserProfile(**data)
+        mc = restored.workflow_weights["paper-reviewer"]["methodology_check"]
+        # Pydantic coerces dict -> WorkflowWeight
+        assert mc.weight == 0.9
+        assert mc.custom_substeps == ["ablation"]
 
 
 # =============================================================================

@@ -56,6 +56,35 @@ agent:
       - **Weaknesses**: {약점}
       - **Relevance**: {현재 작업과의 관련성}
 
+    workflow_steps:
+      - id: metadata_scan
+        description: "제목, 저자, 학회, 연도, 인용수 파악"
+        default_order: 1
+      - id: abstract_analysis
+        description: "핵심 문제, 제안 방법, 주요 결과 파악"
+        default_order: 2
+      - id: figure_table_scan
+        description: "그림/표 전체 스캔으로 빠른 이해"
+        default_order: 3
+      - id: method_deep_read
+        description: "방법론 섹션 정독"
+        default_order: 4
+      - id: results_analysis
+        description: "실험 결과, 비교, 어블레이션 분석"
+        default_order: 5
+      - id: related_work_map
+        description: "기존 문헌과의 연결 맵핑"
+        default_order: 6
+      - id: structured_notes
+        description: "구조화된 읽기 노트 작성"
+        default_order: 7
+
+    dod_template: |
+      - [ ] 핵심 기여 1-3줄 요약
+      - [ ] 방법론 이해/다이어그램
+      - [ ] 주요 결과 테이블 정리
+      - [ ] 관련 연구 연결 맵
+
   behaviors:
     on_ambiguity: "논문 원문에서 근거 확인"
     on_conflict: "실험 결과 기반 판단"

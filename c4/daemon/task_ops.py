@@ -512,10 +512,89 @@ class TaskOps:
                     f"\nSpecial instructions: {profile.persona_overrides[agent_id]}"
                 )
 
+            # Dynamic workflow instructions
+            workflow = self._build_workflow_instructions(agent_id, profile)
+            if workflow:
+                lines.append("\n## Workflow (user-adapted)")
+                lines.append(workflow)
+
             return "\n".join(lines) if len(lines) > 1 else None
         except Exception as e:
             logger.debug(f"Failed to build user context: {e}")
             return None
+
+    def _build_workflow_instructions(
+        self, agent_id: str | None, profile: Any
+    ) -> str | None:
+        """Build user-adapted workflow instructions from persona + profile weights."""
+        if not agent_id:
+            return None
+
+        base_steps = self._get_base_workflow(agent_id)
+        if not base_steps:
+            return None
+
+        from ..system.registry.profile import WorkflowWeight
+
+        weights = profile.workflow_weights.get(agent_id, {})
+
+        def sort_key(step: dict) -> int:
+            w = weights.get(step["id"])
+            if isinstance(w, WorkflowWeight) and w.order > 0:
+                return w.order
+            elif isinstance(w, dict) and w.get("order", 0) > 0:
+                return w["order"]
+            return step.get("default_order", 99)
+
+        sorted_steps = sorted(base_steps, key=sort_key)
+
+        lines = []
+        for i, step in enumerate(sorted_steps, 1):
+            w = weights.get(step["id"])
+            if isinstance(w, dict):
+                w = WorkflowWeight(**w)
+            elif not isinstance(w, WorkflowWeight):
+                w = WorkflowWeight()
+
+            if w.weight > 0.7:
+                emphasis = "HIGH"
+            elif w.weight > 0.4:
+                emphasis = "MEDIUM"
+            else:
+                emphasis = "LOW"
+
+            desc = step["description"]
+            if w.custom_substeps:
+                desc += f" (also check: {', '.join(w.custom_substeps)})"
+            lines.append(f"Step {i} [{emphasis}]: {desc}")
+
+        return "\n".join(lines)
+
+    def _get_base_workflow(self, agent_id: str) -> list[dict] | None:
+        """Load workflow_steps for an agent from persona YAML."""
+        try:
+            from c4.supervisor.agent_graph.loader import AgentGraphLoader
+
+            loader = AgentGraphLoader()
+            agents = loader.load_agents()
+            for agent_def in agents:
+                if agent_def.agent.id == agent_id:
+                    steps = (
+                        agent_def.agent.instructions
+                        and agent_def.agent.instructions.workflow_steps
+                    )
+                    if steps:
+                        return [
+                            {
+                                "id": s.id,
+                                "description": s.description,
+                                "default_order": s.default_order,
+                            }
+                            for s in steps
+                        ]
+        except Exception:
+            pass
+        return None
 
     def _ensure_worker_in_state(
         self, state: Any, worker_id: str, task_id: str, task: Task, task_branch: str

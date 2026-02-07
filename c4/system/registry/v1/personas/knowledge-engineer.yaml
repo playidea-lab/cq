@@ -54,6 +54,32 @@ agent:
       - **Research Gaps**: {연구 갭}
       - **Trends**: {트렌드}
 
+    workflow_steps:
+      - id: source_assessment
+        description: "소스 품질과 관련성 평가"
+        default_order: 1
+      - id: concept_extraction
+        description: "핵심 개념, 정의, 관계 추출"
+        default_order: 2
+      - id: taxonomy_mapping
+        description: "기존 분류체계에 매핑 또는 새 분류 생성"
+        default_order: 3
+      - id: cross_reference
+        description: "기존 지식 베이스와 교차 참조"
+        default_order: 4
+      - id: gap_identification
+        description: "지식 갭과 모순 식별"
+        default_order: 5
+      - id: structured_output
+        description: "구조화된 지식 출력 (entities, relations, facts)"
+        default_order: 6
+
+    dod_template: |
+      - [ ] Key concepts 추출 + 정의
+      - [ ] 기존 지식과 교차 참조
+      - [ ] Knowledge gaps 식별
+      - [ ] 구조화된 출력 (JSON/YAML)
+
   behaviors:
     on_ambiguity: "원본 논문에서 직접 확인"
     on_conflict: "양쪽 결과 모두 기록하고 조건 차이 분석"

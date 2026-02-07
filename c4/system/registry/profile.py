@@ -52,6 +52,25 @@ class DomainExpertise(BaseModel):
     research_fields: list[str] = Field(default_factory=list)
 
 
+class WorkflowWeight(BaseModel):
+    """Workflow step weight learned from user behavior.
+
+    LLM analyzes checkpoint feedback to determine how much
+    the user emphasizes each workflow step.
+    """
+
+    weight: float = Field(
+        default=0.5, ge=0.0, le=1.0, description="Emphasis level"
+    )
+    order: int = Field(default=0, description="Execution order. 0=default")
+    mention_count: int = Field(
+        default=0, description="Observation count (confidence)"
+    )
+    custom_substeps: list[str] = Field(
+        default_factory=list, description="Learned additional substeps"
+    )
+
+
 class UserProfile(BaseModel):
     """Complete user profile for C4 personalization.
 
@@ -68,5 +87,8 @@ class UserProfile(BaseModel):
         default_factory=CommunicationPreferences
     )
     expertise: DomainExpertise = Field(default_factory=DomainExpertise)
+    workflow_weights: dict[str, dict[str, WorkflowWeight]] = Field(
+        default_factory=dict
+    )
     persona_overrides: dict[str, str] = Field(default_factory=dict)
     learned_from: dict[str, int] = Field(default_factory=dict)

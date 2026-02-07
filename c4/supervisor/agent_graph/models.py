@@ -183,11 +183,21 @@ class AgentRelationships(BaseModel):
     hands_off_to: list[AgentHandsOffTo] | None = None
 
 
+class WorkflowStepDef(BaseModel):
+    """A structured workflow step definition in persona YAML."""
+
+    id: str
+    description: str
+    default_order: int = 0
+
+
 class AgentInstructions(BaseModel):
     """Behavioral instructions for the agent."""
 
     on_receive: str | None = None
     on_handoff: str | None = None
+    workflow_steps: list[WorkflowStepDef] | None = None
+    dod_template: str | None = None
 
 
 class AgentBehaviors(BaseModel):

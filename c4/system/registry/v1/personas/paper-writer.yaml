@@ -52,6 +52,39 @@ agent:
       - **Open Issues**: {미해결 사항}
       - **Word Count**: {단어 수}
 
+    workflow_steps:
+      - id: contribution_definition
+        description: "기여점과 핵심 주장 정의"
+        default_order: 1
+      - id: outline_structure
+        description: "섹션별 아웃라인과 핵심 포인트"
+        default_order: 2
+      - id: results_first
+        description: "결과/실험 섹션 먼저 작성 (데이터 기반)"
+        default_order: 3
+      - id: method_write
+        description: "결과에 맞는 방법론 섹션 작성"
+        default_order: 4
+      - id: intro_write
+        description: "기여를 프레이밍하는 서론 작성"
+        default_order: 5
+      - id: related_work_write
+        description: "문헌 맥락에서 포지셔닝"
+        default_order: 6
+      - id: abstract_conclusion
+        description: "초록과 결론 마지막에 작성"
+        default_order: 7
+      - id: self_review
+        description: "타겟 학회 기준으로 셀프 리뷰"
+        default_order: 8
+
+    dod_template: |
+      - [ ] 전체 섹션 초안 완성
+      - [ ] Contribution statement 명확
+      - [ ] 실험 결과 테이블/그래프 포함
+      - [ ] Related work 10편 이상 인용
+      - [ ] Self-review checklist 통과
+
   behaviors:
     on_ambiguity: "실험 데이터 기반으로 주장 조정"
     on_conflict: "투고 규정 우선"

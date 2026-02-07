@@ -171,6 +171,28 @@ properties:
           on_handoff:
             type: string
             description: "Template for handoff summary"
+          workflow_steps:
+            type: array
+            description: "Structured workflow steps for LLM-based learning"
+            items:
+              type: object
+              required:
+                - id
+                - description
+              properties:
+                id:
+                  type: string
+                  description: "Step identifier"
+                description:
+                  type: string
+                  description: "Step description"
+                default_order:
+                  type: integer
+                  minimum: 0
+                  description: "Default execution order"
+          dod_template:
+            type: string
+            description: "DoD auto-generation template"
 
       behaviors:
         type: object
