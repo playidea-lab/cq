@@ -431,6 +431,12 @@ class TaskOps:
         # Get agent routing info
         agent_routing = daemon._get_agent_routing(task)
 
+        # Build user context from profile
+        user_context = self._build_user_context(
+            agent_id=agent_routing.get("recommended_agent"),
+            task=task,
+        )
+
         return TaskAssignment(
             task_id=task_id,
             title=task.title,
@@ -440,8 +446,69 @@ class TaskOps:
             branch=task_branch,
             worktree_path=worktree_path,
             model=task.model,
+            user_context=user_context,
             **agent_routing,
         )
+
+    def _build_user_context(
+        self, agent_id: str | None, task: Any
+    ) -> str | None:
+        """Build user context string from profile for task assignment.
+
+        Args:
+            agent_id: Recommended agent ID (e.g. "paper-reviewer")
+            task: Task being assigned
+
+        Returns:
+            Context string or None if no profile available.
+        """
+        try:
+            from ..system.registry.profile_loader import ProfileLoader
+
+            loader = ProfileLoader(self._daemon.c4_dir)
+            profile = loader.load()
+            if not profile:
+                return None
+
+            lines = [f"## User: {profile.name}"]
+
+            # Reviewer agents get review style context
+            if agent_id and "reviewer" in agent_id:
+                lines.append(f"Review focus: {', '.join(profile.review.focus)}")
+                lines.append(f"Strictness: {profile.review.strictness}")
+                if profile.review.paper_criteria:
+                    lines.append(
+                        f"Paper criteria: {', '.join(profile.review.paper_criteria)}"
+                    )
+
+            # Writer agents get writing style context
+            if agent_id and "writer" in agent_id:
+                lines.append(f"Language: {profile.writing.language}")
+                lines.append(f"Formality: {profile.writing.formality}")
+
+            # All agents get domain expertise
+            if profile.expertise.domains:
+                relevant = [
+                    f"{d}({lvl})"
+                    for d, lvl in profile.expertise.domains.items()
+                ]
+                lines.append(f"Expertise: {', '.join(relevant)}")
+
+            if profile.expertise.research_fields:
+                lines.append(
+                    f"Research fields: {', '.join(profile.expertise.research_fields)}"
+                )
+
+            # Persona-specific overrides
+            if agent_id and agent_id in profile.persona_overrides:
+                lines.append(
+                    f"\nSpecial instructions: {profile.persona_overrides[agent_id]}"
+                )
+
+            return "\n".join(lines) if len(lines) > 1 else None
+        except Exception as e:
+            logger.debug(f"Failed to build user context: {e}")
+            return None
 
     def _ensure_worker_in_state(
         self, state: Any, worker_id: str, task_id: str, task: Task, task_branch: str

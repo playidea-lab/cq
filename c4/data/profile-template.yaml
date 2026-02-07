@@ -1,0 +1,32 @@
+# C4 User Profile
+# Auto-updated by C4 from checkpoint observations.
+# Manual edits are preserved and merged.
+
+name: __USER_NAME__
+version: 0
+
+review:
+  thoroughness: balanced
+  tone: diplomatic
+  focus:
+    - correctness
+    - clarity
+  strictness: 0.5
+  paper_criteria: []
+
+writing:
+  language: en
+  formality: professional
+  verbosity: moderate
+  citation_style: null
+
+communication:
+  explanation_depth: standard
+  dod_detail_level: standard
+
+expertise:
+  domains: {}
+  research_fields: []
+
+persona_overrides: {}
+learned_from: {}

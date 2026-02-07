@@ -221,6 +221,62 @@ rules:
         set_primary: cloud-architect
       reason: "Infrastructure setup requires cloud architecture expertise"
 
+    # --------------------------------------------------------------------------
+    # Paper Review Tasks → paper-reviewer
+    # --------------------------------------------------------------------------
+    - name: paper-review-tasks
+      priority: 90
+      condition:
+        task_type:
+          - paper-review
+          - peer-review
+          - rebuttal
+      action:
+        set_primary: paper-reviewer
+      reason: "Paper reviews require academic peer review expertise"
+
+    # --------------------------------------------------------------------------
+    # Literature Review Tasks → paper-reader
+    # --------------------------------------------------------------------------
+    - name: literature-review-tasks
+      priority: 85
+      condition:
+        task_type:
+          - literature-review
+          - paper-reading
+          - survey
+      action:
+        set_primary: paper-reader
+      reason: "Literature reviews require systematic paper analysis"
+
+    # --------------------------------------------------------------------------
+    # Paper Writing Tasks → paper-writer
+    # --------------------------------------------------------------------------
+    - name: paper-writing-tasks
+      priority: 85
+      condition:
+        task_type:
+          - paper-writing
+          - drafting
+          - manuscript
+      action:
+        set_primary: paper-writer
+      reason: "Paper writing requires academic writing expertise"
+
+    # --------------------------------------------------------------------------
+    # Knowledge Extraction Tasks → knowledge-engineer
+    # --------------------------------------------------------------------------
+    - name: knowledge-extraction-tasks
+      priority: 85
+      condition:
+        task_type:
+          - knowledge-extraction
+          - meta-analysis
+          - synthesis
+      action:
+        set_primary: knowledge-engineer
+      reason: "Knowledge extraction requires systematic synthesis skills"
+
   # ==========================================================================
   # Chain Extension Rules
   # ==========================================================================
@@ -266,6 +322,16 @@ rules:
       action:
         add_to_chain: database-optimizer
         position: after_primary
+
+    - name: research-needs-knowledge
+      condition:
+        all:
+          - domain: research
+          - has_keyword: [survey, literature, related work, meta-analysis]
+      action:
+        ensure_in_chain:
+          - knowledge-engineer
+          - paper-reader
 
   # ==========================================================================
   # Agent Selection Heuristics

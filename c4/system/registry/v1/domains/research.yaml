@@ -1,0 +1,46 @@
+domain:
+  id: research
+  name: "Academic Research"
+  description: "논문 읽기, 작성, 리뷰, 지식 추출 등 학술 연구 전반"
+
+  required_skills:
+    core:
+      - paper-reading
+      - paper-reviewing
+    optional:
+      - paper-writing
+      - knowledge-extraction
+      - data-analysis
+
+  workflow:
+    - step: 1
+      role: primary
+      select:
+        by: skill
+        skills: [paper-reading, knowledge-extraction]
+        prefer_agent: paper-reader
+      purpose: "Analyze papers and extract knowledge"
+
+    - step: 2
+      role: support
+      select:
+        by: skill
+        skills: [paper-writing]
+        prefer_agent: paper-writer
+      purpose: "Draft and structure paper content"
+
+    - step: 3
+      role: quality
+      select:
+        by: skill
+        skills: [paper-reviewing]
+        prefer_agent: paper-reviewer
+      purpose: "Review and validate paper quality"
+
+  rules:
+    - if: "task_has_keyword(['survey', 'literature', 'related work'])"
+      then: "add_to_chain(knowledge-engineer, before=paper-writer)"
+    - if: "task_has_keyword(['experiment', 'ablation', 'baseline'])"
+      then: "add_to_chain(ml-engineer, before=paper-reviewer)"
+    - if: "task_has_keyword(['rebuttal', 'revision'])"
+      then: "add_to_chain(paper-reader, before=paper-writer)"

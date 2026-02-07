@@ -52,7 +52,7 @@ def handle_submit(daemon: Any, arguments: dict[str, Any]) -> dict[str, Any]:
 @register_tool("c4_add_todo")
 def handle_add_todo(daemon: Any, arguments: dict[str, Any]) -> dict[str, Any]:
     """Add a new task to the queue."""
-    return daemon.c4_add_todo(
+    result = daemon.c4_add_todo(
         task_id=arguments["task_id"],
         title=arguments["title"],
         scope=arguments.get("scope"),
@@ -64,6 +64,18 @@ def handle_add_todo(daemon: Any, arguments: dict[str, Any]) -> dict[str, Any]:
         execution_mode=arguments.get("execution_mode", "worker"),
         review_required=arguments.get("review_required", True),
     )
+
+    # Record observation for profile learning
+    try:
+        daemon.profile_observer.record_add_todo(
+            title=arguments["title"],
+            dod=arguments["dod"],
+            domain=arguments.get("domain"),
+        )
+    except Exception:
+        pass  # Non-critical
+
+    return result
 
 
 @register_tool("c4_mark_blocked")

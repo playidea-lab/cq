@@ -232,9 +232,14 @@ class LiteLLMBackend(SupervisorBackend):
             "- required_changes: List of specific changes needed if not approved"
         )
 
-        # 3. Agent Persona (Fixed per agent/worker)
+        # 3. Agent Persona (Fixed per agent/worker) + User Profile
         if agent:
-            system_parts.append("# AGENT PERSONA\n" + self._format_agent_persona(agent))
+            persona_text = self._format_agent_persona(agent)
+            # Inject user profile context for review quality
+            profile_text = self._load_user_profile_context(agent)
+            if profile_text:
+                persona_text += "\n\n" + profile_text
+            system_parts.append("# AGENT PERSONA\n" + persona_text)
         else:
             system_parts.append("# ROLE\nYou are a code review supervisor.")
 
@@ -260,6 +265,42 @@ class LiteLLMBackend(SupervisorBackend):
             kwargs["extra_headers"]["anthropic-beta"] = "prompt-caching-2024-07-31"
 
         return kwargs
+
+    def _load_user_profile_context(self, agent: "AgentDefinition") -> str | None:
+        """Load user profile and format context for LLM review prompts.
+
+        Args:
+            agent: Agent definition to extract agent ID from
+
+        Returns:
+            Profile context string or None if unavailable.
+        """
+        try:
+            if not self.daemon:
+                return None
+            from c4.system.registry.profile_loader import ProfileLoader
+
+            loader = ProfileLoader(self.daemon.c4_dir)
+            profile = loader.load()
+            if not profile:
+                return None
+
+            agent_id = agent.agent.id if agent and agent.agent else None
+            lines = [f"# USER CONTEXT\nWorking with {profile.name}."]
+
+            if profile.review.focus:
+                lines.append(f"Review focus: {', '.join(profile.review.focus)}")
+            if profile.review.paper_criteria:
+                lines.append(
+                    f"Paper criteria: {', '.join(profile.review.paper_criteria)}"
+                )
+            if agent_id and agent_id in profile.persona_overrides:
+                lines.append(
+                    f"User instructions: {profile.persona_overrides[agent_id]}"
+                )
+            return "\n".join(lines) if len(lines) > 1 else None
+        except Exception:
+            return None
 
     def _format_agent_persona(self, agent: "AgentDefinition") -> str:
         """Format AgentDefinition into a text persona description.

@@ -31,6 +31,8 @@ class TaskAssignment(BaseModel):
     worktree_path: str | None = None
     # Economic mode: model assigned to this task
     model: str = "opus"
+    # User profile context injected at assignment time
+    user_context: str | None = None
 
 
 class SubmitResponse(BaseModel):

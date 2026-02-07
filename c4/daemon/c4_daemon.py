@@ -179,6 +179,8 @@ class C4Daemon:
         self._discovery_ops: DiscoveryOps | None = None
         self._design_ops: DesignOps | None = None
         self._checkpoint_ops: CheckpointOps | None = None
+        # Profile observer (lazy)
+        self._profile_observer: Any = None
 
     # =========================================================================
     # Initialization
@@ -557,6 +559,15 @@ Thumbs.db
         if self._checkpoint_ops is None:
             self._checkpoint_ops = CheckpointOps(self)
         return self._checkpoint_ops
+
+    @property
+    def profile_observer(self):
+        """Get profile observer, creating if necessary."""
+        if self._profile_observer is None:
+            from ..system.registry.profile_observer import ProfileObserver
+
+            self._profile_observer = ProfileObserver(self.c4_dir)
+        return self._profile_observer
 
     def _touch_worker(self, worker_id: str | None) -> None:
         """

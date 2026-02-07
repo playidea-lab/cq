@@ -116,6 +116,9 @@ class CheckpointOps:
                     self._daemon.state_machine.transition("approve")
                 state.metrics.checkpoints_passed += 1
 
+                # Trigger profile learning on APPROVE
+                self._learn_and_rebuild(checkpoint_id)
+
             elif decision == "REQUEST_CHANGES":
                 # Mark checkpoint as passed to prevent re-triggering
                 # (supervisor has reviewed; RC tasks are the follow-up)
@@ -302,6 +305,52 @@ class CheckpointOps:
 
         except SupervisorError as e:
             return {"success": False, "error": str(e)}
+
+    # =========================================================================
+    # Profile Learning
+    # =========================================================================
+
+    def _learn_and_rebuild(self, checkpoint_id: str) -> None:
+        """Non-destructive profile learning + persona rebuild on APPROVE.
+
+        Analyzes accumulated observations, updates ~/.c4/profile.yaml,
+        and regenerates persona-*.md files.
+        Failures are logged but never block checkpoint processing.
+        """
+        try:
+            observer = self._daemon.profile_observer
+            observations = observer.get_all()
+            if len(observations) < 3:
+                return
+
+            from ..system.registry.profile_learner import ProfileLearner
+
+            learner_path = Path.home() / ".c4" / "profile.yaml"
+            learner = ProfileLearner(learner_path)
+            current = learner.load_or_default()
+            deltas = learner.analyze(observations, current)
+
+            if deltas:
+                updated = learner.apply(current, deltas)
+                # Record which checkpoint produced this learning
+                updated.learned_from[checkpoint_id] = len(observations)
+                learner.save(updated)
+                logger.info(
+                    f"Profile: {len(deltas)} updates at {checkpoint_id}"
+                )
+
+                # Rebuild persona-*.md (static path C)
+                try:
+                    from ..system.registry.builder import RegistryBuilder
+
+                    builder = RegistryBuilder(self._daemon.root)
+                    builder.build_for_claude()
+                except Exception as e:
+                    logger.debug(f"Persona rebuild skipped: {e}")
+
+            observer.clear()
+        except Exception as e:
+            logger.warning(f"Profile learning failed (non-critical): {e}")
 
     def process_supervisor_decision(self, response: Any) -> dict[str, Any]:
         """Process supervisor decision and update state accordingly.

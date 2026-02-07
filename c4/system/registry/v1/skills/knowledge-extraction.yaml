@@ -1,0 +1,66 @@
+skill:
+  id: knowledge-extraction
+  name: "Knowledge Extraction & Synthesis"
+  description: "다수 논문에서 지식 추출, 패턴 발견, 지식 그래프 구축, 인사이트 합성"
+
+  impact: high
+  category: data-processing
+  domains:
+    - research
+
+  metadata:
+    version: "1.0.0"
+    author: "c4-team"
+    license: MIT
+    tags: [knowledge, extraction, synthesis, knowledge-graph, meta-analysis]
+
+  capabilities:
+    - knowledge-graph-building
+    - pattern-discovery
+    - cross-paper-synthesis
+    - trend-analysis
+    - gap-identification
+
+  triggers:
+    keywords:
+      - knowledge
+      - extract
+      - synthesis
+      - graph
+      - meta-analysis
+      - trend
+      - gap
+    task_types:
+      - knowledge-extraction
+      - meta-analysis
+      - synthesis
+    file_patterns:
+      - "**/knowledge/**"
+      - "**/*.json"
+
+  rules:
+    - id: KE-001
+      description: "추출된 지식은 원본 논문 출처를 반드시 포함"
+      impact: critical
+
+    - id: KE-002
+      description: "상충하는 결과는 명시적으로 표시하고 가능한 원인 분석"
+      impact: high
+
+    - id: KE-003
+      description: "지식 그래프 노드는 검증 가능한 단위로 분해"
+      impact: medium
+
+  tools:
+    - knowledge-base
+    - citation-manager
+
+  complementary_skills:
+    - paper-reading
+    - data-analysis
+
+  prerequisites:
+    - paper-reading
+
+  leads_to:
+    - paper-writing

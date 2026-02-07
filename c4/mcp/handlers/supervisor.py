@@ -25,4 +25,15 @@ def handle_checkpoint(daemon: Any, arguments: dict[str, Any]) -> dict[str, Any]:
         arguments["notes"],
         arguments.get("required_changes"),
     )
+
+    # Record observation for profile learning
+    try:
+        daemon.profile_observer.record_checkpoint(
+            decision=arguments["decision"],
+            notes=arguments["notes"],
+            required_changes=arguments.get("required_changes"),
+        )
+    except Exception:
+        pass  # Non-critical
+
     return result.model_dump()
