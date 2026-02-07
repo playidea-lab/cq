@@ -163,3 +163,75 @@ class TestPatternSuggest:
         """D1-fix: should not crash with event loop errors."""
         result = handle_pattern_suggest(daemon, {"domain": "nonexistent"})
         assert "RuntimeError" not in str(result)
+
+
+class TestVectorIndexingIntegration:
+    """T-KS3-001: Vector indexing auto-connected on document creation."""
+
+    def test_record_auto_indexes_embedding(self, daemon, tmp_path, monkeypatch):
+        """Document creation via MCP should auto-index embedding."""
+        monkeypatch.setenv("C4_PROJECT_ROOT", str(tmp_path))
+
+        # Create a document
+        result = handle_knowledge_record(daemon, {
+            "doc_type": "experiment",
+            "title": "Vector Index Test",
+            "domain": "ml",
+            "body": "Testing automatic vector indexing on create",
+        })
+        assert result["success"] is True
+        assert result["doc_id"]  # verify doc_id exists
+
+        # Check that embedding was indexed
+        from c4.knowledge.embeddings import KnowledgeEmbedder
+
+        embedder = KnowledgeEmbedder(base_path=tmp_path / ".c4" / "knowledge")
+        assert embedder.count > 0, "Embedding should be indexed after record"
+        embedder.close()
+
+    def test_record_embedding_failure_doesnt_block_create(self, daemon, tmp_path, monkeypatch):
+        """If embedding fails, document should still be created."""
+        monkeypatch.setenv("C4_PROJECT_ROOT", str(tmp_path))
+
+        # Monkey-patch embedder to fail
+        from c4.knowledge import embeddings as emb_module
+
+        def failing_index(self, *args, **kwargs):
+            raise RuntimeError("Embedding service down")
+
+        monkeypatch.setattr(emb_module.KnowledgeEmbedder, "index_document", failing_index)
+
+        result = handle_knowledge_record(daemon, {
+            "doc_type": "experiment",
+            "title": "Should Still Create",
+            "domain": "ml",
+        })
+        assert result["success"] is True
+
+        # Document should exist even though embedding failed
+        doc_result = handle_knowledge_get(daemon, {"doc_id": result["doc_id"]})
+        assert doc_result["title"] == "Should Still Create"
+
+    def test_semantic_search_works_after_record(self, daemon, tmp_path, monkeypatch):
+        """After recording docs, semantic search should find them via vector."""
+        monkeypatch.setenv("C4_PROJECT_ROOT", str(tmp_path))
+
+        handle_knowledge_record(daemon, {
+            "doc_type": "experiment",
+            "title": "Neural Network Training PyTorch",
+            "domain": "dl",
+            "body": "Deep learning with ResNet on ImageNet dataset",
+        })
+        handle_knowledge_record(daemon, {
+            "doc_type": "experiment",
+            "title": "Linear Regression Stats",
+            "domain": "stats",
+            "body": "Simple OLS regression on housing prices",
+        })
+
+        # Search should return results (at least via FTS, possibly vector too)
+        result = handle_knowledge_search(daemon, {
+            "query": "neural network deep learning",
+            "top_k": 5,
+        })
+        assert result["count"] >= 1

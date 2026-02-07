@@ -470,6 +470,104 @@ class UnifiedSymbolProvider:
             timeout=self.JEDI_TIMEOUT,
         )
 
+    def find_references(
+        self,
+        file_path: str,
+        line: int,
+        column: int,
+    ) -> list[dict[str, Any]]:
+        """Find all references to the symbol at the given position.
+
+        Uses multilspy first if available, falls back to Jedi for Python.
+
+        Args:
+            file_path: Absolute or project-relative path to the file.
+            line: Line number (0-indexed, LSP convention).
+            column: Column number (0-indexed, LSP convention).
+
+        Returns:
+            List of reference locations with file_path, line, column,
+            end_line, end_column (all 0-indexed).
+        """
+        abs_path = Path(file_path)
+        if not abs_path.is_absolute():
+            abs_path = self.project_path / file_path
+
+        # Try multilspy first
+        if self.multilspy_available:
+            try:
+                refs = self._multilspy.find_references(  # type: ignore[union-attr]
+                    file_path=str(abs_path),
+                    line=line,
+                    column=column,
+                )
+                if refs:
+                    logger.debug(f"multilspy found {len(refs)} references")
+                    return refs
+            except Exception as e:
+                logger.warning(f"multilspy find_references failed, trying Jedi: {e}")
+
+        # Jedi fallback (Python only)
+        language = self._detect_language(abs_path)
+        if language == "python" and JEDI_AVAILABLE:
+            try:
+                return self._find_references_jedi(abs_path, line, column)
+            except Exception as e:
+                logger.warning(f"Jedi find_references failed: {e}")
+
+        return []
+
+    def _find_references_jedi(
+        self,
+        file_path: Path,
+        line: int,
+        column: int,
+    ) -> list[dict[str, Any]]:
+        """Find references using Jedi.
+
+        Args:
+            file_path: Absolute path to the Python file.
+            line: Line number (0-indexed, will be converted to 1-indexed for Jedi).
+            column: Column number (0-indexed, same as Jedi).
+
+        Returns:
+            List of reference locations (0-indexed).
+        """
+        import jedi
+
+        source = file_path.read_text(encoding="utf-8")
+        project = jedi.Project(
+            path=str(self.project_path),
+            added_sys_path=[],
+            smart_sys_path=False,
+        )
+        script = jedi.Script(source, path=str(file_path), project=project)
+
+        # Jedi uses 1-indexed lines, 0-indexed columns
+        jedi_refs = script.get_references(line=line + 1, column=column)
+
+        results: list[dict[str, Any]] = []
+        for ref in jedi_refs:
+            ref_path = str(ref.module_path) if ref.module_path else str(file_path)
+            # ref.line is 1-indexed, convert to 0-indexed
+            ref_line = ref.line - 1 if ref.line else 0
+            ref_col = ref.column if ref.column is not None else 0
+
+            # Get end position from Jedi
+            end_pos = ref.get_definition_end_position()
+            end_line = (end_pos[0] - 1) if end_pos else ref_line
+            end_col = end_pos[1] if end_pos else ref_col + len(ref.name)
+
+            results.append({
+                "file_path": ref_path,
+                "line": ref_line,
+                "column": ref_col,
+                "end_line": end_line,
+                "end_column": end_col,
+            })
+
+        return results
+
     def invalidate_cache(self, file_path: str | None = None) -> int:
         """Invalidate cache entries.
 
@@ -662,6 +760,37 @@ def get_symbols_overview_unified(
             depth=depth,
             project_path=project_path,
         )
+
+
+def find_references_unified(
+    file_path: str,
+    line: int,
+    column: int,
+    project_path: str | None = None,
+    timeout: int = 30,
+) -> list[dict[str, Any]]:
+    """MCP tool wrapper for find_references with unified provider.
+
+    Args:
+        file_path: Path to the file (absolute or relative to project root).
+        line: Line number (0-indexed).
+        column: Column number (0-indexed).
+        project_path: Project root path.
+        timeout: Maximum execution time in seconds.
+
+    Returns:
+        List of reference location dictionaries.
+    """
+    try:
+        provider = get_provider(project_path, timeout)
+        return provider.find_references(
+            file_path=file_path,
+            line=line,
+            column=column,
+        )
+    except Exception as e:
+        logger.error(f"find_references_unified failed: {e}")
+        return []
 
 
 def shutdown_provider() -> None:

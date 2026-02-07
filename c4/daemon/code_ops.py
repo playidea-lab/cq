@@ -23,6 +23,48 @@ if TYPE_CHECKING:
     from .c4_daemon import C4Daemon
 
 
+class _LocationProxy:
+    """Adapts LSP location dict to Tree-sitter Location interface."""
+
+    __slots__ = ("file_path", "start_line", "start_column", "end_line", "end_column")
+
+    def __init__(
+        self,
+        file_path: str,
+        start_line: int,
+        start_column: int,
+        end_line: int,
+        end_column: int,
+    ):
+        self.file_path = file_path
+        self.start_line = start_line
+        self.start_column = start_column
+        self.end_line = end_line
+        self.end_column = end_column
+
+
+class _SymbolProxy:
+    """Adapts LSP symbol dict to Tree-sitter Symbol interface.
+
+    LSP returns 0-indexed lines; Tree-sitter Location uses 1-indexed lines.
+    This proxy converts on construction.
+    """
+
+    def __init__(self, d: dict[str, Any]):
+        self.name = d["name"]
+        self.parent = d.get("parent_name")
+        self.qualified_name = d.get("qualified_name", d.get("name_path", d["name"]))
+        loc = d["location"]
+        # LSP lines are 0-indexed → convert to 1-indexed for Location interface
+        self.location = _LocationProxy(
+            file_path=loc["file_path"],
+            start_line=loc["line"] + 1,
+            start_column=loc.get("column", 0),
+            end_line=loc.get("end_line", loc["line"]) + 1,
+            end_column=loc.get("end_column", 0),
+        )
+
+
 class CodeOps:
     """Code operations handler for C4 Daemon.
 
@@ -49,6 +91,9 @@ class CodeOps:
     ) -> tuple[Any | None, str | None, str | None]:
         """Find a symbol by name path.
 
+        Tries LSP (unified_provider) first for accurate end_line info,
+        then falls back to Tree-sitter (CodeAnalyzer).
+
         Args:
             name_path: Symbol name or qualified name (e.g., "MyClass" or "MyClass.method")
             file_path: Optional file path to restrict search
@@ -56,6 +101,79 @@ class CodeOps:
         Returns:
             Tuple of (symbol, file_path, error_message)
         """
+        # 1st: Try LSP (unified_provider) for accurate range info
+        lsp_result = self._get_symbol_via_lsp(name_path, file_path)
+        if lsp_result[0] is not None:
+            return lsp_result
+
+        # 2nd: Tree-sitter fallback
+        return self._get_symbol_via_treesitter(name_path, file_path)
+
+    def _get_symbol_via_lsp(
+        self,
+        name_path: str,
+        file_path: str | None = None,
+    ) -> tuple[Any | None, str | None, str | None]:
+        """Try to find a symbol using LSP (unified_provider)."""
+        try:
+            from c4.lsp.unified_provider import find_symbol_unified
+
+            # Convert dot-notation to slash for LSP pattern
+            pattern = name_path.replace(".", "/")
+            relative_path = file_path or ""
+            if relative_path:
+                abs_path = Path(relative_path)
+                if abs_path.is_absolute():
+                    try:
+                        relative_path = str(abs_path.relative_to(self._daemon.root))
+                    except ValueError:
+                        relative_path = str(abs_path)
+
+            symbols = find_symbol_unified(
+                name_path_pattern=pattern,
+                relative_path=relative_path,
+                include_body=False,
+                project_path=str(self._daemon.root),
+            )
+
+            if not symbols:
+                return None, None, None  # None error = try fallback
+
+            # Filter by name_path if qualified
+            parts = name_path.split(".")
+            if len(parts) > 1:
+                symbol_name = parts[-1]
+                parent_name = ".".join(parts[:-1])
+                matching = [
+                    s for s in symbols
+                    if s["name"] == symbol_name and (
+                        s.get("name_path", "").endswith(name_path.replace(".", "/"))
+                        or s.get("name_path", "").endswith(f"{parent_name}/{symbol_name}")
+                    )
+                ]
+                if matching:
+                    symbols = matching
+
+            sym = symbols[0]
+            loc = sym.get("location", {})
+
+            # Only use LSP result if we have end_line (needed for editing)
+            end_line = loc.get("end_line")
+            if end_line is None or end_line == 0:
+                return None, None, None  # No end_line → try fallback
+
+            proxy = _SymbolProxy(sym)
+            return proxy, proxy.location.file_path, None
+
+        except (ImportError, Exception):
+            return None, None, None  # Fallback silently
+
+    def _get_symbol_via_treesitter(
+        self,
+        name_path: str,
+        file_path: str | None = None,
+    ) -> tuple[Any | None, str | None, str | None]:
+        """Find a symbol using Tree-sitter (CodeAnalyzer)."""
         from c4.docs.analyzer import CodeAnalyzer
 
         try:
@@ -231,6 +349,9 @@ class CodeOps:
     ) -> dict[str, Any]:
         """Find all references to a symbol in the codebase.
 
+        Tries LSP (unified_provider) first for cross-language support,
+        then falls back to Tree-sitter (CodeAnalyzer).
+
         Args:
             name_path: Name of the symbol to find references for.
             file_path: Optional file path to restrict the search.
@@ -242,6 +363,73 @@ class CodeOps:
                 - total: Number of references found
                 - symbol: The symbol name that was searched
         """
+        # 1st: Try LSP for cross-language references
+        lsp_result = self._find_references_via_lsp(name_path, file_path)
+        if lsp_result is not None:
+            return lsp_result
+
+        # 2nd: Tree-sitter fallback
+        return self._find_references_via_treesitter(name_path, file_path)
+
+    def _find_references_via_lsp(
+        self,
+        name_path: str,
+        file_path: str | None = None,
+    ) -> dict[str, Any] | None:
+        """Try to find references using LSP. Returns None to signal fallback."""
+        try:
+            from c4.lsp.unified_provider import find_references_unified, find_symbol_unified
+
+            # First find the symbol to get its position
+            pattern = name_path.replace(".", "/")
+            relative_path = file_path or ""
+            if relative_path:
+                abs_path = Path(relative_path)
+                if abs_path.is_absolute():
+                    try:
+                        relative_path = str(abs_path.relative_to(self._daemon.root))
+                    except ValueError:
+                        relative_path = str(abs_path)
+
+            symbols = find_symbol_unified(
+                name_path_pattern=pattern,
+                relative_path=relative_path,
+                project_path=str(self._daemon.root),
+            )
+
+            if not symbols:
+                return None  # Signal fallback
+
+            sym = symbols[0]
+            loc = sym["location"]
+
+            # Find references at the symbol's position
+            refs = find_references_unified(
+                file_path=loc["file_path"],
+                line=loc["line"],
+                column=loc.get("column", 0),
+                project_path=str(self._daemon.root),
+            )
+
+            if not refs:
+                return None  # Signal fallback
+
+            return {
+                "success": True,
+                "references": refs,
+                "total": len(refs),
+                "symbol": name_path,
+            }
+
+        except (ImportError, Exception):
+            return None
+
+    def _find_references_via_treesitter(
+        self,
+        name_path: str,
+        file_path: str | None = None,
+    ) -> dict[str, Any]:
+        """Find references using Tree-sitter (CodeAnalyzer)."""
         try:
             from c4.docs.analyzer import CodeAnalyzer
 
@@ -501,6 +689,7 @@ class CodeOps:
         """Rename a symbol across the entire codebase.
 
         This finds all references to the symbol and renames them.
+        Uses LSP for reference finding when available, falls back to Tree-sitter.
 
         Args:
             name_path: Current symbol name or qualified name
@@ -510,8 +699,6 @@ class CodeOps:
         Returns:
             Dict with success status and list of files modified
         """
-        from c4.docs.analyzer import CodeAnalyzer
-
         try:
             # First, find the symbol definition
             symbol, symbol_file, error = self._get_symbol_by_name_path(
@@ -527,35 +714,31 @@ class CodeOps:
             if not new_name.isidentifier():
                 return {"success": False, "error": f"Invalid identifier: {new_name}"}
 
-            # Create analyzer for finding references
-            analyzer = CodeAnalyzer()
-            analyzer.add_directory(
-                self._daemon.root,
-                recursive=True,
-                exclude_patterns=[
-                    "**/node_modules/**",
-                    "**/__pycache__/**",
-                    "**/.git/**",
-                    "**/venv/**",
-                    "**/.venv/**",
-                    "**/.c4/**",
-                    "**/.claude/**",
-                ],
-            )
-
-            # Find all references
-            references = analyzer.find_references(old_name)
-
-            # Group references by file
+            # Find files containing references across entire codebase
+            # (file_path=None to scan all files, not just the definition file)
+            # Use both LSP and Tree-sitter to maximize coverage
             refs_by_file: dict[str, list] = {}
-            for ref in references:
-                fp = ref.location.file_path
-                if fp not in refs_by_file:
-                    refs_by_file[fp] = []
-                refs_by_file[fp].append(ref)
+
+            # LSP references (codebase-wide)
+            lsp_result = self._find_references_via_lsp(name_path, None)
+            if lsp_result and lsp_result.get("success"):
+                for ref in lsp_result.get("references", []):
+                    fp = ref["file_path"]
+                    if fp not in refs_by_file:
+                        refs_by_file[fp] = []
+                    refs_by_file[fp].append(ref)
+
+            # Tree-sitter references (always run for completeness)
+            ts_result = self._find_references_via_treesitter(old_name, None)
+            if ts_result.get("success"):
+                for ref in ts_result.get("references", []):
+                    fp = ref["file_path"]
+                    if fp not in refs_by_file:
+                        refs_by_file[fp] = []
+                    refs_by_file[fp].append(ref)
 
             # Also include the definition file
-            if symbol_file not in refs_by_file:
+            if symbol_file and symbol_file not in refs_by_file:
                 refs_by_file[symbol_file] = []
 
             # Perform replacements file by file

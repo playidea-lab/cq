@@ -401,6 +401,8 @@ class MultilspyProvider:
                     "file_path": str(self._extract_uri(location)),
                     "line": self._extract_line(location),
                     "column": self._extract_column(location),
+                    "end_line": self._extract_end_line(location),
+                    "end_column": self._extract_end_column(location),
                 },
             }
 
@@ -590,6 +592,36 @@ class MultilspyProvider:
         except Exception:
             return 0
 
+    def _extract_end_line(self, location: Any) -> int:
+        """Extract end line number from LSP location."""
+        try:
+            if location is None:
+                return 0
+            range_obj = getattr(location, "range", None)
+            if range_obj is None:
+                return 0
+            end = getattr(range_obj, "end", None)
+            if end is None:
+                return 0
+            return getattr(end, "line", 0) or 0
+        except Exception:
+            return 0
+
+    def _extract_end_column(self, location: Any) -> int:
+        """Extract end column number from LSP location."""
+        try:
+            if location is None:
+                return 0
+            range_obj = getattr(location, "range", None)
+            if range_obj is None:
+                return 0
+            end = getattr(range_obj, "end", None)
+            if end is None:
+                return 0
+            return getattr(end, "character", 0) or 0
+        except Exception:
+            return 0
+
     def _extract_symbol_line(self, sym: Any) -> int:
         """Extract line number from document symbol.
 
@@ -617,6 +649,66 @@ class MultilspyProvider:
             return 0
         except Exception:
             return 0
+
+    def find_references(
+        self,
+        file_path: str,
+        line: int,
+        column: int,
+    ) -> list[dict[str, Any]]:
+        """Find all references to the symbol at the given position.
+
+        Uses multilspy's request_references (LSP textDocument/references).
+
+        Args:
+            file_path: Absolute or project-relative path to the file.
+            line: Line number (0-indexed, LSP convention).
+            column: Column number (0-indexed, LSP convention).
+
+        Returns:
+            List of reference locations, each with file_path, line, column,
+            end_line, end_column.
+        """
+        abs_path = Path(file_path)
+        if not abs_path.is_absolute():
+            abs_path = self.project_path / file_path
+
+        language = self._detect_language(abs_path)
+        if not language:
+            return []
+
+        try:
+            server = self._get_server(language)
+            # multilspy expects relative path
+            rel_path = str(abs_path.relative_to(self.project_path))
+
+            with server.start_server():
+                server.open_file(rel_path)
+                locations = server.request_references(rel_path, line, column) or []
+
+            results: list[dict[str, Any]] = []
+            for loc in locations:
+                ref_path = loc.get("absolutePath") or loc.get("uri", "")
+                if ref_path.startswith("file://"):
+                    ref_path = ref_path[7:]
+
+                range_obj = loc.get("range", {})
+                start = range_obj.get("start", {})
+                end = range_obj.get("end", {})
+
+                results.append({
+                    "file_path": ref_path,
+                    "line": start.get("line", 0),
+                    "column": start.get("character", 0),
+                    "end_line": end.get("line", 0),
+                    "end_column": end.get("character", 0),
+                })
+
+            return results
+
+        except Exception as e:
+            logger.warning(f"LSP find_references failed for {language}: {e}")
+            return []
 
     def cleanup_idle_servers(self) -> int:
         """Shutdown servers that have been idle for longer than idle_timeout.
@@ -770,3 +862,40 @@ def get_symbols_overview_multilspy(
     except Exception as e:
         logger.error(f"get_symbols_overview_multilspy failed: {e}")
         return {"error": str(e)}
+
+
+def find_references_multilspy(
+    file_path: str,
+    line: int,
+    column: int,
+    project_path: str | None = None,
+    timeout: int = 30,
+) -> list[dict[str, Any]]:
+    """MCP tool wrapper for find_references using multilspy.
+
+    Args:
+        file_path: Path to the file (absolute or relative to project root).
+        line: Line number (0-indexed).
+        column: Column number (0-indexed).
+        project_path: Project root path.
+        timeout: Maximum execution time in seconds.
+
+    Returns:
+        List of reference location dictionaries.
+    """
+    if not MULTILSPY_AVAILABLE:
+        return []
+
+    try:
+        with MultilspyProvider(
+            project_path=project_path or ".",
+            timeout=timeout,
+        ) as provider:
+            return provider.find_references(
+                file_path=file_path,
+                line=line,
+                column=column,
+            )
+    except Exception as e:
+        logger.error(f"find_references_multilspy failed: {e}")
+        return []
