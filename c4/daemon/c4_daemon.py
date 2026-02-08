@@ -1575,7 +1575,7 @@ Thumbs.db
                 "Check code quality, correctness, and alignment with DoD. "
                 "Submit with APPROVE (no comments) or REQUEST_CHANGES (with comments)."
             ),
-            dependencies=[],  # Review doesn't depend on other tasks
+            dependencies=[task.id],  # Review depends on parent impl task
             domain=task.domain,
             priority=review_priority,
             task_type="review",  # Enable code-reviewer agent routing

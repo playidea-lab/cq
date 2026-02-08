@@ -1385,10 +1385,16 @@ class TaskOps:
         task.files_changed = files_changed or []
         self.save_task(task)
 
-        # Update state machine queue
-        if task_id in state.queue.in_progress:
-            del state.queue.in_progress[task_id]
-        daemon.state_machine.save_state()
+        # Update state machine queue (atomic: move in_progress → done)
+        store = daemon.state_machine.store
+        project_id = daemon.state_machine.state.project_id
+        with store.atomic_modify(project_id) as mod_state:
+            if task_id in mod_state.queue.in_progress:
+                del mod_state.queue.in_progress[task_id]
+            if task_id not in mod_state.queue.done:
+                mod_state.queue.done.append(task_id)
+            mod_state.metrics.tasks_completed += 1
+            daemon.state_machine._state = mod_state
 
         # Emit event
         daemon.state_machine.emit_event(
@@ -1403,16 +1409,26 @@ class TaskOps:
             },
         )
 
-        # Create review task if required
+        # Create review task if required (matches _generate_review_task in submit path)
         review_created = None
-        if task.review_required and task.type == TaskType.IMPLEMENTATION:
+        if task.review_required and task.type == TaskType.IMPLEMENTATION and task.base_id:
             review_id = f"R-{task.base_id}-{task.version}"
             review_model = daemon.config.economic_mode.get_model_for_task_type("review")
             review_task = Task(
                 id=review_id,
                 title=f"Review: {task.title}",
-                dod=f"Review implementation of {task_id}:\n- Summary: {summary}\n- Files: {', '.join(task.files_changed)}",
-                dependencies=[task_id],
+                scope=task.scope,
+                dod=(
+                    f"Review implementation of {task_id}:\n"
+                    f"- Summary: {summary}\n"
+                    f"- Files: {', '.join(task.files_changed)}\n"
+                    "Check code quality, correctness, and alignment with DoD. "
+                    "Submit with APPROVE or REQUEST_CHANGES."
+                ),
+                dependencies=[],  # No dependency - impl already in done queue
+                domain=task.domain,
+                priority=max(0, task.priority - daemon.config.review_priority_offset),
+                task_type="review",
                 type=TaskType.REVIEW,
                 base_id=task.base_id,
                 version=task.version,
@@ -1425,10 +1441,25 @@ class TaskOps:
             daemon.add_task(review_task)
             review_created = review_id
 
+        # Review-as-Task: handle review completion (same as submit path)
+        if daemon.config.review_as_task and task.type == TaskType.REVIEW:
+            daemon._handle_review_completion(
+                task, None, None, "main-session"
+            )
+
+        # Checkpoint-as-Task: handle checkpoint completion (same as submit path)
+        if daemon.config.checkpoint_as_task and task.type == TaskType.CHECKPOINT:
+            daemon._handle_checkpoint_completion(
+                task, None, None, "main-session"
+            )
+
         # Delete active claim file
         claim_file = daemon.c4_dir / "active_claim.json"
         if claim_file.exists():
             claim_file.unlink()
+
+        # Plan file sync
+        daemon._update_plan_task_status(task_id, "done")
 
         result_dict: dict[str, Any] = {
             "success": True,
@@ -1440,5 +1471,10 @@ class TaskOps:
 
         if review_created:
             result_dict["review_task_created"] = review_created
+
+        # Check completion state (triggers checkpoint creation if needed)
+        state = daemon.state_machine.state
+        if not state.queue.pending and not state.queue.in_progress:
+            result_dict["all_done"] = True
 
         return result_dict
