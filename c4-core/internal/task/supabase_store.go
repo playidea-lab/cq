@@ -93,13 +93,13 @@ func (s *SupabaseTaskStore) GetTask(id string) (*Task, error) {
 // The row_version must match; on conflict ErrVersionConflict is returned.
 func (s *SupabaseTaskStore) UpdateTask(task *Task) error {
 	row := taskToRow(task, s.projectID)
-	// Increment version for optimistic lock
-	row.RowVersion = task.Version + 1
+	// Increment row_version for optimistic lock
+	row.RowVersion = task.RowVersion + 1
 
 	// PATCH with version check
 	filter := fmt.Sprintf(
 		"id=eq.%s&project_id=eq.%s&row_version=eq.%d",
-		task.ID, s.projectID, task.Version,
+		task.ID, s.projectID, task.RowVersion,
 	)
 	return s.patch("c4_tasks", filter, row)
 }
@@ -326,6 +326,7 @@ func rowToTask(row *supabaseTaskRow) *Task {
 		Version:      row.Version,
 		ParentID:     row.ParentID,
 		CompletedBy:  row.CompletedBy,
+		RowVersion:   row.RowVersion,
 	}
 
 	if row.CreatedAt != "" {

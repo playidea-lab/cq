@@ -49,6 +49,9 @@ type Task struct {
 	ParentID    string `json:"parent_id,omitempty"`
 	CompletedBy string `json:"completed_by,omitempty"`
 
+	// Optimistic locking (Supabase row_version)
+	RowVersion int `json:"row_version,omitempty"`
+
 	// Timestamps
 	CreatedAt   time.Time `json:"created_at"`
 	CompletedAt time.Time `json:"completed_at,omitempty"`

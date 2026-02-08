@@ -315,9 +315,19 @@ func TestReconnectOnDisconnect(t *testing.T) {
 
 func TestReconnectExponentialBackoff(t *testing.T) {
 	transport := newMockTransport()
+	var mu sync.Mutex
 	var connectAttempts []time.Time
 
+	// First call (from Start) succeeds; subsequent calls track attempts
+	// and succeed only on the 3rd reconnect attempt.
+	callCount := 0
 	transport.connectFn = func() error {
+		mu.Lock()
+		defer mu.Unlock()
+		callCount++
+		if callCount == 1 {
+			return nil // initial connect succeeds
+		}
 		connectAttempts = append(connectAttempts, time.Now())
 		if len(connectAttempts) < 3 {
 			return fmt.Errorf("simulated failure")
@@ -337,11 +347,14 @@ func TestReconnectExponentialBackoff(t *testing.T) {
 	// Simulate disconnect
 	close(transport.messages)
 
-	time.Sleep(200 * time.Millisecond)
+	time.Sleep(300 * time.Millisecond)
 
-	// Should have attempted multiple connections
-	if len(connectAttempts) < 3 {
-		t.Errorf("connect attempts = %d, expected >= 3", len(connectAttempts))
+	// Should have attempted multiple reconnections
+	mu.Lock()
+	count := len(connectAttempts)
+	mu.Unlock()
+	if count < 3 {
+		t.Errorf("connect attempts = %d, expected >= 3", count)
 	}
 }
 
@@ -367,12 +380,13 @@ func TestReconnectMaxAttempts(t *testing.T) {
 	defer client.Stop()
 
 	close(transport.messages)
-	time.Sleep(100 * time.Millisecond)
+	time.Sleep(200 * time.Millisecond)
 
-	// Should stop after MaxReconnect attempts
+	// Should stop after MaxReconnect attempts (initial + MaxReconnect reconnect attempts)
 	count := connectCount.Load()
-	if count > 5 { // initial + 3 reconnect + some tolerance
-		t.Errorf("connect count = %d, expected <= 5", count)
+	// 1 initial + up to MaxReconnect+1 in reconnect (attempt starts at 1, exceeds at MaxReconnect+1)
+	if count > int32(cfg.MaxReconnect)+2 {
+		t.Errorf("connect count = %d, expected <= %d (initial + MaxReconnect + 1)", count, cfg.MaxReconnect+2)
 	}
 }
 

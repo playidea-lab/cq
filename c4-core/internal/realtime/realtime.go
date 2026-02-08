@@ -309,6 +309,7 @@ func (c *Client) reconnect() {
 		attempt++
 
 		if c.config.MaxReconnect > 0 && attempt > c.config.MaxReconnect {
+			c.running.Store(false) // stop the receive loop
 			return
 		}
 
