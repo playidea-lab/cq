@@ -1,12 +1,4 @@
-"""C4 Self-Documenting Platform.
-
-Provides comprehensive code analysis, spec mapping, gap analysis, and documentation generation:
-- CodeAnalyzer: AST-based symbol extraction (functions, classes, methods)
-- SemanticSearcher: TF-IDF based natural language search
-- CallGraphAnalyzer: Function call relationship analysis
-- GapAnalyzer: Requirements-to-implementation mapping
-- TestGenerator: EARS-based test generation
-"""
+"""C4 Docs - Tree-sitter based code analysis."""
 
 from .analyzer import (
     CodeAnalyzer,
@@ -16,67 +8,12 @@ from .analyzer import (
     Symbol,
     SymbolKind,
 )
-from .call_graph import (
-    CallEdge,
-    CallGraphAnalyzer,
-    CallGraphStats,
-    CallNode,
-    CallPath,
-    RelationType,
-)
-from .gap import (
-    GapAnalysisResult,
-    GapAnalyzer,
-    ImplementationStatus,
-    Priority,
-    RequirementGap,
-)
-from .semantic_search import (
-    SearchHit,
-    SearchResult,
-    SearchScope,
-    SemanticSearcher,
-)
-from .testgen import (
-    EarsPattern,
-    Requirement,
-    TestFormat,
-    TestGenerationResult,
-    TestGenerator,
-    TestStub,
-)
 
 __all__ = [
-    # Analyzer
     "CodeAnalyzer",
-    "Symbol",
-    "SymbolKind",
-    "Reference",
     "Dependency",
     "Location",
-    # Semantic Search
-    "SemanticSearcher",
-    "SearchResult",
-    "SearchHit",
-    "SearchScope",
-    # Call Graph
-    "CallGraphAnalyzer",
-    "CallNode",
-    "CallEdge",
-    "CallPath",
-    "CallGraphStats",
-    "RelationType",
-    # Gap Analysis
-    "GapAnalyzer",
-    "GapAnalysisResult",
-    "ImplementationStatus",
-    "Priority",
-    "RequirementGap",
-    # Test Generation
-    "EarsPattern",
-    "Requirement",
-    "TestFormat",
-    "TestGenerationResult",
-    "TestGenerator",
-    "TestStub",
+    "Reference",
+    "Symbol",
+    "SymbolKind",
 ]

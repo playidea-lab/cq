@@ -1,8 +1,4 @@
-"""C4 LSP Server Module.
-
-Provides Language Server Protocol support for code intelligence
-powered by multilspy (real LSP servers) with jedi as fallback.
-"""
+"""C4 LSP - Code intelligence via multilspy + jedi + tree-sitter."""
 
 from c4.lsp.jedi_provider import (
     JEDI_AVAILABLE,
@@ -13,7 +9,6 @@ from c4.lsp.jedi_provider import (
     SymbolType,
 )
 from c4.lsp.multilspy_provider import MULTILSPY_AVAILABLE, MultilspyProvider
-from c4.lsp.server import C4LSPServer
 from c4.lsp.unified_provider import (
     UnifiedSymbolProvider,
     find_symbol_unified,
@@ -21,18 +16,14 @@ from c4.lsp.unified_provider import (
 )
 
 __all__ = [
-    "C4LSPServer",
-    # Jedi (fallback)
     "JEDI_AVAILABLE",
     "JediSymbolProvider",
     "LSPSymbolKind",
+    "MULTILSPY_AVAILABLE",
+    "MultilspyProvider",
     "SymbolInfo",
     "SymbolLocation",
     "SymbolType",
-    # Multilspy (primary)
-    "MULTILSPY_AVAILABLE",
-    "MultilspyProvider",
-    # Unified (recommended)
     "UnifiedSymbolProvider",
     "find_symbol_unified",
     "get_symbols_overview_unified",
