@@ -11,19 +11,9 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-var mcpCmd = &cobra.Command{
-	Use:   "mcp",
-	Short: "Start MCP server (stdio)",
-	Long: `Start a Model Context Protocol server on stdin/stdout.
-This allows AI agents to interact with C4 via the MCP protocol.
-
-The server reads JSON-RPC requests from stdin and writes responses to stdout.`,
-	RunE: runMCP,
-}
-
-func init() {
-	rootCmd.AddCommand(mcpCmd)
-}
+// NOTE: The "mcp" subcommand is registered by fallback.go (mcpFallbackCmd)
+// which wraps the Go MCP server with a Python fallback mechanism.
+// The runMCP function below is the core Go MCP server implementation.
 
 // mcpRequest represents a JSON-RPC 2.0 request.
 type mcpRequest struct {
