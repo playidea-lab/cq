@@ -11,6 +11,8 @@ option go_package = "github.com/changmin/c4-core/internal/bridge/pb";
 
 // BridgeService provides communication between Go core and Python C4.
 service BridgeService {
+  // --- Core operations (existing) ---
+
   // GetState retrieves the current project state from Python C4.
   rpc GetState(GetStateRequest) returns (GetStateResponse);
 
@@ -25,7 +27,50 @@ service BridgeService {
 
   // RunValidation executes validation commands via the Python runner.
   rpc RunValidation(RunValidationRequest) returns (RunValidationResponse);
+
+  // --- LSP operations (Python has tree-sitter + multilspy + Jedi) ---
+
+  // FindSymbol searches for a symbol by name across the codebase.
+  rpc FindSymbol(FindSymbolRequest) returns (FindSymbolResponse);
+
+  // GetSymbolsOverview returns all symbols defined in a file.
+  rpc GetSymbolsOverview(GetSymbolsOverviewRequest) returns (GetSymbolsOverviewResponse);
+
+  // ReplaceSymbolBody replaces the body of a symbol with new content.
+  rpc ReplaceSymbolBody(ReplaceSymbolBodyRequest) returns (ReplaceSymbolBodyResponse);
+
+  // InsertBeforeSymbol inserts content before a symbol definition.
+  rpc InsertBeforeSymbol(InsertSymbolRequest) returns (InsertSymbolResponse);
+
+  // InsertAfterSymbol inserts content after a symbol definition.
+  rpc InsertAfterSymbol(InsertSymbolRequest) returns (InsertSymbolResponse);
+
+  // RenameSymbol renames a symbol across all references.
+  rpc RenameSymbol(RenameSymbolRequest) returns (RenameSymbolResponse);
+
+  // --- Knowledge Store (Python has FTS5 + sqlite-vec) ---
+
+  // KnowledgeSearch performs hybrid vector + full-text search on knowledge docs.
+  rpc KnowledgeSearch(KnowledgeSearchRequest) returns (KnowledgeSearchResponse);
+
+  // KnowledgeRecord creates or updates a knowledge document.
+  rpc KnowledgeRecord(KnowledgeRecordRequest) returns (KnowledgeRecordResponse);
+
+  // KnowledgeGet retrieves a knowledge document by slug.
+  rpc KnowledgeGet(KnowledgeGetRequest) returns (KnowledgeGetResponse);
+
+  // --- GPU / Job operations (Python has CUDA/MPS detection) ---
+
+  // GPUStatus returns current GPU availability and utilization.
+  rpc GPUStatus(GPUStatusRequest) returns (GPUStatusResponse);
+
+  // JobSubmit submits a compute job to the GPU queue.
+  rpc JobSubmit(JobSubmitRequest) returns (JobSubmitResponse);
 }
+
+// =============================================================================
+// Core messages (existing)
+// =============================================================================
 
 // GetStateRequest is the request for GetState.
 message GetStateRequest {}
@@ -100,4 +145,201 @@ message ValidationResult {
 message RunValidationResponse {
   bool all_passed = 1;
   repeated ValidationResult results = 2;
+}
+
+// =============================================================================
+// LSP messages
+// =============================================================================
+
+// FindSymbolRequest searches for a symbol by name.
+message FindSymbolRequest {
+  string name = 1;
+  // Optional file path to narrow the search scope.
+  string file_path = 2;
+  // Symbol kind filter: "function", "class", "method", "variable", etc.
+  string kind = 3;
+}
+
+// SymbolLocation describes a symbol's position in source code.
+message SymbolLocation {
+  string file_path = 1;
+  string name = 2;
+  string kind = 3;
+  int32 start_line = 4;
+  int32 start_col = 5;
+  int32 end_line = 6;
+  int32 end_col = 7;
+  // Container symbol (e.g., class name for a method).
+  string container = 8;
+}
+
+// FindSymbolResponse returns matched symbol locations.
+message FindSymbolResponse {
+  repeated SymbolLocation symbols = 1;
+}
+
+// GetSymbolsOverviewRequest retrieves all symbols in a file.
+message GetSymbolsOverviewRequest {
+  string file_path = 1;
+}
+
+// GetSymbolsOverviewResponse returns the file's symbol tree.
+message GetSymbolsOverviewResponse {
+  repeated SymbolLocation symbols = 1;
+}
+
+// ReplaceSymbolBodyRequest replaces a symbol's body with new content.
+message ReplaceSymbolBodyRequest {
+  string file_path = 1;
+  string symbol_name = 2;
+  string new_body = 3;
+}
+
+// ReplaceSymbolBodyResponse indicates whether the replacement succeeded.
+message ReplaceSymbolBodyResponse {
+  bool success = 1;
+  string error = 2;
+  // Number of lines changed.
+  int32 lines_changed = 3;
+}
+
+// InsertSymbolRequest inserts content before or after a symbol.
+message InsertSymbolRequest {
+  string file_path = 1;
+  string symbol_name = 2;
+  string content = 3;
+}
+
+// InsertSymbolResponse indicates whether the insertion succeeded.
+message InsertSymbolResponse {
+  bool success = 1;
+  string error = 2;
+}
+
+// RenameSymbolRequest renames a symbol across all references.
+message RenameSymbolRequest {
+  string file_path = 1;
+  string old_name = 2;
+  string new_name = 3;
+}
+
+// RenameSymbolResponse lists files that were modified by the rename.
+message RenameSymbolResponse {
+  bool success = 1;
+  string error = 2;
+  repeated string modified_files = 3;
+  int32 references_updated = 4;
+}
+
+// =============================================================================
+// Knowledge Store messages
+// =============================================================================
+
+// KnowledgeSearchRequest performs hybrid search on knowledge documents.
+message KnowledgeSearchRequest {
+  string query = 1;
+  // Document type filter: "experiment", "pattern", "insight", "hypothesis".
+  string doc_type = 2;
+  int32 limit = 3;
+  // Metadata filter as JSON string (avoids deeply nested proto messages).
+  string metadata_filter_json = 4;
+}
+
+// KnowledgeDocument represents a single knowledge document.
+message KnowledgeDocument {
+  string slug = 1;
+  string doc_type = 2;
+  string title = 3;
+  string content = 4;
+  // Metadata as JSON string.
+  string metadata_json = 5;
+  string created_at = 6;
+  string updated_at = 7;
+  // Search relevance score (0.0 - 1.0).
+  float score = 8;
+}
+
+// KnowledgeSearchResponse returns matching knowledge documents.
+message KnowledgeSearchResponse {
+  repeated KnowledgeDocument documents = 1;
+  int32 total_count = 2;
+}
+
+// KnowledgeRecordRequest creates or updates a knowledge document.
+message KnowledgeRecordRequest {
+  string doc_type = 1;
+  string title = 2;
+  string content = 3;
+  // Metadata as JSON string.
+  string metadata_json = 4;
+  // Optional tags for categorization.
+  repeated string tags = 5;
+}
+
+// KnowledgeRecordResponse returns the created/updated document.
+message KnowledgeRecordResponse {
+  bool success = 1;
+  string slug = 2;
+  string error = 3;
+}
+
+// KnowledgeGetRequest retrieves a document by slug.
+message KnowledgeGetRequest {
+  string slug = 1;
+}
+
+// KnowledgeGetResponse returns the requested document.
+message KnowledgeGetResponse {
+  bool found = 1;
+  KnowledgeDocument document = 2;
+}
+
+// =============================================================================
+// GPU / Job messages
+// =============================================================================
+
+// GPUStatusRequest queries GPU availability.
+message GPUStatusRequest {}
+
+// GPUDevice describes a single GPU device.
+message GPUDevice {
+  int32 index = 1;
+  string name = 2;
+  // Memory in MB.
+  int64 memory_total_mb = 3;
+  int64 memory_used_mb = 4;
+  int64 memory_free_mb = 5;
+  // Utilization percentage (0-100).
+  float utilization_pct = 6;
+  // Backend: "cuda", "mps", "cpu".
+  string backend = 7;
+}
+
+// GPUStatusResponse returns GPU availability and utilization.
+message GPUStatusResponse {
+  bool available = 1;
+  string backend = 2;
+  repeated GPUDevice devices = 3;
+}
+
+// JobSubmitRequest submits a compute job.
+message JobSubmitRequest {
+  string name = 1;
+  string command = 2;
+  // Working directory for the job.
+  string working_dir = 3;
+  // Environment variables as key-value pairs.
+  map<string, string> env = 4;
+  // Resource requirements as JSON string.
+  string resources_json = 5;
+  // Priority (higher = more urgent).
+  int32 priority = 6;
+}
+
+// JobSubmitResponse returns the submitted job identifier.
+message JobSubmitResponse {
+  bool success = 1;
+  string job_id = 2;
+  string error = 3;
+  string status = 4;
 }

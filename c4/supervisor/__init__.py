@@ -49,13 +49,6 @@ from .claude_models import (
     resolve_model_id,
     validate_model_id,
 )
-from .cloud_supervisor import (
-    CloudSupervisor,
-    ReviewRequest,
-    ReviewResult,
-    ReviewStatus,
-    ReviewType,
-)
 from .cost_optimizer import (
     CostAlert,
     CostAlertInfo,
@@ -97,12 +90,6 @@ from .verifier import (
 __all__ = [
     # Main class
     "Supervisor",
-    # Cloud Supervisor
-    "CloudSupervisor",
-    "ReviewRequest",
-    "ReviewResult",
-    "ReviewStatus",
-    "ReviewType",
     # Backends
     "SupervisorBackend",
     "ClaudeCliBackend",

@@ -101,31 +101,42 @@ CP-001:  체크포인트
 
 ---
 
-## Go Core (c4-core/)
+## Go Core (c4-core/) — Primary MCP Server
 
-> `c4-core/` — Go 기반 고성능 코어. Python daemon과 동일 SQLite DB 공유.
+> `c4-core/` — Go 기반 MCP 서버 (Primary). 47개 도구. Python sidecar로 LSP/Knowledge/GPU 기능 위임.
+
+### 아키텍처
+```
+Claude Code → Go MCP Server (stdio, 47 tools)
+                ├→ Go native (21개): 상태, 태스크, 파일, git, validation, discovery, artifact
+                ├→ Go + SQLite (13개): spec, design, checkpoint
+                └→ JSON-RPC proxy (16개) → Python Sidecar
+                                            ├→ LSP (multilspy, Jedi, tree-sitter)
+                                            ├→ Knowledge Store (FTS5 + Vector)
+                                            └→ GPU Scheduler
+```
 
 ### 패키지 구조
-- `cmd/c4/` — CLI (cobra), MCP server
+- `cmd/c4/` — CLI (cobra), MCP server (Registry-based)
+- `internal/mcp/` — Registry + handlers (47개 도구)
+- `internal/mcp/handlers/` — sqlite_store, files, git, discovery, artifacts, proxy, validation
+- `internal/bridge/` — Python sidecar 관리 (JSON-RPC/TCP)
 - `internal/task/` — TaskStore (SQLite, Memory, Supabase)
 - `internal/state/` — State machine
-- `internal/mcp/` — MCP handlers (10개)
-- `internal/bridge/` — gRPC (Go ↔ Python)
 - `internal/worker/` — Worker manager
 - `internal/validation/` — Validation runner
-- `internal/auth/` — OAuth + token
-- `internal/realtime/` — SSE streaming
 
 ### 빌드/테스트
 ```bash
 cd c4-core && go build ./... && go test ./...
+# Binary: c4-core/bin/c4 (12MB)
 ```
 
 ---
 
-## Canvas App (Project Explorer)
+## C1 (Multi-LLM Project Explorer)
 
-> `canvas-app/` — Tauri 2.x 데스크톱 앱. Multi-LLM 프로젝트 탐색기 (C1).
+> `c1/` — Tauri 2.x 데스크톱 앱. Multi-LLM 프로젝트 탐색기.
 
 ### 아키텍처
 - **Rust 백엔드**: `src-tauri/src/{commands,models,scanner,lib}.rs`
@@ -142,7 +153,7 @@ cd c4-core && go build ./... && go test ./...
 
 ### 빌드/실행
 ```bash
-cd canvas-app && pnpm install
+cd c1 && pnpm install
 cd src-tauri && cargo check && cargo test
 pnpm build            # 프론트엔드 빌드
 cargo tauri dev       # 개발 서버

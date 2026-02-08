@@ -74,14 +74,18 @@ func TestE2EStatusWithDB(t *testing.T) {
 // TestE2EMCPStdioInitialize verifies the MCP server handles
 // the initialize JSON-RPC method correctly.
 func TestE2EMCPStdioInitialize(t *testing.T) {
-	// Send an initialize request through the handler
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	srv := newTestMCPServer(t, db)
+
 	reqJSON := `{"jsonrpc":"2.0","id":1,"method":"initialize"}`
 	var req mcpRequest
 	if err := json.Unmarshal([]byte(reqJSON), &req); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
 
-	resp := handleMCPRequest(&req)
+	resp := srv.handleRequest(&req)
 	if resp == nil {
 		t.Fatal("nil response")
 	}
@@ -124,13 +128,18 @@ func TestE2EMCPStdioInitialize(t *testing.T) {
 
 // TestE2EMCPStdioToolsList verifies the MCP server returns tool definitions.
 func TestE2EMCPStdioToolsList(t *testing.T) {
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	srv := newTestMCPServer(t, db)
+
 	req := &mcpRequest{
 		JSONRPC: "2.0",
 		ID:      2,
 		Method:  "tools/list",
 	}
 
-	resp := handleMCPRequest(req)
+	resp := srv.handleRequest(req)
 	if resp == nil {
 		t.Fatal("nil response")
 	}
@@ -138,14 +147,14 @@ func TestE2EMCPStdioToolsList(t *testing.T) {
 		t.Fatalf("error: %v", resp.Error)
 	}
 
-	resultMap, ok := resp.Result.(map[string]interface{})
+	resultMap, ok := resp.Result.(map[string]any)
 	if !ok {
 		t.Fatalf("result type = %T, want map", resp.Result)
 	}
 
-	tools, ok := resultMap["tools"].([]toolInfo)
+	tools, ok := resultMap["tools"].([]map[string]any)
 	if !ok {
-		t.Fatalf("tools type = %T, want []toolInfo", resultMap["tools"])
+		t.Fatalf("tools type = %T, want []map[string]any", resultMap["tools"])
 	}
 
 	if len(tools) < 3 {
@@ -155,9 +164,11 @@ func TestE2EMCPStdioToolsList(t *testing.T) {
 	// Verify expected tools exist
 	names := make(map[string]bool)
 	for _, tool := range tools {
-		names[tool.Name] = true
+		if name, ok := tool["name"].(string); ok {
+			names[name] = true
+		}
 	}
-	for _, expected := range []string{"c4_status", "c4_start", "c4_stop"} {
+	for _, expected := range []string{"c4_status", "c4_start", "c4_clear"} {
 		if !names[expected] {
 			t.Errorf("expected tool %q not found in %v", expected, names)
 		}
@@ -173,6 +184,8 @@ func TestE2EMCPStatusTool(t *testing.T) {
 	insertTask(t, db, "T-001-0", "Task one", "done")
 	insertTask(t, db, "T-002-0", "Task two", "pending")
 
+	srv := newTestMCPServer(t, db)
+
 	req := &mcpRequest{
 		JSONRPC: "2.0",
 		ID:      10,
@@ -183,7 +196,7 @@ func TestE2EMCPStatusTool(t *testing.T) {
 		}`),
 	}
 
-	resp := handleMCPRequest(req)
+	resp := srv.handleRequest(req)
 	if resp == nil {
 		t.Fatal("nil response")
 	}
@@ -192,12 +205,12 @@ func TestE2EMCPStatusTool(t *testing.T) {
 	}
 
 	// Verify response has content
-	resultMap, ok := resp.Result.(map[string]interface{})
+	resultMap, ok := resp.Result.(map[string]any)
 	if !ok {
 		t.Fatalf("result type = %T, want map", resp.Result)
 	}
 
-	content, ok := resultMap["content"].([]map[string]interface{})
+	content, ok := resultMap["content"].([]map[string]any)
 	if !ok {
 		t.Fatalf("content type = %T, want []map", resultMap["content"])
 	}
@@ -217,8 +230,8 @@ func TestE2EMCPStatusTool(t *testing.T) {
 		t.Fatalf("parse status: %v (text: %s)", err, text)
 	}
 
-	if status["status"] != "EXECUTE" {
-		t.Errorf("status = %v, want EXECUTE", status["status"])
+	if status["state"] != "EXECUTE" {
+		t.Errorf("state = %v, want EXECUTE", status["state"])
 	}
 }
 

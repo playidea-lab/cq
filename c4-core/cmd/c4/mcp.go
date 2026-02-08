@@ -7,7 +7,9 @@ import (
 	"io"
 	"os"
 
-	"github.com/spf13/cobra"
+	"github.com/changmin/c4-core/internal/bridge"
+	"github.com/changmin/c4-core/internal/mcp"
+	"github.com/changmin/c4-core/internal/mcp/handlers"
 	_ "modernc.org/sqlite"
 )
 
@@ -52,18 +54,54 @@ type initializeResult struct {
 	} `json:"capabilities"`
 }
 
-// toolInfo describes a single MCP tool.
-type toolInfo struct {
-	Name        string      `json:"name"`
-	Description string      `json:"description"`
-	InputSchema interface{} `json:"inputSchema"`
+// mcpServer holds the state of a running MCP server instance.
+type mcpServer struct {
+	registry *mcp.Registry
+	sidecar  *bridge.Sidecar
 }
 
-func runMCP(cmd *cobra.Command, args []string) error {
-	if verbose {
-		fmt.Fprintln(os.Stderr, "C4 MCP server starting on stdio...")
+// newMCPServer creates and initializes the MCP server with all tools registered.
+func newMCPServer() (*mcpServer, error) {
+	// Open SQLite database
+	db, err := sql.Open("sqlite", dbPath())
+	if err != nil {
+		return nil, fmt.Errorf("opening database: %w", err)
 	}
 
+	// Create store
+	store, err := handlers.NewSQLiteStore(db)
+	if err != nil {
+		return nil, fmt.Errorf("creating store: %w", err)
+	}
+
+	// Try to start Python sidecar for proxy tools
+	var sidecar *bridge.Sidecar
+	var bridgeAddr string
+
+	cfg := bridge.DefaultSidecarConfig()
+	sidecar, err = bridge.StartSidecar(cfg)
+	if err != nil {
+		// Sidecar failed to start — proxy tools will fail at call time
+		fmt.Fprintf(os.Stderr, "c4: Python sidecar not available: %v\n", err)
+		fmt.Fprintln(os.Stderr, "c4: LSP, Knowledge, and GPU tools will be unavailable")
+		bridgeAddr = "" // proxy tools will get empty addr
+	} else {
+		bridgeAddr = sidecar.Addr()
+		fmt.Fprintf(os.Stderr, "c4: Python sidecar started at %s\n", bridgeAddr)
+	}
+
+	// Create registry and register all tools
+	reg := mcp.NewRegistry()
+	handlers.RegisterAllHandlers(reg, store, projectDir, bridgeAddr)
+
+	return &mcpServer{
+		registry: reg,
+		sidecar:  sidecar,
+	}, nil
+}
+
+// serve runs the stdio MCP server loop.
+func (s *mcpServer) serve() error {
 	decoder := json.NewDecoder(os.Stdin)
 	encoder := json.NewEncoder(os.Stdout)
 
@@ -73,19 +111,27 @@ func runMCP(cmd *cobra.Command, args []string) error {
 			if err == io.EOF {
 				return nil
 			}
-			return fmt.Errorf("failed to decode request: %w", err)
+			return fmt.Errorf("decoding request: %w", err)
 		}
 
-		resp := handleMCPRequest(&req)
+		resp := s.handleRequest(&req)
 		if resp != nil {
 			if err := encoder.Encode(resp); err != nil {
-				return fmt.Errorf("failed to encode response: %w", err)
+				return fmt.Errorf("encoding response: %w", err)
 			}
 		}
 	}
 }
 
-func handleMCPRequest(req *mcpRequest) *mcpResponse {
+// shutdown cleans up resources.
+func (s *mcpServer) shutdown() {
+	if s.sidecar != nil {
+		_ = s.sidecar.Stop()
+	}
+}
+
+// handleRequest dispatches a JSON-RPC request.
+func (s *mcpServer) handleRequest(req *mcpRequest) *mcpResponse {
 	switch req.Method {
 	case "initialize":
 		return &mcpResponse{
@@ -95,46 +141,28 @@ func handleMCPRequest(req *mcpRequest) *mcpResponse {
 				ProtocolVersion: "2024-11-05",
 				ServerInfo: serverInfo{
 					Name:    "c4",
-					Version: "0.1.0",
+					Version: version,
 				},
 			},
 		}
 
 	case "tools/list":
-		tools := []toolInfo{
-			{
-				Name:        "c4_status",
-				Description: "Show project state and task counts",
-				InputSchema: map[string]interface{}{
-					"type":       "object",
-					"properties": map[string]interface{}{},
-				},
-			},
-			{
-				Name:        "c4_start",
-				Description: "Transition to EXECUTE state",
-				InputSchema: map[string]interface{}{
-					"type":       "object",
-					"properties": map[string]interface{}{},
-				},
-			},
-			{
-				Name:        "c4_stop",
-				Description: "Transition to HALTED state",
-				InputSchema: map[string]interface{}{
-					"type":       "object",
-					"properties": map[string]interface{}{},
-				},
-			},
+		schemas := s.registry.ListTools()
+		tools := make([]map[string]any, 0, len(schemas))
+		for _, t := range schemas {
+			tools = append(tools, map[string]any{
+				"name":        t.Name,
+				"description": t.Description,
+				"inputSchema": t.InputSchema,
+			})
 		}
 		return &mcpResponse{
 			JSONRPC: "2.0",
 			ID:      req.ID,
-			Result:  map[string]interface{}{"tools": tools},
+			Result:  map[string]any{"tools": tools},
 		}
 
 	case "tools/call":
-		// Parse tool call params
 		var params struct {
 			Name      string          `json:"name"`
 			Arguments json.RawMessage `json:"arguments"`
@@ -147,7 +175,7 @@ func handleMCPRequest(req *mcpRequest) *mcpResponse {
 			}
 		}
 
-		result, err := callTool(params.Name, params.Arguments)
+		result, err := s.registry.Call(params.Name, params.Arguments)
 		if err != nil {
 			return &mcpResponse{
 				JSONRPC: "2.0",
@@ -156,18 +184,27 @@ func handleMCPRequest(req *mcpRequest) *mcpResponse {
 			}
 		}
 
+		// Marshal result to JSON text for MCP content response
+		resultJSON, jsonErr := json.Marshal(result)
+		if jsonErr != nil {
+			return &mcpResponse{
+				JSONRPC: "2.0",
+				ID:      req.ID,
+				Error:   &mcpError{Code: -32000, Message: "failed to serialize result"},
+			}
+		}
+
 		return &mcpResponse{
 			JSONRPC: "2.0",
 			ID:      req.ID,
-			Result: map[string]interface{}{
-				"content": []map[string]interface{}{
-					{"type": "text", "text": result},
+			Result: map[string]any{
+				"content": []map[string]any{
+					{"type": "text", "text": string(resultJSON)},
 				},
 			},
 		}
 
 	case "notifications/initialized":
-		// Notification, no response needed
 		return nil
 
 	default:
@@ -179,96 +216,26 @@ func handleMCPRequest(req *mcpRequest) *mcpResponse {
 	}
 }
 
-// callTool dispatches a tool call to the appropriate handler.
-func callTool(name string, _ json.RawMessage) (string, error) {
-	switch name {
-	case "c4_status":
-		return callStatusTool()
-	case "c4_start":
-		return callStartTool()
-	case "c4_stop":
-		return callStopTool()
-	default:
-		return "", fmt.Errorf("unknown tool: %s", name)
+// runMCP creates and runs the Go MCP server.
+// This is called from fallback.go's startGoMCPServer.
+func runMCP() error {
+	if verbose {
+		fmt.Fprintln(os.Stderr, "c4: Go MCP server starting on stdio...")
 	}
+
+	srv, err := newMCPServer()
+	if err != nil {
+		return fmt.Errorf("initializing MCP server: %w", err)
+	}
+	defer srv.shutdown()
+
+	tools := srv.registry.ListTools()
+	fmt.Fprintf(os.Stderr, "c4: %d tools registered\n", len(tools))
+
+	return srv.serve()
 }
 
-func callStatusTool() (string, error) {
-	db, err := openDB()
-	if err != nil {
-		return "", err
-	}
-	defer db.Close()
-
-	state, err := loadProjectState(db)
-	if err != nil {
-		return "", err
-	}
-
-	counts, err := countTasks(db)
-	if err != nil {
-		return "", err
-	}
-
-	result, _ := json.Marshal(map[string]interface{}{
-		"status":      state.Status,
-		"project_id":  state.ProjectID,
-		"total":       counts.Total,
-		"pending":     counts.Pending,
-		"in_progress": counts.InProgress,
-		"done":        counts.Done,
-		"blocked":     counts.Blocked,
-	})
-	return string(result), nil
-}
-
-func callStartTool() (string, error) {
-	db, err := openDB()
-	if err != nil {
-		return "", err
-	}
-	defer db.Close()
-
-	state, err := loadProjectState(db)
-	if err != nil {
-		return "", err
-	}
-
-	if state.Status != "PLAN" && state.Status != "HALTED" {
-		return "", fmt.Errorf("cannot start from state %s", state.Status)
-	}
-
-	if err := transitionToExecute(db, state); err != nil {
-		return "", err
-	}
-
-	return `{"status":"EXECUTE","success":true}`, nil
-}
-
-func callStopTool() (string, error) {
-	db, err := openDB()
-	if err != nil {
-		return "", err
-	}
-	defer db.Close()
-
-	state, err := loadProjectState(db)
-	if err != nil {
-		return "", err
-	}
-
-	if state.Status != "EXECUTE" {
-		return "", fmt.Errorf("cannot stop from state %s", state.Status)
-	}
-
-	if err := transitionToHalted(db, state); err != nil {
-		return "", err
-	}
-
-	return `{"status":"HALTED","success":true}`, nil
-}
-
-// openDB opens the tasks database (shared helper for MCP tools).
+// openDB opens the tasks database (shared helper for CLI commands).
 func openDB() (*sql.DB, error) {
 	db, err := sql.Open("sqlite", dbPath())
 	if err != nil {

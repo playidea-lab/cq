@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/changmin/c4-core/internal/mcp"
+	"github.com/changmin/c4-core/internal/mcp/handlers"
 	_ "modernc.org/sqlite"
 )
 
@@ -43,11 +45,25 @@ func setupTestDB(t *testing.T) (*sql.DB, func()) {
 			task_id    TEXT PRIMARY KEY,
 			title      TEXT NOT NULL,
 			scope      TEXT DEFAULT '',
+			dod        TEXT DEFAULT '',
 			priority   INTEGER DEFAULT 5,
 			status     TEXT DEFAULT 'pending',
+			dependencies TEXT DEFAULT '[]',
 			depends_on TEXT DEFAULT '[]',
+			domain     TEXT DEFAULT '',
+			model      TEXT DEFAULT '',
+			worker_id  TEXT DEFAULT '',
+			branch     TEXT DEFAULT '',
+			commit_sha TEXT DEFAULT '',
 			created_at TEXT DEFAULT CURRENT_TIMESTAMP,
 			updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+		);
+		CREATE TABLE IF NOT EXISTS c4_checkpoints (
+			checkpoint_id TEXT PRIMARY KEY,
+			decision TEXT,
+			notes TEXT,
+			required_changes TEXT DEFAULT '[]',
+			created_at TEXT DEFAULT CURRENT_TIMESTAMP
 		);
 	`
 	if _, err := db.Exec(schema); err != nil {
@@ -85,6 +101,22 @@ func insertTask(t *testing.T, db *sql.DB, taskID, title, status string) {
 	if err != nil {
 		t.Fatalf("failed to insert task: %v", err)
 	}
+}
+
+// newTestMCPServer creates a minimal MCP server backed by a test DB.
+// It only registers core tools (no sidecar/proxy needed for tests).
+func newTestMCPServer(t *testing.T, db *sql.DB) *mcpServer {
+	t.Helper()
+
+	store, err := handlers.NewSQLiteStore(db)
+	if err != nil {
+		t.Fatalf("creating store: %v", err)
+	}
+
+	reg := mcp.NewRegistry()
+	handlers.RegisterAll(reg, store)
+
+	return &mcpServer{registry: reg}
 }
 
 // TestStatusCommandOutput verifies that runStatus reads project state and
@@ -252,13 +284,18 @@ func TestAddTaskCreatesTask(t *testing.T) {
 
 // TestMCPInitialize verifies the MCP server handles the initialize method.
 func TestMCPInitialize(t *testing.T) {
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	srv := newTestMCPServer(t, db)
+
 	req := &mcpRequest{
 		JSONRPC: "2.0",
 		ID:      1,
 		Method:  "initialize",
 	}
 
-	resp := handleMCPRequest(req)
+	resp := srv.handleRequest(req)
 	if resp == nil {
 		t.Fatal("expected response, got nil")
 	}
@@ -277,13 +314,18 @@ func TestMCPInitialize(t *testing.T) {
 
 // TestMCPToolsList verifies the MCP server returns tool definitions.
 func TestMCPToolsList(t *testing.T) {
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	srv := newTestMCPServer(t, db)
+
 	req := &mcpRequest{
 		JSONRPC: "2.0",
 		ID:      2,
 		Method:  "tools/list",
 	}
 
-	resp := handleMCPRequest(req)
+	resp := srv.handleRequest(req)
 	if resp == nil {
 		t.Fatal("expected response, got nil")
 	}
@@ -291,26 +333,30 @@ func TestMCPToolsList(t *testing.T) {
 		t.Fatalf("expected no error, got %v", resp.Error)
 	}
 
-	resultMap, ok := resp.Result.(map[string]interface{})
+	resultMap, ok := resp.Result.(map[string]any)
 	if !ok {
 		t.Fatalf("expected map result, got %T", resp.Result)
 	}
 
-	tools, ok := resultMap["tools"].([]toolInfo)
+	tools, ok := resultMap["tools"].([]map[string]any)
 	if !ok {
-		t.Fatalf("expected []toolInfo, got %T", resultMap["tools"])
+		t.Fatalf("expected []map[string]any, got %T", resultMap["tools"])
 	}
 
-	if len(tools) != 3 {
-		t.Errorf("expected 3 tools, got %d", len(tools))
+	// Core tools: c4_status, c4_start, c4_clear, c4_get_task, c4_submit,
+	// c4_add_todo, c4_mark_blocked, c4_claim, c4_report, c4_checkpoint
+	if len(tools) < 10 {
+		t.Errorf("expected at least 10 core tools, got %d", len(tools))
 	}
 
-	// Verify tool names
+	// Verify key tools exist
 	names := make(map[string]bool)
 	for _, tool := range tools {
-		names[tool.Name] = true
+		if name, ok := tool["name"].(string); ok {
+			names[name] = true
+		}
 	}
-	for _, expected := range []string{"c4_status", "c4_start", "c4_stop"} {
+	for _, expected := range []string{"c4_status", "c4_start", "c4_get_task", "c4_submit", "c4_claim"} {
 		if !names[expected] {
 			t.Errorf("expected tool %q not found", expected)
 		}
@@ -319,13 +365,18 @@ func TestMCPToolsList(t *testing.T) {
 
 // TestMCPUnknownMethod verifies the MCP server returns a method-not-found error.
 func TestMCPUnknownMethod(t *testing.T) {
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	srv := newTestMCPServer(t, db)
+
 	req := &mcpRequest{
 		JSONRPC: "2.0",
 		ID:      3,
 		Method:  "unknown/method",
 	}
 
-	resp := handleMCPRequest(req)
+	resp := srv.handleRequest(req)
 	if resp == nil {
 		t.Fatal("expected response, got nil")
 	}
@@ -382,27 +433,27 @@ func TestRunFromCompleteState(t *testing.T) {
 // TestMCPStdioIntegration verifies the full JSON-RPC round-trip:
 // send initialize request, receive response with server info.
 func TestMCPStdioIntegration(t *testing.T) {
-	// Build a JSON-RPC request
-	reqJSON := `{"jsonrpc":"2.0","id":1,"method":"initialize"}`
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
 
+	srv := newTestMCPServer(t, db)
+
+	reqJSON := `{"jsonrpc":"2.0","id":1,"method":"initialize"}`
 	var req mcpRequest
 	if err := json.Unmarshal([]byte(reqJSON), &req); err != nil {
 		t.Fatalf("unmarshal request: %v", err)
 	}
 
-	// Process through the handler
-	resp := handleMCPRequest(&req)
+	resp := srv.handleRequest(&req)
 	if resp == nil {
 		t.Fatal("expected non-nil response")
 	}
 
-	// Serialize to JSON (simulates stdout write)
 	respBytes, err := json.Marshal(resp)
 	if err != nil {
 		t.Fatalf("marshal response: %v", err)
 	}
 
-	// Verify response is valid JSON-RPC
 	var parsed struct {
 		JSONRPC string      `json:"jsonrpc"`
 		ID      interface{} `json:"id"`
@@ -416,7 +467,7 @@ func TestMCPStdioIntegration(t *testing.T) {
 	if parsed.JSONRPC != "2.0" {
 		t.Errorf("jsonrpc = %q, want '2.0'", parsed.JSONRPC)
 	}
-	if parsed.ID != float64(1) { // JSON numbers decode as float64
+	if parsed.ID != float64(1) {
 		t.Errorf("id = %v, want 1", parsed.ID)
 	}
 	if parsed.Error != nil {
@@ -433,15 +484,15 @@ func TestMCPStdioToolsCallIntegration(t *testing.T) {
 	insertTask(t, db, "T-001-0", "Task one", "done")
 	insertTask(t, db, "T-002-0", "Task two", "pending")
 
-	// Simulate tools/call for c4_status
-	reqJSON := `{"jsonrpc":"2.0","id":42,"method":"tools/call","params":{"name":"c4_status","arguments":{}}}`
+	srv := newTestMCPServer(t, db)
 
+	reqJSON := `{"jsonrpc":"2.0","id":42,"method":"tools/call","params":{"name":"c4_status","arguments":{}}}`
 	var req mcpRequest
 	if err := json.Unmarshal([]byte(reqJSON), &req); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
 
-	resp := handleMCPRequest(&req)
+	resp := srv.handleRequest(&req)
 	if resp == nil {
 		t.Fatal("nil response")
 	}
@@ -449,13 +500,12 @@ func TestMCPStdioToolsCallIntegration(t *testing.T) {
 		t.Fatalf("error: %v", resp.Error)
 	}
 
-	// Verify response structure
-	resultMap, ok := resp.Result.(map[string]interface{})
+	resultMap, ok := resp.Result.(map[string]any)
 	if !ok {
 		t.Fatalf("result type = %T, want map", resp.Result)
 	}
 
-	content, ok := resultMap["content"].([]map[string]interface{})
+	content, ok := resultMap["content"].([]map[string]any)
 	if !ok {
 		t.Fatalf("content type = %T, want []map", resultMap["content"])
 	}
@@ -464,20 +514,18 @@ func TestMCPStdioToolsCallIntegration(t *testing.T) {
 		t.Fatal("content is empty")
 	}
 
-	// First content block should be text with JSON
 	text, ok := content[0]["text"].(string)
 	if !ok {
 		t.Fatalf("text type = %T, want string", content[0]["text"])
 	}
 
-	// Parse the inner JSON
 	var statusResult map[string]interface{}
 	if err := json.Unmarshal([]byte(text), &statusResult); err != nil {
 		t.Fatalf("parse status result: %v (text: %s)", err, text)
 	}
 
-	if statusResult["status"] != "EXECUTE" {
-		t.Errorf("status = %v, want EXECUTE", statusResult["status"])
+	if statusResult["state"] != "EXECUTE" {
+		t.Errorf("state = %v, want EXECUTE", statusResult["state"])
 	}
 }
 

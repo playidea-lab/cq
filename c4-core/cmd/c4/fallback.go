@@ -85,11 +85,9 @@ func safeRunGoServer(cfg *FallbackConfig) (retErr error) {
 	return cfg.GoServerFunc()
 }
 
-// startGoMCPServer is the default Go MCP server implementation.
-// In the full implementation, this would start the actual Go MCP server.
-// For now, it returns an error indicating the server is not yet implemented.
+// startGoMCPServer starts the actual Go MCP server with all tools.
 func startGoMCPServer() error {
-	return fmt.Errorf("Go MCP server not yet implemented")
+	return runMCP()
 }
 
 // runPythonMCP starts the Python MCP server as a subprocess.

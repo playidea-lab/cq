@@ -46,6 +46,9 @@ htmlcov/
 Thumbs.db
 .env
 
+# Go binaries
+c4-core/bin/
+
 # Local files
 C4-Guide.pptx
 workspace/

@@ -1,12 +1,12 @@
 # C4 Roadmap
 
-## Current Version: v0.6.12 (Go Core + Multi-LLM Explorer)
+## Current Version: v0.7.0 (Go MCP Primary + Cloud Cleanup)
 
-현재 버전은 **Go Core 하이브리드 아키텍처, Multi-LLM 탐색기, GPU/ML 네이티브, 워커 생명주기 강화**를 포함합니다.
+현재 버전은 **Go MCP Primary 아키텍처, Python Cloud 코드 정리(-73K LOC), JSON-RPC Bridge, Multi-LLM 탐색기**를 포함합니다.
 
 ### 지원 기능
 
-- MCP Server (Claude Code 통합) - 30+ 도구
+- **Go MCP Server (Primary)** - 47 도구, Registry-based, Python sidecar 자동 관리
 - **LSP Server** (VS Code 등 에디터 통합) - pygls 기반
 - State Machine (INIT → DISCOVERY → DESIGN → PLAN → EXECUTE ↔ CHECKPOINT → COMPLETE)
 - Multi-Worker (SQLite WAL 모드, race-condition free)
@@ -30,8 +30,10 @@
 - **Knowledge Store v2** - Obsidian Markdown SSOT + FTS5 + Vector hybrid search
 - **Hook Registry** - 태스크 생명주기 훅 시스템
 - **Worker Lifecycle** - 좀비 워커 자동 감지/정리, TTL 기반 제거
-- **Go Core** (c4-core/) - 고성능 State Machine, TaskStore, MCP Server (Go), CLI, gRPC Bridge
+- **Go MCP Primary** (c4-core/) - 47 도구, Registry-based, SQLite Store, Python sidecar 자동 관리
+- **JSON-RPC Bridge** - Go ↔ Python 통신 (LSP, Knowledge, GPU 위임)
 - **C1 Multi-LLM Explorer** - Claude Code, Codex CLI, Cursor, Gemini CLI 4개 프로바이더 통합
+- **Python Cloud 삭제** - ~39K LOC 삭제 (API, Billing, SSO, Monitoring, Realtime 등)
 
 ---
 
@@ -410,7 +412,7 @@ c4/
 **목표**: C1 데스크톱 앱을 Claude Code 전용 뷰어에서 모든 LLM 코딩 도구 통합 탐색기로 확장
 
 **구현 완료**:
-- **Provider Trait 추상화** (`canvas-app/src-tauri/src/providers/mod.rs`)
+- **Provider Trait 추상화** (`c1/src-tauri/src/providers/mod.rs`)
   - `ProviderKind` enum + `SessionProvider` trait (enum dispatch)
   - `detect_providers()` 자동 감지, `get_provider()` 팩토리
 - **4개 프로바이더**:
@@ -424,53 +426,63 @@ c4/
 
 **테스트**: Rust 16/16, Vitest 29/29
 
-### Phase 6.12: Go Core Migration ✅
+### Phase 6.12: Go Core Foundation ✅
 
-**목표**: 성능 크리티컬 컴포넌트를 Go로 마이그레이션
+**목표**: 성능 크리티컬 컴포넌트를 Go로 마이그레이션 (기반 구축)
 
 **구현 완료**:
-- **c4-core/** — 51 Go files, 14,157 LOC, 14 packages
+- **c4-core/** — Go 기반 코어 (14 packages)
 - **State Machine** (Go) — Python과 동일 상태 전이
 - **SQLite TaskStore** (Go) — Python DB 호환 (동일 스키마)
-- **MCP Server** (Go) — stdio transport, 10 핸들러
+- **MCP Server** (Go) — stdio transport, 10 핸들러 (초기)
 - **CLI** (cobra) — run, status, stop, add-task, mcp
-- **Auth** — OAuth + token 관리
-- **Realtime** — SSE 스트리밍
-- **gRPC Bridge** — Go ↔ Python Protobuf 통신
-- **Validation Runner** (Go) — lint, unit, integration 실행
-
-**패키지 구조**:
-```
-c4-core/
-├── cmd/c4/         # CLI (cobra), MCP server
-├── internal/
-│   ├── task/       # TaskStore (SQLite, Memory, Supabase)
-│   ├── state/      # State machine
-│   ├── mcp/        # MCP handlers (10개)
-│   ├── bridge/     # gRPC (Go ↔ Python)
-│   ├── worker/     # Worker manager
-│   ├── validation/ # Validation runner
-│   ├── auth/       # OAuth + token
-│   ├── config/     # Configuration
-│   ├── git/        # Git operations
-│   ├── realtime/   # SSE streaming
-│   └── server/     # HTTP server
-├── proto/          # Protobuf definitions
-└── test/           # Benchmarks
-```
-
-**성능**:
-
-| 메트릭 | Python | Go | 개선 |
-|--------|--------|-----|------|
-| c4_status | 5-20ms | ~57ns | ~100,000x |
-| Worker 생성 | 0.1-1ms | ~61ns | ~1,600x |
-| 메모리 | 50-100MB | ~14MB | 3-7x |
-
-**Go MCP 도구** (10개):
-`c4_status`, `c4_start`, `c4_clear`, `c4_get_task`, `c4_submit`, `c4_add_todo`, `c4_mark_blocked`, `c4_claim`, `c4_report`, `c4_checkpoint`
 
 **테스트**: 275 passing (`go test ./...`)
+
+### Phase 6.13: Go MCP Primary + Cloud Cleanup ✅
+
+**목표**: Go를 MCP Primary 서버로 전환, Python Cloud 코드 대폭 정리
+
+**5-Phase 실행 완료**:
+
+#### Phase 1: Python Cloud 코드 삭제 (-73,000+ LOC)
+- **17+ 모듈 삭제**: `c4/api/`, `c4/billing/`, `c4/monitoring/`, `c4/realtime/`, `c4/cloud/`, `c4/web/`, `c4/ui/`, `c4/telemetry/`, `c4/templates/`, `c4/sandbox/`, `c4/web_worker/`, `c4/connection/`, `c4/workspace/`, `c4/store/supabase.py` 등
+- **pyproject.toml** 정리: fastapi, uvicorn, supabase, opentelemetry, prometheus, stripe 등 삭제
+- **관련 테스트** 정리: Cloud 전용 테스트 디렉토리 삭제
+
+#### Phase 2: JSON-RPC Bridge 구현
+- **Python Bridge Server** (`c4/bridge/grpc_server.py`): JSON-RPC over TCP
+  - 11 methods: find_symbol, get_symbols_overview, replace_symbol_body, insert_before/after_symbol, rename_symbol, knowledge_search/record/get, gpu_status, job_submit
+- **Go Bridge Client** (`c4-core/internal/bridge/`): sidecar 자동 관리, health check
+- **Sidecar Lifecycle**: `C4_BRIDGE_PORT=<port>` stdout 프로토콜, graceful shutdown
+
+#### Phase 3: Go MCP 도구 확장 (10 → 47개)
+- **Go Native (21개)**: 상태, 태스크, 파일(find/read/replace/create), git(worktree/history/commits), validation
+- **Go + SQLite (13개)**: spec(save/get/list), design(save/get/list), discovery/design_complete, artifact(save/get/list), checkpoint, ensure_supervisor
+- **JSON-RPC Proxy (16개)**: LSP 7개(find/get_symbols/replace/insert/rename) + Knowledge 6개(search/record/get/experiment/pattern) + GPU 2개(status/submit)
+
+#### Phase 4: Go MCP Primary 전환
+- **Registry-based**: `mcp.Registry` + `handlers.RegisterAllHandlers()`
+- **SQLiteStore**: `handlers.Store` 인터페이스 SQLite 구현 (11 methods)
+- **Sidecar 자동 관리**: Go 시작 시 Python sidecar 자동 spawn
+- **Fallback**: Go MCP 실패 시 Python MCP fallback
+- **바이너리**: `c4-core/bin/c4` (12MB)
+
+#### Phase 5: canvas-app → c1 리네임
+- `canvas-app/` → `c1/` 디렉토리 이동
+
+**아키텍처**:
+```
+Claude Code → Go MCP Server (stdio, 47 tools)
+                ├→ Go native (21개)
+                ├→ Go + SQLite (13개)
+                └→ JSON-RPC proxy (16개) → Python Sidecar
+                                            ├→ LSP (multilspy, Jedi, tree-sitter)
+                                            ├→ Knowledge Store (FTS5 + Vector)
+                                            └→ GPU Scheduler
+```
+
+**테스트**: Go 15 packages pass, Python 2269/2270 pass
 
 ### Phase 6.10: Worker Lifecycle Hardening ✅
 
@@ -488,9 +500,10 @@ c4-core/
 
 ---
 
-## Phase 7: C4 Cloud (v0.7.0) 📋 Next
+## Phase 7: C4 Cloud (v0.8.0) 📋 Next
 
 **목표**: LLM 오케스트레이션 플랫폼으로서의 완전 관리형 SaaS
+**참고**: Phase 6.13에서 Python Cloud 코드(-73K LOC) 삭제됨. Cloud 재구축 시 Go 기반으로 설계.
 
 ### Phase 7.1: Cloud Foundation
 
@@ -587,17 +600,15 @@ c4-core/
 ## Migration Path
 
 ```text
-v0.1-0.3        v0.4           v0.5           v0.6          v0.6.10         v0.6.12 (현재)   v0.7+
+v0.1-0.3        v0.4           v0.5           v0.6          v0.6.10         v0.7.0 (현재)     v0.8+
     │               │               │               │               │               │               │
-    │  Multi-Worker │  Agent Routing│  Discovery    │  Team + LSP   │  GPU/ML +     │  Go Core +    │
-    │  SQLite       │  + Chaining   │  + Verifier   │  + Observ.    │  Worker Fix   │  C1 Explorer  │
+    │  Multi-Worker │  Agent Routing│  Discovery    │  Team + LSP   │  GPU/ML +     │  Go Primary + │
+    │  SQLite       │  + Chaining   │  + Verifier   │  + Observ.    │  Worker Fix   │  Cloud삭제    │
     ▼               ▼               ▼               ▼               ▼               ▼               ▼
 ┌─────────┐   ┌─────────┐    ┌─────────┐    ┌─────────┐    ┌─────────┐    ┌─────────┐    ┌────────────────┐
-│ Local   │──▶│ Agent   │───▶│ EARS +  │───▶│ Supabase│───▶│ PiQ     │───▶│ Go +    │───▶│ C4 Cloud       │
-│ Files   │   │ Routing │    │ ADR     │    │ + Code  │    │ Absorb  │    │ Hybrid  │    │ ├─ 7.1 Console │
-└─────────┘   └─────────┘    └─────────┘    └─────────┘    └─────────┘    └─────────┘    │ ├─ 7.2 LLM GW  │
-                                                                                          │ └─ 7.3 Workers │
-                                                                                          └────────────────┘
+│ Local   │──▶│ Agent   │───▶│ EARS +  │───▶│ Supabase│───▶│ PiQ     │───▶│ Go MCP  │───▶│ C4 Cloud       │
+│ Files   │   │ Routing │    │ ADR     │    │ + Code  │    │ Absorb  │    │ Primary │    │ (Go 재설계)    │
+└─────────┘   └─────────┘    └─────────┘    └─────────┘    └─────────┘    └─────────┘    └────────────────┘
 ```
 
 ---
@@ -628,7 +639,8 @@ v0.1-0.3        v0.4           v0.5           v0.6          v0.6.10         v0.6
 | **PiQ 완전 흡수 (GPU/ML)** | P0 | ✅ 완료 |
 | **Worker Lifecycle Hardening** | P0 | ✅ 완료 |
 | **C1 Multi-LLM Explorer** | P0 | ✅ 완료 |
-| **Go Core Migration** | P0 | ✅ 완료 |
-| Cloud Foundation (7.1) | P1 | 📋 Next |
+| **Go Core Foundation** | P0 | ✅ 완료 |
+| **Go MCP Primary + Cloud Cleanup** | P0 | ✅ 완료 |
+| Cloud Foundation (7.1) | P1 | 📋 Next (Go 재설계) |
 | LLM Gateway (7.2) | P1 | 📋 Phase 7 |
 | Hosted Workers (7.3) | P2 | 📋 Phase 7 |

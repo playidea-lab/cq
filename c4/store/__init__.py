@@ -3,18 +3,14 @@
 Usage:
     from c4.store import LocalFileStateStore, LocalFileLockStore
 
-    # File-based (default)
+    # File-based
     state_store = LocalFileStateStore(c4_dir)
     lock_store = LocalFileLockStore(state_store)
 
-    # SQLite
+    # SQLite (default)
     from c4.store import SQLiteStateStore, SQLiteLockStore
     state_store = SQLiteStateStore(db_path)
     lock_store = SQLiteLockStore(db_path)
-
-    # Supabase (cloud)
-    from c4.store import SupabaseStateStore
-    state_store = SupabaseStateStore()  # Uses SUPABASE_URL/KEY env vars
 """
 
 from .exceptions import (
@@ -26,7 +22,6 @@ from .exceptions import (
 from .factory import (
     BACKEND_LOCAL_FILE,
     BACKEND_SQLITE,
-    BACKEND_SUPABASE,
     create_lock_store,
     create_state_store,
     create_task_store,
@@ -35,7 +30,6 @@ from .factory import (
 from .local_file import LocalFileLockStore, LocalFileStateStore
 from .protocol import LockStore, StateStore
 from .sqlite import SQLiteLockStore, SQLiteStateStore, SQLiteTaskStore
-from .supabase import SupabaseStateStore, create_supabase_store
 
 __all__ = [
     # Protocols
@@ -53,9 +47,6 @@ __all__ = [
     "SQLiteStateStore",
     "SQLiteLockStore",
     "SQLiteTaskStore",
-    # Implementations - Supabase
-    "SupabaseStateStore",
-    "create_supabase_store",
     # Factory functions
     "create_state_store",
     "create_lock_store",
@@ -64,5 +55,4 @@ __all__ = [
     # Backend constants
     "BACKEND_SQLITE",
     "BACKEND_LOCAL_FILE",
-    "BACKEND_SUPABASE",
 ]

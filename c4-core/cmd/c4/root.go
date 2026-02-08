@@ -67,7 +67,14 @@ func c4Dir() string {
 	return filepath.Join(projectDir, ".c4")
 }
 
-// dbPath returns the path to the tasks database.
+// dbPath returns the path to the main C4 database.
+// The Python daemon uses .c4/c4.db as the primary database.
 func dbPath() string {
+	// Prefer c4.db (shared with Python daemon)
+	primary := filepath.Join(c4Dir(), "c4.db")
+	if _, err := os.Stat(primary); err == nil {
+		return primary
+	}
+	// Fallback to tasks.db (standalone Go)
 	return filepath.Join(c4Dir(), "tasks.db")
 }

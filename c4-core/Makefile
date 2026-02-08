@@ -1,7 +1,7 @@
 # C4 Core - Go Implementation
 # ============================
 
-.PHONY: build test lint vet clean proto-gen fmt help
+.PHONY: build test test-grpc lint vet clean proto-gen fmt help
 
 # Build variables
 BINARY_NAME := c4
@@ -39,12 +39,18 @@ fmt:
 	gofmt -s -w .
 	goimports -w .
 
+## test-grpc: Run tests including gRPC client tests (requires proto-gen first)
+test-grpc:
+	go test -v -race -count=1 -tags=grpc ./...
+
 ## proto-gen: Generate Go code from proto files
 proto-gen:
+	@mkdir -p internal/bridge/pb
 	protoc \
 		--go_out=. --go_opt=paths=source_relative \
 		--go-grpc_out=. --go-grpc_opt=paths=source_relative \
 		proto/c4_bridge.proto
+	@echo "Generated pb files in internal/bridge/pb/"
 
 ## clean: Remove build artifacts
 clean:
