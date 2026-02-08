@@ -26,9 +26,11 @@ func RegisterNativeHandlers(reg *mcp.Registry, rootDir string, store Store) {
 
 // RegisterAllHandlers registers all MCP tool handlers including Python proxy tools.
 // Total: 47 tools (10 core + 11 native + 12 discovery/artifact + 14 proxy)
-func RegisterAllHandlers(reg *mcp.Registry, store Store, rootDir string, bridgeAddr string) {
+// Returns the BridgeProxy so callers can attach a Restarter for auto-recovery.
+func RegisterAllHandlers(reg *mcp.Registry, store Store, rootDir string, bridgeAddr string) *BridgeProxy {
 	RegisterAll(reg, store)
 	RegisterNativeHandlers(reg, rootDir, store)
 	proxy := NewBridgeProxy(bridgeAddr)
 	RegisterProxyHandlers(reg, proxy)
+	return proxy
 }

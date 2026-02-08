@@ -2,6 +2,7 @@ package bridge
 
 import (
 	"bufio"
+	"encoding/json"
 	"fmt"
 	"net"
 	"os"
@@ -14,9 +15,11 @@ import (
 // Sidecar manages the Python bridge sidecar process.
 type Sidecar struct {
 	mu      sync.Mutex
+	cfg     *SidecarConfig
 	cmd     *exec.Cmd
 	addr    string // "host:port" once started
 	stopped bool
+	restarts int
 }
 
 // SidecarConfig holds configuration for the Python sidecar.
@@ -79,7 +82,7 @@ func StartSidecar(cfg *SidecarConfig) (*Sidecar, error) {
 		return nil, fmt.Errorf("starting sidecar: %w", err)
 	}
 
-	s := &Sidecar{cmd: cmd}
+	s := &Sidecar{cfg: cfg, cmd: cmd}
 
 	// Read port from stdout
 	portCh := make(chan string, 1)
@@ -162,6 +165,89 @@ func (s *Sidecar) IsRunning() bool {
 	}
 	// Check if process is still alive by sending signal 0
 	return s.cmd.Process.Signal(nil) == nil
+}
+
+// Ping sends a JSON-RPC Ping request to verify the sidecar is responsive.
+func (s *Sidecar) Ping() error {
+	s.mu.Lock()
+	addr := s.addr
+	s.mu.Unlock()
+
+	if addr == "" {
+		return fmt.Errorf("sidecar not running")
+	}
+
+	conn, err := net.DialTimeout("tcp", addr, 3*time.Second)
+	if err != nil {
+		return fmt.Errorf("ping dial: %w", err)
+	}
+	defer conn.Close()
+
+	_ = conn.SetDeadline(time.Now().Add(3 * time.Second))
+
+	req := map[string]any{"method": "Ping", "params": map[string]any{}}
+	data, _ := json.Marshal(req)
+	data = append(data, '\n')
+	if _, err := conn.Write(data); err != nil {
+		return fmt.Errorf("ping write: %w", err)
+	}
+
+	buf := make([]byte, 1024)
+	n, err := conn.Read(buf)
+	if err != nil {
+		return fmt.Errorf("ping read: %w", err)
+	}
+
+	var resp struct {
+		Result map[string]any `json:"result"`
+		Error  *string        `json:"error"`
+	}
+	if err := json.Unmarshal(buf[:n], &resp); err != nil {
+		return fmt.Errorf("ping parse: %w", err)
+	}
+	if resp.Error != nil {
+		return fmt.Errorf("ping error: %s", *resp.Error)
+	}
+	return nil
+}
+
+// Restart stops the current sidecar and starts a new one.
+// Returns the new address. Max 3 restarts to avoid infinite loops.
+func (s *Sidecar) Restart() (string, error) {
+	s.mu.Lock()
+	if s.restarts >= 3 {
+		s.mu.Unlock()
+		return "", fmt.Errorf("sidecar restart limit reached (%d)", s.restarts)
+	}
+	s.restarts++
+	cfg := s.cfg
+	s.mu.Unlock()
+
+	// Stop existing process
+	_ = s.Stop()
+
+	// Reset stopped flag for new process
+	s.mu.Lock()
+	s.stopped = false
+	s.cmd = nil
+	s.addr = ""
+	s.mu.Unlock()
+
+	// Start new sidecar using stored config
+	newSidecar, err := StartSidecar(cfg)
+	if err != nil {
+		return "", fmt.Errorf("restart failed: %w", err)
+	}
+
+	// Transfer new state
+	s.mu.Lock()
+	s.cmd = newSidecar.cmd
+	s.addr = newSidecar.addr
+	s.stopped = false
+	s.mu.Unlock()
+
+	fmt.Fprintf(os.Stderr, "c4: sidecar restarted at %s (restart #%d)\n", newSidecar.addr, s.restarts)
+	return newSidecar.addr, nil
 }
 
 // waitReady polls the TCP address until connection succeeds or timeout.

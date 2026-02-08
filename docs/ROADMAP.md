@@ -451,7 +451,7 @@ c4/
 - **관련 테스트** 정리: Cloud 전용 테스트 디렉토리 삭제
 
 #### Phase 2: JSON-RPC Bridge 구현
-- **Python Bridge Server** (`c4/bridge/grpc_server.py`): JSON-RPC over TCP
+- **Python Bridge Server** (`c4/bridge/rpc_server.py`): JSON-RPC over TCP
   - 11 methods: find_symbol, get_symbols_overview, replace_symbol_body, insert_before/after_symbol, rename_symbol, knowledge_search/record/get, gpu_status, job_submit
 - **Go Bridge Client** (`c4-core/internal/bridge/`): sidecar 자동 관리, health check
 - **Sidecar Lifecycle**: `C4_BRIDGE_PORT=<port>` stdout 프로토콜, graceful shutdown

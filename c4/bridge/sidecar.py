@@ -1,4 +1,4 @@
-"""C4 Bridge Sidecar -- entry point for the Python gRPC sidecar process.
+"""C4 Bridge Sidecar -- entry point for the Python sidecar process.
 
 Starts the BridgeServer and prints the port to stdout so the Go MCP server
 can discover it. Handles SIGINT/SIGTERM for graceful shutdown.
@@ -21,7 +21,7 @@ import signal
 import sys
 from pathlib import Path
 
-from c4.bridge.grpc_server import BridgeServer
+from c4.bridge.rpc_server import BridgeServer
 
 logger = logging.getLogger(__name__)
 

@@ -92,7 +92,12 @@ func newMCPServer() (*mcpServer, error) {
 
 	// Create registry and register all tools
 	reg := mcp.NewRegistry()
-	handlers.RegisterAllHandlers(reg, store, projectDir, bridgeAddr)
+	proxy := handlers.RegisterAllHandlers(reg, store, projectDir, bridgeAddr)
+
+	// Wire sidecar auto-restart: proxy can restart sidecar on connection failure
+	if sidecar != nil {
+		proxy.SetRestarter(sidecar)
+	}
 
 	return &mcpServer{
 		registry: reg,

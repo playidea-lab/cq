@@ -4,15 +4,24 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/changmin/c4-core/internal/mcp"
 )
 
+// Restarter is implemented by bridge.Sidecar to allow the proxy to trigger restarts.
+type Restarter interface {
+	Restart() (string, error)
+}
+
 // BridgeProxy forwards MCP tool calls to the Python sidecar via JSON-RPC over TCP.
 type BridgeProxy struct {
-	addr    string
-	timeout time.Duration
+	mu        sync.Mutex
+	addr      string
+	timeout   time.Duration
+	restarter Restarter // nil if no auto-restart support
 }
 
 // NewBridgeProxy creates a proxy that connects to the Python bridge sidecar.
@@ -24,12 +33,74 @@ func NewBridgeProxy(addr string) *BridgeProxy {
 	}
 }
 
+// SetRestarter attaches a Restarter (typically *bridge.Sidecar) for auto-recovery.
+func (p *BridgeProxy) SetRestarter(r Restarter) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.restarter = r
+}
+
+// UpdateAddr updates the sidecar address (called after restart).
+func (p *BridgeProxy) UpdateAddr(addr string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.addr = addr
+}
+
 // Call sends a JSON-RPC request to the Python sidecar and returns the result.
+// On connection failure, attempts to restart the sidecar once and retry.
 func (p *BridgeProxy) Call(method string, params map[string]any) (map[string]any, error) {
-	if p.addr == "" {
+	result, err := p.doCall(method, params)
+	if err != nil && p.isConnError(err) {
+		// Try restart + retry once
+		if newAddr, restartErr := p.tryRestart(); restartErr == nil {
+			_ = newAddr
+			return p.doCall(method, params)
+		}
+	}
+	return result, err
+}
+
+// isConnError returns true for errors that indicate the sidecar is unreachable.
+func (p *BridgeProxy) isConnError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "bridge connect:") ||
+		strings.Contains(msg, "write request:") ||
+		strings.Contains(msg, "read response:")
+}
+
+// tryRestart attempts to restart the sidecar via the Restarter interface.
+func (p *BridgeProxy) tryRestart() (string, error) {
+	p.mu.Lock()
+	r := p.restarter
+	p.mu.Unlock()
+
+	if r == nil {
+		return "", fmt.Errorf("no restarter configured")
+	}
+
+	newAddr, err := r.Restart()
+	if err != nil {
+		return "", err
+	}
+
+	p.UpdateAddr(newAddr)
+	return newAddr, nil
+}
+
+// doCall performs a single JSON-RPC call without retry.
+func (p *BridgeProxy) doCall(method string, params map[string]any) (map[string]any, error) {
+	p.mu.Lock()
+	addr := p.addr
+	p.mu.Unlock()
+
+	if addr == "" {
 		return nil, fmt.Errorf("Python sidecar not available (no bridge address)")
 	}
-	conn, err := net.DialTimeout("tcp", p.addr, p.timeout)
+	conn, err := net.DialTimeout("tcp", addr, p.timeout)
 	if err != nil {
 		return nil, fmt.Errorf("bridge connect: %w", err)
 	}
@@ -85,10 +156,14 @@ func (p *BridgeProxy) Call(method string, params map[string]any) (map[string]any
 
 // IsAvailable checks if the Python sidecar is reachable.
 func (p *BridgeProxy) IsAvailable() bool {
-	if p.addr == "" {
+	p.mu.Lock()
+	addr := p.addr
+	p.mu.Unlock()
+
+	if addr == "" {
 		return false
 	}
-	conn, err := net.DialTimeout("tcp", p.addr, 2*time.Second)
+	conn, err := net.DialTimeout("tcp", addr, 2*time.Second)
 	if err != nil {
 		return false
 	}

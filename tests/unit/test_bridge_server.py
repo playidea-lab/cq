@@ -38,7 +38,7 @@ class TestImports:
         assert hasattr(c4.bridge, "__version__")
 
     def test_import_bridge_server(self):
-        from c4.bridge.grpc_server import BridgeServer
+        from c4.bridge.rpc_server import BridgeServer
         assert BridgeServer is not None
 
     def test_import_sidecar(self):
@@ -54,34 +54,34 @@ class TestBridgeServerConstruction:
     """Test server instantiation and configuration."""
 
     def test_default_port(self):
-        from c4.bridge.grpc_server import BridgeServer
+        from c4.bridge.rpc_server import BridgeServer
         server = BridgeServer()
         assert server.port == 50051
 
     def test_custom_port(self):
-        from c4.bridge.grpc_server import BridgeServer
+        from c4.bridge.rpc_server import BridgeServer
         server = BridgeServer(port=9999)
         assert server.port == 9999
 
     def test_env_port(self, monkeypatch):
-        monkeypatch.setenv("C4_GRPC_PORT", "12345")
-        from c4.bridge.grpc_server import BridgeServer
+        monkeypatch.setenv("C4_BRIDGE_PORT", "12345")
+        from c4.bridge.rpc_server import BridgeServer
         server = BridgeServer()
         assert server.port == 12345
 
     def test_explicit_port_overrides_env(self, monkeypatch):
-        monkeypatch.setenv("C4_GRPC_PORT", "12345")
-        from c4.bridge.grpc_server import BridgeServer
+        monkeypatch.setenv("C4_BRIDGE_PORT", "12345")
+        from c4.bridge.rpc_server import BridgeServer
         server = BridgeServer(port=9999)
         assert server.port == 9999
 
     def test_custom_project_root(self, tmp_path):
-        from c4.bridge.grpc_server import BridgeServer
+        from c4.bridge.rpc_server import BridgeServer
         server = BridgeServer(project_root=tmp_path)
         assert server.project_root == tmp_path
 
     def test_default_project_root_is_cwd(self):
-        from c4.bridge.grpc_server import BridgeServer
+        from c4.bridge.rpc_server import BridgeServer
         server = BridgeServer()
         assert server.project_root == Path.cwd()
 
@@ -94,7 +94,7 @@ class TestMethodRegistry:
     """Test that all expected RPC methods are registered."""
 
     def test_has_lsp_methods(self):
-        from c4.bridge.grpc_server import BridgeServer
+        from c4.bridge.rpc_server import BridgeServer
         server = BridgeServer()
         expected = [
             "FindSymbol",
@@ -108,7 +108,7 @@ class TestMethodRegistry:
             assert method in server.methods, f"Missing method: {method}"
 
     def test_has_knowledge_methods(self):
-        from c4.bridge.grpc_server import BridgeServer
+        from c4.bridge.rpc_server import BridgeServer
         server = BridgeServer()
         expected = [
             "KnowledgeSearch",
@@ -119,7 +119,7 @@ class TestMethodRegistry:
             assert method in server.methods, f"Missing method: {method}"
 
     def test_has_gpu_methods(self):
-        from c4.bridge.grpc_server import BridgeServer
+        from c4.bridge.rpc_server import BridgeServer
         server = BridgeServer()
         expected = [
             "GPUStatus",
@@ -129,7 +129,7 @@ class TestMethodRegistry:
             assert method in server.methods, f"Missing method: {method}"
 
     def test_unknown_method_returns_error(self):
-        from c4.bridge.grpc_server import BridgeServer
+        from c4.bridge.rpc_server import BridgeServer
         server = BridgeServer()
         assert "NonExistentMethod" not in server.methods
 
@@ -144,7 +144,7 @@ class TestProtocol:
     @pytest.fixture
     async def server_and_port(self, tmp_path):
         """Start a bridge server on a random port for testing."""
-        from c4.bridge.grpc_server import BridgeServer
+        from c4.bridge.rpc_server import BridgeServer
         server = BridgeServer(port=0, project_root=tmp_path)  # port=0 -> OS-assigned
         actual_port = await server.start()
         yield server, actual_port
@@ -244,7 +244,7 @@ class TestLSPDelegation:
 
     @pytest.fixture
     def server(self, tmp_path):
-        from c4.bridge.grpc_server import BridgeServer
+        from c4.bridge.rpc_server import BridgeServer
         return BridgeServer(project_root=tmp_path)
 
     @pytest.mark.asyncio
@@ -334,13 +334,13 @@ class TestKnowledgeDelegation:
 
     @pytest.fixture
     def server(self, tmp_path):
-        from c4.bridge.grpc_server import BridgeServer
+        from c4.bridge.rpc_server import BridgeServer
         return BridgeServer(project_root=tmp_path)
 
     @pytest.mark.asyncio
     async def test_knowledge_search_delegates(self, server):
         mock_results = [{"slug": "exp-001", "title": "Test", "score": 0.9}]
-        with patch("c4.bridge.grpc_server.KnowledgeSearcher") as MockSearcher:
+        with patch("c4.bridge.rpc_server.KnowledgeSearcher") as MockSearcher:
             MockSearcher.return_value.search.return_value = mock_results
             result = await server.dispatch("KnowledgeSearch", {
                 "query": "test query",
@@ -355,7 +355,7 @@ class TestKnowledgeDelegation:
 
     @pytest.mark.asyncio
     async def test_knowledge_record_delegates(self, server):
-        with patch("c4.bridge.grpc_server.DocumentStore") as MockStore:
+        with patch("c4.bridge.rpc_server.DocumentStore") as MockStore:
             MockStore.return_value.create.return_value = "exp-001"
             MockStore.return_value.get.return_value = None  # skip embedding
             result = await server.dispatch("KnowledgeRecord", {
@@ -384,7 +384,7 @@ class TestKnowledgeDelegation:
             "title": "Test",
             "doc_type": "experiment",
         }
-        with patch("c4.bridge.grpc_server.DocumentStore") as MockStore:
+        with patch("c4.bridge.rpc_server.DocumentStore") as MockStore:
             MockStore.return_value.get.return_value = mock_doc
             MockStore.return_value.get_backlinks.return_value = []
             result = await server.dispatch("KnowledgeGet", {"doc_id": "exp-001"})
@@ -392,7 +392,7 @@ class TestKnowledgeDelegation:
 
     @pytest.mark.asyncio
     async def test_knowledge_get_not_found(self, server):
-        with patch("c4.bridge.grpc_server.DocumentStore") as MockStore:
+        with patch("c4.bridge.rpc_server.DocumentStore") as MockStore:
             MockStore.return_value.get.return_value = None
             result = await server.dispatch("KnowledgeGet", {"doc_id": "nope"})
             assert "error" in result
@@ -412,7 +412,7 @@ class TestGPUDelegation:
 
     @pytest.fixture
     def server(self, tmp_path):
-        from c4.bridge.grpc_server import BridgeServer
+        from c4.bridge.rpc_server import BridgeServer
         return BridgeServer(project_root=tmp_path)
 
     @pytest.mark.asyncio
@@ -425,7 +425,7 @@ class TestGPUDelegation:
         mock_gpu.vram_free_gb = 12.0
         mock_gpu.gpu_utilization = 25.0
 
-        with patch("c4.bridge.grpc_server.GpuMonitor") as MockMonitor:
+        with patch("c4.bridge.rpc_server.GpuMonitor") as MockMonitor:
             # GpuMonitor is get_gpu_monitor factory; calling it returns a monitor
             MockMonitor.return_value.get_all_gpus.return_value = [mock_gpu]
             result = await server.dispatch("GPUStatus", {})
@@ -434,7 +434,7 @@ class TestGPUDelegation:
 
     @pytest.mark.asyncio
     async def test_gpu_status_no_gpus(self, server):
-        with patch("c4.bridge.grpc_server.GpuMonitor") as MockMonitor:
+        with patch("c4.bridge.rpc_server.GpuMonitor") as MockMonitor:
             MockMonitor.return_value.get_all_gpus.return_value = []
             result = await server.dispatch("GPUStatus", {})
             assert result["gpu_count"] == 0
@@ -444,7 +444,7 @@ class TestGPUDelegation:
     async def test_job_submit_delegates(self, server):
         mock_job = MagicMock()
         mock_job.job_id = "job-123"
-        with patch("c4.bridge.grpc_server.GpuJobScheduler") as MockScheduler:
+        with patch("c4.bridge.rpc_server.GpuJobScheduler") as MockScheduler:
             MockScheduler.return_value.submit.return_value = mock_job
             result = await server.dispatch("JobSubmit", {
                 "command": "python train.py",
@@ -468,7 +468,7 @@ class TestErrorHandling:
 
     @pytest.fixture
     def server(self, tmp_path):
-        from c4.bridge.grpc_server import BridgeServer
+        from c4.bridge.rpc_server import BridgeServer
         return BridgeServer(project_root=tmp_path)
 
     @pytest.mark.asyncio
@@ -483,17 +483,53 @@ class TestErrorHandling:
 
     @pytest.mark.asyncio
     async def test_knowledge_exception_returns_error(self, server):
-        with patch("c4.bridge.grpc_server.KnowledgeSearcher") as MockSearcher:
+        with patch("c4.bridge.rpc_server.KnowledgeSearcher") as MockSearcher:
             MockSearcher.return_value.search.side_effect = RuntimeError("DB locked")
             result = await server.dispatch("KnowledgeSearch", {"query": "test"})
             assert "error" in result
 
     @pytest.mark.asyncio
     async def test_gpu_exception_returns_error(self, server):
-        with patch("c4.bridge.grpc_server.GpuMonitor") as MockMonitor:
+        with patch("c4.bridge.rpc_server.GpuMonitor") as MockMonitor:
             MockMonitor.return_value.get_all_gpus.side_effect = RuntimeError("No CUDA")
             result = await server.dispatch("GPUStatus", {})
             assert "error" in result
+
+
+# ---------------------------------------------------------------------------
+# Server Lifecycle Tests
+# ---------------------------------------------------------------------------
+
+class TestPing:
+    """Test the Ping health check method."""
+
+    @pytest.fixture
+    def server(self, tmp_path):
+        from c4.bridge.rpc_server import BridgeServer
+        return BridgeServer(project_root=tmp_path)
+
+    def test_ping_is_registered(self, server):
+        assert "Ping" in server.methods
+
+    @pytest.mark.asyncio
+    async def test_ping_returns_ok(self, server):
+        result = await server.dispatch("Ping", {})
+        assert result == {"status": "ok"}
+
+    @pytest.mark.asyncio
+    async def test_ping_over_tcp(self, tmp_path):
+        from c4.bridge.rpc_server import BridgeServer
+        server = BridgeServer(port=0, project_root=tmp_path)
+        port = await server.start()
+        try:
+            reader, writer = await asyncio.open_connection("127.0.0.1", port)
+            resp = await send_rpc(reader, writer, "Ping", {})
+            assert resp["error"] is None
+            assert resp["result"]["status"] == "ok"
+            writer.close()
+            await writer.wait_closed()
+        finally:
+            await server.stop()
 
 
 # ---------------------------------------------------------------------------
@@ -505,7 +541,7 @@ class TestServerLifecycle:
 
     @pytest.mark.asyncio
     async def test_start_returns_port(self, tmp_path):
-        from c4.bridge.grpc_server import BridgeServer
+        from c4.bridge.rpc_server import BridgeServer
         server = BridgeServer(port=0, project_root=tmp_path)
         port = await server.start()
         assert isinstance(port, int)
@@ -514,7 +550,7 @@ class TestServerLifecycle:
 
     @pytest.mark.asyncio
     async def test_stop_is_idempotent(self, tmp_path):
-        from c4.bridge.grpc_server import BridgeServer
+        from c4.bridge.rpc_server import BridgeServer
         server = BridgeServer(port=0, project_root=tmp_path)
         await server.start()
         await server.stop()
@@ -522,7 +558,7 @@ class TestServerLifecycle:
 
     @pytest.mark.asyncio
     async def test_server_refuses_connections_after_stop(self, tmp_path):
-        from c4.bridge.grpc_server import BridgeServer
+        from c4.bridge.rpc_server import BridgeServer
         server = BridgeServer(port=0, project_root=tmp_path)
         port = await server.start()
         await server.stop()

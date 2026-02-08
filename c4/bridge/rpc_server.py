@@ -1,8 +1,7 @@
 """C4 Bridge Server -- JSON-RPC over TCP for Go<->Python communication.
 
 Listens on a TCP port and handles JSON-RPC requests from the Go MCP server.
-This avoids the need for protoc-generated stubs while maintaining the same
-communication pattern defined in c4-core/proto/c4_bridge.proto.
+Uses newline-delimited JSON (no protoc/grpcio dependency).
 
 Protocol
 --------
@@ -42,10 +41,10 @@ MethodHandler = Callable[[dict[str, Any]], Awaitable[dict[str, Any]]]
 # Lazy imports -- resolved at first BridgeServer construction, not at module
 # load time, to avoid hard failures when optional deps (pynvml, torch) are
 # missing. The module-level names below serve as mock targets in tests:
-#   patch("c4.bridge.grpc_server.DocumentStore")
-#   patch("c4.bridge.grpc_server.KnowledgeSearcher")
-#   patch("c4.bridge.grpc_server.GpuMonitor")
-#   patch("c4.bridge.grpc_server.GpuJobScheduler")
+#   patch("c4.bridge.rpc_server.DocumentStore")
+#   patch("c4.bridge.rpc_server.KnowledgeSearcher")
+#   patch("c4.bridge.rpc_server.GpuMonitor")
+#   patch("c4.bridge.rpc_server.GpuJobScheduler")
 # ---------------------------------------------------------------------------
 
 
@@ -141,7 +140,7 @@ class BridgeServer:
         if port is not None:
             self.port = port
         else:
-            env_port = os.environ.get("C4_GRPC_PORT")
+            env_port = os.environ.get("C4_BRIDGE_PORT", os.environ.get("C4_GRPC_PORT"))
             self.port = int(env_port) if env_port else 50051
 
         self.project_root = project_root or Path.cwd()
@@ -155,9 +154,18 @@ class BridgeServer:
 
         # Register all methods
         self.methods: dict[str, MethodHandler] = {}
+        self.methods["Ping"] = self._handle_ping
         self._register_lsp_methods()
         self._register_knowledge_methods()
         self._register_gpu_methods()
+
+    # ======================================================================
+    # Health Check
+    # ======================================================================
+
+    async def _handle_ping(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Ping -> pong. Used by Go sidecar health check."""
+        return {"status": "ok"}
 
     # ======================================================================
     # Server Lifecycle
