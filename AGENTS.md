@@ -67,7 +67,7 @@ c4_add_todo(mode="direct", review_required=False)
 2. 수정 후 전체 검증 (lint + test)
 
 ### Session Handoff
-장시간 디버깅 종료 시 `c4_write_memory`에 기록:
+장시간 디버깅 종료 시 `c4_knowledge_record`(insight)로 기록:
 - 발견한 문제 + 수정 사항
 - 미해결 이슈
 - 다음 세션 시작 지점
@@ -82,6 +82,8 @@ c4_add_todo(mode="direct", review_required=False)
 리뷰: c4_checkpoint, c4_ensure_supervisor
 검증: c4_run_validation
 코드: c4_find_symbol, c4_get_symbols_overview, c4_replace_symbol_body
+파일: c4_read_file, c4_find_file, c4_search_for_pattern, c4_replace_content
+지식: c4_knowledge_search, c4_knowledge_record, c4_knowledge_get
 ```
 
 ### 워크플로우

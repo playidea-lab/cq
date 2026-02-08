@@ -13,6 +13,15 @@
 - **Lesson**: Tauri apps need path allowlisting on every file-access command; CSP null = no XSS protection
 - **DRY**: formatSize duplicated in SessionList.tsx vs ConfigView.tsx with different implementations
 
+### 2026-02-08: Canvas-App Fix Tasks Batch Review (ALL APPROVED)
+- **Tasks**: R-CVR-004 through R-CVR-008 (5 fix tasks from initial review)
+- **Result**: ALL APPROVE - 29 tests passing, build succeeds, all DoD items met
+- **R-CVR-004**: vitest+RTL setup, 4 test files (format, StatusBadge, ProgressBar, MessageViewer), 29 tests
+- **R-CVR-005**: formatSize/formatDate extracted to src/utils/format.ts, no duplicates remain
+- **R-CVR-006**: StatusBadge uses /_/g regex (replaces all underscores)
+- **R-CVR-007**: key={`${view}-${projectPath}`} on all 3 view components in App.tsx
+- **R-CVR-008**: [...taskList].sort() immutable sort in useDashboard.ts
+
 ### 2026-02-07: User Profile Auto-Learning System - Follow-up Review (APPROVED)
 - **Initial Review**: 2 CRITICAL, 6 WARNING, 5 SUGGESTION findings
 - **Fix Commits**: 9f12982 (CRITICAL), 74b1d24 (WARNING)

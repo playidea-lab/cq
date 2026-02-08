@@ -768,14 +768,6 @@ Thumbs.db
             "message": "SupervisorLoop removed. Use unified task queue (CP-XXX, RPR-XXX).",
         }
 
-    def _ensure_supervisor_running(self) -> None:
-        """Internal helper to ensure supervisor is running.
-
-        Calls c4_ensure_supervisor() for backward compatibility.
-        This is a no-op since SupervisorLoop has been removed.
-        """
-        self.c4_ensure_supervisor()
-
     # =========================================================================
     # Task Management
     # =========================================================================
@@ -864,6 +856,8 @@ Thumbs.db
         1. Detects tasks in c4_state.in_progress that are done in c4_tasks
         2. Detects tasks in c4_state.in_progress that don't exist
         3. Fixes worker states for completed/missing tasks
+        4. Detects tasks in c4_tasks with in_progress status but NOT in
+           c4_state.queue.in_progress (orphaned after worker eviction)
 
         Returns:
             Dict with lists of fixed task IDs by category
@@ -988,8 +982,41 @@ Thumbs.db
                             f"(last seen: {worker.last_seen})"
                         )
 
+                # Collect tracked in_progress task IDs for Case 4 (after lock release)
+                tracked_in_progress = set(state.queue.in_progress.keys())
+
                 # Update cached state
                 self.state_machine._state = state
+
+            # Case 4: Orphaned tasks in c4_tasks — status=in_progress
+            # but not tracked in c4_state.queue.in_progress.
+            # This happens when workers are evicted/crashed and c4_state
+            # was cleaned but c4_tasks.status was not reset.
+            # Runs OUTSIDE atomic_modify to avoid SQLite write lock conflict.
+            try:
+                orphaned = self.task_store.find_orphaned_in_progress(
+                    project_id, tracked_in_progress
+                )
+                if orphaned:
+                    for task_id in orphaned:
+                        self.task_store.update_status(
+                            project_id, task_id, "pending", assigned_to=None
+                        )
+                        fixed_tasks.append(f"{task_id}:orphaned_reset")
+                        logger.warning(
+                            f"State sync: Reset orphaned task {task_id} "
+                            f"from in_progress to pending"
+                        )
+                    # Re-sync c4_state.queue.pending from DB
+                    with store.atomic_modify(project_id) as state:
+                        for task_id in orphaned:
+                            if task_id not in state.queue.pending:
+                                state.queue.pending.append(task_id)
+                        self.state_machine._state = state
+                    # Refresh in-memory task cache
+                    self._load_tasks()
+            except Exception as e:
+                logger.debug(f"Orphan scan skipped: {e}")
 
         except Exception as e:
             logger.error(f"State sync failed: {e}")

@@ -409,3 +409,97 @@ def test_purge_removes_all_stale_workers(daemon: C4Daemon):
 
     # Verify total count (3+ cleanups)
     assert result["total_cleaned"] >= 3  # At least 3 workers cleaned
+
+
+def test_sync_fixes_orphaned_in_progress_in_tasks_db(daemon: C4Daemon):
+    """Test that _sync_state_consistency() resets orphaned tasks in c4_tasks.
+
+    Scenario: c4_tasks has tasks with status=in_progress and assigned_to=worker-X,
+    but c4_state.queue.in_progress is empty (workers were already evicted).
+    These orphaned tasks should be reset to pending.
+    """
+    # Create tasks directly in c4_tasks with in_progress status
+    task1 = Task(
+        id="T-ORPHAN-001-0",
+        title="Orphaned task 1",
+        dod="Test orphan",
+        status=TaskStatus.IN_PROGRESS,
+        assigned_to="worker-dead0001",
+    )
+    task2 = Task(
+        id="T-ORPHAN-002-0",
+        title="Orphaned task 2",
+        dod="Test orphan",
+        status=TaskStatus.IN_PROGRESS,
+        assigned_to="worker-dead0002",
+    )
+    daemon._save_task(task1)
+    daemon._save_task(task2)
+
+    # Do NOT add to c4_state.queue.in_progress — simulating worker eviction
+    # c4_state thinks queue is clean, but c4_tasks still has in_progress
+
+    # Verify precondition: c4_state has no in_progress
+    assert len(daemon.state_machine.state.queue.in_progress) == 0
+
+    # Verify precondition: c4_tasks has 2 in_progress
+    queue_stats = daemon.task_store.get_queue_stats("test-zombie")
+    assert queue_stats["in_progress_count"] == 2
+
+    # Run consistency sync
+    result = daemon._sync_state_consistency()
+
+    # Verify orphans were fixed
+    assert "T-ORPHAN-001-0:orphaned_reset" in result["fixed"]
+    assert "T-ORPHAN-002-0:orphaned_reset" in result["fixed"]
+
+    # Refresh task cache from DB (sync wrote directly to task_store)
+    daemon._load_tasks()
+
+    # Verify tasks are now pending in c4_tasks
+    t1 = daemon.get_task("T-ORPHAN-001-0")
+    assert t1.status == TaskStatus.PENDING
+    assert t1.assigned_to is None
+
+    t2 = daemon.get_task("T-ORPHAN-002-0")
+    assert t2.status == TaskStatus.PENDING
+    assert t2.assigned_to is None
+
+    # Verify tasks are in c4_state.queue.pending
+    assert "T-ORPHAN-001-0" in daemon.state_machine.state.queue.pending
+    assert "T-ORPHAN-002-0" in daemon.state_machine.state.queue.pending
+
+    # Verify c4_tasks shows 0 in_progress
+    queue_stats = daemon.task_store.get_queue_stats("test-zombie")
+    assert queue_stats["in_progress_count"] == 0
+
+
+def test_sync_orphan_does_not_reset_tracked_tasks(daemon: C4Daemon):
+    """Ensure orphan detection doesn't reset tasks that ARE in c4_state.queue."""
+    worker_id = "worker-aaaa1111"
+    daemon.worker_manager.register(worker_id)
+
+    task = Task(
+        id="T-TRACKED-001-0",
+        title="Tracked task",
+        dod="Test",
+        status=TaskStatus.IN_PROGRESS,
+        assigned_to=worker_id,
+    )
+    daemon._save_task(task)
+
+    # This task IS tracked in c4_state
+    daemon.state_machine.state.queue.in_progress["T-TRACKED-001-0"] = worker_id
+    daemon.worker_manager.set_busy(worker_id, "T-TRACKED-001-0")
+    daemon.state_machine.save_state()
+
+    # Run consistency sync
+    result = daemon._sync_state_consistency()
+
+    # Should NOT be orphan-reset
+    orphan_fixes = [f for f in result["fixed"] if "orphaned_reset" in f]
+    assert len(orphan_fixes) == 0
+
+    # Task should still be in_progress
+    t = daemon.get_task("T-TRACKED-001-0")
+    assert t.status == TaskStatus.IN_PROGRESS
