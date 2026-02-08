@@ -41,6 +41,10 @@ func RegisterPersonaHandlers(reg *mcp.Registry, store *SQLiteStore) {
 		}
 
 		if args.PersonaID != "" {
+			// Validate PersonaID: reject directory traversal characters
+			if strings.Contains(args.PersonaID, "..") || strings.Contains(args.PersonaID, "/") || strings.Contains(args.PersonaID, "\\") {
+				return nil, fmt.Errorf("invalid persona_id: must not contain path separators or '..'")
+			}
 			return store.GetPersonaStats(args.PersonaID)
 		}
 
@@ -74,6 +78,11 @@ func RegisterPersonaHandlers(reg *mcp.Registry, store *SQLiteStore) {
 		}
 		if err := json.Unmarshal(rawArgs, &args); err != nil {
 			return nil, fmt.Errorf("parsing arguments: %w", err)
+		}
+
+		// Validate PersonaID
+		if strings.Contains(args.PersonaID, "..") || strings.Contains(args.PersonaID, "/") || strings.Contains(args.PersonaID, "\\") {
+			return nil, fmt.Errorf("invalid persona_id: must not contain path separators or '..'")
 		}
 
 		stats, err := store.GetPersonaStats(args.PersonaID)

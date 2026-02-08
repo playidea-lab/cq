@@ -23,9 +23,9 @@ type ModelRouting struct {
 	Implementation string `mapstructure:"implementation" yaml:"implementation"`
 	Review         string `mapstructure:"review"         yaml:"review"`
 	Checkpoint     string `mapstructure:"checkpoint"     yaml:"checkpoint"`
-	Scout          string `mapstructure:"scout"          yaml:"scout"`
-	Debug          string `mapstructure:"debug"          yaml:"debug"`
-	Planning       string `mapstructure:"planning"       yaml:"planning"`
+	Scout          string `mapstructure:"scout"          yaml:"scout"`    // TODO: not yet used by GetModelForTask — reserved for future scout/explore tasks
+	Debug          string `mapstructure:"debug"          yaml:"debug"`    // TODO: not yet used by GetModelForTask — reserved for future debug tasks
+	Planning       string `mapstructure:"planning"       yaml:"planning"` // TODO: not yet used by GetModelForTask — reserved for future planning tasks
 }
 
 // EconomicMode holds economic mode configuration.

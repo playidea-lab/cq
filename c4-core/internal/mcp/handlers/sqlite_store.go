@@ -70,7 +70,13 @@ func NewSQLiteStore(db *sql.DB, opts ...StoreOption) (*SQLiteStore, error) {
 }
 
 // initSchema creates all required tables if they don't exist.
+// It also detects and migrates legacy Python c4_tasks schema.
 func (s *SQLiteStore) initSchema() error {
+	// Migrate legacy c4_tasks if needed (before CREATE TABLE IF NOT EXISTS)
+	if err := s.migrateTasksIfNeeded(); err != nil {
+		fmt.Fprintf(os.Stderr, "c4: tasks migration failed (non-fatal): %v\n", err)
+	}
+
 	statements := []string{
 		`CREATE TABLE IF NOT EXISTS c4_state (
 			project_id TEXT PRIMARY KEY,
@@ -119,6 +125,148 @@ func (s *SQLiteStore) initSchema() error {
 	return nil
 }
 
+// migrateTasksIfNeeded detects legacy Python c4_tasks schema and migrates data.
+// Legacy schema: (project_id, task_id, task_json, status, assigned_to, updated_at)
+// Go schema: (task_id, title, scope, dod, status, dependencies, domain, priority, model, ...)
+func (s *SQLiteStore) migrateTasksIfNeeded() error {
+	// Check if c4_tasks exists at all
+	var count int
+	err := s.db.QueryRow("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='c4_tasks'").Scan(&count)
+	if err != nil || count == 0 {
+		return nil // Table doesn't exist yet — initSchema will create it
+	}
+
+	// Check if it's legacy schema (has task_json column = legacy)
+	var hasTaskJSON bool
+	rows, err := s.db.Query("PRAGMA table_info(c4_tasks)")
+	if err != nil {
+		return fmt.Errorf("checking table info: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var cid int
+		var name, typ string
+		var notnull int
+		var dflt sql.NullString
+		var pk int
+		if err := rows.Scan(&cid, &name, &typ, &notnull, &dflt, &pk); err != nil {
+			continue
+		}
+		if name == "task_json" {
+			hasTaskJSON = true
+		}
+	}
+
+	if !hasTaskJSON {
+		return nil // Already Go schema — no migration needed
+	}
+
+	fmt.Fprintln(os.Stderr, "c4: detected legacy c4_tasks schema, migrating...")
+
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback()
+
+	// 1. Rename legacy table
+	if _, err := tx.Exec("ALTER TABLE c4_tasks RENAME TO c4_tasks_legacy"); err != nil {
+		return fmt.Errorf("rename legacy table: %w", err)
+	}
+
+	// 2. Create new table with Go schema
+	if _, err := tx.Exec(`CREATE TABLE c4_tasks (
+		task_id      TEXT PRIMARY KEY,
+		title        TEXT NOT NULL,
+		scope        TEXT DEFAULT '',
+		dod          TEXT DEFAULT '',
+		status       TEXT DEFAULT 'pending',
+		dependencies TEXT DEFAULT '[]',
+		domain       TEXT DEFAULT '',
+		priority     INTEGER DEFAULT 0,
+		model        TEXT DEFAULT '',
+		worker_id    TEXT DEFAULT '',
+		branch       TEXT DEFAULT '',
+		commit_sha   TEXT DEFAULT '',
+		created_at   TEXT DEFAULT CURRENT_TIMESTAMP,
+		updated_at   TEXT DEFAULT CURRENT_TIMESTAMP
+	)`); err != nil {
+		return fmt.Errorf("create new table: %w", err)
+	}
+
+	// 3. Migrate data from legacy task_json
+	legacyRows, err := tx.Query("SELECT task_id, task_json, status, updated_at FROM c4_tasks_legacy")
+	if err != nil {
+		return fmt.Errorf("read legacy rows: %w", err)
+	}
+	defer legacyRows.Close()
+
+	migrated := 0
+	for legacyRows.Next() {
+		var taskID, taskJSON, status string
+		var updatedAt sql.NullString
+		if err := legacyRows.Scan(&taskID, &taskJSON, &status, &updatedAt); err != nil {
+			continue
+		}
+
+		var m map[string]any
+		if err := json.Unmarshal([]byte(taskJSON), &m); err != nil {
+			continue
+		}
+
+		title, _ := m["title"].(string)
+		if title == "" {
+			title = taskID
+		}
+		scope, _ := m["scope"].(string)
+		dod, _ := m["dod"].(string)
+		domain, _ := m["domain"].(string)
+		model, _ := m["model"].(string)
+		workerID, _ := m["assigned_to"].(string)
+		branch, _ := m["branch"].(string)
+		commitSHA, _ := m["commit_sha"].(string)
+
+		priority := 0
+		if p, ok := m["priority"].(float64); ok {
+			priority = int(p)
+		}
+
+		deps := "[]"
+		if d, ok := m["dependencies"]; ok {
+			if dBytes, err := json.Marshal(d); err == nil {
+				deps = string(dBytes)
+			}
+		}
+
+		ts := time.Now().Format(time.RFC3339)
+		if updatedAt.Valid && updatedAt.String != "" {
+			ts = updatedAt.String
+		}
+
+		// Use status from task_json if richer, else from column
+		if s, ok := m["status"].(string); ok && s != "" {
+			status = s
+		}
+
+		_, err := tx.Exec(`INSERT OR IGNORE INTO c4_tasks
+			(task_id, title, scope, dod, status, dependencies, domain, priority, model, worker_id, branch, commit_sha, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			taskID, title, scope, dod, status, deps, domain, priority, model, workerID, branch, commitSHA, ts, ts)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "c4: migrate task %s failed: %v\n", taskID, err)
+			continue
+		}
+		migrated++
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit migration: %w", err)
+	}
+
+	fmt.Fprintf(os.Stderr, "c4: migrated %d tasks from legacy schema\n", migrated)
+	return nil
+}
+
 // GetStatus returns the current project status with task counts.
 func (s *SQLiteStore) GetStatus() (*ProjectStatus, error) {
 	status := &ProjectStatus{State: "INIT", ProjectName: s.projectID}
@@ -161,6 +309,21 @@ func (s *SQLiteStore) GetStatus() (*ProjectStatus, error) {
 			status.DoneTasks = count
 		case "blocked":
 			status.BlockedTasks = count
+		}
+	}
+
+	// Add economic mode info if config is available
+	if s.config != nil {
+		cfg := s.config.GetConfig()
+		routing := cfg.EconomicMode.ModelRouting
+		status.EconomicMode = &EconomicModeInfo{
+			Enabled: cfg.EconomicMode.Enabled,
+			Preset:  cfg.EconomicMode.Preset,
+			ModelRouting: map[string]string{
+				"implementation": routing.Implementation,
+				"review":         routing.Review,
+				"checkpoint":     routing.Checkpoint,
+			},
 		}
 	}
 
@@ -248,17 +411,11 @@ func (s *SQLiteStore) Clear(keepConfig bool) error {
 	}
 	defer tx.Rollback()
 
-	if _, err := tx.Exec("DELETE FROM c4_tasks"); err != nil {
-		_ = err
-	}
-	if _, err := tx.Exec("DELETE FROM c4_state"); err != nil {
-		_ = err
-	}
-	if _, err := tx.Exec("DELETE FROM c4_checkpoints"); err != nil {
-		_ = err
-	}
-	if _, err := tx.Exec("DELETE FROM persona_stats"); err != nil {
-		_ = err
+	tables := []string{"c4_tasks", "c4_state", "c4_checkpoints", "persona_stats"}
+	for _, table := range tables {
+		if _, err := tx.Exec("DELETE FROM " + table); err != nil {
+			return fmt.Errorf("clearing %s: %w", table, err)
+		}
 	}
 
 	// Remove active claim file
@@ -313,7 +470,9 @@ func (s *SQLiteStore) GetTask(taskID string) (*Task, error) {
 	}
 
 	if deps.Valid && deps.String != "" {
-		_ = json.Unmarshal([]byte(deps.String), &t.Dependencies)
+		if err := json.Unmarshal([]byte(deps.String), &t.Dependencies); err != nil {
+			fmt.Fprintf(os.Stderr, "c4: warning: failed to parse dependencies for task %s: %v\n", taskID, err)
+		}
 	}
 	if createdAt.Valid {
 		t.CreatedAt = createdAt.String
@@ -385,7 +544,9 @@ func (s *SQLiteStore) AssignTask(workerID string) (*TaskAssignment, error) {
 	}
 
 	if deps.Valid && deps.String != "" {
-		_ = json.Unmarshal([]byte(deps.String), &assignment.Dependencies)
+		if err := json.Unmarshal([]byte(deps.String), &assignment.Dependencies); err != nil {
+			fmt.Fprintf(os.Stderr, "c4: warning: failed to parse dependencies for task %s: %v\n", taskID, err)
+		}
 	}
 
 	return assignment, nil
@@ -681,8 +842,19 @@ func (s *SQLiteStore) autoRecordKnowledge(task *Task, summary string, filesChang
 		"tags":     tags,
 	}
 
-	// Best-effort: don't block on failure
+	// Best-effort: don't block on failure, with timeout to prevent goroutine leak
 	go func() {
-		_, _ = s.proxy.Call("KnowledgeRecord", params)
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			if _, err := s.proxy.Call("KnowledgeRecord", params); err != nil {
+				fmt.Fprintf(os.Stderr, "c4: auto-record knowledge failed for %s: %v\n", task.ID, err)
+			}
+		}()
+		select {
+		case <-done:
+		case <-time.After(10 * time.Second):
+			fmt.Fprintf(os.Stderr, "c4: auto-record knowledge timed out for %s\n", task.ID)
+		}
 	}()
 }

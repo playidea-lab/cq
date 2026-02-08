@@ -8,6 +8,7 @@ package mcp
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"sync"
 )
 
@@ -40,14 +41,15 @@ func NewRegistry() *Registry {
 	}
 }
 
-// Register adds a tool to the registry. Panics if a tool with the
-// same name is already registered.
+// Register adds a tool to the registry. If a tool with the same name
+// is already registered, it logs a warning and skips the duplicate.
 func (r *Registry) Register(schema ToolSchema, handler HandlerFunc) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
 	if _, exists := r.tools[schema.Name]; exists {
-		panic(fmt.Sprintf("mcp: tool already registered: %s", schema.Name))
+		fmt.Fprintf(os.Stderr, "mcp: warning: tool already registered, skipping: %s\n", schema.Name)
+		return
 	}
 
 	r.tools[schema.Name] = registeredTool{

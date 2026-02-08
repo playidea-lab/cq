@@ -90,23 +90,31 @@ func TestMCPRegistryListTools(t *testing.T) {
 	}
 }
 
-// TestMCPRegistryDuplicatePanics verifies that duplicate registration panics.
-func TestMCPRegistryDuplicatePanics(t *testing.T) {
+// TestMCPRegistryDuplicateSkips verifies that duplicate registration is skipped gracefully.
+func TestMCPRegistryDuplicateSkips(t *testing.T) {
 	reg := NewRegistry()
 
 	reg.Register(ToolSchema{Name: "c4_test"}, func(args json.RawMessage) (any, error) {
-		return nil, nil
+		return "first", nil
 	})
 
-	defer func() {
-		if r := recover(); r == nil {
-			t.Fatal("expected panic on duplicate registration")
-		}
-	}()
-
+	// Second registration should be silently skipped (no panic)
 	reg.Register(ToolSchema{Name: "c4_test"}, func(args json.RawMessage) (any, error) {
-		return nil, nil
+		return "second", nil
 	})
+
+	// Should still have only one tool, with the first handler
+	tools := reg.ListTools()
+	if len(tools) != 1 {
+		t.Fatalf("expected 1 tool, got %d", len(tools))
+	}
+	result, err := reg.Call("c4_test", nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result != "first" {
+		t.Fatalf("expected first handler to be kept, got %v", result)
+	}
 }
 
 // TestMCPToolSchemaJSON verifies ToolSchema JSON serialization.

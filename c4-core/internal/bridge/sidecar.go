@@ -230,39 +230,52 @@ func (s *Sidecar) Restart() (string, error) {
 	}
 	s.restarts++
 	cfg := s.cfg
-	s.mu.Unlock()
 
-	// Stop existing process
-	_ = s.Stop()
+	// Stop existing process while holding lock to prevent concurrent access
+	if !s.stopped && s.cmd != nil && s.cmd.Process != nil {
+		_ = s.cmd.Process.Signal(os.Interrupt)
+		s.stopped = true
+		// Don't wait for process exit under lock — it's best-effort
+		go func(cmd *exec.Cmd) {
+			done := make(chan error, 1)
+			go func() { done <- cmd.Wait() }()
+			select {
+			case <-done:
+			case <-time.After(5 * time.Second):
+				_ = cmd.Process.Kill()
+			}
+		}(s.cmd)
+	}
 
-	// Reset stopped flag for new process
-	s.mu.Lock()
-	s.stopped = false
+	// Reset state for new process
 	s.cmd = nil
 	s.addr = ""
+	s.stopped = false
 	s.mu.Unlock()
 
-	// Start new sidecar using stored config
+	// Start new sidecar (blocking, outside lock)
 	newSidecar, err := StartSidecar(cfg)
 	if err != nil {
 		return "", fmt.Errorf("restart failed: %w", err)
 	}
 
-	// Transfer ownership of process and address
+	// Transfer ownership atomically
 	s.mu.Lock()
 	s.cmd = newSidecar.cmd
 	s.addr = newSidecar.addr
 	s.stopped = false
+	addr := s.addr
+	restarts := s.restarts
 	s.mu.Unlock()
 
-	// Release ownership from temporary sidecar to prevent double-close
+	// Release temporary sidecar to prevent double-close
 	newSidecar.mu.Lock()
 	newSidecar.cmd = nil
 	newSidecar.stopped = true
 	newSidecar.mu.Unlock()
 
-	fmt.Fprintf(os.Stderr, "c4: sidecar restarted at %s (restart #%d)\n", newSidecar.addr, s.restarts)
-	return newSidecar.addr, nil
+	fmt.Fprintf(os.Stderr, "c4: sidecar restarted at %s (restart #%d)\n", addr, restarts)
+	return addr, nil
 }
 
 // waitReady polls the TCP address until connection succeeds or timeout.

@@ -99,6 +99,9 @@ func (p *BridgeProxy) tryRestart() (string, error) {
 	return newAddr, nil
 }
 
+// maxResponseSize is the maximum allowed response size from the sidecar (10 MB).
+const maxResponseSize = 10 * 1024 * 1024
+
 // doCall performs a single JSON-RPC call without retry.
 func (p *BridgeProxy) doCall(method string, params map[string]any) (map[string]any, error) {
 	p.mu.Lock()
@@ -138,6 +141,9 @@ func (p *BridgeProxy) doCall(method string, params map[string]any) (map[string]a
 		n, err := conn.Read(tmp)
 		if n > 0 {
 			buf = append(buf, tmp[:n]...)
+			if len(buf) > maxResponseSize {
+				return nil, fmt.Errorf("response exceeds %d bytes limit", maxResponseSize)
+			}
 			// Check for newline delimiter
 			for i := range buf {
 				if buf[i] == '\n' {

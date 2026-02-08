@@ -275,9 +275,14 @@ class BridgeServer:
 
     async def _handle_find_symbol(self, params: dict[str, Any]) -> dict[str, Any]:
         """FindSymbol -> CodeOps.find_symbol()."""
+        if not isinstance(params, dict):
+            return {"error": "params must be a dict"}
+        name = params.get("name")
+        if not name or not isinstance(name, str):
+            return {"error": "name is required and must be a string"}
         try:
             return self._code_ops.find_symbol(
-                name_path_pattern=params.get("name", ""),
+                name_path_pattern=name,
                 relative_path=params.get("file_path", params.get("path", "")),
                 include_body=params.get("include_body", False),
                 depth=params.get("depth", 0),
@@ -287,9 +292,14 @@ class BridgeServer:
 
     async def _handle_get_symbols_overview(self, params: dict[str, Any]) -> dict[str, Any]:
         """GetSymbolsOverview -> CodeOps.get_symbols_overview()."""
+        if not isinstance(params, dict):
+            return {"error": "params must be a dict"}
+        path = params.get("file_path", params.get("path", ""))
+        if not path or not isinstance(path, str):
+            return {"error": "file_path or path is required"}
         try:
             return self._code_ops.get_symbols_overview(
-                relative_path=params.get("file_path", params.get("path", "")),
+                relative_path=path,
                 depth=params.get("depth", 0),
             )
         except Exception as exc:
@@ -406,8 +416,8 @@ class BridgeServer:
                 if doc:
                     embedder.index_document(doc_id, doc.model_dump())
                 embedder.close()
-            except Exception:
-                pass
+            except Exception as idx_err:
+                logger.warning("Auto-index embedding failed for %s: %s", doc_id, idx_err)
 
             return {
                 "success": True,

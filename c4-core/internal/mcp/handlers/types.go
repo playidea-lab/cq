@@ -68,16 +68,24 @@ type WorkerInfo struct {
 	LastSeen    time.Time `json:"last_seen"`
 }
 
+// EconomicModeInfo exposes economic mode configuration in c4_status.
+type EconomicModeInfo struct {
+	Enabled      bool              `json:"enabled"`
+	Preset       string            `json:"preset,omitempty"`
+	ModelRouting map[string]string `json:"model_routing,omitempty"`
+}
+
 // ProjectStatus holds the overall project status.
 type ProjectStatus struct {
-	State        string       `json:"state"` // "INIT", "PLAN", "EXECUTE", etc.
-	ProjectName  string       `json:"project_name"`
-	TotalTasks   int          `json:"total_tasks"`
-	PendingTasks int          `json:"pending_tasks"`
-	InProgress   int          `json:"in_progress_tasks"`
-	DoneTasks    int          `json:"done_tasks"`
-	BlockedTasks int          `json:"blocked_tasks"`
-	Workers      []WorkerInfo `json:"workers,omitempty"`
+	State        string            `json:"state"` // "INIT", "PLAN", "EXECUTE", etc.
+	ProjectName  string            `json:"project_name"`
+	TotalTasks   int               `json:"total_tasks"`
+	PendingTasks int               `json:"pending_tasks"`
+	InProgress   int               `json:"in_progress_tasks"`
+	DoneTasks    int               `json:"done_tasks"`
+	BlockedTasks int               `json:"blocked_tasks"`
+	Workers      []WorkerInfo      `json:"workers,omitempty"`
+	EconomicMode *EconomicModeInfo `json:"economic_mode,omitempty"`
 }
 
 // Store defines the data access interface for MCP handlers.

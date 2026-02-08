@@ -351,7 +351,10 @@ class GpuJobScheduler:
             logger.info("GPU job started: %s (pid=%d, gpus=[%s])", job.job_id, process.pid, gpu_str)
 
         except Exception as e:
-            log_file.close()
+            # Close log_file only if it wasn't registered in _log_files (process failed to start)
+            with self._lock:
+                if job.job_id not in self._log_files:
+                    log_file.close()
             logger.error("Failed to start GPU job %s: %s", job.job_id, e)
             job.status = JobStatus.FAILED
             job.failure_type = FailureType.RUNTIME

@@ -59,6 +59,7 @@ type initializeResult struct {
 type mcpServer struct {
 	registry *mcp.Registry
 	sidecar  *bridge.Sidecar
+	db       *sql.DB
 }
 
 // newMCPServer creates and initializes the MCP server with all tools registered.
@@ -124,6 +125,7 @@ func newMCPServer() (*mcpServer, error) {
 	return &mcpServer{
 		registry: reg,
 		sidecar:  sidecar,
+		db:       db,
 	}, nil
 }
 
@@ -154,6 +156,9 @@ func (s *mcpServer) serve() error {
 func (s *mcpServer) shutdown() {
 	if s.sidecar != nil {
 		_ = s.sidecar.Stop()
+	}
+	if s.db != nil {
+		_ = s.db.Close()
 	}
 }
 
