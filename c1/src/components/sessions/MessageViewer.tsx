@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeSanitize from 'rehype-sanitize';
@@ -75,15 +76,15 @@ function extractToolInfo(block: ContentBlock): ToolInfo {
       return { icon: 'F', label: 'Find', detail: input.query || '' };
     case 'run_terminal_command':
       return { icon: '$', label: 'Terminal', detail: truncate(input.command || '', 120) };
-    default:
+    default: {
       // Try to extract something meaningful
       const firstVal = Object.values(input).find(v => typeof v === 'string' && v.length < 120);
       return { icon: 'T', label: name, detail: firstVal ? truncate(String(firstVal), 80) : '' };
+    }
   }
 }
 
 function shortenPath(p: string): string {
-  // Show last 2-3 segments: /Users/foo/git/c4/src/App.tsx → src/App.tsx
   const parts = p.split('/').filter(Boolean);
   if (parts.length <= 3) return p;
   return '.../' + parts.slice(-3).join('/');
@@ -118,7 +119,6 @@ function ToolCard({ block }: { block: ContentBlock }) {
 }
 
 function resultSummary(text: string): string {
-  // Find first meaningful line (skip empty, braces, brackets)
   const lines = text.split('\n');
   for (const line of lines) {
     const trimmed = line.trim();
@@ -195,7 +195,6 @@ function hasTextContent(message: SessionMessage): boolean {
   );
 }
 
-/** tool_result-only user messages are logically assistant-side (tool responses) */
 function isToolResultOnly(message: SessionMessage): boolean {
   return message.msg_type === 'user' &&
     message.content.length > 0 &&
@@ -248,26 +247,75 @@ function MessageBubble({ message }: { message: SessionMessage }) {
 }
 
 export function MessageViewer({ messages, hasMore, loading, onLoadMore }: MessageViewerProps) {
+  const parentRef = useRef<HTMLDivElement>(null);
+
+  const virtualizer = useVirtualizer({
+    count: messages.length + (hasMore ? 1 : 0),
+    getScrollElement: () => parentRef.current,
+    estimateSize: () => 120,
+    overscan: 5,
+  });
+
   if (messages.length === 0 && !loading) {
     return <div className="msg-viewer__empty">No messages</div>;
   }
 
   return (
-    <div className="msg-viewer">
-      {messages.map((msg, i) => (
-        <MessageBubble key={msg.uuid || i} message={msg} />
-      ))}
-      {hasMore && (
-        <div className="msg-viewer__load-more">
-          <button
-            className="btn btn--secondary btn--sm"
-            onClick={onLoadMore}
-            disabled={loading}
-          >
-            {loading ? 'Loading...' : 'Load More'}
-          </button>
-        </div>
-      )}
+    <div ref={parentRef} className="msg-viewer msg-viewer--virtual">
+      <div
+        style={{
+          height: `${virtualizer.getTotalSize()}px`,
+          width: '100%',
+          position: 'relative',
+        }}
+      >
+        {virtualizer.getVirtualItems().map(virtualItem => {
+          const isLoadMore = virtualItem.index === messages.length;
+
+          if (isLoadMore) {
+            return (
+              <div
+                key="load-more"
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  width: '100%',
+                  transform: `translateY(${virtualItem.start}px)`,
+                }}
+              >
+                <div className="msg-viewer__load-more">
+                  <button
+                    className="btn btn--secondary btn--sm"
+                    onClick={onLoadMore}
+                    disabled={loading}
+                  >
+                    {loading ? 'Loading...' : 'Load More'}
+                  </button>
+                </div>
+              </div>
+            );
+          }
+
+          const msg = messages[virtualItem.index];
+          return (
+            <div
+              key={msg.uuid || virtualItem.index}
+              data-index={virtualItem.index}
+              ref={virtualizer.measureElement}
+              style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                width: '100%',
+                transform: `translateY(${virtualItem.start}px)`,
+              }}
+            >
+              <MessageBubble message={msg} />
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }

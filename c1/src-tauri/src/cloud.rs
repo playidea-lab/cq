@@ -96,6 +96,36 @@ fn build_client() -> Result<reqwest::blocking::Client, String> {
         .map_err(|e| format!("HTTP client error: {}", e))
 }
 
+/// Execute an HTTP request with exponential backoff retry (3 attempts, 1s/2s/4s).
+/// Only retries on network errors or 5xx server errors.
+fn retry_request<F>(max_attempts: u32, mut execute: F) -> Result<reqwest::blocking::Response, String>
+where
+    F: FnMut() -> Result<reqwest::blocking::Response, reqwest::Error>,
+{
+    let mut last_err = String::new();
+    for attempt in 0..max_attempts {
+        match execute() {
+            Ok(resp) => {
+                if resp.status().is_server_error() && attempt + 1 < max_attempts {
+                    last_err = format!("Server error: {}", resp.status());
+                    let delay = std::time::Duration::from_secs(1 << attempt);
+                    std::thread::sleep(delay);
+                    continue;
+                }
+                return Ok(resp);
+            }
+            Err(e) => {
+                last_err = format!("Request failed: {}", e);
+                if attempt + 1 < max_attempts {
+                    let delay = std::time::Duration::from_secs(1 << attempt);
+                    std::thread::sleep(delay);
+                }
+            }
+        }
+    }
+    Err(last_err)
+}
+
 // ---------------------------------------------------------------------------
 // Tauri IPC commands
 // ---------------------------------------------------------------------------
@@ -249,12 +279,13 @@ pub async fn cloud_get_team_projects() -> Result<Vec<TeamProject>, String> {
             supabase_url.trim_end_matches('/')
         );
 
-        let resp = client
-            .get(&url)
-            .header("Authorization", format!("Bearer {}", token))
-            .header("apikey", &anon_key)
-            .send()
-            .map_err(|e| format!("Request failed: {}", e))?;
+        let resp = retry_request(3, || {
+            client
+                .get(&url)
+                .header("Authorization", format!("Bearer {}", token))
+                .header("apikey", &anon_key)
+                .send()
+        })?;
 
         if !resp.status().is_success() {
             let status = resp.status();
@@ -322,12 +353,13 @@ pub async fn cloud_get_remote_dashboard(project_id: String) -> Result<ProjectSta
             urlencoding::encode(&project_id),
         );
 
-        let resp = client
-            .get(&state_url)
-            .header("Authorization", format!("Bearer {}", token))
-            .header("apikey", &anon_key)
-            .send()
-            .map_err(|e| format!("Request failed: {}", e))?;
+        let resp = retry_request(3, || {
+            client
+                .get(&state_url)
+                .header("Authorization", format!("Bearer {}", token))
+                .header("apikey", &anon_key)
+                .send()
+        })?;
 
         if !resp.status().is_success() {
             let status = resp.status();
@@ -361,12 +393,13 @@ pub async fn cloud_get_remote_dashboard(project_id: String) -> Result<ProjectSta
             urlencoding::encode(&project_id),
         );
 
-        let resp = client
-            .get(&tasks_url)
-            .header("Authorization", format!("Bearer {}", token))
-            .header("apikey", &anon_key)
-            .send()
-            .map_err(|e| format!("Request failed: {}", e))?;
+        let resp = retry_request(3, || {
+            client
+                .get(&tasks_url)
+                .header("Authorization", format!("Bearer {}", token))
+                .header("apikey", &anon_key)
+                .send()
+        })?;
 
         let task_rows: Vec<serde_json::Value> = if resp.status().is_success() {
             resp.json().unwrap_or_default()
@@ -474,5 +507,22 @@ mod tests {
         // With no session file, should return error (in most test envs)
         let result = read_auth_token();
         assert!(result.is_ok() || result.is_err());
+    }
+
+    #[test]
+    fn test_retry_request_retries_on_network_error() {
+        let mut attempts = 0u32;
+        let result = retry_request(3, || {
+            attempts += 1;
+            // Use an unreachable address with very short timeout
+            reqwest::blocking::Client::builder()
+                .timeout(std::time::Duration::from_millis(50))
+                .build()
+                .unwrap()
+                .get("http://192.0.2.1:1") // RFC 5737 TEST-NET, guaranteed unreachable
+                .send()
+        });
+        assert!(result.is_err());
+        assert_eq!(attempts, 3);
     }
 }

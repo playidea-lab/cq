@@ -1,6 +1,8 @@
 import { useEffect } from 'react';
 import { useConfig } from '../../hooks/useConfig';
 import { MarkdownViewer } from '../shared/MarkdownViewer';
+import { Skeleton } from '../shared/Skeleton';
+import { ErrorState } from '../shared/ErrorState';
 import { formatSize } from '../../utils/format';
 import '../../styles/config.css';
 
@@ -24,11 +26,26 @@ export function ConfigView({ projectPath }: ConfigViewProps) {
   }, [projectPath, loadFiles]);
 
   if (loading) {
-    return <div className="config__loading">Loading config files...</div>;
+    return (
+      <div className="config">
+        <div className="config__tree-panel">
+          <Skeleton variant="list-item" count={8} />
+        </div>
+        <div className="config__content-panel">
+          <Skeleton variant="card" count={1} />
+        </div>
+      </div>
+    );
   }
 
   if (error) {
-    return <div className="config__error">{error}</div>;
+    return (
+      <ErrorState
+        message="Failed to load config files"
+        detail={error}
+        onRetry={() => loadFiles(projectPath)}
+      />
+    );
   }
 
   return (
@@ -60,7 +77,7 @@ export function ConfigView({ projectPath }: ConfigViewProps) {
 
       <div className="config__content-panel">
         {contentLoading ? (
-          <div className="config__loading">Loading file...</div>
+          <Skeleton variant="card" count={1} />
         ) : selectedFile ? (
           <>
             <div className="config__content-header">

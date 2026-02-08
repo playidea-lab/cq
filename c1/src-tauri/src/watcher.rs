@@ -31,6 +31,7 @@ pub fn start_session_watcher(app: &AppHandle, project_path: &str) -> Result<(), 
     }
 
     let app_handle = app.clone();
+    let sessions_dir_str = sessions_dir.to_string_lossy().to_string();
     let (tx, rx) = mpsc::channel();
 
     // Create watcher with debounce
@@ -79,6 +80,9 @@ pub fn start_session_watcher(app: &AppHandle, project_path: &str) -> Result<(), 
                     if !path.ends_with(".jsonl") {
                         continue;
                     }
+
+                    // Invalidate session cache for this project
+                    crate::commands::invalidate_session_cache(&sessions_dir_str);
 
                     let _ = app_handle.emit(
                         "sessions-changed",

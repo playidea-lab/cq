@@ -3,6 +3,8 @@ import { invoke } from '@tauri-apps/api/core';
 import { useDashboard } from '../../hooks/useDashboard';
 import { StatusBadge } from '../shared/StatusBadge';
 import { ProgressBar } from '../shared/ProgressBar';
+import { Skeleton } from '../shared/Skeleton';
+import { ErrorState } from '../shared/ErrorState';
 import { TaskList } from './TaskList';
 import { TaskDetailPanel } from './TaskDetailPanel';
 import { TaskTimeline } from './TaskTimeline';
@@ -39,7 +41,6 @@ export function DashboardView({ projectPath }: DashboardViewProps) {
     loadTimeline(projectPath);
   }, [projectPath, loadState, loadTimeline]);
 
-  // Load validations when a task is selected and has validations
   useEffect(() => {
     if (selectedTask && selectedTask.validations.length > 0) {
       loadValidations(projectPath, selectedTask.id);
@@ -81,20 +82,40 @@ export function DashboardView({ projectPath }: DashboardViewProps) {
   };
 
   if (loading) {
-    return <div className="dashboard__loading">Loading project state...</div>;
-  }
-
-  if (error) {
     return (
-      <div className="dashboard__error">
-        <p>Failed to load project state</p>
-        <p className="dashboard__error-detail">{error}</p>
+      <div className="dashboard">
+        <div className="dashboard__header">
+          <Skeleton variant="card" count={1} />
+        </div>
+        <div className="dashboard__body">
+          <div className="dashboard__task-list-panel">
+            <Skeleton variant="list-item" count={5} />
+          </div>
+          <div className="dashboard__task-detail-panel">
+            <Skeleton variant="card" count={2} />
+          </div>
+        </div>
       </div>
     );
   }
 
+  if (error) {
+    return (
+      <ErrorState
+        message="Failed to load project state"
+        detail={error}
+        onRetry={() => { loadState(projectPath); loadTimeline(projectPath); }}
+      />
+    );
+  }
+
   if (!state) {
-    return <div className="dashboard__empty">No C4 project data found</div>;
+    return (
+      <div className="dashboard__empty">
+        <p>No C4 project data found</p>
+        <p className="dashboard__empty-hint">Open a project with a .c4/ directory to see dashboard data.</p>
+      </div>
+    );
   }
 
   return (

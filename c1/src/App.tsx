@@ -8,6 +8,7 @@ import { TeamView } from './components/team/TeamView';
 import { LoginView } from './components/auth/LoginView';
 import { ErrorBoundary } from './components/shared/ErrorBoundary';
 import { AuthProvider } from './contexts/AuthContext';
+import { ToastProvider } from './contexts/ToastContext';
 import { useAuth } from './hooks/useAuth';
 import type { ViewType } from './types';
 import './styles/auth.css';
@@ -89,7 +90,6 @@ function AppContent() {
   }
 
   const renderView = () => {
-    // Team view does not require a project path
     if (currentView === 'team') {
       return <TeamView />;
     }
@@ -171,7 +171,9 @@ function AppContent() {
 export default function App() {
   return (
     <AuthProvider>
-      <AppContent />
+      <ToastProvider>
+        <AppContent />
+      </ToastProvider>
     </AuthProvider>
   );
 }

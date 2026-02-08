@@ -2,9 +2,48 @@
 
 use std::collections::HashMap;
 use std::fs;
+use std::num::NonZeroUsize;
 use std::path::Path;
+use std::sync::Mutex;
+use std::time::Instant;
 
+use lru::LruCache;
 use rusqlite::Connection;
+
+// ---------------------------------------------------------------------------
+// Session metadata LRU cache
+// ---------------------------------------------------------------------------
+
+/// Cached entry for session listings (provider + path → sessions)
+struct CachedSessions {
+    data: Vec<SessionMeta>,
+    fetched_at: Instant,
+}
+
+/// Global session metadata cache. Keyed by "provider:project_path".
+/// Entries expire after 30 seconds or on file-watcher invalidation.
+static SESSION_CACHE: std::sync::LazyLock<Mutex<LruCache<String, CachedSessions>>> =
+    std::sync::LazyLock::new(|| {
+        Mutex::new(LruCache::new(NonZeroUsize::new(32).unwrap()))
+    });
+
+const CACHE_TTL_SECS: u64 = 30;
+
+/// Invalidate all cache entries for a given project path.
+/// Called from the file watcher when session files change.
+pub fn invalidate_session_cache(project_path: &str) {
+    if let Ok(mut cache) = SESSION_CACHE.lock() {
+        // Remove all entries that contain this project path
+        let keys: Vec<String> = cache
+            .iter()
+            .filter(|(k, _)| k.contains(project_path))
+            .map(|(k, _)| k.clone())
+            .collect();
+        for key in keys {
+            cache.pop(&key);
+        }
+    }
+}
 
 use crate::models::{
     CanvasData, ConfigFileContent, ConfigFileEntry, ContentBlock, FileChange, ProjectState,
@@ -971,19 +1010,44 @@ pub async fn list_providers(path: String) -> Result<Vec<ProviderInfo>, String> {
     .map_err(|e| format!("Task execution failed: {}", e))?
 }
 
-/// List sessions for a specific provider
+/// List sessions for a specific provider (with LRU caching)
 #[tauri::command(rename_all = "camelCase")]
 pub async fn list_sessions_for_provider(
     path: String,
     provider: ProviderKind,
 ) -> Result<Vec<SessionMeta>, String> {
+    let cache_key = format!("{:?}:{}", provider, &path);
+
+    // Check cache first
+    if let Ok(mut cache) = SESSION_CACHE.lock() {
+        if let Some(entry) = cache.get(&cache_key) {
+            if entry.fetched_at.elapsed().as_secs() < CACHE_TTL_SECS {
+                return Ok(entry.data.clone());
+            }
+        }
+    }
+
     let project_path = path;
-    tokio::task::spawn_blocking(move || {
+    let key = cache_key.clone();
+    let sessions = tokio::task::spawn_blocking(move || {
         let p = providers::get_provider(provider);
         p.list_sessions(&project_path)
     })
     .await
-    .map_err(|e| format!("Task execution failed: {}", e))?
+    .map_err(|e| format!("Task execution failed: {}", e))??;
+
+    // Store in cache
+    if let Ok(mut cache) = SESSION_CACHE.lock() {
+        cache.put(
+            key,
+            CachedSessions {
+                data: sessions.clone(),
+                fetched_at: Instant::now(),
+            },
+        );
+    }
+
+    Ok(sessions)
 }
 
 /// Get paginated session messages for a specific provider

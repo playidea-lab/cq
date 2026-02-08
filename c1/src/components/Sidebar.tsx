@@ -1,5 +1,5 @@
-import { useMemo } from 'react';
-import { LayoutDashboard, MessageSquare, Settings, Users } from 'lucide-react';
+import { useMemo, useState, useEffect } from 'react';
+import { LayoutDashboard, MessageSquare, Settings, Users, Sun, Moon } from 'lucide-react';
 import type { ViewType } from '../types';
 import '../styles/sidebar.css';
 
@@ -17,11 +17,30 @@ const baseNavItems: { view: ViewType; label: string; icon: typeof LayoutDashboar
 
 const teamNavItem = { view: 'team' as ViewType, label: 'Team', icon: Users };
 
+function getInitialTheme(): 'dark' | 'light' {
+  try {
+    return (localStorage.getItem('c1-theme') as 'dark' | 'light') || 'dark';
+  } catch {
+    return 'dark';
+  }
+}
+
 export function Sidebar({ currentView, onViewChange, showTeam }: SidebarProps) {
   const navItems = useMemo(
     () => (showTeam ? [...baseNavItems, teamNavItem] : baseNavItems),
     [showTeam],
   );
+
+  const [theme, setTheme] = useState<'dark' | 'light'>(getInitialTheme);
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+    try {
+      localStorage.setItem('c1-theme', theme);
+    } catch { /* ignore */ }
+  }, [theme]);
+
+  const toggleTheme = () => setTheme(prev => prev === 'dark' ? 'light' : 'dark');
 
   return (
     <nav className="sidebar" aria-label="Main navigation">
@@ -41,6 +60,14 @@ export function Sidebar({ currentView, onViewChange, showTeam }: SidebarProps) {
           </li>
         ))}
       </ul>
+      <div className="sidebar__spacer" />
+      <button
+        className="sidebar__theme-toggle"
+        onClick={toggleTheme}
+        title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
+      >
+        {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
+      </button>
     </nav>
   );
 }

@@ -33,6 +33,7 @@ reqwest = { version = "0.12", features = ["json", "blocking"] }
 urlencoding = "2"
 open = "5"
 notify = { version = "6.1.1", features = ["macos_fsevent"] }
+lru = "0.12"
 
 [features]
 default = ["custom-protocol"]

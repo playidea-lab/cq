@@ -32,6 +32,9 @@ src-tauri/target/
 .env.local
 .env.*.local
 
+# Claude Code
+.claude/
+
 # Test outputs
 coverage/
 *.lcov

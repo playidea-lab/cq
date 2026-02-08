@@ -8,11 +8,36 @@ import { SessionList } from './SessionList';
 import { SearchResults } from './SearchResults';
 import { MessageViewer } from './MessageViewer';
 import { AnalyticsPanel } from './AnalyticsPanel';
-import type { ProviderKind, SearchHit } from '../../types';
+import { FilterBar } from './FilterBar';
+import { Skeleton } from '../shared/Skeleton';
+import { ErrorState } from '../shared/ErrorState';
+import type { ProviderKind, SearchHit, SessionMeta } from '../../types';
+import type { SortKey, TimeFilter } from './FilterBar';
 import '../../styles/sessions.css';
 
 interface SessionsViewProps {
   projectPath: string;
+}
+
+function applyTimeFilter(sessions: SessionMeta[], filter: TimeFilter): SessionMeta[] {
+  if (filter === 'all') return sessions;
+  const now = Date.now();
+  const cutoff = filter === 'today' ? 86400000 : filter === 'week' ? 604800000 : 2592000000;
+  return sessions.filter(s => s.timestamp != null && now - s.timestamp < cutoff);
+}
+
+function applySort(sessions: SessionMeta[], key: SortKey): SessionMeta[] {
+  const sorted = [...sessions];
+  switch (key) {
+    case 'date':
+      return sorted.sort((a, b) => (b.timestamp ?? 0) - (a.timestamp ?? 0));
+    case 'size':
+      return sorted.sort((a, b) => b.file_size - a.file_size);
+    case 'name':
+      return sorted.sort((a, b) => (a.title || a.id).localeCompare(b.title || b.id));
+    default:
+      return sorted;
+  }
 }
 
 export function SessionsView({ projectPath }: SessionsViewProps) {
@@ -44,19 +69,18 @@ export function SessionsView({ projectPath }: SessionsViewProps) {
 
   const [searchQuery, setSearchQuery] = useState('');
   const [detailTab, setDetailTab] = useState<'messages' | 'analytics'>('messages');
+  const [sortBy, setSortBy] = useState<SortKey>('date');
+  const [timeFilter, setTimeFilter] = useState<TimeFilter>('all');
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Load providers on mount
   useEffect(() => {
     loadProviders(projectPath);
   }, [projectPath, loadProviders]);
 
-  // Load sessions when provider changes
   useEffect(() => {
     listSessions(projectPath, activeProvider);
   }, [projectPath, activeProvider, listSessions]);
 
-  // Start file watcher for auto-refresh
   useEffect(() => {
     startWatching(projectPath);
   }, [projectPath, startWatching]);
@@ -91,12 +115,10 @@ export function SessionsView({ projectPath }: SessionsViewProps) {
   };
 
   const handleSearchHitClick = useCallback((hit: SearchHit) => {
-    // Find the session in the loaded sessions list and load it
     const session = sessions.find(s => s.id === hit.session_id);
     if (session) {
       loadMessages(session);
     } else {
-      // Create a minimal session meta to load messages directly
       loadMessages({
         id: hit.session_id,
         slug: '',
@@ -111,16 +133,27 @@ export function SessionsView({ projectPath }: SessionsViewProps) {
   }, [sessions, loadMessages]);
 
   const filteredSessions = useMemo(() => {
-    if (!searchQuery.trim()) return sessions;
-    const q = searchQuery.toLowerCase();
-    return sessions.filter(s =>
-      (s.title && s.title.toLowerCase().includes(q)) ||
-      s.id.toLowerCase().includes(q) ||
-      (s.git_branch && s.git_branch.toLowerCase().includes(q))
-    );
-  }, [sessions, searchQuery]);
+    let result = sessions;
 
-  // Show content search results when query is long enough and results exist
+    // Text filter
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      result = result.filter(s =>
+        (s.title && s.title.toLowerCase().includes(q)) ||
+        s.id.toLowerCase().includes(q) ||
+        (s.git_branch && s.git_branch.toLowerCase().includes(q))
+      );
+    }
+
+    // Time filter
+    result = applyTimeFilter(result, timeFilter);
+
+    // Sort
+    result = applySort(result, sortBy);
+
+    return result;
+  }, [sessions, searchQuery, timeFilter, sortBy]);
+
   const showSearchResults = searchQuery.trim().length > 2 && searchResults !== null;
 
   return (
@@ -136,20 +169,34 @@ export function SessionsView({ projectPath }: SessionsViewProps) {
           <span className="sessions__count">{filteredSessions.length}</span>
         </div>
         {sessions.length > 0 && (
-          <div className="sessions__search">
-            <input
-              className="sessions__search-input"
-              type="text"
-              placeholder="Search sessions..."
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
+          <>
+            <div className="sessions__search">
+              <input
+                className="sessions__search-input"
+                type="text"
+                placeholder="Search sessions..."
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+              />
+            </div>
+            <FilterBar
+              sortBy={sortBy}
+              onSortChange={setSortBy}
+              timeFilter={timeFilter}
+              onTimeFilterChange={setTimeFilter}
             />
-          </div>
+          </>
         )}
         {loading ? (
-          <div className="sessions__loading">Loading sessions...</div>
+          <div className="sessions__loading">
+            <Skeleton variant="list-item" count={6} />
+          </div>
         ) : error ? (
-          <div className="sessions__error">{error}</div>
+          <ErrorState
+            message="Failed to load sessions"
+            detail={error}
+            onRetry={() => listSessions(projectPath, activeProvider)}
+          />
         ) : showSearchResults ? (
           <SearchResults
             results={searchResults!}
@@ -216,7 +263,9 @@ export function SessionsView({ projectPath }: SessionsViewProps) {
                   onLoadMore={loadMore}
                 />
               ) : messagesLoading ? (
-                <div className="sessions__loading">Loading messages...</div>
+                <div className="sessions__loading">
+                  <Skeleton variant="card" count={3} />
+                </div>
               ) : null}
             </div>
           </>

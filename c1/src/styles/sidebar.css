@@ -69,3 +69,32 @@
   font-size: var(--font-size-xs);
   line-height: var(--line-height-tight);
 }
+
+.sidebar__spacer {
+  flex: 1;
+}
+
+.sidebar__theme-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: none;
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  border-radius: var(--radius-md);
+  margin-bottom: var(--space-lg);
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.sidebar__theme-toggle:hover {
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-primary);
+}
+
+.sidebar__theme-toggle:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: -2px;
+}
