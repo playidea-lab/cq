@@ -1,0 +1,393 @@
+package main
+
+import (
+	"database/sql"
+	"os"
+	"path/filepath"
+	"testing"
+
+	_ "modernc.org/sqlite"
+)
+
+// setupTestDB creates a temporary .c4/ directory with a SQLite database
+// containing the c4_state and c4_tasks tables, and sets projectDir so
+// dbPath() resolves correctly.
+func setupTestDB(t *testing.T) (*sql.DB, func()) {
+	t.Helper()
+
+	tmpDir := t.TempDir()
+	c4DirPath := filepath.Join(tmpDir, ".c4")
+	if err := os.MkdirAll(c4DirPath, 0o755); err != nil {
+		t.Fatalf("failed to create .c4 dir: %v", err)
+	}
+
+	// Set the global projectDir so dbPath() resolves correctly
+	oldProjectDir := projectDir
+	projectDir = tmpDir
+
+	dbFile := filepath.Join(c4DirPath, "tasks.db")
+	db, err := sql.Open("sqlite", dbFile)
+	if err != nil {
+		t.Fatalf("failed to open database: %v", err)
+	}
+
+	// Create schema
+	schema := `
+		CREATE TABLE IF NOT EXISTS c4_state (
+			project_id TEXT PRIMARY KEY,
+			state_json TEXT NOT NULL,
+			updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+		);
+		CREATE TABLE IF NOT EXISTS c4_tasks (
+			task_id    TEXT PRIMARY KEY,
+			title      TEXT NOT NULL,
+			scope      TEXT DEFAULT '',
+			priority   INTEGER DEFAULT 5,
+			status     TEXT DEFAULT 'pending',
+			depends_on TEXT DEFAULT '[]',
+			created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+			updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+		);
+	`
+	if _, err := db.Exec(schema); err != nil {
+		t.Fatalf("failed to create schema: %v", err)
+	}
+
+	cleanup := func() {
+		db.Close()
+		projectDir = oldProjectDir
+	}
+
+	return db, cleanup
+}
+
+// insertState inserts a project state row.
+func insertState(t *testing.T, db *sql.DB, projectID, status string) {
+	t.Helper()
+	stateJSON := `{"project_id":"` + projectID + `","status":"` + status + `"}`
+	_, err := db.Exec(
+		"INSERT INTO c4_state (project_id, state_json) VALUES (?, ?)",
+		projectID, stateJSON,
+	)
+	if err != nil {
+		t.Fatalf("failed to insert state: %v", err)
+	}
+}
+
+// insertTask inserts a task row.
+func insertTask(t *testing.T, db *sql.DB, taskID, title, status string) {
+	t.Helper()
+	_, err := db.Exec(
+		"INSERT INTO c4_tasks (task_id, title, status) VALUES (?, ?, ?)",
+		taskID, title, status,
+	)
+	if err != nil {
+		t.Fatalf("failed to insert task: %v", err)
+	}
+}
+
+// TestStatusCommandOutput verifies that runStatus reads project state and
+// task counts from the database and produces output without error.
+func TestStatusCommandOutput(t *testing.T) {
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	insertState(t, db, "test-project", "EXECUTE")
+	insertTask(t, db, "T-001-0", "Task one", "done")
+	insertTask(t, db, "T-002-0", "Task two", "pending")
+	insertTask(t, db, "T-003-0", "Task three", "in_progress")
+
+	// Run the status command (it writes to stdout)
+	err := runStatus(nil, nil)
+	if err != nil {
+		t.Fatalf("runStatus returned error: %v", err)
+	}
+
+	// Verify state was read correctly
+	state, err := loadProjectState(db)
+	if err != nil {
+		t.Fatalf("loadProjectState failed: %v", err)
+	}
+	if state.Status != "EXECUTE" {
+		t.Errorf("expected status EXECUTE, got %s", state.Status)
+	}
+	if state.ProjectID != "test-project" {
+		t.Errorf("expected project_id test-project, got %s", state.ProjectID)
+	}
+
+	// Verify task counts
+	counts, err := countTasks(db)
+	if err != nil {
+		t.Fatalf("countTasks failed: %v", err)
+	}
+	if counts.Total != 3 {
+		t.Errorf("expected 3 total tasks, got %d", counts.Total)
+	}
+	if counts.Done != 1 {
+		t.Errorf("expected 1 done, got %d", counts.Done)
+	}
+	if counts.Pending != 1 {
+		t.Errorf("expected 1 pending, got %d", counts.Pending)
+	}
+	if counts.InProgress != 1 {
+		t.Errorf("expected 1 in_progress, got %d", counts.InProgress)
+	}
+}
+
+// TestRunStartsWorkers verifies that the run command transitions the state
+// from PLAN to EXECUTE when tasks are present.
+func TestRunStartsWorkers(t *testing.T) {
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	insertState(t, db, "test-project", "PLAN")
+	insertTask(t, db, "T-001-0", "Task one", "pending")
+	insertTask(t, db, "T-002-0", "Task two", "pending")
+
+	// Set global workers flag
+	oldWorkers := runWorkers
+	runWorkers = 2
+	defer func() { runWorkers = oldWorkers }()
+
+	err := runRun(nil, nil)
+	if err != nil {
+		t.Fatalf("runRun returned error: %v", err)
+	}
+
+	// Verify state was transitioned to EXECUTE
+	state, err := loadProjectState(db)
+	if err != nil {
+		t.Fatalf("loadProjectState failed: %v", err)
+	}
+	if state.Status != "EXECUTE" {
+		t.Errorf("expected status EXECUTE after run, got %s", state.Status)
+	}
+}
+
+// TestRunWithoutTasksErrors verifies that the run command returns an error
+// when there are no tasks in the database.
+func TestRunWithoutTasksErrors(t *testing.T) {
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	insertState(t, db, "test-project", "PLAN")
+	// No tasks inserted
+
+	err := runRun(nil, nil)
+	if err == nil {
+		t.Fatal("expected error when running with no tasks, got nil")
+	}
+
+	expected := "no tasks found"
+	if !containsString(err.Error(), expected) {
+		t.Errorf("expected error containing %q, got %q", expected, err.Error())
+	}
+}
+
+// TestStopTransitionsState verifies the stop command transitions EXECUTE -> HALTED.
+func TestStopTransitionsState(t *testing.T) {
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	insertState(t, db, "test-project", "EXECUTE")
+
+	err := runStop(nil, nil)
+	if err != nil {
+		t.Fatalf("runStop returned error: %v", err)
+	}
+
+	state, err := loadProjectState(db)
+	if err != nil {
+		t.Fatalf("loadProjectState failed: %v", err)
+	}
+	if state.Status != "HALTED" {
+		t.Errorf("expected status HALTED after stop, got %s", state.Status)
+	}
+}
+
+// TestAddTaskCreatesTask verifies that add-task inserts a task row.
+func TestAddTaskCreatesTask(t *testing.T) {
+	_, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	// Set global flags for add-task
+	oldTitle := taskTitle
+	oldScope := taskScope
+	oldPriority := taskPriority
+	taskTitle = "Test Task"
+	taskScope = "src/"
+	taskPriority = 3
+	taskDepends = nil
+	defer func() {
+		taskTitle = oldTitle
+		taskScope = oldScope
+		taskPriority = oldPriority
+	}()
+
+	err := runAddTask(nil, nil)
+	if err != nil {
+		t.Fatalf("runAddTask returned error: %v", err)
+	}
+
+	// Verify task was inserted by opening the DB and checking
+	db, err := sql.Open("sqlite", dbPath())
+	if err != nil {
+		t.Fatalf("failed to open db: %v", err)
+	}
+	defer db.Close()
+
+	var title, status string
+	err = db.QueryRow("SELECT title, status FROM c4_tasks WHERE task_id = 'T-001-0'").Scan(&title, &status)
+	if err != nil {
+		t.Fatalf("failed to query inserted task: %v", err)
+	}
+	if title != "Test Task" {
+		t.Errorf("expected title 'Test Task', got %q", title)
+	}
+	if status != "pending" {
+		t.Errorf("expected status 'pending', got %q", status)
+	}
+}
+
+// TestMCPInitialize verifies the MCP server handles the initialize method.
+func TestMCPInitialize(t *testing.T) {
+	req := &mcpRequest{
+		JSONRPC: "2.0",
+		ID:      1,
+		Method:  "initialize",
+	}
+
+	resp := handleMCPRequest(req)
+	if resp == nil {
+		t.Fatal("expected response, got nil")
+	}
+	if resp.Error != nil {
+		t.Fatalf("expected no error, got %v", resp.Error)
+	}
+
+	result, ok := resp.Result.(initializeResult)
+	if !ok {
+		t.Fatalf("expected initializeResult, got %T", resp.Result)
+	}
+	if result.ServerInfo.Name != "c4" {
+		t.Errorf("expected server name 'c4', got %q", result.ServerInfo.Name)
+	}
+}
+
+// TestMCPToolsList verifies the MCP server returns tool definitions.
+func TestMCPToolsList(t *testing.T) {
+	req := &mcpRequest{
+		JSONRPC: "2.0",
+		ID:      2,
+		Method:  "tools/list",
+	}
+
+	resp := handleMCPRequest(req)
+	if resp == nil {
+		t.Fatal("expected response, got nil")
+	}
+	if resp.Error != nil {
+		t.Fatalf("expected no error, got %v", resp.Error)
+	}
+
+	resultMap, ok := resp.Result.(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected map result, got %T", resp.Result)
+	}
+
+	tools, ok := resultMap["tools"].([]toolInfo)
+	if !ok {
+		t.Fatalf("expected []toolInfo, got %T", resultMap["tools"])
+	}
+
+	if len(tools) != 3 {
+		t.Errorf("expected 3 tools, got %d", len(tools))
+	}
+
+	// Verify tool names
+	names := make(map[string]bool)
+	for _, tool := range tools {
+		names[tool.Name] = true
+	}
+	for _, expected := range []string{"c4_status", "c4_start", "c4_stop"} {
+		if !names[expected] {
+			t.Errorf("expected tool %q not found", expected)
+		}
+	}
+}
+
+// TestMCPUnknownMethod verifies the MCP server returns a method-not-found error.
+func TestMCPUnknownMethod(t *testing.T) {
+	req := &mcpRequest{
+		JSONRPC: "2.0",
+		ID:      3,
+		Method:  "unknown/method",
+	}
+
+	resp := handleMCPRequest(req)
+	if resp == nil {
+		t.Fatal("expected response, got nil")
+	}
+	if resp.Error == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if resp.Error.Code != -32601 {
+		t.Errorf("expected error code -32601, got %d", resp.Error.Code)
+	}
+}
+
+// TestLoadProjectStateNoRows verifies default state when no rows exist.
+func TestLoadProjectStateNoRows(t *testing.T) {
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	state, err := loadProjectState(db)
+	if err != nil {
+		t.Fatalf("loadProjectState failed: %v", err)
+	}
+	if state.Status != "INIT" {
+		t.Errorf("expected status INIT for empty db, got %s", state.Status)
+	}
+}
+
+// TestCountTasksEmptyTable verifies zero counts when no tasks exist.
+func TestCountTasksEmptyTable(t *testing.T) {
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	counts, err := countTasks(db)
+	if err != nil {
+		t.Fatalf("countTasks failed: %v", err)
+	}
+	if counts.Total != 0 {
+		t.Errorf("expected 0 total, got %d", counts.Total)
+	}
+}
+
+// TestRunFromCompleteState verifies that run returns early for COMPLETE state.
+func TestRunFromCompleteState(t *testing.T) {
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	insertState(t, db, "test-project", "COMPLETE")
+	insertTask(t, db, "T-001-0", "Task one", "done")
+
+	err := runRun(nil, nil)
+	if err != nil {
+		t.Fatalf("runRun returned error for COMPLETE state: %v", err)
+	}
+}
+
+// containsString checks if s contains substr.
+func containsString(s, substr string) bool {
+	return len(s) >= len(substr) && (s == substr || len(s) > 0 && containsSubstring(s, substr))
+}
+
+func containsSubstring(s, sub string) bool {
+	for i := 0; i <= len(s)-len(sub); i++ {
+		if s[i:i+len(sub)] == sub {
+			return true
+		}
+	}
+	return false
+}
