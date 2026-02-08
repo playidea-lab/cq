@@ -403,6 +403,25 @@ c4/
 └── hooks/        # 생명주기 훅 레지스트리
 ```
 
+### Phase 6.11: C1 (See) — Multi-LLM Project Explorer ✅
+
+**목표**: C1 데스크톱 앱을 Claude Code 전용 뷰어에서 모든 LLM 코딩 도구 통합 탐색기로 확장
+
+**구현 완료**:
+- **Provider Trait 추상화** (`canvas-app/src-tauri/src/providers/mod.rs`)
+  - `ProviderKind` enum + `SessionProvider` trait (enum dispatch)
+  - `detect_providers()` 자동 감지, `get_provider()` 팩토리
+- **4개 프로바이더**:
+  - Claude Code (`providers/claude_code.rs`) — 기존 로직 추출
+  - Codex CLI (`providers/codex_cli.rs`) — `~/.codex/sessions/` JSONL 파싱
+  - Cursor (`providers/cursor.rs`) — `state.vscdb` SQLite READONLY (composerData/bubbleId)
+  - Gemini CLI (`providers/gemini_cli.rs`) — 스텁 (설치 감지만)
+- **IPC 커맨드**: `list_providers`, `list_sessions_for_provider`, `get_provider_session_messages`
+- **프론트엔드**: ProviderTabs, OverviewPanel (프로바이더 카드), UsagePanel (CSS-only 바 차트)
+- **리뷰**: R-CVR-001~013 전체 APPROVE
+
+**테스트**: Rust 16/16, Vitest 29/29
+
 ### Phase 6.10: Worker Lifecycle Hardening ✅
 
 **목표**: 좀비 워커 버그 수정 및 워커 생명주기 강화
@@ -558,6 +577,7 @@ v0.1-0.3        v0.4           v0.5           v0.6             v0.6.10 (현재) 
 | **Reliability & Observability** | P0 | ✅ 완료 |
 | **PiQ 완전 흡수 (GPU/ML)** | P0 | ✅ 완료 |
 | **Worker Lifecycle Hardening** | P0 | ✅ 완료 |
+| **C1 Multi-LLM Explorer** | P0 | ✅ 완료 |
 | Cloud Foundation (7.1) | P1 | 📋 Next |
 | LLM Gateway (7.2) | P1 | 📋 Phase 7 |
 | Hosted Workers (7.3) | P2 | 📋 Phase 7 |
