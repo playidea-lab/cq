@@ -237,6 +237,17 @@ func AllowedEvents(status ProjectStatus) []string {
 	return events
 }
 
+// TransitionTarget returns the target state for a (from, event) pair.
+// Returns empty string if the transition is invalid.
+func TransitionTarget(from ProjectStatus, event string) ProjectStatus {
+	key := transitionKey{From: from, Event: event}
+	target, ok := transitions[key]
+	if !ok {
+		return ""
+	}
+	return target
+}
+
 // saveState persists the current state to the database.
 func (m *Machine) saveState() error {
 	if m.state == nil {

@@ -280,6 +280,20 @@ func RegisterProxyHandlers(reg *mcp.Registry, proxy *BridgeProxy) {
 		},
 	}, proxyHandler(proxy, "RenameSymbol"))
 
+	// LSP tool: find referencing symbols — delegated to Python
+	reg.Register(mcp.ToolSchema{
+		Name:        "c4_find_referencing_symbols",
+		Description: "Find all references to a symbol across the project",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"file_path":   map[string]any{"type": "string", "description": "File path containing the symbol"},
+				"symbol_name": map[string]any{"type": "string", "description": "Symbol name to find references for"},
+			},
+			"required": []string{"file_path", "symbol_name"},
+		},
+	}, proxyHandler(proxy, "FindReferencingSymbols"))
+
 	// Knowledge tools (3) — delegated to Python FTS5 + sqlite-vec
 	reg.Register(mcp.ToolSchema{
 		Name:        "c4_knowledge_search",

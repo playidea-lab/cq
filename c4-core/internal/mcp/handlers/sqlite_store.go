@@ -4,22 +4,57 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/changmin/c4-core/internal/config"
+	"github.com/changmin/c4-core/internal/state"
 )
 
 // SQLiteStore implements the handlers.Store interface backed by SQLite.
 // It operates on the shared .c4/tasks.db used by both Go and Python.
 type SQLiteStore struct {
-	db        *sql.DB
-	projectID string
+	db          *sql.DB
+	projectID   string
+	projectRoot string
+	config      *config.Manager
+	proxy       *BridgeProxy // optional: for knowledge auto-record
+}
+
+// StoreOption configures a SQLiteStore.
+type StoreOption func(*SQLiteStore)
+
+// WithProjectRoot sets the project root directory (for .c4/active_claim.json).
+func WithProjectRoot(root string) StoreOption {
+	return func(s *SQLiteStore) { s.projectRoot = root }
+}
+
+// WithConfig sets the config manager for economic mode and settings.
+func WithConfig(cfg *config.Manager) StoreOption {
+	return func(s *SQLiteStore) { s.config = cfg }
+}
+
+// WithProxy sets the bridge proxy for knowledge auto-record on task completion.
+func WithProxy(p *BridgeProxy) StoreOption {
+	return func(s *SQLiteStore) { s.proxy = p }
 }
 
 // NewSQLiteStore creates a new SQLite-backed Store.
-func NewSQLiteStore(db *sql.DB) (*SQLiteStore, error) {
+func NewSQLiteStore(db *sql.DB, opts ...StoreOption) (*SQLiteStore, error) {
 	s := &SQLiteStore{db: db}
 
-	// Read project ID from state (table may not exist yet)
+	for _, opt := range opts {
+		opt(s)
+	}
+
+	// Ensure schema exists
+	if err := s.initSchema(); err != nil {
+		return nil, fmt.Errorf("init schema: %w", err)
+	}
+
+	// Read project ID from state (table is now guaranteed to exist)
 	var stateJSON string
 	err := db.QueryRow("SELECT state_json FROM c4_state LIMIT 1").Scan(&stateJSON)
 	if err == nil {
@@ -30,9 +65,58 @@ func NewSQLiteStore(db *sql.DB) (*SQLiteStore, error) {
 			}
 		}
 	}
-	// Ignore errors — table may not exist yet and that's OK
 
 	return s, nil
+}
+
+// initSchema creates all required tables if they don't exist.
+func (s *SQLiteStore) initSchema() error {
+	statements := []string{
+		`CREATE TABLE IF NOT EXISTS c4_state (
+			project_id TEXT PRIMARY KEY,
+			state_json TEXT NOT NULL,
+			updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+		)`,
+		`CREATE TABLE IF NOT EXISTS c4_tasks (
+			task_id      TEXT PRIMARY KEY,
+			title        TEXT NOT NULL,
+			scope        TEXT DEFAULT '',
+			dod          TEXT DEFAULT '',
+			status       TEXT DEFAULT 'pending',
+			dependencies TEXT DEFAULT '[]',
+			domain       TEXT DEFAULT '',
+			priority     INTEGER DEFAULT 0,
+			model        TEXT DEFAULT '',
+			worker_id    TEXT DEFAULT '',
+			branch       TEXT DEFAULT '',
+			commit_sha   TEXT DEFAULT '',
+			created_at   TEXT DEFAULT CURRENT_TIMESTAMP,
+			updated_at   TEXT DEFAULT CURRENT_TIMESTAMP
+		)`,
+		`CREATE TABLE IF NOT EXISTS c4_checkpoints (
+			checkpoint_id    TEXT PRIMARY KEY,
+			decision         TEXT NOT NULL,
+			notes            TEXT DEFAULT '',
+			required_changes TEXT DEFAULT '[]',
+			created_at       TEXT DEFAULT CURRENT_TIMESTAMP
+		)`,
+		`CREATE TABLE IF NOT EXISTS persona_stats (
+			persona_id   TEXT NOT NULL,
+			task_id      TEXT NOT NULL,
+			outcome      TEXT NOT NULL,
+			review_score REAL DEFAULT 0.0,
+			feedback     TEXT DEFAULT '',
+			created_at   TEXT NOT NULL,
+			UNIQUE(persona_id, task_id)
+		)`,
+	}
+
+	for _, stmt := range statements {
+		if _, err := s.db.Exec(stmt); err != nil {
+			return fmt.Errorf("executing %q: %w", stmt[:40], err)
+		}
+	}
+	return nil
 }
 
 // GetStatus returns the current project status with task counts.
@@ -57,7 +141,6 @@ func (s *SQLiteStore) GetStatus() (*ProjectStatus, error) {
 	// Count tasks by status
 	rows, err := s.db.Query("SELECT status, COUNT(*) FROM c4_tasks GROUP BY status")
 	if err != nil {
-		// Table might not exist yet
 		return status, nil
 	}
 	defer rows.Close()
@@ -84,62 +167,77 @@ func (s *SQLiteStore) GetStatus() (*ProjectStatus, error) {
 	return status, nil
 }
 
-// Start transitions the project to EXECUTE state.
+// Start transitions the project to EXECUTE state using the state machine.
 func (s *SQLiteStore) Start() error {
-	var stateJSON string
-	err := s.db.QueryRow("SELECT state_json FROM c4_state LIMIT 1").Scan(&stateJSON)
+	machine := state.NewMachine(s.db)
+
+	pid := s.projectID
+	if pid == "" {
+		pid = "c4"
+	}
+
+	st, err := machine.LoadState(pid)
 	if err != nil {
-		return fmt.Errorf("reading state: %w", err)
+		return fmt.Errorf("loading state: %w", err)
 	}
 
-	var m map[string]any
-	if err := json.Unmarshal([]byte(stateJSON), &m); err != nil {
-		return fmt.Errorf("parsing state: %w", err)
+	// Map Start to appropriate event based on current state
+	event := "c4_run"
+	if st.Status == state.StatusINIT {
+		event = "c4_init_legacy" // INIT → PLAN (legacy shortcut)
 	}
 
-	current, _ := m["status"].(string)
-	if current != "PLAN" && current != "HALTED" {
-		return fmt.Errorf("cannot start from state %s (must be PLAN or HALTED)", current)
+	_, err = machine.Transition(event)
+	if err != nil {
+		return fmt.Errorf("transition failed: %w", err)
 	}
 
-	m["status"] = "EXECUTE"
-	updated, _ := json.Marshal(m)
-	pid, _ := m["project_id"].(string)
-
-	_, err = s.db.Exec(
-		"UPDATE c4_state SET state_json = ?, updated_at = CURRENT_TIMESTAMP WHERE project_id = ?",
-		string(updated), pid,
-	)
-	return err
+	return nil
 }
 
-// TransitionState transitions the project from one state to another.
+// TransitionState transitions the project using the state machine's transition table.
+// The 'to' parameter is used to infer the appropriate event.
 func (s *SQLiteStore) TransitionState(from, to string) error {
-	var stateJSON string
-	err := s.db.QueryRow("SELECT state_json FROM c4_state LIMIT 1").Scan(&stateJSON)
+	machine := state.NewMachine(s.db)
+
+	pid := s.projectID
+	if pid == "" {
+		pid = "c4"
+	}
+
+	st, err := machine.LoadState(pid)
 	if err != nil {
-		return fmt.Errorf("reading state: %w", err)
+		return fmt.Errorf("loading state: %w", err)
 	}
 
-	var m map[string]any
-	if err := json.Unmarshal([]byte(stateJSON), &m); err != nil {
-		return fmt.Errorf("parsing state: %w", err)
+	if string(st.Status) != from {
+		return fmt.Errorf("cannot transition: current state is %s, expected %s", st.Status, from)
 	}
 
-	current, _ := m["status"].(string)
-	if current != from {
-		return fmt.Errorf("cannot transition from %s to %s (current state: %s)", from, to, current)
+	// Find the event that maps (from → to)
+	event := inferEvent(state.ProjectStatus(from), state.ProjectStatus(to))
+	if event == "" {
+		allowed := state.AllowedEvents(state.ProjectStatus(from))
+		return fmt.Errorf("no valid transition from %s to %s (allowed events from %s: %v)", from, to, from, allowed)
 	}
 
-	m["status"] = to
-	updated, _ := json.Marshal(m)
-	pid, _ := m["project_id"].(string)
+	_, err = machine.Transition(event)
+	if err != nil {
+		return fmt.Errorf("transition failed: %w", err)
+	}
 
-	_, err = s.db.Exec(
-		"UPDATE c4_state SET state_json = ?, updated_at = CURRENT_TIMESTAMP WHERE project_id = ?",
-		string(updated), pid,
-	)
-	return err
+	return nil
+}
+
+// inferEvent finds the event name that produces a transition from → to.
+func inferEvent(from, to state.ProjectStatus) string {
+	// Check all allowed events from the current state
+	for _, event := range state.AllowedEvents(from) {
+		if state.TransitionTarget(from, event) == to {
+			return event
+		}
+	}
+	return ""
 }
 
 // Clear resets the C4 state.
@@ -150,15 +248,22 @@ func (s *SQLiteStore) Clear(keepConfig bool) error {
 	}
 	defer tx.Rollback()
 
-	// Delete all tasks
 	if _, err := tx.Exec("DELETE FROM c4_tasks"); err != nil {
-		// Table might not exist
+		_ = err
+	}
+	if _, err := tx.Exec("DELETE FROM c4_state"); err != nil {
+		_ = err
+	}
+	if _, err := tx.Exec("DELETE FROM c4_checkpoints"); err != nil {
+		_ = err
+	}
+	if _, err := tx.Exec("DELETE FROM persona_stats"); err != nil {
 		_ = err
 	}
 
-	// Reset state
-	if _, err := tx.Exec("DELETE FROM c4_state"); err != nil {
-		_ = err
+	// Remove active claim file
+	if s.projectRoot != "" {
+		_ = os.Remove(filepath.Join(s.projectRoot, ".c4", "active_claim.json"))
 	}
 
 	return tx.Commit()
@@ -172,11 +277,17 @@ func (s *SQLiteStore) AddTask(task *Task) error {
 		deps = string(depsJSON)
 	}
 
+	// Apply config-based model hint if not explicitly set
+	model := task.Model
+	if model == "" && s.config != nil {
+		model = s.config.GetModelForTask(task.ID)
+	}
+
 	_, err := s.db.Exec(`
 		INSERT INTO c4_tasks (task_id, title, scope, dod, status, dependencies, domain, priority, model, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
 		task.ID, task.Title, task.Scope, task.DoD, "pending",
-		deps, task.Domain, task.Priority, task.Model,
+		deps, task.Domain, task.Priority, model,
 	)
 	return err
 }
@@ -222,7 +333,6 @@ func (s *SQLiteStore) AssignTask(workerID string) (*TaskAssignment, error) {
 	}
 	defer tx.Rollback()
 
-	// Find next pending task with all dependencies done
 	var taskID, title, scope, dod, domain, model string
 	var deps sql.NullString
 	var priority int
@@ -241,13 +351,12 @@ func (s *SQLiteStore) AssignTask(workerID string) (*TaskAssignment, error) {
 	).Scan(&taskID, &title, &scope, &dod, &deps, &domain, &priority, &model)
 
 	if err == sql.ErrNoRows {
-		return nil, nil // No tasks available
+		return nil, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("finding task: %w", err)
 	}
 
-	// Assign to worker
 	_, err = tx.Exec(`
 		UPDATE c4_tasks SET status = 'in_progress', worker_id = ?, updated_at = CURRENT_TIMESTAMP
 		WHERE task_id = ?`, workerID, taskID,
@@ -258,6 +367,11 @@ func (s *SQLiteStore) AssignTask(workerID string) (*TaskAssignment, error) {
 
 	if err := tx.Commit(); err != nil {
 		return nil, err
+	}
+
+	// Apply config model hint if task has no explicit model
+	if model == "" && s.config != nil {
+		model = s.config.GetModelForTask(taskID)
 	}
 
 	assignment := &TaskAssignment{
@@ -279,7 +393,6 @@ func (s *SQLiteStore) AssignTask(workerID string) (*TaskAssignment, error) {
 
 // SubmitTask marks a task as done.
 func (s *SQLiteStore) SubmitTask(taskID, workerID, commitSHA string, results []ValidationResult) (*SubmitResult, error) {
-	// Check for failures
 	for _, r := range results {
 		if r.Status == "fail" {
 			return &SubmitResult{
@@ -290,7 +403,12 @@ func (s *SQLiteStore) SubmitTask(taskID, workerID, commitSHA string, results []V
 		}
 	}
 
-	_, err := s.db.Exec(`
+	task, err := s.GetTask(taskID)
+	if err != nil {
+		return nil, fmt.Errorf("getting task for submit: %w", err)
+	}
+
+	_, err = s.db.Exec(`
 		UPDATE c4_tasks SET status = 'done', commit_sha = ?, updated_at = CURRENT_TIMESTAMP
 		WHERE task_id = ?`, commitSHA, taskID,
 	)
@@ -298,7 +416,12 @@ func (s *SQLiteStore) SubmitTask(taskID, workerID, commitSHA string, results []V
 		return nil, fmt.Errorf("updating task: %w", err)
 	}
 
-	// Check if there are more tasks
+	// Record persona stats (best-effort)
+	s.recordPersonaStat(workerID, taskID, "approved")
+
+	// Auto-record knowledge (best-effort)
+	s.autoRecordKnowledge(task, "submitted via worker", nil)
+
 	var pending int
 	_ = s.db.QueryRow("SELECT COUNT(*) FROM c4_tasks WHERE status IN ('pending', 'in_progress')").Scan(&pending)
 
@@ -323,7 +446,7 @@ func (s *SQLiteStore) MarkBlocked(taskID, workerID, failureSignature string, att
 	return err
 }
 
-// ClaimTask claims a task for direct execution.
+// ClaimTask claims a task for direct execution and writes .c4/active_claim.json.
 func (s *SQLiteStore) ClaimTask(taskID string) (*Task, error) {
 	task, err := s.GetTask(taskID)
 	if err != nil {
@@ -344,27 +467,47 @@ func (s *SQLiteStore) ClaimTask(taskID string) (*Task, error) {
 
 	task.Status = "in_progress"
 	task.WorkerID = "direct"
+
+	// Write .c4/active_claim.json for hook validation
+	s.writeClaimFile(taskID)
+
 	return task, nil
 }
 
-// ReportTask marks a directly-claimed task as done, persisting summary and files.
+// ReportTask marks a directly-claimed task as done and removes .c4/active_claim.json.
 func (s *SQLiteStore) ReportTask(taskID, summary string, filesChanged []string) error {
+	task, err := s.GetTask(taskID)
+	if err != nil {
+		return fmt.Errorf("getting task for report: %w", err)
+	}
+
 	files := ""
 	if len(filesChanged) > 0 {
 		files = strings.Join(filesChanged, ",")
 	}
 
-	// Store summary in commit_sha and files in branch (direct mode doesn't use git fields)
-	_, err := s.db.Exec(`
+	_, err = s.db.Exec(`
 		UPDATE c4_tasks SET status = 'done', commit_sha = ?, branch = ?, updated_at = CURRENT_TIMESTAMP
 		WHERE task_id = ?`, summary, files, taskID,
 	)
-	return err
+	if err != nil {
+		return err
+	}
+
+	// Remove .c4/active_claim.json
+	s.removeClaimFile()
+
+	// Record persona stats (best-effort)
+	s.recordPersonaStat("direct", taskID, "approved")
+
+	// Auto-record knowledge (best-effort)
+	s.autoRecordKnowledge(task, summary, filesChanged)
+
+	return nil
 }
 
 // Checkpoint records a checkpoint decision.
 func (s *SQLiteStore) Checkpoint(checkpointID, decision, notes string, requiredChanges []string) (*CheckpointResult, error) {
-	// Record in a checkpoint log table (best effort)
 	changesJSON := "[]"
 	if len(requiredChanges) > 0 {
 		b, _ := json.Marshal(requiredChanges)
@@ -392,4 +535,154 @@ func (s *SQLiteStore) Checkpoint(checkpointID, decision, notes string, requiredC
 	}
 
 	return result, nil
+}
+
+// --- Active Claim File Management ---
+
+// writeClaimFile creates .c4/active_claim.json for hook validation.
+func (s *SQLiteStore) writeClaimFile(taskID string) {
+	if s.projectRoot == "" {
+		return
+	}
+	claim := map[string]any{
+		"task_id":    taskID,
+		"claimed_at": time.Now().UTC().Format(time.RFC3339),
+		"worker_id":  "direct",
+	}
+	data, err := json.MarshalIndent(claim, "", "  ")
+	if err != nil {
+		return
+	}
+	claimPath := filepath.Join(s.projectRoot, ".c4", "active_claim.json")
+	_ = os.MkdirAll(filepath.Dir(claimPath), 0755)
+	_ = os.WriteFile(claimPath, data, 0644)
+}
+
+// removeClaimFile deletes .c4/active_claim.json after task completion.
+func (s *SQLiteStore) removeClaimFile() {
+	if s.projectRoot == "" {
+		return
+	}
+	claimPath := filepath.Join(s.projectRoot, ".c4", "active_claim.json")
+	_ = os.Remove(claimPath)
+}
+
+// --- Persona Stats ---
+
+// recordPersonaStat records a persona outcome for a task (best-effort).
+func (s *SQLiteStore) recordPersonaStat(personaID, taskID, outcome string) {
+	if personaID == "" {
+		personaID = "direct"
+	}
+	_, _ = s.db.Exec(`
+		INSERT OR REPLACE INTO persona_stats (persona_id, task_id, outcome, created_at)
+		VALUES (?, ?, ?, ?)`,
+		personaID, taskID, outcome, time.Now().UTC().Format(time.RFC3339),
+	)
+}
+
+// GetPersonaStats retrieves performance stats for a persona.
+func (s *SQLiteStore) GetPersonaStats(personaID string) (map[string]any, error) {
+	stats := map[string]any{
+		"persona_id": personaID,
+	}
+
+	// Total tasks
+	var total int
+	_ = s.db.QueryRow("SELECT COUNT(*) FROM persona_stats WHERE persona_id = ?", personaID).Scan(&total)
+	stats["total_tasks"] = total
+
+	if total == 0 {
+		return stats, nil
+	}
+
+	// Outcome breakdown
+	rows, err := s.db.Query("SELECT outcome, COUNT(*) FROM persona_stats WHERE persona_id = ? GROUP BY outcome", personaID)
+	if err != nil {
+		return stats, nil
+	}
+	defer rows.Close()
+
+	outcomes := map[string]int{}
+	for rows.Next() {
+		var outcome string
+		var count int
+		if err := rows.Scan(&outcome, &count); err != nil {
+			continue
+		}
+		outcomes[outcome] = count
+	}
+	stats["outcomes"] = outcomes
+
+	// Average review score
+	var avgScore sql.NullFloat64
+	_ = s.db.QueryRow("SELECT AVG(review_score) FROM persona_stats WHERE persona_id = ? AND review_score > 0", personaID).Scan(&avgScore)
+	if avgScore.Valid {
+		stats["avg_review_score"] = avgScore.Float64
+	}
+
+	return stats, nil
+}
+
+// ListPersonas returns all known persona IDs with their task counts.
+func (s *SQLiteStore) ListPersonas() ([]map[string]any, error) {
+	rows, err := s.db.Query("SELECT persona_id, COUNT(*), AVG(review_score) FROM persona_stats GROUP BY persona_id ORDER BY COUNT(*) DESC")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var personas []map[string]any
+	for rows.Next() {
+		var pid string
+		var count int
+		var avgScore sql.NullFloat64
+		if err := rows.Scan(&pid, &count, &avgScore); err != nil {
+			continue
+		}
+		p := map[string]any{
+			"persona_id":  pid,
+			"total_tasks": count,
+		}
+		if avgScore.Valid {
+			p["avg_review_score"] = avgScore.Float64
+		}
+		personas = append(personas, p)
+	}
+	return personas, nil
+}
+
+// --- Knowledge Auto-Record ---
+
+// autoRecordKnowledge sends an experiment knowledge record via the sidecar proxy (best-effort).
+func (s *SQLiteStore) autoRecordKnowledge(task *Task, summary string, filesChanged []string) {
+	if s.proxy == nil || task == nil {
+		return
+	}
+
+	content := fmt.Sprintf("## Task: %s\n\n**Summary**: %s\n\n**Status**: done\n", task.Title, summary)
+	if len(filesChanged) > 0 {
+		content += fmt.Sprintf("\n**Files changed**: %s\n", strings.Join(filesChanged, ", "))
+	}
+
+	tags := []any{}
+	if task.Domain != "" {
+		tags = append(tags, task.Domain)
+	}
+	if task.WorkerID != "" {
+		tags = append(tags, task.WorkerID)
+	}
+	tags = append(tags, "auto-recorded")
+
+	params := map[string]any{
+		"doc_type": "experiment",
+		"title":    fmt.Sprintf("Task %s: %s", task.ID, task.Title),
+		"content":  content,
+		"tags":     tags,
+	}
+
+	// Best-effort: don't block on failure
+	go func() {
+		_, _ = s.proxy.Call("KnowledgeRecord", params)
+	}()
 }

@@ -8,6 +8,7 @@ import (
 	"os"
 
 	"github.com/changmin/c4-core/internal/bridge"
+	"github.com/changmin/c4-core/internal/config"
 	"github.com/changmin/c4-core/internal/mcp"
 	"github.com/changmin/c4-core/internal/mcp/handlers"
 	_ "modernc.org/sqlite"
@@ -68,33 +69,54 @@ func newMCPServer() (*mcpServer, error) {
 		return nil, fmt.Errorf("opening database: %w", err)
 	}
 
-	// Create store
-	store, err := handlers.NewSQLiteStore(db)
+	// Load config (non-fatal on failure)
+	cfgMgr, err := config.New(projectDir)
 	if err != nil {
-		return nil, fmt.Errorf("creating store: %w", err)
+		fmt.Fprintf(os.Stderr, "c4: config load failed (using defaults): %v\n", err)
+		cfgMgr = nil
 	}
 
 	// Try to start Python sidecar for proxy tools
 	var sidecar *bridge.Sidecar
 	var bridgeAddr string
 
-	cfg := bridge.DefaultSidecarConfig()
-	sidecar, err = bridge.StartSidecar(cfg)
+	bridgeCfg := bridge.DefaultSidecarConfig()
+	sidecar, err = bridge.StartSidecar(bridgeCfg)
 	if err != nil {
-		// Sidecar failed to start — proxy tools will fail at call time
 		fmt.Fprintf(os.Stderr, "c4: Python sidecar not available: %v\n", err)
 		fmt.Fprintln(os.Stderr, "c4: LSP, Knowledge, and GPU tools will be unavailable")
-		bridgeAddr = "" // proxy tools will get empty addr
+		bridgeAddr = ""
 	} else {
 		bridgeAddr = sidecar.Addr()
 		fmt.Fprintf(os.Stderr, "c4: Python sidecar started at %s\n", bridgeAddr)
 	}
 
-	// Create registry and register all tools
+	// Create registry and register all tools (proxy is created inside)
 	reg := mcp.NewRegistry()
-	proxy := handlers.RegisterAllHandlers(reg, store, projectDir, bridgeAddr)
+	proxy := handlers.RegisterAllHandlers(reg, nil, projectDir, bridgeAddr)
 
-	// Wire sidecar auto-restart: proxy can restart sidecar on connection failure
+	// Create store with all options
+	storeOpts := []handlers.StoreOption{
+		handlers.WithProjectRoot(projectDir),
+	}
+	if cfgMgr != nil {
+		storeOpts = append(storeOpts, handlers.WithConfig(cfgMgr))
+	}
+	if proxy != nil {
+		storeOpts = append(storeOpts, handlers.WithProxy(proxy))
+	}
+	store, err := handlers.NewSQLiteStore(db, storeOpts...)
+	if err != nil {
+		return nil, fmt.Errorf("creating store: %w", err)
+	}
+
+	// Re-register handlers with the actual store (core + discovery + persona tools)
+	handlers.RegisterAll(reg, store)
+	handlers.RegisterDiscoveryHandlers(reg, store, projectDir)
+	handlers.RegisterPersonaHandlers(reg, store)
+	handlers.RegisterTeamHandlers(reg, projectDir)
+
+	// Wire sidecar auto-restart
 	if sidecar != nil {
 		proxy.SetRestarter(sidecar)
 	}
