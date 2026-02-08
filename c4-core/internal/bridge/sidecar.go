@@ -192,17 +192,20 @@ func (s *Sidecar) Ping() error {
 		return fmt.Errorf("ping write: %w", err)
 	}
 
-	buf := make([]byte, 1024)
-	n, err := conn.Read(buf)
-	if err != nil {
-		return fmt.Errorf("ping read: %w", err)
+	// Read response line using Scanner (same pattern as doCall's loop-until-newline)
+	scanner := bufio.NewScanner(conn)
+	if !scanner.Scan() {
+		if err := scanner.Err(); err != nil {
+			return fmt.Errorf("ping read: %w", err)
+		}
+		return fmt.Errorf("ping read: connection closed")
 	}
 
 	var resp struct {
 		Result map[string]any `json:"result"`
 		Error  *string        `json:"error"`
 	}
-	if err := json.Unmarshal(buf[:n], &resp); err != nil {
+	if err := json.Unmarshal(scanner.Bytes(), &resp); err != nil {
 		return fmt.Errorf("ping parse: %w", err)
 	}
 	if resp.Error != nil {

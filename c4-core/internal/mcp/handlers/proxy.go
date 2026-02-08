@@ -2,14 +2,27 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
-	"strings"
 	"sync"
 	"time"
 
 	"github.com/changmin/c4-core/internal/mcp"
 )
+
+// connError wraps connection-level errors that indicate the sidecar is unreachable.
+// Used as a sentinel type to trigger auto-restart without string matching.
+type connError struct {
+	wrapped error
+}
+
+func (e *connError) Error() string { return e.wrapped.Error() }
+func (e *connError) Unwrap() error { return e.wrapped }
+
+func newConnError(format string, a ...any) error {
+	return &connError{wrapped: fmt.Errorf(format, a...)}
+}
 
 // Restarter is implemented by bridge.Sidecar to allow the proxy to trigger restarts.
 type Restarter interface {
@@ -63,13 +76,8 @@ func (p *BridgeProxy) Call(method string, params map[string]any) (map[string]any
 
 // isConnError returns true for errors that indicate the sidecar is unreachable.
 func (p *BridgeProxy) isConnError(err error) bool {
-	if err == nil {
-		return false
-	}
-	msg := err.Error()
-	return strings.Contains(msg, "bridge connect:") ||
-		strings.Contains(msg, "write request:") ||
-		strings.Contains(msg, "read response:")
+	var ce *connError
+	return errors.As(err, &ce)
 }
 
 // tryRestart attempts to restart the sidecar via the Restarter interface.
@@ -102,7 +110,7 @@ func (p *BridgeProxy) doCall(method string, params map[string]any) (map[string]a
 	}
 	conn, err := net.DialTimeout("tcp", addr, p.timeout)
 	if err != nil {
-		return nil, fmt.Errorf("bridge connect: %w", err)
+		return nil, newConnError("bridge connect: %w", err)
 	}
 	defer conn.Close()
 
@@ -120,7 +128,7 @@ func (p *BridgeProxy) doCall(method string, params map[string]any) (map[string]a
 	reqBytes = append(reqBytes, '\n')
 
 	if _, err := conn.Write(reqBytes); err != nil {
-		return nil, fmt.Errorf("write request: %w", err)
+		return nil, newConnError("write request: %w", err)
 	}
 
 	// Read response (line-delimited JSON)
@@ -149,7 +157,7 @@ func (p *BridgeProxy) doCall(method string, params map[string]any) (map[string]a
 			}
 		}
 		if err != nil {
-			return nil, fmt.Errorf("read response: %w", err)
+			return nil, newConnError("read response: %w", err)
 		}
 	}
 }

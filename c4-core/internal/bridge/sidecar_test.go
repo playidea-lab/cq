@@ -2,8 +2,8 @@ package bridge
 
 import (
 	"encoding/json"
-	"fmt"
 	"net"
+	"strings"
 	"testing"
 	"time"
 )
@@ -202,6 +202,9 @@ func TestAddrReturnsValue(t *testing.T) {
 
 // TestStartSidecarMissingPython verifies StartSidecar fails when python not found.
 func TestStartSidecarMissingPython(t *testing.T) {
+	// Set PATH to empty so neither uv nor python3 can be found
+	t.Setenv("PATH", "/nonexistent")
+
 	cfg := &SidecarConfig{
 		PythonCommand: "nonexistent-python-binary-xyz",
 		PythonArgs:    []string{"run", "c4-bridge"},
@@ -209,11 +212,11 @@ func TestStartSidecarMissingPython(t *testing.T) {
 		Port:          0,
 		StartTimeout:  2 * time.Second,
 	}
-	// This may succeed if python3 is in PATH (fallback), so we just verify no panic
-	s, err := StartSidecar(cfg)
+	_, err := StartSidecar(cfg)
 	if err == nil {
-		// If it somehow succeeded (python3 exists), clean up
-		s.Stop()
-		fmt.Println("StartSidecar succeeded via python3 fallback — not an error")
+		t.Fatal("expected error when python is not in PATH")
+	}
+	if !strings.Contains(err.Error(), "python not found") {
+		t.Fatalf("unexpected error message: %v", err)
 	}
 }
