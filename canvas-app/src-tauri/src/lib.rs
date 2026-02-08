@@ -3,6 +3,7 @@
 //! Desktop app for exploring sessions from Claude Code, Codex CLI,
 //! Cursor, and other LLM coding tools.
 
+pub mod auth;
 pub mod commands;
 pub mod layout;
 pub mod models;
@@ -42,11 +43,18 @@ pub fn run() {
             commands::list_providers,
             commands::list_sessions_for_provider,
             commands::get_provider_session_messages,
+            commands::get_provider_token_usage,
             // Editor deeplink commands
             commands::detect_editors,
             commands::open_in_editor,
             // File watcher
             commands::watch_sessions,
+            // Auth
+            auth::auth_get_session,
+            auth::auth_login,
+            auth::auth_logout,
+            auth::auth_refresh,
+            auth::auth_get_config,
         ])
         .setup(|app| {
             // Log startup

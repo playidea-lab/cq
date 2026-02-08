@@ -106,6 +106,15 @@ export interface ProviderInfo {
   icon: string;
   session_count: number;
   data_path: string;
+  is_global: boolean;
+}
+
+export interface TokenUsage {
+  input_tokens: number;
+  output_tokens: number;
+  cache_read_tokens: number;
+  cache_creation_tokens: number;
+  session_count: number;
 }
 
 // --- View types ---
@@ -159,6 +168,19 @@ export interface FileChange {
   backup_file: string | null;
   version: number | null;
   timestamp: string | null;
+}
+
+// --- Auth types ---
+
+export interface AuthUser {
+  id: string;
+  email: string;
+  provider: string;
+}
+
+export interface AuthConfig {
+  supabase_url: string | null;
+  has_anon_key: boolean;
 }
 
 // --- Config types ---

@@ -28,7 +28,10 @@ regex = "1"
 anyhow = "1"
 dirs = "5"
 rusqlite = { version = "0.31", features = ["bundled"] }
-tokio = { version = "1", features = ["rt"] }
+tokio = { version = "1", features = ["rt", "net", "io-util", "macros"] }
+reqwest = { version = "0.12", features = ["json"] }
+urlencoding = "2"
+open = "5"
 notify = { version = "6.1.1", features = ["macos_fsevent"] }
 
 [features]

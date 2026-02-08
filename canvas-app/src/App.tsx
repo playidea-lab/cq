@@ -4,8 +4,12 @@ import { Sidebar } from './components/Sidebar';
 import { SessionsView } from './components/sessions/SessionsView';
 import { DashboardView } from './components/dashboard/DashboardView';
 import { ConfigView } from './components/config/ConfigView';
+import { LoginView } from './components/auth/LoginView';
 import { ErrorBoundary } from './components/shared/ErrorBoundary';
+import { AuthProvider } from './contexts/AuthContext';
+import { useAuth } from './hooks/useAuth';
 import type { ViewType } from './types';
+import './styles/auth.css';
 
 const VIEW_SHORTCUTS: Record<string, ViewType> = {
   '1': 'sessions',
@@ -13,7 +17,8 @@ const VIEW_SHORTCUTS: Record<string, ViewType> = {
   '3': 'config',
 };
 
-export default function App() {
+function AppContent() {
+  const { user, loading, logout } = useAuth();
   const [currentView, setCurrentView] = useState<ViewType>('sessions');
   const [projectPath, setProjectPath] = useState<string | null>(null);
 
@@ -53,6 +58,34 @@ export default function App() {
     }
   }, [isTauri]);
 
+  if (loading) {
+    return (
+      <div className="app-layout">
+        <Sidebar currentView={currentView} onViewChange={setCurrentView} />
+        <main className="app-main">
+          <div className="app-content">
+            <div className="empty-state">
+              <p className="empty-state__description">Loading...</p>
+            </div>
+          </div>
+        </main>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return (
+      <div className="app-layout">
+        <Sidebar currentView={currentView} onViewChange={setCurrentView} />
+        <main className="app-main">
+          <div className="app-content">
+            <LoginView />
+          </div>
+        </main>
+      </div>
+    );
+  }
+
   const renderView = () => {
     if (!projectPath) {
       return (
@@ -82,16 +115,38 @@ export default function App() {
     <div className="app-layout">
       <Sidebar currentView={currentView} onViewChange={setCurrentView} />
       <main className="app-main">
-        {projectPath && (
-          <header className="app-header">
-            <span className="app-header__path" title={projectPath}>
-              {projectPath}
-            </span>
-            <button className="btn btn--secondary btn--sm" onClick={handleOpenFolder}>
-              Change
-            </button>
-          </header>
-        )}
+        <header className="app-header">
+          {projectPath ? (
+            <>
+              <span className="app-header__path" title={projectPath}>
+                {projectPath}
+              </span>
+              <div className="app-header__user">
+                <span className="app-header__email" title={user.email}>
+                  {user.email}
+                </span>
+                <button className="btn btn--secondary btn--sm" onClick={handleOpenFolder}>
+                  Change
+                </button>
+                <button className="app-header__logout" onClick={logout}>
+                  Logout
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              <span />
+              <div className="app-header__user">
+                <span className="app-header__email" title={user.email}>
+                  {user.email}
+                </span>
+                <button className="app-header__logout" onClick={logout}>
+                  Logout
+                </button>
+              </div>
+            </>
+          )}
+        </header>
         <div className="app-content">
           <ErrorBoundary>
             {renderView()}
@@ -99,5 +154,13 @@ export default function App() {
         </div>
       </main>
     </div>
+  );
+}
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <AppContent />
+    </AuthProvider>
   );
 }

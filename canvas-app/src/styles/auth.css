@@ -1,0 +1,200 @@
+/* ============================================
+   Auth / Login Styles
+   BEM naming, design-tokens.css vars
+   ============================================ */
+
+.login {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100%;
+  padding: var(--space-xl);
+}
+
+.login__card {
+  text-align: center;
+  max-width: 400px;
+  width: 100%;
+  padding: var(--space-2xl) var(--space-xl);
+}
+
+.login__title {
+  font-size: var(--font-size-2xl);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-primary);
+  margin-bottom: var(--space-xs);
+}
+
+.login__subtitle {
+  font-size: var(--font-size-md);
+  color: var(--color-text-muted);
+  margin-bottom: var(--space-2xl);
+}
+
+/* --- Setup (unconfigured) --- */
+
+.login__setup {
+  text-align: left;
+  background: var(--color-bg-tertiary);
+  border-radius: var(--radius-md);
+  padding: var(--space-lg);
+}
+
+.login__setup-heading {
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-warning);
+  margin-bottom: var(--space-md);
+}
+
+.login__setup-instructions {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+  line-height: var(--line-height-relaxed);
+}
+
+.login__setup-instructions p {
+  margin-bottom: var(--space-sm);
+}
+
+.login__code {
+  display: block;
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-sm);
+  padding: var(--space-md);
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-code);
+  white-space: pre;
+  margin-bottom: var(--space-md);
+  overflow-x: auto;
+}
+
+.login__setup-hint {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+}
+
+.login__setup-hint code {
+  color: var(--color-text-code);
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-xs);
+}
+
+/* --- Sign-in button --- */
+
+.login__actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.login__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-sm);
+  padding: var(--space-md) var(--space-xl);
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-white);
+  background: #24292e;
+  border: 1px solid #444;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: background var(--transition-fast), border-color var(--transition-fast);
+}
+
+.login__btn:hover:not(:disabled) {
+  background: #2f363d;
+  border-color: var(--color-border-hover);
+}
+
+.login__btn:disabled {
+  opacity: var(--color-disabled-opacity);
+  cursor: not-allowed;
+}
+
+.login__github-icon {
+  flex-shrink: 0;
+}
+
+/* --- Spinner --- */
+
+.login__spinner {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: login-spin 0.6s linear infinite;
+}
+
+@keyframes login-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* --- Error --- */
+
+.login__error {
+  margin-top: var(--space-lg);
+  padding: var(--space-md);
+  background: rgba(224, 49, 49, 0.1);
+  border: 1px solid rgba(224, 49, 49, 0.3);
+  border-radius: var(--radius-sm);
+  text-align: center;
+}
+
+.login__error p {
+  font-size: var(--font-size-sm);
+  color: var(--color-error);
+  margin-bottom: var(--space-sm);
+}
+
+.login__retry {
+  font-size: var(--font-size-sm);
+  color: var(--color-accent-blue);
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.login__retry:hover {
+  color: var(--color-accent-blue-hover);
+}
+
+/* --- Header user info --- */
+
+.app-header__user {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.app-header__email {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 180px;
+}
+
+.app-header__logout {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+  background: none;
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-sm);
+  padding: 2px var(--space-sm);
+  cursor: pointer;
+  transition: color var(--transition-fast), border-color var(--transition-fast);
+}
+
+.app-header__logout:hover {
+  color: var(--color-text-secondary);
+  border-color: var(--color-border-hover);
+}
