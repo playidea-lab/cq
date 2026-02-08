@@ -1,11 +1,15 @@
 package task
 
 import (
+	"database/sql"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	_ "modernc.org/sqlite"
 )
 
 // =========================================================================
@@ -479,7 +483,18 @@ func TestFactoryMemory(t *testing.T) {
 }
 
 func TestFactorySQLite(t *testing.T) {
-	store, err := NewTaskStore(&StoreConfig{Backend: BackendSQLite})
+	tmpDir := t.TempDir()
+	dbFile := filepath.Join(tmpDir, "test.db")
+	db, err := sql.Open("sqlite", dbFile)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer db.Close()
+
+	store, err := NewTaskStore(&StoreConfig{
+		Backend: BackendSQLite,
+		SQLite:  &SQLiteConfig{DB: db, ProjectID: "test"},
+	})
 	if err != nil {
 		t.Fatalf("NewTaskStore sqlite: %v", err)
 	}
