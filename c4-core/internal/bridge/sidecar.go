@@ -208,6 +208,12 @@ func (s *Sidecar) Ping() error {
 	if resp.Error != nil {
 		return fmt.Errorf("ping error: %s", *resp.Error)
 	}
+
+	// Successful ping resets restart counter — sidecar is healthy
+	s.mu.Lock()
+	s.restarts = 0
+	s.mu.Unlock()
+
 	return nil
 }
 
@@ -239,12 +245,18 @@ func (s *Sidecar) Restart() (string, error) {
 		return "", fmt.Errorf("restart failed: %w", err)
 	}
 
-	// Transfer new state
+	// Transfer ownership of process and address
 	s.mu.Lock()
 	s.cmd = newSidecar.cmd
 	s.addr = newSidecar.addr
 	s.stopped = false
 	s.mu.Unlock()
+
+	// Release ownership from temporary sidecar to prevent double-close
+	newSidecar.mu.Lock()
+	newSidecar.cmd = nil
+	newSidecar.stopped = true
+	newSidecar.mu.Unlock()
 
 	fmt.Fprintf(os.Stderr, "c4: sidecar restarted at %s (restart #%d)\n", newSidecar.addr, s.restarts)
 	return newSidecar.addr, nil
