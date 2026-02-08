@@ -63,12 +63,24 @@ func (p *BridgeProxy) UpdateAddr(addr string) {
 // Call sends a JSON-RPC request to the Python sidecar and returns the result.
 // On connection failure, attempts to restart the sidecar once and retry.
 func (p *BridgeProxy) Call(method string, params map[string]any) (map[string]any, error) {
-	result, err := p.doCall(method, params)
+	result, err := p.doCall(method, params, p.timeout)
 	if err != nil && p.isConnError(err) {
 		// Try restart + retry once
 		if newAddr, restartErr := p.tryRestart(); restartErr == nil {
 			_ = newAddr
-			return p.doCall(method, params)
+			return p.doCall(method, params, p.timeout)
+		}
+	}
+	return result, err
+}
+
+// CallWithTimeout is like Call but uses a custom timeout for long-running operations.
+func (p *BridgeProxy) CallWithTimeout(method string, params map[string]any, timeout time.Duration) (map[string]any, error) {
+	result, err := p.doCall(method, params, timeout)
+	if err != nil && p.isConnError(err) {
+		if newAddr, restartErr := p.tryRestart(); restartErr == nil {
+			_ = newAddr
+			return p.doCall(method, params, timeout)
 		}
 	}
 	return result, err
@@ -103,7 +115,7 @@ func (p *BridgeProxy) tryRestart() (string, error) {
 const maxResponseSize = 10 * 1024 * 1024
 
 // doCall performs a single JSON-RPC call without retry.
-func (p *BridgeProxy) doCall(method string, params map[string]any) (map[string]any, error) {
+func (p *BridgeProxy) doCall(method string, params map[string]any, timeout time.Duration) (map[string]any, error) {
 	p.mu.Lock()
 	addr := p.addr
 	p.mu.Unlock()
@@ -111,13 +123,13 @@ func (p *BridgeProxy) doCall(method string, params map[string]any) (map[string]a
 	if addr == "" {
 		return nil, fmt.Errorf("Python sidecar not available (no bridge address)")
 	}
-	conn, err := net.DialTimeout("tcp", addr, p.timeout)
+	conn, err := net.DialTimeout("tcp", addr, timeout)
 	if err != nil {
 		return nil, newConnError("bridge connect: %w", err)
 	}
 	defer conn.Close()
 
-	_ = conn.SetDeadline(time.Now().Add(p.timeout))
+	_ = conn.SetDeadline(time.Now().Add(timeout))
 
 	// Send request
 	request := map[string]any{
@@ -198,6 +210,22 @@ func proxyHandler(proxy *BridgeProxy, method string) mcp.HandlerFunc {
 			params = make(map[string]any)
 		}
 		return proxy.Call(method, params)
+	}
+}
+
+// proxyHandlerWithTimeout creates a proxy handler with a custom timeout for long-running operations.
+func proxyHandlerWithTimeout(proxy *BridgeProxy, method string, timeout time.Duration) mcp.HandlerFunc {
+	return func(rawArgs json.RawMessage) (any, error) {
+		var params map[string]any
+		if len(rawArgs) > 0 {
+			if err := json.Unmarshal(rawArgs, &params); err != nil {
+				return nil, fmt.Errorf("parsing arguments: %w", err)
+			}
+		}
+		if params == nil {
+			params = make(map[string]any)
+		}
+		return proxy.CallWithTimeout(method, params, timeout)
 	}
 }
 
@@ -405,4 +433,17 @@ func RegisterProxyHandlers(reg *mcp.Registry, proxy *BridgeProxy) {
 			"required": []string{"command"},
 		},
 	}, proxyHandler(proxy, "JobSubmit"))
+
+	// Onboard tool — scans project structure via LSP/tree-sitter (30s timeout for large projects)
+	reg.Register(mcp.ToolSchema{
+		Name:        "c4_onboard",
+		Description: "Scan project structure and generate pat-project-map.md knowledge document. Detects languages, frameworks, entry points, key symbols, type hierarchy, and module dependencies.",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"max_files": map[string]any{"type": "integer", "description": "Maximum files to scan (default: 500)"},
+				"force":     map[string]any{"type": "boolean", "description": "Force regeneration even if map exists (default: false)"},
+			},
+		},
+	}, proxyHandlerWithTimeout(proxy, "ProjectOnboard", 30*time.Second))
 }

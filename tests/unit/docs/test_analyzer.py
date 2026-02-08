@@ -539,7 +539,7 @@ class TestCodeAnalyzerLanguageDetection:
         analyzer = CodeAnalyzer()
 
         assert analyzer._get_language("file.rb") == "unknown"
-        assert analyzer._get_language("file.go") == "unknown"
+        assert analyzer._get_language("file.go") == "go"
 
 
 # =============================================================================

@@ -158,6 +158,7 @@ class BridgeServer:
         self._register_lsp_methods()
         self._register_knowledge_methods()
         self._register_gpu_methods()
+        self._register_onboard_methods()
 
     # ======================================================================
     # Health Check
@@ -505,3 +506,62 @@ class BridgeServer:
             }
         except Exception as exc:
             return {"error": f"JobSubmit failed: {exc}"}
+
+    # ======================================================================
+    # Onboard Methods
+    # ======================================================================
+
+    def _register_onboard_methods(self) -> None:
+        self.methods["ProjectOnboard"] = self._handle_project_onboard
+
+    async def _handle_project_onboard(self, params: dict[str, Any]) -> dict[str, Any]:
+        """ProjectOnboard -> ProjectOnboarder.scan() + Knowledge store."""
+        from c4.docs.onboarder import ProjectOnboarder
+
+        max_files = params.get("max_files", 500)
+        force = params.get("force", False)
+
+        try:
+            onboarder = ProjectOnboarder(
+                project_root=self.project_root,
+                max_files=max_files,
+            )
+            analysis = onboarder.scan()
+            body = onboarder.render_markdown(analysis)
+
+            # Save to knowledge store (update or create)
+            doc_id = "pat-project-map"
+            store = DocumentStore(base_path=self._knowledge_base_path())
+            existing = (store.docs_dir / f"{doc_id}.md").exists()
+
+            if existing and not force:
+                store.update(doc_id, body=body)
+            else:
+                # Remove existing to recreate with fixed ID
+                existing_file = store.docs_dir / f"{doc_id}.md"
+                if existing_file.exists():
+                    existing_file.unlink()
+                    # Clean from index too
+                    try:
+                        with store._get_conn() as conn:
+                            conn.execute("DELETE FROM documents WHERE id = ?", (doc_id,))
+                            conn.execute("DELETE FROM documents_fts WHERE id = ?", (doc_id,))
+                    except Exception:
+                        pass
+
+                store.create("pattern", {
+                    "id": doc_id,
+                    "title": "Project Structure Map",
+                    "tags": ["onboarding", "project-map", "auto-generated"],
+                }, body=body)
+
+            return {
+                "success": True,
+                "doc_id": doc_id,
+                "languages": analysis["stats"]["total_files_scanned"],
+                "symbols": analysis["stats"]["total_symbols"],
+                "elapsed": analysis["stats"]["elapsed_seconds"],
+                "frameworks": analysis.get("frameworks", []),
+            }
+        except Exception as exc:
+            return {"error": f"ProjectOnboard failed: {exc}"}

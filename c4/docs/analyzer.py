@@ -126,6 +126,7 @@ class CodeAnalyzer:
     # Language file extensions
     PYTHON_EXTENSIONS = {".py", ".pyi"}
     TYPESCRIPT_EXTENSIONS = {".ts", ".tsx", ".js", ".jsx"}
+    GO_EXTENSIONS = {".go"}
 
     def __init__(self) -> None:
         """Initialize the code analyzer."""
@@ -173,6 +174,8 @@ class CodeAnalyzer:
             return "python"
         elif ext in self.TYPESCRIPT_EXTENSIONS:
             return "typescript"
+        elif ext in self.GO_EXTENSIONS:
+            return "go"
 
         return "unknown"
 
@@ -220,7 +223,7 @@ class CodeAnalyzer:
         ]
 
         count = 0
-        extensions = self.PYTHON_EXTENSIONS | self.TYPESCRIPT_EXTENSIONS
+        extensions = self.PYTHON_EXTENSIONS | self.TYPESCRIPT_EXTENSIONS | self.GO_EXTENSIONS
 
         pattern = "**/*" if recursive else "*"
 
@@ -260,6 +263,8 @@ class CodeAnalyzer:
 
         parser = self._get_parser(file_path)
         if parser is None:
+            # No tree-sitter parser (e.g. Go files) — use regex fallback
+            self._parse_file_regex(file_path, content)
             return
 
         language = self._get_language(file_path)
@@ -302,7 +307,7 @@ class CodeAnalyzer:
 
         if language == "python":
             # Python patterns
-            class_pattern = re.compile(r"^class\s+(\w+)")
+            class_pattern = re.compile(r"^class\s+(\w+)(?:\(([^)]*)\))?")
             func_pattern = re.compile(r"^(\s*)def\s+(\w+)")
             import_pattern = re.compile(r"^(?:from\s+(\S+)\s+)?import\s+(.+)")
             var_pattern = re.compile(r"^(\w+)\s*=")
@@ -314,11 +319,18 @@ class CodeAnalyzer:
                 match = class_pattern.match(line)
                 if match:
                     current_class = match.group(1)
+                    bases_str = match.group(2)
+                    class_metadata: dict[str, Any] = {}
+                    if bases_str:
+                        class_bases = [b.strip() for b in bases_str.split(",") if b.strip()]
+                        if class_bases:
+                            class_metadata["bases"] = class_bases
                     symbols.append(
                         Symbol(
                             name=match.group(1),
                             kind=SymbolKind.CLASS,
                             location=Location(file_path, i, 0, i, len(line)),
+                            metadata=class_metadata,
                         )
                     )
                     continue
@@ -473,6 +485,116 @@ class CodeAnalyzer:
                         )
                     )
 
+        elif language == "go":
+            # Go patterns (regex-only, no tree-sitter-go)
+            go_func_pattern = re.compile(
+                r"^func\s+(?:\((\w+)\s+\*?(\w+)\)\s+)?(\w+)\s*\("
+            )
+            go_struct_pattern = re.compile(r"^type\s+(\w+)\s+struct\s*\{")
+            go_interface_pattern = re.compile(r"^type\s+(\w+)\s+interface\s*\{")
+            go_package_pattern = re.compile(r"^package\s+(\w+)")
+            go_import_single = re.compile(r'^import\s+"([^"]+)"')
+            go_import_block_start = re.compile(r"^import\s*\(")
+
+            in_import_block = False
+            package_name = ""
+
+            for i, line in enumerate(lines, 1):
+                stripped = line.strip()
+
+                # Package
+                match = go_package_pattern.match(stripped)
+                if match:
+                    package_name = match.group(1)
+                    continue
+
+                # Import block
+                if go_import_block_start.match(stripped):
+                    in_import_block = True
+                    continue
+                if in_import_block:
+                    if stripped == ")":
+                        in_import_block = False
+                        continue
+                    imp_match = re.match(r'\s*(?:\w+\s+)?"([^"]+)"', line)
+                    if imp_match:
+                        dependencies.append(
+                            Dependency(
+                                source=file_path,
+                                target=imp_match.group(1),
+                                import_name=imp_match.group(1).split("/")[-1],
+                            )
+                        )
+                    continue
+
+                # Single import
+                match = go_import_single.match(stripped)
+                if match:
+                    dependencies.append(
+                        Dependency(
+                            source=file_path,
+                            target=match.group(1),
+                            import_name=match.group(1).split("/")[-1],
+                        )
+                    )
+                    continue
+
+                # Struct
+                match = go_struct_pattern.match(stripped)
+                if match:
+                    symbols.append(
+                        Symbol(
+                            name=match.group(1),
+                            kind=SymbolKind.CLASS,
+                            location=Location(file_path, i, 0, i, len(line)),
+                            metadata={"go_kind": "struct", "package": package_name},
+                        )
+                    )
+                    continue
+
+                # Interface
+                match = go_interface_pattern.match(stripped)
+                if match:
+                    symbols.append(
+                        Symbol(
+                            name=match.group(1),
+                            kind=SymbolKind.INTERFACE,
+                            location=Location(file_path, i, 0, i, len(line)),
+                            metadata={"go_kind": "interface", "package": package_name},
+                        )
+                    )
+                    continue
+
+                # Function / Method
+                match = go_func_pattern.match(stripped)
+                if match:
+                    receiver_var = match.group(1)  # noqa: F841
+                    receiver_type = match.group(2)
+                    func_name = match.group(3)
+
+                    if receiver_type:
+                        # Method
+                        symbols.append(
+                            Symbol(
+                                name=func_name,
+                                kind=SymbolKind.METHOD,
+                                location=Location(file_path, i, 0, i, len(line)),
+                                parent=receiver_type,
+                                metadata={"package": package_name},
+                            )
+                        )
+                    else:
+                        # Function
+                        symbols.append(
+                            Symbol(
+                                name=func_name,
+                                kind=SymbolKind.FUNCTION,
+                                location=Location(file_path, i, 0, i, len(line)),
+                                metadata={"package": package_name},
+                            )
+                        )
+                    continue
+
         self._symbols[file_path] = symbols
         self._references[file_path] = references
         self._dependencies[file_path] = dependencies
@@ -544,6 +666,20 @@ class CodeAnalyzer:
                                 '"\''
                             )
 
+                # Extract base classes from argument_list
+                bases = []
+                superclasses = node.child_by_field_name("superclasses")
+                if superclasses:
+                    for child in superclasses.children:
+                        if child.type == "identifier":
+                            bases.append(content[child.start_byte : child.end_byte])
+                        elif child.type == "attribute":
+                            bases.append(content[child.start_byte : child.end_byte])
+
+                sym_metadata: dict[str, Any] = {}
+                if bases:
+                    sym_metadata["bases"] = bases
+
                 symbol = Symbol(
                     name=class_name,
                     kind=SymbolKind.CLASS,
@@ -555,6 +691,7 @@ class CodeAnalyzer:
                         node.end_point[1],
                     ),
                     docstring=docstring,
+                    metadata=sym_metadata,
                 )
                 symbols.append(symbol)
 
@@ -733,6 +870,32 @@ class CodeAnalyzer:
             name_node = node.child_by_field_name("name")
             if name_node:
                 class_name = content[name_node.start_byte : name_node.end_byte]
+
+                # Extract extends/implements
+                ts_bases = []
+                ts_implements = []
+                for child in node.children:
+                    if child.type == "class_heritage":
+                        for heritage in child.children:
+                            if heritage.type == "extends_clause":
+                                for hc in heritage.children:
+                                    if hc.type == "identifier":
+                                        ts_bases.append(content[hc.start_byte : hc.end_byte])
+                                    elif hc.type in ("member_expression", "generic_type"):
+                                        ts_bases.append(content[hc.start_byte : hc.end_byte])
+                            elif heritage.type == "implements_clause":
+                                for hc in heritage.children:
+                                    if hc.type == "identifier":
+                                        ts_implements.append(content[hc.start_byte : hc.end_byte])
+                                    elif hc.type in ("member_expression", "generic_type"):
+                                        ts_implements.append(content[hc.start_byte : hc.end_byte])
+
+                ts_metadata: dict[str, Any] = {}
+                if ts_bases:
+                    ts_metadata["bases"] = ts_bases
+                if ts_implements:
+                    ts_metadata["implements"] = ts_implements
+
                 symbol = Symbol(
                     name=class_name,
                     kind=SymbolKind.CLASS,
@@ -743,6 +906,7 @@ class CodeAnalyzer:
                         node.end_point[0] + 1,
                         node.end_point[1],
                     ),
+                    metadata=ts_metadata,
                 )
                 symbols.append(symbol)
 
@@ -1073,6 +1237,71 @@ class CodeAnalyzer:
             graph[file_path] = targets
 
         return graph
+
+    def get_type_hierarchy(self) -> dict[str, list[str]]:
+        """Get type hierarchy map: class_name -> list of base classes.
+
+        Returns:
+            Dict mapping class names to their base class names.
+        """
+        hierarchy: dict[str, list[str]] = {}
+        for symbols in self._symbols.values():
+            for symbol in symbols:
+                if symbol.kind == SymbolKind.CLASS:
+                    bases = symbol.metadata.get("bases", [])
+                    if bases:
+                        hierarchy[symbol.name] = bases
+        return hierarchy
+
+    def get_entry_points(self) -> list[dict[str, str]]:
+        """Detect entry points (main functions, __main__ modules).
+
+        Returns:
+            List of dicts with keys: name, file_path, kind.
+        """
+        entry_points = []
+        for file_path, symbols in self._symbols.items():
+            for symbol in symbols:
+                if symbol.kind == SymbolKind.FUNCTION and symbol.name == "main":
+                    lang = self._get_language(file_path)
+                    entry_points.append({
+                        "name": "main",
+                        "file_path": file_path,
+                        "kind": "go_main" if lang == "go" else "python_main",
+                    })
+
+            # Python: detect if __name__ == "__main__" or __main__.py
+            if file_path.endswith("__main__.py"):
+                entry_points.append({
+                    "name": "__main__",
+                    "file_path": file_path,
+                    "kind": "python_module",
+                })
+
+        return entry_points
+
+    def get_all_symbols_flat(self) -> list[Symbol]:
+        """Get all symbols across all files as a flat list (no duplicates).
+
+        Unlike get_all_symbols(), this deduplicates method symbols that
+        appear both inside class.children and as top-level entries.
+
+        Returns:
+            Deduplicated flat list of all symbols.
+        """
+        seen: set[tuple[str, str, int]] = set()
+        result = []
+        for symbols in self._symbols.values():
+            for symbol in symbols:
+                key = (
+                    symbol.name,
+                    symbol.location.file_path,
+                    symbol.location.start_line,
+                )
+                if key not in seen:
+                    seen.add(key)
+                    result.append(symbol)
+        return result
 
     def clear(self) -> None:
         """Clear all parsed data."""
