@@ -84,7 +84,12 @@ fn extract_codex_meta(path: &Path) -> Option<(String, Option<String>, Option<Str
                                 .map(|s| {
                                     let trimmed = s.trim();
                                     if trimmed.len() > 120 {
-                                        format!("{}...", &trimmed[..120])
+                                        let end = trimmed.char_indices()
+                                            .take_while(|(i, _)| *i <= 120)
+                                            .last()
+                                            .map(|(i, _)| i)
+                                            .unwrap_or(0);
+                                        format!("{}...", &trimmed[..end])
                                     } else {
                                         trimmed.to_string()
                                     }

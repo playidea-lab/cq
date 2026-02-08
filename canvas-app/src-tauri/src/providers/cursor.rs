@@ -158,13 +158,11 @@ impl SessionProvider for CursorProvider {
             let git_branch = model.map(String::from)
                 .or_else(|| mode.map(String::from));
 
-            let db_path = cursor_db_path().unwrap_or_default();
-
             sessions.push(SessionMeta {
-                id: composer_id,
+                id: composer_id.clone(),
                 slug: status.to_string(),
                 title,
-                path: db_path.to_string_lossy().to_string(),
+                path: composer_id, // Use composer UUID as path (get_messages looks up by ID)
                 line_count: bubble_count,
                 file_size: value.len() as u64,
                 timestamp,
@@ -328,7 +326,12 @@ fn parse_cursor_bubble(bubble: &serde_json::Value, bubble_type: i64) -> Option<S
         // Tool result
         if let Some(result) = tool_data.get("result").and_then(|v| v.as_str()) {
             let truncated = if result.len() > 500 {
-                format!("{}... ({} bytes)", &result[..500], result.len())
+                let end = result.char_indices()
+                    .take_while(|(i, _)| *i <= 500)
+                    .last()
+                    .map(|(i, _)| i)
+                    .unwrap_or(0);
+                format!("{}... ({} bytes)", &result[..end], result.len())
             } else {
                 result.to_string()
             };
