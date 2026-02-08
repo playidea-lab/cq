@@ -47,6 +47,44 @@
 - Persona YAML workflow_steps: only 4 of ~27 personas have them (paper-reviewer, paper-reader, paper-writer, knowledge-engineer)
 - WorkflowWeight sorting/emphasis logic duplicated in task_ops.py and builder.py - watch for drift
 
+### 2026-02-09: C1 Virtual Scrolling Review (READ-ONLY)
+- **Scope**: 3 components (SessionList, MessageViewer, TaskList) + test setup
+- **Result**: 2 HIGH, 4 MEDIUM, 4 LOW
+- **H-1**: SessionList/TaskList use fixed height without measureElement; MessageViewer correctly uses measureElement
+- **H-2**: MessageViewer "Load More" row missing measureElement ref, causing 120px gap
+- **M-2**: .session-list__branch CSS lacks text clamping, will overflow fixed-height rows
+- **M-3**: MessageViewer key fallback to virtualItem.index when uuid is null
+- **M-4**: ResizeObserver mock fires once at 600px, cannot test dynamic sizing
+- **Key pattern**: @tanstack/react-virtual requires either (a) measureElement for dynamic rows or (b) guaranteed CSS clamping for fixed-height rows
+- **Test gap**: No SessionList.test.tsx or TaskList.test.tsx exist
+
+### 2026-02-09: C1 UX Components Accessibility Review (READ-ONLY)
+- **Scope**: FilterBar, Skeleton, Toast+ToastContext, ErrorState, Sidebar theme toggle
+- **Result**: 0 CRITICAL, 3 HIGH, 5 MEDIUM, 4 LOW
+- **H-1/H-2**: No tests for ToastProvider/useToast hook or Sidebar (theme toggle) — context layer untested
+- **H-3**: Theme FOUC — no inline script in index.html to set data-theme before React hydration
+- **Accessibility gaps**: label-select not associated (htmlFor), pills missing aria-pressed, toast close missing aria-label, ErrorState missing role="alert", Skeleton missing aria-hidden, no prefers-reduced-motion anywhere
+- **Key lesson**: Presentational component tests are insufficient — context/hook layer needs separate test coverage
+- **Recurring a11y pattern**: outline:none without adequate :focus-visible replacement (filter-bar__select)
+- **Dead CSS**: .error-toast block in global.css superseded by .toast--error
+
+### 2026-02-09: C1 Backend Deep Review -- Cache, Retry, Watcher (REQUEST CHANGES)
+- **Scope**: LRU session cache, retry_request backoff, file watcher invalidation
+- **Result**: REQUEST CHANGES - 2 CRITICAL, 1 HIGH, 4 WARNING, 2 SUGGESTION
+- **Critical 1**: Cache invalidation is no-op: watcher passes sessions_dir path but cache keys use project path
+- **Critical 2**: Watcher thread leak: no dedup guard, every watch_sessions call spawns new thread+OS watcher
+- **High**: invalidate_session_cache uses contains() -- substring match causes cross-project invalidation
+- **Lesson**: Cache key format and invalidation key format MUST match (verified they don't)
+- **Lesson**: Debug trait format for cache keys is fragile; use Display or explicit string conversion
+- **Lesson**: OS resource watchers (FSEvents) must have dedup + shutdown mechanism
+
+### 2026-02-09: C1 Component Integration Review (3 HIGH, 5 MEDIUM, 3 LOW)
+- **Scope**: SessionsView, DashboardView, ConfigView, App.tsx + all hooks/contexts
+- **HIGH**: Listener leak useSessions:147-162 (async unlisten not awaited); no cancellation in listSessions/loadMessages; stale validations shown for wrong task in DashboardView:44-48
+- **MEDIUM**: useProviders activeProvider in deps causes double-fetch; inconsistent error (inline vs full-page); UsagePanel no cancellation + duplicate IPC; no delayed skeleton
+- **LOW**: useToast never consumed (dead code); no toast cap; timeline async with no indicator
+- **Pattern**: AnalyticsPanel.tsx uses correct cancelled flag -- other hooks should follow
+
 ## Canvas-App (Tauri 2.x) Patterns
 - Tauri IPC commands: async fn + spawn_blocking for I/O, return Result<T, String>
 - Path validation: MUST canonicalize + allowlist check for any file-access command
@@ -54,3 +92,8 @@
 - JSONL session files: located at ~/.claude/projects/{slug}/*.jsonl, can be 50MB+
 - Session pagination: line-based offset/limit, must handle large files efficiently
 - Frontend: BEM CSS + design tokens (--color-*, --space-*, --font-size-*), React hooks per view
+- Cache invalidation: key format in cache vs key format in invalidator MUST match
+- File watchers: MUST track active watchers to prevent duplicate spawns
+- Async cancellation: MUST use cancelled flag or AbortController in useEffect with async IPC
+- Tauri listen() returns Promise<unlisten>: MUST store in ref for reliable cleanup
+- Stale state in useCallback deps: avoid state in useCallback deps when callback used as useEffect dep
