@@ -8,6 +8,9 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// version is set at build time via -ldflags "-X main.version=..."
+var version = "dev"
+
 var (
 	// Global flags
 	cfgFile    string
@@ -16,8 +19,9 @@ var (
 )
 
 var rootCmd = &cobra.Command{
-	Use:   "c4",
-	Short: "C4 - AI orchestration system",
+	Use:     "c4",
+	Short:   "C4 - AI orchestration system",
+	Version: version,
 	Long: `C4 is an AI orchestration system that automates project management
 from planning through completion. It manages tasks, workers, checkpoints,
 and knowledge across the entire development lifecycle.`,
