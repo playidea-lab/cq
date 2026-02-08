@@ -584,8 +584,16 @@
   min-width: 0;
 }
 
-.tool-card__chevron {
+.tool-card__meta {
   margin-left: auto;
+  flex-shrink: 0;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+  font-family: var(--font-family-mono);
+}
+
+.tool-card__chevron {
+  margin-left: var(--space-xs);
   flex-shrink: 0;
   font-size: 10px;
   color: var(--color-text-muted);

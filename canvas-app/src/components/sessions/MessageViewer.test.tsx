@@ -89,7 +89,7 @@ describe('MessageViewer', () => {
     expect(screen.getByText('npm test')).toBeInTheDocument();
   });
 
-  it('renders tool_result with preview', () => {
+  it('renders tool_result collapsed by default with summary', () => {
     const { container } = render(
       <MessageViewer
         messages={[makeMessage({
@@ -108,8 +108,8 @@ describe('MessageViewer', () => {
     );
     expect(container.querySelector('.tool-card--result')).toBeInTheDocument();
     expect(screen.getByText('Result')).toBeInTheDocument();
-    // Preview shows first 4 lines
-    expect(container.querySelector('.tool-card__preview')).toBeInTheDocument();
+    // Collapsed by default — no body or preview shown
+    expect(container.querySelector('.tool-card__body')).not.toBeInTheDocument();
   });
 
   it('renders tool_use as collapsible when message also has text', () => {
