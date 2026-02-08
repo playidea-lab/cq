@@ -195,13 +195,22 @@ function hasTextContent(message: SessionMessage): boolean {
   );
 }
 
+/** tool_result-only user messages are logically assistant-side (tool responses) */
+function isToolResultOnly(message: SessionMessage): boolean {
+  return message.msg_type === 'user' &&
+    message.content.length > 0 &&
+    message.content.every(block => block.block_type === 'tool_result');
+}
+
 function MessageBubble({ message }: { message: SessionMessage }) {
-  const isUser = message.msg_type === 'user';
-  const isAssistant = message.msg_type === 'assistant';
+  const toolResultOnly = isToolResultOnly(message);
+  const isUser = message.msg_type === 'user' && !toolResultOnly;
+  const isAssistant = message.msg_type === 'assistant' || toolResultOnly;
   const isSummary = message.msg_type === 'summary';
   const isSystem = message.msg_type === 'system';
 
-  const isToolOnly = isAssistant && !hasTextContent(message) && message.content.length > 0;
+  const isToolOnly = (message.msg_type === 'assistant' || toolResultOnly) &&
+    !hasTextContent(message) && message.content.length > 0;
 
   const className = [
     'msg',
