@@ -1,11 +1,13 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useProviders } from '../../hooks/useProviders';
 import { useSessions } from '../../hooks/useSessions';
+import { useEditors } from '../../hooks/useEditors';
 import { ProviderTabs } from './ProviderTabs';
 import { OverviewPanel } from './OverviewPanel';
 import { SessionList } from './SessionList';
+import { SearchResults } from './SearchResults';
 import { MessageViewer } from './MessageViewer';
-import type { ProviderKind } from '../../types';
+import type { ProviderKind, SearchHit } from '../../types';
 import '../../styles/sessions.css';
 
 interface SessionsViewProps {
@@ -27,12 +29,20 @@ export function SessionsView({ projectPath }: SessionsViewProps) {
     currentSession,
     page,
     messagesLoading,
+    searchResults,
+    searchLoading,
     listSessions,
     loadMessages,
     loadMore,
+    searchContent,
+    clearSearchResults,
+    startWatching,
   } = useSessions();
 
+  const { editors, openInEditor, getLabel } = useEditors();
+
   const [searchQuery, setSearchQuery] = useState('');
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Load providers on mount
   useEffect(() => {
@@ -44,10 +54,59 @@ export function SessionsView({ projectPath }: SessionsViewProps) {
     listSessions(projectPath, activeProvider);
   }, [projectPath, activeProvider, listSessions]);
 
+  // Start file watcher for auto-refresh
+  useEffect(() => {
+    startWatching(projectPath);
+  }, [projectPath, startWatching]);
+
+  // Debounced content search
+  useEffect(() => {
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current);
+    }
+
+    const trimmed = searchQuery.trim();
+    if (trimmed.length <= 2) {
+      clearSearchResults();
+      return;
+    }
+
+    debounceRef.current = setTimeout(() => {
+      searchContent(projectPath, trimmed);
+    }, 300);
+
+    return () => {
+      if (debounceRef.current) {
+        clearTimeout(debounceRef.current);
+      }
+    };
+  }, [searchQuery, projectPath, searchContent, clearSearchResults]);
+
   const handleProviderChange = (kind: ProviderKind) => {
     setActiveProvider(kind);
     setSearchQuery('');
+    clearSearchResults();
   };
+
+  const handleSearchHitClick = useCallback((hit: SearchHit) => {
+    // Find the session in the loaded sessions list and load it
+    const session = sessions.find(s => s.id === hit.session_id);
+    if (session) {
+      loadMessages(session);
+    } else {
+      // Create a minimal session meta to load messages directly
+      loadMessages({
+        id: hit.session_id,
+        slug: '',
+        title: hit.session_title,
+        path: hit.session_path,
+        line_count: 0,
+        file_size: 0,
+        timestamp: null,
+        git_branch: null,
+      });
+    }
+  }, [sessions, loadMessages]);
 
   const filteredSessions = useMemo(() => {
     if (!searchQuery.trim()) return sessions;
@@ -58,6 +117,9 @@ export function SessionsView({ projectPath }: SessionsViewProps) {
       (s.git_branch && s.git_branch.toLowerCase().includes(q))
     );
   }, [sessions, searchQuery]);
+
+  // Show content search results when query is long enough and results exist
+  const showSearchResults = searchQuery.trim().length > 2 && searchResults !== null;
 
   return (
     <div className="sessions">
@@ -86,6 +148,12 @@ export function SessionsView({ projectPath }: SessionsViewProps) {
           <div className="sessions__loading">Loading sessions...</div>
         ) : error ? (
           <div className="sessions__error">{error}</div>
+        ) : showSearchResults ? (
+          <SearchResults
+            results={searchResults!}
+            loading={searchLoading}
+            onSelect={handleSearchHitClick}
+          />
         ) : (
           <SessionList
             sessions={filteredSessions}
@@ -107,6 +175,15 @@ export function SessionsView({ projectPath }: SessionsViewProps) {
               )}
               {page && (
                 <span className="sessions__detail-lines">{page.total_lines} lines</span>
+              )}
+              {editors.length > 0 && (
+                <button
+                  className="btn btn--sm btn--secondary sessions__open-editor"
+                  onClick={() => openInEditor(projectPath)}
+                  title={`Open project in ${getLabel(editors[0])}`}
+                >
+                  Open in {getLabel(editors[0])}
+                </button>
               )}
             </div>
             <div className="sessions__messages">

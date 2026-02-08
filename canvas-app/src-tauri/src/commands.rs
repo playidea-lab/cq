@@ -750,6 +750,214 @@ pub async fn get_session_file_changes(session_path: String) -> Result<Vec<FileCh
     .map_err(|e| format!("Task execution failed: {}", e))?
 }
 
+// --- Session Content Search ---
+
+/// Search result for a session content match
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct SearchHit {
+    pub session_id: String,
+    pub session_title: Option<String>,
+    pub session_path: String,
+    pub line_number: u32,
+    pub matched_text: String,
+    pub context: String,
+}
+
+/// Search session contents for a query string.
+/// Performs case-insensitive raw text search across JSONL session files.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn search_sessions(
+    path: String,
+    query: String,
+    max_results: u32,
+) -> Result<Vec<SearchHit>, String> {
+    let project_path = path.clone();
+    let query = query.clone();
+    tokio::task::spawn_blocking(move || {
+        let home = dirs::home_dir().ok_or("Could not find home directory")?;
+        let slug = path_to_slug(&project_path);
+        let sessions_dir = home.join(".claude").join("projects").join(&slug);
+
+        if !sessions_dir.exists() {
+            return Ok(Vec::new());
+        }
+
+        let query_lower = query.to_lowercase();
+        let mut hits: Vec<SearchHit> = Vec::new();
+
+        // Collect session files with their titles
+        let mut session_files: Vec<(String, Option<String>, String, std::path::PathBuf)> =
+            Vec::new();
+
+        for entry in
+            fs::read_dir(&sessions_dir).map_err(|e| format!("Read dir failed: {}", e))?
+        {
+            let entry = entry.map_err(|e| format!("Entry error: {}", e))?;
+            let file_path = entry.path();
+
+            if file_path.extension().and_then(|e| e.to_str()) != Some("jsonl") {
+                continue;
+            }
+
+            let file_name = file_path
+                .file_stem()
+                .and_then(|n| n.to_str())
+                .unwrap_or("")
+                .to_string();
+
+            // Skip non-UUID filenames
+            if file_name.len() < 36 {
+                continue;
+            }
+
+            let (title, _, _) = extract_session_meta(&file_path);
+            let path_str = file_path.to_string_lossy().to_string();
+
+            session_files.push((file_name, title, path_str, file_path));
+        }
+
+        // Search each session file
+        'outer: for (session_id, title, path_str, file_path) in &session_files {
+            use std::io::{BufRead, BufReader};
+
+            let file = match fs::File::open(file_path) {
+                Ok(f) => f,
+                Err(_) => continue,
+            };
+
+            let reader = BufReader::new(file);
+            let mut line_number: u32 = 0;
+
+            for line_result in reader.lines() {
+                line_number += 1;
+
+                let line = match line_result {
+                    Ok(l) => l,
+                    Err(_) => continue,
+                };
+
+                let line_lower = line.to_lowercase();
+                if !line_lower.contains(&query_lower) {
+                    continue;
+                }
+
+                // Extract readable text from the JSON line for display
+                let (matched_text, context) = extract_match_context(&line, &query_lower);
+
+                if matched_text.is_empty() {
+                    continue;
+                }
+
+                hits.push(SearchHit {
+                    session_id: session_id.clone(),
+                    session_title: title.clone(),
+                    session_path: path_str.clone(),
+                    line_number,
+                    matched_text,
+                    context,
+                });
+
+                if hits.len() >= max_results as usize {
+                    break 'outer;
+                }
+            }
+        }
+
+        Ok(hits)
+    })
+    .await
+    .map_err(|e| format!("Task execution failed: {}", e))?
+}
+
+/// Extract readable match context from a JSONL line.
+/// Tries to parse JSON and pull text from content blocks; falls back to raw substring.
+fn extract_match_context(line: &str, query_lower: &str) -> (String, String) {
+    // Try parsing as JSON to extract clean text
+    if let Ok(obj) = serde_json::from_str::<serde_json::Value>(line) {
+        let mut texts: Vec<String> = Vec::new();
+        collect_text_fields(&obj, &mut texts);
+
+        for text in &texts {
+            let text_lower = text.to_lowercase();
+            if let Some(pos) = text_lower.find(query_lower) {
+                let matched =
+                    &text[pos..std::cmp::min(pos + query_lower.len(), text.len())];
+
+                // Build context: ~80 chars around the match
+                let ctx_start = if pos > 40 { pos - 40 } else { 0 };
+                let ctx_end = std::cmp::min(pos + query_lower.len() + 40, text.len());
+                let mut context = String::new();
+                if ctx_start > 0 {
+                    context.push_str("...");
+                }
+                context.push_str(&text[ctx_start..ctx_end]);
+                if ctx_end < text.len() {
+                    context.push_str("...");
+                }
+                let context = context.split_whitespace().collect::<Vec<_>>().join(" ");
+
+                return (matched.to_string(), context);
+            }
+        }
+    }
+
+    // Fallback: raw substring match
+    let line_lower = line.to_lowercase();
+    if let Some(pos) = line_lower.find(query_lower) {
+        let matched = &line[pos..std::cmp::min(pos + query_lower.len(), line.len())];
+        let ctx_start = if pos > 60 { pos - 60 } else { 0 };
+        let ctx_end = std::cmp::min(pos + query_lower.len() + 60, line.len());
+        let mut context = String::new();
+        if ctx_start > 0 {
+            context.push_str("...");
+        }
+        context.push_str(&line[ctx_start..ctx_end]);
+        if ctx_end < line.len() {
+            context.push_str("...");
+        }
+        return (matched.to_string(), context);
+    }
+
+    (String::new(), String::new())
+}
+
+/// Recursively collect text-like string values from a JSON value.
+fn collect_text_fields(val: &serde_json::Value, out: &mut Vec<String>) {
+    match val {
+        serde_json::Value::Object(map) => {
+            for (key, v) in map {
+                match key.as_str() {
+                    "text" | "summary" | "thinking" => {
+                        if let Some(s) = v.as_str() {
+                            if !s.is_empty() {
+                                out.push(s.to_string());
+                            }
+                        }
+                    }
+                    "content" => {
+                        if let Some(s) = v.as_str() {
+                            if !s.is_empty() {
+                                out.push(s.to_string());
+                            }
+                        } else {
+                            collect_text_fields(v, out);
+                        }
+                    }
+                    _ => {
+                        collect_text_fields(v, out);
+                    }
+                }
+            }
+        }
+        serde_json::Value::Array(arr) => {
+            for item in arr {
+                collect_text_fields(item, out);
+            }
+        }
+        _ => {}
+    }
+}
+
 // --- Provider API commands ---
 
 /// List all detected LLM tool providers
@@ -952,4 +1160,70 @@ pub async fn read_config_file(project_path: String, file_path: String) -> Result
     })
     .await
     .map_err(|e| format!("Task execution failed: {}", e))?
+}
+
+// --- Editor deeplink commands ---
+
+/// Detect which code editors are available on the system.
+/// Checks for `code` (VS Code), `cursor`, and `zed` in PATH.
+#[tauri::command]
+pub async fn detect_editors() -> Vec<String> {
+    let candidates = ["code", "cursor", "zed"];
+    let mut editors = Vec::new();
+    for name in candidates {
+        let found = tokio::task::spawn_blocking({
+            let name = name.to_string();
+            move || {
+                std::process::Command::new("which")
+                    .arg(&name)
+                    .stdout(std::process::Stdio::null())
+                    .stderr(std::process::Stdio::null())
+                    .status()
+                    .map(|s| s.success())
+                    .unwrap_or(false)
+            }
+        })
+        .await
+        .unwrap_or(false);
+        if found {
+            editors.push(name.to_string());
+        }
+    }
+    editors
+}
+
+/// Open a project path in the specified editor (e.g. "code", "cursor").
+/// Spawns the editor process without waiting for it to exit.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn open_in_editor(project_path: String, editor: String) -> Result<(), String> {
+    // Validate the editor name to prevent arbitrary command execution
+    let allowed = ["code", "cursor", "zed"];
+    if !allowed.contains(&editor.as_str()) {
+        return Err(format!("Unsupported editor: {}", editor));
+    }
+
+    // Validate the project path exists
+    let path = Path::new(&project_path);
+    if !path.exists() || !path.is_dir() {
+        return Err(format!("Invalid project path: {}", project_path));
+    }
+
+    tokio::task::spawn_blocking(move || {
+        std::process::Command::new(&editor)
+            .arg(&project_path)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .map_err(|e| format!("Failed to open editor '{}': {}", editor, e))?;
+        Ok(())
+    })
+    .await
+    .map_err(|e| format!("Task execution failed: {}", e))?
+}
+
+/// Start watching a project's session directory for changes.
+/// Emits "sessions-changed" events when .jsonl files are created/modified.
+#[tauri::command(rename_all = "camelCase")]
+pub fn watch_sessions(app: tauri::AppHandle, project_path: String) -> Result<(), String> {
+    crate::watcher::start_session_watcher(&app, &project_path)
 }

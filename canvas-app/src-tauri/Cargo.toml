@@ -29,6 +29,7 @@ anyhow = "1"
 dirs = "5"
 rusqlite = { version = "0.31", features = ["bundled"] }
 tokio = { version = "1", features = ["rt"] }
+notify = { version = "6.1.1", features = ["macos_fsevent"] }
 
 [features]
 default = ["custom-protocol"]

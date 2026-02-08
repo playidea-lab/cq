@@ -145,6 +145,15 @@ export interface ContentBlock {
   tool_input: unknown | null;
 }
 
+export interface SearchHit {
+  session_id: string;
+  session_title: string | null;
+  session_path: string;
+  line_number: number;
+  matched_text: string;
+  context: string;
+}
+
 export interface FileChange {
   path: string;
   backup_file: string | null;

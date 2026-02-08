@@ -8,6 +8,7 @@ pub mod layout;
 pub mod models;
 pub mod providers;
 pub mod scanner;
+pub mod watcher;
 
 use tauri::Manager;
 
@@ -35,10 +36,17 @@ pub fn run() {
             commands::get_session_file_changes,
             commands::list_config_files,
             commands::read_config_file,
+            // Session content search
+            commands::search_sessions,
             // Provider-based commands
             commands::list_providers,
             commands::list_sessions_for_provider,
             commands::get_provider_session_messages,
+            // Editor deeplink commands
+            commands::detect_editors,
+            commands::open_in_editor,
+            // File watcher
+            commands::watch_sessions,
         ])
         .setup(|app| {
             // Log startup
