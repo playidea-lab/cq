@@ -2,6 +2,7 @@ package main
 
 import (
 	"database/sql"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -375,6 +376,108 @@ func TestRunFromCompleteState(t *testing.T) {
 	err := runRun(nil, nil)
 	if err != nil {
 		t.Fatalf("runRun returned error for COMPLETE state: %v", err)
+	}
+}
+
+// TestMCPStdioIntegration verifies the full JSON-RPC round-trip:
+// send initialize request, receive response with server info.
+func TestMCPStdioIntegration(t *testing.T) {
+	// Build a JSON-RPC request
+	reqJSON := `{"jsonrpc":"2.0","id":1,"method":"initialize"}`
+
+	var req mcpRequest
+	if err := json.Unmarshal([]byte(reqJSON), &req); err != nil {
+		t.Fatalf("unmarshal request: %v", err)
+	}
+
+	// Process through the handler
+	resp := handleMCPRequest(&req)
+	if resp == nil {
+		t.Fatal("expected non-nil response")
+	}
+
+	// Serialize to JSON (simulates stdout write)
+	respBytes, err := json.Marshal(resp)
+	if err != nil {
+		t.Fatalf("marshal response: %v", err)
+	}
+
+	// Verify response is valid JSON-RPC
+	var parsed struct {
+		JSONRPC string      `json:"jsonrpc"`
+		ID      interface{} `json:"id"`
+		Result  interface{} `json:"result"`
+		Error   interface{} `json:"error"`
+	}
+	if err := json.Unmarshal(respBytes, &parsed); err != nil {
+		t.Fatalf("response not valid JSON: %v", err)
+	}
+
+	if parsed.JSONRPC != "2.0" {
+		t.Errorf("jsonrpc = %q, want '2.0'", parsed.JSONRPC)
+	}
+	if parsed.ID != float64(1) { // JSON numbers decode as float64
+		t.Errorf("id = %v, want 1", parsed.ID)
+	}
+	if parsed.Error != nil {
+		t.Errorf("unexpected error: %v", parsed.Error)
+	}
+}
+
+// TestMCPStdioToolsCallIntegration tests a complete tools/call flow with c4_status.
+func TestMCPStdioToolsCallIntegration(t *testing.T) {
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	insertState(t, db, "integration-test", "EXECUTE")
+	insertTask(t, db, "T-001-0", "Task one", "done")
+	insertTask(t, db, "T-002-0", "Task two", "pending")
+
+	// Simulate tools/call for c4_status
+	reqJSON := `{"jsonrpc":"2.0","id":42,"method":"tools/call","params":{"name":"c4_status","arguments":{}}}`
+
+	var req mcpRequest
+	if err := json.Unmarshal([]byte(reqJSON), &req); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	resp := handleMCPRequest(&req)
+	if resp == nil {
+		t.Fatal("nil response")
+	}
+	if resp.Error != nil {
+		t.Fatalf("error: %v", resp.Error)
+	}
+
+	// Verify response structure
+	resultMap, ok := resp.Result.(map[string]interface{})
+	if !ok {
+		t.Fatalf("result type = %T, want map", resp.Result)
+	}
+
+	content, ok := resultMap["content"].([]map[string]interface{})
+	if !ok {
+		t.Fatalf("content type = %T, want []map", resultMap["content"])
+	}
+
+	if len(content) == 0 {
+		t.Fatal("content is empty")
+	}
+
+	// First content block should be text with JSON
+	text, ok := content[0]["text"].(string)
+	if !ok {
+		t.Fatalf("text type = %T, want string", content[0]["text"])
+	}
+
+	// Parse the inner JSON
+	var statusResult map[string]interface{}
+	if err := json.Unmarshal([]byte(text), &statusResult); err != nil {
+		t.Fatalf("parse status result: %v (text: %s)", err, text)
+	}
+
+	if statusResult["status"] != "EXECUTE" {
+		t.Errorf("status = %v, want EXECUTE", statusResult["status"])
 	}
 }
 
