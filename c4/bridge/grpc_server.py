@@ -270,7 +270,7 @@ class BridgeServer:
         try:
             return self._code_ops.find_symbol(
                 name_path_pattern=params.get("name", ""),
-                relative_path=params.get("file_path", ""),
+                relative_path=params.get("file_path", params.get("path", "")),
                 include_body=params.get("include_body", False),
                 depth=params.get("depth", 0),
             )
@@ -281,7 +281,7 @@ class BridgeServer:
         """GetSymbolsOverview -> CodeOps.get_symbols_overview()."""
         try:
             return self._code_ops.get_symbols_overview(
-                relative_path=params.get("file_path", ""),
+                relative_path=params.get("file_path", params.get("path", "")),
                 depth=params.get("depth", 0),
             )
         except Exception as exc:
