@@ -85,6 +85,24 @@
 - **LOW**: useToast never consumed (dead code); no toast cap; timeline async with no indicator
 - **Pattern**: AnalyticsPanel.tsx uses correct cancelled flag -- other hooks should follow
 
+### 2026-02-09: Bridge Sidecar Stability Review (APPROVED)
+- **Commit**: 478a4d9, 9 files, +410/-49 (Go + Python)
+- **Result**: APPROVE - 1 HIGH, 3 MEDIUM, 2 LOW
+- **H-1**: Restart creates orphaned Sidecar; restart counter never resets (no time window for long-running processes)
+- **M-1/M-2**: No tests for BridgeProxy auto-restart path or successful Restart (only limit-exceeded tested)
+- **M-3**: Sidecar.Ping() uses single Read() vs doCall's loop-until-newline (partial read risk)
+- **Good patterns**: Restarter DI interface avoids circular import; mutex usage correct (-race clean)
+- **Lesson**: String-based error classification (isConnError) is fragile; prefer sentinel errors or typed errors
+- **Lesson**: When transferring state from temporary objects, nil out transferred fields to prevent double-ownership
+
+## Go-Python Bridge Patterns
+- Restarter interface in handlers/ avoids circular dep with bridge/ package
+- BridgeProxy.Call: doCall -> isConnError -> tryRestart -> doCall (retry once)
+- Sidecar.Restart: max 3 attempts, counter never resets (design choice)
+- Env var: C4_BRIDGE_PORT (primary) with C4_GRPC_PORT fallback (backward compat)
+- Protocol: newline-delimited JSON-RPC over TCP, no protobuf dependency
+- Ping: Go Sidecar.Ping() -> Python _handle_ping() -> {"status": "ok"}
+
 ## Canvas-App (Tauri 2.x) Patterns
 - Tauri IPC commands: async fn + spawn_blocking for I/O, return Result<T, String>
 - Path validation: MUST canonicalize + allowlist check for any file-access command

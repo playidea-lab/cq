@@ -1,64 +1,99 @@
-# C4 Canvas
+# C1 (See) — Multi-LLM Project Explorer
 
-> Auto-Map Project Visualizer - 프로젝트 맥락을 무한 캔버스에 자동 시각화
+Tauri 2.x 데스크톱 앱. Claude Code, Codex CLI, Cursor, Gemini CLI 등 다양한 LLM 도구의 세션을 통합 탐색합니다.
 
 ## Features
 
-- **자동 스캔**: `.claude/`, `.c4/`, `docs/` 등 프로젝트 파일 자동 스캔
-- **노드 시각화**: 파일 타입별 노드로 표시 (Document, Config, Session, Task, Connection)
-- **시간순 레이아웃**: 파일 수정 시간 기준 자동 배치 (왼쪽=과거, 오른쪽=최근)
-- **상세 패널**: 노드 클릭 시 메타데이터 표시
-- **영속 저장**: 캔버스 상태 `.c4/canvas.json`에 저장
+### 4개 뷰
+
+| 뷰 | 기능 | 데이터 소스 |
+|-----|------|-------------|
+| **Sessions** | 세션 목록 + 메시지 뷰어 + Analytics | 프로바이더별 JSONL/SQLite |
+| **Dashboard** | 태스크 관리 + Timeline + Validation | `.c4/c4.db` |
+| **Config** | 설정 파일 탐색 (CLAUDE.md, personas 등) | `~/.claude/`, `.c4/` |
+| **Team** | 팀 프로젝트 현황 (Cloud) | Supabase |
+
+### 4개 프로바이더
+
+| 프로바이더 | 소스 | 형식 |
+|-----------|------|------|
+| Claude Code | `~/.claude/projects/` | JSONL |
+| Codex CLI | `~/.codex/` | JSONL |
+| Cursor | `~/.cursor/` | SQLite (READONLY) |
+| Gemini CLI | `~/.gemini/` | 스텁 |
+
+### v0.2.0 (Performance + UX)
+
+- **가상 스크롤**: `@tanstack/react-virtual` — SessionList, MessageViewer, TaskList
+- **LRU 캐시**: Rust `lru` 크레이트, 32 entries, 30s TTL, watcher 무효화
+- **Cloud retry**: Exponential backoff (3회, 1s/2s/4s)
+- **FilterBar**: 정렬(date/size/name) + 기간 필터(today/week/month/all)
+- **Skeleton**: CSS shimmer 로딩 애니메이션
+- **Toast**: 자동 해제 알림 (3s)
+- **ErrorState**: Retry 버튼 포함 통일된 에러 표시
+- **테마 토글**: 다크/라이트 모드 (localStorage 저장)
+- **접근성**: WCAG aria-*, role, prefers-reduced-motion
 
 ## Tech Stack
 
-- **Desktop**: [Tauri](https://tauri.app/) v2
-- **Canvas**: [tldraw](https://tldraw.dev/) v4
-- **Frontend**: React + TypeScript + Vite
-- **Backend**: Rust
+- **Frontend**: React 18 + TypeScript + Vite
+- **Backend**: Rust (Tauri 2.x)
+- **스타일**: CSS BEM + design-tokens.css
+- **테스트**: Vitest 80개 + Cargo 31개
 
-## Development
-
-### Prerequisites
-
-- Node.js 18+
-- pnpm
-- Rust (rustup)
-
-### Setup
+## Quick Start
 
 ```bash
-# Install dependencies
+# 의존성 설치
 pnpm install
 
-# Run development server
+# 개발 서버
 pnpm tauri dev
-```
 
-### Build
-
-```bash
+# 프로덕션 빌드
 pnpm tauri build
+
+# 테스트
+pnpm test                    # Vitest (frontend)
+cd src-tauri && cargo test   # Cargo (backend)
 ```
 
-## Usage
+## 환경 변수
 
-1. "Open Project" 클릭하여 C4 프로젝트 선택
-2. 자동으로 노드 생성 및 배치
-3. 노드 클릭하여 상세 정보 확인
-4. 노드 드래그로 재배치 (위치는 자동 저장)
-5. "Refresh" 클릭하여 재스캔
+Team/Cloud 기능 사용 시 프로젝트 루트 `.env`에 설정:
 
-## Node Types
+```
+SUPABASE_URL=https://xxxx.supabase.co
+SUPABASE_KEY=eyJ...
+```
 
-| 타입 | 아이콘 | 설명 |
-|------|--------|------|
-| Document | 📄 | Markdown 문서 |
-| Config | ⚙️ | 설정 파일 (.claude, .c4, yaml, json) |
-| Session | 💬 | Claude 세션 기록 |
-| Task | ✅ | C4 태스크 |
-| Connection | 🔗 | MCP/환경 연결 |
+앱 시작 시 `dotenvy`가 `.env`, `../.env`, `~/.c4/.env` 순으로 자동 로드합니다.
 
-## License
+## 디렉토리 구조
 
-MIT
+```
+c1/
+├── src/
+│   ├── components/
+│   │   ├── auth/          # LoginView
+│   │   ├── sessions/      # SessionsView, SessionList, MessageViewer, FilterBar
+│   │   ├── dashboard/     # DashboardView, TaskList, TaskTimeline, ValidationPanel
+│   │   ├── config/        # ConfigView
+│   │   ├── team/          # TeamView
+│   │   └── shared/        # StatusBadge, ProgressBar, Skeleton, Toast, ErrorState
+│   ├── hooks/             # useSessions, useDashboard, useConfig, useEditors
+│   ├── contexts/          # AuthContext, ToastContext
+│   ├── styles/            # CSS (BEM + design-tokens)
+│   └── App.tsx
+├── src-tauri/
+│   └── src/
+│       ├── lib.rs         # Tauri 앱 설정
+│       ├── commands.rs    # IPC 커맨드 (31개)
+│       ├── providers/     # 4개 세션 프로바이더
+│       ├── analytics.rs   # 세션 통계
+│       ├── cloud.rs       # Supabase REST
+│       ├── auth.rs        # GitHub OAuth
+│       ├── scanner.rs     # JSONL 파싱
+│       └── watcher.rs     # 파일 변경 감지
+└── package.json
+```

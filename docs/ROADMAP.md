@@ -1,39 +1,31 @@
 # C4 Roadmap
 
-## Current Version: v0.7.0 (Go MCP Primary + Cloud Cleanup)
+## Current Version: v0.9.0 (Go Gap Fix + Persona Evolution)
 
-현재 버전은 **Go MCP Primary 아키텍처, Python Cloud 코드 정리(-73K LOC), JSON-RPC Bridge, Multi-LLM 탐색기**를 포함합니다.
+현재 버전은 **Go MCP Primary(51 tools), Persona Evolution, State Machine 검증, Config 연결, Knowledge Auto-Record**를 포함합니다.
+
+### 핵심 구조
+
+- **Go MCP Server (Primary)** - 51 도구, Registry-based, SQLite Store, JSON-RPC Bridge
+- **Python Sidecar** - LSP(Multilspy→Jedi→Tree-sitter), Knowledge Store v2, GPU Scheduler
+- **C1 Desktop App** - Tauri 2.x, 4개 프로바이더, 가상 스크롤, LRU 캐시, 테마 토글
 
 ### 지원 기능
 
-- **Go MCP Server (Primary)** - 47 도구, Registry-based, Python sidecar 자동 관리
-- **LSP Server** (VS Code 등 에디터 통합) - pygls 기반
-- State Machine (INIT → DISCOVERY → DESIGN → PLAN → EXECUTE ↔ CHECKPOINT → COMPLETE)
+- State Machine (INIT → DISCOVERY → DESIGN → PLAN → EXECUTE ⇄ CHECKPOINT → COMPLETE)
 - Multi-Worker (SQLite WAL 모드, race-condition free)
-- Agent Routing (Phase 4) - 도메인별 에이전트 자동 선택 및 체이닝
-- **EARS Requirements** - 5가지 패턴 기반 요구사항 수집
-- **ADR (Architecture Decision Records)** - 설계 결정 관리
-- **Verification System** - 6가지 Verifier (HTTP, CLI, Browser, Visual, Metrics, Dryrun)
+- Direct Mode (c4_claim/c4_report) + Worker Mode (c4_get_task/c4_submit)
+- EARS Requirements + ADR (Architecture Decision Records)
 - Validation Runner (lint, unit tests)
 - Checkpoint System (APPROVE, REQUEST_CHANGES, REPLAN, REDESIGN)
-- Slash Commands (11개)
-- Stop Hook (자동 실행 유지)
-- Auto Supervisor Loop
-- **Team Collaboration** - Supabase 기반 팀 상태 공유
-- **Branding Middleware** - 화이트라벨 커스텀 도메인 지원
-- **Code Analysis Engine** - Python/TypeScript AST 분석
-- **Documentation Snapshots** - Context7 스타일 문서 API
-- **Gap Analyzer** - EARS 요구사항 ↔ 구현 매핑
+- **Code Analysis Engine** - Multilspy → Jedi → Tree-sitter 3단계 fallback
+- **Knowledge Store v2** - Obsidian Markdown SSOT + FTS5 + Vector hybrid search (RRF)
 - **GPU/ML Native** - GPU 감지, 스케줄링, DAG→Task 변환
 - **Experiment Tracker** - @c4_track 데코레이터, 메트릭 자동 캡처
 - **Artifact Store** - Content-addressable 로컬 저장소
-- **Knowledge Store v2** - Obsidian Markdown SSOT + FTS5 + Vector hybrid search
-- **Hook Registry** - 태스크 생명주기 훅 시스템
-- **Worker Lifecycle** - 좀비 워커 자동 감지/정리, TTL 기반 제거
-- **Go MCP Primary** (c4-core/) - 47 도구, Registry-based, SQLite Store, Python sidecar 자동 관리
-- **JSON-RPC Bridge** - Go ↔ Python 통신 (LSP, Knowledge, GPU 위임)
-- **C1 Multi-LLM Explorer** - Claude Code, Codex CLI, Cursor, Gemini CLI 4개 프로바이더 통합
-- **Python Cloud 삭제** - ~39K LOC 삭제 (API, Billing, SSO, Monitoring, Realtime 등)
+- **Team Collaboration** - Supabase 기반 팀 상태 공유
+- **C1 Multi-LLM Explorer** - Claude Code, Codex CLI, Cursor, Gemini CLI 4개 프로바이더
+- **코드베이스**: Go 10.5K + Python 10.5K + C1 5.6K + Tests 5.6K = **~32K LOC**
 
 ---
 
@@ -500,6 +492,30 @@ Claude Code → Go MCP Server (stdio, 47 tools)
 
 ---
 
+### Phase 6.14: Go Gap Fix + Persona Evolution ✅
+
+**목표**: Go 번역 갭 수정 (5 HIGH) + Persona 기반 팀 도구 비전 첫 단계
+
+**Part A: Go 번역 갭 수정**:
+- **A1: Active Claim File** — `ClaimTask()` → `.c4/active_claim.json` 생성, `ReportTask()` → 삭제
+- **A2: State Machine 연결** — `TransitionState()`가 23-rule 전이 테이블 검증 사용 (단순 from/to 덮어쓰기 제거)
+- **A3: Config 연결** — `config.Manager` 로드 → MCP 서버에 주입 (경제 모드, model 힌트 등)
+- **A4: Worker Loop** — **DEFERRED** (현재 MCP 도구 경로로 충분, CLI 단독 사용 시나리오 미존재)
+- **A5: c4_find_referencing_symbols** — proxy 도구 등록 (Python sidecar 위임)
+
+**Part B: Persona Evolution Foundation**:
+- **B1: persona_stats 테이블** — 태스크 완료 시 페르소나별 성과 자동 추적
+- **B2: Knowledge Auto-Record** — `SubmitTask()`/`ReportTask()` 완료 시 experiment 문서 자동 생성 (sidecar proxy, best-effort)
+- **B3: Persona MCP 도구** — `c4_persona_stats` (성과 통계), `c4_persona_evolve` (진화 제안)
+- **B4: Team Identity** — `c4_whoami` 도구 + `.c4/team.yaml` 팀 구성 관리
+
+**결과**: 47 → **51 MCP 도구** (+4: find_referencing_symbols, persona_stats, persona_evolve, whoami)
+**스키마 자동 초기화**: MCP 서버 시작 시 c4_tasks, c4_state, c4_checkpoints, persona_stats 테이블 자동 생성
+
+**테스트**: Go 9 packages pass, Python 402 pass
+
+---
+
 ## Phase 7: C4 Cloud (v0.8.0) 📋 Next
 
 **목표**: LLM 오케스트레이션 플랫폼으로서의 완전 관리형 SaaS
@@ -641,6 +657,8 @@ v0.1-0.3        v0.4           v0.5           v0.6          v0.6.10         v0.7
 | **C1 Multi-LLM Explorer** | P0 | ✅ 완료 |
 | **Go Core Foundation** | P0 | ✅ 완료 |
 | **Go MCP Primary + Cloud Cleanup** | P0 | ✅ 완료 |
+| **Go Gap Fix + Persona Evolution** | P0 | ✅ 완료 |
+| Worker Loop (CLI `c4 run`) | P2 | 📋 Deferred |
 | Cloud Foundation (7.1) | P1 | 📋 Next (Go 재설계) |
 | LLM Gateway (7.2) | P1 | 📋 Phase 7 |
 | Hosted Workers (7.3) | P2 | 📋 Phase 7 |
