@@ -1,7 +1,0 @@
-description = "Clear C4 state and start fresh."
-
-prompt = """
-Confirm with the user before clearing.
-Call `c4_clear(confirm=True)` to wipe state.
-Optionally keep config with `keep_config=True`.
-"""

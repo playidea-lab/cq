@@ -1,7 +1,0 @@
-description = "Create execution plan from docs."
-
-prompt = """
-Call `c4_plan()` to enter PLAN mode.
-Analyze `docs/PLAN.md` or requirements.
-Use `c4_add_todo` to create tasks based on the plan.
-"""

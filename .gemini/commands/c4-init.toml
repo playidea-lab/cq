@@ -1,7 +1,0 @@
-description = "Initialize C4 in the current project directory."
-
-prompt = """
-Run `c4-init` to initialize the project.
-Verify that `.c4/` directory is created.
-Check if a restart is needed.
-"""

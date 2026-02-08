@@ -1,6 +1,0 @@
-description = "Start execution (PLAN -> EXECUTE)."
-
-prompt = """
-Call `c4_run()` to transition to EXECUTE state.
-Verify the state change using `c4_status()`.
-"""

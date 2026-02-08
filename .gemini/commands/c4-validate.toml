@@ -1,6 +1,0 @@
-description = "Run validation commands for the current task."
-
-prompt = """
-Call `c4_run_validation(names=["lint", "unit"])` to run validations.
-Display the results clearly.
-"""

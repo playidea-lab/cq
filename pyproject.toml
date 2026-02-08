@@ -1,40 +1,22 @@
 [project]
 name = "c4"
 version = "0.1.0"
-description = "C4 - AI Project Orchestration System"
+description = "C4 Python Sidecar - LSP, Knowledge, GPU services"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-    "mcp>=1.0.0",
     "pydantic>=2.0.0",
-    "typer>=0.12.0",
-    "rich>=13.0.0",
     "pyyaml>=6.0.0",
-    "jinja2>=3.0.0",
-    "jsonschema>=4.0.0",
-    "networkx>=3.0.0",
-    "litellm>=1.50.0",
-    "python-dotenv>=1.2.1",
-    "multilspy>=0.0.15",
     "sqlite-vec>=0.1.0",
-    "tiktoken>=0.5.0",
-    "pillow>=12.1.0",
-]
-
-[project.optional-dependencies]
-dev = [
-    "pytest>=8.0.0",
-    "pytest-asyncio>=0.23.0",
-    "ruff>=0.5.0",
-]
-lsp = [
-    "pygls>=1.3.0",
     "jedi>=0.19.0",
+    "multilspy>=0.0.15",
     "tree-sitter>=0.25.2",
     "tree-sitter-python>=0.25.0",
     "tree-sitter-javascript>=0.25.0",
     "tree-sitter-typescript>=0.23.2",
 ]
+
+[project.optional-dependencies]
 embeddings = [
     "openai>=1.0.0",
     "sentence-transformers>=2.0.0",
@@ -43,14 +25,8 @@ gpu = [
     "pynvml>=11.0.0",
     "psutil>=5.9.0",
 ]
-tracker = [
-    "psutil>=5.9.0",
-]
 
 [project.scripts]
-c4d = "c4.cli:app"
-c4 = "c4.cli:c4_app"
-c4-lsp = "c4.lsp.server:main"
 c4-bridge = "c4.bridge.sidecar:main"
 
 [build-system]
@@ -60,10 +36,6 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["c4"]
 
-[tool.hatch.build.targets.wheel.force-include]
-"c4/data" = "c4/data"
-"c4/data/agents" = "c4/data/agents"
-
 [tool.ruff]
 line-length = 140
 target-version = "py311"
@@ -72,45 +44,16 @@ target-version = "py311"
 select = ["E", "F", "I", "W"]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["E501"]  # Allow long lines in tests for mock chains
+"tests/**" = ["E501"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
 
-[tool.coverage.run]
-source = ["c4"]
-omit = [
-    "*/tests/*",
-    "*/__pycache__/*",
-    "c4/cli.py",
-]
-
-[tool.coverage.report]
-exclude_lines = [
-    "pragma: no cover",
-    "if TYPE_CHECKING:",
-    "raise NotImplementedError",
-    "if __name__ == .__main__.:",
-]
-fail_under = 80
-show_missing = true
-
 [dependency-groups]
 dev = [
-    "httpx>=0.28.1",
-    "jedi>=0.19.0",
-    "mypy>=1.19.1",
-    "pygls>=1.3.0",
     "pytest>=9.0.2",
     "pytest-asyncio>=1.3.0",
     "pytest-cov>=7.0.0",
-    "pytest-lsp>=0.4.0",
     "ruff>=0.14.10",
-    "tree-sitter>=0.25.2",
-    "tree-sitter-python>=0.25.0",
-    "tree-sitter-typescript>=0.23.2",
-    "types-jsonschema>=4.26.0.20260109",
-    "types-networkx>=3.6.1.20251220",
-    "types-pyyaml>=6.0.12.20250915",
 ]

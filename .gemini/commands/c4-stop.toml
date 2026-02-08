@@ -1,7 +1,0 @@
-description = "Stop the current C4 execution."
-
-prompt = """
-Call `c4_status()` to check the current state.
-If in EXECUTE state, call `c4_stop()` to halt execution.
-Confirm the state changed to HALTED.
-"""

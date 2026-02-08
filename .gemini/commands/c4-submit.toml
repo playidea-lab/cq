@@ -1,7 +1,0 @@
-description = "Submit a completed task."
-
-prompt = """
-1. Ensure validations pass with `c4_run_validation()`.
-2. Get the current git commit SHA.
-3. Call `c4_submit(task_id=..., commit_sha=..., validation_results=...)`.
-"""

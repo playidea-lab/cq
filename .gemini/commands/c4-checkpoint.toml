@@ -1,6 +1,0 @@
-description = "Create a checkpoint."
-
-prompt = """
-Call `c4_checkpoint()` to create a snapshot of the current state.
-Require a message or tag from the user.
-"""
