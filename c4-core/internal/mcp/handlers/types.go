@@ -87,6 +87,7 @@ type Store interface {
 	GetStatus() (*ProjectStatus, error)
 	Start() error
 	Clear(keepConfig bool) error
+	TransitionState(from, to string) error
 
 	// Task management
 	AddTask(task *Task) error

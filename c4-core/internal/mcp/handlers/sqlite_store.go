@@ -113,6 +113,35 @@ func (s *SQLiteStore) Start() error {
 	return err
 }
 
+// TransitionState transitions the project from one state to another.
+func (s *SQLiteStore) TransitionState(from, to string) error {
+	var stateJSON string
+	err := s.db.QueryRow("SELECT state_json FROM c4_state LIMIT 1").Scan(&stateJSON)
+	if err != nil {
+		return fmt.Errorf("reading state: %w", err)
+	}
+
+	var m map[string]any
+	if err := json.Unmarshal([]byte(stateJSON), &m); err != nil {
+		return fmt.Errorf("parsing state: %w", err)
+	}
+
+	current, _ := m["status"].(string)
+	if current != from {
+		return fmt.Errorf("cannot transition from %s to %s (current state: %s)", from, to, current)
+	}
+
+	m["status"] = to
+	updated, _ := json.Marshal(m)
+	pid, _ := m["project_id"].(string)
+
+	_, err = s.db.Exec(
+		"UPDATE c4_state SET state_json = ?, updated_at = CURRENT_TIMESTAMP WHERE project_id = ?",
+		string(updated), pid,
+	)
+	return err
+}
+
 // Clear resets the C4 state.
 func (s *SQLiteStore) Clear(keepConfig bool) error {
 	tx, err := s.db.Begin()
@@ -318,17 +347,17 @@ func (s *SQLiteStore) ClaimTask(taskID string) (*Task, error) {
 	return task, nil
 }
 
-// ReportTask marks a directly-claimed task as done.
+// ReportTask marks a directly-claimed task as done, persisting summary and files.
 func (s *SQLiteStore) ReportTask(taskID, summary string, filesChanged []string) error {
 	files := ""
 	if len(filesChanged) > 0 {
 		files = strings.Join(filesChanged, ",")
 	}
-	_ = files // stored as metadata if needed
 
+	// Store summary in commit_sha and files in branch (direct mode doesn't use git fields)
 	_, err := s.db.Exec(`
-		UPDATE c4_tasks SET status = 'done', updated_at = CURRENT_TIMESTAMP
-		WHERE task_id = ?`, taskID,
+		UPDATE c4_tasks SET status = 'done', commit_sha = ?, branch = ?, updated_at = CURRENT_TIMESTAMP
+		WHERE task_id = ?`, summary, files, taskID,
 	)
 	return err
 }

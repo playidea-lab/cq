@@ -25,7 +25,7 @@ func RegisterNativeHandlers(reg *mcp.Registry, rootDir string, store Store) {
 }
 
 // RegisterAllHandlers registers all MCP tool handlers including Python proxy tools.
-// Total: 50 tools (10 core + 11 native + 16 proxy + 13 discovery/artifact)
+// Total: 47 tools (10 core + 11 native + 12 discovery/artifact + 14 proxy)
 func RegisterAllHandlers(reg *mcp.Registry, store Store, rootDir string, bridgeAddr string) {
 	RegisterAll(reg, store)
 	RegisterNativeHandlers(reg, rootDir, store)

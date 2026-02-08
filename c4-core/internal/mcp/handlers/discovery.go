@@ -109,7 +109,7 @@ func RegisterDiscoveryHandlers(reg *mcp.Registry, store Store, rootDir string) {
 		return handleListDocs(rootDir, "designs")
 	})
 
-	// c4_discovery_complete
+	// c4_discovery_complete — transitions state DISCOVERY → DESIGN
 	reg.Register(mcp.ToolSchema{
 		Name:        "c4_discovery_complete",
 		Description: "Mark discovery phase as complete and transition to DESIGN",
@@ -117,14 +117,9 @@ func RegisterDiscoveryHandlers(reg *mcp.Registry, store Store, rootDir string) {
 			"type":       "object",
 			"properties": map[string]any{},
 		},
-	}, func(args json.RawMessage) (any, error) {
-		return map[string]any{
-			"success": true,
-			"message": "Discovery complete. Transitioning to DESIGN phase.",
-		}, nil
-	})
+	}, makeTransitionHandler(store, "DISCOVERY", "DESIGN"))
 
-	// c4_design_complete
+	// c4_design_complete — transitions state DESIGN → PLAN
 	reg.Register(mcp.ToolSchema{
 		Name:        "c4_design_complete",
 		Description: "Mark design phase as complete and transition to PLAN",
@@ -132,12 +127,7 @@ func RegisterDiscoveryHandlers(reg *mcp.Registry, store Store, rootDir string) {
 			"type":       "object",
 			"properties": map[string]any{},
 		},
-	}, func(args json.RawMessage) (any, error) {
-		return map[string]any{
-			"success": true,
-			"message": "Design complete. Transitioning to PLAN phase.",
-		}, nil
-	})
+	}, makeTransitionHandler(store, "DESIGN", "PLAN"))
 
 	// c4_ensure_supervisor
 	reg.Register(mcp.ToolSchema{
@@ -153,6 +143,22 @@ func RegisterDiscoveryHandlers(reg *mcp.Registry, store Store, rootDir string) {
 			"message": "Supervisor is managed by the Go MCP server",
 		}, nil
 	})
+}
+
+// makeTransitionHandler creates an MCP handler that transitions project state.
+func makeTransitionHandler(store Store, from, to string) mcp.HandlerFunc {
+	return func(args json.RawMessage) (any, error) {
+		if err := store.TransitionState(from, to); err != nil {
+			return map[string]any{
+				"success": false,
+				"error":   err.Error(),
+			}, nil
+		}
+		return map[string]any{
+			"success": true,
+			"message": fmt.Sprintf("%s complete. Transitioned to %s phase.", from, to),
+		}, nil
+	}
 }
 
 // Document helpers — store specs/designs as files in .c4/specs/ and .c4/designs/

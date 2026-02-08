@@ -66,7 +66,8 @@ func (m *mockBenchStore) MarkBlocked(string, string, string, int, string) error 
 func (m *mockBenchStore) ClaimTask(string) (*handlers.Task, error) {
 	return &handlers.Task{ID: "T-001-0"}, nil
 }
-func (m *mockBenchStore) ReportTask(string, string, []string) error { return nil }
+func (m *mockBenchStore) ReportTask(string, string, []string) error      { return nil }
+func (m *mockBenchStore) TransitionState(string, string) error          { return nil }
 func (m *mockBenchStore) Checkpoint(string, string, string, []string) (*handlers.CheckpointResult, error) {
 	return &handlers.CheckpointResult{Success: true}, nil
 }

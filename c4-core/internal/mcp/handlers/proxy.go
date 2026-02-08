@@ -16,10 +16,8 @@ type BridgeProxy struct {
 }
 
 // NewBridgeProxy creates a proxy that connects to the Python bridge sidecar.
+// If addr is empty, proxy calls will fail immediately instead of timing out.
 func NewBridgeProxy(addr string) *BridgeProxy {
-	if addr == "" {
-		addr = "localhost:50051"
-	}
 	return &BridgeProxy{
 		addr:    addr,
 		timeout: 10 * time.Second,
@@ -28,6 +26,9 @@ func NewBridgeProxy(addr string) *BridgeProxy {
 
 // Call sends a JSON-RPC request to the Python sidecar and returns the result.
 func (p *BridgeProxy) Call(method string, params map[string]any) (map[string]any, error) {
+	if p.addr == "" {
+		return nil, fmt.Errorf("Python sidecar not available (no bridge address)")
+	}
 	conn, err := net.DialTimeout("tcp", p.addr, p.timeout)
 	if err != nil {
 		return nil, fmt.Errorf("bridge connect: %w", err)
@@ -84,6 +85,9 @@ func (p *BridgeProxy) Call(method string, params map[string]any) (map[string]any
 
 // IsAvailable checks if the Python sidecar is reachable.
 func (p *BridgeProxy) IsAvailable() bool {
+	if p.addr == "" {
+		return false
+	}
 	conn, err := net.DialTimeout("tcp", p.addr, 2*time.Second)
 	if err != nil {
 		return false

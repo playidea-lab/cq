@@ -177,6 +177,10 @@ func (m *mockStore) ReportTask(taskID, summary string, filesChanged []string) er
 	return nil
 }
 
+func (m *mockStore) TransitionState(from, to string) error {
+	return nil
+}
+
 func (m *mockStore) Checkpoint(checkpointID, decision, notes string, requiredChanges []string) (*CheckpointResult, error) {
 	if m.checkpointErr != nil {
 		return nil, m.checkpointErr
