@@ -1,7 +1,11 @@
 import { useState, useEffect, useMemo } from 'react';
+import { useProviders } from '../../hooks/useProviders';
 import { useSessions } from '../../hooks/useSessions';
+import { ProviderTabs } from './ProviderTabs';
+import { OverviewPanel } from './OverviewPanel';
 import { SessionList } from './SessionList';
 import { MessageViewer } from './MessageViewer';
+import type { ProviderKind } from '../../types';
 import '../../styles/sessions.css';
 
 interface SessionsViewProps {
@@ -9,6 +13,13 @@ interface SessionsViewProps {
 }
 
 export function SessionsView({ projectPath }: SessionsViewProps) {
+  const {
+    providers,
+    activeProvider,
+    setActiveProvider,
+    loadProviders,
+  } = useProviders();
+
   const {
     sessions,
     loading,
@@ -23,9 +34,20 @@ export function SessionsView({ projectPath }: SessionsViewProps) {
 
   const [searchQuery, setSearchQuery] = useState('');
 
+  // Load providers on mount
   useEffect(() => {
-    listSessions(projectPath);
-  }, [projectPath, listSessions]);
+    loadProviders(projectPath);
+  }, [projectPath, loadProviders]);
+
+  // Load sessions when provider changes
+  useEffect(() => {
+    listSessions(projectPath, activeProvider);
+  }, [projectPath, activeProvider, listSessions]);
+
+  const handleProviderChange = (kind: ProviderKind) => {
+    setActiveProvider(kind);
+    setSearchQuery('');
+  };
 
   const filteredSessions = useMemo(() => {
     if (!searchQuery.trim()) return sessions;
@@ -40,6 +62,11 @@ export function SessionsView({ projectPath }: SessionsViewProps) {
   return (
     <div className="sessions">
       <div className="sessions__list-panel">
+        <ProviderTabs
+          providers={providers}
+          active={activeProvider}
+          onSelect={handleProviderChange}
+        />
         <div className="sessions__list-header">
           <h3 className="sessions__list-title">Sessions</h3>
           <span className="sessions__count">{filteredSessions.length}</span>
@@ -95,6 +122,11 @@ export function SessionsView({ projectPath }: SessionsViewProps) {
               ) : null}
             </div>
           </>
+        ) : providers.length > 1 ? (
+          <OverviewPanel
+            providers={providers}
+            onSelectProvider={handleProviderChange}
+          />
         ) : (
           <div className="sessions__placeholder">
             Select a session to view its conversation

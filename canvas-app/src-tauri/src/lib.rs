@@ -1,11 +1,12 @@
-//! C1 (See) — Claude Code Project Explorer
+//! C1 (See) — Multi-LLM Tool Explorer
 //!
-//! This library provides the backend functionality for scanning C4 projects
-//! and generating canvas visualizations.
+//! Desktop app for exploring sessions from Claude Code, Codex CLI,
+//! Cursor, and other LLM coding tools.
 
 pub mod commands;
 pub mod layout;
 pub mod models;
+pub mod providers;
 pub mod scanner;
 
 use tauri::Manager;
@@ -34,6 +35,10 @@ pub fn run() {
             commands::get_session_file_changes,
             commands::list_config_files,
             commands::read_config_file,
+            // Provider-based commands
+            commands::list_providers,
+            commands::list_sessions_for_provider,
+            commands::get_provider_session_messages,
         ])
         .setup(|app| {
             // Log startup

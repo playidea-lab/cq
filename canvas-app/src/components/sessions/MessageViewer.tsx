@@ -52,6 +52,29 @@ function extractToolInfo(block: ContentBlock): ToolInfo {
     case 'TodoWrite':
     case 'TaskCreate':
       return { icon: '+', label: name, detail: input.subject || '' };
+    // Codex CLI tools
+    case 'exec_command':
+    case 'shell':
+      return { icon: '$', label: 'Shell', detail: truncate(input.cmd || input.command || '', 120) };
+    case 'apply_patch':
+      return { icon: 'P', label: 'Patch', detail: truncate(String(Object.values(input)[0] || ''), 80) };
+    case 'update_plan':
+      return { icon: 'P', label: 'Plan', detail: 'Update plan' };
+    // Cursor tools
+    case 'read_file':
+      return { icon: 'R', label: 'Read', detail: shortenPath(input.target_file || input.targetFile || '') };
+    case 'edit_file':
+      return { icon: 'E', label: 'Edit', detail: shortenPath(input.target_file || input.targetFile || '') };
+    case 'list_dir':
+      return { icon: 'D', label: 'List', detail: input.relative_workspace_path || input.path || '' };
+    case 'codebase_search':
+      return { icon: 'S', label: 'Search', detail: input.query || '' };
+    case 'grep_search':
+      return { icon: 'G', label: 'Grep', detail: input.query || '' };
+    case 'file_search':
+      return { icon: 'F', label: 'Find', detail: input.query || '' };
+    case 'run_terminal_command':
+      return { icon: '$', label: 'Terminal', detail: truncate(input.command || '', 120) };
     default:
       // Try to extract something meaningful
       const firstVal = Object.values(input).find(v => typeof v === 'string' && v.length < 120);
