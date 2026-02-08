@@ -1,1 +1,0 @@
-../../.c4/standards/frontend-design.md

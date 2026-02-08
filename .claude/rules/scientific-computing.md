@@ -1,1 +1,0 @@
-../../.c4/standards/scientific-computing.md
