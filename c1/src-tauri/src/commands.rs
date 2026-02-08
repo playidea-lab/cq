@@ -33,10 +33,11 @@ const CACHE_TTL_SECS: u64 = 30;
 /// Called from the file watcher when session files change.
 pub fn invalidate_session_cache(project_path: &str) {
     if let Ok(mut cache) = SESSION_CACHE.lock() {
-        // Remove all entries that contain this project path
+        // Match entries whose key ends with ":<project_path>" (exact path match)
+        let suffix = format!(":{}", project_path);
         let keys: Vec<String> = cache
             .iter()
-            .filter(|(k, _)| k.contains(project_path))
+            .filter(|(k, _)| k.ends_with(&suffix))
             .map(|(k, _)| k.clone())
             .collect();
         for key in keys {
@@ -1016,7 +1017,7 @@ pub async fn list_sessions_for_provider(
     path: String,
     provider: ProviderKind,
 ) -> Result<Vec<SessionMeta>, String> {
-    let cache_key = format!("{:?}:{}", provider, &path);
+    let cache_key = format!("{}:{}", provider.as_str(), &path);
 
     // Check cache first
     if let Ok(mut cache) = SESSION_CACHE.lock() {

@@ -168,45 +168,6 @@ body {
   font-size: var(--font-size-lg);
 }
 
-/* --- Error Toast --- */
-.error-toast {
-  position: fixed;
-  bottom: 80px;
-  left: var(--space-lg);
-  background: var(--color-bg-error);
-  color: var(--color-text-white);
-  padding: var(--space-md) var(--space-lg);
-  border-radius: var(--radius-md);
-  max-width: 400px;
-  z-index: var(--z-toast);
-  display: flex;
-  align-items: center;
-  gap: var(--space-md);
-}
-
-.error-toast__message {
-  flex: 1;
-}
-
-.error-toast__close {
-  background: transparent;
-  border: none;
-  color: var(--color-text-white);
-  cursor: pointer;
-  font-size: 18px;
-  padding: 0;
-  line-height: var(--line-height-tight);
-}
-
-.error-toast__close:hover {
-  opacity: 0.8;
-}
-
-.error-toast__close:focus-visible {
-  outline: 2px solid var(--color-text-white);
-  outline-offset: 2px;
-}
-
 /* --- Error Boundary --- */
 .error-boundary {
   display: flex;
@@ -462,4 +423,15 @@ body {
   overflow-x: auto;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+/* --- Reduced Motion --- */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

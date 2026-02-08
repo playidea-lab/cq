@@ -276,6 +276,8 @@ export function MessageViewer({ messages, hasMore, loading, onLoadMore }: Messag
             return (
               <div
                 key="load-more"
+                data-index={virtualItem.index}
+                ref={virtualizer.measureElement}
                 style={{
                   position: 'absolute',
                   top: 0,

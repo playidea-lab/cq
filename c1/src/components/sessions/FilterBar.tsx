@@ -12,8 +12,9 @@ export function FilterBar({ sortBy, onSortChange, timeFilter, onTimeFilterChange
   return (
     <div className="filter-bar">
       <div className="filter-bar__group">
-        <label className="filter-bar__label">Sort</label>
+        <label className="filter-bar__label" htmlFor="filter-sort">Sort</label>
         <select
+          id="filter-sort"
           className="filter-bar__select"
           value={sortBy}
           onChange={e => onSortChange(e.target.value as SortKey)}
@@ -23,13 +24,14 @@ export function FilterBar({ sortBy, onSortChange, timeFilter, onTimeFilterChange
           <option value="name">Name</option>
         </select>
       </div>
-      <div className="filter-bar__group">
+      <div className="filter-bar__group" role="group" aria-label="Time period filter">
         <label className="filter-bar__label">Period</label>
         <div className="filter-bar__pills">
           {(['all', 'today', 'week', 'month'] as TimeFilter[]).map(f => (
             <button
               key={f}
               className={`filter-bar__pill ${timeFilter === f ? 'filter-bar__pill--active' : ''}`}
+              aria-pressed={timeFilter === f}
               onClick={() => onTimeFilterChange(f)}
             >
               {f === 'all' ? 'All' : f === 'today' ? 'Today' : f === 'week' ? '7d' : '30d'}

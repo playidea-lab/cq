@@ -20,12 +20,12 @@ function Toast({ toast, onDismiss }: ToastProps) {
   }, [toast.id, onDismiss]);
 
   return (
-    <div className={`toast toast--${toast.type}`} role="alert">
+    <div className={`toast toast--${toast.type}`} role="status">
       <span className="toast__icon">
         {toast.type === 'success' ? '\u2713' : toast.type === 'error' ? '\u2717' : '\u2139'}
       </span>
       <span className="toast__message">{toast.message}</span>
-      <button className="toast__close" onClick={() => onDismiss(toast.id)}>&times;</button>
+      <button className="toast__close" onClick={() => onDismiss(toast.id)} aria-label="Dismiss notification">&times;</button>
     </div>
   );
 }
@@ -39,7 +39,7 @@ export function ToastContainer({ toasts, onDismiss }: ToastContainerProps) {
   if (toasts.length === 0) return null;
 
   return (
-    <div className="toast-container">
+    <div className="toast-container" aria-live="polite">
       {toasts.map(t => (
         <Toast key={t.id} toast={t} onDismiss={onDismiss} />
       ))}

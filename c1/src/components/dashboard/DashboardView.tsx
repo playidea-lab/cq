@@ -29,6 +29,7 @@ export function DashboardView({ projectPath }: DashboardViewProps) {
     loadState,
     loadTimeline,
     loadValidations,
+    clearValidations,
     loadTaskDetail,
   } = useDashboard();
 
@@ -44,8 +45,10 @@ export function DashboardView({ projectPath }: DashboardViewProps) {
   useEffect(() => {
     if (selectedTask && selectedTask.validations.length > 0) {
       loadValidations(projectPath, selectedTask.id);
+    } else {
+      clearValidations();
     }
-  }, [selectedTask, projectPath, loadValidations]);
+  }, [selectedTask, projectPath, loadValidations, clearValidations]);
 
   const handleSelectTask = (taskId: string) => {
     loadTaskDetail(projectPath, taskId);

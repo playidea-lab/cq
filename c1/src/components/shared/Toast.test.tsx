@@ -21,13 +21,13 @@ describe('ToastContainer', () => {
     const toasts: ToastData[] = [{ id: '1', message: 'Saved!', type: 'success' }];
     render(<ToastContainer toasts={toasts} onDismiss={vi.fn()} />);
     expect(screen.getByText('Saved!')).toBeInTheDocument();
-    expect(screen.getByRole('alert')).toHaveClass('toast--success');
+    expect(screen.getByRole('status')).toHaveClass('toast--success');
   });
 
   it('renders an error toast', () => {
     const toasts: ToastData[] = [{ id: '1', message: 'Failed!', type: 'error' }];
     render(<ToastContainer toasts={toasts} onDismiss={vi.fn()} />);
-    expect(screen.getByRole('alert')).toHaveClass('toast--error');
+    expect(screen.getByRole('status')).toHaveClass('toast--error');
   });
 
   it('auto-dismisses after 3 seconds', () => {

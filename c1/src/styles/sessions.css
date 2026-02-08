@@ -248,8 +248,10 @@
   cursor: pointer;
 }
 
-.filter-bar__select:focus {
+.filter-bar__select:focus-visible {
   border-color: var(--color-accent-primary);
+  outline: 2px solid var(--color-accent-primary);
+  outline-offset: 1px;
 }
 
 .filter-bar__pills {
@@ -448,6 +450,9 @@
 }
 
 .session-list__branch {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   font-size: var(--font-size-xs);
   font-family: var(--font-family-mono);
   color: var(--color-text-muted);

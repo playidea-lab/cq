@@ -55,6 +55,10 @@ export function useDashboard() {
     }
   }, []);
 
+  const clearValidations = useCallback(() => {
+    setValidations([]);
+  }, []);
+
   const loadTaskDetail = useCallback(async (projectPath: string, taskId: string) => {
     try {
       const detail = await invoke<TaskDetail | null>('get_task_detail', {
@@ -78,6 +82,7 @@ export function useDashboard() {
     loadState,
     loadTimeline,
     loadValidations,
+    clearValidations,
     loadTaskDetail,
     setSelectedTask,
   };

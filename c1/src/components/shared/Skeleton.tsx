@@ -34,7 +34,7 @@ export function Skeleton({ variant = 'line', count = 1, className }: SkeletonPro
   const items = Array.from({ length: count }, (_, i) => i);
 
   return (
-    <div className={`skeleton-container ${className || ''}`}>
+    <div className={`skeleton-container ${className || ''}`} aria-hidden="true">
       {items.map(i => {
         switch (variant) {
           case 'card':

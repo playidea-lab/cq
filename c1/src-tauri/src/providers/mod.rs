@@ -21,6 +21,17 @@ pub enum ProviderKind {
     GeminiCli,
 }
 
+impl ProviderKind {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::ClaudeCode => "claude_code",
+            Self::CodexCli => "codex_cli",
+            Self::Cursor => "cursor",
+            Self::GeminiCli => "gemini_cli",
+        }
+    }
+}
+
 /// Summary information about a detected provider
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProviderInfo {

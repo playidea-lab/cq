@@ -144,9 +144,14 @@ export function useSessions() {
   }, []);
 
   // Auto-refresh session list when file change events arrive
+  // Fix: store unlisten promise properly to avoid listener leak
+  const unlistenRef = useRef<Promise<() => void> | null>(null);
+
   useEffect(() => {
-    let cleanup: (() => void) | null = null;
-    listen<{ kind: string; path: string }>('sessions-changed', () => {
+    // Clean up previous listener first
+    unlistenRef.current?.then(fn => fn()).catch(() => {});
+
+    const promise = listen<{ kind: string; path: string }>('sessions-changed', () => {
       if (watchingRef.current) {
         invoke<SessionMeta[]>('list_sessions_for_provider', {
           path: watchingRef.current,
@@ -155,10 +160,12 @@ export function useSessions() {
           .then(setSessions)
           .catch(() => {});
       }
-    })
-      .then(fn => { cleanup = fn; })
-      .catch(() => {}); // Gracefully handle missing Tauri runtime (e.g. tests)
-    return () => { cleanup?.(); };
+    });
+    unlistenRef.current = promise;
+
+    return () => {
+      promise.then(fn => fn()).catch(() => {});
+    };
   }, [currentProvider]);
 
   return {
