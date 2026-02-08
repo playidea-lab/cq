@@ -1,8 +1,8 @@
 # C4 Roadmap
 
-## Current Version: v0.6.10 (GPU/ML Native + Worker Hardening)
+## Current Version: v0.6.12 (Go Core + Multi-LLM Explorer)
 
-현재 버전은 **GPU/ML 네이티브 지원, 실험 추적, 아티팩트 관리, 워커 생명주기 강화**를 포함합니다.
+현재 버전은 **Go Core 하이브리드 아키텍처, Multi-LLM 탐색기, GPU/ML 네이티브, 워커 생명주기 강화**를 포함합니다.
 
 ### 지원 기능
 
@@ -30,6 +30,8 @@
 - **Knowledge Store v2** - Obsidian Markdown SSOT + FTS5 + Vector hybrid search
 - **Hook Registry** - 태스크 생명주기 훅 시스템
 - **Worker Lifecycle** - 좀비 워커 자동 감지/정리, TTL 기반 제거
+- **Go Core** (c4-core/) - 고성능 State Machine, TaskStore, MCP Server (Go), CLI, gRPC Bridge
+- **C1 Multi-LLM Explorer** - Claude Code, Codex CLI, Cursor, Gemini CLI 4개 프로바이더 통합
 
 ---
 
@@ -422,6 +424,54 @@ c4/
 
 **테스트**: Rust 16/16, Vitest 29/29
 
+### Phase 6.12: Go Core Migration ✅
+
+**목표**: 성능 크리티컬 컴포넌트를 Go로 마이그레이션
+
+**구현 완료**:
+- **c4-core/** — 51 Go files, 14,157 LOC, 14 packages
+- **State Machine** (Go) — Python과 동일 상태 전이
+- **SQLite TaskStore** (Go) — Python DB 호환 (동일 스키마)
+- **MCP Server** (Go) — stdio transport, 10 핸들러
+- **CLI** (cobra) — run, status, stop, add-task, mcp
+- **Auth** — OAuth + token 관리
+- **Realtime** — SSE 스트리밍
+- **gRPC Bridge** — Go ↔ Python Protobuf 통신
+- **Validation Runner** (Go) — lint, unit, integration 실행
+
+**패키지 구조**:
+```
+c4-core/
+├── cmd/c4/         # CLI (cobra), MCP server
+├── internal/
+│   ├── task/       # TaskStore (SQLite, Memory, Supabase)
+│   ├── state/      # State machine
+│   ├── mcp/        # MCP handlers (10개)
+│   ├── bridge/     # gRPC (Go ↔ Python)
+│   ├── worker/     # Worker manager
+│   ├── validation/ # Validation runner
+│   ├── auth/       # OAuth + token
+│   ├── config/     # Configuration
+│   ├── git/        # Git operations
+│   ├── realtime/   # SSE streaming
+│   └── server/     # HTTP server
+├── proto/          # Protobuf definitions
+└── test/           # Benchmarks
+```
+
+**성능**:
+
+| 메트릭 | Python | Go | 개선 |
+|--------|--------|-----|------|
+| c4_status | 5-20ms | ~57ns | ~100,000x |
+| Worker 생성 | 0.1-1ms | ~61ns | ~1,600x |
+| 메모리 | 50-100MB | ~14MB | 3-7x |
+
+**Go MCP 도구** (10개):
+`c4_status`, `c4_start`, `c4_clear`, `c4_get_task`, `c4_submit`, `c4_add_todo`, `c4_mark_blocked`, `c4_claim`, `c4_report`, `c4_checkpoint`
+
+**테스트**: 275 passing (`go test ./...`)
+
 ### Phase 6.10: Worker Lifecycle Hardening ✅
 
 **목표**: 좀비 워커 버그 수정 및 워커 생명주기 강화
@@ -537,17 +587,17 @@ c4/
 ## Migration Path
 
 ```text
-v0.1-0.3        v0.4           v0.5           v0.6             v0.6.10 (현재)    v0.7+
-    │               │               │               │               │               │
-    │  Multi-Worker │  Agent Routing│  Discovery    │  Team + LSP   │  GPU/ML +     │
-    │  SQLite       │  + Chaining   │  + Verifier   │  + Observ.    │  Worker Fix   │
-    ▼               ▼               ▼               ▼               ▼               ▼
-┌─────────┐   ┌─────────┐    ┌─────────┐    ┌─────────┐    ┌─────────┐    ┌────────────────┐
-│ Local   │──▶│ Agent   │───▶│ EARS +  │───▶│ Supabase│───▶│ PiQ     │───▶│ C4 Cloud       │
-│ Files   │   │ Routing │    │ ADR     │    │ + Code  │    │ Absorb  │    │ ├─ 7.1 Console │
-└─────────┘   └─────────┘    └─────────┘    └─────────┘    └─────────┘    │ ├─ 7.2 LLM GW  │
-                                                                          │ └─ 7.3 Workers │
-                                                                          └────────────────┘
+v0.1-0.3        v0.4           v0.5           v0.6          v0.6.10         v0.6.12 (현재)   v0.7+
+    │               │               │               │               │               │               │
+    │  Multi-Worker │  Agent Routing│  Discovery    │  Team + LSP   │  GPU/ML +     │  Go Core +    │
+    │  SQLite       │  + Chaining   │  + Verifier   │  + Observ.    │  Worker Fix   │  C1 Explorer  │
+    ▼               ▼               ▼               ▼               ▼               ▼               ▼
+┌─────────┐   ┌─────────┐    ┌─────────┐    ┌─────────┐    ┌─────────┐    ┌─────────┐    ┌────────────────┐
+│ Local   │──▶│ Agent   │───▶│ EARS +  │───▶│ Supabase│───▶│ PiQ     │───▶│ Go +    │───▶│ C4 Cloud       │
+│ Files   │   │ Routing │    │ ADR     │    │ + Code  │    │ Absorb  │    │ Hybrid  │    │ ├─ 7.1 Console │
+└─────────┘   └─────────┘    └─────────┘    └─────────┘    └─────────┘    └─────────┘    │ ├─ 7.2 LLM GW  │
+                                                                                          │ └─ 7.3 Workers │
+                                                                                          └────────────────┘
 ```
 
 ---
@@ -578,6 +628,7 @@ v0.1-0.3        v0.4           v0.5           v0.6             v0.6.10 (현재) 
 | **PiQ 완전 흡수 (GPU/ML)** | P0 | ✅ 완료 |
 | **Worker Lifecycle Hardening** | P0 | ✅ 완료 |
 | **C1 Multi-LLM Explorer** | P0 | ✅ 완료 |
+| **Go Core Migration** | P0 | ✅ 완료 |
 | Cloud Foundation (7.1) | P1 | 📋 Next |
 | LLM Gateway (7.2) | P1 | 📋 Phase 7 |
 | Hosted Workers (7.3) | P2 | 📋 Phase 7 |

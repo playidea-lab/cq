@@ -59,6 +59,7 @@ c4_add_todo(mode="direct", review_required=False)
 
 ### 검증 후 진행
 - Python → `uv run python -m py_compile <file>` 또는 관련 테스트
+- Go → `cd c4-core && go build ./... && go vet ./...`
 - Config → 형식 검증
 - 검증 실패 시 → 다음 단계 진행 금지
 
@@ -100,19 +101,42 @@ CP-001:  체크포인트
 
 ---
 
+## Go Core (c4-core/)
+
+> `c4-core/` — Go 기반 고성능 코어. Python daemon과 동일 SQLite DB 공유.
+
+### 패키지 구조
+- `cmd/c4/` — CLI (cobra), MCP server
+- `internal/task/` — TaskStore (SQLite, Memory, Supabase)
+- `internal/state/` — State machine
+- `internal/mcp/` — MCP handlers (10개)
+- `internal/bridge/` — gRPC (Go ↔ Python)
+- `internal/worker/` — Worker manager
+- `internal/validation/` — Validation runner
+- `internal/auth/` — OAuth + token
+- `internal/realtime/` — SSE streaming
+
+### 빌드/테스트
+```bash
+cd c4-core && go build ./... && go test ./...
+```
+
+---
+
 ## Canvas App (Project Explorer)
 
-> `canvas-app/` — Tauri 2.x 데스크톱 앱. Claude Code 프로젝트 탐색기.
+> `canvas-app/` — Tauri 2.x 데스크톱 앱. Multi-LLM 프로젝트 탐색기 (C1).
 
 ### 아키텍처
 - **Rust 백엔드**: `src-tauri/src/{commands,models,scanner,lib}.rs`
+- **Multi-Provider**: `src-tauri/src/providers/` — Claude Code, Codex CLI, Cursor, Gemini CLI
 - **React 프론트엔드**: `src/components/`, `src/hooks/`, `src/styles/`
 - **CSS**: BEM 패턴 + `styles/tokens.css` 디자인 토큰
 
 ### 3개 뷰
 | 뷰 | 데이터 소스 | Rust 커맨드 |
 |-----|-------------|-------------|
-| Sessions | `~/.claude/projects/{slug}/*.jsonl` | `list_sessions`, `get_session_messages` |
+| Sessions | 다중 프로바이더 (Claude Code, Codex, Cursor, Gemini) | `list_providers`, `list_sessions_for_provider`, `get_provider_session_messages` |
 | Dashboard | `.c4/tasks.db` (rusqlite) | `get_project_state`, `get_tasks`, `get_task_detail` |
 | Config | `~/.claude/`, `.claude/`, `.c4/` 파일 | `list_config_files`, `read_config_file` |
 

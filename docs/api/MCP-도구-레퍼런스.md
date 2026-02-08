@@ -6,7 +6,7 @@
 
 C4 MCP 서버는 **57개 도구**를 제공합니다:
 
-### Core State (4개)
+### Core State (4개) — `Go: c4-core/internal/mcp/handlers/state.go` + Python
 | 도구 | 설명 |
 |------|------|
 | `c4_status` | 프로젝트 상태 조회 (state, queue, workers, metrics) |
@@ -14,7 +14,7 @@ C4 MCP 서버는 **57개 도구**를 제공합니다:
 | `c4_clear` | 상태 초기화 (개발/디버깅용) |
 | `c4_ensure_supervisor` | Supervisor Loop 실행 보장 |
 
-### Task Management — Worker Mode (4개)
+### Task Management — Worker Mode (4개) — `Go: c4-core/internal/mcp/handlers/tasks.go`
 | 도구 | 설명 |
 |------|------|
 | `c4_get_task` | Worker에게 태스크 할당 (+ 에이전트 라우팅) |
@@ -22,20 +22,20 @@ C4 MCP 서버는 **57개 도구**를 제공합니다:
 | `c4_add_todo` | 태스크 추가 (dependencies, model, execution_mode 지원) |
 | `c4_mark_blocked` | 재시도 실패 → blocked 상태 + repair queue |
 
-### Task Management — Direct Mode (2개)
+### Task Management — Direct Mode (2개) — `Go: c4-core/internal/mcp/handlers/tracking.go`
 | 도구 | 설명 |
 |------|------|
 | `c4_claim` | 태스크 직접 시작 (Worker 프로토콜 우회, active_claim.json 생성) |
 | `c4_report` | Direct 모드 완료 보고 (summary + files_changed) |
 
-### Validation & Supervision (3개)
+### Validation & Supervision (3개) — `Go: checkpoint` / `Python: validation, cleanup`
 | 도구 | 설명 |
 |------|------|
 | `c4_run_validation` | lint, test 등 검증 실행 |
 | `c4_checkpoint` | Supervisor 체크포인트 결정 (APPROVE/REQUEST_CHANGES/REPLAN) |
 | `c4_cleanup_workers` | 좀비 워커 정리 (idle/TTL 만료/일관성 위반) |
 
-### Discovery Phase (4개)
+### Discovery Phase (4개) — `Python: c4/mcp/handlers/discovery.py`
 | 도구 | 설명 |
 |------|------|
 | `c4_save_spec` | EARS 요구사항 저장 |
@@ -43,7 +43,7 @@ C4 MCP 서버는 **57개 도구**를 제공합니다:
 | `c4_get_spec` | 요구사항 상세 조회 |
 | `c4_discovery_complete` | Discovery → Design 전환 |
 
-### Design Phase (4개)
+### Design Phase (4개) — `Python: c4/mcp/handlers/design.py`
 | 도구 | 설명 |
 |------|------|
 | `c4_save_design` | 설계 사양 저장 |
@@ -51,7 +51,7 @@ C4 MCP 서버는 **57개 도구**를 제공합니다:
 | `c4_list_designs` | 설계 목록 |
 | `c4_design_complete` | Design → Plan 전환 |
 
-### Code Analysis & Symbols (6개)
+### Code Analysis & Symbols (6개) — `Python: c4/mcp/handlers/code_ops.py`
 | 도구 | 설명 |
 |------|------|
 | `c4_find_symbol` | 심볼 검색 (함수/클래스/메서드, 디렉토리 재귀 지원) |
@@ -61,7 +61,7 @@ C4 MCP 서버는 **57개 도구**를 제공합니다:
 | `c4_insert_after_symbol` | 심볼 뒤에 내용 삽입 |
 | `c4_rename_symbol` | 코드베이스 전체 심볼 이름 변경 (LSP ∪ Tree-sitter) |
 
-### File Operations (6개)
+### File Operations (6개) — `Python: c4/mcp/handlers/file_ops.py`
 | 도구 | 설명 |
 |------|------|
 | `c4_read_file` | 파일 읽기 (라인 번호, 부분 읽기 지원) |
@@ -71,46 +71,46 @@ C4 MCP 서버는 **57개 도구**를 제공합니다:
 | `c4_search_for_pattern` | 정규식 검색 (context_lines 지원) |
 | `c4_replace_content` | 파일 내용 교체 (리터럴/정규식) |
 
-### Git & History (2개)
+### Git & History (2개) — `Python: c4/mcp/handlers/git_ops.py`
 | 도구 | 설명 |
 |------|------|
 | `c4_analyze_history` | 커밋 히스토리 분석 (클러스터링 + 스토리 생성) |
 | `c4_search_commits` | 의미론적 커밋 검색 (작성자/날짜/경로 필터) |
 
-### Worktree Management (2개)
+### Worktree Management (2개) — `Python: c4/mcp/handlers/tasks.py`
 | 도구 | 설명 |
 |------|------|
 | `c4_worktree_status` | Worker worktree 상태 조회 |
 | `c4_worktree_cleanup` | worktree 정리 (활성 워커 유지 옵션) |
 
-### Agent Routing (2개)
+### Agent Routing (2개) — `Python: c4/mcp/handlers/core.py`
 | 도구 | 설명 |
 |------|------|
 | `c4_test_agent_routing` | 에이전트 라우팅 테스트/디버깅 |
 | `c4_query_agent_graph` | 에이전트 그래프 쿼리 (agents, skills, domains, chains) |
 
-### GPU & Job Scheduling (3개)
+### GPU & Job Scheduling (3개) — `Python: c4/mcp/handlers/gpu.py`
 | 도구 | 설명 |
 |------|------|
 | `c4_gpu_status` | GPU 상태 (개수, VRAM, 사용률, 백엔드) |
 | `c4_job_submit` | GPU 작업 제출 (command + task_id 연계) |
 | `c4_job_status` | GPU 작업 상태 조회 |
 
-### Knowledge Store v2 (3개)
+### Knowledge Store v2 (3개) — `Python: c4/mcp/handlers/knowledge.py`
 | 도구 | 설명 |
 |------|------|
 | `c4_knowledge_search` | 하이브리드 검색 (Vector + FTS5, RRF merge, 필터링) |
 | `c4_knowledge_record` | 지식 문서 생성 (experiment/pattern/insight/hypothesis) |
 | `c4_knowledge_get` | 지식 문서 조회 (ID 기반, 백링크 포함) |
 
-### Knowledge Legacy (v2 위임) (3개)
+### Knowledge Legacy (v2 위임) (3개) — `Python: c4/mcp/handlers/knowledge.py`
 | 도구 | 설명 |
 |------|------|
 | `c4_experiment_search` | 실험 검색 → `c4_knowledge_search` 위임 |
 | `c4_experiment_record` | 실험 기록 → `c4_knowledge_record` 위임 |
 | `c4_pattern_suggest` | 패턴 제안 → v2 search 사용 |
 
-### Artifacts (3개)
+### Artifacts (3개) — `Python: c4/mcp/handlers/artifacts.py`
 | 도구 | 설명 |
 |------|------|
 | `c4_artifact_list` | 태스크 아티팩트 목록 (이름, 유형, 크기, 해시) |
