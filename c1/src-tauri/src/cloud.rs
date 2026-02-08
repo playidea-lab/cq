@@ -39,12 +39,21 @@ pub struct TeamProject {
 // Helpers
 // ---------------------------------------------------------------------------
 
-/// Read Supabase URL and anon_key from ~/.c4/supabase.json
+/// Read Supabase URL and anon_key from env vars or ~/.c4/supabase.json
 fn read_supabase_config() -> Result<(String, String), String> {
+    // Try env vars first (loaded from .env by dotenvy)
+    if let (Ok(url), Ok(key)) = (
+        std::env::var("SUPABASE_URL"),
+        std::env::var("SUPABASE_ANON_KEY").or_else(|_| std::env::var("SUPABASE_KEY")),
+    ) {
+        return Ok((url, key));
+    }
+
+    // Fall back to ~/.c4/supabase.json
     let home = dirs::home_dir().ok_or("Could not find home directory")?;
     let config_path = home.join(".c4").join("supabase.json");
     if !config_path.exists() {
-        return Err("Supabase config not found (~/.c4/supabase.json)".to_string());
+        return Err("Supabase not configured. Set SUPABASE_URL + SUPABASE_KEY env vars or create ~/.c4/supabase.json".to_string());
     }
     let content = fs::read_to_string(&config_path)
         .map_err(|e| format!("Failed to read supabase config: {}", e))?;

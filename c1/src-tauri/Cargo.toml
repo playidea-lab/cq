@@ -34,6 +34,7 @@ urlencoding = "2"
 open = "5"
 notify = { version = "6.1.1", features = ["macos_fsevent"] }
 lru = "0.12"
+dotenvy = "0.15"
 
 [features]
 default = ["custom-protocol"]

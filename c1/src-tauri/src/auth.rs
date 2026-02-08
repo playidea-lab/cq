@@ -106,7 +106,9 @@ fn read_supabase_config() -> AuthConfig {
         let yaml: serde_yaml::Value = serde_yaml::from_str(&content).ok()?;
         yaml.get("supabase_url")?.as_str().map(|s| s.to_string())
     });
-    let has_key = std::env::var("SUPABASE_ANON_KEY").is_ok();
+    let has_key = std::env::var("SUPABASE_ANON_KEY")
+        .or_else(|_| std::env::var("SUPABASE_KEY"))
+        .is_ok();
     AuthConfig {
         supabase_url: url,
         has_anon_key: has_key,
@@ -250,9 +252,13 @@ fn run_callback_server() -> Result<AuthSession, String> {
                 // Extract the first line (e.g. "GET /auth/callback?... HTTP/1.1")
                 let first_line = request.lines().next().unwrap_or("");
 
-                // Check if this is the callback path
-                if !first_line.contains("/auth/callback") {
-                    // Serve the fragment-rewrite page for the initial redirect
+                // Check if this is the callback path with actual query params
+                let params = parse_callback_params(first_line);
+                let has_token = params.contains_key("access_token");
+
+                if !first_line.contains("/auth/callback") || !has_token {
+                    // Either not the callback path, or callback without query params
+                    // (tokens are in # fragment). Serve the rewrite page.
                     let response = format!(
                         "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {}\r\n\r\n{}",
                         FRAGMENT_REWRITE_HTML.len(),
@@ -261,8 +267,6 @@ fn run_callback_server() -> Result<AuthSession, String> {
                     let _ = stream.write_all(response.as_bytes());
                     continue;
                 }
-
-                let params = parse_callback_params(first_line);
 
                 if let Some(access_token) = params.get("access_token") {
                     if access_token.is_empty() {
@@ -357,7 +361,8 @@ pub async fn auth_login(
     // Resolve anon_key: use env var if placeholder or empty
     let anon_key = if anon_key.is_empty() || anon_key == "__FROM_ENV__" {
         std::env::var("SUPABASE_ANON_KEY")
-            .map_err(|_| "SUPABASE_ANON_KEY not set".to_string())?
+            .or_else(|_| std::env::var("SUPABASE_KEY"))
+            .map_err(|_| "SUPABASE_ANON_KEY (or SUPABASE_KEY) not set".to_string())?
     } else {
         anon_key
     };

@@ -17,6 +17,17 @@ use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Load .env from project root (two levels up from src-tauri)
+    // Try multiple locations: CWD, parent dirs, ~/.c4/.env
+    for candidate in [".env", "../.env", "../../.env"] {
+        if dotenvy::from_filename(candidate).is_ok() {
+            break;
+        }
+    }
+    if let Some(home) = dirs::home_dir() {
+        let _ = dotenvy::from_path(home.join(".c4").join(".env"));
+    }
+
     // Panic hook: write crash info to file
     std::panic::set_hook(Box::new(|info| {
         let msg = format!("[PANIC] {}\n{:?}", info, std::backtrace::Backtrace::capture());
