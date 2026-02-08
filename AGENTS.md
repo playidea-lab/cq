@@ -139,17 +139,18 @@ cd c4-core && go build ./... && go test ./...
 > `c1/` — Tauri 2.x 데스크톱 앱. Multi-LLM 프로젝트 탐색기.
 
 ### 아키텍처
-- **Rust 백엔드**: `src-tauri/src/{commands,models,scanner,lib}.rs`
+- **Rust 백엔드**: `src-tauri/src/{commands,models,analytics,cloud,scanner,lib}.rs`
 - **Multi-Provider**: `src-tauri/src/providers/` — Claude Code, Codex CLI, Cursor, Gemini CLI
 - **React 프론트엔드**: `src/components/`, `src/hooks/`, `src/styles/`
 - **CSS**: BEM 패턴 + `styles/tokens.css` 디자인 토큰
 
-### 3개 뷰
+### 4개 뷰
 | 뷰 | 데이터 소스 | Rust 커맨드 |
 |-----|-------------|-------------|
-| Sessions | 다중 프로바이더 (Claude Code, Codex, Cursor, Gemini) | `list_providers`, `list_sessions_for_provider`, `get_provider_session_messages` |
-| Dashboard | `.c4/tasks.db` (rusqlite) | `get_project_state`, `get_tasks`, `get_task_detail` |
+| Sessions | 다중 프로바이더 + Analytics | `list_providers`, `get_session_stats`, `get_provider_timeline` |
+| Dashboard | `.c4/c4.db` + Timeline + Validation | `get_project_state`, `get_task_timeline`, `get_validation_results` |
 | Config | `~/.claude/`, `.claude/`, `.c4/` 파일 | `list_config_files`, `read_config_file` |
+| Team | Supabase (로그인 시만 표시) | `cloud_sync_tasks`, `cloud_get_team_projects`, `cloud_get_remote_dashboard` |
 
 ### 빌드/실행
 ```bash

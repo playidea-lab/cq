@@ -4,6 +4,7 @@ import { Sidebar } from './components/Sidebar';
 import { SessionsView } from './components/sessions/SessionsView';
 import { DashboardView } from './components/dashboard/DashboardView';
 import { ConfigView } from './components/config/ConfigView';
+import { TeamView } from './components/team/TeamView';
 import { LoginView } from './components/auth/LoginView';
 import { ErrorBoundary } from './components/shared/ErrorBoundary';
 import { AuthProvider } from './contexts/AuthContext';
@@ -15,6 +16,7 @@ const VIEW_SHORTCUTS: Record<string, ViewType> = {
   '1': 'sessions',
   '2': 'dashboard',
   '3': 'config',
+  '4': 'team',
 };
 
 function AppContent() {
@@ -87,6 +89,11 @@ function AppContent() {
   }
 
   const renderView = () => {
+    // Team view does not require a project path
+    if (currentView === 'team') {
+      return <TeamView />;
+    }
+
     if (!projectPath) {
       return (
         <div className="empty-state">
@@ -113,7 +120,11 @@ function AppContent() {
 
   return (
     <div className="app-layout">
-      <Sidebar currentView={currentView} onViewChange={setCurrentView} />
+      <Sidebar
+        currentView={currentView}
+        onViewChange={setCurrentView}
+        showTeam={!!user}
+      />
       <main className="app-main">
         <header className="app-header">
           {projectPath ? (

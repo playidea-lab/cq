@@ -347,6 +347,36 @@ pub struct ConfigFileContent {
     pub truncated: bool,
 }
 
+// --- Dashboard Enhancement types (Phase 2) ---
+
+/// A task state change event for the timeline
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TaskEvent {
+    pub task_id: String,
+    pub title: String,
+    pub status: String,
+    pub task_type: String,
+    pub updated_at: Option<String>,
+    pub assigned_to: Option<String>,
+}
+
+/// A worker activity event
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkerEvent {
+    pub worker_id: String,
+    pub task_id: String,
+    pub action: String,
+    pub timestamp: Option<String>,
+}
+
+/// A validation result for a task
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ValidationResult {
+    pub name: String,
+    pub passed: bool,
+    pub output: String,
+}
+
 /// Result of scanning a project
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScanResult {

@@ -1,11 +1,13 @@
 import { useState, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import type { ProjectState, TaskItem, TaskDetail } from '../types';
+import type { ProjectState, TaskItem, TaskDetail, TaskEvent, ValidationResult } from '../types';
 
 export function useDashboard() {
   const [state, setState] = useState<ProjectState | null>(null);
   const [tasks, setTasks] = useState<TaskItem[]>([]);
   const [selectedTask, setSelectedTask] = useState<TaskDetail | null>(null);
+  const [timeline, setTimeline] = useState<TaskEvent[]>([]);
+  const [validations, setValidations] = useState<ValidationResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -29,6 +31,30 @@ export function useDashboard() {
     }
   }, []);
 
+  const loadTimeline = useCallback(async (projectPath: string) => {
+    try {
+      const events = await invoke<TaskEvent[]>('get_task_timeline', {
+        path: projectPath,
+      });
+      setTimeline(events);
+    } catch {
+      // Timeline is non-critical; silently ignore errors
+      setTimeline([]);
+    }
+  }, []);
+
+  const loadValidations = useCallback(async (projectPath: string, taskId: string) => {
+    try {
+      const results = await invoke<ValidationResult[]>('get_validation_results', {
+        path: projectPath,
+        taskId,
+      });
+      setValidations(results);
+    } catch {
+      setValidations([]);
+    }
+  }, []);
+
   const loadTaskDetail = useCallback(async (projectPath: string, taskId: string) => {
     try {
       const detail = await invoke<TaskDetail | null>('get_task_detail', {
@@ -45,9 +71,13 @@ export function useDashboard() {
     state,
     tasks,
     selectedTask,
+    timeline,
+    validations,
     loading,
     error,
     loadState,
+    loadTimeline,
+    loadValidations,
     loadTaskDetail,
     setSelectedTask,
   };

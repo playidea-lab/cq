@@ -8,8 +8,8 @@ use rusqlite::Connection;
 
 use crate::models::{
     CanvasData, ConfigFileContent, ConfigFileEntry, ContentBlock, FileChange, ProjectState,
-    ScanResult, SessionMeta, SessionMessage, SessionPage, TaskDetail, TaskItem, TaskProgress,
-    WorkerInfo,
+    ScanResult, SessionMeta, SessionMessage, SessionPage, TaskDetail, TaskEvent, TaskItem,
+    TaskProgress, ValidationResult, WorkerEvent, WorkerInfo,
 };
 use crate::providers::{self, ProviderInfo, ProviderKind, TokenUsage};
 use crate::scanner::{get_project_id, scan_project};
@@ -1241,4 +1241,197 @@ pub async fn open_in_editor(project_path: String, editor: String) -> Result<(), 
 #[tauri::command(rename_all = "camelCase")]
 pub fn watch_sessions(app: tauri::AppHandle, project_path: String) -> Result<(), String> {
     crate::watcher::start_session_watcher(&app, &project_path)
+}
+
+// --- Dashboard Enhancement commands (Phase 2) ---
+
+/// Get task state change timeline
+#[tauri::command(rename_all = "camelCase")]
+pub async fn get_task_timeline(path: String) -> Result<Vec<TaskEvent>, String> {
+    let project_path = path.clone();
+    tokio::task::spawn_blocking(move || {
+        let project_path = Path::new(&project_path);
+        let conn = open_c4_db(project_path)?;
+        let project_id = get_project_id(project_path)
+            .map_err(|e| format!("Failed to get project_id: {}", e))?;
+
+        let mut stmt = conn
+            .prepare(
+                "SELECT task_id, task_json, status, updated_at FROM c4_tasks \
+                 WHERE project_id = ? ORDER BY updated_at DESC LIMIT 100",
+            )
+            .map_err(|e| format!("Failed to prepare query: {}", e))?;
+
+        let rows = stmt
+            .query_map([&project_id], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, Option<String>>(3)?,
+                ))
+            })
+            .map_err(|e| format!("Failed to query tasks: {}", e))?;
+
+        let mut events = Vec::new();
+        for row in rows {
+            let (task_id, task_json, status, updated_at) =
+                row.map_err(|e| format!("Row error: {}", e))?;
+
+            let data: serde_json::Value =
+                serde_json::from_str(&task_json).unwrap_or_default();
+
+            let title = data
+                .get("title")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+
+            let task_type = map_task_type(
+                data.get("type").and_then(|v| v.as_str()).unwrap_or("impl"),
+            );
+
+            let assigned_to = data
+                .get("assigned_to")
+                .and_then(|v| v.as_str())
+                .map(String::from);
+
+            events.push(TaskEvent {
+                task_id,
+                title,
+                status,
+                task_type,
+                updated_at,
+                assigned_to,
+            });
+        }
+
+        Ok(events)
+    })
+    .await
+    .map_err(|e| format!("Task execution failed: {}", e))?
+}
+
+/// Get worker activity log
+#[tauri::command(rename_all = "camelCase")]
+pub async fn get_worker_activity(path: String) -> Result<Vec<WorkerEvent>, String> {
+    let project_path = path.clone();
+    tokio::task::spawn_blocking(move || {
+        let project_path = Path::new(&project_path);
+        let conn = open_c4_db(project_path)?;
+        let project_id = get_project_id(project_path)
+            .map_err(|e| format!("Failed to get project_id: {}", e))?;
+
+        let mut stmt = conn
+            .prepare(
+                "SELECT task_id, assigned_to, status, updated_at FROM c4_tasks \
+                 WHERE project_id = ? AND assigned_to IS NOT NULL \
+                 ORDER BY updated_at DESC LIMIT 50",
+            )
+            .map_err(|e| format!("Failed to prepare query: {}", e))?;
+
+        let rows = stmt
+            .query_map([&project_id], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, Option<String>>(3)?,
+                ))
+            })
+            .map_err(|e| format!("Failed to query worker activity: {}", e))?;
+
+        let mut events = Vec::new();
+        for row in rows {
+            let (task_id, worker_id, status, timestamp) =
+                row.map_err(|e| format!("Row error: {}", e))?;
+
+            let action = match status.as_str() {
+                "in_progress" => "assigned".to_string(),
+                "done" => "completed".to_string(),
+                other => other.to_string(),
+            };
+
+            events.push(WorkerEvent {
+                worker_id,
+                task_id,
+                action,
+                timestamp,
+            });
+        }
+
+        Ok(events)
+    })
+    .await
+    .map_err(|e| format!("Task execution failed: {}", e))?
+}
+
+/// Get validation results for a task
+#[tauri::command(rename_all = "camelCase")]
+pub async fn get_validation_results(
+    path: String,
+    task_id: String,
+) -> Result<Vec<ValidationResult>, String> {
+    let project_path = path.clone();
+    tokio::task::spawn_blocking(move || {
+        let project_path = Path::new(&project_path);
+        let conn = open_c4_db(project_path)?;
+        let project_id = get_project_id(project_path)
+            .map_err(|e| format!("Failed to get project_id: {}", e))?;
+
+        let result = conn.query_row(
+            "SELECT task_json FROM c4_tasks WHERE project_id = ? AND task_id = ?",
+            [&project_id, &task_id],
+            |row| row.get::<_, String>(0),
+        );
+
+        match result {
+            Ok(task_json) => {
+                let data: serde_json::Value =
+                    serde_json::from_str(&task_json).unwrap_or_default();
+
+                let mut validations = Vec::new();
+
+                if let Some(arr) = data.get("validations").and_then(|v| v.as_array()) {
+                    for item in arr {
+                        if let Some(s) = item.as_str() {
+                            // Simple string validation entries: treat as passed
+                            validations.push(ValidationResult {
+                                name: s.to_string(),
+                                passed: true,
+                                output: String::new(),
+                            });
+                        } else if let Some(obj) = item.as_object() {
+                            // Structured validation: { name, passed, output }
+                            let name = obj
+                                .get("name")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("unknown")
+                                .to_string();
+                            let passed = obj
+                                .get("passed")
+                                .and_then(|v| v.as_bool())
+                                .unwrap_or(false);
+                            let output = obj
+                                .get("output")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .to_string();
+                            validations.push(ValidationResult {
+                                name,
+                                passed,
+                                output,
+                            });
+                        }
+                    }
+                }
+
+                Ok(validations)
+            }
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(Vec::new()),
+            Err(e) => Err(format!("Failed to query task: {}", e)),
+        }
+    })
+    .await
+    .map_err(|e| format!("Task execution failed: {}", e))?
 }

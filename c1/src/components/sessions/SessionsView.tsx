@@ -7,6 +7,7 @@ import { OverviewPanel } from './OverviewPanel';
 import { SessionList } from './SessionList';
 import { SearchResults } from './SearchResults';
 import { MessageViewer } from './MessageViewer';
+import { AnalyticsPanel } from './AnalyticsPanel';
 import type { ProviderKind, SearchHit } from '../../types';
 import '../../styles/sessions.css';
 
@@ -42,6 +43,7 @@ export function SessionsView({ projectPath }: SessionsViewProps) {
   const { editors, openInEditor, getLabel } = useEditors();
 
   const [searchQuery, setSearchQuery] = useState('');
+  const [detailTab, setDetailTab] = useState<'messages' | 'analytics'>('messages');
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Load providers on mount
@@ -173,9 +175,23 @@ export function SessionsView({ projectPath }: SessionsViewProps) {
               {currentSession.git_branch && (
                 <span className="sessions__detail-branch">{currentSession.git_branch}</span>
               )}
-              {page && (
+              {page && detailTab === 'messages' && (
                 <span className="sessions__detail-lines">{page.total_lines} lines</span>
               )}
+              <div className="sessions__detail-tabs">
+                <button
+                  className={`sessions__detail-tab${detailTab === 'messages' ? ' sessions__detail-tab--active' : ''}`}
+                  onClick={() => setDetailTab('messages')}
+                >
+                  Messages
+                </button>
+                <button
+                  className={`sessions__detail-tab${detailTab === 'analytics' ? ' sessions__detail-tab--active' : ''}`}
+                  onClick={() => setDetailTab('analytics')}
+                >
+                  Analytics
+                </button>
+              </div>
               {editors.length > 0 && (
                 <button
                   className="btn btn--sm btn--secondary sessions__open-editor"
@@ -187,7 +203,12 @@ export function SessionsView({ projectPath }: SessionsViewProps) {
               )}
             </div>
             <div className="sessions__messages">
-              {page ? (
+              {detailTab === 'analytics' ? (
+                <AnalyticsPanel
+                  sessionPath={currentSession.path}
+                  provider={activeProvider}
+                />
+              ) : page ? (
                 <MessageViewer
                   messages={page.messages}
                   hasMore={page.has_more}
@@ -203,6 +224,7 @@ export function SessionsView({ projectPath }: SessionsViewProps) {
           <OverviewPanel
             providers={providers}
             onSelectProvider={handleProviderChange}
+            projectPath={projectPath}
           />
         ) : (
           <div className="sessions__placeholder">

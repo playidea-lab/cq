@@ -119,7 +119,7 @@ export interface TokenUsage {
 
 // --- View types ---
 
-export type ViewType = 'sessions' | 'dashboard' | 'config';
+export type ViewType = 'sessions' | 'dashboard' | 'config' | 'team';
 
 // --- Session types ---
 
@@ -168,6 +168,75 @@ export interface FileChange {
   backup_file: string | null;
   version: number | null;
   timestamp: string | null;
+}
+
+// --- Dashboard Enhancement types (Phase 2) ---
+
+export interface TaskEvent {
+  task_id: string;
+  title: string;
+  status: string;
+  task_type: string;
+  updated_at: string | null;
+  assigned_to: string | null;
+}
+
+export interface WorkerEvent {
+  worker_id: string;
+  task_id: string;
+  action: string;
+  timestamp: string | null;
+}
+
+export interface ValidationResult {
+  name: string;
+  passed: boolean;
+  output: string;
+}
+
+// --- Session Analytics types ---
+
+export interface ToolUsageStat {
+  tool_name: string;
+  count: number;
+}
+
+export interface SessionStats {
+  total_messages: number;
+  user_messages: number;
+  assistant_messages: number;
+  total_input_tokens: number;
+  total_output_tokens: number;
+  cache_read_tokens: number;
+  estimated_cost_usd: number;
+  tool_calls: ToolUsageStat[];
+  duration_seconds: number;
+  files_changed: number;
+}
+
+export interface DayStats {
+  date: string; // "2026-02-08"
+  session_count: number;
+  total_tokens: number;
+  estimated_cost: number;
+}
+
+// --- Cloud types (Phase 3) ---
+
+export interface SyncResult {
+  synced_count: number;
+  errors: string[];
+  last_synced: string;
+}
+
+export interface TeamProject {
+  id: string;
+  name: string;
+  owner_email: string;
+  task_count: number;
+  done_count: number;
+  status: string;
+  last_updated: string | null;
 }
 
 // --- Auth types ---

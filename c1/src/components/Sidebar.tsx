@@ -1,19 +1,28 @@
-import { LayoutDashboard, MessageSquare, Settings } from 'lucide-react';
+import { useMemo } from 'react';
+import { LayoutDashboard, MessageSquare, Settings, Users } from 'lucide-react';
 import type { ViewType } from '../types';
 import '../styles/sidebar.css';
 
 interface SidebarProps {
   currentView: ViewType;
   onViewChange: (view: ViewType) => void;
+  showTeam?: boolean;
 }
 
-const navItems: { view: ViewType; label: string; icon: typeof LayoutDashboard }[] = [
+const baseNavItems: { view: ViewType; label: string; icon: typeof LayoutDashboard }[] = [
   { view: 'sessions', label: 'Sessions', icon: MessageSquare },
   { view: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { view: 'config', label: 'Config', icon: Settings },
 ];
 
-export function Sidebar({ currentView, onViewChange }: SidebarProps) {
+const teamNavItem = { view: 'team' as ViewType, label: 'Team', icon: Users };
+
+export function Sidebar({ currentView, onViewChange, showTeam }: SidebarProps) {
+  const navItems = useMemo(
+    () => (showTeam ? [...baseNavItems, teamNavItem] : baseNavItems),
+    [showTeam],
+  );
+
   return (
     <nav className="sidebar" aria-label="Main navigation">
       <div className="sidebar__logo">C4</div>
