@@ -96,6 +96,18 @@ export interface TaskDetail extends TaskItem {
   validations: string[];
 }
 
+// --- Provider types ---
+
+export type ProviderKind = 'claude_code' | 'codex_cli' | 'cursor' | 'gemini_cli';
+
+export interface ProviderInfo {
+  kind: ProviderKind;
+  name: string;
+  icon: string;
+  session_count: number;
+  data_path: string;
+}
+
 // --- View types ---
 
 export type ViewType = 'sessions' | 'dashboard' | 'config';

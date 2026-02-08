@@ -942,12 +942,44 @@ class SQLiteTaskStore:
 
         return True
 
+    def find_orphaned_in_progress(
+        self,
+        project_id: str,
+        tracked_task_ids: set[str],
+    ) -> list[str]:
+        """Find tasks with in_progress status in c4_tasks that are NOT
+        tracked in c4_state.queue.in_progress.
+
+        These are orphaned tasks left behind when workers were evicted
+        but c4_tasks.status was never reset to pending.
+
+        Args:
+            project_id: Project identifier.
+            tracked_task_ids: Set of task IDs currently in c4_state.queue.in_progress.
+
+        Returns:
+            List of orphaned task IDs.
+        """
+        with self._get_connection() as conn:
+            cursor = conn.execute(
+                """
+                SELECT task_id FROM c4_tasks
+                WHERE project_id = ? AND status = 'in_progress'
+                """,
+                (project_id,),
+            )
+            db_in_progress = {row[0] for row in cursor.fetchall()}
+
+        return sorted(db_in_progress - tracked_task_ids)
+
+    _UNSET = object()  # Sentinel to distinguish "not provided" from None
+
     def update_status(
         self,
         project_id: str,
         task_id: str,
         status: str,
-        assigned_to: str | None = None,
+        assigned_to: str | None | object = _UNSET,
         branch: str | None = None,
         commit_sha: str | None = None,
     ) -> bool:
@@ -956,6 +988,9 @@ class SQLiteTaskStore:
 
         This is the primary method for task state changes during execution.
         It loads the task, updates fields, and saves in one operation.
+
+        Pass assigned_to=None explicitly to clear the assignment.
+        Omit assigned_to to keep the current value.
         """
         from c4.models.enums import TaskStatus
         from c4.models.task import Task
@@ -973,7 +1008,7 @@ class SQLiteTaskStore:
             # Update task
             task = Task.model_validate(json.loads(row[0]))
             task.status = TaskStatus(status)
-            if assigned_to is not None:
+            if assigned_to is not self._UNSET:
                 task.assigned_to = assigned_to
             if branch is not None:
                 task.branch = branch

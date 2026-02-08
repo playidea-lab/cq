@@ -52,6 +52,29 @@ function extractToolInfo(block: ContentBlock): ToolInfo {
     case 'TodoWrite':
     case 'TaskCreate':
       return { icon: '+', label: name, detail: input.subject || '' };
+    // Codex CLI tools
+    case 'exec_command':
+    case 'shell':
+      return { icon: '$', label: 'Shell', detail: truncate(input.cmd || input.command || '', 120) };
+    case 'apply_patch':
+      return { icon: 'P', label: 'Patch', detail: truncate(String(Object.values(input)[0] || ''), 80) };
+    case 'update_plan':
+      return { icon: 'P', label: 'Plan', detail: 'Update plan' };
+    // Cursor tools
+    case 'read_file':
+      return { icon: 'R', label: 'Read', detail: shortenPath(input.target_file || input.targetFile || '') };
+    case 'edit_file':
+      return { icon: 'E', label: 'Edit', detail: shortenPath(input.target_file || input.targetFile || '') };
+    case 'list_dir':
+      return { icon: 'D', label: 'List', detail: input.relative_workspace_path || input.path || '' };
+    case 'codebase_search':
+      return { icon: 'S', label: 'Search', detail: input.query || '' };
+    case 'grep_search':
+      return { icon: 'G', label: 'Grep', detail: input.query || '' };
+    case 'file_search':
+      return { icon: 'F', label: 'Find', detail: input.query || '' };
+    case 'run_terminal_command':
+      return { icon: '$', label: 'Terminal', detail: truncate(input.command || '', 120) };
     default:
       // Try to extract something meaningful
       const firstVal = Object.values(input).find(v => typeof v === 'string' && v.length < 120);
@@ -69,13 +92,6 @@ function shortenPath(p: string): string {
 function truncate(s: string, max: number): string {
   if (s.length <= max) return s;
   return s.slice(0, max) + '...';
-}
-
-function previewText(text: string | null | undefined, lines: number = 4): { preview: string; hasMore: boolean } {
-  if (!text) return { preview: '', hasMore: false };
-  const allLines = text.split('\n');
-  if (allLines.length <= lines) return { preview: text, hasMore: false };
-  return { preview: allLines.slice(0, lines).join('\n'), hasMore: true };
 }
 
 // --- Tool Card component ---
@@ -101,11 +117,26 @@ function ToolCard({ block }: { block: ContentBlock }) {
   );
 }
 
+function resultSummary(text: string): string {
+  // Find first meaningful line (skip empty, braces, brackets)
+  const lines = text.split('\n');
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (trimmed && !['', '{', '}', '[', ']', '},', '],'].includes(trimmed)) {
+      return truncate(trimmed, 80);
+    }
+  }
+  return truncate(lines[0] || '', 80);
+}
+
 function ToolResultCard({ block }: { block: ContentBlock }) {
   const [expanded, setExpanded] = useState(false);
-  const { preview, hasMore } = previewText(block.text, 4);
 
   if (!block.text) return null;
+
+  const lineCount = block.text.split('\n').length;
+  const byteLen = block.text.length;
+  const sizeHint = byteLen > 1024 ? `${(byteLen / 1024).toFixed(1)}KB` : `${byteLen}B`;
 
   return (
     <div className="tool-card tool-card--result">
@@ -113,17 +144,14 @@ function ToolResultCard({ block }: { block: ContentBlock }) {
         <span className="tool-card__icon">&#x2190;</span>
         <span className="tool-card__label">Result</span>
         <span className="tool-card__detail">
-          {truncate(block.text.split('\n')[0] || '', 80)}
+          {resultSummary(block.text)}
         </span>
-        {(hasMore || expanded) && (
-          <span className="tool-card__chevron">{expanded ? '\u25B4' : '\u25BE'}</span>
-        )}
+        <span className="tool-card__meta">{lineCount}L / {sizeHint}</span>
+        <span className="tool-card__chevron">{expanded ? '\u25B4' : '\u25BE'}</span>
       </button>
-      {expanded ? (
+      {expanded && (
         <pre className="tool-card__body">{block.text}</pre>
-      ) : hasMore ? (
-        <pre className="tool-card__preview">{preview}</pre>
-      ) : null}
+      )}
     </div>
   );
 }
@@ -167,13 +195,22 @@ function hasTextContent(message: SessionMessage): boolean {
   );
 }
 
+/** tool_result-only user messages are logically assistant-side (tool responses) */
+function isToolResultOnly(message: SessionMessage): boolean {
+  return message.msg_type === 'user' &&
+    message.content.length > 0 &&
+    message.content.every(block => block.block_type === 'tool_result');
+}
+
 function MessageBubble({ message }: { message: SessionMessage }) {
-  const isUser = message.msg_type === 'user';
-  const isAssistant = message.msg_type === 'assistant';
+  const toolResultOnly = isToolResultOnly(message);
+  const isUser = message.msg_type === 'user' && !toolResultOnly;
+  const isAssistant = message.msg_type === 'assistant' || toolResultOnly;
   const isSummary = message.msg_type === 'summary';
   const isSystem = message.msg_type === 'system';
 
-  const isToolOnly = isAssistant && !hasTextContent(message) && message.content.length > 0;
+  const isToolOnly = (message.msg_type === 'assistant' || toolResultOnly) &&
+    !hasTextContent(message) && message.content.length > 0;
 
   const className = [
     'msg',

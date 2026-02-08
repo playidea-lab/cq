@@ -1,3 +1,180 @@
+/* Provider Tabs */
+
+.provider-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--color-border-default);
+  background: var(--color-bg-primary);
+  overflow-x: auto;
+}
+
+.provider-tabs__tab {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  padding: var(--space-sm) var(--space-md);
+  border: none;
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  font-size: var(--font-size-sm);
+  font-family: var(--font-family-sans);
+  white-space: nowrap;
+  border-bottom: 2px solid transparent;
+  transition: color var(--transition-fast), border-color var(--transition-fast);
+}
+
+.provider-tabs__tab:hover {
+  color: var(--color-text-primary);
+  background: var(--color-bg-tertiary);
+}
+
+.provider-tabs__tab--active {
+  color: var(--color-accent-primary);
+  border-bottom-color: var(--color-accent-primary);
+  font-weight: var(--font-weight-semibold);
+}
+
+.provider-tabs__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  font-size: 11px;
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text-white);
+  background: var(--color-text-muted);
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+.provider-tabs__tab--active .provider-tabs__icon {
+  background: var(--color-accent-primary);
+}
+
+.provider-tabs__name {
+  font-size: var(--font-size-sm);
+}
+
+.provider-tabs__count {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+  background: var(--color-bg-tertiary);
+  padding: 1px 5px;
+  border-radius: var(--radius-sm);
+}
+
+/* Overview Panel */
+
+.overview {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  padding: var(--space-2xl);
+  gap: var(--space-xl);
+}
+
+.overview__summary {
+  text-align: center;
+}
+
+.overview__total {
+  display: block;
+  font-size: 48px;
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text-primary);
+  line-height: 1;
+}
+
+.overview__label {
+  font-size: var(--font-size-md);
+  color: var(--color-text-muted);
+  margin-top: var(--space-xs);
+}
+
+.overview__cards {
+  display: flex;
+  gap: var(--space-lg);
+  flex-wrap: wrap;
+  justify-content: center;
+  max-width: 800px;
+}
+
+.overview__card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  padding: var(--space-lg);
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border-default);
+  border-left-width: 3px;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  min-width: 180px;
+  text-align: left;
+  font-family: var(--font-family-sans);
+  transition: background var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.overview__card:hover {
+  background: var(--color-bg-tertiary);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.overview__card-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.overview__card-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  font-size: 13px;
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text-white);
+  border-radius: 5px;
+  flex-shrink: 0;
+}
+
+.overview__card-name {
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-primary);
+}
+
+.overview__card-stats {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-xs);
+}
+
+.overview__card-count {
+  font-size: 28px;
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text-primary);
+  line-height: 1;
+}
+
+.overview__card-unit {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+}
+
+.overview__card-path {
+  font-size: var(--font-size-xs);
+  font-family: var(--font-family-mono);
+  color: var(--color-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* Sessions View - master-detail layout */
 
 .sessions {
@@ -407,8 +584,16 @@
   min-width: 0;
 }
 
-.tool-card__chevron {
+.tool-card__meta {
   margin-left: auto;
+  flex-shrink: 0;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+  font-family: var(--font-family-mono);
+}
+
+.tool-card__chevron {
+  margin-left: var(--space-xs);
   flex-shrink: 0;
   font-size: 10px;
   color: var(--color-text-muted);

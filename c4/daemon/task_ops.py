@@ -110,9 +110,6 @@ class TaskOps:
         if daemon.state_machine is None:
             raise RuntimeError("C4 not initialized")
 
-        # Auto-ensure supervisor loop is running for AI review
-        daemon._ensure_supervisor_running()
-
         # Implicit heartbeat - keep worker marked as active
         daemon._touch_worker(worker_id)
 
@@ -308,6 +305,15 @@ class TaskOps:
         project_id = state.project_id
         ttl = daemon.config.scope_lock_ttl_sec
 
+        # Self-heal: remove tasks from pending that are already in done
+        done_set = set(state.queue.done)
+        overlap = [tid for tid in state.queue.pending if tid in done_set]
+        if overlap:
+            logger.warning(f"Self-healing: removing {overlap} from pending (already in done)")
+            for tid in overlap:
+                state.queue.pending.remove(tid)
+            daemon.state_machine.save_state()
+
         # Get all pending tasks and sort by priority (descending)
         pending_tasks = []
         for task_id in state.queue.pending:
@@ -396,8 +402,8 @@ class TaskOps:
         assigned = False
 
         with store.atomic_modify(project_id) as mod_state:
-            # Double-check task is still pending
-            if task_id in mod_state.queue.pending:
+            # Double-check task is still pending and not already done
+            if task_id in mod_state.queue.pending and task_id not in mod_state.queue.done:
                 # Assign task (ATOMIC)
                 mod_state.queue.pending.remove(task_id)
                 mod_state.queue.in_progress[task_id] = worker_id
@@ -713,9 +719,6 @@ class TaskOps:
         if daemon.state_machine is None:
             raise RuntimeError("C4 not initialized")
 
-        # Auto-ensure supervisor loop is running for AI review
-        daemon._ensure_supervisor_running()
-
         # Implicit heartbeat - keep worker marked as active
         daemon._touch_worker(worker_id)
 
@@ -945,25 +948,42 @@ class TaskOps:
     ) -> SubmitResponse:
         """Check if checkpoint reached or all done.
 
+        Two checkpoint paths:
+        - checkpoint_as_task=True (default): CP-XXX tasks in queue, no legacy transition
+        - checkpoint_as_task=False (legacy): enter_checkpoint() + await_checkpoint
+
         Returns:
             Appropriate SubmitResponse
         """
         daemon = self._daemon
         state = daemon.state_machine.state
 
-        # Check if checkpoint reached
-        cp_id = daemon.state_machine.check_gate_conditions(daemon.config)
-        if cp_id:
-            self._add_to_checkpoint_queue(cp_id, results)
-            daemon.state_machine.enter_checkpoint(cp_id)
-            return SubmitResponse(
-                success=True,
-                next_action="await_checkpoint",
-                message=f"Checkpoint {cp_id} queued for AI review (automatic)",
-            )
+        # Legacy checkpoint path: only when checkpoint_as_task is disabled
+        if not daemon.config.checkpoint_as_task:
+            cp_id = daemon.state_machine.check_gate_conditions(daemon.config)
+            if cp_id:
+                self._add_to_checkpoint_queue(cp_id, results)
+                daemon.state_machine.enter_checkpoint(cp_id)
+                return SubmitResponse(
+                    success=True,
+                    next_action="await_checkpoint",
+                    message=f"Checkpoint {cp_id} queued for AI review (automatic)",
+                )
 
         # Check if all done
         if not state.queue.pending and not state.queue.in_progress:
+            # When checkpoint_as_task is enabled, verify all checkpoints passed
+            if daemon.config.checkpoint_as_task and daemon.config.checkpoints:
+                all_cp_passed = all(
+                    cp.id in state.passed_checkpoints
+                    for cp in daemon.config.checkpoints
+                )
+                if not all_cp_passed:
+                    return SubmitResponse(
+                        success=True,
+                        next_action="get_next_task",
+                        message="Waiting for checkpoint tasks to be created",
+                    )
             return SubmitResponse(
                 success=True,
                 next_action="complete",

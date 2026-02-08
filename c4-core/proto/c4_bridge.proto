@@ -1,0 +1,103 @@
+// C4 Bridge Protocol
+//
+// Defines the gRPC service for Python-Go bridge communication.
+// Used during the gradual migration from Python to Go.
+
+syntax = "proto3";
+
+package c4.bridge;
+
+option go_package = "github.com/changmin/c4-core/internal/bridge/pb";
+
+// BridgeService provides communication between Go core and Python C4.
+service BridgeService {
+  // GetState retrieves the current project state from Python C4.
+  rpc GetState(GetStateRequest) returns (GetStateResponse);
+
+  // TransitionState requests a state transition in the Python state machine.
+  rpc TransitionState(TransitionStateRequest) returns (TransitionStateResponse);
+
+  // GetTask requests the next available task from the Python task store.
+  rpc GetTask(GetTaskRequest) returns (GetTaskResponse);
+
+  // SubmitTask reports task completion to the Python task store.
+  rpc SubmitTask(SubmitTaskRequest) returns (SubmitTaskResponse);
+
+  // RunValidation executes validation commands via the Python runner.
+  rpc RunValidation(RunValidationRequest) returns (RunValidationResponse);
+}
+
+// GetStateRequest is the request for GetState.
+message GetStateRequest {}
+
+// GetStateResponse contains the current project state.
+message GetStateResponse {
+  string state = 1;
+  string project_name = 2;
+  int32 total_tasks = 3;
+  int32 pending_tasks = 4;
+  int32 done_tasks = 5;
+  int32 blocked_tasks = 6;
+}
+
+// TransitionStateRequest requests a state transition.
+message TransitionStateRequest {
+  string event = 1;
+}
+
+// TransitionStateResponse contains the result of a state transition.
+message TransitionStateResponse {
+  bool success = 1;
+  string new_state = 2;
+  string error = 3;
+}
+
+// GetTaskRequest requests task assignment for a worker.
+message GetTaskRequest {
+  string worker_id = 1;
+}
+
+// GetTaskResponse contains the assigned task details.
+message GetTaskResponse {
+  bool has_task = 1;
+  string task_id = 2;
+  string title = 3;
+  string scope = 4;
+  string dod = 5;
+  repeated string validations = 6;
+  string branch = 7;
+  string domain = 8;
+}
+
+// SubmitTaskRequest reports task completion.
+message SubmitTaskRequest {
+  string task_id = 1;
+  string worker_id = 2;
+  string commit_sha = 3;
+  map<string, bool> validation_results = 4;
+}
+
+// SubmitTaskResponse contains the submission result.
+message SubmitTaskResponse {
+  bool success = 1;
+  string next_action = 2;
+  string error = 3;
+}
+
+// RunValidationRequest requests validation execution.
+message RunValidationRequest {
+  repeated string names = 1;
+}
+
+// ValidationResult holds the result of a single validation.
+message ValidationResult {
+  string name = 1;
+  bool passed = 2;
+  string output = 3;
+}
+
+// RunValidationResponse contains validation results.
+message RunValidationResponse {
+  bool all_passed = 1;
+  repeated ValidationResult results = 2;
+}

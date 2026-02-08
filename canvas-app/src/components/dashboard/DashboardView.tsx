@@ -4,6 +4,7 @@ import { StatusBadge } from '../shared/StatusBadge';
 import { ProgressBar } from '../shared/ProgressBar';
 import { TaskList } from './TaskList';
 import { TaskDetailPanel } from './TaskDetailPanel';
+import { UsagePanel } from './UsagePanel';
 import '../../styles/dashboard.css';
 
 interface DashboardViewProps {
@@ -59,6 +60,7 @@ export function DashboardView({ projectPath }: DashboardViewProps) {
             ))}
           </div>
         )}
+        <UsagePanel projectPath={projectPath} />
       </div>
 
       <div className="dashboard__body">

@@ -11,6 +11,7 @@ use crate::models::{
     ScanResult, SessionMeta, SessionMessage, SessionPage, TaskDetail, TaskItem, TaskProgress,
     WorkerInfo,
 };
+use crate::providers::{self, ProviderInfo, ProviderKind};
 use crate::scanner::{get_project_id, scan_project};
 
 /// Canvas save file name
@@ -744,6 +745,50 @@ pub async fn get_session_file_changes(session_path: String) -> Result<Vec<FileCh
         }
 
         Ok(changes)
+    })
+    .await
+    .map_err(|e| format!("Task execution failed: {}", e))?
+}
+
+// --- Provider API commands ---
+
+/// List all detected LLM tool providers
+#[tauri::command(rename_all = "camelCase")]
+pub async fn list_providers(path: String) -> Result<Vec<ProviderInfo>, String> {
+    let project_path = path;
+    tokio::task::spawn_blocking(move || {
+        Ok(providers::detect_providers(&project_path))
+    })
+    .await
+    .map_err(|e| format!("Task execution failed: {}", e))?
+}
+
+/// List sessions for a specific provider
+#[tauri::command(rename_all = "camelCase")]
+pub async fn list_sessions_for_provider(
+    path: String,
+    provider: ProviderKind,
+) -> Result<Vec<SessionMeta>, String> {
+    let project_path = path;
+    tokio::task::spawn_blocking(move || {
+        let p = providers::get_provider(provider);
+        p.list_sessions(&project_path)
+    })
+    .await
+    .map_err(|e| format!("Task execution failed: {}", e))?
+}
+
+/// Get paginated session messages for a specific provider
+#[tauri::command(rename_all = "camelCase")]
+pub async fn get_provider_session_messages(
+    session_path: String,
+    provider: ProviderKind,
+    offset: u32,
+    limit: u32,
+) -> Result<SessionPage, String> {
+    tokio::task::spawn_blocking(move || {
+        let p = providers::get_provider(provider);
+        p.get_messages(&session_path, offset, limit)
     })
     .await
     .map_err(|e| format!("Task execution failed: {}", e))?

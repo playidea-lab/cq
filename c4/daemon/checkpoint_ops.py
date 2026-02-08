@@ -70,11 +70,18 @@ class CheckpointOps:
 
         state = self._daemon.state_machine.state
 
-        # Validate we're in CHECKPOINT state
-        if state.status != ProjectStatus.CHECKPOINT:
+        # Validate we're in CHECKPOINT or EXECUTE (checkpoint_as_task mode) state
+        if state.status not in (ProjectStatus.CHECKPOINT, ProjectStatus.EXECUTE):
             return CheckpointResponse(
                 success=False,
-                message=f"Not in CHECKPOINT state (current: {state.status.value})",
+                message=f"Not in CHECKPOINT or EXECUTE state (current: {state.status.value})",
+            )
+        # EXECUTE state is only valid when checkpoint_as_task is enabled
+        if state.status == ProjectStatus.EXECUTE and not self._daemon.config.checkpoint_as_task:
+            return CheckpointResponse(
+                success=False,
+                message=f"Not in CHECKPOINT state (current: {state.status.value}). "
+                "Enable checkpoint_as_task to use checkpoints in EXECUTE state.",
             )
 
         # Emit decision event
@@ -104,16 +111,17 @@ class CheckpointOps:
                         f"Checkpoint {checkpoint_id}: merged {len(merge_results)} branches"
                     )
 
-                # Check if this is the final checkpoint
-                is_final = not state.queue.pending
-                if is_final:
-                    self._daemon.state_machine.transition("approve_final")
-                    # Perform completion action (merge, pr, or manual)
-                    completion_result = self._daemon._perform_completion_action()
-                    if completion_result:
-                        logger.info(f"Plan completed: {completion_result}")
-                else:
-                    self._daemon.state_machine.transition("approve")
+                # State transition only in legacy CHECKPOINT state
+                # In EXECUTE (checkpoint_as_task mode), _check_completion_state handles all-done
+                if state.status == ProjectStatus.CHECKPOINT:
+                    is_final = not state.queue.pending
+                    if is_final:
+                        self._daemon.state_machine.transition("approve_final")
+                        completion_result = self._daemon._perform_completion_action()
+                        if completion_result:
+                            logger.info(f"Plan completed: {completion_result}")
+                    else:
+                        self._daemon.state_machine.transition("approve")
                 state.metrics.checkpoints_passed += 1
 
                 # Trigger profile learning on APPROVE
@@ -135,10 +143,14 @@ class CheckpointOps:
                             scope=None,
                             dod=change,
                         )
-                self._daemon.state_machine.transition("request_changes")
+                # Only transition in legacy CHECKPOINT state
+                if state.status == ProjectStatus.CHECKPOINT:
+                    self._daemon.state_machine.transition("request_changes")
 
             elif decision == "REPLAN":
-                self._daemon.state_machine.transition("replan")
+                # Only transition in legacy CHECKPOINT state
+                if state.status == ProjectStatus.CHECKPOINT:
+                    self._daemon.state_machine.transition("replan")
 
             else:
                 return CheckpointResponse(
