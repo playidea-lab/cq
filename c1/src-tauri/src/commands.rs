@@ -909,6 +909,30 @@ pub async fn search_sessions(
     .map_err(|e| format!("Task execution failed: {}", e))?
 }
 
+/// Snap a byte index to the nearest valid UTF-8 char boundary (floor).
+fn floor_char_boundary(s: &str, index: usize) -> usize {
+    if index >= s.len() {
+        return s.len();
+    }
+    let mut i = index;
+    while i > 0 && !s.is_char_boundary(i) {
+        i -= 1;
+    }
+    i
+}
+
+/// Snap a byte index to the nearest valid UTF-8 char boundary (ceil).
+fn ceil_char_boundary(s: &str, index: usize) -> usize {
+    if index >= s.len() {
+        return s.len();
+    }
+    let mut i = index;
+    while i < s.len() && !s.is_char_boundary(i) {
+        i += 1;
+    }
+    i
+}
+
 /// Extract readable match context from a JSONL line.
 /// Tries to parse JSON and pull text from content blocks; falls back to raw substring.
 fn extract_match_context(line: &str, query_lower: &str) -> (String, String) {
@@ -920,12 +944,13 @@ fn extract_match_context(line: &str, query_lower: &str) -> (String, String) {
         for text in &texts {
             let text_lower = text.to_lowercase();
             if let Some(pos) = text_lower.find(query_lower) {
-                let matched =
-                    &text[pos..std::cmp::min(pos + query_lower.len(), text.len())];
+                let match_end = ceil_char_boundary(text, pos + query_lower.len());
+                let pos = floor_char_boundary(text, pos);
+                let matched = &text[pos..match_end];
 
                 // Build context: ~80 chars around the match
-                let ctx_start = if pos > 40 { pos - 40 } else { 0 };
-                let ctx_end = std::cmp::min(pos + query_lower.len() + 40, text.len());
+                let ctx_start = floor_char_boundary(text, pos.saturating_sub(40));
+                let ctx_end = ceil_char_boundary(text, match_end + 40);
                 let mut context = String::new();
                 if ctx_start > 0 {
                     context.push_str("...");
@@ -944,9 +969,11 @@ fn extract_match_context(line: &str, query_lower: &str) -> (String, String) {
     // Fallback: raw substring match
     let line_lower = line.to_lowercase();
     if let Some(pos) = line_lower.find(query_lower) {
-        let matched = &line[pos..std::cmp::min(pos + query_lower.len(), line.len())];
-        let ctx_start = if pos > 60 { pos - 60 } else { 0 };
-        let ctx_end = std::cmp::min(pos + query_lower.len() + 60, line.len());
+        let match_end = ceil_char_boundary(line, pos + query_lower.len());
+        let pos = floor_char_boundary(line, pos);
+        let matched = &line[pos..match_end];
+        let ctx_start = floor_char_boundary(line, pos.saturating_sub(60));
+        let ctx_end = ceil_char_boundary(line, match_end + 60);
         let mut context = String::new();
         if ctx_start > 0 {
             context.push_str("...");
