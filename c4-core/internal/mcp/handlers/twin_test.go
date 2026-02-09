@@ -208,6 +208,26 @@ func TestDetectFeedbackKeywords(t *testing.T) {
 	}
 }
 
+// --- Speed pattern edge case tests ---
+
+func TestDetectSpeedChangeZeroDays(t *testing.T) {
+	store := newTestStore(t)
+
+	// Insert tasks with same created_at and updated_at (0 days duration)
+	ts := time.Now().Format(time.RFC3339)
+	for i := 0; i < 10; i++ {
+		taskID := taskIDForTest(100 + i)
+		_, _ = store.db.Exec(
+			"INSERT INTO c4_tasks (task_id, title, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+			taskID, "Same-day task", "done", ts, ts)
+	}
+
+	patterns := store.detectSpeedChange()
+	if len(patterns) > 0 {
+		t.Errorf("expected no speed patterns for zero-day tasks, got: %+v", patterns)
+	}
+}
+
 // --- Growth tracking tests ---
 
 func TestRecordGrowthSnapshot(t *testing.T) {

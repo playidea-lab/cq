@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -331,7 +332,13 @@ func (s *SQLiteStore) detectSpeedChange() []Pattern {
 		FROM c4_tasks WHERE status='done'
 	`).Scan(&overallAvg)
 
-	if !recentAvg.Valid || !overallAvg.Valid || overallAvg.Float64 <= 0 {
+	if !recentAvg.Valid || !overallAvg.Valid {
+		return nil
+	}
+
+	// Skip when durations are under 1 hour (0.042 days) — too noisy for meaningful comparison
+	const minMeaningfulDays = 0.042
+	if overallAvg.Float64 < minMeaningfulDays {
 		return nil
 	}
 
@@ -572,15 +579,46 @@ func RegisterTwinHandlers(reg *mcp.Registry, store *SQLiteStore) {
 	})
 }
 
+// resolveUsername tries getActiveUsername, then git config, then "unknown".
+func resolveUsername(projectRoot string) string {
+	if projectRoot != "" {
+		if u := getActiveUsername(projectRoot); u != "" {
+			return u
+		}
+	}
+	// Fallback: read git user.name from project
+	if projectRoot != "" {
+		gitCfg := projectRoot + "/.git/config"
+		data, err := readFileBytes(gitCfg)
+		if err == nil {
+			for _, line := range strings.Split(string(data), "\n") {
+				line = strings.TrimSpace(line)
+				if strings.HasPrefix(line, "name") || strings.HasPrefix(line, "name =") {
+					parts := strings.SplitN(line, "=", 2)
+					if len(parts) == 2 {
+						return strings.TrimSpace(parts[1])
+					}
+				}
+			}
+		}
+	}
+	return "default"
+}
+
+// readFileBytes reads a file's contents (used for git config fallback).
+func readFileBytes(path string) ([]byte, error) {
+	return os.ReadFile(path)
+}
+
 // reflect gathers all Twin data for the c4_reflect tool.
 func (s *SQLiteStore) reflect(focus string) (map[string]any, error) {
 	result := map[string]any{}
 
 	// Identity
-	username := ""
-	if s.projectRoot != "" {
-		username = getActiveUsername(s.projectRoot)
-	}
+	username := resolveUsername(s.projectRoot)
+
+	// Auto-record growth snapshot on reflect (best-effort)
+	go s.RecordGrowthSnapshot(username)
 
 	var totalTasks int
 	_ = s.db.QueryRow("SELECT COUNT(*) FROM c4_tasks").Scan(&totalTasks)
