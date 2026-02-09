@@ -28,7 +28,9 @@ regex = "1"
 anyhow = "1"
 dirs = "5"
 rusqlite = { version = "0.31", features = ["bundled"] }
-tokio = { version = "1", features = ["rt", "net", "io-util", "macros"] }
+tokio = { version = "1", features = ["rt", "net", "io-util", "macros", "sync", "time"] }
+tokio-tungstenite = { version = "0.24", features = ["native-tls"] }
+futures-util = "0.3"
 reqwest = { version = "0.12", features = ["json", "blocking"] }
 urlencoding = "2"
 open = "5"

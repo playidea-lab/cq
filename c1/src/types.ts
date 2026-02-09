@@ -239,6 +239,44 @@ export interface TeamProject {
   last_updated: string | null;
 }
 
+// --- Cloud Phase 8.2 types ---
+
+export interface PullResult {
+  pulled_count: number;
+  merged_count: number;
+  conflict_count: number;
+  errors: string[];
+}
+
+export interface SyncStatus {
+  last_synced: string | null;
+  pending_push: number;
+  pending_pull: number;
+  cloud_connected: boolean;
+}
+
+export interface RemoteCheckpoint {
+  id: string;
+  decision: string;
+  notes: string | null;
+  created_at: string;
+}
+
+export interface GrowthMetric {
+  week: string;
+  approval_rate: number;
+  avg_score: number;
+  tasks_completed: number;
+}
+
+export interface AgentTrace {
+  agent_type: string;
+  task_id: string | null;
+  action: string;
+  duration_ms: number | null;
+  created_at: string;
+}
+
 // --- Auth types ---
 
 export interface AuthUser {

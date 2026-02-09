@@ -449,6 +449,351 @@ pub async fn cloud_get_remote_dashboard(project_id: String) -> Result<ProjectSta
 }
 
 // ---------------------------------------------------------------------------
+// Pull & Sync Status commands (Phase 8.2)
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PullResult {
+    pub pulled_count: u32,
+    pub merged_count: u32,
+    pub conflict_count: u32,
+    pub errors: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SyncStatus {
+    pub last_synced: Option<String>,
+    pub pending_push: u32,
+    pub pending_pull: u32,
+    pub cloud_connected: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RemoteCheckpoint {
+    pub id: String,
+    pub decision: String,
+    pub notes: Option<String>,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GrowthMetric {
+    pub week: String,
+    pub approval_rate: f64,
+    pub avg_score: f64,
+    pub tasks_completed: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentTrace {
+    pub agent_type: String,
+    pub task_id: Option<String>,
+    pub action: String,
+    pub duration_ms: Option<u64>,
+    pub created_at: String,
+}
+
+/// Pull tasks from Supabase cloud and merge into local database.
+///
+/// Uses row_version for conflict resolution (last-write-wins).
+#[tauri::command(rename_all = "camelCase")]
+pub async fn cloud_pull_tasks(project_path: String) -> Result<PullResult, String> {
+    tokio::task::spawn_blocking(move || {
+        let (supabase_url, anon_key) = read_supabase_config()?;
+        let token = read_auth_token()?;
+
+        let project_dir = std::path::Path::new(&project_path);
+        let conn = open_c4_db(project_dir)?;
+        let project_id = get_project_id(project_dir)
+            .map_err(|e| format!("Failed to get project_id: {}", e))?;
+
+        let client = build_client()?;
+
+        // Fetch remote tasks
+        let tasks_url = format!(
+            "{}/rest/v1/c4_tasks?project_id=eq.{}&select=*",
+            supabase_url.trim_end_matches('/'),
+            urlencoding::encode(&project_id),
+        );
+
+        let resp = retry_request(3, || {
+            client
+                .get(&tasks_url)
+                .header("Authorization", format!("Bearer {}", token))
+                .header("apikey", &anon_key)
+                .send()
+        })?;
+
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let body = resp.text().unwrap_or_default();
+            return Err(format!("Pull failed ({}): {}", status, body));
+        }
+
+        let remote_tasks: Vec<serde_json::Value> = resp
+            .json()
+            .map_err(|e| format!("Failed to parse tasks: {}", e))?;
+
+        let mut pulled: u32 = 0;
+        let mut merged: u32 = 0;
+        let mut conflicts: u32 = 0;
+        let mut errors: Vec<String> = Vec::new();
+
+        for remote_task in &remote_tasks {
+            pulled += 1;
+
+            let task_id = remote_task
+                .get("task_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            let remote_version = remote_task
+                .get("row_version")
+                .and_then(|v| v.as_i64())
+                .unwrap_or(0);
+
+            // Check if local task exists and its version
+            let local_version: Option<i64> = conn
+                .query_row(
+                    "SELECT CAST(json_extract(task_json, '$.row_version') AS INTEGER) FROM c4_tasks WHERE task_id = ? AND project_id = ?",
+                    rusqlite::params![task_id, project_id],
+                    |row| row.get(0),
+                )
+                .ok();
+
+            match local_version {
+                Some(local_v) if local_v >= remote_version => {
+                    // Local is newer or same — skip (conflict logged)
+                    if local_v > remote_version {
+                        conflicts += 1;
+                    }
+                }
+                _ => {
+                    // Remote is newer or local doesn't exist — upsert
+                    let task_json = serde_json::to_string(remote_task).unwrap_or_default();
+                    let status = remote_task
+                        .get("status")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("pending");
+                    let assigned_to = remote_task
+                        .get("assigned_to")
+                        .and_then(|v| v.as_str());
+
+                    let result = conn.execute(
+                        "INSERT INTO c4_tasks (project_id, task_id, task_json, status, assigned_to)
+                         VALUES (?, ?, ?, ?, ?)
+                         ON CONFLICT(project_id, task_id) DO UPDATE SET
+                           task_json = excluded.task_json,
+                           status = excluded.status,
+                           assigned_to = excluded.assigned_to",
+                        rusqlite::params![project_id, task_id, task_json, status, assigned_to],
+                    );
+
+                    match result {
+                        Ok(_) => merged += 1,
+                        Err(e) => errors.push(format!("Merge {} failed: {}", task_id, e)),
+                    }
+                }
+            }
+        }
+
+        // Also pull state
+        let state_url = format!(
+            "{}/rest/v1/c4_state?project_id=eq.{}&select=state_json",
+            supabase_url.trim_end_matches('/'),
+            urlencoding::encode(&project_id),
+        );
+        if let Ok(resp) = retry_request(3, || {
+            client
+                .get(&state_url)
+                .header("Authorization", format!("Bearer {}", token))
+                .header("apikey", &anon_key)
+                .send()
+        }) {
+            if resp.status().is_success() {
+                if let Ok(rows) = resp.json::<Vec<serde_json::Value>>() {
+                    if let Some(state_json) = rows.first().and_then(|r| r.get("state_json")).and_then(|v| v.as_str()) {
+                        let _ = conn.execute(
+                            "INSERT INTO c4_state (project_id, state_json) VALUES (?, ?)
+                             ON CONFLICT(project_id) DO UPDATE SET state_json = excluded.state_json",
+                            rusqlite::params![project_id, state_json],
+                        );
+                    }
+                }
+            }
+        }
+
+        Ok(PullResult {
+            pulled_count: pulled,
+            merged_count: merged,
+            conflict_count: conflicts,
+            errors,
+        })
+    })
+    .await
+    .map_err(|e| format!("Task execution failed: {}", e))?
+}
+
+/// Get current sync status information.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn cloud_sync_status(project_path: String) -> Result<SyncStatus, String> {
+    tokio::task::spawn_blocking(move || {
+        let cloud_connected = read_supabase_config().is_ok() && read_auth_token().is_ok();
+
+        let project_dir = std::path::Path::new(&project_path);
+        let pending_push = if let Ok(conn) = open_c4_db(project_dir) {
+            // Count tasks modified after last sync (approximation)
+            conn.query_row("SELECT COUNT(*) FROM c4_tasks", [], |row| row.get::<_, u32>(0))
+                .unwrap_or(0)
+        } else {
+            0
+        };
+
+        Ok(SyncStatus {
+            last_synced: None, // TODO: persist last sync timestamp
+            pending_push,
+            pending_pull: 0,
+            cloud_connected,
+        })
+    })
+    .await
+    .map_err(|e| format!("Task execution failed: {}", e))?
+}
+
+/// Fetch checkpoints for a remote project.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn cloud_get_checkpoints(project_id: String) -> Result<Vec<RemoteCheckpoint>, String> {
+    tokio::task::spawn_blocking(move || {
+        let (supabase_url, anon_key) = read_supabase_config()?;
+        let token = read_auth_token()?;
+        let client = build_client()?;
+
+        let url = format!(
+            "{}/rest/v1/c4_checkpoints?project_id=eq.{}&select=*&order=created_at.desc&limit=50",
+            supabase_url.trim_end_matches('/'),
+            urlencoding::encode(&project_id),
+        );
+
+        let resp = retry_request(3, || {
+            client
+                .get(&url)
+                .header("Authorization", format!("Bearer {}", token))
+                .header("apikey", &anon_key)
+                .send()
+        })?;
+
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let body = resp.text().unwrap_or_default();
+            return Err(format!("Failed to fetch checkpoints ({}): {}", status, body));
+        }
+
+        let rows: Vec<serde_json::Value> = resp
+            .json()
+            .map_err(|e| format!("Failed to parse checkpoints: {}", e))?;
+
+        Ok(rows
+            .into_iter()
+            .map(|row| RemoteCheckpoint {
+                id: row.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                decision: row.get("decision").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                notes: row.get("notes").and_then(|v| v.as_str()).map(String::from),
+                created_at: row.get("created_at").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+            })
+            .collect())
+    })
+    .await
+    .map_err(|e| format!("Task execution failed: {}", e))?
+}
+
+/// Fetch growth metrics for a remote project.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn cloud_get_growth_metrics(project_id: String) -> Result<Vec<GrowthMetric>, String> {
+    tokio::task::spawn_blocking(move || {
+        let (supabase_url, anon_key) = read_supabase_config()?;
+        let token = read_auth_token()?;
+        let client = build_client()?;
+
+        let url = format!(
+            "{}/rest/v1/c4_twin_growth?project_id=eq.{}&select=*&order=week.desc&limit=20",
+            supabase_url.trim_end_matches('/'),
+            urlencoding::encode(&project_id),
+        );
+
+        let resp = retry_request(3, || {
+            client
+                .get(&url)
+                .header("Authorization", format!("Bearer {}", token))
+                .header("apikey", &anon_key)
+                .send()
+        })?;
+
+        if !resp.status().is_success() {
+            return Ok(Vec::new());
+        }
+
+        let rows: Vec<serde_json::Value> = resp.json().unwrap_or_default();
+
+        Ok(rows
+            .into_iter()
+            .map(|row| GrowthMetric {
+                week: row.get("week").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                approval_rate: row.get("approval_rate").and_then(|v| v.as_f64()).unwrap_or(0.0),
+                avg_score: row.get("avg_score").and_then(|v| v.as_f64()).unwrap_or(0.0),
+                tasks_completed: row
+                    .get("tasks_completed")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0) as u32,
+            })
+            .collect())
+    })
+    .await
+    .map_err(|e| format!("Task execution failed: {}", e))?
+}
+
+/// Fetch recent agent traces for a remote project.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn cloud_get_agent_traces(project_id: String) -> Result<Vec<AgentTrace>, String> {
+    tokio::task::spawn_blocking(move || {
+        let (supabase_url, anon_key) = read_supabase_config()?;
+        let token = read_auth_token()?;
+        let client = build_client()?;
+
+        let url = format!(
+            "{}/rest/v1/c4_agent_traces?project_id=eq.{}&select=*&order=created_at.desc&limit=50",
+            supabase_url.trim_end_matches('/'),
+            urlencoding::encode(&project_id),
+        );
+
+        let resp = retry_request(3, || {
+            client
+                .get(&url)
+                .header("Authorization", format!("Bearer {}", token))
+                .header("apikey", &anon_key)
+                .send()
+        })?;
+
+        if !resp.status().is_success() {
+            return Ok(Vec::new());
+        }
+
+        let rows: Vec<serde_json::Value> = resp.json().unwrap_or_default();
+
+        Ok(rows
+            .into_iter()
+            .map(|row| AgentTrace {
+                agent_type: row.get("agent_type").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                task_id: row.get("task_id").and_then(|v| v.as_str()).map(String::from),
+                action: row.get("action").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                duration_ms: row.get("duration_ms").and_then(|v| v.as_u64()),
+                created_at: row.get("created_at").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+            })
+            .collect())
+    })
+    .await
+    .map_err(|e| format!("Task execution failed: {}", e))?
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -533,5 +878,75 @@ mod tests {
         });
         assert!(result.is_err());
         assert_eq!(attempts, 3);
+    }
+
+    #[test]
+    fn test_pull_result_serialization() {
+        let result = PullResult {
+            pulled_count: 10,
+            merged_count: 8,
+            conflict_count: 2,
+            errors: vec![],
+        };
+        let json = serde_json::to_string(&result).unwrap();
+        let parsed: PullResult = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.pulled_count, 10);
+        assert_eq!(parsed.conflict_count, 2);
+    }
+
+    #[test]
+    fn test_sync_status_serialization() {
+        let status = SyncStatus {
+            last_synced: Some("2026-02-10T00:00:00Z".to_string()),
+            pending_push: 5,
+            pending_pull: 3,
+            cloud_connected: true,
+        };
+        let json = serde_json::to_string(&status).unwrap();
+        let parsed: SyncStatus = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.pending_push, 5);
+        assert!(parsed.cloud_connected);
+    }
+
+    #[test]
+    fn test_remote_checkpoint_serialization() {
+        let cp = RemoteCheckpoint {
+            id: "CP-001".to_string(),
+            decision: "APPROVE".to_string(),
+            notes: Some("Looks good".to_string()),
+            created_at: "2026-02-10T12:00:00Z".to_string(),
+        };
+        let json = serde_json::to_string(&cp).unwrap();
+        assert!(json.contains("APPROVE"));
+        let parsed: RemoteCheckpoint = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.id, "CP-001");
+    }
+
+    #[test]
+    fn test_growth_metric_serialization() {
+        let metric = GrowthMetric {
+            week: "2026-W06".to_string(),
+            approval_rate: 0.85,
+            avg_score: 8.5,
+            tasks_completed: 12,
+        };
+        let json = serde_json::to_string(&metric).unwrap();
+        let parsed: GrowthMetric = serde_json::from_str(&json).unwrap();
+        assert!((parsed.approval_rate - 0.85).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_agent_trace_serialization() {
+        let trace = AgentTrace {
+            agent_type: "golang-pro".to_string(),
+            task_id: Some("T-001-0".to_string()),
+            action: "implement".to_string(),
+            duration_ms: Some(45000),
+            created_at: "2026-02-10T12:00:00Z".to_string(),
+        };
+        let json = serde_json::to_string(&trace).unwrap();
+        let parsed: AgentTrace = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.agent_type, "golang-pro");
+        assert_eq!(parsed.duration_ms, Some(45000));
     }
 }

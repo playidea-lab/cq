@@ -10,6 +10,7 @@ pub mod commands;
 pub mod layout;
 pub mod models;
 pub mod providers;
+pub mod realtime;
 pub mod scanner;
 pub mod watcher;
 
@@ -38,6 +39,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
+        .manage(realtime::RealtimeManager::default())
         .invoke_handler(tauri::generate_handler![
             commands::scan_project_cmd,
             commands::save_canvas,
@@ -73,6 +75,15 @@ pub fn run() {
             cloud::cloud_sync_tasks,
             cloud::cloud_get_team_projects,
             cloud::cloud_get_remote_dashboard,
+            cloud::cloud_pull_tasks,
+            cloud::cloud_sync_status,
+            cloud::cloud_get_checkpoints,
+            cloud::cloud_get_growth_metrics,
+            cloud::cloud_get_agent_traces,
+            // Realtime
+            realtime::realtime_connect,
+            realtime::realtime_disconnect,
+            realtime::realtime_status,
             // Auth
             auth::auth_get_session,
             auth::auth_login,

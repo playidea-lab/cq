@@ -1,6 +1,7 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { useDashboard } from '../../hooks/useDashboard';
+import { useRealtimeSync, type ConnectionStatus } from '../../hooks/useRealtimeSync';
 import { StatusBadge } from '../shared/StatusBadge';
 import { ProgressBar } from '../shared/ProgressBar';
 import { Skeleton } from '../shared/Skeleton';
@@ -36,11 +37,39 @@ export function DashboardView({ projectPath }: DashboardViewProps) {
   const [syncing, setSyncing] = useState(false);
   const [lastSynced, setLastSynced] = useState<string | null>(null);
   const [syncError, setSyncError] = useState<string | null>(null);
+  const [autoSync, setAutoSync] = useState(false);
+  const autoSyncRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Realtime subscription — auto-refresh on cloud changes
+  const { status: realtimeStatus } = useRealtimeSync({
+    autoConnect: true,
+    onUpdate: (event) => {
+      if (event.table === 'c4_tasks' || event.table === 'c4_state') {
+        loadState(projectPath);
+        loadTimeline(projectPath);
+      }
+    },
+  });
 
   useEffect(() => {
     loadState(projectPath);
     loadTimeline(projectPath);
   }, [projectPath, loadState, loadTimeline]);
+
+  // Auto-sync interval (every 30 seconds)
+  useEffect(() => {
+    if (autoSync) {
+      autoSyncRef.current = setInterval(() => {
+        handleSync();
+      }, 30_000);
+    } else if (autoSyncRef.current) {
+      clearInterval(autoSyncRef.current);
+      autoSyncRef.current = null;
+    }
+    return () => {
+      if (autoSyncRef.current) clearInterval(autoSyncRef.current);
+    };
+  }, [autoSync]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (selectedTask && selectedTask.validations.length > 0) {
@@ -71,6 +100,24 @@ export function DashboardView({ projectPath }: DashboardViewProps) {
       setSyncing(false);
     }
   }, [projectPath]);
+
+  const statusIndicator = (s: ConnectionStatus) => {
+    switch (s) {
+      case 'connected': return 'sync-status--online';
+      case 'connecting':
+      case 'reconnecting': return 'sync-status--syncing';
+      default: return 'sync-status--offline';
+    }
+  };
+
+  const statusLabel = (s: ConnectionStatus) => {
+    switch (s) {
+      case 'connected': return 'Online';
+      case 'connecting': return 'Connecting...';
+      case 'reconnecting': return 'Reconnecting...';
+      default: return 'Offline';
+    }
+  };
 
   const formatSyncTime = (iso: string): string => {
     try {
@@ -128,6 +175,10 @@ export function DashboardView({ projectPath }: DashboardViewProps) {
           <h3 className="dashboard__project-id">{state.project_id}</h3>
           <StatusBadge status={state.status} />
           <div className="dashboard__sync">
+            <span className={`sync-status ${statusIndicator(realtimeStatus)}`}
+              title={statusLabel(realtimeStatus)}>
+              {statusLabel(realtimeStatus)}
+            </span>
             <button
               className={`btn btn--secondary btn--sm sync-btn ${syncing ? 'sync-btn--syncing' : ''}`}
               onClick={handleSync}
@@ -135,6 +186,14 @@ export function DashboardView({ projectPath }: DashboardViewProps) {
             >
               {syncing ? 'Syncing...' : 'Sync to Cloud'}
             </button>
+            <label className="sync-auto-toggle" title="Auto-sync every 30 seconds">
+              <input
+                type="checkbox"
+                checked={autoSync}
+                onChange={(e) => setAutoSync(e.target.checked)}
+              />
+              Auto
+            </label>
             {lastSynced && (
               <span className="sync-btn__time">
                 Last sync: {formatSyncTime(lastSynced)}

@@ -811,3 +811,63 @@
   font-size: var(--font-size-xs);
   color: var(--color-error);
 }
+
+/* Sync status indicator */
+.sync-status {
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 9999px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.sync-status::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.sync-status--online {
+  color: var(--color-success, #22c55e);
+}
+.sync-status--online::before {
+  background: var(--color-success, #22c55e);
+}
+
+.sync-status--syncing {
+  color: var(--color-warning, #eab308);
+}
+.sync-status--syncing::before {
+  background: var(--color-warning, #eab308);
+  animation: pulse-dot 1.5s ease-in-out infinite;
+}
+
+.sync-status--offline {
+  color: var(--color-text-muted);
+}
+.sync-status--offline::before {
+  background: var(--color-text-muted);
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+/* Auto-sync toggle */
+.sync-auto-toggle {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+}
+
+.sync-auto-toggle input[type="checkbox"] {
+  accent-color: var(--color-primary, #3b82f6);
+}
