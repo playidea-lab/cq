@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 
 	"github.com/changmin/c4-core/internal/bridge"
 	"github.com/changmin/c4-core/internal/config"
@@ -117,6 +118,13 @@ func newMCPServer() (*mcpServer, error) {
 	handlers.RegisterPersonaHandlers(reg, store)
 	handlers.RegisterTeamHandlers(reg, projectDir)
 	handlers.RegisterSoulHandlers(reg, projectDir)
+	handlers.RegisterTwinHandlers(reg, store)
+
+	// Set project role for Soul stage integration
+	projectName := filepath.Base(projectDir)
+	if projectName != "" && projectName != "." {
+		handlers.SetProjectRoleForStage("project-" + projectName)
+	}
 
 	// Wire sidecar auto-restart
 	if sidecar != nil {

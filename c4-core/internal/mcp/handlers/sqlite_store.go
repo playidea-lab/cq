@@ -116,6 +116,15 @@ func (s *SQLiteStore) initSchema() error {
 			created_at   TEXT NOT NULL,
 			UNIQUE(persona_id, task_id)
 		)`,
+		`CREATE TABLE IF NOT EXISTS twin_growth (
+			id          INTEGER PRIMARY KEY AUTOINCREMENT,
+			username    TEXT NOT NULL,
+			metric      TEXT NOT NULL,
+			value       REAL NOT NULL,
+			period      TEXT NOT NULL,
+			recorded_at TEXT DEFAULT CURRENT_TIMESTAMP,
+			UNIQUE(username, metric, period)
+		)`,
 	}
 
 	for _, stmt := range statements {
@@ -422,7 +431,7 @@ func (s *SQLiteStore) Clear(keepConfig bool) error {
 	}
 	defer tx.Rollback()
 
-	tables := []string{"c4_tasks", "c4_state", "c4_checkpoints", "persona_stats"}
+	tables := []string{"c4_tasks", "c4_state", "c4_checkpoints", "persona_stats", "twin_growth"}
 	for _, table := range tables {
 		if _, err := tx.Exec("DELETE FROM " + table); err != nil {
 			return fmt.Errorf("clearing %s: %w", table, err)
@@ -628,6 +637,9 @@ func (s *SQLiteStore) SubmitTask(taskID, workerID, commitSHA string, results []V
 	// Auto-learn: update soul from persona patterns (best-effort)
 	s.autoLearn(workerID)
 
+	// Record growth snapshot (best-effort)
+	s.recordGrowthOnCompletion()
+
 	var pending int
 	_ = s.db.QueryRow("SELECT COUNT(*) FROM c4_tasks WHERE status IN ('pending', 'in_progress')").Scan(&pending)
 
@@ -711,6 +723,9 @@ func (s *SQLiteStore) ReportTask(taskID, summary string, filesChanged []string) 
 
 	// Auto-learn: update soul from persona patterns (best-effort)
 	s.autoLearn("direct")
+
+	// Record growth snapshot (best-effort)
+	s.recordGrowthOnCompletion()
 
 	return nil
 }
@@ -1007,6 +1022,29 @@ func (s *SQLiteStore) injectSoulContext(a *TaskAssignment) {
 	if merged != "" {
 		a.SoulContext = merged
 	}
+
+	// Also inject project soul if available (3-way merge: role + personal + project)
+	if projectRoleForStage != "" && projectRoleForStage != role {
+		projResult, projErr := ResolveSoul(s.projectRoot, username, projectRoleForStage)
+		if projErr == nil {
+			if projMerged, ok := projResult["merged"].(string); ok && projMerged != "" {
+				a.SoulContext += "\n\n---\n## Project Context\n" + projMerged
+			}
+		}
+	}
+}
+
+// recordGrowthOnCompletion records a growth snapshot after task completion (best-effort).
+func (s *SQLiteStore) recordGrowthOnCompletion() {
+	if s.projectRoot == "" {
+		return
+	}
+	go func() {
+		username := getActiveUsername(s.projectRoot)
+		if username != "" {
+			s.RecordGrowthSnapshot(username)
+		}
+	}()
 }
 
 // autoLearn analyzes persona patterns and updates the soul's Learned section.

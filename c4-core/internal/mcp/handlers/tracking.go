@@ -115,7 +115,7 @@ func handleClaim(store Store, rawArgs json.RawMessage) (any, error) {
 		return nil, fmt.Errorf("claiming task: %w", err)
 	}
 
-	return map[string]any{
+	result := map[string]any{
 		"success": true,
 		"task_id": task.ID,
 		"title":   task.Title,
@@ -123,7 +123,16 @@ func handleClaim(store Store, rawArgs json.RawMessage) (any, error) {
 		"dod":     task.DoD,
 		"status":  task.Status,
 		"message": fmt.Sprintf("Task %s claimed for direct execution", task.ID),
-	}, nil
+	}
+
+	// Best-effort: enrich with Twin context
+	if ss, ok := store.(*SQLiteStore); ok {
+		if tc := ss.BuildTwinContext(task); tc != nil {
+			result["twin_context"] = tc
+		}
+	}
+
+	return result, nil
 }
 
 func handleReport(store Store, rawArgs json.RawMessage) (any, error) {
@@ -175,10 +184,22 @@ func handleCheckpoint(store Store, rawArgs json.RawMessage) (any, error) {
 		return nil, fmt.Errorf("invalid decision: %s (must be APPROVE, REQUEST_CHANGES, or REPLAN)", args.Decision)
 	}
 
-	result, err := store.Checkpoint(args.CheckpointID, args.Decision, args.Notes, args.RequiredChanges)
+	cpResult, err := store.Checkpoint(args.CheckpointID, args.Decision, args.Notes, args.RequiredChanges)
 	if err != nil {
 		return nil, fmt.Errorf("recording checkpoint: %w", err)
 	}
 
-	return result, nil
+	// Best-effort: enrich with Twin review context
+	if ss, ok := store.(*SQLiteStore); ok {
+		if tr := ss.BuildTwinReview(); tr != nil {
+			return map[string]any{
+				"success":      cpResult.Success,
+				"next_action":  cpResult.NextAction,
+				"message":      cpResult.Message,
+				"twin_review":  tr,
+			}, nil
+		}
+	}
+
+	return cpResult, nil
 }

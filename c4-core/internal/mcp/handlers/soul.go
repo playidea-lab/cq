@@ -24,11 +24,38 @@ var StageToRoles = map[string][]string{
 }
 
 // GetActiveRolesForStage returns the soul roles that should be active for a workflow stage.
+// If projectRoot is provided via SetProjectRootForRoles, includes the project role.
 func GetActiveRolesForStage(stage string) []string {
-	if roles, ok := StageToRoles[stage]; ok {
-		return roles
+	roles := StageToRoles[stage]
+	if len(roles) == 0 {
+		roles = []string{"developer"}
 	}
-	return []string{"developer"} // default fallback
+
+	// Append project role if configured
+	if projectRoleForStage != "" {
+		// Check if already in list
+		found := false
+		for _, r := range roles {
+			if r == projectRoleForStage {
+				found = true
+				break
+			}
+		}
+		if !found {
+			roles = append(roles, projectRoleForStage)
+		}
+	}
+
+	return roles
+}
+
+// projectRoleForStage holds the project-specific role name (e.g. "project-c4").
+// Set by SetProjectRoleForStage during initialization.
+var projectRoleForStage string
+
+// SetProjectRoleForStage sets the project role that will be included in all stages.
+func SetProjectRoleForStage(role string) {
+	projectRoleForStage = role
 }
 
 // soulTemplate is the default content for a new soul file.

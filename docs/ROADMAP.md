@@ -1,12 +1,12 @@
 # C4 Roadmap
 
-## Current Version: v0.10.0 (Soul System + Review-as-Task)
+## Current Version: v0.11.0 (Digital Twin + Soul System)
 
-현재 버전은 **Go MCP Primary(56 tools), Soul System, Review-as-Task, Sidecar 안정성, LSP Onboarding**을 포함합니다.
+현재 버전은 **Go MCP Primary(57 tools), Digital Twin, Soul System, Review-as-Task, Sidecar 안정성, LSP Onboarding**을 포함합니다.
 
 ### 핵심 구조
 
-- **Go MCP Server (Primary)** - 56 도구, Registry-based, SQLite Store, JSON-RPC Bridge
+- **Go MCP Server (Primary)** - 57 도구, Registry-based, SQLite Store, JSON-RPC Bridge
 - **Python Sidecar** - LSP(Multilspy→Jedi→Tree-sitter), Knowledge Store v2, GPU Scheduler
 - **C1 Desktop App** - Tauri 2.x, 4개 프로바이더, 가상 스크롤, LRU 캐시, 테마 토글
 
@@ -556,14 +556,38 @@ Claude Code → Go MCP Server (stdio, 47 tools)
 - **흐름**: c4_status → TeamCreate → TaskCreate 매핑 → Task(team_name=...) 스폰 → coordinator 모니터링 → shutdown → TeamDelete
 - **Review 모드**: Security/Performance/TestCoverage 3명, plan 모드(읽기전용)
 
+### Phase 7: Digital Twin — 토론형 성장 시스템 ✅
+
+**목표**: C4를 거울이 아닌 토론 상대로 — 패턴 감지, 도전, 성장 추적
+
+**구현 완료**:
+- **Pattern Detection Engine** (`twin.go`) — 6가지 SQL 기반 패턴 자동 감지
+  - Domain variance, Trend shift, Repeated failures, Checkpoint rejection, Feedback keywords, Speed change
+- **Contextual Enrichment** — 기존 도구 응답 자동 강화
+  - `c4_claim` → `twin_context` (패턴 + Soul reminder)
+  - `c4_checkpoint` → `twin_review` (히스토리 + growth note)
+  - `c4_submit`/`c4_report` → `twin_growth` 주간 스냅샷 자동 기록
+- **c4_reflect MCP 도구** (#57) — Digital Twin 대화 인터페이스
+  - Focus: patterns, growth, challenges, all
+  - Identity, patterns, growth, challenges, soul_summary 반환
+- **Project-as-Persona** — 프로젝트도 하나의 역할
+  - `SetProjectRoleForStage()` → 모든 stage에 project role 동적 추가
+  - `injectSoulContext()` → 3-way merge (role + personal + project)
+- **Growth Dashboard** — 주간 메트릭 추적
+  - `twin_growth` 테이블: approval_rate, avg_review_score, tasks_completed
+  - Milestones: 승인률 80%/90%, 태스크 20/50/100 달성 감지
+
+**결과**: 56 → **57 MCP 도구** (+1: c4_reflect)
+**테스트**: Go 9 packages pass (twin_test.go 23개 포함), Python 446 pass
+
 ---
 
-## Phase 7: C4 Cloud (v0.8.0) 📋 Next
+## Phase 8: C4 Cloud (v0.8.0) 📋 Next
 
 **목표**: LLM 오케스트레이션 플랫폼으로서의 완전 관리형 SaaS
 **참고**: Phase 6.13에서 Python Cloud 코드(-73K LOC) 삭제됨. Cloud 재구축 시 Go 기반으로 설계.
 
-### Phase 7.1: Cloud Foundation
+### Phase 8.1: Cloud Foundation
 
 **목표**: 웹 기반 프로젝트 관리 및 모니터링
 
