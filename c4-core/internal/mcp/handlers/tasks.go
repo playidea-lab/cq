@@ -3,8 +3,10 @@ package handlers
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/changmin/c4-core/internal/mcp"
+	"github.com/changmin/c4-core/internal/task"
 )
 
 // getTaskArgs is the input for c4_get_task.
@@ -32,6 +34,13 @@ type addTodoArgs struct {
 	Model          string   `json:"model,omitempty"`
 	ExecutionMode  string   `json:"execution_mode,omitempty"`
 	ReviewRequired *bool    `json:"review_required,omitempty"`
+}
+
+// requestChangesArgs is the input for c4_request_changes.
+type requestChangesArgs struct {
+	ReviewTaskID    string   `json:"review_task_id"`
+	Comments        string   `json:"comments"`
+	RequiredChanges []string `json:"required_changes"`
 }
 
 // markBlockedArgs is the input for c4_mark_blocked.
@@ -135,6 +144,23 @@ func RegisterTaskHandlers(reg *mcp.Registry, store Store) {
 		return handleAddTodo(store, args)
 	})
 
+	// c4_request_changes
+	reg.Register(mcp.ToolSchema{
+		Name:        "c4_request_changes",
+		Description: "Reject a review task and create next version (T-001-0 → T-001-1 + R-001-1)",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"review_task_id":   map[string]any{"type": "string", "description": "Review task to reject (R-XXX-N)"},
+				"comments":        map[string]any{"type": "string", "description": "Reason for rejection"},
+				"required_changes": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "List of required changes"},
+			},
+			"required": []string{"review_task_id", "comments", "required_changes"},
+		},
+	}, func(args json.RawMessage) (any, error) {
+		return handleRequestChanges(store, args)
+	})
+
 	// c4_mark_blocked
 	reg.Register(mcp.ToolSchema{
 		Name:        "c4_mark_blocked",
@@ -215,7 +241,7 @@ func handleAddTodo(store Store, rawArgs json.RawMessage) (any, error) {
 		return nil, fmt.Errorf("dod is required")
 	}
 
-	task := &Task{
+	t := &Task{
 		ID:           args.TaskID,
 		Title:        args.Title,
 		Scope:        args.Scope,
@@ -227,15 +253,63 @@ func handleAddTodo(store Store, rawArgs json.RawMessage) (any, error) {
 		Model:        args.Model,
 	}
 
-	if err := store.AddTask(task); err != nil {
+	if err := store.AddTask(t); err != nil {
 		return nil, fmt.Errorf("adding task: %w", err)
 	}
 
-	return map[string]any{
+	result := map[string]any{
 		"success": true,
 		"task_id": args.TaskID,
 		"message": fmt.Sprintf("Task %s added to queue", args.TaskID),
-	}, nil
+	}
+
+	// Auto-generate R-XXX review task if review_required=true (default) and T- prefix
+	reviewRequired := args.ReviewRequired == nil || *args.ReviewRequired
+	if reviewRequired && strings.HasPrefix(args.TaskID, "T-") {
+		_, baseID, version, _ := task.ParseTaskID(args.TaskID)
+		reviewID := task.ReviewID(baseID, version)
+		reviewTask := &Task{
+			ID:           reviewID,
+			Title:        fmt.Sprintf("Review: %s", args.Title),
+			DoD:          fmt.Sprintf("Review implementation of %s\n\nOriginal DoD:\n%s", args.TaskID, args.DoD),
+			Status:       "pending",
+			Dependencies: []string{args.TaskID},
+			Domain:       args.Domain,
+			Priority:     args.Priority,
+		}
+		if err := store.AddTask(reviewTask); err != nil {
+			// Best-effort: log but don't fail the main task
+			fmt.Printf("c4: warning: failed to create review task %s: %v\n", reviewID, err)
+		} else {
+			result["review_task_id"] = reviewID
+		}
+	}
+
+	return result, nil
+}
+
+func handleRequestChanges(store Store, rawArgs json.RawMessage) (any, error) {
+	var args requestChangesArgs
+	if err := json.Unmarshal(rawArgs, &args); err != nil {
+		return nil, fmt.Errorf("parsing arguments: %w", err)
+	}
+
+	if args.ReviewTaskID == "" {
+		return nil, fmt.Errorf("review_task_id is required")
+	}
+	if args.Comments == "" {
+		return nil, fmt.Errorf("comments is required")
+	}
+	if len(args.RequiredChanges) == 0 {
+		return nil, fmt.Errorf("required_changes must not be empty")
+	}
+
+	result, err := store.RequestChanges(args.ReviewTaskID, args.Comments, args.RequiredChanges)
+	if err != nil {
+		return nil, fmt.Errorf("request changes: %w", err)
+	}
+
+	return result, nil
 }
 
 func handleMarkBlocked(store Store, rawArgs json.RawMessage) (any, error) {

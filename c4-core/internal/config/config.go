@@ -53,11 +53,8 @@ type C4Config struct {
 	ProjectID        string           `mapstructure:"project_id"          yaml:"project_id"`
 	DefaultBranch    string           `mapstructure:"default_branch"      yaml:"default_branch"`
 	WorkBranchPrefix string           `mapstructure:"work_branch_prefix"  yaml:"work_branch_prefix"`
-	PollIntervalMs   int              `mapstructure:"poll_interval_ms"    yaml:"poll_interval_ms"`
-	MaxIdleMinutes   int              `mapstructure:"max_idle_minutes"    yaml:"max_idle_minutes"`
-	WorkerTTLMinutes int              `mapstructure:"worker_ttl_minutes"  yaml:"worker_ttl_minutes"`
-	ScopeLockTTLSec  int              `mapstructure:"scope_lock_ttl_sec"  yaml:"scope_lock_ttl_sec"`
 	Domain           string           `mapstructure:"domain"              yaml:"domain"`
+	MaxRevision      int              `mapstructure:"max_revision"        yaml:"max_revision"`
 	Validation       ValidationConfig `mapstructure:"validation"          yaml:"validation"`
 	Worktree         WorktreeConfig   `mapstructure:"worktree"            yaml:"worktree"`
 	EconomicMode     EconomicMode     `mapstructure:"economic_mode"       yaml:"economic_mode"`
@@ -108,10 +105,7 @@ func defaultConfig() C4Config {
 		ProjectID:        "c4",
 		DefaultBranch:    "main",
 		WorkBranchPrefix: "c4/w-",
-		PollIntervalMs:   1000,
-		MaxIdleMinutes:   60,
-		WorkerTTLMinutes: 30,
-		ScopeLockTTLSec:  3600,
+		MaxRevision:      3,
 		ReviewAsTask:     true,
 		CheckpointAsTask: true,
 		Worktree: WorktreeConfig{
@@ -145,10 +139,7 @@ func New(projectRoot string) (*Manager, error) {
 	v.SetDefault("project_id", defaults.ProjectID)
 	v.SetDefault("default_branch", defaults.DefaultBranch)
 	v.SetDefault("work_branch_prefix", defaults.WorkBranchPrefix)
-	v.SetDefault("poll_interval_ms", defaults.PollIntervalMs)
-	v.SetDefault("max_idle_minutes", defaults.MaxIdleMinutes)
-	v.SetDefault("worker_ttl_minutes", defaults.WorkerTTLMinutes)
-	v.SetDefault("scope_lock_ttl_sec", defaults.ScopeLockTTLSec)
+	v.SetDefault("max_revision", defaults.MaxRevision)
 	v.SetDefault("review_as_task", defaults.ReviewAsTask)
 	v.SetDefault("checkpoint_as_task", defaults.CheckpointAsTask)
 	v.SetDefault("worktree.enabled", defaults.Worktree.Enabled)

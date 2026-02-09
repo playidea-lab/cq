@@ -11,6 +11,7 @@ import (
 
 	"github.com/changmin/c4-core/internal/config"
 	"github.com/changmin/c4-core/internal/state"
+	"github.com/changmin/c4-core/internal/task"
 )
 
 // SQLiteStore implements the handlers.Store interface backed by SQLite.
@@ -312,7 +313,7 @@ func (s *SQLiteStore) GetStatus() (*ProjectStatus, error) {
 		}
 	}
 
-	// Add economic mode info if config is available
+	// Add economic mode and worker config info if config is available
 	if s.config != nil {
 		cfg := s.config.GetConfig()
 		routing := cfg.EconomicMode.ModelRouting
@@ -324,6 +325,13 @@ func (s *SQLiteStore) GetStatus() (*ProjectStatus, error) {
 				"review":         routing.Review,
 				"checkpoint":     routing.Checkpoint,
 			},
+		}
+		status.WorkerConfig = &WorkerConfigInfo{
+			WorkBranchPrefix: cfg.WorkBranchPrefix,
+			DefaultBranch:    cfg.DefaultBranch,
+			WorktreeEnabled:  cfg.Worktree.Enabled,
+			ReviewAsTask:     cfg.ReviewAsTask,
+			MaxRevision:      cfg.MaxRevision,
 		}
 	}
 
@@ -549,6 +557,32 @@ func (s *SQLiteStore) AssignTask(workerID string) (*TaskAssignment, error) {
 		}
 	}
 
+	// Config-based branch and worktree assignment
+	if s.config != nil {
+		cfg := s.config.GetConfig()
+		if cfg.WorkBranchPrefix != "" {
+			assignment.Branch = cfg.WorkBranchPrefix + taskID
+		}
+		if cfg.Worktree.Enabled && s.projectRoot != "" {
+			assignment.WorktreePath = filepath.Join(s.projectRoot, ".c4", "worktrees", workerID)
+		}
+	}
+
+	// For R- tasks, inject parent T's review context
+	if strings.HasPrefix(taskID, "R-") {
+		_, baseID, ver, _ := task.ParseTaskID(taskID)
+		parentID := fmt.Sprintf("T-%s-%d", baseID, ver)
+		var commitSHA, filesChanged string
+		_ = s.db.QueryRow("SELECT commit_sha, branch FROM c4_tasks WHERE task_id=?", parentID).Scan(&commitSHA, &filesChanged)
+		if commitSHA != "" || filesChanged != "" {
+			assignment.ReviewContext = &ReviewContext{
+				ParentTaskID: parentID,
+				CommitSHA:    commitSHA,
+				FilesChanged: filesChanged,
+			}
+		}
+	}
+
 	return assignment, nil
 }
 
@@ -696,6 +730,74 @@ func (s *SQLiteStore) Checkpoint(checkpointID, decision, notes string, requiredC
 	}
 
 	return result, nil
+}
+
+// RequestChanges rejects a review task and creates the next version T+R pair.
+func (s *SQLiteStore) RequestChanges(reviewTaskID string, comments string, requiredChanges []string) (*RequestChangesResult, error) {
+	// 1. Parse review task ID
+	_, baseID, version, taskType := task.ParseTaskID(reviewTaskID)
+	if taskType != task.TypeReview {
+		return nil, fmt.Errorf("%s is not a review task (got type %s)", reviewTaskID, taskType)
+	}
+
+	// 2. Check max_revision
+	nextVersion := version + 1
+	if s.config != nil {
+		cfg := s.config.GetConfig()
+		if cfg.MaxRevision > 0 && nextVersion >= cfg.MaxRevision {
+			return nil, fmt.Errorf("max revision %d reached for base %s", cfg.MaxRevision, baseID)
+		}
+	}
+
+	// 3. Mark current R task as done with REQUEST_CHANGES result
+	_, err := s.db.Exec(`UPDATE c4_tasks SET status='done', commit_sha=?, updated_at=CURRENT_TIMESTAMP WHERE task_id=?`,
+		"REQUEST_CHANGES: "+comments, reviewTaskID)
+	if err != nil {
+		return nil, fmt.Errorf("updating review task: %w", err)
+	}
+
+	// 4. Look up parent T's DoD
+	parentTaskID := fmt.Sprintf("T-%s-%d", baseID, version)
+	var originalDoD string
+	_ = s.db.QueryRow("SELECT dod FROM c4_tasks WHERE task_id=?", parentTaskID).Scan(&originalDoD)
+
+	// 5. Create next version T + R
+	changesText := strings.Join(requiredChanges, "\n- ")
+	newDoD := fmt.Sprintf("Changes requested:\n- %s\n\nOriginal DoD:\n%s", changesText, originalDoD)
+
+	nextTaskID := task.NextVersionID("T", baseID, version)
+	nextReviewID := task.ReviewID(baseID, nextVersion)
+
+	// T-XXX-(N+1) — fix task
+	if err := s.AddTask(&Task{
+		ID:           nextTaskID,
+		Title:        fmt.Sprintf("Fix: %s", parentTaskID),
+		DoD:          newDoD,
+		Status:       "pending",
+		Dependencies: []string{reviewTaskID},
+		Priority:     10,
+	}); err != nil {
+		return nil, fmt.Errorf("creating fix task %s: %w", nextTaskID, err)
+	}
+
+	// R-XXX-(N+1) — review of fix
+	if err := s.AddTask(&Task{
+		ID:           nextReviewID,
+		Title:        fmt.Sprintf("Review: %s", nextTaskID),
+		DoD:          fmt.Sprintf("Review fix of %s\n\nRequired changes:\n- %s", parentTaskID, changesText),
+		Status:       "pending",
+		Dependencies: []string{nextTaskID},
+	}); err != nil {
+		return nil, fmt.Errorf("creating review task %s: %w", nextReviewID, err)
+	}
+
+	return &RequestChangesResult{
+		Success:      true,
+		NextTaskID:   nextTaskID,
+		NextReviewID: nextReviewID,
+		Version:      nextVersion,
+		Message:      fmt.Sprintf("Created %s + %s (v%d)", nextTaskID, nextReviewID, nextVersion),
+	}, nil
 }
 
 // --- Active Claim File Management ---

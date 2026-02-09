@@ -1531,32 +1531,50 @@ Checkpoints:
 ---
 
 **태스크 생성 (MCP 도구 사용):**
+
+`c4_add_todo`에 T- 접두사 태스크를 추가하면 **R-XXX 리뷰 태스크가 자동 생성**됩니다:
+
 ```javascript
+// T-001-0 추가 → R-001-0 자동 생성 (review_required 기본값 true)
 mcp__c4__c4_add_todo({
-  task_id: "T-001",
+  task_id: "T-001-0",
   title: "MediaPipe Hands 연동",
   scope: "src/HandTracker.js",
-  dod: "1) HandTracker 클래스 구현, 2) startTracking() 호출 시 웹캠 스트림 시작, 3) onFrame 콜백에서 검지 손끝(landmark 8) 좌표 {x, y, z} 반환, 4) stopTracking() 호출 시 리소스 해제"
+  dod: "1) HandTracker 클래스 구현, 2) startTracking() 시 웹캠 시작, 3) onFrame에서 좌표 반환, 4) stopTracking() 시 해제"
+})
+// → 결과: { task_id: "T-001-0", review_task_id: "R-001-0" }
+
+// review_required=false면 R 태스크 미생성 (인프라/설정 태스크 등)
+mcp__c4__c4_add_todo({
+  task_id: "T-002-0",
+  title: "CI/CD 설정",
+  dod: "GitHub Actions 워크플로우 추가",
+  review_required: false
 })
 ```
 
-**또는 CLI 사용:**
-```bash
-uv run --directory $C4_INSTALL_DIR c4 add-task \
-  --task-id "T-001" \
-  --title "MediaPipe Hands 연동" \
-  --scope "src/HandTracker.js" \
-  --dod "1) HandTracker 클래스 구현, 2) startTracking() 호출 시 웹캠 스트림 시작, 3) onFrame 콜백에서 검지 손끝(landmark 8) 좌표 {x, y, z} 반환, 4) stopTracking() 호출 시 리소스 해제"
+**CP 태스크도 Plan 단계에서 명시적으로 생성:**
+```javascript
+// CP 태스크: 여러 R 태스크 완료 후 실행
+mcp__c4__c4_add_todo({
+  task_id: "CP-001",
+  title: "Phase 1 checkpoint",
+  dod: "Phase 1 구현+리뷰 완료 확인",
+  dependencies: ["R-001-0", "R-002-0"],
+  review_required: false
+})
 ```
 
-**체크포인트 설정:**
-`.c4/config.yaml`에 추가:
-```yaml
-checkpoints:
-  - id: CP-001
-    description: "Phase 1 프로토타입 완료"
-    required_tasks: [T-001, T-002, ..., T-008]
-    required_validations: [lint, unit]
+**의존성 트리:**
+```
+T-001-0 → R-001-0 ─┐
+T-002-0 → R-002-0 ─┤→ CP-001 → T-003-0 → R-003-0
+```
+
+**리뷰에서 변경 요청 시:**
+```
+R-001-0 REQUEST_CHANGES → T-001-1 (수정) → R-001-1 (재리뷰)
+                          (max_revision 초과 시 blocked)
 ```
 
 **검증 명령 설정 (인터뷰 결과 반영):**

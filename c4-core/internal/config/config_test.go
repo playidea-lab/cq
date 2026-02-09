@@ -18,9 +18,7 @@ func TestLoadConfigYaml(t *testing.T) {
 project_id: test-project
 default_branch: develop
 work_branch_prefix: "test/w-"
-poll_interval_ms: 2000
-max_idle_minutes: 30
-scope_lock_ttl_sec: 1800
+max_revision: 5
 economic_mode:
   enabled: true
   preset: economic
@@ -45,14 +43,8 @@ economic_mode:
 	if cfg.WorkBranchPrefix != "test/w-" {
 		t.Errorf("WorkBranchPrefix = %q, want %q", cfg.WorkBranchPrefix, "test/w-")
 	}
-	if cfg.PollIntervalMs != 2000 {
-		t.Errorf("PollIntervalMs = %d, want %d", cfg.PollIntervalMs, 2000)
-	}
-	if cfg.MaxIdleMinutes != 30 {
-		t.Errorf("MaxIdleMinutes = %d, want %d", cfg.MaxIdleMinutes, 30)
-	}
-	if cfg.ScopeLockTTLSec != 1800 {
-		t.Errorf("ScopeLockTTLSec = %d, want %d", cfg.ScopeLockTTLSec, 1800)
+	if cfg.MaxRevision != 5 {
+		t.Errorf("MaxRevision = %d, want %d", cfg.MaxRevision, 5)
 	}
 }
 
@@ -145,17 +137,14 @@ func TestMissingConfigFileDefaults(t *testing.T) {
 	if cfg.DefaultBranch != "main" {
 		t.Errorf("DefaultBranch = %q, want %q", cfg.DefaultBranch, "main")
 	}
-	if cfg.PollIntervalMs != 1000 {
-		t.Errorf("PollIntervalMs = %d, want %d", cfg.PollIntervalMs, 1000)
+	if cfg.MaxRevision != 3 {
+		t.Errorf("MaxRevision = %d, want %d", cfg.MaxRevision, 3)
 	}
-	if cfg.MaxIdleMinutes != 60 {
-		t.Errorf("MaxIdleMinutes = %d, want %d", cfg.MaxIdleMinutes, 60)
+	if !cfg.ReviewAsTask {
+		t.Error("ReviewAsTask should be true by default")
 	}
-	if cfg.WorkerTTLMinutes != 30 {
-		t.Errorf("WorkerTTLMinutes = %d, want %d", cfg.WorkerTTLMinutes, 30)
-	}
-	if cfg.ScopeLockTTLSec != 3600 {
-		t.Errorf("ScopeLockTTLSec = %d, want %d", cfg.ScopeLockTTLSec, 3600)
+	if !cfg.CheckpointAsTask {
+		t.Error("CheckpointAsTask should be true by default")
 	}
 	if cfg.EconomicMode.Enabled {
 		t.Error("EconomicMode.Enabled should be false by default")

@@ -71,6 +71,9 @@ func (m *mockBenchStore) TransitionState(string, string) error          { return
 func (m *mockBenchStore) Checkpoint(string, string, string, []string) (*handlers.CheckpointResult, error) {
 	return &handlers.CheckpointResult{Success: true}, nil
 }
+func (m *mockBenchStore) RequestChanges(string, string, []string) (*handlers.RequestChangesResult, error) {
+	return &handlers.RequestChangesResult{Success: true, NextTaskID: "T-001-1", NextReviewID: "R-001-1", Version: 1}, nil
+}
 
 // setupRegistry creates an MCP registry with all handlers registered.
 func setupRegistry() *mcp.Registry {
@@ -163,8 +166,8 @@ func BenchmarkListTools(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		tools := reg.ListTools()
-		if len(tools) != 10 {
-			b.Fatalf("expected 10 tools, got %d", len(tools))
+		if len(tools) != 11 {
+			b.Fatalf("expected 11 tools, got %d", len(tools))
 		}
 	}
 }

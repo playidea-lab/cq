@@ -27,16 +27,42 @@ type Task struct {
 
 // TaskAssignment is returned when a worker is assigned a task.
 type TaskAssignment struct {
-	TaskID       string   `json:"task_id"`
-	Title        string   `json:"title"`
-	Scope        string   `json:"scope,omitempty"`
-	DoD          string   `json:"dod"`
-	Dependencies []string `json:"dependencies,omitempty"`
-	Domain       string   `json:"domain,omitempty"`
-	Branch       string   `json:"branch,omitempty"`
-	WorkerID     string   `json:"worker_id"`
-	WorktreePath string   `json:"worktree_path,omitempty"`
-	Model        string   `json:"recommended_model,omitempty"`
+	TaskID        string         `json:"task_id"`
+	Title         string         `json:"title"`
+	Scope         string         `json:"scope,omitempty"`
+	DoD           string         `json:"dod"`
+	Dependencies  []string       `json:"dependencies,omitempty"`
+	Domain        string         `json:"domain,omitempty"`
+	Branch        string         `json:"branch,omitempty"`
+	WorkerID      string         `json:"worker_id"`
+	WorktreePath  string         `json:"worktree_path,omitempty"`
+	Model         string         `json:"recommended_model,omitempty"`
+	ReviewContext *ReviewContext `json:"review_context,omitempty"`
+}
+
+// ReviewContext provides context from the parent implementation task for review tasks.
+type ReviewContext struct {
+	ParentTaskID string `json:"parent_task_id"`
+	CommitSHA    string `json:"commit_sha,omitempty"`
+	FilesChanged string `json:"files_changed,omitempty"`
+}
+
+// RequestChangesResult holds the result of a REQUEST_CHANGES operation.
+type RequestChangesResult struct {
+	Success      bool   `json:"success"`
+	NextTaskID   string `json:"next_task_id"`
+	NextReviewID string `json:"next_review_id"`
+	Version      int    `json:"version"`
+	Message      string `json:"message"`
+}
+
+// WorkerConfigInfo exposes worker/config info in c4_status.
+type WorkerConfigInfo struct {
+	WorkBranchPrefix string `json:"work_branch_prefix"`
+	DefaultBranch    string `json:"default_branch"`
+	WorktreeEnabled  bool   `json:"worktree_enabled"`
+	ReviewAsTask     bool   `json:"review_as_task"`
+	MaxRevision      int    `json:"max_revision"`
 }
 
 // ValidationResult holds the result of a single validation run.
@@ -86,6 +112,7 @@ type ProjectStatus struct {
 	BlockedTasks int               `json:"blocked_tasks"`
 	Workers      []WorkerInfo      `json:"workers,omitempty"`
 	EconomicMode *EconomicModeInfo `json:"economic_mode,omitempty"`
+	WorkerConfig *WorkerConfigInfo `json:"worker_config,omitempty"`
 }
 
 // Store defines the data access interface for MCP handlers.
@@ -110,4 +137,7 @@ type Store interface {
 
 	// Supervisor
 	Checkpoint(checkpointID, decision, notes string, requiredChanges []string) (*CheckpointResult, error)
+
+	// Review-as-Task: REQUEST_CHANGES creates next version T+R pair
+	RequestChanges(reviewTaskID string, comments string, requiredChanges []string) (*RequestChangesResult, error)
 }

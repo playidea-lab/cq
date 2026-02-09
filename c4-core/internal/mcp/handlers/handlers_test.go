@@ -191,6 +191,16 @@ func (m *mockStore) Checkpoint(checkpointID, decision, notes string, requiredCha
 	return m.cpResult, nil
 }
 
+func (m *mockStore) RequestChanges(reviewTaskID string, comments string, requiredChanges []string) (*RequestChangesResult, error) {
+	return &RequestChangesResult{
+		Success:      true,
+		NextTaskID:   "T-001-1",
+		NextReviewID: "R-001-1",
+		Version:      1,
+		Message:      "Created T-001-1 + R-001-1 (v1)",
+	}, nil
+}
+
 // --- c4_status tests ---
 
 func TestStatusSuccess(t *testing.T) {
@@ -448,19 +458,34 @@ func TestAddTodoSuccess(t *testing.T) {
 		t.Errorf("task_id = %v, want T-NEW-001", m["task_id"])
 	}
 
-	// Check stored task
-	if len(store.addedTasks) != 1 {
-		t.Fatalf("expected 1 added task, got %d", len(store.addedTasks))
+	// Check stored tasks: T + R (auto-generated review)
+	if len(store.addedTasks) != 2 {
+		t.Fatalf("expected 2 added tasks (T + R), got %d", len(store.addedTasks))
 	}
-	task := store.addedTasks[0]
-	if task.Title != "New feature" {
-		t.Errorf("Title = %q, want %q", task.Title, "New feature")
+	implTask := store.addedTasks[0]
+	if implTask.Title != "New feature" {
+		t.Errorf("Title = %q, want %q", implTask.Title, "New feature")
 	}
-	if task.Priority != 5 {
-		t.Errorf("Priority = %d, want %d", task.Priority, 5)
+	if implTask.Priority != 5 {
+		t.Errorf("Priority = %d, want %d", implTask.Priority, 5)
 	}
-	if task.Status != "pending" {
-		t.Errorf("Status = %q, want %q", task.Status, "pending")
+	if implTask.Status != "pending" {
+		t.Errorf("Status = %q, want %q", implTask.Status, "pending")
+	}
+
+	// Check auto-generated review task
+	// ParseTaskID("T-NEW-001") → baseID="NEW", version=1 → ReviewID("NEW", 1) = "R-NEW-1"
+	reviewTask := store.addedTasks[1]
+	if reviewTask.ID != "R-NEW-1" {
+		t.Errorf("Review task ID = %q, want %q", reviewTask.ID, "R-NEW-1")
+	}
+	if reviewTask.Dependencies[0] != "T-NEW-001" {
+		t.Errorf("Review task dependency = %q, want %q", reviewTask.Dependencies[0], "T-NEW-001")
+	}
+
+	// Check result includes review_task_id
+	if m["review_task_id"] != "R-NEW-1" {
+		t.Errorf("review_task_id = %v, want R-NEW-1", m["review_task_id"])
 	}
 }
 
@@ -675,18 +700,18 @@ func TestRegisterAllToolCount(t *testing.T) {
 	RegisterAll(reg, store)
 
 	tools := reg.ListTools()
-	if len(tools) != 10 {
+	if len(tools) != 11 {
 		names := make([]string, 0, len(tools))
 		for _, tool := range tools {
 			names = append(names, tool.Name)
 		}
-		t.Errorf("registered %d tools, want 10: %v", len(tools), names)
+		t.Errorf("registered %d tools, want 11: %v", len(tools), names)
 	}
 
-	// Verify all 10 expected tools are present
+	// Verify all 11 expected tools are present
 	expectedTools := []string{
 		"c4_status", "c4_start", "c4_clear",
-		"c4_get_task", "c4_submit", "c4_add_todo", "c4_mark_blocked",
+		"c4_get_task", "c4_submit", "c4_add_todo", "c4_request_changes", "c4_mark_blocked",
 		"c4_claim", "c4_report", "c4_checkpoint",
 	}
 	for _, name := range expectedTools {

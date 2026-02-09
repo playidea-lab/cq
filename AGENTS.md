@@ -80,7 +80,7 @@ c4_add_todo(mode="direct", review_required=False)
 ```
 상태: c4_status, c4_start, c4_clear
 태스크: c4_add_todo, c4_get_task, c4_submit, c4_claim, c4_report
-리뷰: c4_checkpoint, c4_ensure_supervisor
+리뷰: c4_checkpoint, c4_request_changes, c4_ensure_supervisor
 검증: c4_run_validation
 코드: c4_find_symbol, c4_get_symbols_overview, c4_replace_symbol_body
 파일: c4_read_file, c4_find_file, c4_search_for_pattern, c4_replace_content
@@ -104,11 +104,11 @@ CP-001:  체크포인트
 
 ## Go Core (c4-core/) — Primary MCP Server
 
-> `c4-core/` — Go 기반 MCP 서버 (Primary). 52개 도구. Python sidecar로 LSP/Knowledge/GPU 기능 위임.
+> `c4-core/` — Go 기반 MCP 서버 (Primary). 53개 도구. Python sidecar로 LSP/Knowledge/GPU 기능 위임.
 
 ### 아키텍처
 ```
-Claude Code → Go MCP Server (stdio, 52 tools)
+Claude Code → Go MCP Server (stdio, 53 tools)
                 ├→ Go native (21개): 상태, 태스크, 파일, git, validation, discovery, artifact
                 ├→ Go + SQLite (13개): spec, design, checkpoint
                 └→ JSON-RPC proxy (16개) → Python Sidecar
@@ -119,7 +119,7 @@ Claude Code → Go MCP Server (stdio, 52 tools)
 
 ### 패키지 구조
 - `cmd/c4/` — CLI (cobra), MCP server (Registry-based)
-- `internal/mcp/` — Registry + handlers (52개 도구)
+- `internal/mcp/` — Registry + handlers (53개 도구)
 - `internal/mcp/handlers/` — sqlite_store, files, git, discovery, artifacts, proxy, validation
 - `internal/bridge/` — Python sidecar 관리 (JSON-RPC/TCP)
 - `internal/task/` — TaskStore (SQLite, Memory, Supabase)
