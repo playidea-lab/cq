@@ -1,12 +1,12 @@
 # C4 Roadmap
 
-## Current Version: v0.9.0 (Go Gap Fix + Persona Evolution)
+## Current Version: v0.10.0 (Soul System + Review-as-Task)
 
-현재 버전은 **Go MCP Primary(51 tools), Persona Evolution, State Machine 검증, Config 연결, Knowledge Auto-Record**를 포함합니다.
+현재 버전은 **Go MCP Primary(56 tools), Soul System, Review-as-Task, Sidecar 안정성, LSP Onboarding**을 포함합니다.
 
 ### 핵심 구조
 
-- **Go MCP Server (Primary)** - 51 도구, Registry-based, SQLite Store, JSON-RPC Bridge
+- **Go MCP Server (Primary)** - 56 도구, Registry-based, SQLite Store, JSON-RPC Bridge
 - **Python Sidecar** - LSP(Multilspy→Jedi→Tree-sitter), Knowledge Store v2, GPU Scheduler
 - **C1 Desktop App** - Tauri 2.x, 4개 프로바이더, 가상 스크롤, LRU 캐시, 테마 토글
 
@@ -514,6 +514,39 @@ Claude Code → Go MCP Server (stdio, 47 tools)
 
 **테스트**: Go 9 packages pass, Python 402 pass
 
+### Phase 6.15: Sidecar Stability + LSP Onboarding ✅
+
+**목표**: Python Sidecar 안정성 강화, 프로젝트 자동 분석
+
+**구현 완료**:
+- **Sidecar Rename**: `grpc_server.py` → `rpc_server.py`, `C4_GRPC_PORT` → `C4_BRIDGE_PORT`
+- **Ping Health Check**: Python `Ping` 메서드 + Go `Sidecar.Ping()` JSON-RPC ping
+- **Auto-Restart**: `Sidecar.Restart()` (max 3회), `BridgeProxy` conn 실패 시 자동 재시작+retry
+- **c4_onboard MCP 도구**: 프로젝트 구조 자동 분석 → `pat-project-map.md` 생성
+  - 언어/프레임워크 감지, 심볼 추출 (top 100), 타입 계층, 엔트리포인트, 모듈 의존성 그래프
+
+**결과**: 51 → **52 MCP 도구** (+1: c4_onboard)
+
+### Phase 6.16: Review-as-Task + Soul System ✅
+
+**목표**: 리뷰 태스크 자동 생성, 사용자별 판단 시뮬레이터
+
+**Review-as-Task**:
+- **c4_add_todo**: T- 접두사 + `review_required=true`(기본) → R-XXX 자동 생성
+- **c4_request_changes**: R-task 거부 → T-XXX-(N+1) + R-XXX-(N+1) 자동 생성
+- **AssignTask 확장**: R-task 할당 시 parent T의 commit_sha/files를 ReviewContext로 주입
+- **Config**: `max_revision: 3` (REQUEST_CHANGES 횟수 제한), dead config 4필드 삭제
+
+**Soul System (3-Layer 아키텍처)**:
+- **Persona** (팀 기본, `.c4/personas/`) + **Soul** (개인 override, `.c4/souls/{user}/`) → **Merged** 판단 기준
+- **MCP 도구 3개**: `c4_soul_get` (CRUD), `c4_soul_set` (atomic write), `c4_soul_resolve` (병합)
+- **Workflow-Soul 연동**: 워크플로우 단계별 활성 역할 자동 전환
+- **Learn Loop**: SubmitTask/ReportTask → autoLearn → Soul Learned 섹션 자동 축적
+- **c4_whoami 확장**: 복수 roles, soul_files 표시
+
+**결과**: 52 → **56 MCP 도구** (+4: c4_request_changes, c4_soul_get, c4_soul_set, c4_soul_resolve)
+**테스트**: Go 9 packages pass (soul_test.go 22개 포함), Python 428 pass
+
 ---
 
 ## Phase 7: C4 Cloud (v0.8.0) 📋 Next
@@ -658,6 +691,8 @@ v0.1-0.3        v0.4           v0.5           v0.6          v0.6.10         v0.7
 | **Go Core Foundation** | P0 | ✅ 완료 |
 | **Go MCP Primary + Cloud Cleanup** | P0 | ✅ 완료 |
 | **Go Gap Fix + Persona Evolution** | P0 | ✅ 완료 |
+| **Sidecar Stability + LSP Onboarding** | P0 | ✅ 완료 |
+| **Review-as-Task + Soul System** | P0 | ✅ 완료 |
 | Worker Loop (CLI `c4 run`) | P2 | 📋 Deferred |
 | Cloud Foundation (7.1) | P1 | 📋 Next (Go 재설계) |
 | LLM Gateway (7.2) | P1 | 📋 Phase 7 |

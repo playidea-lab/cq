@@ -5,7 +5,7 @@
 ## Architecture
 
 ```
-Claude Code ──stdio──▶ Go MCP Server (53 tools)
+Claude Code ──stdio──▶ Go MCP Server (56 tools)
                          ├─▶ Go native (21): state, tasks, files, git, validation
                          ├─▶ Go + SQLite (13): spec, design, checkpoint
                          └─▶ JSON-RPC proxy (16) ──TCP──▶ Python Sidecar
@@ -76,7 +76,7 @@ T-001-0 (구현) → R-001-0 (리뷰)
 
 ## Key Features
 
-- **53 MCP Tools**: 상태, 태스크, 코드 분석, 파일, Git, 검증, 지식, GPU
+- **56 MCP Tools**: 상태, 태스크, 코드 분석, 파일, Git, 검증, 지식, GPU
 - **Knowledge Store v2**: Obsidian Markdown SSOT + FTS5 + Vector hybrid search (RRF)
 - **Code Intelligence**: Multilspy → Jedi → Tree-sitter 3단계 LSP fallback
 - **GPU/ML Native**: GPU 감지, 스케줄링, DAG → Task 변환
@@ -86,15 +86,15 @@ T-001-0 (구현) → R-001-0 (리뷰)
 
 ## What's Included
 
-### MCP Tools (53개)
+### MCP Tools (56개)
 
 | 카테고리 | 수 | 예시 |
 |----------|-----|------|
 | Core (상태/태스크) | 11 | `c4_status`, `c4_start`, `c4_add_todo`, `c4_claim`, `c4_report`, `c4_request_changes` |
 | Native (파일/Git) | 11 | `c4_find_file`, `c4_search_for_pattern`, `c4_read_file` |
-| SQLite (스펙/디자인) | 13 | `c4_save_spec`, `c4_save_design`, `c4_checkpoint` |
+| SQLite (스펙/디자인) | 12 | `c4_save_spec`, `c4_save_design`, `c4_checkpoint` |
 | Proxy → Sidecar | 16 | `c4_find_symbol`, `c4_knowledge_search`, `c4_onboard` |
-| Discovery/Artifact | 2 | `c4_discovery_complete`, `c4_artifact_save` |
+| Soul/Persona/Team | 6 | `c4_soul_get`, `c4_soul_set`, `c4_soul_resolve`, `c4_persona_stats`, `c4_persona_evolve`, `c4_whoami` |
 
 ### Slash Commands (14개)
 
@@ -125,6 +125,20 @@ T-001-0 (구현) → R-001-0 (리뷰)
 `.c4/personas/`에 자동 생성. 워크플로우 가중치 기반 역할 분리:
 `general-purpose`, `paper-reviewer`, `paper-reader`, `paper-writer`,
 `code-reviewer`, `backend-architect`, `ml-engineer`, `data-scientist` 등
+
+### Soul System (사용자별 판단 시뮬레이터)
+
+**3-Layer 아키텍처**: Persona (팀 기본) + Soul (개인 override) → Merged 판단 기준
+
+```
+.c4/personas/persona-developer.md   ← 팀 기본 (27개)
+.c4/souls/changmin/soul-developer.md ← 개인 override
+                                       → ResolveSoul() = persona + soul 병합
+```
+
+- **Workflow-Soul 연동**: 워크플로우 단계별 활성 역할 자동 전환 (EXECUTE→developer, CHECKPOINT→developer+ceo)
+- **Learn Loop**: 태스크 완료 → autoLearn → Soul Learned 섹션 자동 축적
+- **MCP 도구**: `c4_soul_get`, `c4_soul_set`, `c4_soul_resolve`
 
 ### SOUL (.c4/SOUL.md)
 
