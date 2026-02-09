@@ -75,9 +75,10 @@ type ValidationResult struct {
 
 // SubmitResult holds the result of a task submission.
 type SubmitResult struct {
-	Success    bool   `json:"success"`
-	NextAction string `json:"next_action"` // "get_next_task", "await_checkpoint", "complete"
-	Message    string `json:"message,omitempty"`
+	Success       bool   `json:"success"`
+	NextAction    string `json:"next_action"` // "get_next_task", "await_checkpoint", "complete"
+	Message       string `json:"message,omitempty"`
+	PendingReview string `json:"pending_review,omitempty"` // R- task ID awaiting review (auto-judge hint)
 }
 
 // CheckpointResult holds the result of a checkpoint decision.
@@ -114,7 +115,23 @@ type ProjectStatus struct {
 	Workers         []WorkerInfo      `json:"workers,omitempty"`
 	EconomicMode    *EconomicModeInfo `json:"economic_mode,omitempty"`
 	WorkerConfig    *WorkerConfigInfo `json:"worker_config,omitempty"`
-	ActiveSoulRoles []string          `json:"active_soul_roles,omitempty"`
+	ActiveSoulRoles       []string          `json:"active_soul_roles,omitempty"`
+	LighthouseStubs       int               `json:"lighthouse_stubs,omitempty"`
+	LighthouseImplemented int               `json:"lighthouse_implemented,omitempty"`
+}
+
+// Lighthouse represents a spec-as-MCP stub tool.
+type Lighthouse struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	InputSchema string `json:"input_schema"`
+	Spec        string `json:"spec"`
+	Status      string `json:"status"` // "stub", "implemented", "deprecated"
+	Version     int    `json:"version"`
+	CreatedBy   string `json:"created_by,omitempty"`
+	PromotedBy  string `json:"promoted_by,omitempty"`
+	CreatedAt   string `json:"created_at,omitempty"`
+	UpdatedAt   string `json:"updated_at,omitempty"`
 }
 
 // Store defines the data access interface for MCP handlers.
@@ -130,7 +147,7 @@ type Store interface {
 	AddTask(task *Task) error
 	GetTask(taskID string) (*Task, error)
 	AssignTask(workerID string) (*TaskAssignment, error)
-	SubmitTask(taskID, workerID, commitSHA string, results []ValidationResult) (*SubmitResult, error)
+	SubmitTask(taskID, workerID, commitSHA, handoff string, results []ValidationResult) (*SubmitResult, error)
 	MarkBlocked(taskID, workerID, failureSignature string, attempts int, lastError string) error
 
 	// Direct mode

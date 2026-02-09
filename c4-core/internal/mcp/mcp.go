@@ -80,6 +80,36 @@ func (r *Registry) HasTool(name string) bool {
 	return ok
 }
 
+// Replace atomically swaps handler+schema for an existing tool.
+// Returns false if the tool is not registered.
+func (r *Registry) Replace(schema ToolSchema, handler HandlerFunc) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, exists := r.tools[schema.Name]; !exists {
+		return false
+	}
+	r.tools[schema.Name] = registeredTool{schema: schema, handler: handler}
+	return true
+}
+
+// Unregister removes a tool from the registry.
+// Returns false if the tool is not registered.
+func (r *Registry) Unregister(name string) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, exists := r.tools[name]; !exists {
+		return false
+	}
+	delete(r.tools, name)
+	for i, n := range r.ordering {
+		if n == name {
+			r.ordering = append(r.ordering[:i], r.ordering[i+1:]...)
+			break
+		}
+	}
+	return true
+}
+
 // ListTools returns all registered tool schemas in registration order.
 func (r *Registry) ListTools() []ToolSchema {
 	r.mu.RLock()

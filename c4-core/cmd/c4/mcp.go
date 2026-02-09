@@ -119,6 +119,10 @@ func newMCPServer() (*mcpServer, error) {
 	handlers.RegisterTeamHandlers(reg, projectDir)
 	handlers.RegisterSoulHandlers(reg, projectDir)
 	handlers.RegisterTwinHandlers(reg, store)
+	handlers.RegisterLighthouseHandlers(reg, store)
+	if n := handlers.LoadLighthousesOnStartup(reg, store); n > 0 {
+		fmt.Fprintf(os.Stderr, "c4: %d lighthouse stubs loaded\n", n)
+	}
 
 	// Set project role for Soul stage integration
 	projectName := filepath.Base(projectDir)

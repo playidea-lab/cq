@@ -125,6 +125,31 @@ func (s *SQLiteStore) initSchema() error {
 			recorded_at TEXT DEFAULT CURRENT_TIMESTAMP,
 			UNIQUE(username, metric, period)
 		)`,
+		`CREATE TABLE IF NOT EXISTS c4_agent_traces (
+			id         INTEGER PRIMARY KEY AUTOINCREMENT,
+			event_type TEXT NOT NULL,
+			agent_id   TEXT DEFAULT '',
+			task_id    TEXT DEFAULT '',
+			detail     TEXT DEFAULT '',
+			created_at TEXT DEFAULT CURRENT_TIMESTAMP
+		)`,
+		`CREATE TABLE IF NOT EXISTS c4_lighthouses (
+			name         TEXT PRIMARY KEY,
+			description  TEXT NOT NULL DEFAULT '',
+			input_schema TEXT NOT NULL DEFAULT '{}',
+			spec         TEXT NOT NULL DEFAULT '',
+			status       TEXT NOT NULL DEFAULT 'stub',
+			version      INTEGER NOT NULL DEFAULT 1,
+			created_by   TEXT DEFAULT '',
+			promoted_by  TEXT DEFAULT '',
+			created_at   TEXT DEFAULT CURRENT_TIMESTAMP,
+			updated_at   TEXT DEFAULT CURRENT_TIMESTAMP
+		)`,
+	}
+
+	// Best-effort migrations for existing tables
+	migrations := []string{
+		"ALTER TABLE c4_tasks ADD COLUMN handoff TEXT DEFAULT ''",
 	}
 
 	for _, stmt := range statements {
@@ -132,6 +157,12 @@ func (s *SQLiteStore) initSchema() error {
 			return fmt.Errorf("executing %q: %w", stmt[:40], err)
 		}
 	}
+
+	// Best-effort: apply migrations (ignore "duplicate column" errors)
+	for _, m := range migrations {
+		_, _ = s.db.Exec(m)
+	}
+
 	return nil
 }
 
@@ -322,6 +353,13 @@ func (s *SQLiteStore) GetStatus() (*ProjectStatus, error) {
 		}
 	}
 
+	// Lighthouse counts
+	var lhStubs, lhImpl int
+	_ = s.db.QueryRow("SELECT COUNT(*) FROM c4_lighthouses WHERE status='stub'").Scan(&lhStubs)
+	_ = s.db.QueryRow("SELECT COUNT(*) FROM c4_lighthouses WHERE status='implemented'").Scan(&lhImpl)
+	status.LighthouseStubs = lhStubs
+	status.LighthouseImplemented = lhImpl
+
 	// Add active soul roles for current workflow stage
 	status.ActiveSoulRoles = GetActiveRolesForStage(status.State)
 
@@ -431,7 +469,7 @@ func (s *SQLiteStore) Clear(keepConfig bool) error {
 	}
 	defer tx.Rollback()
 
-	tables := []string{"c4_tasks", "c4_state", "c4_checkpoints", "persona_stats", "twin_growth"}
+	tables := []string{"c4_tasks", "c4_state", "c4_checkpoints", "persona_stats", "twin_growth", "c4_lighthouses"}
 	for _, table := range tables {
 		if _, err := tx.Exec("DELETE FROM " + table); err != nil {
 			return fmt.Errorf("clearing %s: %w", table, err)
@@ -516,18 +554,35 @@ func (s *SQLiteStore) AssignTask(workerID string) (*TaskAssignment, error) {
 	var deps sql.NullString
 	var priority int
 
+	// Anti-fragility: try to reassign stale in_progress tasks first (>10 min without update)
 	err = tx.QueryRow(`
 		SELECT t.task_id, t.title, t.scope, t.dod, t.dependencies, t.domain, t.priority, t.model
 		FROM c4_tasks t
-		WHERE t.status = 'pending'
-		AND NOT EXISTS (
-			SELECT 1 FROM json_each(CASE WHEN t.dependencies IS NULL OR t.dependencies = '' THEN '[]' ELSE t.dependencies END) AS dep
-			JOIN c4_tasks dt ON dt.task_id = dep.value
-			WHERE dt.status != 'done'
-		)
+		WHERE t.status = 'in_progress'
+		AND (julianday('now') - julianday(t.updated_at)) * 24 * 60 > 10
+		AND t.worker_id != ?
 		ORDER BY t.priority DESC, t.created_at ASC
-		LIMIT 1`,
+		LIMIT 1`, workerID,
 	).Scan(&taskID, &title, &scope, &dod, &deps, &domain, &priority, &model)
+
+	if err == sql.ErrNoRows {
+		// Normal path: find next pending task with resolved dependencies
+		err = tx.QueryRow(`
+			SELECT t.task_id, t.title, t.scope, t.dod, t.dependencies, t.domain, t.priority, t.model
+			FROM c4_tasks t
+			WHERE t.status = 'pending'
+			AND NOT EXISTS (
+				SELECT 1 FROM json_each(CASE WHEN t.dependencies IS NULL OR t.dependencies = '' THEN '[]' ELSE t.dependencies END) AS dep
+				JOIN c4_tasks dt ON dt.task_id = dep.value
+				WHERE dt.status != 'done'
+			)
+			ORDER BY t.priority DESC, t.created_at ASC
+			LIMIT 1`,
+		).Scan(&taskID, &title, &scope, &dod, &deps, &domain, &priority, &model)
+	} else if err == nil {
+		// Log stale reassignment trace
+		s.logTrace("stale_reassign", workerID, taskID, "Reassigned stale in_progress task")
+	}
 
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -576,7 +631,18 @@ func (s *SQLiteStore) AssignTask(workerID string) (*TaskAssignment, error) {
 			assignment.Branch = cfg.WorkBranchPrefix + taskID
 		}
 		if cfg.Worktree.Enabled && s.projectRoot != "" {
-			assignment.WorktreePath = filepath.Join(s.projectRoot, ".c4", "worktrees", workerID)
+			wtPath := filepath.Join(s.projectRoot, ".c4", "worktrees", workerID)
+			assignment.WorktreePath = wtPath
+			// Auto-create worktree (best-effort, skip if already exists)
+			if _, statErr := os.Stat(wtPath); os.IsNotExist(statErr) {
+				branch := assignment.Branch
+				if branch == "" {
+					branch = "c4-" + taskID
+				}
+				if _, wtErr := runGit(s.projectRoot, "worktree", "add", wtPath, "-b", branch); wtErr != nil {
+					fmt.Fprintf(os.Stderr, "c4: warning: failed to create worktree %s: %v\n", wtPath, wtErr)
+				}
+			}
 		}
 	}
 
@@ -604,7 +670,7 @@ func (s *SQLiteStore) AssignTask(workerID string) (*TaskAssignment, error) {
 }
 
 // SubmitTask marks a task as done.
-func (s *SQLiteStore) SubmitTask(taskID, workerID, commitSHA string, results []ValidationResult) (*SubmitResult, error) {
+func (s *SQLiteStore) SubmitTask(taskID, workerID, commitSHA, handoff string, results []ValidationResult) (*SubmitResult, error) {
 	for _, r := range results {
 		if r.Status == "fail" {
 			return &SubmitResult{
@@ -620,9 +686,10 @@ func (s *SQLiteStore) SubmitTask(taskID, workerID, commitSHA string, results []V
 		return nil, fmt.Errorf("getting task for submit: %w", err)
 	}
 
+	// Store task completion + handoff
 	_, err = s.db.Exec(`
-		UPDATE c4_tasks SET status = 'done', commit_sha = ?, updated_at = CURRENT_TIMESTAMP
-		WHERE task_id = ?`, commitSHA, taskID,
+		UPDATE c4_tasks SET status = 'done', commit_sha = ?, handoff = ?, updated_at = CURRENT_TIMESTAMP
+		WHERE task_id = ?`, commitSHA, handoff, taskID,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("updating task: %w", err)
@@ -640,6 +707,9 @@ func (s *SQLiteStore) SubmitTask(taskID, workerID, commitSHA string, results []V
 	// Record growth snapshot (best-effort)
 	s.recordGrowthOnCompletion()
 
+	// Trace logging
+	s.logTrace("task_submitted", workerID, taskID, commitSHA)
+
 	var pending int
 	_ = s.db.QueryRow("SELECT COUNT(*) FROM c4_tasks WHERE status IN ('pending', 'in_progress')").Scan(&pending)
 
@@ -648,10 +718,22 @@ func (s *SQLiteStore) SubmitTask(taskID, workerID, commitSHA string, results []V
 		nextAction = "complete"
 	}
 
+	// Auto-judge: find pending review task for this implementation
+	var pendingReview string
+	if strings.HasPrefix(taskID, "T-") {
+		// T-001-0 → R-001-0
+		reviewID := "R-" + strings.TrimPrefix(taskID, "T-")
+		var reviewStatus string
+		if err := s.db.QueryRow("SELECT status FROM c4_tasks WHERE task_id=?", reviewID).Scan(&reviewStatus); err == nil && reviewStatus == "pending" {
+			pendingReview = reviewID
+		}
+	}
+
 	return &SubmitResult{
-		Success:    true,
-		NextAction: nextAction,
-		Message:    fmt.Sprintf("Task %s submitted successfully", taskID),
+		Success:       true,
+		NextAction:    nextAction,
+		Message:       fmt.Sprintf("Task %s submitted successfully", taskID),
+		PendingReview: pendingReview,
 	}, nil
 }
 
@@ -688,6 +770,9 @@ func (s *SQLiteStore) ClaimTask(taskID string) (*Task, error) {
 
 	// Write .c4/active_claim.json for hook validation
 	s.writeClaimFile(taskID)
+
+	// Trace logging
+	s.logTrace("task_claimed", "direct", taskID, task.Title)
 
 	return task, nil
 }

@@ -117,6 +117,88 @@ func TestMCPRegistryDuplicateSkips(t *testing.T) {
 	}
 }
 
+// TestMCPRegistryReplace verifies Replace swaps an existing tool's handler.
+func TestMCPRegistryReplace(t *testing.T) {
+	reg := NewRegistry()
+
+	reg.Register(ToolSchema{Name: "tool_a", Description: "original"}, func(args json.RawMessage) (any, error) {
+		return "original", nil
+	})
+
+	// Replace with new handler and description
+	ok := reg.Replace(ToolSchema{Name: "tool_a", Description: "replaced"}, func(args json.RawMessage) (any, error) {
+		return "replaced", nil
+	})
+	if !ok {
+		t.Fatal("Replace returned false for existing tool")
+	}
+
+	// Handler should be the new one
+	result, err := reg.Call("tool_a", nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result != "replaced" {
+		t.Errorf("result = %v, want replaced", result)
+	}
+
+	// Schema description should be updated
+	tools := reg.ListTools()
+	if len(tools) != 1 {
+		t.Fatalf("expected 1 tool, got %d", len(tools))
+	}
+	if tools[0].Description != "replaced" {
+		t.Errorf("description = %q, want replaced", tools[0].Description)
+	}
+}
+
+// TestMCPRegistryReplaceNonExistent verifies Replace returns false for unknown tools.
+func TestMCPRegistryReplaceNonExistent(t *testing.T) {
+	reg := NewRegistry()
+	ok := reg.Replace(ToolSchema{Name: "nonexistent"}, func(args json.RawMessage) (any, error) {
+		return nil, nil
+	})
+	if ok {
+		t.Fatal("Replace returned true for non-existent tool")
+	}
+}
+
+// TestMCPRegistryUnregister verifies Unregister removes a tool.
+func TestMCPRegistryUnregister(t *testing.T) {
+	reg := NewRegistry()
+
+	reg.Register(ToolSchema{Name: "tool_a"}, func(args json.RawMessage) (any, error) { return nil, nil })
+	reg.Register(ToolSchema{Name: "tool_b"}, func(args json.RawMessage) (any, error) { return nil, nil })
+	reg.Register(ToolSchema{Name: "tool_c"}, func(args json.RawMessage) (any, error) { return nil, nil })
+
+	ok := reg.Unregister("tool_b")
+	if !ok {
+		t.Fatal("Unregister returned false for existing tool")
+	}
+
+	if reg.HasTool("tool_b") {
+		t.Error("tool_b should be removed")
+	}
+
+	// Verify ordering is correct (tool_a, tool_c)
+	tools := reg.ListTools()
+	if len(tools) != 2 {
+		t.Fatalf("expected 2 tools, got %d", len(tools))
+	}
+	if tools[0].Name != "tool_a" || tools[1].Name != "tool_c" {
+		t.Errorf("tools = [%s, %s], want [tool_a, tool_c]", tools[0].Name, tools[1].Name)
+	}
+}
+
+// TestMCPRegistryUnregisterNonExistent verifies Unregister returns false for unknown tools.
+func TestMCPRegistryUnregisterNonExistent(t *testing.T) {
+	reg := NewRegistry()
+	ok := reg.Unregister("nonexistent")
+	if ok {
+		t.Fatal("Unregister returned true for non-existent tool")
+	}
+}
+
 // TestMCPToolSchemaJSON verifies ToolSchema JSON serialization.
 func TestMCPToolSchemaJSON(t *testing.T) {
 	schema := ToolSchema{

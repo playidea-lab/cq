@@ -1,12 +1,12 @@
 # C4 Roadmap
 
-## Current Version: v0.11.0 (Digital Twin + Soul System)
+## Current Version: v0.12.0 (Lighthouse + PDF/Cursor 고도화)
 
-현재 버전은 **Go MCP Primary(57 tools), Digital Twin, Soul System, Review-as-Task, Sidecar 안정성, LSP Onboarding**을 포함합니다.
+현재 버전은 **Go MCP Primary(58 tools), Lighthouse Pattern (Spec-as-MCP), Digital Twin, Soul System, Review-as-Task, Sidecar 안정성, LSP Onboarding**을 포함합니다.
 
 ### 핵심 구조
 
-- **Go MCP Server (Primary)** - 57 도구, Registry-based, SQLite Store, JSON-RPC Bridge
+- **Go MCP Server (Primary)** - 58 도구, Registry-based, SQLite Store, JSON-RPC Bridge
 - **Python Sidecar** - LSP(Multilspy→Jedi→Tree-sitter), Knowledge Store v2, GPU Scheduler
 - **C1 Desktop App** - Tauri 2.x, 4개 프로바이더, 가상 스크롤, LRU 캐시, 테마 토글
 
@@ -579,6 +579,29 @@ Claude Code → Go MCP Server (stdio, 47 tools)
 
 **결과**: 56 → **57 MCP 도구** (+1: c4_reflect)
 **테스트**: Go 9 packages pass (twin_test.go 23개 포함), Python 446 pass
+
+### Phase 7.5: PDF/Cursor 가이드 고도화 + Lighthouse Pattern ✅
+
+**목표**: Claude Code 70팁 PDF + Cursor Self-Driving 블로그 기반 시스템 고도화, Spec-as-MCP 패턴
+
+**PDF/Cursor 가이드 고도화**:
+- **Go PostToolUse hook**: `.go` 수정 시 자동 `go vet` (hooks.json)
+- **승인 명령어 감사**: `auditApprovedCommands()` → c4_reflect permission_audit 섹션
+- **HANDOFF.md 자동 생성**: c4-finish Step 4.5 — 세션 간 컨텍스트 압축
+- **Worktree 자동 생성**: AssignTask에서 `git worktree add` 실제 실행
+- **c4-swarm 고도화**: domain→agent 매핑 12개, sub-planner 모드, 핸드오프, anti-fragility
+- **Agent trace logging**: c4_agent_traces 테이블, c4_reflect recent_traces
+
+**Lighthouse Pattern (Spec-as-MCP)**:
+- **c4_lighthouse MCP 도구** (#58): register/list/get/promote/update/remove 6개 action
+- **Registry 확장**: `Replace()`, `Unregister()` 메서드 — stub→live 교체
+- **Stub 팩토리**: 호출 시 spec/contract 반환 (TDD와 동일 원리, API 계약 수준)
+- **Startup Loader**: DB의 stub lighthouse를 서버 시작 시 자동 로드
+- **Status 흐름**: stub → implemented (promote) / deprecated (remove)
+- **충돌 방지**: core 도구 이름 거부, 중복 lighthouse 거부
+
+**결과**: 57 → **58 MCP 도구** (+1: c4_lighthouse)
+**테스트**: Go 9 packages pass (lighthouse_test.go 11개 포함)
 
 ---
 

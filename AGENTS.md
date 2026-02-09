@@ -88,6 +88,7 @@ c4_add_todo(mode="direct", review_required=False)
 Soul: c4_soul_get, c4_soul_set, c4_soul_resolve
 팀: c4_whoami, c4_persona_stats, c4_persona_evolve
 온보딩: c4_onboard
+Lighthouse: c4_lighthouse (register/list/get/promote/update/remove)
 ```
 
 ### 워크플로우
