@@ -68,9 +68,9 @@ export function TeamView() {
         invoke<AgentTrace[]>('cloud_get_agent_traces', { projectId }).catch(() => []),
       ]);
       setRemoteDashboard(state);
-      setCheckpoints(cps);
-      setGrowthMetrics(growth);
-      setAgentTraces(traces);
+      setCheckpoints(cps ?? []);
+      setGrowthMetrics(growth ?? []);
+      setAgentTraces(traces ?? []);
     } catch (err) {
       console.error('Failed to load remote dashboard:', err);
     } finally {

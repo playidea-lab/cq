@@ -44,6 +44,8 @@ export function useRealtimeSync(options?: UseRealtimeSyncOptions) {
       setStatus(event.payload);
     }).then((fn) => {
       unlisten = fn;
+    }).catch(() => {
+      // Tauri runtime not available (e.g., in tests)
     });
 
     return () => {
@@ -60,6 +62,8 @@ export function useRealtimeSync(options?: UseRealtimeSyncOptions) {
       onUpdateRef.current?.(event.payload);
     }).then((fn) => {
       unlisten = fn;
+    }).catch(() => {
+      // Tauri runtime not available (e.g., in tests)
     });
 
     return () => {
@@ -70,8 +74,8 @@ export function useRealtimeSync(options?: UseRealtimeSyncOptions) {
   const connect = useCallback(async () => {
     try {
       await invoke('realtime_connect');
-    } catch (err) {
-      console.error('[realtime] connect failed:', err);
+    } catch {
+      // Tauri runtime not available or connection failed
     }
   }, []);
 
@@ -79,8 +83,8 @@ export function useRealtimeSync(options?: UseRealtimeSyncOptions) {
     try {
       await invoke('realtime_disconnect');
       setStatus('disconnected');
-    } catch (err) {
-      console.error('[realtime] disconnect failed:', err);
+    } catch {
+      // Tauri runtime not available
     }
   }, []);
 

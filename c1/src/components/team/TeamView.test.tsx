@@ -6,6 +6,10 @@ vi.mock('@tauri-apps/api/core', () => ({
   invoke: vi.fn(),
 }));
 
+vi.mock('@tauri-apps/api/event', () => ({
+  listen: vi.fn(() => Promise.resolve(() => {})),
+}));
+
 import { invoke } from '@tauri-apps/api/core';
 const mockInvoke = vi.mocked(invoke);
 
