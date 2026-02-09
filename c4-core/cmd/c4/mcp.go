@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 
 	"github.com/changmin/c4-core/internal/bridge"
+	"github.com/changmin/c4-core/internal/cloud"
 	"github.com/changmin/c4-core/internal/config"
 	"github.com/changmin/c4-core/internal/mcp"
 	"github.com/changmin/c4-core/internal/mcp/handlers"
@@ -107,20 +108,50 @@ func newMCPServer() (*mcpServer, error) {
 	if proxy != nil {
 		storeOpts = append(storeOpts, handlers.WithProxy(proxy))
 	}
-	store, err := handlers.NewSQLiteStore(db, storeOpts...)
+	sqliteStore, err := handlers.NewSQLiteStore(db, storeOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating store: %w", err)
 	}
 
+	// Wrap with HybridStore if cloud is enabled
+	var store handlers.Store = sqliteStore
+	if cfgMgr != nil && cfgMgr.GetConfig().Cloud.Enabled {
+		cloudCfg := cfgMgr.GetConfig().Cloud
+		if cloudCfg.URL != "" && cloudCfg.AnonKey != "" {
+			// Load auth token from session (best-effort)
+			authToken := ""
+			authClient := cloud.NewAuthClient(cloudCfg.URL, cloudCfg.AnonKey)
+			if session, sessErr := authClient.GetSession(); sessErr == nil && session != nil {
+				authToken = session.AccessToken
+			}
+
+			cloudURL := cloudCfg.URL + "/rest/v1"
+			projectID := cloudCfg.ProjectID
+			if projectID == "" && cfgMgr != nil {
+				projectID = cfgMgr.GetConfig().ProjectID
+			}
+
+			cloudStore := cloud.NewCloudStore(cloudURL, cloudCfg.AnonKey, authToken, projectID)
+			store = cloud.NewHybridStore(sqliteStore, cloudStore)
+			fmt.Fprintln(os.Stderr, "c4: cloud sync enabled (hybrid mode)")
+		} else {
+			fmt.Fprintln(os.Stderr, "c4: cloud enabled but URL/key not configured, using local only")
+		}
+	}
+
 	// Re-register handlers with the actual store (core + discovery + persona + soul tools)
+	// Note: RegisterAll and RegisterDiscoveryHandlers accept handlers.Store interface,
+	// so they work with both SQLiteStore and HybridStore.
+	// Persona, Twin, and Lighthouse handlers require *SQLiteStore directly
+	// (they use SQLite-specific queries like DetectPatterns, growth snapshots).
 	handlers.RegisterAll(reg, store)
 	handlers.RegisterDiscoveryHandlers(reg, store, projectDir)
-	handlers.RegisterPersonaHandlers(reg, store)
+	handlers.RegisterPersonaHandlers(reg, sqliteStore)
 	handlers.RegisterTeamHandlers(reg, projectDir)
 	handlers.RegisterSoulHandlers(reg, projectDir)
-	handlers.RegisterTwinHandlers(reg, store)
-	handlers.RegisterLighthouseHandlers(reg, store)
-	if n := handlers.LoadLighthousesOnStartup(reg, store); n > 0 {
+	handlers.RegisterTwinHandlers(reg, sqliteStore)
+	handlers.RegisterLighthouseHandlers(reg, sqliteStore)
+	if n := handlers.LoadLighthousesOnStartup(reg, sqliteStore); n > 0 {
 		fmt.Fprintf(os.Stderr, "c4: %d lighthouse stubs loaded\n", n)
 	}
 

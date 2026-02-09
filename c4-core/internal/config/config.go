@@ -35,6 +35,14 @@ type EconomicMode struct {
 	ModelRouting ModelRouting `mapstructure:"model_routing" yaml:"model_routing"`
 }
 
+// CloudConfig holds cloud (Supabase) connection settings.
+type CloudConfig struct {
+	Enabled   bool   `mapstructure:"enabled"    yaml:"enabled"`
+	URL       string `mapstructure:"url"        yaml:"url"`        // Supabase project URL
+	AnonKey   string `mapstructure:"anon_key"   yaml:"anon_key"`   // from env C4_CLOUD_ANON_KEY
+	ProjectID string `mapstructure:"project_id" yaml:"project_id"` // cloud project identifier
+}
+
 // WorktreeConfig holds worktree settings.
 type WorktreeConfig struct {
 	Enabled     bool `mapstructure:"enabled"      yaml:"enabled"`
@@ -58,6 +66,7 @@ type C4Config struct {
 	Validation       ValidationConfig `mapstructure:"validation"          yaml:"validation"`
 	Worktree         WorktreeConfig   `mapstructure:"worktree"            yaml:"worktree"`
 	EconomicMode     EconomicMode     `mapstructure:"economic_mode"       yaml:"economic_mode"`
+	Cloud            CloudConfig      `mapstructure:"cloud"               yaml:"cloud"`
 	ReviewAsTask     bool             `mapstructure:"review_as_task"      yaml:"review_as_task"`
 	CheckpointAsTask bool             `mapstructure:"checkpoint_as_task"  yaml:"checkpoint_as_task"`
 }
@@ -146,6 +155,10 @@ func New(projectRoot string) (*Manager, error) {
 	v.SetDefault("worktree.auto_cleanup", defaults.Worktree.AutoCleanup)
 	v.SetDefault("economic_mode.enabled", defaults.EconomicMode.Enabled)
 	v.SetDefault("economic_mode.preset", defaults.EconomicMode.Preset)
+	v.SetDefault("cloud.enabled", false)
+	v.SetDefault("cloud.url", "")
+	v.SetDefault("cloud.anon_key", "")
+	v.SetDefault("cloud.project_id", "")
 
 	// Config file location
 	configDir := filepath.Join(projectRoot, ".c4")
@@ -231,8 +244,12 @@ func (m *Manager) GetConfig() C4Config {
 	return m.config
 }
 
-// GetBackend returns the store backend type ("sqlite" by default).
+// GetBackend returns the store backend type.
+// Returns "hybrid" if cloud is enabled, "sqlite" otherwise.
 func (m *Manager) GetBackend() string {
+	if m.config.Cloud.Enabled {
+		return "hybrid"
+	}
 	backend := m.v.GetString("store.backend")
 	if backend == "" {
 		return "sqlite"

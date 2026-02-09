@@ -257,3 +257,84 @@ func TestGetBackendDefault(t *testing.T) {
 		t.Errorf("GetBackend() = %q, want %q", got, "sqlite")
 	}
 }
+
+func TestCloudConfig(t *testing.T) {
+	t.Run("disabled by default", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		mgr, err := New(tmpDir)
+		if err != nil {
+			t.Fatalf("New() failed: %v", err)
+		}
+		cfg := mgr.GetConfig()
+		if cfg.Cloud.Enabled {
+			t.Error("Cloud.Enabled should be false by default")
+		}
+		if got := mgr.GetBackend(); got != "sqlite" {
+			t.Errorf("GetBackend() = %q, want %q", got, "sqlite")
+		}
+	})
+
+	t.Run("enabled from yaml", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		c4Dir := filepath.Join(tmpDir, ".c4")
+		if err := os.MkdirAll(c4Dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+
+		yaml := `project_id: test
+cloud:
+  enabled: true
+  url: "https://abc.supabase.co"
+  anon_key: "test-key-123"
+  project_id: "cloud-proj"
+`
+		if err := os.WriteFile(filepath.Join(c4Dir, "config.yaml"), []byte(yaml), 0o644); err != nil {
+			t.Fatal(err)
+		}
+
+		mgr, err := New(tmpDir)
+		if err != nil {
+			t.Fatalf("New() failed: %v", err)
+		}
+
+		cfg := mgr.GetConfig()
+		if !cfg.Cloud.Enabled {
+			t.Error("Cloud.Enabled should be true")
+		}
+		if cfg.Cloud.URL != "https://abc.supabase.co" {
+			t.Errorf("Cloud.URL = %q, want %q", cfg.Cloud.URL, "https://abc.supabase.co")
+		}
+		if cfg.Cloud.AnonKey != "test-key-123" {
+			t.Errorf("Cloud.AnonKey = %q, want %q", cfg.Cloud.AnonKey, "test-key-123")
+		}
+		if cfg.Cloud.ProjectID != "cloud-proj" {
+			t.Errorf("Cloud.ProjectID = %q, want %q", cfg.Cloud.ProjectID, "cloud-proj")
+		}
+		if got := mgr.GetBackend(); got != "hybrid" {
+			t.Errorf("GetBackend() = %q, want %q", got, "hybrid")
+		}
+	})
+
+	t.Run("env var override", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		t.Setenv("C4_CLOUD_ENABLED", "true")
+		t.Setenv("C4_CLOUD_URL", "https://env.supabase.co")
+		t.Setenv("C4_CLOUD_ANON_KEY", "env-key")
+
+		mgr, err := New(tmpDir)
+		if err != nil {
+			t.Fatalf("New() failed: %v", err)
+		}
+
+		cfg := mgr.GetConfig()
+		if !cfg.Cloud.Enabled {
+			t.Error("Cloud.Enabled should be true from env var")
+		}
+		if cfg.Cloud.URL != "https://env.supabase.co" {
+			t.Errorf("Cloud.URL = %q, want %q", cfg.Cloud.URL, "https://env.supabase.co")
+		}
+		if cfg.Cloud.AnonKey != "env-key" {
+			t.Errorf("Cloud.AnonKey = %q, want %q", cfg.Cloud.AnonKey, "env-key")
+		}
+	})
+}
