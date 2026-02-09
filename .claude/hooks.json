@@ -46,6 +46,14 @@
         "enabled": true
       },
       {
+        "id": "auto-vet-go",
+        "matcher": "Edit(*.go)|Write(*.go)",
+        "command": "cd /Users/changmin/git/c4/c4-core && go vet ./... 2>&1 | head -20 || true",
+        "description": "Run go vet after Go file edits",
+        "onFailure": "warn",
+        "enabled": true
+      },
+      {
         "id": "warn-console-log",
         "matcher": "Edit(*.ts)|Write(*.ts)|Edit(*.js)|Write(*.js)",
         "command": "grep -n 'console.log' $FILE 2>/dev/null && echo '⚠️ console.log found - consider removing before commit' || true",

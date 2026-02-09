@@ -437,7 +437,7 @@ func RegisterProxyHandlers(reg *mcp.Registry, proxy *BridgeProxy) {
 	// Onboard tool — scans project structure via LSP/tree-sitter (30s timeout for large projects)
 	reg.Register(mcp.ToolSchema{
 		Name:        "c4_onboard",
-		Description: "Scan project structure and generate pat-project-map.md knowledge document. Detects languages, frameworks, entry points, key symbols, type hierarchy, and module dependencies.",
+		Description: "Scan project and generate pat-project-map.md (languages, symbols, dependencies)",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{

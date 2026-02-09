@@ -64,7 +64,7 @@ func RegisterPersonaHandlers(reg *mcp.Registry, store *SQLiteStore) {
 	// c4_persona_evolve
 	reg.Register(mcp.ToolSchema{
 		Name:        "c4_persona_evolve",
-		Description: "Suggest evolution rules for a persona based on task outcomes. With apply=true (default), auto-writes suggestions to Soul's Learned section.",
+		Description: "Suggest persona evolution based on task outcomes (auto-applies to Soul)",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -161,7 +161,7 @@ func RegisterTeamHandlers(reg *mcp.Registry, projectRoot string) {
 	// c4_whoami
 	reg.Register(mcp.ToolSchema{
 		Name:        "c4_whoami",
-		Description: "Get or set current user identity, roles, and active persona. Supports multiple roles per user for workflow-based Soul activation.",
+		Description: "Get or set current user identity, roles, and active persona",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{

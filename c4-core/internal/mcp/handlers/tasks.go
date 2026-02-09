@@ -20,6 +20,7 @@ type submitArgs struct {
 	CommitSHA         string             `json:"commit_sha"`
 	ValidationResults []ValidationResult `json:"validation_results"`
 	WorkerID          string             `json:"worker_id,omitempty"`
+	Handoff           string             `json:"handoff,omitempty"` // Structured handoff: discoveries, concerns, feedback
 }
 
 // addTodoArgs is the input for c4_add_todo.
@@ -103,6 +104,10 @@ func RegisterTaskHandlers(reg *mcp.Registry, store Store) {
 				"worker_id": map[string]any{
 					"type":        "string",
 					"description": "Worker ID submitting the task (for ownership verification)",
+				},
+				"handoff": map[string]any{
+					"type":        "string",
+					"description": "Structured handoff note (discoveries, concerns, feedback for next agent)",
 				},
 			},
 			"required": []string{"task_id", "commit_sha", "validation_results"},
@@ -217,7 +222,7 @@ func handleSubmit(store Store, rawArgs json.RawMessage) (any, error) {
 		return nil, fmt.Errorf("commit_sha is required")
 	}
 
-	result, err := store.SubmitTask(args.TaskID, args.WorkerID, args.CommitSHA, args.ValidationResults)
+	result, err := store.SubmitTask(args.TaskID, args.WorkerID, args.CommitSHA, args.Handoff, args.ValidationResults)
 	if err != nil {
 		return nil, fmt.Errorf("submitting task: %w", err)
 	}

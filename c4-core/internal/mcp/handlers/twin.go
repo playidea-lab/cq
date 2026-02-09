@@ -553,7 +553,7 @@ func (s *SQLiteStore) BuildTwinReview() *TwinReview {
 func RegisterTwinHandlers(reg *mcp.Registry, store *SQLiteStore) {
 	reg.Register(mcp.ToolSchema{
 		Name:        "c4_reflect",
-		Description: "Digital Twin reflection tool. Returns patterns, growth metrics, challenges, and relevant knowledge for self-reflection and growth-oriented discussion.",
+		Description: "Digital Twin reflection — patterns, growth, challenges, permission audit",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -718,7 +718,52 @@ func (s *SQLiteStore) reflect(focus string) (map[string]any, error) {
 		}
 	}
 
+	// Permission audit
+	if s.projectRoot != "" {
+		if warnings := auditApprovedCommands(s.projectRoot); len(warnings) > 0 {
+			result["permission_audit"] = warnings
+		}
+	}
+
+	// Recent agent traces
+	if traces := s.getRecentTraces(10); len(traces) > 0 {
+		result["recent_traces"] = traces
+	}
+
 	return result, nil
+}
+
+// auditApprovedCommands scans .claude/settings.json for risky approved commands.
+func auditApprovedCommands(projectRoot string) []string {
+	riskyPatterns := map[string]string{
+		"Bash(rm:*)":     "rm — can delete any file",
+		"Bash(chmod:*)":  "chmod — can change file permissions",
+		"Bash(chown:*)":  "chown — can change file ownership",
+		"Bash(curl:*)":   "curl — can download/upload to any URL",
+		"Bash(wget:*)":   "wget — can download from any URL",
+		"Bash(kill:*)":   "kill — can kill any process",
+		"Bash(pkill:*)":  "pkill — can kill processes by name",
+		"Bash(docker:*)": "docker — full container access",
+		"Bash(bash:*)":   "bash — arbitrary shell execution",
+		"Bash(sh:*)":     "sh — arbitrary shell execution",
+		"Bash(sudo:*)":   "sudo — root access",
+	}
+
+	var warnings []string
+	for _, name := range []string{"settings.json", "settings.local.json"} {
+		path := projectRoot + "/.claude/" + name
+		data, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+		content := string(data)
+		for pattern, desc := range riskyPatterns {
+			if strings.Contains(content, pattern) {
+				warnings = append(warnings, fmt.Sprintf("[%s] %s (%s)", name, desc, pattern))
+			}
+		}
+	}
+	return warnings
 }
 
 // detectMilestones finds notable achievements.
@@ -767,4 +812,43 @@ func truncate(s string, max int) string {
 func isoWeek(t time.Time) int {
 	_, week := t.ISOWeek()
 	return week
+}
+
+// logTrace records an event in the c4_agent_traces table.
+func (s *SQLiteStore) logTrace(eventType, agentID, taskID, detail string) {
+	_, _ = s.db.Exec(`
+		INSERT INTO c4_agent_traces (event_type, agent_id, task_id, detail)
+		VALUES (?, ?, ?, ?)`, eventType, agentID, taskID, detail)
+}
+
+// getRecentTraces returns the most recent agent trace events.
+func (s *SQLiteStore) getRecentTraces(limit int) []map[string]string {
+	if limit <= 0 {
+		limit = 20
+	}
+	rows, err := s.db.Query(`
+		SELECT event_type, agent_id, task_id, detail, created_at
+		FROM c4_agent_traces
+		ORDER BY created_at DESC
+		LIMIT ?`, limit)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+
+	var traces []map[string]string
+	for rows.Next() {
+		var eventType, agentID, taskID, detail, createdAt string
+		if err := rows.Scan(&eventType, &agentID, &taskID, &detail, &createdAt); err != nil {
+			continue
+		}
+		traces = append(traces, map[string]string{
+			"event":      eventType,
+			"agent":      agentID,
+			"task":       taskID,
+			"detail":     detail,
+			"created_at": createdAt,
+		})
+	}
+	return traces
 }

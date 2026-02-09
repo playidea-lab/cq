@@ -97,7 +97,7 @@ func RegisterSoulHandlers(reg *mcp.Registry, projectRoot string) {
 	// c4_soul_get
 	reg.Register(mcp.ToolSchema{
 		Name:        "c4_soul_get",
-		Description: "Get a user's soul file content. Returns soul for specific role, or lists all souls for user. Falls back to persona if no soul exists.",
+		Description: "Get user's soul file for a role, or list all souls",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -142,7 +142,7 @@ func RegisterSoulHandlers(reg *mcp.Registry, projectRoot string) {
 	// c4_soul_set
 	reg.Register(mcp.ToolSchema{
 		Name:        "c4_soul_set",
-		Description: "Create or update a section of a user's soul file. Creates from persona template if soul doesn't exist.",
+		Description: "Set a section of user's soul file (Principles/Preferences/Overrides/Learned)",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -198,7 +198,7 @@ func RegisterSoulHandlers(reg *mcp.Registry, projectRoot string) {
 	// c4_soul_resolve
 	reg.Register(mcp.ToolSchema{
 		Name:        "c4_soul_resolve",
-		Description: "Resolve merged persona+soul for a user's role. Returns persona base + soul overrides combined into a single instruction set.",
+		Description: "Resolve merged persona+soul for a user's role",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{

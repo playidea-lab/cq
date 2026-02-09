@@ -133,10 +133,19 @@ MEMBER_PROMPT = """You are "{member_name}", a member of team "{team_name}".
    - 파일 수정: Edit/Write 도구
    - 검증: uv run python -m py_compile (Python) / go build (Go)
 4. git commit
-5. c4_submit(task_id, worker_id="{member_name}", commit_sha, validation_results)
+5. **핸드오프 작성** 후 submit:
+   c4_submit(task_id, worker_id="{member_name}", commit_sha, validation_results,
+     handoff="## Discoveries\\n- ...\\n## Concerns\\n- ...\\n## Feedback\\n- ...")
 6. TaskUpdate(taskId, status="completed")
-7. SendMessage(type="message", recipient="coordinator", content="[task_id] 완료", summary="Task done")
+7. SendMessage(type="message", recipient="coordinator",
+     content="[task_id] 완료. Handoff: [핵심 발견사항 요약]", summary="Task done + handoff")
 8. TaskList() → 다음 태스크가 있으면 2번으로, 없으면 대기
+
+## Handoff 작성 규칙 (CRITICAL)
+submit 시 반드시 handoff 파라미터에 다음 3가지를 포함:
+- **Discoveries**: 구현 중 발견한 것 (의존성, 부작용, 숨겨진 복잡도)
+- **Concerns**: 우려 사항 (잠재적 버그, 성능 이슈, 불완전한 부분)
+- **Feedback**: 다음 작업자/리뷰어를 위한 피드백 (추천 테스트, 확인 포인트)
 
 ## Communication
 - 다른 팀원과 협의 필요 시: SendMessage(type="message", recipient="팀원이름", ...)
@@ -247,17 +256,45 @@ elif investigate_mode:
         members.append(name)
 
 else:
-    # Standard 모드: 구현 팀원 스폰
+    # Standard 모드: 도메인별 전문 에이전트 자동 매핑
+    DOMAIN_AGENT_MAP = {
+        "security": "security-auditor",
+        "frontend": "frontend-developer",
+        "backend": "backend-architect",
+        "database": "database-optimizer",
+        "devops": "deployment-engineer",
+        "ml": "ml-engineer",
+        "api": "backend-architect",
+        "testing": "test-automator",
+        "performance": "performance-engineer",
+        "go": "golang-pro",
+        "python": "python-pro",
+        "infra": "cloud-architect",
+    }
+
+    # 태스크별 도메인 확인 → 전문 에이전트 선택
+    task_domains = {}  # task_id → domain
+    for task in pending_tasks:
+        domain = task.get("domain", "").lower()
+        task_domains[task["id"]] = domain
+
+    # 팀원 스폰 (도메인 기반 agent_type 자동 선택)
     for i in range(member_count):
         name = f"worker-{i+1}"
+        # 해당 워커가 맡을 가능성 높은 태스크의 도메인으로 agent_type 결정
+        agent_type = "general-purpose"  # 기본값
+        if i < len(pending_tasks):
+            domain = task_domains.get(pending_tasks[i]["id"], "")
+            agent_type = DOMAIN_AGENT_MAP.get(domain, "general-purpose")
+
         Task(
-            subagent_type="general-purpose",
+            subagent_type=agent_type,
             name=name,
             team_name=team_name,
-            description=f"C4 Worker {i+1}/{member_count}",
+            description=f"C4 Worker {i+1}/{member_count} ({agent_type})",
             prompt=MEMBER_PROMPT.format(
                 member_name=name, team_name=team_name,
-                role_description=f"팀의 {i+1}번째 구현 담당. TaskList에서 미할당 태스크를 선택하여 구현합니다."
+                role_description=f"팀의 {i+1}번째 구현 담당 (전문: {agent_type}). TaskList에서 미할당 태스크를 선택하여 구현합니다."
             ),
             mode="bypassPermissions",
         )
@@ -283,10 +320,83 @@ Shift+Tab으로 delegate 모드 전환 가능.
 ```
 
 **이후 자동 수신되는 팀원 메시지에 반응**:
-- 태스크 완료 보고 → 확인 + 다음 태스크 안내
+- 태스크 완료 보고 → **핸드오프 확인** + 다음 태스크 안내
 - 차단 보고 → 해결 방안 제시 또는 다른 팀원에 위임
 - 질문 → 답변
 - 리뷰 결과 → 종합
+
+#### 5.1 Auto-Judge: 자동 리뷰 스폰 (CRITICAL)
+
+워커가 T- 태스크를 submit하면, c4_submit 응답에 `pending_review` 필드가 포함됩니다.
+이 경우 **즉시 리뷰 에이전트를 스폰**합니다:
+
+```python
+# 워커 완료 메시지 수신 시
+if submit_result.get("pending_review"):
+    review_task_id = submit_result["pending_review"]
+    review_name = f"reviewer-{review_task_id}"
+    Task(
+        subagent_type="code-reviewer",
+        name=review_name,
+        team_name=team_name,
+        description=f"Auto-review {review_task_id}",
+        prompt=f"""You are "{review_name}", an auto-judge reviewer on team "{team_name}".
+
+Review task {review_task_id}. This is the review for a completed implementation.
+
+Workflow:
+1. c4_get_task(worker_id="{review_name}") — this will assign {review_task_id}
+2. Read the implementation (review_context has parent task info, commit SHA, files)
+3. Read the implementer's handoff (discoveries, concerns, feedback)
+4. Review against DoD, Soul principles, and code quality
+5. If APPROVED: c4_checkpoint(decision="APPROVE", notes="...")
+6. If NEEDS CHANGES: c4_request_changes(review_task_id="{review_task_id}", comments="...", required_changes=[...])
+7. SendMessage to coordinator with verdict
+8. TaskUpdate(status="completed")
+""",
+        mode="plan",  # 읽기 전용
+    )
+```
+
+#### 5.2 Recursive Sub-planners (복잡 태스크 분할)
+
+태스크가 **서브태스크를 가지거나 도메인이 복합적**이면, 워커 대신 **서브플래너**를 스폰합니다:
+
+```python
+SUB_PLANNER_PROMPT = """You are "{member_name}", a sub-planner on team "{team_name}".
+
+## Your Scope
+{scope_description}
+
+## Workflow
+1. 할당된 태스크를 분석하여 2-4개 서브태스크로 분해
+2. 각 서브태스크를 c4_add_todo로 등록 (parent task dependency 설정)
+3. 서브태스크별 워커 스폰 (Task tool, team_name="{team_name}")
+4. 워커들의 완료 보고를 수신하고 핸드오프를 종합
+5. 모든 서브태스크 완료 시, 종합 핸드오프를 coordinator에 보고
+6. 워커들에게 shutdown_request 전송
+
+## 분해 기준
+- 파일 의존성이 낮은 단위로 분리
+- 각 서브태스크는 독립적으로 검증 가능해야 함
+- 서브태스크 간 순서 의존성이 있으면 dependencies 설정
+"""
+
+# 서브플래너 스폰 조건: 태스크 scope에 파일 3개+, 또는 DoD에 체크박스 5개+
+if task_is_complex(task):
+    Task(
+        subagent_type="general-purpose",
+        name=f"planner-{task['id']}",
+        team_name=team_name,
+        description=f"Sub-planner for {task['id']}",
+        prompt=SUB_PLANNER_PROMPT.format(
+            member_name=f"planner-{task['id']}",
+            team_name=team_name,
+            scope_description=f"Task {task['id']}: {task['title']}\nDoD: {task['dod']}"
+        ),
+        mode="bypassPermissions",
+    )
+```
 
 ### 6. 팀 해산
 

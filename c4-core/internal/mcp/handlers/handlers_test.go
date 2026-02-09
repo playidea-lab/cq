@@ -135,7 +135,7 @@ func (m *mockStore) AssignTask(workerID string) (*TaskAssignment, error) {
 	return &a, nil
 }
 
-func (m *mockStore) SubmitTask(taskID, workerID, commitSHA string, results []ValidationResult) (*SubmitResult, error) {
+func (m *mockStore) SubmitTask(taskID, workerID, commitSHA, handoff string, results []ValidationResult) (*SubmitResult, error) {
 	if m.submitErr != nil {
 		return nil, m.submitErr
 	}

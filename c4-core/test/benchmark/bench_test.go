@@ -59,7 +59,7 @@ func (m *mockBenchStore) AssignTask(string) (*handlers.TaskAssignment, error) {
 		Branch: "c4/w-T-001-0",
 	}, nil
 }
-func (m *mockBenchStore) SubmitTask(string, string, string, []handlers.ValidationResult) (*handlers.SubmitResult, error) {
+func (m *mockBenchStore) SubmitTask(string, string, string, string, []handlers.ValidationResult) (*handlers.SubmitResult, error) {
 	return &handlers.SubmitResult{Success: true, NextAction: "get_next_task"}, nil
 }
 func (m *mockBenchStore) MarkBlocked(string, string, string, int, string) error { return nil }
