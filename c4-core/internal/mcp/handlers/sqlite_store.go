@@ -448,7 +448,7 @@ func (s *SQLiteStore) Clear(keepConfig bool) error {
 
 // AddTask inserts a new task.
 func (s *SQLiteStore) AddTask(task *Task) error {
-	deps := ""
+	deps := "[]"
 	if len(task.Dependencies) > 0 {
 		depsJSON, _ := json.Marshal(task.Dependencies)
 		deps = string(depsJSON)
@@ -521,7 +521,7 @@ func (s *SQLiteStore) AssignTask(workerID string) (*TaskAssignment, error) {
 		FROM c4_tasks t
 		WHERE t.status = 'pending'
 		AND NOT EXISTS (
-			SELECT 1 FROM json_each(COALESCE(t.dependencies, '[]')) AS dep
+			SELECT 1 FROM json_each(CASE WHEN t.dependencies IS NULL OR t.dependencies = '' THEN '[]' ELSE t.dependencies END) AS dep
 			JOIN c4_tasks dt ON dt.task_id = dep.value
 			WHERE dt.status != 'done'
 		)
