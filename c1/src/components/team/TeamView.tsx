@@ -3,7 +3,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { useRealtimeSync } from '../../hooks/useRealtimeSync';
 import { StatusBadge } from '../shared/StatusBadge';
 import { ProgressBar } from '../shared/ProgressBar';
-import type { TeamProject, ProjectState, RemoteCheckpoint, GrowthMetric, AgentTrace } from '../../types';
+import type { TeamProject, ProjectState, RemoteCheckpoint, GrowthMetric, AgentTrace, KnowledgeDoc } from '../../types';
 import '../../styles/team.css';
 
 export function TeamView() {
@@ -16,7 +16,9 @@ export function TeamView() {
   const [checkpoints, setCheckpoints] = useState<RemoteCheckpoint[]>([]);
   const [growthMetrics, setGrowthMetrics] = useState<GrowthMetric[]>([]);
   const [agentTraces, setAgentTraces] = useState<AgentTrace[]>([]);
-  const [detailTab, setDetailTab] = useState<'overview' | 'checkpoints' | 'growth' | 'traces'>('overview');
+  const [detailTab, setDetailTab] = useState<'overview' | 'checkpoints' | 'growth' | 'traces' | 'knowledge'>('overview');
+  const [knowledgeDocs, setKnowledgeDocs] = useState<KnowledgeDoc[]>([]);
+  const [knowledgeQuery, setKnowledgeQuery] = useState('');
 
   // Realtime subscription — auto-refresh team projects on cloud changes
   const { status: realtimeStatus } = useRealtimeSync({
@@ -53,6 +55,8 @@ export function TeamView() {
       setCheckpoints([]);
       setGrowthMetrics([]);
       setAgentTraces([]);
+      setKnowledgeDocs([]);
+      setKnowledgeQuery('');
       setDetailTab('overview');
       return;
     }
@@ -61,16 +65,18 @@ export function TeamView() {
     setRemoteDashboard(null);
     setDetailTab('overview');
     try {
-      const [state, cps, growth, traces] = await Promise.all([
+      const [state, cps, growth, traces, kDocs] = await Promise.all([
         invoke<ProjectState>('cloud_get_remote_dashboard', { projectId }),
         invoke<RemoteCheckpoint[]>('cloud_get_checkpoints', { projectId }).catch(() => []),
         invoke<GrowthMetric[]>('cloud_get_growth_metrics', { projectId }).catch(() => []),
         invoke<AgentTrace[]>('cloud_get_agent_traces', { projectId }).catch(() => []),
+        invoke<KnowledgeDoc[]>('cloud_get_knowledge_docs', { projectId }).catch(() => []),
       ]);
       setRemoteDashboard(state);
       setCheckpoints(cps ?? []);
       setGrowthMetrics(growth ?? []);
       setAgentTraces(traces ?? []);
+      setKnowledgeDocs(kDocs ?? []);
     } catch (err) {
       console.error('Failed to load remote dashboard:', err);
     } finally {
@@ -187,7 +193,7 @@ export function TeamView() {
                   ) : remoteDashboard ? (
                     <>
                       <div className="team-project__tabs">
-                        {(['overview', 'checkpoints', 'growth', 'traces'] as const).map((tab) => (
+                        {(['overview', 'checkpoints', 'growth', 'traces', 'knowledge'] as const).map((tab) => (
                           <button
                             key={tab}
                             className={`team-project__tab ${detailTab === tab ? 'team-project__tab--active' : ''}`}
@@ -196,6 +202,7 @@ export function TeamView() {
                             {tab.charAt(0).toUpperCase() + tab.slice(1)}
                             {tab === 'checkpoints' && checkpoints.length > 0 && ` (${checkpoints.length})`}
                             {tab === 'traces' && agentTraces.length > 0 && ` (${agentTraces.length})`}
+                            {tab === 'knowledge' && knowledgeDocs.length > 0 && ` (${knowledgeDocs.length})`}
                           </button>
                         ))}
                       </div>
@@ -293,6 +300,58 @@ export function TeamView() {
                                 </span>
                               )}
                               <span className="team-project__trace-date">{formatDate(t.created_at)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {detailTab === 'knowledge' && (
+                        <div className="team-project__detail-list">
+                          <div className="team-project__knowledge-search">
+                            <input
+                              type="text"
+                              className="team-project__knowledge-input"
+                              placeholder="Search knowledge..."
+                              value={knowledgeQuery}
+                              onChange={(e) => setKnowledgeQuery(e.target.value)}
+                              onKeyDown={async (e) => {
+                                if (e.key === 'Enter' && knowledgeQuery.trim() && selectedProject) {
+                                  try {
+                                    const results = await invoke<KnowledgeDoc[]>(
+                                      'cloud_search_knowledge',
+                                      { projectId: selectedProject, query: knowledgeQuery }
+                                    );
+                                    setKnowledgeDocs(results ?? []);
+                                  } catch {
+                                    // Search failed — keep existing results
+                                  }
+                                }
+                              }}
+                            />
+                          </div>
+                          {knowledgeDocs.length === 0 ? (
+                            <div className="team-project__detail-empty">No knowledge docs</div>
+                          ) : knowledgeDocs.map((doc) => (
+                            <div key={doc.doc_id} className="team-project__knowledge-doc">
+                              <div className="team-project__knowledge-header">
+                                <span className={`badge badge--${doc.doc_type === 'experiment' ? 'blue' : doc.doc_type === 'pattern' ? 'green' : doc.doc_type === 'insight' ? 'yellow' : 'purple'}`}>
+                                  {doc.doc_type}
+                                </span>
+                                <span className="team-project__knowledge-title">{doc.title}</span>
+                                {doc.domain && (
+                                  <span className="team-project__knowledge-domain">{doc.domain}</span>
+                                )}
+                              </div>
+                              {doc.tags.length > 0 && (
+                                <div className="team-project__knowledge-tags">
+                                  {doc.tags.map((tag) => (
+                                    <span key={tag} className="team-project__knowledge-tag">{tag}</span>
+                                  ))}
+                                </div>
+                              )}
+                              <div className="team-project__knowledge-meta">
+                                v{doc.version} | {formatDate(doc.updated_at)}
+                              </div>
                             </div>
                           ))}
                         </div>

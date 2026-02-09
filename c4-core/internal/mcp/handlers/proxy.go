@@ -5,11 +5,19 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"os"
 	"sync"
 	"time"
 
 	"github.com/changmin/c4-core/internal/mcp"
 )
+
+// KnowledgeSyncer abstracts cloud knowledge operations to avoid import cycles.
+// Implemented by cloud.KnowledgeCloudClient.
+type KnowledgeSyncer interface {
+	SyncDocument(params map[string]any, docID string) error
+	SearchDocuments(query string, docType string, limit int) ([]map[string]any, error)
+}
 
 // connError wraps connection-level errors that indicate the sidecar is unreachable.
 // Used as a sentinel type to trigger auto-restart without string matching.
@@ -229,9 +237,84 @@ func proxyHandlerWithTimeout(proxy *BridgeProxy, method string, timeout time.Dur
 	}
 }
 
+// parseParams extracts map[string]any from JSON-RPC raw arguments.
+func parseParams(rawArgs json.RawMessage) map[string]any {
+	var params map[string]any
+	if len(rawArgs) > 0 {
+		if err := json.Unmarshal(rawArgs, &params); err != nil {
+			params = nil
+		}
+	}
+	if params == nil {
+		params = make(map[string]any)
+	}
+	return params
+}
+
+// knowledgeRecordHandler wraps the proxy call with async cloud sync.
+// After Python returns success, the document data from params is pushed to cloud.
+func knowledgeRecordHandler(proxy *BridgeProxy, rpcMethod string, kc KnowledgeSyncer) mcp.HandlerFunc {
+	return func(rawArgs json.RawMessage) (any, error) {
+		params := parseParams(rawArgs)
+		result, err := proxy.Call(rpcMethod, params)
+		if err != nil {
+			return nil, err
+		}
+
+		// Async cloud push on success
+		if kc != nil {
+			if success, _ := result["success"].(bool); success {
+				docID, _ := result["doc_id"].(string)
+				go func() {
+					if syncErr := kc.SyncDocument(params, docID); syncErr != nil {
+						fmt.Fprintf(os.Stderr, "c4: knowledge cloud sync: %v\n", syncErr)
+					}
+				}()
+			}
+		}
+
+		return result, nil
+	}
+}
+
+// knowledgeSearchHandler wraps the proxy call and merges cloud search results.
+func knowledgeSearchHandler(proxy *BridgeProxy, rpcMethod string, kc KnowledgeSyncer) mcp.HandlerFunc {
+	return func(rawArgs json.RawMessage) (any, error) {
+		params := parseParams(rawArgs)
+
+		// Always search local first
+		localResult, err := proxy.Call(rpcMethod, params)
+		if err != nil {
+			return nil, err
+		}
+
+		// Merge cloud results (best-effort)
+		if kc != nil {
+			query, _ := params["query"].(string)
+			if query == "" {
+				query, _ = params["context"].(string) // pattern_suggest uses "context"
+			}
+			docType, _ := params["doc_type"].(string)
+			limit := 10
+			if l, ok := params["limit"].(float64); ok {
+				limit = int(l)
+			}
+
+			cloudDocs, cloudErr := kc.SearchDocuments(query, docType, limit)
+			if cloudErr == nil && len(cloudDocs) > 0 {
+				localResult["cloud_results"] = cloudDocs
+				localResult["cloud_count"] = len(cloudDocs)
+			}
+		}
+
+		return localResult, nil
+	}
+}
+
 // RegisterProxyHandlers registers MCP tools that are proxied to the Python sidecar.
 // These tools require Python dependencies (LSP, Knowledge, GPU).
-func RegisterProxyHandlers(reg *mcp.Registry, proxy *BridgeProxy) {
+// If knowledgeCloud is non-nil, knowledge tools get automatic cloud sync.
+func RegisterProxyHandlers(reg *mcp.Registry, proxy *BridgeProxy, knowledgeCloud KnowledgeSyncer) {
 	// LSP tools (6) — delegated to Python tree-sitter + multilspy + Jedi
 	reg.Register(mcp.ToolSchema{
 		Name:        "c4_find_symbol",
@@ -328,7 +411,7 @@ func RegisterProxyHandlers(reg *mcp.Registry, proxy *BridgeProxy) {
 		},
 	}, proxyHandler(proxy, "FindReferencingSymbols"))
 
-	// Knowledge tools (3) — delegated to Python FTS5 + sqlite-vec
+	// Knowledge tools (3) — delegated to Python FTS5 + sqlite-vec, with optional cloud sync
 	reg.Register(mcp.ToolSchema{
 		Name:        "c4_knowledge_search",
 		Description: "Search knowledge base documents with hybrid vector + FTS search",
@@ -341,7 +424,7 @@ func RegisterProxyHandlers(reg *mcp.Registry, proxy *BridgeProxy) {
 			},
 			"required": []string{"query"},
 		},
-	}, proxyHandler(proxy, "KnowledgeSearch"))
+	}, knowledgeSearchHandler(proxy, "KnowledgeSearch", knowledgeCloud))
 
 	reg.Register(mcp.ToolSchema{
 		Name:        "c4_knowledge_record",
@@ -356,7 +439,7 @@ func RegisterProxyHandlers(reg *mcp.Registry, proxy *BridgeProxy) {
 			},
 			"required": []string{"doc_type", "title", "content"},
 		},
-	}, proxyHandler(proxy, "KnowledgeRecord"))
+	}, knowledgeRecordHandler(proxy, "KnowledgeRecord", knowledgeCloud))
 
 	reg.Register(mcp.ToolSchema{
 		Name:        "c4_knowledge_get",
@@ -370,7 +453,7 @@ func RegisterProxyHandlers(reg *mcp.Registry, proxy *BridgeProxy) {
 		},
 	}, proxyHandler(proxy, "KnowledgeGet"))
 
-	// Knowledge legacy tools (3) — delegated to Python knowledge store
+	// Knowledge legacy tools (3) — delegated to Python knowledge store, with optional cloud sync
 	reg.Register(mcp.ToolSchema{
 		Name:        "c4_experiment_record",
 		Description: "Record an experiment result",
@@ -383,7 +466,7 @@ func RegisterProxyHandlers(reg *mcp.Registry, proxy *BridgeProxy) {
 			},
 			"required": []string{"title", "content"},
 		},
-	}, proxyHandler(proxy, "KnowledgeRecord"))
+	}, knowledgeRecordHandler(proxy, "KnowledgeRecord", knowledgeCloud))
 
 	reg.Register(mcp.ToolSchema{
 		Name:        "c4_experiment_search",
@@ -396,7 +479,7 @@ func RegisterProxyHandlers(reg *mcp.Registry, proxy *BridgeProxy) {
 			},
 			"required": []string{"query"},
 		},
-	}, proxyHandler(proxy, "KnowledgeSearch"))
+	}, knowledgeSearchHandler(proxy, "KnowledgeSearch", knowledgeCloud))
 
 	reg.Register(mcp.ToolSchema{
 		Name:        "c4_pattern_suggest",
@@ -408,7 +491,7 @@ func RegisterProxyHandlers(reg *mcp.Registry, proxy *BridgeProxy) {
 			},
 			"required": []string{"context"},
 		},
-	}, proxyHandler(proxy, "KnowledgeSearch"))
+	}, knowledgeSearchHandler(proxy, "KnowledgeSearch", knowledgeCloud))
 
 	// GPU tools (2) — delegated to Python CUDA/MPS detection
 	reg.Register(mcp.ToolSchema{

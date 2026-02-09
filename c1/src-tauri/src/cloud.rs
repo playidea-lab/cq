@@ -797,6 +797,101 @@ pub async fn cloud_get_agent_traces(project_id: String) -> Result<Vec<AgentTrace
 // Tests
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Knowledge docs (Phase 8.3)
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KnowledgeDoc {
+    pub doc_id: String,
+    pub doc_type: String,
+    pub title: String,
+    #[serde(default)]
+    pub domain: String,
+    #[serde(default)]
+    pub tags: Vec<String>,
+    #[serde(default)]
+    pub body: String,
+    #[serde(default)]
+    pub content_hash: String,
+    #[serde(default)]
+    pub version: u32,
+    #[serde(default)]
+    pub created_at: String,
+    #[serde(default)]
+    pub updated_at: String,
+}
+
+/// Get knowledge documents for a remote project.
+#[tauri::command]
+pub async fn cloud_get_knowledge_docs(project_id: String) -> Result<Vec<KnowledgeDoc>, String> {
+    tokio::task::spawn_blocking(move || {
+        let (supabase_url, anon_key) = read_supabase_config()?;
+        let token = read_auth_token()?;
+        let client = build_client()?;
+
+        let url = format!(
+            "{}/rest/v1/c4_documents?project_id=eq.{}&select=doc_id,doc_type,title,domain,tags,body,content_hash,version,created_at,updated_at&order=updated_at.desc&limit=100",
+            supabase_url.trim_end_matches('/'),
+            urlencoding::encode(&project_id),
+        );
+
+        let resp = retry_request(3, || {
+            client
+                .get(&url)
+                .header("Authorization", format!("Bearer {}", token))
+                .header("apikey", &anon_key)
+                .send()
+        })?;
+
+        if !resp.status().is_success() {
+            return Ok(Vec::new());
+        }
+
+        let docs: Vec<KnowledgeDoc> = resp.json().unwrap_or_default();
+        Ok(docs)
+    })
+    .await
+    .map_err(|e| format!("Task execution failed: {}", e))?
+}
+
+/// Search knowledge documents using PostgreSQL full-text search.
+#[tauri::command]
+pub async fn cloud_search_knowledge(
+    project_id: String,
+    query: String,
+) -> Result<Vec<KnowledgeDoc>, String> {
+    tokio::task::spawn_blocking(move || {
+        let (supabase_url, anon_key) = read_supabase_config()?;
+        let token = read_auth_token()?;
+        let client = build_client()?;
+
+        let url = format!(
+            "{}/rest/v1/c4_documents?project_id=eq.{}&tsv=fts.english.{}&select=doc_id,doc_type,title,domain,tags,body,content_hash,version,created_at,updated_at&order=updated_at.desc&limit=30",
+            supabase_url.trim_end_matches('/'),
+            urlencoding::encode(&project_id),
+            urlencoding::encode(&query),
+        );
+
+        let resp = retry_request(3, || {
+            client
+                .get(&url)
+                .header("Authorization", format!("Bearer {}", token))
+                .header("apikey", &anon_key)
+                .send()
+        })?;
+
+        if !resp.status().is_success() {
+            return Ok(Vec::new());
+        }
+
+        let docs: Vec<KnowledgeDoc> = resp.json().unwrap_or_default();
+        Ok(docs)
+    })
+    .await
+    .map_err(|e| format!("Task execution failed: {}", e))?
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -948,5 +1043,38 @@ mod tests {
         let parsed: AgentTrace = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed.agent_type, "golang-pro");
         assert_eq!(parsed.duration_ms, Some(45000));
+    }
+
+    #[test]
+    fn test_knowledge_doc_serialization() {
+        let doc = KnowledgeDoc {
+            doc_id: "exp-abc123".to_string(),
+            doc_type: "experiment".to_string(),
+            title: "Test Experiment".to_string(),
+            domain: "ml".to_string(),
+            tags: vec!["pytorch".to_string(), "classification".to_string()],
+            body: "# Results\nAccuracy: 95%".to_string(),
+            content_hash: "abc123def456".to_string(),
+            version: 2,
+            created_at: "2026-02-10T12:00:00Z".to_string(),
+            updated_at: "2026-02-10T14:00:00Z".to_string(),
+        };
+        let json = serde_json::to_string(&doc).unwrap();
+        assert!(json.contains("experiment"));
+        assert!(json.contains("pytorch"));
+        let parsed: KnowledgeDoc = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.doc_id, "exp-abc123");
+        assert_eq!(parsed.tags.len(), 2);
+        assert_eq!(parsed.version, 2);
+    }
+
+    #[test]
+    fn test_knowledge_doc_empty_fields() {
+        let json = r#"{"doc_id":"ins-001","doc_type":"insight","title":"Simple"}"#;
+        let doc: KnowledgeDoc = serde_json::from_str(json).unwrap();
+        assert_eq!(doc.doc_id, "ins-001");
+        assert_eq!(doc.domain, "");
+        assert!(doc.tags.is_empty());
+        assert_eq!(doc.version, 0);
     }
 }

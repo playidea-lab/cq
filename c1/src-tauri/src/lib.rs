@@ -80,6 +80,9 @@ pub fn run() {
             cloud::cloud_get_checkpoints,
             cloud::cloud_get_growth_metrics,
             cloud::cloud_get_agent_traces,
+            // Knowledge (Phase 8.3)
+            cloud::cloud_get_knowledge_docs,
+            cloud::cloud_search_knowledge,
             // Realtime
             realtime::realtime_connect,
             realtime::realtime_disconnect,

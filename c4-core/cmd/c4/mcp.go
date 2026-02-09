@@ -94,9 +94,29 @@ func newMCPServer() (*mcpServer, error) {
 		fmt.Fprintf(os.Stderr, "c4: Python sidecar started at %s\n", bridgeAddr)
 	}
 
+	// Create KnowledgeCloudClient if cloud is enabled
+	var knowledgeCloud *cloud.KnowledgeCloudClient
+	var cloudAuthToken string
+	var cloudProjectID string
+	if cfgMgr != nil && cfgMgr.GetConfig().Cloud.Enabled {
+		cloudCfg := cfgMgr.GetConfig().Cloud
+		if cloudCfg.URL != "" && cloudCfg.AnonKey != "" {
+			authClient := cloud.NewAuthClient(cloudCfg.URL, cloudCfg.AnonKey)
+			if session, sessErr := authClient.GetSession(); sessErr == nil && session != nil {
+				cloudAuthToken = session.AccessToken
+			}
+			cloudProjectID = cloudCfg.ProjectID
+			if cloudProjectID == "" {
+				cloudProjectID = cfgMgr.GetConfig().ProjectID
+			}
+			knowledgeCloud = cloud.NewKnowledgeCloudClient(
+				cloudCfg.URL+"/rest/v1", cloudCfg.AnonKey, cloudAuthToken, cloudProjectID)
+		}
+	}
+
 	// Create registry and register all tools (proxy is created inside)
 	reg := mcp.NewRegistry()
-	proxy := handlers.RegisterAllHandlers(reg, nil, projectDir, bridgeAddr)
+	proxy := handlers.RegisterAllHandlers(reg, nil, projectDir, bridgeAddr, knowledgeCloud)
 
 	// Create store with all options
 	storeOpts := []handlers.StoreOption{
@@ -113,25 +133,13 @@ func newMCPServer() (*mcpServer, error) {
 		return nil, fmt.Errorf("creating store: %w", err)
 	}
 
-	// Wrap with HybridStore if cloud is enabled
+	// Wrap with HybridStore if cloud is enabled (reuse auth token from knowledge client setup)
 	var store handlers.Store = sqliteStore
 	if cfgMgr != nil && cfgMgr.GetConfig().Cloud.Enabled {
 		cloudCfg := cfgMgr.GetConfig().Cloud
 		if cloudCfg.URL != "" && cloudCfg.AnonKey != "" {
-			// Load auth token from session (best-effort)
-			authToken := ""
-			authClient := cloud.NewAuthClient(cloudCfg.URL, cloudCfg.AnonKey)
-			if session, sessErr := authClient.GetSession(); sessErr == nil && session != nil {
-				authToken = session.AccessToken
-			}
-
 			cloudURL := cloudCfg.URL + "/rest/v1"
-			projectID := cloudCfg.ProjectID
-			if projectID == "" && cfgMgr != nil {
-				projectID = cfgMgr.GetConfig().ProjectID
-			}
-
-			cloudStore := cloud.NewCloudStore(cloudURL, cloudCfg.AnonKey, authToken, projectID)
+			cloudStore := cloud.NewCloudStore(cloudURL, cloudCfg.AnonKey, cloudAuthToken, cloudProjectID)
 			store = cloud.NewHybridStore(sqliteStore, cloudStore)
 			fmt.Fprintln(os.Stderr, "c4: cloud sync enabled (hybrid mode)")
 		} else {

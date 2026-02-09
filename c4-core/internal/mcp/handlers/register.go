@@ -28,13 +28,14 @@ func RegisterNativeHandlers(reg *mcp.Registry, rootDir string, store Store) {
 
 // RegisterAllHandlers registers all MCP tool handlers including Python proxy tools.
 // If store is nil, only native and proxy handlers are registered (store handlers added later).
+// knowledgeCloud may be nil when cloud is disabled.
 // Returns the BridgeProxy so callers can attach a Restarter for auto-recovery.
-func RegisterAllHandlers(reg *mcp.Registry, store Store, rootDir string, bridgeAddr string) *BridgeProxy {
+func RegisterAllHandlers(reg *mcp.Registry, store Store, rootDir string, bridgeAddr string, knowledgeCloud KnowledgeSyncer) *BridgeProxy {
 	if store != nil {
 		RegisterAll(reg, store)
 	}
 	RegisterNativeHandlers(reg, rootDir, store)
 	proxy := NewBridgeProxy(bridgeAddr)
-	RegisterProxyHandlers(reg, proxy)
+	RegisterProxyHandlers(reg, proxy, knowledgeCloud)
 	return proxy
 }

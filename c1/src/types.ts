@@ -277,6 +277,21 @@ export interface AgentTrace {
   created_at: string;
 }
 
+// --- Knowledge Cloud types (Phase 8.3) ---
+
+export interface KnowledgeDoc {
+  doc_id: string;
+  doc_type: 'experiment' | 'pattern' | 'insight' | 'hypothesis';
+  title: string;
+  domain: string;
+  tags: string[];
+  body: string;
+  content_hash: string;
+  version: number;
+  created_at: string;
+  updated_at: string;
+}
+
 // --- Auth types ---
 
 export interface AuthUser {
