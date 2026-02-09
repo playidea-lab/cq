@@ -247,7 +247,7 @@ SUPABASE_KEY=eyJ...
 | `/c4-add-task` | 태스크 추가 |
 | `/c4-quick` | 빠른 시작 |
 | `/c4-interview` | 요구사항 탐색 인터뷰 |
-| `/c4-swarm` | 병렬 Worker 스폰 |
+| `/c4-swarm` | Agent Teams 기반 협업 병렬 실행 |
 | `/c4-release` | Changelog 생성 |
 | `/c4-clear` | 상태 초기화 |
 

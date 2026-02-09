@@ -41,7 +41,7 @@ wheels = [
 
 [[package]]
 name = "c4"
-version = "0.1.0"
+version = "0.10.0"
 source = { editable = "." }
 dependencies = [
     { name = "jedi" },

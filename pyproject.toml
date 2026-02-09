@@ -1,6 +1,6 @@
 [project]
 name = "c4"
-version = "0.1.0"
+version = "0.10.0"
 description = "C4 Python Sidecar - LSP, Knowledge, GPU services"
 readme = "README.md"
 requires-python = ">=3.11"

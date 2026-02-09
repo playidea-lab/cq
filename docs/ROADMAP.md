@@ -547,6 +547,15 @@ Claude Code → Go MCP Server (stdio, 47 tools)
 **결과**: 52 → **56 MCP 도구** (+4: c4_request_changes, c4_soul_get, c4_soul_set, c4_soul_resolve)
 **테스트**: Go 9 packages pass (soul_test.go 22개 포함), Python 428 pass
 
+### Phase 6.17: c4-swarm Agent Teams ✅
+
+**목표**: deprecated Worker 스폰 → Agent Teams 기반 협업형 병렬 실행
+
+- **3가지 모드**: standard (구현), `--review` (읽기전용 3명), `--investigate` (가설 경쟁)
+- **차별화**: `/c4-run` = fire-and-forget 독립 Worker, `/c4-swarm` = TeamCreate+SendMessage 협업
+- **흐름**: c4_status → TeamCreate → TaskCreate 매핑 → Task(team_name=...) 스폰 → coordinator 모니터링 → shutdown → TeamDelete
+- **Review 모드**: Security/Performance/TestCoverage 3명, plan 모드(읽기전용)
+
 ---
 
 ## Phase 7: C4 Cloud (v0.8.0) 📋 Next
