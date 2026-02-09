@@ -154,6 +154,7 @@ func TestRestartSuccessPath(t *testing.T) {
 	if err == nil {
 		// If it somehow succeeded (python exists), that's fine too
 		t.Log("Restart succeeded (python available)")
+		defer s.Stop() // Clean up the running sidecar to avoid I/O leak
 	}
 
 	s.mu.Lock()

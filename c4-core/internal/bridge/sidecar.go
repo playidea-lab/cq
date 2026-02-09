@@ -65,9 +65,9 @@ func StartSidecar(cfg *SidecarConfig) (*Sidecar, error) {
 	}
 
 	args := cfg.PythonArgs
-	if cfg.Port > 0 {
-		args = append(args, "--port", fmt.Sprintf("%d", cfg.Port))
-	}
+	// Always pass --port so Python uses OS-assigned port when Port=0
+	// instead of falling back to its hard-coded default (50051).
+	args = append(args, "--port", fmt.Sprintf("%d", cfg.Port))
 
 	cmd := exec.Command(pythonPath, args...)
 	cmd.Stderr = os.Stderr

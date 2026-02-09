@@ -26,10 +26,10 @@ from c4.bridge.rpc_server import BridgeServer
 logger = logging.getLogger(__name__)
 
 
-async def _run_server() -> None:
+async def _run_server(port: int | None = None) -> None:
     """Start the bridge server and wait until signaled to stop."""
     project_root = Path(os.environ.get("C4_PROJECT_ROOT", ".")).resolve()
-    server = BridgeServer(project_root=project_root)
+    server = BridgeServer(port=port, project_root=project_root)
 
     port = await server.start()
 
@@ -55,6 +55,12 @@ async def _run_server() -> None:
 
 def main() -> None:
     """Entry point for the c4-bridge console script."""
+    import argparse
+
+    parser = argparse.ArgumentParser(description="C4 Bridge Sidecar")
+    parser.add_argument("--port", type=int, default=None, help="Port to listen on (0=auto, default=50051)")
+    args = parser.parse_args()
+
     logging.basicConfig(
         level=os.environ.get("C4_LOG_LEVEL", "INFO").upper(),
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
@@ -62,7 +68,7 @@ def main() -> None:
     )
 
     try:
-        asyncio.run(_run_server())
+        asyncio.run(_run_server(port=args.port))
     except KeyboardInterrupt:
         pass
 
