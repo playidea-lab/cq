@@ -273,6 +273,7 @@ class BridgeServer:
         self.methods["InsertBeforeSymbol"] = self._handle_insert_before_symbol
         self.methods["InsertAfterSymbol"] = self._handle_insert_after_symbol
         self.methods["RenameSymbol"] = self._handle_rename_symbol
+        self.methods["FindReferencingSymbols"] = self._handle_find_referencing_symbols
 
     async def _handle_find_symbol(self, params: dict[str, Any]) -> dict[str, Any]:
         """FindSymbol -> CodeOps.find_symbol()."""
@@ -349,6 +350,16 @@ class BridgeServer:
             )
         except Exception as exc:
             return {"error": f"RenameSymbol failed: {exc}"}
+
+    async def _handle_find_referencing_symbols(self, params: dict[str, Any]) -> dict[str, Any]:
+        """FindReferencingSymbols -> CodeOps.find_referencing_symbols()."""
+        try:
+            return self._code_ops.find_referencing_symbols(
+                name_path=params.get("symbol_name", ""),
+                file_path=params.get("file_path"),
+            )
+        except Exception as exc:
+            return {"error": f"FindReferencingSymbols failed: {exc}"}
 
     # ======================================================================
     # Knowledge Methods
