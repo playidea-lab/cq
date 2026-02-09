@@ -1,14 +1,16 @@
 # C4 Roadmap
 
-## Current Version: v0.12.0 (Lighthouse + PDF/Cursor 고도화)
+## Current Version: v0.13.0 (Cloud Phase 8.1-8.3)
 
-현재 버전은 **Go MCP Primary(58 tools), Lighthouse Pattern (Spec-as-MCP), Digital Twin, Soul System, Review-as-Task, Sidecar 안정성, LSP Onboarding**을 포함합니다.
+현재 버전은 **Go MCP Primary(58 tools), Cloud Foundation (Supabase), C1 Cloud Dashboard (Realtime WebSocket), Knowledge Store Cloud**를 포함합니다.
 
 ### 핵심 구조
 
 - **Go MCP Server (Primary)** - 58 도구, Registry-based, SQLite Store, JSON-RPC Bridge
+- **Cloud Layer** - Go PostgREST client (Auth + CloudStore + HybridStore + KnowledgeCloudClient)
 - **Python Sidecar** - LSP(Multilspy→Jedi→Tree-sitter), Knowledge Store v2, GPU Scheduler
-- **C1 Desktop App** - Tauri 2.x, 4개 프로바이더, 가상 스크롤, LRU 캐시, 테마 토글
+- **C1 Desktop App** - Tauri 2.x, 4개 프로바이더, Realtime WebSocket, 5-탭 TeamView
+- **Infra** - Supabase PostgreSQL (9 migrations, RLS, tsvector FTS)
 
 ### 지원 기능
 
@@ -25,7 +27,8 @@
 - **Artifact Store** - Content-addressable 로컬 저장소
 - **Team Collaboration** - Supabase 기반 팀 상태 공유
 - **C1 Multi-LLM Explorer** - Claude Code, Codex CLI, Cursor, Gemini CLI 4개 프로바이더
-- **코드베이스**: Go 10.5K + Python 10.5K + C1 5.6K + Tests 5.6K = **~32K LOC**
+- **코드베이스**: Go ~12K + Python 11.3K + C1 ~8K + Tests ~15K = **~38K LOC**
+- **테스트**: Go 270+ + Python 446 + Rust 44 + Frontend 81 = **~841 tests**
 
 ---
 
@@ -605,25 +608,41 @@ Claude Code → Go MCP Server (stdio, 47 tools)
 
 ---
 
-## Phase 8: C4 Cloud (v0.8.0) 📋 Next
+## Phase 8: C4 Cloud (v0.13.0)
 
-**목표**: LLM 오케스트레이션 플랫폼으로서의 완전 관리형 SaaS
-**참고**: Phase 6.13에서 Python Cloud 코드(-73K LOC) 삭제됨. Cloud 재구축 시 Go 기반으로 설계.
+**목표**: Go 기반 Cloud 재구축 — Local-first + Supabase 동기화
+**참고**: Phase 6.13에서 Python Cloud 코드(-73K LOC) 삭제됨. Go 기반으로 재설계 완료.
 
-### Phase 8.1: Cloud Foundation
+### Phase 8.1: Cloud Foundation ✅
 
-**목표**: 웹 기반 프로젝트 관리 및 모니터링
+**목표**: Go 기반 인증, 클라우드 스토어, 하이브리드 동기화
 
-- **Web Console**
-  - 실시간 워크플로우 대시보드
-  - 프로젝트/팀 관리 UI
-  - 태스크 상태 시각화
-- **Remote State Sync**
-  - 로컬 Worker + Supabase 상태 동기화 (이미 구현됨)
-  - 웹에서 실시간 모니터링
-- **Authentication**
-  - Supabase Auth 연동
-  - GitHub OAuth
+- **Authentication**: GitHub OAuth (Go), token 저장/refresh, CLI `c4 auth login/logout/status`
+- **CloudStore**: PostgREST 기반 handlers.Store 완전 구현 (13 메서드)
+- **HybridStore**: Local-first (SQLite 즉시 + Cloud 비동기 push)
+- **SQL Migrations**: 8개 (projects, tasks, state, checkpoints, personas, growth, traces, lighthouses)
+- **RLS**: 모든 테이블에 Row-Level Security + `c4_is_project_member()` 헬퍼
+- **테스트**: Auth 15 + CloudStore 20 + Hybrid 7 = 50개 신규
+
+### Phase 8.2: C1 Cloud Dashboard ✅
+
+**목표**: 실시간 팀 대시보드, 양방향 동기화
+
+- **Realtime WebSocket**: Supabase Realtime v2 (Phoenix Channels), auto-reconnect, heartbeat
+- **Cloud Pull**: PostgREST GET + row_version 충돌 해결 (last-write-wins)
+- **TeamView 확장**: 4-탭 상세 뷰 (Overview/Checkpoints/Growth/Traces)
+- **React Hook**: `useRealtimeSync.ts` — cloud-update/realtime-status 이벤트 구독
+- **테스트**: Rust 36→42, Frontend 80→81
+
+### Phase 8.3: Knowledge Store Cloud ✅
+
+**목표**: 로컬 knowledge → 클라우드 자동 동기화, 팀 검색
+
+- **SQL**: `c4_documents` 테이블 (tsvector FTS, weighted A/B/C, GIN index, RLS)
+- **Go Client**: KnowledgeCloudClient (5 methods: Sync/Search/Get/List/Delete)
+- **Proxy Interceptor**: knowledge_record → async cloud push, knowledge_search → cloud merge
+- **C1 React**: TeamView 5번째 Knowledge 탭 (검색, 문서 목록, type badges)
+- **테스트**: Go 10 + Rust 2 + Frontend 1 = 13개 신규
 
 ### Phase 7.2: LLM Gateway ⭐ 핵심 차별화
 
@@ -749,7 +768,9 @@ v0.1-0.3        v0.4           v0.5           v0.6          v0.6.10         v0.7
 | **Go Gap Fix + Persona Evolution** | P0 | ✅ 완료 |
 | **Sidecar Stability + LSP Onboarding** | P0 | ✅ 완료 |
 | **Review-as-Task + Soul System** | P0 | ✅ 완료 |
+| **Cloud Foundation (8.1)** | P0 | ✅ 완료 |
+| **C1 Cloud Dashboard (8.2)** | P0 | ✅ 완료 |
+| **Knowledge Store Cloud (8.3)** | P0 | ✅ 완료 |
 | Worker Loop (CLI `c4 run`) | P2 | 📋 Deferred |
-| Cloud Foundation (7.1) | P1 | 📋 Next (Go 재설계) |
-| LLM Gateway (7.2) | P1 | 📋 Phase 7 |
-| Hosted Workers (7.3) | P2 | 📋 Phase 7 |
+| LLM Gateway (8.4) | P1 | 📋 Next |
+| Hosted Workers (8.5) | P2 | 📋 Future |
