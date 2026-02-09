@@ -111,11 +111,12 @@ func newMCPServer() (*mcpServer, error) {
 		return nil, fmt.Errorf("creating store: %w", err)
 	}
 
-	// Re-register handlers with the actual store (core + discovery + persona tools)
+	// Re-register handlers with the actual store (core + discovery + persona + soul tools)
 	handlers.RegisterAll(reg, store)
 	handlers.RegisterDiscoveryHandlers(reg, store, projectDir)
 	handlers.RegisterPersonaHandlers(reg, store)
 	handlers.RegisterTeamHandlers(reg, projectDir)
+	handlers.RegisterSoulHandlers(reg, projectDir)
 
 	// Wire sidecar auto-restart
 	if sidecar != nil {

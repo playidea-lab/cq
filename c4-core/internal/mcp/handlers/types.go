@@ -38,6 +38,7 @@ type TaskAssignment struct {
 	WorktreePath  string         `json:"worktree_path,omitempty"`
 	Model         string         `json:"recommended_model,omitempty"`
 	ReviewContext *ReviewContext `json:"review_context,omitempty"`
+	SoulContext   string         `json:"soul_context,omitempty"`
 }
 
 // ReviewContext provides context from the parent implementation task for review tasks.
@@ -103,16 +104,17 @@ type EconomicModeInfo struct {
 
 // ProjectStatus holds the overall project status.
 type ProjectStatus struct {
-	State        string            `json:"state"` // "INIT", "PLAN", "EXECUTE", etc.
-	ProjectName  string            `json:"project_name"`
-	TotalTasks   int               `json:"total_tasks"`
-	PendingTasks int               `json:"pending_tasks"`
-	InProgress   int               `json:"in_progress_tasks"`
-	DoneTasks    int               `json:"done_tasks"`
-	BlockedTasks int               `json:"blocked_tasks"`
-	Workers      []WorkerInfo      `json:"workers,omitempty"`
-	EconomicMode *EconomicModeInfo `json:"economic_mode,omitempty"`
-	WorkerConfig *WorkerConfigInfo `json:"worker_config,omitempty"`
+	State           string            `json:"state"` // "INIT", "PLAN", "EXECUTE", etc.
+	ProjectName     string            `json:"project_name"`
+	TotalTasks      int               `json:"total_tasks"`
+	PendingTasks    int               `json:"pending_tasks"`
+	InProgress      int               `json:"in_progress_tasks"`
+	DoneTasks       int               `json:"done_tasks"`
+	BlockedTasks    int               `json:"blocked_tasks"`
+	Workers         []WorkerInfo      `json:"workers,omitempty"`
+	EconomicMode    *EconomicModeInfo `json:"economic_mode,omitempty"`
+	WorkerConfig    *WorkerConfigInfo `json:"worker_config,omitempty"`
+	ActiveSoulRoles []string          `json:"active_soul_roles,omitempty"`
 }
 
 // Store defines the data access interface for MCP handlers.

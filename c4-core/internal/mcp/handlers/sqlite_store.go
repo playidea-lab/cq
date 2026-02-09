@@ -313,6 +313,9 @@ func (s *SQLiteStore) GetStatus() (*ProjectStatus, error) {
 		}
 	}
 
+	// Add active soul roles for current workflow stage
+	status.ActiveSoulRoles = GetActiveRolesForStage(status.State)
+
 	// Add economic mode and worker config info if config is available
 	if s.config != nil {
 		cfg := s.config.GetConfig()
@@ -568,6 +571,11 @@ func (s *SQLiteStore) AssignTask(workerID string) (*TaskAssignment, error) {
 		}
 	}
 
+	// Best-effort soul context injection
+	if s.projectRoot != "" {
+		s.injectSoulContext(assignment)
+	}
+
 	// For R- tasks, inject parent T's review context
 	if strings.HasPrefix(taskID, "R-") {
 		_, baseID, ver, _ := task.ParseTaskID(taskID)
@@ -616,6 +624,9 @@ func (s *SQLiteStore) SubmitTask(taskID, workerID, commitSHA string, results []V
 
 	// Auto-record knowledge (best-effort)
 	s.autoRecordKnowledge(task, "submitted via worker", nil)
+
+	// Auto-learn: update soul from persona patterns (best-effort)
+	s.autoLearn(workerID)
 
 	var pending int
 	_ = s.db.QueryRow("SELECT COUNT(*) FROM c4_tasks WHERE status IN ('pending', 'in_progress')").Scan(&pending)
@@ -697,6 +708,9 @@ func (s *SQLiteStore) ReportTask(taskID, summary string, filesChanged []string) 
 
 	// Auto-record knowledge (best-effort)
 	s.autoRecordKnowledge(task, summary, filesChanged)
+
+	// Auto-learn: update soul from persona patterns (best-effort)
+	s.autoLearn("direct")
 
 	return nil
 }
@@ -957,6 +971,74 @@ func (s *SQLiteStore) autoRecordKnowledge(task *Task, summary string, filesChang
 		case <-done:
 		case <-time.After(10 * time.Second):
 			fmt.Fprintf(os.Stderr, "c4: auto-record knowledge timed out for %s\n", task.ID)
+		}
+	}()
+}
+
+// injectSoulContext reads team.yaml to find the active user, then resolves
+// their soul for the task's domain. This is best-effort: failures are logged, not fatal.
+func (s *SQLiteStore) injectSoulContext(a *TaskAssignment) {
+	// Reuse proper YAML parsing from persona.go
+	username := getActiveUsername(s.projectRoot)
+	if username == "" {
+		return
+	}
+
+	// Get active persona for the user
+	activePersona := getActivePersonaForUser(s.projectRoot, username)
+
+	// Determine role: use task domain if available, otherwise active persona
+	role := a.Domain
+	if role == "" {
+		role = activePersona
+	}
+	if role == "" {
+		return
+	}
+
+	// Resolve soul (best-effort)
+	result, err := ResolveSoul(s.projectRoot, username, role)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "c4: injectSoulContext failed for %s/%s: %v\n", username, role, err)
+		return
+	}
+
+	merged, _ := result["merged"].(string)
+	if merged != "" {
+		a.SoulContext = merged
+	}
+}
+
+// autoLearn analyzes persona patterns and updates the soul's Learned section.
+// Best-effort: runs in a goroutine, failures are logged not fatal.
+func (s *SQLiteStore) autoLearn(personaID string) {
+	if s.projectRoot == "" {
+		return
+	}
+
+	go func() {
+		stats, err := s.GetPersonaStats(personaID)
+		if err != nil {
+			return
+		}
+
+		total, _ := stats["total_tasks"].(int)
+		if total < 5 {
+			return // need minimum data to generate meaningful suggestions
+		}
+
+		suggestions := analyzePatternsForSuggestions(stats, total)
+		if len(suggestions) == 0 {
+			return
+		}
+
+		username := getActiveUsername(s.projectRoot)
+		if username == "" {
+			return
+		}
+
+		if err := applySuggestionsToSoul(s.projectRoot, username, personaID, suggestions); err != nil {
+			fmt.Fprintf(os.Stderr, "c4: autoLearn failed for %s/%s: %v\n", username, personaID, err)
 		}
 	}()
 }
