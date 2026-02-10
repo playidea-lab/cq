@@ -75,7 +75,7 @@ c4_add_todo(mode="direct", review_required=False)
 
 ---
 
-## MCP 도구 빠른 참조 (58개)
+## MCP 도구 빠른 참조 (62개)
 
 ```
 상태(3):    c4_status, c4_start, c4_clear
@@ -95,7 +95,8 @@ LSP(7):     c4_find_symbol, c4_get_symbols_overview,
             c4_replace_symbol_body, c4_insert_before_symbol,
             c4_insert_after_symbol, c4_rename_symbol,
             c4_find_referencing_symbols
-지식(6):    c4_knowledge_search, c4_knowledge_record, c4_knowledge_get,
+지식(7):    c4_knowledge_search, c4_knowledge_record, c4_knowledge_get,
+            c4_knowledge_pull,
             c4_experiment_record, c4_experiment_search, c4_pattern_suggest
 GPU(2):     c4_gpu_status, c4_job_submit
 Soul(3):    c4_soul_get, c4_soul_set, c4_soul_resolve
@@ -103,6 +104,7 @@ Soul(3):    c4_soul_get, c4_soul_set, c4_soul_resolve
 Twin(1):    c4_reflect
 온보딩(1):  c4_onboard
 Lighthouse(1): c4_lighthouse (register/list/get/promote/update/remove)
+LLM(3):    c4_llm_call, c4_llm_providers, c4_llm_costs
 ```
 
 ### 워크플로우
@@ -121,15 +123,16 @@ CP-001:  체크포인트
 
 ## Go Core (c4-core/) — Primary MCP Server
 
-> `c4-core/` — Go 기반 MCP 서버 (Primary). 58개 도구. Python sidecar로 LSP/Knowledge/GPU 기능 위임.
+> `c4-core/` — Go 기반 MCP 서버 (Primary). 62개 도구. Python sidecar로 LSP/Knowledge/GPU 기능 위임.
 
 ### 아키텍처
 ```
-Claude Code → Go MCP Server (stdio, 58 tools)
+Claude Code → Go MCP Server (stdio, 62 tools)
                 ├→ Go native (22): 상태, 태스크, 파일, git, validation
                 ├→ Go + SQLite (13): spec, design, checkpoint, artifact, lighthouse
                 ├→ Soul/Persona/Twin (7): soul CRUD, persona evolve, whoami, reflect
-                └→ JSON-RPC proxy (16) → Python Sidecar
+                ├→ LLM Gateway (3): llm_call, llm_providers, llm_costs
+                └→ JSON-RPC proxy (17) → Python Sidecar
                                             ├→ LSP (multilspy, Jedi, tree-sitter)
                                             ├→ Knowledge Store (FTS5 + Vector)
                                             └→ GPU Scheduler
@@ -137,8 +140,8 @@ Claude Code → Go MCP Server (stdio, 58 tools)
 
 ### 패키지 구조
 - `cmd/c4/` — CLI (cobra), MCP server (Registry-based)
-- `internal/mcp/` — Registry + handlers (58개 도구)
-- `internal/mcp/handlers/` — sqlite_store, files, git, discovery, artifacts, proxy, validation
+- `internal/mcp/` — Registry + handlers (62개 도구)
+- `internal/mcp/handlers/` — sqlite_store, files, git, discovery, artifacts, proxy, validation, llm
 - `internal/bridge/` — Python sidecar 관리 (JSON-RPC/TCP)
 - `internal/task/` — TaskStore (SQLite, Memory, Supabase)
 - `internal/state/` — State machine

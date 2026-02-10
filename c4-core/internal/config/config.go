@@ -43,6 +43,20 @@ type CloudConfig struct {
 	ProjectID string `mapstructure:"project_id" yaml:"project_id"` // cloud project identifier
 }
 
+// LLMProviderConfig holds per-provider settings.
+type LLMProviderConfig struct {
+	Enabled   bool   `mapstructure:"enabled"     yaml:"enabled"`
+	APIKeyEnv string `mapstructure:"api_key_env" yaml:"api_key_env"`
+	BaseURL   string `mapstructure:"base_url"    yaml:"base_url"`
+}
+
+// LLMGatewayConfig holds LLM gateway settings.
+type LLMGatewayConfig struct {
+	Enabled   bool                         `mapstructure:"enabled"   yaml:"enabled"`
+	Default   string                       `mapstructure:"default"   yaml:"default"`
+	Providers map[string]LLMProviderConfig `mapstructure:"providers" yaml:"providers"`
+}
+
 // WorktreeConfig holds worktree settings.
 type WorktreeConfig struct {
 	Enabled     bool `mapstructure:"enabled"      yaml:"enabled"`
@@ -67,6 +81,7 @@ type C4Config struct {
 	Worktree         WorktreeConfig   `mapstructure:"worktree"            yaml:"worktree"`
 	EconomicMode     EconomicMode     `mapstructure:"economic_mode"       yaml:"economic_mode"`
 	Cloud            CloudConfig      `mapstructure:"cloud"               yaml:"cloud"`
+	LLMGateway       LLMGatewayConfig `mapstructure:"llm_gateway"         yaml:"llm_gateway"`
 	ReviewAsTask     bool             `mapstructure:"review_as_task"      yaml:"review_as_task"`
 	CheckpointAsTask bool             `mapstructure:"checkpoint_as_task"  yaml:"checkpoint_as_task"`
 }
@@ -159,6 +174,8 @@ func New(projectRoot string) (*Manager, error) {
 	v.SetDefault("cloud.url", "")
 	v.SetDefault("cloud.anon_key", "")
 	v.SetDefault("cloud.project_id", "")
+	v.SetDefault("llm_gateway.enabled", false)
+	v.SetDefault("llm_gateway.default", "anthropic")
 
 	// Config file location
 	configDir := filepath.Join(projectRoot, ".c4")

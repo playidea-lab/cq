@@ -338,3 +338,81 @@ cloud:
 		}
 	})
 }
+
+func TestLLMGatewayConfig(t *testing.T) {
+	t.Run("disabled by default", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		mgr, err := New(tmpDir)
+		if err != nil {
+			t.Fatalf("New() failed: %v", err)
+		}
+		cfg := mgr.GetConfig()
+		if cfg.LLMGateway.Enabled {
+			t.Error("LLMGateway.Enabled should be false by default")
+		}
+	})
+
+	t.Run("enabled from yaml", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		c4Dir := filepath.Join(tmpDir, ".c4")
+		if err := os.MkdirAll(c4Dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+
+		yaml := `project_id: test
+llm_gateway:
+  enabled: true
+  default: anthropic
+  providers:
+    anthropic:
+      enabled: true
+      api_key_env: ANTHROPIC_API_KEY
+    openai:
+      enabled: false
+      api_key_env: OPENAI_API_KEY
+    ollama:
+      enabled: true
+      base_url: "http://localhost:11434"
+`
+		if err := os.WriteFile(filepath.Join(c4Dir, "config.yaml"), []byte(yaml), 0o644); err != nil {
+			t.Fatal(err)
+		}
+
+		mgr, err := New(tmpDir)
+		if err != nil {
+			t.Fatalf("New() failed: %v", err)
+		}
+
+		cfg := mgr.GetConfig()
+		if !cfg.LLMGateway.Enabled {
+			t.Error("LLMGateway.Enabled should be true")
+		}
+		if cfg.LLMGateway.Default != "anthropic" {
+			t.Errorf("LLMGateway.Default = %q, want %q", cfg.LLMGateway.Default, "anthropic")
+		}
+		if len(cfg.LLMGateway.Providers) != 3 {
+			t.Fatalf("Providers count = %d, want 3", len(cfg.LLMGateway.Providers))
+		}
+
+		anthropic := cfg.LLMGateway.Providers["anthropic"]
+		if !anthropic.Enabled {
+			t.Error("anthropic provider should be enabled")
+		}
+		if anthropic.APIKeyEnv != "ANTHROPIC_API_KEY" {
+			t.Errorf("anthropic.APIKeyEnv = %q, want %q", anthropic.APIKeyEnv, "ANTHROPIC_API_KEY")
+		}
+
+		openai := cfg.LLMGateway.Providers["openai"]
+		if openai.Enabled {
+			t.Error("openai provider should be disabled")
+		}
+
+		ollama := cfg.LLMGateway.Providers["ollama"]
+		if !ollama.Enabled {
+			t.Error("ollama provider should be enabled")
+		}
+		if ollama.BaseURL != "http://localhost:11434" {
+			t.Errorf("ollama.BaseURL = %q, want %q", ollama.BaseURL, "http://localhost:11434")
+		}
+	})
+}

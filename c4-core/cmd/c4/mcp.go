@@ -11,6 +11,7 @@ import (
 	"github.com/changmin/c4-core/internal/bridge"
 	"github.com/changmin/c4-core/internal/cloud"
 	"github.com/changmin/c4-core/internal/config"
+	"github.com/changmin/c4-core/internal/llm"
 	"github.com/changmin/c4-core/internal/mcp"
 	"github.com/changmin/c4-core/internal/mcp/handlers"
 	_ "modernc.org/sqlite"
@@ -161,6 +162,18 @@ func newMCPServer() (*mcpServer, error) {
 	handlers.RegisterLighthouseHandlers(reg, sqliteStore)
 	if n := handlers.LoadLighthousesOnStartup(reg, sqliteStore); n > 0 {
 		fmt.Fprintf(os.Stderr, "c4: %d lighthouse stubs loaded\n", n)
+	}
+
+	// Register LLM Gateway handlers if enabled
+	if cfgMgr != nil && cfgMgr.GetConfig().LLMGateway.Enabled {
+		gwCfg := cfgMgr.GetConfig().LLMGateway
+		routing := llm.RoutingTable{
+			Default: gwCfg.Default,
+			Aliases: llm.Aliases,
+		}
+		gateway := llm.NewGateway(routing)
+		handlers.RegisterLLMHandlers(reg, gateway)
+		fmt.Fprintf(os.Stderr, "c4: LLM gateway enabled (default: %s)\n", gwCfg.Default)
 	}
 
 	// Set project role for Soul stage integration

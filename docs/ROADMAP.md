@@ -1,12 +1,13 @@
 # C4 Roadmap
 
-## Current Version: v0.13.0 (Cloud Phase 8.1-8.3)
+## Current Version: v0.14.0 (Phase 9 — LLM Gateway)
 
-현재 버전은 **Go MCP Primary(58 tools), Cloud Foundation (Supabase), C1 Cloud Dashboard (Realtime WebSocket), Knowledge Store Cloud**를 포함합니다.
+현재 버전은 **Go MCP Primary(62 tools), LLM Gateway (Provider 인터페이스 + 라우팅 + 비용 추적), Cloud Foundation (Supabase), Knowledge Bidirectional Sync**를 포함합니다.
 
 ### 핵심 구조
 
-- **Go MCP Server (Primary)** - 58 도구, Registry-based, SQLite Store, JSON-RPC Bridge
+- **Go MCP Server (Primary)** - 62 도구, Registry-based, SQLite Store, JSON-RPC Bridge, LLM Gateway
+- **LLM Gateway** - Provider 인터페이스, 5단계 라우팅, CostTracker, 모델 카탈로그 9종
 - **Cloud Layer** - Go PostgREST client (Auth + CloudStore + HybridStore + KnowledgeCloudClient)
 - **Python Sidecar** - LSP(Multilspy→Jedi→Tree-sitter), Knowledge Store v2, GPU Scheduler
 - **C1 Desktop App** - Tauri 2.x, 4개 프로바이더, Realtime WebSocket, 5-탭 TeamView
@@ -28,7 +29,7 @@
 - **Team Collaboration** - Supabase 기반 팀 상태 공유
 - **C1 Multi-LLM Explorer** - Claude Code, Codex CLI, Cursor, Gemini CLI 4개 프로바이더
 - **코드베이스**: Go ~12K + Python 11.3K + C1 ~8K + Tests ~15K = **~38K LOC**
-- **테스트**: Go 270+ + Python 446 + Rust 44 + Frontend 81 = **~841 tests**
+- **테스트**: Go 300+ + Python 446 + Rust 44 + Frontend 81 = **~871 tests**
 
 ---
 
@@ -644,22 +645,52 @@ Claude Code → Go MCP Server (stdio, 47 tools)
 - **C1 React**: TeamView 5번째 Knowledge 탭 (검색, 문서 목록, type badges)
 - **테스트**: Go 10 + Rust 2 + Frontend 1 = 13개 신규
 
-### Phase 7.2: LLM Gateway ⭐ 핵심 차별화
+### Phase 8.4: Knowledge Bidirectional Sync ✅
 
-**목표**: 멀티 LLM 오케스트레이션 플랫폼
+**목표**: Cloud → Local 양방향 knowledge 동기화
 
-- **Multi-LLM Support**
-  - Claude, Gemini, GPT, Ollama 연결
-  - 사용자 API 키 관리 (Vault)
-  - C4 호스팅 API 옵션 (마진 모델)
-- **Smart Routing**
-  - 태스크별 최적 모델 자동 선택 (Economic Mode 확장)
-  - 모델 간 협업 (Claude 계획 → Gemini 실행 → Claude 리뷰)
-  - 비용/성능 트레이드오프 설정
-- **Cost Dashboard**
-  - 모델별 사용량 추적
-  - 예산 알림 및 제한
-  - 비용 분석 리포트
+- **c4_knowledge_pull MCP 도구** (#59): cloud → local sync (version 비교, force 옵션)
+- **KnowledgeSyncer 확장**: 2→4 메서드 (ListDocuments, GetDocument 추가)
+- **content_hash 변경 감지**: ListDocuments select에 content_hash 필드 추가
+- **Re-push 방지**: cloud → local은 BridgeProxy.Call("KnowledgeRecord") 직접 호출 (MCP handler 우회)
+- **테스트**: Pull 핸들러 9개 + content_hash 1개 = 10개 신규
+
+---
+
+## Phase 9: LLM Gateway (v0.14.0)
+
+**목표**: 멀티 LLM 오케스트레이션 프레임워크 — 인터페이스 + 라우팅 + 비용 추적
+
+### Phase 9.1: Gateway Framework ✅
+
+- **Provider 인터페이스**: `Chat(ctx, *ChatRequest) → *ChatResponse` 표준 인터페이스
+- **모델 카탈로그**: 9개 모델 가격/스펙 (Claude Opus/Sonnet/Haiku, GPT-4 Turbo/4o/4o-mini, Gemini Flash/Pro, Llama 70B) + 9개 Aliases
+- **Gateway 코어**: 5단계 라우팅 (direct provider/model → alias → taskType route → default route → default provider)
+- **CostTracker**: 인메모리 비용 집계 (provider별, model별, 세션 누적)
+- **MockProvider**: 테스트용 고정 응답 프로바이더
+- **Config**: `LLMGatewayConfig` (enabled, default, providers map with api_key_env, base_url)
+- **MCP 도구 3개** (#60-62): `c4_llm_call`, `c4_llm_providers`, `c4_llm_costs`
+- **서버 와이어링**: `config.LLMGateway.Enabled` → Gateway 자동 초기화 + 핸들러 등록
+- **테스트**: Gateway 19 + Handler 10 + Config 2 = **31개 신규** (전체 회귀 없음)
+- **외부 의존성**: 추가 없음 (stdlib + 기존 의존성만)
+
+**결과**: 59 → **62 MCP 도구** (+3)
+
+### Phase 9.2: Provider Implementations 📋 Next
+
+**목표**: 실제 API 연결 (별도 PR)
+
+- Anthropic Provider (Claude API)
+- OpenAI Provider (GPT API)
+- Google Provider (Gemini API)
+- Ollama Provider (Local LLM)
+- 모델 간 협업 (Claude 계획 → Gemini 실행 → Claude 리뷰)
+
+### Phase 9.3: Cost Dashboard 📋 Future
+
+- C1 앱에 비용 대시보드 뷰 추가
+- 예산 알림 및 제한
+- 비용 분석 리포트
 
 ### Phase 7.3: Hosted Workers
 
@@ -771,6 +802,9 @@ v0.1-0.3        v0.4           v0.5           v0.6          v0.6.10         v0.7
 | **Cloud Foundation (8.1)** | P0 | ✅ 완료 |
 | **C1 Cloud Dashboard (8.2)** | P0 | ✅ 완료 |
 | **Knowledge Store Cloud (8.3)** | P0 | ✅ 완료 |
+| **Knowledge Bidirectional Sync (8.4)** | P0 | ✅ 완료 |
+| **LLM Gateway Framework (9.1)** | P1 | ✅ 완료 |
+| LLM Provider Implementations (9.2) | P1 | 📋 Next |
+| LLM Cost Dashboard (9.3) | P2 | 📋 Future |
 | Worker Loop (CLI `c4 run`) | P2 | 📋 Deferred |
-| LLM Gateway (8.4) | P1 | 📋 Next |
-| Hosted Workers (8.5) | P2 | 📋 Future |
+| Hosted Workers | P2 | 📋 Future |
