@@ -221,6 +221,34 @@ func TestListDocuments(t *testing.T) {
 	}
 }
 
+func TestListDocuments_IncludesContentHash(t *testing.T) {
+	var receivedURL string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		receivedURL = r.URL.String()
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode([]map[string]any{
+			{"doc_id": "exp-001", "content_hash": "abc123"},
+		})
+	}))
+	defer srv.Close()
+
+	kc := newTestKnowledgeClient(srv.URL)
+	results, err := kc.ListDocuments("", 10)
+	if err != nil {
+		t.Fatalf("ListDocuments failed: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	if results[0]["content_hash"] != "abc123" {
+		t.Errorf("content_hash = %v, want abc123", results[0]["content_hash"])
+	}
+	// Verify select includes content_hash
+	if !strings.Contains(receivedURL, "content_hash") {
+		t.Errorf("URL should request content_hash in select, got: %s", receivedURL)
+	}
+}
+
 func TestDeleteDocument(t *testing.T) {
 	var receivedMethod string
 	var receivedURL string

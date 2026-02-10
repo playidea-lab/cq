@@ -153,7 +153,7 @@ func (k *KnowledgeCloudClient) ListDocuments(docType string, limit int) ([]map[s
 		filter += "&doc_type=eq." + docType
 	}
 	filter += fmt.Sprintf("&order=updated_at.desc&limit=%d", limit)
-	filter += "&select=doc_id,doc_type,title,domain,tags,version,created_at,updated_at"
+	filter += "&select=doc_id,doc_type,title,domain,tags,version,content_hash,created_at,updated_at"
 
 	var rows []map[string]any
 	if err := k.get("c4_documents", filter, &rows); err != nil {

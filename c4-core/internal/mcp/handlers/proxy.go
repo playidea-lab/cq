@@ -17,6 +17,8 @@ import (
 type KnowledgeSyncer interface {
 	SyncDocument(params map[string]any, docID string) error
 	SearchDocuments(query string, docType string, limit int) ([]map[string]any, error)
+	ListDocuments(docType string, limit int) ([]map[string]any, error)
+	GetDocument(docID string) (map[string]any, error)
 }
 
 // connError wraps connection-level errors that indicate the sidecar is unreachable.
@@ -311,6 +313,110 @@ func knowledgeSearchHandler(proxy *BridgeProxy, rpcMethod string, kc KnowledgeSy
 	}
 }
 
+// knowledgePullHandler pulls documents from cloud to local store via Python RPC.
+// Uses KnowledgeSyncer.ListDocuments for lightweight listing, then fetches full docs
+// individually via GetDocument. Creates/updates local docs via BridgeProxy.Call("KnowledgeRecord")
+// which bypasses the MCP handler (no cloud re-push).
+func knowledgePullHandler(proxy *BridgeProxy, kc KnowledgeSyncer) mcp.HandlerFunc {
+	return func(rawArgs json.RawMessage) (any, error) {
+		if kc == nil {
+			return nil, fmt.Errorf("cloud not configured")
+		}
+		params := parseParams(rawArgs)
+
+		docType, _ := params["doc_type"].(string)
+		limit := 50
+		if l, ok := params["limit"].(float64); ok && l > 0 {
+			limit = int(l)
+		}
+		force, _ := params["force"].(bool)
+
+		// 1. List cloud docs (lightweight — no body)
+		cloudDocs, err := kc.ListDocuments(docType, limit)
+		if err != nil {
+			return nil, fmt.Errorf("cloud list: %w", err)
+		}
+
+		var pulled, skipped, updated []string
+		var pullErrors []string
+
+		for _, cdoc := range cloudDocs {
+			docID, _ := cdoc["doc_id"].(string)
+			if docID == "" {
+				continue
+			}
+
+			// 2. Check local existence via Python RPC
+			localDoc, localErr := proxy.Call("KnowledgeGet", map[string]any{"doc_id": docID})
+			localExists := localErr == nil && localDoc["error"] == nil
+
+			if localExists && !force {
+				// Compare version: cloud newer → update, otherwise skip
+				cloudVer, _ := cdoc["version"].(float64)
+				localVer := float64(0)
+				if v, ok := localDoc["version"].(float64); ok {
+					localVer = v
+				}
+				if cloudVer <= localVer {
+					skipped = append(skipped, docID)
+					continue
+				}
+			}
+
+			// 3. Fetch full doc from cloud (includes body)
+			fullDoc, getErr := kc.GetDocument(docID)
+			if getErr != nil {
+				pullErrors = append(pullErrors, fmt.Sprintf("%s: %v", docID, getErr))
+				continue
+			}
+
+			// 4. Transform cloud row → KnowledgeRecord params
+			tags := fullDoc["tags"]
+			if tagsStr, ok := tags.(string); ok {
+				var tagList []any
+				if json.Unmarshal([]byte(tagsStr), &tagList) == nil {
+					tags = tagList
+				}
+			}
+
+			rpcParams := map[string]any{
+				"id":       docID,
+				"doc_type": fullDoc["doc_type"],
+				"title":    fullDoc["title"],
+				"body":     fullDoc["body"],
+				"domain":   fullDoc["domain"],
+				"tags":     tags,
+			}
+
+			// 5. Create/update local via Python RPC (bypasses MCP handler = no cloud re-push)
+			result, recErr := proxy.Call("KnowledgeRecord", rpcParams)
+			if recErr != nil {
+				pullErrors = append(pullErrors, fmt.Sprintf("%s: %v", docID, recErr))
+				continue
+			}
+			if success, _ := result["success"].(bool); success {
+				if localExists {
+					updated = append(updated, docID)
+				} else {
+					pulled = append(pulled, docID)
+				}
+			}
+		}
+
+		return map[string]any{
+			"pulled":  len(pulled),
+			"updated": len(updated),
+			"skipped": len(skipped),
+			"errors":  pullErrors,
+			"details": map[string]any{
+				"pulled_ids":  pulled,
+				"updated_ids": updated,
+				"skipped_ids": skipped,
+			},
+		}, nil
+	}
+}
+
 // RegisterProxyHandlers registers MCP tools that are proxied to the Python sidecar.
 // These tools require Python dependencies (LSP, Knowledge, GPU).
 // If knowledgeCloud is non-nil, knowledge tools get automatic cloud sync.
@@ -529,4 +635,27 @@ func RegisterProxyHandlers(reg *mcp.Registry, proxy *BridgeProxy, knowledgeCloud
 			},
 		},
 	}, proxyHandlerWithTimeout(proxy, "ProjectOnboard", 30*time.Second))
+
+	// Knowledge pull tool — pull cloud documents to local store
+	reg.Register(mcp.ToolSchema{
+		Name:        "c4_knowledge_pull",
+		Description: "Pull knowledge documents from cloud to local store",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"doc_type": map[string]any{
+					"type":        "string",
+					"description": "Filter by type (experiment, pattern, insight, hypothesis)",
+				},
+				"limit": map[string]any{
+					"type":        "integer",
+					"description": "Max documents to pull (default: 50)",
+				},
+				"force": map[string]any{
+					"type":        "boolean",
+					"description": "Overwrite existing local docs (default: false)",
+				},
+			},
+		},
+	}, knowledgePullHandler(proxy, knowledgeCloud))
 }
