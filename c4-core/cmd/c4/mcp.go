@@ -166,14 +166,9 @@ func newMCPServer() (*mcpServer, error) {
 
 	// Register LLM Gateway handlers if enabled
 	if cfgMgr != nil && cfgMgr.GetConfig().LLMGateway.Enabled {
-		gwCfg := cfgMgr.GetConfig().LLMGateway
-		routing := llm.RoutingTable{
-			Default: gwCfg.Default,
-			Aliases: llm.Aliases,
-		}
-		gateway := llm.NewGateway(routing)
+		gateway := llm.NewGatewayFromConfig(cfgMgr.GetConfig())
 		handlers.RegisterLLMHandlers(reg, gateway)
-		fmt.Fprintf(os.Stderr, "c4: LLM gateway enabled (default: %s)\n", gwCfg.Default)
+		fmt.Fprintf(os.Stderr, "c4: LLM gateway enabled (%d providers)\n", gateway.ProviderCount())
 	}
 
 	// Set project role for Soul stage integration
