@@ -1,9 +1,7 @@
 """Normalizer (IR → HTML) 테스트."""
 
-import pytest
 
 from c4.c2.parsers.ir_models import (
-    CellStyle,
     Document,
     MergeInfo,
     create_heading,
@@ -14,7 +12,6 @@ from c4.c2.parsers.ir_models import (
 )
 from c4.c2.parsers.normalizer import (
     get_css,
-    normalize_block,
     normalize_document,
     normalize_heading,
     normalize_image,

@@ -1,9 +1,7 @@
 """Tests for c2.parsers.writer.md_to_ir — Markdown → IR 변환."""
 
-import pytest
 
 from c4.c2.parsers.ir_models import (
-    Document,
     HeadingBlock,
     ListBlock,
     ParagraphBlock,

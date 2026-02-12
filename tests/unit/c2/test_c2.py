@@ -7,8 +7,6 @@ import pytest
 
 from c4.c2.models import (
     Artifact,
-    ChangeEntry,
-    ClaimEvidence,
     EditPattern,
     ProfileDiff,
     ProjectType,
@@ -18,22 +16,20 @@ from c4.c2.models import (
     ReviewRecord,
     ReviewReflectionStatus,
     ReviewType,
-    SectionState,
     SectionStatus,
     Source,
     SourceStatus,
     SourceType,
     WorkspaceState,
 )
-from c4.c2.workspace import create_workspace, parse_workspace, render_workspace, _enum_by_value
+from c4.c2.persona import PersonaLearner, run_review_learning
 from c4.c2.profile import (
     get_preference,
-    get_learned_patterns,
     load_profile,
     save_profile,
     update_learned_patterns,
 )
-from c4.c2.persona import PersonaLearner, run_review_learning
+from c4.c2.workspace import _enum_by_value, create_workspace, parse_workspace, render_workspace
 
 
 class TestModels:

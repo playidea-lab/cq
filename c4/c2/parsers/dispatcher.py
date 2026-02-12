@@ -7,13 +7,13 @@ from c4.c2.parsers.doc_parser import DocParser
 from c4.c2.parsers.docx_parser import DocxParser
 from c4.c2.parsers.hwp_parser import HwpParser
 from c4.c2.parsers.hwpx_parser import HwpxParser
+from c4.c2.parsers.ir_models import Document
 from c4.c2.parsers.pdf_parser import PdfParser
 from c4.c2.parsers.ppt_parser import PptParser
 from c4.c2.parsers.pptx_parser import PptxParser
+from c4.c2.parsers.utils.filetype import get_file_type
 from c4.c2.parsers.xls_parser import XlsParser
 from c4.c2.parsers.xlsx_parser import XlsxParser
-from c4.c2.parsers.ir_models import Document
-from c4.c2.parsers.utils.filetype import get_file_type
 
 
 class ParserDispatcher:

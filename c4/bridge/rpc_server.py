@@ -171,6 +171,7 @@ class BridgeServer:
         self._register_gpu_methods()
         self._register_onboard_methods()
         self._register_research_methods()
+        self._register_c2_methods()
 
     # ======================================================================
     # Health Check
@@ -716,3 +717,165 @@ class BridgeServer:
             return store.suggest_next(project_id)
         except Exception as exc:
             return {"error": f"ResearchNext failed: {exc}"}
+
+    # ======================================================================
+    # C2 Document Lifecycle Methods
+    # ======================================================================
+
+    def _register_c2_methods(self) -> None:
+        self.methods["C2ParseDocument"] = self._handle_c2_parse_document
+        self.methods["C2ExtractText"] = self._handle_c2_extract_text
+        self.methods["C2WorkspaceCreate"] = self._handle_c2_workspace_create
+        self.methods["C2WorkspaceLoad"] = self._handle_c2_workspace_load
+        self.methods["C2WorkspaceSave"] = self._handle_c2_workspace_save
+        self.methods["C2PersonaLearn"] = self._handle_c2_persona_learn
+        self.methods["C2ProfileLoad"] = self._handle_c2_profile_load
+        self.methods["C2ProfileSave"] = self._handle_c2_profile_save
+
+    async def _handle_c2_parse_document(self, params: dict[str, Any]) -> dict[str, Any]:
+        """C2ParseDocument -> c4.c2.converter.parse_document()."""
+        file_path = params.get("file_path")
+        if not file_path:
+            return {"error": "file_path is required"}
+
+        try:
+            from c4.c2.converter import parse_document
+
+            doc = parse_document(Path(file_path))
+            return {
+                "blocks": [b.model_dump(mode="json") for b in doc.blocks],
+                "metadata": doc.metadata.model_dump(mode="json") if doc.metadata else {},
+                "block_count": len(doc.blocks),
+            }
+        except Exception as exc:
+            return {"error": f"C2ParseDocument failed: {exc}"}
+
+    async def _handle_c2_extract_text(self, params: dict[str, Any]) -> dict[str, Any]:
+        """C2ExtractText -> c4.c2.converter.extract_text()."""
+        file_path = params.get("file_path")
+        if not file_path:
+            return {"error": "file_path is required"}
+
+        try:
+            from c4.c2.converter import extract_text
+
+            text = extract_text(Path(file_path))
+            return {"text": text, "char_count": len(text)}
+        except Exception as exc:
+            return {"error": f"C2ExtractText failed: {exc}"}
+
+    async def _handle_c2_workspace_create(self, params: dict[str, Any]) -> dict[str, Any]:
+        """C2WorkspaceCreate -> c4.c2.workspace.create_workspace()."""
+        name = params.get("name")
+        if not name:
+            return {"error": "name is required"}
+
+        try:
+            from c4.c2.models import ProjectType
+            from c4.c2.workspace import create_workspace
+
+            project_type_str = params.get("project_type", "academic_paper")
+            try:
+                project_type = ProjectType(project_type_str)
+            except ValueError:
+                project_type = ProjectType.ACADEMIC_PAPER
+
+            goal = params.get("goal", "")
+            sections = params.get("sections")
+
+            state = create_workspace(name, project_type, goal, sections=sections)
+            return {"state": state.model_dump(mode="json")}
+        except Exception as exc:
+            return {"error": f"C2WorkspaceCreate failed: {exc}"}
+
+    async def _handle_c2_workspace_load(self, params: dict[str, Any]) -> dict[str, Any]:
+        """C2WorkspaceLoad -> c4.c2.workspace.parse_workspace()."""
+        project_dir = params.get("project_dir")
+        if not project_dir:
+            return {"error": "project_dir is required"}
+
+        try:
+            from c4.c2.workspace import parse_workspace
+
+            ws_path = Path(project_dir) / "c2_workspace.md"
+            if not ws_path.exists():
+                return {"error": f"Workspace not found: {ws_path}"}
+
+            md_text = ws_path.read_text(encoding="utf-8")
+            state = parse_workspace(md_text)
+            return {"state": state.model_dump(mode="json")}
+        except Exception as exc:
+            return {"error": f"C2WorkspaceLoad failed: {exc}"}
+
+    async def _handle_c2_workspace_save(self, params: dict[str, Any]) -> dict[str, Any]:
+        """C2WorkspaceSave -> c4.c2.workspace.save_workspace()."""
+        project_dir = params.get("project_dir")
+        if not project_dir:
+            return {"error": "project_dir is required"}
+        state_data = params.get("state")
+        if not state_data:
+            return {"error": "state is required"}
+
+        try:
+            from c4.c2.models import WorkspaceState
+            from c4.c2.workspace import save_workspace
+
+            state = WorkspaceState.model_validate(state_data)
+            saved_path = save_workspace(state, Path(project_dir))
+            return {"success": True, "path": str(saved_path)}
+        except Exception as exc:
+            return {"error": f"C2WorkspaceSave failed: {exc}"}
+
+    async def _handle_c2_persona_learn(self, params: dict[str, Any]) -> dict[str, Any]:
+        """C2PersonaLearn -> c4.c2.persona.run_review_learning()."""
+        draft_path = params.get("draft_path")
+        final_path = params.get("final_path")
+        if not draft_path or not final_path:
+            return {"error": "draft_path and final_path are required"}
+
+        try:
+            from c4.c2.persona import run_review_learning
+
+            profile_path = params.get("profile_path")
+            auto_apply = params.get("auto_apply", False)
+
+            diff = run_review_learning(
+                Path(draft_path),
+                Path(final_path),
+                profile_path=Path(profile_path) if profile_path else None,
+                auto_apply=auto_apply,
+            )
+            return {
+                "summary": diff.summary,
+                "new_patterns": [p.model_dump(mode="json") for p in diff.new_patterns],
+                "tone_updates": diff.tone_updates,
+                "structure_updates": diff.structure_updates,
+            }
+        except Exception as exc:
+            return {"error": f"C2PersonaLearn failed: {exc}"}
+
+    async def _handle_c2_profile_load(self, params: dict[str, Any]) -> dict[str, Any]:
+        """C2ProfileLoad -> c4.c2.profile.load_profile()."""
+        try:
+            from c4.c2.profile import load_profile
+
+            profile_path = params.get("profile_path")
+            profile = load_profile(Path(profile_path) if profile_path else None)
+            return {"profile": profile}
+        except Exception as exc:
+            return {"error": f"C2ProfileLoad failed: {exc}"}
+
+    async def _handle_c2_profile_save(self, params: dict[str, Any]) -> dict[str, Any]:
+        """C2ProfileSave -> c4.c2.profile.save_profile()."""
+        data = params.get("data")
+        if not data or not isinstance(data, dict):
+            return {"error": "data (dict) is required"}
+
+        try:
+            from c4.c2.profile import save_profile
+
+            profile_path = params.get("profile_path")
+            save_profile(data, Path(profile_path) if profile_path else None)
+            return {"success": True}
+        except Exception as exc:
+            return {"error": f"C2ProfileSave failed: {exc}"}

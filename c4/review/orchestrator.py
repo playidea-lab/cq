@@ -13,8 +13,8 @@ from c4.review.models import (
     PaperStructure,
     ReviewConfig,
     ReviewDocument,
-    ReviewSession,
     ReviewerProfile,
+    ReviewSession,
     SectionAnalysis,
 )
 

@@ -12,6 +12,7 @@ import (
 	"github.com/changmin/c4-core/internal/cdp"
 	"github.com/changmin/c4-core/internal/cloud"
 	"github.com/changmin/c4-core/internal/config"
+	"github.com/changmin/c4-core/internal/hub"
 	"github.com/changmin/c4-core/internal/llm"
 	"github.com/changmin/c4-core/internal/mcp"
 	"github.com/changmin/c4-core/internal/mcp/handlers"
@@ -170,6 +171,24 @@ func newMCPServer() (*mcpServer, error) {
 		gateway := llm.NewGatewayFromConfig(cfgMgr.GetConfig())
 		handlers.RegisterLLMHandlers(reg, gateway)
 		fmt.Fprintf(os.Stderr, "c4: LLM gateway enabled (%d providers)\n", gateway.ProviderCount())
+	}
+
+	// Register Hub handlers if enabled
+	if cfgMgr != nil && cfgMgr.GetConfig().Hub.Enabled {
+		hubCfg := cfgMgr.GetConfig().Hub
+		hubClient := hub.NewClient(hub.HubConfig{
+			Enabled:   hubCfg.Enabled,
+			URL:       hubCfg.URL,
+			APIKey:    hubCfg.APIKey,
+			APIKeyEnv: hubCfg.APIKeyEnv,
+			TeamID:    hubCfg.TeamID,
+		})
+		if hubClient.IsAvailable() {
+			handlers.RegisterHubHandlers(reg, hubClient)
+			fmt.Fprintf(os.Stderr, "c4: hub connected (%s)\n", hubCfg.URL)
+		} else {
+			fmt.Fprintln(os.Stderr, "c4: hub enabled but API key not configured")
+		}
 	}
 
 	// Register CDP handlers (always available — connects on demand)

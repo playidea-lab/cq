@@ -1,12 +1,11 @@
 """c2/converter.py 통합 테스트."""
 
+
 import pytest
-from pathlib import Path
 
 from c4.c2.converter import (
     convert_to_html,
     create_hwpx,
-    extract_text,
     parse_document,
 )
 from c4.c2.parsers.ir_models import (
@@ -39,7 +38,7 @@ class TestExtractText:
 
     def test_ir_based_extraction(self):
         """IR Document에서 텍스트 추출 로직 검증."""
-        from c4.c2.parsers.ir_models import HeadingBlock, ParagraphBlock, TableBlock, ListBlock
+        from c4.c2.parsers.ir_models import HeadingBlock, ListBlock, ParagraphBlock, TableBlock
 
         doc = Document(blocks=[
             create_heading(1, "제목"),

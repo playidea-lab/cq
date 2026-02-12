@@ -9,8 +9,8 @@ PPTX(OOXML)와 완전히 다른 구조입니다.
 from pathlib import Path
 
 from c4.c2.parsers.base import BaseParser, ParseResult
-from c4.c2.parsers.pptx_parser import PptxParser
 from c4.c2.parsers.ir_models import Document, create_paragraph
+from c4.c2.parsers.pptx_parser import PptxParser
 from c4.c2.parsers.utils.libreoffice import cleanup_temp_file, convert_to_ooxml, find_soffice
 
 

@@ -69,6 +69,15 @@ type ValidationConfig struct {
 	Unit string `mapstructure:"unit" yaml:"unit"`
 }
 
+// HubConfig holds PiQ Hub connection settings.
+type HubConfig struct {
+	Enabled   bool   `mapstructure:"enabled"     yaml:"enabled"`
+	URL       string `mapstructure:"url"         yaml:"url"`
+	APIKey    string `mapstructure:"api_key"     yaml:"api_key"`
+	APIKeyEnv string `mapstructure:"api_key_env" yaml:"api_key_env"`
+	TeamID    string `mapstructure:"team_id"     yaml:"team_id"`
+}
+
 // C4Config is the top-level configuration schema.
 // It mirrors the Python C4Config model for YAML format compatibility.
 type C4Config struct {
@@ -82,6 +91,7 @@ type C4Config struct {
 	EconomicMode     EconomicMode     `mapstructure:"economic_mode"       yaml:"economic_mode"`
 	Cloud            CloudConfig      `mapstructure:"cloud"               yaml:"cloud"`
 	LLMGateway       LLMGatewayConfig `mapstructure:"llm_gateway"         yaml:"llm_gateway"`
+	Hub              HubConfig        `mapstructure:"hub"                 yaml:"hub"`
 	ReviewAsTask     bool             `mapstructure:"review_as_task"      yaml:"review_as_task"`
 	CheckpointAsTask bool             `mapstructure:"checkpoint_as_task"  yaml:"checkpoint_as_task"`
 }
@@ -176,6 +186,9 @@ func New(projectRoot string) (*Manager, error) {
 	v.SetDefault("cloud.project_id", "")
 	v.SetDefault("llm_gateway.enabled", false)
 	v.SetDefault("llm_gateway.default", "anthropic")
+	v.SetDefault("hub.enabled", false)
+	v.SetDefault("hub.url", "")
+	v.SetDefault("hub.api_key_env", "C4_HUB_API_KEY")
 
 	// Config file location
 	configDir := filepath.Join(projectRoot, ".c4")

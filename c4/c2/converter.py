@@ -15,13 +15,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-# Re-export auto_review converter for backward compatibility
-from c4.review.converter import PDFConverter
-
 from c4.c2.parsers.dispatcher import ParserDispatcher
-from c4.c2.parsers.ir_models import Document, HeadingBlock, ParagraphBlock, TableBlock, ListBlock
+from c4.c2.parsers.ir_models import Document, HeadingBlock, ListBlock, ParagraphBlock, TableBlock
 from c4.c2.parsers.normalizer import normalize_document
 from c4.c2.parsers.writer.md_to_ir import markdown_to_ir
+
+# Re-export auto_review converter for backward compatibility
+from c4.review.converter import PDFConverter
 
 _dispatcher = ParserDispatcher()
 

@@ -62,7 +62,7 @@ def bootstrap_profile(
         profile_mgr.save_profile(profile, output_file)
 
         typer.secho(f"✓ Profile saved to: {output_file}", fg=typer.colors.GREEN)
-        typer.echo(f"\nExtracted patterns:")
+        typer.echo("\nExtracted patterns:")
         typer.echo(f"  - Review style: {profile.review_style}")
         typer.echo(f"  - Expertise areas: {', '.join(profile.expertise_areas) if profile.expertise_areas else 'None'}")
         typer.echo(f"  - Review points: {len(profile.review_points)} patterns identified")

@@ -1,17 +1,12 @@
 """IR 모델 테스트."""
 
-import pytest
 
 from c4.c2.parsers.ir_models import (
-    Block,
     CellStyle,
     Document,
     HeadingBlock,
-    ImageBlock,
-    ListBlock,
     MergeInfo,
     ParagraphBlock,
-    TableBlock,
     create_heading,
     create_image,
     create_list,
