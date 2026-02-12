@@ -1,13 +1,13 @@
 # C4 Roadmap
 
-## Current Version: v0.14.0 (Phase 9 — LLM Gateway)
+## Current Version: v0.15.0 (Phase 10 — CDP Runner + SQLite Hardening)
 
-현재 버전은 **Go MCP Primary(62 tools), LLM Gateway (Provider 인터페이스 + 라우팅 + 비용 추적), Cloud Foundation (Supabase), Knowledge Bidirectional Sync**를 포함합니다.
+현재 버전은 **Go MCP Primary(64 tools), LLM Gateway (4개 Provider 실제 구현), CDP Runner (브라우저 자동화), Cloud Foundation (Supabase), Knowledge Bidirectional Sync**를 포함합니다.
 
 ### 핵심 구조
 
-- **Go MCP Server (Primary)** - 62 도구, Registry-based, SQLite Store, JSON-RPC Bridge, LLM Gateway
-- **LLM Gateway** - Provider 인터페이스, 5단계 라우팅, CostTracker, 모델 카탈로그 9종
+- **Go MCP Server (Primary)** - 64 도구, Registry-based, SQLite Store, JSON-RPC Bridge, LLM Gateway, CDP Runner
+- **LLM Gateway** - 4개 Provider (Anthropic/OpenAI/Gemini/Ollama), 5단계 라우팅, CostTracker, 모델 카탈로그 9종
 - **Cloud Layer** - Go PostgREST client (Auth + CloudStore + HybridStore + KnowledgeCloudClient)
 - **Python Sidecar** - LSP(Multilspy→Jedi→Tree-sitter), Knowledge Store v2, GPU Scheduler
 - **C1 Desktop App** - Tauri 2.x, 4개 프로바이더, Realtime WebSocket, 5-탭 TeamView
@@ -676,15 +676,56 @@ Claude Code → Go MCP Server (stdio, 47 tools)
 
 **결과**: 59 → **62 MCP 도구** (+3)
 
-### Phase 9.2: Provider Implementations 📋 Next
+### Phase 9.2: Provider Implementations ✅
 
-**목표**: 실제 API 연결 (별도 PR)
+**목표**: 실제 API 연결
 
-- Anthropic Provider (Claude API)
-- OpenAI Provider (GPT API)
-- Google Provider (Gemini API)
-- Ollama Provider (Local LLM)
-- 모델 간 협업 (Claude 계획 → Gemini 실행 → Claude 리뷰)
+- **4개 Provider**: stdlib `net/http` + `encoding/json`만 사용 (외부 의존성 0)
+- **Anthropic**: `x-api-key` 헤더, `system` 별도 필드, `anthropic-version: 2023-06-01`
+- **OpenAI**: `Authorization: Bearer` 헤더, system prompt → system role message prepend
+- **Gemini**: API key → URL query param, `systemInstruction` 필드, role 매핑 (assistant→model)
+- **Ollama**: 로컬 전용, API key 불필요, stream: false, 300s timeout
+- **Factory**: `NewGatewayFromConfig(cfg)` — config 기반 Provider 자동 생성 + 등록
+- **테스트**: httptest 기반 25개 신규 (총 44개 LLM 패키지)
+
+---
+
+### Phase 10: CDP Runner (v0.15.0) ✅
+
+**목표**: 브라우저 자동화 — Chromium 앱에 CDP 연결하여 JS 배치 실행
+
+- **신규 패키지**: `internal/cdp/` — chromedp 기반 범용 CDP Runner
+- **Runner.Execute()**: 기존 Chromium 앱에 CDP 연결 → JS 배치 실행 (per-request, stateless)
+- **Runner.ListTargets()**: 브라우저 탭/타겟 목록 조회
+- **MCP 도구 2개** (#63-64): `c4_cdp_run` (JS 실행), `c4_cdp_list` (탭 목록)
+- **보안**: localhost only 기본값, `validateURL()` 강제
+- **timeout**: 기본 30초, 최대 300초
+- **테스트**: Runner unit 5 + handler 9 = 14개
+- **핵심 철학**: "11번 tool call → 1번 스크립트 실행" 패턴으로 토큰 80% 절감
+
+**결과**: 62 → **64 MCP 도구** (+2)
+
+### Phase 10.1: SQLite Hardening ✅
+
+**목표**: SQLITE_BUSY_SNAPSHOT(517) 방지 및 deadlock 수정
+
+- **openDB()**: 중앙 DB 열기 함수 — `MaxOpenConns(1)` + `PRAGMA busy_timeout=5000` + `PRAGMA journal_mode=WAL`
+- **Deadlock 수정**: `AssignTask`에서 `logTrace()`를 `tx.Commit()` 이후로 이동
+- 6개 CLI 파일(`mcp.go`, `status.go`, `add_task.go`, `run.go`, `stop.go`, `root.go`) 통일
+
+### Phase 10.2: R-task Cascade + Orphan GC ✅
+
+**목표**: T-task 완료 시 연관 R-task 자동 정리, 고아 리뷰 감지
+
+- **completeReviewTask() 헬퍼**: `sqlite_store.go`에서 parent T-task done → 연관 R-task 자동 done 처리
+- **SubmitTask 통합**: Worker mode에서 T-task complete 후 cascade 호출
+- **ReportTask 통합**: Direct mode에서 T-task complete 후 cascade 호출
+- **GetStatus() 메트릭**: `orphan_reviews` 필드 추가 (parent T done인데 R-task pending 건수)
+- **ProjectStatus 구조체**: `OrphanReviews` 필드 추가
+- **테스트**: 5개 신규 테스트 (cascade 정상, no R-task, already done, report cascade, orphan count)
+- **결과**: 64 → **64 MCP 도구** (변화 없음, 내부 정리)
+
+---
 
 ### Phase 9.3: Cost Dashboard 📋 Future
 
@@ -804,7 +845,9 @@ v0.1-0.3        v0.4           v0.5           v0.6          v0.6.10         v0.7
 | **Knowledge Store Cloud (8.3)** | P0 | ✅ 완료 |
 | **Knowledge Bidirectional Sync (8.4)** | P0 | ✅ 완료 |
 | **LLM Gateway Framework (9.1)** | P1 | ✅ 완료 |
-| LLM Provider Implementations (9.2) | P1 | 📋 Next |
+| **LLM Provider Implementations (9.2)** | P1 | ✅ 완료 |
+| **CDP Runner (10)** | P1 | ✅ 완료 |
+| **SQLite Hardening (10.1)** | P0 | ✅ 완료 |
 | LLM Cost Dashboard (9.3) | P2 | 📋 Future |
 | Worker Loop (CLI `c4 run`) | P2 | 📋 Deferred |
 | Hosted Workers | P2 | 📋 Future |
