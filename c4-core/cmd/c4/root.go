@@ -53,7 +53,8 @@ Run 'c4 codex' or 'c4 cursor' for other AI tools.`,
 		if _, err := os.Stat(c4Dir); os.IsNotExist(err) {
 			// Allow certain commands without .c4/
 			if cmd.Name() != "mcp" && cmd.Name() != "c4" &&
-			cmd.Name() != "claude" && cmd.Name() != "codex" && cmd.Name() != "cursor" {
+			cmd.Name() != "claude" && cmd.Name() != "codex" && cmd.Name() != "cursor" &&
+			cmd.Parent() != nil && cmd.Parent().Name() != "hub" {
 				return fmt.Errorf("not a C4 project: %s (missing .c4/ directory)", projectDir)
 			}
 		}
