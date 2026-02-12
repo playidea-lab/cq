@@ -153,6 +153,158 @@ func TestSQLiteStoreReportTaskDirectSuccess(t *testing.T) {
 	}
 }
 
+func TestSubmitTask_CascadeReview(t *testing.T) {
+	store, db := newTestSQLiteStore(t)
+	defer db.Close()
+
+	// Add T-task and its paired R-task
+	if err := store.AddTask(&Task{ID: "T-010-0", Title: "Impl", DoD: "done", Status: "pending"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.AddTask(&Task{ID: "R-010-0", Title: "Review", DoD: "done", Status: "pending", Dependencies: []string{"T-010-0"}}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Assign and submit T-task
+	if _, err := store.AssignTask("worker-1"); err != nil {
+		t.Fatal(err)
+	}
+	result, err := store.SubmitTask("T-010-0", "worker-1", "sha1", "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Success {
+		t.Fatalf("submit failed: %s", result.Message)
+	}
+	if result.PendingReview != "R-010-0" {
+		t.Fatalf("PendingReview = %q, want R-010-0", result.PendingReview)
+	}
+
+	// R-task should be auto-completed
+	review, err := store.GetTask("R-010-0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if review.Status != "done" {
+		t.Fatalf("R-task status = %q, want done", review.Status)
+	}
+}
+
+func TestReportTask_CascadeReview(t *testing.T) {
+	store, db := newTestSQLiteStore(t)
+	defer db.Close()
+
+	if err := store.AddTask(&Task{ID: "T-011-0", Title: "Impl", DoD: "done", Status: "pending"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.AddTask(&Task{ID: "R-011-0", Title: "Review", DoD: "done", Status: "pending"}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Claim (direct mode) and report
+	if _, err := store.ClaimTask("T-011-0"); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.ReportTask("T-011-0", "done", []string{"f.go"}); err != nil {
+		t.Fatal(err)
+	}
+
+	review, err := store.GetTask("R-011-0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if review.Status != "done" {
+		t.Fatalf("R-task status = %q, want done", review.Status)
+	}
+}
+
+func TestCompleteReviewTask_NoReview(t *testing.T) {
+	store, db := newTestSQLiteStore(t)
+	defer db.Close()
+
+	// T-task without a paired R-task — should not panic or error
+	if err := store.AddTask(&Task{ID: "T-012-0", Title: "Solo", DoD: "done", Status: "pending"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.AssignTask("worker-1"); err != nil {
+		t.Fatal(err)
+	}
+	result, err := store.SubmitTask("T-012-0", "worker-1", "sha2", "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Success {
+		t.Fatalf("submit failed: %s", result.Message)
+	}
+	if result.PendingReview != "" {
+		t.Fatalf("PendingReview = %q, want empty", result.PendingReview)
+	}
+}
+
+func TestCompleteReviewTask_AlreadyDone(t *testing.T) {
+	store, db := newTestSQLiteStore(t)
+	defer db.Close()
+
+	if err := store.AddTask(&Task{ID: "T-013-0", Title: "Impl", DoD: "done"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.AddTask(&Task{ID: "R-013-0", Title: "Review", DoD: "done"}); err != nil {
+		t.Fatal(err)
+	}
+	// Manually mark R-task as done (AddTask always inserts as "pending")
+	if _, err := db.Exec(`UPDATE c4_tasks SET status='done' WHERE task_id='R-013-0'`); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := store.AssignTask("worker-1"); err != nil {
+		t.Fatal(err)
+	}
+	result, err := store.SubmitTask("T-013-0", "worker-1", "sha3", "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Success {
+		t.Fatalf("submit failed: %s", result.Message)
+	}
+	// Already done R-task should not be re-cascaded
+	if result.PendingReview != "" {
+		t.Fatalf("PendingReview = %q, want empty (already done)", result.PendingReview)
+	}
+}
+
+func TestGetStatus_OrphanCount(t *testing.T) {
+	store, db := newTestSQLiteStore(t)
+	defer db.Close()
+
+	// Create T-task and R-task, then manually mark T-task as done (orphan scenario)
+	if err := store.AddTask(&Task{ID: "T-014-0", Title: "Impl", DoD: "done"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.AddTask(&Task{ID: "R-014-0", Title: "Review", DoD: "done"}); err != nil {
+		t.Fatal(err)
+	}
+	// Mark T-task done manually to simulate orphan (AddTask always inserts as "pending")
+	if _, err := db.Exec(`UPDATE c4_tasks SET status='done' WHERE task_id='T-014-0'`); err != nil {
+		t.Fatal(err)
+	}
+
+	// Non-orphan: T pending, R pending
+	if err := store.AddTask(&Task{ID: "T-015-0", Title: "Impl2", DoD: "done"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.AddTask(&Task{ID: "R-015-0", Title: "Review2", DoD: "done"}); err != nil {
+		t.Fatal(err)
+	}
+
+	status, err := store.GetStatus()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.OrphanReviews != 1 {
+		t.Fatalf("OrphanReviews = %d, want 1", status.OrphanReviews)
+	}
+}
+
 func TestSQLiteStoreStatusReadyTasks(t *testing.T) {
 	store, db := newTestSQLiteStore(t)
 	defer db.Close()

@@ -1,20 +1,18 @@
 {
   "mcpServers": {
     "c4": {
-      "type": "stdio",
-      "command": "/Users/changmin/git/c4/c4-core/bin/c4",
       "args": [
         "mcp",
         "--dir",
         "/Users/changmin/git/c4"
       ],
+      "command": "/Users/changmin/.local/bin/c4",
       "env": {
         "C4_PROJECT_ROOT": "/Users/changmin/git/c4"
-      }
+      },
+      "type": "stdio"
     },
     "piq": {
-      "type": "stdio",
-      "command": "uv",
       "args": [
         "--directory",
         "/Users/changmin/git/piq/packages/piq",
@@ -23,9 +21,11 @@
         "-m",
         "piq.mcp.server"
       ],
+      "command": "uv",
       "env": {
         "PIQ_PROJECT_ROOT": "/Users/changmin/git/c4"
-      }
+      },
+      "type": "stdio"
     }
   }
 }

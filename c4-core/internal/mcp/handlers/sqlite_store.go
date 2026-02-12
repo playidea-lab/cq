@@ -398,6 +398,17 @@ func (s *SQLiteStore) GetStatus() (*ProjectStatus, error) {
 	status.LighthouseStubs = lhStubs
 	status.LighthouseImplemented = lhImpl
 
+	// Orphan review count: R-tasks still pending/in_progress whose parent T-task is done
+	var orphans int
+	_ = s.db.QueryRow(`
+		SELECT COUNT(*) FROM c4_tasks r
+		WHERE r.task_id LIKE 'R-%' AND r.status IN ('pending','in_progress')
+		AND EXISTS (
+			SELECT 1 FROM c4_tasks t
+			WHERE t.task_id = REPLACE(r.task_id, 'R-', 'T-') AND t.status = 'done'
+		)`).Scan(&orphans)
+	status.OrphanReviews = orphans
+
 	// Add active soul roles for current workflow stage
 	status.ActiveSoulRoles = GetActiveRolesForStage(status.State)
 
@@ -783,23 +794,39 @@ func (s *SQLiteStore) SubmitTask(taskID, workerID, commitSHA, handoff string, re
 		nextAction = "complete"
 	}
 
-	// Auto-judge: find pending review task for this implementation
-	var pendingReview string
-	if strings.HasPrefix(taskID, "T-") {
-		// T-001-0 → R-001-0
-		reviewID := "R-" + strings.TrimPrefix(taskID, "T-")
-		var reviewStatus string
-		if err := s.db.QueryRow("SELECT status FROM c4_tasks WHERE task_id=?", reviewID).Scan(&reviewStatus); err == nil && reviewStatus == "pending" {
-			pendingReview = reviewID
-		}
-	}
+	// Auto-complete paired review task (best-effort cascade)
+	cascadedReview := s.completeReviewTask(taskID)
 
 	return &SubmitResult{
 		Success:       true,
 		NextAction:    nextAction,
 		Message:       fmt.Sprintf("Task %s submitted successfully", taskID),
-		PendingReview: pendingReview,
+		PendingReview: cascadedReview,
 	}, nil
+}
+
+// completeReviewTask marks the paired R-task as done when a T-task completes.
+// Returns the review task ID if cascaded, empty string otherwise.
+// Best-effort: errors are logged but don't block task completion.
+func (s *SQLiteStore) completeReviewTask(taskID string) string {
+	if !strings.HasPrefix(taskID, "T-") {
+		return ""
+	}
+	reviewID := "R-" + strings.TrimPrefix(taskID, "T-")
+	result, err := s.db.Exec(
+		`UPDATE c4_tasks SET status='done', worker_id='auto-cascade', updated_at=CURRENT_TIMESTAMP
+		 WHERE task_id=? AND status IN ('pending','in_progress')`,
+		reviewID,
+	)
+	if err != nil {
+		return ""
+	}
+	if n, _ := result.RowsAffected(); n > 0 {
+		s.logTrace("review_cascade", "system", reviewID,
+			fmt.Sprintf("Auto-completed review for %s", taskID))
+		return reviewID
+	}
+	return ""
 }
 
 // MarkBlocked marks a task as blocked.
@@ -882,6 +909,9 @@ func (s *SQLiteStore) ReportTask(taskID, summary string, filesChanged []string) 
 
 	// Record growth snapshot (best-effort)
 	s.recordGrowthOnCompletion()
+
+	// Auto-complete paired review task (best-effort cascade)
+	s.completeReviewTask(taskID)
 
 	return nil
 }

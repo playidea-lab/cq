@@ -121,6 +121,7 @@ type ProjectStatus struct {
 	ActiveSoulRoles       []string          `json:"active_soul_roles,omitempty"`
 	LighthouseStubs       int               `json:"lighthouse_stubs,omitempty"`
 	LighthouseImplemented int               `json:"lighthouse_implemented,omitempty"`
+	OrphanReviews         int               `json:"orphan_reviews,omitempty"`
 }
 
 // Lighthouse represents a spec-as-MCP stub tool.
