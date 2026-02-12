@@ -75,7 +75,7 @@ c4_add_todo(mode="direct", review_required=False)
 
 ---
 
-## MCP 도구 빠른 참조 (62개)
+## MCP 도구 빠른 참조 (86개)
 
 ```
 상태(3):    c4_status, c4_start, c4_clear
@@ -105,6 +105,15 @@ Twin(1):    c4_reflect
 온보딩(1):  c4_onboard
 Lighthouse(1): c4_lighthouse (register/list/get/promote/update/remove)
 LLM(3):    c4_llm_call, c4_llm_providers, c4_llm_costs
+CDP(2):    c4_cdp_run, c4_cdp_list
+Hub-Job(6): c4_hub_submit, c4_hub_status, c4_hub_list,
+            c4_hub_cancel, c4_hub_metrics, c4_hub_log_metrics
+Hub-Infra(4): c4_hub_workers, c4_hub_stats, c4_hub_upload, c4_hub_download
+Hub-DAG(7): c4_hub_dag_create, c4_hub_dag_add_node, c4_hub_dag_add_dep,
+            c4_hub_dag_execute, c4_hub_dag_status, c4_hub_dag_list,
+            c4_hub_dag_from_yaml
+Hub-Edge(5): c4_hub_edge_register, c4_hub_edge_list,
+            c4_hub_deploy_rule, c4_hub_deploy, c4_hub_deploy_status
 ```
 
 ### 워크플로우
@@ -123,15 +132,17 @@ CP-001:  체크포인트
 
 ## Go Core (c4-core/) — Primary MCP Server
 
-> `c4-core/` — Go 기반 MCP 서버 (Primary). 62개 도구. Python sidecar로 LSP/Knowledge/GPU 기능 위임.
+> `c4-core/` — Go 기반 MCP 서버 (Primary). 86개 도구. Python sidecar로 LSP/Knowledge/GPU 기능 위임.
 
 ### 아키텍처
 ```
-Claude Code → Go MCP Server (stdio, 62 tools)
+Claude Code → Go MCP Server (stdio, 86 tools)
                 ├→ Go native (22): 상태, 태스크, 파일, git, validation
                 ├→ Go + SQLite (13): spec, design, checkpoint, artifact, lighthouse
                 ├→ Soul/Persona/Twin (7): soul CRUD, persona evolve, whoami, reflect
                 ├→ LLM Gateway (3): llm_call, llm_providers, llm_costs
+                ├→ CDP Runner (2): cdp_run, cdp_list
+                ├→ Hub Client (22): job, worker, metrics, artifact, DAG, edge, deploy
                 └→ JSON-RPC proxy (17) → Python Sidecar
                                             ├→ LSP (multilspy, Jedi, tree-sitter)
                                             ├→ Knowledge Store (FTS5 + Vector)
@@ -140,8 +151,9 @@ Claude Code → Go MCP Server (stdio, 62 tools)
 
 ### 패키지 구조
 - `cmd/c4/` — CLI (cobra), MCP server (Registry-based)
-- `internal/mcp/` — Registry + handlers (62개 도구)
-- `internal/mcp/handlers/` — sqlite_store, files, git, discovery, artifacts, proxy, validation, llm
+- `internal/mcp/` — Registry + handlers (86개 도구)
+- `internal/mcp/handlers/` — sqlite_store, files, git, discovery, artifacts, proxy, validation, llm, hub
+- `internal/hub/` — PiQ Hub REST+WS client (job, worker, DAG, edge, deploy, artifact, stream)
 - `internal/bridge/` — Python sidecar 관리 (JSON-RPC/TCP)
 - `internal/task/` — TaskStore (SQLite, Memory, Supabase)
 - `internal/state/` — State machine
