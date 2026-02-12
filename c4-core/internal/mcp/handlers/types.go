@@ -105,16 +105,19 @@ type EconomicModeInfo struct {
 
 // ProjectStatus holds the overall project status.
 type ProjectStatus struct {
-	State           string            `json:"state"` // "INIT", "PLAN", "EXECUTE", etc.
-	ProjectName     string            `json:"project_name"`
-	TotalTasks      int               `json:"total_tasks"`
-	PendingTasks    int               `json:"pending_tasks"`
-	InProgress      int               `json:"in_progress_tasks"`
-	DoneTasks       int               `json:"done_tasks"`
-	BlockedTasks    int               `json:"blocked_tasks"`
-	Workers         []WorkerInfo      `json:"workers,omitempty"`
-	EconomicMode    *EconomicModeInfo `json:"economic_mode,omitempty"`
-	WorkerConfig    *WorkerConfigInfo `json:"worker_config,omitempty"`
+	State                 string            `json:"state"` // "INIT", "PLAN", "EXECUTE", etc.
+	ProjectName           string            `json:"project_name"`
+	TotalTasks            int               `json:"total_tasks"`
+	PendingTasks          int               `json:"pending_tasks"`
+	ReadyTasks            int               `json:"ready_tasks"`
+	BlockedByDeps         int               `json:"blocked_by_dependencies"`
+	ReadyTaskIDs          []string          `json:"ready_task_ids,omitempty"`
+	InProgress            int               `json:"in_progress_tasks"`
+	DoneTasks             int               `json:"done_tasks"`
+	BlockedTasks          int               `json:"blocked_tasks"`
+	Workers               []WorkerInfo      `json:"workers,omitempty"`
+	EconomicMode          *EconomicModeInfo `json:"economic_mode,omitempty"`
+	WorkerConfig          *WorkerConfigInfo `json:"worker_config,omitempty"`
 	ActiveSoulRoles       []string          `json:"active_soul_roles,omitempty"`
 	LighthouseStubs       int               `json:"lighthouse_stubs,omitempty"`
 	LighthouseImplemented int               `json:"lighthouse_implemented,omitempty"`

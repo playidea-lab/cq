@@ -353,6 +353,44 @@ func (s *SQLiteStore) GetStatus() (*ProjectStatus, error) {
 		}
 	}
 
+	// Calculate how many pending tasks are runnable now (all deps done).
+	// This helps direct-mode operators pick tasks without extra DB queries.
+	_ = s.db.QueryRow(`
+		SELECT COUNT(*)
+		FROM c4_tasks t
+		WHERE t.status = 'pending'
+		AND NOT EXISTS (
+			SELECT 1 FROM json_each(CASE WHEN t.dependencies IS NULL OR t.dependencies = '' THEN '[]' ELSE t.dependencies END) AS dep
+			JOIN c4_tasks dt ON dt.task_id = dep.value
+			WHERE dt.status != 'done'
+		)`).
+		Scan(&status.ReadyTasks)
+	status.BlockedByDeps = status.PendingTasks - status.ReadyTasks
+	if status.BlockedByDeps < 0 {
+		status.BlockedByDeps = 0
+	}
+
+	readyRows, err := s.db.Query(`
+		SELECT t.task_id
+		FROM c4_tasks t
+		WHERE t.status = 'pending'
+		AND NOT EXISTS (
+			SELECT 1 FROM json_each(CASE WHEN t.dependencies IS NULL OR t.dependencies = '' THEN '[]' ELSE t.dependencies END) AS dep
+			JOIN c4_tasks dt ON dt.task_id = dep.value
+			WHERE dt.status != 'done'
+		)
+		ORDER BY t.priority DESC, t.created_at ASC
+		LIMIT 10`)
+	if err == nil {
+		defer readyRows.Close()
+		for readyRows.Next() {
+			var taskID string
+			if scanErr := readyRows.Scan(&taskID); scanErr == nil {
+				status.ReadyTaskIDs = append(status.ReadyTaskIDs, taskID)
+			}
+		}
+	}
+
 	// Lighthouse counts
 	var lhStubs, lhImpl int
 	_ = s.db.QueryRow("SELECT COUNT(*) FROM c4_lighthouses WHERE status='stub'").Scan(&lhStubs)
@@ -685,6 +723,30 @@ func (s *SQLiteStore) SubmitTask(taskID, workerID, commitSHA, handoff string, re
 	if err != nil {
 		return nil, fmt.Errorf("getting task for submit: %w", err)
 	}
+	if task.Status != "in_progress" {
+		return &SubmitResult{
+			Success:    false,
+			NextAction: "get_next_task",
+			Message:    fmt.Sprintf("Task %s is %s (expected in_progress)", taskID, task.Status),
+		}, nil
+	}
+	if task.WorkerID == "direct" {
+		return &SubmitResult{
+			Success:    false,
+			NextAction: "get_next_task",
+			Message:    fmt.Sprintf("Task %s is claimed by direct mode — use c4_report", taskID),
+		}, nil
+	}
+	if workerID != "" && task.WorkerID != "" && task.WorkerID != workerID {
+		return &SubmitResult{
+			Success:    false,
+			NextAction: "get_next_task",
+			Message: fmt.Sprintf(
+				"Task %s is owned by worker %s (submitter: %s)",
+				taskID, task.WorkerID, workerID,
+			),
+		}, nil
+	}
 
 	// Store task completion + handoff
 	_, err = s.db.Exec(`
@@ -782,6 +844,12 @@ func (s *SQLiteStore) ReportTask(taskID, summary string, filesChanged []string) 
 	task, err := s.GetTask(taskID)
 	if err != nil {
 		return fmt.Errorf("getting task for report: %w", err)
+	}
+	if task.Status != "in_progress" {
+		return fmt.Errorf("task %s is %s (expected in_progress)", taskID, task.Status)
+	}
+	if task.WorkerID != "direct" {
+		return fmt.Errorf("task %s is owned by %q (expected direct)", taskID, task.WorkerID)
 	}
 
 	files := ""

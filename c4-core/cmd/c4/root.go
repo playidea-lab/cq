@@ -24,7 +24,10 @@ var rootCmd = &cobra.Command{
 	Version: version,
 	Long: `C4 is an AI orchestration system that automates project management
 from planning through completion. It manages tasks, workers, checkpoints,
-and knowledge across the entire development lifecycle.`,
+and knowledge across the entire development lifecycle.
+
+Run 'c4' or 'c4 claude' to init a project and launch Claude Code.
+Run 'c4 codex' or 'c4 cursor' for other AI tools.`,
 	SilenceUsage:  true,
 	SilenceErrors: true,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
@@ -47,12 +50,17 @@ and knowledge across the entire development lifecycle.`,
 		c4Dir := filepath.Join(projectDir, ".c4")
 		if _, err := os.Stat(c4Dir); os.IsNotExist(err) {
 			// Allow certain commands without .c4/
-			if cmd.Name() != "mcp" && cmd.Name() != "c4" {
+			if cmd.Name() != "mcp" && cmd.Name() != "c4" &&
+			cmd.Name() != "claude" && cmd.Name() != "codex" && cmd.Name() != "cursor" {
 				return fmt.Errorf("not a C4 project: %s (missing .c4/ directory)", projectDir)
 			}
 		}
 
 		return nil
+	},
+	// Default: no subcommand → init + launch claude
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return initAndLaunch("claude")
 	},
 }
 

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"os/exec"
+	"strings"
 	"time"
 
 	"github.com/changmin/c4-core/internal/mcp"
@@ -48,17 +49,54 @@ func handleRunValidation(rootDir string, rawArgs json.RawMessage) (any, error) {
 	// Detect available validations
 	available := detectValidations(rootDir)
 
-	// Filter if names specified
+	// Filter if names specified (supports aliases like lint/unit/test).
 	var toRun []validationDef
 	if len(args.Names) > 0 {
-		nameSet := make(map[string]bool)
-		for _, n := range args.Names {
-			nameSet[n] = true
-		}
+		byName := make(map[string]validationDef, len(available))
 		for _, v := range available {
-			if nameSet[v.Name] {
-				toRun = append(toRun, v)
+			byName[strings.ToLower(v.Name)] = v
+		}
+		aliasMap := buildValidationAliasMap(available)
+		selected := make(map[string]bool)
+		var unmatched []string
+
+		for _, requested := range args.Names {
+			key := strings.ToLower(strings.TrimSpace(requested))
+			if key == "" {
+				continue
 			}
+
+			name := key
+			if _, ok := byName[name]; !ok {
+				if mapped, ok := aliasMap[name]; ok {
+					name = mapped
+				}
+			}
+
+			if v, ok := byName[name]; ok {
+				if !selected[name] {
+					toRun = append(toRun, v)
+					selected[name] = true
+				}
+			} else {
+				unmatched = append(unmatched, requested)
+			}
+		}
+
+		if len(toRun) == 0 {
+			availableNames := make([]string, 0, len(available))
+			for _, v := range available {
+				availableNames = append(availableNames, v.Name)
+			}
+			return map[string]any{
+				"all_passed":      false,
+				"results":         []any{},
+				"count":           0,
+				"error":           "no matching validations found",
+				"requested_names": args.Names,
+				"unmatched_names": unmatched,
+				"available_names": availableNames,
+			}, nil
 		}
 	} else {
 		toRun = available
@@ -105,6 +143,35 @@ func handleRunValidation(rootDir string, rawArgs json.RawMessage) (any, error) {
 		"results":    results,
 		"count":      len(results),
 	}, nil
+}
+
+func buildValidationAliasMap(available []validationDef) map[string]string {
+	has := make(map[string]bool, len(available))
+	for _, v := range available {
+		has[strings.ToLower(v.Name)] = true
+	}
+
+	alias := map[string]string{
+		"ruff-check": "ruff",
+		"go":         "go-test",
+		"cargo":      "cargo-check",
+	}
+
+	if has["ruff"] {
+		alias["lint"] = "ruff"
+		alias["linter"] = "ruff"
+	}
+	if has["pytest"] {
+		alias["unit"] = "pytest"
+		alias["test"] = "pytest"
+		alias["tests"] = "pytest"
+	} else if has["go-test"] {
+		alias["unit"] = "go-test"
+		alias["test"] = "go-test"
+		alias["tests"] = "go-test"
+	}
+
+	return alias
 }
 
 func detectValidations(rootDir string) []validationDef {

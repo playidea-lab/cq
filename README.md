@@ -37,6 +37,10 @@ git clone https://git.pilab.co.kr/pi/c4.git && cd c4
 
 # 3. Claude Code 재시작 후 사용
 /c4-status
+
+# 4. Codex CLI 사용 시 (선택)
+scripts/codex/setup-mcp.sh --write
+scripts/codex/install-agents.sh
 ```
 
 `install.sh`가 자동으로 수행하는 작업:
@@ -271,6 +275,8 @@ cd c1/src-tauri && cargo test
 - [빠른 시작](docs/getting-started/빠른-시작.md)
 - [아키텍처](docs/developer-guide/아키텍처.md)
 - [워크플로우 개요](docs/user-guide/워크플로우-개요.md)
+- [플랫폼 지원](docs/user-guide/플랫폼-지원.md)
+- [Codex CLI 가이드](docs/user-guide/Codex-가이드.md)
 - [Roadmap](docs/ROADMAP.md)
 
 ## License

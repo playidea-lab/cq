@@ -125,6 +125,34 @@ func handleClaim(store Store, rawArgs json.RawMessage) (any, error) {
 		"message": fmt.Sprintf("Task %s claimed for direct execution", task.ID),
 	}
 
+	// Direct-mode operator hints for faster Codex workflows.
+	suggestedValidations := []string{"lint", "unit"}
+	if ss, ok := store.(*SQLiteStore); ok && ss.config != nil {
+		cfg := ss.config.GetConfig()
+		suggestedValidations = suggestedValidations[:0]
+		if cfg.Validation.Lint != "" {
+			suggestedValidations = append(suggestedValidations, "lint")
+		}
+		if cfg.Validation.Unit != "" {
+			suggestedValidations = append(suggestedValidations, "unit")
+		}
+		if len(suggestedValidations) == 0 {
+			suggestedValidations = []string{"lint", "unit"}
+		}
+	}
+	result["suggested_validations"] = suggestedValidations
+	result["recommended_commit_message"] = fmt.Sprintf("feat: %s (%s)", task.Title, task.ID)
+	result["report_template"] = map[string]any{
+		"summary_format": "What changed + Why + Validation result",
+		"files_changed":  []string{"path/to/file1", "path/to/file2"},
+	}
+	result["next_steps"] = []string{
+		"Implement requested changes in claimed scope",
+		fmt.Sprintf("Run c4_run_validation with %v", suggestedValidations),
+		"Commit your changes",
+		"Call c4_report with task_id, summary, files_changed",
+	}
+
 	// Best-effort: enrich with Twin context
 	if ss, ok := store.(*SQLiteStore); ok {
 		if tc := ss.BuildTwinContext(task); tc != nil {
@@ -193,10 +221,10 @@ func handleCheckpoint(store Store, rawArgs json.RawMessage) (any, error) {
 	if ss, ok := store.(*SQLiteStore); ok {
 		if tr := ss.BuildTwinReview(); tr != nil {
 			return map[string]any{
-				"success":      cpResult.Success,
-				"next_action":  cpResult.NextAction,
-				"message":      cpResult.Message,
-				"twin_review":  tr,
+				"success":     cpResult.Success,
+				"next_action": cpResult.NextAction,
+				"message":     cpResult.Message,
+				"twin_review": tr,
 			}, nil
 		}
 	}

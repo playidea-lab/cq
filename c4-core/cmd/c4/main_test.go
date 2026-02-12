@@ -245,14 +245,17 @@ func TestAddTaskCreatesTask(t *testing.T) {
 
 	// Set global flags for add-task
 	oldTitle := taskTitle
+	oldDoD := taskDoD
 	oldScope := taskScope
 	oldPriority := taskPriority
 	taskTitle = "Test Task"
+	taskDoD = ""
 	taskScope = "src/"
 	taskPriority = 3
 	taskDepends = nil
 	defer func() {
 		taskTitle = oldTitle
+		taskDoD = oldDoD
 		taskScope = oldScope
 		taskPriority = oldPriority
 	}()
