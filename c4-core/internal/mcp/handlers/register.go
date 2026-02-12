@@ -38,5 +38,6 @@ func RegisterAllHandlers(reg *mcp.Registry, store Store, rootDir string, bridgeA
 	proxy := NewBridgeProxy(bridgeAddr)
 	RegisterProxyHandlers(reg, proxy, knowledgeCloud)
 	RegisterResearchProxyHandlers(reg, proxy)
+	RegisterC2ProxyHandlers(reg, proxy)
 	return proxy
 }

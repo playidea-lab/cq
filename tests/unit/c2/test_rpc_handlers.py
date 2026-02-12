@@ -5,14 +5,11 @@ C2ParseDocument, C2ExtractText, C2WorkspaceCreate, C2WorkspaceLoad,
 C2WorkspaceSave, C2PersonaLearn, C2ProfileLoad, C2ProfileSave.
 """
 
-import asyncio
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from c4.bridge.rpc_server import BridgeServer
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
