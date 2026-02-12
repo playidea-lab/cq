@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -47,6 +48,21 @@ Example:
 	RunE: runHubRegister,
 }
 
+var hubWatchCmd = &cobra.Command{
+	Use:   "watch [job_id]",
+	Short: "Watch job metrics in real-time via WebSocket",
+	Long: `Stream training metrics for a Hub job in real-time.
+
+Connects via WebSocket and prints metrics as they arrive.
+Stops when the job completes or is cancelled.
+
+Example:
+  c4 hub watch job-abc123
+  c4 hub watch job-abc123 --history`,
+	Args: cobra.ExactArgs(1),
+	RunE: runHubWatch,
+}
+
 var hubRunCmd = &cobra.Command{
 	Use:   "run",
 	Short: "Run worker daemon (register + heartbeat + claim loop)",
@@ -65,6 +81,7 @@ Example:
 var (
 	hubWorkerName     string
 	hubHeartbeatSec   int
+	hubWatchHistory   bool
 )
 
 func init() {
@@ -72,8 +89,11 @@ func init() {
 	hubRunCmd.Flags().StringVar(&hubWorkerName, "name", "", "worker name (default: hostname)")
 	hubRunCmd.Flags().IntVar(&hubHeartbeatSec, "interval", 60, "heartbeat interval in seconds")
 
+	hubWatchCmd.Flags().BoolVar(&hubWatchHistory, "history", false, "include historical metrics on connect")
+
 	hubCmd.AddCommand(hubStatusCmd)
 	hubCmd.AddCommand(hubRegisterCmd)
+	hubCmd.AddCommand(hubWatchCmd)
 	hubCmd.AddCommand(hubRunCmd)
 	rootCmd.AddCommand(hubCmd)
 }
@@ -204,6 +224,77 @@ func runHubRegister(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Printf("\nRegistered as worker: %s\n", workerID)
+	return nil
+}
+
+// =========================================================================
+// c4 hub watch
+// =========================================================================
+
+func runHubWatch(cmd *cobra.Command, args []string) error {
+	client, err := newHubClient()
+	if err != nil {
+		return err
+	}
+
+	jobID := args[0]
+
+	// First, show current job status
+	job, err := client.GetJob(jobID)
+	if err != nil {
+		return fmt.Errorf("get job: %w", err)
+	}
+	fmt.Printf("Job: %s  Status: %s  Name: %s\n", job.ID, job.Status, job.Name)
+
+	if hub.IsTerminal(job.Status) {
+		fmt.Printf("Job already finished (%s)\n", job.Status)
+		// Show final metrics
+		metrics, mErr := client.GetMetrics(jobID, 5)
+		if mErr == nil && len(metrics.Metrics) > 0 {
+			fmt.Printf("Last %d metrics:\n", len(metrics.Metrics))
+			for _, m := range metrics.Metrics {
+				j, _ := json.Marshal(m.Metrics)
+				fmt.Printf("  step %d: %s\n", m.Step, j)
+			}
+		}
+		return nil
+	}
+
+	fmt.Println("Streaming metrics (Ctrl+C to stop)...")
+	fmt.Println()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Handle Ctrl+C
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		<-sigCh
+		fmt.Println("\nStopping...")
+		cancel()
+	}()
+
+	err = client.StreamMetrics(ctx, jobID, hubWatchHistory, func(msg hub.MetricMessage) {
+		switch msg.Type {
+		case "metric":
+			j, _ := json.Marshal(msg.Metrics)
+			fmt.Printf("[step %d] %s\n", msg.Step, j)
+		case "status":
+			fmt.Printf("[status] %s\n", msg.Status)
+		case "history":
+			j, _ := json.Marshal(msg.Metrics)
+			fmt.Printf("[history step %d] %s\n", msg.Step, j)
+		case "error":
+			fmt.Fprintf(os.Stderr, "[error] %s\n", msg.Error)
+		}
+	})
+
+	if err != nil && ctx.Err() == nil {
+		return fmt.Errorf("stream: %w", err)
+	}
+
+	fmt.Println("Stream ended.")
 	return nil
 }
 
