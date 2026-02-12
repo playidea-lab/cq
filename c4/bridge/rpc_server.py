@@ -80,11 +80,17 @@ KnowledgeSearcher: Any = None
 KnowledgeEmbedder: Any = None
 GpuMonitor: Any = None  # Actually get_gpu_monitor factory
 GpuJobScheduler: Any = None
+ResearchStore: Any = None
+
+
+def _import_research_store():
+    from c4.research.store import ResearchStore
+    return ResearchStore
 
 
 def _ensure_imports() -> None:
     """Resolve lazy imports once. Safe to call multiple times."""
-    global DocumentStore, KnowledgeSearcher, KnowledgeEmbedder, GpuMonitor, GpuJobScheduler
+    global DocumentStore, KnowledgeSearcher, KnowledgeEmbedder, GpuMonitor, GpuJobScheduler, ResearchStore
     if DocumentStore is None:
         try:
             DocumentStore = _import_document_store()
@@ -108,6 +114,11 @@ def _ensure_imports() -> None:
     if GpuJobScheduler is None:
         try:
             GpuJobScheduler = _import_gpu_scheduler()
+        except ImportError:
+            pass
+    if ResearchStore is None:
+        try:
+            ResearchStore = _import_research_store()
         except ImportError:
             pass
 
@@ -159,6 +170,7 @@ class BridgeServer:
         self._register_knowledge_methods()
         self._register_gpu_methods()
         self._register_onboard_methods()
+        self._register_research_methods()
 
     # ======================================================================
     # Health Check
@@ -576,3 +588,131 @@ class BridgeServer:
             }
         except Exception as exc:
             return {"error": f"ProjectOnboard failed: {exc}"}
+
+    # ======================================================================
+    # Research Methods
+    # ======================================================================
+
+    def _register_research_methods(self) -> None:
+        self.methods["ResearchStart"] = self._handle_research_start
+        self.methods["ResearchStatus"] = self._handle_research_status
+        self.methods["ResearchRecord"] = self._handle_research_record
+        self.methods["ResearchApprove"] = self._handle_research_approve
+        self.methods["ResearchNext"] = self._handle_research_next
+
+    def _research_base_path(self) -> Path:
+        return self.project_root / ".c4" / "research"
+
+    async def _handle_research_start(self, params: dict[str, Any]) -> dict[str, Any]:
+        """ResearchStart -> create project + first iteration."""
+        name = params.get("name")
+        if not name:
+            return {"error": "name is required"}
+
+        try:
+            store = ResearchStore(base_path=self._research_base_path())
+            project_id = store.create_project(
+                name=name,
+                paper_path=params.get("paper_path"),
+                repo_path=params.get("repo_path"),
+                target_score=params.get("target_score", 7.0),
+            )
+            iteration_id = store.create_iteration(project_id)
+            return {
+                "success": True,
+                "project_id": project_id,
+                "iteration_id": iteration_id,
+            }
+        except Exception as exc:
+            return {"error": f"ResearchStart failed: {exc}"}
+
+    async def _handle_research_status(self, params: dict[str, Any]) -> dict[str, Any]:
+        """ResearchStatus -> project + iterations + current."""
+        project_id = params.get("project_id")
+        if not project_id:
+            return {"error": "project_id is required"}
+
+        try:
+            store = ResearchStore(base_path=self._research_base_path())
+            project = store.get_project(project_id)
+            if project is None:
+                return {"error": f"Project not found: {project_id}"}
+
+            iterations = store.list_iterations(project_id)
+            current = store.get_current_iteration(project_id)
+
+            return {
+                "project": project.model_dump(mode="json"),
+                "iterations": [i.model_dump(mode="json") for i in iterations],
+                "current_iteration": current.model_dump(mode="json") if current else None,
+            }
+        except Exception as exc:
+            return {"error": f"ResearchStatus failed: {exc}"}
+
+    async def _handle_research_record(self, params: dict[str, Any]) -> dict[str, Any]:
+        """ResearchRecord -> update current iteration with review/experiment data."""
+        project_id = params.get("project_id")
+        if not project_id:
+            return {"error": "project_id is required"}
+
+        try:
+            store = ResearchStore(base_path=self._research_base_path())
+            current = store.get_current_iteration(project_id)
+            if current is None:
+                return {"error": "No active iteration"}
+
+            update_kwargs: dict[str, Any] = {}
+            for key in ("review_score", "axis_scores", "gaps", "experiments", "status"):
+                if key in params:
+                    update_kwargs[key] = params[key]
+
+            if update_kwargs:
+                store.update_iteration(current.id, **update_kwargs)
+
+            return {"success": True, "iteration_id": current.id}
+        except Exception as exc:
+            return {"error": f"ResearchRecord failed: {exc}"}
+
+    async def _handle_research_approve(self, params: dict[str, Any]) -> dict[str, Any]:
+        """ResearchApprove -> continue/pause/complete project."""
+        project_id = params.get("project_id")
+        if not project_id:
+            return {"error": "project_id is required"}
+        action = params.get("action")
+        if action not in ("continue", "pause", "complete"):
+            return {"error": "action must be 'continue', 'pause', or 'complete'"}
+
+        try:
+            store = ResearchStore(base_path=self._research_base_path())
+
+            if action == "continue":
+                store.update_project(project_id, status="active")
+                # Mark current iteration as done and create new one
+                current = store.get_current_iteration(project_id)
+                if current and current.status != "done":
+                    store.update_iteration(current.id, status="done")
+                iteration_id = store.create_iteration(project_id)
+                return {"success": True, "iteration_id": iteration_id}
+            elif action == "pause":
+                store.update_project(project_id, status="paused")
+                return {"success": True}
+            else:  # complete
+                store.update_project(project_id, status="completed")
+                current = store.get_current_iteration(project_id)
+                if current and current.status != "done":
+                    store.update_iteration(current.id, status="done")
+                return {"success": True}
+        except Exception as exc:
+            return {"error": f"ResearchApprove failed: {exc}"}
+
+    async def _handle_research_next(self, params: dict[str, Any]) -> dict[str, Any]:
+        """ResearchNext -> suggest next action."""
+        project_id = params.get("project_id")
+        if not project_id:
+            return {"error": "project_id is required"}
+
+        try:
+            store = ResearchStore(base_path=self._research_base_path())
+            return store.suggest_next(project_id)
+        except Exception as exc:
+            return {"error": f"ResearchNext failed: {exc}"}
