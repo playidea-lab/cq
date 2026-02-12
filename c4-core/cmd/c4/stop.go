@@ -22,7 +22,7 @@ func init() {
 }
 
 func runStop(cmd *cobra.Command, args []string) error {
-	db, err := sql.Open("sqlite", dbPath())
+	db, err := openDB()
 	if err != nil {
 		return fmt.Errorf("failed to open database: %w", err)
 	}

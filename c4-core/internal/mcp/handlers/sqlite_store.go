@@ -617,10 +617,8 @@ func (s *SQLiteStore) AssignTask(workerID string) (*TaskAssignment, error) {
 			ORDER BY t.priority DESC, t.created_at ASC
 			LIMIT 1`,
 		).Scan(&taskID, &title, &scope, &dod, &deps, &domain, &priority, &model)
-	} else if err == nil {
-		// Log stale reassignment trace
-		s.logTrace("stale_reassign", workerID, taskID, "Reassigned stale in_progress task")
 	}
+	staleReassign := err == nil && taskID != "" // track for post-commit logging
 
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -639,6 +637,11 @@ func (s *SQLiteStore) AssignTask(workerID string) (*TaskAssignment, error) {
 
 	if err := tx.Commit(); err != nil {
 		return nil, err
+	}
+
+	// Log stale reassignment AFTER commit (avoids deadlock with MaxOpenConns=1)
+	if staleReassign {
+		s.logTrace("stale_reassign", workerID, taskID, "Reassigned stale in_progress task")
 	}
 
 	// Apply config model hint if task has no explicit model

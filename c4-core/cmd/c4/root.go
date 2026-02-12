@@ -1,11 +1,13 @@
 package main
 
 import (
+	"database/sql"
 	"fmt"
 	"os"
 	"path/filepath"
 
 	"github.com/spf13/cobra"
+	_ "modernc.org/sqlite"
 )
 
 // version is set at build time via -ldflags "-X main.version=..."
@@ -85,4 +87,18 @@ func dbPath() string {
 	}
 	// Fallback to tasks.db (standalone Go)
 	return filepath.Join(c4Dir(), "tasks.db")
+}
+
+// openDB opens the SQLite database with WAL mode and busy timeout.
+// MaxOpenConns=1 prevents SQLITE_BUSY_SNAPSHOT (517) from Go's connection pool.
+func openDB() (*sql.DB, error) {
+	db, err := sql.Open("sqlite", dbPath())
+	if err != nil {
+		return nil, err
+	}
+	// Single connection prevents WAL snapshot conflicts between pooled connections
+	db.SetMaxOpenConns(1)
+	db.Exec("PRAGMA journal_mode=WAL")
+	db.Exec("PRAGMA busy_timeout=5000")
+	return db, nil
 }

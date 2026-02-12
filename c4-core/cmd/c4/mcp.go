@@ -69,7 +69,7 @@ type mcpServer struct {
 // newMCPServer creates and initializes the MCP server with all tools registered.
 func newMCPServer() (*mcpServer, error) {
 	// Open SQLite database
-	db, err := sql.Open("sqlite", dbPath())
+	db, err := openDB()
 	if err != nil {
 		return nil, fmt.Errorf("opening database: %w", err)
 	}
@@ -332,11 +332,3 @@ func runMCP() error {
 	return srv.serve()
 }
 
-// openDB opens the tasks database (shared helper for CLI commands).
-func openDB() (*sql.DB, error) {
-	db, err := sql.Open("sqlite", dbPath())
-	if err != nil {
-		return nil, fmt.Errorf("failed to open database: %w", err)
-	}
-	return db, nil
-}
