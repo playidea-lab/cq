@@ -77,11 +77,44 @@ Example:
 	RunE: runHubRun,
 }
 
+var hubEdgeCmd = &cobra.Command{
+	Use:   "edge",
+	Short: "Manage edge devices for artifact deployment",
+	Long: `Manage edge devices registered with the Hub for model deployment.
+
+Subcommands:
+  register - Register this machine as an edge device
+  list     - List all registered edge devices`,
+}
+
+var hubEdgeRegisterCmd = &cobra.Command{
+	Use:   "register",
+	Short: "Register this machine as an edge device",
+	Long: `Register this machine as an edge device for artifact deployment.
+
+Edge devices receive trained model artifacts from Hub workers.
+Supports architecture/runtime detection for deployment filtering.
+
+Example:
+  c4 hub edge register --name "jetson-factory-1" --tags onnx,arm64
+  c4 hub edge register --name "rpi-fleet" --tags tflite --runtime tflite`,
+	RunE: runHubEdgeRegister,
+}
+
+var hubEdgeListCmd = &cobra.Command{
+	Use:   "list",
+	Short: "List registered edge devices",
+	RunE:  runHubEdgeList,
+}
+
 // Flags
 var (
 	hubWorkerName     string
 	hubHeartbeatSec   int
 	hubWatchHistory   bool
+	hubEdgeName       string
+	hubEdgeTags       string
+	hubEdgeRuntime    string
 )
 
 func init() {
@@ -91,10 +124,19 @@ func init() {
 
 	hubWatchCmd.Flags().BoolVar(&hubWatchHistory, "history", false, "include historical metrics on connect")
 
+	hubEdgeRegisterCmd.Flags().StringVar(&hubEdgeName, "name", "", "edge device name (required)")
+	hubEdgeRegisterCmd.Flags().StringVar(&hubEdgeTags, "tags", "", "comma-separated tags (e.g. onnx,arm64)")
+	hubEdgeRegisterCmd.Flags().StringVar(&hubEdgeRuntime, "runtime", "", "inference runtime (onnx, tflite, tensorrt)")
+	hubEdgeRegisterCmd.MarkFlagRequired("name")
+
+	hubEdgeCmd.AddCommand(hubEdgeRegisterCmd)
+	hubEdgeCmd.AddCommand(hubEdgeListCmd)
+
 	hubCmd.AddCommand(hubStatusCmd)
 	hubCmd.AddCommand(hubRegisterCmd)
 	hubCmd.AddCommand(hubWatchCmd)
 	hubCmd.AddCommand(hubRunCmd)
+	hubCmd.AddCommand(hubEdgeCmd)
 	rootCmd.AddCommand(hubCmd)
 }
 
@@ -440,4 +482,110 @@ func detectGPUCapabilities() (map[string]any, error) {
 	}
 
 	return caps, nil
+}
+
+// =========================================================================
+// c4 hub edge register
+// =========================================================================
+
+func runHubEdgeRegister(cmd *cobra.Command, args []string) error {
+	client, err := newHubClient()
+	if err != nil {
+		return err
+	}
+
+	if !client.HealthCheck() {
+		return fmt.Errorf("Hub is unreachable")
+	}
+
+	hostname, _ := os.Hostname()
+	caps := map[string]any{
+		"hostname": hostname,
+	}
+	if hubEdgeRuntime != "" {
+		caps["runtime"] = hubEdgeRuntime
+	}
+
+	// Detect architecture
+	caps["arch"] = detectArch()
+
+	var tags []string
+	if hubEdgeTags != "" {
+		tags = strings.Split(hubEdgeTags, ",")
+	}
+
+	fmt.Printf("Registering edge device '%s' with Hub...\n", hubEdgeName)
+	if len(tags) > 0 {
+		fmt.Printf("  Tags: %s\n", strings.Join(tags, ", "))
+	}
+	if hubEdgeRuntime != "" {
+		fmt.Printf("  Runtime: %s\n", hubEdgeRuntime)
+	}
+
+	edgeID, err := client.RegisterEdge(hubEdgeName, tags, caps)
+	if err != nil {
+		return fmt.Errorf("registration failed: %w", err)
+	}
+
+	fmt.Printf("\nRegistered as edge: %s\n", edgeID)
+	return nil
+}
+
+// =========================================================================
+// c4 hub edge list
+// =========================================================================
+
+func runHubEdgeList(cmd *cobra.Command, args []string) error {
+	client, err := newHubClient()
+	if err != nil {
+		return err
+	}
+
+	edges, err := client.ListEdges()
+	if err != nil {
+		return err
+	}
+
+	if len(edges) == 0 {
+		fmt.Println("No edge devices registered.")
+		return nil
+	}
+
+	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	fmt.Fprintf(w, "ID\tNAME\tSTATUS\tARCH\tRUNTIME\tTAGS\n")
+	for _, e := range edges {
+		tags := "-"
+		if len(e.Tags) > 0 {
+			tags = strings.Join(e.Tags, ",")
+		}
+		arch := e.Arch
+		if arch == "" {
+			arch = "-"
+		}
+		runtime := e.Runtime
+		if runtime == "" {
+			runtime = "-"
+		}
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n",
+			e.ID, e.Name, e.Status, arch, runtime, tags)
+	}
+	w.Flush()
+	return nil
+}
+
+// detectArch returns the machine architecture (arm64, amd64, etc.).
+func detectArch() string {
+	out, err := exec.Command("uname", "-m").Output()
+	if err != nil {
+		return "unknown"
+	}
+	arch := strings.TrimSpace(string(out))
+	switch arch {
+	case "x86_64":
+		return "amd64"
+	case "aarch64":
+		return "arm64"
+	default:
+		return arch
+	}
 }
