@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 
 	"github.com/changmin/c4-core/internal/bridge"
+	"github.com/changmin/c4-core/internal/cdp"
 	"github.com/changmin/c4-core/internal/cloud"
 	"github.com/changmin/c4-core/internal/config"
 	"github.com/changmin/c4-core/internal/llm"
@@ -170,6 +171,10 @@ func newMCPServer() (*mcpServer, error) {
 		handlers.RegisterLLMHandlers(reg, gateway)
 		fmt.Fprintf(os.Stderr, "c4: LLM gateway enabled (%d providers)\n", gateway.ProviderCount())
 	}
+
+	// Register CDP handlers (always available — connects on demand)
+	cdpRunner := cdp.NewRunner()
+	handlers.RegisterCDPHandlers(reg, cdpRunner)
 
 	// Set project role for Soul stage integration
 	projectName := filepath.Base(projectDir)
