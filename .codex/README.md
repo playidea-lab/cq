@@ -56,3 +56,5 @@
 ## 참고
 
 - 상세 에이전트 규칙: `.codex/agents/README.md`
+- Hosted Worker 서비스화 가이드: `.codex/hosted-worker/README.md`
+- 가격 계산기: `.codex/tools/hosted_pricing.py`
