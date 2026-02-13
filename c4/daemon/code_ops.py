@@ -17,10 +17,7 @@ These operations are delegated from C4Daemon for modularity.
 
 import re
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
-
-if TYPE_CHECKING:
-    from .c4_daemon import C4Daemon
+from typing import Any
 
 
 class _LocationProxy:
@@ -86,11 +83,11 @@ class CodeOps:
     with Python source code, including symbol manipulation and file operations.
     """
 
-    def __init__(self, daemon: "C4Daemon"):
+    def __init__(self, daemon: Any):
         """Initialize CodeOps with parent daemon reference.
 
         Args:
-            daemon: Parent C4Daemon instance for root path access
+            daemon: Object with a ``root`` attribute (Path to project root).
         """
         self._daemon = daemon
 

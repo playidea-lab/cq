@@ -129,10 +129,12 @@ func RegisterDiscoveryHandlers(reg *mcp.Registry, store Store, rootDir string) {
 		},
 	}, makeTransitionHandler(store, "DESIGN", "PLAN"))
 
-	// c4_ensure_supervisor
+	// c4_ensure_supervisor — intentional noop.
+	// Supervisor is managed internally by the Go MCP server lifecycle.
+	// Kept for backward compatibility with older workflows.
 	reg.Register(mcp.ToolSchema{
 		Name:        "c4_ensure_supervisor",
-		Description: "Ensure supervisor process is running for checkpoint reviews",
+		Description: "Ensure supervisor process is running (noop — managed by Go MCP server)",
 		InputSchema: map[string]any{
 			"type":       "object",
 			"properties": map[string]any{},

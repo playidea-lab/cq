@@ -5,17 +5,22 @@
 ## Architecture
 
 ```
-Claude Code ──stdio──▶ Go MCP Server (64 tools)
+Claude Code ──stdio──▶ Go MCP Server (103 tools: 77 base + 26 hub)
                          ├─▶ Go native (22): state, tasks, files, git, validation
                          ├─▶ Go + SQLite (13): spec, design, checkpoint, artifact, lighthouse
-                         ├─▶ Hub Client ──HTTP──▶ Daemon Scheduler
-                         │                           ├─▶ Process Manager
-                         │                           ├─▶ GPU Monitor
-                         │                           └─▶ SQLite Store
-                         └─▶ JSON-RPC proxy (16+) ──TCP──▶ Python Sidecar
-                                                            ├─▶ LSP (Multilspy → Jedi → Tree-sitter)
-                                                            ├─▶ Knowledge Store v2 (FTS5 + Vector)
-                                                            └─▶ GPU Scheduler
+                         ├─▶ Soul/Persona/Twin (7): soul CRUD, persona evolve, reflect
+                         ├─▶ LLM Gateway (3): 4 providers (Claude/GPT/Gemini/Ollama)
+                         ├─▶ CDP Runner (2): browser automation
+                         ├─▶ Hub Client (26) ──HTTP──▶ Daemon Scheduler
+                         │                                ├─▶ Process Manager
+                         │                                ├─▶ GPU Monitor
+                         │                                └─▶ SQLite Store
+                         └─▶ JSON-RPC proxy (30) ──TCP──▶ Python Sidecar
+                                                           ├─▶ LSP (Multilspy → Jedi → Tree-sitter)
+                                                           ├─▶ Knowledge Store v2 (FTS5 + Vector)
+                                                           ├─▶ C2 Document Lifecycle (8)
+                                                           ├─▶ Research Loop (5)
+                                                           └─▶ GPU Scheduler
 ```
 
 ## Components
@@ -85,7 +90,7 @@ T-001-0 (구현) → R-001-0 (리뷰)
 
 ## Key Features
 
-- **64 MCP Tools**: 상태, 태스크, 코드 분석, 파일, Git, 검증, 지식, GPU, LLM, CDP, Hub
+- **103 MCP Tools**: 상태, 태스크, 코드 분석, 파일, Git, 검증, 지식, GPU, LLM, CDP, C2, Research, Hub
 - **Daemon Scheduler**: 로컬 작업 스케줄러 (13 REST API), GPU 할당, 소요시간 예측
 - **Knowledge Store v2**: Obsidian Markdown SSOT + FTS5 + Vector hybrid search (RRF)
 - **Code Intelligence**: Multilspy → Jedi → Tree-sitter 3단계 LSP fallback
@@ -98,18 +103,19 @@ T-001-0 (구현) → R-001-0 (리뷰)
 
 ## What's Included
 
-### MCP Tools (64개)
+### MCP Tools (103개: Base 77 + Hub 26)
 
 | 카테고리 | 수 | 예시 |
 |----------|-----|------|
-| Core (상태/태스크) | 11 | `c4_status`, `c4_start`, `c4_add_todo`, `c4_claim`, `c4_report`, `c4_request_changes` |
-| Native (파일/Git) | 11 | `c4_find_file`, `c4_search_for_pattern`, `c4_read_file`, `c4_search_commits` |
-| SQLite (스펙/디자인) | 12 | `c4_save_spec`, `c4_save_design`, `c4_checkpoint`, `c4_artifact_save`, `c4_lighthouse` |
-| Proxy → Sidecar | 16+ | `c4_find_symbol`, `c4_knowledge_search`, `c4_onboard`, `c4_parse_document` |
-| Soul/Persona/Team | 6 | `c4_soul_get`, `c4_soul_set`, `c4_soul_resolve`, `c4_persona_stats`, `c4_persona_evolve`, `c4_whoami` |
-| LLM Gateway | 3 | `c4_llm_call`, `c4_llm_providers`, `c4_llm_costs` |
-| CDP Runner | 2 | `c4_cdp_run`, `c4_cdp_list` |
-| Hub Client | 3 | `c4_hub_status`, `c4_hub_submit`, `c4_hub_list` (+ DAG, Edge, Deploy) |
+| Core (상태/태스크/리뷰) | 12 | `c4_status`, `c4_start`, `c4_add_todo`, `c4_claim`, `c4_report`, `c4_checkpoint` |
+| Native (파일/Git/검증) | 11 | `c4_find_file`, `c4_search_for_pattern`, `c4_read_file`, `c4_search_commits` |
+| SQLite (스펙/디자인/아티팩트) | 12 | `c4_save_spec`, `c4_save_design`, `c4_artifact_save`, `c4_lighthouse` |
+| Proxy → Sidecar (LSP/지식) | 17 | `c4_find_symbol`, `c4_knowledge_search`, `c4_onboard`, `c4_gpu_status` |
+| Research Loop | 5 | `c4_research_start`, `c4_research_next`, `c4_research_record`, `c4_research_approve` |
+| C2 Document Lifecycle | 8 | `c4_parse_document`, `c4_extract_text`, `c4_workspace_create`, `c4_persona_learn` |
+| Soul/Persona/Team | 7 | `c4_soul_get`, `c4_soul_set`, `c4_soul_resolve`, `c4_persona_evolve`, `c4_whoami` |
+| Twin/LLM/CDP | 6 | `c4_reflect`, `c4_llm_call`, `c4_llm_providers`, `c4_cdp_run`, `c4_cdp_list` |
+| Hub (Job/DAG/Edge/Deploy) | 26 | `c4_hub_submit`, `c4_hub_dag_create`, `c4_hub_edge_register`, `c4_hub_deploy` |
 
 ### Slash Commands (14개)
 
