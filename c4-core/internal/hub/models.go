@@ -9,14 +9,17 @@ package hub
 type HubConfig struct {
 	Enabled   bool   `mapstructure:"enabled"     yaml:"enabled"`
 	URL       string `mapstructure:"url"         yaml:"url"`
+	APIPrefix string `mapstructure:"api_prefix"  yaml:"api_prefix"` // e.g. "/v1" for Hub server, "" for local daemon
 	APIKey    string `mapstructure:"api_key"     yaml:"api_key"`
 	APIKeyEnv string `mapstructure:"api_key_env" yaml:"api_key_env"`
 	TeamID    string `mapstructure:"team_id"     yaml:"team_id"`
 }
 
 // Job represents a Hub job.
+// Supports both Hub server ("id") and PiQ daemon ("job_id") field names.
 type Job struct {
 	ID          string            `json:"id"`
+	JobID       string            `json:"job_id,omitempty"` // PiQ daemon uses job_id instead of id
 	Name        string            `json:"name"`
 	Status      string            `json:"status"` // QUEUED, RUNNING, SUCCEEDED, FAILED, CANCELLED
 	Priority    int               `json:"priority"`
@@ -33,6 +36,14 @@ type Job struct {
 	FinishedAt  string            `json:"finished_at,omitempty"`
 	ExitCode    *int              `json:"exit_code,omitempty"`
 	WorkerID    string            `json:"worker_id,omitempty"`
+}
+
+// GetID returns the job ID, preferring "id" (Hub) but falling back to "job_id" (PiQ daemon).
+func (j *Job) GetID() string {
+	if j.ID != "" {
+		return j.ID
+	}
+	return j.JobID
 }
 
 // JobSubmitRequest is the payload for POST /v1/jobs/submit.
@@ -151,12 +162,15 @@ type JobRetryResponse struct {
 	OriginalJobID string `json:"original_job_id"`
 }
 
-// JobEstimateResponse is the response from GET /v1/jobs/{id}/estimate.
+// JobEstimateResponse is the response from GET /jobs/{id}/estimate.
+// Confidence may be string ("high"/"medium"/"low") from Hub server
+// or float (0.0-1.0) from PiQ daemon.
 type JobEstimateResponse struct {
 	EstimatedDurationSec float64 `json:"estimated_duration_sec"`
 	QueueWaitSec         float64 `json:"queue_wait_sec,omitempty"`
 	EstimatedStartTime   string  `json:"estimated_start_time,omitempty"`
 	EstimatedEndTime     string  `json:"estimated_completion_time,omitempty"`
-	Confidence           string  `json:"confidence"` // high, medium, low
-	Method               string  `json:"method"`     // historical, similar_jobs, default
+	Confidence           any     `json:"confidence"`           // string or float64
+	Method               string  `json:"method"`               // historical, similar_jobs, default, global_avg
+	BlockingReason       *string `json:"blocking_reason,omitempty"` // PiQ daemon field
 }

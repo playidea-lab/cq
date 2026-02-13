@@ -20,7 +20,7 @@ import (
 // =========================================================================
 
 func TestWsURL_HTTP(t *testing.T) {
-	c := &Client{baseURL: "http://hub.example.com:8000"}
+	c := &Client{baseURL: "http://hub.example.com:8000", apiPrefix: "/v1"}
 	got := c.wsURL("job-1", false)
 	want := "ws://hub.example.com:8000/v1/ws/metrics/job-1"
 	if got != want {
@@ -29,7 +29,7 @@ func TestWsURL_HTTP(t *testing.T) {
 }
 
 func TestWsURL_HTTPS(t *testing.T) {
-	c := &Client{baseURL: "https://hub.example.com"}
+	c := &Client{baseURL: "https://hub.example.com", apiPrefix: "/v1"}
 	got := c.wsURL("job-2", true)
 	want := "wss://hub.example.com/v1/ws/metrics/job-2?include_history=true"
 	if got != want {

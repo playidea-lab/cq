@@ -9,7 +9,7 @@ func (c *Client) RegisterWorker(capabilities map[string]any) (string, error) {
 		"capabilities": capabilities,
 	}
 	var resp WorkerRegisterResponse
-	if err := c.post("/v1/workers/register", body, &resp); err != nil {
+	if err := c.post("/workers/register", body, &resp); err != nil {
 		return "", fmt.Errorf("register worker: %w", err)
 	}
 	c.workerID = resp.WorkerID
@@ -22,7 +22,7 @@ func (c *Client) Heartbeat(status string) error {
 		"status": status,
 	}
 	var resp HeartbeatResponse
-	if err := c.post("/v1/workers/heartbeat", body, &resp); err != nil {
+	if err := c.post("/workers/heartbeat", body, &resp); err != nil {
 		return fmt.Errorf("heartbeat: %w", err)
 	}
 	if !resp.Acknowledged {
@@ -38,7 +38,7 @@ func (c *Client) ClaimJob(freeVRAM float64) (*Job, string, error) {
 		"free_vram_gb": freeVRAM,
 	}
 	var resp ClaimResponse
-	if err := c.post("/v1/leases/acquire", body, &resp); err != nil {
+	if err := c.post("/leases/acquire", body, &resp); err != nil {
 		return nil, "", fmt.Errorf("claim job: %w", err)
 	}
 	if resp.JobID == "" {
@@ -53,7 +53,7 @@ func (c *Client) RenewLease(leaseID string) (string, error) {
 		"lease_id": leaseID,
 	}
 	var resp RenewLeaseResponse
-	if err := c.post("/v1/leases/renew", body, &resp); err != nil {
+	if err := c.post("/leases/renew", body, &resp); err != nil {
 		return "", fmt.Errorf("renew lease: %w", err)
 	}
 	if !resp.Renewed {

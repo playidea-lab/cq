@@ -102,7 +102,7 @@ func (c *Client) RegisterEdge(name string, tags []string, capabilities map[strin
 		"capabilities": capabilities,
 	}
 	var resp EdgeRegisterResponse
-	if err := c.post("/v1/edges/register", body, &resp); err != nil {
+	if err := c.post("/edges/register", body, &resp); err != nil {
 		return "", fmt.Errorf("register edge: %w", err)
 	}
 	return resp.EdgeID, nil
@@ -111,7 +111,7 @@ func (c *Client) RegisterEdge(name string, tags []string, capabilities map[strin
 // ListEdges returns all registered edge devices.
 func (c *Client) ListEdges() ([]Edge, error) {
 	var edges []Edge
-	if err := c.get("/v1/edges", &edges); err != nil {
+	if err := c.get("/edges", &edges); err != nil {
 		return nil, fmt.Errorf("list edges: %w", err)
 	}
 	return edges, nil
@@ -124,7 +124,7 @@ func (c *Client) EdgeHeartbeat(edgeID, status string) error {
 		"status":  status,
 	}
 	var resp HeartbeatResponse
-	if err := c.post("/v1/edges/heartbeat", body, &resp); err != nil {
+	if err := c.post("/edges/heartbeat", body, &resp); err != nil {
 		return fmt.Errorf("edge heartbeat: %w", err)
 	}
 	if !resp.Acknowledged {
@@ -135,7 +135,7 @@ func (c *Client) EdgeHeartbeat(edgeID, status string) error {
 
 // RemoveEdge unregisters an edge device.
 func (c *Client) RemoveEdge(edgeID string) error {
-	req, err := newDeleteRequest(c.baseURL + "/v1/edges/" + edgeID)
+	req, err := newDeleteRequest(c.url("/edges/" + edgeID))
 	if err != nil {
 		return err
 	}
@@ -160,7 +160,7 @@ func (c *Client) RemoveEdge(edgeID string) error {
 // CreateDeployRule creates an automatic deployment rule.
 func (c *Client) CreateDeployRule(req *DeployRuleCreateRequest) (*DeployRuleCreateResponse, error) {
 	var resp DeployRuleCreateResponse
-	if err := c.post("/v1/deploy/rules", req, &resp); err != nil {
+	if err := c.post("/deploy/rules", req, &resp); err != nil {
 		return nil, fmt.Errorf("create deploy rule: %w", err)
 	}
 	return &resp, nil
@@ -169,7 +169,7 @@ func (c *Client) CreateDeployRule(req *DeployRuleCreateRequest) (*DeployRuleCrea
 // ListDeployRules returns all deployment rules.
 func (c *Client) ListDeployRules() ([]DeployRule, error) {
 	var rules []DeployRule
-	if err := c.get("/v1/deploy/rules", &rules); err != nil {
+	if err := c.get("/deploy/rules", &rules); err != nil {
 		return nil, fmt.Errorf("list deploy rules: %w", err)
 	}
 	return rules, nil
@@ -177,7 +177,7 @@ func (c *Client) ListDeployRules() ([]DeployRule, error) {
 
 // DeleteDeployRule deletes a deployment rule.
 func (c *Client) DeleteDeployRule(ruleID string) error {
-	req, err := newDeleteRequest(c.baseURL + "/v1/deploy/rules/" + ruleID)
+	req, err := newDeleteRequest(c.url("/deploy/rules/" + ruleID))
 	if err != nil {
 		return err
 	}
@@ -202,7 +202,7 @@ func (c *Client) DeleteDeployRule(ruleID string) error {
 // TriggerDeploy manually triggers deployment of artifacts to edges.
 func (c *Client) TriggerDeploy(req *DeployTriggerRequest) (*DeployTriggerResponse, error) {
 	var resp DeployTriggerResponse
-	if err := c.post("/v1/deploy/trigger", req, &resp); err != nil {
+	if err := c.post("/deploy/trigger", req, &resp); err != nil {
 		return nil, fmt.Errorf("trigger deploy: %w", err)
 	}
 	return &resp, nil
@@ -211,7 +211,7 @@ func (c *Client) TriggerDeploy(req *DeployTriggerRequest) (*DeployTriggerRespons
 // GetDeployStatus returns the status of a deployment.
 func (c *Client) GetDeployStatus(deployID string) (*Deployment, error) {
 	var deploy Deployment
-	if err := c.get("/v1/deploy/"+deployID+"/status", &deploy); err != nil {
+	if err := c.get("/deploy/"+deployID+"/status", &deploy); err != nil {
 		return nil, fmt.Errorf("get deploy status: %w", err)
 	}
 	return &deploy, nil

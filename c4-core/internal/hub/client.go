@@ -13,6 +13,7 @@ import (
 // Client communicates with a PiQ Hub server over REST.
 type Client struct {
 	baseURL    string
+	apiPrefix  string // e.g. "/v1" for Hub server, "" for local daemon
 	apiKey     string
 	teamID     string
 	workerID   string // set after RegisterWorker
@@ -35,24 +36,28 @@ func NewClient(cfg HubConfig) *Client {
 	}
 
 	return &Client{
-		baseURL: strings.TrimRight(cfg.URL, "/"),
-		apiKey:  apiKey,
-		teamID:  teamID,
+		baseURL:   strings.TrimRight(cfg.URL, "/"),
+		apiPrefix: strings.TrimRight(cfg.APIPrefix, "/"),
+		apiKey:    apiKey,
+		teamID:    teamID,
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
 		},
 	}
 }
 
-// IsAvailable returns true when the client has a URL and API key configured.
+// IsAvailable returns true when the client has a URL configured.
+// API key is optional for local daemon mode.
 func (c *Client) IsAvailable() bool {
-	return c.baseURL != "" && c.apiKey != ""
+	return c.baseURL != ""
 }
 
 // setHeaders adds Hub authentication headers.
 func (c *Client) setHeaders(req *http.Request) {
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-API-Key", c.apiKey)
+	if c.apiKey != "" {
+		req.Header.Set("X-API-Key", c.apiKey)
+	}
 	if c.teamID != "" {
 		req.Header.Set("X-Team-ID", c.teamID)
 	}
@@ -61,9 +66,16 @@ func (c *Client) setHeaders(req *http.Request) {
 	}
 }
 
+// url builds the full URL for a path, prepending the API prefix.
+// For Hub server: apiPrefix="/v1", path="/jobs" → baseURL+"/jobs"
+// For local daemon: apiPrefix="", path="/jobs" → baseURL+"/jobs"
+func (c *Client) url(path string) string {
+	return c.baseURL + c.apiPrefix + path
+}
+
 // get performs a GET request and decodes JSON into dest.
 func (c *Client) get(path string, dest any) error {
-	req, err := http.NewRequest("GET", c.baseURL+path, nil)
+	req, err := http.NewRequest("GET", c.url(path), nil)
 	if err != nil {
 		return err
 	}
@@ -88,6 +100,31 @@ func (c *Client) get(path string, dest any) error {
 	return nil
 }
 
+// getRaw performs a GET request and returns the raw response body.
+func (c *Client) getRaw(path string) ([]byte, error) {
+	req, err := http.NewRequest("GET", c.url(path), nil)
+	if err != nil {
+		return nil, err
+	}
+	c.setHeaders(req)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("GET %s: %w", path, err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read %s: %w", path, err)
+	}
+
+	if resp.StatusCode >= 400 {
+		return nil, fmt.Errorf("GET %s: %d %s", path, resp.StatusCode, string(body))
+	}
+	return body, nil
+}
+
 // post performs a POST request with JSON body and decodes the response.
 func (c *Client) post(path string, body, dest any) error {
 	data, err := json.Marshal(body)
@@ -95,7 +132,7 @@ func (c *Client) post(path string, body, dest any) error {
 		return fmt.Errorf("marshal: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", c.baseURL+path, strings.NewReader(string(data)))
+	req, err := http.NewRequest("POST", c.url(path), strings.NewReader(string(data)))
 	if err != nil {
 		return err
 	}
@@ -127,7 +164,7 @@ func (c *Client) patch(path string, body, dest any) error {
 		return fmt.Errorf("marshal: %w", err)
 	}
 
-	req, err := http.NewRequest("PATCH", c.baseURL+path, strings.NewReader(string(data)))
+	req, err := http.NewRequest("PATCH", c.url(path), strings.NewReader(string(data)))
 	if err != nil {
 		return err
 	}
@@ -159,7 +196,7 @@ func (c *Client) patch(path string, body, dest any) error {
 // SubmitJob submits a new job to the Hub queue.
 func (c *Client) SubmitJob(req *JobSubmitRequest) (*JobSubmitResponse, error) {
 	var resp JobSubmitResponse
-	if err := c.post("/v1/jobs/submit", req, &resp); err != nil {
+	if err := c.post("/jobs/submit", req, &resp); err != nil {
 		return nil, fmt.Errorf("submit job: %w", err)
 	}
 	return &resp, nil
@@ -168,15 +205,16 @@ func (c *Client) SubmitJob(req *JobSubmitRequest) (*JobSubmitResponse, error) {
 // GetJob returns the status of a single job.
 func (c *Client) GetJob(jobID string) (*Job, error) {
 	var job Job
-	if err := c.get("/v1/jobs/"+jobID, &job); err != nil {
+	if err := c.get("/jobs/"+jobID, &job); err != nil {
 		return nil, fmt.Errorf("get job: %w", err)
 	}
 	return &job, nil
 }
 
 // ListJobs returns jobs filtered by status (empty = all).
+// Handles both array responses (Hub server) and wrapped responses (PiQ daemon: {"jobs": [...]}).
 func (c *Client) ListJobs(status string, limit int) ([]Job, error) {
-	path := "/v1/jobs"
+	path := "/jobs"
 	params := []string{}
 	if status != "" {
 		params = append(params, "status="+status)
@@ -188,16 +226,30 @@ func (c *Client) ListJobs(status string, limit int) ([]Job, error) {
 		path += "?" + strings.Join(params, "&")
 	}
 
-	var jobs []Job
-	if err := c.get(path, &jobs); err != nil {
+	raw, err := c.getRaw(path)
+	if err != nil {
 		return nil, fmt.Errorf("list jobs: %w", err)
+	}
+
+	// Try wrapped format (PiQ daemon: {"jobs": [...]})
+	var wrapped struct {
+		Jobs []Job `json:"jobs"`
+	}
+	if err := json.Unmarshal(raw, &wrapped); err == nil && wrapped.Jobs != nil {
+		return wrapped.Jobs, nil
+	}
+
+	// Fallback: direct array (Hub server)
+	var jobs []Job
+	if err := json.Unmarshal(raw, &jobs); err != nil {
+		return nil, fmt.Errorf("list jobs: decode: %w", err)
 	}
 	return jobs, nil
 }
 
 // CancelJob cancels a queued or running job.
 func (c *Client) CancelJob(jobID string) error {
-	if err := c.post("/v1/jobs/"+jobID+"/cancel", nil, nil); err != nil {
+	if err := c.post("/jobs/"+jobID+"/cancel", nil, nil); err != nil {
 		return fmt.Errorf("cancel job: %w", err)
 	}
 	return nil
@@ -209,7 +261,7 @@ func (c *Client) CompleteJob(jobID, status string, exitCode int) error {
 		"status":    status,
 		"exit_code": exitCode,
 	}
-	if err := c.post("/v1/jobs/"+jobID+"/complete", body, nil); err != nil {
+	if err := c.post("/jobs/"+jobID+"/complete", body, nil); err != nil {
 		return fmt.Errorf("complete job: %w", err)
 	}
 	return nil
@@ -222,7 +274,7 @@ func (c *Client) CompleteJob(jobID, status string, exitCode int) error {
 // ListWorkers returns all registered workers.
 func (c *Client) ListWorkers() ([]Worker, error) {
 	var workers []Worker
-	if err := c.get("/v1/workers", &workers); err != nil {
+	if err := c.get("/workers", &workers); err != nil {
 		return nil, fmt.Errorf("list workers: %w", err)
 	}
 	return workers, nil
@@ -235,7 +287,7 @@ func (c *Client) HealthCheck() bool {
 		return false
 	}
 	s, _ := result["status"].(string)
-	return s == "healthy"
+	return s == "healthy" || s == "ok"
 }
 
 // =========================================================================
@@ -245,7 +297,7 @@ func (c *Client) HealthCheck() bool {
 // GetQueueStats returns queue-level statistics.
 func (c *Client) GetQueueStats() (*QueueStats, error) {
 	var stats QueueStats
-	if err := c.get("/v1/stats/queue", &stats); err != nil {
+	if err := c.get("/stats/queue", &stats); err != nil {
 		return nil, fmt.Errorf("get queue stats: %w", err)
 	}
 	return &stats, nil
@@ -261,7 +313,7 @@ func (c *Client) LogMetrics(jobID string, step int, metrics map[string]any) erro
 		"step":    step,
 		"metrics": metrics,
 	}
-	if err := c.post("/v1/metrics/"+jobID, body, nil); err != nil {
+	if err := c.post("/metrics/"+jobID, body, nil); err != nil {
 		return fmt.Errorf("log metrics: %w", err)
 	}
 	return nil
@@ -269,7 +321,7 @@ func (c *Client) LogMetrics(jobID string, step int, metrics map[string]any) erro
 
 // GetMetrics returns metrics for a job.
 func (c *Client) GetMetrics(jobID string, limit int) (*MetricsResponse, error) {
-	path := fmt.Sprintf("/v1/metrics/%s?limit=%d", jobID, limit)
+	path := fmt.Sprintf("/metrics/%s?limit=%d", jobID, limit)
 	var resp MetricsResponse
 	if err := c.get(path, &resp); err != nil {
 		return nil, fmt.Errorf("get metrics: %w", err)
@@ -279,7 +331,7 @@ func (c *Client) GetMetrics(jobID string, limit int) (*MetricsResponse, error) {
 
 // GetJobLogs returns log lines for a job.
 func (c *Client) GetJobLogs(jobID string, offset, limit int) (*JobLogsResponse, error) {
-	path := fmt.Sprintf("/v1/jobs/%s/logs?offset=%d&limit=%d", jobID, offset, limit)
+	path := fmt.Sprintf("/jobs/%s/logs?offset=%d&limit=%d", jobID, offset, limit)
 	var resp JobLogsResponse
 	if err := c.get(path, &resp); err != nil {
 		return nil, fmt.Errorf("get job logs: %w", err)
@@ -290,7 +342,7 @@ func (c *Client) GetJobLogs(jobID string, offset, limit int) (*JobLogsResponse, 
 // GetJobSummary returns a comprehensive summary of a job with metrics.
 func (c *Client) GetJobSummary(jobID string) (*JobSummaryResponse, error) {
 	var resp JobSummaryResponse
-	if err := c.get("/v1/jobs/"+jobID+"/summary", &resp); err != nil {
+	if err := c.get("/jobs/"+jobID+"/summary", &resp); err != nil {
 		return nil, fmt.Errorf("get job summary: %w", err)
 	}
 	return &resp, nil
@@ -299,7 +351,7 @@ func (c *Client) GetJobSummary(jobID string) (*JobSummaryResponse, error) {
 // RetryJob resubmits a failed or cancelled job with the same configuration.
 func (c *Client) RetryJob(jobID string) (*JobRetryResponse, error) {
 	var resp JobRetryResponse
-	if err := c.post("/v1/jobs/"+jobID+"/retry", nil, &resp); err != nil {
+	if err := c.post("/jobs/"+jobID+"/retry", nil, &resp); err != nil {
 		return nil, fmt.Errorf("retry job: %w", err)
 	}
 	return &resp, nil
@@ -308,7 +360,7 @@ func (c *Client) RetryJob(jobID string) (*JobRetryResponse, error) {
 // GetJobEstimate returns a time estimate for a job based on historical data.
 func (c *Client) GetJobEstimate(jobID string) (*JobEstimateResponse, error) {
 	var resp JobEstimateResponse
-	if err := c.get("/v1/jobs/"+jobID+"/estimate", &resp); err != nil {
+	if err := c.get("/jobs/"+jobID+"/estimate", &resp); err != nil {
 		return nil, fmt.Errorf("get job estimate: %w", err)
 	}
 	return &resp, nil

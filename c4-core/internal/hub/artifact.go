@@ -54,7 +54,7 @@ func (c *Client) GetPresignedURL(path, method string, ttl int) (*PresignedURLRes
 		TTLSeconds: ttl,
 	}
 	var resp PresignedURLResponse
-	if err := c.post("/v1/storage/presigned-url", req, &resp); err != nil {
+	if err := c.post("/storage/presigned-url", req, &resp); err != nil {
 		return nil, fmt.Errorf("get presigned url: %w", err)
 	}
 	return &resp, nil
@@ -135,7 +135,7 @@ func (c *Client) ConfirmArtifact(jobID, path, contentHash string, sizeBytes int6
 		SizeBytes:   sizeBytes,
 	}
 	var resp ArtifactConfirmResponse
-	if err := c.post(fmt.Sprintf("/v1/artifacts/%s/confirm", jobID), req, &resp); err != nil {
+	if err := c.post(fmt.Sprintf("/artifacts/%s/confirm", jobID), req, &resp); err != nil {
 		return nil, fmt.Errorf("confirm artifact: %w", err)
 	}
 	return &resp, nil
@@ -148,7 +148,7 @@ func (c *Client) ConfirmArtifact(jobID, path, contentHash string, sizeBytes int6
 // GetArtifactURL gets a presigned download URL for an artifact.
 func (c *Client) GetArtifactURL(jobID, name string) (string, error) {
 	var resp ArtifactURLResponse
-	if err := c.get(fmt.Sprintf("/v1/artifacts/%s/url/%s", jobID, name), &resp); err != nil {
+	if err := c.get(fmt.Sprintf("/artifacts/%s/url/%s", jobID, name), &resp); err != nil {
 		return "", fmt.Errorf("get artifact url: %w", err)
 	}
 	return resp.URL, nil

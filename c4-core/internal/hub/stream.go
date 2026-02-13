@@ -101,7 +101,7 @@ func (c *Client) wsURL(jobID string, includeHistory bool) string {
 	base := c.baseURL
 	base = strings.Replace(base, "http://", "ws://", 1)
 	base = strings.Replace(base, "https://", "wss://", 1)
-	url := fmt.Sprintf("%s/v1/ws/metrics/%s", base, jobID)
+	url := fmt.Sprintf("%s%s/ws/metrics/%s", base, c.apiPrefix, jobID)
 	if includeHistory {
 		url += "?include_history=true"
 	}

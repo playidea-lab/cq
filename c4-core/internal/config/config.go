@@ -73,6 +73,7 @@ type ValidationConfig struct {
 type HubConfig struct {
 	Enabled   bool   `mapstructure:"enabled"     yaml:"enabled"`
 	URL       string `mapstructure:"url"         yaml:"url"`
+	APIPrefix string `mapstructure:"api_prefix"  yaml:"api_prefix"` // "/v1" for Hub server, "" for local daemon
 	APIKey    string `mapstructure:"api_key"     yaml:"api_key"`
 	APIKeyEnv string `mapstructure:"api_key_env" yaml:"api_key_env"`
 	TeamID    string `mapstructure:"team_id"     yaml:"team_id"`

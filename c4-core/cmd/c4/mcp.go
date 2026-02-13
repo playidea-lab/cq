@@ -179,6 +179,7 @@ func newMCPServer() (*mcpServer, error) {
 		hubClient := hub.NewClient(hub.HubConfig{
 			Enabled:   hubCfg.Enabled,
 			URL:       hubCfg.URL,
+			APIPrefix: hubCfg.APIPrefix,
 			APIKey:    hubCfg.APIKey,
 			APIKeyEnv: hubCfg.APIKeyEnv,
 			TeamID:    hubCfg.TeamID,
@@ -187,7 +188,7 @@ func newMCPServer() (*mcpServer, error) {
 			handlers.RegisterHubHandlers(reg, hubClient)
 			fmt.Fprintf(os.Stderr, "c4: hub connected (%s)\n", hubCfg.URL)
 		} else {
-			fmt.Fprintln(os.Stderr, "c4: hub enabled but API key not configured")
+			fmt.Fprintln(os.Stderr, "c4: hub enabled but URL not configured")
 		}
 	}
 

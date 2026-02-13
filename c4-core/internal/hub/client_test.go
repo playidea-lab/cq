@@ -14,6 +14,7 @@ func newTestServer(t *testing.T, handler http.Handler) (*Client, *httptest.Serve
 	t.Cleanup(ts.Close)
 	client := &Client{
 		baseURL:    ts.URL,
+		apiPrefix:  "/v1",
 		apiKey:     "test-key",
 		teamID:     "test-team",
 		httpClient: http.DefaultClient,
@@ -52,9 +53,10 @@ func TestNewClient_TrailingSlash(t *testing.T) {
 }
 
 func TestIsAvailable_NoKey(t *testing.T) {
+	// API key is optional (local daemon mode), so URL alone is sufficient.
 	c := NewClient(HubConfig{URL: "http://localhost:8000"})
-	if c.IsAvailable() {
-		t.Error("expected IsAvailable() = false when no API key")
+	if !c.IsAvailable() {
+		t.Error("expected IsAvailable() = true with URL but no API key (daemon mode)")
 	}
 }
 
@@ -114,7 +116,7 @@ func TestSetHeaders_NoWorkerID(t *testing.T) {
 
 func TestHealthCheck_Healthy(t *testing.T) {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/v1/health", func(w http.ResponseWriter, r *http.Request) {
 		jsonResponse(w, map[string]string{"status": "healthy"})
 	})
 	client, _ := newTestServer(t, mux)
@@ -125,7 +127,7 @@ func TestHealthCheck_Healthy(t *testing.T) {
 
 func TestHealthCheck_Unhealthy(t *testing.T) {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/v1/health", func(w http.ResponseWriter, r *http.Request) {
 		jsonResponse(w, map[string]string{"status": "degraded"})
 	})
 	client, _ := newTestServer(t, mux)
@@ -136,7 +138,7 @@ func TestHealthCheck_Unhealthy(t *testing.T) {
 
 func TestHealthCheck_Error(t *testing.T) {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/v1/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(500)
 	})
 	client, _ := newTestServer(t, mux)

@@ -107,7 +107,7 @@ type DAGFromYAMLRequest struct {
 // CreateDAG creates a new DAG.
 func (c *Client) CreateDAG(req *DAGCreateRequest) (*DAGCreateResponse, error) {
 	var resp DAGCreateResponse
-	if err := c.post("/v1/dags", req, &resp); err != nil {
+	if err := c.post("/dags", req, &resp); err != nil {
 		return nil, fmt.Errorf("create dag: %w", err)
 	}
 	return &resp, nil
@@ -116,7 +116,7 @@ func (c *Client) CreateDAG(req *DAGCreateRequest) (*DAGCreateResponse, error) {
 // AddDAGNode adds a job node to a DAG.
 func (c *Client) AddDAGNode(dagID string, req *DAGAddNodeRequest) (*DAGAddNodeResponse, error) {
 	var resp DAGAddNodeResponse
-	if err := c.post("/v1/dags/"+dagID+"/nodes", req, &resp); err != nil {
+	if err := c.post("/dags/"+dagID+"/nodes", req, &resp); err != nil {
 		return nil, fmt.Errorf("add dag node: %w", err)
 	}
 	return &resp, nil
@@ -124,7 +124,7 @@ func (c *Client) AddDAGNode(dagID string, req *DAGAddNodeRequest) (*DAGAddNodeRe
 
 // AddDAGDependency adds a dependency between two nodes.
 func (c *Client) AddDAGDependency(dagID string, req *DAGAddDependencyRequest) error {
-	if err := c.post("/v1/dags/"+dagID+"/dependencies", req, nil); err != nil {
+	if err := c.post("/dags/"+dagID+"/dependencies", req, nil); err != nil {
 		return fmt.Errorf("add dag dependency: %w", err)
 	}
 	return nil
@@ -134,7 +134,7 @@ func (c *Client) AddDAGDependency(dagID string, req *DAGAddDependencyRequest) er
 func (c *Client) ExecuteDAG(dagID string, dryRun bool) (*DAGExecuteResponse, error) {
 	var resp DAGExecuteResponse
 	body := &DAGExecuteRequest{DryRun: dryRun}
-	if err := c.post("/v1/dags/"+dagID+"/execute", body, &resp); err != nil {
+	if err := c.post("/dags/"+dagID+"/execute", body, &resp); err != nil {
 		return nil, fmt.Errorf("execute dag: %w", err)
 	}
 	return &resp, nil
@@ -143,7 +143,7 @@ func (c *Client) ExecuteDAG(dagID string, dryRun bool) (*DAGExecuteResponse, err
 // GetDAGStatus returns the execution status of a DAG with node details.
 func (c *Client) GetDAGStatus(dagID string) (*DAG, error) {
 	var dag DAG
-	if err := c.get("/v1/dags/"+dagID+"/status", &dag); err != nil {
+	if err := c.get("/dags/"+dagID+"/status", &dag); err != nil {
 		return nil, fmt.Errorf("get dag status: %w", err)
 	}
 	return &dag, nil
@@ -151,7 +151,7 @@ func (c *Client) GetDAGStatus(dagID string) (*DAG, error) {
 
 // ListDAGs returns DAGs with optional status filter.
 func (c *Client) ListDAGs(status string, limit int) ([]DAG, error) {
-	path := "/v1/dags"
+	path := "/dags"
 	params := []string{}
 	if status != "" {
 		params = append(params, "status="+status)
@@ -174,7 +174,7 @@ func (c *Client) ListDAGs(status string, limit int) ([]DAG, error) {
 func (c *Client) CreateDAGFromYAML(yamlContent string) (*DAG, error) {
 	var dag DAG
 	body := &DAGFromYAMLRequest{YAMLContent: yamlContent}
-	if err := c.post("/v1/dags/from-yaml", body, &dag); err != nil {
+	if err := c.post("/dags/from-yaml", body, &dag); err != nil {
 		return nil, fmt.Errorf("create dag from yaml: %w", err)
 	}
 	return &dag, nil
