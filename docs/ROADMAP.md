@@ -1,12 +1,13 @@
 # C4 Roadmap
 
-## Current Version: v0.15.0 (Phase 10 — CDP Runner + SQLite Hardening)
+## Current Version: v0.15.1 (Phase 10 + Phase 10.3 — Daemon Scheduler)
 
-현재 버전은 **Go MCP Primary(64 tools), LLM Gateway (4개 Provider 실제 구현), CDP Runner (브라우저 자동화), Cloud Foundation (Supabase), Knowledge Bidirectional Sync**를 포함합니다.
+현재 버전은 **Go MCP Primary(64 tools), LLM Gateway (4개 Provider 실제 구현), CDP Runner (브라우저 자동화), Cloud Foundation (Supabase), Knowledge Bidirectional Sync, c4 daemon (로컬 작업 스케줄러)**를 포함합니다.
 
 ### 핵심 구조
 
-- **Go MCP Server (Primary)** - 64 도구, Registry-based, SQLite Store, JSON-RPC Bridge, LLM Gateway, CDP Runner
+- **Go MCP Server (Primary)** - 64 도구, Registry-based, SQLite Store, JSON-RPC Bridge, LLM Gateway, CDP Runner, Hub Client
+- **Daemon Scheduler** - 로컬 작업 스케줄러, 13 REST API, GPU 할당, 소요시간 예측 (PiQ 대체)
 - **LLM Gateway** - 4개 Provider (Anthropic/OpenAI/Gemini/Ollama), 5단계 라우팅, CostTracker, 모델 카탈로그 9종
 - **Cloud Layer** - Go PostgREST client (Auth + CloudStore + HybridStore + KnowledgeCloudClient)
 - **Python Sidecar** - LSP(Multilspy→Jedi→Tree-sitter), Knowledge Store v2, GPU Scheduler
@@ -724,6 +725,67 @@ Claude Code → Go MCP Server (stdio, 47 tools)
 - **ProjectStatus 구조체**: `OrphanReviews` 필드 추가
 - **테스트**: 5개 신규 테스트 (cascade 정상, no R-task, already done, report cascade, orphan count)
 - **결과**: 64 → **64 MCP 도구** (변화 없음, 내부 정리)
+
+### Phase 10.3: c4 daemon — 로컬 작업 스케줄러 (2026-02-14) ✅
+
+**목표**: PiQ daemon을 Go 기반으로 재작성하여 로컬 환경에서 작업 스케줄링
+
+**구현 완료**:
+- **신규 패키지**: `internal/daemon/` — 6개 모듈 (~2.5K LOC)
+  - `models.go` — JobStatus enum, Job/Task struct, Request/Response types
+  - `store.go` — SQLite 저장소 (MaxOpenConns(1), WAL, atomic ID gen)
+  - `scheduler.go` — 프로세스 실행, GPU 할당, Setpgid 프로세스 그룹
+  - `gpu.go` — nvidia-smi CSV 파싱
+  - `server.go` — PiQ 호환 REST API (13개 엔드포인트)
+  - `estimator.go` — 명령어 정규화, 4단계 소요시간 예측
+
+- **CLI**: `c4 daemon [--port 7123] [--data-dir ~/.c4/daemon] [--max-jobs 4]`
+  - `c4 daemon stop` — graceful shutdown
+
+- **REST API 13개 엔드포인트**:
+  - `/health` — 헬스 체크
+  - `/jobs/submit` — 작업 제출
+  - `/jobs` — 작업 목록
+  - `/jobs/{id}` — 작업 상세
+  - `/jobs/{id}/logs` — 작업 로그
+  - `/jobs/{id}/cancel` — 작업 취소
+  - `/jobs/{id}/complete` — 작업 완료
+  - `/jobs/{id}/summary` — 작업 요약
+  - `/jobs/{id}/estimate` — 소요시간 예측
+  - `/jobs/{id}/retry` — 작업 재시도
+  - `/stats/queue` — 큐 통계
+  - `/gpu/status` — GPU 상태
+  - `/daemon/stop` — daemon 중지
+
+- **Hub 호환성**: `hub.Client(apiPrefix="")` → daemon REST API 완전 호환
+  - submit_job, get_job, list_jobs, cancel_job 기존 메서드 변경 없음
+
+- **Features**:
+  - Job 상태: QUEUED → RUNNING → SUCCEEDED|FAILED|CANCELLED
+  - GPU 할당: nvidia-smi 기반 VRAM 자동 할당
+  - 소요시간 예측: 4단계 (compile/test/train/eval) 학습 모델
+  - 원자적 ID: sync/atomic.Int64 카운터로 밀리초 내 중복 방지
+  - Graceful shutdown: SIGTERM 처리, 진행 중 작업 안전 종료
+
+- **테스트**:
+  - store_test.go (21개): DB CRUD, transaction, 동시성
+  - scheduler_test.go (10개): 프로세스 실행, GPU 할당
+  - gpu_test.go (11개): nvidia-smi 파싱, VRAM 계산
+  - server_test.go (21개): REST API, 요청 검증
+  - estimator_test.go (11개): 명령어 분류, 예측 모델
+  - integration_test.go (23개): End-to-end 워크플로우
+
+- **결과**: Go 300 → **400+ 테스트** (+97)
+
+**아키텍처**:
+```text
+Claude Code → Go MCP Server
+              ├─→ Handler: c4_hub_submit → Hub Client
+              └─→ Hub Client ──HTTP──→ Daemon Server
+                                          ├─→ Scheduler → Process Manager
+                                          ├─→ GPU Monitor → nvidia-smi
+                                          └─→ SQLite Store
+```
 
 ---
 

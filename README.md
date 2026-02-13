@@ -5,24 +5,29 @@
 ## Architecture
 
 ```
-Claude Code ──stdio──▶ Go MCP Server (56 tools)
-                         ├─▶ Go native (21): state, tasks, files, git, validation
-                         ├─▶ Go + SQLite (13): spec, design, checkpoint
-                         └─▶ JSON-RPC proxy (16) ──TCP──▶ Python Sidecar
-                                                           ├─▶ LSP (Multilspy → Jedi → Tree-sitter)
-                                                           ├─▶ Knowledge Store v2 (FTS5 + Vector)
-                                                           └─▶ GPU Scheduler
+Claude Code ──stdio──▶ Go MCP Server (64 tools)
+                         ├─▶ Go native (22): state, tasks, files, git, validation
+                         ├─▶ Go + SQLite (13): spec, design, checkpoint, artifact, lighthouse
+                         ├─▶ Hub Client ──HTTP──▶ Daemon Scheduler
+                         │                           ├─▶ Process Manager
+                         │                           ├─▶ GPU Monitor
+                         │                           └─▶ SQLite Store
+                         └─▶ JSON-RPC proxy (16+) ──TCP──▶ Python Sidecar
+                                                            ├─▶ LSP (Multilspy → Jedi → Tree-sitter)
+                                                            ├─▶ Knowledge Store v2 (FTS5 + Vector)
+                                                            └─▶ GPU Scheduler
 ```
 
 ## Components
 
 | Component | Directory | Tech | LOC |
 |-----------|-----------|------|-----|
-| **Go MCP Server** | `c4-core/` | Go 1.22, SQLite, cobra | ~10.5K |
-| **Python Sidecar** | `c4/` | Python 3.12, multilspy, sqlite-vec | ~10.5K |
+| **Go MCP Server** | `c4-core/` | Go 1.22, SQLite, cobra | ~12K |
+| **Daemon Scheduler** | `c4-core/internal/daemon/` | Go, REST API, GPU monitoring | ~2.5K |
+| **Python Sidecar** | `c4/` | Python 3.12, multilspy, sqlite-vec | ~12K |
 | **C1 Desktop App** | `c1/` | Tauri 2.x, React 18, Rust | ~5.6K |
-| **Tests** | `tests/` | pytest, Vitest, cargo test | ~5.6K |
-| **Total** | | | **~32K** |
+| **Tests** | `tests/` | pytest, Vitest, cargo test, Go tests | ~6K |
+| **Total** | | | **~38K** |
 
 ## Quick Start
 
@@ -80,25 +85,31 @@ T-001-0 (구현) → R-001-0 (리뷰)
 
 ## Key Features
 
-- **56 MCP Tools**: 상태, 태스크, 코드 분석, 파일, Git, 검증, 지식, GPU
+- **64 MCP Tools**: 상태, 태스크, 코드 분석, 파일, Git, 검증, 지식, GPU, LLM, CDP, Hub
+- **Daemon Scheduler**: 로컬 작업 스케줄러 (13 REST API), GPU 할당, 소요시간 예측
 - **Knowledge Store v2**: Obsidian Markdown SSOT + FTS5 + Vector hybrid search (RRF)
 - **Code Intelligence**: Multilspy → Jedi → Tree-sitter 3단계 LSP fallback
 - **GPU/ML Native**: GPU 감지, 스케줄링, DAG → Task 변환
 - **Validation Runner**: lint, unit test 자동 실행
 - **Checkpoint System**: APPROVE, REQUEST_CHANGES, REPLAN, REDESIGN
 - **Team Collaboration**: Supabase 기반 팀 상태 공유
+- **LLM Gateway**: 4개 Provider (Claude/GPT/Gemini/Ollama) 멀티 라우팅
+- **CDP Runner**: 브라우저 자동화 (Chromium DevTools Protocol)
 
 ## What's Included
 
-### MCP Tools (56개)
+### MCP Tools (64개)
 
 | 카테고리 | 수 | 예시 |
 |----------|-----|------|
 | Core (상태/태스크) | 11 | `c4_status`, `c4_start`, `c4_add_todo`, `c4_claim`, `c4_report`, `c4_request_changes` |
-| Native (파일/Git) | 11 | `c4_find_file`, `c4_search_for_pattern`, `c4_read_file` |
-| SQLite (스펙/디자인) | 12 | `c4_save_spec`, `c4_save_design`, `c4_checkpoint` |
-| Proxy → Sidecar | 16 | `c4_find_symbol`, `c4_knowledge_search`, `c4_onboard` |
+| Native (파일/Git) | 11 | `c4_find_file`, `c4_search_for_pattern`, `c4_read_file`, `c4_search_commits` |
+| SQLite (스펙/디자인) | 12 | `c4_save_spec`, `c4_save_design`, `c4_checkpoint`, `c4_artifact_save`, `c4_lighthouse` |
+| Proxy → Sidecar | 16+ | `c4_find_symbol`, `c4_knowledge_search`, `c4_onboard`, `c4_parse_document` |
 | Soul/Persona/Team | 6 | `c4_soul_get`, `c4_soul_set`, `c4_soul_resolve`, `c4_persona_stats`, `c4_persona_evolve`, `c4_whoami` |
+| LLM Gateway | 3 | `c4_llm_call`, `c4_llm_providers`, `c4_llm_costs` |
+| CDP Runner | 2 | `c4_cdp_run`, `c4_cdp_list` |
+| Hub Client | 3 | `c4_hub_status`, `c4_hub_submit`, `c4_hub_list` (+ DAG, Edge, Deploy) |
 
 ### Slash Commands (14개)
 
