@@ -75,11 +75,11 @@ c4_add_todo(mode="direct", review_required=False)
 
 ---
 
-## MCP 도구 빠른 참조 (86개)
+## MCP 도구 빠른 참조 (99개: Base 77 + Hub 22)
 
 ```
 상태(3):    c4_status, c4_start, c4_clear
-태스크(5):  c4_add_todo, c4_get_task, c4_submit, c4_mark_blocked,
+태스크(6):  c4_add_todo, c4_get_task, c4_submit, c4_mark_blocked,
             c4_claim, c4_report
 리뷰(3):    c4_checkpoint, c4_request_changes, c4_ensure_supervisor
 검증(1):    c4_run_validation
@@ -98,6 +98,8 @@ LSP(7):     c4_find_symbol, c4_get_symbols_overview,
 지식(7):    c4_knowledge_search, c4_knowledge_record, c4_knowledge_get,
             c4_knowledge_pull,
             c4_experiment_record, c4_experiment_search, c4_pattern_suggest
+Research(5): c4_research_start, c4_research_next, c4_research_record,
+            c4_research_approve, c4_research_status
 GPU(2):     c4_gpu_status, c4_job_submit
 Soul(3):    c4_soul_get, c4_soul_set, c4_soul_resolve
 팀(3):      c4_whoami, c4_persona_stats, c4_persona_evolve
@@ -106,6 +108,10 @@ Twin(1):    c4_reflect
 Lighthouse(1): c4_lighthouse (register/list/get/promote/update/remove)
 LLM(3):    c4_llm_call, c4_llm_providers, c4_llm_costs
 CDP(2):    c4_cdp_run, c4_cdp_list
+C2(8):     c4_parse_document, c4_extract_text,
+            c4_workspace_create, c4_workspace_load, c4_workspace_save,
+            c4_persona_learn, c4_profile_load, c4_profile_save
+--- Hub (hub.enabled=true 시 추가 등록) ---
 Hub-Job(6): c4_hub_submit, c4_hub_status, c4_hub_list,
             c4_hub_cancel, c4_hub_metrics, c4_hub_log_metrics
 Hub-Infra(4): c4_hub_workers, c4_hub_stats, c4_hub_upload, c4_hub_download
@@ -132,27 +138,29 @@ CP-001:  체크포인트
 
 ## Go Core (c4-core/) — Primary MCP Server
 
-> `c4-core/` — Go 기반 MCP 서버 (Primary). 86개 도구. Python sidecar로 LSP/Knowledge/GPU 기능 위임.
+> `c4-core/` — Go 기반 MCP 서버 (Primary). 99개 도구 (Base 77 + Hub 22). Python sidecar로 LSP/Knowledge/GPU/C2/Research 기능 위임.
 
 ### 아키텍처
 ```
-Claude Code → Go MCP Server (stdio, 86 tools)
+Claude Code → Go MCP Server (stdio, 99 tools)
                 ├→ Go native (22): 상태, 태스크, 파일, git, validation
                 ├→ Go + SQLite (13): spec, design, checkpoint, artifact, lighthouse
                 ├→ Soul/Persona/Twin (7): soul CRUD, persona evolve, whoami, reflect
                 ├→ LLM Gateway (3): llm_call, llm_providers, llm_costs
                 ├→ CDP Runner (2): cdp_run, cdp_list
                 ├→ Hub Client (22): job, worker, metrics, artifact, DAG, edge, deploy
-                └→ JSON-RPC proxy (17) → Python Sidecar
+                └→ JSON-RPC proxy (30) → Python Sidecar
                                             ├→ LSP (multilspy, Jedi, tree-sitter)
                                             ├→ Knowledge Store (FTS5 + Vector)
-                                            └→ GPU Scheduler
+                                            ├→ GPU Scheduler
+                                            ├→ C2 Document Lifecycle (8)
+                                            └→ Research Loop (5)
 ```
 
 ### 패키지 구조
 - `cmd/c4/` — CLI (cobra), MCP server (Registry-based)
-- `internal/mcp/` — Registry + handlers (86개 도구)
-- `internal/mcp/handlers/` — sqlite_store, files, git, discovery, artifacts, proxy, validation, llm, hub
+- `internal/mcp/` — Registry + handlers (99개 도구)
+- `internal/mcp/handlers/` — sqlite_store, files, git, discovery, artifacts, proxy, validation, llm, hub, c2
 - `internal/hub/` — PiQ Hub REST+WS client (job, worker, DAG, edge, deploy, artifact, stream)
 - `internal/bridge/` — Python sidecar 관리 (JSON-RPC/TCP)
 - `internal/task/` — TaskStore (SQLite, Memory, Supabase)
