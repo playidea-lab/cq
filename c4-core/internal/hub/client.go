@@ -276,3 +276,40 @@ func (c *Client) GetMetrics(jobID string, limit int) (*MetricsResponse, error) {
 	}
 	return &resp, nil
 }
+
+// GetJobLogs returns log lines for a job.
+func (c *Client) GetJobLogs(jobID string, offset, limit int) (*JobLogsResponse, error) {
+	path := fmt.Sprintf("/v1/jobs/%s/logs?offset=%d&limit=%d", jobID, offset, limit)
+	var resp JobLogsResponse
+	if err := c.get(path, &resp); err != nil {
+		return nil, fmt.Errorf("get job logs: %w", err)
+	}
+	return &resp, nil
+}
+
+// GetJobSummary returns a comprehensive summary of a job with metrics.
+func (c *Client) GetJobSummary(jobID string) (*JobSummaryResponse, error) {
+	var resp JobSummaryResponse
+	if err := c.get("/v1/jobs/"+jobID+"/summary", &resp); err != nil {
+		return nil, fmt.Errorf("get job summary: %w", err)
+	}
+	return &resp, nil
+}
+
+// RetryJob resubmits a failed or cancelled job with the same configuration.
+func (c *Client) RetryJob(jobID string) (*JobRetryResponse, error) {
+	var resp JobRetryResponse
+	if err := c.post("/v1/jobs/"+jobID+"/retry", nil, &resp); err != nil {
+		return nil, fmt.Errorf("retry job: %w", err)
+	}
+	return &resp, nil
+}
+
+// GetJobEstimate returns a time estimate for a job based on historical data.
+func (c *Client) GetJobEstimate(jobID string) (*JobEstimateResponse, error) {
+	var resp JobEstimateResponse
+	if err := c.get("/v1/jobs/"+jobID+"/estimate", &resp); err != nil {
+		return nil, fmt.Errorf("get job estimate: %w", err)
+	}
+	return &resp, nil
+}

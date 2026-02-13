@@ -387,6 +387,72 @@ func RegisterHubHandlers(reg *mcp.Registry, hubClient *hub.Client) {
 	}, func(raw json.RawMessage) (any, error) {
 		return handleHubDeployStatus(hubClient, raw)
 	})
+
+	// =====================================================================
+	// Job Watch / Summary / Retry / Estimate Tools
+	// =====================================================================
+
+	// c4_hub_watch — Watch job logs (tail)
+	reg.Register(mcp.ToolSchema{
+		Name:        "c4_hub_watch",
+		Description: "Watch job logs. Returns the last N lines of output from a running or completed job",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"job_id": map[string]any{"type": "string", "description": "Job ID"},
+				"tail":   map[string]any{"type": "integer", "description": "Number of lines to return (default: 200)"},
+				"offset": map[string]any{"type": "integer", "description": "Line offset to start from (default: 0, 0=from end)"},
+			},
+			"required": []string{"job_id"},
+		},
+	}, func(raw json.RawMessage) (any, error) {
+		return handleHubWatch(hubClient, raw)
+	})
+
+	// c4_hub_summary — Get job summary with metrics
+	reg.Register(mcp.ToolSchema{
+		Name:        "c4_hub_summary",
+		Description: "Get comprehensive job summary including status, duration, metrics, and log tail",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"job_id": map[string]any{"type": "string", "description": "Job ID"},
+			},
+			"required": []string{"job_id"},
+		},
+	}, func(raw json.RawMessage) (any, error) {
+		return handleHubSummary(hubClient, raw)
+	})
+
+	// c4_hub_retry — Retry a failed or cancelled job
+	reg.Register(mcp.ToolSchema{
+		Name:        "c4_hub_retry",
+		Description: "Retry a failed or cancelled job with the same configuration. Creates a new job",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"job_id": map[string]any{"type": "string", "description": "Job ID of the failed/cancelled job to retry"},
+			},
+			"required": []string{"job_id"},
+		},
+	}, func(raw json.RawMessage) (any, error) {
+		return handleHubRetry(hubClient, raw)
+	})
+
+	// c4_hub_estimate — Get time estimate for a job
+	reg.Register(mcp.ToolSchema{
+		Name:        "c4_hub_estimate",
+		Description: "Get estimated duration and queue wait time for a job based on historical data",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"job_id": map[string]any{"type": "string", "description": "Job ID"},
+			},
+			"required": []string{"job_id"},
+		},
+	}, func(raw json.RawMessage) (any, error) {
+		return handleHubEstimate(hubClient, raw)
+	})
 }
 
 // =========================================================================
@@ -1020,4 +1086,133 @@ func handleHubDeployStatus(client *hub.Client, raw json.RawMessage) (any, error)
 		"status":    deploy.Status,
 		"targets":   targets,
 	}, nil
+}
+
+// =========================================================================
+// Watch / Summary / Retry / Estimate handler implementations
+// =========================================================================
+
+func handleHubWatch(client *hub.Client, raw json.RawMessage) (any, error) {
+	var params struct {
+		JobID  string `json:"job_id"`
+		Tail   int    `json:"tail"`
+		Offset int    `json:"offset"`
+	}
+	if err := json.Unmarshal(raw, &params); err != nil {
+		return nil, fmt.Errorf("parsing params: %w", err)
+	}
+	if params.JobID == "" {
+		return nil, fmt.Errorf("job_id is required")
+	}
+	if params.Tail == 0 {
+		params.Tail = 200
+	}
+
+	resp, err := client.GetJobLogs(params.JobID, params.Offset, params.Tail)
+	if err != nil {
+		return nil, err
+	}
+
+	return map[string]any{
+		"job_id":      resp.JobID,
+		"lines":       resp.Lines,
+		"total_lines": resp.TotalLines,
+		"offset":      resp.Offset,
+		"has_more":    resp.HasMore,
+	}, nil
+}
+
+func handleHubSummary(client *hub.Client, raw json.RawMessage) (any, error) {
+	var params struct {
+		JobID string `json:"job_id"`
+	}
+	if err := json.Unmarshal(raw, &params); err != nil {
+		return nil, fmt.Errorf("parsing params: %w", err)
+	}
+	if params.JobID == "" {
+		return nil, fmt.Errorf("job_id is required")
+	}
+
+	resp, err := client.GetJobSummary(params.JobID)
+	if err != nil {
+		return nil, err
+	}
+
+	result := map[string]any{
+		"job_id": resp.JobID,
+		"name":   resp.Name,
+		"status": resp.Status,
+	}
+	if resp.DurationSec != nil {
+		result["duration_seconds"] = *resp.DurationSec
+	}
+	if resp.ExitCode != nil {
+		result["exit_code"] = *resp.ExitCode
+	}
+	if resp.FailureReason != "" {
+		result["failure_reason"] = resp.FailureReason
+	}
+	if len(resp.Metrics) > 0 {
+		result["metrics"] = resp.Metrics
+	}
+	if len(resp.LogTail) > 0 {
+		result["log_tail"] = resp.LogTail
+	}
+	return result, nil
+}
+
+func handleHubRetry(client *hub.Client, raw json.RawMessage) (any, error) {
+	var params struct {
+		JobID string `json:"job_id"`
+	}
+	if err := json.Unmarshal(raw, &params); err != nil {
+		return nil, fmt.Errorf("parsing params: %w", err)
+	}
+	if params.JobID == "" {
+		return nil, fmt.Errorf("job_id is required")
+	}
+
+	resp, err := client.RetryJob(params.JobID)
+	if err != nil {
+		return nil, err
+	}
+
+	return map[string]any{
+		"new_job_id":      resp.NewJobID,
+		"status":          resp.Status,
+		"original_job_id": resp.OriginalJobID,
+	}, nil
+}
+
+func handleHubEstimate(client *hub.Client, raw json.RawMessage) (any, error) {
+	var params struct {
+		JobID string `json:"job_id"`
+	}
+	if err := json.Unmarshal(raw, &params); err != nil {
+		return nil, fmt.Errorf("parsing params: %w", err)
+	}
+	if params.JobID == "" {
+		return nil, fmt.Errorf("job_id is required")
+	}
+
+	resp, err := client.GetJobEstimate(params.JobID)
+	if err != nil {
+		return nil, err
+	}
+
+	result := map[string]any{
+		"estimated_duration_sec": resp.EstimatedDurationSec,
+		"confidence":             resp.Confidence,
+		"method":                 resp.Method,
+	}
+	if resp.QueueWaitSec > 0 {
+		result["queue_wait_sec"] = resp.QueueWaitSec
+	}
+	if resp.EstimatedStartTime != "" {
+		result["estimated_start_time"] = resp.EstimatedStartTime
+	}
+	if resp.EstimatedEndTime != "" {
+		result["estimated_completion_time"] = resp.EstimatedEndTime
+	}
+	return result, nil
 }

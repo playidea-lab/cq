@@ -593,3 +593,226 @@ func TestHTTP5xx(t *testing.T) {
 		t.Fatal("expected error on 500")
 	}
 }
+
+// =========================================================================
+// GetJobLogs
+// =========================================================================
+
+func TestGetJobLogs(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/jobs/job-500/logs", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "GET" {
+			t.Errorf("method = %s, want GET", r.Method)
+		}
+		offset := r.URL.Query().Get("offset")
+		limit := r.URL.Query().Get("limit")
+		if offset != "0" {
+			t.Errorf("offset = %q, want 0", offset)
+		}
+		if limit != "200" {
+			t.Errorf("limit = %q, want 200", limit)
+		}
+		jsonResponse(w, JobLogsResponse{
+			JobID:      "job-500",
+			Lines:      []string{"epoch 1/10 loss=0.9", "epoch 2/10 loss=0.7", "epoch 3/10 loss=0.5"},
+			TotalLines: 100,
+			Offset:     0,
+			HasMore:    true,
+		})
+	})
+	client, _ := newTestServer(t, mux)
+
+	resp, err := client.GetJobLogs("job-500", 0, 200)
+	if err != nil {
+		t.Fatalf("GetJobLogs: %v", err)
+	}
+	if len(resp.Lines) != 3 {
+		t.Errorf("len(Lines) = %d, want 3", len(resp.Lines))
+	}
+	if resp.TotalLines != 100 {
+		t.Errorf("TotalLines = %d, want 100", resp.TotalLines)
+	}
+	if !resp.HasMore {
+		t.Error("expected HasMore = true")
+	}
+}
+
+func TestGetJobLogs_Empty(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/jobs/job-501/logs", func(w http.ResponseWriter, r *http.Request) {
+		jsonResponse(w, JobLogsResponse{
+			JobID:      "job-501",
+			Lines:      []string{},
+			TotalLines: 0,
+			HasMore:    false,
+		})
+	})
+	client, _ := newTestServer(t, mux)
+
+	resp, err := client.GetJobLogs("job-501", 0, 100)
+	if err != nil {
+		t.Fatalf("GetJobLogs: %v", err)
+	}
+	if len(resp.Lines) != 0 {
+		t.Errorf("expected empty lines, got %d", len(resp.Lines))
+	}
+	if resp.HasMore {
+		t.Error("expected HasMore = false")
+	}
+}
+
+// =========================================================================
+// GetJobSummary
+// =========================================================================
+
+func TestGetJobSummary(t *testing.T) {
+	mux := http.NewServeMux()
+	dur := 540.5
+	exitCode := 0
+	mux.HandleFunc("/v1/jobs/job-600/summary", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "GET" {
+			t.Errorf("method = %s, want GET", r.Method)
+		}
+		jsonResponse(w, JobSummaryResponse{
+			JobID:       "job-600",
+			Name:        "train-resnet",
+			Status:      "SUCCEEDED",
+			DurationSec: &dur,
+			ExitCode:    &exitCode,
+			Metrics:     map[string]any{"loss": 0.05, "accuracy": 0.97},
+			LogTail:     []string{"Training complete", "Best accuracy: 0.97"},
+		})
+	})
+	client, _ := newTestServer(t, mux)
+
+	resp, err := client.GetJobSummary("job-600")
+	if err != nil {
+		t.Fatalf("GetJobSummary: %v", err)
+	}
+	if resp.Status != "SUCCEEDED" {
+		t.Errorf("Status = %q, want SUCCEEDED", resp.Status)
+	}
+	if resp.DurationSec == nil || *resp.DurationSec != 540.5 {
+		t.Errorf("DurationSec = %v, want 540.5", resp.DurationSec)
+	}
+	if len(resp.Metrics) != 2 {
+		t.Errorf("len(Metrics) = %d, want 2", len(resp.Metrics))
+	}
+}
+
+func TestGetJobSummary_NotFound(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/jobs/bad-id/summary", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(404)
+		w.Write([]byte(`{"detail":"not found"}`))
+	})
+	client, _ := newTestServer(t, mux)
+
+	_, err := client.GetJobSummary("bad-id")
+	if err == nil {
+		t.Fatal("expected error on 404")
+	}
+}
+
+// =========================================================================
+// RetryJob
+// =========================================================================
+
+func TestRetryJob(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/jobs/job-700/retry", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "POST" {
+			t.Errorf("method = %s, want POST", r.Method)
+		}
+		jsonResponse(w, JobRetryResponse{
+			NewJobID:      "job-701",
+			Status:        "QUEUED",
+			OriginalJobID: "job-700",
+		})
+	})
+	client, _ := newTestServer(t, mux)
+
+	resp, err := client.RetryJob("job-700")
+	if err != nil {
+		t.Fatalf("RetryJob: %v", err)
+	}
+	if resp.NewJobID != "job-701" {
+		t.Errorf("NewJobID = %q, want job-701", resp.NewJobID)
+	}
+	if resp.OriginalJobID != "job-700" {
+		t.Errorf("OriginalJobID = %q, want job-700", resp.OriginalJobID)
+	}
+}
+
+func TestRetryJob_NotRetryable(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/jobs/job-running/retry", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(400)
+		w.Write([]byte(`{"detail":"job is still running"}`))
+	})
+	client, _ := newTestServer(t, mux)
+
+	_, err := client.RetryJob("job-running")
+	if err == nil {
+		t.Fatal("expected error on 400")
+	}
+}
+
+// =========================================================================
+// GetJobEstimate
+// =========================================================================
+
+func TestGetJobEstimate(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/jobs/job-800/estimate", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "GET" {
+			t.Errorf("method = %s, want GET", r.Method)
+		}
+		jsonResponse(w, JobEstimateResponse{
+			EstimatedDurationSec: 3600,
+			QueueWaitSec:         120,
+			EstimatedStartTime:   "2026-02-13T10:00:00Z",
+			EstimatedEndTime:     "2026-02-13T11:00:00Z",
+			Confidence:           "high",
+			Method:               "historical",
+		})
+	})
+	client, _ := newTestServer(t, mux)
+
+	resp, err := client.GetJobEstimate("job-800")
+	if err != nil {
+		t.Fatalf("GetJobEstimate: %v", err)
+	}
+	if resp.EstimatedDurationSec != 3600 {
+		t.Errorf("EstimatedDurationSec = %f, want 3600", resp.EstimatedDurationSec)
+	}
+	if resp.Confidence != "high" {
+		t.Errorf("Confidence = %q, want high", resp.Confidence)
+	}
+	if resp.Method != "historical" {
+		t.Errorf("Method = %q, want historical", resp.Method)
+	}
+}
+
+func TestGetJobEstimate_NoHistory(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/jobs/job-new/estimate", func(w http.ResponseWriter, r *http.Request) {
+		jsonResponse(w, JobEstimateResponse{
+			EstimatedDurationSec: 1800,
+			Confidence:           "low",
+			Method:               "default",
+		})
+	})
+	client, _ := newTestServer(t, mux)
+
+	resp, err := client.GetJobEstimate("job-new")
+	if err != nil {
+		t.Fatalf("GetJobEstimate: %v", err)
+	}
+	if resp.Confidence != "low" {
+		t.Errorf("Confidence = %q, want low", resp.Confidence)
+	}
+	if resp.Method != "default" {
+		t.Errorf("Method = %q, want default", resp.Method)
+	}
+}

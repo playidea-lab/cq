@@ -11,21 +11,6 @@
         "C4_PROJECT_ROOT": "/Users/changmin/git/c4"
       },
       "type": "stdio"
-    },
-    "piq": {
-      "args": [
-        "--directory",
-        "/Users/changmin/git/piq/packages/piq",
-        "run",
-        "python",
-        "-m",
-        "piq.mcp.server"
-      ],
-      "command": "uv",
-      "env": {
-        "PIQ_PROJECT_ROOT": "/Users/changmin/git/c4"
-      },
-      "type": "stdio"
     }
   }
 }

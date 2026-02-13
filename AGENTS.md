@@ -75,7 +75,7 @@ c4_add_todo(mode="direct", review_required=False)
 
 ---
 
-## MCP 도구 빠른 참조 (99개: Base 77 + Hub 22)
+## MCP 도구 빠른 참조 (103개: Base 77 + Hub 26)
 
 ```
 상태(3):    c4_status, c4_start, c4_clear
@@ -112,8 +112,9 @@ C2(8):     c4_parse_document, c4_extract_text,
             c4_workspace_create, c4_workspace_load, c4_workspace_save,
             c4_persona_learn, c4_profile_load, c4_profile_save
 --- Hub (hub.enabled=true 시 추가 등록) ---
-Hub-Job(6): c4_hub_submit, c4_hub_status, c4_hub_list,
-            c4_hub_cancel, c4_hub_metrics, c4_hub_log_metrics
+Hub-Job(10): c4_hub_submit, c4_hub_status, c4_hub_list,
+            c4_hub_cancel, c4_hub_metrics, c4_hub_log_metrics,
+            c4_hub_watch, c4_hub_summary, c4_hub_retry, c4_hub_estimate
 Hub-Infra(4): c4_hub_workers, c4_hub_stats, c4_hub_upload, c4_hub_download
 Hub-DAG(7): c4_hub_dag_create, c4_hub_dag_add_node, c4_hub_dag_add_dep,
             c4_hub_dag_execute, c4_hub_dag_status, c4_hub_dag_list,
@@ -138,11 +139,11 @@ CP-001:  체크포인트
 
 ## Go Core (c4-core/) — Primary MCP Server
 
-> `c4-core/` — Go 기반 MCP 서버 (Primary). 99개 도구 (Base 77 + Hub 22). Python sidecar로 LSP/Knowledge/GPU/C2/Research 기능 위임.
+> `c4-core/` — Go 기반 MCP 서버 (Primary). 103개 도구 (Base 77 + Hub 26). Python sidecar로 LSP/Knowledge/GPU/C2/Research 기능 위임.
 
 ### 아키텍처
 ```
-Claude Code → Go MCP Server (stdio, 99 tools)
+Claude Code → Go MCP Server (stdio, 103 tools)
                 ├→ Go native (22): 상태, 태스크, 파일, git, validation
                 ├→ Go + SQLite (13): spec, design, checkpoint, artifact, lighthouse
                 ├→ Soul/Persona/Twin (7): soul CRUD, persona evolve, whoami, reflect

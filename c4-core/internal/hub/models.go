@@ -122,3 +122,41 @@ type RenewLeaseResponse struct {
 	Renewed      bool   `json:"renewed"`
 	NewExpiresAt string `json:"new_expires_at,omitempty"`
 }
+
+// JobLogsResponse is the response from GET /v1/jobs/{id}/logs.
+type JobLogsResponse struct {
+	JobID      string   `json:"job_id"`
+	Lines      []string `json:"lines"`
+	TotalLines int      `json:"total_lines"`
+	Offset     int      `json:"offset"`
+	HasMore    bool     `json:"has_more"`
+}
+
+// JobSummaryResponse is the response from GET /v1/jobs/{id}/summary.
+type JobSummaryResponse struct {
+	JobID         string         `json:"job_id"`
+	Name          string         `json:"name"`
+	Status        string         `json:"status"`
+	DurationSec   *float64       `json:"duration_seconds,omitempty"`
+	ExitCode      *int           `json:"exit_code,omitempty"`
+	FailureReason string         `json:"failure_reason,omitempty"`
+	Metrics       map[string]any `json:"metrics,omitempty"`
+	LogTail       []string       `json:"log_tail,omitempty"`
+}
+
+// JobRetryResponse is the response from POST /v1/jobs/{id}/retry.
+type JobRetryResponse struct {
+	NewJobID      string `json:"new_job_id"`
+	Status        string `json:"status"`
+	OriginalJobID string `json:"original_job_id"`
+}
+
+// JobEstimateResponse is the response from GET /v1/jobs/{id}/estimate.
+type JobEstimateResponse struct {
+	EstimatedDurationSec float64 `json:"estimated_duration_sec"`
+	QueueWaitSec         float64 `json:"queue_wait_sec,omitempty"`
+	EstimatedStartTime   string  `json:"estimated_start_time,omitempty"`
+	EstimatedEndTime     string  `json:"estimated_completion_time,omitempty"`
+	Confidence           string  `json:"confidence"` // high, medium, low
+	Method               string  `json:"method"`     // historical, similar_jobs, default
+}
