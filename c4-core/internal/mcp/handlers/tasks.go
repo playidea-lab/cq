@@ -276,7 +276,7 @@ func handleAddTodo(store Store, rawArgs json.RawMessage) (any, error) {
 		reviewTask := &Task{
 			ID:           reviewID,
 			Title:        fmt.Sprintf("Review: %s", args.Title),
-			DoD:          fmt.Sprintf("Review implementation of %s\n\nOriginal DoD:\n%s", args.TaskID, args.DoD),
+			DoD:          BuildReviewDoD(args.TaskID, args.DoD, 0),
 			Status:       "pending",
 			Dependencies: []string{args.TaskID},
 			Domain:       args.Domain,

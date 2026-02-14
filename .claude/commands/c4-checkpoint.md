@@ -37,20 +37,46 @@ checkpoints:
 status = mcp__c4__c4_status()
 ```
 
-### 2. 상태별 처리
+### 2. 전략 리뷰 렌즈 (4-lens strategic review)
+
+체크포인트 결정 **전에** 아래 4개 전략 렌즈를 순차 점검:
+
+#### [holistic] Holistic Review
+- 모든 변경이 하나의 일관된 전체를 이루는가?
+- 아키텍처 결정이 서로 충돌하지 않는가?
+- 새로 도입한 패턴이 기존 패턴과 조화되는가?
+
+#### [user-flow] User Flow Validation
+- 엔드투엔드 기능이 동작하는가?
+- 에러 상태에 사용자 친화적 처리가 있는가?
+- 성능이 수용 가능한 수준인가?
+
+#### [cascade] Cascade Review
+- 이전 REQUEST_CHANGES 항목이 모두 해결되었는가?
+- 수정이 새로운 문제를 만들지 않았는가?
+- 이전 리뷰 피드백이 반영되었는가?
+
+#### [ship-ready] Ship-Ready Gate
+- 테스트 통과 (lint + unit + integration)?
+- 변경된 코드에 TODO/FIXME가 남아있지 않은가?
+- 문제 발생 시 롤백 가능한가?
+
+### 3. 상태별 처리
 
 #### CHECKPOINT 상태
 
 ```
-Claude: 🎯 CP-001 리뷰 준비됐습니다!
+Claude: CP-001 리뷰 준비됐습니다!
 
   완료된 태스크:
-  - T-001: 프로젝트 설정 ✅
-  - T-002: 로그인 구현 ✅
+  - T-001: 프로젝트 설정
+  - T-002: 로그인 구현
 
-  검증 결과:
-  - lint: ✅ pass
-  - unit: ✅ pass (15/15)
+  === 전략 리뷰 (4 lenses) ===
+  [holistic] 아키텍처 일관성: OK/ISSUE
+  [user-flow] 엔드투엔드: OK/ISSUE
+  [cascade] 이전 피드백 반영: OK/ISSUE
+  [ship-ready] 배포 준비: OK/ISSUE
 
   어떻게 처리할까요?
   1. 승인 - 다음 단계로 진행

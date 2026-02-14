@@ -1030,7 +1030,7 @@ func (s *SQLiteStore) RequestChanges(reviewTaskID string, comments string, requi
 	if err := s.AddTask(&Task{
 		ID:           nextReviewID,
 		Title:        fmt.Sprintf("Review: %s", nextTaskID),
-		DoD:          fmt.Sprintf("Review fix of %s\n\nRequired changes:\n- %s", parentTaskID, changesText),
+		DoD:          BuildReviewDoD(nextTaskID, fmt.Sprintf("Fix requested changes for %s:\n- %s", parentTaskID, changesText), 0),
 		Status:       "pending",
 		Dependencies: []string{nextTaskID},
 	}); err != nil {

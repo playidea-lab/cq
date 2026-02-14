@@ -659,11 +659,11 @@ func TestCheckpointApprove(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	r, ok := result.(*CheckpointResult)
+	r, ok := result.(map[string]any)
 	if !ok {
-		t.Fatalf("result type = %T, want *CheckpointResult", result)
+		t.Fatalf("result type = %T, want map[string]any", result)
 	}
-	if !r.Success {
+	if success, _ := r["success"].(bool); !success {
 		t.Error("expected success=true")
 	}
 

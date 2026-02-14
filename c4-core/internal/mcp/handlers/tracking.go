@@ -217,17 +217,18 @@ func handleCheckpoint(store Store, rawArgs json.RawMessage) (any, error) {
 		return nil, fmt.Errorf("recording checkpoint: %w", err)
 	}
 
-	// Best-effort: enrich with Twin review context
+	// Enrich with Twin review + strategic review lenses
+	result := map[string]any{
+		"success":     cpResult.Success,
+		"next_action": cpResult.NextAction,
+		"message":     cpResult.Message,
+		"review_lenses": BuildCheckpointReviewPrompt(),
+	}
 	if ss, ok := store.(*SQLiteStore); ok {
 		if tr := ss.BuildTwinReview(); tr != nil {
-			return map[string]any{
-				"success":     cpResult.Success,
-				"next_action": cpResult.NextAction,
-				"message":     cpResult.Message,
-				"twin_review": tr,
-			}, nil
+			result["twin_review"] = tr
 		}
 	}
 
-	return cpResult, nil
+	return result, nil
 }
