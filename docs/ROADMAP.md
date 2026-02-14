@@ -1,15 +1,16 @@
 # C4 Roadmap
 
-## Current Version: v0.15.2 (Phase 10 + Phase 10.3 — C0 Drive + C1 Documents)
+## Current Version: v0.16.0 (Phase 10.5 — C1 Context Hub)
 
-현재 버전은 **Go MCP Primary(104 tools: Base 78 + Hub 26), LLM Gateway (4개 Provider 실제 구현), CDP Runner (브라우저 자동화), Cloud Foundation (Supabase), Knowledge Bidirectional Sync, c4 daemon (로컬 작업 스케줄러), C0 Drive (파일 관리), C1 Documents (문서 편집)**을 포함합니다.
+현재 버전은 **Go MCP Primary(112 tools: Base 86 + Hub 26), LLM Gateway (4개 Provider 실제 구현), CDP Runner (브라우저 자동화), Cloud Foundation (Supabase), Knowledge Bidirectional Sync, c4 daemon (로컬 작업 스케줄러), C0 Drive (파일 관리), C1 Context Hub (메시징 + 문서 + Context Keeper)**을 포함합니다.
 
 ### 핵심 구조
 
-- **Go MCP Server (Primary)** - 104 도구 (Base 78: state/task/file/git/discovery/artifact/lsp/knowledge/research/gpu/soul/team/twin/onboard/lighthouse/llm/cdp/c2/drive), Registry-based, SQLite Store, JSON-RPC Bridge, LLM Gateway, CDP Runner, Hub Client
+- **Go MCP Server (Primary)** - 112 도구 (Base 86: state/task/file/git/discovery/artifact/lsp/knowledge/research/gpu/soul/team/twin/onboard/lighthouse/llm/cdp/c2/drive/c1), Registry-based, SQLite Store, JSON-RPC Bridge, LLM Gateway, CDP Runner, Hub Client
 - **C0 Drive** - Supabase 파일 저장소, metadata JSONB, c4_drive_mkdir 6개 도구, PostgREST URL 인코딩
-- **C1 Desktop App** - Tauri 2.x, 4개 프로바이더, Realtime WebSocket, 4-탭 UI (Sessions/Dashboard/Config/Documents)
-- **C1 Views** - SessionsView (provider 자동감지), ChannelsView (메시징), DocumentsView (파일+마크다운 편집)
+- **C1 Context Hub** - Supabase 4 테이블 (channels/messages/participants/summaries), Go MCP 3 도구 (search/mentions/briefing), Context Keeper (LLM 요약), Agent 통합 (notifyKeeper)
+- **C1 Desktop App** - Tauri 2.x, 4개 프로바이더, Realtime WebSocket, 5-탭 UI (Sessions/Dashboard/Config/Documents/Channels)
+- **C1 Views** - SessionsView (provider 자동감지), ChannelsView (메시징 + Realtime), DocumentsView (파일+마크다운 편집)
 - **Daemon Scheduler** - 로컬 작업 스케줄러, 13 REST API, GPU 할당, 소요시간 예측 (PiQ 대체)
 - **LLM Gateway** - 4개 Provider (Anthropic/OpenAI/Gemini/Ollama), 5단계 라우팅, CostTracker, 모델 카탈로그 9종
 - **Cloud Layer** - Go PostgREST client (Auth + CloudStore + HybridStore + KnowledgeCloudClient)
@@ -32,9 +33,10 @@
 - **Team Collaboration** - Supabase 기반 팀 상태 공유 + Realtime WebSocket
 - **C1 Multi-Provider** - Claude Code, Codex CLI, Cursor, Gemini CLI 4개 프로바이더
 - **C0 Drive** - 클라우드 파일 저장소 (metadata, URL 인코딩, 보안)
+- **C1 Context Hub** - 채널 메시징, Context Keeper (LLM 요약), Agent 통합 (notifyKeeper)
 - **C1 Documents** - 마크다운 파일 편집기, 지속성 (persona/skill/spec/config)
-- **코드베이스**: Go ~18K + Python 24K + C1 ~12K + Tests ~25K = **~77.8K LOC**
-- **테스트**: Go 620+ + Python 735 + Rust 44 + Frontend 81 = **~1,479+ tests**
+- **코드베이스**: Go ~19K + Python 24K + C1 ~13K + Tests ~26K = **~82K LOC**
+- **테스트**: Go 767 (13 pkgs) + Python 735 + Rust 44 + Frontend 81 = **~1,627 tests**
 
 ---
 
@@ -854,6 +856,38 @@ Claude Code → Go MCP Server
 
 **결과**: Go 400+ → **620+ 테스트** (+17), Python 492+ → **735** (세션 중 업데이트), 파일 29개 변경 (+1,798/-1,332)
 
+### Phase 10.5: C1 Context Hub (2026-02-14) ✅
+
+**목표**: C1 채널 기반 메시징 + Context Keeper (LLM 요약) + Agent 통합 + Desktop UI
+
+**구현 완료**:
+
+#### Phase 1: 데이터 레이어 — Go MCP + Supabase
+- **Supabase Migration 00012**: 4 테이블 (c1_channels, c1_messages, c1_participants, c1_channel_summaries) + RLS + tsvector FTS
+- **Go C1Handler**: PostgREST HTTP client (setHeaders, httpGet, httpPost, resolveChannelID)
+- **MCP 도구 3개**: `c1_search` (FTS), `c1_check_mentions` (agent mentions), `c1_get_briefing` (채널 요약 + 최근 메시지)
+- **Helper 메서드**: ListChannels, CreateChannel, PostMessage, GetContext (4개 추가 메서드, MCP 미등록)
+
+#### Phase 2: C1 Desktop 메시징 UI
+- **Rust messaging.rs**: 7개 IPC commands (list_channels, create_channel, get_channel_messages, send_message, search_messages, get_briefing, check_mentions)
+- **Rust realtime.rs**: c1_messages + c1_channels Supabase Realtime 구독
+- **React 컴포넌트**: ChannelsList, MessageThread, ComposeBox, UserTyping, ChannelPicker
+- **useChannels 훅**: 채널 목록/메시지/전송/검색 상태 관리
+
+#### Phase 3: Context Keeper
+- **c1_keeper.go**: ContextKeeper struct — AutoPost (시스템 메시지 자동 전송), UpdateChannelSummary (LLM haiku 요약)
+- **sqlite_store 연동**: notifyKeeper() — SubmitTask/ReportTask 완료 시 #updates 채널 자동 게시
+- **SetKeeper()**: Post-construction 주입 패턴 (store가 C1Handler보다 먼저 생성되므로)
+- **mcp.go 와이어링**: C1Handler → ContextKeeper → sqliteStore.SetKeeper(keeper) + optional LLM Gateway
+
+#### Phase 4: 문서 관리 + Agent 통합
+- **Documents UI**: DocumentsView (탭 사이드바), DocumentEditor (뷰/수정 토글), MarkdownViewer
+- **Agent 통합**: mcp.go에서 ContextKeeper 자동 와이어링 (Cloud 활성화 시)
+
+**테스트**: c1_test.go 14개 + c1_keeper_test.go 8개 = **22개 신규** (Go 620+ → 767)
+
+**결과**: 104 → **112 MCP 도구** (+8: C1 3개 + 이전 미계수 보정)
+
 ---
 
 ### Phase 9.3: Cost Dashboard 📋 Future
@@ -979,6 +1013,7 @@ v0.1-0.3        v0.4           v0.5           v0.6          v0.6.10         v0.7
 | **SQLite Hardening (10.1)** | P0 | ✅ 완료 |
 | **c4 daemon (10.3)** | P0 | ✅ 완료 |
 | **Codebase Refactoring + Security Fixes (10.4)** | P0 | ✅ 완료 |
+| **C1 Context Hub (10.5)** | P0 | ✅ 완료 |
 | LLM Cost Dashboard (9.3) | P2 | 📋 Future |
 | Worker Loop (CLI `c4 run`) | P2 | 📋 Deferred |
 | Hosted Workers | P2 | 📋 Future |

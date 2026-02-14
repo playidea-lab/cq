@@ -105,7 +105,7 @@ c4_add_todo(mode="direct", review_required=False)
 
 ---
 
-## MCP 도구 빠른 참조 (104개: Base 78 + Hub 26)
+## MCP 도구 빠른 참조 (112개: Base 86 + Hub 26)
 
 ```
 상태(3):    c4_status, c4_start, c4_clear
@@ -143,6 +143,7 @@ C2(8):     c4_parse_document, c4_extract_text,
             c4_persona_learn, c4_profile_load, c4_profile_save
 Drive(6):  c4_drive_upload, c4_drive_download, c4_drive_list, c4_drive_delete,
             c4_drive_info, c4_drive_mkdir
+C1(3):     c1_search, c1_check_mentions, c1_get_briefing
 --- Hub (hub.enabled=true 시 추가 등록) ---
 Hub-Job(10): c4_hub_submit, c4_hub_status, c4_hub_list,
             c4_hub_cancel, c4_hub_metrics, c4_hub_log_metrics,
@@ -171,17 +172,19 @@ CP-001:  체크포인트
 
 ## Go Core (c4-core/) — Primary MCP Server
 
-> `c4-core/` — Go 기반 MCP 서버 (Primary). 103개 도구 (Base 77 + Hub 26). Python sidecar로 LSP/Knowledge/GPU/C2/Research 기능 위임.
+> `c4-core/` — Go 기반 MCP 서버 (Primary). 112개 도구 (Base 86 + Hub 26). Python sidecar로 LSP/Knowledge/GPU/C2/Research 기능 위임.
 
 ### 아키텍처
 ```
-Claude Code → Go MCP Server (stdio, 103 tools)
+Claude Code → Go MCP Server (stdio, 112 tools)
                 ├→ Go native (22): 상태, 태스크, 파일, git, validation
                 ├→ Go + SQLite (13): spec, design, checkpoint, artifact, lighthouse
                 ├→ Soul/Persona/Twin (7): soul CRUD, persona evolve, whoami, reflect
                 ├→ LLM Gateway (3): llm_call, llm_providers, llm_costs
                 ├→ CDP Runner (2): cdp_run, cdp_list
-                ├→ Hub Client (22): job, worker, metrics, artifact, DAG, edge, deploy
+                ├→ C1 Context Hub (3): search, mentions, briefing + ContextKeeper
+                ├→ Drive (6): upload, download, list, delete, info, mkdir
+                ├→ Hub Client (26): job, worker, metrics, artifact, DAG, edge, deploy
                 └→ JSON-RPC proxy (30) → Python Sidecar
                                             ├→ LSP (multilspy, Jedi, tree-sitter)
                                             ├→ Knowledge Store (FTS5 + Vector)
@@ -192,8 +195,8 @@ Claude Code → Go MCP Server (stdio, 103 tools)
 
 ### 패키지 구조
 - `cmd/c4/` — CLI (cobra), MCP server (Registry-based)
-- `internal/mcp/` — Registry + handlers (99개 도구)
-- `internal/mcp/handlers/` — sqlite_store, files, git, discovery, artifacts, proxy, validation, llm, hub, c2
+- `internal/mcp/` — Registry + handlers
+- `internal/mcp/handlers/` — sqlite_store, files, git, discovery, artifacts, proxy, validation, llm, hub, c2, c1, drive
 - `internal/hub/` — PiQ Hub REST+WS client (job, worker, DAG, edge, deploy, artifact, stream)
 - `internal/bridge/` — Python sidecar 관리 (JSON-RPC/TCP)
 - `internal/task/` — TaskStore (SQLite, Memory, Supabase)
@@ -214,17 +217,18 @@ cd c4-core && go build ./... && go test ./...
 > `c1/` — Tauri 2.x 데스크톱 앱. Multi-LLM 프로젝트 탐색기.
 
 ### 아키텍처
-- **Rust 백엔드**: `src-tauri/src/{commands,models,analytics,cloud,scanner,lib}.rs`
+- **Rust 백엔드**: `src-tauri/src/{commands,models,analytics,cloud,scanner,messaging,lib}.rs`
 - **Multi-Provider**: `src-tauri/src/providers/` — Claude Code, Codex CLI, Cursor, Gemini CLI
 - **React 프론트엔드**: `src/components/`, `src/hooks/`, `src/styles/`
 - **CSS**: BEM 패턴 + `styles/tokens.css` 디자인 토큰
 
-### 4개 뷰
+### 5개 뷰
 | 뷰 | 데이터 소스 | Rust 커맨드 |
 |-----|-------------|-------------|
 | Sessions | 다중 프로바이더 + Analytics | `list_providers`, `get_session_stats`, `get_provider_timeline` |
 | Dashboard | `.c4/c4.db` + Timeline + Validation | `get_project_state`, `get_task_timeline`, `get_validation_results` |
 | Config | `~/.claude/`, `.claude/`, `.c4/` 파일 | `list_config_files`, `read_config_file` |
+| Channels | Supabase c1_* 테이블 + Realtime | `list_channels`, `send_message`, `search_messages`, `get_briefing` |
 | Team | Supabase (로그인 시만 표시) | `cloud_sync_tasks`, `cloud_get_team_projects`, `cloud_get_remote_dashboard` |
 
 ### 빌드/실행
