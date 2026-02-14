@@ -1,0 +1,69 @@
+syntax = "proto3";
+package eventbus;
+option go_package = "github.com/changmin/c4-core/internal/eventbus/pb";
+
+service EventBus {
+  rpc Publish(Event) returns (PublishResponse);
+  rpc Subscribe(SubscribeRequest) returns (stream Event);
+  rpc ListEvents(ListEventsRequest) returns (ListEventsResponse);
+  rpc AddRule(Rule) returns (RuleResponse);
+  rpc ListRules(ListRulesRequest) returns (ListRulesResponse);
+  rpc RemoveRule(RemoveRuleRequest) returns (RuleResponse);
+}
+
+message Event {
+  string id = 1;
+  string type = 2;          // e.g. "drive.uploaded", "task.completed"
+  string source = 3;        // e.g. "c4.drive", "c4.core"
+  bytes  data = 4;          // JSON payload
+  string project_id = 5;
+  int64  timestamp_ms = 6;
+}
+
+message PublishResponse {
+  string event_id = 1;
+  bool   ok = 2;
+}
+
+message SubscribeRequest {
+  string event_pattern = 1; // "drive.*" or "drive.uploaded"
+  string project_id = 2;    // optional project filter
+}
+
+message ListEventsRequest {
+  string type = 1;
+  int32  limit = 2;
+  int64  since_ms = 3;
+}
+
+message ListEventsResponse {
+  repeated Event events = 1;
+  int32 total = 2;
+}
+
+message Rule {
+  string id = 1;
+  string name = 2;
+  string event_pattern = 3;   // "drive.uploaded"
+  string filter_json = 4;     // e.g. {"content_type": "application/pdf"}
+  string action_type = 5;     // "rpc", "webhook", "log"
+  string action_config = 6;   // JSON: action-specific config
+  bool   enabled = 7;
+  int32  priority = 8;
+}
+
+message RuleResponse {
+  string rule_id = 1;
+  bool   ok = 2;
+}
+
+message ListRulesRequest {}
+
+message ListRulesResponse {
+  repeated Rule rules = 1;
+}
+
+message RemoveRuleRequest {
+  string id = 1;
+  string name = 2;  // alternative: remove by name
+}

@@ -17,6 +17,7 @@ import (
 	"github.com/changmin/c4-core/internal/cloud"
 	"github.com/changmin/c4-core/internal/config"
 	"github.com/changmin/c4-core/internal/drive"
+	"github.com/changmin/c4-core/internal/eventbus"
 	"github.com/changmin/c4-core/internal/hub"
 	"github.com/changmin/c4-core/internal/llm"
 	"github.com/changmin/c4-core/internal/mcp"
@@ -232,6 +233,26 @@ func newMCPServer() (*mcpServer, error) {
 			keeper := handlers.NewContextKeeper(c1Handler, keeperGateway)
 			sqliteStore.SetKeeper(keeper)
 			fmt.Fprintln(os.Stderr, "c4: c1 enabled (3 tools + keeper)")
+		}
+	}
+
+	// Register EventBus handlers if enabled
+	if cfgMgr != nil && cfgMgr.GetConfig().EventBus.Enabled {
+		ebCfg := cfgMgr.GetConfig().EventBus
+		sockPath := ebCfg.SocketPath
+		if sockPath == "" {
+			home, _ := os.UserHomeDir()
+			sockPath = filepath.Join(home, ".c4", "eventbus", "c3.sock")
+		}
+		ebClient, ebErr := eventbus.NewClient(sockPath)
+		if ebErr != nil {
+			fmt.Fprintf(os.Stderr, "c4: eventbus not reachable (unix:%s): %v\n", sockPath, ebErr)
+		} else {
+			handlers.RegisterEventBusHandlers(reg, ebClient)
+			// Wire event publishing to store + drive handlers
+			sqliteStore.SetEventBus(ebClient)
+			handlers.SetDriveEventBus(ebClient)
+			fmt.Fprintf(os.Stderr, "c4: eventbus connected (unix:%s, 6 tools)\n", sockPath)
 		}
 	}
 

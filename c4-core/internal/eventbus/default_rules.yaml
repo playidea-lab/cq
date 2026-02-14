@@ -1,0 +1,18 @@
+# C3 EventBus — Default Rules
+# These rules are loaded when the EventBus daemon starts for the first time.
+# Modify via c4_rule_add / c4_rule_remove MCP tools or gRPC API.
+
+rules:
+  - name: log-all-events
+    event_pattern: "*"
+    action_type: log
+    enabled: false          # Debug only — enable manually
+    priority: 999
+
+  - name: auto-parse-pdf
+    event_pattern: drive.uploaded
+    filter_json: '{"content_type": "application/pdf"}'
+    action_type: rpc
+    action_config: '{"method": "C2ParseDocument", "args_template": {"file_path": "{{data.path}}"}}'
+    enabled: true
+    priority: 100

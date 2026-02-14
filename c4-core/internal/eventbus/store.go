@@ -1,0 +1,334 @@
+package eventbus
+
+import (
+	"database/sql"
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+	"sync/atomic"
+	"time"
+
+	_ "modernc.org/sqlite"
+)
+
+// eventIDCounter ensures unique event IDs even within the same millisecond.
+var eventIDCounter atomic.Int64
+
+// Store provides event and rule persistence backed by SQLite.
+type Store struct {
+	db *sql.DB
+}
+
+// NewStore opens (or creates) the eventbus database at dbPath.
+// Uses MaxOpenConns(1) + WAL + busy_timeout to prevent deadlocks.
+func NewStore(dbPath string) (*Store, error) {
+	if err := os.MkdirAll(filepath.Dir(dbPath), 0755); err != nil {
+		return nil, fmt.Errorf("create db dir: %w", err)
+	}
+
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		return nil, fmt.Errorf("open db: %w", err)
+	}
+	db.SetMaxOpenConns(1)
+	if _, err := db.Exec("PRAGMA journal_mode=WAL"); err != nil {
+		fmt.Fprintf(os.Stderr, "c4: eventbus: PRAGMA journal_mode=WAL failed: %v\n", err)
+	}
+	if _, err := db.Exec("PRAGMA busy_timeout=5000"); err != nil {
+		fmt.Fprintf(os.Stderr, "c4: eventbus: PRAGMA busy_timeout=5000 failed: %v\n", err)
+	}
+
+	s := &Store{db: db}
+	if err := s.migrate(); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("migrate: %w", err)
+	}
+	return s, nil
+}
+
+// Close closes the database connection.
+func (s *Store) Close() error {
+	return s.db.Close()
+}
+
+func (s *Store) migrate() error {
+	_, err := s.db.Exec(`
+		CREATE TABLE IF NOT EXISTS c4_events (
+			id           TEXT PRIMARY KEY,
+			type         TEXT NOT NULL,
+			source       TEXT NOT NULL DEFAULT '',
+			data         TEXT NOT NULL DEFAULT '{}',
+			project_id   TEXT NOT NULL DEFAULT '',
+			created_at   TEXT NOT NULL,
+			processed    INTEGER NOT NULL DEFAULT 0
+		);
+
+		CREATE INDEX IF NOT EXISTS idx_events_type ON c4_events(type);
+		CREATE INDEX IF NOT EXISTS idx_events_created ON c4_events(created_at DESC);
+
+		CREATE TABLE IF NOT EXISTS c4_event_rules (
+			id            TEXT PRIMARY KEY,
+			name          TEXT NOT NULL UNIQUE,
+			event_pattern TEXT NOT NULL,
+			filter_json   TEXT NOT NULL DEFAULT '{}',
+			action_type   TEXT NOT NULL,
+			action_config TEXT NOT NULL DEFAULT '{}',
+			enabled       INTEGER NOT NULL DEFAULT 1,
+			priority      INTEGER NOT NULL DEFAULT 0,
+			created_at    TEXT NOT NULL
+		);
+
+		CREATE INDEX IF NOT EXISTS idx_rules_pattern ON c4_event_rules(event_pattern);
+
+		CREATE TABLE IF NOT EXISTS c4_event_log (
+			id          INTEGER PRIMARY KEY AUTOINCREMENT,
+			event_id    TEXT NOT NULL,
+			rule_id     TEXT NOT NULL,
+			status      TEXT NOT NULL DEFAULT 'pending',
+			error       TEXT NOT NULL DEFAULT '',
+			duration_ms INTEGER NOT NULL DEFAULT 0,
+			created_at  TEXT NOT NULL
+		);
+
+		CREATE INDEX IF NOT EXISTS idx_log_event ON c4_event_log(event_id);
+	`)
+	return err
+}
+
+// StoredEvent represents a persisted event.
+type StoredEvent struct {
+	ID        string
+	Type      string
+	Source    string
+	Data      json.RawMessage
+	ProjectID string
+	CreatedAt time.Time
+	Processed bool
+}
+
+// StoredRule represents a persisted rule.
+type StoredRule struct {
+	ID           string
+	Name         string
+	EventPattern string
+	FilterJSON   string
+	ActionType   string
+	ActionConfig string
+	Enabled      bool
+	Priority     int
+	CreatedAt    time.Time
+}
+
+// StoreEvent persists an event and returns the generated ID.
+func (s *Store) StoreEvent(evType, source string, data json.RawMessage, projectID string) (string, error) {
+	id := generateEventID()
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+
+	dataStr := "{}"
+	if len(data) > 0 {
+		dataStr = string(data)
+	}
+
+	_, err := s.db.Exec(`
+		INSERT INTO c4_events (id, type, source, data, project_id, created_at)
+		VALUES (?, ?, ?, ?, ?, ?)`,
+		id, evType, source, dataStr, projectID, now)
+	if err != nil {
+		return "", fmt.Errorf("insert event: %w", err)
+	}
+	return id, nil
+}
+
+// MarkProcessed marks an event as processed.
+func (s *Store) MarkProcessed(id string) error {
+	_, err := s.db.Exec(`UPDATE c4_events SET processed = 1 WHERE id = ?`, id)
+	return err
+}
+
+// ListEvents returns events optionally filtered by type, with limit and since.
+func (s *Store) ListEvents(evType string, limit int, sinceMs int64) ([]StoredEvent, error) {
+	query := `SELECT id, type, source, data, project_id, created_at, processed FROM c4_events`
+	args := []any{}
+	clauses := []string{}
+
+	if evType != "" {
+		clauses = append(clauses, "type = ?")
+		args = append(args, evType)
+	}
+	if sinceMs > 0 {
+		since := time.UnixMilli(sinceMs).UTC().Format(time.RFC3339Nano)
+		clauses = append(clauses, "created_at >= ?")
+		args = append(args, since)
+	}
+	if len(clauses) > 0 {
+		query += " WHERE " + clauses[0]
+		for _, c := range clauses[1:] {
+			query += " AND " + c
+		}
+	}
+	query += " ORDER BY created_at DESC"
+	if limit <= 0 {
+		limit = 100
+	}
+	query += fmt.Sprintf(" LIMIT %d", limit)
+
+	rows, err := s.db.Query(query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list events: %w", err)
+	}
+	defer rows.Close()
+
+	var events []StoredEvent
+	for rows.Next() {
+		var e StoredEvent
+		var createdAt string
+		var dataStr string
+		var processed int
+		if err := rows.Scan(&e.ID, &e.Type, &e.Source, &dataStr, &e.ProjectID, &createdAt, &processed); err != nil {
+			return nil, err
+		}
+		e.Data = json.RawMessage(dataStr)
+		e.CreatedAt, _ = time.Parse(time.RFC3339Nano, createdAt)
+		e.Processed = processed != 0
+		events = append(events, e)
+	}
+	return events, rows.Err()
+}
+
+// AddRule inserts a new rule. Returns the generated ID.
+func (s *Store) AddRule(name, pattern, filterJSON, actionType, actionConfig string, enabled bool, priority int) (string, error) {
+	id := generateEventID()
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+
+	if filterJSON == "" {
+		filterJSON = "{}"
+	}
+	if actionConfig == "" {
+		actionConfig = "{}"
+	}
+
+	enabledInt := 0
+	if enabled {
+		enabledInt = 1
+	}
+
+	_, err := s.db.Exec(`
+		INSERT INTO c4_event_rules (id, name, event_pattern, filter_json, action_type, action_config, enabled, priority, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		id, name, pattern, filterJSON, actionType, actionConfig, enabledInt, priority, now)
+	if err != nil {
+		return "", fmt.Errorf("insert rule: %w", err)
+	}
+	return id, nil
+}
+
+// RemoveRule deletes a rule by ID or name.
+func (s *Store) RemoveRule(id, name string) error {
+	var result sql.Result
+	var err error
+	if id != "" {
+		result, err = s.db.Exec(`DELETE FROM c4_event_rules WHERE id = ?`, id)
+	} else if name != "" {
+		result, err = s.db.Exec(`DELETE FROM c4_event_rules WHERE name = ?`, name)
+	} else {
+		return fmt.Errorf("id or name required")
+	}
+	if err != nil {
+		return fmt.Errorf("remove rule: %w", err)
+	}
+	n, _ := result.RowsAffected()
+	if n == 0 {
+		return fmt.Errorf("rule not found")
+	}
+	return nil
+}
+
+// ToggleRule enables or disables a rule by name.
+func (s *Store) ToggleRule(name string, enabled bool) error {
+	enabledInt := 0
+	if enabled {
+		enabledInt = 1
+	}
+	result, err := s.db.Exec(`UPDATE c4_event_rules SET enabled = ? WHERE name = ?`, enabledInt, name)
+	if err != nil {
+		return fmt.Errorf("toggle rule: %w", err)
+	}
+	n, _ := result.RowsAffected()
+	if n == 0 {
+		return fmt.Errorf("rule %q not found", name)
+	}
+	return nil
+}
+
+// ListRules returns all rules ordered by priority DESC.
+func (s *Store) ListRules() ([]StoredRule, error) {
+	rows, err := s.db.Query(`
+		SELECT id, name, event_pattern, filter_json, action_type, action_config, enabled, priority, created_at
+		FROM c4_event_rules ORDER BY priority DESC, name ASC`)
+	if err != nil {
+		return nil, fmt.Errorf("list rules: %w", err)
+	}
+	defer rows.Close()
+
+	var rules []StoredRule
+	for rows.Next() {
+		var r StoredRule
+		var createdAt string
+		var enabled int
+		if err := rows.Scan(&r.ID, &r.Name, &r.EventPattern, &r.FilterJSON, &r.ActionType, &r.ActionConfig, &enabled, &r.Priority, &createdAt); err != nil {
+			return nil, err
+		}
+		r.Enabled = enabled != 0
+		r.CreatedAt, _ = time.Parse(time.RFC3339Nano, createdAt)
+		rules = append(rules, r)
+	}
+	return rules, rows.Err()
+}
+
+// MatchRules returns enabled rules whose event_pattern matches the given event type.
+func (s *Store) MatchRules(eventType string) ([]StoredRule, error) {
+	rules, err := s.ListRules()
+	if err != nil {
+		return nil, err
+	}
+
+	var matched []StoredRule
+	for _, r := range rules {
+		if !r.Enabled {
+			continue
+		}
+		if matchPattern(r.EventPattern, eventType) {
+			matched = append(matched, r)
+		}
+	}
+	return matched, nil
+}
+
+// LogDispatch records a dispatch attempt for an event+rule.
+func (s *Store) LogDispatch(eventID, ruleID, status, errMsg string, durationMs int64) error {
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	_, err := s.db.Exec(`
+		INSERT INTO c4_event_log (event_id, rule_id, status, error, duration_ms, created_at)
+		VALUES (?, ?, ?, ?, ?, ?)`,
+		eventID, ruleID, status, errMsg, durationMs, now)
+	return err
+}
+
+// matchPattern checks if eventType matches a glob pattern.
+// Supports "*" (match all), "prefix.*" (wildcard suffix), and exact match.
+func matchPattern(pattern, eventType string) bool {
+	if pattern == "*" {
+		return true
+	}
+	if len(pattern) > 1 && pattern[len(pattern)-1] == '*' {
+		prefix := pattern[:len(pattern)-1] // includes the trailing dot
+		return len(eventType) >= len(prefix) && eventType[:len(prefix)] == prefix
+	}
+	return pattern == eventType
+}
+
+func generateEventID() string {
+	seq := eventIDCounter.Add(1)
+	return fmt.Sprintf("ev-%d-%d", time.Now().UnixNano()/1e6, seq)
+}

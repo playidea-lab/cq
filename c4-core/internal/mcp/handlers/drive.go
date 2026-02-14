@@ -5,8 +5,26 @@ import (
 	"fmt"
 
 	"github.com/changmin/c4-core/internal/drive"
+	"github.com/changmin/c4-core/internal/eventbus"
 	"github.com/changmin/c4-core/internal/mcp"
 )
+
+// driveEventPub holds the optional EventBus publisher for drive events.
+var driveEventPub eventbus.Publisher
+
+// SetDriveEventBus sets the EventBus publisher for drive handlers.
+func SetDriveEventBus(pub eventbus.Publisher) {
+	driveEventPub = pub
+}
+
+// publishDriveEvent publishes a drive event to the EventBus (fire-and-forget).
+func publishDriveEvent(evType string, data map[string]any) {
+	if driveEventPub == nil {
+		return
+	}
+	jsonData, _ := json.Marshal(data)
+	driveEventPub.PublishAsync(evType, "c4.drive", jsonData, "")
+}
 
 // RegisterDriveHandlers registers c4_drive_* MCP tools.
 func RegisterDriveHandlers(reg *mcp.Registry, driveClient *drive.Client) {
@@ -39,6 +57,12 @@ func RegisterDriveHandlers(reg *mcp.Registry, driveClient *drive.Client) {
 		if err != nil {
 			return nil, err
 		}
+		publishDriveEvent("drive.uploaded", map[string]any{
+			"path":         info.Path,
+			"content_type": info.ContentType,
+			"size_bytes":   info.SizeBytes,
+			"content_hash": info.ContentHash,
+		})
 		return map[string]any{
 			"status":       "uploaded",
 			"name":         info.Name,
@@ -147,6 +171,7 @@ func RegisterDriveHandlers(reg *mcp.Registry, driveClient *drive.Client) {
 		if err := driveClient.Delete(args.Path); err != nil {
 			return nil, err
 		}
+		publishDriveEvent("drive.deleted", map[string]any{"path": args.Path})
 		return map[string]any{
 			"status": "deleted",
 			"path":   args.Path,
@@ -219,6 +244,7 @@ func RegisterDriveHandlers(reg *mcp.Registry, driveClient *drive.Client) {
 		if err != nil {
 			return nil, err
 		}
+		publishDriveEvent("drive.mkdir", map[string]any{"path": info.Path})
 		return map[string]any{
 			"status":    "created",
 			"name":      info.Name,

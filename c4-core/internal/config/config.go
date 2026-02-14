@@ -69,6 +69,13 @@ type ValidationConfig struct {
 	Unit string `mapstructure:"unit" yaml:"unit"`
 }
 
+// EventBusConfig holds C3 EventBus settings.
+type EventBusConfig struct {
+	Enabled    bool   `mapstructure:"enabled"     yaml:"enabled"`
+	SocketPath string `mapstructure:"socket_path" yaml:"socket_path"`
+	DataDir    string `mapstructure:"data_dir"    yaml:"data_dir"`
+}
+
 // HubConfig holds PiQ Hub connection settings.
 type HubConfig struct {
 	Enabled   bool   `mapstructure:"enabled"     yaml:"enabled"`
@@ -92,6 +99,7 @@ type C4Config struct {
 	EconomicMode     EconomicMode     `mapstructure:"economic_mode"       yaml:"economic_mode"`
 	Cloud            CloudConfig      `mapstructure:"cloud"               yaml:"cloud"`
 	LLMGateway       LLMGatewayConfig `mapstructure:"llm_gateway"         yaml:"llm_gateway"`
+	EventBus         EventBusConfig   `mapstructure:"eventbus"            yaml:"eventbus"`
 	Hub              HubConfig        `mapstructure:"hub"                 yaml:"hub"`
 	ReviewAsTask     bool             `mapstructure:"review_as_task"      yaml:"review_as_task"`
 	CheckpointAsTask bool             `mapstructure:"checkpoint_as_task"  yaml:"checkpoint_as_task"`
@@ -187,6 +195,9 @@ func New(projectRoot string) (*Manager, error) {
 	v.SetDefault("cloud.project_id", "")
 	v.SetDefault("llm_gateway.enabled", false)
 	v.SetDefault("llm_gateway.default", "anthropic")
+	v.SetDefault("eventbus.enabled", false)
+	v.SetDefault("eventbus.socket_path", "")
+	v.SetDefault("eventbus.data_dir", "")
 	v.SetDefault("hub.enabled", false)
 	v.SetDefault("hub.url", "")
 	v.SetDefault("hub.api_key_env", "C4_HUB_API_KEY")

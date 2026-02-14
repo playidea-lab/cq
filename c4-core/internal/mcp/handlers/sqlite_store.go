@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/changmin/c4-core/internal/config"
+	"github.com/changmin/c4-core/internal/eventbus"
 	"github.com/changmin/c4-core/internal/state"
 	"github.com/changmin/c4-core/internal/task"
 )
@@ -21,8 +22,9 @@ type SQLiteStore struct {
 	projectID   string
 	projectRoot string
 	config      *config.Manager
-	proxy       *BridgeProxy  // optional: for knowledge auto-record
-	keeper      *ContextKeeper // optional: for C1 channel summary on task events
+	proxy       *BridgeProxy          // optional: for knowledge auto-record
+	keeper      *ContextKeeper        // optional: for C1 channel summary on task events
+	eventPub    eventbus.Publisher    // optional: for C3 EventBus event publishing
 }
 
 // StoreOption configures a SQLiteStore.
@@ -52,6 +54,24 @@ func WithKeeper(k *ContextKeeper) StoreOption {
 // the keeper depends on components created after the store).
 func (s *SQLiteStore) SetKeeper(k *ContextKeeper) {
 	s.keeper = k
+}
+
+// SetEventBus sets the EventBus publisher after construction (for cases where
+// the eventbus client depends on components created after the store).
+func (s *SQLiteStore) SetEventBus(pub eventbus.Publisher) {
+	s.eventPub = pub
+}
+
+// notifyEventBus publishes a task event to the EventBus if configured.
+func (s *SQLiteStore) notifyEventBus(evType string, data map[string]any) {
+	if s.eventPub == nil {
+		return
+	}
+	jsonData, err := json.Marshal(data)
+	if err != nil {
+		return
+	}
+	s.eventPub.PublishAsync(evType, "c4.core", jsonData, s.projectID)
 }
 
 // NewSQLiteStore creates a new SQLite-backed Store.
@@ -443,6 +463,14 @@ func (s *SQLiteStore) AddTask(task *Task) error {
 		task.ID, task.Title, task.Scope, task.DoD, "pending",
 		deps, task.Domain, task.Priority, model,
 	)
+	if err == nil {
+		// C3 EventBus: publish task.created event
+		s.notifyEventBus("task.created", map[string]any{
+			"task_id": task.ID,
+			"title":   task.Title,
+			"mode":    task.Domain,
+		})
+	}
 	return err
 }
 
@@ -749,6 +777,13 @@ func (s *SQLiteStore) SubmitTask(taskID, workerID, commitSHA, handoff string, re
 	// C1 keeper: update channel summaries on task completion (best-effort)
 	s.notifyKeeper(taskID, task.Title)
 
+	// C3 EventBus: publish task.completed event
+	s.notifyEventBus("task.completed", map[string]any{
+		"task_id":    taskID,
+		"title":      task.Title,
+		"commit_sha": commitSHA,
+	})
+
 	var pending int
 	if err := s.db.QueryRow("SELECT COUNT(*) FROM c4_tasks WHERE status IN ('pending', 'in_progress')").Scan(&pending); err != nil {
 		fmt.Fprintf(os.Stderr, "c4: submit-task: pending count: %v\n", err)
@@ -857,6 +892,14 @@ func (s *SQLiteStore) ReportTask(taskID, summary string, filesChanged []string) 
 
 	// C1 keeper: update channel summaries on task completion (best-effort)
 	s.notifyKeeper(taskID, task.Title)
+
+	// C3 EventBus: publish task.completed event
+	s.notifyEventBus("task.completed", map[string]any{
+		"task_id":       taskID,
+		"title":         task.Title,
+		"summary":       summary,
+		"files_changed": filesChanged,
+	})
 
 	return nil
 }
