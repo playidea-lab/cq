@@ -213,7 +213,7 @@ func newMCPServer() (*mcpServer, error) {
 		if cloudCfg.URL != "" && cloudCfg.AnonKey != "" {
 			driveClient := drive.NewClient(cloudCfg.URL, cloudCfg.AnonKey, cloudAuthToken, cloudProjectID)
 			handlers.RegisterDriveHandlers(reg, driveClient)
-			fmt.Fprintln(os.Stderr, "c4: drive enabled (5 tools)")
+			fmt.Fprintln(os.Stderr, "c4: drive enabled (6 tools)")
 		}
 	}
 
