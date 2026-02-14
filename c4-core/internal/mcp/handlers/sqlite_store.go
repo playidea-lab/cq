@@ -59,6 +59,9 @@ func (s *SQLiteStore) SetDispatcher(d *eventbus.Dispatcher) {
 
 // notifyEventBus publishes a task event to the remote C3 EventBus and
 // dispatches locally via the Dispatcher (for c1_post rules, etc.).
+// NOTE: This does NOT cause double dispatch:
+//   - Remote EventBus: PublishAsync → remote server does StoreEvent + Dispatch
+//   - Local Dispatcher: Dispatch only (no store) for immediate local rules (c1_post, log)
 func (s *SQLiteStore) notifyEventBus(evType string, data map[string]any) {
 	jsonData, err := json.Marshal(data)
 	if err != nil {
@@ -70,7 +73,7 @@ func (s *SQLiteStore) notifyEventBus(evType string, data map[string]any) {
 		s.eventPub.PublishAsync(evType, "c4.core", jsonData, s.projectID)
 	}
 
-	// 2. Local dispatch (c1_post, log, etc.)
+	// 2. Local dispatch (c1_post, log, etc.) - dispatch only, no store
 	if s.dispatcher != nil {
 		go s.dispatcher.Dispatch("local-"+evType, evType, jsonData)
 	}
