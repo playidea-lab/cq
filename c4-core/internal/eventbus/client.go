@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"time"
 
 	pb "github.com/changmin/c4-core/internal/eventbus/pb"
@@ -68,7 +69,7 @@ func (c *Client) Publish(evType, source string, data json.RawMessage, projectID 
 func (c *Client) PublishAsync(evType, source string, data json.RawMessage, projectID string) {
 	go func() {
 		if _, err := c.Publish(evType, source, data, projectID); err != nil {
-			fmt.Printf("c4: eventbus: async publish %s: %v\n", evType, err)
+			fmt.Fprintf(os.Stderr, "c4: eventbus: async publish %s: %v\n", evType, err)
 		}
 	}()
 }
@@ -176,15 +177,21 @@ func (c *Client) ToggleRule(name string, enabled bool) error {
 }
 
 // ListLogs returns dispatch log entries with optional filters.
-func (c *Client) ListLogs(eventID string, limit int, sinceMs int64) ([]*pb.LogEntry, error) {
+// Optional eventType filters by event type (passed as first variadic arg).
+func (c *Client) ListLogs(eventID string, limit int, sinceMs int64, eventType ...string) ([]*pb.LogEntry, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	resp, err := c.client.ListLogs(ctx, &pb.ListLogsRequest{
+	req := &pb.ListLogsRequest{
 		EventId: eventID,
 		Limit:   int32(limit),
 		SinceMs: sinceMs,
-	})
+	}
+	if len(eventType) > 0 && eventType[0] != "" {
+		req.EventType = eventType[0]
+	}
+
+	resp, err := c.client.ListLogs(ctx, req)
 	if err != nil {
 		return nil, err
 	}

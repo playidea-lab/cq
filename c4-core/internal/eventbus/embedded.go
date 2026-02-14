@@ -5,6 +5,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	pb "github.com/changmin/c4-core/internal/eventbus/pb"
@@ -21,6 +22,7 @@ type EmbeddedServer struct {
 	sockPath   string
 	listener   net.Listener
 	stopPurge  chan struct{}
+	stopOnce   sync.Once
 }
 
 // EmbeddedConfig holds configuration for the embedded server.
@@ -101,13 +103,15 @@ func StartEmbedded(cfg EmbeddedConfig) (*EmbeddedServer, error) {
 	return e, nil
 }
 
-// Stop gracefully shuts down the embedded server.
+// Stop gracefully shuts down the embedded server. Safe to call multiple times.
 func (e *EmbeddedServer) Stop() {
-	close(e.stopPurge)
-	e.grpcServer.GracefulStop()
-	e.listener.Close()
-	os.Remove(e.sockPath)
-	e.store.Close()
+	e.stopOnce.Do(func() {
+		close(e.stopPurge)
+		e.grpcServer.GracefulStop()
+		e.listener.Close()
+		os.Remove(e.sockPath)
+		e.store.Close()
+	})
 }
 
 // SocketPath returns the Unix socket path for client connections.

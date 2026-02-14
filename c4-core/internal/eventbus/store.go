@@ -352,9 +352,15 @@ func (s *Store) EventStats() (map[string]any, error) {
 	stats := map[string]any{}
 
 	var eventCount, ruleCount, logCount int
-	s.db.QueryRow(`SELECT COUNT(*) FROM c4_events`).Scan(&eventCount)
-	s.db.QueryRow(`SELECT COUNT(*) FROM c4_event_rules`).Scan(&ruleCount)
-	s.db.QueryRow(`SELECT COUNT(*) FROM c4_event_log`).Scan(&logCount)
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM c4_events`).Scan(&eventCount); err != nil {
+		return nil, fmt.Errorf("count events: %w", err)
+	}
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM c4_event_rules`).Scan(&ruleCount); err != nil {
+		return nil, fmt.Errorf("count rules: %w", err)
+	}
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM c4_event_log`).Scan(&logCount); err != nil {
+		return nil, fmt.Errorf("count logs: %w", err)
+	}
 
 	stats["event_count"] = eventCount
 	stats["rule_count"] = ruleCount
@@ -379,7 +385,8 @@ func (s *Store) EventStats() (map[string]any, error) {
 }
 
 // ListLogs returns dispatch log entries with optional filters.
-func (s *Store) ListLogs(eventID string, limit int, sinceMs int64) ([]StoredLog, error) {
+// eventID filters by specific event, eventType filters by event type pattern.
+func (s *Store) ListLogs(eventID string, limit int, sinceMs int64, eventType ...string) ([]StoredLog, error) {
 	query := `SELECT l.id, l.event_id, COALESCE(r.name,''), COALESCE(e.type,''),
 		l.status, l.error, l.duration_ms, l.created_at
 		FROM c4_event_log l
@@ -391,6 +398,10 @@ func (s *Store) ListLogs(eventID string, limit int, sinceMs int64) ([]StoredLog,
 	if eventID != "" {
 		clauses = append(clauses, "l.event_id = ?")
 		args = append(args, eventID)
+	}
+	if len(eventType) > 0 && eventType[0] != "" {
+		clauses = append(clauses, "e.type = ?")
+		args = append(args, eventType[0])
 	}
 	if sinceMs > 0 {
 		since := time.UnixMilli(sinceMs).UTC().Format(time.RFC3339Nano)

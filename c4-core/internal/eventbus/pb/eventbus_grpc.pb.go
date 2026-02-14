@@ -2,7 +2,7 @@
 // versions:
 // - protoc-gen-go-grpc v1.6.1
 // - protoc             v6.33.4
-// source: eventbus.proto
+// source: proto/eventbus.proto
 
 package pb
 
@@ -466,5 +466,5 @@ var EventBus_ServiceDesc = grpc.ServiceDesc{
 			ServerStreams: true,
 		},
 	},
-	Metadata: "eventbus.proto",
+	Metadata: "proto/eventbus.proto",
 }

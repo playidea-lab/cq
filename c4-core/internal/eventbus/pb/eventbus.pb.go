@@ -2,7 +2,7 @@
 // versions:
 // 	protoc-gen-go v1.36.11
 // 	protoc        v6.33.4
-// source: eventbus.proto
+// source: proto/eventbus.proto
 
 package pb
 
@@ -35,7 +35,7 @@ type Event struct {
 
 func (x *Event) Reset() {
 	*x = Event{}
-	mi := &file_eventbus_proto_msgTypes[0]
+	mi := &file_proto_eventbus_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -47,7 +47,7 @@ func (x *Event) String() string {
 func (*Event) ProtoMessage() {}
 
 func (x *Event) ProtoReflect() protoreflect.Message {
-	mi := &file_eventbus_proto_msgTypes[0]
+	mi := &file_proto_eventbus_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -60,7 +60,7 @@ func (x *Event) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Event.ProtoReflect.Descriptor instead.
 func (*Event) Descriptor() ([]byte, []int) {
-	return file_eventbus_proto_rawDescGZIP(), []int{0}
+	return file_proto_eventbus_proto_rawDescGZIP(), []int{0}
 }
 
 func (x *Event) GetId() string {
@@ -115,7 +115,7 @@ type PublishResponse struct {
 
 func (x *PublishResponse) Reset() {
 	*x = PublishResponse{}
-	mi := &file_eventbus_proto_msgTypes[1]
+	mi := &file_proto_eventbus_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -127,7 +127,7 @@ func (x *PublishResponse) String() string {
 func (*PublishResponse) ProtoMessage() {}
 
 func (x *PublishResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_eventbus_proto_msgTypes[1]
+	mi := &file_proto_eventbus_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -140,7 +140,7 @@ func (x *PublishResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PublishResponse.ProtoReflect.Descriptor instead.
 func (*PublishResponse) Descriptor() ([]byte, []int) {
-	return file_eventbus_proto_rawDescGZIP(), []int{1}
+	return file_proto_eventbus_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *PublishResponse) GetEventId() string {
@@ -167,7 +167,7 @@ type SubscribeRequest struct {
 
 func (x *SubscribeRequest) Reset() {
 	*x = SubscribeRequest{}
-	mi := &file_eventbus_proto_msgTypes[2]
+	mi := &file_proto_eventbus_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -179,7 +179,7 @@ func (x *SubscribeRequest) String() string {
 func (*SubscribeRequest) ProtoMessage() {}
 
 func (x *SubscribeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_eventbus_proto_msgTypes[2]
+	mi := &file_proto_eventbus_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -192,7 +192,7 @@ func (x *SubscribeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SubscribeRequest.ProtoReflect.Descriptor instead.
 func (*SubscribeRequest) Descriptor() ([]byte, []int) {
-	return file_eventbus_proto_rawDescGZIP(), []int{2}
+	return file_proto_eventbus_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *SubscribeRequest) GetEventPattern() string {
@@ -220,7 +220,7 @@ type ListEventsRequest struct {
 
 func (x *ListEventsRequest) Reset() {
 	*x = ListEventsRequest{}
-	mi := &file_eventbus_proto_msgTypes[3]
+	mi := &file_proto_eventbus_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -232,7 +232,7 @@ func (x *ListEventsRequest) String() string {
 func (*ListEventsRequest) ProtoMessage() {}
 
 func (x *ListEventsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_eventbus_proto_msgTypes[3]
+	mi := &file_proto_eventbus_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -245,7 +245,7 @@ func (x *ListEventsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListEventsRequest.ProtoReflect.Descriptor instead.
 func (*ListEventsRequest) Descriptor() ([]byte, []int) {
-	return file_eventbus_proto_rawDescGZIP(), []int{3}
+	return file_proto_eventbus_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *ListEventsRequest) GetType() string {
@@ -279,7 +279,7 @@ type ListEventsResponse struct {
 
 func (x *ListEventsResponse) Reset() {
 	*x = ListEventsResponse{}
-	mi := &file_eventbus_proto_msgTypes[4]
+	mi := &file_proto_eventbus_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -291,7 +291,7 @@ func (x *ListEventsResponse) String() string {
 func (*ListEventsResponse) ProtoMessage() {}
 
 func (x *ListEventsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_eventbus_proto_msgTypes[4]
+	mi := &file_proto_eventbus_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -304,7 +304,7 @@ func (x *ListEventsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListEventsResponse.ProtoReflect.Descriptor instead.
 func (*ListEventsResponse) Descriptor() ([]byte, []int) {
-	return file_eventbus_proto_rawDescGZIP(), []int{4}
+	return file_proto_eventbus_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *ListEventsResponse) GetEvents() []*Event {
@@ -337,7 +337,7 @@ type Rule struct {
 
 func (x *Rule) Reset() {
 	*x = Rule{}
-	mi := &file_eventbus_proto_msgTypes[5]
+	mi := &file_proto_eventbus_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -349,7 +349,7 @@ func (x *Rule) String() string {
 func (*Rule) ProtoMessage() {}
 
 func (x *Rule) ProtoReflect() protoreflect.Message {
-	mi := &file_eventbus_proto_msgTypes[5]
+	mi := &file_proto_eventbus_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -362,7 +362,7 @@ func (x *Rule) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Rule.ProtoReflect.Descriptor instead.
 func (*Rule) Descriptor() ([]byte, []int) {
-	return file_eventbus_proto_rawDescGZIP(), []int{5}
+	return file_proto_eventbus_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *Rule) GetId() string {
@@ -431,7 +431,7 @@ type RuleResponse struct {
 
 func (x *RuleResponse) Reset() {
 	*x = RuleResponse{}
-	mi := &file_eventbus_proto_msgTypes[6]
+	mi := &file_proto_eventbus_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -443,7 +443,7 @@ func (x *RuleResponse) String() string {
 func (*RuleResponse) ProtoMessage() {}
 
 func (x *RuleResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_eventbus_proto_msgTypes[6]
+	mi := &file_proto_eventbus_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -456,7 +456,7 @@ func (x *RuleResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RuleResponse.ProtoReflect.Descriptor instead.
 func (*RuleResponse) Descriptor() ([]byte, []int) {
-	return file_eventbus_proto_rawDescGZIP(), []int{6}
+	return file_proto_eventbus_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *RuleResponse) GetRuleId() string {
@@ -481,7 +481,7 @@ type ListRulesRequest struct {
 
 func (x *ListRulesRequest) Reset() {
 	*x = ListRulesRequest{}
-	mi := &file_eventbus_proto_msgTypes[7]
+	mi := &file_proto_eventbus_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -493,7 +493,7 @@ func (x *ListRulesRequest) String() string {
 func (*ListRulesRequest) ProtoMessage() {}
 
 func (x *ListRulesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_eventbus_proto_msgTypes[7]
+	mi := &file_proto_eventbus_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -506,7 +506,7 @@ func (x *ListRulesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListRulesRequest.ProtoReflect.Descriptor instead.
 func (*ListRulesRequest) Descriptor() ([]byte, []int) {
-	return file_eventbus_proto_rawDescGZIP(), []int{7}
+	return file_proto_eventbus_proto_rawDescGZIP(), []int{7}
 }
 
 type ListRulesResponse struct {
@@ -518,7 +518,7 @@ type ListRulesResponse struct {
 
 func (x *ListRulesResponse) Reset() {
 	*x = ListRulesResponse{}
-	mi := &file_eventbus_proto_msgTypes[8]
+	mi := &file_proto_eventbus_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -530,7 +530,7 @@ func (x *ListRulesResponse) String() string {
 func (*ListRulesResponse) ProtoMessage() {}
 
 func (x *ListRulesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_eventbus_proto_msgTypes[8]
+	mi := &file_proto_eventbus_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -543,7 +543,7 @@ func (x *ListRulesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListRulesResponse.ProtoReflect.Descriptor instead.
 func (*ListRulesResponse) Descriptor() ([]byte, []int) {
-	return file_eventbus_proto_rawDescGZIP(), []int{8}
+	return file_proto_eventbus_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *ListRulesResponse) GetRules() []*Rule {
@@ -563,7 +563,7 @@ type RemoveRuleRequest struct {
 
 func (x *RemoveRuleRequest) Reset() {
 	*x = RemoveRuleRequest{}
-	mi := &file_eventbus_proto_msgTypes[9]
+	mi := &file_proto_eventbus_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -575,7 +575,7 @@ func (x *RemoveRuleRequest) String() string {
 func (*RemoveRuleRequest) ProtoMessage() {}
 
 func (x *RemoveRuleRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_eventbus_proto_msgTypes[9]
+	mi := &file_proto_eventbus_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -588,7 +588,7 @@ func (x *RemoveRuleRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RemoveRuleRequest.ProtoReflect.Descriptor instead.
 func (*RemoveRuleRequest) Descriptor() ([]byte, []int) {
-	return file_eventbus_proto_rawDescGZIP(), []int{9}
+	return file_proto_eventbus_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *RemoveRuleRequest) GetId() string {
@@ -616,7 +616,7 @@ type ToggleRuleRequest struct {
 
 func (x *ToggleRuleRequest) Reset() {
 	*x = ToggleRuleRequest{}
-	mi := &file_eventbus_proto_msgTypes[10]
+	mi := &file_proto_eventbus_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -628,7 +628,7 @@ func (x *ToggleRuleRequest) String() string {
 func (*ToggleRuleRequest) ProtoMessage() {}
 
 func (x *ToggleRuleRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_eventbus_proto_msgTypes[10]
+	mi := &file_proto_eventbus_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -641,7 +641,7 @@ func (x *ToggleRuleRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ToggleRuleRequest.ProtoReflect.Descriptor instead.
 func (*ToggleRuleRequest) Descriptor() ([]byte, []int) {
-	return file_eventbus_proto_rawDescGZIP(), []int{10}
+	return file_proto_eventbus_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *ToggleRuleRequest) GetName() string {
@@ -675,7 +675,7 @@ type LogEntry struct {
 
 func (x *LogEntry) Reset() {
 	*x = LogEntry{}
-	mi := &file_eventbus_proto_msgTypes[11]
+	mi := &file_proto_eventbus_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -687,7 +687,7 @@ func (x *LogEntry) String() string {
 func (*LogEntry) ProtoMessage() {}
 
 func (x *LogEntry) ProtoReflect() protoreflect.Message {
-	mi := &file_eventbus_proto_msgTypes[11]
+	mi := &file_proto_eventbus_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -700,7 +700,7 @@ func (x *LogEntry) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LogEntry.ProtoReflect.Descriptor instead.
 func (*LogEntry) Descriptor() ([]byte, []int) {
-	return file_eventbus_proto_rawDescGZIP(), []int{11}
+	return file_proto_eventbus_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *LogEntry) GetId() int64 {
@@ -761,16 +761,17 @@ func (x *LogEntry) GetTimestampMs() int64 {
 
 type ListLogsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	EventId       string                 `protobuf:"bytes,1,opt,name=event_id,json=eventId,proto3" json:"event_id,omitempty"`  // optional: filter by event
-	Limit         int32                  `protobuf:"varint,2,opt,name=limit,proto3" json:"limit,omitempty"`                    // default: 50
-	SinceMs       int64                  `protobuf:"varint,3,opt,name=since_ms,json=sinceMs,proto3" json:"since_ms,omitempty"` // optional: only logs after this timestamp
+	EventId       string                 `protobuf:"bytes,1,opt,name=event_id,json=eventId,proto3" json:"event_id,omitempty"`       // optional: filter by event
+	Limit         int32                  `protobuf:"varint,2,opt,name=limit,proto3" json:"limit,omitempty"`                         // default: 50
+	SinceMs       int64                  `protobuf:"varint,3,opt,name=since_ms,json=sinceMs,proto3" json:"since_ms,omitempty"`      // optional: only logs after this timestamp
+	EventType     string                 `protobuf:"bytes,4,opt,name=event_type,json=eventType,proto3" json:"event_type,omitempty"` // optional: filter by event type
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ListLogsRequest) Reset() {
 	*x = ListLogsRequest{}
-	mi := &file_eventbus_proto_msgTypes[12]
+	mi := &file_proto_eventbus_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -782,7 +783,7 @@ func (x *ListLogsRequest) String() string {
 func (*ListLogsRequest) ProtoMessage() {}
 
 func (x *ListLogsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_eventbus_proto_msgTypes[12]
+	mi := &file_proto_eventbus_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -795,7 +796,7 @@ func (x *ListLogsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListLogsRequest.ProtoReflect.Descriptor instead.
 func (*ListLogsRequest) Descriptor() ([]byte, []int) {
-	return file_eventbus_proto_rawDescGZIP(), []int{12}
+	return file_proto_eventbus_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *ListLogsRequest) GetEventId() string {
@@ -819,6 +820,13 @@ func (x *ListLogsRequest) GetSinceMs() int64 {
 	return 0
 }
 
+func (x *ListLogsRequest) GetEventType() string {
+	if x != nil {
+		return x.EventType
+	}
+	return ""
+}
+
 type ListLogsResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Logs          []*LogEntry            `protobuf:"bytes,1,rep,name=logs,proto3" json:"logs,omitempty"`
@@ -829,7 +837,7 @@ type ListLogsResponse struct {
 
 func (x *ListLogsResponse) Reset() {
 	*x = ListLogsResponse{}
-	mi := &file_eventbus_proto_msgTypes[13]
+	mi := &file_proto_eventbus_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -841,7 +849,7 @@ func (x *ListLogsResponse) String() string {
 func (*ListLogsResponse) ProtoMessage() {}
 
 func (x *ListLogsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_eventbus_proto_msgTypes[13]
+	mi := &file_proto_eventbus_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -854,7 +862,7 @@ func (x *ListLogsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListLogsResponse.ProtoReflect.Descriptor instead.
 func (*ListLogsResponse) Descriptor() ([]byte, []int) {
-	return file_eventbus_proto_rawDescGZIP(), []int{13}
+	return file_proto_eventbus_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *ListLogsResponse) GetLogs() []*LogEntry {
@@ -880,7 +888,7 @@ type GetStatsRequest struct {
 
 func (x *GetStatsRequest) Reset() {
 	*x = GetStatsRequest{}
-	mi := &file_eventbus_proto_msgTypes[14]
+	mi := &file_proto_eventbus_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -892,7 +900,7 @@ func (x *GetStatsRequest) String() string {
 func (*GetStatsRequest) ProtoMessage() {}
 
 func (x *GetStatsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_eventbus_proto_msgTypes[14]
+	mi := &file_proto_eventbus_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -905,7 +913,7 @@ func (x *GetStatsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetStatsRequest.ProtoReflect.Descriptor instead.
 func (*GetStatsRequest) Descriptor() ([]byte, []int) {
-	return file_eventbus_proto_rawDescGZIP(), []int{14}
+	return file_proto_eventbus_proto_rawDescGZIP(), []int{14}
 }
 
 type GetStatsResponse struct {
@@ -921,7 +929,7 @@ type GetStatsResponse struct {
 
 func (x *GetStatsResponse) Reset() {
 	*x = GetStatsResponse{}
-	mi := &file_eventbus_proto_msgTypes[15]
+	mi := &file_proto_eventbus_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -933,7 +941,7 @@ func (x *GetStatsResponse) String() string {
 func (*GetStatsResponse) ProtoMessage() {}
 
 func (x *GetStatsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_eventbus_proto_msgTypes[15]
+	mi := &file_proto_eventbus_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -946,7 +954,7 @@ func (x *GetStatsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetStatsResponse.ProtoReflect.Descriptor instead.
 func (*GetStatsResponse) Descriptor() ([]byte, []int) {
-	return file_eventbus_proto_rawDescGZIP(), []int{15}
+	return file_proto_eventbus_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *GetStatsResponse) GetEventCount() int32 {
@@ -997,7 +1005,7 @@ type ReplayRequest struct {
 
 func (x *ReplayRequest) Reset() {
 	*x = ReplayRequest{}
-	mi := &file_eventbus_proto_msgTypes[16]
+	mi := &file_proto_eventbus_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1009,7 +1017,7 @@ func (x *ReplayRequest) String() string {
 func (*ReplayRequest) ProtoMessage() {}
 
 func (x *ReplayRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_eventbus_proto_msgTypes[16]
+	mi := &file_proto_eventbus_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1022,7 +1030,7 @@ func (x *ReplayRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReplayRequest.ProtoReflect.Descriptor instead.
 func (*ReplayRequest) Descriptor() ([]byte, []int) {
-	return file_eventbus_proto_rawDescGZIP(), []int{16}
+	return file_proto_eventbus_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *ReplayRequest) GetEventType() string {
@@ -1053,11 +1061,11 @@ func (x *ReplayRequest) GetDryRun() bool {
 	return false
 }
 
-var File_eventbus_proto protoreflect.FileDescriptor
+var File_proto_eventbus_proto protoreflect.FileDescriptor
 
-const file_eventbus_proto_rawDesc = "" +
+const file_proto_eventbus_proto_rawDesc = "" +
 	"\n" +
-	"\x0eeventbus.proto\x12\beventbus\"\x99\x01\n" +
+	"\x14proto/eventbus.proto\x12\beventbus\"\x99\x01\n" +
 	"\x05Event\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04type\x18\x02 \x01(\tR\x04type\x12\x16\n" +
@@ -1113,11 +1121,13 @@ const file_eventbus_proto_rawDesc = "" +
 	"\x05error\x18\x06 \x01(\tR\x05error\x12\x1f\n" +
 	"\vduration_ms\x18\a \x01(\x03R\n" +
 	"durationMs\x12!\n" +
-	"\ftimestamp_ms\x18\b \x01(\x03R\vtimestampMs\"]\n" +
+	"\ftimestamp_ms\x18\b \x01(\x03R\vtimestampMs\"|\n" +
 	"\x0fListLogsRequest\x12\x19\n" +
 	"\bevent_id\x18\x01 \x01(\tR\aeventId\x12\x14\n" +
 	"\x05limit\x18\x02 \x01(\x05R\x05limit\x12\x19\n" +
-	"\bsince_ms\x18\x03 \x01(\x03R\asinceMs\"P\n" +
+	"\bsince_ms\x18\x03 \x01(\x03R\asinceMs\x12\x1d\n" +
+	"\n" +
+	"event_type\x18\x04 \x01(\tR\teventType\"P\n" +
 	"\x10ListLogsResponse\x12&\n" +
 	"\x04logs\x18\x01 \x03(\v2\x12.eventbus.LogEntryR\x04logs\x12\x14\n" +
 	"\x05total\x18\x02 \x01(\x05R\x05total\"\x11\n" +
@@ -1152,19 +1162,19 @@ const file_eventbus_proto_rawDesc = "" +
 	"\fReplayEvents\x12\x17.eventbus.ReplayRequest\x1a\x0f.eventbus.Event0\x01B2Z0github.com/changmin/c4-core/internal/eventbus/pbb\x06proto3"
 
 var (
-	file_eventbus_proto_rawDescOnce sync.Once
-	file_eventbus_proto_rawDescData []byte
+	file_proto_eventbus_proto_rawDescOnce sync.Once
+	file_proto_eventbus_proto_rawDescData []byte
 )
 
-func file_eventbus_proto_rawDescGZIP() []byte {
-	file_eventbus_proto_rawDescOnce.Do(func() {
-		file_eventbus_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_eventbus_proto_rawDesc), len(file_eventbus_proto_rawDesc)))
+func file_proto_eventbus_proto_rawDescGZIP() []byte {
+	file_proto_eventbus_proto_rawDescOnce.Do(func() {
+		file_proto_eventbus_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_proto_eventbus_proto_rawDesc), len(file_proto_eventbus_proto_rawDesc)))
 	})
-	return file_eventbus_proto_rawDescData
+	return file_proto_eventbus_proto_rawDescData
 }
 
-var file_eventbus_proto_msgTypes = make([]protoimpl.MessageInfo, 17)
-var file_eventbus_proto_goTypes = []any{
+var file_proto_eventbus_proto_msgTypes = make([]protoimpl.MessageInfo, 17)
+var file_proto_eventbus_proto_goTypes = []any{
 	(*Event)(nil),              // 0: eventbus.Event
 	(*PublishResponse)(nil),    // 1: eventbus.PublishResponse
 	(*SubscribeRequest)(nil),   // 2: eventbus.SubscribeRequest
@@ -1183,7 +1193,7 @@ var file_eventbus_proto_goTypes = []any{
 	(*GetStatsResponse)(nil),   // 15: eventbus.GetStatsResponse
 	(*ReplayRequest)(nil),      // 16: eventbus.ReplayRequest
 }
-var file_eventbus_proto_depIdxs = []int32{
+var file_proto_eventbus_proto_depIdxs = []int32{
 	0,  // 0: eventbus.ListEventsResponse.events:type_name -> eventbus.Event
 	5,  // 1: eventbus.ListRulesResponse.rules:type_name -> eventbus.Rule
 	11, // 2: eventbus.ListLogsResponse.logs:type_name -> eventbus.LogEntry
@@ -1214,26 +1224,26 @@ var file_eventbus_proto_depIdxs = []int32{
 	0,  // [0:3] is the sub-list for field type_name
 }
 
-func init() { file_eventbus_proto_init() }
-func file_eventbus_proto_init() {
-	if File_eventbus_proto != nil {
+func init() { file_proto_eventbus_proto_init() }
+func file_proto_eventbus_proto_init() {
+	if File_proto_eventbus_proto != nil {
 		return
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
-			RawDescriptor: unsafe.Slice(unsafe.StringData(file_eventbus_proto_rawDesc), len(file_eventbus_proto_rawDesc)),
+			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_eventbus_proto_rawDesc), len(file_proto_eventbus_proto_rawDesc)),
 			NumEnums:      0,
 			NumMessages:   17,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
-		GoTypes:           file_eventbus_proto_goTypes,
-		DependencyIndexes: file_eventbus_proto_depIdxs,
-		MessageInfos:      file_eventbus_proto_msgTypes,
+		GoTypes:           file_proto_eventbus_proto_goTypes,
+		DependencyIndexes: file_proto_eventbus_proto_depIdxs,
+		MessageInfos:      file_proto_eventbus_proto_msgTypes,
 	}.Build()
-	File_eventbus_proto = out.File
-	file_eventbus_proto_goTypes = nil
-	file_eventbus_proto_depIdxs = nil
+	File_proto_eventbus_proto = out.File
+	file_proto_eventbus_proto_goTypes = nil
+	file_proto_eventbus_proto_depIdxs = nil
 }

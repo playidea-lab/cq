@@ -219,7 +219,7 @@ func (s *Server) ListLogs(ctx context.Context, req *pb.ListLogsRequest) (*pb.Lis
 		limit = 50
 	}
 
-	logs, err := s.store.ListLogs(req.EventId, limit, req.SinceMs)
+	logs, err := s.store.ListLogs(req.EventId, limit, req.SinceMs, req.EventType)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "list logs: %v", err)
 	}

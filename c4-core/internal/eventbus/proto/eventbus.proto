@@ -91,9 +91,10 @@ message LogEntry {
 }
 
 message ListLogsRequest {
-  string event_id = 1;    // optional: filter by event
+  string event_id = 1;     // optional: filter by event
   int32  limit = 2;        // default: 50
   int64  since_ms = 3;     // optional: only logs after this timestamp
+  string event_type = 4;   // optional: filter by event type
 }
 
 message ListLogsResponse {

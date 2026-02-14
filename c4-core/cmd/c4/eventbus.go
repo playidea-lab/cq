@@ -365,7 +365,7 @@ func runEventbusLogs(cmd *cobra.Command, args []string) error {
 
 	sinceMs := parseSinceTime(logsSince)
 
-	logs, err := client.ListLogs("", logsLimit, sinceMs)
+	logs, err := client.ListLogs("", logsLimit, sinceMs, logsType)
 	if err != nil {
 		return fmt.Errorf("list logs: %w", err)
 	}
@@ -522,8 +522,20 @@ func runRulesImport(cmd *cobra.Command, args []string) error {
 	}
 	defer client.Close()
 
-	var added, failed int
+	// Get existing rules to skip duplicates
+	existingRules, _ := client.ListRules()
+	existingNames := make(map[string]bool, len(existingRules))
+	for _, r := range existingRules {
+		existingNames[r.Name] = true
+	}
+
+	var added, skipped, failed int
 	for _, r := range rf.Rules {
+		if existingNames[r.Name] {
+			fmt.Printf("  skipped: %s (already exists)\n", r.Name)
+			skipped++
+			continue
+		}
 		_, err := client.AddRule(r.Name, r.EventPattern, r.FilterJSON, r.ActionType, r.ActionConfig, r.Enabled, r.Priority)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "  failed: %s (%v)\n", r.Name, err)
@@ -534,7 +546,7 @@ func runRulesImport(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	fmt.Printf("\nImported %d rules (%d failed)\n", added, failed)
+	fmt.Printf("\nImported %d rules (%d skipped, %d failed)\n", added, skipped, failed)
 	return nil
 }
 
