@@ -1,6 +1,6 @@
 # C4 Roadmap
 
-## Current Version: v0.15.1 (Phase 10 + Phase 10.3 — Daemon Scheduler)
+## Current Version: v0.15.2 (Phase 10 + Phase 10.3 — Daemon Scheduler, Refactored)
 
 현재 버전은 **Go MCP Primary(64 tools), LLM Gateway (4개 Provider 실제 구현), CDP Runner (브라우저 자동화), Cloud Foundation (Supabase), Knowledge Bidirectional Sync, c4 daemon (로컬 작업 스케줄러)**를 포함합니다.
 
@@ -29,8 +29,8 @@
 - **Artifact Store** - Content-addressable 로컬 저장소
 - **Team Collaboration** - Supabase 기반 팀 상태 공유
 - **C1 Multi-LLM Explorer** - Claude Code, Codex CLI, Cursor, Gemini CLI 4개 프로바이더
-- **코드베이스**: Go ~12K + Python 11.3K + C1 ~8K + Tests ~15K = **~38K LOC**
-- **테스트**: Go 300+ + Python 446 + Rust 44 + Frontend 81 = **~871 tests**
+- **코드베이스**: Go ~17.5K + Python 24.1K + C1 ~11K + Infra 0.5K = **~53K LOC**
+- **테스트**: Go 620+ + Python 735 + Rust 44 + Frontend 81 = **~1,480+ tests**
 
 ---
 
@@ -787,6 +787,36 @@ Claude Code → Go MCP Server
                                           └─→ SQLite Store
 ```
 
+### Phase 10.4: Codebase Refactoring + Security Fixes (2026-02-14) ✅
+
+**목표**: 커넥션 재사용, 핸들러 중복 제거, 보안/안정성 픽스
+
+**구현 완료**:
+- **Python Store Connection Reuse** (T-S05)
+  - documents.py, research/store.py — 단일 `self._conn` 재사용, `close()`/`__enter__`/`__exit__` 구현
+  - PRAGMA busy_timeout=5000 + WAL 통일
+  - rpc_server.py — DocumentStore/ResearchStore 인스턴스 캐싱
+- **daemon store PRAGMA Error Handling** (T-S08)
+  - 2개 PRAGMA 실행 + 6개 json.Unmarshal 에러 로깅 추가 (fmt.Fprintf(os.Stderr))
+- **Scanner Interface** (T-S09)
+  - scanJob/scanJobRow 95% 중복 제거
+  - type scanner 인터페이스 + populateJob() 공통 함수
+- **hub.go 분할** (T-S10)
+  - hub.go 1219→14줄 (struct + 4개 helper 정의만)
+  - hub_jobs.go (473), hub_dag.go (362), hub_infra.go (152), hub_edge.go (251) 분할
+  - 가독성 + 유지보수성 향상, 자동 테스트 용이
+- **신규 테스트 17개** (T-S11)
+  - validation_test.go (10): JSON validation, file encoding, request format
+  - artifacts_test.go (7): Store CRUD, versioning, metadata
+- **보안 & 안정성 픽스 5개**
+  - PostgREST 필터값 URL-encode (462d8a4)
+  - json.Unmarshal 에러 처리 (773620f) — 7개 핸들러
+  - GPU requires_gpu 로직 단순화 (2616aed)
+  - 파일 경로 프로젝트 루트 검증 (de7b1ee)
+  - daemon GPU indices 워커 전달 (99c29f6)
+
+**결과**: Go 400+ → **620+ 테스트** (+17), Python 492+ → **735** (세션 중 업데이트), 파일 29개 변경 (+1,798/-1,332)
+
 ---
 
 ### Phase 9.3: Cost Dashboard 📋 Future
@@ -910,6 +940,8 @@ v0.1-0.3        v0.4           v0.5           v0.6          v0.6.10         v0.7
 | **LLM Provider Implementations (9.2)** | P1 | ✅ 완료 |
 | **CDP Runner (10)** | P1 | ✅ 완료 |
 | **SQLite Hardening (10.1)** | P0 | ✅ 완료 |
+| **c4 daemon (10.3)** | P0 | ✅ 완료 |
+| **Codebase Refactoring + Security Fixes (10.4)** | P0 | ✅ 완료 |
 | LLM Cost Dashboard (9.3) | P2 | 📋 Future |
 | Worker Loop (CLI `c4 run`) | P2 | 📋 Deferred |
 | Hosted Workers | P2 | 📋 Future |
