@@ -35,6 +35,12 @@ func newConnError(format string, a ...any) error {
 	return &connError{wrapped: fmt.Errorf(format, a...)}
 }
 
+// LazyAddrGetter provides on-demand address resolution for the sidecar.
+// Implemented by bridge.LazyStarter to enable lazy initialization.
+type LazyAddrGetter interface {
+	Addr() (string, error)
+}
+
 // Restarter is implemented by bridge.Sidecar to allow the proxy to trigger restarts.
 type Restarter interface {
 	Restart() (string, error)
@@ -43,7 +49,8 @@ type Restarter interface {
 // BridgeProxy forwards MCP tool calls to the Python sidecar via JSON-RPC over TCP.
 type BridgeProxy struct {
 	mu           sync.Mutex
-	addr         string
+	addrGetter   LazyAddrGetter      // lazy address resolution (nil if using static addr)
+	addr         string              // cached/static address
 	timeout      time.Duration
 	restarter    Restarter           // nil if no auto-restart support
 	lastFailedAt time.Time           // timestamp of last connection failure
@@ -56,6 +63,15 @@ func NewBridgeProxy(addr string) *BridgeProxy {
 	return &BridgeProxy{
 		addr:    addr,
 		timeout: 10 * time.Second,
+	}
+}
+
+// NewBridgeProxyLazy creates a proxy with lazy address resolution.
+// The sidecar will only start when the first proxy tool is called.
+func NewBridgeProxyLazy(addrGetter LazyAddrGetter) *BridgeProxy {
+	return &BridgeProxy{
+		addrGetter: addrGetter,
+		timeout:    10 * time.Second,
 	}
 }
 
@@ -159,7 +175,21 @@ const maxResponseSize = 10 * 1024 * 1024
 func (p *BridgeProxy) doCall(method string, params map[string]any, timeout time.Duration) (map[string]any, error) {
 	p.mu.Lock()
 	addr := p.addr
+	addrGetter := p.addrGetter
 	p.mu.Unlock()
+
+	// Lazy address resolution: call Addr() on first use
+	if addr == "" && addrGetter != nil {
+		var err error
+		addr, err = addrGetter.Addr()
+		if err != nil {
+			return nil, fmt.Errorf("Python sidecar not available: %w", err)
+		}
+		// Cache the address for subsequent calls
+		p.mu.Lock()
+		p.addr = addr
+		p.mu.Unlock()
+	}
 
 	if addr == "" {
 		return nil, fmt.Errorf("Python sidecar not available. Restart Claude Code to reconnect.")

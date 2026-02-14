@@ -29,6 +29,7 @@ func RegisterNativeHandlers(reg *mcp.Registry, rootDir string, store Store) {
 // RegisterAllHandlers registers all MCP tool handlers including Python proxy tools.
 // If store is nil, only native and proxy handlers are registered (store handlers added later).
 // knowledgeCloud may be nil when cloud is disabled.
+// If lazyAddr is non-nil, uses lazy initialization; otherwise uses bridgeAddr directly.
 // Returns the BridgeProxy so callers can attach a Restarter for auto-recovery.
 func RegisterAllHandlers(reg *mcp.Registry, store Store, rootDir string, bridgeAddr string, knowledgeCloud KnowledgeSyncer) *BridgeProxy {
 	if store != nil {
@@ -36,6 +37,20 @@ func RegisterAllHandlers(reg *mcp.Registry, store Store, rootDir string, bridgeA
 	}
 	RegisterNativeHandlers(reg, rootDir, store)
 	proxy := NewBridgeProxy(bridgeAddr)
+	RegisterProxyHandlers(reg, proxy, knowledgeCloud)
+	RegisterResearchProxyHandlers(reg, proxy)
+	RegisterC2ProxyHandlers(reg, proxy)
+	return proxy
+}
+
+// RegisterAllHandlersLazy is like RegisterAllHandlers but uses lazy sidecar initialization.
+// The sidecar will only start when the first proxy tool is called.
+func RegisterAllHandlersLazy(reg *mcp.Registry, store Store, rootDir string, lazyAddr LazyAddrGetter, knowledgeCloud KnowledgeSyncer) *BridgeProxy {
+	if store != nil {
+		RegisterAll(reg, store)
+	}
+	RegisterNativeHandlers(reg, rootDir, store)
+	proxy := NewBridgeProxyLazy(lazyAddr)
 	RegisterProxyHandlers(reg, proxy, knowledgeCloud)
 	RegisterResearchProxyHandlers(reg, proxy)
 	RegisterC2ProxyHandlers(reg, proxy)

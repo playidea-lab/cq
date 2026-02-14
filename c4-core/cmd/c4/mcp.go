@@ -71,7 +71,7 @@ type initializeResult struct {
 // mcpServer holds the state of a running MCP server instance.
 type mcpServer struct {
 	registry   *mcp.Registry
-	sidecar    *bridge.Sidecar
+	sidecar    *bridge.LazyStarter // lazy-initialized Python sidecar
 	db         *sql.DB
 	embeddedEB *eventbus.EmbeddedServer // v3: in-process EventBus
 }
@@ -103,21 +103,11 @@ func newMCPServer() (*mcpServer, error) {
 		cfgMgr = nil
 	}
 
-	// Try to start Python sidecar for proxy tools
-	var sidecar *bridge.Sidecar
-	var bridgeAddr string
-
+	// Create lazy Python sidecar (will start on first proxy tool call)
 	bridgeCfg := bridge.DefaultSidecarConfig()
 	bridgeCfg.PidFile = filepath.Join(projectDir, ".c4", "sidecar.pid")
-	sidecar, err = bridge.StartSidecar(bridgeCfg)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "c4: Python sidecar not available: %v\n", err)
-		fmt.Fprintln(os.Stderr, "c4: LSP, Knowledge, and GPU tools will be unavailable")
-		bridgeAddr = ""
-	} else {
-		bridgeAddr = sidecar.Addr()
-		fmt.Fprintf(os.Stderr, "c4: Python sidecar started at %s\n", bridgeAddr)
-	}
+	lazySidecar := bridge.NewLazyStarter(bridgeCfg)
+	fmt.Fprintln(os.Stderr, "c4: Python sidecar will start on first proxy tool call")
 
 	// Create KnowledgeCloudClient if cloud is enabled
 	var knowledgeCloud *cloud.KnowledgeCloudClient
@@ -148,9 +138,9 @@ func newMCPServer() (*mcpServer, error) {
 		}
 	}
 
-	// Create registry and register all tools (proxy is created inside)
+	// Create registry and register all tools (proxy is created inside with lazy sidecar)
 	reg := mcp.NewRegistry()
-	proxy := handlers.RegisterAllHandlers(reg, nil, projectDir, bridgeAddr, knowledgeCloud)
+	proxy := handlers.RegisterAllHandlersLazy(reg, nil, projectDir, lazySidecar, knowledgeCloud)
 
 	// Create store with all options
 	storeOpts := []handlers.StoreOption{
@@ -360,14 +350,12 @@ func newMCPServer() (*mcpServer, error) {
 		handlers.SetProjectRoleForStage("project-" + projectName)
 	}
 
-	// Wire sidecar auto-restart
-	if sidecar != nil {
-		proxy.SetRestarter(sidecar)
-	}
+	// Wire lazy sidecar for auto-restart (LazyStarter implements Restarter)
+	proxy.SetRestarter(lazySidecar)
 
 	return &mcpServer{
 		registry:   reg,
-		sidecar:    sidecar,
+		sidecar:    lazySidecar,
 		db:         db,
 		embeddedEB: embeddedEB,
 	}, nil
