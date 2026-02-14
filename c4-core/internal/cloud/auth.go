@@ -334,46 +334,6 @@ func (c *AuthClient) oauthURL(callbackPort int) string {
 		"&redirect_to=" + redirectTo
 }
 
-// exchangeCodeForToken exchanges an authorization code for an access token
-// via the Supabase /auth/v1/token endpoint.
-func (c *AuthClient) exchangeCodeForToken(code string) (*Session, error) {
-	body := map[string]string{
-		"auth_code":     code,
-		"code_verifier": "",
-	}
-	bodyJSON, err := json.Marshal(body)
-	if err != nil {
-		return nil, fmt.Errorf("marshaling token request: %w", err)
-	}
-
-	url := c.supabaseURL + "/auth/v1/token?grant_type=authorization_code"
-	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(bodyJSON))
-	if err != nil {
-		return nil, fmt.Errorf("creating token request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("apikey", c.anonKey)
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("token request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		var errResp supabaseErrorResponse
-		json.NewDecoder(resp.Body).Decode(&errResp)
-		return nil, fmt.Errorf("token exchange failed (HTTP %d): %s", resp.StatusCode, errResp.ErrorDescription)
-	}
-
-	var tokenResp supabaseTokenResponse
-	if err := json.NewDecoder(resp.Body).Decode(&tokenResp); err != nil {
-		return nil, fmt.Errorf("decoding token response: %w", err)
-	}
-
-	return tokenResponseToSession(&tokenResp), nil
-}
-
 // saveSession writes the session to disk with restricted permissions.
 func (c *AuthClient) saveSession(session *Session) error {
 	dir := filepath.Dir(c.sessionPath)
