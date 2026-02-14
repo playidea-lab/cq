@@ -6,7 +6,10 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"path/filepath"
+	"sync"
+	"syscall"
 
 	"github.com/changmin/c4-core/internal/bridge"
 	"github.com/changmin/c4-core/internal/cdp"
@@ -87,6 +90,7 @@ func newMCPServer() (*mcpServer, error) {
 	var bridgeAddr string
 
 	bridgeCfg := bridge.DefaultSidecarConfig()
+	bridgeCfg.PidFile = filepath.Join(projectDir, ".c4", "sidecar.pid")
 	sidecar, err = bridge.StartSidecar(bridgeCfg)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "c4: Python sidecar not available: %v\n", err)
@@ -214,10 +218,15 @@ func newMCPServer() (*mcpServer, error) {
 	}, nil
 }
 
-// serve runs the stdio MCP server loop.
+// serve runs the stdio MCP server loop with concurrent request handling.
+// Requests are read sequentially from stdin but handled concurrently in goroutines.
+// Responses are written back through a mutex-protected encoder to preserve stdio integrity.
+// This prevents slow sidecar proxy calls (e.g. c4_find_symbol) from blocking
+// fast native operations (e.g. c4_status) — eliminating head-of-line blocking.
 func (s *mcpServer) serve() error {
 	decoder := json.NewDecoder(os.Stdin)
 	encoder := json.NewEncoder(os.Stdout)
+	var writerMu sync.Mutex
 
 	for {
 		var req mcpRequest
@@ -228,12 +237,21 @@ func (s *mcpServer) serve() error {
 			return fmt.Errorf("decoding request: %w", err)
 		}
 
-		resp := s.handleRequest(&req)
-		if resp != nil {
-			if err := encoder.Encode(resp); err != nil {
-				return fmt.Errorf("encoding response: %w", err)
-			}
+		// Notifications (no ID) don't need responses — handle inline.
+		if req.ID == nil {
+			_ = s.handleRequest(&req)
+			continue
 		}
+
+		// Handle each request concurrently to avoid head-of-line blocking.
+		go func(r mcpRequest) {
+			resp := s.handleRequest(&r)
+			if resp != nil {
+				writerMu.Lock()
+				_ = encoder.Encode(resp)
+				writerMu.Unlock()
+			}
+		}(req)
 	}
 }
 
@@ -345,6 +363,18 @@ func runMCP() error {
 		return fmt.Errorf("initializing MCP server: %w", err)
 	}
 	defer srv.shutdown()
+
+	// Signal handler: ensure sidecar cleanup on SIGTERM/SIGINT.
+	// Without this, signals terminate the process before defer runs,
+	// leaving orphan sidecar processes.
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		sig := <-sigCh
+		fmt.Fprintf(os.Stderr, "c4: received %s, shutting down\n", sig)
+		srv.shutdown()
+		os.Exit(0)
+	}()
 
 	tools := srv.registry.ListTools()
 	fmt.Fprintf(os.Stderr, "c4: %d tools registered\n", len(tools))

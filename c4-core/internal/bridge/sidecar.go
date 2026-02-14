@@ -7,8 +7,10 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -34,6 +36,9 @@ type SidecarConfig struct {
 	Port int
 	// StartTimeout is how long to wait for the sidecar to be ready.
 	StartTimeout time.Duration
+	// PidFile is the path to write the sidecar PID for orphan cleanup.
+	// If set, StartSidecar will kill any stale process from a previous run.
+	PidFile string
 }
 
 // DefaultSidecarConfig returns sensible defaults.
@@ -47,12 +52,53 @@ func DefaultSidecarConfig() *SidecarConfig {
 	}
 }
 
+// cleanupStaleSidecar kills a leftover sidecar process from a previous run
+// using the PID file. This handles the SIGKILL case where the Go parent dies
+// without running defer/signal handlers.
+func cleanupStaleSidecar(pidFile string) {
+	if pidFile == "" {
+		return
+	}
+	data, err := os.ReadFile(pidFile)
+	if err != nil {
+		return // no pid file — nothing to clean
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
+	if err != nil || pid <= 0 {
+		_ = os.Remove(pidFile)
+		return
+	}
+	// Check if process exists (signal 0)
+	if err := syscall.Kill(pid, 0); err != nil {
+		_ = os.Remove(pidFile)
+		return // already dead
+	}
+	// Kill the stale process group
+	fmt.Fprintf(os.Stderr, "c4: killing stale sidecar (pgid %d) from previous session\n", pid)
+	_ = syscall.Kill(-pid, syscall.SIGTERM)
+	// Brief wait then force kill
+	time.Sleep(500 * time.Millisecond)
+	_ = syscall.Kill(-pid, syscall.SIGKILL)
+	_ = os.Remove(pidFile)
+}
+
+// writePidFile writes the sidecar PID to disk for orphan cleanup on next startup.
+func writePidFile(pidFile string, pid int) {
+	if pidFile == "" {
+		return
+	}
+	_ = os.WriteFile(pidFile, []byte(strconv.Itoa(pid)), 0644)
+}
+
 // StartSidecar spawns the Python bridge sidecar and waits for it to be ready.
 // It reads the "C4_BRIDGE_PORT=<port>" line from stdout to discover the port.
 func StartSidecar(cfg *SidecarConfig) (*Sidecar, error) {
 	if cfg == nil {
 		cfg = DefaultSidecarConfig()
 	}
+
+	// Kill any orphan sidecar from a previous session (SIGKILL recovery)
+	cleanupStaleSidecar(cfg.PidFile)
 
 	pythonPath, err := exec.LookPath(cfg.PythonCommand)
 	if err != nil {
@@ -71,6 +117,12 @@ func StartSidecar(cfg *SidecarConfig) (*Sidecar, error) {
 
 	cmd := exec.Command(pythonPath, args...)
 	cmd.Stderr = os.Stderr
+	// Pass Go parent PID so the sidecar can self-terminate when orphaned.
+	// The sidecar monitors this PID and exits if it dies (SIGKILL recovery).
+	cmd.Env = append(os.Environ(), fmt.Sprintf("C4_PARENT_PID=%d", os.Getpid()))
+	// Put sidecar in its own process group so Stop() can kill
+	// the entire tree (uv wrapper + python child) with a single signal.
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 
 	// Capture stdout to read the port announcement
 	stdout, err := cmd.StdoutPipe()
@@ -117,6 +169,9 @@ func StartSidecar(cfg *SidecarConfig) (*Sidecar, error) {
 		return nil, fmt.Errorf("sidecar not reachable at %s: %w", s.addr, err)
 	}
 
+	// Record PID for orphan cleanup on next startup (SIGKILL recovery)
+	writePidFile(cfg.PidFile, cmd.Process.Pid)
+
 	return s, nil
 }
 
@@ -127,7 +182,9 @@ func (s *Sidecar) Addr() string {
 	return s.addr
 }
 
-// Stop gracefully shuts down the sidecar process.
+// Stop gracefully shuts down the sidecar process group.
+// Sends SIGTERM to the entire process group (uv + python) first,
+// then SIGKILL if it doesn't exit within 5 seconds.
 func (s *Sidecar) Stop() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -137,9 +194,16 @@ func (s *Sidecar) Stop() error {
 	}
 	s.stopped = true
 
-	// Send SIGTERM for graceful shutdown
-	if err := s.cmd.Process.Signal(os.Interrupt); err != nil {
-		// Force kill if signal fails
+	pgid := s.cmd.Process.Pid
+
+	// Clean up PID file
+	if s.cfg != nil {
+		_ = os.Remove(s.cfg.PidFile)
+	}
+
+	// Send SIGTERM to the entire process group (negative PID = process group)
+	if err := syscall.Kill(-pgid, syscall.SIGTERM); err != nil {
+		// Fallback: kill individual process
 		_ = s.cmd.Process.Kill()
 	}
 
@@ -151,7 +215,8 @@ func (s *Sidecar) Stop() error {
 	case <-done:
 		return nil
 	case <-time.After(5 * time.Second):
-		_ = s.cmd.Process.Kill()
+		// Force kill entire process group
+		_ = syscall.Kill(-pgid, syscall.SIGKILL)
 		return nil
 	}
 }
@@ -231,20 +296,21 @@ func (s *Sidecar) Restart() (string, error) {
 	s.restarts++
 	cfg := s.cfg
 
-	// Stop existing process while holding lock to prevent concurrent access
+	// Stop existing process group while holding lock to prevent concurrent access
 	if !s.stopped && s.cmd != nil && s.cmd.Process != nil {
-		_ = s.cmd.Process.Signal(os.Interrupt)
+		pgid := s.cmd.Process.Pid
+		_ = syscall.Kill(-pgid, syscall.SIGTERM)
 		s.stopped = true
 		// Don't wait for process exit under lock — it's best-effort
-		go func(cmd *exec.Cmd) {
+		go func(cmd *exec.Cmd, pgid int) {
 			done := make(chan error, 1)
 			go func() { done <- cmd.Wait() }()
 			select {
 			case <-done:
 			case <-time.After(5 * time.Second):
-				_ = cmd.Process.Kill()
+				_ = syscall.Kill(-pgid, syscall.SIGKILL)
 			}
-		}(s.cmd)
+		}(s.cmd, pgid)
 	}
 
 	// Reset state for new process
