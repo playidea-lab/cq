@@ -775,3 +775,88 @@ func TestProxyEventSkipsEmptyType(t *testing.T) {
 		t.Errorf("evType = %q, want valid.event", published[0].evType)
 	}
 }
+
+// TestProxyEventNonArrayEvents verifies _events as non-array (string, object) is ignored gracefully.
+func TestProxyEventNonArrayEvents(t *testing.T) {
+	// _events is a string instead of array — should be stripped but not crash
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	defer ln.Close()
+
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			go func(c net.Conn) {
+				defer c.Close()
+				buf := make([]byte, 4096)
+				n, _ := c.Read(buf)
+				if n == 0 {
+					return
+				}
+				// _events is a string, not an array
+				result := map[string]any{
+					"status":  "ok",
+					"_events": "not-an-array",
+				}
+				resp := map[string]any{"result": result, "error": nil}
+				data, _ := json.Marshal(resp)
+				data = append(data, '\n')
+				c.Write(data)
+			}(conn)
+		}
+	}()
+
+	pub := &mockPublisher{}
+	proxy := NewBridgeProxy(ln.Addr().String())
+	proxy.SetEventBus(pub)
+
+	result, err := proxy.Call("Test", map[string]any{})
+	if err != nil {
+		t.Fatalf("Call failed: %v", err)
+	}
+
+	// _events should be stripped
+	if _, exists := result["_events"]; exists {
+		t.Error("_events should be stripped even when non-array")
+	}
+	// No events should be published (type assertion to []any fails)
+	if len(pub.getEvents()) != 0 {
+		t.Errorf("expected 0 published events for non-array _events, got %d", len(pub.getEvents()))
+	}
+}
+
+// TestProxyEventNilData verifies events with missing/nil data produce valid JSON ("null").
+func TestProxyEventNilData(t *testing.T) {
+	events := []map[string]any{
+		{"type": "test.nil_data", "source": "src", "project_id": ""},
+		// note: no "data" key at all
+	}
+	addr, cleanup := startMockSidecarWithEvents(t, events)
+	defer cleanup()
+
+	pub := &mockPublisher{}
+	proxy := NewBridgeProxy(addr)
+	proxy.SetEventBus(pub)
+
+	_, err := proxy.Call("Test", map[string]any{})
+	if err != nil {
+		t.Fatalf("Call failed: %v", err)
+	}
+
+	published := pub.getEvents()
+	if len(published) != 1 {
+		t.Fatalf("expected 1 published event, got %d", len(published))
+	}
+	// json.Marshal(nil) → "null" — verify it doesn't crash and produces valid JSON
+	if published[0].evType != "test.nil_data" {
+		t.Errorf("evType = %q, want test.nil_data", published[0].evType)
+	}
+	if string(published[0].data) != "null" {
+		t.Errorf("data = %q, want \"null\" for nil data", string(published[0].data))
+	}
+}

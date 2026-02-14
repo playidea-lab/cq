@@ -1,8 +1,18 @@
-"""Tests for c4.bridge.events.EventCollector."""
+"""Tests for c4.bridge.events.EventCollector and event type constants."""
 
 from __future__ import annotations
 
-from c4.bridge.events import EventCollector
+from c4.bridge.events import (
+    C2_DOCUMENT_PARSED,
+    C2_TEXT_EXTRACTED,
+    KNOWLEDGE_RECORDED,
+    RESEARCH_RECORDED,
+    RESEARCH_STARTED,
+    SRC_C2,
+    SRC_KNOWLEDGE,
+    SRC_RESEARCH,
+    EventCollector,
+)
 
 
 class TestEventCollector:
@@ -10,7 +20,7 @@ class TestEventCollector:
 
     def test_emit_and_attach(self) -> None:
         ec = EventCollector()
-        ec.emit("c2.document.parsed", "c4.c2", {"file_path": "/a/b.pdf"})
+        ec.emit(C2_DOCUMENT_PARSED, SRC_C2, {"file_path": "/a/b.pdf"})
 
         result = ec.attach({"success": True})
         assert "_events" in result
@@ -53,3 +63,23 @@ class TestEventCollector:
         assert result["foo"] == "bar"
         assert result["count"] == 42
         assert "_events" in result
+
+
+class TestEventConstants:
+    """Verify event type constants are consistent."""
+
+    def test_c2_event_types(self) -> None:
+        assert C2_DOCUMENT_PARSED == "c2.document.parsed"
+        assert C2_TEXT_EXTRACTED == "c2.text.extracted"
+
+    def test_knowledge_event_types(self) -> None:
+        assert KNOWLEDGE_RECORDED == "knowledge.recorded"
+
+    def test_research_event_types(self) -> None:
+        assert RESEARCH_STARTED == "research.started"
+        assert RESEARCH_RECORDED == "research.recorded"
+
+    def test_source_constants(self) -> None:
+        assert SRC_C2 == "c4.c2"
+        assert SRC_KNOWLEDGE == "c4.knowledge"
+        assert SRC_RESEARCH == "c4.research"

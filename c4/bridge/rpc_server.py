@@ -30,7 +30,17 @@ import os
 from pathlib import Path
 from typing import Any, Awaitable, Callable
 
-from c4.bridge.events import EventCollector
+from c4.bridge.events import (
+    C2_DOCUMENT_PARSED,
+    C2_TEXT_EXTRACTED,
+    KNOWLEDGE_RECORDED,
+    RESEARCH_RECORDED,
+    RESEARCH_STARTED,
+    SRC_C2,
+    SRC_KNOWLEDGE,
+    SRC_RESEARCH,
+    EventCollector,
+)
 from c4.daemon.code_ops import CodeOps
 
 logger = logging.getLogger(__name__)
@@ -469,7 +479,7 @@ class BridgeServer:
                 "message": f"Document created: {doc_id}",
             }
             ec = EventCollector()
-            ec.emit("knowledge.recorded", "c4.knowledge", {
+            ec.emit(KNOWLEDGE_RECORDED, SRC_KNOWLEDGE, {
                 "doc_id": doc_id,
                 "doc_type": doc_type,
                 "title": title,
@@ -657,7 +667,7 @@ class BridgeServer:
                 "iteration_id": iteration_id,
             }
             ec = EventCollector()
-            ec.emit("research.started", "c4.research", {
+            ec.emit(RESEARCH_STARTED, SRC_RESEARCH, {
                 "project_id": project_id,
                 "name": name,
             })
@@ -710,7 +720,7 @@ class BridgeServer:
 
             result = {"success": True, "iteration_id": current.id}
             ec = EventCollector()
-            ec.emit("research.recorded", "c4.research", {
+            ec.emit(RESEARCH_RECORDED, SRC_RESEARCH, {
                 "project_id": project_id,
             })
             return ec.attach(result)
@@ -792,7 +802,7 @@ class BridgeServer:
             }
             ec = EventCollector()
             fmt_name = Path(file_path).suffix.lstrip(".") or "unknown"
-            ec.emit("c2.document.parsed", "c4.c2", {
+            ec.emit(C2_DOCUMENT_PARSED, SRC_C2, {
                 "file_path": file_path,
                 "block_count": len(doc.blocks),
                 "format": fmt_name,
@@ -813,7 +823,7 @@ class BridgeServer:
             text = extract_text(Path(file_path))
             result = {"text": text, "char_count": len(text)}
             ec = EventCollector()
-            ec.emit("c2.text.extracted", "c4.c2", {
+            ec.emit(C2_TEXT_EXTRACTED, SRC_C2, {
                 "file_path": file_path,
                 "char_count": len(text),
             })

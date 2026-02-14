@@ -7,7 +7,7 @@ response-piggyback mechanism.
 Usage::
 
     collector = EventCollector()
-    collector.emit("c2.document.parsed", "c4.c2", {"file_path": "/a/b.pdf"})
+    collector.emit(C2_DOCUMENT_PARSED, SRC_C2, {"file_path": "/a/b.pdf"})
     return collector.attach({"success": True, "block_count": 5})
     # → {"success": True, "block_count": 5, "_events": [...]}
 """
@@ -15,6 +15,20 @@ Usage::
 from __future__ import annotations
 
 from typing import Any
+
+# ---------------------------------------------------------------------------
+# Event type constants — keep in sync with Go EventBus consumers.
+# ---------------------------------------------------------------------------
+C2_DOCUMENT_PARSED = "c2.document.parsed"
+C2_TEXT_EXTRACTED = "c2.text.extracted"
+KNOWLEDGE_RECORDED = "knowledge.recorded"
+RESEARCH_STARTED = "research.started"
+RESEARCH_RECORDED = "research.recorded"
+
+# Source identifiers
+SRC_C2 = "c4.c2"
+SRC_KNOWLEDGE = "c4.knowledge"
+SRC_RESEARCH = "c4.research"
 
 
 class EventCollector:

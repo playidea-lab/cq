@@ -329,6 +329,81 @@ class TestLSPDelegation:
 # Knowledge Method Delegation Tests
 # ---------------------------------------------------------------------------
 
+class TestEventPiggyback:
+    """Test that sidecar methods include _events in responses."""
+
+    @pytest.fixture
+    def server(self, tmp_path):
+        from c4.bridge.rpc_server import BridgeServer
+        return BridgeServer(project_root=tmp_path)
+
+    @pytest.mark.asyncio
+    async def test_knowledge_record_emits_event(self, server):
+        with patch("c4.bridge.rpc_server.DocumentStore") as MockStore:
+            MockStore.return_value.create.return_value = "exp-042"
+            MockStore.return_value.get.return_value = None
+            result = await server.dispatch("KnowledgeRecord", {
+                "doc_type": "experiment",
+                "title": "My Experiment",
+                "body": "Content",
+            })
+            assert result["success"] is True
+            assert "_events" in result
+            events = result["_events"]
+            assert len(events) == 1
+            assert events[0]["type"] == "knowledge.recorded"
+            assert events[0]["source"] == "c4.knowledge"
+            assert events[0]["data"]["doc_id"] == "exp-042"
+            assert events[0]["data"]["doc_type"] == "experiment"
+
+    @pytest.mark.asyncio
+    async def test_c2_parse_document_emits_event(self, server):
+        mock_block = MagicMock()
+        mock_block.model_dump.return_value = {"type": "paragraph", "text": "hello"}
+        mock_doc = MagicMock()
+        mock_doc.blocks = [mock_block, mock_block, mock_block]
+        mock_doc.metadata = None
+
+        # parse_document is imported inside the handler via lazy `from c4.c2.converter import parse_document`
+        with patch("c4.c2.converter.parse_document", return_value=mock_doc):
+            result = await server.dispatch("C2ParseDocument", {
+                "file_path": "/tmp/test.pdf",
+            })
+            assert "error" not in result
+            assert "_events" in result
+            events = result["_events"]
+            assert len(events) == 1
+            assert events[0]["type"] == "c2.document.parsed"
+            assert events[0]["data"]["block_count"] == 3
+            assert events[0]["data"]["format"] == "pdf"
+
+    @pytest.mark.asyncio
+    async def test_research_start_emits_event(self, server):
+        with patch("c4.bridge.rpc_server.ResearchStore") as MockStore:
+            MockStore.return_value.create_project.return_value = "proj-1"
+            MockStore.return_value.create_iteration.return_value = "iter-1"
+            result = await server.dispatch("ResearchStart", {
+                "name": "My Research",
+            })
+            assert result["success"] is True
+            assert "_events" in result
+            events = result["_events"]
+            assert len(events) == 1
+            assert events[0]["type"] == "research.started"
+            assert events[0]["data"]["project_id"] == "proj-1"
+            assert events[0]["data"]["name"] == "My Research"
+
+    @pytest.mark.asyncio
+    async def test_knowledge_record_error_no_event(self, server):
+        """Failed operations should NOT emit events."""
+        result = await server.dispatch("KnowledgeRecord", {
+            "doc_type": "invalid_type",
+            "title": "Test",
+        })
+        assert "error" in result
+        assert "_events" not in result
+
+
 class TestKnowledgeDelegation:
     """Test that Knowledge methods correctly delegate to document store."""
 
