@@ -48,6 +48,12 @@ func WithKeeper(k *ContextKeeper) StoreOption {
 	return func(s *SQLiteStore) { s.keeper = k }
 }
 
+// SetKeeper sets the ContextKeeper after construction (for cases where
+// the keeper depends on components created after the store).
+func (s *SQLiteStore) SetKeeper(k *ContextKeeper) {
+	s.keeper = k
+}
+
 // NewSQLiteStore creates a new SQLite-backed Store.
 func NewSQLiteStore(db *sql.DB, opts ...StoreOption) (*SQLiteStore, error) {
 	s := &SQLiteStore{db: db}

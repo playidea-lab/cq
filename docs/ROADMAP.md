@@ -1,18 +1,20 @@
 # C4 Roadmap
 
-## Current Version: v0.15.2 (Phase 10 + Phase 10.3 — Daemon Scheduler, Refactored)
+## Current Version: v0.15.2 (Phase 10 + Phase 10.3 — C0 Drive + C1 Documents)
 
-현재 버전은 **Go MCP Primary(64 tools), LLM Gateway (4개 Provider 실제 구현), CDP Runner (브라우저 자동화), Cloud Foundation (Supabase), Knowledge Bidirectional Sync, c4 daemon (로컬 작업 스케줄러)**를 포함합니다.
+현재 버전은 **Go MCP Primary(104 tools: Base 78 + Hub 26), LLM Gateway (4개 Provider 실제 구현), CDP Runner (브라우저 자동화), Cloud Foundation (Supabase), Knowledge Bidirectional Sync, c4 daemon (로컬 작업 스케줄러), C0 Drive (파일 관리), C1 Documents (문서 편집)**을 포함합니다.
 
 ### 핵심 구조
 
-- **Go MCP Server (Primary)** - 64 도구, Registry-based, SQLite Store, JSON-RPC Bridge, LLM Gateway, CDP Runner, Hub Client
+- **Go MCP Server (Primary)** - 104 도구 (Base 78: state/task/file/git/discovery/artifact/lsp/knowledge/research/gpu/soul/team/twin/onboard/lighthouse/llm/cdp/c2/drive), Registry-based, SQLite Store, JSON-RPC Bridge, LLM Gateway, CDP Runner, Hub Client
+- **C0 Drive** - Supabase 파일 저장소, metadata JSONB, c4_drive_mkdir 6개 도구, PostgREST URL 인코딩
+- **C1 Desktop App** - Tauri 2.x, 4개 프로바이더, Realtime WebSocket, 4-탭 UI (Sessions/Dashboard/Config/Documents)
+- **C1 Views** - SessionsView (provider 자동감지), ChannelsView (메시징), DocumentsView (파일+마크다운 편집)
 - **Daemon Scheduler** - 로컬 작업 스케줄러, 13 REST API, GPU 할당, 소요시간 예측 (PiQ 대체)
 - **LLM Gateway** - 4개 Provider (Anthropic/OpenAI/Gemini/Ollama), 5단계 라우팅, CostTracker, 모델 카탈로그 9종
 - **Cloud Layer** - Go PostgREST client (Auth + CloudStore + HybridStore + KnowledgeCloudClient)
 - **Python Sidecar** - LSP(Multilspy→Jedi→Tree-sitter), Knowledge Store v2, GPU Scheduler
-- **C1 Desktop App** - Tauri 2.x, 4개 프로바이더, Realtime WebSocket, 5-탭 TeamView
-- **Infra** - Supabase PostgreSQL (9 migrations, RLS, tsvector FTS)
+- **Infra** - Supabase PostgreSQL (12 migrations, RLS, tsvector FTS)
 
 ### 지원 기능
 
@@ -22,15 +24,50 @@
 - EARS Requirements + ADR (Architecture Decision Records)
 - Validation Runner (lint, unit tests)
 - Checkpoint System (APPROVE, REQUEST_CHANGES, REPLAN, REDESIGN)
-- **Code Analysis Engine** - Multilspy → Jedi → Tree-sitter 3단계 fallback
+- **Code Analysis Engine** - Multilspy → Jedi → Tree-sitter 3단계 fallback, LSP 7개 도구
 - **Knowledge Store v2** - Obsidian Markdown SSOT + FTS5 + Vector hybrid search (RRF)
 - **GPU/ML Native** - GPU 감지, 스케줄링, DAG→Task 변환
 - **Experiment Tracker** - @c4_track 데코레이터, 메트릭 자동 캡처
 - **Artifact Store** - Content-addressable 로컬 저장소
-- **Team Collaboration** - Supabase 기반 팀 상태 공유
-- **C1 Multi-LLM Explorer** - Claude Code, Codex CLI, Cursor, Gemini CLI 4개 프로바이더
-- **코드베이스**: Go ~17.5K + Python 24.1K + C1 ~11K + Infra 0.5K = **~53K LOC**
-- **테스트**: Go 620+ + Python 735 + Rust 44 + Frontend 81 = **~1,480+ tests**
+- **Team Collaboration** - Supabase 기반 팀 상태 공유 + Realtime WebSocket
+- **C1 Multi-Provider** - Claude Code, Codex CLI, Cursor, Gemini CLI 4개 프로바이더
+- **C0 Drive** - 클라우드 파일 저장소 (metadata, URL 인코딩, 보안)
+- **C1 Documents** - 마크다운 파일 편집기, 지속성 (persona/skill/spec/config)
+- **코드베이스**: Go ~18K + Python 24K + C1 ~12K + Tests ~25K = **~77.8K LOC**
+- **테스트**: Go 620+ + Python 735 + Rust 44 + Frontend 81 = **~1,479+ tests**
+
+---
+
+## 최신 추가사항 (2026-02-14)
+
+### C0 Drive: Supabase 파일 저장소 ✅
+
+**목표**: Supabase 기반 클라우드 파일 저장소 (모바일-퀵스타트)
+
+- **6개 도구**: c4_drive_upload, c4_drive_download, c4_drive_list, c4_drive_delete, c4_drive_info, c4_drive_mkdir
+- **메타데이터**: JSONB 지원 (색상, 태그, 사용자 정보)
+- **보안**: PostgREST URL-encode, uploaded_by 필드, RLS
+- **DB**: migration 00012 (`drive_files` 테이블, metadata JSONB)
+- **E2E 테스트**: Supabase 통합 검증 완료
+
+### C1 Documents: 마크다운 편집기 ✅
+
+**목표**: C1 내 마크다운 파일 브라우저 및 편집기
+
+- **DocumentsView**: 4개 탭 (persona/skill/spec/config) + 파일 목록 + 검색
+- **DocumentEditor**: 뷰/수정 토글, MarkdownViewer, textarea
+- **useDocuments 훅**: list_documents/get_document/save_document IPC
+- **연동**: C1 Tauri commands (`list_documents`, `get_document`, `save_document`)
+- **지속성**: .c4/documents/ 디렉토리
+
+### C1 Channels + Context Keeper ✅
+
+**목표**: C1 내 채널 기반 메시징 및 자동 요약
+
+- **ChannelsView**: 5개 컴포넌트 (List, Thread, Compose, UserTyping, Picker)
+- **Realtime**: c1_messages, c1_channels Supabase subscription
+- **Context Keeper**: sqlite_store notifyKeeper hook, 채널 요약 자동 생성
+- **테스트**: upsert/trigger 8개
 
 ---
 

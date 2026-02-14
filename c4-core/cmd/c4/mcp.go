@@ -223,7 +223,15 @@ func newMCPServer() (*mcpServer, error) {
 		if cloudCfg.URL != "" && cloudCfg.AnonKey != "" && cloudAuthToken != "" && cloudProjectID != "" {
 			c1Handler := handlers.NewC1Handler(cloudCfg.URL+"/rest/v1", cloudCfg.AnonKey, cloudAuthToken, cloudProjectID)
 			handlers.RegisterC1Handlers(reg, c1Handler)
-			fmt.Fprintln(os.Stderr, "c4: c1 enabled (3 tools)")
+
+			// Wire ContextKeeper: auto-posts task events to C1 #updates channel
+			var keeperGateway *llm.Gateway
+			if cfgMgr.GetConfig().LLMGateway.Enabled {
+				keeperGateway = llm.NewGatewayFromConfig(cfgMgr.GetConfig())
+			}
+			keeper := handlers.NewContextKeeper(c1Handler, keeperGateway)
+			sqliteStore.SetKeeper(keeper)
+			fmt.Fprintln(os.Stderr, "c4: c1 enabled (3 tools + keeper)")
 		}
 	}
 

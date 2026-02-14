@@ -105,7 +105,7 @@ c4_add_todo(mode="direct", review_required=False)
 
 ---
 
-## MCP 도구 빠른 참조 (103개: Base 77 + Hub 26)
+## MCP 도구 빠른 참조 (104개: Base 78 + Hub 26)
 
 ```
 상태(3):    c4_status, c4_start, c4_clear
@@ -141,6 +141,8 @@ CDP(2):    c4_cdp_run, c4_cdp_list
 C2(8):     c4_parse_document, c4_extract_text,
             c4_workspace_create, c4_workspace_load, c4_workspace_save,
             c4_persona_learn, c4_profile_load, c4_profile_save
+Drive(6):  c4_drive_upload, c4_drive_download, c4_drive_list, c4_drive_delete,
+            c4_drive_info, c4_drive_mkdir
 --- Hub (hub.enabled=true 시 추가 등록) ---
 Hub-Job(10): c4_hub_submit, c4_hub_status, c4_hub_list,
             c4_hub_cancel, c4_hub_metrics, c4_hub_log_metrics,
