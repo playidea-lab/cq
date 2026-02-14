@@ -217,6 +217,16 @@ func newMCPServer() (*mcpServer, error) {
 		}
 	}
 
+	// Register C1 handlers if cloud is enabled
+	if cfgMgr != nil && cfgMgr.GetConfig().Cloud.Enabled {
+		cloudCfg := cfgMgr.GetConfig().Cloud
+		if cloudCfg.URL != "" && cloudCfg.AnonKey != "" && cloudAuthToken != "" {
+			c1Handler := handlers.NewC1Handler(cloudCfg.URL+"/rest/v1", cloudCfg.AnonKey, cloudAuthToken, cloudProjectID)
+			handlers.RegisterC1Handlers(reg, c1Handler)
+			fmt.Fprintln(os.Stderr, "c4: c1 hub enabled (2 tools)")
+		}
+	}
+
 	// Register CDP handlers (always available — connects on demand)
 	cdpRunner := cdp.NewRunner()
 	handlers.RegisterCDPHandlers(reg, cdpRunner)
