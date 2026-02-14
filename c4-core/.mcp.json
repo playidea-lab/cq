@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "c4": {
+      "args": [
+        "mcp",
+        "--dir",
+        "/Users/changmin/git/c4/c4-core"
+      ],
+      "command": "/Users/changmin/git/c4/c4-core/bin/c4",
+      "env": {
+        "C4_PROJECT_ROOT": "/Users/changmin/git/c4/c4-core"
+      },
+      "type": "stdio"
+    }
+  }
+}

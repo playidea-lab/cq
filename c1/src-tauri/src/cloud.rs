@@ -40,7 +40,7 @@ pub struct TeamProject {
 // ---------------------------------------------------------------------------
 
 /// Read Supabase URL and anon_key from env vars or ~/.c4/supabase.json
-fn read_supabase_config() -> Result<(String, String), String> {
+pub fn read_supabase_config() -> Result<(String, String), String> {
     // Try env vars first (loaded from .env by dotenvy)
     if let (Ok(url), Ok(key)) = (
         std::env::var("SUPABASE_URL"),
@@ -71,7 +71,7 @@ fn read_supabase_config() -> Result<(String, String), String> {
 }
 
 /// Read access_token from ~/.c4/session.json
-fn read_auth_token() -> Result<String, String> {
+pub fn read_auth_token() -> Result<String, String> {
     let home = dirs::home_dir().ok_or("Could not find home directory")?;
     let session_path = home.join(".c4").join("session.json");
     if !session_path.exists() {
@@ -98,7 +98,7 @@ fn open_c4_db(project_path: &Path) -> Result<Connection, String> {
 }
 
 /// Build a blocking reqwest client with a 30-second timeout
-fn build_client() -> Result<reqwest::blocking::Client, String> {
+pub fn build_client() -> Result<reqwest::blocking::Client, String> {
     reqwest::blocking::Client::builder()
         .timeout(std::time::Duration::from_secs(30))
         .build()
@@ -107,7 +107,7 @@ fn build_client() -> Result<reqwest::blocking::Client, String> {
 
 /// Execute an HTTP request with exponential backoff retry (3 attempts, 1s/2s/4s).
 /// Only retries on network errors or 5xx server errors.
-fn retry_request<F>(max_attempts: u32, mut execute: F) -> Result<reqwest::blocking::Response, String>
+pub fn retry_request<F>(max_attempts: u32, mut execute: F) -> Result<reqwest::blocking::Response, String>
 where
     F: FnMut() -> Result<reqwest::blocking::Response, reqwest::Error>,
 {

@@ -1,259 +1,384 @@
 package handlers
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
 	"github.com/changmin/c4-core/internal/mcp"
 )
 
-// C1Handler provides HTTP client helpers for C1 Hub messaging operations.
+// C1Handler handles C1 (real-time collaboration) HTTP requests to Supabase.
 type C1Handler struct {
-	supabaseURL string
-	supabaseKey string
-	authToken   string
-	projectID   string
-	httpClient  *http.Client
+	baseURL    string       // Supabase PostgREST URL (e.g., https://xxx.supabase.co/rest/v1)
+	apiKey     string       // anon key
+	authToken  string       // user's JWT
+	projectID  string       // project ID for filtering
+	httpClient *http.Client
 }
 
-// NewC1Handler creates a C1Handler with the given Supabase credentials.
-func NewC1Handler(supabaseURL, supabaseKey, authToken, projectID string) *C1Handler {
+// NewC1Handler creates a new C1Handler.
+func NewC1Handler(baseURL, apiKey, authToken, projectID string) *C1Handler {
 	return &C1Handler{
-		supabaseURL: strings.TrimRight(supabaseURL, "/"),
-		supabaseKey: supabaseKey,
-		authToken:   authToken,
-		projectID:   projectID,
-		httpClient:  &http.Client{Timeout: 30 * time.Second},
+		baseURL:   strings.TrimRight(baseURL, "/"),
+		apiKey:    apiKey,
+		authToken: authToken,
+		projectID: projectID,
+		httpClient: &http.Client{
+			Timeout: 15 * time.Second,
+		},
 	}
 }
 
-// httpGet performs a GET request to the given path.
-func (h *C1Handler) httpGet(path string) ([]byte, error) {
-	url := h.supabaseURL + path
-	req, err := http.NewRequest("GET", url, nil)
-	if err != nil {
-		return nil, fmt.Errorf("creating request: %w", err)
+// c1MessageRow represents a message from c1_messages table.
+type c1MessageRow struct {
+	ID         string `json:"id"`
+	ChannelID  string `json:"channel_id"`
+	SenderName string `json:"sender_name"`
+	Content    string `json:"content"`
+	CreatedAt  string `json:"created_at"`
+}
+
+// c1ChannelRow represents a channel from c1_channels table.
+type c1ChannelRow struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+// c1ParticipantRow represents a participant from c1_participants table.
+type c1ParticipantRow struct {
+	AgentName  string `json:"agent_name"`
+	ChannelID  string `json:"channel_id"`
+	LastReadAt string `json:"last_read_at"`
+}
+
+// c1ChannelSummaryRow represents a summary from c1_channel_summaries table.
+type c1ChannelSummaryRow struct {
+	ChannelID     string `json:"channel_id"`
+	Summary       string `json:"summary"`
+	KeyDecisions  string `json:"key_decisions"`
+	OpenQuestions string `json:"open_questions"`
+}
+
+// httpGet performs a GET request and decodes JSON response.
+func (h *C1Handler) httpGet(table, filter string, dest any) error {
+	u := h.baseURL + "/" + table
+	if filter != "" {
+		u += "?" + filter
 	}
-	req.Header.Set("apikey", h.supabaseKey)
-	req.Header.Set("Authorization", "Bearer "+h.authToken)
-	req.Header.Set("Content-Type", "application/json")
+
+	req, err := http.NewRequest("GET", u, nil)
+	if err != nil {
+		return err
+	}
+	h.setHeaders(req)
 
 	resp, err := h.httpClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("GET %s: %w", path, err)
+		return fmt.Errorf("GET %s: %w", table, err)
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("reading response: %w", err)
-	}
-
 	if resp.StatusCode >= 400 {
-		return nil, fmt.Errorf("GET %s: status %d: %s", path, resp.StatusCode, string(body))
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("GET %s: %d %s", table, resp.StatusCode, string(body))
 	}
 
-	return body, nil
+	if dest != nil {
+		if err := json.NewDecoder(resp.Body).Decode(dest); err != nil {
+			return fmt.Errorf("decode %s: %w", table, err)
+		}
+	}
+	return nil
 }
 
-// httpPost performs a POST request to the given path with JSON body.
-func (h *C1Handler) httpPost(path string, body interface{}) ([]byte, error) {
-	jsonData, err := json.Marshal(body)
-	if err != nil {
-		return nil, fmt.Errorf("marshaling body: %w", err)
-	}
-
-	url := h.supabaseURL + path
-	req, err := http.NewRequest("POST", url, bytes.NewReader(jsonData))
-	if err != nil {
-		return nil, fmt.Errorf("creating request: %w", err)
-	}
-	req.Header.Set("apikey", h.supabaseKey)
-	req.Header.Set("Authorization", "Bearer "+h.authToken)
+// setHeaders sets required headers for Supabase PostgREST.
+func (h *C1Handler) setHeaders(req *http.Request) {
+	req.Header.Set("apikey", h.apiKey)
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Prefer", "return=representation")
-
-	resp, err := h.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("POST %s: %w", path, err)
+	if h.authToken != "" {
+		req.Header.Set("Authorization", "Bearer "+h.authToken)
 	}
-	defer resp.Body.Close()
-
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("reading response: %w", err)
-	}
-
-	if resp.StatusCode >= 400 {
-		return nil, fmt.Errorf("POST %s: status %d: %s", path, resp.StatusCode, string(respBody))
-	}
-
-	return respBody, nil
 }
 
-// ListChannels lists all channels for a project.
-func (h *C1Handler) ListChannels(args json.RawMessage) (interface{}, error) {
-	var params struct {
-		ProjectID string `json:"project_id"`
+// resolveChannelID returns channel ID for a given channel name.
+// Returns empty string if not found.
+func (h *C1Handler) resolveChannelID(channelName string) (string, error) {
+	var channels []c1ChannelRow
+	filter := fmt.Sprintf("project_id=eq.%s&name=eq.%s&select=id",
+		url.QueryEscape(h.projectID), url.QueryEscape(channelName))
+	if err := h.httpGet("c1_channels", filter, &channels); err != nil {
+		return "", err
 	}
-	if err := json.Unmarshal(args, &params); err != nil {
-		return nil, fmt.Errorf("parse args: %w", err)
-	}
-
-	projectID := params.ProjectID
-	if projectID == "" {
-		projectID = h.projectID
-	}
-	if projectID == "" {
-		return nil, fmt.Errorf("project_id is required")
-	}
-
-	path := fmt.Sprintf("/c1_channels?project_id=eq.%s&order=name&select=id,name,channel_type,metadata,created_at,updated_at", projectID)
-	respBody, err := h.httpGet(path)
-	if err != nil {
-		return nil, err
-	}
-
-	var channels []map[string]interface{}
-	if err := json.Unmarshal(respBody, &channels); err != nil {
-		return nil, fmt.Errorf("unmarshaling channels: %w", err)
-	}
-
-	return map[string]interface{}{
-		"project_id": projectID,
-		"count":      len(channels),
-		"channels":   channels,
-	}, nil
-}
-
-// CreateChannel creates a new channel and adds the creator as a participant.
-func (h *C1Handler) CreateChannel(args json.RawMessage) (interface{}, error) {
-	var params struct {
-		Name        string `json:"name"`
-		Description string `json:"description"`
-		ChannelType string `json:"channel_type"`
-		ProjectID   string `json:"project_id"`
-	}
-	if err := json.Unmarshal(args, &params); err != nil {
-		return nil, fmt.Errorf("parse args: %w", err)
-	}
-
-	if params.Name == "" {
-		return nil, fmt.Errorf("name is required")
-	}
-	if params.ChannelType == "" {
-		params.ChannelType = "topic"
-	}
-
-	projectID := params.ProjectID
-	if projectID == "" {
-		projectID = h.projectID
-	}
-	if projectID == "" {
-		return nil, fmt.Errorf("project_id is required")
-	}
-
-	// Build metadata with description if provided
-	metadata := make(map[string]interface{})
-	if params.Description != "" {
-		metadata["description"] = params.Description
-	}
-
-	// Create channel
-	channelBody := map[string]interface{}{
-		"project_id":   projectID,
-		"name":         params.Name,
-		"channel_type": params.ChannelType,
-		"metadata":     metadata,
-	}
-
-	respBody, err := h.httpPost("/c1_channels", channelBody)
-	if err != nil {
-		return nil, err
-	}
-
-	var channels []map[string]interface{}
-	if err := json.Unmarshal(respBody, &channels); err != nil {
-		return nil, fmt.Errorf("unmarshaling created channel: %w", err)
-	}
-
 	if len(channels) == 0 {
-		return nil, fmt.Errorf("no channel returned after creation")
+		return "", nil
+	}
+	return channels[0].ID, nil
+}
+
+// intOr returns a if a > 0, otherwise b.
+func intOr(a, b int) int {
+	if a > 0 {
+		return a
+	}
+	return b
+}
+
+// Search searches messages with FTS query, optional channel and date filter.
+func (h *C1Handler) Search(query, channelName, since string, limit int) (map[string]any, error) {
+	// Build filter
+	filters := []string{
+		fmt.Sprintf("project_id=eq.%s", url.QueryEscape(h.projectID)),
+		fmt.Sprintf("tsv=fts(english).%s", url.QueryEscape(query)),
 	}
 
-	channel := channels[0]
-	channelID, ok := channel["id"].(string)
-	if !ok {
-		return nil, fmt.Errorf("channel id not found in response")
+	// Optional channel filter
+	if channelName != "" {
+		channelID, err := h.resolveChannelID(channelName)
+		if err != nil {
+			return nil, fmt.Errorf("resolve channel: %w", err)
+		}
+		if channelID == "" {
+			return nil, fmt.Errorf("channel not found: %s", channelName)
+		}
+		filters = append(filters, fmt.Sprintf("channel_id=eq.%s", url.QueryEscape(channelID)))
 	}
 
-	// Add creator as participant (using "system" as default creator)
-	participantBody := map[string]interface{}{
-		"channel_id":     channelID,
-		"participant_id": "system",
+	// Optional date filter
+	if since != "" {
+		filters = append(filters, fmt.Sprintf("created_at=gte.%s", url.QueryEscape(since)))
 	}
 
-	_, err = h.httpPost("/c1_participants", participantBody)
-	if err != nil {
-		// Log error but don't fail the whole operation
-		return map[string]interface{}{
-			"status":              "created",
-			"channel":             channel,
-			"participant_warning": fmt.Sprintf("failed to add creator: %v", err),
-		}, nil
+	// Add select and ordering
+	filterStr := strings.Join(filters, "&") + "&select=id,channel_id,sender_name,content,created_at&order=created_at.desc"
+	if limit <= 0 {
+		limit = 50
+	}
+	filterStr += fmt.Sprintf("&limit=%d", limit)
+
+	var messages []c1MessageRow
+	if err := h.httpGet("c1_messages", filterStr, &messages); err != nil {
+		return nil, err
 	}
 
-	return map[string]interface{}{
-		"status":  "created",
-		"channel": channel,
+	// Convert to result format
+	results := make([]map[string]any, 0, len(messages))
+	for _, m := range messages {
+		results = append(results, map[string]any{
+			"id":          m.ID,
+			"channel_id":  m.ChannelID,
+			"sender_name": m.SenderName,
+			"content":     m.Content,
+			"created_at":  m.CreatedAt,
+		})
+	}
+
+	return map[string]any{
+		"count":   len(results),
+		"results": results,
 	}, nil
 }
 
-// RegisterC1Handlers registers C1 Hub MCP tools.
-func RegisterC1Handlers(reg *mcp.Registry, handler *C1Handler) {
-	reg.Register(mcp.ToolSchema{
-		Name:        "c1_list_channels",
-		Description: "List all channels for a project in C1 Hub",
-		InputSchema: map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"project_id": map[string]interface{}{
-					"type":        "string",
-					"description": "Project UUID (optional, uses config default if not provided)",
-				},
-			},
-		},
-	}, handler.ListChannels)
+// CheckMentions finds messages mentioning an agent, after their last_read_at.
+func (h *C1Handler) CheckMentions(agentName string) ([]map[string]any, error) {
+	// First get participant record to find last_read_at
+	var participants []c1ParticipantRow
+	filter := fmt.Sprintf("project_id=eq.%s&agent_name=eq.%s&select=channel_id,last_read_at",
+		url.QueryEscape(h.projectID), url.QueryEscape(agentName))
+	if err := h.httpGet("c1_participants", filter, &participants); err != nil {
+		return nil, fmt.Errorf("get participant: %w", err)
+	}
 
+	// Build mention filter
+	mentionPattern := fmt.Sprintf("*@%s*", agentName)
+	filters := []string{
+		fmt.Sprintf("project_id=eq.%s", url.QueryEscape(h.projectID)),
+		fmt.Sprintf("content=like.%s", url.QueryEscape(mentionPattern)),
+	}
+
+	// If participant exists, filter by last_read_at
+	if len(participants) > 0 && participants[0].LastReadAt != "" {
+		filters = append(filters, fmt.Sprintf("created_at=gt.%s", url.QueryEscape(participants[0].LastReadAt)))
+	}
+
+	filterStr := strings.Join(filters, "&") + "&select=id,channel_id,sender_name,content,created_at&order=created_at.desc&limit=50"
+
+	var messages []c1MessageRow
+	if err := h.httpGet("c1_messages", filterStr, &messages); err != nil {
+		return nil, err
+	}
+
+	// Get channel names for the messages
+	channelIDs := make(map[string]bool)
+	for _, m := range messages {
+		channelIDs[m.ChannelID] = true
+	}
+
+	channelIDList := make([]string, 0, len(channelIDs))
+	for id := range channelIDs {
+		channelIDList = append(channelIDList, id)
+	}
+
+	channelMap := make(map[string]string) // id -> name
+	if len(channelIDList) > 0 {
+		var channels []c1ChannelRow
+		channelFilter := fmt.Sprintf("id=in.(%s)&select=id,name", strings.Join(channelIDList, ","))
+		if err := h.httpGet("c1_channels", channelFilter, &channels); err == nil {
+			for _, ch := range channels {
+				channelMap[ch.ID] = ch.Name
+			}
+		}
+	}
+
+	// Format results
+	results := make([]map[string]any, 0, len(messages))
+	for _, m := range messages {
+		channelName := channelMap[m.ChannelID]
+		if channelName == "" {
+			channelName = m.ChannelID
+		}
+		results = append(results, map[string]any{
+			"channel_name": channelName,
+			"message":      m.Content,
+			"sender_name":  m.SenderName,
+			"created_at":   m.CreatedAt,
+		})
+	}
+
+	return results, nil
+}
+
+// GetBriefing returns channel summaries and recent messages for a project.
+func (h *C1Handler) GetBriefing() (map[string]any, error) {
+	// Get all channels for this project
+	var channels []c1ChannelRow
+	channelFilter := fmt.Sprintf("project_id=eq.%s&select=id,name", url.QueryEscape(h.projectID))
+	if err := h.httpGet("c1_channels", channelFilter, &channels); err != nil {
+		return nil, fmt.Errorf("get channels: %w", err)
+	}
+
+	channelMap := make(map[string]string) // id -> name
+	channelIDs := make([]string, 0, len(channels))
+	for _, ch := range channels {
+		channelMap[ch.ID] = ch.Name
+		channelIDs = append(channelIDs, ch.ID)
+	}
+
+	// Get summaries for all channels
+	summaries := make([]map[string]any, 0)
+	if len(channelIDs) > 0 {
+		var summaryRows []c1ChannelSummaryRow
+		summaryFilter := fmt.Sprintf("channel_id=in.(%s)&select=channel_id,summary,key_decisions,open_questions",
+			strings.Join(channelIDs, ","))
+		if err := h.httpGet("c1_channel_summaries", summaryFilter, &summaryRows); err == nil {
+			for _, s := range summaryRows {
+				summaries = append(summaries, map[string]any{
+					"channel_name":   channelMap[s.ChannelID],
+					"summary":        s.Summary,
+					"key_decisions":  s.KeyDecisions,
+					"open_questions": s.OpenQuestions,
+				})
+			}
+		}
+	}
+
+	// Get recent 10 messages across all channels
+	messageFilter := fmt.Sprintf("project_id=eq.%s&select=channel_id,sender_name,content,created_at&order=created_at.desc&limit=10",
+		url.QueryEscape(h.projectID))
+	var messages []c1MessageRow
+	if err := h.httpGet("c1_messages", messageFilter, &messages); err != nil {
+		return nil, fmt.Errorf("get recent messages: %w", err)
+	}
+
+	recentMessages := make([]map[string]any, 0, len(messages))
+	for _, m := range messages {
+		channelName := channelMap[m.ChannelID]
+		if channelName == "" {
+			channelName = m.ChannelID
+		}
+		recentMessages = append(recentMessages, map[string]any{
+			"channel_name": channelName,
+			"sender_name":  m.SenderName,
+			"content":      m.Content,
+			"created_at":   m.CreatedAt,
+		})
+	}
+
+	return map[string]any{
+		"channel_summaries": summaries,
+		"recent_messages":   recentMessages,
+	}, nil
+}
+
+// RegisterC1Handlers registers c1_* MCP tools.
+func RegisterC1Handlers(reg *mcp.Registry, handler *C1Handler) {
+	// c1_search — Full-text search across messages
 	reg.Register(mcp.ToolSchema{
-		Name:        "c1_create_channel",
-		Description: "Create a new channel in C1 Hub and add creator as participant",
-		InputSchema: map[string]interface{}{
+		Name:        "c1_search",
+		Description: "Search C1 messages with full-text query, optional channel and date filter",
+		InputSchema: map[string]any{
 			"type": "object",
-			"properties": map[string]interface{}{
-				"name": map[string]interface{}{
-					"type":        "string",
-					"description": "Channel name",
-				},
-				"description": map[string]interface{}{
-					"type":        "string",
-					"description": "Channel description (stored in metadata)",
-				},
-				"channel_type": map[string]interface{}{
-					"type":        "string",
-					"description": "Channel type: topic, dm, or auto (default: topic)",
-				},
-				"project_id": map[string]interface{}{
-					"type":        "string",
-					"description": "Project UUID (optional, uses config default if not provided)",
-				},
+			"properties": map[string]any{
+				"query":        map[string]any{"type": "string", "description": "Search query (full-text)"},
+				"channel_name": map[string]any{"type": "string", "description": "Optional channel name filter"},
+				"since":        map[string]any{"type": "string", "description": "Optional ISO 8601 date filter (e.g. 2026-02-14T00:00:00Z)"},
+				"limit":        map[string]any{"type": "integer", "description": "Max results (default: 50)"},
 			},
-			"required": []string{"name"},
+			"required": []string{"query"},
 		},
-	}, handler.CreateChannel)
+	}, func(raw json.RawMessage) (any, error) {
+		var args struct {
+			Query       string `json:"query"`
+			ChannelName string `json:"channel_name"`
+			Since       string `json:"since"`
+			Limit       int    `json:"limit"`
+		}
+		if err := json.Unmarshal(raw, &args); err != nil {
+			return nil, fmt.Errorf("parse args: %w", err)
+		}
+		if args.Query == "" {
+			return nil, fmt.Errorf("query is required")
+		}
+		return handler.Search(args.Query, args.ChannelName, args.Since, args.Limit)
+	})
+
+	// c1_check_mentions — Find mentions of an agent
+	reg.Register(mcp.ToolSchema{
+		Name:        "c1_check_mentions",
+		Description: "Check for messages mentioning an agent (after their last_read_at)",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"agent_name": map[string]any{"type": "string", "description": "Agent name to check mentions for"},
+			},
+			"required": []string{"agent_name"},
+		},
+	}, func(raw json.RawMessage) (any, error) {
+		var args struct {
+			AgentName string `json:"agent_name"`
+		}
+		if err := json.Unmarshal(raw, &args); err != nil {
+			return nil, fmt.Errorf("parse args: %w", err)
+		}
+		if args.AgentName == "" {
+			return nil, fmt.Errorf("agent_name is required")
+		}
+		return handler.CheckMentions(args.AgentName)
+	})
+
+	// c1_get_briefing — Get project briefing with summaries and recent messages
+	reg.Register(mcp.ToolSchema{
+		Name:        "c1_get_briefing",
+		Description: "Get project briefing: channel summaries and recent messages",
+		InputSchema: map[string]any{
+			"type":       "object",
+			"properties": map[string]any{},
+		},
+	}, func(raw json.RawMessage) (any, error) {
+		return handler.GetBriefing()
+	})
 }

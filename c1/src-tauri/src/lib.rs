@@ -8,6 +8,7 @@ pub mod auth;
 pub mod cloud;
 pub mod commands;
 pub mod layout;
+pub mod messaging;
 pub mod models;
 pub mod providers;
 pub mod realtime;
@@ -93,6 +94,14 @@ pub fn run() {
             auth::auth_logout,
             auth::auth_refresh,
             auth::auth_get_config,
+            // Messaging
+            messaging::list_channels,
+            messaging::get_channel_messages,
+            messaging::send_message,
+            messaging::search_messages,
+            messaging::mark_read,
+            messaging::create_channel,
+            messaging::get_channel_summary,
         ])
         .setup(|app| {
             // Log startup
