@@ -9,7 +9,7 @@
 - **Go MCP Server (Primary)** - 112 도구 (Base 86: state/task/file/git/discovery/artifact/lsp/knowledge/research/gpu/soul/team/twin/onboard/lighthouse/llm/cdp/c2/drive/c1), Registry-based, SQLite Store, JSON-RPC Bridge, LLM Gateway, CDP Runner, Hub Client
 - **C0 Drive** - Supabase 파일 저장소, metadata JSONB, c4_drive_mkdir 6개 도구, PostgREST URL 인코딩, server-side filtering
 - **C1 Context Hub** - Supabase 4 테이블 (channels/messages/participants/summaries), Go MCP 3 도구 (search/mentions/briefing), Context Keeper (LLM 요약), Agent 통합 (notifyKeeper 4-param), participant_id 추적
-- **C3 EventBus** - gRPC daemon (UDS transport) + Python sidecar response piggyback, task lifecycle wiring (completed/updated → channels)
+- **C3 EventBus** - gRPC daemon (UDS) + Python sidecar piggyback + CLI + Embedded auto-start + Event Replay (16 event types, 5 default rules)
 - **C1 Desktop App** - Tauri 2.x, 4개 프로바이더, Realtime WebSocket, 5-탭 UI (Sessions/Dashboard/Config/Documents/Channels)
 - **C1 Views** - SessionsView (provider 자동감지), ChannelsView (메시징 + Realtime + count 로직), DocumentsView (파일+마크다운 편집)
 - **Daemon Scheduler** - 로컬 작업 스케줄러, 13 REST API, GPU 할당, 소요시간 예측 (PiQ 대체)
@@ -38,31 +38,52 @@
 - **C1 Documents** - 마크다운 파일 편집기, 지속성 (persona/skill/spec/config)
 - **C3 EventBus** - gRPC daemon (UDS), Python sidecar piggyback, task lifecycle events
 - **코드베이스**: Go ~19K + Python 24K + C1 ~13K + Tests ~26K = **~82K LOC**
-- **테스트**: Go 819+ (17 pkgs, +52 eventbus) + Python 748+ + Rust 58 + Frontend 81 = **~1,706 tests**
+- **테스트**: Go 839+ (17 pkgs, +70 eventbus) + Python 748+ + Rust 58 + Frontend 81 = **~1,726 tests**
 
 ---
 
 ## 최신 추가사항 (2026-02-15)
 
-### C3 EventBus v1+v2 ✅
+### C3 EventBus v3 ✅
 
-**목표**: 이벤트 기반 아키텍처 — gRPC daemon + Python sidecar 통합
+**목표**: 완전한 이벤트 기반 아키텍처 — CLI + Replay + Rules 관리 + Auto-start
 
-- **C3 EventBus v1**: Go gRPC daemon (UDS transport)
-  - server.go — Event listeners, rules 실행 엔진
-  - client.go — Go MCP handlers에서 발행
-  - store.go — SQLite 이벤트 로그 (rules YAML)
-  - dispatcher.go — 이벤트 라우팅
-  - publisher.go — 규칙 기반 작업 실행
-- **C3 EventBus v2**: Python sidecar response piggyback
-  - EventCollector — 이벤트 추출 (응답 메타데이터)
-  - response piggyback 패턴 — grpcio 의존성 제거
-  - 5개 RPC 메서드에 emit 추가 (knowledge_record, gpu_status, job_submit 등)
-- **C1 task lifecycle wiring**: task.completed/updated → c1_channels 자동 전달
-  - notifyKeeper(eventType, taskID, title, workerID) 4호출지 연결
-  - EnsureChannel → NotifyTaskEvent async 포스팅
-- **테스트**: Go eventbus 25 + proxy 14 + Python events 9 + piggyback 4 = **52개 신규**
-- **결과**: Go 767→819+, Python 735→748+, 테스트 1,641→1,706+
+- **gRPC RPC 4개 신규**
+  - `ToggleRule(rule_id)` — 규칙 활성화/비활성화
+  - `ListLogs(filter)` — 이벤트 로그 조회 (시간/타입 필터)
+  - `GetStats()` — 통계 (이벤트 유형별, 규칙별)
+  - `ReplayEvents(start_time, end_time)` — 이벤트 재생 (디버깅)
+- **Store 메서드 7개 신규**
+  - `Purge(before)` — 오래된 로그 삭제
+  - `GetStats()` — 이벤트 유형별 통계
+- **Embedded auto-start**
+  - EventBus daemon UDS 자동 시작 (MCP 서버에 내장)
+  - `EnsureServer()` 호출 시 기존 서버 재사용
+- **CLI 전면 재작성** (`internal/eventbus/cmd/cli.go`)
+  - `logs [--filter="type:task.*"] [--limit=100]` — 로그 조회
+  - `rules [--list|--toggle rule_id]` — 규칙 관리
+  - `monitor --watch=5s` — 실시간 감시 (ticker)
+  - `status` — daemon 상태
+  - `replay --start=2h` — 이벤트 재생 + 재처리
+- **신규 이벤트 6종** (총 16→16 동일, 기존 10 + 신규 6)
+  - `checkpoint.approved`, `checkpoint.rejected`
+  - `review.changes_requested`
+  - `validation.passed`, `validation.failed`
+  - `knowledge.searched`
+- **Default rules YAML** (embedded)
+  - task.completed → #task-updates
+  - checkpoint.approved → #milestones
+  - review.changes_requested → #blocked
+  - validation.failed → #errors
+  - knowledge.searched → #insights
+- **테스트**: Go eventbus 34개 (RPC 테스트 포함) + handlers proxy 20개 = **~20개 추가**
+- **결과**: Go 819→839+, eventbus 테스트 52→70+, 이벤트 10→16종
+
+### C3 EventBus v1+v2 (이전)
+
+**요약**: gRPC daemon (UDS) + Python sidecar piggyback, task lifecycle wiring
+- **테스트**: Go eventbus 25 + proxy 14 + Python events 9 + piggyback 4 = 52개
+- **결과**: Go 767→819+, Python 735→748+
 
 ---
 
