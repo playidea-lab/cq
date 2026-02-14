@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func tempStore(t *testing.T) *Store {
@@ -236,6 +237,193 @@ func TestDuplicateRuleName(t *testing.T) {
 	_, err = s.AddRule("unique-name", "drive.*", "", "log", "", true, 0)
 	if err == nil {
 		t.Error("expected error on duplicate rule name")
+	}
+}
+
+func TestPurgeOldEvents(t *testing.T) {
+	s := tempStore(t)
+
+	// Store events
+	s.StoreEvent("test.old", "test", nil, "")
+	s.StoreEvent("test.new", "test", nil, "")
+
+	// Purge with 0 duration should remove all (since they're all "now")
+	// Actually let's purge with huge duration — should remove nothing
+	n, err := s.PurgeOldEvents(24 * time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 0 {
+		t.Errorf("expected 0 purged (all recent), got %d", n)
+	}
+
+	events, _ := s.ListEvents("", 10, 0)
+	if len(events) != 2 {
+		t.Errorf("expected 2 events remaining, got %d", len(events))
+	}
+}
+
+func TestPurgeByCount(t *testing.T) {
+	s := tempStore(t)
+
+	for i := 0; i < 5; i++ {
+		s.StoreEvent("test.event", "test", nil, "")
+	}
+
+	n, err := s.PurgeByCount(3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 2 {
+		t.Errorf("expected 2 purged, got %d", n)
+	}
+
+	events, _ := s.ListEvents("", 10, 0)
+	if len(events) != 3 {
+		t.Errorf("expected 3 events remaining, got %d", len(events))
+	}
+}
+
+func TestPurgeOldLogs(t *testing.T) {
+	s := tempStore(t)
+
+	s.LogDispatch("ev-1", "r-1", "ok", "", 10)
+	s.LogDispatch("ev-2", "r-1", "error", "fail", 20)
+
+	// All logs are recent, purge with 1h shouldn't remove any
+	n, err := s.PurgeOldLogs(time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 0 {
+		t.Errorf("expected 0 purged, got %d", n)
+	}
+}
+
+func TestEventStats(t *testing.T) {
+	s := tempStore(t)
+
+	s.StoreEvent("test.a", "test", nil, "")
+	s.StoreEvent("test.b", "test", nil, "")
+	s.AddRule("rule1", "*", "", "log", "", true, 0)
+	s.LogDispatch("ev-1", "r-1", "ok", "", 10)
+
+	stats, err := s.EventStats()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stats["event_count"] != 2 {
+		t.Errorf("expected event_count=2, got %v", stats["event_count"])
+	}
+	if stats["rule_count"] != 1 {
+		t.Errorf("expected rule_count=1, got %v", stats["rule_count"])
+	}
+	if stats["log_count"] != 1 {
+		t.Errorf("expected log_count=1, got %v", stats["log_count"])
+	}
+	if stats["oldest_event"] == "" {
+		t.Error("expected non-empty oldest_event")
+	}
+}
+
+func TestListLogs(t *testing.T) {
+	s := tempStore(t)
+
+	// Create a rule and dispatch to generate log entries
+	ruleID, _ := s.AddRule("log-rule", "*", "", "log", "", true, 0)
+	evID, _ := s.StoreEvent("test.event", "test", nil, "")
+	s.LogDispatch(evID, ruleID, "ok", "", 42)
+
+	logs, err := s.ListLogs("", 50, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(logs) != 1 {
+		t.Fatalf("expected 1 log, got %d", len(logs))
+	}
+	if logs[0].EventID != evID {
+		t.Errorf("expected event_id %s, got %s", evID, logs[0].EventID)
+	}
+	if logs[0].Status != "ok" {
+		t.Errorf("expected status ok, got %s", logs[0].Status)
+	}
+	if logs[0].DurationMs != 42 {
+		t.Errorf("expected duration 42, got %d", logs[0].DurationMs)
+	}
+}
+
+func TestListLogsFilterByEvent(t *testing.T) {
+	s := tempStore(t)
+
+	s.LogDispatch("ev-1", "r-1", "ok", "", 10)
+	s.LogDispatch("ev-2", "r-1", "ok", "", 20)
+	s.LogDispatch("ev-1", "r-2", "error", "fail", 30)
+
+	logs, err := s.ListLogs("ev-1", 50, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(logs) != 2 {
+		t.Errorf("expected 2 logs for ev-1, got %d", len(logs))
+	}
+}
+
+func TestListEventsASC(t *testing.T) {
+	s := tempStore(t)
+
+	s.StoreEvent("test.a", "test", nil, "")
+	s.StoreEvent("test.b", "test", nil, "")
+	s.StoreEvent("test.c", "test", nil, "")
+
+	events, err := s.ListEventsASC("", 0, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 3 {
+		t.Fatalf("expected 3 events, got %d", len(events))
+	}
+	// ASC order: first stored should come first
+	if events[0].Type != "test.a" {
+		t.Errorf("expected first event test.a, got %s", events[0].Type)
+	}
+	if events[2].Type != "test.c" {
+		t.Errorf("expected last event test.c, got %s", events[2].Type)
+	}
+}
+
+func TestEnsureDefaultRules(t *testing.T) {
+	s := tempStore(t)
+
+	yamlData := []byte(`rules:
+  - name: test-rule-1
+    event_pattern: "test.*"
+    action_type: log
+    enabled: true
+    priority: 100
+  - name: test-rule-2
+    event_pattern: "drive.*"
+    action_type: webhook
+    action_config: '{"url":"http://example.com"}'
+    enabled: false
+    priority: 50
+`)
+
+	// First call should add both rules
+	if err := s.EnsureDefaultRules(yamlData); err != nil {
+		t.Fatal(err)
+	}
+	rules, _ := s.ListRules()
+	if len(rules) != 2 {
+		t.Fatalf("expected 2 rules, got %d", len(rules))
+	}
+
+	// Second call should be idempotent — no duplicates
+	if err := s.EnsureDefaultRules(yamlData); err != nil {
+		t.Fatal(err)
+	}
+	rules, _ = s.ListRules()
+	if len(rules) != 2 {
+		t.Errorf("expected 2 rules after idempotent call, got %d", len(rules))
 	}
 }
 

@@ -605,6 +605,454 @@ func (x *RemoveRuleRequest) GetName() string {
 	return ""
 }
 
+// v3: ToggleRule (Step 1)
+type ToggleRuleRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Enabled       bool                   `protobuf:"varint,2,opt,name=enabled,proto3" json:"enabled,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ToggleRuleRequest) Reset() {
+	*x = ToggleRuleRequest{}
+	mi := &file_eventbus_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ToggleRuleRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ToggleRuleRequest) ProtoMessage() {}
+
+func (x *ToggleRuleRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_eventbus_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ToggleRuleRequest.ProtoReflect.Descriptor instead.
+func (*ToggleRuleRequest) Descriptor() ([]byte, []int) {
+	return file_eventbus_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *ToggleRuleRequest) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *ToggleRuleRequest) GetEnabled() bool {
+	if x != nil {
+		return x.Enabled
+	}
+	return false
+}
+
+// v3: ListLogs audit trail (Step 3)
+type LogEntry struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            int64                  `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
+	EventId       string                 `protobuf:"bytes,2,opt,name=event_id,json=eventId,proto3" json:"event_id,omitempty"`
+	RuleName      string                 `protobuf:"bytes,3,opt,name=rule_name,json=ruleName,proto3" json:"rule_name,omitempty"`
+	EventType     string                 `protobuf:"bytes,4,opt,name=event_type,json=eventType,proto3" json:"event_type,omitempty"`
+	Status        string                 `protobuf:"bytes,5,opt,name=status,proto3" json:"status,omitempty"`
+	Error         string                 `protobuf:"bytes,6,opt,name=error,proto3" json:"error,omitempty"`
+	DurationMs    int64                  `protobuf:"varint,7,opt,name=duration_ms,json=durationMs,proto3" json:"duration_ms,omitempty"`
+	TimestampMs   int64                  `protobuf:"varint,8,opt,name=timestamp_ms,json=timestampMs,proto3" json:"timestamp_ms,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *LogEntry) Reset() {
+	*x = LogEntry{}
+	mi := &file_eventbus_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LogEntry) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LogEntry) ProtoMessage() {}
+
+func (x *LogEntry) ProtoReflect() protoreflect.Message {
+	mi := &file_eventbus_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LogEntry.ProtoReflect.Descriptor instead.
+func (*LogEntry) Descriptor() ([]byte, []int) {
+	return file_eventbus_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *LogEntry) GetId() int64 {
+	if x != nil {
+		return x.Id
+	}
+	return 0
+}
+
+func (x *LogEntry) GetEventId() string {
+	if x != nil {
+		return x.EventId
+	}
+	return ""
+}
+
+func (x *LogEntry) GetRuleName() string {
+	if x != nil {
+		return x.RuleName
+	}
+	return ""
+}
+
+func (x *LogEntry) GetEventType() string {
+	if x != nil {
+		return x.EventType
+	}
+	return ""
+}
+
+func (x *LogEntry) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+func (x *LogEntry) GetError() string {
+	if x != nil {
+		return x.Error
+	}
+	return ""
+}
+
+func (x *LogEntry) GetDurationMs() int64 {
+	if x != nil {
+		return x.DurationMs
+	}
+	return 0
+}
+
+func (x *LogEntry) GetTimestampMs() int64 {
+	if x != nil {
+		return x.TimestampMs
+	}
+	return 0
+}
+
+type ListLogsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	EventId       string                 `protobuf:"bytes,1,opt,name=event_id,json=eventId,proto3" json:"event_id,omitempty"`  // optional: filter by event
+	Limit         int32                  `protobuf:"varint,2,opt,name=limit,proto3" json:"limit,omitempty"`                    // default: 50
+	SinceMs       int64                  `protobuf:"varint,3,opt,name=since_ms,json=sinceMs,proto3" json:"since_ms,omitempty"` // optional: only logs after this timestamp
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListLogsRequest) Reset() {
+	*x = ListLogsRequest{}
+	mi := &file_eventbus_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListLogsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListLogsRequest) ProtoMessage() {}
+
+func (x *ListLogsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_eventbus_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListLogsRequest.ProtoReflect.Descriptor instead.
+func (*ListLogsRequest) Descriptor() ([]byte, []int) {
+	return file_eventbus_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *ListLogsRequest) GetEventId() string {
+	if x != nil {
+		return x.EventId
+	}
+	return ""
+}
+
+func (x *ListLogsRequest) GetLimit() int32 {
+	if x != nil {
+		return x.Limit
+	}
+	return 0
+}
+
+func (x *ListLogsRequest) GetSinceMs() int64 {
+	if x != nil {
+		return x.SinceMs
+	}
+	return 0
+}
+
+type ListLogsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Logs          []*LogEntry            `protobuf:"bytes,1,rep,name=logs,proto3" json:"logs,omitempty"`
+	Total         int32                  `protobuf:"varint,2,opt,name=total,proto3" json:"total,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListLogsResponse) Reset() {
+	*x = ListLogsResponse{}
+	mi := &file_eventbus_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListLogsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListLogsResponse) ProtoMessage() {}
+
+func (x *ListLogsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_eventbus_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListLogsResponse.ProtoReflect.Descriptor instead.
+func (*ListLogsResponse) Descriptor() ([]byte, []int) {
+	return file_eventbus_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *ListLogsResponse) GetLogs() []*LogEntry {
+	if x != nil {
+		return x.Logs
+	}
+	return nil
+}
+
+func (x *ListLogsResponse) GetTotal() int32 {
+	if x != nil {
+		return x.Total
+	}
+	return 0
+}
+
+// v3: GetStats (Step 4)
+type GetStatsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetStatsRequest) Reset() {
+	*x = GetStatsRequest{}
+	mi := &file_eventbus_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetStatsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetStatsRequest) ProtoMessage() {}
+
+func (x *GetStatsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_eventbus_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetStatsRequest.ProtoReflect.Descriptor instead.
+func (*GetStatsRequest) Descriptor() ([]byte, []int) {
+	return file_eventbus_proto_rawDescGZIP(), []int{14}
+}
+
+type GetStatsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	EventCount    int32                  `protobuf:"varint,1,opt,name=event_count,json=eventCount,proto3" json:"event_count,omitempty"`
+	RuleCount     int32                  `protobuf:"varint,2,opt,name=rule_count,json=ruleCount,proto3" json:"rule_count,omitempty"`
+	LogCount      int32                  `protobuf:"varint,3,opt,name=log_count,json=logCount,proto3" json:"log_count,omitempty"`
+	OldestEvent   string                 `protobuf:"bytes,4,opt,name=oldest_event,json=oldestEvent,proto3" json:"oldest_event,omitempty"`
+	NewestEvent   string                 `protobuf:"bytes,5,opt,name=newest_event,json=newestEvent,proto3" json:"newest_event,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetStatsResponse) Reset() {
+	*x = GetStatsResponse{}
+	mi := &file_eventbus_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetStatsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetStatsResponse) ProtoMessage() {}
+
+func (x *GetStatsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_eventbus_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetStatsResponse.ProtoReflect.Descriptor instead.
+func (*GetStatsResponse) Descriptor() ([]byte, []int) {
+	return file_eventbus_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *GetStatsResponse) GetEventCount() int32 {
+	if x != nil {
+		return x.EventCount
+	}
+	return 0
+}
+
+func (x *GetStatsResponse) GetRuleCount() int32 {
+	if x != nil {
+		return x.RuleCount
+	}
+	return 0
+}
+
+func (x *GetStatsResponse) GetLogCount() int32 {
+	if x != nil {
+		return x.LogCount
+	}
+	return 0
+}
+
+func (x *GetStatsResponse) GetOldestEvent() string {
+	if x != nil {
+		return x.OldestEvent
+	}
+	return ""
+}
+
+func (x *GetStatsResponse) GetNewestEvent() string {
+	if x != nil {
+		return x.NewestEvent
+	}
+	return ""
+}
+
+// v3: ReplayEvents (Step 8)
+type ReplayRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	EventType     string                 `protobuf:"bytes,1,opt,name=event_type,json=eventType,proto3" json:"event_type,omitempty"` // optional: filter by type
+	SinceMs       int64                  `protobuf:"varint,2,opt,name=since_ms,json=sinceMs,proto3" json:"since_ms,omitempty"`      // optional: only events after this time
+	Limit         int32                  `protobuf:"varint,3,opt,name=limit,proto3" json:"limit,omitempty"`                         // max events to replay (default: 100)
+	DryRun        bool                   `protobuf:"varint,4,opt,name=dry_run,json=dryRun,proto3" json:"dry_run,omitempty"`         // if true, stream events without re-dispatching
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReplayRequest) Reset() {
+	*x = ReplayRequest{}
+	mi := &file_eventbus_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReplayRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReplayRequest) ProtoMessage() {}
+
+func (x *ReplayRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_eventbus_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReplayRequest.ProtoReflect.Descriptor instead.
+func (*ReplayRequest) Descriptor() ([]byte, []int) {
+	return file_eventbus_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *ReplayRequest) GetEventType() string {
+	if x != nil {
+		return x.EventType
+	}
+	return ""
+}
+
+func (x *ReplayRequest) GetSinceMs() int64 {
+	if x != nil {
+		return x.SinceMs
+	}
+	return 0
+}
+
+func (x *ReplayRequest) GetLimit() int32 {
+	if x != nil {
+		return x.Limit
+	}
+	return 0
+}
+
+func (x *ReplayRequest) GetDryRun() bool {
+	if x != nil {
+		return x.DryRun
+	}
+	return false
+}
+
 var File_eventbus_proto protoreflect.FileDescriptor
 
 const file_eventbus_proto_rawDesc = "" +
@@ -651,7 +1099,43 @@ const file_eventbus_proto_rawDesc = "" +
 	"\x05rules\x18\x01 \x03(\v2\x0e.eventbus.RuleR\x05rules\"7\n" +
 	"\x11RemoveRuleRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
-	"\x04name\x18\x02 \x01(\tR\x04name2\x82\x03\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\"A\n" +
+	"\x11ToggleRuleRequest\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x18\n" +
+	"\aenabled\x18\x02 \x01(\bR\aenabled\"\xe3\x01\n" +
+	"\bLogEntry\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x19\n" +
+	"\bevent_id\x18\x02 \x01(\tR\aeventId\x12\x1b\n" +
+	"\trule_name\x18\x03 \x01(\tR\bruleName\x12\x1d\n" +
+	"\n" +
+	"event_type\x18\x04 \x01(\tR\teventType\x12\x16\n" +
+	"\x06status\x18\x05 \x01(\tR\x06status\x12\x14\n" +
+	"\x05error\x18\x06 \x01(\tR\x05error\x12\x1f\n" +
+	"\vduration_ms\x18\a \x01(\x03R\n" +
+	"durationMs\x12!\n" +
+	"\ftimestamp_ms\x18\b \x01(\x03R\vtimestampMs\"]\n" +
+	"\x0fListLogsRequest\x12\x19\n" +
+	"\bevent_id\x18\x01 \x01(\tR\aeventId\x12\x14\n" +
+	"\x05limit\x18\x02 \x01(\x05R\x05limit\x12\x19\n" +
+	"\bsince_ms\x18\x03 \x01(\x03R\asinceMs\"P\n" +
+	"\x10ListLogsResponse\x12&\n" +
+	"\x04logs\x18\x01 \x03(\v2\x12.eventbus.LogEntryR\x04logs\x12\x14\n" +
+	"\x05total\x18\x02 \x01(\x05R\x05total\"\x11\n" +
+	"\x0fGetStatsRequest\"\xb5\x01\n" +
+	"\x10GetStatsResponse\x12\x1f\n" +
+	"\vevent_count\x18\x01 \x01(\x05R\n" +
+	"eventCount\x12\x1d\n" +
+	"\n" +
+	"rule_count\x18\x02 \x01(\x05R\truleCount\x12\x1b\n" +
+	"\tlog_count\x18\x03 \x01(\x05R\blogCount\x12!\n" +
+	"\foldest_event\x18\x04 \x01(\tR\voldestEvent\x12!\n" +
+	"\fnewest_event\x18\x05 \x01(\tR\vnewestEvent\"x\n" +
+	"\rReplayRequest\x12\x1d\n" +
+	"\n" +
+	"event_type\x18\x01 \x01(\tR\teventType\x12\x19\n" +
+	"\bsince_ms\x18\x02 \x01(\x03R\asinceMs\x12\x14\n" +
+	"\x05limit\x18\x03 \x01(\x05R\x05limit\x12\x17\n" +
+	"\adry_run\x18\x04 \x01(\bR\x06dryRun2\x87\x05\n" +
 	"\bEventBus\x125\n" +
 	"\aPublish\x12\x0f.eventbus.Event\x1a\x19.eventbus.PublishResponse\x12:\n" +
 	"\tSubscribe\x12\x1a.eventbus.SubscribeRequest\x1a\x0f.eventbus.Event0\x01\x12G\n" +
@@ -660,7 +1144,12 @@ const file_eventbus_proto_rawDesc = "" +
 	"\aAddRule\x12\x0e.eventbus.Rule\x1a\x16.eventbus.RuleResponse\x12D\n" +
 	"\tListRules\x12\x1a.eventbus.ListRulesRequest\x1a\x1b.eventbus.ListRulesResponse\x12A\n" +
 	"\n" +
-	"RemoveRule\x12\x1b.eventbus.RemoveRuleRequest\x1a\x16.eventbus.RuleResponseB2Z0github.com/changmin/c4-core/internal/eventbus/pbb\x06proto3"
+	"RemoveRule\x12\x1b.eventbus.RemoveRuleRequest\x1a\x16.eventbus.RuleResponse\x12A\n" +
+	"\n" +
+	"ToggleRule\x12\x1b.eventbus.ToggleRuleRequest\x1a\x16.eventbus.RuleResponse\x12A\n" +
+	"\bListLogs\x12\x19.eventbus.ListLogsRequest\x1a\x1a.eventbus.ListLogsResponse\x12A\n" +
+	"\bGetStats\x12\x19.eventbus.GetStatsRequest\x1a\x1a.eventbus.GetStatsResponse\x12:\n" +
+	"\fReplayEvents\x12\x17.eventbus.ReplayRequest\x1a\x0f.eventbus.Event0\x01B2Z0github.com/changmin/c4-core/internal/eventbus/pbb\x06proto3"
 
 var (
 	file_eventbus_proto_rawDescOnce sync.Once
@@ -674,7 +1163,7 @@ func file_eventbus_proto_rawDescGZIP() []byte {
 	return file_eventbus_proto_rawDescData
 }
 
-var file_eventbus_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
+var file_eventbus_proto_msgTypes = make([]protoimpl.MessageInfo, 17)
 var file_eventbus_proto_goTypes = []any{
 	(*Event)(nil),              // 0: eventbus.Event
 	(*PublishResponse)(nil),    // 1: eventbus.PublishResponse
@@ -686,27 +1175,43 @@ var file_eventbus_proto_goTypes = []any{
 	(*ListRulesRequest)(nil),   // 7: eventbus.ListRulesRequest
 	(*ListRulesResponse)(nil),  // 8: eventbus.ListRulesResponse
 	(*RemoveRuleRequest)(nil),  // 9: eventbus.RemoveRuleRequest
+	(*ToggleRuleRequest)(nil),  // 10: eventbus.ToggleRuleRequest
+	(*LogEntry)(nil),           // 11: eventbus.LogEntry
+	(*ListLogsRequest)(nil),    // 12: eventbus.ListLogsRequest
+	(*ListLogsResponse)(nil),   // 13: eventbus.ListLogsResponse
+	(*GetStatsRequest)(nil),    // 14: eventbus.GetStatsRequest
+	(*GetStatsResponse)(nil),   // 15: eventbus.GetStatsResponse
+	(*ReplayRequest)(nil),      // 16: eventbus.ReplayRequest
 }
 var file_eventbus_proto_depIdxs = []int32{
-	0, // 0: eventbus.ListEventsResponse.events:type_name -> eventbus.Event
-	5, // 1: eventbus.ListRulesResponse.rules:type_name -> eventbus.Rule
-	0, // 2: eventbus.EventBus.Publish:input_type -> eventbus.Event
-	2, // 3: eventbus.EventBus.Subscribe:input_type -> eventbus.SubscribeRequest
-	3, // 4: eventbus.EventBus.ListEvents:input_type -> eventbus.ListEventsRequest
-	5, // 5: eventbus.EventBus.AddRule:input_type -> eventbus.Rule
-	7, // 6: eventbus.EventBus.ListRules:input_type -> eventbus.ListRulesRequest
-	9, // 7: eventbus.EventBus.RemoveRule:input_type -> eventbus.RemoveRuleRequest
-	1, // 8: eventbus.EventBus.Publish:output_type -> eventbus.PublishResponse
-	0, // 9: eventbus.EventBus.Subscribe:output_type -> eventbus.Event
-	4, // 10: eventbus.EventBus.ListEvents:output_type -> eventbus.ListEventsResponse
-	6, // 11: eventbus.EventBus.AddRule:output_type -> eventbus.RuleResponse
-	8, // 12: eventbus.EventBus.ListRules:output_type -> eventbus.ListRulesResponse
-	6, // 13: eventbus.EventBus.RemoveRule:output_type -> eventbus.RuleResponse
-	8, // [8:14] is the sub-list for method output_type
-	2, // [2:8] is the sub-list for method input_type
-	2, // [2:2] is the sub-list for extension type_name
-	2, // [2:2] is the sub-list for extension extendee
-	0, // [0:2] is the sub-list for field type_name
+	0,  // 0: eventbus.ListEventsResponse.events:type_name -> eventbus.Event
+	5,  // 1: eventbus.ListRulesResponse.rules:type_name -> eventbus.Rule
+	11, // 2: eventbus.ListLogsResponse.logs:type_name -> eventbus.LogEntry
+	0,  // 3: eventbus.EventBus.Publish:input_type -> eventbus.Event
+	2,  // 4: eventbus.EventBus.Subscribe:input_type -> eventbus.SubscribeRequest
+	3,  // 5: eventbus.EventBus.ListEvents:input_type -> eventbus.ListEventsRequest
+	5,  // 6: eventbus.EventBus.AddRule:input_type -> eventbus.Rule
+	7,  // 7: eventbus.EventBus.ListRules:input_type -> eventbus.ListRulesRequest
+	9,  // 8: eventbus.EventBus.RemoveRule:input_type -> eventbus.RemoveRuleRequest
+	10, // 9: eventbus.EventBus.ToggleRule:input_type -> eventbus.ToggleRuleRequest
+	12, // 10: eventbus.EventBus.ListLogs:input_type -> eventbus.ListLogsRequest
+	14, // 11: eventbus.EventBus.GetStats:input_type -> eventbus.GetStatsRequest
+	16, // 12: eventbus.EventBus.ReplayEvents:input_type -> eventbus.ReplayRequest
+	1,  // 13: eventbus.EventBus.Publish:output_type -> eventbus.PublishResponse
+	0,  // 14: eventbus.EventBus.Subscribe:output_type -> eventbus.Event
+	4,  // 15: eventbus.EventBus.ListEvents:output_type -> eventbus.ListEventsResponse
+	6,  // 16: eventbus.EventBus.AddRule:output_type -> eventbus.RuleResponse
+	8,  // 17: eventbus.EventBus.ListRules:output_type -> eventbus.ListRulesResponse
+	6,  // 18: eventbus.EventBus.RemoveRule:output_type -> eventbus.RuleResponse
+	6,  // 19: eventbus.EventBus.ToggleRule:output_type -> eventbus.RuleResponse
+	13, // 20: eventbus.EventBus.ListLogs:output_type -> eventbus.ListLogsResponse
+	15, // 21: eventbus.EventBus.GetStats:output_type -> eventbus.GetStatsResponse
+	0,  // 22: eventbus.EventBus.ReplayEvents:output_type -> eventbus.Event
+	13, // [13:23] is the sub-list for method output_type
+	3,  // [3:13] is the sub-list for method input_type
+	3,  // [3:3] is the sub-list for extension type_name
+	3,  // [3:3] is the sub-list for extension extendee
+	0,  // [0:3] is the sub-list for field type_name
 }
 
 func init() { file_eventbus_proto_init() }
@@ -720,7 +1225,7 @@ func file_eventbus_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_eventbus_proto_rawDesc), len(file_eventbus_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   10,
+			NumMessages:   17,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

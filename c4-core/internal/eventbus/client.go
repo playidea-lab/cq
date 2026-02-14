@@ -162,3 +162,70 @@ func (c *Client) RemoveRule(id, name string) error {
 	})
 	return err
 }
+
+// ToggleRule enables or disables a rule by name.
+func (c *Client) ToggleRule(name string, enabled bool) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	_, err := c.client.ToggleRule(ctx, &pb.ToggleRuleRequest{
+		Name:    name,
+		Enabled: enabled,
+	})
+	return err
+}
+
+// ListLogs returns dispatch log entries with optional filters.
+func (c *Client) ListLogs(eventID string, limit int, sinceMs int64) ([]*pb.LogEntry, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	resp, err := c.client.ListLogs(ctx, &pb.ListLogsRequest{
+		EventId: eventID,
+		Limit:   int32(limit),
+		SinceMs: sinceMs,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return resp.Logs, nil
+}
+
+// GetStats returns aggregate eventbus statistics.
+func (c *Client) GetStats() (*pb.GetStatsResponse, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	return c.client.GetStats(ctx, &pb.GetStatsRequest{})
+}
+
+// ReplayEvents streams stored events, optionally re-dispatching them.
+func (c *Client) ReplayEvents(ctx context.Context, evType string, sinceMs int64, limit int, dryRun bool) (<-chan *pb.Event, error) {
+	stream, err := c.client.ReplayEvents(ctx, &pb.ReplayRequest{
+		EventType: evType,
+		SinceMs:   sinceMs,
+		Limit:     int32(limit),
+		DryRun:    dryRun,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	ch := make(chan *pb.Event, 64)
+	go func() {
+		defer close(ch)
+		for {
+			ev, err := stream.Recv()
+			if err != nil {
+				return
+			}
+			select {
+			case ch <- ev:
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+
+	return ch, nil
+}

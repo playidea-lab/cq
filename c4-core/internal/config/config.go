@@ -71,9 +71,12 @@ type ValidationConfig struct {
 
 // EventBusConfig holds C3 EventBus settings.
 type EventBusConfig struct {
-	Enabled    bool   `mapstructure:"enabled"     yaml:"enabled"`
-	SocketPath string `mapstructure:"socket_path" yaml:"socket_path"`
-	DataDir    string `mapstructure:"data_dir"    yaml:"data_dir"`
+	Enabled       bool   `mapstructure:"enabled"        yaml:"enabled"`
+	AutoStart     bool   `mapstructure:"auto_start"     yaml:"auto_start"`
+	SocketPath    string `mapstructure:"socket_path"    yaml:"socket_path"`
+	DataDir       string `mapstructure:"data_dir"       yaml:"data_dir"`
+	RetentionDays int    `mapstructure:"retention_days" yaml:"retention_days"` // 0 = no auto-purge
+	MaxEvents     int    `mapstructure:"max_events"     yaml:"max_events"`     // 0 = unlimited
 }
 
 // HubConfig holds PiQ Hub connection settings.
@@ -196,8 +199,11 @@ func New(projectRoot string) (*Manager, error) {
 	v.SetDefault("llm_gateway.enabled", false)
 	v.SetDefault("llm_gateway.default", "anthropic")
 	v.SetDefault("eventbus.enabled", false)
+	v.SetDefault("eventbus.auto_start", false)
 	v.SetDefault("eventbus.socket_path", "")
 	v.SetDefault("eventbus.data_dir", "")
+	v.SetDefault("eventbus.retention_days", 30)
+	v.SetDefault("eventbus.max_events", 10000)
 	v.SetDefault("hub.enabled", false)
 	v.SetDefault("hub.url", "")
 	v.SetDefault("hub.api_key_env", "C4_HUB_API_KEY")

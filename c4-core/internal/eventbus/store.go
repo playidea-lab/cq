@@ -10,6 +10,7 @@ import (
 	"time"
 
 	_ "modernc.org/sqlite"
+	"gopkg.in/yaml.v3"
 )
 
 // eventIDCounter ensures unique event IDs even within the same millisecond.
@@ -313,6 +314,222 @@ func (s *Store) LogDispatch(eventID, ruleID, status, errMsg string, durationMs i
 		VALUES (?, ?, ?, ?, ?, ?)`,
 		eventID, ruleID, status, errMsg, durationMs, now)
 	return err
+}
+
+// PurgeOldEvents removes events older than maxAge and returns the count deleted.
+func (s *Store) PurgeOldEvents(maxAge time.Duration) (int64, error) {
+	cutoff := time.Now().Add(-maxAge).UTC().Format(time.RFC3339Nano)
+	result, err := s.db.Exec(`DELETE FROM c4_events WHERE created_at < ?`, cutoff)
+	if err != nil {
+		return 0, fmt.Errorf("purge old events: %w", err)
+	}
+	return result.RowsAffected()
+}
+
+// PurgeByCount keeps only the newest maxCount events, deleting the rest.
+func (s *Store) PurgeByCount(maxCount int) (int64, error) {
+	result, err := s.db.Exec(`DELETE FROM c4_events WHERE id NOT IN (
+		SELECT id FROM c4_events ORDER BY created_at DESC LIMIT ?
+	)`, maxCount)
+	if err != nil {
+		return 0, fmt.Errorf("purge by count: %w", err)
+	}
+	return result.RowsAffected()
+}
+
+// PurgeOldLogs removes dispatch log entries older than maxAge.
+func (s *Store) PurgeOldLogs(maxAge time.Duration) (int64, error) {
+	cutoff := time.Now().Add(-maxAge).UTC().Format(time.RFC3339Nano)
+	result, err := s.db.Exec(`DELETE FROM c4_event_log WHERE created_at < ?`, cutoff)
+	if err != nil {
+		return 0, fmt.Errorf("purge old logs: %w", err)
+	}
+	return result.RowsAffected()
+}
+
+// EventStats returns aggregate statistics about events, rules, and logs.
+func (s *Store) EventStats() (map[string]any, error) {
+	stats := map[string]any{}
+
+	var eventCount, ruleCount, logCount int
+	s.db.QueryRow(`SELECT COUNT(*) FROM c4_events`).Scan(&eventCount)
+	s.db.QueryRow(`SELECT COUNT(*) FROM c4_event_rules`).Scan(&ruleCount)
+	s.db.QueryRow(`SELECT COUNT(*) FROM c4_event_log`).Scan(&logCount)
+
+	stats["event_count"] = eventCount
+	stats["rule_count"] = ruleCount
+	stats["log_count"] = logCount
+
+	var oldest, newest sql.NullString
+	s.db.QueryRow(`SELECT MIN(created_at) FROM c4_events`).Scan(&oldest)
+	s.db.QueryRow(`SELECT MAX(created_at) FROM c4_events`).Scan(&newest)
+
+	if oldest.Valid {
+		stats["oldest_event"] = oldest.String
+	} else {
+		stats["oldest_event"] = ""
+	}
+	if newest.Valid {
+		stats["newest_event"] = newest.String
+	} else {
+		stats["newest_event"] = ""
+	}
+
+	return stats, nil
+}
+
+// ListLogs returns dispatch log entries with optional filters.
+func (s *Store) ListLogs(eventID string, limit int, sinceMs int64) ([]StoredLog, error) {
+	query := `SELECT l.id, l.event_id, COALESCE(r.name,''), COALESCE(e.type,''),
+		l.status, l.error, l.duration_ms, l.created_at
+		FROM c4_event_log l
+		LEFT JOIN c4_event_rules r ON l.rule_id = r.id
+		LEFT JOIN c4_events e ON l.event_id = e.id`
+	args := []any{}
+	clauses := []string{}
+
+	if eventID != "" {
+		clauses = append(clauses, "l.event_id = ?")
+		args = append(args, eventID)
+	}
+	if sinceMs > 0 {
+		since := time.UnixMilli(sinceMs).UTC().Format(time.RFC3339Nano)
+		clauses = append(clauses, "l.created_at >= ?")
+		args = append(args, since)
+	}
+	if len(clauses) > 0 {
+		query += " WHERE " + clauses[0]
+		for _, c := range clauses[1:] {
+			query += " AND " + c
+		}
+	}
+	query += " ORDER BY l.id DESC"
+	if limit <= 0 {
+		limit = 50
+	}
+	query += fmt.Sprintf(" LIMIT %d", limit)
+
+	rows, err := s.db.Query(query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list logs: %w", err)
+	}
+	defer rows.Close()
+
+	var logs []StoredLog
+	for rows.Next() {
+		var l StoredLog
+		var createdAt string
+		if err := rows.Scan(&l.ID, &l.EventID, &l.RuleName, &l.EventType,
+			&l.Status, &l.Error, &l.DurationMs, &createdAt); err != nil {
+			return nil, err
+		}
+		l.CreatedAt, _ = time.Parse(time.RFC3339Nano, createdAt)
+		logs = append(logs, l)
+	}
+	return logs, rows.Err()
+}
+
+// ListEventsASC returns events in ascending order (for replay).
+func (s *Store) ListEventsASC(evType string, sinceMs int64, limit int) ([]StoredEvent, error) {
+	query := `SELECT id, type, source, data, project_id, created_at, processed FROM c4_events`
+	args := []any{}
+	clauses := []string{}
+
+	if evType != "" {
+		clauses = append(clauses, "type = ?")
+		args = append(args, evType)
+	}
+	if sinceMs > 0 {
+		since := time.UnixMilli(sinceMs).UTC().Format(time.RFC3339Nano)
+		clauses = append(clauses, "created_at >= ?")
+		args = append(args, since)
+	}
+	if len(clauses) > 0 {
+		query += " WHERE " + clauses[0]
+		for _, c := range clauses[1:] {
+			query += " AND " + c
+		}
+	}
+	query += " ORDER BY created_at ASC"
+	if limit <= 0 {
+		limit = 100
+	}
+	query += fmt.Sprintf(" LIMIT %d", limit)
+
+	rows, err := s.db.Query(query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list events asc: %w", err)
+	}
+	defer rows.Close()
+
+	var events []StoredEvent
+	for rows.Next() {
+		var e StoredEvent
+		var createdAt string
+		var dataStr string
+		var processed int
+		if err := rows.Scan(&e.ID, &e.Type, &e.Source, &dataStr, &e.ProjectID, &createdAt, &processed); err != nil {
+			return nil, err
+		}
+		e.Data = json.RawMessage(dataStr)
+		e.CreatedAt, _ = time.Parse(time.RFC3339Nano, createdAt)
+		e.Processed = processed != 0
+		events = append(events, e)
+	}
+	return events, rows.Err()
+}
+
+// EnsureDefaultRules loads rules from a YAML file, adding any that don't already exist (by name).
+func (s *Store) EnsureDefaultRules(yamlData []byte) error {
+	type ruleYAML struct {
+		Name         string `yaml:"name"          json:"name"`
+		EventPattern string `yaml:"event_pattern" json:"event_pattern"`
+		FilterJSON   string `yaml:"filter_json"   json:"filter_json"`
+		ActionType   string `yaml:"action_type"   json:"action_type"`
+		ActionConfig string `yaml:"action_config" json:"action_config"`
+		Enabled      bool   `yaml:"enabled"       json:"enabled"`
+		Priority     int    `yaml:"priority"      json:"priority"`
+	}
+	type rulesFile struct {
+		Rules []ruleYAML `yaml:"rules" json:"rules"`
+	}
+
+	var rf rulesFile
+	if err := yaml.Unmarshal(yamlData, &rf); err != nil {
+		return fmt.Errorf("parse default rules: %w", err)
+	}
+
+	// Get existing rule names
+	existing, err := s.ListRules()
+	if err != nil {
+		return err
+	}
+	nameSet := make(map[string]bool, len(existing))
+	for _, r := range existing {
+		nameSet[r.Name] = true
+	}
+
+	for _, r := range rf.Rules {
+		if nameSet[r.Name] {
+			continue
+		}
+		if _, err := s.AddRule(r.Name, r.EventPattern, r.FilterJSON, r.ActionType, r.ActionConfig, r.Enabled, r.Priority); err != nil {
+			fmt.Fprintf(os.Stderr, "c4: eventbus: default rule %q: %v\n", r.Name, err)
+		}
+	}
+	return nil
+}
+
+// StoredLog represents a persisted dispatch log entry.
+type StoredLog struct {
+	ID         int64
+	EventID    string
+	RuleName   string
+	EventType  string
+	Status     string
+	Error      string
+	DurationMs int64
+	CreatedAt  time.Time
 }
 
 // matchPattern checks if eventType matches a glob pattern.

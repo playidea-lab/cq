@@ -16,3 +16,38 @@ rules:
     action_config: '{"method": "C2ParseDocument", "args_template": {"file_path": "{{data.path}}"}}'
     enabled: true
     priority: 100
+
+  - name: c1-task-updates
+    event_pattern: "task.*"
+    action_type: c1_post
+    action_config: '{"channel":"#updates","template":"[{{event_type}}] {{task_id}}: {{title}}"}'
+    enabled: true
+    priority: 50
+
+  - name: c1-drive-events
+    event_pattern: "drive.*"
+    action_type: c1_post
+    action_config: '{"channel":"#drive","template":"[drive] {{event_type}}: {{path}}"}'
+    enabled: true
+    priority: 50
+
+  - name: c1-research-events
+    event_pattern: "research.*"
+    action_type: c1_post
+    action_config: '{"channel":"#research","template":"[research] {{event_type}}"}'
+    enabled: true
+    priority: 50
+
+  - name: c1-checkpoint-events
+    event_pattern: "checkpoint.*"
+    action_type: c1_post
+    action_config: '{"channel":"#updates","template":"[checkpoint] {{decision}}: {{checkpoint_id}}"}'
+    enabled: true
+    priority: 50
+
+  - name: c1-validation-events
+    event_pattern: "validation.*"
+    action_type: c1_post
+    action_config: '{"channel":"#updates","template":"[validation] {{event_type}}: {{name}}"}'
+    enabled: true
+    priority: 50

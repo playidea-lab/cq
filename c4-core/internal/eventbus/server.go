@@ -199,6 +199,113 @@ func (s *Server) RemoveRule(ctx context.Context, req *pb.RemoveRuleRequest) (*pb
 	return &pb.RuleResponse{Ok: true}, nil
 }
 
+// ToggleRule enables or disables a rule by name.
+func (s *Server) ToggleRule(ctx context.Context, req *pb.ToggleRuleRequest) (*pb.RuleResponse, error) {
+	if req.Name == "" {
+		return nil, status.Error(codes.InvalidArgument, "rule name is required")
+	}
+
+	if err := s.store.ToggleRule(req.Name, req.Enabled); err != nil {
+		return nil, status.Errorf(codes.NotFound, "toggle rule: %v", err)
+	}
+
+	return &pb.RuleResponse{Ok: true}, nil
+}
+
+// ListLogs returns dispatch log entries with optional filters.
+func (s *Server) ListLogs(ctx context.Context, req *pb.ListLogsRequest) (*pb.ListLogsResponse, error) {
+	limit := int(req.Limit)
+	if limit <= 0 {
+		limit = 50
+	}
+
+	logs, err := s.store.ListLogs(req.EventId, limit, req.SinceMs)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "list logs: %v", err)
+	}
+
+	pbLogs := make([]*pb.LogEntry, 0, len(logs))
+	for _, l := range logs {
+		pbLogs = append(pbLogs, &pb.LogEntry{
+			Id:          l.ID,
+			EventId:     l.EventID,
+			RuleName:    l.RuleName,
+			EventType:   l.EventType,
+			Status:      l.Status,
+			Error:       l.Error,
+			DurationMs:  l.DurationMs,
+			TimestampMs: l.CreatedAt.UnixMilli(),
+		})
+	}
+
+	return &pb.ListLogsResponse{
+		Logs:  pbLogs,
+		Total: int32(len(pbLogs)),
+	}, nil
+}
+
+// GetStats returns aggregate statistics about the eventbus.
+func (s *Server) GetStats(ctx context.Context, req *pb.GetStatsRequest) (*pb.GetStatsResponse, error) {
+	stats, err := s.store.EventStats()
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "get stats: %v", err)
+	}
+
+	resp := &pb.GetStatsResponse{}
+	if v, ok := stats["event_count"].(int); ok {
+		resp.EventCount = int32(v)
+	}
+	if v, ok := stats["rule_count"].(int); ok {
+		resp.RuleCount = int32(v)
+	}
+	if v, ok := stats["log_count"].(int); ok {
+		resp.LogCount = int32(v)
+	}
+	if v, ok := stats["oldest_event"].(string); ok {
+		resp.OldestEvent = v
+	}
+	if v, ok := stats["newest_event"].(string); ok {
+		resp.NewestEvent = v
+	}
+
+	return resp, nil
+}
+
+// ReplayEvents streams stored events and optionally re-dispatches them.
+func (s *Server) ReplayEvents(req *pb.ReplayRequest, stream pb.EventBus_ReplayEventsServer) error {
+	limit := int(req.Limit)
+	if limit <= 0 {
+		limit = 100
+	}
+
+	events, err := s.store.ListEventsASC(req.EventType, req.SinceMs, limit)
+	if err != nil {
+		return status.Errorf(codes.Internal, "list events for replay: %v", err)
+	}
+
+	for _, e := range events {
+		pbEvent := &pb.Event{
+			Id:          e.ID,
+			Type:        e.Type,
+			Source:      e.Source,
+			Data:        []byte(e.Data),
+			ProjectId:   e.ProjectID,
+			TimestampMs: e.CreatedAt.UnixMilli(),
+		}
+
+		if err := stream.Send(pbEvent); err != nil {
+			return err
+		}
+
+		// Re-dispatch if not dry_run
+		if !req.DryRun && s.dispatcher != nil {
+			s.dispatcher.DispatchSync(e.ID, e.Type, e.Data)
+		}
+	}
+
+	return nil
+}
+
 func (s *Server) addSubscriber(pattern string, ch chan *pb.Event) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

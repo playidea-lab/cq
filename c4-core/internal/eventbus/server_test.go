@@ -217,6 +217,191 @@ func TestServerSubscribe(t *testing.T) {
 	}
 }
 
+func TestServerToggleRule(t *testing.T) {
+	client, cleanup := startTestServer(t)
+	defer cleanup()
+
+	ctx := context.Background()
+
+	// Add a rule
+	_, err := client.AddRule(ctx, &pb.Rule{
+		Name: "toggle-me", EventPattern: "test.*", ActionType: "log", Enabled: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Toggle off
+	resp, err := client.ToggleRule(ctx, &pb.ToggleRuleRequest{Name: "toggle-me", Enabled: false})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !resp.Ok {
+		t.Error("expected ok=true")
+	}
+
+	// Verify disabled
+	rules, _ := client.ListRules(ctx, &pb.ListRulesRequest{})
+	if len(rules.Rules) != 1 || rules.Rules[0].Enabled {
+		t.Error("expected rule to be disabled")
+	}
+
+	// Toggle on
+	_, err = client.ToggleRule(ctx, &pb.ToggleRuleRequest{Name: "toggle-me", Enabled: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rules, _ = client.ListRules(ctx, &pb.ListRulesRequest{})
+	if !rules.Rules[0].Enabled {
+		t.Error("expected rule to be enabled")
+	}
+}
+
+func TestServerToggleRuleNotFound(t *testing.T) {
+	client, cleanup := startTestServer(t)
+	defer cleanup()
+
+	_, err := client.ToggleRule(context.Background(), &pb.ToggleRuleRequest{Name: "nonexistent"})
+	if err == nil {
+		t.Error("expected error for nonexistent rule")
+	}
+}
+
+func TestServerListLogs(t *testing.T) {
+	client, cleanup := startTestServer(t)
+	defer cleanup()
+
+	ctx := context.Background()
+
+	// Add a log rule
+	_, _ = client.AddRule(ctx, &pb.Rule{
+		Name: "log-for-audit", EventPattern: "*", ActionType: "log", Enabled: true,
+	})
+
+	// Publish an event (triggers dispatch)
+	_, _ = client.Publish(ctx, &pb.Event{
+		Type: "test.audit", Source: "unit-test", Data: []byte(`{}`),
+	})
+
+	// Wait for async dispatch
+	time.Sleep(100 * time.Millisecond)
+
+	// List logs
+	logsResp, err := client.ListLogs(ctx, &pb.ListLogsRequest{Limit: 50})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if logsResp.Total < 1 {
+		t.Errorf("expected at least 1 log entry, got %d", logsResp.Total)
+	}
+}
+
+func TestServerGetStats(t *testing.T) {
+	client, cleanup := startTestServer(t)
+	defer cleanup()
+
+	ctx := context.Background()
+
+	// Publish some events
+	client.Publish(ctx, &pb.Event{Type: "test.a", Source: "test", Data: []byte(`{}`)})
+	client.Publish(ctx, &pb.Event{Type: "test.b", Source: "test", Data: []byte(`{}`)})
+	client.AddRule(ctx, &pb.Rule{Name: "stat-rule", EventPattern: "*", ActionType: "log", Enabled: true})
+
+	stats, err := client.GetStats(ctx, &pb.GetStatsRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stats.EventCount < 2 {
+		t.Errorf("expected event_count >= 2, got %d", stats.EventCount)
+	}
+	if stats.RuleCount < 1 {
+		t.Errorf("expected rule_count >= 1, got %d", stats.RuleCount)
+	}
+}
+
+func TestServerReplayEvents(t *testing.T) {
+	client, cleanup := startTestServer(t)
+	defer cleanup()
+
+	ctx := context.Background()
+
+	// Publish events
+	client.Publish(ctx, &pb.Event{Type: "test.replay", Source: "test", Data: []byte(`{"n":1}`)})
+	client.Publish(ctx, &pb.Event{Type: "test.replay", Source: "test", Data: []byte(`{"n":2}`)})
+	client.Publish(ctx, &pb.Event{Type: "test.other", Source: "test", Data: []byte(`{"n":3}`)})
+
+	// Replay with type filter + dry_run
+	rctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+
+	stream, err := client.ReplayEvents(rctx, &pb.ReplayRequest{
+		EventType: "test.replay",
+		DryRun:    true,
+		Limit:     10,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var replayed []*pb.Event
+	for {
+		ev, err := stream.Recv()
+		if err != nil {
+			break
+		}
+		replayed = append(replayed, ev)
+	}
+
+	if len(replayed) != 2 {
+		t.Errorf("expected 2 replayed events, got %d", len(replayed))
+	}
+}
+
+func TestServerReplayDryRun(t *testing.T) {
+	client, cleanup := startTestServer(t)
+	defer cleanup()
+
+	ctx := context.Background()
+
+	// Add a log rule to detect dispatch
+	client.AddRule(ctx, &pb.Rule{
+		Name: "replay-check", EventPattern: "test.*", ActionType: "log", Enabled: true,
+	})
+
+	// Publish one event
+	client.Publish(ctx, &pb.Event{Type: "test.dry", Source: "test", Data: []byte(`{}`)})
+	time.Sleep(100 * time.Millisecond)
+
+	// Check initial log count
+	stats1, _ := client.GetStats(ctx, &pb.GetStatsRequest{})
+	initialLogs := stats1.LogCount
+
+	// Replay with dry_run=true — should NOT create additional dispatch logs
+	rctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+
+	stream, _ := client.ReplayEvents(rctx, &pb.ReplayRequest{
+		EventType: "test.dry",
+		DryRun:    true,
+		Limit:     10,
+	})
+
+	for {
+		_, err := stream.Recv()
+		if err != nil {
+			break
+		}
+	}
+
+	time.Sleep(100 * time.Millisecond)
+	stats2, _ := client.GetStats(ctx, &pb.GetStatsRequest{})
+
+	if stats2.LogCount != initialLogs {
+		t.Errorf("dry_run should not create new logs: before=%d, after=%d", initialLogs, stats2.LogCount)
+	}
+}
+
 func TestServerPublishWithRule(t *testing.T) {
 	client, cleanup := startTestServer(t)
 	defer cleanup()

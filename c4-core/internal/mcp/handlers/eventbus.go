@@ -244,36 +244,8 @@ func RegisterEventBusHandlers(reg *mcp.Registry, client *eventbus.Client) {
 			return nil, fmt.Errorf("name is required")
 		}
 
-		// Toggle is a local store operation, but through gRPC we use remove+add
-		// For now, use a direct rule add with updated enabled flag via the gRPC client
-		// Actually, the gRPC API doesn't have a Toggle method — we'll call RemoveRule + AddRule
-		// But that's lossy. Better approach: directly toggle via a custom approach.
-
-		// Since the gRPC API doesn't expose toggle, we'll list rules, find by name,
-		// remove, and re-add with the new enabled state.
-		rules, err := client.ListRules()
-		if err != nil {
-			return nil, fmt.Errorf("list rules: %w", err)
-		}
-
-		var found bool
-		for _, r := range rules {
-			if r.Name == args.Name {
-				found = true
-				// Remove and re-add with updated enabled
-				if err := client.RemoveRule(r.Id, ""); err != nil {
-					return nil, fmt.Errorf("remove rule for toggle: %w", err)
-				}
-				_, err := client.AddRule(r.Name, r.EventPattern, r.FilterJson, r.ActionType, r.ActionConfig, args.Enabled, int(r.Priority))
-				if err != nil {
-					return nil, fmt.Errorf("re-add rule for toggle: %w", err)
-				}
-				break
-			}
-		}
-
-		if !found {
-			return nil, fmt.Errorf("rule %q not found", args.Name)
+		if err := client.ToggleRule(args.Name, args.Enabled); err != nil {
+			return nil, fmt.Errorf("toggle rule: %w", err)
 		}
 
 		state := "enabled"

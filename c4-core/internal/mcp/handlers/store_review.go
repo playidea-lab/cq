@@ -50,6 +50,19 @@ func (s *SQLiteStore) Checkpoint(checkpointID, decision, notes string, requiredC
 		fmt.Fprintf(os.Stderr, "c4: checkpoint INSERT %s: %v\n", checkpointID, err)
 	}
 
+	// Publish checkpoint event
+	switch decision {
+	case "APPROVE":
+		s.notifyEventBus("checkpoint.approved", map[string]any{
+			"checkpoint_id": checkpointID, "decision": "APPROVE", "notes": notes,
+		})
+	case "REQUEST_CHANGES", "REPLAN":
+		s.notifyEventBus("checkpoint.rejected", map[string]any{
+			"checkpoint_id": checkpointID, "decision": decision, "notes": notes,
+			"required_changes": requiredChanges,
+		})
+	}
+
 	result := &CheckpointResult{
 		Success: true,
 		Message: fmt.Sprintf("Checkpoint %s: %s", checkpointID, decision),
@@ -150,6 +163,15 @@ func (s *SQLiteStore) RequestChanges(reviewTaskID string, comments string, requi
 	}); err != nil {
 		return nil, fmt.Errorf("creating review task %s: %w", nextReviewID, err)
 	}
+
+	// Publish review.changes_requested event
+	s.notifyEventBus("review.changes_requested", map[string]any{
+		"review_task_id": reviewTaskID,
+		"next_task_id":   nextTaskID,
+		"next_review_id": nextReviewID,
+		"version":        nextVersion,
+		"comments":       comments,
+	})
 
 	return &RequestChangesResult{
 		Success:      true,

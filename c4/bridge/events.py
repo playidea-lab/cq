@@ -24,6 +24,7 @@ C2_TEXT_EXTRACTED = "c2.text.extracted"
 KNOWLEDGE_RECORDED = "knowledge.recorded"
 RESEARCH_STARTED = "research.started"
 RESEARCH_RECORDED = "research.recorded"
+KNOWLEDGE_SEARCHED = "knowledge.searched"
 
 # Source identifiers
 SRC_C2 = "c4.c2"

@@ -19,12 +19,16 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	EventBus_Publish_FullMethodName    = "/eventbus.EventBus/Publish"
-	EventBus_Subscribe_FullMethodName  = "/eventbus.EventBus/Subscribe"
-	EventBus_ListEvents_FullMethodName = "/eventbus.EventBus/ListEvents"
-	EventBus_AddRule_FullMethodName    = "/eventbus.EventBus/AddRule"
-	EventBus_ListRules_FullMethodName  = "/eventbus.EventBus/ListRules"
-	EventBus_RemoveRule_FullMethodName = "/eventbus.EventBus/RemoveRule"
+	EventBus_Publish_FullMethodName      = "/eventbus.EventBus/Publish"
+	EventBus_Subscribe_FullMethodName    = "/eventbus.EventBus/Subscribe"
+	EventBus_ListEvents_FullMethodName   = "/eventbus.EventBus/ListEvents"
+	EventBus_AddRule_FullMethodName      = "/eventbus.EventBus/AddRule"
+	EventBus_ListRules_FullMethodName    = "/eventbus.EventBus/ListRules"
+	EventBus_RemoveRule_FullMethodName   = "/eventbus.EventBus/RemoveRule"
+	EventBus_ToggleRule_FullMethodName   = "/eventbus.EventBus/ToggleRule"
+	EventBus_ListLogs_FullMethodName     = "/eventbus.EventBus/ListLogs"
+	EventBus_GetStats_FullMethodName     = "/eventbus.EventBus/GetStats"
+	EventBus_ReplayEvents_FullMethodName = "/eventbus.EventBus/ReplayEvents"
 )
 
 // EventBusClient is the client API for EventBus service.
@@ -37,6 +41,10 @@ type EventBusClient interface {
 	AddRule(ctx context.Context, in *Rule, opts ...grpc.CallOption) (*RuleResponse, error)
 	ListRules(ctx context.Context, in *ListRulesRequest, opts ...grpc.CallOption) (*ListRulesResponse, error)
 	RemoveRule(ctx context.Context, in *RemoveRuleRequest, opts ...grpc.CallOption) (*RuleResponse, error)
+	ToggleRule(ctx context.Context, in *ToggleRuleRequest, opts ...grpc.CallOption) (*RuleResponse, error)
+	ListLogs(ctx context.Context, in *ListLogsRequest, opts ...grpc.CallOption) (*ListLogsResponse, error)
+	GetStats(ctx context.Context, in *GetStatsRequest, opts ...grpc.CallOption) (*GetStatsResponse, error)
+	ReplayEvents(ctx context.Context, in *ReplayRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[Event], error)
 }
 
 type eventBusClient struct {
@@ -116,6 +124,55 @@ func (c *eventBusClient) RemoveRule(ctx context.Context, in *RemoveRuleRequest, 
 	return out, nil
 }
 
+func (c *eventBusClient) ToggleRule(ctx context.Context, in *ToggleRuleRequest, opts ...grpc.CallOption) (*RuleResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RuleResponse)
+	err := c.cc.Invoke(ctx, EventBus_ToggleRule_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *eventBusClient) ListLogs(ctx context.Context, in *ListLogsRequest, opts ...grpc.CallOption) (*ListLogsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListLogsResponse)
+	err := c.cc.Invoke(ctx, EventBus_ListLogs_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *eventBusClient) GetStats(ctx context.Context, in *GetStatsRequest, opts ...grpc.CallOption) (*GetStatsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetStatsResponse)
+	err := c.cc.Invoke(ctx, EventBus_GetStats_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *eventBusClient) ReplayEvents(ctx context.Context, in *ReplayRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[Event], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &EventBus_ServiceDesc.Streams[1], EventBus_ReplayEvents_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[ReplayRequest, Event]{ClientStream: stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type EventBus_ReplayEventsClient = grpc.ServerStreamingClient[Event]
+
 // EventBusServer is the server API for EventBus service.
 // All implementations must embed UnimplementedEventBusServer
 // for forward compatibility.
@@ -126,6 +183,10 @@ type EventBusServer interface {
 	AddRule(context.Context, *Rule) (*RuleResponse, error)
 	ListRules(context.Context, *ListRulesRequest) (*ListRulesResponse, error)
 	RemoveRule(context.Context, *RemoveRuleRequest) (*RuleResponse, error)
+	ToggleRule(context.Context, *ToggleRuleRequest) (*RuleResponse, error)
+	ListLogs(context.Context, *ListLogsRequest) (*ListLogsResponse, error)
+	GetStats(context.Context, *GetStatsRequest) (*GetStatsResponse, error)
+	ReplayEvents(*ReplayRequest, grpc.ServerStreamingServer[Event]) error
 	mustEmbedUnimplementedEventBusServer()
 }
 
@@ -153,6 +214,18 @@ func (UnimplementedEventBusServer) ListRules(context.Context, *ListRulesRequest)
 }
 func (UnimplementedEventBusServer) RemoveRule(context.Context, *RemoveRuleRequest) (*RuleResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method RemoveRule not implemented")
+}
+func (UnimplementedEventBusServer) ToggleRule(context.Context, *ToggleRuleRequest) (*RuleResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ToggleRule not implemented")
+}
+func (UnimplementedEventBusServer) ListLogs(context.Context, *ListLogsRequest) (*ListLogsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListLogs not implemented")
+}
+func (UnimplementedEventBusServer) GetStats(context.Context, *GetStatsRequest) (*GetStatsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetStats not implemented")
+}
+func (UnimplementedEventBusServer) ReplayEvents(*ReplayRequest, grpc.ServerStreamingServer[Event]) error {
+	return status.Error(codes.Unimplemented, "method ReplayEvents not implemented")
 }
 func (UnimplementedEventBusServer) mustEmbedUnimplementedEventBusServer() {}
 func (UnimplementedEventBusServer) testEmbeddedByValue()                  {}
@@ -276,6 +349,71 @@ func _EventBus_RemoveRule_Handler(srv interface{}, ctx context.Context, dec func
 	return interceptor(ctx, in, info, handler)
 }
 
+func _EventBus_ToggleRule_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ToggleRuleRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(EventBusServer).ToggleRule(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: EventBus_ToggleRule_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(EventBusServer).ToggleRule(ctx, req.(*ToggleRuleRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _EventBus_ListLogs_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListLogsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(EventBusServer).ListLogs(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: EventBus_ListLogs_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(EventBusServer).ListLogs(ctx, req.(*ListLogsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _EventBus_GetStats_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetStatsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(EventBusServer).GetStats(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: EventBus_GetStats_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(EventBusServer).GetStats(ctx, req.(*GetStatsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _EventBus_ReplayEvents_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(ReplayRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(EventBusServer).ReplayEvents(m, &grpc.GenericServerStream[ReplayRequest, Event]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type EventBus_ReplayEventsServer = grpc.ServerStreamingServer[Event]
+
 // EventBus_ServiceDesc is the grpc.ServiceDesc for EventBus service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -303,11 +441,28 @@ var EventBus_ServiceDesc = grpc.ServiceDesc{
 			MethodName: "RemoveRule",
 			Handler:    _EventBus_RemoveRule_Handler,
 		},
+		{
+			MethodName: "ToggleRule",
+			Handler:    _EventBus_ToggleRule_Handler,
+		},
+		{
+			MethodName: "ListLogs",
+			Handler:    _EventBus_ListLogs_Handler,
+		},
+		{
+			MethodName: "GetStats",
+			Handler:    _EventBus_GetStats_Handler,
+		},
 	},
 	Streams: []grpc.StreamDesc{
 		{
 			StreamName:    "Subscribe",
 			Handler:       _EventBus_Subscribe_Handler,
+			ServerStreams: true,
+		},
+		{
+			StreamName:    "ReplayEvents",
+			Handler:       _EventBus_ReplayEvents_Handler,
 			ServerStreams: true,
 		},
 	},

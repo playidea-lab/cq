@@ -8,8 +8,17 @@ import (
 	"strings"
 	"time"
 
+	"github.com/changmin/c4-core/internal/eventbus"
 	"github.com/changmin/c4-core/internal/mcp"
 )
+
+// validationEventPub holds the optional EventBus publisher for validation events.
+var validationEventPub eventbus.Publisher
+
+// SetValidationEventBus sets the EventBus publisher for validation handlers.
+func SetValidationEventBus(pub eventbus.Publisher) {
+	validationEventPub = pub
+}
 
 // RegisterValidationHandlers registers the validation runner tool.
 func RegisterValidationHandlers(reg *mcp.Registry, rootDir string) {
@@ -144,6 +153,22 @@ func handleRunValidation(rootDir string, rawArgs json.RawMessage) (any, error) {
 			Output:  output,
 			Elapsed: elapsed,
 		})
+	}
+
+	// Publish validation events
+	if validationEventPub != nil {
+		for _, r := range results {
+			evType := "validation.passed"
+			if !r.Passed {
+				evType = "validation.failed"
+			}
+			data, _ := json.Marshal(map[string]any{
+				"name":    r.Name,
+				"passed":  r.Passed,
+				"elapsed": r.Elapsed,
+			})
+			validationEventPub.PublishAsync(evType, "c4.validation", data, "")
+		}
 	}
 
 	return map[string]any{

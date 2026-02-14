@@ -9,6 +9,10 @@ service EventBus {
   rpc AddRule(Rule) returns (RuleResponse);
   rpc ListRules(ListRulesRequest) returns (ListRulesResponse);
   rpc RemoveRule(RemoveRuleRequest) returns (RuleResponse);
+  rpc ToggleRule(ToggleRuleRequest) returns (RuleResponse);       // v3: Step 1
+  rpc ListLogs(ListLogsRequest) returns (ListLogsResponse);       // v3: Step 3
+  rpc GetStats(GetStatsRequest) returns (GetStatsResponse);       // v3: Step 4
+  rpc ReplayEvents(ReplayRequest) returns (stream Event);         // v3: Step 8
 }
 
 message Event {
@@ -66,4 +70,52 @@ message ListRulesResponse {
 message RemoveRuleRequest {
   string id = 1;
   string name = 2;  // alternative: remove by name
+}
+
+// v3: ToggleRule (Step 1)
+message ToggleRuleRequest {
+  string name = 1;
+  bool   enabled = 2;
+}
+
+// v3: ListLogs audit trail (Step 3)
+message LogEntry {
+  int64  id = 1;
+  string event_id = 2;
+  string rule_name = 3;
+  string event_type = 4;
+  string status = 5;
+  string error = 6;
+  int64  duration_ms = 7;
+  int64  timestamp_ms = 8;
+}
+
+message ListLogsRequest {
+  string event_id = 1;    // optional: filter by event
+  int32  limit = 2;        // default: 50
+  int64  since_ms = 3;     // optional: only logs after this timestamp
+}
+
+message ListLogsResponse {
+  repeated LogEntry logs = 1;
+  int32 total = 2;
+}
+
+// v3: GetStats (Step 4)
+message GetStatsRequest {}
+
+message GetStatsResponse {
+  int32  event_count = 1;
+  int32  rule_count = 2;
+  int32  log_count = 3;
+  string oldest_event = 4;
+  string newest_event = 5;
+}
+
+// v3: ReplayEvents (Step 8)
+message ReplayRequest {
+  string event_type = 1;   // optional: filter by type
+  int64  since_ms = 2;     // optional: only events after this time
+  int32  limit = 3;        // max events to replay (default: 100)
+  bool   dry_run = 4;      // if true, stream events without re-dispatching
 }

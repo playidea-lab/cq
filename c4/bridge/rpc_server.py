@@ -34,6 +34,7 @@ from c4.bridge.events import (
     C2_DOCUMENT_PARSED,
     C2_TEXT_EXTRACTED,
     KNOWLEDGE_RECORDED,
+    KNOWLEDGE_SEARCHED,
     RESEARCH_RECORDED,
     RESEARCH_STARTED,
     SRC_C2,
@@ -428,7 +429,13 @@ class BridgeServer:
         try:
             searcher = KnowledgeSearcher(base_path=self._knowledge_base_path())
             results = searcher.search(query, top_k=top_k, filters=filters)
-            return {"count": len(results), "results": results}
+            ec = EventCollector()
+            ec.emit(KNOWLEDGE_SEARCHED, SRC_KNOWLEDGE, {
+                "query": query,
+                "top_k": top_k,
+                "result_count": len(results),
+            })
+            return ec.attach({"count": len(results), "results": results})
         except Exception as exc:
             return {"error": f"KnowledgeSearch failed: {exc}"}
 

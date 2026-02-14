@@ -70,9 +70,10 @@ type initializeResult struct {
 
 // mcpServer holds the state of a running MCP server instance.
 type mcpServer struct {
-	registry *mcp.Registry
-	sidecar  *bridge.Sidecar
-	db       *sql.DB
+	registry   *mcp.Registry
+	sidecar    *bridge.Sidecar
+	db         *sql.DB
+	embeddedEB *eventbus.EmbeddedServer // v3: in-process EventBus
 }
 
 // newMCPServer creates and initializes the MCP server with all tools registered.
@@ -250,30 +251,78 @@ func newMCPServer() (*mcpServer, error) {
 		}
 	}
 
-	// Register EventBus handlers if enabled (remote C3 daemon)
+	// Register EventBus handlers
+	var embeddedEB *eventbus.EmbeddedServer
 	if cfgMgr != nil && cfgMgr.GetConfig().EventBus.Enabled {
 		ebCfg := cfgMgr.GetConfig().EventBus
-		sockPath := ebCfg.SocketPath
-		if sockPath == "" {
-			home, _ := os.UserHomeDir()
-			sockPath = filepath.Join(home, ".c4", "eventbus", "c3.sock")
-		}
-		ebClient, ebErr := eventbus.NewClient(sockPath)
-		if ebErr != nil {
-			fmt.Fprintf(os.Stderr, "c4: eventbus not reachable (unix:%s): %v\n", sockPath, ebErr)
+
+		// Auto-start: launch in-process embedded server
+		if ebCfg.AutoStart {
+			dataDir := ebCfg.DataDir
+			if dataDir == "" {
+				dataDir = filepath.Join(projectDir, ".c4", "eventbus")
+			}
+			// Resolve default rules path: prefer project-local, fall back to data dir
+			defaultRulesPath := filepath.Join(projectDir, "c4-core", "internal", "eventbus", "default_rules.yaml")
+			if _, err := os.Stat(defaultRulesPath); err != nil {
+				defaultRulesPath = filepath.Join(dataDir, "default_rules.yaml")
+				if _, err := os.Stat(defaultRulesPath); err != nil {
+					defaultRulesPath = ""
+				}
+			}
+
+			eb, ebErr := eventbus.StartEmbedded(eventbus.EmbeddedConfig{
+				DataDir:          dataDir,
+				RetentionDays:    ebCfg.RetentionDays,
+				MaxEvents:        ebCfg.MaxEvents,
+				DefaultRulesPath: defaultRulesPath,
+			})
+			if ebErr != nil {
+				fmt.Fprintf(os.Stderr, "c4: eventbus auto-start failed: %v\n", ebErr)
+			} else {
+				embeddedEB = eb
+
+				// Wire C1 poster if keeper available
+				if keeper != nil {
+					eb.Dispatcher().SetC1Poster(keeper)
+				}
+
+				// Connect client to embedded server
+				ebClient, ebErr := eventbus.NewClient(eb.SocketPath())
+				if ebErr == nil {
+					handlers.RegisterEventBusHandlers(reg, ebClient)
+					sqliteStore.SetEventBus(ebClient)
+					handlers.SetDriveEventBus(ebClient)
+					handlers.SetValidationEventBus(ebClient)
+					proxy.SetEventBus(ebClient)
+					sqliteStore.SetDispatcher(eb.Dispatcher())
+					fmt.Fprintf(os.Stderr, "c4: eventbus auto-started (embedded, %s)\n", eb.SocketPath())
+				}
+			}
 		} else {
-			handlers.RegisterEventBusHandlers(reg, ebClient)
-			// Wire remote event publishing to store + drive + proxy handlers
-			sqliteStore.SetEventBus(ebClient)
-			handlers.SetDriveEventBus(ebClient)
-			proxy.SetEventBus(ebClient)
-			fmt.Fprintf(os.Stderr, "c4: eventbus connected (unix:%s, 6 tools)\n", sockPath)
+			// Connect to remote daemon
+			sockPath := ebCfg.SocketPath
+			if sockPath == "" {
+				home, _ := os.UserHomeDir()
+				sockPath = filepath.Join(home, ".c4", "eventbus", "c3.sock")
+			}
+			ebClient, ebErr := eventbus.NewClient(sockPath)
+			if ebErr != nil {
+				fmt.Fprintf(os.Stderr, "c4: eventbus not reachable (unix:%s): %v\n", sockPath, ebErr)
+			} else {
+				handlers.RegisterEventBusHandlers(reg, ebClient)
+				sqliteStore.SetEventBus(ebClient)
+				handlers.SetDriveEventBus(ebClient)
+				handlers.SetValidationEventBus(ebClient)
+				proxy.SetEventBus(ebClient)
+				fmt.Fprintf(os.Stderr, "c4: eventbus connected (unix:%s, 6 tools)\n", sockPath)
+			}
 		}
 	}
 
-	// Wire local Dispatcher for in-process rule-based dispatch (C1 posting, etc.)
-	// This runs independently of the remote C3 EventBus daemon.
-	if keeper != nil {
+	// Wire local Dispatcher for C1 posting if no embedded server
+	// (embedded server already has its own dispatcher wired above)
+	if keeper != nil && embeddedEB == nil {
 		localDBPath := filepath.Join(projectDir, ".c4", "eventbus", "local.db")
 		localStore, localErr := eventbus.NewStore(localDBPath)
 		if localErr != nil {
@@ -317,9 +366,10 @@ func newMCPServer() (*mcpServer, error) {
 	}
 
 	return &mcpServer{
-		registry: reg,
-		sidecar:  sidecar,
-		db:       db,
+		registry:   reg,
+		sidecar:    sidecar,
+		db:         db,
+		embeddedEB: embeddedEB,
 	}, nil
 }
 
@@ -362,6 +412,9 @@ func (s *mcpServer) serve() error {
 
 // shutdown cleans up resources.
 func (s *mcpServer) shutdown() {
+	if s.embeddedEB != nil {
+		s.embeddedEB.Stop()
+	}
 	if s.sidecar != nil {
 		_ = s.sidecar.Stop()
 	}
