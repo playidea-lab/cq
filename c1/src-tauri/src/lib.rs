@@ -7,6 +7,7 @@ pub mod analytics;
 pub mod auth;
 pub mod cloud;
 pub mod commands;
+pub mod documents;
 pub mod layout;
 pub mod messaging;
 pub mod models;
@@ -102,6 +103,10 @@ pub fn run() {
             messaging::mark_read,
             messaging::create_channel,
             messaging::get_channel_summary,
+            // Documents
+            documents::list_documents,
+            documents::get_document,
+            documents::save_document,
         ])
         .setup(|app| {
             // Log startup
