@@ -3,7 +3,6 @@ package eventbus
 import (
 	"encoding/json"
 	"fmt"
-	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -29,12 +28,7 @@ func TestDispatchLog(t *testing.T) {
 }
 
 func TestDispatchWebhook(t *testing.T) {
-	var received []byte
-	var mu sync.Mutex
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		mu.Lock()
-		defer mu.Unlock()
-		received, _ = io.ReadAll(r.Body)
 		w.WriteHeader(200)
 	}))
 	defer ts.Close()
@@ -49,16 +43,15 @@ func TestDispatchWebhook(t *testing.T) {
 	evID, _ := s.StoreEvent("drive.uploaded", "c4.drive", evData, "")
 	d.DispatchSync(evID, "drive.uploaded", evData)
 
-	mu.Lock()
-	defer mu.Unlock()
-	if len(received) == 0 {
-		t.Fatal("webhook was not called")
+	// httptest.NewServer uses localhost (127.0.0.1), which is blocked by SSRF protection
+	// The webhook should NOT be called, and an error should be logged
+	var logStatus, logError string
+	s.db.QueryRow(`SELECT status, error FROM c4_event_log WHERE event_id = ?`, evID).Scan(&logStatus, &logError)
+	if logStatus != "error" {
+		t.Errorf("expected error status for localhost webhook (SSRF protection), got %s", logStatus)
 	}
-
-	var payload map[string]any
-	json.Unmarshal(received, &payload)
-	if payload["type"] != "drive.uploaded" {
-		t.Errorf("expected type drive.uploaded, got %v", payload["type"])
+	if logError == "" || len(logError) == 0 {
+		t.Errorf("expected SSRF error message, got empty")
 	}
 }
 
@@ -206,7 +199,7 @@ func TestDispatchWebhookError(t *testing.T) {
 	evID, _ := s.StoreEvent("test.fail", "test", json.RawMessage(`{}`), "")
 	d.DispatchSync(evID, "test.fail", json.RawMessage(`{}`))
 
-	// Verify error was logged
+	// Verify error was logged (SSRF protection blocks localhost)
 	var status string
 	s.db.QueryRow(`SELECT status FROM c4_event_log WHERE event_id = ?`, evID).Scan(&status)
 	if status != "error" {
@@ -310,5 +303,50 @@ func TestDispatchC1PostNoPoster(t *testing.T) {
 	s.db.QueryRow(`SELECT status FROM c4_event_log WHERE event_id = ?`, evID).Scan(&logStatus)
 	if logStatus != "error" {
 		t.Errorf("expected error status when poster not set, got %s", logStatus)
+	}
+}
+
+func TestIsPrivateIP(t *testing.T) {
+	tests := []struct {
+		ip   string
+		want bool
+	}{
+		// IPv4 private ranges
+		{"127.0.0.1", true},       // Loopback
+		{"127.255.255.255", true}, // Loopback
+		{"10.0.0.1", true},        // Private
+		{"10.255.255.255", true},  // Private
+		{"172.16.0.1", true},      // Private
+		{"172.31.255.255", true},  // Private
+		{"192.168.1.1", true},     // Private
+		{"192.168.255.255", true}, // Private
+		{"169.254.1.1", true},     // Link-local
+		{"0.0.0.0", true},         // Unspecified
+
+		// IPv4 public
+		{"8.8.8.8", false},
+		{"1.1.1.1", false},
+		{"93.184.216.34", false},
+
+		// IPv6 loopback and link-local
+		{"::1", true},                                   // Loopback
+		{"fe80::1", true},                               // Link-local unicast
+		{"ff02::1", true},                               // Link-local multicast
+		{"::", true},                                    // Unspecified
+		{"fc00::1", true},                               // Unique local (fc00::/7)
+		{"fd12:3456:789a:1::1", true},                   // Unique local (fc00::/7)
+		{"2001:4860:4860::8888", false},                 // Public (Google DNS)
+		{"2606:4700:4700::1111", false},                 // Public (Cloudflare DNS)
+	}
+
+	for _, tt := range tests {
+		ip := net.ParseIP(tt.ip)
+		if ip == nil {
+			t.Fatalf("invalid test IP: %s", tt.ip)
+		}
+		got := isPrivateIP(ip)
+		if got != tt.want {
+			t.Errorf("isPrivateIP(%s) = %v, want %v", tt.ip, got, tt.want)
+		}
 	}
 }
