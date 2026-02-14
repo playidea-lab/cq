@@ -1,5 +1,6 @@
 """DOCX Parser - python-docx 기반."""
 
+import logging
 import zipfile
 from pathlib import Path
 
@@ -19,6 +20,8 @@ from c4.c2.parsers.ir_models import (
 )
 from c4.c2.parsers.utils.chart_parser import parse_chart_xml
 from c4.c2.parsers.utils.image import generate_image_id, get_extension_from_mime
+
+logger = logging.getLogger(__name__)
 
 # 이미지 시그니처
 PNG_SIGNATURE = bytes([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A])
@@ -142,10 +145,10 @@ class DocxParser(BaseParser):
                             )
                             image_id_map[rel_id] = image_id_with_ext
                             image_index += 1
-                    except Exception:
-                        pass
-        except Exception:
-            pass
+                    except Exception as e:
+                        logger.debug("Failed to extract image rel %s: %s", rel_id, e)
+        except Exception as e:
+            logger.debug("Failed to iterate document relationships: %s", e)
 
         return images, image_id_map
 
@@ -400,8 +403,8 @@ class DocxParser(BaseParser):
                         chart_block = parse_chart_xml(chart_content)
                         if chart_block:
                             blocks.append(chart_block)
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.debug("Failed to parse chart %s: %s", chart_file, e)
 
                 # 차트 이미지 추출 (word/media/에서)
                 for file_name in zf.namelist():
@@ -432,8 +435,8 @@ class DocxParser(BaseParser):
                                 )
                             )
                             image_index += 1
-                        except Exception:
-                            pass
+                        except Exception as e:
+                            logger.debug("Failed to extract media image %s: %s", file_name, e)
 
         except zipfile.BadZipFile:
             pass

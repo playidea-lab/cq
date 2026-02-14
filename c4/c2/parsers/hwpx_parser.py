@@ -1,5 +1,6 @@
 """HWPX Parser - ZIP + XML 기반 한글 문서 파서."""
 
+import logging
 import zipfile
 from io import BytesIO
 from pathlib import Path
@@ -17,6 +18,8 @@ from c4.c2.parsers.ir_models import (
 )
 from c4.c2.parsers.utils.chart_parser import parse_chart_xml
 from c4.c2.parsers.utils.image import generate_image_id
+
+logger = logging.getLogger(__name__)
 
 # PNG/JPEG 시그니처
 PNG_SIGNATURE = bytes([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A])
@@ -122,8 +125,8 @@ class HwpxParser(BaseParser):
                             )
                         )
                         image_index += 1
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.debug("Failed to extract image %s: %s", file_name, e)
 
         # OLE 파일에서 차트 이미지 추출
         ole_images, image_index = self._extract_ole_chart_images(zf, image_index)
@@ -201,8 +204,8 @@ class HwpxParser(BaseParser):
 
                 char_pr_map[cp_id] = (is_bold, font_size)
 
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Failed to parse header styles: %s", e)
 
         return border_fill_map, char_pr_map
 
@@ -703,8 +706,8 @@ class HwpxParser(BaseParser):
                         )
                     )
                     image_index += 1
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Failed to extract OLE chart image %s: %s", file_name, e)
 
         return images, image_index
 
@@ -740,8 +743,8 @@ class HwpxParser(BaseParser):
                             return image
             finally:
                 ole.close()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Failed to parse OLE compound document: %s", e)
 
         # fallback: 직접 시그니처 검색
         return self._extract_image_by_signature(ole_data)
@@ -780,7 +783,7 @@ class HwpxParser(BaseParser):
                 chart_block = parse_chart_xml(chart_content)
                 if chart_block:
                     blocks.append(chart_block)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Failed to parse chart %s: %s", chart_file, e)
 
         return blocks

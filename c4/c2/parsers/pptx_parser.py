@@ -1,5 +1,6 @@
 """PPTX Parser - python-pptx 기반."""
 
+import logging
 import zipfile
 from pathlib import Path
 
@@ -18,6 +19,8 @@ from c4.c2.parsers.ir_models import (
 )
 from c4.c2.parsers.utils.chart_parser import parse_chart_xml
 from c4.c2.parsers.utils.image import generate_image_id, get_extension_from_mime
+
+logger = logging.getLogger(__name__)
 
 
 class PptxParser(BaseParser):
@@ -87,8 +90,8 @@ class PptxParser(BaseParser):
                     if image_block and image_data:
                         elements.append((y_pos, x_pos, "image", image_block))
                         images.append(image_data)
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug("Failed to extract picture from slide %d: %s", slide_idx, e)
             # 테이블 처리
             elif shape.has_table:
                 block = self._parse_table(shape.table)
@@ -134,7 +137,8 @@ class PptxParser(BaseParser):
             )
 
             return image_block, extracted_image, image_index + 1
-        except Exception:
+        except Exception as e:
+            logger.debug("Failed to extract picture data: %s", e)
             return None, None, image_index
 
     def _parse_text_frame(self, shape, slide_idx: int) -> list:
@@ -270,8 +274,8 @@ class PptxParser(BaseParser):
                         chart_block = parse_chart_xml(chart_content)
                         if chart_block:
                             blocks.append(chart_block)
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.debug("Failed to parse chart %s: %s", chart_file, e)
 
                 # 차트 이미지 추출 (ppt/media/에서 - 이미 추출된 것 제외)
                 # 차트와 연관된 이미지만 추출하기 위해 chart 관련 파일 확인
@@ -303,8 +307,8 @@ class PptxParser(BaseParser):
                                 )
                             )
                             image_index += 1
-                        except Exception:
-                            pass
+                        except Exception as e:
+                            logger.debug("Failed to extract media image %s: %s", file_name, e)
 
         except zipfile.BadZipFile:
             pass

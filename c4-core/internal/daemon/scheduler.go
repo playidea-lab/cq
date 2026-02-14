@@ -40,6 +40,7 @@ type runningJob struct {
 	logFile  *os.File
 	cancelFn context.CancelFunc
 	startAt  time.Time
+	exited   bool // set under s.mu after cmd.Wait() returns
 }
 
 // SchedulerConfig holds scheduler settings.
@@ -305,6 +306,11 @@ func (s *Scheduler) waitForCompletion(jobID string, gpuIndices []int) {
 	}
 
 	err := rj.cmd.Wait()
+
+	s.mu.Lock()
+	rj.exited = true
+	s.mu.Unlock()
+
 	rj.logFile.Close()
 
 	exitCode := 0
@@ -333,7 +339,7 @@ func (s *Scheduler) checkRunningJobs() {
 	s.mu.Lock()
 	var orphans []string
 	for id, rj := range s.running {
-		if rj.cmd.ProcessState != nil && rj.cmd.ProcessState.Exited() {
+		if rj.exited {
 			orphans = append(orphans, id)
 		}
 	}

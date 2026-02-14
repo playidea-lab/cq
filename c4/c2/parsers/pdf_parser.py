@@ -1,5 +1,6 @@
 """PDF Parser - PyMuPDF(fitz) 기반 + pdfplumber 테이블 추출."""
 
+import logging
 from pathlib import Path
 
 import fitz  # PyMuPDF
@@ -15,6 +16,8 @@ from c4.c2.parsers.ir_models import (
     create_table,
 )
 from c4.c2.parsers.utils.image import generate_image_id, get_mime_from_extension
+
+logger = logging.getLogger(__name__)
 
 
 class PdfParser(BaseParser):
@@ -166,8 +169,9 @@ class PdfParser(BaseParser):
                 results.append((y_pos, img_block, img_data))
                 image_index += 1
 
-            except Exception:
+            except Exception as e:
                 # 개별 이미지 추출 실패 시 스킵
+                logger.debug("Failed to extract image xref=%s: %s", img_info[0] if img_info else "?", e)
                 continue
 
         return results, image_index
@@ -180,8 +184,8 @@ class PdfParser(BaseParser):
                 if img.get("xref") == xref:
                     bbox = img.get("bbox", (0, 0, 0, 0))
                     return bbox[1]  # y0
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Failed to get image position for xref=%s: %s", xref, e)
         return 0.0
 
     def _parse_page_with_fitz_positioned(

@@ -33,11 +33,15 @@ Protocol:
 
 from __future__ import annotations
 
+import logging
 import os
+import queue
 import sys
 import time
 from multiprocessing import Queue
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 # Jedi import with configuration
 try:
@@ -85,7 +89,7 @@ def worker_main(
     # Set up project context
     try:
         os.chdir(repo_root)
-    except Exception:
+    except OSError:
         pass  # May fail if directory doesn't exist
 
     if repo_root not in sys.path:
@@ -101,6 +105,7 @@ def worker_main(
                 smart_sys_path=False,
             )
         except Exception:
+            logger.debug("Failed to create Jedi project for %s", repo_root, exc_info=True)
             project = None
 
     # Main loop
@@ -108,8 +113,8 @@ def worker_main(
         try:
             # Wait for request with idle timeout
             request = input_queue.get(timeout=300)  # 5 min idle timeout
-        except Exception:
-            # Queue error or timeout - exit cleanly
+        except (queue.Empty, OSError):
+            # Queue timeout or broken pipe - exit cleanly
             break
 
         if request is None:
@@ -126,8 +131,8 @@ def worker_main(
 
         try:
             output_queue.put(result)
-        except Exception:
-            # Queue error - exit
+        except OSError:
+            # Broken pipe / closed queue - exit
             break
 
 
@@ -270,7 +275,7 @@ def _execute_jedi_operation(
             try:
                 jedi.cache.clear_time_caches()
             except Exception:
-                pass
+                logger.debug("Failed to clear Jedi cache", exc_info=True)
 
 
 def _serialize_name(name: Any) -> dict[str, Any]:
@@ -294,7 +299,7 @@ def _serialize_name(name: Any) -> dict[str, Any]:
             if parent:
                 parent_type = parent.type
                 parent_name = parent.name
-        except Exception:
+        except (AttributeError, TypeError):
             pass
 
         # Get signatures for functions/methods
@@ -304,7 +309,7 @@ def _serialize_name(name: Any) -> dict[str, Any]:
                 sigs = name.get_signatures()
                 if sigs:
                     signature = str(sigs[0])
-            except Exception:
+            except (AttributeError, TypeError):
                 pass
 
         # Get docstring
@@ -313,7 +318,7 @@ def _serialize_name(name: Any) -> dict[str, Any]:
             docstring = name.docstring(raw=True)
             if docstring and len(docstring) > 500:
                 docstring = docstring[:500] + "..."
-        except Exception:
+        except (AttributeError, TypeError):
             pass
 
         # Get end position for editing support
@@ -324,7 +329,7 @@ def _serialize_name(name: Any) -> dict[str, Any]:
             if end_pos:
                 end_line = end_pos[0]    # 1-indexed (same as name.line)
                 end_column = end_pos[1]  # 0-indexed (same as name.column)
-        except Exception:
+        except (AttributeError, TypeError):
             pass
 
         return {
@@ -398,7 +403,7 @@ if __name__ == "__main__":
     try:
         response = out_q.get(timeout=5)
         print(f"Response: {response}")
-    except Exception as e:
+    except (queue.Empty, OSError) as e:
         print(f"Error: {e}")
 
     # Shutdown

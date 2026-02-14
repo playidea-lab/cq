@@ -1,5 +1,6 @@
 """XLSX Parser - openpyxl 기반 + ZIP 이미지 추출."""
 
+import logging
 import zipfile
 from pathlib import Path
 
@@ -17,6 +18,8 @@ from c4.c2.parsers.ir_models import (
 )
 from c4.c2.parsers.utils.chart_parser import parse_chart_xml
 from c4.c2.parsers.utils.image import generate_image_id, get_mime_from_extension
+
+logger = logging.getLogger(__name__)
 
 
 class XlsxParser(BaseParser):
@@ -130,8 +133,9 @@ class XlsxParser(BaseParser):
                             )
                         )
 
-                    except Exception:
+                    except Exception as e:
                         # 개별 이미지 추출 실패 시 스킵
+                        logger.debug("Failed to extract media image %s: %s", media_path, e)
                         continue
 
         except zipfile.BadZipFile:
@@ -232,9 +236,9 @@ class XlsxParser(BaseParser):
             if alignment and alignment.horizontal:
                 text_align = alignment.horizontal
 
-        except Exception:
+        except Exception as e:
             # 스타일 추출 실패 시 기본값 사용
-            pass
+            logger.debug("Failed to extract cell style: %s", e)
 
         return CellStyle(
             background_color=background_color,
@@ -294,8 +298,8 @@ class XlsxParser(BaseParser):
                         chart_block = parse_chart_xml(chart_content)
                         if chart_block:
                             blocks.append(chart_block)
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.debug("Failed to parse chart %s: %s", chart_file, e)
 
                 # 차트 이미지는 이미 _extract_images_from_zip에서 추출되므로
                 # 여기서는 차트 데이터 테이블만 추출

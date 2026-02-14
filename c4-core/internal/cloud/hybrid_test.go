@@ -220,12 +220,10 @@ func TestHybridStoreLocalFailureBlocks(t *testing.T) {
 }
 
 func TestHybridStoreAllWriteOperations(t *testing.T) {
-	var ops []string
-	var mu = &atomic.Int32{}
+	var count atomic.Int32
 
-	recordOp := func(name string) {
-		mu.Add(1)
-		ops = append(ops, name)
+	recordOp := func(_ string) {
+		count.Add(1)
 	}
 
 	local := &mockStore{
@@ -250,8 +248,8 @@ func TestHybridStoreAllWriteOperations(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 
 	// Should have called both local and remote for both operations
-	if mu.Load() < 4 {
-		t.Errorf("Expected at least 4 operations, got %d", mu.Load())
+	if count.Load() < 4 {
+		t.Errorf("Expected at least 4 operations, got %d", count.Load())
 	}
 }
 

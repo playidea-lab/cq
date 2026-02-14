@@ -115,27 +115,31 @@ class CudaGpuMonitor(BaseGpuMonitor):
             util = pynvml.nvmlDeviceGetUtilizationRates(handle)
             gpu_util = float(util.gpu)
             mem_util = float(util.memory)
-        except Exception:
+        except pynvml.NVMLError as e:
+            logger.debug("Failed to get utilization for GPU %d: %s", index, e)
             gpu_util = 0.0
             mem_util = 0.0
 
         # Temperature
         try:
             temp = float(pynvml.nvmlDeviceGetTemperature(handle, 0))
-        except Exception:
+        except pynvml.NVMLError as e:
+            logger.debug("Failed to get temperature for GPU %d: %s", index, e)
             temp = None
 
         # Power
         try:
             power = pynvml.nvmlDeviceGetPowerUsage(handle) / 1000.0
-        except Exception:
+        except pynvml.NVMLError as e:
+            logger.debug("Failed to get power usage for GPU %d: %s", index, e)
             power = None
 
         # Compute capability
         try:
             major, minor = pynvml.nvmlDeviceGetCudaComputeCapability(handle)
             cc = f"{major}.{minor}"
-        except Exception:
+        except pynvml.NVMLError as e:
+            logger.debug("Failed to get compute capability for GPU %d: %s", index, e)
             cc = None
 
         return GpuInfo(
@@ -232,8 +236,10 @@ def detect_backend() -> GpuBackend:
             pynvml.nvmlShutdown()
             return GpuBackend.CUDA
         pynvml.nvmlShutdown()
-    except Exception:
+    except ImportError:
         pass
+    except Exception as e:
+        logger.debug("CUDA detection failed: %s", e)
 
     # Try MPS (Apple Silicon)
     try:
@@ -250,8 +256,8 @@ def detect_backend() -> GpuBackend:
 
         if platform.processor() == "arm" and platform.system() == "Darwin":
             return GpuBackend.MPS
-    except Exception:
-        pass
+    except (AttributeError, OSError) as e:
+        logger.debug("Apple Silicon detection failed: %s", e)
 
     return GpuBackend.NONE
 
