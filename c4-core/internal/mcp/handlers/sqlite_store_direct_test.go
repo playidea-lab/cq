@@ -346,3 +346,141 @@ func TestSQLiteStoreStatusReadyTasks(t *testing.T) {
 		t.Fatalf("ready_task_ids = %v, want first T-001-0", status.ReadyTaskIDs)
 	}
 }
+
+func TestRequestChanges_RecordsRejected(t *testing.T) {
+	store, db := newTestSQLiteStore(t)
+	defer db.Close()
+
+	// Create T-001-0 (parent) and R-001-0 (review)
+	if err := store.AddTask(&Task{ID: "T-001-0", Title: "Impl", DoD: "done", Status: "pending"}); err != nil {
+		t.Fatal(err)
+	}
+	// Assign and submit T-001-0 so it's done
+	store.db.Exec("UPDATE c4_tasks SET status='in_progress', worker_id='worker-1' WHERE task_id='T-001-0'")
+	store.db.Exec("UPDATE c4_tasks SET status='done' WHERE task_id='T-001-0'")
+
+	if err := store.AddTask(&Task{ID: "R-001-0", Title: "Review", DoD: "review", Status: "in_progress"}); err != nil {
+		t.Fatal(err)
+	}
+
+	// RequestChanges should record rejected for parent's worker
+	_, err := store.RequestChanges("R-001-0", "needs fixes", []string{"fix X"})
+	if err != nil {
+		t.Fatalf("request changes: %v", err)
+	}
+
+	// Check persona_stats has rejected
+	var outcome string
+	err = db.QueryRow("SELECT outcome FROM persona_stats WHERE persona_id='worker-1' AND task_id='T-001-0'").Scan(&outcome)
+	if err != nil {
+		t.Fatalf("query persona_stats: %v", err)
+	}
+	if outcome != "rejected" {
+		t.Fatalf("outcome = %q, want rejected", outcome)
+	}
+}
+
+func TestCheckpoint_RequestChanges_RecordsRejected(t *testing.T) {
+	store, db := newTestSQLiteStore(t)
+	defer db.Close()
+
+	// Create an in_progress task
+	if err := store.AddTask(&Task{ID: "T-002-0", Title: "Impl", DoD: "done", Status: "pending"}); err != nil {
+		t.Fatal(err)
+	}
+	store.db.Exec("UPDATE c4_tasks SET status='in_progress', worker_id='worker-2', updated_at=CURRENT_TIMESTAMP WHERE task_id='T-002-0'")
+
+	// Checkpoint with REQUEST_CHANGES
+	result, err := store.Checkpoint("CP-001", "REQUEST_CHANGES", "not good", []string{"fix Y"})
+	if err != nil {
+		t.Fatalf("checkpoint: %v", err)
+	}
+	if result.NextAction != "apply_changes" {
+		t.Fatalf("next_action = %q, want apply_changes", result.NextAction)
+	}
+
+	// Check persona_stats
+	var outcome string
+	err = db.QueryRow("SELECT outcome FROM persona_stats WHERE persona_id='worker-2' AND task_id='T-002-0'").Scan(&outcome)
+	if err != nil {
+		t.Fatalf("query persona_stats: %v", err)
+	}
+	if outcome != "rejected" {
+		t.Fatalf("outcome = %q, want rejected", outcome)
+	}
+}
+
+func TestSubmitTask_ValidationFail_RecordsValidationFailed(t *testing.T) {
+	store, db := newTestSQLiteStore(t)
+	defer db.Close()
+
+	if err := store.AddTask(&Task{ID: "T-003-0", Title: "Impl", DoD: "done", Status: "pending"}); err != nil {
+		t.Fatal(err)
+	}
+	// Assign task
+	store.db.Exec("UPDATE c4_tasks SET status='in_progress', worker_id='worker-3' WHERE task_id='T-003-0'")
+
+	// Submit with failing validation
+	result, err := store.SubmitTask("T-003-0", "worker-3", "abc", "", []ValidationResult{
+		{Name: "lint", Status: "fail", Message: "syntax error"},
+	})
+	if err != nil {
+		t.Fatalf("submit: %v", err)
+	}
+	if result.Success {
+		t.Fatal("expected failure")
+	}
+
+	// Check persona_stats
+	var outcome string
+	err = db.QueryRow("SELECT outcome FROM persona_stats WHERE persona_id='worker-3' AND task_id='T-003-0'").Scan(&outcome)
+	if err != nil {
+		t.Fatalf("query persona_stats: %v", err)
+	}
+	if outcome != "validation_failed" {
+		t.Fatalf("outcome = %q, want validation_failed", outcome)
+	}
+}
+
+func TestGetStatus_PersonaDigest(t *testing.T) {
+	store, db := newTestSQLiteStore(t)
+	defer db.Close()
+
+	// Insert persona_stats directly
+	db.Exec("INSERT INTO persona_stats (persona_id, task_id, outcome, created_at) VALUES ('w1','T-1','approved',datetime('now'))")
+	db.Exec("INSERT INTO persona_stats (persona_id, task_id, outcome, created_at) VALUES ('w1','T-2','rejected',datetime('now'))")
+	db.Exec("INSERT INTO persona_stats (persona_id, task_id, outcome, created_at) VALUES ('w1','T-3','approved',datetime('now'))")
+
+	// Need at least one task for GetStatus
+	store.AddTask(&Task{ID: "T-010-0", Title: "Test", DoD: "done", Status: "pending"})
+
+	status, err := store.GetStatus()
+	if err != nil {
+		t.Fatalf("get status: %v", err)
+	}
+	if status.PersonaDigest == nil {
+		t.Fatal("expected persona_digest, got nil")
+	}
+	if status.PersonaDigest.TotalTasks != 3 {
+		t.Fatalf("total = %d, want 3", status.PersonaDigest.TotalTasks)
+	}
+	// 2/3 approved ≈ 0.667
+	if status.PersonaDigest.ApprovalRate < 0.66 || status.PersonaDigest.ApprovalRate > 0.67 {
+		t.Fatalf("approval_rate = %.3f, want ~0.667", status.PersonaDigest.ApprovalRate)
+	}
+}
+
+func TestGetStatus_PersonaDigest_Empty(t *testing.T) {
+	store, db := newTestSQLiteStore(t)
+	defer db.Close()
+
+	store.AddTask(&Task{ID: "T-011-0", Title: "Test", DoD: "done", Status: "pending"})
+
+	status, err := store.GetStatus()
+	if err != nil {
+		t.Fatalf("get status: %v", err)
+	}
+	if status.PersonaDigest != nil {
+		t.Fatalf("expected nil persona_digest, got %+v", status.PersonaDigest)
+	}
+}

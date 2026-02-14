@@ -122,6 +122,13 @@ type ProjectStatus struct {
 	LighthouseStubs       int               `json:"lighthouse_stubs,omitempty"`
 	LighthouseImplemented int               `json:"lighthouse_implemented,omitempty"`
 	OrphanReviews         int               `json:"orphan_reviews,omitempty"`
+	PersonaDigest         *PersonaSummary   `json:"persona_digest,omitempty"`
+}
+
+// PersonaSummary provides a quick overview of persona performance.
+type PersonaSummary struct {
+	TotalTasks   int     `json:"total_tasks"`
+	ApprovalRate float64 `json:"approval_rate"`
 }
 
 // Lighthouse represents a spec-as-MCP stub tool.

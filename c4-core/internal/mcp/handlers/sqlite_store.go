@@ -412,6 +412,17 @@ func (s *SQLiteStore) GetStatus() (*ProjectStatus, error) {
 	// Add active soul roles for current workflow stage
 	status.ActiveSoulRoles = GetActiveRolesForStage(status.State)
 
+	// Persona digest (lightweight, best-effort)
+	var pTotal, pApproved int
+	_ = s.db.QueryRow(`SELECT COUNT(*), SUM(CASE WHEN outcome='approved' THEN 1 ELSE 0 END)
+		FROM persona_stats`).Scan(&pTotal, &pApproved)
+	if pTotal > 0 {
+		status.PersonaDigest = &PersonaSummary{
+			TotalTasks:   pTotal,
+			ApprovalRate: float64(pApproved) / float64(pTotal),
+		}
+	}
+
 	// Add economic mode and worker config info if config is available
 	if s.config != nil {
 		cfg := s.config.GetConfig()
@@ -725,6 +736,7 @@ func (s *SQLiteStore) AssignTask(workerID string) (*TaskAssignment, error) {
 func (s *SQLiteStore) SubmitTask(taskID, workerID, commitSHA, handoff string, results []ValidationResult) (*SubmitResult, error) {
 	for _, r := range results {
 		if r.Status == "fail" {
+			s.recordPersonaStat(workerID, taskID, "validation_failed")
 			return &SubmitResult{
 				Success:    false,
 				NextAction: "get_next_task",
@@ -940,6 +952,16 @@ func (s *SQLiteStore) Checkpoint(checkpointID, decision, notes string, requiredC
 		result.NextAction = "continue"
 	case "REQUEST_CHANGES":
 		result.NextAction = "apply_changes"
+		// Best-effort: record rejection for most recent active task
+		var recentTaskID, recentWorkerID string
+		_ = s.db.QueryRow(`SELECT task_id, worker_id FROM c4_tasks
+			WHERE status='in_progress' ORDER BY updated_at DESC LIMIT 1`).Scan(&recentTaskID, &recentWorkerID)
+		if recentTaskID != "" {
+			if recentWorkerID == "" {
+				recentWorkerID = "direct"
+			}
+			s.recordPersonaStat(recentWorkerID, recentTaskID, "rejected")
+		}
 	case "REPLAN":
 		result.NextAction = "replan"
 	}
@@ -971,10 +993,19 @@ func (s *SQLiteStore) RequestChanges(reviewTaskID string, comments string, requi
 		return nil, fmt.Errorf("updating review task: %w", err)
 	}
 
-	// 4. Look up parent T's DoD
+	// 4. Look up parent T's DoD and record rejection
 	parentTaskID := fmt.Sprintf("T-%s-%d", baseID, version)
 	var originalDoD string
 	_ = s.db.QueryRow("SELECT dod FROM c4_tasks WHERE task_id=?", parentTaskID).Scan(&originalDoD)
+
+	// Record rejection for parent T-task's worker
+	var parentWorkerID string
+	_ = s.db.QueryRow("SELECT worker_id FROM c4_tasks WHERE task_id=?", parentTaskID).Scan(&parentWorkerID)
+	if parentWorkerID == "" {
+		parentWorkerID = "direct"
+	}
+	s.recordPersonaStat(parentWorkerID, parentTaskID, "rejected")
+	s.autoLearn(parentWorkerID)
 
 	// 5. Create next version T + R
 	changesText := strings.Join(requiredChanges, "\n- ")
