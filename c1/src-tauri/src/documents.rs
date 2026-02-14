@@ -13,6 +13,40 @@ use serde::{Deserialize, Serialize};
 // Data models
 // ---------------------------------------------------------------------------
 
+/// Validate a document path to prevent path traversal attacks
+fn validate_document_path(path: &str, allowed_base: &Path) -> Result<PathBuf, String> {
+    // Check for ".." components before canonicalization
+    if path.contains("..") {
+        return Err("Path contains '..' which is not allowed".to_string());
+    }
+
+    let path_buf = PathBuf::from(path);
+
+    // Canonicalize to resolve symlinks and relative paths
+    let canonical_path = path_buf
+        .canonicalize()
+        .map_err(|e| format!("Failed to canonicalize path: {}", e))?;
+
+    // Ensure the canonical path is within the allowed base directory
+    let canonical_base = allowed_base
+        .canonicalize()
+        .map_err(|e| format!("Failed to canonicalize base directory: {}", e))?;
+
+    if !canonical_path.starts_with(&canonical_base) {
+        return Err(format!(
+            "Path '{}' is outside allowed directory '{}'",
+            canonical_path.display(),
+            canonical_base.display()
+        ));
+    }
+
+    Ok(canonical_path)
+}
+
+// ---------------------------------------------------------------------------
+// Data models (continued)
+// ---------------------------------------------------------------------------
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DocumentMeta {
     pub name: String,
@@ -168,7 +202,17 @@ pub async fn list_documents(
 #[tauri::command(rename_all = "camelCase")]
 pub async fn get_document(path: String) -> Result<DocumentContent, String> {
     tokio::task::spawn_blocking(move || {
-        let file_path = Path::new(&path);
+        // Validate path to prevent path traversal
+        let home = dirs::home_dir().unwrap_or_default();
+        let allowed_base = home.join(".claude");
+        let validated_path = validate_document_path(&path, &allowed_base)
+            .or_else(|_| {
+                // Also allow paths in current working directory
+                let cwd = std::env::current_dir().unwrap_or_default();
+                validate_document_path(&path, &cwd)
+            })?;
+
+        let file_path = validated_path.as_path();
         if !file_path.exists() {
             return Err(format!("File not found: {}", path));
         }
@@ -208,15 +252,29 @@ pub async fn get_document(path: String) -> Result<DocumentContent, String> {
 #[tauri::command(rename_all = "camelCase")]
 pub async fn save_document(path: String, content: String) -> Result<(), String> {
     tokio::task::spawn_blocking(move || {
-        let file_path = Path::new(&path);
+        // Validate path to prevent path traversal
+        let home = dirs::home_dir().unwrap_or_default();
+        let allowed_base = home.join(".claude");
 
-        // Ensure parent directory exists
-        if let Some(parent) = file_path.parent() {
+        // For new files, we need to check the parent directory instead
+        let path_buf = PathBuf::from(&path);
+        let parent = path_buf.parent().ok_or("Invalid path: no parent directory")?;
+
+        // Ensure parent directory exists and is valid
+        if !parent.exists() {
             fs::create_dir_all(parent)
                 .map_err(|e| format!("Failed to create directory: {}", e))?;
         }
 
-        fs::write(file_path, &content)
+        // Validate the full path against allowed base
+        let validated_path = validate_document_path(&path, &allowed_base)
+            .or_else(|_| {
+                // Also allow paths in current working directory
+                let cwd = std::env::current_dir().unwrap_or_default();
+                validate_document_path(&path, &cwd)
+            })?;
+
+        fs::write(&validated_path, &content)
             .map_err(|e| format!("Failed to write {}: {}", path, e))?;
 
         Ok(())

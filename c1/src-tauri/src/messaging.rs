@@ -5,8 +5,41 @@
 //! the Tauri event loop.
 
 use serde::{Deserialize, Serialize};
+use base64::Engine;
 
 use crate::cloud::{build_client, read_auth_token, read_supabase_config, retry_request};
+
+// ---------------------------------------------------------------------------
+// Helper functions
+// ---------------------------------------------------------------------------
+
+/// Extract user ID from JWT token
+fn extract_user_id_from_token(token: &str) -> Result<String, String> {
+    // JWT tokens are in format: header.payload.signature
+    let parts: Vec<&str> = token.split('.').collect();
+    if parts.len() != 3 {
+        return Err("Invalid JWT token format".to_string());
+    }
+
+    // Decode base64 payload (second part)
+    let payload_b64 = parts[1];
+    let payload_bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(payload_b64)
+        .map_err(|e| format!("Failed to decode JWT payload: {}", e))?;
+
+    let payload_str = String::from_utf8(payload_bytes)
+        .map_err(|e| format!("Failed to parse JWT payload as UTF-8: {}", e))?;
+
+    // Parse JSON to extract 'sub' field (user ID)
+    let payload: serde_json::Value = serde_json::from_str(&payload_str)
+        .map_err(|e| format!("Failed to parse JWT payload JSON: {}", e))?;
+
+    payload
+        .get("sub")
+        .and_then(|v| v.as_str())
+        .map(String::from)
+        .ok_or_else(|| "JWT token missing 'sub' field".to_string())
+}
 
 // ---------------------------------------------------------------------------
 // Data models
@@ -202,15 +235,19 @@ pub async fn send_message(
         let (supabase_url, anon_key) = read_supabase_config()?;
         let token = read_auth_token()?;
 
+        // Get current user ID from JWT token
+        let participant_id = extract_user_id_from_token(&token)?;
+
         let client = build_client()?;
         let url = format!(
             "{}/rest/v1/c1_messages",
             supabase_url.trim_end_matches('/')
         );
 
-        // participant_id defaults to auth.uid() in the database
+        // Explicitly set participant_id to current user
         let payload = serde_json::json!({
             "channel_id": channel_id,
+            "participant_id": participant_id,
             "content": content,
             "thread_id": thread_id,
             "metadata": metadata,
@@ -249,7 +286,7 @@ pub async fn send_message(
 /// Search messages using PostgreSQL full-text search
 #[tauri::command(rename_all = "camelCase")]
 pub async fn search_messages(
-    _project_id: String,
+    project_id: String,
     query: String,
     channel_id: Option<String>,
 ) -> Result<Vec<Message>, String> {
@@ -259,7 +296,39 @@ pub async fn search_messages(
 
         let client = build_client()?;
 
-        // Build URL with FTS query and optional channel filter
+        // First, get all channels for the project to filter messages
+        let channels_url = format!(
+            "{}/rest/v1/c1_channels?project_id=eq.{}&select=id",
+            supabase_url.trim_end_matches('/'),
+            urlencoding::encode(&project_id),
+        );
+
+        let channels_resp = retry_request(3, || {
+            client
+                .get(&channels_url)
+                .header("Authorization", format!("Bearer {}", token))
+                .header("apikey", &anon_key)
+                .send()
+        })?;
+
+        if !channels_resp.status().is_success() {
+            return Err("Failed to fetch project channels".to_string());
+        }
+
+        let channels: Vec<serde_json::Value> = channels_resp
+            .json()
+            .map_err(|e| format!("Failed to parse channels: {}", e))?;
+
+        let channel_ids: Vec<String> = channels
+            .iter()
+            .filter_map(|c| c.get("id").and_then(|v| v.as_str()).map(String::from))
+            .collect();
+
+        if channel_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        // Build URL with FTS query and project-based channel filter
         let mut url = format!(
             "{}/rest/v1/c1_messages?tsv=fts(english).{}&select=*&order=created_at.desc&limit=50",
             supabase_url.trim_end_matches('/'),
@@ -267,12 +336,21 @@ pub async fn search_messages(
         );
 
         if let Some(cid) = channel_id {
-            url.push_str(&format!("&channel_id=eq.{}", urlencoding::encode(&cid)));
+            // Filter by specific channel (must be within project)
+            if channel_ids.contains(&cid) {
+                url.push_str(&format!("&channel_id=eq.{}", urlencoding::encode(&cid)));
+            } else {
+                return Err("Channel does not belong to this project".to_string());
+            }
+        } else {
+            // Filter by all channels in the project
+            let channel_filter = channel_ids
+                .iter()
+                .map(|id| format!("\"{}\"", id))
+                .collect::<Vec<_>>()
+                .join(",");
+            url.push_str(&format!("&channel_id=in.({})", channel_filter));
         }
-
-        // Also need to filter by project (join through channels)
-        // For simplicity, we'll fetch all matching messages and filter client-side
-        // In production, use a view or RPC function
 
         let resp = retry_request(3, || {
             client
@@ -305,13 +383,16 @@ pub async fn mark_read(channel_id: String) -> Result<(), String> {
         let (supabase_url, anon_key) = read_supabase_config()?;
         let token = read_auth_token()?;
 
+        // Get current user ID from JWT token
+        let participant_id = extract_user_id_from_token(&token)?;
+
         let client = build_client()?;
-        // RLS policy restricts UPDATE to participant_id = auth.uid(),
-        // so filtering by channel_id alone is sufficient and secure.
+        // Filter by both channel_id and participant_id to prevent updating other users' read status
         let url = format!(
-            "{}/rest/v1/c1_participants?channel_id=eq.{}",
+            "{}/rest/v1/c1_participants?channel_id=eq.{}&participant_id=eq.{}",
             supabase_url.trim_end_matches('/'),
             urlencoding::encode(&channel_id),
+            urlencoding::encode(&participant_id),
         );
 
         let now = chrono::Utc::now().to_rfc3339();
