@@ -150,6 +150,7 @@ func (s *SQLiteStore) initSchema() error {
 	// Best-effort migrations for existing tables
 	migrations := []string{
 		"ALTER TABLE c4_tasks ADD COLUMN handoff TEXT DEFAULT ''",
+		"ALTER TABLE c4_lighthouses ADD COLUMN task_id TEXT DEFAULT ''",
 	}
 
 	for _, stmt := range statements {
@@ -712,6 +713,24 @@ func (s *SQLiteStore) AssignTask(workerID string) (*TaskAssignment, error) {
 	// Best-effort soul context injection
 	if s.projectRoot != "" {
 		s.injectSoulContext(assignment)
+	}
+
+	// For T-LH- tasks, inject lighthouse spec context
+	if strings.HasPrefix(taskID, "T-LH-") {
+		// Extract lighthouse name: T-LH-{name}-{ver}
+		parts := strings.TrimPrefix(taskID, "T-LH-")
+		if idx := strings.LastIndex(parts, "-"); idx > 0 {
+			lhName := parts[:idx]
+			lh, lhErr := s.getLighthouse(lhName)
+			if lhErr == nil {
+				assignment.LighthouseSpec = &LighthouseContext{
+					Name:        lh.Name,
+					Spec:        lh.Spec,
+					InputSchema: lh.InputSchema,
+					Description: lh.Description,
+				}
+			}
+		}
 	}
 
 	// For R- tasks, inject parent T's review context

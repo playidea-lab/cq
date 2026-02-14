@@ -110,6 +110,18 @@ func (r *Registry) Unregister(name string) bool {
 	return true
 }
 
+// GetToolSchema returns the schema for a registered tool.
+// Returns false if the tool is not registered.
+func (r *Registry) GetToolSchema(name string) (ToolSchema, bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	tool, ok := r.tools[name]
+	if !ok {
+		return ToolSchema{}, false
+	}
+	return tool.schema, true
+}
+
 // ListTools returns all registered tool schemas in registration order.
 func (r *Registry) ListTools() []ToolSchema {
 	r.mu.RLock()

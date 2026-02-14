@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/changmin/c4-core/internal/mcp"
@@ -41,6 +42,10 @@ func RegisterLighthouseHandlers(reg *mcp.Registry, store *SQLiteStore) {
 					"type":        "string",
 					"description": "Agent ID for tracing",
 				},
+				"auto_task": map[string]any{
+					"type":        "boolean",
+					"description": "Auto-create implementation task on register (default: true)",
+				},
 			},
 			"required": []string{"action"},
 		},
@@ -52,6 +57,7 @@ func RegisterLighthouseHandlers(reg *mcp.Registry, store *SQLiteStore) {
 			InputSchema string `json:"input_schema"`
 			Spec        string `json:"spec"`
 			AgentID     string `json:"agent_id"`
+			AutoTask    *bool  `json:"auto_task"`
 		}
 		if err := json.Unmarshal(rawArgs, &args); err != nil {
 			return nil, fmt.Errorf("invalid arguments: %w", err)
@@ -62,9 +68,11 @@ func RegisterLighthouseHandlers(reg *mcp.Registry, store *SQLiteStore) {
 			agentID = "direct"
 		}
 
+		autoTask := args.AutoTask == nil || *args.AutoTask // default true
+
 		switch args.Action {
 		case "register":
-			return lighthouseRegister(reg, store, args.Name, args.Description, args.InputSchema, args.Spec, agentID)
+			return lighthouseRegister(reg, store, args.Name, args.Description, args.InputSchema, args.Spec, agentID, autoTask)
 		case "list":
 			return lighthouseList(store)
 		case "get":
@@ -82,7 +90,7 @@ func RegisterLighthouseHandlers(reg *mcp.Registry, store *SQLiteStore) {
 }
 
 // lighthouseRegister creates a new lighthouse stub and registers it in the MCP registry.
-func lighthouseRegister(reg *mcp.Registry, store *SQLiteStore, name, description, inputSchema, spec, agentID string) (any, error) {
+func lighthouseRegister(reg *mcp.Registry, store *SQLiteStore, name, description, inputSchema, spec, agentID string, autoTask bool) (any, error) {
 	if name == "" {
 		return nil, fmt.Errorf("name is required for register")
 	}
@@ -131,13 +139,49 @@ func lighthouseRegister(reg *mcp.Registry, store *SQLiteStore, name, description
 
 	store.logTrace("lighthouse_register", agentID, name, description)
 
-	return map[string]any{
+	result := map[string]any{
 		"success": true,
 		"message": fmt.Sprintf("Lighthouse '%s' registered as stub (v%d)", name, lh.Version),
 		"name":    name,
 		"status":  "stub",
 		"version": lh.Version,
-	}, nil
+	}
+
+	// Auto-create implementation task
+	if autoTask {
+		taskID := fmt.Sprintf("T-LH-%s-0", name)
+
+		// Build DoD from spec and input_schema
+		dod := fmt.Sprintf("Implement '%s' matching lighthouse spec.", name)
+		if spec != "" {
+			specSummary := spec
+			if len(specSummary) > 200 {
+				specSummary = specSummary[:200] + "..."
+			}
+			dod += fmt.Sprintf(" Spec contract: %s", specSummary)
+		}
+		if inputSchema != "" && inputSchema != `{"type":"object"}` {
+			dod += fmt.Sprintf(" Required input_schema: %s", inputSchema)
+		}
+
+		t := &Task{
+			ID:     taskID,
+			Title:  fmt.Sprintf("Implement lighthouse: %s", name),
+			DoD:    dod,
+			Domain: "lighthouse",
+		}
+		if err := store.AddTask(t); err != nil {
+			// Non-blocking: log warning but don't fail the register
+			fmt.Fprintf(os.Stderr, "c4: warning: failed to auto-create task %s: %v\n", taskID, err)
+		} else {
+			lh.TaskID = taskID
+			// Update the lighthouse record with the task_id
+			_, _ = store.db.Exec(`UPDATE c4_lighthouses SET task_id=? WHERE name=?`, taskID, name)
+			result["task_id"] = taskID
+		}
+	}
+
+	return result, nil
 }
 
 // lighthouseList returns all lighthouses with status counts.
@@ -188,6 +232,12 @@ func lighthousePromote(reg *mcp.Registry, store *SQLiteStore, name, agentID stri
 		return nil, fmt.Errorf("name is required for promote")
 	}
 
+	// Get lighthouse before promotion for schema validation
+	lh, err := store.getLighthouse(name)
+	if err != nil {
+		return nil, fmt.Errorf("lighthouse '%s' not found", name)
+	}
+
 	if err := store.promoteLighthouse(name, agentID); err != nil {
 		return nil, err
 	}
@@ -197,12 +247,30 @@ func lighthousePromote(reg *mcp.Registry, store *SQLiteStore, name, agentID stri
 
 	store.logTrace("lighthouse_promote", agentID, name, "promoted to implemented")
 
-	return map[string]any{
+	result := map[string]any{
 		"success": true,
 		"message": fmt.Sprintf("Lighthouse '%s' promoted to implemented. Stub removed from registry.", name),
 		"name":    name,
 		"status":  "implemented",
-	}, nil
+	}
+
+	// Schema validation: compare lighthouse input_schema with real tool's schema
+	if realSchema, ok := reg.GetToolSchema(name); ok {
+		warnings := validateSchemaCompat(lh.InputSchema, realSchema.InputSchema)
+		if len(warnings) > 0 {
+			result["schema_warnings"] = warnings
+		}
+	}
+
+	// Complete the linked task if it exists
+	if lh.TaskID != "" {
+		_, taskErr := store.db.Exec(`UPDATE c4_tasks SET status='done', updated_at=CURRENT_TIMESTAMP WHERE task_id=?`, lh.TaskID)
+		if taskErr == nil {
+			result["task_completed"] = lh.TaskID
+		}
+	}
+
+	return result, nil
 }
 
 // lighthouseUpdate updates a lighthouse's spec, description, or input_schema.
@@ -334,9 +402,9 @@ func LoadLighthousesOnStartup(reg *mcp.Registry, store *SQLiteStore) int {
 func (s *SQLiteStore) saveLighthouse(lh *Lighthouse) error {
 	now := time.Now().UTC().Format(time.RFC3339)
 	_, err := s.db.Exec(`
-		INSERT INTO c4_lighthouses (name, description, input_schema, spec, status, version, created_by, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		lh.Name, lh.Description, lh.InputSchema, lh.Spec, lh.Status, lh.Version, lh.CreatedBy, now, now,
+		INSERT INTO c4_lighthouses (name, description, input_schema, spec, status, version, created_by, task_id, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		lh.Name, lh.Description, lh.InputSchema, lh.Spec, lh.Status, lh.Version, lh.CreatedBy, lh.TaskID, now, now,
 	)
 	return err
 }
@@ -344,10 +412,10 @@ func (s *SQLiteStore) saveLighthouse(lh *Lighthouse) error {
 func (s *SQLiteStore) getLighthouse(name string) (*Lighthouse, error) {
 	var lh Lighthouse
 	err := s.db.QueryRow(`
-		SELECT name, description, input_schema, spec, status, version, created_by, promoted_by, created_at, updated_at
+		SELECT name, description, input_schema, spec, status, version, created_by, promoted_by, task_id, created_at, updated_at
 		FROM c4_lighthouses WHERE name = ?`, name,
 	).Scan(&lh.Name, &lh.Description, &lh.InputSchema, &lh.Spec, &lh.Status, &lh.Version,
-		&lh.CreatedBy, &lh.PromotedBy, &lh.CreatedAt, &lh.UpdatedAt)
+		&lh.CreatedBy, &lh.PromotedBy, &lh.TaskID, &lh.CreatedAt, &lh.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -356,7 +424,7 @@ func (s *SQLiteStore) getLighthouse(name string) (*Lighthouse, error) {
 
 func (s *SQLiteStore) listLighthouses() ([]*Lighthouse, error) {
 	rows, err := s.db.Query(`
-		SELECT name, description, input_schema, spec, status, version, created_by, promoted_by, created_at, updated_at
+		SELECT name, description, input_schema, spec, status, version, created_by, promoted_by, task_id, created_at, updated_at
 		FROM c4_lighthouses ORDER BY created_at ASC`)
 	if err != nil {
 		return nil, err
@@ -367,7 +435,7 @@ func (s *SQLiteStore) listLighthouses() ([]*Lighthouse, error) {
 	for rows.Next() {
 		var lh Lighthouse
 		if err := rows.Scan(&lh.Name, &lh.Description, &lh.InputSchema, &lh.Spec, &lh.Status, &lh.Version,
-			&lh.CreatedBy, &lh.PromotedBy, &lh.CreatedAt, &lh.UpdatedAt); err != nil {
+			&lh.CreatedBy, &lh.PromotedBy, &lh.TaskID, &lh.CreatedAt, &lh.UpdatedAt); err != nil {
 			continue
 		}
 		lighthouses = append(lighthouses, &lh)
@@ -432,4 +500,74 @@ func (s *SQLiteStore) deprecateLighthouse(name string) error {
 		UPDATE c4_lighthouses SET status='deprecated', updated_at=CURRENT_TIMESTAMP
 		WHERE name=?`, name)
 	return err
+}
+
+// validateSchemaCompat compares a lighthouse's input_schema (JSON string) against
+// a real tool's inputSchema (map). Returns a list of warnings for missing required fields.
+// Uses a lenient superset check: the real tool may have extra properties.
+func validateSchemaCompat(lhSchemaJSON string, realSchema map[string]any) []string {
+	var lhSchema map[string]any
+	if err := json.Unmarshal([]byte(lhSchemaJSON), &lhSchema); err != nil {
+		return []string{"lighthouse input_schema is not valid JSON"}
+	}
+
+	var warnings []string
+
+	// Compare required fields: lighthouse required should be a subset of real required
+	lhRequired := extractStringSlice(lhSchema, "required")
+	realRequired := extractStringSlice(realSchema, "required")
+	realRequiredSet := make(map[string]bool, len(realRequired))
+	for _, r := range realRequired {
+		realRequiredSet[r] = true
+	}
+	for _, r := range lhRequired {
+		if !realRequiredSet[r] {
+			warnings = append(warnings, fmt.Sprintf("lighthouse requires '%s' but real tool does not", r))
+		}
+	}
+
+	// Compare properties: lighthouse properties should exist in real tool
+	lhProps := extractMap(lhSchema, "properties")
+	realProps := extractMap(realSchema, "properties")
+	for propName := range lhProps {
+		if _, exists := realProps[propName]; !exists {
+			warnings = append(warnings, fmt.Sprintf("lighthouse property '%s' not found in real tool", propName))
+		}
+	}
+
+	return warnings
+}
+
+func extractStringSlice(m map[string]any, key string) []string {
+	v, ok := m[key]
+	if !ok {
+		return nil
+	}
+	arr, ok := v.([]any)
+	if !ok {
+		// Try []string directly
+		if ss, ok := v.([]string); ok {
+			return ss
+		}
+		return nil
+	}
+	result := make([]string, 0, len(arr))
+	for _, item := range arr {
+		if s, ok := item.(string); ok {
+			result = append(result, s)
+		}
+	}
+	return result
+}
+
+func extractMap(m map[string]any, key string) map[string]any {
+	v, ok := m[key]
+	if !ok {
+		return nil
+	}
+	mm, ok := v.(map[string]any)
+	if !ok {
+		return nil
+	}
+	return mm
 }

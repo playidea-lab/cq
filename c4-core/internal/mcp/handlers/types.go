@@ -34,11 +34,12 @@ type TaskAssignment struct {
 	Dependencies  []string       `json:"dependencies,omitempty"`
 	Domain        string         `json:"domain,omitempty"`
 	Branch        string         `json:"branch,omitempty"`
-	WorkerID      string         `json:"worker_id"`
-	WorktreePath  string         `json:"worktree_path,omitempty"`
-	Model         string         `json:"recommended_model,omitempty"`
-	ReviewContext *ReviewContext `json:"review_context,omitempty"`
-	SoulContext   string         `json:"soul_context,omitempty"`
+	WorkerID       string             `json:"worker_id"`
+	WorktreePath   string             `json:"worktree_path,omitempty"`
+	Model          string             `json:"recommended_model,omitempty"`
+	ReviewContext  *ReviewContext     `json:"review_context,omitempty"`
+	SoulContext    string             `json:"soul_context,omitempty"`
+	LighthouseSpec *LighthouseContext `json:"lighthouse_spec,omitempty"`
 }
 
 // ReviewContext provides context from the parent implementation task for review tasks.
@@ -139,10 +140,19 @@ type Lighthouse struct {
 	Spec        string `json:"spec"`
 	Status      string `json:"status"` // "stub", "implemented", "deprecated"
 	Version     int    `json:"version"`
+	TaskID      string `json:"task_id,omitempty"`
 	CreatedBy   string `json:"created_by,omitempty"`
 	PromotedBy  string `json:"promoted_by,omitempty"`
 	CreatedAt   string `json:"created_at,omitempty"`
 	UpdatedAt   string `json:"updated_at,omitempty"`
+}
+
+// LighthouseContext provides lighthouse spec context for T-LH- tasks.
+type LighthouseContext struct {
+	Name        string `json:"name"`
+	Spec        string `json:"spec"`
+	InputSchema string `json:"input_schema"`
+	Description string `json:"description"`
 }
 
 // Store defines the data access interface for MCP handlers.
