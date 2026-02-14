@@ -229,11 +229,15 @@ func (c *Client) Download(drivePath, destPath string) error {
 func (c *Client) List(folder string) ([]FileInfo, error) {
 	folder = normalizePath(folder)
 
-	// Query files where path starts with folder prefix
+	// Query immediate children only (server-side depth filtering)
 	filter := "project_id=eq." + url.QueryEscape(c.projectID)
-	if folder != "/" {
-		// List immediate children: path like 'folder/%' but not 'folder/%/%'
-		filter += "&path=like." + url.QueryEscape(folder+"/*")
+	if folder == "/" {
+		// Root: exclude nested paths (only top-level entries)
+		filter += "&path=not.like." + url.QueryEscape("/*/*")
+	} else {
+		// Non-root: match folder/* but exclude folder/*/*
+		filter += fmt.Sprintf("&and=(path.like.%s,path.not.like.%s)",
+			url.QueryEscape(folder+"/*"), url.QueryEscape(folder+"/*/*"))
 	}
 	filter += "&order=is_folder.desc,name.asc"
 
@@ -260,16 +264,7 @@ func (c *Client) List(folder string) ([]FileInfo, error) {
 		return nil, fmt.Errorf("decode list: %w", err)
 	}
 
-	// Filter to immediate children only (no nested)
-	var result []FileInfo
-	for _, f := range files {
-		parentDir := path.Dir(f.Path)
-		if parentDir == folder || (folder == "/" && !strings.Contains(strings.TrimPrefix(f.Path, "/"), "/")) {
-			result = append(result, f)
-		}
-	}
-
-	return result, nil
+	return files, nil
 }
 
 // Delete removes a file or folder from the drive.

@@ -317,16 +317,3 @@ func TestSetHeaders(t *testing.T) {
 	}
 }
 
-// --- intOr utility ---
-
-func TestIntOr(t *testing.T) {
-	if intOr(5, 10) != 5 {
-		t.Error("expected 5")
-	}
-	if intOr(0, 10) != 10 {
-		t.Error("expected 10 when a=0")
-	}
-	if intOr(-1, 10) != 10 {
-		t.Error("expected 10 when a=-1")
-	}
-}

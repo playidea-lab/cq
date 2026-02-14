@@ -120,14 +120,6 @@ func (h *C1Handler) resolveChannelID(channelName string) (string, error) {
 	return channels[0].ID, nil
 }
 
-// intOr returns a if a > 0, otherwise b.
-func intOr(a, b int) int {
-	if a > 0 {
-		return a
-	}
-	return b
-}
-
 // Search searches messages with FTS query, optional channel and date filter.
 func (h *C1Handler) Search(query, channelName, since string, limit int) (map[string]any, error) {
 	// Build filter

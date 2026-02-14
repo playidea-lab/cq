@@ -106,6 +106,43 @@ func newTestServer(t *testing.T) *httptest.Server {
 					match = false
 				}
 			}
+			// Handle path=not.like.X (root depth filter)
+			if strings.Contains(query, "path=not.like.") {
+				pattern := extractFilter(query, "path=not.like.")
+				p, _ := row["path"].(string)
+				if matchLikePattern(p, pattern) {
+					match = false
+				}
+			}
+			// Handle and=(path.like.X,path.not.like.Y) composite filter
+			if andIdx := strings.Index(query, "and="); andIdx >= 0 {
+				rest := query[andIdx+len("and="):]
+				if closeIdx := strings.Index(rest, ")"); closeIdx >= 0 {
+					inner := rest[1:closeIdx] // skip '('
+					if unescaped, err := url.QueryUnescape(inner); err == nil {
+						inner = unescaped
+					}
+					p, _ := row["path"].(string)
+					if likeIdx := strings.Index(inner, "path.like."); likeIdx >= 0 {
+						val := inner[likeIdx+len("path.like."):]
+						if ci := strings.Index(val, ","); ci >= 0 {
+							val = val[:ci]
+						}
+						if !matchLikePattern(p, val) {
+							match = false
+						}
+					}
+					if notLikeIdx := strings.Index(inner, "path.not.like."); notLikeIdx >= 0 {
+						val := inner[notLikeIdx+len("path.not.like."):]
+						if ci := strings.Index(val, ","); ci >= 0 {
+							val = val[:ci]
+						}
+						if matchLikePattern(p, val) {
+							match = false
+						}
+					}
+				}
+			}
 			if match {
 				result = append(result, row)
 			}
@@ -146,6 +183,34 @@ func extractFilter(query, prefix string) string {
 		return unescaped
 	}
 	return val
+}
+
+// matchLikePattern matches a string against a PostgREST LIKE pattern where * = any chars.
+func matchLikePattern(s, pattern string) bool {
+	si, pi := 0, 0
+	starIdx, match := -1, 0
+	for si < len(s) {
+		if pi < len(pattern) && (pattern[pi] == s[si] || pattern[pi] == '*') {
+			if pattern[pi] == '*' {
+				starIdx = pi
+				match = si
+				pi++
+				continue
+			}
+			si++
+			pi++
+		} else if starIdx >= 0 {
+			pi = starIdx + 1
+			match++
+			si = match
+		} else {
+			return false
+		}
+	}
+	for pi < len(pattern) && pattern[pi] == '*' {
+		pi++
+	}
+	return pi == len(pattern)
 }
 
 func TestUploadAndDownload(t *testing.T) {
