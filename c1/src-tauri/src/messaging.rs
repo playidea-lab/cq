@@ -5,8 +5,64 @@
 //! the Tauri event loop.
 
 use serde::{Deserialize, Serialize};
+use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 
 use crate::cloud::{build_client, read_auth_token, read_supabase_config, retry_request};
+
+// ---------------------------------------------------------------------------
+// JWT Token Helpers
+// ---------------------------------------------------------------------------
+
+/// Extract user ID from a JWT token's payload without signature verification.
+///
+/// SECURITY NOTE: This function performs base64 decoding of the JWT payload
+/// WITHOUT signature verification. This is intentional for client-side display
+/// purposes only (e.g., showing user info in UI before server validation).
+///
+/// This is acceptable because:
+/// - The token is only used for display, not authorization
+/// - Server-side validation happens when the token is used for API calls
+/// - Supabase verifies the signature on all authenticated requests
+///
+/// DO NOT use this for authorization decisions - always verify tokens server-side.
+fn extract_user_id_from_token(token: &str) -> Result<String, String> {
+    // JWT format: header.payload.signature
+    let parts: Vec<&str> = token.split('.').collect();
+    if parts.len() != 3 {
+        return Err(format!(
+            "Invalid JWT format: expected 3 parts, got {}",
+            parts.len()
+        ));
+    }
+
+    // Decode the payload (second part)
+    let payload_b64 = parts[1];
+
+    // JWT uses base64url encoding (- instead of +, _ instead of /)
+    let payload_bytes = URL_SAFE_NO_PAD
+        .decode(payload_b64)
+        .map_err(|e| format!("Failed to decode JWT payload: {}", e))?;
+
+    let payload_str = String::from_utf8(payload_bytes)
+        .map_err(|e| format!("JWT payload is not valid UTF-8: {}", e))?;
+
+    // Parse JSON payload
+    let payload: serde_json::Value = serde_json::from_str(&payload_str)
+        .map_err(|e| format!("Failed to parse JWT payload as JSON: {}", e))?;
+
+    // Extract 'sub' field (subject, which is the user ID in JWTs)
+    let user_id = payload
+        .get("sub")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| "JWT payload missing 'sub' field".to_string())?;
+
+    // Validate that user_id is not empty
+    if user_id.is_empty() {
+        return Err("JWT 'sub' field is empty".to_string());
+    }
+
+    Ok(user_id.to_string())
+}
 
 // ---------------------------------------------------------------------------
 // Data models
@@ -539,5 +595,75 @@ mod tests {
         let parsed: Participant = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed.participant_id, "user-1");
         assert!(parsed.last_read_at.is_some());
+    }
+
+    #[test]
+    fn test_extract_user_id_valid_token() {
+        // Valid JWT with sub field: header.payload.signature
+        // Payload: {"sub":"user-123","exp":1234567890}
+        let payload = r#"{"sub":"user-123","exp":1234567890}"#;
+        let payload_b64 = URL_SAFE_NO_PAD.encode(payload.as_bytes());
+        let token = format!("eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.{}.fake_signature", payload_b64);
+
+        let result = extract_user_id_from_token(&token);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "user-123");
+    }
+
+    #[test]
+    fn test_extract_user_id_malformed_token() {
+        // Test various malformed tokens
+        let test_cases = vec![
+            ("not.a.valid.jwt.extra", "expected 3 parts, got 5"),
+            ("only.two", "expected 3 parts, got 2"),
+            ("", "expected 3 parts, got 1"),
+            ("a.invalid_base64!.c", "Failed to decode JWT payload"),
+        ];
+
+        for (token, expected_error) in test_cases {
+            let result = extract_user_id_from_token(token);
+            assert!(result.is_err(), "Expected error for token: {}", token);
+            assert!(
+                result.unwrap_err().contains(expected_error),
+                "Expected error containing '{}'",
+                expected_error
+            );
+        }
+    }
+
+    #[test]
+    fn test_extract_user_id_missing_sub_field() {
+        // JWT payload without 'sub' field
+        let payload = r#"{"exp":1234567890,"iat":1234567890}"#;
+        let payload_b64 = URL_SAFE_NO_PAD.encode(payload.as_bytes());
+        let token = format!("eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.{}.fake_sig", payload_b64);
+
+        let result = extract_user_id_from_token(&token);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("missing 'sub' field"));
+    }
+
+    #[test]
+    fn test_extract_user_id_empty_sub() {
+        // JWT payload with empty 'sub' field
+        let payload = r#"{"sub":"","exp":1234567890}"#;
+        let payload_b64 = URL_SAFE_NO_PAD.encode(payload.as_bytes());
+        let token = format!("eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.{}.fake_sig", payload_b64);
+
+        let result = extract_user_id_from_token(&token);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("'sub' field is empty"));
+    }
+
+    #[test]
+    fn test_extract_user_id_invalid_json() {
+        // JWT payload with invalid JSON
+        let payload = "not json at all";
+        let payload_b64 = URL_SAFE_NO_PAD.encode(payload.as_bytes());
+        let token = format!("eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.{}.fake_sig", payload_b64);
+
+        let result = extract_user_id_from_token(&token);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Failed to parse JWT payload"));
     }
 }
