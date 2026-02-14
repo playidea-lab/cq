@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"strings"
 	"time"
@@ -322,15 +323,19 @@ func (s *SQLiteStore) detectFeedbackKeywords() []Pattern {
 func (s *SQLiteStore) detectSpeedChange() []Pattern {
 	// Compare average days to complete: recent 5 vs overall
 	var recentAvg, overallAvg sql.NullFloat64
-	_ = s.db.QueryRow(`
+	if err := s.db.QueryRow(`
 		SELECT AVG(julianday(updated_at) - julianday(created_at))
 		FROM (SELECT created_at, updated_at FROM c4_tasks WHERE status='done' ORDER BY updated_at DESC LIMIT 5)
-	`).Scan(&recentAvg)
+	`).Scan(&recentAvg); err != nil {
+		log.Printf("c4: twin: detectSpeedChange recent avg: %v", err)
+	}
 
-	_ = s.db.QueryRow(`
+	if err := s.db.QueryRow(`
 		SELECT AVG(julianday(updated_at) - julianday(created_at))
 		FROM c4_tasks WHERE status='done'
-	`).Scan(&overallAvg)
+	`).Scan(&overallAvg); err != nil {
+		log.Printf("c4: twin: detectSpeedChange overall avg: %v", err)
+	}
 
 	if !recentAvg.Valid || !overallAvg.Valid {
 		return nil
@@ -370,16 +375,21 @@ func (s *SQLiteStore) RecordGrowthSnapshot(username string) {
 
 	// Check if already recorded this period
 	var exists int
-	_ = s.db.QueryRow("SELECT COUNT(*) FROM twin_growth WHERE username=? AND period=?", username, period).Scan(&exists)
+	if err := s.db.QueryRow("SELECT COUNT(*) FROM twin_growth WHERE username=? AND period=?", username, period).Scan(&exists); err != nil {
+		log.Printf("c4: twin: RecordGrowthSnapshot exists check: %v", err)
+		return
+	}
 	if exists > 0 {
 		return
 	}
 
 	// Calculate current approval rate
 	var total, approved int
-	_ = s.db.QueryRow(`
+	if err := s.db.QueryRow(`
 		SELECT COUNT(*), SUM(CASE WHEN outcome='approved' THEN 1 ELSE 0 END)
-		FROM persona_stats`).Scan(&total, &approved)
+		FROM persona_stats`).Scan(&total, &approved); err != nil {
+		log.Printf("c4: twin: RecordGrowthSnapshot approval rate: %v", err)
+	}
 
 	if total > 0 {
 		rate := float64(approved) / float64(total)
@@ -388,21 +398,27 @@ func (s *SQLiteStore) RecordGrowthSnapshot(username string) {
 
 	// Average review score
 	var avgScore sql.NullFloat64
-	_ = s.db.QueryRow("SELECT AVG(review_score) FROM persona_stats WHERE review_score > 0").Scan(&avgScore)
+	if err := s.db.QueryRow("SELECT AVG(review_score) FROM persona_stats WHERE review_score > 0").Scan(&avgScore); err != nil {
+		log.Printf("c4: twin: RecordGrowthSnapshot avg score: %v", err)
+	}
 	if avgScore.Valid {
 		s.insertGrowthMetric(username, "avg_review_score", avgScore.Float64, period)
 	}
 
 	// Tasks completed this period
 	var completed int
-	_ = s.db.QueryRow("SELECT COUNT(*) FROM c4_tasks WHERE status='done'").Scan(&completed)
+	if err := s.db.QueryRow("SELECT COUNT(*) FROM c4_tasks WHERE status='done'").Scan(&completed); err != nil {
+		log.Printf("c4: twin: RecordGrowthSnapshot tasks completed: %v", err)
+	}
 	s.insertGrowthMetric(username, "tasks_completed", float64(completed), period)
 }
 
 func (s *SQLiteStore) insertGrowthMetric(username, metric string, value float64, period string) {
-	_, _ = s.db.Exec(`
+	if _, err := s.db.Exec(`
 		INSERT OR IGNORE INTO twin_growth (username, metric, value, period)
-		VALUES (?, ?, ?, ?)`, username, metric, value, period)
+		VALUES (?, ?, ?, ?)`, username, metric, value, period); err != nil {
+		log.Printf("c4: twin: insertGrowthMetric %s: %v", metric, err)
+	}
 }
 
 // GetGrowthTrend retrieves recent growth metrics for a user.
@@ -521,11 +537,13 @@ func (s *SQLiteStore) BuildTwinReview() *TwinReview {
 
 	// Historical checkpoint pattern
 	var total, approved, rejected int
-	_ = s.db.QueryRow(`
+	if err := s.db.QueryRow(`
 		SELECT COUNT(*),
 			SUM(CASE WHEN decision='APPROVE' THEN 1 ELSE 0 END),
 			SUM(CASE WHEN decision='REQUEST_CHANGES' THEN 1 ELSE 0 END)
-		FROM c4_checkpoints`).Scan(&total, &approved, &rejected)
+		FROM c4_checkpoints`).Scan(&total, &approved, &rejected); err != nil {
+		log.Printf("c4: twin: BuildTwinReview checkpoint stats: %v", err)
+	}
 
 	if total >= 3 {
 		review.HistoricalPattern = fmt.Sprintf("Checkpoint history: %d/%d approved (%.0f%%)",
@@ -621,10 +639,14 @@ func (s *SQLiteStore) reflect(focus string) (map[string]any, error) {
 	go s.RecordGrowthSnapshot(username)
 
 	var totalTasks int
-	_ = s.db.QueryRow("SELECT COUNT(*) FROM c4_tasks").Scan(&totalTasks)
+	if err := s.db.QueryRow("SELECT COUNT(*) FROM c4_tasks").Scan(&totalTasks); err != nil {
+		log.Printf("c4: twin: reflect totalTasks: %v", err)
+	}
 
 	var doneTasks int
-	_ = s.db.QueryRow("SELECT COUNT(*) FROM c4_tasks WHERE status='done'").Scan(&doneTasks)
+	if err := s.db.QueryRow("SELECT COUNT(*) FROM c4_tasks WHERE status='done'").Scan(&doneTasks); err != nil {
+		log.Printf("c4: twin: reflect doneTasks: %v", err)
+	}
 
 	identity := map[string]any{
 		"username":    username,
@@ -772,9 +794,11 @@ func (s *SQLiteStore) detectMilestones() []string {
 
 	// Check approval rate milestones
 	var total, approved int
-	_ = s.db.QueryRow(`
+	if err := s.db.QueryRow(`
 		SELECT COUNT(*), SUM(CASE WHEN outcome='approved' THEN 1 ELSE 0 END)
-		FROM persona_stats`).Scan(&total, &approved)
+		FROM persona_stats`).Scan(&total, &approved); err != nil {
+		log.Printf("c4: twin: detectMilestones approval stats: %v", err)
+	}
 
 	if total >= 10 {
 		rate := float64(approved) / float64(total) * 100
@@ -787,7 +811,9 @@ func (s *SQLiteStore) detectMilestones() []string {
 
 	// Total tasks completed milestones
 	var done int
-	_ = s.db.QueryRow("SELECT COUNT(*) FROM c4_tasks WHERE status='done'").Scan(&done)
+	if err := s.db.QueryRow("SELECT COUNT(*) FROM c4_tasks WHERE status='done'").Scan(&done); err != nil {
+		log.Printf("c4: twin: detectMilestones done count: %v", err)
+	}
 	switch {
 	case done >= 100:
 		milestones = append(milestones, fmt.Sprintf("%d tasks completed", done))
@@ -816,9 +842,11 @@ func isoWeek(t time.Time) int {
 
 // logTrace records an event in the c4_agent_traces table.
 func (s *SQLiteStore) logTrace(eventType, agentID, taskID, detail string) {
-	_, _ = s.db.Exec(`
+	if _, err := s.db.Exec(`
 		INSERT INTO c4_agent_traces (event_type, agent_id, task_id, detail)
-		VALUES (?, ?, ?, ?)`, eventType, agentID, taskID, detail)
+		VALUES (?, ?, ?, ?)`, eventType, agentID, taskID, detail); err != nil {
+		log.Printf("c4: twin: logTrace %s: %v", eventType, err)
+	}
 }
 
 // getRecentTraces returns the most recent agent trace events.

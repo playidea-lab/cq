@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net"
 	"os"
 	"os/exec"
@@ -64,7 +65,9 @@ func cleanupStaleSidecar(pidFile string) {
 			if err == nil && pid > 0 {
 				if err := syscall.Kill(pid, 0); err == nil {
 					fmt.Fprintf(os.Stderr, "c4: killing stale sidecar (pgid %d) from previous session\n", pid)
-					_ = syscall.Kill(-pid, syscall.SIGTERM)
+					if err := syscall.Kill(-pid, syscall.SIGTERM); err != nil {
+						log.Printf("c4: sidecar: SIGTERM to pgid %d failed: %v", pid, err)
+					}
 					time.Sleep(500 * time.Millisecond)
 					_ = syscall.Kill(-pid, syscall.SIGKILL)
 				}
@@ -93,7 +96,9 @@ func cleanupStaleSidecar(pidFile string) {
 			continue
 		}
 		fmt.Fprintf(os.Stderr, "c4: killing orphan c4-bridge process (pid %d, ppid=1)\n", pid)
-		_ = syscall.Kill(pid, syscall.SIGTERM)
+		if err := syscall.Kill(pid, syscall.SIGTERM); err != nil {
+			log.Printf("c4: sidecar: SIGTERM to orphan pid %d failed: %v", pid, err)
+		}
 		time.Sleep(200 * time.Millisecond)
 		_ = syscall.Kill(pid, syscall.SIGKILL)
 	}
@@ -104,7 +109,9 @@ func writePidFile(pidFile string, pid int) {
 	if pidFile == "" {
 		return
 	}
-	_ = os.WriteFile(pidFile, []byte(strconv.Itoa(pid)), 0644)
+	if err := os.WriteFile(pidFile, []byte(strconv.Itoa(pid)), 0644); err != nil {
+		log.Printf("c4: sidecar: failed to write PID file %s: %v", pidFile, err)
+	}
 }
 
 // StartSidecar spawns the Python bridge sidecar and waits for it to be ready.

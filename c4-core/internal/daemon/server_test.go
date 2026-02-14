@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -275,8 +276,8 @@ func TestServer_GPUStatus_WithMock(t *testing.T) {
 func TestServer_DaemonStop(t *testing.T) {
 	srv, _ := tempServer(t)
 
-	stopped := false
-	srv.cancelFunc = func() { stopped = true }
+	var stopped atomic.Bool
+	srv.cancelFunc = func() { stopped.Store(true) }
 
 	w := doRequest(srv, "POST", "/daemon/stop", "")
 	if w.Code != 200 {
@@ -285,7 +286,7 @@ func TestServer_DaemonStop(t *testing.T) {
 
 	// Wait for the async cancel
 	time.Sleep(200 * time.Millisecond)
-	if !stopped {
+	if !stopped.Load() {
 		t.Error("expected cancelFunc to be called")
 	}
 }

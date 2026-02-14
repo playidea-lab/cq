@@ -426,11 +426,12 @@ func (s *Server) handleDaemonStop(w http.ResponseWriter, r *http.Request) {
 		"message": "daemon shutting down",
 	})
 
-	if s.cancelFunc != nil {
+	cancel := s.cancelFunc
+	if cancel != nil {
 		log.Println("daemon: stop requested via API")
 		go func() {
 			time.Sleep(100 * time.Millisecond) // let response flush
-			s.cancelFunc()
+			cancel()
 		}()
 	}
 }

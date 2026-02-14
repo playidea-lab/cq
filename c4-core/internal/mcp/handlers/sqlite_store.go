@@ -962,11 +962,13 @@ func (s *SQLiteStore) Checkpoint(checkpointID, decision, notes string, requiredC
 		changesJSON = string(b)
 	}
 
-	_, _ = s.db.Exec(`
+	if _, err := s.db.Exec(`
 		INSERT OR REPLACE INTO c4_checkpoints (checkpoint_id, decision, notes, required_changes, created_at)
 		VALUES (?, ?, ?, ?, ?)`,
 		checkpointID, decision, notes, changesJSON, time.Now().Format(time.RFC3339),
-	)
+	); err != nil {
+		fmt.Fprintf(os.Stderr, "c4: checkpoint INSERT %s: %v\n", checkpointID, err)
+	}
 
 	result := &CheckpointResult{
 		Success: true,
@@ -1109,11 +1111,13 @@ func (s *SQLiteStore) recordPersonaStat(personaID, taskID, outcome string) {
 	if personaID == "" {
 		personaID = "direct"
 	}
-	_, _ = s.db.Exec(`
+	if _, err := s.db.Exec(`
 		INSERT OR REPLACE INTO persona_stats (persona_id, task_id, outcome, created_at)
 		VALUES (?, ?, ?, ?)`,
 		personaID, taskID, outcome, time.Now().UTC().Format(time.RFC3339),
-	)
+	); err != nil {
+		fmt.Fprintf(os.Stderr, "c4: recordPersonaStat %s/%s: %v\n", personaID, taskID, err)
+	}
 }
 
 // GetPersonaStats retrieves performance stats for a persona.
