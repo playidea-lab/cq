@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -116,6 +117,15 @@ func newMCPServer() (*mcpServer, error) {
 			cloudProjectID = cloudCfg.ProjectID
 			if cloudProjectID == "" {
 				cloudProjectID = cfgMgr.GetConfig().ProjectID
+			}
+			// Resolve project name to UUID if not already a UUID
+			if cloudAuthToken != "" && cloudProjectID != "" && !isUUID(cloudProjectID) {
+				if uuid, err := resolveProjectUUID(cloudCfg.URL, cloudCfg.AnonKey, cloudAuthToken, cloudProjectID); err == nil {
+					fmt.Fprintf(os.Stderr, "c4: cloud project %q → %s\n", cloudProjectID, uuid)
+					cloudProjectID = uuid
+				} else {
+					fmt.Fprintf(os.Stderr, "c4: could not resolve project UUID: %v\n", err)
+				}
 			}
 			knowledgeCloud = cloud.NewKnowledgeCloudClient(
 				cloudCfg.URL+"/rest/v1", cloudCfg.AnonKey, cloudAuthToken, cloudProjectID)
@@ -391,5 +401,56 @@ func runMCP() error {
 	fmt.Fprintf(os.Stderr, "c4: %d tools registered\n", len(tools))
 
 	return srv.serve()
+}
+
+// isUUID returns true if s looks like a UUID (8-4-4-4-12 hex pattern).
+func isUUID(s string) bool {
+	if len(s) != 36 {
+		return false
+	}
+	for i, c := range s {
+		if i == 8 || i == 13 || i == 18 || i == 23 {
+			if c != '-' {
+				return false
+			}
+		} else {
+			if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')) {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// resolveProjectUUID queries Supabase PostgREST to look up a project UUID by name.
+func resolveProjectUUID(supabaseURL, anonKey, authToken, projectName string) (string, error) {
+	url := supabaseURL + "/rest/v1/c4_projects?select=id&name=eq." + projectName + "&limit=1"
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("apikey", anonKey)
+	req.Header.Set("Authorization", "Bearer "+authToken)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		return "", fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
+
+	var rows []struct {
+		ID string `json:"id"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&rows); err != nil {
+		return "", err
+	}
+	if len(rows) == 0 {
+		return "", fmt.Errorf("project %q not found", projectName)
+	}
+	return rows[0].ID, nil
 }
 
