@@ -4,6 +4,7 @@ import { Sidebar } from './components/Sidebar';
 import { ConfigView } from './components/config/ConfigView';
 import { TeamView } from './components/team/TeamView';
 import { LoginView } from './components/auth/LoginView';
+import { ChannelsView } from './components/channels/ChannelsView';
 import { ErrorBoundary } from './components/shared/ErrorBoundary';
 import { AuthProvider } from './contexts/AuthContext';
 import { ToastProvider } from './contexts/ToastContext';
@@ -108,13 +109,7 @@ function AppContent() {
 
     switch (currentView) {
       case 'channels':
-        // TODO: ChannelsView will be implemented in T-435-0
-        return (
-          <div className="empty-state">
-            <h2 className="empty-state__title">Channels</h2>
-            <p className="empty-state__description">Messaging UI coming soon.</p>
-          </div>
-        );
+        return <ChannelsView key={`channels-${projectPath}`} projectId={projectPath} />;
       case 'documents':
         // TODO: DocumentsView will be implemented in T-439-0
         return <ConfigView key={`config-${projectPath}`} projectPath={projectPath} />;
