@@ -1,6 +1,6 @@
 ---
 name: frontend-developer
-description: Build React components using TDD, implement responsive layouts, and handle client-side state management. Optimizes frontend performance and ensures accessibility. Use PROACTIVELY when creating UI components or fixing frontend issues.
+description: Build React components using TDD, implement responsive layouts, and handle client-side state management. Optimizes frontend performance and ensures accessibility. Use PROACTIVELY when creating UI components or fixing frontend issues. When to use: spec-to-code implementation and React development. For design-to-spec conversion, use frontend-designer instead.
 memory: project
 ---
 

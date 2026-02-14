@@ -1,6 +1,6 @@
 ---
 name: devops-troubleshooter
-description: TDD-driven debug production issues, analyze logs, and fix deployment failures. Masters monitoring tools, incident response, and root cause analysis. Use PROACTIVELY for production debugging or system outages.
+description: TDD-driven debug production issues, analyze logs, and fix deployment failures. Masters monitoring tools, incident response, and root cause analysis. Use PROACTIVELY for production debugging or system outages. When to use: deployment failure debugging and log analysis. For CI/CD pipeline setup, use deployment-engineer instead.
 memory: project
 ---
 

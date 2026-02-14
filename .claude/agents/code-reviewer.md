@@ -1,6 +1,6 @@
 ---
 name: code-reviewer
-description: TDD-focused code review specialist. Reviews code for test coverage, quality, security, and maintainability. Use immediately after writing or modifying code.
+description: TDD-focused code review specialist. Reviews code for test coverage, quality, security, and maintainability. Use immediately after writing or modifying code. When to use: read-only code review and quality assessment. For code changes and refactoring execution, use code-refactorer instead.
 memory: project
 ---
 

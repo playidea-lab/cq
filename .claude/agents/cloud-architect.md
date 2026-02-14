@@ -1,6 +1,6 @@
 ---
 name: cloud-architect
-description: TDD-driven design AWS/Azure/GCP infrastructure, implement Terraform IaC, and optimize cloud costs. Handles auto-scaling, multi-region deployments, and serverless architectures. Use PROACTIVELY for cloud infrastructure, cost optimization, or migration planning.
+description: TDD-driven design AWS/Azure/GCP infrastructure, implement Terraform IaC, and optimize cloud costs. Handles auto-scaling, multi-region deployments, and serverless architectures. Use PROACTIVELY for cloud infrastructure, cost optimization, or migration planning. When to use: cloud infra and IaC. For API/DB design, use backend-architect instead.
 memory: project
 ---
 

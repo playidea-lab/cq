@@ -1,6 +1,6 @@
 ---
 name: debugger
-description: TDD-driven debugging specialist for errors, test failures, and unexpected behavior. Use proactively when encountering any issues.
+description: TDD-driven debugging specialist for errors, test failures, and unexpected behavior. Use proactively when encountering any issues. When to use: development-time bugs and test failures. For production outages, use incident-responder instead.
 memory: project
 ---
 

@@ -1,6 +1,6 @@
 ---
 name: incident-responder
-description: TDD-driven handles production incidents with urgency and precision. Use IMMEDIATELY when production issues occur. Coordinates debugging, implements fixes, and documents post-mortems.
+description: TDD-driven handles production incidents with urgency and precision. Use IMMEDIATELY when production issues occur. Coordinates debugging, implements fixes, and documents post-mortems. When to use: production outages and service degradation. For development-time bugs, use debugger instead.
 memory: project
 ---
 

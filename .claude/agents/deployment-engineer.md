@@ -1,6 +1,6 @@
 ---
 name: deployment-engineer
-description: TDD-driven configure CI/CD pipelines, Docker containers, and cloud deployments. Handles GitHub Actions, Kubernetes, and infrastructure automation. Use PROACTIVELY when setting up deployments, containers, or CI/CD workflows.
+description: TDD-driven configure CI/CD pipelines, Docker containers, and cloud deployments. Handles GitHub Actions, Kubernetes, and infrastructure automation. Use PROACTIVELY when setting up deployments, containers, or CI/CD workflows. When to use: CI/CD pipeline setup and container configuration. For production incident debugging, use devops-troubleshooter instead.
 memory: project
 ---
 

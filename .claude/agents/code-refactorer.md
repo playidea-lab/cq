@@ -1,6 +1,6 @@
 ---
 name: code-refactorer
-description: TDD-driven use this agent when you need to improve existing code structure, readability, or maintainability without changing functionality. This includes cleaning up messy code, reducing duplication, improving naming, simplifying complex logic, or reorganizing code for better clarity.
+description: TDD-driven improves existing code structure, readability, or maintainability without changing functionality. Cleans up messy code, reduces duplication, and simplifies complex logic. When to use: code changes and refactoring execution. For read-only review, use code-reviewer instead.
 memory: project
 ---
 

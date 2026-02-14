@@ -1,6 +1,6 @@
 ---
 name: backend-architect
-description: Design RESTful APIs, microservice boundaries, and database schemas using TDD principles. Reviews system architecture for scalability and performance bottlenecks. Use PROACTIVELY when creating new backend services or APIs.
+description: Design RESTful APIs, microservice boundaries, and database schemas using TDD principles. Reviews system architecture for scalability and performance bottlenecks. Use PROACTIVELY when creating new backend services or APIs. When to use: API/DB design and service architecture. For cloud infrastructure and IaC, use cloud-architect instead.
 memory: project
 ---
 

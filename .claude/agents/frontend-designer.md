@@ -1,6 +1,6 @@
 ---
 name: frontend-designer
-description: TDD-driven use this agent when you need to convert design mockups, wireframes, or visual concepts into detailed technical specifications and implementation guides for frontend development. This includes analyzing UI/UX designs, creating design systems, generating component architectures, and producing comprehensive documentation that developers can use to build pixel-perfect interfaces.
+description: TDD-driven converts design mockups, wireframes, or visual concepts into detailed technical specifications and implementation guides. When to use: design-to-spec conversion and design system creation. For spec-to-code implementation, use frontend-developer instead.
 memory: project
 ---
 
