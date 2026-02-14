@@ -351,6 +351,26 @@ export interface AuthConfig {
   has_anon_key: boolean;
 }
 
+// --- Document types ---
+
+export type DocType = 'persona' | 'skill' | 'spec' | 'config';
+
+export interface DocumentMeta {
+  name: string;
+  doc_type: DocType;
+  path: string;
+  size: number;
+  updated_at: string | null;
+}
+
+export interface DocumentContent {
+  name: string;
+  doc_type: DocType;
+  content: string;
+  path: string;
+  updated_at: string | null;
+}
+
 // --- Config types ---
 
 export type ConfigCategory = 'global' | 'project' | 'persona' | 'c4' | 'memory';

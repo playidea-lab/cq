@@ -5,6 +5,7 @@ import { ConfigView } from './components/config/ConfigView';
 import { TeamView } from './components/team/TeamView';
 import { LoginView } from './components/auth/LoginView';
 import { ChannelsView } from './components/channels/ChannelsView';
+import { DocumentsView } from './components/documents/DocumentsView';
 import { ErrorBoundary } from './components/shared/ErrorBoundary';
 import { AuthProvider } from './contexts/AuthContext';
 import { ToastProvider } from './contexts/ToastContext';
@@ -111,8 +112,7 @@ function AppContent() {
       case 'channels':
         return <ChannelsView key={`channels-${projectPath}`} projectId={projectPath} />;
       case 'documents':
-        // TODO: DocumentsView will be implemented in T-439-0
-        return <ConfigView key={`config-${projectPath}`} projectPath={projectPath} />;
+        return <DocumentsView key={`docs-${projectPath}`} projectPath={projectPath} />;
       case 'settings':
         return <ConfigView key={`settings-${projectPath}`} projectPath={projectPath} />;
     }
