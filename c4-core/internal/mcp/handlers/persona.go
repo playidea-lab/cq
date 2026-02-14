@@ -12,12 +12,6 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// PersonaStore extends Store with persona-specific methods.
-type PersonaStore interface {
-	GetPersonaStats(personaID string) (map[string]any, error)
-	ListPersonas() ([]map[string]any, error)
-}
-
 // RegisterPersonaHandlers registers persona-related MCP tools.
 // projectRoot is needed for soul file auto-update in persona_evolve.
 func RegisterPersonaHandlers(reg *mcp.Registry, store *SQLiteStore) {
@@ -225,6 +219,11 @@ func RegisterTeamHandlers(reg *mcp.Registry, projectRoot string) {
 			}, nil
 		}
 
+		// Validate username to prevent path traversal
+		if !validSoulID.MatchString(args.Username) {
+			return nil, fmt.Errorf("invalid username: must be alphanumeric, dash, or underscore")
+		}
+
 		// Update or create member
 		member, exists := team.Members[args.Username]
 		if !exists {
@@ -385,6 +384,10 @@ func getActiveUsername(projectRoot string) string {
 
 // applySuggestionsToSoul appends suggestions to a user's soul Learned section.
 func applySuggestionsToSoul(projectRoot, username, role string, suggestions []string) error {
+	// Validate inputs to prevent path traversal
+	if !validSoulID.MatchString(username) || !validSoulID.MatchString(role) {
+		return fmt.Errorf("invalid username or role: must be alphanumeric, dash, or underscore")
+	}
 	soulPath := filepath.Join(projectRoot, ".c4", "souls", username, fmt.Sprintf("soul-%s.md", role))
 
 	// Read existing soul or create new
