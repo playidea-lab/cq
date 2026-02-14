@@ -291,7 +291,7 @@ func (s *Scheduler) startJob(job *Job, gpuIndices []int) error {
 	s.mu.Unlock()
 
 	// Wait for completion in background
-	go s.waitForCompletion(job.ID, job.GPUIndices)
+	go s.waitForCompletion(job.ID, gpuIndices)
 
 	return nil
 }
