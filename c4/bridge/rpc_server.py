@@ -159,6 +159,8 @@ class BridgeServer:
         # Internal state
         self._server: asyncio.Server | None = None
         self._code_ops = self._create_code_ops()
+        self._cached_doc_store: Any = None
+        self._cached_research_store: Any = None
 
         # Resolve lazy imports
         _ensure_imports()
@@ -204,7 +206,14 @@ class BridgeServer:
             self._server.close()
             await self._server.wait_closed()
             self._server = None
-            logger.info("Bridge server stopped")
+        # Close cached stores
+        if self._cached_doc_store is not None:
+            self._cached_doc_store.close()
+            self._cached_doc_store = None
+        if self._cached_research_store is not None:
+            self._cached_research_store.close()
+            self._cached_research_store = None
+        logger.info("Bridge server stopped")
 
     # ======================================================================
     # Connection Handler
@@ -390,6 +399,12 @@ class BridgeServer:
     def _knowledge_base_path(self) -> Path:
         return self.project_root / ".c4" / "knowledge"
 
+    def _get_doc_store(self) -> Any:
+        """Get or create a cached DocumentStore instance."""
+        if self._cached_doc_store is None:
+            self._cached_doc_store = DocumentStore(base_path=self._knowledge_base_path())
+        return self._cached_doc_store
+
     async def _handle_knowledge_search(self, params: dict[str, Any]) -> dict[str, Any]:
         """KnowledgeSearch -> KnowledgeSearcher.search()."""
         query = params.get("query")
@@ -434,17 +449,16 @@ class BridgeServer:
         metadata = {k: v for k, v in params.items() if k in _VALID_METADATA_FIELDS}
 
         try:
-            store = DocumentStore(base_path=self._knowledge_base_path())
+            store = self._get_doc_store()
             doc_id = store.create(doc_type, metadata, body=body)
 
             # Auto-index embedding (best-effort, never blocks)
             try:
                 EmbedderCls = _import_knowledge_embedder()
-                embedder = EmbedderCls(base_path=self._knowledge_base_path())
-                doc = store.get(doc_id)
-                if doc:
-                    embedder.index_document(doc_id, doc.model_dump())
-                embedder.close()
+                with EmbedderCls(base_path=self._knowledge_base_path()) as embedder:
+                    doc = store.get(doc_id)
+                    if doc:
+                        embedder.index_document(doc_id, doc.model_dump())
             except Exception as idx_err:
                 logger.warning("Auto-index embedding failed for %s: %s", doc_id, idx_err)
 
@@ -463,7 +477,7 @@ class BridgeServer:
             return {"error": "doc_id is required"}
 
         try:
-            store = DocumentStore(base_path=self._knowledge_base_path())
+            store = self._get_doc_store()
             doc = store.get(doc_id)
             if doc is None:
                 return {"error": f"Document not found: {doc_id}"}
@@ -559,7 +573,7 @@ class BridgeServer:
 
             # Save to knowledge store (update or create)
             doc_id = "pat-project-map"
-            store = DocumentStore(base_path=self._knowledge_base_path())
+            store = self._get_doc_store()
             existing = (store.docs_dir / f"{doc_id}.md").exists()
 
             if existing and not force:
@@ -608,6 +622,12 @@ class BridgeServer:
     def _research_base_path(self) -> Path:
         return self.project_root / ".c4" / "research"
 
+    def _get_research_store(self) -> Any:
+        """Get or create a cached ResearchStore instance."""
+        if self._cached_research_store is None:
+            self._cached_research_store = ResearchStore(base_path=self._research_base_path())
+        return self._cached_research_store
+
     async def _handle_research_start(self, params: dict[str, Any]) -> dict[str, Any]:
         """ResearchStart -> create project + first iteration."""
         name = params.get("name")
@@ -615,7 +635,7 @@ class BridgeServer:
             return {"error": "name is required"}
 
         try:
-            store = ResearchStore(base_path=self._research_base_path())
+            store = self._get_research_store()
             project_id = store.create_project(
                 name=name,
                 paper_path=params.get("paper_path"),
@@ -638,7 +658,7 @@ class BridgeServer:
             return {"error": "project_id is required"}
 
         try:
-            store = ResearchStore(base_path=self._research_base_path())
+            store = self._get_research_store()
             project = store.get_project(project_id)
             if project is None:
                 return {"error": f"Project not found: {project_id}"}
@@ -661,7 +681,7 @@ class BridgeServer:
             return {"error": "project_id is required"}
 
         try:
-            store = ResearchStore(base_path=self._research_base_path())
+            store = self._get_research_store()
             current = store.get_current_iteration(project_id)
             if current is None:
                 return {"error": "No active iteration"}
@@ -688,7 +708,7 @@ class BridgeServer:
             return {"error": "action must be 'continue', 'pause', or 'complete'"}
 
         try:
-            store = ResearchStore(base_path=self._research_base_path())
+            store = self._get_research_store()
 
             if action == "continue":
                 store.update_project(project_id, status="active")
@@ -717,7 +737,7 @@ class BridgeServer:
             return {"error": "project_id is required"}
 
         try:
-            store = ResearchStore(base_path=self._research_base_path())
+            store = self._get_research_store()
             return store.suggest_next(project_id)
         except Exception as exc:
             return {"error": f"ResearchNext failed: {exc}"}

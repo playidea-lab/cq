@@ -181,22 +181,38 @@ class DocumentStore(KnowledgeStore):
         self.docs_dir = self.base_path / "docs"
         self.docs_dir.mkdir(parents=True, exist_ok=True)
         self._db_path = self.base_path / "index.db"
+        self._conn: sqlite3.Connection | None = None
         self._init_db()
 
+    def __enter__(self) -> "DocumentStore":
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        self.close()
+
+    def close(self) -> None:
+        """Close the database connection."""
+        if self._conn is not None:
+            self._conn.close()
+            self._conn = None
+
     def _init_db(self) -> None:
-        with sqlite3.connect(str(self._db_path)) as conn:
-            conn.executescript(_INDEX_SCHEMA)
-            # FTS table needs special handling - check if exists
-            cursor = conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='table' AND name='documents_fts'"
-            )
-            if cursor.fetchone() is None:
-                conn.executescript(_FTS_SCHEMA)
+        conn = self._get_conn()
+        conn.executescript(_INDEX_SCHEMA)
+        # FTS table needs special handling - check if exists
+        cursor = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='documents_fts'"
+        )
+        if cursor.fetchone() is None:
+            conn.executescript(_FTS_SCHEMA)
+        conn.commit()
 
     def _get_conn(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(str(self._db_path))
-        conn.row_factory = sqlite3.Row
-        return conn
+        if self._conn is None:
+            self._conn = sqlite3.connect(str(self._db_path))
+            self._conn.row_factory = sqlite3.Row
+            self._conn.execute("PRAGMA busy_timeout=5000")
+        return self._conn
 
     def create(
         self,

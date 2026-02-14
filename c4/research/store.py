@@ -54,18 +54,34 @@ class ResearchStore:
         self._base_path = Path(base_path)
         self._base_path.mkdir(parents=True, exist_ok=True)
         self._db_path = self._base_path / "research.db"
+        self._conn: sqlite3.Connection | None = None
         self._init_db()
 
+    def __enter__(self) -> "ResearchStore":
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        self.close()
+
+    def close(self) -> None:
+        """Close the database connection."""
+        if self._conn is not None:
+            self._conn.close()
+            self._conn = None
+
     def _init_db(self) -> None:
-        with self._get_conn() as conn:
-            conn.executescript(_SCHEMA)
+        conn = self._get_conn()
+        conn.executescript(_SCHEMA)
+        conn.commit()
 
     def _get_conn(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(str(self._db_path))
-        conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute("PRAGMA foreign_keys=ON")
-        return conn
+        if self._conn is None:
+            self._conn = sqlite3.connect(str(self._db_path))
+            self._conn.row_factory = sqlite3.Row
+            self._conn.execute("PRAGMA journal_mode=WAL")
+            self._conn.execute("PRAGMA foreign_keys=ON")
+            self._conn.execute("PRAGMA busy_timeout=5000")
+        return self._conn
 
     # ------------------------------------------------------------------
     # Project CRUD

@@ -34,8 +34,12 @@ func NewStore(dbPath string) (*Store, error) {
 		return nil, fmt.Errorf("open db: %w", err)
 	}
 	db.SetMaxOpenConns(1)
-	db.Exec("PRAGMA journal_mode=WAL")
-	db.Exec("PRAGMA busy_timeout=5000")
+	if _, err := db.Exec("PRAGMA journal_mode=WAL"); err != nil {
+		fmt.Fprintf(os.Stderr, "c4: daemon: PRAGMA journal_mode=WAL failed: %v\n", err)
+	}
+	if _, err := db.Exec("PRAGMA busy_timeout=5000"); err != nil {
+		fmt.Fprintf(os.Stderr, "c4: daemon: PRAGMA busy_timeout=5000 failed: %v\n", err)
+	}
 
 	s := &Store{db: db}
 	if err := s.migrate(); err != nil {
@@ -384,8 +388,13 @@ func (s *Store) CountByStatus(status JobStatus) (int, error) {
 // Internal helpers
 // =========================================================================
 
-// scanJob scans a single *sql.Row into a Job.
-func scanJob(row *sql.Row) (*Job, error) {
+// scanner abstracts the Scan method shared by *sql.Row and *sql.Rows.
+type scanner interface {
+	Scan(dest ...any) error
+}
+
+// populateJob scans columns from a scanner into a Job struct.
+func populateJob(s scanner) (*Job, error) {
 	var (
 		j           Job
 		status      string
@@ -398,81 +407,61 @@ func scanJob(row *sql.Row) (*Job, error) {
 		exitCode    sql.NullInt64
 		gpuJSON     string
 	)
-	err := row.Scan(
+	err := s.Scan(
 		&j.ID, &j.Name, &status, &j.Priority, &j.Workdir, &j.Command,
 		&requiresGPU, &j.GPUCount, &envJSON, &tagsJSON,
 		&j.ExpID, &j.Memo, &j.TimeoutSec,
 		&createdAt, &startedAt, &finishedAt, &exitCode, &j.PID, &gpuJSON,
 	)
+	if err != nil {
+		return nil, err
+	}
+	j.Status = JobStatus(status)
+	j.RequiresGPU = requiresGPU != 0
+	j.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
+	if startedAt.Valid {
+		t, _ := time.Parse(time.RFC3339, startedAt.String)
+		j.StartedAt = &t
+	}
+	if finishedAt.Valid {
+		t, _ := time.Parse(time.RFC3339, finishedAt.String)
+		j.FinishedAt = &t
+	}
+	if exitCode.Valid {
+		ec := int(exitCode.Int64)
+		j.ExitCode = &ec
+	}
+	if err := json.Unmarshal([]byte(envJSON), &j.Env); err != nil {
+		fmt.Fprintf(os.Stderr, "c4: daemon: unmarshal env for job %s: %v\n", j.ID, err)
+	}
+	if err := json.Unmarshal([]byte(tagsJSON), &j.Tags); err != nil {
+		fmt.Fprintf(os.Stderr, "c4: daemon: unmarshal tags for job %s: %v\n", j.ID, err)
+	}
+	if err := json.Unmarshal([]byte(gpuJSON), &j.GPUIndices); err != nil {
+		fmt.Fprintf(os.Stderr, "c4: daemon: unmarshal gpu_indices for job %s: %v\n", j.ID, err)
+	}
+	return &j, nil
+}
+
+// scanJob scans a single *sql.Row into a Job.
+func scanJob(row *sql.Row) (*Job, error) {
+	j, err := populateJob(row)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, fmt.Errorf("job not found")
 		}
 		return nil, fmt.Errorf("scan job: %w", err)
 	}
-	j.Status = JobStatus(status)
-	j.RequiresGPU = requiresGPU != 0
-	j.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
-	if startedAt.Valid {
-		t, _ := time.Parse(time.RFC3339, startedAt.String)
-		j.StartedAt = &t
-	}
-	if finishedAt.Valid {
-		t, _ := time.Parse(time.RFC3339, finishedAt.String)
-		j.FinishedAt = &t
-	}
-	if exitCode.Valid {
-		ec := int(exitCode.Int64)
-		j.ExitCode = &ec
-	}
-	json.Unmarshal([]byte(envJSON), &j.Env)
-	json.Unmarshal([]byte(tagsJSON), &j.Tags)
-	json.Unmarshal([]byte(gpuJSON), &j.GPUIndices)
-	return &j, nil
+	return j, nil
 }
 
 // scanJobRow scans a *sql.Rows row into a Job.
 func scanJobRow(rows *sql.Rows) (*Job, error) {
-	var (
-		j           Job
-		status      string
-		requiresGPU int
-		envJSON     string
-		tagsJSON    string
-		createdAt   string
-		startedAt   sql.NullString
-		finishedAt  sql.NullString
-		exitCode    sql.NullInt64
-		gpuJSON     string
-	)
-	err := rows.Scan(
-		&j.ID, &j.Name, &status, &j.Priority, &j.Workdir, &j.Command,
-		&requiresGPU, &j.GPUCount, &envJSON, &tagsJSON,
-		&j.ExpID, &j.Memo, &j.TimeoutSec,
-		&createdAt, &startedAt, &finishedAt, &exitCode, &j.PID, &gpuJSON,
-	)
+	j, err := populateJob(rows)
 	if err != nil {
 		return nil, fmt.Errorf("scan job row: %w", err)
 	}
-	j.Status = JobStatus(status)
-	j.RequiresGPU = requiresGPU != 0
-	j.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
-	if startedAt.Valid {
-		t, _ := time.Parse(time.RFC3339, startedAt.String)
-		j.StartedAt = &t
-	}
-	if finishedAt.Valid {
-		t, _ := time.Parse(time.RFC3339, finishedAt.String)
-		j.FinishedAt = &t
-	}
-	if exitCode.Valid {
-		ec := int(exitCode.Int64)
-		j.ExitCode = &ec
-	}
-	json.Unmarshal([]byte(envJSON), &j.Env)
-	json.Unmarshal([]byte(tagsJSON), &j.Tags)
-	json.Unmarshal([]byte(gpuJSON), &j.GPUIndices)
-	return &j, nil
+	return j, nil
 }
 
 func boolToInt(b bool) int {

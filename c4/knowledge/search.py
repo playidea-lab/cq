@@ -165,4 +165,5 @@ class KnowledgeSearcher:
 
     def close(self) -> None:
         """Close resources."""
+        self._doc_store.close()
         self._embedder.close()
