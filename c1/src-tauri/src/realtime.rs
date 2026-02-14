@@ -75,7 +75,13 @@ impl Default for RealtimeManager {
 // ---------------------------------------------------------------------------
 
 /// Tables we subscribe to for real-time changes
-const SUBSCRIBED_TABLES: &[&str] = &["c4_tasks", "c4_state", "c4_checkpoints"];
+const SUBSCRIBED_TABLES: &[&str] = &[
+    "c4_tasks",
+    "c4_state",
+    "c4_checkpoints",
+    "c1_messages",
+    "c1_channels",
+];
 
 /// Build the Supabase Realtime WebSocket URL
 fn build_ws_url(supabase_url: &str, api_key: &str) -> String {
