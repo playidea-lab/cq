@@ -13,12 +13,18 @@ import (
 	"time"
 )
 
+// C1Poster posts messages to C1 channels (implemented by ContextKeeper).
+type C1Poster interface {
+	AutoPost(channelName, content string) error
+}
+
 // Dispatcher evaluates rules against events and executes matched actions.
 type Dispatcher struct {
 	store      *Store
 	mu         sync.RWMutex
 	rpcAddr    string // JSON-RPC sidecar address (e.g. "127.0.0.1:50051")
 	httpClient *http.Client
+	c1Poster   C1Poster // optional: for "c1_post" action type
 }
 
 // NewDispatcher creates a new event dispatcher.
@@ -36,6 +42,13 @@ func (d *Dispatcher) SetRPCAddr(addr string) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.rpcAddr = addr
+}
+
+// SetC1Poster sets the C1 poster for "c1_post" action type.
+func (d *Dispatcher) SetC1Poster(poster C1Poster) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.c1Poster = poster
 }
 
 // Dispatch matches rules against an event and executes their actions.
@@ -87,6 +100,8 @@ func (d *Dispatcher) executeRule(eventID, eventType string, eventData json.RawMe
 		err = d.executeRPC(eventData, rule)
 	case "webhook":
 		err = d.executeWebhook(eventID, eventType, eventData, rule)
+	case "c1_post":
+		err = d.executeC1Post(eventType, eventData, rule)
 	default:
 		err = fmt.Errorf("unknown action type: %s", rule.ActionType)
 	}
@@ -213,6 +228,51 @@ func (d *Dispatcher) executeWebhook(eventID, eventType string, eventData json.Ra
 		return fmt.Errorf("webhook returned HTTP %d", resp.StatusCode)
 	}
 	return nil
+}
+
+func (d *Dispatcher) executeC1Post(eventType string, eventData json.RawMessage, rule StoredRule) error {
+	d.mu.RLock()
+	poster := d.c1Poster
+	d.mu.RUnlock()
+
+	if poster == nil {
+		return fmt.Errorf("c1 poster not configured")
+	}
+
+	var cfg struct {
+		Channel  string `json:"channel"`
+		Template string `json:"template"`
+	}
+	if err := json.Unmarshal([]byte(rule.ActionConfig), &cfg); err != nil {
+		return fmt.Errorf("parse action_config: %w", err)
+	}
+	if cfg.Channel == "" {
+		cfg.Channel = "#updates"
+	}
+
+	// Build data map including event_type for template resolution
+	var data map[string]any
+	if err := json.Unmarshal(eventData, &data); err != nil {
+		data = make(map[string]any)
+	}
+	// Extract short event type: "task.completed" → "completed"
+	shortType := eventType
+	if idx := strings.LastIndex(eventType, "."); idx >= 0 {
+		shortType = eventType[idx+1:]
+	}
+	data["event_type"] = shortType
+
+	msg := cfg.Template
+	if msg != "" {
+		msg = resolveTemplateString(msg, data)
+	} else {
+		// Default format
+		taskID, _ := data["task_id"].(string)
+		title, _ := data["title"].(string)
+		msg = fmt.Sprintf("[%s] %s: %s", shortType, taskID, title)
+	}
+
+	return poster.AutoPost(cfg.Channel, msg)
 }
 
 // evaluateFilter checks if event data matches the filter JSON.

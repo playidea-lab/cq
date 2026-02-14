@@ -233,24 +233,24 @@ func newMCPServer() (*mcpServer, error) {
 	}
 
 	// Register C1 handlers if cloud is enabled
+	var keeper *handlers.ContextKeeper
 	if cfgMgr != nil && cfgMgr.GetConfig().Cloud.Enabled {
 		cloudCfg := cfgMgr.GetConfig().Cloud
 		if cloudCfg.URL != "" && cloudCfg.AnonKey != "" && cloudAuthToken != "" && cloudProjectID != "" {
 			c1Handler := handlers.NewC1Handler(cloudCfg.URL+"/rest/v1", cloudCfg.AnonKey, cloudAuthToken, cloudProjectID)
 			handlers.RegisterC1Handlers(reg, c1Handler)
 
-			// Wire ContextKeeper: auto-posts task events to C1 #updates channel
+			// Create ContextKeeper (wired to Dispatcher below)
 			var keeperGateway *llm.Gateway
 			if cfgMgr.GetConfig().LLMGateway.Enabled {
 				keeperGateway = llm.NewGatewayFromConfig(cfgMgr.GetConfig())
 			}
-			keeper := handlers.NewContextKeeper(c1Handler, keeperGateway)
-			sqliteStore.SetKeeper(keeper)
+			keeper = handlers.NewContextKeeper(c1Handler, keeperGateway)
 			fmt.Fprintln(os.Stderr, "c4: c1 enabled (3 tools + keeper)")
 		}
 	}
 
-	// Register EventBus handlers if enabled
+	// Register EventBus handlers if enabled (remote C3 daemon)
 	if cfgMgr != nil && cfgMgr.GetConfig().EventBus.Enabled {
 		ebCfg := cfgMgr.GetConfig().EventBus
 		sockPath := ebCfg.SocketPath
@@ -263,11 +263,41 @@ func newMCPServer() (*mcpServer, error) {
 			fmt.Fprintf(os.Stderr, "c4: eventbus not reachable (unix:%s): %v\n", sockPath, ebErr)
 		} else {
 			handlers.RegisterEventBusHandlers(reg, ebClient)
-			// Wire event publishing to store + drive + proxy handlers
+			// Wire remote event publishing to store + drive + proxy handlers
 			sqliteStore.SetEventBus(ebClient)
 			handlers.SetDriveEventBus(ebClient)
 			proxy.SetEventBus(ebClient)
 			fmt.Fprintf(os.Stderr, "c4: eventbus connected (unix:%s, 6 tools)\n", sockPath)
+		}
+	}
+
+	// Wire local Dispatcher for in-process rule-based dispatch (C1 posting, etc.)
+	// This runs independently of the remote C3 EventBus daemon.
+	if keeper != nil {
+		localDBPath := filepath.Join(projectDir, ".c4", "eventbus", "local.db")
+		localStore, localErr := eventbus.NewStore(localDBPath)
+		if localErr != nil {
+			fmt.Fprintf(os.Stderr, "c4: local eventbus store failed: %v\n", localErr)
+		} else {
+			localDispatcher := eventbus.NewDispatcher(localStore)
+			localDispatcher.SetC1Poster(keeper)
+
+			// Ensure default c1_post rule exists for task events
+			rules, _ := localStore.MatchRules("task.completed")
+			if len(rules) == 0 {
+				localStore.AddRule(
+					"c1-task-updates",
+					"task.*",
+					"",
+					"c1_post",
+					`{"channel":"#updates","template":"[{{event_type}}] {{task_id}}: {{title}}"}`,
+					true,
+					0,
+				)
+			}
+
+			sqliteStore.SetDispatcher(localDispatcher)
+			fmt.Fprintln(os.Stderr, "c4: local dispatcher wired (c1_post rules)")
 		}
 	}
 

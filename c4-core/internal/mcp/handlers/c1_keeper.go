@@ -154,27 +154,6 @@ func (k *ContextKeeper) AutoPost(channelName, content string) error {
 	return nil
 }
 
-// NotifyTaskEvent posts a formatted task lifecycle event to #updates.
-func (k *ContextKeeper) NotifyTaskEvent(eventType, taskID, title, workerID string) {
-	var msg string
-	switch eventType {
-	case "started":
-		msg = fmt.Sprintf("[started] %s: %s (worker: %s)", taskID, title, workerID)
-	case "completed":
-		msg = fmt.Sprintf("[completed] %s: %s", taskID, title)
-	case "blocked":
-		msg = fmt.Sprintf("[blocked] %s: %s (worker: %s)", taskID, title, workerID)
-	default:
-		msg = fmt.Sprintf("[%s] %s: %s", eventType, taskID, title)
-	}
-
-	go func() {
-		if err := k.AutoPost("#updates", msg); err != nil {
-			log.Printf("[keeper] notify %s: %v", eventType, err)
-		}
-	}()
-}
-
 // getSummary retrieves the current summary for a channel.
 func (k *ContextKeeper) getSummary(channelID string) (*keeperSummaryRow, error) {
 	var rows []keeperSummaryRow

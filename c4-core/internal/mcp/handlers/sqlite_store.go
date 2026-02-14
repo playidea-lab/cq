@@ -23,8 +23,8 @@ type SQLiteStore struct {
 	projectRoot string
 	config      *config.Manager
 	proxy       *BridgeProxy          // optional: for knowledge auto-record
-	keeper      *ContextKeeper        // optional: for C1 channel summary on task events
-	eventPub    eventbus.Publisher    // optional: for C3 EventBus event publishing
+	eventPub    eventbus.Publisher    // optional: for C3 EventBus remote publishing
+	dispatcher  *eventbus.Dispatcher  // optional: local rule-based dispatch (C1 posting, etc.)
 }
 
 // StoreOption configures a SQLiteStore.
@@ -45,33 +45,35 @@ func WithProxy(p *BridgeProxy) StoreOption {
 	return func(s *SQLiteStore) { s.proxy = p }
 }
 
-// WithKeeper sets the ContextKeeper for C1 channel summary updates on task events.
-func WithKeeper(k *ContextKeeper) StoreOption {
-	return func(s *SQLiteStore) { s.keeper = k }
-}
-
-// SetKeeper sets the ContextKeeper after construction (for cases where
-// the keeper depends on components created after the store).
-func (s *SQLiteStore) SetKeeper(k *ContextKeeper) {
-	s.keeper = k
-}
-
 // SetEventBus sets the EventBus publisher after construction (for cases where
 // the eventbus client depends on components created after the store).
 func (s *SQLiteStore) SetEventBus(pub eventbus.Publisher) {
 	s.eventPub = pub
 }
 
-// notifyEventBus publishes a task event to the EventBus if configured.
+// SetDispatcher sets the local Dispatcher for in-process rule-based dispatch
+// (e.g. c1_post action to post task events to C1 channels).
+func (s *SQLiteStore) SetDispatcher(d *eventbus.Dispatcher) {
+	s.dispatcher = d
+}
+
+// notifyEventBus publishes a task event to the remote C3 EventBus and
+// dispatches locally via the Dispatcher (for c1_post rules, etc.).
 func (s *SQLiteStore) notifyEventBus(evType string, data map[string]any) {
-	if s.eventPub == nil {
-		return
-	}
 	jsonData, err := json.Marshal(data)
 	if err != nil {
 		return
 	}
-	s.eventPub.PublishAsync(evType, "c4.core", jsonData, s.projectID)
+
+	// 1. Remote C3 EventBus (fire-and-forget)
+	if s.eventPub != nil {
+		s.eventPub.PublishAsync(evType, "c4.core", jsonData, s.projectID)
+	}
+
+	// 2. Local dispatch (c1_post, log, etc.)
+	if s.dispatcher != nil {
+		go s.dispatcher.Dispatch("local-"+evType, evType, jsonData)
+	}
 }
 
 // NewSQLiteStore creates a new SQLite-backed Store.
@@ -559,8 +561,12 @@ func (s *SQLiteStore) AssignTask(workerID string) (*TaskAssignment, error) {
 	// 5. Enrich with review context (if R- task)
 	s.enrichWithReviewContext(assignment)
 
-	// C1 keeper: notify task started (best-effort)
-	s.notifyKeeper("started", taskID, title, workerID)
+	// C3 EventBus: publish task.started event
+	s.notifyEventBus("task.started", map[string]any{
+		"task_id":   taskID,
+		"title":     title,
+		"worker_id": workerID,
+	})
 
 	return assignment, nil
 }
@@ -777,13 +783,11 @@ func (s *SQLiteStore) SubmitTask(taskID, workerID, commitSHA, handoff string, re
 	// Trace logging
 	s.logTrace("task_submitted", workerID, taskID, commitSHA)
 
-	// C1 keeper: notify task completion (best-effort)
-	s.notifyKeeper("completed", taskID, task.Title, workerID)
-
-	// C3 EventBus: publish task.completed event
+	// C3 EventBus: publish task.completed event (dispatched to C1 via rules)
 	s.notifyEventBus("task.completed", map[string]any{
 		"task_id":    taskID,
 		"title":      task.Title,
+		"worker_id":  workerID,
 		"commit_sha": commitSHA,
 	})
 
@@ -819,8 +823,11 @@ func (s *SQLiteStore) MarkBlocked(taskID, workerID, failureSignature string, att
 		return err
 	}
 
-	// C1 keeper: notify task blocked (best-effort)
-	s.notifyKeeper("blocked", taskID, "", workerID)
+	// C3 EventBus: publish task.blocked event (dispatched to C1 via rules)
+	s.notifyEventBus("task.blocked", map[string]any{
+		"task_id":   taskID,
+		"worker_id": workerID,
+	})
 
 	return nil
 }
@@ -900,27 +907,16 @@ func (s *SQLiteStore) ReportTask(taskID, summary string, filesChanged []string) 
 	// Auto-complete paired review task (best-effort cascade)
 	s.completeReviewTask(taskID)
 
-	// C1 keeper: notify task completion (best-effort)
-	s.notifyKeeper("completed", taskID, task.Title, "direct")
-
-	// C3 EventBus: publish task.completed event
+	// C3 EventBus: publish task.completed event (dispatched to C1 via rules)
 	s.notifyEventBus("task.completed", map[string]any{
 		"task_id":       taskID,
 		"title":         task.Title,
+		"worker_id":     "direct",
 		"summary":       summary,
 		"files_changed": filesChanged,
 	})
 
 	return nil
-}
-
-// notifyKeeper triggers C1 channel event for task lifecycle.
-// eventType: "started", "completed", "blocked"
-func (s *SQLiteStore) notifyKeeper(eventType, taskID, title, workerID string) {
-	if s.keeper == nil {
-		return
-	}
-	s.keeper.NotifyTaskEvent(eventType, taskID, title, workerID)
 }
 
 // --- Active Claim File Management ---

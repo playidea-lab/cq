@@ -1,14 +1,15 @@
 # C4 Roadmap
 
-## Current Version: v0.16.0 (Phase 10.5 — C1 Context Hub)
+## Current Version: v0.16.1 (Phase 10.5 — C1 Context Hub + C3 EventBus)
 
-현재 버전은 **Go MCP Primary(112 tools: Base 86 + Hub 26), LLM Gateway (4개 Provider 실제 구현), CDP Runner (브라우저 자동화), Cloud Foundation (Supabase), Knowledge Bidirectional Sync, c4 daemon (로컬 작업 스케줄러), C0 Drive (파일 관리), C1 Context Hub (메시징 + 문서 + Context Keeper)**을 포함합니다.
+현재 버전은 **Go MCP Primary(112 tools: Base 86 + Hub 26), LLM Gateway (4개 Provider 실제 구현), CDP Runner (브라우저 자동화), Cloud Foundation (Supabase), Knowledge Bidirectional Sync, c4 daemon (로컬 작업 스케줄러), C0 Drive (파일 관리), C1 Context Hub (메시징 + 문서 + Context Keeper), C3 EventBus (gRPC daemon + sidecar piggyback)**을 포함합니다.
 
 ### 핵심 구조
 
 - **Go MCP Server (Primary)** - 112 도구 (Base 86: state/task/file/git/discovery/artifact/lsp/knowledge/research/gpu/soul/team/twin/onboard/lighthouse/llm/cdp/c2/drive/c1), Registry-based, SQLite Store, JSON-RPC Bridge, LLM Gateway, CDP Runner, Hub Client
 - **C0 Drive** - Supabase 파일 저장소, metadata JSONB, c4_drive_mkdir 6개 도구, PostgREST URL 인코딩, server-side filtering
-- **C1 Context Hub** - Supabase 4 테이블 (channels/messages/participants/summaries), Go MCP 3 도구 (search/mentions/briefing), Context Keeper (LLM 요약), Agent 통합 (notifyKeeper), participant_id 추적
+- **C1 Context Hub** - Supabase 4 테이블 (channels/messages/participants/summaries), Go MCP 3 도구 (search/mentions/briefing), Context Keeper (LLM 요약), Agent 통합 (notifyKeeper 4-param), participant_id 추적
+- **C3 EventBus** - gRPC daemon (UDS transport) + Python sidecar response piggyback, task lifecycle wiring (completed/updated → channels)
 - **C1 Desktop App** - Tauri 2.x, 4개 프로바이더, Realtime WebSocket, 5-탭 UI (Sessions/Dashboard/Config/Documents/Channels)
 - **C1 Views** - SessionsView (provider 자동감지), ChannelsView (메시징 + Realtime + count 로직), DocumentsView (파일+마크다운 편집)
 - **Daemon Scheduler** - 로컬 작업 스케줄러, 13 REST API, GPU 할당, 소요시간 예측 (PiQ 대체)
@@ -33,14 +34,39 @@
 - **Team Collaboration** - Supabase 기반 팀 상태 공유 + Realtime WebSocket
 - **C1 Multi-Provider** - Claude Code, Codex CLI, Cursor, Gemini CLI 4개 프로바이더
 - **C0 Drive** - 클라우드 파일 저장소 (metadata, URL 인코딩, 보안)
-- **C1 Context Hub** - 채널 메시징, Context Keeper (LLM 요약), Agent 통합 (notifyKeeper)
+- **C1 Context Hub** - 채널 메시징, Context Keeper (LLM 요약), Agent 통합 (notifyKeeper 4-param)
 - **C1 Documents** - 마크다운 파일 편집기, 지속성 (persona/skill/spec/config)
+- **C3 EventBus** - gRPC daemon (UDS), Python sidecar piggyback, task lifecycle events
 - **코드베이스**: Go ~19K + Python 24K + C1 ~13K + Tests ~26K = **~82K LOC**
-- **테스트**: Go 767 (13 pkgs) + Python 735 + Rust 44 + Frontend 81 = **~1,627 tests**
+- **테스트**: Go 819+ (17 pkgs, +52 eventbus) + Python 748+ + Rust 58 + Frontend 81 = **~1,706 tests**
 
 ---
 
-## 최신 추가사항 (2026-02-14)
+## 최신 추가사항 (2026-02-15)
+
+### C3 EventBus v1+v2 ✅
+
+**목표**: 이벤트 기반 아키텍처 — gRPC daemon + Python sidecar 통합
+
+- **C3 EventBus v1**: Go gRPC daemon (UDS transport)
+  - server.go — Event listeners, rules 실행 엔진
+  - client.go — Go MCP handlers에서 발행
+  - store.go — SQLite 이벤트 로그 (rules YAML)
+  - dispatcher.go — 이벤트 라우팅
+  - publisher.go — 규칙 기반 작업 실행
+- **C3 EventBus v2**: Python sidecar response piggyback
+  - EventCollector — 이벤트 추출 (응답 메타데이터)
+  - response piggyback 패턴 — grpcio 의존성 제거
+  - 5개 RPC 메서드에 emit 추가 (knowledge_record, gpu_status, job_submit 등)
+- **C1 task lifecycle wiring**: task.completed/updated → c1_channels 자동 전달
+  - notifyKeeper(eventType, taskID, title, workerID) 4호출지 연결
+  - EnsureChannel → NotifyTaskEvent async 포스팅
+- **테스트**: Go eventbus 25 + proxy 14 + Python events 9 + piggyback 4 = **52개 신규**
+- **결과**: Go 767→819+, Python 735→748+, 테스트 1,641→1,706+
+
+---
+
+## 이전 추가사항 (2026-02-14)
 
 ### C0 Drive: Supabase 파일 저장소 ✅
 
@@ -899,7 +925,14 @@ Claude Code → Go MCP Server
 - **C3 EventBus**: gRPC UDS daemon (`internal/eventbus/`) + Python sidecar response piggyback
 - **Keeper 테스트**: 11개 (EnsureChannel, NotifyTaskEvent, AutoPost 등)
 
-**결과**: 112 MCP 도구 (Base 86 + Hub 26), ~1,641 tests, 12 migrations
+#### Phase 7: C3 EventBus v1+v2 (2026-02-15)
+- **EventBus v1**: `internal/eventbus/` — server/client/store/dispatcher/publisher (gRPC UDS)
+- **EventBus v2**: Python sidecar response piggyback — EventCollector (grpcio 의존성 제거)
+- **Proxy 통합**: BridgeProxy.SetEventBus + publishSidecarEvents (14개 테스트 추가)
+- **C1 wiring**: notifyKeeper 4곳에서 EventBus emit (channel updates, task events)
+- **테스트**: Go eventbus 25 + proxy 14 + Python events 9 + piggyback 4 = 52개 신규
+
+**결과**: 112 MCP 도구 (Base 86 + Hub 26), ~1,706 tests (Go 819+ + Python 748+), 13 migrations
 
 ---
 

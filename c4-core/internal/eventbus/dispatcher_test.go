@@ -213,3 +213,102 @@ func TestDispatchWebhookError(t *testing.T) {
 		t.Errorf("expected error status, got %s", status)
 	}
 }
+
+// mockC1Poster records AutoPost calls for testing.
+type mockC1Poster struct {
+	mu       sync.Mutex
+	channels []string
+	messages []string
+}
+
+func (m *mockC1Poster) AutoPost(channel, content string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.channels = append(m.channels, channel)
+	m.messages = append(m.messages, content)
+	return nil
+}
+
+func TestDispatchC1Post(t *testing.T) {
+	s := tempStore(t)
+	d := NewDispatcher(s)
+
+	poster := &mockC1Poster{}
+	d.SetC1Poster(poster)
+
+	cfg := `{"channel":"#updates","template":"[{{event_type}}] {{task_id}}: {{title}}"}`
+	s.AddRule("c1-tasks", "task.*", "", "c1_post", cfg, true, 0)
+
+	evData := json.RawMessage(`{"task_id":"T-001-0","title":"Implement feature X","worker_id":"w-abc"}`)
+	evID, _ := s.StoreEvent("task.completed", "c4.core", evData, "")
+	d.DispatchSync(evID, "task.completed", evData)
+
+	poster.mu.Lock()
+	defer poster.mu.Unlock()
+
+	if len(poster.messages) != 1 {
+		t.Fatalf("expected 1 c1_post call, got %d", len(poster.messages))
+	}
+	if poster.channels[0] != "#updates" {
+		t.Errorf("expected channel #updates, got %s", poster.channels[0])
+	}
+	want := "[completed] T-001-0: Implement feature X"
+	if poster.messages[0] != want {
+		t.Errorf("expected message %q, got %q", want, poster.messages[0])
+	}
+
+	// Verify dispatch log entry was created with success
+	var logStatus string
+	s.db.QueryRow(`SELECT status FROM c4_event_log WHERE event_id = ?`, evID).Scan(&logStatus)
+	if logStatus != "ok" {
+		t.Errorf("expected log status ok, got %s", logStatus)
+	}
+}
+
+func TestDispatchC1PostDefaultTemplate(t *testing.T) {
+	s := tempStore(t)
+	d := NewDispatcher(s)
+
+	poster := &mockC1Poster{}
+	d.SetC1Poster(poster)
+
+	// No template — should use default format
+	s.AddRule("c1-default", "task.*", "", "c1_post", `{"channel":"#dev"}`, true, 0)
+
+	evData := json.RawMessage(`{"task_id":"T-002-0","title":"Fix bug"}`)
+	evID, _ := s.StoreEvent("task.started", "c4.core", evData, "")
+	d.DispatchSync(evID, "task.started", evData)
+
+	poster.mu.Lock()
+	defer poster.mu.Unlock()
+
+	if len(poster.messages) != 1 {
+		t.Fatalf("expected 1 c1_post call, got %d", len(poster.messages))
+	}
+	if poster.channels[0] != "#dev" {
+		t.Errorf("expected channel #dev, got %s", poster.channels[0])
+	}
+	want := "[started] T-002-0: Fix bug"
+	if poster.messages[0] != want {
+		t.Errorf("expected message %q, got %q", want, poster.messages[0])
+	}
+}
+
+func TestDispatchC1PostNoPoster(t *testing.T) {
+	s := tempStore(t)
+	d := NewDispatcher(s)
+	// No poster set
+
+	s.AddRule("c1-no-poster", "task.*", "", "c1_post", `{"channel":"#updates"}`, true, 0)
+
+	evData := json.RawMessage(`{"task_id":"T-003-0","title":"Test"}`)
+	evID, _ := s.StoreEvent("task.completed", "c4.core", evData, "")
+	d.DispatchSync(evID, "task.completed", evData)
+
+	// Should log error (poster not configured)
+	var logStatus string
+	s.db.QueryRow(`SELECT status FROM c4_event_log WHERE event_id = ?`, evID).Scan(&logStatus)
+	if logStatus != "error" {
+		t.Errorf("expected error status when poster not set, got %s", logStatus)
+	}
+}
