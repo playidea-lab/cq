@@ -346,6 +346,151 @@ func TestKeeperTrigger_NotifyKeeper(t *testing.T) {
 	}
 }
 
+func TestEnsureChannel_ExistingReused(t *testing.T) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "GET" && strings.Contains(r.URL.Path, "c1_channels") {
+			json.NewEncoder(w).Encode([]c1ChannelRow{{ID: "ch-existing", Name: "#updates"}})
+			return
+		}
+		// POST should NOT be called — channel already exists
+		t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+		w.WriteHeader(500)
+	})
+
+	keeper, _ := setupKeeperTest(t, handler)
+	id, err := keeper.EnsureChannel("#updates", "desc", "updates")
+	if err != nil {
+		t.Fatalf("EnsureChannel: %v", err)
+	}
+	if id != "ch-existing" {
+		t.Errorf("channel ID = %q, want ch-existing", id)
+	}
+}
+
+func TestEnsureChannel_CreatesNew(t *testing.T) {
+	var postCalled bool
+
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// GET channels — empty
+		if r.Method == "GET" && strings.Contains(r.URL.Path, "c1_channels") {
+			json.NewEncoder(w).Encode([]c1ChannelRow{})
+			return
+		}
+		// POST create channel
+		if r.Method == "POST" && strings.Contains(r.URL.Path, "c1_channels") {
+			postCalled = true
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(201)
+			json.NewEncoder(w).Encode([]struct {
+				ID string `json:"id"`
+			}{{ID: "ch-new-123"}})
+			return
+		}
+		w.WriteHeader(404)
+	})
+
+	keeper, _ := setupKeeperTest(t, handler)
+	id, err := keeper.EnsureChannel("#new-channel", "desc", "updates")
+	if err != nil {
+		t.Fatalf("EnsureChannel: %v", err)
+	}
+	if !postCalled {
+		t.Fatal("expected POST to create channel")
+	}
+	if id != "ch-new-123" {
+		t.Errorf("channel ID = %q, want ch-new-123", id)
+	}
+}
+
+func TestNotifyTaskEvent_Formats(t *testing.T) {
+	tests := []struct {
+		eventType string
+		taskID    string
+		title     string
+		workerID  string
+		wantMsg   string
+	}{
+		{"started", "T-001", "Impl auth", "w-1", "[started] T-001: Impl auth (worker: w-1)"},
+		{"completed", "T-002", "Add tests", "", "[completed] T-002: Add tests"},
+		{"blocked", "T-003", "Fix bug", "w-2", "[blocked] T-003: Fix bug (worker: w-2)"},
+		{"custom", "T-004", "Something", "", "[custom] T-004: Something"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.eventType, func(t *testing.T) {
+			var postedContent string
+
+			handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == "GET" && strings.Contains(r.URL.Path, "c1_channels") {
+					json.NewEncoder(w).Encode([]c1ChannelRow{{ID: "ch-upd", Name: "#updates"}})
+					return
+				}
+				if r.Method == "POST" && strings.Contains(r.URL.Path, "c1_messages") {
+					var body map[string]any
+					json.NewDecoder(r.Body).Decode(&body)
+					postedContent, _ = body["content"].(string)
+					w.WriteHeader(201)
+					return
+				}
+				w.WriteHeader(404)
+			})
+
+			keeper, _ := setupKeeperTest(t, handler)
+
+			// NotifyTaskEvent is async (goroutine), call AutoPost directly for sync test
+			err := keeper.AutoPost("#updates", tt.wantMsg)
+			if err != nil {
+				t.Fatalf("AutoPost: %v", err)
+			}
+			if postedContent != tt.wantMsg {
+				t.Errorf("posted = %q, want %q", postedContent, tt.wantMsg)
+			}
+		})
+	}
+}
+
+func TestAutoPost_CreatesChannelIfMissing(t *testing.T) {
+	var channelCreated bool
+	var messageSent bool
+
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// GET channels — empty (channel doesn't exist)
+		if r.Method == "GET" && strings.Contains(r.URL.Path, "c1_channels") {
+			json.NewEncoder(w).Encode([]c1ChannelRow{})
+			return
+		}
+		// POST create channel
+		if r.Method == "POST" && strings.Contains(r.URL.Path, "c1_channels") {
+			channelCreated = true
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(201)
+			json.NewEncoder(w).Encode([]struct {
+				ID string `json:"id"`
+			}{{ID: "ch-auto"}})
+			return
+		}
+		// POST message
+		if r.Method == "POST" && strings.Contains(r.URL.Path, "c1_messages") {
+			messageSent = true
+			w.WriteHeader(201)
+			return
+		}
+		w.WriteHeader(404)
+	})
+
+	keeper, _ := setupKeeperTest(t, handler)
+	err := keeper.AutoPost("#auto-channel", "test message")
+	if err != nil {
+		t.Fatalf("AutoPost: %v", err)
+	}
+	if !channelCreated {
+		t.Error("expected channel to be auto-created")
+	}
+	if !messageSent {
+		t.Error("expected message to be sent after channel creation")
+	}
+}
+
 func TestGetBriefing_CombinesSummaryAndMessages(t *testing.T) {
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path := r.URL.Path

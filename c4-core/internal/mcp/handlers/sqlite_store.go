@@ -559,6 +559,9 @@ func (s *SQLiteStore) AssignTask(workerID string) (*TaskAssignment, error) {
 	// 5. Enrich with review context (if R- task)
 	s.enrichWithReviewContext(assignment)
 
+	// C1 keeper: notify task started (best-effort)
+	s.notifyKeeper("started", taskID, title, workerID)
+
 	return assignment, nil
 }
 
@@ -774,8 +777,8 @@ func (s *SQLiteStore) SubmitTask(taskID, workerID, commitSHA, handoff string, re
 	// Trace logging
 	s.logTrace("task_submitted", workerID, taskID, commitSHA)
 
-	// C1 keeper: update channel summaries on task completion (best-effort)
-	s.notifyKeeper(taskID, task.Title)
+	// C1 keeper: notify task completion (best-effort)
+	s.notifyKeeper("completed", taskID, task.Title, workerID)
 
 	// C3 EventBus: publish task.completed event
 	s.notifyEventBus("task.completed", map[string]any{
@@ -812,7 +815,14 @@ func (s *SQLiteStore) MarkBlocked(taskID, workerID, failureSignature string, att
 		UPDATE c4_tasks SET status = 'blocked', worker_id = '', updated_at = CURRENT_TIMESTAMP
 		WHERE task_id = ?`, taskID,
 	)
-	return err
+	if err != nil {
+		return err
+	}
+
+	// C1 keeper: notify task blocked (best-effort)
+	s.notifyKeeper("blocked", taskID, "", workerID)
+
+	return nil
 }
 
 // ClaimTask claims a task for direct execution and writes .c4/active_claim.json.
@@ -890,8 +900,8 @@ func (s *SQLiteStore) ReportTask(taskID, summary string, filesChanged []string) 
 	// Auto-complete paired review task (best-effort cascade)
 	s.completeReviewTask(taskID)
 
-	// C1 keeper: update channel summaries on task completion (best-effort)
-	s.notifyKeeper(taskID, task.Title)
+	// C1 keeper: notify task completion (best-effort)
+	s.notifyKeeper("completed", taskID, task.Title, "direct")
 
 	// C3 EventBus: publish task.completed event
 	s.notifyEventBus("task.completed", map[string]any{
@@ -904,18 +914,13 @@ func (s *SQLiteStore) ReportTask(taskID, summary string, filesChanged []string) 
 	return nil
 }
 
-// notifyKeeper triggers C1 channel summary update on task events.
-// It posts a system message to #updates channel and is fire-and-forget.
-func (s *SQLiteStore) notifyKeeper(taskID, title string) {
+// notifyKeeper triggers C1 channel event for task lifecycle.
+// eventType: "started", "completed", "blocked"
+func (s *SQLiteStore) notifyKeeper(eventType, taskID, title, workerID string) {
 	if s.keeper == nil {
 		return
 	}
-	go func() {
-		msg := fmt.Sprintf("%s completed: %s", taskID, title)
-		if err := s.keeper.AutoPost("#updates", msg); err != nil {
-			fmt.Fprintf(os.Stderr, "c4: keeper auto-post: %v\n", err)
-		}
-	}()
+	s.keeper.NotifyTaskEvent(eventType, taskID, title, workerID)
 }
 
 // --- Active Claim File Management ---

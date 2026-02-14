@@ -101,16 +101,47 @@ func (k *ContextKeeper) UpdateChannelSummary(channelID string) error {
 	return k.upsertSummary(channelID, result, lastMsgID, newCount)
 }
 
-// AutoPost posts a system message to a channel (by name) and optionally triggers summary update.
+// EnsureChannel creates the channel if it doesn't exist, or returns the existing ID.
+func (k *ContextKeeper) EnsureChannel(name, description, channelType string) (string, error) {
+	// Try to resolve existing
+	channelID, err := k.c1.resolveChannelID(name)
+	if err != nil {
+		return "", fmt.Errorf("resolve channel %s: %w", name, err)
+	}
+	if channelID != "" {
+		return channelID, nil
+	}
+
+	// Create new channel
+	payload := map[string]any{
+		"project_id":   k.c1.projectID,
+		"name":         name,
+		"description":  description,
+		"channel_type": channelType,
+	}
+	var rows []struct {
+		ID string `json:"id"`
+	}
+	if err := k.c1.httpPostReturn("c1_channels", payload, &rows); err != nil {
+		return "", fmt.Errorf("create channel %s: %w", name, err)
+	}
+	if len(rows) > 0 {
+		return rows[0].ID, nil
+	}
+	return "", fmt.Errorf("channel %s created but no ID returned", name)
+}
+
+// AutoPost posts a system message to a channel (by name), auto-creating if needed.
 func (k *ContextKeeper) AutoPost(channelName, content string) error {
-	channelID, err := k.c1.resolveChannelID(channelName)
-	if err != nil || channelID == "" {
-		return nil // Channel doesn't exist, skip silently
+	channelID, err := k.EnsureChannel(channelName, "Auto-created by C4 engine", "updates")
+	if err != nil {
+		return nil // Best-effort: skip on failure
 	}
 
 	// Post system message
 	payload := map[string]any{
 		"channel_id":  channelID,
+		"project_id":  k.c1.projectID,
 		"sender_type": "system",
 		"sender_id":   "c4-engine",
 		"sender_name": "system",
@@ -121,6 +152,27 @@ func (k *ContextKeeper) AutoPost(channelName, content string) error {
 	}
 
 	return nil
+}
+
+// NotifyTaskEvent posts a formatted task lifecycle event to #updates.
+func (k *ContextKeeper) NotifyTaskEvent(eventType, taskID, title, workerID string) {
+	var msg string
+	switch eventType {
+	case "started":
+		msg = fmt.Sprintf("[started] %s: %s (worker: %s)", taskID, title, workerID)
+	case "completed":
+		msg = fmt.Sprintf("[completed] %s: %s", taskID, title)
+	case "blocked":
+		msg = fmt.Sprintf("[blocked] %s: %s (worker: %s)", taskID, title, workerID)
+	default:
+		msg = fmt.Sprintf("[%s] %s: %s", eventType, taskID, title)
+	}
+
+	go func() {
+		if err := k.AutoPost("#updates", msg); err != nil {
+			log.Printf("[keeper] notify %s: %v", eventType, err)
+		}
+	}()
 }
 
 // getSummary retrieves the current summary for a channel.
@@ -231,6 +283,40 @@ func (k *ContextKeeper) upsertSummary(channelID string, result *summaryResult, l
 	}
 
 	return k.c1.httpUpsert("c1_channel_summaries", "channel_id", payload)
+}
+
+// httpPostReturn performs a POST request and decodes the response body.
+func (h *C1Handler) httpPostReturn(table string, payload any, dest any) error {
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("marshal: %w", err)
+	}
+
+	u := h.baseURL + "/" + table
+	req, err := http.NewRequest("POST", u, bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	h.setHeaders(req)
+	req.Header.Set("Prefer", "return=representation")
+
+	resp, err := h.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("POST %s: %w", table, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		respBody, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("POST %s: %d %s", table, resp.StatusCode, string(respBody))
+	}
+
+	if dest != nil {
+		if err := json.NewDecoder(resp.Body).Decode(dest); err != nil {
+			return fmt.Errorf("decode %s response: %w", table, err)
+		}
+	}
+	return nil
 }
 
 // httpPost performs a POST request to Supabase PostgREST.
