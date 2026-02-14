@@ -8,15 +8,15 @@ Plan, execute, review, and learn — automated end-to-end.
 
 ![Go](https://img.shields.io/badge/Go-1.22+-00ADD8?logo=go&logoColor=white)
 ![Python](https://img.shields.io/badge/Python-3.11+-3776AB?logo=python&logoColor=white)
-![Tools](https://img.shields.io/badge/MCP_Tools-103-blueviolet)
-![Tests](https://img.shields.io/badge/Tests-1%2C100+-brightgreen)
+![Tools](https://img.shields.io/badge/MCP_Tools-112-blueviolet)
+![Tests](https://img.shields.io/badge/Tests-1%2C627+-brightgreen)
 ![License](https://img.shields.io/badge/License-Personal_Study-orange)
 
 </div>
 
 ---
 
-C4 turns Claude Code into a full project management system. It provides **103 MCP tools**, a structured workflow engine, multi-lens code review, knowledge persistence, and GPU-aware task scheduling — all through natural language.
+C4 turns Claude Code into a full project management system. It provides **112 MCP tools**, a structured workflow engine, multi-lens code review, knowledge persistence, and GPU-aware task scheduling — all through natural language.
 
 ```
 You: /c4-plan "Add user authentication with JWT"
@@ -75,7 +75,7 @@ git clone https://git.pilab.co.kr/pi/c4.git && cd c4
 Restart Claude Code, then:
 
 ```bash
-/c4-status          # Verify connection (103 tools registered)
+/c4-status          # Verify connection (112 tools registered)
 /c4-plan "feature"  # Start planning
 /c4-run             # Execute tasks
 ```

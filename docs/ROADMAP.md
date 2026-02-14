@@ -7,15 +7,15 @@
 ### 핵심 구조
 
 - **Go MCP Server (Primary)** - 112 도구 (Base 86: state/task/file/git/discovery/artifact/lsp/knowledge/research/gpu/soul/team/twin/onboard/lighthouse/llm/cdp/c2/drive/c1), Registry-based, SQLite Store, JSON-RPC Bridge, LLM Gateway, CDP Runner, Hub Client
-- **C0 Drive** - Supabase 파일 저장소, metadata JSONB, c4_drive_mkdir 6개 도구, PostgREST URL 인코딩
-- **C1 Context Hub** - Supabase 4 테이블 (channels/messages/participants/summaries), Go MCP 3 도구 (search/mentions/briefing), Context Keeper (LLM 요약), Agent 통합 (notifyKeeper)
+- **C0 Drive** - Supabase 파일 저장소, metadata JSONB, c4_drive_mkdir 6개 도구, PostgREST URL 인코딩, server-side filtering
+- **C1 Context Hub** - Supabase 4 테이블 (channels/messages/participants/summaries), Go MCP 3 도구 (search/mentions/briefing), Context Keeper (LLM 요약), Agent 통합 (notifyKeeper), participant_id 추적
 - **C1 Desktop App** - Tauri 2.x, 4개 프로바이더, Realtime WebSocket, 5-탭 UI (Sessions/Dashboard/Config/Documents/Channels)
-- **C1 Views** - SessionsView (provider 자동감지), ChannelsView (메시징 + Realtime), DocumentsView (파일+마크다운 편집)
+- **C1 Views** - SessionsView (provider 자동감지), ChannelsView (메시징 + Realtime + count 로직), DocumentsView (파일+마크다운 편집)
 - **Daemon Scheduler** - 로컬 작업 스케줄러, 13 REST API, GPU 할당, 소요시간 예측 (PiQ 대체)
 - **LLM Gateway** - 4개 Provider (Anthropic/OpenAI/Gemini/Ollama), 5단계 라우팅, CostTracker, 모델 카탈로그 9종
 - **Cloud Layer** - Go PostgREST client (Auth + CloudStore + HybridStore + KnowledgeCloudClient)
 - **Python Sidecar** - LSP(Multilspy→Jedi→Tree-sitter), Knowledge Store v2, GPU Scheduler
-- **Infra** - Supabase PostgreSQL (12 migrations, RLS, tsvector FTS)
+- **Infra** - Supabase PostgreSQL (13 migrations, RLS, tsvector FTS)
 
 ### 지원 기능
 
@@ -863,7 +863,7 @@ Claude Code → Go MCP Server
 **구현 완료**:
 
 #### Phase 1: 데이터 레이어 — Go MCP + Supabase
-- **Supabase Migration 00012**: 4 테이블 (c1_channels, c1_messages, c1_participants, c1_channel_summaries) + RLS + tsvector FTS
+- **Supabase Migration 00013**: 4 테이블 (c1_channels, c1_messages, c1_participants, c1_channel_summaries) + RLS + tsvector FTS + participant_id 필드
 - **Go C1Handler**: PostgREST HTTP client (setHeaders, httpGet, httpPost, resolveChannelID)
 - **MCP 도구 3개**: `c1_search` (FTS), `c1_check_mentions` (agent mentions), `c1_get_briefing` (채널 요약 + 최근 메시지)
 - **Helper 메서드**: ListChannels, CreateChannel, PostMessage, GetContext (4개 추가 메서드, MCP 미등록)
@@ -884,9 +884,14 @@ Claude Code → Go MCP Server
 - **Documents UI**: DocumentsView (탭 사이드바), DocumentEditor (뷰/수정 토글), MarkdownViewer
 - **Agent 통합**: mcp.go에서 ContextKeeper 자동 와이어링 (Cloud 활성화 시)
 
-**테스트**: c1_test.go 14개 + c1_keeper_test.go 8개 = **22개 신규** (Go 620+ → 767)
+#### Phase 5: 코드 리뷰 & 픽스 (R-CVR-002~008)
+- **Migration 00013 확정**: participant_id 필드 추가 (참여자 추적)
+- **Count Logic**: channel.json 구조 수정 (메시지 수 정확도)
+- **URL 인코딩**: Drive client 필터 (PostgREST and()/not.like())
+- **Code Cleanup**: intOr() 미사용 제거, Drive server-side filtering
+- **테스트**: Go 22개 신규 (c1_test.go, c1_keeper_test.go)
 
-**결과**: 104 → **112 MCP 도구** (+8: C1 3개 + 이전 미계수 보정)
+**결과**: 112 MCP 도구 (Base 86 + Hub 26), 767 tests, 10+ migrations
 
 ---
 
