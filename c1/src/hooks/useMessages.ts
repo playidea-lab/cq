@@ -5,6 +5,17 @@ import type { C1Message, C1MessagePage } from '../types';
 
 const PAGE_SIZE = 30;
 
+// Runtime type guard for realtime message records
+function isValidMessage(record: unknown): record is C1Message {
+  if (!record || typeof record !== 'object') return false;
+  const r = record as Record<string, unknown>;
+  return (
+    typeof r.id === 'string' &&
+    typeof r.content === 'string' &&
+    typeof r.channel_id === 'string'
+  );
+}
+
 export function useMessages(channelId: string | null) {
   const [messages, setMessages] = useState<C1Message[]>([]);
   const [loading, setLoading] = useState(false);
@@ -58,7 +69,12 @@ export function useMessages(channelId: string | null) {
         event.change_type === 'INSERT' &&
         channelId
       ) {
-        const record = event.record as unknown as C1Message;
+        // Runtime validation for realtime record
+        if (!isValidMessage(event.record)) {
+          console.warn('Invalid message record from realtime event:', event.record);
+          return;
+        }
+        const record = event.record as C1Message;
         if (record.channel_id === channelId) {
           setMessages(prev => {
             // Deduplicate

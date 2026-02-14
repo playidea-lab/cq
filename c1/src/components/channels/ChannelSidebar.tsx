@@ -34,6 +34,13 @@ export function ChannelSidebar({
     }
   }, [newName, newDesc, onCreate, onSelect]);
 
+  const handleChannelKeyDown = useCallback((channel: Channel, e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      onSelect(channel);
+    }
+  }, [onSelect]);
+
   return (
     <>
       <aside className="channel-sidebar">
@@ -58,6 +65,9 @@ export function ChannelSidebar({
                 key={ch.id}
                 className={`channel-sidebar__item ${selectedChannel?.id === ch.id ? 'channel-sidebar__item--active' : ''}`}
                 onClick={() => onSelect(ch)}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => handleChannelKeyDown(ch, e)}
               >
                 <span className="channel-sidebar__item-hash">#</span>
                 <span className="channel-sidebar__item-name">{ch.name}</span>
