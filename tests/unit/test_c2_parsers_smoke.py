@@ -5,9 +5,9 @@ and an empty/invalid file. The goal is to prove parsing does not crash,
 not to validate content accuracy.
 """
 
-import pytest
 from pathlib import Path
 
+import pytest
 
 # ---------------------------------------------------------------------------
 # Helpers: create minimal test files

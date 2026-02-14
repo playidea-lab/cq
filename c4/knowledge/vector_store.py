@@ -17,7 +17,12 @@ import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
 
-import sqlite_vec
+try:
+    import sqlite_vec
+    _SQLITE_VEC_AVAILABLE = True
+except ImportError:
+    sqlite_vec = None  # type: ignore[assignment]
+    _SQLITE_VEC_AVAILABLE = False
 
 
 @dataclass
@@ -68,6 +73,9 @@ class VectorStore:
             dimension: Dimension of embedding vectors.
             table_name: Name for the vector table.
         """
+        if not _SQLITE_VEC_AVAILABLE:
+            raise ImportError("sqlite_vec is required for VectorStore. Install with: pip install sqlite-vec")
+
         self.db_path = str(db_path)
         self.dimension = dimension
         self.table_name = table_name

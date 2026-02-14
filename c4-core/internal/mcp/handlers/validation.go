@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"strings"
@@ -44,7 +45,9 @@ type validationDef struct {
 func handleRunValidation(rootDir string, rawArgs json.RawMessage) (any, error) {
 	var args runValidationArgs
 	if len(rawArgs) > 0 {
-		_ = json.Unmarshal(rawArgs, &args)
+		if err := json.Unmarshal(rawArgs, &args); err != nil {
+			return nil, fmt.Errorf("parsing arguments: %w", err)
+		}
 	}
 
 	// Detect available validations

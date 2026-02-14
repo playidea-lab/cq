@@ -34,7 +34,9 @@ func RegisterPersonaHandlers(reg *mcp.Registry, store *SQLiteStore) {
 			PersonaID string `json:"persona_id"`
 		}
 		if len(rawArgs) > 0 {
-			_ = json.Unmarshal(rawArgs, &args)
+			if err := json.Unmarshal(rawArgs, &args); err != nil {
+				return nil, fmt.Errorf("parsing arguments: %w", err)
+			}
 		}
 
 		if args.PersonaID != "" {
@@ -186,7 +188,9 @@ func RegisterTeamHandlers(reg *mcp.Registry, projectRoot string) {
 			ActivePersona string   `json:"active_persona"`
 		}
 		if len(rawArgs) > 0 {
-			_ = json.Unmarshal(rawArgs, &args)
+			if err := json.Unmarshal(rawArgs, &args); err != nil {
+				return nil, fmt.Errorf("parsing arguments: %w", err)
+			}
 		}
 
 		teamPath := filepath.Join(projectRoot, ".c4", "team.yaml")

@@ -430,7 +430,7 @@ func handleReplaceContent(rootDir string, rawArgs json.RawMessage) (any, error) 
 
 	return map[string]any{
 		"success":      true,
-		"replacements": strings.Count(content, args.OldText),
+		"replacements": 1,
 	}, nil
 }
 

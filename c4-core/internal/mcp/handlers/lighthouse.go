@@ -380,7 +380,10 @@ func makeLighthouseStub(lh *Lighthouse) mcp.HandlerFunc {
 	snapshot := *lh // value copy — closure is immutable
 	return func(args json.RawMessage) (any, error) {
 		var inputSchema map[string]any
-		_ = json.Unmarshal([]byte(snapshot.InputSchema), &inputSchema)
+		if err := json.Unmarshal([]byte(snapshot.InputSchema), &inputSchema); err != nil {
+			// Continue with empty schema if parsing fails
+			inputSchema = map[string]any{"type": "object"}
+		}
 		return map[string]any{
 			"lighthouse":   true,
 			"status":       "stub",

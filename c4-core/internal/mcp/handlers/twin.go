@@ -586,7 +586,9 @@ func RegisterTwinHandlers(reg *mcp.Registry, store *SQLiteStore) {
 			Focus string `json:"focus"`
 		}
 		if len(rawArgs) > 0 {
-			_ = json.Unmarshal(rawArgs, &args)
+			if err := json.Unmarshal(rawArgs, &args); err != nil {
+				return nil, fmt.Errorf("parsing arguments: %w", err)
+			}
 		}
 		if args.Focus == "" {
 			args.Focus = "all"

@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"sort"
 	"strings"
 	"time"
@@ -91,7 +92,7 @@ func (c *CloudStore) GetStatus() (*handlers.ProjectStatus, error) {
 
 	// Read state
 	var stateRows []cloudStateRow
-	if err := c.get("c4_state", "project_id=eq."+c.projectID, &stateRows); err != nil {
+	if err := c.get("c4_state", "project_id=eq."+url.QueryEscape(c.projectID), &stateRows); err != nil {
 		return nil, fmt.Errorf("get state: %w", err)
 	}
 	if len(stateRows) > 0 {
@@ -108,7 +109,7 @@ func (c *CloudStore) GetStatus() (*handlers.ProjectStatus, error) {
 
 	// Count tasks by status
 	var taskRows []cloudTaskRow
-	if err := c.get("c4_tasks", "project_id=eq."+c.projectID+"&select=task_id,status", &taskRows); err != nil {
+	if err := c.get("c4_tasks", "project_id=eq."+url.QueryEscape(c.projectID)+"&select=task_id,status", &taskRows); err != nil {
 		return status, nil // return partial status on task fetch failure
 	}
 
@@ -165,7 +166,7 @@ func (c *CloudStore) Clear(keepConfig bool) error {
 	}
 
 	for _, table := range tables {
-		if err := c.del(table, "project_id=eq."+c.projectID); err != nil {
+		if err := c.del(table, "project_id=eq."+url.QueryEscape(c.projectID)); err != nil {
 			return fmt.Errorf("clearing %s: %w", table, err)
 		}
 	}
@@ -216,7 +217,7 @@ func (c *CloudStore) AddTask(task *handlers.Task) error {
 // GetTask retrieves a task by ID.
 func (c *CloudStore) GetTask(taskID string) (*handlers.Task, error) {
 	var rows []cloudTaskRow
-	filter := fmt.Sprintf("task_id=eq.%s&project_id=eq.%s", taskID, c.projectID)
+	filter := fmt.Sprintf("task_id=eq.%s&project_id=eq.%s", url.QueryEscape(taskID), url.QueryEscape(c.projectID))
 	if err := c.get("c4_tasks", filter, &rows); err != nil {
 		return nil, fmt.Errorf("get task %s: %w", taskID, err)
 	}
@@ -232,7 +233,7 @@ func (c *CloudStore) GetTask(taskID string) (*handlers.Task, error) {
 // pending task with all dependencies met, and assigns it via PATCH.
 func (c *CloudStore) AssignTask(workerID string) (*handlers.TaskAssignment, error) {
 	var rows []cloudTaskRow
-	filter := "project_id=eq." + c.projectID
+	filter := "project_id=eq." + url.QueryEscape(c.projectID)
 	if err := c.get("c4_tasks", filter, &rows); err != nil {
 		return nil, fmt.Errorf("list tasks: %w", err)
 	}
@@ -271,7 +272,7 @@ func (c *CloudStore) AssignTask(workerID string) (*handlers.TaskAssignment, erro
 	selected := candidates[0]
 
 	// Assign via PATCH
-	patchFilter := fmt.Sprintf("task_id=eq.%s&project_id=eq.%s", selected.TaskID, c.projectID)
+	patchFilter := fmt.Sprintf("task_id=eq.%s&project_id=eq.%s", url.QueryEscape(selected.TaskID), url.QueryEscape(c.projectID))
 	update := map[string]any{
 		"status":     "in_progress",
 		"worker_id":  workerID,

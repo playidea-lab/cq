@@ -28,8 +28,18 @@
 - But sidecar uses dynamic port (port 0 = auto-assign)
 - This means if sidecar fails, proxy will try wrong address
 
+### Key Finding: Lighthouse Feature Issues (2026-02-14)
+- `lighthousePromote` schema validation is dead code: Unregister(name) before GetToolSchema(name)
+- T-LH- task ID parsing uses LastIndex("-") -- fragile if name contains hyphens, no name validation at registration
+- `lighthouseRegister` raw SQL `UPDATE c4_lighthouses SET task_id=?` bypasses store abstraction, swallows errors
+- Promote task completion via raw SQL skips persona stats/auto-learn
+- `validateSchemaCompat` only checks property names + required, not types
+- Lighthouse operations not atomic between Registry + SQLite (race possible in theory)
+- No re-register after deprecate (getLighthouse finds deprecated record, blocks re-register)
+
 ### Patterns Observed
 - All handler files follow consistent pattern: Register*Handlers + handle* functions
 - No hardcoded user paths in Go code (good)
 - Build tags properly used for gRPC (grpc_client.go)
 - Error handling generally good but some `_ = err` silencing in sqlite_store.go
+- Best-effort migrations with `_, _ = s.db.Exec(m)` swallow all errors including non-duplicate-column failures

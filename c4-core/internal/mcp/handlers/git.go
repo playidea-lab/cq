@@ -159,7 +159,9 @@ type worktreeCleanupArgs struct {
 func handleWorktreeCleanup(rootDir string, rawArgs json.RawMessage) (any, error) {
 	args := worktreeCleanupArgs{DryRun: true}
 	if len(rawArgs) > 0 {
-		_ = json.Unmarshal(rawArgs, &args)
+		if err := json.Unmarshal(rawArgs, &args); err != nil {
+			return nil, fmt.Errorf("parsing arguments: %w", err)
+		}
 	}
 
 	// List worktrees
@@ -207,7 +209,9 @@ type analyzeHistoryArgs struct {
 func handleAnalyzeHistory(rootDir string, rawArgs json.RawMessage) (any, error) {
 	args := analyzeHistoryArgs{MaxCount: 100}
 	if len(rawArgs) > 0 {
-		_ = json.Unmarshal(rawArgs, &args)
+		if err := json.Unmarshal(rawArgs, &args); err != nil {
+			return nil, fmt.Errorf("parsing arguments: %w", err)
+		}
 	}
 
 	gitArgs := []string{"log", "--pretty=format:%H|%an|%ad|%s", "--date=short"}

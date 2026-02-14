@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import os
+import shlex
 import shutil
 import signal as sig
 import subprocess
@@ -79,7 +80,7 @@ class GpuJob:
 
     @property
     def requires_gpu(self) -> bool:
-        return self.gpu_count > 0 and self.parallelism != "single" or self.gpu_count >= 1
+        return self.gpu_count > 0
 
     @property
     def is_terminal(self) -> bool:
@@ -325,15 +326,15 @@ class GpuJobScheduler:
 
         try:
             command = self._build_launch_command(job, env)
+            command_args = shlex.split(command)
 
             process = subprocess.Popen(
-                command,
-                shell=True,
+                command_args,
                 cwd=job.workdir,
                 env=env,
                 stdout=log_file,
                 stderr=subprocess.STDOUT,
-                preexec_fn=os.setsid,
+                process_group=0,
             )
 
             with self._lock:
