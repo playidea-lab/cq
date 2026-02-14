@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"sync"
@@ -200,6 +201,11 @@ func (d *Dispatcher) executeWebhook(eventID, eventType string, eventData json.Ra
 		return fmt.Errorf("webhook url not specified in action_config")
 	}
 
+	// Validate webhook URL to prevent SSRF
+	if err := validateWebhookURL(cfg.URL); err != nil {
+		return fmt.Errorf("invalid webhook URL: %w", err)
+	}
+
 	// CloudEvents-style payload
 	payload := map[string]any{
 		"id":     eventID,
@@ -350,4 +356,98 @@ func resolveTemplateString(s string, data map[string]any) string {
 		result = result[:start] + val + result[end+2:]
 	}
 	return result
+}
+
+// validateWebhookURL validates a webhook URL to prevent SSRF attacks.
+// It checks that:
+// - The URL scheme is http or https
+// - The resolved IP addresses are not private/internal ranges
+func validateWebhookURL(rawURL string) error {
+	parsedURL, err := url.Parse(rawURL)
+	if err != nil {
+		return fmt.Errorf("parse URL: %w", err)
+	}
+
+	// Check scheme is http or https
+	if parsedURL.Scheme != "http" && parsedURL.Scheme != "https" {
+		return fmt.Errorf("scheme must be http or https, got %s", parsedURL.Scheme)
+	}
+
+	// Extract hostname
+	hostname := parsedURL.Hostname()
+	if hostname == "" {
+		return fmt.Errorf("missing hostname")
+	}
+
+	// Resolve hostname to IP addresses
+	ips, err := net.LookupHost(hostname)
+	if err != nil {
+		return fmt.Errorf("resolve hostname: %w", err)
+	}
+
+	// Check all resolved IPs
+	for _, ipStr := range ips {
+		ip := net.ParseIP(ipStr)
+		if ip == nil {
+			continue
+		}
+
+		// Check for private/internal ranges
+		if isPrivateIP(ip) {
+			return fmt.Errorf("webhook URL resolves to private IP: %s", ipStr)
+		}
+	}
+
+	return nil
+}
+
+var privateCIDRs []*net.IPNet
+
+func init() {
+	// Initialize private CIDR ranges once at package init
+	privateRanges := []string{
+		"127.0.0.0/8",    // Loopback
+		"10.0.0.0/8",     // Private
+		"172.16.0.0/12",  // Private
+		"192.168.0.0/16", // Private
+		"169.254.0.0/16", // Link-local
+	}
+	for _, cidr := range privateRanges {
+		_, network, _ := net.ParseCIDR(cidr)
+		if network != nil {
+			privateCIDRs = append(privateCIDRs, network)
+		}
+	}
+}
+
+// isPrivateIP checks if an IP is in a private/internal range.
+func isPrivateIP(ip net.IP) bool {
+	// Check for unspecified (0.0.0.0 or ::)
+	if ip.IsUnspecified() {
+		return true
+	}
+
+	// IPv4 private ranges (from init)
+	for _, cidr := range privateCIDRs {
+		if cidr.Contains(ip) {
+			return true
+		}
+	}
+
+	// IPv6 loopback
+	if ip.IsLoopback() {
+		return true
+	}
+
+	// IPv6 link-local (fe80::/10)
+	if ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
+		return true
+	}
+
+	// IPv6 unique local addresses (fc00::/7)
+	if len(ip) == 16 && (ip[0] == 0xfc || ip[0] == 0xfd) {
+		return true
+	}
+
+	return false
 }
