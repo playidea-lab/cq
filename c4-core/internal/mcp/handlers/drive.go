@@ -33,7 +33,7 @@ func RegisterDriveHandlers(reg *mcp.Registry, driveClient *drive.Client) {
 		if args.LocalPath == "" || args.DrivePath == "" {
 			return nil, fmt.Errorf("local_path and drive_path are required")
 		}
-		info, err := driveClient.Upload(args.LocalPath, args.DrivePath)
+		info, err := driveClient.Upload(args.LocalPath, args.DrivePath, nil)
 		if err != nil {
 			return nil, err
 		}
