@@ -891,7 +891,15 @@ Claude Code → Go MCP Server
 - **Code Cleanup**: intOr() 미사용 제거, Drive server-side filtering
 - **테스트**: Go 22개 신규 (c1_test.go, c1_keeper_test.go)
 
-**결과**: 112 MCP 도구 (Base 86 + Hub 26), 767 tests, 10+ migrations
+#### Phase 6: Task Lifecycle → C1 Channels + godotenv
+- **notifyKeeper 4-param**: `notifyKeeper(eventType, taskID, title, workerID)` — AssignTask/SubmitTask/ReportTask/MarkBlocked 4곳 연결
+- **EnsureChannel**: idempotent resolve-or-create 패턴, NotifyTaskEvent async 포스팅
+- **godotenv**: `mcp.go`에서 `.env` 자동 로딩 (monorepo root 지원), `.mcp.json` 하드코딩 키 제거
+- **cloud auto-enable**: `config.go`에서 SUPABASE_URL+KEY 발견 시 cloud.Enabled=true 자동 설정
+- **C3 EventBus**: gRPC UDS daemon (`internal/eventbus/`) + Python sidecar response piggyback
+- **Keeper 테스트**: 11개 (EnsureChannel, NotifyTaskEvent, AutoPost 등)
+
+**결과**: 112 MCP 도구 (Base 86 + Hub 26), ~1,641 tests, 12 migrations
 
 ---
 
