@@ -88,6 +88,42 @@ Restart Claude Code, then:
 - **Checkpoint system** — APPROVE / REQUEST_CHANGES / REPLAN / REDESIGN decision points
 - **Smart Auto Mode** — Automatically picks worker vs direct based on task dependencies
 
+### Lighthouse (Spec-as-MCP TDD)
+
+Define API contracts first, implement later — the lighthouse pattern brings TDD to MCP tool development.
+
+```
+Register spec ──▶ Stub + Task created ──▶ Worker gets spec context ──▶ Promote with schema check
+```
+
+```bash
+# 1. Define the contract — stub tool is immediately available
+c4_lighthouse(action="register", name="export_api",
+  description="Batch export project data",
+  input_schema='{"type":"object","properties":{"format":{"type":"string"}},"required":["format"]}',
+  spec="## Export API\nReturns data in JSON or CSV format.")
+# → Creates stub tool [LIGHTHOUSE] export_api
+# → Auto-creates task T-LH-export_api-0
+
+# 2. Worker receives full spec context on assignment
+c4_get_task  # → TaskAssignment includes lighthouse_spec: {name, spec, input_schema}
+
+# 3. After implementation, promote validates and removes stub
+c4_lighthouse(action="promote", name="export_api")
+# → Compares real tool schema against lighthouse spec (warnings on mismatch)
+# → Marks T-LH-export_api-0 as done
+# → Removes stub from registry
+```
+
+| Action | Description |
+|--------|-------------|
+| `register` | Create stub + auto-task (disable with `auto_task: false`) |
+| `list` | All lighthouses with status counts (stub/implemented/deprecated) |
+| `get` | Full spec, schema, version, linked task ID |
+| `promote` | Validate schema → mark implemented → remove stub → complete task |
+| `update` | Modify spec/schema/description (stub only, bumps version) |
+| `remove` | Deprecate and unregister from MCP |
+
 ### Code Intelligence
 - **3-tier LSP fallback** — Multilspy → Jedi → Tree-sitter for symbol resolution
 - **Symbol operations** — Find, rename, replace body, insert before/after across the project
@@ -118,7 +154,7 @@ Restart Claude Code, then:
 |----------|-------|---------|
 | Core | 12 | `c4_status`, `c4_add_todo`, `c4_claim`, `c4_report`, `c4_checkpoint` |
 | Files & Git | 11 | `c4_find_file`, `c4_search_for_pattern`, `c4_read_file`, `c4_search_commits` |
-| Discovery | 12 | `c4_save_spec`, `c4_save_design`, `c4_artifact_save`, `c4_lighthouse` |
+| Discovery | 12 | `c4_save_spec`, `c4_save_design`, `c4_artifact_save`, `c4_lighthouse` (TDD loop) |
 | Code Intelligence | 7 | `c4_find_symbol`, `c4_get_symbols_overview`, `c4_replace_symbol_body` |
 | Knowledge | 12 | `c4_knowledge_search`, `c4_experiment_record`, `c4_research_start` |
 | Soul & Team | 10 | `c4_soul_resolve`, `c4_persona_evolve`, `c4_reflect`, `c4_whoami` |
