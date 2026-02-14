@@ -30,6 +30,7 @@ import os
 from pathlib import Path
 from typing import Any, Awaitable, Callable
 
+from c4.bridge.events import EventCollector
 from c4.daemon.code_ops import CodeOps
 
 logger = logging.getLogger(__name__)
@@ -462,11 +463,18 @@ class BridgeServer:
             except Exception as idx_err:
                 logger.warning("Auto-index embedding failed for %s: %s", doc_id, idx_err)
 
-            return {
+            result = {
                 "success": True,
                 "doc_id": doc_id,
                 "message": f"Document created: {doc_id}",
             }
+            ec = EventCollector()
+            ec.emit("knowledge.recorded", "c4.knowledge", {
+                "doc_id": doc_id,
+                "doc_type": doc_type,
+                "title": title,
+            })
+            return ec.attach(result)
         except Exception as exc:
             return {"error": f"KnowledgeRecord failed: {exc}"}
 
@@ -643,11 +651,17 @@ class BridgeServer:
                 target_score=params.get("target_score", 7.0),
             )
             iteration_id = store.create_iteration(project_id)
-            return {
+            result = {
                 "success": True,
                 "project_id": project_id,
                 "iteration_id": iteration_id,
             }
+            ec = EventCollector()
+            ec.emit("research.started", "c4.research", {
+                "project_id": project_id,
+                "name": name,
+            })
+            return ec.attach(result)
         except Exception as exc:
             return {"error": f"ResearchStart failed: {exc}"}
 
@@ -694,7 +708,12 @@ class BridgeServer:
             if update_kwargs:
                 store.update_iteration(current.id, **update_kwargs)
 
-            return {"success": True, "iteration_id": current.id}
+            result = {"success": True, "iteration_id": current.id}
+            ec = EventCollector()
+            ec.emit("research.recorded", "c4.research", {
+                "project_id": project_id,
+            })
+            return ec.attach(result)
         except Exception as exc:
             return {"error": f"ResearchRecord failed: {exc}"}
 
@@ -766,11 +785,19 @@ class BridgeServer:
             from c4.c2.converter import parse_document
 
             doc = parse_document(Path(file_path))
-            return {
+            result = {
                 "blocks": [b.model_dump(mode="json") for b in doc.blocks],
                 "metadata": doc.metadata.model_dump(mode="json") if doc.metadata else {},
                 "block_count": len(doc.blocks),
             }
+            ec = EventCollector()
+            fmt_name = Path(file_path).suffix.lstrip(".") or "unknown"
+            ec.emit("c2.document.parsed", "c4.c2", {
+                "file_path": file_path,
+                "block_count": len(doc.blocks),
+                "format": fmt_name,
+            })
+            return ec.attach(result)
         except Exception as exc:
             return {"error": f"C2ParseDocument failed: {exc}"}
 
@@ -784,7 +811,13 @@ class BridgeServer:
             from c4.c2.converter import extract_text
 
             text = extract_text(Path(file_path))
-            return {"text": text, "char_count": len(text)}
+            result = {"text": text, "char_count": len(text)}
+            ec = EventCollector()
+            ec.emit("c2.text.extracted", "c4.c2", {
+                "file_path": file_path,
+                "char_count": len(text),
+            })
+            return ec.attach(result)
         except Exception as exc:
             return {"error": f"C2ExtractText failed: {exc}"}
 

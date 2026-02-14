@@ -8,9 +8,7 @@
       ],
       "command": "/Users/changmin/git/c4/c4-core/bin/c4",
       "env": {
-        "C4_PROJECT_ROOT": "/Users/changmin/git/c4/c4-core",
-        "SUPABASE_URL": "https://fhuomvsswxiwbfqjsgit.supabase.co",
-        "SUPABASE_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZodW9tdnNzd3hpd2JmcWpzZ2l0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg1Mzg4NzgsImV4cCI6MjA4NDExNDg3OH0.vyEfPomCBdQCv81SCMbQGQlE-S3BYgAjyzSOydV_wU4"
+        "C4_PROJECT_ROOT": "/Users/changmin/git/c4/c4-core"
       },
       "type": "stdio"
     }

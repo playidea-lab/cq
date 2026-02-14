@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"sync"
 	"testing"
 
 	"github.com/changmin/c4-core/internal/mcp"
@@ -556,4 +557,221 @@ func (f *filterCaptureSyncer) ListDocuments(docType string, limit int) ([]map[st
 }
 func (f *filterCaptureSyncer) GetDocument(docID string) (map[string]any, error) {
 	return nil, fmt.Errorf("not found")
+}
+
+// =========================================================================
+// Event extraction tests (publishSidecarEvents / SetEventBus)
+// =========================================================================
+
+// mockPublisher records PublishAsync calls for assertions.
+type mockPublisher struct {
+	mu     sync.Mutex
+	events []publishedEvent
+}
+
+type publishedEvent struct {
+	evType    string
+	source    string
+	data      json.RawMessage
+	projectID string
+}
+
+func (m *mockPublisher) PublishAsync(evType, source string, data json.RawMessage, projectID string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.events = append(m.events, publishedEvent{evType, source, data, projectID})
+}
+
+func (m *mockPublisher) getEvents() []publishedEvent {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	cp := make([]publishedEvent, len(m.events))
+	copy(cp, m.events)
+	return cp
+}
+
+// startMockSidecarWithEvents starts a mock sidecar that returns _events in the response.
+func startMockSidecarWithEvents(t *testing.T, events []map[string]any) (string, func()) {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			go func(c net.Conn) {
+				defer c.Close()
+				buf := make([]byte, 4096)
+				n, err := c.Read(buf)
+				if err != nil || n == 0 {
+					return
+				}
+				result := map[string]any{
+					"status":  "ok",
+					"_events": events,
+				}
+				resp := map[string]any{
+					"result": result,
+					"error":  nil,
+				}
+				data, _ := json.Marshal(resp)
+				data = append(data, '\n')
+				c.Write(data)
+			}(conn)
+		}
+	}()
+
+	return ln.Addr().String(), func() { ln.Close() }
+}
+
+// TestProxyEventExtraction verifies _events are extracted and published.
+func TestProxyEventExtraction(t *testing.T) {
+	events := []map[string]any{
+		{
+			"type":       "c2.document.parsed",
+			"source":     "c4.c2",
+			"data":       map[string]any{"file_path": "/a/b.pdf", "block_count": float64(5)},
+			"project_id": "proj-1",
+		},
+	}
+	addr, cleanup := startMockSidecarWithEvents(t, events)
+	defer cleanup()
+
+	pub := &mockPublisher{}
+	proxy := NewBridgeProxy(addr)
+	proxy.SetEventBus(pub)
+
+	result, err := proxy.Call("C2ParseDocument", map[string]any{})
+	if err != nil {
+		t.Fatalf("Call failed: %v", err)
+	}
+
+	// _events should be removed from result
+	if _, exists := result["_events"]; exists {
+		t.Error("_events should be stripped from result")
+	}
+	if result["status"] != "ok" {
+		t.Errorf("expected status=ok, got %v", result["status"])
+	}
+
+	// Publisher should have received the event
+	published := pub.getEvents()
+	if len(published) != 1 {
+		t.Fatalf("expected 1 published event, got %d", len(published))
+	}
+	if published[0].evType != "c2.document.parsed" {
+		t.Errorf("evType = %q, want c2.document.parsed", published[0].evType)
+	}
+	if published[0].source != "c4.c2" {
+		t.Errorf("source = %q, want c4.c2", published[0].source)
+	}
+	if published[0].projectID != "proj-1" {
+		t.Errorf("projectID = %q, want proj-1", published[0].projectID)
+	}
+}
+
+// TestProxyEventExtractionMultiple verifies multiple events are all published.
+func TestProxyEventExtractionMultiple(t *testing.T) {
+	events := []map[string]any{
+		{"type": "ev.a", "source": "src-a", "data": map[string]any{}},
+		{"type": "ev.b", "source": "src-b", "data": map[string]any{"k": "v"}},
+	}
+	addr, cleanup := startMockSidecarWithEvents(t, events)
+	defer cleanup()
+
+	pub := &mockPublisher{}
+	proxy := NewBridgeProxy(addr)
+	proxy.SetEventBus(pub)
+
+	_, err := proxy.Call("Test", map[string]any{})
+	if err != nil {
+		t.Fatalf("Call failed: %v", err)
+	}
+
+	published := pub.getEvents()
+	if len(published) != 2 {
+		t.Fatalf("expected 2 published events, got %d", len(published))
+	}
+	if published[0].evType != "ev.a" {
+		t.Errorf("first event type = %q, want ev.a", published[0].evType)
+	}
+	if published[1].evType != "ev.b" {
+		t.Errorf("second event type = %q, want ev.b", published[1].evType)
+	}
+}
+
+// TestProxyNoEventBus verifies _events are still stripped even without a publisher.
+func TestProxyNoEventBus(t *testing.T) {
+	events := []map[string]any{
+		{"type": "ev.x", "source": "src", "data": map[string]any{}},
+	}
+	addr, cleanup := startMockSidecarWithEvents(t, events)
+	defer cleanup()
+
+	proxy := NewBridgeProxy(addr) // no SetEventBus call
+
+	result, err := proxy.Call("Test", map[string]any{})
+	if err != nil {
+		t.Fatalf("Call failed: %v", err)
+	}
+
+	// _events should still be removed
+	if _, exists := result["_events"]; exists {
+		t.Error("_events should be stripped even without publisher")
+	}
+}
+
+// TestProxyNoEvents verifies normal responses without _events work fine.
+func TestProxyNoEvents(t *testing.T) {
+	addr, cleanup := startMockSidecar(t)
+	defer cleanup()
+
+	pub := &mockPublisher{}
+	proxy := NewBridgeProxy(addr)
+	proxy.SetEventBus(pub)
+
+	result, err := proxy.Call("Ping", map[string]any{})
+	if err != nil {
+		t.Fatalf("Call failed: %v", err)
+	}
+	if result["status"] != "ok" {
+		t.Errorf("expected status=ok, got %v", result["status"])
+	}
+
+	// No events should be published
+	if len(pub.getEvents()) != 0 {
+		t.Error("expected no published events")
+	}
+}
+
+// TestProxyEventSkipsEmptyType verifies events without a type are skipped.
+func TestProxyEventSkipsEmptyType(t *testing.T) {
+	events := []map[string]any{
+		{"type": "", "source": "src", "data": map[string]any{}},
+		{"type": "valid.event", "source": "src", "data": map[string]any{}},
+	}
+	addr, cleanup := startMockSidecarWithEvents(t, events)
+	defer cleanup()
+
+	pub := &mockPublisher{}
+	proxy := NewBridgeProxy(addr)
+	proxy.SetEventBus(pub)
+
+	_, err := proxy.Call("Test", map[string]any{})
+	if err != nil {
+		t.Fatalf("Call failed: %v", err)
+	}
+
+	published := pub.getEvents()
+	if len(published) != 1 {
+		t.Fatalf("expected 1 published event (empty type skipped), got %d", len(published))
+	}
+	if published[0].evType != "valid.event" {
+		t.Errorf("evType = %q, want valid.event", published[0].evType)
+	}
 }

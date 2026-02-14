@@ -241,6 +241,10 @@ func New(projectRoot string) (*Manager, error) {
 			cfg.Cloud.AnonKey = k
 		}
 	}
+	// Auto-enable cloud if credentials are available
+	if !cfg.Cloud.Enabled && cfg.Cloud.URL != "" && cfg.Cloud.AnonKey != "" {
+		cfg.Cloud.Enabled = true
+	}
 
 	// Resolve preset if economic mode is enabled
 	if cfg.EconomicMode.Enabled {

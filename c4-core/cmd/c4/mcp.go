@@ -12,6 +12,8 @@ import (
 	"sync"
 	"syscall"
 
+	"github.com/joho/godotenv"
+
 	"github.com/changmin/c4-core/internal/bridge"
 	"github.com/changmin/c4-core/internal/cdp"
 	"github.com/changmin/c4-core/internal/cloud"
@@ -75,6 +77,18 @@ type mcpServer struct {
 
 // newMCPServer creates and initializes the MCP server with all tools registered.
 func newMCPServer() (*mcpServer, error) {
+	// Load .env files (best-effort, non-fatal)
+	// Search: projectDir/.env, projectDir/../.env (monorepo root)
+	for _, candidate := range []string{
+		filepath.Join(projectDir, ".env"),
+		filepath.Join(projectDir, "..", ".env"),
+	} {
+		if err := godotenv.Load(candidate); err == nil {
+			fmt.Fprintf(os.Stderr, "c4: loaded %s\n", candidate)
+			break
+		}
+	}
+
 	// Open SQLite database
 	db, err := openDB()
 	if err != nil {
@@ -249,9 +263,10 @@ func newMCPServer() (*mcpServer, error) {
 			fmt.Fprintf(os.Stderr, "c4: eventbus not reachable (unix:%s): %v\n", sockPath, ebErr)
 		} else {
 			handlers.RegisterEventBusHandlers(reg, ebClient)
-			// Wire event publishing to store + drive handlers
+			// Wire event publishing to store + drive + proxy handlers
 			sqliteStore.SetEventBus(ebClient)
 			handlers.SetDriveEventBus(ebClient)
+			proxy.SetEventBus(ebClient)
 			fmt.Fprintf(os.Stderr, "c4: eventbus connected (unix:%s, 6 tools)\n", sockPath)
 		}
 	}

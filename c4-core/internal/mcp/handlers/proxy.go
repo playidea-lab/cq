@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/changmin/c4-core/internal/eventbus"
 	"github.com/changmin/c4-core/internal/mcp"
 )
 
@@ -44,8 +45,9 @@ type BridgeProxy struct {
 	mu           sync.Mutex
 	addr         string
 	timeout      time.Duration
-	restarter    Restarter  // nil if no auto-restart support
-	lastFailedAt time.Time  // timestamp of last connection failure
+	restarter    Restarter           // nil if no auto-restart support
+	lastFailedAt time.Time           // timestamp of last connection failure
+	eventPub     eventbus.Publisher  // nil if eventbus not connected
 }
 
 // NewBridgeProxy creates a proxy that connects to the Python bridge sidecar.
@@ -55,6 +57,15 @@ func NewBridgeProxy(addr string) *BridgeProxy {
 		addr:    addr,
 		timeout: 10 * time.Second,
 	}
+}
+
+// SetEventBus attaches an EventBus publisher for forwarding events from the Python sidecar.
+// Python methods can include an "_events" field in their JSON-RPC response; the proxy
+// extracts those events and publishes them asynchronously via the EventBus.
+func (p *BridgeProxy) SetEventBus(pub eventbus.Publisher) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.eventPub = pub
 }
 
 // SetRestarter attaches a Restarter (typically *bridge.Sidecar) for auto-recovery.
@@ -200,6 +211,7 @@ func (p *BridgeProxy) doCall(method string, params map[string]any, timeout time.
 					if response.Error != nil {
 						return nil, fmt.Errorf("bridge error: %s", *response.Error)
 					}
+					p.publishSidecarEvents(response.Result)
 					return response.Result, nil
 				}
 			}
@@ -207,6 +219,46 @@ func (p *BridgeProxy) doCall(method string, params map[string]any, timeout time.
 		if err != nil {
 			return nil, newConnError("read response: %w", err)
 		}
+	}
+}
+
+// publishSidecarEvents extracts the "_events" field from a Python sidecar response
+// and publishes each event via the EventBus. The "_events" field is removed from the
+// result so callers never see it.
+func (p *BridgeProxy) publishSidecarEvents(result map[string]any) {
+	if result == nil {
+		return
+	}
+	events, ok := result["_events"]
+	if !ok {
+		return
+	}
+	delete(result, "_events")
+
+	p.mu.Lock()
+	pub := p.eventPub
+	p.mu.Unlock()
+	if pub == nil {
+		return
+	}
+
+	evList, ok := events.([]any)
+	if !ok {
+		return
+	}
+	for _, ev := range evList {
+		m, ok := ev.(map[string]any)
+		if !ok {
+			continue
+		}
+		evType, _ := m["type"].(string)
+		source, _ := m["source"].(string)
+		projectID, _ := m["project_id"].(string)
+		if evType == "" {
+			continue
+		}
+		data, _ := json.Marshal(m["data"])
+		pub.PublishAsync(evType, source, data, projectID)
 	}
 }
 
