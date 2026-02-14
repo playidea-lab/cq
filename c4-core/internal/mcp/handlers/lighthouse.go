@@ -15,6 +15,9 @@ import (
 var validLighthouseName = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_-]{0,63}$`)
 
 // RegisterLighthouseHandlers registers the c4_lighthouse MCP tool.
+// Concurrency: designed for single-session use via MCP stdio. The SQLite store
+// (MaxOpenConns=1 + WAL) serializes writes, but lighthouse stub handlers capture
+// value copies and are not updated concurrently.
 func RegisterLighthouseHandlers(reg *mcp.Registry, store *SQLiteStore) {
 	reg.Register(mcp.ToolSchema{
 		Name:        "c4_lighthouse",
@@ -367,18 +370,20 @@ func lighthouseRemove(reg *mcp.Registry, store *SQLiteStore, name, agentID strin
 }
 
 // makeLighthouseStub creates a handler that returns the lighthouse spec when called.
+// F-04: Takes value copy to avoid capturing mutable pointer.
 func makeLighthouseStub(lh *Lighthouse) mcp.HandlerFunc {
+	snapshot := *lh // value copy — closure is immutable
 	return func(args json.RawMessage) (any, error) {
 		var inputSchema map[string]any
-		_ = json.Unmarshal([]byte(lh.InputSchema), &inputSchema)
+		_ = json.Unmarshal([]byte(snapshot.InputSchema), &inputSchema)
 		return map[string]any{
 			"lighthouse":   true,
 			"status":       "stub",
-			"name":         lh.Name,
-			"description":  lh.Description,
-			"spec":         lh.Spec,
+			"name":         snapshot.Name,
+			"description":  snapshot.Description,
+			"spec":         snapshot.Spec,
 			"input_schema": inputSchema,
-			"version":      lh.Version,
+			"version":      snapshot.Version,
 			"message":      "This is a lighthouse stub. The spec above defines the contract.",
 			"called_with":  json.RawMessage(args),
 		}, nil
@@ -390,6 +395,7 @@ func makeLighthouseStub(lh *Lighthouse) mcp.HandlerFunc {
 func LoadLighthousesOnStartup(reg *mcp.Registry, store *SQLiteStore) int {
 	lighthouses, err := store.listLighthouses()
 	if err != nil {
+		fmt.Fprintf(os.Stderr, "c4: warning: failed to load lighthouses on startup: %v\n", err)
 		return 0
 	}
 
@@ -484,8 +490,8 @@ func (s *SQLiteStore) updateLighthouse(name string, updates map[string]any) erro
 	if err != nil {
 		return fmt.Errorf("lighthouse '%s' not found", name)
 	}
-	if lh.Status == "deprecated" {
-		return fmt.Errorf("cannot update deprecated lighthouse '%s'", name)
+	if lh.Status != "stub" {
+		return fmt.Errorf("cannot update %s lighthouse '%s' — only stubs can be updated", lh.Status, name)
 	}
 
 	if v, ok := updates["description"].(string); ok && v != "" {
@@ -501,13 +507,7 @@ func (s *SQLiteStore) updateLighthouse(name string, updates map[string]any) erro
 	_, err = s.db.Exec(`
 		UPDATE c4_lighthouses SET description=?, input_schema=?, spec=?, version=version+1, updated_at=CURRENT_TIMESTAMP
 		WHERE name=?`, lh.Description, lh.InputSchema, lh.Spec, name)
-	if err != nil {
-		return err
-	}
-
-	// Re-read to get updated version
-	lh.Version++
-	return nil
+	return err
 }
 
 func (s *SQLiteStore) setLighthouseTaskID(name, taskID string) error {
@@ -562,12 +562,31 @@ func validateSchemaCompat(lhSchemaJSON string, realSchema map[string]any) []stri
 		}
 	}
 
+	// Reverse required check: real tool requires fields that lighthouse doesn't
+	lhRequiredSet := make(map[string]bool, len(lhRequired))
+	for _, r := range lhRequired {
+		lhRequiredSet[r] = true
+	}
+	for _, r := range realRequired {
+		if !lhRequiredSet[r] {
+			warnings = append(warnings, fmt.Sprintf("real tool requires '%s' but lighthouse does not", r))
+		}
+	}
+
 	// Compare properties: lighthouse properties should exist in real tool
 	lhProps := extractMap(lhSchema, "properties")
 	realProps := extractMap(realSchema, "properties")
-	for propName := range lhProps {
-		if _, exists := realProps[propName]; !exists {
+	for propName, lhPropVal := range lhProps {
+		realPropVal, exists := realProps[propName]
+		if !exists {
 			warnings = append(warnings, fmt.Sprintf("lighthouse property '%s' not found in real tool", propName))
+			continue
+		}
+		// Type comparison
+		lhType := extractType(lhPropVal)
+		realType := extractType(realPropVal)
+		if lhType != "" && realType != "" && lhType != realType {
+			warnings = append(warnings, fmt.Sprintf("property '%s' type mismatch: lighthouse=%s, real=%s", propName, lhType, realType))
 		}
 	}
 
@@ -594,6 +613,18 @@ func extractStringSlice(m map[string]any, key string) []string {
 		}
 	}
 	return result
+}
+
+func extractType(v any) string {
+	m, ok := v.(map[string]any)
+	if !ok {
+		return ""
+	}
+	t, ok := m["type"].(string)
+	if !ok {
+		return ""
+	}
+	return t
 }
 
 func extractMap(m map[string]any, key string) map[string]any {

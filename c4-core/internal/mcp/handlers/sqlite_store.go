@@ -160,9 +160,13 @@ func (s *SQLiteStore) initSchema() error {
 		}
 	}
 
-	// Best-effort: apply migrations (ignore "duplicate column" errors)
+	// Best-effort: apply migrations (ignore only "duplicate column" errors)
 	for _, m := range migrations {
-		_, _ = s.db.Exec(m)
+		if _, err := s.db.Exec(m); err != nil {
+			if !strings.Contains(err.Error(), "duplicate column") {
+				fmt.Fprintf(os.Stderr, "c4: warning: migration failed: %v\n", err)
+			}
+		}
 	}
 
 	return nil

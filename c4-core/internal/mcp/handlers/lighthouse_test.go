@@ -3,6 +3,7 @@ package handlers
 import (
 	"database/sql"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/changmin/c4-core/internal/mcp"
@@ -778,6 +779,69 @@ func TestLighthouseRegisterNameValidation(t *testing.T) {
 		if result["success"] != true {
 			t.Errorf("name %q should be valid, got: %v", name, result)
 		}
+	}
+}
+
+func TestLighthouseStartupLoaderCoreToolCollision(t *testing.T) {
+	db, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer db.Close()
+
+	store, err := NewSQLiteStore(db)
+	if err != nil {
+		t.Fatalf("create store: %v", err)
+	}
+
+	// Insert a stub lighthouse with a name that will collide with a core tool
+	if err := store.saveLighthouse(&Lighthouse{
+		Name: "c4_status", Description: "Collides with core", InputSchema: `{}`,
+		Status: "stub", Version: 1, CreatedBy: "test",
+	}); err != nil {
+		t.Fatalf("save lighthouse: %v", err)
+	}
+
+	// Register core tool first
+	reg := mcp.NewRegistry()
+	reg.Register(mcp.ToolSchema{Name: "c4_status", Description: "core"}, func(args json.RawMessage) (any, error) {
+		return nil, nil
+	})
+
+	// Load — should skip the colliding lighthouse
+	n := LoadLighthousesOnStartup(reg, store)
+	if n != 0 {
+		t.Errorf("loaded = %d, want 0 (core tool collision should be skipped)", n)
+	}
+
+	// Core tool should still be there with original description
+	schema, ok := reg.GetToolSchema("c4_status")
+	if !ok {
+		t.Fatal("c4_status should still be registered")
+	}
+	if schema.Description != "core" {
+		t.Errorf("description = %q, want 'core' (should not be overwritten)", schema.Description)
+	}
+}
+
+func TestLighthouseUpdateImplementedBlocked(t *testing.T) {
+	reg, _ := setupLighthouseTest(t)
+
+	// Register and promote
+	callLighthouse(t, reg, map[string]any{
+		"action": "register", "name": "lh_impl_upd", "description": "Will promote", "auto_task": false,
+	})
+	callLighthouse(t, reg, map[string]any{"action": "promote", "name": "lh_impl_upd"})
+
+	// Try to update — should fail because it's "implemented" not "stub"
+	err := callLighthouseExpectErr(t, reg, map[string]any{
+		"action": "update", "name": "lh_impl_upd", "description": "New desc",
+	})
+	if err == nil {
+		t.Fatal("expected error updating implemented lighthouse")
+	}
+	if !strings.Contains(err.Error(), "only stubs can be updated") {
+		t.Errorf("error = %v, want 'only stubs can be updated'", err)
 	}
 }
 
