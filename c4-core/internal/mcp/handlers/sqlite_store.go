@@ -142,6 +142,7 @@ func (s *SQLiteStore) initSchema() error {
 			version      INTEGER NOT NULL DEFAULT 1,
 			created_by   TEXT DEFAULT '',
 			promoted_by  TEXT DEFAULT '',
+			task_id      TEXT DEFAULT '',
 			created_at   TEXT DEFAULT CURRENT_TIMESTAMP,
 			updated_at   TEXT DEFAULT CURRENT_TIMESTAMP
 		)`,

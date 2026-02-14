@@ -591,9 +591,9 @@ func TestAssignTaskWithLighthouseSpec(t *testing.T) {
 }
 
 func TestLighthousePromoteSchemaValidation(t *testing.T) {
-	reg, store := setupLighthouseTest(t)
+	reg, _ := setupLighthouseTest(t)
 
-	// Register lighthouse with specific schema
+	// Register lighthouse with schema requiring "name" and "age"
 	callLighthouse(t, reg, map[string]any{
 		"action":       "register",
 		"name":         "lh_schema_check",
@@ -602,27 +602,12 @@ func TestLighthousePromoteSchemaValidation(t *testing.T) {
 		"auto_task":    false,
 	})
 
-	// Register a "real" tool with a DIFFERENT schema (missing "age" property)
-	reg.Register(mcp.ToolSchema{
-		Name:        "lh_schema_check_real",
-		Description: "Real implementation",
-		InputSchema: map[string]any{
-			"type": "object",
-			"properties": map[string]any{
-				"name": map[string]any{"type": "string"},
-			},
-			"required": []any{"name"},
-		},
-	}, func(args json.RawMessage) (any, error) {
-		return map[string]any{"ok": true}, nil
-	})
-
-	// Now unregister the lighthouse stub and register the real tool under the SAME name
-	// to simulate the real tool taking over
+	// Unregister the lighthouse stub and register a "real" tool under the SAME name
+	// with a DIFFERENT schema (missing "age" property, non-[LIGHTHOUSE] description)
 	reg.Unregister("lh_schema_check")
 	reg.Register(mcp.ToolSchema{
 		Name:        "lh_schema_check",
-		Description: "Real implementation",
+		Description: "Real implementation", // no [LIGHTHOUSE] prefix
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -634,31 +619,16 @@ func TestLighthousePromoteSchemaValidation(t *testing.T) {
 		return map[string]any{"ok": true}, nil
 	})
 
-	// Promote — should succeed but with warnings about missing "age" property
-	// Note: promote calls reg.Unregister(name) internally, so we need to re-read
-	// the lighthouse before promoting. But promoteLighthouse checks status="stub" first.
-	// The real tool was registered under the same name, so promote will unregister it,
-	// then GetToolSchema won't find it. Let's adjust the test:
-	// We need to manually set up the scenario where promote can validate.
-	// Actually, lighthousePromote does: store.promoteLighthouse → reg.Unregister → reg.GetToolSchema
-	// After unregister, the real tool IS gone. So schema validation happens AFTER unregister.
-	// This means the real tool won't be found. We need to register the real tool AFTER promote.
-	// OR, we test validateSchemaCompat directly.
+	// Promote — F-01 fix: GetToolSchema runs BEFORE Unregister, so schema_warnings should appear
+	result := callLighthouse(t, reg, map[string]any{"action": "promote", "name": "lh_schema_check"})
+	if result["success"] != true {
+		t.Fatalf("promote failed: %v", result)
+	}
 
-	// Test validateSchemaCompat directly
-	warnings := validateSchemaCompat(
-		`{"type":"object","properties":{"name":{"type":"string"},"age":{"type":"number"}},"required":["name"]}`,
-		map[string]any{
-			"type": "object",
-			"properties": map[string]any{
-				"name": map[string]any{"type": "string"},
-			},
-			"required": []any{"name"},
-		},
-	)
-
-	if len(warnings) == 0 {
-		t.Fatal("expected schema warnings for missing 'age' property")
+	// Should have schema_warnings about missing "age" property
+	warnings, ok := result["schema_warnings"].([]string)
+	if !ok || len(warnings) == 0 {
+		t.Fatal("expected schema_warnings in promote result for missing 'age'")
 	}
 
 	foundAgeWarning := false
@@ -671,7 +641,7 @@ func TestLighthousePromoteSchemaValidation(t *testing.T) {
 		t.Errorf("warnings = %v, want warning about 'age'", warnings)
 	}
 
-	// Test matching schema — no warnings
+	// Test validateSchemaCompat directly: matching schema — no warnings (superset OK)
 	noWarnings := validateSchemaCompat(
 		`{"type":"object","properties":{"name":{"type":"string"}},"required":["name"]}`,
 		map[string]any{
@@ -686,9 +656,6 @@ func TestLighthousePromoteSchemaValidation(t *testing.T) {
 	if len(noWarnings) != 0 {
 		t.Errorf("expected no warnings for superset schema, got %v", noWarnings)
 	}
-
-	// Clean up: promote via store directly
-	_ = store.promoteLighthouse("lh_schema_check", "test")
 }
 
 func TestLighthousePromoteTaskCompletion(t *testing.T) {
@@ -773,5 +740,58 @@ func TestGetToolSchema(t *testing.T) {
 	_, ok = reg.GetToolSchema("nonexistent")
 	if ok {
 		t.Error("nonexistent tool should not be found")
+	}
+}
+
+func TestLighthouseRegisterNameValidation(t *testing.T) {
+	reg, _ := setupLighthouseTest(t)
+
+	badNames := []string{
+		"hello world",    // space
+		"foo\nbar",       // newline
+		"123start",       // starts with digit
+		"",               // empty (separate check but still invalid)
+		"a-b-c-d-e-f-g-h-i-j-k-l-m-n-o-p-q-r-s-t-u-v-w-x-y-z-aa-bb-cc-dd-ee-ff-gg", // too long
+	}
+
+	for _, name := range badNames {
+		raw, _ := json.Marshal(map[string]any{
+			"action":      "register",
+			"name":        name,
+			"description": "Should fail",
+		})
+		_, err := reg.Call("c4_lighthouse", raw)
+		if err == nil {
+			t.Errorf("expected error for name %q, got nil", name)
+		}
+	}
+
+	// Valid names should work
+	goodNames := []string{"lh_test", "my-tool", "A_valid_Name", "_private"}
+	for _, name := range goodNames {
+		result := callLighthouse(t, reg, map[string]any{
+			"action":      "register",
+			"name":        name,
+			"description": "Valid",
+			"auto_task":   false,
+		})
+		if result["success"] != true {
+			t.Errorf("name %q should be valid, got: %v", name, result)
+		}
+	}
+}
+
+func TestLighthouseRegisterInvalidJSON(t *testing.T) {
+	reg, _ := setupLighthouseTest(t)
+
+	raw, _ := json.Marshal(map[string]any{
+		"action":       "register",
+		"name":         "lh_bad_json",
+		"description":  "Bad schema",
+		"input_schema": "not json at all",
+	})
+	_, err := reg.Call("c4_lighthouse", raw)
+	if err == nil {
+		t.Fatal("expected error for invalid JSON schema, got nil")
 	}
 }

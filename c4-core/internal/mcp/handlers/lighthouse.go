@@ -4,10 +4,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"regexp"
+	"strings"
 	"time"
 
 	"github.com/changmin/c4-core/internal/mcp"
 )
+
+// validLighthouseName restricts lighthouse names to safe characters for task ID parsing.
+var validLighthouseName = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_-]{0,63}$`)
 
 // RegisterLighthouseHandlers registers the c4_lighthouse MCP tool.
 func RegisterLighthouseHandlers(reg *mcp.Registry, store *SQLiteStore) {
@@ -94,6 +99,9 @@ func lighthouseRegister(reg *mcp.Registry, store *SQLiteStore, name, description
 	if name == "" {
 		return nil, fmt.Errorf("name is required for register")
 	}
+	if !validLighthouseName.MatchString(name) {
+		return nil, fmt.Errorf("invalid lighthouse name %q: must match [a-zA-Z_][a-zA-Z0-9_-]{0,63}", name)
+	}
 	if description == "" {
 		return nil, fmt.Errorf("description is required for register")
 	}
@@ -109,6 +117,14 @@ func lighthouseRegister(reg *mcp.Registry, store *SQLiteStore, name, description
 
 	if inputSchema == "" {
 		inputSchema = `{"type":"object"}`
+	}
+
+	// Validate JSON before persisting (F-03: reject malformed schema early)
+	if inputSchema != `{"type":"object"}` {
+		var tmp map[string]any
+		if err := json.Unmarshal([]byte(inputSchema), &tmp); err != nil {
+			return nil, fmt.Errorf("input_schema is not valid JSON: %w", err)
+		}
 	}
 
 	lh := &Lighthouse{
@@ -175,8 +191,9 @@ func lighthouseRegister(reg *mcp.Registry, store *SQLiteStore, name, description
 			fmt.Fprintf(os.Stderr, "c4: warning: failed to auto-create task %s: %v\n", taskID, err)
 		} else {
 			lh.TaskID = taskID
-			// Update the lighthouse record with the task_id
-			_, _ = store.db.Exec(`UPDATE c4_lighthouses SET task_id=? WHERE name=?`, taskID, name)
+			if err := store.setLighthouseTaskID(name, taskID); err != nil {
+				fmt.Fprintf(os.Stderr, "c4: warning: failed to link task %s to lighthouse %s: %v\n", taskID, name, err)
+			}
 			result["task_id"] = taskID
 		}
 	}
@@ -238,6 +255,14 @@ func lighthousePromote(reg *mcp.Registry, store *SQLiteStore, name, agentID stri
 		return nil, fmt.Errorf("lighthouse '%s' not found", name)
 	}
 
+	// F-01: Schema validation BEFORE unregister — check if a real (non-stub) tool is registered
+	var schemaWarnings []string
+	if realSchema, ok := reg.GetToolSchema(name); ok {
+		if !strings.HasPrefix(realSchema.Description, "[LIGHTHOUSE]") {
+			schemaWarnings = validateSchemaCompat(lh.InputSchema, realSchema.InputSchema)
+		}
+	}
+
 	if err := store.promoteLighthouse(name, agentID); err != nil {
 		return nil, err
 	}
@@ -254,18 +279,15 @@ func lighthousePromote(reg *mcp.Registry, store *SQLiteStore, name, agentID stri
 		"status":  "implemented",
 	}
 
-	// Schema validation: compare lighthouse input_schema with real tool's schema
-	if realSchema, ok := reg.GetToolSchema(name); ok {
-		warnings := validateSchemaCompat(lh.InputSchema, realSchema.InputSchema)
-		if len(warnings) > 0 {
-			result["schema_warnings"] = warnings
-		}
+	if len(schemaWarnings) > 0 {
+		result["schema_warnings"] = schemaWarnings
 	}
 
-	// Complete the linked task if it exists
+	// F-13: Complete linked task via store method (preserves logTrace)
 	if lh.TaskID != "" {
-		_, taskErr := store.db.Exec(`UPDATE c4_tasks SET status='done', updated_at=CURRENT_TIMESTAMP WHERE task_id=?`, lh.TaskID)
-		if taskErr == nil {
+		if err := store.completeLighthouseTask(lh.TaskID, name); err != nil {
+			fmt.Fprintf(os.Stderr, "c4: warning: failed to complete lighthouse task %s: %v\n", lh.TaskID, err)
+		} else {
 			result["task_completed"] = lh.TaskID
 		}
 	}
@@ -485,6 +507,20 @@ func (s *SQLiteStore) updateLighthouse(name string, updates map[string]any) erro
 
 	// Re-read to get updated version
 	lh.Version++
+	return nil
+}
+
+func (s *SQLiteStore) setLighthouseTaskID(name, taskID string) error {
+	_, err := s.db.Exec(`UPDATE c4_lighthouses SET task_id=? WHERE name=?`, taskID, name)
+	return err
+}
+
+func (s *SQLiteStore) completeLighthouseTask(taskID, lighthouseName string) error {
+	_, err := s.db.Exec(`UPDATE c4_tasks SET status='done', updated_at=CURRENT_TIMESTAMP WHERE task_id=?`, taskID)
+	if err != nil {
+		return err
+	}
+	s.logTrace("lighthouse_task_complete", "", taskID, fmt.Sprintf("completed via promote of %s", lighthouseName))
 	return nil
 }
 
