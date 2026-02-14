@@ -17,12 +17,14 @@ import (
 
 // Sidecar manages the Python bridge sidecar process.
 type Sidecar struct {
-	mu      sync.Mutex
-	cfg     *SidecarConfig
-	cmd     *exec.Cmd
-	addr    string // "host:port" once started
-	stopped bool
-	restarts int
+	mu         sync.Mutex
+	cfg        *SidecarConfig
+	cmd        *exec.Cmd
+	addr       string // "host:port" once started
+	stopped    bool
+	restarts   int
+	healthStop chan struct{} // channel to stop health check goroutine
+	healthDone chan struct{} // channel to signal health check goroutine exited
 }
 
 // SidecarConfig holds configuration for the Python sidecar.
@@ -210,6 +212,9 @@ func (s *Sidecar) Addr() string {
 // Sends SIGTERM to the entire process group (uv + python) first,
 // then SIGKILL if it doesn't exit within 5 seconds.
 func (s *Sidecar) Stop() error {
+	// Stop health check goroutine first (before acquiring lock)
+	s.StopHealthCheck()
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -307,6 +312,88 @@ func (s *Sidecar) Ping() error {
 	s.mu.Unlock()
 
 	return nil
+}
+
+// StartHealthCheck starts a goroutine that periodically pings the sidecar.
+// If Ping fails, it attempts Restart. On success, onRestart callback is called with new address.
+// Implements exponential backoff: 30s → 60s → 120s → max 5min on consecutive failures.
+// Successful Ping resets backoff. Call StopHealthCheck to terminate the goroutine.
+func (s *Sidecar) StartHealthCheck(interval time.Duration, onRestart func(string)) {
+	s.mu.Lock()
+	// Don't start if already running
+	if s.healthStop != nil {
+		s.mu.Unlock()
+		return
+	}
+	s.healthStop = make(chan struct{})
+	s.healthDone = make(chan struct{})
+	s.mu.Unlock()
+
+	go func() {
+		// Capture stop channel to local var at goroutine start to avoid race with StopHealthCheck
+		s.mu.Lock()
+		stopChan := s.healthStop
+		doneChan := s.healthDone
+		s.mu.Unlock()
+
+		defer close(doneChan)
+		currentInterval := interval
+		maxInterval := 5 * time.Minute
+
+		timer := time.NewTimer(currentInterval)
+		defer timer.Stop()
+
+		for {
+			select {
+			case <-stopChan:
+				return
+			case <-timer.C:
+				// Skip if stopped
+				s.mu.Lock()
+				stopped := s.stopped
+				s.mu.Unlock()
+				if stopped {
+					timer.Reset(currentInterval)
+					continue
+				}
+
+				if err := s.Ping(); err != nil {
+					fmt.Fprintf(os.Stderr, "c4: sidecar health check failed: %v\n", err)
+					// Try restart
+					newAddr, restartErr := s.Restart()
+					if restartErr != nil {
+						fmt.Fprintf(os.Stderr, "c4: sidecar restart failed: %v\n", restartErr)
+						// Exponential backoff
+						currentInterval = min(currentInterval*2, maxInterval)
+					} else {
+						fmt.Fprintf(os.Stderr, "c4: sidecar restarted via health check at %s\n", newAddr)
+						currentInterval = interval // reset backoff
+						if onRestart != nil {
+							onRestart(newAddr)
+						}
+					}
+				} else {
+					// Healthy — reset backoff
+					currentInterval = interval
+				}
+				timer.Reset(currentInterval)
+			}
+		}
+	}()
+}
+
+// StopHealthCheck stops the health check goroutine if running.
+func (s *Sidecar) StopHealthCheck() {
+	s.mu.Lock()
+	stop := s.healthStop
+	done := s.healthDone
+	s.healthStop = nil
+	s.mu.Unlock()
+
+	if stop != nil {
+		close(stop)
+		<-done // wait for goroutine to exit
+	}
 }
 
 // Restart stops the current sidecar and starts a new one.

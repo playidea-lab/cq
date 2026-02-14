@@ -221,3 +221,86 @@ func TestStartSidecarMissingPython(t *testing.T) {
 		t.Fatalf("unexpected error message: %v", err)
 	}
 }
+
+// TestHealthCheckStartStop verifies the health check goroutine can be started and stopped cleanly.
+func TestHealthCheckStartStop(t *testing.T) {
+	// Create a mock sidecar server that responds to Ping
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	defer ln.Close()
+
+	// Handle Ping requests
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			go func(c net.Conn) {
+				defer c.Close()
+				buf := make([]byte, 4096)
+				n, err := c.Read(buf)
+				if err != nil || n == 0 {
+					return
+				}
+				resp := `{"result":{"status":"ok"},"error":null}` + "\n"
+				c.Write([]byte(resp))
+			}(conn)
+		}
+	}()
+
+	s := &Sidecar{addr: ln.Addr().String()}
+
+	// Start health check with short interval
+	s.StartHealthCheck(100*time.Millisecond, nil)
+
+	// Let it run for a bit
+	time.Sleep(250 * time.Millisecond)
+
+	// Stop health check
+	s.StopHealthCheck()
+
+	// Verify channels are cleaned up
+	s.mu.Lock()
+	if s.healthStop != nil {
+		t.Fatal("healthStop should be nil after stop")
+	}
+	s.mu.Unlock()
+
+	// Second stop should be safe
+	s.StopHealthCheck()
+}
+
+// TestHealthCheckRestartsOnFailure verifies the health check attempts restart on Ping failure.
+func TestHealthCheckRestartsOnFailure(t *testing.T) {
+	// Create a sidecar with an unreachable address
+	s := &Sidecar{
+		addr:     "127.0.0.1:1", // port 1 is almost certainly closed
+		cfg:      DefaultSidecarConfig(),
+		stopped:  false,
+		restarts: 0,
+	}
+
+	// Start health check with very short interval
+	s.StartHealthCheck(50*time.Millisecond, nil)
+
+	// Wait for at least one health check cycle
+	time.Sleep(150 * time.Millisecond)
+
+	// Verify restart was attempted (counter should have incremented)
+	s.mu.Lock()
+	restarts := s.restarts
+	s.mu.Unlock()
+
+	// Stop the sidecar first (this will stop any running process)
+	_ = s.Stop() // Stop calls StopHealthCheck internally
+
+	if restarts < 1 {
+		t.Fatalf("expected at least 1 restart attempt, got %d", restarts)
+	}
+
+	// Note: The health check successfully restarted the sidecar (created new process)
+	// s.Stop() cleans up both the health check goroutine and the sidecar process
+}
