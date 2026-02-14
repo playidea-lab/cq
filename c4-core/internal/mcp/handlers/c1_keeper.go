@@ -135,7 +135,7 @@ func (k *ContextKeeper) EnsureChannel(name, description, channelType string) (st
 func (k *ContextKeeper) AutoPost(channelName, content string) error {
 	channelID, err := k.EnsureChannel(channelName, "Auto-created by C4 engine", "updates")
 	if err != nil {
-		return nil // Best-effort: skip on failure
+		return fmt.Errorf("ensure channel %s: %w", channelName, err)
 	}
 
 	// Post system message

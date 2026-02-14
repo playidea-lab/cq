@@ -218,10 +218,13 @@ func TestAutoPost_MissingChannel(t *testing.T) {
 
 	keeper, _ := setupKeeperTest(t, handler)
 
-	// Should not error — just skip silently
+	// Should return error when channel creation fails
 	err := keeper.AutoPost("#nonexistent", "test message")
-	if err != nil {
-		t.Fatalf("expected nil error for missing channel, got: %v", err)
+	if err == nil {
+		t.Fatal("expected error when channel creation fails, got nil")
+	}
+	if !strings.Contains(err.Error(), "ensure channel") {
+		t.Errorf("expected error to contain 'ensure channel', got: %v", err)
 	}
 }
 

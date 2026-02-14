@@ -5,9 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"net/http"
-	"os"
 	"strings"
 	"sync"
 	"time"
@@ -37,6 +37,14 @@ func NewDispatcher(store *Store) *Dispatcher {
 	}
 }
 
+// Close releases resources held by the dispatcher.
+func (d *Dispatcher) Close() error {
+	if d.store != nil {
+		return d.store.Close()
+	}
+	return nil
+}
+
 // SetRPCAddr sets the JSON-RPC sidecar address for "rpc" action type.
 func (d *Dispatcher) SetRPCAddr(addr string) {
 	d.mu.Lock()
@@ -56,7 +64,7 @@ func (d *Dispatcher) SetC1Poster(poster C1Poster) {
 func (d *Dispatcher) Dispatch(eventID, eventType string, eventData json.RawMessage) {
 	rules, err := d.store.MatchRules(eventType)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "c4: eventbus: match rules for %s: %v\n", eventType, err)
+		log.Printf("[eventbus] match rules for %s: %v\n", eventType, err)
 		return
 	}
 
@@ -73,7 +81,7 @@ func (d *Dispatcher) Dispatch(eventID, eventType string, eventData json.RawMessa
 func (d *Dispatcher) DispatchSync(eventID, eventType string, eventData json.RawMessage) {
 	rules, err := d.store.MatchRules(eventType)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "c4: eventbus: match rules for %s: %v\n", eventType, err)
+		log.Printf("[eventbus] match rules for %s: %v\n", eventType, err)
 		return
 	}
 
@@ -112,14 +120,14 @@ func (d *Dispatcher) executeRule(eventID, eventType string, eventData json.RawMe
 	if err != nil {
 		status = "error"
 		errMsg = err.Error()
-		fmt.Fprintf(os.Stderr, "c4: eventbus: rule %q dispatch error: %v\n", rule.Name, err)
+		log.Printf("[eventbus] rule %q dispatch error: %v\n", rule.Name, err)
 	}
 
 	d.store.LogDispatch(eventID, rule.ID, status, errMsg, duration)
 }
 
 func (d *Dispatcher) executeLog(eventID, eventType string, eventData json.RawMessage, rule StoredRule) error {
-	fmt.Fprintf(os.Stderr, "c4: eventbus: [%s] event=%s id=%s data=%s\n", rule.Name, eventType, eventID, string(eventData))
+	log.Printf("[eventbus] [%s] event=%s id=%s data=%s\n", rule.Name, eventType, eventID, string(eventData))
 	return nil
 }
 
