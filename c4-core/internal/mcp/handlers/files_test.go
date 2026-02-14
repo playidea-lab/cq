@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -73,12 +74,24 @@ func TestResolvePath_Relative(t *testing.T) {
 }
 
 func TestResolvePath_Absolute(t *testing.T) {
-	got, err := resolvePath("/project", "/tmp/file.txt")
+	// Valid absolute path within rootDir
+	got, err := resolvePath("/project", "/project/src/main.go")
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("unexpected error for valid absolute path: %v", err)
 	}
-	if got != "/tmp/file.txt" {
-		t.Errorf("got %q, want /tmp/file.txt", got)
+	if got != "/project/src/main.go" {
+		t.Errorf("got %q, want /project/src/main.go", got)
+	}
+}
+
+func TestResolvePath_AbsoluteEscape(t *testing.T) {
+	// Invalid absolute path escaping rootDir
+	_, err := resolvePath("/project", "/tmp/file.txt")
+	if err == nil {
+		t.Error("expected error for absolute path escaping project root")
+	}
+	if err != nil && !strings.Contains(err.Error(), "absolute path escapes project root") {
+		t.Errorf("unexpected error message: %v", err)
 	}
 }
 

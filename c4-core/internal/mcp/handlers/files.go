@@ -166,7 +166,11 @@ func RegisterFileHandlers(reg *mcp.Registry, rootDir string) {
 // resolvePath resolves a path relative to rootDir, preventing directory traversal.
 func resolvePath(rootDir, path string) (string, error) {
 	if filepath.IsAbs(path) {
-		return filepath.Clean(path), nil
+		cleaned := filepath.Clean(path)
+		if !strings.HasPrefix(cleaned, filepath.Clean(rootDir)) {
+			return "", fmt.Errorf("absolute path escapes project root: %s", path)
+		}
+		return cleaned, nil
 	}
 	resolved := filepath.Join(rootDir, path)
 	resolved = filepath.Clean(resolved)
