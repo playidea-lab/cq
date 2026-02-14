@@ -349,7 +349,7 @@ func (c *CloudStore) SubmitTask(taskID, workerID, commitSHA, handoff string, res
 	if strings.HasPrefix(taskID, "T-") {
 		reviewID := "R-" + strings.TrimPrefix(taskID, "T-")
 		var reviewRows []cloudTaskRow
-		reviewFilter := fmt.Sprintf("task_id=eq.%s&project_id=eq.%s&status=eq.pending", reviewID, c.projectID)
+		reviewFilter := fmt.Sprintf("task_id=eq.%s&project_id=eq.%s&status=eq.pending", url.QueryEscape(reviewID), url.QueryEscape(c.projectID))
 		if err := c.get("c4_tasks", reviewFilter, &reviewRows); err == nil && len(reviewRows) > 0 {
 			pendingReview = reviewID
 		}
@@ -365,7 +365,7 @@ func (c *CloudStore) SubmitTask(taskID, workerID, commitSHA, handoff string, res
 
 // MarkBlocked marks a task as blocked.
 func (c *CloudStore) MarkBlocked(taskID, workerID, failureSignature string, attempts int, lastError string) error {
-	patchFilter := fmt.Sprintf("task_id=eq.%s&project_id=eq.%s", taskID, c.projectID)
+	patchFilter := fmt.Sprintf("task_id=eq.%s&project_id=eq.%s", url.QueryEscape(taskID), url.QueryEscape(c.projectID))
 	update := map[string]any{
 		"status":     "blocked",
 		"worker_id":  "",
@@ -385,7 +385,7 @@ func (c *CloudStore) ClaimTask(taskID string) (*handlers.Task, error) {
 		return nil, fmt.Errorf("task %s is %s, not pending", taskID, task.Status)
 	}
 
-	patchFilter := fmt.Sprintf("task_id=eq.%s&project_id=eq.%s", taskID, c.projectID)
+	patchFilter := fmt.Sprintf("task_id=eq.%s&project_id=eq.%s", url.QueryEscape(taskID), url.QueryEscape(c.projectID))
 	update := map[string]any{
 		"status":     "in_progress",
 		"worker_id":  "direct",
@@ -411,7 +411,7 @@ func (c *CloudStore) ReportTask(taskID, summary string, filesChanged []string) e
 		files = strings.Join(filesChanged, ",")
 	}
 
-	patchFilter := fmt.Sprintf("task_id=eq.%s&project_id=eq.%s", taskID, c.projectID)
+	patchFilter := fmt.Sprintf("task_id=eq.%s&project_id=eq.%s", url.QueryEscape(taskID), url.QueryEscape(c.projectID))
 	update := map[string]any{
 		"status":     "done",
 		"commit_sha": summary,
@@ -480,7 +480,7 @@ func (c *CloudStore) RequestChanges(reviewTaskID string, comments string, requir
 	nextVersion := version + 1
 
 	// Mark current R task as done with REQUEST_CHANGES result
-	patchFilter := fmt.Sprintf("task_id=eq.%s&project_id=eq.%s", reviewTaskID, c.projectID)
+	patchFilter := fmt.Sprintf("task_id=eq.%s&project_id=eq.%s", url.QueryEscape(reviewTaskID), url.QueryEscape(c.projectID))
 	update := map[string]any{
 		"status":     "done",
 		"commit_sha": "REQUEST_CHANGES: " + comments,
@@ -493,7 +493,7 @@ func (c *CloudStore) RequestChanges(reviewTaskID string, comments string, requir
 	// Look up parent T's DoD
 	parentTaskID := fmt.Sprintf("T-%s-%d", baseID, version)
 	var parentRows []cloudTaskRow
-	_ = c.get("c4_tasks", fmt.Sprintf("task_id=eq.%s&project_id=eq.%s", parentTaskID, c.projectID), &parentRows)
+	_ = c.get("c4_tasks", fmt.Sprintf("task_id=eq.%s&project_id=eq.%s", url.QueryEscape(parentTaskID), url.QueryEscape(c.projectID)), &parentRows)
 	var originalDoD string
 	if len(parentRows) > 0 {
 		originalDoD = parentRows[0].DoD
@@ -545,7 +545,7 @@ func (c *CloudStore) RequestChanges(reviewTaskID string, comments string, requir
 // readCurrentState reads the current project state from c4_state.
 func (c *CloudStore) readCurrentState() (string, error) {
 	var rows []cloudStateRow
-	if err := c.get("c4_state", "project_id=eq."+c.projectID, &rows); err != nil {
+	if err := c.get("c4_state", "project_id=eq."+url.QueryEscape(c.projectID), &rows); err != nil {
 		return "", fmt.Errorf("get state: %w", err)
 	}
 	if len(rows) == 0 {
@@ -575,7 +575,7 @@ func (c *CloudStore) writeState(newState string) error {
 		return fmt.Errorf("marshal state: %w", err)
 	}
 
-	patchFilter := "project_id=eq." + c.projectID
+	patchFilter := "project_id=eq." + url.QueryEscape(c.projectID)
 	update := map[string]any{
 		"state_json": string(stateJSON),
 		"updated_at": time.Now().UTC().Format(time.RFC3339),

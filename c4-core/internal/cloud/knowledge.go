@@ -110,13 +110,13 @@ func (k *KnowledgeCloudClient) SearchDocuments(query string, docType string, lim
 		limit = 10
 	}
 
-	filter := "project_id=eq." + k.projectID
+	filter := "project_id=eq." + url.QueryEscape(k.projectID)
 	if query != "" {
 		// PostgreSQL tsvector FTS via PostgREST
 		filter += "&tsv=fts.english." + url.QueryEscape(query)
 	}
 	if docType != "" {
-		filter += "&doc_type=eq." + docType
+		filter += "&doc_type=eq." + url.QueryEscape(docType)
 	}
 	filter += fmt.Sprintf("&order=updated_at.desc&limit=%d", limit)
 	filter += "&select=doc_id,doc_type,title,domain,tags,content_hash,version,created_at,updated_at"
@@ -130,7 +130,7 @@ func (k *KnowledgeCloudClient) SearchDocuments(query string, docType string, lim
 
 // GetDocument fetches a single knowledge document from the cloud.
 func (k *KnowledgeCloudClient) GetDocument(docID string) (map[string]any, error) {
-	filter := "project_id=eq." + k.projectID + "&doc_id=eq." + docID
+	filter := "project_id=eq." + url.QueryEscape(k.projectID) + "&doc_id=eq." + url.QueryEscape(docID)
 
 	var rows []map[string]any
 	if err := k.get("c4_documents", filter, &rows); err != nil {
@@ -148,9 +148,9 @@ func (k *KnowledgeCloudClient) ListDocuments(docType string, limit int) ([]map[s
 		limit = 50
 	}
 
-	filter := "project_id=eq." + k.projectID
+	filter := "project_id=eq." + url.QueryEscape(k.projectID)
 	if docType != "" {
-		filter += "&doc_type=eq." + docType
+		filter += "&doc_type=eq." + url.QueryEscape(docType)
 	}
 	filter += fmt.Sprintf("&order=updated_at.desc&limit=%d", limit)
 	filter += "&select=doc_id,doc_type,title,domain,tags,version,content_hash,created_at,updated_at"
@@ -164,7 +164,7 @@ func (k *KnowledgeCloudClient) ListDocuments(docType string, limit int) ([]map[s
 
 // DeleteDocument removes a knowledge document from the cloud.
 func (k *KnowledgeCloudClient) DeleteDocument(docID string) error {
-	filter := "project_id=eq." + k.projectID + "&doc_id=eq." + docID
+	filter := "project_id=eq." + url.QueryEscape(k.projectID) + "&doc_id=eq." + url.QueryEscape(docID)
 	return k.del("c4_documents", filter)
 }
 
