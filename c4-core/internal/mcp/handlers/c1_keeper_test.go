@@ -225,6 +225,127 @@ func TestAutoPost_MissingChannel(t *testing.T) {
 	}
 }
 
+func TestUpdateSummary_UpsertsExisting(t *testing.T) {
+	var upsertBody map[string]any
+
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path := r.URL.Path
+
+		// GET summary (existing entry with 10 messages already counted)
+		if r.Method == "GET" && strings.Contains(path, "c1_channel_summaries") {
+			summaries := []keeperSummaryRow{{
+				ChannelID:     "ch-dev",
+				Summary:       "Old summary about auth module",
+				KeyDecisions:  `["Use PKCE"]`,
+				OpenQuestions:  `["Storage choice"]`,
+				ActiveTasks:   `["T-001-0"]`,
+				LastMessageID: "m-prev",
+				MessageCount:  10,
+			}}
+			json.NewEncoder(w).Encode(summaries)
+			return
+		}
+
+		// GET last message (for created_at filter)
+		if r.Method == "GET" && strings.Contains(path, "c1_messages") && strings.Contains(r.URL.RawQuery, "id=eq.m-prev") {
+			json.NewEncoder(w).Encode([]keeperMessageRow{
+				{ID: "m-prev", SenderName: "sys", Content: "old", CreatedAt: "2026-02-14T00:00:00Z"},
+			})
+			return
+		}
+
+		// GET new messages (6 messages)
+		if r.Method == "GET" && strings.Contains(path, "c1_messages") {
+			messages := []keeperMessageRow{
+				{ID: "n1", SenderName: "alice", Content: "Start refactoring", CreatedAt: "2026-02-14T02:00:00Z"},
+				{ID: "n2", SenderName: "bob", Content: "OK", CreatedAt: "2026-02-14T02:01:00Z"},
+				{ID: "n3", SenderName: "alice", Content: "Module A done", CreatedAt: "2026-02-14T02:02:00Z"},
+				{ID: "n4", SenderName: "bob", Content: "Module B started", CreatedAt: "2026-02-14T02:03:00Z"},
+				{ID: "n5", SenderName: "alice", Content: "Tests pass", CreatedAt: "2026-02-14T02:04:00Z"},
+				{ID: "n6", SenderName: "bob", Content: "Ready for review", CreatedAt: "2026-02-14T02:05:00Z"},
+			}
+			json.NewEncoder(w).Encode(messages)
+			return
+		}
+
+		// POST upsert
+		if r.Method == "POST" && strings.Contains(path, "c1_channel_summaries") {
+			json.NewDecoder(r.Body).Decode(&upsertBody)
+			w.WriteHeader(201)
+			return
+		}
+
+		w.WriteHeader(404)
+	})
+
+	keeper, mock := setupKeeperTest(t, handler)
+	mock.Response = &llm.ChatResponse{
+		Content: `{"summary":"Refactoring complete. Modules A and B done.","key_decisions":["Use PKCE","Refactor modules"],"open_questions":[],"active_tasks":[]}`,
+		Model:   "haiku",
+		Usage:   llm.TokenUsage{InputTokens: 300, OutputTokens: 150},
+	}
+
+	err := keeper.UpdateChannelSummary("ch-dev")
+	if err != nil {
+		t.Fatalf("UpdateChannelSummary: %v", err)
+	}
+
+	// Verify upsert with incremented message count
+	count, _ := upsertBody["message_count"].(float64)
+	if count != 16 { // 10 existing + 6 new
+		t.Errorf("message_count = %v, want 16", count)
+	}
+	if upsertBody["last_message_id"] != "n6" {
+		t.Errorf("last_message_id = %v, want n6", upsertBody["last_message_id"])
+	}
+	if upsertBody["summary"] != "Refactoring complete. Modules A and B done." {
+		t.Errorf("summary = %v", upsertBody["summary"])
+	}
+}
+
+func TestKeeperTrigger_NotifyKeeper(t *testing.T) {
+	var postBody map[string]any
+	var postCalled bool
+
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path := r.URL.Path
+
+		// Resolve channel name
+		if r.Method == "GET" && strings.Contains(path, "c1_channels") {
+			json.NewEncoder(w).Encode([]c1ChannelRow{{ID: "ch-updates", Name: "#updates"}})
+			return
+		}
+
+		// POST message
+		if r.Method == "POST" && strings.Contains(path, "c1_messages") {
+			postCalled = true
+			json.NewDecoder(r.Body).Decode(&postBody)
+			w.WriteHeader(201)
+			return
+		}
+
+		w.WriteHeader(404)
+	})
+
+	keeper, _ := setupKeeperTest(t, handler)
+
+	// Simulate task completion notification
+	err := keeper.AutoPost("#updates", "T-007-0 completed: Implement auth flow")
+	if err != nil {
+		t.Fatalf("AutoPost: %v", err)
+	}
+
+	if !postCalled {
+		t.Fatal("expected POST to be called for task completion notification")
+	}
+	if postBody["content"] != "T-007-0 completed: Implement auth flow" {
+		t.Errorf("content = %v", postBody["content"])
+	}
+	if postBody["sender_type"] != "system" {
+		t.Errorf("sender_type = %v, want system", postBody["sender_type"])
+	}
+}
+
 func TestGetBriefing_CombinesSummaryAndMessages(t *testing.T) {
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path := r.URL.Path

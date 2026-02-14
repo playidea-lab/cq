@@ -21,7 +21,8 @@ type SQLiteStore struct {
 	projectID   string
 	projectRoot string
 	config      *config.Manager
-	proxy       *BridgeProxy // optional: for knowledge auto-record
+	proxy       *BridgeProxy  // optional: for knowledge auto-record
+	keeper      *ContextKeeper // optional: for C1 channel summary on task events
 }
 
 // StoreOption configures a SQLiteStore.
@@ -40,6 +41,11 @@ func WithConfig(cfg *config.Manager) StoreOption {
 // WithProxy sets the bridge proxy for knowledge auto-record on task completion.
 func WithProxy(p *BridgeProxy) StoreOption {
 	return func(s *SQLiteStore) { s.proxy = p }
+}
+
+// WithKeeper sets the ContextKeeper for C1 channel summary updates on task events.
+func WithKeeper(k *ContextKeeper) StoreOption {
+	return func(s *SQLiteStore) { s.keeper = k }
 }
 
 // NewSQLiteStore creates a new SQLite-backed Store.
@@ -734,6 +740,9 @@ func (s *SQLiteStore) SubmitTask(taskID, workerID, commitSHA, handoff string, re
 	// Trace logging
 	s.logTrace("task_submitted", workerID, taskID, commitSHA)
 
+	// C1 keeper: update channel summaries on task completion (best-effort)
+	s.notifyKeeper(taskID, task.Title)
+
 	var pending int
 	if err := s.db.QueryRow("SELECT COUNT(*) FROM c4_tasks WHERE status IN ('pending', 'in_progress')").Scan(&pending); err != nil {
 		fmt.Fprintf(os.Stderr, "c4: submit-task: pending count: %v\n", err)
@@ -840,10 +849,25 @@ func (s *SQLiteStore) ReportTask(taskID, summary string, filesChanged []string) 
 	// Auto-complete paired review task (best-effort cascade)
 	s.completeReviewTask(taskID)
 
+	// C1 keeper: update channel summaries on task completion (best-effort)
+	s.notifyKeeper(taskID, task.Title)
+
 	return nil
 }
 
-
+// notifyKeeper triggers C1 channel summary update on task events.
+// It posts a system message to #updates channel and is fire-and-forget.
+func (s *SQLiteStore) notifyKeeper(taskID, title string) {
+	if s.keeper == nil {
+		return
+	}
+	go func() {
+		msg := fmt.Sprintf("%s completed: %s", taskID, title)
+		if err := s.keeper.AutoPost("#updates", msg); err != nil {
+			fmt.Fprintf(os.Stderr, "c4: keeper auto-post: %v\n", err)
+		}
+	}()
+}
 
 // --- Active Claim File Management ---
 
