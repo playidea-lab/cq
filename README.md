@@ -223,6 +223,7 @@ cd c1/src-tauri && cargo test
 
 | Guide | Description |
 |-------|-------------|
+| [Usage Guide](docs/usage-guide.md) | When to use what — decision tree & workflows |
 | [Installation](docs/getting-started/설치-가이드.md) | Step-by-step setup |
 | [Quick Start](docs/getting-started/빠른-시작.md) | First project walkthrough |
 | [Architecture](docs/developer-guide/아키텍처.md) | System design overview |
