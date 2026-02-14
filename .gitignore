@@ -60,6 +60,13 @@ workspace/
 Claude_Code_*.pdf
 
 
+# Supabase CLI local state
+infra/supabase/supabase/
+infra/supabase/.mcp.json
+
+# Keynote
+*.key
+
 # C4 local files (auto-added)
 .c4/locks/
 .c4/daemon.pid
