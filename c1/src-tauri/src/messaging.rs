@@ -122,9 +122,9 @@ pub async fn get_channel_messages(
 
         let client = build_client()?;
 
-        // Get total count first
+        // Get total count via Content-Range header (Prefer: count=exact)
         let count_url = format!(
-            "{}/rest/v1/c1_messages?channel_id=eq.{}&select=count",
+            "{}/rest/v1/c1_messages?channel_id=eq.{}&select=id&limit=0",
             supabase_url.trim_end_matches('/'),
             urlencoding::encode(&channel_id),
         );
@@ -139,9 +139,14 @@ pub async fn get_channel_messages(
         })?;
 
         let total: u32 = if count_resp.status().is_success() {
-            // Parse count from response
-            let count_result: Vec<serde_json::Value> = count_resp.json().unwrap_or_default();
-            count_result.len() as u32
+            // PostgREST returns total in Content-Range header: "*/100" or "0-9/100"
+            count_resp
+                .headers()
+                .get("content-range")
+                .and_then(|v| v.to_str().ok())
+                .and_then(|s| s.split('/').last())
+                .and_then(|n| n.parse().ok())
+                .unwrap_or(0)
         } else {
             0
         };
@@ -197,19 +202,15 @@ pub async fn send_message(
         let (supabase_url, anon_key) = read_supabase_config()?;
         let token = read_auth_token()?;
 
-        // Get current user's participant_id from session
-        // For now, we'll use a placeholder. In production, this should come from auth context.
-        let participant_id = "current-user".to_string(); // TODO: get from auth session
-
         let client = build_client()?;
         let url = format!(
             "{}/rest/v1/c1_messages",
             supabase_url.trim_end_matches('/')
         );
 
+        // participant_id defaults to auth.uid() in the database
         let payload = serde_json::json!({
             "channel_id": channel_id,
-            "participant_id": participant_id,
             "content": content,
             "thread_id": thread_id,
             "metadata": metadata,
@@ -304,15 +305,13 @@ pub async fn mark_read(channel_id: String) -> Result<(), String> {
         let (supabase_url, anon_key) = read_supabase_config()?;
         let token = read_auth_token()?;
 
-        // Get current user's participant_id from session
-        let participant_id = "current-user".to_string(); // TODO: get from auth session
-
         let client = build_client()?;
+        // RLS policy restricts UPDATE to participant_id = auth.uid(),
+        // so filtering by channel_id alone is sufficient and secure.
         let url = format!(
-            "{}/rest/v1/c1_participants?channel_id=eq.{}&participant_id=eq.{}",
+            "{}/rest/v1/c1_participants?channel_id=eq.{}",
             supabase_url.trim_end_matches('/'),
             urlencoding::encode(&channel_id),
-            urlencoding::encode(&participant_id),
         );
 
         let now = chrono::Utc::now().to_rfc3339();

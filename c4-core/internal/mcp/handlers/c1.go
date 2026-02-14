@@ -220,7 +220,7 @@ func (h *C1Handler) CheckMentions(agentName string) ([]map[string]any, error) {
 
 	channelIDList := make([]string, 0, len(channelIDs))
 	for id := range channelIDs {
-		channelIDList = append(channelIDList, id)
+		channelIDList = append(channelIDList, url.QueryEscape(id))
 	}
 
 	channelMap := make(map[string]string) // id -> name
