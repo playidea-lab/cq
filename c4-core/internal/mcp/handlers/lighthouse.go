@@ -241,7 +241,7 @@ func lighthouseGet(store *SQLiteStore, name string) (any, error) {
 	}
 	lh, err := store.getLighthouse(name)
 	if err != nil {
-		return nil, fmt.Errorf("lighthouse '%s' not found", name)
+		return nil, fmt.Errorf("lighthouse '%s': %w", name, err)
 	}
 	return lh, nil
 }
@@ -464,6 +464,7 @@ func (s *SQLiteStore) listLighthouses() ([]*Lighthouse, error) {
 		var lh Lighthouse
 		if err := rows.Scan(&lh.Name, &lh.Description, &lh.InputSchema, &lh.Spec, &lh.Status, &lh.Version,
 			&lh.CreatedBy, &lh.PromotedBy, &lh.TaskID, &lh.CreatedAt, &lh.UpdatedAt); err != nil {
+			fmt.Fprintf(os.Stderr, "c4: warning: skipping malformed lighthouse row: %v\n", err)
 			continue
 		}
 		lighthouses = append(lighthouses, &lh)

@@ -859,3 +859,56 @@ func TestLighthouseRegisterInvalidJSON(t *testing.T) {
 		t.Fatal("expected error for invalid JSON schema, got nil")
 	}
 }
+
+func TestLighthouseReregisterAfterRemove(t *testing.T) {
+	reg, _ := setupLighthouseTest(t)
+
+	callLighthouse(t, reg, map[string]any{
+		"action": "register", "name": "lh_rereg", "description": "V1", "auto_task": false,
+	})
+	callLighthouse(t, reg, map[string]any{"action": "remove", "name": "lh_rereg"})
+
+	// Re-register with same name should be blocked (deprecated record still exists)
+	err := callLighthouseExpectErr(t, reg, map[string]any{
+		"action": "register", "name": "lh_rereg", "description": "V2",
+	})
+	if !strings.Contains(err.Error(), "already exists") {
+		t.Errorf("error = %v, want 'already exists'", err)
+	}
+}
+
+func TestLighthouseAutoTaskFailurePath(t *testing.T) {
+	reg, store := setupLighthouseTest(t)
+
+	// Pre-create a task with the ID that auto_task would use, causing AddTask to fail
+	dupeTask := &Task{
+		ID:    "T-LH-lh_dupe_task-0",
+		Title: "Pre-existing task",
+		DoD:   "Already here",
+	}
+	if err := store.AddTask(dupeTask); err != nil {
+		t.Fatalf("AddTask setup: %v", err)
+	}
+
+	// Register lighthouse — auto_task should fail silently (task ID collision)
+	// but registration itself should still succeed
+	result := callLighthouse(t, reg, map[string]any{
+		"action":      "register",
+		"name":        "lh_dupe_task",
+		"description": "Task conflict test",
+	})
+
+	if result["success"] != true {
+		t.Fatalf("register should succeed even when auto_task fails: %v", result)
+	}
+
+	// task_id should NOT be in result since AddTask failed
+	if _, ok := result["task_id"]; ok {
+		t.Error("task_id should not be present when auto_task creation fails")
+	}
+
+	// Lighthouse should still be registered in registry
+	if !reg.HasTool("lh_dupe_task") {
+		t.Error("lighthouse stub should be registered even when auto_task fails")
+	}
+}

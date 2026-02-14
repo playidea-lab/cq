@@ -734,6 +734,8 @@ func (s *SQLiteStore) AssignTask(workerID string) (*TaskAssignment, error) {
 					InputSchema: lh.InputSchema,
 					Description: lh.Description,
 				}
+			} else {
+				fmt.Fprintf(os.Stderr, "c4: warning: task %s has T-LH- prefix but lighthouse '%s' not found\n", taskID, lhName)
 			}
 		}
 	}
