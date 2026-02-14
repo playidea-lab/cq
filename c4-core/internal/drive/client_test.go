@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -131,7 +132,7 @@ func newTestServer(t *testing.T) *httptest.Server {
 	return httptest.NewServer(mux)
 }
 
-// extractFilter extracts a filter value from a PostgREST query string.
+// extractFilter extracts a filter value from a PostgREST query string (URL-decodes the value).
 func extractFilter(query, prefix string) string {
 	idx := strings.Index(query, prefix)
 	if idx < 0 {
@@ -140,6 +141,9 @@ func extractFilter(query, prefix string) string {
 	val := query[idx+len(prefix):]
 	if ampIdx := strings.Index(val, "&"); ampIdx >= 0 {
 		val = val[:ampIdx]
+	}
+	if unescaped, err := url.QueryUnescape(val); err == nil {
+		return unescaped
 	}
 	return val
 }
@@ -158,7 +162,7 @@ func TestUploadAndDownload(t *testing.T) {
 	}
 
 	// Upload
-	info, err := client.Upload(srcPath, "/docs/hello.txt")
+	info, err := client.Upload(srcPath, "/docs/hello.txt", nil)
 	if err != nil {
 		t.Fatalf("Upload failed: %v", err)
 	}
@@ -191,6 +195,26 @@ func TestUploadAndDownload(t *testing.T) {
 	}
 }
 
+func TestUploadWithMetadata(t *testing.T) {
+	srv := newTestServer(t)
+	defer srv.Close()
+
+	client := NewClient(srv.URL, "test-key", "test-token", "test-project")
+
+	tmpDir := t.TempDir()
+	srcPath := filepath.Join(tmpDir, "meta.txt")
+	os.WriteFile(srcPath, []byte("with metadata"), 0o644)
+
+	meta := json.RawMessage(`{"tags":["important"],"version":2}`)
+	info, err := client.Upload(srcPath, "/docs/meta.txt", meta)
+	if err != nil {
+		t.Fatalf("Upload with metadata failed: %v", err)
+	}
+	if info.Name != "meta.txt" {
+		t.Errorf("Name = %q, want %q", info.Name, "meta.txt")
+	}
+}
+
 func TestList(t *testing.T) {
 	srv := newTestServer(t)
 	defer srv.Close()
@@ -198,7 +222,7 @@ func TestList(t *testing.T) {
 	client := NewClient(srv.URL, "test-key", "test-token", "test-project")
 
 	// Create folder + files
-	if _, err := client.Mkdir("/docs"); err != nil {
+	if _, err := client.Mkdir("/docs", nil); err != nil {
 		t.Fatalf("Mkdir failed: %v", err)
 	}
 
@@ -208,10 +232,10 @@ func TestList(t *testing.T) {
 	f2 := filepath.Join(tmpDir, "b.txt")
 	os.WriteFile(f2, []byte("bbb"), 0o644)
 
-	if _, err := client.Upload(f1, "/docs/a.txt"); err != nil {
+	if _, err := client.Upload(f1, "/docs/a.txt", nil); err != nil {
 		t.Fatalf("Upload a.txt failed: %v", err)
 	}
-	if _, err := client.Upload(f2, "/docs/b.txt"); err != nil {
+	if _, err := client.Upload(f2, "/docs/b.txt", nil); err != nil {
 		t.Fatalf("Upload b.txt failed: %v", err)
 	}
 
@@ -231,7 +255,7 @@ func TestMkdir(t *testing.T) {
 
 	client := NewClient(srv.URL, "test-key", "test-token", "test-project")
 
-	info, err := client.Mkdir("/reports")
+	info, err := client.Mkdir("/reports", nil)
 	if err != nil {
 		t.Fatalf("Mkdir failed: %v", err)
 	}
@@ -257,7 +281,7 @@ func TestDelete(t *testing.T) {
 	srcPath := filepath.Join(tmpDir, "delete-me.txt")
 	os.WriteFile(srcPath, []byte("delete me"), 0o644)
 
-	if _, err := client.Upload(srcPath, "/temp/delete-me.txt"); err != nil {
+	if _, err := client.Upload(srcPath, "/temp/delete-me.txt", nil); err != nil {
 		t.Fatalf("Upload failed: %v", err)
 	}
 
@@ -287,7 +311,7 @@ func TestInfo(t *testing.T) {
 	srcPath := filepath.Join(tmpDir, "info-test.txt")
 	os.WriteFile(srcPath, []byte("info test content"), 0o644)
 
-	if _, err := client.Upload(srcPath, "/data/info-test.txt"); err != nil {
+	if _, err := client.Upload(srcPath, "/data/info-test.txt", nil); err != nil {
 		t.Fatalf("Upload failed: %v", err)
 	}
 

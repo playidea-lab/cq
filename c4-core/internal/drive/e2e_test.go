@@ -29,7 +29,7 @@ func TestE2EDrive(t *testing.T) {
 
 	// 1. Upload
 	t.Run("Upload", func(t *testing.T) {
-		info, err := client.Upload(tmpFile, "/e2e-test/hello.txt")
+		info, err := client.Upload(tmpFile, "/e2e-test/hello.txt", nil)
 		if err != nil {
 			t.Fatalf("Upload failed: %v", err)
 		}

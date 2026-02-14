@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -75,12 +76,14 @@ func newDriveTestServer(t *testing.T) *httptest.Server {
 		for _, row := range metadataRows {
 			match := true
 			if strings.Contains(query, "path=eq.") {
-				idx := strings.Index(query, "path=eq.")
-				val := query[idx+8:]
-				if amp := strings.Index(val, "&"); amp >= 0 {
-					val = val[:amp]
-				}
+				val := driveExtractFilter(query, "path=eq.")
 				if row["path"] != val {
+					match = false
+				}
+			}
+			if strings.Contains(query, "project_id=eq.") {
+				val := driveExtractFilter(query, "project_id=eq.")
+				if row["project_id"] != val {
 					match = false
 				}
 			}
@@ -96,15 +99,9 @@ func newDriveTestServer(t *testing.T) *httptest.Server {
 		query := r.URL.RawQuery
 		newRows := make([]map[string]any, 0)
 		for _, row := range metadataRows {
-			idx := strings.Index(query, "path=eq.")
-			if idx >= 0 {
-				val := query[idx+8:]
-				if amp := strings.Index(val, "&"); amp >= 0 {
-					val = val[:amp]
-				}
-				if row["path"] != val {
-					newRows = append(newRows, row)
-				}
+			val := driveExtractFilter(query, "path=eq.")
+			if row["path"] != val {
+				newRows = append(newRows, row)
 			}
 		}
 		metadataRows = newRows
@@ -112,6 +109,22 @@ func newDriveTestServer(t *testing.T) *httptest.Server {
 	})
 
 	return httptest.NewServer(mux)
+}
+
+// driveExtractFilter extracts a filter value from a PostgREST query string (URL-decodes the value).
+func driveExtractFilter(query, prefix string) string {
+	idx := strings.Index(query, prefix)
+	if idx < 0 {
+		return ""
+	}
+	val := query[idx+len(prefix):]
+	if amp := strings.Index(val, "&"); amp >= 0 {
+		val = val[:amp]
+	}
+	if unescaped, err := url.QueryUnescape(val); err == nil {
+		return unescaped
+	}
+	return val
 }
 
 func TestRegisterDriveHandlers(t *testing.T) {
@@ -122,7 +135,7 @@ func TestRegisterDriveHandlers(t *testing.T) {
 	client := drive.NewClient(srv.URL, "test-key", "test-token", "test-proj")
 	RegisterDriveHandlers(reg, client)
 
-	// Verify all 5 tools are registered
+	// Verify all 6 tools are registered
 	tools := reg.ListTools()
 	driveTools := make(map[string]bool)
 	for _, tool := range tools {
@@ -137,6 +150,7 @@ func TestRegisterDriveHandlers(t *testing.T) {
 		"c4_drive_list",
 		"c4_drive_delete",
 		"c4_drive_info",
+		"c4_drive_mkdir",
 	}
 	for _, name := range expected {
 		if !driveTools[name] {
@@ -276,5 +290,49 @@ func TestDriveDeleteHandler(t *testing.T) {
 	}
 	if m["status"] != "deleted" {
 		t.Errorf("status = %v, want deleted", m["status"])
+	}
+}
+
+func TestDriveMkdirHandler(t *testing.T) {
+	srv := newDriveTestServer(t)
+	defer srv.Close()
+
+	reg := mcp.NewRegistry()
+	client := drive.NewClient(srv.URL, "test-key", "test-token", "test-proj")
+	RegisterDriveHandlers(reg, client)
+
+	// Create folder without metadata
+	mkdirArgs, _ := json.Marshal(map[string]string{"path": "/projects"})
+	result, err := reg.Call("c4_drive_mkdir", mkdirArgs)
+	if err != nil {
+		t.Fatalf("c4_drive_mkdir failed: %v", err)
+	}
+
+	m, ok := result.(map[string]any)
+	if !ok {
+		t.Fatalf("result type = %T, want map[string]any", result)
+	}
+	if m["status"] != "created" {
+		t.Errorf("status = %v, want created", m["status"])
+	}
+	if m["name"] != "projects" {
+		t.Errorf("name = %v, want projects", m["name"])
+	}
+	if m["is_folder"] != true {
+		t.Errorf("is_folder = %v, want true", m["is_folder"])
+	}
+
+	// Create folder with metadata
+	mkdirMetaArgs, _ := json.Marshal(map[string]any{
+		"path":     "/tagged-folder",
+		"metadata": map[string]any{"team": "engineering"},
+	})
+	result2, err := reg.Call("c4_drive_mkdir", mkdirMetaArgs)
+	if err != nil {
+		t.Fatalf("c4_drive_mkdir with metadata failed: %v", err)
+	}
+	m2 := result2.(map[string]any)
+	if m2["name"] != "tagged-folder" {
+		t.Errorf("name = %v, want tagged-folder", m2["name"])
 	}
 }

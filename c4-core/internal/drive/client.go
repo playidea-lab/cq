@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path"
 	"path/filepath"
@@ -20,16 +21,17 @@ import (
 
 // FileInfo represents metadata about a file in the drive.
 type FileInfo struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	Path        string `json:"path"`
-	StoragePath string `json:"storage_path"`
-	SizeBytes   int64  `json:"size_bytes"`
-	ContentHash string `json:"content_hash"`
-	ContentType string `json:"content_type"`
-	IsFolder    bool   `json:"is_folder"`
-	CreatedAt   string `json:"created_at"`
-	UpdatedAt   string `json:"updated_at"`
+	ID          string          `json:"id"`
+	Name        string          `json:"name"`
+	Path        string          `json:"path"`
+	StoragePath string          `json:"storage_path"`
+	SizeBytes   int64           `json:"size_bytes"`
+	ContentHash string          `json:"content_hash"`
+	ContentType string          `json:"content_type"`
+	IsFolder    bool            `json:"is_folder"`
+	Metadata    json.RawMessage `json:"metadata,omitempty"`
+	CreatedAt   string          `json:"created_at"`
+	UpdatedAt   string          `json:"updated_at"`
 }
 
 // Client provides access to C4 Drive (Supabase Storage + PostgREST metadata).
@@ -54,7 +56,7 @@ func NewClient(supabaseURL, apiKey, authToken, projectID string) *Client {
 
 // Upload uploads a local file to the drive at the given drive path.
 // The storage path is derived from the content hash to enable deduplication.
-func (c *Client) Upload(localPath, drivePath string) (*FileInfo, error) {
+func (c *Client) Upload(localPath, drivePath string, metadata json.RawMessage) (*FileInfo, error) {
 	f, err := os.Open(localPath)
 	if err != nil {
 		return nil, fmt.Errorf("open file: %w", err)
@@ -118,6 +120,9 @@ func (c *Client) Upload(localPath, drivePath string) (*FileInfo, error) {
 		"content_hash": contentHash,
 		"content_type": "application/octet-stream",
 		"is_folder":    false,
+	}
+	if len(metadata) > 0 {
+		meta["metadata"] = metadata
 	}
 
 	metaJSON, err := json.Marshal(meta)
@@ -225,15 +230,15 @@ func (c *Client) List(folder string) ([]FileInfo, error) {
 	folder = normalizePath(folder)
 
 	// Query files where path starts with folder prefix
-	filter := "project_id=eq." + c.projectID
+	filter := "project_id=eq." + url.QueryEscape(c.projectID)
 	if folder != "/" {
 		// List immediate children: path like 'folder/%' but not 'folder/%/%'
-		filter += "&path=like." + folder + "/*"
+		filter += "&path=like." + url.QueryEscape(folder+"/*")
 	}
 	filter += "&order=is_folder.desc,name.asc"
 
-	url := c.supabaseURL + "/rest/v1/c4_drive_files?" + filter
-	req, err := http.NewRequest("GET", url, nil)
+	listURL := c.supabaseURL + "/rest/v1/c4_drive_files?" + filter
+	req, err := http.NewRequest("GET", listURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("create list request: %w", err)
 	}
@@ -294,7 +299,7 @@ func (c *Client) Delete(drivePath string) error {
 	}
 
 	// Delete metadata row
-	metaURL := c.supabaseURL + "/rest/v1/c4_drive_files?project_id=eq." + c.projectID + "&path=eq." + drivePath
+	metaURL := c.supabaseURL + "/rest/v1/c4_drive_files?project_id=eq." + url.QueryEscape(c.projectID) + "&path=eq." + url.QueryEscape(drivePath)
 	req, err := http.NewRequest("DELETE", metaURL, nil)
 	if err != nil {
 		return fmt.Errorf("create metadata delete request: %w", err)
@@ -316,7 +321,7 @@ func (c *Client) Delete(drivePath string) error {
 }
 
 // Mkdir creates a folder entry in the drive.
-func (c *Client) Mkdir(folderPath string) (*FileInfo, error) {
+func (c *Client) Mkdir(folderPath string, metadata json.RawMessage) (*FileInfo, error) {
 	folderPath = normalizePath(folderPath)
 
 	meta := map[string]any{
@@ -329,14 +334,17 @@ func (c *Client) Mkdir(folderPath string) (*FileInfo, error) {
 		"content_type": "inode/directory",
 		"is_folder":    true,
 	}
+	if len(metadata) > 0 {
+		meta["metadata"] = metadata
+	}
 
 	metaJSON, err := json.Marshal(meta)
 	if err != nil {
 		return nil, fmt.Errorf("marshal metadata: %w", err)
 	}
 
-	url := c.supabaseURL + "/rest/v1/c4_drive_files"
-	req, err := http.NewRequest("POST", url, strings.NewReader(string(metaJSON)))
+	mkdirURL := c.supabaseURL + "/rest/v1/c4_drive_files"
+	req, err := http.NewRequest("POST", mkdirURL, strings.NewReader(string(metaJSON)))
 	if err != nil {
 		return nil, fmt.Errorf("create mkdir request: %w", err)
 	}
@@ -371,8 +379,8 @@ func (c *Client) Mkdir(folderPath string) (*FileInfo, error) {
 func (c *Client) Info(drivePath string) (*FileInfo, error) {
 	drivePath = normalizePath(drivePath)
 
-	url := c.supabaseURL + "/rest/v1/c4_drive_files?project_id=eq." + c.projectID + "&path=eq." + drivePath
-	req, err := http.NewRequest("GET", url, nil)
+	infoURL := c.supabaseURL + "/rest/v1/c4_drive_files?project_id=eq." + url.QueryEscape(c.projectID) + "&path=eq." + url.QueryEscape(drivePath)
+	req, err := http.NewRequest("GET", infoURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("create info request: %w", err)
 	}

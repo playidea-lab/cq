@@ -19,13 +19,15 @@ func RegisterDriveHandlers(reg *mcp.Registry, driveClient *drive.Client) {
 			"properties": map[string]any{
 				"local_path": map[string]any{"type": "string", "description": "Local file path to upload"},
 				"drive_path": map[string]any{"type": "string", "description": "Destination path in Drive (e.g. /docs/report.pdf)"},
+				"metadata":   map[string]any{"type": "object", "description": "Optional JSONB metadata to attach to the file"},
 			},
 			"required": []string{"local_path", "drive_path"},
 		},
 	}, func(raw json.RawMessage) (any, error) {
 		var args struct {
-			LocalPath string `json:"local_path"`
-			DrivePath string `json:"drive_path"`
+			LocalPath string          `json:"local_path"`
+			DrivePath string          `json:"drive_path"`
+			Metadata  json.RawMessage `json:"metadata,omitempty"`
 		}
 		if err := json.Unmarshal(raw, &args); err != nil {
 			return nil, fmt.Errorf("parse args: %w", err)
@@ -33,7 +35,7 @@ func RegisterDriveHandlers(reg *mcp.Registry, driveClient *drive.Client) {
 		if args.LocalPath == "" || args.DrivePath == "" {
 			return nil, fmt.Errorf("local_path and drive_path are required")
 		}
-		info, err := driveClient.Upload(args.LocalPath, args.DrivePath, nil)
+		info, err := driveClient.Upload(args.LocalPath, args.DrivePath, args.Metadata)
 		if err != nil {
 			return nil, err
 		}
@@ -187,6 +189,41 @@ func RegisterDriveHandlers(reg *mcp.Registry, driveClient *drive.Client) {
 			"is_folder":    info.IsFolder,
 			"created_at":   info.CreatedAt,
 			"updated_at":   info.UpdatedAt,
+		}, nil
+	})
+
+	// c4_drive_mkdir — Create a folder in Drive
+	reg.Register(mcp.ToolSchema{
+		Name:        "c4_drive_mkdir",
+		Description: "Create a folder in C4 Drive",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"path":     map[string]any{"type": "string", "description": "Folder path to create (e.g. /docs/reports)"},
+				"metadata": map[string]any{"type": "object", "description": "Optional JSONB metadata to attach to the folder"},
+			},
+			"required": []string{"path"},
+		},
+	}, func(raw json.RawMessage) (any, error) {
+		var args struct {
+			Path     string          `json:"path"`
+			Metadata json.RawMessage `json:"metadata,omitempty"`
+		}
+		if err := json.Unmarshal(raw, &args); err != nil {
+			return nil, fmt.Errorf("parse args: %w", err)
+		}
+		if args.Path == "" {
+			return nil, fmt.Errorf("path is required")
+		}
+		info, err := driveClient.Mkdir(args.Path, args.Metadata)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{
+			"status":    "created",
+			"name":      info.Name,
+			"path":      info.Path,
+			"is_folder": info.IsFolder,
 		}, nil
 	})
 }
