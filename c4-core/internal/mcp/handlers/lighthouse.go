@@ -323,9 +323,14 @@ func lighthouseUpdate(reg *mcp.Registry, store *SQLiteStore, name, description, 
 		return nil, err
 	}
 
-	// Refresh the stub in registry if it's still a stub
+	// Re-read updated lighthouse from DB
 	lh, err := store.getLighthouse(name)
-	if err == nil && lh.Status == "stub" {
+	if err != nil {
+		return nil, fmt.Errorf("lighthouse '%s' updated but failed to re-read: %w", name, err)
+	}
+
+	// Refresh the stub in registry if it's still a stub
+	if lh.Status == "stub" {
 		var schemaMap map[string]any
 		if err := json.Unmarshal([]byte(lh.InputSchema), &schemaMap); err != nil {
 			schemaMap = map[string]any{"type": "object"}
