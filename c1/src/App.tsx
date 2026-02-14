@@ -1,8 +1,6 @@
 import { useState, useCallback, useEffect } from 'react';
 import { open } from '@tauri-apps/plugin-dialog';
 import { Sidebar } from './components/Sidebar';
-import { SessionsView } from './components/sessions/SessionsView';
-import { DashboardView } from './components/dashboard/DashboardView';
 import { ConfigView } from './components/config/ConfigView';
 import { TeamView } from './components/team/TeamView';
 import { LoginView } from './components/auth/LoginView';
@@ -14,15 +12,15 @@ import type { ViewType } from './types';
 import './styles/auth.css';
 
 const VIEW_SHORTCUTS: Record<string, ViewType> = {
-  '1': 'sessions',
-  '2': 'dashboard',
-  '3': 'config',
+  '1': 'channels',
+  '2': 'documents',
+  '3': 'settings',
   '4': 'team',
 };
 
 function AppContent() {
   const { user, loading, logout } = useAuth();
-  const [currentView, setCurrentView] = useState<ViewType>('sessions');
+  const [currentView, setCurrentView] = useState<ViewType>('channels');
   const [projectPath, setProjectPath] = useState<string | null>(null);
 
   useEffect(() => {
@@ -109,12 +107,19 @@ function AppContent() {
     }
 
     switch (currentView) {
-      case 'sessions':
-        return <SessionsView key={`sessions-${projectPath}`} projectPath={projectPath} />;
-      case 'dashboard':
-        return <DashboardView key={`dashboard-${projectPath}`} projectPath={projectPath} />;
-      case 'config':
+      case 'channels':
+        // TODO: ChannelsView will be implemented in T-435-0
+        return (
+          <div className="empty-state">
+            <h2 className="empty-state__title">Channels</h2>
+            <p className="empty-state__description">Messaging UI coming soon.</p>
+          </div>
+        );
+      case 'documents':
+        // TODO: DocumentsView will be implemented in T-439-0
         return <ConfigView key={`config-${projectPath}`} projectPath={projectPath} />;
+      case 'settings':
+        return <ConfigView key={`settings-${projectPath}`} projectPath={projectPath} />;
     }
   };
 

@@ -1,5 +1,5 @@
 import { useMemo, useState, useEffect } from 'react';
-import { LayoutDashboard, MessageSquare, Settings, Users, Sun, Moon } from 'lucide-react';
+import { FileText, MessageSquare, Settings, Users, Sun, Moon } from 'lucide-react';
 import type { ViewType } from '../types';
 import '../styles/sidebar.css';
 
@@ -9,10 +9,10 @@ interface SidebarProps {
   showTeam?: boolean;
 }
 
-const baseNavItems: { view: ViewType; label: string; icon: typeof LayoutDashboard }[] = [
-  { view: 'sessions', label: 'Sessions', icon: MessageSquare },
-  { view: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { view: 'config', label: 'Config', icon: Settings },
+const baseNavItems: { view: ViewType; label: string; icon: typeof MessageSquare }[] = [
+  { view: 'channels', label: 'Channels', icon: MessageSquare },
+  { view: 'documents', label: 'Documents', icon: FileText },
+  { view: 'settings', label: 'Settings', icon: Settings },
 ];
 
 const teamNavItem = { view: 'team' as ViewType, label: 'Team', icon: Users };

@@ -119,7 +119,53 @@ export interface TokenUsage {
 
 // --- View types ---
 
-export type ViewType = 'sessions' | 'dashboard' | 'config' | 'team';
+export type ViewType = 'channels' | 'documents' | 'team' | 'settings';
+
+// --- C1 Messaging types ---
+
+export type ChannelType = 'topic' | 'dm' | 'auto';
+export type SenderType = 'human' | 'agent' | 'system';
+
+export interface Channel {
+  id: string;
+  project_id: string;
+  name: string;
+  description: string;
+  channel_type: ChannelType;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface C1Message {
+  id: string;
+  channel_id: string;
+  participant_id: string;
+  content: string;
+  thread_id: string | null;
+  metadata: Record<string, unknown> | null;
+  created_at: string;
+}
+
+export interface C1MessagePage {
+  messages: C1Message[];
+  has_more: boolean;
+  total: number;
+}
+
+export interface C1ChannelSummary {
+  channel_id: string;
+  unread_count: number;
+  last_message_at: string | null;
+  participant_count: number;
+}
+
+export interface C1Participant {
+  id: string;
+  channel_id: string;
+  participant_id: string;
+  last_read_at: string | null;
+  joined_at: string;
+}
 
 // --- Session types ---
 
