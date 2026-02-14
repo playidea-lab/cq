@@ -320,7 +320,7 @@ func (c *CloudStore) SubmitTask(taskID, workerID, commitSHA, handoff string, res
 	}
 
 	// Mark as done
-	patchFilter := fmt.Sprintf("task_id=eq.%s&project_id=eq.%s", taskID, c.projectID)
+	patchFilter := fmt.Sprintf("task_id=eq.%s&project_id=eq.%s", url.QueryEscape(taskID), url.QueryEscape(c.projectID))
 	update := map[string]any{
 		"status":     "done",
 		"commit_sha": commitSHA,
@@ -335,7 +335,7 @@ func (c *CloudStore) SubmitTask(taskID, workerID, commitSHA, handoff string, res
 	var remainingRows []cloudTaskRow
 	remainingFilter := fmt.Sprintf(
 		"project_id=eq.%s&status=in.(pending,in_progress)",
-		c.projectID,
+		url.QueryEscape(c.projectID),
 	)
 	_ = c.get("c4_tasks", remainingFilter, &remainingRows)
 
