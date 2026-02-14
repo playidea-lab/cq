@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 
@@ -105,6 +106,14 @@ func (h *C1Handler) setHeaders(req *http.Request) {
 	}
 }
 
+// escapeLikePattern escapes special characters in PostgREST LIKE patterns.
+// Backslash-escapes % (any characters) and _ (any single character).
+func escapeLikePattern(s string) string {
+	s = strings.ReplaceAll(s, `%`, `\%`)
+	s = strings.ReplaceAll(s, `_`, `\_`)
+	return s
+}
+
 // resolveChannelID returns channel ID for a given channel name.
 // Returns empty string if not found.
 func (h *C1Handler) resolveChannelID(channelName string) (string, error) {
@@ -185,8 +194,9 @@ func (h *C1Handler) CheckMentions(agentName string) ([]map[string]any, error) {
 		return nil, fmt.Errorf("get participant: %w", err)
 	}
 
-	// Build mention filter
-	mentionPattern := fmt.Sprintf("*@%s*", agentName)
+	// Build mention filter with escaped LIKE pattern
+	escapedAgentName := escapeLikePattern(agentName)
+	mentionPattern := fmt.Sprintf("*@%s*", escapedAgentName)
 	filters := []string{
 		fmt.Sprintf("project_id=eq.%s", url.QueryEscape(h.projectID)),
 		fmt.Sprintf("content=like.%s", url.QueryEscape(mentionPattern)),
@@ -263,9 +273,14 @@ func (h *C1Handler) GetBriefing() (map[string]any, error) {
 	// Get summaries for all channels
 	summaries := make([]map[string]any, 0)
 	if len(channelIDs) > 0 {
+		// URL-encode each channel ID for the in.(...) filter
+		encodedIDs := make([]string, 0, len(channelIDs))
+		for _, id := range channelIDs {
+			encodedIDs = append(encodedIDs, url.QueryEscape(id))
+		}
 		var summaryRows []c1ChannelSummaryRow
 		summaryFilter := fmt.Sprintf("channel_id=in.(%s)&select=channel_id,summary,key_decisions,open_questions",
-			strings.Join(channelIDs, ","))
+			strings.Join(encodedIDs, ","))
 		if err := h.httpGet("c1_channel_summaries", summaryFilter, &summaryRows); err == nil {
 			for _, s := range summaryRows {
 				summaries = append(summaries, map[string]any{
@@ -275,6 +290,8 @@ func (h *C1Handler) GetBriefing() (map[string]any, error) {
 					"open_questions": s.OpenQuestions,
 				})
 			}
+		} else {
+			fmt.Fprintf(os.Stderr, "c4: c1: failed to get channel summaries: %v\n", err)
 		}
 	}
 
