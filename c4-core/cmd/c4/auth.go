@@ -52,15 +52,23 @@ func init() {
 }
 
 // newAuthClient creates an AuthClient from environment or config.
+// Checks C4_CLOUD_URL first, then falls back to SUPABASE_URL.
+// Checks C4_CLOUD_ANON_KEY first, then falls back to SUPABASE_KEY.
 func newAuthClient() (*cloud.AuthClient, error) {
 	supabaseURL := os.Getenv("C4_CLOUD_URL")
+	if supabaseURL == "" {
+		supabaseURL = os.Getenv("SUPABASE_URL")
+	}
 	anonKey := os.Getenv("C4_CLOUD_ANON_KEY")
+	if anonKey == "" {
+		anonKey = os.Getenv("SUPABASE_KEY")
+	}
 
 	if supabaseURL == "" {
-		return nil, fmt.Errorf("C4_CLOUD_URL environment variable is not set")
+		return nil, fmt.Errorf("C4_CLOUD_URL or SUPABASE_URL environment variable is not set")
 	}
 	if anonKey == "" {
-		return nil, fmt.Errorf("C4_CLOUD_ANON_KEY environment variable is not set")
+		return nil, fmt.Errorf("C4_CLOUD_ANON_KEY or SUPABASE_KEY environment variable is not set")
 	}
 
 	return cloud.NewAuthClient(supabaseURL, anonKey), nil

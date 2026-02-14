@@ -15,6 +15,7 @@ import (
 	"github.com/changmin/c4-core/internal/cdp"
 	"github.com/changmin/c4-core/internal/cloud"
 	"github.com/changmin/c4-core/internal/config"
+	"github.com/changmin/c4-core/internal/drive"
 	"github.com/changmin/c4-core/internal/hub"
 	"github.com/changmin/c4-core/internal/llm"
 	"github.com/changmin/c4-core/internal/mcp"
@@ -193,6 +194,16 @@ func newMCPServer() (*mcpServer, error) {
 			fmt.Fprintf(os.Stderr, "c4: hub connected (%s)\n", hubCfg.URL)
 		} else {
 			fmt.Fprintln(os.Stderr, "c4: hub enabled but URL not configured")
+		}
+	}
+
+	// Register Drive handlers if cloud is enabled
+	if cfgMgr != nil && cfgMgr.GetConfig().Cloud.Enabled {
+		cloudCfg := cfgMgr.GetConfig().Cloud
+		if cloudCfg.URL != "" && cloudCfg.AnonKey != "" {
+			driveClient := drive.NewClient(cloudCfg.URL, cloudCfg.AnonKey, cloudAuthToken, cloudProjectID)
+			handlers.RegisterDriveHandlers(reg, driveClient)
+			fmt.Fprintln(os.Stderr, "c4: drive enabled (5 tools)")
 		}
 	}
 

@@ -218,6 +218,19 @@ func New(projectRoot string) (*Manager, error) {
 		return nil, fmt.Errorf("parsing config: %w", err)
 	}
 
+	// Fallback: read cloud credentials from SUPABASE_URL / SUPABASE_KEY
+	// if not already set via C4_CLOUD_URL / C4_CLOUD_ANON_KEY.
+	if cfg.Cloud.URL == "" {
+		if u := os.Getenv("SUPABASE_URL"); u != "" {
+			cfg.Cloud.URL = u
+		}
+	}
+	if cfg.Cloud.AnonKey == "" {
+		if k := os.Getenv("SUPABASE_KEY"); k != "" {
+			cfg.Cloud.AnonKey = k
+		}
+	}
+
 	// Resolve preset if economic mode is enabled
 	if cfg.EconomicMode.Enabled {
 		cfg.resolvePreset()

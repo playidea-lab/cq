@@ -337,6 +337,36 @@ cloud:
 			t.Errorf("Cloud.AnonKey = %q, want %q", cfg.Cloud.AnonKey, "env-key")
 		}
 	})
+
+	t.Run("SUPABASE_URL/KEY fallback", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		c4Dir := filepath.Join(tmpDir, ".c4")
+		if err := os.MkdirAll(c4Dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+
+		yaml := "project_id: test\ncloud:\n  enabled: true\n"
+		if err := os.WriteFile(filepath.Join(c4Dir, "config.yaml"), []byte(yaml), 0o644); err != nil {
+			t.Fatal(err)
+		}
+
+		// Set SUPABASE_* env vars (not C4_CLOUD_*)
+		t.Setenv("SUPABASE_URL", "https://fallback.supabase.co")
+		t.Setenv("SUPABASE_KEY", "fallback-key")
+
+		mgr, err := New(tmpDir)
+		if err != nil {
+			t.Fatalf("New() failed: %v", err)
+		}
+
+		cfg := mgr.GetConfig()
+		if cfg.Cloud.URL != "https://fallback.supabase.co" {
+			t.Errorf("Cloud.URL = %q, want %q", cfg.Cloud.URL, "https://fallback.supabase.co")
+		}
+		if cfg.Cloud.AnonKey != "fallback-key" {
+			t.Errorf("Cloud.AnonKey = %q, want %q", cfg.Cloud.AnonKey, "fallback-key")
+		}
+	})
 }
 
 func TestLLMGatewayConfig(t *testing.T) {

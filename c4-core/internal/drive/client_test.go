@@ -1,0 +1,344 @@
+package drive
+
+import (
+	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+// newTestServer creates an httptest server that simulates Supabase Storage + PostgREST.
+func newTestServer(t *testing.T) *httptest.Server {
+	t.Helper()
+
+	// In-memory file store
+	storedFiles := make(map[string][]byte)
+	metadataRows := make([]map[string]any, 0)
+
+	mux := http.NewServeMux()
+
+	// Supabase Storage: upload
+	mux.HandleFunc("POST /storage/v1/object/c4-drive/", func(w http.ResponseWriter, r *http.Request) {
+		storagePath := strings.TrimPrefix(r.URL.Path, "/storage/v1/object/c4-drive/")
+		body, _ := io.ReadAll(r.Body)
+		storedFiles[storagePath] = body
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(map[string]string{"Key": storagePath})
+	})
+
+	// Supabase Storage: download
+	mux.HandleFunc("GET /storage/v1/object/c4-drive/", func(w http.ResponseWriter, r *http.Request) {
+		storagePath := strings.TrimPrefix(r.URL.Path, "/storage/v1/object/c4-drive/")
+		data, ok := storedFiles[storagePath]
+		if !ok {
+			http.Error(w, "not found", http.StatusNotFound)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		w.Write(data)
+	})
+
+	// Supabase Storage: delete
+	mux.HandleFunc("DELETE /storage/v1/object/c4-drive/", func(w http.ResponseWriter, r *http.Request) {
+		storagePath := strings.TrimPrefix(r.URL.Path, "/storage/v1/object/c4-drive/")
+		delete(storedFiles, storagePath)
+		w.WriteHeader(http.StatusOK)
+	})
+
+	// PostgREST: insert/upsert metadata
+	mux.HandleFunc("POST /rest/v1/c4_drive_files", func(w http.ResponseWriter, r *http.Request) {
+		var row map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&row); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		row["id"] = "test-uuid-" + row["path"].(string)
+		row["created_at"] = "2026-02-14T00:00:00Z"
+		row["updated_at"] = "2026-02-14T00:00:00Z"
+
+		// Upsert: replace if path matches
+		found := false
+		for i, existing := range metadataRows {
+			if existing["path"] == row["path"] && existing["project_id"] == row["project_id"] {
+				metadataRows[i] = row
+				found = true
+				break
+			}
+		}
+		if !found {
+			metadataRows = append(metadataRows, row)
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode([]map[string]any{row})
+	})
+
+	// PostgREST: query metadata
+	mux.HandleFunc("GET /rest/v1/c4_drive_files", func(w http.ResponseWriter, r *http.Request) {
+		query := r.URL.RawQuery
+		var result []map[string]any
+
+		for _, row := range metadataRows {
+			match := true
+			if strings.Contains(query, "path=eq.") {
+				pathVal := extractFilter(query, "path=eq.")
+				if row["path"] != pathVal {
+					match = false
+				}
+			}
+			if strings.Contains(query, "project_id=eq.") {
+				projVal := extractFilter(query, "project_id=eq.")
+				if row["project_id"] != projVal {
+					match = false
+				}
+			}
+			if strings.Contains(query, "path=like.") {
+				prefix := extractFilter(query, "path=like.")
+				prefix = strings.TrimSuffix(prefix, "*")
+				p, _ := row["path"].(string)
+				if !strings.HasPrefix(p, prefix) {
+					match = false
+				}
+			}
+			if match {
+				result = append(result, row)
+			}
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(result)
+	})
+
+	// PostgREST: delete metadata
+	mux.HandleFunc("DELETE /rest/v1/c4_drive_files", func(w http.ResponseWriter, r *http.Request) {
+		query := r.URL.RawQuery
+		newRows := make([]map[string]any, 0)
+		for _, row := range metadataRows {
+			pathVal := extractFilter(query, "path=eq.")
+			if row["path"] != pathVal {
+				newRows = append(newRows, row)
+			}
+		}
+		metadataRows = newRows
+		w.WriteHeader(http.StatusOK)
+	})
+
+	return httptest.NewServer(mux)
+}
+
+// extractFilter extracts a filter value from a PostgREST query string.
+func extractFilter(query, prefix string) string {
+	idx := strings.Index(query, prefix)
+	if idx < 0 {
+		return ""
+	}
+	val := query[idx+len(prefix):]
+	if ampIdx := strings.Index(val, "&"); ampIdx >= 0 {
+		val = val[:ampIdx]
+	}
+	return val
+}
+
+func TestUploadAndDownload(t *testing.T) {
+	srv := newTestServer(t)
+	defer srv.Close()
+
+	client := NewClient(srv.URL, "test-key", "test-token", "test-project")
+
+	// Create a temp file to upload
+	tmpDir := t.TempDir()
+	srcPath := filepath.Join(tmpDir, "hello.txt")
+	if err := os.WriteFile(srcPath, []byte("hello world"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Upload
+	info, err := client.Upload(srcPath, "/docs/hello.txt")
+	if err != nil {
+		t.Fatalf("Upload failed: %v", err)
+	}
+
+	if info.Name != "hello.txt" {
+		t.Errorf("Name = %q, want %q", info.Name, "hello.txt")
+	}
+	if info.Path != "/docs/hello.txt" {
+		t.Errorf("Path = %q, want %q", info.Path, "/docs/hello.txt")
+	}
+	if info.SizeBytes != 11 {
+		t.Errorf("SizeBytes = %d, want %d", info.SizeBytes, 11)
+	}
+	if !strings.HasPrefix(info.ContentHash, "sha256:") {
+		t.Errorf("ContentHash = %q, want sha256: prefix", info.ContentHash)
+	}
+
+	// Download
+	destPath := filepath.Join(tmpDir, "downloaded.txt")
+	if err := client.Download("/docs/hello.txt", destPath); err != nil {
+		t.Fatalf("Download failed: %v", err)
+	}
+
+	data, err := os.ReadFile(destPath)
+	if err != nil {
+		t.Fatalf("ReadFile failed: %v", err)
+	}
+	if string(data) != "hello world" {
+		t.Errorf("downloaded content = %q, want %q", string(data), "hello world")
+	}
+}
+
+func TestList(t *testing.T) {
+	srv := newTestServer(t)
+	defer srv.Close()
+
+	client := NewClient(srv.URL, "test-key", "test-token", "test-project")
+
+	// Create folder + files
+	if _, err := client.Mkdir("/docs"); err != nil {
+		t.Fatalf("Mkdir failed: %v", err)
+	}
+
+	tmpDir := t.TempDir()
+	f1 := filepath.Join(tmpDir, "a.txt")
+	os.WriteFile(f1, []byte("aaa"), 0o644)
+	f2 := filepath.Join(tmpDir, "b.txt")
+	os.WriteFile(f2, []byte("bbb"), 0o644)
+
+	if _, err := client.Upload(f1, "/docs/a.txt"); err != nil {
+		t.Fatalf("Upload a.txt failed: %v", err)
+	}
+	if _, err := client.Upload(f2, "/docs/b.txt"); err != nil {
+		t.Fatalf("Upload b.txt failed: %v", err)
+	}
+
+	files, err := client.List("/docs")
+	if err != nil {
+		t.Fatalf("List failed: %v", err)
+	}
+
+	if len(files) != 2 {
+		t.Errorf("List returned %d files, want 2", len(files))
+	}
+}
+
+func TestMkdir(t *testing.T) {
+	srv := newTestServer(t)
+	defer srv.Close()
+
+	client := NewClient(srv.URL, "test-key", "test-token", "test-project")
+
+	info, err := client.Mkdir("/reports")
+	if err != nil {
+		t.Fatalf("Mkdir failed: %v", err)
+	}
+
+	if info.Name != "reports" {
+		t.Errorf("Name = %q, want %q", info.Name, "reports")
+	}
+	if info.Path != "/reports" {
+		t.Errorf("Path = %q, want %q", info.Path, "/reports")
+	}
+	if !info.IsFolder {
+		t.Error("IsFolder should be true")
+	}
+}
+
+func TestDelete(t *testing.T) {
+	srv := newTestServer(t)
+	defer srv.Close()
+
+	client := NewClient(srv.URL, "test-key", "test-token", "test-project")
+
+	tmpDir := t.TempDir()
+	srcPath := filepath.Join(tmpDir, "delete-me.txt")
+	os.WriteFile(srcPath, []byte("delete me"), 0o644)
+
+	if _, err := client.Upload(srcPath, "/temp/delete-me.txt"); err != nil {
+		t.Fatalf("Upload failed: %v", err)
+	}
+
+	// Verify exists
+	if _, err := client.Info("/temp/delete-me.txt"); err != nil {
+		t.Fatalf("Info before delete failed: %v", err)
+	}
+
+	// Delete
+	if err := client.Delete("/temp/delete-me.txt"); err != nil {
+		t.Fatalf("Delete failed: %v", err)
+	}
+
+	// Verify gone
+	if _, err := client.Info("/temp/delete-me.txt"); err == nil {
+		t.Error("expected error after delete, got nil")
+	}
+}
+
+func TestInfo(t *testing.T) {
+	srv := newTestServer(t)
+	defer srv.Close()
+
+	client := NewClient(srv.URL, "test-key", "test-token", "test-project")
+
+	tmpDir := t.TempDir()
+	srcPath := filepath.Join(tmpDir, "info-test.txt")
+	os.WriteFile(srcPath, []byte("info test content"), 0o644)
+
+	if _, err := client.Upload(srcPath, "/data/info-test.txt"); err != nil {
+		t.Fatalf("Upload failed: %v", err)
+	}
+
+	info, err := client.Info("/data/info-test.txt")
+	if err != nil {
+		t.Fatalf("Info failed: %v", err)
+	}
+
+	if info.Name != "info-test.txt" {
+		t.Errorf("Name = %q, want %q", info.Name, "info-test.txt")
+	}
+	if info.Path != "/data/info-test.txt" {
+		t.Errorf("Path = %q, want %q", info.Path, "/data/info-test.txt")
+	}
+	if info.SizeBytes != 17 {
+		t.Errorf("SizeBytes = %d, want %d", info.SizeBytes, 17)
+	}
+}
+
+func TestInfoNotFound(t *testing.T) {
+	srv := newTestServer(t)
+	defer srv.Close()
+
+	client := NewClient(srv.URL, "test-key", "test-token", "test-project")
+
+	_, err := client.Info("/nonexistent.txt")
+	if err == nil {
+		t.Error("expected error for nonexistent file, got nil")
+	}
+	if !strings.Contains(err.Error(), "not found") {
+		t.Errorf("error = %q, want 'not found' substring", err.Error())
+	}
+}
+
+func TestNormalizePath(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"", "/"},
+		{"/", "/"},
+		{"docs", "/docs"},
+		{"/docs/", "/docs"},
+		{"//docs//file.txt//", "/docs/file.txt"},
+		{"/a/b/../c", "/a/c"},
+	}
+
+	for _, tc := range tests {
+		got := normalizePath(tc.input)
+		if got != tc.want {
+			t.Errorf("normalizePath(%q) = %q, want %q", tc.input, got, tc.want)
+		}
+	}
+}
