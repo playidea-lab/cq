@@ -1,6 +1,7 @@
 package cloud
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -453,25 +454,23 @@ func TestRefreshTokenNoSession(t *testing.T) {
 	}
 }
 
-// TestOAuthCallbackServer tests the temporary localhost callback server.
-func TestOAuthCallbackServer(t *testing.T) {
-	// Mock Supabase for token exchange
+// TestOAuthCallbackServer2 tests the fragment-based OAuth callback server.
+func TestOAuthCallbackServer2(t *testing.T) {
+	// Mock Supabase /auth/v1/user endpoint
 	mockSupabase := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		resp := supabaseTokenResponse{
-			AccessToken:  "oauth-access",
-			RefreshToken: "oauth-refresh",
-			ExpiresIn:    3600,
-			TokenType:    "bearer",
-			User: supabaseUser{
+		if r.URL.Path == "/auth/v1/user" {
+			user := supabaseUser{
 				ID:    "github-user",
 				Email: "dev@github.com",
 				UserMetadata: map[string]any{
 					"full_name": "GitHub Dev",
 				},
-			},
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(user)
+			return
 		}
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		w.WriteHeader(http.StatusNotFound)
 	}))
 	defer mockSupabase.Close()
 
@@ -481,12 +480,12 @@ func TestOAuthCallbackServer(t *testing.T) {
 	client := NewAuthClient(mockSupabase.URL, "anon-key")
 	client.SetSessionPath(sessionPath)
 
-	// Start the callback server on a test port
-	codeCh := make(chan string, 1)
+	// Start the callback server
+	sessionCh := make(chan *Session, 1)
 	errCh := make(chan error, 1)
-	srv, port, err := client.startCallbackServer(codeCh, errCh)
+	srv, port, err := client.startCallbackServer2(sessionCh, errCh)
 	if err != nil {
-		t.Fatalf("startCallbackServer failed: %v", err)
+		t.Fatalf("startCallbackServer2 failed: %v", err)
 	}
 	defer srv.Close()
 
@@ -494,53 +493,105 @@ func TestOAuthCallbackServer(t *testing.T) {
 		t.Fatalf("port should be > 0, got %d", port)
 	}
 
-	// Simulate the OAuth redirect hitting the callback
-	callbackURL := "http://localhost:" + itoa(port) + "/auth/callback?code=github-auth-code"
-	resp, err := http.Get(callbackURL)
+	// The callback page serves HTML (fragment extraction via JS).
+	// We test the /auth/token endpoint directly (simulating the JS POST).
+	tokenURL := "http://localhost:" + itoa(port) + "/auth/token"
+	tokenBody := `{"access_token":"test-access","refresh_token":"test-refresh","expires_in":3600,"token_type":"bearer"}`
+	resp, err := http.Post(tokenURL, "application/json", bytes.NewBufferString(tokenBody))
 	if err != nil {
-		t.Fatalf("callback request failed: %v", err)
+		t.Fatalf("token POST failed: %v", err)
 	}
 	resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		t.Errorf("callback status = %d, want %d", resp.StatusCode, http.StatusOK)
+		t.Errorf("token status = %d, want %d", resp.StatusCode, http.StatusOK)
 	}
 
-	// Read the code from the channel
+	// Read the session from the channel
 	select {
-	case code := <-codeCh:
-		if code != "github-auth-code" {
-			t.Errorf("code = %q, want %q", code, "github-auth-code")
+	case session := <-sessionCh:
+		if session.AccessToken != "test-access" {
+			t.Errorf("AccessToken = %q, want %q", session.AccessToken, "test-access")
+		}
+		if session.RefreshToken != "test-refresh" {
+			t.Errorf("RefreshToken = %q, want %q", session.RefreshToken, "test-refresh")
+		}
+		if session.User.ID != "github-user" {
+			t.Errorf("User.ID = %q, want %q", session.User.ID, "github-user")
+		}
+		if session.User.Email != "dev@github.com" {
+			t.Errorf("User.Email = %q, want %q", session.User.Email, "dev@github.com")
+		}
+		if session.User.Name != "GitHub Dev" {
+			t.Errorf("User.Name = %q, want %q", session.User.Name, "GitHub Dev")
 		}
 	case err := <-errCh:
 		t.Fatalf("errCh received: %v", err)
 	case <-time.After(5 * time.Second):
-		t.Fatal("timeout waiting for code")
+		t.Fatal("timeout waiting for session")
 	}
 }
 
-// TestOAuthCallbackServerMissingCode tests callback without code parameter.
-func TestOAuthCallbackServerMissingCode(t *testing.T) {
+// TestOAuthCallbackServer2MissingToken tests /auth/token without access_token.
+func TestOAuthCallbackServer2MissingToken(t *testing.T) {
 	client := NewAuthClient("https://test.supabase.co", "key")
 
-	codeCh := make(chan string, 1)
+	sessionCh := make(chan *Session, 1)
 	errCh := make(chan error, 1)
-	srv, port, err := client.startCallbackServer(codeCh, errCh)
+	srv, port, err := client.startCallbackServer2(sessionCh, errCh)
 	if err != nil {
-		t.Fatalf("startCallbackServer failed: %v", err)
+		t.Fatalf("startCallbackServer2 failed: %v", err)
 	}
 	defer srv.Close()
 
-	// Hit callback without code
-	callbackURL := "http://localhost:" + itoa(port) + "/auth/callback"
-	resp, err := http.Get(callbackURL)
+	// POST without access_token
+	tokenURL := "http://localhost:" + itoa(port) + "/auth/token"
+	resp, err := http.Post(tokenURL, "application/json", bytes.NewBufferString(`{"refresh_token":"rt"}`))
 	if err != nil {
-		t.Fatalf("callback request failed: %v", err)
+		t.Fatalf("token POST failed: %v", err)
 	}
 	resp.Body.Close()
 
 	if resp.StatusCode != http.StatusBadRequest {
-		t.Errorf("callback status = %d, want %d", resp.StatusCode, http.StatusBadRequest)
+		t.Errorf("token status = %d, want %d", resp.StatusCode, http.StatusBadRequest)
+	}
+}
+
+// TestGetUserInfo tests fetching user info from Supabase.
+func TestGetUserInfo(t *testing.T) {
+	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/auth/v1/user" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer test-token" {
+			t.Errorf("Authorization = %q, want 'Bearer test-token'", got)
+		}
+		user := supabaseUser{
+			ID:    "u-123",
+			Email: "user@test.com",
+			UserMetadata: map[string]any{
+				"full_name": "Test User",
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(user)
+	}))
+	defer mockServer.Close()
+
+	client := NewAuthClient(mockServer.URL, "anon-key")
+	user, err := client.getUserInfo("test-token")
+	if err != nil {
+		t.Fatalf("getUserInfo failed: %v", err)
+	}
+	if user.ID != "u-123" {
+		t.Errorf("ID = %q, want u-123", user.ID)
+	}
+	if user.Email != "user@test.com" {
+		t.Errorf("Email = %q, want user@test.com", user.Email)
+	}
+	if user.Name != "Test User" {
+		t.Errorf("Name = %q, want 'Test User'", user.Name)
 	}
 }
 

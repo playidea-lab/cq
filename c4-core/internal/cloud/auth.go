@@ -87,13 +87,14 @@ func (c *AuthClient) SetSessionPath(path string) {
 //  1. Start a temporary HTTP server on localhost:19823
 //  2. Open browser to Supabase /auth/v1/authorize?provider=github
 //  3. User authorizes on GitHub, Supabase redirects to localhost callback
-//  4. Exchange authorization code for access token
-//  5. Save session to ~/.c4/session.json
+//  4. Callback page extracts tokens from URL fragment via JavaScript
+//  5. JavaScript POSTs tokens to /auth/token endpoint
+//  6. Save session to ~/.c4/session.json
 func (c *AuthClient) LoginWithGitHub() error {
-	codeCh := make(chan string, 1)
+	sessionCh := make(chan *Session, 1)
 	errCh := make(chan error, 1)
 
-	srv, port, err := c.startCallbackServer(codeCh, errCh)
+	srv, port, err := c.startCallbackServer2(sessionCh, errCh)
 	if err != nil {
 		return fmt.Errorf("starting callback server: %w", err)
 	}
@@ -109,10 +110,10 @@ func (c *AuthClient) LoginWithGitHub() error {
 	fmt.Printf("If your browser didn't open, visit:\n  %s\n\n", authURL)
 
 	// Wait for the callback
-	var code string
+	var session *Session
 	select {
-	case code = <-codeCh:
-		// Got the code
+	case session = <-sessionCh:
+		// Got the session
 	case err := <-errCh:
 		srv.Close()
 		return fmt.Errorf("OAuth callback error: %w", err)
@@ -125,12 +126,6 @@ func (c *AuthClient) LoginWithGitHub() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	srv.Shutdown(ctx)
-
-	// Exchange code for token
-	session, err := c.exchangeCodeForToken(code)
-	if err != nil {
-		return fmt.Errorf("exchanging code for token: %w", err)
-	}
 
 	// Persist the session
 	if err := c.saveSession(session); err != nil {
@@ -218,27 +213,95 @@ func (c *AuthClient) RefreshToken() (*Session, error) {
 	return newSession, nil
 }
 
-// startCallbackServer starts a temporary HTTP server to receive the OAuth callback.
-// Returns the server, the actual port it is listening on, and any error.
-func (c *AuthClient) startCallbackServer(codeCh chan<- string, errCh chan<- error) (*http.Server, int, error) {
+// startCallbackServer2 starts a temporary HTTP server that handles Supabase's
+// implicit OAuth flow. Supabase returns tokens as URL fragments (#access_token=...),
+// so the callback page uses JavaScript to extract them and POST to /auth/token.
+func (c *AuthClient) startCallbackServer2(sessionCh chan<- *Session, errCh chan<- error) (*http.Server, int, error) {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/auth/callback", func(w http.ResponseWriter, r *http.Request) {
-		code := r.URL.Query().Get("code")
-		if code == "" {
-			w.WriteHeader(http.StatusBadRequest)
-			fmt.Fprint(w, "Missing authorization code. Please try again.")
-			return
-		}
 
+	// Callback page: extracts fragment tokens via JS and POSTs to /auth/token
+	mux.HandleFunc("/auth/callback", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprint(w, `<!DOCTYPE html><html><body>
-<h2>Authorization successful!</h2>
-<p>You can close this window and return to your terminal.</p>
-<script>window.close()</script>
+<h2>Completing authorization...</h2>
+<p id="status">Extracting tokens...</p>
+<script>
+(function() {
+  var hash = window.location.hash.substring(1);
+  if (!hash) {
+    document.getElementById('status').textContent = 'No tokens in URL. Please try again.';
+    return;
+  }
+  var params = new URLSearchParams(hash);
+  var data = {
+    access_token: params.get('access_token'),
+    refresh_token: params.get('refresh_token'),
+    expires_in: parseInt(params.get('expires_in')) || 3600,
+    token_type: params.get('token_type') || 'bearer'
+  };
+  if (!data.access_token) {
+    document.getElementById('status').textContent = 'Missing access token. Please try again.';
+    return;
+  }
+  fetch('/auth/token', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(data)
+  }).then(function(resp) {
+    if (resp.ok) {
+      document.getElementById('status').textContent = 'Authorization successful! You can close this window.';
+      window.close();
+    } else {
+      document.getElementById('status').textContent = 'Failed to save token. Check terminal.';
+    }
+  }).catch(function(err) {
+    document.getElementById('status').textContent = 'Error: ' + err.message;
+  });
+})();
+</script>
 </body></html>`)
+	})
 
-		codeCh <- code
+	// Token receiver: accepts POSTed tokens from the callback page JS
+	mux.HandleFunc("/auth/token", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		var tokenData struct {
+			AccessToken  string `json:"access_token"`
+			RefreshToken string `json:"refresh_token"`
+			ExpiresIn    int64  `json:"expires_in"`
+			TokenType    string `json:"token_type"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&tokenData); err != nil {
+			http.Error(w, "invalid body", http.StatusBadRequest)
+			return
+		}
+
+		if tokenData.AccessToken == "" {
+			http.Error(w, "missing access_token", http.StatusBadRequest)
+			return
+		}
+
+		// Fetch user info from Supabase
+		user, err := c.getUserInfo(tokenData.AccessToken)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "c4: warning: could not fetch user info: %v\n", err)
+			user = &User{}
+		}
+
+		session := &Session{
+			AccessToken:  tokenData.AccessToken,
+			RefreshToken: tokenData.RefreshToken,
+			ExpiresAt:    time.Now().Add(time.Duration(tokenData.ExpiresIn) * time.Second).Unix(),
+			User:         *user,
+		}
+
+		w.WriteHeader(http.StatusOK)
+		sessionCh <- session
 	})
 
 	// Try the default port first, then fall back to a random port.
@@ -347,6 +410,45 @@ func (c *AuthClient) loadSession() (*Session, error) {
 	}
 
 	return &session, nil
+}
+
+// getUserInfo fetches the authenticated user's profile from Supabase.
+func (c *AuthClient) getUserInfo(accessToken string) (*User, error) {
+	url := c.supabaseURL + "/auth/v1/user"
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("creating user info request: %w", err)
+	}
+	req.Header.Set("apikey", c.anonKey)
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("user info request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("user info failed (HTTP %d)", resp.StatusCode)
+	}
+
+	var supaUser supabaseUser
+	if err := json.NewDecoder(resp.Body).Decode(&supaUser); err != nil {
+		return nil, fmt.Errorf("decoding user info: %w", err)
+	}
+
+	name := ""
+	if supaUser.UserMetadata != nil {
+		if n, ok := supaUser.UserMetadata["full_name"].(string); ok {
+			name = n
+		}
+	}
+
+	return &User{
+		ID:    supaUser.ID,
+		Email: supaUser.Email,
+		Name:  name,
+	}, nil
 }
 
 // --- Supabase API types ---
