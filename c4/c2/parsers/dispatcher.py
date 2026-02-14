@@ -32,6 +32,28 @@ class ParserDispatcher:
             "hwpx": HwpxParser(),
         }
 
+    def _get_parser(self, file_path: Path) -> BaseParser:
+        """파일 타입을 확인하고 적절한 파서를 반환.
+
+        Args:
+            file_path: 문서 파일 경로
+
+        Returns:
+            BaseParser: 파일 타입에 해당하는 파서
+
+        Raises:
+            ValueError: 지원하지 않는 파일 포맷 또는 파서 미등록
+        """
+        file_type = get_file_type(file_path.name)
+        if file_type is None:
+            raise ValueError(f"Unsupported file format: {file_path.suffix}")
+
+        parser = self._parsers.get(file_type)
+        if parser is None:
+            raise ValueError(f"No parser available for: {file_type}")
+
+        return parser
+
     def parse(self, file_path: Path) -> Document:
         """파일을 파싱하여 IR로 변환.
 
@@ -44,14 +66,7 @@ class ParserDispatcher:
         Raises:
             ValueError: 지원하지 않는 파일 포맷
         """
-        file_type = get_file_type(file_path.name)
-        if file_type is None:
-            raise ValueError(f"Unsupported file format: {file_path.suffix}")
-
-        parser = self._parsers.get(file_type)
-        if parser is None:
-            raise ValueError(f"No parser available for: {file_type}")
-
+        parser = self._get_parser(file_path)
         return parser.parse(file_path)
 
     def parse_with_images(self, file_path: Path) -> ParseResult:
@@ -66,14 +81,7 @@ class ParserDispatcher:
         Raises:
             ValueError: 지원하지 않는 파일 포맷
         """
-        file_type = get_file_type(file_path.name)
-        if file_type is None:
-            raise ValueError(f"Unsupported file format: {file_path.suffix}")
-
-        parser = self._parsers.get(file_type)
-        if parser is None:
-            raise ValueError(f"No parser available for: {file_type}")
-
+        parser = self._get_parser(file_path)
         return parser.parse_with_images(file_path)
 
 

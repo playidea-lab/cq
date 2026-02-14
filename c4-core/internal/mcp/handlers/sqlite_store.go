@@ -314,145 +314,6 @@ func (s *SQLiteStore) migrateTasksIfNeeded() error {
 	return nil
 }
 
-// GetStatus returns the current project status with task counts.
-func (s *SQLiteStore) GetStatus() (*ProjectStatus, error) {
-	status := &ProjectStatus{State: "INIT", ProjectName: s.projectID}
-
-	// Read state
-	var stateJSON string
-	err := s.db.QueryRow("SELECT state_json FROM c4_state LIMIT 1").Scan(&stateJSON)
-	if err == nil {
-		var m map[string]any
-		if jsonErr := json.Unmarshal([]byte(stateJSON), &m); jsonErr == nil {
-			if st, ok := m["status"].(string); ok {
-				status.State = st
-			}
-			if pn, ok := m["project_id"].(string); ok {
-				status.ProjectName = pn
-			}
-		}
-	}
-
-	// Count tasks by status
-	rows, err := s.db.Query("SELECT status, COUNT(*) FROM c4_tasks GROUP BY status")
-	if err != nil {
-		return status, nil
-	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var st string
-		var count int
-		if err := rows.Scan(&st, &count); err != nil {
-			continue
-		}
-		status.TotalTasks += count
-		switch st {
-		case "pending":
-			status.PendingTasks = count
-		case "in_progress":
-			status.InProgress = count
-		case "done":
-			status.DoneTasks = count
-		case "blocked":
-			status.BlockedTasks = count
-		}
-	}
-
-	// Calculate how many pending tasks are runnable now (all deps done).
-	// This helps direct-mode operators pick tasks without extra DB queries.
-	_ = s.db.QueryRow(`
-		SELECT COUNT(*)
-		FROM c4_tasks t
-		WHERE t.status = 'pending'
-		AND NOT EXISTS (
-			SELECT 1 FROM json_each(CASE WHEN t.dependencies IS NULL OR t.dependencies = '' THEN '[]' ELSE t.dependencies END) AS dep
-			JOIN c4_tasks dt ON dt.task_id = dep.value
-			WHERE dt.status != 'done'
-		)`).
-		Scan(&status.ReadyTasks)
-	status.BlockedByDeps = status.PendingTasks - status.ReadyTasks
-	if status.BlockedByDeps < 0 {
-		status.BlockedByDeps = 0
-	}
-
-	readyRows, err := s.db.Query(`
-		SELECT t.task_id
-		FROM c4_tasks t
-		WHERE t.status = 'pending'
-		AND NOT EXISTS (
-			SELECT 1 FROM json_each(CASE WHEN t.dependencies IS NULL OR t.dependencies = '' THEN '[]' ELSE t.dependencies END) AS dep
-			JOIN c4_tasks dt ON dt.task_id = dep.value
-			WHERE dt.status != 'done'
-		)
-		ORDER BY t.priority DESC, t.created_at ASC
-		LIMIT 10`)
-	if err == nil {
-		defer readyRows.Close()
-		for readyRows.Next() {
-			var taskID string
-			if scanErr := readyRows.Scan(&taskID); scanErr == nil {
-				status.ReadyTaskIDs = append(status.ReadyTaskIDs, taskID)
-			}
-		}
-	}
-
-	// Lighthouse counts
-	var lhStubs, lhImpl int
-	_ = s.db.QueryRow("SELECT COUNT(*) FROM c4_lighthouses WHERE status='stub'").Scan(&lhStubs)
-	_ = s.db.QueryRow("SELECT COUNT(*) FROM c4_lighthouses WHERE status='implemented'").Scan(&lhImpl)
-	status.LighthouseStubs = lhStubs
-	status.LighthouseImplemented = lhImpl
-
-	// Orphan review count: R-tasks still pending/in_progress whose parent T-task is done
-	var orphans int
-	_ = s.db.QueryRow(`
-		SELECT COUNT(*) FROM c4_tasks r
-		WHERE r.task_id LIKE 'R-%' AND r.status IN ('pending','in_progress')
-		AND EXISTS (
-			SELECT 1 FROM c4_tasks t
-			WHERE t.task_id = REPLACE(r.task_id, 'R-', 'T-') AND t.status = 'done'
-		)`).Scan(&orphans)
-	status.OrphanReviews = orphans
-
-	// Add active soul roles for current workflow stage
-	status.ActiveSoulRoles = GetActiveRolesForStage(status.State)
-
-	// Persona digest (lightweight, best-effort)
-	var pTotal, pApproved int
-	_ = s.db.QueryRow(`SELECT COUNT(*), SUM(CASE WHEN outcome='approved' THEN 1 ELSE 0 END)
-		FROM persona_stats`).Scan(&pTotal, &pApproved)
-	if pTotal > 0 {
-		status.PersonaDigest = &PersonaSummary{
-			TotalTasks:   pTotal,
-			ApprovalRate: float64(pApproved) / float64(pTotal),
-		}
-	}
-
-	// Add economic mode and worker config info if config is available
-	if s.config != nil {
-		cfg := s.config.GetConfig()
-		routing := cfg.EconomicMode.ModelRouting
-		status.EconomicMode = &EconomicModeInfo{
-			Enabled: cfg.EconomicMode.Enabled,
-			Preset:  cfg.EconomicMode.Preset,
-			ModelRouting: map[string]string{
-				"implementation": routing.Implementation,
-				"review":         routing.Review,
-				"checkpoint":     routing.Checkpoint,
-			},
-		}
-		status.WorkerConfig = &WorkerConfigInfo{
-			WorkBranchPrefix: cfg.WorkBranchPrefix,
-			DefaultBranch:    cfg.DefaultBranch,
-			WorktreeEnabled:  cfg.Worktree.Enabled,
-			ReviewAsTask:     cfg.ReviewAsTask,
-			MaxRevision:      cfg.MaxRevision,
-		}
-	}
-
-	return status, nil
-}
 
 // Start transitions the project to EXECUTE state using the state machine.
 func (s *SQLiteStore) Start() error {
@@ -610,14 +471,72 @@ func (s *SQLiteStore) GetTask(taskID string) (*Task, error) {
 
 // AssignTask finds and assigns the next available task to a worker.
 func (s *SQLiteStore) AssignTask(workerID string) (*TaskAssignment, error) {
-	tx, err := s.db.Begin()
+	// 1. Find and assign task (within transaction)
+	taskID, title, scope, dod, deps, domain, model, staleReassign, err := s.reassignStaleOrFindPendingTask(workerID)
 	if err != nil {
 		return nil, err
 	}
+	if taskID == "" {
+		return nil, nil // No tasks available
+	}
+
+	// Log stale reassignment AFTER commit (avoids deadlock with MaxOpenConns=1)
+	if staleReassign {
+		s.logTrace("stale_reassign", workerID, taskID, "Reassigned stale in_progress task")
+	}
+
+	// Apply config model hint if task has no explicit model
+	if model == "" && s.config != nil {
+		model = s.config.GetModelForTask(taskID)
+	}
+
+	// Build base assignment
+	assignment := &TaskAssignment{
+		TaskID:   taskID,
+		Title:    title,
+		Scope:    scope,
+		DoD:      dod,
+		Domain:   domain,
+		WorkerID: workerID,
+		Model:    model,
+	}
+
+	if deps.Valid && deps.String != "" {
+		if err := json.Unmarshal([]byte(deps.String), &assignment.Dependencies); err != nil {
+			fmt.Fprintf(os.Stderr, "c4: warning: failed to parse dependencies for task %s: %v\n", taskID, err)
+		}
+	}
+
+	// 2. Enrich with config-based branch and worktree
+	s.enrichWithConfig(assignment, workerID)
+
+	// 3. Enrich with soul context
+	s.enrichWithSoulContext(assignment)
+
+	// 4. Enrich with lighthouse spec (if T-LH- task)
+	s.enrichWithLighthouse(assignment)
+
+	// 5. Enrich with review context (if R- task)
+	s.enrichWithReviewContext(assignment)
+
+	return assignment, nil
+}
+
+// reassignStaleOrFindPendingTask queries for the next task to assign.
+// Returns: taskID, title, scope, dod, deps, domain, model, staleReassign, error
+func (s *SQLiteStore) reassignStaleOrFindPendingTask(workerID string) (
+	taskID, title, scope, dod string,
+	deps sql.NullString,
+	domain, model string,
+	staleReassign bool,
+	err error,
+) {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return "", "", "", "", deps, "", "", false, err
+	}
 	defer tx.Rollback()
 
-	var taskID, title, scope, dod, domain, model string
-	var deps sql.NullString
 	var priority int
 
 	// Anti-fragility: try to reassign stale in_progress tasks first (>10 min without update)
@@ -646,13 +565,13 @@ func (s *SQLiteStore) AssignTask(workerID string) (*TaskAssignment, error) {
 			LIMIT 1`,
 		).Scan(&taskID, &title, &scope, &dod, &deps, &domain, &priority, &model)
 	}
-	staleReassign := err == nil && taskID != "" // track for post-commit logging
+	staleReassign = err == nil && taskID != "" // track for post-commit logging
 
 	if err == sql.ErrNoRows {
-		return nil, nil
+		return "", "", "", "", deps, "", "", false, nil // No tasks available
 	}
 	if err != nil {
-		return nil, fmt.Errorf("finding task: %w", err)
+		return "", "", "", "", deps, "", "", false, fmt.Errorf("finding task: %w", err)
 	}
 
 	_, err = tx.Exec(`
@@ -660,102 +579,93 @@ func (s *SQLiteStore) AssignTask(workerID string) (*TaskAssignment, error) {
 		WHERE task_id = ?`, workerID, taskID,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("assigning task: %w", err)
+		return "", "", "", "", deps, "", "", false, fmt.Errorf("assigning task: %w", err)
 	}
 
 	if err := tx.Commit(); err != nil {
-		return nil, err
+		return "", "", "", "", deps, "", "", false, err
 	}
 
-	// Log stale reassignment AFTER commit (avoids deadlock with MaxOpenConns=1)
-	if staleReassign {
-		s.logTrace("stale_reassign", workerID, taskID, "Reassigned stale in_progress task")
+	return taskID, title, scope, dod, deps, domain, model, staleReassign, nil
+}
+
+// enrichWithConfig applies config-based branch and worktree assignment.
+func (s *SQLiteStore) enrichWithConfig(assignment *TaskAssignment, workerID string) {
+	if s.config == nil {
+		return
 	}
 
-	// Apply config model hint if task has no explicit model
-	if model == "" && s.config != nil {
-		model = s.config.GetModelForTask(taskID)
+	cfg := s.config.GetConfig()
+	if cfg.WorkBranchPrefix != "" {
+		assignment.Branch = cfg.WorkBranchPrefix + assignment.TaskID
 	}
 
-	assignment := &TaskAssignment{
-		TaskID:   taskID,
-		Title:    title,
-		Scope:    scope,
-		DoD:      dod,
-		Domain:   domain,
-		WorkerID: workerID,
-		Model:    model,
-	}
-
-	if deps.Valid && deps.String != "" {
-		if err := json.Unmarshal([]byte(deps.String), &assignment.Dependencies); err != nil {
-			fmt.Fprintf(os.Stderr, "c4: warning: failed to parse dependencies for task %s: %v\n", taskID, err)
-		}
-	}
-
-	// Config-based branch and worktree assignment
-	if s.config != nil {
-		cfg := s.config.GetConfig()
-		if cfg.WorkBranchPrefix != "" {
-			assignment.Branch = cfg.WorkBranchPrefix + taskID
-		}
-		if cfg.Worktree.Enabled && s.projectRoot != "" {
-			wtPath := filepath.Join(s.projectRoot, ".c4", "worktrees", workerID)
-			assignment.WorktreePath = wtPath
-			// Auto-create worktree (best-effort, skip if already exists)
-			if _, statErr := os.Stat(wtPath); os.IsNotExist(statErr) {
-				branch := assignment.Branch
-				if branch == "" {
-					branch = "c4-" + taskID
-				}
-				if _, wtErr := runGit(s.projectRoot, "worktree", "add", wtPath, "-b", branch); wtErr != nil {
-					fmt.Fprintf(os.Stderr, "c4: warning: failed to create worktree %s: %v\n", wtPath, wtErr)
-				}
+	if cfg.Worktree.Enabled && s.projectRoot != "" {
+		wtPath := filepath.Join(s.projectRoot, ".c4", "worktrees", workerID)
+		assignment.WorktreePath = wtPath
+		// Auto-create worktree (best-effort, skip if already exists)
+		if _, statErr := os.Stat(wtPath); os.IsNotExist(statErr) {
+			branch := assignment.Branch
+			if branch == "" {
+				branch = "c4-" + assignment.TaskID
+			}
+			if _, wtErr := runGit(s.projectRoot, "worktree", "add", wtPath, "-b", branch); wtErr != nil {
+				fmt.Fprintf(os.Stderr, "c4: warning: failed to create worktree %s: %v\n", wtPath, wtErr)
 			}
 		}
 	}
+}
 
-	// Best-effort soul context injection
+// enrichWithSoulContext injects soul context (best-effort).
+func (s *SQLiteStore) enrichWithSoulContext(assignment *TaskAssignment) {
 	if s.projectRoot != "" {
 		s.injectSoulContext(assignment)
 	}
+}
 
-	// For T-LH- tasks, inject lighthouse spec context
-	if strings.HasPrefix(taskID, "T-LH-") {
-		// Extract lighthouse name: T-LH-{name}-{ver}
-		parts := strings.TrimPrefix(taskID, "T-LH-")
-		if idx := strings.LastIndex(parts, "-"); idx > 0 {
-			lhName := parts[:idx]
-			lh, lhErr := s.getLighthouse(lhName)
-			if lhErr == nil {
-				assignment.LighthouseSpec = &LighthouseContext{
-					Name:        lh.Name,
-					Spec:        lh.Spec,
-					InputSchema: lh.InputSchema,
-					Description: lh.Description,
-				}
-			} else {
-				fmt.Fprintf(os.Stderr, "c4: warning: task %s has T-LH- prefix but lighthouse '%s' not found\n", taskID, lhName)
-			}
-		}
+// enrichWithLighthouse injects lighthouse spec for T-LH- tasks.
+func (s *SQLiteStore) enrichWithLighthouse(assignment *TaskAssignment) {
+	if !strings.HasPrefix(assignment.TaskID, "T-LH-") {
+		return
 	}
 
-	// For R- tasks, inject parent T's review context
-	if strings.HasPrefix(taskID, "R-") {
-		_, baseID, ver, _ := task.ParseTaskID(taskID)
-		parentID := fmt.Sprintf("T-%s-%d", baseID, ver)
-		var commitSHA, filesChanged string
-		_ = s.db.QueryRow("SELECT commit_sha, branch FROM c4_tasks WHERE task_id=?", parentID).Scan(&commitSHA, &filesChanged)
-		if commitSHA != "" || filesChanged != "" {
-			assignment.ReviewContext = &ReviewContext{
-				ParentTaskID: parentID,
-				CommitSHA:    commitSHA,
-				FilesChanged: filesChanged,
+	// Extract lighthouse name: T-LH-{name}-{ver}
+	parts := strings.TrimPrefix(assignment.TaskID, "T-LH-")
+	if idx := strings.LastIndex(parts, "-"); idx > 0 {
+		lhName := parts[:idx]
+		lh, lhErr := s.getLighthouse(lhName)
+		if lhErr == nil {
+			assignment.LighthouseSpec = &LighthouseContext{
+				Name:        lh.Name,
+				Spec:        lh.Spec,
+				InputSchema: lh.InputSchema,
+				Description: lh.Description,
 			}
+		} else {
+			fmt.Fprintf(os.Stderr, "c4: warning: task %s has T-LH- prefix but lighthouse '%s' not found\n", assignment.TaskID, lhName)
 		}
 	}
+}
 
-	return assignment, nil
+// enrichWithReviewContext injects parent T's review context for R- tasks.
+func (s *SQLiteStore) enrichWithReviewContext(assignment *TaskAssignment) {
+	if !strings.HasPrefix(assignment.TaskID, "R-") {
+		return
+	}
+
+	_, baseID, ver, _ := task.ParseTaskID(assignment.TaskID)
+	parentID := fmt.Sprintf("T-%s-%d", baseID, ver)
+	var commitSHA, filesChanged string
+	if err := s.db.QueryRow("SELECT commit_sha, branch FROM c4_tasks WHERE task_id=?", parentID).Scan(&commitSHA, &filesChanged); err != nil {
+		fmt.Fprintf(os.Stderr, "c4: assign-task: review context for %s: %v\n", parentID, err)
+	}
+	if commitSHA != "" || filesChanged != "" {
+		assignment.ReviewContext = &ReviewContext{
+			ParentTaskID: parentID,
+			CommitSHA:    commitSHA,
+			FilesChanged: filesChanged,
+		}
+	}
 }
 
 // SubmitTask marks a task as done.
@@ -825,7 +735,9 @@ func (s *SQLiteStore) SubmitTask(taskID, workerID, commitSHA, handoff string, re
 	s.logTrace("task_submitted", workerID, taskID, commitSHA)
 
 	var pending int
-	_ = s.db.QueryRow("SELECT COUNT(*) FROM c4_tasks WHERE status IN ('pending', 'in_progress')").Scan(&pending)
+	if err := s.db.QueryRow("SELECT COUNT(*) FROM c4_tasks WHERE status IN ('pending', 'in_progress')").Scan(&pending); err != nil {
+		fmt.Fprintf(os.Stderr, "c4: submit-task: pending count: %v\n", err)
+	}
 
 	nextAction := "get_next_task"
 	if pending == 0 {
@@ -843,29 +755,6 @@ func (s *SQLiteStore) SubmitTask(taskID, workerID, commitSHA, handoff string, re
 	}, nil
 }
 
-// completeReviewTask marks the paired R-task as done when a T-task completes.
-// Returns the review task ID if cascaded, empty string otherwise.
-// Best-effort: errors are logged but don't block task completion.
-func (s *SQLiteStore) completeReviewTask(taskID string) string {
-	if !strings.HasPrefix(taskID, "T-") {
-		return ""
-	}
-	reviewID := "R-" + strings.TrimPrefix(taskID, "T-")
-	result, err := s.db.Exec(
-		`UPDATE c4_tasks SET status='done', worker_id='auto-cascade', updated_at=CURRENT_TIMESTAMP
-		 WHERE task_id=? AND status IN ('pending','in_progress')`,
-		reviewID,
-	)
-	if err != nil {
-		return ""
-	}
-	if n, _ := result.RowsAffected(); n > 0 {
-		s.logTrace("review_cascade", "system", reviewID,
-			fmt.Sprintf("Auto-completed review for %s", taskID))
-		return reviewID
-	}
-	return ""
-}
 
 // MarkBlocked marks a task as blocked.
 func (s *SQLiteStore) MarkBlocked(taskID, workerID, failureSignature string, attempts int, lastError string) error {
@@ -954,125 +843,7 @@ func (s *SQLiteStore) ReportTask(taskID, summary string, filesChanged []string) 
 	return nil
 }
 
-// Checkpoint records a checkpoint decision.
-func (s *SQLiteStore) Checkpoint(checkpointID, decision, notes string, requiredChanges []string) (*CheckpointResult, error) {
-	changesJSON := "[]"
-	if len(requiredChanges) > 0 {
-		b, _ := json.Marshal(requiredChanges)
-		changesJSON = string(b)
-	}
 
-	if _, err := s.db.Exec(`
-		INSERT OR REPLACE INTO c4_checkpoints (checkpoint_id, decision, notes, required_changes, created_at)
-		VALUES (?, ?, ?, ?, ?)`,
-		checkpointID, decision, notes, changesJSON, time.Now().Format(time.RFC3339),
-	); err != nil {
-		fmt.Fprintf(os.Stderr, "c4: checkpoint INSERT %s: %v\n", checkpointID, err)
-	}
-
-	result := &CheckpointResult{
-		Success: true,
-		Message: fmt.Sprintf("Checkpoint %s: %s", checkpointID, decision),
-	}
-
-	switch decision {
-	case "APPROVE":
-		result.NextAction = "continue"
-	case "REQUEST_CHANGES":
-		result.NextAction = "apply_changes"
-		// Best-effort: record rejection for most recent active task
-		var recentTaskID, recentWorkerID string
-		_ = s.db.QueryRow(`SELECT task_id, worker_id FROM c4_tasks
-			WHERE status='in_progress' ORDER BY updated_at DESC LIMIT 1`).Scan(&recentTaskID, &recentWorkerID)
-		if recentTaskID != "" {
-			if recentWorkerID == "" {
-				recentWorkerID = "direct"
-			}
-			s.recordPersonaStat(recentWorkerID, recentTaskID, "rejected")
-		}
-	case "REPLAN":
-		result.NextAction = "replan"
-	}
-
-	return result, nil
-}
-
-// RequestChanges rejects a review task and creates the next version T+R pair.
-func (s *SQLiteStore) RequestChanges(reviewTaskID string, comments string, requiredChanges []string) (*RequestChangesResult, error) {
-	// 1. Parse review task ID
-	_, baseID, version, taskType := task.ParseTaskID(reviewTaskID)
-	if taskType != task.TypeReview {
-		return nil, fmt.Errorf("%s is not a review task (got type %s)", reviewTaskID, taskType)
-	}
-
-	// 2. Check max_revision
-	nextVersion := version + 1
-	if s.config != nil {
-		cfg := s.config.GetConfig()
-		if cfg.MaxRevision > 0 && nextVersion >= cfg.MaxRevision {
-			return nil, fmt.Errorf("max revision %d reached for base %s", cfg.MaxRevision, baseID)
-		}
-	}
-
-	// 3. Mark current R task as done with REQUEST_CHANGES result
-	_, err := s.db.Exec(`UPDATE c4_tasks SET status='done', commit_sha=?, updated_at=CURRENT_TIMESTAMP WHERE task_id=?`,
-		"REQUEST_CHANGES: "+comments, reviewTaskID)
-	if err != nil {
-		return nil, fmt.Errorf("updating review task: %w", err)
-	}
-
-	// 4. Look up parent T's DoD and record rejection
-	parentTaskID := fmt.Sprintf("T-%s-%d", baseID, version)
-	var originalDoD string
-	_ = s.db.QueryRow("SELECT dod FROM c4_tasks WHERE task_id=?", parentTaskID).Scan(&originalDoD)
-
-	// Record rejection for parent T-task's worker
-	var parentWorkerID string
-	_ = s.db.QueryRow("SELECT worker_id FROM c4_tasks WHERE task_id=?", parentTaskID).Scan(&parentWorkerID)
-	if parentWorkerID == "" {
-		parentWorkerID = "direct"
-	}
-	s.recordPersonaStat(parentWorkerID, parentTaskID, "rejected")
-	s.autoLearn(parentWorkerID)
-
-	// 5. Create next version T + R
-	changesText := strings.Join(requiredChanges, "\n- ")
-	newDoD := fmt.Sprintf("Changes requested:\n- %s\n\nOriginal DoD:\n%s", changesText, originalDoD)
-
-	nextTaskID := task.NextVersionID("T", baseID, version)
-	nextReviewID := task.ReviewID(baseID, nextVersion)
-
-	// T-XXX-(N+1) — fix task
-	if err := s.AddTask(&Task{
-		ID:           nextTaskID,
-		Title:        fmt.Sprintf("Fix: %s", parentTaskID),
-		DoD:          newDoD,
-		Status:       "pending",
-		Dependencies: []string{reviewTaskID},
-		Priority:     10,
-	}); err != nil {
-		return nil, fmt.Errorf("creating fix task %s: %w", nextTaskID, err)
-	}
-
-	// R-XXX-(N+1) — review of fix
-	if err := s.AddTask(&Task{
-		ID:           nextReviewID,
-		Title:        fmt.Sprintf("Review: %s", nextTaskID),
-		DoD:          BuildReviewDoD(nextTaskID, fmt.Sprintf("Fix requested changes for %s:\n- %s", parentTaskID, changesText), 0),
-		Status:       "pending",
-		Dependencies: []string{nextTaskID},
-	}); err != nil {
-		return nil, fmt.Errorf("creating review task %s: %w", nextReviewID, err)
-	}
-
-	return &RequestChangesResult{
-		Success:      true,
-		NextTaskID:   nextTaskID,
-		NextReviewID: nextReviewID,
-		Version:      nextVersion,
-		Message:      fmt.Sprintf("Created %s + %s (v%d)", nextTaskID, nextReviewID, nextVersion),
-	}, nil
-}
 
 // --- Active Claim File Management ---
 
@@ -1105,91 +876,7 @@ func (s *SQLiteStore) removeClaimFile() {
 }
 
 // --- Persona Stats ---
-
-// recordPersonaStat records a persona outcome for a task (best-effort).
-func (s *SQLiteStore) recordPersonaStat(personaID, taskID, outcome string) {
-	if personaID == "" {
-		personaID = "direct"
-	}
-	if _, err := s.db.Exec(`
-		INSERT OR REPLACE INTO persona_stats (persona_id, task_id, outcome, created_at)
-		VALUES (?, ?, ?, ?)`,
-		personaID, taskID, outcome, time.Now().UTC().Format(time.RFC3339),
-	); err != nil {
-		fmt.Fprintf(os.Stderr, "c4: recordPersonaStat %s/%s: %v\n", personaID, taskID, err)
-	}
-}
-
-// GetPersonaStats retrieves performance stats for a persona.
-func (s *SQLiteStore) GetPersonaStats(personaID string) (map[string]any, error) {
-	stats := map[string]any{
-		"persona_id": personaID,
-	}
-
-	// Total tasks
-	var total int
-	_ = s.db.QueryRow("SELECT COUNT(*) FROM persona_stats WHERE persona_id = ?", personaID).Scan(&total)
-	stats["total_tasks"] = total
-
-	if total == 0 {
-		return stats, nil
-	}
-
-	// Outcome breakdown
-	rows, err := s.db.Query("SELECT outcome, COUNT(*) FROM persona_stats WHERE persona_id = ? GROUP BY outcome", personaID)
-	if err != nil {
-		return stats, nil
-	}
-	defer rows.Close()
-
-	outcomes := map[string]int{}
-	for rows.Next() {
-		var outcome string
-		var count int
-		if err := rows.Scan(&outcome, &count); err != nil {
-			continue
-		}
-		outcomes[outcome] = count
-	}
-	stats["outcomes"] = outcomes
-
-	// Average review score
-	var avgScore sql.NullFloat64
-	_ = s.db.QueryRow("SELECT AVG(review_score) FROM persona_stats WHERE persona_id = ? AND review_score > 0", personaID).Scan(&avgScore)
-	if avgScore.Valid {
-		stats["avg_review_score"] = avgScore.Float64
-	}
-
-	return stats, nil
-}
-
-// ListPersonas returns all known persona IDs with their task counts.
-func (s *SQLiteStore) ListPersonas() ([]map[string]any, error) {
-	rows, err := s.db.Query("SELECT persona_id, COUNT(*), AVG(review_score) FROM persona_stats GROUP BY persona_id ORDER BY COUNT(*) DESC")
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var personas []map[string]any
-	for rows.Next() {
-		var pid string
-		var count int
-		var avgScore sql.NullFloat64
-		if err := rows.Scan(&pid, &count, &avgScore); err != nil {
-			continue
-		}
-		p := map[string]any{
-			"persona_id":  pid,
-			"total_tasks": count,
-		}
-		if avgScore.Valid {
-			p["avg_review_score"] = avgScore.Float64
-		}
-		personas = append(personas, p)
-	}
-	return personas, nil
-}
+// Note: Functions moved to store_soul.go and store_status.go
 
 // --- Knowledge Auto-Record ---
 
@@ -1237,93 +924,3 @@ func (s *SQLiteStore) autoRecordKnowledge(task *Task, summary string, filesChang
 	}()
 }
 
-// injectSoulContext reads team.yaml to find the active user, then resolves
-// their soul for the task's domain. This is best-effort: failures are logged, not fatal.
-func (s *SQLiteStore) injectSoulContext(a *TaskAssignment) {
-	// Reuse proper YAML parsing from persona.go
-	username := getActiveUsername(s.projectRoot)
-	if username == "" {
-		return
-	}
-
-	// Get active persona for the user
-	activePersona := getActivePersonaForUser(s.projectRoot, username)
-
-	// Determine role: use task domain if available, otherwise active persona
-	role := a.Domain
-	if role == "" {
-		role = activePersona
-	}
-	if role == "" {
-		return
-	}
-
-	// Resolve soul (best-effort)
-	result, err := ResolveSoul(s.projectRoot, username, role)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "c4: injectSoulContext failed for %s/%s: %v\n", username, role, err)
-		return
-	}
-
-	merged, _ := result["merged"].(string)
-	if merged != "" {
-		a.SoulContext = merged
-	}
-
-	// Also inject project soul if available (3-way merge: role + personal + project)
-	if projectRoleForStage != "" && projectRoleForStage != role {
-		projResult, projErr := ResolveSoul(s.projectRoot, username, projectRoleForStage)
-		if projErr == nil {
-			if projMerged, ok := projResult["merged"].(string); ok && projMerged != "" {
-				a.SoulContext += "\n\n---\n## Project Context\n" + projMerged
-			}
-		}
-	}
-}
-
-// recordGrowthOnCompletion records a growth snapshot after task completion (best-effort).
-func (s *SQLiteStore) recordGrowthOnCompletion() {
-	if s.projectRoot == "" {
-		return
-	}
-	go func() {
-		username := getActiveUsername(s.projectRoot)
-		if username != "" {
-			s.RecordGrowthSnapshot(username)
-		}
-	}()
-}
-
-// autoLearn analyzes persona patterns and updates the soul's Learned section.
-// Best-effort: runs in a goroutine, failures are logged not fatal.
-func (s *SQLiteStore) autoLearn(personaID string) {
-	if s.projectRoot == "" {
-		return
-	}
-
-	go func() {
-		stats, err := s.GetPersonaStats(personaID)
-		if err != nil {
-			return
-		}
-
-		total, _ := stats["total_tasks"].(int)
-		if total < 5 {
-			return // need minimum data to generate meaningful suggestions
-		}
-
-		suggestions := analyzePatternsForSuggestions(stats, total)
-		if len(suggestions) == 0 {
-			return
-		}
-
-		username := getActiveUsername(s.projectRoot)
-		if username == "" {
-			return
-		}
-
-		if err := applySuggestionsToSoul(s.projectRoot, username, personaID, suggestions); err != nil {
-			fmt.Fprintf(os.Stderr, "c4: autoLearn failed for %s/%s: %v\n", username, personaID, err)
-		}
-	}()
-}

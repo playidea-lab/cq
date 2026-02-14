@@ -182,8 +182,25 @@ class KnowledgeEmbedder:
     def close(self) -> None:
         """Close the vector store connection."""
         if self._vector_store is not None:
-            self._vector_store.close()
+            if hasattr(self._vector_store, 'close'):
+                self._vector_store.close()
             self._vector_store = None
+
+    def __del__(self) -> None:
+        """Cleanup on garbage collection (fallback)."""
+        try:
+            self.close()
+        except Exception:
+            pass  # Suppress exceptions during cleanup
+
+    def __enter__(self):
+        """Context manager entry."""
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Context manager exit."""
+        self.close()
+        return False
 
 
 # Backward compat: ExperimentEmbedder = KnowledgeEmbedder

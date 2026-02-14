@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"log"
 	"os"
 	"strings"
 	"time"
@@ -327,14 +326,14 @@ func (s *SQLiteStore) detectSpeedChange() []Pattern {
 		SELECT AVG(julianday(updated_at) - julianday(created_at))
 		FROM (SELECT created_at, updated_at FROM c4_tasks WHERE status='done' ORDER BY updated_at DESC LIMIT 5)
 	`).Scan(&recentAvg); err != nil {
-		log.Printf("c4: twin: detectSpeedChange recent avg: %v", err)
+		fmt.Fprintf(os.Stderr, "c4: twin: detectSpeedChange recent avg: %v\n", err)
 	}
 
 	if err := s.db.QueryRow(`
 		SELECT AVG(julianday(updated_at) - julianday(created_at))
 		FROM c4_tasks WHERE status='done'
 	`).Scan(&overallAvg); err != nil {
-		log.Printf("c4: twin: detectSpeedChange overall avg: %v", err)
+		fmt.Fprintf(os.Stderr, "c4: twin: detectSpeedChange overall avg: %v\n", err)
 	}
 
 	if !recentAvg.Valid || !overallAvg.Valid {
@@ -376,7 +375,7 @@ func (s *SQLiteStore) RecordGrowthSnapshot(username string) {
 	// Check if already recorded this period
 	var exists int
 	if err := s.db.QueryRow("SELECT COUNT(*) FROM twin_growth WHERE username=? AND period=?", username, period).Scan(&exists); err != nil {
-		log.Printf("c4: twin: RecordGrowthSnapshot exists check: %v", err)
+		fmt.Fprintf(os.Stderr, "c4: twin: RecordGrowthSnapshot exists check: %v\n", err)
 		return
 	}
 	if exists > 0 {
@@ -388,7 +387,7 @@ func (s *SQLiteStore) RecordGrowthSnapshot(username string) {
 	if err := s.db.QueryRow(`
 		SELECT COUNT(*), SUM(CASE WHEN outcome='approved' THEN 1 ELSE 0 END)
 		FROM persona_stats`).Scan(&total, &approved); err != nil {
-		log.Printf("c4: twin: RecordGrowthSnapshot approval rate: %v", err)
+		fmt.Fprintf(os.Stderr, "c4: twin: RecordGrowthSnapshot approval rate: %v\n", err)
 	}
 
 	if total > 0 {
@@ -399,7 +398,7 @@ func (s *SQLiteStore) RecordGrowthSnapshot(username string) {
 	// Average review score
 	var avgScore sql.NullFloat64
 	if err := s.db.QueryRow("SELECT AVG(review_score) FROM persona_stats WHERE review_score > 0").Scan(&avgScore); err != nil {
-		log.Printf("c4: twin: RecordGrowthSnapshot avg score: %v", err)
+		fmt.Fprintf(os.Stderr, "c4: twin: RecordGrowthSnapshot avg score: %v\n", err)
 	}
 	if avgScore.Valid {
 		s.insertGrowthMetric(username, "avg_review_score", avgScore.Float64, period)
@@ -408,7 +407,7 @@ func (s *SQLiteStore) RecordGrowthSnapshot(username string) {
 	// Tasks completed this period
 	var completed int
 	if err := s.db.QueryRow("SELECT COUNT(*) FROM c4_tasks WHERE status='done'").Scan(&completed); err != nil {
-		log.Printf("c4: twin: RecordGrowthSnapshot tasks completed: %v", err)
+		fmt.Fprintf(os.Stderr, "c4: twin: RecordGrowthSnapshot tasks completed: %v\n", err)
 	}
 	s.insertGrowthMetric(username, "tasks_completed", float64(completed), period)
 }
@@ -417,7 +416,7 @@ func (s *SQLiteStore) insertGrowthMetric(username, metric string, value float64,
 	if _, err := s.db.Exec(`
 		INSERT OR IGNORE INTO twin_growth (username, metric, value, period)
 		VALUES (?, ?, ?, ?)`, username, metric, value, period); err != nil {
-		log.Printf("c4: twin: insertGrowthMetric %s: %v", metric, err)
+		fmt.Fprintf(os.Stderr, "c4: twin: insertGrowthMetric %s: %v\n", metric, err)
 	}
 }
 
@@ -542,7 +541,7 @@ func (s *SQLiteStore) BuildTwinReview() *TwinReview {
 			SUM(CASE WHEN decision='APPROVE' THEN 1 ELSE 0 END),
 			SUM(CASE WHEN decision='REQUEST_CHANGES' THEN 1 ELSE 0 END)
 		FROM c4_checkpoints`).Scan(&total, &approved, &rejected); err != nil {
-		log.Printf("c4: twin: BuildTwinReview checkpoint stats: %v", err)
+		fmt.Fprintf(os.Stderr, "c4: twin: BuildTwinReview checkpoint stats: %v\n", err)
 	}
 
 	if total >= 3 {
@@ -640,12 +639,12 @@ func (s *SQLiteStore) reflect(focus string) (map[string]any, error) {
 
 	var totalTasks int
 	if err := s.db.QueryRow("SELECT COUNT(*) FROM c4_tasks").Scan(&totalTasks); err != nil {
-		log.Printf("c4: twin: reflect totalTasks: %v", err)
+		fmt.Fprintf(os.Stderr, "c4: twin: reflect totalTasks: %v\n", err)
 	}
 
 	var doneTasks int
 	if err := s.db.QueryRow("SELECT COUNT(*) FROM c4_tasks WHERE status='done'").Scan(&doneTasks); err != nil {
-		log.Printf("c4: twin: reflect doneTasks: %v", err)
+		fmt.Fprintf(os.Stderr, "c4: twin: reflect doneTasks: %v\n", err)
 	}
 
 	identity := map[string]any{
@@ -797,7 +796,7 @@ func (s *SQLiteStore) detectMilestones() []string {
 	if err := s.db.QueryRow(`
 		SELECT COUNT(*), SUM(CASE WHEN outcome='approved' THEN 1 ELSE 0 END)
 		FROM persona_stats`).Scan(&total, &approved); err != nil {
-		log.Printf("c4: twin: detectMilestones approval stats: %v", err)
+		fmt.Fprintf(os.Stderr, "c4: twin: detectMilestones approval stats: %v\n", err)
 	}
 
 	if total >= 10 {
@@ -812,7 +811,7 @@ func (s *SQLiteStore) detectMilestones() []string {
 	// Total tasks completed milestones
 	var done int
 	if err := s.db.QueryRow("SELECT COUNT(*) FROM c4_tasks WHERE status='done'").Scan(&done); err != nil {
-		log.Printf("c4: twin: detectMilestones done count: %v", err)
+		fmt.Fprintf(os.Stderr, "c4: twin: detectMilestones done count: %v\n", err)
 	}
 	switch {
 	case done >= 100:
@@ -845,7 +844,7 @@ func (s *SQLiteStore) logTrace(eventType, agentID, taskID, detail string) {
 	if _, err := s.db.Exec(`
 		INSERT INTO c4_agent_traces (event_type, agent_id, task_id, detail)
 		VALUES (?, ?, ?, ?)`, eventType, agentID, taskID, detail); err != nil {
-		log.Printf("c4: twin: logTrace %s: %v", eventType, err)
+		fmt.Fprintf(os.Stderr, "c4: twin: logTrace %s: %v\n", eventType, err)
 	}
 }
 

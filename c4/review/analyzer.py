@@ -48,6 +48,32 @@ class PaperAnalyzer:
         self.llm = llm or create_llm(api_key=api_key, model=model_name)
         self.max_tokens = max_tokens
 
+    def _extract_json(self, response_text: str) -> dict:
+        """
+        Extract JSON object from LLM response text.
+
+        Args:
+            response_text: Raw response text from LLM
+
+        Returns:
+            Parsed JSON as dictionary
+
+        Raises:
+            ValueError: If no JSON found or invalid JSON
+        """
+        try:
+            # Find JSON block in response
+            json_start = response_text.find("{")
+            json_end = response_text.rfind("}") + 1
+            if json_start == -1 or json_end == 0:
+                raise ValueError("No JSON found in API response")
+
+            json_str = response_text[json_start:json_end]
+            data = json.loads(json_str)
+            return data
+        except json.JSONDecodeError as e:
+            raise ValueError(f"Invalid JSON in API response: {e}")
+
     def analyze_structure(self, pages: list[PageImage]) -> PaperStructure:
         """
         Analyze paper structure from page images (Pass 1).
@@ -79,17 +105,7 @@ class PaperAnalyzer:
         response_text = response.text
 
         # Parse JSON response
-        try:
-            # Find JSON block in response
-            json_start = response_text.find("{")
-            json_end = response_text.rfind("}") + 1
-            if json_start == -1 or json_end == 0:
-                raise ValueError("No JSON found in API response")
-
-            json_str = response_text[json_start:json_end]
-            data = json.loads(json_str)
-        except json.JSONDecodeError as e:
-            raise ValueError(f"Invalid JSON in API response: {e}")
+        data = self._extract_json(response_text)
 
         # Convert to PaperStructure
         try:
@@ -157,17 +173,7 @@ class PaperAnalyzer:
         response_text = response.text
 
         # Parse JSON response
-        try:
-            # Find JSON block in response
-            json_start = response_text.find("{")
-            json_end = response_text.rfind("}") + 1
-            if json_start == -1 or json_end == 0:
-                raise ValueError("No JSON found in API response")
-
-            json_str = response_text[json_start:json_end]
-            data = json.loads(json_str)
-        except json.JSONDecodeError as e:
-            raise ValueError(f"Invalid JSON in API response: {e}")
+        data = self._extract_json(response_text)
 
         # Convert to SectionAnalysis
         try:
@@ -222,17 +228,7 @@ class PaperAnalyzer:
         response_text = response.text
 
         # Parse JSON response
-        try:
-            # Find JSON block in response
-            json_start = response_text.find("{")
-            json_end = response_text.rfind("}") + 1
-            if json_start == -1 or json_end == 0:
-                raise ValueError("No JSON found in API response")
-
-            json_str = response_text[json_start:json_end]
-            data = json.loads(json_str)
-        except json.JSONDecodeError as e:
-            raise ValueError(f"Invalid JSON in API response: {e}")
+        data = self._extract_json(response_text)
 
         # Convert to OverallAssessment
         try:

@@ -95,32 +95,32 @@ def _ensure_imports() -> None:
         try:
             DocumentStore = _import_document_store()
         except ImportError:
-            pass
+            logger.debug("Failed to import DocumentStore")
     if KnowledgeSearcher is None:
         try:
             KnowledgeSearcher = _import_knowledge_searcher()
         except ImportError:
-            pass
+            logger.debug("Failed to import KnowledgeSearcher")
     if KnowledgeEmbedder is None:
         try:
             KnowledgeEmbedder = _import_knowledge_embedder()
         except ImportError:
-            pass
+            logger.debug("Failed to import KnowledgeEmbedder")
     if GpuMonitor is None:
         try:
             GpuMonitor = _import_gpu_monitor()
         except ImportError:
-            pass
+            logger.debug("Failed to import GpuMonitor")
     if GpuJobScheduler is None:
         try:
             GpuJobScheduler = _import_gpu_scheduler()
         except ImportError:
-            pass
+            logger.debug("Failed to import GpuJobScheduler")
     if ResearchStore is None:
         try:
             ResearchStore = _import_research_store()
         except ImportError:
-            pass
+            logger.debug("Failed to import ResearchStore")
 
 
 class _DaemonStub:
