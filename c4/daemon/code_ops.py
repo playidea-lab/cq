@@ -286,7 +286,7 @@ class CodeOps:
                     "Workspace-wide search is disabled due to timeout issues. "
                     "Please provide a file or directory path to limit the search scope."
                 ),
-                "hint": "Use relative_path parameter, e.g., relative_path='c4/lsp/provider.py'",
+                "hint": "Use path parameter, e.g., path='c4/lsp/provider.py'",
             }
 
         try:

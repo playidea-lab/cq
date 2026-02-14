@@ -436,7 +436,7 @@ class UnifiedSymbolProvider:
         if not is_python and not self.multilspy_available:
             return {"error": f"No provider available for {language} files"}
 
-        return {"error": "No symbols found"}
+        return {"error": f"No symbols found in {relative_path}. Supported: Python, JS, TS (via multilspy/Jedi)"}
 
     def _get_symbols_overview_isolated(
         self,

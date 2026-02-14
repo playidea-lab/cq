@@ -504,6 +504,9 @@ func ResolveSoul(projectRoot, username, role string) (map[string]any, error) {
 }
 
 // findPersonaForRole looks for a persona file that matches the role name.
+// Matching priority: exact match > role contains personaName (longest wins).
+// Does NOT match when personaName contains role (e.g., "developer" must not
+// match "frontend-developer").
 func findPersonaForRole(projectRoot, role string) (string, string) {
 	personasDir := filepath.Join(projectRoot, ".c4", "personas")
 
@@ -514,12 +517,15 @@ func findPersonaForRole(projectRoot, role string) (string, string) {
 		return string(data), exactPath
 	}
 
-	// Try partial match: role contains persona name or vice versa
+	// Try partial match: only role contains personaName (not the reverse).
+	// Pick the longest (most specific) personaName that matches.
 	entries, err := os.ReadDir(personasDir)
 	if err != nil {
 		return "", ""
 	}
 
+	var bestName string
+	var bestPath string
 	for _, entry := range entries {
 		name := entry.Name()
 		if !strings.HasPrefix(name, "persona-") || !strings.HasSuffix(name, ".md") {
@@ -528,12 +534,18 @@ func findPersonaForRole(projectRoot, role string) (string, string) {
 		personaName := strings.TrimPrefix(name, "persona-")
 		personaName = strings.TrimSuffix(personaName, ".md")
 
-		// Check if role maps to persona (e.g., "developer" → "general-purpose")
-		if personaName == role || strings.Contains(personaName, role) || strings.Contains(role, personaName) {
-			data, err := os.ReadFile(filepath.Join(personasDir, name))
-			if err == nil {
-				return string(data), filepath.Join(personasDir, name)
-			}
+		// Only match when role contains personaName (e.g., "senior-developer" contains "developer").
+		// Skip when personaName contains role (e.g., "frontend-developer" contains "developer").
+		if strings.Contains(role, personaName) && len(personaName) > len(bestName) {
+			bestName = personaName
+			bestPath = filepath.Join(personasDir, name)
+		}
+	}
+
+	if bestPath != "" {
+		data, err := os.ReadFile(bestPath)
+		if err == nil {
+			return string(data), bestPath
 		}
 	}
 

@@ -209,11 +209,7 @@ func handleFindFile(rootDir string, rawArgs json.RawMessage) (any, error) {
 			return nil
 		}
 		relPath, _ := filepath.Rel(rootDir, path)
-		matched, _ := filepath.Match(args.Pattern, filepath.Base(path))
-		if !matched {
-			matched, _ = filepath.Match(args.Pattern, relPath)
-		}
-		if matched {
+		if matchGlob(args.Pattern, filepath.Base(path), relPath) {
 			matches = append(matches, relPath)
 		}
 		return nil
@@ -226,6 +222,31 @@ func handleFindFile(rootDir string, rawArgs json.RawMessage) (any, error) {
 		"matches": matches,
 		"count":   len(matches),
 	}, nil
+}
+
+// matchGlob matches a glob pattern against a filename and its relative path.
+// Supports "**/" prefix for recursive matching (e.g., "**/*.py").
+func matchGlob(pattern, name, relPath string) bool {
+	if strings.HasPrefix(pattern, "**/") {
+		sub := pattern[3:]
+		if m, _ := filepath.Match(sub, name); m {
+			return true
+		}
+		// Try matching against each path suffix
+		for i := 0; i < len(relPath); i++ {
+			if relPath[i] == filepath.Separator || relPath[i] == '/' {
+				if m, _ := filepath.Match(sub, relPath[i+1:]); m {
+					return true
+				}
+			}
+		}
+		return false
+	}
+	if m, _ := filepath.Match(pattern, name); m {
+		return true
+	}
+	m, _ := filepath.Match(pattern, relPath)
+	return m
 }
 
 type searchPatternArgs struct {

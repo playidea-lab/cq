@@ -53,33 +53,50 @@ func DefaultSidecarConfig() *SidecarConfig {
 }
 
 // cleanupStaleSidecar kills a leftover sidecar process from a previous run
-// using the PID file. This handles the SIGKILL case where the Go parent dies
-// without running defer/signal handlers.
+// using the PID file and pgrep fallback. This handles the SIGKILL case where
+// the Go parent dies without running defer/signal handlers.
 func cleanupStaleSidecar(pidFile string) {
-	if pidFile == "" {
+	// 1. PID file cleanup
+	if pidFile != "" {
+		data, err := os.ReadFile(pidFile)
+		if err == nil {
+			pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
+			if err == nil && pid > 0 {
+				if err := syscall.Kill(pid, 0); err == nil {
+					fmt.Fprintf(os.Stderr, "c4: killing stale sidecar (pgid %d) from previous session\n", pid)
+					_ = syscall.Kill(-pid, syscall.SIGTERM)
+					time.Sleep(500 * time.Millisecond)
+					_ = syscall.Kill(-pid, syscall.SIGKILL)
+				}
+			}
+			_ = os.Remove(pidFile)
+		}
+	}
+
+	// 2. pgrep fallback: find orphan c4-bridge processes (PPID=1)
+	out, err := exec.Command("pgrep", "-f", "c4-bridge").Output()
+	if err != nil || len(out) == 0 {
 		return
 	}
-	data, err := os.ReadFile(pidFile)
-	if err != nil {
-		return // no pid file — nothing to clean
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		pid, err := strconv.Atoi(strings.TrimSpace(line))
+		if err != nil || pid <= 0 {
+			continue
+		}
+		// Check if this is an orphan (PPID=1) via /proc or ps
+		ppidOut, err := exec.Command("ps", "-o", "ppid=", "-p", strconv.Itoa(pid)).Output()
+		if err != nil {
+			continue
+		}
+		ppid, err := strconv.Atoi(strings.TrimSpace(string(ppidOut)))
+		if err != nil || ppid != 1 {
+			continue
+		}
+		fmt.Fprintf(os.Stderr, "c4: killing orphan c4-bridge process (pid %d, ppid=1)\n", pid)
+		_ = syscall.Kill(pid, syscall.SIGTERM)
+		time.Sleep(200 * time.Millisecond)
+		_ = syscall.Kill(pid, syscall.SIGKILL)
 	}
-	pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
-	if err != nil || pid <= 0 {
-		_ = os.Remove(pidFile)
-		return
-	}
-	// Check if process exists (signal 0)
-	if err := syscall.Kill(pid, 0); err != nil {
-		_ = os.Remove(pidFile)
-		return // already dead
-	}
-	// Kill the stale process group
-	fmt.Fprintf(os.Stderr, "c4: killing stale sidecar (pgid %d) from previous session\n", pid)
-	_ = syscall.Kill(-pid, syscall.SIGTERM)
-	// Brief wait then force kill
-	time.Sleep(500 * time.Millisecond)
-	_ = syscall.Kill(-pid, syscall.SIGKILL)
-	_ = os.Remove(pidFile)
 }
 
 // writePidFile writes the sidecar PID to disk for orphan cleanup on next startup.
@@ -289,7 +306,7 @@ func (s *Sidecar) Ping() error {
 // Returns the new address. Max 3 restarts to avoid infinite loops.
 func (s *Sidecar) Restart() (string, error) {
 	s.mu.Lock()
-	if s.restarts >= 3 {
+	if s.restarts >= 5 {
 		s.mu.Unlock()
 		return "", fmt.Errorf("sidecar restart limit reached (%d)", s.restarts)
 	}

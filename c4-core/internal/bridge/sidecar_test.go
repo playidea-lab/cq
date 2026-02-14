@@ -87,7 +87,7 @@ func TestRestartLimitReached(t *testing.T) {
 	cfg := DefaultSidecarConfig()
 	s := &Sidecar{
 		cfg:      cfg,
-		restarts: 3, // already at limit
+		restarts: 5, // already at limit
 	}
 	_, err := s.Restart()
 	if err == nil {

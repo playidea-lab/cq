@@ -224,7 +224,11 @@ class BridgeServer:
                 if not line:
                     break  # EOF -- client disconnected
 
-                response = await self._process_line(line)
+                try:
+                    response = await self._process_line(line)
+                except Exception as exc:
+                    logger.exception("_process_line error (connection kept): %s", exc)
+                    response = {"result": None, "error": str(exc)}
                 writer.write(json.dumps(response).encode() + b"\n")
                 await writer.drain()
         except asyncio.CancelledError:

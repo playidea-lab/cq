@@ -41,10 +41,11 @@ type Restarter interface {
 
 // BridgeProxy forwards MCP tool calls to the Python sidecar via JSON-RPC over TCP.
 type BridgeProxy struct {
-	mu        sync.Mutex
-	addr      string
-	timeout   time.Duration
-	restarter Restarter // nil if no auto-restart support
+	mu           sync.Mutex
+	addr         string
+	timeout      time.Duration
+	restarter    Restarter  // nil if no auto-restart support
+	lastFailedAt time.Time  // timestamp of last connection failure
 }
 
 // NewBridgeProxy creates a proxy that connects to the Python bridge sidecar.
@@ -72,12 +73,31 @@ func (p *BridgeProxy) UpdateAddr(addr string) {
 
 // Call sends a JSON-RPC request to the Python sidecar and returns the result.
 // On connection failure, attempts to restart the sidecar once and retry.
+// If a recent failure occurred (within 30s), proactively tries restart before the call.
 func (p *BridgeProxy) Call(method string, params map[string]any) (map[string]any, error) {
+	// Pre-call restart: if last call failed recently, try restart first
+	p.mu.Lock()
+	recentFail := !p.lastFailedAt.IsZero() && time.Since(p.lastFailedAt) < 30*time.Second
+	p.mu.Unlock()
+	if recentFail {
+		if _, restartErr := p.tryRestart(); restartErr == nil {
+			p.mu.Lock()
+			p.lastFailedAt = time.Time{}
+			p.mu.Unlock()
+		}
+	}
+
 	result, err := p.doCall(method, params, p.timeout)
 	if err != nil && p.isConnError(err) {
+		p.mu.Lock()
+		p.lastFailedAt = time.Now()
+		p.mu.Unlock()
 		// Try restart + retry once
 		if newAddr, restartErr := p.tryRestart(); restartErr == nil {
 			_ = newAddr
+			p.mu.Lock()
+			p.lastFailedAt = time.Time{}
+			p.mu.Unlock()
 			return p.doCall(method, params, p.timeout)
 		}
 	}
@@ -131,7 +151,7 @@ func (p *BridgeProxy) doCall(method string, params map[string]any, timeout time.
 	p.mu.Unlock()
 
 	if addr == "" {
-		return nil, fmt.Errorf("Python sidecar not available (no bridge address)")
+		return nil, fmt.Errorf("Python sidecar not available. Restart Claude Code to reconnect.")
 	}
 	conn, err := net.DialTimeout("tcp", addr, timeout)
 	if err != nil {
@@ -429,7 +449,7 @@ func RegisterProxyHandlers(reg *mcp.Registry, proxy *BridgeProxy, knowledgeCloud
 			"type": "object",
 			"properties": map[string]any{
 				"name": map[string]any{"type": "string", "description": "Symbol name to find"},
-				"path": map[string]any{"type": "string", "description": "Optional file path to scope the search"},
+				"path": map[string]any{"type": "string", "description": "File or directory path to scope search (recommended — omitting may timeout)"},
 			},
 			"required": []string{"name"},
 		},

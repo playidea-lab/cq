@@ -38,6 +38,7 @@ type validationDef struct {
 	Name    string
 	Command string
 	Args    []string
+	Dir     string // working directory override (empty = rootDir)
 }
 
 func handleRunValidation(rootDir string, rawArgs json.RawMessage) (any, error) {
@@ -115,7 +116,11 @@ func handleRunValidation(rootDir string, rawArgs json.RawMessage) (any, error) {
 	for _, v := range toRun {
 		start := time.Now()
 		cmd := exec.Command(v.Command, v.Args...)
-		cmd.Dir = rootDir
+		if v.Dir != "" {
+			cmd.Dir = v.Dir
+		} else {
+			cmd.Dir = rootDir
+		}
 		out, err := cmd.CombinedOutput()
 		elapsed := time.Since(start).Seconds()
 
@@ -192,6 +197,7 @@ func detectValidations(rootDir string) []validationDef {
 			Name:    "go-test",
 			Command: "go",
 			Args:    []string{"test", "./..."},
+			Dir:     rootDir + "/c4-core",
 		})
 	}
 

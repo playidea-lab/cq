@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/changmin/c4-core/internal/cdp"
 	"github.com/changmin/c4-core/internal/mcp"
@@ -75,6 +76,9 @@ func handleCDPRun(runner *cdp.Runner, raw json.RawMessage) (any, error) {
 	ctx := context.Background()
 	result, err := runner.Execute(ctx, debugURL, params.Script, opts)
 	if err != nil {
+		if strings.Contains(err.Error(), "connection refused") || strings.Contains(err.Error(), "connect: connection") {
+			return nil, fmt.Errorf("no Chrome browser at %s. Start with: chrome --remote-debugging-port=9222", debugURL)
+		}
 		return nil, err
 	}
 
@@ -101,6 +105,9 @@ func handleCDPList(runner *cdp.Runner, raw json.RawMessage) (any, error) {
 	ctx := context.Background()
 	targets, err := runner.ListTargets(ctx, debugURL)
 	if err != nil {
+		if strings.Contains(err.Error(), "connection refused") || strings.Contains(err.Error(), "connect: connection") {
+			return nil, fmt.Errorf("no Chrome browser at %s. Start with: chrome --remote-debugging-port=9222", debugURL)
+		}
 		return nil, err
 	}
 
