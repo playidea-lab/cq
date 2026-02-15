@@ -5,11 +5,16 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"time"
 
+	"crypto/sha256"
+
+	"github.com/piqsol/c4/c5/internal/model"
 	"github.com/piqsol/c4/c5/internal/storage"
 	"github.com/piqsol/c4/c5/internal/store"
 )
@@ -116,6 +121,10 @@ func (s *Server) registerRoutes() {
 	// WebSocket (both paths: hub.Client sends to /v1/ws/metrics/, workers use /ws/metrics/)
 	s.mux.HandleFunc("/ws/metrics/", s.handleWSMetrics)
 	s.mux.HandleFunc("/v1/ws/metrics/", s.handleWSMetrics)
+
+	// Admin (requires master key)
+	s.mux.HandleFunc("/v1/admin/api-keys", s.handleAdminAPIKeys)
+	s.mux.HandleFunc("/v1/admin/api-keys/", s.handleAdminAPIKeyByHash)
 }
 
 func (s *Server) authMiddleware(next http.Handler) http.Handler {
@@ -125,13 +134,53 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
+
 		key := r.Header.Get("X-API-Key")
-		if key != s.apiKey {
-			writeError(w, http.StatusUnauthorized, "invalid or missing API key")
+		if key == "" {
+			writeError(w, http.StatusUnauthorized, "missing API key")
 			return
 		}
-		next.ServeHTTP(w, r)
+
+		ctx := r.Context()
+
+		// Check master key first
+		if key == s.apiKey {
+			ctx = context.WithValue(ctx, model.CtxProjectID, "")
+			ctx = context.WithValue(ctx, model.CtxIsMaster, true)
+			next.ServeHTTP(w, r.WithContext(ctx))
+			return
+		}
+
+		// Check per-project key
+		h := sha256.Sum256([]byte(key))
+		keyHash := fmt.Sprintf("%x", h[:])
+		projectID, err := s.store.LookupAPIKey(keyHash)
+		if err != nil {
+			writeError(w, http.StatusUnauthorized, "invalid API key")
+			return
+		}
+
+		ctx = context.WithValue(ctx, model.CtxProjectID, projectID)
+		ctx = context.WithValue(ctx, model.CtxIsMaster, false)
+		next.ServeHTTP(w, r.WithContext(ctx))
 	})
+}
+
+// projectIDFromContext returns the authenticated project ID from context.
+// Empty string means master key (full access).
+func projectIDFromContext(r *http.Request) string {
+	if v, ok := r.Context().Value(model.CtxProjectID).(string); ok {
+		return v
+	}
+	return ""
+}
+
+// isMasterFromContext returns true if the request was made with the master key.
+func isMasterFromContext(r *http.Request) bool {
+	if v, ok := r.Context().Value(model.CtxIsMaster).(bool); ok {
+		return v
+	}
+	return false
 }
 
 // Close stops background goroutines.

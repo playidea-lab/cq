@@ -3,10 +3,12 @@ package api
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/piqsol/c4/c5/internal/model"
@@ -687,4 +689,222 @@ func TestMethodNotAllowed(t *testing.T) {
 			t.Errorf("%s %s: expected 405, got %d", tt.method, tt.path, w.Code)
 		}
 	}
+}
+
+// =========================================================================
+// Per-Project API Key Auth
+// =========================================================================
+
+func TestPerProjectAPIKey(t *testing.T) {
+	dir := t.TempDir()
+	st, _ := store.New(filepath.Join(dir, "c5.db"))
+	defer st.Close()
+
+	srv := NewServer(Config{Store: st, APIKey: "master-key-123"})
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+	defer srv.Close()
+
+	// Create per-project key using master key
+	body := `{"project_id":"proj-A","description":"test key"}`
+	req, _ := http.NewRequest("POST", ts.URL+"/v1/admin/api-keys", strings.NewReader(body))
+	req.Header.Set("X-API-Key", "master-key-123")
+	resp, _ := http.DefaultClient.Do(req)
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create key: got %d", resp.StatusCode)
+	}
+	var createResp model.CreateAPIKeyResponse
+	json.NewDecoder(resp.Body).Decode(&createResp)
+	resp.Body.Close()
+	projectKey := createResp.Key
+
+	if !strings.HasPrefix(projectKey, "c5pk_") {
+		t.Errorf("key should start with c5pk_, got %s", projectKey)
+	}
+
+	// Submit job with project key -> should get project_id=proj-A
+	jobBody := `{"name":"test-job","command":"echo hi","workdir":"."}`
+	req, _ = http.NewRequest("POST", ts.URL+"/v1/jobs/submit", strings.NewReader(jobBody))
+	req.Header.Set("X-API-Key", projectKey)
+	resp, _ = http.DefaultClient.Do(req)
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("submit job: got %d", resp.StatusCode)
+	}
+	var jobResp model.JobSubmitResponse
+	json.NewDecoder(resp.Body).Decode(&jobResp)
+	resp.Body.Close()
+
+	// Verify job has project_id=proj-A
+	req, _ = http.NewRequest("GET", ts.URL+"/v1/jobs/"+jobResp.JobID, nil)
+	req.Header.Set("X-API-Key", projectKey)
+	resp, _ = http.DefaultClient.Do(req)
+	var job model.Job
+	json.NewDecoder(resp.Body).Decode(&job)
+	resp.Body.Close()
+	if job.ProjectID != "proj-A" {
+		t.Errorf("job project_id: got %q, want proj-A", job.ProjectID)
+	}
+}
+
+func TestMasterKeyFullAccess(t *testing.T) {
+	dir := t.TempDir()
+	st, _ := store.New(filepath.Join(dir, "c5.db"))
+	defer st.Close()
+
+	srv := NewServer(Config{Store: st, APIKey: "master-key-123"})
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+	defer srv.Close()
+
+	// Master key can submit jobs for any project
+	jobBody := `{"name":"test-job","command":"echo hi","workdir":".","project_id":"any-project"}`
+	req, _ := http.NewRequest("POST", ts.URL+"/v1/jobs/submit", strings.NewReader(jobBody))
+	req.Header.Set("X-API-Key", "master-key-123")
+	resp, _ := http.DefaultClient.Do(req)
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("submit with master: got %d", resp.StatusCode)
+	}
+	resp.Body.Close()
+}
+
+func TestAdminRequiresMasterKey(t *testing.T) {
+	dir := t.TempDir()
+	st, _ := store.New(filepath.Join(dir, "c5.db"))
+	defer st.Close()
+
+	srv := NewServer(Config{Store: st, APIKey: "master-key-123"})
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+	defer srv.Close()
+
+	// First create a project key
+	body := `{"project_id":"proj-A","description":"test"}`
+	req, _ := http.NewRequest("POST", ts.URL+"/v1/admin/api-keys", strings.NewReader(body))
+	req.Header.Set("X-API-Key", "master-key-123")
+	resp, _ := http.DefaultClient.Do(req)
+	var createResp model.CreateAPIKeyResponse
+	json.NewDecoder(resp.Body).Decode(&createResp)
+	resp.Body.Close()
+
+	// Try admin endpoint with project key -> 403
+	req, _ = http.NewRequest("GET", ts.URL+"/v1/admin/api-keys", nil)
+	req.Header.Set("X-API-Key", createResp.Key)
+	resp, _ = http.DefaultClient.Do(req)
+	if resp.StatusCode != http.StatusForbidden {
+		t.Errorf("admin with project key: got %d, want 403", resp.StatusCode)
+	}
+	resp.Body.Close()
+}
+
+func TestProjectIsolation(t *testing.T) {
+	dir := t.TempDir()
+	st, _ := store.New(filepath.Join(dir, "c5.db"))
+	defer st.Close()
+
+	srv := NewServer(Config{Store: st, APIKey: "master-key-123"})
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+	defer srv.Close()
+
+	// Create keys for two projects
+	createKey := func(projID string) string {
+		body := fmt.Sprintf(`{"project_id":"%s"}`, projID)
+		req, _ := http.NewRequest("POST", ts.URL+"/v1/admin/api-keys", strings.NewReader(body))
+		req.Header.Set("X-API-Key", "master-key-123")
+		resp, _ := http.DefaultClient.Do(req)
+		var cr model.CreateAPIKeyResponse
+		json.NewDecoder(resp.Body).Decode(&cr)
+		resp.Body.Close()
+		return cr.Key
+	}
+
+	keyA := createKey("proj-A")
+	keyB := createKey("proj-B")
+
+	// Submit job with key A
+	jobBody := `{"name":"job-a","command":"echo a","workdir":"."}`
+	req, _ := http.NewRequest("POST", ts.URL+"/v1/jobs/submit", strings.NewReader(jobBody))
+	req.Header.Set("X-API-Key", keyA)
+	resp, _ := http.DefaultClient.Do(req)
+	var jr model.JobSubmitResponse
+	json.NewDecoder(resp.Body).Decode(&jr)
+	resp.Body.Close()
+
+	// Try to access job with key B -> 403
+	req, _ = http.NewRequest("GET", ts.URL+"/v1/jobs/"+jr.JobID, nil)
+	req.Header.Set("X-API-Key", keyB)
+	resp, _ = http.DefaultClient.Do(req)
+	if resp.StatusCode != http.StatusForbidden {
+		t.Errorf("cross-project access: got %d, want 403", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	// Access with key A -> 200
+	req, _ = http.NewRequest("GET", ts.URL+"/v1/jobs/"+jr.JobID, nil)
+	req.Header.Set("X-API-Key", keyA)
+	resp, _ = http.DefaultClient.Do(req)
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("own-project access: got %d, want 200", resp.StatusCode)
+	}
+	resp.Body.Close()
+}
+
+func TestProjectIDFromContextOverridesBody(t *testing.T) {
+	dir := t.TempDir()
+	st, _ := store.New(filepath.Join(dir, "c5.db"))
+	defer st.Close()
+
+	srv := NewServer(Config{Store: st, APIKey: "master-key-123"})
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+	defer srv.Close()
+
+	// Create project key for proj-A
+	body := `{"project_id":"proj-A"}`
+	req, _ := http.NewRequest("POST", ts.URL+"/v1/admin/api-keys", strings.NewReader(body))
+	req.Header.Set("X-API-Key", "master-key-123")
+	resp, _ := http.DefaultClient.Do(req)
+	var cr model.CreateAPIKeyResponse
+	json.NewDecoder(resp.Body).Decode(&cr)
+	resp.Body.Close()
+
+	// Submit job claiming project_id=proj-B but using proj-A key
+	jobBody := `{"name":"sneaky","command":"echo","workdir":".","project_id":"proj-B"}`
+	req, _ = http.NewRequest("POST", ts.URL+"/v1/jobs/submit", strings.NewReader(jobBody))
+	req.Header.Set("X-API-Key", cr.Key)
+	resp, _ = http.DefaultClient.Do(req)
+	var jr model.JobSubmitResponse
+	json.NewDecoder(resp.Body).Decode(&jr)
+	resp.Body.Close()
+
+	// Verify job actually got proj-A
+	req, _ = http.NewRequest("GET", ts.URL+"/v1/jobs/"+jr.JobID, nil)
+	req.Header.Set("X-API-Key", cr.Key)
+	resp, _ = http.DefaultClient.Do(req)
+	var job model.Job
+	json.NewDecoder(resp.Body).Decode(&job)
+	resp.Body.Close()
+	if job.ProjectID != "proj-A" {
+		t.Errorf("body override blocked: got project_id=%q, want proj-A", job.ProjectID)
+	}
+}
+
+func TestBackwardCompat_NoAuth(t *testing.T) {
+	dir := t.TempDir()
+	st, _ := store.New(filepath.Join(dir, "c5.db"))
+	defer st.Close()
+
+	// No APIKey -> auth disabled
+	srv := NewServer(Config{Store: st})
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+	defer srv.Close()
+
+	// Should work without any API key
+	jobBody := `{"name":"test","command":"echo hi","workdir":"."}`
+	resp, _ := http.Post(ts.URL+"/v1/jobs/submit", "application/json", strings.NewReader(jobBody))
+	if resp.StatusCode != http.StatusCreated {
+		t.Errorf("no-auth submit: got %d, want 201", resp.StatusCode)
+	}
+	resp.Body.Close()
 }

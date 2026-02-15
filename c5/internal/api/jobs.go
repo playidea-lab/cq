@@ -33,6 +33,11 @@ func (s *Server) handleJobSubmit(w http.ResponseWriter, r *http.Request) {
 		req.Name = "untitled"
 	}
 
+	// Override project_id from auth context
+	if pid := projectIDFromContext(r); pid != "" {
+		req.ProjectID = pid
+	}
+
 	job, err := s.store.CreateJob(&req)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -59,6 +64,11 @@ func (s *Server) handleJobsList(w http.ResponseWriter, r *http.Request) {
 	projectID := r.URL.Query().Get("project_id")
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
+
+	// Auth context overrides query parameter
+	if pid := projectIDFromContext(r); pid != "" {
+		projectID = pid
+	}
 
 	if limit == 0 {
 		limit = 50
@@ -129,6 +139,13 @@ func (s *Server) handleJobByID(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, err.Error())
 		return
 	}
+
+	// Check project ownership
+	if pid := projectIDFromContext(r); pid != "" && job.ProjectID != pid {
+		writeError(w, http.StatusForbidden, "access denied: job belongs to different project")
+		return
+	}
+
 	writeJSON(w, job)
 }
 

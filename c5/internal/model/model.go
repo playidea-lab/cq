@@ -518,6 +518,47 @@ type MetricMessage struct {
 	Error   string         `json:"error,omitempty"`
 }
 
+// =========================================================================
+// API Key Models
+// =========================================================================
+
+// APIKeyInfo represents metadata about an API key (hash is never exposed).
+type APIKeyInfo struct {
+	KeyHash     string `json:"key_hash"`
+	ProjectID   string `json:"project_id"`
+	Description string `json:"description,omitempty"`
+	CreatedAt   string `json:"created_at"`
+}
+
+// CreateAPIKeyRequest is the payload for POST /v1/admin/api-keys.
+type CreateAPIKeyRequest struct {
+	ProjectID   string `json:"project_id"`
+	Description string `json:"description,omitempty"`
+}
+
+// CreateAPIKeyResponse is the response from POST /v1/admin/api-keys.
+type CreateAPIKeyResponse struct {
+	Key       string `json:"key"`        // raw key (only shown once)
+	KeyHash   string `json:"key_hash"`   // SHA256 hash for reference
+	ProjectID string `json:"project_id"`
+}
+
+// ctxKey is a context key type for auth data.
+type ctxKey string
+
+const (
+	// CtxProjectID holds the authenticated project ID in request context.
+	CtxProjectID ctxKey = "project_id"
+	// CtxIsMaster indicates whether the request was made with the master key.
+	CtxIsMaster ctxKey = "is_master"
+)
+
+// SHA256Hex returns the hex-encoded SHA256 hash of s.
+func SHA256Hex(s string) string {
+	h := sha256.Sum256([]byte(s))
+	return fmt.Sprintf("%x", h[:])
+}
+
 // ----- Command normalization for duration estimation -----
 
 var (

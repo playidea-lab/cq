@@ -5,6 +5,7 @@
 package store
 
 import (
+	"crypto/rand"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -225,6 +226,14 @@ func (s *Store) migrate() error {
 			created_at   TEXT NOT NULL
 		);
 		CREATE INDEX IF NOT EXISTS idx_artifacts_job ON artifacts(job_id);
+
+		CREATE TABLE IF NOT EXISTS api_keys (
+			key_hash    TEXT PRIMARY KEY,
+			project_id  TEXT NOT NULL,
+			description TEXT NOT NULL DEFAULT '',
+			created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+		);
+		CREATE INDEX IF NOT EXISTS idx_api_keys_project ON api_keys(project_id);
 	`)
 	if err != nil {
 		return err
@@ -1884,4 +1893,70 @@ func marshalJSON(v any) string {
 		return "null"
 	}
 	return string(data)
+}
+
+// =========================================================================
+// API Keys
+// =========================================================================
+
+// CreateAPIKey generates a new per-project API key and stores its SHA256 hash.
+// Returns the raw key (c5pk_<32 hex chars>) — only shown once.
+func (s *Store) CreateAPIKey(projectID, description string) (string, error) {
+	raw := make([]byte, 16)
+	if _, err := rand.Read(raw); err != nil {
+		return "", fmt.Errorf("generate key: %w", err)
+	}
+	key := fmt.Sprintf("c5pk_%x", raw)
+	hash := model.SHA256Hex(key)
+
+	_, err := s.db.Exec(
+		`INSERT INTO api_keys (key_hash, project_id, description, created_at)
+		 VALUES (?, ?, ?, datetime('now'))`,
+		hash, projectID, description)
+	if err != nil {
+		return "", fmt.Errorf("store api key: %w", err)
+	}
+	return key, nil
+}
+
+// LookupAPIKey looks up a key hash and returns the associated project ID.
+func (s *Store) LookupAPIKey(keyHash string) (string, error) {
+	var projectID string
+	err := s.db.QueryRow("SELECT project_id FROM api_keys WHERE key_hash = ?", keyHash).Scan(&projectID)
+	if err != nil {
+		return "", fmt.Errorf("api key not found")
+	}
+	return projectID, nil
+}
+
+// DeleteAPIKey removes an API key by its hash.
+func (s *Store) DeleteAPIKey(keyHash string) error {
+	res, err := s.db.Exec("DELETE FROM api_keys WHERE key_hash = ?", keyHash)
+	if err != nil {
+		return err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return fmt.Errorf("api key not found")
+	}
+	return nil
+}
+
+// ListAPIKeys returns all API keys (without the raw key).
+func (s *Store) ListAPIKeys() ([]model.APIKeyInfo, error) {
+	rows, err := s.db.Query("SELECT key_hash, project_id, description, created_at FROM api_keys ORDER BY created_at DESC")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var keys []model.APIKeyInfo
+	for rows.Next() {
+		var k model.APIKeyInfo
+		if err := rows.Scan(&k.KeyHash, &k.ProjectID, &k.Description, &k.CreatedAt); err != nil {
+			continue
+		}
+		keys = append(keys, k)
+	}
+	return keys, rows.Err()
 }

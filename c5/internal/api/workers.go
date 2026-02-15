@@ -51,6 +51,11 @@ func (s *Server) handleWorkerRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Override project_id from auth context
+	if pid := projectIDFromContext(r); pid != "" {
+		req.ProjectID = pid
+	}
+
 	worker, err := s.store.RegisterWorker(&req)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -101,6 +106,12 @@ func (s *Server) handleWorkersList(w http.ResponseWriter, r *http.Request) {
 	}
 
 	projectID := r.URL.Query().Get("project_id")
+
+	// Auth context overrides query parameter
+	if pid := projectIDFromContext(r); pid != "" {
+		projectID = pid
+	}
+
 	workers, err := s.store.ListWorkers(projectID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
