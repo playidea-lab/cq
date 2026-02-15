@@ -156,7 +156,15 @@ func lighthouseRegisterAll(reg *mcp.Registry, store *SQLiteStore, agentID string
 		// Skip if already has a lighthouse entry (but backfill empty spec)
 		if existing, _ := store.getLighthouse(name); existing != nil {
 			if existing.Spec == "" {
-				spec := generateSpecFromSchema(name, tool.Description, tool.InputSchema)
+				// Prefer registry schema, fall back to DB-stored schema
+				schema := tool.InputSchema
+				if schema == nil && existing.InputSchema != "" {
+					var parsed map[string]any
+					if json.Unmarshal([]byte(existing.InputSchema), &parsed) == nil {
+						schema = parsed
+					}
+				}
+				spec := generateSpecFromSchema(name, existing.Description, schema)
 				store.updateLighthouseSpec(name, spec)
 				updated++
 			}
@@ -594,20 +602,24 @@ func LoadLighthousesOnStartup(reg *mcp.Registry, store *SQLiteStore) int {
 		// Re-read after seeding
 		lighthouses, _ = store.listLighthouses()
 	} else {
-		// Backfill empty specs for existing entries (e.g., after binary upgrade)
-		hasEmptySpec := false
+		// Backfill empty specs directly from DB entries (covers Hub/Drive/C1 tools not in registry)
+		backfilled := 0
 		for _, lh := range lighthouses {
-			if lh.Spec == "" {
-				hasEmptySpec = true
-				break
+			if lh.Spec != "" {
+				continue
+			}
+			var schema map[string]any
+			if lh.InputSchema != "" {
+				json.Unmarshal([]byte(lh.InputSchema), &schema)
+			}
+			spec := generateSpecFromSchema(lh.Name, lh.Description, schema)
+			if spec != "" {
+				store.updateLighthouseSpec(lh.Name, spec)
+				backfilled++
 			}
 		}
-		if hasEmptySpec {
-			if result, err := lighthouseRegisterAll(reg, store, "auto-backfill"); err == nil {
-				if n, ok := result.(map[string]any)["updated"].(int); ok && n > 0 {
-					fmt.Fprintf(os.Stderr, "c4: lighthouse spec backfill: %d tools updated\n", n)
-				}
-			}
+		if backfilled > 0 {
+			fmt.Fprintf(os.Stderr, "c4: lighthouse spec backfill: %d tools updated\n", backfilled)
 		}
 	}
 
