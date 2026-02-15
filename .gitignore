@@ -49,6 +49,7 @@ Thumbs.db
 # Go binaries
 c4-core/bin/
 c4-core/c4
+*.test
 
 # Agent memory (subagent artifacts)
 .claude/agent-memory/
