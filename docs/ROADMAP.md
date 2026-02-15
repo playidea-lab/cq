@@ -1,8 +1,8 @@
 # C4 Roadmap
 
-## Current Version: v0.19.0 (Phase 10.9 — Lighthouse Docs SSOT + 문서 현행화)
+## Current Version: v0.20.0 (Phase 11.0 — C5 Production Readiness + 문서 현행화)
 
-현재 버전은 **Go MCP Server (122 tools: Base 96 + Hub 26), Native Go/Dart LSP (goast/dartast), LLM Gateway, CDP Runner, Cloud Foundation, Knowledge Sync, c4 daemon, C0 Drive, C1 Context Hub, C3 EventBus v4, C5 Hub Server Phase 3 (hub.Client 완전 호환, 105 테스트), Lighthouse Docs SSOT (58개 rich spec)**을 포함합니다.
+현재 버전은 **Go MCP Server (122 tools: Base 96 + Hub 26), Native Go/Dart LSP (goast/dartast), LLM Gateway, CDP Runner, Cloud Foundation, Knowledge Sync, c4 daemon, C0 Drive, C1 Context Hub, C3 EventBus v4, C5 Hub Server Production Ready (multi-tenant, docker, 109 테스트), Lighthouse Docs SSOT (58개 rich spec)**을 포함합니다.
 
 ### 핵심 구조
 
@@ -41,12 +41,25 @@
 - **C1 Context Hub** - 채널 메시징, Context Keeper (LLM 요약), Agent 통합 (notifyKeeper 4-param)
 - **C1 Documents** - 마크다운 파일 편집기, 지속성 (persona/skill/spec/config)
 - **C3 EventBus v4** - gRPC daemon (UDS) + WebSocket bridge + DLQ + Filter v2, Python sidecar piggyback, task lifecycle events
-- **코드베이스**: Go ~32.7K (c4-core) + Go ~5.1K (c5) + Python 24.4K + C1 ~15.1K + Infra 0.9K = **~78.2K LOC (src)**, 테스트 ~43.1K LOC, **총 ~121.4K LOC**
-- **테스트**: Go ~1,200 (c4-core ~1,096 + c5 105) + Python 750 + Rust 73 = **~2,020 tests**
+- **코드베이스**: Go ~35.5K (c4-core) + Go ~4.9K (c5) + Python 24.4K + C1 ~15.1K + Infra 0.9K = **~80.8K LOC (src)**, 테스트 ~43.6K LOC, **총 ~124.4K LOC**
+- **테스트**: Go ~1,095 (c4-core ~986 + c5 109) + Python 750 + Rust 73 = **~1,918 tests**
 
 ---
 
 ## 최신 추가사항 (2026-02-15)
+
+### C5 Production Readiness — Multi-Tenant Architecture + Docker Deployment ✅
+
+**목표**: C5를 프로덕션 환경에 배포 가능한 상태로 준비 (다중 테넌트 격리 + 컨테이너화 + 배포 가이드)
+
+- **Multi-Tenant 지원**: Job/Worker에 project_id 추가, 프로젝트별 격리 (조직 다중 지원)
+- **hub.Client 호환성 보강**: 응답 배열 형식 (workers/jobs/edges), full DAG struct, blocking_reason 로직
+- **컨테이너 배포**: docker-compose.yml + Dockerfile multi-stage build (신규)
+- **설치/배포 자동화**: install.sh --with-hub 옵션, .env.example 템플릿 (신규)
+- **운영 가이드**: 팀 온보딩 (375줄) + 배포 체크리스트 (550줄) 신규 문서 2개
+- **테스트 강화**: Multi-project E2E 4개 추가 (105→109), c4-core 976→986
+- **규모**: c5 diff +383줄, install.sh/docs +1,215줄, 총 +1,598줄
+- **결과**: C5 운영 준비 완료, 다중 조직 지원 구조 수립
 
 ### Lighthouse A-lite — Docs SSOT 승격 + 문서 현행화 ✅
 

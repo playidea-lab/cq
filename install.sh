@@ -11,6 +11,17 @@ set -euo pipefail
 C4_REPO="https://git.pilab.co.kr/pi/c4.git"
 C4_DEFAULT_DIR="$HOME/c4"
 
+# ─── Flag Parsing ─────────────────────────────────────────────
+
+WITH_HUB=false
+DRY_RUN=false
+for arg in "$@"; do
+    case "$arg" in
+        --with-hub) WITH_HUB=true ;;
+        --dry-run) DRY_RUN=true ;;
+    esac
+done
+
 # ─── Colors & Helpers ───────────────────────────────────────
 
 RED='\033[0;31m'
@@ -118,6 +129,21 @@ mkdir -p bin
 go build -ldflags "$LDFLAGS" -o bin/c4 ./cmd/c4/
 ok "Go binary built (c4-core/bin/c4)"
 
+# ─── C5 Hub Binary Build (optional) ─────────────────────────
+if [ "$WITH_HUB" = true ]; then
+    info "Building C5 Hub binary..."
+    cd "$C4_ROOT/c5"
+    C5_LDFLAGS="-X main.version=$VERSION"
+    if [ "$DRY_RUN" = true ]; then
+        ok "C5 Hub binary (dry-run, skipped)"
+    else
+        mkdir -p bin
+        go build -ldflags "$C5_LDFLAGS" -o bin/c5 ./cmd/c5/
+        ok "C5 Hub binary built (c5/bin/c5)"
+    fi
+    cd "$C4_ROOT"
+fi
+
 # ─── Python Dependencies ───────────────────────────────────
 
 info "Installing Python dependencies..."
@@ -197,6 +223,14 @@ if [[ "${INSTALL_GLOBAL,,}" =~ ^y ]]; then
     fi
 fi
 
+if [ "$WITH_HUB" = true ] && [[ "${INSTALL_GLOBAL,,}" =~ ^y ]]; then
+    info "Building C5 Hub global binary..."
+    cd "$C4_ROOT/c5"
+    go build -ldflags "$C5_LDFLAGS" -o "$HOME/.local/bin/c5" ./cmd/c5/
+    ok "C5 Hub global binary installed (~/.local/bin/c5)"
+    cd "$C4_ROOT"
+fi
+
 # ─── .c4/ Directory Init ───────────────────────────────────
 
 mkdir -p "$C4_ROOT/.c4/knowledge/docs"
@@ -219,3 +253,10 @@ printf "  Binary:   ${BOLD}$C4_ROOT/c4-core/bin/c4${NC}\n"
 printf "\n${BOLD}Next steps:${NC}\n"
 printf "  1. Restart Claude Code to activate MCP tools\n"
 printf "  2. Run ${CYAN}c4 auth login${NC} to sign in (required for cloud features)\n\n"
+
+if [ "$WITH_HUB" = true ]; then
+    printf "${BOLD}C5 Hub:${NC}\n"
+    printf "  Binary: ${BOLD}$C4_ROOT/c5/bin/c5${NC}\n"
+    printf "  Start:  ${CYAN}c5 serve --port 8585 --db ./c5.db${NC}\n"
+    printf "  Docker: ${CYAN}cd c5 && docker compose up -d${NC}\n\n"
+fi

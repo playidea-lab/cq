@@ -72,6 +72,7 @@ func (s *Store) migrate() error {
 			memo        TEXT NOT NULL DEFAULT '',
 			timeout_sec INTEGER NOT NULL DEFAULT 0,
 			worker_id   TEXT NOT NULL DEFAULT '',
+			project_id  TEXT NOT NULL DEFAULT '',
 			created_at  TEXT NOT NULL,
 			started_at  TEXT,
 			finished_at TEXT,
@@ -79,6 +80,7 @@ func (s *Store) migrate() error {
 		);
 		CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);
 		CREATE INDEX IF NOT EXISTS idx_jobs_priority ON jobs(priority DESC, created_at ASC);
+		CREATE INDEX IF NOT EXISTS idx_jobs_project ON jobs(project_id);
 
 		CREATE TABLE IF NOT EXISTS workers (
 			id             TEXT PRIMARY KEY,
@@ -89,6 +91,7 @@ func (s *Store) migrate() error {
 			total_vram     REAL NOT NULL DEFAULT 0,
 			free_vram      REAL NOT NULL DEFAULT 0,
 			tags           TEXT NOT NULL DEFAULT '[]',
+			project_id     TEXT NOT NULL DEFAULT '',
 			last_heartbeat TEXT NOT NULL,
 			registered_at  TEXT NOT NULL
 		);
@@ -223,7 +226,21 @@ func (s *Store) migrate() error {
 		);
 		CREATE INDEX IF NOT EXISTS idx_artifacts_job ON artifacts(job_id);
 	`)
-	return err
+	if err != nil {
+		return err
+	}
+
+	// Migration: add project_id columns for existing databases.
+	// ALTER TABLE ADD COLUMN is idempotent-safe: ignore "duplicate column" errors.
+	for _, stmt := range []string{
+		`ALTER TABLE jobs ADD COLUMN project_id TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE workers ADD COLUMN project_id TEXT NOT NULL DEFAULT ''`,
+		`CREATE INDEX IF NOT EXISTS idx_jobs_project ON jobs(project_id)`,
+	} {
+		_, _ = s.db.Exec(stmt) // ignore errors (column already exists)
+	}
+
+	return nil
 }
 
 // =========================================================================
@@ -248,17 +265,18 @@ func (s *Store) CreateJob(req *model.JobSubmitRequest) (*model.Job, error) {
 		ExpID:       req.ExpID,
 		Memo:        req.Memo,
 		TimeoutSec:  req.TimeoutSec,
+		ProjectID:   req.ProjectID,
 		CreatedAt:   now,
 	}
 
 	_, err := s.db.Exec(`
 		INSERT INTO jobs (id, name, status, priority, workdir, command,
-			requires_gpu, env, tags, exp_id, memo, timeout_sec, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			requires_gpu, env, tags, exp_id, memo, timeout_sec, project_id, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		job.ID, job.Name, string(job.Status), job.Priority, job.Workdir, job.Command,
 		boolToInt(job.RequiresGPU),
 		marshalJSON(job.Env), marshalJSON(job.Tags),
-		job.ExpID, job.Memo, job.TimeoutSec,
+		job.ExpID, job.Memo, job.TimeoutSec, job.ProjectID,
 		now.Format(time.RFC3339),
 	)
 	if err != nil {
@@ -280,14 +298,25 @@ func (s *Store) GetJob(id string) (*model.Job, error) {
 	return j, nil
 }
 
-// ListJobs returns jobs filtered by status with limit/offset.
-func (s *Store) ListJobs(status string, limit, offset int) ([]*model.Job, error) {
+// ListJobs returns jobs filtered by status and/or project_id with limit/offset.
+func (s *Store) ListJobs(status, projectID string, limit, offset int) ([]*model.Job, error) {
 	query := jobSelectCols + " FROM jobs"
 	args := []any{}
+	conditions := []string{}
 
 	if status != "" {
-		query += " WHERE status = ?"
+		conditions = append(conditions, "status = ?")
 		args = append(args, status)
+	}
+	if projectID != "" {
+		conditions = append(conditions, "project_id = ?")
+		args = append(args, projectID)
+	}
+	if len(conditions) > 0 {
+		query += " WHERE " + conditions[0]
+		for _, c := range conditions[1:] {
+			query += " AND " + c
+		}
 	}
 	query += " ORDER BY created_at DESC"
 	if limit > 0 {
@@ -433,14 +462,20 @@ func (s *Store) CountByStatus(status model.JobStatus) (int, error) {
 }
 
 // GetHighestPriorityQueuedJob returns the next job to assign (highest priority, oldest).
-func (s *Store) GetHighestPriorityQueuedJob(requiresGPU bool) (*model.Job, error) {
+// If projectID is non-empty, only jobs from that project are considered.
+func (s *Store) GetHighestPriorityQueuedJob(requiresGPU bool, projectID string) (*model.Job, error) {
 	query := jobSelectCols + " FROM jobs WHERE status = 'QUEUED'"
+	args := []any{}
 	if requiresGPU {
 		query += " AND requires_gpu = 1"
 	}
+	if projectID != "" {
+		query += " AND project_id = ?"
+		args = append(args, projectID)
+	}
 	query += " ORDER BY priority DESC, created_at ASC LIMIT 1"
 
-	row := s.db.QueryRow(query)
+	row := s.db.QueryRow(query, args...)
 	j, err := scanJob(row)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -469,16 +504,17 @@ func (s *Store) RegisterWorker(req *model.WorkerRegisterRequest) (*model.Worker,
 		TotalVRAM:     req.TotalVRAM,
 		FreeVRAM:      req.FreeVRAM,
 		Tags:          req.Tags,
+		ProjectID:     req.ProjectID,
 		LastHeartbeat: now,
 		RegisteredAt:  now,
 	}
 
 	_, err := s.db.Exec(`
 		INSERT INTO workers (id, hostname, status, gpu_count, gpu_model,
-			total_vram, free_vram, tags, last_heartbeat, registered_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			total_vram, free_vram, tags, project_id, last_heartbeat, registered_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		w.ID, w.Hostname, w.Status, w.GPUCount, w.GPUModel,
-		w.TotalVRAM, w.FreeVRAM, marshalJSON(w.Tags),
+		w.TotalVRAM, w.FreeVRAM, marshalJSON(w.Tags), w.ProjectID,
 		now.Format(time.RFC3339), now.Format(time.RFC3339),
 	)
 	if err != nil {
@@ -521,12 +557,18 @@ func (s *Store) UpdateHeartbeat(req *model.HeartbeatRequest) error {
 	return nil
 }
 
-// ListWorkers returns all workers.
-func (s *Store) ListWorkers() ([]*model.Worker, error) {
-	rows, err := s.db.Query(`
-		SELECT id, hostname, status, gpu_count, gpu_model,
-			total_vram, free_vram, tags, last_heartbeat, registered_at
-		FROM workers ORDER BY registered_at DESC`)
+// ListWorkers returns all workers, optionally filtered by project_id.
+func (s *Store) ListWorkers(projectID string) ([]*model.Worker, error) {
+	query := `SELECT id, hostname, status, gpu_count, gpu_model,
+		total_vram, free_vram, tags, project_id, last_heartbeat, registered_at
+		FROM workers`
+	args := []any{}
+	if projectID != "" {
+		query += " WHERE project_id = ?"
+		args = append(args, projectID)
+	}
+	query += " ORDER BY registered_at DESC"
+	rows, err := s.db.Query(query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list workers: %w", err)
 	}
@@ -547,7 +589,7 @@ func (s *Store) ListWorkers() ([]*model.Worker, error) {
 func (s *Store) GetWorker(id string) (*model.Worker, error) {
 	row := s.db.QueryRow(`
 		SELECT id, hostname, status, gpu_count, gpu_model,
-			total_vram, free_vram, tags, last_heartbeat, registered_at
+			total_vram, free_vram, tags, project_id, last_heartbeat, registered_at
 		FROM workers WHERE id = ?`, id)
 	return scanWorkerSingle(row)
 }
@@ -575,7 +617,7 @@ const defaultLeaseDuration = 5 * time.Minute
 // Uses UPDATE-first pattern: atomically claims the highest-priority queued
 // job, then reads the claimed data. Prevents race conditions where two
 // workers could SELECT the same job before either UPDATEs it.
-func (s *Store) AcquireLease(workerID string, requiresGPU bool) (*model.Lease, *model.Job, error) {
+func (s *Store) AcquireLease(workerID string, requiresGPU bool, projectID string) (*model.Lease, *model.Job, error) {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return nil, nil, fmt.Errorf("begin tx: %w", err)
@@ -588,17 +630,22 @@ func (s *Store) AcquireLease(workerID string, requiresGPU bool) (*model.Lease, *
 
 	// UPDATE-first: atomically claim the highest-priority queued job.
 	// The subquery finds the target, UPDATE claims it — one atomic step.
-	gpuFilter := ""
+	extraFilter := ""
+	args := []any{nowStr, workerID}
 	if requiresGPU {
-		gpuFilter = " AND requires_gpu = 1"
+		extraFilter += " AND requires_gpu = 1"
+	}
+	if projectID != "" {
+		extraFilter += " AND project_id = ?"
+		args = append(args, projectID)
 	}
 	result, err := tx.Exec(`
 		UPDATE jobs SET status = 'RUNNING', started_at = ?, worker_id = ?
 		WHERE id = (
-			SELECT id FROM jobs WHERE status = 'QUEUED'`+gpuFilter+`
+			SELECT id FROM jobs WHERE status = 'QUEUED'`+extraFilter+`
 			ORDER BY priority DESC, created_at ASC LIMIT 1
 		) AND status = 'QUEUED'`,
-		nowStr, workerID)
+		args...)
 	if err != nil {
 		return nil, nil, fmt.Errorf("claim job: %w", err)
 	}
@@ -1717,7 +1764,7 @@ func (s *Store) ListArtifacts(jobID string) ([]model.Artifact, error) {
 
 const jobSelectCols = `SELECT id, name, status, priority, workdir, command,
 	requires_gpu, env, tags, exp_id, memo, timeout_sec, worker_id,
-	created_at, started_at, finished_at, exit_code`
+	created_at, started_at, finished_at, exit_code, project_id`
 
 type scanner interface {
 	Scan(dest ...any) error
@@ -1740,6 +1787,7 @@ func populateJob(sc scanner) (*model.Job, error) {
 		&requiresGPU, &envJSON, &tagsJSON,
 		&j.ExpID, &j.Memo, &j.TimeoutSec, &j.WorkerID,
 		&createdAt, &startedAt, &finishedAt, &exitCode,
+		&j.ProjectID,
 	)
 	if err != nil {
 		return nil, err
@@ -1783,7 +1831,7 @@ func scanWorkerRow(rows *sql.Rows) (*model.Worker, error) {
 
 	err := rows.Scan(
 		&w.ID, &w.Hostname, &w.Status, &w.GPUCount, &w.GPUModel,
-		&w.TotalVRAM, &w.FreeVRAM, &tagsJSON, &lastHB, &regAt,
+		&w.TotalVRAM, &w.FreeVRAM, &tagsJSON, &w.ProjectID, &lastHB, &regAt,
 	)
 	if err != nil {
 		return nil, err
@@ -1801,7 +1849,7 @@ func scanWorkerSingle(row *sql.Row) (*model.Worker, error) {
 
 	err := row.Scan(
 		&w.ID, &w.Hostname, &w.Status, &w.GPUCount, &w.GPUModel,
-		&w.TotalVRAM, &w.FreeVRAM, &tagsJSON, &lastHB, &regAt,
+		&w.TotalVRAM, &w.FreeVRAM, &tagsJSON, &w.ProjectID, &lastHB, &regAt,
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {

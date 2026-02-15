@@ -46,6 +46,7 @@ type Job struct {
 	ExpID       string            `json:"exp_id,omitempty"`
 	Memo        string            `json:"memo,omitempty"`
 	TimeoutSec  int               `json:"timeout_sec,omitempty"`
+	ProjectID   string            `json:"project_id,omitempty"`
 	WorkerID    string            `json:"worker_id,omitempty"`
 	CreatedAt   time.Time         `json:"created_at"`
 	StartedAt   *time.Time        `json:"started_at,omitempty"`
@@ -78,6 +79,7 @@ type Worker struct {
 	TotalVRAM     float64   `json:"total_vram_gb"`
 	FreeVRAM      float64   `json:"free_vram_gb"`
 	Tags          []string  `json:"tags,omitempty"`
+	ProjectID     string    `json:"project_id,omitempty"`
 	LastHeartbeat time.Time `json:"last_heartbeat"`
 	RegisteredAt  time.Time `json:"registered_at"`
 }
@@ -119,6 +121,7 @@ type JobSubmitRequest struct {
 	ExpID       string            `json:"exp_id,omitempty"`
 	Memo        string            `json:"memo,omitempty"`
 	TimeoutSec  int               `json:"timeout_sec,omitempty"`
+	ProjectID   string            `json:"project_id,omitempty"`
 }
 
 // JobSubmitResponse is returned from POST /v1/jobs/submit.
@@ -152,6 +155,7 @@ type WorkerRegisterRequest struct {
 	TotalVRAM    float64        `json:"total_vram_gb"`
 	FreeVRAM     float64        `json:"free_vram_gb"`
 	Tags         []string       `json:"tags,omitempty"`
+	ProjectID    string         `json:"project_id,omitempty"`
 	Capabilities map[string]any `json:"capabilities,omitempty"`
 }
 

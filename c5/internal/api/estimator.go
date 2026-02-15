@@ -57,7 +57,7 @@ func (e *Estimator) Estimate(job *model.Job) *model.EstimateResponse {
 	}
 }
 
-// EstimateWithQueue adds queue wait time and estimated start time to the estimate.
+// EstimateWithQueue adds queue wait time, estimated start time, and blocking reason.
 func (e *Estimator) EstimateWithQueue(job *model.Job) *model.EstimateResponse {
 	result := e.Estimate(job)
 
@@ -68,6 +68,25 @@ func (e *Estimator) EstimateWithQueue(job *model.Job) *model.EstimateResponse {
 		}
 		startTime := time.Now().Add(time.Duration(result.QueueWaitSec) * time.Second)
 		result.EstimatedStartTime = startTime.UTC().Format(time.RFC3339)
+
+		// Determine blocking reason
+		workers, _ := e.store.ListWorkers("")
+		if len(workers) == 0 {
+			reason := "no workers available"
+			result.BlockingReason = &reason
+		} else if job.RequiresGPU {
+			hasGPU := false
+			for _, w := range workers {
+				if w.GPUCount > 0 {
+					hasGPU = true
+					break
+				}
+			}
+			if !hasGPU {
+				reason := "no GPU workers available"
+				result.BlockingReason = &reason
+			}
+		}
 	}
 
 	return result

@@ -100,7 +100,8 @@ func (s *Server) handleWorkersList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	workers, err := s.store.ListWorkers()
+	projectID := r.URL.Query().Get("project_id")
+	workers, err := s.store.ListWorkers(projectID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -143,7 +144,7 @@ func (s *Server) handleLeaseAcquire(w http.ResponseWriter, r *http.Request) {
 
 	hasGPU := worker.GPUCount > 0
 
-	lease, job, err := s.store.AcquireLease(req.WorkerID, hasGPU)
+	lease, job, err := s.store.AcquireLease(req.WorkerID, hasGPU, worker.ProjectID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -152,7 +153,7 @@ func (s *Server) handleLeaseAcquire(w http.ResponseWriter, r *http.Request) {
 	if lease == nil {
 		// No GPU jobs? Try non-GPU jobs
 		if hasGPU {
-			lease, job, err = s.store.AcquireLease(req.WorkerID, false)
+			lease, job, err = s.store.AcquireLease(req.WorkerID, false, worker.ProjectID)
 			if err != nil {
 				writeError(w, http.StatusInternalServerError, err.Error())
 				return

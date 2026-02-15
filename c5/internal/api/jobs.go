@@ -56,6 +56,7 @@ func (s *Server) handleJobsList(w http.ResponseWriter, r *http.Request) {
 	}
 
 	status := r.URL.Query().Get("status")
+	projectID := r.URL.Query().Get("project_id")
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
 
@@ -63,26 +64,17 @@ func (s *Server) handleJobsList(w http.ResponseWriter, r *http.Request) {
 		limit = 50
 	}
 
-	jobs, err := s.store.ListJobs(status, limit, offset)
+	jobs, err := s.store.ListJobs(status, projectID, limit, offset)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	stats, _ := s.store.GetQueueStats()
-	runningCount := 0
-	queuedCount := 0
-	if stats != nil {
-		runningCount = stats.Running
-		queuedCount = stats.Queued
+	if jobs == nil {
+		jobs = []*model.Job{}
 	}
 
-	writeJSON(w, map[string]any{
-		"jobs":          jobs,
-		"total_count":   len(jobs),
-		"running_count": runningCount,
-		"queued_count":  queuedCount,
-	})
+	writeJSON(w, jobs)
 }
 
 func (s *Server) handleJobByID(w http.ResponseWriter, r *http.Request) {
@@ -325,6 +317,7 @@ func (s *Server) handleJobRetry(w http.ResponseWriter, r *http.Request, jobID st
 		ExpID:       job.ExpID,
 		Memo:        fmt.Sprintf("retry of %s", jobID),
 		TimeoutSec:  job.TimeoutSec,
+		ProjectID:   job.ProjectID,
 	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())

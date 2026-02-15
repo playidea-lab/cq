@@ -155,9 +155,8 @@ func TestJobsList(t *testing.T) {
 		t.Fatalf("expected 200, got %d", w.Code)
 	}
 
-	var resp map[string]any
-	decodeJSON(t, w, &resp)
-	jobs := resp["jobs"].([]any)
+	var jobs []*model.Job
+	decodeJSON(t, w, &jobs)
 	if len(jobs) != 3 {
 		t.Fatalf("expected 3 jobs, got %d", len(jobs))
 	}

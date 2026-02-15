@@ -72,7 +72,7 @@ func TestListJobs(t *testing.T) {
 		})
 	}
 
-	jobs, err := s.ListJobs("", 10, 0)
+	jobs, err := s.ListJobs("", "", 10, 0)
 	if err != nil {
 		t.Fatalf("list jobs: %v", err)
 	}
@@ -81,7 +81,7 @@ func TestListJobs(t *testing.T) {
 	}
 
 	// Filter by status
-	jobs, err = s.ListJobs("RUNNING", 10, 0)
+	jobs, err = s.ListJobs("RUNNING", "", 10, 0)
 	if err != nil {
 		t.Fatalf("list running: %v", err)
 	}
@@ -100,7 +100,7 @@ func TestListJobsPagination(t *testing.T) {
 		})
 	}
 
-	jobs, err := s.ListJobs("", 3, 0)
+	jobs, err := s.ListJobs("", "", 3, 0)
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}
@@ -108,7 +108,7 @@ func TestListJobsPagination(t *testing.T) {
 		t.Fatalf("expected 3, got %d", len(jobs))
 	}
 
-	jobs2, err := s.ListJobs("", 3, 3)
+	jobs2, err := s.ListJobs("", "", 3, 3)
 	if err != nil {
 		t.Fatalf("list offset: %v", err)
 	}
@@ -227,7 +227,7 @@ func TestGetHighestPriorityQueuedJob(t *testing.T) {
 	s.CreateJob(&model.JobSubmitRequest{Name: "high", Command: "echo", Priority: 10})
 	s.CreateJob(&model.JobSubmitRequest{Name: "mid", Command: "echo", Priority: 5})
 
-	job, err := s.GetHighestPriorityQueuedJob(false)
+	job, err := s.GetHighestPriorityQueuedJob(false, "")
 	if err != nil {
 		t.Fatalf("get highest priority: %v", err)
 	}
@@ -282,7 +282,7 @@ func TestRegisterAndListWorkers(t *testing.T) {
 		t.Fatalf("expected online, got %s", w.Status)
 	}
 
-	workers, err := s.ListWorkers()
+	workers, err := s.ListWorkers("")
 	if err != nil {
 		t.Fatalf("list workers: %v", err)
 	}
@@ -361,7 +361,7 @@ func TestAcquireAndRenewLease(t *testing.T) {
 	w, _ := s.RegisterWorker(&model.WorkerRegisterRequest{Hostname: "test"})
 	s.CreateJob(&model.JobSubmitRequest{Name: "job1", Command: "echo"})
 
-	lease, job, err := s.AcquireLease(w.ID, false)
+	lease, job, err := s.AcquireLease(w.ID, false, "")
 	if err != nil {
 		t.Fatalf("acquire lease: %v", err)
 	}
@@ -390,7 +390,7 @@ func TestAcquireLeaseNoJobs(t *testing.T) {
 
 	w, _ := s.RegisterWorker(&model.WorkerRegisterRequest{Hostname: "test"})
 
-	lease, job, err := s.AcquireLease(w.ID, false)
+	lease, job, err := s.AcquireLease(w.ID, false, "")
 	if err != nil {
 		t.Fatalf("acquire: %v", err)
 	}
@@ -406,7 +406,7 @@ func TestAcquireLeasePriority(t *testing.T) {
 	s.CreateJob(&model.JobSubmitRequest{Name: "low", Command: "echo", Priority: 1})
 	s.CreateJob(&model.JobSubmitRequest{Name: "high", Command: "echo", Priority: 10})
 
-	_, job, err := s.AcquireLease(w.ID, false)
+	_, job, err := s.AcquireLease(w.ID, false, "")
 	if err != nil {
 		t.Fatalf("acquire: %v", err)
 	}
@@ -421,7 +421,7 @@ func TestExpireLeases(t *testing.T) {
 	w, _ := s.RegisterWorker(&model.WorkerRegisterRequest{Hostname: "test"})
 	s.CreateJob(&model.JobSubmitRequest{Name: "job", Command: "echo"})
 
-	lease, _, _ := s.AcquireLease(w.ID, false)
+	lease, _, _ := s.AcquireLease(w.ID, false, "")
 
 	// Set lease to expired (UTC to match ExpireLeases)
 	s.db.Exec(`UPDATE leases SET expires_at = ? WHERE id = ?`,
@@ -436,7 +436,7 @@ func TestExpireLeases(t *testing.T) {
 	}
 
 	// Job should be re-queued
-	job, _ := s.GetHighestPriorityQueuedJob(false)
+	job, _ := s.GetHighestPriorityQueuedJob(false, "")
 	if job == nil {
 		t.Fatal("job should be re-queued after lease expiry")
 	}

@@ -36,10 +36,7 @@ func (s *Server) handleDAGCreate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusCreated)
-	writeJSON(w, model.DAGCreateResponse{
-		DAGID:  dag.ID,
-		Status: dag.Status,
-	})
+	writeJSON(w, dag)
 }
 
 func (s *Server) handleDAGsList(w http.ResponseWriter, r *http.Request) {

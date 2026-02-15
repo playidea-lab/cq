@@ -239,9 +239,9 @@ func TestIntegrationDAGLifecycle(t *testing.T) {
 	if w.Code != http.StatusCreated {
 		t.Fatalf("create DAG: expected 201, got %d: %s", w.Code, w.Body.String())
 	}
-	var dagResp model.DAGCreateResponse
+	var dagResp model.DAG
 	decodeJSON(t, w, &dagResp)
-	dagID := dagResp.DAGID
+	dagID := dagResp.ID
 
 	// Add nodes
 	w1 := doRequest(t, srv, "POST", "/v1/dags/"+dagID+"/nodes", model.DAGAddNodeRequest{
@@ -432,11 +432,9 @@ func TestIntegrationQueueStats(t *testing.T) {
 
 	// Cancel 1
 	wl := doRequest(t, srv, "GET", "/v1/jobs?limit=1", nil)
-	var listResp struct {
-		Jobs []model.Job `json:"jobs"`
-	}
-	decodeJSON(t, wl, &listResp)
-	doRequest(t, srv, "POST", "/v1/jobs/"+listResp.Jobs[0].ID+"/cancel", nil)
+	var jobsList []*model.Job
+	decodeJSON(t, wl, &jobsList)
+	doRequest(t, srv, "POST", "/v1/jobs/"+jobsList[0].ID+"/cancel", nil)
 
 	// Check stats
 	ws := doRequest(t, srv, "GET", "/v1/stats/queue", nil)
@@ -911,5 +909,194 @@ func TestWorkerMetricsAutoParseCompat(t *testing.T) {
 	}
 	if metricsResp.Metrics[0].Step != 42 {
 		t.Fatalf("expected step=42, got %d", metricsResp.Metrics[0].Step)
+	}
+}
+
+// =========================================================================
+// Multi-Project Isolation Tests (T-SVC-08)
+// =========================================================================
+
+// TestMultiProjectJobIsolation verifies that jobs from different projects are isolated.
+func TestMultiProjectJobIsolation(t *testing.T) {
+	srv := newTestServer(t)
+
+	// Submit jobs for project A
+	for i := 0; i < 2; i++ {
+		doRequest(t, srv, "POST", "/v1/jobs/submit", model.JobSubmitRequest{
+			Name: "proj-a-job", Command: "echo a", ProjectID: "project-a",
+		})
+	}
+
+	// Submit jobs for project B
+	doRequest(t, srv, "POST", "/v1/jobs/submit", model.JobSubmitRequest{
+		Name: "proj-b-job", Command: "echo b", ProjectID: "project-b",
+	})
+
+	// List all jobs — should return 3
+	w := doRequest(t, srv, "GET", "/v1/jobs?limit=50", nil)
+	var allJobs []*model.Job
+	decodeJSON(t, w, &allJobs)
+	if len(allJobs) != 3 {
+		t.Fatalf("expected 3 total jobs, got %d", len(allJobs))
+	}
+
+	// List project A jobs — should return 2
+	w = doRequest(t, srv, "GET", "/v1/jobs?project_id=project-a", nil)
+	var projAJobs []*model.Job
+	decodeJSON(t, w, &projAJobs)
+	if len(projAJobs) != 2 {
+		t.Fatalf("expected 2 project-a jobs, got %d", len(projAJobs))
+	}
+	for _, j := range projAJobs {
+		if j.ProjectID != "project-a" {
+			t.Fatalf("expected project_id=project-a, got %s", j.ProjectID)
+		}
+	}
+
+	// List project B jobs — should return 1
+	w = doRequest(t, srv, "GET", "/v1/jobs?project_id=project-b", nil)
+	var projBJobs []*model.Job
+	decodeJSON(t, w, &projBJobs)
+	if len(projBJobs) != 1 {
+		t.Fatalf("expected 1 project-b jobs, got %d", len(projBJobs))
+	}
+
+	// List nonexistent project — should return 0
+	w = doRequest(t, srv, "GET", "/v1/jobs?project_id=project-x", nil)
+	var noJobs []*model.Job
+	decodeJSON(t, w, &noJobs)
+	if len(noJobs) != 0 {
+		t.Fatalf("expected 0 project-x jobs, got %d", len(noJobs))
+	}
+}
+
+// TestMultiProjectWorkerIsolation verifies workers are project-scoped.
+func TestMultiProjectWorkerIsolation(t *testing.T) {
+	srv := newTestServer(t)
+
+	// Register workers for different projects
+	doRequest(t, srv, "POST", "/v1/workers/register", model.WorkerRegisterRequest{
+		Hostname: "worker-a", ProjectID: "project-a",
+	})
+	doRequest(t, srv, "POST", "/v1/workers/register", model.WorkerRegisterRequest{
+		Hostname: "worker-b", ProjectID: "project-b",
+	})
+
+	// List all workers
+	w := doRequest(t, srv, "GET", "/v1/workers", nil)
+	var allWorkers []*model.Worker
+	decodeJSON(t, w, &allWorkers)
+	if len(allWorkers) != 2 {
+		t.Fatalf("expected 2 total workers, got %d", len(allWorkers))
+	}
+
+	// List project A workers
+	w = doRequest(t, srv, "GET", "/v1/workers?project_id=project-a", nil)
+	var projAWorkers []*model.Worker
+	decodeJSON(t, w, &projAWorkers)
+	if len(projAWorkers) != 1 {
+		t.Fatalf("expected 1 project-a worker, got %d", len(projAWorkers))
+	}
+	if projAWorkers[0].Hostname != "worker-a" {
+		t.Fatalf("expected hostname=worker-a, got %s", projAWorkers[0].Hostname)
+	}
+}
+
+// TestMultiProjectLeaseIsolation verifies that a worker only gets jobs from its project.
+func TestMultiProjectLeaseIsolation(t *testing.T) {
+	srv := newTestServer(t)
+
+	// Submit job for project A
+	doRequest(t, srv, "POST", "/v1/jobs/submit", model.JobSubmitRequest{
+		Name: "a-only", Command: "echo a", ProjectID: "project-a",
+	})
+
+	// Register worker for project B
+	wReg := doRequest(t, srv, "POST", "/v1/workers/register", model.WorkerRegisterRequest{
+		Hostname: "worker-b", ProjectID: "project-b",
+	})
+	var regResp model.WorkerRegisterResponse
+	decodeJSON(t, wReg, &regResp)
+
+	// Worker B tries to acquire — should get nothing (project mismatch)
+	wLease := doRequest(t, srv, "POST", "/v1/leases/acquire", model.LeaseAcquireRequest{
+		WorkerID: regResp.WorkerID,
+	})
+	var leaseResp map[string]any
+	decodeJSON(t, wLease, &leaseResp)
+	if leaseResp["job_id"] != nil {
+		t.Fatalf("expected nil job_id for project mismatch, got %v", leaseResp["job_id"])
+	}
+
+	// Register worker for project A
+	wRegA := doRequest(t, srv, "POST", "/v1/workers/register", model.WorkerRegisterRequest{
+		Hostname: "worker-a", ProjectID: "project-a",
+	})
+	var regRespA model.WorkerRegisterResponse
+	decodeJSON(t, wRegA, &regRespA)
+
+	// Worker A acquires — should get the job
+	wLeaseA := doRequest(t, srv, "POST", "/v1/leases/acquire", model.LeaseAcquireRequest{
+		WorkerID: regRespA.WorkerID,
+	})
+	var leaseRespA model.LeaseAcquireResponse
+	decodeJSON(t, wLeaseA, &leaseRespA)
+	if leaseRespA.JobID == "" {
+		t.Fatalf("expected worker-a to get a job, got empty")
+	}
+	if leaseRespA.Job.ProjectID != "project-a" {
+		t.Fatalf("expected job project_id=project-a, got %s", leaseRespA.Job.ProjectID)
+	}
+}
+
+// TestMultiProjectEstimateBlockingReason verifies blocking_reason in estimates.
+func TestMultiProjectEstimateBlockingReason(t *testing.T) {
+	srv := newTestServer(t)
+
+	// Submit a GPU job with no workers
+	w := doRequest(t, srv, "POST", "/v1/jobs/submit", model.JobSubmitRequest{
+		Name: "gpu-job", Command: "train", RequiresGPU: true,
+	})
+	var submitResp model.JobSubmitResponse
+	decodeJSON(t, w, &submitResp)
+
+	// Get estimate — should have "no workers available"
+	w = doRequest(t, srv, "GET", "/v1/jobs/"+submitResp.JobID+"/estimate", nil)
+	var est model.EstimateResponse
+	decodeJSON(t, w, &est)
+	if est.BlockingReason == nil {
+		t.Fatal("expected blocking_reason, got nil")
+	}
+	if *est.BlockingReason != "no workers available" {
+		t.Fatalf("expected 'no workers available', got '%s'", *est.BlockingReason)
+	}
+
+	// Register a non-GPU worker
+	doRequest(t, srv, "POST", "/v1/workers/register", model.WorkerRegisterRequest{
+		Hostname: "cpu-worker",
+	})
+
+	// Get estimate — should have "no GPU workers available"
+	w = doRequest(t, srv, "GET", "/v1/jobs/"+submitResp.JobID+"/estimate", nil)
+	var est2 model.EstimateResponse
+	decodeJSON(t, w, &est2)
+	if est2.BlockingReason == nil {
+		t.Fatal("expected blocking_reason for GPU, got nil")
+	}
+	if *est2.BlockingReason != "no GPU workers available" {
+		t.Fatalf("expected 'no GPU workers available', got '%s'", *est2.BlockingReason)
+	}
+
+	// Register a GPU worker
+	doRequest(t, srv, "POST", "/v1/workers/register", model.WorkerRegisterRequest{
+		Hostname: "gpu-worker", GPUCount: 1, GPUModel: "A100",
+	})
+
+	// Get estimate — should have no blocking reason
+	w = doRequest(t, srv, "GET", "/v1/jobs/"+submitResp.JobID+"/estimate", nil)
+	var est3 model.EstimateResponse
+	decodeJSON(t, w, &est3)
+	if est3.BlockingReason != nil {
+		t.Fatalf("expected no blocking_reason, got '%s'", *est3.BlockingReason)
 	}
 }
