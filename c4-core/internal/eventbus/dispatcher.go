@@ -7,7 +7,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log"
 	"net"
 	"net/http"
@@ -28,7 +27,6 @@ type C1Poster interface {
 type Dispatcher struct {
 	store      *Store
 	mu         sync.RWMutex
-	rpcAddr    string // JSON-RPC sidecar address (e.g. "127.0.0.1:50051")
 	httpClient *http.Client
 	c1Poster   C1Poster // optional: for "c1_post" action type
 	sem        chan struct{} // bounded concurrency for dispatch goroutines
@@ -51,13 +49,6 @@ func (d *Dispatcher) Close() error {
 		return d.store.Close()
 	}
 	return nil
-}
-
-// SetRPCAddr sets the JSON-RPC sidecar address for "rpc" action type.
-func (d *Dispatcher) SetRPCAddr(addr string) {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	d.rpcAddr = addr
 }
 
 // SetC1Poster sets the C1 poster for "c1_post" action type.
@@ -116,8 +107,6 @@ func (d *Dispatcher) executeRule(eventID, eventType string, eventData json.RawMe
 	switch rule.ActionType {
 	case "log":
 		err = d.executeLog(eventID, eventType, eventData, rule)
-	case "rpc":
-		err = d.executeRPC(eventData, rule)
 	case "webhook":
 		err = d.executeWebhook(eventID, eventType, eventData, rule)
 	case "c1_post":
@@ -149,71 +138,6 @@ func (d *Dispatcher) executeRule(eventID, eventType string, eventData json.RawMe
 
 func (d *Dispatcher) executeLog(eventID, eventType string, eventData json.RawMessage, rule StoredRule) error {
 	log.Printf("[eventbus] [%s] event=%s id=%s data=%s\n", rule.Name, eventType, eventID, string(eventData))
-	return nil
-}
-
-func (d *Dispatcher) executeRPC(eventData json.RawMessage, rule StoredRule) error {
-	d.mu.RLock()
-	addr := d.rpcAddr
-	d.mu.RUnlock()
-
-	if addr == "" {
-		return fmt.Errorf("rpc address not configured")
-	}
-
-	var cfg struct {
-		Method       string         `json:"method"`
-		ArgsTemplate map[string]any `json:"args_template"`
-	}
-	if err := json.Unmarshal([]byte(rule.ActionConfig), &cfg); err != nil {
-		return fmt.Errorf("parse action_config: %w", err)
-	}
-	if cfg.Method == "" {
-		return fmt.Errorf("rpc method not specified in action_config")
-	}
-
-	// Resolve template variables from event data
-	args := resolveTemplate(cfg.ArgsTemplate, eventData)
-
-	// Build JSON-RPC request
-	rpcReq := map[string]any{
-		"jsonrpc": "2.0",
-		"id":      1,
-		"method":  cfg.Method,
-		"params":  args,
-	}
-	body, _ := json.Marshal(rpcReq)
-
-	conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
-	if err != nil {
-		return fmt.Errorf("connect to sidecar: %w", err)
-	}
-	defer conn.Close()
-
-	conn.SetDeadline(time.Now().Add(30 * time.Second))
-	if _, err := conn.Write(append(body, '\n')); err != nil {
-		return fmt.Errorf("write rpc: %w", err)
-	}
-
-	// Read response (single line)
-	buf := make([]byte, 64*1024)
-	n, err := conn.Read(buf)
-	if err != nil && err != io.EOF {
-		return fmt.Errorf("read rpc response: %w", err)
-	}
-
-	var rpcResp struct {
-		Error *struct {
-			Message string `json:"message"`
-		} `json:"error"`
-	}
-	if err := json.Unmarshal(buf[:n], &rpcResp); err != nil {
-		return fmt.Errorf("parse rpc response: %w", err)
-	}
-	if rpcResp.Error != nil {
-		return fmt.Errorf("rpc error: %s", rpcResp.Error.Message)
-	}
-
 	return nil
 }
 

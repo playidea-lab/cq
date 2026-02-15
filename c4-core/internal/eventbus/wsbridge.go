@@ -37,10 +37,9 @@ type WSBridge struct {
 }
 
 type wsClient struct {
-	conn     net.Conn
-	pattern  string
-	ch       chan []byte
-	done     chan struct{}
+	conn      net.Conn
+	pattern   string
+	done      chan struct{}
 	closeOnce sync.Once
 }
 
@@ -103,7 +102,6 @@ func (b *WSBridge) handleEvents(w http.ResponseWriter, r *http.Request) {
 	client := &wsClient{
 		conn:    conn,
 		pattern: pattern,
-		ch:      make(chan []byte, 128),
 		done:    make(chan struct{}),
 	}
 

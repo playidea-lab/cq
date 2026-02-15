@@ -57,58 +57,6 @@ func TestDispatchWebhook(t *testing.T) {
 	}
 }
 
-func TestDispatchRPC(t *testing.T) {
-	// Start a fake JSON-RPC server
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer ln.Close()
-
-	var rpcReq []byte
-	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		conn, err := ln.Accept()
-		if err != nil {
-			return
-		}
-		defer conn.Close()
-		buf := make([]byte, 4096)
-		n, _ := conn.Read(buf)
-		rpcReq = buf[:n]
-		conn.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":"ok"}` + "\n"))
-	}()
-
-	s := tempStore(t)
-	d := NewDispatcher(s)
-	d.SetRPCAddr(ln.Addr().String())
-
-	cfg := `{"method":"C2ParseDocument","args_template":{"file_path":"{{data.path}}"}}`
-	s.AddRule("rpc-test", "drive.uploaded", "", "rpc", cfg, true, 0)
-
-	evData := json.RawMessage(`{"path":"/docs/paper.pdf"}`)
-	evID, _ := s.StoreEvent("drive.uploaded", "c4.drive", evData, "")
-	d.DispatchSync(evID, "drive.uploaded", evData)
-
-	wg.Wait()
-
-	if len(rpcReq) == 0 {
-		t.Fatal("RPC server was not called")
-	}
-
-	var req map[string]any
-	json.Unmarshal(rpcReq, &req)
-	if req["method"] != "C2ParseDocument" {
-		t.Errorf("expected method C2ParseDocument, got %v", req["method"])
-	}
-	params, _ := req["params"].(map[string]any)
-	if params["file_path"] != "/docs/paper.pdf" {
-		t.Errorf("expected file_path /docs/paper.pdf, got %v", params["file_path"])
-	}
-}
-
 func TestDispatchFilterMatch(t *testing.T) {
 	s := tempStore(t)
 	d := NewDispatcher(s)
