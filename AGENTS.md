@@ -203,11 +203,31 @@ Claude Code → Go MCP Server (stdio, 112 tools)
 - `internal/worker/` — Worker manager
 - `internal/validation/` — Validation runner
 
-### 빌드/테스트
+### 빌드/테스트/설치
+
 ```bash
+# 빌드 + 테스트
 cd c4-core && go build ./... && go test ./...
-# Binary: c4-core/bin/c4 (12MB)
+
+# 사용자 설치 (CRITICAL — .mcp.json이 이 경로를 참조)
+cd c4-core && go build -o ~/.local/bin/c4 ./cmd/c4/
+
+# 개발용 바이너리 (CI/로컬 테스트)
+cd c4-core && go build -o bin/c4 ./cmd/c4/
 ```
+
+### 바이너리 관리 규칙 (CRITICAL)
+
+| 경로 | 용도 | 갱신 시점 |
+|------|------|----------|
+| `~/.local/bin/c4` | **운영 바이너리** — `.mcp.json`이 참조, Claude Code가 실행 | 코드 변경 후 반드시 재빌드 |
+| `c4-core/bin/c4` | 개발/테스트용 | `go build ./...` 시 자동 |
+
+**필수 규칙**:
+1. **코드 수정 후 `~/.local/bin/c4` 재빌드 필수** — 안 하면 구 바이너리가 계속 실행됨
+2. **`cp` 복사 금지** — macOS ARM64에서 코드 서명 무효화. 반드시 `go build -o` 사용
+3. **재빌드 후 세션 재시작** — Claude Code가 세션 시작 시 MCP 서버를 로드하므로
+4. **`c4-finish` 스킬에서 자동 설치** — 릴리스 루틴에 `go build -o ~/.local/bin/c4` 포함 권장
 
 ---
 

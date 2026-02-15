@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/joho/godotenv"
 
@@ -122,6 +123,15 @@ func newMCPServer() (*mcpServer, error) {
 		if cloudCfg.URL != "" && cloudCfg.AnonKey != "" {
 			authClient := cloud.NewAuthClient(cloudCfg.URL, cloudCfg.AnonKey)
 			if session, sessErr := authClient.GetSession(); sessErr == nil && session != nil {
+				// Auto-refresh if token expired
+				if session.ExpiresAt > 0 && time.Now().Unix() >= session.ExpiresAt {
+					if refreshed, refErr := authClient.RefreshToken(); refErr == nil {
+						fmt.Fprintln(os.Stderr, "c4: cloud session refreshed")
+						session = refreshed
+					} else {
+						fmt.Fprintf(os.Stderr, "c4: cloud session expired, refresh failed: %v\n", refErr)
+					}
+				}
 				cloudAuthToken = session.AccessToken
 			}
 			cloudProjectID = cloudCfg.ProjectID
