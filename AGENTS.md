@@ -172,7 +172,7 @@ CP-001:  체크포인트
 
 ## Go Core (c4-core/) — Primary MCP Server
 
-> `c4-core/` — Go 기반 MCP 서버 (Primary). 112개 도구 (Base 86 + Hub 26). Python sidecar로 LSP/Knowledge/GPU/C2/Research 기능 위임.
+> `c4-core/` — Go 기반 MCP 서버 (Primary). 112개 도구 (Base 86 + Hub 26). Python sidecar로 LSP/C2 Doc 기능 위임 (10 proxy tools).
 
 ### 아키텍처
 ```
@@ -186,10 +186,10 @@ Claude Code → Go MCP Server (stdio, 112 tools)
                 ├→ Drive (6): upload, download, list, delete, info, mkdir
                 ├→ Hub Client (26): job, worker, metrics, artifact, DAG, edge, deploy
                 ├→ Go Native (Tier 1) (13): Research (5) + C2 (6) + GPU (2)
-                └→ JSON-RPC proxy (17) → Python Sidecar (Tier 2: LSP 7 + Knowledge 6 + Review 1)
+                ├→ Go Native (Tier 2) (7): Knowledge (7) — Store+FTS5+Vector+Sync
+                └→ JSON-RPC proxy (10) → Python Sidecar (LSP 7 + C2 Doc 2 + Onboard 1)
                                             ├→ LSP (multilspy, Jedi, tree-sitter)
-                                            ├→ Knowledge Store (FTS5 + Vector)
-                                            └→ Review Skill (LLM based)
+                                            └→ C2 Doc (pymupdf, python-docx)
 ```
 
 ### 패키지 구조
