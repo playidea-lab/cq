@@ -8,19 +8,31 @@ Plan, execute, review, and learn — automated end-to-end.
 
 ![Go](https://img.shields.io/badge/Go-1.22+-00ADD8?logo=go&logoColor=white)
 ![Python](https://img.shields.io/badge/Python-3.11+-3776AB?logo=python&logoColor=white)
-![Tools](https://img.shields.io/badge/MCP_Tools-112-blueviolet)
-![Tests](https://img.shields.io/badge/Tests-1%2C900+-brightgreen)
+![Tools](https://img.shields.io/badge/MCP_Tools-152-blueviolet)
+![Tests](https://img.shields.io/badge/Tests-1%2C918+-brightgreen)
 ![License](https://img.shields.io/badge/License-Personal_Study-orange)
 
 </div>
 
 ---
 
-C4 turns Claude Code into a full project management system. It provides **112 MCP tools**, a structured workflow engine, multi-lens code review, knowledge persistence, and GPU-aware task scheduling — all through natural language.
+C4 turns Claude Code into a full project management system. It provides **152 MCP tools**, a structured workflow engine, multi-lens code review, knowledge persistence, distributed job scheduling, and GPU-aware task management — all through natural language.
 
 ```
 You: /c4-plan "Add user authentication with JWT"
 C4:  Creates 5 tasks with DoD, spawns workers, reviews each PR, learns from decisions.
+```
+
+## C Series Ecosystem
+
+```
+C0 Drive    — Cloud file storage (Supabase Storage)
+C1 Desktop  — Tauri 2.x project explorer (6-tab view)
+C2 Docs     — Document lifecycle (parsing/workspace/profile)
+C3 EventBus — gRPC event bus (UDS + WebSocket + DLQ)
+C4 Engine   — MCP orchestration engine (this project)
+C5 Hub      — Distributed job queue server (Worker Pull, Lease-based)
+C9 Knowledge — Knowledge management (FTS5 + pgvector + Embedding + Usage)
 ```
 
 ## How It Works
@@ -37,31 +49,39 @@ C4 breaks features into tasks, assigns them to workers (parallel) or claims them
 ## Architecture
 
 ```
-Claude Code ──stdio──▶ Go MCP Server (112 tools)
+Claude Code ──stdio──▶ Go MCP Server (100 base + 26 Hub + 26 extras = 152 tools)
                         │
                         ├── Go Native ──────── State, Tasks, Files, Git, Validation
                         ├── SQLite Store ───── Specs, Designs, Checkpoints, Artifacts
-                        ├── Knowledge (Go) ─── FTS5 + Vector Search, RRF Hybrid
+                        ├── Knowledge (Go) ─── FTS5 + pgvector + Embedding + 3-way RRF
+                        │                      ├── Usage Tracking (view/cite/search_hit)
+                        │                      ├── Document Ingestion (chunker + RAG)
+                        │                      └── Visibility (private/team/public)
                         ├── Research (Go) ──── Research Loop, C2 Workspace, GPU
                         ├── Soul Engine ────── Persona evolution, Digital Twin, Reflection
-                        ├── LLM Gateway ────── Claude / GPT / Gemini / Ollama
+                        ├── LLM Gateway ────── Claude / GPT / Gemini / Ollama + Embeddings
                         ├── CDP Runner ─────── Browser automation (DevTools Protocol)
-                        ├── Hub Client ─HTTP─▶ Daemon Scheduler
-                        │                      ├── Process Manager (max-jobs, GPU alloc)
+                        ├── EventBus ──gRPC──▶ Event daemon (UDS + WebSocket + DLQ)
+                        ├── Cloud Layer ────── Supabase (Auth, CloudStore, HybridStore)
+                        ├── Drive ─────────── Supabase Storage (upload/download/mkdir)
+                        ├── C1 Context Hub ─── Search, Mentions, Briefing
+                        ├── Hub Client ─HTTP─▶ C5 Hub Server (distributed job queue)
+                        │                      ├── Multi-tenant isolation (project_id)
                         │                      ├── DAG Orchestration
                         │                      └── Edge Deployment
                         │
                         └── JSON-RPC ──TCP──▶ Python Sidecar (10 tools)
-                                              ├── LSP (Multilspy/Jedi/Tree-sitter)
+                                              ├── LSP (Multilspy/Jedi — Python/JS/TS)
                                               └── C2 Document Parsing
 ```
 
 | Component | Directory | Stack |
 |-----------|-----------|-------|
-| Go MCP Server | `c4-core/` | Go, SQLite, Cobra CLI |
-| Daemon Scheduler | `c4-core/internal/daemon/` | Go, REST API, GPU monitoring |
-| Python Sidecar | `c4/` | Python, multilspy, sqlite-vec |
+| Go MCP Server | `c4-core/` | Go 1.22+, SQLite, Cobra CLI |
+| C5 Hub Server | `c5/` | Go, SQLite, REST API, WebSocket |
+| Python Sidecar | `c4/` | Python 3.11+, multilspy, sqlite-vec |
 | C1 Desktop App | `c1/` | Tauri 2.x, React, Rust |
+| Cloud Infra | `infra/supabase/` | PostgreSQL, pgvector, RLS |
 
 ## Quick Start
 
@@ -74,12 +94,15 @@ curl -sSL https://git.pilab.co.kr/pi/c4/raw/main/install.sh | bash
 # Or clone + install
 git clone https://git.pilab.co.kr/pi/c4.git && cd c4
 ./install.sh
+
+# Optional: install C5 Hub Server
+./install.sh --with-hub
 ```
 
 Restart Claude Code, then:
 
 ```bash
-/c4-status          # Verify connection (112 tools registered)
+/c4-status          # Verify connection (152 tools registered)
 /c4-plan "feature"  # Start planning
 /c4-run             # Execute tasks
 ```
@@ -129,21 +152,28 @@ c4_lighthouse(action="promote", name="export_api")
 | `remove` | Deprecate and unregister from MCP |
 
 ### Code Intelligence
-- **3-tier LSP fallback** — Multilspy → Jedi → Tree-sitter for symbol resolution
+- **Native LSP** — Go (go/ast), Dart (regex), Python/JS/TS (Jedi + multilspy via sidecar)
 - **Symbol operations** — Find, rename, replace body, insert before/after across the project
 - **Multi-lens review** — Security, performance, architecture, testing perspectives per review
 
-### Knowledge & Learning
-- **Persistent knowledge store** — Experiments, patterns, insights, hypotheses with hybrid search (FTS5 + Vector)
+### Knowledge & Learning (C9)
+- **Real embeddings** — OpenAI text-embedding-3-small (1536d) for semantic search
+- **3-way hybrid search** — FTS5 + Vector similarity + Popularity ranking via Reciprocal Rank Fusion
+- **Visibility control** — private / team / public documents with cross-project discovery
+- **Document ingestion** — File → chunk → embed → store pipeline (RAG-ready)
+- **Usage tracking** — Automatic view/cite/search_hit tracking with popularity boost
+- **Cloud sync** — Bidirectional sync with Supabase (pgvector + RLS)
 - **Soul system** — Per-user judgment profiles that evolve from task outcomes
 - **Digital Twin** — `c4_reflect` for pattern analysis, growth tracking, challenge identification
-- **Persona evolution** — 27 role-specific personas with automatic behavioral learning
 
 ### Infrastructure
-- **LLM Gateway** — Route to Claude, GPT, Gemini, or Ollama with cost tracking
+- **LLM Gateway** — Route to Claude, GPT, Gemini, or Ollama with cost tracking + embeddings
+- **C5 Hub Server** — Distributed job queue with multi-tenant isolation, lease-based scheduling
 - **Daemon Scheduler** — Local job queue with GPU allocation, duration estimation, and retry
 - **DAG Orchestration** — Multi-step pipelines with dependency resolution
 - **Edge Deployment** — Push artifacts to edge devices with auto-trigger rules
+- **C3 EventBus** — gRPC event daemon with WebSocket bridge, DLQ, correlation tracking
+- **C0 Drive** — Supabase Storage integration (upload, download, mkdir, list)
 - **CDP Runner** — Browser automation via Chrome DevTools Protocol
 
 ### Developer Experience
@@ -152,7 +182,7 @@ c4_lighthouse(action="promote", name="export_api")
 - **7 hooks** — Secret scanning, force-push prevention, auto-lint (Python/TypeScript)
 - **Economic mode** — Model routing presets (standard / economic / ultra-economic / quality)
 
-## MCP Tools (112)
+## MCP Tools (152)
 
 | Category | Count | Examples |
 |----------|-------|---------|
@@ -160,13 +190,29 @@ c4_lighthouse(action="promote", name="export_api")
 | Files & Git | 11 | `c4_find_file`, `c4_search_for_pattern`, `c4_read_file`, `c4_search_commits` |
 | Discovery | 12 | `c4_save_spec`, `c4_save_design`, `c4_artifact_save`, `c4_lighthouse` (TDD loop) |
 | Code Intelligence | 7 | `c4_find_symbol`, `c4_get_symbols_overview`, `c4_replace_symbol_body` |
-| Knowledge (Go) | 7 | `c4_knowledge_search`, `c4_knowledge_record`, `c4_experiment_record` |
-| Research (Go) | 5 | `c4_research_start`, `c4_research_next`, `c4_research_record` |
+| Knowledge | 12 | `c4_knowledge_search`, `c4_knowledge_discover`, `c4_knowledge_ingest`, `c4_knowledge_stats` |
+| Research | 5 | `c4_research_start`, `c4_research_next`, `c4_research_record` |
 | Soul & Team | 10 | `c4_soul_resolve`, `c4_persona_evolve`, `c4_reflect`, `c4_whoami` |
 | LLM & CDP | 5 | `c4_llm_call`, `c4_llm_providers`, `c4_cdp_run` |
 | C1 & C2 | 11 | `c1_search`, `c4_parse_document`, `c4_workspace_create`, `c4_persona_learn` |
 | Drive | 6 | `c4_drive_upload`, `c4_drive_download`, `c4_drive_list` |
+| EventBus | 6 | `c4_event_publish`, `c4_rule_add`, `c4_rule_list`, `c4_rule_toggle` |
+| Lighthouse | 6 | `c4_lighthouse` (register/list/get/promote/update/remove) |
 | Hub | 26 | `c4_hub_submit`, `c4_hub_dag_create`, `c4_hub_edge_register`, `c4_hub_deploy` |
+
+## Codebase
+
+| Language | Source | Tests | Total |
+|----------|--------|-------|-------|
+| Go (`c4-core/`) | ~35.5K | ~29.2K | ~64.7K |
+| Go (`c5/`) | ~5.1K | ~3.0K | ~8.2K |
+| Python (`c4/`) | ~24.4K | ~11.6K | ~36.0K |
+| Rust (`c1/`) | ~8.5K | (built-in) | ~8.5K |
+| TypeScript (`c1/`) | ~6.6K | — | ~6.6K |
+| SQL (`infra/`) | ~0.9K | — | ~0.9K |
+| **Total** | **~81K** | **~44K** | **~125K LOC** |
+
+**Tests:** Go 1,095 (c4-core 986 + c5 109) · Python 750 · Rust 73 → **~1,918 total**
 
 ## Configuration
 
@@ -215,7 +261,10 @@ See [c1/README.md](c1/README.md) for details.
 
 ```bash
 # Go MCP Server
-cd c4-core && go build ./... && go test ./...
+cd c4-core && go build ./... && go test -p 1 ./...
+
+# C5 Hub Server
+cd c5 && go build ./... && go test ./...
 
 # Python Sidecar
 uv run pytest tests/
