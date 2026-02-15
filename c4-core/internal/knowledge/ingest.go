@@ -1,7 +1,6 @@
 package knowledge
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -70,26 +69,35 @@ func Ingest(store *Store, searcher *Searcher, filePath string, opts IngestOpts) 
 	}
 	chunks := ChunkText(body, maxTokens)
 
-	// Index each chunk for vector search
+	// Batch-index all chunks + parent document
 	if searcher != nil && searcher.vectorStore != nil {
+		var batchIDs []string
+		var batchDocs []*Document
+
 		for _, chunk := range chunks {
 			chunkID := fmt.Sprintf("%s-chunk-%d", docID, chunk.Index)
-			chunkDoc := &Document{
+			batchIDs = append(batchIDs, chunkID)
+			batchDocs = append(batchDocs, &Document{
 				ID:        chunkID,
 				Type:      TypeInsight,
 				Title:     fmt.Sprintf("%s (chunk %d)", title, chunk.Index),
 				Body:      chunk.Body,
 				CreatedAt: time.Now().UTC().Format(time.RFC3339),
-			}
-			if err := searcher.IndexDocument(chunkID, chunkDoc); err != nil {
-				// Non-fatal: continue with other chunks
-				fmt.Fprintf(os.Stderr, "c4: index chunk %d: %v\n", chunk.Index, err)
-			}
+			})
 		}
-	}
 
-	// Also index the parent document
-	if searcher != nil {
+		// Add parent document
+		parentDoc, _ := store.Get(docID)
+		if parentDoc != nil {
+			batchIDs = append(batchIDs, docID)
+			batchDocs = append(batchDocs, parentDoc)
+		}
+
+		if err := searcher.BatchIndexDocuments(batchIDs, batchDocs); err != nil {
+			fmt.Fprintf(os.Stderr, "c4: batch index: %v\n", err)
+		}
+	} else if searcher != nil {
+		// FTS-only mode: index parent for metadata enrichment
 		doc, _ := store.Get(docID)
 		if doc != nil {
 			searcher.IndexDocument(docID, doc)
@@ -138,21 +146,31 @@ func IngestText(store *Store, searcher *Searcher, content string, opts IngestOpt
 	}
 	chunks := ChunkText(content, maxTokens)
 
+	// Batch-index chunks + parent
 	if searcher != nil && searcher.vectorStore != nil {
-		ctx := context.Background()
-		_ = ctx
+		var batchIDs []string
+		var batchDocs []*Document
+
 		for _, chunk := range chunks {
 			chunkID := fmt.Sprintf("%s-chunk-%d", docID, chunk.Index)
-			chunkDoc := &Document{
+			batchIDs = append(batchIDs, chunkID)
+			batchDocs = append(batchDocs, &Document{
 				ID:    chunkID,
 				Title: fmt.Sprintf("%s (chunk %d)", title, chunk.Index),
 				Body:  chunk.Body,
-			}
-			searcher.IndexDocument(chunkID, chunkDoc)
+			})
 		}
-	}
 
-	if searcher != nil {
+		parentDoc, _ := store.Get(docID)
+		if parentDoc != nil {
+			batchIDs = append(batchIDs, docID)
+			batchDocs = append(batchDocs, parentDoc)
+		}
+
+		if err := searcher.BatchIndexDocuments(batchIDs, batchDocs); err != nil {
+			fmt.Fprintf(os.Stderr, "c4: batch index: %v\n", err)
+		}
+	} else if searcher != nil {
 		doc, _ := store.Get(docID)
 		if doc != nil {
 			searcher.IndexDocument(docID, doc)

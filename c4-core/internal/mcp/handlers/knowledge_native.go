@@ -329,11 +329,12 @@ func knowledgeSearchNativeHandler(opts *KnowledgeNativeOpts) mcp.HandlerFunc {
 		resultList := make([]map[string]any, len(results))
 		for i, r := range results {
 			resultList[i] = map[string]any{
-				"id":        r.ID,
-				"title":     r.Title,
-				"type":      r.Type,
-				"domain":    r.Domain,
-				"rrf_score": r.RRFScore,
+				"id":               r.ID,
+				"title":            r.Title,
+				"type":             r.Type,
+				"domain":           r.Domain,
+				"rrf_score":        r.RRFScore,
+				"embedding_source": r.EmbeddingSource,
 			}
 		}
 
@@ -776,6 +777,10 @@ func knowledgeStatsNativeHandler(opts *KnowledgeNativeOpts) mcp.HandlerFunc {
 			stats["vector_count"] = vs.Count()
 			stats["vector_dimension"] = vs.Dimension()
 			stats["has_real_embedder"] = vs.HasRealEmbedder()
+			modelCounts, _ := vs.CountByModel()
+			if len(modelCounts) > 0 {
+				stats["vector_by_model"] = modelCounts
+			}
 		}
 
 		return stats, nil

@@ -241,3 +241,115 @@ func searchString(s, sub string) bool {
 	}
 	return false
 }
+
+func TestBatchIndexDocuments(t *testing.T) {
+	dir := t.TempDir()
+	store, err := NewStore(filepath.Join(dir, "knowledge"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	vs, _ := NewVectorStore(store.DB(), 384, nil)
+	searcher := NewSearcher(store, vs)
+
+	docs := []*Document{
+		{ID: "d1", Title: "First", Body: "hello world"},
+		{ID: "d2", Title: "Second", Body: "foo bar"},
+		{ID: "d3", Title: "Third", Body: "baz qux"},
+	}
+	ids := []string{"d1", "d2", "d3"}
+
+	err = searcher.BatchIndexDocuments(ids, docs)
+	if err != nil {
+		t.Fatalf("BatchIndexDocuments: %v", err)
+	}
+
+	if vs.Count() != 3 {
+		t.Errorf("vector count: got %d, want 3", vs.Count())
+	}
+
+	// All should be indexed
+	for _, id := range ids {
+		if !vs.Exists(id) {
+			t.Errorf("vector not found for %s", id)
+		}
+	}
+}
+
+func TestBatchIndexDocuments_LengthMismatch(t *testing.T) {
+	dir := t.TempDir()
+	store, _ := NewStore(filepath.Join(dir, "knowledge"))
+	defer store.Close()
+
+	vs, _ := NewVectorStore(store.DB(), 384, nil)
+	searcher := NewSearcher(store, vs)
+
+	err := searcher.BatchIndexDocuments([]string{"a"}, []*Document{{}, {}})
+	if err == nil {
+		t.Error("expected error for length mismatch")
+	}
+}
+
+func TestReindexDocument(t *testing.T) {
+	dir := t.TempDir()
+	store, _ := NewStore(filepath.Join(dir, "knowledge"))
+	defer store.Close()
+
+	vs, _ := NewVectorStore(store.DB(), 384, nil)
+	searcher := NewSearcher(store, vs)
+
+	// Index a doc and its "chunks"
+	doc := &Document{ID: "doc1", Title: "Original", Body: "original content"}
+	searcher.IndexDocument("doc1", doc)
+	vs.Add("doc1-chunk-0", MockEmbedding("chunk0", 384), "mock")
+	vs.Add("doc1-chunk-1", MockEmbedding("chunk1", 384), "mock")
+
+	if vs.Count() != 3 {
+		t.Fatalf("before reindex: got %d vectors, want 3", vs.Count())
+	}
+
+	// Reindex with updated content
+	updatedDoc := &Document{ID: "doc1", Title: "Updated", Body: "updated content"}
+	err := searcher.ReindexDocument("doc1", updatedDoc)
+	if err != nil {
+		t.Fatalf("ReindexDocument: %v", err)
+	}
+
+	// Should have exactly 1 vector (parent only, chunks were deleted and not re-created by ReindexDocument)
+	if vs.Count() != 1 {
+		t.Errorf("after reindex: got %d vectors, want 1", vs.Count())
+	}
+	if !vs.Exists("doc1") {
+		t.Error("doc1 should exist after reindex")
+	}
+}
+
+func TestSearchResultEmbeddingSource(t *testing.T) {
+	dir := t.TempDir()
+	store, _ := NewStore(filepath.Join(dir, "knowledge"))
+	defer store.Close()
+
+	vs, _ := NewVectorStore(store.DB(), 384, nil)
+	searcher := NewSearcher(store, vs)
+
+	// Create and index a document
+	metadata := map[string]any{"title": "Test Doc", "tags": []string{}}
+	docID, _ := store.Create(TypeInsight, metadata, "some content here")
+	doc, _ := store.Get(docID)
+	searcher.IndexDocument(docID, doc)
+
+	results, err := searcher.Search("some content", 10, nil)
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+
+	if len(results) == 0 {
+		t.Fatal("expected at least 1 result")
+	}
+
+	// Since we're using MockEmbedding, source should be "mock"
+	if results[0].EmbeddingSource != "mock" {
+		t.Errorf("embedding_source: got %q, want mock", results[0].EmbeddingSource)
+	}
+}

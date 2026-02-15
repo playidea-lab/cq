@@ -2,6 +2,7 @@ package knowledge
 
 import (
 	"context"
+	"fmt"
 	"sort"
 )
 
@@ -40,11 +41,12 @@ func (s *Searcher) VectorStore() *VectorStore {
 
 // SearchResult holds a single hybrid search result.
 type SearchResult struct {
-	ID       string  `json:"id"`
-	Title    string  `json:"title"`
-	Type     string  `json:"type"`
-	Domain   string  `json:"domain"`
-	RRFScore float64 `json:"rrf_score"`
+	ID              string  `json:"id"`
+	Title           string  `json:"title"`
+	Type            string  `json:"type"`
+	Domain          string  `json:"domain"`
+	RRFScore        float64 `json:"rrf_score"`
+	EmbeddingSource string  `json:"embedding_source,omitempty"` // "real", "mock", or ""
 }
 
 // Search performs hybrid search with optional filters.
@@ -84,6 +86,16 @@ func (s *Searcher) Search(query string, topK int, filters map[string]string) ([]
 
 	// 4. Enrich with metadata and apply filters
 	merged = s.enrichAndFilter(merged, filters)
+
+	// 5. Annotate embedding source
+	if s.vectorStore != nil {
+		for i, r := range merged {
+			model := s.vectorStore.GetModel(r.ID)
+			if model != "" {
+				merged[i].EmbeddingSource = model
+			}
+		}
+	}
 
 	if len(merged) > topK {
 		merged = merged[:topK]
@@ -274,6 +286,47 @@ func (s *Searcher) IndexDocument(docID string, doc *Document) error {
 		return err
 	}
 	return s.vectorStore.Add(docID, emb, model)
+}
+
+// BatchIndexDocuments generates embeddings for multiple documents in a single batch API call.
+func (s *Searcher) BatchIndexDocuments(ids []string, docs []*Document) error {
+	if s.vectorStore == nil || len(ids) == 0 {
+		return nil
+	}
+	if len(ids) != len(docs) {
+		return fmt.Errorf("ids and docs length mismatch: %d vs %d", len(ids), len(docs))
+	}
+
+	texts := make([]string, len(docs))
+	for i, doc := range docs {
+		texts[i] = documentToText(doc)
+	}
+
+	embeddings, model, err := s.vectorStore.EmbedTexts(context.Background(), texts)
+	if err != nil {
+		return fmt.Errorf("batch embed: %w", err)
+	}
+
+	for i, emb := range embeddings {
+		if err := s.vectorStore.Add(ids[i], emb, model); err != nil {
+			return fmt.Errorf("add embedding %s: %w", ids[i], err)
+		}
+	}
+	return nil
+}
+
+// ReindexDocument removes existing embeddings and re-embeds a document with its chunks.
+// Used when document content changes to ensure fresh embeddings.
+func (s *Searcher) ReindexDocument(docID string, doc *Document) error {
+	if s.vectorStore == nil {
+		return nil
+	}
+
+	// Delete existing embeddings (parent + chunks)
+	s.vectorStore.DeleteByPrefix(docID)
+
+	// Re-index the parent document
+	return s.IndexDocument(docID, doc)
 }
 
 // documentToText converts a Document to searchable text for embedding.

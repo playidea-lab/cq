@@ -130,6 +130,47 @@ func (v *VectorStore) Count() int {
 	return n
 }
 
+// DeleteByPrefix removes all embeddings whose doc_id starts with the given prefix.
+// Used for removing chunk embeddings when reindexing a document.
+func (v *VectorStore) DeleteByPrefix(prefix string) (int, error) {
+	res, err := v.db.Exec("DELETE FROM knowledge_vectors WHERE doc_id LIKE ?", prefix+"%")
+	if err != nil {
+		return 0, err
+	}
+	n, _ := res.RowsAffected()
+	return int(n), nil
+}
+
+// GetModel returns the embedding model name for a document ID, or "" if not found.
+func (v *VectorStore) GetModel(docID string) string {
+	var model string
+	v.db.QueryRow("SELECT model FROM knowledge_vectors WHERE doc_id = ?", docID).Scan(&model)
+	return model
+}
+
+// CountByModel returns the count of embeddings grouped by model name.
+func (v *VectorStore) CountByModel() (map[string]int, error) {
+	rows, err := v.db.Query("SELECT COALESCE(model, ''), COUNT(*) FROM knowledge_vectors GROUP BY model")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	counts := map[string]int{}
+	for rows.Next() {
+		var model string
+		var count int
+		if err := rows.Scan(&model, &count); err != nil {
+			continue
+		}
+		if model == "" {
+			model = "unknown"
+		}
+		counts[model] = count
+	}
+	return counts, rows.Err()
+}
+
 // VectorResult holds a single search result with similarity score.
 type VectorResult struct {
 	DocID    string  `json:"id"`

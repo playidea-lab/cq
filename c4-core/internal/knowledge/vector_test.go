@@ -215,5 +215,64 @@ func TestMockEmbedding(t *testing.T) {
 	}
 }
 
+func TestDeleteByPrefix(t *testing.T) {
+	vs := setupTestVectorStore(t)
+
+	vs.Add("doc1", []float32{1, 0, 0, 0}, "test")
+	vs.Add("doc1-chunk-0", []float32{0, 1, 0, 0}, "test")
+	vs.Add("doc1-chunk-1", []float32{0, 0, 1, 0}, "test")
+	vs.Add("doc2", []float32{0, 0, 0, 1}, "test")
+
+	n, err := vs.DeleteByPrefix("doc1")
+	if err != nil {
+		t.Fatalf("DeleteByPrefix: %v", err)
+	}
+	if n != 3 {
+		t.Errorf("deleted: got %d, want 3", n)
+	}
+	if vs.Count() != 1 {
+		t.Errorf("remaining: got %d, want 1", vs.Count())
+	}
+	if !vs.Exists("doc2") {
+		t.Error("doc2 should still exist")
+	}
+}
+
+func TestGetModel(t *testing.T) {
+	vs := setupTestVectorStore(t)
+
+	vs.Add("doc1", []float32{1, 0, 0, 0}, "real")
+	vs.Add("doc2", []float32{0, 1, 0, 0}, "mock")
+
+	if m := vs.GetModel("doc1"); m != "real" {
+		t.Errorf("model doc1: got %q, want real", m)
+	}
+	if m := vs.GetModel("doc2"); m != "mock" {
+		t.Errorf("model doc2: got %q, want mock", m)
+	}
+	if m := vs.GetModel("nonexistent"); m != "" {
+		t.Errorf("model nonexistent: got %q, want empty", m)
+	}
+}
+
+func TestCountByModel(t *testing.T) {
+	vs := setupTestVectorStore(t)
+
+	vs.Add("doc1", []float32{1, 0, 0, 0}, "real")
+	vs.Add("doc2", []float32{0, 1, 0, 0}, "real")
+	vs.Add("doc3", []float32{0, 0, 1, 0}, "mock")
+
+	counts, err := vs.CountByModel()
+	if err != nil {
+		t.Fatalf("CountByModel: %v", err)
+	}
+	if counts["real"] != 2 {
+		t.Errorf("real: got %d, want 2", counts["real"])
+	}
+	if counts["mock"] != 1 {
+		t.Errorf("mock: got %d, want 1", counts["mock"])
+	}
+}
+
 // suppress unused import
 var _ = fmt.Sprintf
