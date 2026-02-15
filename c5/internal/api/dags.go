@@ -43,6 +43,10 @@ func (s *Server) handleDAGCreate(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleDAGsList(w http.ResponseWriter, r *http.Request) {
+	if r.Method == "POST" {
+		s.handleDAGCreate(w, r)
+		return
+	}
 	if r.Method != "GET" {
 		methodNotAllowed(w)
 		return

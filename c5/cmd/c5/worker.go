@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -129,29 +130,56 @@ func runWorker(cfg workerConfig) error {
 			log.Printf("c5-worker: acquired job %s (%s)", job.ID, job.Name)
 
 			// Execute job in a goroutine
-			go func(jobID, leaseID, command, workdir string) {
+			go func(j *model.Job, leaseID string) {
 				defer func() { running = false }()
 
-				exitCode := executeJob(client, jobID, leaseID, workerID, command, workdir)
+				exitCode := executeJob(client, j, leaseID, workerID, cfg.gpuCount)
 
 				status := "SUCCEEDED"
 				if exitCode != 0 {
 					status = "FAILED"
 				}
 
-				if err := client.completeJob(jobID, status, exitCode); err != nil {
+				if err := client.completeJob(j.ID, status, exitCode); err != nil {
 					log.Printf("c5-worker: complete error: %v", err)
 				} else {
-					log.Printf("c5-worker: job %s %s (exit %d)", jobID, status, exitCode)
+					log.Printf("c5-worker: job %s %s (exit %d)", j.ID, status, exitCode)
 				}
-			}(job.ID, lease.ID, job.Command, job.Workdir)
+			}(job, lease.ID)
 		}
 	}
 }
 
-func executeJob(client *workerClient, jobID, leaseID, workerID, command, workdir string) int {
-	cmd := exec.Command("sh", "-c", command)
-	cmd.Dir = workdir
+func executeJob(client *workerClient, job *model.Job, leaseID, workerID string, gpuCount int) int {
+	// Set up context with optional timeout
+	ctx := context.Background()
+	var cancel context.CancelFunc
+	if job.TimeoutSec > 0 {
+		ctx, cancel = context.WithTimeout(ctx, time.Duration(job.TimeoutSec)*time.Second)
+	} else {
+		ctx, cancel = context.WithCancel(ctx)
+	}
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "sh", "-c", job.Command)
+	cmd.Dir = job.Workdir
+
+	// Env injection: inherit current env + job env vars
+	env := os.Environ()
+	for k, v := range job.Env {
+		env = append(env, k+"="+v)
+	}
+
+	// GPU assignment: set CUDA_VISIBLE_DEVICES if job requires GPU
+	if job.RequiresGPU && gpuCount > 0 {
+		// Build device list: "0", "0,1", "0,1,2", etc.
+		devices := make([]string, gpuCount)
+		for i := range devices {
+			devices[i] = fmt.Sprintf("%d", i)
+		}
+		env = append(env, "CUDA_VISIBLE_DEVICES="+strings.Join(devices, ","))
+	}
+	cmd.Env = env
 
 	stdout, _ := cmd.StdoutPipe()
 	stderr, _ := cmd.StderrPipe()
@@ -162,20 +190,30 @@ func executeJob(client *workerClient, jobID, leaseID, workerID, command, workdir
 	}
 
 	// Stream logs
-	go streamLogs(client, jobID, stdout, "stdout")
-	go streamLogs(client, jobID, stderr, "stderr")
+	go streamLogs(client, job.ID, stdout, "stdout")
+	go streamLogs(client, job.ID, stderr, "stderr")
 
-	// Renew lease periodically
+	// Lease renew + cancel detection goroutine
 	done := make(chan struct{})
 	go func() {
-		ticker := time.NewTicker(2 * time.Minute)
-		defer ticker.Stop()
+		renewTicker := time.NewTicker(2 * time.Minute)
+		cancelTicker := time.NewTicker(30 * time.Second)
+		defer renewTicker.Stop()
+		defer cancelTicker.Stop()
 		for {
 			select {
 			case <-done:
 				return
-			case <-ticker.C:
+			case <-renewTicker.C:
 				client.renewLease(leaseID, workerID)
+			case <-cancelTicker.C:
+				// Check if job was cancelled on server
+				status, err := client.getJobStatus(job.ID)
+				if err == nil && status == string(model.StatusCancelled) {
+					log.Printf("c5-worker: job %s cancelled, killing process", job.ID)
+					cancel()
+					return
+				}
 			}
 		}
 	}()
@@ -184,6 +222,16 @@ func executeJob(client *workerClient, jobID, leaseID, workerID, command, workdir
 	close(done)
 
 	if err != nil {
+		// Check if killed by timeout
+		if ctx.Err() == context.DeadlineExceeded {
+			log.Printf("c5-worker: job %s timed out after %ds", job.ID, job.TimeoutSec)
+			return 124
+		}
+		// Check if killed by cancel
+		if ctx.Err() == context.Canceled {
+			log.Printf("c5-worker: job %s cancelled", job.ID)
+			return 130
+		}
 		if exitErr, ok := err.(*exec.ExitError); ok {
 			return exitErr.ExitCode()
 		}
@@ -306,4 +354,12 @@ func (c *workerClient) appendLog(jobID, line, stream string) {
 		"line":   line,
 		"stream": stream,
 	}, nil)
+}
+
+func (c *workerClient) getJobStatus(jobID string) (string, error) {
+	var job model.Job
+	if err := c.doJSON("GET", "/v1/jobs/"+jobID, nil, &job); err != nil {
+		return "", err
+	}
+	return string(job.Status), nil
 }

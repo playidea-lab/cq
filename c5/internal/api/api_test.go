@@ -572,6 +572,105 @@ func TestAPIKeyAuth(t *testing.T) {
 // Method Not Allowed
 // =========================================================================
 
+// =========================================================================
+// Deploy status path compatibility (T-P3-01)
+// =========================================================================
+
+func TestDeployStatusPathCompat(t *testing.T) {
+	srv := newTestServer(t)
+
+	// Register an edge
+	w := doRequest(t, srv, "POST", "/v1/edges/register", model.EdgeRegisterRequest{
+		Name: "edge-1",
+		Tags: []string{"onnx"},
+	})
+	if w.Code != http.StatusCreated {
+		t.Fatalf("register edge: expected 201, got %d", w.Code)
+	}
+	var edgeResp model.EdgeRegisterResponse
+	decodeJSON(t, w, &edgeResp)
+
+	// Submit a job
+	wj := doRequest(t, srv, "POST", "/v1/jobs/submit", model.JobSubmitRequest{
+		Name: "deploy-test", Command: "echo",
+	})
+	var jobResp model.JobSubmitResponse
+	decodeJSON(t, wj, &jobResp)
+
+	// Trigger deploy
+	wd := doRequest(t, srv, "POST", "/v1/deploy/trigger", model.DeployTriggerRequest{
+		JobID:   jobResp.JobID,
+		EdgeIDs: []string{edgeResp.EdgeID},
+	})
+	if wd.Code != http.StatusCreated {
+		t.Fatalf("trigger deploy: expected 201, got %d: %s", wd.Code, wd.Body.String())
+	}
+	var deployResp model.DeployTriggerResponse
+	decodeJSON(t, wd, &deployResp)
+
+	// Test both paths return the same result:
+	// Path 1: GET /v1/deploy/{id} (original C5 path)
+	w1 := doRequest(t, srv, "GET", "/v1/deploy/"+deployResp.DeployID, nil)
+	if w1.Code != http.StatusOK {
+		t.Fatalf("GET /v1/deploy/{id}: expected 200, got %d", w1.Code)
+	}
+	var d1 model.Deployment
+	decodeJSON(t, w1, &d1)
+
+	// Path 2: GET /v1/deploy/{id}/status (hub.Client path)
+	w2 := doRequest(t, srv, "GET", "/v1/deploy/"+deployResp.DeployID+"/status", nil)
+	if w2.Code != http.StatusOK {
+		t.Fatalf("GET /v1/deploy/{id}/status: expected 200, got %d: %s", w2.Code, w2.Body.String())
+	}
+	var d2 model.Deployment
+	decodeJSON(t, w2, &d2)
+
+	if d1.ID != d2.ID {
+		t.Fatalf("deploy IDs mismatch: %s vs %s", d1.ID, d2.ID)
+	}
+	if d1.Status != d2.Status {
+		t.Fatalf("deploy status mismatch: %s vs %s", d1.Status, d2.Status)
+	}
+}
+
+// =========================================================================
+// Estimate response fields (T-P3-03 compat)
+// =========================================================================
+
+func TestEstimateResponseFields(t *testing.T) {
+	srv := newTestServer(t)
+
+	w := doRequest(t, srv, "POST", "/v1/jobs/submit", model.JobSubmitRequest{
+		Name: "est-fields", Command: "echo",
+	})
+	var resp model.JobSubmitResponse
+	decodeJSON(t, w, &resp)
+
+	w2 := doRequest(t, srv, "GET", "/v1/jobs/"+resp.JobID+"/estimate", nil)
+	if w2.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w2.Code)
+	}
+
+	// Decode as raw map to check field presence
+	var raw map[string]any
+	decodeJSON(t, w2, &raw)
+
+	// estimated_start_time should be present for QUEUED jobs
+	if _, ok := raw["estimated_start_time"]; !ok {
+		t.Fatal("expected estimated_start_time field in response")
+	}
+
+	// Verify it's a valid RFC3339 time
+	est := raw["estimated_start_time"].(string)
+	if est == "" {
+		t.Fatal("estimated_start_time should not be empty")
+	}
+}
+
+// =========================================================================
+// Method Not Allowed
+// =========================================================================
+
 func TestMethodNotAllowed(t *testing.T) {
 	srv := newTestServer(t)
 

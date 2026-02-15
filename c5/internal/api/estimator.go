@@ -1,6 +1,8 @@
 package api
 
 import (
+	"time"
+
 	"github.com/piqsol/c4/c5/internal/model"
 	"github.com/piqsol/c4/c5/internal/store"
 )
@@ -55,7 +57,7 @@ func (e *Estimator) Estimate(job *model.Job) *model.EstimateResponse {
 	}
 }
 
-// EstimateWithQueue adds queue wait time to the estimate.
+// EstimateWithQueue adds queue wait time and estimated start time to the estimate.
 func (e *Estimator) EstimateWithQueue(job *model.Job) *model.EstimateResponse {
 	result := e.Estimate(job)
 
@@ -64,6 +66,8 @@ func (e *Estimator) EstimateWithQueue(job *model.Job) *model.EstimateResponse {
 		if queuedCount > 0 {
 			result.QueueWaitSec = float64(queuedCount) * result.EstimatedDurationSec / 2
 		}
+		startTime := time.Now().Add(time.Duration(result.QueueWaitSec) * time.Second)
+		result.EstimatedStartTime = startTime.UTC().Format(time.RFC3339)
 	}
 
 	return result

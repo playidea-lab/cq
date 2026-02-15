@@ -259,6 +259,8 @@ func (s *Server) handleDeployStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	deployID := strings.TrimPrefix(r.URL.Path, "/v1/deploy/")
+	// hub.Client sends GET /deploy/{id}/status — strip /status suffix for compat
+	deployID = strings.TrimSuffix(deployID, "/status")
 	if deployID == "" {
 		writeError(w, http.StatusBadRequest, "deploy ID required")
 		return

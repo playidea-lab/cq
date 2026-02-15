@@ -238,11 +238,14 @@ type JobRetryResponse struct {
 }
 
 // EstimateResponse is returned from GET /v1/jobs/{id}/estimate.
+// Fields are compatible with hub.Client's JobEstimateResponse.
 type EstimateResponse struct {
 	EstimatedDurationSec float64 `json:"estimated_duration_sec"`
 	QueueWaitSec         float64 `json:"queue_wait_sec,omitempty"`
+	EstimatedStartTime   string  `json:"estimated_start_time,omitempty"`
 	Confidence           float64 `json:"confidence"`
 	Method               string  `json:"method"` // historical, similar_jobs, global_avg, default
+	BlockingReason       *string `json:"blocking_reason,omitempty"`
 }
 
 // =========================================================================
