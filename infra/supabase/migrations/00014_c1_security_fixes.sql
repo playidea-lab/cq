@@ -10,7 +10,7 @@ DROP POLICY IF EXISTS "Members can delete own messages" ON c1_messages;
 
 CREATE POLICY "Members can delete own messages"
     ON c1_messages FOR DELETE
-    USING (project_id IN (SELECT project_id FROM c1_participants WHERE user_id = auth.uid())
+    USING (project_id IN (SELECT project_id FROM c1_participants WHERE participant_id = auth.uid()::text)
            AND sender_type != 'system');
 
 -- ============================================================

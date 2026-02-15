@@ -121,7 +121,7 @@ func (k *KnowledgeCloudClient) SearchDocuments(query string, docType string, lim
 	filter := "project_id=eq." + url.QueryEscape(k.projectID) + "&deleted_at=is.null"
 	if query != "" {
 		// PostgreSQL tsvector FTS via PostgREST
-		filter += "&tsv=fts.english." + url.QueryEscape(query)
+		filter += "&tsv=fts.english." + url.QueryEscape(toTSQuery(query))
 	}
 	if docType != "" {
 		filter += "&doc_type=eq." + url.QueryEscape(docType)
@@ -194,7 +194,7 @@ func (k *KnowledgeCloudClient) DiscoverPublic(query string, docType string, limi
 
 	filter := "visibility=eq.public&deleted_at=is.null"
 	if query != "" {
-		filter += "&tsv=fts.english." + url.QueryEscape(query)
+		filter += "&tsv=fts.english." + url.QueryEscape(toTSQuery(query))
 	}
 	if docType != "" {
 		filter += "&doc_type=eq." + url.QueryEscape(docType)
@@ -207,6 +207,16 @@ func (k *KnowledgeCloudClient) DiscoverPublic(query string, docType string, limi
 		return nil, err
 	}
 	return rows, nil
+}
+
+// toTSQuery converts a multi-word query into PostgreSQL tsquery format.
+// "embedding search" → "embedding & search" (AND).
+func toTSQuery(q string) string {
+	words := strings.Fields(q)
+	if len(words) <= 1 {
+		return q
+	}
+	return strings.Join(words, " & ")
 }
 
 // =========================================================================

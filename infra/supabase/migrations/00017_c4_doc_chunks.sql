@@ -5,7 +5,7 @@
 CREATE TABLE IF NOT EXISTS c4_doc_chunks (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
     parent_doc_id TEXT NOT NULL,
-    project_id TEXT NOT NULL,
+    project_id UUID NOT NULL,
     chunk_index INTEGER NOT NULL,
     body TEXT NOT NULL,
     embedding vector(1536),
@@ -47,7 +47,7 @@ CREATE POLICY "Project members can insert chunks"
 CREATE OR REPLACE FUNCTION c4_chunk_search_semantic(
     query_embedding vector(1536),
     match_count INTEGER DEFAULT 10,
-    p_project_id TEXT DEFAULT NULL
+    p_project_id UUID DEFAULT NULL
 )
 RETURNS TABLE (
     chunk_id UUID,
