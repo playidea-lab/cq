@@ -31,6 +31,7 @@ type Dispatcher struct {
 	rpcAddr    string // JSON-RPC sidecar address (e.g. "127.0.0.1:50051")
 	httpClient *http.Client
 	c1Poster   C1Poster // optional: for "c1_post" action type
+	sem        chan struct{} // bounded concurrency for dispatch goroutines
 }
 
 // NewDispatcher creates a new event dispatcher.
@@ -40,6 +41,7 @@ func NewDispatcher(store *Store) *Dispatcher {
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
 		},
+		sem: make(chan struct{}, 32), // max 32 concurrent dispatches
 	}
 }
 
@@ -79,7 +81,11 @@ func (d *Dispatcher) Dispatch(eventID, eventType string, eventData json.RawMessa
 	}
 
 	for _, rule := range rules {
-		go d.executeRule(eventID, eventType, eventData, rule)
+		d.sem <- struct{}{} // acquire semaphore
+		go func(r StoredRule) {
+			defer func() { <-d.sem }() // release semaphore
+			d.executeRule(eventID, eventType, eventData, r)
+		}(rule)
 	}
 }
 
@@ -127,8 +133,15 @@ func (d *Dispatcher) executeRule(eventID, eventType string, eventData json.RawMe
 		logStatus = "error"
 		errMsg = err.Error()
 		log.Printf("[eventbus] rule %q dispatch error: %v\n", rule.Name, err)
-		// Insert into Dead Letter Queue for retry
-		d.store.InsertDLQ(eventID, rule.ID, rule.Name, eventType, errMsg, 3)
+		// Extract max_retries from action_config (default: 3)
+		maxRetries := 3
+		var cfgBase struct {
+			MaxRetries int `json:"max_retries"`
+		}
+		if json.Unmarshal([]byte(rule.ActionConfig), &cfgBase) == nil && cfgBase.MaxRetries > 0 {
+			maxRetries = cfgBase.MaxRetries
+		}
+		d.store.InsertDLQ(eventID, rule.ID, rule.Name, eventType, errMsg, maxRetries)
 	}
 
 	d.store.LogDispatch(eventID, rule.ID, logStatus, errMsg, duration)
@@ -491,7 +504,7 @@ func resolveTemplate(template map[string]any, eventData json.RawMessage) map[str
 	return result
 }
 
-// resolveTemplateString replaces {{data.key}} with actual values.
+// resolveTemplateString replaces {{data.key}} or {{nested.path}} with actual values.
 func resolveTemplateString(s string, data map[string]any) string {
 	result := s
 	for {
@@ -510,7 +523,7 @@ func resolveTemplateString(s string, data map[string]any) string {
 		key = strings.TrimPrefix(key, "data.")
 
 		val := ""
-		if v, ok := data[key]; ok {
+		if v, ok := resolveNestedField(data, key); ok {
 			val = fmt.Sprintf("%v", v)
 		}
 

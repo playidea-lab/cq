@@ -28,11 +28,12 @@ type EmbeddedServer struct {
 
 // EmbeddedConfig holds configuration for the embedded server.
 type EmbeddedConfig struct {
-	DataDir          string
-	RetentionDays    int    // 0 = no auto-purge
-	MaxEvents        int    // 0 = unlimited
-	DefaultRulesPath string // path to default_rules.yaml (empty = skip)
-	WSPort           int    // 0 = WebSocket bridge disabled
+	DataDir           string
+	RetentionDays     int    // 0 = no auto-purge
+	MaxEvents         int    // 0 = unlimited
+	DefaultRulesPath  string // path to default_rules.yaml (empty = skip)
+	WSPort            int    // 0 = WebSocket bridge disabled
+	DLQRetentionDays  int    // 0 = use 2x RetentionDays; >0 = explicit DLQ retention
 }
 
 // StartEmbedded creates and starts an in-process gRPC EventBus server.
@@ -105,7 +106,11 @@ func StartEmbedded(cfg EmbeddedConfig) (*EmbeddedServer, error) {
 
 	// Start auto-purge goroutine if configured
 	if cfg.RetentionDays > 0 || cfg.MaxEvents > 0 {
-		go e.autoPurge(cfg.RetentionDays, cfg.MaxEvents)
+		dlqDays := cfg.DLQRetentionDays
+		if dlqDays <= 0 && cfg.RetentionDays > 0 {
+			dlqDays = cfg.RetentionDays * 2 // DLQ entries retained 2x longer by default
+		}
+		go e.autoPurge(cfg.RetentionDays, cfg.MaxEvents, dlqDays)
 	}
 
 	return e, nil
@@ -140,7 +145,7 @@ func (e *EmbeddedServer) Dispatcher() *Dispatcher {
 	return e.dispatcher
 }
 
-func (e *EmbeddedServer) autoPurge(retentionDays, maxEvents int) {
+func (e *EmbeddedServer) autoPurge(retentionDays, maxEvents, dlqRetentionDays int) {
 	ticker := time.NewTicker(1 * time.Hour)
 	defer ticker.Stop()
 
@@ -161,10 +166,10 @@ func (e *EmbeddedServer) autoPurge(retentionDays, maxEvents int) {
 					fmt.Fprintf(os.Stderr, "c4: eventbus: purged %d events (count limit)\n", n)
 				}
 			}
-			// Purge old DLQ entries (same retention as events)
-			if retentionDays > 0 {
-				maxAge := time.Duration(retentionDays) * 24 * time.Hour
-				if n, err := e.store.PurgeDLQ(maxAge); err == nil && n > 0 {
+			// Purge old DLQ entries (separate retention, default 2x events)
+			if dlqRetentionDays > 0 {
+				dlqMaxAge := time.Duration(dlqRetentionDays) * 24 * time.Hour
+				if n, err := e.store.PurgeDLQ(dlqMaxAge); err == nil && n > 0 {
 					fmt.Fprintf(os.Stderr, "c4: eventbus: purged %d old DLQ entries\n", n)
 				}
 			}

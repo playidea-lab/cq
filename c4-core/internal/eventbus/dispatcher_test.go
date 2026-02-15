@@ -6,8 +6,10 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"sync"
 	"testing"
+	"time"
 )
 
 func TestDispatchLog(t *testing.T) {
@@ -645,5 +647,115 @@ func TestIsPrivateIP(t *testing.T) {
 		if got != tt.want {
 			t.Errorf("isPrivateIP(%s) = %v, want %v", tt.ip, got, tt.want)
 		}
+	}
+}
+
+func TestDLQMaxRetriesFromConfig(t *testing.T) {
+	dir := t.TempDir()
+	store, _ := NewStore(filepath.Join(dir, "test.db"))
+	defer store.Close()
+
+	dispatcher := NewDispatcher(store)
+
+	// Add a webhook rule with custom max_retries
+	store.AddRule("custom-retry", "test.*", "{}", "webhook",
+		`{"url":"http://192.168.1.1:9999/hook","max_retries":5}`, true, 0)
+
+	// Dispatch event — webhook to private IP will fail (SSRF block)
+	dispatcher.DispatchSync("ev-retry-1", "test.event", json.RawMessage(`{}`))
+
+	time.Sleep(50 * time.Millisecond)
+
+	// Check DLQ entry has max_retries=5 (not default 3)
+	entries, err := store.ListDLQ(10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) == 0 {
+		t.Fatal("expected DLQ entry")
+	}
+	if entries[0].MaxRetries != 5 {
+		t.Errorf("expected max_retries=5, got %d", entries[0].MaxRetries)
+	}
+}
+
+func TestDLQMaxRetriesDefault(t *testing.T) {
+	dir := t.TempDir()
+	store, _ := NewStore(filepath.Join(dir, "test.db"))
+	defer store.Close()
+
+	dispatcher := NewDispatcher(store)
+
+	// Add a webhook rule WITHOUT max_retries
+	store.AddRule("default-retry", "test.*", "{}", "webhook",
+		`{"url":"http://192.168.1.1:9999/hook"}`, true, 0)
+
+	dispatcher.DispatchSync("ev-retry-2", "test.event", json.RawMessage(`{}`))
+
+	time.Sleep(50 * time.Millisecond)
+
+	entries, _ := store.ListDLQ(10)
+	if len(entries) == 0 {
+		t.Fatal("expected DLQ entry")
+	}
+	if entries[0].MaxRetries != 3 {
+		t.Errorf("expected default max_retries=3, got %d", entries[0].MaxRetries)
+	}
+}
+
+func TestTemplateNestedField(t *testing.T) {
+	data := map[string]any{
+		"task": map[string]any{
+			"id":    "T-001",
+			"title": "test task",
+		},
+		"simple": "value",
+	}
+
+	// Nested field
+	result := resolveTemplateString("Task: {{task.id}} - {{task.title}}", data)
+	if result != "Task: T-001 - test task" {
+		t.Errorf("expected 'Task: T-001 - test task', got %q", result)
+	}
+
+	// Simple field (backward compatible)
+	result2 := resolveTemplateString("Val: {{simple}}", data)
+	if result2 != "Val: value" {
+		t.Errorf("expected 'Val: value', got %q", result2)
+	}
+
+	// Missing nested field
+	result3 := resolveTemplateString("Missing: {{task.nonexistent}}", data)
+	if result3 != "Missing: " {
+		t.Errorf("expected 'Missing: ', got %q", result3)
+	}
+}
+
+func TestDispatchBoundedConcurrency(t *testing.T) {
+	dir := t.TempDir()
+	store, _ := NewStore(filepath.Join(dir, "test.db"))
+	defer store.Close()
+
+	dispatcher := NewDispatcher(store)
+
+	// Verify semaphore was created with capacity 32
+	if cap(dispatcher.sem) != 32 {
+		t.Errorf("expected sem capacity 32, got %d", cap(dispatcher.sem))
+	}
+
+	// Add a log rule
+	store.AddRule("bounded-test", "test.*", "{}", "log", "{}", true, 0)
+
+	// Dispatch multiple events — should not deadlock
+	for i := 0; i < 50; i++ {
+		dispatcher.Dispatch(fmt.Sprintf("ev-%d", i), "test.event", json.RawMessage(`{}`))
+	}
+
+	// Wait for all dispatches to complete
+	time.Sleep(200 * time.Millisecond)
+
+	// Semaphore should be fully released
+	if len(dispatcher.sem) != 0 {
+		t.Errorf("expected empty semaphore, got %d in-use", len(dispatcher.sem))
 	}
 }

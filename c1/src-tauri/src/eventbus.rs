@@ -121,11 +121,10 @@ async fn run_eventbus_loop(
                     }
                 }
 
-                emit_status(&app, EventBusStatus::Reconnecting);
+                // Status will be emitted after cancel check below
             }
             Err(e) => {
                 eprintln!("[eventbus] connection failed: {}", e);
-                emit_status(&app, EventBusStatus::Reconnecting);
             }
         }
 
@@ -134,6 +133,7 @@ async fn run_eventbus_loop(
             return;
         }
 
+        emit_status(&app, EventBusStatus::Reconnecting);
         sleep(Duration::from_secs(backoff_secs)).await;
         backoff_secs = (backoff_secs * 2).min(max_backoff);
     }

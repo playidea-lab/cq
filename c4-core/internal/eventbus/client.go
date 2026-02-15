@@ -18,18 +18,15 @@ type Client struct {
 	client pb.EventBusClient
 }
 
-// NewClient dials the EventBus gRPC server at the given Unix socket path.
+// NewClient connects to the EventBus gRPC server at the given Unix socket path.
+// The connection is lazy — established on the first RPC call.
 func NewClient(socketPath string) (*Client, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
 	target := "unix:" + socketPath
-	conn, err := grpc.DialContext(ctx, target,
+	conn, err := grpc.NewClient(target,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithBlock(),
 	)
 	if err != nil {
-		return nil, fmt.Errorf("dial eventbus unix:%s: %w", socketPath, err)
+		return nil, fmt.Errorf("connect eventbus unix:%s: %w", socketPath, err)
 	}
 
 	return &Client{

@@ -438,3 +438,99 @@ func TestServerPublishWithRule(t *testing.T) {
 		t.Errorf("expected 1 event, got %d", listResp.Total)
 	}
 }
+
+func TestServerListDLQEmpty(t *testing.T) {
+	client, cleanup := startTestServer(t)
+	defer cleanup()
+
+	resp, err := client.ListDLQ(context.Background(), &pb.ListDLQRequest{Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.Total != 0 {
+		t.Errorf("expected 0 DLQ entries, got %d", resp.Total)
+	}
+}
+
+func TestServerCorrID(t *testing.T) {
+	client, cleanup := startTestServer(t)
+	defer cleanup()
+
+	ctx := context.Background()
+
+	// Publish with correlation_id
+	_, err := client.Publish(ctx, &pb.Event{
+		Type:          "test.corr",
+		Source:        "unit-test",
+		Data:          []byte(`{}`),
+		CorrelationId: "corr-abc-123",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Verify correlation_id is stored and returned
+	listResp, err := client.ListEvents(ctx, &pb.ListEventsRequest{Type: "test.corr", Limit: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if listResp.Total != 1 {
+		t.Fatalf("expected 1 event, got %d", listResp.Total)
+	}
+	if listResp.Events[0].CorrelationId != "corr-abc-123" {
+		t.Errorf("expected correlation_id corr-abc-123, got %q", listResp.Events[0].CorrelationId)
+	}
+}
+
+func TestServerRemoveRuleValidation(t *testing.T) {
+	client, cleanup := startTestServer(t)
+	defer cleanup()
+
+	// Empty id and name should fail
+	_, err := client.RemoveRule(context.Background(), &pb.RemoveRuleRequest{})
+	if err == nil {
+		t.Error("expected error for empty id and name")
+	}
+}
+
+func TestServerSubProjFilter(t *testing.T) {
+	client, cleanup := startTestServer(t)
+	defer cleanup()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	// Subscribe with project_id filter
+	stream, err := client.Subscribe(ctx, &pb.SubscribeRequest{
+		EventPattern: "test.*",
+		ProjectId:    "proj-A",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	time.Sleep(50 * time.Millisecond)
+
+	// Publish event with different project_id (should NOT be received)
+	client.Publish(ctx, &pb.Event{
+		Type: "test.filtered", Source: "test", Data: []byte(`{}`),
+		ProjectId: "proj-B",
+	})
+
+	// Publish event with matching project_id (should be received)
+	client.Publish(ctx, &pb.Event{
+		Type: "test.matched", Source: "test", Data: []byte(`{}`),
+		ProjectId: "proj-A",
+	})
+
+	ev, err := stream.Recv()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ev.Type != "test.matched" {
+		t.Errorf("expected type test.matched, got %s", ev.Type)
+	}
+	if ev.ProjectId != "proj-A" {
+		t.Errorf("expected project_id proj-A, got %s", ev.ProjectId)
+	}
+}
