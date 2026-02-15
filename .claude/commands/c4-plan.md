@@ -176,7 +176,8 @@ lighthouses = mcp__c4__c4_lighthouse(action="list")
   └─────────────────────────────────────────────────────────────────────────────┘
 
 데이터 수집: `lighthouses = mcp__c4__c4_lighthouse(action="list")`
-Lighthouse가 없으면 이 섹션은 "(등록된 Lighthouse 없음)" 한 줄로 표시.
+**표시 규칙**: stub 상태인 항목만 "Active Stubs"에 표시. implemented 항목은 개수만 요약.
+Lighthouse가 없거나 stub이 0개면 이 섹션은 "✅ 모든 도구 구현 완료 (N개)" 한 줄로 표시.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 📄 기획 문서 (docs/)
@@ -246,7 +247,7 @@ AskUserQuestion(questions=[
 ])
 ```
 
-#### 0.4 선택에 따른 분기
+#### 0.5 선택에 따른 분기
 
 | 선택 | 다음 단계 |
 |------|----------|
@@ -646,35 +647,10 @@ AskUserQuestion(questions=[
 인터뷰 완료 후, EARS 패턴으로 변환된 요구사항을 저장합니다.
 
 ```python
-# 명세 저장 예시
+# 명세 저장 (name + content YAML 문자열)
 mcp__c4__c4_save_spec(
-    feature="user-auth",
-    domain="web-frontend",
-    description="사용자 인증 기능",
-    requirements=[
-        {
-            "id": "REQ-001",
-            "pattern": "event-driven",
-            "text": "When user submits login form, the system shall validate credentials"
-        },
-        {
-            "id": "REQ-002",
-            "pattern": "unwanted",
-            "text": "If credentials are invalid, the system shall display error message"
-        },
-        {
-            "id": "REQ-003",
-            "pattern": "unwanted",
-            "text": "If login fails 5 times, the system shall lock account for 30 minutes"
-        }
-    ]
-)
-```
-
-**저장 위치:** `.c4/specs/{feature}/requirements.yaml`
-
-```yaml
-# .c4/specs/user-auth/requirements.yaml
+    name="user-auth",
+    content="""
 feature: user-auth
 domain: web-frontend
 description: 사용자 인증 기능
@@ -685,7 +661,14 @@ requirements:
   - id: REQ-002
     pattern: unwanted
     text: "If credentials are invalid, the system shall display error message"
+  - id: REQ-003
+    pattern: unwanted
+    text: "If login fails 5 times, the system shall lock account for 30 minutes"
+"""
+)
 ```
+
+**저장 위치:** `.c4/specs/user-auth` (SQLite)
 
 ---
 
@@ -733,79 +716,36 @@ AskUserQuestion(questions=[
 ])
 ```
 
-##### 검증 요구사항 저장 (MCP 도구 사용)
+##### 검증 요구사항을 DoD에 포함
+
+검증 요구사항은 별도 도구가 아니라 **태스크 DoD에 직접 포함**합니다.
 
 ```python
-# 사용자가 E2E 테스트를 요청한 경우
-mcp__c4__c4_add_verification(
-    feature="user-auth",
-    verification_type="browser",
-    name="Login Flow E2E",
-    reason="사용자 요청: 로그인 플로우 E2E 테스트",
-    priority=1,  # 1=critical, 2=normal, 3=optional
-    config={
-        "url": "http://localhost:3000",
-        "steps": [
-            {"action": "goto", "url": "/login"},
-            {"action": "type", "selector": "#email", "value": "test@example.com"},
-            {"action": "type", "selector": "#password", "value": "password123"},
-            {"action": "click", "selector": "#submit"},
-            {"action": "wait", "selector": ".dashboard"}
-        ]
-    }
-)
+# 예: 검증 요구사항이 있는 태스크 생성
+mcp__c4__c4_add_todo(
+    task_id="T-001-0",
+    title="사용자 인증 구현",
+    scope="src/auth/",
+    dod="""
+Goal: POST /api/login 호출 시 JWT 토큰 반환
 
-# API 성능 검증 요청
-mcp__c4__c4_add_verification(
-    feature="api-users",
-    verification_type="http",
-    name="User API Response Time",
-    reason="사용자 요청: API 응답 500ms 이하",
-    config={
-        "url": "/api/users",
-        "method": "GET",
-        "max_response_time": 500,
-        "expected_status": 200
-    }
-)
-
-# ML 메트릭 검증
-mcp__c4__c4_add_verification(
-    feature="model-training",
-    verification_type="metrics",
-    name="Model Accuracy Check",
-    reason="사용자 요구사항: 정확도 95% 이상",
-    config={
-        "thresholds": {
-            "accuracy": {"min": 0.95},
-            "loss": {"max": 0.1}
-        }
-    }
+검증 요구사항:
+  - [browser] 로그인 E2E: 이메일/비밀번호 입력 → 대시보드 도달
+  - [http] API 응답시간 500ms 이하
+  - [unit] test_login_success, test_login_invalid_password 통과
+"""
 )
 ```
 
 ##### 검증 타입 참조
 
-| Type | 용도 | 필수 config |
-|------|------|------------|
-| `http` | API 엔드포인트 검증 | `url`, `method`, `expected_status` |
-| `browser` | E2E 브라우저 테스트 | `url`, `steps` (action 배열) |
-| `cli` | CLI 명령 실행 검증 | `command`, `expected_output` 또는 `expected_exit_code` |
-| `metrics` | ML/DL 메트릭 검증 | `thresholds` (metric → {min, max, eq}) |
-| `visual` | 스크린샷 비교 | `baseline`, `current` |
-| `dryrun` | 인프라 dry-run | `command`, `success_patterns`, `failure_patterns` |
-
-##### 저장된 검증 확인
-
-```python
-# 저장된 검증 확인
-verifications = mcp__c4__c4_get_feature_verifications(feature="user-auth")
-print(f"📋 {verifications['feature']} 검증 요구사항:")
-for v in verifications['verifications']:
-    status = "✅" if v['enabled'] else "⏸️"
-    print(f"  {status} [{v['type']}] {v['name']} (P{v['priority']})")
-    print(f"      이유: {v['reason']}")
-```
+| Type | 용도 | DoD에 기재할 내용 |
+|------|------|------------------|
+| `unit` | 유닛 테스트 | 테스트 함수명, 통과 기준 |
+| `http` | API 엔드포인트 검증 | URL, 메서드, 응답시간, 상태코드 |
+| `browser` | E2E 브라우저 테스트 | 시나리오 단계, 기대 결과 |
+| `cli` | CLI 명령 실행 검증 | 명령어, 기대 출력/종료코드 |
+| `metrics` | ML/DL 메트릭 검증 | 메트릭명, 임계값 |
 
 ---
 
@@ -1078,59 +1018,57 @@ decisions = [
 설계를 저장합니다.
 
 ```python
-# 설계 저장
+# 설계 저장 (name + content YAML/Markdown 문자열)
 mcp__c4__c4_save_design(
-    feature="user-auth",
-    domain="web-backend",
-    description="사용자 인증 시스템 설계",
-    options=[
-        {
-            "id": "option-a",
-            "name": "Session-based Auth",
-            "description": "서버 세션 + HTTP-only 쿠키",
-            "complexity": "low",
-            "pros": ["단순한 구현", "서버 측 세션 관리", "CSRF 보호 용이"],
-            "cons": ["서버 메모리 사용", "수평 확장 시 세션 공유 필요"],
-            "recommended": True
-        },
-        {
-            "id": "option-b",
-            "name": "JWT Token Auth",
-            "description": "Stateless JWT 토큰",
-            "complexity": "medium",
-            "pros": ["Stateless", "수평 확장 용이"],
-            "cons": ["토큰 만료 관리", "토큰 크기"]
-        }
-    ],
-    selected_option="option-a",
-    components=[
-        {
-            "name": "AuthService",
-            "type": "service",
-            "description": "인증 비즈니스 로직",
-            "responsibilities": ["로그인/로그아웃", "세션 관리"],
-            "dependencies": ["UserRepository", "SessionStore"]
-        }
-    ],
-    decisions=[
-        {
-            "id": "DEC-001",
-            "question": "인증 방식?",
-            "decision": "Session-based",
-            "rationale": "프로젝트 규모에 적합, 단순한 구현"
-        }
-    ],
-    mermaid_diagram="""sequenceDiagram
+    name="user-auth",
+    content="""
+feature: user-auth
+domain: web-backend
+description: 사용자 인증 시스템 설계
+
+options:
+  - id: option-a
+    name: Session-based Auth
+    description: "서버 세션 + HTTP-only 쿠키"
+    complexity: low
+    pros: [단순한 구현, 서버 측 세션 관리, CSRF 보호 용이]
+    cons: [서버 메모리 사용, 수평 확장 시 세션 공유 필요]
+    recommended: true
+  - id: option-b
+    name: JWT Token Auth
+    description: "Stateless JWT 토큰"
+    complexity: medium
+    pros: [Stateless, 수평 확장 용이]
+    cons: [토큰 만료 관리, 토큰 크기]
+
+selected_option: option-a
+
+components:
+  - name: AuthService
+    type: service
+    description: 인증 비즈니스 로직
+    responsibilities: [로그인/로그아웃, 세션 관리]
+    dependencies: [UserRepository, SessionStore]
+
+decisions:
+  - id: DEC-001
+    question: "인증 방식?"
+    decision: Session-based
+    rationale: "프로젝트 규모에 적합, 단순한 구현"
+
+mermaid: |
+  sequenceDiagram
     Client->>AuthController: POST /login
     AuthController->>AuthService: authenticate()
     AuthService->>UserRepository: findByEmail()
     UserRepository-->>AuthService: User
     AuthService-->>AuthController: SessionToken
-    AuthController-->>Client: Set-Cookie"""
+    AuthController-->>Client: Set-Cookie
+"""
 )
 ```
 
-**저장 위치:** `.c4/specs/{feature}/design.yaml`, `.c4/specs/{feature}/design.md`
+**저장 위치:** `.c4/specs/user-auth` (SQLite)
 
 ---
 
