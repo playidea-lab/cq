@@ -68,8 +68,12 @@ Claude Code ──stdio──▶ Go MCP Server (112 tools)
 **Prerequisites:** Go 1.22+, Python 3.11+, [uv](https://docs.astral.sh/uv/)
 
 ```bash
+# One-line remote install
+curl -sSL https://git.pilab.co.kr/pi/c4/raw/main/install.sh | bash
+
+# Or clone + install
 git clone https://git.pilab.co.kr/pi/c4.git && cd c4
-./install.sh        # Builds Go binary, installs Python deps, configures .mcp.json
+./install.sh
 ```
 
 Restart Claude Code, then:
