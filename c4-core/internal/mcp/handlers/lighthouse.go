@@ -518,6 +518,17 @@ func LoadLighthousesOnStartup(reg *mcp.Registry, store *SQLiteStore) int {
 		return 0
 	}
 
+	// Auto-seed: if no lighthouses exist, register all current tools as documentation
+	if len(lighthouses) == 0 {
+		if result, err := lighthouseRegisterAll(reg, store, "auto-seed"); err == nil {
+			if n, ok := result.(map[string]any)["registered"].(int); ok && n > 0 {
+				fmt.Fprintf(os.Stderr, "c4: lighthouse auto-seed: %d tools registered\n", n)
+			}
+		}
+		// Re-read after seeding
+		lighthouses, _ = store.listLighthouses()
+	}
+
 	count := 0
 	for _, lh := range lighthouses {
 		if lh.Status != "stub" {
