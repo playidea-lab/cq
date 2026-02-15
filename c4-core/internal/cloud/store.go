@@ -225,7 +225,7 @@ func (c *CloudStore) GetTask(taskID string) (*store.Task, error) {
 		return nil, fmt.Errorf("task not found: %s", taskID)
 	}
 
-	return rowToHandlersTask(&rows[0]), nil
+	return rowToTask(&rows[0]), nil
 }
 
 // AssignTask finds and assigns the next available task to a worker.
@@ -600,8 +600,8 @@ func cloudDependenciesMet(row *cloudTaskRow, taskMap map[string]*cloudTaskRow) b
 	return true
 }
 
-// rowToHandlersTask converts a cloudTaskRow to a store.Task.
-func rowToHandlersTask(row *cloudTaskRow) *store.Task {
+// rowToTask converts a cloudTaskRow to a store.Task.
+func rowToTask(row *cloudTaskRow) *store.Task {
 	var deps []string
 	if row.Dependencies != "" && row.Dependencies != "[]" {
 		_ = json.Unmarshal([]byte(row.Dependencies), &deps)
