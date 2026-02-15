@@ -1,8 +1,8 @@
 # C4 Roadmap
 
-## Current Version: v0.16.4 (Phase 10.6 — Sidecar Resilience + Cloud Token Auto-Refresh)
+## Current Version: v0.17.0 (Phase 10.7 — C5 Hub Server Phase 1)
 
-현재 버전은 **Go MCP Primary(112 tools: Base 86 + Hub 26), LLM Gateway (4개 Provider 실제 구현), CDP Runner (브라우저 자동화), Cloud Foundation (Supabase + TokenProvider auto-refresh), Knowledge Bidirectional Sync, c4 daemon (로컬 작업 스케줄러), C0 Drive (파일 관리), C1 Context Hub (메시징 + 문서 + Context Keeper), C3 EventBus v4 (gRPC daemon + WebSocket bridge + DLQ + Filter v2), Sidecar Resilience (lazy start + health check)**을 포함합니다.
+현재 버전은 **Go MCP Primary(112 tools: Base 86 + Hub 26), LLM Gateway (4개 Provider 실제 구현), CDP Runner (브라우저 자동화), Cloud Foundation (Supabase + TokenProvider auto-refresh), Knowledge Bidirectional Sync, c4 daemon (로컬 작업 스케줄러), C0 Drive (파일 관리), C1 Context Hub (메시징 + 문서 + Context Keeper), C3 EventBus v4 (gRPC daemon + WebSocket bridge + DLQ + Filter v2), C5 Hub Server (분산 작업 큐, 18 REST API, 50 테스트), Sidecar Resilience (lazy start + health check)**을 포함합니다.
 
 ### 핵심 구조
 
@@ -37,12 +37,45 @@
 - **C1 Context Hub** - 채널 메시징, Context Keeper (LLM 요약), Agent 통합 (notifyKeeper 4-param)
 - **C1 Documents** - 마크다운 파일 편집기, 지속성 (persona/skill/spec/config)
 - **C3 EventBus v4** - gRPC daemon (UDS) + WebSocket bridge + DLQ + Filter v2, Python sidecar piggyback, task lifecycle events
-- **코드베이스**: Go ~19K + Python 24K + C1 ~13K + Tests ~26K = **~82K LOC**
-- **테스트**: Go 940+ (eventbus 87+, c2 29, research 34, gpu 4, lighthouse 24+) + Python 735+ + C1 (Rust 73 + Frontend 81) = **~1,849 tests** (+20 recent sessions)
+- **코드베이스**: Go ~21.5K (c4-core) + Go ~2.4K (c5) + Python 24K + C1 ~13K + Tests ~27K = **~86.2K LOC**
+- **테스트**: Go 945+ (c4-core 895 + c5 50) + Python 735+ + C1 (Rust 73 + Frontend 81) = **~1,769 tests**
 
 ---
 
 ## 최신 추가사항 (2026-02-15)
+
+### C5 Hub Server Phase 1 (분산 작업 큐) ✅
+
+**목표**: 독립형 분산 작업 큐 서버 구현 (PiQ Hub 대체)
+
+- **프로젝트 신규**: `c5/` — Go 기반 분산 작업 큐 서버
+- **4개 패키지**:
+  - `model/` — Job, Worker, Lease, Metric 데이터 모델
+  - `store/` — SQLite 백엔드 (6 테이블: jobs, workers, leases, metrics, job_logs, job_durations)
+  - `api/` — 18 REST API 엔드포인트 (jobs, workers, infra, metrics, estimator)
+  - `cmd/` — CLI (serve, worker 서브커맨드)
+
+- **핵심 기능**:
+  - **Worker Pull 모델**: register → heartbeat → lease acquire → execute → complete
+  - **Lease 기반 안정성**: 5분 리스 타임아웃 → 자동 재큐잉, stale worker 감지
+  - **hub.Client 호환**: C4 hub.Client가 동일한 JSON 형식으로 C5에 연결 가능
+  - **Estimator**: 작업 소요시간 예측 (Linear Regression with worker history)
+  - **Metrics**: 작업별 실행 시간, 완료율, 실패율 추적
+
+- **API 엔드포인트** (18개):
+  - Jobs: POST /api/v1/jobs, GET /api/v1/jobs/{id}, PATCH /api/v1/jobs/{id}/status, GET /api/v1/jobs
+  - Workers: POST /api/v1/workers, GET /api/v1/workers, POST /api/v1/workers/{id}/heartbeat, DELETE /api/v1/workers/{id}
+  - Leases: POST /api/v1/leases, GET /api/v1/leases/{id}, PATCH /api/v1/leases/{id}/heartbeat
+  - Metrics: GET /api/v1/metrics, POST /api/v1/metrics (bulk)
+  - Infra: GET /api/v1/health, GET /api/v1/stats, GET /api/v1/estimate/{job_id}
+
+- **테스트**: 50개 (model 6, store 24, api 21, integration 추후)
+
+- **규모**: 2,396 LOC (src) + 1,253 LOC (tests) = 3,649 LOC
+
+- **Phase 2 예정**: DAG execution, Edge device management, Artifact storage, WebSocket streaming
+
+---
 
 ### Cloud TokenProvider Auto-Refresh + Built-in Supabase Defaults ✅
 

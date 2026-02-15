@@ -20,7 +20,7 @@ C1 Desktop  — Tauri 2.x 프로젝트 탐색기 (6-탭 뷰)
 C2 Docs     — 문서 라이프사이클 (파싱/워크스페이스/프로필)
 C3 EventBus — gRPC 이벤트 버스 (UDS + WebSocket + DLQ)
 C4 Engine   — MCP 오케스트레이션 엔진 (이 프로젝트)
-C5 Hub      — 원격 GPU 작업 스케줄러
+C5 Hub      — 분산 작업 큐 서버 (Worker Pull 모델, Lease 기반)
 C9 Knowledge — 지식 관리 (FTS5 + Vector + Cloud Sync)
 ```
 
@@ -28,25 +28,27 @@ C9 Knowledge — 지식 관리 (FTS5 + Vector + Cloud Sync)
 | 언어 | 소스 | 테스트 | 합계 |
 |------|------|--------|------|
 | Go (`c4-core/`) | ~32K LOC | ~27K LOC | ~59K |
+| Go (`c5/`) | ~2.4K LOC | ~1.3K LOC | ~3.7K |
 | Python (`c4/`) | ~24K LOC | (tests/ 내 포함) | ~24K |
 | Rust (`c1/src-tauri/`) | ~8.5K LOC | (내장) | ~8.5K |
 | TypeScript (`c1/src/`) | ~6.5K LOC | | ~6.5K |
 | SQL (`infra/`) | ~0.8K LOC | | ~0.8K |
-| **합계** | | | **~99K LOC** |
+| **합계** | | | **~102.5K LOC** |
 
 ### 테스트 현황
 | 언어 | 테스트 수 | 패키지/모듈 |
 |------|----------|------------|
-| Go | **895** | 19 packages (all pass) |
+| Go | **945** | 20 packages (all pass) — c4-core 895 + c5 50 |
 | Python | **751** | tests/unit/ |
 | Rust | **73** | src-tauri |
-| **합계** | **~1,719** | |
+| **합계** | **~1,769** | |
 
 ### Monorepo 구조
 ```
 c4/
 ├── c4-core/          # Go MCP 서버 (Primary)
 ├── c4/               # Python Sidecar (LSP, Doc parsing)
+├── c5/               # Go 분산 작업 큐 서버 (Hub)
 ├── c1/               # Tauri 2.x 데스크톱 앱
 ├── infra/supabase/   # PostgreSQL 마이그레이션 (14개)
 ├── docs/             # ROADMAP, guides
