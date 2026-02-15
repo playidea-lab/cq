@@ -143,7 +143,7 @@ func lighthouseRegisterExisting(store *SQLiteStore, name, description, inputSche
 // Skips tools that already have a lighthouse record or are the lighthouse tool itself.
 func lighthouseRegisterAll(reg *mcp.Registry, store *SQLiteStore, agentID string) (any, error) {
 	tools := reg.ListTools()
-	registered, skipped := 0, 0
+	registered, skipped, updated := 0, 0, 0
 	var errors []string
 
 	for _, tool := range tools {
@@ -153,8 +153,13 @@ func lighthouseRegisterAll(reg *mcp.Registry, store *SQLiteStore, agentID string
 			skipped++
 			continue
 		}
-		// Skip if already has a lighthouse entry
+		// Skip if already has a lighthouse entry (but backfill empty spec)
 		if existing, _ := store.getLighthouse(name); existing != nil {
+			if existing.Spec == "" {
+				spec := generateSpecFromSchema(name, tool.Description, tool.InputSchema)
+				store.updateLighthouseSpec(name, spec)
+				updated++
+			}
 			skipped++
 			continue
 		}
@@ -171,6 +176,7 @@ func lighthouseRegisterAll(reg *mcp.Registry, store *SQLiteStore, agentID string
 			Name:        name,
 			Description: tool.Description,
 			InputSchema: schemaJSON,
+			Spec:        generateSpecFromSchema(name, tool.Description, tool.InputSchema),
 			Status:      "implemented",
 			Version:     1,
 			CreatedBy:   agentID,
@@ -190,12 +196,72 @@ func lighthouseRegisterAll(reg *mcp.Registry, store *SQLiteStore, agentID string
 		"success":    true,
 		"registered": registered,
 		"skipped":    skipped,
+		"updated":    updated,
 		"total":      len(tools),
 	}
 	if len(errors) > 0 {
 		result["errors"] = errors
 	}
 	return result, nil
+}
+
+// generateSpecFromSchema creates a structured markdown spec from a tool's description and input schema.
+func generateSpecFromSchema(name, description string, schema map[string]any) string {
+	var b strings.Builder
+	b.WriteString(fmt.Sprintf("# %s\n\n%s\n", name, description))
+
+	props := extractMap(schema, "properties")
+	if len(props) == 0 {
+		b.WriteString("\n## Parameters\nNone\n")
+		return b.String()
+	}
+
+	required := make(map[string]bool)
+	for _, r := range extractStringSlice(schema, "required") {
+		required[r] = true
+	}
+
+	b.WriteString("\n## Parameters\n")
+	for propName, propVal := range props {
+		pm, ok := propVal.(map[string]any)
+		if !ok {
+			continue
+		}
+		pType := ""
+		if t, ok := pm["type"].(string); ok {
+			pType = t
+		}
+		pDesc := ""
+		if d, ok := pm["description"].(string); ok {
+			pDesc = d
+		}
+		req := ""
+		if required[propName] {
+			req = " **(required)**"
+		}
+
+		b.WriteString(fmt.Sprintf("- `%s` (%s)%s: %s", propName, pType, req, pDesc))
+
+		// Add enum values if present
+		if enumVal, ok := pm["enum"].([]any); ok && len(enumVal) > 0 {
+			vals := make([]string, 0, len(enumVal))
+			for _, v := range enumVal {
+				if s, ok := v.(string); ok {
+					vals = append(vals, s)
+				}
+			}
+			if len(vals) > 0 {
+				b.WriteString(fmt.Sprintf(" [%s]", strings.Join(vals, ", ")))
+			}
+		}
+		// Add default value if present
+		if def, ok := pm["default"]; ok {
+			b.WriteString(fmt.Sprintf(" (default: %v)", def))
+		}
+		b.WriteString("\n")
+	}
+
+	return b.String()
 }
 
 // lighthouseRegister creates a new lighthouse stub and registers it in the MCP registry.
@@ -616,6 +682,11 @@ func (s *SQLiteStore) promoteLighthouse(name, promotedBy string) error {
 	_, err = s.db.Exec(`
 		UPDATE c4_lighthouses SET status='implemented', promoted_by=?, updated_at=CURRENT_TIMESTAMP
 		WHERE name=?`, promotedBy, name)
+	return err
+}
+
+func (s *SQLiteStore) updateLighthouseSpec(name, spec string) error {
+	_, err := s.db.Exec(`UPDATE c4_lighthouses SET spec=?, updated_at=CURRENT_TIMESTAMP WHERE name=?`, spec, name)
 	return err
 }
 

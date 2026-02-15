@@ -1217,11 +1217,47 @@ func TestLighthouseRegisterAll(t *testing.T) {
 		t.Errorf("skipped = %d, want 1 (c4_lighthouse)", skipped)
 	}
 
-	// Calling again should skip all (already registered)
+	// Verify spec was auto-generated
+	getResult := callLighthouse(t, reg, map[string]any{"action": "get", "name": "c4_status"})
+	if spec, _ := getResult["spec"].(string); spec == "" {
+		t.Error("spec should be auto-generated, got empty")
+	}
+
+	// Calling again should skip all (already registered), updated=0 since spec exists
 	result2 := callLighthouse(t, reg, map[string]any{"action": "register_all"})
 	registered2 := result2["registered"].(int)
 	if registered2 != 0 {
 		t.Errorf("second register_all registered = %d, want 0 (idempotent)", registered2)
+	}
+	updated2 := result2["updated"].(int)
+	if updated2 != 0 {
+		t.Errorf("second register_all updated = %d, want 0 (spec already filled)", updated2)
+	}
+}
+
+func TestLighthouseRegisterAllBackfillSpec(t *testing.T) {
+	reg, store := setupLighthouseTest(t)
+
+	// Manually insert a lighthouse entry with empty spec (simulates pre-generateSpec registration)
+	lh := &Lighthouse{
+		Name: "c4_status", Description: "old desc", InputSchema: `{"type":"object"}`,
+		Spec: "", Status: "implemented", Version: 1, CreatedBy: "test", PromotedBy: "manual",
+	}
+	if err := store.saveLighthouse(lh); err != nil {
+		t.Fatal(err)
+	}
+
+	// register_all should backfill the empty spec
+	result := callLighthouse(t, reg, map[string]any{"action": "register_all"})
+	updated := result["updated"].(int)
+	if updated != 1 {
+		t.Errorf("updated = %d, want 1 (backfill empty spec)", updated)
+	}
+
+	// Verify spec is now filled
+	getResult := callLighthouse(t, reg, map[string]any{"action": "get", "name": "c4_status"})
+	if spec, _ := getResult["spec"].(string); spec == "" {
+		t.Error("spec should be backfilled, got empty")
 	}
 }
 
