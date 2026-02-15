@@ -105,7 +105,7 @@ c4_add_todo(mode="direct", review_required=False)
 
 ---
 
-## MCP 도구 빠른 참조 (112개: Base 86 + Hub 26)
+## MCP 도구 빠른 참조 (112개: Base 86 + Hub 26, Tier 1 Go Native 13개 포함)
 
 ```
 상태(3):    c4_status, c4_start, c4_clear
@@ -185,12 +185,11 @@ Claude Code → Go MCP Server (stdio, 112 tools)
                 ├→ C1 Context Hub (3): search, mentions, briefing + ContextKeeper
                 ├→ Drive (6): upload, download, list, delete, info, mkdir
                 ├→ Hub Client (26): job, worker, metrics, artifact, DAG, edge, deploy
-                └→ JSON-RPC proxy (30) → Python Sidecar
+                ├→ Go Native (Tier 1) (13): Research (5) + C2 (6) + GPU (2)
+                └→ JSON-RPC proxy (17) → Python Sidecar (Tier 2: LSP 7 + Knowledge 6 + Review 1)
                                             ├→ LSP (multilspy, Jedi, tree-sitter)
                                             ├→ Knowledge Store (FTS5 + Vector)
-                                            ├→ GPU Scheduler
-                                            ├→ C2 Document Lifecycle (8)
-                                            └→ Research Loop (5)
+                                            └→ Review Skill (LLM based)
 ```
 
 ### 패키지 구조

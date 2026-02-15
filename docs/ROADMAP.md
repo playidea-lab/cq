@@ -44,6 +44,33 @@
 
 ## 최신 추가사항 (2026-02-15)
 
+### Python Sidecar Tier 1 Migration to Go Native ✅
+
+**목표**: 13개 Python proxy 도구를 Go native로 마이그레이션 (성능 + 의존성 축소)
+
+- **Research Store (5 tools)**: `internal/research/store.go` — SQLite CRUD 구현 (565 LOC)
+  - c4_research_start, c4_research_status, c4_research_record, c4_research_approve, c4_research_next
+  - axis_scores, experiments, gaps 메타데이터 저장
+  - 테스트: 19개 (CRUD, iteration, gap tracking)
+- **C2 Workspace/Profile/Persona (6 tools)**: `internal/c2/` — 문서 생명주기 (1,067 LOC)
+  - c4_workspace_create, c4_workspace_load, c4_workspace_save
+  - c4_profile_load, c4_profile_save
+  - c4_persona_learn (draft/final 비교 → 패턴 추출)
+  - 테스트: 29개 (YAML parsing, line-diff, profile versioning)
+- **GPU Native (2 tools)**: `internal/gpu/handlers.go` — daemon GPU monitor 활용 (123 LOC)
+  - c4_gpu_status, c4_job_submit (기존 proxy 제거, 직접 구현)
+  - 테스트: 4개 (GPU detection, job submission)
+- **Handler 통합**: `handlers/register.go` — NativeOpts wiring (research, c2, gpu handlers 등록)
+- **Proxy 감소**: 30 → 17 tools (13개 Go 대체)
+- **코드**: +3,667 LOC (c2 1,067 + research 907 + gpu 123 + tests 1,570)
+- **테스트**: Go 687 → 754 (+67)
+- **결과**: Python 의존성 제거 (pytorch, tensorflow 등), sidecar 초기화 시간 단축
+
+**Tier 2 다음 계획** (예정):
+- LSP tools (7): find_symbol, get_symbols_overview, replace/insert/rename_symbol (tree-sitter 활용)
+- Knowledge tools (6): knowledge_search/record/get, experiment_search/record (vector DB 대체)
+- Review tool (1): c2_review (LLM 기반, 계획 중)
+
 ### C3 EventBus v4 — WS Bridge + DLQ + Filter v2 + C1 Events 탭 ✅
 
 **목표**: 실시간 이벤트 스트리밍 + 신뢰성 (DLQ) + 고급 필터링 + Desktop 이벤트 모니터링
