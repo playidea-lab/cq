@@ -270,8 +270,14 @@ func lighthousePromote(reg *mcp.Registry, store *SQLiteStore, name, agentID stri
 		return nil, err
 	}
 
-	// Remove the stub from registry — the real implementation should be registered separately
-	reg.Unregister(name)
+	// Remove the stub from registry — but only if no real implementation is already registered.
+	// If a real tool exists (description without [LIGHTHOUSE] prefix), keep it.
+	if schema, ok := reg.GetToolSchema(name); ok {
+		if strings.HasPrefix(schema.Description, "[LIGHTHOUSE]") {
+			reg.Unregister(name)
+		}
+		// Real tool already registered — leave it in place
+	}
 
 	store.logTrace("lighthouse_promote", agentID, name, "promoted to implemented")
 
@@ -400,6 +406,8 @@ func makeLighthouseStub(lh *Lighthouse) mcp.HandlerFunc {
 
 // LoadLighthousesOnStartup loads all stub lighthouses from DB into the MCP registry.
 // Must be called after all core handlers are registered.
+// If a real tool is already registered with the same name as a stub, the lighthouse
+// is auto-promoted to "implemented" status — eliminating manual promote steps.
 func LoadLighthousesOnStartup(reg *mcp.Registry, store *SQLiteStore) int {
 	lighthouses, err := store.listLighthouses()
 	if err != nil {
@@ -412,8 +420,11 @@ func LoadLighthousesOnStartup(reg *mcp.Registry, store *SQLiteStore) int {
 		if lh.Status != "stub" {
 			continue
 		}
-		// Skip if a core tool already has this name
+		// If real tool already registered, auto-promote the lighthouse
 		if reg.HasTool(lh.Name) {
+			if err := store.promoteLighthouse(lh.Name, "auto-startup"); err == nil {
+				fmt.Fprintf(os.Stderr, "c4: lighthouse auto-promoted: %s (real tool detected)\n", lh.Name)
+			}
 			continue
 		}
 

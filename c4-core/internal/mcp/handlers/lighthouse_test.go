@@ -1068,6 +1068,94 @@ func TestAutoPromoteLighthouseHyphenatedName(t *testing.T) {
 	}
 }
 
+func TestStartupAutoPromoteWhenRealToolExists(t *testing.T) {
+	db, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer db.Close()
+
+	store, err := NewSQLiteStore(db)
+	if err != nil {
+		t.Fatalf("create store: %v", err)
+	}
+
+	// Insert a stub lighthouse
+	if err := store.saveLighthouse(&Lighthouse{
+		Name: "c4_health", Description: "Health check", InputSchema: `{"type":"object"}`,
+		Status: "stub", Version: 1, CreatedBy: "test",
+	}); err != nil {
+		t.Fatalf("save lighthouse: %v", err)
+	}
+
+	// Register real tool FIRST (simulates RegisterHealthHandler running before LoadLighthousesOnStartup)
+	reg := mcp.NewRegistry()
+	reg.Register(mcp.ToolSchema{Name: "c4_health", Description: "Check subsystem health"}, func(args json.RawMessage) (any, error) {
+		return map[string]any{"status": "healthy"}, nil
+	})
+
+	// Load — should auto-promote the stub since real tool exists
+	n := LoadLighthousesOnStartup(reg, store)
+	if n != 0 {
+		t.Errorf("loaded = %d, want 0 (no stubs should be registered)", n)
+	}
+
+	// Real tool should still be there with original description
+	schema, ok := reg.GetToolSchema("c4_health")
+	if !ok {
+		t.Fatal("c4_health should still be registered")
+	}
+	if schema.Description != "Check subsystem health" {
+		t.Errorf("description = %q, want real tool description", schema.Description)
+	}
+
+	// Lighthouse status should be auto-promoted to "implemented"
+	lh, err := store.getLighthouse("c4_health")
+	if err != nil {
+		t.Fatalf("getLighthouse: %v", err)
+	}
+	if lh.Status != "implemented" {
+		t.Errorf("status = %q, want implemented (auto-promoted)", lh.Status)
+	}
+	if lh.PromotedBy != "auto-startup" {
+		t.Errorf("promoted_by = %q, want auto-startup", lh.PromotedBy)
+	}
+}
+
+func TestPromoteKeepsRealToolInRegistry(t *testing.T) {
+	reg, _ := setupLighthouseTest(t)
+
+	// Register a lighthouse stub
+	callLighthouse(t, reg, map[string]any{
+		"action": "register", "name": "lh_real_keep", "description": "Will have real impl", "auto_task": false,
+	})
+
+	// Now register a "real" tool with the same name (overwrites the stub)
+	reg.Replace(mcp.ToolSchema{Name: "lh_real_keep", Description: "Real implementation"}, func(args json.RawMessage) (any, error) {
+		return map[string]any{"real": true}, nil
+	})
+
+	// Promote — should NOT unregister the real tool
+	result := callLighthouse(t, reg, map[string]any{"action": "promote", "name": "lh_real_keep"})
+	if result["success"] != true {
+		t.Fatalf("promote failed: %v", result)
+	}
+
+	// Real tool should still be registered
+	if !reg.HasTool("lh_real_keep") {
+		t.Error("real tool should remain in registry after promote")
+	}
+
+	// Verify it's the real implementation
+	schema, ok := reg.GetToolSchema("lh_real_keep")
+	if !ok {
+		t.Fatal("tool should exist")
+	}
+	if schema.Description != "Real implementation" {
+		t.Errorf("description = %q, want 'Real implementation'", schema.Description)
+	}
+}
+
 func TestLighthouseAutoTaskFailurePath(t *testing.T) {
 	reg, store := setupLighthouseTest(t)
 
