@@ -38,7 +38,7 @@
 - **C1 Documents** - 마크다운 파일 편집기, 지속성 (persona/skill/spec/config)
 - **C3 EventBus v4** - gRPC daemon (UDS) + WebSocket bridge + DLQ + Filter v2, Python sidecar piggyback, task lifecycle events
 - **코드베이스**: Go ~19K + Python 24K + C1 ~13K + Tests ~26K = **~82K LOC**
-- **테스트**: Go 937+ (eventbus 87+, c2 29, research 34, gpu 4) + Python 735+ + C1 (Rust 73 + Frontend 81) = **~1,839 tests** (+10 this session)
+- **테스트**: Go 940+ (eventbus 87+, c2 29, research 34, gpu 4, lighthouse 24+) + Python 735+ + C1 (Rust 73 + Frontend 81) = **~1,849 tests** (+20 recent sessions)
 
 ---
 
@@ -841,6 +841,26 @@ Claude Code → Go MCP Server (stdio, 47 tools)
 
 **결과**: 57 → **58 MCP 도구** (+1: c4_lighthouse)
 **테스트**: Go 9 packages pass (lighthouse_test.go 11개 포함)
+
+### Phase 7.6: Lighthouse-First Planning Integration ✅
+
+**목표**: Contract-First TDD를 c4-plan 워크플로우에 정식 통합
+
+- **AutoPromote 기능**: T-LH 태스크 완료 시 연결된 lighthouse 자동 promote
+  - `SubmitTask()` → lighthouse status: stub → implemented 변환
+  - `ReportTask()` → direct mode에서도 lighthouse auto-promote
+  - 비 LH 태스크는 스킵 (무시)
+- **WithRegistry 와이어링**:
+  - `sqlite_store.go` — 생성자에서 `*Registry` 의존성 주입
+  - `mcp.go` — `NewStore(..., WithRegistry(reg))` 초기화
+- **c4-plan.md 워크플로우 확장**:
+  - Phase 0.2: Lighthouse 현황 검토
+  - Phase 2.7: Contract-First 정의 (MCP tool 명세 작성)
+  - Phase L: Lighthouse 관리 (프로모션 추적)
+  - Worker Packet: LighthouseRef 필드 추가
+- **테스트**: lighthouse_test.go 11 → 14 (+3 auto-promote 테스트)
+  - TestAutoPromoteOnSubmit, TestAutoPromoteOnReport, TestSkipNonLighthouseTasks
+- **결과**: Contract-First TDD 정식 통합, 테스트 937 → **940+** (+3)
 
 ---
 
