@@ -9,7 +9,7 @@ Plan, execute, review, and learn — automated end-to-end.
 ![Go](https://img.shields.io/badge/Go-1.22+-00ADD8?logo=go&logoColor=white)
 ![Python](https://img.shields.io/badge/Python-3.11+-3776AB?logo=python&logoColor=white)
 ![Tools](https://img.shields.io/badge/MCP_Tools-112-blueviolet)
-![Tests](https://img.shields.io/badge/Tests-1%2C627+-brightgreen)
+![Tests](https://img.shields.io/badge/Tests-1%2C900+-brightgreen)
 ![License](https://img.shields.io/badge/License-Personal_Study-orange)
 
 </div>
@@ -37,10 +37,12 @@ C4 breaks features into tasks, assigns them to workers (parallel) or claims them
 ## Architecture
 
 ```
-Claude Code ──stdio──▶ Go MCP Server (103 tools)
+Claude Code ──stdio──▶ Go MCP Server (112 tools)
                         │
                         ├── Go Native ──────── State, Tasks, Files, Git, Validation
                         ├── SQLite Store ───── Specs, Designs, Checkpoints, Artifacts
+                        ├── Knowledge (Go) ─── FTS5 + Vector Search, RRF Hybrid
+                        ├── Research (Go) ──── Research Loop, C2 Workspace, GPU
                         ├── Soul Engine ────── Persona evolution, Digital Twin, Reflection
                         ├── LLM Gateway ────── Claude / GPT / Gemini / Ollama
                         ├── CDP Runner ─────── Browser automation (DevTools Protocol)
@@ -49,11 +51,9 @@ Claude Code ──stdio──▶ Go MCP Server (103 tools)
                         │                      ├── DAG Orchestration
                         │                      └── Edge Deployment
                         │
-                        └── JSON-RPC ──TCP──▶ Python Sidecar
-                                              ├── Code Intelligence (Multilspy/Jedi/Tree-sitter)
-                                              ├── Knowledge Store (FTS5 + Vector, RRF)
-                                              ├── C2 Document Lifecycle
-                                              └── Research Loop
+                        └── JSON-RPC ──TCP──▶ Python Sidecar (10 tools)
+                                              ├── LSP (Multilspy/Jedi/Tree-sitter)
+                                              └── C2 Document Parsing
 ```
 
 | Component | Directory | Stack |
@@ -148,7 +148,7 @@ c4_lighthouse(action="promote", name="export_api")
 - **7 hooks** — Secret scanning, force-push prevention, auto-lint (Python/TypeScript)
 - **Economic mode** — Model routing presets (standard / economic / ultra-economic / quality)
 
-## MCP Tools (103)
+## MCP Tools (112)
 
 | Category | Count | Examples |
 |----------|-------|---------|
@@ -156,10 +156,12 @@ c4_lighthouse(action="promote", name="export_api")
 | Files & Git | 11 | `c4_find_file`, `c4_search_for_pattern`, `c4_read_file`, `c4_search_commits` |
 | Discovery | 12 | `c4_save_spec`, `c4_save_design`, `c4_artifact_save`, `c4_lighthouse` (TDD loop) |
 | Code Intelligence | 7 | `c4_find_symbol`, `c4_get_symbols_overview`, `c4_replace_symbol_body` |
-| Knowledge | 12 | `c4_knowledge_search`, `c4_experiment_record`, `c4_research_start` |
+| Knowledge (Go) | 7 | `c4_knowledge_search`, `c4_knowledge_record`, `c4_experiment_record` |
+| Research (Go) | 5 | `c4_research_start`, `c4_research_next`, `c4_research_record` |
 | Soul & Team | 10 | `c4_soul_resolve`, `c4_persona_evolve`, `c4_reflect`, `c4_whoami` |
 | LLM & CDP | 5 | `c4_llm_call`, `c4_llm_providers`, `c4_cdp_run` |
-| C2 Documents | 8 | `c4_parse_document`, `c4_workspace_create`, `c4_persona_learn` |
+| C1 & C2 | 11 | `c1_search`, `c4_parse_document`, `c4_workspace_create`, `c4_persona_learn` |
+| Drive | 6 | `c4_drive_upload`, `c4_drive_download`, `c4_drive_list` |
 | Hub | 26 | `c4_hub_submit`, `c4_hub_dag_create`, `c4_hub_edge_register`, `c4_hub_deploy` |
 
 ## Configuration
@@ -195,7 +197,7 @@ worktree:
 
 ## C1 Desktop App
 
-Multi-LLM project explorer with 4 views: Sessions, Dashboard, Config, Team.
+Multi-LLM project explorer with 6 views: Sessions, Dashboard, Config, Documents, Channels, Events.
 
 Integrates with Claude Code, Codex CLI, Cursor, and Gemini CLI.
 

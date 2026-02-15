@@ -122,6 +122,25 @@ MCPEOF
     ok ".mcp.json created"
 fi
 
+# ─── Global Install (optional) ────────────────────────────
+
+printf "\n"
+read -rp "  Install c4 globally to ~/.local/bin/c4? [y/N] " INSTALL_GLOBAL
+if [[ "${INSTALL_GLOBAL,,}" =~ ^y ]]; then
+    mkdir -p "$HOME/.local/bin"
+    # CRITICAL: Use go build -o, NOT cp (macOS ARM64 code signing)
+    info "Building global binary..."
+    cd "$C4_ROOT/c4-core"
+    go build -ldflags "-X main.version=$VERSION" -o "$HOME/.local/bin/c4" ./cmd/c4/
+    ok "Global binary installed (~/.local/bin/c4)"
+
+    # Check if ~/.local/bin is in PATH
+    if ! echo "$PATH" | tr ':' '\n' | grep -qx "$HOME/.local/bin"; then
+        warn "~/.local/bin is not in PATH. Add to your shell profile:"
+        info '  export PATH="$HOME/.local/bin:$PATH"'
+    fi
+fi
+
 # ─── .c4/ Directory Init ───────────────────────────────────
 
 mkdir -p "$C4_ROOT/.c4/knowledge/docs"

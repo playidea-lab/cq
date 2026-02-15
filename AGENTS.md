@@ -11,6 +11,54 @@ Spec: https://agents.md/
 
 ---
 
+## Project Overview
+
+### C 시리즈 생태계
+```
+C0 Drive    — 클라우드 파일 스토리지 (Supabase Storage)
+C1 Desktop  — Tauri 2.x 프로젝트 탐색기 (6-탭 뷰)
+C2 Docs     — 문서 라이프사이클 (파싱/워크스페이스/프로필)
+C3 EventBus — gRPC 이벤트 버스 (UDS + WebSocket + DLQ)
+C4 Engine   — MCP 오케스트레이션 엔진 (이 프로젝트)
+C5 Hub      — 원격 GPU 작업 스케줄러
+C9 Knowledge — 지식 관리 (FTS5 + Vector + Cloud Sync)
+```
+
+### 코드베이스 규모
+| 언어 | 소스 | 테스트 | 합계 |
+|------|------|--------|------|
+| Go (`c4-core/`) | ~32K LOC | ~27K LOC | ~59K |
+| Python (`c4/`) | ~24K LOC | (tests/ 내 포함) | ~24K |
+| Rust (`c1/src-tauri/`) | ~8.5K LOC | (내장) | ~8.5K |
+| TypeScript (`c1/src/`) | ~6.5K LOC | | ~6.5K |
+| SQL (`infra/`) | ~0.8K LOC | | ~0.8K |
+| **합계** | | | **~99K LOC** |
+
+### 테스트 현황
+| 언어 | 테스트 수 | 패키지/모듈 |
+|------|----------|------------|
+| Go | **895** | 19 packages (all pass) |
+| Python | **751** | tests/unit/ |
+| Rust | **73** | src-tauri |
+| **합계** | **~1,719** | |
+
+### Monorepo 구조
+```
+c4/
+├── c4-core/          # Go MCP 서버 (Primary)
+├── c4/               # Python Sidecar (LSP, Doc parsing)
+├── c1/               # Tauri 2.x 데스크톱 앱
+├── infra/supabase/   # PostgreSQL 마이그레이션 (14개)
+├── docs/             # ROADMAP, guides
+├── scripts/          # 유틸리티 스크립트
+├── tests/            # Python 테스트
+├── .mcp.json         # MCP 서버 설정 → ~/.local/bin/c4
+├── CLAUDE.md → AGENTS.md  # AI 에이전트 지침 (SSOT)
+└── pyproject.toml    # Python 프로젝트 설정
+```
+
+---
+
 ## Documentation SSOT Rules (CRITICAL)
 
 - **DO NOT CREATE**: `PLAN.md`, `TODO.md`, `PHASES.md`, `DONE.md`, `*_SUMMARY.md`
@@ -105,7 +153,7 @@ c4_add_todo(mode="direct", review_required=False)
 
 ---
 
-## MCP 도구 빠른 참조 (112개: Base 86 + Hub 26, Tier 1 Go Native 13개 포함)
+## MCP 도구 빠른 참조 (109개 등록, Hub 활성화 시 최대 ~135개)
 
 ```
 상태(3):    c4_status, c4_start, c4_clear
@@ -172,11 +220,11 @@ CP-001:  체크포인트
 
 ## Go Core (c4-core/) — Primary MCP Server
 
-> `c4-core/` — Go 기반 MCP 서버 (Primary). 112개 도구 (Base 86 + Hub 26). Python sidecar로 LSP/C2 Doc 기능 위임 (10 proxy tools).
+> Go 기반 MCP 서버. ~32K LOC(src) + ~27K LOC(test). 895개 테스트, 19 패키지.
 
 ### 아키텍처
 ```
-Claude Code → Go MCP Server (stdio, 112 tools)
+Claude Code → Go MCP Server (stdio, 109 tools)
                 ├→ Go native (22): 상태, 태스크, 파일, git, validation
                 ├→ Go + SQLite (13): spec, design, checkpoint, artifact, lighthouse
                 ├→ Soul/Persona/Twin (7): soul CRUD, persona evolve, whoami, reflect
@@ -184,24 +232,37 @@ Claude Code → Go MCP Server (stdio, 112 tools)
                 ├→ CDP Runner (2): cdp_run, cdp_list
                 ├→ C1 Context Hub (3): search, mentions, briefing + ContextKeeper
                 ├→ Drive (6): upload, download, list, delete, info, mkdir
-                ├→ Hub Client (26): job, worker, metrics, artifact, DAG, edge, deploy
-                ├→ Go Native (Tier 1) (13): Research (5) + C2 (6) + GPU (2)
-                ├→ Go Native (Tier 2) (7): Knowledge (7) — Store+FTS5+Vector+Sync
+                ├→ Go Native — Tier 1 (13): Research (5) + C2 (6) + GPU (2)
+                ├→ Go Native — Tier 2 (7): Knowledge (Store+FTS5+Vector+Sync)
+                ├→ Hub Client (26, 조건부): job, worker, DAG, edge, deploy, artifact
                 └→ JSON-RPC proxy (10) → Python Sidecar (LSP 7 + C2 Doc 2 + Onboard 1)
-                                            ├→ LSP (multilspy, Jedi, tree-sitter)
-                                            └→ C2 Doc (pymupdf, python-docx)
 ```
 
 ### 패키지 구조
-- `cmd/c4/` — CLI (cobra), MCP server (Registry-based)
-- `internal/mcp/` — Registry + handlers
-- `internal/mcp/handlers/` — sqlite_store, files, git, discovery, artifacts, proxy, validation, llm, hub, c2, c1, drive
-- `internal/hub/` — PiQ Hub REST+WS client (job, worker, DAG, edge, deploy, artifact, stream)
-- `internal/bridge/` — Python sidecar 관리 (JSON-RPC/TCP)
-- `internal/task/` — TaskStore (SQLite, Memory, Supabase)
-- `internal/state/` — State machine
-- `internal/worker/` — Worker manager
-- `internal/validation/` — Validation runner
+```
+c4-core/
+├── cmd/c4/           # CLI (cobra) + MCP server 진입점
+├── internal/
+│   ├── mcp/          # Registry + stdio transport
+│   │   └── handlers/ # 도구별 핸들러 (sqlite_store, files, git, proxy, ...)
+│   ├── bridge/       # Python sidecar 관리 (JSON-RPC/TCP, lazy start)
+│   ├── task/         # TaskStore (SQLite, Memory, Supabase)
+│   ├── state/        # State machine (INIT→...→COMPLETE)
+│   ├── worker/       # Worker manager
+│   ├── validation/   # Validation runner (go test, pytest, cargo test 자동 감지)
+│   ├── config/       # Config manager (YAML, env, economic presets)
+│   ├── cloud/        # Auth (OAuth), CloudStore, HybridStore
+│   ├── hub/          # PiQ Hub REST+WS client (26 tools)
+│   ├── daemon/       # 로컬 작업 스케줄러 (Store+Scheduler+Server+GPU)
+│   ├── eventbus/     # C3 EventBus v4 (gRPC, WS bridge, DLQ, filter v2)
+│   ├── knowledge/    # C9 Knowledge (Store+FTS5+VectorStore+Searcher+Sync)
+│   ├── research/     # Research iteration store (paper+experiment loop)
+│   ├── c2/           # C2 Workspace/Profile/Persona
+│   ├── drive/        # C0 Drive client (Supabase Storage)
+│   ├── llm/          # LLM Gateway (Anthropic, OpenAI, Gemini, Ollama)
+│   └── cdp/          # Chrome DevTools Protocol runner
+└── test/benchmark/   # 벤치마크
+```
 
 ### 빌드/테스트/설치
 
@@ -231,24 +292,52 @@ cd c4-core && go build -o bin/c4 ./cmd/c4/
 
 ---
 
-## C1 (Multi-LLM Project Explorer)
+## Python Sidecar (c4/)
 
-> `c1/` — Tauri 2.x 데스크톱 앱. Multi-LLM 프로젝트 탐색기.
+> Python 기반 보조 서버. Go MCP 서버에서 JSON-RPC/TCP로 호출. ~24K LOC.
+
+### 역할 (Tier 1+2 마이그레이션 후 축소)
+```
+Go MCP Server ──JSON-RPC/TCP──→ Python Sidecar (10 tools)
+                                  ├→ LSP (7): find_symbol, get_overview, replace_body,
+                                  │          insert_before/after, rename, find_refs
+                                  ├→ C2 Doc (2): parse_document, extract_text
+                                  └→ Onboard (1): c4_onboard
+```
+
+### 마이그레이션 이력
+| Tier | 도구 수 | 대상 | Go 패키지 |
+|------|---------|------|-----------|
+| Tier 1 | 13 → Go | Research (5) + C2 (6) + GPU (2) | `research/`, `c2/`, `daemon/` |
+| Tier 2 | 7 → Go | Knowledge (7) | `knowledge/` |
+| 남은 Proxy | 10 | LSP (7) + C2 Doc (2) + Onboard (1) | — |
+
+### 특성
+- **Lazy Start**: 첫 proxy 호출 시에만 sidecar 시작
+- **Health Check**: Exponential backoff로 연결 확인
+- **Python 미설치 시**: Graceful fallback (LSP/Doc 도구만 비활성)
+
+---
+
+## C1 Desktop (c1/)
+
+> Tauri 2.x 데스크톱 앱. ~8.5K LOC(Rust) + ~6.5K LOC(TypeScript). 73개 테스트.
 
 ### 아키텍처
-- **Rust 백엔드**: `src-tauri/src/{commands,models,analytics,cloud,scanner,messaging,lib}.rs`
+- **Rust 백엔드**: `src-tauri/src/{commands,models,analytics,cloud,scanner,messaging,eventbus,lib}.rs`
 - **Multi-Provider**: `src-tauri/src/providers/` — Claude Code, Codex CLI, Cursor, Gemini CLI
 - **React 프론트엔드**: `src/components/`, `src/hooks/`, `src/styles/`
 - **CSS**: BEM 패턴 + `styles/tokens.css` 디자인 토큰
 
-### 5개 뷰
-| 뷰 | 데이터 소스 | Rust 커맨드 |
-|-----|-------------|-------------|
-| Sessions | 다중 프로바이더 + Analytics | `list_providers`, `get_session_stats`, `get_provider_timeline` |
-| Dashboard | `.c4/c4.db` + Timeline + Validation | `get_project_state`, `get_task_timeline`, `get_validation_results` |
-| Config | `~/.claude/`, `.claude/`, `.c4/` 파일 | `list_config_files`, `read_config_file` |
-| Channels | Supabase c1_* 테이블 + Realtime | `list_channels`, `send_message`, `search_messages`, `get_briefing` |
-| Team | Supabase (로그인 시만 표시) | `cloud_sync_tasks`, `cloud_get_team_projects`, `cloud_get_remote_dashboard` |
+### 6개 뷰
+| 뷰 | 데이터 소스 | 핵심 기능 |
+|-----|-------------|-----------|
+| Sessions | 다중 프로바이더 | 세션 분석, 타임라인, 통계 |
+| Dashboard | `.c4/c4.db` | 프로젝트 상태, 태스크, 검증 결과 |
+| Config | `~/.claude/`, `.c4/` | 설정 파일 뷰어/편집기 |
+| Documents | 로컬 파일시스템 | 문서 파싱, C2 연동 |
+| Channels | Supabase Realtime | 실시간 메시징, 검색, 브리핑 |
+| Events | EventBus WebSocket | 실시간 이벤트 모니터링 |
 
 ### 빌드/실행
 ```bash
@@ -256,4 +345,36 @@ cd c1 && pnpm install
 cd src-tauri && cargo check && cargo test
 pnpm build            # 프론트엔드 빌드
 cargo tauri dev       # 개발 서버
+```
+
+---
+
+## Infra (infra/supabase/)
+
+> PostgreSQL 마이그레이션 14개. Supabase 기반 클라우드 레이어.
+
+### 주요 테이블
+- `c4_tasks`, `c4_documents`, `c4_projects` — C4 핵심 데이터
+- `c1_channels`, `c1_messages`, `c1_participants`, `c1_channel_summaries` — C1 메시징
+- RLS 정책 (migration 00014: 보안 픽스)
+
+---
+
+## C3 EventBus (internal/eventbus/)
+
+> gRPC UDS daemon + WebSocket bridge + DLQ. 87+ 테스트.
+
+### 기능
+- **v1**: gRPC daemon (UDS), rules YAML, Store/Dispatcher
+- **v2**: Python sidecar response piggyback (grpcio 의존성 제거)
+- **v3**: ToggleRule, ListLogs, GetStats, ReplayEvents, Embedded auto-start
+- **v4**: correlation_id, DLQ, Filter v2 ($eq/$ne/$gt/$lt/$in/$regex/$exists), WebSocket bridge, HMAC-SHA256 webhook
+
+### 이벤트 종류 (16종)
+```
+task.completed, task.updated, task.blocked, task.created
+checkpoint.approved, checkpoint.rejected
+review.changes_requested
+validation.passed, validation.failed
+knowledge.recorded, knowledge.searched
 ```
