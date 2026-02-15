@@ -94,11 +94,22 @@ After:   Go MCP → Go Native (Research/C2/GPU) + Python Sidecar (17 proxy tools
 - **테스트**: Go 687 → 754 (+67)
 - **결과**: Python 의존성 제거 (pytorch, tensorflow 등), sidecar 초기화 시간 단축
 
-**Tier 2 다음 계획** (예정 — LSP/Knowledge/Review Go native):
-- LSP tools (7): find_symbol, get_symbols_overview, replace/insert/rename_symbol (tree-sitter 활용)
-- Knowledge tools (6): knowledge_search/record/get, experiment_search/record (vector DB 대체)
-- Review tool (1): c2_review (LLM 기반, 계획 중)
-- **결과**: Python sidecar 17 → 3 tools (minimal bridge layer), 완전 Go MCP native
+### Python Sidecar Tier 2 Migration — Knowledge Go Native ✅
+
+- **7개 도구 이동**: knowledge_record, knowledge_get, knowledge_search, experiment_record, experiment_search, pattern_suggest, knowledge_pull
+- **새 패키지**: `internal/knowledge/` — Store (SQLite CRUD+FTS5+Markdown SSOT), VectorStore (BLOB cosine), Searcher (RRF hybrid), Sync (Cloud pull)
+- **NativeOpts 확장**: KnowledgeStore, KnowledgeSearcher, KnowledgeCloud 필드 추가 (register.go)
+- **mcp.go 와이어링**: NewStore → NewVectorStore → NewSearcher 초기화, shutdown cleanup
+- **Proxy fallback 유지**: KnowledgeStore 초기화 실패 시 Python proxy로 자동 전환
+- **Proxy 감소**: 17 → 10 tools (LSP 7 + Onboard 1 + C2 Doc 2)
+- **테스트**: knowledge store 26 + vector 9 + search 13 + sync 8 + handlers 16 = ~72개
+- **커밋**: 825cf12, c6f28ab, cd692a7, 01c9244
+
+**Tier 3 다음 계획** (예정 — LSP Go native):
+- LSP tools (7): find_symbol, get_symbols_overview, replace/insert/rename_symbol (tree-sitter Go 활용)
+- Review tool (1): c2_review (LLM 기반)
+- C2 Doc tools (2): parse_document, extract_text (Go PDF/DOCX 라이브러리)
+- **결과**: Python sidecar 10 → 0 tools (완전 Go MCP native)
 
 ### C3 EventBus v4 — WS Bridge + DLQ + Filter v2 + C1 Events 탭 ✅
 
