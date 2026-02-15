@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 )
 
 // GetStatus returns the current project status with task counts.
@@ -230,4 +231,70 @@ func (s *SQLiteStore) ListPersonas() ([]map[string]any, error) {
 		personas = append(personas, p)
 	}
 	return personas, nil
+}
+
+// TaskFilter defines filtering criteria for ListTasks.
+type TaskFilter struct {
+	Status   string `json:"status,omitempty"`
+	Domain   string `json:"domain,omitempty"`
+	WorkerID string `json:"worker_id,omitempty"`
+	Limit    int    `json:"limit,omitempty"`
+}
+
+// ListTasks returns tasks matching the given filter with priority DESC, created_at ASC ordering.
+func (s *SQLiteStore) ListTasks(filter TaskFilter) ([]Task, int, error) {
+	if filter.Limit <= 0 {
+		filter.Limit = 50
+	}
+
+	// Total count (unfiltered)
+	var total int
+	if err := s.db.QueryRow("SELECT COUNT(*) FROM c4_tasks").Scan(&total); err != nil {
+		return nil, 0, err
+	}
+
+	query := `SELECT task_id, title, status, priority, domain, worker_id, created_at, dod FROM c4_tasks`
+	var conditions []string
+	var args []any
+
+	if filter.Status != "" {
+		conditions = append(conditions, "status = ?")
+		args = append(args, filter.Status)
+	}
+	if filter.Domain != "" {
+		conditions = append(conditions, "domain = ?")
+		args = append(args, filter.Domain)
+	}
+	if filter.WorkerID != "" {
+		conditions = append(conditions, "worker_id = ?")
+		args = append(args, filter.WorkerID)
+	}
+
+	if len(conditions) > 0 {
+		query += " WHERE " + strings.Join(conditions, " AND ")
+	}
+	query += " ORDER BY priority DESC, created_at ASC LIMIT ?"
+	args = append(args, filter.Limit)
+
+	rows, err := s.db.Query(query, args...)
+	if err != nil {
+		return nil, 0, fmt.Errorf("list tasks: %w", err)
+	}
+	defer rows.Close()
+
+	var tasks []Task
+	for rows.Next() {
+		var t Task
+		var domain, workerID, createdAt, dod sql.NullString
+		if err := rows.Scan(&t.ID, &t.Title, &t.Status, &t.Priority, &domain, &workerID, &createdAt, &dod); err != nil {
+			continue
+		}
+		t.Domain = domain.String
+		t.WorkerID = workerID.String
+		t.CreatedAt = createdAt.String
+		t.DoD = dod.String
+		tasks = append(tasks, t)
+	}
+
+	return tasks, total, rows.Err()
 }

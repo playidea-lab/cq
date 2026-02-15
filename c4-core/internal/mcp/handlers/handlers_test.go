@@ -700,19 +700,19 @@ func TestRegisterAllToolCount(t *testing.T) {
 	RegisterAll(reg, store)
 
 	tools := reg.ListTools()
-	if len(tools) != 11 {
+	if len(tools) != 12 {
 		names := make([]string, 0, len(tools))
 		for _, tool := range tools {
 			names = append(names, tool.Name)
 		}
-		t.Errorf("registered %d tools, want 11: %v", len(tools), names)
+		t.Errorf("registered %d tools, want 12: %v", len(tools), names)
 	}
 
-	// Verify all 11 expected tools are present
+	// Verify all 12 expected tools are present
 	expectedTools := []string{
 		"c4_status", "c4_start", "c4_clear",
 		"c4_get_task", "c4_submit", "c4_add_todo", "c4_request_changes", "c4_mark_blocked",
-		"c4_claim", "c4_report", "c4_checkpoint",
+		"c4_task_list", "c4_claim", "c4_report", "c4_checkpoint",
 	}
 	for _, name := range expectedTools {
 		if !reg.HasTool(name) {

@@ -27,6 +27,10 @@ type Registry struct {
 	mu       sync.RWMutex
 	tools    map[string]registeredTool
 	ordering []string // preserve registration order
+
+	// OnChange is called after Register/Replace/Unregister mutate the tool list.
+	// Used by the MCP server to send notifications/tools/list_changed.
+	OnChange func()
 }
 
 type registeredTool struct {
@@ -45,9 +49,9 @@ func NewRegistry() *Registry {
 // is already registered, it logs a warning and skips the duplicate.
 func (r *Registry) Register(schema ToolSchema, handler HandlerFunc) {
 	r.mu.Lock()
-	defer r.mu.Unlock()
 
 	if _, exists := r.tools[schema.Name]; exists {
+		r.mu.Unlock()
 		fmt.Fprintf(os.Stderr, "mcp: warning: tool already registered, skipping: %s\n", schema.Name)
 		return
 	}
@@ -57,6 +61,12 @@ func (r *Registry) Register(schema ToolSchema, handler HandlerFunc) {
 		handler: handler,
 	}
 	r.ordering = append(r.ordering, schema.Name)
+	onChange := r.OnChange
+	r.mu.Unlock()
+
+	if onChange != nil {
+		onChange()
+	}
 }
 
 // Call invokes a registered tool by name with the given JSON arguments.
@@ -84,11 +94,17 @@ func (r *Registry) HasTool(name string) bool {
 // Returns false if the tool is not registered.
 func (r *Registry) Replace(schema ToolSchema, handler HandlerFunc) bool {
 	r.mu.Lock()
-	defer r.mu.Unlock()
 	if _, exists := r.tools[schema.Name]; !exists {
+		r.mu.Unlock()
 		return false
 	}
 	r.tools[schema.Name] = registeredTool{schema: schema, handler: handler}
+	onChange := r.OnChange
+	r.mu.Unlock()
+
+	if onChange != nil {
+		onChange()
+	}
 	return true
 }
 
@@ -96,8 +112,8 @@ func (r *Registry) Replace(schema ToolSchema, handler HandlerFunc) bool {
 // Returns false if the tool is not registered.
 func (r *Registry) Unregister(name string) bool {
 	r.mu.Lock()
-	defer r.mu.Unlock()
 	if _, exists := r.tools[name]; !exists {
+		r.mu.Unlock()
 		return false
 	}
 	delete(r.tools, name)
@@ -106,6 +122,12 @@ func (r *Registry) Unregister(name string) bool {
 			r.ordering = append(r.ordering[:i], r.ordering[i+1:]...)
 			break
 		}
+	}
+	onChange := r.OnChange
+	r.mu.Unlock()
+
+	if onChange != nil {
+		onChange()
 	}
 	return true
 }

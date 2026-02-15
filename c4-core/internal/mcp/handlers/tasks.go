@@ -184,6 +184,23 @@ func RegisterTaskHandlers(reg *mcp.Registry, store Store) {
 	}, func(args json.RawMessage) (any, error) {
 		return handleMarkBlocked(store, args)
 	})
+
+	// c4_task_list
+	reg.Register(mcp.ToolSchema{
+		Name:        "c4_task_list",
+		Description: "List tasks with optional status/domain/worker filtering",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"status":    map[string]any{"type": "string", "description": "Filter by status: pending, in_progress, done, blocked", "enum": []string{"pending", "in_progress", "done", "blocked"}},
+				"domain":    map[string]any{"type": "string", "description": "Filter by domain"},
+				"worker_id": map[string]any{"type": "string", "description": "Filter by assigned worker ID"},
+				"limit":     map[string]any{"type": "integer", "description": "Max results (default: 50)", "default": 50},
+			},
+		},
+	}, func(args json.RawMessage) (any, error) {
+		return handleTaskList(store, args)
+	})
 }
 
 func handleGetTask(store Store, rawArgs json.RawMessage) (any, error) {
@@ -342,5 +359,42 @@ func handleMarkBlocked(store Store, rawArgs json.RawMessage) (any, error) {
 		"task_id": args.TaskID,
 		"status":  "blocked",
 		"message": fmt.Sprintf("Task %s marked as blocked after %d attempts", args.TaskID, args.Attempts),
+	}, nil
+}
+
+// taskListArgs is the input for c4_task_list.
+type taskListArgs struct {
+	Status   string `json:"status"`
+	Domain   string `json:"domain"`
+	WorkerID string `json:"worker_id"`
+	Limit    int    `json:"limit"`
+}
+
+func handleTaskList(store Store, rawArgs json.RawMessage) (any, error) {
+	var args taskListArgs
+	if err := json.Unmarshal(rawArgs, &args); err != nil {
+		return nil, fmt.Errorf("parsing arguments: %w", err)
+	}
+
+	// Type assert to SQLiteStore for ListTasks
+	sqlStore, ok := store.(*SQLiteStore)
+	if !ok {
+		return nil, fmt.Errorf("task_list requires SQLite backend")
+	}
+
+	tasks, total, err := sqlStore.ListTasks(TaskFilter{
+		Status:   args.Status,
+		Domain:   args.Domain,
+		WorkerID: args.WorkerID,
+		Limit:    args.Limit,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("listing tasks: %w", err)
+	}
+
+	return map[string]any{
+		"tasks":    tasks,
+		"total":    total,
+		"filtered": len(tasks),
 	}, nil
 }

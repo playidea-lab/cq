@@ -416,6 +416,17 @@ func newMCPServer() (*mcpServer, error) {
 	// Wire lazy sidecar for auto-restart (LazyStarter implements Restarter)
 	proxy.SetRestarter(lazySidecar)
 
+	// Register health check handler
+	handlers.RegisterHealthHandler(reg, &handlers.HealthDeps{
+		DB:             db,
+		Sidecar:        lazySidecar,
+		KnowledgeStore: knowledgeStore,
+		StartTime:      time.Now(),
+	})
+
+	// Register config get handler
+	handlers.RegisterConfigHandler(reg, cfgMgr)
+
 	return &mcpServer{
 		registry:       reg,
 		sidecar:        lazySidecar,
@@ -435,6 +446,16 @@ func (s *mcpServer) serve() error {
 	decoder := json.NewDecoder(os.Stdin)
 	encoder := json.NewEncoder(os.Stdout)
 	var writerMu sync.Mutex
+
+	// Wire up tools/list_changed notification so clients re-fetch after lighthouse register.
+	s.registry.OnChange = func() {
+		writerMu.Lock()
+		_ = encoder.Encode(map[string]any{
+			"jsonrpc": "2.0",
+			"method":  "notifications/tools/list_changed",
+		})
+		writerMu.Unlock()
+	}
 
 	for {
 		var req mcpRequest

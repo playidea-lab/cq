@@ -122,6 +122,19 @@ func RegisterKnowledgeNativeHandlers(reg *mcp.Registry, opts *KnowledgeNativeOpt
 			},
 		},
 	}, knowledgePullNativeHandler(opts))
+
+	// 8. c4_knowledge_delete
+	reg.Register(mcp.ToolSchema{
+		Name:        "c4_knowledge_delete",
+		Description: "Delete a knowledge document (FTS5 + vector + markdown)",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"doc_id": map[string]any{"type": "string", "description": "Document ID to delete"},
+			},
+			"required": []string{"doc_id"},
+		},
+	}, knowledgeDeleteNativeHandler(opts))
 }
 
 // =========================================================================
@@ -524,4 +537,31 @@ func documentToMap(doc *knowledge.Document) map[string]any {
 func stringFromAny(v any) string {
 	s, _ := v.(string)
 	return s
+}
+
+func knowledgeDeleteNativeHandler(opts *KnowledgeNativeOpts) mcp.HandlerFunc {
+	return func(rawArgs json.RawMessage) (any, error) {
+		params := parseParams(rawArgs)
+		docID, _ := params["doc_id"].(string)
+		if docID == "" {
+			return map[string]any{"error": "doc_id is required"}, nil
+		}
+
+		// Store.Delete handles: documents table + FTS5 + markdown file
+		deleted, err := opts.Store.Delete(docID)
+		if err != nil {
+			return map[string]any{"error": fmt.Sprintf("delete failed: %v", err)}, nil
+		}
+		if !deleted {
+			return map[string]any{"error": "document not found", "doc_id": docID}, nil
+		}
+
+		// Also remove vector embedding (shares same DB, separate table)
+		opts.Store.DB().Exec("DELETE FROM knowledge_vectors WHERE doc_id = ?", docID)
+
+		return map[string]any{
+			"deleted": true,
+			"doc_id":  docID,
+		}, nil
+	}
 }

@@ -120,6 +120,10 @@ func TestEconomicPresetResolution(t *testing.T) {
 }
 
 func TestMissingConfigFileDefaults(t *testing.T) {
+	// Isolate from host env (godotenv may have loaded .env with Supabase creds)
+	t.Setenv("SUPABASE_URL", "")
+	t.Setenv("SUPABASE_KEY", "")
+
 	// Use a temp directory with no config file
 	tmpDir := t.TempDir()
 
@@ -246,6 +250,9 @@ func TestIsPreset(t *testing.T) {
 }
 
 func TestGetBackendDefault(t *testing.T) {
+	t.Setenv("SUPABASE_URL", "")
+	t.Setenv("SUPABASE_KEY", "")
+
 	tmpDir := t.TempDir()
 
 	mgr, err := New(tmpDir)
@@ -260,6 +267,9 @@ func TestGetBackendDefault(t *testing.T) {
 
 func TestCloudConfig(t *testing.T) {
 	t.Run("disabled by default", func(t *testing.T) {
+		t.Setenv("SUPABASE_URL", "")
+		t.Setenv("SUPABASE_KEY", "")
+
 		tmpDir := t.TempDir()
 		mgr, err := New(tmpDir)
 		if err != nil {
