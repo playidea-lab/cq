@@ -1,6 +1,6 @@
 # C4 Roadmap
 
-## Current Version: v0.16.2 (Phase 10.5 — C1 Context Hub + C3 EventBus v4)
+## Current Version: v0.16.3 (Phase 10.5 — C1 Context Hub + C3 EventBus v4 + Tier 1 Go Native)
 
 현재 버전은 **Go MCP Primary(112 tools: Base 86 + Hub 26), LLM Gateway (4개 Provider 실제 구현), CDP Runner (브라우저 자동화), Cloud Foundation (Supabase), Knowledge Bidirectional Sync, c4 daemon (로컬 작업 스케줄러), C0 Drive (파일 관리), C1 Context Hub (메시징 + 문서 + Context Keeper), C3 EventBus v4 (gRPC daemon + WebSocket bridge + DLQ + Filter v2)**을 포함합니다.
 
@@ -38,13 +38,41 @@
 - **C1 Documents** - 마크다운 파일 편집기, 지속성 (persona/skill/spec/config)
 - **C3 EventBus v4** - gRPC daemon (UDS) + WebSocket bridge + DLQ + Filter v2, Python sidecar piggyback, task lifecycle events
 - **코드베이스**: Go ~19K + Python 24K + C1 ~13K + Tests ~26K = **~82K LOC**
-- **테스트**: Go 860+ (17 pkgs) + Python 748+ + C1 (Rust 73 + Frontend 81) = **~1,762 tests** (+11 security)
+- **테스트**: Go 937+ (eventbus 87+, c2 29, research 34, gpu 4) + Python 735+ + C1 (Rust 73 + Frontend 81) = **~1,839 tests** (+10 this session)
 
 ---
 
 ## 최신 추가사항 (2026-02-15)
 
-### Python Sidecar Tier 1 Migration to Go Native ✅
+### C3 EventBus Full Code Review + Tier 1 Go Native Migration Complete ✅
+
+**목표**: C3 EventBus v4 최종 검토 완료, Python sidecar 13개 도구 Go native 마이그레이션 완료
+
+- **C3 v4 Review 이슈 7개 수정**:
+  - **Bounded Dispatch**: buffered channel 크기 제한 (1000), queue full 시 oldest event 자동 폐기
+  - **gRPC Client Upgrade**: v1.60+ grpc.NewClient() 마이그레이션 (deprecated dial 제거)
+  - **DLQ Config**: max_retries (기본 3) + retention_days (기본 7) 명시적 설정
+  - **Nested Template Expressions**: $if/$for 중첩 조건식 지원
+  - **Template Escaping**: 표현식 파싱 강화
+  - **Tests**: dispatcher_test +5, server_test +5 (eventbus 안정성)
+
+- **Tier 1 Go Native Migration 완료**:
+  - **13개 도구 마이그레이션**: Research (5) + C2 (6) + GPU (2) → Go native
+  - **Python sidecar 도구 축소**: 30 → 17 tools (LSP, Knowledge Store만 남음)
+  - **새 패키지**: `internal/research/` (565 LOC) + `internal/c2/` (1,067 LOC)
+  - **테스트**: +67개 신규 (research 34 + c2 29 + gpu 4 + migration 18)
+
+- **코드 변경**: +248/-25 LOC (20 files changed)
+- **커밋**: 5e589fb, 8f9d7a9, 6f3918c
+- **결과**: Python 의존성 축소, Go MCP toolset 강화, sidecar 초기화 시간 단축
+
+**Architecture 영향**:
+```
+Before:  Go MCP → Python Sidecar (30 proxy tools: LSP 7 + Knowledge 6 + Research 5 + C2 6 + GPU 2 + Review 4)
+After:   Go MCP → Go Native (Research/C2/GPU) + Python Sidecar (17 proxy tools: LSP 7 + Knowledge 6 + Review 4)
+```
+
+### Python Sidecar Tier 1 Migration to Go Native ✅ (상세 - 최근 완료됨)
 
 **목표**: 13개 Python proxy 도구를 Go native로 마이그레이션 (성능 + 의존성 축소)
 
@@ -66,10 +94,11 @@
 - **테스트**: Go 687 → 754 (+67)
 - **결과**: Python 의존성 제거 (pytorch, tensorflow 등), sidecar 초기화 시간 단축
 
-**Tier 2 다음 계획** (예정):
+**Tier 2 다음 계획** (예정 — LSP/Knowledge/Review Go native):
 - LSP tools (7): find_symbol, get_symbols_overview, replace/insert/rename_symbol (tree-sitter 활용)
 - Knowledge tools (6): knowledge_search/record/get, experiment_search/record (vector DB 대체)
 - Review tool (1): c2_review (LLM 기반, 계획 중)
+- **결과**: Python sidecar 17 → 3 tools (minimal bridge layer), 완전 Go MCP native
 
 ### C3 EventBus v4 — WS Bridge + DLQ + Filter v2 + C1 Events 탭 ✅
 
