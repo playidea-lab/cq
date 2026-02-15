@@ -701,29 +701,7 @@ func RegisterProxyHandlers(reg *mcp.Registry, proxy *BridgeProxy, knowledgeCloud
 		},
 	}, knowledgeSearchHandler(proxy, "KnowledgeSearch", knowledgeCloud))
 
-	// GPU tools (2) — delegated to Python CUDA/MPS detection
-	reg.Register(mcp.ToolSchema{
-		Name:        "c4_gpu_status",
-		Description: "Get GPU device status and availability",
-		InputSchema: map[string]any{
-			"type":       "object",
-			"properties": map[string]any{},
-		},
-	}, proxyHandler(proxy, "GPUStatus"))
-
-	reg.Register(mcp.ToolSchema{
-		Name:        "c4_job_submit",
-		Description: "Submit a job to the GPU scheduler",
-		InputSchema: map[string]any{
-			"type": "object",
-			"properties": map[string]any{
-				"command":  map[string]any{"type": "string", "description": "Command to run"},
-				"gpu_id":   map[string]any{"type": "integer", "description": "Specific GPU ID (optional)"},
-				"priority": map[string]any{"type": "integer", "description": "Job priority (default: 5)"},
-			},
-			"required": []string{"command"},
-		},
-	}, proxyHandler(proxy, "JobSubmit"))
+	// NOTE: GPU tools (2) moved to Go native — see gpu_native.go
 
 	// Onboard tool — scans project structure via LSP/tree-sitter (30s timeout for large projects)
 	reg.Register(mcp.ToolSchema{

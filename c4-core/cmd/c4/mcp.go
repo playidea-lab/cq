@@ -24,6 +24,7 @@ import (
 	"github.com/changmin/c4-core/internal/llm"
 	"github.com/changmin/c4-core/internal/mcp"
 	"github.com/changmin/c4-core/internal/mcp/handlers"
+	"github.com/changmin/c4-core/internal/research"
 	_ "modernc.org/sqlite"
 )
 
@@ -70,10 +71,11 @@ type initializeResult struct {
 
 // mcpServer holds the state of a running MCP server instance.
 type mcpServer struct {
-	registry   *mcp.Registry
-	sidecar    *bridge.LazyStarter // lazy-initialized Python sidecar
-	db         *sql.DB
-	embeddedEB *eventbus.EmbeddedServer // v3: in-process EventBus
+	registry      *mcp.Registry
+	sidecar       *bridge.LazyStarter    // lazy-initialized Python sidecar
+	db            *sql.DB
+	embeddedEB    *eventbus.EmbeddedServer // v3: in-process EventBus
+	researchStore *research.Store          // Go native research store
 }
 
 // newMCPServer creates and initializes the MCP server with all tools registered.
@@ -138,9 +140,20 @@ func newMCPServer() (*mcpServer, error) {
 		}
 	}
 
+	// Create research store (optional — native research tools use this)
+	researchDir := filepath.Join(projectDir, ".c4", "research")
+	os.MkdirAll(researchDir, 0755)
+	researchStore, researchErr := research.NewStore(researchDir)
+	if researchErr != nil {
+		fmt.Fprintf(os.Stderr, "c4: research store init failed (proxy fallback): %v\n", researchErr)
+	}
+
 	// Create registry and register all tools (proxy is created inside with lazy sidecar)
 	reg := mcp.NewRegistry()
-	proxy := handlers.RegisterAllHandlersLazy(reg, nil, projectDir, lazySidecar, knowledgeCloud)
+	nativeOpts := &handlers.NativeOpts{
+		ResearchStore: researchStore,
+	}
+	proxy := handlers.RegisterAllHandlersLazyWithOpts(reg, nil, projectDir, lazySidecar, knowledgeCloud, nativeOpts)
 
 	// Create store with all options
 	storeOpts := []handlers.StoreOption{
@@ -355,10 +368,11 @@ func newMCPServer() (*mcpServer, error) {
 	proxy.SetRestarter(lazySidecar)
 
 	return &mcpServer{
-		registry:   reg,
-		sidecar:    lazySidecar,
-		db:         db,
-		embeddedEB: embeddedEB,
+		registry:      reg,
+		sidecar:       lazySidecar,
+		db:            db,
+		embeddedEB:    embeddedEB,
+		researchStore: researchStore,
 	}, nil
 }
 
@@ -406,6 +420,9 @@ func (s *mcpServer) shutdown() {
 	}
 	if s.sidecar != nil {
 		_ = s.sidecar.Stop()
+	}
+	if s.researchStore != nil {
+		s.researchStore.Close()
 	}
 	if s.db != nil {
 		_ = s.db.Close()
