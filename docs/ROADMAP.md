@@ -1,12 +1,12 @@
 # C4 Roadmap
 
-## Current Version: v0.18.0 (Phase 10.8 — C5 Hub Server Phase 3 + Native LSP + Lighthouse)
+## Current Version: v0.19.0 (Phase 10.9 — Lighthouse Docs SSOT + 문서 현행화)
 
-현재 버전은 **Go MCP Primary (144 tools: Base 112 + Hub 26 + Lighthouse 6), Native Go/Dart LSP (goast/dartast), LLM Gateway, CDP Runner, Cloud Foundation, Knowledge Sync, c4 daemon, C0 Drive, C1 Context Hub, C3 EventBus v4, C5 Hub Server Phase 3 (hub.Client 완전 호환, 105 테스트, DAG/Edge/Deploy/Artifact/WebSocket, worker metrics auto-parsing), Lighthouse (auto-seed, spec auto-generate, auto-backfill)**을 포함합니다.
+현재 버전은 **Go MCP Server (122 tools: Base 96 + Hub 26), Native Go/Dart LSP (goast/dartast), LLM Gateway, CDP Runner, Cloud Foundation, Knowledge Sync, c4 daemon, C0 Drive, C1 Context Hub, C3 EventBus v4, C5 Hub Server Phase 3 (hub.Client 완전 호환, 105 테스트), Lighthouse Docs SSOT (58개 rich spec)**을 포함합니다.
 
 ### 핵심 구조
 
-- **Go MCP Server (Primary)** - 144 도구 (Base 112: state/task/file/git/discovery/artifact/lsp/knowledge/research/gpu/soul/team/twin/onboard/lighthouse/llm/cdp/c2/drive/c1), Registry-based, SQLite Store, JSON-RPC Bridge, LLM Gateway, CDP Runner, Hub Client, Native LSP (goast/dartast)
+- **Go MCP Server (Primary)** - 122 도구 (Base 96 + Hub 26), Registry-based, SQLite Store, JSON-RPC Bridge, LLM Gateway, CDP Runner, Hub Client, Native LSP (goast/dartast), Lighthouse Docs SSOT
 - **C0 Drive** - Supabase 파일 저장소, metadata JSONB, c4_drive_mkdir 6개 도구, PostgREST URL 인코딩, server-side filtering
 - **C1 Context Hub** - Supabase 4 테이블 (channels/messages/participants/summaries), Go MCP 3 도구 (search/mentions/briefing), Context Keeper (LLM 요약), Agent 통합 (notifyKeeper 4-param), participant_id 추적
 - **C3 EventBus v4** - gRPC daemon (UDS) + WebSocket bridge + Python sidecar piggyback + CLI + Embedded auto-start + Event Replay + DLQ (16+ event types, 5 default rules, correlation_id, Filter v2)
@@ -41,12 +41,23 @@
 - **C1 Context Hub** - 채널 메시징, Context Keeper (LLM 요약), Agent 통합 (notifyKeeper 4-param)
 - **C1 Documents** - 마크다운 파일 편집기, 지속성 (persona/skill/spec/config)
 - **C3 EventBus v4** - gRPC daemon (UDS) + WebSocket bridge + DLQ + Filter v2, Python sidecar piggyback, task lifecycle events
-- **코드베이스**: Go ~34.3K (c4-core) + Go ~4.9K (c5) + Python 24.4K + C1 ~15.1K + Infra 0.8K = **~79.5K LOC**
-- **테스트**: Go 1,072 (c4-core 967 + c5 105) + Python 750 + C1 (Rust 73 + Frontend 81) = **~1,895 tests**
+- **코드베이스**: Go ~32.7K (c4-core) + Go ~5.1K (c5) + Python 24.4K + C1 ~15.1K + Infra 0.9K = **~78.2K LOC (src)**, 테스트 ~43.1K LOC, **총 ~121.4K LOC**
+- **테스트**: Go ~1,200 (c4-core ~1,096 + c5 105) + Python 750 + Rust 73 = **~2,020 tests**
 
 ---
 
 ## 최신 추가사항 (2026-02-15)
+
+### Lighthouse A-lite — Docs SSOT 승격 + 문서 현행화 ✅
+
+**목표**: Lighthouse를 도구 문서의 SSOT로 승격, 전체 문서 수치 현행화
+
+- **3-Layer 역할 분리**: AGENTS.md(규칙, push) / Registry(인터페이스, push) / Lighthouse(문서, pull)
+- **58개 도구 rich spec 작성**: Hub DAG(7), Hub Job(10), Drive(6), Hub Edge(5), Hub Infra(4), Task(8), State(3), Checkpoint(2), Knowledge(8), Research(5)
+- **AGENTS.md 업데이트**: Lighthouse 참조 안내 + 복잡 도구 사전 조회 규칙
+- **문서 현행화**: 도구 수 96 base + 26 hub = 122 (누락 10개 추가), 테스트 수 ~2,020, LOC 정확한 수치 반영
+- **결과**: 에이전트가 `c4_lighthouse get <tool>` 으로 상세 사용법 조회 가능
+
 
 ### C5 Hub Server Phase 3 — hub.Client 완전 호환 ✅
 

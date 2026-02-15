@@ -21,27 +21,27 @@ C2 Docs     — 문서 라이프사이클 (파싱/워크스페이스/프로필)
 C3 EventBus — gRPC 이벤트 버스 (UDS + WebSocket + DLQ)
 C4 Engine   — MCP 오케스트레이션 엔진 (이 프로젝트)
 C5 Hub      — 분산 작업 큐 서버 (Worker Pull 모델, Lease 기반)
-C9 Knowledge — 지식 관리 (FTS5 + Vector + Cloud Sync)
+C9 Knowledge — 지식 관리 (FTS5 + pgvector + Embedding + Usage + Ingestion)
 ```
 
 ### 코드베이스 규모
 | 언어 | 소스 | 테스트 | 합계 |
 |------|------|--------|------|
-| Go (`c4-core/`) | ~34.3K LOC | ~28.5K LOC | ~62.8K |
-| Go (`c5/`) | ~4.9K LOC | ~2.9K LOC | ~7.8K |
-| Python (`c4/`) | ~24.4K LOC | (tests/ 내 포함) | ~24.4K |
+| Go (`c4-core/`) | ~32.7K LOC | ~28.5K LOC | ~61.2K |
+| Go (`c5/`) | ~5.1K LOC | ~3.0K LOC | ~8.2K |
+| Python (`c4/`) | ~24.4K LOC | ~11.6K LOC | ~36.0K |
 | Rust (`c1/src-tauri/`) | ~8.5K LOC | (내장) | ~8.5K |
 | TypeScript (`c1/src/`) | ~6.6K LOC | | ~6.6K |
-| SQL (`infra/`) | ~0.8K LOC | | ~0.8K |
-| **합계** | | | **~122.5K LOC** |
+| SQL (`infra/`) | ~0.9K LOC | | ~0.9K |
+| **합계** | ~78.2K | ~43.1K | **~121.4K LOC** |
 
 ### 테스트 현황
 | 언어 | 테스트 수 | 패키지/모듈 |
 |------|----------|------------|
-| Go | **1,072** | 26 packages (all pass) — c4-core 967 + c5 105 |
+| Go | **1,081** | 21 packages (all pass) — c4-core 976 + c5 105 |
 | Python | **750** | tests/unit/ |
 | Rust | **73** | src-tauri |
-| **합계** | **~1,895** | |
+| **합계** | **~1,904** | |
 
 ### Monorepo 구조
 ```
@@ -162,14 +162,14 @@ c4_lighthouse get <tool_name>
 
 ---
 
-## MCP 도구 빠른 참조 (109개 등록, Hub 활성화 시 최대 ~135개)
+## MCP 도구 빠른 참조 (96개 base, Hub 활성화 시 122개)
 
 > **도구 상세 사용법**: `c4_lighthouse get <tool_name>`으로 워크플로우, 예시, 관련 도구, 주의사항 조회
 
 ```
-상태(3):    c4_status, c4_start, c4_clear
-태스크(6):  c4_add_todo, c4_get_task, c4_submit, c4_mark_blocked,
-            c4_claim, c4_report
+상태(5):    c4_status, c4_start, c4_clear, c4_config_get, c4_health
+태스크(7):  c4_add_todo, c4_get_task, c4_submit, c4_mark_blocked,
+            c4_claim, c4_report, c4_task_list
 리뷰(3):    c4_checkpoint, c4_request_changes, c4_ensure_supervisor
 검증(1):    c4_run_validation
 파일(6):    c4_find_file, c4_search_for_pattern, c4_read_file,
@@ -185,8 +185,10 @@ LSP(7):     c4_find_symbol, c4_get_symbols_overview,  ← Python/JS/TS + Go + Da
             c4_insert_after_symbol, c4_rename_symbol,
             c4_find_referencing_symbols
             ※ Go/Dart는 native 지원, Rust → c4_search_for_pattern 사용
-지식(7):    c4_knowledge_search, c4_knowledge_record, c4_knowledge_get,
-            c4_knowledge_pull,
+지식(12):   c4_knowledge_search, c4_knowledge_record, c4_knowledge_get,
+            c4_knowledge_pull, c4_knowledge_delete,
+            c4_knowledge_discover, c4_knowledge_ingest,
+            c4_knowledge_stats, c4_knowledge_reindex,
             c4_experiment_record, c4_experiment_search, c4_pattern_suggest
 Research(5): c4_research_start, c4_research_next, c4_research_record,
             c4_research_approve, c4_research_status
@@ -203,8 +205,10 @@ C2(8):     c4_parse_document, c4_extract_text,
             c4_persona_learn, c4_profile_load, c4_profile_save
 Drive(6):  c4_drive_upload, c4_drive_download, c4_drive_list, c4_drive_delete,
             c4_drive_info, c4_drive_mkdir
+EventBus(6): c4_event_list, c4_event_publish,
+            c4_rule_add, c4_rule_list, c4_rule_remove, c4_rule_toggle
 C1(3):     c1_search, c1_check_mentions, c1_get_briefing
---- Hub (hub.enabled=true 시 추가 등록) ---
+--- Hub (hub.enabled=true 시 추가 등록, +26) ---
 Hub-Job(10): c4_hub_submit, c4_hub_status, c4_hub_list,
             c4_hub_cancel, c4_hub_metrics, c4_hub_log_metrics,
             c4_hub_watch, c4_hub_summary, c4_hub_retry, c4_hub_estimate
@@ -232,12 +236,12 @@ CP-001:  체크포인트
 
 ## Go Core (c4-core/) — Primary MCP Server
 
-> Go 기반 MCP 서버. ~32K LOC(src) + ~27K LOC(test). 895개 테스트, 19 패키지.
+> Go 기반 MCP 서버. ~32.7K LOC(src) + ~28.5K LOC(test). ~1,096개 테스트, 20 패키지.
 
 ### 아키텍처
 ```
-Claude Code → Go MCP Server (stdio, 109 tools)
-                ├→ Go native (22): 상태, 태스크, 파일, git, validation
+Claude Code → Go MCP Server (stdio, 100 base + 26 Hub = 126 tools)
+                ├→ Go native (27): 상태, 태스크, 파일, git, validation, config, health, eventbus rules
                 ├→ Go + SQLite (13): spec, design, checkpoint, artifact, lighthouse
                 ├→ Soul/Persona/Twin (7): soul CRUD, persona evolve, whoami, reflect
                 ├→ LLM Gateway (3): llm_call, llm_providers, llm_costs
@@ -245,7 +249,7 @@ Claude Code → Go MCP Server (stdio, 109 tools)
                 ├→ C1 Context Hub (3): search, mentions, briefing + ContextKeeper
                 ├→ Drive (6): upload, download, list, delete, info, mkdir
                 ├→ Go Native — Tier 1 (13): Research (5) + C2 (6) + GPU (2)
-                ├→ Go Native — Tier 2 (7): Knowledge (Store+FTS5+Vector+Sync)
+                ├→ Go Native — Tier 2 (12): Knowledge (Store+FTS5+Vector+Embedding+Usage+Ingest+Sync)
                 ├→ Hub Client (26, 조건부): job, worker, DAG, edge, deploy, artifact
                 └→ JSON-RPC proxy (10) → Python Sidecar (LSP 7 + C2 Doc 2 + Onboard 1)
 ```
@@ -267,7 +271,7 @@ c4-core/
 │   ├── hub/          # PiQ Hub REST+WS client (26 tools)
 │   ├── daemon/       # 로컬 작업 스케줄러 (Store+Scheduler+Server+GPU)
 │   ├── eventbus/     # C3 EventBus v4 (gRPC, WS bridge, DLQ, filter v2)
-│   ├── knowledge/    # C9 Knowledge (Store+FTS5+VectorStore+Searcher+Sync)
+│   ├── knowledge/    # C9 Knowledge (Store+FTS5+Vector+Embedding+Usage+Chunker+Ingest+Sync)
 │   ├── research/     # Research iteration store (paper+experiment loop)
 │   ├── c2/           # C2 Workspace/Profile/Persona
 │   ├── drive/        # C0 Drive client (Supabase Storage)
@@ -323,7 +327,7 @@ Go MCP Server ──JSON-RPC/TCP──→ Python Sidecar (10 tools)
 | Tier | 도구 수 | 대상 | Go 패키지 |
 |------|---------|------|-----------|
 | Tier 1 | 13 → Go | Research (5) + C2 (6) + GPU (2) | `research/`, `c2/`, `daemon/` |
-| Tier 2 | 7 → Go | Knowledge (7) | `knowledge/` |
+| Tier 2 | 12 → Go | Knowledge (12) | `knowledge/` |
 | 남은 Proxy | 10 | LSP (7) + C2 Doc (2) + Onboard (1) | — |
 
 ### 특성
@@ -376,7 +380,7 @@ cargo tauri dev       # 개발 서버
 
 ## C3 EventBus (internal/eventbus/)
 
-> gRPC UDS daemon + WebSocket bridge + DLQ. 87+ 테스트.
+> gRPC UDS daemon + WebSocket bridge + DLQ. 78 테스트.
 
 ### 기능
 - **v1**: gRPC daemon (UDS), rules YAML, Store/Dispatcher
