@@ -21,6 +21,7 @@ import (
 	"github.com/changmin/c4-core/internal/drive"
 	"github.com/changmin/c4-core/internal/eventbus"
 	"github.com/changmin/c4-core/internal/hub"
+	"github.com/changmin/c4-core/internal/knowledge"
 	"github.com/changmin/c4-core/internal/llm"
 	"github.com/changmin/c4-core/internal/mcp"
 	"github.com/changmin/c4-core/internal/mcp/handlers"
@@ -71,11 +72,12 @@ type initializeResult struct {
 
 // mcpServer holds the state of a running MCP server instance.
 type mcpServer struct {
-	registry      *mcp.Registry
-	sidecar       *bridge.LazyStarter    // lazy-initialized Python sidecar
-	db            *sql.DB
-	embeddedEB    *eventbus.EmbeddedServer // v3: in-process EventBus
-	researchStore *research.Store          // Go native research store
+	registry       *mcp.Registry
+	sidecar        *bridge.LazyStarter    // lazy-initialized Python sidecar
+	db             *sql.DB
+	embeddedEB     *eventbus.EmbeddedServer // v3: in-process EventBus
+	researchStore  *research.Store          // Go native research store
+	knowledgeStore *knowledge.Store         // Go native knowledge store (Tier 2)
 }
 
 // newMCPServer creates and initializes the MCP server with all tools registered.
@@ -148,10 +150,31 @@ func newMCPServer() (*mcpServer, error) {
 		fmt.Fprintf(os.Stderr, "c4: research store init failed (proxy fallback): %v\n", researchErr)
 	}
 
+	// Create knowledge store (optional — native knowledge tools use this, Tier 2)
+	knowledgeDir := filepath.Join(projectDir, ".c4", "knowledge")
+	os.MkdirAll(knowledgeDir, 0755)
+	var knowledgeStore *knowledge.Store
+	var knowledgeSearcher *knowledge.Searcher
+	if ks, ksErr := knowledge.NewStore(knowledgeDir); ksErr != nil {
+		fmt.Fprintf(os.Stderr, "c4: knowledge store init failed (proxy fallback): %v\n", ksErr)
+	} else {
+		knowledgeStore = ks
+		// Create vector store + searcher for hybrid search
+		if vs, vsErr := knowledge.NewVectorStore(ks.DB(), 384); vsErr != nil {
+			fmt.Fprintf(os.Stderr, "c4: knowledge vector store init failed (FTS-only): %v\n", vsErr)
+			knowledgeSearcher = knowledge.NewSearcher(ks, nil)
+		} else {
+			knowledgeSearcher = knowledge.NewSearcher(ks, vs)
+		}
+	}
+
 	// Create registry and register all tools (proxy is created inside with lazy sidecar)
 	reg := mcp.NewRegistry()
 	nativeOpts := &handlers.NativeOpts{
-		ResearchStore: researchStore,
+		ResearchStore:     researchStore,
+		KnowledgeStore:    knowledgeStore,
+		KnowledgeSearcher: knowledgeSearcher,
+		KnowledgeCloud:    knowledgeCloud,
 	}
 	proxy := handlers.RegisterAllHandlersLazyWithOpts(reg, nil, projectDir, lazySidecar, knowledgeCloud, nativeOpts)
 
@@ -368,11 +391,12 @@ func newMCPServer() (*mcpServer, error) {
 	proxy.SetRestarter(lazySidecar)
 
 	return &mcpServer{
-		registry:      reg,
-		sidecar:       lazySidecar,
-		db:            db,
-		embeddedEB:    embeddedEB,
-		researchStore: researchStore,
+		registry:       reg,
+		sidecar:        lazySidecar,
+		db:             db,
+		embeddedEB:     embeddedEB,
+		researchStore:  researchStore,
+		knowledgeStore: knowledgeStore,
 	}, nil
 }
 
@@ -423,6 +447,9 @@ func (s *mcpServer) shutdown() {
 	}
 	if s.researchStore != nil {
 		s.researchStore.Close()
+	}
+	if s.knowledgeStore != nil {
+		s.knowledgeStore.Close()
 	}
 	if s.db != nil {
 		_ = s.db.Close()
