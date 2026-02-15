@@ -84,5 +84,24 @@
     ],
     "defaultMode": "acceptEdits"
   },
-  "enableAllProjectMcpServers": true
+  "enableAllProjectMcpServers": true,
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "FILE=$(echo \"$ARGUMENTS\" | jq -r '.file_path // empty') && if [[ \"$FILE\" == *.go ]]; then cd \"$(git rev-parse --show-toplevel)\" && go build ./... 2>&1 | head -20; fi",
+            "timeout": 30
+          },
+          {
+            "type": "command",
+            "command": "FILE=$(echo \"$ARGUMENTS\" | jq -r '.file_path // empty') && if [[ \"$FILE\" == *.py ]]; then python -m py_compile \"$FILE\"; fi",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
 }
