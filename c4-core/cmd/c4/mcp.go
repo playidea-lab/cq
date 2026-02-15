@@ -536,8 +536,8 @@ func (s *mcpServer) handleRequest(req *mcpRequest) *mcpResponse {
 			}
 		}
 
-		// Marshal result to JSON text for MCP content response
-		resultJSON, jsonErr := json.Marshal(result)
+		// Marshal result to indented JSON for readability in tool responses
+		resultJSON, jsonErr := json.MarshalIndent(result, "", "  ")
 		if jsonErr != nil {
 			return &mcpResponse{
 				JSONRPC: "2.0",
