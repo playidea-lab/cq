@@ -51,24 +51,31 @@ func init() {
 	rootCmd.AddCommand(authCmd)
 }
 
-// newAuthClient creates an AuthClient from environment or config.
-// Checks C4_CLOUD_URL first, then falls back to SUPABASE_URL.
-// Checks C4_CLOUD_ANON_KEY first, then falls back to SUPABASE_KEY.
+// newAuthClient creates an AuthClient using the following priority:
+//  1. Environment: C4_CLOUD_URL / C4_CLOUD_ANON_KEY
+//  2. Environment: SUPABASE_URL / SUPABASE_KEY
+//  3. Built-in defaults (set via ldflags at build time)
 func newAuthClient() (*cloud.AuthClient, error) {
 	supabaseURL := os.Getenv("C4_CLOUD_URL")
 	if supabaseURL == "" {
 		supabaseURL = os.Getenv("SUPABASE_URL")
 	}
+	if supabaseURL == "" {
+		supabaseURL = builtinSupabaseURL
+	}
 	anonKey := os.Getenv("C4_CLOUD_ANON_KEY")
 	if anonKey == "" {
 		anonKey = os.Getenv("SUPABASE_KEY")
 	}
+	if anonKey == "" {
+		anonKey = builtinSupabaseKey
+	}
 
 	if supabaseURL == "" {
-		return nil, fmt.Errorf("C4_CLOUD_URL or SUPABASE_URL environment variable is not set")
+		return nil, fmt.Errorf("no Supabase URL configured (set C4_CLOUD_URL or build with -ldflags)")
 	}
 	if anonKey == "" {
-		return nil, fmt.Errorf("C4_CLOUD_ANON_KEY or SUPABASE_KEY environment variable is not set")
+		return nil, fmt.Errorf("no Supabase key configured (set C4_CLOUD_ANON_KEY or build with -ldflags)")
 	}
 
 	return cloud.NewAuthClient(supabaseURL, anonKey), nil

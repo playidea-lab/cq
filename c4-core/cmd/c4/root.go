@@ -13,6 +13,14 @@ import (
 // version is set at build time via -ldflags "-X main.version=..."
 var version = "dev"
 
+// Built-in Supabase defaults — set at build time via -ldflags.
+// These are PUBLIC values (anon key + RLS = safe to embed).
+// Users don't need to configure these; they just run `c4 auth login`.
+var (
+	builtinSupabaseURL = "" // -ldflags "-X main.builtinSupabaseURL=https://xxx.supabase.co"
+	builtinSupabaseKey = "" // -ldflags "-X main.builtinSupabaseKey=eyJ..."
+)
+
 var (
 	// Global flags
 	cfgFile    string

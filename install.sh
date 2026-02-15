@@ -98,11 +98,24 @@ ok "uv $UV_VER detected"
 
 # ─── Go Binary Build ───────────────────────────────────────
 
+# ─── Cloud Defaults (built into binary) ────────────────────
+# These are PUBLIC values (anon key + RLS = safe to embed).
+# Override with C4_SUPABASE_URL / C4_SUPABASE_KEY env vars at build time.
+C4_SB_URL="${C4_SUPABASE_URL:-}"
+C4_SB_KEY="${C4_SUPABASE_KEY:-}"
+
 info "Building Go binary..."
 cd "$C4_ROOT/c4-core"
 VERSION="$(git describe --tags --always --dirty 2>/dev/null || echo "dev")"
+LDFLAGS="-X main.version=$VERSION"
+if [ -n "$C4_SB_URL" ]; then
+    LDFLAGS="$LDFLAGS -X main.builtinSupabaseURL=$C4_SB_URL"
+fi
+if [ -n "$C4_SB_KEY" ]; then
+    LDFLAGS="$LDFLAGS -X main.builtinSupabaseKey=$C4_SB_KEY"
+fi
 mkdir -p bin
-go build -ldflags "-X main.version=$VERSION" -o bin/c4 ./cmd/c4/
+go build -ldflags "$LDFLAGS" -o bin/c4 ./cmd/c4/
 ok "Go binary built (c4-core/bin/c4)"
 
 # ─── Python Dependencies ───────────────────────────────────
@@ -174,7 +187,7 @@ if [[ "${INSTALL_GLOBAL,,}" =~ ^y ]]; then
     # CRITICAL: Use go build -o, NOT cp (macOS ARM64 code signing)
     info "Building global binary..."
     cd "$C4_ROOT/c4-core"
-    go build -ldflags "-X main.version=$VERSION" -o "$HOME/.local/bin/c4" ./cmd/c4/
+    go build -ldflags "$LDFLAGS" -o "$HOME/.local/bin/c4" ./cmd/c4/
     ok "Global binary installed (~/.local/bin/c4)"
 
     # Check if ~/.local/bin is in PATH
@@ -203,4 +216,6 @@ fi
 printf "\n${GREEN}${BOLD}C4 $VERSION installed successfully!${NC}\n"
 printf "  Location: ${BOLD}$C4_ROOT${NC}\n"
 printf "  Binary:   ${BOLD}$C4_ROOT/c4-core/bin/c4${NC}\n"
-printf "\nRestart Claude Code to activate.\n\n"
+printf "\n${BOLD}Next steps:${NC}\n"
+printf "  1. Restart Claude Code to activate MCP tools\n"
+printf "  2. Run ${CYAN}c4 auth login${NC} to sign in (required for cloud features)\n\n"

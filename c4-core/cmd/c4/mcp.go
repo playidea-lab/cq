@@ -102,7 +102,10 @@ func newMCPServer() (*mcpServer, error) {
 	}
 
 	// Load config (non-fatal on failure)
-	cfgMgr, err := config.New(projectDir)
+	cfgMgr, err := config.New(projectDir, config.CloudDefaults{
+		URL:     builtinSupabaseURL,
+		AnonKey: builtinSupabaseKey,
+	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "c4: config load failed (using defaults): %v\n", err)
 		cfgMgr = nil

@@ -142,7 +142,10 @@ func init() {
 
 // newHubClient creates a Hub client from project config.
 func newHubClient() (*hub.Client, error) {
-	cfgMgr, err := config.New(projectDir)
+	cfgMgr, err := config.New(projectDir, config.CloudDefaults{
+		URL:     builtinSupabaseURL,
+		AnonKey: builtinSupabaseKey,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("loading config: %w", err)
 	}

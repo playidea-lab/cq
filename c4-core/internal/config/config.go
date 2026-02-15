@@ -167,6 +167,13 @@ func defaultConfig() C4Config {
 	}
 }
 
+// CloudDefaults holds built-in Supabase credentials injected at build time.
+// These are PUBLIC values (anon key + RLS = safe to embed in binary).
+type CloudDefaults struct {
+	URL     string
+	AnonKey string
+}
+
 // Manager provides access to C4 configuration.
 type Manager struct {
 	v      *viper.Viper
@@ -178,7 +185,7 @@ type Manager struct {
 //
 // If the config file does not exist, defaults are used.
 // Environment variables with the C4_ prefix override config values.
-func New(projectRoot string) (*Manager, error) {
+func New(projectRoot string, cloudDefaults ...CloudDefaults) (*Manager, error) {
 	v := viper.New()
 
 	// Set defaults
@@ -237,8 +244,11 @@ func New(projectRoot string) (*Manager, error) {
 		return nil, fmt.Errorf("parsing config: %w", err)
 	}
 
-	// Fallback: read cloud credentials from SUPABASE_URL / SUPABASE_KEY
-	// if not already set via C4_CLOUD_URL / C4_CLOUD_ANON_KEY.
+	// Cloud credential resolution priority:
+	//  1. Config file (cloud.url / cloud.anon_key)
+	//  2. Environment: C4_CLOUD_URL / C4_CLOUD_ANON_KEY (via viper)
+	//  3. Environment: SUPABASE_URL / SUPABASE_KEY (legacy)
+	//  4. Built-in defaults (set via ldflags at build time)
 	if cfg.Cloud.URL == "" {
 		if u := os.Getenv("SUPABASE_URL"); u != "" {
 			cfg.Cloud.URL = u
@@ -247,6 +257,15 @@ func New(projectRoot string) (*Manager, error) {
 	if cfg.Cloud.AnonKey == "" {
 		if k := os.Getenv("SUPABASE_KEY"); k != "" {
 			cfg.Cloud.AnonKey = k
+		}
+	}
+	// Fallback to built-in defaults (baked into binary via ldflags)
+	if len(cloudDefaults) > 0 && cloudDefaults[0].URL != "" {
+		if cfg.Cloud.URL == "" {
+			cfg.Cloud.URL = cloudDefaults[0].URL
+		}
+		if cfg.Cloud.AnonKey == "" {
+			cfg.Cloud.AnonKey = cloudDefaults[0].AnonKey
 		}
 	}
 	// Auto-enable cloud if credentials are available
