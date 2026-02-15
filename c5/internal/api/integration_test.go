@@ -755,3 +755,79 @@ func TestHubClientWSPathCompat(t *testing.T) {
 		t.Fatal("/v1/ws/metrics/ path should be registered")
 	}
 }
+
+// TestHubClientCapabilitiesRegister verifies hub.Client's {"capabilities":{...}} format.
+func TestHubClientCapabilitiesRegister(t *testing.T) {
+	srv := newTestServer(t)
+
+	// hub.Client sends: {"capabilities": {"hostname": "gpu-box", "gpu_count": 2, "gpu_model": "A100"}}
+	w := doRequest(t, srv, "POST", "/v1/workers/register", map[string]any{
+		"capabilities": map[string]any{
+			"hostname":  "gpu-box",
+			"gpu_count": 2,
+			"gpu_model": "A100",
+		},
+	})
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp model.WorkerRegisterResponse
+	decodeJSON(t, w, &resp)
+	if resp.WorkerID == "" {
+		t.Fatal("worker_id should not be empty")
+	}
+
+	// Verify the worker was registered with extracted fields
+	wl := doRequest(t, srv, "GET", "/v1/workers", nil)
+	var workers []model.Worker
+	decodeJSON(t, wl, &workers)
+	if len(workers) != 1 {
+		t.Fatalf("expected 1 worker, got %d", len(workers))
+	}
+	if workers[0].Hostname != "gpu-box" {
+		t.Fatalf("hostname mismatch: %s", workers[0].Hostname)
+	}
+	if workers[0].GPUCount != 2 {
+		t.Fatalf("gpu_count mismatch: %d", workers[0].GPUCount)
+	}
+	if workers[0].GPUModel != "A100" {
+		t.Fatalf("gpu_model mismatch: %s", workers[0].GPUModel)
+	}
+}
+
+// TestHubClientArtifactListCompat verifies artifacts list returns raw []Artifact array.
+func TestHubClientArtifactListCompat(t *testing.T) {
+	srv := newTestServer(t)
+
+	// Submit a job
+	w := doRequest(t, srv, "POST", "/v1/jobs/submit", model.JobSubmitRequest{
+		Name: "art-test", Command: "echo",
+	})
+	var submitResp model.JobSubmitResponse
+	decodeJSON(t, w, &submitResp)
+
+	// Empty list should return []
+	wa := doRequest(t, srv, "GET", "/v1/artifacts/"+submitResp.JobID, nil)
+	if wa.Body.String() != "[]\n" {
+		t.Fatalf("empty artifacts should be [], got: %s", wa.Body.String())
+	}
+
+	// Confirm an artifact with sha256: prefix
+	doRequest(t, srv, "POST", "/v1/artifacts/"+submitResp.JobID+"/confirm", model.ArtifactConfirmRequest{
+		Path:        "model.onnx",
+		ContentHash: "sha256:abcdef123456",
+		SizeBytes:   2048,
+	})
+
+	// List should return raw array
+	wa2 := doRequest(t, srv, "GET", "/v1/artifacts/"+submitResp.JobID, nil)
+	var artifacts []model.Artifact
+	decodeJSON(t, wa2, &artifacts)
+	if len(artifacts) != 1 {
+		t.Fatalf("expected 1 artifact, got %d", len(artifacts))
+	}
+	if artifacts[0].ContentHash != "sha256:abcdef123456" {
+		t.Fatalf("content_hash mismatch: %s", artifacts[0].ContentHash)
+	}
+}

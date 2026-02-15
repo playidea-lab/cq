@@ -19,6 +19,33 @@ func (s *Server) handleWorkerRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// hub.Client sends {"capabilities": {"hostname":"h1","gpu_count":2,...}}
+	// Extract fields from capabilities map if top-level fields are empty
+	if req.Hostname == "" && len(req.Capabilities) > 0 {
+		if v, ok := req.Capabilities["hostname"]; ok {
+			if s, ok := v.(string); ok {
+				req.Hostname = s
+			}
+		}
+		if req.GPUCount == 0 {
+			if v, ok := req.Capabilities["gpu_count"]; ok {
+				switch n := v.(type) {
+				case float64:
+					req.GPUCount = int(n)
+				case int:
+					req.GPUCount = n
+				}
+			}
+		}
+		if req.GPUModel == "" {
+			if v, ok := req.Capabilities["gpu_model"]; ok {
+				if s, ok := v.(string); ok {
+					req.GPUModel = s
+				}
+			}
+		}
+	}
+
 	if req.Hostname == "" {
 		writeError(w, http.StatusBadRequest, "hostname is required")
 		return

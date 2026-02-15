@@ -144,13 +144,15 @@ type QueueStats struct {
 }
 
 // WorkerRegisterRequest is the payload for POST /v1/workers/register.
+// hub.Client sends {"capabilities": {...}} — the handler extracts fields from the map.
 type WorkerRegisterRequest struct {
-	Hostname  string   `json:"hostname"`
-	GPUCount  int      `json:"gpu_count"`
-	GPUModel  string   `json:"gpu_model,omitempty"`
-	TotalVRAM float64  `json:"total_vram_gb"`
-	FreeVRAM  float64  `json:"free_vram_gb"`
-	Tags      []string `json:"tags,omitempty"`
+	Hostname     string         `json:"hostname"`
+	GPUCount     int            `json:"gpu_count"`
+	GPUModel     string         `json:"gpu_model,omitempty"`
+	TotalVRAM    float64        `json:"total_vram_gb"`
+	FreeVRAM     float64        `json:"free_vram_gb"`
+	Tags         []string       `json:"tags,omitempty"`
+	Capabilities map[string]any `json:"capabilities,omitempty"`
 }
 
 // WorkerRegisterResponse is returned from POST /v1/workers/register.

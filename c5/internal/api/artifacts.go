@@ -95,10 +95,10 @@ func (s *Server) handleArtifacts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, map[string]any{
-		"artifacts": artifacts,
-		"count":     len(artifacts),
-	})
+	if artifacts == nil {
+		artifacts = []model.Artifact{}
+	}
+	writeJSON(w, artifacts)
 }
 
 func (s *Server) handleArtifactConfirm(w http.ResponseWriter, r *http.Request, jobID string) {
