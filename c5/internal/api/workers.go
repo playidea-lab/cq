@@ -79,10 +79,7 @@ func (s *Server) handleWorkersList(w http.ResponseWriter, r *http.Request) {
 		workers = []*model.Worker{}
 	}
 
-	writeJSON(w, map[string]any{
-		"workers": workers,
-		"count":   len(workers),
-	})
+	writeJSON(w, workers)
 }
 
 func (s *Server) handleLeaseAcquire(w http.ResponseWriter, r *http.Request) {

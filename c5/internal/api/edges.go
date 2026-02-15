@@ -63,7 +63,7 @@ func (s *Server) handleEdgeHeartbeat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, map[string]string{"status": "ok"})
+	writeJSON(w, model.HeartbeatResponse{Acknowledged: true})
 }
 
 func (s *Server) handleEdgesList(w http.ResponseWriter, r *http.Request) {
@@ -78,10 +78,10 @@ func (s *Server) handleEdgesList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, map[string]any{
-		"edges": edges,
-		"count": len(edges),
-	})
+	if edges == nil {
+		edges = []model.Edge{}
+	}
+	writeJSON(w, edges)
 }
 
 func (s *Server) handleEdgeByID(w http.ResponseWriter, r *http.Request) {
@@ -161,10 +161,10 @@ func (s *Server) handleDeployRulesList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, map[string]any{
-		"rules": rules,
-		"count": len(rules),
-	})
+	if rules == nil {
+		rules = []model.DeployRule{}
+	}
+	writeJSON(w, rules)
 }
 
 func (s *Server) handleDeployRuleByID(w http.ResponseWriter, r *http.Request) {

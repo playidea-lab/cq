@@ -64,10 +64,10 @@ func (s *Server) handleDAGsList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, map[string]any{
-		"dags":  dags,
-		"count": len(dags),
-	})
+	if dags == nil {
+		dags = []model.DAG{}
+	}
+	writeJSON(w, dags)
 }
 
 func (s *Server) handleDAGByID(w http.ResponseWriter, r *http.Request) {

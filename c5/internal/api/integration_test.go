@@ -216,9 +216,8 @@ func TestIntegrationWorkerLifecycle(t *testing.T) {
 	if wl.Code != http.StatusOK {
 		t.Fatalf("list: expected 200, got %d", wl.Code)
 	}
-	var listResp map[string]any
-	decodeJSON(t, wl, &listResp)
-	workers := listResp["workers"].([]any)
+	var workers []model.Worker
+	decodeJSON(t, wl, &workers)
 	if len(workers) != 1 {
 		t.Fatalf("expected 1 worker, got %d", len(workers))
 	}
@@ -493,6 +492,137 @@ dependencies:
 	}
 	if len(dag.Nodes) != 2 {
 		t.Fatalf("expected 2 nodes, got %d", len(dag.Nodes))
+	}
+}
+
+// TestHubClientListWorkersCompat verifies GET /v1/workers returns raw []Worker array.
+func TestHubClientListWorkersCompat(t *testing.T) {
+	srv := newTestServer(t)
+
+	// Register 2 workers
+	doRequest(t, srv, "POST", "/v1/workers/register", model.WorkerRegisterRequest{Hostname: "w1"})
+	doRequest(t, srv, "POST", "/v1/workers/register", model.WorkerRegisterRequest{Hostname: "w2"})
+
+	w := doRequest(t, srv, "GET", "/v1/workers", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+
+	// hub.Client does: var workers []Worker; json.Decode(&workers)
+	var workers []model.Worker
+	decodeJSON(t, w, &workers)
+	if len(workers) != 2 {
+		t.Fatalf("expected 2 workers, got %d", len(workers))
+	}
+}
+
+// TestHubClientListEdgesCompat verifies GET /v1/edges returns raw []Edge array.
+func TestHubClientListEdgesCompat(t *testing.T) {
+	srv := newTestServer(t)
+
+	doRequest(t, srv, "POST", "/v1/edges/register", model.EdgeRegisterRequest{Name: "e1", Tags: []string{"onnx"}})
+	doRequest(t, srv, "POST", "/v1/edges/register", model.EdgeRegisterRequest{Name: "e2", Tags: []string{"tflite"}})
+
+	w := doRequest(t, srv, "GET", "/v1/edges", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+
+	var edges []model.Edge
+	decodeJSON(t, w, &edges)
+	if len(edges) != 2 {
+		t.Fatalf("expected 2 edges, got %d", len(edges))
+	}
+}
+
+// TestHubClientListDAGsCompat verifies GET /v1/dags returns raw []DAG array.
+func TestHubClientListDAGsCompat(t *testing.T) {
+	srv := newTestServer(t)
+
+	doRequest(t, srv, "POST", "/v1/dags", model.DAGCreateRequest{Name: "dag1"})
+	doRequest(t, srv, "POST", "/v1/dags", model.DAGCreateRequest{Name: "dag2"})
+
+	w := doRequest(t, srv, "GET", "/v1/dags", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+
+	var dags []model.DAG
+	decodeJSON(t, w, &dags)
+	if len(dags) != 2 {
+		t.Fatalf("expected 2 DAGs, got %d", len(dags))
+	}
+}
+
+// TestHubClientListDeployRulesCompat verifies GET /v1/deploy/rules returns raw []DeployRule array.
+func TestHubClientListDeployRulesCompat(t *testing.T) {
+	srv := newTestServer(t)
+
+	doRequest(t, srv, "POST", "/v1/deploy/rules", model.DeployRuleCreateRequest{
+		Trigger: "job_tag:prod", EdgeFilter: "tag:onnx", ArtifactPattern: "*.onnx",
+	})
+
+	w := doRequest(t, srv, "GET", "/v1/deploy/rules", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+
+	var rules []model.DeployRule
+	decodeJSON(t, w, &rules)
+	if len(rules) != 1 {
+		t.Fatalf("expected 1 rule, got %d", len(rules))
+	}
+}
+
+// TestHubClientEdgeHeartbeatCompat verifies edge heartbeat returns {acknowledged: true}.
+func TestHubClientEdgeHeartbeatCompat(t *testing.T) {
+	srv := newTestServer(t)
+
+	we := doRequest(t, srv, "POST", "/v1/edges/register", model.EdgeRegisterRequest{Name: "e1"})
+	var edgeResp model.EdgeRegisterResponse
+	decodeJSON(t, we, &edgeResp)
+
+	w := doRequest(t, srv, "POST", "/v1/edges/heartbeat", model.EdgeHeartbeatRequest{
+		EdgeID: edgeResp.EdgeID,
+	})
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+
+	// hub.Client does: var resp HeartbeatResponse; if !resp.Acknowledged { error }
+	var resp model.HeartbeatResponse
+	decodeJSON(t, w, &resp)
+	if !resp.Acknowledged {
+		t.Fatal("expected acknowledged=true")
+	}
+}
+
+// TestHubClientEmptyListCompat verifies empty lists return [] not null.
+func TestHubClientEmptyListCompat(t *testing.T) {
+	srv := newTestServer(t)
+
+	// Workers
+	ww := doRequest(t, srv, "GET", "/v1/workers", nil)
+	if ww.Body.String() != "[]\n" {
+		t.Fatalf("empty workers should be [], got: %s", ww.Body.String())
+	}
+
+	// Edges
+	we := doRequest(t, srv, "GET", "/v1/edges", nil)
+	if we.Body.String() != "[]\n" {
+		t.Fatalf("empty edges should be [], got: %s", we.Body.String())
+	}
+
+	// DAGs
+	wd := doRequest(t, srv, "GET", "/v1/dags", nil)
+	if wd.Body.String() != "[]\n" {
+		t.Fatalf("empty dags should be [], got: %s", wd.Body.String())
+	}
+
+	// Deploy rules
+	wr := doRequest(t, srv, "GET", "/v1/deploy/rules", nil)
+	if wr.Body.String() != "[]\n" {
+		t.Fatalf("empty rules should be [], got: %s", wr.Body.String())
 	}
 }
 

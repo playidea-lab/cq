@@ -343,9 +343,8 @@ func TestWorkerRegisterAndList(t *testing.T) {
 		t.Fatalf("expected 200, got %d", w2.Code)
 	}
 
-	var listResp map[string]any
-	decodeJSON(t, w2, &listResp)
-	workers := listResp["workers"].([]any)
+	var workers []model.Worker
+	decodeJSON(t, w2, &workers)
 	if len(workers) != 1 {
 		t.Fatalf("expected 1 worker, got %d", len(workers))
 	}
