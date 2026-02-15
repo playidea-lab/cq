@@ -251,7 +251,7 @@ c4-core/
 │   ├── worker/       # Worker manager
 │   ├── validation/   # Validation runner (go test, pytest, cargo test 자동 감지)
 │   ├── config/       # Config manager (YAML, env, economic presets)
-│   ├── cloud/        # Auth (OAuth), CloudStore, HybridStore
+│   ├── cloud/        # Auth (OAuth), CloudStore, HybridStore, TokenProvider (auto-refresh)
 │   ├── hub/          # PiQ Hub REST+WS client (26 tools)
 │   ├── daemon/       # 로컬 작업 스케줄러 (Store+Scheduler+Server+GPU)
 │   ├── eventbus/     # C3 EventBus v4 (gRPC, WS bridge, DLQ, filter v2)

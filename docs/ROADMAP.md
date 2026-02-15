@@ -1,8 +1,8 @@
 # C4 Roadmap
 
-## Current Version: v0.16.3 (Phase 10.5 — C1 Context Hub + C3 EventBus v4 + Tier 1 Go Native)
+## Current Version: v0.16.4 (Phase 10.6 — Sidecar Resilience + Cloud Token Auto-Refresh)
 
-현재 버전은 **Go MCP Primary(112 tools: Base 86 + Hub 26), LLM Gateway (4개 Provider 실제 구현), CDP Runner (브라우저 자동화), Cloud Foundation (Supabase), Knowledge Bidirectional Sync, c4 daemon (로컬 작업 스케줄러), C0 Drive (파일 관리), C1 Context Hub (메시징 + 문서 + Context Keeper), C3 EventBus v4 (gRPC daemon + WebSocket bridge + DLQ + Filter v2)**을 포함합니다.
+현재 버전은 **Go MCP Primary(112 tools: Base 86 + Hub 26), LLM Gateway (4개 Provider 실제 구현), CDP Runner (브라우저 자동화), Cloud Foundation (Supabase + TokenProvider auto-refresh), Knowledge Bidirectional Sync, c4 daemon (로컬 작업 스케줄러), C0 Drive (파일 관리), C1 Context Hub (메시징 + 문서 + Context Keeper), C3 EventBus v4 (gRPC daemon + WebSocket bridge + DLQ + Filter v2), Sidecar Resilience (lazy start + health check)**을 포함합니다.
 
 ### 핵심 구조
 
@@ -14,7 +14,7 @@
 - **C1 Views** - SessionsView (provider 자동감지), ChannelsView (메시징 + Realtime + count 로직), DocumentsView (파일+마크다운 편집)
 - **Daemon Scheduler** - 로컬 작업 스케줄러, 13 REST API, GPU 할당, 소요시간 예측 (PiQ 대체)
 - **LLM Gateway** - 4개 Provider (Anthropic/OpenAI/Gemini/Ollama), 5단계 라우팅, CostTracker, 모델 카탈로그 9종
-- **Cloud Layer** - Go PostgREST client (Auth + CloudStore + HybridStore + KnowledgeCloudClient)
+- **Cloud Layer** - Go PostgREST client (Auth + CloudStore + HybridStore + KnowledgeCloudClient + TokenProvider proactive auto-refresh with 401 retry)
 - **Python Sidecar** - LSP(Multilspy→Jedi→Tree-sitter), Knowledge Store v2, GPU Scheduler
 - **Infra** - Supabase PostgreSQL (13 migrations, RLS, tsvector FTS)
 
@@ -43,6 +43,31 @@
 ---
 
 ## 최신 추가사항 (2026-02-15)
+
+### Cloud TokenProvider Auto-Refresh + Built-in Supabase Defaults ✅
+
+**목표**: 클라우드 토큰 자동 갱신 안정성 강화, 바이너리에 Supabase 기본값 내장
+
+- **TokenProvider 추상화**:
+  - `cloud.TokenProvider` 인터페이스 — proactive auto-refresh (만료 1분 전)
+  - 401 응답 시 강제 갱신 (재시도 로직)
+  - store/knowledge/drive/c1 모든 HTTP client 통합
+  - 테스트: token_test.go 172줄 신규
+
+- **Built-in Supabase Defaults**:
+  - `go build -ldflags` 주입: builtinSupabaseURL, builtinSupabaseKey
+  - auth.go 진입점: env → builtin → config file fallback chain
+  - install.sh 업데이트: ldflags injection + 로그인 안내 추가
+
+- **Deployment Topology 문서**:
+  - docs/deployment-topology.md 신규: 온프레미스/클라우드/하이브리드 아키텍처
+  - 초기 설정 단계 감소
+
+- **Bridge 개선**:
+  - `internal/bridge/lazy.go` — health check + exponential backoff (최대 32s)
+  - onRestart callback 추가
+
+---
 
 ### C3 EventBus Full Code Review + Tier 1 Go Native Migration Complete ✅
 
