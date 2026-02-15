@@ -20,7 +20,11 @@ const (
 // handleWSMetrics handles WebSocket connections for real-time metrics streaming.
 // Path: /ws/metrics/{job_id}?include_history=true
 func (s *Server) handleWSMetrics(w http.ResponseWriter, r *http.Request) {
-	jobID := strings.TrimPrefix(r.URL.Path, "/ws/metrics/")
+	// Support both /ws/metrics/{id} and /v1/ws/metrics/{id}
+	jobID := strings.TrimPrefix(r.URL.Path, "/v1/ws/metrics/")
+	if jobID == r.URL.Path {
+		jobID = strings.TrimPrefix(r.URL.Path, "/ws/metrics/")
+	}
 	if jobID == "" {
 		writeError(w, http.StatusBadRequest, "job_id required")
 		return

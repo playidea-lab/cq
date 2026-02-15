@@ -1,7 +1,10 @@
 package api
 
 import (
+	"bytes"
+	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/piqsol/c4/c5/internal/model"
@@ -474,19 +477,12 @@ dependencies:
 	if w.Code != http.StatusCreated {
 		t.Fatalf("from-yaml: expected 201, got %d: %s", w.Code, w.Body.String())
 	}
-	var resp model.DAGCreateResponse
-	decodeJSON(t, w, &resp)
-	if resp.DAGID == "" {
-		t.Fatal("dag_id should not be empty")
-	}
-
-	// Verify DAG was created properly
-	wg := doRequest(t, srv, "GET", "/v1/dags/"+resp.DAGID, nil)
-	if wg.Code != http.StatusOK {
-		t.Fatalf("get DAG: expected 200, got %d", wg.Code)
-	}
+	// hub.Client expects full DAG struct from from-yaml endpoint
 	var dag model.DAG
-	decodeJSON(t, wg, &dag)
+	decodeJSON(t, w, &dag)
+	if dag.ID == "" {
+		t.Fatal("dag ID should not be empty")
+	}
 	if dag.Name != "yaml-pipeline" {
 		t.Fatalf("name mismatch: %s", dag.Name)
 	}
@@ -666,5 +662,96 @@ func TestIntegrationJobCancelFlow(t *testing.T) {
 	decodeJSON(t, wg2, &job2)
 	if job2.Status != model.StatusCancelled {
 		t.Fatalf("expected CANCELLED, got %s", job2.Status)
+	}
+}
+
+// TestHubClientDAGFromYAMLCompat verifies from-yaml returns full DAG struct (not DAGCreateResponse).
+func TestHubClientDAGFromYAMLCompat(t *testing.T) {
+	srv := newTestServer(t)
+
+	yamlContent := `
+name: compat-test
+description: compat test
+nodes:
+  - name: n1
+    command: echo ok
+`
+	w := doRequest(t, srv, "POST", "/v1/dags/from-yaml", model.DAGFromYAMLRequest{
+		YAMLContent: yamlContent,
+	})
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// hub.Client does: var dag DAG; json.Decode(&dag)
+	var dag model.DAG
+	decodeJSON(t, w, &dag)
+	if dag.ID == "" {
+		t.Fatal("dag.ID should not be empty")
+	}
+	if dag.Name != "compat-test" {
+		t.Fatalf("expected name compat-test, got %s", dag.Name)
+	}
+	if len(dag.Nodes) != 1 {
+		t.Fatalf("expected 1 node, got %d", len(dag.Nodes))
+	}
+}
+
+// TestHubClientWorkerIDHeaderCompat verifies X-Worker-ID header fallback for heartbeat and lease.
+func TestHubClientWorkerIDHeaderCompat(t *testing.T) {
+	srv := newTestServer(t)
+
+	// Register worker
+	wr := doRequest(t, srv, "POST", "/v1/workers/register", model.WorkerRegisterRequest{Hostname: "header-test"})
+	var regResp model.WorkerRegisterResponse
+	decodeJSON(t, wr, &regResp)
+
+	// Heartbeat with X-Worker-ID header (empty body worker_id)
+	data1, _ := json.Marshal(model.HeartbeatRequest{})
+	req1 := httptest.NewRequest("POST", "/v1/workers/heartbeat", bytes.NewReader(data1))
+	req1.Header.Set("Content-Type", "application/json")
+	req1.Header.Set("X-Worker-ID", regResp.WorkerID)
+	w1 := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w1, req1)
+	if w1.Code != http.StatusOK {
+		t.Fatalf("heartbeat with header: expected 200, got %d: %s", w1.Code, w1.Body.String())
+	}
+
+	// Lease acquire with X-Worker-ID header (empty body worker_id)
+	data2, _ := json.Marshal(model.LeaseAcquireRequest{})
+	req2 := httptest.NewRequest("POST", "/v1/leases/acquire", bytes.NewReader(data2))
+	req2.Header.Set("Content-Type", "application/json")
+	req2.Header.Set("X-Worker-ID", regResp.WorkerID)
+	w2 := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w2, req2)
+	if w2.Code != http.StatusOK {
+		t.Fatalf("lease acquire with header: expected 200, got %d: %s", w2.Code, w2.Body.String())
+	}
+}
+
+// TestHubClientWSPathCompat verifies /v1/ws/metrics/ path alias works.
+func TestHubClientWSPathCompat(t *testing.T) {
+	srv := newTestServer(t)
+
+	// Submit a job for the WebSocket endpoint
+	w := doRequest(t, srv, "POST", "/v1/jobs/submit", model.JobSubmitRequest{
+		Name: "ws-compat", Command: "echo ok",
+	})
+	var submitResp model.JobSubmitResponse
+	decodeJSON(t, w, &submitResp)
+
+	// Verify both WebSocket paths are routed (HTTP GET returns non-404)
+	req1 := httptest.NewRequest("GET", "/ws/metrics/"+submitResp.JobID, nil)
+	w1 := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w1, req1)
+	if w1.Code == http.StatusNotFound {
+		t.Fatal("/ws/metrics/ path should be registered")
+	}
+
+	req2 := httptest.NewRequest("GET", "/v1/ws/metrics/"+submitResp.JobID, nil)
+	w2 := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w2, req2)
+	if w2.Code == http.StatusNotFound {
+		t.Fatal("/v1/ws/metrics/ path should be registered")
 	}
 }

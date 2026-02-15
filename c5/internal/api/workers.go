@@ -48,6 +48,10 @@ func (s *Server) handleWorkerHeartbeat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Fallback: hub.Client sends worker_id in X-Worker-ID header
+	if req.WorkerID == "" {
+		req.WorkerID = r.Header.Get("X-Worker-ID")
+	}
 	if req.WorkerID == "" {
 		writeError(w, http.StatusBadRequest, "worker_id is required")
 		return
@@ -94,6 +98,10 @@ func (s *Server) handleLeaseAcquire(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Fallback: hub.Client sends worker_id in X-Worker-ID header
+	if req.WorkerID == "" {
+		req.WorkerID = r.Header.Get("X-Worker-ID")
+	}
 	if req.WorkerID == "" {
 		writeError(w, http.StatusBadRequest, "worker_id is required")
 		return

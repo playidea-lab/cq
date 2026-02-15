@@ -316,11 +316,15 @@ func (s *Server) handleDAGFromYAML(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Return full DAG struct (hub.Client expects DAG, not DAGCreateResponse)
+	fullDAG, err := s.store.GetDAG(dag.ID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
 	w.WriteHeader(http.StatusCreated)
-	writeJSON(w, model.DAGCreateResponse{
-		DAGID:  dag.ID,
-		Status: "pending",
-	})
+	writeJSON(w, fullDAG)
 }
 
 // dagYAMLDef is the internal representation of a YAML DAG definition.

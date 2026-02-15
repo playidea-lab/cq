@@ -110,8 +110,9 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("/v1/storage/upload", s.handleUploadArtifact)
 	s.mux.HandleFunc("/v1/artifacts/", s.handleArtifacts)
 
-	// WebSocket
+	// WebSocket (both paths: hub.Client sends to /v1/ws/metrics/, workers use /ws/metrics/)
 	s.mux.HandleFunc("/ws/metrics/", s.handleWSMetrics)
+	s.mux.HandleFunc("/v1/ws/metrics/", s.handleWSMetrics)
 }
 
 func (s *Server) authMiddleware(next http.Handler) http.Handler {
