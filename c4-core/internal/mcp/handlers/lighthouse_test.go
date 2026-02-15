@@ -877,6 +877,147 @@ func TestLighthouseReregisterAfterRemove(t *testing.T) {
 	}
 }
 
+func TestAutoPromoteLighthouseOnSubmit(t *testing.T) {
+	reg, store := setupLighthouseTest(t)
+
+	// Register lighthouse with auto_task
+	result := callLighthouse(t, reg, map[string]any{
+		"action":      "register",
+		"name":        "lh_auto_promote",
+		"description": "Auto promote test",
+		"spec":        "Returns data",
+	})
+	taskID := result["task_id"].(string)
+	if taskID != "T-LH-lh_auto_promote-0" {
+		t.Fatalf("task_id = %q, want T-LH-lh_auto_promote-0", taskID)
+	}
+
+	// Wire registry to store for auto-promote
+	store.registry = reg
+
+	// Assign task (moves to in_progress)
+	assignment, err := store.AssignTask("worker-1")
+	if err != nil {
+		t.Fatalf("AssignTask: %v", err)
+	}
+	if assignment.TaskID != taskID {
+		t.Fatalf("assigned = %q, want %q", assignment.TaskID, taskID)
+	}
+
+	// Submit task
+	submitResult, err := store.SubmitTask(taskID, "worker-1", "abc123", "", nil)
+	if err != nil {
+		t.Fatalf("SubmitTask: %v", err)
+	}
+	if !submitResult.Success {
+		t.Fatalf("submit failed: %s", submitResult.Message)
+	}
+
+	// Lighthouse should be promoted
+	lh, err := store.getLighthouse("lh_auto_promote")
+	if err != nil {
+		t.Fatalf("getLighthouse: %v", err)
+	}
+	if lh.Status != "implemented" {
+		t.Errorf("lighthouse status = %q, want implemented", lh.Status)
+	}
+
+	// Stub should be removed from registry
+	if reg.HasTool("lh_auto_promote") {
+		t.Error("stub should be removed from registry after auto-promote")
+	}
+}
+
+func TestAutoPromoteLighthouseOnReport(t *testing.T) {
+	reg, store := setupLighthouseTest(t)
+
+	// Register lighthouse with auto_task
+	result := callLighthouse(t, reg, map[string]any{
+		"action":      "register",
+		"name":        "lh_report_promote",
+		"description": "Report promote test",
+		"spec":        "Returns data",
+	})
+	taskID := result["task_id"].(string)
+
+	// Wire registry to store for auto-promote
+	store.registry = reg
+
+	// Claim task (direct mode)
+	_, err := store.ClaimTask(taskID)
+	if err != nil {
+		t.Fatalf("ClaimTask: %v", err)
+	}
+
+	// Report task
+	err = store.ReportTask(taskID, "implemented lighthouse", []string{"handler.go"})
+	if err != nil {
+		t.Fatalf("ReportTask: %v", err)
+	}
+
+	// Lighthouse should be promoted
+	lh, err := store.getLighthouse("lh_report_promote")
+	if err != nil {
+		t.Fatalf("getLighthouse: %v", err)
+	}
+	if lh.Status != "implemented" {
+		t.Errorf("lighthouse status = %q, want implemented", lh.Status)
+	}
+
+	// Stub should be removed from registry
+	if reg.HasTool("lh_report_promote") {
+		t.Error("stub should be removed from registry after auto-promote")
+	}
+}
+
+func TestAutoPromoteSkipsNonLHTask(t *testing.T) {
+	reg, store := setupLighthouseTest(t)
+
+	// Register a lighthouse (creates T-LH-lh_skip_test-0)
+	callLighthouse(t, reg, map[string]any{
+		"action":      "register",
+		"name":        "lh_skip_test",
+		"description": "Should not be affected",
+		"spec":        "Spec",
+		"auto_task":   false, // no auto task — keeps things clean
+	})
+
+	// Wire registry
+	store.registry = reg
+
+	// Create a normal (non-T-LH) task
+	normalTask := &Task{
+		ID:    "T-001-0",
+		Title: "Normal task",
+		DoD:   "Do something",
+	}
+	if err := store.AddTask(normalTask); err != nil {
+		t.Fatalf("AddTask: %v", err)
+	}
+
+	// Claim and report the normal task (direct mode)
+	if _, err := store.ClaimTask("T-001-0"); err != nil {
+		t.Fatalf("ClaimTask: %v", err)
+	}
+	if err := store.ReportTask("T-001-0", "done", []string{"file.go"}); err != nil {
+		t.Fatalf("ReportTask: %v", err)
+	}
+
+	// Lighthouse should still be stub (not promoted)
+	lh, err := store.getLighthouse("lh_skip_test")
+	if err != nil {
+		t.Fatalf("getLighthouse: %v", err)
+	}
+	if lh.Status != "stub" {
+		t.Errorf("lighthouse status = %q, want stub (should not be affected by non-LH task)", lh.Status)
+	}
+
+	// Stub should still be in registry
+	if !reg.HasTool("lh_skip_test") {
+		t.Error("stub should remain in registry when non-LH task completes")
+	}
+}
+
 func TestLighthouseAutoTaskFailurePath(t *testing.T) {
 	reg, store := setupLighthouseTest(t)
 

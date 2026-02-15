@@ -43,6 +43,9 @@ designs = mcp__c4__c4_list_designs()
 # 4. 기획 문서 스캔
 # Glob으로 docs/**/*.md 검색
 # PRD, requirements, spec, plan 키워드 포함 파일 식별
+
+# 5. Lighthouse 현황
+lighthouses = mcp__c4__c4_lighthouse(action="list")
 ```
 
 #### 0.2 현황 출력 (Enhanced)
@@ -158,6 +161,24 @@ designs = mcp__c4__c4_list_designs()
 └─────────────────────────────────────────────────────────────────────────────┘
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🏗️ Lighthouse (Contract-First TDD)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ┌─────────────────────────────────────────────────────────────────────────────┐
+  │ Stubs: {stubs}개  Implemented: {impl}개  Deprecated: {depr}개              │
+  │                                                                             │
+  │ 📋 Active Stubs:                                                            │
+  │   🔴 {name1} — {description1}     → T-LH-{name1}-0                         │
+  │   🔴 {name2} — {description2}     → T-LH-{name2}-0                         │
+  │                                                                             │
+  │ ✅ Recently Implemented:                                                    │
+  │   🟢 {name3} — {description3}                                               │
+  └─────────────────────────────────────────────────────────────────────────────┘
+
+데이터 수집: `lighthouses = mcp__c4__c4_lighthouse(action="list")`
+Lighthouse가 없으면 이 섹션은 "(등록된 Lighthouse 없음)" 한 줄로 표시.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 📄 기획 문서 (docs/)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -214,8 +235,9 @@ AskUserQuestion(questions=[
         "question": "무엇을 하시겠습니까?",
         "header": "작업선택",
         "options": [
-            {"label": "새 기능 계획", "description": "Discovery → Design → Tasks 전체 플로우"},
+            {"label": "새 기능 계획", "description": "Discovery → Design → Lighthouse → Tasks 전체 플로우"},
             {"label": "기존 계획 검토/수정", "description": "저장된 Spec/Design 상세 보기 및 수정"},
+            {"label": "Lighthouse 관리", "description": "도구 계약 등록/조회/promote/삭제"},
             {"label": "태스크만 추가", "description": "기존 설계 기반 태스크 생성"},
             {"label": "현황만 확인", "description": "출력 후 종료"}
         ],
@@ -230,6 +252,7 @@ AskUserQuestion(questions=[
 |------|----------|
 | **새 기능 계획** | → Phase 1 (문서 스캔)으로 이동 |
 | **기존 계획 검토/수정** | → Phase R (검토/수정)로 이동 |
+| **Lighthouse 관리** | → Phase L (Lighthouse 관리)로 이동 |
 | **태스크만 추가** | → Phase 4 (태스크 생성)로 직행 |
 | **현황만 확인** | → "현황 파악 완료" 메시지 후 종료 |
 
@@ -1159,6 +1182,147 @@ else:
 
 ---
 
+### Phase 2.7: Contract-First — Lighthouse 도구 계약 정의
+
+> **진입 조건**: Design 완료 후 (Phase 2.6.7), Task 생성 전
+> **핵심 원칙**: "먼저 인터페이스를 정의하고, 그 다음에 구현한다" (TDD 방식)
+
+#### 2.7.1 설계에서 도구 계약 추출
+
+Design 단계에서 정의된 컴포넌트/인터페이스를 분석하여
+**MCP 도구로 노출할 계약(contract)**을 식별합니다.
+
+**식별 기준:**
+| 유형 | 예시 | Lighthouse 후보 |
+|------|------|----------------|
+| 새 MCP 도구 | `c4_xyz` 도구 추가 | 반드시 등록 |
+| 새 API 엔드포인트 | REST/gRPC/WS | 도구 래퍼로 등록 |
+| 새 서비스 인터페이스 | `FooService.bar()` | 외부 노출 시 등록 |
+| 내부 헬퍼/유틸 | `parseX()`, `validate()` | 등록 불필요 |
+
+**원칙**: 새 기능 계획 시 **반드시 Lighthouse 도구 계약을 정의**한다 (TDD의 "Red" 단계).
+내부 리팩토링/버그 수정처럼 새 도구가 없는 경우에만 스킵 가능하며, 이 경우 명시적 사유를 남긴다.
+
+```python
+# 설계 분석 → 도구 계약 목록 생성
+AskUserQuestion(questions=[
+    {
+        "question": "정의할 MCP 도구 계약을 확인하세요 (새 기능엔 필수)",
+        "header": "도구계약",
+        "options": [
+            # 설계에서 자동 추출된 후보들
+            {"label": "{tool_name_1}", "description": "{description_1}"},
+            {"label": "{tool_name_2}", "description": "{description_2}"},
+            {"label": "추가 정의", "description": "직접 도구 이름과 스펙 입력"}
+        ],
+        "multiSelect": True
+    }
+])
+# 참고: "스킵"은 옵션 목록에 없음 — 새 기능엔 Lighthouse 필수.
+# 리팩토링/버그수정 시에만 사용자가 직접 "해당 없음"을 입력.
+```
+
+#### 2.7.2 도구별 계약 정의 (Lighthouse Register)
+
+각 선택된 도구에 대해 **입력 스키마 + API 스펙**을 정의하고 Lighthouse stub으로 등록합니다.
+
+```python
+# 도구마다 계약 정의
+for tool in selected_tools:
+    # 1. 입력 스키마 정의 (Design의 컴포넌트 인터페이스에서 추출)
+    input_schema = {
+        "type": "object",
+        "properties": {
+            "param1": {"type": "string", "description": "..."},
+            "param2": {"type": "integer", "description": "..."}
+        },
+        "required": ["param1"]
+    }
+
+    # 2. API 스펙 정의 (계약)
+    spec = """
+    ## {tool_name}
+    ### 입력
+    - param1 (string, required): ...
+    - param2 (integer, optional): ...
+    ### 출력
+    - success (bool): 성공 여부
+    - data: ...
+    ### 에러
+    - "param1 is required": param1 누락
+    - "not found": 리소스 없음
+    ### 동작
+    1. ...
+    2. ...
+    """
+
+    # 3. Lighthouse stub 등록 (auto_task=true → T-LH-{name}-0 자동 생성)
+    mcp__c4__c4_lighthouse(
+        action="register",
+        name=tool_name,
+        description=tool_description,
+        input_schema=json.dumps(input_schema),
+        spec=spec,
+        auto_task=True
+    )
+```
+
+#### 2.7.3 계약 검증 (Stub 호출 테스트)
+
+등록된 Lighthouse stub을 직접 호출하여 **계약이 올바르게 정의되었는지** 확인합니다.
+
+```python
+# Stub 호출 → 계약 정보 반환 확인
+result = mcp__c4__{tool_name}(param1="test")
+# result: {"lighthouse": true, "status": "stub", "spec": "...", ...}
+
+# 모든 stub 호출 성공 확인
+print(f"✅ {len(stubs)}개 Lighthouse stub 등록 완료")
+print(f"   자동 생성된 태스크: {[f'T-LH-{name}-0' for name in stubs]}")
+```
+
+#### 2.7.4 Lighthouse 요약
+
+```
+🏗️ Contract-First TDD — Lighthouse 등록 완료
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  🔴 c4_xyz         — "XYZ 도구 설명"    → T-LH-c4_xyz-0
+  🔴 c4_abc         — "ABC 도구 설명"    → T-LH-c4_abc-0
+
+  다음: Phase 3 (환경 인터뷰) → Phase 4 (태스크 생성)
+
+  💡 T-LH 태스크 완료 시 해당 Lighthouse가 자동으로 promote됩니다.
+```
+
+---
+
+### Phase L: Lighthouse 관리
+
+> **진입 조건**: Phase 0.5에서 "Lighthouse 관리" 선택 시
+
+#### L.1 액션 선택
+
+```python
+AskUserQuestion(questions=[
+    {
+        "question": "Lighthouse 작업을 선택하세요",
+        "header": "LH액션",
+        "options": [
+            {"label": "새 도구 계약 등록", "description": "Lighthouse stub 등록 + 태스크 생성"},
+            {"label": "도구 목록 조회", "description": "등록된 Lighthouse 전체 보기"},
+            {"label": "수동 Promote", "description": "구현 완료된 stub을 implemented로 전환"},
+            {"label": "도구 제거", "description": "Lighthouse deprecated 처리"}
+        ],
+        "multiSelect": False
+    }
+])
+```
+
+각 선택에 따라 `c4_lighthouse` MCP 도구의 해당 action(register/list/promote/remove) 호출.
+
+---
+
 ### Phase 3: 구조화된 인터뷰 (개발 환경)
 
 문서에서 확인되지 않은 **개발 환경** 정보를 **AskUserQuestion** 도구로 질문합니다.
@@ -1310,6 +1474,7 @@ Worker Packet은 다음 요소로 구성됩니다:
 |------|------|------|
 | **Goal** | ✅ | 완료 조건 + 범위 외 명시 |
 | **ContractSpec** | ✅ | API 명세 + 테스트 명세 |
+| **LighthouseRef** | ⚠️ | Lighthouse stub 이름 (있으면 계약 기반 구현) |
 | **BoundaryMap** | ⚠️ | DDD 레이어 제약 |
 | **CodePlacement** | ⚠️ | 생성/수정 파일 목록 |
 | **QualityGates** | ⚠️ | 검증 명령어 |
@@ -1631,11 +1796,12 @@ validation:
 ```
 /c4-plan 실행
     ↓
-Phase 0: 현황 출력 (상태, 태스크, specs, designs, docs)
+Phase 0: 현황 출력 (상태, 태스크, specs, designs, lighthouses, docs)
     ↓
 Phase 0.5: 행동 선택
-    ├→ "새 기능 계획"      → Phase 1~5 (Discovery → Design → Tasks)
+    ├→ "새 기능 계획"      → Phase 1~2.7~5 (Discovery → Design → Lighthouse → Tasks)
     ├→ "기존 계획 검토/수정" → Phase R (상세 보기 → 수정)
+    ├→ "Lighthouse 관리"   → Phase L (등록/조회/promote/삭제)
     ├→ "태스크만 추가"      → Phase 4~5 (Tasks 직행)
     └→ "현황만 확인"       → 종료
 ```

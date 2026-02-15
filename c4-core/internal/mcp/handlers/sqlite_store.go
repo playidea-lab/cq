@@ -11,6 +11,7 @@ import (
 
 	"github.com/changmin/c4-core/internal/config"
 	"github.com/changmin/c4-core/internal/eventbus"
+	"github.com/changmin/c4-core/internal/mcp"
 	"github.com/changmin/c4-core/internal/state"
 	"github.com/changmin/c4-core/internal/task"
 )
@@ -25,6 +26,7 @@ type SQLiteStore struct {
 	proxy       *BridgeProxy          // optional: for knowledge auto-record
 	eventPub    eventbus.Publisher    // optional: for C3 EventBus remote publishing
 	dispatcher  *eventbus.Dispatcher  // optional: local rule-based dispatch (C1 posting, etc.)
+	registry    *mcp.Registry         // optional: for lighthouse auto-promote registry cleanup
 }
 
 // StoreOption configures a SQLiteStore.
@@ -43,6 +45,11 @@ func WithConfig(cfg *config.Manager) StoreOption {
 // WithProxy sets the bridge proxy for knowledge auto-record on task completion.
 func WithProxy(p *BridgeProxy) StoreOption {
 	return func(s *SQLiteStore) { s.proxy = p }
+}
+
+// WithRegistry sets the MCP registry for lighthouse auto-promote on T-LH task completion.
+func WithRegistry(reg *mcp.Registry) StoreOption {
+	return func(s *SQLiteStore) { s.registry = reg }
 }
 
 // SetEventBus sets the EventBus publisher after construction (for cases where
@@ -786,6 +793,9 @@ func (s *SQLiteStore) SubmitTask(taskID, workerID, commitSHA, handoff string, re
 	// Trace logging
 	s.logTrace("task_submitted", workerID, taskID, commitSHA)
 
+	// Auto-promote lighthouse if T-LH- task (best-effort)
+	s.autoPromoteLighthouse(taskID, workerID)
+
 	// C3 EventBus: publish task.completed event (dispatched to C1 via rules)
 	s.notifyEventBus("task.completed", map[string]any{
 		"task_id":    taskID,
@@ -910,6 +920,9 @@ func (s *SQLiteStore) ReportTask(taskID, summary string, filesChanged []string) 
 	// Auto-complete paired review task (best-effort cascade)
 	s.completeReviewTask(taskID)
 
+	// Auto-promote lighthouse if T-LH- task (best-effort)
+	s.autoPromoteLighthouse(taskID, "direct")
+
 	// C3 EventBus: publish task.completed event (dispatched to C1 via rules)
 	s.notifyEventBus("task.completed", map[string]any{
 		"task_id":       taskID,
@@ -954,6 +967,50 @@ func (s *SQLiteStore) removeClaimFile() {
 
 // --- Persona Stats ---
 // Note: Functions moved to store_soul.go and store_status.go
+
+// --- Lighthouse Auto-Promote ---
+
+// autoPromoteLighthouse checks if a completed task is a T-LH- task
+// and auto-promotes the linked lighthouse from stub to implemented.
+// Best-effort: failures are logged but don't block task completion.
+func (s *SQLiteStore) autoPromoteLighthouse(taskID, workerID string) {
+	if !strings.HasPrefix(taskID, "T-LH-") {
+		return
+	}
+	// Extract lighthouse name: T-LH-{name}-{ver}
+	parts := strings.TrimPrefix(taskID, "T-LH-")
+	idx := strings.LastIndex(parts, "-")
+	if idx <= 0 {
+		return
+	}
+	lhName := parts[:idx]
+
+	lh, err := s.getLighthouse(lhName)
+	if err != nil || lh == nil || lh.Status != "stub" {
+		return
+	}
+
+	// Promote lighthouse in DB
+	if err := s.promoteLighthouse(lhName, workerID); err != nil {
+		fmt.Fprintf(os.Stderr, "c4: warning: auto-promote lighthouse '%s' failed: %v\n", lhName, err)
+		return
+	}
+
+	// Remove stub handler from MCP registry (real handler registered on next restart)
+	if s.registry != nil {
+		s.registry.Unregister(lhName)
+	}
+
+	s.logTrace("lighthouse_auto_promote", workerID, lhName,
+		fmt.Sprintf("auto-promoted via task %s completion", taskID))
+
+	// Notify EventBus
+	s.notifyEventBus("lighthouse.promoted", map[string]any{
+		"lighthouse": lhName,
+		"task_id":    taskID,
+		"worker_id":  workerID,
+	})
+}
 
 // --- Knowledge Auto-Record ---
 

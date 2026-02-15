@@ -188,6 +188,7 @@ func newMCPServer() (*mcpServer, error) {
 	if proxy != nil {
 		storeOpts = append(storeOpts, handlers.WithProxy(proxy))
 	}
+	storeOpts = append(storeOpts, handlers.WithRegistry(reg))
 	sqliteStore, err := handlers.NewSQLiteStore(db, storeOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating store: %w", err)
