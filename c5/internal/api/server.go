@@ -103,6 +103,7 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("/v1/deploy/rules", s.handleDeployRulesList)
 	s.mux.HandleFunc("/v1/deploy/rules/", s.handleDeployRuleByID)
 	s.mux.HandleFunc("/v1/deploy/trigger", s.handleDeployTrigger)
+	s.mux.HandleFunc("/v1/deploy", s.handleDeployList) // GET /v1/deploy?limit=50&offset=0
 	s.mux.HandleFunc("/v1/deploy/", s.handleDeployStatus)
 
 	// Artifacts & Storage

@@ -1530,6 +1530,35 @@ func (s *Store) GetDeployment(id string) (*model.Deployment, error) {
 	return &d, rows.Err()
 }
 
+// ListDeployments returns deployments with pagination (no targets loaded).
+func (s *Store) ListDeployments(limit, offset int) ([]model.Deployment, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+
+	rows, err := s.db.Query(`
+		SELECT id, rule_id, job_id, status, created_at, finished_at
+		FROM deployments ORDER BY created_at DESC LIMIT ? OFFSET ?`, limit, offset)
+	if err != nil {
+		return nil, fmt.Errorf("list deployments: %w", err)
+	}
+	defer rows.Close()
+
+	var result []model.Deployment
+	for rows.Next() {
+		var d model.Deployment
+		var finishedAt sql.NullString
+		if err := rows.Scan(&d.ID, &d.RuleID, &d.JobID, &d.Status, &d.CreatedAt, &finishedAt); err != nil {
+			return nil, err
+		}
+		if finishedAt.Valid {
+			d.FinishedAt = finishedAt.String
+		}
+		result = append(result, d)
+	}
+	return result, rows.Err()
+}
+
 // UpdateDeployTarget updates a single target's status within a deployment.
 func (s *Store) UpdateDeployTarget(deployID, edgeID, status, errMsg string) error {
 	now := time.Now().UTC().Format(time.RFC3339)

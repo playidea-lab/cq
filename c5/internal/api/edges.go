@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/piqsol/c4/c5/internal/model"
@@ -273,4 +274,28 @@ func (s *Server) handleDeployStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, deployment)
+}
+
+func (s *Server) handleDeployList(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "GET" {
+		methodNotAllowed(w)
+		return
+	}
+
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
+	if limit <= 0 {
+		limit = 50
+	}
+
+	deployments, err := s.store.ListDeployments(limit, offset)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	if deployments == nil {
+		deployments = []model.Deployment{}
+	}
+	writeJSON(w, deployments)
 }

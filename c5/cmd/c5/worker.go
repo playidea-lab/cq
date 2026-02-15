@@ -11,7 +11,10 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"regexp"
+	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -189,9 +192,10 @@ func executeJob(client *workerClient, job *model.Job, leaseID, workerID string, 
 		return 1
 	}
 
-	// Stream logs
-	go streamLogs(client, job.ID, stdout, "stdout")
-	go streamLogs(client, job.ID, stderr, "stderr")
+	// Stream logs with metrics auto-parsing on stdout
+	mc := newMetricsCollector(client, job.ID)
+	go streamLogs(client, job.ID, stdout, "stdout", mc)
+	go streamLogs(client, job.ID, stderr, "stderr", nil)
 
 	// Lease renew + cancel detection goroutine
 	done := make(chan struct{})
@@ -240,7 +244,108 @@ func executeJob(client *workerClient, job *model.Job, leaseID, workerID string, 
 	return 0
 }
 
-func streamLogs(client *workerClient, jobID string, r io.Reader, stream string) {
+// metricsCollector buffers parsed metrics and batch-sends them.
+type metricsCollector struct {
+	client  *workerClient
+	jobID   string
+	mu      sync.Mutex
+	step    int
+	pending map[string]float64
+	timer   *time.Timer
+}
+
+func newMetricsCollector(client *workerClient, jobID string) *metricsCollector {
+	return &metricsCollector{
+		client:  client,
+		jobID:   jobID,
+		pending: make(map[string]float64),
+	}
+}
+
+// kvPattern matches key=value pairs like "loss=0.5" or "accuracy=0.95"
+var kvPattern = regexp.MustCompile(`(\w+)=([\d.eE+-]+)`)
+
+func (mc *metricsCollector) parseLine(line string) {
+	trimmed := strings.TrimSpace(line)
+	if trimmed == "" {
+		return
+	}
+
+	metrics := make(map[string]float64)
+
+	// Try JSON first: {"loss": 0.5, "step": 100}
+	if strings.HasPrefix(trimmed, "{") {
+		var parsed map[string]any
+		if json.Unmarshal([]byte(trimmed), &parsed) == nil && len(parsed) > 0 {
+			for k, v := range parsed {
+				switch n := v.(type) {
+				case float64:
+					metrics[k] = n
+				case int:
+					metrics[k] = float64(n)
+				}
+			}
+		}
+	}
+
+	// Fallback: key=value pattern
+	if len(metrics) == 0 {
+		matches := kvPattern.FindAllStringSubmatch(trimmed, -1)
+		for _, m := range matches {
+			if val, err := strconv.ParseFloat(m[2], 64); err == nil {
+				metrics[m[1]] = val
+			}
+		}
+	}
+
+	if len(metrics) == 0 {
+		return
+	}
+
+	mc.mu.Lock()
+	defer mc.mu.Unlock()
+
+	// Extract step if present
+	if s, ok := metrics["step"]; ok {
+		mc.step = int(s)
+		delete(metrics, "step")
+	}
+
+	for k, v := range metrics {
+		mc.pending[k] = v
+	}
+
+	// Reset flush timer (debounce 5 seconds)
+	if mc.timer != nil {
+		mc.timer.Stop()
+	}
+	mc.timer = time.AfterFunc(5*time.Second, mc.flush)
+
+	// Flush immediately if buffer has many keys
+	if len(mc.pending) >= 10 {
+		mc.timer.Stop()
+		go mc.flush()
+	}
+}
+
+func (mc *metricsCollector) flush() {
+	mc.mu.Lock()
+	if len(mc.pending) == 0 {
+		mc.mu.Unlock()
+		return
+	}
+	step := mc.step
+	toSend := make(map[string]float64, len(mc.pending))
+	for k, v := range mc.pending {
+		toSend[k] = v
+	}
+	mc.pending = make(map[string]float64)
+	mc.mu.Unlock()
+
+	mc.client.logMetrics(mc.jobID, step, toSend)
+}
+
+func streamLogs(client *workerClient, jobID string, r io.Reader, stream string, mc *metricsCollector) {
 	buf := make([]byte, 4096)
 	for {
 		n, err := r.Read(buf)
@@ -249,10 +354,18 @@ func streamLogs(client *workerClient, jobID string, r io.Reader, stream string) 
 			for _, line := range lines {
 				if line != "" {
 					client.appendLog(jobID, line, stream)
+					// Parse metrics from stdout only
+					if stream == "stdout" && mc != nil {
+						mc.parseLine(line)
+					}
 				}
 			}
 		}
 		if err != nil {
+			// Flush remaining metrics on stream close
+			if mc != nil && stream == "stdout" {
+				mc.flush()
+			}
 			return
 		}
 	}
@@ -353,6 +466,17 @@ func (c *workerClient) appendLog(jobID, line, stream string) {
 	c.doJSON("POST", "/v1/jobs/"+jobID+"/logs", map[string]string{
 		"line":   line,
 		"stream": stream,
+	}, nil)
+}
+
+func (c *workerClient) logMetrics(jobID string, step int, metrics map[string]float64) {
+	m := make(map[string]any, len(metrics))
+	for k, v := range metrics {
+		m[k] = v
+	}
+	c.doJSON("POST", "/v1/metrics/"+jobID, &model.MetricsLogRequest{
+		Step:    step,
+		Metrics: m,
 	}, nil)
 }
 

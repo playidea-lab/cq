@@ -831,3 +831,85 @@ func TestHubClientArtifactListCompat(t *testing.T) {
 		t.Fatalf("content_hash mismatch: %s", artifacts[0].ContentHash)
 	}
 }
+
+// TestHubClientDeployListCompat verifies GET /v1/deploy returns raw deployment array with pagination.
+func TestHubClientDeployListCompat(t *testing.T) {
+	srv := newTestServer(t)
+
+	// Register edge for deploy
+	we := doRequest(t, srv, "POST", "/v1/edges/register", model.EdgeRegisterRequest{
+		Name: "test-edge-deploy-list",
+		Tags: []string{"test"},
+	})
+	var edgeResp model.EdgeRegisterResponse
+	decodeJSON(t, we, &edgeResp)
+
+	// Submit a job
+	wj := doRequest(t, srv, "POST", "/v1/jobs/submit", model.JobSubmitRequest{
+		Name:    "deploy-list-job",
+		Command: "echo hi",
+		Workdir: "/tmp",
+	})
+	var jobResp model.JobSubmitResponse
+	decodeJSON(t, wj, &jobResp)
+
+	// Trigger 2 deployments
+	for i := 0; i < 2; i++ {
+		doRequest(t, srv, "POST", "/v1/deploy/trigger", model.DeployTriggerRequest{
+			JobID:   jobResp.JobID,
+			EdgeIDs: []string{edgeResp.EdgeID},
+		})
+	}
+
+	// GET /v1/deploy — should return raw array
+	wd := doRequest(t, srv, "GET", "/v1/deploy?limit=10&offset=0", nil)
+	var deployments []model.Deployment
+	decodeJSON(t, wd, &deployments)
+	if len(deployments) < 2 {
+		t.Fatalf("expected >= 2 deployments, got %d", len(deployments))
+	}
+
+	// Verify pagination: offset=1 should return 1 less
+	wd2 := doRequest(t, srv, "GET", "/v1/deploy?limit=10&offset=1", nil)
+	var deploys2 []model.Deployment
+	decodeJSON(t, wd2, &deploys2)
+	if len(deploys2) != len(deployments)-1 {
+		t.Fatalf("expected %d deployments with offset=1, got %d", len(deployments)-1, len(deploys2))
+	}
+}
+
+// TestWorkerMetricsAutoParseCompat verifies POST /v1/metrics/{job_id} — the endpoint worker sends parsed metrics to.
+func TestWorkerMetricsAutoParseCompat(t *testing.T) {
+	srv := newTestServer(t)
+
+	// Submit job
+	w := doRequest(t, srv, "POST", "/v1/jobs/submit", model.JobSubmitRequest{
+		Name:    "metrics-parse-job",
+		Command: "echo test",
+		Workdir: "/tmp",
+	})
+	var submitResp model.JobSubmitResponse
+	decodeJSON(t, w, &submitResp)
+
+	// Simulate worker auto-posting parsed metrics (what metricsCollector.flush does)
+	w2 := doRequest(t, srv, "POST", "/v1/metrics/"+submitResp.JobID, model.MetricsLogRequest{
+		Step:    42,
+		Metrics: map[string]any{"loss": 0.5, "accuracy": 0.95},
+	})
+	var logResp map[string]any
+	decodeJSON(t, w2, &logResp)
+	if logResp["status"] != "recorded" {
+		t.Fatalf("expected status=recorded, got %v", logResp["status"])
+	}
+
+	// Verify metrics retrievable
+	w3 := doRequest(t, srv, "GET", "/v1/metrics/"+submitResp.JobID, nil)
+	var metricsResp model.MetricsResponse
+	decodeJSON(t, w3, &metricsResp)
+	if len(metricsResp.Metrics) != 1 {
+		t.Fatalf("expected 1 metric entry, got %d", len(metricsResp.Metrics))
+	}
+	if metricsResp.Metrics[0].Step != 42 {
+		t.Fatalf("expected step=42, got %d", metricsResp.Metrics[0].Step)
+	}
+}
