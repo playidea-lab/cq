@@ -593,6 +593,22 @@ func LoadLighthousesOnStartup(reg *mcp.Registry, store *SQLiteStore) int {
 		}
 		// Re-read after seeding
 		lighthouses, _ = store.listLighthouses()
+	} else {
+		// Backfill empty specs for existing entries (e.g., after binary upgrade)
+		hasEmptySpec := false
+		for _, lh := range lighthouses {
+			if lh.Spec == "" {
+				hasEmptySpec = true
+				break
+			}
+		}
+		if hasEmptySpec {
+			if result, err := lighthouseRegisterAll(reg, store, "auto-backfill"); err == nil {
+				if n, ok := result.(map[string]any)["updated"].(int); ok && n > 0 {
+					fmt.Fprintf(os.Stderr, "c4: lighthouse spec backfill: %d tools updated\n", n)
+				}
+			}
+		}
 	}
 
 	count := 0
