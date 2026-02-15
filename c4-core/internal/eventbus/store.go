@@ -94,18 +94,41 @@ func (s *Store) migrate() error {
 
 		CREATE INDEX IF NOT EXISTS idx_log_event ON c4_event_log(event_id);
 	`)
+	if err != nil {
+		return err
+	}
+
+	// v4: add correlation_id to events (idempotent ALTER TABLE)
+	s.db.Exec(`ALTER TABLE c4_events ADD COLUMN correlation_id TEXT NOT NULL DEFAULT ''`)
+
+	// v4: Dead Letter Queue
+	_, err = s.db.Exec(`
+		CREATE TABLE IF NOT EXISTS c4_event_dlq (
+			id          INTEGER PRIMARY KEY AUTOINCREMENT,
+			event_id    TEXT NOT NULL,
+			rule_id     TEXT NOT NULL,
+			rule_name   TEXT NOT NULL DEFAULT '',
+			event_type  TEXT NOT NULL DEFAULT '',
+			error       TEXT NOT NULL DEFAULT '',
+			retry_count INTEGER NOT NULL DEFAULT 0,
+			max_retries INTEGER NOT NULL DEFAULT 3,
+			created_at  TEXT NOT NULL
+		);
+		CREATE INDEX IF NOT EXISTS idx_dlq_event ON c4_event_dlq(event_id);
+	`)
 	return err
 }
 
 // StoredEvent represents a persisted event.
 type StoredEvent struct {
-	ID        string
-	Type      string
-	Source    string
-	Data      json.RawMessage
-	ProjectID string
-	CreatedAt time.Time
-	Processed bool
+	ID            string
+	Type          string
+	Source        string
+	Data          json.RawMessage
+	ProjectID     string
+	CorrelationID string
+	CreatedAt     time.Time
+	Processed     bool
 }
 
 // StoredRule represents a persisted rule.
@@ -122,7 +145,7 @@ type StoredRule struct {
 }
 
 // StoreEvent persists an event and returns the generated ID.
-func (s *Store) StoreEvent(evType, source string, data json.RawMessage, projectID string) (string, error) {
+func (s *Store) StoreEvent(evType, source string, data json.RawMessage, projectID string, correlationID ...string) (string, error) {
 	id := generateEventID()
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 
@@ -131,10 +154,15 @@ func (s *Store) StoreEvent(evType, source string, data json.RawMessage, projectI
 		dataStr = string(data)
 	}
 
+	corrID := ""
+	if len(correlationID) > 0 {
+		corrID = correlationID[0]
+	}
+
 	_, err := s.db.Exec(`
-		INSERT INTO c4_events (id, type, source, data, project_id, created_at)
-		VALUES (?, ?, ?, ?, ?, ?)`,
-		id, evType, source, dataStr, projectID, now)
+		INSERT INTO c4_events (id, type, source, data, project_id, correlation_id, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		id, evType, source, dataStr, projectID, corrID, now)
 	if err != nil {
 		return "", fmt.Errorf("insert event: %w", err)
 	}
@@ -149,7 +177,7 @@ func (s *Store) MarkProcessed(id string) error {
 
 // ListEvents returns events optionally filtered by type, with limit and since.
 func (s *Store) ListEvents(evType string, limit int, sinceMs int64) ([]StoredEvent, error) {
-	query := `SELECT id, type, source, data, project_id, created_at, processed FROM c4_events`
+	query := `SELECT id, type, source, data, project_id, correlation_id, created_at, processed FROM c4_events`
 	args := []any{}
 	clauses := []string{}
 
@@ -186,7 +214,7 @@ func (s *Store) ListEvents(evType string, limit int, sinceMs int64) ([]StoredEve
 		var createdAt string
 		var dataStr string
 		var processed int
-		if err := rows.Scan(&e.ID, &e.Type, &e.Source, &dataStr, &e.ProjectID, &createdAt, &processed); err != nil {
+		if err := rows.Scan(&e.ID, &e.Type, &e.Source, &dataStr, &e.ProjectID, &e.CorrelationID, &createdAt, &processed); err != nil {
 			return nil, err
 		}
 		e.Data = json.RawMessage(dataStr)
@@ -442,7 +470,7 @@ func (s *Store) ListLogs(eventID string, limit int, sinceMs int64, eventType ...
 
 // ListEventsASC returns events in ascending order (for replay).
 func (s *Store) ListEventsASC(evType string, sinceMs int64, limit int) ([]StoredEvent, error) {
-	query := `SELECT id, type, source, data, project_id, created_at, processed FROM c4_events`
+	query := `SELECT id, type, source, data, project_id, correlation_id, created_at, processed FROM c4_events`
 	args := []any{}
 	clauses := []string{}
 
@@ -479,7 +507,7 @@ func (s *Store) ListEventsASC(evType string, sinceMs int64, limit int) ([]Stored
 		var createdAt string
 		var dataStr string
 		var processed int
-		if err := rows.Scan(&e.ID, &e.Type, &e.Source, &dataStr, &e.ProjectID, &createdAt, &processed); err != nil {
+		if err := rows.Scan(&e.ID, &e.Type, &e.Source, &dataStr, &e.ProjectID, &e.CorrelationID, &createdAt, &processed); err != nil {
 			return nil, err
 		}
 		e.Data = json.RawMessage(dataStr)
@@ -554,6 +582,102 @@ func matchPattern(pattern, eventType string) bool {
 		return len(eventType) >= len(prefix) && eventType[:len(prefix)] == prefix
 	}
 	return pattern == eventType
+}
+
+// DLQEntry represents a dead letter queue entry.
+type DLQEntry struct {
+	ID         int64
+	EventID    string
+	RuleID     string
+	RuleName   string
+	EventType  string
+	Error      string
+	RetryCount int
+	MaxRetries int
+	CreatedAt  time.Time
+}
+
+// InsertDLQ adds a failed dispatch to the dead letter queue.
+func (s *Store) InsertDLQ(eventID, ruleID, ruleName, eventType, errMsg string, maxRetries int) error {
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	_, err := s.db.Exec(`
+		INSERT INTO c4_event_dlq (event_id, rule_id, rule_name, event_type, error, max_retries, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		eventID, ruleID, ruleName, eventType, errMsg, maxRetries, now)
+	return err
+}
+
+// ListDLQ returns dead letter queue entries.
+func (s *Store) ListDLQ(limit int) ([]DLQEntry, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	rows, err := s.db.Query(`
+		SELECT id, event_id, rule_id, rule_name, event_type, error, retry_count, max_retries, created_at
+		FROM c4_event_dlq ORDER BY id DESC LIMIT ?`, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list dlq: %w", err)
+	}
+	defer rows.Close()
+
+	var entries []DLQEntry
+	for rows.Next() {
+		var e DLQEntry
+		var createdAt string
+		if err := rows.Scan(&e.ID, &e.EventID, &e.RuleID, &e.RuleName, &e.EventType, &e.Error, &e.RetryCount, &e.MaxRetries, &createdAt); err != nil {
+			return nil, err
+		}
+		e.CreatedAt, _ = time.Parse(time.RFC3339Nano, createdAt)
+		entries = append(entries, e)
+	}
+	return entries, rows.Err()
+}
+
+// IncrementDLQRetry increments the retry count for a DLQ entry and returns the entry.
+func (s *Store) IncrementDLQRetry(id int64) (*DLQEntry, error) {
+	result, err := s.db.Exec(`UPDATE c4_event_dlq SET retry_count = retry_count + 1 WHERE id = ?`, id)
+	if err != nil {
+		return nil, fmt.Errorf("increment dlq retry: %w", err)
+	}
+	n, _ := result.RowsAffected()
+	if n == 0 {
+		return nil, fmt.Errorf("dlq entry %d not found", id)
+	}
+
+	var e DLQEntry
+	var createdAt string
+	err = s.db.QueryRow(`
+		SELECT id, event_id, rule_id, rule_name, event_type, error, retry_count, max_retries, created_at
+		FROM c4_event_dlq WHERE id = ?`, id).Scan(
+		&e.ID, &e.EventID, &e.RuleID, &e.RuleName, &e.EventType, &e.Error, &e.RetryCount, &e.MaxRetries, &createdAt)
+	if err != nil {
+		return nil, err
+	}
+	e.CreatedAt, _ = time.Parse(time.RFC3339Nano, createdAt)
+	return &e, nil
+}
+
+// RemoveDLQ removes a DLQ entry by ID.
+func (s *Store) RemoveDLQ(id int64) error {
+	result, err := s.db.Exec(`DELETE FROM c4_event_dlq WHERE id = ?`, id)
+	if err != nil {
+		return fmt.Errorf("remove dlq: %w", err)
+	}
+	n, _ := result.RowsAffected()
+	if n == 0 {
+		return fmt.Errorf("dlq entry %d not found", id)
+	}
+	return nil
+}
+
+// PurgeDLQ removes DLQ entries older than maxAge.
+func (s *Store) PurgeDLQ(maxAge time.Duration) (int64, error) {
+	cutoff := time.Now().Add(-maxAge).UTC().Format(time.RFC3339Nano)
+	result, err := s.db.Exec(`DELETE FROM c4_event_dlq WHERE created_at < ?`, cutoff)
+	if err != nil {
+		return 0, fmt.Errorf("purge dlq: %w", err)
+	}
+	return result.RowsAffected()
 }
 
 func generateEventID() string {

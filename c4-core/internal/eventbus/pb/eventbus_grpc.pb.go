@@ -29,6 +29,7 @@ const (
 	EventBus_ListLogs_FullMethodName     = "/eventbus.EventBus/ListLogs"
 	EventBus_GetStats_FullMethodName     = "/eventbus.EventBus/GetStats"
 	EventBus_ReplayEvents_FullMethodName = "/eventbus.EventBus/ReplayEvents"
+	EventBus_ListDLQ_FullMethodName      = "/eventbus.EventBus/ListDLQ"
 )
 
 // EventBusClient is the client API for EventBus service.
@@ -45,6 +46,7 @@ type EventBusClient interface {
 	ListLogs(ctx context.Context, in *ListLogsRequest, opts ...grpc.CallOption) (*ListLogsResponse, error)
 	GetStats(ctx context.Context, in *GetStatsRequest, opts ...grpc.CallOption) (*GetStatsResponse, error)
 	ReplayEvents(ctx context.Context, in *ReplayRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[Event], error)
+	ListDLQ(ctx context.Context, in *ListDLQRequest, opts ...grpc.CallOption) (*ListDLQResponse, error)
 }
 
 type eventBusClient struct {
@@ -173,6 +175,16 @@ func (c *eventBusClient) ReplayEvents(ctx context.Context, in *ReplayRequest, op
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type EventBus_ReplayEventsClient = grpc.ServerStreamingClient[Event]
 
+func (c *eventBusClient) ListDLQ(ctx context.Context, in *ListDLQRequest, opts ...grpc.CallOption) (*ListDLQResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListDLQResponse)
+	err := c.cc.Invoke(ctx, EventBus_ListDLQ_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // EventBusServer is the server API for EventBus service.
 // All implementations must embed UnimplementedEventBusServer
 // for forward compatibility.
@@ -187,6 +199,7 @@ type EventBusServer interface {
 	ListLogs(context.Context, *ListLogsRequest) (*ListLogsResponse, error)
 	GetStats(context.Context, *GetStatsRequest) (*GetStatsResponse, error)
 	ReplayEvents(*ReplayRequest, grpc.ServerStreamingServer[Event]) error
+	ListDLQ(context.Context, *ListDLQRequest) (*ListDLQResponse, error)
 	mustEmbedUnimplementedEventBusServer()
 }
 
@@ -226,6 +239,9 @@ func (UnimplementedEventBusServer) GetStats(context.Context, *GetStatsRequest) (
 }
 func (UnimplementedEventBusServer) ReplayEvents(*ReplayRequest, grpc.ServerStreamingServer[Event]) error {
 	return status.Error(codes.Unimplemented, "method ReplayEvents not implemented")
+}
+func (UnimplementedEventBusServer) ListDLQ(context.Context, *ListDLQRequest) (*ListDLQResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListDLQ not implemented")
 }
 func (UnimplementedEventBusServer) mustEmbedUnimplementedEventBusServer() {}
 func (UnimplementedEventBusServer) testEmbeddedByValue()                  {}
@@ -414,6 +430,24 @@ func _EventBus_ReplayEvents_Handler(srv interface{}, stream grpc.ServerStream) e
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type EventBus_ReplayEventsServer = grpc.ServerStreamingServer[Event]
 
+func _EventBus_ListDLQ_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListDLQRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(EventBusServer).ListDLQ(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: EventBus_ListDLQ_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(EventBusServer).ListDLQ(ctx, req.(*ListDLQRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // EventBus_ServiceDesc is the grpc.ServiceDesc for EventBus service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -452,6 +486,10 @@ var EventBus_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetStats",
 			Handler:    _EventBus_GetStats_Handler,
+		},
+		{
+			MethodName: "ListDLQ",
+			Handler:    _EventBus_ListDLQ_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

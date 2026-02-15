@@ -126,6 +126,19 @@ var eventbusStatusCmd = &cobra.Command{
 	RunE:  runEventbusStatus,
 }
 
+// --- dlq ---
+
+var eventbusDLQCmd = &cobra.Command{
+	Use:   "dlq",
+	Short: "View and manage the Dead Letter Queue",
+	RunE:  runDLQ,
+}
+
+var dlqLimit int
+var dlqRetryID int64
+var dlqPurge bool
+var dlqPurgeAge string
+
 // --- replay ---
 
 var eventbusReplayCmd = &cobra.Command{
@@ -170,6 +183,12 @@ func init() {
 	// monitor
 	eventbusMonitorCmd.Flags().StringVar(&monitorPattern, "pattern", "*", "event pattern to subscribe")
 
+	// dlq
+	eventbusDLQCmd.Flags().IntVar(&dlqLimit, "limit", 50, "max entries to show")
+	eventbusDLQCmd.Flags().Int64Var(&dlqRetryID, "retry", 0, "retry a specific DLQ entry by ID")
+	eventbusDLQCmd.Flags().BoolVar(&dlqPurge, "purge", false, "purge old DLQ entries")
+	eventbusDLQCmd.Flags().StringVar(&dlqPurgeAge, "age", "7d", "age threshold for purge (e.g. 7d, 24h)")
+
 	// replay
 	eventbusReplayCmd.Flags().StringVar(&replayType, "type", "", "filter by event type")
 	eventbusReplayCmd.Flags().StringVar(&replaySince, "since", "", "only events after (RFC3339)")
@@ -189,6 +208,7 @@ func init() {
 	eventbusCmd.AddCommand(eventbusMonitorCmd)
 	eventbusCmd.AddCommand(eventbusStatusCmd)
 	eventbusCmd.AddCommand(eventbusReplayCmd)
+	eventbusCmd.AddCommand(eventbusDLQCmd)
 
 	rootCmd.AddCommand(eventbusCmd)
 }
@@ -582,7 +602,11 @@ func runMonitor(cmd *cobra.Command, args []string) error {
 		if len(dataStr) > 100 {
 			dataStr = dataStr[:100] + "..."
 		}
-		fmt.Printf("[%s] %s (src=%s) %s\n", ts, ev.Type, ev.Source, dataStr)
+		corrStr := ""
+		if ev.CorrelationId != "" {
+			corrStr = fmt.Sprintf(" corr=%s", ev.CorrelationId)
+		}
+		fmt.Printf("[%s] %s (src=%s%s) %s\n", ts, ev.Type, ev.Source, corrStr, dataStr)
 	}
 
 	return nil
@@ -656,6 +680,41 @@ func runReplay(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Printf("\nReplayed %d events\n", count)
+	return nil
+}
+
+// --- DLQ command ---
+
+func runDLQ(cmd *cobra.Command, args []string) error {
+	client, err := connectEventbus()
+	if err != nil {
+		return fmt.Errorf("connect: %w (is daemon running?)", err)
+	}
+	defer client.Close()
+
+	entries, err := client.ListDLQ(dlqLimit)
+	if err != nil {
+		return fmt.Errorf("list dlq: %w", err)
+	}
+
+	if len(entries) == 0 {
+		fmt.Println("Dead Letter Queue is empty.")
+		return nil
+	}
+
+	w := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
+	fmt.Fprintln(w, "ID\tEVENT_TYPE\tRULE\tRETRIES\tERROR\tCREATED")
+	for _, e := range entries {
+		ts := time.UnixMilli(e.CreatedAtMs).Format("2006-01-02 15:04:05")
+		errStr := e.Error
+		if len(errStr) > 50 {
+			errStr = errStr[:50] + "..."
+		}
+		fmt.Fprintf(w, "%d\t%s\t%s\t%d/%d\t%s\t%s\n",
+			e.Id, e.EventType, e.RuleName, e.RetryCount, e.MaxRetries, errStr, ts)
+	}
+	w.Flush()
+	fmt.Printf("\nTotal: %d entries\n", len(entries))
 	return nil
 }
 

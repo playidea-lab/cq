@@ -6,6 +6,7 @@ import { TeamView } from './components/team/TeamView';
 import { LoginView } from './components/auth/LoginView';
 import { ChannelsView } from './components/channels/ChannelsView';
 import { DocumentsView } from './components/documents/DocumentsView';
+import { EventBusView } from './components/eventbus/EventBusView';
 import { ErrorBoundary } from './components/shared/ErrorBoundary';
 import { AuthProvider } from './contexts/AuthContext';
 import { ToastProvider } from './contexts/ToastContext';
@@ -18,6 +19,7 @@ const VIEW_SHORTCUTS: Record<string, ViewType> = {
   '2': 'documents',
   '3': 'settings',
   '4': 'team',
+  '5': 'events',
 };
 
 function AppContent() {
@@ -115,6 +117,8 @@ function AppContent() {
         return <DocumentsView key={`docs-${projectPath}`} projectPath={projectPath} />;
       case 'settings':
         return <ConfigView key={`settings-${projectPath}`} projectPath={projectPath} />;
+      case 'events':
+        return <EventBusView />;
     }
   };
 

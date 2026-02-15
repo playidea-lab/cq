@@ -47,16 +47,23 @@ func (c *Client) Close() error {
 }
 
 // Publish sends an event to the EventBus daemon.
-func (c *Client) Publish(evType, source string, data json.RawMessage, projectID string) (string, error) {
+// Optional correlationID links related events in the same workflow.
+func (c *Client) Publish(evType, source string, data json.RawMessage, projectID string, correlationID ...string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
+	corrID := ""
+	if len(correlationID) > 0 {
+		corrID = correlationID[0]
+	}
+
 	resp, err := c.client.Publish(ctx, &pb.Event{
-		Type:        evType,
-		Source:      source,
-		Data:        data,
-		ProjectId:   projectID,
-		TimestampMs: time.Now().UnixMilli(),
+		Type:          evType,
+		Source:        source,
+		Data:          data,
+		ProjectId:     projectID,
+		TimestampMs:   time.Now().UnixMilli(),
+		CorrelationId: corrID,
 	})
 	if err != nil {
 		return "", err
@@ -204,6 +211,20 @@ func (c *Client) GetStats() (*pb.GetStatsResponse, error) {
 	defer cancel()
 
 	return c.client.GetStats(ctx, &pb.GetStatsRequest{})
+}
+
+// ListDLQ returns dead letter queue entries.
+func (c *Client) ListDLQ(limit int) ([]*pb.DLQEntry, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	resp, err := c.client.ListDLQ(ctx, &pb.ListDLQRequest{
+		Limit: int32(limit),
+	})
+	if err != nil {
+		return nil, err
+	}
+	return resp.Entries, nil
 }
 
 // ReplayEvents streams stored events, optionally re-dispatching them.

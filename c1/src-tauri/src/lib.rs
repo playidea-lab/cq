@@ -8,6 +8,7 @@ pub mod auth;
 pub mod cloud;
 pub mod commands;
 pub mod documents;
+pub mod eventbus;
 pub mod layout;
 pub mod messaging;
 pub mod models;
@@ -42,6 +43,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
         .manage(realtime::RealtimeManager::default())
+        .manage(eventbus::EventBusManager::default())
         .invoke_handler(tauri::generate_handler![
             commands::scan_project_cmd,
             commands::save_canvas,
@@ -89,6 +91,10 @@ pub fn run() {
             realtime::realtime_connect,
             realtime::realtime_disconnect,
             realtime::realtime_status,
+            // EventBus
+            eventbus::eventbus_connect,
+            eventbus::eventbus_disconnect,
+            eventbus::eventbus_status,
             // Auth
             auth::auth_get_session,
             auth::auth_login,

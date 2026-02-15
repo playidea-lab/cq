@@ -58,7 +58,7 @@ func (s *Server) Publish(ctx context.Context, req *pb.Event) (*pb.PublishRespons
 		data = json.RawMessage("{}")
 	}
 
-	eventID, err := s.store.StoreEvent(req.Type, req.Source, data, req.ProjectId)
+	eventID, err := s.store.StoreEvent(req.Type, req.Source, data, req.ProjectId, req.CorrelationId)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "store event: %v", err)
 	}
@@ -68,12 +68,13 @@ func (s *Server) Publish(ctx context.Context, req *pb.Event) (*pb.PublishRespons
 
 	// Notify subscribers
 	s.notifySubscribers(req.Type, &pb.Event{
-		Id:          eventID,
-		Type:        req.Type,
-		Source:      req.Source,
-		Data:        req.Data,
-		ProjectId:   req.ProjectId,
-		TimestampMs: req.TimestampMs,
+		Id:            eventID,
+		Type:          req.Type,
+		Source:        req.Source,
+		Data:          req.Data,
+		ProjectId:     req.ProjectId,
+		TimestampMs:   req.TimestampMs,
+		CorrelationId: req.CorrelationId,
 	})
 
 	return &pb.PublishResponse{
@@ -124,12 +125,13 @@ func (s *Server) ListEvents(ctx context.Context, req *pb.ListEventsRequest) (*pb
 	pbEvents := make([]*pb.Event, 0, len(events))
 	for _, e := range events {
 		pbEvents = append(pbEvents, &pb.Event{
-			Id:          e.ID,
-			Type:        e.Type,
-			Source:      e.Source,
-			Data:        []byte(e.Data),
-			ProjectId:   e.ProjectID,
-			TimestampMs: e.CreatedAt.UnixMilli(),
+			Id:            e.ID,
+			Type:          e.Type,
+			Source:        e.Source,
+			Data:          []byte(e.Data),
+			ProjectId:     e.ProjectID,
+			CorrelationId: e.CorrelationID,
+			TimestampMs:   e.CreatedAt.UnixMilli(),
 		})
 	}
 
@@ -285,12 +287,13 @@ func (s *Server) ReplayEvents(req *pb.ReplayRequest, stream pb.EventBus_ReplayEv
 
 	for _, e := range events {
 		pbEvent := &pb.Event{
-			Id:          e.ID,
-			Type:        e.Type,
-			Source:      e.Source,
-			Data:        []byte(e.Data),
-			ProjectId:   e.ProjectID,
-			TimestampMs: e.CreatedAt.UnixMilli(),
+			Id:            e.ID,
+			Type:          e.Type,
+			Source:        e.Source,
+			Data:          []byte(e.Data),
+			ProjectId:     e.ProjectID,
+			CorrelationId: e.CorrelationID,
+			TimestampMs:   e.CreatedAt.UnixMilli(),
 		}
 
 		if err := stream.Send(pbEvent); err != nil {
@@ -304,6 +307,39 @@ func (s *Server) ReplayEvents(req *pb.ReplayRequest, stream pb.EventBus_ReplayEv
 	}
 
 	return nil
+}
+
+// ListDLQ returns dead letter queue entries.
+func (s *Server) ListDLQ(ctx context.Context, req *pb.ListDLQRequest) (*pb.ListDLQResponse, error) {
+	limit := int(req.Limit)
+	if limit <= 0 {
+		limit = 50
+	}
+
+	entries, err := s.store.ListDLQ(limit)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "list dlq: %v", err)
+	}
+
+	pbEntries := make([]*pb.DLQEntry, 0, len(entries))
+	for _, e := range entries {
+		pbEntries = append(pbEntries, &pb.DLQEntry{
+			Id:          e.ID,
+			EventId:     e.EventID,
+			RuleId:      e.RuleID,
+			RuleName:    e.RuleName,
+			EventType:   e.EventType,
+			Error:       e.Error,
+			RetryCount:  int32(e.RetryCount),
+			MaxRetries:  int32(e.MaxRetries),
+			CreatedAtMs: e.CreatedAt.UnixMilli(),
+		})
+	}
+
+	return &pb.ListDLQResponse{
+		Entries: pbEntries,
+		Total:   int32(len(pbEntries)),
+	}, nil
 }
 
 func (s *Server) addSubscriber(pattern string, ch chan *pb.Event) {

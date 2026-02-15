@@ -9,19 +9,21 @@ service EventBus {
   rpc AddRule(Rule) returns (RuleResponse);
   rpc ListRules(ListRulesRequest) returns (ListRulesResponse);
   rpc RemoveRule(RemoveRuleRequest) returns (RuleResponse);
-  rpc ToggleRule(ToggleRuleRequest) returns (RuleResponse);       // v3: Step 1
-  rpc ListLogs(ListLogsRequest) returns (ListLogsResponse);       // v3: Step 3
-  rpc GetStats(GetStatsRequest) returns (GetStatsResponse);       // v3: Step 4
-  rpc ReplayEvents(ReplayRequest) returns (stream Event);         // v3: Step 8
+  rpc ToggleRule(ToggleRuleRequest) returns (RuleResponse);       // v3
+  rpc ListLogs(ListLogsRequest) returns (ListLogsResponse);       // v3
+  rpc GetStats(GetStatsRequest) returns (GetStatsResponse);       // v3
+  rpc ReplayEvents(ReplayRequest) returns (stream Event);         // v3
+  rpc ListDLQ(ListDLQRequest) returns (ListDLQResponse);          // v4: Dead Letter Queue
 }
 
 message Event {
   string id = 1;
-  string type = 2;          // e.g. "drive.uploaded", "task.completed"
-  string source = 3;        // e.g. "c4.drive", "c4.core"
-  bytes  data = 4;          // JSON payload
+  string type = 2;            // e.g. "drive.uploaded", "task.completed"
+  string source = 3;          // e.g. "c4.drive", "c4.core"
+  bytes  data = 4;            // JSON payload
   string project_id = 5;
   int64  timestamp_ms = 6;
+  string correlation_id = 7;  // v4: event chain tracking (same workflow)
 }
 
 message PublishResponse {
@@ -72,13 +74,13 @@ message RemoveRuleRequest {
   string name = 2;  // alternative: remove by name
 }
 
-// v3: ToggleRule (Step 1)
+// v3: ToggleRule
 message ToggleRuleRequest {
   string name = 1;
   bool   enabled = 2;
 }
 
-// v3: ListLogs audit trail (Step 3)
+// v3: ListLogs audit trail
 message LogEntry {
   int64  id = 1;
   string event_id = 2;
@@ -102,7 +104,7 @@ message ListLogsResponse {
   int32 total = 2;
 }
 
-// v3: GetStats (Step 4)
+// v3: GetStats
 message GetStatsRequest {}
 
 message GetStatsResponse {
@@ -113,10 +115,32 @@ message GetStatsResponse {
   string newest_event = 5;
 }
 
-// v3: ReplayEvents (Step 8)
+// v3: ReplayEvents
 message ReplayRequest {
   string event_type = 1;   // optional: filter by type
   int64  since_ms = 2;     // optional: only events after this time
   int32  limit = 3;        // max events to replay (default: 100)
   bool   dry_run = 4;      // if true, stream events without re-dispatching
+}
+
+// v4: Dead Letter Queue
+message DLQEntry {
+  int64  id = 1;
+  string event_id = 2;
+  string rule_id = 3;
+  string rule_name = 4;
+  string event_type = 5;
+  string error = 6;
+  int32  retry_count = 7;
+  int32  max_retries = 8;
+  int64  created_at_ms = 9;
+}
+
+message ListDLQRequest {
+  int32 limit = 1;
+}
+
+message ListDLQResponse {
+  repeated DLQEntry entries = 1;
+  int32 total = 2;
 }

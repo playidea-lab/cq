@@ -266,6 +266,7 @@ func newMCPServer() (*mcpServer, error) {
 				RetentionDays:    ebCfg.RetentionDays,
 				MaxEvents:        ebCfg.MaxEvents,
 				DefaultRulesPath: defaultRulesPath,
+				WSPort:           ebCfg.WSPort,
 			})
 			if ebErr != nil {
 				fmt.Fprintf(os.Stderr, "c4: eventbus auto-start failed: %v\n", ebErr)

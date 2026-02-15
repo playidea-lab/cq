@@ -440,3 +440,203 @@ func TestNewStoreCreatesDir(t *testing.T) {
 		t.Error("expected nested directory to be created")
 	}
 }
+
+// --- v4: correlation_id tests ---
+
+func TestStoreEventCorrelation(t *testing.T) {
+	s := tempStore(t)
+
+	id, err := s.StoreEvent("task.completed", "c4.core", json.RawMessage(`{"task_id":"T-001"}`), "proj1", "corr-abc-123")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	events, err := s.ListEvents("task.completed", 10, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("expected 1 event, got %d", len(events))
+	}
+	if events[0].ID != id {
+		t.Errorf("expected id %s, got %s", id, events[0].ID)
+	}
+	if events[0].CorrelationID != "corr-abc-123" {
+		t.Errorf("expected correlation_id corr-abc-123, got %s", events[0].CorrelationID)
+	}
+}
+
+func TestListEventsCorrelation(t *testing.T) {
+	s := tempStore(t)
+
+	// Store events with and without correlation_id
+	s.StoreEvent("task.a", "test", nil, "", "corr-1")
+	s.StoreEvent("task.b", "test", nil, "")
+	s.StoreEvent("task.c", "test", nil, "", "corr-2")
+
+	events, err := s.ListEvents("", 10, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 3 {
+		t.Fatalf("expected 3 events, got %d", len(events))
+	}
+
+	// Check correlation IDs are persisted correctly
+	corrMap := map[string]string{}
+	for _, ev := range events {
+		corrMap[ev.Type] = ev.CorrelationID
+	}
+	if corrMap["task.a"] != "corr-1" {
+		t.Errorf("task.a: expected corr-1, got %s", corrMap["task.a"])
+	}
+	if corrMap["task.b"] != "" {
+		t.Errorf("task.b: expected empty, got %s", corrMap["task.b"])
+	}
+	if corrMap["task.c"] != "corr-2" {
+		t.Errorf("task.c: expected corr-2, got %s", corrMap["task.c"])
+	}
+
+	// ASC order also returns correlation_id
+	eventsASC, err := s.ListEventsASC("", 0, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if eventsASC[0].CorrelationID != "corr-1" {
+		t.Errorf("ASC first: expected corr-1, got %s", eventsASC[0].CorrelationID)
+	}
+}
+
+// --- v4: DLQ tests ---
+
+func TestInsertDLQ(t *testing.T) {
+	s := tempStore(t)
+
+	err := s.InsertDLQ("ev-1", "rule-1", "my-rule", "task.failed", "timeout error", 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	entries, err := s.ListDLQ(10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 DLQ entry, got %d", len(entries))
+	}
+	e := entries[0]
+	if e.EventID != "ev-1" {
+		t.Errorf("expected event_id ev-1, got %s", e.EventID)
+	}
+	if e.RuleName != "my-rule" {
+		t.Errorf("expected rule_name my-rule, got %s", e.RuleName)
+	}
+	if e.EventType != "task.failed" {
+		t.Errorf("expected event_type task.failed, got %s", e.EventType)
+	}
+	if e.Error != "timeout error" {
+		t.Errorf("expected error 'timeout error', got %s", e.Error)
+	}
+	if e.RetryCount != 0 {
+		t.Errorf("expected retry_count 0, got %d", e.RetryCount)
+	}
+	if e.MaxRetries != 3 {
+		t.Errorf("expected max_retries 3, got %d", e.MaxRetries)
+	}
+}
+
+func TestListDLQ(t *testing.T) {
+	s := tempStore(t)
+
+	// Insert multiple DLQ entries
+	s.InsertDLQ("ev-1", "r-1", "rule-a", "task.failed", "err1", 3)
+	s.InsertDLQ("ev-2", "r-2", "rule-b", "drive.error", "err2", 5)
+	s.InsertDLQ("ev-3", "r-1", "rule-a", "task.failed", "err3", 3)
+
+	entries, err := s.ListDLQ(10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 3 {
+		t.Fatalf("expected 3 DLQ entries, got %d", len(entries))
+	}
+
+	// Should be ordered by id DESC (newest first)
+	if entries[0].EventID != "ev-3" {
+		t.Errorf("expected newest first (ev-3), got %s", entries[0].EventID)
+	}
+
+	// Test limit
+	entries, err = s.ListDLQ(2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 2 {
+		t.Errorf("expected 2 entries with limit=2, got %d", len(entries))
+	}
+}
+
+func TestRetryDLQ(t *testing.T) {
+	s := tempStore(t)
+
+	s.InsertDLQ("ev-1", "r-1", "rule-a", "task.failed", "err1", 3)
+
+	entries, _ := s.ListDLQ(10)
+	dlqID := entries[0].ID
+
+	// Increment retry count
+	entry, err := s.IncrementDLQRetry(dlqID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if entry.RetryCount != 1 {
+		t.Errorf("expected retry_count 1, got %d", entry.RetryCount)
+	}
+
+	// Increment again
+	entry, err = s.IncrementDLQRetry(dlqID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if entry.RetryCount != 2 {
+		t.Errorf("expected retry_count 2, got %d", entry.RetryCount)
+	}
+
+	// Remove DLQ entry
+	err = s.RemoveDLQ(dlqID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	entries, _ = s.ListDLQ(10)
+	if len(entries) != 0 {
+		t.Errorf("expected 0 entries after remove, got %d", len(entries))
+	}
+
+	// Remove non-existent should error
+	err = s.RemoveDLQ(99999)
+	if err == nil {
+		t.Error("expected error removing non-existent DLQ entry")
+	}
+}
+
+func TestPurgeDLQ(t *testing.T) {
+	s := tempStore(t)
+
+	s.InsertDLQ("ev-1", "r-1", "rule-a", "task.failed", "err1", 3)
+	s.InsertDLQ("ev-2", "r-2", "rule-b", "task.failed", "err2", 3)
+
+	// All recent — purge with 1h shouldn't remove any
+	n, err := s.PurgeDLQ(time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 0 {
+		t.Errorf("expected 0 purged (all recent), got %d", n)
+	}
+
+	entries, _ := s.ListDLQ(10)
+	if len(entries) != 2 {
+		t.Errorf("expected 2 entries remaining, got %d", len(entries))
+	}
+}

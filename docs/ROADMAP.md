@@ -1,16 +1,16 @@
 # C4 Roadmap
 
-## Current Version: v0.16.1 (Phase 10.5 — C1 Context Hub + C3 EventBus)
+## Current Version: v0.16.2 (Phase 10.5 — C1 Context Hub + C3 EventBus v4)
 
-현재 버전은 **Go MCP Primary(112 tools: Base 86 + Hub 26), LLM Gateway (4개 Provider 실제 구현), CDP Runner (브라우저 자동화), Cloud Foundation (Supabase), Knowledge Bidirectional Sync, c4 daemon (로컬 작업 스케줄러), C0 Drive (파일 관리), C1 Context Hub (메시징 + 문서 + Context Keeper), C3 EventBus (gRPC daemon + sidecar piggyback)**을 포함합니다.
+현재 버전은 **Go MCP Primary(112 tools: Base 86 + Hub 26), LLM Gateway (4개 Provider 실제 구현), CDP Runner (브라우저 자동화), Cloud Foundation (Supabase), Knowledge Bidirectional Sync, c4 daemon (로컬 작업 스케줄러), C0 Drive (파일 관리), C1 Context Hub (메시징 + 문서 + Context Keeper), C3 EventBus v4 (gRPC daemon + WebSocket bridge + DLQ + Filter v2)**을 포함합니다.
 
 ### 핵심 구조
 
 - **Go MCP Server (Primary)** - 112 도구 (Base 86: state/task/file/git/discovery/artifact/lsp/knowledge/research/gpu/soul/team/twin/onboard/lighthouse/llm/cdp/c2/drive/c1), Registry-based, SQLite Store, JSON-RPC Bridge, LLM Gateway, CDP Runner, Hub Client
 - **C0 Drive** - Supabase 파일 저장소, metadata JSONB, c4_drive_mkdir 6개 도구, PostgREST URL 인코딩, server-side filtering
 - **C1 Context Hub** - Supabase 4 테이블 (channels/messages/participants/summaries), Go MCP 3 도구 (search/mentions/briefing), Context Keeper (LLM 요약), Agent 통합 (notifyKeeper 4-param), participant_id 추적
-- **C3 EventBus** - gRPC daemon (UDS) + Python sidecar piggyback + CLI + Embedded auto-start + Event Replay (16 event types, 5 default rules)
-- **C1 Desktop App** - Tauri 2.x, 4개 프로바이더, Realtime WebSocket, 5-탭 UI (Sessions/Dashboard/Config/Documents/Channels)
+- **C3 EventBus v4** - gRPC daemon (UDS) + WebSocket bridge + Python sidecar piggyback + CLI + Embedded auto-start + Event Replay + DLQ (16+ event types, 5 default rules, correlation_id, Filter v2)
+- **C1 Desktop App** - Tauri 2.x, 4개 프로바이더, Realtime WebSocket, 6-탭 UI (Sessions/Dashboard/Config/Documents/Channels/Events)
 - **C1 Views** - SessionsView (provider 자동감지), ChannelsView (메시징 + Realtime + count 로직), DocumentsView (파일+마크다운 편집)
 - **Daemon Scheduler** - 로컬 작업 스케줄러, 13 REST API, GPU 할당, 소요시간 예측 (PiQ 대체)
 - **LLM Gateway** - 4개 Provider (Anthropic/OpenAI/Gemini/Ollama), 5단계 라우팅, CostTracker, 모델 카탈로그 9종
@@ -36,13 +36,58 @@
 - **C0 Drive** - 클라우드 파일 저장소 (metadata, URL 인코딩, 보안)
 - **C1 Context Hub** - 채널 메시징, Context Keeper (LLM 요약), Agent 통합 (notifyKeeper 4-param)
 - **C1 Documents** - 마크다운 파일 편집기, 지속성 (persona/skill/spec/config)
-- **C3 EventBus** - gRPC daemon (UDS), Python sidecar piggyback, task lifecycle events
+- **C3 EventBus v4** - gRPC daemon (UDS) + WebSocket bridge + DLQ + Filter v2, Python sidecar piggyback, task lifecycle events
 - **코드베이스**: Go ~19K + Python 24K + C1 ~13K + Tests ~26K = **~82K LOC**
-- **테스트**: Go 839+ (17 pkgs) + Python 748+ + C1 (Rust 69 + Frontend 81) = **~1,737 tests** (+11 security)
+- **테스트**: Go 860+ (17 pkgs) + Python 748+ + C1 (Rust 73 + Frontend 81) = **~1,762 tests** (+11 security)
 
 ---
 
 ## 최신 추가사항 (2026-02-15)
+
+### C3 EventBus v4 — WS Bridge + DLQ + Filter v2 + C1 Events 탭 ✅
+
+**목표**: 실시간 이벤트 스트리밍 + 신뢰성 (DLQ) + 고급 필터링 + Desktop 이벤트 모니터링
+
+- **correlation_id**: Proto Event 신규 field 7, Store/Server/Client 전체 반영 (사건-추적)
+- **DLQ (Dead Letter Queue)**:
+  - `c4_event_dlq` 테이블 (id, event, error, retry_count, created_at, updated_at)
+  - 5개 Store 메서드: InsertDLQ, ListDLQ, IncrementDLQRetry, RemoveDLQ, PurgeDLQ
+  - Dispatcher에서 처리 실패 시 자동 DLQ 삽입 (with correlation_id)
+  - autoPurge: 7일 이상 재시도 실패한 이벤트 자동 삭제
+- **Filter Engine v2**:
+  - 7개 연산자: `$eq`, `$ne`, `$gt`, `$lt`, `$in`, `$regex`, `$exists`
+  - dot notation 중첩 필드 지원 (e.g., `task.priority > 2`)
+  - 기존 1.0 필터와 하위 호환 (기본 `$eq`)
+- **Go WebSocket Bridge** (`wsbridge.go`):
+  - gobwas/ws 라이브러리 (12KB, production-grade)
+  - `/ws/events?pattern=task.*` 엔드포인트 (GET → WebSocket 업그레이드)
+  - Embedded config: `WSPort` (기본 9222), message chunking
+  - Per-client filter 관리 (goroutine-safe)
+- **C1 Desktop Events 탭** (6번째 탭):
+  - **Rust WS Client** (`eventbus.rs`): WebSocket 연결 + 재연결 로직
+  - **React Hook** (`useEventBus.ts`): events list, filter pattern, real-time updates
+  - **EventBusView.tsx + eventbus.css**: 이벤트 스트림 시각화 (타입별 색상, correlation_id 표시)
+  - **DLQ 모니터**: Failed events 섹션, retry 버튼, manual purge
+- **Webhook HMAC-SHA256**:
+  - `X-C4-Signature: sha256=<hex>` 헤더 자동 생성 (dispatcher)
+  - `X-C4-Timestamp: <unix_ms>` 타임스탐프 검증 (5분 유효)
+  - 외부 webhook consumer 검증용
+- **CLI DLQ Subcommand**:
+  - `c4 eventbus dlq list [--filter=error] [--limit=100]` — DLQ 조회
+  - `c4 eventbus dlq retry <id>` — 재시도
+  - `c4 eventbus dlq purge [--before=7d]` — 정리
+  - `c4 eventbus monitor` — correlation_id + error 표시
+- **내부 개선**:
+  - dispatcher Close() 메서드: graceful shutdown
+  - publishSidecarEvents: correlation_id 자동 설정
+  - eventbus.proto: field 7 추가 (backward-compat)
+- **테스트**:
+  - Go +22: store (6 DLQ 메서드), dispatcher (11 DLQ 처리/filter/ws), wsbridge (3)
+  - Rust +4: eventbus.rs (2), useEventBus.ts (2)
+  - 기존 eventbus 테스트 호환성 유지
+- **코드**: +1277/-119 LOC (19 files modified + 5 new: wsbridge.go, wsbridge_test.go, eventbus.rs, EventBusView.tsx, eventbus.css, useEventBus.ts)
+- **의존성**: gobwas/ws v1.4.0 추가 (direct), 기타 신규 없음
+- **결과**: Go eventbus 테스트 65→87 (+22), Rust 69→73 (+4), C1 Desktop 탭 5→6
 
 ### Security Fixes + Sidecar Improvements ✅
 

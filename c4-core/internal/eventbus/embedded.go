@@ -19,6 +19,7 @@ type EmbeddedServer struct {
 	dispatcher *Dispatcher
 	server     *Server
 	grpcServer *grpc.Server
+	wsBridge   *WSBridge
 	sockPath   string
 	listener   net.Listener
 	stopPurge  chan struct{}
@@ -31,6 +32,7 @@ type EmbeddedConfig struct {
 	RetentionDays    int    // 0 = no auto-purge
 	MaxEvents        int    // 0 = unlimited
 	DefaultRulesPath string // path to default_rules.yaml (empty = skip)
+	WSPort           int    // 0 = WebSocket bridge disabled
 }
 
 // StartEmbedded creates and starts an in-process gRPC EventBus server.
@@ -95,6 +97,12 @@ func StartEmbedded(cfg EmbeddedConfig) (*EmbeddedServer, error) {
 		}
 	}
 
+	// Start WebSocket bridge if configured
+	if cfg.WSPort > 0 {
+		e.wsBridge = NewWSBridge(srv, cfg.WSPort)
+		go e.wsBridge.Start()
+	}
+
 	// Start auto-purge goroutine if configured
 	if cfg.RetentionDays > 0 || cfg.MaxEvents > 0 {
 		go e.autoPurge(cfg.RetentionDays, cfg.MaxEvents)
@@ -107,6 +115,9 @@ func StartEmbedded(cfg EmbeddedConfig) (*EmbeddedServer, error) {
 func (e *EmbeddedServer) Stop() {
 	e.stopOnce.Do(func() {
 		close(e.stopPurge)
+		if e.wsBridge != nil {
+			e.wsBridge.Stop()
+		}
 		e.grpcServer.GracefulStop()
 		e.listener.Close()
 		os.Remove(e.sockPath)
@@ -148,6 +159,13 @@ func (e *EmbeddedServer) autoPurge(retentionDays, maxEvents int) {
 			if maxEvents > 0 {
 				if n, err := e.store.PurgeByCount(maxEvents); err == nil && n > 0 {
 					fmt.Fprintf(os.Stderr, "c4: eventbus: purged %d events (count limit)\n", n)
+				}
+			}
+			// Purge old DLQ entries (same retention as events)
+			if retentionDays > 0 {
+				maxAge := time.Duration(retentionDays) * 24 * time.Hour
+				if n, err := e.store.PurgeDLQ(maxAge); err == nil && n > 0 {
+					fmt.Fprintf(os.Stderr, "c4: eventbus: purged %d old DLQ entries\n", n)
 				}
 			}
 		case <-e.stopPurge:

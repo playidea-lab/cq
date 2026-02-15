@@ -2,6 +2,9 @@ package eventbus
 
 import (
 	"bytes"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -9,6 +12,8 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -116,15 +121,17 @@ func (d *Dispatcher) executeRule(eventID, eventType string, eventData json.RawMe
 	}
 
 	duration := time.Since(start).Milliseconds()
-	status := "ok"
+	logStatus := "ok"
 	errMsg := ""
 	if err != nil {
-		status = "error"
+		logStatus = "error"
 		errMsg = err.Error()
 		log.Printf("[eventbus] rule %q dispatch error: %v\n", rule.Name, err)
+		// Insert into Dead Letter Queue for retry
+		d.store.InsertDLQ(eventID, rule.ID, rule.Name, eventType, errMsg, 3)
 	}
 
-	d.store.LogDispatch(eventID, rule.ID, status, errMsg, duration)
+	d.store.LogDispatch(eventID, rule.ID, logStatus, errMsg, duration)
 }
 
 func (d *Dispatcher) executeLog(eventID, eventType string, eventData json.RawMessage, rule StoredRule) error {
@@ -201,6 +208,7 @@ func (d *Dispatcher) executeWebhook(eventID, eventType string, eventData json.Ra
 	var cfg struct {
 		URL     string            `json:"url"`
 		Headers map[string]string `json:"headers"`
+		Secret  string            `json:"secret"` // HMAC secret (optional)
 	}
 	if err := json.Unmarshal([]byte(rule.ActionConfig), &cfg); err != nil {
 		return fmt.Errorf("parse action_config: %w", err)
@@ -230,6 +238,15 @@ func (d *Dispatcher) executeWebhook(eventID, eventType string, eventData json.Ra
 	req.Header.Set("Content-Type", "application/cloudevents+json")
 	for k, v := range cfg.Headers {
 		req.Header.Set(k, v)
+	}
+
+	// HMAC-SHA256 signing if secret is configured
+	if cfg.Secret != "" {
+		mac := hmac.New(sha256.New, []byte(cfg.Secret))
+		mac.Write(body)
+		sig := hex.EncodeToString(mac.Sum(nil))
+		req.Header.Set("X-C4-Signature", "sha256="+sig)
+		req.Header.Set("X-C4-Timestamp", strconv.FormatInt(time.Now().Unix(), 10))
 	}
 
 	resp, err := d.httpClient.Do(req)
@@ -290,7 +307,8 @@ func (d *Dispatcher) executeC1Post(eventType string, eventData json.RawMessage, 
 }
 
 // evaluateFilter checks if event data matches the filter JSON.
-// Simple top-level key equality check.
+// Supports v2 operators ($eq, $ne, $gt, $lt, $in, $regex, $exists) and dot notation for nested fields.
+// Backward compatible: plain {"key": "value"} is treated as $eq.
 func evaluateFilter(filterJSON string, eventData json.RawMessage) bool {
 	var filter map[string]any
 	if err := json.Unmarshal([]byte(filterJSON), &filter); err != nil {
@@ -303,16 +321,148 @@ func evaluateFilter(filterJSON string, eventData json.RawMessage) bool {
 	}
 
 	for k, v := range filter {
-		dataVal, ok := data[k]
-		if !ok {
-			return false
-		}
-		// Compare as strings for simplicity
-		if fmt.Sprintf("%v", dataVal) != fmt.Sprintf("%v", v) {
-			return false
+		dataVal, exists := resolveNestedField(data, k)
+
+		switch cond := v.(type) {
+		case map[string]any:
+			// Operator mode: {"field": {"$gt": 100}}
+			if !evaluateOperators(cond, dataVal, exists) {
+				return false
+			}
+		default:
+			// Simple equality (backward compatible)
+			if !exists {
+				return false
+			}
+			if fmt.Sprintf("%v", dataVal) != fmt.Sprintf("%v", v) {
+				return false
+			}
 		}
 	}
 	return true
+}
+
+// resolveNestedField resolves dot-notation paths like "data.nested.field".
+func resolveNestedField(data map[string]any, dotPath string) (any, bool) {
+	parts := strings.Split(dotPath, ".")
+	var current any = data
+
+	for _, part := range parts {
+		m, ok := current.(map[string]any)
+		if !ok {
+			return nil, false
+		}
+		current, ok = m[part]
+		if !ok {
+			return nil, false
+		}
+	}
+	return current, true
+}
+
+// evaluateOperators checks a value against operator conditions.
+func evaluateOperators(operators map[string]any, value any, exists bool) bool {
+	for op, expected := range operators {
+		switch op {
+		case "$eq":
+			if !exists || fmt.Sprintf("%v", value) != fmt.Sprintf("%v", expected) {
+				return false
+			}
+		case "$ne":
+			if exists && fmt.Sprintf("%v", value) == fmt.Sprintf("%v", expected) {
+				return false
+			}
+		case "$gt":
+			if !exists {
+				return false
+			}
+			if !compareNumeric(value, expected, func(a, b float64) bool { return a > b }) {
+				return false
+			}
+		case "$lt":
+			if !exists {
+				return false
+			}
+			if !compareNumeric(value, expected, func(a, b float64) bool { return a < b }) {
+				return false
+			}
+		case "$in":
+			if !exists {
+				return false
+			}
+			arr, ok := expected.([]any)
+			if !ok {
+				return false
+			}
+			found := false
+			valStr := fmt.Sprintf("%v", value)
+			for _, item := range arr {
+				if fmt.Sprintf("%v", item) == valStr {
+					found = true
+					break
+				}
+			}
+			if !found {
+				return false
+			}
+		case "$regex":
+			if !exists {
+				return false
+			}
+			pattern, ok := expected.(string)
+			if !ok {
+				return false
+			}
+			re, err := regexp.Compile(pattern)
+			if err != nil {
+				return false
+			}
+			if !re.MatchString(fmt.Sprintf("%v", value)) {
+				return false
+			}
+		case "$exists":
+			wantExists, ok := expected.(bool)
+			if !ok {
+				return false
+			}
+			if wantExists != exists {
+				return false
+			}
+		default:
+			// Unknown operator — skip
+		}
+	}
+	return true
+}
+
+// compareNumeric converts values to float64 and applies the comparator.
+func compareNumeric(a, b any, cmp func(float64, float64) bool) bool {
+	af, aOK := toFloat64(a)
+	bf, bOK := toFloat64(b)
+	if !aOK || !bOK {
+		return false
+	}
+	return cmp(af, bf)
+}
+
+func toFloat64(v any) (float64, bool) {
+	switch n := v.(type) {
+	case float64:
+		return n, true
+	case float32:
+		return float64(n), true
+	case int:
+		return float64(n), true
+	case int64:
+		return float64(n), true
+	case json.Number:
+		f, err := n.Float64()
+		return f, err == nil
+	case string:
+		f, err := strconv.ParseFloat(n, 64)
+		return f, err == nil
+	}
+	return 0, false
 }
 
 // resolveTemplate replaces {{data.field}} placeholders in template values

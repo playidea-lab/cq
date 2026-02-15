@@ -77,6 +77,7 @@ type EventBusConfig struct {
 	DataDir       string `mapstructure:"data_dir"       yaml:"data_dir"`
 	RetentionDays int    `mapstructure:"retention_days" yaml:"retention_days"` // 0 = no auto-purge
 	MaxEvents     int    `mapstructure:"max_events"     yaml:"max_events"`     // 0 = unlimited
+	WSPort        int    `mapstructure:"ws_port"        yaml:"ws_port"`        // 0 = WebSocket bridge disabled
 }
 
 // HubConfig holds PiQ Hub connection settings.
@@ -204,6 +205,7 @@ func New(projectRoot string) (*Manager, error) {
 	v.SetDefault("eventbus.data_dir", "")
 	v.SetDefault("eventbus.retention_days", 30)
 	v.SetDefault("eventbus.max_events", 10000)
+	v.SetDefault("eventbus.ws_port", 0)
 	v.SetDefault("hub.enabled", false)
 	v.SetDefault("hub.url", "")
 	v.SetDefault("hub.api_key_env", "C4_HUB_API_KEY")

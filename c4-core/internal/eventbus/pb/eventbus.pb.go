@@ -29,6 +29,7 @@ type Event struct {
 	Data          []byte                 `protobuf:"bytes,4,opt,name=data,proto3" json:"data,omitempty"`     // JSON payload
 	ProjectId     string                 `protobuf:"bytes,5,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
 	TimestampMs   int64                  `protobuf:"varint,6,opt,name=timestamp_ms,json=timestampMs,proto3" json:"timestamp_ms,omitempty"`
+	CorrelationId string                 `protobuf:"bytes,7,opt,name=correlation_id,json=correlationId,proto3" json:"correlation_id,omitempty"` // v4: event chain tracking (same workflow)
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -103,6 +104,13 @@ func (x *Event) GetTimestampMs() int64 {
 		return x.TimestampMs
 	}
 	return 0
+}
+
+func (x *Event) GetCorrelationId() string {
+	if x != nil {
+		return x.CorrelationId
+	}
+	return ""
 }
 
 type PublishResponse struct {
@@ -605,7 +613,7 @@ func (x *RemoveRuleRequest) GetName() string {
 	return ""
 }
 
-// v3: ToggleRule (Step 1)
+// v3: ToggleRule
 type ToggleRuleRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
@@ -658,7 +666,7 @@ func (x *ToggleRuleRequest) GetEnabled() bool {
 	return false
 }
 
-// v3: ListLogs audit trail (Step 3)
+// v3: ListLogs audit trail
 type LogEntry struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            int64                  `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
@@ -879,7 +887,7 @@ func (x *ListLogsResponse) GetTotal() int32 {
 	return 0
 }
 
-// v3: GetStats (Step 4)
+// v3: GetStats
 type GetStatsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -992,7 +1000,7 @@ func (x *GetStatsResponse) GetNewestEvent() string {
 	return ""
 }
 
-// v3: ReplayEvents (Step 8)
+// v3: ReplayEvents
 type ReplayRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	EventType     string                 `protobuf:"bytes,1,opt,name=event_type,json=eventType,proto3" json:"event_type,omitempty"` // optional: filter by type
@@ -1061,11 +1069,216 @@ func (x *ReplayRequest) GetDryRun() bool {
 	return false
 }
 
+// v4: Dead Letter Queue
+type DLQEntry struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            int64                  `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
+	EventId       string                 `protobuf:"bytes,2,opt,name=event_id,json=eventId,proto3" json:"event_id,omitempty"`
+	RuleId        string                 `protobuf:"bytes,3,opt,name=rule_id,json=ruleId,proto3" json:"rule_id,omitempty"`
+	RuleName      string                 `protobuf:"bytes,4,opt,name=rule_name,json=ruleName,proto3" json:"rule_name,omitempty"`
+	EventType     string                 `protobuf:"bytes,5,opt,name=event_type,json=eventType,proto3" json:"event_type,omitempty"`
+	Error         string                 `protobuf:"bytes,6,opt,name=error,proto3" json:"error,omitempty"`
+	RetryCount    int32                  `protobuf:"varint,7,opt,name=retry_count,json=retryCount,proto3" json:"retry_count,omitempty"`
+	MaxRetries    int32                  `protobuf:"varint,8,opt,name=max_retries,json=maxRetries,proto3" json:"max_retries,omitempty"`
+	CreatedAtMs   int64                  `protobuf:"varint,9,opt,name=created_at_ms,json=createdAtMs,proto3" json:"created_at_ms,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DLQEntry) Reset() {
+	*x = DLQEntry{}
+	mi := &file_proto_eventbus_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DLQEntry) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DLQEntry) ProtoMessage() {}
+
+func (x *DLQEntry) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_eventbus_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DLQEntry.ProtoReflect.Descriptor instead.
+func (*DLQEntry) Descriptor() ([]byte, []int) {
+	return file_proto_eventbus_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *DLQEntry) GetId() int64 {
+	if x != nil {
+		return x.Id
+	}
+	return 0
+}
+
+func (x *DLQEntry) GetEventId() string {
+	if x != nil {
+		return x.EventId
+	}
+	return ""
+}
+
+func (x *DLQEntry) GetRuleId() string {
+	if x != nil {
+		return x.RuleId
+	}
+	return ""
+}
+
+func (x *DLQEntry) GetRuleName() string {
+	if x != nil {
+		return x.RuleName
+	}
+	return ""
+}
+
+func (x *DLQEntry) GetEventType() string {
+	if x != nil {
+		return x.EventType
+	}
+	return ""
+}
+
+func (x *DLQEntry) GetError() string {
+	if x != nil {
+		return x.Error
+	}
+	return ""
+}
+
+func (x *DLQEntry) GetRetryCount() int32 {
+	if x != nil {
+		return x.RetryCount
+	}
+	return 0
+}
+
+func (x *DLQEntry) GetMaxRetries() int32 {
+	if x != nil {
+		return x.MaxRetries
+	}
+	return 0
+}
+
+func (x *DLQEntry) GetCreatedAtMs() int64 {
+	if x != nil {
+		return x.CreatedAtMs
+	}
+	return 0
+}
+
+type ListDLQRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Limit         int32                  `protobuf:"varint,1,opt,name=limit,proto3" json:"limit,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListDLQRequest) Reset() {
+	*x = ListDLQRequest{}
+	mi := &file_proto_eventbus_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListDLQRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListDLQRequest) ProtoMessage() {}
+
+func (x *ListDLQRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_eventbus_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListDLQRequest.ProtoReflect.Descriptor instead.
+func (*ListDLQRequest) Descriptor() ([]byte, []int) {
+	return file_proto_eventbus_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *ListDLQRequest) GetLimit() int32 {
+	if x != nil {
+		return x.Limit
+	}
+	return 0
+}
+
+type ListDLQResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Entries       []*DLQEntry            `protobuf:"bytes,1,rep,name=entries,proto3" json:"entries,omitempty"`
+	Total         int32                  `protobuf:"varint,2,opt,name=total,proto3" json:"total,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListDLQResponse) Reset() {
+	*x = ListDLQResponse{}
+	mi := &file_proto_eventbus_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListDLQResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListDLQResponse) ProtoMessage() {}
+
+func (x *ListDLQResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_eventbus_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListDLQResponse.ProtoReflect.Descriptor instead.
+func (*ListDLQResponse) Descriptor() ([]byte, []int) {
+	return file_proto_eventbus_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *ListDLQResponse) GetEntries() []*DLQEntry {
+	if x != nil {
+		return x.Entries
+	}
+	return nil
+}
+
+func (x *ListDLQResponse) GetTotal() int32 {
+	if x != nil {
+		return x.Total
+	}
+	return 0
+}
+
 var File_proto_eventbus_proto protoreflect.FileDescriptor
 
 const file_proto_eventbus_proto_rawDesc = "" +
 	"\n" +
-	"\x14proto/eventbus.proto\x12\beventbus\"\x99\x01\n" +
+	"\x14proto/eventbus.proto\x12\beventbus\"\xc0\x01\n" +
 	"\x05Event\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04type\x18\x02 \x01(\tR\x04type\x12\x16\n" +
@@ -1073,7 +1286,8 @@ const file_proto_eventbus_proto_rawDesc = "" +
 	"\x04data\x18\x04 \x01(\fR\x04data\x12\x1d\n" +
 	"\n" +
 	"project_id\x18\x05 \x01(\tR\tprojectId\x12!\n" +
-	"\ftimestamp_ms\x18\x06 \x01(\x03R\vtimestampMs\"<\n" +
+	"\ftimestamp_ms\x18\x06 \x01(\x03R\vtimestampMs\x12%\n" +
+	"\x0ecorrelation_id\x18\a \x01(\tR\rcorrelationId\"<\n" +
 	"\x0fPublishResponse\x12\x19\n" +
 	"\bevent_id\x18\x01 \x01(\tR\aeventId\x12\x0e\n" +
 	"\x02ok\x18\x02 \x01(\bR\x02ok\"V\n" +
@@ -1145,7 +1359,25 @@ const file_proto_eventbus_proto_rawDesc = "" +
 	"event_type\x18\x01 \x01(\tR\teventType\x12\x19\n" +
 	"\bsince_ms\x18\x02 \x01(\x03R\asinceMs\x12\x14\n" +
 	"\x05limit\x18\x03 \x01(\x05R\x05limit\x12\x17\n" +
-	"\adry_run\x18\x04 \x01(\bR\x06dryRun2\x87\x05\n" +
+	"\adry_run\x18\x04 \x01(\bR\x06dryRun\"\x86\x02\n" +
+	"\bDLQEntry\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x19\n" +
+	"\bevent_id\x18\x02 \x01(\tR\aeventId\x12\x17\n" +
+	"\arule_id\x18\x03 \x01(\tR\x06ruleId\x12\x1b\n" +
+	"\trule_name\x18\x04 \x01(\tR\bruleName\x12\x1d\n" +
+	"\n" +
+	"event_type\x18\x05 \x01(\tR\teventType\x12\x14\n" +
+	"\x05error\x18\x06 \x01(\tR\x05error\x12\x1f\n" +
+	"\vretry_count\x18\a \x01(\x05R\n" +
+	"retryCount\x12\x1f\n" +
+	"\vmax_retries\x18\b \x01(\x05R\n" +
+	"maxRetries\x12\"\n" +
+	"\rcreated_at_ms\x18\t \x01(\x03R\vcreatedAtMs\"&\n" +
+	"\x0eListDLQRequest\x12\x14\n" +
+	"\x05limit\x18\x01 \x01(\x05R\x05limit\"U\n" +
+	"\x0fListDLQResponse\x12,\n" +
+	"\aentries\x18\x01 \x03(\v2\x12.eventbus.DLQEntryR\aentries\x12\x14\n" +
+	"\x05total\x18\x02 \x01(\x05R\x05total2\xc7\x05\n" +
 	"\bEventBus\x125\n" +
 	"\aPublish\x12\x0f.eventbus.Event\x1a\x19.eventbus.PublishResponse\x12:\n" +
 	"\tSubscribe\x12\x1a.eventbus.SubscribeRequest\x1a\x0f.eventbus.Event0\x01\x12G\n" +
@@ -1159,7 +1391,8 @@ const file_proto_eventbus_proto_rawDesc = "" +
 	"ToggleRule\x12\x1b.eventbus.ToggleRuleRequest\x1a\x16.eventbus.RuleResponse\x12A\n" +
 	"\bListLogs\x12\x19.eventbus.ListLogsRequest\x1a\x1a.eventbus.ListLogsResponse\x12A\n" +
 	"\bGetStats\x12\x19.eventbus.GetStatsRequest\x1a\x1a.eventbus.GetStatsResponse\x12:\n" +
-	"\fReplayEvents\x12\x17.eventbus.ReplayRequest\x1a\x0f.eventbus.Event0\x01B2Z0github.com/changmin/c4-core/internal/eventbus/pbb\x06proto3"
+	"\fReplayEvents\x12\x17.eventbus.ReplayRequest\x1a\x0f.eventbus.Event0\x01\x12>\n" +
+	"\aListDLQ\x12\x18.eventbus.ListDLQRequest\x1a\x19.eventbus.ListDLQResponseB2Z0github.com/changmin/c4-core/internal/eventbus/pbb\x06proto3"
 
 var (
 	file_proto_eventbus_proto_rawDescOnce sync.Once
@@ -1173,7 +1406,7 @@ func file_proto_eventbus_proto_rawDescGZIP() []byte {
 	return file_proto_eventbus_proto_rawDescData
 }
 
-var file_proto_eventbus_proto_msgTypes = make([]protoimpl.MessageInfo, 17)
+var file_proto_eventbus_proto_msgTypes = make([]protoimpl.MessageInfo, 20)
 var file_proto_eventbus_proto_goTypes = []any{
 	(*Event)(nil),              // 0: eventbus.Event
 	(*PublishResponse)(nil),    // 1: eventbus.PublishResponse
@@ -1192,36 +1425,42 @@ var file_proto_eventbus_proto_goTypes = []any{
 	(*GetStatsRequest)(nil),    // 14: eventbus.GetStatsRequest
 	(*GetStatsResponse)(nil),   // 15: eventbus.GetStatsResponse
 	(*ReplayRequest)(nil),      // 16: eventbus.ReplayRequest
+	(*DLQEntry)(nil),           // 17: eventbus.DLQEntry
+	(*ListDLQRequest)(nil),     // 18: eventbus.ListDLQRequest
+	(*ListDLQResponse)(nil),    // 19: eventbus.ListDLQResponse
 }
 var file_proto_eventbus_proto_depIdxs = []int32{
 	0,  // 0: eventbus.ListEventsResponse.events:type_name -> eventbus.Event
 	5,  // 1: eventbus.ListRulesResponse.rules:type_name -> eventbus.Rule
 	11, // 2: eventbus.ListLogsResponse.logs:type_name -> eventbus.LogEntry
-	0,  // 3: eventbus.EventBus.Publish:input_type -> eventbus.Event
-	2,  // 4: eventbus.EventBus.Subscribe:input_type -> eventbus.SubscribeRequest
-	3,  // 5: eventbus.EventBus.ListEvents:input_type -> eventbus.ListEventsRequest
-	5,  // 6: eventbus.EventBus.AddRule:input_type -> eventbus.Rule
-	7,  // 7: eventbus.EventBus.ListRules:input_type -> eventbus.ListRulesRequest
-	9,  // 8: eventbus.EventBus.RemoveRule:input_type -> eventbus.RemoveRuleRequest
-	10, // 9: eventbus.EventBus.ToggleRule:input_type -> eventbus.ToggleRuleRequest
-	12, // 10: eventbus.EventBus.ListLogs:input_type -> eventbus.ListLogsRequest
-	14, // 11: eventbus.EventBus.GetStats:input_type -> eventbus.GetStatsRequest
-	16, // 12: eventbus.EventBus.ReplayEvents:input_type -> eventbus.ReplayRequest
-	1,  // 13: eventbus.EventBus.Publish:output_type -> eventbus.PublishResponse
-	0,  // 14: eventbus.EventBus.Subscribe:output_type -> eventbus.Event
-	4,  // 15: eventbus.EventBus.ListEvents:output_type -> eventbus.ListEventsResponse
-	6,  // 16: eventbus.EventBus.AddRule:output_type -> eventbus.RuleResponse
-	8,  // 17: eventbus.EventBus.ListRules:output_type -> eventbus.ListRulesResponse
-	6,  // 18: eventbus.EventBus.RemoveRule:output_type -> eventbus.RuleResponse
-	6,  // 19: eventbus.EventBus.ToggleRule:output_type -> eventbus.RuleResponse
-	13, // 20: eventbus.EventBus.ListLogs:output_type -> eventbus.ListLogsResponse
-	15, // 21: eventbus.EventBus.GetStats:output_type -> eventbus.GetStatsResponse
-	0,  // 22: eventbus.EventBus.ReplayEvents:output_type -> eventbus.Event
-	13, // [13:23] is the sub-list for method output_type
-	3,  // [3:13] is the sub-list for method input_type
-	3,  // [3:3] is the sub-list for extension type_name
-	3,  // [3:3] is the sub-list for extension extendee
-	0,  // [0:3] is the sub-list for field type_name
+	17, // 3: eventbus.ListDLQResponse.entries:type_name -> eventbus.DLQEntry
+	0,  // 4: eventbus.EventBus.Publish:input_type -> eventbus.Event
+	2,  // 5: eventbus.EventBus.Subscribe:input_type -> eventbus.SubscribeRequest
+	3,  // 6: eventbus.EventBus.ListEvents:input_type -> eventbus.ListEventsRequest
+	5,  // 7: eventbus.EventBus.AddRule:input_type -> eventbus.Rule
+	7,  // 8: eventbus.EventBus.ListRules:input_type -> eventbus.ListRulesRequest
+	9,  // 9: eventbus.EventBus.RemoveRule:input_type -> eventbus.RemoveRuleRequest
+	10, // 10: eventbus.EventBus.ToggleRule:input_type -> eventbus.ToggleRuleRequest
+	12, // 11: eventbus.EventBus.ListLogs:input_type -> eventbus.ListLogsRequest
+	14, // 12: eventbus.EventBus.GetStats:input_type -> eventbus.GetStatsRequest
+	16, // 13: eventbus.EventBus.ReplayEvents:input_type -> eventbus.ReplayRequest
+	18, // 14: eventbus.EventBus.ListDLQ:input_type -> eventbus.ListDLQRequest
+	1,  // 15: eventbus.EventBus.Publish:output_type -> eventbus.PublishResponse
+	0,  // 16: eventbus.EventBus.Subscribe:output_type -> eventbus.Event
+	4,  // 17: eventbus.EventBus.ListEvents:output_type -> eventbus.ListEventsResponse
+	6,  // 18: eventbus.EventBus.AddRule:output_type -> eventbus.RuleResponse
+	8,  // 19: eventbus.EventBus.ListRules:output_type -> eventbus.ListRulesResponse
+	6,  // 20: eventbus.EventBus.RemoveRule:output_type -> eventbus.RuleResponse
+	6,  // 21: eventbus.EventBus.ToggleRule:output_type -> eventbus.RuleResponse
+	13, // 22: eventbus.EventBus.ListLogs:output_type -> eventbus.ListLogsResponse
+	15, // 23: eventbus.EventBus.GetStats:output_type -> eventbus.GetStatsResponse
+	0,  // 24: eventbus.EventBus.ReplayEvents:output_type -> eventbus.Event
+	19, // 25: eventbus.EventBus.ListDLQ:output_type -> eventbus.ListDLQResponse
+	15, // [15:26] is the sub-list for method output_type
+	4,  // [4:15] is the sub-list for method input_type
+	4,  // [4:4] is the sub-list for extension type_name
+	4,  // [4:4] is the sub-list for extension extendee
+	0,  // [0:4] is the sub-list for field type_name
 }
 
 func init() { file_proto_eventbus_proto_init() }
@@ -1235,7 +1474,7 @@ func file_proto_eventbus_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_eventbus_proto_rawDesc), len(file_proto_eventbus_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   17,
+			NumMessages:   20,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
