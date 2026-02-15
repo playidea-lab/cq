@@ -11,6 +11,17 @@ Spec: https://agents.md/
 
 ---
 
+## General Rules
+
+- 구현 계획을 요청하면, **태스크 생성이나 코드 작성 전에 반드시 접근 방식을 먼저 논의**한다. 바로 구현에 뛰어들지 않는다.
+- 기존 결과/커밋을 보거나 검토하라는 요청이면, **조회만** 한다 — 실험을 재실행하거나 재구현하지 않는다. 기존 출력을 볼 것인지 새로 생성할 것인지 불명확하면 확인한다.
+
+## Project Context
+
+Primary languages: **Go, Python, TypeScript, Rust**. 변경 시 각 언어의 기존 패턴을 따른다. YAML과 Markdown은 설정·문서용.
+
+---
+
 ## Project Overview
 
 ### C 시리즈 생태계
@@ -93,6 +104,10 @@ c4_add_todo(mode="direct", review_required=False)
 → c4_report(task_id, summary, files_changed)  # 완료 보고
 ```
 
+### C4 Worker 규칙
+- C4 워크플로우에서 구현 태스크는 **항상 Worker를 사용**하고, 직접 구현하지 않는다.
+- Worker 출력을 보고하기 전에 **실제 코드 변경(commit_sha)을 확인**한다. diff가 없으면 완료가 아니다.
+
 ### Edit OK (C4 추적 불필요)
 - 단순 타이포, 로그/디버그 추가, 1줄 수정, 탐색/실험 중
 
@@ -125,6 +140,14 @@ c4_add_todo(mode="direct", review_required=False)
 - docstring, 주석, type annotation은 **내가 수정한 코드에만** 추가
 
 **기준**: 시니어 엔지니어가 "과하다"고 할 만하면 → 단순화.
+
+### Efficiency Rules (컨텍스트 절약)
+- 큰 파일을 읽기 전에 **항상 line range를 제한**한다. 일부만 필요하면 전체를 읽지 않는다.
+- 컨텍스트 사용을 최소화한다.
+
+### Debugging (디버깅 원칙)
+- MCP 서버나 도구 연결 문제 디버깅 시, 우회책 대신 **근본 원인(모듈 경로, config 오류 등)을 수정**한다.
+- 도구/서버 연결 실패 시 설정과 모듈 경로부터 확인한다.
 
 ---
 
@@ -396,3 +419,10 @@ review.changes_requested
 validation.passed, validation.failed
 knowledge.recorded, knowledge.searched
 ```
+
+Add at the top of CLAUDE.md under a ## General Rules section\n\nWhen I ask you to implement a plan, ALWAYS discuss the approach with me first before creating tasks or writing code. Do not jump straight into implementation.
+Add under a ## C4 Workflow section\n\nWhen working in C4 workflow: always use C4 workers for implementation tasks, never implement directly. Verify worker output by checking for actual code changes (commit_sha) before reporting tasks as done.
+Add under a ## Code Reading section or ## Efficiency Rules section\n\nBefore reading large files, always use line range constraints. Do not read entire files when only a portion is needed. Minimize context usage.
+Add under ## General Rules section\n\nWhen I ask to view, inspect, or review existing results/commits, retrieve them — do NOT re-run experiments or re-implement things. Ask for clarification if unsure whether I want to view existing output or generate new output.
+Add under a ## Debugging section\n\nWhen debugging MCP server or tool connection issues, fix the root cause (e.g., wrong module path, config error) instead of trying workarounds. If a tool/server fails to connect, check the configuration and module paths first.
+Add under a ## Project Context section near the top of CLAUDE.md\n\nPrimary languages for this workspace: Go, Python, TypeScript, Rust. When making changes, follow existing patterns in each language. YAML and Markdown are used for configuration and documentation.
