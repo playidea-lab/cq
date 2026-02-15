@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -104,7 +105,7 @@ func runWorker(cfg workerConfig) error {
 	heartbeatTicker := time.NewTicker(30 * time.Second)
 	defer heartbeatTicker.Stop()
 
-	running := false
+	var running atomic.Bool
 
 	for {
 		select {
@@ -116,7 +117,7 @@ func runWorker(cfg workerConfig) error {
 			client.heartbeat(workerID, cfg.totalVRAM)
 
 		case <-ticker.C:
-			if running {
+			if running.Load() {
 				continue
 			}
 
@@ -129,12 +130,12 @@ func runWorker(cfg workerConfig) error {
 				continue // no jobs
 			}
 
-			running = true
+			running.Store(true)
 			log.Printf("c5-worker: acquired job %s (%s)", job.ID, job.Name)
 
 			// Execute job in a goroutine
 			go func(j *model.Job, leaseID string) {
-				defer func() { running = false }()
+				defer running.Store(false)
 
 				exitCode := executeJob(client, j, leaseID, workerID, cfg.gpuCount)
 
@@ -345,6 +346,17 @@ func (mc *metricsCollector) flush() {
 	mc.client.logMetrics(mc.jobID, step, toSend)
 }
 
+// close stops the debounce timer and performs a final flush.
+func (mc *metricsCollector) close() {
+	mc.mu.Lock()
+	if mc.timer != nil {
+		mc.timer.Stop()
+		mc.timer = nil
+	}
+	mc.mu.Unlock()
+	mc.flush()
+}
+
 func streamLogs(client *workerClient, jobID string, r io.Reader, stream string, mc *metricsCollector) {
 	buf := make([]byte, 4096)
 	for {
@@ -362,9 +374,9 @@ func streamLogs(client *workerClient, jobID string, r io.Reader, stream string, 
 			}
 		}
 		if err != nil {
-			// Flush remaining metrics on stream close
+			// Stop timer and flush remaining metrics on stream close
 			if mc != nil && stream == "stdout" {
-				mc.flush()
+				mc.close()
 			}
 			return
 		}

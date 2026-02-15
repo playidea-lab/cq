@@ -572,6 +572,9 @@ func (s *Store) MarkStaleWorkers(threshold time.Duration) (int, error) {
 const defaultLeaseDuration = 5 * time.Minute
 
 // AcquireLease assigns a queued job to a worker and creates a lease.
+// Uses UPDATE-first pattern: atomically claims the highest-priority queued
+// job, then reads the claimed data. Prevents race conditions where two
+// workers could SELECT the same job before either UPDATEs it.
 func (s *Store) AcquireLease(workerID string, requiresGPU bool) (*model.Lease, *model.Job, error) {
 	tx, err := s.db.Begin()
 	if err != nil {
@@ -579,32 +582,37 @@ func (s *Store) AcquireLease(workerID string, requiresGPU bool) (*model.Lease, *
 	}
 	defer tx.Rollback()
 
-	// Find highest-priority queued job
-	query := jobSelectCols + " FROM jobs WHERE status = 'QUEUED'"
-	if requiresGPU {
-		query += " AND requires_gpu = 1"
-	}
-	query += " ORDER BY priority DESC, created_at ASC LIMIT 1"
-
-	row := tx.QueryRow(query)
-	job, err := scanJob(row)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			return nil, nil, nil // no job available
-		}
-		return nil, nil, fmt.Errorf("find queued job: %w", err)
-	}
-
 	now := time.Now().UTC()
 	expiresAt := now.Add(defaultLeaseDuration)
+	nowStr := now.Format(time.RFC3339)
 
-	// Update job status to RUNNING
-	_, err = tx.Exec(`
+	// UPDATE-first: atomically claim the highest-priority queued job.
+	// The subquery finds the target, UPDATE claims it — one atomic step.
+	gpuFilter := ""
+	if requiresGPU {
+		gpuFilter = " AND requires_gpu = 1"
+	}
+	result, err := tx.Exec(`
 		UPDATE jobs SET status = 'RUNNING', started_at = ?, worker_id = ?
-		WHERE id = ? AND status = 'QUEUED'`,
-		now.Format(time.RFC3339), workerID, job.ID)
+		WHERE id = (
+			SELECT id FROM jobs WHERE status = 'QUEUED'`+gpuFilter+`
+			ORDER BY priority DESC, created_at ASC LIMIT 1
+		) AND status = 'QUEUED'`,
+		nowStr, workerID)
 	if err != nil {
-		return nil, nil, fmt.Errorf("start job: %w", err)
+		return nil, nil, fmt.Errorf("claim job: %w", err)
+	}
+	n, _ := result.RowsAffected()
+	if n == 0 {
+		return nil, nil, nil // no job available
+	}
+
+	// Read the claimed job
+	row := tx.QueryRow(jobSelectCols+" FROM jobs WHERE worker_id = ? AND started_at = ?",
+		workerID, nowStr)
+	job, err := scanJob(row)
+	if err != nil {
+		return nil, nil, fmt.Errorf("read claimed job: %w", err)
 	}
 
 	// Create lease
@@ -621,7 +629,7 @@ func (s *Store) AcquireLease(workerID string, requiresGPU bool) (*model.Lease, *
 		INSERT INTO leases (id, job_id, worker_id, created_at, expires_at)
 		VALUES (?, ?, ?, ?, ?)`,
 		lease.ID, lease.JobID, lease.WorkerID,
-		now.Format(time.RFC3339), expiresAt.Format(time.RFC3339))
+		nowStr, expiresAt.Format(time.RFC3339))
 	if err != nil {
 		return nil, nil, fmt.Errorf("insert lease: %w", err)
 	}
@@ -632,10 +640,6 @@ func (s *Store) AcquireLease(workerID string, requiresGPU bool) (*model.Lease, *
 	if err := tx.Commit(); err != nil {
 		return nil, nil, fmt.Errorf("commit: %w", err)
 	}
-
-	job.Status = model.StatusRunning
-	job.WorkerID = workerID
-	job.StartedAt = &now
 
 	return lease, job, nil
 }

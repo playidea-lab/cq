@@ -152,10 +152,16 @@ func (s *Server) handleWSMetrics(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func writeWSJSON(conn interface{ Write([]byte) (int, error) }, v any) error {
+const wsWriteTimeout = 10 * time.Second
+
+func writeWSJSON(conn interface {
+	Write([]byte) (int, error)
+	SetWriteDeadline(time.Time) error
+}, v any) error {
 	data, err := json.Marshal(v)
 	if err != nil {
 		return err
 	}
+	conn.SetWriteDeadline(time.Now().Add(wsWriteTimeout))
 	return wsutil.WriteServerMessage(conn, ws.OpText, data)
 }

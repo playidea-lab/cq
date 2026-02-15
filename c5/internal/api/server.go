@@ -23,6 +23,7 @@ type Server struct {
 	version   string
 	apiKey    string // optional API key for authentication
 	mux       *http.ServeMux
+	done      chan struct{} // closed on shutdown to stop background goroutines
 }
 
 // Config holds server configuration.
@@ -49,6 +50,7 @@ func NewServer(cfg Config) *Server {
 		version:   cfg.Version,
 		apiKey:    cfg.APIKey,
 		mux:       http.NewServeMux(),
+		done:      make(chan struct{}),
 	}
 	s.registerRoutes()
 
@@ -132,10 +134,21 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 	})
 }
 
+// Close stops background goroutines.
+func (s *Server) Close() {
+	close(s.done)
+}
+
 func (s *Server) leaseExpiryLoop() {
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
-	for range ticker.C {
+	for {
+		select {
+		case <-s.done:
+			return
+		case <-ticker.C:
+		}
+
 		n, err := s.store.ExpireLeases()
 		if err != nil {
 			log.Printf("c5: lease expiry error: %v", err)

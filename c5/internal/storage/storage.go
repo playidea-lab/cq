@@ -117,7 +117,19 @@ func (l *LocalBackend) PresignedURL(path, method string, ttlSeconds int) (string
 	}
 	expiresAt := time.Now().UTC().Add(time.Duration(ttlSeconds) * time.Second)
 
-	fullPath := filepath.Join(l.baseDir, path)
+	// Sanitize path to prevent directory traversal
+	cleaned := filepath.Clean(path)
+	if strings.HasPrefix(cleaned, "..") || filepath.IsAbs(cleaned) {
+		return "", time.Time{}, fmt.Errorf("invalid storage path: %s", path)
+	}
+
+	fullPath := filepath.Join(l.baseDir, cleaned)
+	absBase, _ := filepath.Abs(l.baseDir)
+	absPath, _ := filepath.Abs(fullPath)
+	if !strings.HasPrefix(absPath, absBase+string(filepath.Separator)) && absPath != absBase {
+		return "", time.Time{}, fmt.Errorf("path escapes base directory: %s", path)
+	}
+
 	os.MkdirAll(filepath.Dir(fullPath), 0755)
 
 	if method == "PUT" {
@@ -126,13 +138,14 @@ func (l *LocalBackend) PresignedURL(path, method string, ttlSeconds int) (string
 	}
 
 	// Return a download URL via the C5 server
-	url := fmt.Sprintf("%s/v1/storage/download/%s", l.baseURL, path)
+	url := fmt.Sprintf("%s/v1/storage/download/%s", l.baseURL, cleaned)
 	return url, expiresAt, nil
 }
 
 // FilePath returns the local file path for a storage path.
 func (l *LocalBackend) FilePath(storagePath string) string {
-	return filepath.Join(l.baseDir, storagePath)
+	cleaned := filepath.Clean(storagePath)
+	return filepath.Join(l.baseDir, cleaned)
 }
 
 // NewBackend creates the appropriate storage backend based on environment.
