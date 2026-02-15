@@ -1201,3 +1201,60 @@ func TestLighthouseAutoTaskFailurePath(t *testing.T) {
 		t.Error("lighthouse stub should be registered even when auto_task fails")
 	}
 }
+
+func TestLighthouseRegisterAll(t *testing.T) {
+	reg, _ := setupLighthouseTest(t)
+
+	// reg already has c4_status and c4_lighthouse — register_all should capture c4_status
+	result := callLighthouse(t, reg, map[string]any{"action": "register_all"})
+	// c4_status should be registered, c4_lighthouse should be skipped
+	registered := result["registered"].(int)
+	skipped := result["skipped"].(int)
+	if registered != 1 {
+		t.Errorf("registered = %d, want 1 (c4_status)", registered)
+	}
+	if skipped != 1 {
+		t.Errorf("skipped = %d, want 1 (c4_lighthouse)", skipped)
+	}
+
+	// Calling again should skip all (already registered)
+	result2 := callLighthouse(t, reg, map[string]any{"action": "register_all"})
+	registered2 := result2["registered"].(int)
+	if registered2 != 0 {
+		t.Errorf("second register_all registered = %d, want 0 (idempotent)", registered2)
+	}
+}
+
+func TestLighthouseRegisterExistingTool(t *testing.T) {
+	reg, _ := setupLighthouseTest(t)
+
+	// Register c4_status (already a core tool) — should succeed as "implemented"
+	result := callLighthouse(t, reg, map[string]any{
+		"action":      "register",
+		"name":        "c4_status",
+		"description": "Get project status",
+		"spec":        "Returns current project state",
+	})
+	if result["status"] != "implemented" {
+		t.Errorf("status = %v, want implemented", result["status"])
+	}
+
+	// Verify it's in the lighthouse list
+	listResult := callLighthouse(t, reg, map[string]any{"action": "list"})
+	lighthouses := listResult["lighthouses"].([]*Lighthouse)
+	found := false
+	for _, lh := range lighthouses {
+		if lh.Name == "c4_status" {
+			found = true
+			if lh.Status != "implemented" {
+				t.Errorf("c4_status lighthouse status = %s, want implemented", lh.Status)
+			}
+			if lh.PromotedBy != "pre-existing" {
+				t.Errorf("promoted_by = %s, want pre-existing", lh.PromotedBy)
+			}
+		}
+	}
+	if !found {
+		t.Error("c4_status not found in lighthouse list")
+	}
+}

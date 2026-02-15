@@ -27,8 +27,8 @@ func RegisterLighthouseHandlers(reg *mcp.Registry, store *SQLiteStore) {
 			"properties": map[string]any{
 				"action": map[string]any{
 					"type":        "string",
-					"description": "Action: register, list, get, promote, update, remove",
-					"enum":        []string{"register", "list", "get", "promote", "update", "remove"},
+					"description": "Action: register, register_all, list, get, promote, update, remove",
+					"enum":        []string{"register", "register_all", "list", "get", "promote", "update", "remove"},
 				},
 				"name": map[string]any{
 					"type":        "string",
@@ -81,6 +81,8 @@ func RegisterLighthouseHandlers(reg *mcp.Registry, store *SQLiteStore) {
 		switch args.Action {
 		case "register":
 			return lighthouseRegister(reg, store, args.Name, args.Description, args.InputSchema, args.Spec, agentID, autoTask)
+		case "register_all":
+			return lighthouseRegisterAll(reg, store, agentID)
 		case "list":
 			return lighthouseList(store)
 		case "get":
@@ -135,6 +137,65 @@ func lighthouseRegisterExisting(store *SQLiteStore, name, description, inputSche
 		"status":  "implemented",
 		"version": 1,
 	}, nil
+}
+
+// lighthouseRegisterAll bulk-registers all existing MCP tools as lighthouse entries.
+// Skips tools that already have a lighthouse record or are the lighthouse tool itself.
+func lighthouseRegisterAll(reg *mcp.Registry, store *SQLiteStore, agentID string) (any, error) {
+	tools := reg.ListTools()
+	registered, skipped := 0, 0
+	var errors []string
+
+	for _, tool := range tools {
+		name := tool.Name
+		// Skip the lighthouse tool itself
+		if name == "c4_lighthouse" {
+			skipped++
+			continue
+		}
+		// Skip if already has a lighthouse entry
+		if existing, _ := store.getLighthouse(name); existing != nil {
+			skipped++
+			continue
+		}
+
+		// Serialize input_schema to JSON string
+		schemaJSON := `{"type":"object"}`
+		if tool.InputSchema != nil {
+			if data, err := json.Marshal(tool.InputSchema); err == nil {
+				schemaJSON = string(data)
+			}
+		}
+
+		lh := &Lighthouse{
+			Name:        name,
+			Description: tool.Description,
+			InputSchema: schemaJSON,
+			Status:      "implemented",
+			Version:     1,
+			CreatedBy:   agentID,
+			PromotedBy:  "register_all",
+		}
+
+		if err := store.saveLighthouse(lh); err != nil {
+			errors = append(errors, fmt.Sprintf("%s: %v", name, err))
+			continue
+		}
+		registered++
+	}
+
+	store.logTrace("lighthouse_register_all", agentID, fmt.Sprintf("%d tools", registered), "bulk registration")
+
+	result := map[string]any{
+		"success":    true,
+		"registered": registered,
+		"skipped":    skipped,
+		"total":      len(tools),
+	}
+	if len(errors) > 0 {
+		result["errors"] = errors
+	}
+	return result, nil
 }
 
 // lighthouseRegister creates a new lighthouse stub and registers it in the MCP registry.
