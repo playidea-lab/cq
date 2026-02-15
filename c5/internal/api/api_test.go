@@ -1,0 +1,593 @@
+package api
+
+import (
+	"bytes"
+	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"path/filepath"
+	"testing"
+
+	"github.com/piqsol/c4/c5/internal/model"
+	"github.com/piqsol/c4/c5/internal/store"
+)
+
+func newTestServer(t *testing.T) *Server {
+	t.Helper()
+	dir := t.TempDir()
+	st, err := store.New(filepath.Join(dir, "test.db"))
+	if err != nil {
+		t.Fatalf("new store: %v", err)
+	}
+	t.Cleanup(func() { st.Close() })
+
+	return NewServer(Config{
+		Store:   st,
+		Version: "test",
+	})
+}
+
+func doRequest(t *testing.T, srv *Server, method, path string, body any) *httptest.ResponseRecorder {
+	t.Helper()
+	var bodyReader io.Reader
+	if body != nil {
+		data, _ := json.Marshal(body)
+		bodyReader = bytes.NewReader(data)
+	}
+	req := httptest.NewRequest(method, path, bodyReader)
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	return w
+}
+
+func decodeJSON(t *testing.T, w *httptest.ResponseRecorder, v any) {
+	t.Helper()
+	if err := json.NewDecoder(w.Body).Decode(v); err != nil {
+		t.Fatalf("decode json: %v (body: %s)", err, w.Body.String())
+	}
+}
+
+// =========================================================================
+// Health & Stats
+// =========================================================================
+
+func TestHealth(t *testing.T) {
+	srv := newTestServer(t)
+	w := doRequest(t, srv, "GET", "/v1/health", nil)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+
+	var resp map[string]any
+	decodeJSON(t, w, &resp)
+	if resp["status"] != "ok" {
+		t.Fatalf("expected ok, got %v", resp["status"])
+	}
+}
+
+func TestQueueStats(t *testing.T) {
+	srv := newTestServer(t)
+
+	// Submit some jobs first
+	doRequest(t, srv, "POST", "/v1/jobs/submit", model.JobSubmitRequest{
+		Name: "j1", Command: "echo",
+	})
+	doRequest(t, srv, "POST", "/v1/jobs/submit", model.JobSubmitRequest{
+		Name: "j2", Command: "echo",
+	})
+
+	w := doRequest(t, srv, "GET", "/v1/stats/queue", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+
+	var stats model.QueueStats
+	decodeJSON(t, w, &stats)
+	if stats.Queued != 2 {
+		t.Fatalf("expected 2 queued, got %d", stats.Queued)
+	}
+}
+
+// =========================================================================
+// Jobs
+// =========================================================================
+
+func TestJobSubmitAndGet(t *testing.T) {
+	srv := newTestServer(t)
+
+	w := doRequest(t, srv, "POST", "/v1/jobs/submit", model.JobSubmitRequest{
+		Name:    "test-job",
+		Command: "echo hello",
+		Workdir: "/tmp",
+	})
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp model.JobSubmitResponse
+	decodeJSON(t, w, &resp)
+	if resp.JobID == "" {
+		t.Fatal("job_id should not be empty")
+	}
+	if resp.Status != "QUEUED" {
+		t.Fatalf("expected QUEUED, got %s", resp.Status)
+	}
+
+	// GET job
+	w2 := doRequest(t, srv, "GET", "/v1/jobs/"+resp.JobID, nil)
+	if w2.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w2.Code)
+	}
+
+	var job model.Job
+	decodeJSON(t, w2, &job)
+	if job.Name != "test-job" {
+		t.Fatalf("expected test-job, got %s", job.Name)
+	}
+}
+
+func TestJobSubmitValidation(t *testing.T) {
+	srv := newTestServer(t)
+
+	// Missing command
+	w := doRequest(t, srv, "POST", "/v1/jobs/submit", model.JobSubmitRequest{
+		Name: "no-cmd",
+	})
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", w.Code)
+	}
+}
+
+func TestJobsList(t *testing.T) {
+	srv := newTestServer(t)
+
+	for i := 0; i < 3; i++ {
+		doRequest(t, srv, "POST", "/v1/jobs/submit", model.JobSubmitRequest{
+			Name: "job", Command: "echo",
+		})
+	}
+
+	w := doRequest(t, srv, "GET", "/v1/jobs?limit=10", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+
+	var resp map[string]any
+	decodeJSON(t, w, &resp)
+	jobs := resp["jobs"].([]any)
+	if len(jobs) != 3 {
+		t.Fatalf("expected 3 jobs, got %d", len(jobs))
+	}
+}
+
+func TestJobCancel(t *testing.T) {
+	srv := newTestServer(t)
+
+	w := doRequest(t, srv, "POST", "/v1/jobs/submit", model.JobSubmitRequest{
+		Name: "cancel-me", Command: "sleep 100",
+	})
+	var resp model.JobSubmitResponse
+	decodeJSON(t, w, &resp)
+
+	w2 := doRequest(t, srv, "POST", "/v1/jobs/"+resp.JobID+"/cancel", nil)
+	if w2.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w2.Code, w2.Body.String())
+	}
+
+	// Verify
+	w3 := doRequest(t, srv, "GET", "/v1/jobs/"+resp.JobID, nil)
+	var job model.Job
+	decodeJSON(t, w3, &job)
+	if job.Status != model.StatusCancelled {
+		t.Fatalf("expected CANCELLED, got %s", job.Status)
+	}
+}
+
+func TestJobRetry(t *testing.T) {
+	srv := newTestServer(t)
+
+	// Create and cancel a job
+	w := doRequest(t, srv, "POST", "/v1/jobs/submit", model.JobSubmitRequest{
+		Name: "retry-me", Command: "echo retry",
+	})
+	var resp model.JobSubmitResponse
+	decodeJSON(t, w, &resp)
+	doRequest(t, srv, "POST", "/v1/jobs/"+resp.JobID+"/cancel", nil)
+
+	// Retry
+	w2 := doRequest(t, srv, "POST", "/v1/jobs/"+resp.JobID+"/retry", nil)
+	if w2.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w2.Code, w2.Body.String())
+	}
+
+	var retryResp model.JobRetryResponse
+	decodeJSON(t, w2, &retryResp)
+	if retryResp.NewJobID == "" {
+		t.Fatal("new_job_id should not be empty")
+	}
+	if retryResp.OriginalJobID != resp.JobID {
+		t.Fatalf("original_job_id mismatch")
+	}
+}
+
+func TestJobRetryNonTerminal(t *testing.T) {
+	srv := newTestServer(t)
+
+	w := doRequest(t, srv, "POST", "/v1/jobs/submit", model.JobSubmitRequest{
+		Name: "running", Command: "echo",
+	})
+	var resp model.JobSubmitResponse
+	decodeJSON(t, w, &resp)
+
+	// Try retry while QUEUED
+	w2 := doRequest(t, srv, "POST", "/v1/jobs/"+resp.JobID+"/retry", nil)
+	if w2.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", w2.Code)
+	}
+}
+
+func TestJobLogs(t *testing.T) {
+	srv := newTestServer(t)
+
+	w := doRequest(t, srv, "POST", "/v1/jobs/submit", model.JobSubmitRequest{
+		Name: "log-job", Command: "echo hello",
+	})
+	var resp model.JobSubmitResponse
+	decodeJSON(t, w, &resp)
+
+	// Append logs
+	doRequest(t, srv, "POST", "/v1/jobs/"+resp.JobID+"/logs", map[string]string{
+		"line": "hello world", "stream": "stdout",
+	})
+	doRequest(t, srv, "POST", "/v1/jobs/"+resp.JobID+"/logs", map[string]string{
+		"line": "error occurred", "stream": "stderr",
+	})
+
+	// Get logs
+	w2 := doRequest(t, srv, "GET", "/v1/jobs/"+resp.JobID+"/logs", nil)
+	if w2.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w2.Code)
+	}
+
+	var logs model.JobLogsResponse
+	decodeJSON(t, w2, &logs)
+	if logs.TotalLines != 2 {
+		t.Fatalf("expected 2 lines, got %d", logs.TotalLines)
+	}
+}
+
+func TestJobSummary(t *testing.T) {
+	srv := newTestServer(t)
+
+	w := doRequest(t, srv, "POST", "/v1/jobs/submit", model.JobSubmitRequest{
+		Name: "summary-job", Command: "echo",
+	})
+	var resp model.JobSubmitResponse
+	decodeJSON(t, w, &resp)
+
+	w2 := doRequest(t, srv, "GET", "/v1/jobs/"+resp.JobID+"/summary", nil)
+	if w2.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w2.Code)
+	}
+
+	var summary model.JobSummaryResponse
+	decodeJSON(t, w2, &summary)
+	if summary.Name != "summary-job" {
+		t.Fatalf("expected summary-job, got %s", summary.Name)
+	}
+}
+
+func TestJobEstimate(t *testing.T) {
+	srv := newTestServer(t)
+
+	w := doRequest(t, srv, "POST", "/v1/jobs/submit", model.JobSubmitRequest{
+		Name: "est-job", Command: "echo",
+	})
+	var resp model.JobSubmitResponse
+	decodeJSON(t, w, &resp)
+
+	w2 := doRequest(t, srv, "GET", "/v1/jobs/"+resp.JobID+"/estimate", nil)
+	if w2.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w2.Code)
+	}
+
+	var est model.EstimateResponse
+	decodeJSON(t, w2, &est)
+	if est.Method != "default" {
+		t.Fatalf("expected default method, got %s", est.Method)
+	}
+	if est.EstimatedDurationSec != 300 {
+		t.Fatalf("expected 300s default, got %f", est.EstimatedDurationSec)
+	}
+}
+
+func TestJobNotFound(t *testing.T) {
+	srv := newTestServer(t)
+
+	w := doRequest(t, srv, "GET", "/v1/jobs/nonexistent", nil)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", w.Code)
+	}
+}
+
+// =========================================================================
+// Workers
+// =========================================================================
+
+func TestWorkerRegisterAndList(t *testing.T) {
+	srv := newTestServer(t)
+
+	w := doRequest(t, srv, "POST", "/v1/workers/register", model.WorkerRegisterRequest{
+		Hostname:  "gpu-1",
+		GPUCount:  2,
+		GPUModel:  "A100",
+		TotalVRAM: 80,
+		FreeVRAM:  80,
+	})
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp model.WorkerRegisterResponse
+	decodeJSON(t, w, &resp)
+	if resp.WorkerID == "" {
+		t.Fatal("worker_id should not be empty")
+	}
+
+	// List
+	w2 := doRequest(t, srv, "GET", "/v1/workers", nil)
+	if w2.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w2.Code)
+	}
+
+	var listResp map[string]any
+	decodeJSON(t, w2, &listResp)
+	workers := listResp["workers"].([]any)
+	if len(workers) != 1 {
+		t.Fatalf("expected 1 worker, got %d", len(workers))
+	}
+}
+
+func TestWorkerRegisterValidation(t *testing.T) {
+	srv := newTestServer(t)
+
+	w := doRequest(t, srv, "POST", "/v1/workers/register", model.WorkerRegisterRequest{})
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", w.Code)
+	}
+}
+
+func TestWorkerHeartbeat(t *testing.T) {
+	srv := newTestServer(t)
+
+	w := doRequest(t, srv, "POST", "/v1/workers/register", model.WorkerRegisterRequest{
+		Hostname: "test",
+	})
+	var regResp model.WorkerRegisterResponse
+	decodeJSON(t, w, &regResp)
+
+	w2 := doRequest(t, srv, "POST", "/v1/workers/heartbeat", model.HeartbeatRequest{
+		WorkerID: regResp.WorkerID,
+		FreeVRAM: 40,
+	})
+	if w2.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w2.Code, w2.Body.String())
+	}
+
+	var hbResp model.HeartbeatResponse
+	decodeJSON(t, w2, &hbResp)
+	if !hbResp.Acknowledged {
+		t.Fatal("expected acknowledged=true")
+	}
+}
+
+// =========================================================================
+// Leases
+// =========================================================================
+
+func TestLeaseAcquireAndRenew(t *testing.T) {
+	srv := newTestServer(t)
+
+	// Register worker
+	w := doRequest(t, srv, "POST", "/v1/workers/register", model.WorkerRegisterRequest{
+		Hostname: "test",
+	})
+	var regResp model.WorkerRegisterResponse
+	decodeJSON(t, w, &regResp)
+
+	// Submit job
+	doRequest(t, srv, "POST", "/v1/jobs/submit", model.JobSubmitRequest{
+		Name: "job1", Command: "echo",
+	})
+
+	// Acquire lease
+	w2 := doRequest(t, srv, "POST", "/v1/leases/acquire", model.LeaseAcquireRequest{
+		WorkerID: regResp.WorkerID,
+	})
+	if w2.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w2.Code, w2.Body.String())
+	}
+
+	var acqResp model.LeaseAcquireResponse
+	decodeJSON(t, w2, &acqResp)
+	if acqResp.LeaseID == "" {
+		t.Fatal("lease_id should not be empty")
+	}
+	if acqResp.Job.Name != "job1" {
+		t.Fatalf("expected job1, got %s", acqResp.Job.Name)
+	}
+
+	// Renew lease
+	w3 := doRequest(t, srv, "POST", "/v1/leases/renew", model.LeaseRenewRequest{
+		LeaseID:  acqResp.LeaseID,
+		WorkerID: regResp.WorkerID,
+	})
+	if w3.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w3.Code, w3.Body.String())
+	}
+
+	var renewResp model.LeaseRenewResponse
+	decodeJSON(t, w3, &renewResp)
+	if !renewResp.Renewed {
+		t.Fatal("expected renewed=true")
+	}
+}
+
+func TestLeaseAcquireNoJobs(t *testing.T) {
+	srv := newTestServer(t)
+
+	w := doRequest(t, srv, "POST", "/v1/workers/register", model.WorkerRegisterRequest{
+		Hostname: "test",
+	})
+	var regResp model.WorkerRegisterResponse
+	decodeJSON(t, w, &regResp)
+
+	w2 := doRequest(t, srv, "POST", "/v1/leases/acquire", model.LeaseAcquireRequest{
+		WorkerID: regResp.WorkerID,
+	})
+	if w2.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w2.Code)
+	}
+
+	var resp map[string]any
+	decodeJSON(t, w2, &resp)
+	if resp["message"] != "no jobs available" {
+		t.Fatalf("expected no jobs message, got %v", resp)
+	}
+}
+
+func TestCompleteJobViaAPI(t *testing.T) {
+	srv := newTestServer(t)
+
+	// Register + submit + acquire
+	w := doRequest(t, srv, "POST", "/v1/workers/register", model.WorkerRegisterRequest{Hostname: "test"})
+	var regResp model.WorkerRegisterResponse
+	decodeJSON(t, w, &regResp)
+
+	w2 := doRequest(t, srv, "POST", "/v1/jobs/submit", model.JobSubmitRequest{Name: "job", Command: "echo"})
+	var submitResp model.JobSubmitResponse
+	decodeJSON(t, w2, &submitResp)
+
+	doRequest(t, srv, "POST", "/v1/leases/acquire", model.LeaseAcquireRequest{WorkerID: regResp.WorkerID})
+
+	// Complete
+	w3 := doRequest(t, srv, "POST", "/v1/jobs/"+submitResp.JobID+"/complete", model.JobCompleteRequest{
+		Status:   "SUCCEEDED",
+		ExitCode: 0,
+	})
+	if w3.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w3.Code, w3.Body.String())
+	}
+
+	// Verify
+	w4 := doRequest(t, srv, "GET", "/v1/jobs/"+submitResp.JobID, nil)
+	var job model.Job
+	decodeJSON(t, w4, &job)
+	if job.Status != model.StatusSucceeded {
+		t.Fatalf("expected SUCCEEDED, got %s", job.Status)
+	}
+}
+
+// =========================================================================
+// Metrics
+// =========================================================================
+
+func TestMetricsLogAndGet(t *testing.T) {
+	srv := newTestServer(t)
+
+	w := doRequest(t, srv, "POST", "/v1/jobs/submit", model.JobSubmitRequest{
+		Name: "metric-job", Command: "echo",
+	})
+	var resp model.JobSubmitResponse
+	decodeJSON(t, w, &resp)
+
+	// Log metrics
+	doRequest(t, srv, "POST", "/v1/metrics/"+resp.JobID, model.MetricsLogRequest{
+		Step:    0,
+		Metrics: map[string]any{"loss": 0.5},
+	})
+	doRequest(t, srv, "POST", "/v1/metrics/"+resp.JobID, model.MetricsLogRequest{
+		Step:    1,
+		Metrics: map[string]any{"loss": 0.3},
+	})
+
+	// Get metrics
+	w2 := doRequest(t, srv, "GET", "/v1/metrics/"+resp.JobID, nil)
+	if w2.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w2.Code)
+	}
+
+	var metricsResp model.MetricsResponse
+	decodeJSON(t, w2, &metricsResp)
+	if metricsResp.TotalSteps != 2 {
+		t.Fatalf("expected 2 steps, got %d", metricsResp.TotalSteps)
+	}
+}
+
+// =========================================================================
+// Auth
+// =========================================================================
+
+func TestAPIKeyAuth(t *testing.T) {
+	dir := t.TempDir()
+	st, _ := store.New(filepath.Join(dir, "test.db"))
+	defer st.Close()
+
+	srv := NewServer(Config{
+		Store:   st,
+		Version: "test",
+		APIKey:  "secret-key",
+	})
+
+	// Health should be accessible without key
+	req := httptest.NewRequest("GET", "/v1/health", nil)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("health should work without key, got %d", w.Code)
+	}
+
+	// Other endpoints should require key
+	req2 := httptest.NewRequest("GET", "/v1/jobs?limit=10", nil)
+	w2 := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w2, req2)
+	if w2.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d", w2.Code)
+	}
+
+	// With correct key
+	req3 := httptest.NewRequest("GET", "/v1/jobs?limit=10", nil)
+	req3.Header.Set("X-API-Key", "secret-key")
+	w3 := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w3, req3)
+	if w3.Code != http.StatusOK {
+		t.Fatalf("expected 200 with key, got %d", w3.Code)
+	}
+}
+
+// =========================================================================
+// Method Not Allowed
+// =========================================================================
+
+func TestMethodNotAllowed(t *testing.T) {
+	srv := newTestServer(t)
+
+	tests := []struct {
+		method string
+		path   string
+	}{
+		{"POST", "/v1/health"},
+		{"DELETE", "/v1/jobs/submit"},
+		{"PUT", "/v1/workers/register"},
+	}
+
+	for _, tt := range tests {
+		w := doRequest(t, srv, tt.method, tt.path, nil)
+		if w.Code != http.StatusMethodNotAllowed {
+			t.Errorf("%s %s: expected 405, got %d", tt.method, tt.path, w.Code)
+		}
+	}
+}
