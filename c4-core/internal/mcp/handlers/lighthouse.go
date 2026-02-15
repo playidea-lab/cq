@@ -153,8 +153,15 @@ func lighthouseRegisterAll(reg *mcp.Registry, store *SQLiteStore, agentID string
 			skipped++
 			continue
 		}
-		// Skip if already has a lighthouse entry (but backfill empty spec)
+		// Skip if already has a lighthouse entry (but sync description/spec from registry)
 		if existing, _ := store.getLighthouse(name); existing != nil {
+			changed := false
+			// Sync description from registry (authoritative source)
+			if tool.Description != "" && tool.Description != existing.Description {
+				existing.Description = tool.Description
+				changed = true
+			}
+			// Backfill empty spec
 			if existing.Spec == "" {
 				// Prefer registry schema, fall back to DB-stored schema
 				schema := tool.InputSchema
@@ -164,8 +171,11 @@ func lighthouseRegisterAll(reg *mcp.Registry, store *SQLiteStore, agentID string
 						schema = parsed
 					}
 				}
-				spec := generateSpecFromSchema(name, existing.Description, schema)
-				store.updateLighthouseSpec(name, spec)
+				existing.Spec = generateSpecFromSchema(name, existing.Description, schema)
+				changed = true
+			}
+			if changed {
+				store.updateLighthouseDescAndSpec(name, existing.Description, existing.Spec)
 				updated++
 			}
 			skipped++
@@ -715,6 +725,11 @@ func (s *SQLiteStore) promoteLighthouse(name, promotedBy string) error {
 
 func (s *SQLiteStore) updateLighthouseSpec(name, spec string) error {
 	_, err := s.db.Exec(`UPDATE c4_lighthouses SET spec=?, updated_at=CURRENT_TIMESTAMP WHERE name=?`, spec, name)
+	return err
+}
+
+func (s *SQLiteStore) updateLighthouseDescAndSpec(name, description, spec string) error {
+	_, err := s.db.Exec(`UPDATE c4_lighthouses SET description=?, spec=?, updated_at=CURRENT_TIMESTAMP WHERE name=?`, description, spec, name)
 	return err
 }
 

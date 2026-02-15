@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"path/filepath"
-	"strings"
 
 	"github.com/changmin/c4-core/internal/dartast"
 	"github.com/changmin/c4-core/internal/goast"
@@ -24,7 +23,10 @@ func goAwareFindSymbol(proxy *BridgeProxy, rootDir string) mcp.HandlerFunc {
 			return pyHandler(rawArgs)
 		}
 
-		absPath := resolveLSPPath(params.Path, rootDir)
+		absPath, err := resolvePath(rootDir, params.Path)
+		if err != nil {
+			return nil, err
+		}
 		if goast.HasGoFiles(absPath) {
 			return handleGoFindSymbol(params.Name, absPath, rootDir)
 		}
@@ -47,7 +49,10 @@ func goAwareSymbolsOverview(proxy *BridgeProxy, rootDir string) mcp.HandlerFunc 
 			return pyHandler(rawArgs)
 		}
 
-		absPath := resolveLSPPath(params.Path, rootDir)
+		absPath, err := resolvePath(rootDir, params.Path)
+		if err != nil {
+			return nil, err
+		}
 		if goast.HasGoFiles(absPath) {
 			return handleGoSymbolsOverview(absPath)
 		}
@@ -56,13 +61,6 @@ func goAwareSymbolsOverview(proxy *BridgeProxy, rootDir string) mcp.HandlerFunc 
 		}
 		return pyHandler(rawArgs)
 	}
-}
-
-func resolveLSPPath(path, rootDir string) string {
-	if filepath.IsAbs(path) {
-		return path
-	}
-	return filepath.Join(rootDir, path)
 }
 
 // --- Go handlers ---
@@ -178,9 +176,4 @@ func handleDartSymbolsOverview(absPath string) (any, error) {
 	}
 	result["success"] = true
 	return result, nil
-}
-
-// isRustPath checks if the path is a Rust file (not supported by native parsers).
-func isRustPath(path string) bool {
-	return strings.HasSuffix(path, ".rs")
 }
