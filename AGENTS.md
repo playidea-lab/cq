@@ -171,11 +171,11 @@ Discovery(8): c4_save_spec, c4_get_spec, c4_list_specs,
             c4_save_design, c4_get_design, c4_list_designs,
             c4_discovery_complete, c4_design_complete
 Artifact(3): c4_artifact_save, c4_artifact_list, c4_artifact_get
-LSP(7):     c4_find_symbol, c4_get_symbols_overview,  ← Python/JS/TS only
+LSP(7):     c4_find_symbol, c4_get_symbols_overview,  ← Python/JS/TS + Go + Dart native
             c4_replace_symbol_body, c4_insert_before_symbol,
             c4_insert_after_symbol, c4_rename_symbol,
             c4_find_referencing_symbols
-            ※ Go/Rust → c4_search_for_pattern 사용 (예: "^func ", "^type .* struct")
+            ※ Go/Dart는 native 지원, Rust → c4_search_for_pattern 사용
 지식(7):    c4_knowledge_search, c4_knowledge_record, c4_knowledge_get,
             c4_knowledge_pull,
             c4_experiment_record, c4_experiment_search, c4_pattern_suggest

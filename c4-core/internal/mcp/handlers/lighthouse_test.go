@@ -843,15 +843,29 @@ func TestLighthouseUpdateImplementedBlocked(t *testing.T) {
 	})
 	callLighthouse(t, reg, map[string]any{"action": "promote", "name": "lh_impl_upd"})
 
-	// Try to update — should fail because it's "implemented" not "stub"
+	// Updating description/spec on implemented lighthouse should succeed
+	result := callLighthouse(t, reg, map[string]any{
+		"action": "update", "name": "lh_impl_upd", "description": "Updated desc", "spec": "Updated spec",
+	})
+	if result["success"] != true {
+		t.Fatalf("expected success updating description on implemented lighthouse, got %v", result)
+	}
+
+	// Verify description was updated
+	got := callLighthouse(t, reg, map[string]any{"action": "get", "name": "lh_impl_upd"})
+	if got["description"] != "Updated desc" {
+		t.Errorf("description = %v, want 'Updated desc'", got["description"])
+	}
+
+	// Updating input_schema on implemented lighthouse should fail (contract change)
 	err := callLighthouseExpectErr(t, reg, map[string]any{
-		"action": "update", "name": "lh_impl_upd", "description": "New desc",
+		"action": "update", "name": "lh_impl_upd", "input_schema": `{"type":"object"}`,
 	})
 	if err == nil {
-		t.Fatal("expected error updating implemented lighthouse")
+		t.Fatal("expected error changing input_schema on implemented lighthouse")
 	}
-	if !strings.Contains(err.Error(), "only stubs can be updated") {
-		t.Errorf("error = %v, want 'only stubs can be updated'", err)
+	if !strings.Contains(err.Error(), "only stubs allow schema changes") {
+		t.Errorf("error = %v, want 'only stubs allow schema changes'", err)
 	}
 }
 

@@ -723,15 +723,17 @@ func (s *SQLiteStore) updateLighthouse(name string, updates map[string]any) erro
 	if err != nil {
 		return fmt.Errorf("lighthouse '%s' not found", name)
 	}
-	if lh.Status != "stub" {
-		return fmt.Errorf("cannot update %s lighthouse '%s' — only stubs can be updated", lh.Status, name)
+	// input_schema changes only allowed for stubs (contract change)
+	if v, ok := updates["input_schema"].(string); ok && v != "" {
+		if lh.Status != "stub" {
+			return fmt.Errorf("cannot change input_schema of %s lighthouse '%s' — only stubs allow schema changes", lh.Status, name)
+		}
+		lh.InputSchema = v
 	}
 
+	// description and spec can be updated for any status (documentation evolves)
 	if v, ok := updates["description"].(string); ok && v != "" {
 		lh.Description = v
-	}
-	if v, ok := updates["input_schema"].(string); ok && v != "" {
-		lh.InputSchema = v
 	}
 	if v, ok := updates["spec"].(string); ok && v != "" {
 		lh.Spec = v

@@ -528,7 +528,7 @@ func RegisterProxyHandlers(reg *mcp.Registry, proxy *BridgeProxy, rootDir string
 	// replace/insert/rename/refs: Python/JS/TS only
 	reg.Register(mcp.ToolSchema{
 		Name:        "c4_find_symbol",
-		Description: "Find symbol definitions by name across the project. Supports Python/JS/TS only — for Go/Rust use c4_search_for_pattern instead. Name must be exact match (e.g. 'MyClass' not 'My'). Path is required to avoid timeout.",
+		Description: "Find symbol definitions by name across the project. Supports Python/JS/TS and Go. Name must be exact match (e.g. 'MyClass' not 'My'). Path is required to avoid timeout.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -541,7 +541,7 @@ func RegisterProxyHandlers(reg *mcp.Registry, proxy *BridgeProxy, rootDir string
 
 	reg.Register(mcp.ToolSchema{
 		Name:        "c4_get_symbols_overview",
-		Description: "Get overview of all symbols in a file. Supports Python/JS/TS and Go",
+		Description: "Get overview of all symbols in a file. Supports Python/JS/TS, Go, and Dart",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
