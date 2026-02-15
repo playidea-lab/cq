@@ -130,6 +130,13 @@ c4_add_todo(mode="direct", review_required=False)
 
 ## CRITICAL: C4 Operation Pre-conditions
 
+### 복잡한 도구 사용 전 Lighthouse 조회
+Hub DAG, Hub Job, Drive, Edge/Deploy, Research 등 워크플로우가 있는 도구 사용 전:
+```
+c4_lighthouse get <tool_name>
+```
+→ 사용 패턴, 워크플로우, 예시, 주의사항, 출력 형식 확인
+
 ### c4_submit 전 필수 체크
 1. `c4_status`로 태스크 상태 확인
 2. 태스크가 `in_progress` 상태인지 검증
@@ -156,6 +163,8 @@ c4_add_todo(mode="direct", review_required=False)
 ---
 
 ## MCP 도구 빠른 참조 (109개 등록, Hub 활성화 시 최대 ~135개)
+
+> **도구 상세 사용법**: `c4_lighthouse get <tool_name>`으로 워크플로우, 예시, 관련 도구, 주의사항 조회
 
 ```
 상태(3):    c4_status, c4_start, c4_clear
