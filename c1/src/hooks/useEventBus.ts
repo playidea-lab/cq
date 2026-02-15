@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 
@@ -25,10 +25,12 @@ export function useEventBus(options: UseEventBusOptions = {}) {
   const [events, setEvents] = useState<EventBusEvent[]>([]);
   const [status, setStatus] = useState<EventBusConnectionStatus>('disconnected');
   const [paused, setPaused] = useState(false);
+  const pausedRef = useRef(paused);
+  pausedRef.current = paused;
 
   useEffect(() => {
     const unlistenEvent = listen<EventBusEvent>('eventbus-event', (e) => {
-      if (paused) return;
+      if (pausedRef.current) return;
       const event = e.payload;
       if (filter && !event.type.includes(filter)) return;
       setEvents(prev => [event, ...prev].slice(0, maxEvents));
@@ -47,7 +49,7 @@ export function useEventBus(options: UseEventBusOptions = {}) {
       unlistenStatus.then(fn => fn());
       invoke('eventbus_disconnect').catch(() => {});
     };
-  }, [maxEvents, filter, paused, autoConnect]);
+  }, [maxEvents, filter, autoConnect]);
 
   const connect = useCallback(() => {
     invoke('eventbus_connect').catch(console.error);

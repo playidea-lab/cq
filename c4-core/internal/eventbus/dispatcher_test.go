@@ -528,6 +528,81 @@ func TestWebhookNoSecret(t *testing.T) {
 	}
 }
 
+func TestFilterV2NeFieldMissing(t *testing.T) {
+	// $ne on a missing field: should pass (field doesn't exist, so it's "not equal")
+	filter := `{"missing_field": {"$ne": "value"}}`
+	data := json.RawMessage(`{"other": "data"}`)
+	if !evaluateFilter(filter, data) {
+		t.Error("$ne on missing field should pass")
+	}
+}
+
+func TestFilterV2MultiOperators(t *testing.T) {
+	// Combined $gt + $lt on same field (range query)
+	filter := `{"size": {"$gt": 10, "$lt": 100}}`
+	data50 := json.RawMessage(`{"size": 50}`)
+	data5 := json.RawMessage(`{"size": 5}`)
+	data200 := json.RawMessage(`{"size": 200}`)
+
+	if !evaluateFilter(filter, data50) {
+		t.Error("size=50 should match $gt:10 $lt:100")
+	}
+	if evaluateFilter(filter, data5) {
+		t.Error("size=5 should NOT match $gt:10")
+	}
+	if evaluateFilter(filter, data200) {
+		t.Error("size=200 should NOT match $lt:100")
+	}
+}
+
+func TestFilterV2RegexTooLong(t *testing.T) {
+	// Pattern longer than 256 chars should be rejected
+	longPattern := ""
+	for i := 0; i < 300; i++ {
+		longPattern += "a"
+	}
+	filter := fmt.Sprintf(`{"name": {"$regex": "%s"}}`, longPattern)
+	data := json.RawMessage(`{"name": "test"}`)
+	if evaluateFilter(filter, data) {
+		t.Error("regex pattern > 256 chars should be rejected")
+	}
+}
+
+func TestFilterV2DotNotationDeep(t *testing.T) {
+	// 3-level nested dot notation
+	filter := `{"a.b.c": "deep"}`
+	data := json.RawMessage(`{"a": {"b": {"c": "deep"}}}`)
+	dataMiss := json.RawMessage(`{"a": {"b": {"d": "wrong"}}}`)
+
+	if !evaluateFilter(filter, data) {
+		t.Error("3-level dot notation should match")
+	}
+	if evaluateFilter(filter, dataMiss) {
+		t.Error("wrong nested key should not match")
+	}
+}
+
+func TestDLQMaxRetriesExceeded(t *testing.T) {
+	s := tempStore(t)
+	s.InsertDLQ("ev-1", "rule-1", "test-rule", "test.event", "fail", 1)
+	entries, _ := s.ListDLQ(10)
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 DLQ entry, got %d", len(entries))
+	}
+
+	// First retry should succeed (0 < 1)
+	_, err := s.IncrementDLQRetry(entries[0].ID)
+	if err != nil {
+		t.Fatalf("first retry should succeed: %v", err)
+	}
+
+	// Second retry should fail (1 >= 1)
+	_, err = s.IncrementDLQRetry(entries[0].ID)
+	if err == nil {
+		t.Error("retry beyond max_retries should return error")
+	}
+}
+
 func TestIsPrivateIP(t *testing.T) {
 	tests := []struct {
 		ip   string

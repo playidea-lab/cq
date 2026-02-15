@@ -413,6 +413,9 @@ func evaluateOperators(operators map[string]any, value any, exists bool) bool {
 			if !ok {
 				return false
 			}
+			if len(pattern) > 256 {
+				return false // prevent ReDoS with overly long patterns
+			}
 			re, err := regexp.Compile(pattern)
 			if err != nil {
 				return false

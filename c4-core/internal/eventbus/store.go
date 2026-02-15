@@ -634,14 +634,21 @@ func (s *Store) ListDLQ(limit int) ([]DLQEntry, error) {
 }
 
 // IncrementDLQRetry increments the retry count for a DLQ entry and returns the entry.
+// Returns an error if the entry has already reached max_retries.
 func (s *Store) IncrementDLQRetry(id int64) (*DLQEntry, error) {
-	result, err := s.db.Exec(`UPDATE c4_event_dlq SET retry_count = retry_count + 1 WHERE id = ?`, id)
+	// Check current state before incrementing
+	var currentRetry, maxRetries int
+	err := s.db.QueryRow(`SELECT retry_count, max_retries FROM c4_event_dlq WHERE id = ?`, id).Scan(&currentRetry, &maxRetries)
+	if err != nil {
+		return nil, fmt.Errorf("dlq entry %d not found", id)
+	}
+	if currentRetry >= maxRetries {
+		return nil, fmt.Errorf("dlq entry %d exceeded max retries (%d/%d)", id, currentRetry, maxRetries)
+	}
+
+	_, err = s.db.Exec(`UPDATE c4_event_dlq SET retry_count = retry_count + 1 WHERE id = ?`, id)
 	if err != nil {
 		return nil, fmt.Errorf("increment dlq retry: %w", err)
-	}
-	n, _ := result.RowsAffected()
-	if n == 0 {
-		return nil, fmt.Errorf("dlq entry %d not found", id)
 	}
 
 	var e DLQEntry
