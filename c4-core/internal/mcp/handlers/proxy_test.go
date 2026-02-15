@@ -501,7 +501,7 @@ func TestKnowledgePull_Registration(t *testing.T) {
 	kc := &mockKnowledgeSyncer{}
 	reg := mcp.NewRegistry()
 
-	RegisterProxyHandlers(reg, proxy, kc)
+	registerKnowledgeProxy(reg, proxy, kc)
 
 	tools := reg.ListTools()
 	found := false

@@ -520,9 +520,9 @@ func knowledgePullHandler(proxy *BridgeProxy, kc KnowledgeSyncer) mcp.HandlerFun
 }
 
 // RegisterProxyHandlers registers MCP tools that are proxied to the Python sidecar.
-// These tools require Python dependencies (LSP, Knowledge, GPU).
-// If knowledgeCloud is non-nil, knowledge tools get automatic cloud sync.
-func RegisterProxyHandlers(reg *mcp.Registry, proxy *BridgeProxy, knowledgeCloud KnowledgeSyncer) {
+// These tools require Python dependencies: LSP (7) + Onboard (1) = 8 tools.
+// Knowledge tools (7) moved to Go native — see knowledge_native.go.
+func RegisterProxyHandlers(reg *mcp.Registry, proxy *BridgeProxy) {
 	// LSP tools (6) — delegated to Python tree-sitter + multilspy + Jedi
 	reg.Register(mcp.ToolSchema{
 		Name:        "c4_find_symbol",
@@ -619,7 +619,26 @@ func RegisterProxyHandlers(reg *mcp.Registry, proxy *BridgeProxy, knowledgeCloud
 		},
 	}, proxyHandler(proxy, "FindReferencingSymbols"))
 
-	// Knowledge tools (3) — delegated to Python FTS5 + sqlite-vec, with optional cloud sync
+	// NOTE: Knowledge tools (7) moved to Go native — see knowledge_native.go
+	// NOTE: GPU tools (2) moved to Go native — see gpu_native.go
+
+	// Onboard tool — scans project structure via LSP/tree-sitter (30s timeout for large projects)
+	reg.Register(mcp.ToolSchema{
+		Name:        "c4_onboard",
+		Description: "Scan project and generate pat-project-map.md (languages, symbols, dependencies)",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"max_files": map[string]any{"type": "integer", "description": "Maximum files to scan (default: 500)"},
+				"force":     map[string]any{"type": "boolean", "description": "Force regeneration even if map exists (default: false)"},
+			},
+		},
+	}, proxyHandlerWithTimeout(proxy, "ProjectOnboard", 30*time.Second))
+}
+
+// registerKnowledgeProxy registers 7 knowledge tools as Python proxy fallback.
+// Used when KnowledgeStore is unavailable (Go native not initialized).
+func registerKnowledgeProxy(reg *mcp.Registry, proxy *BridgeProxy, knowledgeCloud KnowledgeSyncer) {
 	reg.Register(mcp.ToolSchema{
 		Name:        "c4_knowledge_search",
 		Description: "Search knowledge base documents with hybrid vector + FTS search",
@@ -661,7 +680,6 @@ func RegisterProxyHandlers(reg *mcp.Registry, proxy *BridgeProxy, knowledgeCloud
 		},
 	}, proxyHandler(proxy, "KnowledgeGet"))
 
-	// Knowledge legacy tools (3) — delegated to Python knowledge store, with optional cloud sync
 	reg.Register(mcp.ToolSchema{
 		Name:        "c4_experiment_record",
 		Description: "Record an experiment result",
@@ -701,40 +719,15 @@ func RegisterProxyHandlers(reg *mcp.Registry, proxy *BridgeProxy, knowledgeCloud
 		},
 	}, knowledgeSearchHandler(proxy, "KnowledgeSearch", knowledgeCloud))
 
-	// NOTE: GPU tools (2) moved to Go native — see gpu_native.go
-
-	// Onboard tool — scans project structure via LSP/tree-sitter (30s timeout for large projects)
-	reg.Register(mcp.ToolSchema{
-		Name:        "c4_onboard",
-		Description: "Scan project and generate pat-project-map.md (languages, symbols, dependencies)",
-		InputSchema: map[string]any{
-			"type": "object",
-			"properties": map[string]any{
-				"max_files": map[string]any{"type": "integer", "description": "Maximum files to scan (default: 500)"},
-				"force":     map[string]any{"type": "boolean", "description": "Force regeneration even if map exists (default: false)"},
-			},
-		},
-	}, proxyHandlerWithTimeout(proxy, "ProjectOnboard", 30*time.Second))
-
-	// Knowledge pull tool — pull cloud documents to local store
 	reg.Register(mcp.ToolSchema{
 		Name:        "c4_knowledge_pull",
 		Description: "Pull knowledge documents from cloud to local store",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"doc_type": map[string]any{
-					"type":        "string",
-					"description": "Filter by type (experiment, pattern, insight, hypothesis)",
-				},
-				"limit": map[string]any{
-					"type":        "integer",
-					"description": "Max documents to pull (default: 50)",
-				},
-				"force": map[string]any{
-					"type":        "boolean",
-					"description": "Overwrite existing local docs (default: false)",
-				},
+				"doc_type": map[string]any{"type": "string", "description": "Filter by type (experiment, pattern, insight, hypothesis)"},
+				"limit":    map[string]any{"type": "integer", "description": "Max documents to pull (default: 50)"},
+				"force":    map[string]any{"type": "boolean", "description": "Overwrite existing local docs (default: false)"},
 			},
 		},
 	}, knowledgePullHandler(proxy, knowledgeCloud))
