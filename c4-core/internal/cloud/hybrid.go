@@ -36,6 +36,12 @@ func NewHybridStore(local, remote store.Store) *HybridStore {
 	}
 }
 
+// Local returns the underlying local store for type-specific operations
+// like ListTasks that aren't part of the Store interface.
+func (h *HybridStore) Local() store.Store {
+	return h.local
+}
+
 // asyncCloud runs a cloud operation in a goroutine. Failures are logged
 // but never propagated — the local store is the source of truth.
 func (h *HybridStore) asyncCloud(op string, fn func() error) {
