@@ -1018,6 +1018,56 @@ func TestAutoPromoteSkipsNonLHTask(t *testing.T) {
 	}
 }
 
+func TestAutoPromoteLighthouseHyphenatedName(t *testing.T) {
+	reg, store := setupLighthouseTest(t)
+
+	// Register lighthouse with hyphenated name (e.g., "my-cool-tool")
+	result := callLighthouse(t, reg, map[string]any{
+		"action":      "register",
+		"name":        "my-cool-tool",
+		"description": "Hyphenated name test",
+		"spec":        "Returns data",
+	})
+	taskID := result["task_id"].(string)
+	if taskID != "T-LH-my-cool-tool-0" {
+		t.Fatalf("task_id = %q, want T-LH-my-cool-tool-0", taskID)
+	}
+
+	// Wire registry
+	store.registry = reg
+
+	// Assign and submit
+	assignment, err := store.AssignTask("worker-1")
+	if err != nil {
+		t.Fatalf("AssignTask: %v", err)
+	}
+	if assignment.TaskID != taskID {
+		t.Fatalf("assigned = %q, want %q", assignment.TaskID, taskID)
+	}
+
+	submitResult, err := store.SubmitTask(taskID, "worker-1", "def456", "", nil)
+	if err != nil {
+		t.Fatalf("SubmitTask: %v", err)
+	}
+	if !submitResult.Success {
+		t.Fatalf("submit failed: %s", submitResult.Message)
+	}
+
+	// Lighthouse "my-cool-tool" should be promoted (LastIndex correctly parses hyphenated names)
+	lh, err := store.getLighthouse("my-cool-tool")
+	if err != nil {
+		t.Fatalf("getLighthouse: %v", err)
+	}
+	if lh.Status != "implemented" {
+		t.Errorf("lighthouse status = %q, want implemented", lh.Status)
+	}
+
+	// Stub should be removed from registry
+	if reg.HasTool("my-cool-tool") {
+		t.Error("stub should be removed from registry after auto-promote")
+	}
+}
+
 func TestLighthouseAutoTaskFailurePath(t *testing.T) {
 	reg, store := setupLighthouseTest(t)
 

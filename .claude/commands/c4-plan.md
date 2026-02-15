@@ -1213,13 +1213,13 @@ AskUserQuestion(questions=[
             # 설계에서 자동 추출된 후보들
             {"label": "{tool_name_1}", "description": "{description_1}"},
             {"label": "{tool_name_2}", "description": "{description_2}"},
-            {"label": "추가 정의", "description": "직접 도구 이름과 스펙 입력"}
+            {"label": "추가 정의", "description": "직접 도구 이름과 스펙 입력"},
+            {"label": "스킵 (새 도구 없음)", "description": "리팩토링/버그수정 등 새 MCP 도구가 없는 경우"}
         ],
         "multiSelect": True
     }
 ])
-# 참고: "스킵"은 옵션 목록에 없음 — 새 기능엔 Lighthouse 필수.
-# 리팩토링/버그수정 시에만 사용자가 직접 "해당 없음"을 입력.
+# "스킵" 선택 시 사유를 한 줄 입력받고, Phase 3으로 직행.
 ```
 
 #### 2.7.2 도구별 계약 정의 (Lighthouse Register)
