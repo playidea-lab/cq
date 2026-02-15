@@ -34,7 +34,7 @@ func newTestStore(serverURL string) *CloudStore {
 	return NewCloudStore(
 		serverURL+"/rest/v1",
 		"test-anon-key",
-		"test-jwt-token",
+		NewStaticTokenProvider("test-jwt-token"),
 		"proj-123",
 	)
 }

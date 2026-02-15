@@ -17,14 +17,15 @@ import (
 
 // Sidecar manages the Python bridge sidecar process.
 type Sidecar struct {
-	mu         sync.Mutex
-	cfg        *SidecarConfig
-	cmd        *exec.Cmd
-	addr       string // "host:port" once started
-	stopped    bool
-	restarts   int
-	healthStop chan struct{} // channel to stop health check goroutine
-	healthDone chan struct{} // channel to signal health check goroutine exited
+	mu            sync.Mutex
+	cfg           *SidecarConfig
+	cmd           *exec.Cmd
+	addr          string // "host:port" once started
+	stopped       bool
+	restarts      int
+	lastRestartAt time.Time    // time of last restart, for counter reset
+	healthStop    chan struct{} // channel to stop health check goroutine
+	healthDone    chan struct{} // channel to signal health check goroutine exited
 }
 
 // SidecarConfig holds configuration for the Python sidecar.
@@ -397,14 +398,20 @@ func (s *Sidecar) StopHealthCheck() {
 }
 
 // Restart stops the current sidecar and starts a new one.
-// Returns the new address. Max 3 restarts to avoid infinite loops.
+// Returns the new address. Max 5 restarts to avoid infinite loops.
+// The restart counter resets after 10 minutes of stability.
 func (s *Sidecar) Restart() (string, error) {
 	s.mu.Lock()
+	// Time-based counter reset: if last restart was >10min ago, reset counter
+	if !s.lastRestartAt.IsZero() && time.Since(s.lastRestartAt) > 10*time.Minute {
+		s.restarts = 0
+	}
 	if s.restarts >= 5 {
 		s.mu.Unlock()
 		return "", fmt.Errorf("sidecar restart limit reached (%d)", s.restarts)
 	}
 	s.restarts++
+	s.lastRestartAt = time.Now()
 	cfg := s.cfg
 
 	// Stop existing process group while holding lock to prevent concurrent access

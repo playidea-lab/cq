@@ -14,11 +14,11 @@ import (
 // KnowledgeCloudClient handles cloud sync for knowledge documents.
 // Uses the same PostgREST REST API pattern as CloudStore.
 type KnowledgeCloudClient struct {
-	baseURL    string // Supabase PostgREST URL
-	apiKey     string
-	authToken  string
-	projectID  string
-	httpClient *http.Client
+	baseURL       string // Supabase PostgREST URL
+	apiKey        string
+	tokenProvider *TokenProvider
+	projectID     string
+	httpClient    *http.Client
 }
 
 // cloudDocRow maps to the c4_documents Supabase table.
@@ -39,12 +39,12 @@ type cloudDocRow struct {
 }
 
 // NewKnowledgeCloudClient creates a new knowledge cloud sync client.
-func NewKnowledgeCloudClient(baseURL, apiKey, authToken, projectID string) *KnowledgeCloudClient {
+func NewKnowledgeCloudClient(baseURL, apiKey string, tp *TokenProvider, projectID string) *KnowledgeCloudClient {
 	return &KnowledgeCloudClient{
-		baseURL:   strings.TrimRight(baseURL, "/"),
-		apiKey:    apiKey,
-		authToken: authToken,
-		projectID: projectID,
+		baseURL:       strings.TrimRight(baseURL, "/"),
+		apiKey:        apiKey,
+		tokenProvider: tp,
+		projectID:     projectID,
 		httpClient: &http.Client{
 			Timeout: 15 * time.Second,
 		},
@@ -178,27 +178,38 @@ func (k *KnowledgeCloudClient) get(table, filter string, dest any) error {
 		reqURL += "?" + filter
 	}
 
-	req, err := http.NewRequest("GET", reqURL, nil)
-	if err != nil {
-		return err
-	}
-	k.setHeaders(req)
-
-	resp, err := k.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("GET %s: %w", table, err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode >= 400 {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("GET %s: %d %s", table, resp.StatusCode, string(body))
-	}
-
-	if dest != nil {
-		if err := json.NewDecoder(resp.Body).Decode(dest); err != nil {
-			return fmt.Errorf("decode %s: %w", table, err)
+	for attempt := 0; attempt < 2; attempt++ {
+		req, err := http.NewRequest("GET", reqURL, nil)
+		if err != nil {
+			return err
 		}
+		k.setHeaders(req)
+
+		resp, err := k.httpClient.Do(req)
+		if err != nil {
+			return fmt.Errorf("GET %s: %w", table, err)
+		}
+
+		if resp.StatusCode == http.StatusUnauthorized && attempt == 0 {
+			resp.Body.Close()
+			if _, err := k.tokenProvider.Refresh(); err == nil {
+				continue
+			}
+		}
+
+		defer resp.Body.Close()
+
+		if resp.StatusCode >= 400 {
+			body, _ := io.ReadAll(resp.Body)
+			return fmt.Errorf("GET %s: %d %s", table, resp.StatusCode, string(body))
+		}
+
+		if dest != nil {
+			if err := json.NewDecoder(resp.Body).Decode(dest); err != nil {
+				return fmt.Errorf("decode %s: %w", table, err)
+			}
+		}
+		return nil
 	}
 	return nil
 }
@@ -209,43 +220,65 @@ func (k *KnowledgeCloudClient) post(table string, body any) error {
 		return fmt.Errorf("marshal: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", k.baseURL+"/"+table, strings.NewReader(string(data)))
-	if err != nil {
-		return err
-	}
-	k.setHeaders(req)
-	req.Header.Set("Prefer", "return=minimal,resolution=merge-duplicates")
+	for attempt := 0; attempt < 2; attempt++ {
+		req, err := http.NewRequest("POST", k.baseURL+"/"+table, strings.NewReader(string(data)))
+		if err != nil {
+			return err
+		}
+		k.setHeaders(req)
+		req.Header.Set("Prefer", "return=minimal,resolution=merge-duplicates")
 
-	resp, err := k.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("POST %s: %w", table, err)
-	}
-	defer resp.Body.Close()
+		resp, err := k.httpClient.Do(req)
+		if err != nil {
+			return fmt.Errorf("POST %s: %w", table, err)
+		}
 
-	if resp.StatusCode >= 400 {
-		respBody, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("POST %s: %d %s", table, resp.StatusCode, string(respBody))
+		if resp.StatusCode == http.StatusUnauthorized && attempt == 0 {
+			resp.Body.Close()
+			if _, err := k.tokenProvider.Refresh(); err == nil {
+				continue
+			}
+		}
+
+		defer resp.Body.Close()
+
+		if resp.StatusCode >= 400 {
+			respBody, _ := io.ReadAll(resp.Body)
+			return fmt.Errorf("POST %s: %d %s", table, resp.StatusCode, string(respBody))
+		}
+		return nil
 	}
 	return nil
 }
 
 func (k *KnowledgeCloudClient) del(table, filter string) error {
 	reqURL := k.baseURL + "/" + table + "?" + filter
-	req, err := http.NewRequest("DELETE", reqURL, nil)
-	if err != nil {
-		return err
-	}
-	k.setHeaders(req)
+	for attempt := 0; attempt < 2; attempt++ {
+		req, err := http.NewRequest("DELETE", reqURL, nil)
+		if err != nil {
+			return err
+		}
+		k.setHeaders(req)
 
-	resp, err := k.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("DELETE %s: %w", table, err)
-	}
-	defer resp.Body.Close()
+		resp, err := k.httpClient.Do(req)
+		if err != nil {
+			return fmt.Errorf("DELETE %s: %w", table, err)
+		}
 
-	if resp.StatusCode >= 400 {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("DELETE %s: %d %s", table, resp.StatusCode, string(body))
+		if resp.StatusCode == http.StatusUnauthorized && attempt == 0 {
+			resp.Body.Close()
+			if _, err := k.tokenProvider.Refresh(); err == nil {
+				continue
+			}
+		}
+
+		defer resp.Body.Close()
+
+		if resp.StatusCode >= 400 {
+			body, _ := io.ReadAll(resp.Body)
+			return fmt.Errorf("DELETE %s: %d %s", table, resp.StatusCode, string(body))
+		}
+		return nil
 	}
 	return nil
 }
@@ -253,5 +286,5 @@ func (k *KnowledgeCloudClient) del(table, filter string) error {
 func (k *KnowledgeCloudClient) setHeaders(req *http.Request) {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("apikey", k.apiKey)
-	req.Header.Set("Authorization", "Bearer "+k.authToken)
+	req.Header.Set("Authorization", "Bearer "+k.tokenProvider.Token())
 }

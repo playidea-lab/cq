@@ -117,9 +117,9 @@ func newMCPServer() (*mcpServer, error) {
 	lazySidecar := bridge.NewLazyStarter(bridgeCfg)
 	fmt.Fprintln(os.Stderr, "c4: Python sidecar will start on first proxy tool call")
 
-	// Create KnowledgeCloudClient if cloud is enabled
+	// Create TokenProvider and KnowledgeCloudClient if cloud is enabled
 	var knowledgeCloud *cloud.KnowledgeCloudClient
-	var cloudAuthToken string
+	var cloudTP *cloud.TokenProvider
 	var cloudProjectID string
 	if cfgMgr != nil && cfgMgr.GetConfig().Cloud.Enabled {
 		cloudCfg := cfgMgr.GetConfig().Cloud
@@ -135,24 +135,30 @@ func newMCPServer() (*mcpServer, error) {
 						fmt.Fprintf(os.Stderr, "c4: cloud session expired, refresh failed: %v\n", refErr)
 					}
 				}
-				cloudAuthToken = session.AccessToken
+				cloudTP = cloud.NewTokenProvider(session.AccessToken, session.ExpiresAt, authClient)
 			}
 			cloudProjectID = cloudCfg.ProjectID
 			if cloudProjectID == "" {
 				cloudProjectID = cfgMgr.GetConfig().ProjectID
 			}
 			// Resolve project name to UUID if not already a UUID
-			if cloudAuthToken != "" && cloudProjectID != "" && !isUUID(cloudProjectID) {
-				if uuid, err := resolveProjectUUID(cloudCfg.URL, cloudCfg.AnonKey, cloudAuthToken, cloudProjectID); err == nil {
+			if cloudTP != nil && cloudProjectID != "" && !isUUID(cloudProjectID) {
+				if uuid, err := resolveProjectUUID(cloudCfg.URL, cloudCfg.AnonKey, cloudTP.Token(), cloudProjectID); err == nil {
 					fmt.Fprintf(os.Stderr, "c4: cloud project %q → %s\n", cloudProjectID, uuid)
 					cloudProjectID = uuid
 				} else {
 					fmt.Fprintf(os.Stderr, "c4: could not resolve project UUID: %v\n", err)
 				}
 			}
+			if cloudTP == nil {
+				cloudTP = cloud.NewStaticTokenProvider("")
+			}
 			knowledgeCloud = cloud.NewKnowledgeCloudClient(
-				cloudCfg.URL+"/rest/v1", cloudCfg.AnonKey, cloudAuthToken, cloudProjectID)
+				cloudCfg.URL+"/rest/v1", cloudCfg.AnonKey, cloudTP, cloudProjectID)
 		}
+	}
+	if cloudTP == nil {
+		cloudTP = cloud.NewStaticTokenProvider("")
 	}
 
 	// Create research store (optional — native research tools use this)
@@ -191,6 +197,12 @@ func newMCPServer() (*mcpServer, error) {
 	}
 	proxy := handlers.RegisterAllHandlersLazyWithOpts(reg, nil, projectDir, lazySidecar, knowledgeCloud, nativeOpts)
 
+	// Wire proxy restart and sidecar health check onRestart callback
+	proxy.SetRestarter(lazySidecar)
+	lazySidecar.SetOnRestart(func(newAddr string) {
+		proxy.UpdateAddr(newAddr)
+	})
+
 	// Create store with all options
 	storeOpts := []handlers.StoreOption{
 		handlers.WithProjectRoot(projectDir),
@@ -213,7 +225,7 @@ func newMCPServer() (*mcpServer, error) {
 		cloudCfg := cfgMgr.GetConfig().Cloud
 		if cloudCfg.URL != "" && cloudCfg.AnonKey != "" {
 			cloudURL := cloudCfg.URL + "/rest/v1"
-			cloudStore := cloud.NewCloudStore(cloudURL, cloudCfg.AnonKey, cloudAuthToken, cloudProjectID)
+			cloudStore := cloud.NewCloudStore(cloudURL, cloudCfg.AnonKey, cloudTP, cloudProjectID)
 			store = cloud.NewHybridStore(sqliteStore, cloudStore)
 			fmt.Fprintln(os.Stderr, "c4: cloud sync enabled (hybrid mode)")
 		} else {
@@ -267,7 +279,7 @@ func newMCPServer() (*mcpServer, error) {
 	if cfgMgr != nil && cfgMgr.GetConfig().Cloud.Enabled {
 		cloudCfg := cfgMgr.GetConfig().Cloud
 		if cloudCfg.URL != "" && cloudCfg.AnonKey != "" {
-			driveClient := drive.NewClient(cloudCfg.URL, cloudCfg.AnonKey, cloudAuthToken, cloudProjectID)
+			driveClient := drive.NewClient(cloudCfg.URL, cloudCfg.AnonKey, cloudTP, cloudProjectID)
 			handlers.RegisterDriveHandlers(reg, driveClient)
 			fmt.Fprintln(os.Stderr, "c4: drive enabled (6 tools)")
 		}
@@ -277,8 +289,8 @@ func newMCPServer() (*mcpServer, error) {
 	var keeper *handlers.ContextKeeper
 	if cfgMgr != nil && cfgMgr.GetConfig().Cloud.Enabled {
 		cloudCfg := cfgMgr.GetConfig().Cloud
-		if cloudCfg.URL != "" && cloudCfg.AnonKey != "" && cloudAuthToken != "" && cloudProjectID != "" {
-			c1Handler := handlers.NewC1Handler(cloudCfg.URL+"/rest/v1", cloudCfg.AnonKey, cloudAuthToken, cloudProjectID)
+		if cloudCfg.URL != "" && cloudCfg.AnonKey != "" && cloudTP.Token() != "" && cloudProjectID != "" {
+			c1Handler := handlers.NewC1Handler(cloudCfg.URL+"/rest/v1", cloudCfg.AnonKey, cloudTP, cloudProjectID)
 			handlers.RegisterC1Handlers(reg, c1Handler)
 
 			// Create ContextKeeper (wired to Dispatcher below)

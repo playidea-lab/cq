@@ -3,6 +3,7 @@ package bridge
 import (
 	"fmt"
 	"sync"
+	"time"
 )
 
 // LazyStarter wraps Sidecar with lazy initialization.
@@ -10,11 +11,12 @@ import (
 // This improves startup time and prevents errors when Python/uv is not available
 // but Go-native tools are sufficient.
 type LazyStarter struct {
-	mu      sync.Mutex
-	sidecar *Sidecar
-	cfg     *SidecarConfig
-	started bool
-	err     error
+	mu        sync.Mutex
+	sidecar   *Sidecar
+	cfg       *SidecarConfig
+	started   bool
+	err       error
+	onRestart func(string) // callback when sidecar restarts via health check
 }
 
 // NewLazyStarter creates a LazyStarter with the given config.
@@ -28,22 +30,34 @@ func NewLazyStarter(cfg *SidecarConfig) *LazyStarter {
 	}
 }
 
+// SetOnRestart sets a callback that is invoked when the sidecar restarts
+// via health check. Typically used to update the proxy address.
+func (l *LazyStarter) SetOnRestart(fn func(string)) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.onRestart = fn
+}
+
 // Addr returns the address of the sidecar, starting it if necessary.
 // On first call, it starts the sidecar. Subsequent calls return the cached address.
-// Returns empty string and error if startup fails.
+// If a previous start failed, retries once before returning the error.
 func (l *LazyStarter) Addr() (string, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
-	// Return cached result if already started (success or failure)
-	if l.started {
-		if l.err != nil {
-			return "", l.err
-		}
+	// If previously started successfully, return cached address
+	if l.started && l.err == nil && l.sidecar != nil {
 		return l.sidecar.Addr(), nil
 	}
 
-	// First call: start the sidecar
+	// If previous start failed, clear state to retry
+	if l.started && l.err != nil {
+		l.started = false
+		l.err = nil
+		l.sidecar = nil
+	}
+
+	// Start the sidecar
 	l.started = true
 	sidecar, err := StartSidecar(l.cfg)
 	if err != nil {
@@ -52,6 +66,10 @@ func (l *LazyStarter) Addr() (string, error) {
 	}
 
 	l.sidecar = sidecar
+
+	// Start health check after successful start
+	l.sidecar.StartHealthCheck(30*time.Second, l.onRestart)
+
 	return l.sidecar.Addr(), nil
 }
 
@@ -94,6 +112,7 @@ func (l *LazyStarter) Restart() (string, error) {
 		}
 		l.sidecar = sidecar
 		l.err = nil
+		l.sidecar.StartHealthCheck(30*time.Second, l.onRestart)
 		return l.sidecar.Addr(), nil
 	}
 

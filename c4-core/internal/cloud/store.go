@@ -25,20 +25,20 @@ var _ handlers.Store = (*CloudStore)(nil)
 
 // CloudStore implements handlers.Store using Supabase PostgREST REST API.
 type CloudStore struct {
-	baseURL    string       // Supabase PostgREST URL (e.g., https://xxx.supabase.co/rest/v1)
-	apiKey     string       // anon key
-	authToken  string       // user's JWT (from auth)
-	projectID  string       // cloud project ID for RLS
-	httpClient *http.Client
+	baseURL       string         // Supabase PostgREST URL (e.g., https://xxx.supabase.co/rest/v1)
+	apiKey        string         // anon key
+	tokenProvider *TokenProvider // manages JWT with auto-refresh
+	projectID     string         // cloud project ID for RLS
+	httpClient    *http.Client
 }
 
 // NewCloudStore creates a new Supabase-backed Store.
-func NewCloudStore(baseURL, apiKey, authToken, projectID string) *CloudStore {
+func NewCloudStore(baseURL, apiKey string, tp *TokenProvider, projectID string) *CloudStore {
 	return &CloudStore{
-		baseURL:   strings.TrimRight(baseURL, "/"),
-		apiKey:    apiKey,
-		authToken: authToken,
-		projectID: projectID,
+		baseURL:       strings.TrimRight(baseURL, "/"),
+		apiKey:        apiKey,
+		tokenProvider: tp,
+		projectID:     projectID,
 		httpClient: &http.Client{
 			Timeout: 15 * time.Second,
 		},
@@ -630,110 +630,158 @@ func rowToHandlersTask(row *cloudTaskRow) *handlers.Task {
 // =========================================================================
 
 // get performs a GET request and decodes the JSON response into dest.
+// Retries once on 401 Unauthorized after refreshing the token.
 func (c *CloudStore) get(table, filter string, dest any) error {
-	url := c.baseURL + "/" + table
+	u := c.baseURL + "/" + table
 	if filter != "" {
-		url += "?" + filter
+		u += "?" + filter
 	}
 
-	req, err := http.NewRequest("GET", url, nil)
-	if err != nil {
-		return err
-	}
-	c.setHeaders(req)
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("GET %s: %w", table, err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode >= 400 {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("GET %s: %d %s", table, resp.StatusCode, string(body))
-	}
-
-	if dest != nil {
-		if err := json.NewDecoder(resp.Body).Decode(dest); err != nil {
-			return fmt.Errorf("decode %s: %w", table, err)
+	for attempt := 0; attempt < 2; attempt++ {
+		req, err := http.NewRequest("GET", u, nil)
+		if err != nil {
+			return err
 		}
+		c.setHeaders(req)
+
+		resp, err := c.httpClient.Do(req)
+		if err != nil {
+			return fmt.Errorf("GET %s: %w", table, err)
+		}
+
+		if resp.StatusCode == http.StatusUnauthorized && attempt == 0 {
+			resp.Body.Close()
+			if _, err := c.tokenProvider.Refresh(); err == nil {
+				continue
+			}
+		}
+
+		defer resp.Body.Close()
+
+		if resp.StatusCode >= 400 {
+			body, _ := io.ReadAll(resp.Body)
+			return fmt.Errorf("GET %s: %d %s", table, resp.StatusCode, string(body))
+		}
+
+		if dest != nil {
+			if err := json.NewDecoder(resp.Body).Decode(dest); err != nil {
+				return fmt.Errorf("decode %s: %w", table, err)
+			}
+		}
+		return nil
 	}
 	return nil
 }
 
 // post performs a POST request with the given body.
+// Retries once on 401 Unauthorized after refreshing the token.
 func (c *CloudStore) post(table string, body any) error {
 	data, err := json.Marshal(body)
 	if err != nil {
 		return fmt.Errorf("marshal: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", c.baseURL+"/"+table, strings.NewReader(string(data)))
-	if err != nil {
-		return err
-	}
-	c.setHeaders(req)
-	req.Header.Set("Prefer", "return=minimal")
+	for attempt := 0; attempt < 2; attempt++ {
+		req, err := http.NewRequest("POST", c.baseURL+"/"+table, strings.NewReader(string(data)))
+		if err != nil {
+			return err
+		}
+		c.setHeaders(req)
+		req.Header.Set("Prefer", "return=minimal")
 
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("POST %s: %w", table, err)
-	}
-	defer resp.Body.Close()
+		resp, err := c.httpClient.Do(req)
+		if err != nil {
+			return fmt.Errorf("POST %s: %w", table, err)
+		}
 
-	if resp.StatusCode >= 400 {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("POST %s: %d %s", table, resp.StatusCode, string(body))
+		if resp.StatusCode == http.StatusUnauthorized && attempt == 0 {
+			resp.Body.Close()
+			if _, err := c.tokenProvider.Refresh(); err == nil {
+				continue
+			}
+		}
+
+		defer resp.Body.Close()
+
+		if resp.StatusCode >= 400 {
+			respBody, _ := io.ReadAll(resp.Body)
+			return fmt.Errorf("POST %s: %d %s", table, resp.StatusCode, string(respBody))
+		}
+		return nil
 	}
 	return nil
 }
 
 // patch performs a PATCH request with the given filter and body.
+// Retries once on 401 Unauthorized after refreshing the token.
 func (c *CloudStore) patch(table, filter string, body any) error {
 	data, err := json.Marshal(body)
 	if err != nil {
 		return fmt.Errorf("marshal: %w", err)
 	}
 
-	url := c.baseURL + "/" + table + "?" + filter
-	req, err := http.NewRequest("PATCH", url, strings.NewReader(string(data)))
-	if err != nil {
-		return err
-	}
-	c.setHeaders(req)
-	req.Header.Set("Prefer", "return=minimal")
+	u := c.baseURL + "/" + table + "?" + filter
+	for attempt := 0; attempt < 2; attempt++ {
+		req, err := http.NewRequest("PATCH", u, strings.NewReader(string(data)))
+		if err != nil {
+			return err
+		}
+		c.setHeaders(req)
+		req.Header.Set("Prefer", "return=minimal")
 
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("PATCH %s: %w", table, err)
-	}
-	defer resp.Body.Close()
+		resp, err := c.httpClient.Do(req)
+		if err != nil {
+			return fmt.Errorf("PATCH %s: %w", table, err)
+		}
 
-	if resp.StatusCode >= 400 {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("PATCH %s: %d %s", table, resp.StatusCode, string(body))
+		if resp.StatusCode == http.StatusUnauthorized && attempt == 0 {
+			resp.Body.Close()
+			if _, err := c.tokenProvider.Refresh(); err == nil {
+				continue
+			}
+		}
+
+		defer resp.Body.Close()
+
+		if resp.StatusCode >= 400 {
+			respBody, _ := io.ReadAll(resp.Body)
+			return fmt.Errorf("PATCH %s: %d %s", table, resp.StatusCode, string(respBody))
+		}
+		return nil
 	}
 	return nil
 }
 
 // del performs a DELETE request with the given filter.
+// Retries once on 401 Unauthorized after refreshing the token.
 func (c *CloudStore) del(table, filter string) error {
-	url := c.baseURL + "/" + table + "?" + filter
-	req, err := http.NewRequest("DELETE", url, nil)
-	if err != nil {
-		return err
-	}
-	c.setHeaders(req)
+	u := c.baseURL + "/" + table + "?" + filter
+	for attempt := 0; attempt < 2; attempt++ {
+		req, err := http.NewRequest("DELETE", u, nil)
+		if err != nil {
+			return err
+		}
+		c.setHeaders(req)
 
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("DELETE %s: %w", table, err)
-	}
-	defer resp.Body.Close()
+		resp, err := c.httpClient.Do(req)
+		if err != nil {
+			return fmt.Errorf("DELETE %s: %w", table, err)
+		}
 
-	if resp.StatusCode >= 400 {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("DELETE %s: %d %s", table, resp.StatusCode, string(body))
+		if resp.StatusCode == http.StatusUnauthorized && attempt == 0 {
+			resp.Body.Close()
+			if _, err := c.tokenProvider.Refresh(); err == nil {
+				continue
+			}
+		}
+
+		defer resp.Body.Close()
+
+		if resp.StatusCode >= 400 {
+			body, _ := io.ReadAll(resp.Body)
+			return fmt.Errorf("DELETE %s: %d %s", table, resp.StatusCode, string(body))
+		}
+		return nil
 	}
 	return nil
 }
@@ -742,5 +790,5 @@ func (c *CloudStore) del(table, filter string) error {
 func (c *CloudStore) setHeaders(req *http.Request) {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("apikey", c.apiKey)
-	req.Header.Set("Authorization", "Bearer "+c.authToken)
+	req.Header.Set("Authorization", "Bearer "+c.tokenProvider.Token())
 }

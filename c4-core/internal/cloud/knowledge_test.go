@@ -9,7 +9,7 @@ import (
 )
 
 func newTestKnowledgeClient(serverURL string) *KnowledgeCloudClient {
-	return NewKnowledgeCloudClient(serverURL, "test-key", "test-token", "proj-1")
+	return NewKnowledgeCloudClient(serverURL, "test-key", NewStaticTokenProvider("test-token"), "proj-1")
 }
 
 func TestSyncDocument(t *testing.T) {

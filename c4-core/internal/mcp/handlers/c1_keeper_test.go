@@ -16,7 +16,7 @@ func setupKeeperTest(t *testing.T, handler http.HandlerFunc) (*ContextKeeper, *l
 	ts := httptest.NewServer(handler)
 	t.Cleanup(ts.Close)
 
-	c1 := NewC1Handler(ts.URL, "test-key", "test-token", "proj-1")
+	c1 := NewC1Handler(ts.URL, "test-key", &staticTP{"test-token"}, "proj-1")
 
 	gw := llm.NewGateway(llm.RoutingTable{
 		Default: "mock",
@@ -153,7 +153,7 @@ func TestUpdateSummary_EmptyChannelNoop(t *testing.T) {
 }
 
 func TestUpdateSummary_NoGatewaySkips(t *testing.T) {
-	c1 := NewC1Handler("http://localhost", "key", "token", "proj")
+	c1 := NewC1Handler("http://localhost", "key", &staticTP{"token"}, "proj")
 	keeper := NewContextKeeper(c1, nil) // nil gateway
 
 	err := keeper.UpdateChannelSummary("ch-1")
@@ -533,7 +533,7 @@ func TestGetBriefing_CombinesSummaryAndMessages(t *testing.T) {
 	ts := httptest.NewServer(handler)
 	defer ts.Close()
 
-	c1 := NewC1Handler(ts.URL, "test-key", "test-token", "proj-1")
+	c1 := NewC1Handler(ts.URL, "test-key", &staticTP{"test-token"}, "proj-1")
 	result, err := c1.GetBriefing()
 	if err != nil {
 		t.Fatalf("GetBriefing: %v", err)

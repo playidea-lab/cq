@@ -304,3 +304,53 @@ func TestHealthCheckRestartsOnFailure(t *testing.T) {
 	// Note: The health check successfully restarted the sidecar (created new process)
 	// s.Stop() cleans up both the health check goroutine and the sidecar process
 }
+
+// TestRestartCounterResetsAfterTimeout verifies the restart counter resets
+// when lastRestartAt is more than 10 minutes in the past.
+func TestRestartCounterResetsAfterTimeout(t *testing.T) {
+	cfg := DefaultSidecarConfig()
+	s := &Sidecar{
+		cfg:           cfg,
+		restarts:      4,                                 // near limit
+		lastRestartAt: time.Now().Add(-11 * time.Minute), // >10 min ago
+		stopped:       true,
+	}
+
+	// Restart should succeed because counter resets (4→0, then 0→1)
+	_, err := s.Restart()
+	// StartSidecar will likely fail (no python), but the counter should have reset
+	s.mu.Lock()
+	count := s.restarts
+	s.mu.Unlock()
+
+	if count != 1 {
+		t.Fatalf("expected restarts=1 after time-based reset, got %d", count)
+	}
+	// err is expected (no python in test env) — that's fine
+	_ = err
+}
+
+// TestRestartCounterNoResetTooEarly verifies the restart counter does NOT reset
+// when lastRestartAt is less than 10 minutes ago.
+func TestRestartCounterNoResetTooEarly(t *testing.T) {
+	cfg := DefaultSidecarConfig()
+	s := &Sidecar{
+		cfg:           cfg,
+		restarts:      5,                               // at limit
+		lastRestartAt: time.Now().Add(-5 * time.Minute), // <10 min ago
+		stopped:       true,
+	}
+
+	_, err := s.Restart()
+	if err == nil {
+		t.Fatal("expected restart limit error when <10 min elapsed")
+	}
+
+	s.mu.Lock()
+	count := s.restarts
+	s.mu.Unlock()
+
+	if count != 5 {
+		t.Fatalf("expected restarts=5 (unchanged), got %d", count)
+	}
+}

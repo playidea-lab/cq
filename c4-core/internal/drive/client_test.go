@@ -12,6 +12,12 @@ import (
 	"testing"
 )
 
+// staticTP is a test-only tokenProvider that returns a fixed token.
+type staticTP struct{ token string }
+
+func (s *staticTP) Token() string              { return s.token }
+func (s *staticTP) Refresh() (string, error)   { return s.token, nil }
+
 // newTestServer creates an httptest server that simulates Supabase Storage + PostgREST.
 func newTestServer(t *testing.T) *httptest.Server {
 	t.Helper()
@@ -217,7 +223,7 @@ func TestUploadAndDownload(t *testing.T) {
 	srv := newTestServer(t)
 	defer srv.Close()
 
-	client := NewClient(srv.URL, "test-key", "test-token", "test-project")
+	client := NewClient(srv.URL, "test-key", &staticTP{"test-token"}, "test-project")
 
 	// Create a temp file to upload
 	tmpDir := t.TempDir()
@@ -264,7 +270,7 @@ func TestUploadWithMetadata(t *testing.T) {
 	srv := newTestServer(t)
 	defer srv.Close()
 
-	client := NewClient(srv.URL, "test-key", "test-token", "test-project")
+	client := NewClient(srv.URL, "test-key", &staticTP{"test-token"}, "test-project")
 
 	tmpDir := t.TempDir()
 	srcPath := filepath.Join(tmpDir, "meta.txt")
@@ -284,7 +290,7 @@ func TestList(t *testing.T) {
 	srv := newTestServer(t)
 	defer srv.Close()
 
-	client := NewClient(srv.URL, "test-key", "test-token", "test-project")
+	client := NewClient(srv.URL, "test-key", &staticTP{"test-token"}, "test-project")
 
 	// Create folder + files
 	if _, err := client.Mkdir("/docs", nil); err != nil {
@@ -318,7 +324,7 @@ func TestMkdir(t *testing.T) {
 	srv := newTestServer(t)
 	defer srv.Close()
 
-	client := NewClient(srv.URL, "test-key", "test-token", "test-project")
+	client := NewClient(srv.URL, "test-key", &staticTP{"test-token"}, "test-project")
 
 	info, err := client.Mkdir("/reports", nil)
 	if err != nil {
@@ -340,7 +346,7 @@ func TestDelete(t *testing.T) {
 	srv := newTestServer(t)
 	defer srv.Close()
 
-	client := NewClient(srv.URL, "test-key", "test-token", "test-project")
+	client := NewClient(srv.URL, "test-key", &staticTP{"test-token"}, "test-project")
 
 	tmpDir := t.TempDir()
 	srcPath := filepath.Join(tmpDir, "delete-me.txt")
@@ -370,7 +376,7 @@ func TestInfo(t *testing.T) {
 	srv := newTestServer(t)
 	defer srv.Close()
 
-	client := NewClient(srv.URL, "test-key", "test-token", "test-project")
+	client := NewClient(srv.URL, "test-key", &staticTP{"test-token"}, "test-project")
 
 	tmpDir := t.TempDir()
 	srcPath := filepath.Join(tmpDir, "info-test.txt")
@@ -400,7 +406,7 @@ func TestInfoNotFound(t *testing.T) {
 	srv := newTestServer(t)
 	defer srv.Close()
 
-	client := NewClient(srv.URL, "test-key", "test-token", "test-project")
+	client := NewClient(srv.URL, "test-key", &staticTP{"test-token"}, "test-project")
 
 	_, err := client.Info("/nonexistent.txt")
 	if err == nil {

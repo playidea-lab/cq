@@ -34,21 +34,28 @@ type FileInfo struct {
 	UpdatedAt   string          `json:"updated_at"`
 }
 
+// tokenProvider abstracts JWT token management for Supabase auth.
+// This local interface avoids importing the cloud package.
+type tokenProvider interface {
+	Token() string
+	Refresh() (string, error)
+}
+
 // Client provides access to C4 Drive (Supabase Storage + PostgREST metadata).
 type Client struct {
 	supabaseURL string // e.g. https://xxx.supabase.co
 	apiKey      string // anon key
-	authToken   string // user JWT
+	tp          tokenProvider
 	projectID   string // cloud project ID (UUID or name)
 	httpClient  *http.Client
 }
 
 // NewClient creates a new Drive client.
-func NewClient(supabaseURL, apiKey, authToken, projectID string) *Client {
+func NewClient(supabaseURL, apiKey string, tp tokenProvider, projectID string) *Client {
 	return &Client{
 		supabaseURL: strings.TrimRight(supabaseURL, "/"),
 		apiKey:      apiKey,
-		authToken:   authToken,
+		tp:          tp,
 		projectID:   projectID,
 		httpClient:  &http.Client{Timeout: 60 * time.Second},
 	}
@@ -407,7 +414,7 @@ func (c *Client) Info(drivePath string) (*FileInfo, error) {
 // setHeaders adds standard Supabase headers to the request.
 func (c *Client) setHeaders(req *http.Request) {
 	req.Header.Set("apikey", c.apiKey)
-	req.Header.Set("Authorization", "Bearer "+c.authToken)
+	req.Header.Set("Authorization", "Bearer "+c.tp.Token())
 }
 
 // normalizePath ensures a consistent path format: leading /, no trailing /.

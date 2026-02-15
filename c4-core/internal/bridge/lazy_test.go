@@ -223,3 +223,99 @@ func TestLazyStarterCachesError(t *testing.T) {
 		t.Errorf("expected same error message on second call: got %q, want %q", err2.Error(), err1.Error())
 	}
 }
+
+func TestLazyStarterRetriesOnCachedError(t *testing.T) {
+	// Both attempts will fail (invalid python), but the key is:
+	// Addr() retries instead of returning the cached error forever.
+	t.Setenv("PATH", "/nonexistent") // ensure no python fallback
+	cfg := &SidecarConfig{
+		PythonCommand: "nonexistent-python-command-retry-test",
+		PythonArgs:    []string{"-m", "c4.bridge.sidecar"},
+		Host:          "localhost",
+		Port:          0,
+		StartTimeout:  1 * time.Second,
+	}
+
+	lazy := NewLazyStarter(cfg)
+	defer lazy.Stop()
+
+	// First call fails
+	_, err1 := lazy.Addr()
+	if err1 == nil {
+		t.Fatal("expected error on first call")
+	}
+
+	// Verify internal state was reset for retry
+	lazy.mu.Lock()
+	started := lazy.started
+	cachedErr := lazy.err
+	lazy.mu.Unlock()
+
+	// After Addr() with retry logic, state should allow retry:
+	// started should be true (retry happened), err should still be set (retry also failed)
+	if !started {
+		t.Fatal("expected started=true after retry attempt")
+	}
+	if cachedErr == nil {
+		t.Fatal("expected err to be set (retry also failed with invalid python)")
+	}
+
+	// The important behavior: second Addr() call should attempt a fresh start,
+	// not just return the stale cached error from the first attempt.
+	_, err2 := lazy.Addr()
+	if err2 == nil {
+		t.Fatal("expected error on second call")
+	}
+
+	// Both errors should be fresh startup errors (not stale cached ones).
+	// The error is "lazy start: ..." which proves a new attempt was made.
+	if !strings.Contains(err2.Error(), "lazy start:") {
+		t.Fatalf("expected 'lazy start:' error on retry (fresh attempt), got: %v", err2)
+	}
+}
+
+func TestLazyStarterHealthCheckStartsAfterAddr(t *testing.T) {
+	cfg := &SidecarConfig{
+		PythonCommand: "python3",
+		PythonArgs:    []string{"-m", "c4.bridge.sidecar"},
+		Host:          "localhost",
+		Port:          0,
+		StartTimeout:  5 * time.Second,
+	}
+
+	var restartCalled bool
+	lazy := NewLazyStarter(cfg)
+	lazy.SetOnRestart(func(addr string) {
+		restartCalled = true
+	})
+	defer lazy.Stop()
+
+	addr, err := lazy.Addr()
+	if err != nil {
+		if !strings.Contains(err.Error(), "python not found") &&
+			!strings.Contains(err.Error(), "No module named") {
+			t.Skipf("skipping test: Python sidecar not available: %v", err)
+		}
+		return
+	}
+
+	if addr == "" {
+		t.Fatal("expected non-empty address")
+	}
+
+	// Verify health check was started (healthStop channel should be set)
+	lazy.mu.Lock()
+	sidecar := lazy.sidecar
+	lazy.mu.Unlock()
+
+	sidecar.mu.Lock()
+	hasHealthCheck := sidecar.healthStop != nil
+	sidecar.mu.Unlock()
+
+	if !hasHealthCheck {
+		t.Fatal("expected health check to be started after successful Addr()")
+	}
+
+	// restartCalled won't be true (sidecar is healthy), just verify callback was set
+	_ = restartCalled
+}

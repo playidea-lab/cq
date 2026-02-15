@@ -13,21 +13,28 @@ import (
 	"github.com/changmin/c4-core/internal/mcp"
 )
 
+// tokenProvider abstracts JWT token management for Supabase auth.
+// This local interface avoids importing the cloud package.
+type tokenProvider interface {
+	Token() string
+	Refresh() (string, error)
+}
+
 // C1Handler handles C1 (real-time collaboration) HTTP requests to Supabase.
 type C1Handler struct {
 	baseURL    string       // Supabase PostgREST URL (e.g., https://xxx.supabase.co/rest/v1)
 	apiKey     string       // anon key
-	authToken  string       // user's JWT
+	tp         tokenProvider
 	projectID  string       // project ID for filtering
 	httpClient *http.Client
 }
 
 // NewC1Handler creates a new C1Handler.
-func NewC1Handler(baseURL, apiKey, authToken, projectID string) *C1Handler {
+func NewC1Handler(baseURL, apiKey string, tp tokenProvider, projectID string) *C1Handler {
 	return &C1Handler{
 		baseURL:   strings.TrimRight(baseURL, "/"),
 		apiKey:    apiKey,
-		authToken: authToken,
+		tp:        tp,
 		projectID: projectID,
 		httpClient: &http.Client{
 			Timeout: 15 * time.Second,
@@ -66,33 +73,45 @@ type c1ChannelSummaryRow struct {
 }
 
 // httpGet performs a GET request and decodes JSON response.
+// Retries once on 401 Unauthorized after refreshing the token.
 func (h *C1Handler) httpGet(table, filter string, dest any) error {
 	u := h.baseURL + "/" + table
 	if filter != "" {
 		u += "?" + filter
 	}
 
-	req, err := http.NewRequest("GET", u, nil)
-	if err != nil {
-		return err
-	}
-	h.setHeaders(req)
-
-	resp, err := h.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("GET %s: %w", table, err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode >= 400 {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("GET %s: %d %s", table, resp.StatusCode, string(body))
-	}
-
-	if dest != nil {
-		if err := json.NewDecoder(resp.Body).Decode(dest); err != nil {
-			return fmt.Errorf("decode %s: %w", table, err)
+	for attempt := 0; attempt < 2; attempt++ {
+		req, err := http.NewRequest("GET", u, nil)
+		if err != nil {
+			return err
 		}
+		h.setHeaders(req)
+
+		resp, err := h.httpClient.Do(req)
+		if err != nil {
+			return fmt.Errorf("GET %s: %w", table, err)
+		}
+
+		if resp.StatusCode == http.StatusUnauthorized && attempt == 0 {
+			resp.Body.Close()
+			if _, err := h.tp.Refresh(); err == nil {
+				continue
+			}
+		}
+
+		defer resp.Body.Close()
+
+		if resp.StatusCode >= 400 {
+			body, _ := io.ReadAll(resp.Body)
+			return fmt.Errorf("GET %s: %d %s", table, resp.StatusCode, string(body))
+		}
+
+		if dest != nil {
+			if err := json.NewDecoder(resp.Body).Decode(dest); err != nil {
+				return fmt.Errorf("decode %s: %w", table, err)
+			}
+		}
+		return nil
 	}
 	return nil
 }
@@ -101,8 +120,8 @@ func (h *C1Handler) httpGet(table, filter string, dest any) error {
 func (h *C1Handler) setHeaders(req *http.Request) {
 	req.Header.Set("apikey", h.apiKey)
 	req.Header.Set("Content-Type", "application/json")
-	if h.authToken != "" {
-		req.Header.Set("Authorization", "Bearer "+h.authToken)
+	if token := h.tp.Token(); token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
 	}
 }
 

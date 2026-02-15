@@ -19,7 +19,7 @@ func TestE2EDrive(t *testing.T) {
 	if projectID == "" {
 		t.Skip("Skipping E2E: C4_CLOUD_PROJECT_UUID required")
 	}
-	client := NewClient(url, key, token, projectID)
+	client := NewClient(url, key, &staticTP{token: token}, projectID)
 
 	// Create test file
 	tmpFile := t.TempDir() + "/e2e_test.txt"
