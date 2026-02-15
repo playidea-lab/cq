@@ -171,10 +171,11 @@ Discovery(8): c4_save_spec, c4_get_spec, c4_list_specs,
             c4_save_design, c4_get_design, c4_list_designs,
             c4_discovery_complete, c4_design_complete
 Artifact(3): c4_artifact_save, c4_artifact_list, c4_artifact_get
-LSP(7):     c4_find_symbol, c4_get_symbols_overview,
+LSP(7):     c4_find_symbol, c4_get_symbols_overview,  ← Python/JS/TS only
             c4_replace_symbol_body, c4_insert_before_symbol,
             c4_insert_after_symbol, c4_rename_symbol,
             c4_find_referencing_symbols
+            ※ Go/Rust → c4_search_for_pattern 사용 (예: "^func ", "^type .* struct")
 지식(7):    c4_knowledge_search, c4_knowledge_record, c4_knowledge_get,
             c4_knowledge_pull,
             c4_experiment_record, c4_experiment_search, c4_pattern_suggest
@@ -303,6 +304,8 @@ cd c4-core && go build -o bin/c4 ./cmd/c4/
 Go MCP Server ──JSON-RPC/TCP──→ Python Sidecar (10 tools)
                                   ├→ LSP (7): find_symbol, get_overview, replace_body,
                                   │          insert_before/after, rename, find_refs
+                                  │          ※ Python/JS/TS only (Jedi+multilspy)
+                                  │          ※ Go/Rust → c4_search_for_pattern 대체
                                   ├→ C2 Doc (2): parse_document, extract_text
                                   └→ Onboard (1): c4_onboard
 ```

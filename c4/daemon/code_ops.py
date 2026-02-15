@@ -95,6 +95,38 @@ class CodeOps:
     # Symbol Operations
     # =========================================================================
 
+    # Languages supported by LSP tools (Jedi + multilspy)
+    _SUPPORTED_EXTENSIONS = {".py", ".pyi", ".js", ".jsx", ".ts", ".tsx"}
+    _UNSUPPORTED_ALTERNATIVES = {
+        ".go": "Go",
+        ".rs": "Rust",
+        ".java": "Java",
+        ".rb": "Ruby",
+        ".cs": "C#",
+        ".c": "C",
+        ".cpp": "C++",
+        ".h": "C/C++",
+    }
+
+    def _check_unsupported_language(self, relative_path: str) -> dict[str, Any] | None:
+        """Return error dict if path points to an unsupported language, else None."""
+        from pathlib import Path as P
+
+        path = P(self._daemon.root) / relative_path
+        if path.is_file():
+            ext = path.suffix.lower()
+            if ext and ext not in self._SUPPORTED_EXTENSIONS:
+                lang = self._UNSUPPORTED_ALTERNATIVES.get(ext, ext)
+                return {
+                    "success": False,
+                    "error": f"{lang} is not supported by LSP tools (Python/JS/TS only)",
+                    "hint": f"Use c4_search_for_pattern instead. Examples for {lang}:"
+                    + " 'func \\\\w+' (functions), 'type \\\\w+ struct' (structs)"
+                    if ext == ".go"
+                    else f"Use c4_search_for_pattern with regex to search {lang} files",
+                }
+        return None
+
     def _get_symbol_by_name_path(
         self,
         name_path: str,
@@ -289,6 +321,11 @@ class CodeOps:
                 "hint": "Use path parameter, e.g., path='c4/lsp/provider.py'",
             }
 
+        # Check for unsupported languages
+        unsupported = self._check_unsupported_language(relative_path)
+        if unsupported:
+            return unsupported
+
         try:
             from c4.lsp.unified_provider import find_symbol_unified
 
@@ -333,6 +370,11 @@ class CodeOps:
         Returns:
             Dictionary with symbols grouped by kind
         """
+        # Check for unsupported languages
+        unsupported = self._check_unsupported_language(relative_path)
+        if unsupported:
+            return unsupported
+
         try:
             from c4.lsp.unified_provider import get_symbols_overview_unified
 

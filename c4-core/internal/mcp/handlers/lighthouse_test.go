@@ -301,14 +301,24 @@ func TestLighthouseRemove(t *testing.T) {
 func TestLighthouseNameCollision(t *testing.T) {
 	reg, _ := setupLighthouseTest(t)
 
-	// c4_status is a core tool — should be rejected
+	// c4_status is a core tool — should be registered as "implemented" (documentation-only)
+	m := callLighthouse(t, reg, map[string]any{
+		"action":      "register",
+		"name":        "c4_status",
+		"description": "Project status overview",
+	})
+	if m["status"] != "implemented" {
+		t.Errorf("status = %v, want implemented", m["status"])
+	}
+
+	// Duplicate lighthouse name (already exists as implemented) — should be rejected
 	callLighthouseExpectErr(t, reg, map[string]any{
 		"action":      "register",
 		"name":        "c4_status",
-		"description": "Should fail",
+		"description": "Duplicate",
 	})
 
-	// Duplicate lighthouse name
+	// Duplicate stub lighthouse name
 	callLighthouse(t, reg, map[string]any{"action": "register", "name": "lh_dup", "description": "First"})
 	callLighthouseExpectErr(t, reg, map[string]any{
 		"action":      "register",

@@ -97,6 +97,46 @@ func RegisterLighthouseHandlers(reg *mcp.Registry, store *SQLiteStore) {
 	})
 }
 
+// lighthouseRegisterExisting saves a lighthouse record for an already-implemented core tool.
+// No MCP stub is created — the real tool stays in the registry unchanged.
+// No auto-task is created — the tool is already implemented.
+func lighthouseRegisterExisting(store *SQLiteStore, name, description, inputSchema, spec, agentID string) (any, error) {
+	if inputSchema == "" {
+		inputSchema = `{"type":"object"}`
+	}
+	if inputSchema != `{"type":"object"}` {
+		var tmp map[string]any
+		if err := json.Unmarshal([]byte(inputSchema), &tmp); err != nil {
+			return nil, fmt.Errorf("input_schema is not valid JSON: %w", err)
+		}
+	}
+
+	lh := &Lighthouse{
+		Name:        name,
+		Description: description,
+		InputSchema: inputSchema,
+		Spec:        spec,
+		Status:      "implemented",
+		Version:     1,
+		CreatedBy:   agentID,
+		PromotedBy:  "pre-existing",
+	}
+
+	if err := store.saveLighthouse(lh); err != nil {
+		return nil, fmt.Errorf("saving lighthouse: %w", err)
+	}
+
+	store.logTrace("lighthouse_register_existing", agentID, name, "registered as pre-existing implemented tool")
+
+	return map[string]any{
+		"success": true,
+		"message": fmt.Sprintf("Lighthouse '%s' registered as pre-existing implemented tool (documentation-only)", name),
+		"name":    name,
+		"status":  "implemented",
+		"version": 1,
+	}, nil
+}
+
 // lighthouseRegister creates a new lighthouse stub and registers it in the MCP registry.
 func lighthouseRegister(reg *mcp.Registry, store *SQLiteStore, name, description, inputSchema, spec, agentID string, autoTask bool) (any, error) {
 	if name == "" {
@@ -109,13 +149,15 @@ func lighthouseRegister(reg *mcp.Registry, store *SQLiteStore, name, description
 		return nil, fmt.Errorf("description is required for register")
 	}
 
-	// Check for name collision with existing non-lighthouse tools
+	// Check for existing lighthouse record
 	existing, _ := store.getLighthouse(name)
 	if existing != nil {
 		return nil, fmt.Errorf("lighthouse '%s' already exists (status: %s)", name, existing.Status)
 	}
+
+	// If a core tool already exists, register as "implemented" (documentation-only mode)
 	if reg.HasTool(name) {
-		return nil, fmt.Errorf("tool '%s' already registered as a core tool — choose a different name", name)
+		return lighthouseRegisterExisting(store, name, description, inputSchema, spec, agentID)
 	}
 
 	if inputSchema == "" {
@@ -449,9 +491,9 @@ func LoadLighthousesOnStartup(reg *mcp.Registry, store *SQLiteStore) int {
 func (s *SQLiteStore) saveLighthouse(lh *Lighthouse) error {
 	now := time.Now().UTC().Format(time.RFC3339)
 	_, err := s.db.Exec(`
-		INSERT INTO c4_lighthouses (name, description, input_schema, spec, status, version, created_by, task_id, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		lh.Name, lh.Description, lh.InputSchema, lh.Spec, lh.Status, lh.Version, lh.CreatedBy, lh.TaskID, now, now,
+		INSERT INTO c4_lighthouses (name, description, input_schema, spec, status, version, created_by, promoted_by, task_id, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		lh.Name, lh.Description, lh.InputSchema, lh.Spec, lh.Status, lh.Version, lh.CreatedBy, lh.PromotedBy, lh.TaskID, now, now,
 	)
 	return err
 }

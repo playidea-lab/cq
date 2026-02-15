@@ -522,36 +522,38 @@ func knowledgePullHandler(proxy *BridgeProxy, kc KnowledgeSyncer) mcp.HandlerFun
 // RegisterProxyHandlers registers MCP tools that are proxied to the Python sidecar.
 // These tools require Python dependencies: LSP (7) + Onboard (1) = 8 tools.
 // Knowledge tools (7) moved to Go native — see knowledge_native.go.
-func RegisterProxyHandlers(reg *mcp.Registry, proxy *BridgeProxy) {
-	// LSP tools (6) — delegated to Python tree-sitter + multilspy + Jedi
+func RegisterProxyHandlers(reg *mcp.Registry, proxy *BridgeProxy, rootDir string) {
+	// LSP tools (7) — Python Jedi/multilspy for Python/JS/TS, go/ast for Go
+	// find_symbol + get_symbols_overview: Go-aware (auto-routes .go files to native parser)
+	// replace/insert/rename/refs: Python/JS/TS only
 	reg.Register(mcp.ToolSchema{
 		Name:        "c4_find_symbol",
-		Description: "Find symbol definitions by name across the project",
+		Description: "Find symbol definitions by name across the project. Supports Python/JS/TS only — for Go/Rust use c4_search_for_pattern instead. Name must be exact match (e.g. 'MyClass' not 'My'). Path is required to avoid timeout.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"name": map[string]any{"type": "string", "description": "Symbol name to find"},
+				"name": map[string]any{"type": "string", "description": "Symbol name to find (exact match, e.g. 'MyClass' or 'MyClass/method')"},
 				"path": map[string]any{"type": "string", "description": "File or directory path to scope search (recommended — omitting may timeout)"},
 			},
 			"required": []string{"name"},
 		},
-	}, proxyHandler(proxy, "FindSymbol"))
+	}, goAwareFindSymbol(proxy, rootDir))
 
 	reg.Register(mcp.ToolSchema{
 		Name:        "c4_get_symbols_overview",
-		Description: "Get overview of all symbols in a file",
+		Description: "Get overview of all symbols in a file. Supports Python/JS/TS and Go",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"path": map[string]any{"type": "string", "description": "File path"},
+				"path": map[string]any{"type": "string", "description": "File path (Python/JS/TS only)"},
 			},
 			"required": []string{"path"},
 		},
-	}, proxyHandler(proxy, "GetSymbolsOverview"))
+	}, goAwareSymbolsOverview(proxy, rootDir))
 
 	reg.Register(mcp.ToolSchema{
 		Name:        "c4_replace_symbol_body",
-		Description: "Replace the body of a symbol (function, class, method)",
+		Description: "Replace the body of a symbol (function, class, method). Python/JS/TS only",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -565,7 +567,7 @@ func RegisterProxyHandlers(reg *mcp.Registry, proxy *BridgeProxy) {
 
 	reg.Register(mcp.ToolSchema{
 		Name:        "c4_insert_before_symbol",
-		Description: "Insert content before a symbol definition",
+		Description: "Insert content before a symbol definition. Python/JS/TS only",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -579,7 +581,7 @@ func RegisterProxyHandlers(reg *mcp.Registry, proxy *BridgeProxy) {
 
 	reg.Register(mcp.ToolSchema{
 		Name:        "c4_insert_after_symbol",
-		Description: "Insert content after a symbol definition",
+		Description: "Insert content after a symbol definition. Python/JS/TS only",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -593,7 +595,7 @@ func RegisterProxyHandlers(reg *mcp.Registry, proxy *BridgeProxy) {
 
 	reg.Register(mcp.ToolSchema{
 		Name:        "c4_rename_symbol",
-		Description: "Rename a symbol across all references",
+		Description: "Rename a symbol across all references. Python/JS/TS only",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -608,7 +610,7 @@ func RegisterProxyHandlers(reg *mcp.Registry, proxy *BridgeProxy) {
 	// LSP tool: find referencing symbols — delegated to Python
 	reg.Register(mcp.ToolSchema{
 		Name:        "c4_find_referencing_symbols",
-		Description: "Find all references to a symbol across the project",
+		Description: "Find all references to a symbol across the project. Python/JS/TS only",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{

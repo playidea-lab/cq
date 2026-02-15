@@ -70,7 +70,8 @@ func RegisterAllHandlersWithOpts(reg *mcp.Registry, store Store, rootDir string,
 	}
 
 	// Register proxy tools (LSP + Onboard — still Python-dependent)
-	RegisterProxyHandlers(reg, proxy)
+	// rootDir enables Go-native symbol parsing for .go files via go/ast
+	RegisterProxyHandlers(reg, proxy, rootDir)
 
 	// Register native tools that replaced proxy calls (Research, GPU, C2, Knowledge)
 	registerNativeReplacements(reg, proxy, opts, knowledgeCloud)
