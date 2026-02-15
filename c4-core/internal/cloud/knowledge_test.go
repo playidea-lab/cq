@@ -252,9 +252,13 @@ func TestListDocuments_IncludesContentHash(t *testing.T) {
 func TestDeleteDocument(t *testing.T) {
 	var receivedMethod string
 	var receivedURL string
+	var receivedBody string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		receivedMethod = r.Method
 		receivedURL = r.URL.String()
+		buf := make([]byte, 4096)
+		n, _ := r.Body.Read(buf)
+		receivedBody = string(buf[:n])
 		w.WriteHeader(http.StatusNoContent)
 	}))
 	defer srv.Close()
@@ -264,11 +268,15 @@ func TestDeleteDocument(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DeleteDocument failed: %v", err)
 	}
-	if receivedMethod != "DELETE" {
-		t.Errorf("method = %s, want DELETE", receivedMethod)
+	// Soft delete uses PATCH with deleted_at
+	if receivedMethod != "PATCH" {
+		t.Errorf("method = %s, want PATCH (soft delete)", receivedMethod)
 	}
 	if !strings.Contains(receivedURL, "doc_id=eq.exp-001") {
 		t.Errorf("URL should contain doc_id filter, got: %s", receivedURL)
+	}
+	if !strings.Contains(receivedBody, "deleted_at") {
+		t.Errorf("body should contain deleted_at for soft delete, got: %s", receivedBody)
 	}
 }
 

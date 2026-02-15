@@ -13,10 +13,11 @@ import (
 type KnowledgeNativeOpts struct {
 	Store    *knowledge.Store
 	Searcher *knowledge.Searcher
-	Cloud    knowledge.CloudSyncer // nil if cloud disabled
+	Cloud    knowledge.CloudSyncer     // nil if cloud disabled
+	Usage    *knowledge.UsageTracker   // nil if usage tracking disabled
 }
 
-// RegisterKnowledgeNativeHandlers registers 7 knowledge tools as Go native handlers.
+// RegisterKnowledgeNativeHandlers registers 12 knowledge tools as Go native handlers.
 // Replaces the proxy-based knowledge tools in RegisterProxyHandlers.
 func RegisterKnowledgeNativeHandlers(reg *mcp.Registry, opts *KnowledgeNativeOpts) {
 	if opts == nil || opts.Store == nil {
@@ -33,7 +34,8 @@ func RegisterKnowledgeNativeHandlers(reg *mcp.Registry, opts *KnowledgeNativeOpt
 				"doc_type": map[string]any{"type": "string", "description": "Document type: experiment, pattern, insight, hypothesis"},
 				"title":    map[string]any{"type": "string", "description": "Document title"},
 				"content":  map[string]any{"type": "string", "description": "Document content (markdown)"},
-				"tags":     map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Optional tags"},
+				"tags":       map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Optional tags"},
+				"visibility": map[string]any{"type": "string", "description": "Visibility: private, team, public (default: team)"},
 			},
 			"required": []string{"doc_type", "title", "content"},
 		},
@@ -135,6 +137,58 @@ func RegisterKnowledgeNativeHandlers(reg *mcp.Registry, opts *KnowledgeNativeOpt
 			"required": []string{"doc_id"},
 		},
 	}, knowledgeDeleteNativeHandler(opts))
+
+	// 9. c4_knowledge_discover — cross-project public knowledge search
+	reg.Register(mcp.ToolSchema{
+		Name:        "c4_knowledge_discover",
+		Description: "Search public knowledge documents across all projects for cross-project discovery",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"query":    map[string]any{"type": "string", "description": "Search query"},
+				"doc_type": map[string]any{"type": "string", "description": "Filter by type (experiment, pattern, insight, hypothesis)"},
+				"limit":    map[string]any{"type": "integer", "description": "Max results (default: 10)"},
+			},
+			"required": []string{"query"},
+		},
+	}, knowledgeDiscoverNativeHandler(opts))
+
+	// 10. c4_knowledge_ingest — document ingestion (file → chunk → embed → search)
+	reg.Register(mcp.ToolSchema{
+		Name:        "c4_knowledge_ingest",
+		Description: "Ingest a document file into knowledge base with chunking and embedding for RAG search",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"file_path":  map[string]any{"type": "string", "description": "Path to the document file to ingest"},
+				"title":      map[string]any{"type": "string", "description": "Optional title override (defaults to filename)"},
+				"tags":       map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Optional tags"},
+				"visibility": map[string]any{"type": "string", "description": "Visibility: private, team, public (default: team)"},
+				"max_tokens": map[string]any{"type": "integer", "description": "Chunk size in tokens (default: 512)"},
+			},
+			"required": []string{"file_path"},
+		},
+	}, knowledgeIngestNativeHandler(opts))
+
+	// 11. c4_knowledge_stats
+	reg.Register(mcp.ToolSchema{
+		Name:        "c4_knowledge_stats",
+		Description: "Get knowledge base statistics: document counts by type and visibility",
+		InputSchema: map[string]any{
+			"type":       "object",
+			"properties": map[string]any{},
+		},
+	}, knowledgeStatsNativeHandler(opts))
+
+	// 12. c4_knowledge_reindex
+	reg.Register(mcp.ToolSchema{
+		Name:        "c4_knowledge_reindex",
+		Description: "Rebuild the knowledge search index from Markdown source files",
+		InputSchema: map[string]any{
+			"type":       "object",
+			"properties": map[string]any{},
+		},
+	}, knowledgeReindexNativeHandler(opts))
 }
 
 // =========================================================================
@@ -155,10 +209,13 @@ func knowledgeRecordNativeHandler(opts *KnowledgeNativeOpts) mcp.HandlerFunc {
 		}
 		body, _ := params["content"].(string)
 
+		visibility, _ := params["visibility"].(string)
+
 		metadata := map[string]any{
-			"title":  title,
-			"domain": params["domain"],
-			"tags":   params["tags"],
+			"title":      title,
+			"domain":     params["domain"],
+			"tags":       params["tags"],
+			"visibility": visibility,
 		}
 		// Copy extra fields
 		for _, key := range []string{"id", "task_id", "hypothesis", "hypothesis_status",
@@ -211,6 +268,11 @@ func knowledgeGetNativeHandler(opts *KnowledgeNativeOpts) mcp.HandlerFunc {
 		}
 		if doc == nil {
 			return map[string]any{"error": fmt.Sprintf("Document not found: %s", docID)}, nil
+		}
+
+		// Track usage
+		if opts.Usage != nil {
+			opts.Usage.Record(docID, knowledge.ActionView)
 		}
 
 		return documentToMap(doc), nil
@@ -272,6 +334,13 @@ func knowledgeSearchNativeHandler(opts *KnowledgeNativeOpts) mcp.HandlerFunc {
 				"type":      r.Type,
 				"domain":    r.Domain,
 				"rrf_score": r.RRFScore,
+			}
+		}
+
+		// Track search_hit usage
+		if opts.Usage != nil {
+			for _, r := range results {
+				opts.Usage.Record(r.ID, knowledge.ActionSearchHit)
 			}
 		}
 
@@ -509,6 +578,7 @@ func documentToMap(doc *knowledge.Document) map[string]any {
 		"domain":     doc.Domain,
 		"tags":       doc.Tags,
 		"body":       doc.Body,
+		"visibility": doc.Visibility,
 		"created_at": doc.CreatedAt,
 		"updated_at": doc.UpdatedAt,
 		"version":    doc.Version,
@@ -559,9 +629,170 @@ func knowledgeDeleteNativeHandler(opts *KnowledgeNativeOpts) mcp.HandlerFunc {
 		// Also remove vector embedding (shares same DB, separate table)
 		opts.Store.DB().Exec("DELETE FROM knowledge_vectors WHERE doc_id = ?", docID)
 
+		// Cloud soft-delete (async)
+		if opts.Cloud != nil {
+			go func() {
+				if delErr := opts.Cloud.DeleteDocument(docID); delErr != nil {
+					fmt.Fprintf(os.Stderr, "c4: knowledge cloud delete: %v\n", delErr)
+				}
+			}()
+		}
+
 		return map[string]any{
 			"deleted": true,
 			"doc_id":  docID,
+		}, nil
+	}
+}
+
+func knowledgeDiscoverNativeHandler(opts *KnowledgeNativeOpts) mcp.HandlerFunc {
+	return func(rawArgs json.RawMessage) (any, error) {
+		if opts.Cloud == nil {
+			return map[string]any{"error": "cloud not configured — discover requires cloud connection"}, nil
+		}
+
+		params := parseParams(rawArgs)
+		query, _ := params["query"].(string)
+		if query == "" {
+			return map[string]any{"error": "query is required"}, nil
+		}
+
+		docType, _ := params["doc_type"].(string)
+		limit := 10
+		if l, ok := params["limit"].(float64); ok && l > 0 {
+			limit = int(l)
+		}
+
+		docs, err := opts.Cloud.DiscoverPublic(query, docType, limit)
+		if err != nil {
+			return map[string]any{"error": fmt.Sprintf("discover failed: %v", err)}, nil
+		}
+
+		return map[string]any{
+			"results": docs,
+			"count":   len(docs),
+		}, nil
+	}
+}
+
+func knowledgeIngestNativeHandler(opts *KnowledgeNativeOpts) mcp.HandlerFunc {
+	return func(rawArgs json.RawMessage) (any, error) {
+		params := parseParams(rawArgs)
+		filePath, _ := params["file_path"].(string)
+		if filePath == "" {
+			return map[string]any{"error": "file_path is required"}, nil
+		}
+
+		title, _ := params["title"].(string)
+		visibility, _ := params["visibility"].(string)
+		maxTokens := 512
+		if mt, ok := params["max_tokens"].(float64); ok && mt > 0 {
+			maxTokens = int(mt)
+		}
+
+		var tags []string
+		if rawTags, ok := params["tags"]; ok {
+			tags = toStringSliceAny(rawTags)
+		}
+
+		ingestOpts := knowledge.IngestOpts{
+			Title:      title,
+			Tags:       tags,
+			Visibility: visibility,
+			MaxTokens:  maxTokens,
+		}
+
+		result, err := knowledge.Ingest(opts.Store, opts.Searcher, filePath, ingestOpts)
+		if err != nil {
+			return map[string]any{"error": fmt.Sprintf("ingest failed: %v", err)}, nil
+		}
+
+		return map[string]any{
+			"success":     true,
+			"doc_id":      result.DocID,
+			"title":       result.Title,
+			"chunk_count": result.ChunkCount,
+			"body_length": result.BodyLen,
+		}, nil
+	}
+}
+
+func toStringSliceAny(v any) []string {
+	if v == nil {
+		return nil
+	}
+	switch t := v.(type) {
+	case []string:
+		return t
+	case []any:
+		var result []string
+		for _, item := range t {
+			if s, ok := item.(string); ok {
+				result = append(result, s)
+			}
+		}
+		return result
+	}
+	return nil
+}
+
+func knowledgeStatsNativeHandler(opts *KnowledgeNativeOpts) mcp.HandlerFunc {
+	return func(rawArgs json.RawMessage) (any, error) {
+		// Count by type
+		allDocs, err := opts.Store.List("", "", 10000)
+		if err != nil {
+			return map[string]any{"error": fmt.Sprintf("list failed: %v", err)}, nil
+		}
+
+		typeCounts := map[string]int{}
+		visCounts := map[string]int{}
+		for _, d := range allDocs {
+			dt, _ := d["type"].(string)
+			typeCounts[dt]++
+		}
+
+		// Read visibility from docs (need full read for visibility field)
+		for _, d := range allDocs {
+			docID, _ := d["id"].(string)
+			doc, _ := opts.Store.Get(docID)
+			if doc != nil {
+				vis := doc.Visibility
+				if vis == "" {
+					vis = "team"
+				}
+				visCounts[vis]++
+			}
+		}
+
+		stats := map[string]any{
+			"total":          len(allDocs),
+			"by_type":        typeCounts,
+			"by_visibility":  visCounts,
+		}
+
+		// Vector store stats
+		if opts.Searcher != nil && opts.Searcher.VectorStore() != nil {
+			vs := opts.Searcher.VectorStore()
+			stats["vector_count"] = vs.Count()
+			stats["vector_dimension"] = vs.Dimension()
+			stats["has_real_embedder"] = vs.HasRealEmbedder()
+		}
+
+		return stats, nil
+	}
+}
+
+func knowledgeReindexNativeHandler(opts *KnowledgeNativeOpts) mcp.HandlerFunc {
+	return func(rawArgs json.RawMessage) (any, error) {
+		count, err := opts.Store.RebuildIndex()
+		if err != nil {
+			return map[string]any{"error": fmt.Sprintf("reindex failed: %v", err)}, nil
+		}
+
+		return map[string]any{
+			"success":  true,
+			"indexed":  count,
+			"docs_dir": opts.Store.DocsDir(),
 		}, nil
 	}
 }

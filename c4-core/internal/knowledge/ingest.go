@@ -1,0 +1,168 @@
+package knowledge
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
+)
+
+// IngestOpts configures document ingestion.
+type IngestOpts struct {
+	Title      string   // optional override; defaults to filename
+	Tags       []string // optional tags
+	Visibility string   // private, team, public (default: team)
+	MaxTokens  int      // chunk size in tokens (default: 512)
+}
+
+// IngestResult holds the outcome of a document ingestion.
+type IngestResult struct {
+	DocID      string `json:"doc_id"`
+	Title      string `json:"title"`
+	ChunkCount int    `json:"chunk_count"`
+	BodyLen    int    `json:"body_length"`
+}
+
+// Ingest reads a text file, chunks it, and stores each chunk as an indexed document.
+// The parent document is stored with the full body, and chunks are stored in the
+// local vector store for semantic search.
+func Ingest(store *Store, searcher *Searcher, filePath string, opts IngestOpts) (*IngestResult, error) {
+	// Read file
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		return nil, fmt.Errorf("read file: %w", err)
+	}
+	body := string(data)
+	if strings.TrimSpace(body) == "" {
+		return nil, fmt.Errorf("file is empty: %s", filePath)
+	}
+
+	// Determine title
+	title := opts.Title
+	if title == "" {
+		title = strings.TrimSuffix(filepath.Base(filePath), filepath.Ext(filePath))
+	}
+
+	visibility := opts.Visibility
+	if visibility == "" {
+		visibility = "team"
+	}
+
+	// Create parent document
+	metadata := map[string]any{
+		"title":      title,
+		"tags":       opts.Tags,
+		"visibility": visibility,
+		"domain":     "ingested",
+	}
+
+	docID, err := store.Create(TypeInsight, metadata, body)
+	if err != nil {
+		return nil, fmt.Errorf("create document: %w", err)
+	}
+
+	// Chunk the body
+	maxTokens := opts.MaxTokens
+	if maxTokens <= 0 {
+		maxTokens = 512
+	}
+	chunks := ChunkText(body, maxTokens)
+
+	// Index each chunk for vector search
+	if searcher != nil && searcher.vectorStore != nil {
+		for _, chunk := range chunks {
+			chunkID := fmt.Sprintf("%s-chunk-%d", docID, chunk.Index)
+			chunkDoc := &Document{
+				ID:        chunkID,
+				Type:      TypeInsight,
+				Title:     fmt.Sprintf("%s (chunk %d)", title, chunk.Index),
+				Body:      chunk.Body,
+				CreatedAt: time.Now().UTC().Format(time.RFC3339),
+			}
+			if err := searcher.IndexDocument(chunkID, chunkDoc); err != nil {
+				// Non-fatal: continue with other chunks
+				fmt.Fprintf(os.Stderr, "c4: index chunk %d: %v\n", chunk.Index, err)
+			}
+		}
+	}
+
+	// Also index the parent document
+	if searcher != nil {
+		doc, _ := store.Get(docID)
+		if doc != nil {
+			searcher.IndexDocument(docID, doc)
+		}
+	}
+
+	return &IngestResult{
+		DocID:      docID,
+		Title:      title,
+		ChunkCount: len(chunks),
+		BodyLen:    len(body),
+	}, nil
+}
+
+// IngestText ingests text content directly (without reading from file).
+func IngestText(store *Store, searcher *Searcher, content string, opts IngestOpts) (*IngestResult, error) {
+	if strings.TrimSpace(content) == "" {
+		return nil, fmt.Errorf("content is empty")
+	}
+
+	title := opts.Title
+	if title == "" {
+		title = "Untitled Document"
+	}
+
+	visibility := opts.Visibility
+	if visibility == "" {
+		visibility = "team"
+	}
+
+	metadata := map[string]any{
+		"title":      title,
+		"tags":       opts.Tags,
+		"visibility": visibility,
+		"domain":     "ingested",
+	}
+
+	docID, err := store.Create(TypeInsight, metadata, content)
+	if err != nil {
+		return nil, fmt.Errorf("create document: %w", err)
+	}
+
+	maxTokens := opts.MaxTokens
+	if maxTokens <= 0 {
+		maxTokens = 512
+	}
+	chunks := ChunkText(content, maxTokens)
+
+	if searcher != nil && searcher.vectorStore != nil {
+		ctx := context.Background()
+		_ = ctx
+		for _, chunk := range chunks {
+			chunkID := fmt.Sprintf("%s-chunk-%d", docID, chunk.Index)
+			chunkDoc := &Document{
+				ID:    chunkID,
+				Title: fmt.Sprintf("%s (chunk %d)", title, chunk.Index),
+				Body:  chunk.Body,
+			}
+			searcher.IndexDocument(chunkID, chunkDoc)
+		}
+	}
+
+	if searcher != nil {
+		doc, _ := store.Get(docID)
+		if doc != nil {
+			searcher.IndexDocument(docID, doc)
+		}
+	}
+
+	return &IngestResult{
+		DocID:      docID,
+		Title:      title,
+		ChunkCount: len(chunks),
+		BodyLen:    len(content),
+	}, nil
+}

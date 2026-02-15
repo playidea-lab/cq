@@ -17,7 +17,7 @@ func setupTestVectorStore(t *testing.T) *VectorStore {
 	}
 	t.Cleanup(func() { store.Close() })
 
-	vs, err := NewVectorStore(store.DB(), 4)
+	vs, err := NewVectorStore(store.DB(), 4, nil)
 	if err != nil {
 		t.Fatalf("NewVectorStore: %v", err)
 	}

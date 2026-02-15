@@ -21,7 +21,7 @@ func setupKnowledgeNativeTest(t *testing.T) (*mcp.Registry, *KnowledgeNativeOpts
 	}
 	t.Cleanup(func() { store.Close() })
 
-	vs, err := knowledge.NewVectorStore(store.DB(), 384)
+	vs, err := knowledge.NewVectorStore(store.DB(), 384, nil)
 	if err != nil {
 		t.Fatalf("NewVectorStore: %v", err)
 	}
@@ -444,6 +444,11 @@ func TestE2ERegisterConditionalWiring(t *testing.T) {
 		"c4_experiment_search",
 		"c4_pattern_suggest",
 		"c4_knowledge_pull",
+		"c4_knowledge_delete",
+		"c4_knowledge_discover",
+		"c4_knowledge_ingest",
+		"c4_knowledge_stats",
+		"c4_knowledge_reindex",
 	}
 	for _, name := range expected {
 		if !toolNames[name] {

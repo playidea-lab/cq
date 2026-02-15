@@ -57,6 +57,7 @@ type Document struct {
 	Domain           string       `json:"domain,omitempty"`
 	Tags             []string     `json:"tags,omitempty"`
 	TaskID           string       `json:"task_id,omitempty"`
+	Visibility       string       `json:"visibility,omitempty"`
 	Hypothesis       string       `json:"hypothesis,omitempty"`
 	HypothesisStatus string       `json:"hypothesis_status,omitempty"`
 	Confidence       float64      `json:"confidence,omitempty"`
@@ -196,6 +197,9 @@ func (s *Store) Create(docType DocumentType, metadata map[string]any, body strin
 		Body:      body,
 	}
 
+	// Visibility
+	doc.Visibility = stringVal(metadata, "visibility")
+
 	// Type-specific fields
 	doc.Hypothesis = stringVal(metadata, "hypothesis")
 	doc.HypothesisStatus = stringVal(metadata, "hypothesis_status")
@@ -265,6 +269,9 @@ func (s *Store) Update(docID string, metadata map[string]any, body *string) (boo
 		}
 		if v, ok := metadata["task_id"]; ok {
 			doc.TaskID, _ = v.(string)
+		}
+		if v, ok := metadata["visibility"]; ok {
+			doc.Visibility, _ = v.(string)
 		}
 		if v, ok := metadata["hypothesis"]; ok {
 			doc.Hypothesis, _ = v.(string)
@@ -690,6 +697,7 @@ func docToMarkdown(doc *Document) string {
 	writeFieldAlways("title", doc.Title)
 	writeField("domain", doc.Domain)
 	writeField("task_id", doc.TaskID)
+	writeField("visibility", doc.Visibility)
 
 	if len(doc.Tags) > 0 {
 		b.WriteString("tags:\n")
@@ -762,6 +770,7 @@ func frontmatterToDocument(fm map[string]any, body, fallbackID string) *Document
 		Domain:           fmString(fm, "domain"),
 		Tags:             fmStringSlice(fm, "tags"),
 		TaskID:           fmString(fm, "task_id"),
+		Visibility:       fmString(fm, "visibility"),
 		Hypothesis:       fmString(fm, "hypothesis"),
 		HypothesisStatus: fmString(fm, "hypothesis_status"),
 		Confidence:       fmFloat(fm, "confidence"),

@@ -57,6 +57,16 @@ var Catalog = map[string]ModelInfo{
 		InputPer1M: 0, OutputPer1M: 0,
 		SupportsTools: false, SupportsVision: false,
 	},
+	"text-embedding-3-small": {
+		ID: "text-embedding-3-small", Name: "OpenAI Embedding 3 Small",
+		ContextWindow: 8191, MaxOutput: 0,
+		InputPer1M: 0.02, OutputPer1M: 0,
+	},
+	"text-embedding-3-large": {
+		ID: "text-embedding-3-large", Name: "OpenAI Embedding 3 Large",
+		ContextWindow: 8191, MaxOutput: 0,
+		InputPer1M: 0.13, OutputPer1M: 0,
+	},
 }
 
 // Aliases maps short names to full model IDs.

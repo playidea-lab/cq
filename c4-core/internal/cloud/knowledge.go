@@ -23,19 +23,21 @@ type KnowledgeCloudClient struct {
 
 // cloudDocRow maps to the c4_documents Supabase table.
 type cloudDocRow struct {
-	DocID       string `json:"doc_id"`
-	ProjectID   string `json:"project_id,omitempty"`
-	DocType     string `json:"doc_type"`
-	Title       string `json:"title"`
-	Domain      string `json:"domain"`
-	Tags        string `json:"tags"`         // JSON array string
-	Body        string `json:"body"`
-	Metadata    string `json:"metadata"`     // JSON object string
-	ContentHash string `json:"content_hash"`
-	Version     int    `json:"version"`
-	CreatedBy   string `json:"created_by"`
-	CreatedAt   string `json:"created_at,omitempty"`
-	UpdatedAt   string `json:"updated_at,omitempty"`
+	DocID           string `json:"doc_id"`
+	ProjectID       string `json:"project_id,omitempty"`
+	DocType         string `json:"doc_type"`
+	Title           string `json:"title"`
+	Domain          string `json:"domain"`
+	Tags            string `json:"tags"`                        // JSON array string
+	Body            string `json:"body"`
+	Metadata        string `json:"metadata"`                    // JSON object string
+	ContentHash     string `json:"content_hash"`
+	Version         int    `json:"version"`
+	CreatedBy       string `json:"created_by"`
+	Visibility      string `json:"visibility,omitempty"`        // private, team, public
+	CreatedByUserID string `json:"created_by_user_id,omitempty"`
+	CreatedAt       string `json:"created_at,omitempty"`
+	UpdatedAt       string `json:"updated_at,omitempty"`
 }
 
 // NewKnowledgeCloudClient creates a new knowledge cloud sync client.
@@ -87,6 +89,11 @@ func (k *KnowledgeCloudClient) SyncDocument(params map[string]any, docID string)
 	// Content hash
 	hash := fmt.Sprintf("%x", sha256.Sum256([]byte(body)))[:16]
 
+	visibility, _ := params["visibility"].(string)
+	if visibility == "" {
+		visibility = "team"
+	}
+
 	row := cloudDocRow{
 		DocID:       docID,
 		ProjectID:   k.projectID,
@@ -98,6 +105,7 @@ func (k *KnowledgeCloudClient) SyncDocument(params map[string]any, docID string)
 		Metadata:    metadataJSON,
 		ContentHash: hash,
 		Version:     1,
+		Visibility:  visibility,
 		CreatedBy:   "",
 	}
 
@@ -110,7 +118,7 @@ func (k *KnowledgeCloudClient) SearchDocuments(query string, docType string, lim
 		limit = 10
 	}
 
-	filter := "project_id=eq." + url.QueryEscape(k.projectID)
+	filter := "project_id=eq." + url.QueryEscape(k.projectID) + "&deleted_at=is.null"
 	if query != "" {
 		// PostgreSQL tsvector FTS via PostgREST
 		filter += "&tsv=fts.english." + url.QueryEscape(query)
@@ -119,7 +127,7 @@ func (k *KnowledgeCloudClient) SearchDocuments(query string, docType string, lim
 		filter += "&doc_type=eq." + url.QueryEscape(docType)
 	}
 	filter += fmt.Sprintf("&order=updated_at.desc&limit=%d", limit)
-	filter += "&select=doc_id,doc_type,title,domain,tags,content_hash,version,created_at,updated_at"
+	filter += "&select=doc_id,doc_type,title,domain,tags,visibility,content_hash,version,created_at,updated_at"
 
 	var rows []map[string]any
 	if err := k.get("c4_documents", filter, &rows); err != nil {
@@ -148,12 +156,12 @@ func (k *KnowledgeCloudClient) ListDocuments(docType string, limit int) ([]map[s
 		limit = 50
 	}
 
-	filter := "project_id=eq." + url.QueryEscape(k.projectID)
+	filter := "project_id=eq." + url.QueryEscape(k.projectID) + "&deleted_at=is.null"
 	if docType != "" {
 		filter += "&doc_type=eq." + url.QueryEscape(docType)
 	}
 	filter += fmt.Sprintf("&order=updated_at.desc&limit=%d", limit)
-	filter += "&select=doc_id,doc_type,title,domain,tags,version,content_hash,created_at,updated_at"
+	filter += "&select=doc_id,doc_type,title,domain,tags,visibility,version,content_hash,created_at,updated_at"
 
 	var rows []map[string]any
 	if err := k.get("c4_documents", filter, &rows); err != nil {
@@ -162,10 +170,43 @@ func (k *KnowledgeCloudClient) ListDocuments(docType string, limit int) ([]map[s
 	return rows, nil
 }
 
-// DeleteDocument removes a knowledge document from the cloud.
+// DeleteDocument soft-deletes a knowledge document from the cloud (sets deleted_at).
 func (k *KnowledgeCloudClient) DeleteDocument(docID string) error {
 	filter := "project_id=eq." + url.QueryEscape(k.projectID) + "&doc_id=eq." + url.QueryEscape(docID)
-	return k.del("c4_documents", filter)
+	patch := map[string]any{
+		"deleted_at": time.Now().UTC().Format(time.RFC3339),
+	}
+	return k.patch("c4_documents", filter, patch)
+}
+
+// UpdateDocument updates a knowledge document in the cloud.
+func (k *KnowledgeCloudClient) UpdateDocument(docID string, updates map[string]any) error {
+	filter := "project_id=eq." + url.QueryEscape(k.projectID) + "&doc_id=eq." + url.QueryEscape(docID)
+	return k.patch("c4_documents", filter, updates)
+}
+
+// DiscoverPublic searches for public documents across all projects (no project_id filter).
+// Used for cross-project knowledge discovery.
+func (k *KnowledgeCloudClient) DiscoverPublic(query string, docType string, limit int) ([]map[string]any, error) {
+	if limit <= 0 {
+		limit = 10
+	}
+
+	filter := "visibility=eq.public&deleted_at=is.null"
+	if query != "" {
+		filter += "&tsv=fts.english." + url.QueryEscape(query)
+	}
+	if docType != "" {
+		filter += "&doc_type=eq." + url.QueryEscape(docType)
+	}
+	filter += fmt.Sprintf("&order=updated_at.desc&limit=%d", limit)
+	filter += "&select=doc_id,project_id,doc_type,title,domain,tags,visibility,content_hash,version,created_at,updated_at"
+
+	var rows []map[string]any
+	if err := k.get("c4_documents", filter, &rows); err != nil {
+		return nil, err
+	}
+	return rows, nil
 }
 
 // =========================================================================
@@ -245,6 +286,44 @@ func (k *KnowledgeCloudClient) post(table string, body any) error {
 		if resp.StatusCode >= 400 {
 			respBody, _ := io.ReadAll(resp.Body)
 			return fmt.Errorf("POST %s: %d %s", table, resp.StatusCode, string(respBody))
+		}
+		return nil
+	}
+	return nil
+}
+
+func (k *KnowledgeCloudClient) patch(table, filter string, body any) error {
+	data, err := json.Marshal(body)
+	if err != nil {
+		return fmt.Errorf("marshal: %w", err)
+	}
+
+	reqURL := k.baseURL + "/" + table + "?" + filter
+	for attempt := 0; attempt < 2; attempt++ {
+		req, err := http.NewRequest("PATCH", reqURL, strings.NewReader(string(data)))
+		if err != nil {
+			return err
+		}
+		k.setHeaders(req)
+		req.Header.Set("Prefer", "return=minimal")
+
+		resp, err := k.httpClient.Do(req)
+		if err != nil {
+			return fmt.Errorf("PATCH %s: %w", table, err)
+		}
+
+		if resp.StatusCode == http.StatusUnauthorized && attempt == 0 {
+			resp.Body.Close()
+			if _, err := k.tokenProvider.Refresh(); err == nil {
+				continue
+			}
+		}
+
+		defer resp.Body.Close()
+
+		if resp.StatusCode >= 400 {
+			respBody, _ := io.ReadAll(resp.Body)
+			return fmt.Errorf("PATCH %s: %d %s", table, resp.StatusCode, string(respBody))
 		}
 		return nil
 	}

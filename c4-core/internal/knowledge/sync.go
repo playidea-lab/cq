@@ -12,6 +12,8 @@ type CloudSyncer interface {
 	SearchDocuments(query string, docType string, limit int) ([]map[string]any, error)
 	ListDocuments(docType string, limit int) ([]map[string]any, error)
 	GetDocument(docID string) (map[string]any, error)
+	DeleteDocument(docID string) error
+	DiscoverPublic(query string, docType string, limit int) ([]map[string]any, error)
 }
 
 // PullResult holds the result of a cloud pull operation.
@@ -19,10 +21,12 @@ type PullResult struct {
 	Pulled     int      `json:"pulled"`
 	Updated    int      `json:"updated"`
 	Skipped    int      `json:"skipped"`
+	Deleted    int      `json:"deleted"`
 	Errors     []string `json:"errors"`
 	PulledIDs  []string `json:"pulled_ids"`
 	UpdatedIDs []string `json:"updated_ids"`
 	SkippedIDs []string `json:"skipped_ids"`
+	DeletedIDs []string `json:"deleted_ids"`
 }
 
 // Pull downloads documents from cloud to local store.
@@ -111,6 +115,33 @@ func Pull(store *Store, cloud CloudSyncer, docType string, limit int, force bool
 		}
 	}
 
+	// 6. Delete local docs that no longer exist in cloud.
+	// Only when not filtering by docType, to avoid accidentally deleting
+	// docs of other types that were simply excluded from the cloud query.
+	if docType == "" {
+		cloudIDs := make(map[string]bool, len(cloudDocs))
+		for _, cd := range cloudDocs {
+			if id, _ := cd["doc_id"].(string); id != "" {
+				cloudIDs[id] = true
+			}
+		}
+
+		localDocs, listErr := store.List("", "", limit)
+		if listErr == nil {
+			for _, ld := range localDocs {
+				localID, _ := ld["id"].(string)
+				if localID != "" && !cloudIDs[localID] {
+					if _, delErr := store.Delete(localID); delErr == nil {
+						result.Deleted++
+						result.DeletedIDs = append(result.DeletedIDs, localID)
+					} else {
+						result.Errors = append(result.Errors, fmt.Sprintf("delete %s: %v", localID, delErr))
+					}
+				}
+			}
+		}
+	}
+
 	return result, nil
 }
 
@@ -120,6 +151,111 @@ func SyncAfterRecord(cloud CloudSyncer, params map[string]any, docID string) err
 		return nil
 	}
 	return cloud.SyncDocument(params, docID)
+}
+
+// SyncAfterUpdate pushes updated document fields to cloud.
+func SyncAfterUpdate(cloud CloudSyncer, docID string, doc *Document) error {
+	if cloud == nil || doc == nil {
+		return nil
+	}
+	params := map[string]any{
+		"doc_type":   string(doc.Type),
+		"title":      doc.Title,
+		"content":    doc.Body,
+		"domain":     doc.Domain,
+		"tags":       doc.Tags,
+		"visibility": doc.Visibility,
+	}
+	return cloud.SyncDocument(params, docID)
+}
+
+// SyncAfterDelete soft-deletes a document in the cloud.
+func SyncAfterDelete(cloud CloudSyncer, docID string) error {
+	if cloud == nil {
+		return nil
+	}
+	return cloud.DeleteDocument(docID)
+}
+
+// PushChanges pushes all local documents to cloud.
+// Compares content_hash to avoid unnecessary uploads.
+func PushChanges(store *Store, cloud CloudSyncer, limit int) (*PushResult, error) {
+	if cloud == nil {
+		return nil, fmt.Errorf("cloud not configured")
+	}
+	if limit <= 0 {
+		limit = 100
+	}
+
+	// List local docs
+	localDocs, err := store.List("", "", limit)
+	if err != nil {
+		return nil, fmt.Errorf("list local: %w", err)
+	}
+
+	// List cloud docs for hash comparison
+	cloudDocs, err := cloud.ListDocuments("", limit)
+	if err != nil {
+		return nil, fmt.Errorf("cloud list: %w", err)
+	}
+
+	cloudHashes := make(map[string]string, len(cloudDocs))
+	for _, cd := range cloudDocs {
+		id, _ := cd["doc_id"].(string)
+		hash, _ := cd["content_hash"].(string)
+		if id != "" {
+			cloudHashes[id] = hash
+		}
+	}
+
+	result := &PushResult{}
+
+	for _, ldoc := range localDocs {
+		docID, _ := ldoc["id"].(string)
+		if docID == "" {
+			continue
+		}
+
+		// Read full doc for hash + body
+		doc, err := store.Get(docID)
+		if err != nil || doc == nil {
+			continue
+		}
+
+		localHash := contentHash(docToMarkdown(doc))
+
+		// Skip if cloud already has same content
+		if cloudHash, exists := cloudHashes[docID]; exists && cloudHash == localHash {
+			result.Skipped++
+			continue
+		}
+
+		// Push to cloud
+		params := map[string]any{
+			"doc_type":   string(doc.Type),
+			"title":      doc.Title,
+			"content":    doc.Body,
+			"domain":     doc.Domain,
+			"tags":       doc.Tags,
+			"visibility": doc.Visibility,
+		}
+		if err := cloud.SyncDocument(params, docID); err != nil {
+			result.Errors = append(result.Errors, fmt.Sprintf("%s: %v", docID, err))
+			continue
+		}
+		result.Pushed++
+		result.PushedIDs = append(result.PushedIDs, docID)
+	}
+
+	return result, nil
+}
+
+// PushResult holds the result of a push operation.
+type PushResult struct {
+	Pushed    int      `json:"pushed"`
+	Skipped   int      `json:"skipped"`
+	Errors    []string `json:"errors"`
+	PushedIDs []string `json:"pushed_ids"`
 }
 
 // extractTags handles tags in various formats (JSON string, []any, []string).

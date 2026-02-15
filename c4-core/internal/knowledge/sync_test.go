@@ -79,6 +79,15 @@ func (m *mockCloud) GetDocument(docID string) (map[string]any, error) {
 	return d, nil
 }
 
+func (m *mockCloud) DeleteDocument(docID string) error {
+	delete(m.docs, docID)
+	return nil
+}
+
+func (m *mockCloud) DiscoverPublic(query string, docType string, limit int) ([]map[string]any, error) {
+	return m.SearchDocuments(query, docType, limit)
+}
+
 func TestPullNewDocs(t *testing.T) {
 	dir := t.TempDir()
 	store, _ := NewStore(filepath.Join(dir, "knowledge"))
@@ -199,6 +208,145 @@ func TestSyncAfterRecordNilCloud(t *testing.T) {
 	err := SyncAfterRecord(nil, nil, "")
 	if err != nil {
 		t.Error("nil cloud should return nil")
+	}
+}
+
+func TestPushChanges(t *testing.T) {
+	dir := t.TempDir()
+	store, _ := NewStore(filepath.Join(dir, "knowledge"))
+	defer store.Close()
+
+	store.Create(TypeExperiment, map[string]any{
+		"title":  "Local Doc 1",
+		"domain": "test",
+	}, "body 1")
+	store.Create(TypeInsight, map[string]any{
+		"title": "Local Doc 2",
+	}, "body 2")
+
+	cloud := newMockCloud()
+
+	result, err := PushChanges(store, cloud, 100)
+	if err != nil {
+		t.Fatalf("PushChanges: %v", err)
+	}
+	if result.Pushed != 2 {
+		t.Errorf("pushed: got %d, want 2", result.Pushed)
+	}
+	if len(cloud.synced) != 2 {
+		t.Errorf("cloud synced: got %d, want 2", len(cloud.synced))
+	}
+}
+
+func TestPushChangesNilCloud(t *testing.T) {
+	dir := t.TempDir()
+	store, _ := NewStore(filepath.Join(dir, "knowledge"))
+	defer store.Close()
+
+	_, err := PushChanges(store, nil, 50)
+	if err == nil {
+		t.Error("expected error for nil cloud")
+	}
+}
+
+func TestSyncAfterUpdate(t *testing.T) {
+	cloud := newMockCloud()
+	doc := &Document{
+		Type:  TypeExperiment,
+		Title: "Updated Doc",
+		Body:  "new body",
+	}
+	err := SyncAfterUpdate(cloud, "exp-123", doc)
+	if err != nil {
+		t.Fatalf("SyncAfterUpdate: %v", err)
+	}
+	if len(cloud.synced) != 1 || cloud.synced[0] != "exp-123" {
+		t.Errorf("synced: %v", cloud.synced)
+	}
+}
+
+func TestSyncAfterDelete(t *testing.T) {
+	cloud := newMockCloud()
+	cloud.addDoc("exp-del", "To Delete", "experiment", "body", 1)
+
+	err := SyncAfterDelete(cloud, "exp-del")
+	if err != nil {
+		t.Fatalf("SyncAfterDelete: %v", err)
+	}
+	// Should be deleted from mock
+	if _, ok := cloud.docs["exp-del"]; ok {
+		t.Error("document should be deleted from cloud")
+	}
+}
+
+func TestPullDeletesLocalDocsRemovedFromCloud(t *testing.T) {
+	dir := t.TempDir()
+	store, _ := NewStore(filepath.Join(dir, "knowledge"))
+	defer store.Close()
+
+	// Create local doc that doesn't exist in cloud
+	store.Create(TypeExperiment, map[string]any{
+		"id":    "exp-orphan",
+		"title": "Orphan Doc",
+	}, "orphan body")
+
+	// Cloud has a different doc
+	cloud := newMockCloud()
+	cloud.addDoc("exp-cloud01", "Cloud Doc", "experiment", "body1", 1)
+
+	result, err := Pull(store, cloud, "", 50, false)
+	if err != nil {
+		t.Fatalf("Pull: %v", err)
+	}
+	if result.Pulled != 1 {
+		t.Errorf("pulled: got %d, want 1", result.Pulled)
+	}
+	if result.Deleted != 1 {
+		t.Errorf("deleted: got %d, want 1", result.Deleted)
+	}
+	if len(result.DeletedIDs) != 1 || result.DeletedIDs[0] != "exp-orphan" {
+		t.Errorf("deleted_ids: got %v, want [exp-orphan]", result.DeletedIDs)
+	}
+
+	// Verify orphan was deleted
+	doc, _ := store.Get("exp-orphan")
+	if doc != nil {
+		t.Error("orphan doc should have been deleted")
+	}
+}
+
+func TestPullDeleteSkippedWhenFilteringByDocType(t *testing.T) {
+	dir := t.TempDir()
+	store, _ := NewStore(filepath.Join(dir, "knowledge"))
+	defer store.Close()
+
+	// Create local docs of different types
+	store.Create(TypeExperiment, map[string]any{
+		"id":    "exp-local",
+		"title": "Local Experiment",
+	}, "exp body")
+	store.Create(TypeInsight, map[string]any{
+		"id":    "ins-local",
+		"title": "Local Insight",
+	}, "ins body")
+
+	// Cloud only has experiments (filter will only return experiments)
+	cloud := newMockCloud()
+	cloud.addDoc("exp-cloud01", "Cloud Exp", "experiment", "body1", 1)
+
+	// Pull with docType filter — should NOT delete ins-local
+	result, err := Pull(store, cloud, "experiment", 50, false)
+	if err != nil {
+		t.Fatalf("Pull: %v", err)
+	}
+	if result.Deleted != 0 {
+		t.Errorf("deleted: got %d, want 0 (should skip deletion when filtering by docType)", result.Deleted)
+	}
+
+	// Verify insight doc still exists
+	doc, _ := store.Get("ins-local")
+	if doc == nil {
+		t.Error("insight doc should NOT have been deleted when filtering by docType")
 	}
 }
 

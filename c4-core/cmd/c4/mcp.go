@@ -178,8 +178,23 @@ func newMCPServer() (*mcpServer, error) {
 		fmt.Fprintf(os.Stderr, "c4: knowledge store init failed (proxy fallback): %v\n", ksErr)
 	} else {
 		knowledgeStore = ks
+
+		// Create embedder from LLM Gateway if OpenAI is available
+		var embedder knowledge.Embedder
+		embDim := 1536
+		if cfgMgr != nil && cfgMgr.GetConfig().LLMGateway.Enabled {
+			embGateway := llm.NewGatewayFromConfig(cfgMgr.GetConfig())
+			// Add embedding route if not configured
+			embGateway.Resolve("embedding", "")
+			embedder = llm.NewEmbeddingProvider(embGateway, embDim)
+			fmt.Fprintln(os.Stderr, "c4: knowledge real embeddings enabled (1536d)")
+		} else {
+			embDim = 384 // fallback to mock dimension
+			fmt.Fprintln(os.Stderr, "c4: knowledge using mock embeddings (384d)")
+		}
+
 		// Create vector store + searcher for hybrid search
-		if vs, vsErr := knowledge.NewVectorStore(ks.DB(), 384); vsErr != nil {
+		if vs, vsErr := knowledge.NewVectorStore(ks.DB(), embDim, embedder); vsErr != nil {
 			fmt.Fprintf(os.Stderr, "c4: knowledge vector store init failed (FTS-only): %v\n", vsErr)
 			knowledgeSearcher = knowledge.NewSearcher(ks, nil)
 		} else {

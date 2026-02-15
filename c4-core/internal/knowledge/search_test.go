@@ -15,7 +15,7 @@ func setupTestSearcher(t *testing.T) (*Store, *Searcher) {
 	}
 	t.Cleanup(func() { store.Close() })
 
-	vs, err := NewVectorStore(store.DB(), 384)
+	vs, err := NewVectorStore(store.DB(), 384, nil)
 	if err != nil {
 		t.Fatalf("NewVectorStore: %v", err)
 	}

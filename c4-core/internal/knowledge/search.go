@@ -1,15 +1,18 @@
 package knowledge
 
 import (
+	"context"
 	"sort"
 )
 
 // Searcher provides hybrid search combining vector similarity and FTS5 keyword search.
-// Uses 2-way RRF (Reciprocal Rank Fusion) to merge results.
+// Uses 2-way or 3-way RRF (Reciprocal Rank Fusion) to merge results.
+// When UsageTracker is set, popularity scores boost ranking (3-way RRF).
 type Searcher struct {
-	store       *Store
-	vectorStore *VectorStore // nil if embeddings not available
-	dimension   int
+	store        *Store
+	vectorStore  *VectorStore  // nil if embeddings not available
+	usageTracker *UsageTracker // nil if usage tracking disabled
+	dimension    int
 }
 
 // NewSearcher creates a hybrid searcher. vectorStore may be nil (FTS-only mode).
@@ -23,6 +26,16 @@ func NewSearcher(store *Store, vectorStore *VectorStore) *Searcher {
 		vectorStore: vectorStore,
 		dimension:   dim,
 	}
+}
+
+// SetUsageTracker enables popularity-boosted ranking (3-way RRF).
+func (s *Searcher) SetUsageTracker(ut *UsageTracker) {
+	s.usageTracker = ut
+}
+
+// VectorStore returns the underlying vector store (may be nil).
+func (s *Searcher) VectorStore() *VectorStore {
+	return s.vectorStore
 }
 
 // SearchResult holds a single hybrid search result.
@@ -50,12 +63,24 @@ func (s *Searcher) Search(query string, topK int, filters map[string]string) ([]
 	// 2. Vector search (semantic) — skip if no vector store
 	var vecResults []VectorResult
 	if s.vectorStore != nil && s.vectorStore.Count() > 0 {
-		queryEmb := MockEmbedding(query, s.dimension)
+		queryEmb, _, _ := s.vectorStore.EmbedText(context.Background(), query)
 		vecResults, _ = s.vectorStore.Search(queryEmb, fetchK)
 	}
 
 	// 3. RRF merge
 	merged := rrfMerge(ftsResults, vecResults, 60)
+
+	// 3.5. Popularity boost (3-way RRF)
+	if s.usageTracker != nil && len(merged) > 0 {
+		docIDs := make([]string, len(merged))
+		for i, r := range merged {
+			docIDs[i] = r.ID
+		}
+		popularity := s.usageTracker.GetPopularity(docIDs)
+		if len(popularity) > 0 {
+			boostRRFWithPopularity(merged, popularity)
+		}
+	}
 
 	// 4. Enrich with metadata and apply filters
 	merged = s.enrichAndFilter(merged, filters)
@@ -127,6 +152,56 @@ func rrfMerge(ftsResults []map[string]any, vecResults []VectorResult, k int) []S
 	return results
 }
 
+// boostRRFWithPopularity adds a popularity component to RRF scores.
+// Popularity is normalized and added as a third RRF signal with k=60.
+func boostRRFWithPopularity(results []SearchResult, popularity map[string]float64) {
+	if len(popularity) == 0 {
+		return
+	}
+
+	// Find max popularity for normalization
+	maxPop := 0.0
+	for _, p := range popularity {
+		if p > maxPop {
+			maxPop = p
+		}
+	}
+	if maxPop == 0 {
+		return
+	}
+
+	// Sort by popularity descending to assign ranks
+	type popEntry struct {
+		id    string
+		score float64
+	}
+	var sorted []popEntry
+	for id, score := range popularity {
+		sorted = append(sorted, popEntry{id, score})
+	}
+	sort.Slice(sorted, func(i, j int) bool {
+		return sorted[i].score > sorted[j].score
+	})
+
+	popRank := make(map[string]int, len(sorted))
+	for i, e := range sorted {
+		popRank[e.id] = i
+	}
+
+	// Boost RRF scores with popularity rank
+	k := 60
+	for i, r := range results {
+		if rank, ok := popRank[r.ID]; ok {
+			results[i].RRFScore += 1.0 / float64(k+rank+1)
+		}
+	}
+
+	// Re-sort by boosted RRF score
+	sort.Slice(results, func(i, j int) bool {
+		return results[i].RRFScore > results[j].RRFScore
+	})
+}
+
 // enrichAndFilter enriches results with metadata from the index and applies filters.
 func (s *Searcher) enrichAndFilter(results []SearchResult, filters map[string]string) []SearchResult {
 	if len(results) == 0 {
@@ -183,7 +258,7 @@ func (s *Searcher) enrichAndFilter(results []SearchResult, filters map[string]st
 }
 
 // IndexDocument generates and stores an embedding for a document.
-// Uses MockEmbedding if no external embedding provider is configured.
+// Uses real embeddings if an Embedder is configured, otherwise falls back to MockEmbedding.
 func (s *Searcher) IndexDocument(docID string, doc *Document) error {
 	if s.vectorStore == nil {
 		return nil
@@ -194,8 +269,11 @@ func (s *Searcher) IndexDocument(docID string, doc *Document) error {
 		return nil
 	}
 
-	emb := MockEmbedding(text, s.dimension)
-	return s.vectorStore.Add(docID, emb, "mock")
+	emb, model, err := s.vectorStore.EmbedText(context.Background(), text)
+	if err != nil {
+		return err
+	}
+	return s.vectorStore.Add(docID, emb, model)
 }
 
 // documentToText converts a Document to searchable text for embedding.

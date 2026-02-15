@@ -145,3 +145,94 @@ func (p *OpenAIProvider) Chat(ctx context.Context, req *ChatRequest) (*ChatRespo
 		},
 	}, nil
 }
+
+// openaiEmbedRequest is the request body for the OpenAI Embeddings API.
+type openaiEmbedRequest struct {
+	Model string   `json:"model"`
+	Input []string `json:"input"`
+}
+
+// openaiEmbedResponse is the response from the OpenAI Embeddings API.
+type openaiEmbedResponse struct {
+	Data []struct {
+		Embedding []float32 `json:"embedding"`
+		Index     int       `json:"index"`
+	} `json:"data"`
+	Model string `json:"model"`
+	Usage struct {
+		PromptTokens int `json:"prompt_tokens"`
+		TotalTokens  int `json:"total_tokens"`
+	} `json:"usage"`
+}
+
+// Embed generates embeddings for the given texts using the OpenAI Embeddings API.
+// Model defaults to "text-embedding-3-small" (1536 dims) if not specified.
+// Supports batching up to 2048 inputs per call.
+func (p *OpenAIProvider) Embed(ctx context.Context, texts []string, model string) (*EmbedResponse, error) {
+	if model == "" {
+		model = "text-embedding-3-small"
+	}
+
+	const maxBatch = 2048
+	var allEmbeddings [][]float32
+	var totalInput int
+
+	for i := 0; i < len(texts); i += maxBatch {
+		end := i + maxBatch
+		if end > len(texts) {
+			end = len(texts)
+		}
+		batch := texts[i:end]
+
+		apiReq := openaiEmbedRequest{
+			Model: model,
+			Input: batch,
+		}
+		body, err := json.Marshal(apiReq)
+		if err != nil {
+			return nil, fmt.Errorf("marshal embed request: %w", err)
+		}
+
+		httpReq, err := http.NewRequestWithContext(ctx, "POST", p.baseURL+"/v1/embeddings", bytes.NewReader(body))
+		if err != nil {
+			return nil, fmt.Errorf("create embed request: %w", err)
+		}
+		httpReq.Header.Set("Content-Type", "application/json")
+		httpReq.Header.Set("Authorization", "Bearer "+p.apiKey)
+
+		resp, err := p.client.Do(httpReq)
+		if err != nil {
+			return nil, fmt.Errorf("embed http request: %w", err)
+		}
+		defer resp.Body.Close()
+
+		respBody, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return nil, fmt.Errorf("read embed response: %w", err)
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			var errResp openaiErrorResponse
+			if json.Unmarshal(respBody, &errResp) == nil && errResp.Error.Message != "" {
+				return nil, fmt.Errorf("openai embed API error (%d): %s", resp.StatusCode, errResp.Error.Message)
+			}
+			return nil, fmt.Errorf("openai embed API error (%d): %s", resp.StatusCode, string(respBody))
+		}
+
+		var apiResp openaiEmbedResponse
+		if err := json.Unmarshal(respBody, &apiResp); err != nil {
+			return nil, fmt.Errorf("unmarshal embed response: %w", err)
+		}
+
+		for _, d := range apiResp.Data {
+			allEmbeddings = append(allEmbeddings, d.Embedding)
+		}
+		totalInput += apiResp.Usage.PromptTokens
+	}
+
+	return &EmbedResponse{
+		Embeddings: allEmbeddings,
+		Model:      model,
+		Usage:      TokenUsage{InputTokens: totalInput},
+	}, nil
+}

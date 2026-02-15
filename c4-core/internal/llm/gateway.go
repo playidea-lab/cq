@@ -129,6 +129,44 @@ func (g *Gateway) Chat(ctx context.Context, taskType string, req *ChatRequest) (
 	return resp, nil
 }
 
+// EmbedProvider is an optional interface that providers can implement for embedding support.
+type EmbedProvider interface {
+	Embed(ctx context.Context, texts []string, model string) (*EmbedResponse, error)
+}
+
+// Embed routes an embedding request to the appropriate provider.
+// Uses the "embedding" route in the routing table to determine provider/model.
+func (g *Gateway) Embed(ctx context.Context, taskType string, texts []string) ([][]float32, error) {
+	ref := g.Resolve(taskType, "")
+
+	g.mu.RLock()
+	provider, ok := g.providers[ref.Provider]
+	g.mu.RUnlock()
+
+	if !ok {
+		return nil, fmt.Errorf("provider %q not registered", ref.Provider)
+	}
+	if !provider.IsAvailable() {
+		return nil, fmt.Errorf("provider %q is not available", ref.Provider)
+	}
+
+	embedder, ok := provider.(EmbedProvider)
+	if !ok {
+		return nil, fmt.Errorf("provider %q does not support embeddings", ref.Provider)
+	}
+
+	start := time.Now()
+	resp, err := embedder.Embed(ctx, texts, ref.Model)
+	latency := time.Since(start)
+
+	if err != nil {
+		return nil, fmt.Errorf("provider %q embed error: %w", ref.Provider, err)
+	}
+
+	g.tracker.Record(ref.Provider, resp.Model, resp.Usage, latency)
+	return resp.Embeddings, nil
+}
+
 // ListProviders returns the status of all registered providers.
 func (g *Gateway) ListProviders() []ProviderStatus {
 	g.mu.RLock()

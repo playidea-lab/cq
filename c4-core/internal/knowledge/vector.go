@@ -1,12 +1,20 @@
 package knowledge
 
 import (
+	"context"
 	"crypto/sha256"
 	"database/sql"
 	"encoding/binary"
 	"fmt"
 	"math"
+	"os"
 )
+
+// Embedder generates embeddings from text. Implemented by llm.EmbeddingProvider.
+type Embedder interface {
+	Embed(ctx context.Context, texts []string) ([][]float32, error)
+	EmbedDimension() int
+}
 
 // VectorStore provides embedding storage and cosine similarity search
 // using SQLite BLOB columns (no sqlite-vec / no CGO required).
@@ -16,6 +24,7 @@ import (
 type VectorStore struct {
 	db        *sql.DB
 	dimension int
+	embedder  Embedder // nil → MockEmbedding fallback
 }
 
 const vectorSchema = `
@@ -29,11 +38,59 @@ CREATE TABLE IF NOT EXISTS knowledge_vectors (
 
 // NewVectorStore creates a VectorStore sharing the same *sql.DB as the knowledge Store.
 // dimension is the expected embedding size (e.g., 1536 for OpenAI, 384 for MiniLM).
-func NewVectorStore(db *sql.DB, dimension int) (*VectorStore, error) {
+// embedder may be nil — falls back to MockEmbedding.
+func NewVectorStore(db *sql.DB, dimension int, embedder Embedder) (*VectorStore, error) {
 	if _, err := db.Exec(vectorSchema); err != nil {
 		return nil, fmt.Errorf("vector schema: %w", err)
 	}
-	return &VectorStore{db: db, dimension: dimension}, nil
+	return &VectorStore{db: db, dimension: dimension, embedder: embedder}, nil
+}
+
+// HasRealEmbedder returns true if a real (non-mock) embedder is configured.
+func (v *VectorStore) HasRealEmbedder() bool {
+	return v.embedder != nil
+}
+
+// EmbedText generates embeddings for the given text.
+// Uses the configured embedder if available, otherwise falls back to MockEmbedding.
+func (v *VectorStore) EmbedText(ctx context.Context, text string) ([]float32, string, error) {
+	if v.embedder != nil {
+		embeddings, err := v.embedder.Embed(ctx, []string{text})
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "c4: knowledge: real embedding failed, falling back to mock: %v\n", err)
+			return MockEmbedding(text, v.dimension), "mock", nil
+		}
+		if len(embeddings) > 0 {
+			return embeddings[0], "real", nil
+		}
+	}
+	return MockEmbedding(text, v.dimension), "mock", nil
+}
+
+// EmbedTexts generates embeddings for multiple texts in a batch.
+func (v *VectorStore) EmbedTexts(ctx context.Context, texts []string) ([][]float32, string, error) {
+	if v.embedder != nil {
+		embeddings, err := v.embedder.Embed(ctx, texts)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "c4: knowledge: batch embedding failed, falling back to mock: %v\n", err)
+			results := make([][]float32, len(texts))
+			for i, t := range texts {
+				results[i] = MockEmbedding(t, v.dimension)
+			}
+			return results, "mock", nil
+		}
+		return embeddings, "real", nil
+	}
+	results := make([][]float32, len(texts))
+	for i, t := range texts {
+		results[i] = MockEmbedding(t, v.dimension)
+	}
+	return results, "mock", nil
+}
+
+// Dimension returns the expected embedding dimension.
+func (v *VectorStore) Dimension() int {
+	return v.dimension
 }
 
 // Add stores an embedding for a document. Replaces if exists.
