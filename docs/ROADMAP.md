@@ -1,22 +1,26 @@
 # C4 Roadmap
 
-## Current Version: v0.17.0 (Phase 10.7 — C5 Hub Server Phase 1)
+## Current Version: v0.18.0 (Phase 10.8 — C5 Hub Server Phase 3 + Native LSP + Lighthouse)
 
-현재 버전은 **Go MCP Primary(112 tools: Base 86 + Hub 26), LLM Gateway (4개 Provider 실제 구현), CDP Runner (브라우저 자동화), Cloud Foundation (Supabase + TokenProvider auto-refresh), Knowledge Bidirectional Sync, c4 daemon (로컬 작업 스케줄러), C0 Drive (파일 관리), C1 Context Hub (메시징 + 문서 + Context Keeper), C3 EventBus v4 (gRPC daemon + WebSocket bridge + DLQ + Filter v2), C5 Hub Server (분산 작업 큐, 18 REST API, 50 테스트), Sidecar Resilience (lazy start + health check)**을 포함합니다.
+현재 버전은 **Go MCP Primary (144 tools: Base 112 + Hub 26 + Lighthouse 6), Native Go/Dart LSP (goast/dartast), LLM Gateway, CDP Runner, Cloud Foundation, Knowledge Sync, c4 daemon, C0 Drive, C1 Context Hub, C3 EventBus v4, C5 Hub Server Phase 3 (hub.Client 완전 호환, 105 테스트, DAG/Edge/Deploy/Artifact/WebSocket, worker metrics auto-parsing), Lighthouse (auto-seed, spec auto-generate, auto-backfill)**을 포함합니다.
 
 ### 핵심 구조
 
-- **Go MCP Server (Primary)** - 112 도구 (Base 86: state/task/file/git/discovery/artifact/lsp/knowledge/research/gpu/soul/team/twin/onboard/lighthouse/llm/cdp/c2/drive/c1), Registry-based, SQLite Store, JSON-RPC Bridge, LLM Gateway, CDP Runner, Hub Client
+- **Go MCP Server (Primary)** - 144 도구 (Base 112: state/task/file/git/discovery/artifact/lsp/knowledge/research/gpu/soul/team/twin/onboard/lighthouse/llm/cdp/c2/drive/c1), Registry-based, SQLite Store, JSON-RPC Bridge, LLM Gateway, CDP Runner, Hub Client, Native LSP (goast/dartast)
 - **C0 Drive** - Supabase 파일 저장소, metadata JSONB, c4_drive_mkdir 6개 도구, PostgREST URL 인코딩, server-side filtering
 - **C1 Context Hub** - Supabase 4 테이블 (channels/messages/participants/summaries), Go MCP 3 도구 (search/mentions/briefing), Context Keeper (LLM 요약), Agent 통합 (notifyKeeper 4-param), participant_id 추적
 - **C3 EventBus v4** - gRPC daemon (UDS) + WebSocket bridge + Python sidecar piggyback + CLI + Embedded auto-start + Event Replay + DLQ (16+ event types, 5 default rules, correlation_id, Filter v2)
 - **C1 Desktop App** - Tauri 2.x, 4개 프로바이더, Realtime WebSocket, 6-탭 UI (Sessions/Dashboard/Config/Documents/Channels/Events)
 - **C1 Views** - SessionsView (provider 자동감지), ChannelsView (메시징 + Realtime + count 로직), DocumentsView (파일+마크다운 편집)
+- **Native LSP** - `goast/` (Go 심볼 파싱), `dartast/` (Dart 심볼 파싱), Python/JS/TS sidecar 폴백
+- **C3 EventBus v4** - gRPC daemon (UDS) + WebSocket bridge + DLQ + Filter v2, task lifecycle tracking
+- **C5 Hub Server Phase 3** - hub.Client 완전 호환, DAG/Edge/Deploy/Artifact, worker metrics auto-parsing, WebSocket auth, pagination
 - **Daemon Scheduler** - 로컬 작업 스케줄러, 13 REST API, GPU 할당, 소요시간 예측 (PiQ 대체)
 - **LLM Gateway** - 4개 Provider (Anthropic/OpenAI/Gemini/Ollama), 5단계 라우팅, CostTracker, 모델 카탈로그 9종
 - **Cloud Layer** - Go PostgREST client (Auth + CloudStore + HybridStore + KnowledgeCloudClient + TokenProvider proactive auto-refresh with 401 retry)
-- **Python Sidecar** - LSP(Multilspy→Jedi→Tree-sitter), Knowledge Store v2, GPU Scheduler
-- **Infra** - Supabase PostgreSQL (13 migrations, RLS, tsvector FTS)
+- **Python Sidecar** - LSP 10 proxy tools (7 LSP + 2 C2 Doc + 1 Onboard)
+- **Lighthouse** - register_all, spec auto-generate from schema, auto-seed catalog, auto-backfill empty specs
+- **Infra** - Supabase PostgreSQL (14 migrations, RLS, tsvector FTS, C1 channels/messages)
 
 ### 지원 기능
 
@@ -37,12 +41,32 @@
 - **C1 Context Hub** - 채널 메시징, Context Keeper (LLM 요약), Agent 통합 (notifyKeeper 4-param)
 - **C1 Documents** - 마크다운 파일 편집기, 지속성 (persona/skill/spec/config)
 - **C3 EventBus v4** - gRPC daemon (UDS) + WebSocket bridge + DLQ + Filter v2, Python sidecar piggyback, task lifecycle events
-- **코드베이스**: Go ~21.5K (c4-core) + Go ~2.4K (c5) + Python 24K + C1 ~13K + Tests ~27K = **~86.2K LOC**
-- **테스트**: Go 945+ (c4-core 895 + c5 50) + Python 735+ + C1 (Rust 73 + Frontend 81) = **~1,769 tests**
+- **코드베이스**: Go ~34.3K (c4-core) + Go ~4.9K (c5) + Python 24.4K + C1 ~15.1K + Infra 0.8K = **~79.5K LOC**
+- **테스트**: Go 1,072 (c4-core 967 + c5 105) + Python 750 + C1 (Rust 73 + Frontend 81) = **~1,895 tests**
 
 ---
 
 ## 최신 추가사항 (2026-02-15)
+
+### C5 Hub Server Phase 3 — hub.Client 완전 호환 ✅
+
+**목표**: C4 hub.Client와의 완전한 호환성 확보 및 완전한 분산 작업 큐 서버 구현
+
+- **P0 (5개)**: 응답 형식 수정 (raw JSON arrays), deploy status 양쪽 지원, worker env/timeout/GPU/cancel, stale cleanup 강화, estimate 응답 확장
+- **P1 (5개)**: WebSocket auth (X-API-Key), DAG from-yaml full response, Edge capabilities map, Artifact content_hash sha256: prefix, Worker metrics auto-parsing (JSON+key=value 감지, 5초 debounce)
+- **P2 (2개)**: Deploy list pagination (GET /v1/deploy?limit=50&offset=0), 통합 테스트 21개
+- **규모**: C5 83→105 (+22 테스트), c4-core 953→967 (+14 goast/dartast 포함)
+- **커밋**: 254e9c1 (P2), ba875df/82d2466/4b84b76 (P1), 3373e1 (fix)
+- **결과**: hub.Client ↔ C5 완전 호환 (모든 Phase 1+2+3 API 검증)
+
+### Go/Dart Native LSP + Lighthouse 개선 ✅
+
+- **goast**: `internal/goast/` — Go 심볼 파싱 (func/type/method/interface/const/var, 50 테스트)
+- **dartast**: `internal/dartast/` — Dart 심볼 파싱 (class/function/mixin/extension, 35 테스트)
+- **native_lsp.go**: Go → Dart → Python sidecar 폴백 라우팅, path traversal 방지
+- **Lighthouse 개선**: auto-seed catalog, register_all, spec auto-generate from schema, auto-backfill empty specs
+- **커밋**: 20e2ec4, f53c841, da60e27, f7293c4, d2d7ddb, 5e5036f
+- **결과**: LSP 패키지 +2 (goast/dartast), handlers +14 테스트
 
 ### C5 Hub Server Phase 1 (분산 작업 큐) ✅
 
