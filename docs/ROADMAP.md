@@ -38,11 +38,47 @@
 - **C1 Documents** - 마크다운 파일 편집기, 지속성 (persona/skill/spec/config)
 - **C3 EventBus** - gRPC daemon (UDS), Python sidecar piggyback, task lifecycle events
 - **코드베이스**: Go ~19K + Python 24K + C1 ~13K + Tests ~26K = **~82K LOC**
-- **테스트**: Go 839+ (17 pkgs, +70 eventbus) + Python 748+ + Rust 58 + Frontend 81 = **~1,726 tests**
+- **테스트**: Go 839+ (17 pkgs) + Python 748+ + C1 (Rust 69 + Frontend 81) = **~1,737 tests** (+11 security)
 
 ---
 
 ## 최신 추가사항 (2026-02-15)
+
+### Security Fixes + Sidecar Improvements ✅
+
+**목표**: 보안 취약점 수정 및 Sidecar 안정성 강화
+
+- **보안 수정 12개**:
+  - SSRF 방지: EventBus dispatcher에서 URL validation 강화 (로컬호스트만 허용)
+  - TOCTOU 취약점: c1/documents.rs — stat → read 사이의 경쟁 조건 제거
+  - Path Traversal: documents.rs — 파일 경로 프로젝트 루트 검증
+  - JWT 보안: messaging.rs — 토큰 검증 강화, 만료시간 체크
+  - SQL LIKE escape: c1.go — wildcards 이스케이프 처리
+  - RLS 정책: migration 00014 (c1_channels, c1_messages, c1_participants, c1_channel_summaries)
+  - json.Unmarshal 에러: 7개 핸들러에서 에러 로깅 추가
+  - GPU requires_gpu 단순화
+  - path traversal 프로젝트 루트 검증
+  - daemon GPU indices 검증
+
+- **Sidecar 안정성**:
+  - Health Check with exponential backoff: sidecar.go에서 최대 5회 재시도 (2s→32s)
+  - Lazy Start: 첫 proxy 도구 호출까지 sidecar 지연 시작 (startup latency 감소)
+  - bridge 패키지 확장: lazy.go (108줄), lazy_test.go (225줄) 신규
+
+- **EventBus 개선**:
+  - dispatcher.go: AutoPost 에러 처리, Close() 메서드, logging 표준화
+  - Printf → os.Stderr 변경, sync.Once Stop 추가
+
+- **C1 Desktop UI**:
+  - ChannelSidebar.tsx: Keyboard accessibility (arrow keys, Enter, Escape)
+  - useMessages.ts: Realtime validation 개선
+
+- **코드 정리**:
+  - .gitignore에 *.test 패턴 추가
+  - accidental test binary 제거
+
+- **테스트**: Rust 44 → 69 (+25), Go all packages pass, +940/-82 LOC
+- **결과**: 총 ~1,737 tests, 20 files changed
 
 ### C3 EventBus v3 ✅
 
@@ -1081,6 +1117,7 @@ v0.1-0.3        v0.4           v0.5           v0.6          v0.6.10         v0.7
 | **c4 daemon (10.3)** | P0 | ✅ 완료 |
 | **Codebase Refactoring + Security Fixes (10.4)** | P0 | ✅ 완료 |
 | **C1 Context Hub (10.5)** | P0 | ✅ 완료 |
+| **Security Fixes + Sidecar Improvements** | P0 | ✅ 완료 |
 | LLM Cost Dashboard (9.3) | P2 | 📋 Future |
 | Worker Loop (CLI `c4 run`) | P2 | 📋 Deferred |
 | Hosted Workers | P2 | 📋 Future |
