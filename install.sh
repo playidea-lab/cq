@@ -2,7 +2,14 @@
 set -euo pipefail
 
 # C4 Installer — One-line setup for C4 AI Orchestration System
-# Usage: ./install.sh  or  curl -sSL https://... | sh
+#
+# Local:   ./install.sh
+# Remote:  curl -sSL https://git.pilab.co.kr/pi/c4/raw/main/install.sh | bash
+#
+# When piped via curl, the script auto-clones the repo first.
+
+C4_REPO="https://git.pilab.co.kr/pi/c4.git"
+C4_DEFAULT_DIR="$HOME/c4"
 
 # ─── Colors & Helpers ───────────────────────────────────────
 
@@ -18,13 +25,42 @@ warn() { printf "  ${YELLOW}[!]${NC} %s\n" "$1"; }
 fail() { printf "  ${RED}[✗]${NC} %s\n" "$1"; exit 1; }
 info() { printf "  ${CYAN}[·]${NC} %s\n" "$1"; }
 
-# ─── Project Root ───────────────────────────────────────────
+# ─── Project Root (auto-clone if needed) ──────────────────
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-C4_ROOT="$SCRIPT_DIR"
+detect_or_clone() {
+    # Case 1: Running locally inside the repo (./install.sh)
+    if [ -n "${BASH_SOURCE[0]:-}" ] && [ "${BASH_SOURCE[0]}" != "" ] && [ -f "${BASH_SOURCE[0]}" ]; then
+        local script_dir
+        script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+        if [ -d "$script_dir/c4-core" ]; then
+            C4_ROOT="$script_dir"
+            return
+        fi
+    fi
+
+    # Case 2: Piped via curl — need to clone
+    if ! command -v git &>/dev/null; then
+        fail "git not found. Install git first."
+    fi
+
+    local install_dir="${C4_INSTALL_DIR:-$C4_DEFAULT_DIR}"
+
+    if [ -d "$install_dir/c4-core" ]; then
+        info "Existing C4 found at $install_dir, updating..."
+        cd "$install_dir" && git pull --ff-only
+        C4_ROOT="$install_dir"
+    else
+        info "Cloning C4 to $install_dir..."
+        git clone "$C4_REPO" "$install_dir"
+        C4_ROOT="$install_dir"
+    fi
+}
 
 printf "\n${BOLD}C4 Installer${NC}\n"
 printf "─────────────────\n"
+
+detect_or_clone
+ok "Project root: $C4_ROOT"
 
 # ─── Dependency Checks ─────────────────────────────────────
 
@@ -124,8 +160,15 @@ fi
 
 # ─── Global Install (optional) ────────────────────────────
 
-printf "\n"
-read -rp "  Install c4 globally to ~/.local/bin/c4? [y/N] " INSTALL_GLOBAL
+INSTALL_GLOBAL="${C4_GLOBAL_INSTALL:-}"
+if [ -z "$INSTALL_GLOBAL" ] && [ -t 0 ]; then
+    # Interactive terminal — ask user
+    printf "\n"
+    read -rp "  Install c4 globally to ~/.local/bin/c4? [y/N] " INSTALL_GLOBAL
+elif [ -z "$INSTALL_GLOBAL" ]; then
+    # Piped (curl | bash) — skip by default
+    INSTALL_GLOBAL="n"
+fi
 if [[ "${INSTALL_GLOBAL,,}" =~ ^y ]]; then
     mkdir -p "$HOME/.local/bin"
     # CRITICAL: Use go build -o, NOT cp (macOS ARM64 code signing)
@@ -158,4 +201,6 @@ fi
 # ─── Done ───────────────────────────────────────────────────
 
 printf "\n${GREEN}${BOLD}C4 $VERSION installed successfully!${NC}\n"
-printf "Restart Claude Code to activate.\n\n"
+printf "  Location: ${BOLD}$C4_ROOT${NC}\n"
+printf "  Binary:   ${BOLD}$C4_ROOT/c4-core/bin/c4${NC}\n"
+printf "\nRestart Claude Code to activate.\n\n"
