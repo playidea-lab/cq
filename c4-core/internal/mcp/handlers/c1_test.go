@@ -6,20 +6,16 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/changmin/c4-core/internal/cloud"
 )
-
-// staticTP is a test-only tokenProvider that returns a fixed token.
-type staticTP struct{ token string }
-
-func (s *staticTP) Token() string            { return s.token }
-func (s *staticTP) Refresh() (string, error) { return s.token, nil }
 
 // setupC1Test creates a C1Handler pointing at a mock server.
 func setupC1Test(t *testing.T, handler http.HandlerFunc) *C1Handler {
 	t.Helper()
 	ts := httptest.NewServer(handler)
 	t.Cleanup(ts.Close)
-	return NewC1Handler(ts.URL, "test-key", &staticTP{"test-token"}, "proj-1")
+	return NewC1Handler(ts.URL, "test-key", cloud.NewStaticTokenProvider("test-token"), "proj-1")
 }
 
 // --- resolveChannelID tests ---

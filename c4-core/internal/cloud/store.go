@@ -1,4 +1,4 @@
-// Package cloud implements a CloudStore that satisfies the handlers.Store
+// Package cloud implements a CloudStore that satisfies the store.Store
 // interface using Supabase PostgREST as the backend.
 //
 // All data operations are performed via HTTP against a Supabase REST API,
@@ -17,13 +17,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/changmin/c4-core/internal/mcp/handlers"
+	"github.com/changmin/c4-core/internal/store"
 )
 
 // Compile-time interface check.
-var _ handlers.Store = (*CloudStore)(nil)
+var _ store.Store = (*CloudStore)(nil)
 
-// CloudStore implements handlers.Store using Supabase PostgREST REST API.
+// CloudStore implements store.Store using Supabase PostgREST REST API.
 type CloudStore struct {
 	baseURL       string         // Supabase PostgREST URL (e.g., https://xxx.supabase.co/rest/v1)
 	apiKey        string         // anon key
@@ -87,8 +87,8 @@ type cloudCheckpointRow struct {
 // =========================================================================
 
 // GetStatus returns the current project status with task counts.
-func (c *CloudStore) GetStatus() (*handlers.ProjectStatus, error) {
-	status := &handlers.ProjectStatus{State: "INIT", ProjectName: c.projectID}
+func (c *CloudStore) GetStatus() (*store.ProjectStatus, error) {
+	status := &store.ProjectStatus{State: "INIT", ProjectName: c.projectID}
 
 	// Read state
 	var stateRows []cloudStateRow
@@ -189,7 +189,7 @@ func (c *CloudStore) TransitionState(from, to string) error {
 }
 
 // AddTask inserts a new task.
-func (c *CloudStore) AddTask(task *handlers.Task) error {
+func (c *CloudStore) AddTask(task *store.Task) error {
 	deps := "[]"
 	if len(task.Dependencies) > 0 {
 		depsJSON, _ := json.Marshal(task.Dependencies)
@@ -215,7 +215,7 @@ func (c *CloudStore) AddTask(task *handlers.Task) error {
 }
 
 // GetTask retrieves a task by ID.
-func (c *CloudStore) GetTask(taskID string) (*handlers.Task, error) {
+func (c *CloudStore) GetTask(taskID string) (*store.Task, error) {
 	var rows []cloudTaskRow
 	filter := fmt.Sprintf("task_id=eq.%s&project_id=eq.%s", url.QueryEscape(taskID), url.QueryEscape(c.projectID))
 	if err := c.get("c4_tasks", filter, &rows); err != nil {
@@ -231,7 +231,7 @@ func (c *CloudStore) GetTask(taskID string) (*handlers.Task, error) {
 // AssignTask finds and assigns the next available task to a worker.
 // It fetches all tasks, evaluates dependencies, picks the highest-priority
 // pending task with all dependencies met, and assigns it via PATCH.
-func (c *CloudStore) AssignTask(workerID string) (*handlers.TaskAssignment, error) {
+func (c *CloudStore) AssignTask(workerID string) (*store.TaskAssignment, error) {
 	var rows []cloudTaskRow
 	filter := "project_id=eq." + url.QueryEscape(c.projectID)
 	if err := c.get("c4_tasks", filter, &rows); err != nil {
@@ -287,7 +287,7 @@ func (c *CloudStore) AssignTask(workerID string) (*handlers.TaskAssignment, erro
 		_ = json.Unmarshal([]byte(selected.Dependencies), &deps)
 	}
 
-	assignment := &handlers.TaskAssignment{
+	assignment := &store.TaskAssignment{
 		TaskID:       selected.TaskID,
 		Title:        selected.Title,
 		Scope:        selected.Scope,
@@ -302,11 +302,11 @@ func (c *CloudStore) AssignTask(workerID string) (*handlers.TaskAssignment, erro
 }
 
 // SubmitTask marks a task as done after validating results.
-func (c *CloudStore) SubmitTask(taskID, workerID, commitSHA, handoff string, results []handlers.ValidationResult) (*handlers.SubmitResult, error) {
+func (c *CloudStore) SubmitTask(taskID, workerID, commitSHA, handoff string, results []store.ValidationResult) (*store.SubmitResult, error) {
 	// Check for validation failures first (no HTTP needed)
 	for _, r := range results {
 		if r.Status == "fail" {
-			return &handlers.SubmitResult{
+			return &store.SubmitResult{
 				Success:    false,
 				NextAction: "get_next_task",
 				Message:    fmt.Sprintf("Validation failed: %s -- %s", r.Name, r.Message),
@@ -355,7 +355,7 @@ func (c *CloudStore) SubmitTask(taskID, workerID, commitSHA, handoff string, res
 		}
 	}
 
-	return &handlers.SubmitResult{
+	return &store.SubmitResult{
 		Success:       true,
 		NextAction:    nextAction,
 		Message:       fmt.Sprintf("Task %s submitted successfully", taskID),
@@ -375,7 +375,7 @@ func (c *CloudStore) MarkBlocked(taskID, workerID, failureSignature string, atte
 }
 
 // ClaimTask claims a task for direct execution.
-func (c *CloudStore) ClaimTask(taskID string) (*handlers.Task, error) {
+func (c *CloudStore) ClaimTask(taskID string) (*store.Task, error) {
 	task, err := c.GetTask(taskID)
 	if err != nil {
 		return nil, err
@@ -422,7 +422,7 @@ func (c *CloudStore) ReportTask(taskID, summary string, filesChanged []string) e
 }
 
 // Checkpoint records a checkpoint decision.
-func (c *CloudStore) Checkpoint(checkpointID, decision, notes string, requiredChanges []string) (*handlers.CheckpointResult, error) {
+func (c *CloudStore) Checkpoint(checkpointID, decision, notes string, requiredChanges []string) (*store.CheckpointResult, error) {
 	changesJSON := "[]"
 	if len(requiredChanges) > 0 {
 		b, _ := json.Marshal(requiredChanges)
@@ -442,7 +442,7 @@ func (c *CloudStore) Checkpoint(checkpointID, decision, notes string, requiredCh
 		return nil, fmt.Errorf("recording checkpoint: %w", err)
 	}
 
-	result := &handlers.CheckpointResult{
+	result := &store.CheckpointResult{
 		Success: true,
 		Message: fmt.Sprintf("Checkpoint %s: %s", checkpointID, decision),
 	}
@@ -460,7 +460,7 @@ func (c *CloudStore) Checkpoint(checkpointID, decision, notes string, requiredCh
 }
 
 // RequestChanges rejects a review task and creates the next version T+R pair.
-func (c *CloudStore) RequestChanges(reviewTaskID string, comments string, requiredChanges []string) (*handlers.RequestChangesResult, error) {
+func (c *CloudStore) RequestChanges(reviewTaskID string, comments string, requiredChanges []string) (*store.RequestChangesResult, error) {
 	// Parse review task ID: R-{baseID}-{version}
 	if !strings.HasPrefix(reviewTaskID, "R-") {
 		return nil, fmt.Errorf("%s is not a review task", reviewTaskID)
@@ -507,7 +507,7 @@ func (c *CloudStore) RequestChanges(reviewTaskID string, comments string, requir
 	nextReviewID := fmt.Sprintf("R-%s-%d", baseID, nextVersion)
 
 	// T-XXX-(N+1) -- fix task
-	if err := c.AddTask(&handlers.Task{
+	if err := c.AddTask(&store.Task{
 		ID:           nextTaskID,
 		Title:        fmt.Sprintf("Fix: %s", parentTaskID),
 		DoD:          newDoD,
@@ -519,7 +519,7 @@ func (c *CloudStore) RequestChanges(reviewTaskID string, comments string, requir
 	}
 
 	// R-XXX-(N+1) -- review of fix
-	if err := c.AddTask(&handlers.Task{
+	if err := c.AddTask(&store.Task{
 		ID:           nextReviewID,
 		Title:        fmt.Sprintf("Review: %s", nextTaskID),
 		DoD:          fmt.Sprintf("Review fix of %s\n\nRequired changes:\n- %s", parentTaskID, changesText),
@@ -529,7 +529,7 @@ func (c *CloudStore) RequestChanges(reviewTaskID string, comments string, requir
 		return nil, fmt.Errorf("creating review task %s: %w", nextReviewID, err)
 	}
 
-	return &handlers.RequestChangesResult{
+	return &store.RequestChangesResult{
 		Success:      true,
 		NextTaskID:   nextTaskID,
 		NextReviewID: nextReviewID,
@@ -600,14 +600,14 @@ func cloudDependenciesMet(row *cloudTaskRow, taskMap map[string]*cloudTaskRow) b
 	return true
 }
 
-// rowToHandlersTask converts a cloudTaskRow to a handlers.Task.
-func rowToHandlersTask(row *cloudTaskRow) *handlers.Task {
+// rowToHandlersTask converts a cloudTaskRow to a store.Task.
+func rowToHandlersTask(row *cloudTaskRow) *store.Task {
 	var deps []string
 	if row.Dependencies != "" && row.Dependencies != "[]" {
 		_ = json.Unmarshal([]byte(row.Dependencies), &deps)
 	}
 
-	return &handlers.Task{
+	return &store.Task{
 		ID:           row.TaskID,
 		Title:        row.Title,
 		Scope:        row.Scope,

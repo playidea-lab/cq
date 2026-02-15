@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/changmin/c4-core/internal/mcp/handlers"
+	corestore "github.com/changmin/c4-core/internal/store"
 )
 
 // newTestServer creates a PostgREST-like test server with a handler map.
@@ -42,7 +42,7 @@ func newTestStore(serverURL string) *CloudStore {
 // --- Compile-time interface check ---
 
 func TestCloudStoreImplementsStoreInterface(t *testing.T) {
-	var _ handlers.Store = (*CloudStore)(nil)
+	var _ corestore.Store = (*CloudStore)(nil)
 }
 
 // --- GetStatus ---
@@ -133,7 +133,7 @@ func TestAddTask(t *testing.T) {
 	defer srv.Close()
 
 	store := newTestStore(srv.URL)
-	err := store.AddTask(&handlers.Task{
+	err := store.AddTask(&corestore.Task{
 		ID:           "T-001-0",
 		Title:        "Implement feature X",
 		Scope:        "backend",
@@ -306,7 +306,7 @@ func TestSubmitTask_ValidationFailure(t *testing.T) {
 	defer srv.Close()
 
 	store := newTestStore(srv.URL)
-	result, err := store.SubmitTask("T-001-0", "worker-1", "", "", []handlers.ValidationResult{
+	result, err := store.SubmitTask("T-001-0", "worker-1", "", "", []corestore.ValidationResult{
 		{Name: "go_vet", Status: "fail", Message: "unused variable"},
 	})
 	if err != nil {

@@ -11,15 +11,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/changmin/c4-core/internal/cloud"
 	"github.com/changmin/c4-core/internal/drive"
 	"github.com/changmin/c4-core/internal/mcp"
 )
-
-// mockTP is a test tokenProvider that returns a fixed token.
-type mockTP struct{ t string }
-
-func (m *mockTP) Token() string            { return m.t }
-func (m *mockTP) Refresh() (string, error) { return m.t, nil }
 
 // newDriveTestServer creates an httptest server simulating Supabase for drive tests.
 func newDriveTestServer(t *testing.T) *httptest.Server {
@@ -138,7 +133,7 @@ func TestRegisterDriveHandlers(t *testing.T) {
 	defer srv.Close()
 
 	reg := mcp.NewRegistry()
-	client := drive.NewClient(srv.URL, "test-key", &mockTP{"test-token"}, "test-proj")
+	client := drive.NewClient(srv.URL, "test-key", cloud.NewStaticTokenProvider("test-token"), "test-proj")
 	RegisterDriveHandlers(reg, client)
 
 	// Verify all 6 tools are registered
@@ -170,7 +165,7 @@ func TestDriveUploadHandler(t *testing.T) {
 	defer srv.Close()
 
 	reg := mcp.NewRegistry()
-	client := drive.NewClient(srv.URL, "test-key", &mockTP{"test-token"}, "test-proj")
+	client := drive.NewClient(srv.URL, "test-key", cloud.NewStaticTokenProvider("test-token"), "test-proj")
 	RegisterDriveHandlers(reg, client)
 
 	// Create test file
@@ -204,7 +199,7 @@ func TestDriveInfoHandler(t *testing.T) {
 	defer srv.Close()
 
 	reg := mcp.NewRegistry()
-	client := drive.NewClient(srv.URL, "test-key", &mockTP{"test-token"}, "test-proj")
+	client := drive.NewClient(srv.URL, "test-key", cloud.NewStaticTokenProvider("test-token"), "test-proj")
 	RegisterDriveHandlers(reg, client)
 
 	// Upload first
@@ -244,7 +239,7 @@ func TestDriveListHandler(t *testing.T) {
 	defer srv.Close()
 
 	reg := mcp.NewRegistry()
-	client := drive.NewClient(srv.URL, "test-key", &mockTP{"test-token"}, "test-proj")
+	client := drive.NewClient(srv.URL, "test-key", cloud.NewStaticTokenProvider("test-token"), "test-proj")
 	RegisterDriveHandlers(reg, client)
 
 	// List empty
@@ -268,7 +263,7 @@ func TestDriveDeleteHandler(t *testing.T) {
 	defer srv.Close()
 
 	reg := mcp.NewRegistry()
-	client := drive.NewClient(srv.URL, "test-key", &mockTP{"test-token"}, "test-proj")
+	client := drive.NewClient(srv.URL, "test-key", cloud.NewStaticTokenProvider("test-token"), "test-proj")
 	RegisterDriveHandlers(reg, client)
 
 	// Upload then delete
@@ -304,7 +299,7 @@ func TestDriveMkdirHandler(t *testing.T) {
 	defer srv.Close()
 
 	reg := mcp.NewRegistry()
-	client := drive.NewClient(srv.URL, "test-key", &mockTP{"test-token"}, "test-proj")
+	client := drive.NewClient(srv.URL, "test-key", cloud.NewStaticTokenProvider("test-token"), "test-proj")
 	RegisterDriveHandlers(reg, client)
 
 	// Create folder without metadata

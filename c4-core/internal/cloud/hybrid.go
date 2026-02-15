@@ -11,25 +11,25 @@ import (
 	"os"
 	"sync"
 
-	"github.com/changmin/c4-core/internal/mcp/handlers"
+	"github.com/changmin/c4-core/internal/store"
 )
 
 // Compile-time interface check.
-var _ handlers.Store = (*HybridStore)(nil)
+var _ store.Store = (*HybridStore)(nil)
 
-// HybridStore implements handlers.Store with local-first writes.
+// HybridStore implements store.Store with local-first writes.
 // All reads come from the local store. All writes go to the local
 // store first, then are asynchronously pushed to the cloud store.
 type HybridStore struct {
-	local  handlers.Store
-	remote handlers.Store
+	local  store.Store
+	remote store.Store
 
 	mu       sync.Mutex
 	failures int // count of consecutive cloud failures (for monitoring)
 }
 
 // NewHybridStore creates a HybridStore wrapping local and remote stores.
-func NewHybridStore(local, remote handlers.Store) *HybridStore {
+func NewHybridStore(local, remote store.Store) *HybridStore {
 	return &HybridStore{
 		local:  local,
 		remote: remote,
@@ -65,12 +65,12 @@ func (h *HybridStore) CloudFailures() int {
 // =========================================================================
 
 // GetStatus reads from local store.
-func (h *HybridStore) GetStatus() (*handlers.ProjectStatus, error) {
+func (h *HybridStore) GetStatus() (*store.ProjectStatus, error) {
 	return h.local.GetStatus()
 }
 
 // GetTask reads from local store.
-func (h *HybridStore) GetTask(taskID string) (*handlers.Task, error) {
+func (h *HybridStore) GetTask(taskID string) (*store.Task, error) {
 	return h.local.GetTask(taskID)
 }
 
@@ -112,7 +112,7 @@ func (h *HybridStore) TransitionState(from, to string) error {
 }
 
 // AddTask adds locally and pushes to cloud.
-func (h *HybridStore) AddTask(task *handlers.Task) error {
+func (h *HybridStore) AddTask(task *store.Task) error {
 	if err := h.local.AddTask(task); err != nil {
 		return err
 	}
@@ -123,7 +123,7 @@ func (h *HybridStore) AddTask(task *handlers.Task) error {
 }
 
 // AssignTask assigns locally and pushes to cloud.
-func (h *HybridStore) AssignTask(workerID string) (*handlers.TaskAssignment, error) {
+func (h *HybridStore) AssignTask(workerID string) (*store.TaskAssignment, error) {
 	assignment, err := h.local.AssignTask(workerID)
 	if err != nil {
 		return nil, err
@@ -138,7 +138,7 @@ func (h *HybridStore) AssignTask(workerID string) (*handlers.TaskAssignment, err
 }
 
 // SubmitTask submits locally and pushes to cloud.
-func (h *HybridStore) SubmitTask(taskID, workerID, commitSHA, handoff string, results []handlers.ValidationResult) (*handlers.SubmitResult, error) {
+func (h *HybridStore) SubmitTask(taskID, workerID, commitSHA, handoff string, results []store.ValidationResult) (*store.SubmitResult, error) {
 	result, err := h.local.SubmitTask(taskID, workerID, commitSHA, handoff, results)
 	if err != nil {
 		return nil, err
@@ -162,7 +162,7 @@ func (h *HybridStore) MarkBlocked(taskID, workerID, failureSignature string, att
 }
 
 // ClaimTask claims locally and pushes to cloud.
-func (h *HybridStore) ClaimTask(taskID string) (*handlers.Task, error) {
+func (h *HybridStore) ClaimTask(taskID string) (*store.Task, error) {
 	task, err := h.local.ClaimTask(taskID)
 	if err != nil {
 		return nil, err
@@ -186,7 +186,7 @@ func (h *HybridStore) ReportTask(taskID, summary string, filesChanged []string) 
 }
 
 // Checkpoint records locally and pushes to cloud.
-func (h *HybridStore) Checkpoint(checkpointID, decision, notes string, requiredChanges []string) (*handlers.CheckpointResult, error) {
+func (h *HybridStore) Checkpoint(checkpointID, decision, notes string, requiredChanges []string) (*store.CheckpointResult, error) {
 	result, err := h.local.Checkpoint(checkpointID, decision, notes, requiredChanges)
 	if err != nil {
 		return nil, err
@@ -199,7 +199,7 @@ func (h *HybridStore) Checkpoint(checkpointID, decision, notes string, requiredC
 }
 
 // RequestChanges processes locally and pushes to cloud.
-func (h *HybridStore) RequestChanges(reviewTaskID string, comments string, requiredChanges []string) (*handlers.RequestChangesResult, error) {
+func (h *HybridStore) RequestChanges(reviewTaskID string, comments string, requiredChanges []string) (*store.RequestChangesResult, error) {
 	result, err := h.local.RequestChanges(reviewTaskID, comments, requiredChanges)
 	if err != nil {
 		return nil, err

@@ -6,31 +6,31 @@ import (
 	"testing"
 	"time"
 
-	"github.com/changmin/c4-core/internal/mcp/handlers"
+	"github.com/changmin/c4-core/internal/store"
 )
 
-// mockStore implements handlers.Store for testing.
+// mockStore implements store.Store for testing.
 type mockStore struct {
-	statusFn          func() (*handlers.ProjectStatus, error)
+	statusFn          func() (*store.ProjectStatus, error)
 	startFn           func() error
 	clearFn           func(bool) error
 	transitionStateFn func(string, string) error
-	addTaskFn         func(*handlers.Task) error
-	getTaskFn         func(string) (*handlers.Task, error)
-	assignTaskFn      func(string) (*handlers.TaskAssignment, error)
-	submitTaskFn      func(string, string, string, string, []handlers.ValidationResult) (*handlers.SubmitResult, error)
+	addTaskFn         func(*store.Task) error
+	getTaskFn         func(string) (*store.Task, error)
+	assignTaskFn      func(string) (*store.TaskAssignment, error)
+	submitTaskFn      func(string, string, string, string, []store.ValidationResult) (*store.SubmitResult, error)
 	markBlockedFn     func(string, string, string, int, string) error
-	claimTaskFn       func(string) (*handlers.Task, error)
+	claimTaskFn       func(string) (*store.Task, error)
 	reportTaskFn      func(string, string, []string) error
-	checkpointFn      func(string, string, string, []string) (*handlers.CheckpointResult, error)
-	requestChangesFn  func(string, string, []string) (*handlers.RequestChangesResult, error)
+	checkpointFn      func(string, string, string, []string) (*store.CheckpointResult, error)
+	requestChangesFn  func(string, string, []string) (*store.RequestChangesResult, error)
 }
 
-func (m *mockStore) GetStatus() (*handlers.ProjectStatus, error) {
+func (m *mockStore) GetStatus() (*store.ProjectStatus, error) {
 	if m.statusFn != nil {
 		return m.statusFn()
 	}
-	return &handlers.ProjectStatus{State: "EXECUTE"}, nil
+	return &store.ProjectStatus{State: "EXECUTE"}, nil
 }
 
 func (m *mockStore) Start() error {
@@ -54,32 +54,32 @@ func (m *mockStore) TransitionState(from, to string) error {
 	return nil
 }
 
-func (m *mockStore) AddTask(task *handlers.Task) error {
+func (m *mockStore) AddTask(task *store.Task) error {
 	if m.addTaskFn != nil {
 		return m.addTaskFn(task)
 	}
 	return nil
 }
 
-func (m *mockStore) GetTask(taskID string) (*handlers.Task, error) {
+func (m *mockStore) GetTask(taskID string) (*store.Task, error) {
 	if m.getTaskFn != nil {
 		return m.getTaskFn(taskID)
 	}
-	return &handlers.Task{ID: taskID, Title: "test"}, nil
+	return &store.Task{ID: taskID, Title: "test"}, nil
 }
 
-func (m *mockStore) AssignTask(workerID string) (*handlers.TaskAssignment, error) {
+func (m *mockStore) AssignTask(workerID string) (*store.TaskAssignment, error) {
 	if m.assignTaskFn != nil {
 		return m.assignTaskFn(workerID)
 	}
-	return &handlers.TaskAssignment{TaskID: "T-001-0", WorkerID: workerID}, nil
+	return &store.TaskAssignment{TaskID: "T-001-0", WorkerID: workerID}, nil
 }
 
-func (m *mockStore) SubmitTask(taskID, workerID, commitSHA, handoff string, results []handlers.ValidationResult) (*handlers.SubmitResult, error) {
+func (m *mockStore) SubmitTask(taskID, workerID, commitSHA, handoff string, results []store.ValidationResult) (*store.SubmitResult, error) {
 	if m.submitTaskFn != nil {
 		return m.submitTaskFn(taskID, workerID, commitSHA, handoff, results)
 	}
-	return &handlers.SubmitResult{Success: true}, nil
+	return &store.SubmitResult{Success: true}, nil
 }
 
 func (m *mockStore) MarkBlocked(taskID, workerID, failureSignature string, attempts int, lastError string) error {
@@ -89,11 +89,11 @@ func (m *mockStore) MarkBlocked(taskID, workerID, failureSignature string, attem
 	return nil
 }
 
-func (m *mockStore) ClaimTask(taskID string) (*handlers.Task, error) {
+func (m *mockStore) ClaimTask(taskID string) (*store.Task, error) {
 	if m.claimTaskFn != nil {
 		return m.claimTaskFn(taskID)
 	}
-	return &handlers.Task{ID: taskID, Status: "in_progress"}, nil
+	return &store.Task{ID: taskID, Status: "in_progress"}, nil
 }
 
 func (m *mockStore) ReportTask(taskID, summary string, filesChanged []string) error {
@@ -103,29 +103,29 @@ func (m *mockStore) ReportTask(taskID, summary string, filesChanged []string) er
 	return nil
 }
 
-func (m *mockStore) Checkpoint(checkpointID, decision, notes string, requiredChanges []string) (*handlers.CheckpointResult, error) {
+func (m *mockStore) Checkpoint(checkpointID, decision, notes string, requiredChanges []string) (*store.CheckpointResult, error) {
 	if m.checkpointFn != nil {
 		return m.checkpointFn(checkpointID, decision, notes, requiredChanges)
 	}
-	return &handlers.CheckpointResult{Success: true}, nil
+	return &store.CheckpointResult{Success: true}, nil
 }
 
-func (m *mockStore) RequestChanges(reviewTaskID string, comments string, requiredChanges []string) (*handlers.RequestChangesResult, error) {
+func (m *mockStore) RequestChanges(reviewTaskID string, comments string, requiredChanges []string) (*store.RequestChangesResult, error) {
 	if m.requestChangesFn != nil {
 		return m.requestChangesFn(reviewTaskID, comments, requiredChanges)
 	}
-	return &handlers.RequestChangesResult{Success: true}, nil
+	return &store.RequestChangesResult{Success: true}, nil
 }
 
 func TestHybridStoreReadsFromLocal(t *testing.T) {
 	local := &mockStore{
-		statusFn: func() (*handlers.ProjectStatus, error) {
-			return &handlers.ProjectStatus{State: "EXECUTE", TotalTasks: 5}, nil
+		statusFn: func() (*store.ProjectStatus, error) {
+			return &store.ProjectStatus{State: "EXECUTE", TotalTasks: 5}, nil
 		},
 	}
 	remote := &mockStore{
-		statusFn: func() (*handlers.ProjectStatus, error) {
-			return &handlers.ProjectStatus{State: "PLAN", TotalTasks: 99}, nil
+		statusFn: func() (*store.ProjectStatus, error) {
+			return &store.ProjectStatus{State: "PLAN", TotalTasks: 99}, nil
 		},
 	}
 
@@ -147,13 +147,13 @@ func TestHybridStoreWritesLocalFirst(t *testing.T) {
 	var localCalled, remoteCalled atomic.Int32
 
 	local := &mockStore{
-		addTaskFn: func(task *handlers.Task) error {
+		addTaskFn: func(task *store.Task) error {
 			localCalled.Add(1)
 			return nil
 		},
 	}
 	remote := &mockStore{
-		addTaskFn: func(task *handlers.Task) error {
+		addTaskFn: func(task *store.Task) error {
 			remoteCalled.Add(1)
 			return nil
 		},
@@ -161,7 +161,7 @@ func TestHybridStoreWritesLocalFirst(t *testing.T) {
 
 	hybrid := NewHybridStore(local, remote)
 
-	err := hybrid.AddTask(&handlers.Task{ID: "T-001-0", Title: "test"})
+	err := hybrid.AddTask(&store.Task{ID: "T-001-0", Title: "test"})
 	if err != nil {
 		t.Fatalf("AddTask() error: %v", err)
 	}
@@ -182,7 +182,7 @@ func TestHybridStoreWritesLocalFirst(t *testing.T) {
 func TestHybridStoreCloudFailureNonFatal(t *testing.T) {
 	local := &mockStore{}
 	remote := &mockStore{
-		addTaskFn: func(task *handlers.Task) error {
+		addTaskFn: func(task *store.Task) error {
 			return errors.New("cloud unavailable")
 		},
 	}
@@ -190,7 +190,7 @@ func TestHybridStoreCloudFailureNonFatal(t *testing.T) {
 	hybrid := NewHybridStore(local, remote)
 
 	// Should succeed despite cloud failure
-	err := hybrid.AddTask(&handlers.Task{ID: "T-001-0", Title: "test"})
+	err := hybrid.AddTask(&store.Task{ID: "T-001-0", Title: "test"})
 	if err != nil {
 		t.Fatalf("AddTask() should not fail on cloud error: %v", err)
 	}
@@ -205,7 +205,7 @@ func TestHybridStoreCloudFailureNonFatal(t *testing.T) {
 
 func TestHybridStoreLocalFailureBlocks(t *testing.T) {
 	local := &mockStore{
-		addTaskFn: func(task *handlers.Task) error {
+		addTaskFn: func(task *store.Task) error {
 			return errors.New("disk full")
 		},
 	}
@@ -213,7 +213,7 @@ func TestHybridStoreLocalFailureBlocks(t *testing.T) {
 
 	hybrid := NewHybridStore(local, remote)
 
-	err := hybrid.AddTask(&handlers.Task{ID: "T-001-0", Title: "test"})
+	err := hybrid.AddTask(&store.Task{ID: "T-001-0", Title: "test"})
 	if err == nil {
 		t.Fatal("AddTask() should fail when local store fails")
 	}
@@ -258,9 +258,9 @@ func TestHybridStoreClaimReportCycle(t *testing.T) {
 
 	local := &mockStore{}
 	remote := &mockStore{
-		claimTaskFn: func(string) (*handlers.Task, error) {
+		claimTaskFn: func(string) (*store.Task, error) {
 			claimCount.Add(1)
-			return &handlers.Task{}, nil
+			return &store.Task{}, nil
 		},
 		reportTaskFn: func(string, string, []string) error {
 			reportCount.Add(1)
@@ -297,7 +297,7 @@ func TestHybridStoreFailureCountReset(t *testing.T) {
 	callCount := atomic.Int32{}
 
 	remote := &mockStore{
-		addTaskFn: func(task *handlers.Task) error {
+		addTaskFn: func(task *store.Task) error {
 			n := callCount.Add(1)
 			if n == 1 {
 				return errors.New("temporary failure")
@@ -309,14 +309,14 @@ func TestHybridStoreFailureCountReset(t *testing.T) {
 	hybrid := NewHybridStore(&mockStore{}, remote)
 
 	// First call — cloud fails
-	hybrid.AddTask(&handlers.Task{ID: "T-001-0"})
+	hybrid.AddTask(&store.Task{ID: "T-001-0"})
 	time.Sleep(50 * time.Millisecond)
 	if hybrid.CloudFailures() != 1 {
 		t.Errorf("CloudFailures() = %d, want 1", hybrid.CloudFailures())
 	}
 
 	// Second call — cloud succeeds, counter resets
-	hybrid.AddTask(&handlers.Task{ID: "T-002-0"})
+	hybrid.AddTask(&store.Task{ID: "T-002-0"})
 	time.Sleep(50 * time.Millisecond)
 	if hybrid.CloudFailures() != 0 {
 		t.Errorf("CloudFailures() = %d, want 0 (should reset on success)", hybrid.CloudFailures())

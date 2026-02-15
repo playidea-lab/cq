@@ -10,27 +10,21 @@ import (
 	"strings"
 	"time"
 
+	"github.com/changmin/c4-core/internal/cloud"
 	"github.com/changmin/c4-core/internal/mcp"
 )
 
-// tokenProvider abstracts JWT token management for Supabase auth.
-// This local interface avoids importing the cloud package.
-type tokenProvider interface {
-	Token() string
-	Refresh() (string, error)
-}
-
 // C1Handler handles C1 (real-time collaboration) HTTP requests to Supabase.
 type C1Handler struct {
-	baseURL    string       // Supabase PostgREST URL (e.g., https://xxx.supabase.co/rest/v1)
-	apiKey     string       // anon key
-	tp         tokenProvider
-	projectID  string       // project ID for filtering
+	baseURL    string              // Supabase PostgREST URL (e.g., https://xxx.supabase.co/rest/v1)
+	apiKey     string              // anon key
+	tp         *cloud.TokenProvider
+	projectID  string              // project ID for filtering
 	httpClient *http.Client
 }
 
 // NewC1Handler creates a new C1Handler.
-func NewC1Handler(baseURL, apiKey string, tp tokenProvider, projectID string) *C1Handler {
+func NewC1Handler(baseURL, apiKey string, tp *cloud.TokenProvider, projectID string) *C1Handler {
 	return &C1Handler{
 		baseURL:   strings.TrimRight(baseURL, "/"),
 		apiKey:    apiKey,
