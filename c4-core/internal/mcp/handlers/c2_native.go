@@ -134,7 +134,9 @@ func workspaceCreateHandler() mcp.HandlerFunc {
 			Sections    []string `json:"sections"`
 		}
 		if len(rawArgs) > 0 {
-			json.Unmarshal(rawArgs, &params)
+			if err := json.Unmarshal(rawArgs, &params); err != nil {
+				return map[string]any{"error": fmt.Sprintf("invalid arguments: %v", err)}, nil
+			}
 		}
 		if params.Name == "" {
 			return map[string]any{"error": "name is required"}, nil
@@ -163,7 +165,9 @@ func workspaceLoadHandler() mcp.HandlerFunc {
 			ProjectDir string `json:"project_dir"`
 		}
 		if len(rawArgs) > 0 {
-			json.Unmarshal(rawArgs, &params)
+			if err := json.Unmarshal(rawArgs, &params); err != nil {
+				return map[string]any{"error": fmt.Sprintf("invalid arguments: %v", err)}, nil
+			}
 		}
 		if params.ProjectDir == "" {
 			return map[string]any{"error": "project_dir is required"}, nil
@@ -226,7 +230,9 @@ func personaLearnHandler() mcp.HandlerFunc {
 			AutoApply   bool   `json:"auto_apply"`
 		}
 		if len(rawArgs) > 0 {
-			json.Unmarshal(rawArgs, &params)
+			if err := json.Unmarshal(rawArgs, &params); err != nil {
+				return map[string]any{"error": fmt.Sprintf("invalid arguments: %v", err)}, nil
+			}
 		}
 		if params.DraftPath == "" || params.FinalPath == "" {
 			return map[string]any{"error": "draft_path and final_path are required"}, nil
@@ -262,7 +268,9 @@ func profileLoadHandler() mcp.HandlerFunc {
 			ProfilePath string `json:"profile_path"`
 		}
 		if len(rawArgs) > 0 {
-			json.Unmarshal(rawArgs, &params)
+			if err := json.Unmarshal(rawArgs, &params); err != nil {
+				return map[string]any{"error": fmt.Sprintf("invalid arguments: %v", err)}, nil
+			}
 		}
 
 		profile, err := c2.LoadProfile(params.ProfilePath)

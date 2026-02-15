@@ -165,7 +165,7 @@ func RunPersonaLearn(draftPath, finalPath, profilePath string, autoApply bool) (
 // Diff helpers
 // =========================================================================
 
-// computeLineDiff returns deleted and added lines using a simple LCS-based diff.
+// computeLineDiff returns deleted and added lines using a frequency-based (bag-of-lines) diff.
 func computeLineDiff(orig, edit []string) (deletions, additions []string) {
 	// Build a set of lines in each
 	origSet := make(map[string]int)

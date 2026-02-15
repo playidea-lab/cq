@@ -128,7 +128,9 @@ func researchStatusHandler(store *research.Store) mcp.HandlerFunc {
 			ProjectID string `json:"project_id"`
 		}
 		if len(rawArgs) > 0 {
-			json.Unmarshal(rawArgs, &params)
+			if err := json.Unmarshal(rawArgs, &params); err != nil {
+				return map[string]any{"error": fmt.Sprintf("invalid arguments: %v", err)}, nil
+			}
 		}
 		if params.ProjectID == "" {
 			return map[string]any{"error": "project_id is required"}, nil
@@ -175,7 +177,9 @@ func researchRecordHandler(store *research.Store) mcp.HandlerFunc {
 	return func(rawArgs json.RawMessage) (any, error) {
 		var raw map[string]any
 		if len(rawArgs) > 0 {
-			json.Unmarshal(rawArgs, &raw)
+			if err := json.Unmarshal(rawArgs, &raw); err != nil {
+				return map[string]any{"error": fmt.Sprintf("invalid arguments: %v", err)}, nil
+			}
 		}
 		projectID, _ := raw["project_id"].(string)
 		if projectID == "" {
@@ -214,7 +218,9 @@ func researchApproveHandler(store *research.Store) mcp.HandlerFunc {
 			Action    string `json:"action"`
 		}
 		if len(rawArgs) > 0 {
-			json.Unmarshal(rawArgs, &params)
+			if err := json.Unmarshal(rawArgs, &params); err != nil {
+				return map[string]any{"error": fmt.Sprintf("invalid arguments: %v", err)}, nil
+			}
 		}
 		if params.ProjectID == "" {
 			return map[string]any{"error": "project_id is required"}, nil
@@ -259,7 +265,9 @@ func researchNextHandler(store *research.Store) mcp.HandlerFunc {
 			ProjectID string `json:"project_id"`
 		}
 		if len(rawArgs) > 0 {
-			json.Unmarshal(rawArgs, &params)
+			if err := json.Unmarshal(rawArgs, &params); err != nil {
+				return map[string]any{"error": fmt.Sprintf("invalid arguments: %v", err)}, nil
+			}
 		}
 		if params.ProjectID == "" {
 			return map[string]any{"error": "project_id is required"}, nil

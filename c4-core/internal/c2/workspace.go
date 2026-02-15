@@ -430,6 +430,8 @@ func allDashes(cells []string) bool {
 	return true
 }
 
+var slugRe = regexp.MustCompile(`[^a-zA-Z0-9가-힣]`)
+
 func parseDiscoverSection(text string) []Source {
 	rows := parseTableRows(text)
 	var sources []Source
@@ -437,7 +439,6 @@ func parseDiscoverSection(text string) []Source {
 		if len(cells) < 6 {
 			continue
 		}
-		slugRe := regexp.MustCompile(`[^a-zA-Z0-9가-힣]`)
 		slug := slugRe.ReplaceAllString(cells[1], "_")
 		if len(slug) > 40 {
 			slug = slug[:40]

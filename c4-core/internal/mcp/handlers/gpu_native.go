@@ -31,6 +31,8 @@ func RegisterGPUNativeHandlers(reg *mcp.Registry, gpuStore *daemon.Store) {
 			"type": "object",
 			"properties": map[string]any{
 				"command":  map[string]any{"type": "string", "description": "Command to run"},
+				"name":     map[string]any{"type": "string", "description": "Job name (default: gpu-job)"},
+				"workdir":  map[string]any{"type": "string", "description": "Working directory (default: current directory)"},
 				"gpu_id":   map[string]any{"type": "integer", "description": "Specific GPU ID (optional)"},
 				"priority": map[string]any{"type": "integer", "description": "Job priority (default: 5)"},
 			},
@@ -84,6 +86,8 @@ func jobSubmitHandler(store *daemon.Store) mcp.HandlerFunc {
 	return func(rawArgs json.RawMessage) (any, error) {
 		var params struct {
 			Command  string `json:"command"`
+			Name     string `json:"name"`
+			Workdir  string `json:"workdir"`
 			GPUID    *int   `json:"gpu_id"`
 			Priority int    `json:"priority"`
 		}
@@ -100,10 +104,19 @@ func jobSubmitHandler(store *daemon.Store) mcp.HandlerFunc {
 			return map[string]any{"error": "GPU job scheduler not available"}, nil
 		}
 
+		jobName := params.Name
+		if jobName == "" {
+			jobName = "gpu-job"
+		}
+		workdir := params.Workdir
+		if workdir == "" {
+			workdir = "."
+		}
+
 		req := &daemon.JobSubmitRequest{
-			Name:        "gpu-job",
+			Name:        jobName,
 			Command:     params.Command,
-			Workdir:     ".",
+			Workdir:     workdir,
 			RequiresGPU: true,
 			GPUCount:    1,
 			Priority:    params.Priority,

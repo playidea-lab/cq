@@ -77,6 +77,8 @@ func NewStore(basePath string) (*Store, error) {
 	}
 	dbPath := filepath.Join(dbDir, "research.db")
 
+	// Note: sql.Open used directly (not openDB) because research.db is an independent
+	// database separate from c4.db. MaxOpenConns(1) + WAL prevents deadlocks.
 	db, err := sql.Open("sqlite", dbPath)
 	if err != nil {
 		return nil, fmt.Errorf("open research db: %w", err)
