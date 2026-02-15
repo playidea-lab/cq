@@ -112,6 +112,11 @@ func RegisterFileHandlers(reg *mcp.Registry, rootDir string) {
 					"type":        "string",
 					"description": "Replacement text",
 				},
+				"replace_all": map[string]any{
+					"type":        "boolean",
+					"description": "Replace all occurrences (default: first only)",
+					"default":     false,
+				},
 			},
 			"required": []string{"path", "old_text", "new_text"},
 		},
@@ -394,9 +399,10 @@ func handleReadFile(rootDir string, rawArgs json.RawMessage) (any, error) {
 }
 
 type replaceContentArgs struct {
-	Path    string `json:"path"`
-	OldText string `json:"old_text"`
-	NewText string `json:"new_text"`
+	Path       string `json:"path"`
+	OldText    string `json:"old_text"`
+	NewText    string `json:"new_text"`
+	ReplaceAll bool   `json:"replace_all"`
 }
 
 func handleReplaceContent(rootDir string, rawArgs json.RawMessage) (any, error) {
@@ -423,14 +429,23 @@ func handleReplaceContent(rootDir string, rawArgs json.RawMessage) (any, error) 
 		}, nil
 	}
 
-	newContent := strings.Replace(content, args.OldText, args.NewText, 1)
+	count := strings.Count(content, args.OldText)
+	n := 1
+	if args.ReplaceAll {
+		n = -1
+	}
+	newContent := strings.Replace(content, args.OldText, args.NewText, n)
 	if err := os.WriteFile(resolved, []byte(newContent), 0644); err != nil {
 		return nil, fmt.Errorf("writing file: %w", err)
 	}
 
+	replacements := 1
+	if args.ReplaceAll {
+		replacements = count
+	}
 	return map[string]any{
 		"success":      true,
-		"replacements": 1,
+		"replacements": replacements,
 	}, nil
 }
 

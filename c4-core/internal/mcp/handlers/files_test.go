@@ -384,3 +384,66 @@ func TestHandleCreateTextFile_NestedDir(t *testing.T) {
 		t.Errorf("content = %q", string(data))
 	}
 }
+
+// --- handleReplaceContent: replace_all ---
+
+func TestReplaceContent_ReplaceAll(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "file.txt"), []byte("foo bar foo baz foo"), 0644)
+
+	args, _ := json.Marshal(replaceContentArgs{Path: "file.txt", OldText: "foo", NewText: "qux", ReplaceAll: true})
+	result, err := handleReplaceContent(dir, args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := result.(map[string]any)
+	if !m["success"].(bool) {
+		t.Error("expected success")
+	}
+	if m["replacements"].(int) != 3 {
+		t.Errorf("replacements = %d, want 3", m["replacements"])
+	}
+	data, _ := os.ReadFile(filepath.Join(dir, "file.txt"))
+	if string(data) != "qux bar qux baz qux" {
+		t.Errorf("content = %q", string(data))
+	}
+}
+
+func TestReplaceContent_FirstOnly(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "file.txt"), []byte("foo bar foo baz foo"), 0644)
+
+	args, _ := json.Marshal(replaceContentArgs{Path: "file.txt", OldText: "foo", NewText: "qux", ReplaceAll: false})
+	result, err := handleReplaceContent(dir, args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := result.(map[string]any)
+	if m["replacements"].(int) != 1 {
+		t.Errorf("replacements = %d, want 1", m["replacements"])
+	}
+	data, _ := os.ReadFile(filepath.Join(dir, "file.txt"))
+	if string(data) != "qux bar foo baz foo" {
+		t.Errorf("content = %q", string(data))
+	}
+}
+
+func TestReplaceContent_DefaultFirstOnly(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "file.txt"), []byte("foo bar foo baz foo"), 0644)
+
+	// replace_all not specified — should default to first-only
+	args, _ := json.Marshal(map[string]string{"path": "file.txt", "old_text": "foo", "new_text": "qux"})
+	result, err := handleReplaceContent(dir, args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := result.(map[string]any)
+	if m["replacements"].(int) != 1 {
+		t.Errorf("replacements = %d, want 1", m["replacements"])
+	}
+	data, _ := os.ReadFile(filepath.Join(dir, "file.txt"))
+	if string(data) != "qux bar foo baz foo" {
+		t.Errorf("content = %q", string(data))
+	}
+}
