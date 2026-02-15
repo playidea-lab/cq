@@ -550,6 +550,756 @@ func TestGetGlobalDurations(t *testing.T) {
 // Misc
 // =========================================================================
 
+// =========================================================================
+// DAGs
+// =========================================================================
+
+func TestCreateAndGetDAG(t *testing.T) {
+	s := newTestStore(t)
+
+	dag, err := s.CreateDAG(&model.DAGCreateRequest{
+		Name:        "test-pipeline",
+		Description: "A test pipeline",
+		Tags:        []string{"test", "ci"},
+	})
+	if err != nil {
+		t.Fatalf("create dag: %v", err)
+	}
+	if dag.ID == "" {
+		t.Fatal("dag ID should not be empty")
+	}
+	if dag.Status != "pending" {
+		t.Fatalf("expected pending, got %s", dag.Status)
+	}
+
+	got, err := s.GetDAG(dag.ID)
+	if err != nil {
+		t.Fatalf("get dag: %v", err)
+	}
+	if got.Name != "test-pipeline" {
+		t.Fatalf("expected test-pipeline, got %s", got.Name)
+	}
+	if got.Description != "A test pipeline" {
+		t.Fatalf("expected description, got %s", got.Description)
+	}
+	if len(got.Tags) != 2 {
+		t.Fatalf("expected 2 tags, got %d", len(got.Tags))
+	}
+}
+
+func TestGetDAGNotFound(t *testing.T) {
+	s := newTestStore(t)
+	_, err := s.GetDAG("nonexistent")
+	if err == nil {
+		t.Fatal("expected error for nonexistent dag")
+	}
+}
+
+func TestListDAGs(t *testing.T) {
+	s := newTestStore(t)
+
+	s.CreateDAG(&model.DAGCreateRequest{Name: "dag1"})
+	s.CreateDAG(&model.DAGCreateRequest{Name: "dag2"})
+	s.CreateDAG(&model.DAGCreateRequest{Name: "dag3"})
+
+	dags, err := s.ListDAGs("", 10)
+	if err != nil {
+		t.Fatalf("list dags: %v", err)
+	}
+	if len(dags) != 3 {
+		t.Fatalf("expected 3 dags, got %d", len(dags))
+	}
+
+	// Filter by status
+	dags, err = s.ListDAGs("running", 10)
+	if err != nil {
+		t.Fatalf("list running: %v", err)
+	}
+	if len(dags) != 0 {
+		t.Fatalf("expected 0 running, got %d", len(dags))
+	}
+}
+
+func TestAddDAGNodeAndDependency(t *testing.T) {
+	s := newTestStore(t)
+
+	dag, _ := s.CreateDAG(&model.DAGCreateRequest{Name: "pipeline"})
+
+	node1, err := s.AddDAGNode(dag.ID, &model.DAGAddNodeRequest{
+		Name:    "preprocess",
+		Command: "python preprocess.py",
+	})
+	if err != nil {
+		t.Fatalf("add node 1: %v", err)
+	}
+
+	node2, err := s.AddDAGNode(dag.ID, &model.DAGAddNodeRequest{
+		Name:       "train",
+		Command:    "python train.py",
+		WorkingDir: "/workspace",
+		GPUCount:   1,
+		MaxRetries: 3,
+	})
+	if err != nil {
+		t.Fatalf("add node 2: %v", err)
+	}
+
+	// Add dependency: preprocess -> train
+	err = s.AddDAGDependency(dag.ID, &model.DAGAddDependencyRequest{
+		SourceID: node1.ID,
+		TargetID: node2.ID,
+		Type:     "sequential",
+	})
+	if err != nil {
+		t.Fatalf("add dep: %v", err)
+	}
+
+	// Verify by getting DAG
+	got, _ := s.GetDAG(dag.ID)
+	if len(got.Nodes) != 2 {
+		t.Fatalf("expected 2 nodes, got %d", len(got.Nodes))
+	}
+	if len(got.Dependencies) != 1 {
+		t.Fatalf("expected 1 dep, got %d", len(got.Dependencies))
+	}
+	if got.Dependencies[0].SourceID != node1.ID {
+		t.Fatalf("expected source %s, got %s", node1.ID, got.Dependencies[0].SourceID)
+	}
+}
+
+func TestTopologicalSort(t *testing.T) {
+	s := newTestStore(t)
+	dag, _ := s.CreateDAG(&model.DAGCreateRequest{Name: "topo"})
+
+	// A -> B -> C
+	a, _ := s.AddDAGNode(dag.ID, &model.DAGAddNodeRequest{Name: "A", Command: "echo A"})
+	b, _ := s.AddDAGNode(dag.ID, &model.DAGAddNodeRequest{Name: "B", Command: "echo B"})
+	c, _ := s.AddDAGNode(dag.ID, &model.DAGAddNodeRequest{Name: "C", Command: "echo C"})
+
+	s.AddDAGDependency(dag.ID, &model.DAGAddDependencyRequest{SourceID: a.ID, TargetID: b.ID})
+	s.AddDAGDependency(dag.ID, &model.DAGAddDependencyRequest{SourceID: b.ID, TargetID: c.ID})
+
+	order, err := s.TopologicalSort(dag.ID)
+	if err != nil {
+		t.Fatalf("topo sort: %v", err)
+	}
+	if len(order) != 3 {
+		t.Fatalf("expected 3 nodes, got %d", len(order))
+	}
+	// A must come before B, B before C
+	indexOf := func(id string) int {
+		for i, v := range order {
+			if v == id {
+				return i
+			}
+		}
+		return -1
+	}
+	if indexOf(a.ID) >= indexOf(b.ID) {
+		t.Fatal("A should come before B")
+	}
+	if indexOf(b.ID) >= indexOf(c.ID) {
+		t.Fatal("B should come before C")
+	}
+}
+
+func TestTopologicalSortCycleDetection(t *testing.T) {
+	s := newTestStore(t)
+	dag, _ := s.CreateDAG(&model.DAGCreateRequest{Name: "cycle"})
+
+	a, _ := s.AddDAGNode(dag.ID, &model.DAGAddNodeRequest{Name: "A", Command: "echo"})
+	b, _ := s.AddDAGNode(dag.ID, &model.DAGAddNodeRequest{Name: "B", Command: "echo"})
+
+	// A -> B -> A (cycle)
+	s.AddDAGDependency(dag.ID, &model.DAGAddDependencyRequest{SourceID: a.ID, TargetID: b.ID})
+	s.AddDAGDependency(dag.ID, &model.DAGAddDependencyRequest{SourceID: b.ID, TargetID: a.ID})
+
+	_, err := s.TopologicalSort(dag.ID)
+	if err == nil {
+		t.Fatal("expected cycle detection error")
+	}
+}
+
+func TestGetReadyNodes(t *testing.T) {
+	s := newTestStore(t)
+	dag, _ := s.CreateDAG(&model.DAGCreateRequest{Name: "ready"})
+
+	a, _ := s.AddDAGNode(dag.ID, &model.DAGAddNodeRequest{Name: "A", Command: "echo A"})
+	b, _ := s.AddDAGNode(dag.ID, &model.DAGAddNodeRequest{Name: "B", Command: "echo B"})
+
+	// A -> B
+	s.AddDAGDependency(dag.ID, &model.DAGAddDependencyRequest{SourceID: a.ID, TargetID: b.ID})
+
+	// Initially only A should be ready (no deps)
+	ready, err := s.GetReadyNodes(dag.ID)
+	if err != nil {
+		t.Fatalf("get ready: %v", err)
+	}
+	if len(ready) != 1 {
+		t.Fatalf("expected 1 ready node, got %d", len(ready))
+	}
+	if ready[0].ID != a.ID {
+		t.Fatalf("expected node A, got %s", ready[0].Name)
+	}
+
+	// Mark A as succeeded -> B should become ready
+	s.db.Exec(`UPDATE dag_nodes SET status = 'succeeded' WHERE id = ?`, a.ID)
+	ready, _ = s.GetReadyNodes(dag.ID)
+	if len(ready) != 1 {
+		t.Fatalf("expected 1 ready node after A succeeded, got %d", len(ready))
+	}
+	if ready[0].ID != b.ID {
+		t.Fatalf("expected node B, got %s", ready[0].Name)
+	}
+}
+
+func TestAdvanceDAG(t *testing.T) {
+	s := newTestStore(t)
+	dag, _ := s.CreateDAG(&model.DAGCreateRequest{Name: "advance"})
+
+	a, _ := s.AddDAGNode(dag.ID, &model.DAGAddNodeRequest{Name: "A", Command: "echo A"})
+	s.AddDAGNode(dag.ID, &model.DAGAddNodeRequest{Name: "B", Command: "echo B"})
+
+	// A -> B
+	s.AddDAGDependency(dag.ID, &model.DAGAddDependencyRequest{
+		SourceID: a.ID,
+		TargetID: func() string {
+			d, _ := s.GetDAG(dag.ID)
+			for _, n := range d.Nodes {
+				if n.Name == "B" {
+					return n.ID
+				}
+			}
+			return ""
+		}(),
+	})
+
+	// Advance should queue A (root node)
+	created, err := s.AdvanceDAG(dag.ID)
+	if err != nil {
+		t.Fatalf("advance: %v", err)
+	}
+	if created != 1 {
+		t.Fatalf("expected 1 job created, got %d", created)
+	}
+
+	// Check that node A is now running with a linked job
+	got, _ := s.GetDAG(dag.ID)
+	for _, n := range got.Nodes {
+		if n.Name == "A" {
+			if n.Status != "running" {
+				t.Fatalf("expected A running, got %s", n.Status)
+			}
+			if n.JobID == "" {
+				t.Fatal("A should have a linked job")
+			}
+		}
+	}
+}
+
+func TestUpdateDAGNodeFromJob(t *testing.T) {
+	s := newTestStore(t)
+	dag, _ := s.CreateDAG(&model.DAGCreateRequest{Name: "update-node"})
+
+	node, _ := s.AddDAGNode(dag.ID, &model.DAGAddNodeRequest{Name: "A", Command: "echo"})
+
+	// Simulate: advance creates a job, then job completes
+	job, _ := s.CreateJob(&model.JobSubmitRequest{Name: "dag-job", Command: "echo"})
+	s.db.Exec(`UPDATE dag_nodes SET status = 'running', job_id = ? WHERE id = ?`, job.ID, node.ID)
+
+	dagID, err := s.UpdateDAGNodeFromJob(job.ID, model.StatusSucceeded, 0)
+	if err != nil {
+		t.Fatalf("update node from job: %v", err)
+	}
+	if dagID != dag.ID {
+		t.Fatalf("expected dag ID %s, got %s", dag.ID, dagID)
+	}
+
+	// Node should be succeeded
+	got, _ := s.GetDAG(dag.ID)
+	if got.Nodes[0].Status != "succeeded" {
+		t.Fatalf("expected succeeded, got %s", got.Nodes[0].Status)
+	}
+}
+
+func TestUpdateDAGNodeFromJobNonDAGJob(t *testing.T) {
+	s := newTestStore(t)
+
+	dagID, err := s.UpdateDAGNodeFromJob("nonexistent-job", model.StatusSucceeded, 0)
+	if err != nil {
+		t.Fatalf("expected no error for non-DAG job: %v", err)
+	}
+	if dagID != "" {
+		t.Fatalf("expected empty dagID, got %s", dagID)
+	}
+}
+
+func TestDAGCompletionStatus(t *testing.T) {
+	s := newTestStore(t)
+	dag, _ := s.CreateDAG(&model.DAGCreateRequest{Name: "completion"})
+	s.UpdateDAGStatus(dag.ID, "running")
+
+	node, _ := s.AddDAGNode(dag.ID, &model.DAGAddNodeRequest{Name: "only", Command: "echo"})
+
+	// Mark node as succeeded
+	s.db.Exec(`UPDATE dag_nodes SET status = 'succeeded' WHERE id = ?`, node.ID)
+
+	// Advance should detect completion
+	created, _ := s.AdvanceDAG(dag.ID)
+	if created != 0 {
+		t.Fatalf("expected 0 jobs, got %d", created)
+	}
+
+	got, _ := s.GetDAG(dag.ID)
+	if got.Status != "completed" {
+		t.Fatalf("expected completed, got %s", got.Status)
+	}
+}
+
+func TestDAGFailedStatus(t *testing.T) {
+	s := newTestStore(t)
+	dag, _ := s.CreateDAG(&model.DAGCreateRequest{Name: "fail"})
+	s.UpdateDAGStatus(dag.ID, "running")
+
+	node, _ := s.AddDAGNode(dag.ID, &model.DAGAddNodeRequest{Name: "only", Command: "echo"})
+
+	// Mark node as failed
+	s.db.Exec(`UPDATE dag_nodes SET status = 'failed' WHERE id = ?`, node.ID)
+
+	s.AdvanceDAG(dag.ID)
+
+	got, _ := s.GetDAG(dag.ID)
+	if got.Status != "failed" {
+		t.Fatalf("expected failed, got %s", got.Status)
+	}
+}
+
+// =========================================================================
+// Edges
+// =========================================================================
+
+func TestRegisterAndGetEdge(t *testing.T) {
+	s := newTestStore(t)
+
+	edge, err := s.RegisterEdge(&model.EdgeRegisterRequest{
+		Name:    "jetson-1",
+		Tags:    []string{"arm64", "onnx"},
+		Arch:    "arm64",
+		Runtime: "onnx",
+		Storage: 32.0,
+	})
+	if err != nil {
+		t.Fatalf("register edge: %v", err)
+	}
+	if edge.ID == "" {
+		t.Fatal("edge ID should not be empty")
+	}
+	if edge.Status != "online" {
+		t.Fatalf("expected online, got %s", edge.Status)
+	}
+
+	got, err := s.GetEdge(edge.ID)
+	if err != nil {
+		t.Fatalf("get edge: %v", err)
+	}
+	if got.Name != "jetson-1" {
+		t.Fatalf("expected jetson-1, got %s", got.Name)
+	}
+	if got.Arch != "arm64" {
+		t.Fatalf("expected arm64, got %s", got.Arch)
+	}
+	if len(got.Tags) != 2 {
+		t.Fatalf("expected 2 tags, got %d", len(got.Tags))
+	}
+}
+
+func TestListEdges(t *testing.T) {
+	s := newTestStore(t)
+
+	s.RegisterEdge(&model.EdgeRegisterRequest{Name: "edge1"})
+	s.RegisterEdge(&model.EdgeRegisterRequest{Name: "edge2"})
+
+	edges, err := s.ListEdges()
+	if err != nil {
+		t.Fatalf("list edges: %v", err)
+	}
+	if len(edges) != 2 {
+		t.Fatalf("expected 2 edges, got %d", len(edges))
+	}
+}
+
+func TestUpdateEdgeHeartbeat(t *testing.T) {
+	s := newTestStore(t)
+
+	edge, _ := s.RegisterEdge(&model.EdgeRegisterRequest{Name: "hb-test"})
+
+	err := s.UpdateEdgeHeartbeat(&model.EdgeHeartbeatRequest{
+		EdgeID: edge.ID,
+		Status: "busy",
+	})
+	if err != nil {
+		t.Fatalf("heartbeat: %v", err)
+	}
+
+	got, _ := s.GetEdge(edge.ID)
+	if got.Status != "busy" {
+		t.Fatalf("expected busy, got %s", got.Status)
+	}
+}
+
+func TestUpdateEdgeHeartbeatNotFound(t *testing.T) {
+	s := newTestStore(t)
+	err := s.UpdateEdgeHeartbeat(&model.EdgeHeartbeatRequest{EdgeID: "nonexistent"})
+	if err == nil {
+		t.Fatal("expected error for nonexistent edge")
+	}
+}
+
+func TestRemoveEdge(t *testing.T) {
+	s := newTestStore(t)
+
+	edge, _ := s.RegisterEdge(&model.EdgeRegisterRequest{Name: "remove-me"})
+
+	err := s.RemoveEdge(edge.ID)
+	if err != nil {
+		t.Fatalf("remove edge: %v", err)
+	}
+
+	_, err = s.GetEdge(edge.ID)
+	if err == nil {
+		t.Fatal("expected error after removal")
+	}
+}
+
+func TestRemoveEdgeNotFound(t *testing.T) {
+	s := newTestStore(t)
+	err := s.RemoveEdge("nonexistent")
+	if err == nil {
+		t.Fatal("expected error for nonexistent edge")
+	}
+}
+
+func TestMarkStaleEdges(t *testing.T) {
+	s := newTestStore(t)
+
+	edge, _ := s.RegisterEdge(&model.EdgeRegisterRequest{Name: "stale-edge"})
+
+	// Set old last_seen
+	s.db.Exec(`UPDATE edges SET last_seen = ? WHERE id = ?`,
+		time.Now().UTC().Add(-10*time.Minute).Format(time.RFC3339), edge.ID)
+
+	n, err := s.MarkStaleEdges(2 * time.Minute)
+	if err != nil {
+		t.Fatalf("mark stale: %v", err)
+	}
+	if n != 1 {
+		t.Fatalf("expected 1 stale, got %d", n)
+	}
+
+	got, _ := s.GetEdge(edge.ID)
+	if got.Status != "offline" {
+		t.Fatalf("expected offline, got %s", got.Status)
+	}
+}
+
+func TestMatchEdgesTag(t *testing.T) {
+	s := newTestStore(t)
+
+	s.RegisterEdge(&model.EdgeRegisterRequest{Name: "e1", Tags: []string{"onnx", "arm64"}})
+	s.RegisterEdge(&model.EdgeRegisterRequest{Name: "e2", Tags: []string{"tensorrt"}})
+	s.RegisterEdge(&model.EdgeRegisterRequest{Name: "e3", Tags: []string{"onnx"}})
+
+	matched, err := s.MatchEdges("tag:onnx")
+	if err != nil {
+		t.Fatalf("match: %v", err)
+	}
+	if len(matched) != 2 {
+		t.Fatalf("expected 2 onnx edges, got %d", len(matched))
+	}
+}
+
+func TestMatchEdgesName(t *testing.T) {
+	s := newTestStore(t)
+
+	s.RegisterEdge(&model.EdgeRegisterRequest{Name: "jetson-factory-1"})
+	s.RegisterEdge(&model.EdgeRegisterRequest{Name: "jetson-factory-2"})
+	s.RegisterEdge(&model.EdgeRegisterRequest{Name: "rpi-lab-1"})
+
+	matched, err := s.MatchEdges("name:jetson-*")
+	if err != nil {
+		t.Fatalf("match: %v", err)
+	}
+	if len(matched) != 2 {
+		t.Fatalf("expected 2 jetson edges, got %d", len(matched))
+	}
+}
+
+func TestMatchEdgesAll(t *testing.T) {
+	s := newTestStore(t)
+
+	s.RegisterEdge(&model.EdgeRegisterRequest{Name: "e1"})
+	s.RegisterEdge(&model.EdgeRegisterRequest{Name: "e2"})
+
+	matched, _ := s.MatchEdges("all")
+	if len(matched) != 2 {
+		t.Fatalf("expected 2, got %d", len(matched))
+	}
+
+	matched2, _ := s.MatchEdges("")
+	if len(matched2) != 2 {
+		t.Fatalf("expected 2 for empty filter, got %d", len(matched2))
+	}
+}
+
+// =========================================================================
+// Deploy Rules & Deployments
+// =========================================================================
+
+func TestCreateAndListDeployRules(t *testing.T) {
+	s := newTestStore(t)
+
+	rule, err := s.CreateDeployRule(&model.DeployRuleCreateRequest{
+		Name:            "auto-deploy",
+		Trigger:         "job_tag:production",
+		EdgeFilter:      "tag:onnx",
+		ArtifactPattern: "outputs/*.onnx",
+		PostCommand:     "systemctl restart inference",
+	})
+	if err != nil {
+		t.Fatalf("create rule: %v", err)
+	}
+	if rule.ID == "" {
+		t.Fatal("rule ID should not be empty")
+	}
+	if !rule.Enabled {
+		t.Fatal("rule should be enabled by default")
+	}
+
+	rules, err := s.ListDeployRules()
+	if err != nil {
+		t.Fatalf("list rules: %v", err)
+	}
+	if len(rules) != 1 {
+		t.Fatalf("expected 1 rule, got %d", len(rules))
+	}
+	if rules[0].Trigger != "job_tag:production" {
+		t.Fatalf("expected trigger, got %s", rules[0].Trigger)
+	}
+}
+
+func TestDeleteDeployRule(t *testing.T) {
+	s := newTestStore(t)
+
+	rule, _ := s.CreateDeployRule(&model.DeployRuleCreateRequest{
+		Trigger:         "test",
+		EdgeFilter:      "all",
+		ArtifactPattern: "*",
+	})
+
+	err := s.DeleteDeployRule(rule.ID)
+	if err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+
+	rules, _ := s.ListDeployRules()
+	if len(rules) != 0 {
+		t.Fatalf("expected 0 rules after delete, got %d", len(rules))
+	}
+}
+
+func TestDeleteDeployRuleNotFound(t *testing.T) {
+	s := newTestStore(t)
+	err := s.DeleteDeployRule("nonexistent")
+	if err == nil {
+		t.Fatal("expected error for nonexistent rule")
+	}
+}
+
+func TestCreateAndGetDeployment(t *testing.T) {
+	s := newTestStore(t)
+
+	// Create edges
+	e1, _ := s.RegisterEdge(&model.EdgeRegisterRequest{Name: "edge-1"})
+	e2, _ := s.RegisterEdge(&model.EdgeRegisterRequest{Name: "edge-2"})
+
+	// Create a job
+	job, _ := s.CreateJob(&model.JobSubmitRequest{Name: "model-train", Command: "train"})
+
+	// Create deployment
+	edges := []model.Edge{
+		{ID: e1.ID, Name: e1.Name},
+		{ID: e2.ID, Name: e2.Name},
+	}
+	dep, err := s.CreateDeployment(&model.DeployTriggerRequest{JobID: job.ID}, edges)
+	if err != nil {
+		t.Fatalf("create deployment: %v", err)
+	}
+	if dep.ID == "" {
+		t.Fatal("deployment ID should not be empty")
+	}
+	if dep.Status != "pending" {
+		t.Fatalf("expected pending, got %s", dep.Status)
+	}
+	if len(dep.Targets) != 2 {
+		t.Fatalf("expected 2 targets, got %d", len(dep.Targets))
+	}
+
+	// Get deployment
+	got, err := s.GetDeployment(dep.ID)
+	if err != nil {
+		t.Fatalf("get deployment: %v", err)
+	}
+	if len(got.Targets) != 2 {
+		t.Fatalf("expected 2 targets, got %d", len(got.Targets))
+	}
+	if got.JobID != job.ID {
+		t.Fatalf("expected job %s, got %s", job.ID, got.JobID)
+	}
+}
+
+func TestUpdateDeployTargetComplete(t *testing.T) {
+	s := newTestStore(t)
+
+	e1, _ := s.RegisterEdge(&model.EdgeRegisterRequest{Name: "e1"})
+	e2, _ := s.RegisterEdge(&model.EdgeRegisterRequest{Name: "e2"})
+	job, _ := s.CreateJob(&model.JobSubmitRequest{Name: "j", Command: "echo"})
+
+	edges := []model.Edge{{ID: e1.ID, Name: "e1"}, {ID: e2.ID, Name: "e2"}}
+	dep, _ := s.CreateDeployment(&model.DeployTriggerRequest{JobID: job.ID}, edges)
+
+	// Both succeed -> deployment completed
+	s.UpdateDeployTarget(dep.ID, e1.ID, "succeeded", "")
+	s.UpdateDeployTarget(dep.ID, e2.ID, "succeeded", "")
+
+	got, _ := s.GetDeployment(dep.ID)
+	if got.Status != "completed" {
+		t.Fatalf("expected completed, got %s", got.Status)
+	}
+}
+
+func TestUpdateDeployTargetPartial(t *testing.T) {
+	s := newTestStore(t)
+
+	e1, _ := s.RegisterEdge(&model.EdgeRegisterRequest{Name: "e1"})
+	e2, _ := s.RegisterEdge(&model.EdgeRegisterRequest{Name: "e2"})
+	job, _ := s.CreateJob(&model.JobSubmitRequest{Name: "j", Command: "echo"})
+
+	edges := []model.Edge{{ID: e1.ID, Name: "e1"}, {ID: e2.ID, Name: "e2"}}
+	dep, _ := s.CreateDeployment(&model.DeployTriggerRequest{JobID: job.ID}, edges)
+
+	// One succeeds, one fails -> partial
+	s.UpdateDeployTarget(dep.ID, e1.ID, "succeeded", "")
+	s.UpdateDeployTarget(dep.ID, e2.ID, "failed", "timeout")
+
+	got, _ := s.GetDeployment(dep.ID)
+	if got.Status != "partial" {
+		t.Fatalf("expected partial, got %s", got.Status)
+	}
+}
+
+func TestUpdateDeployTargetAllFailed(t *testing.T) {
+	s := newTestStore(t)
+
+	e1, _ := s.RegisterEdge(&model.EdgeRegisterRequest{Name: "e1"})
+	job, _ := s.CreateJob(&model.JobSubmitRequest{Name: "j", Command: "echo"})
+
+	edges := []model.Edge{{ID: e1.ID, Name: "e1"}}
+	dep, _ := s.CreateDeployment(&model.DeployTriggerRequest{JobID: job.ID}, edges)
+
+	s.UpdateDeployTarget(dep.ID, e1.ID, "failed", "disk full")
+
+	got, _ := s.GetDeployment(dep.ID)
+	if got.Status != "failed" {
+		t.Fatalf("expected failed, got %s", got.Status)
+	}
+}
+
+// =========================================================================
+// Artifacts
+// =========================================================================
+
+func TestCreateAndConfirmArtifact(t *testing.T) {
+	s := newTestStore(t)
+
+	job, _ := s.CreateJob(&model.JobSubmitRequest{Name: "j", Command: "echo"})
+
+	art, err := s.CreateArtifact(job.ID, "outputs/model.onnx")
+	if err != nil {
+		t.Fatalf("create artifact: %v", err)
+	}
+	if art.ID == "" {
+		t.Fatal("artifact ID should not be empty")
+	}
+	if art.Confirmed {
+		t.Fatal("artifact should not be confirmed yet")
+	}
+
+	resp, err := s.ConfirmArtifact(job.ID, &model.ArtifactConfirmRequest{
+		Path:        "outputs/model.onnx",
+		ContentHash: "sha256:abc123",
+		SizeBytes:   1024000,
+	})
+	if err != nil {
+		t.Fatalf("confirm: %v", err)
+	}
+	if !resp.Confirmed {
+		t.Fatal("should be confirmed")
+	}
+
+	got, _ := s.GetArtifact(job.ID, "outputs/model.onnx")
+	if !got.Confirmed {
+		t.Fatal("artifact should be confirmed")
+	}
+	if got.ContentHash != "sha256:abc123" {
+		t.Fatalf("expected hash, got %s", got.ContentHash)
+	}
+	if got.SizeBytes != 1024000 {
+		t.Fatalf("expected 1024000, got %d", got.SizeBytes)
+	}
+}
+
+func TestListArtifacts(t *testing.T) {
+	s := newTestStore(t)
+
+	job, _ := s.CreateJob(&model.JobSubmitRequest{Name: "j", Command: "echo"})
+
+	s.CreateArtifact(job.ID, "model.onnx")
+	s.CreateArtifact(job.ID, "model.pt")
+	s.CreateArtifact(job.ID, "metrics.json")
+
+	arts, err := s.ListArtifacts(job.ID)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(arts) != 3 {
+		t.Fatalf("expected 3, got %d", len(arts))
+	}
+}
+
+func TestGetArtifactNotFound(t *testing.T) {
+	s := newTestStore(t)
+	_, err := s.GetArtifact("nonexistent", "none.txt")
+	if err == nil {
+		t.Fatal("expected error for nonexistent artifact")
+	}
+}
+
+func TestConfirmArtifactNotFound(t *testing.T) {
+	s := newTestStore(t)
+	_, err := s.ConfirmArtifact("nonexistent", &model.ArtifactConfirmRequest{
+		Path:        "none.txt",
+		ContentHash: "hash",
+		SizeBytes:   100,
+	})
+	if err == nil {
+		t.Fatal("expected error for nonexistent artifact")
+	}
+}
+
+// =========================================================================
+// Misc
+// =========================================================================
+
 func TestNewStoreCreatesDir(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "sub", "deep", "test.db")

@@ -245,6 +245,270 @@ type EstimateResponse struct {
 	Method               string  `json:"method"` // historical, similar_jobs, global_avg, default
 }
 
+// =========================================================================
+// DAG Models (hub.Client compatible)
+// =========================================================================
+
+// DAG represents a directed acyclic graph of job nodes.
+type DAG struct {
+	ID           string          `json:"id"`
+	Name         string          `json:"name"`
+	Description  string          `json:"description,omitempty"`
+	Tags         []string        `json:"tags,omitempty"`
+	Status       string          `json:"status,omitempty"` // pending, running, completed, failed
+	Nodes        []DAGNode       `json:"nodes,omitempty"`
+	Dependencies []DAGDependency `json:"dependencies,omitempty"`
+	CreatedAt    string          `json:"created_at,omitempty"`
+	StartedAt    string          `json:"started_at,omitempty"`
+	FinishedAt   string          `json:"finished_at,omitempty"`
+}
+
+// DAGNode represents a single executable node in a DAG.
+type DAGNode struct {
+	ID          string            `json:"id"`
+	Name        string            `json:"name"`
+	Description string            `json:"description,omitempty"`
+	Command     string            `json:"command"`
+	WorkingDir  string            `json:"working_dir,omitempty"`
+	Env         map[string]string `json:"environment,omitempty"`
+	GPUCount    int               `json:"gpu_count,omitempty"`
+	MaxRetries  int               `json:"max_retries,omitempty"`
+	Status      string            `json:"status,omitempty"` // pending, running, succeeded, failed, skipped
+	JobID       string            `json:"job_id,omitempty"`
+	StartedAt   string            `json:"started_at,omitempty"`
+	FinishedAt  string            `json:"finished_at,omitempty"`
+	ExitCode    *int              `json:"exit_code,omitempty"`
+}
+
+// DAGDependency represents a directed edge between two nodes.
+type DAGDependency struct {
+	SourceID string `json:"source_id"`
+	TargetID string `json:"target_id"`
+	Type     string `json:"dependency_type,omitempty"` // sequential, data_dependency, conditional
+}
+
+// DAGCreateRequest is the payload for POST /v1/dags.
+type DAGCreateRequest struct {
+	Name        string   `json:"name"`
+	Description string   `json:"description,omitempty"`
+	Tags        []string `json:"tags,omitempty"`
+}
+
+// DAGCreateResponse is the response from POST /v1/dags.
+type DAGCreateResponse struct {
+	DAGID  string `json:"dag_id"`
+	Status string `json:"status"`
+}
+
+// DAGAddNodeRequest is the payload for POST /v1/dags/{id}/nodes.
+type DAGAddNodeRequest struct {
+	Name        string            `json:"name"`
+	Command     string            `json:"command"`
+	Description string            `json:"description,omitempty"`
+	WorkingDir  string            `json:"working_dir,omitempty"`
+	Env         map[string]string `json:"environment,omitempty"`
+	GPUCount    int               `json:"gpu_count,omitempty"`
+	MaxRetries  int               `json:"max_retries,omitempty"`
+}
+
+// DAGAddNodeResponse is the response from POST /v1/dags/{id}/nodes.
+type DAGAddNodeResponse struct {
+	NodeID string `json:"node_id"`
+	Name   string `json:"name"`
+}
+
+// DAGAddDependencyRequest is the payload for POST /v1/dags/{id}/dependencies.
+type DAGAddDependencyRequest struct {
+	SourceID string `json:"source_id"`
+	TargetID string `json:"target_id"`
+	Type     string `json:"dependency_type,omitempty"`
+}
+
+// DAGExecuteRequest is the payload for POST /v1/dags/{id}/execute.
+type DAGExecuteRequest struct {
+	DryRun bool `json:"dry_run,omitempty"`
+}
+
+// DAGExecuteResponse is the response from POST /v1/dags/{id}/execute.
+type DAGExecuteResponse struct {
+	DAGID      string   `json:"dag_id"`
+	Status     string   `json:"status"`
+	NodeOrder  []string `json:"node_order,omitempty"`
+	Validation string   `json:"validation,omitempty"`
+	Errors     []string `json:"errors,omitempty"`
+}
+
+// DAGFromYAMLRequest is the payload for POST /v1/dags/from-yaml.
+type DAGFromYAMLRequest struct {
+	YAMLContent string `json:"yaml_content"`
+}
+
+// =========================================================================
+// Edge Models (hub.Client compatible)
+// =========================================================================
+
+// Edge represents a registered edge device for artifact deployment.
+type Edge struct {
+	ID       string            `json:"id"`
+	Name     string            `json:"name"`
+	Status   string            `json:"status"` // online, offline
+	Tags     []string          `json:"tags,omitempty"`
+	Arch     string            `json:"arch,omitempty"`
+	Runtime  string            `json:"runtime,omitempty"`
+	Storage  float64           `json:"storage_gb,omitempty"`
+	Metadata map[string]string `json:"metadata,omitempty"`
+	LastSeen string            `json:"last_seen,omitempty"`
+}
+
+// EdgeRegisterRequest is the payload for POST /v1/edges/register.
+type EdgeRegisterRequest struct {
+	Name    string            `json:"name"`
+	Tags    []string          `json:"tags,omitempty"`
+	Arch    string            `json:"arch,omitempty"`
+	Runtime string            `json:"runtime,omitempty"`
+	Storage float64           `json:"storage_gb,omitempty"`
+	Meta    map[string]string `json:"metadata,omitempty"`
+}
+
+// EdgeRegisterResponse is the response from POST /v1/edges/register.
+type EdgeRegisterResponse struct {
+	EdgeID string `json:"edge_id"`
+}
+
+// EdgeHeartbeatRequest is the payload for POST /v1/edges/heartbeat.
+type EdgeHeartbeatRequest struct {
+	EdgeID string `json:"edge_id"`
+	Status string `json:"status,omitempty"`
+}
+
+// =========================================================================
+// Deploy Models (hub.Client compatible)
+// =========================================================================
+
+// DeployRule defines an automatic deployment trigger.
+type DeployRule struct {
+	ID              string `json:"id"`
+	Name            string `json:"name,omitempty"`
+	Trigger         string `json:"trigger"`
+	EdgeFilter      string `json:"edge_filter"`
+	ArtifactPattern string `json:"artifact_pattern"`
+	PostCommand     string `json:"post_command,omitempty"`
+	Enabled         bool   `json:"enabled"`
+	CreatedAt       string `json:"created_at,omitempty"`
+}
+
+// DeployRuleCreateRequest is the payload for POST /v1/deploy/rules.
+type DeployRuleCreateRequest struct {
+	Name            string `json:"name,omitempty"`
+	Trigger         string `json:"trigger"`
+	EdgeFilter      string `json:"edge_filter"`
+	ArtifactPattern string `json:"artifact_pattern"`
+	PostCommand     string `json:"post_command,omitempty"`
+}
+
+// DeployRuleCreateResponse is the response from POST /v1/deploy/rules.
+type DeployRuleCreateResponse struct {
+	RuleID string `json:"rule_id"`
+}
+
+// Deployment represents a deployment instance.
+type Deployment struct {
+	ID         string         `json:"id"`
+	RuleID     string         `json:"rule_id,omitempty"`
+	JobID      string         `json:"job_id,omitempty"`
+	Status     string         `json:"status"` // pending, deploying, completed, failed, partial
+	Targets    []DeployTarget `json:"targets,omitempty"`
+	CreatedAt  string         `json:"created_at,omitempty"`
+	FinishedAt string         `json:"finished_at,omitempty"`
+}
+
+// DeployTarget represents the deployment status for a single edge device.
+type DeployTarget struct {
+	EdgeID    string `json:"edge_id"`
+	EdgeName  string `json:"edge_name,omitempty"`
+	Status    string `json:"status"` // pending, downloading, deploying, succeeded, failed
+	Error     string `json:"error,omitempty"`
+	StartedAt string `json:"started_at,omitempty"`
+	DoneAt    string `json:"done_at,omitempty"`
+}
+
+// DeployTriggerRequest is the payload for POST /v1/deploy/trigger.
+type DeployTriggerRequest struct {
+	JobID           string   `json:"job_id"`
+	ArtifactPattern string   `json:"artifact_pattern,omitempty"`
+	EdgeFilter      string   `json:"edge_filter,omitempty"`
+	EdgeIDs         []string `json:"edge_ids,omitempty"`
+	PostCommand     string   `json:"post_command,omitempty"`
+}
+
+// DeployTriggerResponse is the response from POST /v1/deploy/trigger.
+type DeployTriggerResponse struct {
+	DeployID    string `json:"deploy_id"`
+	Status      string `json:"status"`
+	TargetCount int    `json:"target_count"`
+}
+
+// =========================================================================
+// Artifact Models (hub.Client compatible)
+// =========================================================================
+
+// Artifact represents a file artifact associated with a job.
+type Artifact struct {
+	ID          string `json:"id"`
+	JobID       string `json:"job_id"`
+	Path        string `json:"path"`
+	ContentHash string `json:"content_hash,omitempty"`
+	SizeBytes   int64  `json:"size_bytes,omitempty"`
+	Confirmed   bool   `json:"confirmed"`
+	CreatedAt   string `json:"created_at,omitempty"`
+}
+
+// PresignedURLRequest is the payload for POST /v1/storage/presigned-url.
+type PresignedURLRequest struct {
+	Path        string `json:"path"`
+	Method      string `json:"method"` // GET or PUT
+	TTLSeconds  int    `json:"ttl_seconds,omitempty"`
+	ContentType string `json:"content_type,omitempty"`
+}
+
+// PresignedURLResponse is the response from POST /v1/storage/presigned-url.
+type PresignedURLResponse struct {
+	URL       string `json:"url"`
+	ExpiresAt string `json:"expires_at"`
+}
+
+// ArtifactConfirmRequest is the payload for POST /v1/artifacts/{job_id}/confirm.
+type ArtifactConfirmRequest struct {
+	Path        string `json:"path"`
+	ContentHash string `json:"content_hash"`
+	SizeBytes   int64  `json:"size_bytes"`
+}
+
+// ArtifactConfirmResponse is the response from POST /v1/artifacts/{job_id}/confirm.
+type ArtifactConfirmResponse struct {
+	ArtifactID string `json:"artifact_id"`
+	Confirmed  bool   `json:"confirmed"`
+}
+
+// ArtifactURLResponse is the response from GET /v1/artifacts/{job_id}/url/{name}.
+type ArtifactURLResponse struct {
+	URL string `json:"url"`
+}
+
+// =========================================================================
+// WebSocket Models (hub.Client compatible)
+// =========================================================================
+
+// MetricMessage represents a message on the metrics WebSocket.
+type MetricMessage struct {
+	Type    string         `json:"type"` // metric, status, history, error
+	JobID   string         `json:"job_id,omitempty"`
+	Step    int            `json:"step,omitempty"`
+	Metrics map[string]any `json:"metrics,omitempty"`
+	Status  string         `json:"status,omitempty"`
+	Error   string         `json:"error,omitempty"`
+}
+
 // ----- Command normalization for duration estimation -----
 
 var (

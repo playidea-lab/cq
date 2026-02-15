@@ -10,12 +10,14 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/piqsol/c4/c5/internal/storage"
 	"github.com/piqsol/c4/c5/internal/store"
 )
 
 // Server is the C5 HTTP API server.
 type Server struct {
 	store     *store.Store
+	storage   storage.Backend
 	estimator *Estimator
 	startTime time.Time
 	version   string
@@ -25,15 +27,23 @@ type Server struct {
 
 // Config holds server configuration.
 type Config struct {
-	Store   *store.Store
-	Version string
-	APIKey  string // if non-empty, X-API-Key header is required
+	Store     *store.Store
+	Storage   storage.Backend // if nil, auto-detected from env
+	Version   string
+	APIKey    string // if non-empty, X-API-Key header is required
+	ServerURL string // server's external URL (for local storage fallback)
 }
 
 // NewServer creates an HTTP API server.
 func NewServer(cfg Config) *Server {
+	stor := cfg.Storage
+	if stor == nil {
+		stor = storage.NewBackend(cfg.ServerURL)
+	}
+
 	s := &Server{
 		store:     cfg.Store,
+		storage:   stor,
 		estimator: NewEstimator(cfg.Store),
 		startTime: time.Now(),
 		version:   cfg.Version,
@@ -77,6 +87,31 @@ func (s *Server) registerRoutes() {
 
 	// Metrics
 	s.mux.HandleFunc("/v1/metrics/", s.handleMetrics)
+
+	// DAGs
+	s.mux.HandleFunc("/v1/dags/from-yaml", s.handleDAGFromYAML)
+	s.mux.HandleFunc("/v1/dags", s.handleDAGsList)
+	s.mux.HandleFunc("/v1/dags/", s.handleDAGByID)
+
+	// Edges
+	s.mux.HandleFunc("/v1/edges/register", s.handleEdgeRegister)
+	s.mux.HandleFunc("/v1/edges/heartbeat", s.handleEdgeHeartbeat)
+	s.mux.HandleFunc("/v1/edges", s.handleEdgesList)
+	s.mux.HandleFunc("/v1/edges/", s.handleEdgeByID)
+
+	// Deploy
+	s.mux.HandleFunc("/v1/deploy/rules", s.handleDeployRulesList)
+	s.mux.HandleFunc("/v1/deploy/rules/", s.handleDeployRuleByID)
+	s.mux.HandleFunc("/v1/deploy/trigger", s.handleDeployTrigger)
+	s.mux.HandleFunc("/v1/deploy/", s.handleDeployStatus)
+
+	// Artifacts & Storage
+	s.mux.HandleFunc("/v1/storage/presigned-url", s.handlePresignedURL)
+	s.mux.HandleFunc("/v1/storage/upload", s.handleUploadArtifact)
+	s.mux.HandleFunc("/v1/artifacts/", s.handleArtifacts)
+
+	// WebSocket
+	s.mux.HandleFunc("/ws/metrics/", s.handleWSMetrics)
 }
 
 func (s *Server) authMiddleware(next http.Handler) http.Handler {
@@ -112,6 +147,14 @@ func (s *Server) leaseExpiryLoop() {
 			log.Printf("c5: stale worker check error: %v", err)
 		} else if stale > 0 {
 			log.Printf("c5: marked %d workers as offline", stale)
+		}
+
+		// Mark stale edges
+		staleEdges, err := s.store.MarkStaleEdges(5 * time.Minute)
+		if err != nil {
+			log.Printf("c5: stale edge check error: %v", err)
+		} else if staleEdges > 0 {
+			log.Printf("c5: marked %d edges as offline", staleEdges)
 		}
 	}
 }

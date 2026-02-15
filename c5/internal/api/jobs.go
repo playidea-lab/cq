@@ -185,6 +185,9 @@ func (s *Server) handleJobComplete(w http.ResponseWriter, r *http.Request, jobID
 	// Clean up lease
 	s.store.DeleteLease(jobID)
 
+	// DAG orchestrator hook: advance DAG if this job was a DAG node
+	s.onJobComplete(jobID, status, req.ExitCode)
+
 	writeJSON(w, map[string]any{
 		"job_id": jobID,
 		"status": string(status),

@@ -128,6 +128,100 @@ func (s *Store) migrate() error {
 			created_at   TEXT NOT NULL
 		);
 		CREATE INDEX IF NOT EXISTS idx_job_durations_hash ON job_durations(command_hash);
+
+		CREATE TABLE IF NOT EXISTS dags (
+			id          TEXT PRIMARY KEY,
+			name        TEXT NOT NULL,
+			description TEXT NOT NULL DEFAULT '',
+			tags        TEXT NOT NULL DEFAULT '[]',
+			status      TEXT NOT NULL DEFAULT 'pending',
+			created_at  TEXT NOT NULL,
+			started_at  TEXT,
+			finished_at TEXT
+		);
+
+		CREATE TABLE IF NOT EXISTS dag_nodes (
+			id          TEXT PRIMARY KEY,
+			dag_id      TEXT NOT NULL,
+			name        TEXT NOT NULL,
+			description TEXT NOT NULL DEFAULT '',
+			command     TEXT NOT NULL,
+			working_dir TEXT NOT NULL DEFAULT '.',
+			env         TEXT NOT NULL DEFAULT '{}',
+			gpu_count   INTEGER NOT NULL DEFAULT 0,
+			max_retries INTEGER NOT NULL DEFAULT 3,
+			status      TEXT NOT NULL DEFAULT 'pending',
+			job_id      TEXT NOT NULL DEFAULT '',
+			started_at  TEXT,
+			finished_at TEXT,
+			exit_code   INTEGER
+		);
+		CREATE INDEX IF NOT EXISTS idx_dag_nodes_dag ON dag_nodes(dag_id);
+
+		CREATE TABLE IF NOT EXISTS dag_dependencies (
+			id        INTEGER PRIMARY KEY AUTOINCREMENT,
+			dag_id    TEXT NOT NULL,
+			source_id TEXT NOT NULL,
+			target_id TEXT NOT NULL,
+			dep_type  TEXT NOT NULL DEFAULT 'sequential'
+		);
+		CREATE INDEX IF NOT EXISTS idx_dag_deps_dag ON dag_dependencies(dag_id);
+
+		CREATE TABLE IF NOT EXISTS edges (
+			id        TEXT PRIMARY KEY,
+			name      TEXT NOT NULL,
+			status    TEXT NOT NULL DEFAULT 'online',
+			tags      TEXT NOT NULL DEFAULT '[]',
+			arch      TEXT NOT NULL DEFAULT '',
+			runtime   TEXT NOT NULL DEFAULT '',
+			storage   REAL NOT NULL DEFAULT 0,
+			metadata  TEXT NOT NULL DEFAULT '{}',
+			last_seen TEXT NOT NULL,
+			created_at TEXT NOT NULL
+		);
+
+		CREATE TABLE IF NOT EXISTS deploy_rules (
+			id               TEXT PRIMARY KEY,
+			name             TEXT NOT NULL DEFAULT '',
+			trigger_expr     TEXT NOT NULL,
+			edge_filter      TEXT NOT NULL,
+			artifact_pattern TEXT NOT NULL,
+			post_command     TEXT NOT NULL DEFAULT '',
+			enabled          INTEGER NOT NULL DEFAULT 1,
+			created_at       TEXT NOT NULL
+		);
+
+		CREATE TABLE IF NOT EXISTS deployments (
+			id          TEXT PRIMARY KEY,
+			rule_id     TEXT NOT NULL DEFAULT '',
+			job_id      TEXT NOT NULL DEFAULT '',
+			status      TEXT NOT NULL DEFAULT 'pending',
+			created_at  TEXT NOT NULL,
+			finished_at TEXT
+		);
+
+		CREATE TABLE IF NOT EXISTS deploy_targets (
+			id         INTEGER PRIMARY KEY AUTOINCREMENT,
+			deploy_id  TEXT NOT NULL,
+			edge_id    TEXT NOT NULL,
+			edge_name  TEXT NOT NULL DEFAULT '',
+			status     TEXT NOT NULL DEFAULT 'pending',
+			error      TEXT NOT NULL DEFAULT '',
+			started_at TEXT,
+			done_at    TEXT
+		);
+		CREATE INDEX IF NOT EXISTS idx_deploy_targets_deploy ON deploy_targets(deploy_id);
+
+		CREATE TABLE IF NOT EXISTS artifacts (
+			id           TEXT PRIMARY KEY,
+			job_id       TEXT NOT NULL,
+			path         TEXT NOT NULL,
+			content_hash TEXT NOT NULL DEFAULT '',
+			size_bytes   INTEGER NOT NULL DEFAULT 0,
+			confirmed    INTEGER NOT NULL DEFAULT 0,
+			created_at   TEXT NOT NULL
+		);
+		CREATE INDEX IF NOT EXISTS idx_artifacts_job ON artifacts(job_id);
 	`)
 	return err
 }
@@ -741,6 +835,847 @@ func (s *Store) GetGlobalDurations(limit int) ([]float64, error) {
 		durations = append(durations, d)
 	}
 	return durations, rows.Err()
+}
+
+// =========================================================================
+// DAGs
+// =========================================================================
+
+// CreateDAG creates a new DAG.
+func (s *Store) CreateDAG(req *model.DAGCreateRequest) (*model.DAG, error) {
+	id := generateID("dag")
+	now := time.Now().UTC().Format(time.RFC3339)
+
+	_, err := s.db.Exec(`
+		INSERT INTO dags (id, name, description, tags, status, created_at)
+		VALUES (?, ?, ?, ?, 'pending', ?)`,
+		id, req.Name, req.Description, marshalJSON(req.Tags), now)
+	if err != nil {
+		return nil, fmt.Errorf("create dag: %w", err)
+	}
+
+	return &model.DAG{
+		ID:          id,
+		Name:        req.Name,
+		Description: req.Description,
+		Tags:        req.Tags,
+		Status:      "pending",
+		CreatedAt:   now,
+	}, nil
+}
+
+// GetDAG retrieves a DAG with all its nodes and dependencies.
+func (s *Store) GetDAG(id string) (*model.DAG, error) {
+	var dag model.DAG
+	var tagsJSON string
+	var startedAt, finishedAt sql.NullString
+
+	err := s.db.QueryRow(`
+		SELECT id, name, description, tags, status, created_at, started_at, finished_at
+		FROM dags WHERE id = ?`, id).Scan(
+		&dag.ID, &dag.Name, &dag.Description, &tagsJSON, &dag.Status,
+		&dag.CreatedAt, &startedAt, &finishedAt)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, fmt.Errorf("dag not found: %s", id)
+		}
+		return nil, fmt.Errorf("get dag: %w", err)
+	}
+	json.Unmarshal([]byte(tagsJSON), &dag.Tags)
+	if startedAt.Valid {
+		dag.StartedAt = startedAt.String
+	}
+	if finishedAt.Valid {
+		dag.FinishedAt = finishedAt.String
+	}
+
+	// Load nodes
+	nodes, err := s.getDAGNodes(id)
+	if err != nil {
+		return nil, err
+	}
+	dag.Nodes = nodes
+
+	// Load dependencies
+	deps, err := s.getDAGDependencies(id)
+	if err != nil {
+		return nil, err
+	}
+	dag.Dependencies = deps
+
+	return &dag, nil
+}
+
+// ListDAGs returns DAGs with optional status filter.
+func (s *Store) ListDAGs(status string, limit int) ([]model.DAG, error) {
+	query := `SELECT id, name, description, tags, status, created_at, started_at, finished_at FROM dags`
+	args := []any{}
+	if status != "" {
+		query += " WHERE status = ?"
+		args = append(args, status)
+	}
+	query += " ORDER BY created_at DESC"
+	if limit > 0 {
+		query += fmt.Sprintf(" LIMIT %d", limit)
+	}
+
+	rows, err := s.db.Query(query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list dags: %w", err)
+	}
+	defer rows.Close()
+
+	var dags []model.DAG
+	for rows.Next() {
+		var d model.DAG
+		var tagsJSON string
+		var startedAt, finishedAt sql.NullString
+		if err := rows.Scan(&d.ID, &d.Name, &d.Description, &tagsJSON, &d.Status,
+			&d.CreatedAt, &startedAt, &finishedAt); err != nil {
+			return nil, err
+		}
+		json.Unmarshal([]byte(tagsJSON), &d.Tags)
+		if startedAt.Valid {
+			d.StartedAt = startedAt.String
+		}
+		if finishedAt.Valid {
+			d.FinishedAt = finishedAt.String
+		}
+		dags = append(dags, d)
+	}
+	return dags, rows.Err()
+}
+
+// UpdateDAGStatus updates the status of a DAG.
+func (s *Store) UpdateDAGStatus(dagID, status string) error {
+	now := time.Now().UTC().Format(time.RFC3339)
+	var err error
+	switch status {
+	case "running":
+		_, err = s.db.Exec(`UPDATE dags SET status = ?, started_at = ? WHERE id = ?`, status, now, dagID)
+	case "completed", "failed":
+		_, err = s.db.Exec(`UPDATE dags SET status = ?, finished_at = ? WHERE id = ?`, status, now, dagID)
+	default:
+		_, err = s.db.Exec(`UPDATE dags SET status = ? WHERE id = ?`, status, dagID)
+	}
+	return err
+}
+
+// AddDAGNode adds a node to a DAG.
+func (s *Store) AddDAGNode(dagID string, req *model.DAGAddNodeRequest) (*model.DAGNode, error) {
+	id := generateID("dn")
+	_, err := s.db.Exec(`
+		INSERT INTO dag_nodes (id, dag_id, name, description, command, working_dir, env, gpu_count, max_retries, status)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
+		id, dagID, req.Name, req.Description, req.Command,
+		req.WorkingDir, marshalJSON(req.Env), req.GPUCount, req.MaxRetries)
+	if err != nil {
+		return nil, fmt.Errorf("add dag node: %w", err)
+	}
+	return &model.DAGNode{
+		ID:         id,
+		Name:       req.Name,
+		Command:    req.Command,
+		WorkingDir: req.WorkingDir,
+		Env:        req.Env,
+		GPUCount:   req.GPUCount,
+		MaxRetries: req.MaxRetries,
+		Status:     "pending",
+	}, nil
+}
+
+// AddDAGDependency adds a dependency between two nodes.
+func (s *Store) AddDAGDependency(dagID string, req *model.DAGAddDependencyRequest) error {
+	depType := req.Type
+	if depType == "" {
+		depType = "sequential"
+	}
+	_, err := s.db.Exec(`
+		INSERT INTO dag_dependencies (dag_id, source_id, target_id, dep_type)
+		VALUES (?, ?, ?, ?)`,
+		dagID, req.SourceID, req.TargetID, depType)
+	if err != nil {
+		return fmt.Errorf("add dag dep: %w", err)
+	}
+	return nil
+}
+
+// TopologicalSort returns nodes in topological order. Returns error if cycle detected.
+func (s *Store) TopologicalSort(dagID string) ([]string, error) {
+	nodes, err := s.getDAGNodes(dagID)
+	if err != nil {
+		return nil, err
+	}
+	deps, err := s.getDAGDependencies(dagID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Build adjacency list and in-degree map
+	inDegree := make(map[string]int)
+	adj := make(map[string][]string)
+	for _, n := range nodes {
+		inDegree[n.ID] = 0
+	}
+	for _, d := range deps {
+		adj[d.SourceID] = append(adj[d.SourceID], d.TargetID)
+		inDegree[d.TargetID]++
+	}
+
+	// Kahn's algorithm
+	var queue []string
+	for _, n := range nodes {
+		if inDegree[n.ID] == 0 {
+			queue = append(queue, n.ID)
+		}
+	}
+
+	var order []string
+	for len(queue) > 0 {
+		node := queue[0]
+		queue = queue[1:]
+		order = append(order, node)
+
+		for _, next := range adj[node] {
+			inDegree[next]--
+			if inDegree[next] == 0 {
+				queue = append(queue, next)
+			}
+		}
+	}
+
+	if len(order) != len(nodes) {
+		return nil, fmt.Errorf("cycle detected in DAG %s", dagID)
+	}
+	return order, nil
+}
+
+// GetReadyNodes returns nodes that have no pending dependencies (all sources completed).
+func (s *Store) GetReadyNodes(dagID string) ([]model.DAGNode, error) {
+	rows, err := s.db.Query(`
+		SELECT n.id, n.name, n.description, n.command, n.working_dir, n.env,
+			n.gpu_count, n.max_retries, n.status, n.job_id, n.started_at, n.finished_at, n.exit_code
+		FROM dag_nodes n
+		WHERE n.dag_id = ? AND n.status = 'pending'
+		AND NOT EXISTS (
+			SELECT 1 FROM dag_dependencies d
+			JOIN dag_nodes src ON d.source_id = src.id
+			WHERE d.dag_id = ? AND d.target_id = n.id
+			AND src.status != 'succeeded'
+		)`, dagID, dagID)
+	if err != nil {
+		return nil, fmt.Errorf("get ready nodes: %w", err)
+	}
+	defer rows.Close()
+
+	return scanDAGNodes(rows)
+}
+
+// AdvanceDAG checks if the DAG can advance after a job completes.
+// It queues ready nodes as jobs and updates the DAG status.
+// Returns the number of new jobs created.
+func (s *Store) AdvanceDAG(dagID string) (int, error) {
+	readyNodes, err := s.GetReadyNodes(dagID)
+	if err != nil {
+		return 0, err
+	}
+
+	created := 0
+	for _, node := range readyNodes {
+		job, err := s.CreateJob(&model.JobSubmitRequest{
+			Name:        fmt.Sprintf("dag:%s/%s", dagID, node.Name),
+			Workdir:     node.WorkingDir,
+			Command:     node.Command,
+			Env:         node.Env,
+			RequiresGPU: node.GPUCount > 0,
+		})
+		if err != nil {
+			return created, fmt.Errorf("create job for node %s: %w", node.ID, err)
+		}
+
+		// Link node to job
+		now := time.Now().UTC().Format(time.RFC3339)
+		s.db.Exec(`UPDATE dag_nodes SET status = 'running', job_id = ?, started_at = ? WHERE id = ?`,
+			job.ID, now, node.ID)
+		created++
+	}
+
+	// Check if DAG is complete (all nodes succeeded) or failed
+	if created == 0 {
+		var pending, running, failed int
+		s.db.QueryRow(`SELECT COUNT(*) FROM dag_nodes WHERE dag_id = ? AND status = 'pending'`, dagID).Scan(&pending)
+		s.db.QueryRow(`SELECT COUNT(*) FROM dag_nodes WHERE dag_id = ? AND status = 'running'`, dagID).Scan(&running)
+		s.db.QueryRow(`SELECT COUNT(*) FROM dag_nodes WHERE dag_id = ? AND status = 'failed'`, dagID).Scan(&failed)
+
+		if pending == 0 && running == 0 {
+			if failed > 0 {
+				s.UpdateDAGStatus(dagID, "failed")
+			} else {
+				s.UpdateDAGStatus(dagID, "completed")
+			}
+		}
+	}
+
+	return created, nil
+}
+
+// UpdateDAGNodeFromJob updates a DAG node's status based on its linked job's completion.
+func (s *Store) UpdateDAGNodeFromJob(jobID string, status model.JobStatus, exitCode int) (string, error) {
+	var nodeID, dagID string
+	err := s.db.QueryRow(`SELECT id, dag_id FROM dag_nodes WHERE job_id = ?`, jobID).Scan(&nodeID, &dagID)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return "", nil // not a DAG node job
+		}
+		return "", fmt.Errorf("find dag node for job: %w", err)
+	}
+
+	now := time.Now().UTC().Format(time.RFC3339)
+	nodeStatus := "succeeded"
+	if status == model.StatusFailed {
+		nodeStatus = "failed"
+	}
+
+	_, err = s.db.Exec(`UPDATE dag_nodes SET status = ?, finished_at = ?, exit_code = ? WHERE id = ?`,
+		nodeStatus, now, exitCode, nodeID)
+	if err != nil {
+		return "", fmt.Errorf("update dag node: %w", err)
+	}
+
+	return dagID, nil
+}
+
+// getDAGNodes returns all nodes for a DAG.
+func (s *Store) getDAGNodes(dagID string) ([]model.DAGNode, error) {
+	rows, err := s.db.Query(`
+		SELECT id, name, description, command, working_dir, env,
+			gpu_count, max_retries, status, job_id, started_at, finished_at, exit_code
+		FROM dag_nodes WHERE dag_id = ? ORDER BY id ASC`, dagID)
+	if err != nil {
+		return nil, fmt.Errorf("get dag nodes: %w", err)
+	}
+	defer rows.Close()
+	return scanDAGNodes(rows)
+}
+
+// getDAGDependencies returns all dependencies for a DAG.
+func (s *Store) getDAGDependencies(dagID string) ([]model.DAGDependency, error) {
+	rows, err := s.db.Query(`
+		SELECT source_id, target_id, dep_type
+		FROM dag_dependencies WHERE dag_id = ?`, dagID)
+	if err != nil {
+		return nil, fmt.Errorf("get dag deps: %w", err)
+	}
+	defer rows.Close()
+
+	var deps []model.DAGDependency
+	for rows.Next() {
+		var d model.DAGDependency
+		if err := rows.Scan(&d.SourceID, &d.TargetID, &d.Type); err != nil {
+			return nil, err
+		}
+		deps = append(deps, d)
+	}
+	return deps, rows.Err()
+}
+
+func scanDAGNodes(rows *sql.Rows) ([]model.DAGNode, error) {
+	var nodes []model.DAGNode
+	for rows.Next() {
+		var n model.DAGNode
+		var envJSON string
+		var startedAt, finishedAt sql.NullString
+		var exitCode sql.NullInt64
+		if err := rows.Scan(&n.ID, &n.Name, &n.Description, &n.Command, &n.WorkingDir, &envJSON,
+			&n.GPUCount, &n.MaxRetries, &n.Status, &n.JobID, &startedAt, &finishedAt, &exitCode); err != nil {
+			return nil, err
+		}
+		json.Unmarshal([]byte(envJSON), &n.Env)
+		if startedAt.Valid {
+			n.StartedAt = startedAt.String
+		}
+		if finishedAt.Valid {
+			n.FinishedAt = finishedAt.String
+		}
+		if exitCode.Valid {
+			ec := int(exitCode.Int64)
+			n.ExitCode = &ec
+		}
+		nodes = append(nodes, n)
+	}
+	return nodes, rows.Err()
+}
+
+// =========================================================================
+// Edges
+// =========================================================================
+
+// RegisterEdge inserts a new edge device.
+func (s *Store) RegisterEdge(req *model.EdgeRegisterRequest) (*model.Edge, error) {
+	id := generateID("edge")
+	now := time.Now().UTC().Format(time.RFC3339)
+
+	_, err := s.db.Exec(`
+		INSERT INTO edges (id, name, status, tags, arch, runtime, storage, metadata, last_seen, created_at)
+		VALUES (?, ?, 'online', ?, ?, ?, ?, ?, ?, ?)`,
+		id, req.Name, marshalJSON(req.Tags), req.Arch, req.Runtime,
+		req.Storage, marshalJSON(req.Meta), now, now)
+	if err != nil {
+		return nil, fmt.Errorf("register edge: %w", err)
+	}
+	return &model.Edge{
+		ID:       id,
+		Name:     req.Name,
+		Status:   "online",
+		Tags:     req.Tags,
+		Arch:     req.Arch,
+		Runtime:  req.Runtime,
+		Storage:  req.Storage,
+		Metadata: req.Meta,
+		LastSeen: now,
+	}, nil
+}
+
+// GetEdge retrieves an edge device by ID.
+func (s *Store) GetEdge(id string) (*model.Edge, error) {
+	var e model.Edge
+	var tagsJSON, metaJSON string
+	err := s.db.QueryRow(`
+		SELECT id, name, status, tags, arch, runtime, storage, metadata, last_seen
+		FROM edges WHERE id = ?`, id).Scan(
+		&e.ID, &e.Name, &e.Status, &tagsJSON, &e.Arch, &e.Runtime,
+		&e.Storage, &metaJSON, &e.LastSeen)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, fmt.Errorf("edge not found: %s", id)
+		}
+		return nil, fmt.Errorf("get edge: %w", err)
+	}
+	json.Unmarshal([]byte(tagsJSON), &e.Tags)
+	json.Unmarshal([]byte(metaJSON), &e.Metadata)
+	return &e, nil
+}
+
+// ListEdges returns all registered edge devices.
+func (s *Store) ListEdges() ([]model.Edge, error) {
+	rows, err := s.db.Query(`
+		SELECT id, name, status, tags, arch, runtime, storage, metadata, last_seen
+		FROM edges ORDER BY created_at DESC`)
+	if err != nil {
+		return nil, fmt.Errorf("list edges: %w", err)
+	}
+	defer rows.Close()
+
+	var edges []model.Edge
+	for rows.Next() {
+		var e model.Edge
+		var tagsJSON, metaJSON string
+		if err := rows.Scan(&e.ID, &e.Name, &e.Status, &tagsJSON, &e.Arch, &e.Runtime,
+			&e.Storage, &metaJSON, &e.LastSeen); err != nil {
+			return nil, err
+		}
+		json.Unmarshal([]byte(tagsJSON), &e.Tags)
+		json.Unmarshal([]byte(metaJSON), &e.Metadata)
+		edges = append(edges, e)
+	}
+	return edges, rows.Err()
+}
+
+// UpdateEdgeHeartbeat updates an edge device's last_seen timestamp.
+func (s *Store) UpdateEdgeHeartbeat(req *model.EdgeHeartbeatRequest) error {
+	now := time.Now().UTC().Format(time.RFC3339)
+	query := `UPDATE edges SET last_seen = ?`
+	args := []any{now}
+
+	if req.Status != "" {
+		query += ", status = ?"
+		args = append(args, req.Status)
+	}
+	query += " WHERE id = ?"
+	args = append(args, req.EdgeID)
+
+	result, err := s.db.Exec(query, args...)
+	if err != nil {
+		return fmt.Errorf("update edge heartbeat: %w", err)
+	}
+	n, _ := result.RowsAffected()
+	if n == 0 {
+		return fmt.Errorf("edge not found: %s", req.EdgeID)
+	}
+	return nil
+}
+
+// RemoveEdge deletes an edge device.
+func (s *Store) RemoveEdge(id string) error {
+	result, err := s.db.Exec(`DELETE FROM edges WHERE id = ?`, id)
+	if err != nil {
+		return fmt.Errorf("remove edge: %w", err)
+	}
+	n, _ := result.RowsAffected()
+	if n == 0 {
+		return fmt.Errorf("edge not found: %s", id)
+	}
+	return nil
+}
+
+// MarkStaleEdges marks edges with last_seen older than threshold as offline.
+func (s *Store) MarkStaleEdges(threshold time.Duration) (int, error) {
+	cutoff := time.Now().UTC().Add(-threshold).Format(time.RFC3339)
+	result, err := s.db.Exec(`
+		UPDATE edges SET status = 'offline'
+		WHERE status = 'online' AND last_seen < ?`, cutoff)
+	if err != nil {
+		return 0, err
+	}
+	n, _ := result.RowsAffected()
+	return int(n), nil
+}
+
+// MatchEdges returns edges matching a filter expression.
+// Supports: "tag:xxx" (tag match), "name:xxx" (glob match), "all" (all edges).
+func (s *Store) MatchEdges(filter string) ([]model.Edge, error) {
+	edges, err := s.ListEdges()
+	if err != nil {
+		return nil, err
+	}
+	if filter == "" || filter == "all" {
+		return edges, nil
+	}
+
+	var matched []model.Edge
+	for _, e := range edges {
+		if matchEdgeFilter(e, filter) {
+			matched = append(matched, e)
+		}
+	}
+	return matched, nil
+}
+
+func matchEdgeFilter(e model.Edge, filter string) bool {
+	// tag:xxx — match edges with this tag
+	if len(filter) > 4 && filter[:4] == "tag:" {
+		tag := filter[4:]
+		for _, t := range e.Tags {
+			if t == tag {
+				return true
+			}
+		}
+		return false
+	}
+	// name:xxx — simple prefix/suffix match with *
+	if len(filter) > 5 && filter[:5] == "name:" {
+		pattern := filter[5:]
+		if len(pattern) > 0 && pattern[len(pattern)-1] == '*' {
+			prefix := pattern[:len(pattern)-1]
+			return len(e.Name) >= len(prefix) && e.Name[:len(prefix)] == prefix
+		}
+		return e.Name == pattern
+	}
+	return false
+}
+
+// =========================================================================
+// Deploy Rules & Deployments
+// =========================================================================
+
+// CreateDeployRule creates a new auto-deployment rule.
+func (s *Store) CreateDeployRule(req *model.DeployRuleCreateRequest) (*model.DeployRule, error) {
+	id := generateID("dr")
+	now := time.Now().UTC().Format(time.RFC3339)
+
+	_, err := s.db.Exec(`
+		INSERT INTO deploy_rules (id, name, trigger_expr, edge_filter, artifact_pattern, post_command, enabled, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, 1, ?)`,
+		id, req.Name, req.Trigger, req.EdgeFilter, req.ArtifactPattern, req.PostCommand, now)
+	if err != nil {
+		return nil, fmt.Errorf("create deploy rule: %w", err)
+	}
+	return &model.DeployRule{
+		ID:              id,
+		Name:            req.Name,
+		Trigger:         req.Trigger,
+		EdgeFilter:      req.EdgeFilter,
+		ArtifactPattern: req.ArtifactPattern,
+		PostCommand:     req.PostCommand,
+		Enabled:         true,
+		CreatedAt:       now,
+	}, nil
+}
+
+// ListDeployRules returns all deploy rules.
+func (s *Store) ListDeployRules() ([]model.DeployRule, error) {
+	rows, err := s.db.Query(`
+		SELECT id, name, trigger_expr, edge_filter, artifact_pattern, post_command, enabled, created_at
+		FROM deploy_rules ORDER BY created_at DESC`)
+	if err != nil {
+		return nil, fmt.Errorf("list deploy rules: %w", err)
+	}
+	defer rows.Close()
+
+	var rules []model.DeployRule
+	for rows.Next() {
+		var r model.DeployRule
+		var enabled int
+		if err := rows.Scan(&r.ID, &r.Name, &r.Trigger, &r.EdgeFilter,
+			&r.ArtifactPattern, &r.PostCommand, &enabled, &r.CreatedAt); err != nil {
+			return nil, err
+		}
+		r.Enabled = enabled != 0
+		rules = append(rules, r)
+	}
+	return rules, rows.Err()
+}
+
+// DeleteDeployRule removes a deploy rule by ID.
+func (s *Store) DeleteDeployRule(id string) error {
+	result, err := s.db.Exec(`DELETE FROM deploy_rules WHERE id = ?`, id)
+	if err != nil {
+		return fmt.Errorf("delete deploy rule: %w", err)
+	}
+	n, _ := result.RowsAffected()
+	if n == 0 {
+		return fmt.Errorf("deploy rule not found: %s", id)
+	}
+	return nil
+}
+
+// CreateDeployment creates a new deployment and its targets.
+func (s *Store) CreateDeployment(req *model.DeployTriggerRequest, edges []model.Edge) (*model.Deployment, error) {
+	id := generateID("dep")
+	now := time.Now().UTC().Format(time.RFC3339)
+
+	tx, err := s.db.Begin()
+	if err != nil {
+		return nil, fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback()
+
+	_, err = tx.Exec(`
+		INSERT INTO deployments (id, job_id, status, created_at)
+		VALUES (?, ?, 'pending', ?)`, id, req.JobID, now)
+	if err != nil {
+		return nil, fmt.Errorf("create deployment: %w", err)
+	}
+
+	targets := make([]model.DeployTarget, 0, len(edges))
+	for _, e := range edges {
+		_, err = tx.Exec(`
+			INSERT INTO deploy_targets (deploy_id, edge_id, edge_name, status)
+			VALUES (?, ?, ?, 'pending')`, id, e.ID, e.Name)
+		if err != nil {
+			return nil, fmt.Errorf("create deploy target: %w", err)
+		}
+		targets = append(targets, model.DeployTarget{
+			EdgeID:   e.ID,
+			EdgeName: e.Name,
+			Status:   "pending",
+		})
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("commit: %w", err)
+	}
+
+	return &model.Deployment{
+		ID:        id,
+		JobID:     req.JobID,
+		Status:    "pending",
+		Targets:   targets,
+		CreatedAt: now,
+	}, nil
+}
+
+// GetDeployment retrieves a deployment with all its targets.
+func (s *Store) GetDeployment(id string) (*model.Deployment, error) {
+	var d model.Deployment
+	var finishedAt sql.NullString
+	err := s.db.QueryRow(`
+		SELECT id, rule_id, job_id, status, created_at, finished_at
+		FROM deployments WHERE id = ?`, id).Scan(
+		&d.ID, &d.RuleID, &d.JobID, &d.Status, &d.CreatedAt, &finishedAt)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, fmt.Errorf("deployment not found: %s", id)
+		}
+		return nil, fmt.Errorf("get deployment: %w", err)
+	}
+	if finishedAt.Valid {
+		d.FinishedAt = finishedAt.String
+	}
+
+	// Load targets
+	rows, err := s.db.Query(`
+		SELECT edge_id, edge_name, status, error, started_at, done_at
+		FROM deploy_targets WHERE deploy_id = ?`, id)
+	if err != nil {
+		return nil, fmt.Errorf("get deploy targets: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var t model.DeployTarget
+		var startedAt, doneAt sql.NullString
+		if err := rows.Scan(&t.EdgeID, &t.EdgeName, &t.Status, &t.Error, &startedAt, &doneAt); err != nil {
+			return nil, err
+		}
+		if startedAt.Valid {
+			t.StartedAt = startedAt.String
+		}
+		if doneAt.Valid {
+			t.DoneAt = doneAt.String
+		}
+		d.Targets = append(d.Targets, t)
+	}
+
+	return &d, rows.Err()
+}
+
+// UpdateDeployTarget updates a single target's status within a deployment.
+func (s *Store) UpdateDeployTarget(deployID, edgeID, status, errMsg string) error {
+	now := time.Now().UTC().Format(time.RFC3339)
+
+	switch status {
+	case "downloading", "deploying":
+		_, err := s.db.Exec(`
+			UPDATE deploy_targets SET status = ?, started_at = ?
+			WHERE deploy_id = ? AND edge_id = ?`,
+			status, now, deployID, edgeID)
+		return err
+	case "succeeded", "failed":
+		_, err := s.db.Exec(`
+			UPDATE deploy_targets SET status = ?, error = ?, done_at = ?
+			WHERE deploy_id = ? AND edge_id = ?`,
+			status, errMsg, now, deployID, edgeID)
+		if err != nil {
+			return err
+		}
+		// Check if all targets are done
+		return s.checkDeploymentComplete(deployID)
+	default:
+		_, err := s.db.Exec(`
+			UPDATE deploy_targets SET status = ?
+			WHERE deploy_id = ? AND edge_id = ?`,
+			status, deployID, edgeID)
+		return err
+	}
+}
+
+// checkDeploymentComplete checks if all targets are done and updates deployment status.
+func (s *Store) checkDeploymentComplete(deployID string) error {
+	var pending, failed int
+	s.db.QueryRow(`SELECT COUNT(*) FROM deploy_targets WHERE deploy_id = ? AND status NOT IN ('succeeded', 'failed')`, deployID).Scan(&pending)
+
+	if pending > 0 {
+		return nil // still in progress
+	}
+
+	s.db.QueryRow(`SELECT COUNT(*) FROM deploy_targets WHERE deploy_id = ? AND status = 'failed'`, deployID).Scan(&failed)
+
+	now := time.Now().UTC().Format(time.RFC3339)
+	var total int
+	s.db.QueryRow(`SELECT COUNT(*) FROM deploy_targets WHERE deploy_id = ?`, deployID).Scan(&total)
+
+	status := "completed"
+	if failed > 0 {
+		if failed == total {
+			status = "failed"
+		} else {
+			status = "partial"
+		}
+	}
+
+	_, err := s.db.Exec(`UPDATE deployments SET status = ?, finished_at = ? WHERE id = ?`,
+		status, now, deployID)
+	return err
+}
+
+// =========================================================================
+// Artifacts
+// =========================================================================
+
+// CreateArtifact creates a new artifact record (before upload).
+func (s *Store) CreateArtifact(jobID, path string) (*model.Artifact, error) {
+	id := generateID("art")
+	now := time.Now().UTC().Format(time.RFC3339)
+
+	_, err := s.db.Exec(`
+		INSERT INTO artifacts (id, job_id, path, confirmed, created_at)
+		VALUES (?, ?, ?, 0, ?)`, id, jobID, path, now)
+	if err != nil {
+		return nil, fmt.Errorf("create artifact: %w", err)
+	}
+	return &model.Artifact{
+		ID:        id,
+		JobID:     jobID,
+		Path:      path,
+		Confirmed: false,
+		CreatedAt: now,
+	}, nil
+}
+
+// ConfirmArtifact marks an artifact as confirmed with hash and size.
+func (s *Store) ConfirmArtifact(jobID string, req *model.ArtifactConfirmRequest) (*model.ArtifactConfirmResponse, error) {
+	result, err := s.db.Exec(`
+		UPDATE artifacts SET confirmed = 1, content_hash = ?, size_bytes = ?
+		WHERE job_id = ? AND path = ?`,
+		req.ContentHash, req.SizeBytes, jobID, req.Path)
+	if err != nil {
+		return nil, fmt.Errorf("confirm artifact: %w", err)
+	}
+	n, _ := result.RowsAffected()
+	if n == 0 {
+		return nil, fmt.Errorf("artifact not found: job=%s path=%s", jobID, req.Path)
+	}
+
+	var id string
+	s.db.QueryRow(`SELECT id FROM artifacts WHERE job_id = ? AND path = ?`, jobID, req.Path).Scan(&id)
+
+	return &model.ArtifactConfirmResponse{
+		ArtifactID: id,
+		Confirmed:  true,
+	}, nil
+}
+
+// GetArtifact retrieves a specific artifact by job ID and path.
+func (s *Store) GetArtifact(jobID, path string) (*model.Artifact, error) {
+	var a model.Artifact
+	var confirmed int
+	err := s.db.QueryRow(`
+		SELECT id, job_id, path, content_hash, size_bytes, confirmed, created_at
+		FROM artifacts WHERE job_id = ? AND path = ?`, jobID, path).Scan(
+		&a.ID, &a.JobID, &a.Path, &a.ContentHash, &a.SizeBytes, &confirmed, &a.CreatedAt)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, fmt.Errorf("artifact not found: job=%s path=%s", jobID, path)
+		}
+		return nil, fmt.Errorf("get artifact: %w", err)
+	}
+	a.Confirmed = confirmed != 0
+	return &a, nil
+}
+
+// ListArtifacts returns all artifacts for a job.
+func (s *Store) ListArtifacts(jobID string) ([]model.Artifact, error) {
+	rows, err := s.db.Query(`
+		SELECT id, job_id, path, content_hash, size_bytes, confirmed, created_at
+		FROM artifacts WHERE job_id = ? ORDER BY created_at ASC`, jobID)
+	if err != nil {
+		return nil, fmt.Errorf("list artifacts: %w", err)
+	}
+	defer rows.Close()
+
+	var artifacts []model.Artifact
+	for rows.Next() {
+		var a model.Artifact
+		var confirmed int
+		if err := rows.Scan(&a.ID, &a.JobID, &a.Path, &a.ContentHash,
+			&a.SizeBytes, &confirmed, &a.CreatedAt); err != nil {
+			return nil, err
+		}
+		a.Confirmed = confirmed != 0
+		artifacts = append(artifacts, a)
+	}
+	return artifacts, rows.Err()
 }
 
 // =========================================================================

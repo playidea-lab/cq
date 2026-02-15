@@ -1,0 +1,153 @@
+// Package storage provides artifact storage backends for C5.
+//
+// It supports Supabase Storage (presigned URLs) with a local filesystem fallback
+// when Supabase credentials are not configured.
+package storage
+
+import (
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
+)
+
+const (
+	defaultBucket = "c5-artifacts"
+	defaultTTL    = 3600 // 1 hour
+)
+
+// Backend provides artifact storage operations.
+type Backend interface {
+	// PresignedURL generates a presigned URL for upload (PUT) or download (GET).
+	PresignedURL(path, method string, ttlSeconds int) (url string, expiresAt time.Time, err error)
+}
+
+// SupabaseBackend uses Supabase Storage for artifact storage.
+type SupabaseBackend struct {
+	supabaseURL string
+	apiKey      string
+	bucket      string
+	httpClient  *http.Client
+}
+
+// NewSupabase creates a new Supabase storage backend.
+func NewSupabase(supabaseURL, apiKey string) *SupabaseBackend {
+	return &SupabaseBackend{
+		supabaseURL: strings.TrimRight(supabaseURL, "/"),
+		apiKey:      apiKey,
+		bucket:      defaultBucket,
+		httpClient:  &http.Client{Timeout: 30 * time.Second},
+	}
+}
+
+// PresignedURL generates a Supabase Storage presigned URL.
+func (s *SupabaseBackend) PresignedURL(path, method string, ttlSeconds int) (string, time.Time, error) {
+	if ttlSeconds == 0 {
+		ttlSeconds = defaultTTL
+	}
+	expiresAt := time.Now().UTC().Add(time.Duration(ttlSeconds) * time.Second)
+
+	if method == "PUT" {
+		// For uploads, return the direct upload URL
+		// Supabase Storage upload: POST /storage/v1/object/{bucket}/{path}
+		url := fmt.Sprintf("%s/storage/v1/object/%s/%s", s.supabaseURL, s.bucket, path)
+		return url, expiresAt, nil
+	}
+
+	// For downloads, create a signed URL
+	// Supabase Storage: POST /storage/v1/object/sign/{bucket}/{path}
+	signURL := fmt.Sprintf("%s/storage/v1/object/sign/%s/%s", s.supabaseURL, s.bucket, path)
+	body := fmt.Sprintf(`{"expiresIn":%d}`, ttlSeconds)
+
+	req, err := http.NewRequest("POST", signURL, strings.NewReader(body))
+	if err != nil {
+		return "", time.Time{}, fmt.Errorf("create sign request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("apikey", s.apiKey)
+	req.Header.Set("Authorization", "Bearer "+s.apiKey)
+
+	resp, err := s.httpClient.Do(req)
+	if err != nil {
+		return "", time.Time{}, fmt.Errorf("sign request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		return "", time.Time{}, fmt.Errorf("sign failed (status %d): %s", resp.StatusCode, string(respBody))
+	}
+
+	var result struct {
+		SignedURL string `json:"signedURL"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", time.Time{}, fmt.Errorf("decode sign response: %w", err)
+	}
+
+	// signedURL is relative, prepend base
+	fullURL := s.supabaseURL + "/storage/v1" + result.SignedURL
+	return fullURL, expiresAt, nil
+}
+
+// LocalBackend stores artifacts on the local filesystem.
+// Used as fallback when Supabase is not configured.
+type LocalBackend struct {
+	baseDir string
+	baseURL string // server's own URL for download links
+}
+
+// NewLocal creates a local filesystem storage backend.
+func NewLocal(baseDir, baseURL string) *LocalBackend {
+	os.MkdirAll(baseDir, 0755)
+	return &LocalBackend{
+		baseDir: baseDir,
+		baseURL: strings.TrimRight(baseURL, "/"),
+	}
+}
+
+// PresignedURL returns a local file path for uploads or a download URL.
+func (l *LocalBackend) PresignedURL(path, method string, ttlSeconds int) (string, time.Time, error) {
+	if ttlSeconds == 0 {
+		ttlSeconds = defaultTTL
+	}
+	expiresAt := time.Now().UTC().Add(time.Duration(ttlSeconds) * time.Second)
+
+	fullPath := filepath.Join(l.baseDir, path)
+	os.MkdirAll(filepath.Dir(fullPath), 0755)
+
+	if method == "PUT" {
+		// Return the local file path — client must handle local upload
+		return "file://" + fullPath, expiresAt, nil
+	}
+
+	// Return a download URL via the C5 server
+	url := fmt.Sprintf("%s/v1/storage/download/%s", l.baseURL, path)
+	return url, expiresAt, nil
+}
+
+// FilePath returns the local file path for a storage path.
+func (l *LocalBackend) FilePath(storagePath string) string {
+	return filepath.Join(l.baseDir, storagePath)
+}
+
+// NewBackend creates the appropriate storage backend based on environment.
+func NewBackend(serverURL string) Backend {
+	supabaseURL := os.Getenv("C5_SUPABASE_URL")
+	supabaseKey := os.Getenv("C5_SUPABASE_KEY")
+
+	if supabaseURL != "" && supabaseKey != "" {
+		return NewSupabase(supabaseURL, supabaseKey)
+	}
+
+	// Fallback to local storage
+	dataDir := os.Getenv("C5_DATA_DIR")
+	if dataDir == "" {
+		dataDir = "."
+	}
+	return NewLocal(filepath.Join(dataDir, "artifacts"), serverURL)
+}
