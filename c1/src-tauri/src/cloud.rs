@@ -70,7 +70,7 @@ pub fn read_supabase_config() -> Result<(String, String), String> {
     Ok((url.to_string(), anon_key.to_string()))
 }
 
-/// Read access_token from ~/.c4/session.json
+/// Read access_token from ~/.c4/session.json, auto-refreshing if expired.
 pub fn read_auth_token() -> Result<String, String> {
     let home = dirs::home_dir().ok_or("Could not find home directory")?;
     let session_path = home.join(".c4").join("session.json");
@@ -81,11 +81,92 @@ pub fn read_auth_token() -> Result<String, String> {
         .map_err(|e| format!("Failed to read session: {}", e))?;
     let session: serde_json::Value = serde_json::from_str(&content)
         .map_err(|e| format!("Invalid session: {}", e))?;
-    session
+
+    let access_token = session
         .get("access_token")
         .and_then(|v| v.as_str())
-        .map(String::from)
-        .ok_or("No access_token in session".to_string())
+        .ok_or("No access_token in session")?
+        .to_string();
+
+    // Check if token is expired or near expiry (5 min margin)
+    let needs_refresh = if let Some(expires_str) = session.get("expires_at").and_then(|v| v.as_str()) {
+        if let Ok(expires) = chrono::DateTime::parse_from_rfc3339(expires_str) {
+            let margin = chrono::Duration::minutes(5);
+            chrono::Utc::now() >= expires - margin
+        } else {
+            false
+        }
+    } else {
+        false
+    };
+
+    if !needs_refresh {
+        return Ok(access_token);
+    }
+
+    // Token expired — attempt refresh
+    let refresh_token = match session.get("refresh_token").and_then(|v| v.as_str()) {
+        Some(rt) if !rt.is_empty() => rt.to_string(),
+        _ => return Ok(access_token), // No refresh token, return stale token as best effort
+    };
+
+    let (supabase_url, anon_key) = match read_supabase_config() {
+        Ok(cfg) => cfg,
+        Err(_) => return Ok(access_token),
+    };
+
+    let client = match build_client() {
+        Ok(c) => c,
+        Err(_) => return Ok(access_token),
+    };
+
+    let refresh_url = format!(
+        "{}/auth/v1/token?grant_type=refresh_token",
+        supabase_url.trim_end_matches('/')
+    );
+
+    let body = serde_json::json!({ "refresh_token": refresh_token });
+
+    let resp = client
+        .post(&refresh_url)
+        .header("Content-Type", "application/json")
+        .header("apikey", &anon_key)
+        .json(&body)
+        .send();
+
+    match resp {
+        Ok(r) if r.status().is_success() => {
+            if let Ok(token_resp) = r.json::<serde_json::Value>() {
+                let new_token = token_resp
+                    .get("access_token")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+
+                if !new_token.is_empty() {
+                    // Build updated session and save
+                    let mut new_session = session.clone();
+                    if let Some(obj) = new_session.as_object_mut() {
+                        obj.insert("access_token".to_string(), serde_json::Value::String(new_token.clone()));
+                        if let Some(rt) = token_resp.get("refresh_token").and_then(|v| v.as_str()) {
+                            obj.insert("refresh_token".to_string(), serde_json::Value::String(rt.to_string()));
+                        }
+                        if let Some(exp) = token_resp.get("expires_in").and_then(|v| v.as_i64()) {
+                            let expires_at = chrono::Utc::now() + chrono::Duration::seconds(exp);
+                            obj.insert("expires_at".to_string(), serde_json::Value::String(expires_at.to_rfc3339()));
+                        }
+                    }
+                    // Best-effort save — don't fail if write fails
+                    if let Ok(json_str) = serde_json::to_string_pretty(&new_session) {
+                        let _ = fs::write(&session_path, json_str);
+                    }
+                    return Ok(new_token);
+                }
+            }
+            Ok(access_token) // Parse failed, return old token
+        }
+        _ => Ok(access_token), // Refresh failed, return old token
+    }
 }
 
 /// Open the local C4 SQLite database
