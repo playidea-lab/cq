@@ -508,7 +508,7 @@
 }
 
 .msg-row--assistant {
-  justify-content: flex-start;
+  justify-content: flex-end;
 }
 
 /* Message Bubble */
@@ -528,7 +528,7 @@
 .msg--assistant {
   background: var(--color-bg-secondary);
   border: 1px solid var(--color-border-subtle);
-  border-left: 3px solid var(--color-success);
+  border-right: 3px solid var(--color-success);
 }
 
 .msg--summary {
@@ -571,6 +571,14 @@
 
 .msg--assistant .msg__role {
   color: var(--color-success);
+}
+
+.msg--assistant .msg__header {
+  flex-direction: row-reverse;
+}
+
+.msg--assistant .msg__body {
+  text-align: left;
 }
 
 .msg__time {

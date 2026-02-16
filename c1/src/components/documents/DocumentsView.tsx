@@ -26,7 +26,12 @@ export function DocumentsView({ projectPath }: DocumentsViewProps) {
   const [activeTab, setActiveTab] = useState<DocType>('persona');
   const [selectedDoc, setSelectedDoc] = useState<DocumentMeta | null>(null);
   const [showCreate, setShowCreate] = useState(false);
+  const [docSearch, setDocSearch] = useState('');
   const { documents, loading, createDocument, deleteDocument } = useDocuments(projectPath, activeTab);
+
+  const filteredDocs = docSearch.trim()
+    ? documents.filter(d => d.name.toLowerCase().includes(docSearch.toLowerCase()))
+    : documents;
 
   const handleTabChange = (type: DocType) => {
     setActiveTab(type);
@@ -68,18 +73,25 @@ export function DocumentsView({ projectPath }: DocumentsViewProps) {
               </button>
             ))}
           </div>
+          <input
+            className="search-input"
+            type="text"
+            placeholder="Search documents..."
+            value={docSearch}
+            onChange={e => setDocSearch(e.target.value)}
+          />
         </div>
         <ul className="doc-sidebar__list">
           {loading ? (
             <li style={{ padding: '8px 16px' }}>
               <Skeleton variant="list-item" count={3} />
             </li>
-          ) : documents.length === 0 ? (
+          ) : filteredDocs.length === 0 ? (
             <li style={{ padding: '8px 16px', color: 'var(--color-text-muted)', fontSize: 'var(--font-size-sm)' }}>
-              No {activeTab} documents found
+              {docSearch.trim() ? 'No matches' : `No ${activeTab} documents found`}
             </li>
           ) : (
-            documents.map(doc => (
+            filteredDocs.map(doc => (
               <li
                 key={doc.path}
                 className={`doc-sidebar__item ${selectedDoc?.path === doc.path ? 'doc-sidebar__item--active' : ''}`}

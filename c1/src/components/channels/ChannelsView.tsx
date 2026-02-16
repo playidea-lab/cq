@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { useChannels } from '../../hooks/useChannels';
 import { useMessages } from '../../hooks/useMessages';
@@ -31,6 +31,7 @@ interface ChannelsViewProps {
 export function ChannelsView({ projectPath }: ChannelsViewProps) {
   const [activeTab, setActiveTab] = useState<MessengerTab>('sessions');
   const [showMembers, setShowMembers] = useState(false);
+  const [channelMsgFilter, setChannelMsgFilter] = useState('');
   const [projectId, setProjectId] = useState<string | null>(null);
 
   // Resolve projectPath → actual project_id via Rust IPC
@@ -78,11 +79,27 @@ export function ChannelsView({ projectPath }: ChannelsViewProps) {
     page,
     messagesLoading: sessionMessagesLoading,
     currentProvider,
+    searchResults,
+    searchLoading,
     listSessions,
     loadMessages,
     loadMore: sessionLoadMore,
+    searchContent,
+    clearSearchResults,
     startWatching,
   } = useSessions();
+
+  const [sessionSearchQuery, setSessionSearchQuery] = useState('');
+  const [msgFilter, setMsgFilter] = useState('');
+
+  const handleSessionSearch = useCallback((q: string) => {
+    setSessionSearchQuery(q);
+    if (q.trim().length >= 2) {
+      searchContent(projectPath, q.trim());
+    } else {
+      clearSearchResults();
+    }
+  }, [projectPath, searchContent, clearSearchResults]);
 
   // Load sessions when tab becomes active or provider changes
   useEffect(() => {
@@ -133,6 +150,13 @@ export function ChannelsView({ projectPath }: ChannelsViewProps) {
                   {selectedChannel.description && (
                     <span className="chat-panel__channel-desc">{selectedChannel.description}</span>
                   )}
+                  <input
+                    className="search-input search-input--inline"
+                    type="text"
+                    placeholder="Filter messages..."
+                    value={channelMsgFilter}
+                    onChange={e => setChannelMsgFilter(e.target.value)}
+                  />
                   <button
                     className="chat-panel__members-toggle"
                     onClick={() => setShowMembers(!showMembers)}
@@ -143,9 +167,13 @@ export function ChannelsView({ projectPath }: ChannelsViewProps) {
                 </div>
                 <div className="chat-panel__body">
                   <MessageList
-                    messages={channelMessages}
+                    messages={channelMsgFilter.trim()
+                      ? channelMessages.filter(m =>
+                          m.content.toLowerCase().includes(channelMsgFilter.toLowerCase())
+                        )
+                      : channelMessages}
                     loading={messagesLoading}
-                    hasMore={channelHasMore}
+                    hasMore={!channelMsgFilter.trim() && channelHasMore}
                     onLoadMore={channelLoadMore}
                     getMember={getMember}
                   />
@@ -178,12 +206,43 @@ export function ChannelsView({ projectPath }: ChannelsViewProps) {
                   </button>
                 ))}
               </div>
+              <input
+                className="search-input"
+                type="text"
+                placeholder="Search sessions..."
+                value={sessionSearchQuery}
+                onChange={e => handleSessionSearch(e.target.value)}
+              />
             </div>
-            <SessionList
-              sessions={sessions}
-              selected={currentSession}
-              onSelect={loadMessages}
-            />
+            {searchResults !== null ? (
+              <div className="search-results">
+                {searchLoading && <div className="search-results__loading">Searching...</div>}
+                {!searchLoading && searchResults.length === 0 && (
+                  <div className="search-results__empty">No matches</div>
+                )}
+                {searchResults.map((hit, i) => (
+                  <button
+                    key={`${hit.session_id}-${hit.line_number}-${i}`}
+                    className="search-results__item"
+                    onClick={() => {
+                      const session = sessions.find(s => s.id === hit.session_id);
+                      if (session) loadMessages(session);
+                    }}
+                  >
+                    <div className="search-results__title">
+                      {hit.session_title || hit.session_id.slice(0, 8)}
+                    </div>
+                    <div className="search-results__context">{hit.matched_text}</div>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <SessionList
+                sessions={sessions}
+                selected={currentSession}
+                onSelect={loadMessages}
+              />
+            )}
             {sessionsLoading && (
               <div className="session-sidebar__loading">Loading...</div>
             )}
@@ -199,10 +258,21 @@ export function ChannelsView({ projectPath }: ChannelsViewProps) {
                     {currentProvider}
                     {currentSession.git_branch && ` · ${currentSession.git_branch}`}
                   </span>
+                  <input
+                    className="search-input search-input--inline"
+                    type="text"
+                    placeholder="Filter messages..."
+                    value={msgFilter}
+                    onChange={e => setMsgFilter(e.target.value)}
+                  />
                 </div>
                 <MessageViewer
-                  messages={page.messages}
-                  hasMore={page.has_more}
+                  messages={msgFilter.trim()
+                    ? page.messages.filter(m =>
+                        m.content.some(b => b.text?.toLowerCase().includes(msgFilter.toLowerCase()))
+                      )
+                    : page.messages}
+                  hasMore={!msgFilter.trim() && page.has_more}
                   loading={sessionMessagesLoading}
                   onLoadMore={sessionLoadMore}
                 />
