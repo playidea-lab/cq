@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -64,6 +65,20 @@ type c1ChannelSummaryRow struct {
 	Summary       string `json:"summary"`
 	KeyDecisions  string `json:"key_decisions"`
 	OpenQuestions string `json:"open_questions"`
+}
+
+// c1MemberRow represents a member from c1_members table.
+type c1MemberRow struct {
+	ID          string `json:"id"`
+	ProjectID   string `json:"project_id"`
+	MemberType  string `json:"member_type"`
+	ExternalID  string `json:"external_id"`
+	DisplayName string `json:"display_name"`
+	Avatar      string `json:"avatar"`
+	Status      string `json:"status"`
+	StatusText  string `json:"status_text"`
+	LastSeenAt  string `json:"last_seen_at"`
+	CreatedAt   string `json:"created_at"`
 }
 
 // httpGet performs a GET request and decodes JSON response.
@@ -336,6 +351,154 @@ func (h *C1Handler) GetBriefing() (map[string]any, error) {
 	}, nil
 }
 
+// EnsureMember upserts a member record and returns the member ID.
+func (h *C1Handler) EnsureMember(memberType, externalID, displayName string) (string, error) {
+	// Try to find existing member
+	var members []c1MemberRow
+	filter := fmt.Sprintf("project_id=eq.%s&member_type=eq.%s&external_id=eq.%s&select=id",
+		url.QueryEscape(h.projectID), url.QueryEscape(memberType), url.QueryEscape(externalID))
+	if err := h.httpGet("c1_members", filter, &members); err != nil {
+		return "", fmt.Errorf("lookup member: %w", err)
+	}
+	if len(members) > 0 {
+		return members[0].ID, nil
+	}
+
+	// Create new member
+	payload := map[string]any{
+		"project_id":   h.projectID,
+		"member_type":  memberType,
+		"external_id":  externalID,
+		"display_name": displayName,
+		"status":       "online",
+		"last_seen_at":  time.Now().UTC().Format(time.RFC3339),
+	}
+	var rows []struct {
+		ID string `json:"id"`
+	}
+	if err := h.httpPostReturn("c1_members", payload, &rows); err != nil {
+		return "", fmt.Errorf("create member: %w", err)
+	}
+	if len(rows) > 0 {
+		return rows[0].ID, nil
+	}
+	return "", fmt.Errorf("member created but no ID returned")
+}
+
+// SendMessage sends a message to a channel as a member (agent or user).
+func (h *C1Handler) SendMessage(channelName, content, senderName string, threadID string, metadata map[string]any) (map[string]any, error) {
+	if channelName == "" {
+		return nil, fmt.Errorf("channel_name is required")
+	}
+	if content == "" {
+		return nil, fmt.Errorf("content is required")
+	}
+
+	// Resolve channel (auto-create if needed)
+	channelID, err := h.resolveChannelID(channelName)
+	if err != nil {
+		return nil, fmt.Errorf("resolve channel: %w", err)
+	}
+	if channelID == "" {
+		return nil, fmt.Errorf("channel not found: %s", channelName)
+	}
+
+	// Determine sender info
+	if senderName == "" {
+		senderName = "c4-agent"
+	}
+
+	// Ensure member exists
+	memberID, err := h.EnsureMember("agent", senderName, senderName)
+	if err != nil {
+		return nil, fmt.Errorf("ensure member: %w", err)
+	}
+
+	// Build message payload
+	payload := map[string]any{
+		"channel_id":  channelID,
+		"project_id":  h.projectID,
+		"sender_type": "agent",
+		"sender_id":   senderName,
+		"sender_name": senderName,
+		"member_id":   memberID,
+		"content":     content,
+	}
+	if threadID != "" {
+		payload["thread_id"] = threadID
+	}
+	if metadata != nil {
+		payload["metadata"] = metadata
+	}
+
+	if err := h.httpPost("c1_messages", payload); err != nil {
+		return nil, fmt.Errorf("send message: %w", err)
+	}
+
+	return map[string]any{
+		"status":     "sent",
+		"channel":    channelName,
+		"member_id":  memberID,
+		"sender":     senderName,
+	}, nil
+}
+
+// UpdatePresence updates a member's status and status_text.
+func (h *C1Handler) UpdatePresence(memberType, externalID, status, statusText string) error {
+	// Validate status
+	switch status {
+	case "online", "working", "idle", "offline":
+		// valid
+	default:
+		return fmt.Errorf("invalid status: %s (must be online/working/idle/offline)", status)
+	}
+
+	payload := map[string]any{
+		"status":       status,
+		"status_text":  statusText,
+		"last_seen_at": time.Now().UTC().Format(time.RFC3339),
+	}
+
+	filter := fmt.Sprintf("project_id=eq.%s&member_type=eq.%s&external_id=eq.%s",
+		url.QueryEscape(h.projectID), url.QueryEscape(memberType), url.QueryEscape(externalID))
+
+	if err := h.httpPatch("c1_members", filter, payload); err != nil {
+		return fmt.Errorf("update presence: %w", err)
+	}
+	return nil
+}
+
+// httpPatch performs a PATCH request to Supabase PostgREST.
+func (h *C1Handler) httpPatch(table, filter string, payload any) error {
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("marshal: %w", err)
+	}
+
+	u := h.baseURL + "/" + table
+	if filter != "" {
+		u += "?" + filter
+	}
+
+	req, err := http.NewRequest("PATCH", u, bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	h.setHeaders(req)
+
+	resp, err := h.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("PATCH %s: %w", table, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		respBody, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("PATCH %s: %d %s", table, resp.StatusCode, string(respBody))
+	}
+	return nil
+}
+
 // RegisterC1Handlers registers c1_* MCP tools.
 func RegisterC1Handlers(reg *mcp.Registry, handler *C1Handler) {
 	// c1_search — Full-text search across messages
@@ -402,5 +565,64 @@ func RegisterC1Handlers(reg *mcp.Registry, handler *C1Handler) {
 		},
 	}, func(raw json.RawMessage) (any, error) {
 		return handler.GetBriefing()
+	})
+
+	// c1_send_message — Send a message to a channel as an agent
+	reg.Register(mcp.ToolSchema{
+		Name:        "c1_send_message",
+		Description: "Send a message to a C1 channel as an agent. Auto-creates agent member record.",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"channel_name": map[string]any{"type": "string", "description": "Target channel name (e.g. general, tasks)"},
+				"content":      map[string]any{"type": "string", "description": "Message content (markdown supported)"},
+				"agent_name":   map[string]any{"type": "string", "description": "Sender agent name (default: c4-agent)"},
+				"thread_id":    map[string]any{"type": "string", "description": "Optional thread ID for threaded replies"},
+			},
+			"required": []string{"channel_name", "content"},
+		},
+	}, func(raw json.RawMessage) (any, error) {
+		var args struct {
+			ChannelName string         `json:"channel_name"`
+			Content     string         `json:"content"`
+			AgentName   string         `json:"agent_name"`
+			ThreadID    string         `json:"thread_id"`
+			Metadata    map[string]any `json:"metadata"`
+		}
+		if err := json.Unmarshal(raw, &args); err != nil {
+			return nil, fmt.Errorf("parse args: %w", err)
+		}
+		return handler.SendMessage(args.ChannelName, args.Content, args.AgentName, args.ThreadID, args.Metadata)
+	})
+
+	// c1_update_presence — Update agent presence status
+	reg.Register(mcp.ToolSchema{
+		Name:        "c1_update_presence",
+		Description: "Update an agent's presence status (online/working/idle/offline) with optional status text",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"agent_name":  map[string]any{"type": "string", "description": "Agent name"},
+				"status":      map[string]any{"type": "string", "enum": []string{"online", "working", "idle", "offline"}, "description": "Presence status"},
+				"status_text": map[string]any{"type": "string", "description": "Status text (e.g. 'Working on T-003-0')"},
+			},
+			"required": []string{"agent_name", "status"},
+		},
+	}, func(raw json.RawMessage) (any, error) {
+		var args struct {
+			AgentName  string `json:"agent_name"`
+			Status     string `json:"status"`
+			StatusText string `json:"status_text"`
+		}
+		if err := json.Unmarshal(raw, &args); err != nil {
+			return nil, fmt.Errorf("parse args: %w", err)
+		}
+		if args.AgentName == "" {
+			return nil, fmt.Errorf("agent_name is required")
+		}
+		if err := handler.UpdatePresence("agent", args.AgentName, args.Status, args.StatusText); err != nil {
+			return nil, err
+		}
+		return map[string]any{"status": "updated", "agent": args.AgentName, "presence": args.Status}, nil
 	})
 }

@@ -119,7 +119,7 @@ export interface TokenUsage {
 
 // --- View types ---
 
-export type ViewType = 'channels' | 'documents' | 'team' | 'settings' | 'events';
+export type ViewType = 'channels' | 'documents' | 'team' | 'settings';
 
 // --- C1 Messaging types ---
 
@@ -143,6 +143,25 @@ export interface C1Message {
   content: string;
   thread_id: string | null;
   metadata: Record<string, unknown> | null;
+  member_id?: string;
+  created_at: string;
+}
+
+// --- C1 Member types ---
+
+export type MemberType = 'user' | 'agent' | 'system';
+export type MemberStatus = 'online' | 'working' | 'idle' | 'offline';
+
+export interface C1Member {
+  id: string;
+  project_id: string;
+  member_type: MemberType;
+  external_id: string;
+  display_name: string;
+  avatar: string;
+  status: MemberStatus;
+  status_text: string;
+  last_seen_at: string | null;
   created_at: string;
 }
 

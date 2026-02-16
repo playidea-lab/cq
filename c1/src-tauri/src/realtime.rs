@@ -81,6 +81,7 @@ const SUBSCRIBED_TABLES: &[&str] = &[
     "c4_checkpoints",
     "c1_messages",
     "c1_channels",
+    "c1_members",
 ];
 
 /// Build the Supabase Realtime WebSocket URL

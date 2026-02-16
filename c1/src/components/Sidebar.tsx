@@ -1,5 +1,5 @@
 import { useMemo, useState, useEffect } from 'react';
-import { FileText, MessageSquare, Settings, Users, Sun, Moon, Radio } from 'lucide-react';
+import { FileText, MessageSquare, Settings, Users, Sun, Moon } from 'lucide-react';
 import type { ViewType } from '../types';
 import '../styles/sidebar.css';
 
@@ -10,9 +10,8 @@ interface SidebarProps {
 }
 
 const baseNavItems: { view: ViewType; label: string; icon: typeof MessageSquare }[] = [
-  { view: 'channels', label: 'Channels', icon: MessageSquare },
+  { view: 'channels', label: 'Messenger', icon: MessageSquare },
   { view: 'documents', label: 'Documents', icon: FileText },
-  { view: 'events', label: 'Events', icon: Radio },
   { view: 'settings', label: 'Settings', icon: Settings },
 ];
 

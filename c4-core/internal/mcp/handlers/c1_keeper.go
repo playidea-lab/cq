@@ -18,9 +18,10 @@ import (
 // ContextKeeper generates and maintains channel summaries using LLM.
 // It is event-driven: triggered by task completions, checkpoints, or explicit requests.
 type ContextKeeper struct {
-	c1      *C1Handler
-	gateway *llm.Gateway
-	minMessages int // minimum new messages before triggering summary update
+	c1            *C1Handler
+	gateway       *llm.Gateway
+	minMessages   int    // minimum new messages before triggering summary update
+	systemMemberID string // cached system member ID
 }
 
 // NewContextKeeper creates a ContextKeeper.
@@ -131,12 +132,29 @@ func (k *ContextKeeper) EnsureChannel(name, description, channelType string) (st
 	return "", fmt.Errorf("channel %s created but no ID returned", name)
 }
 
+// ensureSystemMember returns the cached system member ID, creating it on first call.
+func (k *ContextKeeper) ensureSystemMember() string {
+	if k.systemMemberID != "" {
+		return k.systemMemberID
+	}
+	memberID, err := k.c1.EnsureMember("system", "c4-engine", "C4 System")
+	if err != nil {
+		log.Printf("[keeper] failed to ensure system member: %v", err)
+		return ""
+	}
+	k.systemMemberID = memberID
+	return memberID
+}
+
 // AutoPost posts a system message to a channel (by name), auto-creating if needed.
 func (k *ContextKeeper) AutoPost(channelName, content string) error {
 	channelID, err := k.EnsureChannel(channelName, "Auto-created by C4 engine", "updates")
 	if err != nil {
 		return fmt.Errorf("ensure channel %s: %w", channelName, err)
 	}
+
+	// Ensure system member exists
+	memberID := k.ensureSystemMember()
 
 	// Post system message
 	payload := map[string]any{
@@ -147,10 +165,33 @@ func (k *ContextKeeper) AutoPost(channelName, content string) error {
 		"sender_name": "system",
 		"content":     content,
 	}
+	if memberID != "" {
+		payload["member_id"] = memberID
+	}
 	if err := k.c1.httpPost("c1_messages", payload); err != nil {
 		return fmt.Errorf("auto-post to %s: %w", channelName, err)
 	}
 
+	return nil
+}
+
+// EnsureSystemChannels creates the standard system channels for a project.
+func (k *ContextKeeper) EnsureSystemChannels() error {
+	channels := []struct {
+		name        string
+		description string
+		channelType string
+	}{
+		{"general", "General discussion", "topic"},
+		{"tasks", "Task events (created, completed, blocked)", "auto"},
+		{"events", "EventBus event summaries", "auto"},
+		{"knowledge", "Knowledge recorded events", "auto"},
+	}
+	for _, ch := range channels {
+		if _, err := k.EnsureChannel(ch.name, ch.description, ch.channelType); err != nil {
+			log.Printf("[keeper] failed to ensure system channel %s: %v", ch.name, err)
+		}
+	}
 	return nil
 }
 

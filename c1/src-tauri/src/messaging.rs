@@ -94,6 +94,28 @@ pub struct Message {
     #[serde(default)]
     pub metadata: Option<serde_json::Value>,
     #[serde(default)]
+    pub member_id: Option<String>,
+    #[serde(default)]
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Member {
+    pub id: String,
+    pub project_id: String,
+    pub member_type: String,
+    pub external_id: String,
+    #[serde(default)]
+    pub display_name: String,
+    #[serde(default)]
+    pub avatar: String,
+    #[serde(default)]
+    pub status: String,
+    #[serde(default)]
+    pub status_text: String,
+    #[serde(default)]
+    pub last_seen_at: Option<String>,
+    #[serde(default)]
     pub created_at: String,
 }
 
@@ -267,13 +289,19 @@ pub async fn send_message(
             supabase_url.trim_end_matches('/')
         );
 
+        // Ensure user member exists
+        let member_id = ensure_user_member(&client, &supabase_url, &anon_key, &token, &participant_id)?;
+
         // Explicitly set participant_id to current user
         let payload = serde_json::json!({
             "channel_id": channel_id,
             "participant_id": participant_id,
+            "member_id": member_id,
             "content": content,
             "thread_id": thread_id,
             "metadata": metadata,
+            "sender_type": "human",
+            "sender_name": participant_id,
         });
 
         let resp = retry_request(3, || {
@@ -545,6 +573,137 @@ pub async fn get_channel_summary(channel_id: String) -> Result<ChannelSummary, S
 }
 
 // ---------------------------------------------------------------------------
+// Member helpers
+// ---------------------------------------------------------------------------
+
+/// Ensure a user member exists for the given participant_id.
+/// Returns the member_id. Uses the project_id from the first channel the user can access.
+fn ensure_user_member(
+    client: &reqwest::blocking::Client,
+    supabase_url: &str,
+    anon_key: &str,
+    token: &str,
+    user_id: &str,
+) -> Result<String, String> {
+    // Check if member already exists by looking across all projects for this user
+    let lookup_url = format!(
+        "{}/rest/v1/c1_members?member_type=eq.user&external_id=eq.{}&select=id&limit=1",
+        supabase_url.trim_end_matches('/'),
+        urlencoding::encode(user_id),
+    );
+
+    let resp = retry_request(2, || {
+        client
+            .get(&lookup_url)
+            .header("Authorization", format!("Bearer {}", token))
+            .header("apikey", anon_key)
+            .send()
+    })?;
+
+    if resp.status().is_success() {
+        let members: Vec<serde_json::Value> = resp
+            .json()
+            .unwrap_or_default();
+        if let Some(member) = members.first() {
+            if let Some(id) = member.get("id").and_then(|v| v.as_str()) {
+                return Ok(id.to_string());
+            }
+        }
+    }
+
+    // No existing member — but we need a project_id. Return empty for now
+    // (the member will be created when a project context is available).
+    Ok(String::new())
+}
+
+/// List all members for a project
+#[tauri::command(rename_all = "camelCase")]
+pub async fn list_members(project_id: String) -> Result<Vec<Member>, String> {
+    tokio::task::spawn_blocking(move || {
+        let (supabase_url, anon_key) = read_supabase_config()?;
+        let token = read_auth_token()?;
+
+        let client = build_client()?;
+        let url = format!(
+            "{}/rest/v1/c1_members?project_id=eq.{}&select=*&order=display_name",
+            supabase_url.trim_end_matches('/'),
+            urlencoding::encode(&project_id),
+        );
+
+        let resp = retry_request(3, || {
+            client
+                .get(&url)
+                .header("Authorization", format!("Bearer {}", token))
+                .header("apikey", &anon_key)
+                .send()
+        })?;
+
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let body = resp.text().unwrap_or_default();
+            return Err(format!("Failed to list members ({}): {}", status, body));
+        }
+
+        let members: Vec<Member> = resp
+            .json()
+            .map_err(|e| format!("Failed to parse members: {}", e))?;
+
+        Ok(members)
+    })
+    .await
+    .map_err(|e| format!("Task execution failed: {}", e))?
+}
+
+/// Update presence status for the current user
+#[tauri::command(rename_all = "camelCase")]
+pub async fn update_presence(
+    project_id: String,
+    status: String,
+    status_text: String,
+) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || {
+        let (supabase_url, anon_key) = read_supabase_config()?;
+        let token = read_auth_token()?;
+        let user_id = extract_user_id_from_token(&token)?;
+
+        let client = build_client()?;
+        let url = format!(
+            "{}/rest/v1/c1_members?project_id=eq.{}&member_type=eq.user&external_id=eq.{}",
+            supabase_url.trim_end_matches('/'),
+            urlencoding::encode(&project_id),
+            urlencoding::encode(&user_id),
+        );
+
+        let now = chrono::Utc::now().to_rfc3339();
+        let payload = serde_json::json!({
+            "status": status,
+            "status_text": status_text,
+            "last_seen_at": now,
+        });
+
+        let resp = retry_request(3, || {
+            client
+                .patch(&url)
+                .header("Authorization", format!("Bearer {}", token))
+                .header("apikey", &anon_key)
+                .header("Content-Type", "application/json")
+                .json(&payload)
+                .send()
+        })?;
+
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let body = resp.text().unwrap_or_default();
+            return Err(format!("Failed to update presence ({}): {}", status, body));
+        }
+
+        Ok(())
+    })
+    .await
+    .map_err(|e| format!("Task execution failed: {}", e))?
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -578,6 +737,7 @@ mod tests {
             content: "Hello world".to_string(),
             thread_id: None,
             metadata: None,
+            member_id: None,
             created_at: "2026-02-14T00:00:00Z".to_string(),
         };
         let json = serde_json::to_string(&message).unwrap();
@@ -595,6 +755,7 @@ mod tests {
             content: "Reply".to_string(),
             thread_id: Some("msg-1".to_string()),
             metadata: Some(serde_json::json!({"emoji": "👍"})),
+            member_id: None,
             created_at: "2026-02-14T00:01:00Z".to_string(),
         };
         let json = serde_json::to_string(&message).unwrap();
@@ -713,5 +874,51 @@ mod tests {
         let result = extract_user_id_from_token(&token);
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("Failed to parse JWT payload"));
+    }
+
+    #[test]
+    fn test_member_serialization() {
+        let member = Member {
+            id: "mem-1".to_string(),
+            project_id: "proj-1".to_string(),
+            member_type: "agent".to_string(),
+            external_id: "worker-1".to_string(),
+            display_name: "Worker 1".to_string(),
+            avatar: "".to_string(),
+            status: "working".to_string(),
+            status_text: "T-003-0".to_string(),
+            last_seen_at: Some("2026-02-16T00:00:00Z".to_string()),
+            created_at: "2026-02-16T00:00:00Z".to_string(),
+        };
+        let json = serde_json::to_string(&member).unwrap();
+        let parsed: Member = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.member_type, "agent");
+        assert_eq!(parsed.status, "working");
+        assert_eq!(parsed.display_name, "Worker 1");
+    }
+
+    #[test]
+    fn test_message_with_member_id() {
+        let message = Message {
+            id: "msg-3".to_string(),
+            channel_id: "ch-1".to_string(),
+            participant_id: "user-1".to_string(),
+            content: "Hello with member".to_string(),
+            thread_id: None,
+            metadata: None,
+            member_id: Some("mem-1".to_string()),
+            created_at: "2026-02-16T00:00:00Z".to_string(),
+        };
+        let json = serde_json::to_string(&message).unwrap();
+        let parsed: Message = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.member_id, Some("mem-1".to_string()));
+    }
+
+    #[test]
+    fn test_message_without_member_id() {
+        // Legacy message without member_id
+        let json = r#"{"id":"msg-4","channel_id":"ch-1","participant_id":"user-1","content":"legacy","created_at":"2026-02-16T00:00:00Z"}"#;
+        let parsed: Message = serde_json::from_str(json).unwrap();
+        assert!(parsed.member_id.is_none());
     }
 }

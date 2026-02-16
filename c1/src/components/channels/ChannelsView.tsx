@@ -1,8 +1,12 @@
+import { useState } from 'react';
 import { useChannels } from '../../hooks/useChannels';
 import { useMessages } from '../../hooks/useMessages';
+import { useMembers } from '../../hooks/useMembers';
+import { usePresence } from '../../hooks/usePresence';
 import { ChannelSidebar } from './ChannelSidebar';
 import { MessageList } from './MessageList';
 import { MessageInput } from './MessageInput';
+import { MembersPanel } from './MembersPanel';
 import '../../styles/channels.css';
 
 interface ChannelsViewProps {
@@ -10,6 +14,8 @@ interface ChannelsViewProps {
 }
 
 export function ChannelsView({ projectId }: ChannelsViewProps) {
+  const [showMembers, setShowMembers] = useState(false);
+
   const {
     channels,
     loading: channelsLoading,
@@ -26,6 +32,9 @@ export function ChannelsView({ projectId }: ChannelsViewProps) {
     sendMessage,
   } = useMessages(selectedChannel?.id ?? null);
 
+  const { members, getMember } = useMembers(projectId);
+  usePresence(projectId);
+
   return (
     <div className="channels">
       <ChannelSidebar
@@ -34,6 +43,7 @@ export function ChannelsView({ projectId }: ChannelsViewProps) {
         loading={channelsLoading}
         onSelect={selectChannel}
         onCreate={createChannel}
+        members={members}
       />
       <div className="chat-panel">
         {selectedChannel ? (
@@ -43,13 +53,26 @@ export function ChannelsView({ projectId }: ChannelsViewProps) {
               {selectedChannel.description && (
                 <span className="chat-panel__channel-desc">{selectedChannel.description}</span>
               )}
+              <button
+                className="chat-panel__members-toggle"
+                onClick={() => setShowMembers(!showMembers)}
+                title="Toggle members panel"
+              >
+                {members.length} members
+              </button>
             </div>
-            <MessageList
-              messages={messages}
-              loading={messagesLoading}
-              hasMore={hasMore}
-              onLoadMore={loadMore}
-            />
+            <div className="chat-panel__body">
+              <MessageList
+                messages={messages}
+                loading={messagesLoading}
+                hasMore={hasMore}
+                onLoadMore={loadMore}
+                getMember={getMember}
+              />
+              {showMembers && (
+                <MembersPanel members={members} />
+              )}
+            </div>
             <MessageInput onSend={content => sendMessage(content)} />
           </>
         ) : (

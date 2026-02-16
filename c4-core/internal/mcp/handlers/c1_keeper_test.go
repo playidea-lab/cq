@@ -453,6 +453,91 @@ func TestNotifyTaskEvent_Formats(t *testing.T) {
 	}
 }
 
+func TestAutoPost_IncludesMemberID(t *testing.T) {
+	var postBody map[string]any
+
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path := r.URL.Path
+
+		// Resolve channel
+		if r.Method == "GET" && strings.Contains(path, "c1_channels") {
+			json.NewEncoder(w).Encode([]c1ChannelRow{{ID: "ch-test", Name: "#test"}})
+			return
+		}
+
+		// Lookup system member — return existing
+		if r.Method == "GET" && strings.Contains(path, "c1_members") {
+			json.NewEncoder(w).Encode([]c1MemberRow{{ID: "mem-system-1"}})
+			return
+		}
+
+		// POST message
+		if r.Method == "POST" && strings.Contains(path, "c1_messages") {
+			json.NewDecoder(r.Body).Decode(&postBody)
+			w.WriteHeader(201)
+			return
+		}
+
+		w.WriteHeader(404)
+	})
+
+	keeper, _ := setupKeeperTest(t, handler)
+
+	err := keeper.AutoPost("#test", "system event")
+	if err != nil {
+		t.Fatalf("AutoPost: %v", err)
+	}
+
+	if postBody["member_id"] != "mem-system-1" {
+		t.Errorf("member_id = %v, want mem-system-1", postBody["member_id"])
+	}
+	if postBody["sender_type"] != "system" {
+		t.Errorf("sender_type = %v, want system", postBody["sender_type"])
+	}
+}
+
+func TestEnsureSystemChannels(t *testing.T) {
+	var createdChannels []string
+
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// GET channels — empty (none exist yet)
+		if r.Method == "GET" && strings.Contains(r.URL.Path, "c1_channels") {
+			json.NewEncoder(w).Encode([]c1ChannelRow{})
+			return
+		}
+		// POST create channel
+		if r.Method == "POST" && strings.Contains(r.URL.Path, "c1_channels") {
+			var body map[string]any
+			json.NewDecoder(r.Body).Decode(&body)
+			name, _ := body["name"].(string)
+			createdChannels = append(createdChannels, name)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(201)
+			json.NewEncoder(w).Encode([]struct {
+				ID string `json:"id"`
+			}{{ID: "ch-" + name}})
+			return
+		}
+		w.WriteHeader(404)
+	})
+
+	keeper, _ := setupKeeperTest(t, handler)
+	err := keeper.EnsureSystemChannels()
+	if err != nil {
+		t.Fatalf("EnsureSystemChannels: %v", err)
+	}
+
+	expected := []string{"general", "tasks", "events", "knowledge"}
+	if len(createdChannels) != len(expected) {
+		t.Fatalf("expected %d channels, got %d: %v", len(expected), len(createdChannels), createdChannels)
+	}
+	for i, name := range expected {
+		if createdChannels[i] != name {
+			t.Errorf("channel[%d] = %q, want %q", i, createdChannels[i], name)
+		}
+	}
+}
+
 func TestAutoPost_CreatesChannelIfMissing(t *testing.T) {
 	var channelCreated bool
 	var messageSent bool

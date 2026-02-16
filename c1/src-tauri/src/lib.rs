@@ -1,7 +1,7 @@
-//! C1 (See) — Multi-LLM Tool Explorer
+//! C1 — Unified Dashboard Messenger
 //!
-//! Desktop app for exploring sessions from Claude Code, Codex CLI,
-//! Cursor, and other LLM coding tools.
+//! Desktop app for team collaboration where users and agents participate
+//! as equal members. Integrates messaging, documents, and project management.
 
 pub mod analytics;
 pub mod auth;
@@ -109,6 +109,9 @@ pub fn run() {
             messaging::mark_read,
             messaging::create_channel,
             messaging::get_channel_summary,
+            // Members
+            messaging::list_members,
+            messaging::update_presence,
             // Documents
             documents::list_documents,
             documents::get_document,

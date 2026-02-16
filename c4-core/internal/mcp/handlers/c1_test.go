@@ -319,3 +319,169 @@ func TestSetHeaders(t *testing.T) {
 	}
 }
 
+// --- EnsureMember tests ---
+
+func TestEnsureMember_ExistingReturned(t *testing.T) {
+	h := setupC1Test(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "GET" && strings.Contains(r.URL.Path, "c1_members") {
+			json.NewEncoder(w).Encode([]c1MemberRow{{ID: "mem-123"}})
+			return
+		}
+		http.Error(w, "not found", 404)
+	})
+
+	id, err := h.EnsureMember("agent", "worker-1", "Worker 1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if id != "mem-123" {
+		t.Fatalf("expected mem-123, got %s", id)
+	}
+}
+
+func TestEnsureMember_CreatesNew(t *testing.T) {
+	var postCalled bool
+	h := setupC1Test(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "GET" && strings.Contains(r.URL.Path, "c1_members") {
+			json.NewEncoder(w).Encode([]c1MemberRow{})
+			return
+		}
+		if r.Method == "POST" && strings.Contains(r.URL.Path, "c1_members") {
+			postCalled = true
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(201)
+			json.NewEncoder(w).Encode([]struct {
+				ID string `json:"id"`
+			}{{ID: "mem-new-456"}})
+			return
+		}
+		http.Error(w, "not found", 404)
+	})
+
+	id, err := h.EnsureMember("agent", "worker-2", "Worker 2")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !postCalled {
+		t.Fatal("expected POST to create member")
+	}
+	if id != "mem-new-456" {
+		t.Fatalf("expected mem-new-456, got %s", id)
+	}
+}
+
+// --- SendMessage tests ---
+
+func TestSendMessage_Success(t *testing.T) {
+	var msgPayload map[string]any
+	h := setupC1Test(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "GET" && strings.Contains(r.URL.Path, "c1_channels") {
+			json.NewEncoder(w).Encode([]c1ChannelRow{{ID: "ch-gen", Name: "general"}})
+			return
+		}
+		if r.Method == "GET" && strings.Contains(r.URL.Path, "c1_members") {
+			json.NewEncoder(w).Encode([]c1MemberRow{{ID: "mem-agent"}})
+			return
+		}
+		if r.Method == "POST" && strings.Contains(r.URL.Path, "c1_messages") {
+			json.NewDecoder(r.Body).Decode(&msgPayload)
+			w.WriteHeader(201)
+			return
+		}
+		http.Error(w, "not found", 404)
+	})
+
+	result, err := h.SendMessage("general", "Hello from agent", "test-agent", "", nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result["status"] != "sent" {
+		t.Errorf("expected status=sent, got %v", result["status"])
+	}
+	if msgPayload["member_id"] != "mem-agent" {
+		t.Errorf("expected member_id=mem-agent, got %v", msgPayload["member_id"])
+	}
+	if msgPayload["sender_type"] != "agent" {
+		t.Errorf("expected sender_type=agent, got %v", msgPayload["sender_type"])
+	}
+}
+
+func TestSendMessage_ChannelNotFound(t *testing.T) {
+	h := setupC1Test(t, func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode([]c1ChannelRow{})
+	})
+
+	_, err := h.SendMessage("nonexistent", "hello", "", "", nil)
+	if err == nil {
+		t.Fatal("expected error for nonexistent channel")
+	}
+	if !strings.Contains(err.Error(), "channel not found") {
+		t.Fatalf("expected 'channel not found' error, got: %v", err)
+	}
+}
+
+func TestSendMessage_EmptyContent(t *testing.T) {
+	h := setupC1Test(t, func(w http.ResponseWriter, r *http.Request) {})
+
+	_, err := h.SendMessage("general", "", "agent", "", nil)
+	if err == nil {
+		t.Fatal("expected error for empty content")
+	}
+}
+
+// --- UpdatePresence tests ---
+
+func TestUpdatePresence_ValidStatus(t *testing.T) {
+	var patchPayload map[string]any
+	h := setupC1Test(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "PATCH" && strings.Contains(r.URL.Path, "c1_members") {
+			json.NewDecoder(r.Body).Decode(&patchPayload)
+			w.WriteHeader(200)
+			return
+		}
+		http.Error(w, "not found", 404)
+	})
+
+	err := h.UpdatePresence("agent", "worker-1", "working", "T-003-0")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if patchPayload["status"] != "working" {
+		t.Errorf("expected status=working, got %v", patchPayload["status"])
+	}
+	if patchPayload["status_text"] != "T-003-0" {
+		t.Errorf("expected status_text=T-003-0, got %v", patchPayload["status_text"])
+	}
+}
+
+func TestUpdatePresence_InvalidStatus(t *testing.T) {
+	h := setupC1Test(t, func(w http.ResponseWriter, r *http.Request) {})
+
+	err := h.UpdatePresence("agent", "worker-1", "invalid-status", "")
+	if err == nil {
+		t.Fatal("expected error for invalid status")
+	}
+	if !strings.Contains(err.Error(), "invalid status") {
+		t.Fatalf("expected 'invalid status' error, got: %v", err)
+	}
+}
+
+// --- httpPatch tests ---
+
+func TestHttpPatch_ServerError(t *testing.T) {
+	h := setupC1Test(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "PATCH" {
+			http.Error(w, `{"message":"internal error"}`, 500)
+			return
+		}
+	})
+
+	err := h.httpPatch("c1_members", "id=eq.123", map[string]any{"status": "online"})
+	if err == nil {
+		t.Fatal("expected error on 500 response")
+	}
+	if !strings.Contains(err.Error(), "500") {
+		t.Fatalf("expected 500 in error, got: %v", err)
+	}
+}
+
