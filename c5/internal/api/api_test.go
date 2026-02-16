@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"testing/fstest"
 
 	"github.com/piqsol/c4/c5/internal/model"
 	"github.com/piqsol/c4/c5/internal/store"
@@ -907,4 +908,125 @@ func TestBackwardCompat_NoAuth(t *testing.T) {
 		t.Errorf("no-auth submit: got %d, want 201", resp.StatusCode)
 	}
 	resp.Body.Close()
+}
+
+// =========================================================================
+// LLMs.txt + Docs
+// =========================================================================
+
+func newTestServerWithDocs(t *testing.T) *Server {
+	t.Helper()
+	dir := t.TempDir()
+	st, err := store.New(filepath.Join(dir, "test.db"))
+	if err != nil {
+		t.Fatalf("new store: %v", err)
+	}
+	t.Cleanup(func() { st.Close() })
+
+	docsFS := fstest.MapFS{
+		"docs/jobs.md":    {Data: []byte("# Jobs API\n\nJobs documentation.")},
+		"docs/workers.md": {Data: []byte("# Workers API\n\nWorkers documentation.")},
+	}
+
+	return NewServer(Config{
+		Store:   st,
+		Version: "test",
+		LLMSTxt: "# C5 Hub\n\n> Distributed job queue.",
+		DocsFS:  docsFS,
+	})
+}
+
+func TestLLMSTxtEndpoint(t *testing.T) {
+	srv := newTestServerWithDocs(t)
+
+	w := doRequest(t, srv, "GET", "/.well-known/llms.txt", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+
+	ct := w.Header().Get("Content-Type")
+	if !strings.HasPrefix(ct, "text/plain") {
+		t.Fatalf("expected text/plain, got %s", ct)
+	}
+
+	body := w.Body.String()
+	if !strings.Contains(body, "C5 Hub") {
+		t.Fatalf("body should contain 'C5 Hub', got: %s", body)
+	}
+}
+
+func TestLLMSTxtConvenience(t *testing.T) {
+	srv := newTestServerWithDocs(t)
+
+	w := doRequest(t, srv, "GET", "/llms.txt", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+
+	body := w.Body.String()
+	if !strings.Contains(body, "C5 Hub") {
+		t.Fatalf("body should contain 'C5 Hub', got: %s", body)
+	}
+}
+
+func TestDocsEndpoint(t *testing.T) {
+	srv := newTestServerWithDocs(t)
+
+	w := doRequest(t, srv, "GET", "/v1/docs/jobs.md", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+
+	ct := w.Header().Get("Content-Type")
+	if !strings.HasPrefix(ct, "text/markdown") {
+		t.Fatalf("expected text/markdown, got %s", ct)
+	}
+
+	body := w.Body.String()
+	if !strings.Contains(body, "Jobs API") {
+		t.Fatalf("body should contain 'Jobs API', got: %s", body)
+	}
+}
+
+func TestDocsNotFound(t *testing.T) {
+	srv := newTestServerWithDocs(t)
+
+	w := doRequest(t, srv, "GET", "/v1/docs/nonexistent.md", nil)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", w.Code)
+	}
+}
+
+func TestLLMSTxtNoAuthRequired(t *testing.T) {
+	dir := t.TempDir()
+	st, _ := store.New(filepath.Join(dir, "test.db"))
+	defer st.Close()
+
+	docsFS := fstest.MapFS{
+		"docs/jobs.md": {Data: []byte("# Jobs API")},
+	}
+
+	srv := NewServer(Config{
+		Store:   st,
+		Version: "test",
+		APIKey:  "secret-key",
+		LLMSTxt: "# C5 Hub",
+		DocsFS:  docsFS,
+	})
+
+	// llms.txt should be accessible without API key
+	req := httptest.NewRequest("GET", "/.well-known/llms.txt", nil)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("llms.txt should work without key, got %d", w.Code)
+	}
+
+	// docs should also be accessible without API key
+	req2 := httptest.NewRequest("GET", "/v1/docs/jobs.md", nil)
+	w2 := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w2, req2)
+	if w2.Code != http.StatusOK {
+		t.Fatalf("docs should work without key, got %d", w2.Code)
+	}
 }

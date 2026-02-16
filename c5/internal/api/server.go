@@ -8,8 +8,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"crypto/sha256"
@@ -27,6 +29,8 @@ type Server struct {
 	startTime time.Time
 	version   string
 	apiKey    string // optional API key for authentication
+	llmsTxt   string // llms.txt content
+	docsFS    fs.FS  // docs filesystem (may be nil)
 	mux       *http.ServeMux
 	done      chan struct{} // closed on shutdown to stop background goroutines
 }
@@ -38,6 +42,8 @@ type Config struct {
 	Version   string
 	APIKey    string // if non-empty, X-API-Key header is required
 	ServerURL string // server's external URL (for local storage fallback)
+	LLMSTxt   string // llms.txt content (served at /.well-known/llms.txt)
+	DocsFS    fs.FS  // embedded docs filesystem (served at /v1/docs/)
 }
 
 // NewServer creates an HTTP API server.
@@ -54,6 +60,8 @@ func NewServer(cfg Config) *Server {
 		startTime: time.Now(),
 		version:   cfg.Version,
 		apiKey:    cfg.APIKey,
+		llmsTxt:   cfg.LLMSTxt,
+		docsFS:    cfg.DocsFS,
 		mux:       http.NewServeMux(),
 		done:      make(chan struct{}),
 	}
@@ -125,12 +133,19 @@ func (s *Server) registerRoutes() {
 	// Admin (requires master key)
 	s.mux.HandleFunc("/v1/admin/api-keys", s.handleAdminAPIKeys)
 	s.mux.HandleFunc("/v1/admin/api-keys/", s.handleAdminAPIKeyByHash)
+
+	// LLMs.txt + docs
+	s.registerLLMSTxtRoutes()
 }
 
 func (s *Server) authMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Health endpoint is always accessible
-		if r.URL.Path == "/v1/health" {
+		// Public endpoints: health, llms.txt, docs
+		switch {
+		case r.URL.Path == "/v1/health",
+			r.URL.Path == "/llms.txt",
+			r.URL.Path == "/.well-known/llms.txt",
+			strings.HasPrefix(r.URL.Path, "/v1/docs/"):
 			next.ServeHTTP(w, r)
 			return
 		}

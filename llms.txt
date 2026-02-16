@@ -1,0 +1,24 @@
+# C4 — AI Orchestration Engine
+
+> C4 is an MCP-based orchestration system that automates project management from planning to completion. It provides 150+ tools for task management, code analysis, knowledge management, and distributed job execution.
+
+## Components
+
+- [AGENTS.md](AGENTS.md): Complete agent instructions and tool reference
+- [C5 Hub](c5/): Distributed job queue server with lease-based work distribution
+
+## MCP Tools (150+)
+
+Core tools for AI agent orchestration:
+- **Task Management**: add_todo, get_task, submit, claim, report, checkpoint
+- **Code Analysis**: find_symbol, get_symbols_overview, find_file, search_for_pattern
+- **Knowledge**: record, search, ingest, discover, publish, stats
+- **Web Content**: web_fetch (markdown-first content retrieval)
+- **Hub Integration**: job submit/status, DAG workflows, edge deployment
+- **EventBus**: event publishing, rule management, WebSocket bridge
+
+## Getting Started
+
+1. Install: `cd c4-core && go build -o ~/.local/bin/c4 ./cmd/c4/`
+2. Configure: Create `.mcp.json` pointing to the c4 binary
+3. Use: MCP tools are available through any MCP-compatible AI agent

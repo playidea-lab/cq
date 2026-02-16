@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	c5 "github.com/piqsol/c4/c5"
 	"github.com/piqsol/c4/c5/internal/api"
 	"github.com/piqsol/c4/c5/internal/store"
 	"github.com/spf13/cobra"
@@ -48,6 +49,8 @@ func runServe(port int, dbPath, apiKey string) error {
 		Store:   st,
 		Version: version,
 		APIKey:  apiKey,
+		LLMSTxt: c5.LLMSTxt,
+		DocsFS:  c5.DocsFS,
 	})
 
 	httpSrv := &http.Server{

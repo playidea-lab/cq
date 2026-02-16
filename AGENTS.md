@@ -39,21 +39,21 @@ C9 Knowledge — 지식 관리 (FTS5 + pgvector + Embedding + Usage + Ingestion)
 ### 코드베이스 규모
 | 언어 | 소스 | 테스트 | 합계 |
 |------|------|--------|------|
-| Go (`c4-core/`) | ~32.7K LOC | ~28.5K LOC | ~61.2K |
-| Go (`c5/`) | ~5.1K LOC | ~3.0K LOC | ~8.2K |
+| Go (`c4-core/`) | ~33.5K LOC | ~29.5K LOC | ~63.0K |
+| Go (`c5/`) | ~5.4K LOC | ~3.1K LOC | ~8.5K |
 | Python (`c4/`) | ~24.4K LOC | ~11.6K LOC | ~36.0K |
 | Rust (`c1/src-tauri/`) | ~8.5K LOC | (내장) | ~8.5K |
 | TypeScript (`c1/src/`) | ~6.6K LOC | | ~6.6K |
 | SQL (`infra/`) | ~0.9K LOC | | ~0.9K |
-| **합계** | ~78.2K | ~43.1K | **~121.4K LOC** |
+| **합계** | ~79.4K | ~44.2K | **~123.6K LOC** |
 
 ### 테스트 현황
 | 언어 | 테스트 수 | 패키지/모듈 |
 |------|----------|------------|
-| Go | **1,095** | 21 packages (all pass) — c4-core 986 + c5 109 |
+| Go | **1,336** | 25 packages (all pass) — c4-core 1,216 + c5 120 |
 | Python | **750** | tests/unit/ |
-| Rust | **73** | src-tauri |
-| **합계** | **~1,918** | |
+| Rust | **76** | src-tauri |
+| **합계** | **~2,162** | |
 
 ### Monorepo 구조
 ```
@@ -187,7 +187,7 @@ c4_lighthouse get <tool_name>
 
 ---
 
-## MCP 도구 빠른 참조 (96개 base, Hub 활성화 시 122개)
+## MCP 도구 빠른 참조 (99개 base, Hub 활성화 시 125개)
 
 > **도구 상세 사용법**: `c4_lighthouse get <tool_name>`으로 워크플로우, 예시, 관련 도구, 주의사항 조회
 
@@ -225,6 +225,7 @@ Twin(1):    c4_reflect
 Lighthouse(1): c4_lighthouse (register/list/get/promote/update/remove)
 LLM(3):    c4_llm_call, c4_llm_providers, c4_llm_costs
 CDP(2):    c4_cdp_run, c4_cdp_list
+Web(3):    c4_web_fetch, c4_webmcp_discover, c4_webmcp_call
 C2(8):     c4_parse_document, c4_extract_text,
             c4_workspace_create, c4_workspace_load, c4_workspace_save,
             c4_persona_learn, c4_profile_load, c4_profile_save
@@ -262,16 +263,17 @@ CP-001:  체크포인트
 
 ## Go Core (c4-core/) — Primary MCP Server
 
-> Go 기반 MCP 서버. ~35.5K LOC(src) + ~29.2K LOC(test). 986개 테스트, 21 패키지.
+> Go 기반 MCP 서버. ~33.5K LOC(src) + ~29.5K LOC(test). 1,216개 테스트, 24 패키지.
 
 ### 아키텍처
 ```
-Claude Code → Go MCP Server (stdio, 100 base + 26 Hub = 126 tools)
+Claude Code → Go MCP Server (stdio, 99 base + 26 Hub = 125 tools)
                 ├→ Go native (27): 상태, 태스크, 파일, git, validation, config, health, eventbus rules
                 ├→ Go + SQLite (13): spec, design, checkpoint, artifact, lighthouse
                 ├→ Soul/Persona/Twin (7): soul CRUD, persona evolve, whoami, reflect
                 ├→ LLM Gateway (3): llm_call, llm_providers, llm_costs
-                ├→ CDP Runner (2): cdp_run, cdp_list
+                ├→ CDP Runner + WebMCP (4): cdp_run, cdp_list, webmcp_discover, webmcp_call
+                ├→ WebContent (1): web_fetch (content negotiation, SSRF, HTML→MD)
                 ├→ C1 Messenger (5): search, mentions, briefing, send_message, update_presence + ContextKeeper
                 ├→ Drive (6): upload, download, list, delete, info, mkdir
                 ├→ Go Native — Tier 1 (13): Research (5) + C2 (6) + GPU (2)
@@ -302,7 +304,8 @@ c4-core/
 │   ├── c2/           # C2 Workspace/Profile/Persona
 │   ├── drive/        # C0 Drive client (Supabase Storage)
 │   ├── llm/          # LLM Gateway (Anthropic, OpenAI, Gemini, Ollama)
-│   └── cdp/          # Chrome DevTools Protocol runner
+│   ├── cdp/          # Chrome DevTools Protocol runner + WebMCP
+│   └── webcontent/   # Web fetch (content negotiation, SSRF, HTML→MD, llms.txt)
 └── test/benchmark/   # 벤치마크
 ```
 

@@ -18,6 +18,7 @@ type FetchOpts struct {
 	MaxBodyBytes   int64         // Max response body size (default: 5MB)
 	Timeout        time.Duration // HTTP timeout (default: 15s)
 	FollowLLMSTxt  bool          // Also check for llms.txt
+	SkipSSRFCheck  bool          // Skip SSRF validation (for testing only)
 }
 
 // FetchResult holds the fetched and converted content.
@@ -43,7 +44,13 @@ var (
 	rateBuckets = map[string][]time.Time{}
 	rateLimit   = 10
 	rateWindow  = time.Minute
+	testMode    bool // disables SSRF checks globally (for handler tests)
 )
+
+// SetTestMode disables SSRF checks globally (for testing handlers that call Fetch internally).
+func SetTestMode(enabled bool) {
+	testMode = enabled
+}
 
 // Fetch retrieves content from a URL and converts it to markdown.
 //
@@ -67,8 +74,10 @@ func Fetch(rawURL string, opts *FetchOpts) (*FetchResult, error) {
 		return nil, fmt.Errorf("invalid URL: %w", err)
 	}
 
-	if err := validateURL(parsed); err != nil {
-		return nil, err
+	if !opts.SkipSSRFCheck && !testMode {
+		if err := validateURL(parsed); err != nil {
+			return nil, err
+		}
 	}
 
 	origin := parsed.Scheme + "://" + parsed.Host
@@ -76,15 +85,17 @@ func Fetch(rawURL string, opts *FetchOpts) (*FetchResult, error) {
 		return nil, err
 	}
 
+	skipSSRF := opts.SkipSSRFCheck
 	client := &http.Client{
 		Timeout: opts.Timeout,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			if len(via) >= maxRedirects {
 				return fmt.Errorf("too many redirects (max %d)", maxRedirects)
 			}
-			// SSRF check on redirect target
-			if err := validateURL(req.URL); err != nil {
-				return fmt.Errorf("redirect blocked: %w", err)
+			if !skipSSRF && !testMode {
+				if err := validateURL(req.URL); err != nil {
+					return fmt.Errorf("redirect blocked: %w", err)
+				}
 			}
 			return nil
 		},

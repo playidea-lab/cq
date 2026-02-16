@@ -8,6 +8,7 @@ import (
 
 	"github.com/changmin/c4-core/internal/knowledge"
 	"github.com/changmin/c4-core/internal/mcp"
+	"github.com/changmin/c4-core/internal/webcontent"
 )
 
 // KnowledgeNativeOpts holds dependencies for native knowledge handlers.
@@ -154,20 +155,20 @@ func RegisterKnowledgeNativeHandlers(reg *mcp.Registry, opts *KnowledgeNativeOpt
 		},
 	}, knowledgeDiscoverNativeHandler(opts))
 
-	// 10. c4_knowledge_ingest — document ingestion (file → chunk → embed → search)
+	// 10. c4_knowledge_ingest — document ingestion (file/URL → chunk → embed → search)
 	reg.Register(mcp.ToolSchema{
 		Name:        "c4_knowledge_ingest",
-		Description: "Ingest a document file into knowledge base with chunking and embedding for RAG search",
+		Description: "Ingest a document file or URL into knowledge base with chunking and embedding for RAG search",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
 				"file_path":  map[string]any{"type": "string", "description": "Path to the document file to ingest"},
-				"title":      map[string]any{"type": "string", "description": "Optional title override (defaults to filename)"},
+				"url":        map[string]any{"type": "string", "description": "URL to fetch and ingest (alternative to file_path)"},
+				"title":      map[string]any{"type": "string", "description": "Optional title override (defaults to filename or page title)"},
 				"tags":       map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Optional tags"},
 				"visibility": map[string]any{"type": "string", "description": "Visibility: private, team, public (default: team)"},
 				"max_tokens": map[string]any{"type": "integer", "description": "Chunk size in tokens (default: 512)"},
 			},
-			"required": []string{"file_path"},
 		},
 	}, knowledgeIngestNativeHandler(opts))
 
@@ -836,8 +837,13 @@ func knowledgeIngestNativeHandler(opts *KnowledgeNativeOpts) mcp.HandlerFunc {
 	return func(rawArgs json.RawMessage) (any, error) {
 		params := parseParams(rawArgs)
 		filePath, _ := params["file_path"].(string)
-		if filePath == "" {
-			return map[string]any{"error": "file_path is required"}, nil
+		urlStr, _ := params["url"].(string)
+
+		if filePath != "" && urlStr != "" {
+			return map[string]any{"error": "provide either file_path or url, not both"}, nil
+		}
+		if filePath == "" && urlStr == "" {
+			return map[string]any{"error": "file_path or url is required"}, nil
 		}
 
 		title, _ := params["title"].(string)
@@ -859,6 +865,35 @@ func knowledgeIngestNativeHandler(opts *KnowledgeNativeOpts) mcp.HandlerFunc {
 			MaxTokens:  maxTokens,
 		}
 
+		// URL path: fetch web content, then ingest as text
+		if urlStr != "" {
+			fetchResult, err := webcontent.Fetch(urlStr, nil)
+			if err != nil {
+				return map[string]any{"error": fmt.Sprintf("fetch failed: %v", err)}, nil
+			}
+
+			if ingestOpts.Title == "" {
+				ingestOpts.Title = fetchResult.Title
+			}
+			ingestOpts.Tags = append(ingestOpts.Tags, "source:url")
+
+			result, err := knowledge.IngestText(opts.Store, opts.Searcher, fetchResult.Content, ingestOpts)
+			if err != nil {
+				return map[string]any{"error": fmt.Sprintf("ingest failed: %v", err)}, nil
+			}
+
+			return map[string]any{
+				"success":     true,
+				"doc_id":      result.DocID,
+				"title":       result.Title,
+				"chunk_count": result.ChunkCount,
+				"body_length": result.BodyLen,
+				"source_url":  urlStr,
+				"method":      fetchResult.Method,
+			}, nil
+		}
+
+		// File path: existing behavior
 		result, err := knowledge.Ingest(opts.Store, opts.Searcher, filePath, ingestOpts)
 		if err != nil {
 			return map[string]any{"error": fmt.Sprintf("ingest failed: %v", err)}, nil
