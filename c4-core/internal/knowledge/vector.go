@@ -7,7 +7,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"math"
-	"os"
 )
 
 // Embedder generates embeddings from text. Implemented by llm.EmbeddingProvider.
@@ -51,33 +50,30 @@ func (v *VectorStore) HasRealEmbedder() bool {
 	return v.embedder != nil
 }
 
-// EmbedText generates embeddings for the given text.
-// Uses the configured embedder if available, otherwise falls back to MockEmbedding.
+// EmbedText generates an embedding for the given text.
+// Returns error if a real embedder is configured but fails (no mock fallback).
+// Falls back to MockEmbedding only when no real embedder is configured.
 func (v *VectorStore) EmbedText(ctx context.Context, text string) ([]float32, string, error) {
 	if v.embedder != nil {
 		embeddings, err := v.embedder.Embed(ctx, []string{text})
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "c4: knowledge: real embedding failed, falling back to mock: %v\n", err)
-			return MockEmbedding(text, v.dimension), "mock", nil
+			return nil, "", fmt.Errorf("embedding failed: %w", err)
 		}
 		if len(embeddings) > 0 {
 			return embeddings[0], "real", nil
 		}
+		return nil, "", fmt.Errorf("embedding returned empty result")
 	}
 	return MockEmbedding(text, v.dimension), "mock", nil
 }
 
 // EmbedTexts generates embeddings for multiple texts in a batch.
+// Returns error if a real embedder is configured but fails (no mock fallback).
 func (v *VectorStore) EmbedTexts(ctx context.Context, texts []string) ([][]float32, string, error) {
 	if v.embedder != nil {
 		embeddings, err := v.embedder.Embed(ctx, texts)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "c4: knowledge: batch embedding failed, falling back to mock: %v\n", err)
-			results := make([][]float32, len(texts))
-			for i, t := range texts {
-				results[i] = MockEmbedding(t, v.dimension)
-			}
-			return results, "mock", nil
+			return nil, "", fmt.Errorf("batch embedding failed: %w", err)
 		}
 		return embeddings, "real", nil
 	}

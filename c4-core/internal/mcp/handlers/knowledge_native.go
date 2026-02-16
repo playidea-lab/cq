@@ -230,11 +230,15 @@ func knowledgeRecordNativeHandler(opts *KnowledgeNativeOpts) mcp.HandlerFunc {
 			return map[string]any{"error": fmt.Sprintf("KnowledgeRecord failed: %v", err)}, nil
 		}
 
-		// Index for vector search
+		// Index for vector search (skip silently on embedding failure — will be caught up on reindex)
+		var embedWarning string
 		if opts.Searcher != nil {
 			doc, _ := opts.Store.Get(docID)
 			if doc != nil {
-				opts.Searcher.IndexDocument(docID, doc)
+				if idxErr := opts.Searcher.IndexDocument(docID, doc); idxErr != nil {
+					embedWarning = fmt.Sprintf("embedding skipped (will embed on reindex): %v", idxErr)
+					fmt.Fprintf(os.Stderr, "c4: knowledge: %s\n", embedWarning)
+				}
 			}
 		}
 
@@ -247,10 +251,14 @@ func knowledgeRecordNativeHandler(opts *KnowledgeNativeOpts) mcp.HandlerFunc {
 			}()
 		}
 
-		return map[string]any{
+		result := map[string]any{
 			"success": true,
 			"doc_id":  docID,
-		}, nil
+		}
+		if embedWarning != "" {
+			result["warning"] = embedWarning
+		}
+		return result, nil
 	}
 }
 
@@ -384,10 +392,14 @@ func experimentRecordNativeHandler(opts *KnowledgeNativeOpts) mcp.HandlerFunc {
 		}
 
 		// Index + cloud sync
+		var embedWarning2 string
 		if opts.Searcher != nil {
 			doc, _ := opts.Store.Get(docID)
 			if doc != nil {
-				opts.Searcher.IndexDocument(docID, doc)
+				if idxErr := opts.Searcher.IndexDocument(docID, doc); idxErr != nil {
+					embedWarning2 = fmt.Sprintf("embedding skipped (will embed on reindex): %v", idxErr)
+					fmt.Fprintf(os.Stderr, "c4: knowledge: %s\n", embedWarning2)
+				}
 			}
 		}
 		if opts.Cloud != nil {
@@ -397,10 +409,14 @@ func experimentRecordNativeHandler(opts *KnowledgeNativeOpts) mcp.HandlerFunc {
 			}()
 		}
 
-		return map[string]any{
+		result := map[string]any{
 			"success": true,
 			"doc_id":  docID,
-		}, nil
+		}
+		if embedWarning2 != "" {
+			result["warning"] = embedWarning2
+		}
+		return result, nil
 	}
 }
 
@@ -774,12 +790,21 @@ func knowledgeStatsNativeHandler(opts *KnowledgeNativeOpts) mcp.HandlerFunc {
 		// Vector store stats
 		if opts.Searcher != nil && opts.Searcher.VectorStore() != nil {
 			vs := opts.Searcher.VectorStore()
-			stats["vector_count"] = vs.Count()
+			vectorCount := vs.Count()
+			stats["vector_count"] = vectorCount
 			stats["vector_dimension"] = vs.Dimension()
 			stats["has_real_embedder"] = vs.HasRealEmbedder()
 			modelCounts, _ := vs.CountByModel()
 			if len(modelCounts) > 0 {
 				stats["vector_by_model"] = modelCounts
+			}
+			// Documents without embeddings (pending re-embed)
+			unembedded := len(allDocs) - vectorCount
+			if unembedded < 0 {
+				unembedded = 0
+			}
+			if unembedded > 0 {
+				stats["unembedded"] = unembedded
 			}
 		}
 
