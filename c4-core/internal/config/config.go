@@ -385,6 +385,13 @@ func (m *Manager) GetModelForTask(taskID string) string {
 	}
 }
 
+// Set updates a configuration value in memory (does not persist to file).
+// Use dot-notation keys (e.g., "permission_reviewer.enabled").
+func (m *Manager) Set(key string, value any) {
+	m.v.Set(key, value)
+	_ = m.v.Unmarshal(&m.config)
+}
+
 // IsPreset checks if a preset name is valid.
 func IsPreset(name string) bool {
 	_, ok := presetConfigs[name]

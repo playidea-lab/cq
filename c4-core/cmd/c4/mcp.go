@@ -439,8 +439,9 @@ func newMCPServer() (*mcpServer, error) {
 		StartTime:      time.Now(),
 	})
 
-	// Register config get handler
+	// Register config handlers
 	handlers.RegisterConfigHandler(reg, cfgMgr)
+	handlers.RegisterConfigSetHandler(reg, cfgMgr, projectDir)
 
 	return &mcpServer{
 		registry:       reg,
