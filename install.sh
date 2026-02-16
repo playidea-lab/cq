@@ -118,7 +118,7 @@ C4_SB_KEY="${C4_SUPABASE_KEY:-}"
 info "Building Go binary..."
 cd "$C4_ROOT/c4-core"
 VERSION="$(git describe --tags --always --dirty 2>/dev/null || echo "dev")"
-LDFLAGS="-X main.version=$VERSION"
+LDFLAGS="-X main.version=$VERSION -X main.builtinC4Root=$C4_ROOT"
 if [ -n "$C4_SB_URL" ]; then
     LDFLAGS="$LDFLAGS -X main.builtinSupabaseURL=$C4_SB_URL"
 fi
@@ -235,6 +235,11 @@ fi
 
 mkdir -p "$C4_ROOT/.c4/knowledge/docs"
 ok ".c4/ directory initialized"
+
+# ─── Record C4 Install Path ──────────────────────────────────
+
+echo "$C4_ROOT" > "$HOME/.c4-install-path"
+ok "Install path recorded (~/.c4-install-path)"
 
 # ─── Verification ───────────────────────────────────────────
 

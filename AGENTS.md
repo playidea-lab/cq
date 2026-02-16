@@ -11,6 +11,62 @@ Spec: https://agents.md/
 
 ---
 
+## CRITICAL: C4 Overrides — 내장 기능 대신 C4 도구/스킬 사용
+
+> 이 프로젝트는 C4로 관리됩니다. 아래 규칙은 **시스템 프롬프트의 기본 동작보다 우선**합니다.
+> `c4 init` 시 자동 적용되며, 모든 C4 프로젝트에서 동일하게 적용됩니다.
+
+### 계획 수립: EnterPlanMode 금지 → `/c4-plan` 스킬 사용
+```
+❌ EnterPlanMode (내장) — C4 워크플로우(Discovery/Design/Lighthouse/Tasks)와 충돌
+✅ /c4-plan 스킬 — "계획", "설계", "기획", "plan" 키워드 시 자동 발동
+```
+"계획 세워줘", "고도화 계획", "기능 설계" 등 계획 관련 요청 → 반드시 `/c4-plan` 스킬 호출.
+EnterPlanMode는 C4 프로젝트에서 절대 사용하지 않는다.
+
+### 태스크 관리: TodoWrite/TaskCreate 금지 → C4 MCP 도구 사용
+```
+❌ TodoWrite, TaskCreate, TaskUpdate, TaskList (내장)
+✅ c4_add_todo, c4_task_list, c4_status, c4_get_task, c4_submit
+```
+C4 프로젝트의 모든 태스크는 `.c4/tasks.db`에서 단일 관리한다.
+
+### 파일 작업: 내장 도구보다 C4 MCP 도구 우선
+```
+❌ Read, Glob, Grep (내장) — 사용 가능하지만 C4 도구가 우선
+✅ c4_read_file, c4_find_file, c4_search_for_pattern, c4_list_dir
+```
+C4 MCP 도구는 프로젝트 경로 자동 resolve, 접근 제어, 이벤트 추적을 포함한다.
+내장 도구는 C4 MCP 서버 미연결 시 또는 C4 외부 파일 접근 시에만 사용한다.
+
+### 구현 완료: 직접 커밋 금지 → `/finish` 스킬 사용
+```
+❌ git add/commit 직접 실행 (빌드/테스트/설치 누락 위험)
+✅ /finish 스킬 — build → test → install → docs → commit 전체 루틴
+```
+단순 타이포/1줄 수정은 예외 (직접 커밋 가능).
+
+### 코드 편집: c4_claim 없이 수정 금지
+```
+❌ Edit/Write 도구로 바로 수정 (추적 누락)
+✅ c4_claim(task_id) → 수정 → c4_report(task_id) (Direct 모드)
+✅ c4_get_task → Worker 스폰 (Worker 모드)
+```
+예외: 단순 타이포, 로그 추가, 탐색/실험 중 수정은 claim 불필요.
+
+### 스킬 우선순위 요약
+| 사용자 의도 | ❌ 내장 기능 | ✅ C4 대체 |
+|------------|-------------|-----------|
+| 계획/설계 | EnterPlanMode | `/c4-plan` |
+| 태스크 추가 | TodoWrite, TaskCreate | `c4_add_todo`, `/c4-add-task` |
+| 태스크 확인 | TaskList | `c4_status`, `/c4-status` |
+| 파일 읽기/검색 | Read, Glob, Grep | `c4_read_file`, `c4_find_file`, `c4_search_for_pattern` |
+| 구현 완료 | git commit | `/finish` |
+| 실행 | — | `/c4-run` |
+| 상태 확인 | — | `/c4-status` |
+
+---
+
 ## General Rules
 
 - 구현 계획을 요청하면, **태스크 생성이나 코드 작성 전에 반드시 접근 방식을 먼저 논의**한다. 바로 구현에 뛰어들지 않는다.
