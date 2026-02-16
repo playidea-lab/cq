@@ -20,7 +20,7 @@ export function UIProvider({ children }: { children: React.ReactNode }) {
       isChatOpen, 
       toggleChat, 
       isPaletteOpen, 
-      setPaletteOpen 
+      setPaletteOpen: setIsPaletteOpen 
     }}>
       {children}
     </UIContext.Provider>
