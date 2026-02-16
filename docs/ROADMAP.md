@@ -48,6 +48,26 @@
 
 ## 최신 추가사항 (2026-02-16)
 
+### CDP Auto-Discovery + WebMCP Context + Lighthouse llms.txt ✅
+
+**목표**: CDP 탭 자동 탐색, WebMCP context API, SPA 대기, Lighthouse llms.txt 내보내기
+
+- **CDP Auto-Discovery**: `internal/cdp/discovery.go` — 활성 CDP 탭 자동 탐색, SPA 로딩 대기
+- **WebMCP Context**: `c4_webmcp_context` — 현재 페이지의 modelContext 상태 조회
+- **Lighthouse llms.txt Export**: `c4_lighthouse export_llms_txt` — 등록된 spec을 llms.txt 형식으로 내보내기
+- **새 MCP 도구 +2**: c4_webmcp_context, c4_lighthouse export_llms_txt
+- **테스트**: cdp +8, lighthouse +4
+
+### C9 Knowledge 고도화 — Usage 성숙 + 자동 증류 + 관측성 ✅
+
+**목표**: 시간 가중치 인기도, 자동 패턴 증류, 운영 지표 강화
+
+- **Usage 성숙**: GetPopularity 시간 가중치 (30일 반감기), 90일 retention cleanup, `cite` 파라미터
+- **자동 증류**: `c4_knowledge_distill` MCP 도구 (LLM Gateway 조건부) — FindClusters → LLM 패턴 추출
+- **관측성**: GetStats (total/7d/30d/by_action/top_cited), embedding_coverage%, distillation 구조화
+- **새 MCP 도구 +1**: c4_knowledge_distill (LLM Gateway 활성 시 조건부)
+- **테스트**: knowledge 78→92 (+14), handlers +8
+
 ### C9 Knowledge Feedback Loop — 관련 문서 연결 + 검색 블렌딩 ✅
 
 **목표**: 지식이 기록될 때 관련 문서를 자동 연결하고, 검색 시 로컬+커뮤니티 결과를 블렌딩하며, 사용량 기반 인기도 부스트 적용
