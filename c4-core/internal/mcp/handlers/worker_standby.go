@@ -66,6 +66,14 @@ func handleWorkerStandby(deps *WorkerDeps, raw json.RawMessage) (any, error) {
 	if caps == nil {
 		caps = map[string]any{"tags": []string{"claude", "mcp"}}
 	}
+	// Ensure hostname is set (required by C5 Hub)
+	if _, ok := caps["hostname"]; !ok {
+		hostname, _ := os.Hostname()
+		if hostname == "" {
+			hostname = params.WorkerID
+		}
+		caps["hostname"] = hostname
+	}
 	hubWorkerID, err := deps.HubClient.RegisterWorker(caps)
 	if err != nil {
 		return nil, fmt.Errorf("register worker: %w", err)
