@@ -21,8 +21,8 @@ func RegisterConfigHandler(reg *mcp.Registry, cfgMgr *config.Manager) {
 			"properties": map[string]any{
 				"section": map[string]any{
 					"type":        "string",
-					"description": "Config section: all, economic, worker, cloud, hub",
-					"enum":        []string{"all", "economic", "worker", "cloud", "hub"},
+					"description": "Config section: all, economic, worker, cloud, hub, permission_reviewer",
+					"enum":        []string{"all", "economic", "worker", "cloud", "hub", "permission_reviewer"},
 					"default":     "all",
 				},
 			},
@@ -82,6 +82,14 @@ func handleConfigGet(cfgMgr *config.Manager, rawArgs json.RawMessage) (any, erro
 			"api_key":    maskSecret(cfg.Hub.APIKey),
 			"team_id":    cfg.Hub.TeamID,
 		}, nil
+	case "permission_reviewer":
+		return map[string]any{
+			"enabled":     cfg.PermissionReviewer.Enabled,
+			"model":       cfg.PermissionReviewer.Model,
+			"api_key_env": cfg.PermissionReviewer.APIKeyEnv,
+			"fail_mode":   cfg.PermissionReviewer.FailMode,
+			"timeout":     cfg.PermissionReviewer.Timeout,
+		}, nil
 	default: // "all"
 		return map[string]any{
 			"project_id":     cfg.ProjectID,
@@ -111,6 +119,10 @@ func handleConfigGet(cfgMgr *config.Manager, rawArgs json.RawMessage) (any, erro
 			"validation": map[string]any{
 				"lint": cfg.Validation.Lint,
 				"unit": cfg.Validation.Unit,
+			},
+			"permission_reviewer": map[string]any{
+				"enabled": cfg.PermissionReviewer.Enabled,
+				"model":   cfg.PermissionReviewer.Model,
 			},
 		}, nil
 	}

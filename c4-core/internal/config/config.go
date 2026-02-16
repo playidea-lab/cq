@@ -90,6 +90,15 @@ type HubConfig struct {
 	TeamID    string `mapstructure:"team_id"     yaml:"team_id"`
 }
 
+// PermissionReviewerConfig holds settings for the Haiku-based permission auto-reviewer hook.
+type PermissionReviewerConfig struct {
+	Enabled   bool   `mapstructure:"enabled"     yaml:"enabled"`
+	Model     string `mapstructure:"model"       yaml:"model"`        // claude model: haiku, sonnet, opus
+	APIKeyEnv string `mapstructure:"api_key_env" yaml:"api_key_env"`  // env var name for Anthropic API key
+	FailMode  string `mapstructure:"fail_mode"   yaml:"fail_mode"`    // "ask" (prompt user) or "allow" (auto-approve)
+	Timeout   int    `mapstructure:"timeout"     yaml:"timeout"`      // API call timeout in seconds
+}
+
 // C4Config is the top-level configuration schema.
 // It mirrors the Python C4Config model for YAML format compatibility.
 type C4Config struct {
@@ -104,8 +113,9 @@ type C4Config struct {
 	Cloud            CloudConfig      `mapstructure:"cloud"               yaml:"cloud"`
 	LLMGateway       LLMGatewayConfig `mapstructure:"llm_gateway"         yaml:"llm_gateway"`
 	EventBus         EventBusConfig   `mapstructure:"eventbus"            yaml:"eventbus"`
-	Hub              HubConfig        `mapstructure:"hub"                 yaml:"hub"`
-	ReviewAsTask     bool             `mapstructure:"review_as_task"      yaml:"review_as_task"`
+	Hub              HubConfig                `mapstructure:"hub"                  yaml:"hub"`
+	PermissionReviewer PermissionReviewerConfig `mapstructure:"permission_reviewer"  yaml:"permission_reviewer"`
+	ReviewAsTask     bool                       `mapstructure:"review_as_task"       yaml:"review_as_task"`
 	CheckpointAsTask bool             `mapstructure:"checkpoint_as_task"  yaml:"checkpoint_as_task"`
 }
 
@@ -216,6 +226,11 @@ func New(projectRoot string, cloudDefaults ...CloudDefaults) (*Manager, error) {
 	v.SetDefault("hub.enabled", false)
 	v.SetDefault("hub.url", "")
 	v.SetDefault("hub.api_key_env", "C4_HUB_API_KEY")
+	v.SetDefault("permission_reviewer.enabled", false)
+	v.SetDefault("permission_reviewer.model", "haiku")
+	v.SetDefault("permission_reviewer.api_key_env", "ANTHROPIC_API_KEY")
+	v.SetDefault("permission_reviewer.fail_mode", "ask")
+	v.SetDefault("permission_reviewer.timeout", 10)
 
 	// Config file location
 	configDir := filepath.Join(projectRoot, ".c4")
