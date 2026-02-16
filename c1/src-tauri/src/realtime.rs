@@ -345,11 +345,15 @@ pub async fn realtime_status(
 // ---------------------------------------------------------------------------
 
 fn read_config() -> Result<(String, String), String> {
-    // Try env vars first
-    if let (Ok(url), Ok(key)) = (
-        std::env::var("SUPABASE_URL"),
-        std::env::var("SUPABASE_ANON_KEY").or_else(|_| std::env::var("SUPABASE_KEY")),
-    ) {
+    // Try env vars first (support both standard and C4_ prefixed vars)
+    let url_var = std::env::var("SUPABASE_URL")
+        .or_else(|_| std::env::var("C4_SUPABASE_URL"));
+    
+    let key_var = std::env::var("SUPABASE_ANON_KEY")
+        .or_else(|_| std::env::var("SUPABASE_KEY"))
+        .or_else(|_| std::env::var("C4_SUPABASE_KEY"));
+
+    if let (Ok(url), Ok(key)) = (url_var, key_var) {
         return Ok((url, key));
     }
 
