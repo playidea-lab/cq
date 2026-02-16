@@ -699,6 +699,25 @@
   color: var(--color-text-muted);
 }
 
+.git-graph__load-more {
+  align-self: center;
+  background: none;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  padding: var(--space-xs) var(--space-md);
+  font-size: var(--font-size-sm);
+  margin: var(--space-sm) auto;
+  display: block;
+  transition: all var(--transition-fast);
+}
+
+.git-graph__load-more:hover {
+  color: var(--color-text-primary);
+  border-color: var(--color-border-hover);
+}
+
 /* Task Timeline (legacy, kept for reference) */
 
 .task-timeline {

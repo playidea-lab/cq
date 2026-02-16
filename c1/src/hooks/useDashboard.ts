@@ -7,6 +7,7 @@ export function useDashboard() {
   const [tasks, setTasks] = useState<TaskItem[]>([]);
   const [selectedTask, setSelectedTask] = useState<TaskDetail | null>(null);
   const [gitGraph, setGitGraph] = useState<GitCommit[]>([]);
+  const [hasMoreCommits, setHasMoreCommits] = useState(true);
   const [validations, setValidations] = useState<ValidationResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -36,13 +37,29 @@ export function useDashboard() {
       const commits = await invoke<GitCommit[]>('get_git_graph', {
         path: projectPath,
         limit: 60,
+        skip: 0,
       });
       setGitGraph(commits);
+      setHasMoreCommits(commits.length >= 60);
     } catch {
-      // Git graph is non-critical; silently ignore errors
       setGitGraph([]);
+      setHasMoreCommits(false);
     }
   }, []);
+
+  const loadMoreGitGraph = useCallback(async (projectPath: string) => {
+    try {
+      const commits = await invoke<GitCommit[]>('get_git_graph', {
+        path: projectPath,
+        limit: 40,
+        skip: gitGraph.length,
+      });
+      setGitGraph(prev => [...prev, ...commits]);
+      setHasMoreCommits(commits.length >= 40);
+    } catch {
+      setHasMoreCommits(false);
+    }
+  }, [gitGraph.length]);
 
   const loadValidations = useCallback(async (projectPath: string, taskId: string) => {
     try {
@@ -77,11 +94,13 @@ export function useDashboard() {
     tasks,
     selectedTask,
     gitGraph,
+    hasMoreCommits,
     validations,
     loading,
     error,
     loadState,
     loadGitGraph,
+    loadMoreGitGraph,
     loadValidations,
     clearValidations,
     loadTaskDetail,

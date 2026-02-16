@@ -553,6 +553,36 @@ func experimentSearchNativeHandler(opts *KnowledgeNativeOpts) mcp.HandlerFunc {
 				"type":      r.Type,
 				"domain":    r.Domain,
 				"rrf_score": r.RRFScore,
+				"source":    "local",
+			}
+		}
+
+		localCount := len(resultList)
+		communityCount := 0
+
+		// Blend community results (consistent with knowledge_search)
+		if opts.Cloud != nil {
+			cloudDocs, cloudErr := opts.Cloud.DiscoverPublic(query, "experiment", limit)
+			if cloudErr == nil && len(cloudDocs) > 0 {
+				localIDs := make(map[string]bool, localCount)
+				for _, r := range results {
+					localIDs[r.ID] = true
+				}
+				for _, cd := range cloudDocs {
+					cdID, _ := cd["id"].(string)
+					if localIDs[cdID] {
+						continue
+					}
+					resultList = append(resultList, map[string]any{
+						"id":        cdID,
+						"title":     cd["title"],
+						"type":      cd["type"],
+						"domain":    cd["domain"],
+						"rrf_score": float64(0),
+						"source":    "community",
+					})
+					communityCount++
+				}
 			}
 		}
 
@@ -560,13 +590,9 @@ func experimentSearchNativeHandler(opts *KnowledgeNativeOpts) mcp.HandlerFunc {
 			"results": resultList,
 			"count":   len(resultList),
 		}
-
-		if opts.Cloud != nil {
-			cloudDocs, cloudErr := opts.Cloud.SearchDocuments(query, "experiment", limit)
-			if cloudErr == nil && len(cloudDocs) > 0 {
-				response["cloud_results"] = cloudDocs
-				response["cloud_count"] = len(cloudDocs)
-			}
+		if communityCount > 0 {
+			response["local_count"] = localCount
+			response["community_count"] = communityCount
 		}
 
 		return response, nil

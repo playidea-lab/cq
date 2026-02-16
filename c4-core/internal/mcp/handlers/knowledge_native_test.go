@@ -509,24 +509,14 @@ func TestKnowledgeSearchBlending(t *testing.T) {
 		"query": "machine learning",
 	})
 
-	results, ok := result["results"].([]any)
+	results, ok := result["results"].([]map[string]any)
 	if !ok {
-		// Try map slice
-		if mapResults, ok2 := result["results"].([]map[string]any); ok2 {
-			for _, r := range mapResults {
-				src, _ := r["source"].(string)
-				if src != "local" && src != "community" {
-					t.Errorf("unexpected source: %q", src)
-				}
-			}
-		}
-	} else {
-		for _, r := range results {
-			rm, _ := r.(map[string]any)
-			src, _ := rm["source"].(string)
-			if src != "local" && src != "community" {
-				t.Errorf("unexpected source: %q", src)
-			}
+		t.Fatal("results should be []map[string]any")
+	}
+	for _, r := range results {
+		src, _ := r["source"].(string)
+		if src != "local" && src != "community" {
+			t.Errorf("unexpected source: %q", src)
 		}
 	}
 

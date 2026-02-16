@@ -1603,22 +1603,28 @@ pub struct GitCommit {
 
 /// Get git graph data for visualization
 #[tauri::command(rename_all = "camelCase")]
-pub async fn get_git_graph(path: String, limit: Option<u32>) -> Result<Vec<GitCommit>, String> {
+pub async fn get_git_graph(path: String, limit: Option<u32>, skip: Option<u32>) -> Result<Vec<GitCommit>, String> {
     let project_path = path;
     let max_count = limit.unwrap_or(60);
+    let skip_count = skip.unwrap_or(0);
     tokio::task::spawn_blocking(move || {
         let project_path = Path::new(&project_path);
         if !project_path.join(".git").exists() {
             return Ok(Vec::new());
         }
 
+        let mut args = vec![
+            "log".to_string(),
+            "--all".to_string(),
+            format!("--format=%H|%h|%P|%D|%an|%aI|%s"),
+            format!("--max-count={}", max_count),
+        ];
+        if skip_count > 0 {
+            args.push(format!("--skip={}", skip_count));
+        }
+
         let output = std::process::Command::new("git")
-            .args([
-                "log",
-                "--all",
-                &format!("--format=%H|%h|%P|%D|%an|%aI|%s"),
-                &format!("--max-count={}", max_count),
-            ])
+            .args(&args)
             .current_dir(project_path)
             .output()
             .map_err(|e| format!("Failed to run git log: {}", e))?;

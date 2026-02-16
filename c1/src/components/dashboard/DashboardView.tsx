@@ -24,11 +24,13 @@ export function DashboardView({ projectPath }: DashboardViewProps) {
     tasks,
     selectedTask,
     gitGraph,
+    hasMoreCommits,
     validations,
     loading,
     error,
     loadState,
     loadGitGraph,
+    loadMoreGitGraph,
     loadValidations,
     clearValidations,
     loadTaskDetail,
@@ -219,7 +221,11 @@ export function DashboardView({ projectPath }: DashboardViewProps) {
       </div>
 
       {gitGraph.length > 0 && (
-        <GitGraph commits={gitGraph} />
+        <GitGraph
+          commits={gitGraph}
+          hasMore={hasMoreCommits}
+          onLoadMore={() => loadMoreGitGraph(projectPath)}
+        />
       )}
 
       <div className="dashboard__body">

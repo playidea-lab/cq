@@ -3,6 +3,8 @@ import type { GitCommit } from '../../types';
 
 interface GitGraphProps {
   commits: GitCommit[];
+  hasMore?: boolean;
+  onLoadMore?: () => void;
 }
 
 interface LaneInfo {
@@ -133,7 +135,7 @@ function formatRef(ref: string): { label: string; type: 'head' | 'branch' | 'rem
   return { label: ref, type: 'branch' };
 }
 
-export function GitGraph({ commits }: GitGraphProps) {
+export function GitGraph({ commits, hasMore, onLoadMore }: GitGraphProps) {
   const lanes = useMemo(() => computeLanes(commits), [commits]);
   const maxLane = useMemo(() => {
     let max = 0;
@@ -256,6 +258,11 @@ export function GitGraph({ commits }: GitGraphProps) {
             </div>
           );
         })}
+        {hasMore && onLoadMore && (
+          <button className="git-graph__load-more" onClick={onLoadMore}>
+            Load more commits
+          </button>
+        )}
       </div>
     </div>
   );
