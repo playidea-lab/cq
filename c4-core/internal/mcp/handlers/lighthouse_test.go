@@ -1308,3 +1308,133 @@ func TestLighthouseRegisterExistingTool(t *testing.T) {
 		t.Error("c4_status not found in lighthouse list")
 	}
 }
+
+func TestLighthouseExportLLMSTxt(t *testing.T) {
+	reg, _ := setupLighthouseTest(t)
+
+	// Register some tools via register_all (seeds c4_status which is already in registry)
+	callLighthouse(t, reg, map[string]any{"action": "register_all"})
+
+	// Register a stub too
+	callLighthouse(t, reg, map[string]any{
+		"action":       "register",
+		"name":         "lh_search_api",
+		"description":  "Full-text search API",
+		"input_schema": `{"type":"object","properties":{"query":{"type":"string","description":"Search query"}},"required":["query"]}`,
+		"spec":         "## Search API\n\nSearch across all documents.\n",
+	})
+
+	// Export
+	result := callLighthouse(t, reg, map[string]any{"action": "export_llms_txt"})
+
+	// Check llms_txt
+	llmsTxt, ok := result["llms_txt"].(string)
+	if !ok || llmsTxt == "" {
+		t.Fatal("llms_txt is empty or wrong type")
+	}
+	if !strings.Contains(llmsTxt, "# C4 Engine") {
+		t.Error("llms_txt missing header")
+	}
+	if !strings.Contains(llmsTxt, "c4_status") {
+		t.Error("llms_txt missing c4_status tool")
+	}
+	if !strings.Contains(llmsTxt, "lh_search_api") {
+		t.Error("llms_txt missing lh_search_api stub")
+	}
+
+	// Check tool_count
+	tc, ok := result["tool_count"]
+	if !ok {
+		t.Fatal("tool_count missing")
+	}
+	count := toFloat(tc)
+	if count < 2 {
+		t.Errorf("tool_count = %v, want >= 2", count)
+	}
+
+	// Check tools map
+	tools, ok := result["tools"].(map[string]string)
+	if !ok {
+		t.Fatal("tools should be map[string]string")
+	}
+	if _, exists := tools["c4_status"]; !exists {
+		t.Error("tools missing c4_status doc")
+	}
+	if doc, exists := tools["lh_search_api"]; !exists {
+		t.Error("tools missing lh_search_api doc")
+	} else {
+		if !strings.Contains(doc, "## Parameters") {
+			t.Error("lh_search_api doc missing Parameters section")
+		}
+		if !strings.Contains(doc, "query") {
+			t.Error("lh_search_api doc missing query parameter")
+		}
+		if !strings.Contains(doc, "## Spec") {
+			t.Error("lh_search_api doc missing Spec section")
+		}
+	}
+}
+
+func TestCategorize(t *testing.T) {
+	tests := []struct {
+		name string
+		want string
+	}{
+		{"c4_status", "status"},
+		{"c4_add_todo", "task"},
+		{"c4_checkpoint", "review"},
+		{"c4_find_file", "file"},
+		{"c4_worktree_status", "git"},
+		{"c4_save_spec", "discovery"},
+		{"c4_artifact_save", "artifact"},
+		{"c4_find_symbol", "lsp"},
+		{"c4_knowledge_search", "knowledge"},
+		{"c4_research_start", "research"},
+		{"c4_soul_get", "soul"},
+		{"c4_llm_call", "llm"},
+		{"c4_cdp_run", "cdp"},
+		{"c4_webmcp_discover", "cdp"},
+		{"c4_web_fetch", "web"},
+		{"c1_search", "c1"},
+		{"c4_drive_upload", "drive"},
+		{"c4_hub_submit", "hub"},
+		{"c4_gpu_status", "gpu"},
+		{"c4_lighthouse", "lighthouse"},
+		{"c4_onboard", "other"},
+		{"unknown_tool", "other"},
+	}
+	for _, tt := range tests {
+		got := categorize(tt.name)
+		if got != tt.want {
+			t.Errorf("categorize(%q) = %q, want %q", tt.name, got, tt.want)
+		}
+	}
+}
+
+func TestGenerateToolDoc(t *testing.T) {
+	lh := &Lighthouse{
+		Name:        "c4_test_tool",
+		Description: "A test tool for documentation",
+		InputSchema: `{"type":"object","properties":{"name":{"type":"string","description":"Tool name"},"count":{"type":"integer","description":"Item count"}},"required":["name"]}`,
+		Spec:        "## Usage\nCall with name parameter.\n",
+		Status:      "implemented",
+		Version:     2,
+	}
+
+	doc := generateToolDoc(lh)
+	if !strings.Contains(doc, "# c4_test_tool") {
+		t.Error("missing title")
+	}
+	if !strings.Contains(doc, "**Status:** implemented") {
+		t.Error("missing status")
+	}
+	if !strings.Contains(doc, "| name | string | **yes** |") {
+		t.Error("missing required parameter with yes")
+	}
+	if !strings.Contains(doc, "| count | integer | no |") {
+		t.Error("missing optional parameter")
+	}
+	if !strings.Contains(doc, "## Spec") {
+		t.Error("missing spec section")
+	}
+}

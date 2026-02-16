@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/changmin/c4-core/internal/mcp"
-	"github.com/changmin/c4-core/internal/webcontent"
+	"github.com/changmin/c4-core/internal/c2/webcontent"
 )
 
 // testWebFetchHandler creates a handler with SSRF check disabled for testing.

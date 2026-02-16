@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/changmin/c4-core/internal/mcp"
-	"github.com/changmin/c4-core/internal/webcontent"
+	"github.com/changmin/c4-core/internal/c2/webcontent"
 )
 
 // RegisterWebContentHandlers registers c4_web_fetch tool.

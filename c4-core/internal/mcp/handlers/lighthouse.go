@@ -27,8 +27,8 @@ func RegisterLighthouseHandlers(reg *mcp.Registry, store *SQLiteStore) {
 			"properties": map[string]any{
 				"action": map[string]any{
 					"type":        "string",
-					"description": "Action: register, register_all, list, get, promote, update, remove",
-					"enum":        []string{"register", "register_all", "list", "get", "promote", "update", "remove"},
+					"description": "Action: register, register_all, list, get, promote, update, remove, export_llms_txt",
+					"enum":        []string{"register", "register_all", "list", "get", "promote", "update", "remove", "export_llms_txt"},
 				},
 				"name": map[string]any{
 					"type":        "string",
@@ -93,6 +93,8 @@ func RegisterLighthouseHandlers(reg *mcp.Registry, store *SQLiteStore) {
 			return lighthouseUpdate(reg, store, args.Name, args.Description, args.InputSchema, args.Spec)
 		case "remove":
 			return lighthouseRemove(reg, store, args.Name, agentID)
+		case "export_llms_txt":
+			return lighthouseExportLLMSTxt(store)
 		default:
 			return nil, fmt.Errorf("unknown action: %s", args.Action)
 		}
@@ -419,6 +421,203 @@ func lighthouseList(store *SQLiteStore) (any, error) {
 			"deprecated":  deprecated,
 		},
 	}, nil
+}
+
+// lighthouseExportLLMSTxt generates llms.txt + per-tool markdown from lighthouse data.
+// Output: { llms_txt: string, tools: { name: markdown }[], tool_count: int }
+func lighthouseExportLLMSTxt(store *SQLiteStore) (any, error) {
+	lighthouses, err := store.listLighthouses()
+	if err != nil {
+		return nil, fmt.Errorf("listing lighthouses: %w", err)
+	}
+
+	// Group tools by category (prefix-based)
+	categories := groupByCategory(lighthouses)
+
+	// Generate llms.txt
+	var llms strings.Builder
+	llms.WriteString("# C4 Engine\n\n")
+	llms.WriteString("> AI orchestration engine — plan, execute, review, and learn.\n\n")
+
+	// Summary
+	implemented, stubs := 0, 0
+	for _, lh := range lighthouses {
+		switch lh.Status {
+		case "implemented":
+			implemented++
+		case "stub":
+			stubs++
+		}
+	}
+	llms.WriteString(fmt.Sprintf("> %d tools (%d implemented, %d stubs)\n\n", implemented+stubs, implemented, stubs))
+
+	// Sections by category
+	categoryOrder := []struct {
+		key   string
+		title string
+	}{
+		{"status", "Status & Config"},
+		{"task", "Tasks"},
+		{"review", "Review & Validation"},
+		{"file", "Files & Search"},
+		{"git", "Git"},
+		{"discovery", "Discovery & Design"},
+		{"artifact", "Artifacts"},
+		{"lsp", "Code Intelligence (LSP)"},
+		{"knowledge", "Knowledge (C9)"},
+		{"research", "Research"},
+		{"soul", "Soul & Persona"},
+		{"llm", "LLM Gateway"},
+		{"cdp", "CDP & WebMCP"},
+		{"web", "Web Content"},
+		{"c1", "Messenger (C1)"},
+		{"c2", "Documents (C2)"},
+		{"drive", "Drive (C0)"},
+		{"event", "EventBus (C3)"},
+		{"hub", "Hub (C5)"},
+		{"gpu", "GPU & Jobs"},
+		{"lighthouse", "Lighthouse"},
+		{"other", "Other"},
+	}
+
+	for _, cat := range categoryOrder {
+		tools, ok := categories[cat.key]
+		if !ok || len(tools) == 0 {
+			continue
+		}
+		llms.WriteString(fmt.Sprintf("## %s\n\n", cat.title))
+		for _, lh := range tools {
+			llms.WriteString(fmt.Sprintf("- [%s](c4://tools/%s.md): %s\n", lh.Name, lh.Name, lh.Description))
+		}
+		llms.WriteString("\n")
+	}
+
+	// Generate per-tool markdown
+	toolDocs := make(map[string]string, len(lighthouses))
+	for _, lh := range lighthouses {
+		if lh.Status == "deprecated" {
+			continue
+		}
+		toolDocs[lh.Name] = generateToolDoc(lh)
+	}
+
+	return map[string]any{
+		"llms_txt":   llms.String(),
+		"tools":      toolDocs,
+		"tool_count": len(toolDocs),
+	}, nil
+}
+
+// generateToolDoc creates a full markdown doc for a single tool.
+func generateToolDoc(lh *Lighthouse) string {
+	var b strings.Builder
+	b.WriteString(fmt.Sprintf("# %s\n\n", lh.Name))
+	b.WriteString(fmt.Sprintf("%s\n\n", lh.Description))
+	b.WriteString(fmt.Sprintf("**Status:** %s | **Version:** %d\n\n", lh.Status, lh.Version))
+
+	// Input schema as parameters table
+	if lh.InputSchema != "" && lh.InputSchema != `{"type":"object"}` {
+		var schema map[string]any
+		if json.Unmarshal([]byte(lh.InputSchema), &schema) == nil {
+			props := extractMap(schema, "properties")
+			required := make(map[string]bool)
+			for _, r := range extractStringSlice(schema, "required") {
+				required[r] = true
+			}
+			if len(props) > 0 {
+				b.WriteString("## Parameters\n\n")
+				b.WriteString("| Name | Type | Required | Description |\n")
+				b.WriteString("|------|------|----------|-------------|\n")
+				for name, val := range props {
+					pm, ok := val.(map[string]any)
+					if !ok {
+						continue
+					}
+					pType, _ := pm["type"].(string)
+					pDesc, _ := pm["description"].(string)
+					req := "no"
+					if required[name] {
+						req = "**yes**"
+					}
+					b.WriteString(fmt.Sprintf("| %s | %s | %s | %s |\n", name, pType, req, pDesc))
+				}
+				b.WriteString("\n")
+			}
+		}
+	}
+
+	// Spec (usage/workflow/examples)
+	if lh.Spec != "" {
+		b.WriteString("## Spec\n\n")
+		b.WriteString(lh.Spec)
+		if !strings.HasSuffix(lh.Spec, "\n") {
+			b.WriteString("\n")
+		}
+	}
+
+	return b.String()
+}
+
+// groupByCategory groups lighthouses by tool name prefix.
+func groupByCategory(lighthouses []*Lighthouse) map[string][]*Lighthouse {
+	categories := make(map[string][]*Lighthouse)
+	for _, lh := range lighthouses {
+		if lh.Status == "deprecated" {
+			continue
+		}
+		cat := categorize(lh.Name)
+		categories[cat] = append(categories[cat], lh)
+	}
+	return categories
+}
+
+// categorize returns a category key based on tool name prefix.
+func categorize(name string) string {
+	prefixes := []struct {
+		prefix string
+		cat    string
+	}{
+		{"c4_status", "status"}, {"c4_start", "status"}, {"c4_clear", "status"},
+		{"c4_config", "status"}, {"c4_health", "status"},
+		{"c4_add_todo", "task"}, {"c4_get_task", "task"}, {"c4_submit", "task"},
+		{"c4_mark_blocked", "task"}, {"c4_claim", "task"}, {"c4_report", "task"},
+		{"c4_task_list", "task"},
+		{"c4_checkpoint", "review"}, {"c4_request_changes", "review"},
+		{"c4_ensure_supervisor", "review"}, {"c4_run_validation", "review"},
+		{"c4_find_file", "file"}, {"c4_search_for_pattern", "file"},
+		{"c4_read_file", "file"}, {"c4_replace_content", "file"},
+		{"c4_create_text_file", "file"}, {"c4_list_dir", "file"},
+		{"c4_worktree", "git"}, {"c4_analyze_history", "git"}, {"c4_search_commits", "git"},
+		{"c4_save_spec", "discovery"}, {"c4_get_spec", "discovery"}, {"c4_list_specs", "discovery"},
+		{"c4_save_design", "discovery"}, {"c4_get_design", "discovery"}, {"c4_list_designs", "discovery"},
+		{"c4_discovery_complete", "discovery"}, {"c4_design_complete", "discovery"},
+		{"c4_artifact", "artifact"},
+		{"c4_find_symbol", "lsp"}, {"c4_get_symbols", "lsp"}, {"c4_replace_symbol", "lsp"},
+		{"c4_insert_before", "lsp"}, {"c4_insert_after", "lsp"}, {"c4_rename_symbol", "lsp"},
+		{"c4_find_referencing", "lsp"},
+		{"c4_knowledge", "knowledge"}, {"c4_experiment", "knowledge"}, {"c4_pattern_suggest", "knowledge"},
+		{"c4_research", "research"},
+		{"c4_soul", "soul"}, {"c4_whoami", "soul"}, {"c4_persona", "soul"}, {"c4_reflect", "soul"},
+		{"c4_llm", "llm"},
+		{"c4_cdp", "cdp"}, {"c4_webmcp", "cdp"},
+		{"c4_web_fetch", "web"},
+		{"c1_", "c1"},
+		{"c4_parse_document", "c2"}, {"c4_extract_text", "c2"},
+		{"c4_workspace", "c2"}, {"c4_profile", "c2"}, {"c4_persona_learn", "c2"},
+		{"c4_drive", "drive"},
+		{"c4_event", "event"}, {"c4_rule", "event"},
+		{"c4_hub", "hub"},
+		{"c4_gpu", "gpu"}, {"c4_job_submit", "gpu"},
+		{"c4_lighthouse", "lighthouse"},
+		{"c4_onboard", "other"},
+	}
+
+	for _, p := range prefixes {
+		if strings.HasPrefix(name, p.prefix) {
+			return p.cat
+		}
+	}
+	return "other"
 }
 
 // lighthouseGet returns details for a specific lighthouse.
