@@ -261,7 +261,6 @@ type PushResult struct {
 
 // PublishDocument publishes a local document to the community pool.
 // Strips project-specific metadata (task_id, file paths) and sets visibility=public.
-// The document is pushed to cloud with project_id="__community__".
 func PublishDocument(store *Store, cloud CloudSyncer, docID string) error {
 	if cloud == nil {
 		return fmt.Errorf("cloud not configured")
@@ -298,21 +297,19 @@ func PublishDocument(store *Store, cloud CloudSyncer, docID string) error {
 	return nil
 }
 
+// Pre-compiled regexes for metadata stripping.
+var (
+	reTaskID    = regexp.MustCompile(`\b[TRC]P?-\d{1,4}(-\d+)?\b`)
+	reCommitSHA = regexp.MustCompile(`\b[0-9a-f]{8,40}\b`)
+	reAbsPath   = regexp.MustCompile(`/(?:Users|home|var|tmp|opt|etc)/[^\s,)]+`)
+)
+
 // StripMetadata removes project-specific identifiers from document body.
-// Strips: task IDs (T-NNN, R-NNN), file paths, git SHAs, specific project names.
+// Strips: task IDs (T-NNN, R-NNN), file paths, git SHAs (8+ hex chars).
 func StripMetadata(body string) string {
-	// Task IDs: T-001-0, R-042, CP-003
-	reTaskID := regexp.MustCompile(`\b[TRC]P?-\d{1,4}(-\d+)?\b`)
 	body = reTaskID.ReplaceAllString(body, "[task]")
-
-	// Git commit SHAs (7+ hex chars)
-	reCommitSHA := regexp.MustCompile(`\b[0-9a-f]{7,40}\b`)
 	body = reCommitSHA.ReplaceAllString(body, "[commit]")
-
-	// Absolute file paths (/Users/..., /home/..., /var/..., etc.)
-	reAbsPath := regexp.MustCompile(`/(?:Users|home|var|tmp|opt|etc)/[^\s,)]+`)
 	body = reAbsPath.ReplaceAllString(body, "[path]")
-
 	return body
 }
 

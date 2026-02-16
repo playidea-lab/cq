@@ -375,3 +375,84 @@ func TestExtractTags(t *testing.T) {
 		t.Errorf("nil: got %v", tags)
 	}
 }
+
+func TestStripMetadata(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{"task IDs", "Fixed T-001-0 and R-042 issues", "Fixed [task] and [task] issues"},
+		{"checkpoint", "See CP-003 for details", "See [task] for details"},
+		{"git SHA 8 chars", "commit abcdef12 merged", "commit [commit] merged"},
+		{"git SHA 40 chars", "sha 1234567890abcdef1234567890abcdef12345678 ok", "sha [commit] ok"},
+		{"short hex preserved", "value abc1234 stays", "value abc1234 stays"},
+		{"abs path /Users", "file at /Users/changmin/git/c4/main.go here", "file at [path] here"},
+		{"abs path /home", "see /home/user/project/file.py end", "see [path] end"},
+		{"no match", "plain text without identifiers", "plain text without identifiers"},
+		{"mixed", "T-001 fixed in abcdef12 at /Users/dev/src/f.go", "[task] fixed in [commit] at [path]"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := StripMetadata(tt.input)
+			if got != tt.want {
+				t.Errorf("StripMetadata(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestPublishDocument(t *testing.T) {
+	dir := t.TempDir()
+	store, _ := NewStore(filepath.Join(dir, "knowledge"))
+	defer store.Close()
+
+	store.Create(TypeInsight, map[string]any{
+		"id":    "ins-publish",
+		"title": "Test Insight",
+	}, "Insight about T-001 at /Users/dev/src/main.go")
+
+	cloud := newMockCloud()
+
+	err := PublishDocument(store, cloud, "ins-publish")
+	if err != nil {
+		t.Fatalf("PublishDocument: %v", err)
+	}
+
+	// Verify cloud sync was called
+	if len(cloud.synced) != 1 || cloud.synced[0] != "ins-publish" {
+		t.Errorf("synced: got %v, want [ins-publish]", cloud.synced)
+	}
+
+	// Verify local visibility updated
+	doc, _ := store.Get("ins-publish")
+	if doc == nil {
+		t.Fatal("doc should exist")
+	}
+	if doc.Visibility != "public" {
+		t.Errorf("visibility: got %q, want public", doc.Visibility)
+	}
+}
+
+func TestPublishDocumentNilCloud(t *testing.T) {
+	dir := t.TempDir()
+	store, _ := NewStore(filepath.Join(dir, "knowledge"))
+	defer store.Close()
+
+	err := PublishDocument(store, nil, "any-id")
+	if err == nil {
+		t.Error("expected error for nil cloud")
+	}
+}
+
+func TestPublishDocumentNotFound(t *testing.T) {
+	dir := t.TempDir()
+	store, _ := NewStore(filepath.Join(dir, "knowledge"))
+	defer store.Close()
+
+	cloud := newMockCloud()
+	err := PublishDocument(store, cloud, "nonexistent")
+	if err == nil {
+		t.Error("expected error for nonexistent doc")
+	}
+}
