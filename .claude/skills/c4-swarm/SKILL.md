@@ -4,8 +4,9 @@ description: |
   teams with direct member communication. Supports standard (implementation),
   review (read-only audit), and investigate (hypothesis competition) modes.
   Auto-maps C4 tasks to team tasks, domain-based agent selection, handoff tracking,
-  auto-judge review spawning. Triggers on: "swarm mode", "spawn team", "parallel
-  workers with communication", "team collaboration", "coordinate agents".
+  auto-judge review spawning. Triggers: "팀 협업", "스웜", "병렬 팀 실행",
+  "swarm mode", "spawn team", "parallel workers with communication",
+  "team collaboration", "coordinate agents".
 ---
 
 # C4 Swarm — Agent Teams Parallel Collaboration

@@ -5,8 +5,9 @@ description: |
   (EARS requirements), Design (architecture decisions), Lighthouse contracts
   (contract-first TDD), and task breakdown with DoD. Use when the user wants to
   plan features, review existing plans, manage Lighthouse contracts, or create
-  implementation tasks. Triggers on: "plan this feature", "create implementation
-  plan", "design this", "break down requirements", "set up tasks".
+  implementation tasks. Triggers: "계획 수립", "기능 설계", "태스크 분해",
+  "plan this feature", "create implementation plan", "design this",
+  "break down requirements", "set up tasks".
 ---
 
 # C4 Plan Mode

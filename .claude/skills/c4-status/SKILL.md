@@ -4,8 +4,9 @@ description: |
   Displays overall progress, phase breakdowns, dependency graphs, queue
   summary, worker status, next ready tasks, and supervisor metrics. Use
   when the user wants to check project status, view task progress, see
-  dependency graphs, or check what tasks are ready to start. Triggers on:
-  "show status", "project status", "task progress", "what's ready".
+  dependency graphs, or check what tasks are ready to start. Triggers:
+  "상태 확인", "진행 상황", "현황", "show status", "project status",
+  "task progress", "what's ready".
 ---
 
 # C4 Project Status

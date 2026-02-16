@@ -3,7 +3,8 @@ description: |
   Submit completed C4 tasks with automated validation (lint, unit tests, DDD-CLEANCODE
   checks). Auto-detects in-progress tasks, runs required validators, verifies commit SHA,
   and triggers checkpoint reviews when needed. Use when task implementation is done.
-  Triggers on: "submit task", "complete task", "submit T-XXX", "/c4-submit".
+  Triggers: "제출", "태스크 제출", "작업 완료", "submit task", "complete task",
+  "submit T-XXX", "/c4-submit".
 ---
 
 # C4 Submit Task

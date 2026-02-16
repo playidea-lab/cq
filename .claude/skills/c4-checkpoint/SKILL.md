@@ -3,8 +3,9 @@ description: |
   Review checkpoints with strategic 4-lens analysis (holistic/user-flow/cascade/ship-ready).
   Handles CHECKPOINT state by guiding approve/request-changes/replan/redesign decisions.
   Auto-approve configurable per checkpoint. Use when checkpoint state is reached or to
-  review work before proceeding. Triggers on: "/c4-checkpoint", "review checkpoint",
-  "approve checkpoint", "request changes at checkpoint".
+  review work before proceeding. Triggers: "체크포인트", "검토 승인", "중간 리뷰",
+  "/c4-checkpoint", "review checkpoint", "approve checkpoint",
+  "request changes at checkpoint".
 ---
 
 # C4 Checkpoint Review

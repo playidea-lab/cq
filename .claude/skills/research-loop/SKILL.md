@@ -4,8 +4,9 @@ description: |
   plan → experiment → re-review until target quality is reached. Manages research
   projects with automated experiment submission and score tracking. Re-entrant
   design: each invocation picks up where it left off. Use when iterating on
-  research papers with experiment validation. Triggers: "research loop", "iterate
-  on paper", "experiment loop", "improve research", "paper quality loop".
+  research papers with experiment validation. Triggers: "연구 반복", "실험 루프",
+  "논문 개선", "research loop", "iterate on paper", "experiment loop",
+  "improve research", "paper quality loop".
 ---
 
 # Research Loop: Paper-Experiment Iteration Tracker

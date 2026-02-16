@@ -3,8 +3,9 @@ description: |
   Quick start C4 workflow: create task + assign in one command. Handles state
   transitions (PLAN/HALTED → EXECUTE), creates task with DoD and validations,
   assigns to worker, and sets up isolated worktree. Use when user wants to
-  quickly start working on a task without going through full planning. Triggers
-  on: "quick start", "start task quickly", "/c4-quick", "create and assign task".
+  quickly start working on a task without going through full planning. Triggers:
+  "빠른 시작", "바로 실행", "즉시 태스크", "quick start", "start task quickly",
+  "/c4-quick", "create and assign task".
 ---
 
 # C4 Quick Start

@@ -1,15 +1,15 @@
 ---
 description: |
-  Conduct academic paper reviews using the C2 document lifecycle system with a
-  6-axis evaluation framework. Performs 3-pass review (structure, detailed analysis,
-  synthesis), generates bilingual review documents, and learns from user edits via
-  persona learning. Uses MCP tools for workspace management and profile updates.
-  Trigger: "review this paper", "c2 review", "/c2-review".
+  Streamlined academic paper review using the C2 document lifecycle system.
+  3-pass review with 6-axis evaluation, bilingual output, and persona learning
+  from user edits. Uses MCP tools for workspace and profile management.
+  Triggers: "논문 리뷰", "페이퍼 리뷰", "학술 논문 검토", "c2 paper review",
+  "/c2-paper-review". For detailed review with math verification, use /c4-review.
 ---
 
-# c2-review: Academic Paper Review (C2 Lifecycle)
+# c2-paper-review: Academic Paper Review (C2 Lifecycle)
 
-> **Command**: `/c2-review <pdf_path> [--project <name>] [--journal <name>]`
+> **Command**: `/c2-paper-review <pdf_path> [--project <name>] [--journal <name>]`
 >
 > Full 3-pass academic paper review using c2 document lifecycle. Claude reads PDF directly, applies 6-axis framework, generates bilingual reviews, and learns from user feedback.
 

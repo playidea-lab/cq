@@ -3,8 +3,8 @@ description: |
   Stop C4 project execution and transition to HALTED state. Checks current state,
   halts execution if running, and reports interrupted tasks. Use when the user wants
   to pause or stop an active C4 execution workflow. Stopping preserves progress and
-  allows resumption with /c4-run. Triggers on: "stop execution", "halt C4", "pause
-  project", "stop C4".
+  allows resumption with /c4-run. Triggers: "중지", "실행 멈춤", "일시 정지",
+  "stop execution", "halt C4", "pause project", "stop C4".
 ---
 
 # C4 Stop Execution

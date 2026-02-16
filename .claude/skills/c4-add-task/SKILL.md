@@ -4,8 +4,8 @@ description: |
   define clear task descriptions, Definition of Done (DoD), scope, and domain through
   interactive dialogue. Infers task IDs from existing patterns and suggests concrete
   DoD criteria when requirements are vague. Use when the user wants to add a task,
-  create a work item, or plan a feature. Triggers on: "add task", "create task",
-  "add work item", "plan feature".
+  create a work item, or plan a feature. Triggers: "태스크 추가", "작업 추가",
+  "할 일 생성", "add task", "create task", "add work item", "plan feature".
 ---
 
 # C4 Add Task

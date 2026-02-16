@@ -1,10 +1,11 @@
 ---
 description: |
-  Quick reference for C4 commands, agents, and tools. Provides summaries,
-  decision trees, and keyword search across 16 commands, 37 agents (9 categories),
-  and 103 MCP tools (3 layers). Use when the user needs help, reference,
-  command list, or wants to search C4 capabilities. Triggers on: "help",
-  "list commands", "show agents", "what tools", "how to".
+  Quick reference for C4 skills, agents, and tools. Provides summaries,
+  decision trees, and keyword search across 19 skills, 37 agents (9 categories),
+  and 154 MCP tools (3 layers). Use when the user needs help, reference,
+  skill list, or wants to search C4 capabilities. Triggers: "도움말",
+  "명령어 목록", "도구 검색", "help", "list commands", "show agents",
+  "what tools", "how to".
 ---
 
 # C4 Help

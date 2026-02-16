@@ -4,8 +4,9 @@ description: |
   Executes configured validations, detects CRITICAL (commit-blocking), HIGH (review-required),
   and MEDIUM (recommended) issues. Supports security pattern detection (hardcoded secrets,
   SQL/command injection, XSS), code quality checks, and test execution. Use when validating
-  code before commits, running pre-merge checks, or security audits. Triggers on: "validate",
-  "run validations", "check security", "lint and test".
+  code before commits, running pre-merge checks, or security audits. Triggers:
+  "검증", "테스트 실행", "린트 검사", "validate", "run validations",
+  "check security", "lint and test".
 ---
 
 # C4 Run Validations

@@ -3,8 +3,9 @@ description: |
   Deep exploratory requirements interview to discover hidden requirements, edge
   cases, failure scenarios, and tradeoffs. Acts as senior PM/architect to ask
   non-obvious, in-depth questions until complete clarity. Use for new features,
-  requirements refinement, or discovering implicit assumptions. Triggers on:
-  "interview requirements", "discover requirements", "explore feature needs".
+  requirements refinement, or discovering implicit assumptions. Triggers:
+  "인터뷰", "요구사항 탐색", "심층 질문", "interview requirements",
+  "discover requirements", "explore feature needs".
 ---
 
 # C4 Interview - Deep Exploratory Requirements Interview

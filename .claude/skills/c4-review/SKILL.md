@@ -1,11 +1,12 @@
 ---
 description: |
-  Conduct comprehensive 3-pass academic paper reviews using the C2 document
-  lifecycle system. Performs structure analysis, 6-axis evaluation framework
-  (quality, novelty, technical soundness, experimental validation, discussion,
-  presentation), and generates formal review documents with tone rules. Includes
-  persona learning from human edits. Use when reviewing academic papers with PDF
-  input. Triggers on: "review this paper", "academic review", "c2 review".
+  Comprehensive 3-pass academic paper review with detailed math verification,
+  formal tone rules, and 6-axis evaluation (quality, novelty, technical soundness,
+  experimental validation, discussion, presentation). Generates formal review
+  documents with C2 lifecycle integration and persona learning from human edits.
+  Use for in-depth reviews requiring equation verification or detailed technical
+  analysis. Triggers: "리뷰 작성", "상세 논문 리뷰", "6축 리뷰", "수식 검증 리뷰",
+  "academic review", "/c4-review". For quick reviews, use /c2-paper-review.
 ---
 
 # c2-review: Academic Paper Review (c2 Lifecycle)

@@ -3,8 +3,9 @@ description: |
   Completely reset C4 state for development and debugging. Clears all state
   files, tasks, events, bundles, and locks in .c4/ directory with optional
   config preservation. Use when you need to reset project state, debug
-  initialization issues, or start fresh. Triggers on: "clear c4 state",
-  "reset c4", "delete all tasks", "start c4 fresh".
+  initialization issues, or start fresh. Triggers: "초기화", "상태 리셋",
+  "전체 삭제", "clear c4 state", "reset c4", "delete all tasks",
+  "start c4 fresh".
 ---
 
 # C4 Clear (Development)

@@ -4,8 +4,8 @@ description: |
   dependency graph, calculates optimal worker count, and spawns background workers
   with fresh context isolation (one task per worker). Supports auto mode (smart
   parallelism), manual worker count, continuous mode (auto-respawn), and max limits.
-  Use when ready to execute C4 tasks. Triggers: "run tasks", "execute plan", "spawn
-  workers", "start implementation", "/c4-run".
+  Use when ready to execute C4 tasks. Triggers: "실행", "워커 실행", "태스크 실행",
+  "run tasks", "execute plan", "spawn workers", "start implementation", "/c4-run".
 ---
 
 # C4 Run — Smart Auto Worker Spawner

@@ -2,8 +2,9 @@
 description: |
   Post-implementation completion workflow with build verification, testing,
   binary installation, documentation updates, and knowledge recording.
-  Execute after implementing features or fixes. Triggers on: "finish",
-  "wrap up", "finalize", "complete implementation", "post-implementation".
+  Execute after implementing features or fixes. Triggers: "마무리", "완료 루틴",
+  "구현 마무리", "finish", "wrap up", "finalize", "complete implementation",
+  "post-implementation".
 ---
 
 # C4 Finish Routine
