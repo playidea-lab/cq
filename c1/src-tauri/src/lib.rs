@@ -77,6 +77,10 @@ pub fn run() {
             commands::get_task_timeline,
             commands::get_worker_activity,
             commands::get_validation_results,
+            // Project ID resolution
+            commands::get_project_id_cmd,
+            // Git Graph
+            commands::get_git_graph,
             // Cloud sync
             cloud::cloud_sync_tasks,
             cloud::cloud_get_team_projects,

@@ -1,6 +1,7 @@
 package knowledge
 
 import (
+	"fmt"
 	"path/filepath"
 	"testing"
 )
@@ -193,7 +194,7 @@ func TestDocumentToText(t *testing.T) {
 		Hypothesis: "RF is best",
 		Body:       "Long body content here.",
 	}
-	text := documentToText(doc)
+	text := DocumentToText(doc)
 	if text == "" {
 		t.Error("text should not be empty")
 	}
@@ -210,7 +211,7 @@ func TestDocumentToText(t *testing.T) {
 
 func TestDocumentToTextEmpty(t *testing.T) {
 	doc := &Document{}
-	text := documentToText(doc)
+	text := DocumentToText(doc)
 	if text != "" {
 		t.Errorf("empty doc text: got %q", text)
 	}
@@ -222,7 +223,7 @@ func TestDocumentToTextBodyTruncation(t *testing.T) {
 		longBody += "x"
 	}
 	doc := &Document{Title: "T", Body: longBody}
-	text := documentToText(doc)
+	text := DocumentToText(doc)
 	// Body should be truncated to 500 chars
 	if len(text) > 510 { // title + separator + 500 body
 		t.Errorf("body not truncated: text len=%d", len(text))
@@ -240,6 +241,148 @@ func searchString(s, sub string) bool {
 		}
 	}
 	return false
+}
+
+func TestFindRelated(t *testing.T) {
+	store, searcher := setupTestSearcher(t)
+
+	// Create two documents with identical content (cosine sim = 1.0 via mock)
+	id1, _ := store.Create(TypeInsight, map[string]any{
+		"title": "Go Performance Tips",
+	}, "Go performance optimization techniques and best practices")
+	doc1, _ := store.Get(id1)
+	searcher.IndexDocument(id1, doc1)
+
+	id2, _ := store.Create(TypeInsight, map[string]any{
+		"title": "Go Performance Tips",
+	}, "Go performance optimization techniques and best practices")
+	doc2, _ := store.Get(id2)
+	searcher.IndexDocument(id2, doc2)
+
+	// Create an unrelated document
+	id3, _ := store.Create(TypeExperiment, map[string]any{
+		"title": "Random Topic",
+	}, "completely different content here about something else entirely")
+	doc3, _ := store.Get(id3)
+	searcher.IndexDocument(id3, doc3)
+
+	// FindRelated for doc1 — should return doc2 (identical content) and exclude doc1
+	related := searcher.FindRelated(DocumentToText(doc1), id1, 3)
+
+	foundDoc2 := false
+	for _, r := range related {
+		if r.ID == id1 {
+			t.Error("excluded ID should not appear in results")
+		}
+		if r.ID == id2 {
+			foundDoc2 = true
+			if r.RRFScore < 0.5 {
+				t.Errorf("expected high similarity for identical content, got %f", r.RRFScore)
+			}
+		}
+	}
+	if !foundDoc2 {
+		t.Error("expected to find document with identical content")
+	}
+}
+
+func TestFindRelatedEmpty(t *testing.T) {
+	_, searcher := setupTestSearcher(t)
+
+	results := searcher.FindRelated("anything", "no-exist", 3)
+	if len(results) != 0 {
+		t.Errorf("empty store: got %d results, want 0", len(results))
+	}
+}
+
+func TestFindRelatedNoVectorStore(t *testing.T) {
+	dir := t.TempDir()
+	store, _ := NewStore(filepath.Join(dir, "knowledge"))
+	defer store.Close()
+
+	searcher := NewSearcher(store, nil)
+	results := searcher.FindRelated("text", "id", 3)
+	if results != nil {
+		t.Error("expected nil for no vector store")
+	}
+}
+
+func TestFindClusters(t *testing.T) {
+	store, searcher := setupTestSearcher(t)
+
+	// Create 3 documents: 2 identical (should cluster) + 1 different
+	for i := 0; i < 2; i++ {
+		id, _ := store.Create(TypeInsight, map[string]any{
+			"title": "Cluster Doc",
+		}, "identical content for clustering test")
+		doc, _ := store.Get(id)
+		searcher.IndexDocument(id, doc)
+	}
+
+	id3, _ := store.Create(TypeExperiment, map[string]any{
+		"title": "Different Doc",
+	}, "completely unrelated content about a different topic")
+	doc3, _ := store.Get(id3)
+	searcher.IndexDocument(id3, doc3)
+
+	// Threshold 0.99 should cluster only the identical docs
+	clusters := searcher.FindClusters(0.99, 2)
+	if len(clusters) == 0 {
+		t.Fatal("expected at least 1 cluster")
+	}
+
+	// At least one cluster should have size >= 2
+	found := false
+	for _, c := range clusters {
+		if len(c) >= 2 {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("expected a cluster with at least 2 members")
+	}
+}
+
+func TestFindClustersEmpty(t *testing.T) {
+	_, searcher := setupTestSearcher(t)
+
+	clusters := searcher.FindClusters(0.5, 2)
+	if clusters != nil {
+		t.Error("expected nil for empty store")
+	}
+}
+
+func TestPairwiseSimilarityStats(t *testing.T) {
+	store, searcher := setupTestSearcher(t)
+
+	// Create and index 3 documents
+	for i := 0; i < 3; i++ {
+		id, _ := store.Create(TypeInsight, map[string]any{
+			"title": fmt.Sprintf("Doc %d", i),
+		}, fmt.Sprintf("content for document number %d", i))
+		doc, _ := store.Get(id)
+		searcher.IndexDocument(id, doc)
+	}
+
+	avg, maxSim, minSim, pairs := searcher.PairwiseSimilarityStats(100)
+	if pairs != 3 { // C(3,2) = 3
+		t.Errorf("pairs: got %d, want 3", pairs)
+	}
+	if maxSim < minSim {
+		t.Errorf("max %f < min %f", maxSim, minSim)
+	}
+	if avg < minSim || avg > maxSim {
+		t.Errorf("avg %f not between min %f and max %f", avg, minSim, maxSim)
+	}
+}
+
+func TestPairwiseSimilarityStatsEmpty(t *testing.T) {
+	_, searcher := setupTestSearcher(t)
+
+	avg, maxSim, minSim, pairs := searcher.PairwiseSimilarityStats(100)
+	if pairs != 0 || avg != 0 || maxSim != 0 || minSim != 0 {
+		t.Error("expected all zeros for empty store")
+	}
 }
 
 func TestBatchIndexDocuments(t *testing.T) {

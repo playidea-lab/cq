@@ -259,6 +259,18 @@ export interface ValidationResult {
   output: string;
 }
 
+// --- Git Graph types ---
+
+export interface GitCommit {
+  hash: string;
+  shortHash: string;
+  parents: string[];
+  refs: string[];
+  author: string;
+  date: string;
+  message: string;
+}
+
 // --- Session Analytics types ---
 
 export interface ToolUsageStat {

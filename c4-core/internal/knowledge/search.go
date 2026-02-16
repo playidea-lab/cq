@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strings"
 )
 
 // Searcher provides hybrid search combining vector similarity and FTS5 keyword search.
@@ -276,7 +277,7 @@ func (s *Searcher) IndexDocument(docID string, doc *Document) error {
 		return nil
 	}
 
-	text := documentToText(doc)
+	text := DocumentToText(doc)
 	if text == "" {
 		return nil
 	}
@@ -299,7 +300,7 @@ func (s *Searcher) BatchIndexDocuments(ids []string, docs []*Document) error {
 
 	texts := make([]string, len(docs))
 	for i, doc := range docs {
-		texts[i] = documentToText(doc)
+		texts[i] = DocumentToText(doc)
 	}
 
 	embeddings, model, err := s.vectorStore.EmbedTexts(context.Background(), texts)
@@ -329,9 +330,188 @@ func (s *Searcher) ReindexDocument(docID string, doc *Document) error {
 	return s.IndexDocument(docID, doc)
 }
 
-// documentToText converts a Document to searchable text for embedding.
+// FindRelated returns top-N most similar documents to the given text.
+// Uses vector similarity only (no FTS). Excludes the document itself and its chunks.
+// Results with cosine similarity < 0.5 are filtered out.
+func (s *Searcher) FindRelated(text string, excludeID string, topN int) []SearchResult {
+	if s.vectorStore == nil || s.vectorStore.Count() == 0 || topN <= 0 {
+		return nil
+	}
+
+	queryEmb, _, err := s.vectorStore.EmbedText(context.Background(), text)
+	if err != nil {
+		return nil
+	}
+
+	fetchN := topN + 5
+	vecResults, err := s.vectorStore.Search(queryEmb, fetchN)
+	if err != nil {
+		return nil
+	}
+
+	var results []SearchResult
+	for _, r := range vecResults {
+		if r.DocID == excludeID || strings.HasPrefix(r.DocID, excludeID+"-chunk-") {
+			continue
+		}
+		if r.Score < 0.5 {
+			continue
+		}
+		results = append(results, SearchResult{
+			ID:       r.DocID,
+			RRFScore: r.Score,
+		})
+		if len(results) >= topN {
+			break
+		}
+	}
+
+	results = s.enrichAndFilter(results, nil)
+	if len(results) > topN {
+		results = results[:topN]
+	}
+	return results
+}
+
+// FindClusters groups documents by vector similarity using connected components.
+// Documents with pairwise similarity >= threshold are linked together.
+// Only returns clusters with at least minSize members.
+func (s *Searcher) FindClusters(threshold float64, minSize int) [][]string {
+	if s.vectorStore == nil {
+		return nil
+	}
+
+	embeddings, err := s.vectorStore.AllEmbeddings()
+	if err != nil || len(embeddings) < minSize {
+		return nil
+	}
+
+	// Filter to parent documents only (exclude chunk IDs)
+	// Collect and sort IDs for deterministic results (map iteration is random)
+	var sortedIDs []string
+	for id := range embeddings {
+		if !strings.Contains(id, "-chunk-") {
+			sortedIDs = append(sortedIDs, id)
+		}
+	}
+	sort.Strings(sortedIDs)
+
+	docIDs := sortedIDs
+	docEmbs := make([][]float32, len(docIDs))
+	for i, id := range docIDs {
+		docEmbs[i] = embeddings[id]
+	}
+
+	n := len(docIDs)
+	if n < minSize {
+		return nil
+	}
+
+	// Union-Find
+	parent := make([]int, n)
+	for i := range parent {
+		parent[i] = i
+	}
+	var find func(int) int
+	find = func(x int) int {
+		if parent[x] != x {
+			parent[x] = find(parent[x])
+		}
+		return parent[x]
+	}
+	union := func(a, b int) {
+		ra, rb := find(a), find(b)
+		if ra != rb {
+			parent[ra] = rb
+		}
+	}
+
+	for i := 0; i < n; i++ {
+		for j := i + 1; j < n; j++ {
+			sim := cosineSimilarity(docEmbs[i], docEmbs[j])
+			if sim >= threshold {
+				union(i, j)
+			}
+		}
+	}
+
+	groups := map[int][]string{}
+	for i, id := range docIDs {
+		root := find(i)
+		groups[root] = append(groups[root], id)
+	}
+
+	var clusters [][]string
+	for _, group := range groups {
+		if len(group) >= minSize {
+			clusters = append(clusters, group)
+		}
+	}
+	return clusters
+}
+
+// PairwiseSimilarityStats computes summary statistics of pairwise cosine similarities.
+// Samples up to maxSample parent-document embeddings to limit computation.
+func (s *Searcher) PairwiseSimilarityStats(maxSample int) (avg, maxSim, minSim float64, pairs int) {
+	if s.vectorStore == nil {
+		return 0, 0, 0, 0
+	}
+
+	embeddings, err := s.vectorStore.AllEmbeddings()
+	if err != nil || len(embeddings) < 2 {
+		return 0, 0, 0, 0
+	}
+
+	// Sort IDs for deterministic sampling (map iteration is random)
+	var sortedIDs []string
+	for id := range embeddings {
+		if !strings.Contains(id, "-chunk-") {
+			sortedIDs = append(sortedIDs, id)
+		}
+	}
+	sort.Strings(sortedIDs)
+
+	embs := make([][]float32, len(sortedIDs))
+	for i, id := range sortedIDs {
+		embs[i] = embeddings[id]
+	}
+
+	if maxSample > 0 && len(embs) > maxSample {
+		embs = embs[:maxSample]
+	}
+
+	n := len(embs)
+	if n < 2 {
+		return 0, 0, 0, 0
+	}
+
+	var total float64
+	maxSim = -1.0
+	minSim = 2.0
+
+	for i := 0; i < n; i++ {
+		for j := i + 1; j < n; j++ {
+			sim := cosineSimilarity(embs[i], embs[j])
+			total += sim
+			pairs++
+			if sim > maxSim {
+				maxSim = sim
+			}
+			if sim < minSim {
+				minSim = sim
+			}
+		}
+	}
+
+	if pairs > 0 {
+		avg = total / float64(pairs)
+	}
+	return avg, maxSim, minSim, pairs
+}
+
+// DocumentToText converts a Document to searchable text for embedding.
 // Compatible with Python _document_to_text().
-func documentToText(doc *Document) string {
+func DocumentToText(doc *Document) string {
 	var parts []string
 	if doc.Title != "" {
 		parts = append(parts, doc.Title)

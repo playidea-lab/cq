@@ -583,7 +583,123 @@
   margin: var(--space-sm) 0;
 }
 
-/* Task Timeline */
+/* Git Graph */
+
+.git-graph {
+  padding: var(--space-md) var(--space-lg);
+  border-bottom: 1px solid var(--color-border-default);
+  background: var(--color-bg-secondary);
+  max-height: 280px;
+  overflow-y: scroll;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+
+.git-graph__title {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-secondary);
+  margin-bottom: var(--space-sm);
+}
+
+.git-graph__container {
+  display: flex;
+  flex-direction: column;
+}
+
+.git-graph__row {
+  display: flex;
+  align-items: center;
+  min-height: 32px;
+}
+
+.git-graph__svg {
+  flex-shrink: 0;
+  pointer-events: none;
+}
+
+.git-graph__info {
+  flex: 1;
+  min-width: 0;
+  padding: 2px 0 2px var(--space-sm);
+}
+
+.git-graph__message-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  min-width: 0;
+}
+
+.git-graph__message {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+  min-width: 0;
+}
+
+.git-graph__refs {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.git-graph__ref {
+  font-size: 10px;
+  font-weight: var(--font-weight-medium);
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  white-space: nowrap;
+}
+
+.git-graph__ref--head {
+  background: var(--color-badge-blue-bg);
+  color: var(--color-info);
+  font-weight: var(--font-weight-bold);
+}
+
+.git-graph__ref--branch {
+  background: var(--color-badge-green-bg);
+  color: var(--color-success);
+}
+
+.git-graph__ref--remote {
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-muted);
+}
+
+.git-graph__ref--tag {
+  background: var(--color-badge-orange-bg);
+  color: var(--color-warning);
+}
+
+.git-graph__meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  margin-top: 1px;
+}
+
+.git-graph__hash {
+  font-size: var(--font-size-xs);
+  font-family: var(--font-family-mono);
+  color: var(--color-text-muted);
+}
+
+.git-graph__author {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+}
+
+.git-graph__date {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+}
+
+/* Task Timeline (legacy, kept for reference) */
 
 .task-timeline {
   padding: var(--space-md) var(--space-lg);

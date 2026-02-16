@@ -167,6 +167,30 @@ func (v *VectorStore) CountByModel() (map[string]int, error) {
 	return counts, rows.Err()
 }
 
+// AllEmbeddings returns all stored embeddings as a map of docID → embedding.
+// Used for batch analysis like clustering and pairwise similarity stats.
+func (v *VectorStore) AllEmbeddings() (map[string][]float32, error) {
+	rows, err := v.db.Query("SELECT doc_id, embedding FROM knowledge_vectors")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	result := make(map[string][]float32)
+	for rows.Next() {
+		var docID string
+		var blob []byte
+		if err := rows.Scan(&docID, &blob); err != nil {
+			continue
+		}
+		emb := decodeEmbedding(blob)
+		if len(emb) == v.dimension {
+			result[docID] = emb
+		}
+	}
+	return result, rows.Err()
+}
+
 // VectorResult holds a single search result with similarity score.
 type VectorResult struct {
 	DocID    string  `json:"id"`

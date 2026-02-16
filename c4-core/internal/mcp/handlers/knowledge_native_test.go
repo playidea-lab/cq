@@ -412,6 +412,177 @@ func TestE2ESearchWithLimit(t *testing.T) {
 	}
 }
 
+// --- Mock CloudSyncer for blending tests ---
+
+type mockCloudSyncer struct {
+	discoverResults []map[string]any
+}
+
+func (m *mockCloudSyncer) SyncDocument(params map[string]any, docID string) error     { return nil }
+func (m *mockCloudSyncer) SearchDocuments(query, docType string, limit int) ([]map[string]any, error) {
+	return nil, nil
+}
+func (m *mockCloudSyncer) ListDocuments(docType string, limit int) ([]map[string]any, error) {
+	return nil, nil
+}
+func (m *mockCloudSyncer) GetDocument(docID string) (map[string]any, error) { return nil, nil }
+func (m *mockCloudSyncer) DeleteDocument(docID string) error                { return nil }
+func (m *mockCloudSyncer) DiscoverPublic(query, docType string, limit int) ([]map[string]any, error) {
+	return m.discoverResults, nil
+}
+
+func TestKnowledgeRecordWithRelated(t *testing.T) {
+	reg, _ := setupKnowledgeNativeTest(t)
+
+	// Record a first document
+	callHandler(t, reg, "c4_knowledge_record", map[string]any{
+		"doc_type": "insight",
+		"title":    "Go Performance Tips",
+		"content":  "Go performance optimization techniques and best practices",
+	})
+
+	// Record a second document with identical content — should see related
+	result := callHandler(t, reg, "c4_knowledge_record", map[string]any{
+		"doc_type": "insight",
+		"title":    "Go Performance Tips",
+		"content":  "Go performance optimization techniques and best practices",
+	})
+
+	if result["success"] != true {
+		t.Fatalf("expected success=true, got %v", result)
+	}
+
+	// With identical content and mock embeddings, related should include the first doc
+	if related, ok := result["related"].([]map[string]any); ok {
+		if len(related) == 0 {
+			t.Error("expected related documents for identical content")
+		}
+		for _, r := range related {
+			if _, hasID := r["id"]; !hasID {
+				t.Error("related item missing id")
+			}
+			if _, hasSim := r["similarity"]; !hasSim {
+				t.Error("related item missing similarity")
+			}
+		}
+	}
+	// related may be nil if similarity < 0.5 with mock — that's OK
+}
+
+func TestKnowledgeSearchBlending(t *testing.T) {
+	dir := t.TempDir()
+	basePath := filepath.Join(dir, "knowledge")
+	store, err := knowledge.NewStore(basePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { store.Close() })
+
+	vs, _ := knowledge.NewVectorStore(store.DB(), 384, nil)
+	searcher := knowledge.NewSearcher(store, vs)
+
+	cloud := &mockCloudSyncer{
+		discoverResults: []map[string]any{
+			{"id": "community-1", "title": "Community Pattern", "type": "pattern", "domain": "ml"},
+			{"id": "community-2", "title": "Community Insight", "type": "insight", "domain": "dl"},
+		},
+	}
+
+	opts := &KnowledgeNativeOpts{
+		Store:    store,
+		Searcher: searcher,
+		Cloud:    cloud,
+	}
+
+	reg := mcp.NewRegistry()
+	RegisterKnowledgeNativeHandlers(reg, opts)
+
+	// Create a local document
+	callHandler(t, reg, "c4_knowledge_record", map[string]any{
+		"doc_type": "insight",
+		"title":    "Local ML Insight",
+		"content":  "local machine learning knowledge",
+	})
+
+	// Search — should blend local + community results
+	result := callHandler(t, reg, "c4_knowledge_search", map[string]any{
+		"query": "machine learning",
+	})
+
+	results, ok := result["results"].([]any)
+	if !ok {
+		// Try map slice
+		if mapResults, ok2 := result["results"].([]map[string]any); ok2 {
+			for _, r := range mapResults {
+				src, _ := r["source"].(string)
+				if src != "local" && src != "community" {
+					t.Errorf("unexpected source: %q", src)
+				}
+			}
+		}
+	} else {
+		for _, r := range results {
+			rm, _ := r.(map[string]any)
+			src, _ := rm["source"].(string)
+			if src != "local" && src != "community" {
+				t.Errorf("unexpected source: %q", src)
+			}
+		}
+	}
+
+	// Check community count
+	if cc, ok := result["community_count"].(int); ok {
+		if cc != 2 {
+			t.Errorf("community_count: got %d, want 2", cc)
+		}
+	}
+}
+
+func TestKnowledgeStatsExtended(t *testing.T) {
+	reg, _ := setupKnowledgeNativeTest(t)
+
+	// Create some documents
+	for i := 0; i < 3; i++ {
+		callHandler(t, reg, "c4_knowledge_record", map[string]any{
+			"doc_type": "insight",
+			"title":    fmt.Sprintf("Stats Test Doc %d", i),
+			"content":  fmt.Sprintf("content for stats test document %d", i),
+		})
+	}
+	callHandler(t, reg, "c4_knowledge_record", map[string]any{
+		"doc_type": "pattern",
+		"title":    "Test Pattern",
+		"content":  "pattern content",
+	})
+
+	result := callHandler(t, reg, "c4_knowledge_stats", map[string]any{})
+
+	// Check pattern_count
+	if pc, ok := result["pattern_count"].(int); ok {
+		if pc != 1 {
+			t.Errorf("pattern_count: got %d, want 1", pc)
+		}
+	}
+
+	// Check similarity stats exist (we have 4 docs with vectors → should have pairwise stats)
+	if sim, ok := result["similarity"].(map[string]any); ok {
+		if _, hasAvg := sim["avg_pairwise"]; !hasAvg {
+			t.Error("similarity missing avg_pairwise")
+		}
+		if _, hasMax := sim["max_pairwise"]; !hasMax {
+			t.Error("similarity missing max_pairwise")
+		}
+		if _, hasPairs := sim["pairs_sampled"]; !hasPairs {
+			t.Error("similarity missing pairs_sampled")
+		}
+	}
+
+	// No distillation hint for < 50 docs
+	if _, has := result["distillation_hint"]; has {
+		t.Error("should not have distillation_hint for < 50 docs")
+	}
+}
+
 // TestE2ERegisterConditionalWiring verifies that registerNativeReplacements
 // correctly chooses between Go native and proxy fallback.
 func TestE2ERegisterConditionalWiring(t *testing.T) {

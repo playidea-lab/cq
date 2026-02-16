@@ -121,26 +121,6 @@ fn open_c4_db(project_path: &Path) -> Result<Connection, String> {
     Connection::open(&db_path).map_err(|e| format!("Failed to open DB: {}", e))
 }
 
-/// Map DB task type to frontend enum value
-fn map_task_type(raw: &str) -> String {
-    match raw {
-        "impl" => "IMPLEMENTATION".to_string(),
-        "review" => "REVIEW".to_string(),
-        "checkpoint" => "CHECKPOINT".to_string(),
-        other => other.to_uppercase(),
-    }
-}
-
-/// Extract a string array from a JSON value
-fn json_string_array(val: Option<&serde_json::Value>) -> Vec<String> {
-    val.and_then(|v| v.as_array())
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|item| item.as_str().map(String::from))
-                .collect()
-        })
-        .unwrap_or_default()
-}
 
 /// Get project state including status, workers, and progress
 #[tauri::command(rename_all = "camelCase")]
@@ -170,17 +150,17 @@ pub async fn get_project_state(path: String) -> Result<ProjectState, String> {
             .unwrap_or("UNKNOWN")
             .to_string();
 
-        // 2. Extract workers from c4_tasks (assigned_to with in_progress status)
+        // 2. Extract workers from c4_tasks (worker_id with in_progress status)
         let mut worker_stmt = conn
             .prepare(
-                "SELECT DISTINCT assigned_to, task_id FROM c4_tasks \
-                 WHERE project_id = ? AND status = 'in_progress' AND assigned_to IS NOT NULL",
+                "SELECT DISTINCT worker_id, task_id FROM c4_tasks \
+                 WHERE status = 'in_progress' AND worker_id IS NOT NULL AND worker_id != ''",
             )
             .map_err(|e| format!("Failed to prepare worker query: {}", e))?;
 
         let mut worker_map: HashMap<String, Vec<String>> = HashMap::new();
         let rows = worker_stmt
-            .query_map([&project_id], |row| {
+            .query_map([], |row| {
                 Ok((
                     row.get::<_, String>(0)?,
                     row.get::<_, String>(1)?,
@@ -207,7 +187,7 @@ pub async fn get_project_state(path: String) -> Result<ProjectState, String> {
         // 3. Count tasks by status
         let mut count_stmt = conn
             .prepare(
-                "SELECT status, COUNT(*) FROM c4_tasks WHERE project_id = ? GROUP BY status",
+                "SELECT status, COUNT(*) FROM c4_tasks GROUP BY status",
             )
             .map_err(|e| format!("Failed to prepare count query: {}", e))?;
 
@@ -216,7 +196,7 @@ pub async fn get_project_state(path: String) -> Result<ProjectState, String> {
         let mut pending: u32 = 0;
 
         let count_rows = count_stmt
-            .query_map([&project_id], |row| {
+            .query_map([], |row| {
                 Ok((row.get::<_, String>(0)?, row.get::<_, u32>(1)?))
             })
             .map_err(|e| format!("Failed to count tasks: {}", e))?;
@@ -263,55 +243,54 @@ pub async fn get_tasks(path: String) -> Result<Vec<TaskItem>, String> {
     tokio::task::spawn_blocking(move || {
         let project_path = Path::new(&project_path);
         let conn = open_c4_db(project_path)?;
-        let project_id = get_project_id(project_path)
-            .map_err(|e| format!("Failed to get project_id: {}", e))?;
-
         let mut stmt = conn
             .prepare(
-                "SELECT task_id, task_json, status, assigned_to FROM c4_tasks WHERE project_id = ?",
+                "SELECT task_id, title, status, worker_id, dependencies, domain, priority \
+                 FROM c4_tasks ORDER BY priority DESC",
             )
             .map_err(|e| format!("Failed to prepare query: {}", e))?;
 
         let rows = stmt
-            .query_map([&project_id], |row| {
+            .query_map([], |row| {
                 Ok((
                     row.get::<_, String>(0)?,
                     row.get::<_, String>(1)?,
                     row.get::<_, String>(2)?,
                     row.get::<_, Option<String>>(3)?,
+                    row.get::<_, Option<String>>(4)?,
+                    row.get::<_, Option<String>>(5)?,
+                    row.get::<_, Option<i32>>(6)?,
                 ))
             })
             .map_err(|e| format!("Failed to query tasks: {}", e))?;
 
         let mut tasks = Vec::new();
         for row in rows {
-            let (task_id, task_json, status, assigned_to) =
+            let (task_id, title, status, worker_id, deps_json, domain, priority) =
                 row.map_err(|e| format!("Row error: {}", e))?;
 
-            let data: serde_json::Value =
-                serde_json::from_str(&task_json).unwrap_or_default();
+            let deps: Vec<String> = deps_json
+                .as_deref()
+                .and_then(|s| serde_json::from_str(s).ok())
+                .unwrap_or_default();
+
+            let task_type = if task_id.starts_with("R-") {
+                "REVIEW"
+            } else if task_id.starts_with("CP-") {
+                "CHECKPOINT"
+            } else {
+                "IMPLEMENTATION"
+            }.to_string();
 
             tasks.push(TaskItem {
                 id: task_id,
-                title: data
-                    .get("title")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .to_string(),
+                title,
                 status,
-                task_type: map_task_type(
-                    data.get("type").and_then(|v| v.as_str()).unwrap_or("impl"),
-                ),
-                dependencies: json_string_array(data.get("dependencies")),
-                assigned_to,
-                domain: data
-                    .get("domain")
-                    .and_then(|v| v.as_str())
-                    .map(String::from),
-                priority: data
-                    .get("priority")
-                    .and_then(|v| v.as_i64())
-                    .unwrap_or(0) as i32,
+                task_type,
+                dependencies: deps,
+                assigned_to: worker_id.filter(|s| !s.is_empty()),
+                domain: domain.filter(|s| !s.is_empty()),
+                priority: priority.unwrap_or(0),
             });
         }
 
@@ -328,45 +307,61 @@ pub async fn get_task_detail(path: String, task_id: String) -> Result<Option<Tas
     tokio::task::spawn_blocking(move || {
         let project_path = Path::new(&project_path);
         let conn = open_c4_db(project_path)?;
-        let project_id = get_project_id(project_path)
-            .map_err(|e| format!("Failed to get project_id: {}", e))?;
 
         let result = conn.query_row(
-            "SELECT task_json, status, assigned_to FROM c4_tasks WHERE project_id = ? AND task_id = ?",
-            [&project_id, &task_id],
+            "SELECT task_id, title, status, worker_id, dependencies, domain, priority, \
+                    scope, dod, branch, commit_sha \
+             FROM c4_tasks WHERE task_id = ?",
+            [&task_id],
             |row| {
                 Ok((
                     row.get::<_, String>(0)?,
                     row.get::<_, String>(1)?,
-                    row.get::<_, Option<String>>(2)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, Option<String>>(3)?,
+                    row.get::<_, Option<String>>(4)?,
+                    row.get::<_, Option<String>>(5)?,
+                    row.get::<_, Option<i32>>(6)?,
+                    row.get::<_, Option<String>>(7)?,
+                    row.get::<_, Option<String>>(8)?,
+                    row.get::<_, Option<String>>(9)?,
+                    row.get::<_, Option<String>>(10)?,
                 ))
             },
         );
 
         match result {
-            Ok((task_json, status, assigned_to)) => {
-                let data: serde_json::Value =
-                    serde_json::from_str(&task_json).unwrap_or_default();
+            Ok((id, title, status, worker_id, deps_json, domain, priority, scope, dod, branch, commit_sha)) => {
+                let deps: Vec<String> = deps_json
+                    .as_deref()
+                    .and_then(|s| serde_json::from_str(s).ok())
+                    .unwrap_or_default();
+
+                let task_type = if id.starts_with("R-") {
+                    "REVIEW"
+                } else if id.starts_with("CP-") {
+                    "CHECKPOINT"
+                } else {
+                    "IMPLEMENTATION"
+                }.to_string();
 
                 Ok(Some(TaskDetail {
-                    id: task_id,
-                    title: data.get("title").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                    id,
+                    title,
                     status,
-                    task_type: map_task_type(
-                        data.get("type").and_then(|v| v.as_str()).unwrap_or("impl"),
-                    ),
-                    dependencies: json_string_array(data.get("dependencies")),
-                    assigned_to,
-                    domain: data.get("domain").and_then(|v| v.as_str()).map(String::from),
-                    priority: data.get("priority").and_then(|v| v.as_i64()).unwrap_or(0) as i32,
-                    dod: data.get("dod").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                    scope: data.get("scope").and_then(|v| v.as_str()).map(String::from),
-                    branch: data.get("branch").and_then(|v| v.as_str()).map(String::from),
-                    commit_sha: data.get("commit_sha").and_then(|v| v.as_str()).map(String::from),
-                    version: data.get("version").and_then(|v| v.as_i64()).unwrap_or(0) as i32,
-                    parent_id: data.get("parent_id").and_then(|v| v.as_str()).map(String::from),
-                    review_decision: data.get("review_decision").and_then(|v| v.as_str()).map(String::from),
-                    validations: json_string_array(data.get("validations")),
+                    task_type,
+                    dependencies: deps,
+                    assigned_to: worker_id.filter(|s| !s.is_empty()),
+                    domain: domain.filter(|s| !s.is_empty()),
+                    priority: priority.unwrap_or(0),
+                    dod: dod.unwrap_or_default(),
+                    scope: scope.filter(|s| !s.is_empty()),
+                    branch: branch.filter(|s| !s.is_empty()),
+                    commit_sha: commit_sha.filter(|s| !s.is_empty()),
+                    version: 0,
+                    parent_id: None,
+                    review_decision: None,
+                    validations: vec![],
                 }))
             }
             Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
@@ -1364,49 +1359,38 @@ pub async fn get_task_timeline(path: String) -> Result<Vec<TaskEvent>, String> {
     tokio::task::spawn_blocking(move || {
         let project_path = Path::new(&project_path);
         let conn = open_c4_db(project_path)?;
-        let project_id = get_project_id(project_path)
-            .map_err(|e| format!("Failed to get project_id: {}", e))?;
 
         let mut stmt = conn
             .prepare(
-                "SELECT task_id, task_json, status, updated_at FROM c4_tasks \
-                 WHERE project_id = ? ORDER BY updated_at DESC LIMIT 100",
+                "SELECT task_id, title, status, updated_at, worker_id FROM c4_tasks \
+                 ORDER BY updated_at DESC LIMIT 100",
             )
             .map_err(|e| format!("Failed to prepare query: {}", e))?;
 
         let rows = stmt
-            .query_map([&project_id], |row| {
+            .query_map([], |row| {
                 Ok((
                     row.get::<_, String>(0)?,
                     row.get::<_, String>(1)?,
                     row.get::<_, String>(2)?,
-                    row.get::<_, Option<String>>(3)?,
+                    row.get::<_, Option<String>>(3)?,  // updated_at
+                    row.get::<_, Option<String>>(4)?,  // worker_id
                 ))
             })
             .map_err(|e| format!("Failed to query tasks: {}", e))?;
 
         let mut events = Vec::new();
         for row in rows {
-            let (task_id, task_json, status, updated_at) =
+            let (task_id, title, status, updated_at, worker_id) =
                 row.map_err(|e| format!("Row error: {}", e))?;
 
-            let data: serde_json::Value =
-                serde_json::from_str(&task_json).unwrap_or_default();
-
-            let title = data
-                .get("title")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string();
-
-            let task_type = map_task_type(
-                data.get("type").and_then(|v| v.as_str()).unwrap_or("impl"),
-            );
-
-            let assigned_to = data
-                .get("assigned_to")
-                .and_then(|v| v.as_str())
-                .map(String::from);
+            let task_type = if task_id.starts_with("R-") {
+                "REVIEW"
+            } else if task_id.starts_with("CP-") {
+                "CHECKPOINT"
+            } else {
+                "IMPLEMENTATION"
+            }.to_string();
 
             events.push(TaskEvent {
                 task_id,
@@ -1414,7 +1398,7 @@ pub async fn get_task_timeline(path: String) -> Result<Vec<TaskEvent>, String> {
                 status,
                 task_type,
                 updated_at,
-                assigned_to,
+                assigned_to: worker_id.filter(|s| !s.is_empty()),
             });
         }
 
@@ -1431,19 +1415,17 @@ pub async fn get_worker_activity(path: String) -> Result<Vec<WorkerEvent>, Strin
     tokio::task::spawn_blocking(move || {
         let project_path = Path::new(&project_path);
         let conn = open_c4_db(project_path)?;
-        let project_id = get_project_id(project_path)
-            .map_err(|e| format!("Failed to get project_id: {}", e))?;
 
         let mut stmt = conn
             .prepare(
-                "SELECT task_id, assigned_to, status, updated_at FROM c4_tasks \
-                 WHERE project_id = ? AND assigned_to IS NOT NULL \
+                "SELECT task_id, worker_id, status, updated_at FROM c4_tasks \
+                 WHERE worker_id IS NOT NULL AND worker_id != '' \
                  ORDER BY updated_at DESC LIMIT 50",
             )
             .map_err(|e| format!("Failed to prepare query: {}", e))?;
 
         let rows = stmt
-            .query_map([&project_id], |row| {
+            .query_map([], |row| {
                 Ok((
                     row.get::<_, String>(0)?,
                     row.get::<_, String>(1)?,
@@ -1473,6 +1455,63 @@ pub async fn get_worker_activity(path: String) -> Result<Vec<WorkerEvent>, Strin
         }
 
         Ok(events)
+    })
+    .await
+    .map_err(|e| format!("Task execution failed: {}", e))?
+}
+
+/// Resolve a project path to its Supabase project UUID.
+/// 1. Read project_id from .c4/config.yaml (e.g. "c4")
+/// 2. If not already a UUID, query Supabase c4_projects to resolve name → UUID
+#[tauri::command(rename_all = "camelCase")]
+pub async fn get_project_id_cmd(path: String) -> Result<String, String> {
+    let project_path = path;
+    tokio::task::spawn_blocking(move || {
+        use crate::cloud::{build_client, read_auth_token, read_supabase_config};
+
+        let project_path = Path::new(&project_path);
+        let name = get_project_id(project_path)
+            .map_err(|e| format!("Failed to get project_id: {}", e))?;
+
+        // If it already looks like a UUID (36 chars, dashes), return as-is
+        if name.len() == 36 && name.chars().filter(|c| *c == '-').count() == 4 {
+            return Ok(name);
+        }
+
+        // Resolve name → UUID via Supabase
+        let (supabase_url, anon_key) = read_supabase_config()?;
+        let token = read_auth_token()?;
+        let client = build_client()?;
+
+        let url = format!(
+            "{}/rest/v1/c4_projects?select=id&name=eq.{}&limit=1",
+            supabase_url.trim_end_matches('/'),
+            urlencoding::encode(&name),
+        );
+
+        let resp = client
+            .get(&url)
+            .header("Authorization", format!("Bearer {}", token))
+            .header("apikey", &anon_key)
+            .send()
+            .map_err(|e| format!("Failed to resolve project UUID: {}", e))?;
+
+        if !resp.status().is_success() {
+            return Err(format!("Project UUID lookup failed ({})", resp.status()));
+        }
+
+        let rows: Vec<serde_json::Value> = resp
+            .json()
+            .map_err(|e| format!("Failed to parse project lookup: {}", e))?;
+
+        if let Some(row) = rows.first() {
+            if let Some(id) = row.get("id").and_then(|v| v.as_str()) {
+                return Ok(id.to_string());
+            }
+        }
+
+        // Fallback: return the name as-is if resolution fails
+        Ok(name)
     })
     .await
     .map_err(|e| format!("Task execution failed: {}", e))?
@@ -1543,6 +1582,85 @@ pub async fn get_validation_results(
             Err(rusqlite::Error::QueryReturnedNoRows) => Ok(Vec::new()),
             Err(e) => Err(format!("Failed to query task: {}", e)),
         }
+    })
+    .await
+    .map_err(|e| format!("Task execution failed: {}", e))?
+}
+
+// --- Git Graph commands ---
+
+/// A single commit in the git graph
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct GitCommit {
+    pub hash: String,
+    pub short_hash: String,
+    pub parents: Vec<String>,
+    pub refs: Vec<String>,
+    pub author: String,
+    pub date: String,
+    pub message: String,
+}
+
+/// Get git graph data for visualization
+#[tauri::command(rename_all = "camelCase")]
+pub async fn get_git_graph(path: String, limit: Option<u32>) -> Result<Vec<GitCommit>, String> {
+    let project_path = path;
+    let max_count = limit.unwrap_or(60);
+    tokio::task::spawn_blocking(move || {
+        let project_path = Path::new(&project_path);
+        if !project_path.join(".git").exists() {
+            return Ok(Vec::new());
+        }
+
+        let output = std::process::Command::new("git")
+            .args([
+                "log",
+                "--all",
+                &format!("--format=%H|%h|%P|%D|%an|%aI|%s"),
+                &format!("--max-count={}", max_count),
+            ])
+            .current_dir(project_path)
+            .output()
+            .map_err(|e| format!("Failed to run git log: {}", e))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(format!("git log failed: {}", stderr));
+        }
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let mut commits = Vec::new();
+
+        for line in stdout.lines() {
+            let parts: Vec<&str> = line.splitn(7, '|').collect();
+            if parts.len() < 7 {
+                continue;
+            }
+
+            let parents: Vec<String> = if parts[2].is_empty() {
+                Vec::new()
+            } else {
+                parts[2].split(' ').map(|s| s.to_string()).collect()
+            };
+
+            let refs: Vec<String> = if parts[3].is_empty() {
+                Vec::new()
+            } else {
+                parts[3].split(", ").map(|s| s.to_string()).collect()
+            };
+
+            commits.push(GitCommit {
+                hash: parts[0].to_string(),
+                short_hash: parts[1].to_string(),
+                parents,
+                refs,
+                author: parts[4].to_string(),
+                date: parts[5].to_string(),
+                message: parts[6].to_string(),
+            });
+        }
+
+        Ok(commits)
     })
     .await
     .map_err(|e| format!("Task execution failed: {}", e))?

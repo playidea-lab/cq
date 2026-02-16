@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 
 	"github.com/changmin/c4-core/internal/knowledge"
@@ -255,6 +256,27 @@ func knowledgeRecordNativeHandler(opts *KnowledgeNativeOpts) mcp.HandlerFunc {
 			}
 		}
 
+		// Find related documents (best-effort)
+		var relatedList []map[string]any
+		if opts.Searcher != nil && embedWarning == "" {
+			searchText := title
+			if body != "" {
+				searchText += " " + body
+			}
+			related := opts.Searcher.FindRelated(searchText, docID, 3)
+			if len(related) > 0 {
+				relatedList = make([]map[string]any, len(related))
+				for i, r := range related {
+					relatedList[i] = map[string]any{
+						"id":         r.ID,
+						"title":      r.Title,
+						"type":       r.Type,
+						"similarity": r.RRFScore,
+					}
+				}
+			}
+		}
+
 		// Async cloud push
 		if opts.Cloud != nil {
 			go func() {
@@ -270,6 +292,9 @@ func knowledgeRecordNativeHandler(opts *KnowledgeNativeOpts) mcp.HandlerFunc {
 		}
 		if embedWarning != "" {
 			result["warning"] = embedWarning
+		}
+		if len(relatedList) > 0 {
+			result["related"] = relatedList
 		}
 		return result, nil
 	}
@@ -356,6 +381,7 @@ func knowledgeSearchNativeHandler(opts *KnowledgeNativeOpts) mcp.HandlerFunc {
 				"domain":           r.Domain,
 				"rrf_score":        r.RRFScore,
 				"embedding_source": r.EmbeddingSource,
+				"source":           "local",
 			}
 		}
 
@@ -366,18 +392,41 @@ func knowledgeSearchNativeHandler(opts *KnowledgeNativeOpts) mcp.HandlerFunc {
 			}
 		}
 
+		localCount := len(resultList)
+		communityCount := 0
+
+		// Blend community results if available
+		if opts.Cloud != nil {
+			cloudDocs, cloudErr := opts.Cloud.DiscoverPublic(query, docType, limit)
+			if cloudErr == nil && len(cloudDocs) > 0 {
+				localIDs := make(map[string]bool, localCount)
+				for _, r := range results {
+					localIDs[r.ID] = true
+				}
+				for _, cd := range cloudDocs {
+					cdID, _ := cd["id"].(string)
+					if localIDs[cdID] {
+						continue
+					}
+					resultList = append(resultList, map[string]any{
+						"id":     cdID,
+						"title":  cd["title"],
+						"type":   cd["type"],
+						"domain": cd["domain"],
+						"source": "community",
+					})
+					communityCount++
+				}
+			}
+		}
+
 		response := map[string]any{
 			"results": resultList,
 			"count":   len(resultList),
 		}
-
-		// Merge cloud results if available
-		if opts.Cloud != nil {
-			cloudDocs, cloudErr := opts.Cloud.SearchDocuments(query, docType, limit)
-			if cloudErr == nil && len(cloudDocs) > 0 {
-				response["cloud_results"] = cloudDocs
-				response["cloud_count"] = len(cloudDocs)
-			}
+		if communityCount > 0 {
+			response["local_count"] = localCount
+			response["community_count"] = communityCount
 		}
 
 		return response, nil
@@ -415,6 +464,27 @@ func experimentRecordNativeHandler(opts *KnowledgeNativeOpts) mcp.HandlerFunc {
 				}
 			}
 		}
+		// Find related documents (best-effort)
+		var relatedList []map[string]any
+		if opts.Searcher != nil && embedWarning2 == "" {
+			searchText := title
+			if body != "" {
+				searchText += " " + body
+			}
+			related := opts.Searcher.FindRelated(searchText, docID, 3)
+			if len(related) > 0 {
+				relatedList = make([]map[string]any, len(related))
+				for i, r := range related {
+					relatedList[i] = map[string]any{
+						"id":         r.ID,
+						"title":      r.Title,
+						"type":       r.Type,
+						"similarity": r.RRFScore,
+					}
+				}
+			}
+		}
+
 		if opts.Cloud != nil {
 			params["doc_type"] = "experiment"
 			go func() {
@@ -428,6 +498,9 @@ func experimentRecordNativeHandler(opts *KnowledgeNativeOpts) mcp.HandlerFunc {
 		}
 		if embedWarning2 != "" {
 			result["warning"] = embedWarning2
+		}
+		if len(relatedList) > 0 {
+			result["related"] = relatedList
 		}
 		return result, nil
 	}
@@ -543,6 +616,34 @@ func patternSuggestNativeHandler(opts *KnowledgeNativeOpts) mcp.HandlerFunc {
 				"type":      r.Type,
 				"domain":    r.Domain,
 				"rrf_score": r.RRFScore,
+				"source":    "local",
+			}
+		}
+
+		localCount := len(resultList)
+		communityCount := 0
+
+		if opts.Cloud != nil {
+			cloudDocs, cloudErr := opts.Cloud.DiscoverPublic(context, "pattern", limit)
+			if cloudErr == nil && len(cloudDocs) > 0 {
+				localIDs := make(map[string]bool, localCount)
+				for _, r := range results {
+					localIDs[r.ID] = true
+				}
+				for _, cd := range cloudDocs {
+					cdID, _ := cd["id"].(string)
+					if localIDs[cdID] {
+						continue
+					}
+					resultList = append(resultList, map[string]any{
+						"id":     cdID,
+						"title":  cd["title"],
+						"type":   cd["type"],
+						"domain": cd["domain"],
+						"source": "community",
+					})
+					communityCount++
+				}
 			}
 		}
 
@@ -550,13 +651,9 @@ func patternSuggestNativeHandler(opts *KnowledgeNativeOpts) mcp.HandlerFunc {
 			"results": resultList,
 			"count":   len(resultList),
 		}
-
-		if opts.Cloud != nil {
-			cloudDocs, cloudErr := opts.Cloud.SearchDocuments(context, "pattern", limit)
-			if cloudErr == nil && len(cloudDocs) > 0 {
-				response["cloud_results"] = cloudDocs
-				response["cloud_count"] = len(cloudDocs)
-			}
+		if communityCount > 0 {
+			response["local_count"] = localCount
+			response["community_count"] = communityCount
 		}
 
 		return response, nil
@@ -819,6 +916,25 @@ func knowledgeStatsNativeHandler(opts *KnowledgeNativeOpts) mcp.HandlerFunc {
 			if unembedded > 0 {
 				stats["unembedded"] = unembedded
 			}
+
+			// Pairwise similarity distribution (Phase 3)
+			if vectorCount >= 2 {
+				avg, maxSim, minSim, pairs := opts.Searcher.PairwiseSimilarityStats(100)
+				if pairs > 0 {
+					stats["similarity"] = map[string]any{
+						"avg_pairwise":  math.Round(avg*1000) / 1000,
+						"max_pairwise":  math.Round(maxSim*1000) / 1000,
+						"min_pairwise":  math.Round(minSim*1000) / 1000,
+						"pairs_sampled": pairs,
+					}
+				}
+			}
+		}
+
+		// Pattern count + distillation readiness hint
+		stats["pattern_count"] = typeCounts["pattern"]
+		if len(allDocs) >= 50 {
+			stats["distillation_hint"] = fmt.Sprintf("%d documents accumulated — pattern analysis possible", len(allDocs))
 		}
 
 		return stats, nil

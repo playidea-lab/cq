@@ -8,7 +8,7 @@ import { Skeleton } from '../shared/Skeleton';
 import { ErrorState } from '../shared/ErrorState';
 import { TaskList } from './TaskList';
 import { TaskDetailPanel } from './TaskDetailPanel';
-import { TaskTimeline } from './TaskTimeline';
+import { GitGraph } from './GitGraph';
 import { ValidationPanel } from './ValidationPanel';
 import { UsagePanel } from './UsagePanel';
 import type { SyncResult } from '../../types';
@@ -23,12 +23,12 @@ export function DashboardView({ projectPath }: DashboardViewProps) {
     state,
     tasks,
     selectedTask,
-    timeline,
+    gitGraph,
     validations,
     loading,
     error,
     loadState,
-    loadTimeline,
+    loadGitGraph,
     loadValidations,
     clearValidations,
     loadTaskDetail,
@@ -46,15 +46,14 @@ export function DashboardView({ projectPath }: DashboardViewProps) {
     onUpdate: (event) => {
       if (event.table === 'c4_tasks' || event.table === 'c4_state') {
         loadState(projectPath);
-        loadTimeline(projectPath);
       }
     },
   });
 
   useEffect(() => {
     loadState(projectPath);
-    loadTimeline(projectPath);
-  }, [projectPath, loadState, loadTimeline]);
+    loadGitGraph(projectPath);
+  }, [projectPath, loadState, loadGitGraph]);
 
   // Auto-sync interval (every 30 seconds)
   useEffect(() => {
@@ -154,7 +153,7 @@ export function DashboardView({ projectPath }: DashboardViewProps) {
       <ErrorState
         message="Failed to load project state"
         detail={error}
-        onRetry={() => { loadState(projectPath); loadTimeline(projectPath); }}
+        onRetry={() => { loadState(projectPath); loadGitGraph(projectPath); }}
       />
     );
   }
@@ -219,8 +218,8 @@ export function DashboardView({ projectPath }: DashboardViewProps) {
         <UsagePanel projectPath={projectPath} />
       </div>
 
-      {timeline.length > 0 && (
-        <TaskTimeline events={timeline} onSelectTask={handleSelectTask} />
+      {gitGraph.length > 0 && (
+        <GitGraph commits={gitGraph} />
       )}
 
       <div className="dashboard__body">

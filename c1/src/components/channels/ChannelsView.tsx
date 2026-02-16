@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { invoke } from '@tauri-apps/api/core';
 import { useChannels } from '../../hooks/useChannels';
 import { useMessages } from '../../hooks/useMessages';
 import { useMembers } from '../../hooks/useMembers';
@@ -10,11 +11,29 @@ import { MembersPanel } from './MembersPanel';
 import '../../styles/channels.css';
 
 interface ChannelsViewProps {
-  projectId: string;
+  projectPath: string;
 }
 
-export function ChannelsView({ projectId }: ChannelsViewProps) {
+export function ChannelsView({ projectPath }: ChannelsViewProps) {
   const [showMembers, setShowMembers] = useState(false);
+  const [projectId, setProjectId] = useState<string | null>(null);
+
+  // Resolve projectPath → actual project_id via Rust IPC
+  useEffect(() => {
+    let cancelled = false;
+    invoke<string>('get_project_id_cmd', { path: projectPath })
+      .then((id) => {
+        if (!cancelled) setProjectId(id);
+      })
+      .catch(() => {
+        // Fallback: use directory name
+        if (!cancelled) {
+          const parts = projectPath.replace(/\\/g, '/').split('/');
+          setProjectId(parts[parts.length - 1] || projectPath);
+        }
+      });
+    return () => { cancelled = true; };
+  }, [projectPath]);
 
   const {
     channels,
@@ -34,6 +53,14 @@ export function ChannelsView({ projectId }: ChannelsViewProps) {
 
   const { members, getMember } = useMembers(projectId);
   usePresence(projectId);
+
+  if (!projectId) {
+    return (
+      <div className="channels">
+        <div className="chat-panel__empty">Resolving project...</div>
+      </div>
+    );
+  }
 
   return (
     <div className="channels">

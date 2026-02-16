@@ -57,7 +57,7 @@ fn open_knowledge_db(project_path: &str) -> Result<Connection, String> {
     let db_path = Path::new(project_path)
         .join(".c4")
         .join("knowledge")
-        .join("knowledge.db");
+        .join("index.db");
 
     if !db_path.exists() {
         return Err(format!(
@@ -290,7 +290,7 @@ mod tests {
         let knowledge_dir = dir.path().join(".c4").join("knowledge");
         fs::create_dir_all(&knowledge_dir).unwrap();
 
-        let db_path = knowledge_dir.join("knowledge.db");
+        let db_path = knowledge_dir.join("index.db");
         let conn = Connection::open(&db_path).unwrap();
 
         conn.execute_batch(

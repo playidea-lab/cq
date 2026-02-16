@@ -1,12 +1,12 @@
 import { useState, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import type { ProjectState, TaskItem, TaskDetail, TaskEvent, ValidationResult } from '../types';
+import type { ProjectState, TaskItem, TaskDetail, GitCommit, ValidationResult } from '../types';
 
 export function useDashboard() {
   const [state, setState] = useState<ProjectState | null>(null);
   const [tasks, setTasks] = useState<TaskItem[]>([]);
   const [selectedTask, setSelectedTask] = useState<TaskDetail | null>(null);
-  const [timeline, setTimeline] = useState<TaskEvent[]>([]);
+  const [gitGraph, setGitGraph] = useState<GitCommit[]>([]);
   const [validations, setValidations] = useState<ValidationResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -31,15 +31,16 @@ export function useDashboard() {
     }
   }, []);
 
-  const loadTimeline = useCallback(async (projectPath: string) => {
+  const loadGitGraph = useCallback(async (projectPath: string) => {
     try {
-      const events = await invoke<TaskEvent[]>('get_task_timeline', {
+      const commits = await invoke<GitCommit[]>('get_git_graph', {
         path: projectPath,
+        limit: 60,
       });
-      setTimeline(events);
+      setGitGraph(commits);
     } catch {
-      // Timeline is non-critical; silently ignore errors
-      setTimeline([]);
+      // Git graph is non-critical; silently ignore errors
+      setGitGraph([]);
     }
   }, []);
 
@@ -75,12 +76,12 @@ export function useDashboard() {
     state,
     tasks,
     selectedTask,
-    timeline,
+    gitGraph,
     validations,
     loading,
     error,
     loadState,
-    loadTimeline,
+    loadGitGraph,
     loadValidations,
     clearValidations,
     loadTaskDetail,

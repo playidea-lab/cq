@@ -63,17 +63,17 @@ describe('useDashboard', () => {
     expect(result.current.state).toBeNull();
   });
 
-  it('loads timeline without throwing on error', async () => {
-    mockInvoke.mockRejectedValue(new Error('timeline fail'));
+  it('loads git graph without throwing on error', async () => {
+    mockInvoke.mockRejectedValue(new Error('git graph fail'));
 
     const { result } = renderHook(() => useDashboard());
 
     await act(async () => {
-      await result.current.loadTimeline('/test');
+      await result.current.loadGitGraph('/test');
     });
 
-    // Timeline errors are silently handled
-    expect(result.current.timeline).toEqual([]);
+    // Git graph errors are silently handled
+    expect(result.current.gitGraph).toEqual([]);
   });
 
   it('loads task detail', async () => {

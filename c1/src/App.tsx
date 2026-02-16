@@ -114,7 +114,7 @@ function AppContent() {
       case 'knowledge':
         return <KnowledgeView key={`knowledge-${projectPath}`} projectPath={projectPath} />;
       case 'messenger':
-        return <ChannelsView key={`messenger-${projectPath}`} projectId={projectPath} />;
+        return <ChannelsView key={`messenger-${projectPath}`} projectPath={projectPath} />;
       case 'settings':
         return <ConfigView key={`settings-${projectPath}`} projectPath={projectPath} />;
     }
