@@ -3,6 +3,7 @@ package knowledge
 import (
 	"encoding/json"
 	"fmt"
+	"regexp"
 )
 
 // CloudSyncer abstracts cloud knowledge operations.
@@ -256,6 +257,63 @@ type PushResult struct {
 	Skipped   int      `json:"skipped"`
 	Errors    []string `json:"errors"`
 	PushedIDs []string `json:"pushed_ids"`
+}
+
+// PublishDocument publishes a local document to the community pool.
+// Strips project-specific metadata (task_id, file paths) and sets visibility=public.
+// The document is pushed to cloud with project_id="__community__".
+func PublishDocument(store *Store, cloud CloudSyncer, docID string) error {
+	if cloud == nil {
+		return fmt.Errorf("cloud not configured")
+	}
+
+	doc, err := store.Get(docID)
+	if err != nil || doc == nil {
+		return fmt.Errorf("document not found: %s", docID)
+	}
+
+	// Strip project-specific metadata
+	body := StripMetadata(doc.Body)
+
+	params := map[string]any{
+		"doc_type":   string(doc.Type),
+		"title":      doc.Title,
+		"content":    body,
+		"domain":     doc.Domain,
+		"tags":       doc.Tags,
+		"visibility": "public",
+		"metadata": map[string]any{
+			"source": "community",
+		},
+	}
+
+	// Push with community project context
+	if err := cloud.SyncDocument(params, docID); err != nil {
+		return fmt.Errorf("cloud publish: %w", err)
+	}
+
+	// Mark local document as published
+	vis := "public"
+	store.Update(docID, map[string]any{"visibility": vis}, nil)
+	return nil
+}
+
+// StripMetadata removes project-specific identifiers from document body.
+// Strips: task IDs (T-NNN, R-NNN), file paths, git SHAs, specific project names.
+func StripMetadata(body string) string {
+	// Task IDs: T-001-0, R-042, CP-003
+	reTaskID := regexp.MustCompile(`\b[TRC]P?-\d{1,4}(-\d+)?\b`)
+	body = reTaskID.ReplaceAllString(body, "[task]")
+
+	// Git commit SHAs (7+ hex chars)
+	reCommitSHA := regexp.MustCompile(`\b[0-9a-f]{7,40}\b`)
+	body = reCommitSHA.ReplaceAllString(body, "[commit]")
+
+	// Absolute file paths (/Users/..., /home/..., /var/..., etc.)
+	reAbsPath := regexp.MustCompile(`/(?:Users|home|var|tmp|opt|etc)/[^\s,)]+`)
+	body = reAbsPath.ReplaceAllString(body, "[path]")
+
+	return body
 }
 
 // extractTags handles tags in various formats (JSON string, []any, []string).

@@ -189,6 +189,19 @@ func RegisterKnowledgeNativeHandlers(reg *mcp.Registry, opts *KnowledgeNativeOpt
 			"properties": map[string]any{},
 		},
 	}, knowledgeReindexNativeHandler(opts))
+
+	// 13. c4_knowledge_publish — opt-in community publishing
+	reg.Register(mcp.ToolSchema{
+		Name:        "c4_knowledge_publish",
+		Description: "Publish a knowledge document to the community pool (opt-in, metadata stripped)",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"doc_id": map[string]any{"type": "string", "description": "ID of the document to publish"},
+			},
+			"required": []string{"doc_id"},
+		},
+	}, knowledgePublishNativeHandler(opts))
 }
 
 // =========================================================================
@@ -854,5 +867,37 @@ func knowledgeReindexNativeHandler(opts *KnowledgeNativeOpts) mcp.HandlerFunc {
 		}
 
 		return result, nil
+	}
+}
+
+func knowledgePublishNativeHandler(opts *KnowledgeNativeOpts) mcp.HandlerFunc {
+	return func(rawArgs json.RawMessage) (any, error) {
+		params := parseParams(rawArgs)
+		docID, _ := params["doc_id"].(string)
+		if docID == "" {
+			return map[string]any{"error": "doc_id is required"}, nil
+		}
+		if opts.Cloud == nil {
+			return map[string]any{"error": "cloud not configured — publish requires cloud connection"}, nil
+		}
+
+		doc, err := opts.Store.Get(docID)
+		if err != nil || doc == nil {
+			return map[string]any{"error": fmt.Sprintf("document not found: %s", docID)}, nil
+		}
+
+		if err := knowledge.PublishDocument(opts.Store, opts.Cloud, docID); err != nil {
+			return map[string]any{"error": fmt.Sprintf("publish failed: %v", err)}, nil
+		}
+
+		strippedBody := knowledge.StripMetadata(doc.Body)
+		return map[string]any{
+			"success":    true,
+			"doc_id":     docID,
+			"title":      doc.Title,
+			"type":       string(doc.Type),
+			"visibility": "public",
+			"stripped":   strippedBody != doc.Body,
+		}, nil
 	}
 }
