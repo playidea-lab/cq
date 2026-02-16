@@ -123,7 +123,7 @@ export type ViewType = 'board' | 'docs' | 'knowledge' | 'messenger' | 'settings'
 
 // --- C1 Messaging types ---
 
-export type ChannelType = 'topic' | 'dm' | 'auto';
+export type ChannelType = 'topic' | 'dm' | 'auto' | 'worker';
 export type SenderType = 'human' | 'agent' | 'system';
 
 export interface Channel {

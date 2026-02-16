@@ -27,6 +27,7 @@ import (
 	"github.com/changmin/c4-core/internal/mcp"
 	"github.com/changmin/c4-core/internal/mcp/handlers"
 	"github.com/changmin/c4-core/internal/research"
+	"github.com/changmin/c4-core/internal/worker"
 	_ "modernc.org/sqlite"
 )
 
@@ -291,9 +292,10 @@ func newMCPServer() (*mcpServer, error) {
 	}
 
 	// Register Hub handlers if enabled
+	var hubClient *hub.Client
 	if cfgMgr != nil && cfgMgr.GetConfig().Hub.Enabled {
 		hubCfg := cfgMgr.GetConfig().Hub
-		hubClient := hub.NewClient(hub.HubConfig{
+		hubClient = hub.NewClient(hub.HubConfig{
 			Enabled:   hubCfg.Enabled,
 			URL:       hubCfg.URL,
 			APIPrefix: hubCfg.APIPrefix,
@@ -306,6 +308,7 @@ func newMCPServer() (*mcpServer, error) {
 			fmt.Fprintf(os.Stderr, "c4: hub connected (%s)\n", hubCfg.URL)
 		} else {
 			fmt.Fprintln(os.Stderr, "c4: hub enabled but URL not configured")
+			hubClient = nil
 		}
 	}
 
@@ -334,6 +337,21 @@ func newMCPServer() (*mcpServer, error) {
 			}
 			keeper = handlers.NewContextKeeper(c1Handler, keeperGateway)
 			fmt.Fprintln(os.Stderr, "c4: c1 enabled (3 tools + keeper)")
+		}
+	}
+
+	// Register Worker standby tools if Hub is available
+	if hubClient != nil {
+		shutdownStore, shutdownErr := worker.NewShutdownStore(db)
+		if shutdownErr != nil {
+			fmt.Fprintf(os.Stderr, "c4: worker shutdown store failed: %v\n", shutdownErr)
+		} else {
+			handlers.RegisterWorkerHandlers(reg, &handlers.WorkerDeps{
+				HubClient:     hubClient,
+				ShutdownStore: shutdownStore,
+				Keeper:        keeper,
+			})
+			fmt.Fprintln(os.Stderr, "c4: worker standby tools registered (3 tools)")
 		}
 	}
 

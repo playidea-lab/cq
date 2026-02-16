@@ -90,6 +90,28 @@
   font-size: var(--font-size-sm);
 }
 
+/* --- Worker Status Dot --- */
+.channel-sidebar__status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--color-text-muted);
+}
+
+.channel-sidebar__status-dot--online,
+.channel-sidebar__status-dot--working {
+  background: var(--color-accent-green, #22c55e);
+}
+
+.channel-sidebar__status-dot--idle {
+  background: var(--color-accent-yellow, #eab308);
+}
+
+.channel-sidebar__status-dot--offline {
+  background: var(--color-text-muted);
+}
+
 /* --- Chat Panel --- */
 .chat-panel {
   flex: 1;
@@ -483,4 +505,72 @@
 .chat-panel__members-toggle:hover {
   color: var(--color-text-primary);
   border-color: var(--color-border-hover);
+}
+
+/* --- Search --- */
+.search-input {
+  width: 100%;
+  padding: var(--space-xs) var(--space-sm);
+  margin-top: var(--space-xs);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-primary);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+  outline: none;
+}
+
+.search-input:focus {
+  border-color: var(--color-accent-primary);
+}
+
+.search-input--inline {
+  width: 180px;
+  margin: 0;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.search-results {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-xs);
+}
+
+.search-results__loading,
+.search-results__empty {
+  padding: var(--space-md);
+  text-align: center;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.search-results__item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: var(--space-sm) var(--space-md);
+  border: none;
+  background: none;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  color: var(--color-text-primary);
+}
+
+.search-results__item:hover {
+  background: var(--color-bg-hover);
+}
+
+.search-results__title {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  margin-bottom: 2px;
+}
+
+.search-results__context {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }

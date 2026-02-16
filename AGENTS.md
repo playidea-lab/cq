@@ -106,10 +106,10 @@ C9 Knowledge — 지식 관리 (FTS5 + pgvector + Embedding + Usage + Ingestion)
 ### 테스트 현황
 | 언어 | 테스트 수 | 패키지/모듈 |
 |------|----------|------------|
-| Go | **1,205** | 25 packages (all pass) — c4-core 1,085 + c5 120 |
+| Go | **1,386** | 26 packages (all pass) — c4-core 1,266 + c5 120 |
 | Python | **750** | tests/unit/ |
 | Rust | **85** | src-tauri |
-| **합계** | **~2,040** | |
+| **합계** | **~2,221** | |
 
 ### Monorepo 구조
 ```
@@ -118,7 +118,7 @@ c4/
 ├── c4/               # Python Sidecar (LSP, Doc parsing)
 ├── c5/               # Go 분산 작업 큐 서버 (Hub)
 ├── c1/               # Tauri 2.x 데스크톱 앱
-├── .claude/skills/   # Claude Code Skills (19개, 자동 발동 워크플로우)
+├── .claude/skills/   # Claude Code Skills (20개, 자동 발동 워크플로우)
 ├── infra/supabase/   # PostgreSQL 마이그레이션 (18개)
 ├── docs/             # ROADMAP, guides
 ├── scripts/          # 유틸리티 스크립트
@@ -291,7 +291,8 @@ EventBus(6): c4_event_list, c4_event_publish,
             c4_rule_add, c4_rule_list, c4_rule_remove, c4_rule_toggle
 C1(5):     c1_search, c1_check_mentions, c1_get_briefing,
             c1_send_message, c1_update_presence
---- Hub (hub.enabled=true 시 추가 등록, +26) ---
+--- Hub (hub.enabled=true 시 추가 등록, +29) ---
+Worker(3): c4_worker_standby, c4_worker_complete, c4_worker_shutdown
 Hub-Job(10): c4_hub_submit, c4_hub_status, c4_hub_list,
             c4_hub_cancel, c4_hub_metrics, c4_hub_log_metrics,
             c4_hub_watch, c4_hub_summary, c4_hub_retry, c4_hub_estimate
@@ -335,6 +336,7 @@ Claude Code → Go MCP Server (stdio, 108 base + 26 Hub = 134 tools)
                 ├→ Go Native — Tier 1 (13): Research (5) + C2 (6) + GPU (2)
                 ├→ Go Native — Tier 2 (13): Knowledge (Store+FTS5+Vector+Embedding+Usage+Ingest+Sync+Publish)
                 ├→ Hub Client (26, 조건부): job, worker, DAG, edge, deploy, artifact
+                ├→ Worker Standby (3, Hub 조건부): standby, complete, shutdown
                 └→ JSON-RPC proxy (10) → Python Sidecar (LSP 7 + C2 Doc 2 + Onboard 1)
 ```
 
@@ -360,7 +362,8 @@ c4-core/
 │   ├── c2/           # C2 Workspace/Profile/Persona + webcontent (fetch, HTML→MD, llms.txt)
 │   ├── drive/        # C0 Drive client (Supabase Storage)
 │   ├── llm/          # LLM Gateway (Anthropic, OpenAI, Gemini, Ollama)
-│   └── cdp/          # Chrome DevTools Protocol runner + WebMCP + CDP auto-discovery
+│   ├── cdp/          # Chrome DevTools Protocol runner + WebMCP + CDP auto-discovery
+│   └── worker/       # Worker shutdown signal store (SQLite)
 └── test/benchmark/   # 벤치마크
 ```
 

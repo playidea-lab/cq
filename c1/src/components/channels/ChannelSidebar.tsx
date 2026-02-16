@@ -45,20 +45,23 @@ export function ChannelSidebar({
     }
   }, [onSelect]);
 
-  // Group channels into system and user-created
-  const { systemChannels, userChannels } = useMemo(() => {
+  // Group channels into system, worker, and user-created
+  const { systemChannels, workerChannels, userChannels } = useMemo(() => {
     const sys: Channel[] = [];
+    const wkr: Channel[] = [];
     const usr: Channel[] = [];
     for (const ch of channels) {
       if (SYSTEM_CHANNELS.includes(ch.name)) {
         sys.push(ch);
+      } else if (ch.channel_type === 'worker') {
+        wkr.push(ch);
       } else {
         usr.push(ch);
       }
     }
     // Sort system channels in predefined order
     sys.sort((a, b) => SYSTEM_CHANNELS.indexOf(a.name) - SYSTEM_CHANNELS.indexOf(b.name));
-    return { systemChannels: sys, userChannels: usr };
+    return { systemChannels: sys, workerChannels: wkr, userChannels: usr };
   }, [channels]);
 
   // Online member count
@@ -66,6 +69,13 @@ export function ChannelSidebar({
     () => members.filter(m => m.status !== 'offline').length,
     [members],
   );
+
+  // Find worker member by channel name (worker-{id} → member external_id={id})
+  const getWorkerStatus = useCallback((ch: Channel) => {
+    const workerID = ch.name.replace(/^worker-/, '');
+    const member = members.find(m => m.external_id === workerID && m.member_type === 'agent');
+    return member?.status ?? 'offline';
+  }, [members]);
 
   const renderChannel = (ch: Channel) => (
     <li
@@ -80,6 +90,23 @@ export function ChannelSidebar({
       <span className="channel-sidebar__item-name">{ch.name}</span>
     </li>
   );
+
+  const renderWorkerChannel = (ch: Channel) => {
+    const status = getWorkerStatus(ch);
+    return (
+      <li
+        key={ch.id}
+        className={`channel-sidebar__item ${selectedChannel?.id === ch.id ? 'channel-sidebar__item--active' : ''}`}
+        onClick={() => onSelect(ch)}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => handleChannelKeyDown(ch, e)}
+      >
+        <span className={`channel-sidebar__status-dot channel-sidebar__status-dot--${status}`} />
+        <span className="channel-sidebar__item-name">{ch.name}</span>
+      </li>
+    );
+  };
 
   return (
     <>
@@ -100,6 +127,15 @@ export function ChannelSidebar({
                 <span className="channel-sidebar__section-title">SYSTEM</span>
                 <ul className="channel-sidebar__list">
                   {systemChannels.map(renderChannel)}
+                </ul>
+              </div>
+            )}
+
+            {workerChannels.length > 0 && (
+              <div className="channel-sidebar__section">
+                <span className="channel-sidebar__section-title">WORKERS</span>
+                <ul className="channel-sidebar__list">
+                  {workerChannels.map(renderWorkerChannel)}
                 </ul>
               </div>
             )}
