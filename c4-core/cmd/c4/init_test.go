@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -306,5 +307,129 @@ func TestHasSkills(t *testing.T) {
 	}
 	if !hasSkills(dir) {
 		t.Error("hasSkills should return true when .claude/skills/ exists")
+	}
+}
+
+func TestSetupCodexConfig_NewFile(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.toml")
+	t.Setenv("CODEX_CONFIG", configPath)
+
+	projectDir := filepath.Join(dir, "project")
+	if err := os.MkdirAll(projectDir, 0755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	if err := setupCodexConfig(projectDir); err != nil {
+		t.Fatalf("setupCodexConfig failed: %v", err)
+	}
+
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("config not created: %v", err)
+	}
+	content := string(data)
+
+	if !containsSubstring(content, "[mcp_servers.c4]") {
+		t.Error("missing [mcp_servers.c4] block")
+	}
+	if !containsSubstring(content, projectDir) {
+		t.Error("project dir not reflected in codex config")
+	}
+}
+
+func TestSetupCodexConfig_ReplaceExistingBlock(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.toml")
+	t.Setenv("CODEX_CONFIG", configPath)
+
+	original := strings.Join([]string{
+		"[general]",
+		`theme = "light"`,
+		"",
+		"[mcp_servers.c4]",
+		`command = "/old/c4"`,
+		`args = ["mcp", "--dir", "/old/project"]`,
+		`env = { C4_PROJECT_ROOT = "/old/project" }`,
+		"",
+		"[other]",
+		`value = "ok"`,
+		"",
+	}, "\n")
+	if err := os.WriteFile(configPath, []byte(original), 0644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	projectDir := filepath.Join(dir, "new-project")
+	if err := os.MkdirAll(projectDir, 0755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	if err := setupCodexConfig(projectDir); err != nil {
+		t.Fatalf("setupCodexConfig failed: %v", err)
+	}
+
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	content := string(data)
+
+	if strings.Count(content, "[mcp_servers.c4]") != 1 {
+		t.Fatalf("expected exactly one c4 mcp block, got %d", strings.Count(content, "[mcp_servers.c4]"))
+	}
+	if containsSubstring(content, "/old/project") {
+		t.Error("old c4 block content still present")
+	}
+	if !containsSubstring(content, "[general]") || !containsSubstring(content, "[other]") {
+		t.Error("non-c4 blocks should be preserved")
+	}
+}
+
+func TestSetupCodexAgents_DeploysSymlinks(t *testing.T) {
+	c4Root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(c4Root, ".claude", "skills"), 0755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	sourceAgentsDir := filepath.Join(c4Root, ".codex", "agents")
+	if err := os.MkdirAll(sourceAgentsDir, 0755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	sourceAgent := filepath.Join(sourceAgentsDir, "c4-run.md")
+	if err := os.WriteFile(sourceAgent, []byte("# c4-run\n"), 0644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	// Non-c4 files are intentionally ignored.
+	if err := os.WriteFile(filepath.Join(sourceAgentsDir, "README.md"), []byte("# docs\n"), 0644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	t.Setenv("C4_SOURCE_ROOT", c4Root)
+
+	targetDir := t.TempDir()
+	if err := setupCodexAgents(targetDir); err != nil {
+		t.Fatalf("setupCodexAgents failed: %v", err)
+	}
+
+	targetAgent := filepath.Join(targetDir, ".codex", "agents", "c4-run.md")
+	info, err := os.Lstat(targetAgent)
+	if err != nil {
+		t.Fatalf("agent symlink not created: %v", err)
+	}
+	if info.Mode()&os.ModeSymlink == 0 {
+		t.Error("expected codex agent symlink")
+	}
+	linkTarget, err := os.Readlink(targetAgent)
+	if err != nil {
+		t.Fatalf("readlink: %v", err)
+	}
+	if linkTarget != sourceAgent {
+		t.Errorf("symlink target = %q, want %q", linkTarget, sourceAgent)
+	}
+
+	_, err = os.Stat(filepath.Join(targetDir, ".codex", "agents", "README.md"))
+	if err == nil {
+		t.Error("README.md should not be deployed by setupCodexAgents")
 	}
 }

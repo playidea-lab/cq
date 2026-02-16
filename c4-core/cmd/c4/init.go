@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 
@@ -76,7 +77,17 @@ func initAndLaunch(tool string) error {
 		fmt.Fprintf(os.Stderr, "c4: warning: skills setup failed: %v\n", err)
 	}
 
-	// 5. Launch AI tool
+	// 5. Codex-specific setup
+	if tool == "codex" {
+		if err := setupCodexConfig(dir); err != nil {
+			fmt.Fprintf(os.Stderr, "c4: warning: codex config setup failed: %v\n", err)
+		}
+		if err := setupCodexAgents(dir); err != nil {
+			fmt.Fprintf(os.Stderr, "c4: warning: codex agents setup failed: %v\n", err)
+		}
+	}
+
+	// 6. Launch AI tool
 	return launchTool(tool, dir)
 }
 
@@ -161,6 +172,149 @@ func setupSkills(dir string) error {
 		fmt.Fprintf(os.Stderr, "c4: %d skills deployed (symlinked from %s)\n", count, c4Root)
 	} else {
 		fmt.Fprintln(os.Stderr, "c4: skills up to date")
+	}
+	return nil
+}
+
+// setupCodexConfig creates or updates ~/.codex/config.toml with c4 MCP server entry.
+func setupCodexConfig(dir string) error {
+	configPath, err := codexConfigPath()
+	if err != nil {
+		return err
+	}
+	binPath, err := findC4Binary()
+	if err != nil {
+		return err
+	}
+
+	content := ""
+	if data, readErr := os.ReadFile(configPath); readErr == nil {
+		content = string(data)
+	} else if !os.IsNotExist(readErr) {
+		return fmt.Errorf("reading %s: %w", configPath, readErr)
+	}
+	content = strings.ReplaceAll(content, "\r\n", "\n")
+
+	updated := strings.Contains(content, "[mcp_servers.c4]")
+	cleaned := removeTOMLTable(content, "[mcp_servers.c4]")
+	cleaned = strings.TrimRight(cleaned, "\n")
+
+	block := codexMCPBlock(binPath, dir)
+	var final strings.Builder
+	if cleaned != "" {
+		final.WriteString(cleaned)
+		final.WriteString("\n\n")
+	}
+	final.WriteString(block)
+	final.WriteString("\n")
+
+	if err := os.MkdirAll(filepath.Dir(configPath), 0755); err != nil {
+		return fmt.Errorf("creating codex config directory: %w", err)
+	}
+	if err := os.WriteFile(configPath, []byte(final.String()), 0644); err != nil {
+		return fmt.Errorf("writing codex config: %w", err)
+	}
+
+	if updated {
+		fmt.Fprintf(os.Stderr, "c4: codex MCP config updated (%s)\n", configPath)
+	} else {
+		fmt.Fprintf(os.Stderr, "c4: codex MCP config added (%s)\n", configPath)
+	}
+	return nil
+}
+
+func codexConfigPath() (string, error) {
+	if path := os.Getenv("CODEX_CONFIG"); path != "" {
+		return path, nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("cannot determine home directory for codex config: %w", err)
+	}
+	return filepath.Join(home, ".codex", "config.toml"), nil
+}
+
+func codexMCPBlock(binPath, dir string) string {
+	lines := []string{
+		"[mcp_servers.c4]",
+		fmt.Sprintf("command = %s", strconv.Quote(binPath)),
+		fmt.Sprintf("args = [\"mcp\", \"--dir\", %s]", strconv.Quote(dir)),
+		fmt.Sprintf("env = { C4_PROJECT_ROOT = %s }", strconv.Quote(dir)),
+	}
+	return strings.Join(lines, "\n")
+}
+
+func removeTOMLTable(content, header string) string {
+	if content == "" {
+		return ""
+	}
+	lines := strings.Split(content, "\n")
+	out := make([]string, 0, len(lines))
+	skipping := false
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if !skipping {
+			if trimmed == header {
+				skipping = true
+				continue
+			}
+			out = append(out, line)
+			continue
+		}
+		// End skip when next TOML table header begins.
+		if trimmed != "" && strings.HasPrefix(trimmed, "[") && strings.HasSuffix(trimmed, "]") {
+			skipping = false
+			out = append(out, line)
+		}
+	}
+
+	return strings.Join(out, "\n")
+}
+
+// setupCodexAgents deploys project-level Codex agent files via symlinks.
+func setupCodexAgents(dir string) error {
+	c4Root, err := findC4Root()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "c4: codex agents setup skipped (C4 source root not found)")
+		return nil
+	}
+
+	sourceAgentsDir := filepath.Join(c4Root, ".codex", "agents")
+	entries, err := os.ReadDir(sourceAgentsDir)
+	if err != nil {
+		return nil // No agents to deploy
+	}
+
+	targetAgentsDir := filepath.Join(dir, ".codex", "agents")
+	if err := os.MkdirAll(targetAgentsDir, 0755); err != nil {
+		return fmt.Errorf("creating .codex/agents/: %w", err)
+	}
+
+	count := 0
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		if !strings.HasPrefix(name, "c4-") || !strings.HasSuffix(name, ".md") {
+			continue
+		}
+		target := filepath.Join(targetAgentsDir, name)
+		if _, err := os.Lstat(target); err == nil {
+			continue
+		}
+		source := filepath.Join(sourceAgentsDir, name)
+		if err := os.Symlink(source, target); err != nil {
+			fmt.Fprintf(os.Stderr, "c4: warning: symlink codex agent %s: %v\n", name, err)
+			continue
+		}
+		count++
+	}
+	if count > 0 {
+		fmt.Fprintf(os.Stderr, "c4: %d codex agents deployed (symlinked from %s)\n", count, c4Root)
+	} else {
+		fmt.Fprintln(os.Stderr, "c4: codex agents up to date")
 	}
 	return nil
 }
