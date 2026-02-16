@@ -166,6 +166,7 @@ func SyncAfterUpdate(cloud CloudSyncer, docID string, doc *Document) error {
 		"domain":     doc.Domain,
 		"tags":       doc.Tags,
 		"visibility": doc.Visibility,
+		"version":    doc.Version,
 	}
 	return cloud.SyncDocument(params, docID)
 }

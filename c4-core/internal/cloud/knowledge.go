@@ -94,6 +94,17 @@ func (k *KnowledgeCloudClient) SyncDocument(params map[string]any, docID string)
 		visibility = "team"
 	}
 
+	// Version: use provided value (from SyncAfterUpdate) or default to 1 (new docs)
+	version := 1
+	if v, ok := params["version"]; ok {
+		switch vv := v.(type) {
+		case int:
+			version = vv
+		case float64:
+			version = int(vv)
+		}
+	}
+
 	row := cloudDocRow{
 		DocID:       docID,
 		ProjectID:   k.projectID,
@@ -104,7 +115,7 @@ func (k *KnowledgeCloudClient) SyncDocument(params map[string]any, docID string)
 		Body:        body,
 		Metadata:    metadataJSON,
 		ContentHash: hash,
-		Version:     1,
+		Version:     version,
 		Visibility:  visibility,
 		CreatedBy:   "",
 	}

@@ -79,6 +79,7 @@ type mcpServer struct {
 	embeddedEB     *eventbus.EmbeddedServer // v3: in-process EventBus
 	researchStore  *research.Store          // Go native research store
 	knowledgeStore *knowledge.Store         // Go native knowledge store (Tier 2)
+	knowledgeUsage *knowledge.UsageTracker  // usage tracking for 3-way RRF
 }
 
 // newMCPServer creates and initializes the MCP server with all tools registered.
@@ -462,6 +463,7 @@ func newMCPServer() (*mcpServer, error) {
 		embeddedEB:     embeddedEB,
 		researchStore:  researchStore,
 		knowledgeStore: knowledgeStore,
+		knowledgeUsage: knowledgeUsage,
 	}, nil
 }
 
@@ -522,6 +524,9 @@ func (s *mcpServer) shutdown() {
 	}
 	if s.researchStore != nil {
 		s.researchStore.Close()
+	}
+	if s.knowledgeUsage != nil {
+		s.knowledgeUsage.Close()
 	}
 	if s.knowledgeStore != nil {
 		s.knowledgeStore.Close()

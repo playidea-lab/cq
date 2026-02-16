@@ -8,7 +8,7 @@ import (
 
 	"github.com/changmin/c4-core/internal/knowledge"
 	"github.com/changmin/c4-core/internal/mcp"
-	"github.com/changmin/c4-core/internal/webcontent"
+	"github.com/changmin/c4-core/internal/c2/webcontent"
 )
 
 // KnowledgeNativeOpts holds dependencies for native knowledge handlers.
@@ -406,7 +406,7 @@ func knowledgeSearchNativeHandler(opts *KnowledgeNativeOpts) mcp.HandlerFunc {
 					localIDs[r.ID] = true
 				}
 				for _, cd := range cloudDocs {
-					cdID, _ := cd["id"].(string)
+					cdID, _ := cd["doc_id"].(string)
 					if localIDs[cdID] {
 						continue
 					}
@@ -561,6 +561,13 @@ func experimentSearchNativeHandler(opts *KnowledgeNativeOpts) mcp.HandlerFunc {
 			}
 		}
 
+		// Track search_hit usage
+		if opts.Usage != nil {
+			for _, r := range results {
+				opts.Usage.Record(r.ID, knowledge.ActionSearchHit)
+			}
+		}
+
 		localCount := len(resultList)
 		communityCount := 0
 
@@ -573,7 +580,7 @@ func experimentSearchNativeHandler(opts *KnowledgeNativeOpts) mcp.HandlerFunc {
 					localIDs[r.ID] = true
 				}
 				for _, cd := range cloudDocs {
-					cdID, _ := cd["id"].(string)
+					cdID, _ := cd["doc_id"].(string)
 					if localIDs[cdID] {
 						continue
 					}
@@ -650,6 +657,13 @@ func patternSuggestNativeHandler(opts *KnowledgeNativeOpts) mcp.HandlerFunc {
 			}
 		}
 
+		// Track search_hit usage
+		if opts.Usage != nil {
+			for _, r := range results {
+				opts.Usage.Record(r.ID, knowledge.ActionSearchHit)
+			}
+		}
+
 		localCount := len(resultList)
 		communityCount := 0
 
@@ -661,7 +675,7 @@ func patternSuggestNativeHandler(opts *KnowledgeNativeOpts) mcp.HandlerFunc {
 					localIDs[r.ID] = true
 				}
 				for _, cd := range cloudDocs {
-					cdID, _ := cd["id"].(string)
+					cdID, _ := cd["doc_id"].(string)
 					if localIDs[cdID] {
 						continue
 					}
@@ -784,8 +798,8 @@ func knowledgeDeleteNativeHandler(opts *KnowledgeNativeOpts) mcp.HandlerFunc {
 			return map[string]any{"error": "document not found", "doc_id": docID}, nil
 		}
 
-		// Also remove vector embedding (shares same DB, separate table)
-		opts.Store.DB().Exec("DELETE FROM knowledge_vectors WHERE doc_id = ?", docID)
+		// Also remove vector embeddings including chunks (doc_id-chunk-N)
+		opts.Store.DB().Exec("DELETE FROM knowledge_vectors WHERE doc_id = ? OR doc_id LIKE ?", docID, docID+"-chunk-%")
 
 		// Cloud soft-delete (async)
 		if opts.Cloud != nil {

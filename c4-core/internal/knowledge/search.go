@@ -215,47 +215,38 @@ func boostRRFWithPopularity(results []SearchResult, popularity map[string]float6
 	})
 }
 
-// enrichAndFilter enriches results with metadata from the index and applies filters.
+// enrichAndFilter enriches results with metadata from the store and applies filters.
+// Uses per-doc Get() instead of List() to avoid O(N) full-table scan.
 func (s *Searcher) enrichAndFilter(results []SearchResult, filters map[string]string) []SearchResult {
 	if len(results) == 0 {
 		return results
 	}
 
-	// Load metadata for all docs (O(m+n))
-	allDocs, err := s.store.List("", "", 10000)
-	if err != nil {
-		return results
-	}
-	docMap := make(map[string]map[string]any, len(allDocs))
-	for _, d := range allDocs {
-		id, _ := d["id"].(string)
-		docMap[id] = d
-	}
-
 	var enriched []SearchResult
 	for _, r := range results {
-		meta, ok := docMap[r.ID]
-		if !ok {
+		doc, err := s.store.Get(r.ID)
+		if err != nil || doc == nil {
 			continue
 		}
 
 		// Enrich
-		if title, ok := meta["title"].(string); ok && title != "" {
-			r.Title = title
+		if doc.Title != "" {
+			r.Title = doc.Title
 		}
-		if typ, ok := meta["type"].(string); ok && typ != "" {
-			r.Type = typ
+		if string(doc.Type) != "" {
+			r.Type = string(doc.Type)
 		}
-		if domain, ok := meta["domain"].(string); ok {
-			r.Domain = domain
-		}
+		r.Domain = doc.Domain
 
 		// Apply filters
 		if filters != nil {
+			meta := map[string]string{
+				"type":   string(doc.Type),
+				"domain": doc.Domain,
+			}
 			match := true
 			for key, val := range filters {
-				metaVal, _ := meta[key].(string)
-				if metaVal != val {
+				if meta[key] != val {
 					match = false
 					break
 				}
