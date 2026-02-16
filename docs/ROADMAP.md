@@ -1,26 +1,26 @@
 # C4 Roadmap
 
-## Current Version: v0.20.0 (Phase 11.0 — C5 Production Readiness + 문서 현행화)
+## Current Version: v0.21.0 (Phase 12.0 — Knowledge Feedback Loop + WebMCP + C1 Redesign)
 
-현재 버전은 **Go MCP Server (122 tools: Base 96 + Hub 26), Native Go/Dart LSP (goast/dartast), LLM Gateway, CDP Runner, Cloud Foundation, Knowledge Sync, c4 daemon, C0 Drive, C1 Context Hub, C3 EventBus v4, C5 Hub Server Production Ready (multi-tenant, docker, 109 테스트), Lighthouse Docs SSOT (58개 rich spec)**을 포함합니다.
+현재 버전은 **Go MCP Server (125 tools: Base 99 + Hub 26), Native Go/Dart LSP (goast/dartast), LLM Gateway, CDP Runner + WebMCP, Cloud Foundation, Knowledge Feedback Loop (3-way RRF + FindRelated + Community Blending), c4 daemon, C0 Drive, C1 Unified Dashboard Messenger (4-탭 뷰 + Members/Presence), C3 EventBus v4, C5 Hub Server (Per-Project RBAC, 120 테스트), 19개 Skills, Lighthouse Docs SSOT (58개 rich spec)**을 포함합니다.
 
 ### 핵심 구조
 
-- **Go MCP Server (Primary)** - 122 도구 (Base 96 + Hub 26), Registry-based, SQLite Store, JSON-RPC Bridge, LLM Gateway, CDP Runner, Hub Client, Native LSP (goast/dartast), Lighthouse Docs SSOT
+- **Go MCP Server (Primary)** - 125 도구 (Base 99 + Hub 26), Registry-based, SQLite Store, JSON-RPC Bridge, LLM Gateway, CDP Runner + WebMCP, Hub Client, Native LSP (goast/dartast), Lighthouse Docs SSOT
+- **C9 Knowledge** - Store + FTS5 + Vector (OpenAI 1536d) + 3-way RRF (FTS+Vector+Popularity) + UsageTracker + FindRelated + Community Blending + Chunker + BatchIngest + ReindexSync
 - **C0 Drive** - Supabase 파일 저장소, metadata JSONB, c4_drive_mkdir 6개 도구, PostgREST URL 인코딩, server-side filtering
-- **C1 Context Hub** - Supabase 4 테이블 (channels/messages/participants/summaries), Go MCP 3 도구 (search/mentions/briefing), Context Keeper (LLM 요약), Agent 통합 (notifyKeeper 4-param), participant_id 추적
-- **C3 EventBus v4** - gRPC daemon (UDS) + WebSocket bridge + Python sidecar piggyback + CLI + Embedded auto-start + Event Replay + DLQ (16+ event types, 5 default rules, correlation_id, Filter v2)
-- **C1 Desktop App** - Tauri 2.x, 4개 프로바이더, Realtime WebSocket, 6-탭 UI (Sessions/Dashboard/Config/Documents/Channels/Events)
-- **C1 Views** - SessionsView (provider 자동감지), ChannelsView (메시징 + Realtime + count 로직), DocumentsView (파일+마크다운 편집)
+- **C1 Messenger** - Tauri 2.x 통합 대시보드 (4-탭: Messenger/Documents/Settings/Team), 통합 멤버 모델 (user/agent/system), Realtime Presence, MCP 5도구
+- **C3 EventBus v4** - gRPC daemon (UDS) + WebSocket bridge + DLQ + Filter v2 + Python sidecar piggyback + correlation_id (16+ event types)
+- **C5 Hub Server** - 분산 작업 큐, Per-Project API Key RBAC, multi-tenant, Docker, hub.Client 완전 호환, DAG/Edge/Deploy/Artifact
+- **WebContent** - web_fetch (content negotiation, SSRF, rate limit, HTML→MD), webmcp_discover/call (Chrome DevTools Protocol)
 - **Native LSP** - `goast/` (Go 심볼 파싱), `dartast/` (Dart 심볼 파싱), Python/JS/TS sidecar 폴백
-- **C3 EventBus v4** - gRPC daemon (UDS) + WebSocket bridge + DLQ + Filter v2, task lifecycle tracking
-- **C5 Hub Server Phase 3** - hub.Client 완전 호환, DAG/Edge/Deploy/Artifact, worker metrics auto-parsing, WebSocket auth, pagination
-- **Daemon Scheduler** - 로컬 작업 스케줄러, 13 REST API, GPU 할당, 소요시간 예측 (PiQ 대체)
+- **Daemon Scheduler** - 로컬 작업 스케줄러, 13 REST API, GPU 할당, 소요시간 예측
 - **LLM Gateway** - 4개 Provider (Anthropic/OpenAI/Gemini/Ollama), 5단계 라우팅, CostTracker, 모델 카탈로그 9종
-- **Cloud Layer** - Go PostgREST client (Auth + CloudStore + HybridStore + KnowledgeCloudClient + TokenProvider proactive auto-refresh with 401 retry)
+- **Cloud Layer** - Go PostgREST client (Auth + CloudStore + HybridStore + KnowledgeCloudClient + TokenProvider auto-refresh)
 - **Python Sidecar** - LSP 10 proxy tools (7 LSP + 2 C2 Doc + 1 Onboard)
+- **Skills** - 19개 Claude Code Skills (.claude/skills/), Commands 완전 마이그레이션
 - **Lighthouse** - register_all, spec auto-generate from schema, auto-seed catalog, auto-backfill empty specs
-- **Infra** - Supabase PostgreSQL (14 migrations, RLS, tsvector FTS, C1 channels/messages)
+- **Infra** - Supabase PostgreSQL (18 migrations, RLS, tsvector FTS, c1_members)
 
 ### 지원 기능
 
@@ -31,7 +31,7 @@
 - Validation Runner (lint, unit tests)
 - Checkpoint System (APPROVE, REQUEST_CHANGES, REPLAN, REDESIGN)
 - **Code Analysis Engine** - Multilspy → Jedi → Tree-sitter 3단계 fallback, LSP 7개 도구
-- **Knowledge Store v2** - Obsidian Markdown SSOT + FTS5 + Vector hybrid search (RRF)
+- **Knowledge Store v3** - FTS5 + Vector (OpenAI 1536d) + 3-way RRF (FTS+Vector+Popularity) + FindRelated + Community Blending + UsageTracker
 - **GPU/ML Native** - GPU 감지, 스케줄링, DAG→Task 변환
 - **Experiment Tracker** - @c4_track 데코레이터, 메트릭 자동 캡처
 - **Artifact Store** - Content-addressable 로컬 저장소
@@ -41,35 +41,67 @@
 - **C1 Context Hub** - 채널 메시징, Context Keeper (LLM 요약), Agent 통합 (notifyKeeper 4-param)
 - **C1 Documents** - 마크다운 파일 편집기, 지속성 (persona/skill/spec/config)
 - **C3 EventBus v4** - gRPC daemon (UDS) + WebSocket bridge + DLQ + Filter v2, Python sidecar piggyback, task lifecycle events
-- **코드베이스**: Go ~35.5K (c4-core) + Go ~4.9K (c5) + Python 24.4K + C1 ~15.1K + Infra 0.9K = **~80.8K LOC (src)**, 테스트 ~43.6K LOC, **총 ~124.4K LOC**
-- **테스트**: Go ~1,095 (c4-core ~986 + c5 109) + Python 750 + Rust 73 = **~1,918 tests**
+- **코드베이스**: Go ~33.5K (c4-core) + Go ~5.4K (c5) + Python 24.4K + C1 ~15.1K + Infra 0.9K = **~79.4K LOC (src)**, 테스트 ~44.2K LOC, **총 ~123.6K LOC**
+- **테스트**: Go 1,336 (c4-core 1,216 + c5 120) + Python 750 + Rust 76 = **~2,162 tests** (25 packages)
 
 ---
 
-## 최신 추가사항 (2026-02-15)
+## 최신 추가사항 (2026-02-16)
+
+### C9 Knowledge Feedback Loop — 관련 문서 연결 + 검색 블렌딩 ✅
+
+**목표**: 지식이 기록될 때 관련 문서를 자동 연결하고, 검색 시 로컬+커뮤니티 결과를 블렌딩하며, 사용량 기반 인기도 부스트 적용
+
+- **FindRelated**: Record 시 벡터 유사도로 관련 문서 3개 자동 탐색 (cosine >= 0.5), 응답에 `related` 필드
+- **Search Blending**: 로컬 3-way RRF + 클라우드 DiscoverPublic 결과 통합 (`source: local/community`)
+- **UsageTracker 배선**: search_hit/view/cite 이벤트 → 3-way RRF 인기도 부스트 활성화
+- **Distillation Stats**: FindClusters (Union-Find), PairwiseSimilarityStats, distillation_hint
+- **테스트**: knowledge 69→78 (+9), handlers +4개 (RecordWithRelated, SearchBlending)
+- **결과**: 검색→기록→검색 피드백 루프 완성, 자주 사용되는 지식이 상위 노출
+
+### WebMCP + Markdown for Agents — 3-Phase Implementation ✅
+
+**목표**: 웹 콘텐츠 소비(fetch→markdown), C4/C5 정보 노출(llms.txt), WebMCP 소비(Chrome DevTools)
+
+- **Phase 1**: `internal/webcontent/` — HTTP fetch, content negotiation, SSRF 차단, rate limit, HTML→MD, llms.txt 파서
+- **Phase 2**: C5 `/.well-known/llms.txt` + `/v1/docs/*.md`, C4 프로젝트 루트 `llms.txt`
+- **Phase 3**: `c4_webmcp_discover` + `c4_webmcp_call` — Chrome DevTools Protocol 활용 WebMCP 탐색/호출
+- **새 MCP 도구 +3**: c4_web_fetch, c4_webmcp_discover, c4_webmcp_call
+
+### C1 Messenger Redesign — Unified Dashboard Messenger ✅
+
+**목표**: C1을 6-탭 구조에서 4-탭 통합 대시보드 메신저로 재설계
+
+- **통합 멤버 모델**: c1_members 테이블 (user/agent/system), presence (online/working/idle/offline)
+- **Go MCP 도구 +2**: c1_send_message, c1_update_presence + ContextKeeper 통합
+- **React 프론트엔드**: MessageBubble (멤버 아바타), MembersPanel, useMembers/usePresence 훅
+- **4-탭 뷰**: Messenger/Documents/Settings/Team (Events 뷰 제거)
+- **테스트**: Go +10, Rust +3
+
+### C5 Per-Project API Key RBAC ✅
+
+- **api_keys 테이블**: key_hash(PK), project_id 바인딩
+- **인증 체계**: Master key = admin, Per-project key = 해당 프로젝트만
+- **테스트**: 109→120 (+11 RBAC E2E)
+
+### Command→Skill 전체 마이그레이션 ✅
+
+- **19개 Skill** 생성 (.claude/skills/), Commands 완전 제거
+- **토큰 절약**: Commands ~10,800줄 제거, Skill description만 시스템 프롬프트에 표시
+
+---
+
+## 이전 추가사항 (2026-02-15)
 
 ### C5 Production Readiness — Multi-Tenant Architecture + Docker Deployment ✅
 
-**목표**: C5를 프로덕션 환경에 배포 가능한 상태로 준비 (다중 테넌트 격리 + 컨테이너화 + 배포 가이드)
-
-- **Multi-Tenant 지원**: Job/Worker에 project_id 추가, 프로젝트별 격리 (조직 다중 지원)
-- **hub.Client 호환성 보강**: 응답 배열 형식 (workers/jobs/edges), full DAG struct, blocking_reason 로직
-- **컨테이너 배포**: docker-compose.yml + Dockerfile multi-stage build (신규)
-- **설치/배포 자동화**: install.sh --with-hub 옵션, .env.example 템플릿 (신규)
-- **운영 가이드**: 팀 온보딩 (375줄) + 배포 체크리스트 (550줄) 신규 문서 2개
-- **테스트 강화**: Multi-project E2E 4개 추가 (105→109), c4-core 976→986
-- **규모**: c5 diff +383줄, install.sh/docs +1,215줄, 총 +1,598줄
-- **결과**: C5 운영 준비 완료, 다중 조직 지원 구조 수립
+- Multi-Tenant 지원, 컨테이너 배포, 운영 가이드
+- 테스트: 105→109, 규모: +1,598줄
 
 ### Lighthouse A-lite — Docs SSOT 승격 + 문서 현행화 ✅
 
-**목표**: Lighthouse를 도구 문서의 SSOT로 승격, 전체 문서 수치 현행화
-
-- **3-Layer 역할 분리**: AGENTS.md(규칙, push) / Registry(인터페이스, push) / Lighthouse(문서, pull)
-- **58개 도구 rich spec 작성**: Hub DAG(7), Hub Job(10), Drive(6), Hub Edge(5), Hub Infra(4), Task(8), State(3), Checkpoint(2), Knowledge(8), Research(5)
-- **AGENTS.md 업데이트**: Lighthouse 참조 안내 + 복잡 도구 사전 조회 규칙
-- **문서 현행화**: 도구 수 96 base + 26 hub = 122 (누락 10개 추가), 테스트 수 ~2,020, LOC 정확한 수치 반영
-- **결과**: 에이전트가 `c4_lighthouse get <tool>` 으로 상세 사용법 조회 가능
+- 58개 도구 rich spec, 3-Layer 역할 분리
+- `c4_lighthouse get <tool>` 으로 상세 사용법 조회 가능
 
 
 ### C5 Hub Server Phase 3 — hub.Client 완전 호환 ✅

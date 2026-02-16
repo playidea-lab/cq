@@ -605,13 +605,11 @@
 .git-graph__container {
   display: flex;
   flex-direction: column;
-  gap: 0;
 }
 
-.git-graph__row {
+.git-graph__canvas {
   display: flex;
-  align-items: stretch;
-  height: 32px;
+  align-items: flex-start;
 }
 
 .git-graph__svg {
@@ -620,10 +618,21 @@
   pointer-events: none;
 }
 
-.git-graph__info {
+.git-graph__info-list {
   flex: 1;
   min-width: 0;
-  padding: 2px 0 2px var(--space-sm);
+}
+
+.git-graph__info {
+  height: 32px;
+  min-height: 32px;
+  max-height: 32px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 0 0 0 var(--space-sm);
+  box-sizing: border-box;
+  overflow: hidden;
 }
 
 .git-graph__message-row {
