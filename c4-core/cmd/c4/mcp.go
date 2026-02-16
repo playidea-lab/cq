@@ -174,6 +174,7 @@ func newMCPServer() (*mcpServer, error) {
 	os.MkdirAll(knowledgeDir, 0755)
 	var knowledgeStore *knowledge.Store
 	var knowledgeSearcher *knowledge.Searcher
+	var knowledgeUsage *knowledge.UsageTracker
 	if ks, ksErr := knowledge.NewStore(knowledgeDir); ksErr != nil {
 		fmt.Fprintf(os.Stderr, "c4: knowledge store init failed (proxy fallback): %v\n", ksErr)
 	} else {
@@ -200,6 +201,16 @@ func newMCPServer() (*mcpServer, error) {
 		} else {
 			knowledgeSearcher = knowledge.NewSearcher(ks, vs)
 		}
+
+		// Create usage tracker for popularity-boosted search (3-way RRF)
+		if ut, utErr := knowledge.NewUsageTracker(ks.DB()); utErr != nil {
+			fmt.Fprintf(os.Stderr, "c4: knowledge usage tracker init failed: %v\n", utErr)
+		} else {
+			knowledgeUsage = ut
+			if knowledgeSearcher != nil {
+				knowledgeSearcher.SetUsageTracker(ut)
+			}
+		}
 	}
 
 	// Create registry and register all tools (proxy is created inside with lazy sidecar)
@@ -209,6 +220,7 @@ func newMCPServer() (*mcpServer, error) {
 		KnowledgeStore:    knowledgeStore,
 		KnowledgeSearcher: knowledgeSearcher,
 		KnowledgeCloud:    knowledgeCloud,
+		KnowledgeUsage:    knowledgeUsage,
 	}
 	proxy := handlers.RegisterAllHandlersLazyWithOpts(reg, nil, projectDir, lazySidecar, knowledgeCloud, nativeOpts)
 

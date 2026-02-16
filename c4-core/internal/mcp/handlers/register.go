@@ -34,11 +34,12 @@ func RegisterNativeHandlers(reg *mcp.Registry, rootDir string, store Store) {
 // NativeOpts holds optional dependencies for native handler registration.
 // Fields may be nil when their backing service is unavailable.
 type NativeOpts struct {
-	ResearchStore     *research.Store     // nil if research DB unavailable
-	GPUStore          *daemon.Store       // nil if GPU scheduler unavailable
-	KnowledgeStore    *knowledge.Store    // nil if knowledge DB unavailable
-	KnowledgeSearcher *knowledge.Searcher // nil = FTS-only (no vector search)
-	KnowledgeCloud    knowledge.CloudSyncer // nil if cloud disabled
+	ResearchStore     *research.Store        // nil if research DB unavailable
+	GPUStore          *daemon.Store          // nil if GPU scheduler unavailable
+	KnowledgeStore    *knowledge.Store       // nil if knowledge DB unavailable
+	KnowledgeSearcher *knowledge.Searcher    // nil = FTS-only (no vector search)
+	KnowledgeCloud    knowledge.CloudSyncer  // nil if cloud disabled
+	KnowledgeUsage    *knowledge.UsageTracker // nil if usage tracking disabled
 }
 
 // RegisterAllHandlers registers all MCP tool handlers including Python proxy tools.
@@ -72,6 +73,9 @@ func RegisterAllHandlersWithOpts(reg *mcp.Registry, store Store, rootDir string,
 	// Register proxy tools (LSP + Onboard — still Python-dependent)
 	// rootDir enables Go-native symbol parsing for .go files via go/ast
 	RegisterProxyHandlers(reg, proxy, rootDir)
+
+	// Register web content tools (c4_web_fetch — no dependencies)
+	RegisterWebContentHandlers(reg)
 
 	// Register native tools that replaced proxy calls (Research, GPU, C2, Knowledge)
 	registerNativeReplacements(reg, proxy, opts, knowledgeCloud)
@@ -115,6 +119,7 @@ func registerNativeReplacements(reg *mcp.Registry, proxy *BridgeProxy, opts *Nat
 			Store:    opts.KnowledgeStore,
 			Searcher: opts.KnowledgeSearcher,
 			Cloud:    opts.KnowledgeCloud,
+			Usage:    opts.KnowledgeUsage,
 		})
 	} else {
 		registerKnowledgeProxy(reg, proxy, knowledgeCloud)
