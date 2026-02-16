@@ -349,7 +349,7 @@ Worker auto-selects appropriate agent.
 | Worktree | Required for multi-worker |
 | Accept Edits | Required for automation |
 
-## Related Commands
+## Related Skills
 
 - `/c4-status` - Check status (includes parallelism analysis)
 - `/c4-stop` - Stop execution

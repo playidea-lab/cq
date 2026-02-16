@@ -564,7 +564,7 @@ Phase 0.5: Action selection
     |-> "View status only"     -> End
 ```
 
-## Related Commands
+## Related Skills
 
 - `/c4-add-task` — add individual task
 - `/c4-run` — start execution

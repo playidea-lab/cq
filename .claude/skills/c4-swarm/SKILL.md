@@ -477,7 +477,7 @@ C4 Swarm complete! (Team: {team_name})
 | Accept Edits | Required in Standard mode (`Shift+Tab`) |
 | delegate mode | Recommended for coordinator (`Shift+Tab`) |
 
-## Related Commands
+## Related Skills
 
 - `/c4-run` — Independent Worker parallel execution (no communication, fire-and-forget)
 - `/c4-status` — Check C4 project state

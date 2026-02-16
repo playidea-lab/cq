@@ -62,7 +62,8 @@ c4/
 ├── c4/               # Python Sidecar (LSP, Doc parsing)
 ├── c5/               # Go 분산 작업 큐 서버 (Hub)
 ├── c1/               # Tauri 2.x 데스크톱 앱
-├── infra/supabase/   # PostgreSQL 마이그레이션 (14개)
+├── .claude/skills/   # Claude Code Skills (19개, 자동 발동 워크플로우)
+├── infra/supabase/   # PostgreSQL 마이그레이션 (18개)
 ├── docs/             # ROADMAP, guides
 ├── scripts/          # 유틸리티 스크립트
 ├── tests/            # Python 테스트
