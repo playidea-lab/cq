@@ -9,6 +9,7 @@ pub mod cloud;
 pub mod commands;
 pub mod documents;
 pub mod eventbus;
+pub mod knowledge;
 pub mod layout;
 pub mod messaging;
 pub mod models;
@@ -56,6 +57,7 @@ pub fn run() {
             commands::get_session_file_changes,
             commands::list_config_files,
             commands::read_config_file,
+            commands::write_config_file,
             // Session content search
             commands::search_sessions,
             // Provider-based commands
@@ -116,6 +118,12 @@ pub fn run() {
             documents::list_documents,
             documents::get_document,
             documents::save_document,
+            documents::create_document,
+            documents::delete_document,
+            // Knowledge
+            knowledge::list_knowledge,
+            knowledge::get_knowledge_doc,
+            knowledge::get_knowledge_stats,
         ])
         .setup(|app| {
             // Log startup

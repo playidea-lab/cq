@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useConfig } from '../../hooks/useConfig';
 import { MarkdownViewer } from '../shared/MarkdownViewer';
 import { Skeleton } from '../shared/Skeleton';
@@ -19,11 +19,44 @@ export function ConfigView({ projectPath }: ConfigViewProps) {
     error,
     loadFiles,
     loadContent,
+    saveConfig,
   } = useConfig();
+
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState('');
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     loadFiles(projectPath);
   }, [projectPath, loadFiles]);
+
+  // Reset edit mode when selected file changes
+  useEffect(() => {
+    setEditing(false);
+    if (selectedFile) setDraft(selectedFile.content);
+  }, [selectedFile]);
+
+  const handleToggleEdit = () => {
+    if (!editing && selectedFile) {
+      setDraft(selectedFile.content);
+    }
+    setEditing(!editing);
+  };
+
+  const handleSave = async () => {
+    if (!selectedFile) return;
+    setSaving(true);
+    try {
+      await saveConfig(selectedFile.path, draft);
+      setEditing(false);
+    } catch {
+      // error is set in useConfig
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const hasChanges = editing && selectedFile && draft !== selectedFile.content;
 
   if (loading) {
     return (
@@ -82,12 +115,35 @@ export function ConfigView({ projectPath }: ConfigViewProps) {
           <>
             <div className="config__content-header">
               <span className="config__content-path">{selectedFile.path}</span>
-              {selectedFile.truncated && (
-                <span className="badge badge--orange">Truncated</span>
-              )}
+              <div className="config__content-actions">
+                {selectedFile.truncated && (
+                  <span className="badge badge--orange">Truncated</span>
+                )}
+                <button
+                  className={`config__edit-btn ${editing ? 'config__edit-btn--active' : ''}`}
+                  onClick={handleToggleEdit}
+                >
+                  {editing ? 'Preview' : 'Edit'}
+                </button>
+                {editing && (
+                  <button
+                    className="config__save-btn"
+                    onClick={handleSave}
+                    disabled={saving || !hasChanges}
+                  >
+                    {saving ? 'Saving...' : 'Save'}
+                  </button>
+                )}
+              </div>
             </div>
             <div className="config__content-body">
-              {selectedFile.path.endsWith('.md') ? (
+              {editing ? (
+                <textarea
+                  className="config__textarea"
+                  value={draft}
+                  onChange={e => setDraft(e.target.value)}
+                />
+              ) : selectedFile.path.endsWith('.md') ? (
                 <MarkdownViewer content={selectedFile.content} />
               ) : (
                 <pre className="config__content-raw">{selectedFile.content}</pre>

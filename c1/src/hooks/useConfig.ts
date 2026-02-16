@@ -57,6 +57,16 @@ export function useConfig() {
     return groups;
   }, [files]);
 
+  const saveConfig = useCallback(async (filePath: string, content: string) => {
+    try {
+      await invoke('write_config_file', { projectPath: currentProject, filePath, content });
+      setSelectedFile(prev => prev ? { ...prev, content } : null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      throw err;
+    }
+  }, [currentProject]);
+
   return {
     files,
     grouped,
@@ -66,5 +76,6 @@ export function useConfig() {
     error,
     loadFiles,
     loadContent,
+    saveConfig,
   };
 }

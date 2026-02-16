@@ -5,22 +5,20 @@ import { useDocument } from '../../hooks/useDocuments';
 
 interface DocumentEditorProps {
   path: string | null;
+  onDelete?: (path: string) => Promise<void>;
 }
 
-function formatSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-export function DocumentEditor({ path }: DocumentEditorProps) {
+export function DocumentEditor({ path, onDelete }: DocumentEditorProps) {
   const { doc, loading, saving, save } = useDocument(path);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   // Reset edit mode when document changes
   useEffect(() => {
     setEditing(false);
+    setConfirmDelete(false);
     if (doc) setDraft(doc.content);
   }, [doc]);
 
@@ -57,6 +55,17 @@ export function DocumentEditor({ path }: DocumentEditorProps) {
     setEditing(false);
   };
 
+  const handleDelete = async () => {
+    if (!onDelete) return;
+    setDeleting(true);
+    try {
+      await onDelete(path);
+    } catch {
+      setDeleting(false);
+      setConfirmDelete(false);
+    }
+  };
+
   const hasChanges = editing && draft !== doc.content;
 
   return (
@@ -65,7 +74,7 @@ export function DocumentEditor({ path }: DocumentEditorProps) {
         <div>
           <span className="doc-editor__name">{doc.name}</span>
           <span className="doc-editor__meta">
-            {doc.doc_type} &middot; {formatSize(doc.content.length)}
+            {doc.doc_type} &middot; {doc.content.length < 1024 ? `${doc.content.length} B` : `${(doc.content.length / 1024).toFixed(1)} KB`}
           </span>
         </div>
         <div className="doc-editor__actions">
@@ -83,6 +92,35 @@ export function DocumentEditor({ path }: DocumentEditorProps) {
             >
               {saving ? 'Saving...' : 'Save'}
             </button>
+          )}
+          {onDelete && !editing && (
+            confirmDelete ? (
+              <div className="doc-editor__confirm-delete">
+                <span className="doc-editor__confirm-text">Delete?</span>
+                <button
+                  className="btn btn--danger btn--sm"
+                  onClick={handleDelete}
+                  disabled={deleting}
+                >
+                  {deleting ? 'Deleting...' : 'Yes'}
+                </button>
+                <button
+                  className="btn btn--secondary btn--sm"
+                  onClick={() => setConfirmDelete(false)}
+                  disabled={deleting}
+                >
+                  No
+                </button>
+              </div>
+            ) : (
+              <button
+                className="doc-editor__delete-btn"
+                onClick={() => setConfirmDelete(true)}
+                title="Delete document"
+              >
+                Delete
+              </button>
+            )
           )}
         </div>
       </div>

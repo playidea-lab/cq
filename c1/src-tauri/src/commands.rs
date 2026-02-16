@@ -1269,6 +1269,26 @@ pub async fn read_config_file(project_path: String, file_path: String) -> Result
     .map_err(|e| format!("Task execution failed: {}", e))?
 }
 
+/// Write/save a config file
+#[tauri::command(rename_all = "camelCase")]
+pub async fn write_config_file(project_path: String, file_path: String, content: String) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || {
+        let home = dirs::home_dir().ok_or("Could not find home directory")?;
+        let allowed = vec![
+            Path::new(&project_path).to_path_buf(),
+            home.join(".claude"),
+        ];
+        validate_allowed_path(&file_path, &allowed)?;
+
+        fs::write(&file_path, &content)
+            .map_err(|e| format!("Failed to write {}: {}", file_path, e))?;
+
+        Ok(())
+    })
+    .await
+    .map_err(|e| format!("Task execution failed: {}", e))?
+}
+
 // --- Editor deeplink commands ---
 
 /// Detect which code editors are available on the system.

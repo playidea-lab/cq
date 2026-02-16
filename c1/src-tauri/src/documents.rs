@@ -285,6 +285,87 @@ pub async fn save_document(path: String, content: String) -> Result<(), String> 
     .map_err(|e| format!("Task execution failed: {}", e))?
 }
 
+/// Create a new document file
+#[tauri::command(rename_all = "camelCase")]
+pub async fn create_document(
+    project_path: String,
+    doc_type: String,
+    name: String,
+    content: String,
+) -> Result<String, String> {
+    tokio::task::spawn_blocking(move || {
+        let project = Path::new(&project_path);
+
+        // Determine target directory based on doc_type
+        let target_dir = match doc_type.as_str() {
+            "persona" => project.join(".c4"),
+            "skill" => project.join(".claude").join("commands"),
+            "spec" => project.join(".c4").join("specs"),
+            "config" => project.join(".c4"),
+            _ => return Err(format!("Unknown doc_type: {}", doc_type)),
+        };
+
+        // Ensure directory exists
+        fs::create_dir_all(&target_dir)
+            .map_err(|e| format!("Failed to create directory: {}", e))?;
+
+        // Determine file extension
+        let file_name = if name.contains('.') {
+            name.clone()
+        } else {
+            match doc_type.as_str() {
+                "spec" => format!("{}.yaml", name),
+                _ => format!("{}.md", name),
+            }
+        };
+
+        let file_path = target_dir.join(&file_name);
+
+        // Validate path
+        validate_path_components(&file_path)?;
+
+        // Check if file already exists
+        if file_path.exists() {
+            return Err(format!("File already exists: {}", file_path.display()));
+        }
+
+        fs::write(&file_path, &content)
+            .map_err(|e| format!("Failed to create file: {}", e))?;
+
+        Ok(file_path.to_string_lossy().to_string())
+    })
+    .await
+    .map_err(|e| format!("Task execution failed: {}", e))?
+}
+
+/// Delete a document file
+#[tauri::command(rename_all = "camelCase")]
+pub async fn delete_document(path: String) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || {
+        let file_path = PathBuf::from(&path);
+
+        // Validate path
+        validate_path_components(&file_path)?;
+
+        if !file_path.exists() {
+            return Err(format!("File not found: {}", path));
+        }
+
+        // Additional safety: only delete files we recognize as documents
+        let ext = file_path.extension().and_then(|e| e.to_str()).unwrap_or("");
+        if !["md", "yaml", "yml", "json", "toml"].contains(&ext) {
+            return Err(format!("Refusing to delete non-document file: {}", path));
+        }
+
+        fs::remove_file(&file_path)
+            .map_err(|e| format!("Failed to delete file: {}", e))?;
+
+        Ok(())
+    })
+    .await
+    .map_err(|e| format!("Task execution failed: {}", e))?
+}
+
 fn infer_doc_type(path: &str) -> String {
     if path.contains("agents") || path.contains("SOUL") {
         "persona".to_string()

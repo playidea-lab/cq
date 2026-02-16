@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useDocuments } from '../../hooks/useDocuments';
 import { DocumentEditor } from './DocumentEditor';
+import { CreateDocumentDialog } from './CreateDocumentDialog';
 import { Skeleton } from '../shared/Skeleton';
 import type { DocType, DocumentMeta } from '../../types';
 import '../../styles/documents.css';
@@ -24,10 +25,21 @@ function formatSize(bytes: number): string {
 export function DocumentsView({ projectPath }: DocumentsViewProps) {
   const [activeTab, setActiveTab] = useState<DocType>('persona');
   const [selectedDoc, setSelectedDoc] = useState<DocumentMeta | null>(null);
-  const { documents, loading } = useDocuments(projectPath, activeTab);
+  const [showCreate, setShowCreate] = useState(false);
+  const { documents, loading, createDocument, deleteDocument } = useDocuments(projectPath, activeTab);
 
   const handleTabChange = (type: DocType) => {
     setActiveTab(type);
+    setSelectedDoc(null);
+  };
+
+  const handleCreate = async (name: string, content: string) => {
+    await createDocument(name, content);
+    setShowCreate(false);
+  };
+
+  const handleDelete = async (path: string) => {
+    await deleteDocument(path);
     setSelectedDoc(null);
   };
 
@@ -35,7 +47,16 @@ export function DocumentsView({ projectPath }: DocumentsViewProps) {
     <div className="documents">
       <aside className="doc-sidebar">
         <div className="doc-sidebar__header">
-          <div className="doc-sidebar__title">Documents</div>
+          <div className="doc-sidebar__title-row">
+            <span className="doc-sidebar__title">Documents</span>
+            <button
+              className="btn btn--primary btn--sm"
+              onClick={() => setShowCreate(true)}
+              title={`New ${activeTab}`}
+            >
+              + New
+            </button>
+          </div>
           <div className="doc-sidebar__tabs">
             {DOC_TABS.map(tab => (
               <button
@@ -71,7 +92,17 @@ export function DocumentsView({ projectPath }: DocumentsViewProps) {
           )}
         </ul>
       </aside>
-      <DocumentEditor path={selectedDoc?.path ?? null} />
+      <DocumentEditor
+        path={selectedDoc?.path ?? null}
+        onDelete={handleDelete}
+      />
+      {showCreate && (
+        <CreateDocumentDialog
+          docType={activeTab}
+          onConfirm={handleCreate}
+          onCancel={() => setShowCreate(false)}
+        />
+      )}
     </div>
   );
 }

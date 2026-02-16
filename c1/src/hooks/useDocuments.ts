@@ -28,7 +28,33 @@ export function useDocuments(projectPath: string | null, docType: DocType) {
     fetchDocuments();
   }, [fetchDocuments]);
 
-  return { documents, loading, error, refresh: fetchDocuments };
+  const createDocument = useCallback(async (name: string, content: string) => {
+    if (!projectPath) return;
+    try {
+      await invoke<string>('create_document', {
+        projectPath,
+        docType,
+        name,
+        content,
+      });
+      await fetchDocuments();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      throw err;
+    }
+  }, [projectPath, docType, fetchDocuments]);
+
+  const deleteDocument = useCallback(async (path: string) => {
+    try {
+      await invoke('delete_document', { path });
+      await fetchDocuments();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      throw err;
+    }
+  }, [fetchDocuments]);
+
+  return { documents, loading, error, refresh: fetchDocuments, createDocument, deleteDocument };
 }
 
 export function useDocument(path: string | null) {

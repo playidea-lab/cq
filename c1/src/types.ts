@@ -119,7 +119,7 @@ export interface TokenUsage {
 
 // --- View types ---
 
-export type ViewType = 'channels' | 'documents' | 'team' | 'settings';
+export type ViewType = 'board' | 'docs' | 'knowledge' | 'messenger' | 'settings';
 
 // --- C1 Messaging types ---
 

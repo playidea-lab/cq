@@ -1,11 +1,12 @@
 import { useState, useCallback, useEffect } from 'react';
 import { open } from '@tauri-apps/plugin-dialog';
 import { Sidebar } from './components/Sidebar';
-import { ConfigView } from './components/config/ConfigView';
-import { TeamView } from './components/team/TeamView';
-import { LoginView } from './components/auth/LoginView';
-import { ChannelsView } from './components/channels/ChannelsView';
+import { DashboardView } from './components/dashboard/DashboardView';
 import { DocumentsView } from './components/documents/DocumentsView';
+import { KnowledgeView } from './components/knowledge/KnowledgeView';
+import { ChannelsView } from './components/channels/ChannelsView';
+import { ConfigView } from './components/config/ConfigView';
+import { LoginView } from './components/auth/LoginView';
 import { ErrorBoundary } from './components/shared/ErrorBoundary';
 import { AuthProvider } from './contexts/AuthContext';
 import { ToastProvider } from './contexts/ToastContext';
@@ -14,15 +15,16 @@ import type { ViewType } from './types';
 import './styles/auth.css';
 
 const VIEW_SHORTCUTS: Record<string, ViewType> = {
-  '1': 'channels',
-  '2': 'documents',
-  '3': 'settings',
-  '4': 'team',
+  '1': 'board',
+  '2': 'docs',
+  '3': 'knowledge',
+  '4': 'messenger',
+  '5': 'settings',
 };
 
 function AppContent() {
   const { user, loading, logout } = useAuth();
-  const [currentView, setCurrentView] = useState<ViewType>('channels');
+  const [currentView, setCurrentView] = useState<ViewType>('board');
   const [projectPath, setProjectPath] = useState<string | null>(null);
 
   useEffect(() => {
@@ -90,16 +92,12 @@ function AppContent() {
   }
 
   const renderView = () => {
-    if (currentView === 'team') {
-      return <TeamView />;
-    }
-
     if (!projectPath) {
       return (
         <div className="empty-state">
-          <h2 className="empty-state__title">C1 — See</h2>
+          <h2 className="empty-state__title">C4 Board</h2>
           <p className="empty-state__description">
-            Browse your Claude Code sessions, C4 workflow status, and project configuration.
+            Manage your C4 project: tasks, documents, knowledge, and team communication.
           </p>
           <button className="btn btn--primary" onClick={handleOpenFolder}>
             Open Project Folder
@@ -109,10 +107,14 @@ function AppContent() {
     }
 
     switch (currentView) {
-      case 'channels':
-        return <ChannelsView key={`channels-${projectPath}`} projectId={projectPath} />;
-      case 'documents':
+      case 'board':
+        return <DashboardView key={`board-${projectPath}`} projectPath={projectPath} />;
+      case 'docs':
         return <DocumentsView key={`docs-${projectPath}`} projectPath={projectPath} />;
+      case 'knowledge':
+        return <KnowledgeView key={`knowledge-${projectPath}`} projectPath={projectPath} />;
+      case 'messenger':
+        return <ChannelsView key={`messenger-${projectPath}`} projectId={projectPath} />;
       case 'settings':
         return <ConfigView key={`settings-${projectPath}`} projectPath={projectPath} />;
     }
@@ -123,7 +125,6 @@ function AppContent() {
       <Sidebar
         currentView={currentView}
         onViewChange={setCurrentView}
-        showTeam={!!user}
       />
       <main className="app-main">
         <header className="app-header">
