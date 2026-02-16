@@ -1,25 +1,25 @@
 # C4 Roadmap
 
-## Current Version: v0.21.0 (Phase 12.0 — Knowledge Feedback Loop + WebMCP + C1 Redesign)
+## Current Version: v0.22.0 (Phase 12.1 — Knowledge Maturity + CDP Auto-Discovery)
 
-현재 버전은 **Go MCP Server (125 tools: Base 99 + Hub 26), Native Go/Dart LSP (goast/dartast), LLM Gateway, CDP Runner + WebMCP, Cloud Foundation, Knowledge Feedback Loop (3-way RRF + FindRelated + Community Blending), c4 daemon, C0 Drive, C1 Unified Dashboard Messenger (4-탭 뷰 + Members/Presence), C3 EventBus v4, C5 Hub Server (Per-Project RBAC, 120 테스트), 19개 Skills, Lighthouse Docs SSOT (58개 rich spec)**을 포함합니다.
+현재 버전은 **Go MCP Server (134 tools: Base 108 + Hub 26), Native Go/Dart LSP (goast/dartast), LLM Gateway, CDP Runner + WebMCP + Auto-Discovery, Cloud Foundation, Knowledge v4 (3-way RRF + FindRelated + Time-Weighted Usage + Auto-Distill + Observability), c4 daemon, C0 Drive, C1 Unified Dashboard Messenger (4-탭 뷰 + Members/Presence), C3 EventBus v4, C5 Hub Server (Per-Project RBAC, 120 테스트), 19개 Skills, Lighthouse Docs SSOT (llms.txt export)**을 포함합니다.
 
 ### 핵심 구조
 
-- **Go MCP Server (Primary)** - 125 도구 (Base 99 + Hub 26), Registry-based, SQLite Store, JSON-RPC Bridge, LLM Gateway, CDP Runner + WebMCP, Hub Client, Native LSP (goast/dartast), Lighthouse Docs SSOT
-- **C9 Knowledge** - Store + FTS5 + Vector (OpenAI 1536d) + 3-way RRF (FTS+Vector+Popularity) + UsageTracker + FindRelated + Community Blending + Chunker + BatchIngest + ReindexSync
+- **Go MCP Server (Primary)** - 134 도구 (Base 108 + Hub 26), Registry-based, SQLite Store, JSON-RPC Bridge, LLM Gateway, CDP Runner + WebMCP, Hub Client, Native LSP (goast/dartast), Lighthouse Docs SSOT
+- **C9 Knowledge v4** - Store + FTS5 + Vector (OpenAI 1536d) + 3-way RRF (FTS+Vector+Popularity) + Time-Weighted UsageTracker (30일 반감기) + FindRelated + Community Blending + Auto-Distill (LLM 패턴 추출) + Chunker + BatchIngest + ReindexSync
 - **C0 Drive** - Supabase 파일 저장소, metadata JSONB, c4_drive_mkdir 6개 도구, PostgREST URL 인코딩, server-side filtering
 - **C1 Messenger** - Tauri 2.x 통합 대시보드 (4-탭: Messenger/Documents/Settings/Team), 통합 멤버 모델 (user/agent/system), Realtime Presence, MCP 5도구
 - **C3 EventBus v4** - gRPC daemon (UDS) + WebSocket bridge + DLQ + Filter v2 + Python sidecar piggyback + correlation_id (16+ event types)
 - **C5 Hub Server** - 분산 작업 큐, Per-Project API Key RBAC, multi-tenant, Docker, hub.Client 완전 호환, DAG/Edge/Deploy/Artifact
-- **WebContent** - web_fetch (content negotiation, SSRF, rate limit, HTML→MD), webmcp_discover/call (Chrome DevTools Protocol)
+- **WebContent + WebMCP** - web_fetch (content negotiation, SSRF, rate limit, HTML→MD), webmcp_discover/call/context (Chrome DevTools Protocol), CDP auto-discovery
 - **Native LSP** - `goast/` (Go 심볼 파싱), `dartast/` (Dart 심볼 파싱), Python/JS/TS sidecar 폴백
 - **Daemon Scheduler** - 로컬 작업 스케줄러, 13 REST API, GPU 할당, 소요시간 예측
 - **LLM Gateway** - 4개 Provider (Anthropic/OpenAI/Gemini/Ollama), 5단계 라우팅, CostTracker, 모델 카탈로그 9종
 - **Cloud Layer** - Go PostgREST client (Auth + CloudStore + HybridStore + KnowledgeCloudClient + TokenProvider auto-refresh)
 - **Python Sidecar** - LSP 10 proxy tools (7 LSP + 2 C2 Doc + 1 Onboard)
 - **Skills** - 19개 Claude Code Skills (.claude/skills/), Commands 완전 마이그레이션
-- **Lighthouse** - register_all, spec auto-generate from schema, auto-seed catalog, auto-backfill empty specs
+- **Lighthouse** - register_all, spec auto-generate, auto-seed, auto-backfill, llms.txt export
 - **Infra** - Supabase PostgreSQL (18 migrations, RLS, tsvector FTS, c1_members)
 
 ### 지원 기능
@@ -31,7 +31,7 @@
 - Validation Runner (lint, unit tests)
 - Checkpoint System (APPROVE, REQUEST_CHANGES, REPLAN, REDESIGN)
 - **Code Analysis Engine** - Multilspy → Jedi → Tree-sitter 3단계 fallback, LSP 7개 도구
-- **Knowledge Store v3** - FTS5 + Vector (OpenAI 1536d) + 3-way RRF (FTS+Vector+Popularity) + FindRelated + Community Blending + UsageTracker
+- **Knowledge Store v4** - FTS5 + Vector (OpenAI 1536d) + 3-way RRF (FTS+Vector+Popularity) + Time-Weighted Usage (30일 반감기) + FindRelated + Community Blending + Auto-Distill
 - **GPU/ML Native** - GPU 감지, 스케줄링, DAG→Task 변환
 - **Experiment Tracker** - @c4_track 데코레이터, 메트릭 자동 캡처
 - **Artifact Store** - Content-addressable 로컬 저장소
@@ -41,8 +41,8 @@
 - **C1 Context Hub** - 채널 메시징, Context Keeper (LLM 요약), Agent 통합 (notifyKeeper 4-param)
 - **C1 Documents** - 마크다운 파일 편집기, 지속성 (persona/skill/spec/config)
 - **C3 EventBus v4** - gRPC daemon (UDS) + WebSocket bridge + DLQ + Filter v2, Python sidecar piggyback, task lifecycle events
-- **코드베이스**: Go ~33.5K (c4-core) + Go ~5.4K (c5) + Python 24.4K + C1 ~15.1K + Infra 0.9K = **~79.4K LOC (src)**, 테스트 ~44.2K LOC, **총 ~123.6K LOC**
-- **테스트**: Go 1,336 (c4-core 1,216 + c5 120) + Python 750 + Rust 76 = **~2,162 tests** (25 packages)
+- **코드베이스**: Go ~37.8K (c4-core) + Go ~5.6K (c5) + Python ~24.4K + Rust ~9.5K + TS ~5.5K + SQL ~1.1K = **~83.9K LOC (src)**, 테스트 ~46.0K LOC, **총 ~129.9K LOC**
+- **테스트**: Go 1,194 (c4-core 1,074 + c5 120) + Python 750 + Rust 85 = **~2,029 tests** (25 packages)
 
 ---
 

@@ -106,10 +106,10 @@ C9 Knowledge — 지식 관리 (FTS5 + pgvector + Embedding + Usage + Ingestion)
 ### 테스트 현황
 | 언어 | 테스트 수 | 패키지/모듈 |
 |------|----------|------------|
-| Go | **1,176** | 25 packages (all pass) — c4-core 1,056 + c5 120 |
+| Go | **1,205** | 25 packages (all pass) — c4-core 1,085 + c5 120 |
 | Python | **750** | tests/unit/ |
 | Rust | **76** | src-tauri |
-| **합계** | **~2,002** | |
+| **합계** | **~2,031** | |
 
 ### Monorepo 구조
 ```
@@ -243,7 +243,7 @@ c4_lighthouse get <tool_name>
 
 ---
 
-## MCP 도구 빠른 참조 (107개 base, Hub 활성화 시 133개)
+## MCP 도구 빠른 참조 (108개 base, Hub 활성화 시 134개)
 
 > **도구 상세 사용법**: `c4_lighthouse get <tool_name>`으로 워크플로우, 예시, 관련 도구, 주의사항 조회
 
@@ -278,10 +278,10 @@ Soul(3):    c4_soul_get, c4_soul_set, c4_soul_resolve
 팀(3):      c4_whoami, c4_persona_stats, c4_persona_evolve
 Twin(1):    c4_reflect
 온보딩(1):  c4_onboard
-Lighthouse(1): c4_lighthouse (register/list/get/promote/update/remove)
+Lighthouse(1): c4_lighthouse (register/list/get/promote/update/remove/export_llms_txt)
 LLM(3):    c4_llm_call, c4_llm_providers, c4_llm_costs
 CDP(2):    c4_cdp_run, c4_cdp_list
-Web(3):    c4_web_fetch, c4_webmcp_discover, c4_webmcp_call
+WebMCP(4): c4_webmcp_discover, c4_webmcp_call, c4_webmcp_context, c4_web_fetch
 C2(8):     c4_parse_document, c4_extract_text,
             c4_workspace_create, c4_workspace_load, c4_workspace_save,
             c4_persona_learn, c4_profile_load, c4_profile_save
@@ -319,17 +319,17 @@ CP-001:  체크포인트
 
 ## Go Core (c4-core/) — Primary MCP Server
 
-> Go 기반 MCP 서버. ~37.8K LOC(src) + ~30.9K LOC(test). 1,056개 테스트, 22 패키지.
+> Go 기반 MCP 서버. ~37.8K LOC(src) + ~30.9K LOC(test). 1,085개 테스트, 25 패키지.
 
 ### 아키텍처
 ```
-Claude Code → Go MCP Server (stdio, 107 base + 26 Hub = 133 tools)
+Claude Code → Go MCP Server (stdio, 108 base + 26 Hub = 134 tools)
                 ├→ Go native (28): 상태/설정, 태스크, 파일, git, validation, config, health, eventbus rules
                 ├→ Go + SQLite (13): spec, design, checkpoint, artifact, lighthouse
                 ├→ Soul/Persona/Twin (7): soul CRUD, persona evolve, whoami, reflect
                 ├→ LLM Gateway (3): llm_call, llm_providers, llm_costs
-                ├→ CDP Runner + WebMCP (4): cdp_run, cdp_list, webmcp_discover, webmcp_call
-                ├→ WebContent (1): web_fetch (content negotiation, SSRF, HTML→MD)
+                ├→ CDP Runner + WebMCP (5): cdp_run, cdp_list, webmcp_discover, webmcp_call, webmcp_context
+                ├→ WebContent (1): web_fetch (content negotiation, SSRF, HTML→MD) — c2/webcontent
                 ├→ C1 Messenger (5): search, mentions, briefing, send_message, update_presence + ContextKeeper
                 ├→ Drive (6): upload, download, list, delete, info, mkdir
                 ├→ Go Native — Tier 1 (13): Research (5) + C2 (6) + GPU (2)
@@ -357,11 +357,10 @@ c4-core/
 │   ├── eventbus/     # C3 EventBus v4 (gRPC, WS bridge, DLQ, filter v2)
 │   ├── knowledge/    # C9 Knowledge (Store+FTS5+Vector+Embedding+Usage+Chunker+Ingest+Sync)
 │   ├── research/     # Research iteration store (paper+experiment loop)
-│   ├── c2/           # C2 Workspace/Profile/Persona
+│   ├── c2/           # C2 Workspace/Profile/Persona + webcontent (fetch, HTML→MD, llms.txt)
 │   ├── drive/        # C0 Drive client (Supabase Storage)
 │   ├── llm/          # LLM Gateway (Anthropic, OpenAI, Gemini, Ollama)
-│   ├── cdp/          # Chrome DevTools Protocol runner + WebMCP
-│   └── webcontent/   # Web fetch (content negotiation, SSRF, HTML→MD, llms.txt)
+│   └── cdp/          # Chrome DevTools Protocol runner + WebMCP + CDP auto-discovery
 └── test/benchmark/   # 벤치마크
 ```
 
