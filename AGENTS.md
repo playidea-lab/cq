@@ -108,8 +108,8 @@ C9 Knowledge — 지식 관리 (FTS5 + pgvector + Embedding + Usage + Ingestion)
 |------|----------|------------|
 | Go | **1,205** | 25 packages (all pass) — c4-core 1,085 + c5 120 |
 | Python | **750** | tests/unit/ |
-| Rust | **76** | src-tauri |
-| **합계** | **~2,031** | |
+| Rust | **85** | src-tauri |
+| **합계** | **~2,040** | |
 
 ### Monorepo 구조
 ```
@@ -266,9 +266,9 @@ LSP(7):     c4_find_symbol, c4_get_symbols_overview,  ← Python/JS/TS + Go + Da
             c4_insert_after_symbol, c4_rename_symbol,
             c4_find_referencing_symbols
             ※ Go/Dart는 native 지원, Rust → c4_search_for_pattern 사용
-지식(13):   c4_knowledge_search, c4_knowledge_record, c4_knowledge_get,
+지식(14):   c4_knowledge_search, c4_knowledge_record, c4_knowledge_get,
             c4_knowledge_pull, c4_knowledge_delete, c4_knowledge_publish,
-            c4_knowledge_discover, c4_knowledge_ingest,
+            c4_knowledge_discover, c4_knowledge_ingest, c4_knowledge_distill,
             c4_knowledge_stats, c4_knowledge_reindex,
             c4_experiment_record, c4_experiment_search, c4_pattern_suggest
 Research(5): c4_research_start, c4_research_next, c4_research_record,
