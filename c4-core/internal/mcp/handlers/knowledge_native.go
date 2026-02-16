@@ -1,12 +1,15 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"math"
 	"os"
+	"strings"
 
 	"github.com/changmin/c4-core/internal/knowledge"
+	"github.com/changmin/c4-core/internal/llm"
 	"github.com/changmin/c4-core/internal/mcp"
 	"github.com/changmin/c4-core/internal/c2/webcontent"
 )
@@ -17,6 +20,7 @@ type KnowledgeNativeOpts struct {
 	Searcher *knowledge.Searcher
 	Cloud    knowledge.CloudSyncer     // nil if cloud disabled
 	Usage    *knowledge.UsageTracker   // nil if usage tracking disabled
+	LLM      *llm.Gateway             // nil if LLM gateway disabled (distill unavailable)
 }
 
 // RegisterKnowledgeNativeHandlers registers 12 knowledge tools as Go native handlers.
@@ -51,6 +55,7 @@ func RegisterKnowledgeNativeHandlers(reg *mcp.Registry, opts *KnowledgeNativeOpt
 			"type": "object",
 			"properties": map[string]any{
 				"doc_id": map[string]any{"type": "string", "description": "Document ID"},
+				"cite":   map[string]any{"type": "boolean", "description": "Mark as cited (boosts future ranking)"},
 			},
 			"required": []string{"doc_id"},
 		},
@@ -204,6 +209,22 @@ func RegisterKnowledgeNativeHandlers(reg *mcp.Registry, opts *KnowledgeNativeOpt
 			"required": []string{"doc_id"},
 		},
 	}, knowledgePublishNativeHandler(opts))
+
+	// 14. c4_knowledge_distill — LLM-based pattern extraction from similar document clusters
+	if opts.LLM != nil && opts.Searcher != nil {
+		reg.Register(mcp.ToolSchema{
+			Name:        "c4_knowledge_distill",
+			Description: "Auto-distill similar document clusters into pattern documents using LLM",
+			InputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"threshold":   map[string]any{"type": "number", "description": "Similarity threshold for clustering (default: 0.7)"},
+					"min_cluster": map[string]any{"type": "integer", "description": "Minimum cluster size (default: 3)"},
+					"dry_run":     map[string]any{"type": "boolean", "description": "Preview clusters without creating patterns (default: true)"},
+				},
+			},
+		}, knowledgeDistillNativeHandler(opts))
+	}
 }
 
 // =========================================================================
@@ -318,9 +339,14 @@ func knowledgeGetNativeHandler(opts *KnowledgeNativeOpts) mcp.HandlerFunc {
 			return map[string]any{"error": fmt.Sprintf("Document not found: %s", docID)}, nil
 		}
 
-		// Track usage
+		// Track usage: cite=true → ActionCite (higher boost), else ActionView
 		if opts.Usage != nil {
-			opts.Usage.Record(docID, knowledge.ActionView)
+			cite, _ := params["cite"].(bool)
+			if cite {
+				opts.Usage.Record(docID, knowledge.ActionCite)
+			} else {
+				opts.Usage.Record(docID, knowledge.ActionView)
+			}
 		}
 
 		return documentToMap(doc), nil
@@ -1010,10 +1036,36 @@ func knowledgeStatsNativeHandler(opts *KnowledgeNativeOpts) mcp.HandlerFunc {
 			}
 		}
 
-		// Pattern count + distillation readiness hint
+		// Embedding coverage
+		if opts.Searcher != nil && opts.Searcher.VectorStore() != nil {
+			vectorCount := opts.Searcher.VectorStore().Count()
+			total := len(allDocs)
+			if total > 0 {
+				pct := float64(vectorCount) / float64(total) * 100
+				stats["embedding_coverage"] = fmt.Sprintf("%.0f%%", pct)
+			}
+		}
+
+		// Usage stats
+		if opts.Usage != nil {
+			stats["usage"] = opts.Usage.GetStats()
+		}
+
+		// Pattern count + structured distillation info
 		stats["pattern_count"] = typeCounts["pattern"]
-		if len(allDocs) >= 50 {
-			stats["distillation_hint"] = fmt.Sprintf("%d documents accumulated — pattern analysis possible", len(allDocs))
+		if opts.Searcher != nil && opts.Searcher.VectorStore() != nil && opts.Searcher.VectorStore().Count() >= 2 {
+			clusters := opts.Searcher.FindClusters(0.7, 3)
+			largestCluster := 0
+			for _, c := range clusters {
+				if len(c) > largestCluster {
+					largestCluster = len(c)
+				}
+			}
+			stats["distillation"] = map[string]any{
+				"cluster_count":   len(clusters),
+				"largest_cluster": largestCluster,
+				"hint":            fmt.Sprintf("%d clusters (largest=%d docs) — run c4_knowledge_distill", len(clusters), largestCluster),
+			}
 		}
 
 		return stats, nil
@@ -1096,3 +1148,120 @@ func knowledgePublishNativeHandler(opts *KnowledgeNativeOpts) mcp.HandlerFunc {
 		}, nil
 	}
 }
+
+const distillPrompt = `You are a knowledge distillation assistant. Given these related documents, extract the common pattern or principle in 1-2 concise sentences.
+
+Documents:
+%s
+
+Pattern:`
+
+func knowledgeDistillNativeHandler(opts *KnowledgeNativeOpts) mcp.HandlerFunc {
+	return func(rawArgs json.RawMessage) (any, error) {
+		params := parseParams(rawArgs)
+
+		threshold := 0.7
+		if t, ok := params["threshold"].(float64); ok && t > 0 && t <= 1.0 {
+			threshold = t
+		}
+		minCluster := 3
+		if mc, ok := params["min_cluster"].(float64); ok && mc >= 2 {
+			minCluster = int(mc)
+		}
+		dryRun := true
+		if dr, ok := params["dry_run"].(bool); ok {
+			dryRun = dr
+		}
+
+		clusters := opts.Searcher.FindClusters(threshold, minCluster)
+		if len(clusters) == 0 {
+			return map[string]any{
+				"clusters":       []any{},
+				"total_clusters": 0,
+				"message":        "no clusters found at this threshold",
+			}, nil
+		}
+
+		totalDocsCovered := 0
+		var clusterResults []map[string]any
+
+		for _, cluster := range clusters {
+			totalDocsCovered += len(cluster)
+
+			// Collect document bodies (max 5 per cluster)
+			maxDocs := 5
+			if len(cluster) < maxDocs {
+				maxDocs = len(cluster)
+			}
+			var docTexts []string
+			for i := 0; i < maxDocs; i++ {
+				doc, _ := opts.Store.Get(cluster[i])
+				if doc != nil {
+					text := doc.Title
+					if doc.Body != "" {
+						body := doc.Body
+						if len(body) > 300 {
+							body = body[:300] + "..."
+						}
+						text += ": " + body
+					}
+					docTexts = append(docTexts, fmt.Sprintf("- %s", text))
+				}
+			}
+
+			clusterResult := map[string]any{
+				"size": len(cluster),
+				"docs": cluster,
+			}
+
+			// Call LLM for pattern extraction
+			if len(docTexts) > 0 {
+				prompt := fmt.Sprintf(distillPrompt, strings.Join(docTexts, "\n"))
+				ref := opts.LLM.Resolve("scout", "")
+				resp, err := opts.LLM.Chat(context.Background(), "scout", &llm.ChatRequest{
+					Model:       ref.Model,
+					Messages:    []llm.Message{{Role: "user", Content: prompt}},
+					MaxTokens:   200,
+					Temperature: 0.3,
+				})
+				if err != nil {
+					clusterResult["llm_error"] = err.Error()
+				} else {
+					pattern := strings.TrimSpace(resp.Content)
+					clusterResult["suggested_pattern"] = pattern
+
+					// Create pattern document if not dry_run
+					if !dryRun && pattern != "" {
+						metadata := map[string]any{
+							"title":      fmt.Sprintf("Distilled: %s", truncate(pattern, 60)),
+							"tags":       []string{"auto-distilled"},
+							"visibility": "team",
+						}
+						patID, createErr := opts.Store.Create(knowledge.TypePattern, metadata, pattern)
+						if createErr == nil {
+							clusterResult["created_pattern_id"] = patID
+							// Index for search
+							if opts.Searcher != nil {
+								doc, _ := opts.Store.Get(patID)
+								if doc != nil {
+									opts.Searcher.IndexDocument(patID, doc)
+								}
+							}
+						}
+					}
+				}
+			}
+
+			clusterResults = append(clusterResults, clusterResult)
+		}
+
+		return map[string]any{
+			"clusters":          clusterResults,
+			"total_clusters":    len(clusters),
+			"total_docs_covered": totalDocsCovered,
+			"dry_run":           dryRun,
+		}, nil
+	}
+}
+
+// truncate is defined in twin.go — reused here for distill pattern titles

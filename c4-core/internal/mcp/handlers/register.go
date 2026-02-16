@@ -3,6 +3,7 @@ package handlers
 import (
 	"github.com/changmin/c4-core/internal/daemon"
 	"github.com/changmin/c4-core/internal/knowledge"
+	"github.com/changmin/c4-core/internal/llm"
 	"github.com/changmin/c4-core/internal/mcp"
 	"github.com/changmin/c4-core/internal/research"
 )
@@ -40,6 +41,7 @@ type NativeOpts struct {
 	KnowledgeSearcher *knowledge.Searcher    // nil = FTS-only (no vector search)
 	KnowledgeCloud    knowledge.CloudSyncer  // nil if cloud disabled
 	KnowledgeUsage    *knowledge.UsageTracker // nil if usage tracking disabled
+	LLMGateway        *llm.Gateway           // nil if LLM gateway disabled
 }
 
 // RegisterAllHandlers registers all MCP tool handlers including Python proxy tools.
@@ -113,13 +115,14 @@ func registerNativeReplacements(reg *mcp.Registry, proxy *BridgeProxy, opts *Nat
 	// C2 Document parsing (2 tools) — still Python proxy
 	RegisterC2DocProxyHandlers(reg, proxy)
 
-	// Knowledge (7 tools) — Go native (Tier 2) or Python proxy fallback
+	// Knowledge (13+ tools) — Go native (Tier 2) or Python proxy fallback
 	if opts != nil && opts.KnowledgeStore != nil {
 		RegisterKnowledgeNativeHandlers(reg, &KnowledgeNativeOpts{
 			Store:    opts.KnowledgeStore,
 			Searcher: opts.KnowledgeSearcher,
 			Cloud:    opts.KnowledgeCloud,
 			Usage:    opts.KnowledgeUsage,
+			LLM:      opts.LLMGateway,
 		})
 	} else {
 		registerKnowledgeProxy(reg, proxy, knowledgeCloud)

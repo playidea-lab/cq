@@ -214,6 +214,12 @@ func newMCPServer() (*mcpServer, error) {
 		}
 	}
 
+	// Create LLM Gateway early so it can be shared with knowledge distill
+	var llmGateway *llm.Gateway
+	if cfgMgr != nil && cfgMgr.GetConfig().LLMGateway.Enabled {
+		llmGateway = llm.NewGatewayFromConfig(cfgMgr.GetConfig())
+	}
+
 	// Create registry and register all tools (proxy is created inside with lazy sidecar)
 	reg := mcp.NewRegistry()
 	nativeOpts := &handlers.NativeOpts{
@@ -222,6 +228,7 @@ func newMCPServer() (*mcpServer, error) {
 		KnowledgeSearcher: knowledgeSearcher,
 		KnowledgeCloud:    knowledgeCloud,
 		KnowledgeUsage:    knowledgeUsage,
+		LLMGateway:        llmGateway,
 	}
 	proxy := handlers.RegisterAllHandlersLazyWithOpts(reg, nil, projectDir, lazySidecar, knowledgeCloud, nativeOpts)
 
@@ -277,11 +284,10 @@ func newMCPServer() (*mcpServer, error) {
 		fmt.Fprintf(os.Stderr, "c4: %d lighthouse stubs loaded\n", n)
 	}
 
-	// Register LLM Gateway handlers if enabled
-	if cfgMgr != nil && cfgMgr.GetConfig().LLMGateway.Enabled {
-		gateway := llm.NewGatewayFromConfig(cfgMgr.GetConfig())
-		handlers.RegisterLLMHandlers(reg, gateway)
-		fmt.Fprintf(os.Stderr, "c4: LLM gateway enabled (%d providers)\n", gateway.ProviderCount())
+	// Register LLM Gateway handlers if enabled (reuse gateway created earlier)
+	if llmGateway != nil {
+		handlers.RegisterLLMHandlers(reg, llmGateway)
+		fmt.Fprintf(os.Stderr, "c4: LLM gateway enabled (%d providers)\n", llmGateway.ProviderCount())
 	}
 
 	// Register Hub handlers if enabled

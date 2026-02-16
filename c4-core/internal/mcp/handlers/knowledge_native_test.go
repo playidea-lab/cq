@@ -617,3 +617,150 @@ func TestE2ERegisterConditionalWiring(t *testing.T) {
 		}
 	}
 }
+
+func TestKnowledgeGetCiteAction(t *testing.T) {
+	dir := t.TempDir()
+	basePath := filepath.Join(dir, "knowledge")
+	store, err := knowledge.NewStore(basePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { store.Close() })
+
+	vs, _ := knowledge.NewVectorStore(store.DB(), 384, nil)
+	searcher := knowledge.NewSearcher(store, vs)
+
+	ut, err := knowledge.NewUsageTracker(store.DB())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	opts := &KnowledgeNativeOpts{
+		Store:    store,
+		Searcher: searcher,
+		Usage:    ut,
+	}
+
+	reg := mcp.NewRegistry()
+	RegisterKnowledgeNativeHandlers(reg, opts)
+
+	// Create a document
+	created := callHandler(t, reg, "c4_knowledge_record", map[string]any{
+		"doc_type": "insight",
+		"title":    "Cite Test",
+		"content":  "Testing cite action tracking",
+	})
+	docID := created["doc_id"].(string)
+
+	// Get with cite=false (default) → ActionView
+	callHandler(t, reg, "c4_knowledge_get", map[string]any{"doc_id": docID})
+
+	// Get with cite=true → ActionCite
+	callHandler(t, reg, "c4_knowledge_get", map[string]any{"doc_id": docID, "cite": true})
+
+	// Flush and check usage
+	ut.Close() // explicit close to flush
+
+	// Verify: 1 view + 1 cite
+	var viewCount, citeCount int
+	store.DB().QueryRow("SELECT COUNT(*) FROM doc_usage WHERE doc_id=? AND action='view'", docID).Scan(&viewCount)
+	store.DB().QueryRow("SELECT COUNT(*) FROM doc_usage WHERE doc_id=? AND action='cite'", docID).Scan(&citeCount)
+
+	if viewCount != 1 {
+		t.Errorf("expected 1 view, got %d", viewCount)
+	}
+	if citeCount != 1 {
+		t.Errorf("expected 1 cite, got %d", citeCount)
+	}
+}
+
+func TestKnowledgeStatsWithUsage(t *testing.T) {
+	dir := t.TempDir()
+	basePath := filepath.Join(dir, "knowledge")
+	store, err := knowledge.NewStore(basePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { store.Close() })
+
+	vs, _ := knowledge.NewVectorStore(store.DB(), 384, nil)
+	searcher := knowledge.NewSearcher(store, vs)
+
+	ut, err := knowledge.NewUsageTracker(store.DB())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { ut.Close() })
+
+	opts := &KnowledgeNativeOpts{
+		Store:    store,
+		Searcher: searcher,
+		Usage:    ut,
+	}
+
+	reg := mcp.NewRegistry()
+	RegisterKnowledgeNativeHandlers(reg, opts)
+
+	// Create some docs and generate usage
+	for i := 0; i < 3; i++ {
+		callHandler(t, reg, "c4_knowledge_record", map[string]any{
+			"doc_type": "insight",
+			"title":    fmt.Sprintf("Usage Stats Doc %d", i),
+			"content":  fmt.Sprintf("content %d", i),
+		})
+	}
+
+	result := callHandler(t, reg, "c4_knowledge_stats", map[string]any{})
+
+	// Check usage field exists
+	if _, ok := result["usage"]; !ok {
+		t.Error("stats should include usage field")
+	}
+
+	// Check embedding_coverage
+	if _, ok := result["embedding_coverage"]; !ok {
+		t.Error("stats should include embedding_coverage")
+	}
+
+	// Check distillation field (may be nil with < 3 similar docs)
+	if dist, ok := result["distillation"].(map[string]any); ok {
+		if _, ok := dist["cluster_count"]; !ok {
+			t.Error("distillation should include cluster_count")
+		}
+		if _, ok := dist["largest_cluster"]; !ok {
+			t.Error("distillation should include largest_cluster")
+		}
+		if _, ok := dist["hint"]; !ok {
+			t.Error("distillation should include hint")
+		}
+	}
+}
+
+func TestKnowledgeDistillDryRun(t *testing.T) {
+	dir := t.TempDir()
+	basePath := filepath.Join(dir, "knowledge")
+	store, err := knowledge.NewStore(basePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { store.Close() })
+
+	vs, _ := knowledge.NewVectorStore(store.DB(), 384, nil)
+	searcher := knowledge.NewSearcher(store, vs)
+
+	// No LLM gateway → distill tool should not be registered
+	opts := &KnowledgeNativeOpts{
+		Store:    store,
+		Searcher: searcher,
+	}
+
+	reg := mcp.NewRegistry()
+	RegisterKnowledgeNativeHandlers(reg, opts)
+
+	tools := reg.ListTools()
+	for _, tool := range tools {
+		if tool.Name == "c4_knowledge_distill" {
+			t.Error("distill should NOT be registered without LLM gateway")
+		}
+	}
+}
