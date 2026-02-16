@@ -794,10 +794,40 @@ func knowledgeReindexNativeHandler(opts *KnowledgeNativeOpts) mcp.HandlerFunc {
 			return map[string]any{"error": fmt.Sprintf("reindex failed: %v", err)}, nil
 		}
 
-		return map[string]any{
+		result := map[string]any{
 			"success":  true,
 			"indexed":  count,
 			"docs_dir": opts.Store.DocsDir(),
-		}, nil
+		}
+
+		// Re-embed all documents if vector store with real embedder is available
+		if opts.Searcher != nil && opts.Searcher.VectorStore() != nil && opts.Searcher.VectorStore().HasRealEmbedder() {
+			summaries, listErr := opts.Store.List("", "", 10000)
+			if listErr == nil && len(summaries) > 0 {
+				var ids []string
+				var docs []*knowledge.Document
+				for _, s := range summaries {
+					docID, _ := s["id"].(string)
+					if docID == "" {
+						continue
+					}
+					doc, getErr := opts.Store.Get(docID)
+					if getErr != nil || doc == nil {
+						continue
+					}
+					ids = append(ids, docID)
+					docs = append(docs, doc)
+				}
+				if len(ids) > 0 {
+					if embErr := opts.Searcher.BatchIndexDocuments(ids, docs); embErr != nil {
+						result["embed_error"] = embErr.Error()
+					} else {
+						result["embedded"] = len(ids)
+					}
+				}
+			}
+		}
+
+		return result, nil
 	}
 }
