@@ -39,7 +39,7 @@ func registerWorkerStandby(reg *mcp.Registry, deps *WorkerDeps) {
 				},
 				"capabilities": map[string]any{
 					"type":        "object",
-					"description": "Worker capabilities (e.g. {\"tags\": [\"claude\", \"mcp\"]})",
+					"description": "Worker capabilities (e.g. {\"tags\": [\"c4-worker\", \"mcp\"]})",
 				},
 			},
 			"required": []string{"worker_id"},
@@ -64,7 +64,7 @@ func handleWorkerStandby(deps *WorkerDeps, raw json.RawMessage) (any, error) {
 	// Register with Hub (first time)
 	caps := params.Capabilities
 	if caps == nil {
-		caps = map[string]any{"tags": []string{"claude", "mcp"}}
+		caps = map[string]any{"tags": []string{"c4-worker", "mcp"}}
 	}
 	// Ensure hostname is set (required by C5 Hub)
 	if _, ok := caps["hostname"]; !ok {

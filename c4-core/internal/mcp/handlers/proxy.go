@@ -49,12 +49,12 @@ type Restarter interface {
 // BridgeProxy forwards MCP tool calls to the Python sidecar via JSON-RPC over TCP.
 type BridgeProxy struct {
 	mu           sync.Mutex
-	addrGetter   LazyAddrGetter      // lazy address resolution (nil if using static addr)
-	addr         string              // cached/static address
+	addrGetter   LazyAddrGetter // lazy address resolution (nil if using static addr)
+	addr         string         // cached/static address
 	timeout      time.Duration
-	restarter    Restarter           // nil if no auto-restart support
-	lastFailedAt time.Time           // timestamp of last connection failure
-	eventPub     eventbus.Publisher  // nil if eventbus not connected
+	restarter    Restarter          // nil if no auto-restart support
+	lastFailedAt time.Time          // timestamp of last connection failure
+	eventPub     eventbus.Publisher // nil if eventbus not connected
 }
 
 // NewBridgeProxy creates a proxy that connects to the Python bridge sidecar.
@@ -192,7 +192,7 @@ func (p *BridgeProxy) doCall(method string, params map[string]any, timeout time.
 	}
 
 	if addr == "" {
-		return nil, fmt.Errorf("Python sidecar not available. Restart Claude Code to reconnect.")
+		return nil, fmt.Errorf("Python sidecar not available. Restart your MCP client to reconnect.")
 	}
 	conn, err := net.DialTimeout("tcp", addr, timeout)
 	if err != nil {
