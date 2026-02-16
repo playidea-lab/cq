@@ -2,7 +2,7 @@
 description: |
   Quick reference for C4 skills, agents, and tools. Provides summaries,
   decision trees, and keyword search across 19 skills, 37 agents (9 categories),
-  and 154 MCP tools (3 layers). Use when the user needs help, reference,
+  and 133 MCP tools (107 base + 26 hub). Use when the user needs help, reference,
   skill list, or wants to search C4 capabilities. Triggers: "도움말",
   "명령어 목록", "도구 검색", "help", "list commands", "show agents",
   "what tools", "how to".
@@ -16,9 +16,9 @@ Quick reference for commands, agents, and tools. Parse `$ARGUMENTS` and branch a
 
 ```
 /c4-help              → Full summary
-/c4-help commands     → All 16 commands
+/c4-help commands     → All 19 skills
 /c4-help agents       → 37 agents by category
-/c4-help tools        → 103 MCP tools (3 layers)
+/c4-help tools        → 133 MCP tools (107 base + 26 hub)
 /c4-help <keyword>    → Keyword search
 ```
 
@@ -55,9 +55,9 @@ What's the task?
 
 ### More Info
 
-- /c4-help commands  → All 16 commands
+- /c4-help commands  → All 19 skills
 - /c4-help agents    → 37 agents by category
-- /c4-help tools     → 103 MCP tools
+- /c4-help tools     → 133 MCP tools
 - /c4-help <keyword> → Keyword search (e.g., /c4-help review)
 ```
 
@@ -209,7 +209,7 @@ What's the task?
 ### Branch 4: `$ARGUMENTS` = "tools" → MCP tools (3 layers)
 
 ```
-## C4 MCP Tools (103, 3 layers)
+## C4 MCP Tools (133, 107 base + 26 hub)
 
 ### Layer 1: Daily tools (6)
 Direct use or via commands.

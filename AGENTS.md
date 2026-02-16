@@ -39,21 +39,21 @@ C9 Knowledge — 지식 관리 (FTS5 + pgvector + Embedding + Usage + Ingestion)
 ### 코드베이스 규모
 | 언어 | 소스 | 테스트 | 합계 |
 |------|------|--------|------|
-| Go (`c4-core/`) | ~33.5K LOC | ~29.5K LOC | ~63.0K |
-| Go (`c5/`) | ~5.4K LOC | ~3.1K LOC | ~8.5K |
+| Go (`c4-core/`) | ~37.8K LOC | ~30.9K LOC | ~68.7K |
+| Go (`c5/`) | ~5.6K LOC | ~3.5K LOC | ~9.1K |
 | Python (`c4/`) | ~24.4K LOC | ~11.6K LOC | ~36.0K |
-| Rust (`c1/src-tauri/`) | ~8.5K LOC | (내장) | ~8.5K |
-| TypeScript (`c1/src/`) | ~6.6K LOC | | ~6.6K |
-| SQL (`infra/`) | ~0.9K LOC | | ~0.9K |
-| **합계** | ~79.4K | ~44.2K | **~123.6K LOC** |
+| Rust (`c1/src-tauri/`) | ~9.5K LOC | (내장) | ~9.5K |
+| TypeScript (`c1/src/`) | ~5.5K LOC | | ~5.5K |
+| SQL (`infra/`) | ~1.1K LOC | | ~1.1K |
+| **합계** | ~83.8K | ~46.0K | **~129.9K LOC** |
 
 ### 테스트 현황
 | 언어 | 테스트 수 | 패키지/모듈 |
 |------|----------|------------|
-| Go | **1,336** | 25 packages (all pass) — c4-core 1,216 + c5 120 |
+| Go | **1,176** | 25 packages (all pass) — c4-core 1,056 + c5 120 |
 | Python | **750** | tests/unit/ |
 | Rust | **76** | src-tauri |
-| **합계** | **~2,162** | |
+| **합계** | **~2,002** | |
 
 ### Monorepo 구조
 ```
@@ -187,12 +187,12 @@ c4_lighthouse get <tool_name>
 
 ---
 
-## MCP 도구 빠른 참조 (99개 base, Hub 활성화 시 125개)
+## MCP 도구 빠른 참조 (107개 base, Hub 활성화 시 133개)
 
 > **도구 상세 사용법**: `c4_lighthouse get <tool_name>`으로 워크플로우, 예시, 관련 도구, 주의사항 조회
 
 ```
-상태(5):    c4_status, c4_start, c4_clear, c4_config_get, c4_health
+상태/설정(6): c4_status, c4_start, c4_clear, c4_config_get, c4_config_set, c4_health
 태스크(7):  c4_add_todo, c4_get_task, c4_submit, c4_mark_blocked,
             c4_claim, c4_report, c4_task_list
 리뷰(3):    c4_checkpoint, c4_request_changes, c4_ensure_supervisor
@@ -210,8 +210,8 @@ LSP(7):     c4_find_symbol, c4_get_symbols_overview,  ← Python/JS/TS + Go + Da
             c4_insert_after_symbol, c4_rename_symbol,
             c4_find_referencing_symbols
             ※ Go/Dart는 native 지원, Rust → c4_search_for_pattern 사용
-지식(12):   c4_knowledge_search, c4_knowledge_record, c4_knowledge_get,
-            c4_knowledge_pull, c4_knowledge_delete,
+지식(13):   c4_knowledge_search, c4_knowledge_record, c4_knowledge_get,
+            c4_knowledge_pull, c4_knowledge_delete, c4_knowledge_publish,
             c4_knowledge_discover, c4_knowledge_ingest,
             c4_knowledge_stats, c4_knowledge_reindex,
             c4_experiment_record, c4_experiment_search, c4_pattern_suggest
@@ -263,12 +263,12 @@ CP-001:  체크포인트
 
 ## Go Core (c4-core/) — Primary MCP Server
 
-> Go 기반 MCP 서버. ~33.5K LOC(src) + ~29.5K LOC(test). 1,216개 테스트, 24 패키지.
+> Go 기반 MCP 서버. ~37.8K LOC(src) + ~30.9K LOC(test). 1,056개 테스트, 22 패키지.
 
 ### 아키텍처
 ```
-Claude Code → Go MCP Server (stdio, 99 base + 26 Hub = 125 tools)
-                ├→ Go native (27): 상태, 태스크, 파일, git, validation, config, health, eventbus rules
+Claude Code → Go MCP Server (stdio, 107 base + 26 Hub = 133 tools)
+                ├→ Go native (28): 상태/설정, 태스크, 파일, git, validation, config, health, eventbus rules
                 ├→ Go + SQLite (13): spec, design, checkpoint, artifact, lighthouse
                 ├→ Soul/Persona/Twin (7): soul CRUD, persona evolve, whoami, reflect
                 ├→ LLM Gateway (3): llm_call, llm_providers, llm_costs
@@ -277,7 +277,7 @@ Claude Code → Go MCP Server (stdio, 99 base + 26 Hub = 125 tools)
                 ├→ C1 Messenger (5): search, mentions, briefing, send_message, update_presence + ContextKeeper
                 ├→ Drive (6): upload, download, list, delete, info, mkdir
                 ├→ Go Native — Tier 1 (13): Research (5) + C2 (6) + GPU (2)
-                ├→ Go Native — Tier 2 (12): Knowledge (Store+FTS5+Vector+Embedding+Usage+Ingest+Sync)
+                ├→ Go Native — Tier 2 (13): Knowledge (Store+FTS5+Vector+Embedding+Usage+Ingest+Sync+Publish)
                 ├→ Hub Client (26, 조건부): job, worker, DAG, edge, deploy, artifact
                 └→ JSON-RPC proxy (10) → Python Sidecar (LSP 7 + C2 Doc 2 + Onboard 1)
 ```
