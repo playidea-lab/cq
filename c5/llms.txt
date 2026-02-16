@@ -1,0 +1,23 @@
+# C5 Hub — Distributed Job Queue for AI Orchestration
+
+> C5 is a distributed job queue server with lease-based work distribution, DAG workflows, edge device management, and artifact storage. Designed for AI agent orchestration with per-project API key RBAC.
+
+## API Documentation
+
+- [Jobs API](/v1/docs/jobs.md): Submit, list, cancel, and retry jobs with priority queuing
+- [Workers API](/v1/docs/workers.md): Register workers, heartbeat, and lease management
+- [DAGs API](/v1/docs/dags.md): Create and execute directed acyclic graph workflows
+- [Edges API](/v1/docs/edges.md): Edge device registration, deployment, and management
+- [Artifacts API](/v1/docs/artifacts.md): Upload, download, and manage job artifacts
+
+## Quick Start
+
+Authentication: Set `X-API-Key` header. Master key for admin access, per-project keys for scoped access.
+
+Base URL: `http://your-hub:8585/v1`
+
+Submit a job:
+```
+POST /v1/jobs/submit
+{"type": "build", "payload": {"repo": "...", "branch": "main"}, "priority": 5}
+```

@@ -605,16 +605,18 @@
 .git-graph__container {
   display: flex;
   flex-direction: column;
+  gap: 0;
 }
 
 .git-graph__row {
   display: flex;
-  align-items: center;
-  min-height: 32px;
+  align-items: stretch;
+  height: 32px;
 }
 
 .git-graph__svg {
   flex-shrink: 0;
+  display: block;
   pointer-events: none;
 }
 

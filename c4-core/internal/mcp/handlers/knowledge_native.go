@@ -256,12 +256,13 @@ func knowledgeRecordNativeHandler(opts *KnowledgeNativeOpts) mcp.HandlerFunc {
 			}
 		}
 
-		// Find related documents (best-effort)
+		// Find related documents (best-effort, uses same embedding as IndexDocument)
 		var relatedList []map[string]any
 		if opts.Searcher != nil && embedWarning == "" {
-			searchText := title
-			if body != "" {
-				searchText += " " + body
+			doc, _ := opts.Store.Get(docID)
+			searchText := ""
+			if doc != nil {
+				searchText = knowledge.DocumentToText(doc)
 			}
 			related := opts.Searcher.FindRelated(searchText, docID, 3)
 			if len(related) > 0 {
@@ -409,11 +410,12 @@ func knowledgeSearchNativeHandler(opts *KnowledgeNativeOpts) mcp.HandlerFunc {
 						continue
 					}
 					resultList = append(resultList, map[string]any{
-						"id":     cdID,
-						"title":  cd["title"],
-						"type":   cd["type"],
-						"domain": cd["domain"],
-						"source": "community",
+						"id":        cdID,
+						"title":     cd["title"],
+						"type":      cd["type"],
+						"domain":    cd["domain"],
+						"rrf_score": float64(0),
+						"source":    "community",
 					})
 					communityCount++
 				}
@@ -464,12 +466,13 @@ func experimentRecordNativeHandler(opts *KnowledgeNativeOpts) mcp.HandlerFunc {
 				}
 			}
 		}
-		// Find related documents (best-effort)
+		// Find related documents (best-effort, uses same embedding as IndexDocument)
 		var relatedList []map[string]any
 		if opts.Searcher != nil && embedWarning2 == "" {
-			searchText := title
-			if body != "" {
-				searchText += " " + body
+			doc, _ := opts.Store.Get(docID)
+			searchText := ""
+			if doc != nil {
+				searchText = knowledge.DocumentToText(doc)
 			}
 			related := opts.Searcher.FindRelated(searchText, docID, 3)
 			if len(related) > 0 {
@@ -662,11 +665,12 @@ func patternSuggestNativeHandler(opts *KnowledgeNativeOpts) mcp.HandlerFunc {
 						continue
 					}
 					resultList = append(resultList, map[string]any{
-						"id":     cdID,
-						"title":  cd["title"],
-						"type":   cd["type"],
-						"domain": cd["domain"],
-						"source": "community",
+						"id":        cdID,
+						"title":     cd["title"],
+						"type":      cd["type"],
+						"domain":    cd["domain"],
+						"rrf_score": float64(0),
+						"source":    "community",
 					})
 					communityCount++
 				}
