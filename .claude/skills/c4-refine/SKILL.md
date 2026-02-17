@@ -1,23 +1,34 @@
 ---
 description: |
   Iterative review-fix loop that runs after checkpoint and before finish.
-  Reviews code changes, identifies issues by severity, fixes them, then
-  re-reviews with fresh context until quality threshold is met.
-  Hook-based loop: review → fix → context clear → re-review → repeat.
+  Spawns C4 Workers with domain="refine" for true context isolation.
+  Each round: Worker reviews → Orchestrator fixes → new Worker re-reviews.
+  Converges until quality gate passes (CRITICAL+HIGH = 0).
   Triggers: "리파인", "정제", "반복 리뷰", "refine", "/c4-refine",
   "review and fix loop", "quality loop", "iterative review".
 ---
 
 # C4 Refine — Iterative Review-Fix Loop
 
-리뷰 → 수정 → 컨텍스트 초기화 → 재리뷰 루프를 반복하여
-코드 품질을 일정 수준 이하로 수렴시킵니다.
+반복적 품질 수렴 프로세스. Worker 기반 컨텍스트 격리로
+confirmation bias 없는 재리뷰를 보장합니다.
 
 ## 위치: Checkpoint → **Refine** → Finish
 
 ```
 /c4-plan → /c4-run → /c4-checkpoint → /c4-refine → /c4-finish
 ```
+
+## Review vs Refine 구분
+
+| | Review (R-xxx-0) | Refine (domain=refine) |
+|---|---|---|
+| **목적** | 다른 에이전트의 코드를 1회 검토 | 반복 루프로 품질 수렴 |
+| **횟수** | 1회 | N회 (quality gate 통과까지) |
+| **수정** | 안 함 (리뷰만) | 리뷰 + 수정 + 재리뷰 |
+| **태스크** | `R-001-0` | `T-RF-{round}-0` |
+| **domain** | `review` | `refine` |
+| **컨텍스트** | 구현 맥락 포함 가능 | 매 라운드 완전 초기화 |
 
 ## 사용법
 
@@ -56,9 +67,52 @@ status = mcp__c4__c4_status()
 
 대상 파일 목록을 `SCOPE`로 저장합니다.
 
-### Phase 1. Review (Read-Only)
+### Phase 1. Spawn Refine Worker (리뷰)
 
-변경된 파일을 읽고 이슈를 분류합니다.
+**핵심**: domain="refine" Worker를 스폰하여 컨텍스트 격리된 리뷰를 수행합니다.
+
+#### Claude Code (C4 MCP 사용)
+
+```python
+# Refine 리뷰 태스크 생성
+c4_add_todo(
+    title=f"Refine Round {round} - 6-axis 코드 리뷰",
+    scope=SCOPE,                    # 변경된 파일 목록
+    dod="6-axis 리뷰 수행, 이슈 테이블 반환 (severity/axis/file/line/description)",
+    mode="worker",                  # Worker 모드 (프로세스 격리)
+    domain="refine",                # ← review가 아닌 refine
+    review_required=False,
+    priority=10,                    # 즉시 실행
+)
+
+# Worker 스폰 — 태스크를 할당받아 리뷰 수행
+# Worker는 이전 라운드의 리뷰 결과를 전혀 모름 (fresh eyes)
+```
+
+Worker 내부 동작:
+```
+1. c4_get_task(worker_id) → refine 태스크 할당
+2. SCOPE 파일 읽기 (c4_read_file)
+3. 6-axis 리뷰 수행 (read-only)
+4. 이슈 테이블을 handoff에 기록
+5. c4_submit(task_id, ...) → 리뷰 결과 전달
+```
+
+#### Cursor (subagent 사용)
+
+```python
+# Task tool로 code-reviewer subagent 스폰
+Task(
+    subagent_type="code-reviewer",
+    readonly=True,
+    prompt=f"""
+    Review these files for issues using 6-axis analysis:
+    {SCOPE}
+    Return markdown table: # | File | Line | Severity | Axis | Description
+    Summary: CRITICAL: N / HIGH: N / MEDIUM: N / LOW: N
+    """
+)
+```
 
 **리뷰 관점 (6-axis)**:
 1. **Correctness** — 로직 오류, edge case 누락, off-by-one
@@ -76,16 +130,13 @@ status = mcp__c4__c4_status()
 |---|------|------|----------|------|-------------|
 | 1 | hub/client.go | 95 | CRITICAL | Resilience | ... |
 | 2 | eventbus/embedded.go | 170 | HIGH | Correctness | ... |
-```
 
-**카운트 요약**:
-```
 CRITICAL: N / HIGH: N / MEDIUM: N / LOW: N
 ```
 
-### Phase 2. Fix
+### Phase 2. Fix (Orchestrator)
 
-Phase 1에서 발견된 이슈를 severity 순서로 수정합니다.
+Phase 1의 Worker/subagent가 반환한 이슈를 **Orchestrator(메인 세션)**가 수정합니다.
 
 **수정 순서**: CRITICAL → HIGH → MEDIUM (threshold 이하)
 
@@ -95,23 +146,24 @@ Phase 1에서 발견된 이슈를 severity 순서로 수정합니다.
 - 테스트가 있는 파일은 관련 테스트 실행
 - 수정한 파일 목록을 `FIXED`로 저장
 
-### Phase 3. Context Clear
+### Phase 3. Context Clear + Commit
 
-**핵심**: 이전 리뷰의 편향(confirmation bias)을 제거합니다.
+**핵심**: 수정분 커밋 → 다음 라운드에서 새 Worker가 처음부터 리뷰.
 
-```
-# 선행 수정 커밋
+```bash
 git add -A && git commit -m "refine(round-N): [요약]"
-
-# 컨텍스트 초기화:
-# - 이전 리뷰 결과를 잊고, 코드만 다시 읽음
-# - 새 subagent를 스폰하여 fresh eyes로 리뷰
-# - 또는 파일을 처음부터 다시 읽기
 ```
 
-Cursor/Claude Code에서:
-- **subagent 스폰**: Task tool로 read-only 리뷰 에이전트 생성
-- **셀프 리뷰**: SCOPE 파일을 처음부터 다시 읽고 Phase 1 반복
+**컨텍스트 클리어 메커니즘**:
+
+| 환경 | 방법 | 격리 수준 |
+|------|------|----------|
+| Claude Code | 새 C4 Worker 프로세스 스폰 | **완전** (별도 프로세스, 별도 컨텍스트) |
+| Cursor | 새 subagent(Task) 스폰 | **높음** (별도 컨텍스트, 동일 프로세스) |
+| 수동 | 세션 종료 → 새 세션에서 재리뷰 | **완전** |
+
+Worker/subagent는 **이전 라운드의 리뷰 결과, 수정 의도, 대화 이력**을
+전혀 알지 못합니다. 코드만 보고 독립적으로 판단합니다.
 
 ### Phase 4. Loop Control
 
@@ -121,21 +173,25 @@ max_rounds = 5  # 기본값, --max-rounds로 변경 가능
 threshold = "high"  # 기본값
 
 while round <= max_rounds:
-    issues = review(SCOPE)  # Phase 1
+    # Phase 1: 새 Worker/subagent로 리뷰 (context isolated)
+    issues = spawn_refine_worker(SCOPE, round)
     
     gate_issues = count_above_threshold(issues, threshold)
     if gate_issues == 0:
-        print(f"Quality gate passed at round {round}")
+        print(f"Quality gate PASSED at round {round}")
         break
     
-    fix(issues, threshold)   # Phase 2
-    commit_fixes(round)      # Phase 3 - commit
-    clear_context()          # Phase 3 - clear
+    # Phase 2: Orchestrator가 수정
+    fix(issues, threshold)
+    
+    # Phase 3: 커밋 (다음 Worker가 이 커밋 기준으로 리뷰)
+    commit_fixes(round)
+    
     round += 1
 
 if round > max_rounds:
-    print(f"WARNING: Max rounds ({max_rounds}) reached. Remaining issues:")
-    print(remaining_issues)
+    print(f"WARNING: Max rounds ({max_rounds}) reached.")
+    print(f"Remaining: {remaining_issues}")
 ```
 
 ### Phase 5. Report
@@ -151,11 +207,11 @@ if round > max_rounds:
 - Remaining: Z (all below threshold)
 
 ### Round History
-| Round | CRIT | HIGH | MED | LOW | Action |
-|-------|------|------|-----|-----|--------|
-| 1     | 2    | 2    | 4   | 1   | Fixed 4 |
-| 2     | 0    | 1    | 3   | 1   | Fixed 1 |
-| 3     | 0    | 0    | 2   | 1   | PASS   |
+| Round | Worker | CRIT | HIGH | MED | LOW | Action |
+|-------|--------|------|------|-----|-----|--------|
+| 1     | worker-a1b2 | 2 | 2 | 4 | 1 | Fixed 4 |
+| 2     | worker-c3d4 | 0 | 1 | 3 | 1 | Fixed 1 |
+| 3     | worker-e5f6 | 0 | 0 | 2 | 1 | PASS   |
 ```
 
 ## Hook Integration
@@ -192,12 +248,12 @@ refine:
 | 새 이슈가 이전보다 증가 | 경고 (regression 의심), 사용자 확인 |
 | 빌드/테스트 실패 | 수정 필수, 라운드 카운트 소비하지 않음 |
 
-## Cursor에서의 실행 방식
+## Task ID Convention
 
-Cursor에서는 C4 MCP 도구가 없으므로 직접 실행합니다:
+```
+T-RF-001-0  : Refine Round 1 리뷰 태스크 (domain=refine)
+T-RF-002-0  : Refine Round 2 리뷰 태스크
+...
+```
 
-1. `git diff --name-only` 로 SCOPE 결정
-2. 각 파일 Read → 6-axis 리뷰
-3. 이슈 수정 → build/test 확인
-4. 커밋 후 Task(subagent_type="code-reviewer") 스폰하여 재리뷰
-5. 반환된 이슈 수가 threshold 이하이면 종료
+`T-RF-` prefix로 일반 구현(T-), 리뷰(R-), 체크포인트(CP-)와 구분.
