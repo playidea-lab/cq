@@ -330,8 +330,9 @@ func handleRequestChanges(store Store, rawArgs json.RawMessage) (any, error) {
 	if args.Comments == "" {
 		return nil, fmt.Errorf("comments is required")
 	}
+	args.RequiredChanges = normalizeRequiredChanges(args.RequiredChanges)
 	if len(args.RequiredChanges) == 0 {
-		return nil, fmt.Errorf("required_changes must not be empty")
+		return nil, fmt.Errorf("required_changes must contain at least one non-empty item")
 	}
 	if err := task.ValidateTaskID(args.ReviewTaskID); err != nil {
 		return nil, err

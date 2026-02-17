@@ -84,6 +84,23 @@ func (s *SQLiteStore) resolveCheckpointTargets(checkpointID string) (string, str
 	return targetTaskID, targetReviewID, nil
 }
 
+func normalizeRequiredChanges(requiredChanges []string) []string {
+	seen := make(map[string]struct{}, len(requiredChanges))
+	normalized := make([]string, 0, len(requiredChanges))
+	for _, change := range requiredChanges {
+		change = strings.TrimSpace(change)
+		if change == "" {
+			continue
+		}
+		if _, exists := seen[change]; exists {
+			continue
+		}
+		seen[change] = struct{}{}
+		normalized = append(normalized, change)
+	}
+	return normalized
+}
+
 // Checkpoint records a checkpoint decision.
 func (s *SQLiteStore) Checkpoint(checkpointID, decision, notes string, requiredChanges []string) (*CheckpointResult, error) {
 	changesJSON := "[]"
@@ -148,6 +165,11 @@ func (s *SQLiteStore) Checkpoint(checkpointID, decision, notes string, requiredC
 
 // RequestChanges rejects a review task and creates the next version T+R pair.
 func (s *SQLiteStore) RequestChanges(reviewTaskID string, comments string, requiredChanges []string) (*RequestChangesResult, error) {
+	requiredChanges = normalizeRequiredChanges(requiredChanges)
+	if len(requiredChanges) == 0 {
+		return nil, fmt.Errorf("required_changes must contain at least one non-empty item")
+	}
+
 	// 1. Parse review task ID
 	_, baseID, version, taskType := task.ParseTaskID(reviewTaskID)
 	if taskType != task.TypeReview {

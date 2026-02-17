@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"testing"
 
 	"github.com/changmin/c4-core/internal/mcp"
@@ -609,7 +610,13 @@ func TestHandleRequestChanges(t *testing.T) {
 			name:    "empty required_changes",
 			args:    `{"review_task_id": "R-001-0", "comments": "bad", "required_changes": []}`,
 			wantErr: true,
-			errMsg:  "required_changes must not be empty",
+			errMsg:  "required_changes must contain at least one non-empty item",
+		},
+		{
+			name:    "required_changes normalize to empty",
+			args:    `{"review_task_id": "R-001-0", "comments": "bad", "required_changes": [" ", "\n\t", ""]}`,
+			wantErr: true,
+			errMsg:  "required_changes must contain at least one non-empty item",
 		},
 	}
 
@@ -641,6 +648,28 @@ func TestHandleRequestChanges(t *testing.T) {
 				t.Error("expected success=true")
 			}
 		})
+	}
+}
+
+func TestHandleRequestChanges_NormalizesRequiredChanges(t *testing.T) {
+	store := newMockStore()
+
+	args := `{
+		"review_task_id": "R-002-0",
+		"comments": "needs work",
+		"required_changes": ["  fix A  ", "", "fix A", " fix B ", "\n\t"]
+	}`
+	_, err := handleRequestChanges(store, json.RawMessage(args))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(store.requestChangesCalls) != 1 {
+		t.Fatalf("requestChangesCalls = %d, want 1", len(store.requestChangesCalls))
+	}
+	got := store.requestChangesCalls[0].requiredChanges
+	want := []string{"fix A", "fix B"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("normalized required_changes = %#v, want %#v", got, want)
 	}
 }
 

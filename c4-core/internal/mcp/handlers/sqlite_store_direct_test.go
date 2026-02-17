@@ -464,6 +464,78 @@ func TestRequestChanges_MaxRevisionBoundary(t *testing.T) {
 	}
 }
 
+func TestRequestChanges_NormalizesRequiredChangesForDoD(t *testing.T) {
+	store, db := newTestSQLiteStore(t)
+	defer db.Close()
+
+	if err := store.AddTask(&Task{ID: "T-201-0", Title: "Impl", DoD: "original dod", Status: "pending"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.AddTask(&Task{
+		ID:           "R-201-0",
+		Title:        "Review",
+		DoD:          "review",
+		Status:       "pending",
+		Dependencies: []string{"T-201-0"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := store.RequestChanges("R-201-0", "needs fixes", []string{
+		"  fix A  ",
+		"",
+		"fix A",
+		" fix B ",
+		"\n\t",
+	})
+	if err != nil {
+		t.Fatalf("request changes: %v", err)
+	}
+
+	nextTask, err := store.GetTask("T-201-1")
+	if err != nil {
+		t.Fatalf("get next task: %v", err)
+	}
+	if strings.Count(nextTask.DoD, "- fix A") != 1 {
+		t.Fatalf("DoD should contain deduped fix A once, got: %q", nextTask.DoD)
+	}
+	if strings.Count(nextTask.DoD, "- fix B") != 1 {
+		t.Fatalf("DoD should contain trimmed fix B once, got: %q", nextTask.DoD)
+	}
+	if strings.Contains(nextTask.DoD, "- \n") {
+		t.Fatalf("DoD should not contain empty bullet entries: %q", nextTask.DoD)
+	}
+}
+
+func TestRequestChanges_RejectsNormalizedEmptyRequiredChanges(t *testing.T) {
+	store, db := newTestSQLiteStore(t)
+	defer db.Close()
+
+	if err := store.AddTask(&Task{ID: "T-202-0", Title: "Impl", DoD: "original dod", Status: "pending"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.AddTask(&Task{
+		ID:           "R-202-0",
+		Title:        "Review",
+		DoD:          "review",
+		Status:       "pending",
+		Dependencies: []string{"T-202-0"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := store.RequestChanges("R-202-0", "needs fixes", []string{" ", "\n\t", ""})
+	if err == nil {
+		t.Fatal("expected normalization-empty required_changes error")
+	}
+	if !strings.Contains(err.Error(), "required_changes must contain at least one non-empty item") {
+		t.Fatalf("error = %q, want normalized-empty message", err.Error())
+	}
+	if _, getErr := store.GetTask("T-202-1"); getErr == nil {
+		t.Fatal("unexpected next task created on invalid required_changes")
+	}
+}
+
 func TestCheckpoint_RequestChanges_RecordsRejected(t *testing.T) {
 	store, db := newTestSQLiteStore(t)
 	defer db.Close()

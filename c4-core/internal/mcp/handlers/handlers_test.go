@@ -17,14 +17,15 @@ type mockStore struct {
 	cpResult   *CheckpointResult
 
 	// Track calls
-	startCalled     bool
-	clearCalled     bool
-	clearKeepConfig bool
-	addedTasks      []*Task
-	blockedCalls    []markBlockedCall
-	claimedTasks    []string
-	reportedTasks   []reportCall
-	checkpointCalls []checkpointCall
+	startCalled         bool
+	clearCalled         bool
+	clearKeepConfig     bool
+	addedTasks          []*Task
+	blockedCalls        []markBlockedCall
+	claimedTasks        []string
+	reportedTasks       []reportCall
+	checkpointCalls     []checkpointCall
+	requestChangesCalls []requestChangesCall
 
 	// Error injection
 	statusErr     error
@@ -53,6 +54,12 @@ type reportCall struct {
 type checkpointCall struct {
 	id, decision, notes string
 	requiredChanges     []string
+}
+
+type requestChangesCall struct {
+	reviewTaskID    string
+	comments        string
+	requiredChanges []string
 }
 
 func newMockStore() *mockStore {
@@ -192,6 +199,11 @@ func (m *mockStore) Checkpoint(checkpointID, decision, notes string, requiredCha
 }
 
 func (m *mockStore) RequestChanges(reviewTaskID string, comments string, requiredChanges []string) (*RequestChangesResult, error) {
+	m.requestChangesCalls = append(m.requestChangesCalls, requestChangesCall{
+		reviewTaskID:    reviewTaskID,
+		comments:        comments,
+		requiredChanges: requiredChanges,
+	})
 	return &RequestChangesResult{
 		Success:      true,
 		NextTaskID:   "T-001-1",
