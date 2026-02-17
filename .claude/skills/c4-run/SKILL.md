@@ -227,6 +227,7 @@ Monitor:
 Next Steps:
   • After workers complete, run `/c4-run` again if tasks remain
   • Or use `/c4-run --continuous` for auto-respawn mode
+  • When ALL tasks are done → `/c4-finish` (build + test + install + commit)
 """)
 else:
     # 🔄 Continuous Mode: Monitor and respawn
@@ -281,6 +282,10 @@ Ctrl+C to interrupt.
                 print(f"  • {worker_id}")
 
     print("🏁 Continuous mode ended")
+
+    # Auto-finish: build + test + install + commit
+    print("\n🏁 All tasks done — running finish routine...")
+    Skill("c4-finish")
 ```
 
 ## 🌲 Worktree Isolation (Multi-Worker Requirement!)
