@@ -49,7 +49,16 @@ Thumbs.db
 # Go binaries
 c4-core/bin/
 c4-core/c4
+c5/bin/
 *.test
+
+# C5 Hub runtime databases
+c5/*.db
+c5/*.db-shm
+c5/*.db-wal
+
+# Tauri dev logs
+tauri_launch.log
 
 # Agent memory (subagent artifacts)
 .claude/agent-memory/
