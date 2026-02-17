@@ -10,6 +10,11 @@ import (
 	"time"
 )
 
+const (
+	maxRetries    = 3
+	retryBaseWait = 1 * time.Second
+)
+
 // Client communicates with a PiQ Hub server over REST.
 type Client struct {
 	baseURL    string
@@ -42,6 +47,11 @@ func NewClient(cfg HubConfig) *Client {
 		teamID:    teamID,
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
+			Transport: &http.Transport{
+				MaxIdleConns:        20,
+				MaxIdleConnsPerHost: 10,
+				IdleConnTimeout:     90 * time.Second,
+			},
 		},
 	}
 }
@@ -73,6 +83,45 @@ func (c *Client) url(path string) string {
 	return c.baseURL + c.apiPrefix + path
 }
 
+// isRetryableStatus returns true for HTTP status codes that warrant a retry.
+func isRetryableStatus(code int) bool {
+	return code == http.StatusTooManyRequests || code >= 500
+}
+
+// doWithRetry executes an HTTP request with exponential backoff retry.
+// Only retries on network errors and retryable status codes (429, 5xx).
+func (c *Client) doWithRetry(req *http.Request) (*http.Response, error) {
+	var lastErr error
+	for attempt := range maxRetries {
+		if attempt > 0 {
+			wait := retryBaseWait << (attempt - 1) // 1s, 2s, 4s
+			time.Sleep(wait)
+
+			// Rewind body for retry if present
+			if req.GetBody != nil {
+				body, err := req.GetBody()
+				if err != nil {
+					return nil, fmt.Errorf("retry body reset: %w", err)
+				}
+				req.Body = body
+			}
+		}
+
+		resp, err := c.httpClient.Do(req)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		if isRetryableStatus(resp.StatusCode) {
+			resp.Body.Close()
+			lastErr = fmt.Errorf("%s %s: %d", req.Method, req.URL.Path, resp.StatusCode)
+			continue
+		}
+		return resp, nil
+	}
+	return nil, lastErr
+}
+
 // get performs a GET request and decodes JSON into dest.
 func (c *Client) get(path string, dest any) error {
 	req, err := http.NewRequest("GET", c.url(path), nil)
@@ -81,7 +130,7 @@ func (c *Client) get(path string, dest any) error {
 	}
 	c.setHeaders(req)
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.doWithRetry(req)
 	if err != nil {
 		return fmt.Errorf("GET %s: %w", path, err)
 	}
@@ -108,7 +157,7 @@ func (c *Client) getRaw(path string) ([]byte, error) {
 	}
 	c.setHeaders(req)
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.doWithRetry(req)
 	if err != nil {
 		return nil, fmt.Errorf("GET %s: %w", path, err)
 	}
@@ -137,8 +186,11 @@ func (c *Client) post(path string, body, dest any) error {
 		return err
 	}
 	c.setHeaders(req)
+	req.GetBody = func() (io.ReadCloser, error) {
+		return io.NopCloser(strings.NewReader(string(data))), nil
+	}
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.doWithRetry(req)
 	if err != nil {
 		return fmt.Errorf("POST %s: %w", path, err)
 	}
@@ -169,8 +221,11 @@ func (c *Client) patch(path string, body, dest any) error {
 		return err
 	}
 	c.setHeaders(req)
+	req.GetBody = func() (io.ReadCloser, error) {
+		return io.NopCloser(strings.NewReader(string(data))), nil
+	}
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.doWithRetry(req)
 	if err != nil {
 		return fmt.Errorf("PATCH %s: %w", path, err)
 	}

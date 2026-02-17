@@ -355,6 +355,16 @@ func newMCPServer() (*mcpServer, error) {
 		}
 	}
 
+	// wireEventBusClient connects an EventBus client to all components that need it.
+	// Centralised to prevent wiring omissions when adding new components.
+	wireEventBusClient := func(ebClient *eventbus.Client) {
+		handlers.RegisterEventBusHandlers(reg, ebClient)
+		sqliteStore.SetEventBus(ebClient)
+		handlers.SetDriveEventBus(ebClient)
+		handlers.SetValidationEventBus(ebClient)
+		proxy.SetEventBus(ebClient)
+	}
+
 	// Register EventBus handlers
 	var embeddedEB *eventbus.EmbeddedServer
 	if cfgMgr != nil && cfgMgr.GetConfig().EventBus.Enabled {
@@ -381,25 +391,20 @@ func newMCPServer() (*mcpServer, error) {
 				MaxEvents:        ebCfg.MaxEvents,
 				DefaultRulesPath: defaultRulesPath,
 				WSPort:           ebCfg.WSPort,
+				WSHost:           ebCfg.WSHost,
 			})
 			if ebErr != nil {
 				fmt.Fprintf(os.Stderr, "c4: eventbus auto-start failed: %v\n", ebErr)
 			} else {
 				embeddedEB = eb
 
-				// Wire C1 poster if keeper available
 				if keeper != nil {
 					eb.Dispatcher().SetC1Poster(keeper)
 				}
 
-				// Connect client to embedded server
 				ebClient, ebErr := eventbus.NewClient(eb.SocketPath())
 				if ebErr == nil {
-					handlers.RegisterEventBusHandlers(reg, ebClient)
-					sqliteStore.SetEventBus(ebClient)
-					handlers.SetDriveEventBus(ebClient)
-					handlers.SetValidationEventBus(ebClient)
-					proxy.SetEventBus(ebClient)
+					wireEventBusClient(ebClient)
 					sqliteStore.SetDispatcher(eb.Dispatcher())
 					fmt.Fprintf(os.Stderr, "c4: eventbus auto-started (embedded, %s)\n", eb.SocketPath())
 				}
@@ -415,18 +420,13 @@ func newMCPServer() (*mcpServer, error) {
 			if ebErr != nil {
 				fmt.Fprintf(os.Stderr, "c4: eventbus not reachable (unix:%s): %v\n", sockPath, ebErr)
 			} else {
-				handlers.RegisterEventBusHandlers(reg, ebClient)
-				sqliteStore.SetEventBus(ebClient)
-				handlers.SetDriveEventBus(ebClient)
-				handlers.SetValidationEventBus(ebClient)
-				proxy.SetEventBus(ebClient)
+				wireEventBusClient(ebClient)
 				fmt.Fprintf(os.Stderr, "c4: eventbus connected (unix:%s, 6 tools)\n", sockPath)
 			}
 		}
 	}
 
 	// Wire local Dispatcher for C1 posting if no embedded server
-	// (embedded server already has its own dispatcher wired above)
 	if keeper != nil && embeddedEB == nil {
 		localDBPath := filepath.Join(projectDir, ".c4", "eventbus", "local.db")
 		localStore, localErr := eventbus.NewStore(localDBPath)
@@ -436,7 +436,6 @@ func newMCPServer() (*mcpServer, error) {
 			localDispatcher := eventbus.NewDispatcher(localStore)
 			localDispatcher.SetC1Poster(keeper)
 
-			// Ensure default c1_post rule exists for task events
 			rules, _ := localStore.MatchRules("task.completed")
 			if len(rules) == 0 {
 				localStore.AddRule(

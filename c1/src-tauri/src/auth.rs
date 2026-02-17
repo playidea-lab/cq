@@ -214,11 +214,22 @@ const FRAGMENT_REWRITE_HTML: &str = r#"<!DOCTYPE html>
 // OAuth callback server (blocking, runs on a spawned thread)
 // ---------------------------------------------------------------------------
 
-/// Starts a one-shot HTTP server on 127.0.0.1:8765, waits for the OAuth
-/// callback, extracts tokens, saves session, and returns the session.
-fn run_callback_server() -> Result<AuthSession, String> {
-    let listener = TcpListener::bind("127.0.0.1:8765")
-        .map_err(|e| format!("Failed to bind :8765 — is another login in progress? ({})", e))?;
+/// Default OAuth callback port — must match C4 Core (cloud/auth.go defaultCallbackPort).
+const DEFAULT_OAUTH_PORT: u16 = 19823;
+
+/// Binds the OAuth callback listener. Returns (listener, port).
+fn bind_callback_listener() -> Result<(TcpListener, u16), String> {
+    let listener = TcpListener::bind(format!("127.0.0.1:{}", DEFAULT_OAUTH_PORT))
+        .or_else(|_| TcpListener::bind("127.0.0.1:0"))
+        .map_err(|e| format!("Failed to bind OAuth callback port ({})", e))?;
+    let port = listener.local_addr()
+        .map_err(|e| format!("Failed to get local addr: {}", e))?
+        .port();
+    Ok((listener, port))
+}
+
+/// Waits for the OAuth callback on an already-bound listener.
+fn wait_for_callback(listener: TcpListener) -> Result<AuthSession, String> {
 
     listener
         .set_nonblocking(false)
@@ -367,16 +378,18 @@ pub async fn auth_login(
         anon_key
     };
 
-    let redirect_uri = "http://127.0.0.1:8765/auth/callback";
-    let oauth_url = build_oauth_url(&supabase_url, redirect_uri);
+    // Bind callback listener first to get the actual port
+    let (listener, port) = bind_callback_listener()?;
+    let redirect_uri = format!("http://127.0.0.1:{}/auth/callback", port);
+    let oauth_url = build_oauth_url(&supabase_url, &redirect_uri);
 
     // Open system browser
     tauri::async_runtime::spawn(async move {
         let _ = open::that(&oauth_url);
     });
 
-    // Run callback server on a blocking thread
-    let session = tokio::task::spawn_blocking(run_callback_server)
+    // Wait for OAuth callback on the already-bound listener
+    let session = tokio::task::spawn_blocking(move || wait_for_callback(listener))
         .await
         .map_err(|e| format!("Task join error: {}", e))?
         .map_err(|e| e)?;
@@ -568,7 +581,7 @@ mod tests {
 
     #[test]
     fn test_build_oauth_url() {
-        let url = build_oauth_url("https://test.supabase.co", "http://127.0.0.1:8765/auth/callback");
+        let url = build_oauth_url("https://test.supabase.co", &format!("http://127.0.0.1:{}/auth/callback", DEFAULT_OAUTH_PORT));
         assert!(url.starts_with("https://test.supabase.co/auth/v1/authorize?provider=github"));
         assert!(url.contains("redirect_to="));
     }

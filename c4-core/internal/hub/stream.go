@@ -23,20 +23,58 @@ type MetricMessage struct {
 	Error   string         `json:"error,omitempty"`
 }
 
+const (
+	wsMaxReconnect = 10
+	wsBaseBackoff  = 1 * time.Second
+	wsMaxBackoff   = 30 * time.Second
+)
+
 // StreamMetrics connects to the Hub WebSocket and streams metrics for a job.
 // It calls onMessage for each received message and stops when:
 // - ctx is cancelled
 // - job reaches terminal status (SUCCEEDED, FAILED, CANCELLED)
-// - connection is closed
+// Auto-reconnects on connection loss with exponential backoff.
 func (c *Client) StreamMetrics(ctx context.Context, jobID string, includeHistory bool, onMessage func(MetricMessage)) error {
 	wsURL := c.wsURL(jobID, includeHistory)
 
-	// Dial with auth headers
+	var reconnects int
+	for {
+		err := c.streamOnce(ctx, wsURL, onMessage)
+		if err == nil {
+			return nil // clean exit (terminal status or OpClose)
+		}
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+
+		reconnects++
+		if reconnects > wsMaxReconnect {
+			return fmt.Errorf("websocket: max reconnect attempts reached (%d): %w", wsMaxReconnect, err)
+		}
+
+		backoff := wsBaseBackoff << (reconnects - 1)
+		if backoff > wsMaxBackoff {
+			backoff = wsMaxBackoff
+		}
+
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(backoff):
+		}
+
+		// After reconnect, always request history to avoid gaps
+		wsURL = c.wsURL(jobID, true)
+	}
+}
+
+// streamOnce runs a single WebSocket connection lifecycle.
+func (c *Client) streamOnce(ctx context.Context, wsURL string, onMessage func(MetricMessage)) error {
 	dialer := ws.Dialer{
 		Header: ws.HandshakeHeaderHTTP{
-			"X-API-Key":    []string{c.apiKey},
-			"X-Team-ID":    []string{c.teamID},
-			"X-Worker-ID":  []string{c.workerID},
+			"X-API-Key":   []string{c.apiKey},
+			"X-Team-ID":   []string{c.teamID},
+			"X-Worker-ID": []string{c.workerID},
 		},
 		Timeout: 10 * time.Second,
 	}
@@ -47,7 +85,6 @@ func (c *Client) StreamMetrics(ctx context.Context, jobID string, includeHistory
 	}
 	defer conn.Close()
 
-	// Read loop
 	for {
 		select {
 		case <-ctx.Done():
@@ -55,7 +92,6 @@ func (c *Client) StreamMetrics(ctx context.Context, jobID string, includeHistory
 		default:
 		}
 
-		// Set read deadline: use context deadline if sooner, otherwise 5s for periodic ctx check
 		readDeadline := time.Now().Add(5 * time.Second)
 		if dl, ok := ctx.Deadline(); ok && dl.Before(readDeadline) {
 			readDeadline = dl
@@ -66,12 +102,11 @@ func (c *Client) StreamMetrics(ctx context.Context, jobID string, includeHistory
 
 		data, op, err := wsutil.ReadServerData(conn)
 		if err != nil {
-			// Always check context first — context cancellation may cause read errors
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}
 			if isTimeout(err) {
-				continue // timeout — loop back to check ctx
+				continue
 			}
 			return fmt.Errorf("websocket read: %w", err)
 		}
@@ -83,12 +118,9 @@ func (c *Client) StreamMetrics(ctx context.Context, jobID string, includeHistory
 		if op == ws.OpText || op == ws.OpBinary {
 			var msg MetricMessage
 			if err := json.Unmarshal(data, &msg); err != nil {
-				continue // skip malformed messages
+				continue
 			}
-
 			onMessage(msg)
-
-			// Stop on terminal job status
 			if msg.Type == "status" && isTerminalStatus(msg.Status) {
 				return nil
 			}
