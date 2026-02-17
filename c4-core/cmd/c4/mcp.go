@@ -316,7 +316,7 @@ func newMCPServer() (*mcpServer, error) {
 	if cfgMgr != nil && cfgMgr.GetConfig().Cloud.Enabled {
 		cloudCfg := cfgMgr.GetConfig().Cloud
 		if cloudCfg.URL != "" && cloudCfg.AnonKey != "" {
-			driveClient := drive.NewClient(cloudCfg.URL, cloudCfg.AnonKey, cloudTP, cloudProjectID)
+			driveClient := drive.NewClient(cloudCfg.URL, cloudCfg.AnonKey, cloudTP, cloudProjectID, cloudCfg.BucketName)
 			handlers.RegisterDriveHandlers(reg, driveClient)
 			fmt.Fprintln(os.Stderr, "c4: drive enabled (6 tools)")
 		}

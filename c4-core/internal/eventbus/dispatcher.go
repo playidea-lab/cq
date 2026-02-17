@@ -93,6 +93,53 @@ func (d *Dispatcher) DispatchSync(eventID, eventType string, eventData json.RawM
 	}
 }
 
+// ReplayRule re-executes a specific rule for a specific event.
+// Returns nil on success, error on failure. Does NOT insert into DLQ on failure
+// (caller is responsible for DLQ management during replay).
+func (d *Dispatcher) ReplayRule(eventID, eventType string, eventData json.RawMessage, ruleID string) error {
+	rules, err := d.store.MatchRules(eventType)
+	if err != nil {
+		return fmt.Errorf("match rules: %w", err)
+	}
+
+	for _, rule := range rules {
+		if rule.ID != ruleID {
+			continue
+		}
+
+		if rule.FilterJSON != "" && rule.FilterJSON != "{}" {
+			if !evaluateFilter(rule.FilterJSON, eventData) {
+				return nil // filter excluded — not an error
+			}
+		}
+
+		start := time.Now()
+		var execErr error
+		switch rule.ActionType {
+		case "log":
+			execErr = d.executeLog(eventID, eventType, eventData, rule)
+		case "webhook":
+			execErr = d.executeWebhook(eventID, eventType, eventData, rule)
+		case "c1_post":
+			execErr = d.executeC1Post(eventType, eventData, rule)
+		default:
+			execErr = fmt.Errorf("unknown action type: %s", rule.ActionType)
+		}
+
+		duration := time.Since(start).Milliseconds()
+		logStatus := "ok"
+		errMsg := ""
+		if execErr != nil {
+			logStatus = "replay_error"
+			errMsg = execErr.Error()
+		}
+		d.store.LogDispatch(eventID, rule.ID, logStatus, errMsg, duration)
+		return execErr
+	}
+
+	return fmt.Errorf("rule %s not found for event type %s", ruleID, eventType)
+}
+
 func (d *Dispatcher) executeRule(eventID, eventType string, eventData json.RawMessage, rule StoredRule) {
 	// Check filter
 	if rule.FilterJSON != "" && rule.FilterJSON != "{}" {

@@ -110,6 +110,13 @@ func (c *Client) Upload(localPath, drivePath string, metadata json.RawMessage) (
 		return nil, fmt.Errorf("create upload request: %w", err)
 	}
 	req.ContentLength = fi.Size()
+	// Enable retry by seeking file back to start
+	req.GetBody = func() (io.ReadCloser, error) {
+		if _, err := f.Seek(0, io.SeekStart); err != nil {
+			return nil, err
+		}
+		return io.NopCloser(f), nil
+	}
 	req.Header.Set("Content-Type", "application/octet-stream")
 	c.setHeaders(req)
 	// Supabase Storage uses x-upsert for overwrite

@@ -150,9 +150,8 @@ func (e *EmbeddedServer) Dispatcher() *Dispatcher {
 }
 
 // dlqAutoReplay periodically checks the DLQ for entries that can be retried.
-// Uses exponential backoff per entry (based on last retry time).
-// On successful re-dispatch, the DLQ entry is removed.
-// On failure, executeRule will insert a new DLQ entry; we remove the old one.
+// Uses ReplayRule to avoid duplicate DLQ insertion on failure.
+// Exponential backoff per entry based on last_retried_at.
 func (e *EmbeddedServer) dlqAutoReplay() {
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
@@ -183,36 +182,21 @@ func (e *EmbeddedServer) dlqAutoReplay() {
 					continue
 				}
 
-				// Snapshot DLQ count before dispatch to detect if dispatch failed
-				// (executeRule inserts a new DLQ entry on failure)
-				countBefore := e.dlqCount()
-
-				e.dispatcher.DispatchSync(ev.ID, ev.Type, ev.Data)
-
-				countAfter := e.dlqCount()
-
-				if countAfter > countBefore {
-					// Dispatch failed — new DLQ entry was created by executeRule.
-					// Remove the old entry (the new one has updated info).
+				// ReplayRule does NOT insert into DLQ on failure (unlike DispatchSync).
+				// This preserves the existing entry's retry_count.
+				replayErr := e.dispatcher.ReplayRule(ev.ID, ev.Type, ev.Data, entry.RuleID)
+				if replayErr == nil {
+					// Success — remove DLQ entry
 					e.store.RemoveDLQ(entry.ID)
 				} else {
-					// Dispatch succeeded — remove the DLQ entry.
-					e.store.RemoveDLQ(entry.ID)
+					// Failure — increment retry count (entry stays in DLQ)
+					e.store.IncrementDLQRetry(entry.ID)
 				}
 			}
 		case <-e.stopPurge:
 			return
 		}
 	}
-}
-
-// dlqCount returns the current number of DLQ entries.
-func (e *EmbeddedServer) dlqCount() int {
-	entries, err := e.store.ListDLQ(1000)
-	if err != nil {
-		return 0
-	}
-	return len(entries)
 }
 
 func (e *EmbeddedServer) autoPurge(retentionDays, maxEvents, dlqRetentionDays int) {

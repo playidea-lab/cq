@@ -69,7 +69,7 @@ func (b *WSBridge) Start() error {
 		Handler: mux,
 	}
 
-	fmt.Fprintf(os.Stderr, "c4: eventbus: ws bridge listening on 127.0.0.1:%d\n", b.port)
+	fmt.Fprintf(os.Stderr, "c4: eventbus: ws bridge listening on %s:%d\n", b.host, b.port)
 	err := b.httpServer.ListenAndServe()
 	if err == http.ErrServerClosed {
 		return nil
