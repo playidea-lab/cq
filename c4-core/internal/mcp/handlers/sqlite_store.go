@@ -23,10 +23,10 @@ type SQLiteStore struct {
 	projectID   string
 	projectRoot string
 	config      *config.Manager
-	proxy       *BridgeProxy          // optional: for knowledge auto-record
-	eventPub    eventbus.Publisher    // optional: for C3 EventBus remote publishing
-	dispatcher  *eventbus.Dispatcher  // optional: local rule-based dispatch (C1 posting, etc.)
-	registry    *mcp.Registry         // optional: for lighthouse auto-promote registry cleanup
+	proxy       *BridgeProxy         // optional: for knowledge auto-record
+	eventPub    eventbus.Publisher   // optional: for C3 EventBus remote publishing
+	dispatcher  *eventbus.Dispatcher // optional: local rule-based dispatch (C1 posting, etc.)
+	registry    *mcp.Registry        // optional: for lighthouse auto-promote registry cleanup
 }
 
 // StoreOption configures a SQLiteStore.
@@ -149,6 +149,8 @@ func (s *SQLiteStore) initSchema() error {
 			decision         TEXT NOT NULL,
 			notes            TEXT DEFAULT '',
 			required_changes TEXT DEFAULT '[]',
+			target_task_id   TEXT DEFAULT '',
+			target_review_id TEXT DEFAULT '',
 			created_at       TEXT DEFAULT CURRENT_TIMESTAMP
 		)`,
 		`CREATE TABLE IF NOT EXISTS persona_stats (
@@ -196,6 +198,8 @@ func (s *SQLiteStore) initSchema() error {
 	migrations := []string{
 		"ALTER TABLE c4_tasks ADD COLUMN handoff TEXT DEFAULT ''",
 		"ALTER TABLE c4_lighthouses ADD COLUMN task_id TEXT DEFAULT ''",
+		"ALTER TABLE c4_checkpoints ADD COLUMN target_task_id TEXT DEFAULT ''",
+		"ALTER TABLE c4_checkpoints ADD COLUMN target_review_id TEXT DEFAULT ''",
 	}
 
 	for _, stmt := range statements {
@@ -357,7 +361,6 @@ func (s *SQLiteStore) migrateTasksIfNeeded() error {
 	fmt.Fprintf(os.Stderr, "c4: migrated %d tasks from legacy schema\n", migrated)
 	return nil
 }
-
 
 // Start transitions the project to EXECUTE state using the state machine.
 func (s *SQLiteStore) Start() error {
@@ -825,7 +828,6 @@ func (s *SQLiteStore) SubmitTask(taskID, workerID, commitSHA, handoff string, re
 	}, nil
 }
 
-
 // MarkBlocked marks a task as blocked.
 func (s *SQLiteStore) MarkBlocked(taskID, workerID, failureSignature string, attempts int, lastError string) error {
 	_, err := s.db.Exec(`
@@ -1057,4 +1059,3 @@ func (s *SQLiteStore) autoRecordKnowledge(task *Task, summary string, filesChang
 		}
 	}()
 }
-

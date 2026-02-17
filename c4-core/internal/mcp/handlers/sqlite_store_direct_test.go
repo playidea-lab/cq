@@ -384,11 +384,31 @@ func TestCheckpoint_RequestChanges_RecordsRejected(t *testing.T) {
 	store, db := newTestSQLiteStore(t)
 	defer db.Close()
 
-	// Create an in_progress task
+	// Create target implementation task with known worker
 	if err := store.AddTask(&Task{ID: "T-002-0", Title: "Impl", DoD: "done", Status: "pending"}); err != nil {
 		t.Fatal(err)
 	}
-	store.db.Exec("UPDATE c4_tasks SET status='in_progress', worker_id='worker-2', updated_at=CURRENT_TIMESTAMP WHERE task_id='T-002-0'")
+	store.db.Exec("UPDATE c4_tasks SET worker_id='worker-2', updated_at=CURRENT_TIMESTAMP WHERE task_id='T-002-0'")
+
+	// Link CP task to review task, then to target T task.
+	if err := store.AddTask(&Task{
+		ID:           "R-002-0",
+		Title:        "Review",
+		DoD:          "review",
+		Status:       "pending",
+		Dependencies: []string{"T-002-0"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.AddTask(&Task{
+		ID:           "CP-001",
+		Title:        "Checkpoint",
+		DoD:          "checkpoint",
+		Status:       "pending",
+		Dependencies: []string{"R-002-0"},
+	}); err != nil {
+		t.Fatal(err)
+	}
 
 	// Checkpoint with REQUEST_CHANGES
 	result, err := store.Checkpoint("CP-001", "REQUEST_CHANGES", "not good", []string{"fix Y"})
@@ -407,6 +427,48 @@ func TestCheckpoint_RequestChanges_RecordsRejected(t *testing.T) {
 	}
 	if outcome != "rejected" {
 		t.Fatalf("outcome = %q, want rejected", outcome)
+	}
+}
+
+func TestCheckpoint_PersistsTargetLinkage(t *testing.T) {
+	store, db := newTestSQLiteStore(t)
+	defer db.Close()
+
+	if err := store.AddTask(&Task{ID: "T-100-0", Title: "Impl", DoD: "done", Status: "pending"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.AddTask(&Task{
+		ID:           "R-100-0",
+		Title:        "Review",
+		DoD:          "review",
+		Status:       "pending",
+		Dependencies: []string{"T-100-0"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.AddTask(&Task{
+		ID:           "CP-100",
+		Title:        "Checkpoint",
+		DoD:          "checkpoint",
+		Status:       "pending",
+		Dependencies: []string{"R-100-0"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := store.Checkpoint("CP-100", "APPROVE", "looks good", nil); err != nil {
+		t.Fatalf("checkpoint: %v", err)
+	}
+
+	var targetTaskID, targetReviewID string
+	if err := db.QueryRow("SELECT target_task_id, target_review_id FROM c4_checkpoints WHERE checkpoint_id='CP-100'").Scan(&targetTaskID, &targetReviewID); err != nil {
+		t.Fatalf("query checkpoint linkage: %v", err)
+	}
+	if targetTaskID != "T-100-0" {
+		t.Fatalf("target_task_id = %q, want T-100-0", targetTaskID)
+	}
+	if targetReviewID != "R-100-0" {
+		t.Fatalf("target_review_id = %q, want R-100-0", targetReviewID)
 	}
 }
 

@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -34,6 +35,55 @@ func (s *SQLiteStore) completeReviewTask(taskID string) string {
 	return ""
 }
 
+func (s *SQLiteStore) resolveCheckpointTargets(checkpointID string) (string, string, error) {
+	var depsRaw string
+	if err := s.db.QueryRow("SELECT dependencies FROM c4_tasks WHERE task_id=?", checkpointID).Scan(&depsRaw); err != nil {
+		if err == sql.ErrNoRows {
+			return "", "", nil
+		}
+		return "", "", err
+	}
+
+	depsRaw = strings.TrimSpace(depsRaw)
+	if depsRaw == "" {
+		return "", "", nil
+	}
+
+	deps := make([]string, 0)
+	if err := json.Unmarshal([]byte(depsRaw), &deps); err != nil {
+		for _, dep := range strings.Split(depsRaw, ",") {
+			dep = strings.Trim(dep, " \t\r\n\"[]")
+			if dep != "" {
+				deps = append(deps, dep)
+			}
+		}
+	}
+
+	targetTaskID := ""
+	targetReviewID := ""
+	for _, dep := range deps {
+		dep = strings.Trim(dep, " \t\r\n\"[]")
+		if dep == "" {
+			continue
+		}
+		switch {
+		case strings.HasPrefix(dep, "R-"):
+			targetReviewID = dep
+			if targetTaskID == "" {
+				targetTaskID = "T-" + strings.TrimPrefix(dep, "R-")
+			}
+		case strings.HasPrefix(dep, "T-"):
+			if targetTaskID == "" {
+				targetTaskID = dep
+			}
+		}
+		if targetTaskID != "" && targetReviewID != "" {
+			break
+		}
+	}
+	return targetTaskID, targetReviewID, nil
+}
+
 // Checkpoint records a checkpoint decision.
 func (s *SQLiteStore) Checkpoint(checkpointID, decision, notes string, requiredChanges []string) (*CheckpointResult, error) {
 	changesJSON := "[]"
@@ -42,10 +92,15 @@ func (s *SQLiteStore) Checkpoint(checkpointID, decision, notes string, requiredC
 		changesJSON = string(b)
 	}
 
+	targetTaskID, targetReviewID, err := s.resolveCheckpointTargets(checkpointID)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "c4: checkpoint target lookup %s: %v\n", checkpointID, err)
+	}
+
 	if _, err := s.db.Exec(`
-		INSERT OR REPLACE INTO c4_checkpoints (checkpoint_id, decision, notes, required_changes, created_at)
-		VALUES (?, ?, ?, ?, ?)`,
-		checkpointID, decision, notes, changesJSON, time.Now().Format(time.RFC3339),
+		INSERT OR REPLACE INTO c4_checkpoints (checkpoint_id, decision, notes, required_changes, target_task_id, target_review_id, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		checkpointID, decision, notes, changesJSON, targetTaskID, targetReviewID, time.Now().Format(time.RFC3339),
 	); err != nil {
 		fmt.Fprintf(os.Stderr, "c4: checkpoint INSERT %s: %v\n", checkpointID, err)
 	}
@@ -59,7 +114,7 @@ func (s *SQLiteStore) Checkpoint(checkpointID, decision, notes string, requiredC
 	case "REQUEST_CHANGES", "REPLAN":
 		s.notifyEventBus("checkpoint.rejected", map[string]any{
 			"checkpoint_id": checkpointID, "decision": decision, "notes": notes,
-			"required_changes": requiredChanges,
+			"required_changes": requiredChanges, "target_task_id": targetTaskID, "target_review_id": targetReviewID,
 		})
 	}
 
@@ -73,17 +128,16 @@ func (s *SQLiteStore) Checkpoint(checkpointID, decision, notes string, requiredC
 		result.NextAction = "continue"
 	case "REQUEST_CHANGES":
 		result.NextAction = "apply_changes"
-		// Best-effort: record rejection for most recent active task
-		var recentTaskID, recentWorkerID string
-		if err := s.db.QueryRow(`SELECT task_id, worker_id FROM c4_tasks
-			WHERE status='in_progress' ORDER BY updated_at DESC LIMIT 1`).Scan(&recentTaskID, &recentWorkerID); err != nil {
-			fmt.Fprintf(os.Stderr, "c4: checkpoint: recent task lookup: %v\n", err)
-		}
-		if recentTaskID != "" {
-			if recentWorkerID == "" {
-				recentWorkerID = "direct"
+		if targetTaskID != "" {
+			var targetWorkerID string
+			if err := s.db.QueryRow("SELECT worker_id FROM c4_tasks WHERE task_id=?", targetTaskID).Scan(&targetWorkerID); err != nil {
+				fmt.Fprintf(os.Stderr, "c4: checkpoint: target worker lookup %s: %v\n", targetTaskID, err)
+			} else {
+				if targetWorkerID == "" {
+					targetWorkerID = "direct"
+				}
+				s.recordPersonaStat(targetWorkerID, targetTaskID, "rejected")
 			}
-			s.recordPersonaStat(recentWorkerID, recentTaskID, "rejected")
 		}
 	case "REPLAN":
 		result.NextAction = "replan"
