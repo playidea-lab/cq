@@ -2,9 +2,11 @@ package handlers
 
 import (
 	"database/sql"
+	"fmt"
 	"strings"
 	"testing"
 
+	"github.com/changmin/c4-core/internal/config"
 	_ "modernc.org/sqlite"
 )
 
@@ -377,6 +379,88 @@ func TestRequestChanges_RecordsRejected(t *testing.T) {
 	}
 	if outcome != "rejected" {
 		t.Fatalf("outcome = %q, want rejected", outcome)
+	}
+}
+
+func TestRequestChanges_MaxRevisionBoundary(t *testing.T) {
+	tests := []struct {
+		name          string
+		maxRevision   int
+		reviewVersion int
+		wantErr       bool
+	}{
+		{
+			name:          "allow when next version equals max_revision",
+			maxRevision:   3,
+			reviewVersion: 2,
+			wantErr:       false,
+		},
+		{
+			name:          "block when next version exceeds max_revision",
+			maxRevision:   3,
+			reviewVersion: 3,
+			wantErr:       true,
+		},
+		{
+			name:          "allow first change at max_revision one",
+			maxRevision:   1,
+			reviewVersion: 0,
+			wantErr:       false,
+		},
+		{
+			name:          "block second change at max_revision one",
+			maxRevision:   1,
+			reviewVersion: 1,
+			wantErr:       true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store, db := newTestSQLiteStore(t)
+			defer db.Close()
+
+			cfg, err := config.New(t.TempDir())
+			if err != nil {
+				t.Fatalf("load config: %v", err)
+			}
+			cfg.Set("max_revision", tt.maxRevision)
+			store.config = cfg
+
+			parentTaskID := fmt.Sprintf("T-101-%d", tt.reviewVersion)
+			reviewTaskID := fmt.Sprintf("R-101-%d", tt.reviewVersion)
+			if err := store.AddTask(&Task{
+				ID:     parentTaskID,
+				Title:  "Impl",
+				DoD:    "done",
+				Status: "pending",
+			}); err != nil {
+				t.Fatalf("add parent task: %v", err)
+			}
+			if err := store.AddTask(&Task{
+				ID:           reviewTaskID,
+				Title:        "Review",
+				DoD:          "review",
+				Status:       "pending",
+				Dependencies: []string{parentTaskID},
+			}); err != nil {
+				t.Fatalf("add review task: %v", err)
+			}
+
+			_, err = store.RequestChanges(reviewTaskID, "needs fixes", []string{"fix X"})
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("expected max_revision error")
+				}
+				if !strings.Contains(err.Error(), "max revision") {
+					t.Fatalf("error = %q, want max revision boundary message", err.Error())
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("request changes: %v", err)
+			}
+		})
 	}
 }
 

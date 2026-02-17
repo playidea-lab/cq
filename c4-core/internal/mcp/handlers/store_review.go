@@ -155,11 +155,12 @@ func (s *SQLiteStore) RequestChanges(reviewTaskID string, comments string, requi
 	}
 
 	// 2. Check max_revision
+	// max_revision is the maximum allowed REQUEST_CHANGES count.
 	nextVersion := version + 1
 	if s.config != nil {
 		cfg := s.config.GetConfig()
-		if cfg.MaxRevision > 0 && nextVersion >= cfg.MaxRevision {
-			return nil, fmt.Errorf("max revision %d reached for base %s", cfg.MaxRevision, baseID)
+		if cfg.MaxRevision > 0 && nextVersion > cfg.MaxRevision {
+			return nil, fmt.Errorf("max revision %d exceeded for base %s", cfg.MaxRevision, baseID)
 		}
 	}
 
