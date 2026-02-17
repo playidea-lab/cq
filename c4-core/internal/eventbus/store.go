@@ -104,15 +104,16 @@ func (s *Store) migrate() error {
 	// v4: Dead Letter Queue
 	_, err = s.db.Exec(`
 		CREATE TABLE IF NOT EXISTS c4_event_dlq (
-			id          INTEGER PRIMARY KEY AUTOINCREMENT,
-			event_id    TEXT NOT NULL,
-			rule_id     TEXT NOT NULL,
-			rule_name   TEXT NOT NULL DEFAULT '',
-			event_type  TEXT NOT NULL DEFAULT '',
-			error       TEXT NOT NULL DEFAULT '',
-			retry_count INTEGER NOT NULL DEFAULT 0,
-			max_retries INTEGER NOT NULL DEFAULT 3,
-			created_at  TEXT NOT NULL
+			id              INTEGER PRIMARY KEY AUTOINCREMENT,
+			event_id        TEXT NOT NULL,
+			rule_id         TEXT NOT NULL,
+			rule_name       TEXT NOT NULL DEFAULT '',
+			event_type      TEXT NOT NULL DEFAULT '',
+			error           TEXT NOT NULL DEFAULT '',
+			retry_count     INTEGER NOT NULL DEFAULT 0,
+			max_retries     INTEGER NOT NULL DEFAULT 3,
+			created_at      TEXT NOT NULL,
+			last_retried_at TEXT NOT NULL DEFAULT ''
 		);
 		CREATE INDEX IF NOT EXISTS idx_dlq_event ON c4_event_dlq(event_id);
 	`)
@@ -586,15 +587,16 @@ func matchPattern(pattern, eventType string) bool {
 
 // DLQEntry represents a dead letter queue entry.
 type DLQEntry struct {
-	ID         int64
-	EventID    string
-	RuleID     string
-	RuleName   string
-	EventType  string
-	Error      string
-	RetryCount int
-	MaxRetries int
-	CreatedAt  time.Time
+	ID            int64
+	EventID       string
+	RuleID        string
+	RuleName      string
+	EventType     string
+	Error         string
+	RetryCount    int
+	MaxRetries    int
+	CreatedAt     time.Time
+	LastRetriedAt time.Time
 }
 
 // GetEventByID retrieves a single event by its ID.
@@ -628,7 +630,7 @@ func (s *Store) ListDLQ(limit int) ([]DLQEntry, error) {
 		limit = 50
 	}
 	rows, err := s.db.Query(`
-		SELECT id, event_id, rule_id, rule_name, event_type, error, retry_count, max_retries, created_at
+		SELECT id, event_id, rule_id, rule_name, event_type, error, retry_count, max_retries, created_at, last_retried_at
 		FROM c4_event_dlq ORDER BY id DESC LIMIT ?`, limit)
 	if err != nil {
 		return nil, fmt.Errorf("list dlq: %w", err)
@@ -638,11 +640,14 @@ func (s *Store) ListDLQ(limit int) ([]DLQEntry, error) {
 	var entries []DLQEntry
 	for rows.Next() {
 		var e DLQEntry
-		var createdAt string
-		if err := rows.Scan(&e.ID, &e.EventID, &e.RuleID, &e.RuleName, &e.EventType, &e.Error, &e.RetryCount, &e.MaxRetries, &createdAt); err != nil {
+		var createdAt, lastRetried string
+		if err := rows.Scan(&e.ID, &e.EventID, &e.RuleID, &e.RuleName, &e.EventType, &e.Error, &e.RetryCount, &e.MaxRetries, &createdAt, &lastRetried); err != nil {
 			return nil, err
 		}
 		e.CreatedAt, _ = time.Parse(time.RFC3339Nano, createdAt)
+		if lastRetried != "" {
+			e.LastRetriedAt, _ = time.Parse(time.RFC3339Nano, lastRetried)
+		}
 		entries = append(entries, e)
 	}
 	return entries, rows.Err()
@@ -661,21 +666,25 @@ func (s *Store) IncrementDLQRetry(id int64) (*DLQEntry, error) {
 		return nil, fmt.Errorf("dlq entry %d exceeded max retries (%d/%d)", id, currentRetry, maxRetries)
 	}
 
-	_, err = s.db.Exec(`UPDATE c4_event_dlq SET retry_count = retry_count + 1 WHERE id = ?`, id)
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	_, err = s.db.Exec(`UPDATE c4_event_dlq SET retry_count = retry_count + 1, last_retried_at = ? WHERE id = ?`, now, id)
 	if err != nil {
 		return nil, fmt.Errorf("increment dlq retry: %w", err)
 	}
 
 	var e DLQEntry
-	var createdAt string
+	var createdAt, lastRetried string
 	err = s.db.QueryRow(`
-		SELECT id, event_id, rule_id, rule_name, event_type, error, retry_count, max_retries, created_at
+		SELECT id, event_id, rule_id, rule_name, event_type, error, retry_count, max_retries, created_at, last_retried_at
 		FROM c4_event_dlq WHERE id = ?`, id).Scan(
-		&e.ID, &e.EventID, &e.RuleID, &e.RuleName, &e.EventType, &e.Error, &e.RetryCount, &e.MaxRetries, &createdAt)
+		&e.ID, &e.EventID, &e.RuleID, &e.RuleName, &e.EventType, &e.Error, &e.RetryCount, &e.MaxRetries, &createdAt, &lastRetried)
 	if err != nil {
 		return nil, err
 	}
 	e.CreatedAt, _ = time.Parse(time.RFC3339Nano, createdAt)
+	if lastRetried != "" {
+		e.LastRetriedAt, _ = time.Parse(time.RFC3339Nano, lastRetried)
+	}
 	return &e, nil
 }
 

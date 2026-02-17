@@ -41,24 +41,34 @@ type tokenProvider interface {
 	Refresh() (string, error)
 }
 
+// DefaultBucketName is the default Supabase Storage bucket for C4 Drive.
+const DefaultBucketName = "c4-drive"
+
+const driveMaxRetries = 3
+
 // Client provides access to C4 Drive (Supabase Storage + PostgREST metadata).
 type Client struct {
 	supabaseURL string // e.g. https://xxx.supabase.co
 	apiKey      string // anon key
 	tp          tokenProvider
 	projectID   string // cloud project ID (UUID or name)
+	bucketName  string // storage bucket name
 	httpClient  *http.Client
 }
 
-const driveMaxRetries = 2
-
 // NewClient creates a new Drive client.
-func NewClient(supabaseURL, apiKey string, tp tokenProvider, projectID string) *Client {
+// bucketName defaults to DefaultBucketName if empty.
+func NewClient(supabaseURL, apiKey string, tp tokenProvider, projectID string, bucketName ...string) *Client {
+	bn := DefaultBucketName
+	if len(bucketName) > 0 && bucketName[0] != "" {
+		bn = bucketName[0]
+	}
 	return &Client{
 		supabaseURL: strings.TrimRight(supabaseURL, "/"),
 		apiKey:      apiKey,
 		tp:          tp,
 		projectID:   projectID,
+		bucketName:  bn,
 		httpClient:  &http.Client{Timeout: 60 * time.Second},
 	}
 }
@@ -94,7 +104,7 @@ func (c *Client) Upload(localPath, drivePath string, metadata json.RawMessage) (
 	storagePath := c.projectID + "/" + hashHex[:8] + "/" + filepath.Base(localPath)
 
 	// Upload to Supabase Storage
-	uploadURL := c.supabaseURL + "/storage/v1/object/c4-drive/" + storagePath
+	uploadURL := c.supabaseURL + "/storage/v1/object/" + c.bucketName + "/" + storagePath
 	req, err := http.NewRequest("POST", uploadURL, f)
 	if err != nil {
 		return nil, fmt.Errorf("create upload request: %w", err)
@@ -197,7 +207,7 @@ func (c *Client) Download(drivePath, destPath string) error {
 	}
 
 	// Download from Supabase Storage
-	downloadURL := c.supabaseURL + "/storage/v1/object/c4-drive/" + info.StoragePath
+	downloadURL := c.supabaseURL + "/storage/v1/object/" + c.bucketName + "/" + info.StoragePath
 	req, err := http.NewRequest("GET", downloadURL, nil)
 	if err != nil {
 		return fmt.Errorf("create download request: %w", err)
@@ -288,7 +298,7 @@ func (c *Client) Delete(drivePath string) error {
 
 	// Delete from Supabase Storage (only for non-folders)
 	if !info.IsFolder && info.StoragePath != "" {
-		deleteURL := c.supabaseURL + "/storage/v1/object/c4-drive/" + info.StoragePath
+		deleteURL := c.supabaseURL + "/storage/v1/object/" + c.bucketName + "/" + info.StoragePath
 		req, err := http.NewRequest("DELETE", deleteURL, nil)
 		if err != nil {
 			return fmt.Errorf("create storage delete request: %w", err)

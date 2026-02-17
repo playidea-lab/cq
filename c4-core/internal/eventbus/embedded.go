@@ -150,7 +150,9 @@ func (e *EmbeddedServer) Dispatcher() *Dispatcher {
 }
 
 // dlqAutoReplay periodically checks the DLQ for entries that can be retried.
-// Uses exponential backoff per entry (based on retry_count) with max 5 retries.
+// Uses exponential backoff per entry (based on last retry time).
+// On successful re-dispatch, the DLQ entry is removed.
+// On failure, executeRule will insert a new DLQ entry; we remove the old one.
 func (e *EmbeddedServer) dlqAutoReplay() {
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
@@ -166,9 +168,13 @@ func (e *EmbeddedServer) dlqAutoReplay() {
 				if entry.RetryCount >= entry.MaxRetries {
 					continue
 				}
-				// Exponential backoff: skip if too recent
+				// Exponential backoff based on last retry (or creation if never retried)
+				ref := entry.LastRetriedAt
+				if ref.IsZero() {
+					ref = entry.CreatedAt
+				}
 				backoff := time.Duration(1<<entry.RetryCount) * time.Minute
-				if time.Since(entry.CreatedAt) < backoff {
+				if time.Since(ref) < backoff {
 					continue
 				}
 
@@ -176,9 +182,21 @@ func (e *EmbeddedServer) dlqAutoReplay() {
 				if err != nil {
 					continue
 				}
+
+				// Snapshot DLQ count before dispatch to detect if dispatch failed
+				// (executeRule inserts a new DLQ entry on failure)
+				countBefore := e.dlqCount()
+
 				e.dispatcher.DispatchSync(ev.ID, ev.Type, ev.Data)
-				updated, err := e.store.IncrementDLQRetry(entry.ID)
-				if err == nil && updated.RetryCount >= updated.MaxRetries {
+
+				countAfter := e.dlqCount()
+
+				if countAfter > countBefore {
+					// Dispatch failed — new DLQ entry was created by executeRule.
+					// Remove the old entry (the new one has updated info).
+					e.store.RemoveDLQ(entry.ID)
+				} else {
+					// Dispatch succeeded — remove the DLQ entry.
 					e.store.RemoveDLQ(entry.ID)
 				}
 			}
@@ -186,6 +204,15 @@ func (e *EmbeddedServer) dlqAutoReplay() {
 			return
 		}
 	}
+}
+
+// dlqCount returns the current number of DLQ entries.
+func (e *EmbeddedServer) dlqCount() int {
+	entries, err := e.store.ListDLQ(1000)
+	if err != nil {
+		return 0
+	}
+	return len(entries)
 }
 
 func (e *EmbeddedServer) autoPurge(retentionDays, maxEvents, dlqRetentionDays int) {

@@ -110,8 +110,8 @@ func (p *TokenProvider) Refresh() (string, error) {
 
 	session, err := refresher.RefreshToken()
 	if err != nil {
-		// Retry once after a brief pause
-		time.Sleep(2 * time.Second)
+		// Retry once after a brief pause (500ms to minimize race window)
+		time.Sleep(500 * time.Millisecond)
 		session, err = refresher.RefreshToken()
 	}
 

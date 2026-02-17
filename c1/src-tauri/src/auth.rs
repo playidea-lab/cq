@@ -230,7 +230,6 @@ fn bind_callback_listener() -> Result<(TcpListener, u16), String> {
 
 /// Waits for the OAuth callback on an already-bound listener.
 fn wait_for_callback(listener: TcpListener) -> Result<AuthSession, String> {
-
     listener
         .set_nonblocking(false)
         .map_err(|e| format!("set_nonblocking: {}", e))?;

@@ -226,6 +226,7 @@ async fn run_realtime_loop(
                 }
 
                 // Connection dropped — try to reconnect
+                consecutive_failures += 1;
                 emit_status(&app, ConnectionStatus::Reconnecting);
             }
             Err(e) => {
