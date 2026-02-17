@@ -4,6 +4,8 @@ package task
 
 import (
 	"fmt"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -26,6 +28,8 @@ const (
 	TypeReview         Type = "REVIEW"
 	TypeCheckpoint     Type = "CHECKPOINT"
 )
+
+var baseIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]*$`)
 
 // Task represents a C4 task with Review-as-Task versioning.
 type Task struct {
@@ -57,34 +61,121 @@ type Task struct {
 	CompletedAt time.Time `json:"completed_at,omitempty"`
 }
 
+// ValidateTaskID validates task ID grammar.
+//
+// Grammar:
+//   - Implementation: T-<base>-<version> (legacy T-<base> is accepted and normalized to -0)
+//   - Review:         R-<base>-<version> (legacy R-<base> is accepted and normalized to -0)
+//   - Repair:         RPR-<base>-<version> (legacy RPR-<base> is accepted and normalized to -0)
+//   - Checkpoint:     CP-<base>
+//
+// base: [A-Za-z0-9][A-Za-z0-9_-]*
+// version: non-negative integer
+func ValidateTaskID(id string) error {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return fmt.Errorf("task_id is required")
+	}
+
+	switch {
+	case strings.HasPrefix(id, "CP-"):
+		baseID := strings.TrimPrefix(id, "CP-")
+		if !baseIDPattern.MatchString(baseID) {
+			return fmt.Errorf("invalid task_id format: %s", id)
+		}
+		return nil
+	case strings.HasPrefix(id, "T-"):
+		return validateVersionedTaskIDBody(strings.TrimPrefix(id, "T-"), id)
+	case strings.HasPrefix(id, "R-"):
+		return validateVersionedTaskIDBody(strings.TrimPrefix(id, "R-"), id)
+	case strings.HasPrefix(id, "RPR-"):
+		return validateVersionedTaskIDBody(strings.TrimPrefix(id, "RPR-"), id)
+	default:
+		return fmt.Errorf("invalid task_id format: %s", id)
+	}
+}
+
+func validateVersionedTaskIDBody(body string, original string) error {
+	if body == "" {
+		return fmt.Errorf("invalid task_id format: %s", original)
+	}
+
+	// Preferred format: <base>-<version> (right-most '-' splits version)
+	if idx := strings.LastIndex(body, "-"); idx > 0 {
+		basePart := body[:idx]
+		versionPart := body[idx+1:]
+		if isDigits(versionPart) {
+			if !baseIDPattern.MatchString(basePart) {
+				return fmt.Errorf("invalid task_id format: %s", original)
+			}
+			return nil
+		}
+	}
+
+	// Legacy format without version suffix.
+	if baseIDPattern.MatchString(body) {
+		return nil
+	}
+	return fmt.Errorf("invalid task_id format: %s", original)
+}
+
+func isDigits(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
+}
+
 // ParseTaskID normalizes a task ID and extracts components.
 func ParseTaskID(id string) (normalized string, baseID string, version int, taskType Type) {
-	parts := strings.SplitN(id, "-", 3)
-	if len(parts) < 2 {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return "", "", 0, TypeImplementation
+	}
+
+	switch {
+	case strings.HasPrefix(id, "CP-"):
+		baseID = strings.TrimPrefix(id, "CP-")
+		if baseID == "" {
+			return id, id, 0, TypeCheckpoint
+		}
+		return "CP-" + baseID, baseID, 0, TypeCheckpoint
+	case strings.HasPrefix(id, "R-"):
+		return parseVersionedTaskID(id, "R", TypeReview)
+	case strings.HasPrefix(id, "RPR-"):
+		return parseVersionedTaskID(id, "RPR", TypeImplementation)
+	case strings.HasPrefix(id, "T-"):
+		return parseVersionedTaskID(id, "T", TypeImplementation)
+	default:
 		return id, id, 0, TypeImplementation
 	}
+}
 
-	prefix := parts[0]
-	switch prefix {
-	case "R":
-		taskType = TypeReview
-	case "CP":
-		taskType = TypeCheckpoint
-	default:
-		taskType = TypeImplementation
+func parseVersionedTaskID(id string, prefix string, taskType Type) (normalized string, baseID string, version int, parsedType Type) {
+	parsedType = taskType
+	body := strings.TrimPrefix(id, prefix+"-")
+	if body == "" {
+		return id, id, 0, parsedType
 	}
 
-	baseID = parts[1]
+	baseID = body
 	version = 0
-
-	if len(parts) == 3 {
-		fmt.Sscanf(parts[2], "%d", &version)
-		normalized = id
-	} else {
-		normalized = fmt.Sprintf("%s-%s-0", prefix, baseID)
+	if idx := strings.LastIndex(body, "-"); idx > 0 {
+		basePart := body[:idx]
+		versionPart := body[idx+1:]
+		if isDigits(versionPart) {
+			if v, err := strconv.Atoi(versionPart); err == nil {
+				baseID = basePart
+				version = v
+			}
+		}
 	}
-
-	return normalized, baseID, version, taskType
+	return fmt.Sprintf("%s-%s-%d", prefix, baseID, version), baseID, version, parsedType
 }
 
 // ReviewID generates the review task ID for a given implementation task.

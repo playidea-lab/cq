@@ -157,7 +157,7 @@ func RegisterTaskHandlers(reg *mcp.Registry, store Store) {
 			"type": "object",
 			"properties": map[string]any{
 				"review_task_id":   map[string]any{"type": "string", "description": "Review task to reject (R-XXX-N)"},
-				"comments":        map[string]any{"type": "string", "description": "Reason for rejection"},
+				"comments":         map[string]any{"type": "string", "description": "Reason for rejection"},
 				"required_changes": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "List of required changes"},
 			},
 			"required": []string{"review_task_id", "comments", "required_changes"},
@@ -174,10 +174,10 @@ func RegisterTaskHandlers(reg *mcp.Registry, store Store) {
 			"type": "object",
 			"properties": map[string]any{
 				"task_id":           map[string]any{"type": "string", "description": "ID of the blocked task"},
-				"worker_id":        map[string]any{"type": "string", "description": "ID of the worker"},
+				"worker_id":         map[string]any{"type": "string", "description": "ID of the worker"},
 				"failure_signature": map[string]any{"type": "string", "description": "Error signature from validation failures"},
-				"attempts":         map[string]any{"type": "integer", "description": "Number of fix attempts made"},
-				"last_error":       map[string]any{"type": "string", "description": "Last error message"},
+				"attempts":          map[string]any{"type": "integer", "description": "Number of fix attempts made"},
+				"last_error":        map[string]any{"type": "string", "description": "Last error message"},
 			},
 			"required": []string{"task_id", "worker_id", "failure_signature", "attempts"},
 		},
@@ -262,6 +262,14 @@ func handleAddTodo(store Store, rawArgs json.RawMessage) (any, error) {
 	if args.DoD == "" {
 		return nil, fmt.Errorf("dod is required")
 	}
+	if err := task.ValidateTaskID(args.TaskID); err != nil {
+		return nil, err
+	}
+	for _, depID := range args.Dependencies {
+		if err := task.ValidateTaskID(depID); err != nil {
+			return nil, fmt.Errorf("invalid dependency %q: %w", depID, err)
+		}
+	}
 
 	t := &Task{
 		ID:           args.TaskID,
@@ -324,6 +332,12 @@ func handleRequestChanges(store Store, rawArgs json.RawMessage) (any, error) {
 	}
 	if len(args.RequiredChanges) == 0 {
 		return nil, fmt.Errorf("required_changes must not be empty")
+	}
+	if err := task.ValidateTaskID(args.ReviewTaskID); err != nil {
+		return nil, err
+	}
+	if _, _, _, taskType := task.ParseTaskID(args.ReviewTaskID); taskType != task.TypeReview {
+		return nil, fmt.Errorf("review_task_id must be an R- task: %s", args.ReviewTaskID)
 	}
 
 	result, err := store.RequestChanges(args.ReviewTaskID, args.Comments, args.RequiredChanges)

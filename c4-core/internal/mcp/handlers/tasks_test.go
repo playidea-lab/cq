@@ -53,6 +53,20 @@ func TestHandleAddTodo(t *testing.T) {
 			wantTasks: 0,
 		},
 		{
+			name:      "invalid task_id format",
+			args:      `{"task_id": "INVALID", "title": "Bad", "dod": "Done"}`,
+			wantErr:   true,
+			errMsg:    "invalid task_id format",
+			wantTasks: 0,
+		},
+		{
+			name:      "invalid dependency format",
+			args:      `{"task_id": "T-VALID-0", "title": "Task", "dod": "Done", "dependencies": ["bad dep"]}`,
+			wantErr:   true,
+			errMsg:    "invalid dependency",
+			wantTasks: 0,
+		},
+		{
 			name: "first add creates review task",
 			args: `{
 				"task_id": "T-DUP-001",
@@ -125,6 +139,35 @@ func TestHandleAddTodo(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestHandleAddTodo_DeterministicReviewIDForHyphenBase(t *testing.T) {
+	store := newMockStore()
+
+	args := `{
+		"task_id": "T-LH-my-cool-tool-0",
+		"title": "Lighthouse implementation",
+		"dod": "Implement and test"
+	}`
+	result, err := handleAddTodo(store, json.RawMessage(args))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	m, ok := result.(map[string]any)
+	if !ok {
+		t.Fatalf("result type = %T, want map[string]any", result)
+	}
+	wantReviewID := "R-LH-my-cool-tool-0"
+	if got := m["review_task_id"]; got != wantReviewID {
+		t.Fatalf("review_task_id = %v, want %s", got, wantReviewID)
+	}
+	if len(store.addedTasks) != 2 {
+		t.Fatalf("added tasks = %d, want 2", len(store.addedTasks))
+	}
+	if got := store.addedTasks[1].ID; got != wantReviewID {
+		t.Fatalf("generated review task ID = %s, want %s", got, wantReviewID)
 	}
 }
 
@@ -447,11 +490,11 @@ func TestHandleReport(t *testing.T) {
 // TestHandleMarkBlocked tests the handleMarkBlocked function
 func TestHandleMarkBlocked(t *testing.T) {
 	tests := []struct {
-		name      string
-		args      string
-		blockErr  error
-		wantErr   bool
-		errMsg    string
+		name         string
+		args         string
+		blockErr     error
+		wantErr      bool
+		errMsg       string
 		wantAttempts int
 	}{
 		{
