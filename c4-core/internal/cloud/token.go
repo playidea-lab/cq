@@ -109,6 +109,11 @@ func (p *TokenProvider) Refresh() (string, error) {
 	p.mu.Unlock()
 
 	session, err := refresher.RefreshToken()
+	if err != nil {
+		// Retry once after a brief pause
+		time.Sleep(2 * time.Second)
+		session, err = refresher.RefreshToken()
+	}
 
 	p.mu.Lock()
 	p.refreshing = false

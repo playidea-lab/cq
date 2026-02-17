@@ -129,6 +129,9 @@ fn make_heartbeat() -> String {
     serde_json::to_string(&msg).unwrap_or_default()
 }
 
+/// Maximum consecutive reconnect attempts before giving up.
+const MAX_RECONNECT_ATTEMPTS: u32 = 50;
+
 /// Run the WebSocket connection with auto-reconnect
 async fn run_realtime_loop(
     app: AppHandle,
@@ -139,10 +142,17 @@ async fn run_realtime_loop(
 ) {
     let mut backoff_secs: u64 = 1;
     let max_backoff: u64 = 30;
+    let mut consecutive_failures: u32 = 0;
 
     loop {
         // Check cancellation
         if *cancel_rx.borrow() {
+            emit_status(&app, ConnectionStatus::Disconnected);
+            return;
+        }
+
+        if consecutive_failures >= MAX_RECONNECT_ATTEMPTS {
+            eprintln!("[realtime] max reconnect attempts ({}) reached, giving up", MAX_RECONNECT_ATTEMPTS);
             emit_status(&app, ConnectionStatus::Disconnected);
             return;
         }
@@ -155,6 +165,7 @@ async fn run_realtime_loop(
         match connect_result {
             Ok((ws_stream, _)) => {
                 backoff_secs = 1; // Reset backoff on successful connection
+                consecutive_failures = 0;
                 emit_status(&app, ConnectionStatus::Connected);
 
                 let (mut write, mut read) = ws_stream.split();
@@ -218,7 +229,8 @@ async fn run_realtime_loop(
                 emit_status(&app, ConnectionStatus::Reconnecting);
             }
             Err(e) => {
-                eprintln!("[realtime] connection failed: {}", e);
+                consecutive_failures += 1;
+                eprintln!("[realtime] connection failed ({}/{}): {}", consecutive_failures, MAX_RECONNECT_ATTEMPTS, e);
                 emit_status(&app, ConnectionStatus::Reconnecting);
             }
         }

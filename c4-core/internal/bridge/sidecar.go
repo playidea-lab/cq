@@ -129,10 +129,15 @@ func StartSidecar(cfg *SidecarConfig) (*Sidecar, error) {
 
 	pythonPath, err := exec.LookPath(cfg.PythonCommand)
 	if err != nil {
-		// Try fallback to python3
-		pythonPath, err = exec.LookPath("python3")
+		// Try PYTHON env, then python3 as final fallback
+		if envPython := os.Getenv("PYTHON"); envPython != "" {
+			pythonPath, err = exec.LookPath(envPython)
+		}
 		if err != nil {
-			return nil, fmt.Errorf("python not found: neither %q nor python3 in PATH", cfg.PythonCommand)
+			pythonPath, err = exec.LookPath("python3")
+		}
+		if err != nil {
+			return nil, fmt.Errorf("python not found: neither %q, $PYTHON, nor python3 in PATH", cfg.PythonCommand)
 		}
 		cfg.PythonArgs = []string{"-m", "c4.bridge.sidecar"}
 	}
