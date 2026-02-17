@@ -27,6 +27,7 @@ const (
 	TypeImplementation Type = "IMPLEMENTATION"
 	TypeReview         Type = "REVIEW"
 	TypeCheckpoint     Type = "CHECKPOINT"
+	TypeRefine         Type = "REFINE"
 )
 
 var baseIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]*$`)
@@ -66,6 +67,7 @@ type Task struct {
 // Grammar:
 //   - Implementation: T-<base>-<version> (legacy T-<base> is accepted and normalized to -0)
 //   - Review:         R-<base>-<version> (legacy R-<base> is accepted and normalized to -0)
+//   - Refine:         RF-<base>-<version> (iterative review-fix loop task)
 //   - Repair:         RPR-<base>-<version> (legacy RPR-<base> is accepted and normalized to -0)
 //   - Checkpoint:     CP-<base>
 //
@@ -86,10 +88,12 @@ func ValidateTaskID(id string) error {
 		return nil
 	case strings.HasPrefix(id, "T-"):
 		return validateVersionedTaskIDBody(strings.TrimPrefix(id, "T-"), id)
-	case strings.HasPrefix(id, "R-"):
-		return validateVersionedTaskIDBody(strings.TrimPrefix(id, "R-"), id)
 	case strings.HasPrefix(id, "RPR-"):
 		return validateVersionedTaskIDBody(strings.TrimPrefix(id, "RPR-"), id)
+	case strings.HasPrefix(id, "RF-"):
+		return validateVersionedTaskIDBody(strings.TrimPrefix(id, "RF-"), id)
+	case strings.HasPrefix(id, "R-"):
+		return validateVersionedTaskIDBody(strings.TrimPrefix(id, "R-"), id)
 	default:
 		return fmt.Errorf("invalid task_id format: %s", id)
 	}
@@ -145,10 +149,12 @@ func ParseTaskID(id string) (normalized string, baseID string, version int, task
 			return id, id, 0, TypeCheckpoint
 		}
 		return "CP-" + baseID, baseID, 0, TypeCheckpoint
-	case strings.HasPrefix(id, "R-"):
-		return parseVersionedTaskID(id, "R", TypeReview)
+	case strings.HasPrefix(id, "RF-"):
+		return parseVersionedTaskID(id, "RF", TypeRefine)
 	case strings.HasPrefix(id, "RPR-"):
 		return parseVersionedTaskID(id, "RPR", TypeImplementation)
+	case strings.HasPrefix(id, "R-"):
+		return parseVersionedTaskID(id, "R", TypeReview)
 	case strings.HasPrefix(id, "T-"):
 		return parseVersionedTaskID(id, "T", TypeImplementation)
 	default:
