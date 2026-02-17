@@ -439,6 +439,33 @@ func TestReportTask(t *testing.T) {
 			if payload["status"] != "done" {
 				t.Errorf("status = %v, want 'done'", payload["status"])
 			}
+			if _, hasCommit := payload["commit_sha"]; hasCommit {
+				t.Errorf("commit_sha should not be set in direct report payload")
+			}
+			if _, hasBranch := payload["branch"]; hasBranch {
+				t.Errorf("branch should not be set in direct report payload")
+			}
+			handoff, ok := payload["handoff"].(string)
+			if !ok || handoff == "" {
+				t.Fatalf("handoff = %v, want non-empty JSON string", payload["handoff"])
+			}
+			var handoffPayload struct {
+				Type         string   `json:"type"`
+				Summary      string   `json:"summary"`
+				FilesChanged []string `json:"files_changed"`
+			}
+			if err := json.Unmarshal([]byte(handoff), &handoffPayload); err != nil {
+				t.Fatalf("handoff JSON parse error: %v", err)
+			}
+			if handoffPayload.Type != "direct_report" {
+				t.Errorf("handoff.type = %q, want direct_report", handoffPayload.Type)
+			}
+			if handoffPayload.Summary != "Completed implementation" {
+				t.Errorf("handoff.summary = %q, want Completed implementation", handoffPayload.Summary)
+			}
+			if len(handoffPayload.FilesChanged) != 2 || handoffPayload.FilesChanged[0] != "main.go" || handoffPayload.FilesChanged[1] != "handler.go" {
+				t.Errorf("handoff.files_changed = %v, want [main.go handler.go]", handoffPayload.FilesChanged)
+			}
 			return 200, ""
 		},
 	})

@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
@@ -152,6 +153,85 @@ func TestSQLiteStoreReportTaskDirectSuccess(t *testing.T) {
 	}
 	if got.Status != "done" {
 		t.Fatalf("status = %q, want done", got.Status)
+	}
+
+	var commitSHA, branch, handoff string
+	if err := db.QueryRow("SELECT commit_sha, branch, handoff FROM c4_tasks WHERE task_id='T-001-0'").Scan(&commitSHA, &branch, &handoff); err != nil {
+		t.Fatalf("query direct report persistence: %v", err)
+	}
+	if commitSHA != "" {
+		t.Fatalf("commit_sha = %q, want empty for direct report", commitSHA)
+	}
+	if branch != "" {
+		t.Fatalf("branch = %q, want empty for direct report", branch)
+	}
+
+	var payload struct {
+		Type         string   `json:"type"`
+		Summary      string   `json:"summary"`
+		FilesChanged []string `json:"files_changed"`
+	}
+	if err := json.Unmarshal([]byte(handoff), &payload); err != nil {
+		t.Fatalf("handoff should be JSON payload: %v", err)
+	}
+	if payload.Type != "direct_report" {
+		t.Fatalf("handoff.type = %q, want direct_report", payload.Type)
+	}
+	if payload.Summary != "done" {
+		t.Fatalf("handoff.summary = %q, want done", payload.Summary)
+	}
+	if len(payload.FilesChanged) != 1 || payload.FilesChanged[0] != "feature.go" {
+		t.Fatalf("handoff.files_changed = %v, want [feature.go]", payload.FilesChanged)
+	}
+}
+
+func TestAssignTask_ReviewContextFromDirectReportHandoff(t *testing.T) {
+	store, db := newTestSQLiteStore(t)
+	defer db.Close()
+
+	if err := store.AddTask(&Task{ID: "T-301-0", Title: "Impl", DoD: "done", Status: "pending"}); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := store.ClaimTask("T-301-0"); err != nil {
+		t.Fatalf("claim task: %v", err)
+	}
+	if err := store.ReportTask("T-301-0", "direct summary", []string{"a.go", "b.go"}); err != nil {
+		t.Fatalf("report task: %v", err)
+	}
+
+	// Add review task after report to avoid auto-cascade completion on the paired R task.
+	if err := store.AddTask(&Task{
+		ID:           "R-301-0",
+		Title:        "Review",
+		DoD:          "review",
+		Status:       "pending",
+		Dependencies: []string{"T-301-0"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	assignment, err := store.AssignTask("worker-review")
+	if err != nil {
+		t.Fatalf("assign review task: %v", err)
+	}
+	if assignment == nil {
+		t.Fatal("expected review assignment, got nil")
+	}
+	if assignment.TaskID != "R-301-0" {
+		t.Fatalf("task_id = %q, want R-301-0", assignment.TaskID)
+	}
+	if assignment.ReviewContext == nil {
+		t.Fatal("expected review_context, got nil")
+	}
+	if assignment.ReviewContext.ParentTaskID != "T-301-0" {
+		t.Fatalf("parent_task_id = %q, want T-301-0", assignment.ReviewContext.ParentTaskID)
+	}
+	if assignment.ReviewContext.CommitSHA != "" {
+		t.Fatalf("commit_sha = %q, want empty for direct report", assignment.ReviewContext.CommitSHA)
+	}
+	if assignment.ReviewContext.FilesChanged != "a.go,b.go" {
+		t.Fatalf("files_changed = %q, want a.go,b.go", assignment.ReviewContext.FilesChanged)
 	}
 }
 

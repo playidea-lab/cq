@@ -406,19 +406,30 @@ func (c *CloudStore) ReportTask(taskID, summary string, filesChanged []string) e
 		return fmt.Errorf("getting task for report: %w", err)
 	}
 
-	files := ""
-	if len(filesChanged) > 0 {
-		files = strings.Join(filesChanged, ",")
-	}
+	handoff := buildDirectReportHandoff(summary, filesChanged)
 
 	patchFilter := fmt.Sprintf("task_id=eq.%s&project_id=eq.%s", url.QueryEscape(taskID), url.QueryEscape(c.projectID))
 	update := map[string]any{
 		"status":     "done",
-		"commit_sha": summary,
-		"branch":     files,
+		"handoff":    handoff,
 		"updated_at": time.Now().UTC().Format(time.RFC3339),
 	}
 	return c.patch("c4_tasks", patchFilter, update)
+}
+
+func buildDirectReportHandoff(summary string, filesChanged []string) string {
+	payload := map[string]any{
+		"type":    "direct_report",
+		"summary": summary,
+	}
+	if len(filesChanged) > 0 {
+		payload["files_changed"] = filesChanged
+	}
+	b, err := json.Marshal(payload)
+	if err != nil {
+		return summary
+	}
+	return string(b)
 }
 
 // Checkpoint records a checkpoint decision.

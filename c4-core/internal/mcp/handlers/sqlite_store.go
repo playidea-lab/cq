@@ -717,9 +717,14 @@ func (s *SQLiteStore) enrichWithReviewContext(assignment *TaskAssignment) {
 
 	_, baseID, ver, _ := task.ParseTaskID(assignment.TaskID)
 	parentID := fmt.Sprintf("T-%s-%d", baseID, ver)
-	var commitSHA, filesChanged string
-	if err := s.db.QueryRow("SELECT commit_sha, branch FROM c4_tasks WHERE task_id=?", parentID).Scan(&commitSHA, &filesChanged); err != nil {
+	var commitSHA, legacyFilesChanged, handoff string
+	if err := s.db.QueryRow("SELECT commit_sha, branch, handoff FROM c4_tasks WHERE task_id=?", parentID).Scan(&commitSHA, &legacyFilesChanged, &handoff); err != nil {
 		fmt.Fprintf(os.Stderr, "c4: assign-task: review context for %s: %v\n", parentID, err)
+	}
+	filesChanged := extractFilesChangedFromHandoff(handoff)
+	if filesChanged == "" {
+		// Backward compatibility for legacy rows that stored files in branch.
+		filesChanged = legacyFilesChanged
 	}
 	if commitSHA != "" || filesChanged != "" {
 		assignment.ReviewContext = &ReviewContext{
@@ -891,14 +896,11 @@ func (s *SQLiteStore) ReportTask(taskID, summary string, filesChanged []string) 
 		return fmt.Errorf("task %s is owned by %q (expected direct)", taskID, task.WorkerID)
 	}
 
-	files := ""
-	if len(filesChanged) > 0 {
-		files = strings.Join(filesChanged, ",")
-	}
+	handoff := buildDirectReportHandoff(summary, filesChanged)
 
 	_, err = s.db.Exec(`
-		UPDATE c4_tasks SET status = 'done', commit_sha = ?, branch = ?, updated_at = CURRENT_TIMESTAMP
-		WHERE task_id = ?`, summary, files, taskID,
+		UPDATE c4_tasks SET status = 'done', handoff = ?, updated_at = CURRENT_TIMESTAMP
+		WHERE task_id = ?`, handoff, taskID,
 	)
 	if err != nil {
 		return err
@@ -935,6 +937,41 @@ func (s *SQLiteStore) ReportTask(taskID, summary string, filesChanged []string) 
 	})
 
 	return nil
+}
+
+func buildDirectReportHandoff(summary string, filesChanged []string) string {
+	payload := map[string]any{
+		"type":    "direct_report",
+		"summary": summary,
+	}
+	if len(filesChanged) > 0 {
+		payload["files_changed"] = filesChanged
+	}
+	b, err := json.Marshal(payload)
+	if err != nil {
+		return summary
+	}
+	return string(b)
+}
+
+func extractFilesChangedFromHandoff(handoff string) string {
+	if strings.TrimSpace(handoff) == "" {
+		return ""
+	}
+	var payload struct {
+		Type         string   `json:"type"`
+		FilesChanged []string `json:"files_changed"`
+	}
+	if err := json.Unmarshal([]byte(handoff), &payload); err != nil {
+		return ""
+	}
+	if payload.Type != "" && payload.Type != "direct_report" {
+		return ""
+	}
+	if len(payload.FilesChanged) == 0 {
+		return ""
+	}
+	return strings.Join(payload.FilesChanged, ",")
 }
 
 // --- Active Claim File Management ---
