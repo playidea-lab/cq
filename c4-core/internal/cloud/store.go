@@ -47,22 +47,63 @@ func NewCloudStore(baseURL, apiKey string, tp *TokenProvider, projectID string) 
 
 // cloudTaskRow maps to the c4_tasks Supabase table.
 type cloudTaskRow struct {
-	TaskID       string `json:"task_id"`
-	ProjectID    string `json:"project_id,omitempty"`
-	Title        string `json:"title"`
-	Scope        string `json:"scope,omitempty"`
-	DoD          string `json:"dod,omitempty"`
-	Status       string `json:"status"`
-	Dependencies string `json:"dependencies,omitempty"` // JSON array string
-	Domain       string `json:"domain,omitempty"`
-	Priority     int    `json:"priority"`
-	Model        string `json:"model,omitempty"`
-	WorkerID     string `json:"worker_id,omitempty"`
-	Branch       string `json:"branch,omitempty"`
-	CommitSHA    string `json:"commit_sha,omitempty"`
-	Handoff      string `json:"handoff,omitempty"`
-	CreatedAt    string `json:"created_at,omitempty"`
-	UpdatedAt    string `json:"updated_at,omitempty"`
+	TaskID        string            `json:"task_id"`
+	ProjectID     string            `json:"project_id,omitempty"`
+	Title         string            `json:"title"`
+	Scope         string            `json:"scope,omitempty"`
+	DoD           string            `json:"dod,omitempty"`
+	Status        string            `json:"status"`
+	Dependencies  cloudDependencies `json:"dependencies,omitempty"` // JSON array string (or array payload from Supabase)
+	Domain        string            `json:"domain,omitempty"`
+	Priority      int               `json:"priority"`
+	Model         string            `json:"model,omitempty"`
+	ExecutionMode string            `json:"execution_mode,omitempty"` // worker, direct, auto
+	WorkerID      string            `json:"worker_id,omitempty"`
+	Branch        string            `json:"branch,omitempty"`
+	CommitSHA     string            `json:"commit_sha,omitempty"`
+	Handoff       string            `json:"handoff,omitempty"`
+	CreatedAt     string            `json:"created_at,omitempty"`
+	UpdatedAt     string            `json:"updated_at,omitempty"`
+}
+
+type cloudDependencies string
+
+func (d *cloudDependencies) UnmarshalJSON(data []byte) error {
+	trimmed := strings.TrimSpace(string(data))
+	if trimmed == "" || trimmed == "null" {
+		*d = cloudDependencies("[]")
+		return nil
+	}
+	if strings.HasPrefix(trimmed, "\"") {
+		var s string
+		if err := json.Unmarshal(data, &s); err != nil {
+			return err
+		}
+		if strings.TrimSpace(s) == "" {
+			s = "[]"
+		}
+		*d = cloudDependencies(s)
+		return nil
+	}
+
+	var deps []string
+	if err := json.Unmarshal(data, &deps); err != nil {
+		return err
+	}
+	b, err := json.Marshal(deps)
+	if err != nil {
+		return err
+	}
+	*d = cloudDependencies(string(b))
+	return nil
+}
+
+func (d cloudDependencies) MarshalJSON() ([]byte, error) {
+	v := strings.TrimSpace(string(d))
+	if v == "" {
+		v = "[]"
+	}
+	return json.Marshal(v)
 }
 
 // cloudStateRow maps to the c4_state Supabase table.
@@ -197,18 +238,19 @@ func (c *CloudStore) AddTask(task *store.Task) error {
 	}
 
 	row := &cloudTaskRow{
-		TaskID:       task.ID,
-		ProjectID:    c.projectID,
-		Title:        task.Title,
-		Scope:        task.Scope,
-		DoD:          task.DoD,
-		Status:       "pending",
-		Dependencies: deps,
-		Domain:       task.Domain,
-		Priority:     task.Priority,
-		Model:        task.Model,
-		CreatedAt:    time.Now().UTC().Format(time.RFC3339),
-		UpdatedAt:    time.Now().UTC().Format(time.RFC3339),
+		TaskID:        task.ID,
+		ProjectID:     c.projectID,
+		Title:         task.Title,
+		Scope:         task.Scope,
+		DoD:           task.DoD,
+		Status:        "pending",
+		Dependencies:  cloudDependencies(deps),
+		Domain:        task.Domain,
+		Priority:      task.Priority,
+		Model:         task.Model,
+		ExecutionMode: normalizeExecutionMode(task.ExecutionMode),
+		CreatedAt:     time.Now().UTC().Format(time.RFC3339),
+		UpdatedAt:     time.Now().UTC().Format(time.RFC3339),
 	}
 
 	return c.post("c4_tasks", row)
@@ -251,6 +293,9 @@ func (c *CloudStore) AssignTask(workerID string) (*store.TaskAssignment, error) 
 		if row.Status != "pending" {
 			continue
 		}
+		if !isWorkerExecutionAllowed(row.ExecutionMode) {
+			continue
+		}
 		if !cloudDependenciesMet(row, taskMap) {
 			continue
 		}
@@ -283,7 +328,7 @@ func (c *CloudStore) AssignTask(workerID string) (*store.TaskAssignment, error) 
 	}
 
 	var deps []string
-	if selected.Dependencies != "" && selected.Dependencies != "[]" {
+	if selected.Dependencies != "" && string(selected.Dependencies) != "[]" {
 		_ = json.Unmarshal([]byte(selected.Dependencies), &deps)
 	}
 
@@ -315,8 +360,40 @@ func (c *CloudStore) SubmitTask(taskID, workerID, commitSHA, handoff string, res
 	}
 
 	// Verify task exists
-	if _, err := c.GetTask(taskID); err != nil {
+	task, err := c.GetTask(taskID)
+	if err != nil {
 		return nil, fmt.Errorf("getting task for submit: %w", err)
+	}
+	if task.Status != "in_progress" {
+		return &store.SubmitResult{
+			Success:    false,
+			NextAction: "get_next_task",
+			Message:    fmt.Sprintf("Task %s is %s (expected in_progress)", taskID, task.Status),
+		}, nil
+	}
+	if !isWorkerExecutionAllowed(task.ExecutionMode) {
+		return &store.SubmitResult{
+			Success:    false,
+			NextAction: "get_next_task",
+			Message:    fmt.Sprintf("Task %s execution_mode is %q (worker submit allowed: worker/auto)", taskID, task.ExecutionMode),
+		}, nil
+	}
+	if task.WorkerID == "direct" {
+		return &store.SubmitResult{
+			Success:    false,
+			NextAction: "get_next_task",
+			Message:    fmt.Sprintf("Task %s is claimed by direct mode — use c4_report", taskID),
+		}, nil
+	}
+	if workerID != "" && task.WorkerID != "" && task.WorkerID != workerID {
+		return &store.SubmitResult{
+			Success:    false,
+			NextAction: "get_next_task",
+			Message: fmt.Sprintf(
+				"Task %s is owned by worker %s (submitter: %s)",
+				taskID, task.WorkerID, workerID,
+			),
+		}, nil
 	}
 
 	// Mark as done
@@ -384,6 +461,9 @@ func (c *CloudStore) ClaimTask(taskID string) (*store.Task, error) {
 	if task.Status != "pending" {
 		return nil, fmt.Errorf("task %s is %s, not pending", taskID, task.Status)
 	}
+	if !isDirectExecutionAllowed(task.ExecutionMode) {
+		return nil, fmt.Errorf("task %s execution_mode is %q (expected direct or auto)", taskID, task.ExecutionMode)
+	}
 
 	patchFilter := fmt.Sprintf("task_id=eq.%s&project_id=eq.%s", url.QueryEscape(taskID), url.QueryEscape(c.projectID))
 	update := map[string]any{
@@ -402,8 +482,18 @@ func (c *CloudStore) ClaimTask(taskID string) (*store.Task, error) {
 
 // ReportTask marks a directly-claimed task as done.
 func (c *CloudStore) ReportTask(taskID, summary string, filesChanged []string) error {
-	if _, err := c.GetTask(taskID); err != nil {
+	task, err := c.GetTask(taskID)
+	if err != nil {
 		return fmt.Errorf("getting task for report: %w", err)
+	}
+	if task.Status != "in_progress" {
+		return fmt.Errorf("task %s is %s (expected in_progress)", taskID, task.Status)
+	}
+	if task.WorkerID != "direct" {
+		return fmt.Errorf("task %s is owned by %q (expected direct)", taskID, task.WorkerID)
+	}
+	if !isDirectExecutionAllowed(task.ExecutionMode) {
+		return fmt.Errorf("task %s execution_mode is %q (expected direct or auto)", taskID, task.ExecutionMode)
 	}
 
 	handoff := buildDirectReportHandoff(summary, filesChanged)
@@ -597,7 +687,7 @@ func (c *CloudStore) writeState(newState string) error {
 // cloudDependenciesMet checks if all of a task's dependencies are done.
 func cloudDependenciesMet(row *cloudTaskRow, taskMap map[string]*cloudTaskRow) bool {
 	var deps []string
-	if row.Dependencies != "" && row.Dependencies != "[]" {
+	if row.Dependencies != "" && string(row.Dependencies) != "[]" {
 		if err := json.Unmarshal([]byte(row.Dependencies), &deps); err != nil {
 			return false
 		}
@@ -614,26 +704,50 @@ func cloudDependenciesMet(row *cloudTaskRow, taskMap map[string]*cloudTaskRow) b
 // rowToTask converts a cloudTaskRow to a store.Task.
 func rowToTask(row *cloudTaskRow) *store.Task {
 	var deps []string
-	if row.Dependencies != "" && row.Dependencies != "[]" {
+	if row.Dependencies != "" && string(row.Dependencies) != "[]" {
 		_ = json.Unmarshal([]byte(row.Dependencies), &deps)
 	}
 
 	return &store.Task{
-		ID:           row.TaskID,
-		Title:        row.Title,
-		Scope:        row.Scope,
-		DoD:          row.DoD,
-		Status:       row.Status,
-		Dependencies: deps,
-		Domain:       row.Domain,
-		Priority:     row.Priority,
-		Model:        row.Model,
-		WorkerID:     row.WorkerID,
-		Branch:       row.Branch,
-		CommitSHA:    row.CommitSHA,
-		CreatedAt:    row.CreatedAt,
-		UpdatedAt:    row.UpdatedAt,
+		ID:            row.TaskID,
+		Title:         row.Title,
+		Scope:         row.Scope,
+		DoD:           row.DoD,
+		Status:        row.Status,
+		Dependencies:  deps,
+		Domain:        row.Domain,
+		Priority:      row.Priority,
+		Model:         row.Model,
+		ExecutionMode: normalizeExecutionMode(row.ExecutionMode),
+		WorkerID:      row.WorkerID,
+		Branch:        row.Branch,
+		CommitSHA:     row.CommitSHA,
+		CreatedAt:     row.CreatedAt,
+		UpdatedAt:     row.UpdatedAt,
 	}
+}
+
+func normalizeExecutionMode(mode string) string {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case "", "worker":
+		return "worker"
+	case "direct":
+		return "direct"
+	case "auto":
+		return "auto"
+	default:
+		return "worker"
+	}
+}
+
+func isWorkerExecutionAllowed(mode string) bool {
+	normalized := normalizeExecutionMode(mode)
+	return normalized == "worker" || normalized == "auto"
+}
+
+func isDirectExecutionAllowed(mode string) bool {
+	normalized := normalizeExecutionMode(mode)
+	return normalized == "direct" || normalized == "auto"
 }
 
 // =========================================================================

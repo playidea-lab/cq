@@ -7,31 +7,32 @@ import "time"
 
 // Task represents a task in the C4 system.
 type Task struct {
-	ID           string   `json:"task_id"`
-	Title        string   `json:"title"`
-	Scope        string   `json:"scope,omitempty"`
-	DoD          string   `json:"dod"`
-	Status       string   `json:"status"`
-	Dependencies []string `json:"dependencies,omitempty"`
-	Domain       string   `json:"domain,omitempty"`
-	Priority     int      `json:"priority"`
-	Model        string   `json:"model,omitempty"`
-	WorkerID     string   `json:"worker_id,omitempty"`
-	Branch       string   `json:"branch,omitempty"`
-	CommitSHA    string   `json:"commit_sha,omitempty"`
-	CreatedAt    string   `json:"created_at,omitempty"`
-	UpdatedAt    string   `json:"updated_at,omitempty"`
+	ID            string   `json:"task_id"`
+	Title         string   `json:"title"`
+	Scope         string   `json:"scope,omitempty"`
+	DoD           string   `json:"dod"`
+	Status        string   `json:"status"`
+	Dependencies  []string `json:"dependencies,omitempty"`
+	Domain        string   `json:"domain,omitempty"`
+	Priority      int      `json:"priority"`
+	Model         string   `json:"model,omitempty"`
+	ExecutionMode string   `json:"execution_mode,omitempty"` // worker, direct, auto
+	WorkerID      string   `json:"worker_id,omitempty"`
+	Branch        string   `json:"branch,omitempty"`
+	CommitSHA     string   `json:"commit_sha,omitempty"`
+	CreatedAt     string   `json:"created_at,omitempty"`
+	UpdatedAt     string   `json:"updated_at,omitempty"`
 }
 
 // TaskAssignment is returned when a worker is assigned a task.
 type TaskAssignment struct {
-	TaskID        string         `json:"task_id"`
-	Title         string         `json:"title"`
-	Scope         string         `json:"scope,omitempty"`
-	DoD           string         `json:"dod"`
-	Dependencies  []string       `json:"dependencies,omitempty"`
-	Domain        string         `json:"domain,omitempty"`
-	Branch        string         `json:"branch,omitempty"`
+	TaskID         string             `json:"task_id"`
+	Title          string             `json:"title"`
+	Scope          string             `json:"scope,omitempty"`
+	DoD            string             `json:"dod"`
+	Dependencies   []string           `json:"dependencies,omitempty"`
+	Domain         string             `json:"domain,omitempty"`
+	Branch         string             `json:"branch,omitempty"`
 	WorkerID       string             `json:"worker_id"`
 	WorktreePath   string             `json:"worktree_path,omitempty"`
 	Model          string             `json:"recommended_model,omitempty"`

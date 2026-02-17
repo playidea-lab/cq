@@ -53,6 +53,19 @@ type markBlockedArgs struct {
 	LastError        string `json:"last_error,omitempty"`
 }
 
+func resolveExecutionMode(mode string) (string, error) {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case "", "worker":
+		return "worker", nil
+	case "direct":
+		return "direct", nil
+	case "auto":
+		return "auto", nil
+	default:
+		return "", fmt.Errorf("invalid execution_mode: %s (must be worker, direct, or auto)", mode)
+	}
+}
+
 // RegisterTaskHandlers registers task management tools on the registry.
 func RegisterTaskHandlers(reg *mcp.Registry, store Store) {
 	// c4_get_task
@@ -265,6 +278,10 @@ func handleAddTodo(store Store, rawArgs json.RawMessage) (any, error) {
 	if err := task.ValidateTaskID(args.TaskID); err != nil {
 		return nil, err
 	}
+	executionMode, err := resolveExecutionMode(args.ExecutionMode)
+	if err != nil {
+		return nil, err
+	}
 	for _, depID := range args.Dependencies {
 		if err := task.ValidateTaskID(depID); err != nil {
 			return nil, fmt.Errorf("invalid dependency %q: %w", depID, err)
@@ -281,6 +298,7 @@ func handleAddTodo(store Store, rawArgs json.RawMessage) (any, error) {
 		Domain:       args.Domain,
 		Priority:     args.Priority,
 		Model:        args.Model,
+		ExecutionMode: executionMode,
 	}
 
 	if err := store.AddTask(t); err != nil {

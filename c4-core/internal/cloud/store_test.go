@@ -164,6 +164,9 @@ func TestAddTask(t *testing.T) {
 	if payload.Dependencies != `["T-000-0"]` {
 		t.Errorf("dependencies = %q, want %q", payload.Dependencies, `["T-000-0"]`)
 	}
+	if payload.ExecutionMode != "worker" {
+		t.Errorf("execution_mode = %q, want %q", payload.ExecutionMode, "worker")
+	}
 }
 
 // --- GetTask ---
@@ -232,6 +235,41 @@ func TestGetTask_NotFound(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "not found") {
 		t.Errorf("error = %q, want it to contain 'not found'", err.Error())
+	}
+}
+
+func TestGetTask_DependenciesJSONArray(t *testing.T) {
+	srv := newTestServer(t, map[string]func(r *http.Request) (int, string){
+		"GET /rest/v1/c4_tasks": func(r *http.Request) (int, string) {
+			return 200, `[{
+				"task_id":"T-001-0",
+				"title":"Implement feature X",
+				"scope":"backend",
+				"dod":"Tests pass",
+				"status":"pending",
+				"dependencies":["T-000-0"],
+				"domain":"go",
+				"priority":5,
+				"execution_mode":"auto",
+				"worker_id":"",
+				"branch":"",
+				"commit_sha":"",
+				"project_id":"proj-123"
+			}]`
+		},
+	})
+	defer srv.Close()
+
+	store := newTestStore(srv.URL)
+	task, err := store.GetTask("T-001-0")
+	if err != nil {
+		t.Fatalf("GetTask() error: %v", err)
+	}
+	if len(task.Dependencies) != 1 || task.Dependencies[0] != "T-000-0" {
+		t.Fatalf("Dependencies = %v, want [T-000-0]", task.Dependencies)
+	}
+	if task.ExecutionMode != "auto" {
+		t.Fatalf("ExecutionMode = %q, want auto", task.ExecutionMode)
 	}
 }
 
@@ -320,6 +358,39 @@ func TestSubmitTask_ValidationFailure(t *testing.T) {
 	}
 }
 
+func TestSubmitTask_ExecutionModeGuard(t *testing.T) {
+	srv := newTestServer(t, map[string]func(r *http.Request) (int, string){
+		"GET /rest/v1/c4_tasks": func(r *http.Request) (int, string) {
+			return 200, `[{
+				"task_id":"T-001-0",
+				"title":"Implement feature X",
+				"status":"in_progress",
+				"dod":"Tests pass",
+				"dependencies":"[]",
+				"domain":"go",
+				"priority":5,
+				"execution_mode":"direct",
+				"worker_id":"worker-1",
+				"scope":"backend",
+				"project_id":"proj-123"
+			}]`
+		},
+	})
+	defer srv.Close()
+
+	store := newTestStore(srv.URL)
+	result, err := store.SubmitTask("T-001-0", "worker-1", "abc123", "", nil)
+	if err != nil {
+		t.Fatalf("SubmitTask() error: %v", err)
+	}
+	if result.Success {
+		t.Fatal("expected Success = false for direct execution_mode")
+	}
+	if !strings.Contains(result.Message, "worker submit allowed") {
+		t.Fatalf("message = %q, want worker submit guard", result.Message)
+	}
+}
+
 // --- ClaimTask ---
 
 func TestClaimTask(t *testing.T) {
@@ -335,6 +406,7 @@ func TestClaimTask(t *testing.T) {
 				"dependencies":"[]",
 				"domain":"go",
 				"priority":5,
+				"execution_mode":"direct",
 				"worker_id":"",
 				"branch":"",
 				"commit_sha":"",
@@ -409,6 +481,36 @@ func TestClaimTask_NotPending(t *testing.T) {
 	}
 }
 
+func TestClaimTask_ExecutionModeGuard(t *testing.T) {
+	srv := newTestServer(t, map[string]func(r *http.Request) (int, string){
+		"GET /rest/v1/c4_tasks": func(r *http.Request) (int, string) {
+			return 200, `[{
+				"task_id":"T-001-0",
+				"title":"Implement feature X",
+				"status":"pending",
+				"dod":"",
+				"dependencies":"[]",
+				"domain":"",
+				"priority":0,
+				"execution_mode":"worker",
+				"worker_id":"",
+				"scope":"",
+				"project_id":"proj-123"
+			}]`
+		},
+	})
+	defer srv.Close()
+
+	store := newTestStore(srv.URL)
+	_, err := store.ClaimTask("T-001-0")
+	if err == nil {
+		t.Fatal("ClaimTask() expected execution_mode guard error, got nil")
+	}
+	if !strings.Contains(err.Error(), "expected direct or auto") {
+		t.Fatalf("error = %q, want direct/auto guard", err.Error())
+	}
+}
+
 // --- ReportTask ---
 
 func TestReportTask(t *testing.T) {
@@ -424,6 +526,7 @@ func TestReportTask(t *testing.T) {
 				"dependencies":"[]",
 				"domain":"go",
 				"priority":5,
+				"execution_mode":"direct",
 				"worker_id":"direct",
 				"branch":"",
 				"commit_sha":"",

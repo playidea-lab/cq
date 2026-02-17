@@ -172,6 +172,48 @@ func TestHandleAddTodo_DeterministicReviewIDForHyphenBase(t *testing.T) {
 	}
 }
 
+func TestHandleAddTodo_ExecutionModeDefaultAndExplicit(t *testing.T) {
+	t.Run("default execution_mode is worker", func(t *testing.T) {
+		store := newMockStore()
+		args := `{"task_id":"T-EX-MODE-001","title":"Task","dod":"Done"}`
+		if _, err := handleAddTodo(store, json.RawMessage(args)); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(store.addedTasks) == 0 {
+			t.Fatal("expected added task")
+		}
+		if got := store.addedTasks[0].ExecutionMode; got != "worker" {
+			t.Fatalf("execution_mode = %q, want worker", got)
+		}
+	})
+
+	t.Run("explicit execution_mode is preserved", func(t *testing.T) {
+		store := newMockStore()
+		args := `{"task_id":"T-EX-MODE-002","title":"Task","dod":"Done","execution_mode":"direct"}`
+		if _, err := handleAddTodo(store, json.RawMessage(args)); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(store.addedTasks) == 0 {
+			t.Fatal("expected added task")
+		}
+		if got := store.addedTasks[0].ExecutionMode; got != "direct" {
+			t.Fatalf("execution_mode = %q, want direct", got)
+		}
+	})
+}
+
+func TestHandleAddTodo_InvalidExecutionMode(t *testing.T) {
+	store := newMockStore()
+	args := `{"task_id":"T-EX-MODE-003","title":"Task","dod":"Done","execution_mode":"invalid"}`
+	_, err := handleAddTodo(store, json.RawMessage(args))
+	if err == nil {
+		t.Fatal("expected error for invalid execution_mode, got nil")
+	}
+	if !contains(err.Error(), "invalid execution_mode") {
+		t.Fatalf("error = %q, want substring %q", err.Error(), "invalid execution_mode")
+	}
+}
+
 // TestHandleGetTask tests the handleGetTask function
 func TestHandleGetTask(t *testing.T) {
 	tests := []struct {

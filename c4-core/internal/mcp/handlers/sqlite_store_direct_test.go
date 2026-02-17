@@ -126,15 +126,70 @@ func TestSQLiteStoreReportTaskRequiresDirectOwner(t *testing.T) {
 	}
 }
 
+func TestSQLiteStoreClaimTaskExecutionModeGuard(t *testing.T) {
+	store, db := newTestSQLiteStore(t)
+	defer db.Close()
+
+	task := &Task{
+		ID:            "T-001-0",
+		Title:         "Implement feature",
+		DoD:           "Done when tests pass",
+		Status:        "pending",
+		ExecutionMode: "worker",
+	}
+	if err := store.AddTask(task); err != nil {
+		t.Fatalf("add task: %v", err)
+	}
+
+	_, err := store.ClaimTask("T-001-0")
+	if err == nil {
+		t.Fatal("expected claim to fail for worker execution_mode")
+	}
+	if !strings.Contains(err.Error(), "expected direct or auto") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestSQLiteStoreSubmitTaskExecutionModeGuard(t *testing.T) {
+	store, db := newTestSQLiteStore(t)
+	defer db.Close()
+
+	task := &Task{
+		ID:            "T-001-0",
+		Title:         "Implement feature",
+		DoD:           "Done when tests pass",
+		Status:        "pending",
+		ExecutionMode: "direct",
+	}
+	if err := store.AddTask(task); err != nil {
+		t.Fatalf("add task: %v", err)
+	}
+	if _, err := db.Exec("UPDATE c4_tasks SET status='in_progress', worker_id='worker-a' WHERE task_id='T-001-0'"); err != nil {
+		t.Fatalf("seed in_progress task: %v", err)
+	}
+
+	result, err := store.SubmitTask("T-001-0", "worker-a", "abc123", "", []ValidationResult{{Name: "lint", Status: "pass"}})
+	if err != nil {
+		t.Fatalf("submit task: %v", err)
+	}
+	if result.Success {
+		t.Fatal("expected submit to fail for direct execution_mode")
+	}
+	if !strings.Contains(result.Message, "worker submit allowed") {
+		t.Fatalf("unexpected message: %q", result.Message)
+	}
+}
+
 func TestSQLiteStoreReportTaskDirectSuccess(t *testing.T) {
 	store, db := newTestSQLiteStore(t)
 	defer db.Close()
 
 	task := &Task{
-		ID:     "T-001-0",
-		Title:  "Implement feature",
-		DoD:    "Done when tests pass",
-		Status: "pending",
+		ID:            "T-001-0",
+		Title:         "Implement feature",
+		DoD:           "Done when tests pass",
+		Status:        "pending",
+		ExecutionMode: "direct",
 	}
 	if err := store.AddTask(task); err != nil {
 		t.Fatalf("add task: %v", err)
@@ -189,7 +244,7 @@ func TestAssignTask_ReviewContextFromDirectReportHandoff(t *testing.T) {
 	store, db := newTestSQLiteStore(t)
 	defer db.Close()
 
-	if err := store.AddTask(&Task{ID: "T-301-0", Title: "Impl", DoD: "done", Status: "pending"}); err != nil {
+	if err := store.AddTask(&Task{ID: "T-301-0", Title: "Impl", DoD: "done", Status: "pending", ExecutionMode: "direct"}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -276,7 +331,7 @@ func TestReportTask_CascadeReview(t *testing.T) {
 	store, db := newTestSQLiteStore(t)
 	defer db.Close()
 
-	if err := store.AddTask(&Task{ID: "T-011-0", Title: "Impl", DoD: "done", Status: "pending"}); err != nil {
+	if err := store.AddTask(&Task{ID: "T-011-0", Title: "Impl", DoD: "done", Status: "pending", ExecutionMode: "direct"}); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.AddTask(&Task{ID: "R-011-0", Title: "Review", DoD: "done", Status: "pending"}); err != nil {

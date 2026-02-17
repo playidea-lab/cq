@@ -138,6 +138,7 @@ func (s *SQLiteStore) initSchema() error {
 			domain       TEXT DEFAULT '',
 			priority     INTEGER DEFAULT 0,
 			model        TEXT DEFAULT '',
+			execution_mode TEXT DEFAULT 'worker',
 			worker_id    TEXT DEFAULT '',
 			branch       TEXT DEFAULT '',
 			commit_sha   TEXT DEFAULT '',
@@ -197,6 +198,7 @@ func (s *SQLiteStore) initSchema() error {
 	// Best-effort migrations for existing tables
 	migrations := []string{
 		"ALTER TABLE c4_tasks ADD COLUMN handoff TEXT DEFAULT ''",
+		"ALTER TABLE c4_tasks ADD COLUMN execution_mode TEXT DEFAULT 'worker'",
 		"ALTER TABLE c4_lighthouses ADD COLUMN task_id TEXT DEFAULT ''",
 		"ALTER TABLE c4_checkpoints ADD COLUMN target_task_id TEXT DEFAULT ''",
 		"ALTER TABLE c4_checkpoints ADD COLUMN target_review_id TEXT DEFAULT ''",
@@ -465,6 +467,7 @@ func (s *SQLiteStore) AddTask(task *Task) error {
 		depsJSON, _ := json.Marshal(task.Dependencies)
 		deps = string(depsJSON)
 	}
+	executionMode := normalizeExecutionMode(task.ExecutionMode)
 
 	// Apply config-based model hint if not explicitly set
 	model := task.Model
@@ -473,10 +476,10 @@ func (s *SQLiteStore) AddTask(task *Task) error {
 	}
 
 	_, err := s.db.Exec(`
-		INSERT INTO c4_tasks (task_id, title, scope, dod, status, dependencies, domain, priority, model, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+		INSERT INTO c4_tasks (task_id, title, scope, dod, status, dependencies, domain, priority, model, execution_mode, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
 		task.ID, task.Title, task.Scope, task.DoD, "pending",
-		deps, task.Domain, task.Priority, model,
+		deps, task.Domain, task.Priority, model, executionMode,
 	)
 	if err == nil {
 		// C3 EventBus: publish task.created event
@@ -489,6 +492,24 @@ func (s *SQLiteStore) AddTask(task *Task) error {
 	return err
 }
 
+func normalizeExecutionMode(mode string) string {
+	normalized, err := resolveExecutionMode(mode)
+	if err != nil {
+		return "worker"
+	}
+	return normalized
+}
+
+func isWorkerExecutionAllowed(mode string) bool {
+	normalized := normalizeExecutionMode(mode)
+	return normalized == "worker" || normalized == "auto"
+}
+
+func isDirectExecutionAllowed(mode string) bool {
+	normalized := normalizeExecutionMode(mode)
+	return normalized == "direct" || normalized == "auto"
+}
+
 // GetTask retrieves a task by ID.
 func (s *SQLiteStore) GetTask(taskID string) (*Task, error) {
 	var t Task
@@ -496,10 +517,10 @@ func (s *SQLiteStore) GetTask(taskID string) (*Task, error) {
 	var createdAt, updatedAt sql.NullString
 
 	err := s.db.QueryRow(`
-		SELECT task_id, title, scope, dod, status, dependencies, domain, priority, model, worker_id, branch, commit_sha, created_at, updated_at
+		SELECT task_id, title, scope, dod, status, dependencies, domain, priority, model, execution_mode, worker_id, branch, commit_sha, created_at, updated_at
 		FROM c4_tasks WHERE task_id = ?`, taskID,
 	).Scan(&t.ID, &t.Title, &t.Scope, &t.DoD, &t.Status, &deps,
-		&t.Domain, &t.Priority, &t.Model, &t.WorkerID, &t.Branch, &t.CommitSHA,
+		&t.Domain, &t.Priority, &t.Model, &t.ExecutionMode, &t.WorkerID, &t.Branch, &t.CommitSHA,
 		&createdAt, &updatedAt)
 
 	if err == sql.ErrNoRows {
@@ -520,6 +541,7 @@ func (s *SQLiteStore) GetTask(taskID string) (*Task, error) {
 	if updatedAt.Valid {
 		t.UpdatedAt = updatedAt.String
 	}
+	t.ExecutionMode = normalizeExecutionMode(t.ExecutionMode)
 
 	return &t, nil
 }
@@ -606,6 +628,7 @@ func (s *SQLiteStore) reassignStaleOrFindPendingTask(workerID string) (
 		SELECT t.task_id, t.title, t.scope, t.dod, t.dependencies, t.domain, t.priority, t.model
 		FROM c4_tasks t
 		WHERE t.status = 'in_progress'
+		AND (t.execution_mode IS NULL OR t.execution_mode IN ('', 'worker', 'auto'))
 		AND (julianday('now') - julianday(t.updated_at)) * 24 * 60 > 10
 		AND t.worker_id != ?
 		ORDER BY t.priority DESC, t.created_at ASC
@@ -618,6 +641,7 @@ func (s *SQLiteStore) reassignStaleOrFindPendingTask(workerID string) (
 			SELECT t.task_id, t.title, t.scope, t.dod, t.dependencies, t.domain, t.priority, t.model
 			FROM c4_tasks t
 			WHERE t.status = 'pending'
+			AND (t.execution_mode IS NULL OR t.execution_mode IN ('', 'worker', 'auto'))
 			AND NOT EXISTS (
 				SELECT 1 FROM json_each(CASE WHEN t.dependencies IS NULL OR t.dependencies = '' THEN '[]' ELSE t.dependencies END) AS dep
 				JOIN c4_tasks dt ON dt.task_id = dep.value
@@ -759,6 +783,13 @@ func (s *SQLiteStore) SubmitTask(taskID, workerID, commitSHA, handoff string, re
 			Message:    fmt.Sprintf("Task %s is %s (expected in_progress)", taskID, task.Status),
 		}, nil
 	}
+	if !isWorkerExecutionAllowed(task.ExecutionMode) {
+		return &SubmitResult{
+			Success:    false,
+			NextAction: "get_next_task",
+			Message:    fmt.Sprintf("Task %s execution_mode is %q (worker submit allowed: worker/auto)", taskID, task.ExecutionMode),
+		}, nil
+	}
 	if task.WorkerID == "direct" {
 		return &SubmitResult{
 			Success:    false,
@@ -862,6 +893,9 @@ func (s *SQLiteStore) ClaimTask(taskID string) (*Task, error) {
 	if task.Status != "pending" {
 		return nil, fmt.Errorf("task %s is %s, not pending", taskID, task.Status)
 	}
+	if !isDirectExecutionAllowed(task.ExecutionMode) {
+		return nil, fmt.Errorf("task %s execution_mode is %q (expected direct or auto)", taskID, task.ExecutionMode)
+	}
 
 	_, err = s.db.Exec(`
 		UPDATE c4_tasks SET status = 'in_progress', worker_id = 'direct', updated_at = CURRENT_TIMESTAMP
@@ -894,6 +928,9 @@ func (s *SQLiteStore) ReportTask(taskID, summary string, filesChanged []string) 
 	}
 	if task.WorkerID != "direct" {
 		return fmt.Errorf("task %s is owned by %q (expected direct)", taskID, task.WorkerID)
+	}
+	if !isDirectExecutionAllowed(task.ExecutionMode) {
+		return fmt.Errorf("task %s execution_mode is %q (expected direct or auto)", taskID, task.ExecutionMode)
 	}
 
 	handoff := buildDirectReportHandoff(summary, filesChanged)

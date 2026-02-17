@@ -758,10 +758,10 @@ func TestLighthouseRegisterNameValidation(t *testing.T) {
 	reg, _ := setupLighthouseTest(t)
 
 	badNames := []string{
-		"hello world",    // space
-		"foo\nbar",       // newline
-		"123start",       // starts with digit
-		"",               // empty (separate check but still invalid)
+		"hello world", // space
+		"foo\nbar",    // newline
+		"123start",    // starts with digit
+		"",            // empty (separate check but still invalid)
 		"a-b-c-d-e-f-g-h-i-j-k-l-m-n-o-p-q-r-s-t-u-v-w-x-y-z-aa-bb-cc-dd-ee-ff-gg", // too long
 	}
 
@@ -967,6 +967,11 @@ func TestAutoPromoteLighthouseOnReport(t *testing.T) {
 	// Wire registry to store for auto-promote
 	store.registry = reg
 
+	// Switch execution mode to direct for direct claim/report flow.
+	if _, err := store.db.Exec("UPDATE c4_tasks SET execution_mode='direct' WHERE task_id=?", taskID); err != nil {
+		t.Fatalf("set direct execution_mode: %v", err)
+	}
+
 	// Claim task (direct mode)
 	_, err := store.ClaimTask(taskID)
 	if err != nil {
@@ -1011,9 +1016,10 @@ func TestAutoPromoteSkipsNonLHTask(t *testing.T) {
 
 	// Create a normal (non-T-LH) task
 	normalTask := &Task{
-		ID:    "T-001-0",
-		Title: "Normal task",
-		DoD:   "Do something",
+		ID:            "T-001-0",
+		Title:         "Normal task",
+		DoD:           "Do something",
+		ExecutionMode: "direct",
 	}
 	if err := store.AddTask(normalTask); err != nil {
 		t.Fatalf("AddTask: %v", err)
