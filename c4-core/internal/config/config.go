@@ -37,10 +37,12 @@ type EconomicMode struct {
 
 // CloudConfig holds cloud (Supabase) connection settings.
 type CloudConfig struct {
-	Enabled   bool   `mapstructure:"enabled"    yaml:"enabled"`
-	URL       string `mapstructure:"url"        yaml:"url"`        // Supabase project URL
-	AnonKey   string `mapstructure:"anon_key"   yaml:"anon_key"`   // from env C4_CLOUD_ANON_KEY
-	ProjectID string `mapstructure:"project_id" yaml:"project_id"` // cloud project identifier
+	Enabled      bool   `mapstructure:"enabled"       yaml:"enabled"`
+	URL          string `mapstructure:"url"            yaml:"url"`            // Supabase project URL
+	AnonKey      string `mapstructure:"anon_key"       yaml:"anon_key"`       // from env C4_CLOUD_ANON_KEY
+	ProjectID    string `mapstructure:"project_id"     yaml:"project_id"`     // cloud project identifier
+	BucketName   string `mapstructure:"bucket_name"    yaml:"bucket_name"`    // default "c4-drive"
+	OAuthTimeout int    `mapstructure:"oauth_timeout"  yaml:"oauth_timeout"`  // seconds, default 120
 }
 
 // LLMProviderConfig holds per-provider settings.
@@ -78,6 +80,7 @@ type EventBusConfig struct {
 	RetentionDays int    `mapstructure:"retention_days" yaml:"retention_days"` // 0 = no auto-purge
 	MaxEvents     int    `mapstructure:"max_events"     yaml:"max_events"`     // 0 = unlimited
 	WSPort        int    `mapstructure:"ws_port"        yaml:"ws_port"`        // 0 = WebSocket bridge disabled
+	WSHost        string `mapstructure:"ws_host"        yaml:"ws_host"`        // default "127.0.0.1"
 }
 
 // HubConfig holds PiQ Hub connection settings.

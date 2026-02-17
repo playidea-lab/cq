@@ -34,6 +34,7 @@ type EmbeddedConfig struct {
 	DefaultRulesPath  string // path to default_rules.yaml (empty = skip)
 	WSPort            int    // 0 = WebSocket bridge disabled
 	DLQRetentionDays  int    // 0 = use 2x RetentionDays; >0 = explicit DLQ retention
+	WSHost            string // WebSocket bind address; default "127.0.0.1"
 }
 
 // StartEmbedded creates and starts an in-process gRPC EventBus server.
@@ -100,9 +101,12 @@ func StartEmbedded(cfg EmbeddedConfig) (*EmbeddedServer, error) {
 
 	// Start WebSocket bridge if configured
 	if cfg.WSPort > 0 {
-		e.wsBridge = NewWSBridge(srv, cfg.WSPort)
+		e.wsBridge = NewWSBridge(srv, cfg.WSPort, cfg.WSHost)
 		go e.wsBridge.Start()
 	}
+
+	// Start DLQ auto-replay goroutine
+	go e.dlqAutoReplay()
 
 	// Start auto-purge goroutine if configured
 	if cfg.RetentionDays > 0 || cfg.MaxEvents > 0 {
@@ -143,6 +147,45 @@ func (e *EmbeddedServer) Store() *Store {
 // Dispatcher returns the underlying dispatcher (for wiring C1Poster, etc.).
 func (e *EmbeddedServer) Dispatcher() *Dispatcher {
 	return e.dispatcher
+}
+
+// dlqAutoReplay periodically checks the DLQ for entries that can be retried.
+// Uses exponential backoff per entry (based on retry_count) with max 5 retries.
+func (e *EmbeddedServer) dlqAutoReplay() {
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			entries, err := e.store.ListDLQ(20)
+			if err != nil || len(entries) == 0 {
+				continue
+			}
+			for _, entry := range entries {
+				if entry.RetryCount >= entry.MaxRetries {
+					continue
+				}
+				// Exponential backoff: skip if too recent
+				backoff := time.Duration(1<<entry.RetryCount) * time.Minute
+				if time.Since(entry.CreatedAt) < backoff {
+					continue
+				}
+
+				ev, err := e.store.GetEventByID(entry.EventID)
+				if err != nil {
+					continue
+				}
+				e.dispatcher.DispatchSync(ev.ID, ev.Type, ev.Data)
+				updated, err := e.store.IncrementDLQRetry(entry.ID)
+				if err == nil && updated.RetryCount >= updated.MaxRetries {
+					e.store.RemoveDLQ(entry.ID)
+				}
+			}
+		case <-e.stopPurge:
+			return
+		}
+	}
 }
 
 func (e *EmbeddedServer) autoPurge(retentionDays, maxEvents, dlqRetentionDays int) {

@@ -50,6 +50,8 @@ type Client struct {
 	httpClient  *http.Client
 }
 
+const driveMaxRetries = 2
+
 // NewClient creates a new Drive client.
 func NewClient(supabaseURL, apiKey string, tp tokenProvider, projectID string) *Client {
 	return &Client{
@@ -103,7 +105,7 @@ func (c *Client) Upload(localPath, drivePath string, metadata json.RawMessage) (
 	// Supabase Storage uses x-upsert for overwrite
 	req.Header.Set("x-upsert", "true")
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.doWithRetry(req)
 	if err != nil {
 		return nil, fmt.Errorf("upload request: %w", err)
 	}
@@ -146,7 +148,7 @@ func (c *Client) Upload(localPath, drivePath string, metadata json.RawMessage) (
 	metaReq.Header.Set("Prefer", "return=representation,resolution=merge-duplicates")
 	metaReq.Header.Set("Content-Type", "application/json")
 
-	metaResp, err := c.httpClient.Do(metaReq)
+	metaResp, err := c.doWithRetry(metaReq)
 	if err != nil {
 		return nil, fmt.Errorf("metadata request: %w", err)
 	}
@@ -202,7 +204,7 @@ func (c *Client) Download(drivePath, destPath string) error {
 	}
 	c.setHeaders(req)
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.doWithRetry(req)
 	if err != nil {
 		return fmt.Errorf("download request: %w", err)
 	}
@@ -255,7 +257,7 @@ func (c *Client) List(folder string) ([]FileInfo, error) {
 	}
 	c.setHeaders(req)
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.doWithRetry(req)
 	if err != nil {
 		return nil, fmt.Errorf("list request: %w", err)
 	}
@@ -293,7 +295,7 @@ func (c *Client) Delete(drivePath string) error {
 		}
 		c.setHeaders(req)
 
-		resp, err := c.httpClient.Do(req)
+		resp, err := c.doWithRetry(req)
 		if err != nil {
 			return fmt.Errorf("storage delete request: %w", err)
 		}
@@ -308,7 +310,7 @@ func (c *Client) Delete(drivePath string) error {
 	}
 	c.setHeaders(req)
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.doWithRetry(req)
 	if err != nil {
 		return fmt.Errorf("metadata delete request: %w", err)
 	}
@@ -354,7 +356,7 @@ func (c *Client) Mkdir(folderPath string, metadata json.RawMessage) (*FileInfo, 
 	req.Header.Set("Prefer", "return=representation,resolution=merge-duplicates")
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.doWithRetry(req)
 	if err != nil {
 		return nil, fmt.Errorf("mkdir request: %w", err)
 	}
@@ -388,7 +390,7 @@ func (c *Client) Info(drivePath string) (*FileInfo, error) {
 	}
 	c.setHeaders(req)
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.doWithRetry(req)
 	if err != nil {
 		return nil, fmt.Errorf("info request: %w", err)
 	}
@@ -415,6 +417,37 @@ func (c *Client) Info(drivePath string) (*FileInfo, error) {
 func (c *Client) setHeaders(req *http.Request) {
 	req.Header.Set("apikey", c.apiKey)
 	req.Header.Set("Authorization", "Bearer "+c.tp.Token())
+}
+
+// doWithRetry executes an HTTP request with retry on 5xx/network errors.
+// 401 is NOT retried here — callers handle token refresh separately.
+func (c *Client) doWithRetry(req *http.Request) (*http.Response, error) {
+	var lastErr error
+	for attempt := range driveMaxRetries {
+		if attempt > 0 {
+			time.Sleep(time.Duration(attempt) * time.Second)
+			if req.GetBody != nil {
+				body, err := req.GetBody()
+				if err != nil {
+					return nil, err
+				}
+				req.Body = body
+			}
+			c.setHeaders(req) // refresh token on retry
+		}
+		resp, err := c.httpClient.Do(req)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		if resp.StatusCode >= 500 {
+			resp.Body.Close()
+			lastErr = fmt.Errorf("HTTP %d", resp.StatusCode)
+			continue
+		}
+		return resp, nil
+	}
+	return nil, lastErr
 }
 
 // normalizePath ensures a consistent path format: leading /, no trailing /.

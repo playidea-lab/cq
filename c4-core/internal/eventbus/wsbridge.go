@@ -31,6 +31,7 @@ type WSBridge struct {
 	server     *Server
 	httpServer *http.Server
 	port       int
+	host       string
 
 	mu      sync.Mutex
 	clients map[*wsClient]struct{}
@@ -44,10 +45,16 @@ type wsClient struct {
 }
 
 // NewWSBridge creates a new WebSocket bridge for the given EventBus server.
-func NewWSBridge(srv *Server, port int) *WSBridge {
+// host defaults to "127.0.0.1" if empty.
+func NewWSBridge(srv *Server, port int, host ...string) *WSBridge {
+	h := "127.0.0.1"
+	if len(host) > 0 && host[0] != "" {
+		h = host[0]
+	}
 	return &WSBridge{
 		server:  srv,
 		port:    port,
+		host:    h,
 		clients: make(map[*wsClient]struct{}),
 	}
 }
@@ -58,7 +65,7 @@ func (b *WSBridge) Start() error {
 	mux.HandleFunc("/ws/events", b.handleEvents)
 
 	b.httpServer = &http.Server{
-		Addr:    fmt.Sprintf("127.0.0.1:%d", b.port),
+		Addr:    fmt.Sprintf("%s:%d", b.host, b.port),
 		Handler: mux,
 	}
 

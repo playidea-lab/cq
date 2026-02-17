@@ -597,6 +597,21 @@ type DLQEntry struct {
 	CreatedAt  time.Time
 }
 
+// GetEventByID retrieves a single event by its ID.
+func (s *Store) GetEventByID(eventID string) (*StoredEvent, error) {
+	row := s.db.QueryRow(
+		`SELECT id, type, source, data, project_id, correlation_id, created_at, processed FROM c4_events WHERE id = ?`,
+		eventID,
+	)
+	var ev StoredEvent
+	var createdAt string
+	if err := row.Scan(&ev.ID, &ev.Type, &ev.Source, &ev.Data, &ev.ProjectID, &ev.CorrelationID, &createdAt, &ev.Processed); err != nil {
+		return nil, err
+	}
+	ev.CreatedAt, _ = time.Parse(time.RFC3339Nano, createdAt)
+	return &ev, nil
+}
+
 // InsertDLQ adds a failed dispatch to the dead letter queue.
 func (s *Store) InsertDLQ(eventID, ruleID, ruleName, eventType, errMsg string, maxRetries int) error {
 	now := time.Now().UTC().Format(time.RFC3339Nano)
