@@ -10,7 +10,7 @@ interface UIContextType {
 const UIContext = createContext<UIContextType | undefined>(undefined);
 
 export function UIProvider({ children }: { children: React.ReactNode }) {
-  const [isChatOpen, setIsChatOpen] = useState(false);
+  const [isChatOpen, setIsChatOpen] = useState(true); // 기본: 열림
   const [isPaletteOpen, setIsPaletteOpen] = useState(false);
 
   const toggleChat = () => setIsChatOpen(prev => !prev);

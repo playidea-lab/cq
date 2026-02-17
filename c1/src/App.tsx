@@ -4,13 +4,12 @@ import { Sidebar } from './components/Sidebar';
 import { DashboardView } from './components/dashboard/DashboardView';
 import { DocumentsView } from './components/documents/DocumentsView';
 import { KnowledgeView } from './components/knowledge/KnowledgeView';
-import { ChannelsView } from './components/channels/ChannelsView';
 import { ConfigView } from './components/config/ConfigView';
 import { LoginView } from './components/auth/LoginView';
 import { ErrorBoundary } from './components/shared/ErrorBoundary';
 import { AuthProvider } from './contexts/AuthContext';
 import { ToastProvider } from './contexts/ToastContext';
-import { TaskProvider } from './contexts/TaskContext';
+import { TaskProvider, useTask } from './contexts/TaskContext';
 import { UIProvider, useUI } from './contexts/UIContext';
 import { Header } from './components/layout/Header';
 import { MainLayout } from './components/layout/MainLayout';
@@ -25,12 +24,29 @@ const VIEW_SHORTCUTS: Record<string, ViewType> = {
   '1': 'board',
   '2': 'docs',
   '3': 'knowledge',
-  '4': 'messenger',
-  '5': 'settings',
+  '4': 'settings',
 };
 
+// Component to handle task polling based on projectPath
+function TaskPoller({ projectPath }: { projectPath: string | null }) {
+  const { refresh } = useTask();
+
+  useEffect(() => {
+    refresh(projectPath);
+    if (!projectPath) return;
+
+    const interval = setInterval(() => {
+      refresh(projectPath);
+    }, 5000); // Poll every 5s
+
+    return () => clearInterval(interval);
+  }, [projectPath, refresh]);
+
+  return null;
+}
+
 function AppContent() {
-  const { user, loading, logout } = useAuth();
+  const { user, loading } = useAuth();
   const { isChatOpen } = useUI();
   const [currentView, setCurrentView] = useState<ViewType>('board');
   const [projectPath, setProjectPath] = useState<string | null>(null);
@@ -116,8 +132,6 @@ function AppContent() {
         return <DocumentsView key={`docs-${projectPath}`} projectPath={projectPath} />;
       case 'knowledge':
         return <KnowledgeView key={`knowledge-${projectPath}`} projectPath={projectPath} />;
-      case 'messenger':
-        return <ChannelsView key={`messenger-${projectPath}`} projectPath={projectPath} />;
       case 'settings':
         return <ConfigView key={`settings-${projectPath}`} projectPath={projectPath} />;
     }
@@ -125,12 +139,13 @@ function AppContent() {
 
   return (
     <>
+      <TaskPoller projectPath={projectPath} />
       <MainLayout
         sidebar={<Sidebar currentView={currentView} onViewChange={setCurrentView} />}
         header={<Header projectPath={projectPath} onOpenFolder={handleOpenFolder} />}
         content={<ErrorBoundary>{renderView()}</ErrorBoundary>}
-        drawer={projectPath ? <ChatDrawer projectPath={projectPath} /> : undefined}
-        isDrawerOpen={isChatOpen}
+        messenger={projectPath ? <ChatDrawer projectPath={projectPath} /> : undefined}
+        isMessengerOpen={isChatOpen}
       />
       <CommandPalette 
         onViewChange={setCurrentView} 

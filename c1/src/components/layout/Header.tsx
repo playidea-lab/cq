@@ -33,7 +33,7 @@ export function Header({ projectPath, onOpenFolder }: HeaderProps) {
           </div>
         ) : (
           <div className="task-hud task-hud--idle">
-            <span className="task-hud__text">System Idle</span>
+            <span className="task-hud__text">No Active Task</span>
           </div>
         )}
       </div>
@@ -66,4 +66,3 @@ export function Header({ projectPath, onOpenFolder }: HeaderProps) {
     </header>
   );
 }
-

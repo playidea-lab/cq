@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { LayoutDashboard, FileText, BookOpen, MessageSquare, Settings, Sun, Moon } from 'lucide-react';
+import { LayoutDashboard, FileText, BookOpen, Settings, Sun, Moon } from 'lucide-react';
 import type { ViewType } from '../types';
 import '../styles/sidebar.css';
 
@@ -8,11 +8,10 @@ interface SidebarProps {
   onViewChange: (view: ViewType) => void;
 }
 
-const navItems: { view: ViewType; label: string; icon: typeof MessageSquare }[] = [
+const navItems: { view: ViewType; label: string; icon: typeof LayoutDashboard }[] = [
   { view: 'board', label: 'Board', icon: LayoutDashboard },
   { view: 'docs', label: 'Docs', icon: FileText },
   { view: 'knowledge', label: 'Knowledge', icon: BookOpen },
-  { view: 'messenger', label: 'Messenger', icon: MessageSquare },
   { view: 'settings', label: 'Settings', icon: Settings },
 ];
 

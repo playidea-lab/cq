@@ -4,16 +4,16 @@ interface MainLayoutProps {
   sidebar: React.ReactNode;
   header: React.ReactNode;
   content: React.ReactNode;
-  drawer?: React.ReactNode;
-  isDrawerOpen?: boolean;
+  messenger?: React.ReactNode;
+  isMessengerOpen?: boolean;
 }
 
-export function MainLayout({ 
-  sidebar, 
-  header, 
-  content, 
-  drawer, 
-  isDrawerOpen 
+export function MainLayout({
+  sidebar,
+  header,
+  content,
+  messenger,
+  isMessengerOpen = true
 }: MainLayoutProps) {
   return (
     <div className="app-layout">
@@ -21,12 +21,14 @@ export function MainLayout({
       <main className="app-main">
         {header}
         <div className="app-container">
-          <div className="app-content-wrapper">
+          {/* Main content: 100% or 50% depending on messenger state */}
+          <div className={`app-content ${isMessengerOpen && messenger ? 'app-content--split' : 'app-content--full'}`}>
             {content}
           </div>
-          {drawer && (
-            <aside className={`app-drawer ${isDrawerOpen ? 'app-drawer--open' : ''}`}>
-              {drawer}
+          {/* Messenger: toggleable */}
+          {messenger && isMessengerOpen && (
+            <aside className="app-messenger-fixed">
+              {messenger}
             </aside>
           )}
         </div>
