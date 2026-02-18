@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/changmin/c4-core/internal/mcp"
@@ -211,6 +212,34 @@ func TestHandleAddTodo_InvalidExecutionMode(t *testing.T) {
 	}
 	if !contains(err.Error(), "invalid execution_mode") {
 		t.Fatalf("error = %q, want substring %q", err.Error(), "invalid execution_mode")
+	}
+}
+
+// TestHandleAddTodo_ReviewTaskFailureRollsBackMain verifies that when review_required=true
+// and adding the review task fails, the main task is deleted (rollback).
+func TestHandleAddTodo_ReviewTaskFailureRollsBackMain(t *testing.T) {
+	store := newMockStore()
+	store.addTaskFn = func(task *Task) error {
+		if strings.HasPrefix(task.ID, "R-") {
+			return fmt.Errorf("injected review add failure")
+		}
+		store.addedTasks = append(store.addedTasks, task)
+		store.tasks[task.ID] = task
+		return nil
+	}
+	args := `{"task_id":"T-ROLL-001","title":"Rollback test","dod":"Done"}`
+	_, err := handleAddTodo(store, json.RawMessage(args))
+	if err == nil {
+		t.Fatal("expected error when review task add fails, got nil")
+	}
+	if !strings.Contains(err.Error(), "review task") || !strings.Contains(err.Error(), "rolled back") {
+		t.Errorf("error = %q, want mention of review task and rollback", err.Error())
+	}
+	if len(store.deleteTaskCalls) != 1 || store.deleteTaskCalls[0] != "T-ROLL-001" {
+		t.Errorf("DeleteTask calls = %v, want [T-ROLL-001]", store.deleteTaskCalls)
+	}
+	if _, ok := store.tasks["T-ROLL-001"]; ok {
+		t.Error("main task T-ROLL-001 should be removed after rollback")
 	}
 }
 

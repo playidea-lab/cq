@@ -84,6 +84,17 @@ func (h *HybridStore) ListTasks(filter store.TaskFilter) ([]store.Task, int, err
 	return h.local.ListTasks(filter)
 }
 
+// DeleteTask removes from local; async delete on cloud.
+func (h *HybridStore) DeleteTask(taskID string) error {
+	if err := h.local.DeleteTask(taskID); err != nil {
+		return err
+	}
+	h.asyncCloud("delete_task", func() error {
+		return h.remote.DeleteTask(taskID)
+	})
+	return nil
+}
+
 // =========================================================================
 // Write operations — local first, then async cloud
 // =========================================================================

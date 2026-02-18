@@ -39,6 +39,8 @@ type mockStore struct {
 	claimErr      error
 	reportErr     error
 	checkpointErr error
+	addTaskFn     func(*Task) error // if set, AddTask calls this
+	deleteTaskCalls []string       // records DeleteTask(taskID)
 }
 
 type markBlockedCall struct {
@@ -114,11 +116,20 @@ func (m *mockStore) Clear(keepConfig bool) error {
 }
 
 func (m *mockStore) AddTask(task *Task) error {
+	if m.addTaskFn != nil {
+		return m.addTaskFn(task)
+	}
 	if m.addErr != nil {
 		return m.addErr
 	}
 	m.addedTasks = append(m.addedTasks, task)
 	m.tasks[task.ID] = task
+	return nil
+}
+
+func (m *mockStore) DeleteTask(taskID string) error {
+	m.deleteTaskCalls = append(m.deleteTaskCalls, taskID)
+	delete(m.tasks, taskID)
 	return nil
 }
 

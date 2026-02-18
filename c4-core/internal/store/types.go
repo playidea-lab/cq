@@ -180,6 +180,7 @@ type Store interface {
 
 	// Task management
 	AddTask(task *Task) error
+	DeleteTask(taskID string) error
 	GetTask(taskID string) (*Task, error)
 	AssignTask(workerID string) (*TaskAssignment, error)
 	SubmitTask(taskID, workerID, commitSHA, handoff string, results []ValidationResult) (*SubmitResult, error)

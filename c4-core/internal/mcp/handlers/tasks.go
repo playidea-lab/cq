@@ -312,7 +312,7 @@ func handleAddTodo(store Store, rawArgs json.RawMessage) (any, error) {
 		"message": fmt.Sprintf("Task %s added to queue", args.TaskID),
 	}
 
-	// Auto-generate R-XXX review task if review_required=true (default) and T- prefix
+	// When review_required=true, create review task; on failure rollback main task (non-best-effort).
 	reviewRequired := args.ReviewRequired == nil || *args.ReviewRequired
 	if reviewRequired && strings.HasPrefix(args.TaskID, "T-") {
 		_, baseID, version, _ := task.ParseTaskID(args.TaskID)
@@ -327,11 +327,10 @@ func handleAddTodo(store Store, rawArgs json.RawMessage) (any, error) {
 			Priority:     args.Priority,
 		}
 		if err := store.AddTask(reviewTask); err != nil {
-			// Best-effort: log but don't fail the main task
-			fmt.Printf("c4: warning: failed to create review task %s: %v\n", reviewID, err)
-		} else {
-			result["review_task_id"] = reviewID
+			_ = store.DeleteTask(args.TaskID)
+			return nil, fmt.Errorf("review task %s: %w (main task rolled back)", reviewID, err)
 		}
+		result["review_task_id"] = reviewID
 	}
 
 	return result, nil

@@ -487,6 +487,12 @@ func (c *CloudStore) MarkBlocked(taskID, workerID, failureSignature string, atte
 	return c.patch("c4_tasks", patchFilter, update)
 }
 
+// DeleteTask removes a task by ID (for rollback when review task creation fails).
+func (c *CloudStore) DeleteTask(taskID string) error {
+	filter := fmt.Sprintf("task_id=eq.%s&project_id=eq.%s", url.QueryEscape(taskID), url.QueryEscape(c.projectID))
+	return c.del("c4_tasks", filter)
+}
+
 // ClaimTask claims a task for direct execution.
 func (c *CloudStore) ClaimTask(taskID string) (*store.Task, error) {
 	task, err := c.GetTask(taskID)

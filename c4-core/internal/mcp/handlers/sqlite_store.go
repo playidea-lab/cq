@@ -520,6 +520,12 @@ func (s *SQLiteStore) AddTask(task *Task) error {
 	return err
 }
 
+// DeleteTask removes a task by ID (for rollback when review task creation fails).
+func (s *SQLiteStore) DeleteTask(taskID string) error {
+	_, err := s.db.Exec("DELETE FROM c4_tasks WHERE task_id = ?", taskID)
+	return err
+}
+
 func normalizeExecutionMode(mode string) string {
 	normalized, err := resolveExecutionMode(mode)
 	if err != nil {
