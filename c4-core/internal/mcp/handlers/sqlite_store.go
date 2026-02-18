@@ -159,6 +159,9 @@ func (s *SQLiteStore) initSchema() error {
 			branch       TEXT DEFAULT '',
 			commit_sha   TEXT DEFAULT '',
 			review_decision_evidence TEXT DEFAULT '',
+			failure_signature TEXT DEFAULT '',
+			blocked_attempts INTEGER DEFAULT 0,
+			last_error TEXT DEFAULT '',
 			created_at   TEXT DEFAULT CURRENT_TIMESTAMP,
 			updated_at   TEXT DEFAULT CURRENT_TIMESTAMP
 		)`,
@@ -217,6 +220,9 @@ func (s *SQLiteStore) initSchema() error {
 		"ALTER TABLE c4_tasks ADD COLUMN handoff TEXT DEFAULT ''",
 		"ALTER TABLE c4_tasks ADD COLUMN execution_mode TEXT DEFAULT 'worker'",
 		"ALTER TABLE c4_tasks ADD COLUMN review_decision_evidence TEXT DEFAULT ''",
+		"ALTER TABLE c4_tasks ADD COLUMN failure_signature TEXT DEFAULT ''",
+		"ALTER TABLE c4_tasks ADD COLUMN blocked_attempts INTEGER DEFAULT 0",
+		"ALTER TABLE c4_tasks ADD COLUMN last_error TEXT DEFAULT ''",
 		"ALTER TABLE c4_lighthouses ADD COLUMN task_id TEXT DEFAULT ''",
 		"ALTER TABLE c4_checkpoints ADD COLUMN target_task_id TEXT DEFAULT ''",
 		"ALTER TABLE c4_checkpoints ADD COLUMN target_review_id TEXT DEFAULT ''",
@@ -304,6 +310,9 @@ func (s *SQLiteStore) migrateTasksIfNeeded() error {
 		branch       TEXT DEFAULT '',
 		commit_sha   TEXT DEFAULT '',
 		review_decision_evidence TEXT DEFAULT '',
+		failure_signature TEXT DEFAULT '',
+		blocked_attempts INTEGER DEFAULT 0,
+		last_error TEXT DEFAULT '',
 		created_at   TEXT DEFAULT CURRENT_TIMESTAMP,
 		updated_at   TEXT DEFAULT CURRENT_TIMESTAMP
 	)`); err != nil {
@@ -536,12 +545,14 @@ func (s *SQLiteStore) GetTask(taskID string) (*Task, error) {
 	var createdAt, updatedAt sql.NullString
 
 	var reviewEvidence sql.NullString
+	var failureSig, lastErr sql.NullString
+	var blockedAttempts sql.NullInt64
 	err := s.db.QueryRow(`
-		SELECT task_id, title, scope, dod, status, dependencies, domain, priority, model, execution_mode, worker_id, branch, commit_sha, review_decision_evidence, created_at, updated_at
+		SELECT task_id, title, scope, dod, status, dependencies, domain, priority, model, execution_mode, worker_id, branch, commit_sha, review_decision_evidence, failure_signature, blocked_attempts, last_error, created_at, updated_at
 		FROM c4_tasks WHERE task_id = ?`, taskID,
 	).Scan(&t.ID, &t.Title, &t.Scope, &t.DoD, &t.Status, &deps,
 		&t.Domain, &t.Priority, &t.Model, &t.ExecutionMode, &t.WorkerID, &t.Branch, &t.CommitSHA,
-		&reviewEvidence, &createdAt, &updatedAt)
+		&reviewEvidence, &failureSig, &blockedAttempts, &lastErr, &createdAt, &updatedAt)
 
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("task not found: %s", taskID)
@@ -557,6 +568,15 @@ func (s *SQLiteStore) GetTask(taskID string) (*Task, error) {
 	}
 	if reviewEvidence.Valid {
 		t.ReviewDecisionEvidence = reviewEvidence.String
+	}
+	if failureSig.Valid {
+		t.FailureSignature = failureSig.String
+	}
+	if blockedAttempts.Valid {
+		t.Attempts = int(blockedAttempts.Int64)
+	}
+	if lastErr.Valid {
+		t.LastError = lastErr.String
 	}
 	if createdAt.Valid {
 		t.CreatedAt = createdAt.String
@@ -934,11 +954,11 @@ func (s *SQLiteStore) SubmitTask(taskID, workerID, commitSHA, handoff string, re
 	}, nil
 }
 
-// MarkBlocked marks a task as blocked.
+// MarkBlocked marks a task as blocked and persists failure_signature, attempts, last_error.
 func (s *SQLiteStore) MarkBlocked(taskID, workerID, failureSignature string, attempts int, lastError string) error {
 	_, err := s.db.Exec(`
-		UPDATE c4_tasks SET status = 'blocked', worker_id = '', updated_at = CURRENT_TIMESTAMP
-		WHERE task_id = ?`, taskID,
+		UPDATE c4_tasks SET status = 'blocked', worker_id = '', failure_signature = ?, blocked_attempts = ?, last_error = ?, updated_at = CURRENT_TIMESTAMP
+		WHERE task_id = ?`, failureSignature, attempts, lastError, taskID,
 	)
 	if err != nil {
 		return err
@@ -946,10 +966,12 @@ func (s *SQLiteStore) MarkBlocked(taskID, workerID, failureSignature string, att
 
 	// C3 EventBus: publish task.blocked event (dispatched to C1 via rules)
 	s.notifyEventBus("task.blocked", map[string]any{
-		"task_id":   taskID,
-		"worker_id": workerID,
+		"task_id":            taskID,
+		"worker_id":          workerID,
+		"failure_signature":  failureSignature,
+		"attempts":           attempts,
+		"last_error":         lastError,
 	})
-
 	return nil
 }
 

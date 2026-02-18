@@ -22,8 +22,12 @@ type Task struct {
 	CommitSHA     string   `json:"commit_sha,omitempty"`
 	// ReviewDecisionEvidence stores REQUEST_CHANGES reason (comments) for R-tasks; do not use commit_sha for that.
 	ReviewDecisionEvidence string `json:"review_decision_evidence,omitempty"`
-	CreatedAt     string   `json:"created_at,omitempty"`
-	UpdatedAt     string   `json:"updated_at,omitempty"`
+	// Blocked-task diagnostics (persisted by mark_blocked)
+	FailureSignature string `json:"failure_signature,omitempty"`
+	Attempts         int    `json:"attempts,omitempty"`
+	LastError       string `json:"last_error,omitempty"`
+	CreatedAt       string `json:"created_at,omitempty"`
+	UpdatedAt       string `json:"updated_at,omitempty"`
 }
 
 // TaskAssignment is returned when a worker is assigned a task.

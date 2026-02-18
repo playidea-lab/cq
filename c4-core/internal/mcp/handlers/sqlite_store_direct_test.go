@@ -683,6 +683,33 @@ func TestRequestChanges_RejectsNormalizedEmptyRequiredChanges(t *testing.T) {
 	}
 }
 
+func TestMarkBlocked_PersistsDiagnostics(t *testing.T) {
+	store, _ := newTestSQLiteStore(t)
+
+	if err := store.AddTask(&Task{ID: "T-BLK-0", Title: "Impl", DoD: "done", Status: "pending"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.MarkBlocked("T-BLK-0", "worker-1", "validation_fail", 5, "go test failed: timeout"); err != nil {
+		t.Fatalf("MarkBlocked: %v", err)
+	}
+	task, err := store.GetTask("T-BLK-0")
+	if err != nil {
+		t.Fatalf("GetTask: %v", err)
+	}
+	if task.Status != "blocked" {
+		t.Errorf("status = %q, want blocked", task.Status)
+	}
+	if task.FailureSignature != "validation_fail" {
+		t.Errorf("failure_signature = %q, want validation_fail", task.FailureSignature)
+	}
+	if task.Attempts != 5 {
+		t.Errorf("attempts = %d, want 5", task.Attempts)
+	}
+	if task.LastError != "go test failed: timeout" {
+		t.Errorf("last_error = %q, want go test failed: timeout", task.LastError)
+	}
+}
+
 func TestCheckpoint_RequestChanges_RecordsRejected(t *testing.T) {
 	store, db := newTestSQLiteStore(t)
 	defer db.Close()

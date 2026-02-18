@@ -62,6 +62,9 @@ type cloudTaskRow struct {
 	Branch        string            `json:"branch,omitempty"`
 	CommitSHA     string            `json:"commit_sha,omitempty"`
 	Handoff       string            `json:"handoff,omitempty"`
+	FailureSignature string         `json:"failure_signature,omitempty"`
+	BlockedAttempts  int            `json:"blocked_attempts,omitempty"`
+	LastError     string            `json:"last_error,omitempty"`
 	CreatedAt     string            `json:"created_at,omitempty"`
 	UpdatedAt     string            `json:"updated_at,omitempty"`
 }
@@ -444,8 +447,11 @@ func (c *CloudStore) SubmitTask(taskID, workerID, commitSHA, handoff string, res
 func (c *CloudStore) MarkBlocked(taskID, workerID, failureSignature string, attempts int, lastError string) error {
 	patchFilter := fmt.Sprintf("task_id=eq.%s&project_id=eq.%s", url.QueryEscape(taskID), url.QueryEscape(c.projectID))
 	update := map[string]any{
-		"status":     "blocked",
-		"worker_id":  "",
+		"status":             "blocked",
+		"worker_id":          "",
+		"failure_signature":  failureSignature,
+		"blocked_attempts":   attempts,
+		"last_error":         lastError,
 		"updated_at": time.Now().UTC().Format(time.RFC3339),
 	}
 	return c.patch("c4_tasks", patchFilter, update)
@@ -710,21 +716,24 @@ func rowToTask(row *cloudTaskRow) *store.Task {
 	}
 
 	return &store.Task{
-		ID:            row.TaskID,
-		Title:         row.Title,
-		Scope:         row.Scope,
-		DoD:           row.DoD,
-		Status:        row.Status,
-		Dependencies:  deps,
-		Domain:        row.Domain,
-		Priority:      row.Priority,
-		Model:         row.Model,
-		ExecutionMode: normalizeExecutionMode(row.ExecutionMode),
-		WorkerID:      row.WorkerID,
-		Branch:        row.Branch,
-		CommitSHA:     row.CommitSHA,
-		CreatedAt:     row.CreatedAt,
-		UpdatedAt:     row.UpdatedAt,
+		ID:                 row.TaskID,
+		Title:              row.Title,
+		Scope:              row.Scope,
+		DoD:                row.DoD,
+		Status:             row.Status,
+		Dependencies:       deps,
+		Domain:             row.Domain,
+		Priority:           row.Priority,
+		Model:              row.Model,
+		ExecutionMode:      normalizeExecutionMode(row.ExecutionMode),
+		WorkerID:           row.WorkerID,
+		Branch:             row.Branch,
+		CommitSHA:          row.CommitSHA,
+		FailureSignature:   row.FailureSignature,
+		Attempts:           row.BlockedAttempts,
+		LastError:          row.LastError,
+		CreatedAt:          row.CreatedAt,
+		UpdatedAt:          row.UpdatedAt,
 	}
 }
 
