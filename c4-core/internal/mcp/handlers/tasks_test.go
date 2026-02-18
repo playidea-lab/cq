@@ -243,6 +243,75 @@ func TestHandleAddTodo_ReviewTaskFailureRollsBackMain(t *testing.T) {
 	}
 }
 
+func TestHandleAddTodo_ExecutionModeAuto(t *testing.T) {
+	store := newMockStore()
+	args := `{"task_id":"T-AUTO-001","title":"Task","dod":"Done","execution_mode":"auto"}`
+	if _, err := handleAddTodo(store, json.RawMessage(args)); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(store.addedTasks) == 0 {
+		t.Fatal("expected added task")
+	}
+	if got := store.addedTasks[0].ExecutionMode; got != "auto" {
+		t.Fatalf("execution_mode = %q, want auto", got)
+	}
+}
+
+func TestHandleAddTodo_TaskIDParsingBoundaries(t *testing.T) {
+	t.Run("hyphen base accepted", func(t *testing.T) {
+		store := newMockStore()
+		args := `{"task_id":"T-DASH-001-0","title":"Task","dod":"Done"}`
+		result, err := handleAddTodo(store, json.RawMessage(args))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		m, _ := result.(map[string]any)
+		if m["task_id"] != "T-DASH-001-0" {
+			t.Errorf("task_id = %v, want T-DASH-001-0", m["task_id"])
+		}
+	})
+	t.Run("legacy no version accepted", func(t *testing.T) {
+		store := newMockStore()
+		args := `{"task_id":"T-LEGACY","title":"Task","dod":"Done"}`
+		_, err := handleAddTodo(store, json.RawMessage(args))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(store.addedTasks) == 0 {
+			t.Fatal("expected added task")
+		}
+		if store.addedTasks[0].ID != "T-LEGACY" {
+			t.Errorf("task_id = %q, want T-LEGACY", store.addedTasks[0].ID)
+		}
+	})
+}
+
+func TestHandleTaskList_UsesStoreListTasks(t *testing.T) {
+	store := newMockStore()
+	args := `{"status":"pending","domain":"backend","limit":10}`
+	result, err := handleTaskList(store, json.RawMessage(args))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(store.listTasksCalls) != 1 {
+		t.Fatalf("ListTasks calls = %d, want 1", len(store.listTasksCalls))
+	}
+	f := store.listTasksCalls[0]
+	if f.Status != "pending" || f.Domain != "backend" || f.Limit != 10 {
+		t.Errorf("filter = Status=%q Domain=%q Limit=%d; want pending, backend, 10", f.Status, f.Domain, f.Limit)
+	}
+	m, ok := result.(map[string]any)
+	if !ok {
+		t.Fatalf("result type = %T", result)
+	}
+	if _, hasTasks := m["tasks"]; !hasTasks {
+		t.Error("result missing tasks key")
+	}
+	if _, hasTotal := m["total"]; !hasTotal {
+		t.Error("result missing total key")
+	}
+}
+
 // TestHandleGetTask tests the handleGetTask function
 func TestHandleGetTask(t *testing.T) {
 	tests := []struct {

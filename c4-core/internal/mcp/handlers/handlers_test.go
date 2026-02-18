@@ -39,8 +39,9 @@ type mockStore struct {
 	claimErr      error
 	reportErr     error
 	checkpointErr error
-	addTaskFn     func(*Task) error // if set, AddTask calls this
-	deleteTaskCalls []string       // records DeleteTask(taskID)
+	addTaskFn       func(*Task) error  // if set, AddTask calls this
+	deleteTaskCalls []string          // records DeleteTask(taskID)
+	listTasksCalls  []store.TaskFilter // records ListTasks(filter)
 }
 
 type markBlockedCall struct {
@@ -134,6 +135,7 @@ func (m *mockStore) DeleteTask(taskID string) error {
 }
 
 func (m *mockStore) ListTasks(filter store.TaskFilter) ([]store.Task, int, error) {
+	m.listTasksCalls = append(m.listTasksCalls, filter)
 	return nil, 0, nil
 }
 
