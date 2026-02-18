@@ -13,12 +13,18 @@ import (
 
 // completeReviewTask marks the paired R-task as done when a T-task completes.
 // Returns the review task ID if cascaded, empty string otherwise.
-// Best-effort: errors are logged but don't block task completion.
+// Uses ParseTaskID + ReviewID so the review ID is collision-safe and consistent with
+// validated task ID grammar; non-conforming taskID fails fast (ValidateTaskID) and is skipped.
+// Best-effort: DB errors are logged but don't block task completion.
 func (s *SQLiteStore) completeReviewTask(taskID string) string {
-	if !strings.HasPrefix(taskID, "T-") {
+	if task.ValidateTaskID(taskID) != nil {
 		return ""
 	}
-	reviewID := "R-" + strings.TrimPrefix(taskID, "T-")
+	_, baseID, version, taskType := task.ParseTaskID(taskID)
+	if taskType != task.TypeImplementation {
+		return ""
+	}
+	reviewID := task.ReviewID(baseID, version)
 	result, err := s.db.Exec(
 		`UPDATE c4_tasks SET status='done', worker_id='auto-cascade', updated_at=CURRENT_TIMESTAMP
 		 WHERE task_id=? AND status IN ('pending','in_progress')`,
@@ -176,11 +182,15 @@ func (s *SQLiteStore) RequestChanges(reviewTaskID string, comments string, requi
 		return nil, fmt.Errorf("required_changes must contain at least one non-empty item")
 	}
 
-	// 1. Parse review task ID
+	// 1. Validate and parse review task ID (fail-fast for non-conforming IDs)
+	if err := task.ValidateTaskID(reviewTaskID); err != nil {
+		return nil, fmt.Errorf("invalid review task ID %q: %w", reviewTaskID, err)
+	}
 	_, baseID, version, taskType := task.ParseTaskID(reviewTaskID)
 	if taskType != task.TypeReview {
 		return nil, fmt.Errorf("%s is not a review task (got type %s)", reviewTaskID, taskType)
 	}
+	normalizedReviewID := task.ReviewID(baseID, version)
 
 	// 2. Check max_revision
 	// max_revision is the maximum allowed REQUEST_CHANGES count.
@@ -192,9 +202,9 @@ func (s *SQLiteStore) RequestChanges(reviewTaskID string, comments string, requi
 		}
 	}
 
-	// 3. Mark current R task as done with REQUEST_CHANGES result
+	// 3. Mark current R task as done with REQUEST_CHANGES result (use normalized ID for DB)
 	_, err := s.db.Exec(`UPDATE c4_tasks SET status='done', commit_sha=?, updated_at=CURRENT_TIMESTAMP WHERE task_id=?`,
-		"REQUEST_CHANGES: "+comments, reviewTaskID)
+		"REQUEST_CHANGES: "+comments, normalizedReviewID)
 	if err != nil {
 		return nil, fmt.Errorf("updating review task: %w", err)
 	}
@@ -230,7 +240,7 @@ func (s *SQLiteStore) RequestChanges(reviewTaskID string, comments string, requi
 		Title:        fmt.Sprintf("Fix: %s", parentTaskID),
 		DoD:          newDoD,
 		Status:       "pending",
-		Dependencies: []string{reviewTaskID},
+		Dependencies: []string{normalizedReviewID},
 		Priority:     10,
 	}); err != nil {
 		return nil, fmt.Errorf("creating fix task %s: %w", nextTaskID, err)
@@ -249,7 +259,7 @@ func (s *SQLiteStore) RequestChanges(reviewTaskID string, comments string, requi
 
 	// Publish review.changes_requested event
 	s.notifyEventBus("review.changes_requested", map[string]any{
-		"review_task_id": reviewTaskID,
+		"review_task_id": normalizedReviewID,
 		"next_task_id":   nextTaskID,
 		"next_review_id": nextReviewID,
 		"version":        nextVersion,

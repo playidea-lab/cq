@@ -91,6 +91,18 @@ func TestCompleteReviewTask_NonTPrefix(t *testing.T) {
 	}
 }
 
+func TestCompleteReviewTask_InvalidIDFailFast(t *testing.T) {
+	store, _ := newTestSQLiteStore(t)
+
+	// Non-conforming IDs are skipped (fail-fast: no cascade)
+	for _, invalid := range []string{"", "T-bad!!!", "T-", "no-prefix"} {
+		result := store.completeReviewTask(invalid)
+		if result != "" {
+			t.Errorf("completeReviewTask(%q) = %q, want \"\" (fail-fast)", invalid, result)
+		}
+	}
+}
+
 func TestCompleteReviewTask_NoMatchingReview(t *testing.T) {
 	store, db := newTestSQLiteStore(t)
 	defer db.Close()
