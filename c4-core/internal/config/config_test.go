@@ -216,6 +216,11 @@ func TestGetModelForTask(t *testing.T) {
 		if got := mgr.GetModelForTask("RPR-001-1"); got != "sonnet" {
 			t.Errorf("RPR-001-1 -> %q, want %q", got, "sonnet")
 		}
+
+		// RF- -> review (opus) — refine tasks use review model
+		if got := mgr.GetModelForTask("RF-001-0"); got != "opus" {
+			t.Errorf("RF-001-0 -> %q, want %q", got, "opus")
+		}
 	})
 
 	t.Run("economic mode disabled", func(t *testing.T) {

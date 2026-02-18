@@ -326,8 +326,10 @@ func TestRestartCounterResetsAfterTimeout(t *testing.T) {
 	if count != 1 {
 		t.Fatalf("expected restarts=1 after time-based reset, got %d", count)
 	}
-	// err is expected (no python in test env) — that's fine
-	_ = err
+	// err is expected (no python in test env); verify counter reset is the point
+	if err == nil {
+		t.Log("Restart unexpectedly succeeded (python available in test env)")
+	}
 }
 
 // TestRestartCounterNoResetTooEarly verifies the restart counter does NOT reset

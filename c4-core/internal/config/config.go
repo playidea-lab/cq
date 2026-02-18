@@ -23,9 +23,9 @@ type ModelRouting struct {
 	Implementation string `mapstructure:"implementation" yaml:"implementation"`
 	Review         string `mapstructure:"review"         yaml:"review"`
 	Checkpoint     string `mapstructure:"checkpoint"     yaml:"checkpoint"`
-	Scout          string `mapstructure:"scout"          yaml:"scout"`    // TODO: not yet used by GetModelForTask — reserved for future scout/explore tasks
-	Debug          string `mapstructure:"debug"          yaml:"debug"`    // TODO: not yet used by GetModelForTask — reserved for future debug tasks
-	Planning       string `mapstructure:"planning"       yaml:"planning"` // TODO: not yet used by GetModelForTask — reserved for future planning tasks
+	Scout          string `mapstructure:"scout"          yaml:"scout"`    // Used by c4-plan scout phase (no task prefix yet)
+	Debug          string `mapstructure:"debug"          yaml:"debug"`    // Used by c4-refine debug rounds (no task prefix yet)
+	Planning       string `mapstructure:"planning"       yaml:"planning"` // Used by c4-plan planning phase (no task prefix yet)
 }
 
 // EconomicMode holds economic mode configuration.
@@ -367,6 +367,7 @@ func (m *Manager) GetBackend() string {
 //   - T-XXX -> implementation
 //   - R-XXX -> review
 //   - CP-XXX -> checkpoint
+//   - RF-XXX -> review (refine uses review model)
 //   - RPR-XXX -> implementation (repair)
 //
 // If economic mode is disabled, returns empty string (use default).
@@ -378,6 +379,8 @@ func (m *Manager) GetModelForTask(taskID string) string {
 	routing := m.config.EconomicMode.ModelRouting
 
 	switch {
+	case strings.HasPrefix(taskID, "RF-"):
+		return routing.Review
 	case strings.HasPrefix(taskID, "R-"):
 		return routing.Review
 	case strings.HasPrefix(taskID, "CP-"):
