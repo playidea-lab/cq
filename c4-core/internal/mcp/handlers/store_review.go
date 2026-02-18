@@ -114,16 +114,20 @@ func normalizeRequiredChanges(requiredChanges []string) []string {
 }
 
 // Checkpoint records a checkpoint decision.
-func (s *SQLiteStore) Checkpoint(checkpointID, decision, notes string, requiredChanges []string) (*CheckpointResult, error) {
+// targetTaskID/targetReviewID: when both non-empty, use for attribution and persistence (explicit linkage). Never use "latest in_progress" heuristic.
+func (s *SQLiteStore) Checkpoint(checkpointID, decision, notes string, requiredChanges []string, targetTaskID, targetReviewID string) (*CheckpointResult, error) {
 	changesJSON := "[]"
 	if len(requiredChanges) > 0 {
 		b, _ := json.Marshal(requiredChanges)
 		changesJSON = string(b)
 	}
 
-	targetTaskID, targetReviewID, err := s.resolveCheckpointTargets(checkpointID)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "c4: checkpoint target lookup %s: %v\n", checkpointID, err)
+	if targetTaskID == "" || targetReviewID == "" {
+		var err error
+		targetTaskID, targetReviewID, err = s.resolveCheckpointTargets(checkpointID)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "c4: checkpoint target lookup %s: %v\n", checkpointID, err)
+		}
 	}
 
 	if _, err := s.db.Exec(`

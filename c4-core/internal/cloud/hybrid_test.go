@@ -103,7 +103,7 @@ func (m *mockStore) ReportTask(taskID, summary string, filesChanged []string) er
 	return nil
 }
 
-func (m *mockStore) Checkpoint(checkpointID, decision, notes string, requiredChanges []string) (*store.CheckpointResult, error) {
+func (m *mockStore) Checkpoint(checkpointID, decision, notes string, requiredChanges []string, targetTaskID, targetReviewID string) (*store.CheckpointResult, error) {
 	if m.checkpointFn != nil {
 		return m.checkpointFn(checkpointID, decision, notes, requiredChanges)
 	}

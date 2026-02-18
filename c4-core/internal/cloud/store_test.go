@@ -674,7 +674,7 @@ func TestCheckpoint(t *testing.T) {
 	defer srv.Close()
 
 	store := newTestStore(srv.URL)
-	result, err := store.Checkpoint("CP-001", "APPROVE", "Looks good", nil)
+	result, err := store.Checkpoint("CP-001", "APPROVE", "Looks good", nil, "", "")
 	if err != nil {
 		t.Fatalf("Checkpoint() error: %v", err)
 	}

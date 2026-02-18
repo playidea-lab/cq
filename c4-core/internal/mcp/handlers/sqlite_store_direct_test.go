@@ -714,7 +714,7 @@ func TestCheckpoint_RequestChanges_RecordsRejected(t *testing.T) {
 	}
 
 	// Checkpoint with REQUEST_CHANGES
-	result, err := store.Checkpoint("CP-001", "REQUEST_CHANGES", "not good", []string{"fix Y"})
+	result, err := store.Checkpoint("CP-001", "REQUEST_CHANGES", "not good", []string{"fix Y"}, "", "")
 	if err != nil {
 		t.Fatalf("checkpoint: %v", err)
 	}
@@ -759,7 +759,7 @@ func TestCheckpoint_PersistsTargetLinkage(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err := store.Checkpoint("CP-100", "APPROVE", "looks good", nil); err != nil {
+	if _, err := store.Checkpoint("CP-100", "APPROVE", "looks good", nil, "", ""); err != nil {
 		t.Fatalf("checkpoint: %v", err)
 	}
 
@@ -772,6 +772,38 @@ func TestCheckpoint_PersistsTargetLinkage(t *testing.T) {
 	}
 	if targetReviewID != "R-100-0" {
 		t.Fatalf("target_review_id = %q, want R-100-0", targetReviewID)
+	}
+}
+
+func TestCheckpoint_ExplicitLinkage_NoCPTask(t *testing.T) {
+	store, db := newTestSQLiteStore(t)
+	defer db.Close()
+
+	// No CP-999 task in c4_tasks; explicit target_task_id/target_review_id provided
+	if err := store.AddTask(&Task{ID: "T-999-0", Title: "Impl", DoD: "done", Status: "pending"}); err != nil {
+		t.Fatal(err)
+	}
+	store.db.Exec("UPDATE c4_tasks SET worker_id='worker-explicit' WHERE task_id='T-999-0'")
+
+	_, err := store.Checkpoint("CP-999", "REQUEST_CHANGES", "needs work", []string{"fix A"}, "T-999-0", "R-999-0")
+	if err != nil {
+		t.Fatalf("checkpoint: %v", err)
+	}
+
+	var outcome string
+	err = db.QueryRow("SELECT outcome FROM persona_stats WHERE persona_id='worker-explicit' AND task_id='T-999-0'").Scan(&outcome)
+	if err != nil {
+		t.Fatalf("query persona_stats: %v", err)
+	}
+	if outcome != "rejected" {
+		t.Errorf("outcome = %q, want rejected (explicit linkage)", outcome)
+	}
+	var targetTaskID, targetReviewID string
+	if err := db.QueryRow("SELECT target_task_id, target_review_id FROM c4_checkpoints WHERE checkpoint_id='CP-999'").Scan(&targetTaskID, &targetReviewID); err != nil {
+		t.Fatalf("query checkpoint: %v", err)
+	}
+	if targetTaskID != "T-999-0" || targetReviewID != "R-999-0" {
+		t.Errorf("linkage = %q, %q; want T-999-0, R-999-0", targetTaskID, targetReviewID)
 	}
 }
 

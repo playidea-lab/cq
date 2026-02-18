@@ -192,13 +192,13 @@ func (h *HybridStore) ReportTask(taskID, summary string, filesChanged []string) 
 }
 
 // Checkpoint records locally and pushes to cloud.
-func (h *HybridStore) Checkpoint(checkpointID, decision, notes string, requiredChanges []string) (*store.CheckpointResult, error) {
-	result, err := h.local.Checkpoint(checkpointID, decision, notes, requiredChanges)
+func (h *HybridStore) Checkpoint(checkpointID, decision, notes string, requiredChanges []string, targetTaskID, targetReviewID string) (*store.CheckpointResult, error) {
+	result, err := h.local.Checkpoint(checkpointID, decision, notes, requiredChanges, targetTaskID, targetReviewID)
 	if err != nil {
 		return nil, err
 	}
 	h.asyncCloud("checkpoint", func() error {
-		_, remoteErr := h.remote.Checkpoint(checkpointID, decision, notes, requiredChanges)
+		_, remoteErr := h.remote.Checkpoint(checkpointID, decision, notes, requiredChanges, targetTaskID, targetReviewID)
 		return remoteErr
 	})
 	return result, nil

@@ -68,7 +68,7 @@ func (m *mockBenchStore) ClaimTask(string) (*handlers.Task, error) {
 }
 func (m *mockBenchStore) ReportTask(string, string, []string) error      { return nil }
 func (m *mockBenchStore) TransitionState(string, string) error          { return nil }
-func (m *mockBenchStore) Checkpoint(string, string, string, []string) (*handlers.CheckpointResult, error) {
+func (m *mockBenchStore) Checkpoint(string, string, string, []string, string, string) (*handlers.CheckpointResult, error) {
 	return &handlers.CheckpointResult{Success: true}, nil
 }
 func (m *mockBenchStore) RequestChanges(string, string, []string) (*handlers.RequestChangesResult, error) {

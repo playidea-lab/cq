@@ -177,8 +177,8 @@ type Store interface {
 	ClaimTask(taskID string) (*Task, error)
 	ReportTask(taskID, summary string, filesChanged []string) error
 
-	// Supervisor
-	Checkpoint(checkpointID, decision, notes string, requiredChanges []string) (*CheckpointResult, error)
+	// Supervisor. targetTaskID/targetReviewID are optional; when both set, attribution uses them (explicit linkage). Otherwise resolved from CP task deps.
+	Checkpoint(checkpointID, decision, notes string, requiredChanges []string, targetTaskID, targetReviewID string) (*CheckpointResult, error)
 
 	// Review-as-Task: REQUEST_CHANGES creates next version T+R pair
 	RequestChanges(reviewTaskID string, comments string, requiredChanges []string) (*RequestChangesResult, error)

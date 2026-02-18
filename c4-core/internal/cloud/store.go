@@ -523,7 +523,7 @@ func buildDirectReportHandoff(summary string, filesChanged []string) string {
 }
 
 // Checkpoint records a checkpoint decision.
-func (c *CloudStore) Checkpoint(checkpointID, decision, notes string, requiredChanges []string) (*store.CheckpointResult, error) {
+func (c *CloudStore) Checkpoint(checkpointID, decision, notes string, requiredChanges []string, targetTaskID, targetReviewID string) (*store.CheckpointResult, error) {
 	changesJSON := "[]"
 	if len(requiredChanges) > 0 {
 		b, _ := json.Marshal(requiredChanges)

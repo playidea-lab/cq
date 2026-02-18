@@ -25,6 +25,8 @@ type checkpointArgs struct {
 	Decision        string   `json:"decision"` // "APPROVE", "REQUEST_CHANGES", "REPLAN"
 	Notes           string   `json:"notes"`
 	RequiredChanges []string `json:"required_changes,omitempty"`
+	TargetTaskID    string   `json:"target_task_id,omitempty"`   // explicit linkage for attribution (no latest-in_progress heuristic)
+	TargetReviewID  string   `json:"target_review_id,omitempty"` // explicit linkage for attribution
 }
 
 // RegisterTrackingHandlers registers direct-mode and supervisor tools on the registry.
@@ -77,21 +79,16 @@ func RegisterTrackingHandlers(reg *mcp.Registry, store Store) {
 	// c4_checkpoint
 	reg.Register(mcp.ToolSchema{
 		Name:        "c4_checkpoint",
-		Description: "Record supervisor checkpoint decision",
+		Description: "Record supervisor checkpoint decision. Use target_task_id/target_review_id for explicit attribution (no latest-in_progress heuristic).",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"checkpoint_id": map[string]any{"type": "string"},
-				"decision": map[string]any{
-					"type": "string",
-					"enum": []string{"APPROVE", "REQUEST_CHANGES", "REPLAN"},
-				},
-				"notes": map[string]any{"type": "string"},
-				"required_changes": map[string]any{
-					"type":        "array",
-					"items":       map[string]any{"type": "string"},
-					"description": "List of required changes (for REQUEST_CHANGES)",
-				},
+				"checkpoint_id":    map[string]any{"type": "string"},
+				"decision":         map[string]any{"type": "string", "enum": []string{"APPROVE", "REQUEST_CHANGES", "REPLAN"}},
+				"notes":            map[string]any{"type": "string"},
+				"required_changes": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "List of required changes (for REQUEST_CHANGES)"},
+				"target_task_id":   map[string]any{"type": "string", "description": "Explicit target implementation task for attribution (optional)"},
+				"target_review_id": map[string]any{"type": "string", "description": "Explicit target review task for attribution (optional)"},
 			},
 			"required": []string{"checkpoint_id", "decision", "notes"},
 		},
@@ -212,7 +209,7 @@ func handleCheckpoint(store Store, rawArgs json.RawMessage) (any, error) {
 		return nil, fmt.Errorf("invalid decision: %s (must be APPROVE, REQUEST_CHANGES, or REPLAN)", args.Decision)
 	}
 
-	cpResult, err := store.Checkpoint(args.CheckpointID, args.Decision, args.Notes, args.RequiredChanges)
+	cpResult, err := store.Checkpoint(args.CheckpointID, args.Decision, args.Notes, args.RequiredChanges, args.TargetTaskID, args.TargetReviewID)
 	if err != nil {
 		return nil, fmt.Errorf("recording checkpoint: %w", err)
 	}
