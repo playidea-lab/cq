@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/changmin/c4-core/internal/mcp"
+	"github.com/changmin/c4-core/internal/task"
 )
 
 // claimArgs is the input for c4_claim.
@@ -106,6 +107,13 @@ func handleClaim(store Store, rawArgs json.RawMessage) (any, error) {
 	if args.TaskID == "" {
 		return nil, fmt.Errorf("task_id is required")
 	}
+	if err := task.ValidateTaskID(args.TaskID); err != nil {
+		return nil, err
+	}
+	_, _, _, taskType := task.ParseTaskID(args.TaskID)
+	if taskType != task.TypeImplementation {
+		return nil, fmt.Errorf("task_id must be an implementation task (T-): %s", args.TaskID)
+	}
 
 	task, err := store.ClaimTask(args.TaskID)
 	if err != nil {
@@ -168,6 +176,9 @@ func handleReport(store Store, rawArgs json.RawMessage) (any, error) {
 
 	if args.TaskID == "" {
 		return nil, fmt.Errorf("task_id is required")
+	}
+	if err := task.ValidateTaskID(args.TaskID); err != nil {
+		return nil, err
 	}
 	if args.Summary == "" {
 		return nil, fmt.Errorf("summary is required")

@@ -448,6 +448,27 @@ func TestHandleClaim(t *testing.T) {
 			wantErr:  true,
 			errMsg:   "task_id is required",
 		},
+		{
+			name:     "invalid task_id format",
+			args:     `{"task_id": "INVALID"}`,
+			claimErr: nil,
+			wantErr:  true,
+			errMsg:   "invalid task_id format",
+		},
+		{
+			name:     "review task_id not claimable",
+			args:     `{"task_id": "R-001-0"}`,
+			claimErr: nil,
+			wantErr:  true,
+			errMsg:   "implementation task (T-)",
+		},
+		{
+			name:     "checkpoint task_id not claimable",
+			args:     `{"task_id": "CP-001"}`,
+			claimErr: nil,
+			wantErr:  true,
+			errMsg:   "implementation task (T-)",
+		},
 	}
 
 	for _, tt := range tests {
@@ -524,6 +545,23 @@ func TestHandleReport(t *testing.T) {
 			reportErr: nil,
 			wantErr:   true,
 			errMsg:    "summary is required",
+		},
+		{
+			name:      "invalid task_id format",
+			args:      `{"task_id": "INVALID", "summary": "Done"}`,
+			reportErr: nil,
+			wantErr:   true,
+			errMsg:    "invalid task_id format",
+		},
+		{
+			name: "empty files_changed accepted",
+			args: `{
+				"task_id": "T-001-0",
+				"summary": "Done with no files",
+				"files_changed": []
+			}`,
+			reportErr: nil,
+			wantErr:   false,
 		},
 	}
 
@@ -688,6 +726,18 @@ func TestHandleRequestChanges(t *testing.T) {
 			args:    `{"review_task_id": "R-001-0", "comments": "bad", "required_changes": [" ", "\n\t", ""]}`,
 			wantErr: true,
 			errMsg:  "required_changes must contain at least one non-empty item",
+		},
+		{
+			name:    "invalid review_task_id format",
+			args:    `{"review_task_id": "INVALID", "comments": "bad", "required_changes": ["fix"]}`,
+			wantErr: true,
+			errMsg:  "invalid task_id format",
+		},
+		{
+			name:    "implementation task_id not allowed",
+			args:    `{"review_task_id": "T-001-0", "comments": "bad", "required_changes": ["fix"]}`,
+			wantErr: true,
+			errMsg:  "review_task_id must be an R- task",
 		},
 	}
 
