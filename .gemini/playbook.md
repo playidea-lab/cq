@@ -6,7 +6,7 @@ Follow these phases sequentially to ensure high-quality, safe, and verifiable wo
 ## Phase 1: Context & Assessment
 **Goal**: Understand the current situation without making changes.
 
-1.  **Check Status**: Run `c4 status` (or `./.gemini/skills/c4-status.sh`).
+1.  **Check Status**: Run `cq status` (or `./.gemini/skills/c4-status.sh`).
 2.  **Scan Environment**:
     - `ls -F`: Check directory structure.
     - `git status`: Check for uncommitted changes.
@@ -23,8 +23,8 @@ Follow these phases sequentially to ensure high-quality, safe, and verifiable wo
     - Split large goals into small, atomic tasks.
     - **Critical**: Ensure each task has a clear **Definition of Done (DoD)**.
 3.  **Task Registration**:
-    - Use `c4 add-task --title "..." --scope "..."` for each task.
-    - **Verify**: Run `c4 status` to confirm tasks are created.
+    - Use `cq add-task --title "..." --scope "..."` for each task.
+    - **Verify**: Run `cq status` to confirm tasks are created.
 
 ## Phase 3: Execution (The Loop)
 **Goal**: Implement changes safely.

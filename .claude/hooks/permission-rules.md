@@ -3,7 +3,7 @@ This request already passed rule-based allow/deny filters without matching —
 it's a gray-zone edge case needing your judgment.
 
 Context: Developer working on a Go/Python/TypeScript/Rust monorepo.
-Production binary: ~/.local/bin/c4. Project root: working directory.
+Production binary: ~/.local/bin/cq. Project root: working directory.
 
 APPROVE (return {"ok": true}):
 - Reading/writing files within the project or ~/.claude/ directory

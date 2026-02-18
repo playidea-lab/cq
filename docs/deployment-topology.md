@@ -57,7 +57,7 @@ c1_participants, c1_channel_summaries — C1 참여자/요약
 ### 2-1. Go MCP 바이너리 (핵심)
 
 ```
-~/.local/bin/c4  또는  c4-core/bin/c4
+~/.local/bin/cq  또는  c4-core/bin/cq
 ```
 - 112개 MCP 도구의 실행 엔진
 - Claude Code가 stdio로 직접 실행
@@ -248,7 +248,7 @@ cd c4-core && go build \
   -ldflags "-X main.version=v1.0.0 \
             -X main.builtinSupabaseURL=https://xxx.supabase.co \
             -X main.builtinSupabaseKey=eyJ..." \
-  -o ~/.local/bin/c4 ./cmd/c4/
+  -o ~/.local/bin/cq ./cmd/c4/
 ```
 
 **anon key 보안**: Supabase anon key는 공개 값 (RLS가 데이터 보호). 바이너리에 내장해도 안전.

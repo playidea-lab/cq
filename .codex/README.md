@@ -28,7 +28,7 @@
 ## 실행 리허설
 
 1. Direct 리허설
-- 시작 입력: `c4 status 보여주고 direct로 시작해`
+- 시작 입력: `cq status 보여주고 direct로 시작해`
 - 기대 분기: `c4-status -> c4-direct -> c4-claim -> c4-report`
 
 2. Worker 리허설

@@ -330,8 +330,8 @@ func TestSetupCodexConfig_NewFile(t *testing.T) {
 	}
 	content := string(data)
 
-	if !containsSubstring(content, "[mcp_servers.c4]") {
-		t.Error("missing [mcp_servers.c4] block")
+	if !containsSubstring(content, "[mcp_servers.cq]") {
+		t.Error("missing [mcp_servers.cq] block")
 	}
 	if !containsSubstring(content, projectDir) {
 		t.Error("project dir not reflected in codex config")
@@ -347,8 +347,8 @@ func TestSetupCodexConfig_ReplaceExistingBlock(t *testing.T) {
 		"[general]",
 		`theme = "light"`,
 		"",
-		"[mcp_servers.c4]",
-		`command = "/old/c4"`,
+		"[mcp_servers.cq]",
+		`command = "/old/cq"`,
 		`args = ["mcp", "--dir", "/old/project"]`,
 		`env = { C4_PROJECT_ROOT = "/old/project" }`,
 		"",
@@ -375,14 +375,14 @@ func TestSetupCodexConfig_ReplaceExistingBlock(t *testing.T) {
 	}
 	content := string(data)
 
-	if strings.Count(content, "[mcp_servers.c4]") != 1 {
-		t.Fatalf("expected exactly one c4 mcp block, got %d", strings.Count(content, "[mcp_servers.c4]"))
+	if strings.Count(content, "[mcp_servers.cq]") != 1 {
+		t.Fatalf("expected exactly one cq mcp block, got %d", strings.Count(content, "[mcp_servers.cq]"))
 	}
 	if containsSubstring(content, "/old/project") {
-		t.Error("old c4 block content still present")
+		t.Error("old cq block content still present")
 	}
 	if !containsSubstring(content, "[general]") || !containsSubstring(content, "[other]") {
-		t.Error("non-c4 blocks should be preserved")
+		t.Error("non-cq blocks should be preserved")
 	}
 }
 

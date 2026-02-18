@@ -23,8 +23,8 @@ func TestE2EVersion(t *testing.T) {
 		t.Fatalf("Execute --version: %v", err)
 	}
 	output := buf.String()
-	if !strings.Contains(output, "c4 version") {
-		t.Errorf("--version output = %q, want to contain 'c4 version'", output)
+	if !strings.Contains(output, "cq version") {
+		t.Errorf("--version output = %q, want to contain 'cq version'", output)
 	}
 }
 
@@ -280,7 +280,7 @@ func TestE2EBuildBinary(t *testing.T) {
 	}
 
 	tmpDir := t.TempDir()
-	binPath := filepath.Join(tmpDir, "c4")
+	binPath := filepath.Join(tmpDir, "cq")
 
 	cmd := exec.Command("go", "build", "-o", binPath, ".")
 	cmd.Dir = filepath.Join(testGoModDir(t), "cmd", "c4")
@@ -308,7 +308,7 @@ func TestE2EBinaryVersion(t *testing.T) {
 	}
 
 	tmpDir := t.TempDir()
-	binPath := filepath.Join(tmpDir, "c4")
+	binPath := filepath.Join(tmpDir, "cq")
 
 	// Build with version ldflags
 	buildCmd := exec.Command("go", "build",
@@ -325,7 +325,7 @@ func TestE2EBinaryVersion(t *testing.T) {
 	versionCmd := exec.Command(binPath, "--version")
 	output, err := versionCmd.CombinedOutput()
 	if err != nil {
-		t.Fatalf("c4 --version: %v\n%s", err, output)
+		t.Fatalf("cq --version: %v\n%s", err, output)
 	}
 
 	if !strings.Contains(string(output), "test-1.0.0") {

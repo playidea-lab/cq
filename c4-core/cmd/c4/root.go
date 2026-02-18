@@ -15,7 +15,7 @@ var version = "dev"
 
 // Built-in Supabase defaults — set at build time via -ldflags.
 // These are PUBLIC values (anon key + RLS = safe to embed).
-// Users don't need to configure these; they just run `c4 auth login`.
+// Users don't need to configure these; they just run `cq auth login`.
 var (
 	builtinSupabaseURL = "" // -ldflags "-X main.builtinSupabaseURL=https://xxx.supabase.co"
 	builtinSupabaseKey = "" // -ldflags "-X main.builtinSupabaseKey=eyJ..."
@@ -29,15 +29,15 @@ var (
 )
 
 var rootCmd = &cobra.Command{
-	Use:     "c4",
-	Short:   "C4 - AI orchestration system",
+	Use:     "cq",
+	Short:   "CQ - AI orchestration system",
 	Version: version,
-	Long: `C4 is an AI orchestration system that automates project management
+	Long: `CQ is an AI orchestration system that automates project management
 from planning through completion. It manages tasks, workers, checkpoints,
 and knowledge across the entire development lifecycle.
 
-Run 'c4' or 'c4 claude' to init a project and launch Claude Code.
-Run 'c4 codex' or 'c4 cursor' for other AI tools.`,
+Run 'cq' or 'cq claude' to init a project and launch Claude Code.
+Run 'cq codex' or 'cq cursor' for other AI tools.`,
 	SilenceUsage:  true,
 	SilenceErrors: true,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
@@ -60,10 +60,10 @@ Run 'c4 codex' or 'c4 cursor' for other AI tools.`,
 		c4Dir := filepath.Join(projectDir, ".c4")
 		if _, err := os.Stat(c4Dir); os.IsNotExist(err) {
 			// Allow certain commands without .c4/
-			if cmd.Name() != "mcp" && cmd.Name() != "c4" &&
+			if cmd.Name() != "mcp" && cmd.Name() != "cq" &&
 			cmd.Name() != "claude" && cmd.Name() != "codex" && cmd.Name() != "cursor" &&
 			cmd.Parent() != nil && cmd.Parent().Name() != "hub" {
-				return fmt.Errorf("not a C4 project: %s (missing .c4/ directory)", projectDir)
+				return fmt.Errorf("not a CQ project: %s (missing .c4/ directory)", projectDir)
 			}
 		}
 

@@ -16,16 +16,16 @@ Gemini agents must consult this guide before executing commands to avoid syntax 
 
 **Example**:
 ```bash
-c4 add-task --title "Refactor Auth" --scope "src/auth/" --priority 3 --dod "Implement JWT validation"
+cq add-task --title "Refactor Auth" --scope "src/auth/" --priority 3 --dod "Implement JWT validation"
 ```
 
-### `c4 status` (Check project state)
-**Syntax**: `c4 status`
+### `cq status` (Check project state)
+**Syntax**: `cq status`
 - Shows active tasks, workers, and overall progress.
 - **Use this first** before starting any work.
 
-### `c4 run` (Execute tasks)
-**Syntax**: `c4 run [flags]`
+### `cq run` (Execute tasks)
+**Syntax**: `cq run [flags]`
 - Starts the task execution loop (Worker mode).
 - Usually run in a separate terminal or background process.
 
@@ -38,7 +38,7 @@ c4 add-task --title "Refactor Auth" --scope "src/auth/" --priority 3 --dod "Impl
 
 ### `c4-status.sh` (Quick status check)
 **Syntax**: `./.gemini/skills/c4-status.sh`
-- Lightweight alternative to `c4 status`.
+- Lightweight alternative to `cq status`.
 
 ## 3. Core Development (`c5` & Go)
 

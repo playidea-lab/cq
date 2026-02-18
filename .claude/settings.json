@@ -77,10 +77,10 @@
       "WebFetch(domain:github.com)",
       "WebFetch(domain:raw.githubusercontent.com)",
       "WebFetch(domain:api.github.com)",
-      "Write(/Users/changmin/git/c4/**)",
-      "Edit(/Users/changmin/git/c4/**)",
-      "MultiEdit(/Users/changmin/git/c4/**)",
-      "Read(/Users/changmin/git/c4/**)"
+      "Write(/Users/changmin/git/cq/**)",
+      "Edit(/Users/changmin/git/cq/**)",
+      "MultiEdit(/Users/changmin/git/cq/**)",
+      "Read(/Users/changmin/git/cq/**)"
     ],
     "defaultMode": "acceptEdits"
   },

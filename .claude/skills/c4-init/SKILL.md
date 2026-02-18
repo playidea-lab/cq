@@ -16,7 +16,7 @@ Initialize C4 in the current project directory.
 ### Step 1: C4 설치 경로 확인
 
 ```bash
-C4_DIR=$(cat ~/.c4-install-path 2>/dev/null || echo "$HOME/git/c4")
+C4_DIR=$(cat ~/.c4-install-path 2>/dev/null || echo "$HOME/git/cq")
 ```
 
 ### Step 2: 초기화 실행

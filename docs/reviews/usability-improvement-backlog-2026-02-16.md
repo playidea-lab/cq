@@ -109,7 +109,7 @@
 
 증상:
 - 일부 문서는 MCP 실행 경로를 `python -m c4.mcp_server`로 안내.
-- 설치 가이드는 Go 바이너리(`c4-core/bin/c4` 또는 `~/.local/bin/c4`) 기준.
+- 설치 가이드는 Go 바이너리(`c4-core/bin/cq` 또는 `~/.local/bin/cq`) 기준.
 
 사용자 영향:
 - 설치 후 "MCP server not found" 해결 과정에서 잘못된 경로를 따라갈 위험.

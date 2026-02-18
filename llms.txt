@@ -19,6 +19,6 @@ Core tools for AI agent orchestration:
 
 ## Getting Started
 
-1. Install: `cd c4-core && go build -o ~/.local/bin/c4 ./cmd/c4/`
-2. Configure: Create `.mcp.json` pointing to the c4 binary
+1. Install: `cd c4-core && go build -o ~/.local/bin/cq ./cmd/c4/`
+2. Configure: Create `.mcp.json` pointing to the cq binary
 3. Use: MCP tools are available through any MCP-compatible AI agent

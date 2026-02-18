@@ -24,9 +24,9 @@
       "Bash(find:*)",
       "Bash(c5:*)",
       "Bash(c4_*:*)",
-      "Write(/Users/changmin/git/c4/**)",
-      "Edit(/Users/changmin/git/c4/**)",
-      "Read(/Users/changmin/git/c4/**)",
+      "Write(/Users/changmin/git/cq/**)",
+      "Edit(/Users/changmin/git/cq/**)",
+      "Read(/Users/changmin/git/cq/**)",
       "WebSearch"
     ],
     "defaultMode": "acceptEdits"

@@ -13,7 +13,7 @@ c4 codex
 `c4 codex`는 다음을 자동으로 수행합니다.
 - 프로젝트 `.mcp.json` 갱신
 - `CLAUDE.md`/`.claude/skills` 동기화
-- `~/.codex/config.toml`의 `[mcp_servers.c4]` 블록 갱신
+- `~/.codex/config.toml`의 `[mcp_servers.cq]` 블록 갱신
 - 프로젝트 `.codex/agents`의 `c4-*.md` 동기화
 
 필요 시 수동 스크립트도 사용 가능합니다:

@@ -43,8 +43,8 @@ Detects local GPU capabilities automatically via nvidia-smi
 and registers with the Hub. The worker ID is printed on success.
 
 Example:
-  c4 hub register
-  c4 hub register --name "lab-rtx4090"`,
+  cq hub register
+  cq hub register --name "lab-rtx4090"`,
 	RunE: runHubRegister,
 }
 
@@ -57,8 +57,8 @@ Connects via WebSocket and prints metrics as they arrive.
 Stops when the job completes or is cancelled.
 
 Example:
-  c4 hub watch job-abc123
-  c4 hub watch job-abc123 --history`,
+  cq hub watch job-abc123
+  cq hub watch job-abc123 --history`,
 	Args: cobra.ExactArgs(1),
 	RunE: runHubWatch,
 }
@@ -72,8 +72,8 @@ sends periodic heartbeats, and claims jobs from the queue.
 The daemon runs until interrupted (Ctrl+C).
 
 Example:
-  c4 hub run
-  c4 hub run --interval 30`,
+  cq hub run
+  cq hub run --interval 30`,
 	RunE: runHubRun,
 }
 
@@ -96,8 +96,8 @@ Edge devices receive trained model artifacts from Hub workers.
 Supports architecture/runtime detection for deployment filtering.
 
 Example:
-  c4 hub edge register --name "jetson-factory-1" --tags onnx,arm64
-  c4 hub edge register --name "rpi-fleet" --tags tflite --runtime tflite`,
+  cq hub edge register --name "jetson-factory-1" --tags onnx,arm64
+  cq hub edge register --name "rpi-fleet" --tags tflite --runtime tflite`,
 	RunE: runHubEdgeRegister,
 }
 
@@ -171,7 +171,7 @@ func newHubClient() (*hub.Client, error) {
 }
 
 // =========================================================================
-// c4 hub status
+// cq hub status
 // =========================================================================
 
 func runHubStatus(cmd *cobra.Command, args []string) error {
@@ -227,7 +227,7 @@ func runHubStatus(cmd *cobra.Command, args []string) error {
 }
 
 // =========================================================================
-// c4 hub register
+// cq hub register
 // =========================================================================
 
 func runHubRegister(cmd *cobra.Command, args []string) error {
@@ -273,7 +273,7 @@ func runHubRegister(cmd *cobra.Command, args []string) error {
 }
 
 // =========================================================================
-// c4 hub watch
+// cq hub watch
 // =========================================================================
 
 func runHubWatch(cmd *cobra.Command, args []string) error {
@@ -344,7 +344,7 @@ func runHubWatch(cmd *cobra.Command, args []string) error {
 }
 
 // =========================================================================
-// c4 hub run (daemon mode)
+// cq hub run (daemon mode)
 // =========================================================================
 
 func runHubRun(cmd *cobra.Command, args []string) error {
@@ -488,7 +488,7 @@ func detectGPUCapabilities() (map[string]any, error) {
 }
 
 // =========================================================================
-// c4 hub edge register
+// cq hub edge register
 // =========================================================================
 
 func runHubEdgeRegister(cmd *cobra.Command, args []string) error {
@@ -535,7 +535,7 @@ func runHubEdgeRegister(cmd *cobra.Command, args []string) error {
 }
 
 // =========================================================================
-// c4 hub edge list
+// cq hub edge list
 // =========================================================================
 
 func runHubEdgeList(cmd *cobra.Command, args []string) error {

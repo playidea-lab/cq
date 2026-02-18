@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# C4 Installer — One-line setup for C4 AI Orchestration System
+# CQ Installer — One-line setup for CQ AI Orchestration System
 #
 # Local:   ./install.sh
-# Remote:  curl -sSL https://git.pilab.co.kr/pi/c4/raw/main/install.sh | bash
+# Remote:  curl -sSL https://git.pilab.co.kr/pi/cq/raw/main/install.sh | bash
 #
 # When piped via curl, the script auto-clones the repo first.
 
-C4_REPO="https://git.pilab.co.kr/pi/c4.git"
-C4_DEFAULT_DIR="$HOME/c4"
+C4_REPO="https://git.pilab.co.kr/pi/cq.git"
+C4_DEFAULT_DIR="$HOME/cq"
 
 # ─── Flag Parsing ─────────────────────────────────────────────
 
@@ -67,7 +67,7 @@ detect_or_clone() {
     fi
 }
 
-printf "\n${BOLD}C4 Installer${NC}\n"
+printf "\n${BOLD}CQ Installer${NC}\n"
 printf "─────────────────\n"
 
 detect_or_clone
@@ -126,8 +126,8 @@ if [ -n "$C4_SB_KEY" ]; then
     LDFLAGS="$LDFLAGS -X main.builtinSupabaseKey=$C4_SB_KEY"
 fi
 mkdir -p bin
-go build -ldflags "$LDFLAGS" -o bin/c4 ./cmd/c4/
-ok "Go binary built (c4-core/bin/c4)"
+go build -ldflags "$LDFLAGS" -o bin/cq ./cmd/c4/
+ok "Go binary built (c4-core/bin/cq)"
 
 # ─── C5 Hub Binary Build (optional) ─────────────────────────
 if [ "$WITH_HUB" = true ]; then
@@ -157,7 +157,7 @@ MCP_JSON="$C4_ROOT/.mcp.json"
 C4_ENTRY=$(cat <<EOF
 {
   "type": "stdio",
-  "command": "$C4_ROOT/c4-core/bin/c4",
+  "command": "$C4_ROOT/c4-core/bin/cq",
   "args": ["mcp", "--dir", "$C4_ROOT"],
   "env": {
     "C4_PROJECT_ROOT": "$C4_ROOT"
@@ -167,10 +167,10 @@ EOF
 )
 
 if [ -f "$MCP_JSON" ]; then
-    # Existing .mcp.json — merge c4 entry, preserve other servers
+    # Existing .mcp.json — merge cq entry, preserve other servers
     if command -v jq &>/dev/null; then
         # jq available: surgical update
-        jq --argjson c4 "$C4_ENTRY" '.mcpServers.c4 = $c4' "$MCP_JSON" > "${MCP_JSON}.tmp"
+        jq --argjson cq "$C4_ENTRY" '.mcpServers.cq = $cq' "$MCP_JSON" > "${MCP_JSON}.tmp"
         mv "${MCP_JSON}.tmp" "$MCP_JSON"
     else
         # Fallback: Python JSON merge
@@ -178,7 +178,7 @@ if [ -f "$MCP_JSON" ]; then
 import json, sys
 with open('$MCP_JSON') as f:
     data = json.load(f)
-data.setdefault('mcpServers', {})['c4'] = json.loads('''$C4_ENTRY''')
+data.setdefault('mcpServers', {})['cq'] = json.loads('''$C4_ENTRY''')
 with open('$MCP_JSON', 'w') as f:
     json.dump(data, f, indent=2)
     f.write('\n')
@@ -190,7 +190,7 @@ else
     cat > "$MCP_JSON" <<MCPEOF
 {
   "mcpServers": {
-    "c4": $C4_ENTRY
+    "cq": $C4_ENTRY
   }
 }
 MCPEOF
@@ -203,18 +203,18 @@ INSTALL_GLOBAL="${C4_GLOBAL_INSTALL:-}"
 if [ -z "$INSTALL_GLOBAL" ] && [ -t 0 ]; then
     # Interactive terminal — ask user
     printf "\n"
-    read -rp "  Install c4 globally to ~/.local/bin/c4? [y/N] " INSTALL_GLOBAL
+    read -rp "  Install cq globally to ~/.local/bin/cq? [y/N] " INSTALL_GLOBAL
 elif [ -z "$INSTALL_GLOBAL" ]; then
     # Piped (curl | bash) — skip by default
     INSTALL_GLOBAL="n"
 fi
-if [[ "${INSTALL_GLOBAL,,}" =~ ^y ]]; then
+if [[ "$(echo "$INSTALL_GLOBAL" | tr '[:upper:]' '[:lower:]')" =~ ^y ]]; then
     mkdir -p "$HOME/.local/bin"
     # CRITICAL: Use go build -o, NOT cp (macOS ARM64 code signing)
     info "Building global binary..."
     cd "$C4_ROOT/c4-core"
-    go build -ldflags "$LDFLAGS" -o "$HOME/.local/bin/c4" ./cmd/c4/
-    ok "Global binary installed (~/.local/bin/c4)"
+    go build -ldflags "$LDFLAGS" -o "$HOME/.local/bin/cq" ./cmd/c4/
+    ok "Global binary installed (~/.local/bin/cq)"
 
     # Check if ~/.local/bin is in PATH
     if ! echo "$PATH" | tr ':' '\n' | grep -qx "$HOME/.local/bin"; then
@@ -223,7 +223,7 @@ if [[ "${INSTALL_GLOBAL,,}" =~ ^y ]]; then
     fi
 fi
 
-if [ "$WITH_HUB" = true ] && [[ "${INSTALL_GLOBAL,,}" =~ ^y ]]; then
+if [ "$WITH_HUB" = true ] && [[ "$(echo "$INSTALL_GLOBAL" | tr '[:upper:]' '[:lower:]')" =~ ^y ]]; then
     info "Building C5 Hub global binary..."
     cd "$C4_ROOT/c5"
     go build -ldflags "$C5_LDFLAGS" -o "$HOME/.local/bin/c5" ./cmd/c5/
@@ -243,7 +243,7 @@ ok "Install path recorded (~/.c4-install-path)"
 
 # ─── Verification ───────────────────────────────────────────
 
-INSTALLED_VER="$("$C4_ROOT/c4-core/bin/c4" --version 2>&1 | head -1 || true)"
+INSTALLED_VER="$("$C4_ROOT/c4-core/bin/cq" --version 2>&1 | head -1 || true)"
 if [ -z "$INSTALLED_VER" ]; then
     warn "Binary built but version check failed"
 else
@@ -252,12 +252,12 @@ fi
 
 # ─── Done ───────────────────────────────────────────────────
 
-printf "\n${GREEN}${BOLD}C4 $VERSION installed successfully!${NC}\n"
+printf "\n${GREEN}${BOLD}CQ $VERSION installed successfully!${NC}\n"
 printf "  Location: ${BOLD}$C4_ROOT${NC}\n"
-printf "  Binary:   ${BOLD}$C4_ROOT/c4-core/bin/c4${NC}\n"
+printf "  Binary:   ${BOLD}$C4_ROOT/c4-core/bin/cq${NC}\n"
 printf "\n${BOLD}Next steps:${NC}\n"
 printf "  1. Restart Claude Code to activate MCP tools\n"
-printf "  2. Run ${CYAN}c4 auth login${NC} to sign in (required for cloud features)\n\n"
+printf "  2. Run ${CYAN}cq auth login${NC} to sign in (required for cloud features)\n\n"
 
 if [ "$WITH_HUB" = true ]; then
     printf "${BOLD}C5 Hub:${NC}\n"

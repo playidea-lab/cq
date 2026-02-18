@@ -46,6 +46,17 @@
 
 ---
 
+## 최신 추가사항 (2026-02-19)
+
+### 프로젝트/CLI·MCP 이름 현행화 (c4 → cq) ✅
+
+- **프로젝트·CLI**: c4 → **cq** (바이너리 `cq`, 설치 경로 `$HOME/cq`, 리포 pi/cq)
+- **MCP 서버 키**: `mcpServers.c4` → **`mcpServers.cq`** (`.mcp.json`, `.cursor/mcp.json`, Codex `[mcp_servers.cq]`)
+- **문서·스크립트**: CLI/바이너리 참조 전반 cq로 통일, install.sh bash 3.x 호환 수정
+- 점검 목록: `docs/c4-to-cq-rename-issues.md` (반영 완료)
+
+---
+
 ## 최신 추가사항 (2026-02-16)
 
 ### CDP Auto-Discovery + WebMCP Context + Lighthouse llms.txt ✅
@@ -855,7 +866,7 @@ c4/
 - **SQLiteStore**: `handlers.Store` 인터페이스 SQLite 구현 (11 methods)
 - **Sidecar 자동 관리**: Go 시작 시 Python sidecar 자동 spawn
 - **Fallback**: Go MCP 실패 시 Python MCP fallback
-- **바이너리**: `c4-core/bin/c4` (12MB)
+- **바이너리**: `c4-core/bin/cq` (12MB)
 
 #### Phase 5: canvas-app → c1 리네임
 - `canvas-app/` → `c1/` 디렉토리 이동

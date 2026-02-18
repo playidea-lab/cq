@@ -92,7 +92,7 @@ func newMCPServer() (*mcpServer, error) {
 		filepath.Join(projectDir, "..", ".env"),
 	} {
 		if err := godotenv.Load(candidate); err == nil {
-			fmt.Fprintf(os.Stderr, "c4: loaded %s\n", candidate)
+			fmt.Fprintf(os.Stderr, "cq: loaded %s\n", candidate)
 			break
 		}
 	}
@@ -109,7 +109,7 @@ func newMCPServer() (*mcpServer, error) {
 		AnonKey: builtinSupabaseKey,
 	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "c4: config load failed (using defaults): %v\n", err)
+		fmt.Fprintf(os.Stderr, "cq: config load failed (using defaults): %v\n", err)
 		cfgMgr = nil
 	}
 
@@ -117,7 +117,7 @@ func newMCPServer() (*mcpServer, error) {
 	bridgeCfg := bridge.DefaultSidecarConfig()
 	bridgeCfg.PidFile = filepath.Join(projectDir, ".c4", "sidecar.pid")
 	lazySidecar := bridge.NewLazyStarter(bridgeCfg)
-	fmt.Fprintln(os.Stderr, "c4: Python sidecar will start on first proxy tool call")
+	fmt.Fprintln(os.Stderr, "cq: Python sidecar will start on first proxy tool call")
 
 	// Create TokenProvider and KnowledgeCloudClient if cloud is enabled
 	var knowledgeCloud *cloud.KnowledgeCloudClient
@@ -131,10 +131,10 @@ func newMCPServer() (*mcpServer, error) {
 				// Auto-refresh if token expired
 				if session.ExpiresAt > 0 && time.Now().Unix() >= session.ExpiresAt {
 					if refreshed, refErr := authClient.RefreshToken(); refErr == nil {
-						fmt.Fprintln(os.Stderr, "c4: cloud session refreshed")
+						fmt.Fprintln(os.Stderr, "cq: cloud session refreshed")
 						session = refreshed
 					} else {
-						fmt.Fprintf(os.Stderr, "c4: cloud session expired, refresh failed: %v\n", refErr)
+						fmt.Fprintf(os.Stderr, "cq: cloud session expired, refresh failed: %v\n", refErr)
 					}
 				}
 				cloudTP = cloud.NewTokenProvider(session.AccessToken, session.ExpiresAt, authClient)
@@ -146,10 +146,10 @@ func newMCPServer() (*mcpServer, error) {
 			// Resolve project name to UUID if not already a UUID
 			if cloudTP != nil && cloudProjectID != "" && !isUUID(cloudProjectID) {
 				if uuid, err := resolveProjectUUID(cloudCfg.URL, cloudCfg.AnonKey, cloudTP.Token(), cloudProjectID); err == nil {
-					fmt.Fprintf(os.Stderr, "c4: cloud project %q → %s\n", cloudProjectID, uuid)
+					fmt.Fprintf(os.Stderr, "cq: cloud project %q → %s\n", cloudProjectID, uuid)
 					cloudProjectID = uuid
 				} else {
-					fmt.Fprintf(os.Stderr, "c4: could not resolve project UUID: %v\n", err)
+					fmt.Fprintf(os.Stderr, "cq: could not resolve project UUID: %v\n", err)
 				}
 			}
 			if cloudTP == nil {
@@ -168,7 +168,7 @@ func newMCPServer() (*mcpServer, error) {
 	os.MkdirAll(researchDir, 0755)
 	researchStore, researchErr := research.NewStore(researchDir)
 	if researchErr != nil {
-		fmt.Fprintf(os.Stderr, "c4: research store init failed (proxy fallback): %v\n", researchErr)
+		fmt.Fprintf(os.Stderr, "cq: research store init failed (proxy fallback): %v\n", researchErr)
 	}
 
 	// Create knowledge store (optional — native knowledge tools use this, Tier 2)
@@ -178,7 +178,7 @@ func newMCPServer() (*mcpServer, error) {
 	var knowledgeSearcher *knowledge.Searcher
 	var knowledgeUsage *knowledge.UsageTracker
 	if ks, ksErr := knowledge.NewStore(knowledgeDir); ksErr != nil {
-		fmt.Fprintf(os.Stderr, "c4: knowledge store init failed (proxy fallback): %v\n", ksErr)
+		fmt.Fprintf(os.Stderr, "cq: knowledge store init failed (proxy fallback): %v\n", ksErr)
 	} else {
 		knowledgeStore = ks
 
@@ -190,15 +190,15 @@ func newMCPServer() (*mcpServer, error) {
 			// Add embedding route if not configured
 			embGateway.Resolve("embedding", "")
 			embedder = llm.NewEmbeddingProvider(embGateway, embDim)
-			fmt.Fprintln(os.Stderr, "c4: knowledge real embeddings enabled (1536d)")
+			fmt.Fprintln(os.Stderr, "cq: knowledge real embeddings enabled (1536d)")
 		} else {
 			embDim = 384 // fallback to mock dimension
-			fmt.Fprintln(os.Stderr, "c4: knowledge using mock embeddings (384d)")
+			fmt.Fprintln(os.Stderr, "cq: knowledge using mock embeddings (384d)")
 		}
 
 		// Create vector store + searcher for hybrid search
 		if vs, vsErr := knowledge.NewVectorStore(ks.DB(), embDim, embedder); vsErr != nil {
-			fmt.Fprintf(os.Stderr, "c4: knowledge vector store init failed (FTS-only): %v\n", vsErr)
+			fmt.Fprintf(os.Stderr, "cq: knowledge vector store init failed (FTS-only): %v\n", vsErr)
 			knowledgeSearcher = knowledge.NewSearcher(ks, nil)
 		} else {
 			knowledgeSearcher = knowledge.NewSearcher(ks, vs)
@@ -206,7 +206,7 @@ func newMCPServer() (*mcpServer, error) {
 
 		// Create usage tracker for popularity-boosted search (3-way RRF)
 		if ut, utErr := knowledge.NewUsageTracker(ks.DB()); utErr != nil {
-			fmt.Fprintf(os.Stderr, "c4: knowledge usage tracker init failed: %v\n", utErr)
+			fmt.Fprintf(os.Stderr, "cq: knowledge usage tracker init failed: %v\n", utErr)
 		} else {
 			knowledgeUsage = ut
 			if knowledgeSearcher != nil {
@@ -266,9 +266,9 @@ func newMCPServer() (*mcpServer, error) {
 			cloudURL := cloudCfg.URL + "/rest/v1"
 			cloudStore := cloud.NewCloudStore(cloudURL, cloudCfg.AnonKey, cloudTP, cloudProjectID)
 			store = cloud.NewHybridStore(sqliteStore, cloudStore)
-			fmt.Fprintln(os.Stderr, "c4: cloud sync enabled (hybrid mode)")
+			fmt.Fprintln(os.Stderr, "cq: cloud sync enabled (hybrid mode)")
 		} else {
-			fmt.Fprintln(os.Stderr, "c4: cloud enabled but URL/key not configured, using local only")
+			fmt.Fprintln(os.Stderr, "cq: cloud enabled but URL/key not configured, using local only")
 		}
 	}
 
@@ -285,13 +285,13 @@ func newMCPServer() (*mcpServer, error) {
 	handlers.RegisterTwinHandlers(reg, sqliteStore)
 	handlers.RegisterLighthouseHandlers(reg, sqliteStore)
 	if n := handlers.LoadLighthousesOnStartup(reg, sqliteStore); n > 0 {
-		fmt.Fprintf(os.Stderr, "c4: %d lighthouse stubs loaded\n", n)
+		fmt.Fprintf(os.Stderr, "cq: %d lighthouse stubs loaded\n", n)
 	}
 
 	// Register LLM Gateway handlers if enabled (reuse gateway created earlier)
 	if llmGateway != nil {
 		handlers.RegisterLLMHandlers(reg, llmGateway)
-		fmt.Fprintf(os.Stderr, "c4: LLM gateway enabled (%d providers)\n", llmGateway.ProviderCount())
+		fmt.Fprintf(os.Stderr, "cq: LLM gateway enabled (%d providers)\n", llmGateway.ProviderCount())
 	}
 
 	// Register Hub handlers if enabled
@@ -308,9 +308,9 @@ func newMCPServer() (*mcpServer, error) {
 		})
 		if hubClient.IsAvailable() {
 			handlers.RegisterHubHandlers(reg, hubClient)
-			fmt.Fprintf(os.Stderr, "c4: hub connected (%s)\n", hubCfg.URL)
+			fmt.Fprintf(os.Stderr, "cq: hub connected (%s)\n", hubCfg.URL)
 		} else {
-			fmt.Fprintln(os.Stderr, "c4: hub enabled but URL not configured")
+			fmt.Fprintln(os.Stderr, "cq: hub enabled but URL not configured")
 			hubClient = nil
 		}
 	}
@@ -321,7 +321,7 @@ func newMCPServer() (*mcpServer, error) {
 		if cloudCfg.URL != "" && cloudCfg.AnonKey != "" {
 			driveClient := drive.NewClient(cloudCfg.URL, cloudCfg.AnonKey, cloudTP, cloudProjectID, cloudCfg.BucketName)
 			handlers.RegisterDriveHandlers(reg, driveClient)
-			fmt.Fprintln(os.Stderr, "c4: drive enabled (6 tools)")
+			fmt.Fprintln(os.Stderr, "cq: drive enabled (6 tools)")
 		}
 	}
 
@@ -339,7 +339,7 @@ func newMCPServer() (*mcpServer, error) {
 				keeperGateway = llm.NewGatewayFromConfig(cfgMgr.GetConfig())
 			}
 			keeper = handlers.NewContextKeeper(c1Handler, keeperGateway)
-			fmt.Fprintln(os.Stderr, "c4: c1 enabled (3 tools + keeper)")
+			fmt.Fprintln(os.Stderr, "cq: c1 enabled (3 tools + keeper)")
 		}
 	}
 
@@ -347,14 +347,14 @@ func newMCPServer() (*mcpServer, error) {
 	if hubClient != nil {
 		shutdownStore, shutdownErr := worker.NewShutdownStore(db)
 		if shutdownErr != nil {
-			fmt.Fprintf(os.Stderr, "c4: worker shutdown store failed: %v\n", shutdownErr)
+			fmt.Fprintf(os.Stderr, "cq: worker shutdown store failed: %v\n", shutdownErr)
 		} else {
 			handlers.RegisterWorkerHandlers(reg, &handlers.WorkerDeps{
 				HubClient:     hubClient,
 				ShutdownStore: shutdownStore,
 				Keeper:        keeper,
 			})
-			fmt.Fprintln(os.Stderr, "c4: worker standby tools registered (3 tools)")
+			fmt.Fprintln(os.Stderr, "cq: worker standby tools registered (3 tools)")
 		}
 	}
 
@@ -402,7 +402,7 @@ func newMCPServer() (*mcpServer, error) {
 				WSHost:           ebCfg.WSHost,
 			})
 			if ebErr != nil {
-				fmt.Fprintf(os.Stderr, "c4: eventbus auto-start failed: %v\n", ebErr)
+				fmt.Fprintf(os.Stderr, "cq: eventbus auto-start failed: %v\n", ebErr)
 			} else {
 				embeddedEB = eb
 
@@ -417,7 +417,7 @@ func newMCPServer() (*mcpServer, error) {
 					if hubClient != nil {
 						eb.Dispatcher().SetHubSubmitter(hubClient)
 					}
-					fmt.Fprintf(os.Stderr, "c4: eventbus auto-started (embedded, %s)\n", eb.SocketPath())
+					fmt.Fprintf(os.Stderr, "cq: eventbus auto-started (embedded, %s)\n", eb.SocketPath())
 				}
 			}
 		} else {
@@ -429,10 +429,10 @@ func newMCPServer() (*mcpServer, error) {
 			}
 			ebClient, ebErr := eventbus.NewClient(sockPath)
 			if ebErr != nil {
-				fmt.Fprintf(os.Stderr, "c4: eventbus not reachable (unix:%s): %v\n", sockPath, ebErr)
+				fmt.Fprintf(os.Stderr, "cq: eventbus not reachable (unix:%s): %v\n", sockPath, ebErr)
 			} else {
 				wireEventBusClient(ebClient)
-				fmt.Fprintf(os.Stderr, "c4: eventbus connected (unix:%s, 6 tools)\n", sockPath)
+				fmt.Fprintf(os.Stderr, "cq: eventbus connected (unix:%s, 6 tools)\n", sockPath)
 			}
 		}
 	}
@@ -442,7 +442,7 @@ func newMCPServer() (*mcpServer, error) {
 		localDBPath := filepath.Join(projectDir, ".c4", "eventbus", "local.db")
 		localStore, localErr := eventbus.NewStore(localDBPath)
 		if localErr != nil {
-			fmt.Fprintf(os.Stderr, "c4: local eventbus store failed: %v\n", localErr)
+			fmt.Fprintf(os.Stderr, "cq: local eventbus store failed: %v\n", localErr)
 		} else {
 			localDispatcher := eventbus.NewDispatcher(localStore)
 			localDispatcher.SetC1Poster(keeper)
@@ -461,7 +461,7 @@ func newMCPServer() (*mcpServer, error) {
 			}
 
 			sqliteStore.SetDispatcher(localDispatcher)
-			fmt.Fprintln(os.Stderr, "c4: local dispatcher wired (c1_post rules)")
+			fmt.Fprintln(os.Stderr, "cq: local dispatcher wired (c1_post rules)")
 		}
 	}
 
@@ -660,7 +660,7 @@ func (s *mcpServer) handleRequest(req *mcpRequest) *mcpResponse {
 // This is called from fallback.go's startGoMCPServer.
 func runMCP() error {
 	if verbose {
-		fmt.Fprintln(os.Stderr, "c4: Go MCP server starting on stdio...")
+		fmt.Fprintln(os.Stderr, "cq: Go MCP server starting on stdio...")
 	}
 
 	srv, err := newMCPServer()
@@ -676,13 +676,13 @@ func runMCP() error {
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
 		sig := <-sigCh
-		fmt.Fprintf(os.Stderr, "c4: received %s, shutting down\n", sig)
+		fmt.Fprintf(os.Stderr, "cq: received %s, shutting down\n", sig)
 		srv.shutdown()
 		os.Exit(0)
 	}()
 
 	tools := srv.registry.ListTools()
-	fmt.Fprintf(os.Stderr, "c4: %d tools registered\n", len(tools))
+	fmt.Fprintf(os.Stderr, "cq: %d tools registered\n", len(tools))
 
 	return srv.serve()
 }

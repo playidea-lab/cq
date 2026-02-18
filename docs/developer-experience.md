@@ -198,7 +198,7 @@ c4 init --with-git-hooks
 
 ```bash
 # MCP 서버 상태 확인
-c4 status
+cq status
 
 # .mcp.json 확인
 cat .mcp.json
@@ -273,7 +273,7 @@ main (기본 브랜치)
 
 ```bash
 # Worktree 상태 확인
-c4 status  # MCP tool: c4_worktree_status
+cq status  # MCP tool: c4_worktree_status
 
 # 특정 Worker 상태
 # MCP tool: c4_worktree_status(worker_id="worker-1")

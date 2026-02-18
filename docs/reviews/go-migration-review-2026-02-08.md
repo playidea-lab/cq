@@ -505,7 +505,7 @@ service C4Python {
 - [ ] State Machine 전체 전이 규칙 구현 + 테스트
 - [ ] SQLite Task Store CRUD + WAL 모드
 - [ ] Worker 3개 동시 실행 가능
-- [ ] `c4 status` CLI 명령어 동작
+- [ ] `cq status` CLI 명령어 동작
 
 ### 7.4 Phase 2: 통합 (4주, 2026-04)
 

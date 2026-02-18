@@ -110,10 +110,10 @@ eval $(c4 env anthropic)
     }
   },
   "mcpServers": {
-    "c4": {
+    "cq": {
       "type": "stdio",
       "command": "uv",
-      "args": ["--directory", "/path/to/c4", "run", "python", "-m", "c4.mcp_server"],
+      "args": ["--directory", "/path/to/cq", "run", "python", "-m", "c4.mcp_server"],
       "env": {
         "C4_PROJECT_ROOT": "${PWD}"
       }

@@ -57,7 +57,7 @@ while Python continues to manage task orchestration and agent routing.
    ```json
    {
      "mcpServers": {
-       "c4": {
+       "cq": {
          "command": "c4-core",
          "args": ["mcp", "--project", "/path/to/project"]
        }

@@ -116,7 +116,7 @@ func runAuthStatus(cmd *cobra.Command, args []string) error {
 
 	if session == nil {
 		fmt.Println("Not authenticated.")
-		fmt.Println("Run 'c4 auth login' to authenticate with GitHub.")
+		fmt.Println("Run 'cq auth login' to authenticate with GitHub.")
 		return nil
 	}
 
@@ -128,7 +128,7 @@ func runAuthStatus(cmd *cobra.Command, args []string) error {
 
 	if expired {
 		fmt.Printf("Status:  expired (at %s)\n", expiresAt.Format(time.RFC3339))
-		fmt.Println("Run 'c4 auth login' to re-authenticate.")
+		fmt.Println("Run 'cq auth login' to re-authenticate.")
 	} else {
 		remaining := time.Until(expiresAt).Round(time.Minute)
 		fmt.Printf("Status:  authenticated (expires in %s)\n", remaining)

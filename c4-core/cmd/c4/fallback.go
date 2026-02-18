@@ -57,7 +57,7 @@ func runMCPFallback(cmd *cobra.Command, args []string) error {
 func RunWithFallback(cfg *FallbackConfig) error {
 	// Check for force-Python mode
 	if cfg.ForcePython {
-		fmt.Fprintln(os.Stderr, "c4: C4_FORCE_PYTHON=1 set, using Python MCP server")
+		fmt.Fprintln(os.Stderr, "cq: C4_FORCE_PYTHON=1 set, using Python MCP server")
 		return runPythonMCP(cfg)
 	}
 
@@ -68,8 +68,8 @@ func RunWithFallback(cfg *FallbackConfig) error {
 	}
 
 	// Go server failed - fall back to Python
-	fmt.Fprintf(os.Stderr, "c4: Go MCP server failed: %v\n", err)
-	fmt.Fprintln(os.Stderr, "c4: Falling back to Python MCP server...")
+	fmt.Fprintf(os.Stderr, "cq: Go MCP server failed: %v\n", err)
+	fmt.Fprintln(os.Stderr, "cq: Falling back to Python MCP server...")
 
 	return runPythonMCP(cfg)
 }

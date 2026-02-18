@@ -1,0 +1,15 @@
+---
+description: "C4 워크플로우: plan/run/checkpoint/refine/finish 시 C4 MCP 도구 사용"
+alwaysApply: false
+---
+
+# C4 워크플로우 (Cursor)
+
+이 프로젝트는 C4로 관리됩니다. 다음 요청이 나오면 **C4 MCP 도구**를 사용하세요 (MCP 서버가 연결된 경우).
+
+- **상태/태스크**: `c4_status`, `c4_add_todo`, `c4_get_task`, `c4_submit`, `c4_task_list`
+- **계획/설계**: "계획", "설계", "기획" → `.claude/skills/c4-plan/SKILL.md` 절차 + MCP 도구
+- **실행**: "실행", "워커" → `.claude/skills/c4-run/SKILL.md` + `c4_get_task` 등
+- **마무리**: "마무리", "완료" → `.claude/skills/c4-finish/SKILL.md` (빌드·테스트·커밋·지식 기록)
+
+전체 규칙과 도구 목록은 **AGENTS.md**를 참고하세요. MCP 미연결 시에는 내장 도구로 동일한 워크플로우를 흉내 낼 수 있습니다.

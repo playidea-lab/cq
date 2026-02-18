@@ -34,11 +34,11 @@ var eventbusCmd = &cobra.Command{
 Start the gRPC daemon, manage rules, view logs, and monitor events.
 
 Example:
-  c4 eventbus              # Start daemon
-  c4 eventbus status       # Show daemon stats
-  c4 eventbus logs         # View dispatch logs
-  c4 eventbus rules list   # List routing rules
-  c4 eventbus monitor      # Live event stream`,
+  cq eventbus              # Start daemon
+  cq eventbus status       # Show daemon stats
+  cq eventbus logs         # View dispatch logs
+  cq eventbus rules list   # List routing rules
+  cq eventbus monitor      # Live event stream`,
 	RunE: runEventbus,
 }
 
@@ -295,7 +295,7 @@ func runEventbus(cmd *cobra.Command, args []string) error {
 	defaultRulesPath := filepath.Join(dataDir, "default_rules.yaml")
 	if data, err := os.ReadFile(defaultRulesPath); err == nil {
 		if err := store.EnsureDefaultRules(data); err != nil {
-			fmt.Fprintf(os.Stderr, "c4 eventbus: default rules: %v\n", err)
+			fmt.Fprintf(os.Stderr, "cq eventbus: default rules: %v\n", err)
 		}
 	}
 
@@ -327,20 +327,20 @@ func runEventbus(cmd *cobra.Command, args []string) error {
 	go func() {
 		select {
 		case <-sigCh:
-			fmt.Fprintln(os.Stderr, "\nc4 eventbus: shutting down (signal)...")
+			fmt.Fprintln(os.Stderr, "\ncq eventbus: shutting down (signal)...")
 		case <-ctx.Done():
-			fmt.Fprintln(os.Stderr, "c4 eventbus: shutting down...")
+			fmt.Fprintln(os.Stderr, "cq eventbus: shutting down...")
 		}
 		grpcServer.GracefulStop()
 	}()
 
-	fmt.Fprintf(os.Stderr, "c4 eventbus: listening on unix:%s (data: %s)\n", sockPath, dataDir)
+	fmt.Fprintf(os.Stderr, "cq eventbus: listening on unix:%s (data: %s)\n", sockPath, dataDir)
 
 	if err := grpcServer.Serve(ln); err != nil {
 		return fmt.Errorf("serve: %w", err)
 	}
 
-	fmt.Fprintln(os.Stderr, "c4 eventbus: stopped")
+	fmt.Fprintln(os.Stderr, "cq eventbus: stopped")
 	return nil
 }
 
@@ -370,7 +370,7 @@ func runEventbusStop(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to signal process %d: %w", pid, err)
 	}
 
-	fmt.Printf("c4 eventbus: sent SIGTERM to PID %d\n", pid)
+	fmt.Printf("cq eventbus: sent SIGTERM to PID %d\n", pid)
 	return nil
 }
 
@@ -579,7 +579,7 @@ func runMonitor(cmd *cobra.Command, args []string) error {
 	}
 	defer client.Close()
 
-	fmt.Fprintf(os.Stderr, "c4 eventbus: monitoring events (pattern: %s) — Ctrl+C to stop\n", monitorPattern)
+	fmt.Fprintf(os.Stderr, "cq eventbus: monitoring events (pattern: %s) — Ctrl+C to stop\n", monitorPattern)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -659,7 +659,7 @@ func runReplay(cmd *cobra.Command, args []string) error {
 	if !replayDryRun {
 		mode = "re-dispatch"
 	}
-	fmt.Fprintf(os.Stderr, "c4 eventbus: replaying events (type=%q, mode=%s, limit=%d)\n",
+	fmt.Fprintf(os.Stderr, "cq eventbus: replaying events (type=%q, mode=%s, limit=%d)\n",
 		replayType, mode, replayLimit)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
@@ -726,7 +726,7 @@ func acquireEventbusPIDLock(pidPath string) error {
 			proc, err := os.FindProcess(pid)
 			if err == nil {
 				if err := proc.Signal(syscall.Signal(0)); err == nil {
-					return fmt.Errorf("eventbus already running (PID %d). Stop it with: c4 eventbus stop", pid)
+					return fmt.Errorf("eventbus already running (PID %d). Stop it with: cq eventbus stop", pid)
 				}
 			}
 		}

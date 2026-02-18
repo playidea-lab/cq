@@ -656,7 +656,7 @@ mod tests {
     #[test]
     fn test_get_project_id_from_config() {
         // Test with actual project root
-        let project_root = Path::new("/Users/changmin/git/c4");
+        let project_root = Path::new("/Users/changmin/git/cq");
         let result = get_project_id(project_root);
 
         assert!(result.is_ok());

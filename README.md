@@ -1,12 +1,12 @@
 <div align="center">
 
-# Cstem
+# CQ
 
 **AI-Powered Project Orchestration System**
 
 Plan, execute, review, and learn — automated end-to-end.
 
-*Cstem* is a pronunciation variant of *System*: the C-series (C0–C1–C2–C3–C4–C5–C9) as one organically connected ecosystem.
+*CQ*: C-series (C0–C1–C2–C3–C4–C5–C9) as one organically connected ecosystem. CLI: `cq`.
 
 ![Go](https://img.shields.io/badge/Go-1.22+-00ADD8?logo=go&logoColor=white)
 ![Python](https://img.shields.io/badge/Python-3.11+-3776AB?logo=python&logoColor=white)
@@ -18,14 +18,14 @@ Plan, execute, review, and learn — automated end-to-end.
 
 ---
 
-C4 turns Claude Code into a full project management system. It provides **134 MCP tools** (108 base + 26 Hub), a structured workflow engine, multi-lens code review, knowledge feedback loops, distributed job scheduling, and GPU-aware task management — all through natural language.
+CQ turns Claude Code into a full project management system. It provides **134 MCP tools** (108 base + 26 Hub), a structured workflow engine, multi-lens code review, knowledge feedback loops, distributed job scheduling, and GPU-aware task management — all through natural language. Run the CLI with `cq`.
 
 ```
 You: /c4-plan "Add user authentication with JWT"
-C4:  Creates 5 tasks with DoD, spawns workers, reviews each PR, learns from decisions.
+CQ:  Creates 5 tasks with DoD, spawns workers, reviews each PR, learns from decisions.
 ```
 
-## C Series Ecosystem (Cstem)
+## C Series Ecosystem (CQ)
 
 C1·C2·C3·C4·C5·C9가 유기적으로 연결된 생태계.
 
@@ -48,7 +48,7 @@ INIT ─▶ DISCOVERY ─▶ DESIGN ─▶ PLAN ─▶ EXECUTE ⇄ CHECKPOINT �
                                     Direct mode     code review   quality loop
 ```
 
-C4 breaks features into tasks, assigns them to workers (parallel) or claims them directly (sequential), auto-generates review tasks, and accumulates decisions as organizational knowledge.
+CQ breaks features into tasks, assigns them to workers (parallel) or claims them directly (sequential), auto-generates review tasks, and accumulates decisions as organizational knowledge.
 
 ## Architecture
 
@@ -93,10 +93,10 @@ Claude Code ──stdio──▶ Go MCP Server (100 base + 26 Hub + 26 extras = 
 
 ```bash
 # One-line remote install
-curl -sSL https://git.pilab.co.kr/pi/c4/raw/main/install.sh | bash
+curl -sSL https://git.pilab.co.kr/pi/cq/raw/main/install.sh | bash
 
 # Or clone + install
-git clone https://git.pilab.co.kr/pi/c4.git && cd c4
+git clone https://git.pilab.co.kr/pi/cq.git && cd cq
 ./install.sh
 
 # Optional: install C5 Hub Server

@@ -35,7 +35,7 @@ cd c4-core && go test -count=1 -p 1 ./...
 
 ### 4. Install Binary
 ```bash
-cd c4-core && go build -o ~/.local/bin/c4 ./cmd/c4/
+cd c4-core && go build -o ~/.local/bin/cq ./cmd/c4/
 ```
 - `cp` 복사 금지 (macOS ARM64 코드 서명 무효화)
 

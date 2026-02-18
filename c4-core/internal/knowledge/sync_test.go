@@ -387,7 +387,7 @@ func TestStripMetadata(t *testing.T) {
 		{"git SHA 8 chars", "commit abcdef12 merged", "commit [commit] merged"},
 		{"git SHA 40 chars", "sha 1234567890abcdef1234567890abcdef12345678 ok", "sha [commit] ok"},
 		{"short hex preserved", "value abc1234 stays", "value abc1234 stays"},
-		{"abs path /Users", "file at /Users/changmin/git/c4/main.go here", "file at [path] here"},
+		{"abs path /Users", "file at /Users/changmin/git/cq/main.go here", "file at [path] here"},
 		{"abs path /home", "see /home/user/project/file.py end", "see [path] end"},
 		{"no match", "plain text without identifiers", "plain text without identifiers"},
 		{"mixed", "T-001 fixed in abcdef12 at /Users/dev/src/f.go", "[task] fixed in [commit] at [path]"},

@@ -2,8 +2,8 @@
 name: c4-status
 description: "C4 프로젝트 상태/큐를 Codex에서 정리"
 triggers:
-  - c4 status
-  - show c4 status
+  - cq status
+  - show cq status
   - 상태 보여줘
 ---
 

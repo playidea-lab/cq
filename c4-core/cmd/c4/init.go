@@ -60,7 +60,7 @@ func initAndLaunch(tool string) error {
 			return fmt.Errorf("creating directory %s: %w", d, err)
 		}
 	}
-	fmt.Fprintln(os.Stderr, "c4: .c4/ directory initialized")
+	fmt.Fprintln(os.Stderr, "cq: .c4/ directory initialized")
 
 	// 2. Create/update .mcp.json
 	if err := setupMCPConfig(dir); err != nil {
@@ -69,21 +69,28 @@ func initAndLaunch(tool string) error {
 
 	// 3. Create/update CLAUDE.md with C4 overrides
 	if err := setupClaudeMD(dir); err != nil {
-		fmt.Fprintf(os.Stderr, "c4: warning: CLAUDE.md setup failed: %v\n", err)
+		fmt.Fprintf(os.Stderr, "cq: warning: CLAUDE.md setup failed: %v\n", err)
 	}
 
 	// 4. Deploy C4 skills (symlinks from C4 source)
 	if err := setupSkills(dir); err != nil {
-		fmt.Fprintf(os.Stderr, "c4: warning: skills setup failed: %v\n", err)
+		fmt.Fprintf(os.Stderr, "cq: warning: skills setup failed: %v\n", err)
 	}
 
 	// 5. Codex-specific setup
 	if tool == "codex" {
 		if err := setupCodexConfig(dir); err != nil {
-			fmt.Fprintf(os.Stderr, "c4: warning: codex config setup failed: %v\n", err)
+			fmt.Fprintf(os.Stderr, "cq: warning: codex config setup failed: %v\n", err)
 		}
 		if err := setupCodexAgents(dir); err != nil {
-			fmt.Fprintf(os.Stderr, "c4: warning: codex agents setup failed: %v\n", err)
+			fmt.Fprintf(os.Stderr, "cq: warning: codex agents setup failed: %v\n", err)
+		}
+	}
+
+	// 5b. Cursor-specific setup: .cursor/mcp.json so Cursor loads C4 MCP on start
+	if tool == "cursor" {
+		if err := setupCursorMCPConfig(dir); err != nil {
+			return fmt.Errorf("setting up .cursor/mcp.json: %w", err)
 		}
 	}
 
@@ -102,7 +109,7 @@ func setupClaudeMD(dir string) error {
 	// Check for AGENTS.md symlink (C4 repo itself — skip template deployment)
 	if target, err := os.Readlink(claudePath); err == nil {
 		if strings.Contains(target, "AGENTS.md") {
-			fmt.Fprintln(os.Stderr, "c4: CLAUDE.md is AGENTS.md symlink (C4 repo), skipping template")
+			fmt.Fprintln(os.Stderr, "cq: CLAUDE.md is AGENTS.md symlink (C4 repo), skipping template")
 			return nil
 		}
 	}
@@ -110,7 +117,7 @@ func setupClaudeMD(dir string) error {
 	if data, err := os.ReadFile(claudePath); err == nil {
 		content := string(data)
 		if strings.Contains(content, marker) {
-			fmt.Fprintln(os.Stderr, "c4: CLAUDE.md already has C4 overrides")
+			fmt.Fprintln(os.Stderr, "cq: CLAUDE.md already has C4 overrides")
 			return nil
 		}
 		// Prepend C4 section to existing CLAUDE.md
@@ -118,7 +125,7 @@ func setupClaudeMD(dir string) error {
 		if err := os.WriteFile(claudePath, []byte(newContent), 0644); err != nil {
 			return fmt.Errorf("updating CLAUDE.md: %w", err)
 		}
-		fmt.Fprintln(os.Stderr, "c4: CLAUDE.md updated with C4 overrides (existing content preserved)")
+		fmt.Fprintln(os.Stderr, "cq: CLAUDE.md updated with C4 overrides (existing content preserved)")
 		return nil
 	}
 
@@ -126,7 +133,7 @@ func setupClaudeMD(dir string) error {
 	if err := os.WriteFile(claudePath, []byte(claudeMDTemplate), 0644); err != nil {
 		return fmt.Errorf("creating CLAUDE.md: %w", err)
 	}
-	fmt.Fprintln(os.Stderr, "c4: CLAUDE.md created")
+	fmt.Fprintln(os.Stderr, "cq: CLAUDE.md created")
 	return nil
 }
 
@@ -136,7 +143,7 @@ func setupClaudeMD(dir string) error {
 func setupSkills(dir string) error {
 	c4Root, err := findC4Root()
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "c4: skills setup skipped (C4 source root not found)")
+		fmt.Fprintln(os.Stderr, "cq: skills setup skipped (C4 source root not found)")
 		return nil
 	}
 
@@ -163,26 +170,26 @@ func setupSkills(dir string) error {
 		}
 		source := filepath.Join(sourceSkillsDir, entry.Name())
 		if err := os.Symlink(source, target); err != nil {
-			fmt.Fprintf(os.Stderr, "c4: warning: symlink skill %s: %v\n", entry.Name(), err)
+			fmt.Fprintf(os.Stderr, "cq: warning: symlink skill %s: %v\n", entry.Name(), err)
 			continue
 		}
 		count++
 	}
 	if count > 0 {
-		fmt.Fprintf(os.Stderr, "c4: %d skills deployed (symlinked from %s)\n", count, c4Root)
+		fmt.Fprintf(os.Stderr, "cq: %d skills deployed (symlinked from %s)\n", count, c4Root)
 	} else {
-		fmt.Fprintln(os.Stderr, "c4: skills up to date")
+		fmt.Fprintln(os.Stderr, "cq: skills up to date")
 	}
 	return nil
 }
 
-// setupCodexConfig creates or updates ~/.codex/config.toml with c4 MCP server entry.
+// setupCodexConfig creates or updates ~/.codex/config.toml with cq MCP server entry.
 func setupCodexConfig(dir string) error {
 	configPath, err := codexConfigPath()
 	if err != nil {
 		return err
 	}
-	binPath, err := findC4Binary()
+	binPath, err := findCQBinary()
 	if err != nil {
 		return err
 	}
@@ -195,8 +202,8 @@ func setupCodexConfig(dir string) error {
 	}
 	content = strings.ReplaceAll(content, "\r\n", "\n")
 
-	updated := strings.Contains(content, "[mcp_servers.c4]")
-	cleaned := removeTOMLTable(content, "[mcp_servers.c4]")
+	updated := strings.Contains(content, "[mcp_servers.cq]")
+	cleaned := removeTOMLTable(content, "[mcp_servers.cq]")
 	cleaned = strings.TrimRight(cleaned, "\n")
 
 	block := codexMCPBlock(binPath, dir)
@@ -216,9 +223,9 @@ func setupCodexConfig(dir string) error {
 	}
 
 	if updated {
-		fmt.Fprintf(os.Stderr, "c4: codex MCP config updated (%s)\n", configPath)
+		fmt.Fprintf(os.Stderr, "cq: codex MCP config updated (%s)\n", configPath)
 	} else {
-		fmt.Fprintf(os.Stderr, "c4: codex MCP config added (%s)\n", configPath)
+		fmt.Fprintf(os.Stderr, "cq: codex MCP config added (%s)\n", configPath)
 	}
 	return nil
 }
@@ -236,7 +243,7 @@ func codexConfigPath() (string, error) {
 
 func codexMCPBlock(binPath, dir string) string {
 	lines := []string{
-		"[mcp_servers.c4]",
+		"[mcp_servers.cq]",
 		fmt.Sprintf("command = %s", strconv.Quote(binPath)),
 		fmt.Sprintf("args = [\"mcp\", \"--dir\", %s]", strconv.Quote(dir)),
 		fmt.Sprintf("env = { C4_PROJECT_ROOT = %s }", strconv.Quote(dir)),
@@ -276,7 +283,7 @@ func removeTOMLTable(content, header string) string {
 func setupCodexAgents(dir string) error {
 	c4Root, err := findC4Root()
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "c4: codex agents setup skipped (C4 source root not found)")
+		fmt.Fprintln(os.Stderr, "cq: codex agents setup skipped (C4 source root not found)")
 		return nil
 	}
 
@@ -306,22 +313,22 @@ func setupCodexAgents(dir string) error {
 		}
 		source := filepath.Join(sourceAgentsDir, name)
 		if err := os.Symlink(source, target); err != nil {
-			fmt.Fprintf(os.Stderr, "c4: warning: symlink codex agent %s: %v\n", name, err)
+			fmt.Fprintf(os.Stderr, "cq: warning: symlink codex agent %s: %v\n", name, err)
 			continue
 		}
 		count++
 	}
 	if count > 0 {
-		fmt.Fprintf(os.Stderr, "c4: %d codex agents deployed (symlinked from %s)\n", count, c4Root)
+		fmt.Fprintf(os.Stderr, "cq: %d codex agents deployed (symlinked from %s)\n", count, c4Root)
 	} else {
-		fmt.Fprintln(os.Stderr, "c4: codex agents up to date")
+		fmt.Fprintln(os.Stderr, "cq: codex agents up to date")
 	}
 	return nil
 }
 
 // findC4Root locates the C4 source repository root directory.
 // Search order: C4_SOURCE_ROOT env, builtinC4Root (ldflags), ~/.c4-install-path,
-// then derivation from binary path (c4-core/bin/c4 → repo root).
+// then derivation from binary path (c4-core/bin/cq → repo root).
 func findC4Root() (string, error) {
 	// 1. Environment variable
 	if root := os.Getenv("C4_SOURCE_ROOT"); root != "" {
@@ -345,10 +352,10 @@ func findC4Root() (string, error) {
 		}
 	}
 
-	// 4. Derive from binary path: {root}/c4-core/bin/c4 → {root}
+	// 4. Derive from binary path: {root}/c4-core/bin/cq → {root}
 	if binPath, err := os.Executable(); err == nil {
 		if binPath, err = filepath.EvalSymlinks(binPath); err == nil {
-			// Try c4-core/bin/c4 layout
+			// Try c4-core/bin/cq layout
 			root := filepath.Dir(filepath.Dir(filepath.Dir(binPath)))
 			if hasSkills(root) {
 				return root, nil
@@ -365,11 +372,64 @@ func hasSkills(root string) bool {
 	return err == nil && info.IsDir()
 }
 
+// setupCursorMCPConfig creates or updates .cursor/mcp.json so Cursor loads C4 MCP when opening the project.
+func setupCursorMCPConfig(dir string) error {
+	cursorDir := filepath.Join(dir, ".cursor")
+	if err := os.MkdirAll(cursorDir, 0755); err != nil {
+		return fmt.Errorf("creating .cursor: %w", err)
+	}
+	mcpPath := filepath.Join(cursorDir, "mcp.json")
+
+	binPath, err := findCQBinary()
+	if err != nil {
+		return err
+	}
+
+	c4Entry := map[string]any{
+		"type":    "stdio",
+		"command": binPath,
+		"args":    []string{"mcp", "--dir", dir},
+		"env": map[string]string{
+			"C4_PROJECT_ROOT": dir,
+		},
+	}
+
+	var config map[string]any
+	if data, readErr := os.ReadFile(mcpPath); readErr == nil {
+		if json.Unmarshal(data, &config) != nil {
+			config = nil
+		}
+	}
+	if config == nil {
+		config = map[string]any{}
+	}
+
+	servers, _ := config["mcpServers"].(map[string]any)
+	if servers == nil {
+		servers = map[string]any{}
+	}
+	servers["c4"] = c4Entry
+	config["mcpServers"] = servers
+
+	data, err := json.MarshalIndent(config, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshaling config: %w", err)
+	}
+	data = append(data, '\n')
+
+	if err := os.WriteFile(mcpPath, data, 0644); err != nil {
+		return fmt.Errorf("writing .cursor/mcp.json: %w", err)
+	}
+
+	fmt.Fprintln(os.Stderr, "cq: .cursor/mcp.json configured (C4 MCP will load when Cursor opens this project)")
+	return nil
+}
+
 // setupMCPConfig creates or updates .mcp.json with the C4 MCP server entry.
 func setupMCPConfig(dir string) error {
 	mcpPath := filepath.Join(dir, ".mcp.json")
 
-	binPath, err := findC4Binary()
+	binPath, err := findCQBinary()
 	if err != nil {
 		return err
 	}
@@ -411,12 +471,12 @@ func setupMCPConfig(dir string) error {
 		return fmt.Errorf("writing .mcp.json: %w", err)
 	}
 
-	fmt.Fprintln(os.Stderr, "c4: .mcp.json configured")
+	fmt.Fprintln(os.Stderr, "cq: .mcp.json configured")
 	return nil
 }
 
-// findC4Binary locates the c4 Go binary path for .mcp.json configuration.
-func findC4Binary() (string, error) {
+// findCQBinary locates the cq Go binary path for .mcp.json configuration.
+func findCQBinary() (string, error) {
 	binPath, err := os.Executable()
 	if err == nil {
 		binPath, err = filepath.EvalSymlinks(binPath)
@@ -424,10 +484,10 @@ func findC4Binary() (string, error) {
 			return binPath, nil
 		}
 	}
-	if p, err := exec.LookPath("c4"); err == nil {
+	if p, err := exec.LookPath("cq"); err == nil {
 		return filepath.Abs(p)
 	}
-	return "", fmt.Errorf("cannot determine c4 binary path")
+	return "", fmt.Errorf("cannot determine cq binary path")
 }
 
 // launchTool launches the specified AI coding tool, replacing the current process.
@@ -454,6 +514,6 @@ func launchTool(tool, dir string) error {
 		return fmt.Errorf("%s not found in PATH (install it first): %w", toolCmd, err)
 	}
 
-	fmt.Fprintf(os.Stderr, "c4: launching %s...\n", tool)
+	fmt.Fprintf(os.Stderr, "cq: launching %s...\n", tool)
 	return syscall.Exec(toolPath, toolArgs, os.Environ())
 }

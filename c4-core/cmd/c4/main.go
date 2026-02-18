@@ -1,12 +1,12 @@
-// Package main is the entry point for the c4 CLI tool.
+// Package main is the entry point for the cq CLI tool.
 //
 // Usage:
 //
-//	c4 status           # Show project state
-//	c4 run              # Start execution with workers
-//	c4 stop             # Stop execution
-//	c4 add-task         # Add a task interactively
-//	c4 mcp              # Start MCP server (stdio)
+//	cq status           # Show project state
+//	cq run              # Start execution with workers
+//	cq stop             # Stop execution
+//	cq add-task         # Add a task interactively
+//	cq mcp              # Start MCP server (stdio)
 //
 // Global flags:
 //

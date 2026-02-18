@@ -71,7 +71,7 @@ func runRun(cmd *cobra.Command, args []string) error {
 		fmt.Println("Checkpoint review in progress. Wait for review to complete.")
 		return nil
 	default:
-		return fmt.Errorf("cannot run from state %s: use 'c4 status' to check current state", state.Status)
+		return fmt.Errorf("cannot run from state %s: use 'cq status' to check current state", state.Status)
 	}
 
 	fmt.Printf("Starting %d worker(s)...\n", runWorkers)

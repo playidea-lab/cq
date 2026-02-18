@@ -18,7 +18,7 @@ Before taking any complex action, consult these guides:
 
 ### 1. Planning First (The "Measure Twice" Rule)
 - **Problem**: Do not rush into coding.
-- **Action**: Analyze request -> Check `c4 status` -> Consult `playbook.md` -> Create Plan.
+- **Action**: Analyze request -> Check `cq status` -> Consult `playbook.md` -> Create Plan.
 - **Output**: Clear, step-by-step plan.
 
 ### 2. Context Awareness (The "Know Your Ground" Rule)

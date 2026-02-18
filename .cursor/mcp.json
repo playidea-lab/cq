@@ -1,0 +1,1 @@
+{"mcpServers":{"cq":{"command":"cq","args":["mcp","--dir","."],"env":{},"type":"stdio"}}}
