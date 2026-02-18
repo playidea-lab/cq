@@ -510,11 +510,13 @@ func (s *SQLiteStore) AddTask(task *Task) error {
 		deps, task.Domain, task.Priority, model, executionMode,
 	)
 	if err == nil {
-		// C3 EventBus: publish task.created event
+		// C3 EventBus: publish task.created event (domain vs execution_mode separated; mode kept for backward compat)
 		s.notifyEventBus("task.created", map[string]any{
-			"task_id": task.ID,
-			"title":   task.Title,
-			"mode":    task.Domain,
+			"task_id":         task.ID,
+			"title":           task.Title,
+			"domain":          task.Domain,
+			"execution_mode":  executionMode,
+			"mode":            task.Domain, // deprecated: use "domain"; kept for backward compatibility
 		})
 	}
 	return err
