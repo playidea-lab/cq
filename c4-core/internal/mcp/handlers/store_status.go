@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"os"
 	"strings"
+
+	"github.com/changmin/c4-core/internal/store"
 )
 
 // GetStatus returns the current project status with task counts.
@@ -233,16 +235,8 @@ func (s *SQLiteStore) ListPersonas() ([]map[string]any, error) {
 	return personas, nil
 }
 
-// TaskFilter defines filtering criteria for ListTasks.
-type TaskFilter struct {
-	Status   string `json:"status,omitempty"`
-	Domain   string `json:"domain,omitempty"`
-	WorkerID string `json:"worker_id,omitempty"`
-	Limit    int    `json:"limit,omitempty"`
-}
-
 // ListTasks returns tasks matching the given filter with priority DESC, created_at ASC ordering.
-func (s *SQLiteStore) ListTasks(filter TaskFilter) ([]Task, int, error) {
+func (s *SQLiteStore) ListTasks(filter store.TaskFilter) ([]store.Task, int, error) {
 	if filter.Limit <= 0 {
 		filter.Limit = 50
 	}
@@ -282,9 +276,9 @@ func (s *SQLiteStore) ListTasks(filter TaskFilter) ([]Task, int, error) {
 	}
 	defer rows.Close()
 
-	var tasks []Task
+	var tasks []store.Task
 	for rows.Next() {
-		var t Task
+		var t store.Task
 		var domain, workerID, createdAt, dod sql.NullString
 		if err := rows.Scan(&t.ID, &t.Title, &t.Status, &t.Priority, &domain, &workerID, &createdAt, &dod); err != nil {
 			continue

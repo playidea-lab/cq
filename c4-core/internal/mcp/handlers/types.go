@@ -13,6 +13,7 @@ import "github.com/changmin/c4-core/internal/store"
 
 type Store = store.Store
 type Task = store.Task
+type TaskFilter = store.TaskFilter
 type TaskAssignment = store.TaskAssignment
 type ReviewContext = store.ReviewContext
 type RequestChangesResult = store.RequestChangesResult

@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/changmin/c4-core/internal/mcp"
+	"github.com/changmin/c4-core/internal/store"
 )
 
 // mockStore implements Store for testing.
@@ -119,6 +120,10 @@ func (m *mockStore) AddTask(task *Task) error {
 	m.addedTasks = append(m.addedTasks, task)
 	m.tasks[task.ID] = task
 	return nil
+}
+
+func (m *mockStore) ListTasks(filter store.TaskFilter) ([]store.Task, int, error) {
+	return nil, 0, nil
 }
 
 func (m *mockStore) GetTask(taskID string) (*Task, error) {

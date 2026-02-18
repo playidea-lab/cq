@@ -259,6 +259,36 @@ func (c *CloudStore) AddTask(task *store.Task) error {
 	return c.post("c4_tasks", row)
 }
 
+// ListTasks returns tasks matching the filter; backend is cloud (Supabase).
+func (c *CloudStore) ListTasks(filter store.TaskFilter) ([]store.Task, int, error) {
+	baseFilter := "project_id=eq." + url.QueryEscape(c.projectID)
+	if filter.Status != "" {
+		baseFilter += "&status=eq." + url.QueryEscape(filter.Status)
+	}
+	if filter.Domain != "" {
+		baseFilter += "&domain=eq." + url.QueryEscape(filter.Domain)
+	}
+	if filter.WorkerID != "" {
+		baseFilter += "&worker_id=eq." + url.QueryEscape(filter.WorkerID)
+	}
+	limit := filter.Limit
+	if limit <= 0 {
+		limit = 50
+	}
+	baseFilter += "&order=priority.desc,created_at.asc&limit=" + fmt.Sprintf("%d", limit)
+
+	var rows []cloudTaskRow
+	if err := c.get("c4_tasks", baseFilter, &rows); err != nil {
+		return nil, 0, fmt.Errorf("list tasks: %w", err)
+	}
+	tasks := make([]store.Task, 0, len(rows))
+	for i := range rows {
+		tasks = append(tasks, *rowToTask(&rows[i]))
+	}
+	// Total: with cloud we return the count of rows in this response; no separate count query.
+	return tasks, len(rows), nil
+}
+
 // GetTask retrieves a task by ID.
 func (c *CloudStore) GetTask(taskID string) (*store.Task, error) {
 	var rows []cloudTaskRow

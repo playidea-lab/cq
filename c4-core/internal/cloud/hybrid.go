@@ -36,8 +36,7 @@ func NewHybridStore(local, remote store.Store) *HybridStore {
 	}
 }
 
-// Local returns the underlying local store for type-specific operations
-// like ListTasks that aren't part of the Store interface.
+// Local returns the underlying local store.
 func (h *HybridStore) Local() store.Store {
 	return h.local
 }
@@ -78,6 +77,11 @@ func (h *HybridStore) GetStatus() (*store.ProjectStatus, error) {
 // GetTask reads from local store.
 func (h *HybridStore) GetTask(taskID string) (*store.Task, error) {
 	return h.local.GetTask(taskID)
+}
+
+// ListTasks reads from local store (declared backend; no hard SQLite coupling at call site).
+func (h *HybridStore) ListTasks(filter store.TaskFilter) ([]store.Task, int, error) {
+	return h.local.ListTasks(filter)
 }
 
 // =========================================================================

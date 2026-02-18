@@ -47,6 +47,9 @@ func (m *mockBenchStore) GetStatus() (*handlers.ProjectStatus, error) {
 func (m *mockBenchStore) Start() error                  { return nil }
 func (m *mockBenchStore) Clear(bool) error              { return nil }
 func (m *mockBenchStore) AddTask(*handlers.Task) error  { return nil }
+func (m *mockBenchStore) ListTasks(handlers.TaskFilter) ([]handlers.Task, int, error) {
+	return nil, 0, nil
+}
 func (m *mockBenchStore) GetTask(string) (*handlers.Task, error) {
 	return &handlers.Task{ID: "T-001-0", Title: "Bench Task"}, nil
 }

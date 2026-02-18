@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/changmin/c4-core/internal/mcp"
+	"github.com/changmin/c4-core/internal/store"
 	"github.com/changmin/c4-core/internal/task"
 )
 
@@ -403,29 +404,13 @@ type taskListArgs struct {
 	Limit    int    `json:"limit"`
 }
 
-// localUnwrapper allows extracting the local store from a wrapper (e.g., cloud.HybridStore).
-type localUnwrapper interface {
-	Local() Store
-}
-
-func handleTaskList(store Store, rawArgs json.RawMessage) (any, error) {
+func handleTaskList(s Store, rawArgs json.RawMessage) (any, error) {
 	var args taskListArgs
 	if err := json.Unmarshal(rawArgs, &args); err != nil {
 		return nil, fmt.Errorf("parsing arguments: %w", err)
 	}
 
-	// Try direct type assertion first, then unwrap if wrapped (e.g., HybridStore)
-	sqlStore, ok := store.(*SQLiteStore)
-	if !ok {
-		if unwrapper, canUnwrap := store.(localUnwrapper); canUnwrap {
-			sqlStore, ok = unwrapper.Local().(*SQLiteStore)
-		}
-	}
-	if !ok || sqlStore == nil {
-		return nil, fmt.Errorf("task_list requires SQLite backend")
-	}
-
-	tasks, total, err := sqlStore.ListTasks(TaskFilter{
+	tasks, total, err := s.ListTasks(store.TaskFilter{
 		Status:   args.Status,
 		Domain:   args.Domain,
 		WorkerID: args.WorkerID,

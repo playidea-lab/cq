@@ -161,6 +161,14 @@ type LighthouseContext struct {
 	Description string `json:"description"`
 }
 
+// TaskFilter defines filtering criteria for ListTasks.
+type TaskFilter struct {
+	Status   string `json:"status,omitempty"`
+	Domain   string `json:"domain,omitempty"`
+	WorkerID string `json:"worker_id,omitempty"`
+	Limit    int    `json:"limit,omitempty"`
+}
+
 // Store defines the data access interface for MCP handlers.
 // This is implemented by the SQLite store or any other backend.
 type Store interface {
@@ -176,6 +184,9 @@ type Store interface {
 	AssignTask(workerID string) (*TaskAssignment, error)
 	SubmitTask(taskID, workerID, commitSHA, handoff string, results []ValidationResult) (*SubmitResult, error)
 	MarkBlocked(taskID, workerID, failureSignature string, attempts int, lastError string) error
+
+	// ListTasks returns tasks matching the filter; backend may be SQLite or cloud. Limit 0 means default (e.g. 50).
+	ListTasks(filter TaskFilter) ([]Task, int, error)
 
 	// Direct mode
 	ClaimTask(taskID string) (*Task, error)

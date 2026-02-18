@@ -61,6 +61,10 @@ func (m *mockStore) AddTask(task *store.Task) error {
 	return nil
 }
 
+func (m *mockStore) ListTasks(filter store.TaskFilter) ([]store.Task, int, error) {
+	return nil, 0, nil
+}
+
 func (m *mockStore) GetTask(taskID string) (*store.Task, error) {
 	if m.getTaskFn != nil {
 		return m.getTaskFn(taskID)
