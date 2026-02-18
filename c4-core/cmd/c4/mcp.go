@@ -365,6 +365,11 @@ func newMCPServer() (*mcpServer, error) {
 		sqliteStore.SetEventBus(ebClient)
 		handlers.SetDriveEventBus(ebClient)
 		handlers.SetValidationEventBus(ebClient)
+		handlers.SetKnowledgeEventBus(ebClient, sqliteStore.GetProjectID())
+		handlers.SetResearchEventBus(ebClient, sqliteStore.GetProjectID())
+		handlers.SetSoulEventBus(ebClient, sqliteStore.GetProjectID())
+		handlers.SetPersonaEventBus(ebClient, sqliteStore.GetProjectID())
+		handlers.SetHubEventBus(ebClient, sqliteStore.GetProjectID())
 		proxy.SetEventBus(ebClient)
 	}
 
@@ -409,6 +414,9 @@ func newMCPServer() (*mcpServer, error) {
 				if ebErr == nil {
 					wireEventBusClient(ebClient)
 					sqliteStore.SetDispatcher(eb.Dispatcher())
+					if hubClient != nil {
+						eb.Dispatcher().SetHubSubmitter(hubClient)
+					}
 					fmt.Fprintf(os.Stderr, "c4: eventbus auto-started (embedded, %s)\n", eb.SocketPath())
 				}
 			}

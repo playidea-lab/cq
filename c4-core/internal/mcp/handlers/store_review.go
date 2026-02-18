@@ -30,6 +30,12 @@ func (s *SQLiteStore) completeReviewTask(taskID string) string {
 	if n, _ := result.RowsAffected(); n > 0 {
 		s.logTrace("review_cascade", "system", reviewID,
 			fmt.Sprintf("Auto-completed review for %s", taskID))
+		s.notifyEventBus("task.updated", map[string]any{
+			"task_id":         reviewID,
+			"status":         "done",
+			"previous_status": "pending",
+			"worker_id":      "auto-cascade",
+		})
 		return reviewID
 	}
 	return ""

@@ -79,6 +79,10 @@ func handleWorkerStandby(deps *WorkerDeps, raw json.RawMessage) (any, error) {
 		return nil, fmt.Errorf("register worker: %w", err)
 	}
 	fmt.Fprintf(os.Stderr, "c4: worker %s registered (hub_id=%s)\n", params.WorkerID, hubWorkerID)
+	if hubEventPub != nil {
+		payload, _ := json.Marshal(map[string]any{"worker_id": params.WorkerID, "hub_worker_id": hubWorkerID, "capabilities": caps})
+		hubEventPub.PublishAsync("hub.worker.registered", "c4.hub", payload, hubProjectID)
+	}
 
 	// Setup C1 channel and presence if keeper available
 	if deps.Keeper != nil {
@@ -210,7 +214,17 @@ func handleWorkerComplete(deps *WorkerDeps, raw json.RawMessage) (any, error) {
 		}
 		deps.Keeper.AutoPost(channelName, msg)
 	}
-
+	evType := "hub.job.completed"
+	if params.Status == "FAILED" {
+		evType = "hub.job.failed"
+	}
+	if hubEventPub != nil {
+		payload, _ := json.Marshal(map[string]any{
+			"job_id": params.JobID, "status": params.Status, "exit_code": exitCode,
+			"commit_sha": params.CommitSHA, "summary": params.Summary, "worker_id": params.WorkerID,
+		})
+		hubEventPub.PublishAsync(evType, "c4.hub", payload, hubProjectID)
+	}
 	return map[string]any{
 		"status": "completed",
 		"job_id": params.JobID,

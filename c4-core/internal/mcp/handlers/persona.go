@@ -8,9 +8,19 @@ import (
 	"strings"
 	"time"
 
+	"github.com/changmin/c4-core/internal/eventbus"
 	"github.com/changmin/c4-core/internal/mcp"
 	"gopkg.in/yaml.v3"
 )
+
+var personaEventPub eventbus.Publisher
+var personaProjectID string
+
+// SetPersonaEventBus sets the EventBus publisher and project ID for persona event publishing.
+func SetPersonaEventBus(pub eventbus.Publisher, projectID string) {
+	personaEventPub = pub
+	personaProjectID = projectID
+}
 
 // RegisterPersonaHandlers registers persona-related MCP tools.
 // projectRoot is needed for soul file auto-update in persona_evolve.
@@ -128,7 +138,10 @@ func RegisterPersonaHandlers(reg *mcp.Registry, store *SQLiteStore) {
 				}
 			}
 		}
-
+		if personaEventPub != nil {
+			payload, _ := json.Marshal(map[string]any{"persona_id": args.PersonaID, "suggestions": suggestions, "applied": applied})
+			personaEventPub.PublishAsync("persona.evolved", "c4.persona", payload, personaProjectID)
+		}
 		return map[string]any{
 			"persona_id":  args.PersonaID,
 			"stats":       stats,

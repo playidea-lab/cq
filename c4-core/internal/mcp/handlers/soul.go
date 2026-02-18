@@ -8,8 +8,18 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/changmin/c4-core/internal/eventbus"
 	"github.com/changmin/c4-core/internal/mcp"
 )
+
+var soulEventPub eventbus.Publisher
+var soulProjectID string
+
+// SetSoulEventBus sets the EventBus publisher and project ID for soul event publishing.
+func SetSoulEventBus(pub eventbus.Publisher, projectID string) {
+	soulEventPub = pub
+	soulProjectID = projectID
+}
 
 // StageToRoles maps workflow stages to the soul roles that should be active.
 // Multiple roles can be active simultaneously for cross-validation.
@@ -349,7 +359,10 @@ func setSoulSection(projectRoot, soulPath, username, role, section, content stri
 	if created {
 		action = "created"
 	}
-
+	if soulEventPub != nil {
+		payload, _ := json.Marshal(map[string]any{"username": username, "role": role, "section": section, "action": action})
+		soulEventPub.PublishAsync("soul.updated", "c4.soul", payload, soulProjectID)
+	}
 	return map[string]any{
 		"success":  true,
 		"username": username,

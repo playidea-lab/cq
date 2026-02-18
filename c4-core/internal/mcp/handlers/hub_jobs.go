@@ -4,9 +4,19 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/changmin/c4-core/internal/eventbus"
 	"github.com/changmin/c4-core/internal/hub"
 	"github.com/changmin/c4-core/internal/mcp"
 )
+
+var hubEventPub eventbus.Publisher
+var hubProjectID string
+
+// SetHubEventBus sets the EventBus publisher and project ID for Hub event publishing.
+func SetHubEventBus(pub eventbus.Publisher, projectID string) {
+	hubEventPub = pub
+	hubProjectID = projectID
+}
 
 func registerHubJobHandlers(reg *mcp.Registry, hubClient *hub.Client) {
 	// c4_hub_submit — Submit a job to the Hub queue
@@ -222,7 +232,13 @@ func handleHubSubmit(client *hub.Client, raw json.RawMessage) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-
+	if hubEventPub != nil {
+		payload, _ := json.Marshal(map[string]any{
+			"job_id": resp.JobID, "name": params.Name, "command": params.Command,
+			"workdir": params.Workdir, "tags": params.Tags, "priority": params.Priority,
+		})
+		hubEventPub.PublishAsync("hub.job.submitted", "c4.hub", payload, hubProjectID)
+	}
 	return map[string]any{
 		"job_id":         resp.JobID,
 		"status":         resp.Status,
@@ -286,7 +302,10 @@ func handleHubCancel(client *hub.Client, raw json.RawMessage) (any, error) {
 	if err := client.CancelJob(params.JobID); err != nil {
 		return nil, err
 	}
-
+	if hubEventPub != nil {
+		payload, _ := json.Marshal(map[string]any{"job_id": params.JobID, "cancelled_by": "mcp"})
+		hubEventPub.PublishAsync("hub.job.cancelled", "c4.hub", payload, hubProjectID)
+	}
 	return map[string]any{
 		"cancelled": true,
 		"job_id":    params.JobID,

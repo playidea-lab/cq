@@ -16,6 +16,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/changmin/c4-core/internal/hub"
 )
 
 // C1Poster posts messages to C1 channels (implemented by ContextKeeper).
@@ -23,13 +25,19 @@ type C1Poster interface {
 	AutoPost(channelName, content string) error
 }
 
+// HubSubmitter submits jobs to C5 Hub (implemented by hub.Client).
+type HubSubmitter interface {
+	SubmitJob(req *hub.JobSubmitRequest) (*hub.JobSubmitResponse, error)
+}
+
 // Dispatcher evaluates rules against events and executes matched actions.
 type Dispatcher struct {
-	store      *Store
-	mu         sync.RWMutex
-	httpClient *http.Client
-	c1Poster   C1Poster // optional: for "c1_post" action type
-	sem        chan struct{} // bounded concurrency for dispatch goroutines
+	store        *Store
+	mu           sync.RWMutex
+	httpClient   *http.Client
+	c1Poster     C1Poster     // optional: for "c1_post" action type
+	hubSubmitter HubSubmitter // optional: for "hub_submit" action type
+	sem          chan struct{} // bounded concurrency for dispatch goroutines
 }
 
 // NewDispatcher creates a new event dispatcher.
@@ -56,6 +64,13 @@ func (d *Dispatcher) SetC1Poster(poster C1Poster) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.c1Poster = poster
+}
+
+// SetHubSubmitter sets the Hub submitter for "hub_submit" action type.
+func (d *Dispatcher) SetHubSubmitter(s HubSubmitter) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.hubSubmitter = s
 }
 
 // Dispatch matches rules against an event and executes their actions.
@@ -122,6 +137,8 @@ func (d *Dispatcher) ReplayRule(eventID, eventType string, eventData json.RawMes
 			execErr = d.executeWebhook(eventID, eventType, eventData, rule)
 		case "c1_post":
 			execErr = d.executeC1Post(eventType, eventData, rule)
+		case "hub_submit":
+			execErr = d.executeHubSubmit(eventType, eventData, rule)
 		default:
 			execErr = fmt.Errorf("unknown action type: %s", rule.ActionType)
 		}
@@ -158,6 +175,8 @@ func (d *Dispatcher) executeRule(eventID, eventType string, eventData json.RawMe
 		err = d.executeWebhook(eventID, eventType, eventData, rule)
 	case "c1_post":
 		err = d.executeC1Post(eventType, eventData, rule)
+	case "hub_submit":
+		err = d.executeHubSubmit(eventType, eventData, rule)
 	default:
 		err = fmt.Errorf("unknown action type: %s", rule.ActionType)
 	}
@@ -288,6 +307,67 @@ func (d *Dispatcher) executeC1Post(eventType string, eventData json.RawMessage, 
 	}
 
 	return poster.AutoPost(cfg.Channel, msg)
+}
+
+func (d *Dispatcher) executeHubSubmit(eventType string, eventData json.RawMessage, rule StoredRule) error {
+	d.mu.RLock()
+	submitter := d.hubSubmitter
+	d.mu.RUnlock()
+
+	if submitter == nil {
+		return fmt.Errorf("hub submitter not configured")
+	}
+
+	var cfg struct {
+		Name        string            `json:"name"`
+		Workdir     string            `json:"workdir"`
+		Command     string            `json:"command"`
+		Env         map[string]string `json:"env"`
+		Tags        []string          `json:"tags"`
+		RequiresGPU bool              `json:"requires_gpu"`
+		Priority    int               `json:"priority"`
+		ExpID       string            `json:"exp_id"`
+		Memo        string            `json:"memo"`
+		TimeoutSec  int               `json:"timeout_sec"`
+	}
+	if err := json.Unmarshal([]byte(rule.ActionConfig), &cfg); err != nil {
+		return fmt.Errorf("parse hub_submit action_config: %w", err)
+	}
+	if cfg.Name == "" || cfg.Workdir == "" || cfg.Command == "" {
+		return fmt.Errorf("hub_submit action_config requires name, workdir, and command")
+	}
+
+	var data map[string]any
+	if err := json.Unmarshal(eventData, &data); err != nil {
+		data = make(map[string]any)
+	}
+	if idx := strings.LastIndex(eventType, "."); idx >= 0 {
+		data["event_type"] = eventType[idx+1:]
+	} else {
+		data["event_type"] = eventType
+	}
+
+	// Resolve template placeholders in string fields
+	cfg.Name = resolveTemplateString(cfg.Name, data)
+	cfg.Workdir = resolveTemplateString(cfg.Workdir, data)
+	cfg.Command = resolveTemplateString(cfg.Command, data)
+	cfg.ExpID = resolveTemplateString(cfg.ExpID, data)
+	cfg.Memo = resolveTemplateString(cfg.Memo, data)
+
+	req := &hub.JobSubmitRequest{
+		Name:        cfg.Name,
+		Workdir:     cfg.Workdir,
+		Command:     cfg.Command,
+		Env:         cfg.Env,
+		Tags:        cfg.Tags,
+		RequiresGPU: cfg.RequiresGPU,
+		Priority:    cfg.Priority,
+		ExpID:       cfg.ExpID,
+		Memo:        cfg.Memo,
+		TimeoutSec:  cfg.TimeoutSec,
+	}
+	_, err := submitter.SubmitJob(req)
+	return err
 }
 
 // evaluateFilter checks if event data matches the filter JSON.

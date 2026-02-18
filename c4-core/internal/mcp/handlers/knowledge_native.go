@@ -8,19 +8,29 @@ import (
 	"os"
 	"strings"
 
+	"github.com/changmin/c4-core/internal/c2/webcontent"
+	"github.com/changmin/c4-core/internal/eventbus"
 	"github.com/changmin/c4-core/internal/knowledge"
 	"github.com/changmin/c4-core/internal/llm"
 	"github.com/changmin/c4-core/internal/mcp"
-	"github.com/changmin/c4-core/internal/c2/webcontent"
 )
 
 // KnowledgeNativeOpts holds dependencies for native knowledge handlers.
 type KnowledgeNativeOpts struct {
 	Store    *knowledge.Store
 	Searcher *knowledge.Searcher
-	Cloud    knowledge.CloudSyncer     // nil if cloud disabled
-	Usage    *knowledge.UsageTracker   // nil if usage tracking disabled
+	Cloud    knowledge.CloudSyncer   // nil if cloud disabled
+	Usage    *knowledge.UsageTracker // nil if usage tracking disabled
 	LLM      *llm.Gateway             // nil if LLM gateway disabled (distill unavailable)
+}
+
+var knowledgeEventPub eventbus.Publisher
+var knowledgeProjectID string
+
+// SetKnowledgeEventBus sets the EventBus publisher and project ID for knowledge event publishing.
+func SetKnowledgeEventBus(pub eventbus.Publisher, projectID string) {
+	knowledgeEventPub = pub
+	knowledgeProjectID = projectID
 }
 
 // RegisterKnowledgeNativeHandlers registers 12 knowledge tools as Go native handlers.
@@ -309,6 +319,10 @@ func knowledgeRecordNativeHandler(opts *KnowledgeNativeOpts) mcp.HandlerFunc {
 			}()
 		}
 
+		if knowledgeEventPub != nil {
+			payload, _ := json.Marshal(map[string]any{"doc_id": docID, "doc_type": docType, "title": title})
+			knowledgeEventPub.PublishAsync("knowledge.recorded", "c4.knowledge", payload, knowledgeProjectID)
+		}
 		result := map[string]any{
 			"success": true,
 			"doc_id":  docID,
@@ -419,7 +433,10 @@ func knowledgeSearchNativeHandler(opts *KnowledgeNativeOpts) mcp.HandlerFunc {
 				opts.Usage.Record(r.ID, knowledge.ActionSearchHit)
 			}
 		}
-
+		if knowledgeEventPub != nil {
+			payload, _ := json.Marshal(map[string]any{"query": query, "doc_type": docType, "result_count": len(results)})
+			knowledgeEventPub.PublishAsync("knowledge.searched", "c4.knowledge", payload, knowledgeProjectID)
+		}
 		localCount := len(resultList)
 		communityCount := 0
 
@@ -521,7 +538,10 @@ func experimentRecordNativeHandler(opts *KnowledgeNativeOpts) mcp.HandlerFunc {
 				knowledge.SyncAfterRecord(opts.Cloud, params, docID)
 			}()
 		}
-
+		if knowledgeEventPub != nil {
+			payload, _ := json.Marshal(map[string]any{"doc_id": docID, "doc_type": "experiment", "title": title})
+			knowledgeEventPub.PublishAsync("knowledge.recorded", "c4.knowledge", payload, knowledgeProjectID)
+		}
 		result := map[string]any{
 			"success": true,
 			"doc_id":  docID,

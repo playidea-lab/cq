@@ -75,6 +75,11 @@ func (s *SQLiteStore) SetDispatcher(d *eventbus.Dispatcher) {
 	s.dispatcher = d
 }
 
+// GetProjectID returns the project ID for event publishing.
+func (s *SQLiteStore) GetProjectID() string {
+	return s.projectID
+}
+
 // notifyEventBus publishes a task event to the remote C3 EventBus and
 // dispatches locally via the Dispatcher (for c1_post rules, etc.).
 // NOTE: This does NOT cause double dispatch:
@@ -686,6 +691,12 @@ func (s *SQLiteStore) reassignStaleOrFindPendingTask(workerID string) (
 		return "", "", "", "", deps, "", "", false, err
 	}
 
+	s.notifyEventBus("task.updated", map[string]any{
+		"task_id":         taskID,
+		"status":         "in_progress",
+		"previous_status": "pending",
+		"worker_id":      workerID,
+	})
 	return taskID, title, scope, dod, deps, domain, model, staleReassign, nil
 }
 
@@ -960,6 +971,12 @@ func (s *SQLiteStore) ClaimTask(taskID string) (*Task, error) {
 	task.Status = "in_progress"
 	task.WorkerID = "direct"
 
+	s.notifyEventBus("task.updated", map[string]any{
+		"task_id":         taskID,
+		"status":         "in_progress",
+		"previous_status": "pending",
+		"worker_id":      "direct",
+	})
 	// Write .c4/active_claim.json for hook validation
 	s.writeClaimFile(taskID)
 

@@ -5,9 +5,19 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/changmin/c4-core/internal/eventbus"
 	"github.com/changmin/c4-core/internal/mcp"
 	"github.com/changmin/c4-core/internal/research"
 )
+
+var researchEventPub eventbus.Publisher
+var researchProjectID string
+
+// SetResearchEventBus sets the EventBus publisher and project ID for research event publishing.
+func SetResearchEventBus(pub eventbus.Publisher, projectID string) {
+	researchEventPub = pub
+	researchProjectID = projectID
+}
 
 // RegisterResearchNativeHandlers registers 5 research tools as Go native handlers.
 // Replaces RegisterResearchProxyHandlers — no Python sidecar needed.
@@ -113,7 +123,10 @@ func researchStartHandler(store *research.Store) mcp.HandlerFunc {
 		if err != nil {
 			return map[string]any{"error": fmt.Sprintf("ResearchStart failed: %v", err)}, nil
 		}
-
+		if researchEventPub != nil {
+			payload, _ := json.Marshal(map[string]any{"project_id": projectID, "name": params.Name, "iteration_id": iterationID})
+			researchEventPub.PublishAsync("research.started", "c4.research", payload, researchProjectID)
+		}
 		return map[string]any{
 			"success":      true,
 			"project_id":   projectID,
@@ -201,6 +214,10 @@ func researchRecordHandler(store *research.Store) mcp.HandlerFunc {
 		if len(updates) > 0 {
 			if err := store.UpdateIteration(current.ID, updates); err != nil {
 				return map[string]any{"error": fmt.Sprintf("ResearchRecord failed: %v", err)}, nil
+			}
+			if researchEventPub != nil {
+				payload, _ := json.Marshal(map[string]any{"project_id": projectID, "iteration_id": current.ID, "updates": updates})
+				researchEventPub.PublishAsync("research.recorded", "c4.research", payload, researchProjectID)
 			}
 		}
 
