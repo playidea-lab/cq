@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -196,6 +197,19 @@ func (s *Server) handleJobComplete(w http.ResponseWriter, r *http.Request, jobID
 
 	// DAG orchestrator hook: advance DAG if this job was a DAG node
 	s.onJobComplete(jobID, status, req.ExitCode)
+
+	// Deploy rules: evaluate on job success and create deployments for matching rules
+	if status == model.StatusSucceeded {
+		if job, err := s.store.GetJob(jobID); err == nil {
+			tags := job.Tags
+			if tags == nil {
+				tags = []string{}
+			}
+			if n, _ := s.store.EvaluateDeployRulesForJob(jobID, tags); n > 0 {
+				log.Printf("c5: deploy rules matched for job %s, created %d deployment(s)", jobID, n)
+			}
+		}
+	}
 
 	writeJSON(w, map[string]any{
 		"job_id": jobID,

@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -1172,6 +1173,10 @@ func (s *Store) AdvanceDAG(dagID string) (int, error) {
 				s.UpdateDAGStatus(dagID, "failed")
 			} else {
 				s.UpdateDAGStatus(dagID, "completed")
+				var repJobID string
+				if err := s.db.QueryRow(`SELECT job_id FROM dag_nodes WHERE dag_id = ? AND status = 'succeeded' LIMIT 1`, dagID).Scan(&repJobID); err == nil && repJobID != "" {
+					_, _ = s.EvaluateDeployRulesForDAG(dagID, repJobID)
+				}
 			}
 		}
 	}
@@ -1499,6 +1504,128 @@ func (s *Store) DeleteDeployRule(id string) error {
 	return nil
 }
 
+// matchRuleTriggerForJob returns true if the rule trigger matches the job.
+// Supports: job_tag:X (X in jobTags), job_id:J (exact or prefix match with jobID).
+func matchRuleTriggerForJob(triggerExpr, jobID string, jobTags []string) bool {
+	triggerExpr = strings.TrimSpace(triggerExpr)
+	if triggerExpr == "" {
+		return false
+	}
+	if strings.HasPrefix(triggerExpr, "job_tag:") {
+		tag := strings.TrimSpace(triggerExpr[8:])
+		for _, t := range jobTags {
+			if t == tag {
+				return true
+			}
+		}
+		return false
+	}
+	if strings.HasPrefix(triggerExpr, "job_id:") {
+		prefix := strings.TrimSpace(triggerExpr[7:])
+		if prefix == "" {
+			return false
+		}
+		return jobID == prefix || strings.HasPrefix(jobID, prefix)
+	}
+	return false
+}
+
+// EvaluateDeployRulesForJob evaluates enabled deploy rules for a completed job and creates deployments for matching rules.
+func (s *Store) EvaluateDeployRulesForJob(jobID string, jobTags []string) (int, error) {
+	rules, err := s.ListDeployRules()
+	if err != nil {
+		return 0, err
+	}
+	var created int
+	for _, rule := range rules {
+		if !rule.Enabled {
+			continue
+		}
+		if !matchRuleTriggerForJob(rule.Trigger, jobID, jobTags) {
+			continue
+		}
+		edges, err := s.MatchEdges(rule.EdgeFilter)
+		if err != nil {
+			continue
+		}
+		if len(edges) == 0 {
+			continue
+		}
+		req := &model.DeployTriggerRequest{
+			JobID:           jobID,
+			RuleID:          rule.ID,
+			ArtifactPattern: rule.ArtifactPattern,
+			PostCommand:     rule.PostCommand,
+		}
+		_, err = s.CreateDeployment(req, edges)
+		if err != nil {
+			continue
+		}
+		created++
+	}
+	return created, nil
+}
+
+// matchRuleTriggerForDAG returns true if the rule trigger matches the DAG (e.g. dag_complete:dag-*).
+func matchRuleTriggerForDAG(triggerExpr, dagID string) bool {
+	triggerExpr = strings.TrimSpace(triggerExpr)
+	if triggerExpr == "" || dagID == "" {
+		return false
+	}
+	if !strings.HasPrefix(triggerExpr, "dag_complete:") {
+		return false
+	}
+	pattern := strings.TrimSpace(triggerExpr[13:])
+	if pattern == "" {
+		return false
+	}
+	if len(pattern) > 0 && pattern[len(pattern)-1] == '*' {
+		prefix := pattern[:len(pattern)-1]
+		return strings.HasPrefix(dagID, prefix)
+	}
+	return dagID == pattern
+}
+
+// EvaluateDeployRulesForDAG evaluates enabled deploy rules for a completed DAG and creates deployments for matching rules.
+// representativeJobID is used as the deployment job_id (e.g. one succeeded job from the DAG).
+func (s *Store) EvaluateDeployRulesForDAG(dagID, representativeJobID string) (int, error) {
+	if representativeJobID == "" {
+		return 0, nil
+	}
+	rules, err := s.ListDeployRules()
+	if err != nil {
+		return 0, err
+	}
+	var created int
+	for _, rule := range rules {
+		if !rule.Enabled {
+			continue
+		}
+		if !matchRuleTriggerForDAG(rule.Trigger, dagID) {
+			continue
+		}
+		edges, err := s.MatchEdges(rule.EdgeFilter)
+		if err != nil {
+			continue
+		}
+		if len(edges) == 0 {
+			continue
+		}
+		req := &model.DeployTriggerRequest{
+			JobID:           representativeJobID,
+			RuleID:          rule.ID,
+			ArtifactPattern: rule.ArtifactPattern,
+			PostCommand:     rule.PostCommand,
+		}
+		_, err = s.CreateDeployment(req, edges)
+		if err != nil {
+			continue
+		}
+		created++
+	}
+	return created, nil
+}
+
 // CreateDeployment creates a new deployment and its targets.
 func (s *Store) CreateDeployment(req *model.DeployTriggerRequest, edges []model.Edge) (*model.Deployment, error) {
 	id := generateID("dep")
@@ -1511,8 +1638,8 @@ func (s *Store) CreateDeployment(req *model.DeployTriggerRequest, edges []model.
 	defer tx.Rollback()
 
 	_, err = tx.Exec(`
-		INSERT INTO deployments (id, job_id, status, created_at)
-		VALUES (?, ?, 'pending', ?)`, id, req.JobID, now)
+		INSERT INTO deployments (id, rule_id, job_id, status, created_at)
+		VALUES (?, ?, ?, 'pending', ?)`, id, req.RuleID, req.JobID, now)
 	if err != nil {
 		return nil, fmt.Errorf("create deployment: %w", err)
 	}
@@ -1617,6 +1744,31 @@ func (s *Store) ListDeployments(limit, offset int) ([]model.Deployment, error) {
 		result = append(result, d)
 	}
 	return result, rows.Err()
+}
+
+// ListPendingAssignmentsForEdge returns pending deployment assignments for the given edge (for GET /v1/deploy/assignments/{edge_id}).
+func (s *Store) ListPendingAssignmentsForEdge(edgeID string) ([]model.PendingAssignment, error) {
+	rows, err := s.db.Query(`
+		SELECT dt.deploy_id, d.job_id, COALESCE(r.artifact_pattern,''), COALESCE(r.post_command,'')
+		FROM deploy_targets dt
+		JOIN deployments d ON dt.deploy_id = d.id
+		LEFT JOIN deploy_rules r ON d.rule_id = r.id
+		WHERE dt.edge_id = ? AND dt.status = 'pending' AND d.status = 'pending'
+		ORDER BY d.created_at ASC`, edgeID)
+	if err != nil {
+		return nil, fmt.Errorf("list pending assignments: %w", err)
+	}
+	defer rows.Close()
+
+	var out []model.PendingAssignment
+	for rows.Next() {
+		var a model.PendingAssignment
+		if err := rows.Scan(&a.DeployID, &a.JobID, &a.ArtifactPattern, &a.PostCommand); err != nil {
+			return nil, err
+		}
+		out = append(out, a)
+	}
+	return out, rows.Err()
 }
 
 // UpdateDeployTarget updates a single target's status within a deployment.

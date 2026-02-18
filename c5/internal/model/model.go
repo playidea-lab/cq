@@ -444,6 +444,7 @@ type DeployTarget struct {
 // DeployTriggerRequest is the payload for POST /v1/deploy/trigger.
 type DeployTriggerRequest struct {
 	JobID           string   `json:"job_id"`
+	RuleID          string   `json:"rule_id,omitempty"` // set when creating deployment from a rule
 	ArtifactPattern string   `json:"artifact_pattern,omitempty"`
 	EdgeFilter      string   `json:"edge_filter,omitempty"`
 	EdgeIDs         []string `json:"edge_ids,omitempty"`
@@ -455,6 +456,37 @@ type DeployTriggerResponse struct {
 	DeployID    string `json:"deploy_id"`
 	Status      string `json:"status"`
 	TargetCount int    `json:"target_count"`
+}
+
+// PendingAssignment is a pending deployment assignment for an edge (store layer).
+type PendingAssignment struct {
+	DeployID        string `json:"deploy_id"`
+	JobID           string `json:"job_id"`
+	ArtifactPattern string `json:"artifact_pattern"`
+	PostCommand     string `json:"post_command,omitempty"`
+}
+
+// DeployAssignmentArtifact is one artifact with download URL (API response).
+type DeployAssignmentArtifact struct {
+	Path string `json:"path"`
+	URL  string `json:"url"`
+}
+
+// DeployAssignmentResponse is one item of GET /v1/deploy/assignments/{edge_id} response.
+type DeployAssignmentResponse struct {
+	DeployID        string                     `json:"deploy_id"`
+	JobID           string                     `json:"job_id"`
+	ArtifactPattern string                     `json:"artifact_pattern"`
+	PostCommand     string                     `json:"post_command,omitempty"`
+	Artifacts       []DeployAssignmentArtifact `json:"artifacts,omitempty"`
+}
+
+// DeployTargetStatusRequest is the payload for POST /v1/deploy/target-status (edge agent reports target status).
+type DeployTargetStatusRequest struct {
+	DeployID string `json:"deploy_id"`
+	EdgeID   string `json:"edge_id"`
+	Status   string `json:"status"` // downloading, deploying, succeeded, failed
+	Error    string `json:"error,omitempty"`
 }
 
 // =========================================================================

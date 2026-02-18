@@ -1214,6 +1214,73 @@ func TestUpdateDeployTargetAllFailed(t *testing.T) {
 	}
 }
 
+func TestListPendingAssignmentsForEdge(t *testing.T) {
+	s := newTestStore(t)
+
+	e1, _ := s.RegisterEdge(&model.EdgeRegisterRequest{Name: "e1"})
+	e2, _ := s.RegisterEdge(&model.EdgeRegisterRequest{Name: "e2"})
+	job, _ := s.CreateJob(&model.JobSubmitRequest{Name: "j", Command: "echo"})
+	rule, _ := s.CreateDeployRule(&model.DeployRuleCreateRequest{
+		Name: "r1", Trigger: "job_id:*", EdgeFilter: "all", ArtifactPattern: "*", PostCommand: "",
+	})
+	dep, _ := s.CreateDeployment(&model.DeployTriggerRequest{
+		JobID: job.ID, RuleID: rule.ID, ArtifactPattern: "*", PostCommand: "",
+	}, []model.Edge{{ID: e1.ID, Name: "e1"}, {ID: e2.ID, Name: "e2"}})
+	_ = dep
+
+	list, err := s.ListPendingAssignmentsForEdge(e1.ID)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(list) != 1 {
+		t.Fatalf("expected 1 assignment for e1, got %d", len(list))
+	}
+	if list[0].DeployID == "" || list[0].JobID != job.ID {
+		t.Fatalf("assignment deploy_id or job_id wrong: %+v", list[0])
+	}
+
+	list2, _ := s.ListPendingAssignmentsForEdge(e2.ID)
+	if len(list2) != 1 {
+		t.Fatalf("expected 1 assignment for e2, got %d", len(list2))
+	}
+
+	s.UpdateDeployTarget(dep.ID, e1.ID, "succeeded", "")
+	list3, _ := s.ListPendingAssignmentsForEdge(e1.ID)
+	if len(list3) != 0 {
+		t.Fatalf("e1 should have 0 pending after succeeded, got %d", len(list3))
+	}
+}
+
+func TestEvaluateDeployRulesForDAG(t *testing.T) {
+	s := newTestStore(t)
+
+	_, _ = s.RegisterEdge(&model.EdgeRegisterRequest{Name: "e1"})
+	rule, _ := s.CreateDeployRule(&model.DeployRuleCreateRequest{
+		Name: "dag-rule", Trigger: "dag_complete:pipeline-*", EdgeFilter: "all", ArtifactPattern: "*", PostCommand: "",
+	})
+	_ = rule
+
+	dag, _ := s.CreateDAG(&model.DAGCreateRequest{Name: "pipeline-1", Description: "pipeline-1"})
+	n1, _ := s.AddDAGNode(dag.ID, &model.DAGAddNodeRequest{Name: "n1", Command: "echo a"})
+	job, _ := s.CreateJob(&model.JobSubmitRequest{Name: "dag:j", Command: "echo"})
+	now := time.Now().UTC().Format(time.RFC3339)
+	s.db.Exec(`UPDATE dag_nodes SET status = 'succeeded', job_id = ?, started_at = ?, done_at = ? WHERE id = ?`, job.ID, now, now, n1.ID)
+
+	n, err := s.EvaluateDeployRulesForDAG("pipeline-1", job.ID)
+	if err != nil {
+		t.Fatalf("evaluate: %v", err)
+	}
+	if n != 1 {
+		t.Fatalf("expected 1 deployment created, got %d", n)
+	}
+
+	// Non-matching DAG
+	n2, _ := s.EvaluateDeployRulesForDAG("other-dag", job.ID)
+	if n2 != 0 {
+		t.Fatalf("expected 0 for non-matching dag, got %d", n2)
+	}
+}
+
 // =========================================================================
 // Artifacts
 // =========================================================================

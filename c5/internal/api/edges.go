@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"path"
 	"strconv"
 	"strings"
 
@@ -298,4 +299,78 @@ func (s *Server) handleDeployList(w http.ResponseWriter, r *http.Request) {
 		deployments = []model.Deployment{}
 	}
 	writeJSON(w, deployments)
+}
+
+func (s *Server) handleDeployAssignments(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "GET" {
+		methodNotAllowed(w)
+		return
+	}
+	edgeID := strings.TrimPrefix(r.URL.Path, "/v1/deploy/assignments/")
+	edgeID = strings.TrimSuffix(edgeID, "/")
+	if edgeID == "" {
+		writeError(w, http.StatusBadRequest, "edge_id is required")
+		return
+	}
+
+	list, err := s.store.ListPendingAssignmentsForEdge(edgeID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if list == nil {
+		list = []model.PendingAssignment{}
+	}
+
+	resp := make([]model.DeployAssignmentResponse, 0, len(list))
+	for _, a := range list {
+		item := model.DeployAssignmentResponse{
+			DeployID:        a.DeployID,
+			JobID:           a.JobID,
+			ArtifactPattern: a.ArtifactPattern,
+			PostCommand:     a.PostCommand,
+		}
+		arts, err := s.store.ListArtifacts(a.JobID)
+		if err == nil && len(arts) > 0 && a.ArtifactPattern != "" {
+			pattern := a.ArtifactPattern
+			for _, art := range arts {
+				if !art.Confirmed {
+					continue
+				}
+				ok, _ := path.Match(pattern, art.Path)
+				if !ok {
+					continue
+				}
+				url, _, err := s.storage.PresignedURL(art.Path, "GET", 3600)
+				if err != nil {
+					continue
+				}
+				item.Artifacts = append(item.Artifacts, model.DeployAssignmentArtifact{Path: art.Path, URL: url})
+			}
+		}
+		resp = append(resp, item)
+	}
+	writeJSON(w, resp)
+}
+
+func (s *Server) handleDeployTargetStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		methodNotAllowed(w)
+		return
+	}
+	var req model.DeployTargetStatusRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+		return
+	}
+	if req.DeployID == "" || req.EdgeID == "" || req.Status == "" {
+		writeError(w, http.StatusBadRequest, "deploy_id, edge_id, and status are required")
+		return
+	}
+	errMsg := req.Error
+	if err := s.store.UpdateDeployTarget(req.DeployID, req.EdgeID, req.Status, errMsg); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, map[string]string{"ok": "true"})
 }

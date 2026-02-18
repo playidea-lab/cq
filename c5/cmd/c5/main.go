@@ -24,6 +24,7 @@ func main() {
 
 	root.AddCommand(serveCmd())
 	root.AddCommand(workerCmd())
+	root.AddCommand(edgeAgentCmd())
 
 	if err := root.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
