@@ -834,6 +834,109 @@ func TestCheckpoint_ExplicitLinkage_NoCPTask(t *testing.T) {
 	}
 }
 
+// TestMarkBlocked_NotFound_DoesNotCreateTask: MarkBlocked on non-existent task_id does not create a row.
+func TestMarkBlocked_NotFound_DoesNotCreateTask(t *testing.T) {
+	store, _ := newTestSQLiteStore(t)
+	err := store.MarkBlocked("T-NONE-0", "worker-1", "sig", 1, "err")
+	if err != nil {
+		t.Fatalf("MarkBlocked (no row) should not error: %v", err)
+	}
+	_, getErr := store.GetTask("T-NONE-0")
+	if getErr == nil {
+		t.Fatal("GetTask(T-NONE-0) should fail (task not created by MarkBlocked)")
+	}
+}
+
+// TestMarkBlocked_NotFound_OtherTasksUnchanged: MarkBlocked on non-existent task leaves other tasks unchanged.
+func TestMarkBlocked_NotFound_OtherTasksUnchanged(t *testing.T) {
+	store, _ := newTestSQLiteStore(t)
+	if err := store.AddTask(&Task{ID: "T-OK-0", Title: "Ok", DoD: "done", Status: "pending"}); err != nil {
+		t.Fatal(err)
+	}
+	_ = store.MarkBlocked("T-NONE-0", "w", "sig", 1, "err")
+	task, err := store.GetTask("T-OK-0")
+	if err != nil {
+		t.Fatalf("GetTask T-OK-0: %v", err)
+	}
+	if task.Status != "pending" {
+		t.Errorf("T-OK-0 status = %q, want pending (unchanged)", task.Status)
+	}
+}
+
+// TestCheckpoint_NotFoundCPTask_StillPersists: Checkpoint with non-existent CP task id still inserts c4_checkpoints row (no target resolution).
+func TestCheckpoint_NotFoundCPTask_StillPersists(t *testing.T) {
+	store, db := newTestSQLiteStore(t)
+	defer db.Close()
+	result, err := store.Checkpoint("CP-NONE", "APPROVE", "notes", nil, "", "")
+	if err != nil {
+		t.Fatalf("Checkpoint: %v", err)
+	}
+	if !result.Success {
+		t.Fatal("expected success")
+	}
+	var checkpointID, decision, targetTaskID, targetReviewID string
+	err = db.QueryRow("SELECT checkpoint_id, decision, target_task_id, target_review_id FROM c4_checkpoints WHERE checkpoint_id='CP-NONE'").Scan(&checkpointID, &decision, &targetTaskID, &targetReviewID)
+	if err != nil {
+		t.Fatalf("query c4_checkpoints: %v", err)
+	}
+	if checkpointID != "CP-NONE" || decision != "APPROVE" {
+		t.Errorf("checkpoint = %q, decision = %q", checkpointID, decision)
+	}
+	if targetTaskID != "" || targetReviewID != "" {
+		t.Errorf("targets = %q, %q (want empty when CP task not in DB)", targetTaskID, targetReviewID)
+	}
+}
+
+// TestCheckpoint_StateConsistency_AfterApprove: After Checkpoint APPROVE, checkpoint row and target linkage are consistent.
+func TestCheckpoint_StateConsistency_AfterApprove(t *testing.T) {
+	store, db := newTestSQLiteStore(t)
+	defer db.Close()
+	if err := store.AddTask(&Task{ID: "T-SC-0", Title: "Impl", DoD: "done", Status: "pending"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.AddTask(&Task{ID: "R-SC-0", Title: "Review", DoD: "r", Status: "pending", Dependencies: []string{"T-SC-0"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.AddTask(&Task{ID: "CP-SC", Title: "CP", DoD: "cp", Status: "pending", Dependencies: []string{"R-SC-0"}}); err != nil {
+		t.Fatal(err)
+	}
+	result, err := store.Checkpoint("CP-SC", "APPROVE", "ok", nil, "", "")
+	if err != nil {
+		t.Fatalf("Checkpoint: %v", err)
+	}
+	if result.NextAction != "continue" {
+		t.Errorf("next_action = %q, want continue", result.NextAction)
+	}
+	var targetTaskID, targetReviewID string
+	if err := db.QueryRow("SELECT target_task_id, target_review_id FROM c4_checkpoints WHERE checkpoint_id='CP-SC'").Scan(&targetTaskID, &targetReviewID); err != nil {
+		t.Fatalf("query: %v", err)
+	}
+	if targetTaskID != "T-SC-0" || targetReviewID != "R-SC-0" {
+		t.Errorf("attribution = %q, %q; want T-SC-0, R-SC-0", targetTaskID, targetReviewID)
+	}
+}
+
+// TestMarkBlocked_StateConsistency: After MarkBlocked, task state and diagnostics are consistent in DB.
+func TestMarkBlocked_StateConsistency(t *testing.T) {
+	store, _ := newTestSQLiteStore(t)
+	if err := store.AddTask(&Task{ID: "T-CS-0", Title: "Impl", DoD: "done", Status: "in_progress"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.MarkBlocked("T-CS-0", "worker-1", "build_fail", 2, "exit code 1"); err != nil {
+		t.Fatalf("MarkBlocked: %v", err)
+	}
+	task, err := store.GetTask("T-CS-0")
+	if err != nil {
+		t.Fatalf("GetTask: %v", err)
+	}
+	if task.Status != "blocked" {
+		t.Errorf("status = %q, want blocked", task.Status)
+	}
+	if task.FailureSignature != "build_fail" || task.Attempts != 2 || task.LastError != "exit code 1" {
+		t.Errorf("diagnostics = sig=%q attempts=%d last=%q", task.FailureSignature, task.Attempts, task.LastError)
+	}
+}
+
 func TestSubmitTask_ValidationFail_RecordsValidationFailed(t *testing.T) {
 	store, db := newTestSQLiteStore(t)
 	defer db.Close()
