@@ -321,6 +321,8 @@ RPR-001-0: 수정 재작업
 CP-001:    체크포인트
 ```
 
+- **REQUEST_CHANGES 사유**: 리뷰 태스크(R-)의 거절 사유는 `review_decision_evidence` 필드에 저장됨. `commit_sha`는 실제 커밋 SHA 전용. 조회 시 GetTask/c4_get_task 응답의 `review_decision_evidence` 사용.
+
 ---
 
 ## Go Core (c4-core/) — Primary MCP Server

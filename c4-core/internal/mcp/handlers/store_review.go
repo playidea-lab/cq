@@ -202,9 +202,9 @@ func (s *SQLiteStore) RequestChanges(reviewTaskID string, comments string, requi
 		}
 	}
 
-	// 3. Mark current R task as done with REQUEST_CHANGES result (use normalized ID for DB)
-	_, err := s.db.Exec(`UPDATE c4_tasks SET status='done', commit_sha=?, updated_at=CURRENT_TIMESTAMP WHERE task_id=?`,
-		"REQUEST_CHANGES: "+comments, normalizedReviewID)
+	// 3. Mark current R task as done with REQUEST_CHANGES result (reason in dedicated field, not commit_sha)
+	_, err := s.db.Exec(`UPDATE c4_tasks SET status='done', review_decision_evidence=?, commit_sha='', updated_at=CURRENT_TIMESTAMP WHERE task_id=?`,
+		comments, normalizedReviewID)
 	if err != nil {
 		return nil, fmt.Errorf("updating review task: %w", err)
 	}

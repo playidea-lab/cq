@@ -515,6 +515,18 @@ func TestRequestChanges_RecordsRejected(t *testing.T) {
 	if outcome != "rejected" {
 		t.Fatalf("outcome = %q, want rejected", outcome)
 	}
+
+	// REQUEST_CHANGES reason must be in review_decision_evidence, not commit_sha
+	r, gerr := store.GetTask("R-001-0")
+	if gerr != nil {
+		t.Fatalf("GetTask R-001-0: %v", gerr)
+	}
+	if r.ReviewDecisionEvidence != "needs fixes" {
+		t.Errorf("review_decision_evidence = %q, want %q", r.ReviewDecisionEvidence, "needs fixes")
+	}
+	if r.CommitSHA != "" {
+		t.Errorf("commit_sha = %q (should be empty for REQUEST_CHANGES)", r.CommitSHA)
+	}
 }
 
 func TestRequestChanges_MaxRevisionBoundary(t *testing.T) {

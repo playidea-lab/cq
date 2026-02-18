@@ -158,6 +158,7 @@ func (s *SQLiteStore) initSchema() error {
 			worker_id    TEXT DEFAULT '',
 			branch       TEXT DEFAULT '',
 			commit_sha   TEXT DEFAULT '',
+			review_decision_evidence TEXT DEFAULT '',
 			created_at   TEXT DEFAULT CURRENT_TIMESTAMP,
 			updated_at   TEXT DEFAULT CURRENT_TIMESTAMP
 		)`,
@@ -215,6 +216,7 @@ func (s *SQLiteStore) initSchema() error {
 	migrations := []string{
 		"ALTER TABLE c4_tasks ADD COLUMN handoff TEXT DEFAULT ''",
 		"ALTER TABLE c4_tasks ADD COLUMN execution_mode TEXT DEFAULT 'worker'",
+		"ALTER TABLE c4_tasks ADD COLUMN review_decision_evidence TEXT DEFAULT ''",
 		"ALTER TABLE c4_lighthouses ADD COLUMN task_id TEXT DEFAULT ''",
 		"ALTER TABLE c4_checkpoints ADD COLUMN target_task_id TEXT DEFAULT ''",
 		"ALTER TABLE c4_checkpoints ADD COLUMN target_review_id TEXT DEFAULT ''",
@@ -301,6 +303,7 @@ func (s *SQLiteStore) migrateTasksIfNeeded() error {
 		worker_id    TEXT DEFAULT '',
 		branch       TEXT DEFAULT '',
 		commit_sha   TEXT DEFAULT '',
+		review_decision_evidence TEXT DEFAULT '',
 		created_at   TEXT DEFAULT CURRENT_TIMESTAMP,
 		updated_at   TEXT DEFAULT CURRENT_TIMESTAMP
 	)`); err != nil {
@@ -532,12 +535,13 @@ func (s *SQLiteStore) GetTask(taskID string) (*Task, error) {
 	var deps sql.NullString
 	var createdAt, updatedAt sql.NullString
 
+	var reviewEvidence sql.NullString
 	err := s.db.QueryRow(`
-		SELECT task_id, title, scope, dod, status, dependencies, domain, priority, model, execution_mode, worker_id, branch, commit_sha, created_at, updated_at
+		SELECT task_id, title, scope, dod, status, dependencies, domain, priority, model, execution_mode, worker_id, branch, commit_sha, review_decision_evidence, created_at, updated_at
 		FROM c4_tasks WHERE task_id = ?`, taskID,
 	).Scan(&t.ID, &t.Title, &t.Scope, &t.DoD, &t.Status, &deps,
 		&t.Domain, &t.Priority, &t.Model, &t.ExecutionMode, &t.WorkerID, &t.Branch, &t.CommitSHA,
-		&createdAt, &updatedAt)
+		&reviewEvidence, &createdAt, &updatedAt)
 
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("task not found: %s", taskID)
@@ -550,6 +554,9 @@ func (s *SQLiteStore) GetTask(taskID string) (*Task, error) {
 		if err := json.Unmarshal([]byte(deps.String), &t.Dependencies); err != nil {
 			fmt.Fprintf(os.Stderr, "c4: warning: failed to parse dependencies for task %s: %v\n", taskID, err)
 		}
+	}
+	if reviewEvidence.Valid {
+		t.ReviewDecisionEvidence = reviewEvidence.String
 	}
 	if createdAt.Valid {
 		t.CreatedAt = createdAt.String

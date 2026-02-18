@@ -580,11 +580,12 @@ func (c *CloudStore) RequestChanges(reviewTaskID string, comments string, requir
 
 	nextVersion := version + 1
 
-	// Mark current R task as done with REQUEST_CHANGES result
+	// Mark current R task as done with REQUEST_CHANGES result (reason in review_decision_evidence, not commit_sha)
 	patchFilter := fmt.Sprintf("task_id=eq.%s&project_id=eq.%s", url.QueryEscape(reviewTaskID), url.QueryEscape(c.projectID))
 	update := map[string]any{
-		"status":     "done",
-		"commit_sha": "REQUEST_CHANGES: " + comments,
+		"status":                     "done",
+		"review_decision_evidence":   comments,
+		"commit_sha":                 "",
 		"updated_at": time.Now().UTC().Format(time.RFC3339),
 	}
 	if err := c.patch("c4_tasks", patchFilter, update); err != nil {

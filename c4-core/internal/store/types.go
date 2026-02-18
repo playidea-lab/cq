@@ -20,6 +20,8 @@ type Task struct {
 	WorkerID      string   `json:"worker_id,omitempty"`
 	Branch        string   `json:"branch,omitempty"`
 	CommitSHA     string   `json:"commit_sha,omitempty"`
+	// ReviewDecisionEvidence stores REQUEST_CHANGES reason (comments) for R-tasks; do not use commit_sha for that.
+	ReviewDecisionEvidence string `json:"review_decision_evidence,omitempty"`
 	CreatedAt     string   `json:"created_at,omitempty"`
 	UpdatedAt     string   `json:"updated_at,omitempty"`
 }
