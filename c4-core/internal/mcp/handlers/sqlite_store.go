@@ -11,6 +11,7 @@ import (
 
 	"github.com/changmin/c4-core/internal/config"
 	"github.com/changmin/c4-core/internal/eventbus"
+	"github.com/changmin/c4-core/internal/knowledge"
 	"github.com/changmin/c4-core/internal/mcp"
 	"github.com/changmin/c4-core/internal/state"
 	"github.com/changmin/c4-core/internal/task"
@@ -19,14 +20,16 @@ import (
 // SQLiteStore implements the handlers.Store interface backed by SQLite.
 // It operates on the shared .c4/tasks.db used by both Go and Python.
 type SQLiteStore struct {
-	db          *sql.DB
-	projectID   string
-	projectRoot string
-	config      *config.Manager
-	proxy       *BridgeProxy         // optional: for knowledge auto-record
-	eventPub    eventbus.Publisher   // optional: for C3 EventBus remote publishing
-	dispatcher  *eventbus.Dispatcher // optional: local rule-based dispatch (C1 posting, etc.)
-	registry    *mcp.Registry        // optional: for lighthouse auto-promote registry cleanup
+	db             *sql.DB
+	projectID      string
+	projectRoot    string
+	config         *config.Manager
+	proxy          *BridgeProxy            // optional: for legacy proxy calls
+	knowledgeStore *knowledge.Store        // optional: for native knowledge recording
+	knowledgeSearch *knowledge.Searcher    // optional: for knowledge context injection
+	eventPub       eventbus.Publisher      // optional: for C3 EventBus remote publishing
+	dispatcher     *eventbus.Dispatcher    // optional: local rule-based dispatch (C1 posting, etc.)
+	registry       *mcp.Registry           // optional: for lighthouse auto-promote registry cleanup
 }
 
 // StoreOption configures a SQLiteStore.
@@ -42,9 +45,17 @@ func WithConfig(cfg *config.Manager) StoreOption {
 	return func(s *SQLiteStore) { s.config = cfg }
 }
 
-// WithProxy sets the bridge proxy for knowledge auto-record on task completion.
+// WithProxy sets the bridge proxy for legacy proxy calls.
 func WithProxy(p *BridgeProxy) StoreOption {
 	return func(s *SQLiteStore) { s.proxy = p }
+}
+
+// WithKnowledge sets the native knowledge store and searcher for auto-recording and context injection.
+func WithKnowledge(store *knowledge.Store, searcher *knowledge.Searcher) StoreOption {
+	return func(s *SQLiteStore) {
+		s.knowledgeStore = store
+		s.knowledgeSearch = searcher
+	}
 }
 
 // WithRegistry sets the MCP registry for lighthouse auto-promote on T-LH task completion.
@@ -596,6 +607,9 @@ func (s *SQLiteStore) AssignTask(workerID string) (*TaskAssignment, error) {
 	// 5. Enrich with review context (if R- task)
 	s.enrichWithReviewContext(assignment)
 
+	// 6. Enrich with knowledge context (past patterns and insights)
+	s.enrichWithKnowledge(assignment)
+
 	// C3 EventBus: publish task.started event
 	s.notifyEventBus("task.started", map[string]any{
 		"task_id":   taskID,
@@ -759,6 +773,44 @@ func (s *SQLiteStore) enrichWithReviewContext(assignment *TaskAssignment) {
 	}
 }
 
+// enrichWithKnowledge injects relevant knowledge context (past patterns, insights, experiments).
+func (s *SQLiteStore) enrichWithKnowledge(assignment *TaskAssignment) {
+	if s.knowledgeSearch == nil {
+		return
+	}
+
+	query := assignment.Title
+	if assignment.Domain != "" {
+		query = assignment.Domain + " " + query
+	}
+
+	results, err := s.knowledgeSearch.Search(query, 3, nil)
+	if err != nil || len(results) == 0 {
+		return
+	}
+
+	var b strings.Builder
+	b.WriteString("## Relevant Knowledge (auto-injected)\n\n")
+	for i, r := range results {
+		fmt.Fprintf(&b, "### %d. [%s] %s\n", i+1, r.Type, r.Title)
+		if r.Domain != "" {
+			fmt.Fprintf(&b, "- Domain: %s\n", r.Domain)
+		}
+		// Fetch body summary (first 200 chars) for actionable context
+		if s.knowledgeStore != nil {
+			if doc, err := s.knowledgeStore.Get(r.ID); err == nil && doc.Body != "" {
+				body := doc.Body
+				if len(body) > 200 {
+					body = body[:200] + "..."
+				}
+				fmt.Fprintf(&b, "- Summary: %s\n", body)
+			}
+		}
+		b.WriteString("\n")
+	}
+	assignment.KnowledgeContext = b.String()
+}
+
 // SubmitTask marks a task as done.
 func (s *SQLiteStore) SubmitTask(taskID, workerID, commitSHA, handoff string, results []ValidationResult) (*SubmitResult, error) {
 	for _, r := range results {
@@ -820,8 +872,8 @@ func (s *SQLiteStore) SubmitTask(taskID, workerID, commitSHA, handoff string, re
 	// Record persona stats (best-effort)
 	s.recordPersonaStat(workerID, taskID, "approved")
 
-	// Auto-record knowledge (best-effort)
-	s.autoRecordKnowledge(task, "submitted via worker", nil)
+	// Auto-record knowledge (best-effort) — pass handoff for structured extraction
+	s.autoRecordKnowledge(task, "submitted via worker", nil, handoff)
 
 	// Auto-learn: update soul from persona patterns (best-effort)
 	s.autoLearn(workerID)
@@ -949,8 +1001,8 @@ func (s *SQLiteStore) ReportTask(taskID, summary string, filesChanged []string) 
 	// Record persona stats (best-effort)
 	s.recordPersonaStat("direct", taskID, "approved")
 
-	// Auto-record knowledge (best-effort)
-	s.autoRecordKnowledge(task, summary, filesChanged)
+	// Auto-record knowledge (best-effort) — pass handoff for structured extraction
+	s.autoRecordKnowledge(task, summary, filesChanged, handoff)
 
 	// Auto-learn: update soul from persona patterns (best-effort)
 	s.autoLearn("direct")
@@ -1090,18 +1142,49 @@ func (s *SQLiteStore) autoPromoteLighthouse(taskID, workerID string) {
 
 // --- Knowledge Auto-Record ---
 
-// autoRecordKnowledge sends an experiment knowledge record via the sidecar proxy (best-effort).
-func (s *SQLiteStore) autoRecordKnowledge(task *Task, summary string, filesChanged []string) {
-	if s.proxy == nil || task == nil {
+// autoRecordKnowledge records task completion as a knowledge experiment (best-effort).
+// Uses native knowledge store if available, falls back to proxy.
+func (s *SQLiteStore) autoRecordKnowledge(task *Task, summary string, filesChanged []string, handoff string) {
+	if task == nil {
+		return
+	}
+	if s.knowledgeStore == nil && s.proxy == nil {
 		return
 	}
 
-	content := fmt.Sprintf("## Task: %s\n\n**Summary**: %s\n\n**Status**: done\n", task.Title, summary)
-	if len(filesChanged) > 0 {
-		content += fmt.Sprintf("\n**Files changed**: %s\n", strings.Join(filesChanged, ", "))
+	// Parse handoff to extract structured data
+	ho := parseHandoff(handoff)
+	if ho.Summary != "" && summary == "submitted via worker" {
+		summary = ho.Summary
+	}
+	if len(ho.FilesChanged) > 0 && len(filesChanged) == 0 {
+		filesChanged = ho.FilesChanged
 	}
 
-	tags := []any{}
+	// Build rich content with rationale and discoveries
+	var b strings.Builder
+	fmt.Fprintf(&b, "## Task: %s\n\n**Summary**: %s\n\n**Status**: done\n", task.Title, summary)
+	if len(filesChanged) > 0 {
+		fmt.Fprintf(&b, "\n**Files changed**: %s\n", strings.Join(filesChanged, ", "))
+	}
+	if len(ho.Discoveries) > 0 {
+		b.WriteString("\n## Discoveries\n")
+		for _, d := range ho.Discoveries {
+			fmt.Fprintf(&b, "- %s\n", d)
+		}
+	}
+	if len(ho.Concerns) > 0 {
+		b.WriteString("\n## Concerns\n")
+		for _, c := range ho.Concerns {
+			fmt.Fprintf(&b, "- %s\n", c)
+		}
+	}
+	if ho.Rationale != "" {
+		fmt.Fprintf(&b, "\n## Rationale\n%s\n", ho.Rationale)
+	}
+	content := b.String()
+
+	tags := []string{}
 	if task.Domain != "" {
 		tags = append(tags, task.Domain)
 	}
@@ -1110,14 +1193,31 @@ func (s *SQLiteStore) autoRecordKnowledge(task *Task, summary string, filesChang
 	}
 	tags = append(tags, "auto-recorded")
 
+	title := fmt.Sprintf("Task %s: %s", task.ID, task.Title)
+
+	// Prefer native store over proxy
+	if s.knowledgeStore != nil {
+		go func() {
+			metadata := map[string]any{
+				"title":   title,
+				"domain":  task.Domain,
+				"tags":    tags,
+				"task_id": task.ID,
+			}
+			if _, err := s.knowledgeStore.Create(knowledge.TypeExperiment, metadata, content); err != nil {
+				fmt.Fprintf(os.Stderr, "c4: auto-record knowledge failed for %s: %v\n", task.ID, err)
+			}
+		}()
+		return
+	}
+
+	// Fallback to proxy
 	params := map[string]any{
 		"doc_type": "experiment",
-		"title":    fmt.Sprintf("Task %s: %s", task.ID, task.Title),
+		"title":    title,
 		"content":  content,
 		"tags":     tags,
 	}
-
-	// Best-effort: don't block on failure, with timeout to prevent goroutine leak
 	go func() {
 		done := make(chan struct{})
 		go func() {
@@ -1132,4 +1232,25 @@ func (s *SQLiteStore) autoRecordKnowledge(task *Task, summary string, filesChang
 			fmt.Fprintf(os.Stderr, "c4: auto-record knowledge timed out for %s\n", task.ID)
 		}
 	}()
+}
+
+// handoffData holds structured data parsed from a handoff JSON string.
+type handoffData struct {
+	Summary      string   `json:"summary"`
+	FilesChanged []string `json:"files_changed"`
+	Discoveries  []string `json:"discoveries"`
+	Concerns     []string `json:"concerns"`
+	Rationale    string   `json:"rationale"`
+}
+
+// parseHandoff extracts structured fields from a handoff JSON string.
+func parseHandoff(handoff string) handoffData {
+	if strings.TrimSpace(handoff) == "" {
+		return handoffData{}
+	}
+	var ho handoffData
+	if err := json.Unmarshal([]byte(handoff), &ho); err != nil {
+		return handoffData{Summary: handoff}
+	}
+	return ho
 }

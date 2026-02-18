@@ -26,19 +26,20 @@ type Task struct {
 
 // TaskAssignment is returned when a worker is assigned a task.
 type TaskAssignment struct {
-	TaskID         string             `json:"task_id"`
-	Title          string             `json:"title"`
-	Scope          string             `json:"scope,omitempty"`
-	DoD            string             `json:"dod"`
-	Dependencies   []string           `json:"dependencies,omitempty"`
-	Domain         string             `json:"domain,omitempty"`
-	Branch         string             `json:"branch,omitempty"`
-	WorkerID       string             `json:"worker_id"`
-	WorktreePath   string             `json:"worktree_path,omitempty"`
-	Model          string             `json:"recommended_model,omitempty"`
-	ReviewContext  *ReviewContext     `json:"review_context,omitempty"`
-	SoulContext    string             `json:"soul_context,omitempty"`
-	LighthouseSpec *LighthouseContext `json:"lighthouse_spec,omitempty"`
+	TaskID           string             `json:"task_id"`
+	Title            string             `json:"title"`
+	Scope            string             `json:"scope,omitempty"`
+	DoD              string             `json:"dod"`
+	Dependencies     []string           `json:"dependencies,omitempty"`
+	Domain           string             `json:"domain,omitempty"`
+	Branch           string             `json:"branch,omitempty"`
+	WorkerID         string             `json:"worker_id"`
+	WorktreePath     string             `json:"worktree_path,omitempty"`
+	Model            string             `json:"recommended_model,omitempty"`
+	ReviewContext    *ReviewContext     `json:"review_context,omitempty"`
+	SoulContext      string             `json:"soul_context,omitempty"`
+	LighthouseSpec   *LighthouseContext `json:"lighthouse_spec,omitempty"`
+	KnowledgeContext string             `json:"knowledge_context,omitempty"`
 }
 
 // ReviewContext provides context from the parent implementation task for review tasks.

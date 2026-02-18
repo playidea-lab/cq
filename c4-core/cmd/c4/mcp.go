@@ -249,6 +249,9 @@ func newMCPServer() (*mcpServer, error) {
 	if proxy != nil {
 		storeOpts = append(storeOpts, handlers.WithProxy(proxy))
 	}
+	if knowledgeStore != nil && knowledgeSearcher != nil {
+		storeOpts = append(storeOpts, handlers.WithKnowledge(knowledgeStore, knowledgeSearcher))
+	}
 	storeOpts = append(storeOpts, handlers.WithRegistry(reg))
 	sqliteStore, err := handlers.NewSQLiteStore(db, storeOpts...)
 	if err != nil {
