@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "description": "C4 project hooks - migrated from .claude/hooks.json for Cursor",
+  "hooks": {
+    "beforeShellExecution": [
+      {
+        "command": ".cursor/hooks/security-check-commit.sh",
+        "matcher": "git commit",
+        "timeout": 15
+      },
+      {
+        "command": ".cursor/hooks/block-force-push-main.sh",
+        "matcher": "git push.*--force|git push.*-f.*main",
+        "timeout": 5
+      }
+    ],
+    "afterFileEdit": [
+      {
+        "command": ".cursor/hooks/after-edit.sh",
+        "timeout": 30
+      }
+    ],
+    "stop": [
+      {
+        "command": ".cursor/hooks/stop-cleanup.sh",
+        "timeout": 10
+      }
+    ]
+  }
+}
