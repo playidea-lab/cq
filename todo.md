@@ -31,7 +31,15 @@
 - [x] L-1: 주석 처리된 코드 - 조사 결과 문서용 주석만 존재 (문제 없음)
 - [x] L-3: `_ = err` 패턴 수정 (bridge/sidecar_test.go:330)
 
-## 남은 항목 (별도 계획 필요)
+## 완료 (Phase 3 - 핸들러 테스트 보강)
 
-- [ ] Hub 핸들러 테스트 (hub_jobs, hub_infra, hub_edge, hub_dag - 30 functions)
-- [ ] c2_native, persona, native_lsp 핸들러 테스트
+- [x] Phase A: Hub 핸들러 전체 테스트 (httptest.Server 기반, 50개 테스트)
+  - `c4-core/internal/mcp/handlers/hub_test.go` - hub_jobs(10), hub_infra(4), hub_edge(5), hub_dag(7) + validation tests
+- [x] Phase B: persona.go 테스트 (SQLite + temp dir, 20개 테스트)
+  - `c4-core/internal/mcp/handlers/persona_test.go` - persona_stats, persona_evolve, whoami, helper functions
+- [x] Phase C: c2_native.go 테스트 (temp dir, 15개 테스트)
+  - `c4-core/internal/mcp/handlers/c2_native_test.go` - workspace CRUD, profile save/load, persona_learn
+- [x] Phase D: native_lsp.go 테스트 (Go/Dart fixture, 9개 테스트)
+  - `c4-core/internal/mcp/handlers/native_lsp_test.go` - Go/Dart AST find_symbol, symbols_overview
+
+> 총 98개 새 테스트 추가 (handlers 패키지: 385 -> 483 tests)
