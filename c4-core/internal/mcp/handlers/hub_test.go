@@ -887,6 +887,64 @@ func TestHubDAGFromYAML_MissingContent(t *testing.T) {
 }
 
 // =========================================================================
+// Error response tests (one per handler category)
+// =========================================================================
+
+func TestHubSubmit_ServerError(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/jobs/submit", func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, `{"error":"internal"}`, http.StatusInternalServerError)
+	})
+	_, reg := newHubTestServer(t, mux)
+
+	_, err := reg.Call("c4_hub_submit", json.RawMessage(`{
+		"name": "test", "workdir": "/ws", "command": "echo"
+	}`))
+	if err == nil {
+		t.Fatal("expected error for 500 response")
+	}
+}
+
+func TestHubWorkers_ServerError(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/workers", func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "unavailable", http.StatusServiceUnavailable)
+	})
+	_, reg := newHubTestServer(t, mux)
+
+	_, err := reg.Call("c4_hub_workers", json.RawMessage(`{}`))
+	if err == nil {
+		t.Fatal("expected error for 503 response")
+	}
+}
+
+func TestHubEdgeRegister_ServerError(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/edges/register", func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "forbidden", http.StatusForbidden)
+	})
+	_, reg := newHubTestServer(t, mux)
+
+	_, err := reg.Call("c4_hub_edge_register", json.RawMessage(`{"name": "e1"}`))
+	if err == nil {
+		t.Fatal("expected error for 403 response")
+	}
+}
+
+func TestHubDAGCreate_ServerError(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/dags", func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "bad gateway", http.StatusBadGateway)
+	})
+	_, reg := newHubTestServer(t, mux)
+
+	_, err := reg.Call("c4_hub_dag_create", json.RawMessage(`{"name": "fail-dag"}`))
+	if err == nil {
+		t.Fatal("expected error for 502 response")
+	}
+}
+
+// =========================================================================
 // Registration count test
 // =========================================================================
 

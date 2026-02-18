@@ -135,7 +135,9 @@ func TestWhoami_EmptyTeam(t *testing.T) {
 
 func TestWhoami_RegisterUser(t *testing.T) {
 	tmpDir := t.TempDir()
-	os.MkdirAll(filepath.Join(tmpDir, ".c4"), 0755)
+	if err := os.MkdirAll(filepath.Join(tmpDir, ".c4"), 0755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
 
 	reg := mcp.NewRegistry()
 	RegisterTeamHandlers(reg, tmpDir)

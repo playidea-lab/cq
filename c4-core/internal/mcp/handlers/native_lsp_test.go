@@ -12,7 +12,9 @@ import (
 
 func writeGoFixture(t *testing.T, dir string) {
 	t.Helper()
-	os.MkdirAll(dir, 0755)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
 	src := `package fixture
 
 // Greeter provides greeting functionality.
@@ -33,7 +35,9 @@ func Add(a, b int) int {
 	return a + b
 }
 `
-	os.WriteFile(filepath.Join(dir, "fixture.go"), []byte(src), 0644)
+	if err := os.WriteFile(filepath.Join(dir, "fixture.go"), []byte(src), 0644); err != nil {
+		t.Fatalf("write fixture.go: %v", err)
+	}
 }
 
 func TestHandleGoFindSymbol(t *testing.T) {
@@ -121,10 +125,17 @@ func TestHandleGoSymbolsOverview(t *testing.T) {
 func TestHandleGoSymbolsOverview_EmptyDir(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	// No Go files → should return error or empty
-	_, err := handleGoSymbolsOverview(tmpDir)
+	result, err := handleGoSymbolsOverview(tmpDir)
 	if err != nil {
-		t.Logf("expected error for empty dir: %v", err)
+		return // error for empty dir is acceptable
+	}
+	// If no error, result should still be valid but empty
+	m, ok := result.(map[string]any)
+	if !ok {
+		t.Fatal("expected map result")
+	}
+	if m["success"] != true {
+		t.Error("expected success=true even for empty dir")
 	}
 }
 
@@ -134,7 +145,9 @@ func TestHandleGoSymbolsOverview_EmptyDir(t *testing.T) {
 
 func writeDartFixture(t *testing.T, dir string) {
 	t.Helper()
-	os.MkdirAll(dir, 0755)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
 	src := `/// A greeting class.
 class Greeter {
   final String name;
@@ -147,7 +160,9 @@ class Greeter {
 /// Adds two numbers.
 int add(int a, int b) => a + b;
 `
-	os.WriteFile(filepath.Join(dir, "fixture.dart"), []byte(src), 0644)
+	if err := os.WriteFile(filepath.Join(dir, "fixture.dart"), []byte(src), 0644); err != nil {
+		t.Fatalf("write fixture.dart: %v", err)
+	}
 }
 
 func TestHandleDartFindSymbol(t *testing.T) {
