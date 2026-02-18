@@ -170,14 +170,29 @@ Execute **ONE** C4 task and exit. (Context isolation principle)
 ```
 1. task = c4_get_task(worker_id="{worker_id}")
 2. IF task is None or no task_id:
-       PRINT "✅ No tasks available"
+       PRINT "No tasks available"
        EXIT
-3. Implement the task (follow DoD)
-4. Run validations, fix issues (max 3 retries)
-5. git commit
-6. c4_submit(task_id, ...)
-7. EXIT (✅ Task complete - fresh context for next task!)
+3. IF task.knowledge_context exists:
+       READ the knowledge context (past patterns, insights)
+       APPLY relevant lessons to implementation decisions
+4. Implement the task (follow DoD, including Rationale)
+5. Run validations, fix issues (max 3 retries)
+6. git commit
+7. c4_submit(task_id, ..., handoff=JSON with discoveries/concerns/rationale)
+8. EXIT (Task complete - fresh context for next task!)
 ```
+
+**handoff 구조** (c4_submit 시 전달):
+```json
+{
+  "summary": "구현 요약",
+  "files_changed": ["path/to/file.go"],
+  "discoveries": ["발견한 사항들"],
+  "concerns": ["우려 사항"],
+  "rationale": "이 접근을 선택한 이유"
+}
+```
+이 handoff 데이터는 자동으로 knowledge DB에 기록되어 향후 재활용됩니다.
 
 **CRITICAL**: Exit after ONE task completion!
 Next task → new Worker → fresh context → prevents context death.

@@ -466,6 +466,43 @@ cargo tauri dev       # 개발 서버
 
 ---
 
+## Knowledge Pipeline (지식 피드백 루프)
+
+> 프로젝트 전체에서 "왜(why)"를 기록하고, 축적된 지식으로 다음 시도를 고도화하는 4-layer 파이프라인.
+
+### 파이프라인 흐름
+```
+Plan (knowledge_search) → Task DoD (Rationale 포함) → Worker (knowledge_context 주입)
+     ↑                                                        ↓
+pattern_suggest ← distill ← autoRecordKnowledge ← Worker 완료 (handoff)
+```
+
+### Layer 1: Write (기록 강화)
+- **autoRecordKnowledge**: 태스크 완료 시 handoff JSON을 파싱하여 discoveries/concerns/rationale 추출
+- **handoff 구조**: `{summary, files_changed, discoveries, concerns, rationale}`
+- **Worker가 기록**: c4_submit 시 handoff에 구조화된 데이터 전달 → 자동 knowledge 기록
+
+### Layer 2: Read (조회 통합)
+- `/c4-plan` Phase 0.1: `c4_knowledge_search` + `c4_pattern_suggest` 자동 호출
+- `/c4-refine` Phase 0.5: 과거 refine 패턴 조회
+- DoD에 **Rationale** 섹션 필수 포함
+
+### Layer 3: Inject (주입)
+- `AssignTask`에서 `enrichWithKnowledge` → `TaskAssignment.knowledge_context`에 관련 지식 주입
+- Worker는 과거 패턴/인사이트를 참조하여 구현
+
+### Layer 4: Converge (수렴)
+- `/c4-finish`에서 `c4_knowledge_distill` 자동 호출 (docs ≥ 5건)
+- `/c4-refine`에서 반복 이슈 패턴을 pattern으로 자동 기록
+- `c4_knowledge_publish` / `c4_knowledge_pull`로 프로젝트 간 공유
+
+### 핵심 규칙
+- **c4_submit 시 handoff에 reasoning 포함**: discoveries, concerns, rationale 필드 활용
+- **계획 시 과거 지식 조회 필수**: `/c4-plan` Phase 0.1에서 knowledge_search 수행
+- **Refine 루프에서 교훈 기록**: 반복 이슈 → pattern 자동 승격
+
+---
+
 ## C3 EventBus (internal/eventbus/)
 
 > gRPC UDS daemon + WebSocket bridge + DLQ. 78 테스트.

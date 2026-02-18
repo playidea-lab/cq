@@ -60,7 +60,13 @@ Call these MCP tools to gather current state:
 3. c4_list_designs()     — saved designs
 4. c4_lighthouse(list)   — tool contracts (stubs/implemented)
 5. Glob docs/**/*.md     — planning documents
+6. c4_knowledge_search(query="{feature description}")  — past patterns/insights/experiments
+7. c4_pattern_suggest(context="{domain}")              — recurring patterns from past work
 ```
+
+**Knowledge 조회 목적**: 과거 유사 기능의 실패/성공 패턴, 아키텍처 결정의 이유,
+반복된 이슈 패턴을 참조하여 같은 실수를 방지하고 검증된 접근 방식을 재활용합니다.
+결과가 없으면 건너뜁니다.
 
 ### 0.2 Rich Status Output
 
@@ -464,6 +470,7 @@ For Worker Packet format and DoD principles, see `references/worker-packet.md`.
 | Element | Required | Description |
 |---------|----------|-------------|
 | **Goal** | Yes | Completion criteria + out-of-scope |
+| **Rationale** | Yes | Why this approach (design decision ref, past knowledge) |
 | **ContractSpec** | Yes | API spec + test spec |
 | **LighthouseRef** | If exists | Lighthouse stub name |
 | **BoundaryMap** | Recommended | DDD layer constraints |
@@ -501,7 +508,7 @@ c4_add_todo(
     task_id="T-001-0",
     title="Task title",
     scope="src/path/",
-    dod="Goal: ...\n\nContractSpec:\n  API: ...\n  Tests: ...\n\nCodePlacement:\n  Create: ...\n  Modify: ..."
+    dod="Goal: ...\n\nRationale: (why this approach was chosen, design decision reference)\n\nContractSpec:\n  API: ...\n  Tests: ...\n\nCodePlacement:\n  Create: ...\n  Modify: ..."
 )
 
 # CP tasks depend on R tasks

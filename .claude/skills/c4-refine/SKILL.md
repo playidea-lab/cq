@@ -67,6 +67,21 @@ status = mcp__c4__c4_status()
 
 대상 파일 목록을 `SCOPE`로 저장합니다.
 
+### Phase 0.5. Knowledge Lookup (선택적)
+
+과거 refine에서 발견된 반복 패턴을 조회합니다:
+
+```python
+# 과거 이슈 패턴 조회
+patterns = c4_pattern_suggest(context="refine " + SCOPE_summary)
+# 또는 Cursor: c4_knowledge_search(query="refine pattern")
+
+# 결과가 있으면 Worker 프롬프트에 "주의 패턴"으로 전달
+# 예: "과거 resilience axis에서 retry 누락이 3회 반복 발견됨"
+```
+
+결과가 없으면 건너뛰고 Phase 1로 진행합니다.
+
 ### Phase 1. Spawn Refine Worker (리뷰)
 
 **핵심**: domain="refine" Worker를 스폰하여 컨텍스트 격리된 리뷰를 수행합니다.
@@ -213,6 +228,29 @@ if round > max_rounds:
 | 2     | worker-c3d4 | 0 | 1 | 3 | 1 | Fixed 1 |
 | 3     | worker-e5f6 | 0 | 0 | 2 | 1 | PASS   |
 ```
+
+### Phase 5.5. Knowledge Recording (자동)
+
+반복 발견된 이슈 패턴을 knowledge에 기록하여 다음 프로젝트에서 재활용합니다.
+
+**규칙**: 같은 axis에서 2회 이상 발견된 이슈 유형 → pattern으로 자동 기록
+
+```python
+# Claude Code:
+c4_knowledge_record(
+    doc_type="pattern",
+    title=f"Refine pattern: {axis} issues ({count}x)",
+    content="## 반복 이슈 패턴\n\n" + issue_descriptions,
+    tags=["refine", "auto-pattern", axis],
+)
+
+# Cursor:
+# 이슈 요약을 knowledge_record로 기록하거나
+# 별도 insight 문서로 남김
+```
+
+이를 통해 다음 `/c4-plan`의 Phase 0.1에서 `c4_pattern_suggest`가
+"과거 refine에서 resilience axis 이슈가 빈발" 등의 패턴을 자동 반환합니다.
 
 ## Hook Integration
 

@@ -48,6 +48,17 @@ cd c4-core && go build -o ~/.local/bin/c4 ./cmd/c4/
 - `c4_knowledge_record`로 이번 세션의 인사이트 기록
 - 반복될 수 있는 실수 패턴 → MEMORY.md에 추가
 
+### 6.5. Auto-Distill (조건부)
+```python
+# 축적된 knowledge가 5건 이상이면 자동 distill 수행
+stats = c4_knowledge_stats()
+if stats.total_docs >= 5:
+    c4_knowledge_distill(dry_run=False)
+    # 유사 experiment 클러스터에서 pattern을 자동 추출
+    # 추출된 패턴은 다음 /c4-plan에서 pattern_suggest로 반환됨
+```
+Cursor에서는 수동으로 `c4_knowledge_distill` 호출하거나 건너뜁니다.
+
 ### 7. Git Commit
 - `git status` → 변경 파일 확인
 - `git diff` → 변경 내용 검토
