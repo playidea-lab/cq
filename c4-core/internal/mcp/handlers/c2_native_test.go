@@ -220,12 +220,12 @@ func TestPersonaLearn_WithFiles(t *testing.T) {
 	}
 
 	m := result.(map[string]any)
-	if _, hasError := m["error"]; hasError {
-		t.Logf("persona_learn returned error (may be expected in test env): %v", m["error"])
-	} else {
-		if m["summary"] == nil {
-			t.Error("expected summary in response")
-		}
+	if errMsg, hasError := m["error"]; hasError {
+		// persona_learn may fail in test env without full C2 setup
+		t.Skipf("persona_learn not available in test env: %v", errMsg)
+	}
+	if m["summary"] == nil {
+		t.Error("expected summary in response")
 	}
 }
 

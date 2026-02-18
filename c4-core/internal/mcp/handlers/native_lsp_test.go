@@ -127,15 +127,17 @@ func TestHandleGoSymbolsOverview_EmptyDir(t *testing.T) {
 
 	result, err := handleGoSymbolsOverview(tmpDir)
 	if err != nil {
-		return // error for empty dir is acceptable
+		// error for empty dir (no Go files) is expected
+		t.Logf("got expected error for empty dir: %v", err)
+		return
 	}
-	// If no error, result should still be valid but empty
+	// If no error, result should be a valid map
 	m, ok := result.(map[string]any)
 	if !ok {
 		t.Fatal("expected map result")
 	}
 	if m["success"] != true {
-		t.Error("expected success=true even for empty dir")
+		t.Errorf("expected success=true, got %v", m["success"])
 	}
 }
 
