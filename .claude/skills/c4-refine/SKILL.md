@@ -295,3 +295,13 @@ T-RF-002-0  : Refine Round 2 리뷰 태스크
 ```
 
 `T-RF-` prefix로 일반 구현(T-), 리뷰(R-), 체크포인트(CP-)와 구분.
+
+## Related Skills
+
+| 스킬 | 연결 |
+|------|------|
+| `/c4-plan` | Refine 대상 태스크의 원본 계획 |
+| `/c4-submit` | Refine 결과 제출 (handoff JSON 포함) |
+| `/c4-checkpoint` | Refine 완료 후 체크포인트 리뷰 |
+| `/c4-finish` | 전체 Refine 루프 완료 → auto-distill |
+| `/c4-run` | Refine fix 태스크의 Worker 스폰 |

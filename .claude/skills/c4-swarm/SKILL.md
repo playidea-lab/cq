@@ -144,19 +144,26 @@ MEMBER_PROMPT = """You are "{member_name}", a member of team "{team_name}".
    - File modifications: Edit/Write tools
    - Validation: uv run python -m py_compile (Python) / go build (Go)
 4. git commit
-5. **Write handoff** then submit:
+5. **Write handoff** (JSON format) then submit:
    c4_submit(task_id, worker_id="{member_name}", commit_sha, validation_results,
-     handoff="## Discoveries\\n- ...\\n## Concerns\\n- ...\\n## Feedback\\n- ...")
+     handoff=json.dumps({"summary": "...", "files_changed": [...],
+       "discoveries": [...], "concerns": [...], "rationale": "..."}))
 6. TaskUpdate(taskId, status="completed")
 7. SendMessage(type="message", recipient="coordinator",
      content="[task_id] completed. Handoff: [key discovery summary]", summary="Task done + handoff")
 8. TaskList() → if next task exists goto 2, else wait
 
 ## Handoff Writing Rules (CRITICAL)
-Must include these 3 sections in handoff parameter when submitting:
-- **Discoveries**: Found during implementation (dependencies, side effects, hidden complexity)
-- **Concerns**: Potential issues (bugs, performance, incomplete parts)
-- **Feedback**: For next worker/reviewer (recommended tests, check points)
+handoff 파라미터는 JSON 문자열로 전달 (autoRecordKnowledge가 파싱):
+```json
+{
+  "summary": "구현 요약",
+  "files_changed": ["path/to/file.go"],
+  "discoveries": ["발견사항: 의존성, 사이드이펙트, 숨겨진 복잡성"],
+  "concerns": ["우려사항: 버그, 성능, 미완성 부분"],
+  "rationale": "설계 결정 이유"
+}
+```
 
 ## Communication
 - Need to coordinate with other members: SendMessage(type="message", recipient="member_name", ...)

@@ -9,7 +9,7 @@ description: |
   "academic review", "/c4-review". For quick reviews, use /c2-paper-review.
 ---
 
-# c2-review: Academic Paper Review (c2 Lifecycle)
+# c4-review: Academic Paper Review (c2 Lifecycle)
 
 > **Command**: `/c4-review <pdf_path> [--project <name>] [--journal <name>]`
 >

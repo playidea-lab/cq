@@ -58,7 +58,7 @@ result = mcp__c4__c4_start()
 add_result = mcp__c4__c4_add_todo(
     title="$ARGUMENTS",
     scope=scope or None,  # scope 인자가 있으면 사용
-    dod=f"- [ ] $ARGUMENTS 완료\n- [ ] 테스트 통과",
+    dod=f"- [ ] $ARGUMENTS 완료\n- [ ] 테스트 통과\n- [ ] Rationale: (접근 방식 선택 이유)",
     validations=["lint", "unit"],
 )
 # add_result.task_id = "T-XXX-0"

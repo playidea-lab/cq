@@ -43,3 +43,17 @@ rules:
     action_config: '{"channel":"#updates","template":"[validation] {{event_type}}: {{name}}"}'
     enabled: true
     priority: 50
+
+  - name: c1-review-events
+    event_pattern: "review.*"
+    action_type: c1_post
+    action_config: '{"channel":"#updates","template":"[review] {{event_type}}: {{task_id}}"}'
+    enabled: true
+    priority: 50
+
+  - name: c1-knowledge-events
+    event_pattern: "knowledge.*"
+    action_type: c1_post
+    action_config: '{"channel":"#knowledge","template":"[knowledge] {{event_type}}: {{title}}"}'
+    enabled: true
+    priority: 50

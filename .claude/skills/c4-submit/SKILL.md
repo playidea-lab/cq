@@ -223,12 +223,36 @@ mcp__c4__c4_submit(
         {"name": "boundary", "status": "pass"},
         {"name": "work_breakdown", "status": "pass"},
         {"name": "contract_spec", "status": "pass"},
-    ]
+    ],
+    handoff=json.dumps({
+        "summary": "구현 요약 (1-2줄)",
+        "files_changed": ["path/to/file1.go", "path/to/file2.go"],
+        "discoveries": ["발견사항 1: ...", "발견사항 2: ..."],
+        "concerns": ["우려사항: ..."],
+        "rationale": "이 접근 방식을 선택한 이유"
+    })
 )
 ```
 
 > **Note**: DDD-CLEANCODE validation runs only if task includes Worker Packet specs
 > (BoundaryMap, ContractSpec, etc.). Without specs, only basic validation (lint, unit).
+
+### 5.1 Handoff 구조 (CRITICAL)
+
+`handoff` 파라미터는 JSON 문자열로, 지식 자동 축적에 사용됩니다.
+
+| 필드 | 필수 | 설명 |
+|------|------|------|
+| `summary` | Y | 구현 요약 (1-2줄) |
+| `files_changed` | Y | 변경된 파일 경로 목록 |
+| `discoveries` | N | 구현 중 발견사항 (의존성, 사이드이펙트, 숨겨진 복잡성) |
+| `concerns` | N | 잠재적 이슈 (버그, 성능, 미완성 부분) |
+| `rationale` | N | 설계 결정 이유 (DoD의 Rationale과 연결) |
+
+handoff가 포함되면 Go 핸들러(`autoRecordKnowledge`)가 자동으로:
+- discoveries/concerns를 knowledge document로 기록
+- rationale을 설계 결정 이력으로 보존
+- 이후 Worker 할당 시 `enrichWithKnowledge`로 주입
 
 ### 6. Result & Next Steps
 
