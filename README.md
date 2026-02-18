@@ -8,15 +8,15 @@ Plan, execute, review, and learn — automated end-to-end.
 
 ![Go](https://img.shields.io/badge/Go-1.22+-00ADD8?logo=go&logoColor=white)
 ![Python](https://img.shields.io/badge/Python-3.11+-3776AB?logo=python&logoColor=white)
-![Tools](https://img.shields.io/badge/MCP_Tools-152-blueviolet)
-![Tests](https://img.shields.io/badge/Tests-1%2C918+-brightgreen)
+![Tools](https://img.shields.io/badge/MCP_Tools-134-blueviolet)
+![Tests](https://img.shields.io/badge/Tests-2%2C058+-brightgreen)
 ![License](https://img.shields.io/badge/License-Personal_Study-orange)
 
 </div>
 
 ---
 
-C4 turns Claude Code into a full project management system. It provides **152 MCP tools**, a structured workflow engine, multi-lens code review, knowledge persistence, distributed job scheduling, and GPU-aware task management — all through natural language.
+C4 turns Claude Code into a full project management system. It provides **134 MCP tools** (108 base + 26 Hub), a structured workflow engine, multi-lens code review, knowledge feedback loops, distributed job scheduling, and GPU-aware task management — all through natural language.
 
 ```
 You: /c4-plan "Add user authentication with JWT"
@@ -38,10 +38,10 @@ C9 Knowledge — Knowledge management (FTS5 + pgvector + Embedding + Usage)
 ## How It Works
 
 ```
-INIT ─▶ DISCOVERY ─▶ DESIGN ─▶ PLAN ─▶ EXECUTE ⇄ CHECKPOINT ─▶ COMPLETE
-                                         │              │
-                                    Worker mode     Multi-lens
-                                    Direct mode     code review
+INIT ─▶ DISCOVERY ─▶ DESIGN ─▶ PLAN ─▶ EXECUTE ⇄ CHECKPOINT ─▶ REFINE ─▶ COMPLETE
+                                         │              │            │
+                                    Worker mode     Multi-lens    Iterative
+                                    Direct mode     code review   quality loop
 ```
 
 C4 breaks features into tasks, assigns them to workers (parallel) or claims them directly (sequential), auto-generates review tasks, and accumulates decisions as organizational knowledge.
@@ -157,10 +157,12 @@ c4_lighthouse(action="promote", name="export_api")
 - **Multi-lens review** — Security, performance, architecture, testing perspectives per review
 
 ### Knowledge & Learning (C9)
+- **Knowledge feedback loop** — Plan→Execute→Record→Distill→Reuse 자동 순환
+- **Auto-record on completion** — Task handoff (discoveries/concerns/rationale) → knowledge DB 자동 기록
+- **Worker knowledge injection** — AssignTask 시 관련 knowledge context 자동 주입
 - **Real embeddings** — OpenAI text-embedding-3-small (1536d) for semantic search
 - **3-way hybrid search** — FTS5 + Vector similarity + Popularity ranking via Reciprocal Rank Fusion
-- **Visibility control** — private / team / public documents with cross-project discovery
-- **Document ingestion** — File → chunk → embed → store pipeline (RAG-ready)
+- **Auto-distill** — Experiment 클러스터에서 Pattern 자동 추출 (finish 시)
 - **Usage tracking** — Automatic view/cite/search_hit tracking with popularity boost
 - **Cloud sync** — Bidirectional sync with Supabase (pgvector + RLS)
 - **Soul system** — Per-user judgment profiles that evolve from task outcomes

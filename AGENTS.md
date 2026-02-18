@@ -96,21 +96,21 @@ C9 Knowledge — 지식 관리 (FTS5 + pgvector + Embedding + Usage + Ingestion)
 ### 코드베이스 규모
 | 언어 | 소스 | 테스트 | 합계 |
 |------|------|--------|------|
-| Go (`c4-core/`) | ~37.8K LOC | ~30.9K LOC | ~68.7K |
+| Go (`c4-core/`) | ~40.2K LOC | ~32.7K LOC | ~72.9K |
 | Go (`c5/`) | ~5.6K LOC | ~3.5K LOC | ~9.1K |
 | Python (`c4/`) | ~24.4K LOC | ~11.6K LOC | ~36.0K |
 | Rust (`c1/src-tauri/`) | ~9.5K LOC | (내장) | ~9.5K |
-| TypeScript (`c1/src/`) | ~5.5K LOC | | ~5.5K |
+| TypeScript (`c1/src/`) | ~6.6K LOC | | ~6.6K |
 | SQL (`infra/`) | ~1.1K LOC | | ~1.1K |
-| **합계** | ~83.8K | ~46.0K | **~129.9K LOC** |
+| **합계** | ~87.4K | ~47.8K | **~135.2K LOC** |
 
 ### 테스트 현황
 | 언어 | 테스트 수 | 패키지/모듈 |
 |------|----------|------------|
-| Go | **1,386** | 26 packages (all pass) — c4-core 1,266 + c5 120 |
+| Go | **1,223** | 23 packages (all pass) — c4-core 1,103 + c5 120 |
 | Python | **750** | tests/unit/ |
 | Rust | **85** | src-tauri |
-| **합계** | **~2,221** | |
+| **합계** | **~2,058** | |
 
 ### Monorepo 구조
 ```
@@ -307,14 +307,16 @@ Hub-Edge(5): c4_hub_edge_register, c4_hub_edge_list,
 
 ### 워크플로우
 ```
-INIT → DISCOVERY → DESIGN → PLAN → EXECUTE ⇄ CHECKPOINT → COMPLETE
+INIT → DISCOVERY → DESIGN → PLAN → EXECUTE ⇄ CHECKPOINT → REFINE → COMPLETE
 ```
 
 ### Task ID 체계
 ```
-T-001-0: 구현 태스크 (버전 0)
-R-001-0: 리뷰 태스크
-CP-001:  체크포인트
+T-001-0:   구현 태스크 (버전 0)
+R-001-0:   리뷰 태스크
+RF-001-0:  리파인 태스크 (반복 리뷰-수정 루프, domain=refine)
+RPR-001-0: 수정 재작업
+CP-001:    체크포인트
 ```
 
 ---
