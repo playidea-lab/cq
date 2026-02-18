@@ -1,10 +1,12 @@
 <div align="center">
 
-# C4
+# Cstem
 
 **AI-Powered Project Orchestration System**
 
 Plan, execute, review, and learn — automated end-to-end.
+
+*Cstem* is a pronunciation variant of *System*: the C-series (C0–C1–C2–C3–C4–C5–C9) as one organically connected ecosystem.
 
 ![Go](https://img.shields.io/badge/Go-1.22+-00ADD8?logo=go&logoColor=white)
 ![Python](https://img.shields.io/badge/Python-3.11+-3776AB?logo=python&logoColor=white)
@@ -23,14 +25,16 @@ You: /c4-plan "Add user authentication with JWT"
 C4:  Creates 5 tasks with DoD, spawns workers, reviews each PR, learns from decisions.
 ```
 
-## C Series Ecosystem
+## C Series Ecosystem (Cstem)
+
+C1·C2·C3·C4·C5·C9가 유기적으로 연결된 생태계.
 
 ```
 C0 Drive    — Cloud file storage (Supabase Storage)
 C1 Desktop  — Tauri 2.x project explorer (6-tab view)
 C2 Docs     — Document lifecycle (parsing/workspace/profile)
 C3 EventBus — gRPC event bus (UDS + WebSocket + DLQ)
-C4 Engine   — MCP orchestration engine (this project)
+C4 Engine   — MCP orchestration engine (this repo)
 C5 Hub      — Distributed job queue server (Worker Pull, Lease-based)
 C9 Knowledge — Knowledge management (FTS5 + pgvector + Embedding + Usage)
 ```
@@ -288,6 +292,7 @@ cd c1/src-tauri && cargo test
 | [Commands](docs/user-guide/명령어-레퍼런스.md) | Slash command reference |
 | [Smart Auto Mode](docs/user-guide/Smart-Auto-Mode.md) | Automatic execution mode |
 | [LLM Config](docs/user-guide/LLM-설정.md) | Model routing & economic mode |
+| [Cursor Guide](docs/user-guide/Cursor-가이드.md) | Use C4 MCP in Cursor IDE |
 | [Troubleshooting](docs/user-guide/문제-해결.md) | Common issues & fixes |
 | [Roadmap](docs/ROADMAP.md) | Future plans |
 
