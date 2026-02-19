@@ -945,6 +945,69 @@ func TestHubDAGCreate_ServerError(t *testing.T) {
 }
 
 // =========================================================================
+// Hub Lease Renew Tests (1 handler)
+// =========================================================================
+
+func TestHubLeaseRenew_Success(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/leases/renew", func(w http.ResponseWriter, r *http.Request) {
+		hubJSON(w, map[string]any{"renewed": true, "new_expires_at": "2026-02-19T12:05:00Z"})
+	})
+	_, reg := newHubTestServer(t, mux)
+
+	result, err := reg.Call("c4_hub_lease_renew", json.RawMessage(`{"lease_id": "lease-abc"}`))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	m := result.(map[string]any)
+	if m["renewed"] != true {
+		t.Errorf("renewed = %v, want true", m["renewed"])
+	}
+	if m["lease_id"] != "lease-abc" {
+		t.Errorf("lease_id = %v, want lease-abc", m["lease_id"])
+	}
+	if m["new_expires_at"] != "2026-02-19T12:05:00Z" {
+		t.Errorf("new_expires_at = %v, want 2026-02-19T12:05:00Z", m["new_expires_at"])
+	}
+}
+
+func TestHubLeaseRenew_Failure(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/leases/renew", func(w http.ResponseWriter, r *http.Request) {
+		// Hub returns renewed=false when lease has already expired
+		hubJSON(w, map[string]any{"renewed": false})
+	})
+	_, reg := newHubTestServer(t, mux)
+
+	_, err := reg.Call("c4_hub_lease_renew", json.RawMessage(`{"lease_id": "lease-expired"}`))
+	if err == nil {
+		t.Fatal("expected error when lease renewal fails")
+	}
+}
+
+func TestHubLeaseRenew_MissingLeaseID(t *testing.T) {
+	mux := http.NewServeMux()
+	_, reg := newHubTestServer(t, mux)
+	_, err := reg.Call("c4_hub_lease_renew", json.RawMessage(`{}`))
+	if err == nil {
+		t.Fatal("expected error for missing lease_id")
+	}
+}
+
+func TestHubLeaseRenew_ServerError(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/leases/renew", func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+	})
+	_, reg := newHubTestServer(t, mux)
+
+	_, err := reg.Call("c4_hub_lease_renew", json.RawMessage(`{"lease_id": "lease-abc"}`))
+	if err == nil {
+		t.Fatal("expected error for 500 response")
+	}
+}
+
+// =========================================================================
 // Registration count test
 // =========================================================================
 
@@ -952,11 +1015,11 @@ func TestRegisterHubHandlersToolCount(t *testing.T) {
 	mux := http.NewServeMux()
 	_, reg := newHubTestServer(t, mux)
 	tools := reg.ListTools()
-	if len(tools) != 26 {
+	if len(tools) != 27 {
 		names := make([]string, 0, len(tools))
 		for _, tool := range tools {
 			names = append(names, tool.Name)
 		}
-		t.Errorf("registered %d hub tools, want 26: %v", len(tools), names)
+		t.Errorf("registered %d hub tools, want 27: %v", len(tools), names)
 	}
 }
