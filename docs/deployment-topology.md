@@ -268,3 +268,56 @@ cd c4-core && go build \
 | `.env` | **사용자 직접 (선택)** | Hub/LLM 키만 |
 | Supabase URL/Key | **바이너리 내장** | 없음 |
 | OAuth 세션 | `c4 auth login` | GitHub 인증만 |
+
+---
+
+## 9. C5 Hub → C4 EventSink 이벤트 흐름
+
+C5 Hub 서버가 job/worker 상태 변화를 C4 EventBus로 전달하는 E2E 이벤트 파이프라인.
+
+### 흐름 다이어그램 (Mermaid)
+
+```mermaid
+flowchart TD
+    C5[C5 Hub Server\n분산 작업 큐]
+    ES[C4-core EventSink\nHTTP :4141\nPOST /v1/events/publish]
+    EB[C3 EventBus\ngRPC UDS daemon]
+    RULE[c1-hub-events 규칙\nevent_pattern: hub.*\naction_type: c1_post]
+    C1[C1 Messenger\n#updates 채널]
+
+    C5 -->|"hub.job.completed\nhub.job.failed\nhub.worker.started\nhub.worker.offline"| ES
+    ES -->|Publisher.PublishAsync| EB
+    EB -->|filter: hub.*| RULE
+    RULE -->|c1_post| C1
+```
+
+### ASCII 흐름
+
+```
+C5 Hub Server
+  └─(POST /v1/events/publish)──→ C4-core EventSink(:4141)
+       └─(Publisher.PublishAsync)──→ C3 EventBus (gRPC UDS)
+            └─(c1-hub-events rule, hub.* filter)──→ C1 Messenger (#updates)
+```
+
+### 이벤트 종류
+
+| 이벤트 | 트리거 | 페이로드 |
+|--------|--------|---------|
+| `hub.job.completed` | Job 완료 시 | `job_id`, `name`, `status` |
+| `hub.job.failed` | Job 실패 시 | `job_id`, `name`, `error` |
+| `hub.worker.started` | Worker 기동 시 | `worker_id`, `tags` |
+| `hub.worker.offline` | Worker 종료 시 | `worker_id`, `reason` |
+
+### C5 환경변수
+
+C5 서버에서 C4 EventSink로 이벤트를 발행하기 위해 아래 환경변수를 설정한다:
+
+```bash
+# C5 → C4 EventSink 연결 설정
+C5_EVENTBUS_URL=http://localhost:4141    # C4 EventSink 주소
+C5_EVENTBUS_TOKEN=                       # Bearer 인증 토큰 (기본: 없음)
+```
+
+- `C5_EVENTBUS_URL` 미설정 시 이벤트 발행 비활성화 (graceful fallback).
+- `C5_EVENTBUS_TOKEN` 설정 시 `Authorization: Bearer <token>` 헤더 전송.

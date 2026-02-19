@@ -527,7 +527,31 @@ checkpoint.approved, checkpoint.rejected
 review.changes_requested
 validation.passed, validation.failed
 knowledge.recorded, knowledge.searched
+hub.job.completed, hub.job.failed, hub.worker.started, hub.worker.offline
 ```
+
+---
+
+## C5 Hub (c5/)
+
+> Go 기반 분산 작업 큐 서버. Worker Pull 모델, Lease 기반. ~5.6K LOC.
+
+### 빌드/실행
+```bash
+cd c5 && go build ./... && go test ./...
+go build -o ~/bin/c5 ./cmd/c5/
+```
+
+### 환경변수
+```bash
+# C5 → C4 EventSink 이벤트 발행 (선택)
+C5_EVENTBUS_URL=http://localhost:4141    # C4-core EventSink 주소
+C5_EVENTBUS_TOKEN=                       # Bearer 인증 토큰 (기본: 없음)
+```
+
+- `C5_EVENTBUS_URL` 미설정 시 이벤트 발행 비활성화 (graceful fallback).
+- C4-core EventSink는 `:4141` 포트에서 `POST /v1/events/publish` 수신.
+- 발행 이벤트: `hub.job.completed`, `hub.job.failed`, `hub.worker.started`, `hub.worker.offline`
 
 Add at the top of CLAUDE.md under a ## General Rules section\n\nWhen I ask you to implement a plan, ALWAYS discuss the approach with me first before creating tasks or writing code. Do not jump straight into implementation.
 Add under a ## C4 Workflow section\n\nWhen working in C4 workflow: always use C4 workers for implementation tasks, never implement directly. Verify worker output by checking for actual code changes (commit_sha) before reporting tasks as done.
