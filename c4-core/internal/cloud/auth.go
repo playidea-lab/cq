@@ -55,6 +55,34 @@ type Session struct {
 	User         User   `json:"user"`
 }
 
+// UnmarshalJSON implements json.Unmarshaler for Session.
+// It handles expires_at as either a numeric Unix timestamp (Go format)
+// or an ISO 8601 string (Rust c1 format).
+func (s *Session) UnmarshalJSON(data []byte) error {
+	type Alias Session
+	var raw struct {
+		Alias
+		ExpiresAt interface{} `json:"expires_at"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	*s = Session(raw.Alias)
+	switch v := raw.ExpiresAt.(type) {
+	case float64:
+		s.ExpiresAt = int64(v)
+	case string:
+		t, err := time.Parse(time.RFC3339, v)
+		if err != nil {
+			return fmt.Errorf("parsing expires_at %q: %w", v, err)
+		}
+		s.ExpiresAt = t.Unix()
+	case nil:
+		s.ExpiresAt = 0
+	}
+	return nil
+}
+
 // AuthClient is a Supabase Auth REST API client that handles GitHub OAuth flow.
 type AuthClient struct {
 	supabaseURL string
