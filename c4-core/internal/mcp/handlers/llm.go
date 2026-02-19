@@ -142,10 +142,13 @@ func handleLLMCosts(gateway *llm.Gateway) (any, error) {
 	byProvider := make(map[string]any)
 	for name, pc := range report.ByProvider {
 		byProvider[name] = map[string]any{
-			"total_usd":     pc.TotalUSD,
-			"requests":      pc.Requests,
-			"input_tokens":  pc.InputTok,
-			"output_tokens": pc.OutputTok,
+			"total_usd":          pc.TotalUSD,
+			"requests":           pc.Requests,
+			"input_tokens":       pc.InputTok,
+			"output_tokens":      pc.OutputTok,
+			"cache_read_tokens":  pc.CacheReadTok,
+			"cache_write_tokens": pc.CacheWriteTok,
+			"cache_savings_usd":  pc.SavedUSD,
 		}
 	}
 	return map[string]any{
