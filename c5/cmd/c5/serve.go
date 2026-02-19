@@ -18,27 +18,31 @@ import (
 
 func serveCmd() *cobra.Command {
 	var (
-		port   int
-		dbPath string
-		apiKey string
+		port          int
+		dbPath        string
+		apiKey        string
+		eventBusURL   string
+		eventBusToken string
 	)
 
 	cmd := &cobra.Command{
 		Use:   "serve",
 		Short: "Start the C5 job queue server",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runServe(port, dbPath, apiKey)
+			return runServe(port, dbPath, apiKey, eventBusURL, eventBusToken)
 		},
 	}
 
 	cmd.Flags().IntVar(&port, "port", 8585, "HTTP port to listen on")
 	cmd.Flags().StringVar(&dbPath, "db", "./c5.db", "SQLite database path")
 	cmd.Flags().StringVar(&apiKey, "api-key", os.Getenv("C5_API_KEY"), "API key for authentication (optional)")
+	cmd.Flags().StringVar(&eventBusURL, "eventbus-url", os.Getenv("C5_EVENTBUS_URL"), "C3 EventBus base URL (optional)")
+	cmd.Flags().StringVar(&eventBusToken, "eventbus-token", os.Getenv("C5_EVENTBUS_TOKEN"), "Bearer token for EventBus (optional)")
 
 	return cmd
 }
 
-func runServe(port int, dbPath, apiKey string) error {
+func runServe(port int, dbPath, apiKey, eventBusURL, eventBusToken string) error {
 	st, err := store.New(dbPath)
 	if err != nil {
 		return fmt.Errorf("open store: %w", err)
@@ -46,11 +50,13 @@ func runServe(port int, dbPath, apiKey string) error {
 	defer st.Close()
 
 	srv := api.NewServer(api.Config{
-		Store:   st,
-		Version: version,
-		APIKey:  apiKey,
-		LLMSTxt: c5.LLMSTxt,
-		DocsFS:  c5.DocsFS,
+		Store:         st,
+		Version:       version,
+		APIKey:        apiKey,
+		LLMSTxt:       c5.LLMSTxt,
+		DocsFS:        c5.DocsFS,
+		EventBusURL:   eventBusURL,
+		EventBusToken: eventBusToken,
 	})
 
 	httpSrv := &http.Server{
