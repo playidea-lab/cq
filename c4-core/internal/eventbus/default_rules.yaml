@@ -57,3 +57,10 @@ rules:
     action_config: '{"channel":"#knowledge","template":"[knowledge] {{event_type}}: {{title}}"}'
     enabled: true
     priority: 50
+
+  - name: c1-hub-events
+    event_pattern: "hub.*"
+    action_type: c1_post
+    action_config: '{"channel":"#updates","template":"[hub] {{event_type}}: {{job_id}} {{name}}"}'
+    enabled: true
+    priority: 50
