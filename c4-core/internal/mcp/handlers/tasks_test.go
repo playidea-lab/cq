@@ -444,11 +444,19 @@ func TestHandleSubmit(t *testing.T) {
 			errMsg:    "commit_sha is required",
 		},
 		{
+			name:      "missing worker_id",
+			args:      `{"task_id": "T-001-0", "commit_sha": "abc123", "validation_results": []}`,
+			submitErr: nil,
+			wantErr:   true,
+			errMsg:    "worker_id is required",
+		},
+		{
 			name: "store submit error",
 			args: `{
 				"task_id": "T-003-0",
 				"commit_sha": "ghi789",
-				"validation_results": []
+				"validation_results": [],
+				"worker_id": "worker-test"
 			}`,
 			submitErr: fmt.Errorf("database error"),
 			wantErr:   true,
@@ -485,6 +493,54 @@ func TestHandleSubmit(t *testing.T) {
 				t.Error("expected success=true")
 			}
 		})
+	}
+}
+
+// TestHandleSubmitWorkerIDRequired verifies that handleSubmit rejects requests
+// with a missing worker_id at the handler level (schema enforcement).
+func TestHandleSubmitWorkerIDRequired(t *testing.T) {
+	store := newMockStore()
+	_, err := handleSubmit(store, json.RawMessage(`{
+		"task_id": "T-001-0",
+		"commit_sha": "abc123",
+		"validation_results": []
+	}`))
+	if err == nil {
+		t.Fatal("expected error for missing worker_id, got nil")
+	}
+	if !contains(err.Error(), "worker_id is required") {
+		t.Errorf("error = %q, want substring %q", err.Error(), "worker_id is required")
+	}
+}
+
+// TestHandleSubmitOwnerMismatch verifies that handleSubmit rejects a submission
+// when the provided worker_id does not match the task's assigned owner.
+func TestHandleSubmitOwnerMismatch(t *testing.T) {
+	store := newMockStore()
+	// Configure mock store to return an ownership-rejection SubmitResult.
+	store.submitRes = &SubmitResult{
+		Success:    false,
+		NextAction: "get_next_task",
+		Message:    "Task T-001-0 is owned by worker worker-a (submitter: worker-b)",
+	}
+	result, err := handleSubmit(store, json.RawMessage(`{
+		"task_id": "T-001-0",
+		"commit_sha": "abc123",
+		"validation_results": [],
+		"worker_id": "worker-b"
+	}`))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	r, ok := result.(*SubmitResult)
+	if !ok {
+		t.Fatalf("result type = %T, want *SubmitResult", result)
+	}
+	if r.Success {
+		t.Error("expected success=false for owner mismatch")
+	}
+	if !contains(r.Message, "owned by worker") {
+		t.Errorf("message = %q, want substring 'owned by worker'", r.Message)
 	}
 }
 
@@ -894,7 +950,7 @@ func TestTaskHandlersViaRegistry(t *testing.T) {
 	})
 
 	t.Run("c4_submit via registry", func(t *testing.T) {
-		args := `{"task_id": "T-001", "commit_sha": "xyz", "validation_results": []}`
+		args := `{"task_id": "T-001", "commit_sha": "xyz", "validation_results": [], "worker_id": "worker-reg"}`
 		result, err := reg.Call("c4_submit", json.RawMessage(args))
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
