@@ -284,6 +284,32 @@ pub async fn send_message(
         let participant_id = extract_user_id_from_token(&token)?;
 
         let client = build_client()?;
+
+        // Fetch project_id from channel (c1_messages.project_id is NOT NULL)
+        let channel_url = format!(
+            "{}/rest/v1/c1_channels?id=eq.{}&select=project_id&limit=1",
+            supabase_url.trim_end_matches('/'),
+            urlencoding::encode(&channel_id),
+        );
+        let ch_resp = retry_request(3, || {
+            client
+                .get(&channel_url)
+                .header("Authorization", format!("Bearer {}", token))
+                .header("apikey", &anon_key)
+                .send()
+        })?;
+        if !ch_resp.status().is_success() {
+            return Err(format!("Failed to fetch channel info: {}", ch_resp.status()));
+        }
+        let channels: Vec<serde_json::Value> = ch_resp
+            .json()
+            .map_err(|e| format!("Failed to parse channel: {}", e))?;
+        let project_id = channels
+            .first()
+            .and_then(|c| c.get("project_id").and_then(|v| v.as_str()))
+            .ok_or_else(|| format!("Channel {} not found", channel_id))?
+            .to_string();
+
         let url = format!(
             "{}/rest/v1/c1_messages",
             supabase_url.trim_end_matches('/')
@@ -300,6 +326,7 @@ pub async fn send_message(
         // Explicitly set participant_id to current user
         let payload = serde_json::json!({
             "channel_id": channel_id,
+            "project_id": project_id,
             "participant_id": participant_id,
             "member_id": member_id_val,
             "content": content,

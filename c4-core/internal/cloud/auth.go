@@ -196,6 +196,13 @@ func (c *AuthClient) RefreshToken() (*Session, error) {
 	if session == nil {
 		return nil, fmt.Errorf("no session to refresh")
 	}
+
+	// If session on disk already has a valid, unexpired access token (written by
+	// another process such as Rust c1 app), reuse it to avoid refresh-token rotation race.
+	if session.AccessToken != "" && session.ExpiresAt > 0 && time.Now().Unix() < session.ExpiresAt {
+		return session, nil
+	}
+
 	if session.RefreshToken == "" {
 		return nil, fmt.Errorf("no refresh token available")
 	}
