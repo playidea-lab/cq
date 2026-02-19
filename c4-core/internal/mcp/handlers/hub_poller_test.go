@@ -175,3 +175,70 @@ func TestNewHubPoller_DefaultInterval(t *testing.T) {
 		t.Errorf("interval = %v, want 30s", poller.interval)
 	}
 }
+
+func TestHubPoller_LastSeenCleanedAfterTerminal(t *testing.T) {
+	// Verify that lastSeen entries are removed after a terminal transition
+	// so the map does not grow unbounded in long-running scenarios.
+	var callCount atomic.Int32
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/jobs", func(w http.ResponseWriter, r *http.Request) {
+		n := callCount.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		if n == 1 {
+			json.NewEncoder(w).Encode([]hub.Job{{ID: "job-cleanup", Name: "train", Status: "RUNNING"}})
+		} else {
+			json.NewEncoder(w).Encode([]hub.Job{})
+		}
+	})
+	mux.HandleFunc("/jobs/job-cleanup", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(hub.Job{ID: "job-cleanup", Name: "train", Status: "SUCCEEDED"})
+	})
+
+	client, pub := newPollerTestServer(t, mux)
+	poller := NewHubPoller(client, pub, 10*time.Millisecond)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+	poller.Start(ctx)
+
+	// Wait until the terminal event is published
+	deadline := time.Now().Add(400 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		if len(pub.calls) >= 1 {
+			break
+		}
+		time.Sleep(15 * time.Millisecond)
+	}
+
+	if len(pub.calls) == 0 {
+		t.Fatal("expected hub.job.completed event")
+	}
+
+	// After terminal event, lastSeen should no longer contain the job entry.
+	poller.mu.Lock()
+	_, stillPresent := poller.lastSeen["job-cleanup"]
+	poller.mu.Unlock()
+	if stillPresent {
+		t.Error("lastSeen entry not removed after terminal transition (memory leak)")
+	}
+}
+
+func TestHubPoller_WithMaxJobs(t *testing.T) {
+	pub := &capturePublisher{}
+	client := hub.NewClient(hub.HubConfig{URL: "http://localhost:9999"})
+	poller := NewHubPoller(client, pub, 30*time.Second, WithMaxJobs(50))
+	if poller.maxJobs != 50 {
+		t.Errorf("maxJobs = %d, want 50", poller.maxJobs)
+	}
+}
+
+func TestHubPoller_DefaultMaxJobs(t *testing.T) {
+	pub := &capturePublisher{}
+	client := hub.NewClient(hub.HubConfig{URL: "http://localhost:9999"})
+	poller := NewHubPoller(client, pub, 30*time.Second)
+	if poller.maxJobs != 200 {
+		t.Errorf("maxJobs = %d, want 200", poller.maxJobs)
+	}
+}

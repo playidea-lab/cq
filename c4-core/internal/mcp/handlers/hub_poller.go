@@ -18,21 +18,39 @@ type HubPoller struct {
 	pub       eventbus.Publisher
 	interval  time.Duration
 	projectID string
+	maxJobs   int // max jobs to fetch per poll (default 200)
 
-	mu      sync.Mutex
+	mu       sync.Mutex
 	lastSeen map[string]string // job ID → last known status
 }
 
 // NewHubPoller creates a new HubPoller. interval defaults to 30s if <= 0.
-func NewHubPoller(client *hub.Client, pub eventbus.Publisher, interval time.Duration) *HubPoller {
+func NewHubPoller(client *hub.Client, pub eventbus.Publisher, interval time.Duration, opts ...HubPollerOption) *HubPoller {
 	if interval <= 0 {
 		interval = 30 * time.Second
 	}
-	return &HubPoller{
+	p := &HubPoller{
 		client:   client,
 		pub:      pub,
 		interval: interval,
+		maxJobs:  200,
 		lastSeen: make(map[string]string),
+	}
+	for _, o := range opts {
+		o(p)
+	}
+	return p
+}
+
+// HubPollerOption is a functional option for HubPoller.
+type HubPollerOption func(*HubPoller)
+
+// WithMaxJobs sets the maximum number of jobs fetched per poll. Default is 200.
+func WithMaxJobs(n int) HubPollerOption {
+	return func(p *HubPoller) {
+		if n > 0 {
+			p.maxJobs = n
+		}
 	}
 }
 
@@ -59,7 +77,7 @@ func (p *HubPoller) Start(ctx context.Context) {
 
 // poll fetches RUNNING jobs and detects terminal-state transitions.
 func (p *HubPoller) poll() {
-	jobs, err := p.client.ListJobs("RUNNING", 200)
+	jobs, err := p.client.ListJobs("RUNNING", p.maxJobs)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "cq: hub_poller: list running jobs: %v\n", err)
 		return
@@ -96,8 +114,14 @@ func (p *HubPoller) poll() {
 			continue
 		}
 		newStatus := finalJob.Status
-		p.lastSeen[id] = newStatus
 		p.publishTransition(finalJob, prevStatus, newStatus)
+		// Delete terminal entries from lastSeen to prevent unbounded growth.
+		// SUCCEEDED/FAILED jobs will never reappear in the RUNNING list.
+		if newStatus == "SUCCEEDED" || newStatus == "FAILED" {
+			delete(p.lastSeen, id)
+		} else {
+			p.lastSeen[id] = newStatus
+		}
 	}
 }
 
