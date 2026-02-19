@@ -2,7 +2,7 @@
 name: c4-run
 description: "Codex Worker-first 실행 루프 (c4_start + c4_get_task + c4_submit)"
 triggers:
-  - c4 run
+  - cq run
   - worker loop
   - 병렬 태스크 처리
 ---

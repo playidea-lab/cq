@@ -33,7 +33,7 @@ go install github.com/opencode-ai/opencode@latest
 ### 2. C4 설치
 
 ```bash
-curl -fsSL https://git.pilab.co.kr/pi/c4/raw/main/install-remote.sh | bash
+curl -fsSL https://git.pilab.co.kr/pi/cq/raw/main/install-remote.sh | bash
 ```
 
 ### 3. API 키 설정
@@ -302,7 +302,7 @@ OpenCode에서 MCP 도구 목록 확인:
 
 2. **C4 설치**
    ```bash
-   curl -fsSL https://git.pilab.co.kr/pi/c4/raw/main/install-remote.sh | bash
+   curl -fsSL https://git.pilab.co.kr/pi/cq/raw/main/install-remote.sh | bash
    ```
 
 3. **API 키 설정** (리더에게 받은 키)

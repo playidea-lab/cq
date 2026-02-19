@@ -1,25 +1,24 @@
 ---
 description: |
-  Spawn C4 workers to execute implementation tasks in parallel. Analyzes task
-  dependency graph, calculates optimal worker count, and spawns background workers
-  with fresh context isolation (one task per worker). Supports auto mode (smart
-  parallelism), manual worker count, continuous mode (auto-respawn), and max limits.
+  Spawn C4 workers to execute implementation tasks in parallel. **Always runs in
+  continuous mode** (auto-respawn until queue empty). Analyzes task dependency
+  graph, spawns workers with fresh context isolation (one task per worker).
   Use when ready to execute C4 tasks. Triggers: "실행", "워커 실행", "태스크 실행",
   "run tasks", "execute plan", "spawn workers", "start implementation", "/c4-run".
 ---
 
-# C4 Run — Smart Auto Worker Spawner
+# C4 Run — Continuous Auto Worker Spawner
 
-Execute C4 tasks with dependency-aware parallel workers.
+Execute C4 tasks with dependency-aware parallel workers. **Defaults to continuous mode** (auto-respawn until queue empty).
 
 ## Usage
 
 ```
-/c4-run             # Auto: analyze graph, spawn optimal workers (1-round)
-/c4-run 1           # Spawn 1 worker (background)
-/c4-run 3           # Spawn 3 workers (background)
-/c4-run --max 4     # Auto mode, capped at 4 workers
-/c4-run --continuous  # 🔄 Continuous: auto-respawn until queue empty
+/c4-run             # Continuous: spawn workers, auto-respawn until queue empty (default)
+/c4-run 3           # Continuous, initial batch 3 workers
+/c4-run --max 4     # Continuous, cap 4 workers per respawn
+/c4-run --single    # One round only (no respawn); then exit
+/c4-run 2 --single  # One round: spawn 2 workers, then exit
 ```
 
 ## 🔄 Single-Task Worker Model
@@ -108,26 +107,26 @@ result = mcp__c4__c4_start()
 # result.success == true, result.status == "EXECUTE"
 ```
 
-### 3. Worker Count Decision (Smart Auto)
+### 3. Worker Count Decision (Continuous by default)
 
 ```python
-# Parse ARGUMENTS
+# Parse ARGUMENTS — continuous is DEFAULT; --single = one round only
 args = "$ARGUMENTS".strip()
-continuous_mode = "--continuous" in args
+single_round = "--single" in args
+continuous_mode = not single_round
 
-if args == "" or args == "--auto":
-    # Auto mode: use recommended
-    worker_count = parallelism["recommended"]
-elif "--continuous" in args:
-    # Continuous mode: spawn ready_now
-    worker_count = parallelism["ready_now"]
-elif args.startswith("--max"):
-    # Max cap
-    max_workers = int(args.split()[-1])
-    worker_count = min(parallelism["recommended"], max_workers)
+# Strip option flags for numeric parsing
+args_clean = args.replace("--single", "").replace("--max", "").strip()
+
+if args_clean == "" or args_clean == "--auto":
+    worker_count = parallelism["ready_now"]  # continuous: spawn all ready
+elif "--max" in args:
+    max_workers = int([x for x in args.split() if x.isdigit()][-1])
+    worker_count = min(parallelism["ready_now"], max_workers)
+elif args_clean.isdigit():
+    worker_count = int(args_clean)
 else:
-    # Direct number
-    worker_count = int(args)
+    worker_count = parallelism["ready_now"]
 
 # Cap at 7 (Claude Code subagent limit)
 worker_count = min(worker_count, 7)
@@ -228,26 +227,17 @@ Workers:
 for w in workers:
     print(f"  • {w['id']}: {w['output']}")
 
-if not continuous_mode:
+if single_round:
     print("""
-## ⚠️ Single-Task Worker Model
+## One-round mode (--single)
 
-Each Worker processes **ONE task** and exits.
-(Prevents context accumulation → prevents worker death)
-
-Monitor:
-  /c4-status - overall progress
-  tail -f {output_file} - individual worker logs
-
-Next Steps:
-  • After workers complete, run `/c4-run` again if tasks remain
-  • Or use `/c4-run --continuous` for auto-respawn mode
-  • When ALL tasks are done → `/c4-finish` (build + test + install + commit)
+Workers run once; no auto-respawn.
+Monitor: /c4-status. When done, run `/c4-run` again for more or `/c4-finish` when all complete.
 """)
 else:
-    # 🔄 Continuous Mode: Monitor and respawn
+    # Default: Continuous — monitor and respawn until queue empty
     print("""
-## 🔄 Continuous Mode Active
+## Continuous mode (default)
 
 Auto-respawns workers until queue exhausted.
 Ctrl+C to interrupt.
@@ -255,7 +245,7 @@ Ctrl+C to interrupt.
 
     import time
 
-    while True:
+    while continuous_mode:
         # Wait 30s (worker execution time)
         time.sleep(30)
 

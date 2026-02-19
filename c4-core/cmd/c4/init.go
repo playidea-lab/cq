@@ -20,7 +20,7 @@ var claudeMDTemplate string
 // builtinC4Root is set at build time via -ldflags for skill deployment.
 var builtinC4Root string
 
-// Tool launcher commands: c4 claude, c4 codex, c4 cursor
+// Tool launcher commands: cq claude, cq codex, cq cursor
 var (
 	claudeCmd = &cobra.Command{
 		Use:   "claude",

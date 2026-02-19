@@ -38,7 +38,7 @@ Before taking any complex action, consult these guides:
 ### 5. Tool Usage (The "Right Tool" Rule)
 - **Problem**: Do not guess command syntax.
 - **Action**: **CHECK `.gemini/tools.md` FIRST.**
-    - Example: `c4 add-task --title "My Task" --scope "src/"` (Always use flags!)
+    - Example: `cq add-task --title "My Task" --scope "src/"` (Always use flags!)
 - **Self-Correction**: If a command fails, read the error, consult `tools.md`, and retry with correct syntax.
 
 ## Response Format

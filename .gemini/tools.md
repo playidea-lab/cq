@@ -5,8 +5,8 @@ Gemini agents must consult this guide before executing commands to avoid syntax 
 
 ## 1. Task Management (`c4`)
 
-### `c4 add-task` (Create new task)
-**Syntax**: `c4 add-task --title "..." [flags]`
+### `cq add-task` (Create new task)
+**Syntax**: `cq add-task --title "..." [flags]`
 - **Required**: `--title "Task Title"`
 - **Optional**:
     - `--scope "path/to/file"` (Highly recommended)

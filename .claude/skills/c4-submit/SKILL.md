@@ -264,6 +264,20 @@ Claude: ✅ T-003 submitted!
   - Run /c4-run to start next task
 ```
 
+### 6.1 Post-Submit Hook: Continue to Next Task (CRITICAL)
+
+**제출이 성공한 직후, pending 태스크가 있으면 반드시 다음 태스크로 이어간다.**
+
+1. 제출 성공 직후 `mcp__c4__c4_status()` 호출.
+2. `status["status"] == "EXECUTE"` 이고 `status["parallelism"]["ready_now"] > 0` 이면:
+   - **즉시** 다음 태스크 실행을 위해 `/c4-run 1` 스킬을 **실제로 실행**한다.
+   - 사용자에게 "다음 실행할까요?" 묻지 않음. 제출 → 다음 run 한 번에 이어짐.
+   - (구현: c4-run 스킬 호출, 인자 `"1"` — 워커 1명 스폰)
+3. `status["status"] == "CHECKPOINT"` 이면 체크포인트 안내만 출력, run 호출하지 않음.
+4. `status["status"] == "COMPLETE"` 이면 완료 안내만 출력.
+
+**요약**: 제출 끝나면 pending·ready 있으면 **자동으로 `/c4-run 1` 실행** → 다음 태스크로 넘어감.
+
 Checkpoint reached:
 
 ```

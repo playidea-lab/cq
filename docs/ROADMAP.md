@@ -1420,5 +1420,5 @@ v0.1-0.3        v0.4           v0.5           v0.6          v0.6.10         v0.7
 | **C1 Context Hub (10.5)** | P0 | ✅ 완료 |
 | **Security Fixes + Sidecar Improvements** | P0 | ✅ 완료 |
 | LLM Cost Dashboard (9.3) | P2 | 📋 Future |
-| Worker Loop (CLI `c4 run`) | P2 | 📋 Deferred |
+| Worker Loop (CLI `cq run`) | P2 | 📋 Deferred |
 | Hosted Workers | P2 | 📋 Future |
