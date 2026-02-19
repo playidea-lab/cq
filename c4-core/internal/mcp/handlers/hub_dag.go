@@ -255,6 +255,13 @@ func handleHubDAGExecute(client *hub.Client, raw json.RawMessage) (any, error) {
 		return nil, err
 	}
 
+	if hubEventPub != nil && !params.DryRun {
+		payload, _ := json.Marshal(map[string]any{
+			"dag_id": resp.DAGID, "node_count": len(resp.NodeOrder),
+		})
+		hubEventPub.PublishAsync("hub.dag.executed", "c4.hub", payload, hubProjectID)
+	}
+
 	result := map[string]any{
 		"dag_id": resp.DAGID,
 		"status": resp.Status,
