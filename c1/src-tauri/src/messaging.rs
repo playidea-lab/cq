@@ -289,14 +289,19 @@ pub async fn send_message(
             supabase_url.trim_end_matches('/')
         );
 
-        // Ensure user member exists
+        // Ensure user member exists (empty string → null to avoid UUID FK error)
         let member_id = ensure_user_member(&client, &supabase_url, &anon_key, &token, &participant_id)?;
+        let member_id_val = if member_id.is_empty() {
+            serde_json::Value::Null
+        } else {
+            serde_json::Value::String(member_id)
+        };
 
         // Explicitly set participant_id to current user
         let payload = serde_json::json!({
             "channel_id": channel_id,
             "participant_id": participant_id,
-            "member_id": member_id,
+            "member_id": member_id_val,
             "content": content,
             "thread_id": thread_id,
             "metadata": metadata,

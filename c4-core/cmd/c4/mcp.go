@@ -160,6 +160,8 @@ func newMCPServer() (*mcpServer, error) {
 			}
 			knowledgeCloud = cloud.NewKnowledgeCloudClient(
 				cloudCfg.URL+"/rest/v1", cloudCfg.AnonKey, cloudTP, cloudProjectID)
+			// Write ~/.c4/supabase.json for Rust c1 app (list_channels, get_project_id_cmd)
+			writeSupabaseJSON(cloudCfg.URL, cloudCfg.AnonKey)
 		}
 	}
 	if cloudTP == nil {
@@ -775,5 +777,28 @@ func resolveProjectUUID(supabaseURL, anonKey, authToken, projectName string) (st
 		return "", fmt.Errorf("project %q not found", projectName)
 	}
 	return rows[0].ID, nil
+}
+
+// writeSupabaseJSON writes ~/.c4/supabase.json so Rust c1 app can read Supabase credentials.
+// This is a no-op if the file already exists with the same content.
+func writeSupabaseJSON(supabaseURL, anonKey string) {
+	if supabaseURL == "" || anonKey == "" {
+		return
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return
+	}
+	dir := filepath.Join(home, ".c4")
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		return
+	}
+	path := filepath.Join(dir, "supabase.json")
+	content := fmt.Sprintf(`{"url":%q,"anon_key":%q}`, supabaseURL, anonKey)
+	// Skip write if file already has the same content
+	if existing, err := os.ReadFile(path); err == nil && string(existing) == content {
+		return
+	}
+	_ = os.WriteFile(path, []byte(content), 0600)
 }
 
