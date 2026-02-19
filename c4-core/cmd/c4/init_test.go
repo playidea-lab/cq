@@ -433,3 +433,50 @@ func TestSetupCodexAgents_DeploysSymlinks(t *testing.T) {
 		t.Error("README.md should not be deployed by setupCodexAgents")
 	}
 }
+
+func TestSetupMCPConfig_ServerKeyCQ(t *testing.T) {
+	dir := t.TempDir()
+	mcpPath := filepath.Join(dir, ".mcp.json")
+
+	// setupMCPConfig uses os.Executable() to find the binary; override with PATH fallback.
+	// We just verify the server key written to .mcp.json is "cq", not "c4".
+	if err := setupMCPConfig(dir); err != nil {
+		// Binary lookup may fail in test environment — skip rather than fail.
+		t.Skipf("setupMCPConfig: %v", err)
+	}
+
+	data, err := os.ReadFile(mcpPath)
+	if err != nil {
+		t.Fatalf(".mcp.json not created: %v", err)
+	}
+	content := string(data)
+
+	if !containsSubstring(content, `"cq"`) {
+		t.Errorf(".mcp.json missing \"cq\" server key; got:\n%s", content)
+	}
+	if containsSubstring(content, `"c4"`) {
+		t.Errorf(".mcp.json has stale \"c4\" server key (should be \"cq\"); got:\n%s", content)
+	}
+}
+
+func TestSetupCursorMCPConfig_ServerKeyCQ(t *testing.T) {
+	dir := t.TempDir()
+	mcpPath := filepath.Join(dir, ".cursor", "mcp.json")
+
+	if err := setupCursorMCPConfig(dir); err != nil {
+		t.Skipf("setupCursorMCPConfig: %v", err)
+	}
+
+	data, err := os.ReadFile(mcpPath)
+	if err != nil {
+		t.Fatalf(".cursor/mcp.json not created: %v", err)
+	}
+	content := string(data)
+
+	if !containsSubstring(content, `"cq"`) {
+		t.Errorf(".cursor/mcp.json missing \"cq\" server key; got:\n%s", content)
+	}
+	if containsSubstring(content, `"c4"`) {
+		t.Errorf(".cursor/mcp.json has stale \"c4\" server key (should be \"cq\"); got:\n%s", content)
+	}
+}

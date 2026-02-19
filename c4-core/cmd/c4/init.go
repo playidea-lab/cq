@@ -408,7 +408,7 @@ func setupCursorMCPConfig(dir string) error {
 	if servers == nil {
 		servers = map[string]any{}
 	}
-	servers["c4"] = c4Entry
+	servers["cq"] = c4Entry
 	config["mcpServers"] = servers
 
 	data, err := json.MarshalIndent(config, "", "  ")
@@ -458,7 +458,7 @@ func setupMCPConfig(dir string) error {
 	if !ok {
 		servers = map[string]any{}
 	}
-	servers["c4"] = c4Entry
+	servers["cq"] = c4Entry
 	config["mcpServers"] = servers
 
 	data, err := json.MarshalIndent(config, "", "  ")
