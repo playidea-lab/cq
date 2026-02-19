@@ -467,6 +467,7 @@ func TestHandleSubmit(t *testing.T) {
 			args: `{
 				"task_id": "T-004-0",
 				"commit_sha": "abc123",
+				"worker_id": "worker-test",
 				"validation_results": [
 					{"name": "unit", "status": "unknown"}
 				]
@@ -480,6 +481,7 @@ func TestHandleSubmit(t *testing.T) {
 			args: `{
 				"task_id": "T-004-0",
 				"commit_sha": "abc123",
+				"worker_id": "worker-test",
 				"validation_results": [
 					{"name": "unit", "status": ""}
 				]
@@ -490,7 +492,7 @@ func TestHandleSubmit(t *testing.T) {
 		},
 		{
 			name:      "validation_results omitted is valid",
-			args:      `{"task_id": "T-005-0", "commit_sha": "sha123"}`,
+			args:      `{"task_id": "T-005-0", "commit_sha": "sha123", "worker_id": "worker-test"}`,
 			submitErr: nil,
 			wantErr:   false,
 		},
