@@ -951,6 +951,16 @@ func (s *SQLiteStore) SubmitTask(taskID, workerID, commitSHA, handoff string, re
 		nextAction = "complete"
 	}
 
+	// Auto-cleanup worktree if enabled (best-effort)
+	if s.config != nil && s.config.GetConfig().Worktree.AutoCleanup && s.projectRoot != "" {
+		wtPath := filepath.Join(s.projectRoot, ".c4", "worktrees", workerID)
+		if _, statErr := os.Stat(wtPath); statErr == nil {
+			if _, rmErr := runGit(s.projectRoot, "worktree", "remove", "--force", wtPath); rmErr != nil {
+				fmt.Fprintf(os.Stderr, "c4: warning: failed to remove worktree %s: %v\n", wtPath, rmErr)
+			}
+		}
+	}
+
 	// Auto-complete paired review task (best-effort cascade)
 	cascadedReview := s.completeReviewTask(taskID)
 

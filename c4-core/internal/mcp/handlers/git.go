@@ -157,7 +157,7 @@ type worktreeCleanupArgs struct {
 }
 
 func handleWorktreeCleanup(rootDir string, rawArgs json.RawMessage) (any, error) {
-	args := worktreeCleanupArgs{DryRun: true}
+	args := worktreeCleanupArgs{DryRun: false}
 	if len(rawArgs) > 0 {
 		if err := json.Unmarshal(rawArgs, &args); err != nil {
 			return nil, fmt.Errorf("parsing arguments: %w", err)
