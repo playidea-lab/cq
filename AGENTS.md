@@ -457,6 +457,7 @@ cd src-tauri && cargo check && cargo test
 pnpm build            # 프론트엔드 빌드
 cargo tauri dev       # 개발 서버
 ```
+- **Tauri identifier**: `com.cq.c1` (tauri.conf.json). cq 리포에서 빌드 시 `cargo clean` 후 빌드하면 경로 캐시 이슈 없음.
 
 ---
 
