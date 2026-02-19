@@ -50,6 +50,12 @@ func registerWorkerStandby(reg *mcp.Registry, deps *WorkerDeps) {
 }
 
 func handleWorkerStandby(deps *WorkerDeps, raw json.RawMessage) (any, error) {
+	if deps == nil || deps.HubClient == nil {
+		return nil, fmt.Errorf("hub client not configured")
+	}
+	if deps.ShutdownStore == nil {
+		return nil, fmt.Errorf("shutdown store not configured")
+	}
 	var params struct {
 		WorkerID     string         `json:"worker_id"`
 		Capabilities map[string]any `json:"capabilities"`
@@ -172,6 +178,9 @@ func registerWorkerComplete(reg *mcp.Registry, deps *WorkerDeps) {
 }
 
 func handleWorkerComplete(deps *WorkerDeps, raw json.RawMessage) (any, error) {
+	if deps == nil || deps.HubClient == nil {
+		return nil, fmt.Errorf("hub client not configured")
+	}
 	var params struct {
 		JobID     string `json:"job_id"`
 		LeaseID   string `json:"lease_id"`
@@ -187,11 +196,18 @@ func handleWorkerComplete(deps *WorkerDeps, raw json.RawMessage) (any, error) {
 		return nil, fmt.Errorf("job_id, worker_id, and status are required")
 	}
 
-	// Complete job on Hub
-	exitCode := 0
-	if params.Status == "FAILED" {
+	// Validate status enum
+	var exitCode int
+	switch params.Status {
+	case "SUCCEEDED":
+		exitCode = 0
+	case "FAILED":
 		exitCode = 1
+	default:
+		return nil, fmt.Errorf("invalid status: %q (must be SUCCEEDED or FAILED)", params.Status)
 	}
+
+	// Complete job on Hub
 	if err := deps.HubClient.CompleteJob(params.JobID, params.Status, exitCode); err != nil {
 		return nil, fmt.Errorf("complete job: %w", err)
 	}
@@ -250,6 +266,9 @@ func registerWorkerShutdown(reg *mcp.Registry, deps *WorkerDeps) {
 }
 
 func handleWorkerShutdown(deps *WorkerDeps, raw json.RawMessage) (any, error) {
+	if deps == nil || deps.ShutdownStore == nil {
+		return nil, fmt.Errorf("shutdown store not configured")
+	}
 	var params struct {
 		WorkerID string `json:"worker_id"`
 		Reason   string `json:"reason"`
