@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -74,13 +75,15 @@ type initializeResult struct {
 
 // mcpServer holds the state of a running MCP server instance.
 type mcpServer struct {
-	registry       *mcp.Registry
-	sidecar        *bridge.LazyStarter    // lazy-initialized Python sidecar
-	db             *sql.DB
-	embeddedEB     *eventbus.EmbeddedServer // v3: in-process EventBus
-	researchStore  *research.Store          // Go native research store
-	knowledgeStore *knowledge.Store         // Go native knowledge store (Tier 2)
-	knowledgeUsage *knowledge.UsageTracker  // usage tracking for 3-way RRF
+	registry         *mcp.Registry
+	sidecar          *bridge.LazyStarter      // lazy-initialized Python sidecar
+	db               *sql.DB
+	embeddedEB       *eventbus.EmbeddedServer // v3: in-process EventBus
+	researchStore    *research.Store          // Go native research store
+	knowledgeStore   *knowledge.Store         // Go native knowledge store (Tier 2)
+	knowledgeUsage   *knowledge.UsageTracker  // usage tracking for 3-way RRF
+	eventsinkSrv     *http.Server             // EventSink HTTP server (nil if disabled)
+	hubPollerCancel  context.CancelFunc       // cancel func for HubPoller goroutine
 }
 
 // newMCPServer creates and initializes the MCP server with all tools registered.
@@ -296,6 +299,7 @@ func newMCPServer() (*mcpServer, error) {
 
 	// Register Hub handlers if enabled
 	var hubClient *hub.Client
+	var hubPollerCancel context.CancelFunc
 	if cfgMgr != nil && cfgMgr.GetConfig().Hub.Enabled {
 		hubCfg := cfgMgr.GetConfig().Hub
 		hubClient = hub.NewClient(hub.HubConfig{
@@ -490,14 +494,43 @@ func newMCPServer() (*mcpServer, error) {
 	handlers.RegisterConfigHandler(reg, cfgMgr)
 	handlers.RegisterConfigSetHandler(reg, cfgMgr, projectDir)
 
+	// Start HubPoller and EventSink using hubEventPub (set by SetHubEventBus above).
+	// These must be started after EventBus wiring so hubEventPub is populated.
+	// hubEventPubOrNoop returns the hub event publisher, falling back to NoopPublisher.
+	hubEventPubOrNoop := handlers.GetHubEventPub()
+
+	if hubClient != nil {
+		pollerCtx, pollerCancel := context.WithCancel(context.Background())
+		hubPollerCancel = pollerCancel
+		poller := handlers.NewHubPoller(hubClient, hubEventPubOrNoop, 30*time.Second)
+		poller.SetProjectID(sqliteStore.GetProjectID())
+		poller.Start(pollerCtx)
+		fmt.Fprintln(os.Stderr, "cq: hub poller started (30s interval)")
+	}
+
+	// Start EventSink HTTP server (reads C4_EVENTSINK_PORT / C4_EVENTSINK_TOKEN from env)
+	esPort, esToken := handlers.EventSinkConfigFromEnv()
+	var eventsinkSrv *http.Server
+	if esPort > 0 {
+		esSrv, esErr := handlers.StartEventSinkServer(esPort, esToken, hubEventPubOrNoop)
+		if esErr != nil {
+			fmt.Fprintf(os.Stderr, "cq: eventsink start failed: %v\n", esErr)
+		} else if esSrv != nil {
+			eventsinkSrv = esSrv
+			fmt.Fprintf(os.Stderr, "cq: eventsink listening on :%d\n", esPort)
+		}
+	}
+
 	return &mcpServer{
-		registry:       reg,
-		sidecar:        lazySidecar,
-		db:             db,
-		embeddedEB:     embeddedEB,
-		researchStore:  researchStore,
-		knowledgeStore: knowledgeStore,
-		knowledgeUsage: knowledgeUsage,
+		registry:        reg,
+		sidecar:         lazySidecar,
+		db:              db,
+		embeddedEB:      embeddedEB,
+		researchStore:   researchStore,
+		knowledgeStore:  knowledgeStore,
+		knowledgeUsage:  knowledgeUsage,
+		eventsinkSrv:    eventsinkSrv,
+		hubPollerCancel: hubPollerCancel,
 	}, nil
 }
 
@@ -550,6 +583,12 @@ func (s *mcpServer) serve() error {
 
 // shutdown cleans up resources.
 func (s *mcpServer) shutdown() {
+	if s.hubPollerCancel != nil {
+		s.hubPollerCancel()
+	}
+	if s.eventsinkSrv != nil {
+		s.eventsinkSrv.Close()
+	}
 	if s.embeddedEB != nil {
 		s.embeddedEB.Stop()
 	}

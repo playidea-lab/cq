@@ -18,6 +18,14 @@ func SetHubEventBus(pub eventbus.Publisher, projectID string) {
 	hubProjectID = projectID
 }
 
+// GetHubEventPub returns the current Hub EventBus publisher, or NoopPublisher if not set.
+func GetHubEventPub() eventbus.Publisher {
+	if hubEventPub != nil {
+		return hubEventPub
+	}
+	return eventbus.NoopPublisher{}
+}
+
 func registerHubJobHandlers(reg *mcp.Registry, hubClient *hub.Client) {
 	// c4_hub_submit — Submit a job to the Hub queue
 	reg.Register(mcp.ToolSchema{
