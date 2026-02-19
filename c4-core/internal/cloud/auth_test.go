@@ -564,6 +564,45 @@ func containsSubstring(s, substr string) bool {
 	return false
 }
 
+// TestSessionUnmarshal_Int64 verifies that expires_at as a numeric Unix timestamp is parsed correctly.
+func TestSessionUnmarshal_Int64(t *testing.T) {
+	data := `{"access_token":"at","refresh_token":"rt","expires_at":1700000000,"user":{"id":"u1","email":"a@b.com","name":""}}`
+	var s Session
+	if err := json.Unmarshal([]byte(data), &s); err != nil {
+		t.Fatalf("Unmarshal failed: %v", err)
+	}
+	if s.ExpiresAt != 1700000000 {
+		t.Errorf("ExpiresAt = %d, want 1700000000", s.ExpiresAt)
+	}
+	if s.AccessToken != "at" {
+		t.Errorf("AccessToken = %q, want at", s.AccessToken)
+	}
+}
+
+// TestSessionUnmarshal_ISO8601 verifies that expires_at as an ISO 8601 string (Rust c1 format) is parsed correctly.
+func TestSessionUnmarshal_ISO8601(t *testing.T) {
+	data := `{"access_token":"at","refresh_token":"rt","expires_at":"2026-02-18T00:35:21.824664+00:00","user":{"id":"u1","email":"a@b.com","name":""}}`
+	var s Session
+	if err := json.Unmarshal([]byte(data), &s); err != nil {
+		t.Fatalf("Unmarshal failed: %v", err)
+	}
+	// 2026-02-18T00:35:21+00:00 → Unix = 1771374921
+	want := int64(1771374921)
+	if s.ExpiresAt != want {
+		t.Errorf("ExpiresAt = %d, want %d", s.ExpiresAt, want)
+	}
+}
+
+// TestSessionUnmarshal_InvalidStr verifies that an unparseable expires_at string returns an error.
+func TestSessionUnmarshal_InvalidStr(t *testing.T) {
+	data := `{"access_token":"at","refresh_token":"rt","expires_at":"not-a-date","user":{"id":"u1","email":"a@b.com","name":""}}`
+	var s Session
+	err := json.Unmarshal([]byte(data), &s)
+	if err == nil {
+		t.Fatal("expected error for invalid expires_at string, got nil")
+	}
+}
+
 // itoa converts int to string without importing strconv.
 func itoa(n int) string {
 	if n == 0 {
