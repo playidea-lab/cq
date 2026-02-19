@@ -955,10 +955,11 @@ func (s *SQLiteStore) SubmitTask(taskID, workerID, commitSHA, handoff string, re
 	cascadedReview := s.completeReviewTask(taskID)
 
 	return &SubmitResult{
-		Success:       true,
-		NextAction:    nextAction,
-		Message:       fmt.Sprintf("Task %s submitted successfully", taskID),
-		PendingReview: cascadedReview,
+		Success:           true,
+		NextAction:        nextAction,
+		Message:           fmt.Sprintf("Task %s submitted successfully", taskID),
+		PendingReview:     cascadedReview,
+		ValidationSkipped: len(results) == 0,
 	}, nil
 }
 

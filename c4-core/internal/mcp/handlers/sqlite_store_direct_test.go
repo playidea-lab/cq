@@ -1011,3 +1011,76 @@ func TestGetStatus_PersonaDigest_Empty(t *testing.T) {
 		t.Fatalf("expected nil persona_digest, got %+v", status.PersonaDigest)
 	}
 }
+
+// TestSubmitTask_ValidationResultsOptional verifies that omitting validation_results
+// (nil slice) is accepted and sets ValidationSkipped=true in the result.
+func TestSubmitTask_ValidationResultsOptional(t *testing.T) {
+	store, db := newTestSQLiteStore(t)
+	defer db.Close()
+
+	if err := store.AddTask(&Task{ID: "T-vr-0", Title: "Impl", DoD: "done", Status: "pending"}); err != nil {
+		t.Fatal(err)
+	}
+	db.Exec("UPDATE c4_tasks SET status='in_progress', worker_id='worker-vr' WHERE task_id='T-vr-0'")
+
+	// Submit without validation_results (nil)
+	result, err := store.SubmitTask("T-vr-0", "worker-vr", "sha-vr", "", nil)
+	if err != nil {
+		t.Fatalf("submit: %v", err)
+	}
+	if !result.Success {
+		t.Fatalf("expected success, got failure: %s", result.Message)
+	}
+	if !result.ValidationSkipped {
+		t.Error("expected ValidationSkipped=true when no validation_results provided")
+	}
+}
+
+// TestSubmitTask_ValidationSkipped_False verifies that providing results sets ValidationSkipped=false.
+func TestSubmitTask_ValidationSkipped_False(t *testing.T) {
+	store, db := newTestSQLiteStore(t)
+	defer db.Close()
+
+	if err := store.AddTask(&Task{ID: "T-vs-0", Title: "Impl", DoD: "done", Status: "pending"}); err != nil {
+		t.Fatal(err)
+	}
+	db.Exec("UPDATE c4_tasks SET status='in_progress', worker_id='worker-vs' WHERE task_id='T-vs-0'")
+
+	result, err := store.SubmitTask("T-vs-0", "worker-vs", "sha-vs", "", []ValidationResult{{Name: "unit", Status: "pass"}})
+	if err != nil {
+		t.Fatalf("submit: %v", err)
+	}
+	if !result.Success {
+		t.Fatalf("expected success, got failure: %s", result.Message)
+	}
+	if result.ValidationSkipped {
+		t.Error("expected ValidationSkipped=false when validation_results provided")
+	}
+}
+
+// TestHandleSubmit_StatusEnumRejected verifies that handleSubmit rejects status values
+// outside the "pass"|"fail" enum at the handler level.
+func TestHandleSubmit_StatusEnumRejected(t *testing.T) {
+	store, db := newTestSQLiteStore(t)
+	defer db.Close()
+
+	if err := store.AddTask(&Task{ID: "T-en-0", Title: "Impl", DoD: "done", Status: "pending"}); err != nil {
+		t.Fatal(err)
+	}
+	db.Exec("UPDATE c4_tasks SET status='in_progress', worker_id='worker-en' WHERE task_id='T-en-0'")
+
+	args := json.RawMessage(`{
+		"task_id": "T-en-0",
+		"commit_sha": "sha-en",
+		"worker_id": "worker-en",
+		"validation_results": [{"name": "unit", "status": "unknown"}]
+	}`)
+
+	_, err := handleSubmit(store, args)
+	if err == nil {
+		t.Fatal("expected error for status=unknown, got nil")
+	}
+	if !strings.Contains(err.Error(), "must be") {
+		t.Errorf("error = %q, want substring \"must be\"", err.Error())
+	}
+}

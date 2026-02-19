@@ -124,7 +124,7 @@ func RegisterTaskHandlers(reg *mcp.Registry, store Store) {
 					"description": "Structured handoff note (discoveries, concerns, feedback for next agent)",
 				},
 			},
-			"required": []string{"task_id", "commit_sha", "validation_results"},
+			"required": []string{"task_id", "commit_sha"},
 		},
 	}, func(args json.RawMessage) (any, error) {
 		return handleSubmit(store, args)
@@ -251,6 +251,11 @@ func handleSubmit(store Store, rawArgs json.RawMessage) (any, error) {
 	}
 	if args.CommitSHA == "" {
 		return nil, fmt.Errorf("commit_sha is required")
+	}
+	for _, r := range args.ValidationResults {
+		if r.Status != "pass" && r.Status != "fail" {
+			return nil, fmt.Errorf("validation_results[%s].status %q is invalid: must be \"pass\" or \"fail\"", r.Name, r.Status)
+		}
 	}
 
 	result, err := store.SubmitTask(args.TaskID, args.WorkerID, args.CommitSHA, args.Handoff, args.ValidationResults)

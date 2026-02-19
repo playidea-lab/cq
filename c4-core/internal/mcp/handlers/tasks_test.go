@@ -454,6 +454,38 @@ func TestHandleSubmit(t *testing.T) {
 			wantErr:   true,
 			errMsg:    "submitting task",
 		},
+		{
+			name: "invalid status enum unknown",
+			args: `{
+				"task_id": "T-004-0",
+				"commit_sha": "abc123",
+				"validation_results": [
+					{"name": "unit", "status": "unknown"}
+				]
+			}`,
+			submitErr: nil,
+			wantErr:   true,
+			errMsg:    "must be \"pass\" or \"fail\"",
+		},
+		{
+			name: "invalid status enum empty string",
+			args: `{
+				"task_id": "T-004-0",
+				"commit_sha": "abc123",
+				"validation_results": [
+					{"name": "unit", "status": ""}
+				]
+			}`,
+			submitErr: nil,
+			wantErr:   true,
+			errMsg:    "must be \"pass\" or \"fail\"",
+		},
+		{
+			name:      "validation_results omitted is valid",
+			args:      `{"task_id": "T-005-0", "commit_sha": "sha123"}`,
+			submitErr: nil,
+			wantErr:   false,
+		},
 	}
 
 	for _, tt := range tests {

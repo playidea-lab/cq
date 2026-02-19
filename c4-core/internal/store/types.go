@@ -82,10 +82,11 @@ type ValidationResult struct {
 
 // SubmitResult holds the result of a task submission.
 type SubmitResult struct {
-	Success       bool   `json:"success"`
-	NextAction    string `json:"next_action"` // "get_next_task", "await_checkpoint", "complete"
-	Message       string `json:"message,omitempty"`
-	PendingReview string `json:"pending_review,omitempty"` // R- task ID awaiting review (auto-judge hint)
+	Success            bool   `json:"success"`
+	NextAction         string `json:"next_action"` // "get_next_task", "await_checkpoint", "complete"
+	Message            string `json:"message,omitempty"`
+	PendingReview      string `json:"pending_review,omitempty"` // R- task ID awaiting review (auto-judge hint)
+	ValidationSkipped  bool   `json:"validation_skipped,omitempty"` // true when validation_results was omitted
 }
 
 // CheckpointResult holds the result of a checkpoint decision.
