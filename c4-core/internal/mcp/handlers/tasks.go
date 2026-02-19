@@ -20,7 +20,7 @@ type submitArgs struct {
 	TaskID            string             `json:"task_id"`
 	CommitSHA         string             `json:"commit_sha"`
 	ValidationResults []ValidationResult `json:"validation_results"`
-	WorkerID          string             `json:"worker_id,omitempty"`
+	WorkerID          string             `json:"worker_id"`
 	Handoff           string             `json:"handoff,omitempty"` // Structured handoff: discoveries, concerns, feedback
 }
 
@@ -124,7 +124,7 @@ func RegisterTaskHandlers(reg *mcp.Registry, store Store) {
 					"description": "Structured handoff note (discoveries, concerns, feedback for next agent)",
 				},
 			},
-			"required": []string{"task_id", "commit_sha", "validation_results"},
+			"required": []string{"task_id", "commit_sha", "validation_results", "worker_id"},
 		},
 	}, func(args json.RawMessage) (any, error) {
 		return handleSubmit(store, args)
@@ -251,6 +251,9 @@ func handleSubmit(store Store, rawArgs json.RawMessage) (any, error) {
 	}
 	if args.CommitSHA == "" {
 		return nil, fmt.Errorf("commit_sha is required")
+	}
+	if args.WorkerID == "" {
+		return nil, fmt.Errorf("worker_id is required")
 	}
 
 	result, err := store.SubmitTask(args.TaskID, args.WorkerID, args.CommitSHA, args.Handoff, args.ValidationResults)

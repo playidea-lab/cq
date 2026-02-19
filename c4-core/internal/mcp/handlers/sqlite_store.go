@@ -895,7 +895,7 @@ func (s *SQLiteStore) SubmitTask(taskID, workerID, commitSHA, handoff string, re
 			Message:    fmt.Sprintf("Task %s is claimed by direct mode — use c4_report", taskID),
 		}, nil
 	}
-	if workerID != "" && task.WorkerID != "" && task.WorkerID != workerID {
+	if task.WorkerID != "" && task.WorkerID != workerID {
 		return &SubmitResult{
 			Success:    false,
 			NextAction: "get_next_task",
