@@ -3,7 +3,7 @@
     "allow": [
       "Skill(c4-*)",
       "Skill(cycle-*)",
-      "mcp__c4__*",
+      "mcp__cq__*",
       "mcp__piq__*",
       "mcp__serena__*",
       "mcp__plugin_serena_serena__*",
@@ -15,6 +15,7 @@
       "Bash(yarn:*)",
       "Bash(cargo:*)",
       "Bash(go:*)",
+      "Bash(cd:*)",
       "Bash(git:*)",
       "Bash(python:*)",
       "Bash(python3:*)",
