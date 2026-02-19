@@ -2,7 +2,7 @@
 
 ## Current Version: v0.22.0 (Phase 12.1 — Knowledge Maturity + CDP Auto-Discovery)
 
-현재 버전은 **Go MCP Server (134 tools: Base 108 + Hub 26), Native Go/Dart LSP (goast/dartast), LLM Gateway, CDP Runner + WebMCP + Auto-Discovery, Cloud Foundation, Knowledge v4 (3-way RRF + FindRelated + Time-Weighted Usage + Auto-Distill + Observability), c4 daemon, C0 Drive, C1 Unified Dashboard Messenger (4-탭 뷰 + Members/Presence), C3 EventBus v4, C5 Hub Server (Per-Project RBAC, 120 테스트), 19개 Skills, Lighthouse Docs SSOT (llms.txt export)**을 포함합니다.
+현재 버전은 **Go MCP Server (134 tools: Base 108 + Hub 26), Native Go/Dart LSP (goast/dartast), LLM Gateway, CDP Runner + WebMCP + Auto-Discovery, Cloud Foundation, Knowledge v4 (3-way RRF + FindRelated + Time-Weighted Usage + Auto-Distill + Observability), c4 daemon, C0 Drive, C1 Unified Dashboard Messenger (4-탭 뷰 + Members/Presence), C3 EventBus v4 (hub.* 이벤트 C1 라우팅), C5 Hub Server (Per-Project RBAC, 132 테스트, EventBus 통합), 19개 Skills, Lighthouse Docs SSOT (llms.txt export)**을 포함합니다.
 
 ### 핵심 구조
 
@@ -10,8 +10,8 @@
 - **C9 Knowledge v4** - Store + FTS5 + Vector (OpenAI 1536d) + 3-way RRF (FTS+Vector+Popularity) + Time-Weighted UsageTracker (30일 반감기) + FindRelated + Community Blending + Auto-Distill (LLM 패턴 추출) + Chunker + BatchIngest + ReindexSync
 - **C0 Drive** - Supabase 파일 저장소, metadata JSONB, c4_drive_mkdir 6개 도구, PostgREST URL 인코딩, server-side filtering
 - **C1 Messenger** - Tauri 2.x 통합 대시보드 (4-탭: Messenger/Documents/Settings/Team), 통합 멤버 모델 (user/agent/system), Realtime Presence, MCP 5도구
-- **C3 EventBus v4** - gRPC daemon (UDS) + WebSocket bridge + DLQ + Filter v2 + Python sidecar piggyback + correlation_id (16+ event types)
-- **C5 Hub Server** - 분산 작업 큐, Per-Project API Key RBAC, multi-tenant, Docker, hub.Client 완전 호환, DAG/Edge/Deploy/Artifact
+- **C3 EventBus v4** - gRPC daemon (UDS) + WebSocket bridge + DLQ + Filter v2 + Python sidecar piggyback + correlation_id (16+ event types) + hub.* 이벤트 C1 라우팅
+- **C5 Hub Server** - 분산 작업 큐, Per-Project API Key RBAC, multi-tenant, Docker, hub.Client 완전 호환, DAG/Edge/Deploy/Artifact, EventBus 통합 (hub.job.started/completed/failed/cancelled)
 - **WebContent + WebMCP** - web_fetch (content negotiation, SSRF, rate limit, HTML→MD), webmcp_discover/call/context (Chrome DevTools Protocol), CDP auto-discovery
 - **Native LSP** - `goast/` (Go 심볼 파싱), `dartast/` (Dart 심볼 파싱), Python/JS/TS sidecar 폴백
 - **Daemon Scheduler** - 로컬 작업 스케줄러, 13 REST API, GPU 할당, 소요시간 예측
@@ -42,7 +42,21 @@
 - **C1 Documents** - 마크다운 파일 편집기, 지속성 (persona/skill/spec/config)
 - **C3 EventBus v4** - gRPC daemon (UDS) + WebSocket bridge + DLQ + Filter v2, Python sidecar piggyback, task lifecycle events
 - **코드베이스**: Go ~37.8K (c4-core) + Go ~5.6K (c5) + Python ~24.4K + Rust ~9.5K + TS ~5.5K + SQL ~1.1K = **~83.9K LOC (src)**, 테스트 ~46.0K LOC, **총 ~129.9K LOC**
-- **테스트**: Go 1,194 (c4-core 1,074 + c5 120) + Python 750 + Rust 85 = **~2,029 tests** (25 packages)
+- **테스트**: Go ~1,355 (c4-core ~1,235 + c5 132) + Python 750 + Rust 85 = **~2,190 tests** (25 packages)
+
+---
+
+## 최신 추가사항 (2026-02-20)
+
+### C5 → C4 → C3 이벤트 통합 ✅
+
+- **C5 eventpub**: HTTP Publisher → C4 EventSink (`POST /v1/events/publish`)
+- **C4 EventSink**: `eventsink.go` — HTTP 수신 → C3 EventBus 전달
+- **C4 HubPoller**: 30s 폴링 fallback, hub.job.completed/failed 발행
+- **default_rules.yaml**: `c1-hub-events` 규칙 추가 (hub.* → C1)
+- **C5 config**: `~/.config/c5/c5.yaml` (XDG 기반), `--print-config` 플래그
+- **Worktree 자동 제거**: SubmitTask 성공 시 `worktree.auto_cleanup: true`이면 즉시 제거
+- **테스트**: c4-core ~1,201 → ~1,235, c5 120 → 132
 
 ---
 
@@ -134,6 +148,24 @@
 - 58개 도구 rich spec, 3-Layer 역할 분리
 - `c4_lighthouse get <tool>` 으로 상세 사용법 조회 가능
 
+
+### C5 → C4 → C3 이벤트 통합 ✅
+
+**목표**: C5 Hub 작업 완료/실패를 C3 EventBus를 통해 C1 Messenger에 실시간 전파.
+
+**구현**:
+- C5 `eventpub` 패키지: HTTP Publisher (`POST /v1/events/publish`)
+- C4-core `EventSink`: HTTP 엔드포인트 수신 → C3 EventBus 전달
+- C4-core `HubPoller`: 30s 폴링 fallback (C5 미설정 환경)
+- `default_rules.yaml` `c1-hub-events` 규칙: hub.* → C1 Messenger
+- 발행 이벤트: `hub.job.started`, `hub.job.completed`, `hub.job.failed`, `hub.job.cancelled`, `hub.job.retried`, `hub.dag.executed`
+
+**설정**: `.c4/config.yaml` eventsink 섹션 + `~/.config/c5/c5.yaml` eventbus 섹션
+
+- **테스트 증가**: c4-core +34 (eventsink 11 + hub_poller 5 + hub event 6 + config 4 + 기타), c5 +12 (eventpub 4 + config 8)
+- **Worktree 자동 제거**: SubmitTask 성공 시 `worktree.auto_cleanup: true`(기본값)이면 즉시 자동 제거
+
+---
 
 ### C5 Hub Server Phase 3 — hub.Client 완전 호환 ✅
 

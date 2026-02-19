@@ -109,10 +109,10 @@ C9 Knowledge — 지식 관리 (FTS5 + pgvector + Embedding + Usage + Ingestion)
 ### 테스트 현황
 | 언어 | 테스트 수 | 패키지/모듈 |
 |------|----------|------------|
-| Go | **1,321** | 23 packages (all pass) — c4-core 1,201 + c5 120 |
+| Go | **~1,355** | 23 packages (all pass) — c4-core ~1,235 + c5 132 |
 | Python | **750** | tests/unit/ |
 | Rust | **85** | src-tauri |
-| **합계** | **~2,156** | |
+| **합계** | **~2,190** | |
 
 ### Monorepo 구조
 ```
@@ -344,6 +344,8 @@ Claude Code → Go MCP Server (stdio, 108 base + 26 Hub = 134 tools)
                 ├→ Go Native — Tier 2 (13): Knowledge (Store+FTS5+Vector+Embedding+Usage+Ingest+Sync+Publish)
                 ├→ Hub Client (26, 조건부): job, worker, DAG, edge, deploy, artifact
                 ├→ Worker Standby (3, Hub 조건부): standby, complete, shutdown
+                ├→ EventSink (1): HTTP POST /v1/events/publish 수신 → C3 EventBus 전달
+                ├→ HubPoller (1): 30s 간격 C5 RUNNING jobs 상태 감시 → hub.job.completed/failed 발행
                 └→ JSON-RPC proxy (10) → Python Sidecar (LSP 7 + C2 Doc 2 + Onboard 1)
 ```
 
@@ -399,6 +401,18 @@ cd c4-core && go build -o bin/cq ./cmd/c4/
 2. **`cp` 복사 금지** — macOS ARM64에서 코드 서명 무효화. 반드시 `go build -o` 사용
 3. **재빌드 후 세션 재시작** — Claude Code가 세션 시작 시 MCP 서버를 로드하므로
 4. **`c4-finish` 스킬에서 자동 설치** — 릴리스 루틴에 `go build -o ~/.local/bin/cq` 포함 권장
+
+### 주요 설정 섹션 (.c4/config.yaml)
+
+| 섹션 | 설명 |
+|------|------|
+| `hub` | C5 Hub 연결 (enabled, url, api_key) |
+| `llm_gateway` | LLM 프로바이더 설정 |
+| `eventsink` | EventSink HTTP 서버 설정 (enabled, port, token) |
+| `worktree` | Worktree 관리 (auto_cleanup: true/false) |
+
+- **`eventsink`**: C5 → C4 이벤트 수신용 HTTP 엔드포인트 (기본 포트 `:4141`). `POST /v1/events/publish`로 수신한 이벤트를 C3 EventBus에 전달.
+- **`worktree.auto_cleanup`**: `true`(기본값)이면 `SubmitTask()` 성공 시 worktree를 즉시 자동 제거. Worktree 자동 생성은 AssignTask에서, 자동 제거는 SubmitTask 성공 시 수행.
 
 ---
 
@@ -542,20 +556,26 @@ cd c5 && go build ./... && go test ./...
 go build -o ~/bin/c5 ./cmd/c5/
 ```
 
-### 환경변수
+### 설정 (c5.yaml)
 ```bash
-# C5 → C4 EventSink 이벤트 발행 (선택)
-C5_EVENTBUS_URL=http://localhost:4141    # C4-core EventSink 주소
-C5_EVENTBUS_TOKEN=                       # Bearer 인증 토큰 (기본: 없음)
+# 초기 템플릿 생성
+c5 serve --print-config > ~/.config/c5/c5.yaml
 ```
 
-- `C5_EVENTBUS_URL` 미설정 시 이벤트 발행 비활성화 (graceful fallback).
-- C4-core EventSink는 `:4141` 포트에서 `POST /v1/events/publish` 수신.
-- 발행 이벤트: `hub.job.completed`, `hub.job.failed`, `hub.worker.started`, `hub.worker.offline`
+```yaml
+# ~/.config/c5/c5.yaml
+server:
+  host: "0.0.0.0"
+  port: 8585
+eventbus:
+  url: "http://localhost:4141"  # C4 EventSink
+  token: ""
+storage:
+  path: "~/.local/share/c5"
+```
 
-Add at the top of CLAUDE.md under a ## General Rules section\n\nWhen I ask you to implement a plan, ALWAYS discuss the approach with me first before creating tasks or writing code. Do not jump straight into implementation.
-Add under a ## C4 Workflow section\n\nWhen working in C4 workflow: always use C4 workers for implementation tasks, never implement directly. Verify worker output by checking for actual code changes (commit_sha) before reporting tasks as done.
-Add under a ## Code Reading section or ## Efficiency Rules section\n\nBefore reading large files, always use line range constraints. Do not read entire files when only a portion is needed. Minimize context usage.
-Add under ## General Rules section\n\nWhen I ask to view, inspect, or review existing results/commits, retrieve them — do NOT re-run experiments or re-implement things. Ask for clarification if unsure whether I want to view existing output or generate new output.
-Add under a ## Debugging section\n\nWhen debugging MCP server or tool connection issues, fix the root cause (e.g., wrong module path, config error) instead of trying workarounds. If a tool/server fails to connect, check the configuration and module paths first.
-Add under a ## Project Context section near the top of CLAUDE.md\n\nPrimary languages for this workspace: Go, Python, TypeScript, Rust. When making changes, follow existing patterns in each language. YAML and Markdown are used for configuration and documentation.
+우선순위: CLI 플래그 > 환경변수(C5_EVENTBUS_URL, C5_EVENTBUS_TOKEN) > c5.yaml > 기본값
+
+- `eventbus.url` 미설정 시 이벤트 발행 비활성화 (graceful fallback).
+- C4-core EventSink는 `:4141` 포트에서 `POST /v1/events/publish` 수신.
+- 발행 이벤트: `hub.job.started`, `hub.job.completed`, `hub.job.failed`, `hub.job.cancelled`
