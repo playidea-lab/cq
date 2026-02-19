@@ -387,6 +387,29 @@ func handleHubWatch(client *hub.Client, raw json.RawMessage) (any, error) {
 		return nil, err
 	}
 
+	// Detect job completion and publish event.
+	if hubEventPub != nil {
+		job, jobErr := client.GetJob(params.JobID)
+		if jobErr == nil {
+			switch job.Status {
+			case "SUCCEEDED":
+				payload, _ := json.Marshal(map[string]any{
+					"job_id": params.JobID, "name": job.Name, "duration_sec": 0,
+				})
+				hubEventPub.PublishAsync("hub.job.completed", "c4.hub", payload, hubProjectID)
+			case "FAILED":
+				exitCode := 0
+				if job.ExitCode != nil {
+					exitCode = *job.ExitCode
+				}
+				payload, _ := json.Marshal(map[string]any{
+					"job_id": params.JobID, "name": job.Name, "exit_code": exitCode,
+				})
+				hubEventPub.PublishAsync("hub.job.failed", "c4.hub", payload, hubProjectID)
+			}
+		}
+	}
+
 	return map[string]any{
 		"job_id":      resp.JobID,
 		"lines":       resp.Lines,
@@ -449,6 +472,13 @@ func handleHubRetry(client *hub.Client, raw json.RawMessage) (any, error) {
 	resp, err := client.RetryJob(params.JobID)
 	if err != nil {
 		return nil, err
+	}
+
+	if hubEventPub != nil {
+		payload, _ := json.Marshal(map[string]any{
+			"original_job_id": resp.OriginalJobID, "new_job_id": resp.NewJobID,
+		})
+		hubEventPub.PublishAsync("hub.job.retried", "c4.hub", payload, hubProjectID)
 	}
 
 	return map[string]any{

@@ -945,6 +945,162 @@ func TestHubDAGCreate_ServerError(t *testing.T) {
 }
 
 // =========================================================================
+// Event publishing tests
+// =========================================================================
+
+func TestHubWatch_PublishesCompletedEvent(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/jobs/job-done/logs", func(w http.ResponseWriter, r *http.Request) {
+		hubJSON(w, hub.JobLogsResponse{
+			JobID: "job-done", Lines: []string{"done"}, TotalLines: 1,
+		})
+	})
+	mux.HandleFunc("/jobs/job-done", func(w http.ResponseWriter, r *http.Request) {
+		hubJSON(w, hub.Job{ID: "job-done", Name: "train", Status: "SUCCEEDED"})
+	})
+	_, reg := newHubTestServer(t, mux)
+
+	pub := &mockPublisher{}
+	origPub := hubEventPub
+	hubEventPub = pub
+	t.Cleanup(func() { hubEventPub = origPub })
+
+	_, err := reg.Call("c4_hub_watch", json.RawMessage(`{"job_id": "job-done"}`))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	events := pub.getEvents()
+	if len(events) != 1 {
+		t.Fatalf("expected 1 event, got %d", len(events))
+	}
+	if events[0].evType != "hub.job.completed" {
+		t.Errorf("event = %q, want hub.job.completed", events[0].evType)
+	}
+}
+
+func TestHubWatch_PublishesFailedEvent(t *testing.T) {
+	exitCode := 1
+	mux := http.NewServeMux()
+	mux.HandleFunc("/jobs/job-fail/logs", func(w http.ResponseWriter, r *http.Request) {
+		hubJSON(w, hub.JobLogsResponse{JobID: "job-fail", Lines: []string{"error"}})
+	})
+	mux.HandleFunc("/jobs/job-fail", func(w http.ResponseWriter, r *http.Request) {
+		hubJSON(w, hub.Job{ID: "job-fail", Name: "train", Status: "FAILED", ExitCode: &exitCode})
+	})
+	_, reg := newHubTestServer(t, mux)
+
+	pub := &mockPublisher{}
+	origPub := hubEventPub
+	hubEventPub = pub
+	t.Cleanup(func() { hubEventPub = origPub })
+
+	_, err := reg.Call("c4_hub_watch", json.RawMessage(`{"job_id": "job-fail"}`))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	events := pub.getEvents()
+	if len(events) != 1 {
+		t.Fatalf("expected 1 event, got %d", len(events))
+	}
+	if events[0].evType != "hub.job.failed" {
+		t.Errorf("event = %q, want hub.job.failed", events[0].evType)
+	}
+}
+
+func TestHubWatch_NilPublisher_NoPanic(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/jobs/job-np/logs", func(w http.ResponseWriter, r *http.Request) {
+		hubJSON(w, hub.JobLogsResponse{JobID: "job-np", Lines: []string{"ok"}})
+	})
+	_, reg := newHubTestServer(t, mux)
+
+	origPub := hubEventPub
+	hubEventPub = nil
+	t.Cleanup(func() { hubEventPub = origPub })
+
+	// Should not panic even if hubEventPub is nil.
+	_, err := reg.Call("c4_hub_watch", json.RawMessage(`{"job_id": "job-np"}`))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestHubRetry_PublishesRetriedEvent(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/jobs/job-ev-r/retry", func(w http.ResponseWriter, r *http.Request) {
+		hubJSON(w, hub.JobRetryResponse{NewJobID: "job-ev-r2", Status: "QUEUED", OriginalJobID: "job-ev-r"})
+	})
+	_, reg := newHubTestServer(t, mux)
+
+	pub := &mockPublisher{}
+	origPub := hubEventPub
+	hubEventPub = pub
+	t.Cleanup(func() { hubEventPub = origPub })
+
+	_, err := reg.Call("c4_hub_retry", json.RawMessage(`{"job_id": "job-ev-r"}`))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	events := pub.getEvents()
+	if len(events) != 1 {
+		t.Fatalf("expected 1 event, got %d", len(events))
+	}
+	if events[0].evType != "hub.job.retried" {
+		t.Errorf("event = %q, want hub.job.retried", events[0].evType)
+	}
+}
+
+func TestHubDAGExecute_PublishesDagExecutedEvent(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/dags/dag-ev/execute", func(w http.ResponseWriter, r *http.Request) {
+		hubJSON(w, hub.DAGExecuteResponse{
+			DAGID: "dag-ev", Status: "running", NodeOrder: []string{"a", "b", "c"},
+		})
+	})
+	_, reg := newHubTestServer(t, mux)
+
+	pub := &mockPublisher{}
+	origPub := hubEventPub
+	hubEventPub = pub
+	t.Cleanup(func() { hubEventPub = origPub })
+
+	_, err := reg.Call("c4_hub_dag_execute", json.RawMessage(`{"dag_id": "dag-ev"}`))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	events := pub.getEvents()
+	if len(events) != 1 {
+		t.Fatalf("expected 1 event, got %d", len(events))
+	}
+	if events[0].evType != "hub.dag.executed" {
+		t.Errorf("event = %q, want hub.dag.executed", events[0].evType)
+	}
+}
+
+func TestHubDAGExecute_DryRun_NoEvent(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/dags/dag-dr/execute", func(w http.ResponseWriter, r *http.Request) {
+		hubJSON(w, hub.DAGExecuteResponse{DAGID: "dag-dr", Status: "validated", Validation: "valid"})
+	})
+	_, reg := newHubTestServer(t, mux)
+
+	pub := &mockPublisher{}
+	origPub := hubEventPub
+	hubEventPub = pub
+	t.Cleanup(func() { hubEventPub = origPub })
+
+	_, err := reg.Call("c4_hub_dag_execute", json.RawMessage(`{"dag_id": "dag-dr", "dry_run": true}`))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// dry_run should not emit events
+	events := pub.getEvents()
+	if len(events) != 0 {
+		t.Errorf("expected 0 events for dry_run, got %d", len(events))
+	}
+}
+
+// =========================================================================
 // Registration count test
 // =========================================================================
 
