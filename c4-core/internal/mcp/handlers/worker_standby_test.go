@@ -221,6 +221,101 @@ func TestWorkerStandby_ClaimsJob(t *testing.T) {
 	}
 }
 
+// Nil-deps boundary tests (CR-005)
+
+func TestWorkerStandby_NilDeps_ReturnsError(t *testing.T) {
+	_, err := handleWorkerStandby(nil, json.RawMessage(`{"worker_id": "w1"}`))
+	if err == nil {
+		t.Fatal("expected error for nil deps")
+	}
+	if err.Error() != "hub client not configured" {
+		t.Errorf("err = %q, want %q", err.Error(), "hub client not configured")
+	}
+}
+
+func TestWorkerStandby_NilHubClient_ReturnsError(t *testing.T) {
+	deps := &WorkerDeps{HubClient: nil, ShutdownStore: nil}
+	_, err := handleWorkerStandby(deps, json.RawMessage(`{"worker_id": "w1"}`))
+	if err == nil {
+		t.Fatal("expected error for nil HubClient")
+	}
+	if err.Error() != "hub client not configured" {
+		t.Errorf("err = %q, want %q", err.Error(), "hub client not configured")
+	}
+}
+
+func TestWorkerComplete_NilDeps_ReturnsError(t *testing.T) {
+	_, err := handleWorkerComplete(nil, json.RawMessage(`{"job_id": "j1", "worker_id": "w1", "status": "SUCCEEDED"}`))
+	if err == nil {
+		t.Fatal("expected error for nil deps")
+	}
+	if err.Error() != "hub client not configured" {
+		t.Errorf("err = %q, want %q", err.Error(), "hub client not configured")
+	}
+}
+
+func TestWorkerShutdown_NilDeps_ReturnsError(t *testing.T) {
+	_, err := handleWorkerShutdown(nil, json.RawMessage(`{"worker_id": "w1"}`))
+	if err == nil {
+		t.Fatal("expected error for nil deps")
+	}
+	if err.Error() != "shutdown store not configured" {
+		t.Errorf("err = %q, want %q", err.Error(), "shutdown store not configured")
+	}
+}
+
+func TestWorkerShutdown_NilShutdownStore_ReturnsError(t *testing.T) {
+	deps := &WorkerDeps{ShutdownStore: nil}
+	_, err := handleWorkerShutdown(deps, json.RawMessage(`{"worker_id": "w1"}`))
+	if err == nil {
+		t.Fatal("expected error for nil ShutdownStore")
+	}
+	if err.Error() != "shutdown store not configured" {
+		t.Errorf("err = %q, want %q", err.Error(), "shutdown store not configured")
+	}
+}
+
+// Status enum validation tests (CR-006)
+
+func TestWorkerComplete_InvalidStatus_UNKNOWN(t *testing.T) {
+	hubHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// CompleteJob must NOT be called for invalid status
+		if r.URL.Path == "/jobs/job-123/complete" {
+			t.Error("CompleteJob should not be called for invalid status")
+			w.WriteHeader(500)
+			return
+		}
+		w.WriteHeader(404)
+	})
+	deps, _ := testWorkerDeps(t, hubHandler, nil)
+	reg := mcp.NewRegistry()
+	RegisterWorkerHandlers(reg, deps)
+
+	_, err := reg.Call("c4_worker_complete", json.RawMessage(`{
+		"job_id": "job-123",
+		"worker_id": "w1",
+		"status": "UNKNOWN"
+	}`))
+	if err == nil {
+		t.Fatal("expected error for status=UNKNOWN")
+	}
+}
+
+func TestWorkerComplete_InvalidStatus_Empty(t *testing.T) {
+	deps, _ := testWorkerDeps(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}), nil)
+	reg := mcp.NewRegistry()
+	RegisterWorkerHandlers(reg, deps)
+
+	_, err := reg.Call("c4_worker_complete", json.RawMessage(`{
+		"job_id": "job-123",
+		"worker_id": "w1",
+		"status": ""
+	}`))
+	if err == nil {
+		t.Fatal("expected error for empty status")
+	}
+}
+
 func TestWorkerHandlers_Registration(t *testing.T) {
 	deps, _ := testWorkerDeps(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}), nil)
 	reg := mcp.NewRegistry()
