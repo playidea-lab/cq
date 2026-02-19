@@ -5,14 +5,13 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"strconv"
 
 	"github.com/changmin/c4-core/internal/eventbus"
 )
 
 // StartEventSinkServer starts an HTTP server that accepts incoming events and publishes them
 // to the EventBus. Returns nil server if port is 0 (disabled).
-// Environment variables: C4_EVENTSINK_PORT (default 4141, 0=disabled), C4_EVENTSINK_TOKEN (default "", no auth).
+// Port and token are provided by the caller (from config.EventSink).
 func StartEventSinkServer(port int, token string, pub eventbus.Publisher) (*http.Server, error) {
 	if port == 0 {
 		return nil, nil
@@ -86,15 +85,3 @@ func StartEventSinkServer(port int, token string, pub eventbus.Publisher) (*http
 	return srv, nil
 }
 
-// EventSinkConfigFromEnv reads C4_EVENTSINK_PORT and C4_EVENTSINK_TOKEN from environment.
-// Returns port=4141 and token="" by default.
-func EventSinkConfigFromEnv() (port int, token string) {
-	port = 4141
-	if v := os.Getenv("C4_EVENTSINK_PORT"); v != "" {
-		if p, err := strconv.Atoi(v); err == nil {
-			port = p
-		}
-	}
-	token = os.Getenv("C4_EVENTSINK_TOKEN")
-	return port, token
-}
