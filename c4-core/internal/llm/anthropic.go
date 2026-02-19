@@ -11,6 +11,8 @@ import (
 	"time"
 )
 
+const anthropicBetaCaching = "prompt-caching-2024-07-31"
+
 const (
 	defaultAnthropicBaseURL = "https://api.anthropic.com"
 	anthropicAPIVersion     = "2023-06-01"
@@ -50,12 +52,25 @@ func (p *AnthropicProvider) Models() []ModelInfo {
 	return models
 }
 
+// anthropicCacheControl specifies the cache control type for a content block.
+type anthropicCacheControl struct {
+	Type string `json:"type"` // "ephemeral"
+}
+
+// anthropicSystemBlock is a content block for the system prompt (supports cache_control).
+type anthropicSystemBlock struct {
+	Type         string                 `json:"type"`
+	Text         string                 `json:"text"`
+	CacheControl *anthropicCacheControl `json:"cache_control,omitempty"`
+}
+
 // anthropicRequest is the request body for the Anthropic Messages API.
+// System is json.RawMessage to support both plain string and content block array.
 type anthropicRequest struct {
-	Model     string    `json:"model"`
-	MaxTokens int       `json:"max_tokens"`
-	System    string    `json:"system,omitempty"`
-	Messages  []Message `json:"messages"`
+	Model     string          `json:"model"`
+	MaxTokens int             `json:"max_tokens"`
+	System    json.RawMessage `json:"system,omitempty"`
+	Messages  []Message       `json:"messages"`
 }
 
 // anthropicResponse is the response from the Anthropic Messages API.
@@ -67,8 +82,10 @@ type anthropicResponse struct {
 	Model      string `json:"model"`
 	StopReason string `json:"stop_reason"`
 	Usage      struct {
-		InputTokens  int `json:"input_tokens"`
-		OutputTokens int `json:"output_tokens"`
+		InputTokens              int `json:"input_tokens"`
+		OutputTokens             int `json:"output_tokens"`
+		CacheCreationInputTokens int `json:"cache_creation_input_tokens"`
+		CacheReadInputTokens     int `json:"cache_read_input_tokens"`
 	} `json:"usage"`
 }
 
@@ -81,15 +98,27 @@ type anthropicErrorResponse struct {
 }
 
 func (p *AnthropicProvider) Chat(ctx context.Context, req *ChatRequest) (*ChatResponse, error) {
-	// Build request: system prompt goes to separate field, not in messages
 	apiReq := anthropicRequest{
 		Model:     req.Model,
 		MaxTokens: req.MaxTokens,
-		System:    req.System,
 		Messages:  req.Messages,
 	}
 	if apiReq.MaxTokens == 0 {
 		apiReq.MaxTokens = 4096
+	}
+
+	// System prompt: plain string or content block with cache_control
+	if req.System != "" {
+		if req.CacheSystemPrompt {
+			blocks := []anthropicSystemBlock{{
+				Type:         "text",
+				Text:         req.System,
+				CacheControl: &anthropicCacheControl{Type: "ephemeral"},
+			}}
+			apiReq.System, _ = json.Marshal(blocks)
+		} else {
+			apiReq.System, _ = json.Marshal(req.System)
+		}
 	}
 
 	body, err := json.Marshal(apiReq)
@@ -104,6 +133,9 @@ func (p *AnthropicProvider) Chat(ctx context.Context, req *ChatRequest) (*ChatRe
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("x-api-key", p.apiKey)
 	httpReq.Header.Set("anthropic-version", anthropicAPIVersion)
+	if req.CacheSystemPrompt {
+		httpReq.Header.Set("anthropic-beta", anthropicBetaCaching)
+	}
 
 	resp, err := p.client.Do(httpReq)
 	if err != nil {
@@ -141,8 +173,10 @@ func (p *AnthropicProvider) Chat(ctx context.Context, req *ChatRequest) (*ChatRe
 		Model:        apiResp.Model,
 		FinishReason: apiResp.StopReason,
 		Usage: TokenUsage{
-			InputTokens:  apiResp.Usage.InputTokens,
-			OutputTokens: apiResp.Usage.OutputTokens,
+			InputTokens:      apiResp.Usage.InputTokens,
+			OutputTokens:     apiResp.Usage.OutputTokens,
+			CacheReadTokens:  apiResp.Usage.CacheReadInputTokens,
+			CacheWriteTokens: apiResp.Usage.CacheCreationInputTokens,
 		},
 	}, nil
 }

@@ -30,8 +30,8 @@ func TestAnthropicChat(t *testing.T) {
 
 		var reqBody anthropicRequest
 		json.NewDecoder(r.Body).Decode(&reqBody)
-		if reqBody.System != "You are helpful" {
-			t.Errorf("system = %q, want %q", reqBody.System, "You are helpful")
+		if string(reqBody.System) != `"You are helpful"` {
+			t.Errorf("system = %s, want %q", reqBody.System, "You are helpful")
 		}
 
 		json.NewEncoder(w).Encode(map[string]any{
@@ -60,6 +60,99 @@ func TestAnthropicChat(t *testing.T) {
 	}
 	if resp.Usage.InputTokens != 10 || resp.Usage.OutputTokens != 5 {
 		t.Errorf("Usage = %+v, want {10, 5}", resp.Usage)
+	}
+}
+
+func TestAnthropicChatWithCaching(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// beta header must be present
+		if r.Header.Get("anthropic-beta") != anthropicBetaCaching {
+			t.Errorf("anthropic-beta = %q, want %q", r.Header.Get("anthropic-beta"), anthropicBetaCaching)
+		}
+
+		// system must be a content block array with cache_control
+		var reqBody anthropicRequest
+		json.NewDecoder(r.Body).Decode(&reqBody)
+
+		var blocks []anthropicSystemBlock
+		if err := json.Unmarshal(reqBody.System, &blocks); err != nil {
+			t.Fatalf("system should be content block array: %v", err)
+		}
+		if len(blocks) != 1 {
+			t.Fatalf("expected 1 system block, got %d", len(blocks))
+		}
+		if blocks[0].Text != "You are helpful" {
+			t.Errorf("system text = %q, want %q", blocks[0].Text, "You are helpful")
+		}
+		if blocks[0].CacheControl == nil || blocks[0].CacheControl.Type != "ephemeral" {
+			t.Errorf("expected cache_control ephemeral, got %+v", blocks[0].CacheControl)
+		}
+
+		json.NewEncoder(w).Encode(map[string]any{
+			"content":     []map[string]string{{"type": "text", "text": "Cached!"}},
+			"model":       "claude-sonnet-4-5",
+			"stop_reason": "end_turn",
+			"usage": map[string]int{
+				"input_tokens":               5,
+				"output_tokens":              3,
+				"cache_creation_input_tokens": 100,
+				"cache_read_input_tokens":    0,
+			},
+		})
+	}))
+	defer server.Close()
+
+	p := NewAnthropicProvider("test-key", server.URL)
+	resp, err := p.Chat(context.Background(), &ChatRequest{
+		Model:             "claude-sonnet-4-5",
+		System:            "You are helpful",
+		Messages:          []Message{{Role: "user", Content: "hi"}},
+		CacheSystemPrompt: true,
+	})
+	if err != nil {
+		t.Fatalf("Chat() error: %v", err)
+	}
+	if resp.Content != "Cached!" {
+		t.Errorf("Content = %q, want %q", resp.Content, "Cached!")
+	}
+	if resp.Usage.CacheWriteTokens != 100 {
+		t.Errorf("CacheWriteTokens = %d, want 100", resp.Usage.CacheWriteTokens)
+	}
+	if resp.Usage.CacheReadTokens != 0 {
+		t.Errorf("CacheReadTokens = %d, want 0", resp.Usage.CacheReadTokens)
+	}
+}
+
+func TestAnthropicChatNoCachingByDefault(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// beta header must NOT be present when caching disabled
+		if r.Header.Get("anthropic-beta") == anthropicBetaCaching {
+			t.Errorf("anthropic-beta should not be set without CacheSystemPrompt")
+		}
+		// system must be plain JSON string, not array
+		var reqBody anthropicRequest
+		json.NewDecoder(r.Body).Decode(&reqBody)
+		if string(reqBody.System)[0] == '[' {
+			t.Errorf("system should be plain string, not array")
+		}
+
+		json.NewEncoder(w).Encode(map[string]any{
+			"content":     []map[string]string{{"type": "text", "text": "ok"}},
+			"model":       "claude-sonnet-4-5",
+			"stop_reason": "end_turn",
+			"usage":       map[string]int{"input_tokens": 5, "output_tokens": 2},
+		})
+	}))
+	defer server.Close()
+
+	p := NewAnthropicProvider("test-key", server.URL)
+	_, err := p.Chat(context.Background(), &ChatRequest{
+		Model:    "claude-sonnet-4-5",
+		System:   "You are helpful",
+		Messages: []Message{{Role: "user", Content: "hi"}},
+	})
+	if err != nil {
+		t.Fatalf("Chat() error: %v", err)
 	}
 }
 

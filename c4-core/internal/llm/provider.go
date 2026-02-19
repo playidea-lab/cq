@@ -17,12 +17,13 @@ type Provider interface {
 
 // ChatRequest holds parameters for an LLM chat call.
 type ChatRequest struct {
-	Model       string         `json:"model,omitempty"`
-	Messages    []Message      `json:"messages"`
-	MaxTokens   int            `json:"max_tokens,omitempty"`
-	Temperature float64        `json:"temperature,omitempty"`
-	System      string         `json:"system,omitempty"`
-	Metadata    map[string]any `json:"metadata,omitempty"`
+	Model             string         `json:"model,omitempty"`
+	Messages          []Message      `json:"messages"`
+	MaxTokens         int            `json:"max_tokens,omitempty"`
+	Temperature       float64        `json:"temperature,omitempty"`
+	System            string         `json:"system,omitempty"`
+	Metadata          map[string]any `json:"metadata,omitempty"`
+	CacheSystemPrompt bool           `json:"cache_system_prompt,omitempty"`
 }
 
 // ChatResponse holds the result of an LLM chat call.
@@ -42,8 +43,10 @@ type Message struct {
 
 // TokenUsage tracks token consumption for a single request.
 type TokenUsage struct {
-	InputTokens  int `json:"input_tokens"`
-	OutputTokens int `json:"output_tokens"`
+	InputTokens      int `json:"input_tokens"`
+	OutputTokens     int `json:"output_tokens"`
+	CacheReadTokens  int `json:"cache_read_input_tokens,omitempty"`
+	CacheWriteTokens int `json:"cache_creation_input_tokens,omitempty"`
 }
 
 // ModelInfo describes a model's capabilities and pricing.
