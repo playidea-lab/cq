@@ -461,3 +461,107 @@ llm_gateway:
 		}
 	})
 }
+
+func TestEventSinkConfig(t *testing.T) {
+	t.Run("defaults", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		mgr, err := New(tmpDir)
+		if err != nil {
+			t.Fatalf("New() failed: %v", err)
+		}
+		cfg := mgr.GetConfig()
+		if cfg.EventSink.Enabled {
+			t.Error("EventSink.Enabled should be false by default")
+		}
+		if cfg.EventSink.Port != 4141 {
+			t.Errorf("EventSink.Port = %d, want 4141", cfg.EventSink.Port)
+		}
+		if cfg.EventSink.Token != "" {
+			t.Errorf("EventSink.Token = %q, want empty string", cfg.EventSink.Token)
+		}
+	})
+
+	t.Run("yaml parsing", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		c4Dir := filepath.Join(tmpDir, ".c4")
+		if err := os.MkdirAll(c4Dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+
+		yaml := `project_id: test
+eventsink:
+  enabled: true
+  port: 9999
+  token: "secret"
+`
+		if err := os.WriteFile(filepath.Join(c4Dir, "config.yaml"), []byte(yaml), 0o644); err != nil {
+			t.Fatal(err)
+		}
+
+		mgr, err := New(tmpDir)
+		if err != nil {
+			t.Fatalf("New() failed: %v", err)
+		}
+		cfg := mgr.GetConfig()
+		if !cfg.EventSink.Enabled {
+			t.Error("EventSink.Enabled should be true")
+		}
+		if cfg.EventSink.Port != 9999 {
+			t.Errorf("EventSink.Port = %d, want 9999", cfg.EventSink.Port)
+		}
+		if cfg.EventSink.Token != "secret" {
+			t.Errorf("EventSink.Token = %q, want %q", cfg.EventSink.Token, "secret")
+		}
+	})
+
+	t.Run("env override port enables eventsink", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		t.Setenv("C4_EVENTSINK_PORT", "5000")
+		t.Setenv("C4_EVENTSINK_TOKEN", "tok123")
+
+		mgr, err := New(tmpDir)
+		if err != nil {
+			t.Fatalf("New() failed: %v", err)
+		}
+		cfg := mgr.GetConfig()
+		if !cfg.EventSink.Enabled {
+			t.Error("EventSink.Enabled should be true when C4_EVENTSINK_PORT is set")
+		}
+		if cfg.EventSink.Port != 5000 {
+			t.Errorf("EventSink.Port = %d, want 5000", cfg.EventSink.Port)
+		}
+		if cfg.EventSink.Token != "tok123" {
+			t.Errorf("EventSink.Token = %q, want %q", cfg.EventSink.Token, "tok123")
+		}
+	})
+
+	t.Run("env override port=0 disables eventsink", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		c4Dir := filepath.Join(tmpDir, ".c4")
+		if err := os.MkdirAll(c4Dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		// yaml enables it, but env sets port=0 → disabled
+		yaml := `project_id: test
+eventsink:
+  enabled: true
+  port: 4141
+`
+		if err := os.WriteFile(filepath.Join(c4Dir, "config.yaml"), []byte(yaml), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		t.Setenv("C4_EVENTSINK_PORT", "0")
+
+		mgr, err := New(tmpDir)
+		if err != nil {
+			t.Fatalf("New() failed: %v", err)
+		}
+		cfg := mgr.GetConfig()
+		if cfg.EventSink.Enabled {
+			t.Error("EventSink.Enabled should be false when C4_EVENTSINK_PORT=0")
+		}
+		if cfg.EventSink.Port != 0 {
+			t.Errorf("EventSink.Port = %d, want 0", cfg.EventSink.Port)
+		}
+	})
+}
