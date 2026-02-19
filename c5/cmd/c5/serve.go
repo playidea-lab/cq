@@ -12,15 +12,18 @@ import (
 
 	c5 "github.com/piqsol/c4/c5"
 	"github.com/piqsol/c4/c5/internal/api"
+	"github.com/piqsol/c4/c5/internal/config"
 	"github.com/piqsol/c4/c5/internal/store"
 	"github.com/spf13/cobra"
 )
 
 func serveCmd() *cobra.Command {
 	var (
-		port          int
-		dbPath        string
-		apiKey        string
+		configPath  string
+		printConfig bool
+		port        int
+		dbPath      string
+		apiKey      string
 		eventBusURL   string
 		eventBusToken string
 	)
@@ -29,20 +32,71 @@ func serveCmd() *cobra.Command {
 		Use:   "serve",
 		Short: "Start the C5 job queue server",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runServe(port, dbPath, apiKey, eventBusURL, eventBusToken)
+			if printConfig {
+				fmt.Print(config.ExampleConfigYAML())
+				return nil
+			}
+			return runServe(cmd, configPath, port, dbPath, apiKey, eventBusURL, eventBusToken)
 		},
 	}
 
-	cmd.Flags().IntVar(&port, "port", 8585, "HTTP port to listen on")
+	cmd.Flags().StringVar(&configPath, "config", "", "Path to config file (default: ~/.config/c5/c5.yaml)")
+	cmd.Flags().BoolVar(&printConfig, "print-config", false, "Print example config YAML and exit")
+	cmd.Flags().IntVar(&port, "port", 0, "HTTP port to listen on (overrides config)")
 	cmd.Flags().StringVar(&dbPath, "db", "./c5.db", "SQLite database path")
 	cmd.Flags().StringVar(&apiKey, "api-key", os.Getenv("C5_API_KEY"), "API key for authentication (optional)")
-	cmd.Flags().StringVar(&eventBusURL, "eventbus-url", os.Getenv("C5_EVENTBUS_URL"), "C3 EventBus base URL (optional)")
-	cmd.Flags().StringVar(&eventBusToken, "eventbus-token", os.Getenv("C5_EVENTBUS_TOKEN"), "Bearer token for EventBus (optional)")
+	cmd.Flags().StringVar(&eventBusURL, "eventbus-url", "", "C3 EventBus base URL (overrides config and env)")
+	cmd.Flags().StringVar(&eventBusToken, "eventbus-token", "", "Bearer token for EventBus (overrides config and env)")
 
 	return cmd
 }
 
-func runServe(port int, dbPath, apiKey, eventBusURL, eventBusToken string) error {
+func runServe(cmd *cobra.Command, configPath string, port int, dbPath, apiKey, eventBusURL, eventBusToken string) error {
+	// 1. Load config file (explicit path errors if missing; default path is silently ignored)
+	explicitConfig := cmd.Flags().Changed("config")
+	var cfg *config.Config
+	var err error
+	if explicitConfig {
+		// explicit --config: error if file not found
+		cfg, err = loadConfigStrict(configPath)
+		if err != nil {
+			return err
+		}
+	} else {
+		// default path: silently ignore missing file
+		cfg, err = config.Load("")
+		if err != nil {
+			return err
+		}
+	}
+
+	// 2. Environment variable overrides
+	if v := os.Getenv("C5_EVENTBUS_URL"); v != "" {
+		cfg.EventBus.URL = v
+	}
+	if v := os.Getenv("C5_EVENTBUS_TOKEN"); v != "" {
+		cfg.EventBus.Token = v
+	}
+	if v := os.Getenv("C5_STORAGE_PATH"); v != "" {
+		cfg.Storage.Path = v
+	}
+
+	// 3. CLI flag overrides (only if explicitly specified)
+	if cmd.Flags().Changed("eventbus-url") {
+		cfg.EventBus.URL = eventBusURL
+	}
+	if cmd.Flags().Changed("eventbus-token") {
+		cfg.EventBus.Token = eventBusToken
+	}
+	if cmd.Flags().Changed("port") {
+		cfg.Server.Port = port
+	}
+
+	// Use cfg values
+	resolvedPort := cfg.Server.Port
+	resolvedEventBusURL := cfg.EventBus.URL
+	resolvedEventBusToken := cfg.EventBus.Token
+
 	st, err := store.New(dbPath)
 	if err != nil {
 		return fmt.Errorf("open store: %w", err)
@@ -55,12 +109,12 @@ func runServe(port int, dbPath, apiKey, eventBusURL, eventBusToken string) error
 		APIKey:        apiKey,
 		LLMSTxt:       c5.LLMSTxt,
 		DocsFS:        c5.DocsFS,
-		EventBusURL:   eventBusURL,
-		EventBusToken: eventBusToken,
+		EventBusURL:   resolvedEventBusURL,
+		EventBusToken: resolvedEventBusToken,
 	})
 
 	httpSrv := &http.Server{
-		Addr:         fmt.Sprintf(":%d", port),
+		Addr:         fmt.Sprintf(":%d", resolvedPort),
 		Handler:      srv.Handler(),
 		ReadTimeout:  30 * time.Second,
 		WriteTimeout: 30 * time.Second,
@@ -79,7 +133,7 @@ func runServe(port int, dbPath, apiKey, eventBusURL, eventBusToken string) error
 		httpSrv.Shutdown(shutCtx)
 	}()
 
-	log.Printf("c5: serving on :%d (db: %s)", port, dbPath)
+	log.Printf("c5: serving on :%d (db: %s)", resolvedPort, dbPath)
 	if apiKey != "" {
 		log.Println("c5: API key authentication enabled")
 	}
@@ -88,4 +142,16 @@ func runServe(port int, dbPath, apiKey, eventBusURL, eventBusToken string) error
 		return err
 	}
 	return nil
+}
+
+// loadConfigStrict loads the config from configPath and returns an error if the file does not exist.
+func loadConfigStrict(configPath string) (*config.Config, error) {
+	_, err := os.Stat(configPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, fmt.Errorf("config: file not found: %s", configPath)
+		}
+		return nil, fmt.Errorf("config: stat %q: %w", configPath, err)
+	}
+	return config.Load(configPath)
 }
