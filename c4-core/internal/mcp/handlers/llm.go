@@ -34,7 +34,11 @@ func RegisterLLMHandlers(reg *mcp.Registry, gateway *llm.Gateway) {
 				"task_type":   map[string]any{"type": "string", "description": "Task type for routing (e.g. review, implementation)"},
 				"max_tokens":  map[string]any{"type": "integer", "description": "Max output tokens"},
 				"temperature": map[string]any{"type": "number", "description": "Sampling temperature"},
-				"system":      map[string]any{"type": "string", "description": "System prompt"},
+				"system":               map[string]any{"type": "string", "description": "System prompt"},
+				"cache_system_prompt": map[string]any{
+					"type":        "boolean",
+					"description": "Cache system prompt via Anthropic prompt caching (min 1024 tokens, reduces cost ~90% on cache hits)",
+				},
 			},
 			"required": []string{"messages"},
 		},
@@ -67,12 +71,13 @@ func RegisterLLMHandlers(reg *mcp.Registry, gateway *llm.Gateway) {
 
 func handleLLMCall(gateway *llm.Gateway, raw json.RawMessage) (any, error) {
 	var params struct {
-		Messages    []llm.Message `json:"messages"`
-		Model       string        `json:"model"`
-		TaskType    string        `json:"task_type"`
-		MaxTokens   int           `json:"max_tokens"`
-		Temperature float64       `json:"temperature"`
-		System      string        `json:"system"`
+		Messages          []llm.Message `json:"messages"`
+		Model             string        `json:"model"`
+		TaskType          string        `json:"task_type"`
+		MaxTokens         int           `json:"max_tokens"`
+		Temperature       float64       `json:"temperature"`
+		System            string        `json:"system"`
+		CacheSystemPrompt bool          `json:"cache_system_prompt"`
 	}
 	if err := json.Unmarshal(raw, &params); err != nil {
 		return nil, fmt.Errorf("parsing params: %w", err)
@@ -82,11 +87,12 @@ func handleLLMCall(gateway *llm.Gateway, raw json.RawMessage) (any, error) {
 	}
 
 	req := &llm.ChatRequest{
-		Model:       params.Model,
-		Messages:    params.Messages,
-		MaxTokens:   params.MaxTokens,
-		Temperature: params.Temperature,
-		System:      params.System,
+		Model:             params.Model,
+		Messages:          params.Messages,
+		MaxTokens:         params.MaxTokens,
+		Temperature:       params.Temperature,
+		System:            params.System,
+		CacheSystemPrompt: params.CacheSystemPrompt,
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
@@ -107,8 +113,10 @@ func handleLLMCall(gateway *llm.Gateway, raw json.RawMessage) (any, error) {
 		"model":         resp.Model,
 		"finish_reason": resp.FinishReason,
 		"usage": map[string]any{
-			"input_tokens":  resp.Usage.InputTokens,
-			"output_tokens": resp.Usage.OutputTokens,
+			"input_tokens":        resp.Usage.InputTokens,
+			"output_tokens":       resp.Usage.OutputTokens,
+			"cache_read_tokens":   resp.Usage.CacheReadTokens,
+			"cache_write_tokens":  resp.Usage.CacheWriteTokens,
 		},
 		"cost_usd": costUSD,
 	}, nil
