@@ -164,6 +164,12 @@ func (s *Server) handleJobCancel(w http.ResponseWriter, r *http.Request, jobID s
 	// Clean up lease if any
 	s.store.DeleteLease(jobID)
 
+	if s.eventPub.IsEnabled() {
+		if err := s.eventPub.Publish("hub.job.cancelled", "c5", map[string]any{"job_id": jobID}); err != nil {
+			log.Printf("c5: eventpub hub.job.cancelled: %v", err)
+		}
+	}
+
 	writeJSON(w, map[string]any{
 		"job_id": jobID,
 		"status": "CANCELLED",
@@ -208,6 +214,20 @@ func (s *Server) handleJobComplete(w http.ResponseWriter, r *http.Request, jobID
 			if n, _ := s.store.EvaluateDeployRulesForJob(jobID, tags); n > 0 {
 				log.Printf("c5: deploy rules matched for job %s, created %d deployment(s)", jobID, n)
 			}
+		}
+	}
+
+	if s.eventPub.IsEnabled() {
+		evType := "hub.job.completed"
+		if status == model.StatusFailed {
+			evType = "hub.job.failed"
+		}
+		if err := s.eventPub.Publish(evType, "c5", map[string]any{
+			"job_id":    jobID,
+			"status":    string(status),
+			"exit_code": req.ExitCode,
+		}); err != nil {
+			log.Printf("c5: eventpub %s: %v", evType, err)
 		}
 	}
 

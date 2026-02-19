@@ -16,6 +16,7 @@ import (
 
 	"crypto/sha256"
 
+	"github.com/piqsol/c4/c5/internal/eventpub"
 	"github.com/piqsol/c4/c5/internal/model"
 	"github.com/piqsol/c4/c5/internal/storage"
 	"github.com/piqsol/c4/c5/internal/store"
@@ -33,17 +34,20 @@ type Server struct {
 	docsFS    fs.FS  // docs filesystem (may be nil)
 	mux       *http.ServeMux
 	done      chan struct{} // closed on shutdown to stop background goroutines
+	eventPub  *eventpub.Publisher
 }
 
 // Config holds server configuration.
 type Config struct {
-	Store     *store.Store
-	Storage   storage.Backend // if nil, auto-detected from env
-	Version   string
-	APIKey    string // if non-empty, X-API-Key header is required
-	ServerURL string // server's external URL (for local storage fallback)
-	LLMSTxt   string // llms.txt content (served at /.well-known/llms.txt)
-	DocsFS    fs.FS  // embedded docs filesystem (served at /v1/docs/)
+	Store          *store.Store
+	Storage        storage.Backend // if nil, auto-detected from env
+	Version        string
+	APIKey         string // if non-empty, X-API-Key header is required
+	ServerURL      string // server's external URL (for local storage fallback)
+	LLMSTxt        string // llms.txt content (served at /.well-known/llms.txt)
+	DocsFS         fs.FS  // embedded docs filesystem (served at /v1/docs/)
+	EventBusURL    string // C3 EventBus base URL (empty = disabled)
+	EventBusToken  string // Bearer token for EventBus (optional)
 }
 
 // NewServer creates an HTTP API server.
@@ -64,6 +68,7 @@ func NewServer(cfg Config) *Server {
 		docsFS:    cfg.DocsFS,
 		mux:       http.NewServeMux(),
 		done:      make(chan struct{}),
+		eventPub:  eventpub.New(cfg.EventBusURL, cfg.EventBusToken),
 	}
 	s.registerRoutes()
 

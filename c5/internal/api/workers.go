@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 
 	"github.com/piqsol/c4/c5/internal/model"
@@ -180,6 +181,15 @@ func (s *Server) handleLeaseAcquire(w http.ResponseWriter, r *http.Request) {
 			"message":  "no jobs available",
 		})
 		return
+	}
+
+	if s.eventPub.IsEnabled() {
+		if err := s.eventPub.Publish("hub.job.started", "c5", map[string]any{
+			"job_id":    job.ID,
+			"worker_id": req.WorkerID,
+		}); err != nil {
+			log.Printf("c5: eventpub hub.job.started: %v", err)
+		}
 	}
 
 	writeJSON(w, model.LeaseAcquireResponse{
