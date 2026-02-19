@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/spf13/viper"
@@ -93,6 +94,14 @@ type HubConfig struct {
 	TeamID    string `mapstructure:"team_id"     yaml:"team_id"`
 }
 
+// EventSinkConfig holds EventSink HTTP server settings.
+// EventSink receives events from C5 Hub and publishes them to the local EventBus.
+type EventSinkConfig struct {
+	Enabled bool   `mapstructure:"enabled" yaml:"enabled"` // default false
+	Port    int    `mapstructure:"port"    yaml:"port"`    // default 4141
+	Token   string `mapstructure:"token"   yaml:"token"`   // default "", no auth
+}
+
 // PermissionReviewerConfig holds settings for the Haiku-based permission auto-reviewer hook.
 type PermissionReviewerConfig struct {
 	Enabled   bool   `mapstructure:"enabled"     yaml:"enabled"`
@@ -117,6 +126,7 @@ type C4Config struct {
 	LLMGateway       LLMGatewayConfig `mapstructure:"llm_gateway"         yaml:"llm_gateway"`
 	EventBus         EventBusConfig   `mapstructure:"eventbus"            yaml:"eventbus"`
 	Hub              HubConfig                `mapstructure:"hub"                  yaml:"hub"`
+	EventSink        EventSinkConfig          `mapstructure:"eventsink"            yaml:"eventsink"`
 	PermissionReviewer PermissionReviewerConfig `mapstructure:"permission_reviewer"  yaml:"permission_reviewer"`
 	ReviewAsTask     bool                       `mapstructure:"review_as_task"       yaml:"review_as_task"`
 	CheckpointAsTask bool             `mapstructure:"checkpoint_as_task"  yaml:"checkpoint_as_task"`
@@ -177,6 +187,10 @@ func defaultConfig() C4Config {
 			Preset:       "economic",
 			ModelRouting: presetConfigs["standard"],
 		},
+		EventSink: EventSinkConfig{
+			Enabled: false,
+			Port:    4141,
+		},
 	}
 }
 
@@ -229,6 +243,9 @@ func New(projectRoot string, cloudDefaults ...CloudDefaults) (*Manager, error) {
 	v.SetDefault("hub.enabled", false)
 	v.SetDefault("hub.url", "")
 	v.SetDefault("hub.api_key_env", "C4_HUB_API_KEY")
+	v.SetDefault("eventsink.enabled", false)
+	v.SetDefault("eventsink.port", 4141)
+	v.SetDefault("eventsink.token", "")
 	v.SetDefault("permission_reviewer.enabled", false)
 	v.SetDefault("permission_reviewer.model", "haiku")
 	v.SetDefault("permission_reviewer.api_key_env", "ANTHROPIC_API_KEY")
@@ -289,6 +306,19 @@ func New(projectRoot string, cloudDefaults ...CloudDefaults) (*Manager, error) {
 	// Auto-enable cloud if credentials are available
 	if !cfg.Cloud.Enabled && cfg.Cloud.URL != "" && cfg.Cloud.AnonKey != "" {
 		cfg.Cloud.Enabled = true
+	}
+
+	// EventSink environment variable overrides (priority: env > config.yaml > defaults)
+	// C4_EVENTSINK_PORT: if set, overrides port; if "0", disables eventsink
+	// C4_EVENTSINK_TOKEN: if set, overrides token
+	if v := os.Getenv("C4_EVENTSINK_PORT"); v != "" {
+		if p, err := strconv.Atoi(v); err == nil {
+			cfg.EventSink.Port = p
+			cfg.EventSink.Enabled = p != 0
+		}
+	}
+	if v := os.Getenv("C4_EVENTSINK_TOKEN"); v != "" {
+		cfg.EventSink.Token = v
 	}
 
 	// Resolve preset if economic mode is enabled

@@ -508,16 +508,16 @@ func newMCPServer() (*mcpServer, error) {
 		fmt.Fprintln(os.Stderr, "cq: hub poller started (30s interval)")
 	}
 
-	// Start EventSink HTTP server (reads C4_EVENTSINK_PORT / C4_EVENTSINK_TOKEN from env)
-	esPort, esToken := handlers.EventSinkConfigFromEnv()
+	// Start EventSink HTTP server (config from .c4/config.yaml, env overrides applied in config.New)
 	var eventsinkSrv *http.Server
-	if esPort > 0 {
-		esSrv, esErr := handlers.StartEventSinkServer(esPort, esToken, hubEventPubOrNoop)
+	if cfgMgr != nil && cfgMgr.GetConfig().EventSink.Enabled {
+		esCfg := cfgMgr.GetConfig().EventSink
+		esSrv, esErr := handlers.StartEventSinkServer(esCfg.Port, esCfg.Token, hubEventPubOrNoop)
 		if esErr != nil {
 			fmt.Fprintf(os.Stderr, "cq: eventsink start failed: %v\n", esErr)
 		} else if esSrv != nil {
 			eventsinkSrv = esSrv
-			fmt.Fprintf(os.Stderr, "cq: eventsink listening on :%d\n", esPort)
+			fmt.Fprintf(os.Stderr, "cq: eventsink listening on :%d\n", esCfg.Port)
 		}
 	}
 
