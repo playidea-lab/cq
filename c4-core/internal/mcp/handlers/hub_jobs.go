@@ -186,6 +186,26 @@ func registerHubJobHandlers(reg *mcp.Registry, hubClient *hub.Client) {
 	}, func(raw json.RawMessage) (any, error) {
 		return handleHubEstimate(hubClient, raw)
 	})
+
+	// c4_hub_lease_renew — Renew a job lease to prevent expiry.
+	// Lease renewal policy: renew when ≥60 seconds remain before expiry to avoid
+	// the Hub re-queuing the job. A typical lease lasts 5 minutes; renew every
+	// ~4 minutes (i.e. when <60 seconds of remaining lease time is detected) or
+	// proactively on a fixed interval shorter than the lease TTL. On failure,
+	// retry up to 3 times with exponential backoff before aborting the job.
+	reg.Register(mcp.ToolSchema{
+		Name:        "c4_hub_lease_renew",
+		Description: "Renew a job lease to prevent the Hub from re-queuing the job. Call periodically while executing a long-running job (recommended: every 4 minutes for a 5-minute lease). Returns the new expiry timestamp.",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"lease_id": map[string]any{"type": "string", "description": "Lease ID returned by c4_worker_standby"},
+			},
+			"required": []string{"lease_id"},
+		},
+	}, func(raw json.RawMessage) (any, error) {
+		return handleHubLeaseRenew(hubClient, raw)
+	})
 }
 
 // =========================================================================
@@ -455,6 +475,29 @@ func handleHubRetry(client *hub.Client, raw json.RawMessage) (any, error) {
 		"new_job_id":      resp.NewJobID,
 		"status":          resp.Status,
 		"original_job_id": resp.OriginalJobID,
+	}, nil
+}
+
+func handleHubLeaseRenew(client *hub.Client, raw json.RawMessage) (any, error) {
+	var params struct {
+		LeaseID string `json:"lease_id"`
+	}
+	if err := json.Unmarshal(raw, &params); err != nil {
+		return nil, fmt.Errorf("parsing params: %w", err)
+	}
+	if params.LeaseID == "" {
+		return nil, fmt.Errorf("lease_id is required")
+	}
+
+	newExpiresAt, err := client.RenewLease(params.LeaseID)
+	if err != nil {
+		return nil, fmt.Errorf("renew lease: %w", err)
+	}
+
+	return map[string]any{
+		"renewed":        true,
+		"lease_id":       params.LeaseID,
+		"new_expires_at": newExpiresAt,
 	}, nil
 }
 
