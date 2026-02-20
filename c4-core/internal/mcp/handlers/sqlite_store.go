@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -663,9 +664,16 @@ func (s *SQLiteStore) AssignTask(workerID string) (*TaskAssignment, error) {
 // reassignStaleOrFindPendingTask queries for the next task to assign.
 // Returns: taskID, title, scope, dod, deps, domain, model, staleReassign, error
 //
-// Optimistic concurrency: UPDATE includes the original status in WHERE so that
-// concurrent processes racing for the same task cause one to get rowsAffected=0
-// and back off (returns empty taskID = "no task available").
+// Concurrency: uses BEGIN IMMEDIATE to acquire a write-reservation lock before
+// any reads. This prevents SQLITE_BUSY_SNAPSHOT (517) that arises when two
+// processes both BEGIN DEFERRED, read the same snapshot, and then race to UPDATE
+// the same row — the second writer's UPDATE fails with error 517, which
+// busy_timeout cannot resolve.
+//
+// With BEGIN IMMEDIATE the loser blocks at BEGIN (not at UPDATE), and
+// busy_timeout(5000) causes it to wait up to 5 s for the winner to commit.
+// After the winner commits the loser runs its SELECT and finds the task already
+// in_progress, so it returns cleanly with no double-assignment.
 func (s *SQLiteStore) reassignStaleOrFindPendingTask(workerID string) (
 	taskID, title, scope, dod string,
 	deps sql.NullString,
@@ -673,17 +681,30 @@ func (s *SQLiteStore) reassignStaleOrFindPendingTask(workerID string) (
 	staleReassign bool,
 	err error,
 ) {
-	tx, err := s.db.Begin()
+	ctx := context.Background()
+	conn, err := s.db.Conn(ctx)
 	if err != nil {
 		return "", "", "", "", deps, "", "", false, err
 	}
-	defer tx.Rollback()
+	defer conn.Close()
+
+	// BEGIN IMMEDIATE acquires a write-reservation lock immediately.
+	// busy_timeout(5000) applies here, so concurrent processes serialise cleanly.
+	if _, err = conn.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
+		return "", "", "", "", deps, "", "", false, fmt.Errorf("begin immediate: %w", err)
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			conn.ExecContext(ctx, "ROLLBACK") //nolint:errcheck
+		}
+	}()
 
 	var priority int
 	var isStale bool
 
 	// Anti-fragility: try to reassign stale in_progress tasks first (>10 min without update)
-	err = tx.QueryRow(`
+	err = conn.QueryRowContext(ctx, `
 		SELECT t.task_id, t.title, t.scope, t.dod, t.dependencies, t.domain, t.priority, t.model
 		FROM c4_tasks t
 		WHERE t.status = 'in_progress'
@@ -696,7 +717,7 @@ func (s *SQLiteStore) reassignStaleOrFindPendingTask(workerID string) (
 
 	if err == sql.ErrNoRows {
 		// Normal path: find next pending task with resolved dependencies
-		err = tx.QueryRow(`
+		err = conn.QueryRowContext(ctx, `
 			SELECT t.task_id, t.title, t.scope, t.dod, t.dependencies, t.domain, t.priority, t.model
 			FROM c4_tasks t
 			WHERE t.status = 'pending'
@@ -715,19 +736,19 @@ func (s *SQLiteStore) reassignStaleOrFindPendingTask(workerID string) (
 	}
 
 	if err == sql.ErrNoRows {
+		conn.ExecContext(ctx, "ROLLBACK") //nolint:errcheck
+		committed = true
 		return "", "", "", "", deps, "", "", false, nil // No tasks available
 	}
 	if err != nil {
 		return "", "", "", "", deps, "", "", false, fmt.Errorf("finding task: %w", err)
 	}
 
-	// Optimistic concurrency: include original status in WHERE so that a concurrent
-	// process that already claimed this task causes rowsAffected=0 here.
 	originalStatus := "pending"
 	if isStale {
 		originalStatus = "in_progress"
 	}
-	result, err := tx.Exec(`
+	result, err := conn.ExecContext(ctx, `
 		UPDATE c4_tasks SET status = 'in_progress', worker_id = ?, updated_at = CURRENT_TIMESTAMP
 		WHERE task_id = ? AND status = ?`, workerID, taskID, originalStatus,
 	)
@@ -735,13 +756,16 @@ func (s *SQLiteStore) reassignStaleOrFindPendingTask(workerID string) (
 		return "", "", "", "", deps, "", "", false, fmt.Errorf("assigning task: %w", err)
 	}
 	if n, _ := result.RowsAffected(); n == 0 {
-		// Another process won the race for this task; signal "no task available"
+		// Extra safety: task was taken between BEGIN and UPDATE (should not happen with IMMEDIATE).
+		conn.ExecContext(ctx, "ROLLBACK") //nolint:errcheck
+		committed = true
 		return "", "", "", "", deps, "", "", false, nil
 	}
 
-	if err := tx.Commit(); err != nil {
+	if _, err = conn.ExecContext(ctx, "COMMIT"); err != nil {
 		return "", "", "", "", deps, "", "", false, err
 	}
+	committed = true
 
 	s.notifyEventBus("task.updated", map[string]any{
 		"task_id":         taskID,
