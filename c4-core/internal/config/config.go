@@ -66,6 +66,19 @@ type WorktreeConfig struct {
 	AutoCleanup bool `mapstructure:"auto_cleanup" yaml:"auto_cleanup"`
 }
 
+// CritiqueLoopConfig controls the Plan Critique Loop (Phase 4.5) in c4-plan.
+type CritiqueLoopConfig struct {
+	Enabled   bool   `mapstructure:"enabled"    yaml:"enabled"`
+	MaxRounds int    `mapstructure:"max_rounds" yaml:"max_rounds"`
+	// Mode: "auto" (run silently), "interactive" (pause per round), "skip" (disable loop)
+	Mode      string `mapstructure:"mode"       yaml:"mode"`
+}
+
+// PlanningConfig controls c4-plan skill behavior.
+type PlanningConfig struct {
+	CritiqueLoop CritiqueLoopConfig `mapstructure:"critique_loop" yaml:"critique_loop"`
+}
+
 // ValidationConfig holds validation command settings.
 type ValidationConfig struct {
 	Lint string `mapstructure:"lint" yaml:"lint"`
@@ -129,7 +142,8 @@ type C4Config struct {
 	EventSink        EventSinkConfig          `mapstructure:"eventsink"            yaml:"eventsink"`
 	PermissionReviewer PermissionReviewerConfig `mapstructure:"permission_reviewer"  yaml:"permission_reviewer"`
 	ReviewAsTask     bool                       `mapstructure:"review_as_task"       yaml:"review_as_task"`
-	CheckpointAsTask bool             `mapstructure:"checkpoint_as_task"  yaml:"checkpoint_as_task"`
+	CheckpointAsTask bool                       `mapstructure:"checkpoint_as_task"  yaml:"checkpoint_as_task"`
+	Planning         PlanningConfig             `mapstructure:"planning"             yaml:"planning"`
 }
 
 // presetConfigs defines the economic mode presets.
@@ -191,6 +205,13 @@ func defaultConfig() C4Config {
 			Enabled: false,
 			Port:    4141,
 		},
+		Planning: PlanningConfig{
+			CritiqueLoop: CritiqueLoopConfig{
+				Enabled:   true,
+				MaxRounds: 3,
+				Mode:      "auto",
+			},
+		},
 	}
 }
 
@@ -247,6 +268,9 @@ func New(projectRoot string, cloudDefaults ...CloudDefaults) (*Manager, error) {
 	v.SetDefault("eventsink.port", 4141)
 	v.SetDefault("eventsink.token", "")
 	v.SetDefault("permission_reviewer.enabled", false)
+	v.SetDefault("planning.critique_loop.enabled", true)
+	v.SetDefault("planning.critique_loop.max_rounds", 3)
+	v.SetDefault("planning.critique_loop.mode", "auto")
 	v.SetDefault("permission_reviewer.model", "haiku")
 	v.SetDefault("permission_reviewer.api_key_env", "ANTHROPIC_API_KEY")
 	v.SetDefault("permission_reviewer.fail_mode", "ask")

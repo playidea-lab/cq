@@ -50,6 +50,31 @@ Required:
 
 ## Phase 0: Context Display
 
+### 0.0 Config 읽기 (필수 — 가장 먼저 실행)
+
+```python
+cfg = c4_config_get(section="all")
+
+# Critique Loop 설정 읽기
+critique_cfg = cfg.get("planning", {}).get("critique_loop", {})
+CRITIQUE_ENABLED = critique_cfg.get("enabled", True)
+CRITIQUE_MAX_ROUNDS = critique_cfg.get("max_rounds", 3)
+CRITIQUE_MODE = critique_cfg.get("mode", "auto")
+# mode: "auto"        → 루프 자동 실행 (기본값)
+# mode: "interactive" → 라운드마다 사용자 확인 후 진행
+# mode: "skip"        → Phase 4.5 완전 건너뜀 (enabled=false와 동일)
+
+# 루프 비활성화 판정
+LOOP_ACTIVE = CRITIQUE_ENABLED and CRITIQUE_MODE != "skip"
+
+# 설정 요약 출력
+if LOOP_ACTIVE:
+    print(f"📋 Plan Critique Loop: ON (mode={CRITIQUE_MODE}, max={CRITIQUE_MAX_ROUNDS} rounds)")
+    print("   변경: .c4/config.yaml planning.critique_loop.mode = skip 으로 비활성화")
+else:
+    print(f"📋 Plan Critique Loop: OFF (enabled={CRITIQUE_ENABLED}, mode={CRITIQUE_MODE})")
+```
+
 ### 0.1 Data Collection
 
 Call these MCP tools to gather current state:
@@ -452,7 +477,10 @@ Ask about: checkpoint placement (per-phase/per-feature/none), task granularity, 
 
 ---
 
-## Phase 4: Task Creation
+## Phase 4: Task Draft (DB 커밋 전)
+
+> ⚠️ 이 단계에서는 c4_add_todo를 호출하지 않습니다. 텍스트 초안만 작성합니다.
+> DB 커밋은 Phase 4.5 Critique Loop 수렴 후 Phase 4.9에서만 수행합니다.
 
 Create C4 tasks from interview results and design.
 For Worker Packet format and DoD principles, see `references/worker-packet.md`.
@@ -500,7 +528,145 @@ For Worker Packet format and DoD principles, see `references/worker-packet.md`.
 
 If exceeded, ask user whether to split.
 
-### Task Creation
+### Task Draft Format (텍스트만, DB 저장 금지)
+
+```
+[DRAFT] T-001-0: Task title
+  scope: src/path/
+  dod: |
+    Goal: ...
+    Rationale: (why this approach)
+    ContractSpec:
+      API: ...
+      Tests: ...
+    CodePlacement:
+      Modify: ...
+  dependencies: []
+
+[DRAFT] CP-001: Phase 1 checkpoint
+  dod: Phase 1 implementation + review complete
+  dependencies: [R-001-0, R-002-0]
+  review_required: false
+```
+
+Dependency tree: `T-XXX -> R-XXX -> CP-XXX -> T-YYY -> R-YYY`
+
+---
+
+## Phase 4.5: Plan Critique Loop (Pre-Mortem)
+
+> Entry: Phase 4 draft 완료 직후. DB 커밋 전.
+> Exit: 수렴 선언 → Phase 4.9 (DB 커밋) → Phase 5
+> Purpose: 실행 전에 실패 시나리오를 시뮬레이션하여 가정을 검증하고 계획을 개선합니다.
+
+### 4.5.0 Config 분기
+
+```python
+# Phase 0.0에서 읽은 설정 사용
+if not LOOP_ACTIVE:
+    print("⏭️  Plan Critique Loop 비활성화 (config: planning.critique_loop)")
+    print("   활성화: .c4/config.yaml → planning.critique_loop.enabled: true")
+    → Phase 4.9 (DB Commit) 직행
+
+if CRITIQUE_MODE == "interactive":
+    # 라운드 시작 전마다 사용자에게 계속 진행 여부 묻기
+    INTERACTIVE = True
+else:
+    INTERACTIVE = False  # auto: 조용히 실행
+```
+
+### 4.5.0 Loop 초기화
+
+```
+round = 0 (max: 3)
+converged = false
+prev_draft = Phase 4 draft
+```
+
+### 4.5.1 역할 전환: 사후 분석가 (Pre-Mortem)
+
+**프레임**: "이 계획이 실행됐고 결과가 나빴다. 지금은 실패 후 3개월이 지난 회고 자리다. 가장 큰 실패 원인 3가지를 밝혀라."
+
+역할을 "계획자"에서 "비판적 리뷰어"로 전환하여 각 태스크를 아래 렌즈로 검토합니다:
+
+| 렌즈 | 질문 | 심각도 |
+|------|------|--------|
+| **가정 목록** | 이 태스크가 전제하는 것은? (파일 경로, API 형식, 외부 설정) | High |
+| **DoD 측정 가능성** | "완료됐음을 어떻게 증명하는가?" — 구체적 명령어/테스트가 있는가? | Critical |
+| **파일 충돌** | 두 태스크가 같은 파일을 동시에 수정하는가? | Critical |
+| **외부 의존성** | LLM API, 네트워크, 환경 변수, 외부 서비스가 전제되어 있는가? | High |
+| **범위 과잉** | 수정 파일 5개 초과? API 3개 초과? 도메인 2개 이상? | High |
+| **더 단순한 방법** | 50% 코드로 80% 결과를 내는 방법이 있는가? | Medium |
+| **의존성 누락** | 숨겨진 실행 순서 제약이 있는가? | High |
+
+**출력 형식** (구조화된 비판):
+
+```
+## Critique Round N/3
+
+### Critical (즉시 수정)
+- [T-001-0] DoD: "X 구현" → 측정 불가. 수정: "go test ./... PASS + coverage > 80%"
+
+### High (수정 권장)
+- [T-002-0] 가정: c4_knowledge_reindex가 file_path를 재스캔함 — 미검증.
+  수정: Lighthouse로 동작 확인 후 진행, 또는 fallback 경로 명시
+
+### Medium (사용자 선택)
+- [T-003-0] 더 단순한 방법: SQL UPDATE 대신 reindex API로 처리 가능
+```
+
+### 4.5.2 수정 (Revise)
+
+각 비판 심각도에 따라:
+- **Critical**: 즉시 draft 수정 (DoD 재작성, 태스크 분리/병합)
+- **High**: 수정 적용 또는 Rationale에 리스크 명시
+- **Medium**: 사용자에게 선택 제시
+
+수정 후 draft를 갱신합니다.
+
+### 4.5.3 수렴 판정
+
+```
+delta = diff(prev_draft, current_draft)
+
+converged = ALL of:
+  - delta.new_tasks == 0          # 새 태스크 없음
+  - delta.deleted_tasks == 0      # 삭제된 태스크 없음
+  - delta.dod_change_rate < 0.20  # DoD 변경 20% 미만
+  - delta.critical_issues == 0    # 미해결 Critical 없음
+
+if converged OR round >= 3:
+  → Phase 4.9
+else:
+  round += 1
+  prev_draft = current_draft
+  → Phase 4.5.1 (다음 라운드)
+```
+
+**수렴 선언 출력**:
+```
+## 계획 수렴 ✅ (Round N/3)
+변경 요약: +N 추가 / -N 삭제 / N DoD 수정
+미해결 Critical: 0
+→ DB 커밋 진행
+```
+
+**3 round 미수렴 시**:
+```
+## 계획 미수렴 ⚠️ (3/3 rounds)
+미해결 항목: [목록]
+```
+→ AskUserQuestion: "(1) 현재 상태로 진행  (2) 수동 수정 후 재시작"
+
+---
+
+## Phase 4.9: DB Commit
+
+> Entry: Phase 4.5 수렴 선언 직후
+> 이 단계에서만 c4_add_todo를 호출합니다.
+
+수렴 확정된 task draft를 순서대로 DB에 기록합니다.
+Critique loop에서 발생한 수정 이력은 각 태스크 DoD의 Rationale 섹션에 포함합니다.
 
 ```python
 # T-XXX creates R-XXX review task automatically (review_required default true)
@@ -508,7 +674,7 @@ c4_add_todo(
     task_id="T-001-0",
     title="Task title",
     scope="src/path/",
-    dod="Goal: ...\n\nRationale: (why this approach was chosen, design decision reference)\n\nContractSpec:\n  API: ...\n  Tests: ...\n\nCodePlacement:\n  Create: ...\n  Modify: ..."
+    dod="Goal: ...\n\nRationale: (why this approach; critique loop에서 수정된 경우 이유 포함)\n\nContractSpec:\n  API: ...\n  Tests: ...\n\nCodePlacement:\n  Create: ...\n  Modify: ..."
 )
 
 # CP tasks depend on R tasks
@@ -520,8 +686,6 @@ c4_add_todo(
     review_required=False
 )
 ```
-
-Dependency tree: `T-XXX -> R-XXX -> CP-XXX -> T-YYY -> R-YYY`
 
 ---
 
@@ -562,14 +726,33 @@ Recommended:
 ```
 /c4-plan
     |
-Phase 0: Status display (state, tasks, specs, designs, lighthouses, docs)
+Phase 0: Status display + knowledge_search (state, tasks, specs, designs, lighthouses, docs)
     |
 Phase 0.5: Action selection
-    |-> "Plan new feature"     -> Phase 1~2.7~5 (Discovery->Design->Lighthouse->Tasks)
+    |-> "Plan new feature"     -> Phase 1~2.7~3~4~4.5~4.9~5
     |-> "Review/modify"        -> Phase R (detail view -> edit)
     |-> "Lighthouse"           -> Phase L (register/list/promote/remove)
-    |-> "Add tasks only"       -> Phase 4~5 (Tasks directly)
+    |-> "Add tasks only"       -> Phase 4~4.5~4.9~5
     |-> "View status only"     -> End
+
+"Plan new feature" 상세:
+    Phase 1  : 문서 스캔
+    Phase 2  : 문서 해석
+    Phase 2.5: Discovery (EARS 요구사항)
+    Phase 2.6: Design (아키텍처 결정)
+    Phase 2.7: Lighthouse (계약 정의)
+    Phase 3  : 개발 환경 인터뷰
+    Phase 4  : Task Draft (텍스트만, DB 저장 금지)
+        |
+    Phase 4.5: Plan Critique Loop ← ─ ─ ─ ─ ┐
+        |  Pre-Mortem 분석 (역할 전환)        │
+        |  수정 (Critical/High/Medium)         │
+        |  수렴 판정: 미수렴이면 round++ ──── ┘
+        |  수렴 (max 3 rounds)
+        ↓
+    Phase 4.9: DB Commit (c4_add_todo 일괄 호출)
+        |
+    Phase 5  : Plan Confirmation (사용자 최종 승인)
 ```
 
 ## Related Skills
