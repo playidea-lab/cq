@@ -17,6 +17,12 @@ import (
 //go:embed templates/claude_md.tmpl
 var claudeMDTemplate string
 
+//go:embed templates/hooks/c4-bash-security-hook.sh
+var hookShContent string
+
+//go:embed templates/hooks/c4-bash-security.conf
+var hookConfContent string
+
 // builtinC4Root is set at build time via -ldflags for skill deployment.
 var builtinC4Root string
 
