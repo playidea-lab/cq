@@ -293,6 +293,13 @@ func newMCPServer() (*mcpServer, error) {
 		fmt.Fprintf(os.Stderr, "cq: %d lighthouse stubs loaded\n", n)
 	}
 
+	// Option B: manual recovery tools for stuck workers.
+	handlers.RegisterTaskAdminHandlers(reg, sqliteStore)
+
+	// Option C: implicit heartbeat — refresh active worker's task updated_at on
+	// every tool call, so the 30-min stale timeout isn't triggered by genuine work.
+	reg.OnCall = sqliteStore.TouchCurrentWorkerHeartbeat
+
 	// Register LLM Gateway handlers if enabled (reuse gateway created earlier)
 	if llmGateway != nil {
 		handlers.RegisterLLMHandlers(reg, llmGateway)

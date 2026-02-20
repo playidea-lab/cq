@@ -276,7 +276,7 @@ func TestConcurrentClaimTask_OnlyOneWins(t *testing.T) {
 }
 
 // TestStaleReassignment_TakesOverAfterTimeout verifies that a task stuck in_progress
-// for more than 10 minutes is reassigned to a new worker (anti-fragility path).
+// for more than 30 minutes is reassigned to a new worker (anti-fragility path).
 func TestStaleReassignment_TakesOverAfterTimeout(t *testing.T) {
 	store, db := newTestSQLiteStore(t)
 	defer db.Close()
@@ -294,9 +294,9 @@ func TestStaleReassignment_TakesOverAfterTimeout(t *testing.T) {
 		t.Fatalf("initial assign: %v", err)
 	}
 
-	// Simulate task being stuck: backdate updated_at by 11 minutes.
+	// Simulate task being stuck: backdate updated_at by 31 minutes (threshold is 30).
 	if _, err := db.Exec(`
-		UPDATE c4_tasks SET updated_at = datetime('now', '-11 minutes')
+		UPDATE c4_tasks SET updated_at = datetime('now', '-31 minutes')
 		WHERE task_id = 'T-001-0'`); err != nil {
 		t.Fatalf("backdate: %v", err)
 	}
@@ -320,7 +320,7 @@ func TestStaleReassignment_TakesOverAfterTimeout(t *testing.T) {
 }
 
 // TestStaleReassignment_NotTriggeredBeforeTimeout verifies that a task in_progress
-// for less than 10 minutes is NOT reassigned (normal operation protected).
+// for less than 30 minutes is NOT reassigned (normal operation protected).
 func TestStaleReassignment_NotTriggeredBeforeTimeout(t *testing.T) {
 	store, db := newTestSQLiteStore(t)
 	defer db.Close()

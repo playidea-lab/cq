@@ -433,3 +433,76 @@ func handleTaskList(s Store, rawArgs json.RawMessage) (any, error) {
 		"filtered": len(tasks),
 	}, nil
 }
+
+// AdminStore is the minimal interface required by RegisterTaskAdminHandlers.
+// Implemented by SQLiteStore but separated to avoid polluting the main Store interface.
+type AdminStore interface {
+	StaleTasks(minMinutes int) ([]Task, error)
+	ResetTask(taskID string) error
+}
+
+// RegisterTaskAdminHandlers registers c4_stale_tasks and c4_reset_task recovery tools.
+// These are Option-B manual recovery tools for stuck workers.
+func RegisterTaskAdminHandlers(reg *mcp.Registry, s AdminStore) {
+	// c4_stale_tasks — list in_progress tasks that haven't been updated recently.
+	reg.Register(mcp.ToolSchema{
+		Name:        "c4_stale_tasks",
+		Description: "List in_progress tasks that haven't been updated recently (possible stuck workers). Default threshold is 30 minutes.",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"min_minutes": map[string]any{
+					"type":        "integer",
+					"description": "Age threshold in minutes (default 30)",
+				},
+			},
+		},
+	}, func(args json.RawMessage) (any, error) {
+		var a struct {
+			MinMinutes int `json:"min_minutes"`
+		}
+		_ = json.Unmarshal(args, &a)
+		if a.MinMinutes <= 0 {
+			a.MinMinutes = 30
+		}
+		tasks, err := s.StaleTasks(a.MinMinutes)
+		if err != nil {
+			return nil, fmt.Errorf("listing stale tasks: %w", err)
+		}
+		return map[string]any{
+			"stale_tasks":  tasks,
+			"count":        len(tasks),
+			"threshold_min": a.MinMinutes,
+		}, nil
+	})
+
+	// c4_reset_task — reset a single stuck in_progress task back to pending.
+	reg.Register(mcp.ToolSchema{
+		Name:        "c4_reset_task",
+		Description: "Reset a stuck in_progress task back to pending so a new worker can pick it up. Only works on in_progress tasks.",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"task_id": map[string]any{
+					"type":        "string",
+					"description": "ID of the stuck task to reset",
+				},
+			},
+			"required": []string{"task_id"},
+		},
+	}, func(args json.RawMessage) (any, error) {
+		var a struct {
+			TaskID string `json:"task_id"`
+		}
+		if err := json.Unmarshal(args, &a); err != nil || a.TaskID == "" {
+			return nil, fmt.Errorf("task_id required")
+		}
+		if err := s.ResetTask(a.TaskID); err != nil {
+			return nil, err
+		}
+		return map[string]any{
+			"task_id": a.TaskID,
+			"status":  "reset to pending",
+		}, nil
+	})
+}

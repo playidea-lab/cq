@@ -31,6 +31,11 @@ type Registry struct {
 	// OnChange is called after Register/Replace/Unregister mutate the tool list.
 	// Used by the MCP server to send notifications/tools/list_changed.
 	OnChange func()
+
+	// OnCall is called at the beginning of every tool dispatch (Option C: implicit heartbeat).
+	// Set to SQLiteStore.TouchCurrentWorkerHeartbeat to refresh the active worker's task
+	// updated_at on every tool call, preventing false stale-task detection.
+	OnCall func()
 }
 
 type registeredTool struct {
@@ -70,13 +75,19 @@ func (r *Registry) Register(schema ToolSchema, handler HandlerFunc) {
 }
 
 // Call invokes a registered tool by name with the given JSON arguments.
+// Calls OnCall (if set) before dispatching — used for implicit worker heartbeat.
 func (r *Registry) Call(name string, args json.RawMessage) (any, error) {
 	r.mu.RLock()
 	tool, ok := r.tools[name]
+	onCall := r.OnCall
 	r.mu.RUnlock()
 
 	if !ok {
 		return nil, fmt.Errorf("mcp: unknown tool: %s", name)
+	}
+
+	if onCall != nil {
+		onCall()
 	}
 
 	return tool.handler(args)

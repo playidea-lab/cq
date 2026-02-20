@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/changmin/c4-core/internal/config"
@@ -31,6 +32,11 @@ type SQLiteStore struct {
 	eventPub       eventbus.Publisher      // optional: for C3 EventBus remote publishing
 	dispatcher     *eventbus.Dispatcher    // optional: local rule-based dispatch (C1 posting, etc.)
 	registry       *mcp.Registry           // optional: for lighthouse auto-promote registry cleanup
+
+	// Implicit heartbeat (Option C): tracks the active worker for this MCP process.
+	// Set by AssignTask; refreshed before every tool dispatch via Registry.OnCall.
+	workerMu        sync.RWMutex
+	currentWorkerID string
 }
 
 // StoreOption configures a SQLiteStore.
@@ -658,6 +664,11 @@ func (s *SQLiteStore) AssignTask(workerID string) (*TaskAssignment, error) {
 		"worker_id": workerID,
 	})
 
+	// Track active worker for implicit heartbeat (Option C).
+	s.workerMu.Lock()
+	s.currentWorkerID = workerID
+	s.workerMu.Unlock()
+
 	return assignment, nil
 }
 
@@ -709,7 +720,7 @@ func (s *SQLiteStore) reassignStaleOrFindPendingTask(workerID string) (
 		FROM c4_tasks t
 		WHERE t.status = 'in_progress'
 		AND (t.execution_mode IS NULL OR t.execution_mode IN ('', 'worker', 'auto'))
-		AND (julianday('now') - julianday(t.updated_at)) * 24 * 60 > 10
+		AND (julianday('now') - julianday(t.updated_at)) * 24 * 60 > 30
 		AND t.worker_id != ?
 		ORDER BY t.priority DESC, t.created_at ASC
 		LIMIT 1`, workerID,
@@ -1342,6 +1353,76 @@ func (s *SQLiteStore) autoRecordKnowledge(task *Task, summary string, filesChang
 			fmt.Fprintf(os.Stderr, "c4: auto-record knowledge timed out for %s\n", task.ID)
 		}
 	}()
+}
+
+// StaleTasks returns in_progress tasks whose updated_at is older than minMinutes.
+// Used by the admin c4_stale_tasks tool to surface stuck workers.
+func (s *SQLiteStore) StaleTasks(minMinutes int) ([]Task, error) {
+	rows, err := s.db.Query(`
+		SELECT id, title, worker_id, updated_at, domain
+		FROM c4_tasks
+		WHERE project_id = ? AND status = 'in_progress'
+		  AND (julianday('now') - julianday(updated_at)) * 24 * 60 > ?
+		ORDER BY updated_at ASC`,
+		s.projectID, minMinutes)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var tasks []Task
+	for rows.Next() {
+		var t Task
+		var workerID sql.NullString
+		var domain sql.NullString
+		if err := rows.Scan(&t.ID, &t.Title, &workerID, &t.UpdatedAt, &domain); err != nil {
+			return nil, err
+		}
+		t.WorkerID = workerID.String
+		t.Domain = domain.String
+		t.Status = "in_progress"
+		tasks = append(tasks, t)
+	}
+	return tasks, rows.Err()
+}
+
+// ResetTask resets an in_progress task back to pending so a new worker can pick it up.
+// Only works on in_progress tasks to avoid accidentally resetting completed work.
+func (s *SQLiteStore) ResetTask(taskID string) error {
+	now := time.Now().UTC().Format(time.RFC3339)
+	res, err := s.db.Exec(`
+		UPDATE c4_tasks
+		SET status = 'pending', worker_id = NULL, updated_at = ?
+		WHERE project_id = ? AND id = ? AND status = 'in_progress'`,
+		now, s.projectID, taskID)
+	if err != nil {
+		return err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return fmt.Errorf("task %s not found or not in_progress", taskID)
+	}
+	return nil
+}
+
+// TouchCurrentWorkerHeartbeat refreshes updated_at for the currently active worker's task.
+// Intended to be called by Registry.OnCall (implicit heartbeat — Option C).
+// No-op if no worker is currently active.
+func (s *SQLiteStore) TouchCurrentWorkerHeartbeat() {
+	s.workerMu.RLock()
+	workerID := s.currentWorkerID
+	s.workerMu.RUnlock()
+
+	if workerID == "" {
+		return
+	}
+
+	now := time.Now().UTC().Format(time.RFC3339)
+	_, _ = s.db.Exec(`
+		UPDATE c4_tasks
+		SET updated_at = ?
+		WHERE project_id = ? AND worker_id = ? AND status = 'in_progress'`,
+		now, s.projectID, workerID)
 }
 
 // handoffData holds structured data parsed from a handoff JSON string.
