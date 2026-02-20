@@ -1392,7 +1392,7 @@ func (s *SQLiteStore) ResetTask(taskID string) error {
 	now := time.Now().UTC().Format(time.RFC3339)
 	res, err := s.db.Exec(`
 		UPDATE c4_tasks
-		SET status = 'pending', worker_id = NULL, updated_at = ?
+		SET status = 'pending', worker_id = '', updated_at = ?
 		WHERE task_id = ? AND status = 'in_progress'`,
 		now, taskID)
 	if err != nil {

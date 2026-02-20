@@ -40,8 +40,16 @@ SUPERVISOR_MODEL="claude-haiku-4-5-20251001"
 ALLOW_PATTERNS=()
 BLOCK_PATTERNS=()
 
+# Verify conf is owned by current user and not world-writable before sourcing
 if [[ -f "$CONFIG_FILE" ]]; then
-    source "$CONFIG_FILE"
+    conf_owner=$(stat -f "%u" "$CONFIG_FILE" 2>/dev/null)
+    conf_mode=$(stat -f "%A" "$CONFIG_FILE" 2>/dev/null)
+    if [[ "$conf_owner" != "$(id -u)" ]] || [[ "${conf_mode: -1}" =~ [2367] ]]; then
+        echo "c4-security-hook: WARNING: $CONFIG_FILE is not trusted (owner/perms), skipping." >&2
+    else
+        # shellcheck source=/dev/null
+        source "$CONFIG_FILE"
+    fi
 fi
 
 # =============================================================================
