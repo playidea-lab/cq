@@ -34,6 +34,13 @@ type BucketManager interface {
 	EnsureBucket() error
 }
 
+// FilePathResolver is an optional interface for backends that store files locally.
+// Used by the API server to serve downloads and accept uploads via HTTP.
+type FilePathResolver interface {
+	// FilePath returns the absolute local filesystem path for a storage path.
+	FilePath(storagePath string) (string, error)
+}
+
 // SupabaseBackend uses Supabase Storage for artifact storage.
 type SupabaseBackend struct {
 	supabaseURL string
@@ -211,7 +218,7 @@ func NewLocal(baseDir, baseURL string) *LocalBackend {
 	}
 }
 
-// PresignedURL returns a local file path for uploads or a download URL.
+// PresignedURL returns an HTTP URL for uploads (PUT) or downloads (GET) via the C5 server.
 func (l *LocalBackend) PresignedURL(path, method string, ttlSeconds int) (string, time.Time, error) {
 	if ttlSeconds == 0 {
 		ttlSeconds = defaultTTL
@@ -234,8 +241,9 @@ func (l *LocalBackend) PresignedURL(path, method string, ttlSeconds int) (string
 	os.MkdirAll(filepath.Dir(fullPath), 0755)
 
 	if method == "PUT" {
-		// Return the local file path — client must handle local upload
-		return "file://" + fullPath, expiresAt, nil
+		// Return an HTTP upload URL via the C5 server (not file://).
+		url := fmt.Sprintf("%s/v1/storage/upload/%s", l.baseURL, cleaned)
+		return url, expiresAt, nil
 	}
 
 	// Return a download URL via the C5 server

@@ -137,7 +137,9 @@ func (s *Server) registerRoutes() {
 
 	// Artifacts & Storage
 	s.mux.HandleFunc("/v1/storage/presigned-url", s.handlePresignedURL)
-	s.mux.HandleFunc("/v1/storage/upload", s.handleUploadArtifact)
+	s.mux.HandleFunc("/v1/storage/upload/", s.handleStoragePut)      // PUT /v1/storage/upload/{path} (local backend)
+	s.mux.HandleFunc("/v1/storage/upload", s.handleUploadArtifact)   // POST /v1/storage/upload (legacy JSON)
+	s.mux.HandleFunc("/v1/storage/download/", s.handleStorageDownload) // GET /v1/storage/download/{path}
 	s.mux.HandleFunc("/v1/artifacts/", s.handleArtifacts)
 
 	// WebSocket (both paths: hub.Client sends to /v1/ws/metrics/, workers use /ws/metrics/)
