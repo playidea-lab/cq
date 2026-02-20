@@ -341,6 +341,7 @@ func downloadSingleArtifact(httpClient *http.Client, url, artifactPath, localPat
 	resp.Body.Close()
 	f.Close()
 	if copyErr != nil {
+		os.Remove(localPath)
 		return fmt.Errorf("write artifact %s: %w", artifactPath, copyErr)
 	}
 	return nil

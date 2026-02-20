@@ -1,7 +1,9 @@
 package api
 
 import (
+	"bytes"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -142,16 +144,15 @@ func TestArtifactPipelineE2E(t *testing.T) {
 		t.Fatalf("presigned URL unexpected format: %s", presigned.URL)
 	}
 
-	// 6. Verify the input file exists on local storage (simulates download).
-	// In a real worker, the worker would HTTP GET the presigned URL. With
-	// LocalBackend the file is directly on disk, so we verify its content.
-	localInputPath := filepath.Join(storageDir, "inputs", "data.txt")
-	data, err := os.ReadFile(localInputPath)
-	if err != nil {
-		t.Fatalf("read input artifact from local storage: %v", err)
+	// 6. Download input artifact via HTTP GET through the storage download handler.
+	wdl := httptest.NewRecorder()
+	dlReq := httptest.NewRequest("GET", "/v1/storage/download/inputs/data.txt", nil)
+	srv.Handler().ServeHTTP(wdl, dlReq)
+	if wdl.Code != http.StatusOK {
+		t.Fatalf("GET download: expected 200, got %d: %s", wdl.Code, wdl.Body.String())
 	}
-	if string(data) != "hello input" {
-		t.Fatalf("input content mismatch: got %q", string(data))
+	if wdl.Body.String() != "hello input" {
+		t.Fatalf("download content mismatch: got %q", wdl.Body.String())
 	}
 
 	// 7. Get presigned upload URL for output artifact.
@@ -167,24 +168,23 @@ func TestArtifactPipelineE2E(t *testing.T) {
 	if putResp.URL == "" {
 		t.Fatal("PUT presigned URL should not be empty")
 	}
-	// LocalBackend PUT URLs have the form: file://{storageDir}/outputs/result.txt
-	if !strings.HasPrefix(putResp.URL, "file://") {
-		t.Fatalf("expected file:// URL for LocalBackend PUT, got: %s", putResp.URL)
+	// LocalBackend PUT URLs have the form: http://{baseURL}/v1/storage/upload/{path}
+	if !strings.Contains(putResp.URL, "/v1/storage/upload/") {
+		t.Fatalf("expected /v1/storage/upload/ URL for LocalBackend PUT, got: %s", putResp.URL)
 	}
 	if putResp.ExpiresAt == "" {
 		t.Fatal("expires_at should not be empty")
 	}
 
-	// 8. Upload output artifact by writing directly to the local file path.
-	// In production, the worker would HTTP PUT to a Supabase signed URL.
-	// With LocalBackend, the "presigned URL" is a file:// path.
-	localOutputPath := strings.TrimPrefix(putResp.URL, "file://")
+	// 8. Upload output artifact via HTTP PUT to the storage upload endpoint.
 	outputContent := []byte("hello output")
-	if err := os.MkdirAll(filepath.Dir(localOutputPath), 0755); err != nil {
-		t.Fatalf("mkdir output dir: %v", err)
-	}
-	if err := os.WriteFile(localOutputPath, outputContent, 0644); err != nil {
-		t.Fatalf("write output artifact: %v", err)
+	uploadPath := "/v1/storage/upload/outputs/result.txt"
+	wup := httptest.NewRecorder()
+	uploadReq := httptest.NewRequest("PUT", uploadPath, bytes.NewReader(outputContent))
+	uploadReq.Header.Set("Content-Type", "application/octet-stream")
+	srv.Handler().ServeHTTP(wup, uploadReq)
+	if wup.Code != http.StatusOK {
+		t.Fatalf("PUT upload: expected 200, got %d: %s", wup.Code, wup.Body.String())
 	}
 
 	// 9. Confirm artifact.

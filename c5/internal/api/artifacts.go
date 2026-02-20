@@ -2,10 +2,14 @@ package api
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/piqsol/c4/c5/internal/model"
+	"github.com/piqsol/c4/c5/internal/storage"
 )
 
 // =========================================================================
@@ -155,7 +159,7 @@ func (s *Server) handleArtifactURL(w http.ResponseWriter, r *http.Request, jobID
 	})
 }
 
-// handleUploadArtifact handles PUT upload for presigned URLs (local backend only).
+// handleUploadArtifact handles POST /v1/storage/upload — legacy JSON-based upload request.
 func (s *Server) handleUploadArtifact(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
 		methodNotAllowed(w)
@@ -196,4 +200,96 @@ func (s *Server) handleUploadArtifact(w http.ResponseWriter, r *http.Request) {
 		"upload_url":  url,
 		"expires_at":  expiresAt.Format("2006-01-02T15:04:05Z"),
 	})
+}
+
+// handleStorageDownload serves file content for GET /v1/storage/download/{path}.
+// Only works when the storage backend implements FilePathResolver (local backend).
+func (s *Server) handleStorageDownload(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "GET" {
+		methodNotAllowed(w)
+		return
+	}
+
+	resolver, ok := s.storage.(storage.FilePathResolver)
+	if !ok {
+		writeError(w, http.StatusNotImplemented, "download not supported for this storage backend")
+		return
+	}
+
+	storagePath := strings.TrimPrefix(r.URL.Path, "/v1/storage/download/")
+	if storagePath == "" {
+		writeError(w, http.StatusBadRequest, "path is required")
+		return
+	}
+
+	localPath, err := resolver.FilePath(storagePath)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	fi, err := os.Stat(localPath)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "file not found")
+		return
+	}
+	if fi.IsDir() {
+		writeError(w, http.StatusBadRequest, "path is a directory")
+		return
+	}
+
+	http.ServeFile(w, r, localPath)
+}
+
+// handleStoragePut accepts PUT /v1/storage/upload/{path} — writes request body to local file.
+// Only works when the storage backend implements FilePathResolver (local backend).
+func (s *Server) handleStoragePut(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "PUT" {
+		methodNotAllowed(w)
+		return
+	}
+
+	resolver, ok := s.storage.(storage.FilePathResolver)
+	if !ok {
+		writeError(w, http.StatusNotImplemented, "direct upload not supported for this storage backend")
+		return
+	}
+
+	storagePath := strings.TrimPrefix(r.URL.Path, "/v1/storage/upload/")
+	if storagePath == "" {
+		writeError(w, http.StatusBadRequest, "path is required")
+		return
+	}
+
+	localPath, err := resolver.FilePath(storagePath)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	if err := os.MkdirAll(filepath.Dir(localPath), 0755); err != nil {
+		writeError(w, http.StatusInternalServerError, "create directory: "+err.Error())
+		return
+	}
+
+	f, err := os.Create(localPath)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "create file: "+err.Error())
+		return
+	}
+	defer f.Close()
+
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<30) // 1GB limit
+	if _, err := io.Copy(f, r.Body); err != nil {
+		f.Close()
+		os.Remove(localPath)
+		if err.Error() == "http: request body too large" {
+			writeError(w, http.StatusRequestEntityTooLarge, "upload too large")
+		} else {
+			writeError(w, http.StatusInternalServerError, "upload failed: "+err.Error())
+		}
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
 }
