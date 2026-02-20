@@ -13,7 +13,18 @@ func NewGatewayFromConfig(cfg config.C4Config) *Gateway {
 	routing := RoutingTable{
 		Default: cfg.LLMGateway.Default,
 		Aliases: Aliases,
+		Routes:  make(map[string]ModelRef),
 	}
+
+	// If the default provider has a default_model, register it as the "default" route.
+	// This allows Resolve() fallback to pick up a model when no specific route matches.
+	if defaultProv, ok := cfg.LLMGateway.Providers[cfg.LLMGateway.Default]; ok && defaultProv.DefaultModel != "" {
+		routing.Routes["default"] = ModelRef{
+			Provider: cfg.LLMGateway.Default,
+			Model:    defaultProv.DefaultModel,
+		}
+	}
+
 	gw := NewGateway(routing)
 
 	for name, provCfg := range cfg.LLMGateway.Providers {

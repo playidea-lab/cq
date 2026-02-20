@@ -48,9 +48,10 @@ type CloudConfig struct {
 
 // LLMProviderConfig holds per-provider settings.
 type LLMProviderConfig struct {
-	Enabled   bool   `mapstructure:"enabled"     yaml:"enabled"`
-	APIKeyEnv string `mapstructure:"api_key_env" yaml:"api_key_env"`
-	BaseURL   string `mapstructure:"base_url"    yaml:"base_url"`
+	Enabled      bool   `mapstructure:"enabled"       yaml:"enabled"`
+	APIKeyEnv    string `mapstructure:"api_key_env"   yaml:"api_key_env"`
+	BaseURL      string `mapstructure:"base_url"      yaml:"base_url"`
+	DefaultModel string `mapstructure:"default_model" yaml:"default_model"`
 }
 
 // LLMGatewayConfig holds LLM gateway settings.

@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 
@@ -186,10 +187,14 @@ func (k *ContextKeeper) EnsureSystemChannels() error {
 		{"tasks", "Task events (created, completed, blocked)", "auto"},
 		{"events", "EventBus event summaries", "auto"},
 		{"knowledge", "Knowledge recorded events", "auto"},
+		{"cq", "Shared worker dispatch channel (@cq mentions)", "worker"},
 	}
 	for _, ch := range channels {
-		if _, err := k.EnsureChannel(ch.name, ch.description, ch.channelType); err != nil {
-			log.Printf("[keeper] failed to ensure system channel %s: %v", ch.name, err)
+		id, err := k.EnsureChannel(ch.name, ch.description, ch.channelType)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "cq: [keeper] failed to ensure channel %s: %v\n", ch.name, err)
+		} else {
+			fmt.Fprintf(os.Stderr, "cq: [keeper] channel %s ok (id=%s)\n", ch.name, id)
 		}
 	}
 	return nil

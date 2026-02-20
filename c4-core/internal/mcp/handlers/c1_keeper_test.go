@@ -527,7 +527,7 @@ func TestEnsureSystemChannels(t *testing.T) {
 		t.Fatalf("EnsureSystemChannels: %v", err)
 	}
 
-	expected := []string{"general", "tasks", "events", "knowledge"}
+	expected := []string{"general", "tasks", "events", "knowledge", "cq"}
 	if len(createdChannels) != len(expected) {
 		t.Fatalf("expected %d channels, got %d: %v", len(expected), len(createdChannels), createdChannels)
 	}

@@ -345,6 +345,9 @@ func newMCPServer() (*mcpServer, error) {
 				keeperGateway = llm.NewGatewayFromConfig(cfgMgr.GetConfig())
 			}
 			keeper = handlers.NewContextKeeper(c1Handler, keeperGateway)
+			if err := keeper.EnsureSystemChannels(); err != nil {
+				fmt.Fprintf(os.Stderr, "cq: system channels setup failed: %v\n", err)
+			}
 			fmt.Fprintln(os.Stderr, "cq: c1 enabled (3 tools + keeper)")
 		}
 	}

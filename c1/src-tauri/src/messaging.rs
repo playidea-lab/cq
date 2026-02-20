@@ -315,26 +315,24 @@ pub async fn send_message(
             supabase_url.trim_end_matches('/')
         );
 
-        // Ensure user member exists (empty string → null to avoid UUID FK error)
-        let member_id = ensure_user_member(&client, &supabase_url, &anon_key, &token, &participant_id)?;
-        let member_id_val = if member_id.is_empty() {
-            serde_json::Value::Null
-        } else {
-            serde_json::Value::String(member_id)
-        };
+        // Try to resolve member_id (optional — column may not exist if migration 00018 not applied)
+        let member_id = ensure_user_member(&client, &supabase_url, &anon_key, &token, &participant_id)
+            .unwrap_or_default();
 
-        // Explicitly set participant_id to current user
-        let payload = serde_json::json!({
+        // Build payload without member_id if not available (avoids "column not found" on older schemas)
+        let mut payload = serde_json::json!({
             "channel_id": channel_id,
             "project_id": project_id,
             "participant_id": participant_id,
-            "member_id": member_id_val,
             "content": content,
             "thread_id": thread_id,
             "metadata": metadata,
             "sender_type": "human",
             "sender_name": participant_id,
         });
+        if !member_id.is_empty() {
+            payload["member_id"] = serde_json::Value::String(member_id);
+        }
 
         let resp = retry_request(3, || {
             client
