@@ -379,8 +379,8 @@ func (s *SQLiteStore) migrateTasksIfNeeded() error {
 		}
 
 		// Use status from task_json if richer, else from column
-		if s, ok := m["status"].(string); ok && s != "" {
-			status = s
+		if statusStr, ok := m["status"].(string); ok && statusStr != "" {
+			status = statusStr
 		}
 
 		_, err := tx.Exec(`INSERT OR IGNORE INTO c4_tasks
@@ -392,6 +392,9 @@ func (s *SQLiteStore) migrateTasksIfNeeded() error {
 			continue
 		}
 		migrated++
+	}
+	if err := legacyRows.Err(); err != nil {
+		return fmt.Errorf("iterating legacy rows: %w", err)
 	}
 
 	if err := tx.Commit(); err != nil {

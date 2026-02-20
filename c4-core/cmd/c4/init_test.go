@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -630,5 +631,170 @@ func TestSetupGlobalHooks_Idempotent(t *testing.T) {
 	}
 	if string(hookData) != hookShContent {
 		t.Error("hook script content mismatch after second install")
+	}
+}
+
+func TestPatchClaudeSettings_NewFile(t *testing.T) {
+	homeDir := t.TempDir()
+	hookPath := "/usr/local/bin/hook.sh"
+
+	if err := patchClaudeSettings(homeDir, hookPath); err != nil {
+		t.Fatalf("patchClaudeSettings: %v", err)
+	}
+
+	settingsPath := filepath.Join(homeDir, ".claude", "settings.json")
+	data, err := os.ReadFile(settingsPath)
+	if err != nil {
+		t.Fatalf("settings.json not created: %v", err)
+	}
+
+	var settings map[string]any
+	if err := json.Unmarshal(data, &settings); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+
+	hooks, _ := settings["hooks"].(map[string]any)
+	if hooks == nil {
+		t.Fatal("missing hooks key")
+	}
+	preToolUse, _ := hooks["PreToolUse"].([]any)
+	if len(preToolUse) != 1 {
+		t.Fatalf("expected 1 PreToolUse entry, got %d", len(preToolUse))
+	}
+	entry, _ := preToolUse[0].(map[string]any)
+	if entry["matcher"] != "Bash" {
+		t.Errorf("matcher = %v, want Bash", entry["matcher"])
+	}
+	innerHooks, _ := entry["hooks"].([]any)
+	if len(innerHooks) != 1 {
+		t.Fatalf("expected 1 inner hook, got %d", len(innerHooks))
+	}
+	h, _ := innerHooks[0].(map[string]any)
+	if h["command"] != hookPath {
+		t.Errorf("command = %v, want %v", h["command"], hookPath)
+	}
+	if h["type"] != "command" {
+		t.Errorf("type = %v, want command", h["type"])
+	}
+}
+
+func TestPatchClaudeSettings_AppendToExisting(t *testing.T) {
+	homeDir := t.TempDir()
+	settingsDir := filepath.Join(homeDir, ".claude")
+	os.MkdirAll(settingsDir, 0755)
+
+	existing := map[string]any{
+		"model": "opus",
+		"permissions": map[string]any{
+			"allow": []string{"mcp__cq__*"},
+		},
+	}
+	data, _ := json.MarshalIndent(existing, "", "  ")
+	os.WriteFile(filepath.Join(settingsDir, "settings.json"), data, 0644)
+
+	hookPath := "/path/to/hook.sh"
+	if err := patchClaudeSettings(homeDir, hookPath); err != nil {
+		t.Fatalf("patchClaudeSettings: %v", err)
+	}
+
+	result, _ := os.ReadFile(filepath.Join(settingsDir, "settings.json"))
+	var settings map[string]any
+	if err := json.Unmarshal(result, &settings); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+
+	// Existing keys preserved
+	if settings["model"] != "opus" {
+		t.Errorf("model key lost: %v", settings["model"])
+	}
+	if _, ok := settings["permissions"]; !ok {
+		t.Error("permissions key lost")
+	}
+
+	// Hook added
+	hooks, _ := settings["hooks"].(map[string]any)
+	preToolUse, _ := hooks["PreToolUse"].([]any)
+	if len(preToolUse) != 1 {
+		t.Fatalf("expected 1 PreToolUse entry, got %d", len(preToolUse))
+	}
+}
+
+func TestPatchClaudeSettings_Idempotent(t *testing.T) {
+	homeDir := t.TempDir()
+	hookPath := "/path/to/hook.sh"
+
+	// First call
+	if err := patchClaudeSettings(homeDir, hookPath); err != nil {
+		t.Fatalf("first call: %v", err)
+	}
+
+	// Second call — should not duplicate
+	if err := patchClaudeSettings(homeDir, hookPath); err != nil {
+		t.Fatalf("second call: %v", err)
+	}
+
+	settingsPath := filepath.Join(homeDir, ".claude", "settings.json")
+	data, _ := os.ReadFile(settingsPath)
+
+	var settings map[string]any
+	json.Unmarshal(data, &settings)
+	hooks, _ := settings["hooks"].(map[string]any)
+	preToolUse, _ := hooks["PreToolUse"].([]any)
+
+	if len(preToolUse) != 1 {
+		t.Errorf("expected 1 PreToolUse entry after 2 calls, got %d", len(preToolUse))
+	}
+
+	// Count occurrences of hookPath in raw JSON
+	content := string(data)
+	count := strings.Count(content, hookPath)
+	if count != 1 {
+		t.Errorf("hookPath appears %d times, want 1", count)
+	}
+}
+
+func TestPatchClaudeSettings_CorruptedJSON(t *testing.T) {
+	homeDir := t.TempDir()
+	settingsDir := filepath.Join(homeDir, ".claude")
+	os.MkdirAll(settingsDir, 0755)
+
+	settingsPath := filepath.Join(settingsDir, "settings.json")
+	os.WriteFile(settingsPath, []byte("{invalid json!!!"), 0644)
+
+	hookPath := "/path/to/hook.sh"
+	if err := patchClaudeSettings(homeDir, hookPath); err != nil {
+		t.Fatalf("patchClaudeSettings: %v", err)
+	}
+
+	// Backup should exist
+	entries, _ := os.ReadDir(settingsDir)
+	backupFound := false
+	for _, entry := range entries {
+		if strings.HasPrefix(entry.Name(), "settings.json.bak.") {
+			backupFound = true
+			// Verify backup content
+			backupData, _ := os.ReadFile(filepath.Join(settingsDir, entry.Name()))
+			if string(backupData) != "{invalid json!!!" {
+				t.Errorf("backup content mismatch: %q", string(backupData))
+			}
+		}
+	}
+	if !backupFound {
+		t.Error("no backup file created for corrupted settings.json")
+	}
+
+	// New settings.json should be valid JSON with hook
+	data, err := os.ReadFile(settingsPath)
+	if err != nil {
+		t.Fatalf("settings.json not rewritten: %v", err)
+	}
+	var settings map[string]any
+	if err := json.Unmarshal(data, &settings); err != nil {
+		t.Fatalf("rewritten settings.json invalid: %v", err)
+	}
+	hooks, _ := settings["hooks"].(map[string]any)
+	preToolUse, _ := hooks["PreToolUse"].([]any)
+	if len(preToolUse) != 1 {
+		t.Fatalf("expected 1 PreToolUse entry, got %d", len(preToolUse))
 	}
 }

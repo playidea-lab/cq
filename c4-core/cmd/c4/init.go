@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/spf13/cobra"
 )
@@ -238,6 +239,115 @@ func setupGlobalHooks(homeDir string) error {
 		fmt.Fprintln(os.Stderr, "cq: hook config → "+confPath)
 	}
 
+	// Register hook in ~/.claude/settings.json
+	if err := patchClaudeSettings(homeDir, hookPath); err != nil {
+		return fmt.Errorf("patching settings.json: %w", err)
+	}
+
+	return nil
+}
+
+// patchClaudeSettings registers the Bash security hook in ~/.claude/settings.json.
+// It is idempotent: if the hook entry already exists, it does nothing.
+// Corrupted JSON is backed up and replaced with a fresh structure.
+func patchClaudeSettings(homeDir string, hookPath string) error {
+	settingsPath := filepath.Join(homeDir, ".claude", "settings.json")
+
+	// Read existing settings or start fresh
+	var settings map[string]any
+	data, err := os.ReadFile(settingsPath)
+	if err == nil {
+		if jsonErr := json.Unmarshal(data, &settings); jsonErr != nil {
+			// Corrupted JSON → backup and start fresh
+			backupName := fmt.Sprintf("settings.json.bak.%s", time.Now().Format("20060102150405"))
+			backupPath := filepath.Join(filepath.Dir(settingsPath), backupName)
+			_ = os.WriteFile(backupPath, data, 0644)
+			fmt.Fprintf(os.Stderr, "cq: settings.json corrupted, backed up → %s\n", backupPath)
+			settings = map[string]any{}
+		}
+	} else {
+		settings = map[string]any{}
+	}
+
+	// Navigate to hooks → PreToolUse
+	hooks, _ := settings["hooks"].(map[string]any)
+	if hooks == nil {
+		hooks = map[string]any{}
+	}
+
+	preToolUseRaw, _ := hooks["PreToolUse"]
+	var preToolUse []any
+	if arr, ok := preToolUseRaw.([]any); ok {
+		preToolUse = arr
+	}
+
+	// Check if Bash matcher with this hookPath already exists
+	for _, entry := range preToolUse {
+		entryMap, ok := entry.(map[string]any)
+		if !ok {
+			continue
+		}
+		if entryMap["matcher"] != "Bash" {
+			continue
+		}
+		innerHooks, _ := entryMap["hooks"].([]any)
+		for _, h := range innerHooks {
+			hMap, ok := h.(map[string]any)
+			if !ok {
+				continue
+			}
+			if hMap["command"] == hookPath {
+				// Already registered
+				return nil
+			}
+		}
+	}
+
+	// Add new entry
+	newEntry := map[string]any{
+		"matcher": "Bash",
+		"hooks": []any{
+			map[string]any{
+				"type":    "command",
+				"command": hookPath,
+			},
+		},
+	}
+	preToolUse = append(preToolUse, newEntry)
+	hooks["PreToolUse"] = preToolUse
+	settings["hooks"] = hooks
+
+	// Atomic write: tempfile → rename
+	dir := filepath.Dir(settingsPath)
+	if mkErr := os.MkdirAll(dir, 0755); mkErr != nil {
+		return fmt.Errorf("creating settings dir: %w", mkErr)
+	}
+	out, marshalErr := json.MarshalIndent(settings, "", "  ")
+	if marshalErr != nil {
+		return fmt.Errorf("marshaling settings: %w", marshalErr)
+	}
+	out = append(out, '\n')
+
+	tmpFile, tmpErr := os.CreateTemp(dir, "settings-*.json.tmp")
+	if tmpErr != nil {
+		return fmt.Errorf("creating temp file: %w", tmpErr)
+	}
+	tmpPath := tmpFile.Name()
+	if _, wErr := tmpFile.Write(out); wErr != nil {
+		tmpFile.Close()
+		os.Remove(tmpPath)
+		return fmt.Errorf("writing temp file: %w", wErr)
+	}
+	if cErr := tmpFile.Close(); cErr != nil {
+		os.Remove(tmpPath)
+		return fmt.Errorf("closing temp file: %w", cErr)
+	}
+	if rErr := os.Rename(tmpPath, settingsPath); rErr != nil {
+		os.Remove(tmpPath)
+		return fmt.Errorf("renaming temp file: %w", rErr)
+	}
+
+	fmt.Fprintln(os.Stderr, "cq: registered Bash hook in ~/.claude/settings.json")
 	return nil
 }
 
