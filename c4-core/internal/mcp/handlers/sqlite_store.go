@@ -1393,8 +1393,8 @@ func (s *SQLiteStore) ResetTask(taskID string) error {
 	res, err := s.db.Exec(`
 		UPDATE c4_tasks
 		SET status = 'pending', worker_id = NULL, updated_at = ?
-		WHERE project_id = ? AND id = ? AND status = 'in_progress'`,
-		now, s.projectID, taskID)
+		WHERE task_id = ? AND status = 'in_progress'`,
+		now, taskID)
 	if err != nil {
 		return err
 	}
@@ -1421,8 +1421,8 @@ func (s *SQLiteStore) TouchCurrentWorkerHeartbeat() {
 	_, _ = s.db.Exec(`
 		UPDATE c4_tasks
 		SET updated_at = ?
-		WHERE project_id = ? AND worker_id = ? AND status = 'in_progress'`,
-		now, s.projectID, workerID)
+		WHERE worker_id = ? AND status = 'in_progress'`,
+		now, workerID)
 }
 
 // handoffData holds structured data parsed from a handoff JSON string.

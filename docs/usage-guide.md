@@ -324,9 +324,30 @@ C4 Swarm이 태스크의 `domain` 필드를 보고 자동 매핑합니다:
 
 사용자가 직접 호출할 일은 드물지만, 시스템이 내부적으로 쓰거나 특정 시나리오에서 필요한 기능들입니다.
 
-### Hub / Daemon — GPU 작업 스케줄링
+### Daemon — 로컬 작업 스케줄링 (Hub 불필요)
 
-로컬 또는 원격 GPU 작업을 관리합니다. ML 워크플로우의 핵심.
+Hub 서버 없이 로컬에서 바로 작업을 실행합니다. `.c4/daemon.db`에 저장.
+
+| 도구 | 용도 |
+|------|------|
+| `c4_job_submit` | 작업 제출 (command, exp_id, tags, env, timeout_sec, memo) |
+| `c4_job_list` | 작업 목록 조회 (status 필터 지원) |
+| `c4_job_status` | 특정 작업 상세 (로그 + 메트릭 포함) |
+| `c4_job_cancel` | 실행 중 작업 취소 |
+| `c4_job_summary` | 큐 전체 통계 (QUEUED/RUNNING/SUCCEEDED/FAILED 수) |
+| `c4_gpu_status` | GPU 현황 조회 |
+
+**특징**: `metrics.json` 자동 로드 (workdir 기준), `exp_id`/`tags`로 실험 분류 가능.
+
+```
+c4_job_submit(command="python train.py", exp_id="exp-001", tags=["gpu", "resnet"])
+c4_job_status(job_id="j-...")   # 로그 + 메트릭 확인
+c4_job_summary()                # 전체 큐 현황
+```
+
+### Hub — 원격/분산 작업 스케줄링 (C5 Hub 서버 필요)
+
+원격 GPU 서버 또는 다중 워커가 필요한 경우 사용합니다.
 
 | 도구 | 용도 |
 |------|------|

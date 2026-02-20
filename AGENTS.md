@@ -109,10 +109,10 @@ C9 Knowledge — 지식 관리 (FTS5 + pgvector + Embedding + Usage + Ingestion)
 ### 테스트 현황
 | 언어 | 테스트 수 | 패키지/모듈 |
 |------|----------|------------|
-| Go | **~1,397** | 28 packages (all pass) — c4-core ~1,263 + c5 134 |
+| Go | **~1,661** | 28 packages (all pass) — c4-core ~1,527 + c5 134 |
 | Python | **750** | tests/unit/ |
 | Rust | **85** | src-tauri |
-| **합계** | **~2,232** | |
+| **합계** | **~2,496** | |
 
 ### Monorepo 구조
 ```
@@ -246,7 +246,7 @@ c4_lighthouse get <tool_name>
 
 ---
 
-## MCP 도구 빠른 참조 (108개 base, Hub 활성화 시 134개)
+## MCP 도구 빠른 참조 (112개 base, Hub 활성화 시 138개)
 
 > **도구 상세 사용법**: `c4_lighthouse get <tool_name>`으로 워크플로우, 예시, 관련 도구, 주의사항 조회
 
@@ -328,11 +328,11 @@ CP-001:    체크포인트
 
 ## Go Core (c4-core/) — Primary MCP Server
 
-> Go 기반 MCP 서버. ~37.8K LOC(src) + ~30.9K LOC(test). 1,263개 테스트, 23 패키지.
+> Go 기반 MCP 서버. ~37.8K LOC(src) + ~30.9K LOC(test). 1,527개 테스트, 23 패키지.
 
 ### 아키텍처
 ```
-Claude Code → Go MCP Server (stdio, 108 base + 26 Hub = 134 tools)
+Claude Code → Go MCP Server (stdio, 112 base + 26 Hub = 138 tools)
                 ├→ Go native (28): 상태/설정, 태스크, 파일, git, validation, config, health, eventbus rules
                 ├→ Go + SQLite (13): spec, design, checkpoint, artifact, lighthouse
                 ├→ Soul/Persona/Twin (7): soul CRUD, persona evolve, whoami, reflect
