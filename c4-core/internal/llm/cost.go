@@ -21,21 +21,25 @@ type CostEntry struct {
 
 // ProviderCost aggregates costs for a single provider.
 type ProviderCost struct {
-	TotalUSD      float64 `json:"total_usd"`
-	Requests      int     `json:"requests"`
-	InputTok      int     `json:"input_tokens"`
-	OutputTok     int     `json:"output_tokens"`
-	CacheReadTok  int     `json:"cache_read_tokens,omitempty"`
-	CacheWriteTok int     `json:"cache_write_tokens,omitempty"`
-	SavedUSD      float64 `json:"cache_savings_usd,omitempty"`
+	TotalUSD         float64 `json:"total_usd"`
+	Requests         int     `json:"requests"`
+	InputTok         int     `json:"input_tokens"`
+	OutputTok        int     `json:"output_tokens"`
+	CacheReadTok     int     `json:"cache_read_tokens,omitempty"`
+	CacheWriteTok    int     `json:"cache_write_tokens,omitempty"`
+	SavedUSD         float64 `json:"cache_savings_usd,omitempty"`
+	CacheHitRate     float64 `json:"cache_hit_rate,omitempty"`
+	CacheSavingsRate float64 `json:"cache_savings_rate,omitempty"`
 }
 
 // CostReport is the aggregate cost summary.
 type CostReport struct {
-	TotalUSD   float64                 `json:"total_usd"`
-	TotalReqs  int                     `json:"total_requests"`
-	ByProvider map[string]ProviderCost `json:"by_provider"`
-	ByModel    map[string]float64      `json:"by_model"`
+	TotalUSD              float64                 `json:"total_usd"`
+	TotalReqs             int                     `json:"total_requests"`
+	ByProvider            map[string]ProviderCost `json:"by_provider"`
+	ByModel               map[string]float64      `json:"by_model"`
+	GlobalCacheHitRate    float64                 `json:"global_cache_hit_rate,omitempty"`
+	GlobalCacheSavingsRate float64                `json:"global_cache_savings_rate,omitempty"`
 }
 
 // CostTracker accumulates LLM usage costs in memory.
@@ -84,6 +88,8 @@ func (ct *CostTracker) Report() CostReport {
 		ByModel:    make(map[string]float64),
 	}
 
+	var globalInput, globalCacheRead, globalCacheWrite int
+
 	for _, e := range ct.entries {
 		report.TotalUSD += e.CostUSD
 		report.TotalReqs++
@@ -99,6 +105,33 @@ func (ct *CostTracker) Report() CostReport {
 		report.ByProvider[e.Provider] = pc
 
 		report.ByModel[e.Model] += e.CostUSD
+
+		globalInput += e.Input
+		globalCacheRead += e.CacheRead
+		globalCacheWrite += e.CacheWrite
+	}
+
+	// Calculate per-provider cache rates.
+	for provider, pc := range report.ByProvider {
+		cacheAttempts := pc.CacheReadTok + pc.CacheWriteTok
+		if cacheAttempts > 0 {
+			pc.CacheHitRate = float64(pc.CacheReadTok) / float64(cacheAttempts)
+		}
+		totalInput := pc.InputTok + pc.CacheReadTok + pc.CacheWriteTok
+		if totalInput > 0 {
+			pc.CacheSavingsRate = float64(pc.CacheReadTok) / float64(totalInput)
+		}
+		report.ByProvider[provider] = pc
+	}
+
+	// Calculate global cache rates.
+	globalCacheAttempts := globalCacheRead + globalCacheWrite
+	if globalCacheAttempts > 0 {
+		report.GlobalCacheHitRate = float64(globalCacheRead) / float64(globalCacheAttempts)
+	}
+	globalTotalInput := globalInput + globalCacheRead + globalCacheWrite
+	if globalTotalInput > 0 {
+		report.GlobalCacheSavingsRate = float64(globalCacheRead) / float64(globalTotalInput)
 	}
 
 	return report
