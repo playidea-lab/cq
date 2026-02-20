@@ -7,7 +7,6 @@
 }
 
 .config__loading,
-.config__error,
 .config__placeholder {
   display: flex;
   align-items: center;
@@ -17,10 +16,6 @@
   font-size: var(--font-size-md);
   padding: var(--space-xl);
   text-align: center;
-}
-
-.config__error {
-  color: var(--color-error);
 }
 
 .config__tree-panel {

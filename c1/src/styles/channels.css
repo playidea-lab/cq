@@ -127,17 +127,8 @@
   background: var(--color-text-muted);
 }
 
-.channel-sidebar__status-dot--online,
-.channel-sidebar__status-dot--working {
+.channel-sidebar__status-dot--online {
   background: var(--color-accent-green, #22c55e);
-}
-
-.channel-sidebar__status-dot--idle {
-  background: var(--color-accent-yellow, #eab308);
-}
-
-.channel-sidebar__status-dot--offline {
-  background: var(--color-text-muted);
 }
 
 /* --- Worker Count Badge --- */
@@ -251,21 +242,6 @@
   font-size: var(--font-size-sm);
   flex-shrink: 0;
   margin-top: 2px;
-}
-
-.message-bubble__avatar--human {
-  background: var(--color-accent-blue);
-  color: var(--color-text-white);
-}
-
-.message-bubble__avatar--agent {
-  background: var(--color-purple);
-  color: var(--color-text-white);
-}
-
-.message-bubble__avatar--system {
-  background: var(--color-bg-tertiary);
-  color: var(--color-text-muted);
 }
 
 .message-bubble__body {
