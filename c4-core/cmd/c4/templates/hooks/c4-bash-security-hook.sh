@@ -44,7 +44,7 @@ BLOCK_PATTERNS=()
 if [[ -f "$CONFIG_FILE" ]]; then
     conf_owner=$(stat -c "%u" "$CONFIG_FILE" 2>/dev/null || stat -f "%u" "$CONFIG_FILE" 2>/dev/null)
     conf_mode=$(stat -c "%a" "$CONFIG_FILE" 2>/dev/null || stat -f "%OLp" "$CONFIG_FILE" 2>/dev/null)
-    if [[ "$conf_owner" != "$(id -u)" ]] || [[ "${conf_mode: -2:1}" =~ [2367] ]] || [[ "${conf_mode: -1}" =~ [2367] ]]; then
+    if [[ -z "$conf_mode" ]] || [[ "$conf_owner" != "$(id -u)" ]] || [[ "${conf_mode: -2:1}" =~ [2367] ]] || [[ "${conf_mode: -1}" =~ [2367] ]]; then
         echo "c4-security-hook: WARNING: $CONFIG_FILE is not trusted (owner/perms), skipping." >&2
     else
         # shellcheck source=/dev/null

@@ -334,8 +334,6 @@ func (s *SQLiteStore) migrateTasksIfNeeded() error {
 	if err != nil {
 		return fmt.Errorf("read legacy rows: %w", err)
 	}
-	defer legacyRows.Close()
-
 	migrated := 0
 	for legacyRows.Next() {
 		var taskID, taskJSON, status string
@@ -393,6 +391,7 @@ func (s *SQLiteStore) migrateTasksIfNeeded() error {
 		}
 		migrated++
 	}
+	legacyRows.Close()
 	if err := legacyRows.Err(); err != nil {
 		return fmt.Errorf("iterating legacy rows: %w", err)
 	}
@@ -720,7 +719,7 @@ func (s *SQLiteStore) reassignStaleOrFindPendingTask(workerID string) (
 	var priority int
 	var isStale bool
 
-	// Anti-fragility: try to reassign stale in_progress tasks first (>10 min without update)
+	// Anti-fragility: try to reassign stale in_progress tasks first (>30 min without update)
 	err = conn.QueryRowContext(ctx, `
 		SELECT t.task_id, t.title, t.scope, t.dod, t.dependencies, t.domain, t.priority, t.model
 		FROM c4_tasks t
