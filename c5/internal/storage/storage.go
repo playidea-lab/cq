@@ -124,9 +124,13 @@ func (s *SupabaseBackend) EnsureBucket() error {
 	if resp.StatusCode == http.StatusOK {
 		return nil
 	}
+	// Supabase may return 400 with "Bucket not found" instead of 404.
 	if resp.StatusCode != http.StatusNotFound {
 		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("ensure bucket: unexpected status %d: %s", resp.StatusCode, string(body))
+		bodyStr := string(body)
+		if !strings.Contains(strings.ToLower(bodyStr), "not found") {
+			return fmt.Errorf("ensure bucket: unexpected status %d: %s", resp.StatusCode, bodyStr)
+		}
 	}
 
 	// Bucket not found — create it.
