@@ -140,6 +140,28 @@
   background: var(--color-text-muted);
 }
 
+/* --- Worker Count Badge --- */
+.channel-sidebar__worker-badge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 10px;
+  min-width: 18px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.channel-sidebar__worker-badge--online {
+  background: var(--color-accent-green, #22c55e);
+  color: #fff;
+}
+
+.channel-sidebar__worker-badge--offline {
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-muted);
+  border: 1px solid var(--color-border-subtle);
+}
+
 /* --- Chat Panel --- */
 .chat-panel {
   flex: 1;

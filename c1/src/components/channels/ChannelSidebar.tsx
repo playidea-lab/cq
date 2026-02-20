@@ -64,9 +64,15 @@ export function ChannelSidebar({
     return { systemChannels: sys, workerChannels: wkr, userChannels: usr };
   }, [channels]);
 
-  // Online member count
+  // Online member count (all non-offline)
   const onlineCount = useMemo(
     () => members.filter(m => m.status !== 'offline').length,
+    [members],
+  );
+
+  // Online agent (worker) count
+  const onlineAgentCount = useMemo(
+    () => members.filter(m => m.member_type === 'agent' && m.status !== 'offline').length,
     [members],
   );
 
@@ -92,6 +98,32 @@ export function ChannelSidebar({
   );
 
   const renderWorkerChannel = (ch: Channel) => {
+    // #cq is the shared dispatch channel — show online agent count badge
+    if (ch.name === 'cq') {
+      return (
+        <li
+          key={ch.id}
+          className={`channel-sidebar__item ${selectedChannel?.id === ch.id ? 'channel-sidebar__item--active' : ''}`}
+          onClick={() => onSelect(ch)}
+          role="button"
+          tabIndex={0}
+          onKeyDown={(e) => handleChannelKeyDown(ch, e)}
+        >
+          <span className="channel-sidebar__item-hash">#</span>
+          <span className="channel-sidebar__item-name">{ch.name}</span>
+          {onlineAgentCount > 0 ? (
+            <span className="channel-sidebar__worker-badge channel-sidebar__worker-badge--online">
+              {onlineAgentCount}
+            </span>
+          ) : (
+            <span className="channel-sidebar__worker-badge channel-sidebar__worker-badge--offline">
+              0
+            </span>
+          )}
+        </li>
+      );
+    }
+    // Per-worker channels: show individual status dot
     const status = getWorkerStatus(ch);
     return (
       <li
