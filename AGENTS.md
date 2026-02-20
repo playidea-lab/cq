@@ -98,7 +98,7 @@ C9 Knowledge — 지식 관리 (FTS5 + pgvector + Embedding + Usage + Ingestion)
 ### 코드베이스 규모
 | 언어 | 소스 | 테스트 | 합계 |
 |------|------|--------|------|
-| Go (`c4-core/`) | ~40.2K LOC | ~32.7K LOC | ~72.9K |
+| Go (`c4-core/`) | ~40.6K LOC | ~36.6K LOC | ~77.3K |
 | Go (`c5/`) | ~5.6K LOC | ~3.5K LOC | ~9.1K |
 | Python (`c4/`) | ~24.4K LOC | ~11.6K LOC | ~36.0K |
 | Rust (`c1/src-tauri/`) | ~9.5K LOC | (내장) | ~9.5K |
@@ -109,7 +109,7 @@ C9 Knowledge — 지식 관리 (FTS5 + pgvector + Embedding + Usage + Ingestion)
 ### 테스트 현황
 | 언어 | 테스트 수 | 패키지/모듈 |
 |------|----------|------------|
-| Go | **~1,661** | 28 packages (all pass) — c4-core ~1,527 + c5 134 |
+| Go | **~1,398** | 22 packages (all pass) — c4-core ~1,260 + c5 138 |
 | Python | **750** | tests/unit/ |
 | Rust | **85** | src-tauri |
 | **합계** | **~2,496** | |
