@@ -1359,12 +1359,12 @@ func (s *SQLiteStore) autoRecordKnowledge(task *Task, summary string, filesChang
 // Used by the admin c4_stale_tasks tool to surface stuck workers.
 func (s *SQLiteStore) StaleTasks(minMinutes int) ([]Task, error) {
 	rows, err := s.db.Query(`
-		SELECT id, title, worker_id, updated_at, domain
+		SELECT task_id, title, worker_id, updated_at, domain
 		FROM c4_tasks
-		WHERE project_id = ? AND status = 'in_progress'
+		WHERE status = 'in_progress'
 		  AND (julianday('now') - julianday(updated_at)) * 24 * 60 > ?
 		ORDER BY updated_at ASC`,
-		s.projectID, minMinutes)
+		minMinutes)
 	if err != nil {
 		return nil, err
 	}
