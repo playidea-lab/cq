@@ -6,18 +6,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net/http"
 	"os"
 	"os/signal"
 	"sync"
 	"syscall"
 
 	"github.com/changmin/c4-core/internal/bridge"
-	"github.com/changmin/c4-core/internal/daemon"
-	"github.com/changmin/c4-core/internal/eventbus"
 	"github.com/changmin/c4-core/internal/knowledge"
 	"github.com/changmin/c4-core/internal/mcp"
-	"github.com/changmin/c4-core/internal/research"
 )
 
 // NOTE: The "mcp" subcommand is registered by fallback.go (mcpFallbackCmd)
@@ -63,18 +59,13 @@ type initializeResult struct {
 
 // mcpServer holds the state of a running MCP server instance.
 type mcpServer struct {
-	registry         *mcp.Registry
-	sidecar          *bridge.LazyStarter      // lazy-initialized Python sidecar
-	db               *sql.DB
-	embeddedEB       *eventbus.EmbeddedServer // v3: in-process EventBus
-	researchStore    *research.Store          // Go native research store
-	knowledgeStore   *knowledge.Store         // Go native knowledge store (Tier 2)
-	knowledgeUsage   *knowledge.UsageTracker  // usage tracking for 3-way RRF
-	eventsinkSrv     *http.Server             // EventSink HTTP server (nil if disabled)
-	hubPollerCancel  context.CancelFunc       // cancel func for HubPoller goroutine
-	daemonStore      *daemon.Store            // local job scheduler store (nil if init failed)
-	scheduler        *daemon.Scheduler        // local job scheduler (nil if init failed)
-	schedulerCancel  context.CancelFunc       // cancel func for scheduler lifecycle context
+	registry *mcp.Registry
+	sidecar  *bridge.LazyStarter // lazy-initialized Python sidecar
+	db       *sql.DB
+	// initCtx holds all component-specific state; shutdown delegates to componentShutdownHooks.
+	initCtx        *initContext
+	knowledgeStore *knowledge.Store        // Go native knowledge store (Tier 2)
+	knowledgeUsage *knowledge.UsageTracker // usage tracking for 3-way RRF
 }
 
 // serve runs the stdio MCP server loop with concurrent request handling.
@@ -166,30 +157,18 @@ func (s *mcpServer) serve() error {
 }
 
 // shutdown cleans up resources.
+// Component-specific cleanup is delegated to componentShutdownHooks registered by each
+// build-tagged init file (mcp_init_*.go). Core resources (sidecar, knowledge, db) are
+// cleaned up here since they are always present regardless of build tags.
 func (s *mcpServer) shutdown() {
-	if s.hubPollerCancel != nil {
-		s.hubPollerCancel()
-	}
-	if s.eventsinkSrv != nil {
-		s.eventsinkSrv.Close()
-	}
-	if s.embeddedEB != nil {
-		s.embeddedEB.Stop()
+	// Run component shutdown hooks in reverse registration order.
+	for i := len(componentShutdownHooks) - 1; i >= 0; i-- {
+		if s.initCtx != nil {
+			componentShutdownHooks[i](s.initCtx)
+		}
 	}
 	if s.sidecar != nil {
 		_ = s.sidecar.Stop()
-	}
-	if s.scheduler != nil {
-		s.scheduler.Stop()
-	}
-	if s.schedulerCancel != nil {
-		s.schedulerCancel()
-	}
-	if s.daemonStore != nil {
-		_ = s.daemonStore.Close()
-	}
-	if s.researchStore != nil {
-		s.researchStore.Close()
 	}
 	if s.knowledgeUsage != nil {
 		s.knowledgeUsage.Close()

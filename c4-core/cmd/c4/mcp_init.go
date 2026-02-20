@@ -1,9 +1,7 @@
 package main
 
 import (
-	"context"
 	"fmt"
-	"net/http"
 	"os"
 	"path/filepath"
 	"time"
@@ -11,23 +9,23 @@ import (
 	"github.com/joho/godotenv"
 
 	"github.com/changmin/c4-core/internal/bridge"
-	"github.com/changmin/c4-core/internal/cdp"
 	"github.com/changmin/c4-core/internal/cloud"
 	"github.com/changmin/c4-core/internal/config"
-	"github.com/changmin/c4-core/internal/daemon"
-	"github.com/changmin/c4-core/internal/drive"
 	"github.com/changmin/c4-core/internal/eventbus"
 	"github.com/changmin/c4-core/internal/hub"
 	"github.com/changmin/c4-core/internal/knowledge"
 	"github.com/changmin/c4-core/internal/llm"
 	"github.com/changmin/c4-core/internal/mcp"
 	"github.com/changmin/c4-core/internal/mcp/handlers"
-	"github.com/changmin/c4-core/internal/research"
-	"github.com/changmin/c4-core/internal/worker"
 	_ "modernc.org/sqlite"
 )
 
 // newMCPServer creates and initializes the MCP server with all tools registered.
+// Initialization proceeds in four phases:
+//  1. Core setup: DB, config, sidecar, cloud/token, knowledge store
+//  2. componentPreStoreHooks: LLM, GPU, Research — populate NativeOpts fields
+//  3. Registry + proxy + sqliteStore creation + core handler registration
+//  4. componentInitHooks: C1, Drive, Hub, CDP, EventBus — require ctx.sqliteStore
 func newMCPServer() (*mcpServer, error) {
 	// Load .env files (best-effort, non-fatal)
 	// Search: projectDir/.env, projectDir/../.env (monorepo root)
@@ -109,14 +107,6 @@ func newMCPServer() (*mcpServer, error) {
 		cloudTP = cloud.NewStaticTokenProvider("")
 	}
 
-	// Create research store (optional — native research tools use this)
-	researchDir := filepath.Join(projectDir, ".c4", "research")
-	os.MkdirAll(researchDir, 0755)
-	researchStore, researchErr := research.NewStore(researchDir)
-	if researchErr != nil {
-		fmt.Fprintf(os.Stderr, "cq: research store init failed (proxy fallback): %v\n", researchErr)
-	}
-
 	// Create knowledge store (optional — native knowledge tools use this, Tier 2)
 	knowledgeDir := filepath.Join(projectDir, ".c4", "knowledge")
 	os.MkdirAll(knowledgeDir, 0755)
@@ -161,50 +151,44 @@ func newMCPServer() (*mcpServer, error) {
 		}
 	}
 
-	// Create LLM Gateway early so it can be shared with knowledge distill
-	var llmGateway *llm.Gateway
-	if cfgMgr != nil && cfgMgr.GetConfig().LLMGateway.Enabled {
-		llmGateway = llm.NewGatewayFromConfig(toLLMGatewayConfig(cfgMgr.GetConfig()))
-	}
-
-	// Create daemon store and scheduler (graceful fallback on failure)
-	var daemonStore *daemon.Store
-	var scheduler *daemon.Scheduler
-	var schedulerCancel context.CancelFunc
-	daemonDBPath := filepath.Join(projectDir, ".c4", "daemon.db")
-	if ds, dsErr := daemon.NewStore(daemonDBPath); dsErr != nil {
-		fmt.Fprintf(os.Stderr, "cq: daemon store init failed (job scheduler unavailable): %v\n", dsErr)
-	} else {
-		daemonStore = ds
-		daemonDataDir := filepath.Join(projectDir, ".c4", "daemon")
-		gpuMon := daemon.NewGpuMonitor()
-		gpuCount := 0
-		if gpus, gpuErr := gpuMon.GetAllGPUs(); gpuErr == nil {
-			gpuCount = len(gpus)
-		}
-		scheduler = daemon.NewScheduler(daemonStore, daemon.SchedulerConfig{
-			DataDir:  daemonDataDir,
-			GPUCount: gpuCount,
-		})
-		schedulerCtx, schedCancel := context.WithCancel(context.Background())
-		schedulerCancel = schedCancel
-		scheduler.Start(schedulerCtx)
-		fmt.Fprintf(os.Stderr, "cq: daemon scheduler started (gpus=%d)\n", gpuCount)
-	}
-
-	// Create registry and register all tools (proxy is created inside with lazy sidecar)
+	// --- Phase 1: Create registry and initContext with core fields ---
 	reg := mcp.NewRegistry()
+	ctx := &initContext{
+		projectDir:        projectDir,
+		db:                db,
+		cfgMgr:            cfgMgr,
+		reg:               reg,
+		lazySidecar:       lazySidecar,
+		cloudTP:           cloudTP,
+		cloudProjectID:    cloudProjectID,
+		knowledgeCloud:    knowledgeCloud,
+		knowledgeStore:    knowledgeStore,
+		knowledgeSearcher: knowledgeSearcher,
+		knowledgeUsage:    knowledgeUsage,
+	}
+
+	// --- Phase 2: Run pre-store hooks (LLM, GPU, Research) ---
+	// These populate ctx.llmGateway, ctx.daemonStore, ctx.researchStore
+	// which are consumed by NativeOpts before handler registration.
+	for _, fn := range componentPreStoreHooks {
+		if err := fn(ctx); err != nil {
+			return nil, fmt.Errorf("pre-store component init: %w", err)
+		}
+	}
+
+	// --- Phase 3: Create proxy, sqliteStore, hybridStore, register core handlers ---
 	nativeOpts := &handlers.NativeOpts{
-		ResearchStore:     researchStore,
+		ResearchStore:     ctx.researchStore,
 		KnowledgeStore:    knowledgeStore,
 		KnowledgeSearcher: knowledgeSearcher,
 		KnowledgeCloud:    knowledgeCloud,
 		KnowledgeUsage:    knowledgeUsage,
-		LLMGateway:        llmGateway,
-		GPUStore:          daemonStore,
-		GPUScheduler:      scheduler,
+		LLMGateway:        ctx.llmGateway,
+		GPUStore:          ctx.daemonStore,
+		GPUScheduler:      ctx.scheduler,
 	}
 	proxy := handlers.RegisterAllHandlersLazyWithOpts(reg, nil, projectDir, lazySidecar, knowledgeCloud, nativeOpts)
+	ctx.proxy = proxy
 
 	// Wire proxy restart and sidecar health check onRestart callback
 	proxy.SetRestarter(lazySidecar)
@@ -231,8 +215,9 @@ func newMCPServer() (*mcpServer, error) {
 	if err != nil {
 		return nil, fmt.Errorf("creating store: %w", err)
 	}
+	ctx.sqliteStore = sqliteStore
 
-	// Wrap with HybridStore if cloud is enabled (reuse auth token from knowledge client setup)
+	// Wrap with HybridStore if cloud is enabled
 	var store handlers.Store = sqliteStore
 	if cfgMgr != nil && cfgMgr.GetConfig().Cloud.Enabled {
 		cloudCfg := cfgMgr.GetConfig().Cloud
@@ -245,8 +230,9 @@ func newMCPServer() (*mcpServer, error) {
 			fmt.Fprintln(os.Stderr, "cq: cloud enabled but URL/key not configured, using local only")
 		}
 	}
+	ctx.store = store
 
-	// Re-register handlers with the actual store (core + discovery + persona + soul tools)
+	// Register core handlers (task, state, discovery, persona, team, soul, twin, lighthouse).
 	// Note: RegisterAll and RegisterDiscoveryHandlers accept handlers.Store interface,
 	// so they work with both SQLiteStore and HybridStore.
 	// Persona, Twin, and Lighthouse handlers require *SQLiteStore directly
@@ -262,206 +248,18 @@ func newMCPServer() (*mcpServer, error) {
 		fmt.Fprintf(os.Stderr, "cq: %d lighthouse stubs loaded\n", n)
 	}
 
-	// Option B: manual recovery tools for stuck workers.
+	// Manual recovery tools for stuck workers.
 	handlers.RegisterTaskAdminHandlers(reg, sqliteStore)
 
-	// Option C: implicit heartbeat — refresh active worker's task updated_at on
-	// every tool call, so the 30-min stale timeout isn't triggered by genuine work.
+	// Implicit heartbeat — refresh active worker's task updated_at on every tool call,
+	// so the 30-min stale timeout isn't triggered by genuine work.
 	reg.OnCall = sqliteStore.TouchCurrentWorkerHeartbeat
-
-	// Register LLM Gateway handlers if enabled (reuse gateway created earlier)
-	if llmGateway != nil {
-		handlers.RegisterLLMHandlers(reg, llmGateway)
-		fmt.Fprintf(os.Stderr, "cq: LLM gateway enabled (%d providers)\n", llmGateway.ProviderCount())
-	}
-
-	// Register Hub handlers if enabled
-	var hubClient *hub.Client
-	var hubPollerCancel context.CancelFunc
-	if cfgMgr != nil && cfgMgr.GetConfig().Hub.Enabled {
-		hubCfg := cfgMgr.GetConfig().Hub
-		hubClient = hub.NewClient(hub.HubConfig{
-			Enabled:   hubCfg.Enabled,
-			URL:       hubCfg.URL,
-			APIPrefix: hubCfg.APIPrefix,
-			APIKey:    hubCfg.APIKey,
-			APIKeyEnv: hubCfg.APIKeyEnv,
-			TeamID:    hubCfg.TeamID,
-		})
-		if hubClient.IsAvailable() {
-			handlers.RegisterHubHandlers(reg, hubClient)
-			fmt.Fprintf(os.Stderr, "cq: hub connected (%s)\n", hubCfg.URL)
-		} else {
-			fmt.Fprintln(os.Stderr, "cq: hub enabled but URL not configured")
-			hubClient = nil
-		}
-	}
-
-	// Register Drive handlers if cloud is enabled
-	if cfgMgr != nil && cfgMgr.GetConfig().Cloud.Enabled {
-		cloudCfg := cfgMgr.GetConfig().Cloud
-		if cloudCfg.URL != "" && cloudCfg.AnonKey != "" {
-			driveClient := drive.NewClient(cloudCfg.URL, cloudCfg.AnonKey, cloudTP, cloudProjectID, cloudCfg.BucketName)
-			handlers.RegisterDriveHandlers(reg, driveClient)
-			fmt.Fprintln(os.Stderr, "cq: drive enabled (6 tools)")
-		}
-	}
-
-	// Register C1 handlers if cloud is enabled
-	var keeper *handlers.ContextKeeper
-	if cfgMgr != nil && cfgMgr.GetConfig().Cloud.Enabled {
-		cloudCfg := cfgMgr.GetConfig().Cloud
-		if cloudCfg.URL != "" && cloudCfg.AnonKey != "" && cloudTP.Token() != "" && cloudProjectID != "" {
-			c1Handler := handlers.NewC1Handler(cloudCfg.URL+"/rest/v1", cloudCfg.AnonKey, cloudTP, cloudProjectID)
-			handlers.RegisterC1Handlers(reg, c1Handler)
-
-			// Create ContextKeeper (wired to Dispatcher below)
-			var keeperGateway *llm.Gateway
-			if cfgMgr.GetConfig().LLMGateway.Enabled {
-				keeperGateway = llm.NewGatewayFromConfig(toLLMGatewayConfig(cfgMgr.GetConfig()))
-			}
-			keeper = handlers.NewContextKeeper(c1Handler, keeperGateway)
-			if err := keeper.EnsureSystemChannels(); err != nil {
-				fmt.Fprintf(os.Stderr, "cq: system channels setup failed: %v\n", err)
-			}
-			fmt.Fprintln(os.Stderr, "cq: c1 enabled (3 tools + keeper)")
-		}
-	}
-
-	// Register Worker standby tools if Hub is available
-	if hubClient != nil {
-		shutdownStore, shutdownErr := worker.NewShutdownStore(db)
-		if shutdownErr != nil {
-			fmt.Fprintf(os.Stderr, "cq: worker shutdown store failed: %v\n", shutdownErr)
-		} else {
-			handlers.RegisterWorkerHandlers(reg, &handlers.WorkerDeps{
-				HubClient:     hubClient,
-				ShutdownStore: shutdownStore,
-				Keeper:        keeper,
-			})
-			fmt.Fprintln(os.Stderr, "cq: worker standby tools registered (3 tools)")
-		}
-	}
-
-	// wireEventBusClient connects an EventBus client to all components that need it.
-	// Centralised to prevent wiring omissions when adding new components.
-	wireEventBusClient := func(ebClient *eventbus.Client) {
-		handlers.RegisterEventBusHandlers(reg, ebClient)
-		sqliteStore.SetEventBus(ebClient)
-		handlers.SetDriveEventBus(ebClient)
-		handlers.SetValidationEventBus(ebClient)
-		handlers.SetKnowledgeEventBus(ebClient, sqliteStore.GetProjectID())
-		handlers.SetResearchEventBus(ebClient, sqliteStore.GetProjectID())
-		handlers.SetSoulEventBus(ebClient, sqliteStore.GetProjectID())
-		handlers.SetPersonaEventBus(ebClient, sqliteStore.GetProjectID())
-		handlers.SetHubEventBus(ebClient, sqliteStore.GetProjectID())
-		proxy.SetEventBus(ebClient)
-	}
-
-	// Register EventBus handlers
-	var embeddedEB *eventbus.EmbeddedServer
-	if cfgMgr != nil && cfgMgr.GetConfig().EventBus.Enabled {
-		ebCfg := cfgMgr.GetConfig().EventBus
-
-		// Auto-start: launch in-process embedded server
-		if ebCfg.AutoStart {
-			dataDir := ebCfg.DataDir
-			if dataDir == "" {
-				dataDir = filepath.Join(projectDir, ".c4", "eventbus")
-			}
-			// Resolve default rules path: prefer project-local, fall back to data dir
-			defaultRulesPath := filepath.Join(projectDir, "c4-core", "internal", "eventbus", "default_rules.yaml")
-			if _, err := os.Stat(defaultRulesPath); err != nil {
-				defaultRulesPath = filepath.Join(dataDir, "default_rules.yaml")
-				if _, err := os.Stat(defaultRulesPath); err != nil {
-					defaultRulesPath = ""
-				}
-			}
-
-			eb, ebErr := eventbus.StartEmbedded(eventbus.EmbeddedConfig{
-				DataDir:          dataDir,
-				RetentionDays:    ebCfg.RetentionDays,
-				MaxEvents:        ebCfg.MaxEvents,
-				DefaultRulesPath: defaultRulesPath,
-				WSPort:           ebCfg.WSPort,
-				WSHost:           ebCfg.WSHost,
-			})
-			if ebErr != nil {
-				fmt.Fprintf(os.Stderr, "cq: eventbus auto-start failed: %v\n", ebErr)
-			} else {
-				embeddedEB = eb
-
-				if keeper != nil {
-					eb.Dispatcher().SetC1Poster(keeper)
-				}
-
-				ebClient, ebErr := eventbus.NewClient(eb.SocketPath())
-				if ebErr == nil {
-					wireEventBusClient(ebClient)
-					sqliteStore.SetDispatcher(eb.Dispatcher())
-					if hubClient != nil {
-						eb.Dispatcher().SetHubSubmitter(&hubJobSubmitterAdapter{client: hubClient})
-					}
-					fmt.Fprintf(os.Stderr, "cq: eventbus auto-started (embedded, %s)\n", eb.SocketPath())
-				}
-			}
-		} else {
-			// Connect to remote daemon
-			sockPath := ebCfg.SocketPath
-			if sockPath == "" {
-				home, _ := os.UserHomeDir()
-				sockPath = filepath.Join(home, ".c4", "eventbus", "c3.sock")
-			}
-			ebClient, ebErr := eventbus.NewClient(sockPath)
-			if ebErr != nil {
-				fmt.Fprintf(os.Stderr, "cq: eventbus not reachable (unix:%s): %v\n", sockPath, ebErr)
-			} else {
-				wireEventBusClient(ebClient)
-				fmt.Fprintf(os.Stderr, "cq: eventbus connected (unix:%s, 6 tools)\n", sockPath)
-			}
-		}
-	}
-
-	// Wire local Dispatcher for C1 posting if no embedded server
-	if keeper != nil && embeddedEB == nil {
-		localDBPath := filepath.Join(projectDir, ".c4", "eventbus", "local.db")
-		localStore, localErr := eventbus.NewStore(localDBPath)
-		if localErr != nil {
-			fmt.Fprintf(os.Stderr, "cq: local eventbus store failed: %v\n", localErr)
-		} else {
-			localDispatcher := eventbus.NewDispatcher(localStore)
-			localDispatcher.SetC1Poster(keeper)
-
-			rules, _ := localStore.MatchRules("task.completed")
-			if len(rules) == 0 {
-				localStore.AddRule(
-					"c1-task-updates",
-					"task.*",
-					"",
-					"c1_post",
-					`{"channel":"#updates","template":"[{{event_type}}] {{task_id}}: {{title}}"}`,
-					true,
-					0,
-				)
-			}
-
-			sqliteStore.SetDispatcher(localDispatcher)
-			fmt.Fprintln(os.Stderr, "cq: local dispatcher wired (c1_post rules)")
-		}
-	}
-
-	// Register CDP handlers (always available — connects on demand)
-	cdpRunner := cdp.NewRunner()
-	handlers.RegisterCDPHandlers(reg, cdpRunner)
 
 	// Set project role for Soul stage integration
 	projectName := filepath.Base(projectDir)
 	if projectName != "" && projectName != "." {
 		handlers.SetProjectRoleForStage("project-" + projectName)
 	}
-
-	// Wire lazy sidecar for auto-restart (LazyStarter implements Restarter)
-	proxy.SetRestarter(lazySidecar)
 
 	// Register health check handler
 	handlers.RegisterHealthHandler(reg, &handlers.HealthDeps{
@@ -475,46 +273,29 @@ func newMCPServer() (*mcpServer, error) {
 	handlers.RegisterConfigHandler(reg, cfgMgr)
 	handlers.RegisterConfigSetHandler(reg, cfgMgr, projectDir)
 
-	// Start HubPoller and EventSink using hubEventPub (set by SetHubEventBus above).
-	// These must be started after EventBus wiring so hubEventPub is populated.
-	// hubEventPubOrNoop returns the hub event publisher, falling back to NoopPublisher.
-	hubEventPubOrNoop := handlers.GetHubEventPub()
-
-	if hubClient != nil {
-		pollerCtx, pollerCancel := context.WithCancel(context.Background())
-		hubPollerCancel = pollerCancel
-		poller := handlers.NewHubPoller(hubClient, hubEventPubOrNoop, 30*time.Second)
-		poller.SetProjectID(sqliteStore.GetProjectID())
-		poller.Start(pollerCtx)
-		fmt.Fprintln(os.Stderr, "cq: hub poller started (30s interval)")
-	}
-
-	// Start EventSink HTTP server (config from .c4/config.yaml, env overrides applied in config.New)
-	var eventsinkSrv *http.Server
-	if cfgMgr != nil && cfgMgr.GetConfig().EventSink.Enabled {
-		esCfg := cfgMgr.GetConfig().EventSink
-		esSrv, esErr := handlers.StartEventSinkServer(esCfg.Port, esCfg.Token, hubEventPubOrNoop)
-		if esErr != nil {
-			fmt.Fprintf(os.Stderr, "cq: eventsink start failed: %v\n", esErr)
-		} else if esSrv != nil {
-			eventsinkSrv = esSrv
-			fmt.Fprintf(os.Stderr, "cq: eventsink listening on :%d\n", esCfg.Port)
+	// --- Phase 4: Run post-store hooks (C1, Drive, Hub, CDP, EventBus) ---
+	// ctx.sqliteStore and ctx.proxy are now set; EventBus wiring can proceed.
+	for _, fn := range componentInitHooks {
+		if err := fn(ctx); err != nil {
+			return nil, fmt.Errorf("component init: %w", err)
 		}
 	}
 
+	// Start HubPoller after EventBus wiring so hubEventPub is populated.
+	// startHubPoller is defined in mcp_init_hub.go (c5_hub) / mcp_init_hub_stub.go (!c5_hub).
+	startHubPoller(ctx)
+
+	// Start EventSink HTTP server (config from .c4/config.yaml).
+	// startEventSink is defined in mcp_init_eventbus.go (c3_eventbus) / mcp_init_eventbus_stub.go.
+	startEventSink(ctx)
+
 	return &mcpServer{
-		registry:        reg,
-		sidecar:         lazySidecar,
-		db:              db,
-		embeddedEB:      embeddedEB,
-		researchStore:   researchStore,
-		knowledgeStore:  knowledgeStore,
-		knowledgeUsage:  knowledgeUsage,
-		eventsinkSrv:    eventsinkSrv,
-		hubPollerCancel: hubPollerCancel,
-		daemonStore:     daemonStore,
-		scheduler:       scheduler,
-		schedulerCancel: schedulerCancel,
+		registry:       reg,
+		sidecar:        lazySidecar,
+		db:             db,
+		initCtx:        ctx,
+		knowledgeStore: knowledgeStore,
+		knowledgeUsage: knowledgeUsage,
 	}, nil
 }
 
