@@ -1,8 +1,8 @@
 # C4 Roadmap
 
-## Current Version: v0.22.1 (Phase 12.2 — Dead Code Cleanup + Hook Auto-Install)
+## Current Version: v0.22.2 (Phase 12.3 — CTO Codebase Cleanup)
 
-현재 버전은 **Go MCP Server (112 base + 26 Hub = 138 tools), Native Go/Dart LSP (goast/dartast), LLM Gateway, CDP Runner + WebMCP + Auto-Discovery, Cloud Foundation, Knowledge v4 (3-way RRF + FindRelated + Time-Weighted Usage + Auto-Distill + Observability), c4 daemon, C0 Drive, C1 Unified Dashboard Messenger (4-탭 뷰 + Members/Presence), C3 EventBus v4 (hub.* 이벤트 C1 라우팅), C5 Hub Server (Per-Project RBAC, 138 테스트, EventBus 통합), 20개 Skills, Lighthouse Docs SSOT (llms.txt export), Hook 자동 설치 (cq init)**을 포함합니다.
+현재 버전은 **Go MCP Server (112 base + 26 Hub = 138 tools), Native Go/Dart LSP (goast/dartast), LLM Gateway, CDP Runner + WebMCP + Auto-Discovery, Cloud Foundation, Knowledge v4 (3-way RRF + FindRelated + Time-Weighted Usage + Auto-Distill + Observability), c4 daemon, C0 Drive, C1 Unified Dashboard Messenger (4-탭 뷰 + Members/Presence), C3 EventBus v4 (hub.* 이벤트 C1 라우팅), C5 Hub Server (Per-Project RBAC, 151 테스트, EventBus 통합), 20개 Skills, Lighthouse Docs SSOT (llms.txt export), Hook 자동 설치 (cq init), CTO 코드 정리 (~1,700 LOC 삭감)**을 포함합니다.
 
 ### 핵심 구조
 
@@ -36,17 +36,27 @@
 - **Experiment Tracker** - @c4_track 데코레이터, 메트릭 자동 캡처
 - **Artifact Store** - Content-addressable 로컬 저장소
 - **Team Collaboration** - Supabase 기반 팀 상태 공유 + Realtime WebSocket
-- **C1 Multi-Provider** - Claude Code, Codex CLI, Cursor, Gemini CLI 4개 프로바이더
+- **C1 Multi-Provider** - Claude Code, Codex CLI, Cursor 3개 프로바이더
 - **C0 Drive** - 클라우드 파일 저장소 (metadata, URL 인코딩, 보안)
 - **C1 Context Hub** - 채널 메시징, Context Keeper (LLM 요약), Agent 통합 (notifyKeeper 4-param)
 - **C1 Documents** - 마크다운 파일 편집기, 지속성 (persona/skill/spec/config)
 - **C3 EventBus v4** - gRPC daemon (UDS) + WebSocket bridge + DLQ + Filter v2, Python sidecar piggyback, task lifecycle events
-- **코드베이스**: Go ~40.6K (c4-core) + Go ~5.6K (c5) + Python ~24.4K + Rust ~9.5K + TS ~5.5K + SQL ~1.1K = **~86.7K LOC (src)**, 테스트 ~48.6K LOC, **총 ~135.3K LOC**
-- **테스트**: Go ~1,398 (c4-core ~1,260 + c5 138) + Python 750 + Rust 85 = **~2,233 tests** (22 packages)
+- **코드베이스**: Go ~38.9K (c4-core) + Go ~6.7K (c5) + Python ~22.9K + Rust ~9.5K + TS+CSS ~11.8K + SQL ~1.1K = **~90.9K LOC (src)**, 테스트 ~50.8K LOC, **총 ~141.7K LOC**
+- **테스트**: Go ~1,404 (c4-core ~1,253 + c5 151) + Python 697 + Rust 85 = **~2,186 tests** (22 packages)
 
 ---
 
 ## 최신 추가사항 (2026-02-20)
+
+### CTO 코드베이스 정리 ✅
+
+- **Go c4-core 파일 분할**: `knowledge_native.go` 1,287→4파일 (record/search/experiment), `hub_jobs.go`→metrics 분리
+- **Python dead code 제거**: `c4/review/` 7파일 삭제 (~1,130 LOC), `interfaces.py` ABC 4개 제거 (~235 LOC), orphaned conftest (~265 LOC)
+- **Go c5 리팩토링**: `decodeRequest[T]` generic validation helper (13 핸들러, -75 LOC), magic number 상수화
+- **C1 GeminiCli 제거**: Rust stub 삭제, TS ProviderKind/PROVIDERS/색상 정리, dead CSS 7클래스
+- **Polish 3-round**: TS gemini_cli 잔여 수정, unchecked type assertion→stringFromAny(), CSS --working/--idle 복원
+- **Python 테스트 조정**: review/ 테스트 삭제 (750→697), Rust 테스트 수정 (make_join_message arg)
+- **순 삭감**: ~1,700 LOC 제거, 코드 navigability 대폭 개선
 
 ### Dead Code 삭제 + Hook 자동 설치 ✅
 

@@ -97,22 +97,27 @@ fn build_ws_url(supabase_url: &str, api_key: &str) -> String {
     )
 }
 
-/// Create a Phoenix Channel join message for a table
-fn make_join_message(table: &str, ref_id: usize) -> String {
+/// Create a Phoenix Channel join message for a table.
+/// auth_token is included in the payload so Supabase Realtime can apply RLS per subscriber.
+fn make_join_message(table: &str, ref_id: usize, auth_token: &str) -> String {
+    let mut payload = serde_json::json!({
+        "config": {
+            "broadcast": { "self": false },
+            "presence": { "key": "" },
+            "postgres_changes": [{
+                "event": "*",
+                "schema": "public",
+                "table": table
+            }]
+        }
+    });
+    if !auth_token.is_empty() {
+        payload["access_token"] = serde_json::Value::String(auth_token.to_string());
+    }
     let msg = PhxMessage {
         topic: format!("realtime:public:{}", table),
         event: "phx_join".to_string(),
-        payload: serde_json::json!({
-            "config": {
-                "broadcast": { "self": false },
-                "presence": { "key": "" },
-                "postgres_changes": [{
-                    "event": "*",
-                    "schema": "public",
-                    "table": table
-                }]
-            }
-        }),
+        payload,
         msg_ref: Some(ref_id.to_string()),
     };
     serde_json::to_string(&msg).unwrap_or_default()
@@ -170,23 +175,11 @@ async fn run_realtime_loop(
 
                 let (mut write, mut read) = ws_stream.split();
 
-                // Set auth token FIRST — Supabase RLS checks auth at channel join time.
-                // Sending access_token after phx_join means RLS rejects postgres_changes events.
-                if !auth_token.is_empty() {
-                    let token_msg = serde_json::json!({
-                        "topic": "realtime:*",
-                        "event": "access_token",
-                        "payload": { "access_token": auth_token },
-                        "ref": "auth"
-                    });
-                    let _ = write
-                        .send(Message::Text(token_msg.to_string().into()))
-                        .await;
-                }
-
-                // Join channels for each table (after auth is set)
+                // Join channels for each table.
+                // access_token is included in each phx_join payload for RLS authentication.
+                // (Supabase Realtime no longer supports the access_token event to realtime:*)
                 for (i, table) in SUBSCRIBED_TABLES.iter().enumerate() {
-                    let join_msg = make_join_message(table, i + 1);
+                    let join_msg = make_join_message(table, i + 1, &auth_token);
                     if write.send(Message::Text(join_msg.into())).await.is_err() {
                         break;
                     }
@@ -434,7 +427,7 @@ mod tests {
 
     #[test]
     fn test_make_join_message_parses() {
-        let msg = make_join_message("c4_tasks", 1);
+        let msg = make_join_message("c4_tasks", 1, "test-token");
         let parsed: serde_json::Value = serde_json::from_str(&msg).unwrap();
         assert_eq!(parsed["topic"], "realtime:public:c4_tasks");
         assert_eq!(parsed["event"], "phx_join");
