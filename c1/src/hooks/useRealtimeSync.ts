@@ -41,6 +41,8 @@ export function useRealtimeSync(options?: UseRealtimeSyncOptions) {
     let unlisten: UnlistenFn | undefined;
 
     listen<ConnectionStatus>('realtime-status', (event) => {
+      // eslint-disable-next-line no-console
+      console.log('[realtime] status:', event.payload);
       setStatus(event.payload);
     }).then((fn) => {
       unlisten = fn;
@@ -58,6 +60,8 @@ export function useRealtimeSync(options?: UseRealtimeSyncOptions) {
     let unlisten: UnlistenFn | undefined;
 
     listen<CloudChangeEvent>('cloud-update', (event) => {
+      // eslint-disable-next-line no-console
+      console.log('[realtime] cloud-update:', event.payload.table, event.payload.change_type);
       setLastEvent(event.payload);
       onUpdateRef.current?.(event.payload);
     }).then((fn) => {
