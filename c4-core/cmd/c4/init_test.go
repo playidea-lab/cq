@@ -983,3 +983,84 @@ func TestInitInteractive_ExistingMcpJson(t *testing.T) {
 		t.Error("cq entry missing from updated .mcp.json")
 	}
 }
+
+func TestWriteTierConfig_NewFile(t *testing.T) {
+	dir := t.TempDir()
+	c4Dir := filepath.Join(dir, ".c4")
+	if err := os.MkdirAll(c4Dir, 0755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	if err := writeTierConfig(dir, "solo"); err != nil {
+		t.Fatalf("writeTierConfig: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(c4Dir, "config.yaml"))
+	if err != nil {
+		t.Fatalf("config.yaml not created: %v", err)
+	}
+	if !containsSubstring(string(data), "tier: solo") {
+		t.Errorf("expected 'tier: solo' in config.yaml; got:\n%s", string(data))
+	}
+}
+
+func TestWriteTierConfig_UpdatesExisting(t *testing.T) {
+	dir := t.TempDir()
+	c4Dir := filepath.Join(dir, ".c4")
+	if err := os.MkdirAll(c4Dir, 0755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	configPath := filepath.Join(c4Dir, "config.yaml")
+	initial := "project_id: myproj\ntier: connected\n"
+	if err := os.WriteFile(configPath, []byte(initial), 0644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	if err := writeTierConfig(dir, "full"); err != nil {
+		t.Fatalf("writeTierConfig: %v", err)
+	}
+
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	content := string(data)
+	if strings.Count(content, "tier:") != 1 {
+		t.Errorf("expected exactly 1 tier: line; got:\n%s", content)
+	}
+	if !containsSubstring(content, "tier: full") {
+		t.Errorf("expected 'tier: full'; got:\n%s", content)
+	}
+	if !containsSubstring(content, "project_id: myproj") {
+		t.Error("existing config key 'project_id' was lost")
+	}
+}
+
+func TestWriteTierConfig_EmptyTierIsNoop(t *testing.T) {
+	dir := t.TempDir()
+	c4Dir := filepath.Join(dir, ".c4")
+	if err := os.MkdirAll(c4Dir, 0755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	if err := writeTierConfig(dir, ""); err != nil {
+		t.Fatalf("writeTierConfig with empty tier should not fail: %v", err)
+	}
+
+	// config.yaml should not be created for empty tier
+	_, err := os.Stat(filepath.Join(c4Dir, "config.yaml"))
+	if err == nil {
+		t.Error("config.yaml should not be created when tier is empty")
+	}
+}
+
+func TestWriteTierConfig_InvalidTier(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, ".c4"), 0755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := writeTierConfig(dir, "premium"); err == nil {
+		t.Error("expected error for invalid tier 'premium'")
+	}
+}

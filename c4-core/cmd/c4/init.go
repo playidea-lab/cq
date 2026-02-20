@@ -29,6 +29,10 @@ var hookConfContent string
 // builtinC4Root is set at build time via -ldflags for skill deployment.
 var builtinC4Root string
 
+// initTier is the build tier written to .c4/config.yaml on project init.
+// Valid values: "solo", "connected", "full" (default).
+var initTier string
+
 // Tool launcher commands: cq claude, cq codex, cq cursor
 var (
 	claudeCmd = &cobra.Command{
@@ -52,7 +56,64 @@ var (
 )
 
 func init() {
+	// Register --tier flag on all init-related commands and the root command.
+	for _, cmd := range []*cobra.Command{rootCmd, claudeCmd, codexCmd, cursorCmd} {
+		cmd.Flags().StringVar(&initTier, "tier", "", "build tier: solo|connected|full (written to .c4/config.yaml)")
+	}
 	rootCmd.AddCommand(claudeCmd, codexCmd, cursorCmd)
+}
+
+// validTiers is the set of accepted --tier values.
+var validTiers = map[string]bool{"solo": true, "connected": true, "full": true}
+
+// writeTierConfig writes the tier key to .c4/config.yaml if --tier was specified.
+// It creates the file if it does not exist, or appends/updates the tier line.
+func writeTierConfig(dir, tier string) error {
+	if tier == "" {
+		return nil
+	}
+	if !validTiers[tier] {
+		return fmt.Errorf("invalid tier %q: must be solo, connected, or full", tier)
+	}
+
+	configPath := filepath.Join(dir, ".c4", "config.yaml")
+
+	// Read existing config or start with empty content.
+	var existing string
+	if data, err := os.ReadFile(configPath); err == nil {
+		existing = string(data)
+	}
+
+	// Replace existing tier line or append one.
+	const prefix = "tier: "
+	lines := strings.Split(existing, "\n")
+	found := false
+	for i, line := range lines {
+		if strings.HasPrefix(strings.TrimSpace(line), prefix) {
+			lines[i] = prefix + tier
+			found = true
+			break
+		}
+	}
+	if !found {
+		// Append tier line (ensure no double blank line at top)
+		if existing != "" && !strings.HasSuffix(existing, "\n") {
+			existing += "\n"
+		}
+		existing += prefix + tier + "\n"
+		if err := os.WriteFile(configPath, []byte(existing), 0644); err != nil {
+			return fmt.Errorf("writing tier to config.yaml: %w", err)
+		}
+		fmt.Fprintf(os.Stderr, "cq: tier=%s written to .c4/config.yaml\n", tier)
+		return nil
+	}
+
+	content := strings.Join(lines, "\n")
+	if err := os.WriteFile(configPath, []byte(content), 0644); err != nil {
+		return fmt.Errorf("updating tier in config.yaml: %w", err)
+	}
+	fmt.Fprintf(os.Stderr, "cq: tier=%s updated in .c4/config.yaml\n", tier)
+	return nil
 }
 
 // confirmGlobalChanges prompts the user before modifying global files
@@ -101,6 +162,11 @@ func initAndLaunch(tool string) error {
 		}
 	}
 	fmt.Fprintln(os.Stderr, "cq: .c4/ directory initialized")
+
+	// 1b. Write tier to .c4/config.yaml if --tier was specified
+	if err := writeTierConfig(dir, initTier); err != nil {
+		return fmt.Errorf("writing tier config: %w", err)
+	}
 
 	// 2. Create/update .mcp.json
 	if err := setupMCPConfig(dir); err != nil {
