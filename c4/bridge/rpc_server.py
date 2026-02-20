@@ -403,6 +403,7 @@ class BridgeServer:
     # Knowledge Methods
     # ======================================================================
 
+    # DEPRECATED: Go native implementation preferred (fallback only)
     def _register_knowledge_methods(self) -> None:
         self.methods["KnowledgeSearch"] = self._handle_knowledge_search
         self.methods["KnowledgeRecord"] = self._handle_knowledge_record
@@ -518,6 +519,7 @@ class BridgeServer:
     # GPU Methods
     # ======================================================================
 
+    # DEPRECATED: Go native implementation preferred (fallback only)
     def _register_gpu_methods(self) -> None:
         self.methods["GPUStatus"] = self._handle_gpu_status
         self.methods["JobSubmit"] = self._handle_job_submit
@@ -637,6 +639,7 @@ class BridgeServer:
     # Research Methods
     # ======================================================================
 
+    # DEPRECATED: Go native implementation preferred (fallback only)
     def _register_research_methods(self) -> None:
         self.methods["ResearchStart"] = self._handle_research_start
         self.methods["ResearchStatus"] = self._handle_research_status
@@ -782,6 +785,7 @@ class BridgeServer:
     # C2 Document Lifecycle Methods
     # ======================================================================
 
+    # DEPRECATED: Go native implementation preferred (fallback only)
     def _register_c2_methods(self) -> None:
         self.methods["C2ParseDocument"] = self._handle_c2_parse_document
         self.methods["C2ExtractText"] = self._handle_c2_extract_text
