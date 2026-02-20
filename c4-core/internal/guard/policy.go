@@ -60,6 +60,28 @@ func (e *Engine) SavePolicy(ctx context.Context, rule PolicyRule) error {
 	return nil
 }
 
+// ListPolicies returns all policy rules stored in the database, ordered by descending priority.
+func (e *Engine) ListPolicies(ctx context.Context) ([]PolicyRule, error) {
+	rows, err := e.db.QueryContext(ctx,
+		`SELECT tool, action, reason, priority FROM policies ORDER BY priority DESC`)
+	if err != nil {
+		return nil, fmt.Errorf("guard: list policies: %w", err)
+	}
+	defer rows.Close()
+
+	var rules []PolicyRule
+	for rows.Next() {
+		var p PolicyRule
+		var actionStr string
+		if err := rows.Scan(&p.Tool, &actionStr, &p.Reason, &p.Priority); err != nil {
+			return nil, fmt.Errorf("guard: list policies scan: %w", err)
+		}
+		p.Action = parseAction(actionStr)
+		rules = append(rules, p)
+	}
+	return rules, rows.Err()
+}
+
 // dbPolicyCheck queries the policies table for a matching rule.
 // Returns (action, reason, found, error).
 func (e *Engine) dbPolicyCheck(ctx context.Context, tool string) (Action, string, bool, error) {

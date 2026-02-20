@@ -116,6 +116,53 @@ type EventSinkConfig struct {
 	Token   string `mapstructure:"token"   yaml:"token"`   // default "", no auth
 }
 
+// GateSlackConnectorConfig holds Slack connector settings.
+type GateSlackConnectorConfig struct {
+	Enabled    bool   `mapstructure:"enabled"     yaml:"enabled"`
+	WebhookURL string `mapstructure:"webhook_url" yaml:"webhook_url"`
+}
+
+// GateGitHubConnectorConfig holds GitHub connector settings.
+type GateGitHubConnectorConfig struct {
+	Enabled bool   `mapstructure:"enabled" yaml:"enabled"`
+	PAT     string `mapstructure:"pat"     yaml:"pat"`
+}
+
+// GateConnectorsConfig groups all connector configs.
+type GateConnectorsConfig struct {
+	Slack  GateSlackConnectorConfig  `mapstructure:"slack"  yaml:"slack"`
+	GitHub GateGitHubConnectorConfig `mapstructure:"github" yaml:"github"`
+}
+
+// GateConfig holds C8 Gate settings (webhooks, scheduler, connectors).
+type GateConfig struct {
+	Enabled    bool                 `mapstructure:"enabled"    yaml:"enabled"`
+	Connectors GateConnectorsConfig `mapstructure:"connectors" yaml:"connectors"`
+}
+
+// ObserveConfig holds C7 observability settings (logging, metrics, health).
+type ObserveConfig struct {
+	Enabled   bool   `mapstructure:"enabled"    yaml:"enabled"`
+	LogLevel  string `mapstructure:"log_level"  yaml:"log_level"`  // debug, info, warn, error
+	LogFormat string `mapstructure:"log_format" yaml:"log_format"` // json, text
+}
+
+// GuardPolicyRule mirrors guard.PolicyRule for YAML-based configuration.
+type GuardPolicyRule struct {
+	Tool     string `mapstructure:"tool"     yaml:"tool"`
+	Action   string `mapstructure:"action"   yaml:"action"`   // allow | deny | audit_only
+	Reason   string `mapstructure:"reason"   yaml:"reason"`
+	Priority int    `mapstructure:"priority" yaml:"priority"`
+}
+
+// GuardConfig holds C6 guard engine settings.
+type GuardConfig struct {
+	Enabled        bool              `mapstructure:"enabled"          yaml:"enabled"`
+	DefaultPolicy  string            `mapstructure:"default_policy"   yaml:"default_policy"`  // allow | deny | audit_only
+	AuditRetention string            `mapstructure:"audit_retention"  yaml:"audit_retention"` // e.g. "30d"
+	Policies       []GuardPolicyRule `mapstructure:"policies"         yaml:"policies"`
+}
+
 // PermissionReviewerConfig holds settings for the Haiku-based permission auto-reviewer hook.
 type PermissionReviewerConfig struct {
 	Enabled   bool   `mapstructure:"enabled"     yaml:"enabled"`
@@ -145,6 +192,9 @@ type C4Config struct {
 	ReviewAsTask     bool                       `mapstructure:"review_as_task"       yaml:"review_as_task"`
 	CheckpointAsTask bool                       `mapstructure:"checkpoint_as_task"  yaml:"checkpoint_as_task"`
 	Planning         PlanningConfig             `mapstructure:"planning"             yaml:"planning"`
+	Gate             GateConfig                 `mapstructure:"gate"                 yaml:"gate"`
+	Observe          ObserveConfig              `mapstructure:"observe"              yaml:"observe"`
+	Guard            GuardConfig                `mapstructure:"guard"                yaml:"guard"`
 }
 
 // presetConfigs defines the economic mode presets.
@@ -212,6 +262,11 @@ func defaultConfig() C4Config {
 				MaxRounds: 3,
 				Mode:      "auto",
 			},
+		},
+		Observe: ObserveConfig{
+			Enabled:   true,
+			LogLevel:  "info",
+			LogFormat: "json",
 		},
 	}
 }
