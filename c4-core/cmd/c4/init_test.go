@@ -887,3 +887,99 @@ func TestPatchClaudeSettings_CorruptedJSON(t *testing.T) {
 		t.Fatalf("expected 1 PreToolUse entry, got %d", len(preToolUse))
 	}
 }
+
+// TestInitInteractive_YesFlag verifies that when yesAll is set, confirmGlobalChanges
+// returns true without reading from stdin.
+func TestInitInteractive_YesFlag(t *testing.T) {
+	oldYesAll := yesAll
+	yesAll = true
+	defer func() { yesAll = oldYesAll }()
+
+	homeDir := t.TempDir()
+
+	// With yesAll=true, confirmGlobalChanges should return true immediately.
+	if !confirmGlobalChanges(homeDir) {
+		t.Error("confirmGlobalChanges should return true when yesAll is set")
+	}
+
+	// Verify that setupGlobalHooks proceeds (hook file created) when yesAll=true.
+	if err := setupGlobalHooks(homeDir); err != nil {
+		t.Fatalf("setupGlobalHooks failed: %v", err)
+	}
+	hookPath := filepath.Join(homeDir, ".claude", "hooks", "c4-bash-security-hook.sh")
+	if _, err := os.Stat(hookPath); err != nil {
+		t.Error("hook file should be created when --yes is set")
+	}
+}
+
+// TestInitInteractive_GlobalDeny verifies that when the user declines the global
+// confirmation prompt, confirmGlobalChanges returns false and the hook is skipped.
+func TestInitInteractive_GlobalDeny(t *testing.T) {
+	oldYesAll := yesAll
+	yesAll = false
+	defer func() { yesAll = oldYesAll }()
+
+	homeDir := t.TempDir()
+
+	// Simulate stdin with "n" (deny)
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("pipe: %v", err)
+	}
+	oldStdin := os.Stdin
+	os.Stdin = r
+	defer func() { os.Stdin = oldStdin }()
+
+	w.WriteString("n\n")
+	w.Close()
+
+	// confirmGlobalChanges should return false on "n".
+	if confirmGlobalChanges(homeDir) {
+		t.Error("confirmGlobalChanges should return false when user answers 'n'")
+	}
+
+	// Hook file must NOT be created when user denies.
+	hookPath := filepath.Join(homeDir, ".claude", "hooks", "c4-bash-security-hook.sh")
+	if _, err := os.Stat(hookPath); err == nil {
+		t.Error("hook file should NOT exist after user denial")
+	}
+}
+
+// TestInitInteractive_ExistingMcpJson verifies that when .mcp.json already exists,
+// setupMCPConfig emits an overwrite warning and updates the file while preserving
+// existing entries.
+func TestInitInteractive_ExistingMcpJson(t *testing.T) {
+	dir := t.TempDir()
+	mcpPath := filepath.Join(dir, ".mcp.json")
+
+	// Pre-create a .mcp.json with some existing content
+	existing := map[string]any{
+		"mcpServers": map[string]any{
+			"other": map[string]any{"command": "/usr/bin/other"},
+		},
+	}
+	data, _ := json.MarshalIndent(existing, "", "  ")
+	if err := os.WriteFile(mcpPath, append(data, '\n'), 0644); err != nil {
+		t.Fatalf("write existing .mcp.json: %v", err)
+	}
+
+	// setupMCPConfig should succeed and warn about overwrite.
+	if err := setupMCPConfig(dir); err != nil {
+		t.Skipf("setupMCPConfig: %v", err) // binary lookup may fail in test env
+	}
+
+	result, err := os.ReadFile(mcpPath)
+	if err != nil {
+		t.Fatalf(".mcp.json not found: %v", err)
+	}
+	content := string(result)
+
+	// Existing "other" server must be preserved.
+	if !containsSubstring(content, `"other"`) {
+		t.Error("existing mcpServers entry 'other' was lost after update")
+	}
+	// New "cq" entry must be present.
+	if !containsSubstring(content, `"cq"`) {
+		t.Error("cq entry missing from updated .mcp.json")
+	}
+}

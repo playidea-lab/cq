@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"crypto/sha256"
 	_ "embed"
 	"encoding/json"
@@ -54,6 +55,37 @@ func init() {
 	rootCmd.AddCommand(claudeCmd, codexCmd, cursorCmd)
 }
 
+// confirmGlobalChanges prompts the user before modifying global files
+// (~/.claude/hooks and ~/.claude/settings.json). Returns true if the user
+// accepts or if yesAll is set; false if the user declines (skip the step).
+// The prompt is written to stderr; the response is read from stdin.
+func confirmGlobalChanges(homeDir string) bool {
+	if yesAll {
+		return true
+	}
+
+	hookPath := filepath.Join(homeDir, ".claude", "hooks", "c4-bash-security-hook.sh")
+	settingsPath := filepath.Join(homeDir, ".claude", "settings.json")
+
+	fmt.Fprintln(os.Stderr, "")
+	fmt.Fprintln(os.Stderr, "cq: The following GLOBAL files will be created or modified:")
+	fmt.Fprintf(os.Stderr, "  1. %s\n", hookPath)
+	fmt.Fprintf(os.Stderr, "  2. %s\n", settingsPath)
+	fmt.Fprintln(os.Stderr, "")
+	fmt.Fprint(os.Stderr, "Allow? [y/N] ")
+
+	scanner := bufio.NewScanner(os.Stdin)
+	if scanner.Scan() {
+		answer := strings.TrimSpace(strings.ToLower(scanner.Text()))
+		if answer == "y" || answer == "yes" {
+			return true
+		}
+	}
+
+	fmt.Fprintln(os.Stderr, "cq: skipping global hook installation (run with --yes to suppress this prompt)")
+	return false
+}
+
 // initAndLaunch initializes the C4 project and launches the AI tool.
 func initAndLaunch(tool string) error {
 	dir := projectDir
@@ -85,10 +117,12 @@ func initAndLaunch(tool string) error {
 		fmt.Fprintf(os.Stderr, "cq: warning: skills setup failed: %v\n", err)
 	}
 
-	// 5. Install global hooks to ~/.claude/hooks/
+	// 5. Install global hooks to ~/.claude/hooks/ (requires user confirmation)
 	if homeDir, err := os.UserHomeDir(); err == nil {
-		if err := setupGlobalHooks(homeDir); err != nil {
-			fmt.Fprintf(os.Stderr, "cq: warning: hooks setup failed: %v\n", err)
+		if confirmGlobalChanges(homeDir) {
+			if err := setupGlobalHooks(homeDir); err != nil {
+				fmt.Fprintf(os.Stderr, "cq: warning: hooks setup failed: %v\n", err)
+			}
 		}
 	} else {
 		fmt.Fprintf(os.Stderr, "cq: warning: could not determine home dir: %v\n", err)
@@ -636,6 +670,7 @@ func setupMCPConfig(dir string) error {
 	// Read existing .mcp.json or create new
 	var config map[string]any
 	if data, readErr := os.ReadFile(mcpPath); readErr == nil {
+		fmt.Fprintf(os.Stderr, "cq: .mcp.json already exists, updating (cq entry will be overwritten)\n")
 		if json.Unmarshal(data, &config) != nil {
 			fmt.Fprintf(os.Stderr, "cq: WARNING: %s has invalid JSON, overwriting with new config\n", mcpPath)
 			config = nil

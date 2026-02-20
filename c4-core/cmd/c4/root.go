@@ -26,6 +26,7 @@ var (
 	cfgFile    string
 	verbose    bool
 	projectDir string
+	yesAll     bool // --yes / -y: skip all interactive confirmations
 )
 
 var rootCmd = &cobra.Command{
@@ -79,6 +80,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default: .c4/config.yaml)")
 	rootCmd.PersistentFlags().BoolVar(&verbose, "verbose", false, "enable verbose output")
 	rootCmd.PersistentFlags().StringVar(&projectDir, "dir", "", "project root directory (default: current directory)")
+	rootCmd.PersistentFlags().BoolVarP(&yesAll, "yes", "y", false, "skip interactive confirmations (non-interactive/CI mode)")
 }
 
 // c4Dir returns the path to the .c4 directory.
