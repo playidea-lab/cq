@@ -114,25 +114,6 @@ func TestEvaluateFilter(t *testing.T) {
 	}
 }
 
-func TestResolveTemplate(t *testing.T) {
-	data := json.RawMessage(`{"path":"/docs/paper.pdf","size":1024}`)
-	tpl := map[string]any{
-		"file_path": "{{data.path}}",
-		"msg":       "File {{data.path}} of size {{data.size}}",
-		"static":    "no-template",
-	}
-
-	result := resolveTemplate(tpl, data)
-	if result["file_path"] != "/docs/paper.pdf" {
-		t.Errorf("expected /docs/paper.pdf, got %v", result["file_path"])
-	}
-	if result["msg"] != "File /docs/paper.pdf of size 1024" {
-		t.Errorf("unexpected msg: %v", result["msg"])
-	}
-	if result["static"] != "no-template" {
-		t.Errorf("static value should be unchanged")
-	}
-}
 
 func TestDispatchWebhookError(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

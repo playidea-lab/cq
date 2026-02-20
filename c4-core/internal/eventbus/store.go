@@ -170,12 +170,6 @@ func (s *Store) StoreEvent(evType, source string, data json.RawMessage, projectI
 	return id, nil
 }
 
-// MarkProcessed marks an event as processed.
-func (s *Store) MarkProcessed(id string) error {
-	_, err := s.db.Exec(`UPDATE c4_events SET processed = 1 WHERE id = ?`, id)
-	return err
-}
-
 // ListEvents returns events optionally filtered by type, with limit and since.
 func (s *Store) ListEvents(evType string, limit int, sinceMs int64) ([]StoredEvent, error) {
 	query := `SELECT id, type, source, data, project_id, correlation_id, created_at, processed FROM c4_events`
