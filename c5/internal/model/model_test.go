@@ -1,6 +1,7 @@
 package model
 
 import (
+	"encoding/json"
 	"testing"
 	"time"
 )
@@ -91,4 +92,63 @@ func TestCommandHash(t *testing.T) {
 	if len(hash) != 16 { // 8 bytes hex = 16 chars
 		t.Errorf("expected 16 char hash, got %d: %s", len(hash), hash)
 	}
+}
+
+// TestArtifactRefMarshal verifies ArtifactRef JSON round-trip.
+func TestArtifactRefMarshal(t *testing.T) {
+	orig := ArtifactRef{
+		Path:      "inputs/data.bin",
+		LocalPath: "/local/data.bin",
+		Required:  true,
+	}
+
+	data, err := json.Marshal(orig)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+
+	var got ArtifactRef
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	if got.Path != orig.Path {
+		t.Errorf("Path: got %q, want %q", got.Path, orig.Path)
+	}
+	if got.LocalPath != orig.LocalPath {
+		t.Errorf("LocalPath: got %q, want %q", got.LocalPath, orig.LocalPath)
+	}
+	if got.Required != orig.Required {
+		t.Errorf("Required: got %v, want %v", got.Required, orig.Required)
+	}
+}
+
+// TestArtifactRefMarshal_OmitEmpty verifies omitempty fields are absent when zero.
+func TestArtifactRefMarshal_OmitEmpty(t *testing.T) {
+	ref := ArtifactRef{Path: "outputs/result.bin"}
+	data, err := json.Marshal(ref)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	s := string(data)
+	// local_path and required should be omitted
+	if contains(s, "local_path") {
+		t.Errorf("local_path should be omitted, got: %s", s)
+	}
+	if contains(s, "required") {
+		t.Errorf("required should be omitted, got: %s", s)
+	}
+}
+
+func contains(s, substr string) bool {
+	return len(s) >= len(substr) && (s == substr || len(s) > 0 && containsStr(s, substr))
+}
+
+func containsStr(s, sub string) bool {
+	for i := 0; i <= len(s)-len(sub); i++ {
+		if s[i:i+len(sub)] == sub {
+			return true
+		}
+	}
+	return false
 }

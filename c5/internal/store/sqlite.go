@@ -246,6 +246,9 @@ func (s *Store) migrate() error {
 		`ALTER TABLE jobs ADD COLUMN project_id TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE workers ADD COLUMN project_id TEXT NOT NULL DEFAULT ''`,
 		`CREATE INDEX IF NOT EXISTS idx_jobs_project ON jobs(project_id)`,
+		// Migration: add input/output artifact JSON columns.
+		`ALTER TABLE jobs ADD COLUMN input_artifacts TEXT NOT NULL DEFAULT '[]'`,
+		`ALTER TABLE jobs ADD COLUMN output_artifacts TEXT NOT NULL DEFAULT '[]'`,
 	} {
 		_, _ = s.db.Exec(stmt) // ignore errors (column already exists)
 	}
@@ -263,30 +266,34 @@ func (s *Store) CreateJob(req *model.JobSubmitRequest) (*model.Job, error) {
 	now := time.Now().UTC()
 
 	job := &model.Job{
-		ID:          id,
-		Name:        req.Name,
-		Status:      model.StatusQueued,
-		Priority:    req.Priority,
-		Workdir:     req.Workdir,
-		Command:     req.Command,
-		RequiresGPU: req.RequiresGPU,
-		Env:         req.Env,
-		Tags:        req.Tags,
-		ExpID:       req.ExpID,
-		Memo:        req.Memo,
-		TimeoutSec:  req.TimeoutSec,
-		ProjectID:   req.ProjectID,
-		CreatedAt:   now,
+		ID:              id,
+		Name:            req.Name,
+		Status:          model.StatusQueued,
+		Priority:        req.Priority,
+		Workdir:         req.Workdir,
+		Command:         req.Command,
+		RequiresGPU:     req.RequiresGPU,
+		Env:             req.Env,
+		Tags:            req.Tags,
+		ExpID:           req.ExpID,
+		Memo:            req.Memo,
+		TimeoutSec:      req.TimeoutSec,
+		ProjectID:       req.ProjectID,
+		InputArtifacts:  req.InputArtifacts,
+		OutputArtifacts: req.OutputArtifacts,
+		CreatedAt:       now,
 	}
 
 	_, err := s.db.Exec(`
 		INSERT INTO jobs (id, name, status, priority, workdir, command,
-			requires_gpu, env, tags, exp_id, memo, timeout_sec, project_id, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			requires_gpu, env, tags, exp_id, memo, timeout_sec, project_id,
+			input_artifacts, output_artifacts, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		job.ID, job.Name, string(job.Status), job.Priority, job.Workdir, job.Command,
 		boolToInt(job.RequiresGPU),
 		marshalJSON(job.Env), marshalJSON(job.Tags),
 		job.ExpID, job.Memo, job.TimeoutSec, job.ProjectID,
+		marshalArtifacts(job.InputArtifacts), marshalArtifacts(job.OutputArtifacts),
 		now.Format(time.RFC3339),
 	)
 	if err != nil {
@@ -1925,7 +1932,8 @@ func (s *Store) ListArtifacts(jobID string) ([]model.Artifact, error) {
 
 const jobSelectCols = `SELECT id, name, status, priority, workdir, command,
 	requires_gpu, env, tags, exp_id, memo, timeout_sec, worker_id,
-	created_at, started_at, finished_at, exit_code, project_id`
+	created_at, started_at, finished_at, exit_code, project_id,
+	input_artifacts, output_artifacts`
 
 type scanner interface {
 	Scan(dest ...any) error
@@ -1933,15 +1941,17 @@ type scanner interface {
 
 func populateJob(sc scanner) (*model.Job, error) {
 	var (
-		j           model.Job
-		status      string
-		requiresGPU int
-		envJSON     string
-		tagsJSON    string
-		createdAt   string
-		startedAt   sql.NullString
-		finishedAt  sql.NullString
-		exitCode    sql.NullInt64
+		j                   model.Job
+		status              string
+		requiresGPU         int
+		envJSON             string
+		tagsJSON            string
+		createdAt           string
+		startedAt           sql.NullString
+		finishedAt          sql.NullString
+		exitCode            sql.NullInt64
+		inputArtifactsJSON  string
+		outputArtifactsJSON string
 	)
 	err := sc.Scan(
 		&j.ID, &j.Name, &status, &j.Priority, &j.Workdir, &j.Command,
@@ -1949,6 +1959,7 @@ func populateJob(sc scanner) (*model.Job, error) {
 		&j.ExpID, &j.Memo, &j.TimeoutSec, &j.WorkerID,
 		&createdAt, &startedAt, &finishedAt, &exitCode,
 		&j.ProjectID,
+		&inputArtifactsJSON, &outputArtifactsJSON,
 	)
 	if err != nil {
 		return nil, err
@@ -1970,6 +1981,8 @@ func populateJob(sc scanner) (*model.Job, error) {
 	}
 	json.Unmarshal([]byte(envJSON), &j.Env)
 	json.Unmarshal([]byte(tagsJSON), &j.Tags)
+	j.InputArtifacts = unmarshalArtifacts(inputArtifactsJSON)
+	j.OutputArtifacts = unmarshalArtifacts(outputArtifactsJSON)
 	return &j, nil
 }
 
@@ -2045,6 +2058,31 @@ func marshalJSON(v any) string {
 		return "null"
 	}
 	return string(data)
+}
+
+// marshalArtifacts serialises a []ArtifactRef to JSON, always returning "[]" for nil/empty.
+func marshalArtifacts(refs []model.ArtifactRef) string {
+	if len(refs) == 0 {
+		return "[]"
+	}
+	data, err := json.Marshal(refs)
+	if err != nil {
+		return "[]"
+	}
+	return string(data)
+}
+
+// unmarshalArtifacts deserialises a JSON TEXT column to []ArtifactRef.
+// Empty or invalid JSON returns nil (which JSON marshals to omitempty).
+func unmarshalArtifacts(s string) []model.ArtifactRef {
+	if s == "" || s == "[]" || s == "null" {
+		return nil
+	}
+	var refs []model.ArtifactRef
+	if err := json.Unmarshal([]byte(s), &refs); err != nil {
+		return nil
+	}
+	return refs
 }
 
 // =========================================================================
