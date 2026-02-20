@@ -11,8 +11,6 @@ import re
 import threading
 from abc import ABC, abstractmethod
 
-from c4.interfaces import GpuScheduler
-
 from .models import GpuBackend, GpuInfo
 
 logger = logging.getLogger(__name__)
@@ -305,7 +303,7 @@ def reset_gpu_monitor() -> None:
         _monitor_instance = None
 
 
-class LocalGpuScheduler(GpuScheduler):
+class LocalGpuScheduler:
     """Local GPU scheduler - single machine implementation."""
 
     def __init__(self, monitor: BaseGpuMonitor | None = None) -> None:
