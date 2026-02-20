@@ -163,6 +163,37 @@ func (s *Server) handleLeaseAcquire(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if lease == nil && req.WaitSeconds > 0 {
+		// Long-poll: wait up to WaitSeconds for a job to appear
+		deadline := time.Now().Add(time.Duration(req.WaitSeconds) * time.Second)
+		for lease == nil && time.Now().Before(deadline) {
+			notify := s.getJobNotifyChan()
+			remaining := time.Until(deadline)
+			select {
+			case <-notify:
+				// A new job was submitted; try to acquire
+			case <-time.After(remaining):
+				// Timeout — fall through to "no jobs" response
+			case <-r.Context().Done():
+				// Client disconnected
+				writeJSON(w, map[string]any{"job_id": nil, "lease_id": nil, "message": "no jobs available"})
+				return
+			}
+			lease, job, err = s.store.AcquireLease(req.WorkerID, hasGPU, worker.ProjectID)
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, err.Error())
+				return
+			}
+			if lease == nil && hasGPU {
+				lease, job, err = s.store.AcquireLease(req.WorkerID, false, worker.ProjectID)
+				if err != nil {
+					writeError(w, http.StatusInternalServerError, err.Error())
+					return
+				}
+			}
+		}
+	}
+
 	if lease == nil {
 		// No jobs available
 		writeJSON(w, map[string]any{
