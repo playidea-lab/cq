@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/sha256"
 	_ "embed"
 	"encoding/json"
 	"fmt"
@@ -83,7 +84,16 @@ func initAndLaunch(tool string) error {
 		fmt.Fprintf(os.Stderr, "cq: warning: skills setup failed: %v\n", err)
 	}
 
-	// 5. Codex-specific setup
+	// 5. Install global hooks to ~/.claude/hooks/
+	if homeDir, err := os.UserHomeDir(); err == nil {
+		if err := setupGlobalHooks(homeDir); err != nil {
+			fmt.Fprintf(os.Stderr, "cq: warning: hooks setup failed: %v\n", err)
+		}
+	} else {
+		fmt.Fprintf(os.Stderr, "cq: warning: could not determine home dir: %v\n", err)
+	}
+
+	// 6. Codex-specific setup
 	if tool == "codex" {
 		if err := setupCodexConfig(dir); err != nil {
 			fmt.Fprintf(os.Stderr, "cq: warning: codex config setup failed: %v\n", err)
@@ -93,14 +103,14 @@ func initAndLaunch(tool string) error {
 		}
 	}
 
-	// 5b. Cursor-specific setup: .cursor/mcp.json so Cursor loads C4 MCP on start
+	// 6b. Cursor-specific setup: .cursor/mcp.json so Cursor loads C4 MCP on start
 	if tool == "cursor" {
 		if err := setupCursorMCPConfig(dir); err != nil {
 			return fmt.Errorf("setting up .cursor/mcp.json: %w", err)
 		}
 	}
 
-	// 6. Launch AI tool
+	// 7. Launch AI tool
 	return launchTool(tool, dir)
 }
 
@@ -186,6 +196,48 @@ func setupSkills(dir string) error {
 	} else {
 		fmt.Fprintln(os.Stderr, "cq: skills up to date")
 	}
+	return nil
+}
+
+// hookNeedsUpdate returns true if the file at path doesn't exist or
+// its SHA256 hash differs from the embedded content.
+func hookNeedsUpdate(path string, embeddedContent string) bool {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return true // file missing
+	}
+	existing := sha256.Sum256(data)
+	embedded := sha256.Sum256([]byte(embeddedContent))
+	return existing != embedded
+}
+
+// setupGlobalHooks installs the C4 bash security hook to ~/.claude/hooks/.
+// The hook script is embedded in the binary. The .conf file is only created
+// if it doesn't exist (preserving user customizations).
+func setupGlobalHooks(homeDir string) error {
+	hooksDir := filepath.Join(homeDir, ".claude", "hooks")
+	if err := os.MkdirAll(hooksDir, 0700); err != nil {
+		return fmt.Errorf("creating hooks dir: %w", err)
+	}
+
+	hookPath := filepath.Join(hooksDir, "c4-bash-security-hook.sh")
+	if hookNeedsUpdate(hookPath, hookShContent) {
+		if err := os.WriteFile(hookPath, []byte(hookShContent), 0755); err != nil {
+			return fmt.Errorf("writing hook: %w", err)
+		}
+		fmt.Fprintln(os.Stderr, "cq: hook installed → "+hookPath)
+	} else {
+		fmt.Fprintln(os.Stderr, "cq: hooks up-to-date")
+	}
+
+	confPath := filepath.Join(hooksDir, "c4-bash-security.conf")
+	if _, err := os.Stat(confPath); os.IsNotExist(err) {
+		if err := os.WriteFile(confPath, []byte(hookConfContent), 0644); err != nil {
+			return fmt.Errorf("writing hook config: %w", err)
+		}
+		fmt.Fprintln(os.Stderr, "cq: hook config → "+confPath)
+	}
+
 	return nil
 }
 

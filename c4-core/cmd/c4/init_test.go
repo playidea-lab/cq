@@ -7,6 +7,50 @@ import (
 	"testing"
 )
 
+func TestHookNeedsUpdate(t *testing.T) {
+	dir := t.TempDir()
+	content := "#!/bin/bash\necho hello"
+	hookPath := filepath.Join(dir, "hook.sh")
+
+	// Missing file → needs update
+	if !hookNeedsUpdate(hookPath, content) {
+		t.Error("expected true for missing file")
+	}
+
+	// Write same content → no update needed
+	os.WriteFile(hookPath, []byte(content), 0755)
+	if hookNeedsUpdate(hookPath, content) {
+		t.Error("expected false for same content")
+	}
+
+	// Different content → needs update
+	if !hookNeedsUpdate(hookPath, content+"different") {
+		t.Error("expected true for different content")
+	}
+}
+
+func TestSetupGlobalHooks(t *testing.T) {
+	homeDir := t.TempDir()
+
+	// First run: installs hook
+	if err := setupGlobalHooks(homeDir); err != nil {
+		t.Fatalf("setupGlobalHooks: %v", err)
+	}
+	hookPath := filepath.Join(homeDir, ".claude", "hooks", "c4-bash-security-hook.sh")
+	if _, err := os.Stat(hookPath); err != nil {
+		t.Fatalf("hook file not created: %v", err)
+	}
+	info, _ := os.Stat(hookPath)
+	if info.Mode()&0111 == 0 {
+		t.Error("hook file not executable")
+	}
+
+	// Second run: idempotent
+	if err := setupGlobalHooks(homeDir); err != nil {
+		t.Fatalf("second setupGlobalHooks: %v", err)
+	}
+}
+
 func TestSetupClaudeMD_NewFile(t *testing.T) {
 	dir := t.TempDir()
 
