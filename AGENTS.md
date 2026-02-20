@@ -330,7 +330,7 @@ CP-001:    체크포인트
 
 ## Go Core (c4-core/) — Primary MCP Server
 
-> Go 기반 MCP 서버. ~37.8K LOC(src) + ~30.9K LOC(test). ~1,540개 테스트, 23 패키지.
+> Go 기반 MCP 서버. ~40.6K LOC(src) + ~36.6K LOC(test). ~1,260개 테스트, 22 패키지.
 
 ### 아키텍처
 ```
