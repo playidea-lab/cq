@@ -14,17 +14,17 @@ import (
 )
 
 // TestE2EVersion verifies the --version flag outputs version info.
+// Uses os/exec subprocess to avoid rootCmd global state race when run with -count=N.
 func TestE2EVersion(t *testing.T) {
-	// Use rootCmd directly rather than building a binary
-	buf := new(bytes.Buffer)
-	rootCmd.SetOut(buf)
-	rootCmd.SetArgs([]string{"--version"})
-	if err := rootCmd.Execute(); err != nil {
-		t.Fatalf("Execute --version: %v", err)
+	srcDir := filepath.Join(testGoModDir(t), "cmd", "c4")
+	cmd := exec.Command("go", "run", ".", "--version")
+	cmd.Dir = srcDir
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("go run . --version: %v\n%s", err, output)
 	}
-	output := buf.String()
-	if !strings.Contains(output, "cq version") {
-		t.Errorf("--version output = %q, want to contain 'cq version'", output)
+	if !strings.Contains(string(output), "cq version") {
+		t.Errorf("--version output = %q, want to contain 'cq version'", string(output))
 	}
 }
 
