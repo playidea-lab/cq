@@ -154,6 +154,8 @@ c4/
 ```
 /c4-plan "기능 설명"    # 계획 수립 + 태스크 생성
 /c4-run                 # Worker 스폰 → 자동 실행
+/c4-polish              # 수정사항 0될 때까지 정제 (필수)
+/c4-finish              # 빌드·설치·문서·커밋 마무리
 /c4-status              # 진행 상황 확인
 ```
 
@@ -310,7 +312,7 @@ Hub-Edge(5): c4_hub_edge_register, c4_hub_edge_list,
 
 ### 워크플로우
 ```
-INIT → DISCOVERY → DESIGN → PLAN → EXECUTE ⇄ CHECKPOINT → REFINE → COMPLETE
+INIT → DISCOVERY → DESIGN → PLAN → EXECUTE ⇄ CHECKPOINT → REFINE → POLISH → COMPLETE
 ```
 
 ### Task ID 체계

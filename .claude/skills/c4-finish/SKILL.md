@@ -13,6 +13,22 @@ Post-implementation completion workflow. Execute ALL steps in order.
 
 ## Steps
 
+### 0. Run Polish (MANDATORY)
+
+**항상 실행** — 수정사항이 0이 될 때까지 코드를 정제합니다.
+
+```
+/c4-polish
+```
+
+- `/c4-run` 이후, `/c4-finish` 진입 전 반드시 실행
+- polish가 CONVERGED 또는 quality gate PASSED 상태여야 다음 단계 진행
+- 이미 이번 세션에서 polish를 실행했고 이후 코드 변경이 없으면 건너뜀
+- `--no-polish` 플래그를 명시한 경우에만 생략 가능 (긴급 배포 등 예외)
+
+> **건너뛰는 조건**: 이번 세션에서 `/c4-polish`가 이미 완료됐고, 그 이후 코드 변경이 없는 경우.
+> 의심스러우면 실행한다. 비용보다 품질이 우선.
+
 ### 1. Verify Build
 ```bash
 cd c4-core && go build ./... && go vet ./...
