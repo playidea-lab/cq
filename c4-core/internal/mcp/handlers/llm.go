@@ -147,22 +147,49 @@ func handleLLMProviders(gateway *llm.Gateway) (any, error) {
 
 func handleLLMCosts(gateway *llm.Gateway) (any, error) {
 	report := gateway.CostReport()
+
+	// Aggregate global cache tokens across all providers.
+	var globalCacheRead, globalCacheWrite, globalInput int
 	byProvider := make(map[string]any)
 	for name, pc := range report.ByProvider {
+		globalCacheRead += pc.CacheReadTok
+		globalCacheWrite += pc.CacheWriteTok
+		globalInput += pc.InputTok
+
+		var hitRate, savingsRate float64
+		if denom := pc.CacheReadTok + pc.CacheWriteTok; denom > 0 {
+			hitRate = float64(pc.CacheReadTok) / float64(denom)
+		}
+		if denom := pc.InputTok + pc.CacheReadTok + pc.CacheWriteTok; denom > 0 {
+			savingsRate = float64(pc.CacheReadTok) / float64(denom)
+		}
 		byProvider[name] = map[string]any{
-			"total_usd":          pc.TotalUSD,
-			"requests":           pc.Requests,
-			"input_tokens":       pc.InputTok,
-			"output_tokens":      pc.OutputTok,
-			"cache_read_tokens":  pc.CacheReadTok,
-			"cache_write_tokens": pc.CacheWriteTok,
-			"cache_savings_usd":  pc.SavedUSD,
+			"total_usd":           pc.TotalUSD,
+			"requests":            pc.Requests,
+			"input_tokens":        pc.InputTok,
+			"output_tokens":       pc.OutputTok,
+			"cache_read_tokens":   pc.CacheReadTok,
+			"cache_write_tokens":  pc.CacheWriteTok,
+			"cache_savings_usd":   pc.SavedUSD,
+			"cache_hit_rate":      hitRate,
+			"cache_savings_rate":  savingsRate,
 		}
 	}
+
+	var globalHitRate, globalSavingsRate float64
+	if denom := globalCacheRead + globalCacheWrite; denom > 0 {
+		globalHitRate = float64(globalCacheRead) / float64(denom)
+	}
+	if denom := globalInput + globalCacheRead + globalCacheWrite; denom > 0 {
+		globalSavingsRate = float64(globalCacheRead) / float64(denom)
+	}
+
 	return map[string]any{
-		"total_usd":      report.TotalUSD,
-		"total_requests": report.TotalReqs,
-		"by_provider":    byProvider,
-		"by_model":       report.ByModel,
+		"total_usd":                 report.TotalUSD,
+		"total_requests":            report.TotalReqs,
+		"global_cache_hit_rate":     globalHitRate,
+		"global_cache_savings_rate": globalSavingsRate,
+		"by_provider":               byProvider,
+		"by_model":                  report.ByModel,
 	}, nil
 }
