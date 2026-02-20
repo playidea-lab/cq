@@ -351,38 +351,6 @@ func (k *KnowledgeCloudClient) patch(table, filter string, body any) error {
 	return nil
 }
 
-func (k *KnowledgeCloudClient) del(table, filter string) error {
-	reqURL := k.baseURL + "/" + table + "?" + filter
-	for attempt := 0; attempt < 2; attempt++ {
-		req, err := http.NewRequest("DELETE", reqURL, nil)
-		if err != nil {
-			return err
-		}
-		k.setHeaders(req)
-
-		resp, err := k.httpClient.Do(req)
-		if err != nil {
-			return fmt.Errorf("DELETE %s: %w", table, err)
-		}
-
-		if resp.StatusCode == http.StatusUnauthorized && attempt == 0 {
-			resp.Body.Close()
-			if _, err := k.tokenProvider.Refresh(); err == nil {
-				continue
-			}
-		}
-
-		defer resp.Body.Close()
-
-		if resp.StatusCode >= 400 {
-			body, _ := io.ReadAll(resp.Body)
-			return fmt.Errorf("DELETE %s: %d %s", table, resp.StatusCode, string(body))
-		}
-		return nil
-	}
-	return nil
-}
-
 func (k *KnowledgeCloudClient) setHeaders(req *http.Request) {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("apikey", k.apiKey)
