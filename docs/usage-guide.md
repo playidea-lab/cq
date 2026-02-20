@@ -18,12 +18,12 @@
 │  → /c4-quick "설명" → 작업 → /c4-submit
 │
 ├─ 중규모 (5-15파일, 아키텍처 확정)
-│  → /c4-add-task 반복 → /c4-run
+│  → /c4-add-task 반복 → /c4-run → /c4-polish → /c4-finish
 │    또는 Direct: c4_claim → c4_report
 │
 ├─ 대규모 (15+파일, 새 도메인)
-│  → /c4-interview → /c4-plan → /c4-run N
-│    또는 /c4-swarm N
+│  → /c4-interview → /c4-plan → /c4-run N → /c4-polish → /c4-finish
+│    또는 /c4-swarm N → /c4-polish → /c4-finish
 │
 ├─ 연구/실험
 │  → /c4-research 또는 /c4-swarm --investigate

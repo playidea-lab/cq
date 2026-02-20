@@ -42,10 +42,10 @@ C9 Knowledge — Knowledge management (FTS5 + pgvector + Embedding + Usage)
 ## How It Works
 
 ```
-INIT ─▶ DISCOVERY ─▶ DESIGN ─▶ PLAN ─▶ EXECUTE ⇄ CHECKPOINT ─▶ REFINE ─▶ COMPLETE
-                                         │              │            │
-                                    Worker mode     Multi-lens    Iterative
-                                    Direct mode     code review   quality loop
+INIT ─▶ DISCOVERY ─▶ DESIGN ─▶ PLAN ─▶ EXECUTE ⇄ CHECKPOINT ─▶ REFINE ─▶ POLISH ─▶ COMPLETE
+                                         │              │            │            │
+                                    Worker mode     Multi-lens    Iterative    Build·Test·Review
+                                    Direct mode     code review   quality loop until 0 changes
 ```
 
 CQ breaks features into tasks, assigns them to workers (parallel) or claims them directly (sequential), auto-generates review tasks, and accumulates decisions as organizational knowledge.
@@ -183,7 +183,7 @@ c4_lighthouse(action="promote", name="export_api")
 - **CDP Runner** — Browser automation via Chrome DevTools Protocol
 
 ### Developer Experience
-- **14 slash commands** — `/c4-plan`, `/c4-run`, `/c4-status`, `/c4-checkpoint`, `/c4-swarm`, ...
+- **15 slash commands** — `/c4-plan`, `/c4-run`, `/c4-status`, `/c4-checkpoint`, `/c4-swarm`, ...
 - **37 specialized agents** — `code-reviewer`, `ml-engineer`, `security-auditor`, `debugger`, ...
 - **7 hooks** — Secret scanning, force-push prevention, auto-lint (Python/TypeScript)
 - **Economic mode** — Model routing presets (standard / economic / ultra-economic / quality)
