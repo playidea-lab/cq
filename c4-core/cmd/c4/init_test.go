@@ -524,3 +524,111 @@ func TestSetupCursorMCPConfig_ServerKeyCQ(t *testing.T) {
 		t.Errorf(".cursor/mcp.json has stale \"c4\" server key (should be \"cq\"); got:\n%s", content)
 	}
 }
+
+func TestHookNeedsUpdate_Missing(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "nonexistent.sh")
+	if !hookNeedsUpdate(path, "content") {
+		t.Error("expected true for missing file")
+	}
+}
+
+func TestHookNeedsUpdate_HashMatch(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "hook.sh")
+	content := "#!/bin/bash\necho hello\n"
+	if err := os.WriteFile(path, []byte(content), 0755); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if hookNeedsUpdate(path, content) {
+		t.Error("expected false when content matches")
+	}
+}
+
+func TestHookNeedsUpdate_HashMismatch(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "hook.sh")
+	if err := os.WriteFile(path, []byte("old content"), 0755); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if !hookNeedsUpdate(path, "new content") {
+		t.Error("expected true when content differs")
+	}
+}
+
+func TestSetupGlobalHooks_Install(t *testing.T) {
+	homeDir := t.TempDir()
+
+	if err := setupGlobalHooks(homeDir); err != nil {
+		t.Fatalf("setupGlobalHooks failed: %v", err)
+	}
+
+	hooksDir := filepath.Join(homeDir, ".claude", "hooks")
+
+	hookPath := filepath.Join(hooksDir, "c4-bash-security-hook.sh")
+	data, err := os.ReadFile(hookPath)
+	if err != nil {
+		t.Fatalf("hook script not created: %v", err)
+	}
+	if string(data) != hookShContent {
+		t.Error("hook script content mismatch")
+	}
+	// Verify executable permission
+	info, err := os.Stat(hookPath)
+	if err != nil {
+		t.Fatalf("stat hook: %v", err)
+	}
+	if info.Mode()&0100 == 0 {
+		t.Error("hook script not executable")
+	}
+
+	confPath := filepath.Join(hooksDir, "c4-bash-security.conf")
+	confData, err := os.ReadFile(confPath)
+	if err != nil {
+		t.Fatalf("hook conf not created: %v", err)
+	}
+	if string(confData) != hookConfContent {
+		t.Error("hook conf content mismatch")
+	}
+}
+
+func TestSetupGlobalHooks_Idempotent(t *testing.T) {
+	homeDir := t.TempDir()
+
+	// First install
+	if err := setupGlobalHooks(homeDir); err != nil {
+		t.Fatalf("first setupGlobalHooks failed: %v", err)
+	}
+
+	hooksDir := filepath.Join(homeDir, ".claude", "hooks")
+	confPath := filepath.Join(hooksDir, "c4-bash-security.conf")
+
+	// Modify conf to simulate user customization
+	customConf := "# user customization\nALLOW_ALL=true\n"
+	if err := os.WriteFile(confPath, []byte(customConf), 0644); err != nil {
+		t.Fatalf("write custom conf: %v", err)
+	}
+
+	// Second install should not overwrite conf
+	if err := setupGlobalHooks(homeDir); err != nil {
+		t.Fatalf("second setupGlobalHooks failed: %v", err)
+	}
+
+	data, err := os.ReadFile(confPath)
+	if err != nil {
+		t.Fatalf("read conf: %v", err)
+	}
+	if string(data) != customConf {
+		t.Error("user conf was overwritten by idempotent install")
+	}
+
+	// Hook script should still match embedded content
+	hookPath := filepath.Join(hooksDir, "c4-bash-security-hook.sh")
+	hookData, err := os.ReadFile(hookPath)
+	if err != nil {
+		t.Fatalf("read hook: %v", err)
+	}
+	if string(hookData) != hookShContent {
+		t.Error("hook script content mismatch after second install")
+	}
+}
