@@ -127,8 +127,13 @@
   background: var(--color-text-muted);
 }
 
-.channel-sidebar__status-dot--online {
+.channel-sidebar__status-dot--online,
+.channel-sidebar__status-dot--working {
   background: var(--color-accent-green, #22c55e);
+}
+
+.channel-sidebar__status-dot--idle {
+  background: var(--color-accent-yellow, #eab308);
 }
 
 /* --- Worker Count Badge --- */
