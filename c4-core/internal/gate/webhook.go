@@ -95,6 +95,34 @@ func (m *WebhookManager) Dispatch(event Event) error {
 	return firstErr
 }
 
+// ListEndpoints returns a snapshot of all registered endpoints.
+func (m *WebhookManager) ListEndpoints() []*Endpoint {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	out := make([]*Endpoint, len(m.endpoints))
+	copy(out, m.endpoints)
+	return out
+}
+
+// DispatchTo sends the event only to the named endpoint.
+// Returns an error if no endpoint with that name is found.
+func (m *WebhookManager) DispatchTo(name string, event Event) error {
+	m.mu.RLock()
+	var target *Endpoint
+	for _, ep := range m.endpoints {
+		if ep.Name == name {
+			target = ep
+			break
+		}
+	}
+	m.mu.RUnlock()
+
+	if target == nil {
+		return fmt.Errorf("webhook endpoint %q not found", name)
+	}
+	return m.post(target, event)
+}
+
 // matchesEvents reports whether eventType matches the subscription list.
 // An empty list matches all event types.
 func matchesEvents(subscribed []string, eventType string) bool {

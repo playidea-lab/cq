@@ -61,11 +61,23 @@ type initContext struct {
 	// EventBus (set by initEventBus post-store hook)
 	embeddedEB   *eventbus.EmbeddedServer
 	eventsinkSrv *http.Server
+
+	// Gate (set by initGate post-store hook, c8_gate build tag)
+	gateWebhookManager gateWebhookManagerInterface
+	gateScheduler      gateSchedulerInterface
 }
 
 // hubClientInterface abstracts hub.Client so the stub doesn't need to import hub.
 type hubClientInterface interface {
 	IsAvailable() bool
+}
+
+// gateWebhookManagerInterface abstracts gate.WebhookManager for the initContext.
+type gateWebhookManagerInterface interface{}
+
+// gateSchedulerInterface abstracts gate.Scheduler for the initContext.
+type gateSchedulerInterface interface {
+	Stop()
 }
 
 // componentPreStoreHooks run before registry/proxy/sqliteStore creation.

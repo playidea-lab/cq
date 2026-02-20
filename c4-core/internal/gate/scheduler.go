@@ -146,6 +146,11 @@ func (s *Scheduler) Stop() {
 	close(s.done)
 }
 
+// ListJobs returns all jobs currently tracked in the store.
+func (s *Scheduler) ListJobs() ([]Job, error) {
+	return s.store.List()
+}
+
 // parseCronExpr parses @every <duration> shorthand.
 // Returns an error for unsupported expressions.
 func parseCronExpr(expr string) (time.Duration, error) {
