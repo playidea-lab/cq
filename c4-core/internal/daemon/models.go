@@ -53,6 +53,8 @@ type Job struct {
 	ExitCode    *int              `json:"exit_code,omitempty"`
 	PID         int               `json:"pid,omitempty"`
 	GPUIndices  []int             `json:"gpu_indices,omitempty"`
+	MetricsPath string            `json:"metrics_path,omitempty"`
+	Metrics     map[string]any    `json:"metrics,omitempty"`
 }
 
 // DurationSec returns the job duration in seconds, or nil if not yet finished.
@@ -84,6 +86,7 @@ type JobSubmitRequest struct {
 	ExpID       string            `json:"exp_id,omitempty"`
 	Memo        string            `json:"memo,omitempty"`
 	TimeoutSec  int               `json:"timeout_sec,omitempty"`
+	MetricsPath string            `json:"metrics_path,omitempty"`
 }
 
 // JobSubmitResponse is returned from POST /jobs/submit.

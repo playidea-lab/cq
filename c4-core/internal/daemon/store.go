@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -54,7 +55,7 @@ func (s *Store) Close() error {
 	return s.db.Close()
 }
 
-// migrate creates tables if they don't exist.
+// migrate creates tables if they don't exist and applies incremental schema changes.
 func (s *Store) migrate() error {
 	_, err := s.db.Exec(`
 		CREATE TABLE IF NOT EXISTS jobs (
@@ -91,7 +92,24 @@ func (s *Store) migrate() error {
 
 		CREATE INDEX IF NOT EXISTS idx_job_durations_hash ON job_durations(command_hash);
 	`)
-	return err
+	if err != nil {
+		return err
+	}
+
+	// Incremental migrations: add new columns to existing DBs.
+	// SQLite returns an error if the column already exists; we ignore it.
+	for _, stmt := range []string{
+		`ALTER TABLE jobs ADD COLUMN metrics_path TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE jobs ADD COLUMN metrics TEXT NOT NULL DEFAULT 'null'`,
+	} {
+		if _, err := s.db.Exec(stmt); err != nil {
+			// "duplicate column name" is expected on existing DBs — ignore it.
+			if !strings.Contains(err.Error(), "duplicate column name") {
+				return fmt.Errorf("alter table: %w", err)
+			}
+		}
+	}
+	return nil
 }
 
 // CreateJob inserts a new job with QUEUED status and returns it.
@@ -113,18 +131,21 @@ func (s *Store) CreateJob(req *JobSubmitRequest) (*Job, error) {
 		ExpID:       req.ExpID,
 		Memo:        req.Memo,
 		TimeoutSec:  req.TimeoutSec,
+		MetricsPath: req.MetricsPath,
 		CreatedAt:   now,
 	}
 
 	_, err := s.db.Exec(`
 		INSERT INTO jobs (id, name, status, priority, workdir, command,
-			requires_gpu, gpu_count, env, tags, exp_id, memo, timeout_sec, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			requires_gpu, gpu_count, env, tags, exp_id, memo, timeout_sec, created_at,
+			metrics_path)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		job.ID, job.Name, string(job.Status), job.Priority, job.Workdir, job.Command,
 		boolToInt(job.RequiresGPU), job.GPUCount,
 		marshalJSON(job.Env), marshalJSON(job.Tags),
 		job.ExpID, job.Memo, job.TimeoutSec,
 		now.Format(time.RFC3339),
+		job.MetricsPath,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("insert job: %w", err)
@@ -136,7 +157,8 @@ func (s *Store) CreateJob(req *JobSubmitRequest) (*Job, error) {
 func (s *Store) GetJob(id string) (*Job, error) {
 	row := s.db.QueryRow(`SELECT id, name, status, priority, workdir, command,
 		requires_gpu, gpu_count, env, tags, exp_id, memo, timeout_sec,
-		created_at, started_at, finished_at, exit_code, pid, gpu_indices
+		created_at, started_at, finished_at, exit_code, pid, gpu_indices,
+		metrics_path, metrics
 		FROM jobs WHERE id = ?`, id)
 	return scanJob(row)
 }
@@ -145,7 +167,8 @@ func (s *Store) GetJob(id string) (*Job, error) {
 func (s *Store) ListJobs(status string, limit, offset int) ([]*Job, error) {
 	query := `SELECT id, name, status, priority, workdir, command,
 		requires_gpu, gpu_count, env, tags, exp_id, memo, timeout_sec,
-		created_at, started_at, finished_at, exit_code, pid, gpu_indices
+		created_at, started_at, finished_at, exit_code, pid, gpu_indices,
+		metrics_path, metrics
 		FROM jobs`
 	args := []any{}
 
@@ -183,7 +206,8 @@ func (s *Store) ListJobs(status string, limit, offset int) ([]*Job, error) {
 func (s *Store) GetQueuedJobs() ([]*Job, error) {
 	rows, err := s.db.Query(`SELECT id, name, status, priority, workdir, command,
 		requires_gpu, gpu_count, env, tags, exp_id, memo, timeout_sec,
-		created_at, started_at, finished_at, exit_code, pid, gpu_indices
+		created_at, started_at, finished_at, exit_code, pid, gpu_indices,
+		metrics_path, metrics
 		FROM jobs WHERE status = 'QUEUED'
 		ORDER BY priority DESC, created_at ASC`)
 	if err != nil {
@@ -206,7 +230,8 @@ func (s *Store) GetQueuedJobs() ([]*Job, error) {
 func (s *Store) GetRunningJobs() ([]*Job, error) {
 	rows, err := s.db.Query(`SELECT id, name, status, priority, workdir, command,
 		requires_gpu, gpu_count, env, tags, exp_id, memo, timeout_sec,
-		created_at, started_at, finished_at, exit_code, pid, gpu_indices
+		created_at, started_at, finished_at, exit_code, pid, gpu_indices,
+		metrics_path, metrics
 		FROM jobs WHERE status = 'RUNNING'
 		ORDER BY started_at ASC`)
 	if err != nil {
@@ -384,6 +409,12 @@ func (s *Store) CountByStatus(status JobStatus) (int, error) {
 	return count, err
 }
 
+// SetJobMetrics persists parsed metrics data for a job.
+func (s *Store) SetJobMetrics(id string, data map[string]any) error {
+	_, err := s.db.Exec(`UPDATE jobs SET metrics = ? WHERE id = ?`, marshalJSON(data), id)
+	return err
+}
+
 // =========================================================================
 // Internal helpers
 // =========================================================================
@@ -406,12 +437,14 @@ func populateJob(s scanner) (*Job, error) {
 		finishedAt  sql.NullString
 		exitCode    sql.NullInt64
 		gpuJSON     string
+		metricsJSON string
 	)
 	err := s.Scan(
 		&j.ID, &j.Name, &status, &j.Priority, &j.Workdir, &j.Command,
 		&requiresGPU, &j.GPUCount, &envJSON, &tagsJSON,
 		&j.ExpID, &j.Memo, &j.TimeoutSec,
 		&createdAt, &startedAt, &finishedAt, &exitCode, &j.PID, &gpuJSON,
+		&j.MetricsPath, &metricsJSON,
 	)
 	if err != nil {
 		return nil, err
@@ -439,6 +472,11 @@ func populateJob(s scanner) (*Job, error) {
 	}
 	if err := json.Unmarshal([]byte(gpuJSON), &j.GPUIndices); err != nil {
 		fmt.Fprintf(os.Stderr, "c4: daemon: unmarshal gpu_indices for job %s: %v\n", j.ID, err)
+	}
+	if metricsJSON != "" && metricsJSON != "null" {
+		if err := json.Unmarshal([]byte(metricsJSON), &j.Metrics); err != nil {
+			fmt.Fprintf(os.Stderr, "c4: daemon: unmarshal metrics for job %s: %v\n", j.ID, err)
+		}
 	}
 	return &j, nil
 }

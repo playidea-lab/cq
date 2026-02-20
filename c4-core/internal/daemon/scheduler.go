@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -325,11 +326,46 @@ func (s *Scheduler) waitForCompletion(jobID string, gpuIndices []int) {
 	}
 
 	s.store.CompleteJob(jobID, status, exitCode)
+	s.loadMetricsJSON(jobID)
 	s.releaseGPU(gpuIndices)
 
 	s.mu.Lock()
 	delete(s.running, jobID)
 	s.mu.Unlock()
+}
+
+// loadMetricsJSON looks for a metrics file after job completion and stores it.
+// It checks MetricsPath first, then falls back to {workdir}/metrics.json.
+// Errors are logged but do not affect the job's terminal status.
+func (s *Scheduler) loadMetricsJSON(jobID string) {
+	job, err := s.store.GetJob(jobID)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "c4: daemon: loadMetricsJSON get job %s: %v\n", jobID, err)
+		return
+	}
+
+	metricsPath := job.MetricsPath
+	if metricsPath == "" {
+		metricsPath = filepath.Join(job.Workdir, "metrics.json")
+	}
+
+	data, err := os.ReadFile(metricsPath)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			fmt.Fprintf(os.Stderr, "c4: daemon: loadMetricsJSON read %s: %v\n", metricsPath, err)
+		}
+		return
+	}
+
+	var metrics map[string]any
+	if err := json.Unmarshal(data, &metrics); err != nil {
+		fmt.Fprintf(os.Stderr, "c4: daemon: loadMetricsJSON parse %s: %v\n", metricsPath, err)
+		return
+	}
+
+	if err := s.store.SetJobMetrics(jobID, metrics); err != nil {
+		fmt.Fprintf(os.Stderr, "c4: daemon: loadMetricsJSON store %s: %v\n", jobID, err)
+	}
 }
 
 // checkRunningJobs verifies running processes are still alive and handles timeouts.
