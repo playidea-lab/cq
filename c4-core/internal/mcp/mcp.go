@@ -29,9 +29,10 @@ type BlockingHandlerFunc func(ctx context.Context, args json.RawMessage) (any, e
 
 // Registry manages registered MCP tools and dispatches calls.
 type Registry struct {
-	mu       sync.RWMutex
-	tools    map[string]registeredTool
-	ordering []string // preserve registration order
+	mu          sync.RWMutex
+	tools       map[string]registeredTool
+	ordering    []string // preserve registration order
+	middlewares []Middleware
 
 	// OnChange is called after Register/Replace/Unregister mutate the tool list.
 	// Used by the MCP server to send notifications/tools/list_changed.
@@ -54,6 +55,16 @@ func NewRegistry() *Registry {
 	return &Registry{
 		tools: make(map[string]registeredTool),
 	}
+}
+
+// Use appends middlewares to the registry's middleware chain.
+// Middlewares are applied in registration order: the first Use'd middleware
+// is the outermost wrapper (executed first on entry, last on exit).
+// Use must be called before tool registration for consistent behavior.
+func (r *Registry) Use(mw ...Middleware) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.middlewares = append(r.middlewares, mw...)
 }
 
 // Register adds a tool to the registry. If a tool with the same name
@@ -113,10 +124,12 @@ func (r *Registry) Call(name string, args json.RawMessage) (any, error) {
 
 // CallWithContext invokes a registered tool, passing ctx to blocking handlers.
 // For regular handlers ctx is ignored; for blocking handlers ctx enables cancellation.
+// The handler is wrapped with the registered middleware chain before execution.
 func (r *Registry) CallWithContext(ctx context.Context, name string, args json.RawMessage) (any, error) {
 	r.mu.RLock()
 	tool, ok := r.tools[name]
 	onCall := r.OnCall
+	mws := r.middlewares // snapshot under lock
 	r.mu.RUnlock()
 
 	if !ok {
@@ -127,10 +140,25 @@ func (r *Registry) CallWithContext(ctx context.Context, name string, args json.R
 		onCall()
 	}
 
+	// Build the base handler: adapt BlockingHandlerFunc to HandlerFunc by capturing ctx.
+	var base HandlerFunc
 	if tool.bhandler != nil {
-		return tool.bhandler(ctx, args)
+		bh := tool.bhandler
+		base = func(a json.RawMessage) (any, error) {
+			return bh(ctx, a)
+		}
+	} else {
+		base = tool.handler
 	}
-	return tool.handler(args)
+
+	// Apply middleware chain in reverse order so that the first Use'd
+	// middleware is the outermost wrapper.
+	h := base
+	for i := len(mws) - 1; i >= 0; i-- {
+		h = mws[i](h)
+	}
+
+	return h(args)
 }
 
 // HasTool returns true if a tool with the given name is registered.
