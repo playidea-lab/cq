@@ -283,6 +283,8 @@ func executeJob(client *workerClient, job *model.Job, leaseID, workerID string, 
 }
 
 // downloadInputArtifacts fetches each presigned artifact URL to its local path.
+// Required artifacts (art.Required == true) cause a hard failure; optional
+// artifacts log a warning and continue.
 func downloadInputArtifacts(httpClient *http.Client, artifacts []model.InputPresignedArtifact) error {
 	for _, art := range artifacts {
 		localPath := art.LocalPath
@@ -292,32 +294,54 @@ func downloadInputArtifacts(httpClient *http.Client, artifacts []model.InputPres
 		// Path traversal defense: reject absolute paths and .. components
 		cleaned := filepath.Clean(localPath)
 		if filepath.IsAbs(cleaned) || strings.HasPrefix(cleaned, "..") {
-			return fmt.Errorf("unsafe local path for artifact %s: %s", art.Path, localPath)
+			err := fmt.Errorf("unsafe local path for artifact %s: %s", art.Path, localPath)
+			if !art.Required {
+				log.Printf("c5-worker: WARNING: optional artifact skipped: %v", err)
+				continue
+			}
+			return err
 		}
 		localPath = cleaned
 		if err := os.MkdirAll(filepath.Dir(localPath), 0755); err != nil {
+			if !art.Required {
+				log.Printf("c5-worker: WARNING: optional artifact %s skipped (mkdir): %v", art.Path, err)
+				continue
+			}
 			return fmt.Errorf("create dir for artifact %s: %w", art.Path, err)
 		}
-		resp, err := httpClient.Get(art.URL)
-		if err != nil {
-			return fmt.Errorf("download artifact %s: %w", art.Path, err)
-		}
-		if resp.StatusCode != http.StatusOK {
-			resp.Body.Close()
-			return fmt.Errorf("download artifact %s: HTTP %d", art.Path, resp.StatusCode)
-		}
-		f, err := os.Create(localPath)
-		if err != nil {
-			resp.Body.Close()
-			return fmt.Errorf("create file %s: %w", localPath, err)
-		}
-		_, copyErr := io.Copy(f, resp.Body)
-		resp.Body.Close()
-		f.Close()
-		if copyErr != nil {
-			return fmt.Errorf("write artifact %s: %w", art.Path, copyErr)
+
+		if err := downloadSingleArtifact(httpClient, art.URL, art.Path, localPath); err != nil {
+			if !art.Required {
+				log.Printf("c5-worker: WARNING: optional artifact %s skipped: %v", art.Path, err)
+				continue
+			}
+			return err
 		}
 		log.Printf("c5-worker: downloaded %s → %s", art.Path, localPath)
+	}
+	return nil
+}
+
+// downloadSingleArtifact downloads a single URL to localPath.
+func downloadSingleArtifact(httpClient *http.Client, url, artifactPath, localPath string) error {
+	resp, err := httpClient.Get(url)
+	if err != nil {
+		return fmt.Errorf("download artifact %s: %w", artifactPath, err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		resp.Body.Close()
+		return fmt.Errorf("download artifact %s: HTTP %d", artifactPath, resp.StatusCode)
+	}
+	f, err := os.Create(localPath)
+	if err != nil {
+		resp.Body.Close()
+		return fmt.Errorf("create file %s: %w", localPath, err)
+	}
+	_, copyErr := io.Copy(f, resp.Body)
+	resp.Body.Close()
+	f.Close()
+	if copyErr != nil {
+		return fmt.Errorf("write artifact %s: %w", artifactPath, copyErr)
 	}
 	return nil
 }

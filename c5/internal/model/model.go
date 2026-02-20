@@ -201,6 +201,7 @@ type InputPresignedArtifact struct {
 	LocalPath string `json:"local_path,omitempty"`
 	URL       string `json:"url"`
 	ExpiresAt string `json:"expires_at,omitempty"`
+	Required  bool   `json:"required,omitempty"` // propagated from ArtifactRef; false = skip on failure
 }
 
 // LeaseAcquireResponse is returned from POST /v1/leases/acquire.

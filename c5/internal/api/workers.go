@@ -250,6 +250,7 @@ func (s *Server) handleLeaseAcquire(w http.ResponseWriter, r *http.Request) {
 			LocalPath: art.LocalPath,
 			URL:       res.url,
 			ExpiresAt: res.expiresAt.UTC().Format(time.RFC3339),
+			Required:  art.Required,
 		})
 	}
 

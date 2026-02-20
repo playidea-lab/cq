@@ -516,3 +516,28 @@ func newMCPServer() (*mcpServer, error) {
 		schedulerCancel: schedulerCancel,
 	}, nil
 }
+
+// hubJobSubmitterAdapter adapts hub.Client to eventbus.JobSubmitter interface,
+// breaking the eventbus→hub import dependency.
+type hubJobSubmitterAdapter struct {
+	client *hub.Client
+}
+
+func (a *hubJobSubmitterAdapter) Submit(spec *eventbus.JobSubmitSpec) (string, error) {
+	resp, err := a.client.SubmitJob(&hub.JobSubmitRequest{
+		Name:        spec.Name,
+		Workdir:     spec.Workdir,
+		Command:     spec.Command,
+		Env:         spec.Env,
+		Tags:        spec.Tags,
+		RequiresGPU: spec.RequiresGPU,
+		Priority:    spec.Priority,
+		ExpID:       spec.ExpID,
+		Memo:        spec.Memo,
+		TimeoutSec:  spec.TimeoutSec,
+	})
+	if err != nil {
+		return "", err
+	}
+	return resp.JobID, nil
+}
