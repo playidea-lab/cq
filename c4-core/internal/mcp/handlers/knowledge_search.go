@@ -45,7 +45,7 @@ func knowledgeSearchNativeHandler(opts *KnowledgeNativeOpts) mcp.HandlerFunc {
 					}
 				}
 				results = append(results, knowledge.SearchResult{
-					ID:     r["id"].(string),
+					ID:     stringFromAny(r["id"]),
 					Title:  stringFromAny(r["title"]),
 					Type:   stringFromAny(r["type"]),
 					Domain: stringFromAny(r["domain"]),

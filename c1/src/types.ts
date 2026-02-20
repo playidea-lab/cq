@@ -98,7 +98,7 @@ export interface TaskDetail extends TaskItem {
 
 // --- Provider types ---
 
-export type ProviderKind = 'claude_code' | 'codex_cli' | 'cursor' | 'gemini_cli';
+export type ProviderKind = 'claude_code' | 'codex_cli' | 'cursor';
 
 export interface ProviderInfo {
   kind: ProviderKind;

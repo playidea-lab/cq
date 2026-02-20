@@ -21,7 +21,6 @@ const PROVIDERS: { kind: ProviderKind; label: string }[] = [
   { kind: 'claude_code', label: 'Claude' },
   { kind: 'codex_cli', label: 'Codex' },
   { kind: 'cursor', label: 'Cursor' },
-  { kind: 'gemini_cli', label: 'Gemini' },
 ];
 
 interface ChannelsViewProps {

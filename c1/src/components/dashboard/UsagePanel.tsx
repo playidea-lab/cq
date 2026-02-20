@@ -6,7 +6,6 @@ const PROVIDER_COLORS: Record<string, string> = {
   claude_code: 'var(--color-accent-primary)',
   codex_cli: '#10a37f',
   cursor: '#7c3aed',
-  gemini_cli: '#4285f4',
 };
 
 function formatTokens(n: number): string {

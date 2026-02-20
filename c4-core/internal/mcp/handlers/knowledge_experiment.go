@@ -119,7 +119,7 @@ func experimentSearchNativeHandler(opts *KnowledgeNativeOpts) mcp.HandlerFunc {
 					continue
 				}
 				results = append(results, knowledge.SearchResult{
-					ID:    r["id"].(string),
+					ID:    stringFromAny(r["id"]),
 					Title: stringFromAny(r["title"]),
 					Type:  stringFromAny(r["type"]),
 				})
@@ -215,7 +215,7 @@ func patternSuggestNativeHandler(opts *KnowledgeNativeOpts) mcp.HandlerFunc {
 					continue
 				}
 				results = append(results, knowledge.SearchResult{
-					ID:    r["id"].(string),
+					ID:    stringFromAny(r["id"]),
 					Title: stringFromAny(r["title"]),
 					Type:  stringFromAny(r["type"]),
 				})
