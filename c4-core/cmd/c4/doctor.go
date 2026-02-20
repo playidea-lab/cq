@@ -1,0 +1,578 @@
+package main
+
+import (
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"time"
+
+	"github.com/spf13/cobra"
+)
+
+// checkStatus represents the result of a single diagnostic check.
+type checkStatus string
+
+const (
+	checkOK   checkStatus = "OK"
+	checkWarn checkStatus = "WARN"
+	checkFail checkStatus = "FAIL"
+)
+
+// checkResult holds the outcome of one diagnostic check.
+type checkResult struct {
+	Name    string      `json:"name"`
+	Status  checkStatus `json:"status"`
+	Message string      `json:"message"`
+	Fix     string      `json:"fix,omitempty"`
+}
+
+var (
+	doctorFix  bool
+	doctorJSON bool
+)
+
+var doctorCmd = &cobra.Command{
+	Use:   "doctor",
+	Short: "Diagnose CQ installation and environment",
+	Long: `doctor checks the CQ installation and reports any problems.
+
+Each check is reported as [OK], [WARN], or [FAIL] with a description.
+FAIL items include a suggested fix command.
+
+Use --fix to automatically repair simple issues (symlinks, config gaps).
+Use --json for machine-readable output.`,
+	RunE: runDoctor,
+}
+
+func init() {
+	doctorCmd.Flags().BoolVar(&doctorFix, "fix", false, "auto-fix simple issues")
+	doctorCmd.Flags().BoolVar(&doctorJSON, "json", false, "output results as JSON")
+	// doctor doesn't require a .c4/ directory — override the root PersistentPreRunE
+	doctorCmd.PersistentPreRunE = nil
+	rootCmd.AddCommand(doctorCmd)
+}
+
+func runDoctor(cmd *cobra.Command, args []string) error {
+	checks := []func() checkResult{
+		checkBinary,
+		checkC4Dir,
+		checkMCPJson,
+		checkClaudeMDSymlink,
+		checkHooks,
+		checkPythonSidecar,
+		checkHub,
+		checkSupabase,
+	}
+
+	results := make([]checkResult, 0, len(checks))
+	for _, fn := range checks {
+		r := fn()
+		if doctorFix && r.Status == checkFail {
+			if fixed := tryFix(r); fixed != "" {
+				r.Message += " (fixed: " + fixed + ")"
+				r.Status = checkOK
+				r.Fix = ""
+			}
+		}
+		results = append(results, r)
+	}
+
+	if doctorJSON {
+		return printDoctorJSON(results)
+	}
+	printDoctorHuman(results)
+	return nil
+}
+
+// printDoctorJSON outputs results as a JSON array.
+func printDoctorJSON(results []checkResult) error {
+	enc := json.NewEncoder(os.Stdout)
+	enc.SetIndent("", "  ")
+	return enc.Encode(results)
+}
+
+// printDoctorHuman prints results in human-readable form.
+func printDoctorHuman(results []checkResult) {
+	failCount := 0
+	warnCount := 0
+	for _, r := range results {
+		icon := "OK  "
+		switch r.Status {
+		case checkWarn:
+			icon = "WARN"
+			warnCount++
+		case checkFail:
+			icon = "FAIL"
+			failCount++
+		}
+		fmt.Printf("[%s] %s: %s\n", icon, r.Name, r.Message)
+		if r.Fix != "" {
+			fmt.Printf("       Fix: %s\n", r.Fix)
+		}
+	}
+	fmt.Println()
+	if failCount == 0 && warnCount == 0 {
+		fmt.Println("All checks passed.")
+	} else {
+		fmt.Printf("%d failed, %d warnings.\n", failCount, warnCount)
+	}
+}
+
+// checkBinary verifies that cq binary is on PATH and shows its version.
+func checkBinary() checkResult {
+	path, err := exec.LookPath("cq")
+	if err != nil {
+		return checkResult{
+			Name:    "cq binary",
+			Status:  checkFail,
+			Message: "cq not found on PATH",
+			Fix:     "go build -o ~/.local/bin/cq ./cmd/c4/ && export PATH=$PATH:~/.local/bin",
+		}
+	}
+	out, err := exec.Command(path, "--version").Output()
+	if err != nil {
+		return checkResult{
+			Name:    "cq binary",
+			Status:  checkWarn,
+			Message: fmt.Sprintf("found at %s but --version failed: %v", path, err),
+		}
+	}
+	ver := strings.TrimSpace(string(out))
+	return checkResult{
+		Name:    "cq binary",
+		Status:  checkOK,
+		Message: fmt.Sprintf("%s (%s)", ver, path),
+	}
+}
+
+// checkC4Dir verifies the .c4/ directory and required files exist.
+func checkC4Dir() checkResult {
+	dir := filepath.Join(projectDir, ".c4")
+	if _, err := os.Stat(dir); os.IsNotExist(err) {
+		return checkResult{
+			Name:    ".c4 directory",
+			Status:  checkFail,
+			Message: fmt.Sprintf(".c4/ not found in %s", projectDir),
+			Fix:     "cq claude  (or: cq init) to initialize the project",
+		}
+	}
+
+	missing := []string{}
+	for _, f := range []string{"config.yaml", "tasks.db"} {
+		p := filepath.Join(dir, f)
+		if _, err := os.Stat(p); os.IsNotExist(err) {
+			missing = append(missing, f)
+		}
+	}
+	// tasks.db may be named c4.db
+	if contains(missing, "tasks.db") {
+		if _, err := os.Stat(filepath.Join(dir, "c4.db")); err == nil {
+			missing = remove(missing, "tasks.db")
+		}
+	}
+	if len(missing) > 0 {
+		return checkResult{
+			Name:    ".c4 directory",
+			Status:  checkWarn,
+			Message: fmt.Sprintf(".c4/ found but missing: %s", strings.Join(missing, ", ")),
+			Fix:     "cq claude to re-initialize",
+		}
+	}
+	return checkResult{
+		Name:    ".c4 directory",
+		Status:  checkOK,
+		Message: fmt.Sprintf("%s (config.yaml, db)", dir),
+	}
+}
+
+// checkMCPJson validates the .mcp.json file and that the binary it references exists.
+func checkMCPJson() checkResult {
+	mcpPath := filepath.Join(projectDir, ".mcp.json")
+	data, err := os.ReadFile(mcpPath)
+	if err != nil {
+		return checkResult{
+			Name:    ".mcp.json",
+			Status:  checkFail,
+			Message: ".mcp.json not found",
+			Fix:     "cq claude to (re-)initialize the project",
+		}
+	}
+
+	var cfg map[string]interface{}
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		return checkResult{
+			Name:    ".mcp.json",
+			Status:  checkFail,
+			Message: fmt.Sprintf("invalid JSON: %v", err),
+			Fix:     "cq claude to regenerate .mcp.json",
+		}
+	}
+
+	// Look for a command entry that references cq binary
+	binPath := extractMCPBinaryPath(cfg)
+	if binPath == "" {
+		return checkResult{
+			Name:    ".mcp.json",
+			Status:  checkWarn,
+			Message: ".mcp.json parsed but could not find cq binary reference",
+		}
+	}
+	if _, err := os.Stat(binPath); os.IsNotExist(err) {
+		return checkResult{
+			Name:    ".mcp.json",
+			Status:  checkFail,
+			Message: fmt.Sprintf("referenced binary missing: %s", binPath),
+			Fix:     fmt.Sprintf("go build -o %s ./cmd/c4/", binPath),
+		}
+	}
+	return checkResult{
+		Name:    ".mcp.json",
+		Status:  checkOK,
+		Message: fmt.Sprintf("valid JSON, binary exists (%s)", binPath),
+	}
+}
+
+// extractMCPBinaryPath looks inside the MCP config for the first command path that looks like cq.
+func extractMCPBinaryPath(cfg map[string]interface{}) string {
+	servers, ok := cfg["mcpServers"].(map[string]interface{})
+	if !ok {
+		return ""
+	}
+	for _, v := range servers {
+		srv, ok := v.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		cmd, _ := srv["command"].(string)
+		if strings.Contains(cmd, "cq") {
+			return expandTilde(cmd)
+		}
+		// args may hold the binary
+		if args, ok := srv["args"].([]interface{}); ok && len(args) > 0 {
+			if s, ok := args[0].(string); ok && strings.Contains(s, "cq") {
+				return expandTilde(s)
+			}
+		}
+	}
+	return ""
+}
+
+// checkClaudeMDSymlink checks CLAUDE.md / AGENTS.md symlink status.
+func checkClaudeMDSymlink() checkResult {
+	claudePath := filepath.Join(projectDir, "CLAUDE.md")
+	fi, err := os.Lstat(claudePath)
+	if os.IsNotExist(err) {
+		return checkResult{
+			Name:    "CLAUDE.md",
+			Status:  checkWarn,
+			Message: "CLAUDE.md not found",
+			Fix:     "cq claude to create CLAUDE.md with C4 overrides",
+		}
+	}
+	if err != nil {
+		return checkResult{
+			Name:    "CLAUDE.md",
+			Status:  checkFail,
+			Message: fmt.Sprintf("stat error: %v", err),
+		}
+	}
+	if fi.Mode()&os.ModeSymlink != 0 {
+		target, err := os.Readlink(claudePath)
+		if err != nil {
+			return checkResult{
+				Name:    "CLAUDE.md",
+				Status:  checkFail,
+				Message: "CLAUDE.md is a broken symlink",
+				Fix:     fmt.Sprintf("rm %s && cq claude", claudePath),
+			}
+		}
+		// Verify target exists
+		if _, err := os.Stat(claudePath); os.IsNotExist(err) {
+			return checkResult{
+				Name:    "CLAUDE.md",
+				Status:  checkFail,
+				Message: fmt.Sprintf("CLAUDE.md symlink target missing: %s", target),
+				Fix:     fmt.Sprintf("rm %s && cq claude", claudePath),
+			}
+		}
+		return checkResult{
+			Name:    "CLAUDE.md",
+			Status:  checkOK,
+			Message: fmt.Sprintf("symlink → %s", target),
+		}
+	}
+	return checkResult{
+		Name:    "CLAUDE.md",
+		Status:  checkOK,
+		Message: "regular file with C4 overrides",
+	}
+}
+
+// checkHooks verifies ~/.claude/hooks/ setup and settings.json patch.
+func checkHooks() checkResult {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return checkResult{
+			Name:    "hooks",
+			Status:  checkWarn,
+			Message: "cannot determine home directory",
+		}
+	}
+
+	hookFile := filepath.Join(home, ".claude", "hooks", "c4-bash-security-hook.sh")
+	if _, err := os.Stat(hookFile); os.IsNotExist(err) {
+		return checkResult{
+			Name:    "hooks",
+			Status:  checkWarn,
+			Message: "c4-bash-security-hook.sh not installed",
+			Fix:     "cq claude to install hooks (run from any CQ project directory)",
+		}
+	}
+
+	settingsPath := filepath.Join(home, ".claude", "settings.json")
+	data, err := os.ReadFile(settingsPath)
+	if err != nil {
+		return checkResult{
+			Name:    "hooks",
+			Status:  checkWarn,
+			Message: fmt.Sprintf("hook file found but ~/.claude/settings.json missing: %v", err),
+		}
+	}
+	if !strings.Contains(string(data), "c4-bash-security-hook") {
+		return checkResult{
+			Name:    "hooks",
+			Status:  checkWarn,
+			Message: "hook file exists but not registered in settings.json",
+			Fix:     "cq claude to patch settings.json",
+		}
+	}
+	return checkResult{
+		Name:    "hooks",
+		Status:  checkOK,
+		Message: fmt.Sprintf("%s (registered in settings.json)", hookFile),
+	}
+}
+
+// checkPythonSidecar verifies uv and Python sidecar dependencies.
+func checkPythonSidecar() checkResult {
+	uvPath, err := exec.LookPath("uv")
+	if err != nil {
+		return checkResult{
+			Name:    "Python sidecar",
+			Status:  checkWarn,
+			Message: "uv not found — LSP/doc tools will be unavailable",
+			Fix:     "curl -LsSf https://astral.sh/uv/install.sh | sh",
+		}
+	}
+
+	// Check if pyproject.toml or requirements exist in project
+	hasProject := false
+	for _, f := range []string{
+		filepath.Join(projectDir, "pyproject.toml"),
+		filepath.Join(projectDir, "c4", "pyproject.toml"),
+	} {
+		if _, err := os.Stat(f); err == nil {
+			hasProject = true
+			break
+		}
+	}
+	if !hasProject {
+		return checkResult{
+			Name:    "Python sidecar",
+			Status:  checkOK,
+			Message: fmt.Sprintf("uv found at %s (no pyproject.toml in project)", uvPath),
+		}
+	}
+
+	return checkResult{
+		Name:    "Python sidecar",
+		Status:  checkOK,
+		Message: fmt.Sprintf("uv found at %s", uvPath),
+	}
+}
+
+// checkHub checks C5 Hub connectivity when hub.enabled=true.
+func checkHub() checkResult {
+	cfgPath := filepath.Join(projectDir, ".c4", "config.yaml")
+	data, err := os.ReadFile(cfgPath)
+	if err != nil {
+		return checkResult{
+			Name:    "C5 Hub",
+			Status:  checkOK,
+			Message: "skipped (no config.yaml)",
+		}
+	}
+
+	content := string(data)
+	// Simple YAML scan — avoid pulling in a YAML library here
+	if !strings.Contains(content, "enabled: true") || !strings.Contains(content, "hub:") {
+		return checkResult{
+			Name:    "C5 Hub",
+			Status:  checkOK,
+			Message: "hub not enabled",
+		}
+	}
+
+	url := extractYAMLValue(content, "url:")
+	if url == "" {
+		return checkResult{
+			Name:    "C5 Hub",
+			Status:  checkWarn,
+			Message: "hub.enabled=true but url not configured",
+		}
+	}
+
+	healthURL := strings.TrimRight(url, "/") + "/health"
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Get(healthURL)
+	if err != nil {
+		return checkResult{
+			Name:    "C5 Hub",
+			Status:  checkFail,
+			Message: fmt.Sprintf("hub unreachable at %s: %v", url, err),
+			Fix:     "Start C5: c5 serve",
+		}
+	}
+	resp.Body.Close()
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		return checkResult{
+			Name:    "C5 Hub",
+			Status:  checkOK,
+			Message: fmt.Sprintf("reachable at %s (HTTP %d)", url, resp.StatusCode),
+		}
+	}
+	return checkResult{
+		Name:    "C5 Hub",
+		Status:  checkWarn,
+		Message: fmt.Sprintf("hub returned HTTP %d at %s", resp.StatusCode, url),
+	}
+}
+
+// checkSupabase checks Supabase connectivity when cloud is configured.
+func checkSupabase() checkResult {
+	cfgPath := filepath.Join(projectDir, ".c4", "config.yaml")
+	data, err := os.ReadFile(cfgPath)
+	if err != nil {
+		// Try builtin URL
+		if builtinSupabaseURL == "" {
+			return checkResult{
+				Name:    "Supabase",
+				Status:  checkOK,
+				Message: "skipped (no cloud config)",
+			}
+		}
+		data = []byte{}
+	}
+
+	supabaseURL := extractYAMLValue(string(data), "url:")
+	if supabaseURL == "" {
+		supabaseURL = builtinSupabaseURL
+	}
+	if supabaseURL == "" || !strings.Contains(supabaseURL, "supabase") {
+		return checkResult{
+			Name:    "Supabase",
+			Status:  checkOK,
+			Message: "skipped (not configured)",
+		}
+	}
+
+	healthURL := strings.TrimRight(supabaseURL, "/") + "/rest/v1/"
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Get(healthURL)
+	if err != nil {
+		return checkResult{
+			Name:    "Supabase",
+			Status:  checkFail,
+			Message: fmt.Sprintf("unreachable at %s: %v", supabaseURL, err),
+			Fix:     "Check network / Supabase project status",
+		}
+	}
+	resp.Body.Close()
+	// Supabase REST returns 200 or 401 (both indicate it's up)
+	if resp.StatusCode == 200 || resp.StatusCode == 401 {
+		return checkResult{
+			Name:    "Supabase",
+			Status:  checkOK,
+			Message: fmt.Sprintf("reachable at %s", supabaseURL),
+		}
+	}
+	return checkResult{
+		Name:    "Supabase",
+		Status:  checkWarn,
+		Message: fmt.Sprintf("returned HTTP %d at %s", resp.StatusCode, supabaseURL),
+	}
+}
+
+// tryFix attempts automatic remediation for known FAIL cases.
+// Returns a short description of what was fixed, or empty string if no fix was applied.
+func tryFix(r checkResult) string {
+	switch r.Name {
+	case "CLAUDE.md":
+		claudePath := filepath.Join(projectDir, "CLAUDE.md")
+		// Remove broken symlink so next init can recreate it
+		if fi, err := os.Lstat(claudePath); err == nil && fi.Mode()&os.ModeSymlink != 0 {
+			if _, err := os.Stat(claudePath); os.IsNotExist(err) {
+				if os.Remove(claudePath) == nil {
+					return "removed broken symlink"
+				}
+			}
+		}
+	}
+	return ""
+}
+
+// extractYAMLValue is a simple line-by-line YAML value extractor (key: value).
+// It returns the trimmed value after the first occurrence of key on its own line.
+func extractYAMLValue(content, key string) string {
+	for _, line := range strings.Split(content, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, key) {
+			val := strings.TrimSpace(strings.TrimPrefix(trimmed, key))
+			// Strip surrounding quotes
+			val = strings.Trim(val, `"'`)
+			return val
+		}
+	}
+	return ""
+}
+
+// expandTilde replaces a leading ~ with the user home directory.
+func expandTilde(p string) string {
+	if !strings.HasPrefix(p, "~") {
+		return p
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return p
+	}
+	return filepath.Join(home, p[1:])
+}
+
+// contains reports whether slice s contains elem.
+func contains(s []string, elem string) bool {
+	for _, v := range s {
+		if v == elem {
+			return true
+		}
+	}
+	return false
+}
+
+// remove returns a copy of s without the first occurrence of elem.
+func remove(s []string, elem string) []string {
+	result := make([]string, 0, len(s))
+	removed := false
+	for _, v := range s {
+		if v == elem && !removed {
+			removed = true
+			continue
+		}
+		result = append(result, v)
+	}
+	return result
+}
+
