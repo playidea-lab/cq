@@ -586,6 +586,7 @@ func setupCursorMCPConfig(dir string) error {
 	var config map[string]any
 	if data, readErr := os.ReadFile(mcpPath); readErr == nil {
 		if json.Unmarshal(data, &config) != nil {
+			fmt.Fprintf(os.Stderr, "cq: WARNING: %s has invalid JSON, overwriting with new config\n", mcpPath)
 			config = nil
 		}
 	}
@@ -636,6 +637,7 @@ func setupMCPConfig(dir string) error {
 	var config map[string]any
 	if data, readErr := os.ReadFile(mcpPath); readErr == nil {
 		if json.Unmarshal(data, &config) != nil {
+			fmt.Fprintf(os.Stderr, "cq: WARNING: %s has invalid JSON, overwriting with new config\n", mcpPath)
 			config = nil
 		}
 	}
