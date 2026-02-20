@@ -106,6 +106,7 @@ git clone https://git.pilab.co.kr/pi/cq.git && cd cq
 Restart Claude Code, then:
 
 ```bash
+cq doctor           # Verify installation (8 health checks)
 /c4-status          # Verify connection (134 tools registered)
 /c4-plan "feature"  # Start planning
 /c4-run             # Execute tasks
@@ -278,6 +279,11 @@ uv run pytest tests/
 # C1 Desktop
 cd c1 && pnpm test
 cd c1/src-tauri && cargo test
+
+# Environment diagnosis
+cq doctor              # 8-item health check (binary, .c4/, .mcp.json, hooks, hub, ...)
+cq doctor --json       # Machine-readable output for CI
+cq doctor --fix        # Auto-fix simple issues (broken symlinks, etc.)
 ```
 
 ## Documentation
