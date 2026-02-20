@@ -45,20 +45,6 @@ type NativeOpts struct {
 	LLMGateway        *llm.Gateway            // nil if LLM gateway disabled
 }
 
-// RegisterAllHandlers registers all MCP tool handlers including Python proxy tools.
-// If store is nil, only native and proxy handlers are registered (store handlers added later).
-// knowledgeCloud may be nil when cloud is disabled.
-// Returns the BridgeProxy so callers can attach a Restarter for auto-recovery.
-func RegisterAllHandlers(reg *mcp.Registry, store Store, rootDir string, bridgeAddr string, knowledgeCloud KnowledgeSyncer) *BridgeProxy {
-	return RegisterAllHandlersWithOpts(reg, store, rootDir, bridgeAddr, nil, knowledgeCloud, nil)
-}
-
-// RegisterAllHandlersLazy is like RegisterAllHandlers but uses lazy sidecar initialization.
-// The sidecar will only start when the first proxy tool is called.
-func RegisterAllHandlersLazy(reg *mcp.Registry, store Store, rootDir string, lazyAddr LazyAddrGetter, knowledgeCloud KnowledgeSyncer) *BridgeProxy {
-	return RegisterAllHandlersLazyWithOpts(reg, store, rootDir, lazyAddr, knowledgeCloud, nil)
-}
-
 // RegisterAllHandlersWithOpts is the full-featured registration with native opts.
 func RegisterAllHandlersWithOpts(reg *mcp.Registry, store Store, rootDir string, bridgeAddr string, lazyAddr LazyAddrGetter, knowledgeCloud KnowledgeSyncer, opts *NativeOpts) *BridgeProxy {
 	if store != nil {
