@@ -118,9 +118,8 @@ func (s *SQLiteStore) enrichWithKnowledge(assignment *TaskAssignment) {
 			fmt.Fprintf(&b, "- Domain: %s\n", r.Domain)
 		}
 		// Fetch body summary (first 200 chars) for actionable context
-		if s.knowledgeStore != nil {
-			if doc, err := s.knowledgeStore.Get(r.ID); err == nil && doc.Body != "" {
-				body := doc.Body
+		if s.knowledgeReader != nil {
+			if body, err := s.knowledgeReader.GetBody(r.ID); err == nil && body != "" {
 				if len(body) > 200 {
 					body = body[:200] + "..."
 				}

@@ -222,8 +222,9 @@ func newMCPServer() (*mcpServer, error) {
 	if proxy != nil {
 		storeOpts = append(storeOpts, handlers.WithProxy(proxy))
 	}
-	if knowledgeStore != nil && knowledgeSearcher != nil {
-		storeOpts = append(storeOpts, handlers.WithKnowledge(knowledgeStore, knowledgeSearcher))
+	if knowledgeStore != nil || knowledgeSearcher != nil {
+		w, r, s := handlers.AdaptKnowledge(knowledgeStore, knowledgeSearcher)
+		storeOpts = append(storeOpts, handlers.WithKnowledge(w, r, s))
 	}
 	storeOpts = append(storeOpts, handlers.WithRegistry(reg))
 	sqliteStore, err := handlers.NewSQLiteStore(db, storeOpts...)

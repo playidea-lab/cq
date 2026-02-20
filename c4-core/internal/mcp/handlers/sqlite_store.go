@@ -11,8 +11,6 @@ import (
 	"time"
 
 	"github.com/changmin/c4-core/internal/config"
-	"github.com/changmin/c4-core/internal/eventbus"
-	"github.com/changmin/c4-core/internal/knowledge"
 	"github.com/changmin/c4-core/internal/mcp"
 	"github.com/changmin/c4-core/internal/state"
 )
@@ -24,12 +22,13 @@ type SQLiteStore struct {
 	projectID      string
 	projectRoot    string
 	config         *config.Manager
-	proxy          *BridgeProxy            // optional: for legacy proxy calls
-	knowledgeStore *knowledge.Store        // optional: for native knowledge recording
-	knowledgeSearch *knowledge.Searcher    // optional: for knowledge context injection
-	eventPub       eventbus.Publisher      // optional: for C3 EventBus remote publishing
-	dispatcher     *eventbus.Dispatcher    // optional: local rule-based dispatch (C1 posting, etc.)
-	registry       *mcp.Registry           // optional: for lighthouse auto-promote registry cleanup
+	proxy           *BridgeProxy              // optional: for legacy proxy calls
+	knowledgeWriter KnowledgeWriter           // optional: for native knowledge recording
+	knowledgeReader KnowledgeReader           // optional: for knowledge body lookup
+	knowledgeSearch KnowledgeContextSearcher  // optional: for knowledge context injection
+	eventPub        EventPublisher            // optional: for C3 EventBus remote publishing
+	dispatcher      EventDispatcher           // optional: local rule-based dispatch (C1 posting, etc.)
+	registry        *mcp.Registry             // optional: for lighthouse auto-promote registry cleanup
 
 	// Implicit heartbeat (Option C): tracks the active worker for this MCP process.
 	// Set by AssignTask; refreshed before every tool dispatch via Registry.OnCall.
@@ -55,10 +54,12 @@ func WithProxy(p *BridgeProxy) StoreOption {
 	return func(s *SQLiteStore) { s.proxy = p }
 }
 
-// WithKnowledge sets the native knowledge store and searcher for auto-recording and context injection.
-func WithKnowledge(store *knowledge.Store, searcher *knowledge.Searcher) StoreOption {
+// WithKnowledge sets the knowledge interfaces for auto-recording and context injection.
+// Use AdaptKnowledge() to wrap concrete *knowledge.Store and *knowledge.Searcher.
+func WithKnowledge(writer KnowledgeWriter, reader KnowledgeReader, searcher KnowledgeContextSearcher) StoreOption {
 	return func(s *SQLiteStore) {
-		s.knowledgeStore = store
+		s.knowledgeWriter = writer
+		s.knowledgeReader = reader
 		s.knowledgeSearch = searcher
 	}
 }
@@ -70,13 +71,15 @@ func WithRegistry(reg *mcp.Registry) StoreOption {
 
 // SetEventBus sets the EventBus publisher after construction (for cases where
 // the eventbus client depends on components created after the store).
-func (s *SQLiteStore) SetEventBus(pub eventbus.Publisher) {
+// Accepts any type satisfying the EventPublisher interface (e.g. eventbus.Client).
+func (s *SQLiteStore) SetEventBus(pub EventPublisher) {
 	s.eventPub = pub
 }
 
 // SetDispatcher sets the local Dispatcher for in-process rule-based dispatch
 // (e.g. c1_post action to post task events to C1 channels).
-func (s *SQLiteStore) SetDispatcher(d *eventbus.Dispatcher) {
+// Accepts any type satisfying the EventDispatcher interface (e.g. *eventbus.Dispatcher).
+func (s *SQLiteStore) SetDispatcher(d EventDispatcher) {
 	s.dispatcher = d
 }
 

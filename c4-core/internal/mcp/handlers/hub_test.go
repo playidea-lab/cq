@@ -1,3 +1,5 @@
+//go:build c5_hub
+
 package handlers
 
 import (

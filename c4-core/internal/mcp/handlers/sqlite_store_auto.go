@@ -6,8 +6,6 @@ import (
 	"os"
 	"strings"
 	"time"
-
-	"github.com/changmin/c4-core/internal/knowledge"
 )
 
 // --- Lighthouse Auto-Promote ---
@@ -57,12 +55,12 @@ func (s *SQLiteStore) autoPromoteLighthouse(taskID, workerID string) {
 // --- Knowledge Auto-Record ---
 
 // autoRecordKnowledge records task completion as a knowledge experiment (best-effort).
-// Uses native knowledge store if available, falls back to proxy.
+// Uses native knowledge writer if available, falls back to proxy.
 func (s *SQLiteStore) autoRecordKnowledge(task *Task, summary string, filesChanged []string, handoff string) {
 	if task == nil {
 		return
 	}
-	if s.knowledgeStore == nil && s.proxy == nil {
+	if s.knowledgeWriter == nil && s.proxy == nil {
 		return
 	}
 
@@ -109,8 +107,8 @@ func (s *SQLiteStore) autoRecordKnowledge(task *Task, summary string, filesChang
 
 	title := fmt.Sprintf("Task %s: %s", task.ID, task.Title)
 
-	// Prefer native store over proxy
-	if s.knowledgeStore != nil {
+	// Prefer native knowledge writer over proxy
+	if s.knowledgeWriter != nil {
 		go func() {
 			metadata := map[string]any{
 				"title":   title,
@@ -118,7 +116,7 @@ func (s *SQLiteStore) autoRecordKnowledge(task *Task, summary string, filesChang
 				"tags":    tags,
 				"task_id": task.ID,
 			}
-			if _, err := s.knowledgeStore.Create(knowledge.TypeExperiment, metadata, content); err != nil {
+			if _, err := s.knowledgeWriter.CreateExperiment(metadata, content); err != nil {
 				fmt.Fprintf(os.Stderr, "c4: auto-record knowledge failed for %s: %v\n", task.ID, err)
 			}
 		}()

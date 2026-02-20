@@ -1,3 +1,5 @@
+//go:build llm_gateway
+
 package handlers
 
 import (

@@ -1,3 +1,5 @@
+//go:build c3_eventbus
+
 package handlers
 
 import (

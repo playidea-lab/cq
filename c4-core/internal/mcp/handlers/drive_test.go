@@ -1,3 +1,5 @@
+//go:build c0_drive
+
 package handlers
 
 import (
