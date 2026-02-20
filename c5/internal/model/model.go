@@ -190,8 +190,9 @@ type HeartbeatResponse struct {
 
 // LeaseAcquireRequest is the payload for POST /v1/leases/acquire.
 type LeaseAcquireRequest struct {
-	WorkerID string  `json:"worker_id"`
-	FreeVRAM float64 `json:"free_vram_gb,omitempty"`
+	WorkerID    string  `json:"worker_id"`
+	FreeVRAM    float64 `json:"free_vram_gb,omitempty"`
+	WaitSeconds int     `json:"wait_seconds,omitempty"` // 0 = return immediately, >0 = long-poll timeout
 }
 
 // InputPresignedArtifact is a presigned download URL for a job input artifact.

@@ -39,6 +39,9 @@ func (s *Server) handleJobSubmit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Wake up any long-poll waiters in /v1/leases/acquire
+	s.notifyJobAvailable()
+
 	queuePos, _ := s.store.CountByStatus(model.StatusQueued)
 
 	w.WriteHeader(http.StatusCreated)

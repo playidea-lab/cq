@@ -12,6 +12,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"crypto/sha256"
@@ -35,6 +36,11 @@ type Server struct {
 	mux       *http.ServeMux
 	done      chan struct{} // closed on shutdown to stop background goroutines
 	eventPub  *eventpub.Publisher
+
+	// jobMu protects jobNotify. When a new job is queued, jobNotify is closed
+	// (broadcasting to all long-poll waiters) and replaced with a new channel.
+	jobMu     sync.Mutex
+	jobNotify chan struct{}
 }
 
 // Config holds server configuration.
@@ -69,6 +75,7 @@ func NewServer(cfg Config) *Server {
 		mux:       http.NewServeMux(),
 		done:      make(chan struct{}),
 		eventPub:  eventpub.New(cfg.EventBusURL, cfg.EventBusToken),
+		jobNotify: make(chan struct{}),
 	}
 	s.registerRoutes()
 
@@ -203,6 +210,25 @@ func isMasterFromContext(r *http.Request) bool {
 		return v
 	}
 	return false
+}
+
+// notifyJobAvailable broadcasts to all long-poll waiters that a new job is queued.
+// It does this by closing the current jobNotify channel and creating a new one.
+func (s *Server) notifyJobAvailable() {
+	s.jobMu.Lock()
+	old := s.jobNotify
+	s.jobNotify = make(chan struct{})
+	s.jobMu.Unlock()
+	close(old)
+}
+
+// getJobNotifyChan returns the current job notification channel.
+// Callers should capture it before blocking, then select on it.
+func (s *Server) getJobNotifyChan() <-chan struct{} {
+	s.jobMu.Lock()
+	ch := s.jobNotify
+	s.jobMu.Unlock()
+	return ch
 }
 
 // Close stops background goroutines.
