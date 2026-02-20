@@ -31,8 +31,8 @@ func TestLookupModel(t *testing.T) {
 	if !ok {
 		t.Fatal("LookupModel(claude-opus-4-6) not found")
 	}
-	if info.InputPer1M != 15.0 {
-		t.Errorf("InputPer1M = %f, want 15.0", info.InputPer1M)
+	if info.InputPer1M != 5.0 {
+		t.Errorf("InputPer1M = %f, want 5.0", info.InputPer1M)
 	}
 
 	// Via alias

@@ -5,26 +5,26 @@ package llm
 var Catalog = map[string]ModelInfo{
 	"claude-opus-4-6": {
 		ID: "claude-opus-4-6", Name: "Claude Opus 4.6",
-		ContextWindow: 200000, MaxOutput: 32000,
-		InputPer1M: 15.0, OutputPer1M: 75.0,
+		ContextWindow: 200000, MaxOutput: 128000,
+		InputPer1M: 5.0, OutputPer1M: 25.0,
 		SupportsTools: true, SupportsVision: true,
 	},
 	"claude-sonnet-4-6": {
 		ID: "claude-sonnet-4-6", Name: "Claude Sonnet 4.6",
-		ContextWindow: 200000, MaxOutput: 16000,
+		ContextWindow: 200000, MaxOutput: 64000,
 		InputPer1M: 3.0, OutputPer1M: 15.0,
 		SupportsTools: true, SupportsVision: true,
 	},
 	"claude-sonnet-4-5": {
 		ID: "claude-sonnet-4-5", Name: "Claude Sonnet 4.5",
-		ContextWindow: 200000, MaxOutput: 16000,
+		ContextWindow: 200000, MaxOutput: 64000,
 		InputPer1M: 3.0, OutputPer1M: 15.0,
 		SupportsTools: true, SupportsVision: true,
 	},
 	"claude-haiku-4-5-20251001": {
 		ID: "claude-haiku-4-5-20251001", Name: "Claude Haiku 4.5",
-		ContextWindow: 200000, MaxOutput: 8192,
-		InputPer1M: 0.80, OutputPer1M: 4.0,
+		ContextWindow: 200000, MaxOutput: 64000,
+		InputPer1M: 1.0, OutputPer1M: 5.0,
 		SupportsTools: true, SupportsVision: true,
 	},
 	"claude-haiku-3-5": {
