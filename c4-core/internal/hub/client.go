@@ -209,40 +209,6 @@ func (c *Client) post(path string, body, dest any) error {
 	return nil
 }
 
-// patch performs a PATCH request with JSON body and decodes the response.
-func (c *Client) patch(path string, body, dest any) error {
-	data, err := json.Marshal(body)
-	if err != nil {
-		return fmt.Errorf("marshal: %w", err)
-	}
-
-	req, err := http.NewRequest("PATCH", c.url(path), strings.NewReader(string(data)))
-	if err != nil {
-		return err
-	}
-	c.setHeaders(req)
-	req.GetBody = func() (io.ReadCloser, error) {
-		return io.NopCloser(strings.NewReader(string(data))), nil
-	}
-
-	resp, err := c.doWithRetry(req)
-	if err != nil {
-		return fmt.Errorf("PATCH %s: %w", path, err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode >= 400 {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("PATCH %s: %d %s", path, resp.StatusCode, string(body))
-	}
-
-	if dest != nil {
-		if err := json.NewDecoder(resp.Body).Decode(dest); err != nil {
-			return fmt.Errorf("decode %s: %w", path, err)
-		}
-	}
-	return nil
-}
 
 // =========================================================================
 // Job API

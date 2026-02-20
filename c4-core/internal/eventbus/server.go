@@ -28,7 +28,6 @@ type Server struct {
 	// Subscriber management
 	mu          sync.RWMutex
 	subscribers map[string][]chan *pb.Event // pattern -> channels
-	nextSubID   int
 }
 
 // NewServer creates a new EventBus gRPC server.

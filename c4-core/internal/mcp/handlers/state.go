@@ -7,17 +7,11 @@ import (
 	"github.com/changmin/c4-core/internal/mcp"
 )
 
-// statusArgs is the input for c4_status (no arguments).
-type statusArgs struct{}
-
 // clearArgs is the input for c4_clear.
 type clearArgs struct {
 	Confirm    bool `json:"confirm"`
 	KeepConfig bool `json:"keep_config"`
 }
-
-// startArgs is the input for c4_start (no arguments).
-type startArgs struct{}
 
 // RegisterStateHandlers registers state management tools on the registry.
 func RegisterStateHandlers(reg *mcp.Registry, store Store) {
