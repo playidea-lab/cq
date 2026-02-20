@@ -194,11 +194,20 @@ type LeaseAcquireRequest struct {
 	FreeVRAM float64 `json:"free_vram_gb,omitempty"`
 }
 
+// InputPresignedArtifact is a presigned download URL for a job input artifact.
+type InputPresignedArtifact struct {
+	Path      string `json:"path"`
+	LocalPath string `json:"local_path,omitempty"`
+	URL       string `json:"url"`
+	ExpiresAt string `json:"expires_at"`
+}
+
 // LeaseAcquireResponse is returned from POST /v1/leases/acquire.
 type LeaseAcquireResponse struct {
-	JobID   string `json:"job_id"`
-	LeaseID string `json:"lease_id"`
-	Job     Job    `json:"job"`
+	JobID               string                   `json:"job_id"`
+	LeaseID             string                   `json:"lease_id"`
+	Job                 Job                      `json:"job"`
+	InputPresignedURLs  []InputPresignedArtifact `json:"input_presigned_urls,omitempty"`
 }
 
 // LeaseRenewRequest is the payload for POST /v1/leases/renew.
