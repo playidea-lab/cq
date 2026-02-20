@@ -44,6 +44,31 @@ func registerHubJobHandlers(reg *mcp.Registry, hubClient *hub.Client) {
 				"exp_id":       map[string]any{"type": "string", "description": "Experiment ID to link"},
 				"memo":         map[string]any{"type": "string", "description": "Experiment memo/hypothesis"},
 				"timeout_sec":  map[string]any{"type": "integer", "description": "Timeout in seconds"},
+				"input_artifacts": map[string]any{
+					"type":        "array",
+					"description": "Input artifact paths to download before job execution",
+					"items": map[string]any{
+						"type": "object",
+						"properties": map[string]any{
+							"path":       map[string]any{"type": "string", "description": "Hub artifact path"},
+							"local_path": map[string]any{"type": "string", "description": "Local destination path on worker"},
+							"required":   map[string]any{"type": "boolean", "description": "Fail if artifact missing"},
+						},
+						"required": []string{"path"},
+					},
+				},
+				"output_artifacts": map[string]any{
+					"type":        "array",
+					"description": "Output artifact paths to upload after job completion",
+					"items": map[string]any{
+						"type": "object",
+						"properties": map[string]any{
+							"path":       map[string]any{"type": "string", "description": "Hub artifact path"},
+							"local_path": map[string]any{"type": "string", "description": "Local source path on worker"},
+						},
+						"required": []string{"path"},
+					},
+				},
 			},
 			"required": []string{"name", "workdir", "command"},
 		},
@@ -222,16 +247,18 @@ func registerHubJobHandlers(reg *mcp.Registry, hubClient *hub.Client) {
 
 func handleHubSubmit(client *hub.Client, raw json.RawMessage) (any, error) {
 	var params struct {
-		Name        string            `json:"name"`
-		Workdir     string            `json:"workdir"`
-		Command     string            `json:"command"`
-		Env         map[string]string `json:"env"`
-		Tags        []string          `json:"tags"`
-		RequiresGPU *bool             `json:"requires_gpu"`
-		Priority    int               `json:"priority"`
-		ExpID       string            `json:"exp_id"`
-		Memo        string            `json:"memo"`
-		TimeoutSec  int               `json:"timeout_sec"`
+		Name            string            `json:"name"`
+		Workdir         string            `json:"workdir"`
+		Command         string            `json:"command"`
+		Env             map[string]string `json:"env"`
+		Tags            []string          `json:"tags"`
+		RequiresGPU     *bool             `json:"requires_gpu"`
+		Priority        int               `json:"priority"`
+		ExpID           string            `json:"exp_id"`
+		Memo            string            `json:"memo"`
+		TimeoutSec      int               `json:"timeout_sec"`
+		InputArtifacts  []hub.ArtifactRef `json:"input_artifacts"`
+		OutputArtifacts []hub.ArtifactRef `json:"output_artifacts"`
 	}
 	if err := json.Unmarshal(raw, &params); err != nil {
 		return nil, fmt.Errorf("parsing params: %w", err)
@@ -246,16 +273,18 @@ func handleHubSubmit(client *hub.Client, raw json.RawMessage) (any, error) {
 	}
 
 	resp, err := client.SubmitJob(&hub.JobSubmitRequest{
-		Name:        params.Name,
-		Workdir:     params.Workdir,
-		Command:     params.Command,
-		Env:         params.Env,
-		Tags:        params.Tags,
-		RequiresGPU: requiresGPU,
-		Priority:    params.Priority,
-		ExpID:       params.ExpID,
-		Memo:        params.Memo,
-		TimeoutSec:  params.TimeoutSec,
+		Name:            params.Name,
+		Workdir:         params.Workdir,
+		Command:         params.Command,
+		Env:             params.Env,
+		Tags:            params.Tags,
+		RequiresGPU:     requiresGPU,
+		Priority:        params.Priority,
+		ExpID:           params.ExpID,
+		Memo:            params.Memo,
+		TimeoutSec:      params.TimeoutSec,
+		InputArtifacts:  params.InputArtifacts,
+		OutputArtifacts: params.OutputArtifacts,
 	})
 	if err != nil {
 		return nil, err

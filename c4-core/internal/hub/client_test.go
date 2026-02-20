@@ -818,3 +818,110 @@ func TestGetJobEstimate_NoHistory(t *testing.T) {
 		t.Errorf("Method = %q, want default", resp.Method)
 	}
 }
+
+// =========================================================================
+// Artifact model tests (T-838-0)
+// =========================================================================
+
+func TestHubSubmitRequest_WithArtifacts(t *testing.T) {
+	req := JobSubmitRequest{
+		Name:    "train-job",
+		Workdir: "/workspace",
+		Command: "python train.py",
+		InputArtifacts: []ArtifactRef{
+			{Path: "datasets/cifar10.tar.gz", LocalPath: "/data/cifar10.tar.gz", Required: true},
+		},
+		OutputArtifacts: []ArtifactRef{
+			{Path: "models/resnet50.pt", LocalPath: "/output/resnet50.pt"},
+		},
+	}
+
+	data, err := json.Marshal(req)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+
+	var decoded map[string]any
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	// Verify C5-compatible field names are present.
+	if _, ok := decoded["input_artifacts"]; !ok {
+		t.Error("expected input_artifacts field in JSON")
+	}
+	if _, ok := decoded["output_artifacts"]; !ok {
+		t.Error("expected output_artifacts field in JSON")
+	}
+
+	// Verify artifact fields are correctly serialized.
+	inputs, _ := decoded["input_artifacts"].([]any)
+	if len(inputs) != 1 {
+		t.Fatalf("input_artifacts len = %d, want 1", len(inputs))
+	}
+	input0 := inputs[0].(map[string]any)
+	if input0["path"] != "datasets/cifar10.tar.gz" {
+		t.Errorf("input path = %v, want datasets/cifar10.tar.gz", input0["path"])
+	}
+	if input0["local_path"] != "/data/cifar10.tar.gz" {
+		t.Errorf("input local_path = %v, want /data/cifar10.tar.gz", input0["local_path"])
+	}
+	if input0["required"] != true {
+		t.Errorf("input required = %v, want true", input0["required"])
+	}
+
+	// Verify empty artifacts are omitted (omitempty).
+	reqEmpty := JobSubmitRequest{Name: "x", Workdir: ".", Command: "echo"}
+	dataEmpty, _ := json.Marshal(reqEmpty)
+	var decodedEmpty map[string]any
+	json.Unmarshal(dataEmpty, &decodedEmpty)
+	if _, ok := decodedEmpty["input_artifacts"]; ok {
+		t.Error("input_artifacts should be omitted when empty")
+	}
+}
+
+func TestLeaseAcquireResponse_ParsesPresignedURLs(t *testing.T) {
+	raw := `{
+		"job_id": "job-42",
+		"lease_id": "lease-99",
+		"job": {"id": "job-42", "name": "train", "status": "RUNNING"},
+		"input_presigned_urls": [
+			{"path": "datasets/cifar10.tar.gz", "local_path": "/data/cifar10.tar.gz", "url": "https://s3.example.com/signed-url", "expires_at": "2026-02-21T00:00:00Z"}
+		]
+	}`
+
+	var resp ClaimResponse
+	if err := json.Unmarshal([]byte(raw), &resp); err != nil {
+		t.Fatalf("unmarshal ClaimResponse: %v", err)
+	}
+
+	if resp.JobID != "job-42" {
+		t.Errorf("JobID = %q, want job-42", resp.JobID)
+	}
+	if resp.LeaseID != "lease-99" {
+		t.Errorf("LeaseID = %q, want lease-99", resp.LeaseID)
+	}
+	if len(resp.InputPresignedURLs) != 1 {
+		t.Fatalf("InputPresignedURLs len = %d, want 1", len(resp.InputPresignedURLs))
+	}
+	u := resp.InputPresignedURLs[0]
+	if u.Path != "datasets/cifar10.tar.gz" {
+		t.Errorf("presigned path = %q, want datasets/cifar10.tar.gz", u.Path)
+	}
+	if u.URL != "https://s3.example.com/signed-url" {
+		t.Errorf("presigned url = %q, want https://s3.example.com/signed-url", u.URL)
+	}
+	if u.ExpiresAt != "2026-02-21T00:00:00Z" {
+		t.Errorf("expires_at = %q, want 2026-02-21T00:00:00Z", u.ExpiresAt)
+	}
+
+	// Verify backward compatibility: response without presigned URLs still parses fine.
+	rawLegacy := `{"job_id": "job-1", "lease_id": "lease-1", "job": {"id": "job-1", "status": "RUNNING"}}`
+	var legacyResp ClaimResponse
+	if err := json.Unmarshal([]byte(rawLegacy), &legacyResp); err != nil {
+		t.Fatalf("unmarshal legacy ClaimResponse: %v", err)
+	}
+	if legacyResp.InputPresignedURLs != nil {
+		t.Error("InputPresignedURLs should be nil for legacy response")
+	}
+}
