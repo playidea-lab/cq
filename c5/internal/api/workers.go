@@ -182,9 +182,15 @@ func (s *Server) handleLeaseAcquire(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Generate presigned GET URLs for input artifacts (5-second timeout per call).
+	// Generate presigned GET URLs for input artifacts (5-second timeout per call, 50 max).
+	const maxInputArtifacts = 50
+	artifacts := job.InputArtifacts
+	if len(artifacts) > maxInputArtifacts {
+		log.Printf("c5: job %s has %d input artifacts, capping at %d", job.ID, len(artifacts), maxInputArtifacts)
+		artifacts = artifacts[:maxInputArtifacts]
+	}
 	var inputPresignedURLs []model.InputPresignedArtifact
-	for _, art := range job.InputArtifacts {
+	for _, art := range artifacts {
 		type result struct {
 			url       string
 			expiresAt time.Time

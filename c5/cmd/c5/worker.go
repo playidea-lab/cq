@@ -476,7 +476,7 @@ func (c *workerClient) renewLease(leaseID, workerID string) {
 func (c *workerClient) completeJob(jobID, status string, exitCode int) error {
 	return c.doJSON("POST", "/v1/jobs/"+jobID+"/complete", &model.JobCompleteRequest{
 		Status:   status,
-		ExitCode: exitCode,
+		ExitCode: &exitCode,
 	}, nil)
 }
 

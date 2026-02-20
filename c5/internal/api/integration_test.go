@@ -150,9 +150,10 @@ func TestIntegrationJobLifecycle(t *testing.T) {
 	}
 
 	// 11. Complete job
+	exitZero := 0
 	wc := doRequest(t, srv, "POST", "/v1/jobs/"+jobID+"/complete", model.JobCompleteRequest{
 		Status:   "SUCCEEDED",
-		ExitCode: 0,
+		ExitCode: &exitZero,
 	})
 	if wc.Code != http.StatusOK {
 		t.Fatalf("complete: expected 200, got %d: %s", wc.Code, wc.Body.String())

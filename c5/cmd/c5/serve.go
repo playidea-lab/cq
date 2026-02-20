@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -44,7 +45,7 @@ func serveCmd() *cobra.Command {
 	cmd.Flags().StringVar(&configPath, "config", "", "Path to config file (default: ~/.config/c5/c5.yaml)")
 	cmd.Flags().BoolVar(&printConfig, "print-config", false, "Print example config YAML and exit")
 	cmd.Flags().IntVar(&port, "port", 0, "HTTP port to listen on (overrides config)")
-	cmd.Flags().StringVar(&dbPath, "db", "./c5.db", "SQLite database path")
+	cmd.Flags().StringVar(&dbPath, "db", defaultDBPath(), "SQLite database path")
 	cmd.Flags().StringVar(&apiKey, "api-key", os.Getenv("C5_API_KEY"), "API key for authentication (optional)")
 	cmd.Flags().StringVar(&eventBusURL, "eventbus-url", "", "C3 EventBus base URL (overrides config and env)")
 	cmd.Flags().StringVar(&eventBusToken, "eventbus-token", "", "Bearer token for EventBus (overrides config and env)")
@@ -170,6 +171,15 @@ func runServe(cmd *cobra.Command, configPath string, port int, dbPath, apiKey, e
 		return err
 	}
 	return nil
+}
+
+// defaultDBPath returns the default database path under the user's data directory.
+func defaultDBPath() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "./c5.db"
+	}
+	return filepath.Join(home, ".local", "share", "c5", "c5.db")
 }
 
 // loadConfigStrict loads the config from configPath and returns an error if the file does not exist.

@@ -505,9 +505,10 @@ func TestCompleteJobViaAPI(t *testing.T) {
 	doRequest(t, srv, "POST", "/v1/leases/acquire", model.LeaseAcquireRequest{WorkerID: regResp.WorkerID})
 
 	// Complete
+	exitZero := 0
 	w3 := doRequest(t, srv, "POST", "/v1/jobs/"+submitResp.JobID+"/complete", model.JobCompleteRequest{
 		Status:   "SUCCEEDED",
-		ExitCode: 0,
+		ExitCode: &exitZero,
 	})
 	if w3.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", w3.Code, w3.Body.String())

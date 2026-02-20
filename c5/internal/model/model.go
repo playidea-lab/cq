@@ -145,7 +145,7 @@ type JobSubmitResponse struct {
 // JobCompleteRequest is the payload for POST /v1/jobs/{id}/complete.
 type JobCompleteRequest struct {
 	Status   string `json:"status"`
-	ExitCode int    `json:"exit_code"`
+	ExitCode *int   `json:"exit_code,omitempty"`
 }
 
 // QueueStats holds aggregate counts by status.

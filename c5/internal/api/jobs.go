@@ -177,11 +177,15 @@ func (s *Server) handleJobComplete(w http.ResponseWriter, r *http.Request, jobID
 	}
 
 	status := model.StatusSucceeded
-	if req.Status == "FAILED" || req.ExitCode != 0 {
+	exitCode := 0
+	if req.ExitCode != nil {
+		exitCode = *req.ExitCode
+	}
+	if req.Status == "FAILED" || exitCode != 0 {
 		status = model.StatusFailed
 	}
 
-	if err := s.store.CompleteJob(jobID, status, req.ExitCode); err != nil {
+	if err := s.store.CompleteJob(jobID, status, exitCode); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -190,7 +194,7 @@ func (s *Server) handleJobComplete(w http.ResponseWriter, r *http.Request, jobID
 	s.store.DeleteLease(jobID)
 
 	// DAG orchestrator hook: advance DAG if this job was a DAG node
-	s.onJobComplete(jobID, status, req.ExitCode)
+	s.onJobComplete(jobID, status, exitCode)
 
 	// Deploy rules: evaluate on job success and create deployments for matching rules
 	if status == model.StatusSucceeded {
@@ -213,7 +217,7 @@ func (s *Server) handleJobComplete(w http.ResponseWriter, r *http.Request, jobID
 		if err := s.eventPub.Publish(evType, "c5", map[string]any{
 			"job_id":    jobID,
 			"status":    string(status),
-			"exit_code": req.ExitCode,
+			"exit_code": exitCode,
 		}); err != nil {
 			log.Printf("c5: eventpub %s: %v", evType, err)
 		}
