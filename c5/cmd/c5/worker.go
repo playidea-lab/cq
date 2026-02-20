@@ -23,6 +23,13 @@ import (
 	"github.com/spf13/cobra"
 )
 
+const (
+	LeaseRenewInterval          = 2 * time.Minute
+	WorkerHeartbeatInterval     = 30 * time.Second
+	MetricsFlushDebounce        = 5 * time.Second
+	MetricsBufferFlushThreshold = 10
+)
+
 func workerCmd() *cobra.Command {
 	var (
 		serverURL string
@@ -79,7 +86,7 @@ func runWorker(cfg workerConfig) error {
 	client := &workerClient{
 		baseURL: strings.TrimRight(cfg.serverURL, "/"),
 		apiKey:  cfg.apiKey,
-		http:    &http.Client{Timeout: 30 * time.Second},
+		http:    &http.Client{Timeout: WorkerHeartbeatInterval},
 	}
 
 	// Register
@@ -102,7 +109,7 @@ func runWorker(cfg workerConfig) error {
 	ticker := time.NewTicker(time.Duration(cfg.pollSec) * time.Second)
 	defer ticker.Stop()
 
-	heartbeatTicker := time.NewTicker(30 * time.Second)
+	heartbeatTicker := time.NewTicker(WorkerHeartbeatInterval)
 	defer heartbeatTicker.Stop()
 
 	var running atomic.Bool
@@ -201,8 +208,8 @@ func executeJob(client *workerClient, job *model.Job, leaseID, workerID string, 
 	// Lease renew + cancel detection goroutine
 	done := make(chan struct{})
 	go func() {
-		renewTicker := time.NewTicker(2 * time.Minute)
-		cancelTicker := time.NewTicker(30 * time.Second)
+		renewTicker := time.NewTicker(LeaseRenewInterval)
+		cancelTicker := time.NewTicker(WorkerHeartbeatInterval)
 		defer renewTicker.Stop()
 		defer cancelTicker.Stop()
 		for {
@@ -320,10 +327,10 @@ func (mc *metricsCollector) parseLine(line string) {
 	if mc.timer != nil {
 		mc.timer.Stop()
 	}
-	mc.timer = time.AfterFunc(5*time.Second, mc.flush)
+	mc.timer = time.AfterFunc(MetricsFlushDebounce, mc.flush)
 
 	// Flush immediately if buffer has many keys
-	if len(mc.pending) >= 10 {
+	if len(mc.pending) >= MetricsBufferFlushThreshold {
 		mc.timer.Stop()
 		go mc.flush()
 	}
