@@ -20,6 +20,7 @@ import (
 	"github.com/changmin/c4-core/internal/cdp"
 	"github.com/changmin/c4-core/internal/cloud"
 	"github.com/changmin/c4-core/internal/config"
+	"github.com/changmin/c4-core/internal/daemon"
 	"github.com/changmin/c4-core/internal/drive"
 	"github.com/changmin/c4-core/internal/eventbus"
 	"github.com/changmin/c4-core/internal/hub"
@@ -84,6 +85,9 @@ type mcpServer struct {
 	knowledgeUsage   *knowledge.UsageTracker  // usage tracking for 3-way RRF
 	eventsinkSrv     *http.Server             // EventSink HTTP server (nil if disabled)
 	hubPollerCancel  context.CancelFunc       // cancel func for HubPoller goroutine
+	daemonStore      *daemon.Store            // local job scheduler store (nil if init failed)
+	scheduler        *daemon.Scheduler        // local job scheduler (nil if init failed)
+	schedulerCancel  context.CancelFunc       // cancel func for scheduler lifecycle context
 }
 
 // newMCPServer creates and initializes the MCP server with all tools registered.
@@ -226,6 +230,31 @@ func newMCPServer() (*mcpServer, error) {
 		llmGateway = llm.NewGatewayFromConfig(cfgMgr.GetConfig())
 	}
 
+	// Create daemon store and scheduler (graceful fallback on failure)
+	var daemonStore *daemon.Store
+	var scheduler *daemon.Scheduler
+	var schedulerCancel context.CancelFunc
+	daemonDBPath := filepath.Join(projectDir, ".c4", "daemon.db")
+	if ds, dsErr := daemon.NewStore(daemonDBPath); dsErr != nil {
+		fmt.Fprintf(os.Stderr, "cq: daemon store init failed (job scheduler unavailable): %v\n", dsErr)
+	} else {
+		daemonStore = ds
+		daemonDataDir := filepath.Join(projectDir, ".c4", "daemon")
+		gpuMon := daemon.NewGpuMonitor()
+		gpuCount := 0
+		if gpus, gpuErr := gpuMon.GetAllGPUs(); gpuErr == nil {
+			gpuCount = len(gpus)
+		}
+		scheduler = daemon.NewScheduler(daemonStore, daemon.SchedulerConfig{
+			DataDir:  daemonDataDir,
+			GPUCount: gpuCount,
+		})
+		schedulerCtx, schedCancel := context.WithCancel(context.Background())
+		schedulerCancel = schedCancel
+		scheduler.Start(schedulerCtx)
+		fmt.Fprintf(os.Stderr, "cq: daemon scheduler started (gpus=%d)\n", gpuCount)
+	}
+
 	// Create registry and register all tools (proxy is created inside with lazy sidecar)
 	reg := mcp.NewRegistry()
 	nativeOpts := &handlers.NativeOpts{
@@ -235,6 +264,7 @@ func newMCPServer() (*mcpServer, error) {
 		KnowledgeCloud:    knowledgeCloud,
 		KnowledgeUsage:    knowledgeUsage,
 		LLMGateway:        llmGateway,
+		GPUStore:          daemonStore,
 	}
 	proxy := handlers.RegisterAllHandlersLazyWithOpts(reg, nil, projectDir, lazySidecar, knowledgeCloud, nativeOpts)
 
@@ -543,6 +573,9 @@ func newMCPServer() (*mcpServer, error) {
 		knowledgeUsage:  knowledgeUsage,
 		eventsinkSrv:    eventsinkSrv,
 		hubPollerCancel: hubPollerCancel,
+		daemonStore:     daemonStore,
+		scheduler:       scheduler,
+		schedulerCancel: schedulerCancel,
 	}, nil
 }
 
@@ -606,6 +639,15 @@ func (s *mcpServer) shutdown() {
 	}
 	if s.sidecar != nil {
 		_ = s.sidecar.Stop()
+	}
+	if s.scheduler != nil {
+		s.scheduler.Stop()
+	}
+	if s.schedulerCancel != nil {
+		s.schedulerCancel()
+	}
+	if s.daemonStore != nil {
+		_ = s.daemonStore.Close()
 	}
 	if s.researchStore != nil {
 		s.researchStore.Close()
