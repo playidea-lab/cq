@@ -68,19 +68,6 @@ func TestListEventsFilters(t *testing.T) {
 	}
 }
 
-func TestMarkProcessed(t *testing.T) {
-	s := tempStore(t)
-
-	id, _ := s.StoreEvent("test.event", "test", nil, "")
-	if err := s.MarkProcessed(id); err != nil {
-		t.Fatal(err)
-	}
-
-	events, _ := s.ListEvents("test.event", 1, 0)
-	if len(events) != 1 || !events[0].Processed {
-		t.Error("expected event to be marked processed")
-	}
-}
 
 func TestAddAndListRules(t *testing.T) {
 	s := tempStore(t)

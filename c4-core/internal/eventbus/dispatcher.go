@@ -532,29 +532,6 @@ func toFloat64(v any) (float64, bool) {
 	return 0, false
 }
 
-// resolveTemplate replaces {{data.field}} placeholders in template values
-// with values from the event data.
-func resolveTemplate(template map[string]any, eventData json.RawMessage) map[string]any {
-	if template == nil {
-		return nil
-	}
-
-	var data map[string]any
-	if err := json.Unmarshal(eventData, &data); err != nil {
-		return template
-	}
-
-	result := make(map[string]any, len(template))
-	for k, v := range template {
-		if s, ok := v.(string); ok && strings.Contains(s, "{{") {
-			result[k] = resolveTemplateString(s, data)
-		} else {
-			result[k] = v
-		}
-	}
-	return result
-}
-
 // resolveTemplateString replaces {{data.key}} or {{nested.path}} with actual values.
 func resolveTemplateString(s string, data map[string]any) string {
 	result := s
