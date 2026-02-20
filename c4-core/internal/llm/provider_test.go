@@ -617,6 +617,30 @@ func TestNewGatewayFromConfigAvailability(t *testing.T) {
 	}
 }
 
+func TestNewGatewayFromConfigDefaultModel(t *testing.T) {
+	cfg := config.C4Config{
+		LLMGateway: config.LLMGatewayConfig{
+			Enabled: true,
+			Default: "openai",
+			Providers: map[string]config.LLMProviderConfig{
+				"openai": {Enabled: true, APIKeyEnv: "C4_TEST_OPENAI_KEY", DefaultModel: "gpt-4o-mini"},
+			},
+		},
+	}
+	t.Setenv("C4_TEST_OPENAI_KEY", "sk-test")
+
+	gw := NewGatewayFromConfig(cfg)
+
+	// Resolve("scout", "") should fall through to Routes["default"] and pick gpt-4o-mini
+	ref := gw.Resolve("scout", "")
+	if ref.Provider != "openai" {
+		t.Errorf("Resolve provider = %q, want %q", ref.Provider, "openai")
+	}
+	if ref.Model != "gpt-4o-mini" {
+		t.Errorf("Resolve model = %q, want %q", ref.Model, "gpt-4o-mini")
+	}
+}
+
 // --- Integration: Provider + Gateway ---
 
 func TestGatewayWithRealProvider(t *testing.T) {
