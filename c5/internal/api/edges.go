@@ -1,7 +1,6 @@
 package api
 
 import (
-	"encoding/json"
 	"net/http"
 	"path"
 	"strconv"
@@ -15,14 +14,8 @@ import (
 // =========================================================================
 
 func (s *Server) handleEdgeRegister(w http.ResponseWriter, r *http.Request) {
-	if r.Method != "POST" {
-		methodNotAllowed(w)
-		return
-	}
-
-	var req model.EdgeRegisterRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+	req, ok := decodeRequest[model.EdgeRegisterRequest](w, r, "POST")
+	if !ok {
 		return
 	}
 
@@ -31,7 +24,7 @@ func (s *Server) handleEdgeRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	edge, err := s.store.RegisterEdge(&req)
+	edge, err := s.store.RegisterEdge(req)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -44,14 +37,8 @@ func (s *Server) handleEdgeRegister(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleEdgeHeartbeat(w http.ResponseWriter, r *http.Request) {
-	if r.Method != "POST" {
-		methodNotAllowed(w)
-		return
-	}
-
-	var req model.EdgeHeartbeatRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+	req, ok := decodeRequest[model.EdgeHeartbeatRequest](w, r, "POST")
+	if !ok {
 		return
 	}
 
@@ -60,7 +47,7 @@ func (s *Server) handleEdgeHeartbeat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.store.UpdateEdgeHeartbeat(&req); err != nil {
+	if err := s.store.UpdateEdgeHeartbeat(req); err != nil {
 		writeError(w, http.StatusNotFound, err.Error())
 		return
 	}
@@ -119,14 +106,8 @@ func (s *Server) handleEdgeByID(w http.ResponseWriter, r *http.Request) {
 // =========================================================================
 
 func (s *Server) handleDeployRuleCreate(w http.ResponseWriter, r *http.Request) {
-	if r.Method != "POST" {
-		methodNotAllowed(w)
-		return
-	}
-
-	var req model.DeployRuleCreateRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+	req, ok := decodeRequest[model.DeployRuleCreateRequest](w, r, "POST")
+	if !ok {
 		return
 	}
 
@@ -135,7 +116,7 @@ func (s *Server) handleDeployRuleCreate(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	rule, err := s.store.CreateDeployRule(&req)
+	rule, err := s.store.CreateDeployRule(req)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -194,14 +175,8 @@ func (s *Server) handleDeployRuleByID(w http.ResponseWriter, r *http.Request) {
 // =========================================================================
 
 func (s *Server) handleDeployTrigger(w http.ResponseWriter, r *http.Request) {
-	if r.Method != "POST" {
-		methodNotAllowed(w)
-		return
-	}
-
-	var req model.DeployTriggerRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+	req, ok := decodeRequest[model.DeployTriggerRequest](w, r, "POST")
+	if !ok {
 		return
 	}
 
@@ -240,7 +215,7 @@ func (s *Server) handleDeployTrigger(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	deployment, err := s.store.CreateDeployment(&req, edges)
+	deployment, err := s.store.CreateDeployment(req, edges)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -354,13 +329,8 @@ func (s *Server) handleDeployAssignments(w http.ResponseWriter, r *http.Request)
 }
 
 func (s *Server) handleDeployTargetStatus(w http.ResponseWriter, r *http.Request) {
-	if r.Method != "POST" {
-		methodNotAllowed(w)
-		return
-	}
-	var req model.DeployTargetStatusRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+	req, ok := decodeRequest[model.DeployTargetStatusRequest](w, r, "POST")
+	if !ok {
 		return
 	}
 	if req.DeployID == "" || req.EdgeID == "" || req.Status == "" {

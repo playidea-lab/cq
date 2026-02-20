@@ -11,14 +11,8 @@ import (
 )
 
 func (s *Server) handleWorkerRegister(w http.ResponseWriter, r *http.Request) {
-	if r.Method != "POST" {
-		methodNotAllowed(w)
-		return
-	}
-
-	var req model.WorkerRegisterRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+	req, ok := decodeRequest[model.WorkerRegisterRequest](w, r, "POST")
+	if !ok {
 		return
 	}
 
@@ -59,7 +53,7 @@ func (s *Server) handleWorkerRegister(w http.ResponseWriter, r *http.Request) {
 		req.ProjectID = pid
 	}
 
-	worker, err := s.store.RegisterWorker(&req)
+	worker, err := s.store.RegisterWorker(req)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -72,14 +66,8 @@ func (s *Server) handleWorkerRegister(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleWorkerHeartbeat(w http.ResponseWriter, r *http.Request) {
-	if r.Method != "POST" {
-		methodNotAllowed(w)
-		return
-	}
-
-	var req model.HeartbeatRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+	req, ok := decodeRequest[model.HeartbeatRequest](w, r, "POST")
+	if !ok {
 		return
 	}
 
@@ -92,7 +80,7 @@ func (s *Server) handleWorkerHeartbeat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.store.UpdateHeartbeat(&req); err != nil {
+	if err := s.store.UpdateHeartbeat(req); err != nil {
 		writeError(w, http.StatusNotFound, err.Error())
 		return
 	}
@@ -237,14 +225,8 @@ func (s *Server) handleLeaseAcquire(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleLeaseRenew(w http.ResponseWriter, r *http.Request) {
-	if r.Method != "POST" {
-		methodNotAllowed(w)
-		return
-	}
-
-	var req model.LeaseRenewRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+	req, ok := decodeRequest[model.LeaseRenewRequest](w, r, "POST")
+	if !ok {
 		return
 	}
 
