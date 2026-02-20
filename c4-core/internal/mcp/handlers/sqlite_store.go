@@ -662,6 +662,10 @@ func (s *SQLiteStore) AssignTask(workerID string) (*TaskAssignment, error) {
 
 // reassignStaleOrFindPendingTask queries for the next task to assign.
 // Returns: taskID, title, scope, dod, deps, domain, model, staleReassign, error
+//
+// Optimistic concurrency: UPDATE includes the original status in WHERE so that
+// concurrent processes racing for the same task cause one to get rowsAffected=0
+// and back off (returns empty taskID = "no task available").
 func (s *SQLiteStore) reassignStaleOrFindPendingTask(workerID string) (
 	taskID, title, scope, dod string,
 	deps sql.NullString,
@@ -676,6 +680,7 @@ func (s *SQLiteStore) reassignStaleOrFindPendingTask(workerID string) (
 	defer tx.Rollback()
 
 	var priority int
+	var isStale bool
 
 	// Anti-fragility: try to reassign stale in_progress tasks first (>10 min without update)
 	err = tx.QueryRow(`
@@ -704,8 +709,10 @@ func (s *SQLiteStore) reassignStaleOrFindPendingTask(workerID string) (
 			ORDER BY t.priority DESC, t.created_at ASC
 			LIMIT 1`,
 		).Scan(&taskID, &title, &scope, &dod, &deps, &domain, &priority, &model)
+		isStale = false
+	} else if err == nil {
+		isStale = true
 	}
-	staleReassign = err == nil && taskID != "" // track for post-commit logging
 
 	if err == sql.ErrNoRows {
 		return "", "", "", "", deps, "", "", false, nil // No tasks available
@@ -714,12 +721,22 @@ func (s *SQLiteStore) reassignStaleOrFindPendingTask(workerID string) (
 		return "", "", "", "", deps, "", "", false, fmt.Errorf("finding task: %w", err)
 	}
 
-	_, err = tx.Exec(`
+	// Optimistic concurrency: include original status in WHERE so that a concurrent
+	// process that already claimed this task causes rowsAffected=0 here.
+	originalStatus := "pending"
+	if isStale {
+		originalStatus = "in_progress"
+	}
+	result, err := tx.Exec(`
 		UPDATE c4_tasks SET status = 'in_progress', worker_id = ?, updated_at = CURRENT_TIMESTAMP
-		WHERE task_id = ?`, workerID, taskID,
+		WHERE task_id = ? AND status = ?`, workerID, taskID, originalStatus,
 	)
 	if err != nil {
 		return "", "", "", "", deps, "", "", false, fmt.Errorf("assigning task: %w", err)
+	}
+	if n, _ := result.RowsAffected(); n == 0 {
+		// Another process won the race for this task; signal "no task available"
+		return "", "", "", "", deps, "", "", false, nil
 	}
 
 	if err := tx.Commit(); err != nil {
@@ -728,11 +745,11 @@ func (s *SQLiteStore) reassignStaleOrFindPendingTask(workerID string) (
 
 	s.notifyEventBus("task.updated", map[string]any{
 		"task_id":         taskID,
-		"status":         "in_progress",
-		"previous_status": "pending",
-		"worker_id":      workerID,
+		"status":          "in_progress",
+		"previous_status": originalStatus,
+		"worker_id":       workerID,
 	})
-	return taskID, title, scope, dod, deps, domain, model, staleReassign, nil
+	return taskID, title, scope, dod, deps, domain, model, isStale, nil
 }
 
 // enrichWithConfig applies config-based branch and worktree assignment.
@@ -995,25 +1012,29 @@ func (s *SQLiteStore) MarkBlocked(taskID, workerID, failureSignature string, att
 }
 
 // ClaimTask claims a task for direct execution and writes .c4/active_claim.json.
+// Uses an atomic UPDATE WHERE status='pending' + RowsAffected check to prevent
+// two concurrent Direct-mode sessions from claiming the same task.
 func (s *SQLiteStore) ClaimTask(taskID string) (*Task, error) {
+	// Pre-check execution_mode before taking the write lock.
 	task, err := s.GetTask(taskID)
 	if err != nil {
 		return nil, err
-	}
-
-	if task.Status != "pending" {
-		return nil, fmt.Errorf("task %s is %s, not pending", taskID, task.Status)
 	}
 	if !isDirectExecutionAllowed(task.ExecutionMode) {
 		return nil, fmt.Errorf("task %s execution_mode is %q (expected direct or auto)", taskID, task.ExecutionMode)
 	}
 
-	_, err = s.db.Exec(`
+	// Atomic claim: only succeeds if task is still pending.
+	result, err := s.db.Exec(`
 		UPDATE c4_tasks SET status = 'in_progress', worker_id = 'direct', updated_at = CURRENT_TIMESTAMP
-		WHERE task_id = ?`, taskID,
+		WHERE task_id = ? AND status = 'pending'`, taskID,
 	)
 	if err != nil {
 		return nil, err
+	}
+	if n, _ := result.RowsAffected(); n == 0 {
+		// Either already in_progress/done, or another process claimed it first.
+		return nil, fmt.Errorf("task %s is not pending (already claimed or completed)", taskID)
 	}
 
 	task.Status = "in_progress"
@@ -1021,9 +1042,9 @@ func (s *SQLiteStore) ClaimTask(taskID string) (*Task, error) {
 
 	s.notifyEventBus("task.updated", map[string]any{
 		"task_id":         taskID,
-		"status":         "in_progress",
+		"status":          "in_progress",
 		"previous_status": "pending",
-		"worker_id":      "direct",
+		"worker_id":       "direct",
 	})
 	// Write .c4/active_claim.json for hook validation
 	s.writeClaimFile(taskID)
