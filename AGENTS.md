@@ -98,21 +98,21 @@ C9 Knowledge — 지식 관리 (FTS5 + pgvector + Embedding + Usage + Ingestion)
 ### 코드베이스 규모
 | 언어 | 소스 | 테스트 | 합계 |
 |------|------|--------|------|
-| Go (`c4-core/`) | ~40.6K LOC | ~36.6K LOC | ~77.3K |
-| Go (`c5/`) | ~5.6K LOC | ~3.5K LOC | ~9.1K |
-| Python (`c4/`) | ~24.4K LOC | ~11.6K LOC | ~36.0K |
+| Go (`c4-core/`) | ~38.9K LOC | ~36.8K LOC | ~75.7K |
+| Go (`c5/`) | ~6.7K LOC | ~4.5K LOC | ~11.2K |
+| Python (`c4/`) | ~22.9K LOC | ~9.5K LOC | ~32.4K |
 | Rust (`c1/src-tauri/`) | ~9.5K LOC | (내장) | ~9.5K |
-| TypeScript (`c1/src/`) | ~6.6K LOC | | ~6.6K |
+| TS+CSS (`c1/src/`) | ~11.8K LOC | | ~11.8K |
 | SQL (`infra/`) | ~1.1K LOC | | ~1.1K |
-| **합계** | ~87.4K | ~47.8K | **~135.2K LOC** |
+| **합계** | ~90.9K | ~50.8K | **~141.7K LOC** |
 
 ### 테스트 현황
 | 언어 | 테스트 수 | 패키지/모듈 |
 |------|----------|------------|
-| Go | **~1,398** | 22 packages (all pass) — c4-core ~1,260 + c5 138 |
-| Python | **750** | tests/unit/ |
+| Go | **~1,404** | 22 packages (all pass) — c4-core ~1,253 + c5 151 |
+| Python | **697** | tests/unit/ |
 | Rust | **85** | src-tauri |
-| **합계** | **~2,496** | |
+| **합계** | **~2,186** | |
 
 ### Monorepo 구조
 ```
@@ -330,7 +330,7 @@ CP-001:    체크포인트
 
 ## Go Core (c4-core/) — Primary MCP Server
 
-> Go 기반 MCP 서버. ~40.6K LOC(src) + ~36.6K LOC(test). ~1,260개 테스트, 22 패키지.
+> Go 기반 MCP 서버. ~38.9K LOC(src) + ~36.8K LOC(test). ~1,253개 테스트, 22 패키지.
 
 ### 아키텍처
 ```
@@ -436,7 +436,7 @@ cd c4-core && go build -o bin/cq ./cmd/c4/
 
 ## Python Sidecar (c4/)
 
-> Python 기반 보조 서버. Go MCP 서버에서 JSON-RPC/TCP로 호출. ~24K LOC.
+> Python 기반 보조 서버. Go MCP 서버에서 JSON-RPC/TCP로 호출. ~22.9K LOC.
 
 ### 역할 (Tier 1+2 마이그레이션 후 축소)
 ```
@@ -465,11 +465,11 @@ Go MCP Server ──JSON-RPC/TCP──→ Python Sidecar (10 tools)
 
 ## C1 Messenger (c1/)
 
-> Tauri 2.x 통합 대시보드 메신저. ~8.5K LOC(Rust) + ~6.5K LOC(TypeScript). 76개 테스트.
+> Tauri 2.x 통합 대시보드 메신저. ~9.5K LOC(Rust) + ~11.8K LOC(TS+CSS). 85개 테스트.
 
 ### 아키텍처
 - **Rust 백엔드**: `src-tauri/src/{commands,models,analytics,cloud,scanner,messaging,eventbus,lib}.rs`
-- **Multi-Provider**: `src-tauri/src/providers/` — Claude Code, Codex CLI, Cursor, Gemini CLI
+- **Multi-Provider**: `src-tauri/src/providers/` — Claude Code, Codex CLI, Cursor
 - **React 프론트엔드**: `src/components/`, `src/hooks/`, `src/styles/`
 - **CSS**: BEM 패턴 + `styles/tokens.css` 디자인 토큰
 - **통합 멤버 모델**: `c1_members` — 사용자/에이전트/시스템을 동등한 멤버로 관리
@@ -566,7 +566,7 @@ hub.job.completed, hub.job.failed, hub.worker.started, hub.worker.offline
 
 ## C5 Hub (c5/)
 
-> Go 기반 분산 작업 큐 서버. Worker Pull 모델, Lease 기반. ~5.6K LOC.
+> Go 기반 분산 작업 큐 서버. Worker Pull 모델, Lease 기반. ~6.7K LOC.
 
 ### 빌드/실행
 ```bash
