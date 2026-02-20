@@ -190,6 +190,72 @@ func TestLLMToolsRegistered(t *testing.T) {
 	}
 }
 
+func TestLLMCosts_CacheMetrics(t *testing.T) {
+	gw := llm.NewGateway(llm.RoutingTable{Default: "mock"})
+	mock := llm.NewMockProvider("mock")
+	mock.Response = &llm.ChatResponse{
+		Content:      "cached",
+		Model:        "mock-model",
+		FinishReason: "stop",
+		Usage: llm.TokenUsage{
+			InputTokens:      1000,
+			OutputTokens:     100,
+			CacheReadTokens:  500,
+			CacheWriteTokens: 500,
+		},
+	}
+	gw.Register(mock)
+
+	reg := mcp.NewRegistry()
+	RegisterLLMHandlers(reg, gw)
+
+	// Make one call to populate cost data.
+	_, err := reg.Call("c4_llm_call", json.RawMessage(`{"messages":[{"role":"user","content":"hi"}]}`))
+	if err != nil {
+		t.Fatalf("c4_llm_call error: %v", err)
+	}
+
+	result, err := reg.Call("c4_llm_costs", json.RawMessage(`{}`))
+	if err != nil {
+		t.Fatalf("c4_llm_costs error: %v", err)
+	}
+
+	m := result.(map[string]any)
+
+	globalHitRate, ok := m["global_cache_hit_rate"].(float64)
+	if !ok {
+		t.Fatalf("global_cache_hit_rate type = %T, want float64", m["global_cache_hit_rate"])
+	}
+	if globalHitRate != 0.5 {
+		t.Errorf("global_cache_hit_rate = %v, want 0.5", globalHitRate)
+	}
+
+	globalSavingsRate, ok := m["global_cache_savings_rate"].(float64)
+	if !ok {
+		t.Fatalf("global_cache_savings_rate type = %T, want float64", m["global_cache_savings_rate"])
+	}
+	const wantSavings = 0.25
+	if diff := globalSavingsRate - wantSavings; diff > 1e-9 || diff < -1e-9 {
+		t.Errorf("global_cache_savings_rate = %v, want ~%v", globalSavingsRate, wantSavings)
+	}
+
+	byProvider, ok := m["by_provider"].(map[string]any)
+	if !ok {
+		t.Fatalf("by_provider type = %T, want map", m["by_provider"])
+	}
+	mockProv, ok := byProvider["mock"].(map[string]any)
+	if !ok {
+		t.Fatalf("by_provider[mock] type = %T, want map", byProvider["mock"])
+	}
+	provHitRate, ok := mockProv["cache_hit_rate"].(float64)
+	if !ok {
+		t.Fatalf("cache_hit_rate type = %T, want float64", mockProv["cache_hit_rate"])
+	}
+	if provHitRate != 0.5 {
+		t.Errorf("by_provider[mock][cache_hit_rate] = %v, want 0.5", provHitRate)
+	}
+}
+
 func TestLLMCallWithSystemPrompt(t *testing.T) {
 	reg, _, mock := setupLLMGateway(t)
 
