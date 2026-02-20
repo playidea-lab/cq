@@ -390,6 +390,10 @@ cd c4-core && go build -o ~/.local/bin/cq ./cmd/c4/
 
 # 개발용 바이너리 (CI/로컬 테스트)
 cd c4-core && go build -o bin/cq ./cmd/c4/
+
+# 환경 진단
+cq doctor              # 8개 항목 건강 체크
+cq doctor --json       # CI/자동화용 JSON 출력
 ```
 
 ### 바이너리 관리 규칙 (CRITICAL)
@@ -407,18 +411,45 @@ cd c4-core && go build -o bin/cq ./cmd/c4/
 
 ### cq init 자동 설치 항목 (`cq claude/codex/cursor` 실행 시)
 
-| 항목 | 대상 경로 | 설명 |
-|------|----------|------|
-| `.c4/` 디렉토리 | `{project}/.c4/` | C4 데이터 디렉토리 |
-| `.mcp.json` | `{project}/.mcp.json` | MCP 서버 설정 |
-| `CLAUDE.md` | `{project}/CLAUDE.md` | C4 override 규칙 |
-| skills symlinks | `{project}/.claude/skills/` | C4 스킬 심볼릭 링크 |
-| **hook 파일** | `~/.claude/hooks/c4-bash-security-hook.sh` | Bash 명령 Haiku 리뷰 hook |
-| **settings.json 패치** | `~/.claude/settings.json` | PreToolUse Bash hook 등록 |
+| 항목 | 대상 경로 | 확인 | 설명 |
+|------|----------|------|------|
+| `.c4/` 디렉토리 | `{project}/.c4/` | 자동 | C4 데이터 디렉토리 |
+| `.mcp.json` | `{project}/.mcp.json` | 자동 | MCP 서버 설정 |
+| `CLAUDE.md` | `{project}/CLAUDE.md` | 자동 | C4 override 규칙 |
+| skills symlinks | `{project}/.claude/skills/` | 자동 | C4 스킬 심볼릭 링크 |
+| **hook 파일** | `~/.claude/hooks/c4-bash-security-hook.sh` | **대화형** | Bash 명령 Haiku 리뷰 hook |
+| **settings.json 패치** | `~/.claude/settings.json` | **대화형** | PreToolUse Bash hook 등록 |
 
+- hook/settings 설치는 **대화형 확인** 필요 — 사용자가 N 입력 시 건너뜀 (C4 핵심 기능에 영향 없음)
+- `--yes` / `-y` 플래그: 모든 대화형 확인을 자동 승인 (CI/자동화 환경용)
 - hook 파일은 바이너리에 embed되어 있어 소스 없이도 설치 가능
 - `.conf` 파일(`c4-bash-security.conf`)은 없을 때만 생성 (기존 커스터마이징 보존)
 - `permission_reviewer.enabled: true` 설정 시 Haiku API로 Bash 명령 안전성 검토
+
+### cq doctor (자가진단)
+
+프로젝트 환경의 건강 상태를 8개 항목으로 진단합니다.
+
+```bash
+cq doctor              # 전체 진단
+cq doctor --json       # JSON 출력 (CI/자동화용)
+cq doctor --fix        # 자동 수정 가능한 문제 해결 시도
+```
+
+| 체크 항목 | 검사 내용 |
+|----------|----------|
+| cq binary | 바이너리 존재 여부 + 버전 |
+| .c4 directory | `.c4/` 존재 + DB 파일 (tasks.db 또는 c4.db) |
+| .mcp.json | JSON 유효성 + 참조된 바이너리 경로 존재 |
+| CLAUDE.md | 파일 존재 + symlink 유효성 |
+| hooks | hook 파일 존재 + settings.json 등록 |
+| Python sidecar | `uv` 존재 + pyproject.toml |
+| C5 Hub | hub 설정 + health 엔드포인트 |
+| Supabase | 클라우드 설정 + 연결 확인 |
+
+- non-CQ 디렉토리에서도 실행 가능 (누락 항목을 FAIL로 표시)
+- `--fix`: broken symlink 제거 등 안전한 자동 수정 (수정 후 WARN으로 표시)
+- `--json`: 구조화된 JSON 배열 출력 (name, status, message, fix 필드)
 
 ### 주요 설정 섹션 (.c4/config.yaml)
 

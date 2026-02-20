@@ -71,7 +71,7 @@ func confirmGlobalChanges(homeDir string) bool {
 	fmt.Fprintln(os.Stderr, "cq: The following GLOBAL files will be created or modified:")
 	fmt.Fprintf(os.Stderr, "  1. %s\n", hookPath)
 	fmt.Fprintf(os.Stderr, "  2. %s\n", settingsPath)
-	fmt.Fprintln(os.Stderr, "")
+	fmt.Fprintln(os.Stderr, "  These hooks review Bash commands for safety before execution.")
 	fmt.Fprint(os.Stderr, "Allow? [y/N] ")
 
 	scanner := bufio.NewScanner(os.Stdin)

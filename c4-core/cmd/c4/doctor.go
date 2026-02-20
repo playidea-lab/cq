@@ -52,11 +52,22 @@ func init() {
 	doctorCmd.Flags().BoolVar(&doctorFix, "fix", false, "auto-fix simple issues")
 	doctorCmd.Flags().BoolVar(&doctorJSON, "json", false, "output results as JSON")
 	// doctor doesn't require a .c4/ directory — override the root PersistentPreRunE
-	doctorCmd.PersistentPreRunE = nil
+	doctorCmd.PersistentPreRunE = func(cmd *cobra.Command, args []string) error { return nil }
 	rootCmd.AddCommand(doctorCmd)
 }
 
 func runDoctor(cmd *cobra.Command, args []string) error {
+	// Resolve projectDir if not set (PersistentPreRunE is overridden for doctor)
+	if projectDir == "" {
+		var err error
+		projectDir, err = os.Getwd()
+		if err != nil {
+			return fmt.Errorf("failed to get working directory: %w", err)
+		}
+	}
+	if abs, err := filepath.Abs(projectDir); err == nil {
+		projectDir = abs
+	}
 	checks := []func() checkResult{
 		checkBinary,
 		checkC4Dir,
@@ -72,9 +83,9 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 	for _, fn := range checks {
 		r := fn()
 		if doctorFix && r.Status == checkFail {
-			if fixed := tryFix(r); fixed != "" {
+			fixed := tryFix(&r)
+			if fixed != "" {
 				r.Message += " (fixed: " + fixed + ")"
-				r.Status = checkOK
 				r.Fix = ""
 			}
 		}
@@ -161,31 +172,31 @@ func checkC4Dir() checkResult {
 		}
 	}
 
-	missing := []string{}
-	for _, f := range []string{"config.yaml", "tasks.db"} {
-		p := filepath.Join(dir, f)
-		if _, err := os.Stat(p); os.IsNotExist(err) {
-			missing = append(missing, f)
+	// Check for database file (tasks.db or c4.db)
+	hasDB := false
+	for _, f := range []string{"tasks.db", "c4.db"} {
+		if _, err := os.Stat(filepath.Join(dir, f)); err == nil {
+			hasDB = true
+			break
 		}
 	}
-	// tasks.db may be named c4.db
-	if contains(missing, "tasks.db") {
-		if _, err := os.Stat(filepath.Join(dir, "c4.db")); err == nil {
-			missing = remove(missing, "tasks.db")
-		}
-	}
-	if len(missing) > 0 {
+	if !hasDB {
 		return checkResult{
 			Name:    ".c4 directory",
 			Status:  checkWarn,
-			Message: fmt.Sprintf(".c4/ found but missing: %s", strings.Join(missing, ", ")),
+			Message: ".c4/ found but no database (tasks.db or c4.db)",
 			Fix:     "cq claude to re-initialize",
 		}
+	}
+	// config.yaml is optional — note if present
+	configInfo := "no config.yaml"
+	if _, err := os.Stat(filepath.Join(dir, "config.yaml")); err == nil {
+		configInfo = "config.yaml"
 	}
 	return checkResult{
 		Name:    ".c4 directory",
 		Status:  checkOK,
-		Message: fmt.Sprintf("%s (config.yaml, db)", dir),
+		Message: fmt.Sprintf("%s (db, %s)", dir, configInfo),
 	}
 }
 
@@ -226,7 +237,7 @@ func checkMCPJson() checkResult {
 			Name:    ".mcp.json",
 			Status:  checkFail,
 			Message: fmt.Sprintf("referenced binary missing: %s", binPath),
-			Fix:     fmt.Sprintf("go build -o %s ./cmd/c4/", binPath),
+			Fix:     "cq claude to regenerate .mcp.json with correct binary path",
 		}
 	}
 	return checkResult{
@@ -509,7 +520,8 @@ func checkSupabase() checkResult {
 
 // tryFix attempts automatic remediation for known FAIL cases.
 // Returns a short description of what was fixed, or empty string if no fix was applied.
-func tryFix(r checkResult) string {
+// The caller's checkResult pointer is updated (e.g. status downgraded to WARN).
+func tryFix(r *checkResult) string {
 	switch r.Name {
 	case "CLAUDE.md":
 		claudePath := filepath.Join(projectDir, "CLAUDE.md")
@@ -552,27 +564,5 @@ func expandTilde(p string) string {
 	return filepath.Join(home, p[1:])
 }
 
-// contains reports whether slice s contains elem.
-func contains(s []string, elem string) bool {
-	for _, v := range s {
-		if v == elem {
-			return true
-		}
-	}
-	return false
-}
 
-// remove returns a copy of s without the first occurrence of elem.
-func remove(s []string, elem string) []string {
-	result := make([]string, 0, len(s))
-	removed := false
-	for _, v := range s {
-		if v == elem && !removed {
-			removed = true
-			continue
-		}
-		result = append(result, v)
-	}
-	return result
-}
 

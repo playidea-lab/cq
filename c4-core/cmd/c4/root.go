@@ -64,7 +64,7 @@ Run 'cq codex' or 'cq cursor' for other AI tools.`,
 			if cmd.Name() != "mcp" && cmd.Name() != "cq" &&
 			cmd.Name() != "claude" && cmd.Name() != "codex" && cmd.Name() != "cursor" &&
 			cmd.Parent() != nil && cmd.Parent().Name() != "hub" {
-				return fmt.Errorf("not a CQ project: %s (missing .c4/ directory)", projectDir)
+				return fmt.Errorf("not a CQ project: %s (missing .c4/ directory)\n\nRun 'cq claude' to initialize this project.", projectDir)
 			}
 		}
 
