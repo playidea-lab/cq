@@ -41,7 +41,7 @@ func RegisterWorkerHandlers(reg *mcp.Registry, deps *WorkerDeps) {
 
 // registerWorkerStandby registers the blocking standby tool.
 func registerWorkerStandby(reg *mcp.Registry, deps *WorkerDeps) {
-	reg.Register(mcp.ToolSchema{
+	reg.RegisterBlocking(mcp.ToolSchema{
 		Name:        "c4_worker_standby",
 		Description: "Register as a Hub worker and block until a job is available or shutdown is requested. Polls every 5 seconds with 30-second heartbeats. Returns job info when available.",
 		InputSchema: map[string]any{
@@ -58,12 +58,12 @@ func registerWorkerStandby(reg *mcp.Registry, deps *WorkerDeps) {
 			},
 			"required": []string{"worker_id"},
 		},
-	}, func(raw json.RawMessage) (any, error) {
-		return handleWorkerStandby(deps, raw)
+	}, func(ctx context.Context, raw json.RawMessage) (any, error) {
+		return handleWorkerStandby(ctx, deps, raw)
 	})
 }
 
-func handleWorkerStandby(deps *WorkerDeps, raw json.RawMessage) (any, error) {
+func handleWorkerStandby(mcpCtx context.Context, deps *WorkerDeps, raw json.RawMessage) (any, error) {
 	if deps == nil || deps.HubClient == nil {
 		return nil, fmt.Errorf("hub client not configured")
 	}
@@ -82,7 +82,8 @@ func handleWorkerStandby(deps *WorkerDeps, raw json.RawMessage) (any, error) {
 	}
 
 	// Cancel any existing standby goroutine for the same worker_id, then register this one.
-	ctx, cancel := context.WithCancel(context.Background())
+	// Derive from mcpCtx so that ESC/interrupt from the MCP client propagates cancellation.
+	ctx, cancel := context.WithCancel(mcpCtx)
 	deps.activeWorkersMu.Lock()
 	if deps.activeWorkers == nil {
 		deps.activeWorkers = make(map[string]workerEntry)

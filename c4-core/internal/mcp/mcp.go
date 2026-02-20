@@ -6,6 +6,7 @@
 package mcp
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -21,6 +22,10 @@ type ToolSchema struct {
 
 // HandlerFunc is the function signature for tool handlers.
 type HandlerFunc func(args json.RawMessage) (any, error)
+
+// BlockingHandlerFunc is the function signature for cancellable blocking tool handlers.
+// The context is cancelled when the MCP client sends notifications/cancelled for this request.
+type BlockingHandlerFunc func(ctx context.Context, args json.RawMessage) (any, error)
 
 // Registry manages registered MCP tools and dispatches calls.
 type Registry struct {
@@ -39,8 +44,9 @@ type Registry struct {
 }
 
 type registeredTool struct {
-	schema  ToolSchema
-	handler HandlerFunc
+	schema   ToolSchema
+	handler  HandlerFunc         // nil if blocking
+	bhandler BlockingHandlerFunc // nil if not blocking
 }
 
 // NewRegistry creates a new empty tool registry.
@@ -74,9 +80,40 @@ func (r *Registry) Register(schema ToolSchema, handler HandlerFunc) {
 	}
 }
 
+// RegisterBlocking adds a cancellable blocking tool to the registry.
+// The handler receives a context that is cancelled when the MCP client sends
+// notifications/cancelled for the corresponding request.
+func (r *Registry) RegisterBlocking(schema ToolSchema, handler BlockingHandlerFunc) {
+	r.mu.Lock()
+
+	if _, exists := r.tools[schema.Name]; exists {
+		r.mu.Unlock()
+		fmt.Fprintf(os.Stderr, "mcp: warning: tool already registered, skipping: %s\n", schema.Name)
+		return
+	}
+
+	r.tools[schema.Name] = registeredTool{
+		schema:   schema,
+		bhandler: handler,
+	}
+	r.ordering = append(r.ordering, schema.Name)
+	onChange := r.OnChange
+	r.mu.Unlock()
+
+	if onChange != nil {
+		onChange()
+	}
+}
+
 // Call invokes a registered tool by name with the given JSON arguments.
 // Calls OnCall (if set) before dispatching — used for implicit worker heartbeat.
 func (r *Registry) Call(name string, args json.RawMessage) (any, error) {
+	return r.CallWithContext(context.Background(), name, args)
+}
+
+// CallWithContext invokes a registered tool, passing ctx to blocking handlers.
+// For regular handlers ctx is ignored; for blocking handlers ctx enables cancellation.
+func (r *Registry) CallWithContext(ctx context.Context, name string, args json.RawMessage) (any, error) {
 	r.mu.RLock()
 	tool, ok := r.tools[name]
 	onCall := r.OnCall
@@ -90,6 +127,9 @@ func (r *Registry) Call(name string, args json.RawMessage) (any, error) {
 		onCall()
 	}
 
+	if tool.bhandler != nil {
+		return tool.bhandler(ctx, args)
+	}
 	return tool.handler(args)
 }
 

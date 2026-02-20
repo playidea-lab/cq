@@ -590,6 +590,11 @@ func (s *mcpServer) serve() error {
 	encoder := json.NewEncoder(os.Stdout)
 	var writerMu sync.Mutex
 
+	// pending tracks in-flight tools/call requests for cancellation.
+	// Key: fmt.Sprint(request.ID), Value: context cancel func.
+	var pendingMu sync.Mutex
+	pending := make(map[string]context.CancelFunc)
+
 	// Wire up tools/list_changed notification so clients re-fetch after lighthouse register.
 	s.registry.OnChange = func() {
 		writerMu.Lock()
@@ -609,15 +614,51 @@ func (s *mcpServer) serve() error {
 			return fmt.Errorf("decoding request: %w", err)
 		}
 
-		// Notifications (no ID) don't need responses — handle inline.
+		// Notifications (no ID): handle inline without a response.
 		if req.ID == nil {
-			_ = s.handleRequest(&req)
+			// notifications/cancelled: cancel the corresponding in-flight request.
+			if req.Method == "notifications/cancelled" {
+				var params struct {
+					RequestID interface{} `json:"requestId"`
+				}
+				if err := json.Unmarshal(req.Params, &params); err == nil && params.RequestID != nil {
+					key := fmt.Sprint(params.RequestID)
+					pendingMu.Lock()
+					if cancel, ok := pending[key]; ok {
+						cancel()
+						delete(pending, key)
+					}
+					pendingMu.Unlock()
+				}
+			} else {
+				_ = s.handleRequest(&req)
+			}
 			continue
 		}
 
 		// Handle each request concurrently to avoid head-of-line blocking.
 		go func(r mcpRequest) {
-			resp := s.handleRequest(&r)
+			key := fmt.Sprint(r.ID)
+
+			// For tools/call, create a cancellable context and register it.
+			ctx := context.Background()
+			if r.Method == "tools/call" {
+				var callCtx context.Context
+				var cancel context.CancelFunc
+				callCtx, cancel = context.WithCancel(context.Background())
+				ctx = callCtx
+				pendingMu.Lock()
+				pending[key] = cancel
+				pendingMu.Unlock()
+				defer func() {
+					pendingMu.Lock()
+					delete(pending, key)
+					pendingMu.Unlock()
+					cancel()
+				}()
+			}
+
+			resp := s.handleRequestWithCtx(&r, ctx)
 			if resp != nil {
 				writerMu.Lock()
 				_ = encoder.Encode(resp)
@@ -665,7 +706,14 @@ func (s *mcpServer) shutdown() {
 }
 
 // handleRequest dispatches a JSON-RPC request.
+// handleRequest handles a request without a specific context (used for notifications).
 func (s *mcpServer) handleRequest(req *mcpRequest) *mcpResponse {
+	return s.handleRequestWithCtx(req, context.Background())
+}
+
+// handleRequestWithCtx handles a request with the given context.
+// For tools/call, ctx is passed to blocking handlers to support cancellation.
+func (s *mcpServer) handleRequestWithCtx(req *mcpRequest, ctx context.Context) *mcpResponse {
 	switch req.Method {
 	case "initialize":
 		return &mcpResponse{
@@ -709,7 +757,7 @@ func (s *mcpServer) handleRequest(req *mcpRequest) *mcpResponse {
 			}
 		}
 
-		result, err := s.registry.Call(params.Name, params.Arguments)
+		result, err := s.registry.CallWithContext(ctx, params.Name, params.Arguments)
 		if err != nil {
 			return &mcpResponse{
 				JSONRPC: "2.0",

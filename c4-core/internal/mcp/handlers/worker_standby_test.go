@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"net/http"
@@ -160,7 +161,7 @@ func TestWorkerStandby_ShutdownSignal(t *testing.T) {
 	// Pre-store a shutdown signal so the loop exits immediately
 	deps.ShutdownStore.StoreSignal("w1", "test exit")
 
-	result, err := handleWorkerStandby(deps, json.RawMessage(`{"worker_id": "w1"}`))
+	result, err := handleWorkerStandby(context.Background(), deps, json.RawMessage(`{"worker_id": "w1"}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -200,7 +201,7 @@ func TestWorkerStandby_ClaimsJob(t *testing.T) {
 
 	deps, _ := testWorkerDeps(t, hubHandler, nil)
 
-	result, err := handleWorkerStandby(deps, json.RawMessage(`{"worker_id": "w1"}`))
+	result, err := handleWorkerStandby(context.Background(), deps, json.RawMessage(`{"worker_id": "w1"}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -224,7 +225,7 @@ func TestWorkerStandby_ClaimsJob(t *testing.T) {
 // Nil-deps boundary tests (CR-005)
 
 func TestWorkerStandby_NilDeps_ReturnsError(t *testing.T) {
-	_, err := handleWorkerStandby(nil, json.RawMessage(`{"worker_id": "w1"}`))
+	_, err := handleWorkerStandby(context.Background(), nil, json.RawMessage(`{"worker_id": "w1"}`))
 	if err == nil {
 		t.Fatal("expected error for nil deps")
 	}
@@ -235,7 +236,7 @@ func TestWorkerStandby_NilDeps_ReturnsError(t *testing.T) {
 
 func TestWorkerStandby_NilHubClient_ReturnsError(t *testing.T) {
 	deps := &WorkerDeps{HubClient: nil, ShutdownStore: nil}
-	_, err := handleWorkerStandby(deps, json.RawMessage(`{"worker_id": "w1"}`))
+	_, err := handleWorkerStandby(context.Background(), deps, json.RawMessage(`{"worker_id": "w1"}`))
 	if err == nil {
 		t.Fatal("expected error for nil HubClient")
 	}
