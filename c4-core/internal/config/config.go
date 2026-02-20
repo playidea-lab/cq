@@ -43,7 +43,6 @@ type CloudConfig struct {
 	AnonKey      string `mapstructure:"anon_key"       yaml:"anon_key"`       // from env C4_CLOUD_ANON_KEY
 	ProjectID    string `mapstructure:"project_id"     yaml:"project_id"`     // cloud project identifier
 	BucketName   string `mapstructure:"bucket_name"    yaml:"bucket_name"`    // default "c4-drive"
-	OAuthTimeout int    `mapstructure:"oauth_timeout"  yaml:"oauth_timeout"`  // seconds, default 120
 }
 
 // LLMProviderConfig holds per-provider settings.
@@ -455,17 +454,3 @@ func (m *Manager) Set(key string, value any) {
 	_ = m.v.Unmarshal(&m.config)
 }
 
-// IsPreset checks if a preset name is valid.
-func IsPreset(name string) bool {
-	_, ok := presetConfigs[name]
-	return ok
-}
-
-// PresetNames returns all available preset names.
-func PresetNames() []string {
-	names := make([]string, 0, len(presetConfigs))
-	for name := range presetConfigs {
-		names = append(names, name)
-	}
-	return names
-}

@@ -36,8 +36,6 @@ type ExecutionMode string
 
 const (
 	ModeRunning ExecutionMode = "running"
-	ModePaused  ExecutionMode = "paused"
-	ModeRepair  ExecutionMode = "repair"
 )
 
 // transitionKey is a (from_status, event) tuple.
