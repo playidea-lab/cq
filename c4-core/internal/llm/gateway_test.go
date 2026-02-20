@@ -13,8 +13,8 @@ func TestResolveAlias(t *testing.T) {
 		want  string
 	}{
 		{"opus", "claude-opus-4-6"},
-		{"sonnet", "claude-sonnet-4-5"},
-		{"haiku", "claude-haiku-3-5"},
+		{"sonnet", "claude-sonnet-4-6"},
+		{"haiku", "claude-haiku-4-5-20251001"},
 		{"gpt4o", "gpt-4o"},
 		{"unknown-model", "unknown-model"},
 	}
@@ -40,8 +40,8 @@ func TestLookupModel(t *testing.T) {
 	if !ok {
 		t.Fatal("LookupModel(sonnet) not found")
 	}
-	if info.ID != "claude-sonnet-4-5" {
-		t.Errorf("ID = %q, want %q", info.ID, "claude-sonnet-4-5")
+	if info.ID != "claude-sonnet-4-6" {
+		t.Errorf("ID = %q, want %q", info.ID, "claude-sonnet-4-6")
 	}
 
 	// Unknown

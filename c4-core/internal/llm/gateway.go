@@ -121,6 +121,11 @@ func (g *Gateway) Chat(ctx context.Context, taskType string, req *ChatRequest) (
 		req.Model = ref.Model
 	}
 
+	// Apply cacheByDefault if not already explicitly set by the caller
+	if g.cacheByDefault && !req.CacheSystemPrompt {
+		req.CacheSystemPrompt = true
+	}
+
 	start := time.Now()
 	resp, err := provider.Chat(ctx, req)
 	latency := time.Since(start)
