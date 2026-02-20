@@ -70,6 +70,16 @@
         "onFailure": "warn",
         "enabled": true
       }
+    ],
+    "PermissionRequest": [
+      {
+        "id": "llm-permission-reviewer",
+        "matcher": "Bash|Edit|Write|MultiEdit|Task|WebFetch",
+        "command": "python3 \"${CLAUDE_PROJECT_DIR}/.claude/hooks/permission-reviewer.py\"",
+        "description": "LLM-based auto-judgment for gray-zone tool permissions using Haiku. Configured in .c4/config.yaml (permission_reviewer section). Returns allow/deny; falls back to ask on error.",
+        "onFailure": "ask",
+        "enabled": true
+      }
     ]
   },
   "settings": {

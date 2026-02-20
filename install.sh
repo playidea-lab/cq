@@ -3,8 +3,14 @@ set -euo pipefail
 
 # CQ Installer — One-line setup for CQ AI Orchestration System
 #
-# Local:   ./install.sh
+# Local:   ./install.sh [options]
 # Remote:  curl -sSL https://git.pilab.co.kr/pi/cq/raw/main/install.sh | bash
+#
+# Options:
+#   --global-mcp      Register cq in ~/.mcp.json (all-project access)
+#   --global-skills   Symlink skills to ~/.claude/commands/ (global slash commands)
+#   --with-hub        Also build the C5 Hub binary
+#   --dry-run         Skip actual builds/installs
 #
 # When piped via curl, the script auto-clones the repo first.
 
@@ -15,10 +21,14 @@ C4_DEFAULT_DIR="$HOME/cq"
 
 WITH_HUB=false
 DRY_RUN=false
+GLOBAL_MCP=false
+GLOBAL_SKILLS=false
 for arg in "$@"; do
     case "$arg" in
-        --with-hub) WITH_HUB=true ;;
-        --dry-run) DRY_RUN=true ;;
+        --with-hub)      WITH_HUB=true ;;
+        --dry-run)       DRY_RUN=true ;;
+        --global-mcp)    GLOBAL_MCP=true ;;
+        --global-skills) GLOBAL_SKILLS=true ;;
     esac
 done
 
@@ -82,7 +92,11 @@ version_ge() {
 
 # Check Go (1.22+)
 if ! command -v go &>/dev/null; then
-    fail "Go not found. Install Go 1.22+ from https://go.dev/dl/"
+    printf "\n  ${RED}[✗]${NC} Go not found. Install Go 1.22+:\n"
+    printf "       macOS:  ${CYAN}brew install go${NC}\n"
+    printf "       Linux:  ${CYAN}curl -sSL https://go.dev/dl/go1.22.0.linux-amd64.tar.gz | sudo tar -C /usr/local -xz${NC}\n"
+    printf "       All:    ${CYAN}https://go.dev/dl/${NC}\n\n"
+    exit 1
 fi
 GO_VER="$(go version | grep -oE '[0-9]+\.[0-9]+(\.[0-9]+)?' | head -1)"
 if ! version_ge "$GO_VER" "1.22"; then
@@ -153,49 +167,57 @@ ok "Python dependencies installed"
 
 # ─── .mcp.json Configuration ───────────────────────────────
 
-MCP_JSON="$C4_ROOT/.mcp.json"
-C4_ENTRY=$(cat <<EOF
+# Helper: write/update a .mcp.json file with the cq entry.
+# Usage: write_mcp_json <path> <binary_path> <dir_path>
+write_mcp_json() {
+    local mcp_file="$1"
+    local bin_path="$2"
+    local dir_path="$3"
+
+    local entry
+    entry=$(cat <<EOF
 {
   "type": "stdio",
-  "command": "$C4_ROOT/c4-core/bin/cq",
-  "args": ["mcp", "--dir", "$C4_ROOT"],
+  "command": "$bin_path",
+  "args": ["mcp", "--dir", "$dir_path"],
   "env": {
-    "C4_PROJECT_ROOT": "$C4_ROOT"
+    "C4_PROJECT_ROOT": "$dir_path"
   }
 }
 EOF
 )
 
-if [ -f "$MCP_JSON" ]; then
-    # Existing .mcp.json — merge cq entry, preserve other servers
-    if command -v jq &>/dev/null; then
-        # jq available: surgical update
-        jq --argjson cq "$C4_ENTRY" '.mcpServers.cq = $cq' "$MCP_JSON" > "${MCP_JSON}.tmp"
-        mv "${MCP_JSON}.tmp" "$MCP_JSON"
-    else
-        # Fallback: Python JSON merge
-        python3 -c "
-import json, sys
-with open('$MCP_JSON') as f:
+    if [ -f "$mcp_file" ]; then
+        if command -v jq &>/dev/null; then
+            jq --argjson cq "$entry" '.mcpServers.cq = $cq' "$mcp_file" > "${mcp_file}.tmp"
+            mv "${mcp_file}.tmp" "$mcp_file"
+        else
+            python3 -c "
+import json
+with open('$mcp_file') as f:
     data = json.load(f)
-data.setdefault('mcpServers', {})['cq'] = json.loads('''$C4_ENTRY''')
-with open('$MCP_JSON', 'w') as f:
+data.setdefault('mcpServers', {})['cq'] = json.loads('''$entry''')
+with open('$mcp_file', 'w') as f:
     json.dump(data, f, indent=2)
     f.write('\n')
 "
-    fi
-    ok ".mcp.json updated (existing servers preserved)"
-else
-    # Create new .mcp.json
-    cat > "$MCP_JSON" <<MCPEOF
+        fi
+        ok "$(basename "$mcp_file") updated at $mcp_file"
+    else
+        mkdir -p "$(dirname "$mcp_file")"
+        cat > "$mcp_file" <<MCPEOF
 {
   "mcpServers": {
-    "cq": $C4_ENTRY
+    "cq": $entry
   }
 }
 MCPEOF
-    ok ".mcp.json created"
-fi
+        ok "$(basename "$mcp_file") created at $mcp_file"
+    fi
+}
+
+# Project-local .mcp.json (always)
+write_mcp_json "$C4_ROOT/.mcp.json" "$C4_ROOT/c4-core/bin/cq" "$C4_ROOT"
 
 # ─── Global Install (optional) ────────────────────────────
 
@@ -208,7 +230,9 @@ elif [ -z "$INSTALL_GLOBAL" ]; then
     # Piped (curl | bash) — skip by default
     INSTALL_GLOBAL="n"
 fi
+GLOBAL_INSTALLED=false
 if [[ "$(echo "$INSTALL_GLOBAL" | tr '[:upper:]' '[:lower:]')" =~ ^y ]]; then
+    GLOBAL_INSTALLED=true
     mkdir -p "$HOME/.local/bin"
     # CRITICAL: Use go build -o, NOT cp (macOS ARM64 code signing)
     info "Building global binary..."
@@ -223,12 +247,66 @@ if [[ "$(echo "$INSTALL_GLOBAL" | tr '[:upper:]' '[:lower:]')" =~ ^y ]]; then
     fi
 fi
 
-if [ "$WITH_HUB" = true ] && [[ "$(echo "$INSTALL_GLOBAL" | tr '[:upper:]' '[:lower:]')" =~ ^y ]]; then
+if [ "$WITH_HUB" = true ] && [ "$GLOBAL_INSTALLED" = true ]; then
     info "Building C5 Hub global binary..."
     cd "$C4_ROOT/c5"
     go build -ldflags "$C5_LDFLAGS" -o "$HOME/.local/bin/c5" ./cmd/c5/
     ok "C5 Hub global binary installed (~/.local/bin/c5)"
     cd "$C4_ROOT"
+fi
+
+# ─── Global MCP Registration (--global-mcp) ───────────────
+#
+# Writes/updates ~/.mcp.json so cq tools are available in ALL projects.
+# The global server uses ~/.local/bin/cq (must be globally installed).
+# Each per-project .mcp.json overrides the global entry for that project.
+
+if [ "$GLOBAL_MCP" = true ]; then
+    GLOBAL_BIN="$HOME/.local/bin/cq"
+    if [ ! -f "$GLOBAL_BIN" ]; then
+        warn "--global-mcp requires global binary. Re-run with 'y' at the global install prompt."
+        warn "Skipping ~/.mcp.json update."
+    else
+        # Global server uses C4_ROOT as its --dir so it has access to its own .c4/ DB.
+        # Per-project servers (via cq init) override this for project-specific state.
+        write_mcp_json "$HOME/.mcp.json" "$GLOBAL_BIN" "$C4_ROOT"
+        printf "\n"
+        info "Global MCP server registered. To activate in Claude Code:"
+        info "  Settings → MCP → enable 'cq' server, then restart Claude Code."
+        info "  Or add to ~/.claude/settings.json:"
+        info '    { "enabledMcpjsonServers": ["cq"] }'
+    fi
+fi
+
+# ─── Global Skills Symlinks (--global-skills) ─────────────
+#
+# Symlinks .claude/skills/*.md to ~/.claude/commands/ so /c4-plan, /c4-run,
+# etc. are available as slash commands in ALL projects.
+
+if [ "$GLOBAL_SKILLS" = true ]; then
+    SKILLS_SRC="$C4_ROOT/.claude/skills"
+    COMMANDS_DST="$HOME/.claude/commands"
+
+    if [ ! -d "$SKILLS_SRC" ]; then
+        warn "Skills directory not found: $SKILLS_SRC"
+    else
+        mkdir -p "$COMMANDS_DST"
+        linked=0
+        skipped=0
+        for skill_file in "$SKILLS_SRC"/*.md; do
+            [ -f "$skill_file" ] || continue
+            skill_name="$(basename "$skill_file")"
+            target="$COMMANDS_DST/$skill_name"
+            if [ -L "$target" ] && [ "$(readlink "$target")" = "$skill_file" ]; then
+                skipped=$((skipped + 1))
+            else
+                ln -sf "$skill_file" "$target"
+                linked=$((linked + 1))
+            fi
+        done
+        ok "Skills symlinked to ~/.claude/commands/ (new=$linked, up-to-date=$skipped)"
+        info "Restart Claude Code to pick up new slash commands (/c4-plan, /c4-run, etc.)"
+    fi
 fi
 
 # ─── .c4/ Directory Init ───────────────────────────────────
@@ -256,8 +334,20 @@ printf "\n${GREEN}${BOLD}CQ $VERSION installed successfully!${NC}\n"
 printf "  Location: ${BOLD}$C4_ROOT${NC}\n"
 printf "  Binary:   ${BOLD}$C4_ROOT/c4-core/bin/cq${NC}\n"
 printf "\n${BOLD}Next steps:${NC}\n"
-printf "  1. Restart Claude Code to activate MCP tools\n"
-printf "  2. Run ${CYAN}cq auth login${NC} to sign in (required for cloud features)\n\n"
+if [ "$GLOBAL_MCP" = true ] && [ "$GLOBAL_INSTALLED" = true ]; then
+    printf "  1. Enable MCP server in Claude Code:\n"
+    printf "       Settings → MCP → enable ${CYAN}cq${NC}  (or add to ~/.claude/settings.json)\n"
+    printf "       ${CYAN}{ \"enabledMcpjsonServers\": [\"cq\"] }${NC}\n"
+    printf "  2. Restart Claude Code to activate MCP tools\n"
+    printf "  3. Run ${CYAN}cq auth login${NC} to sign in (required for cloud features)\n\n"
+    printf "  Per-project isolation: run ${CYAN}cq init${NC} in any project directory.\n"
+    printf "  The project .mcp.json overrides the global entry for that project.\n\n"
+else
+    printf "  1. Restart Claude Code to activate MCP tools\n"
+    printf "  2. Run ${CYAN}cq auth login${NC} to sign in (required for cloud features)\n"
+    printf "  3. (Optional) For global access across all projects:\n"
+    printf "       ${CYAN}./install.sh --global-mcp --global-skills${NC}\n\n"
+fi
 
 if [ "$WITH_HUB" = true ]; then
     printf "${BOLD}C5 Hub:${NC}\n"
