@@ -8,19 +8,12 @@ import (
 	"strings"
 
 	"github.com/piqsol/c4/c5/internal/model"
-
 	"gopkg.in/yaml.v3"
 )
 
 func (s *Server) handleDAGCreate(w http.ResponseWriter, r *http.Request) {
-	if r.Method != "POST" {
-		methodNotAllowed(w)
-		return
-	}
-
-	var req model.DAGCreateRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+	req, ok := decodeRequest[model.DAGCreateRequest](w, r, "POST")
+	if !ok {
 		return
 	}
 
@@ -29,7 +22,7 @@ func (s *Server) handleDAGCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	dag, err := s.store.CreateDAG(&req)
+	dag, err := s.store.CreateDAG(req)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -113,14 +106,8 @@ func (s *Server) handleDAGByID(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleDAGAddNode(w http.ResponseWriter, r *http.Request, dagID string) {
-	if r.Method != "POST" {
-		methodNotAllowed(w)
-		return
-	}
-
-	var req model.DAGAddNodeRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+	req, ok := decodeRequest[model.DAGAddNodeRequest](w, r, "POST")
+	if !ok {
 		return
 	}
 
@@ -132,7 +119,7 @@ func (s *Server) handleDAGAddNode(w http.ResponseWriter, r *http.Request, dagID 
 		req.MaxRetries = 3
 	}
 
-	node, err := s.store.AddDAGNode(dagID, &req)
+	node, err := s.store.AddDAGNode(dagID, req)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -146,14 +133,8 @@ func (s *Server) handleDAGAddNode(w http.ResponseWriter, r *http.Request, dagID 
 }
 
 func (s *Server) handleDAGAddDependency(w http.ResponseWriter, r *http.Request, dagID string) {
-	if r.Method != "POST" {
-		methodNotAllowed(w)
-		return
-	}
-
-	var req model.DAGAddDependencyRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+	req, ok := decodeRequest[model.DAGAddDependencyRequest](w, r, "POST")
+	if !ok {
 		return
 	}
 
@@ -162,7 +143,7 @@ func (s *Server) handleDAGAddDependency(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 
-	if err := s.store.AddDAGDependency(dagID, &req); err != nil {
+	if err := s.store.AddDAGDependency(dagID, req); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -237,14 +218,8 @@ func (s *Server) handleDAGStatus(w http.ResponseWriter, r *http.Request, dagID s
 
 // handleDAGFromYAML creates a complete DAG from a YAML definition.
 func (s *Server) handleDAGFromYAML(w http.ResponseWriter, r *http.Request) {
-	if r.Method != "POST" {
-		methodNotAllowed(w)
-		return
-	}
-
-	var req model.DAGFromYAMLRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+	req, ok := decodeRequest[model.DAGFromYAMLRequest](w, r, "POST")
+	if !ok {
 		return
 	}
 

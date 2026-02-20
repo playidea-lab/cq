@@ -12,14 +12,8 @@ import (
 )
 
 func (s *Server) handleJobSubmit(w http.ResponseWriter, r *http.Request) {
-	if r.Method != "POST" {
-		methodNotAllowed(w)
-		return
-	}
-
-	var req model.JobSubmitRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+	req, ok := decodeRequest[model.JobSubmitRequest](w, r, "POST")
+	if !ok {
 		return
 	}
 
@@ -39,7 +33,7 @@ func (s *Server) handleJobSubmit(w http.ResponseWriter, r *http.Request) {
 		req.ProjectID = pid
 	}
 
-	job, err := s.store.CreateJob(&req)
+	job, err := s.store.CreateJob(req)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -177,14 +171,8 @@ func (s *Server) handleJobCancel(w http.ResponseWriter, r *http.Request, jobID s
 }
 
 func (s *Server) handleJobComplete(w http.ResponseWriter, r *http.Request, jobID string) {
-	if r.Method != "POST" {
-		methodNotAllowed(w)
-		return
-	}
-
-	var req model.JobCompleteRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+	req, ok := decodeRequest[model.JobCompleteRequest](w, r, "POST")
+	if !ok {
 		return
 	}
 

@@ -13,14 +13,8 @@ import (
 // =========================================================================
 
 func (s *Server) handlePresignedURL(w http.ResponseWriter, r *http.Request) {
-	if r.Method != "POST" {
-		methodNotAllowed(w)
-		return
-	}
-
-	var req model.PresignedURLRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+	req, ok := decodeRequest[model.PresignedURLRequest](w, r, "POST")
+	if !ok {
 		return
 	}
 
@@ -102,14 +96,8 @@ func (s *Server) handleArtifacts(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleArtifactConfirm(w http.ResponseWriter, r *http.Request, jobID string) {
-	if r.Method != "POST" {
-		methodNotAllowed(w)
-		return
-	}
-
-	var req model.ArtifactConfirmRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+	req, ok := decodeRequest[model.ArtifactConfirmRequest](w, r, "POST")
+	if !ok {
 		return
 	}
 
@@ -128,7 +116,7 @@ func (s *Server) handleArtifactConfirm(w http.ResponseWriter, r *http.Request, j
 		}
 	}
 
-	resp, err := s.store.ConfirmArtifact(jobID, &req)
+	resp, err := s.store.ConfirmArtifact(jobID, req)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
