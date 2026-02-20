@@ -1,9 +1,11 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/changmin/c4-core/internal/hub"
@@ -11,11 +13,23 @@ import (
 	"github.com/changmin/c4-core/internal/worker"
 )
 
+// workerEntry tracks an active standby goroutine.
+type workerEntry struct {
+	cancel context.CancelFunc
+	gen    uint64 // generation: incremented on each new standby for the same worker_id
+}
+
 // WorkerDeps holds dependencies for worker standby tools.
 type WorkerDeps struct {
 	HubClient     *hub.Client
 	ShutdownStore *worker.ShutdownStore
 	Keeper        *ContextKeeper // may be nil if C1 not enabled
+
+	// activeWorkers tracks running standby goroutines by worker_id.
+	// A new standby cancels the previous goroutine for the same worker_id.
+	activeWorkersMu sync.Mutex
+	activeWorkers   map[string]workerEntry
+	nextGen         uint64
 }
 
 // RegisterWorkerHandlers registers c4_worker_standby, c4_worker_complete, c4_worker_shutdown.
@@ -67,6 +81,36 @@ func handleWorkerStandby(deps *WorkerDeps, raw json.RawMessage) (any, error) {
 		return nil, fmt.Errorf("worker_id is required")
 	}
 
+	// Cancel any existing standby goroutine for the same worker_id, then register this one.
+	ctx, cancel := context.WithCancel(context.Background())
+	deps.activeWorkersMu.Lock()
+	if deps.activeWorkers == nil {
+		deps.activeWorkers = make(map[string]workerEntry)
+	}
+	if old, ok := deps.activeWorkers[params.WorkerID]; ok {
+		old.cancel() // signal the stale goroutine to exit
+	}
+	deps.nextGen++
+	myGen := deps.nextGen
+	deps.activeWorkers[params.WorkerID] = workerEntry{cancel: cancel, gen: myGen}
+	deps.activeWorkersMu.Unlock()
+
+	// Always clean up when this goroutine exits.
+	defer func() {
+		cancel()
+		deps.activeWorkersMu.Lock()
+		// Only set offline if we are still the current owner (not replaced by a newer standby)
+		if entry, ok := deps.activeWorkers[params.WorkerID]; ok && entry.gen == myGen {
+			delete(deps.activeWorkers, params.WorkerID)
+			deps.activeWorkersMu.Unlock()
+			if deps.Keeper != nil {
+				deps.Keeper.c1.UpdatePresence("agent", params.WorkerID, "offline", "Standby ended")
+			}
+		} else {
+			deps.activeWorkersMu.Unlock()
+		}
+	}()
+
 	// Register with Hub (first time)
 	caps := params.Capabilities
 	if caps == nil {
@@ -110,6 +154,10 @@ func handleWorkerStandby(deps *WorkerDeps, raw json.RawMessage) (any, error) {
 
 	for {
 		select {
+		case <-ctx.Done():
+			// Cancelled by a new standby call for the same worker_id
+			return map[string]any{"shutdown": true, "reason": "cancelled"}, nil
+
 		case <-pollTicker.C:
 			// Check shutdown signal
 			if reason, ok := deps.ShutdownStore.ConsumeSignal(params.WorkerID); ok {

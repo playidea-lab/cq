@@ -170,15 +170,8 @@ async fn run_realtime_loop(
 
                 let (mut write, mut read) = ws_stream.split();
 
-                // Join channels for each table
-                for (i, table) in SUBSCRIBED_TABLES.iter().enumerate() {
-                    let join_msg = make_join_message(table, i + 1);
-                    if write.send(Message::Text(join_msg.into())).await.is_err() {
-                        break;
-                    }
-                }
-
-                // If we have an auth token, set it via access_token event
+                // Set auth token FIRST — Supabase RLS checks auth at channel join time.
+                // Sending access_token after phx_join means RLS rejects postgres_changes events.
                 if !auth_token.is_empty() {
                     let token_msg = serde_json::json!({
                         "topic": "realtime:*",
@@ -189,6 +182,14 @@ async fn run_realtime_loop(
                     let _ = write
                         .send(Message::Text(token_msg.to_string().into()))
                         .await;
+                }
+
+                // Join channels for each table (after auth is set)
+                for (i, table) in SUBSCRIBED_TABLES.iter().enumerate() {
+                    let join_msg = make_join_message(table, i + 1);
+                    if write.send(Message::Text(join_msg.into())).await.is_err() {
+                        break;
+                    }
                 }
 
                 // Heartbeat interval
