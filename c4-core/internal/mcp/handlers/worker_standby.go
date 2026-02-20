@@ -135,7 +135,7 @@ func handleWorkerStandby(deps *WorkerDeps, raw json.RawMessage) (any, error) {
 						continue
 					}
 					if claimed {
-						deps.Keeper.c1.UpdatePresence("agent", params.WorkerID, "working", "Claimed: "+msg.ID)
+						deps.Keeper.c1.UpdatePresence("agent", params.WorkerID, "idle", "Dispatched: "+msg.ID)
 						return map[string]any{
 							"dispatched":  true,
 							"message_id":  msg.ID,
@@ -240,7 +240,7 @@ func handleWorkerComplete(deps *WorkerDeps, raw json.RawMessage) (any, error) {
 
 	// Update C1 presence and post to #cq channel
 	if deps.Keeper != nil {
-		deps.Keeper.c1.UpdatePresence("agent", params.WorkerID, "online", "Waiting for jobs in #cq")
+		deps.Keeper.c1.UpdatePresence("agent", params.WorkerID, "idle", "Job done, waiting for next")
 
 		statusIcon := "done"
 		if params.Status == "FAILED" {

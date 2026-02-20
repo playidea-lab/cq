@@ -64,15 +64,9 @@ export function ChannelSidebar({
     return { systemChannels: sys, workerChannels: wkr, userChannels: usr };
   }, [channels]);
 
-  // Online member count (all non-offline)
-  const onlineCount = useMemo(
-    () => members.filter(m => m.status !== 'offline').length,
-    [members],
-  );
-
   // Online agent (worker) count
   const onlineAgentCount = useMemo(
-    () => members.filter(m => m.member_type === 'agent' && m.status !== 'offline').length,
+    () => members.filter(m => m.member_type === 'agent' && (m.status === 'online' || m.status === 'working')).length,
     [members],
   );
 
@@ -145,8 +139,8 @@ export function ChannelSidebar({
       <aside className="channel-sidebar">
         <div className="channel-sidebar__header">
           <span className="channel-sidebar__title">Messenger</span>
-          {onlineCount > 0 && (
-            <span className="channel-sidebar__online-count">{onlineCount} online</span>
+          {onlineAgentCount > 0 && (
+            <span className="channel-sidebar__online-count">{onlineAgentCount} worker{onlineAgentCount > 1 ? 's' : ''}</span>
           )}
         </div>
 

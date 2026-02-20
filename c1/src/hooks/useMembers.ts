@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { useRealtimeSync } from './useRealtimeSync';
 import type { C1Member } from '../types';
@@ -7,6 +7,7 @@ export function useMembers(projectId: string | null) {
   const [members, setMembers] = useState<C1Member[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const fetchMembers = useCallback(async () => {
     if (!projectId) return;
@@ -25,6 +26,15 @@ export function useMembers(projectId: string | null) {
   useEffect(() => {
     fetchMembers();
   }, [fetchMembers]);
+
+  // Polling fallback: refresh every 5s in case Realtime misses updates
+  useEffect(() => {
+    if (!projectId) return;
+    pollRef.current = setInterval(fetchMembers, 5000);
+    return () => {
+      if (pollRef.current) clearInterval(pollRef.current);
+    };
+  }, [projectId, fetchMembers]);
 
   // Realtime: refresh on c1_members changes
   useRealtimeSync({

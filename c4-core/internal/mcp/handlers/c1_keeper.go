@@ -176,8 +176,16 @@ func (k *ContextKeeper) AutoPost(channelName, content string) error {
 	return nil
 }
 
-// EnsureSystemChannels creates the standard system channels for a project.
+// EnsureSystemChannels creates the standard system channels for a project
+// and removes legacy channels (worker-* per-worker channels, #updates duplicate).
 func (k *ContextKeeper) EnsureSystemChannels() error {
+	// --- Step 1: Delete legacy channels ---
+	k.deleteLegacyChannels()
+
+	// --- Step 1b: Reset stale agent presence (online/working → offline) ---
+	k.resetStaleAgentPresence()
+
+	// --- Step 2: Ensure canonical system channels ---
 	channels := []struct {
 		name        string
 		description string
@@ -198,6 +206,72 @@ func (k *ContextKeeper) EnsureSystemChannels() error {
 		}
 	}
 	return nil
+}
+
+// deleteLegacyChannels removes old-style per-worker channels and name duplicates.
+func (k *ContextKeeper) deleteLegacyChannels() {
+	type channelRow struct {
+		ID   string `json:"id"`
+		Name string `json:"name"`
+	}
+	var rows []channelRow
+	filter := fmt.Sprintf("project_id=eq.%s&select=id,name", url.QueryEscape(k.c1.projectID))
+	if err := k.c1.httpGet("c1_channels", filter, &rows); err != nil {
+		fmt.Fprintf(os.Stderr, "cq: [keeper] list channels for cleanup: %v\n", err)
+		return
+	}
+	for _, ch := range rows {
+		// Delete old per-worker channels (worker-*)
+		// Delete channels whose name starts with '#' (e.g. #updates duplicate)
+		if strings.HasPrefix(ch.Name, "worker-") || strings.HasPrefix(ch.Name, "#") {
+			if err := k.c1.httpDelete("c1_channels", fmt.Sprintf("id=eq.%s", ch.ID)); err != nil {
+				fmt.Fprintf(os.Stderr, "cq: [keeper] delete legacy channel %q: %v\n", ch.Name, err)
+			} else {
+				fmt.Fprintf(os.Stderr, "cq: [keeper] deleted legacy channel %q\n", ch.Name)
+			}
+		}
+	}
+}
+
+// resetStaleAgentPresence sets all online/working agent members to offline at startup.
+// This cleans up stale presence from sessions that exited without calling c4_worker_shutdown.
+func (k *ContextKeeper) resetStaleAgentPresence() {
+	type memberRow struct {
+		ID string `json:"id"`
+	}
+	var rows []memberRow
+	filter := fmt.Sprintf(
+		"project_id=eq.%s&member_type=eq.agent&status=in.(online,working,idle)&select=id",
+		url.QueryEscape(k.c1.projectID),
+	)
+	if err := k.c1.httpGet("c1_members", filter, &rows); err != nil {
+		fmt.Fprintf(os.Stderr, "cq: [keeper] list stale agents: %v\n", err)
+		return
+	}
+	if len(rows) == 0 {
+		return
+	}
+	// PATCH all stale agents to offline
+	patch := map[string]any{"status": "offline", "status_text": "Session ended (auto-reset)"}
+	patchBody, _ := json.Marshal(patch)
+	patchFilter := fmt.Sprintf(
+		"project_id=eq.%s&member_type=eq.agent&status=in.(online,working,idle)",
+		url.QueryEscape(k.c1.projectID),
+	)
+	u := k.c1.baseURL + "/c1_members?" + patchFilter
+	req, err := http.NewRequest("PATCH", u, bytes.NewReader(patchBody))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "cq: [keeper] patch stale agents: %v\n", err)
+		return
+	}
+	k.c1.setHeaders(req)
+	resp, err := k.c1.httpClient.Do(req)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "cq: [keeper] patch stale agents: %v\n", err)
+		return
+	}
+	resp.Body.Close()
+	fmt.Fprintf(os.Stderr, "cq: [keeper] reset %d stale agent(s) to offline\n", len(rows))
 }
 
 // getSummary retrieves the current summary for a channel.
@@ -367,6 +441,28 @@ func (h *C1Handler) httpPost(table string, payload any) error {
 	if resp.StatusCode >= 400 {
 		respBody, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("POST %s: %d %s", table, resp.StatusCode, string(respBody))
+	}
+	return nil
+}
+
+// httpDelete performs a DELETE request to Supabase PostgREST with a filter.
+func (h *C1Handler) httpDelete(table, filter string) error {
+	u := h.baseURL + "/" + table + "?" + filter
+	req, err := http.NewRequest("DELETE", u, nil)
+	if err != nil {
+		return err
+	}
+	h.setHeaders(req)
+
+	resp, err := h.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("DELETE %s: %w", table, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		respBody, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("DELETE %s: %d %s", table, resp.StatusCode, string(respBody))
 	}
 	return nil
 }
