@@ -281,8 +281,10 @@ func patchClaudeSettings(homeDir string, hookPath string) error {
 		preToolUse = arr
 	}
 
-	// Check if Bash matcher with this hookPath already exists
-	for _, entry := range preToolUse {
+	// Check if Bash matcher with this hookPath already exists; update stale path in-place.
+	const hookBaseName = "c4-bash-security-hook.sh"
+	updated := false
+	for i, entry := range preToolUse {
 		entryMap, ok := entry.(map[string]any)
 		if !ok {
 			continue
@@ -291,29 +293,44 @@ func patchClaudeSettings(homeDir string, hookPath string) error {
 			continue
 		}
 		innerHooks, _ := entryMap["hooks"].([]any)
-		for _, h := range innerHooks {
+		for j, h := range innerHooks {
 			hMap, ok := h.(map[string]any)
 			if !ok {
 				continue
 			}
-			if hMap["command"] == hookPath {
-				// Already registered
+			cmd, _ := hMap["command"].(string)
+			if cmd == hookPath {
+				// Already registered with correct path
 				return nil
 			}
+			if strings.Contains(cmd, hookBaseName) {
+				// Same hook script, stale path – update in place
+				hMap["command"] = hookPath
+				innerHooks[j] = hMap
+				entryMap["hooks"] = innerHooks
+				preToolUse[i] = entryMap
+				updated = true
+				break
+			}
+		}
+		if updated {
+			break
 		}
 	}
 
-	// Add new entry
-	newEntry := map[string]any{
-		"matcher": "Bash",
-		"hooks": []any{
-			map[string]any{
-				"type":    "command",
-				"command": hookPath,
+	if !updated {
+		// No existing Bash hook entry for this script; add new entry
+		newEntry := map[string]any{
+			"matcher": "Bash",
+			"hooks": []any{
+				map[string]any{
+					"type":    "command",
+					"command": hookPath,
+				},
 			},
-		},
+		}
+		preToolUse = append(preToolUse, newEntry)
 	}
-	preToolUse = append(preToolUse, newEntry)
 	hooks["PreToolUse"] = preToolUse
 	settings["hooks"] = hooks
 
@@ -346,6 +363,8 @@ func patchClaudeSettings(homeDir string, hookPath string) error {
 		os.Remove(tmpPath)
 		return fmt.Errorf("renaming temp file: %w", rErr)
 	}
+	// Restore readable permissions (os.CreateTemp creates with 0600)
+	_ = os.Chmod(settingsPath, 0644)
 
 	fmt.Fprintln(os.Stderr, "cq: registered Bash hook in ~/.claude/settings.json")
 	return nil
