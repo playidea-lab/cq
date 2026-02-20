@@ -297,6 +297,11 @@ EventBus(6): c4_event_list, c4_event_publish,
             c4_rule_add, c4_rule_list, c4_rule_remove, c4_rule_toggle
 C1(5):     c1_search, c1_check_mentions, c1_get_briefing,
             c1_send_message, c1_update_presence
+--- Tiered (build tag 활성화 시 추가 등록) ---
+C7 Observe(4): c4_observe_metrics, c4_observe_logs, c4_observe_config, c4_observe_health
+C6 Guard(5): c4_guard_check, c4_guard_audit, c4_guard_policy_set, c4_guard_policy_list, c4_guard_role_assign
+C8 Gate(6): c4_gate_webhook_register, c4_gate_webhook_list, c4_gate_webhook_test,
+            c4_gate_schedule_add, c4_gate_schedule_list, c4_gate_connector_status
 --- Hub (hub.enabled=true 시 추가 등록, +29) ---
 Worker(3): c4_worker_standby, c4_worker_complete, c4_worker_shutdown
 Hub-Job(10): c4_hub_submit, c4_hub_status, c4_hub_list,
@@ -330,11 +335,11 @@ CP-001:    체크포인트
 
 ## Go Core (c4-core/) — Primary MCP Server
 
-> Go 기반 MCP 서버. ~38.9K LOC(src) + ~36.8K LOC(test). ~1,253개 테스트, 22 패키지.
+> Go 기반 MCP 서버. ~45.0K LOC(src) + ~38.7K LOC(test). ~1,295개 테스트, 25 패키지.
 
 ### 아키텍처
 ```
-Claude Code → Go MCP Server (stdio, 112 base + 26 Hub = 138 tools)
+Claude Code → Go MCP Server (stdio, 127 base + 26 Hub = 153 tools)
                 ├→ Go native (28): 상태/설정, 태스크, 파일, git, validation, config, health, eventbus rules
                 ├→ Go + SQLite (13): spec, design, checkpoint, artifact, lighthouse
                 ├→ Soul/Persona/Twin (7): soul CRUD, persona evolve, whoami, reflect
@@ -345,6 +350,9 @@ Claude Code → Go MCP Server (stdio, 112 base + 26 Hub = 138 tools)
                 ├→ Drive (6): upload, download, list, delete, info, mkdir
                 ├→ Go Native — Tier 1 (17): Research (5) + C2 (6) + GPU (6)
                 ├→ Go Native — Tier 2 (13): Knowledge (Store+FTS5+Vector+Embedding+Usage+Ingest+Sync+Publish)
+                ├→ C7 Observe (4, c7_observe 조건부): observe_metrics, observe_logs, observe_config, observe_health
+                ├→ C6 Guard (5, c6_guard 조건부): guard_check, guard_audit, guard_policy_set/list, guard_role_assign
+                ├→ C8 Gate (6, c8_gate 조건부): gate_webhook_register/list/test, gate_schedule_add/list, gate_connector_status
                 ├→ Hub Client (26, 조건부): job, worker, DAG, edge, deploy, artifact
                 ├→ Worker Standby (3, Hub 조건부): standby, complete, shutdown
                 ├→ EventSink (1): HTTP POST /v1/events/publish 수신 → C3 EventBus 전달
@@ -375,6 +383,9 @@ c4-core/
 │   ├── drive/        # C0 Drive client (Supabase Storage)
 │   ├── llm/          # LLM Gateway (Anthropic, OpenAI, Gemini, Ollama)
 │   ├── cdp/          # Chrome DevTools Protocol runner + WebMCP + CDP auto-discovery
+│   ├── observe/      # C7 Observe: Logger(slog) + Metrics + Middleware (c7_observe build tag)
+│   ├── guard/        # C6 Guard: RBAC + Audit + Policy + Middleware (c6_guard build tag)
+│   ├── gate/         # C8 Gate: Webhook + Scheduler + Connectors (c8_gate build tag)
 │   └── worker/       # Worker shutdown signal store (SQLite)
 └── test/benchmark/   # 벤치마크
 ```
@@ -459,6 +470,9 @@ cq doctor --fix        # 자동 수정 가능한 문제 해결 시도
 | `llm_gateway` | LLM 프로바이더 설정 |
 | `eventsink` | EventSink HTTP 서버 설정 (enabled, port, token) |
 | `worktree` | Worktree 관리 (auto_cleanup: true/false) |
+| `observe` | C7 관측성 (enabled, log_level, log_format) — c7_observe 빌드 태그 필요 |
+| `guard` | C6 접근 제어 (default_action: allow/deny, policies[]) — c6_guard 빌드 태그 필요 |
+| `gate` | C8 외부 연동 (connectors.slack.*, connectors.github.*) — c8_gate 빌드 태그 필요 |
 
 - **`eventsink`**: C5 → C4 이벤트 수신용 HTTP 엔드포인트 (기본 포트 `:4141`). `POST /v1/events/publish`로 수신한 이벤트를 C3 EventBus에 전달.
 - **`worktree.auto_cleanup`**: `true`(기본값)이면 `SubmitTask()` 성공 시 worktree를 즉시 자동 제거. Worktree 자동 생성은 AssignTask에서, 자동 제거는 SubmitTask 성공 시 수행.
