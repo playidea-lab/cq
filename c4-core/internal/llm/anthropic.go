@@ -81,11 +81,15 @@ type anthropicResponse struct {
 	} `json:"content"`
 	Model      string `json:"model"`
 	StopReason string `json:"stop_reason"`
-	Usage      struct {
+	Usage struct {
 		InputTokens              int `json:"input_tokens"`
 		OutputTokens             int `json:"output_tokens"`
-		CacheCreationInputTokens int `json:"cache_creation_input_tokens"`
+		CacheCreationInputTokens int `json:"cache_creation_input_tokens"` // Claude 3.x
 		CacheReadInputTokens     int `json:"cache_read_input_tokens"`
+		CacheCreation            struct {                                 // Claude 4.x
+			Ephemeral5mInputTokens int `json:"ephemeral_5m_input_tokens"`
+			Ephemeral1hInputTokens int `json:"ephemeral_1h_input_tokens"`
+		} `json:"cache_creation"`
 	} `json:"usage"`
 }
 
@@ -175,8 +179,11 @@ func (p *AnthropicProvider) Chat(ctx context.Context, req *ChatRequest) (*ChatRe
 		Usage: TokenUsage{
 			InputTokens:      apiResp.Usage.InputTokens,
 			OutputTokens:     apiResp.Usage.OutputTokens,
-			CacheReadTokens:  apiResp.Usage.CacheReadInputTokens,
-			CacheWriteTokens: apiResp.Usage.CacheCreationInputTokens,
+			CacheReadTokens: apiResp.Usage.CacheReadInputTokens,
+			// Claude 4.x splits cache_creation into ephemeral_5m + ephemeral_1h; fall back to 3.x field
+			CacheWriteTokens: apiResp.Usage.CacheCreationInputTokens +
+				apiResp.Usage.CacheCreation.Ephemeral5mInputTokens +
+				apiResp.Usage.CacheCreation.Ephemeral1hInputTokens,
 		},
 	}, nil
 }
