@@ -113,12 +113,17 @@ func jobSubmitHandler(store *daemon.Store) mcp.HandlerFunc {
 			workdir = "."
 		}
 
+		requiresGPU := params.GPUID != nil
+		gpuCount := 0
+		if requiresGPU {
+			gpuCount = 1
+		}
 		req := &daemon.JobSubmitRequest{
 			Name:        jobName,
 			Command:     params.Command,
 			Workdir:     workdir,
-			RequiresGPU: true,
-			GPUCount:    1,
+			RequiresGPU: requiresGPU,
+			GPUCount:    gpuCount,
 			Priority:    params.Priority,
 		}
 
