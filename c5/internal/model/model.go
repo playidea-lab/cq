@@ -32,26 +32,35 @@ func (s JobStatus) IsTerminal() bool {
 	return false
 }
 
+// ArtifactRef is a reference to an artifact in the c5-artifacts bucket.
+type ArtifactRef struct {
+	Path      string `json:"path"`                 // c5-artifacts bucket 내 경로
+	LocalPath string `json:"local_path,omitempty"` // 워커 로컬 저장 경로
+	Required  bool   `json:"required,omitempty"`   // false 시 missing 허용
+}
+
 // Job represents a submitted job with its full lifecycle state.
 type Job struct {
-	ID          string            `json:"id"`
-	Name        string            `json:"name"`
-	Status      JobStatus         `json:"status"`
-	Priority    int               `json:"priority"`
-	Workdir     string            `json:"workdir"`
-	Command     string            `json:"command"`
-	RequiresGPU bool              `json:"requires_gpu"`
-	Env         map[string]string `json:"env,omitempty"`
-	Tags        []string          `json:"tags,omitempty"`
-	ExpID       string            `json:"exp_id,omitempty"`
-	Memo        string            `json:"memo,omitempty"`
-	TimeoutSec  int               `json:"timeout_sec,omitempty"`
-	ProjectID   string            `json:"project_id,omitempty"`
-	WorkerID    string            `json:"worker_id,omitempty"`
-	CreatedAt   time.Time         `json:"created_at"`
-	StartedAt   *time.Time        `json:"started_at,omitempty"`
-	FinishedAt  *time.Time        `json:"finished_at,omitempty"`
-	ExitCode    *int              `json:"exit_code,omitempty"`
+	ID              string            `json:"id"`
+	Name            string            `json:"name"`
+	Status          JobStatus         `json:"status"`
+	Priority        int               `json:"priority"`
+	Workdir         string            `json:"workdir"`
+	Command         string            `json:"command"`
+	RequiresGPU     bool              `json:"requires_gpu"`
+	Env             map[string]string `json:"env,omitempty"`
+	Tags            []string          `json:"tags,omitempty"`
+	ExpID           string            `json:"exp_id,omitempty"`
+	Memo            string            `json:"memo,omitempty"`
+	TimeoutSec      int               `json:"timeout_sec,omitempty"`
+	ProjectID       string            `json:"project_id,omitempty"`
+	WorkerID        string            `json:"worker_id,omitempty"`
+	InputArtifacts  []ArtifactRef     `json:"input_artifacts,omitempty"`
+	OutputArtifacts []ArtifactRef     `json:"output_artifacts,omitempty"`
+	CreatedAt       time.Time         `json:"created_at"`
+	StartedAt       *time.Time        `json:"started_at,omitempty"`
+	FinishedAt      *time.Time        `json:"finished_at,omitempty"`
+	ExitCode        *int              `json:"exit_code,omitempty"`
 }
 
 // DurationSec returns the job duration in seconds, or nil if not yet finished.
@@ -111,17 +120,19 @@ type LogEntry struct {
 
 // JobSubmitRequest is the payload for POST /v1/jobs/submit.
 type JobSubmitRequest struct {
-	Name        string            `json:"name"`
-	Workdir     string            `json:"workdir"`
-	Command     string            `json:"command"`
-	Env         map[string]string `json:"env,omitempty"`
-	Tags        []string          `json:"tags,omitempty"`
-	RequiresGPU bool              `json:"requires_gpu"`
-	Priority    int               `json:"priority,omitempty"`
-	ExpID       string            `json:"exp_id,omitempty"`
-	Memo        string            `json:"memo,omitempty"`
-	TimeoutSec  int               `json:"timeout_sec,omitempty"`
-	ProjectID   string            `json:"project_id,omitempty"`
+	Name            string            `json:"name"`
+	Workdir         string            `json:"workdir"`
+	Command         string            `json:"command"`
+	Env             map[string]string `json:"env,omitempty"`
+	Tags            []string          `json:"tags,omitempty"`
+	RequiresGPU     bool              `json:"requires_gpu"`
+	Priority        int               `json:"priority,omitempty"`
+	ExpID           string            `json:"exp_id,omitempty"`
+	Memo            string            `json:"memo,omitempty"`
+	TimeoutSec      int               `json:"timeout_sec,omitempty"`
+	ProjectID       string            `json:"project_id,omitempty"`
+	InputArtifacts  []ArtifactRef     `json:"input_artifacts,omitempty"`
+	OutputArtifacts []ArtifactRef     `json:"output_artifacts,omitempty"`
 }
 
 // JobSubmitResponse is returned from POST /v1/jobs/submit.

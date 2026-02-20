@@ -1381,3 +1381,109 @@ func TestNewStoreCreatesDir(t *testing.T) {
 		t.Fatal("directory should have been created")
 	}
 }
+
+// =========================================================================
+// ArtifactRef / Job artifact columns
+// =========================================================================
+
+// TestJobRoundTrip_WithArtifacts verifies that InputArtifacts and OutputArtifacts
+// survive a full submit → store → retrieve round-trip.
+func TestJobRoundTrip_WithArtifacts(t *testing.T) {
+	s := newTestStore(t)
+
+	req := &model.JobSubmitRequest{
+		Name:    "artifact-job",
+		Command: "echo hi",
+		Workdir: "/tmp",
+		InputArtifacts: []model.ArtifactRef{
+			{Path: "inputs/data.bin", LocalPath: "/local/data.bin", Required: true},
+		},
+		OutputArtifacts: []model.ArtifactRef{
+			{Path: "outputs/result.bin"},
+		},
+	}
+
+	job, err := s.CreateJob(req)
+	if err != nil {
+		t.Fatalf("create job: %v", err)
+	}
+
+	got, err := s.GetJob(job.ID)
+	if err != nil {
+		t.Fatalf("get job: %v", err)
+	}
+
+	if len(got.InputArtifacts) != 1 {
+		t.Fatalf("expected 1 input artifact, got %d", len(got.InputArtifacts))
+	}
+	if got.InputArtifacts[0].Path != "inputs/data.bin" {
+		t.Errorf("input path: got %q, want %q", got.InputArtifacts[0].Path, "inputs/data.bin")
+	}
+	if got.InputArtifacts[0].LocalPath != "/local/data.bin" {
+		t.Errorf("local path: got %q", got.InputArtifacts[0].LocalPath)
+	}
+	if !got.InputArtifacts[0].Required {
+		t.Error("expected Required=true")
+	}
+
+	if len(got.OutputArtifacts) != 1 {
+		t.Fatalf("expected 1 output artifact, got %d", len(got.OutputArtifacts))
+	}
+	if got.OutputArtifacts[0].Path != "outputs/result.bin" {
+		t.Errorf("output path: got %q", got.OutputArtifacts[0].Path)
+	}
+}
+
+// TestMigration_Idempotent verifies that running the migration twice does not error.
+func TestMigration_Idempotent(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "idem.db")
+
+	s1, err := New(dbPath)
+	if err != nil {
+		t.Fatalf("first open: %v", err)
+	}
+	s1.Close()
+
+	// Second open runs migrate() again — duplicate column ALTERs must be silently ignored.
+	s2, err := New(dbPath)
+	if err != nil {
+		t.Fatalf("second open (idempotent migration): %v", err)
+	}
+	s2.Close()
+}
+
+// TestStore_ExistingRows_NullSafe verifies that rows inserted without artifact columns
+// (simulating a pre-migration database) return empty slices, not errors.
+func TestStore_ExistingRows_NullSafe(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "legacy.db")
+
+	s, err := New(dbPath)
+	if err != nil {
+		t.Fatalf("new store: %v", err)
+	}
+	defer s.Close()
+
+	// Insert a row the old-fashioned way without artifact columns (use DEFAULT values).
+	now := time.Now().UTC().Format(time.RFC3339)
+	_, err = s.db.Exec(`
+		INSERT INTO jobs (id, name, status, priority, workdir, command,
+			requires_gpu, env, tags, exp_id, memo, timeout_sec, project_id, created_at)
+		VALUES (?, ?, 'QUEUED', 0, '.', 'echo', 0, '{}', '[]', '', '', 0, '', ?)`,
+		"legacy-001", "legacy-job", now)
+	if err != nil {
+		t.Fatalf("insert legacy row: %v", err)
+	}
+
+	got, err := s.GetJob("legacy-001")
+	if err != nil {
+		t.Fatalf("get legacy job: %v", err)
+	}
+	if got.InputArtifacts != nil {
+		t.Errorf("expected nil InputArtifacts for legacy row, got %v", got.InputArtifacts)
+	}
+	if got.OutputArtifacts != nil {
+		t.Errorf("expected nil OutputArtifacts for legacy row, got %v", got.OutputArtifacts)
+	}
+}
