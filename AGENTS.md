@@ -99,7 +99,7 @@ C9 Knowledge — 지식 관리 (FTS5 + pgvector + Embedding + Usage + Ingestion)
 | 언어 | 소스 | 테스트 | 합계 |
 |------|------|--------|------|
 | Go (`c4-core/`) | ~38.9K LOC | ~36.8K LOC | ~75.7K |
-| Go (`c5/`) | ~6.7K LOC | ~4.5K LOC | ~11.2K |
+| Go (`c5/`) | ~6.9K LOC | ~4.8K LOC | ~11.7K |
 | Python (`c4/`) | ~22.9K LOC | ~9.5K LOC | ~32.4K |
 | Rust (`c1/src-tauri/`) | ~9.5K LOC | (내장) | ~9.5K |
 | TS+CSS (`c1/src/`) | ~11.8K LOC | | ~11.8K |
@@ -109,10 +109,10 @@ C9 Knowledge — 지식 관리 (FTS5 + pgvector + Embedding + Usage + Ingestion)
 ### 테스트 현황
 | 언어 | 테스트 수 | 패키지/모듈 |
 |------|----------|------------|
-| Go | **~1,419** | 22 packages (all pass) — c4-core ~1,268 + c5 151 |
+| Go | **~1,423** | 22 packages (all pass) — c4-core ~1,268 + c5 155 |
 | Python | **697** | tests/unit/ |
 | Rust | **85** | src-tauri |
-| **합계** | **~2,201** | |
+| **합계** | **~2,205** | |
 
 ### Monorepo 구조
 ```
