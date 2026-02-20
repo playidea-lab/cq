@@ -328,7 +328,9 @@ func removeTOMLTable(content, header string) string {
 			continue
 		}
 		// End skip when next TOML table header begins.
-		if trimmed != "" && strings.HasPrefix(trimmed, "[") && strings.HasSuffix(trimmed, "]") {
+		// Match [section] but not [[array-of-tables]] headers.
+		if trimmed != "" && strings.HasPrefix(trimmed, "[") && strings.HasSuffix(trimmed, "]") &&
+			!strings.HasPrefix(trimmed, "[[") {
 			skipping = false
 			out = append(out, line)
 		}

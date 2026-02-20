@@ -284,6 +284,9 @@ func (s *SQLiteStore) migrateTasksIfNeeded() error {
 			hasTaskJSON = true
 		}
 	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("reading table_info: %w", err)
+	}
 
 	if !hasTaskJSON {
 		return nil // Already Go schema — no migration needed
