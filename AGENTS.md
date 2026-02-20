@@ -109,10 +109,10 @@ C9 Knowledge — 지식 관리 (FTS5 + pgvector + Embedding + Usage + Ingestion)
 ### 테스트 현황
 | 언어 | 테스트 수 | 패키지/모듈 |
 |------|----------|------------|
-| Go | **~1,355** | 23 packages (all pass) — c4-core ~1,235 + c5 132 |
+| Go | **~1,397** | 28 packages (all pass) — c4-core ~1,263 + c5 134 |
 | Python | **750** | tests/unit/ |
 | Rust | **85** | src-tauri |
-| **합계** | **~2,190** | |
+| **합계** | **~2,232** | |
 
 ### Monorepo 구조
 ```
@@ -122,7 +122,7 @@ c4/
 ├── c5/               # Go 분산 작업 큐 서버 (Hub)
 ├── c1/               # Tauri 2.x 데스크톱 앱
 ├── .claude/skills/   # Claude Code Skills (20개, 자동 발동 워크플로우)
-├── infra/supabase/   # PostgreSQL 마이그레이션 (18개)
+├── infra/supabase/   # PostgreSQL 마이그레이션 (21개)
 ├── docs/             # ROADMAP, guides
 ├── scripts/          # 유틸리티 스크립트
 ├── tests/            # Python 테스트
@@ -327,7 +327,7 @@ CP-001:    체크포인트
 
 ## Go Core (c4-core/) — Primary MCP Server
 
-> Go 기반 MCP 서버. ~37.8K LOC(src) + ~30.9K LOC(test). 1,085개 테스트, 25 패키지.
+> Go 기반 MCP 서버. ~37.8K LOC(src) + ~30.9K LOC(test). 1,263개 테스트, 23 패키지.
 
 ### 아키텍처
 ```
@@ -477,7 +477,7 @@ cargo tauri dev       # 개발 서버
 
 ## Infra (infra/supabase/)
 
-> PostgreSQL 마이그레이션 18개. Supabase 기반 클라우드 레이어.
+> PostgreSQL 마이그레이션 21개 (00001~00021). Supabase 기반 클라우드 레이어.
 
 ### 주요 테이블
 - `c4_tasks`, `c4_documents`, `c4_projects` — C4 핵심 데이터
