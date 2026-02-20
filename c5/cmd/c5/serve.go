@@ -115,6 +115,13 @@ func runServe(cmd *cobra.Command, configPath string, port int, dbPath, apiKey, e
 		storageBackend = storage.NewLocal(cfg.Storage.Path, serverURL)
 	}
 
+	// Optional: validate/create bucket (non-fatal)
+	if bm, ok := storageBackend.(storage.BucketManager); ok {
+		if err := bm.EnsureBucket(); err != nil {
+			log.Printf("c5: bucket check failed (non-fatal): %v", err)
+		}
+	}
+
 	st, err := store.New(dbPath)
 	if err != nil {
 		return fmt.Errorf("open store: %w", err)

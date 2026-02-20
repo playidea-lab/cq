@@ -26,6 +26,14 @@ type Backend interface {
 	PresignedURL(path, method string, ttlSeconds int) (url string, expiresAt time.Time, err error)
 }
 
+// BucketManager is an optional interface implemented by backends that support
+// bucket/directory initialization. Separate from Backend to avoid breaking
+// existing implementations.
+type BucketManager interface {
+	// EnsureBucket verifies the storage bucket/directory exists, creating it if absent.
+	EnsureBucket() error
+}
+
 // SupabaseBackend uses Supabase Storage for artifact storage.
 type SupabaseBackend struct {
 	supabaseURL string
@@ -94,6 +102,58 @@ func (s *SupabaseBackend) PresignedURL(path, method string, ttlSeconds int) (str
 	return fullURL, expiresAt, nil
 }
 
+// EnsureBucket checks whether the c5-artifacts bucket exists in Supabase Storage.
+// If not found (HTTP 404), it creates the bucket. Non-fatal by design; callers
+// should log and continue if this returns an error.
+func (s *SupabaseBackend) EnsureBucket() error {
+	checkURL := fmt.Sprintf("%s/storage/v1/bucket/%s", s.supabaseURL, s.bucket)
+
+	req, err := http.NewRequest("GET", checkURL, nil)
+	if err != nil {
+		return fmt.Errorf("ensure bucket: create check request: %w", err)
+	}
+	req.Header.Set("apikey", s.apiKey)
+	req.Header.Set("Authorization", "Bearer "+s.apiKey)
+
+	resp, err := s.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("ensure bucket: check request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusOK {
+		return nil
+	}
+	if resp.StatusCode != http.StatusNotFound {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("ensure bucket: unexpected status %d: %s", resp.StatusCode, string(body))
+	}
+
+	// Bucket not found — create it.
+	createURL := fmt.Sprintf("%s/storage/v1/bucket", s.supabaseURL)
+	payload := fmt.Sprintf(`{"id":%q,"public":false}`, s.bucket)
+
+	createReq, err := http.NewRequest("POST", createURL, strings.NewReader(payload))
+	if err != nil {
+		return fmt.Errorf("ensure bucket: create bucket request: %w", err)
+	}
+	createReq.Header.Set("Content-Type", "application/json")
+	createReq.Header.Set("apikey", s.apiKey)
+	createReq.Header.Set("Authorization", "Bearer "+s.apiKey)
+
+	createResp, err := s.httpClient.Do(createReq)
+	if err != nil {
+		return fmt.Errorf("ensure bucket: create request: %w", err)
+	}
+	defer createResp.Body.Close()
+
+	if createResp.StatusCode != http.StatusOK && createResp.StatusCode != http.StatusCreated {
+		body, _ := io.ReadAll(createResp.Body)
+		return fmt.Errorf("ensure bucket: create failed (status %d): %s", createResp.StatusCode, string(body))
+	}
+	return nil
+}
+
 // LocalBackend stores artifacts on the local filesystem.
 // Used as fallback when Supabase is not configured.
 type LocalBackend struct {
@@ -146,6 +206,11 @@ func (l *LocalBackend) PresignedURL(path, method string, ttlSeconds int) (string
 func (l *LocalBackend) FilePath(storagePath string) string {
 	cleaned := filepath.Clean(storagePath)
 	return filepath.Join(l.baseDir, cleaned)
+}
+
+// EnsureBucket ensures the local base directory exists.
+func (l *LocalBackend) EnsureBucket() error {
+	return os.MkdirAll(l.baseDir, 0755)
 }
 
 // NewBackend creates the appropriate storage backend based on environment.
