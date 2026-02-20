@@ -1,8 +1,8 @@
 # C4 Roadmap
 
-## Current Version: v0.22.0 (Phase 12.1 — Knowledge Maturity + CDP Auto-Discovery)
+## Current Version: v0.22.1 (Phase 12.2 — Dead Code Cleanup + Hook Auto-Install)
 
-현재 버전은 **Go MCP Server (134 tools: Base 108 + Hub 26), Native Go/Dart LSP (goast/dartast), LLM Gateway, CDP Runner + WebMCP + Auto-Discovery, Cloud Foundation, Knowledge v4 (3-way RRF + FindRelated + Time-Weighted Usage + Auto-Distill + Observability), c4 daemon, C0 Drive, C1 Unified Dashboard Messenger (4-탭 뷰 + Members/Presence), C3 EventBus v4 (hub.* 이벤트 C1 라우팅), C5 Hub Server (Per-Project RBAC, 132 테스트, EventBus 통합), 19개 Skills, Lighthouse Docs SSOT (llms.txt export)**을 포함합니다.
+현재 버전은 **Go MCP Server (112 base + 26 Hub = 138 tools), Native Go/Dart LSP (goast/dartast), LLM Gateway, CDP Runner + WebMCP + Auto-Discovery, Cloud Foundation, Knowledge v4 (3-way RRF + FindRelated + Time-Weighted Usage + Auto-Distill + Observability), c4 daemon, C0 Drive, C1 Unified Dashboard Messenger (4-탭 뷰 + Members/Presence), C3 EventBus v4 (hub.* 이벤트 C1 라우팅), C5 Hub Server (Per-Project RBAC, 138 테스트, EventBus 통합), 20개 Skills, Lighthouse Docs SSOT (llms.txt export), Hook 자동 설치 (cq init)**을 포함합니다.
 
 ### 핵심 구조
 
@@ -41,12 +41,20 @@
 - **C1 Context Hub** - 채널 메시징, Context Keeper (LLM 요약), Agent 통합 (notifyKeeper 4-param)
 - **C1 Documents** - 마크다운 파일 편집기, 지속성 (persona/skill/spec/config)
 - **C3 EventBus v4** - gRPC daemon (UDS) + WebSocket bridge + DLQ + Filter v2, Python sidecar piggyback, task lifecycle events
-- **코드베이스**: Go ~37.8K (c4-core) + Go ~5.6K (c5) + Python ~24.4K + Rust ~9.5K + TS ~5.5K + SQL ~1.1K = **~83.9K LOC (src)**, 테스트 ~46.0K LOC, **총 ~129.9K LOC**
-- **테스트**: Go ~1,355 (c4-core ~1,235 + c5 132) + Python 750 + Rust 85 = **~2,190 tests** (25 packages)
+- **코드베이스**: Go ~40.6K (c4-core) + Go ~5.6K (c5) + Python ~24.4K + Rust ~9.5K + TS ~5.5K + SQL ~1.1K = **~86.7K LOC (src)**, 테스트 ~48.6K LOC, **총 ~135.3K LOC**
+- **테스트**: Go ~1,398 (c4-core ~1,260 + c5 138) + Python 750 + Rust 85 = **~2,233 tests** (22 packages)
 
 ---
 
 ## 최신 추가사항 (2026-02-20)
+
+### Dead Code 삭제 + Hook 자동 설치 ✅
+
+- **Dead code 삭제** (~2,600 LOC 제거): `task/` SQLite·Supabase·Store·factory, `validation/runner`, `handlers/c2.go`, `eventbus/` 레거시 헬퍼, `config/` 미사용 함수, `state/` 미사용 모드, `handlers/RegisterAllHandlers`
+- **Hook 자동 설치** (`cq init` 시 자동): `c4-bash-security-hook.sh` + `c4-bash-security.conf` → `~/.claude/hooks/` (go:embed, SHA256 업데이트 감지)
+- **Settings 자동 패치** (`patchClaudeSettings`): `~/.claude/settings.json` PreToolUse Bash hook 등록 (idempotent, corrupt backup)
+- **LLM 가격 수정**: claude-sonnet-4-6 / claude-haiku-4-5 Catalog 등록 및 가격 현행화
+- **테스트**: c4-core ~1,235 → ~1,260 (hook 설치 단위·통합 테스트 8건 추가), c5 132 → 138
 
 ### C5 → C4 → C3 이벤트 통합 ✅
 
