@@ -53,7 +53,7 @@ CQ breaks features into tasks, assigns them to workers (parallel) or claims them
 ## Architecture
 
 ```
-Claude Code ──stdio──▶ Go MCP Server (100 base + 26 Hub + 26 extras = 152 tools)
+Claude Code ──stdio──▶ Go MCP Server (108 base + 26 Hub = 134 tools)
                         │
                         ├── Go Native ──────── State, Tasks, Files, Git, Validation
                         ├── SQLite Store ───── Specs, Designs, Checkpoints, Artifacts
@@ -106,7 +106,7 @@ git clone https://git.pilab.co.kr/pi/cq.git && cd cq
 Restart Claude Code, then:
 
 ```bash
-/c4-status          # Verify connection (152 tools registered)
+/c4-status          # Verify connection (134 tools registered)
 /c4-plan "feature"  # Start planning
 /c4-run             # Execute tasks
 ```
