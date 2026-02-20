@@ -67,10 +67,40 @@ func (s *SupabaseBackend) PresignedURL(path, method string, ttlSeconds int) (str
 	expiresAt := time.Now().UTC().Add(time.Duration(ttlSeconds) * time.Second)
 
 	if method == "PUT" {
-		// For uploads, return the direct upload URL
-		// Supabase Storage upload: POST /storage/v1/object/{bucket}/{path}
-		url := fmt.Sprintf("%s/storage/v1/object/%s/%s", s.supabaseURL, s.bucket, path)
-		return url, expiresAt, nil
+		// Create a signed upload URL so the worker can PUT without auth headers.
+		// Supabase Storage: POST /storage/v1/object/upload/sign/{bucket}/{path}
+		signURL := fmt.Sprintf("%s/storage/v1/object/upload/sign/%s/%s", s.supabaseURL, s.bucket, path)
+		body := fmt.Sprintf(`{"expiresIn":%d}`, ttlSeconds)
+
+		req, err := http.NewRequest("POST", signURL, strings.NewReader(body))
+		if err != nil {
+			return "", time.Time{}, fmt.Errorf("create upload sign request: %w", err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("apikey", s.apiKey)
+		req.Header.Set("Authorization", "Bearer "+s.apiKey)
+
+		resp, err := s.httpClient.Do(req)
+		if err != nil {
+			return "", time.Time{}, fmt.Errorf("upload sign request: %w", err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<16))
+			return "", time.Time{}, fmt.Errorf("upload sign failed (status %d): %s", resp.StatusCode, string(respBody))
+		}
+
+		var result struct {
+			URL string `json:"url"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+			return "", time.Time{}, fmt.Errorf("decode upload sign response: %w", err)
+		}
+
+		// URL is relative (e.g. "/object/upload/sign/{bucket}/{path}?token=xxx"), prepend base.
+		fullURL := s.supabaseURL + "/storage/v1" + result.URL
+		return fullURL, expiresAt, nil
 	}
 
 	// For downloads, create a signed URL
@@ -133,7 +163,7 @@ func (s *SupabaseBackend) EnsureBucket() error {
 	}
 	// Supabase may return 400 with "Bucket not found" instead of 404.
 	if resp.StatusCode != http.StatusNotFound {
-		body, _ := io.ReadAll(resp.Body)
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<16))
 		bodyStr := string(body)
 		if !strings.Contains(strings.ToLower(bodyStr), "not found") {
 			return fmt.Errorf("ensure bucket: unexpected status %d: %s", resp.StatusCode, bodyStr)

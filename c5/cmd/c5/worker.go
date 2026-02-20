@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -11,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -84,9 +86,10 @@ type workerConfig struct {
 
 func runWorker(cfg workerConfig) error {
 	client := &workerClient{
-		baseURL: strings.TrimRight(cfg.serverURL, "/"),
-		apiKey:  cfg.apiKey,
-		http:    &http.Client{Timeout: WorkerHeartbeatInterval},
+		baseURL:      strings.TrimRight(cfg.serverURL, "/"),
+		apiKey:       cfg.apiKey,
+		http:         &http.Client{Timeout: WorkerHeartbeatInterval},
+		artifactHTTP: &http.Client{Timeout: 10 * time.Minute},
 	}
 
 	// Register
@@ -128,7 +131,7 @@ func runWorker(cfg workerConfig) error {
 				continue
 			}
 
-			lease, job, err := client.acquireLease(workerID)
+			lease, job, inputArtifacts, err := client.acquireLease(workerID)
 			if err != nil {
 				log.Printf("c5-worker: acquire error: %v", err)
 				continue
@@ -141,10 +144,32 @@ func runWorker(cfg workerConfig) error {
 			log.Printf("c5-worker: acquired job %s (%s)", job.ID, job.Name)
 
 			// Execute job in a goroutine
-			go func(j *model.Job, leaseID string) {
+			go func(j *model.Job, leaseID string, artifacts []model.InputPresignedArtifact) {
 				defer running.Store(false)
 
+				// Download input artifacts before job execution
+				if len(artifacts) > 0 {
+					log.Printf("c5-worker: downloading %d input artifacts", len(artifacts))
+					if err := downloadInputArtifacts(client.artifactHTTP, artifacts); err != nil {
+						log.Printf("c5-worker: input artifact download failed: %v", err)
+						exitCode := 1
+						if cErr := client.completeJob(j.ID, "FAILED", exitCode); cErr != nil {
+							log.Printf("c5-worker: complete error: %v", cErr)
+						}
+						return
+					}
+				}
+
 				exitCode := executeJob(client, j, leaseID, workerID, cfg.gpuCount)
+
+				// Upload output artifacts on success
+				if exitCode == 0 && len(j.OutputArtifacts) > 0 {
+					log.Printf("c5-worker: uploading %d output artifacts", len(j.OutputArtifacts))
+					if err := uploadOutputArtifacts(client, j.ID, j.OutputArtifacts); err != nil {
+						log.Printf("c5-worker: job %s command succeeded (exit 0) but artifact upload failed: %v", j.ID, err)
+						exitCode = 1
+					}
+				}
 
 				status := "SUCCEEDED"
 				if exitCode != 0 {
@@ -156,7 +181,7 @@ func runWorker(cfg workerConfig) error {
 				} else {
 					log.Printf("c5-worker: job %s %s (exit %d)", j.ID, status, exitCode)
 				}
-			}(job, lease.ID)
+			}(job, lease.ID, inputArtifacts)
 		}
 	}
 }
@@ -190,6 +215,11 @@ func executeJob(client *workerClient, job *model.Job, leaseID, workerID string, 
 		}
 		env = append(env, "CUDA_VISIBLE_DEVICES="+strings.Join(devices, ","))
 	}
+
+	// Artifact directory hints for job scripts
+	env = append(env, "C5_INPUT_DIR=.")
+	env = append(env, "C5_OUTPUT_DIR=.")
+
 	cmd.Env = env
 
 	stdout, _ := cmd.StdoutPipe()
@@ -250,6 +280,124 @@ func executeJob(client *workerClient, job *model.Job, leaseID, workerID string, 
 		return 1
 	}
 	return 0
+}
+
+// downloadInputArtifacts fetches each presigned artifact URL to its local path.
+func downloadInputArtifacts(httpClient *http.Client, artifacts []model.InputPresignedArtifact) error {
+	for _, art := range artifacts {
+		localPath := art.LocalPath
+		if localPath == "" {
+			localPath = filepath.Base(art.Path)
+		}
+		// Path traversal defense: reject absolute paths and .. components
+		cleaned := filepath.Clean(localPath)
+		if filepath.IsAbs(cleaned) || strings.HasPrefix(cleaned, "..") {
+			return fmt.Errorf("unsafe local path for artifact %s: %s", art.Path, localPath)
+		}
+		localPath = cleaned
+		if err := os.MkdirAll(filepath.Dir(localPath), 0755); err != nil {
+			return fmt.Errorf("create dir for artifact %s: %w", art.Path, err)
+		}
+		resp, err := httpClient.Get(art.URL)
+		if err != nil {
+			return fmt.Errorf("download artifact %s: %w", art.Path, err)
+		}
+		if resp.StatusCode != http.StatusOK {
+			resp.Body.Close()
+			return fmt.Errorf("download artifact %s: HTTP %d", art.Path, resp.StatusCode)
+		}
+		f, err := os.Create(localPath)
+		if err != nil {
+			resp.Body.Close()
+			return fmt.Errorf("create file %s: %w", localPath, err)
+		}
+		_, copyErr := io.Copy(f, resp.Body)
+		resp.Body.Close()
+		f.Close()
+		if copyErr != nil {
+			return fmt.Errorf("write artifact %s: %w", art.Path, copyErr)
+		}
+		log.Printf("c5-worker: downloaded %s → %s", art.Path, localPath)
+	}
+	return nil
+}
+
+// uploadOutputArtifacts uploads each output artifact to signed URLs and confirms them.
+func uploadOutputArtifacts(client *workerClient, jobID string, artifacts []model.ArtifactRef) error {
+	for _, art := range artifacts {
+		localPath := art.LocalPath
+		if localPath == "" {
+			localPath = filepath.Base(art.Path)
+		}
+		// Path traversal defense: reject absolute paths and .. components
+		cleaned := filepath.Clean(localPath)
+		if filepath.IsAbs(cleaned) || strings.HasPrefix(cleaned, "..") {
+			return fmt.Errorf("unsafe local path for artifact %s: %s", art.Path, localPath)
+		}
+		localPath = cleaned
+
+		// Check if file exists
+		info, err := os.Stat(localPath)
+		if err != nil {
+			if !art.Required {
+				log.Printf("c5-worker: optional output artifact %s not found, skipping", art.Path)
+				continue
+			}
+			return fmt.Errorf("required output artifact %s not found at %s: %w", art.Path, localPath, err)
+		}
+
+		// Get signed upload URL
+		uploadURL, err := client.getPresignedURL(art.Path)
+		if err != nil {
+			return fmt.Errorf("get upload URL for %s: %w", art.Path, err)
+		}
+
+		// Upload file
+		f, err := os.Open(localPath)
+		if err != nil {
+			return fmt.Errorf("open %s: %w", localPath, err)
+		}
+
+		req, err := http.NewRequest("PUT", uploadURL, f)
+		if err != nil {
+			f.Close()
+			return fmt.Errorf("create upload request for %s: %w", art.Path, err)
+		}
+		req.ContentLength = info.Size()
+		req.Header.Set("Content-Type", "application/octet-stream")
+
+		resp, err := client.artifactHTTP.Do(req)
+		f.Close()
+		if err != nil {
+			return fmt.Errorf("upload %s: %w", art.Path, err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode >= 400 {
+			return fmt.Errorf("upload %s: HTTP %d", art.Path, resp.StatusCode)
+		}
+
+		// Compute content hash (SHA-256)
+		hash := computeFileHash(localPath)
+
+		// Confirm artifact
+		if err := client.confirmArtifact(jobID, art.Path, hash, info.Size()); err != nil {
+			return fmt.Errorf("confirm artifact %s: %w", art.Path, err)
+		}
+
+		log.Printf("c5-worker: uploaded output artifact %s (%d bytes)", art.Path, info.Size())
+	}
+	return nil
+}
+
+func computeFileHash(path string) string {
+	f, err := os.Open(path)
+	if err != nil {
+		return ""
+	}
+	defer f.Close()
+	h := sha256.New()
+	io.Copy(h, f)
+	return fmt.Sprintf("%x", h.Sum(nil))
 }
 
 // metricsCollector buffers parsed metrics and batch-sends them.
@@ -395,9 +543,10 @@ func streamLogs(client *workerClient, jobID string, r io.Reader, stream string, 
 // =========================================================================
 
 type workerClient struct {
-	baseURL string
-	apiKey  string
-	http    *http.Client
+	baseURL      string
+	apiKey       string
+	http         *http.Client // short timeout for API calls / heartbeats
+	artifactHTTP *http.Client // longer timeout for artifact uploads/downloads
 }
 
 func (c *workerClient) doJSON(method, path string, body any, result any) error {
@@ -448,22 +597,22 @@ func (c *workerClient) heartbeat(workerID string, freeVRAM float64) {
 	}, nil)
 }
 
-func (c *workerClient) acquireLease(workerID string) (*model.Lease, *model.Job, error) {
+func (c *workerClient) acquireLease(workerID string) (*model.Lease, *model.Job, []model.InputPresignedArtifact, error) {
 	var resp model.LeaseAcquireResponse
 	if err := c.doJSON("POST", "/v1/leases/acquire", &model.LeaseAcquireRequest{
 		WorkerID: workerID,
 	}, &resp); err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	if resp.LeaseID == "" {
-		return nil, nil, nil // no jobs
+		return nil, nil, nil, nil // no jobs
 	}
 	lease := &model.Lease{
 		ID:       resp.LeaseID,
 		JobID:    resp.JobID,
 		WorkerID: workerID,
 	}
-	return lease, &resp.Job, nil
+	return lease, &resp.Job, resp.InputPresignedURLs, nil
 }
 
 func (c *workerClient) renewLease(leaseID, workerID string) {
@@ -505,4 +654,25 @@ func (c *workerClient) getJobStatus(jobID string) (string, error) {
 		return "", err
 	}
 	return string(job.Status), nil
+}
+
+// getPresignedURL requests a signed upload URL from C5 server.
+func (c *workerClient) getPresignedURL(path string) (string, error) {
+	var resp model.PresignedURLResponse
+	if err := c.doJSON("POST", "/v1/storage/presigned-url", &model.PresignedURLRequest{
+		Path:   path,
+		Method: "PUT",
+	}, &resp); err != nil {
+		return "", err
+	}
+	return resp.URL, nil
+}
+
+// confirmArtifact confirms an uploaded artifact with the C5 server.
+func (c *workerClient) confirmArtifact(jobID string, path string, contentHash string, sizeBytes int64) error {
+	return c.doJSON("POST", "/v1/artifacts/"+jobID+"/confirm", &model.ArtifactConfirmRequest{
+		Path:        path,
+		ContentHash: contentHash,
+		SizeBytes:   sizeBytes,
+	}, nil)
 }
