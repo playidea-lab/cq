@@ -20,6 +20,19 @@ type ToolSchema struct {
 	InputSchema map[string]any `json:"inputSchema"`
 }
 
+// toolNameKey is an unexported context key used to carry the dispatched tool name
+// through the middleware chain, enabling observe.Middleware to perform per-tool tracking.
+type toolNameKey struct{}
+
+// ToolNameFromContext returns the tool name stored in ctx by CallWithContext.
+// Returns "" when called outside a middleware chain.
+func ToolNameFromContext(ctx context.Context) string {
+	if v, ok := ctx.Value(toolNameKey{}).(string); ok {
+		return v
+	}
+	return ""
+}
+
 // HandlerFunc is the function signature for tool handlers.
 type HandlerFunc func(args json.RawMessage) (any, error)
 
@@ -33,6 +46,7 @@ type Registry struct {
 	tools       map[string]registeredTool
 	ordering    []string // preserve registration order
 	middlewares []Middleware
+	ctxMws      []ContextualMiddleware // context-aware middlewares applied with ctx+name
 
 	// OnChange is called after Register/Replace/Unregister mutate the tool list.
 	// Used by the MCP server to send notifications/tools/list_changed.
@@ -65,6 +79,15 @@ func (r *Registry) Use(mw ...Middleware) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.middlewares = append(r.middlewares, mw...)
+}
+
+// UseContextual appends context-aware middlewares.
+// Contextual middlewares receive the call context (with tool name via ToolNameFromContext)
+// and tool name, and are applied innermost after plain Middlewares.
+func (r *Registry) UseContextual(mw ...ContextualMiddleware) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.ctxMws = append(r.ctxMws, mw...)
 }
 
 // Register adds a tool to the registry. If a tool with the same name
@@ -125,11 +148,13 @@ func (r *Registry) Call(name string, args json.RawMessage) (any, error) {
 // CallWithContext invokes a registered tool, passing ctx to blocking handlers.
 // For regular handlers ctx is ignored; for blocking handlers ctx enables cancellation.
 // The handler is wrapped with the registered middleware chain before execution.
+// The tool name is injected into ctx via toolNameKey for observability middleware.
 func (r *Registry) CallWithContext(ctx context.Context, name string, args json.RawMessage) (any, error) {
 	r.mu.RLock()
 	tool, ok := r.tools[name]
 	onCall := r.OnCall
-	mws := r.middlewares // snapshot under lock
+	mws := r.middlewares   // snapshot under lock
+	ctxMws := r.ctxMws     // snapshot under lock
 	r.mu.RUnlock()
 
 	if !ok {
@@ -139,6 +164,9 @@ func (r *Registry) CallWithContext(ctx context.Context, name string, args json.R
 	if onCall != nil {
 		onCall()
 	}
+
+	// Inject tool name into context so contextual and observability middlewares can read it.
+	ctx = context.WithValue(ctx, toolNameKey{}, name)
 
 	// Build the base handler: adapt BlockingHandlerFunc to HandlerFunc by capturing ctx.
 	var base HandlerFunc
@@ -151,14 +179,23 @@ func (r *Registry) CallWithContext(ctx context.Context, name string, args json.R
 		base = tool.handler
 	}
 
-	// Apply middleware chain in reverse order so that the first Use'd
-	// middleware is the outermost wrapper.
+	// Apply contextual middlewares first (innermost), in reverse registration order.
 	h := base
+	for i := len(ctxMws) - 1; i >= 0; i-- {
+		h = ctxMws[i](ctx, name, h)
+	}
+
+	// Apply plain middlewares (outermost), in reverse registration order.
 	for i := len(mws) - 1; i >= 0; i-- {
 		h = mws[i](h)
 	}
 
 	return h(args)
+}
+
+// Dispatch is a convenience alias for CallWithContext.
+func (r *Registry) Dispatch(ctx context.Context, name string, args json.RawMessage) (any, error) {
+	return r.CallWithContext(ctx, name, args)
 }
 
 // HasTool returns true if a tool with the given name is registered.
