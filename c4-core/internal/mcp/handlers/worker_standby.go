@@ -147,31 +147,81 @@ func handleWorkerStandby(mcpCtx context.Context, deps *WorkerDeps, raw json.RawM
 		deps.Keeper.c1.UpdatePresence("agent", params.WorkerID, "online", "Waiting for jobs in #cq")
 	}
 
-	// Polling loop: 5s poll, 30s heartbeat
-	pollTicker := time.NewTicker(5 * time.Second)
-	defer pollTicker.Stop()
+	// hubPollResult carries the result of a Hub long-poll attempt.
+	type hubPollResult struct {
+		job     *hub.Job
+		leaseID string
+		err     error
+	}
+
+	// hubCh receives results from the Hub long-poll goroutine (buffered to avoid leaks).
+	hubCh := make(chan hubPollResult, 1)
+
+	// hubPollCtx/Cancel controls the current Hub goroutine.
+	hubPollCtx, hubPollCancel := context.WithCancel(ctx)
+
+	// startHubPoll launches a new Hub long-poll goroutine.
+	// The server blocks up to 20s waiting for a job; response is near-instant when one arrives.
+	startHubPoll := func() {
+		go func() {
+			job, leaseID, err := deps.HubClient.ClaimJobWithWait(hubPollCtx, 0, 20)
+			select {
+			case hubCh <- hubPollResult{job, leaseID, err}:
+			case <-hubPollCtx.Done():
+			}
+		}()
+	}
+	startHubPoll()
+	defer hubPollCancel()
+
+	// c1Ticker: check C1 mentions and shutdown signals every 5s.
+	c1Ticker := time.NewTicker(5 * time.Second)
+	defer c1Ticker.Stop()
 	heartbeatTicker := time.NewTicker(30 * time.Second)
 	defer heartbeatTicker.Stop()
 
 	for {
 		select {
 		case <-ctx.Done():
-			// Cancelled by a new standby call for the same worker_id
+			// Cancelled by a new standby call for the same worker_id or MCP interrupt
 			return map[string]any{"shutdown": true, "reason": "cancelled"}, nil
 
-		case <-pollTicker.C:
+		case result := <-hubCh:
+			// Hub long-poll returned
+			if result.err != nil {
+				fmt.Fprintf(os.Stderr, "c4: worker %s hub poll error: %v\n", params.WorkerID, result.err)
+				startHubPoll() // retry
+				continue
+			}
+			if result.job == nil {
+				startHubPoll() // no job this round, poll again immediately
+				continue
+			}
+			// Hub job found — update presence and return
+			if deps.Keeper != nil {
+				deps.Keeper.c1.UpdatePresence("agent", params.WorkerID, "working", "Job: "+result.job.GetID())
+				deps.Keeper.AutoPost("cq", fmt.Sprintf("Worker %s claimed job %s: %s", params.WorkerID, result.job.GetID(), result.job.Command))
+			}
+			return map[string]any{
+				"job_id":   result.job.GetID(),
+				"command":  result.job.Command,
+				"lease_id": result.leaseID,
+				"name":     result.job.Name,
+				"workdir":  result.job.Workdir,
+				"env":      result.job.Env,
+				"tags":     result.job.Tags,
+			}, nil
+
+		case <-c1Ticker.C:
 			// Check shutdown signal
 			if reason, ok := deps.ShutdownStore.ConsumeSignal(params.WorkerID); ok {
 				if deps.Keeper != nil {
 					deps.Keeper.c1.UpdatePresence("agent", params.WorkerID, "offline", "Shutdown: "+reason)
 				}
-				return map[string]any{
-					"shutdown": true,
-					"reason":   reason,
-				}, nil
+				return map[string]any{"shutdown": true, "reason": reason}, nil
 			}
 
-			// Poll #cq channel for @cq mentions (claimed_by IS NULL)
+			// Poll #cq channel for @cq mentions
 			if deps.Keeper != nil && cqChannelID != "" {
 				mentions, pollErr := deps.Keeper.c1.PollCqMentions(cqChannelID, 5)
 				if pollErr != nil {
@@ -195,32 +245,6 @@ func handleWorkerStandby(mcpCtx context.Context, deps *WorkerDeps, raw json.RawM
 					}
 				}
 			}
-
-			// Try to claim a Hub job
-			job, leaseID, err := deps.HubClient.ClaimJob(0)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "c4: worker %s claim error: %v\n", params.WorkerID, err)
-				continue
-			}
-			if job == nil {
-				continue
-			}
-
-			// Hub job found — update presence and return
-			if deps.Keeper != nil {
-				deps.Keeper.c1.UpdatePresence("agent", params.WorkerID, "working", "Job: "+job.GetID())
-				deps.Keeper.AutoPost("cq", fmt.Sprintf("Worker %s claimed job %s: %s", params.WorkerID, job.GetID(), job.Command))
-			}
-
-			return map[string]any{
-				"job_id":   job.GetID(),
-				"command":  job.Command,
-				"lease_id": leaseID,
-				"name":     job.Name,
-				"workdir":  job.Workdir,
-				"env":      job.Env,
-				"tags":     job.Tags,
-			}, nil
 
 		case <-heartbeatTicker.C:
 			if err := deps.HubClient.Heartbeat("idle"); err != nil {
