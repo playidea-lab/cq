@@ -1,3 +1,6 @@
+//go:build c1_messenger
+
+
 package handlers
 
 import (

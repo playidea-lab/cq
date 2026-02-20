@@ -1,3 +1,5 @@
+//go:build research
+
 package handlers
 
 import "github.com/changmin/c4-core/internal/mcp"

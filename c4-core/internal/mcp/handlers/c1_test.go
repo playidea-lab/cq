@@ -1,3 +1,6 @@
+//go:build c1_messenger
+
+
 package handlers
 
 import (
@@ -484,4 +487,3 @@ func TestHttpPatch_ServerError(t *testing.T) {
 		t.Fatalf("expected 500 in error, got: %v", err)
 	}
 }
-

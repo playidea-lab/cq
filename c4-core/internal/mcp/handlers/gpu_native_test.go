@@ -1,3 +1,6 @@
+//go:build gpu
+
+
 package handlers
 
 import (

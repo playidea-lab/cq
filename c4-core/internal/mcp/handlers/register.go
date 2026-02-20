@@ -67,6 +67,7 @@ func RegisterAllHandlersWithOpts(reg *mcp.Registry, store Store, rootDir string,
 	RegisterWebContentHandlers(reg)
 
 	// Register native tools that replaced proxy calls (Research, GPU, C2, Knowledge)
+	// Each component is gated by its build tag via dedicated registration functions.
 	registerNativeReplacements(reg, proxy, opts, knowledgeCloud)
 
 	return proxy
@@ -77,32 +78,34 @@ func RegisterAllHandlersLazyWithOpts(reg *mcp.Registry, store Store, rootDir str
 	return RegisterAllHandlersWithOpts(reg, store, rootDir, "", lazyAddr, knowledgeCloud, opts)
 }
 
-// registerNativeReplacements registers the 24 tools that moved from proxy to Go native.
+// registerNativeReplacements registers tools that moved from proxy to Go native.
+// Each component delegates to a build-tag-gated function or an inline helper.
 // Tier 1 (17): Research 5 + C2 6 + GPU 6
-// Tier 2 (7): Knowledge 7
+// Tier 2 (13+): Knowledge
 func registerNativeReplacements(reg *mcp.Registry, proxy *BridgeProxy, opts *NativeOpts, knowledgeCloud KnowledgeSyncer) {
-	// Research (5 tools) — Go native
-	if opts != nil && opts.ResearchStore != nil {
-		RegisterResearchNativeHandlers(reg, opts.ResearchStore)
-	} else {
-		// Fallback: still use proxy if store unavailable
-		RegisterResearchProxyHandlers(reg, proxy)
-	}
+	// Research (5 tools) — gated by //go:build research
+	registerResearchNative(reg, proxy, opts)
 
-	// GPU (6 tools) — Go native
-	if opts != nil {
-		RegisterGPUNativeHandlers(reg, opts.GPUStore, opts.GPUScheduler)
-	} else {
-		RegisterGPUNativeHandlers(reg, nil, nil)
-	}
+	// GPU (6 tools) — gated by //go:build gpu
+	registerGPUNative(reg, opts)
 
-	// C2 Workspace/Profile/Persona (6 tools) — Go native
+	// C2 Workspace/Profile/Persona (6 tools) + Doc parsing (2 tools) — always compiled
+	registerC2Component(reg, proxy)
+
+	// Knowledge (13+ tools) — always compiled (uses interfaces from interfaces.go)
+	registerKnowledgeComponent(reg, proxy, opts, knowledgeCloud)
+}
+
+// registerC2Component registers C2 workspace/profile/persona tools and document proxy tools.
+// Always compiled — C2 native has no heavy external dependencies.
+func registerC2Component(reg *mcp.Registry, proxy *BridgeProxy) {
 	RegisterC2NativeHandlers(reg)
-
-	// C2 Document parsing (2 tools) — still Python proxy
 	RegisterC2DocProxyHandlers(reg, proxy)
+}
 
-	// Knowledge (13+ tools) — Go native (Tier 2) or Python proxy fallback
+// registerKnowledgeComponent registers knowledge tools (Go native or proxy fallback).
+// Always compiled — Knowledge native uses interfaces from interfaces.go.
+func registerKnowledgeComponent(reg *mcp.Registry, proxy *BridgeProxy, opts *NativeOpts, knowledgeCloud KnowledgeSyncer) {
 	if opts != nil && opts.KnowledgeStore != nil {
 		RegisterKnowledgeNativeHandlers(reg, &KnowledgeNativeOpts{
 			Store:    opts.KnowledgeStore,
