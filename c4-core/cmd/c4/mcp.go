@@ -265,6 +265,7 @@ func newMCPServer() (*mcpServer, error) {
 		KnowledgeUsage:    knowledgeUsage,
 		LLMGateway:        llmGateway,
 		GPUStore:          daemonStore,
+		GPUScheduler:      scheduler,
 	}
 	proxy := handlers.RegisterAllHandlersLazyWithOpts(reg, nil, projectDir, lazySidecar, knowledgeCloud, nativeOpts)
 

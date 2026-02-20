@@ -276,7 +276,8 @@ LSP(7):     c4_find_symbol, c4_get_symbols_overview,  ← Python/JS/TS + Go + Da
             c4_experiment_record, c4_experiment_search, c4_pattern_suggest
 Research(5): c4_research_start, c4_research_next, c4_research_record,
             c4_research_approve, c4_research_status
-GPU(2):     c4_gpu_status, c4_job_submit
+GPU(6):     c4_gpu_status, c4_job_submit, c4_job_list,
+            c4_job_status, c4_job_cancel, c4_job_summary
 Soul(3):    c4_soul_get, c4_soul_set, c4_soul_resolve
 팀(3):      c4_whoami, c4_persona_stats, c4_persona_evolve
 Twin(1):    c4_reflect
@@ -340,7 +341,7 @@ Claude Code → Go MCP Server (stdio, 108 base + 26 Hub = 134 tools)
                 ├→ WebContent (1): web_fetch (content negotiation, SSRF, HTML→MD) — c2/webcontent
                 ├→ C1 Messenger (5): search, mentions, briefing, send_message, update_presence + ContextKeeper
                 ├→ Drive (6): upload, download, list, delete, info, mkdir
-                ├→ Go Native — Tier 1 (13): Research (5) + C2 (6) + GPU (2)
+                ├→ Go Native — Tier 1 (17): Research (5) + C2 (6) + GPU (6)
                 ├→ Go Native — Tier 2 (13): Knowledge (Store+FTS5+Vector+Embedding+Usage+Ingest+Sync+Publish)
                 ├→ Hub Client (26, 조건부): job, worker, DAG, edge, deploy, artifact
                 ├→ Worker Standby (3, Hub 조건부): standby, complete, shutdown
@@ -434,7 +435,7 @@ Go MCP Server ──JSON-RPC/TCP──→ Python Sidecar (10 tools)
 ### 마이그레이션 이력
 | Tier | 도구 수 | 대상 | Go 패키지 |
 |------|---------|------|-----------|
-| Tier 1 | 13 → Go | Research (5) + C2 (6) + GPU (2) | `research/`, `c2/`, `daemon/` |
+| Tier 1 | 17 → Go | Research (5) + C2 (6) + GPU (6) | `research/`, `c2/`, `daemon/` |
 | Tier 2 | 12 → Go | Knowledge (12) | `knowledge/` |
 | 남은 Proxy | 10 | LSP (7) + C2 Doc (2) + Onboard (1) | — |
 
