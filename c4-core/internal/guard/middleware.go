@@ -1,0 +1,144 @@
+// Package guard – middleware integration with the mcp.Registry.
+//
+// The mcp.Registry applies a middleware chain at call time (CallWithContext).
+// Each middleware receives only (args json.RawMessage) — no tool name.
+// To enforce per-tool policies we provide two variants:
+//
+//   - MiddlewareForTool(eng, actor, toolName): hard-coded for one tool.
+//     Use this when registering individual tools that need enforcement.
+//
+//   - MiddlewareWithResolver(eng, actor, resolverFn): calls resolverFn() at
+//     runtime to determine the current tool name.  Useful when a shared
+//     resolver (e.g. atomic string) is updated by the dispatch layer.
+//
+//   - Middleware(eng, actor): generic variant — allows all calls when the
+//     tool name cannot be determined from the context alone.  Useful as a
+//     base when combined with WithTool context injection.
+//
+// Context helpers:
+//   - WithActor / ActorFromContext: embed / extract actor identity.
+//   - WithTool  / toolFromContext:  embed / extract tool name.
+package guard
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+
+	"github.com/changmin/c4-core/internal/mcp"
+)
+
+type contextKey int
+
+const actorKey contextKey = iota
+
+// WithActor returns a new context carrying the actor identifier.
+func WithActor(ctx context.Context, actor string) context.Context {
+	return context.WithValue(ctx, actorKey, actor)
+}
+
+// ActorFromContext extracts the actor from ctx.
+// Returns "" if not set.
+func ActorFromContext(ctx context.Context) string {
+	v, _ := ctx.Value(actorKey).(string)
+	return v
+}
+
+type toolContextKey int
+
+const toolKey toolContextKey = iota
+
+// WithTool returns a context carrying the tool name for guard enforcement.
+func WithTool(ctx context.Context, tool string) context.Context {
+	return context.WithValue(ctx, toolKey, tool)
+}
+
+func toolFromContext(ctx context.Context) string {
+	v, _ := ctx.Value(toolKey).(string)
+	return v
+}
+
+// Middleware returns a generic mcp.Middleware.
+// When the tool name is embedded in the context via WithTool it is enforced;
+// otherwise the call is allowed through unchanged.
+func Middleware(eng *Engine, defaultActor string) mcp.Middleware {
+	return func(next mcp.HandlerFunc) mcp.HandlerFunc {
+		return func(args json.RawMessage) (any, error) {
+			ctx := context.Background()
+			actor := ActorFromContext(ctx)
+			if actor == "" {
+				actor = defaultActor
+			}
+			toolName := toolFromContext(ctx)
+			if toolName == "" {
+				// Cannot determine tool name — allow through.
+				return next(args)
+			}
+			action := eng.Check(ctx, actor, toolName, args)
+			if action == ActionDeny {
+				return nil, fmt.Errorf("guard: access denied: actor=%q tool=%q", actor, toolName)
+			}
+			return next(args)
+		}
+	}
+}
+
+// MiddlewareForTool returns an mcp.Middleware that enforces guard policies
+// for a single, statically-named tool.
+//
+// Usage — register one middleware per tool that needs enforcement:
+//
+//	reg.Use(guard.MiddlewareForTool(eng, "alice", "c4_blocked"))
+//	reg.Register(mcp.ToolSchema{Name: "c4_blocked"}, handler)
+//
+// Note: because the Registry applies the full middleware chain to EVERY tool
+// call, MiddlewareForTool checks the tool name at runtime and only enforces
+// when the call matches toolName; all other tools pass through.
+func MiddlewareForTool(eng *Engine, defaultActor, toolName string) mcp.Middleware {
+	return func(next mcp.HandlerFunc) mcp.HandlerFunc {
+		return func(args json.RawMessage) (any, error) {
+			ctx := context.Background()
+			actor := ActorFromContext(ctx)
+			if actor == "" {
+				actor = defaultActor
+			}
+			action := eng.Check(ctx, actor, toolName, args)
+			if action == ActionDeny {
+				return nil, fmt.Errorf("guard: access denied: actor=%q tool=%q", actor, toolName)
+			}
+			return next(args)
+		}
+	}
+}
+
+// MiddlewareWithResolver returns a middleware that calls resolverFn() at
+// runtime to determine the tool name.  This is the production integration
+// point when a shared resolver is updated by the dispatch layer.
+//
+// Example with an atomic string resolver:
+//
+//	var current atomic.Value
+//	reg.Use(guard.MiddlewareWithResolver(eng, "actor", func() string {
+//	    s, _ := current.Load().(string)
+//	    return s
+//	}))
+func MiddlewareWithResolver(eng *Engine, defaultActor string, toolResolver func() string) mcp.Middleware {
+	return func(next mcp.HandlerFunc) mcp.HandlerFunc {
+		return func(args json.RawMessage) (any, error) {
+			ctx := context.Background()
+			actor := ActorFromContext(ctx)
+			if actor == "" {
+				actor = defaultActor
+			}
+			toolName := toolResolver()
+			if toolName == "" {
+				return next(args)
+			}
+			action := eng.Check(ctx, actor, toolName, args)
+			if action == ActionDeny {
+				return nil, fmt.Errorf("guard: access denied: actor=%q tool=%q", actor, toolName)
+			}
+			return next(args)
+		}
+	}
+}
