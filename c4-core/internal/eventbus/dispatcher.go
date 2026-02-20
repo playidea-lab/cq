@@ -16,8 +16,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/changmin/c4-core/internal/hub"
 )
 
 // C1Poster posts messages to C1 channels (implemented by ContextKeeper).
@@ -25,10 +23,6 @@ type C1Poster interface {
 	AutoPost(channelName, content string) error
 }
 
-// HubSubmitter submits jobs to C5 Hub (implemented by hub.Client).
-type HubSubmitter interface {
-	SubmitJob(req *hub.JobSubmitRequest) (*hub.JobSubmitResponse, error)
-}
 
 // Dispatcher evaluates rules against events and executes matched actions.
 type Dispatcher struct {
@@ -36,7 +30,7 @@ type Dispatcher struct {
 	mu           sync.RWMutex
 	httpClient   *http.Client
 	c1Poster     C1Poster     // optional: for "c1_post" action type
-	hubSubmitter HubSubmitter // optional: for "hub_submit" action type
+	hubSubmitter JobSubmitter // optional: for "hub_submit" action type
 	sem          chan struct{} // bounded concurrency for dispatch goroutines
 }
 
@@ -67,7 +61,7 @@ func (d *Dispatcher) SetC1Poster(poster C1Poster) {
 }
 
 // SetHubSubmitter sets the Hub submitter for "hub_submit" action type.
-func (d *Dispatcher) SetHubSubmitter(s HubSubmitter) {
+func (d *Dispatcher) SetHubSubmitter(s JobSubmitter) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.hubSubmitter = s
@@ -354,7 +348,7 @@ func (d *Dispatcher) executeHubSubmit(eventType string, eventData json.RawMessag
 	cfg.ExpID = resolveTemplateString(cfg.ExpID, data)
 	cfg.Memo = resolveTemplateString(cfg.Memo, data)
 
-	req := &hub.JobSubmitRequest{
+	spec := &JobSubmitSpec{
 		Name:        cfg.Name,
 		Workdir:     cfg.Workdir,
 		Command:     cfg.Command,
@@ -366,7 +360,7 @@ func (d *Dispatcher) executeHubSubmit(eventType string, eventData json.RawMessag
 		Memo:        cfg.Memo,
 		TimeoutSec:  cfg.TimeoutSec,
 	}
-	_, err := submitter.SubmitJob(req)
+	_, err := submitter.Submit(spec)
 	return err
 }
 

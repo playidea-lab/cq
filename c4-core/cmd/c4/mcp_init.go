@@ -132,7 +132,7 @@ func newMCPServer() (*mcpServer, error) {
 		var embedder knowledge.Embedder
 		embDim := 1536
 		if cfgMgr != nil && cfgMgr.GetConfig().LLMGateway.Enabled {
-			embGateway := llm.NewGatewayFromConfig(cfgMgr.GetConfig())
+			embGateway := llm.NewGatewayFromConfig(toLLMGatewayConfig(cfgMgr.GetConfig()))
 			// Add embedding route if not configured
 			embGateway.Resolve("embedding", "")
 			embedder = llm.NewEmbeddingProvider(embGateway, embDim)
@@ -164,7 +164,7 @@ func newMCPServer() (*mcpServer, error) {
 	// Create LLM Gateway early so it can be shared with knowledge distill
 	var llmGateway *llm.Gateway
 	if cfgMgr != nil && cfgMgr.GetConfig().LLMGateway.Enabled {
-		llmGateway = llm.NewGatewayFromConfig(cfgMgr.GetConfig())
+		llmGateway = llm.NewGatewayFromConfig(toLLMGatewayConfig(cfgMgr.GetConfig()))
 	}
 
 	// Create daemon store and scheduler (graceful fallback on failure)
@@ -317,7 +317,7 @@ func newMCPServer() (*mcpServer, error) {
 			// Create ContextKeeper (wired to Dispatcher below)
 			var keeperGateway *llm.Gateway
 			if cfgMgr.GetConfig().LLMGateway.Enabled {
-				keeperGateway = llm.NewGatewayFromConfig(cfgMgr.GetConfig())
+				keeperGateway = llm.NewGatewayFromConfig(toLLMGatewayConfig(cfgMgr.GetConfig()))
 			}
 			keeper = handlers.NewContextKeeper(c1Handler, keeperGateway)
 			if err := keeper.EnsureSystemChannels(); err != nil {
@@ -399,7 +399,7 @@ func newMCPServer() (*mcpServer, error) {
 					wireEventBusClient(ebClient)
 					sqliteStore.SetDispatcher(eb.Dispatcher())
 					if hubClient != nil {
-						eb.Dispatcher().SetHubSubmitter(hubClient)
+						eb.Dispatcher().SetHubSubmitter(&hubJobSubmitterAdapter{client: hubClient})
 					}
 					fmt.Fprintf(os.Stderr, "cq: eventbus auto-started (embedded, %s)\n", eb.SocketPath())
 				}
@@ -515,6 +515,25 @@ func newMCPServer() (*mcpServer, error) {
 		scheduler:       scheduler,
 		schedulerCancel: schedulerCancel,
 	}, nil
+}
+
+// toLLMGatewayConfig converts config.C4Config to llm.GatewayConfig,
+// breaking the llm→config import dependency.
+func toLLMGatewayConfig(cfg config.C4Config) llm.GatewayConfig {
+	providers := make(map[string]llm.GatewayProviderConfig, len(cfg.LLMGateway.Providers))
+	for name, p := range cfg.LLMGateway.Providers {
+		providers[name] = llm.GatewayProviderConfig{
+			Enabled:      p.Enabled,
+			APIKeyEnv:    p.APIKeyEnv,
+			BaseURL:      p.BaseURL,
+			DefaultModel: p.DefaultModel,
+		}
+	}
+	return llm.GatewayConfig{
+		Default:        cfg.LLMGateway.Default,
+		CacheByDefault: cfg.LLMGateway.CacheByDefault,
+		Providers:      providers,
+	}
 }
 
 // hubJobSubmitterAdapter adapts hub.Client to eventbus.JobSubmitter interface,

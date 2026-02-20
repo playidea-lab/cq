@@ -1,34 +1,48 @@
 package llm
 
-import (
-	"os"
+import "os"
 
-	"github.com/changmin/c4-core/internal/config"
-)
+// GatewayProviderConfig holds per-provider settings for the LLM gateway.
+// This mirrors config.LLMProviderConfig to avoid importing the config package.
+type GatewayProviderConfig struct {
+	Enabled      bool
+	APIKeyEnv    string
+	BaseURL      string
+	DefaultModel string
+}
+
+// GatewayConfig holds settings needed to construct a Gateway.
+// This mirrors the relevant fields from config.C4Config.LLMGateway
+// to avoid importing the config package directly.
+type GatewayConfig struct {
+	Default        string
+	CacheByDefault bool
+	Providers      map[string]GatewayProviderConfig
+}
 
 // NewGatewayFromConfig creates a Gateway with providers auto-registered from config.
-// Each provider is created based on the llm_gateway.providers map in config.
-// API keys are read from environment variables specified in api_key_env.
-func NewGatewayFromConfig(cfg config.C4Config) *Gateway {
+// Each provider is created based on the providers map in GatewayConfig.
+// API keys are read from environment variables specified in APIKeyEnv.
+func NewGatewayFromConfig(cfg GatewayConfig) *Gateway {
 	routing := RoutingTable{
-		Default: cfg.LLMGateway.Default,
+		Default: cfg.Default,
 		Aliases: Aliases,
 		Routes:  make(map[string]ModelRef),
 	}
 
 	// If the default provider has a default_model, register it as the "default" route.
 	// This allows Resolve() fallback to pick up a model when no specific route matches.
-	if defaultProv, ok := cfg.LLMGateway.Providers[cfg.LLMGateway.Default]; ok && defaultProv.DefaultModel != "" {
+	if defaultProv, ok := cfg.Providers[cfg.Default]; ok && defaultProv.DefaultModel != "" {
 		routing.Routes["default"] = ModelRef{
-			Provider: cfg.LLMGateway.Default,
+			Provider: cfg.Default,
 			Model:    defaultProv.DefaultModel,
 		}
 	}
 
 	gw := NewGateway(routing)
-	gw.cacheByDefault = cfg.LLMGateway.CacheByDefault
+	gw.cacheByDefault = cfg.CacheByDefault
 
-	for name, provCfg := range cfg.LLMGateway.Providers {
+	for name, provCfg := range cfg.Providers {
 		if !provCfg.Enabled {
 			continue
 		}

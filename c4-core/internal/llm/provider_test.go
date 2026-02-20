@@ -8,7 +8,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/changmin/c4-core/internal/config"
 )
 
 // --- Anthropic Provider Tests ---
@@ -522,17 +521,14 @@ func TestOllamaName(t *testing.T) {
 // --- Factory Tests ---
 
 func TestNewGatewayFromConfig(t *testing.T) {
-	cfg := config.C4Config{
-		LLMGateway: config.LLMGatewayConfig{
-			Enabled: true,
-			Default: "anthropic",
-			Providers: map[string]config.LLMProviderConfig{
+	cfg := GatewayConfig{
+		Default: "anthropic",
+		Providers: map[string]GatewayProviderConfig{
 				"anthropic": {Enabled: true, APIKeyEnv: "C4_TEST_ANTHROPIC_KEY"},
 				"openai":    {Enabled: true, APIKeyEnv: "C4_TEST_OPENAI_KEY"},
 				"gemini":    {Enabled: false, APIKeyEnv: "C4_TEST_GEMINI_KEY"},
 				"ollama":    {Enabled: true, BaseURL: "http://localhost:11434"},
 			},
-		},
 	}
 
 	// Set test env vars
@@ -566,11 +562,8 @@ func TestNewGatewayFromConfig(t *testing.T) {
 }
 
 func TestNewGatewayFromConfigEmpty(t *testing.T) {
-	cfg := config.C4Config{
-		LLMGateway: config.LLMGatewayConfig{
-			Enabled: true,
-			Default: "anthropic",
-		},
+	cfg := GatewayConfig{
+		Default: "anthropic",
 	}
 
 	gw := NewGatewayFromConfig(cfg)
@@ -580,15 +573,12 @@ func TestNewGatewayFromConfigEmpty(t *testing.T) {
 }
 
 func TestNewGatewayFromConfigAvailability(t *testing.T) {
-	cfg := config.C4Config{
-		LLMGateway: config.LLMGatewayConfig{
-			Enabled: true,
-			Default: "anthropic",
-			Providers: map[string]config.LLMProviderConfig{
+	cfg := GatewayConfig{
+		Default: "anthropic",
+		Providers: map[string]GatewayProviderConfig{
 				"anthropic": {Enabled: true, APIKeyEnv: "C4_TEST_MISSING_KEY"},
 				"openai":    {Enabled: true, APIKeyEnv: "C4_TEST_PRESENT_KEY"},
 			},
-		},
 	}
 
 	// Only set one key
@@ -618,14 +608,11 @@ func TestNewGatewayFromConfigAvailability(t *testing.T) {
 }
 
 func TestNewGatewayFromConfigDefaultModel(t *testing.T) {
-	cfg := config.C4Config{
-		LLMGateway: config.LLMGatewayConfig{
-			Enabled: true,
-			Default: "openai",
-			Providers: map[string]config.LLMProviderConfig{
+	cfg := GatewayConfig{
+		Default: "openai",
+		Providers: map[string]GatewayProviderConfig{
 				"openai": {Enabled: true, APIKeyEnv: "C4_TEST_OPENAI_KEY", DefaultModel: "gpt-4o-mini"},
 			},
-		},
 	}
 	t.Setenv("C4_TEST_OPENAI_KEY", "sk-test")
 
