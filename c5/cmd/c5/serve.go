@@ -13,6 +13,7 @@ import (
 	c5 "github.com/piqsol/c4/c5"
 	"github.com/piqsol/c4/c5/internal/api"
 	"github.com/piqsol/c4/c5/internal/config"
+	"github.com/piqsol/c4/c5/internal/storage"
 	"github.com/piqsol/c4/c5/internal/store"
 	"github.com/spf13/cobra"
 )
@@ -80,6 +81,12 @@ func runServe(cmd *cobra.Command, configPath string, port int, dbPath, apiKey, e
 	if v := os.Getenv("C5_STORAGE_PATH"); v != "" {
 		cfg.Storage.Path = v
 	}
+	if v := os.Getenv("C5_SUPABASE_URL"); v != "" {
+		cfg.Storage.SupabaseURL = v
+	}
+	if v := os.Getenv("C5_SUPABASE_KEY"); v != "" {
+		cfg.Storage.SupabaseKey = v
+	}
 
 	// 3. CLI flag overrides (only if explicitly specified)
 	if cmd.Flags().Changed("eventbus-url") {
@@ -96,6 +103,17 @@ func runServe(cmd *cobra.Command, configPath string, port int, dbPath, apiKey, e
 	resolvedPort := cfg.Server.Port
 	resolvedEventBusURL := cfg.EventBus.URL
 	resolvedEventBusToken := cfg.EventBus.Token
+	serverURL := fmt.Sprintf("http://%s:%d", cfg.Server.Host, resolvedPort)
+
+	// Select storage backend
+	var storageBackend storage.Backend
+	if cfg.IsSupabaseEnabled() {
+		log.Println("c5: using Supabase storage")
+		storageBackend = storage.NewSupabase(cfg.Storage.SupabaseURL, cfg.Storage.SupabaseKey)
+	} else {
+		log.Printf("c5: using local storage at %s", cfg.Storage.Path)
+		storageBackend = storage.NewLocal(cfg.Storage.Path, serverURL)
+	}
 
 	st, err := store.New(dbPath)
 	if err != nil {
@@ -105,6 +123,8 @@ func runServe(cmd *cobra.Command, configPath string, port int, dbPath, apiKey, e
 
 	srv := api.NewServer(api.Config{
 		Store:         st,
+		Storage:       storageBackend,
+		ServerURL:     serverURL,
 		Version:       version,
 		APIKey:        apiKey,
 		LLMSTxt:       c5.LLMSTxt,
