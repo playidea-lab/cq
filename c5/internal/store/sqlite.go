@@ -250,7 +250,11 @@ func (s *Store) migrate() error {
 		`ALTER TABLE jobs ADD COLUMN input_artifacts TEXT NOT NULL DEFAULT '[]'`,
 		`ALTER TABLE jobs ADD COLUMN output_artifacts TEXT NOT NULL DEFAULT '[]'`,
 	} {
-		_, _ = s.db.Exec(stmt) // ignore errors (column already exists)
+		if _, err := s.db.Exec(stmt); err != nil {
+			if !strings.Contains(err.Error(), "duplicate column") {
+				return fmt.Errorf("migration %q: %w", stmt, err)
+			}
+		}
 	}
 
 	return nil

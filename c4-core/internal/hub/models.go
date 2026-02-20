@@ -34,8 +34,10 @@ type Job struct {
 	CreatedAt   string            `json:"created_at,omitempty"`
 	StartedAt   string            `json:"started_at,omitempty"`
 	FinishedAt  string            `json:"finished_at,omitempty"`
-	ExitCode    *int              `json:"exit_code,omitempty"`
-	WorkerID    string            `json:"worker_id,omitempty"`
+	ExitCode        *int              `json:"exit_code,omitempty"`
+	WorkerID        string            `json:"worker_id,omitempty"`
+	InputArtifacts  []ArtifactRef     `json:"input_artifacts,omitempty"`
+	OutputArtifacts []ArtifactRef     `json:"output_artifacts,omitempty"`
 }
 
 // GetID returns the job ID, preferring "id" (Hub) but falling back to "job_id" (PiQ daemon).

@@ -199,7 +199,7 @@ type InputPresignedArtifact struct {
 	Path      string `json:"path"`
 	LocalPath string `json:"local_path,omitempty"`
 	URL       string `json:"url"`
-	ExpiresAt string `json:"expires_at"`
+	ExpiresAt string `json:"expires_at,omitempty"`
 }
 
 // LeaseAcquireResponse is returned from POST /v1/leases/acquire.
