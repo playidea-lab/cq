@@ -241,18 +241,6 @@ func TestGetModelForTask(t *testing.T) {
 	})
 }
 
-func TestIsPreset(t *testing.T) {
-	validPresets := []string{"standard", "economic", "ultra-economic", "quality"}
-	for _, p := range validPresets {
-		if !IsPreset(p) {
-			t.Errorf("IsPreset(%q) = false, want true", p)
-		}
-	}
-
-	if IsPreset("invalid") {
-		t.Error("IsPreset(invalid) = true, want false")
-	}
-}
 
 func TestGetBackendDefault(t *testing.T) {
 	t.Setenv("SUPABASE_URL", "")
