@@ -92,7 +92,7 @@ func handleLLMCall(gateway *llm.Gateway, raw json.RawMessage) (any, error) {
 		MaxTokens:         params.MaxTokens,
 		Temperature:       params.Temperature,
 		System:            params.System,
-		CacheSystemPrompt: params.CacheSystemPrompt,
+		CacheSystemPrompt: params.CacheSystemPrompt || gateway.CacheByDefault(),
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)

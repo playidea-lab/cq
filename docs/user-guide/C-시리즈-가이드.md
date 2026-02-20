@@ -511,12 +511,17 @@ hub:
   api_prefix: "/v1"
   team_id: "my-team"
 
-# LLM Gateway (C9 임베딩, C1 요약)
+# LLM Gateway (C9 임베딩, C1 요약, c4_llm_call)
 llm_gateway:
   enabled: true
-  default: openai
+  default: anthropic
+  cache_by_default: true  # Anthropic Prompt Caching 자동 적용 (기본값 true)
   providers:
+    anthropic:
+      enabled: true
+      api_key_env: ANTHROPIC_API_KEY  # 환경변수 이름 (실제 키는 .env에)
     openai:
+      enabled: true
       api_key_env: OPENAI_API_KEY
 
 # Cloud (C0, C1)

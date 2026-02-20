@@ -24,11 +24,15 @@ type RoutingTable struct {
 // Gateway is the central LLM orchestration hub.
 // It manages provider registration, request routing, and cost tracking.
 type Gateway struct {
-	mu        sync.RWMutex
-	providers map[string]Provider
-	routing   RoutingTable
-	tracker   *CostTracker
+	mu             sync.RWMutex
+	providers      map[string]Provider
+	routing        RoutingTable
+	tracker        *CostTracker
+	cacheByDefault bool
 }
+
+// CacheByDefault returns whether system prompt caching is enabled by default.
+func (g *Gateway) CacheByDefault() bool { return g.cacheByDefault }
 
 // NewGateway creates a Gateway with the given routing table.
 func NewGateway(routing RoutingTable) *Gateway {

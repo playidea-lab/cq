@@ -56,9 +56,10 @@ type LLMProviderConfig struct {
 
 // LLMGatewayConfig holds LLM gateway settings.
 type LLMGatewayConfig struct {
-	Enabled   bool                         `mapstructure:"enabled"   yaml:"enabled"`
-	Default   string                       `mapstructure:"default"   yaml:"default"`
-	Providers map[string]LLMProviderConfig `mapstructure:"providers" yaml:"providers"`
+	Enabled        bool                         `mapstructure:"enabled"          yaml:"enabled"`
+	Default        string                       `mapstructure:"default"          yaml:"default"`
+	CacheByDefault bool                         `mapstructure:"cache_by_default" yaml:"cache_by_default"`
+	Providers      map[string]LLMProviderConfig `mapstructure:"providers"        yaml:"providers"`
 }
 
 // WorktreeConfig holds worktree settings.
@@ -255,6 +256,7 @@ func New(projectRoot string, cloudDefaults ...CloudDefaults) (*Manager, error) {
 	v.SetDefault("cloud.project_id", "")
 	v.SetDefault("llm_gateway.enabled", false)
 	v.SetDefault("llm_gateway.default", "anthropic")
+	v.SetDefault("llm_gateway.cache_by_default", true)
 	v.SetDefault("eventbus.enabled", false)
 	v.SetDefault("eventbus.auto_start", false)
 	v.SetDefault("eventbus.socket_path", "")

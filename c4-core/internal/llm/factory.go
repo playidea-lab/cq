@@ -26,6 +26,7 @@ func NewGatewayFromConfig(cfg config.C4Config) *Gateway {
 	}
 
 	gw := NewGateway(routing)
+	gw.cacheByDefault = cfg.LLMGateway.CacheByDefault
 
 	for name, provCfg := range cfg.LLMGateway.Providers {
 		if !provCfg.Enabled {

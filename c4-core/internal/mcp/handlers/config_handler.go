@@ -113,8 +113,9 @@ func handleConfigGet(cfgMgr *config.Manager, rawArgs json.RawMessage) (any, erro
 				"ws_port":    cfg.EventBus.WSPort,
 			},
 			"llm_gateway": map[string]any{
-				"enabled": cfg.LLMGateway.Enabled,
-				"default": cfg.LLMGateway.Default,
+				"enabled":          cfg.LLMGateway.Enabled,
+				"default":          cfg.LLMGateway.Default,
+				"cache_by_default": cfg.LLMGateway.CacheByDefault,
 			},
 			"validation": map[string]any{
 				"lint": cfg.Validation.Lint,
