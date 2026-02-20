@@ -634,6 +634,95 @@ func TestSetupGlobalHooks_Idempotent(t *testing.T) {
 	}
 }
 
+// --- Integration tests: setupGlobalHooks end-to-end ---
+
+// TestInitAndLaunch_HooksInstalled simulates a fresh install (empty home dir)
+// and verifies that setupGlobalHooks creates the hook file with 0755 permissions.
+func TestInitAndLaunch_HooksInstalled(t *testing.T) {
+	tmpHome := t.TempDir()
+
+	if err := setupGlobalHooks(tmpHome); err != nil {
+		t.Fatalf("setupGlobalHooks: %v", err)
+	}
+
+	hookPath := filepath.Join(tmpHome, ".claude", "hooks", "c4-bash-security-hook.sh")
+	info, err := os.Stat(hookPath)
+	if err != nil {
+		t.Fatalf("hook file not created: %v", err)
+	}
+	// Verify executable permission (0755)
+	if info.Mode().Perm() != 0755 {
+		t.Errorf("hook permissions = %o, want 0755", info.Mode().Perm())
+	}
+}
+
+// TestInitAndLaunch_SettingsPatched simulates a fresh install and verifies
+// that settings.json is created with hooks.PreToolUse[0].matcher == "Bash".
+func TestInitAndLaunch_SettingsPatched(t *testing.T) {
+	tmpHome := t.TempDir()
+
+	if err := setupGlobalHooks(tmpHome); err != nil {
+		t.Fatalf("setupGlobalHooks: %v", err)
+	}
+
+	settingsPath := filepath.Join(tmpHome, ".claude", "settings.json")
+	data, err := os.ReadFile(settingsPath)
+	if err != nil {
+		t.Fatalf("settings.json not created: %v", err)
+	}
+
+	var settings map[string]any
+	if err := json.Unmarshal(data, &settings); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+
+	hooks, _ := settings["hooks"].(map[string]any)
+	if hooks == nil {
+		t.Fatal("missing hooks key in settings.json")
+	}
+	preToolUse, _ := hooks["PreToolUse"].([]any)
+	if len(preToolUse) == 0 {
+		t.Fatal("PreToolUse array is empty")
+	}
+	entry, _ := preToolUse[0].(map[string]any)
+	if entry["matcher"] != "Bash" {
+		t.Errorf("PreToolUse[0].matcher = %v, want Bash", entry["matcher"])
+	}
+}
+
+// TestInitAndLaunch_Idempotent calls setupGlobalHooks twice and verifies
+// that hooks.PreToolUse has exactly 1 entry (no duplicates).
+func TestInitAndLaunch_Idempotent(t *testing.T) {
+	tmpHome := t.TempDir()
+
+	// First call
+	if err := setupGlobalHooks(tmpHome); err != nil {
+		t.Fatalf("first setupGlobalHooks: %v", err)
+	}
+
+	// Second call
+	if err := setupGlobalHooks(tmpHome); err != nil {
+		t.Fatalf("second setupGlobalHooks: %v", err)
+	}
+
+	settingsPath := filepath.Join(tmpHome, ".claude", "settings.json")
+	data, err := os.ReadFile(settingsPath)
+	if err != nil {
+		t.Fatalf("settings.json not found: %v", err)
+	}
+
+	var settings map[string]any
+	if err := json.Unmarshal(data, &settings); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+
+	hooks, _ := settings["hooks"].(map[string]any)
+	preToolUse, _ := hooks["PreToolUse"].([]any)
+	if len(preToolUse) != 1 {
+		t.Errorf("expected 1 PreToolUse entry after 2 calls, got %d", len(preToolUse))
+	}
+}
+
 func TestPatchClaudeSettings_NewFile(t *testing.T) {
 	homeDir := t.TempDir()
 	hookPath := "/usr/local/bin/hook.sh"
