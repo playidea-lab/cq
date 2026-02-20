@@ -46,18 +46,27 @@ func (j *Job) GetID() string {
 	return j.JobID
 }
 
+// ArtifactRef references an artifact by its Hub path and optional local path.
+type ArtifactRef struct {
+	Path      string `json:"path"`
+	LocalPath string `json:"local_path,omitempty"`
+	Required  bool   `json:"required,omitempty"`
+}
+
 // JobSubmitRequest is the payload for POST /v1/jobs/submit.
 type JobSubmitRequest struct {
-	Name        string            `json:"name"`
-	Workdir     string            `json:"workdir"`
-	Command     string            `json:"command"`
-	Env         map[string]string `json:"env,omitempty"`
-	Tags        []string          `json:"tags,omitempty"`
-	RequiresGPU bool              `json:"requires_gpu"`
-	Priority    int               `json:"priority,omitempty"`
-	ExpID       string            `json:"exp_id,omitempty"`
-	Memo        string            `json:"memo,omitempty"`
-	TimeoutSec  int               `json:"timeout_sec,omitempty"`
+	Name            string            `json:"name"`
+	Workdir         string            `json:"workdir"`
+	Command         string            `json:"command"`
+	Env             map[string]string `json:"env,omitempty"`
+	Tags            []string          `json:"tags,omitempty"`
+	RequiresGPU     bool              `json:"requires_gpu"`
+	Priority        int               `json:"priority,omitempty"`
+	ExpID           string            `json:"exp_id,omitempty"`
+	Memo            string            `json:"memo,omitempty"`
+	TimeoutSec      int               `json:"timeout_sec,omitempty"`
+	InputArtifacts  []ArtifactRef     `json:"input_artifacts,omitempty"`
+	OutputArtifacts []ArtifactRef     `json:"output_artifacts,omitempty"`
 }
 
 // JobSubmitResponse is the response from POST /v1/jobs/submit.
@@ -121,11 +130,20 @@ type HeartbeatResponse struct {
 	Acknowledged bool `json:"acknowledged"`
 }
 
+// InputPresignedArtifact is a pre-signed download URL for an input artifact.
+type InputPresignedArtifact struct {
+	Path      string `json:"path"`
+	LocalPath string `json:"local_path,omitempty"`
+	URL       string `json:"url"`
+	ExpiresAt string `json:"expires_at,omitempty"`
+}
+
 // ClaimResponse is the response from POST /v1/leases/acquire.
 type ClaimResponse struct {
-	JobID   string `json:"job_id"`
-	LeaseID string `json:"lease_id"`
-	Job     Job    `json:"job"`
+	JobID              string                   `json:"job_id"`
+	LeaseID            string                   `json:"lease_id"`
+	Job                Job                      `json:"job"`
+	InputPresignedURLs []InputPresignedArtifact `json:"input_presigned_urls,omitempty"`
 }
 
 // RenewLeaseResponse is the response from POST /v1/leases/renew.

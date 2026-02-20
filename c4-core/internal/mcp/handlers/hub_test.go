@@ -1164,6 +1164,66 @@ func TestHubDAGExecute_DryRun_NoEvent(t *testing.T) {
 }
 
 // =========================================================================
+// Artifact param tests (T-838-0)
+// =========================================================================
+
+func TestHubSubmit_WithArtifacts(t *testing.T) {
+	var receivedBody map[string]any
+	mux := http.NewServeMux()
+	mux.HandleFunc("/jobs/submit", func(w http.ResponseWriter, r *http.Request) {
+		json.NewDecoder(r.Body).Decode(&receivedBody)
+		hubJSON(w, map[string]any{"job_id": "job-art", "status": "QUEUED", "queue_position": 0})
+	})
+	_, reg := newHubTestServer(t, mux)
+
+	result, err := reg.Call("c4_hub_submit", json.RawMessage(`{
+		"name": "train", "workdir": "/ws", "command": "run.sh",
+		"input_artifacts":  [{"path": "datasets/cifar.tar.gz", "local_path": "/data/cifar.tar.gz", "required": true}],
+		"output_artifacts": [{"path": "models/resnet.pt", "local_path": "/out/resnet.pt"}]
+	}`))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	m := result.(map[string]any)
+	if m["job_id"] != "job-art" {
+		t.Errorf("job_id = %v, want job-art", m["job_id"])
+	}
+
+	// Verify artifact fields were forwarded to C5.
+	if _, ok := receivedBody["input_artifacts"]; !ok {
+		t.Error("expected input_artifacts in request body sent to Hub")
+	}
+	if _, ok := receivedBody["output_artifacts"]; !ok {
+		t.Error("expected output_artifacts in request body sent to Hub")
+	}
+}
+
+func TestHubSubmit_WithoutArtifacts_Omitted(t *testing.T) {
+	var receivedBody map[string]any
+	mux := http.NewServeMux()
+	mux.HandleFunc("/jobs/submit", func(w http.ResponseWriter, r *http.Request) {
+		json.NewDecoder(r.Body).Decode(&receivedBody)
+		hubJSON(w, map[string]any{"job_id": "job-noart", "status": "QUEUED", "queue_position": 0})
+	})
+	_, reg := newHubTestServer(t, mux)
+
+	_, err := reg.Call("c4_hub_submit", json.RawMessage(`{
+		"name": "train", "workdir": "/ws", "command": "run.sh"
+	}`))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Verify artifact fields are absent when not provided (omitempty).
+	if _, ok := receivedBody["input_artifacts"]; ok {
+		t.Error("input_artifacts should be omitted from request body when not provided")
+	}
+	if _, ok := receivedBody["output_artifacts"]; ok {
+		t.Error("output_artifacts should be omitted from request body when not provided")
+	}
+}
+
+// =========================================================================
 // Registration count test
 // =========================================================================
 
