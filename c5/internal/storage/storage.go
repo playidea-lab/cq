@@ -123,7 +123,7 @@ func (s *SupabaseBackend) PresignedURL(path, method string, ttlSeconds int) (str
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		respBody, _ := io.ReadAll(resp.Body)
+		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<16))
 		return "", time.Time{}, fmt.Errorf("sign failed (status %d): %s", resp.StatusCode, string(respBody))
 	}
 
@@ -189,7 +189,7 @@ func (s *SupabaseBackend) EnsureBucket() error {
 	defer createResp.Body.Close()
 
 	if createResp.StatusCode != http.StatusOK && createResp.StatusCode != http.StatusCreated {
-		body, _ := io.ReadAll(createResp.Body)
+		body, _ := io.ReadAll(io.LimitReader(createResp.Body, 1<<16))
 		return fmt.Errorf("ensure bucket: create failed (status %d): %s", createResp.StatusCode, string(body))
 	}
 	return nil

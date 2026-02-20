@@ -572,7 +572,7 @@ func (c *workerClient) doJSON(method, path string, body any, result any) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode >= 400 {
-		data, _ := io.ReadAll(resp.Body)
+		data, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<16))
 		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(data))
 	}
 
