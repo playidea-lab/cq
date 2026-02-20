@@ -90,14 +90,16 @@ func handleWorkerStandby(deps *WorkerDeps, raw json.RawMessage) (any, error) {
 		hubEventPub.PublishAsync("hub.worker.registered", "c4.hub", payload, hubProjectID)
 	}
 
-	// Setup C1 channel and presence if keeper available
+	// Setup shared #cq channel and presence if keeper available
+	var cqChannelID string
 	if deps.Keeper != nil {
-		channelName := "worker-" + params.WorkerID
-		if _, chErr := deps.Keeper.EnsureChannel(channelName, "Worker "+params.WorkerID+" channel", "worker"); chErr != nil {
-			fmt.Fprintf(os.Stderr, "c4: worker channel creation failed: %v\n", chErr)
+		var chErr error
+		cqChannelID, chErr = deps.Keeper.EnsureChannel("cq", "Shared worker dispatch channel", "worker")
+		if chErr != nil {
+			fmt.Fprintf(os.Stderr, "c4: #cq channel creation failed: %v\n", chErr)
 		}
 		deps.Keeper.c1.EnsureMember("agent", params.WorkerID, params.WorkerID)
-		deps.Keeper.c1.UpdatePresence("agent", params.WorkerID, "idle", "Waiting for jobs")
+		deps.Keeper.c1.UpdatePresence("agent", params.WorkerID, "online", "Waiting for jobs in #cq")
 	}
 
 	// Polling loop: 5s poll, 30s heartbeat
@@ -120,7 +122,32 @@ func handleWorkerStandby(deps *WorkerDeps, raw json.RawMessage) (any, error) {
 				}, nil
 			}
 
-			// Try to claim a job
+			// Poll #cq channel for @cq mentions (claimed_by IS NULL)
+			if deps.Keeper != nil && cqChannelID != "" {
+				mentions, pollErr := deps.Keeper.c1.PollCqMentions(cqChannelID, 5)
+				if pollErr != nil {
+					fmt.Fprintf(os.Stderr, "c4: worker %s poll #cq error: %v\n", params.WorkerID, pollErr)
+				}
+				for _, msg := range mentions {
+					claimed, claimErr := deps.Keeper.c1.ClaimMessage(msg.ID, params.WorkerID)
+					if claimErr != nil {
+						fmt.Fprintf(os.Stderr, "c4: worker %s claim msg %s error: %v\n", params.WorkerID, msg.ID, claimErr)
+						continue
+					}
+					if claimed {
+						deps.Keeper.c1.UpdatePresence("agent", params.WorkerID, "working", "Claimed: "+msg.ID)
+						return map[string]any{
+							"dispatched":  true,
+							"message_id":  msg.ID,
+							"content":     msg.Content,
+							"sender_name": msg.SenderName,
+							"channel":     "cq",
+						}, nil
+					}
+				}
+			}
+
+			// Try to claim a Hub job
 			job, leaseID, err := deps.HubClient.ClaimJob(0)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "c4: worker %s claim error: %v\n", params.WorkerID, err)
@@ -130,11 +157,10 @@ func handleWorkerStandby(deps *WorkerDeps, raw json.RawMessage) (any, error) {
 				continue
 			}
 
-			// Job found — update presence and return
+			// Hub job found — update presence and return
 			if deps.Keeper != nil {
 				deps.Keeper.c1.UpdatePresence("agent", params.WorkerID, "working", "Job: "+job.GetID())
-				channelName := "worker-" + params.WorkerID
-				deps.Keeper.AutoPost(channelName, fmt.Sprintf("🔧 Claimed job %s: %s", job.GetID(), job.Command))
+				deps.Keeper.AutoPost("cq", fmt.Sprintf("Worker %s claimed job %s: %s", params.WorkerID, job.GetID(), job.Command))
 			}
 
 			return map[string]any{
@@ -212,23 +238,22 @@ func handleWorkerComplete(deps *WorkerDeps, raw json.RawMessage) (any, error) {
 		return nil, fmt.Errorf("complete job: %w", err)
 	}
 
-	// Update C1 presence and post to worker channel
+	// Update C1 presence and post to #cq channel
 	if deps.Keeper != nil {
-		deps.Keeper.c1.UpdatePresence("agent", params.WorkerID, "idle", "Waiting for jobs")
+		deps.Keeper.c1.UpdatePresence("agent", params.WorkerID, "online", "Waiting for jobs in #cq")
 
-		channelName := "worker-" + params.WorkerID
-		emoji := "✅"
+		statusIcon := "done"
 		if params.Status == "FAILED" {
-			emoji = "❌"
+			statusIcon = "failed"
 		}
-		msg := fmt.Sprintf("%s Job %s: %s", emoji, params.JobID, params.Status)
+		msg := fmt.Sprintf("Worker %s: Job %s %s", params.WorkerID, params.JobID, statusIcon)
 		if params.CommitSHA != "" {
-			msg += "\nCommit: " + params.CommitSHA
+			msg += " commit=" + params.CommitSHA
 		}
 		if params.Summary != "" {
 			msg += "\n" + params.Summary
 		}
-		deps.Keeper.AutoPost(channelName, msg)
+		deps.Keeper.AutoPost("cq", msg)
 	}
 	evType := "hub.job.completed"
 	if params.Status == "FAILED" {
@@ -288,10 +313,10 @@ func handleWorkerShutdown(deps *WorkerDeps, raw json.RawMessage) (any, error) {
 		return nil, fmt.Errorf("store shutdown signal: %w", err)
 	}
 
-	// Post to worker channel
+	// Update presence and post to #cq channel
 	if deps.Keeper != nil {
-		channelName := "worker-" + params.WorkerID
-		deps.Keeper.AutoPost(channelName, "🛑 Shutdown requested: "+params.Reason)
+		deps.Keeper.c1.UpdatePresence("agent", params.WorkerID, "offline", "Shutdown: "+params.Reason)
+		deps.Keeper.AutoPost("cq", "Worker "+params.WorkerID+" shutdown: "+params.Reason)
 	}
 
 	return map[string]any{

@@ -499,6 +499,72 @@ func (h *C1Handler) httpPatch(table, filter string, payload any) error {
 	return nil
 }
 
+// ClaimMessage atomically claims a c1_messages row via Supabase RPC.
+// Returns true if the claim succeeded (no other worker claimed it first).
+func (h *C1Handler) ClaimMessage(messageID, workerID string) (bool, error) {
+	payload := map[string]any{
+		"p_message_id": messageID,
+		"p_worker_id":  workerID,
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return false, fmt.Errorf("marshal: %w", err)
+	}
+
+	// Supabase RPC: POST /rest/v1/rpc/claim_message
+	rpcURL := h.baseURL + "/rpc/claim_message"
+	req, err := http.NewRequest("POST", rpcURL, bytes.NewReader(body))
+	if err != nil {
+		return false, err
+	}
+	h.setHeaders(req)
+	req.Header.Set("Prefer", "return=representation")
+
+	resp, err := h.httpClient.Do(req)
+	if err != nil {
+		return false, fmt.Errorf("RPC claim_message: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		respBody, _ := io.ReadAll(resp.Body)
+		return false, fmt.Errorf("RPC claim_message: %d %s", resp.StatusCode, string(respBody))
+	}
+
+	// The function returns SETOF c1_messages; if the row was claimed, we get a non-empty array.
+	var rows []json.RawMessage
+	if err := json.NewDecoder(resp.Body).Decode(&rows); err != nil {
+		return false, fmt.Errorf("decode claim_message response: %w", err)
+	}
+	return len(rows) > 0, nil
+}
+
+// cqMentionRow is a minimal message row for @cq mention polling.
+type cqMentionRow struct {
+	ID        string `json:"id"`
+	Content   string `json:"content"`
+	SenderName string `json:"sender_name"`
+	CreatedAt string `json:"created_at"`
+}
+
+// PollCqMentions returns unclaimed messages from the #cq channel that mention @cq.
+func (h *C1Handler) PollCqMentions(channelID string, limit int) ([]cqMentionRow, error) {
+	if limit <= 0 {
+		limit = 10
+	}
+	filter := fmt.Sprintf(
+		"channel_id=eq.%s&content=like.%s&claimed_by=is.null&select=id,content,sender_name,created_at&order=created_at.asc&limit=%d",
+		url.QueryEscape(channelID),
+		url.QueryEscape("*@cq*"),
+		limit,
+	)
+	var rows []cqMentionRow
+	if err := h.httpGet("c1_messages", filter, &rows); err != nil {
+		return nil, err
+	}
+	return rows, nil
+}
+
 // RegisterC1Handlers registers c1_* MCP tools.
 func RegisterC1Handlers(reg *mcp.Registry, handler *C1Handler) {
 	// c1_search — Full-text search across messages
