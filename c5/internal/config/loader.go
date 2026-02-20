@@ -67,5 +67,9 @@ eventbus:
 storage:
   # Local storage directory for C5 data.
   path: "~/.local/share/c5"
+  # Supabase project URL. Leave empty to use local storage only.
+  supabase_url: ""
+  # Supabase service-role key. Required when supabase_url is set.
+  supabase_key: ""
 `
 }

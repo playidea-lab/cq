@@ -21,7 +21,9 @@ type EventBusConfig struct {
 
 // StorageConfig holds local storage settings.
 type StorageConfig struct {
-	Path string `yaml:"path"` // default "~/.local/share/c5"
+	Path        string `yaml:"path"`         // default "~/.local/share/c5"
+	SupabaseURL string `yaml:"supabase_url"` // "" = disabled
+	SupabaseKey string `yaml:"supabase_key"`
 }
 
 // Default returns a Config populated with default values.
@@ -44,4 +46,9 @@ func Default() Config {
 // IsEventBusEnabled reports whether the EventBus integration is active.
 func (c *Config) IsEventBusEnabled() bool {
 	return c.EventBus.URL != ""
+}
+
+// IsSupabaseEnabled reports whether Supabase storage integration is active.
+func (c *Config) IsSupabaseEnabled() bool {
+	return c.Storage.SupabaseURL != "" && c.Storage.SupabaseKey != ""
 }

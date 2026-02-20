@@ -151,6 +151,48 @@ storage:
 	}
 }
 
+func TestStorageConfigDefault(t *testing.T) {
+	cfg := config.Default()
+
+	if cfg.Storage.Path != "~/.local/share/c5" {
+		t.Errorf("Storage.Path: got %q, want \"~/.local/share/c5\"", cfg.Storage.Path)
+	}
+	if cfg.Storage.SupabaseURL != "" {
+		t.Errorf("Storage.SupabaseURL: got %q, want \"\"", cfg.Storage.SupabaseURL)
+	}
+	if cfg.Storage.SupabaseKey != "" {
+		t.Errorf("Storage.SupabaseKey: got %q, want \"\"", cfg.Storage.SupabaseKey)
+	}
+}
+
+func TestIsSupabaseEnabled(t *testing.T) {
+	cfg := config.Default()
+
+	// Neither set — disabled.
+	if cfg.IsSupabaseEnabled() {
+		t.Error("expected Supabase disabled by default")
+	}
+
+	// Only URL set — still disabled.
+	cfg.Storage.SupabaseURL = "https://project.supabase.co"
+	if cfg.IsSupabaseEnabled() {
+		t.Error("expected Supabase disabled when only URL is set")
+	}
+
+	// Only key set — still disabled.
+	cfg.Storage.SupabaseURL = ""
+	cfg.Storage.SupabaseKey = "service-role-key"
+	if cfg.IsSupabaseEnabled() {
+		t.Error("expected Supabase disabled when only key is set")
+	}
+
+	// Both set — enabled.
+	cfg.Storage.SupabaseURL = "https://project.supabase.co"
+	if !cfg.IsSupabaseEnabled() {
+		t.Error("expected Supabase enabled when both URL and key are set")
+	}
+}
+
 // writeTempConfig writes content to a temp file and returns its path.
 func writeTempConfig(t *testing.T, content string) string {
 	t.Helper()
