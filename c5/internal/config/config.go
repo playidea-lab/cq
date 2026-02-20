@@ -1,5 +1,10 @@
 package config
 
+import (
+	"os"
+	"path/filepath"
+)
+
 // Config is the top-level configuration for the C5 server.
 type Config struct {
 	Server   ServerConfig   `yaml:"server"`
@@ -38,9 +43,17 @@ func Default() Config {
 			Token: "",
 		},
 		Storage: StorageConfig{
-			Path: "~/.local/share/c5",
+			Path: defaultStoragePath(),
 		},
 	}
+}
+
+func defaultStoragePath() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ".local/share/c5"
+	}
+	return filepath.Join(home, ".local", "share", "c5")
 }
 
 // IsEventBusEnabled reports whether the EventBus integration is active.

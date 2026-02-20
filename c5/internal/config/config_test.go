@@ -66,8 +66,10 @@ server:
 	if cfg.Server.Host != "0.0.0.0" {
 		t.Errorf("Server.Host: got %q, want \"0.0.0.0\"", cfg.Server.Host)
 	}
-	if cfg.Storage.Path != "~/.local/share/c5" {
-		t.Errorf("Storage.Path: got %q, want \"~/.local/share/c5\"", cfg.Storage.Path)
+	home, _ := os.UserHomeDir()
+	wantPath := filepath.Join(home, ".local", "share", "c5")
+	if cfg.Storage.Path != wantPath {
+		t.Errorf("Storage.Path: got %q, want %q", cfg.Storage.Path, wantPath)
 	}
 	if cfg.EventBus.URL != "" {
 		t.Errorf("EventBus.URL: got %q, want \"\"", cfg.EventBus.URL)
@@ -154,8 +156,10 @@ storage:
 func TestStorageConfigDefault(t *testing.T) {
 	cfg := config.Default()
 
-	if cfg.Storage.Path != "~/.local/share/c5" {
-		t.Errorf("Storage.Path: got %q, want \"~/.local/share/c5\"", cfg.Storage.Path)
+	home, _ := os.UserHomeDir()
+	wantPath := filepath.Join(home, ".local", "share", "c5")
+	if cfg.Storage.Path != wantPath {
+		t.Errorf("Storage.Path: got %q, want %q", cfg.Storage.Path, wantPath)
 	}
 	if cfg.Storage.SupabaseURL != "" {
 		t.Errorf("Storage.SupabaseURL: got %q, want \"\"", cfg.Storage.SupabaseURL)

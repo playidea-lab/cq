@@ -139,6 +139,7 @@ func runServe(cmd *cobra.Command, configPath string, port int, dbPath, apiKey, e
 		EventBusURL:   resolvedEventBusURL,
 		EventBusToken: resolvedEventBusToken,
 	})
+	defer srv.Close()
 
 	httpSrv := &http.Server{
 		Addr:         fmt.Sprintf(":%d", resolvedPort),
