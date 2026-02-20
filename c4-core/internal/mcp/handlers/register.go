@@ -35,13 +35,14 @@ func RegisterNativeHandlers(reg *mcp.Registry, rootDir string, store Store) {
 // NativeOpts holds optional dependencies for native handler registration.
 // Fields may be nil when their backing service is unavailable.
 type NativeOpts struct {
-	ResearchStore     *research.Store        // nil if research DB unavailable
-	GPUStore          *daemon.Store          // nil if GPU scheduler unavailable
-	KnowledgeStore    *knowledge.Store       // nil if knowledge DB unavailable
-	KnowledgeSearcher *knowledge.Searcher    // nil = FTS-only (no vector search)
-	KnowledgeCloud    knowledge.CloudSyncer  // nil if cloud disabled
+	ResearchStore     *research.Store         // nil if research DB unavailable
+	GPUStore          *daemon.Store           // nil if GPU scheduler unavailable
+	GPUScheduler      *daemon.Scheduler       // nil if scheduler not running (cancel does store-only)
+	KnowledgeStore    *knowledge.Store        // nil if knowledge DB unavailable
+	KnowledgeSearcher *knowledge.Searcher     // nil = FTS-only (no vector search)
+	KnowledgeCloud    knowledge.CloudSyncer   // nil if cloud disabled
 	KnowledgeUsage    *knowledge.UsageTracker // nil if usage tracking disabled
-	LLMGateway        *llm.Gateway           // nil if LLM gateway disabled
+	LLMGateway        *llm.Gateway            // nil if LLM gateway disabled
 }
 
 // RegisterAllHandlers registers all MCP tool handlers including Python proxy tools.
@@ -90,8 +91,8 @@ func RegisterAllHandlersLazyWithOpts(reg *mcp.Registry, store Store, rootDir str
 	return RegisterAllHandlersWithOpts(reg, store, rootDir, "", lazyAddr, knowledgeCloud, opts)
 }
 
-// registerNativeReplacements registers the 20 tools that moved from proxy to Go native.
-// Tier 1 (13): Research 5 + C2 6 + GPU 2
+// registerNativeReplacements registers the 24 tools that moved from proxy to Go native.
+// Tier 1 (17): Research 5 + C2 6 + GPU 6
 // Tier 2 (7): Knowledge 7
 func registerNativeReplacements(reg *mcp.Registry, proxy *BridgeProxy, opts *NativeOpts, knowledgeCloud KnowledgeSyncer) {
 	// Research (5 tools) — Go native
@@ -102,11 +103,11 @@ func registerNativeReplacements(reg *mcp.Registry, proxy *BridgeProxy, opts *Nat
 		RegisterResearchProxyHandlers(reg, proxy)
 	}
 
-	// GPU (2 tools) — Go native
+	// GPU (6 tools) — Go native
 	if opts != nil {
-		RegisterGPUNativeHandlers(reg, opts.GPUStore)
+		RegisterGPUNativeHandlers(reg, opts.GPUStore, opts.GPUScheduler)
 	} else {
-		RegisterGPUNativeHandlers(reg, nil)
+		RegisterGPUNativeHandlers(reg, nil, nil)
 	}
 
 	// C2 Workspace/Profile/Persona (6 tools) — Go native
