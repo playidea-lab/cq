@@ -1,9 +1,11 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"log"
 	"net/http"
+	"time"
 
 	"github.com/piqsol/c4/c5/internal/model"
 )
@@ -192,10 +194,45 @@ func (s *Server) handleLeaseAcquire(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Generate presigned GET URLs for input artifacts (5-second timeout per call).
+	var inputPresignedURLs []model.InputPresignedArtifact
+	for _, art := range job.InputArtifacts {
+		type result struct {
+			url       string
+			expiresAt time.Time
+			err       error
+		}
+		ch := make(chan result, 1)
+		artPath := art.Path
+		go func() {
+			u, exp, e := s.storage.PresignedURL(artPath, "GET", 3600)
+			ch <- result{u, exp, e}
+		}()
+		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+		var res result
+		select {
+		case res = <-ch:
+		case <-ctx.Done():
+			res.err = ctx.Err()
+		}
+		cancel()
+		if res.err != nil {
+			log.Printf("c5: presigned URL failed for %s: %v", art.Path, res.err)
+			continue
+		}
+		inputPresignedURLs = append(inputPresignedURLs, model.InputPresignedArtifact{
+			Path:      art.Path,
+			LocalPath: art.LocalPath,
+			URL:       res.url,
+			ExpiresAt: res.expiresAt.UTC().Format(time.RFC3339),
+		})
+	}
+
 	writeJSON(w, model.LeaseAcquireResponse{
-		JobID:   job.ID,
-		LeaseID: lease.ID,
-		Job:     *job,
+		JobID:              job.ID,
+		LeaseID:            lease.ID,
+		Job:                *job,
+		InputPresignedURLs: inputPresignedURLs,
 	})
 }
 

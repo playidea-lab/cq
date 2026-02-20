@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -11,10 +12,39 @@ import (
 	"strings"
 	"testing"
 	"testing/fstest"
+	"time"
 
 	"github.com/piqsol/c4/c5/internal/model"
 	"github.com/piqsol/c4/c5/internal/store"
 )
+
+// mockStorage is a test storage backend.
+type mockStorage struct {
+	failURLs bool // if true, PresignedURL always returns an error
+}
+
+func (m *mockStorage) PresignedURL(path, method string, ttlSeconds int) (string, time.Time, error) {
+	if m.failURLs {
+		return "", time.Time{}, errors.New("mock storage error")
+	}
+	exp := time.Now().UTC().Add(time.Duration(ttlSeconds) * time.Second)
+	return "https://mock.example.com/" + path, exp, nil
+}
+
+func newTestServerWithStorage(t *testing.T, stor *mockStorage) *Server {
+	t.Helper()
+	dir := t.TempDir()
+	st, err := store.New(filepath.Join(dir, "test.db"))
+	if err != nil {
+		t.Fatalf("new store: %v", err)
+	}
+	t.Cleanup(func() { st.Close() })
+	return NewServer(Config{
+		Store:   st,
+		Storage: stor,
+		Version: "test",
+	})
+}
 
 func newTestServer(t *testing.T) *Server {
 	t.Helper()
@@ -1028,5 +1058,149 @@ func TestLLMSTxtNoAuthRequired(t *testing.T) {
 	srv.Handler().ServeHTTP(w2, req2)
 	if w2.Code != http.StatusOK {
 		t.Fatalf("docs should work without key, got %d", w2.Code)
+	}
+}
+
+// =========================================================================
+// Presigned URL in LeaseAcquireResponse (T-836-0)
+// =========================================================================
+
+func TestLeaseAcquire_WithInputArtifacts(t *testing.T) {
+	stor := &mockStorage{}
+	srv := newTestServerWithStorage(t, stor)
+
+	// Register worker
+	w := doRequest(t, srv, "POST", "/v1/workers/register", model.WorkerRegisterRequest{
+		Hostname: "test-worker",
+	})
+	var regResp model.WorkerRegisterResponse
+	decodeJSON(t, w, &regResp)
+
+	// Submit job with input artifacts
+	w2 := doRequest(t, srv, "POST", "/v1/jobs/submit", model.JobSubmitRequest{
+		Name:    "artifact-job",
+		Command: "echo",
+		InputArtifacts: []model.ArtifactRef{
+			{Path: "inputs/model.pt", LocalPath: "/tmp/model.pt"},
+			{Path: "inputs/data.csv"},
+		},
+	})
+	if w2.Code != http.StatusCreated {
+		t.Fatalf("submit: expected 201, got %d: %s", w2.Code, w2.Body.String())
+	}
+
+	// Acquire lease
+	w3 := doRequest(t, srv, "POST", "/v1/leases/acquire", model.LeaseAcquireRequest{
+		WorkerID: regResp.WorkerID,
+	})
+	if w3.Code != http.StatusOK {
+		t.Fatalf("acquire: expected 200, got %d: %s", w3.Code, w3.Body.String())
+	}
+
+	var acqResp model.LeaseAcquireResponse
+	decodeJSON(t, w3, &acqResp)
+
+	if acqResp.LeaseID == "" {
+		t.Fatal("lease_id should not be empty")
+	}
+	if len(acqResp.InputPresignedURLs) != 2 {
+		t.Fatalf("expected 2 presigned URLs, got %d", len(acqResp.InputPresignedURLs))
+	}
+
+	// Verify first artifact
+	found := false
+	for _, p := range acqResp.InputPresignedURLs {
+		if p.Path == "inputs/model.pt" {
+			found = true
+			if p.LocalPath != "/tmp/model.pt" {
+				t.Errorf("local_path mismatch: got %q", p.LocalPath)
+			}
+			if p.URL == "" {
+				t.Error("URL should not be empty")
+			}
+			if p.ExpiresAt == "" {
+				t.Error("expires_at should not be empty")
+			}
+		}
+	}
+	if !found {
+		t.Fatal("inputs/model.pt not found in presigned URLs")
+	}
+}
+
+func TestLeaseAcquire_NoArtifacts(t *testing.T) {
+	stor := &mockStorage{}
+	srv := newTestServerWithStorage(t, stor)
+
+	// Register worker
+	w := doRequest(t, srv, "POST", "/v1/workers/register", model.WorkerRegisterRequest{
+		Hostname: "test-worker",
+	})
+	var regResp model.WorkerRegisterResponse
+	decodeJSON(t, w, &regResp)
+
+	// Submit job without input artifacts
+	doRequest(t, srv, "POST", "/v1/jobs/submit", model.JobSubmitRequest{
+		Name:    "plain-job",
+		Command: "echo",
+	})
+
+	// Acquire lease
+	w2 := doRequest(t, srv, "POST", "/v1/leases/acquire", model.LeaseAcquireRequest{
+		WorkerID: regResp.WorkerID,
+	})
+	if w2.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w2.Code, w2.Body.String())
+	}
+
+	var acqResp model.LeaseAcquireResponse
+	decodeJSON(t, w2, &acqResp)
+
+	if acqResp.LeaseID == "" {
+		t.Fatal("lease_id should not be empty")
+	}
+	// No artifacts -> omitempty field should be absent/empty
+	if len(acqResp.InputPresignedURLs) != 0 {
+		t.Fatalf("expected 0 presigned URLs, got %d", len(acqResp.InputPresignedURLs))
+	}
+}
+
+func TestLeaseAcquire_StorageError(t *testing.T) {
+	stor := &mockStorage{failURLs: true}
+	srv := newTestServerWithStorage(t, stor)
+
+	// Register worker
+	w := doRequest(t, srv, "POST", "/v1/workers/register", model.WorkerRegisterRequest{
+		Hostname: "test-worker",
+	})
+	var regResp model.WorkerRegisterResponse
+	decodeJSON(t, w, &regResp)
+
+	// Submit job with input artifacts
+	doRequest(t, srv, "POST", "/v1/jobs/submit", model.JobSubmitRequest{
+		Name:    "err-artifact-job",
+		Command: "echo",
+		InputArtifacts: []model.ArtifactRef{
+			{Path: "inputs/model.pt"},
+		},
+	})
+
+	// Acquire lease — should succeed even though storage fails
+	w2 := doRequest(t, srv, "POST", "/v1/leases/acquire", model.LeaseAcquireRequest{
+		WorkerID: regResp.WorkerID,
+	})
+	if w2.Code != http.StatusOK {
+		t.Fatalf("expected 200 even on storage error, got %d: %s", w2.Code, w2.Body.String())
+	}
+
+	var acqResp model.LeaseAcquireResponse
+	decodeJSON(t, w2, &acqResp)
+
+	if acqResp.LeaseID == "" {
+		t.Fatal("lease should still be returned on storage error")
+	}
+	// Storage failed -> InputPresignedURLs should be empty (artifact skipped)
+	if len(acqResp.InputPresignedURLs) != 0 {
+		t.Fatalf("expected 0 presigned URLs on storage error, got %d", len(acqResp.InputPresignedURLs))
 	}
 }
