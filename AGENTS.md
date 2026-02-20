@@ -330,7 +330,7 @@ CP-001:    체크포인트
 
 ## Go Core (c4-core/) — Primary MCP Server
 
-> Go 기반 MCP 서버. ~37.8K LOC(src) + ~30.9K LOC(test). 1,527개 테스트, 23 패키지.
+> Go 기반 MCP 서버. ~37.8K LOC(src) + ~30.9K LOC(test). ~1,540개 테스트, 23 패키지.
 
 ### 아키텍처
 ```
@@ -404,6 +404,21 @@ cd c4-core && go build -o bin/cq ./cmd/c4/
 2. **`cp` 복사 금지** — macOS ARM64에서 코드 서명 무효화. 반드시 `go build -o` 사용
 3. **재빌드 후 세션 재시작** — Claude Code가 세션 시작 시 MCP 서버를 로드하므로
 4. **`c4-finish` 스킬에서 자동 설치** — 릴리스 루틴에 `go build -o ~/.local/bin/cq` 포함 권장
+
+### cq init 자동 설치 항목 (`cq claude/codex/cursor` 실행 시)
+
+| 항목 | 대상 경로 | 설명 |
+|------|----------|------|
+| `.c4/` 디렉토리 | `{project}/.c4/` | C4 데이터 디렉토리 |
+| `.mcp.json` | `{project}/.mcp.json` | MCP 서버 설정 |
+| `CLAUDE.md` | `{project}/CLAUDE.md` | C4 override 규칙 |
+| skills symlinks | `{project}/.claude/skills/` | C4 스킬 심볼릭 링크 |
+| **hook 파일** | `~/.claude/hooks/c4-bash-security-hook.sh` | Bash 명령 Haiku 리뷰 hook |
+| **settings.json 패치** | `~/.claude/settings.json` | PreToolUse Bash hook 등록 |
+
+- hook 파일은 바이너리에 embed되어 있어 소스 없이도 설치 가능
+- `.conf` 파일(`c4-bash-security.conf`)은 없을 때만 생성 (기존 커스터마이징 보존)
+- `permission_reviewer.enabled: true` 설정 시 Haiku API로 Bash 명령 안전성 검토
 
 ### 주요 설정 섹션 (.c4/config.yaml)
 
