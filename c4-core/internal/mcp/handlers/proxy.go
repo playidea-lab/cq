@@ -563,7 +563,7 @@ func RegisterProxyHandlers(reg *mcp.Registry, proxy *BridgeProxy, rootDir string
 			},
 			"required": []string{"file_path", "symbol_name", "new_body"},
 		},
-	}, proxyHandler(proxy, "ReplaceSymbolBody"))
+	}, languageGuardedProxy(proxy, "ReplaceSymbolBody", "c4_replace_symbol_body"))
 
 	reg.Register(mcp.ToolSchema{
 		Name:        "c4_insert_before_symbol",
@@ -577,7 +577,7 @@ func RegisterProxyHandlers(reg *mcp.Registry, proxy *BridgeProxy, rootDir string
 			},
 			"required": []string{"file_path", "symbol_name", "content"},
 		},
-	}, proxyHandler(proxy, "InsertBeforeSymbol"))
+	}, languageGuardedProxy(proxy, "InsertBeforeSymbol", "c4_insert_before_symbol"))
 
 	reg.Register(mcp.ToolSchema{
 		Name:        "c4_insert_after_symbol",
@@ -591,7 +591,7 @@ func RegisterProxyHandlers(reg *mcp.Registry, proxy *BridgeProxy, rootDir string
 			},
 			"required": []string{"file_path", "symbol_name", "content"},
 		},
-	}, proxyHandler(proxy, "InsertAfterSymbol"))
+	}, languageGuardedProxy(proxy, "InsertAfterSymbol", "c4_insert_after_symbol"))
 
 	reg.Register(mcp.ToolSchema{
 		Name:        "c4_rename_symbol",
@@ -605,7 +605,7 @@ func RegisterProxyHandlers(reg *mcp.Registry, proxy *BridgeProxy, rootDir string
 			},
 			"required": []string{"file_path", "old_name", "new_name"},
 		},
-	}, proxyHandler(proxy, "RenameSymbol"))
+	}, languageGuardedProxy(proxy, "RenameSymbol", "c4_rename_symbol"))
 
 	// LSP tool: find referencing symbols — delegated to Python
 	reg.Register(mcp.ToolSchema{
@@ -619,7 +619,7 @@ func RegisterProxyHandlers(reg *mcp.Registry, proxy *BridgeProxy, rootDir string
 			},
 			"required": []string{"file_path", "symbol_name"},
 		},
-	}, proxyHandler(proxy, "FindReferencingSymbols"))
+	}, languageGuardedProxy(proxy, "FindReferencingSymbols", "c4_find_referencing_symbols"))
 
 	// NOTE: Knowledge tools (7) moved to Go native — see knowledge_native.go
 	// NOTE: GPU tools (2) moved to Go native — see gpu_native.go
