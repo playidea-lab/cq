@@ -17,6 +17,7 @@ package guard
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -58,8 +59,15 @@ type Config struct {
 
 // Engine is the central guard coordinator.
 type Engine struct {
-	db     *sql.DB
-	config Config
+	db        *sql.DB
+	config    Config
+	publisher EventPublisher
+}
+
+// SetPublisher wires an EventPublisher into the engine.
+// When set, ActionDeny decisions will emit a "guard.denied" event.
+func (e *Engine) SetPublisher(p EventPublisher) {
+	e.publisher = p
 }
 
 // NewEngine opens (or creates) a SQLite database at dbPath, applies the schema,
@@ -110,6 +118,11 @@ func (e *Engine) Check(ctx context.Context, actor, tool string, args []byte) Act
 	}
 	// Best-effort: ignore audit write errors here.
 	_ = e.writeAudit(ctx, entry)
+
+	if action == ActionDeny && e.publisher != nil {
+		data, _ := json.Marshal(map[string]string{"actor": actor, "tool": tool, "reason": reason})
+		e.publisher.PublishAsync("guard.denied", "guard", data, "")
+	}
 
 	return action
 }

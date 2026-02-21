@@ -69,6 +69,10 @@ type initContext struct {
 	gateWebhookManager gateWebhookManagerInterface
 	gateScheduler      gateSchedulerInterface
 
+	// Guard (set by initGuard post-store hook, c6_guard build tag)
+	// Typed as any to avoid importing guard in build-tag-agnostic files.
+	guardEngine any
+
 	// Agent (set by startAgentIfNeeded in mcp_init_agent.go)
 	agentComp   *serve.Agent
 	agentCancel context.CancelFunc
@@ -86,6 +90,7 @@ type gateWebhookManagerInterface interface{}
 type gateSchedulerInterface interface {
 	Stop()
 }
+
 
 // componentPreStoreHooks run before registry/proxy/sqliteStore creation.
 // Use for components that only need projectDir, cfgMgr, db, reg (LLM, GPU, Research).

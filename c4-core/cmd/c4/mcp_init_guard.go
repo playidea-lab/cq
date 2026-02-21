@@ -7,12 +7,14 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/changmin/c4-core/internal/eventbus"
 	"github.com/changmin/c4-core/internal/guard"
 	"github.com/changmin/c4-core/internal/mcp/handlers"
 )
 
 func init() {
 	registerInitHook(initGuard)
+	registerEBWireHook(wireGuardEventBus)
 }
 
 // initGuard initializes the C6 guard engine and registers guard MCP tools.
@@ -48,7 +50,18 @@ func initGuard(ctx *initContext) error {
 		return nil // non-fatal: guard unavailable but MCP server still starts
 	}
 
+	ctx.guardEngine = eng
 	handlers.RegisterGuardHandlers(ctx.reg, eng)
 	fmt.Fprintf(os.Stderr, "cq: guard enabled (5 tools, db=%s)\n", dbPath)
 	return nil
+}
+
+// wireGuardEventBus wires the EventBus client into the guard engine so that
+// ActionDeny decisions emit a "guard.denied" event.
+func wireGuardEventBus(ctx *initContext, ebClient *eventbus.Client) {
+	eng, ok := ctx.guardEngine.(*guard.Engine)
+	if !ok || eng == nil {
+		return
+	}
+	eng.SetPublisher(ebClient)
 }
