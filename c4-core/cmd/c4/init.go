@@ -6,6 +6,8 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
+	"io/fs"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -273,16 +275,39 @@ func setupClaudeMD(dir string) error {
 	return nil
 }
 
-// setupSkills deploys C4 skills to the target project via symlinks.
-// Each skill directory is symlinked from {c4Root}/.claude/skills/{name}/ to
-// {dir}/.claude/skills/{name}/. Existing skills are not overwritten.
+// setupSkills deploys C4 skills to the target project.
+// Priority order:
+//  1. findC4Root() succeeds → symlink mode (development)
+//  2. EmbeddedSkillsFS != nil → extract to ~/.c4/skills/ (installed binary)
+//  3. Neither → skip gracefully
 func setupSkills(dir string) error {
-	c4Root, err := findC4Root()
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "cq: skills setup skipped (C4 source root not found)")
-		return nil
+	// 1. Development mode: symlink from source root
+	if c4Root, err := findC4Root(); err == nil {
+		return setupSkillsSymlink(dir, c4Root)
 	}
 
+	// 2. Embedded mode: extract to ~/.c4/skills/
+	if EmbeddedSkillsFS != nil {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			slog.Warn("skills embed: cannot determine home dir", "err", err)
+			return nil
+		}
+		skillsDir := filepath.Join(home, ".c4", "skills")
+		if err := extractEmbeddedSkills(skillsDir); err != nil {
+			slog.Warn("skills embed: extraction failed", "err", err)
+			return nil
+		}
+		return setupSkillsFromExtracted(dir, skillsDir)
+	}
+
+	// 3. Neither available
+	slog.Info("skills not embedded, skipping")
+	return nil
+}
+
+// setupSkillsSymlink creates symlinks from c4Root skills to the project.
+func setupSkillsSymlink(dir, c4Root string) error {
 	sourceSkillsDir := filepath.Join(c4Root, ".claude", "skills")
 	entries, err := os.ReadDir(sourceSkillsDir)
 	if err != nil {
@@ -316,6 +341,110 @@ func setupSkills(dir string) error {
 	} else {
 		fmt.Fprintln(os.Stderr, "cq: skills up to date")
 	}
+	return nil
+}
+
+// setupSkillsFromExtracted creates symlinks from the extracted skills dir to the project.
+func setupSkillsFromExtracted(dir, skillsDir string) error {
+	entries, err := os.ReadDir(skillsDir)
+	if err != nil {
+		return nil
+	}
+
+	targetSkillsDir := filepath.Join(dir, ".claude", "skills")
+	if err := os.MkdirAll(targetSkillsDir, 0755); err != nil {
+		return fmt.Errorf("creating .claude/skills/: %w", err)
+	}
+
+	count := 0
+	for _, entry := range entries {
+		if !entry.IsDir() || entry.Name() == ".version" {
+			continue
+		}
+		target := filepath.Join(targetSkillsDir, entry.Name())
+		if _, err := os.Lstat(target); err == nil {
+			continue
+		}
+		source := filepath.Join(skillsDir, entry.Name())
+		if err := os.Symlink(source, target); err != nil {
+			fmt.Fprintf(os.Stderr, "cq: warning: symlink skill %s: %v\n", entry.Name(), err)
+			continue
+		}
+		count++
+	}
+	if count > 0 {
+		fmt.Fprintf(os.Stderr, "cq: %d skills deployed (extracted from embed)\n", count)
+	} else {
+		fmt.Fprintln(os.Stderr, "cq: skills up to date")
+	}
+	return nil
+}
+
+// extractEmbeddedSkills extracts skills from EmbeddedSkillsFS to destDir.
+// It is version-aware: if ~/.c4/skills/.version matches the embedded version, extraction is skipped.
+// Write failures are logged as warnings and return nil (CI read-only mount safety).
+func extractEmbeddedSkills(destDir string) error {
+	// Read embedded version from skills_src/.version
+	embeddedVersionBytes, err := fs.ReadFile(EmbeddedSkillsFS, "skills_src/.version")
+	embeddedVersion := strings.TrimSpace(string(embeddedVersionBytes))
+	if err != nil {
+		embeddedVersion = ""
+	}
+
+	// Fast path: check if installed version matches embedded version
+	if embeddedVersion != "" {
+		installedVersionBytes, err := os.ReadFile(filepath.Join(destDir, ".version"))
+		if err == nil {
+			installedVersion := strings.TrimSpace(string(installedVersionBytes))
+			if installedVersion == embeddedVersion {
+				return nil // already up to date
+			}
+		}
+	}
+
+	// Extract all files from skills_src/
+	if err := fs.WalkDir(EmbeddedSkillsFS, "skills_src", func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+
+		// Compute destination path by stripping "skills_src/" prefix
+		rel, stripErr := filepath.Rel("skills_src", path)
+		if stripErr != nil {
+			return stripErr
+		}
+		dest := filepath.Join(destDir, rel)
+
+		if d.IsDir() {
+			mkErr := os.MkdirAll(dest, 0755)
+			if mkErr != nil {
+				slog.Warn("skills embed: mkdir failed", "path", dest, "err", mkErr)
+			}
+			return nil
+		}
+
+		data, readErr := fs.ReadFile(EmbeddedSkillsFS, path)
+		if readErr != nil {
+			return readErr
+		}
+
+		if writeErr := os.WriteFile(dest, data, 0644); writeErr != nil {
+			slog.Warn("skills embed: write failed", "path", dest, "err", writeErr)
+			return nil // graceful: don't abort on write failure
+		}
+		return nil
+	}); err != nil {
+		return fmt.Errorf("extractEmbeddedSkills walk: %w", err)
+	}
+
+	// Update .version file
+	if embeddedVersion != "" {
+		versionPath := filepath.Join(destDir, ".version")
+		if writeErr := os.WriteFile(versionPath, []byte(embeddedVersion+"\n"), 0644); writeErr != nil {
+			slog.Warn("skills embed: version write failed", "err", writeErr)
+		}
+	}
+
 	return nil
 }
 
