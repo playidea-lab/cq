@@ -163,6 +163,21 @@ type GuardConfig struct {
 	Policies       []GuardPolicyRule `mapstructure:"policies"         yaml:"policies"`
 }
 
+// ServeComponentToggle holds a single enabled flag for a serve sub-component.
+type ServeComponentToggle struct {
+	Enabled bool `mapstructure:"enabled" yaml:"enabled"`
+}
+
+// ServeConfig holds settings for the cq serve command.
+type ServeConfig struct {
+	HealthPort int                    `mapstructure:"health_port" yaml:"health_port"`
+	Agent      ServeComponentToggle   `mapstructure:"agent"       yaml:"agent"`
+	EventBus   ServeComponentToggle   `mapstructure:"eventbus"    yaml:"eventbus"`
+	EventSink  ServeComponentToggle   `mapstructure:"eventsink"   yaml:"eventsink"`
+	HubPoller  ServeComponentToggle   `mapstructure:"hubpoller"   yaml:"hubpoller"`
+	GPU        ServeComponentToggle   `mapstructure:"gpu"         yaml:"gpu"`
+}
+
 // PermissionReviewerConfig holds settings for the Haiku-based permission auto-reviewer hook.
 type PermissionReviewerConfig struct {
 	Enabled   bool   `mapstructure:"enabled"     yaml:"enabled"`
@@ -195,6 +210,7 @@ type C4Config struct {
 	Gate             GateConfig                 `mapstructure:"gate"                 yaml:"gate"`
 	Observe          ObserveConfig              `mapstructure:"observe"              yaml:"observe"`
 	Guard            GuardConfig                `mapstructure:"guard"                yaml:"guard"`
+	Serve            ServeConfig                `mapstructure:"serve"                yaml:"serve"`
 }
 
 // presetConfigs defines the economic mode presets.
@@ -268,6 +284,9 @@ func defaultConfig() C4Config {
 			LogLevel:  "info",
 			LogFormat: "json",
 		},
+		Serve: ServeConfig{
+			HealthPort: 4140,
+		},
 	}
 }
 
@@ -324,6 +343,12 @@ func New(projectRoot string, cloudDefaults ...CloudDefaults) (*Manager, error) {
 	v.SetDefault("eventsink.enabled", false)
 	v.SetDefault("eventsink.port", 4141)
 	v.SetDefault("eventsink.token", "")
+	v.SetDefault("serve.health_port", 4140)
+	v.SetDefault("serve.agent.enabled", false)
+	v.SetDefault("serve.eventbus.enabled", false)
+	v.SetDefault("serve.eventsink.enabled", false)
+	v.SetDefault("serve.hubpoller.enabled", false)
+	v.SetDefault("serve.gpu.enabled", false)
 	v.SetDefault("permission_reviewer.enabled", false)
 	v.SetDefault("planning.critique_loop.enabled", true)
 	v.SetDefault("planning.critique_loop.max_rounds", 3)
