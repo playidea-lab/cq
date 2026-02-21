@@ -130,6 +130,7 @@ func newMCPServer() (*mcpServer, error) {
 	var secretStore *secrets.Store
 	if ss, secErr := secrets.New(); secErr != nil {
 		fmt.Fprintf(os.Stderr, "cq: secret store init failed: %v\n", secErr)
+		fmt.Fprintln(os.Stderr, "cq: c4_secret_* tools not registered (store unavailable)")
 	} else {
 		secretStore = ss
 		fmt.Fprintln(os.Stderr, "cq: secret store ready (~/.c4/secrets.db)")

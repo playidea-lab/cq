@@ -112,7 +112,9 @@ func TestMasterKeyFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("first open: %v", err)
 	}
-	s1.Set("k", "hello")
+	if err := s1.Set("k", "hello"); err != nil {
+		t.Fatalf("Set: %v", err)
+	}
 	s1.Close()
 
 	// Check file permissions

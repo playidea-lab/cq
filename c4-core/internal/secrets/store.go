@@ -15,6 +15,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -169,9 +170,10 @@ func initDB(db *sql.DB) error {
 func loadOrCreateMasterKey(path string) ([32]byte, error) {
 	var key [32]byte
 
-	// CI override via env var (64 hex chars = 32 bytes)
-	if envKey := os.Getenv("C4_MASTER_KEY"); envKey != "" {
-		b, err := hex.DecodeString(envKey)
+	// CI override via env var (64 hex chars = 32 bytes).
+	// Normalize to lowercase to accept both "0A0B..." and "0a0b..." forms.
+	if envKey := strings.TrimSpace(os.Getenv("C4_MASTER_KEY")); envKey != "" {
+		b, err := hex.DecodeString(strings.ToLower(envKey))
 		if err != nil || len(b) != 32 {
 			for i := range b {
 				b[i] = 0
@@ -187,7 +189,12 @@ func loadOrCreateMasterKey(path string) ([32]byte, error) {
 
 	// Load existing key file. Open the FD first, then stat on the same descriptor
 	// to avoid a TOCTOU race between the permission check and the read.
-	if f, openErr := os.Open(path); openErr == nil {
+	// Distinguish ENOENT (key not yet created) from other errors (e.g. EACCES).
+	f, openErr := os.Open(path)
+	if openErr != nil && !errors.Is(openErr, os.ErrNotExist) {
+		return key, fmt.Errorf("open master key: %w", openErr)
+	}
+	if openErr == nil {
 		defer f.Close()
 		info, statErr := f.Stat()
 		if statErr != nil {

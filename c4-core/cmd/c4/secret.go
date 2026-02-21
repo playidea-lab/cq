@@ -41,19 +41,22 @@ var secretSetCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		key := args[0]
 
-		value, err := readHiddenInput(fmt.Sprintf("Value for %q (hidden): ", key))
-		if err != nil {
-			return fmt.Errorf("read value: %w", err)
-		}
-		if strings.TrimSpace(value) == "" {
-			return fmt.Errorf("value must not be empty")
-		}
-
+		// Open the store before prompting so the user isn't asked to type a secret
+		// that cannot be saved (e.g. disk full, permission error).
 		store, err := secrets.New()
 		if err != nil {
 			return err
 		}
 		defer store.Close()
+
+		value, err := readHiddenInput(fmt.Sprintf("Value for %q (hidden): ", key))
+		if err != nil {
+			return fmt.Errorf("read value: %w", err)
+		}
+		// value is stored as-is; TrimSpace is only used to reject blank-only input.
+		if strings.TrimSpace(value) == "" {
+			return fmt.Errorf("value must not be empty")
+		}
 
 		if err := store.Set(key, value); err != nil {
 			return err
