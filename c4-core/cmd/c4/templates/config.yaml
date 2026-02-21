@@ -1,0 +1,97 @@
+# C4 Configuration — .c4/config.yaml
+# SSOT for all C4 settings. Edit this file to configure the project.
+# Changes take effect on next MCP server restart (Claude Code session restart).
+
+# Project metadata
+project_id: ""             # e.g. "my-project"
+default_branch: main
+work_branch_prefix: c4/w-
+domain: ""                 # e.g. "web-backend", "ml-pipeline"
+
+# Task mode
+review_as_task: true
+checkpoint_as_task: true
+max_revision: 3
+
+# Economic mode — controls which Claude model is used per task type
+economic_mode:
+  enabled: true
+  preset: standard          # standard, economic, ultra-economic, quality
+  model_routing:
+    implementation: sonnet
+    review: opus
+    checkpoint: opus
+
+# Validation commands (leave empty to skip)
+validation:
+  lint: ""                  # e.g. "uv run ruff check ."
+  unit: ""                  # e.g. "uv run pytest tests/unit/ -v"
+
+# Permission reviewer — Bash 명령 안전성 심사 훅
+# SSOT: 이 섹션 → .c4/hook-config.json (MCP 시작 시 자동 생성) → hook 스크립트
+#
+# mode:
+#   "hook"  — 정규식 패턴 매칭만 (오프라인, 빠름) [기본값]
+#   "model" — LLM API 호출 (Haiku, 더 정확하나 느림)
+#
+# auto_approve: true  → 안전 판정 시 사용자 확인 없이 자동 실행
+#               false → Claude Code 기본 플로우 (위험 명령만 차단)
+#
+# allow_patterns: 항상 허용할 정규식 패턴 (모든 mode에서 최우선)
+# block_patterns: 항상 차단할 정규식 패턴 (hook mode + model fallback)
+permission_reviewer:
+  enabled: true
+  mode: hook                 # "hook" (regex only) or "model" (LLM API)
+  model: haiku               # model mode용: haiku, sonnet, opus
+  api_key_env: ANTHROPIC_API_KEY
+  fail_mode: ask             # model 실패 시: "ask" (사용자 확인) or "allow" (자동 승인)
+  auto_approve: true         # 안전 판정 시 사용자 확인 없이 자동 실행
+  timeout: 10
+  allow_patterns: []         # 예: ["git log", "go test ./\\.\\.\\."]
+  block_patterns: []         # 예: ["curl.*\\| bash"]
+
+# Worktree settings
+worktree:
+  enabled: true
+  auto_cleanup: true
+
+# Planning — c4-plan 스킬 동작 설정
+planning:
+  critique_loop:
+    enabled: true
+    max_rounds: 3
+    mode: auto               # auto / interactive / skip
+
+# --- Optional integrations (uncomment to enable) ---
+
+# Cloud connection (Supabase)
+# cloud:
+#   enabled: true
+#   project_id: ""
+
+# LLM Gateway
+# llm_gateway:
+#   enabled: true
+#   default: openai
+#   cache_by_default: true
+#   providers:
+#     openai:
+#       enabled: true
+#       api_key_env: OPENAI_API_KEY
+#       default_model: gpt-4o-mini
+#     anthropic:
+#       enabled: true
+#       api_key_env: ANTHROPIC_API_KEY
+
+# Hub connection (C5 distributed job queue)
+# hub:
+#   enabled: true
+#   url: "http://localhost:8585"
+#   api_prefix: "/v1"
+
+# cq serve components
+# serve:
+#   eventbus:
+#     enabled: true
+#   gpu:
+#     enabled: true

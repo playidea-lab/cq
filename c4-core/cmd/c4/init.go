@@ -23,6 +23,9 @@ var claudeMDTemplate string
 //go:embed templates/hooks/c4-bash-security-hook.sh
 var hookShContent string
 
+//go:embed templates/config.yaml
+var defaultConfigYAML string
+
 // builtinC4Root is set at build time via -ldflags for skill deployment.
 var builtinC4Root string
 
@@ -58,6 +61,20 @@ func init() {
 		cmd.Flags().StringVar(&initTier, "tier", "", "build tier: solo|connected|full (written to .c4/config.yaml)")
 	}
 	rootCmd.AddCommand(claudeCmd, codexCmd, cursorCmd)
+}
+
+// writeDefaultConfig writes the embedded default config.yaml to .c4/config.yaml
+// if the file does not already exist. Existing configs are never overwritten.
+func writeDefaultConfig(dir string) error {
+	configPath := filepath.Join(dir, ".c4", "config.yaml")
+	if _, err := os.Stat(configPath); err == nil {
+		return nil // already exists — do not overwrite
+	}
+	if err := os.WriteFile(configPath, []byte(defaultConfigYAML), 0644); err != nil {
+		return fmt.Errorf("writing default config.yaml: %w", err)
+	}
+	fmt.Fprintln(os.Stderr, "cq: .c4/config.yaml created (default)")
+	return nil
 }
 
 // validTiers is the set of accepted --tier values.
@@ -160,7 +177,12 @@ func initAndLaunch(tool string) error {
 	}
 	fmt.Fprintln(os.Stderr, "cq: .c4/ directory initialized")
 
-	// 1b. Write tier to .c4/config.yaml if --tier was specified
+	// 1b. Write default config.yaml if it doesn't exist yet.
+	if err := writeDefaultConfig(dir); err != nil {
+		return fmt.Errorf("writing default config: %w", err)
+	}
+
+	// 1c. Write tier to .c4/config.yaml if --tier was specified
 	if err := writeTierConfig(dir, initTier); err != nil {
 		return fmt.Errorf("writing tier config: %w", err)
 	}

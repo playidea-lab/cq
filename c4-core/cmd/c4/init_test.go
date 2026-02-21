@@ -1052,6 +1052,50 @@ func TestWriteTierConfig_EmptyTierIsNoop(t *testing.T) {
 	}
 }
 
+func TestWriteDefaultConfig(t *testing.T) {
+	t.Run("creates config.yaml when missing", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := os.MkdirAll(filepath.Join(dir, ".c4"), 0755); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
+		if err := writeDefaultConfig(dir); err != nil {
+			t.Fatalf("writeDefaultConfig: %v", err)
+		}
+		data, err := os.ReadFile(filepath.Join(dir, ".c4", "config.yaml"))
+		if err != nil {
+			t.Fatalf("read config.yaml: %v", err)
+		}
+		if !strings.Contains(string(data), "permission_reviewer") {
+			t.Error("config.yaml missing permission_reviewer section")
+		}
+		if !strings.Contains(string(data), "mode: hook") {
+			t.Error("config.yaml missing mode: hook")
+		}
+	})
+
+	t.Run("does not overwrite existing config.yaml", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := os.MkdirAll(filepath.Join(dir, ".c4"), 0755); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
+		existing := "project_id: my-existing-project\n"
+		configPath := filepath.Join(dir, ".c4", "config.yaml")
+		if err := os.WriteFile(configPath, []byte(existing), 0644); err != nil {
+			t.Fatalf("write: %v", err)
+		}
+		if err := writeDefaultConfig(dir); err != nil {
+			t.Fatalf("writeDefaultConfig: %v", err)
+		}
+		data, err := os.ReadFile(configPath)
+		if err != nil {
+			t.Fatalf("read: %v", err)
+		}
+		if string(data) != existing {
+			t.Errorf("existing config was overwritten: got %q", string(data))
+		}
+	})
+}
+
 func TestWriteTierConfig_InvalidTier(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(dir, ".c4"), 0755); err != nil {
