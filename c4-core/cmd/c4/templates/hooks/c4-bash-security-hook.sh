@@ -210,9 +210,11 @@ if [[ "$COMMAND" =~ chmod[[:space:]]+(-R[[:space:]]+)?777 ]] || \
 fi
 
 # Disk/filesystem operations
+# Note: >/dev/null, >/dev/stderr, >/dev/stdin, >/dev/stdout, >/dev/fd are safe redirections — excluded.
 if [[ "$COMMAND" =~ mkfs ]] || \
    [[ "$COMMAND" =~ dd[[:space:]]+if= ]] || \
-   [[ "$COMMAND" =~ \>[[:space:]]*/dev/ ]]; then
+   { [[ "$COMMAND" =~ \>[[:space:]]*/dev/ ]] && \
+     [[ ! "$COMMAND" =~ \>[[:space:]]*/dev/(null|stderr|stdin|stdout|fd) ]]; }; then
     _emit_deny "Direct disk/filesystem operation"
 fi
 
