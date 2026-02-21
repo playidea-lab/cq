@@ -61,7 +61,7 @@ permission_reviewer:
     - "^find (\\.|\\./)"              # find . / find ./src (상대경로만 허용)
     - "^(grep|rg) "
     - "^(echo|pwd|which|env|printenv|whoami|date|uname) "
-    - "^cq (status|doctor|mcp|version|help)"
+    - "^cq (status|doctor|mcp|version|help)( |$)"
   block_patterns: []         # 예: ["curl.*\\| bash"]
 
 # Worktree settings

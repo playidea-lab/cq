@@ -6,6 +6,7 @@ import "os"
 // This mirrors config.LLMProviderConfig to avoid importing the config package.
 type GatewayProviderConfig struct {
 	Enabled      bool
+	APIKey       string
 	APIKeyEnv    string
 	BaseURL      string
 	DefaultModel string
@@ -47,8 +48,8 @@ func NewGatewayFromConfig(cfg GatewayConfig) *Gateway {
 			continue
 		}
 
-		apiKey := ""
-		if provCfg.APIKeyEnv != "" {
+		apiKey := provCfg.APIKey
+		if apiKey == "" && provCfg.APIKeyEnv != "" {
 			apiKey = os.Getenv(provCfg.APIKeyEnv)
 		}
 		baseURL := provCfg.BaseURL

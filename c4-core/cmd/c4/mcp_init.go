@@ -330,6 +330,7 @@ func toLLMGatewayConfig(cfg config.C4Config) llm.GatewayConfig {
 	for name, p := range cfg.LLMGateway.Providers {
 		providers[name] = llm.GatewayProviderConfig{
 			Enabled:      p.Enabled,
+			APIKey:       p.APIKey,
 			APIKeyEnv:    p.APIKeyEnv,
 			BaseURL:      p.BaseURL,
 			DefaultModel: p.DefaultModel,
