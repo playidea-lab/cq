@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"database/sql"
+	"encoding/json"
 	"testing"
 
 	_ "modernc.org/sqlite"
@@ -152,4 +153,83 @@ func TestListTasksEmpty(t *testing.T) {
 	if len(tasks) != 0 {
 		t.Errorf("filtered = %d, want 0", len(tasks))
 	}
+}
+
+func TestHandleTaskListIncludeDod(t *testing.T) {
+	db, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	s, err := NewSQLiteStore(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	dod := "Goal: Implement feature\n\nTests: unit tests pass"
+	_, err = db.Exec(
+		`INSERT INTO c4_tasks (task_id, title, status, priority, dod, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
+		"T-001-0", "Backend API", "pending", 2, dod, "2026-02-15T01:00:00Z",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Run("include_dod=false omits dod field", func(t *testing.T) {
+		result, err := handleTaskList(s, json.RawMessage(`{"include_dod":false}`))
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp := result.(map[string]any)
+		tasks, ok := resp["tasks"].([]map[string]any)
+		if !ok {
+			t.Fatalf("tasks type = %T, want []map[string]any", resp["tasks"])
+		}
+		if len(tasks) != 1 {
+			t.Fatalf("len(tasks) = %d, want 1", len(tasks))
+		}
+		if _, hasDod := tasks[0]["dod"]; hasDod {
+			t.Error("dod field present, want omitted when include_dod=false")
+		}
+		if tasks[0]["task_id"] != "T-001-0" {
+			t.Errorf("task_id = %v, want T-001-0", tasks[0]["task_id"])
+		}
+	})
+
+	t.Run("include_dod=true preserves dod field", func(t *testing.T) {
+		result, err := handleTaskList(s, json.RawMessage(`{"include_dod":true}`))
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp := result.(map[string]any)
+		tasks, ok := resp["tasks"].([]Task)
+		if !ok {
+			t.Fatalf("tasks type = %T, want []Task", resp["tasks"])
+		}
+		if len(tasks) != 1 {
+			t.Fatalf("len(tasks) = %d, want 1", len(tasks))
+		}
+		if tasks[0].DoD != dod {
+			t.Errorf("dod = %q, want %q", tasks[0].DoD, dod)
+		}
+	})
+
+	t.Run("default preserves dod field", func(t *testing.T) {
+		result, err := handleTaskList(s, json.RawMessage(`{}`))
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp := result.(map[string]any)
+		tasks, ok := resp["tasks"].([]Task)
+		if !ok {
+			t.Fatalf("tasks type = %T, want []Task", resp["tasks"])
+		}
+		if len(tasks) != 1 {
+			t.Fatalf("len(tasks) = %d, want 1", len(tasks))
+		}
+		if tasks[0].DoD != dod {
+			t.Errorf("dod = %q, want %q", tasks[0].DoD, dod)
+		}
+	})
 }

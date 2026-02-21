@@ -206,10 +206,11 @@ func RegisterTaskHandlers(reg *mcp.Registry, store Store) {
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"status":    map[string]any{"type": "string", "description": "Filter by status: pending, in_progress, done, blocked", "enum": []string{"pending", "in_progress", "done", "blocked"}},
-				"domain":    map[string]any{"type": "string", "description": "Filter by domain"},
-				"worker_id": map[string]any{"type": "string", "description": "Filter by assigned worker ID"},
-				"limit":     map[string]any{"type": "integer", "description": "Max results (default: 50)", "default": 50},
+				"status":      map[string]any{"type": "string", "description": "Filter by status: pending, in_progress, done, blocked", "enum": []string{"pending", "in_progress", "done", "blocked"}},
+				"domain":      map[string]any{"type": "string", "description": "Filter by domain"},
+				"worker_id":   map[string]any{"type": "string", "description": "Filter by assigned worker ID"},
+				"limit":       map[string]any{"type": "integer", "description": "Max results (default: 50)", "default": 50},
+				"include_dod": map[string]any{"type": "boolean", "description": "Include DoD field in response (default: true). Set false for brief listing to reduce response size.", "default": true},
 			},
 		},
 	}, func(args json.RawMessage) (any, error) {
@@ -409,10 +410,11 @@ func handleMarkBlocked(store Store, rawArgs json.RawMessage) (any, error) {
 
 // taskListArgs is the input for c4_task_list.
 type taskListArgs struct {
-	Status   string `json:"status"`
-	Domain   string `json:"domain"`
-	WorkerID string `json:"worker_id"`
-	Limit    int    `json:"limit"`
+	Status     string `json:"status"`
+	Domain     string `json:"domain"`
+	WorkerID   string `json:"worker_id"`
+	Limit      int    `json:"limit"`
+	IncludeDoD *bool  `json:"include_dod"`
 }
 
 func handleTaskList(s Store, rawArgs json.RawMessage) (any, error) {
@@ -431,8 +433,22 @@ func handleTaskList(s Store, rawArgs json.RawMessage) (any, error) {
 		return nil, fmt.Errorf("listing tasks: %w", err)
 	}
 
+	includeDoD := args.IncludeDoD == nil || *args.IncludeDoD
+	var result any = tasks
+	if !includeDoD {
+		brief := make([]map[string]any, len(tasks))
+		for i, t := range tasks {
+			b, _ := json.Marshal(t)
+			var m map[string]any
+			_ = json.Unmarshal(b, &m)
+			delete(m, "dod")
+			brief[i] = m
+		}
+		result = brief
+	}
+
 	return map[string]any{
-		"tasks":    tasks,
+		"tasks":    result,
 		"total":    total,
 		"filtered": len(tasks),
 	}, nil
