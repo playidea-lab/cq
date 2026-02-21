@@ -121,6 +121,8 @@ export interface TokenUsage {
 
 export type ViewType = 'board' | 'docs' | 'knowledge' | 'messenger' | 'settings';
 
+export type WorkspaceMode = 'messenger' | 'board' | 'docs' | 'knowledge' | 'settings';
+
 // --- C1 Messaging types ---
 
 export type ChannelType = 'topic' | 'dm' | 'auto' | 'worker';

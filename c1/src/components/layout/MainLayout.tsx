@@ -1,38 +1,30 @@
 import React from 'react';
 
 interface MainLayoutProps {
-  sidebar: React.ReactNode;
-  header: React.ReactNode;
+  leftNav: React.ReactNode;
+  channelList: React.ReactNode;
   content: React.ReactNode;
-  messenger?: React.ReactNode;
-  isMessengerOpen?: boolean;
 }
 
 export function MainLayout({
-  sidebar,
-  header,
+  leftNav,
+  channelList,
   content,
-  messenger,
-  isMessengerOpen = true
 }: MainLayoutProps) {
   return (
-    <div className="app-layout">
-      {sidebar}
-      <main className="app-main">
-        {header}
-        <div className="app-container">
-          {/* Main content: 100% or 50% depending on messenger state */}
-          <div className={`app-content ${isMessengerOpen && messenger ? 'app-content--split' : 'app-content--full'}`}>
-            {content}
-          </div>
-          {/* Messenger: toggleable */}
-          {messenger && isMessengerOpen && (
-            <aside className="app-messenger-fixed">
-              {messenger}
-            </aside>
-          )}
-        </div>
-      </main>
+    <div className="main-layout">
+      {/* Left nav: 48px fixed */}
+      <div className="main-layout__nav">
+        {leftNav}
+      </div>
+      {/* Channel list area: 240px */}
+      <div className="main-layout__channel-list">
+        {channelList}
+      </div>
+      {/* Content area: flex-grow */}
+      <div className="main-layout__content">
+        {content}
+      </div>
     </div>
   );
 }

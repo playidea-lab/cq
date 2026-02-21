@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect } from 'react';
 import { open } from '@tauri-apps/plugin-dialog';
-import { Sidebar } from './components/Sidebar';
+import { WorkspaceNav } from './components/WorkspaceNav';
 import { DashboardView } from './components/dashboard/DashboardView';
 import { DocumentsView } from './components/documents/DocumentsView';
 import { KnowledgeView } from './components/knowledge/KnowledgeView';
@@ -10,21 +10,20 @@ import { ErrorBoundary } from './components/shared/ErrorBoundary';
 import { AuthProvider } from './contexts/AuthContext';
 import { ToastProvider } from './contexts/ToastContext';
 import { TaskProvider, useTask } from './contexts/TaskContext';
-import { UIProvider, useUI } from './contexts/UIContext';
-import { Header } from './components/layout/Header';
+import { UIProvider } from './contexts/UIContext';
 import { MainLayout } from './components/layout/MainLayout';
-import { ChatDrawer } from './components/channels/ChatDrawer';
 import { CommandPalette } from './components/shared/CommandPalette';
 import { useAuth } from './hooks/useAuth';
-import type { ViewType } from './types';
+import type { WorkspaceMode } from './types';
 import './styles/auth.css';
 import './styles/layout.css';
 
-const VIEW_SHORTCUTS: Record<string, ViewType> = {
-  '1': 'board',
-  '2': 'docs',
-  '3': 'knowledge',
-  '4': 'settings',
+const MODE_SHORTCUTS: Record<string, WorkspaceMode> = {
+  '1': 'messenger',
+  '2': 'board',
+  '3': 'docs',
+  '4': 'knowledge',
+  '5': 'settings',
 };
 
 // Component to handle task polling based on projectPath
@@ -47,15 +46,14 @@ function TaskPoller({ projectPath }: { projectPath: string | null }) {
 
 function AppContent() {
   const { user, loading } = useAuth();
-  const { isChatOpen } = useUI();
-  const [currentView, setCurrentView] = useState<ViewType>('board');
+  const [workspaceMode, setWorkspaceMode] = useState<WorkspaceMode>('messenger');
   const [projectPath, setProjectPath] = useState<string | null>(null);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && VIEW_SHORTCUTS[e.key]) {
+      if ((e.metaKey || e.ctrlKey) && MODE_SHORTCUTS[e.key]) {
         e.preventDefault();
-        setCurrentView(VIEW_SHORTCUTS[e.key]);
+        setWorkspaceMode(MODE_SHORTCUTS[e.key]);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
@@ -87,30 +85,46 @@ function AppContent() {
     }
   }, [isTauri]);
 
-  if (loading) {
-    return (
-      <MainLayout
-        sidebar={<Sidebar currentView={currentView} onViewChange={setCurrentView} />}
-        header={<Header projectPath={null} onOpenFolder={() => {}} />}
-        content={<div className="empty-state">Loading...</div>}
-      />
-    );
-  }
+  // Render the channel list area based on workspace mode.
+  // When mode is 'messenger', show channel list placeholder (ChannelListSidebar in T-943).
+  // Other modes render their secondary view here.
+  const renderChannelList = () => {
+    if (workspaceMode === 'messenger') {
+      // Placeholder: ChannelListSidebar will be wired in T-943
+      return (
+        <div className="channel-list-placeholder">
+          {/* Channel list will be rendered in T-943 */}
+        </div>
+      );
+    }
+    // Non-messenger modes: show the relevant view in the channel list area
+    if (!projectPath) {
+      return (
+        <div className="channel-list-placeholder" />
+      );
+    }
+    switch (workspaceMode) {
+      case 'board':
+        return <DashboardView key={`board-${projectPath}`} projectPath={projectPath} />;
+      case 'docs':
+        return <DocumentsView key={`docs-${projectPath}`} projectPath={projectPath} />;
+      case 'knowledge':
+        return <KnowledgeView key={`knowledge-${projectPath}`} projectPath={projectPath} />;
+      case 'settings':
+        return <ConfigView key={`settings-${projectPath}`} projectPath={projectPath} />;
+    }
+  };
 
-  if (!user) {
-    return (
-      <div className="app-layout">
-        <Sidebar currentView={currentView} onViewChange={setCurrentView} />
-        <main className="app-main">
-          <div className="app-content">
-            <LoginView />
-          </div>
-        </main>
-      </div>
-    );
-  }
+  // Content area: always show main content
+  const renderContent = () => {
+    if (loading) {
+      return <div className="empty-state">Loading...</div>;
+    }
 
-  const renderView = () => {
+    if (!user) {
+      return <LoginView />;
+    }
+
     if (!projectPath) {
       return (
         <div className="empty-state">
@@ -125,31 +139,25 @@ function AppContent() {
       );
     }
 
-    switch (currentView) {
-      case 'board':
-        return <DashboardView key={`board-${projectPath}`} projectPath={projectPath} />;
-      case 'docs':
-        return <DocumentsView key={`docs-${projectPath}`} projectPath={projectPath} />;
-      case 'knowledge':
-        return <KnowledgeView key={`knowledge-${projectPath}`} projectPath={projectPath} />;
-      case 'settings':
-        return <ConfigView key={`settings-${projectPath}`} projectPath={projectPath} />;
-    }
+    // NOTE: ChannelsView is not rendered here yet (done in T-945)
+    return null;
   };
+
+  const workspaceNav = (
+    <WorkspaceNav mode={workspaceMode} onModeChange={setWorkspaceMode} />
+  );
 
   return (
     <>
       <TaskPoller projectPath={projectPath} />
       <MainLayout
-        sidebar={<Sidebar currentView={currentView} onViewChange={setCurrentView} />}
-        header={<Header projectPath={projectPath} onOpenFolder={handleOpenFolder} />}
-        content={<ErrorBoundary>{renderView()}</ErrorBoundary>}
-        messenger={projectPath ? <ChatDrawer projectPath={projectPath} /> : undefined}
-        isMessengerOpen={isChatOpen}
+        leftNav={workspaceNav}
+        channelList={renderChannelList()}
+        content={<ErrorBoundary>{renderContent()}</ErrorBoundary>}
       />
-      <CommandPalette 
-        onViewChange={setCurrentView} 
-        onOpenFolder={handleOpenFolder} 
+      <CommandPalette
+        onViewChange={(view) => setWorkspaceMode(view as WorkspaceMode)}
+        onOpenFolder={handleOpenFolder}
       />
     </>
   );

@@ -1,3 +1,4 @@
+// @deprecated — use WorkspaceNav instead
 import { useState, useEffect } from 'react';
 import { LayoutDashboard, FileText, BookOpen, Settings, Sun, Moon } from 'lucide-react';
 import type { ViewType } from '../types';
