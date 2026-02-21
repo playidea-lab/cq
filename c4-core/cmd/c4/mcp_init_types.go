@@ -15,6 +15,7 @@ import (
 	"github.com/changmin/c4-core/internal/mcp"
 	"github.com/changmin/c4-core/internal/mcp/handlers"
 	"github.com/changmin/c4-core/internal/research"
+	"github.com/changmin/c4-core/internal/serve"
 )
 
 // initContext carries shared dependencies between component init functions.
@@ -65,6 +66,10 @@ type initContext struct {
 	// Gate (set by initGate post-store hook, c8_gate build tag)
 	gateWebhookManager gateWebhookManagerInterface
 	gateScheduler      gateSchedulerInterface
+
+	// Agent (set by startAgentIfNeeded in mcp_init_agent.go)
+	agentComp   *serve.Agent
+	agentCancel context.CancelFunc
 }
 
 // hubClientInterface abstracts hub.Client so the stub doesn't need to import hub.

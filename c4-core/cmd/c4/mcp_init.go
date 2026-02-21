@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -296,6 +297,13 @@ func newMCPServer() (*mcpServer, error) {
 	// Start EventSink HTTP server (config from .c4/config.yaml).
 	// startEventSink is defined in mcp_init_eventbus.go (c3_eventbus) / mcp_init_eventbus_stub.go.
 	startEventSink(ctx)
+
+	// Start Agent inside MCP server (lazy, no cq serve required).
+	// Defined in mcp_init_agent.go — no build tag.
+	// agentCtx is cancelled by shutdownAgent hook (via ctx.agentCancel).
+	agentCtx, agentCancel := context.WithCancel(context.Background())
+	ctx.agentCancel = agentCancel
+	startAgentIfNeeded(agentCtx, ctx)
 
 	return &mcpServer{
 		registry:       reg,
