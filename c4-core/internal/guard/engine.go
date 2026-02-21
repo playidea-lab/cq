@@ -70,6 +70,7 @@ func NewEngine(dbPath string, config Config) (*Engine, error) {
 		return nil, fmt.Errorf("guard: open db: %w", err)
 	}
 	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
 
 	// Enable WAL for concurrent read/write without blocking.
 	if _, err := db.Exec("PRAGMA journal_mode=WAL"); err != nil {
@@ -176,7 +177,11 @@ func (e *Engine) AuditEntries(ctx context.Context, n int, toolFilter, actorFilte
 			return nil, fmt.Errorf("guard: audit scan: %w", err)
 		}
 		ent.Action = parseAction(actionStr)
-		ent.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
+		if t, err := time.Parse(time.RFC3339, createdAt); err == nil {
+			ent.CreatedAt = t
+		} else if t, err := time.Parse(time.RFC3339Nano, createdAt); err == nil {
+			ent.CreatedAt = t
+		}
 		entries = append(entries, ent)
 	}
 	return entries, rows.Err()
