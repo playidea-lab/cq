@@ -126,6 +126,8 @@ c4/
 ├── docs/             # ROADMAP, guides
 ├── scripts/          # 유틸리티 스크립트
 ├── tests/            # Python 테스트
+├── user/             # PlayIdea-Lab/cq submodule (공개 배포 — install.sh, configs/)
+├── .gitlab-ci.yml    # GitLab CI: 9-binary 크로스 컴파일 → GitHub Releases
 ├── .mcp.json         # MCP 서버 설정 → ~/.local/bin/cq
 ├── CLAUDE.md → AGENTS.md  # AI 에이전트 지침 (SSOT)
 └── pyproject.toml    # Python 프로젝트 설정
@@ -541,7 +543,7 @@ serve:
 | 섹션 | 설명 |
 |------|------|
 | `hub` | C5 Hub 연결 (enabled, url, api_key) |
-| `llm_gateway` | LLM 프로바이더 설정 |
+| `llm_gateway` | LLM 프로바이더 설정 — API 키는 `cq secret set <provider>.api_key <value>` (config.yaml의 api_key/api_key_env 필드는 deprecated) |
 | `eventsink` | EventSink HTTP 서버 설정 (enabled, port, token) |
 | `worktree` | Worktree 관리 (auto_cleanup: true/false) |
 | `observe` | C7 관측성 (enabled, log_level, log_format) — c7_observe 빌드 태그 필요 |
