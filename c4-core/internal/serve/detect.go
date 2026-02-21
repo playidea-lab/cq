@@ -68,7 +68,8 @@ func isServeRunningWith(pidPath, healthURL string) bool {
 	}
 	defer resp.Body.Close()
 
-	return resp.StatusCode == http.StatusOK
+	// Accept both 200 (ok) and 503 (degraded) — a degraded serve is still running
+	return resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusServiceUnavailable
 }
 
 // StatusMessage returns a human-readable string for stderr logging.

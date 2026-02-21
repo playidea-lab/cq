@@ -47,14 +47,14 @@ func (c *EventSinkComponent) Start(_ context.Context) error {
 	return nil
 }
 
-func (c *EventSinkComponent) Stop(_ context.Context) error {
+func (c *EventSinkComponent) Stop(ctx context.Context) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
 	if c.srv == nil {
 		return nil
 	}
-	err := c.srv.Close()
+	err := c.srv.Shutdown(ctx)
 	c.srv = nil
 	return err
 }

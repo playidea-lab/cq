@@ -41,6 +41,7 @@ type Agent struct {
 	cancel     context.CancelFunc
 	childCtx   context.Context
 	claudePath string // path to claude CLI binary
+	memberID   string // cached member ID from ensureMember
 	httpClient *http.Client
 	wg         sync.WaitGroup
 	sem        chan struct{} // concurrency limiter for processMessage goroutines
@@ -338,8 +339,18 @@ func parseClaudeOutput(data []byte) string {
 
 // postMessage sends a response message to a channel via Supabase REST.
 func (a *Agent) postMessage(channelID, content string) {
-	// First ensure member exists
-	memberID := a.ensureMember()
+	a.mu.Lock()
+	memberID := a.memberID
+	a.mu.Unlock()
+
+	if memberID == "" {
+		memberID = a.ensureMember()
+		if memberID != "" {
+			a.mu.Lock()
+			a.memberID = memberID
+			a.mu.Unlock()
+		}
+	}
 
 	payload := map[string]interface{}{
 		"channel_id":  channelID,
