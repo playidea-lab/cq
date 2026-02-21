@@ -8,7 +8,7 @@ Runs a 4-phase structured planning process:
 
 1. **Discovery** — Clarifies requirements using EARS format. Asks questions until the scope is unambiguous.
 2. **Design** — Proposes architecture and key decisions with tradeoffs.
-3. **Lighthouse** — Registers tool contracts (DoD checklist per task).
+3. **Lighthouse** — Registers tool contracts (DoD checklist per task). Lighthouse is C4's contract-first TDD layer: each task gets a verifiable definition of done before any code is written.
 4. **Tasks** — Creates the task queue in `.c4/tasks.db` with Definition of Done per task.
 
 ## Example

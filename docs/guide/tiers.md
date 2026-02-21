@@ -38,7 +38,14 @@ Additional features on top of `solo`:
 - **C3 EventBus** — gRPC event bus for real-time notifications
 - **C0 Drive** — file storage via Supabase Storage
 
-Requires: Supabase project URL + anon key in `.c4/config.yaml`.
+Requires: Supabase project URL + anon key. Create a free project at [supabase.com](https://supabase.com), then:
+
+```sh
+# Copy the connected config template
+curl -fsSL https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/configs/connected.yaml > ~/.c4/config.yaml
+# Edit cloud.url and cloud.anon_key (or use secret store)
+cq secret set supabase.anon_key your-anon-key
+```
 
 Best for: teams, multi-machine setups, AI-powered workflows.
 

@@ -29,7 +29,7 @@ CQ detects your project type automatically:
 | Project type | Build command |
 |-------------|---------------|
 | Go | `go build ./... && go vet ./...` |
-| Python | `uv run python -m py_compile` |
+| Python | `uv run python -m compileall . && uv run pytest tests/ -x` |
 | Node | `npm run build` |
 | Rust | `cargo build` |
 
