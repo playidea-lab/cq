@@ -14,11 +14,11 @@ interface MessageListProps {
 }
 
 // Message grouping types
-type MessageGroup =
+export type MessageGroup =
   | { type: 'single'; message: C1Message }
   | { type: 'thread'; workId: string; messages: C1Message[] };
 
-function groupMessages(messages: C1Message[]): MessageGroup[] {
+export function groupMessages(messages: C1Message[]): MessageGroup[] {
   const groups: MessageGroup[] = [];
   let i = 0;
   while (i < messages.length) {
