@@ -10,8 +10,10 @@
 package state
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 )
@@ -109,6 +111,18 @@ func (e *InvariantViolationError) Error() string {
 	return fmt.Sprintf("invariant violation: %s", e.Message)
 }
 
+// ErrStateChanged is returned by Transition when the DB state differs from
+// the in-memory expected state at the moment the IMMEDIATE lock is acquired.
+// Callers may retry after re-loading state via LoadState.
+var ErrStateChanged = errors.New("state changed by concurrent writer")
+
+// ErrInvalidTransition is returned by Transition when the current DB state
+// does not allow the requested event. This is non-retryable.
+var ErrInvalidTransition = errors.New("invalid transition from current state")
+
+// ErrDatabase is returned by Transition on transient DB errors. Callers may retry.
+var ErrDatabase = errors.New("database error")
+
 // ProjectState holds the full project state (mirrors Python C4State).
 type ProjectState struct {
 	ProjectID     string        `json:"project_id"`
@@ -183,43 +197,115 @@ func (m *Machine) CanTransition(event string) bool {
 	return ok
 }
 
-// Transition executes a state transition.
-// Returns the new status or an error if the transition is invalid.
+// Transition executes a state transition using a BEGIN IMMEDIATE transaction.
+//
+// Concurrency: acquires a write-reservation lock (BEGIN IMMEDIATE) before
+// re-reading the DB state. This prevents last-write-wins races when multiple
+// Claude Code sessions call Transition concurrently on the same project.
+//
+// Error classification:
+//   - ErrStateChanged:      DB state != in-memory expected state → caller should
+//     call LoadState and retry
+//   - ErrInvalidTransition: event not allowed from current DB state → non-retryable
+//   - ErrDatabase:          transient DB error → retry
 func (m *Machine) Transition(event string) (ProjectStatus, error) {
 	if m.state == nil {
 		return "", fmt.Errorf("no state loaded")
 	}
 
-	current := m.state.Status
-	key := transitionKey{From: current, Event: event}
+	expectedStatus := m.state.Status
+	projectID := m.state.ProjectID
 
+	ctx := context.Background()
+	conn, err := m.db.Conn(ctx)
+	if err != nil {
+		return "", fmt.Errorf("%w: get connection: %v", ErrDatabase, err)
+	}
+	defer conn.Close()
+
+	// BEGIN IMMEDIATE acquires a write-reservation lock immediately.
+	// busy_timeout (if set on the DB) causes concurrent callers to wait
+	// rather than fail immediately, serialising transitions cleanly.
+	if _, err = conn.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
+		return "", fmt.Errorf("%w: begin immediate: %v", ErrDatabase, err)
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			conn.ExecContext(ctx, "ROLLBACK") //nolint:errcheck
+		}
+	}()
+
+	// Re-read state from DB inside the transaction to detect concurrent changes.
+	var stateJSON string
+	dbErr := conn.QueryRowContext(ctx,
+		"SELECT state_json FROM c4_state WHERE project_id = ?",
+		projectID,
+	).Scan(&stateJSON)
+	if dbErr != nil && dbErr != sql.ErrNoRows {
+		return "", fmt.Errorf("%w: read state: %v", ErrDatabase, dbErr)
+	}
+
+	// Determine actual current DB status.
+	var dbStatus ProjectStatus
+	if dbErr == sql.ErrNoRows {
+		dbStatus = StatusINIT
+	} else {
+		var dbState ProjectState
+		if jsonErr := json.Unmarshal([]byte(stateJSON), &dbState); jsonErr != nil {
+			return "", fmt.Errorf("%w: parse state: %v", ErrDatabase, jsonErr)
+		}
+		dbStatus = dbState.Status
+	}
+
+	// Guard: if DB state differs from in-memory expectation, a concurrent
+	// writer has already advanced the state. Signal the caller to retry.
+	if dbStatus != expectedStatus {
+		return "", fmt.Errorf("%w: expected %s but DB has %s",
+			ErrStateChanged, expectedStatus, dbStatus)
+	}
+
+	// Validate the transition against the actual DB state.
+	key := transitionKey{From: dbStatus, Event: event}
 	newStatus, ok := transitions[key]
 	if !ok {
-		return "", &StateTransitionError{
-			From:    current,
-			Event:   event,
-			Allowed: AllowedEvents(current),
-		}
+		return "", fmt.Errorf("%w: %s --[%s]--> ? (allowed: %v)",
+			ErrInvalidTransition, dbStatus, event, AllowedEvents(dbStatus))
 	}
 
-	// Update execution mode
-	oldStatus := m.state.Status
-	m.state.Status = newStatus
-	m.state.UpdatedAt = time.Now()
-
+	// Build new state.
+	now := time.Now()
+	newState := &ProjectState{
+		ProjectID: projectID,
+		Status:    newStatus,
+		UpdatedAt: now,
+	}
 	if newStatus == StatusEXECUTE {
-		m.state.ExecutionMode = ModeRunning
+		newState.ExecutionMode = ModeRunning
 	}
-	if oldStatus == StatusEXECUTE && newStatus != StatusEXECUTE {
-		m.state.ExecutionMode = ""
+	// ExecutionMode stays zero-value ("") when leaving EXECUTE.
+
+	newStateJSON, err := json.Marshal(newState)
+	if err != nil {
+		return "", fmt.Errorf("%w: marshal state: %v", ErrDatabase, err)
 	}
 
-	// Save immediately
-	if err := m.saveState(); err != nil {
-		// Rollback on save failure
-		m.state.Status = oldStatus
-		return "", fmt.Errorf("save state after transition: %w", err)
+	_, err = conn.ExecContext(ctx,
+		`INSERT OR REPLACE INTO c4_state (project_id, state_json, updated_at)
+		 VALUES (?, ?, ?)`,
+		projectID, string(newStateJSON), now,
+	)
+	if err != nil {
+		return "", fmt.Errorf("%w: save state: %v", ErrDatabase, err)
 	}
+
+	if _, err = conn.ExecContext(ctx, "COMMIT"); err != nil {
+		return "", fmt.Errorf("%w: commit: %v", ErrDatabase, err)
+	}
+	committed = true
+
+	// Update in-memory state only after a successful commit.
+	m.state = newState
 
 	return newStatus, nil
 }
@@ -247,6 +333,7 @@ func TransitionTarget(from ProjectStatus, event string) ProjectStatus {
 }
 
 // saveState persists the current state to the database.
+// Used by Initialize only (non-concurrent path, no IMMEDIATE needed).
 func (m *Machine) saveState() error {
 	if m.state == nil {
 		return fmt.Errorf("no state to save")

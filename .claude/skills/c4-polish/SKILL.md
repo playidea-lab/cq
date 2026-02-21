@@ -49,7 +49,25 @@ description: |
 
 ## Instructions
 
-### Phase 0. Scope Determination
+### Phase 0. Phase Lock Acquire (Advisory)
+
+동시 실행 방지를 위한 advisory lock을 획득합니다.
+
+```python
+result = c4_phase_lock_acquire(phase="polish")
+if not result["acquired"]:
+    err = result["error"]
+    print(f"다른 세션이 Polish 중입니다 ({err['message']})")
+    print("Override하시겠습니까? (Y/N)")
+    # N이면 종료
+    # Y면 강제 override로 진행 (lock 파일 무시)
+```
+
+- `acquired: true` → 정상 진행
+- `acquired: false, code: LOCK_HELD` → 사용자에게 override 여부 확인
+- 종료 시 반드시 `c4_phase_lock_release(phase="polish")` 호출
+
+### Phase 0.5. Scope Determination
 
 리뷰 대상 파일을 확정합니다.
 
