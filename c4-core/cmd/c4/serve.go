@@ -93,6 +93,9 @@ func runServe(cmd *cobra.Command, args []string) error {
 	cfgMgr, err := config.New(projectDir)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "cq serve: config load warning: %v (using defaults)\n", err)
+		if cfgMgr == nil {
+			return fmt.Errorf("cq serve: config load failed: %w", err)
+		}
 	}
 	cfg := cfgMgr.GetConfig()
 

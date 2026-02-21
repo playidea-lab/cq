@@ -74,7 +74,21 @@ func (pl *PhaseLocker) lockFile(phase string) string {
 // Acquire attempts to acquire an advisory lock for the given phase.
 // Returns (true, nil) if the lock was successfully acquired.
 // Returns (false, lockError) if the lock is held by another process.
+// validPhase returns true if phase is an allowed phase name.
+func validPhase(phase string) bool {
+	return phase == "polish" || phase == "finish"
+}
+
 func (pl *PhaseLocker) Acquire(phase string) PhaseLockResult {
+	if !validPhase(phase) {
+		return PhaseLockResult{
+			Acquired: false,
+			Error: &PhaseLockError{
+				Code:    "INVALID_PHASE",
+				Message: fmt.Sprintf("invalid phase %q: must be one of: polish, finish", phase),
+			},
+		}
+	}
 	if err := os.MkdirAll(pl.lockDir(), 0755); err != nil {
 		return PhaseLockResult{
 			Acquired: false,
@@ -154,6 +168,9 @@ func (pl *PhaseLocker) Acquire(phase string) PhaseLockResult {
 // Release removes the lock file for the given phase.
 // Returns true if the file was removed (or did not exist), false on error.
 func (pl *PhaseLocker) Release(phase string) bool {
+	if !validPhase(phase) {
+		return false
+	}
 	lockPath := pl.lockFile(phase)
 	err := os.Remove(lockPath)
 	return err == nil || os.IsNotExist(err)

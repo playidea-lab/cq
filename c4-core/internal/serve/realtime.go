@@ -164,6 +164,10 @@ func (rc *RealtimeClient) connectionLoop(ctx context.Context) {
 			consecutiveFailures++
 			fmt.Fprintf(os.Stderr, "cq: [realtime] connection error (%d/%d): %v\n",
 				consecutiveFailures, maxReconnectFails, err)
+			backoff = backoff * 2
+			if backoff > maxBackoff {
+				backoff = maxBackoff
+			}
 		} else {
 			// Clean disconnect — reset counters
 			consecutiveFailures = 0
@@ -175,10 +179,6 @@ func (rc *RealtimeClient) connectionLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-time.After(backoff):
-		}
-		backoff = backoff * 2
-		if backoff > maxBackoff {
-			backoff = maxBackoff
 		}
 	}
 }

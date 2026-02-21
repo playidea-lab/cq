@@ -59,6 +59,8 @@ type phaseLockArgs struct {
 	Phase string `json:"phase"`
 }
 
+var validPhases = map[string]bool{"polish": true, "finish": true}
+
 func handlePhaseLockAcquire(locker *state.PhaseLocker, rawArgs json.RawMessage) (any, error) {
 	var args phaseLockArgs
 	if err := json.Unmarshal(rawArgs, &args); err != nil {
@@ -66,6 +68,9 @@ func handlePhaseLockAcquire(locker *state.PhaseLocker, rawArgs json.RawMessage) 
 	}
 	if args.Phase == "" {
 		return nil, fmt.Errorf("phase is required")
+	}
+	if !validPhases[args.Phase] {
+		return nil, fmt.Errorf("invalid phase %q: must be one of: polish, finish", args.Phase)
 	}
 	result := locker.Acquire(args.Phase)
 	return result, nil
@@ -78,6 +83,9 @@ func handlePhaseLockRelease(locker *state.PhaseLocker, rawArgs json.RawMessage) 
 	}
 	if args.Phase == "" {
 		return nil, fmt.Errorf("phase is required")
+	}
+	if !validPhases[args.Phase] {
+		return nil, fmt.Errorf("invalid phase %q: must be one of: polish, finish", args.Phase)
 	}
 	released := locker.Release(args.Phase)
 	return map[string]any{
