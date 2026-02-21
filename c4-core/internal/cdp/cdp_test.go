@@ -181,6 +181,12 @@ func TestClickByRef_ValidationErrors(t *testing.T) {
 			t.Fatal("expected error for empty url")
 		}
 	})
+	t.Run("remote url rejected", func(t *testing.T) {
+		_, err := r.ClickByRef(ctx, "http://remote.host:9222", "c4r-0", "", 0)
+		if err == nil {
+			t.Fatal("expected error for remote url")
+		}
+	})
 	t.Run("invalid ref", func(t *testing.T) {
 		_, err := r.ClickByRef(ctx, "http://localhost:9222", "bad-ref", "", 0)
 		if err == nil {

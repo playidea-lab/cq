@@ -652,13 +652,21 @@ func (s *SQLiteStore) SubmitTask(taskID, workerID, commitSHA, handoff string, re
 }
 
 // MarkBlocked marks a task as blocked and persists failure_signature, attempts, last_error.
+// Returns an error if the task_id does not exist (RowsAffected == 0).
 func (s *SQLiteStore) MarkBlocked(taskID, workerID, failureSignature string, attempts int, lastError string) error {
-	_, err := s.db.Exec(`
+	result, err := s.db.Exec(`
 		UPDATE c4_tasks SET status = 'blocked', worker_id = '', failure_signature = ?, blocked_attempts = ?, last_error = ?, updated_at = CURRENT_TIMESTAMP
 		WHERE task_id = ?`, failureSignature, attempts, lastError, taskID,
 	)
 	if err != nil {
 		return err
+	}
+	n, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("checking rows affected: %w", err)
+	}
+	if n == 0 {
+		return fmt.Errorf("task %s not found", taskID)
 	}
 
 	// C3 EventBus: publish task.blocked event (dispatched to C1 via rules)

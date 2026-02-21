@@ -800,6 +800,19 @@ func TestHandleMarkBlocked(t *testing.T) {
 			wantErr:  true,
 			errMsg:   "failure_signature is required",
 		},
+		{
+			name: "store returns not found error",
+			args: `{
+				"task_id": "T-GHOST-0",
+				"worker_id": "worker-1",
+				"failure_signature": "build_fail",
+				"attempts": 1,
+				"last_error": "exit 1"
+			}`,
+			blockErr: fmt.Errorf("task T-GHOST-0 not found"),
+			wantErr:  true,
+			errMsg:   "not found",
+		},
 	}
 
 	for _, tt := range tests {

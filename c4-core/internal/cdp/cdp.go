@@ -285,7 +285,8 @@ func (r *Runner) TypeByRef(ctx context.Context, debugURL, ref, text, targetURL s
 		}); err != nil {
 		return nil, fmt.Errorf("cdp: type into %s: %w", ref, err)
 	}
-	return &ActionResult{Action: "type", Ref: ref, Value: text, ElapsedMs: time.Since(start).Milliseconds()}, nil
+	// Value intentionally omitted: typed text may contain credentials.
+	return &ActionResult{Action: "type", Ref: ref, ElapsedMs: time.Since(start).Milliseconds()}, nil
 }
 
 // GetTextByRef returns the text content of the element identified by a ref from ScanElements.
