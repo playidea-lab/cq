@@ -7,6 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-02-21
+
+### ✨ Features
+
+- **`hub`: Worker standby 자동 lease 갱신** — standby 루프에서 lease를 주기적으로 자동 갱신, 장시간 대기 시 lease 만료 방지
+- **`llm`: `api_key` 직접 값 지원** — `LLMProviderConfig`에 환경변수 외 인라인 API 키 설정 가능
+
+### 🐛 Bug Fixes
+
+- **`task`**: Task ID 문법 regex + `ReviewID` last-hyphen split 수정 (CR-027)
+- **`submit`**: `validation_results` 정책 통합 — optional, non-empty, status enum 검증 일관성 (CR-013/014)
+- **`store`**: `files_changed` 컬럼 누락 수정 — `c4_tasks` 테이블에 추가 (CR-017)
+- **`review`**: `max_revision` 경계 조건 수정 (`>` → `>=`) 및 정책 문서화
+- **`security`**: `SubmitTask`에서 worker ownership 항상 검증 (CR-012)
+- **`checkpoint`**: `APPROVE_FINAL`을 유효한 결정 값으로 추가
+- **`handlers`**: `MarkBlocked` not-found 에러 계약 명확화 및 테스트 동기화 (CR-021)
+
+### 🛡️ Security (CDP element-ref API 강화)
+
+- `config.yaml` allow_patterns에 `( |$)` 끝 앵커 추가 — compound 명령 우회(`cmd&&evil`) 방지
+- `find` 패턴을 두 개로 분리 — `./../../` 경로 순회 공격 차단
+- `TypeByRef` 응답에서 `Value` 필드 제거 — 자격증명 에코 방지
+- JS text sanitization에 C1 제어문자(U+0080–U+009F) 추가
+- `TypeByRef` 라이브러리 레이어 empty-text 가드 — 브라우저 연결 전 조기 검증
+
+### 🧪 Tests
+
+- `test(worker)`: `handleWorkerComplete` status enum 검증 테스트 추가 (CR-006)
+- `test(worktree)`: `SubmitTask` worktree 자동 cleanup 테스트 추가
+- CDP ref-based API 검증 오류 테스트 — remote URL, invalid ref, empty text, credentials
+
+### 📚 Documentation
+
+- Go 테스트 수 업데이트: ~1,651개 (c4-core ~1,477 + c5 174), 26 패키지
+
+---
+
 ## [0.9.2] - 2026-02-21
 
 ### ✨ Features
