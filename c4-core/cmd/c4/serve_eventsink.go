@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"github.com/changmin/c4-core/internal/config"
+	"github.com/changmin/c4-core/internal/eventbus"
 	"github.com/changmin/c4-core/internal/serve"
 )
 
@@ -24,8 +25,10 @@ func registerEventSinkServeComponent(mgr *serve.Manager, cfg config.C4Config, eb
 		port = 4141
 	}
 
-	// eb is reserved for future publisher wiring (EventBus → EventSink forwarding).
-	_ = eb
-	mgr.Register(serve.NewEventSinkComponent(port, cfg.EventSink.Token, nil))
+	var pub eventbus.Publisher
+	if eb != nil {
+		pub = eb.Publisher()
+	}
+	mgr.Register(serve.NewEventSinkComponent(port, cfg.EventSink.Token, pub))
 	fmt.Fprintf(os.Stderr, "cq serve: registered eventsink (port %d)\n", port)
 }

@@ -2,6 +2,7 @@ package serve
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -183,5 +184,52 @@ func TestEBComp_ManagerIntegration(t *testing.T) {
 
 	if err := mgr.StopAll(ctx); err != nil {
 		t.Fatalf("StopAll failed: %v", err)
+	}
+}
+
+// TestLazyPublisher_InnerNilBeforeFirstPublish verifies that inner is nil
+// before the first PublishAsync call.
+func TestLazyPublisher_InnerNilBeforeFirstPublish(t *testing.T) {
+	comp := NewEventBusComponent(EventBusConfig{})
+	lp := comp.Publisher().(*lazyPublisher)
+	lp.mu.Lock()
+	inner := lp.inner
+	lp.mu.Unlock()
+	if inner != nil {
+		t.Error("inner should be nil before first PublishAsync call")
+	}
+}
+
+// TestLazyPublisher_StopBeforeInit verifies Stop() does not panic when
+// the inner client has never been initialized.
+func TestLazyPublisher_StopBeforeInit(t *testing.T) {
+	comp := NewEventBusComponent(EventBusConfig{})
+	lp := comp.Publisher().(*lazyPublisher)
+	// Should not panic
+	lp.Stop()
+}
+
+// TestLazyPublisher_PublishAsyncEBNotStarted verifies that PublishAsync does
+// not panic when the EventBus is not started (socket path is empty).
+func TestLazyPublisher_PublishAsyncEBNotStarted(t *testing.T) {
+	comp := NewEventBusComponent(EventBusConfig{})
+	lp := comp.Publisher().(*lazyPublisher)
+	// Should not panic; error is silently dropped/logged
+	lp.PublishAsync("test.event", "test", json.RawMessage(`{}`), "proj")
+}
+
+// TestPublisher_IndependentInstances verifies that two Publisher() calls return
+// independent lazyPublisher instances (prevents double-close issues).
+func TestPublisher_IndependentInstances(t *testing.T) {
+	comp := NewEventBusComponent(EventBusConfig{})
+	p1 := comp.Publisher()
+	p2 := comp.Publisher()
+	if p1 == p2 {
+		t.Error("Publisher() should return independent instances on each call")
+	}
+	lp1 := p1.(*lazyPublisher)
+	lp2 := p2.(*lazyPublisher)
+	if lp1 == lp2 {
+		t.Error("Publisher() returned the same lazyPublisher pointer twice")
 	}
 }
