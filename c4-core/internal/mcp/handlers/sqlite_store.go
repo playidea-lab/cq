@@ -564,7 +564,7 @@ func (s *SQLiteStore) SubmitTask(taskID, workerID, commitSHA, handoff string, re
 			Message:    fmt.Sprintf("Task %s is claimed by direct mode — use c4_report", taskID),
 		}, nil
 	}
-	if task.WorkerID != "" && task.WorkerID != workerID {
+	if task.WorkerID != workerID {
 		return &SubmitResult{
 			Success:    false,
 			NextAction: "get_next_task",
@@ -626,6 +626,15 @@ func (s *SQLiteStore) SubmitTask(taskID, workerID, commitSHA, handoff string, re
 		if _, statErr := os.Stat(wtPath); statErr == nil {
 			if _, rmErr := runGit(s.projectRoot, "worktree", "remove", "--force", wtPath); rmErr != nil {
 				fmt.Fprintf(os.Stderr, "c4: warning: failed to remove worktree %s: %v\n", wtPath, rmErr)
+			} else {
+				// Also delete the associated branch (git worktree remove does not delete the branch)
+				cfg := s.config.GetConfig()
+				if cfg.WorkBranchPrefix != "" {
+					branch := cfg.WorkBranchPrefix + taskID
+					if _, branchErr := runGit(s.projectRoot, "branch", "-D", branch); branchErr != nil {
+						fmt.Fprintf(os.Stderr, "c4: warning: failed to delete branch %s: %v\n", branch, branchErr)
+					}
+				}
 			}
 		}
 	}

@@ -72,6 +72,42 @@ func TestSQLiteStoreSubmitTaskOwnerGuard(t *testing.T) {
 	}
 }
 
+// TestSQLiteStoreSubmitTaskOwnerGuardEmptyWorker verifies that SubmitTask rejects
+// a submission even when the task has an empty worker_id (i.e., not yet assigned).
+// Before this fix the condition was `task.WorkerID != "" && task.WorkerID != workerID`,
+// which allowed bypass when task.WorkerID was empty.
+func TestSQLiteStoreSubmitTaskOwnerGuardEmptyWorker(t *testing.T) {
+	store, db := newTestSQLiteStore(t)
+	defer db.Close()
+
+	task := &Task{
+		ID:     "T-001-0",
+		Title:  "Implement feature",
+		DoD:    "Done when tests pass",
+		Status: "in_progress", // manually set in_progress with empty worker_id
+	}
+	if err := store.AddTask(task); err != nil {
+		t.Fatalf("add task: %v", err)
+	}
+	// Force status to in_progress with empty worker_id (simulates tampered/corrupt state)
+	if _, err := store.db.Exec(`UPDATE c4_tasks SET status = 'in_progress', worker_id = '' WHERE task_id = 'T-001-0'`); err != nil {
+		t.Fatalf("force in_progress: %v", err)
+	}
+
+	result, err := store.SubmitTask("T-001-0", "worker-x", "abc123", "", []ValidationResult{
+		{Name: "lint", Status: "pass"},
+	})
+	if err != nil {
+		t.Fatalf("submit task: %v", err)
+	}
+	if result.Success {
+		t.Fatal("expected submit to fail: task has no assigned owner, worker-x should be rejected")
+	}
+	if !strings.Contains(result.Message, "owned by worker") {
+		t.Fatalf("unexpected message: %q", result.Message)
+	}
+}
+
 func TestSQLiteStoreSubmitTaskStateGuard(t *testing.T) {
 	store, db := newTestSQLiteStore(t)
 	defer db.Close()
