@@ -55,6 +55,14 @@ func newMCPServer() (*mcpServer, error) {
 		cfgMgr = nil
 	}
 
+	// Export permission_reviewer config to .c4/hook-config.json for bash hook.
+	var hookCfg *config.C4Config
+	if cfgMgr != nil {
+		c := cfgMgr.GetConfig()
+		hookCfg = &c
+	}
+	writeHookConfigJSON(projectDir, hookCfg)
+
 	// Create lazy Python sidecar (will start on first proxy tool call)
 	bridgeCfg := bridge.DefaultSidecarConfig()
 	bridgeCfg.PidFile = filepath.Join(projectDir, ".c4", "sidecar.pid")
