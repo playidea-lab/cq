@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"github.com/changmin/c4-core/internal/config"
 	"github.com/changmin/c4-core/internal/eventbus"
@@ -53,6 +54,12 @@ type EventBusComponent struct {
 	cfg    EventBusConfig
 	mu     sync.RWMutex
 	server *eventbus.EmbeddedServer
+
+	healthMu    sync.Mutex
+	healthCache struct {
+		result ComponentHealth
+		at     time.Time
+	}
 }
 
 // NewEventBusComponent creates a new EventBus component with the given config.
@@ -119,6 +126,20 @@ func (c *EventBusComponent) Stop(ctx context.Context) error {
 }
 
 func (c *EventBusComponent) Health() ComponentHealth {
+	c.healthMu.Lock()
+	defer c.healthMu.Unlock()
+
+	if !c.healthCache.at.IsZero() && time.Since(c.healthCache.at) < 5*time.Second {
+		return c.healthCache.result
+	}
+
+	result := c.doHealth()
+	c.healthCache.result = result
+	c.healthCache.at = time.Now()
+	return result
+}
+
+func (c *EventBusComponent) doHealth() ComponentHealth {
 	c.mu.RLock()
 	eb := c.server
 	c.mu.RUnlock()
