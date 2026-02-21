@@ -247,10 +247,35 @@ func TestWorkerStandby_NilHubClient_ReturnsError(t *testing.T) {
 	}
 }
 
+func TestWorkerStandby_NilShutdownStore_ReturnsError(t *testing.T) {
+	hubServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	defer hubServer.Close()
+	hubClient := hub.NewClient(hub.HubConfig{Enabled: true, URL: hubServer.URL})
+	deps := &WorkerDeps{HubClient: hubClient, ShutdownStore: nil}
+	_, err := handleWorkerStandby(context.Background(), deps, json.RawMessage(`{"worker_id": "w1"}`))
+	if err == nil {
+		t.Fatal("expected error for nil ShutdownStore")
+	}
+	if err.Error() != "shutdown store not configured" {
+		t.Errorf("err = %q, want %q", err.Error(), "shutdown store not configured")
+	}
+}
+
 func TestWorkerComplete_NilDeps_ReturnsError(t *testing.T) {
 	_, err := handleWorkerComplete(nil, json.RawMessage(`{"job_id": "j1", "worker_id": "w1", "status": "SUCCEEDED"}`))
 	if err == nil {
 		t.Fatal("expected error for nil deps")
+	}
+	if err.Error() != "hub client not configured" {
+		t.Errorf("err = %q, want %q", err.Error(), "hub client not configured")
+	}
+}
+
+func TestWorkerComplete_NilHubClient_ReturnsError(t *testing.T) {
+	deps := &WorkerDeps{HubClient: nil}
+	_, err := handleWorkerComplete(deps, json.RawMessage(`{"job_id": "j1", "worker_id": "w1", "status": "SUCCEEDED"}`))
+	if err == nil {
+		t.Fatal("expected error for nil HubClient")
 	}
 	if err.Error() != "hub client not configured" {
 		t.Errorf("err = %q, want %q", err.Error(), "hub client not configured")
