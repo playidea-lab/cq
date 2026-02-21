@@ -1,6 +1,6 @@
-# C4 — AI Orchestration Engine
+# CQ — AI Orchestration Engine
 
-> C4 is an MCP-based orchestration system that automates project management from planning to completion. It provides 150+ tools for task management, code analysis, knowledge management, and distributed job execution.
+> CQ is an MCP-based orchestration system that automates project management from planning to completion. It provides 150+ tools for task management, code analysis, knowledge management, and distributed job execution.
 
 ## Components
 

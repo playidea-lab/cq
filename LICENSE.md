@@ -1,4 +1,4 @@
-C4 Personal Study & Research License (Non-Commercial, No Organizational Use)
+CQ Personal Study & Research License (Non-Commercial, No Organizational Use)
 Version 1.0
 
 Copyright (c) 2026 PlayIdeaLab
