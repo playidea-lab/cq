@@ -431,8 +431,10 @@ llm_gateway:
 		if !anthropic.Enabled {
 			t.Error("anthropic provider should be enabled")
 		}
-		if anthropic.APIKeyEnv != "ANTHROPIC_API_KEY" {
-			t.Errorf("anthropic.APIKeyEnv = %q, want %q", anthropic.APIKeyEnv, "ANTHROPIC_API_KEY")
+		// api_key_env is no longer stored in LLMProviderConfig (field removed).
+		// The deprecated field is detected via mgr.IsSet() in toLLMGatewayConfig.
+		if !mgr.IsSet("llm_gateway.providers.anthropic.api_key_env") {
+			t.Error("IsSet(api_key_env) should be true for deprecated field present in config.yaml")
 		}
 
 		openai := cfg.LLMGateway.Providers["openai"]

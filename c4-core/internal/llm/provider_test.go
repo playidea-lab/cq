@@ -521,19 +521,16 @@ func TestOllamaName(t *testing.T) {
 // --- Factory Tests ---
 
 func TestNewGatewayFromConfig(t *testing.T) {
+	// APIKey is pre-resolved by the caller (mcp_init.go); factory just consumes it.
 	cfg := GatewayConfig{
 		Default: "anthropic",
 		Providers: map[string]GatewayProviderConfig{
-				"anthropic": {Enabled: true, APIKeyEnv: "C4_TEST_ANTHROPIC_KEY"},
-				"openai":    {Enabled: true, APIKeyEnv: "C4_TEST_OPENAI_KEY"},
-				"gemini":    {Enabled: false, APIKeyEnv: "C4_TEST_GEMINI_KEY"},
-				"ollama":    {Enabled: true, BaseURL: "http://localhost:11434"},
-			},
+			"anthropic": {Enabled: true, APIKey: "ak-test"},
+			"openai":    {Enabled: true, APIKey: "sk-test"},
+			"gemini":    {Enabled: false, APIKey: ""},
+			"ollama":    {Enabled: true, BaseURL: "http://localhost:11434"},
+		},
 	}
-
-	// Set test env vars
-	t.Setenv("C4_TEST_ANTHROPIC_KEY", "ak-test")
-	t.Setenv("C4_TEST_OPENAI_KEY", "sk-test")
 
 	gw := NewGatewayFromConfig(cfg)
 
@@ -573,17 +570,14 @@ func TestNewGatewayFromConfigEmpty(t *testing.T) {
 }
 
 func TestNewGatewayFromConfigAvailability(t *testing.T) {
+	// APIKey is pre-resolved by the caller; empty = no key = provider registered but unavailable.
 	cfg := GatewayConfig{
 		Default: "anthropic",
 		Providers: map[string]GatewayProviderConfig{
-				"anthropic": {Enabled: true, APIKeyEnv: "C4_TEST_MISSING_KEY"},
-				"openai":    {Enabled: true, APIKeyEnv: "C4_TEST_PRESENT_KEY"},
-			},
+			"anthropic": {Enabled: true, APIKey: ""},
+			"openai":    {Enabled: true, APIKey: "sk-present"},
+		},
 	}
-
-	// Only set one key
-	t.Setenv("C4_TEST_PRESENT_KEY", "sk-present")
-	// C4_TEST_MISSING_KEY is not set
 
 	gw := NewGatewayFromConfig(cfg)
 
@@ -611,10 +605,9 @@ func TestNewGatewayFromConfigDefaultModel(t *testing.T) {
 	cfg := GatewayConfig{
 		Default: "openai",
 		Providers: map[string]GatewayProviderConfig{
-				"openai": {Enabled: true, APIKeyEnv: "C4_TEST_OPENAI_KEY", DefaultModel: "gpt-4o-mini"},
-			},
+			"openai": {Enabled: true, APIKey: "sk-test", DefaultModel: "gpt-4o-mini"},
+		},
 	}
-	t.Setenv("C4_TEST_OPENAI_KEY", "sk-test")
 
 	gw := NewGatewayFromConfig(cfg)
 

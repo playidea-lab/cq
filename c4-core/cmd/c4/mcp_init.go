@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"time"
@@ -151,7 +152,7 @@ func newMCPServer() (*mcpServer, error) {
 		var embedder knowledge.Embedder
 		embDim := 1536
 		if cfgMgr != nil && cfgMgr.GetConfig().LLMGateway.Enabled {
-			embGateway := llm.NewGatewayFromConfig(toLLMGatewayConfig(cfgMgr.GetConfig(), secretStore))
+			embGateway := llm.NewGatewayFromConfig(toLLMGatewayConfig(cfgMgr, secretStore))
 			// Add embedding route if not configured
 			embGateway.Resolve("embedding", "")
 			embedder = llm.NewEmbeddingProvider(embGateway, embDim)
@@ -342,26 +343,69 @@ func newMCPServer() (*mcpServer, error) {
 	}, nil
 }
 
+// providerDefaultEnvVar returns the default environment variable name for a provider's API key.
+func providerDefaultEnvVar(provider string) string {
+	switch provider {
+	case "anthropic":
+		return "ANTHROPIC_API_KEY"
+	case "openai":
+		return "OPENAI_API_KEY"
+	case "gemini":
+		return "GEMINI_API_KEY"
+	default:
+		return ""
+	}
+}
+
 // toLLMGatewayConfig converts config.C4Config to llm.GatewayConfig,
 // breaking the llm→config import dependency.
-// Key resolution priority: config.api_key > config.api_key_env > secrets store (name.api_key).
-// ss may be nil (e.g. if the secret store failed to open); fallback is silently skipped.
-func toLLMGatewayConfig(cfg config.C4Config, ss *secrets.Store) llm.GatewayConfig {
+// Key resolution priority:
+//  1. secrets store (name.api_key) — ~/.c4/secrets.db (AES-256-GCM)
+//  2. default environment variable (e.g. ANTHROPIC_API_KEY)
+//
+// Ollama is exempt from the no-key check (it does not require an API key).
+// If the config file contains deprecated api_key or api_key_env fields under
+// llm_gateway.providers.*, a deprecation warning is logged via slog.
+// cfgMgr may be nil (config failed to load); in that case no deprecation check is done.
+// ss may be nil (secret store unavailable); env fallback is still attempted.
+func toLLMGatewayConfig(cfgMgr *config.Manager, ss *secrets.Store) llm.GatewayConfig {
+	var cfg config.C4Config
+	if cfgMgr != nil {
+		cfg = cfgMgr.GetConfig()
+		// Detect deprecated api_key / api_key_env fields in config.yaml.
+		// Since LLMProviderConfig no longer has these fields, viper silently drops them
+		// during Unmarshal. Use IsSet() to detect if they were present in the config file.
+		for name := range cfg.LLMGateway.Providers {
+			if cfgMgr.IsSet("llm_gateway.providers."+name+".api_key") ||
+				cfgMgr.IsSet("llm_gateway.providers."+name+".api_key_env") {
+				slog.Warn("llm_gateway api_key in config deprecated; use: cq secret set <provider>.api_key <value>",
+					"provider", name)
+			}
+		}
+	}
+
 	providers := make(map[string]llm.GatewayProviderConfig, len(cfg.LLMGateway.Providers))
 	for name, p := range cfg.LLMGateway.Providers {
-		apiKey := p.APIKey
-		if apiKey == "" && p.APIKeyEnv != "" {
-			apiKey = os.Getenv(p.APIKeyEnv)
-		}
-		if apiKey == "" && ss != nil {
+		var apiKey string
+		// 1st: secrets store (preferred — AES-256-GCM encrypted)
+		if ss != nil {
 			if v, err := ss.Get(name + ".api_key"); err == nil {
 				apiKey = v
 			}
 		}
+		// 2nd: default environment variable (e.g. ANTHROPIC_API_KEY)
+		if apiKey == "" {
+			if envVar := providerDefaultEnvVar(name); envVar != "" {
+				apiKey = os.Getenv(envVar)
+			}
+		}
+		// Ollama does not require an API key; all other providers need one.
+		if apiKey == "" && name != "ollama" {
+			slog.Warn("no API key for provider; provider disabled", "provider", name)
+		}
 		providers[name] = llm.GatewayProviderConfig{
-			Enabled:      p.Enabled,
+			Enabled:      p.Enabled && (apiKey != "" || name == "ollama"),
 			APIKey:       apiKey,
-			APIKeyEnv:    "", // already resolved above
 			BaseURL:      p.BaseURL,
 			DefaultModel: p.DefaultModel,
 		}

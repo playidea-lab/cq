@@ -1,13 +1,11 @@
 package llm
 
-import "os"
-
 // GatewayProviderConfig holds per-provider settings for the LLM gateway.
 // This mirrors config.LLMProviderConfig to avoid importing the config package.
+// APIKey is pre-resolved by the caller (mcp_init.go); no env lookup is done here.
 type GatewayProviderConfig struct {
 	Enabled      bool
 	APIKey       string
-	APIKeyEnv    string
 	BaseURL      string
 	DefaultModel string
 }
@@ -49,9 +47,6 @@ func NewGatewayFromConfig(cfg GatewayConfig) *Gateway {
 		}
 
 		apiKey := provCfg.APIKey
-		if apiKey == "" && provCfg.APIKeyEnv != "" {
-			apiKey = os.Getenv(provCfg.APIKeyEnv)
-		}
 		baseURL := provCfg.BaseURL
 
 		switch name {
