@@ -72,7 +72,7 @@ Claude_Code_*.pdf
 
 # Supabase CLI local state
 infra/supabase/supabase/
-infra/supabase/.mcp.json
+**/.mcp.json
 
 # Keynote
 *.key
