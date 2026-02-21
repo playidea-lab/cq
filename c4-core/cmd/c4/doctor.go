@@ -82,7 +82,7 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 	results := make([]checkResult, 0, len(checks))
 	for _, fn := range checks {
 		r := fn()
-		if doctorFix && r.Status == checkFail {
+		if doctorFix && (r.Status == checkFail || r.Status == checkWarn) {
 			fixed := tryFix(&r)
 			if fixed != "" {
 				r.Message += " (fixed: " + fixed + ")"
@@ -344,6 +344,16 @@ func checkHooks() checkResult {
 		}
 	}
 
+	// Check if installed hook content matches the embedded template
+	if hookNeedsUpdate(hookFile, hookShContent) {
+		return checkResult{
+			Name:    "hooks",
+			Status:  checkWarn,
+			Message: fmt.Sprintf("hook outdated at %s (binary has newer version)", hookFile),
+			Fix:     "cq doctor --fix  (or: cq claude)",
+		}
+	}
+
 	settingsPath := filepath.Join(home, ".claude", "settings.json")
 	data, err := os.ReadFile(settingsPath)
 	if err != nil {
@@ -533,6 +543,15 @@ func tryFix(r *checkResult) string {
 				}
 			}
 		}
+	case "hooks":
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return ""
+		}
+		if err := setupGlobalHooks(home); err != nil {
+			return ""
+		}
+		return "hook updated"
 	}
 	return ""
 }

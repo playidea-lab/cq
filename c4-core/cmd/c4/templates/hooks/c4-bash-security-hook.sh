@@ -32,10 +32,20 @@ if [[ -z "$COMMAND" ]] && [[ -n "$*" ]]; then
     COMMAND="$*"
 fi
 
-# Skip if not in a C4 project (.c4/ directory must exist)
-if [[ ! -d ".c4" ]]; then
-    exit 0
-fi
+# Walk up directory tree to find nearest .c4/ (supports subdirectory and monorepo usage)
+_find_c4_root() {
+    local dir="$PWD"
+    while [[ "$dir" != "/" ]] && [[ -n "$dir" ]]; do
+        if [[ -d "$dir/.c4" ]]; then
+            echo "$dir"
+            return 0
+        fi
+        dir="${dir%/*}"
+    done
+    return 1
+}
+
+C4_ROOT=$(_find_c4_root) || exit 0
 
 # Skip empty commands
 if [[ -z "$COMMAND" ]]; then
@@ -46,7 +56,7 @@ fi
 # Load Configuration
 # Priority: .c4/hook-config.json > ~/.claude/hooks/c4-bash-security.conf > defaults
 # =============================================================================
-HOOK_CONFIG_JSON=".c4/hook-config.json"
+HOOK_CONFIG_JSON="${C4_ROOT}/.c4/hook-config.json"
 LEGACY_CONF="$HOME/.claude/hooks/c4-bash-security.conf"
 
 PERMISSION_MODE="model"
@@ -77,8 +87,27 @@ elif [[ -f "$LEGACY_CONF" ]]; then
         # shellcheck source=/dev/null
         source "$LEGACY_CONF"
     fi
+else
+    # Priority 3: .c4/ found but hook-config.json not yet generated
+    # (MCP server not started — e.g. first install or session before cq startup)
+    # Use hook mode with built-in safe patterns to avoid calling API without config.
+    PERMISSION_MODE="hook"
+    ALLOW_PATTERNS=(
+        "^git (log|show|diff|status|branch|tag|remote|stash list|ls-files|blame)( |$)"
+        "^go (build|test|vet|run|env|list|mod)( |$)"
+        "^uv (run|sync|pip list|pip show|lock|python)( |$)"
+        "^(ls|ll|la|cat|head|tail|wc|stat)( |$)"
+        "^ls$"
+        "^find \\. "
+        "^(grep|rg) "
+        "^(echo|pwd|which|env|printenv|date|uname|whoami)( |$)"
+        "^(cargo|rustc) (build|test|check|clippy)( |$)"
+        "^pnpm (build|test|lint|install|dev)( |$)"
+        "^cq (status|doctor|mcp|version|help)( |$)"
+        "^sqlite3 "
+    )
 fi
-# Priority 3: hardcoded defaults (already set above)
+# Priority 4: hardcoded defaults (already set above)
 
 # =============================================================================
 # Helper: emit approval/denial JSON for Claude Code hooks protocol
@@ -133,11 +162,11 @@ done
 _log_decision() {
     local decision="$1"
     local reason="$2"
-    [[ -d ".c4" ]] || return 0
+    [[ -n "${C4_ROOT}" ]] || return 0
     local ts
     ts=$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date +%Y-%m-%dT%H:%M:%SZ)
     printf '%s | %s | %s | %s\n' "$ts" "$decision" "$reason" "$COMMAND" \
-        >> ".c4/hook-decisions.log" 2>/dev/null
+        >> "${C4_ROOT}/.c4/hook-decisions.log" 2>/dev/null
 }
 
 if [[ "$PERMISSION_MODE" == "model" ]]; then
