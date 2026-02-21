@@ -122,6 +122,8 @@ pub fn run() {
             messaging::create_channel_pin,
             messaging::list_channel_pins,
             messaging::delete_channel_pin,
+            // Session sync
+            scanner::sync_session_channels,
             // Documents
             documents::list_documents,
             documents::get_document,

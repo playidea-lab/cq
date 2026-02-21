@@ -1,6 +1,7 @@
 //! Project scanner - extracts nodes and edges from a C4 project
 
 use anyhow::{Context, Result};
+use chrono::{TimeZone, Utc};
 use regex::Regex;
 use rusqlite::Connection;
 use std::collections::{HashMap, HashSet};
@@ -9,7 +10,9 @@ use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 use walkdir::WalkDir;
 
+use crate::cloud::{build_client, read_auth_token, read_supabase_config, retry_request};
 use crate::layout::{apply_time_layout, resolve_overlaps};
+use crate::messaging::Channel;
 use crate::models::{CanvasData, CanvasEdge, CanvasNode, NodeType, Position, RelationType};
 
 /// Patterns to scan for different node types
@@ -609,9 +612,240 @@ fn truncate_string(s: &str, max_len: usize) -> String {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Session → Channel sync
+// ---------------------------------------------------------------------------
+
+/// Derive a slug from a project path: /Users/foo/bar -> -Users-foo-bar
+fn path_to_slug_scanner(path: &str) -> String {
+    let slug = path.replace('/', "-").replace('\\', "-");
+    if slug.starts_with('-') {
+        slug
+    } else {
+        format!("-{}", slug)
+    }
+}
+
+/// Generate channel name from session id and creation timestamp (ms).
+/// Format: `claude-{MMDD}-{session_id[..8]}`
+pub fn session_channel_name(session_id: &str, created_ms: i64) -> String {
+    let dt = Utc.timestamp_millis_opt(created_ms).single().unwrap_or_else(Utc::now);
+    let mmdd = dt.format("%m%d").to_string();
+    let id_prefix = &session_id[..session_id.len().min(8)];
+    format!("claude-{}-{}", mmdd, id_prefix)
+}
+
+/// Get the creation timestamp for a session file.
+/// Tries to read the `timestamp` field from the first JSON line.
+/// Falls back to file creation time → file modification time.
+fn session_created_ms(session_path: &Path) -> i64 {
+    use std::io::{BufRead, BufReader};
+
+    // Try first JSONL line's `timestamp` field
+    if let Ok(file) = fs::File::open(session_path) {
+        let mut reader = BufReader::new(file);
+        let mut line = String::new();
+        if reader.read_line(&mut line).is_ok() {
+            if let Ok(obj) = serde_json::from_str::<serde_json::Value>(&line) {
+                // Claude session lines use "timestamp" as ISO 8601 string
+                if let Some(ts_str) = obj.get("timestamp").and_then(|v| v.as_str()) {
+                    if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(ts_str) {
+                        return dt.timestamp_millis();
+                    }
+                }
+            }
+        }
+    }
+
+    // Fallback: file modification time
+    fs::metadata(session_path)
+        .ok()
+        .and_then(|m| m.modified().ok())
+        .and_then(|t| t.duration_since(SystemTime::UNIX_EPOCH).ok())
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
+}
+
+/// Upsert a single session channel to Supabase.
+/// Uses `ON CONFLICT` via PostgREST `Prefer: resolution=merge-duplicates`.
+/// Returns the upserted Channel.
+fn upsert_session_channel(
+    client: &reqwest::blocking::Client,
+    supabase_url: &str,
+    anon_key: &str,
+    token: &str,
+    project_id: &str,
+    channel_name: &str,
+    session_id: &str,
+    description: &str,
+) -> Result<Channel, String> {
+    let url = format!(
+        "{}/rest/v1/c1_channels?on_conflict=project_id,name",
+        supabase_url.trim_end_matches('/')
+    );
+
+    let payload = serde_json::json!({
+        "project_id": project_id,
+        "name": channel_name,
+        "channel_type": "session",
+        "created_by": session_id,
+        "description": description,
+    });
+
+    let resp = retry_request(3, || {
+        client
+            .post(&url)
+            .header("Authorization", format!("Bearer {}", token))
+            .header("apikey", anon_key)
+            .header("Content-Type", "application/json")
+            .header("Prefer", "resolution=merge-duplicates,return=representation")
+            .json(&payload)
+            .send()
+    })?;
+
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let body = resp.text().unwrap_or_default();
+        return Err(format!(
+            "Failed to upsert session channel '{}' ({}): {}",
+            channel_name, status, body
+        ));
+    }
+
+    let channels: Vec<Channel> = resp
+        .json()
+        .map_err(|e| format!("Failed to parse upsert response: {}", e))?;
+
+    channels
+        .into_iter()
+        .next()
+        .ok_or_else(|| format!("No channel returned for '{}'", channel_name))
+}
+
+/// Tauri command: scan local Claude sessions for a project and upsert
+/// session-type channels to Supabase.
+///
+/// Name format: `claude-{MMDD}-{session_uuid_8}` where MMDD is derived from
+/// the session's creation timestamp (first JSONL line or file mtime).
+/// `created_by` stores the session UUID for external_id tracking.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn sync_session_channels(
+    project_id: String,
+    project_path: String,
+) -> Result<Vec<Channel>, String> {
+    tokio::task::spawn_blocking(move || {
+        let (supabase_url, anon_key) = read_supabase_config()?;
+        let token = read_auth_token()?;
+        let client = build_client()?;
+
+        // Locate session directory
+        let home = dirs::home_dir().ok_or("Could not find home directory")?;
+        let slug = path_to_slug_scanner(&project_path);
+        let sessions_dir = home.join(".claude").join("projects").join(&slug);
+
+        if !sessions_dir.exists() {
+            return Ok(Vec::new());
+        }
+
+        let mut channels = Vec::new();
+
+        for entry in
+            fs::read_dir(&sessions_dir).map_err(|e| format!("Read dir failed: {}", e))?
+        {
+            let entry = entry.map_err(|e| format!("Entry error: {}", e))?;
+            let file_path = entry.path();
+
+            if file_path.extension().and_then(|e| e.to_str()) != Some("jsonl") {
+                continue;
+            }
+
+            let session_id = match file_path.file_stem().and_then(|n| n.to_str()) {
+                Some(s) if s.len() >= 36 => s.to_string(),
+                _ => continue, // skip non-UUID filenames
+            };
+
+            let created_ms = session_created_ms(&file_path);
+            let channel_name = session_channel_name(&session_id, created_ms);
+
+            // Use session title as description if available (first summary line)
+            let description = {
+                use std::io::{BufRead, BufReader};
+                let mut desc = String::new();
+                if let Ok(file) = fs::File::open(&file_path) {
+                    let mut reader = BufReader::new(file);
+                    let mut line = String::new();
+                    for _ in 0..20 {
+                        line.clear();
+                        if reader.read_line(&mut line).unwrap_or(0) == 0 {
+                            break;
+                        }
+                        if let Ok(obj) = serde_json::from_str::<serde_json::Value>(&line) {
+                            if obj.get("type").and_then(|v| v.as_str()) == Some("summary") {
+                                if let Some(s) = obj.get("summary").and_then(|v| v.as_str()) {
+                                    desc = s.chars().take(200).collect();
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+                desc
+            };
+
+            match upsert_session_channel(
+                &client,
+                &supabase_url,
+                &anon_key,
+                &token,
+                &project_id,
+                &channel_name,
+                &session_id,
+                &description,
+            ) {
+                Ok(ch) => channels.push(ch),
+                Err(e) => {
+                    // Log but continue processing remaining sessions
+                    eprintln!("[sync_session_channels] skipping {}: {}", channel_name, e);
+                }
+            }
+        }
+
+        Ok(channels)
+    })
+    .await
+    .map_err(|e| format!("Task execution failed: {}", e))?
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_sync_session_channels_name_format() {
+        // 2026-02-22T10:30:00Z → 02-22 → mmdd = "0222"
+        let session_id = "a1b2c3d4-e5f6-7890-abcd-ef1234567890";
+        // 2026-02-22T10:30:00Z in millis
+        let ms: i64 = 1740220200000;
+        let name = session_channel_name(session_id, ms);
+        assert_eq!(name, "claude-0222-a1b2c3d4");
+    }
+
+    #[test]
+    fn test_session_channel_name_short_id() {
+        // session_id shorter than 8 chars → use full id
+        let session_id = "abc";
+        let ms: i64 = 1740220200000; // 2026-02-22
+        let name = session_channel_name(session_id, ms);
+        assert_eq!(name, "claude-0222-abc");
+    }
+
+    #[test]
+    fn test_session_channel_name_zero_timestamp() {
+        // zero ms → 1970-01-01 → mmdd = "0101"
+        let session_id = "deadbeef-0000-0000-0000-000000000000";
+        let name = session_channel_name(session_id, 0);
+        assert_eq!(name, "claude-0101-deadbeef");
+    }
 
     #[test]
     fn test_truncate_string_ascii() {
