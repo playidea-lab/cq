@@ -1,0 +1,71 @@
+# CQ — AI Project Orchestration Engine
+
+> CQ is a project management engine for Claude Code. It automates the full development lifecycle (plan → implement → review → ship) using MCP tools and isolated git worktree workers.
+
+## Install
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/install.sh | sh
+cd your-project && cq claude
+```
+
+## Core Concepts
+
+- **Tasks**: SQLite-backed work items with Definition of Done. ID format: T-001-0 (impl), R-001-0 (review), CP-001 (checkpoint).
+- **Workers**: Claude Code instances, each handling one task in an isolated git worktree (`c4/w-T-XXX-N`).
+- **Skills**: Slash commands inside Claude Code (`/c4-plan`, `/c4-run`, `/c4-finish`, etc.).
+- **MCP Tools**: 100+ tools with `c4_*` prefix. Available after `cq claude` init + Claude Code restart.
+- **Tiers**: solo (local only) | connected (+ Supabase/LLM/EventBus) | full (+ Hub/CDP/GPU).
+
+## Workflow
+
+```
+/c4-plan "feature"   → creates tasks with DoD
+/c4-run              → spawns workers (one per task, parallel)
+/c4-status           → check progress
+/c4-finish           → build → test → install → commit
+```
+
+## Key Skills
+
+| Skill | Trigger keywords | Purpose |
+|-------|-----------------|---------|
+| /c4-plan | plan, 계획, 설계 | Discovery + design + task creation |
+| /c4-run | run, 실행, ㄱㄱ | Spawn workers for pending tasks |
+| /c4-finish | finish, 마무리 | Build/test/install/commit routine |
+| /c4-status | status, 상태 | Visual progress report |
+| /c4-quick | quick, 빠르게 | Single task without planning phase |
+| /c4-polish | polish | Fix loop until zero reviewer changes |
+| /c4-checkpoint | (auto) | Phase gate: approve or request changes |
+
+## Key MCP Tools
+
+- `c4_status` — project state + queue summary
+- `c4_add_todo` — add task to queue
+- `c4_get_task` — claim a task (worker flow)
+- `c4_submit` — submit completed task
+- `c4_claim` / `c4_report` — direct mode (no worktree)
+- `c4_knowledge_search` / `c4_knowledge_record` — knowledge base
+- `c4_secret_set` / `c4_secret_get` — AES-256-GCM secret store
+- `c4_llm_call` — unified LLM gateway (Anthropic/OpenAI/Gemini/Ollama)
+- `c4_lighthouse` — tool contract registry
+
+## Task ID Grammar
+
+- `T-001-0` — implementation task, version 0
+- `R-001-0` — review task for T-001-0
+- `T-001-1` — revision after review requested changes
+- `CP-001` — checkpoint (phase gate)
+- `RF-001-0` — refine task
+
+## Security
+
+- API keys stored in `~/.c4/secrets.db` (AES-256-GCM). Never in config files.
+- Set keys: `cq secret set anthropic.api_key sk-ant-...`
+- Shell command security hook: reviews bash commands before execution.
+
+## Docs
+
+- Full docs: https://playidealab.github.io/cq/
+- Skills JSONL: https://playidealab.github.io/cq/api/skills.jsonl
+- Tools JSONL: https://playidealab.github.io/cq/api/tools.jsonl
