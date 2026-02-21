@@ -126,6 +126,20 @@ done
 # =============================================================================
 # MODEL MODE — Haiku API supervision
 # =============================================================================
+
+# _log_decision: append model decisions to .c4/hook-decisions.log
+# Format: <timestamp> | <safe|deny> | <reason> | <command>
+# Used later to identify patterns worth promoting to allow_patterns.
+_log_decision() {
+    local decision="$1"
+    local reason="$2"
+    [[ -d ".c4" ]] || return 0
+    local ts
+    ts=$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date +%Y-%m-%dT%H:%M:%SZ)
+    printf '%s | %s | %s | %s\n' "$ts" "$decision" "$reason" "$COMMAND" \
+        >> ".c4/hook-decisions.log" 2>/dev/null
+}
+
 if [[ "$PERMISSION_MODE" == "model" ]]; then
 
     _model_check() {
@@ -165,10 +179,12 @@ if [[ "$PERMISSION_MODE" == "model" ]]; then
         reason=$(echo "$text" | jq -r '.reason' 2>/dev/null)
 
         if [[ "$safe" == "false" ]]; then
+            _log_decision "deny" "$reason"
             _emit_deny "AI supervisor (Haiku) blocked: $reason"
         fi
 
         # Model says safe
+        _log_decision "safe" "$reason"
         _emit_allow "AI supervisor: $reason"
     }
 

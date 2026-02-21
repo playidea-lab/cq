@@ -518,6 +518,32 @@ For Worker Packet format and DoD principles, see `references/worker-packet.md`.
 | "Optimize API" | "GET /users response < 100ms, existing tests pass" |
 | "Fix bug" | "null input returns empty array, add regression test" |
 
+#### QualityGates 표준 (CRITICAL)
+
+DoD에 테스트 언급이 있으면 `QualityGates`에 **파일 존재 확인 명령**을 반드시 포함한다.
+
+> ⚠️ `pnpm test` / `go test ./...` 단독 실행은 테스트 파일이 없어도 통과 → **false positive** 방지 필수.
+
+```
+QualityGates:
+  # ❌ 잘못된 예 (테스트 파일 없어도 통과 가능)
+  - pnpm test
+
+  # ✅ 올바른 예 (파일 존재 먼저 확인)
+  - test -f src/components/Foo.test.tsx        # 테스트 파일 존재 확인
+  - pnpm test --run src/components/Foo.test.tsx # 해당 파일만 실행
+  # 또는 Go:
+  - test -f internal/foo/foo_test.go
+  - go test ./internal/foo/...
+```
+
+| 언어 | 존재 확인 | 실행 |
+|------|----------|------|
+| TypeScript | `test -f path/to/Foo.test.tsx` | `pnpm test --run Foo.test.tsx` |
+| Go | `test -f path/to/foo_test.go` | `go test ./path/to/...` |
+| Python | `test -f tests/test_foo.py` | `uv run pytest tests/test_foo.py` |
+| Rust | `grep -q '#\[test\]' src/foo.rs` | `cargo test foo` |
+
 ### Task Size Validation
 
 | Metric | Max | If exceeded |
@@ -550,6 +576,13 @@ If exceeded, ask user whether to split.
 ```
 
 Dependency tree: `T-XXX -> R-XXX -> CP-XXX -> T-YYY -> R-YYY`
+
+> ⚠️ **CP deps 규칙 (CRITICAL)**: CP 태스크의 `dependencies`에는 반드시 R- 태스크만 넣는다.
+> T- 태스크를 CP에 직접 연결하는 것은 리뷰 레이어 우회이므로 금지.
+> 예외: `review_required=False`인 경우 명시적 사유 필수 (체크포인트·docs·migration 전용 태스크만 허용).
+>
+> **올바른 구조**: `T-001 → R-001 → CP-001`
+> **잘못된 구조**: `T-001 → CP-001` (R-001 없음 → CRITICAL)
 
 ---
 
@@ -608,6 +641,8 @@ critique_result = Task(
 | 렌즈 | 질문 | 심각도 |
 |------|------|--------|
 | DoD 측정 가능성 | "완료됐음을 어떻게 증명하는가?" — 구체적 명령어/테스트가 있는가? | CRITICAL |
+| **R- 쌍 누락** | **T- 태스크에 대응하는 R- 태스크가 의존성 트리에 있는가? CP deps에 T-가 직접 들어있고 R-가 없으면 리뷰 레이어가 없는 것.** | **CRITICAL** |
+| **test 파일 존재 확인** | **DoD에 "X.test.tsx N개 pass"가 있으면 QualityGate에 `test -f X.test.tsx` 명령이 포함되어 있는가? 없으면 false positive 위험.** | **CRITICAL** |
 | 파일 충돌 | 두 태스크가 같은 파일을 동시에 수정하는가? | CRITICAL |
 | 가정 목록 | 이 태스크가 전제하는 것은? (파일 경로, API 형식, 외부 설정) | HIGH |
 | 의존성 누락 | 숨겨진 실행 순서 제약이 있는가? | HIGH |
