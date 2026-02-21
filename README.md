@@ -126,6 +126,69 @@ cq cursor   # for Cursor
 
 ---
 
+### Scenario 4 — Distributed experiments across machines
+
+> **You:** "backbone 3개 비교 실험 돌려야 해. ResNet / EfficientNet / ViT"
+
+```
+/c4-plan "backbone ablation: ResNet50 vs EfficientNet-B4 vs ViT-B/16"
+
+  ● Tasks created
+    T-020  train ResNet50       (GPU: 1x A100, est. 4h)
+    T-021  train EfficientNet   (GPU: 1x A100, est. 3h)
+    T-022  train ViT-B/16       (GPU: 1x A100, est. 6h)
+    T-023  compare results + report
+```
+
+각 머신에서 `/c4-standby`로 워커 등록:
+
+```
+# machine-1 (Claude Code session)
+/c4-standby
+
+  ● Registered as worker  [id: worker-m1]
+  ◷ Waiting for jobs from C5 Hub...
+  ✓ Claimed T-020  →  training ResNet50...
+
+# machine-2
+/c4-standby
+  ✓ Claimed T-021  →  training EfficientNet...
+
+# machine-3
+/c4-standby
+  ✓ Claimed T-022  →  training ViT-B/16...
+```
+
+> **You:** "결과 어때?"
+
+```
+/c4-status
+
+  ✓ T-020  ResNet50       MPJPE: 48.3mm  PA-MPJPE: 34.1mm  [worker-m1]
+  ✓ T-021  EfficientNet   MPJPE: 44.7mm  PA-MPJPE: 31.8mm  [worker-m2]  ← best
+  ▶ T-022  ViT-B/16       running 3h 42m / ~6h               [worker-m3]
+  ◷ T-023  waiting on T-020, T-021, T-022
+
+  Knowledge: 2 new experiment records saved
+```
+
+T-022 완료 후 비교 리포트 자동 생성:
+
+```
+  ✓ T-023  Comparison report
+
+  | Backbone      | MPJPE  | PA-MPJPE | Params | Throughput |
+  |---------------|--------|----------|--------|------------|
+  | ResNet50      | 48.3mm | 34.1mm   | 25.6M  | 142 img/s  |
+  | EfficientNet  | 44.7mm | 31.8mm   | 19.3M  | 98 img/s   |
+  | ViT-B/16      | 41.2mm | 29.4mm   | 86.6M  | 47 img/s   |
+
+  Recommendation: EfficientNet — best accuracy/efficiency ratio
+  Knowledge recorded → injected into next experiment planning
+```
+
+---
+
 ## Workflow
 
 ```
