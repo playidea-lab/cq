@@ -13,6 +13,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -62,6 +63,7 @@ type Agent struct {
 	memberID   string // cached member ID from ensureMember
 	httpClient *http.Client
 	wg         sync.WaitGroup
+	inFlight   atomic.Int32 // count of active processMessage goroutines
 	sem        chan struct{} // concurrency limiter for processMessage goroutines
 }
 
@@ -160,7 +162,7 @@ func (a *Agent) Start(ctx context.Context) error {
 }
 
 // Stop implements Component.
-func (a *Agent) Stop(_ context.Context) error {
+func (a *Agent) Stop(ctx context.Context) error {
 	a.mu.Lock()
 	cancel := a.cancel
 	a.mu.Unlock()
@@ -171,7 +173,16 @@ func (a *Agent) Stop(_ context.Context) error {
 	if a.client != nil {
 		a.client.Close()
 	}
-	a.wg.Wait() // wait for in-flight processMessage goroutines
+
+	done := make(chan struct{})
+	go func() { a.wg.Wait(); close(done) }()
+	select {
+	case <-done:
+		// all goroutines finished cleanly
+	case <-ctx.Done():
+		fmt.Fprintf(os.Stderr, "cq: [agent] stop timed out, %d goroutines may still run\n", a.inFlight.Load())
+	}
+
 	a.setStatus("stopped")
 	fmt.Fprintf(os.Stderr, "cq: [agent] stopped\n")
 	return nil
@@ -243,8 +254,10 @@ func (a *Agent) handleEvent(event RealtimeEvent) {
 
 	// Process in background
 	a.wg.Add(1)
+	a.inFlight.Add(1)
 	go func() {
 		defer a.wg.Done()
+		defer a.inFlight.Add(-1)
 		defer func() { <-a.sem }()
 		a.processMessage(msg.ID, msg.ChannelID, msg.Content, msg.SenderName)
 	}()
