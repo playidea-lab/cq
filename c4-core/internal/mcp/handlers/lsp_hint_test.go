@@ -108,4 +108,15 @@ func TestDartOverviewHasEditHint(t *testing.T) {
 	if hint != "Dart file: use Edit tool for modifications (c4_replace_symbol_body not supported)" {
 		t.Errorf("unexpected _edit_hint value: %v", hint)
 	}
+
+	// classes[]/functions[] 각 항목에도 _edit_hint 있어야 함
+	for _, key := range []string{"classes", "functions"} {
+		if items, ok := m[key].([]map[string]any); ok {
+			for i, item := range items {
+				if item["_edit_hint"] == nil {
+					t.Errorf("%s[%d] missing _edit_hint", key, i)
+				}
+			}
+		}
+	}
 }

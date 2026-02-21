@@ -35,6 +35,7 @@ func languageGuardedProxy(proxy *BridgeProxy, method, toolName string) mcp.Handl
 		}
 		if lang != "" {
 			return map[string]any{
+				"success":             false,
 				"error":               fmt.Sprintf("%s does not support %s files", toolName, lang),
 				"language":            lang,
 				"hint":                "Use Edit tool for Go/Dart/Rust. Supported: Python/JS/TS only.",
@@ -226,7 +227,7 @@ func handleDartSymbolsOverview(absPath string) (any, error) {
 	result["success"] = true
 	hint := "Dart file: use Edit tool for modifications (c4_replace_symbol_body not supported)"
 	result["_edit_hint"] = hint
-	for _, key := range []string{"classes", "functions", "methods", "enums", "mixins", "extensions", "variables", "constants"} {
+	for _, key := range []string{"classes", "enums", "typedefs", "functions"} {
 		if items, ok := result[key].([]map[string]any); ok {
 			for _, item := range items {
 				item["_edit_hint"] = hint
