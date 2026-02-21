@@ -10,15 +10,15 @@ Plan, execute, review, and learn — automated end-to-end.
 
 ![Go](https://img.shields.io/badge/Go-1.22+-00ADD8?logo=go&logoColor=white)
 ![Python](https://img.shields.io/badge/Python-3.11+-3776AB?logo=python&logoColor=white)
-![Tools](https://img.shields.io/badge/MCP_Tools-134-blueviolet)
-![Tests](https://img.shields.io/badge/Tests-2%2C058+-brightgreen)
+![Tools](https://img.shields.io/badge/MCP_Tools-154-blueviolet)
+![Tests](https://img.shields.io/badge/Tests-2%2C205+-brightgreen)
 ![License](https://img.shields.io/badge/License-Personal_Study-orange)
 
 </div>
 
 ---
 
-CQ turns Claude Code into a full project management system. It provides **134 MCP tools** (108 base + 26 Hub), a structured workflow engine, multi-lens code review, knowledge feedback loops, distributed job scheduling, and GPU-aware task management — all through natural language. Run the CLI with `cq`.
+CQ turns Claude Code into a full project management system. It provides **154 MCP tools** (112 base + 26 Hub + 16 tiered C7/C6/C8), a structured workflow engine, multi-lens code review, knowledge feedback loops, distributed job scheduling, and GPU-aware task management — all through natural language. Run the CLI with `cq`.
 
 ```
 You: /c4-plan "Add user authentication with JWT"
@@ -53,7 +53,7 @@ CQ breaks features into tasks, assigns them to workers (parallel) or claims them
 ## Architecture
 
 ```
-Claude Code ──stdio──▶ Go MCP Server (108 base + 26 Hub = 134 tools)
+Claude Code ──stdio──▶ Go MCP Server (112 base + 26 Hub + Tiered C7/C6/C8 = 154 tools)
                         │
                         ├── Go Native ──────── State, Tasks, Files, Git, Validation
                         ├── SQLite Store ───── Specs, Designs, Checkpoints, Artifacts
@@ -107,7 +107,7 @@ Restart Claude Code, then:
 
 ```bash
 cq doctor           # Verify installation (8 health checks)
-/c4-status          # Verify connection (134 tools registered)
+/c4-status          # Verify connection (154 tools registered)
 /c4-plan "feature"  # Start planning
 /c4-run             # Execute tasks
 ```
@@ -189,7 +189,7 @@ c4_lighthouse(action="promote", name="export_api")
 - **7 hooks** — Secret scanning, force-push prevention, auto-lint (Python/TypeScript)
 - **Economic mode** — Model routing presets (standard / economic / ultra-economic / quality)
 
-## MCP Tools (152)
+## MCP Tools (154)
 
 | Category | Count | Examples |
 |----------|-------|---------|
@@ -211,15 +211,15 @@ c4_lighthouse(action="promote", name="export_api")
 
 | Language | Source | Tests | Total |
 |----------|--------|-------|-------|
-| Go (`c4-core/`) | ~35.5K | ~29.2K | ~64.7K |
-| Go (`c5/`) | ~5.1K | ~3.0K | ~8.2K |
-| Python (`c4/`) | ~24.4K | ~11.6K | ~36.0K |
-| Rust (`c1/`) | ~8.5K | (built-in) | ~8.5K |
-| TypeScript (`c1/`) | ~6.6K | — | ~6.6K |
-| SQL (`infra/`) | ~0.9K | — | ~0.9K |
-| **Total** | **~81K** | **~44K** | **~125K LOC** |
+| Go (`c4-core/`) | ~38.9K | ~36.8K | ~75.7K |
+| Go (`c5/`) | ~6.9K | ~4.8K | ~11.7K |
+| Python (`c4/`) | ~22.9K | ~9.5K | ~32.4K |
+| Rust (`c1/src-tauri/`) | ~9.5K | (built-in) | ~9.5K |
+| TS+CSS (`c1/src/`) | ~11.8K | — | ~11.8K |
+| SQL (`infra/`) | ~1.1K | — | ~1.1K |
+| **Total** | **~90.9K** | **~50.8K** | **~141.7K LOC** |
 
-**Tests:** Go 1,095 (c4-core 986 + c5 109) · Python 750 · Rust 73 → **~1,918 total**
+**Tests:** Go 1,423 (c4-core 1,268 + c5 155) · Python 697 · Rust 85 → **~2,205 total**
 
 ## Configuration
 
@@ -298,7 +298,7 @@ cq doctor --fix        # Auto-fix simple issues (broken symlinks, etc.)
 | [Commands](docs/user-guide/명령어-레퍼런스.md) | Slash command reference |
 | [Smart Auto Mode](docs/user-guide/Smart-Auto-Mode.md) | Automatic execution mode |
 | [LLM Config](docs/user-guide/LLM-설정.md) | Model routing & economic mode |
-| [Cursor Guide](docs/user-guide/Cursor-가이드.md) | Use C4 MCP in Cursor IDE |
+| [Cursor Guide](docs/user-guide/Cursor-가이드.md) | Use CQ MCP in Cursor IDE |
 | [Troubleshooting](docs/user-guide/문제-해결.md) | Common issues & fixes |
 | [Roadmap](docs/ROADMAP.md) | Future plans |
 
