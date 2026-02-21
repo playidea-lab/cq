@@ -11,6 +11,7 @@ import (
 	"github.com/changmin/c4-core/internal/eventbus"
 	"github.com/changmin/c4-core/internal/hub"
 	"github.com/changmin/c4-core/internal/mcp/handlers"
+	"github.com/changmin/c4-core/internal/serve"
 	"github.com/changmin/c4-core/internal/worker"
 )
 
@@ -76,6 +77,10 @@ func hubJobSubmitter(ctx *initContext) eventbus.JobSubmitter {
 // startHubPoller starts the HubPoller goroutine (called after eventbus wiring).
 func startHubPoller(ctx *initContext) {
 	if ctx.hubClient == nil {
+		return
+	}
+	if serve.IsServeRunning() {
+		fmt.Fprintln(os.Stderr, serve.StatusMessage("hub poller"))
 		return
 	}
 	hc, ok := ctx.hubClient.(*hub.Client)

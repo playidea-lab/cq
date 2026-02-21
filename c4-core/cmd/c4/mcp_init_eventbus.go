@@ -9,6 +9,7 @@ import (
 
 	"github.com/changmin/c4-core/internal/eventbus"
 	"github.com/changmin/c4-core/internal/mcp/handlers"
+	"github.com/changmin/c4-core/internal/serve"
 )
 
 func init() {
@@ -24,7 +25,12 @@ func initEventBus(ctx *initContext) error {
 	}
 	ebCfg := ctx.cfgMgr.GetConfig().EventBus
 
-	if ebCfg.AutoStart {
+	// If cq serve is running, skip embedded and connect to its remote EventBus.
+	// This avoids socket conflicts since serve already manages the EventBus.
+	if ebCfg.AutoStart && serve.IsServeRunning() {
+		fmt.Fprintln(os.Stderr, "cq: serve running, using remote eventbus")
+		initRemoteEB(ctx)
+	} else if ebCfg.AutoStart {
 		initEmbeddedEB(ctx)
 	} else {
 		initRemoteEB(ctx)
@@ -154,6 +160,10 @@ func wireLocalDispatcher(ctx *initContext) {
 // startEventSink starts the EventSink HTTP server if configured.
 func startEventSink(ctx *initContext) {
 	if ctx.cfgMgr == nil || !ctx.cfgMgr.GetConfig().EventSink.Enabled {
+		return
+	}
+	if serve.IsServeRunning() {
+		fmt.Fprintln(os.Stderr, serve.StatusMessage("eventsink"))
 		return
 	}
 	esCfg := ctx.cfgMgr.GetConfig().EventSink
