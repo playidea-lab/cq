@@ -4,6 +4,9 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -1185,5 +1188,107 @@ func TestHandleSubmit_StatusEnumRejected(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "must be") {
 		t.Errorf("error = %q, want substring \"must be\"", err.Error())
+	}
+}
+
+// newTestSQLiteStoreWithGitRepo creates a SQLiteStore backed by a real git repo and config.
+// Used to test worktree auto-cleanup that requires actual git operations.
+func newTestSQLiteStoreWithGitRepo(t *testing.T) (*SQLiteStore, *sql.DB, string) {
+	t.Helper()
+
+	repoDir := t.TempDir()
+	for _, args := range [][]string{
+		{"git", "init"},
+		{"git", "config", "user.email", "test@test.com"},
+		{"git", "config", "user.name", "Test"},
+	} {
+		cmd := exec.Command(args[0], args[1:]...)
+		cmd.Dir = repoDir
+		if out, runErr := cmd.CombinedOutput(); runErr != nil {
+			t.Fatalf("git setup %v: %s: %v", args, string(out), runErr)
+		}
+	}
+	os.WriteFile(filepath.Join(repoDir, "main.go"), []byte("package main"), 0644)
+	for _, args := range [][]string{
+		{"git", "add", "."},
+		{"git", "commit", "-m", "initial"},
+	} {
+		cmd := exec.Command(args[0], args[1:]...)
+		cmd.Dir = repoDir
+		cmd.CombinedOutput()
+	}
+	os.MkdirAll(filepath.Join(repoDir, ".c4"), 0755)
+
+	cfg, cfgErr := config.New(repoDir)
+	if cfgErr != nil {
+		t.Fatalf("config.New: %v", cfgErr)
+	}
+
+	db, dbErr := sql.Open("sqlite", ":memory:")
+	if dbErr != nil {
+		t.Fatalf("open sqlite: %v", dbErr)
+	}
+
+	store, storeErr := NewSQLiteStore(db, WithProjectRoot(repoDir), WithConfig(cfg))
+	if storeErr != nil {
+		db.Close()
+		t.Fatalf("new store: %v", storeErr)
+	}
+
+	return store, db, repoDir
+}
+
+func TestSubmitTask_WorktreeAutoCleanup_DeletesBranch(t *testing.T) {
+	store, db, repoDir := newTestSQLiteStoreWithGitRepo(t)
+	defer db.Close()
+
+	workerID := "worker-cleanup-test"
+	taskID := "T-cleanup-0"
+
+	if err := store.AddTask(&Task{ID: taskID, Title: "cleanup test", DoD: "done", Status: "pending"}); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := store.config.GetConfig()
+	branchName := cfg.WorkBranchPrefix + taskID // e.g. "c4/w-T-cleanup-0"
+	wtPath := filepath.Join(repoDir, ".c4", "worktrees", workerID)
+
+	// Create the worktree+branch as enrichWithConfig does during AssignTask.
+	if out, wtErr := exec.Command("git", "-C", repoDir, "worktree", "add", wtPath, "-b", branchName).CombinedOutput(); wtErr != nil {
+		t.Fatalf("create worktree: %s: %v", string(out), wtErr)
+	}
+
+	// Seed task as in_progress owned by our worker.
+	if _, dbErr := db.Exec("UPDATE c4_tasks SET status='in_progress', worker_id=? WHERE task_id=?", workerID, taskID); dbErr != nil {
+		t.Fatalf("seed in_progress: %v", dbErr)
+	}
+
+	// Verify preconditions.
+	if _, statErr := os.Stat(wtPath); statErr != nil {
+		t.Fatalf("worktree path should exist before submit: %v", statErr)
+	}
+	branchOut, _ := exec.Command("git", "-C", repoDir, "branch", "--list", branchName).CombinedOutput()
+	if !strings.Contains(string(branchOut), branchName) {
+		t.Fatalf("branch %q should exist before submit", branchName)
+	}
+
+	// Submit — triggers auto-cleanup.
+	result, submitErr := store.SubmitTask(taskID, workerID, "abc123", "", nil)
+	if submitErr != nil {
+		t.Fatalf("submit: %v", submitErr)
+	}
+	if !result.Success {
+		t.Fatalf("expected success, got: %s", result.Message)
+	}
+
+	// Worktree directory must be gone.
+	if _, statErr := os.Stat(wtPath); !os.IsNotExist(statErr) {
+		t.Errorf("worktree path %q should have been removed after submit", wtPath)
+	}
+
+	// Branch must also be gone.
+	branchOut2, _ := exec.Command("git", "-C", repoDir, "branch", "--list", branchName).CombinedOutput()
+	if strings.Contains(string(branchOut2), branchName) {
+		t.Errorf("branch %q should have been deleted after submit, still present: %q", branchName, string(branchOut2))
 	}
 }
