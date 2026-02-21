@@ -255,6 +255,10 @@ func handleSubmit(store Store, rawArgs json.RawMessage) (any, error) {
 	if args.WorkerID == "" {
 		return nil, fmt.Errorf("worker_id is required")
 	}
+	// validation_results is optional; if provided, must be non-empty and contain valid status values.
+	if args.ValidationResults != nil && len(args.ValidationResults) == 0 {
+		return nil, fmt.Errorf("empty validation_results not allowed: omit the field to skip validation")
+	}
 	for _, r := range args.ValidationResults {
 		if r.Status != "pass" && r.Status != "fail" {
 			return nil, fmt.Errorf("validation_results[%s].status %q is invalid: must be \"pass\" or \"fail\"", r.Name, r.Status)

@@ -529,13 +529,18 @@ func (s *SQLiteStore) reassignStaleOrFindPendingTask(workerID string) (
 // SubmitTask marks a task as done.
 func (s *SQLiteStore) SubmitTask(taskID, workerID, commitSHA, handoff string, results []ValidationResult) (*SubmitResult, error) {
 	for _, r := range results {
-		if r.Status == "fail" {
+		switch r.Status {
+		case "pass":
+			// ok
+		case "fail":
 			s.recordPersonaStat(workerID, taskID, "validation_failed")
 			return &SubmitResult{
 				Success:    false,
 				NextAction: "get_next_task",
 				Message:    fmt.Sprintf("Validation failed: %s — %s", r.Name, r.Message),
 			}, nil
+		default:
+			return nil, fmt.Errorf("validation_results[%s].status %q is invalid: must be \"pass\" or \"fail\"", r.Name, r.Status)
 		}
 	}
 

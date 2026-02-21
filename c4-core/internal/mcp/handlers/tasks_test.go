@@ -455,7 +455,6 @@ func TestHandleSubmit(t *testing.T) {
 			args: `{
 				"task_id": "T-003-0",
 				"commit_sha": "ghi789",
-				"validation_results": [],
 				"worker_id": "worker-test"
 			}`,
 			submitErr: fmt.Errorf("database error"),
@@ -560,7 +559,6 @@ func TestHandleSubmitOwnerMismatch(t *testing.T) {
 	result, err := handleSubmit(store, json.RawMessage(`{
 		"task_id": "T-001-0",
 		"commit_sha": "abc123",
-		"validation_results": [],
 		"worker_id": "worker-b"
 	}`))
 	if err != nil {
@@ -997,7 +995,7 @@ func TestTaskHandlersViaRegistry(t *testing.T) {
 	})
 
 	t.Run("c4_submit via registry", func(t *testing.T) {
-		args := `{"task_id": "T-001", "commit_sha": "xyz", "validation_results": [], "worker_id": "worker-reg"}`
+		args := `{"task_id": "T-001", "commit_sha": "xyz", "worker_id": "worker-reg"}`
 		result, err := reg.Call("c4_submit", json.RawMessage(args))
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
