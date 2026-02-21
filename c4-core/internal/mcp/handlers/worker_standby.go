@@ -32,6 +32,11 @@ type WorkerDeps struct {
 	activeWorkersMu sync.Mutex
 	activeWorkers   map[string]workerEntry
 	nextGen         uint64
+
+	// leaseRenewals tracks background lease renewal goroutines by job_id.
+	// Cancelled when the job completes via c4_worker_complete.
+	leaseRenewalsMu sync.Mutex
+	leaseRenewals   map[string]context.CancelFunc
 }
 
 // RegisterWorkerHandlers registers c4_worker_standby, c4_worker_complete, c4_worker_shutdown.
@@ -204,6 +209,10 @@ func handleWorkerStandby(mcpCtx context.Context, deps *WorkerDeps, raw json.RawM
 				deps.Keeper.c1.UpdatePresence("agent", params.WorkerID, "working", "Job: "+result.job.GetID())
 				deps.Keeper.AutoPost("cq", fmt.Sprintf("Worker %s claimed job %s: %s", params.WorkerID, result.job.GetID(), result.job.Command))
 			}
+			// Start background lease renewal goroutine for this job.
+			if result.leaseID != "" {
+				deps.startLeaseRenewal(result.job.GetID(), result.leaseID, params.WorkerID)
+			}
 			return map[string]any{
 				"job_id":   result.job.GetID(),
 				"command":  result.job.Command,
@@ -308,6 +317,9 @@ func handleWorkerComplete(deps *WorkerDeps, raw json.RawMessage) (any, error) {
 		return nil, fmt.Errorf("invalid status: %q (must be SUCCEEDED or FAILED)", params.Status)
 	}
 
+	// Stop background lease renewal for this job (if active).
+	deps.stopLeaseRenewal(params.JobID)
+
 	// Complete job on Hub
 	if err := deps.HubClient.CompleteJob(params.JobID, params.Status, exitCode); err != nil {
 		return nil, fmt.Errorf("complete job: %w", err)
@@ -399,4 +411,81 @@ func handleWorkerShutdown(deps *WorkerDeps, raw json.RawMessage) (any, error) {
 		"worker_id": params.WorkerID,
 		"reason":    params.Reason,
 	}, nil
+}
+
+// leaseRenewalInterval is the period between automatic lease renewals.
+// Set to 60 seconds (well within the typical 5-minute lease TTL).
+const leaseRenewalInterval = 60 * time.Second
+
+// leaseRenewalMaxFailures is the number of consecutive renewal failures before
+// the goroutine stores a shutdown signal for the worker and exits.
+const leaseRenewalMaxFailures = 3
+
+// startLeaseRenewal launches a background goroutine that renews the lease for
+// jobID every leaseRenewalInterval. The goroutine is tracked by jobID so
+// stopLeaseRenewal can cancel it when the job completes.
+func (d *WorkerDeps) startLeaseRenewal(jobID, leaseID, workerID string) {
+	ctx, cancel := context.WithCancel(context.Background())
+	d.leaseRenewalsMu.Lock()
+	if d.leaseRenewals == nil {
+		d.leaseRenewals = make(map[string]context.CancelFunc)
+	}
+	// Cancel any existing renewal for the same job (safety).
+	if old, ok := d.leaseRenewals[jobID]; ok {
+		old()
+	}
+	d.leaseRenewals[jobID] = cancel
+	d.leaseRenewalsMu.Unlock()
+
+	go func() {
+		defer func() {
+			cancel()
+			d.leaseRenewalsMu.Lock()
+			if fn, ok := d.leaseRenewals[jobID]; ok && fn != nil {
+				delete(d.leaseRenewals, jobID)
+			}
+			d.leaseRenewalsMu.Unlock()
+		}()
+
+		ticker := time.NewTicker(leaseRenewalInterval)
+		defer ticker.Stop()
+		failures := 0
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				_, err := d.HubClient.RenewLease(leaseID)
+				if err != nil {
+					failures++
+					fmt.Fprintf(os.Stderr, "c4: lease renewal failed for job %s (attempt %d/%d): %v\n",
+						jobID, failures, leaseRenewalMaxFailures, err)
+					if failures >= leaseRenewalMaxFailures {
+						fmt.Fprintf(os.Stderr, "c4: lease renewal exceeded %d consecutive failures for job %s — signalling worker shutdown\n",
+							leaseRenewalMaxFailures, jobID)
+						if d.ShutdownStore != nil {
+							_ = d.ShutdownStore.StoreSignal(workerID, "lease renewal failed for job "+jobID)
+						}
+						return
+					}
+				} else {
+					failures = 0 // reset on success
+				}
+			}
+		}
+	}()
+}
+
+// stopLeaseRenewal cancels the background lease renewal goroutine for jobID.
+func (d *WorkerDeps) stopLeaseRenewal(jobID string) {
+	if d == nil {
+		return
+	}
+	d.leaseRenewalsMu.Lock()
+	defer d.leaseRenewalsMu.Unlock()
+	if fn, ok := d.leaseRenewals[jobID]; ok {
+		fn()
+		delete(d.leaseRenewals, jobID)
+	}
 }

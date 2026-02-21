@@ -31,7 +31,7 @@ c4_worker_standby(worker_id, capabilities: {"tags": ["claude", "mcp"]})
 - `shutdown: true` → Step 5 (종료)
 - `job_id, command, lease_id` → Step 3 (실행)
 
-### Step 3: 잡 실행 (+ 주기적 Lease 갱신)
+### Step 3: 잡 실행 (+ 자동 Lease 갱신)
 
 `command` 필드를 파싱하여 실행합니다:
 
@@ -41,18 +41,24 @@ c4_worker_standby(worker_id, capabilities: {"tags": ["claude", "mcp"]})
 | 셸 명령 (e.g. `go test ./...`) | Bash로 직접 실행 |
 | 자연어 (e.g. "fix the login bug") | Claude가 해석하여 자율 실행 |
 
-**Lease 갱신 정책 (긴 잡 대상):**
+**Lease 자동 갱신 (내장):**
 
-기본 Lease TTL은 5분입니다. 잡 실행 시간이 4분을 초과할 것으로 예상되면,
-약 4분마다 (만료 60초 전 기준) 아래 도구를 호출하여 Lease를 갱신하세요:
+`c4_worker_standby`가 잡을 반환하면, **60초 주기 자동 갱신 루프**가 백그라운드에서 시작됩니다.
+
+- `c4_worker_complete` 호출 시 자동 중단됩니다.
+- 갱신 3회 연속 실패 시: 워커에 shutdown 신호가 저장되어 다음 루프에서 종료됩니다.
+- 이 갱신은 기본 Lease TTL 5분 내에 만료를 방지합니다.
+
+**수동 갱신 (선택):**
+
+5분 이상 소요되는 잡에서 추가로 직접 갱신이 필요하면:
 
 ```
 c4_hub_lease_renew(lease_id: "<lease_id>")
 ```
 
-- 갱신 성공 시: `new_expires_at` 타임스탬프가 반환됩니다. 실행을 계속하세요.
-- 갱신 실패 시: 최대 3회 재시도(지수 백오프). 3회 모두 실패하면 잡을 중단하고
-  `c4_worker_complete(status: "FAILED")`로 보고하세요.
+- 갱신 성공 시: `new_expires_at` 타임스탬프가 반환됩니다.
+- 갱신 3회 모두 실패하면 잡을 중단하고 `c4_worker_complete(status: "FAILED")`로 보고하세요.
 
 ### Step 4: 완료 보고
 
