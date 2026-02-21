@@ -1,9 +1,11 @@
 import { MarkdownViewer } from '../shared/MarkdownViewer';
+import { A2UIRenderer } from './A2UIRenderer';
 import type { C1Message, C1Member, SenderType } from '../../types';
 
 interface MessageBubbleProps {
   message: C1Message;
   member?: C1Member;
+  onAction?: (id: string, label: string) => void;
 }
 
 function inferSenderType(msg: C1Message): SenderType {
@@ -59,9 +61,11 @@ function formatTime(iso: string): string {
   }
 }
 
-export function MessageBubble({ message, member }: MessageBubbleProps) {
+export function MessageBubble({ message, member, onAction }: MessageBubbleProps) {
   const type = member ? member.member_type as SenderType : inferSenderType(message);
   const avatarClass = member ? member.member_type : type;
+
+  const a2uiSpec = message.metadata?.a2ui;
 
   if (type === 'system' && !member) {
     return (
@@ -70,6 +74,12 @@ export function MessageBubble({ message, member }: MessageBubbleProps) {
           <div className="message-bubble__content">
             <MarkdownViewer content={message.content} />
           </div>
+          {a2uiSpec != null && (
+            <A2UIRenderer
+              spec={a2uiSpec}
+              onAction={onAction ?? (() => {})}
+            />
+          )}
         </div>
       </div>
     );
@@ -88,6 +98,12 @@ export function MessageBubble({ message, member }: MessageBubbleProps) {
         <div className="message-bubble__content">
           <MarkdownViewer content={message.content} />
         </div>
+        {a2uiSpec != null && (
+          <A2UIRenderer
+            spec={a2uiSpec}
+            onAction={onAction ?? (() => {})}
+          />
+        )}
       </div>
     </div>
   );

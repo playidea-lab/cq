@@ -10,6 +10,7 @@ interface MessageListProps {
   hasMore: boolean;
   onLoadMore: () => void;
   getMember?: (memberId: string) => C1Member | undefined;
+  onAction?: (id: string, label: string) => void;
 }
 
 // Message grouping types
@@ -61,7 +62,7 @@ function getAgentName(messages: C1Message[], getMember?: (id: string) => C1Membe
   return 'Agent';
 }
 
-export function MessageList({ messages, loading, hasMore, onLoadMore, getMember }: MessageListProps) {
+export function MessageList({ messages, loading, hasMore, onLoadMore, getMember, onAction }: MessageListProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const prevCountRef = useRef(messages.length);
 
@@ -109,6 +110,7 @@ export function MessageList({ messages, loading, hasMore, onLoadMore, getMember 
               key={group.message.id}
               message={group.message}
               member={group.message.member_id && getMember ? getMember(group.message.member_id) : undefined}
+              onAction={onAction}
             />
           );
         }

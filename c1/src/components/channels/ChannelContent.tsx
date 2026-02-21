@@ -1,4 +1,4 @@
-import { type ReactNode } from 'react';
+import { type ReactNode, useCallback } from 'react';
 import { useMessages } from '../../hooks/useMessages';
 import { MessageList } from './MessageList';
 import { MessageInput } from './MessageInput';
@@ -29,6 +29,10 @@ export function ChannelContent({
     sendMessage,
   } = useMessages(channel.id);
 
+  const handleA2UIAction = useCallback((id: string, label: string) => {
+    sendMessage(label, undefined, { a2ui_response: { action_id: id } });
+  }, [sendMessage]);
+
   const filteredMessages = msgFilter.trim()
     ? messages.filter(m =>
         m.content.toLowerCase().includes(msgFilter.toLowerCase())
@@ -51,6 +55,7 @@ export function ChannelContent({
           hasMore={filteredHasMore}
           onLoadMore={loadMore}
           getMember={getMember}
+          onAction={handleA2UIAction}
         />
         {!isReadOnly && (
           <MessageInput
