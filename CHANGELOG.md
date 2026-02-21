@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-02-22
+
+### ✨ Features
+- **lsp**: Go/Dart native handler 응답에 `_edit_hint` 필드 주입 — Agent가 find/overview 결과에서 편집 도구 제약을 즉시 인식 (`76d80cb`)
+
+### 🐛 Bug Fixes
+- **lsp**: `languageGuardedProxy` 도구명 PascalCase 버그 수정 — `toolName` 명시적 snake_case 전달, 미사용 `rootDir` 파라미터 제거 (`8dbfc5c`)
+
+### 🧪 Tests
+- **c1**: C1 Messenger-first 재설계 신규 컴포넌트 테스트 추가 (`d4efa3f`)
+- **handlers**: `language_guard_test.go` (5개) + `lsp_hint_test.go` (4개) = Go +9 tests (`76d80cb`, `8dbfc5c`)
+
+### 📚 Documentation
+- **agents**: Go 테스트 수 ~1,262 → ~1,271 반영 (`59ca0df`)
+
+### 🔧 Chores
+- **user**: submodule 업데이트 (README user scenarios, distributed experiment scenario, Examples section, refine+polish workflow pages)
+
+---
+
 ## [0.14.0] - 2026-02-22
 
 ### ✨ Features
