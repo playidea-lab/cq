@@ -41,6 +41,10 @@ type Server struct {
 	// (broadcasting to all long-poll waiters) and replaced with a new channel.
 	jobMu     sync.Mutex
 	jobNotify chan struct{}
+
+	// sseSubs holds active SSE subscriber channels (map[chan string]struct{}).
+	// Entries are added in handleSSEStream and removed when the connection closes.
+	sseSubs sync.Map
 }
 
 // Config holds server configuration.
@@ -142,6 +146,9 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("/v1/storage/download/", s.handleStorageDownload) // GET /v1/storage/download/{path}
 	s.mux.HandleFunc("/v1/artifacts/", s.handleArtifacts)
 
+	// SSE event stream
+	s.mux.HandleFunc("/v1/events/stream", s.handleSSEStream)
+
 	// WebSocket (both paths: hub.Client sends to /v1/ws/metrics/, workers use /ws/metrics/)
 	s.mux.HandleFunc("/ws/metrics/", s.handleWSMetrics)
 	s.mux.HandleFunc("/v1/ws/metrics/", s.handleWSMetrics)
@@ -216,12 +223,16 @@ func isMasterFromContext(r *http.Request) bool {
 
 // notifyJobAvailable broadcasts to all long-poll waiters that a new job is queued.
 // It does this by closing the current jobNotify channel and creating a new one.
+// It also broadcasts an SSE event to all SSE subscribers.
 func (s *Server) notifyJobAvailable() {
 	s.jobMu.Lock()
 	old := s.jobNotify
 	s.jobNotify = make(chan struct{})
 	s.jobMu.Unlock()
 	close(old)
+
+	// Broadcast to SSE subscribers (non-blocking, fire-and-forget).
+	s.broadcastSSEEvent("job.available", nil)
 }
 
 // getJobNotifyChan returns the current job notification channel.
