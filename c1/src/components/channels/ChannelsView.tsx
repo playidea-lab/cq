@@ -7,6 +7,7 @@ import { useSessions } from '../../hooks/useSessions';
 import { ChannelListSidebar } from './ChannelListSidebar';
 import { ChannelContent } from './ChannelContent';
 import { MembersPanel } from './MembersPanel';
+import { ProductView } from './ProductView';
 import { SessionList } from '../sessions/SessionList';
 import { MessageViewer } from '../sessions/MessageViewer';
 import type { ProviderKind } from '../../types';
@@ -161,6 +162,7 @@ export function ChannelsView({ projectPath }: ChannelsViewProps) {
                 <div className="chat-panel__body">
                   <ChannelContent
                     channel={selectedChannel}
+                    productSlot={<ProductView channelId={selectedChannel.id} />}
                     getMember={getMember}
                     agentMembers={members.filter(m => m.member_type === 'agent')}
                     msgFilter={channelMsgFilter}
