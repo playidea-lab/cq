@@ -81,6 +81,19 @@ Cursor에서는 수동으로 `c4_knowledge_distill` 호출하거나 건너뜁니
 - Conventional commit message 작성 (feat/fix/docs/refactor)
 - 커밋 생성 (push는 사용자 요청 시에만)
 
+### 8. Release Notes (c4-release)
+
+커밋 완료 후 자동으로 `/c4-release`를 실행합니다.
+
+```
+/c4-release
+```
+
+- 마지막 태그 이후 커밋 분석 → CHANGELOG.md 업데이트
+- 버전 bump 제안 (Major/Minor/Patch)
+- Git 태그 생성은 사용자 확인 후 수행
+- `--no-release` 플래그 명시 시 생략 가능
+
 ## Rules
 - 단계를 건너뛰지 않는다
 - 각 단계 완료 후 상태 보고
