@@ -970,19 +970,24 @@ func TestMarkBlocked_NotFound_DoesNotCreateTask(t *testing.T) {
 	if err == nil {
 		t.Fatal("MarkBlocked on non-existent task should return error")
 	}
+	if !strings.Contains(err.Error(), "not found") {
+		t.Errorf("error = %q, want to contain 'not found'", err.Error())
+	}
 	_, getErr := store.GetTask("T-NONE-0")
 	if getErr == nil {
 		t.Fatal("GetTask(T-NONE-0) should fail (task not created by MarkBlocked)")
 	}
 }
 
-// TestMarkBlocked_NotFound_OtherTasksUnchanged: MarkBlocked on non-existent task leaves other tasks unchanged.
+// TestMarkBlocked_NotFound_OtherTasksUnchanged: MarkBlocked on non-existent task returns error and leaves other tasks unchanged.
 func TestMarkBlocked_NotFound_OtherTasksUnchanged(t *testing.T) {
 	store, _ := newTestSQLiteStore(t)
 	if err := store.AddTask(&Task{ID: "T-OK-0", Title: "Ok", DoD: "done", Status: "pending"}); err != nil {
 		t.Fatal(err)
 	}
-	_ = store.MarkBlocked("T-NONE-0", "w", "sig", 1, "err")
+	if err := store.MarkBlocked("T-NONE-0", "w", "sig", 1, "err"); err == nil {
+		t.Fatal("MarkBlocked on non-existent task should return error")
+	}
 	task, err := store.GetTask("T-OK-0")
 	if err != nil {
 		t.Fatalf("GetTask T-OK-0: %v", err)
