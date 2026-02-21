@@ -13,21 +13,41 @@ Post-implementation completion workflow. Execute ALL steps in order.
 
 ## Steps
 
-### 0. Run Polish (MANDATORY)
+### 0. Gate Check (MANDATORY — 항상 첫 번째)
 
-**항상 실행** — 수정사항이 0이 될 때까지 코드를 정제합니다.
+**세션 메모리가 아닌 DB 상태로 판단한다. 컨텍스트 소진 후 재개해도 동일하게 동작.**
 
+```bash
+# Step 0.1: c4_gates 테이블 생성 (없으면)
+sqlite3 .c4/c4.db "
+CREATE TABLE IF NOT EXISTS c4_gates (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  batch_id     TEXT,
+  gate         TEXT    NOT NULL,
+  status       TEXT    NOT NULL CHECK(status IN ('done','skipped','override')),
+  reason       TEXT,
+  completed_at TEXT    DEFAULT (datetime('now'))
+);"
+
+# Step 0.2: polish 게이트 상태 조회
+sqlite3 .c4/c4.db \
+  "SELECT gate, status, reason, completed_at FROM c4_gates ORDER BY completed_at DESC LIMIT 5;"
 ```
-/c4-polish
+
+| 조회 결과 | 동작 |
+|---------|------|
+| `polish \| done` 레코드 있음 | ✅ Step 1로 진행 |
+| 레코드 없음 | ⛔ **중단** → `/c4-polish` 먼저 실행 |
+| `polish \| skipped` | ⚠️ 사유 표시 + 사용자 명시 확인 후 진행 |
+
+**`--no-polish` 긴급 예외 시** (사유 없이는 불가):
+```bash
+sqlite3 .c4/c4.db \
+  "INSERT INTO c4_gates (gate, status, reason) VALUES ('polish', 'skipped', '${사유 필수}')"
 ```
 
-- `/c4-run` 이후, `/c4-finish` 진입 전 반드시 실행
-- polish가 CONVERGED 또는 quality gate PASSED 상태여야 다음 단계 진행
-- 이미 이번 세션에서 polish를 실행했고 이후 코드 변경이 없으면 건너뜀
-- `--no-polish` 플래그를 명시한 경우에만 생략 가능 (긴급 배포 등 예외)
-
-> **건너뛰는 조건**: 이번 세션에서 `/c4-polish`가 이미 완료됐고, 그 이후 코드 변경이 없는 경우.
-> 의심스러우면 실행한다. 비용보다 품질이 우선.
+> ⛔ **레코드가 없으면 c4-finish를 진행하지 않는다.**
+> "이번 세션에서 polish를 했다"는 기억에 의존하지 않는다.
 
 ### 1. Phase Lock Acquire (Advisory)
 

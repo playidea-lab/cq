@@ -194,6 +194,47 @@ c4/
 /c4-status              # 진행 상황 확인
 ```
 
+### Session Resume Protocol (컨텍스트 소진 후 재개 시 — 가장 먼저 실행)
+
+**세션이 끊겨서 재개할 때, "어디까지 했나"보다 "무엇을 빠뜨렸나"를 먼저 확인한다.**
+
+```bash
+# 1. 품질 게이트 상태 확인 (DB 직접 조회 — 세션 메모리 무관)
+sqlite3 .c4/c4.db \
+  "SELECT gate, status, reason, completed_at FROM c4_gates ORDER BY completed_at DESC LIMIT 10;" \
+  2>/dev/null || echo "⚠️ c4_gates 테이블 없음 (이전 세션에서 게이트 미기록)"
+```
+
+| 조회 결과 | 판단 |
+|---------|------|
+| `polish \| done` 레코드 있음 | ✅ c4-finish 진행 가능 |
+| 레코드 없음 | ⛔ polish/refine 먼저 실행 필요 |
+| `polish \| skipped` | ⚠️ 사유 확인 후 사용자에게 명시 |
+
+**재개 시 선언 형식** (항상 이 형식으로 현재 상태를 명시):
+```
+## 재개 상태
+- Task batch: T-XXX~T-YYY
+- Gates: polish=[done|pending], refine=[done|pending]
+- 다음 단계: [무엇부터 시작하는지]
+```
+
+### Context Compression Handoff Protocol (컨텍스트 소진 예상 시)
+
+컨텍스트가 소진되기 전, MEMORY.md 또는 `.c4/handoff.md`에 반드시 기록:
+
+```markdown
+## [HANDOFF] 워크플로우 상태 — {날짜}
+- Task batch: T-XXX~T-YYY
+- Gates completed: polish=done(round 3), refine=skipped(사유)
+- Gates pending: []
+- finish_allowed: true
+- 다음 단계: Step 6 — AGENTS.md 문서 업데이트
+- 주의: [컨텍스트 소진 전 마지막으로 알고 있는 중요 상태]
+```
+
+**핵심 원칙**: 요약이 "위치"를 전달한다면, Handoff는 "게이트 상태"를 전달한다.
+
 ### Direct 모드
 ```
 c4_add_todo(mode="direct", review_required=False)

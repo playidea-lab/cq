@@ -209,7 +209,7 @@ if round > max_rounds:
     print(f"Remaining: {remaining_issues}")
 ```
 
-### Phase 5. Report
+### Phase 5. Report + Gate Recording
 
 최종 리포트를 생성합니다.
 
@@ -227,6 +227,24 @@ if round > max_rounds:
 | 1     | worker-a1b2 | 2 | 2 | 4 | 1 | Fixed 4 |
 | 2     | worker-c3d4 | 0 | 1 | 3 | 1 | Fixed 1 |
 | 3     | worker-e5f6 | 0 | 0 | 2 | 1 | PASS   |
+```
+
+**Refine 완료 후 반드시 게이트를 DB에 기록한다 (c4-finish가 이 레코드를 확인):**
+
+```bash
+sqlite3 .c4/c4.db "
+CREATE TABLE IF NOT EXISTS c4_gates (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  batch_id     TEXT,
+  gate         TEXT    NOT NULL,
+  status       TEXT    NOT NULL CHECK(status IN ('done','skipped','override')),
+  reason       TEXT,
+  completed_at TEXT    DEFAULT (datetime('now'))
+);
+INSERT INTO c4_gates (gate, status, reason)
+  VALUES ('refine', 'done', 'quality gate passed at round ${round}/${max_rounds}');"
+
+echo "✅ refine gate recorded → c4-finish 진행 가능"
 ```
 
 ### Phase 5.5. Knowledge Recording (자동)

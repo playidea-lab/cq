@@ -228,7 +228,7 @@ else:
     print_remaining_issues(review)
 ```
 
-### Phase 6. Final Report
+### Phase 6. Final Report + Gate Recording
 
 ```
 ## Polish Summary
@@ -244,6 +244,24 @@ else:
 | 1     | worker-a1 | 1  | 2   | 4   | 2   | 9    | Fixed  |
 | 2     | worker-b2 | 0  | 1   | 2   | 1   | 4    | Fixed  |
 | 3     | worker-c3 | 0  | 0   | 0   | 1   | 0    | PASS ✅|
+```
+
+**Polish 완료 후 반드시 게이트를 DB에 기록한다 (c4-finish가 이 레코드를 확인):**
+
+```bash
+sqlite3 .c4/c4.db "
+CREATE TABLE IF NOT EXISTS c4_gates (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  batch_id     TEXT,
+  gate         TEXT    NOT NULL,
+  status       TEXT    NOT NULL CHECK(status IN ('done','skipped','override')),
+  reason       TEXT,
+  completed_at TEXT    DEFAULT (datetime('now'))
+);
+INSERT INTO c4_gates (gate, status, reason)
+  VALUES ('polish', 'done', 'converged at round ${round}/${max_rounds}');"
+
+echo "✅ polish gate recorded → c4-finish 진행 가능"
 ```
 
 ### Phase 6.5. Knowledge Recording
