@@ -71,10 +71,38 @@ chmod +x "${TMP_FILE}"
 mv "${TMP_FILE}" "${INSTALL_DIR}/cq"
 echo "Installed: ${INSTALL_DIR}/cq"
 
+# Auto-add INSTALL_DIR to PATH in shell rc files
+add_to_path() {
+  LINE="export PATH=\"\$PATH:${INSTALL_DIR}\""
+  ADDED=0
+  for RC in "${HOME}/.zshrc" "${HOME}/.bashrc" "${HOME}/.profile"; do
+    if [ -f "$RC" ]; then
+      if ! grep -qF "${INSTALL_DIR}" "$RC" 2>/dev/null; then
+        printf '\n# Added by cq installer\n%s\n' "$LINE" >> "$RC"
+        echo "PATH updated: $RC"
+        ADDED=1
+      fi
+    fi
+  done
+  if [ "$ADDED" = "0" ] && [ ! -f "${HOME}/.zshrc" ] && [ ! -f "${HOME}/.bashrc" ]; then
+    printf '%s\n' "$LINE" > "${HOME}/.profile"
+    echo "PATH updated: ${HOME}/.profile"
+  fi
+}
+
+case ":$PATH:" in
+  *":${INSTALL_DIR}:"*) ;;
+  *)
+    add_to_path
+    export PATH="$PATH:${INSTALL_DIR}"
+    ;;
+esac
+
 if [ -x "${INSTALL_DIR}/cq" ]; then
   echo ""
   "${INSTALL_DIR}/cq" doctor || true
 fi
 
 echo ""
-echo "Done. Make sure ${INSTALL_DIR} is in your PATH."
+echo "Done! cq is ready to use."
+echo "(Open a new terminal if 'cq' is not found yet)"
