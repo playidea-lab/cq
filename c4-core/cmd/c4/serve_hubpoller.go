@@ -20,7 +20,12 @@ func registerHubPollerServeComponent(mgr *serve.Manager, cfg config.C4Config, eb
 		return
 	}
 
-	_ = eb // reserved for future publisher wiring
-	mgr.Register(serve.NewHubPollerComponent(cfg.Hub, eventbus.NoopPublisher{}, cfg.ProjectID))
+	var pub eventbus.Publisher
+	if eb != nil {
+		pub = eb.Publisher()
+	} else {
+		pub = eventbus.NoopPublisher{}
+	}
+	mgr.Register(serve.NewHubPollerComponent(cfg.Hub, pub, cfg.ProjectID))
 	fmt.Fprintf(os.Stderr, "cq serve: registered hubpoller\n")
 }

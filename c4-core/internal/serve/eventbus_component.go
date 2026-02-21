@@ -2,7 +2,9 @@ package serve
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sync"
@@ -161,4 +163,57 @@ func (c *EventBusComponent) SocketPath() string {
 		return ""
 	}
 	return eb.SocketPath()
+}
+
+// Publisher returns a new lazyPublisher that lazily connects to the EventBus
+// on first PublishAsync call. Each call returns an independent instance with
+// its own Once and lifecycle (prevents double-close issues).
+func (c *EventBusComponent) Publisher() eventbus.Publisher {
+	return &lazyPublisher{eb: c}
+}
+
+// lazyPublisher implements eventbus.Publisher with lazy gRPC client init.
+// The inner client is created on the first PublishAsync call, not at construction
+// time, so it works even before the EventBus socket is ready.
+type lazyPublisher struct {
+	eb    *EventBusComponent
+	inner *eventbus.Client
+	once  sync.Once
+	mu    sync.Mutex
+}
+
+// PublishAsync initializes the inner client on first call (lazy), then publishes
+// the event. If the EventBus is not available, the error is logged and dropped.
+func (p *lazyPublisher) PublishAsync(evType, source string, data json.RawMessage, projectID string) {
+	p.once.Do(func() {
+		sockPath := p.eb.SocketPath()
+		client, err := eventbus.NewClient(sockPath)
+		if err != nil {
+			slog.Warn("eventbus: lazy init failed, dropping events", "err", err)
+			return
+		}
+		p.mu.Lock()
+		p.inner = client
+		p.mu.Unlock()
+	})
+
+	p.mu.Lock()
+	client := p.inner
+	p.mu.Unlock()
+
+	if client == nil {
+		slog.Warn("eventbus: publish failed, dropping event", "type", evType)
+		return
+	}
+	client.PublishAsync(evType, source, data, projectID)
+}
+
+// Stop closes the inner client if it was initialized.
+func (p *lazyPublisher) Stop() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.inner != nil {
+		p.inner.Close()
+		p.inner = nil
+	}
 }
