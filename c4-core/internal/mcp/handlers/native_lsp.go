@@ -108,6 +108,7 @@ func handleGoFindSymbol(name, absPath, rootDir string) (any, error) {
 		"relative_path": relPath,
 		"symbols":       results,
 		"count":         len(results),
+		"_edit_hint":    "Go file: use Edit tool for modifications (c4_replace_symbol_body not supported)",
 	}, nil
 }
 
@@ -117,6 +118,7 @@ func handleGoSymbolsOverview(absPath string) (any, error) {
 		return nil, err
 	}
 	result["success"] = true
+	result["_edit_hint"] = "Go file: use Edit tool for modifications (c4_replace_symbol_body not supported)"
 	return result, nil
 }
 
@@ -166,6 +168,7 @@ func handleDartFindSymbol(name, absPath, rootDir string) (any, error) {
 		"relative_path": relPath,
 		"symbols":       results,
 		"count":         len(results),
+		"_edit_hint":    "Dart file: use Edit tool for modifications (c4_replace_symbol_body not supported)",
 	}, nil
 }
 
@@ -175,5 +178,6 @@ func handleDartSymbolsOverview(absPath string) (any, error) {
 		return nil, err
 	}
 	result["success"] = true
+	result["_edit_hint"] = "Dart file: use Edit tool for modifications (c4_replace_symbol_body not supported)"
 	return result, nil
 }
