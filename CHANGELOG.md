@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.1] - 2026-02-21
+
+### 🐛 Bug Fixes
+
+- **`ssesubscriber`**: X-API-Key 헤더 사용 (`Authorization: Bearer` → `X-API-Key`) — C5 auth 스펙 준수
+- **`ssesubscriber`**: 백오프 지수 오버플로우 방지 (`exp > 30` 상한 설정)
+- **`ssesubscriber`**: `bufio.Scanner` 토큰 버퍼 1MiB로 확장 (기본 64KiB → 대용량 SSE 페이로드 처리)
+- **`ssesubscriber`**: `http.Client` 재사용 (reconnect loop마다 재생성 → 구조체 필드로 유지)
+- **`eventsink` / `hubpoller`**: NoopPublisher → `eb.Publisher()` 연결 수정 (pub wiring)
+- **`detect.go`**: `isServeRunningWith` 코드 중복 제거 → `isServeRunningWithCtx` 위임
+
+### 📚 Documentation
+
+- **AGENTS.md**: `cq serve` 컴포넌트 테이블에 `ssesubscriber` 항목 추가
+  - 활성화 조건 (`serve.ssesubscriber.enabled: true`, `c5_hub && c3_eventbus` 빌드 태그) 명시
+
 ## [0.9.0] - 2026-02-21
 
 ### ✨ Features
