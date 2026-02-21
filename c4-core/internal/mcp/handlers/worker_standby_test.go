@@ -319,6 +319,68 @@ func TestWorkerComplete_InvalidStatus_Empty(t *testing.T) {
 	}
 }
 
+func TestWorkerComplete_Failed_CallsCompleteJob(t *testing.T) {
+	var completeCalled bool
+	hubHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/jobs/job-456/complete" {
+			completeCalled = true
+			json.NewEncoder(w).Encode(map[string]any{"status": "FAILED"})
+			return
+		}
+		w.WriteHeader(404)
+	})
+
+	deps, _ := testWorkerDeps(t, hubHandler, nil)
+	reg := mcp.NewRegistry()
+	RegisterWorkerHandlers(reg, deps)
+
+	result, err := reg.Call("c4_worker_complete", json.RawMessage(`{
+		"job_id": "job-456",
+		"worker_id": "w1",
+		"status": "FAILED",
+		"summary": "task failed due to compilation error"
+	}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !completeCalled {
+		t.Error("expected Hub CompleteJob to be called for FAILED status")
+	}
+
+	m, ok := result.(map[string]any)
+	if !ok {
+		t.Fatalf("result type = %T, want map", result)
+	}
+	if m["status"] != "completed" {
+		t.Errorf("status = %v, want completed", m["status"])
+	}
+}
+
+func TestWorkerComplete_InvalidStatus_Lowercase(t *testing.T) {
+	hubHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// CompleteJob must NOT be called for invalid lowercase status
+		if r.URL.Path == "/jobs/job-123/complete" {
+			t.Error("CompleteJob should not be called for lowercase status")
+			w.WriteHeader(500)
+			return
+		}
+		w.WriteHeader(404)
+	})
+	deps, _ := testWorkerDeps(t, hubHandler, nil)
+	reg := mcp.NewRegistry()
+	RegisterWorkerHandlers(reg, deps)
+
+	_, err := reg.Call("c4_worker_complete", json.RawMessage(`{
+		"job_id": "job-123",
+		"worker_id": "w1",
+		"status": "succeeded"
+	}`))
+	if err == nil {
+		t.Fatal("expected error for lowercase status=succeeded")
+	}
+}
+
 func TestWorkerHandlers_Registration(t *testing.T) {
 	deps, _ := testWorkerDeps(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}), nil)
 	reg := mcp.NewRegistry()
