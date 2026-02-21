@@ -12,42 +12,9 @@ import (
 	"time"
 
 	"github.com/changmin/c4-core/internal/daemon"
+	"github.com/changmin/c4-core/internal/serve"
 	"github.com/spf13/cobra"
 )
-
-// isDaemonServeRunning checks if cq serve is managing the job scheduler.
-// It reads ~/.c4/serve/serve.pid and verifies the process is alive via
-// signal(0), then confirms via HTTP GET to localhost:4140/health.
-func isDaemonServeRunning() bool {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return false
-	}
-	pidPath := filepath.Join(home, ".c4", "serve", "serve.pid")
-
-	data, err := os.ReadFile(pidPath)
-	if err != nil {
-		return false
-	}
-	pid, err := strconv.Atoi(string(data))
-	if err != nil || pid <= 0 {
-		return false
-	}
-	proc, err := os.FindProcess(pid)
-	if err != nil {
-		return false
-	}
-	if err := proc.Signal(syscall.Signal(0)); err != nil {
-		return false
-	}
-	client := &http.Client{Timeout: 2 * time.Second}
-	resp, err := client.Get("http://localhost:4140/health")
-	if err != nil {
-		return false
-	}
-	defer resp.Body.Close()
-	return resp.StatusCode == http.StatusOK
-}
 
 var (
 	daemonPort    int
@@ -96,10 +63,9 @@ func init() {
 
 func runDaemon(cmd *cobra.Command, args []string) error {
 	// Deprecation warning: prefer cq serve when it is already running
-	if isDaemonServeRunning() {
-		fmt.Fprintln(os.Stderr, "WARNING: cq serve is running and manages the job scheduler.")
-		fmt.Fprintln(os.Stderr, "         Use 'cq serve' instead of 'cq daemon'.")
-		fmt.Fprintln(os.Stderr, "         'cq daemon' will be removed in a future release.")
+	if serve.IsServeRunning() {
+		fmt.Fprintln(os.Stderr, "WARNING: cq serve is running. GPU scheduling is managed by serve.")
+		fmt.Fprintln(os.Stderr, "Consider using 'cq serve' instead of 'cq daemon'.")
 	}
 
 	// Resolve data directory

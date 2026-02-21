@@ -2,8 +2,8 @@
 # ============================
 
 .PHONY: build test test-grpc lint vet clean proto-gen fmt help \
-        build-solo build-connected build-full \
-        install-solo install-connected install-full
+        build-solo build-connected build-full build-nightly \
+        install-solo install-connected install-full install-nightly
 
 # Build variables
 BINARY_NAME := c4
@@ -37,6 +37,17 @@ build-connected:
 build-full:
 	@mkdir -p $(BUILD_DIR)
 	go build $(LDFLAGS) -tags 'c0_drive c3_eventbus c5_hub llm_gateway cdp gpu c1_messenger research' -o $(BUILD_DIR)/cq-full ./cmd/c4/
+
+## build-nightly: Build with all integrations including Observe/Guard/Gate (C7/C6/C8)
+build-nightly:
+	@mkdir -p $(BUILD_DIR)
+	go build $(LDFLAGS) -tags 'c0_drive c3_eventbus c5_hub llm_gateway cdp gpu c1_messenger research c7_observe c6_guard c8_gate' -o $(BUILD_DIR)/cq-nightly ./cmd/c4/
+
+## install-nightly: Build nightly tier and install to ~/.local/bin/cq
+install-nightly: build-nightly
+	@mkdir -p $(INSTALL_DIR)
+	cp $(BUILD_DIR)/cq-nightly $(INSTALL_BIN)
+	@echo "Installed nightly tier → $(INSTALL_BIN)"
 
 ## install-solo: Build solo tier and install to ~/.local/bin/cq
 install-solo: build-solo
