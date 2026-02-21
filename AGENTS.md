@@ -40,6 +40,26 @@ C4 프로젝트의 모든 태스크는 `.c4/tasks.db`에서 단일 관리한다.
 C4 MCP 도구는 프로젝트 경로 자동 resolve, 접근 제어, 이벤트 추적을 포함한다.
 내장 도구는 C4 MCP 서버 미연결 시 또는 C4 외부 파일 접근 시에만 사용한다.
 
+### 코드 분석/편집: LSP 도구 사용 원칙
+
+**언어별 지원 범위 (CRITICAL)**
+```
+✅ Python/JS/TS → c4_find_symbol, c4_get_symbols_overview, c4_replace_symbol_body
+❌ Go/Rust      → c4_search_for_pattern + Edit 도구 (LSP 미지원 — timeout 발생)
+```
+
+**표준 편집 체인 (Python/JS/TS)**
+```
+1. c4_get_symbols_overview(path="파일")      # 구조 파악 — c4_read_file 전에 먼저
+2. c4_find_symbol(name="Target", path="...")  # 위치 확인 (path 필수, 생략 시 timeout)
+3. c4_replace_symbol_body(...)               # 편집
+4. c4_find_symbol(...)                       # 결과 검증
+```
+
+**이름 변경**: `c4_rename_symbol` 우선 (텍스트 치환보다 안전) → 완료 후 `c4_search_for_pattern`으로 잔존 확인
+
+**상세 가이드**: `c4_lighthouse get c4_find_symbol` 또는 Knowledge 조회 `"LSP symbol"`
+
 ### 구현 완료: 직접 커밋 금지 → `/c4-finish` 스킬 사용
 ```
 ❌ git add/commit 직접 실행 (빌드/테스트/설치 누락 위험)
