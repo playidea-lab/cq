@@ -115,7 +115,10 @@ func (s *Scheduler) Schedule(expr string, action func()) (Job, error) {
 		for {
 			select {
 			case <-ticker.C:
-				action()
+				func() {
+					defer func() { recover() }() //nolint:errcheck // ignore panic in action
+					action()
+				}()
 			case <-sj.cancel:
 				return
 			case <-s.done:

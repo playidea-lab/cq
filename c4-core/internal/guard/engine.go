@@ -100,7 +100,7 @@ func (e *Engine) Check(ctx context.Context, actor, tool string, args []byte) Act
 
 	action, reason := e.evaluate(ctx, actor, tool, args)
 
-	// Record asynchronously to avoid slowing the hot path.
+	// Record synchronously. Audit write is best-effort; errors are ignored.
 	entry := AuditEntry{
 		Actor:  actor,
 		Tool:   tool,

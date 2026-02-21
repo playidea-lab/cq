@@ -60,20 +60,19 @@ func toolFromContext(ctx context.Context) string {
 	return v
 }
 
-// Middleware returns a generic mcp.Middleware using defaultActor.
-// Because mcp.HandlerFunc carries no context, this middleware uses
-// context.Background() and the statically-supplied defaultActor.
-// For context-propagated enforcement use Registry.UseContextual() instead.
-func Middleware(eng *Engine, defaultActor string) mcp.Middleware {
+// Middleware returns a pass-through mcp.Middleware.
+//
+// WARNING: This variant performs NO enforcement. It exists only as a structural
+// placeholder. Because mcp.HandlerFunc carries no context and no tool name,
+// neither actor nor tool can be resolved — all calls pass through unconditionally.
+//
+// For actual enforcement, use:
+//   - MiddlewareForTool (per-tool, static actor)
+//   - MiddlewareWithResolver (per-tool, dynamic resolver)
+//   - Registry.UseContextual with ContextualMiddlewareFunc (full context)
+func Middleware(_ *Engine, _ string) mcp.Middleware {
 	return func(next mcp.HandlerFunc) mcp.HandlerFunc {
-		return func(args json.RawMessage) (any, error) {
-			// mcp.HandlerFunc has no context parameter; use background.
-			ctx := context.Background()
-			// Tool name is not available here — allow through.
-			// Use MiddlewareForTool or ContextualMiddleware for per-tool enforcement.
-			_ = ActorFromContext(ctx) // context always empty in this path
-			return next(args)
-		}
+		return next // no-op: tool name and actor are unavailable in HandlerFunc
 	}
 }
 

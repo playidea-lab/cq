@@ -5,6 +5,7 @@ package gate
 
 import (
 	"bytes"
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
@@ -140,6 +141,10 @@ func matchesEvents(subscribed []string, eventType string) bool {
 
 // post performs a single HTTP POST to the endpoint.
 func (m *WebhookManager) post(ep *Endpoint, event Event) error {
+	return m.postCtx(context.Background(), ep, event)
+}
+
+func (m *WebhookManager) postCtx(ctx context.Context, ep *Endpoint, event Event) error {
 	if event.Source == "" {
 		event.Source = "c4.gate"
 	}
@@ -148,7 +153,7 @@ func (m *WebhookManager) post(ep *Endpoint, event Event) error {
 		return fmt.Errorf("marshal event: %w", err)
 	}
 
-	req, err := http.NewRequest(http.MethodPost, ep.URL, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, ep.URL, bytes.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("create request: %w", err)
 	}

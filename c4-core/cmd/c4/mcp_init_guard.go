@@ -17,7 +17,7 @@ func init() {
 
 // initGuard initializes the C6 guard engine and registers guard MCP tools.
 func initGuard(ctx *initContext) error {
-	cfg := guard.Config{Enabled: true} // default: enabled
+	cfg := guard.Config{Enabled: false} // default: disabled until explicitly configured
 	if ctx.cfgMgr != nil {
 		raw := ctx.cfgMgr.GetConfig().Guard
 		cfg.Enabled = raw.Enabled

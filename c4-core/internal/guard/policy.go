@@ -2,6 +2,8 @@ package guard
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -96,8 +98,10 @@ func (e *Engine) dbPolicyCheck(ctx context.Context, tool string) (Action, string
 	var actionStr, reason string
 	err := row.Scan(&actionStr, &reason)
 	if err != nil {
-		// sql.ErrNoRows is not an error in our domain — just "not found".
-		return ActionAllow, "", false, nil
+		if errors.Is(err, sql.ErrNoRows) {
+			return ActionAllow, "", false, nil
+		}
+		return ActionAllow, "", false, err
 	}
 	return parseAction(actionStr), reason, true, nil
 }

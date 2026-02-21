@@ -178,8 +178,11 @@ func (p *AnthropicProvider) Chat(ctx context.Context, req *ChatRequest) (*ChatRe
 			InputTokens:      apiResp.Usage.InputTokens,
 			OutputTokens:     apiResp.Usage.OutputTokens,
 			CacheReadTokens: apiResp.Usage.CacheReadInputTokens,
-			// cache_creation_input_tokens == ephemeral_5m + ephemeral_1h (both old and new API)
-			CacheWriteTokens: apiResp.Usage.CacheCreationInputTokens,
+			// Claude 3.x: CacheCreationInputTokens; Claude 4.x: CacheCreation.Ephemeral* fields.
+			// Sum all to support both API versions.
+			CacheWriteTokens: apiResp.Usage.CacheCreationInputTokens +
+				apiResp.Usage.CacheCreation.Ephemeral5mInputTokens +
+				apiResp.Usage.CacheCreation.Ephemeral1hInputTokens,
 		},
 	}, nil
 }
