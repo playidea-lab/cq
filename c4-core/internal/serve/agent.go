@@ -201,28 +201,34 @@ func (a *Agent) handleEvent(event RealtimeEvent) {
 
 	fmt.Fprintf(os.Stderr, "cq: [agent] @cq mention detected in msg %s from %s\n", msg.ID, msg.SenderName)
 
+	// Check concurrency limit before claiming (avoid claiming then dropping)
+	select {
+	case a.sem <- struct{}{}:
+		// acquired semaphore slot
+	default:
+		fmt.Fprintf(os.Stderr, "cq: [agent] msg %s skipped (concurrency limit)\n", msg.ID)
+		return
+	}
+
 	// Try to claim the message
 	claimed, err := a.claimMessage(msg.ID)
 	if err != nil {
+		<-a.sem // release slot
 		fmt.Fprintf(os.Stderr, "cq: [agent] claim msg %s failed: %v\n", msg.ID, err)
 		return
 	}
 	if !claimed {
+		<-a.sem // release slot
 		fmt.Fprintf(os.Stderr, "cq: [agent] msg %s already claimed by another worker\n", msg.ID)
 		return
 	}
 
-	// Process in background with concurrency limit
+	// Process in background
 	a.wg.Add(1)
 	go func() {
 		defer a.wg.Done()
-		select {
-		case a.sem <- struct{}{}:
-			defer func() { <-a.sem }()
-			a.processMessage(msg.ID, msg.ChannelID, msg.Content, msg.SenderName)
-		default:
-			fmt.Fprintf(os.Stderr, "cq: [agent] msg %s dropped (concurrency limit)\n", msg.ID)
-		}
+		defer func() { <-a.sem }()
+		a.processMessage(msg.ID, msg.ChannelID, msg.Content, msg.SenderName)
 	}()
 }
 
