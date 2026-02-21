@@ -36,14 +36,15 @@ type SSESubscriberConfig struct {
 // SSESubscriberComponent connects to C5 /v1/events/stream via SSE and
 // forwards received events to the local EventBus. It implements Component.
 type SSESubscriberComponent struct {
-	cfg SSESubscriberConfig
-	pub eventbus.Publisher
+	cfg        SSESubscriberConfig
+	pub        eventbus.Publisher
+	httpClient *http.Client // reused across connect() calls
 
-	mu           sync.Mutex
-	cancel       context.CancelFunc
-	done         chan struct{}
-	failCount    int
-	running      bool
+	mu        sync.Mutex
+	cancel    context.CancelFunc
+	done      chan struct{}
+	failCount int
+	running   bool
 }
 
 // NewSSESubscriberComponent creates a new SSESubscriberComponent.
@@ -51,6 +52,11 @@ func NewSSESubscriberComponent(cfg SSESubscriberConfig, pub eventbus.Publisher) 
 	return &SSESubscriberComponent{
 		cfg: cfg,
 		pub: pub,
+		httpClient: &http.Client{
+			Transport: &http.Transport{
+				ResponseHeaderTimeout: 10 * time.Second,
+			},
+		},
 	}
 }
 
@@ -174,20 +180,12 @@ func (c *SSESubscriberComponent) connect(ctx context.Context) error {
 		return fmt.Errorf("create request: %w", err)
 	}
 	if c.cfg.APIKey != "" {
-		req.Header.Set("Authorization", "Bearer "+c.cfg.APIKey)
+		req.Header.Set("X-API-Key", c.cfg.APIKey)
 	}
 	req.Header.Set("Accept", "text/event-stream")
 	req.Header.Set("Cache-Control", "no-cache")
 
-	// Set ResponseHeaderTimeout so a hung server does not block the goroutine
-	// indefinitely before the response headers arrive. Body reads are cancelled
-	// via the request context (ctx) when Stop() is called.
-	client := &http.Client{
-		Transport: &http.Transport{
-			ResponseHeaderTimeout: 10 * time.Second,
-		},
-	}
-	resp, err := client.Do(req)
+	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("connect: %w", err)
 	}
