@@ -1,53 +1,82 @@
-# CQ - AI 코딩 에이전트 관리 엔진
+# CQ — AI Project Orchestration Engine
 
-CQ는 Claude Code와 함께 사용하는 프로젝트 관리 엔진입니다.
-C4 Engine을 통해 계획부터 완료까지 자동화된 워크플로우를 제공합니다.
+**CQ** is a project management engine for Claude Code.
+It automates the full development lifecycle — planning, implementation, review, and delivery — through a structured workflow powered by C4 Engine.
 
-## 설치 (curl)
+## Install
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/install.sh | sh
 ```
 
-## 티어 선택
-
-| 티어 | 설명 |
-|------|------|
-| solo | 로컬 전용 (기본값) |
-| connected | Supabase + C3 EventBus 연동 |
-| full | 모든 기능 (Hub, Drive, LLM Gateway 포함) |
+Opens a new terminal and you're ready:
 
 ```sh
-# connected 티어 설치
-curl -fsSL https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/install.sh | sh -s -- --tier connected
-
-# full 티어 설치
-curl -fsSL https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/install.sh | sh -s -- --tier full
+cq --help
 ```
 
-## 빠른 시작
+## Tiers
+
+Choose the tier that fits your setup:
+
+| Tier | Description | Use when |
+|------|-------------|----------|
+| `solo` | Local only, no external deps | Personal / offline |
+| `connected` | + Supabase, LLM Gateway, EventBus | Team / cloud sync |
+| `full` | + Hub, Drive, CDP, GPU, C1 Messenger | Full production |
 
 ```sh
-# 설치 확인
+# Install a specific tier (default: solo)
+curl -fsSL https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/install.sh | sh -s -- --tier connected
+```
+
+## Quick Start
+
+```sh
+# 1. Check environment
 cq doctor
 
-# 프로젝트 초기화
-cq init
+# 2. Initialize C4 in your project (generates .mcp.json + CLAUDE.md)
+cd your-project
+cq claude   # for Claude Code
+cq cursor   # for Cursor
 
-# 상태 확인
-cq status
+# 3. Open Claude Code — C4 MCP tools are now available
 ```
 
-## 설정 템플릿
+## Workflow
 
-`configs/` 디렉토리에서 각 티어별 기본 설정 템플릿을 확인할 수 있습니다.
-`configs/solo.yaml`, `configs/connected.yaml`, `configs/full.yaml`을 참고하세요.
+```
+/c4-plan "feature description"   → discovery + design + tasks
+/c4-run                          → spawn workers, implement in parallel
+/c4-finish                       → build · test · install · commit
+/c4-status                       → check progress at any time
+```
 
-## 아티팩트 이름 규약
+## Config Templates
 
-빌드 아티팩트는 `cq-{tier}-{GOOS}-{GOARCH}` 형식을 따릅니다.
-예: `cq-solo-linux-amd64`, `cq-connected-darwin-arm64`, `cq-full-linux-arm64`
+See `configs/` for per-tier starter configs:
 
-## 라이선스
+```sh
+cp configs/solo.yaml ~/.c4/config.yaml        # solo
+cp configs/connected.yaml ~/.c4/config.yaml   # connected
+cp configs/full.yaml ~/.c4/config.yaml        # full
+```
+
+## Update
+
+Re-run the install command to update to the latest release:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/install.sh | sh
+```
+
+## Requirements
+
+- macOS (arm64) or Linux (amd64 / arm64)
+- [Claude Code](https://claude.ai/code) installed
+- `curl` available
+
+## License
 
 MIT
