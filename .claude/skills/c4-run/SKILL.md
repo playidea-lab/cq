@@ -171,17 +171,61 @@ Execute **ONE** C4 task and exit. (Context isolation principle)
 2. IF task is None or no task_id:
        PRINT "No tasks available"
        EXIT
-3. IF task.knowledge_context exists:
-       READ the knowledge context (past patterns, insights)
-       APPLY relevant lessons to implementation decisions
-4. Implement the task (follow DoD, including Rationale)
-5. Run validations, fix issues (max 3 retries)
-6. git commit
-7. c4_submit(task_id, ..., handoff=JSON with discoveries/concerns/rationale)
-8. EXIT (Task complete - fresh context for next task!)
+3. IF task.task_id starts with "R-":
+       → SWITCH TO REVIEW MODE (see below)
+   ELSE:
+       → SWITCH TO IMPLEMENTATION MODE (see below)
 ```
 
-**handoff 구조** (c4_submit 시 전달):
+## 🔍 Review Mode (task_id starts with "R-")
+
+When assigned an R- task, perform a structured code review:
+
+```
+1. Read the task DoD — it contains the implementation task_id and commit_sha to review
+2. Read the implementation commit:
+       git show <commit_sha> (via Bash) to see all changes
+3. Perform 6-axis review:
+       Axis 1: Correctness    — Does the code do what the DoD requires?
+       Axis 2: Security       — Any injection, auth bypass, data exposure risks?
+       Axis 3: Reliability    — Error handling, edge cases, idempotency?
+       Axis 4: Observability  — Logging, metrics, tracing adequate?
+       Axis 5: Test Coverage  — Are tests sufficient? Regressions covered?
+       Axis 6: Readability    — Style consistent with codebase? Clear naming?
+4. Decision:
+       IF all axes pass → mcp__c4__c4_submit(task_id, worker_id, commit_sha="",
+                           handoff={"summary":"APPROVED: ...", "verdict":"approved"})
+       IF issues found → mcp__c4__c4_request_changes(task_id, reason="<detailed issues>")
+                         then EXIT (no submit needed)
+5. EXIT
+```
+
+**Review handoff 구조**:
+```json
+{
+  "summary": "APPROVED: 구현이 DoD를 충족함",
+  "verdict": "approved",
+  "files_changed": [],
+  "discoveries": ["리뷰에서 발견한 긍정적 패턴"],
+  "concerns": ["minor: 향후 개선 가능한 사항"],
+  "rationale": "6-axis 리뷰 결과 승인 근거"
+}
+```
+
+## 🛠️ Implementation Mode (task_id starts with "T-" or other)
+
+```
+1. IF task.knowledge_context exists:
+       READ the knowledge context (past patterns, insights)
+       APPLY relevant lessons to implementation decisions
+2. Implement the task (follow DoD, including Rationale)
+3. Run validations, fix issues (max 3 retries)
+4. git commit
+5. c4_submit(task_id, ..., handoff=JSON with discoveries/concerns/rationale)
+6. EXIT (Task complete - fresh context for next task!)
+```
+
+**Implementation handoff 구조** (c4_submit 시 전달):
 ```json
 {
   "summary": "구현 요약",
@@ -201,23 +245,42 @@ Next task → new Worker → fresh context → prevents context death.
 START NOW: Call `mcp__c4__c4_get_task(worker_id="{worker_id}")`, complete ONE task, then exit!
 """
 
+# Model routing from economic_mode config
+review_model = status.get("economic_mode", {}).get("model_routing", {}).get("review", "opus")
+impl_model = status.get("economic_mode", {}).get("model_routing", {}).get("implementation", "sonnet")
+
+# Classify initial ready tasks by prefix for model routing
+initial_ready_ids = status.get("ready_task_ids", [])
+initial_review_ids = [t for t in initial_ready_ids if t.startswith("R-")]
+initial_impl_ids = [t for t in initial_ready_ids if not t.startswith("R-")]
+
 workers = []
+review_spawned = 0
+impl_spawned = 0
 for i in range(worker_count):
     worker_id = f"worker-{uuid.uuid4().hex[:8]}"
 
-    # Model selection (from by_model distribution or default opus)
-    model = "opus"  # default
+    # Select model: review tasks use review_model (opus), impl tasks use impl_model
+    if review_spawned < len(initial_review_ids):
+        model = review_model
+        task_hint = initial_review_ids[review_spawned]
+        review_spawned += 1
+        desc = f"C4 Review Worker {i+1}/{worker_count} [{task_hint}]"
+    else:
+        model = impl_model
+        desc = f"C4 Worker {i+1}/{worker_count}"
+        impl_spawned += 1
 
     result = Task(
         subagent_type="general-purpose",
-        description=f"C4 Worker {i+1}/{worker_count}",
+        description=desc,
         prompt=WORKER_PROMPT.format(worker_id=worker_id),
         model=model,
         run_in_background=True
     )
 
-    workers.append({"id": worker_id, "output": result.output_file})
-    print(f"🚀 Worker {i+1}/{worker_count} spawned: {worker_id}")
+    workers.append({"id": worker_id, "output": result.output_file, "model": model})
+    print(f"🚀 Worker {i+1}/{worker_count} spawned: {worker_id} [{model}]")
 
 print(f"""
 🐝 C4 Run: {worker_count} workers spawned (background)
@@ -271,20 +334,61 @@ Ctrl+C to interrupt.
                 print(f"⏳ {status['queue']['pending']} tasks pending (deps unmet)...")
                 continue
 
+        # Determine model per task type (R- tasks use review model = opus)
+        review_model = status.get("economic_mode", {}).get("model_routing", {}).get("review", "opus")
+        impl_model = status.get("economic_mode", {}).get("model_routing", {}).get("implementation", "sonnet")
+
+        # Classify ready tasks by prefix
+        ready_task_ids = status.get("ready_task_ids", [])
+        review_task_ids = [t for t in ready_task_ids if t.startswith("R-")]
+        impl_task_ids = [t for t in ready_task_ids if not t.startswith("R-")]
+
         # Spawn new workers (up to ready count)
-        spawn_count = min(ready, 7 - len([w for w in status["workers"].values() if w["state"] == "busy"]))
+        busy_count = len([w for w in status.get("workers", {}).values() if w.get("state") == "busy"])
+        spawn_count = min(ready, 7 - busy_count)
         if spawn_count > 0:
-            print(f"🚀 Spawning {spawn_count} more workers...")
-            for i in range(spawn_count):
+            print(f"🚀 Spawning {spawn_count} more workers... (review: {len(review_task_ids)}, impl: {len(impl_task_ids)})")
+            spawned = 0
+            # Spawn review workers first (higher priority, use opus)
+            for t_id in review_task_ids:
+                if spawned >= spawn_count:
+                    break
+                worker_id = f"worker-{uuid.uuid4().hex[:8]}"
+                Task(
+                    subagent_type="general-purpose",
+                    description=f"C4 Review Worker (continuous) [{t_id}]",
+                    prompt=WORKER_PROMPT.format(worker_id=worker_id),
+                    model=review_model,
+                    run_in_background=True
+                )
+                print(f"  • {worker_id} [review/{review_model}]")
+                spawned += 1
+            # Spawn implementation workers
+            for t_id in impl_task_ids:
+                if spawned >= spawn_count:
+                    break
                 worker_id = f"worker-{uuid.uuid4().hex[:8]}"
                 Task(
                     subagent_type="general-purpose",
                     description=f"C4 Worker (continuous)",
                     prompt=WORKER_PROMPT.format(worker_id=worker_id),
-                    model="opus",
+                    model=impl_model,
                     run_in_background=True
                 )
-                print(f"  • {worker_id}")
+                print(f"  • {worker_id} [impl/{impl_model}]")
+                spawned += 1
+            # Fallback: if no task IDs available, spawn generic workers
+            while spawned < spawn_count:
+                worker_id = f"worker-{uuid.uuid4().hex[:8]}"
+                Task(
+                    subagent_type="general-purpose",
+                    description=f"C4 Worker (continuous)",
+                    prompt=WORKER_PROMPT.format(worker_id=worker_id),
+                    model=impl_model,
+                    run_in_background=True
+                )
+                print(f"  • {worker_id} [impl/{impl_model}]")
+                spawned += 1
 
     print("🏁 Continuous mode ended")
 
