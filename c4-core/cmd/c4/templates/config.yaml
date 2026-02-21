@@ -85,6 +85,10 @@ planning:
 #   project_id: ""
 
 # LLM Gateway
+# API 키는 cq secret set 으로 저장 권장 (히스토리 미노출, AES-256-GCM 암호화)
+#   cq secret set openai.api_key
+#   cq secret set anthropic.api_key
+# 키 해석 우선순위: api_key (직접) > api_key_env (환경변수) > ~/.c4/secrets.db
 # llm_gateway:
 #   enabled: true
 #   default: openai
@@ -92,11 +96,13 @@ planning:
 #   providers:
 #     openai:
 #       enabled: true
-#       api_key_env: OPENAI_API_KEY
 #       default_model: gpt-4o-mini
+#       # api_key: sk-...        # 직접 입력 (비권장 — .c4/ gitignore로 보호되나 평문)
+#       # api_key_env: OPENAI_API_KEY  # 환경변수 참조 (레거시)
 #     anthropic:
 #       enabled: true
-#       api_key_env: ANTHROPIC_API_KEY
+#       # api_key: sk-ant-...    # 직접 입력
+#       # api_key_env: ANTHROPIC_API_KEY
 
 # Hub connection (C5 distributed job queue)
 # hub:

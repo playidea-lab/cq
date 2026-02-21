@@ -38,16 +38,20 @@ cloud:
   oauth_timeout: 120          # 초 단위
 
 # LLM 게이트웨이
-llm:
+# API 키: cq secret set openai.api_key (권장) 또는 api_key_env / api_key 필드
+# 키 해석 우선순위: api_key > api_key_env > ~/.c4/secrets.db
+llm_gateway:
   enabled: false
-  default: "anthropic"
+  default: "openai"
+  cache_by_default: true
   providers:
-    anthropic:
-      enabled: true
-      api_key_env: "ANTHROPIC_API_KEY"
     openai:
+      enabled: true
+      default_model: "gpt-4o-mini"
+      # cq secret set openai.api_key 로 저장 시 자동 조회
+    anthropic:
       enabled: false
-      api_key_env: "OPENAI_API_KEY"
+      # cq secret set anthropic.api_key 로 저장 시 자동 조회
 
 # Worktree 설정
 worktree:
@@ -74,10 +78,11 @@ eventsink:
   token: ""                   # 인증 토큰 (C5 --eventbus-token과 일치해야 함)
 
 # Permission Reviewer (권한 자동 승인)
+# model 모드 사용 시 api_key_env 또는 api_key 로 Anthropic 키 설정
 permission_reviewer:
   enabled: false
   model: "haiku"
-  api_key_env: "ANTHROPIC_API_KEY"
+  api_key_env: "ANTHROPIC_API_KEY"  # 환경변수 참조 (hook 프로세스 특성상 secrets.db 미지원)
   fail_mode: "ask"            # ask | allow
   timeout: 10                 # API 호출 타임아웃 (초)
 

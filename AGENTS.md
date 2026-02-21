@@ -248,7 +248,7 @@ c4_lighthouse get <tool_name>
 
 ---
 
-## MCP 도구 빠른 참조 (114개 base, Hub 활성화 시 140개)
+## MCP 도구 빠른 참조 (118개 base, Hub 활성화 시 144개)
 
 > **도구 상세 사용법**: `c4_lighthouse get <tool_name>`으로 워크플로우, 예시, 관련 도구, 주의사항 조회
 
@@ -285,6 +285,7 @@ Soul(3):    c4_soul_get, c4_soul_set, c4_soul_resolve
 팀(3):      c4_whoami, c4_persona_stats, c4_persona_evolve
 Twin(1):    c4_reflect
 온보딩(1):  c4_onboard
+Secrets(4): c4_secret_set, c4_secret_get, c4_secret_list, c4_secret_delete
 Lighthouse(1): c4_lighthouse (register/list/get/promote/update/remove/export_llms_txt)
 LLM(3):    c4_llm_call, c4_llm_providers, c4_llm_costs
 CDP(2):    c4_cdp_run, c4_cdp_list
@@ -340,7 +341,7 @@ CP-001:    체크포인트
 
 ### 아키텍처
 ```
-Claude Code → Go MCP Server (stdio, 127 base + 26 Hub = 153 tools)
+Claude Code → Go MCP Server (stdio, 131 base + 26 Hub = 157 tools)
                 ├→ Go native (28): 상태/설정, 태스크, 파일, git, validation, config, health, eventbus rules
                 ├→ Go + SQLite (13): spec, design, checkpoint, artifact, lighthouse
                 ├→ Soul/Persona/Twin (7): soul CRUD, persona evolve, whoami, reflect
