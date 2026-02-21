@@ -210,7 +210,7 @@ func RegisterTaskHandlers(reg *mcp.Registry, store Store) {
 				"domain":      map[string]any{"type": "string", "description": "Filter by domain"},
 				"worker_id":   map[string]any{"type": "string", "description": "Filter by assigned worker ID"},
 				"limit":       map[string]any{"type": "integer", "description": "Max results (default: 50)", "default": 50},
-				"include_dod": map[string]any{"type": "boolean", "description": "Include DoD field in response (default: true). Set false for brief listing to reduce response size.", "default": true},
+				"include_dod": map[string]any{"type": "boolean", "description": "Include DoD field in response (default: false). Set true to get full DoD content.", "default": false},
 			},
 		},
 	}, func(args json.RawMessage) (any, error) {
@@ -433,7 +433,7 @@ func handleTaskList(s Store, rawArgs json.RawMessage) (any, error) {
 		return nil, fmt.Errorf("listing tasks: %w", err)
 	}
 
-	includeDoD := args.IncludeDoD == nil || *args.IncludeDoD
+	includeDoD := args.IncludeDoD != nil && *args.IncludeDoD
 	var result any = tasks
 	if !includeDoD {
 		brief := make([]map[string]any, len(tasks))

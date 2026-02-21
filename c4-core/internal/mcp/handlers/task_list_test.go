@@ -215,21 +215,21 @@ func TestHandleTaskListIncludeDod(t *testing.T) {
 		}
 	})
 
-	t.Run("default preserves dod field", func(t *testing.T) {
+	t.Run("default omits dod field", func(t *testing.T) {
 		result, err := handleTaskList(s, json.RawMessage(`{}`))
 		if err != nil {
 			t.Fatal(err)
 		}
 		resp := result.(map[string]any)
-		tasks, ok := resp["tasks"].([]Task)
+		tasks, ok := resp["tasks"].([]map[string]any)
 		if !ok {
-			t.Fatalf("tasks type = %T, want []Task", resp["tasks"])
+			t.Fatalf("tasks type = %T, want []map[string]any", resp["tasks"])
 		}
 		if len(tasks) != 1 {
 			t.Fatalf("len(tasks) = %d, want 1", len(tasks))
 		}
-		if tasks[0].DoD != dod {
-			t.Errorf("dod = %q, want %q", tasks[0].DoD, dod)
+		if _, hasDod := tasks[0]["dod"]; hasDod {
+			t.Error("dod field present, want omitted by default")
 		}
 	})
 }
