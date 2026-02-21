@@ -65,6 +65,8 @@ func newMCPServer() (*mcpServer, error) {
 	writeHookConfigJSON(projectDir, hookCfg)
 
 	// Wire validation config so c4_run_validation prefers config.yaml commands.
+	// Note: validCfg is a snapshot taken at startup. Changes to validation.*
+	// via c4_config_set take effect only after MCP server restart (per config.yaml SSOT).
 	if cfgMgr != nil {
 		validCfg := cfgMgr.GetConfig().Validation
 		handlers.SetValidationConfig(&validCfg)
