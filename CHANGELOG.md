@@ -7,6 +7,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-02-21
+
+### ✨ Features
+
+- **`cq serve` 데몬 명령어**: ComponentManager 기반 상시 실행 서버
+  - PID 락 파일, `/health` 엔드포인트, 컴포넌트 라이프사이클 관리
+  - EventBus, EventSink, HubPoller, GPU Scheduler, Agent 컴포넌트 wrapping
+  - Agent 컴포넌트: Supabase Realtime WebSocket → `@cq` mention 감지 → `claude -p` 디스패치
+  - `cq serve` 실행 중이면 데몬 내장 컴포넌트 자동 skip (중복 방지)
+
+- **Tiered Build System** (`solo` / `connected` / `full` / `nightly`)
+  - Build tag 기반 컴포넌트 선택적 포함 (stub 파일 패턴)
+  - `cq init --tier solo|connected|full` → `.c4/config.yaml` tier 저장
+  - Makefile: `build-solo/connected/full/nightly`, `install-*` 타겟
+  - C7 Observe / C6 Guard / C8 Gate 조건부 빌드 (nightly 태그)
+
+- **C7 Observe**: Logger(slog) + Metrics + Registry Middleware 자동 계측
+- **C6 Guard**: RBAC + Audit + Policy + Middleware (`c6_guard` 빌드 태그)
+- **C8 Gate**: Webhook + Scheduler + Connector (`c8_gate` 빌드 태그)
+
+- **Registry Middleware 체인**: `Registry.Use()` / `UseContextual()` 지원
+  - `ToolNameFromContext()` 로 도구 이름 접근 가능
+
+- **C5 Hub Artifact Pipeline**:
+  - Signed Upload/Download (Supabase Storage), Worker input/output artifact 흐름
+  - `LocalBackend` HTTP 핸들러 (`/v1/storage/upload/{path}`)
+  - Long-poll Lease Acquire (20s server-side)
+
+- **LLM Gateway 캐싱 개선**:
+  - Anthropic Prompt Caching (ephemeral cache_control 블록)
+  - `cache_hit_rate` + `cache_savings_rate` 노출 (`c4_llm_costs`)
+  - `cache_by_default` 설정 지원
+
+- **`cq doctor` 자가진단**: 8개 항목 (binary, .c4, .mcp.json, CLAUDE.md, hooks, Python, C5, Supabase)
+- **c4-bash-security hook UX 개선**: 차단 메시지 가독성 향상
+
+### 🐛 Bug Fixes
+
+- `serve/agent.go`: `a.Status()` → `a.status` (미존재 메서드 수정)
+- `serve/agent_test.go`: 중복 `mockComponent` 선언 제거, 잘못된 API 테스트 제거
+- `c5`: LocalBackend HTTP 핸들러 디렉토리 리스팅 차단, partial file 정리
+- LLM body limit `io.LimitReader(resp.Body, 1<<22)` 적용 (4 MiB)
+- `guard/gate` SQLite + scheduler 마이너 수정
+
+### 📚 Documentation
+
+- `CLAUDE.md` / `AGENTS.md`: Tiered Build System, `cq serve` 섹션, C7/C6/C8 문서화
+- `README.md`: CQ 브랜딩 통일, `cq doctor` 섹션, 154 tools / 2,205 tests / 141.7K LOC 수치 현행화
+
+---
+
 ## [0.6.0] - 2026-01-26
 
 ### Added
