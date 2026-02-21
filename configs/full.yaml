@@ -1,0 +1,53 @@
+# CQ Full tier configuration template
+# Copy to ~/.c4/config.yaml and customize
+# Requires: Supabase, C3 EventBus, C5 Hub (optional)
+
+# Task storage
+task_store:
+  type: supabase
+
+# Cloud (Supabase)
+cloud:
+  url: https://your-project.supabase.co
+  anon_key: your-anon-key
+
+# C5 Hub (distributed job queue)
+hub:
+  enabled: true
+  url: http://localhost:8585
+  api_key: your-hub-api-key
+
+# C0 Drive (file storage)
+# drive:
+#   bucket: cq-artifacts
+
+# C3 EventBus
+# eventbus:
+#   host: localhost
+#   port: 50051
+
+# LLM Gateway (multi-provider)
+# llm_gateway:
+#   default_provider: anthropic
+#   providers:
+#     anthropic:
+#       api_key_env: ANTHROPIC_API_KEY
+#     openai:
+#       api_key_env: OPENAI_API_KEY
+#     ollama:
+#       base_url: http://localhost:11434
+
+# cq serve components
+serve:
+  eventbus:
+    enabled: false
+  gpu:
+    enabled: false
+  agent:
+    enabled: false
+
+# Permission reviewer
+permission_reviewer:
+  enabled: true
+  mode: hook
+  auto_approve: true

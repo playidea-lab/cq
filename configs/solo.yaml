@@ -1,0 +1,20 @@
+# CQ Solo tier configuration template
+# Copy to ~/.c4/config.yaml and customize
+
+# Task storage
+task_store:
+  type: sqlite
+  path: ~/.c4/tasks.db
+
+# LLM Gateway (optional - for c4_llm_call tool)
+# llm_gateway:
+#   default_provider: anthropic
+#   providers:
+#     anthropic:
+#       api_key_env: ANTHROPIC_API_KEY
+
+# Permission reviewer (bash hook)
+permission_reviewer:
+  enabled: true
+  mode: hook
+  auto_approve: true
