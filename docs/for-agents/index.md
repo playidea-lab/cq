@@ -48,11 +48,10 @@ skills = [
 ```json
 {
   "name": "c4-plan",
-  "trigger": ["/c4-plan", "계획", "plan", "설계"],
-  "description": "Discovery → Design → Tasks. Creates structured implementation plan.",
-  "input": "feature description (string)",
-  "output": "tasks created in .c4/tasks.db",
-  "tier": "all"
+  "trigger": ["/c4-plan", "계획", "plan", "설계", "기획"],
+  "description": "Discovery → Design → Lighthouse contracts → Task creation. Full structured plan.",
+  "tier": "all",
+  "category": "workflow"
 }
 ```
 

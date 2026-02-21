@@ -32,7 +32,7 @@ cd your-project && cq claude
 |-------|-----------------|---------|
 | /c4-plan | plan, 계획, 설계 | Discovery + design + task creation |
 | /c4-run | run, 실행, ㄱㄱ | Spawn workers for pending tasks |
-| /c4-finish | finish, 마무리 | Build/test/install/commit routine |
+| /c4-finish | finish, 마무리 | Build/test/docs/commit routine |
 | /c4-status | status, 상태 | Visual progress report |
 | /c4-quick | quick, 빠르게 | Single task without planning phase |
 | /c4-polish | polish | Fix loop until zero reviewer changes |

@@ -17,7 +17,7 @@ You describe a feature → /c4-plan creates tasks with DoD
                        → /c4-run spawns workers (one per task)
                        → each worker: implement → test → submit
                        → reviewer worker checks the output
-                       → /c4-finish builds, installs, commits
+                       → /c4-finish builds, tests, commits
 ```
 
 CQ uses the **Model Context Protocol (MCP)** — Claude Code talks to the CQ binary via 100+ tools (`c4_*` prefix).

@@ -1,6 +1,6 @@
 {"name":"c4-plan","trigger":["/c4-plan","계획","plan","설계","기획"],"description":"Discovery → Design → Lighthouse contracts → Task creation. Full structured plan.","tier":"all","category":"workflow"}
 {"name":"c4-run","trigger":["/c4-run","실행","run","ㄱㄱ"],"description":"Spawn workers for all pending tasks in parallel. Continuous mode.","tier":"all","category":"workflow"}
-{"name":"c4-finish","trigger":["/c4-finish","마무리","finish","완료"],"description":"Build → test → install → docs → commit. Post-implementation routine.","tier":"all","category":"workflow"}
+{"name":"c4-finish","trigger":["/c4-finish","마무리","finish","완료"],"description":"Build → test → docs → commit. Post-implementation routine.","tier":"all","category":"workflow"}
 {"name":"c4-status","trigger":["/c4-status","상태","status"],"description":"Visual task graph with progress, dependency graph, queue summary.","tier":"all","category":"workflow"}
 {"name":"c4-quick","trigger":["/c4-quick","quick","빠르게"],"description":"Create + assign one task immediately, skip planning phase.","tier":"all","category":"workflow"}
 {"name":"c4-polish","trigger":["/c4-polish","polish"],"description":"Build-test-review-fix loop until reviewer finds zero changes.","tier":"all","category":"quality"}

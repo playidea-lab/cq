@@ -8,7 +8,7 @@ Skills are slash commands invoked inside Claude Code. All 22 skills are embedded
 |-------|----------|-------------|
 | `/c4-plan` | plan, 계획, 설계, 기획 | Discovery → Design → Lighthouse contracts → Task creation. Full structured plan for a feature. |
 | `/c4-run` | run, 실행, ㄱㄱ | Spawn workers for all pending tasks in parallel. Continuous mode — auto-respawns until queue empty. |
-| `/c4-finish` | finish, 마무리, 완료 | Build → test → install → docs → commit. Post-implementation completion routine. |
+| `/c4-finish` | finish, 마무리, 완료 | Build → test → docs → commit. Post-implementation completion routine. |
 | `/c4-status` | status, 상태 | Visual task graph with progress, dependency graph, queue summary, and worker status. |
 | `/c4-quick` | quick, 빠르게 | Create + assign one task immediately, skip planning. For small focused changes. |
 
