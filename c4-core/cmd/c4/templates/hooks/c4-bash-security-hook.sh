@@ -64,8 +64,9 @@ if [[ -f "$HOOK_CONFIG_JSON" ]] && command -v jq &>/dev/null; then
     PERMISSION_MODE=$(jq -r '.mode // "model"' "$HOOK_CONFIG_JSON" 2>/dev/null)
     AUTO_APPROVE=$(jq -r '.auto_approve // true' "$HOOK_CONFIG_JSON" 2>/dev/null)
     SUPERVISOR_MODEL=$(jq -r '.model // "claude-haiku-4-5-20251001"' "$HOOK_CONFIG_JSON" 2>/dev/null)
-    mapfile -t ALLOW_PATTERNS < <(jq -r '.allow_patterns[]? // empty' "$HOOK_CONFIG_JSON" 2>/dev/null)
-    mapfile -t BLOCK_PATTERNS < <(jq -r '.block_patterns[]? // empty' "$HOOK_CONFIG_JSON" 2>/dev/null)
+    # bash 3.2 compatible (no mapfile)
+    while IFS= read -r _p; do [[ -n "$_p" ]] && ALLOW_PATTERNS+=("$_p"); done < <(jq -r '.allow_patterns[]? // empty' "$HOOK_CONFIG_JSON" 2>/dev/null)
+    while IFS= read -r _p; do [[ -n "$_p" ]] && BLOCK_PATTERNS+=("$_p"); done < <(jq -r '.block_patterns[]? // empty' "$HOOK_CONFIG_JSON" 2>/dev/null)
 elif [[ -f "$LEGACY_CONF" ]]; then
     # Priority 2: legacy ~/.claude/hooks/c4-bash-security.conf
     conf_owner=$(stat -c "%u" "$LEGACY_CONF" 2>/dev/null || stat -f "%u" "$LEGACY_CONF" 2>/dev/null)
