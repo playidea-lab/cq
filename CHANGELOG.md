@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-02-22
+
+### ✨ Features
+- **lsp**: `c4_find_symbol` 결과의 `symbols[]` 각 항목에도 `_edit_hint` 주입 — Agent가 심볼 항목을 꺼내 처리할 때도 편집 제약 인식 (`f0f023b`)
+
+### 🐛 Bug Fixes
+- **lsp**: `get_symbols_overview` overview 그룹 항목(`functions[]`/`methods[]`/`structs[]` 등)에 `_edit_hint` 누락 수정 (`9ae2846`)
+- **lsp**: Dart `handleDartSymbolsOverview` 키 목록을 `dartast.kindGroup` 실제 키와 일치시킴 — `typedefs` 누락 + 존재하지 않는 키 제거 (`bfc5c0b`)
+- **lsp**: `languageGuardedProxy` 응답에 `success:false` 추가 — 차단 응답을 성공과 명시적으로 구분 (`bfc5c0b`)
+- **hook**: `.c4/` 디렉토리 walk-up 탐지 + fallback 패턴 + doctor --fix hook 업데이트 (`6d6f101`)
+
+### 🧪 Tests
+- **lsp**: Go overview 테스트에 `structs`/`methods`/`constants` 카테고리 검증 추가 (`ed8385b`)
+- **lsp**: Dart overview 테스트에 `classes[]`/`functions[]` 항목 순회 검증 추가 (`bfc5c0b`)
+
+### 📚 Documentation
+- **skills**: polish 누락 방지 — run/refine/plan 스킬 3곳에 플로우 명시 (`1371548`)
+- **skills**: TDD 원칙 강화 — 3-layer 안전망 + C1 테스트 커버리지 인프라 (`3cdbbe1`)
+
+### 🔧 Chores
+- **user**: submodule 업데이트 (workflow page cross-links, checkpoint explanation, workflow overview)
+
+---
+
 ## [0.15.0] - 2026-02-22
 
 ### ✨ Features
