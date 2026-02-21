@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"net/url"
 	"os"
 	"strings"
 	"sync"
@@ -105,7 +106,7 @@ func (rc *RealtimeClient) buildWSURL() string {
 	base = strings.Replace(base, "https://", "wss://", 1)
 	base = strings.Replace(base, "http://", "ws://", 1)
 	base = strings.TrimRight(base, "/")
-	return fmt.Sprintf("%s/realtime/v1/websocket?apikey=%s&vsn=1.0.0", base, rc.apiKey)
+	return fmt.Sprintf("%s/realtime/v1/websocket?apikey=%s&vsn=1.0.0", base, url.QueryEscape(rc.apiKey))
 }
 
 // phxMessage is the Phoenix Channels protocol message format.
@@ -164,9 +165,10 @@ func (rc *RealtimeClient) connectionLoop(ctx context.Context) {
 			fmt.Fprintf(os.Stderr, "cq: [realtime] connection error (%d/%d): %v\n",
 				consecutiveFailures, maxReconnectFails, err)
 		} else {
-			consecutiveFailures++
-			fmt.Fprintf(os.Stderr, "cq: [realtime] connection closed, reconnecting (%d/%d)\n",
-				consecutiveFailures, maxReconnectFails)
+			// Clean disconnect — reset counters
+			consecutiveFailures = 0
+			backoff = 1 * time.Second
+			fmt.Fprintln(os.Stderr, "cq: [realtime] connection closed cleanly, reconnecting")
 		}
 
 		select {

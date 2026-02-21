@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 )
@@ -45,7 +46,7 @@ func isServeRunningWith(pidPath, healthURL string) bool {
 		return false // no PID file → not running
 	}
 
-	pid, err := strconv.Atoi(string(data))
+	pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
 	if err != nil || pid <= 0 {
 		return false // invalid PID
 	}

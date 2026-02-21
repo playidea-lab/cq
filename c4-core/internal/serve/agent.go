@@ -39,8 +39,11 @@ type Agent struct {
 	mu         sync.Mutex
 	status     string // "stopped", "starting", "running", "degraded", "failed"
 	cancel     context.CancelFunc
+	childCtx   context.Context
 	claudePath string // path to claude CLI binary
 	httpClient *http.Client
+	wg         sync.WaitGroup
+	sem        chan struct{} // concurrency limiter for processMessage goroutines
 }
 
 // NewAgent creates a new Agent component.
@@ -54,6 +57,7 @@ func NewAgent(cfg AgentConfig) *Agent {
 		httpClient: &http.Client{
 			Timeout: 15 * time.Second,
 		},
+		sem: make(chan struct{}, 5), // max 5 concurrent claude -p processes
 	}
 }
 
@@ -118,6 +122,7 @@ func (a *Agent) Start(ctx context.Context) error {
 	childCtx, cancel := context.WithCancel(ctx)
 	a.mu.Lock()
 	a.cancel = cancel
+	a.childCtx = childCtx
 	a.mu.Unlock()
 
 	if err := a.client.Connect(childCtx); err != nil {
@@ -131,7 +136,7 @@ func (a *Agent) Start(ctx context.Context) error {
 	} else {
 		a.setStatus("running")
 	}
-	fmt.Fprintf(os.Stderr, "cq: [agent] started (status=%s)\n", a.status)
+	fmt.Fprintf(os.Stderr, "cq: [agent] started (health=%s)\n", a.Health().Status)
 	return nil
 }
 
@@ -147,6 +152,7 @@ func (a *Agent) Stop(_ context.Context) error {
 	if a.client != nil {
 		a.client.Close()
 	}
+	a.wg.Wait() // wait for in-flight processMessage goroutines
 	a.setStatus("stopped")
 	fmt.Fprintf(os.Stderr, "cq: [agent] stopped\n")
 	return nil
@@ -205,8 +211,18 @@ func (a *Agent) handleEvent(event RealtimeEvent) {
 		return
 	}
 
-	// Process in background
-	go a.processMessage(msg.ID, msg.ChannelID, msg.Content, msg.SenderName)
+	// Process in background with concurrency limit
+	a.wg.Add(1)
+	go func() {
+		defer a.wg.Done()
+		select {
+		case a.sem <- struct{}{}:
+			defer func() { <-a.sem }()
+			a.processMessage(msg.ID, msg.ChannelID, msg.Content, msg.SenderName)
+		default:
+			fmt.Fprintf(os.Stderr, "cq: [agent] msg %s dropped (concurrency limit)\n", msg.ID)
+		}
+	}()
 }
 
 // claimMessage atomically claims a message via Supabase RPC.
@@ -235,7 +251,7 @@ func (a *Agent) claimMessage(messageID string) (bool, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode >= 400 {
-		respBody, _ := io.ReadAll(resp.Body)
+		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
 		return false, fmt.Errorf("rpc claim_message: %d %s", resp.StatusCode, string(respBody))
 	}
 
@@ -267,8 +283,14 @@ func (a *Agent) processMessage(messageID, channelID, content, senderName string)
 
 	fmt.Fprintf(os.Stderr, "cq: [agent] spawning claude -p for msg %s\n", messageID)
 
-	// Run claude -p with timeout
-	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	// Run claude -p with timeout, derived from component context for graceful shutdown
+	a.mu.Lock()
+	parentCtx := a.childCtx
+	a.mu.Unlock()
+	if parentCtx == nil {
+		parentCtx = context.Background()
+	}
+	ctx, cancel := context.WithTimeout(parentCtx, 120*time.Second)
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, claudePath, "-p", prompt, "--output-format", "json")
@@ -353,7 +375,7 @@ func (a *Agent) postMessage(channelID, content string) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode >= 400 {
-		respBody, _ := io.ReadAll(resp.Body)
+		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
 		fmt.Fprintf(os.Stderr, "cq: [agent] post message %d: %s\n", resp.StatusCode, string(respBody))
 	}
 }

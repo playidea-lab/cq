@@ -8,6 +8,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -106,7 +107,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 	mux.HandleFunc("/health", serve.HealthHandler(mgr))
 
 	httpServer := &http.Server{
-		Addr:    fmt.Sprintf(":%d", servePort),
+		Addr:    fmt.Sprintf("127.0.0.1:%d", servePort),
 		Handler: mux,
 	}
 
@@ -115,12 +116,8 @@ func runServe(cmd *cobra.Command, args []string) error {
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 
 	go func() {
-		select {
-		case sig := <-sigCh:
-			fmt.Fprintf(os.Stderr, "\ncq serve: shutting down (signal: %s)...\n", sig)
-		case <-ctx.Done():
-			fmt.Fprintln(os.Stderr, "cq serve: shutting down...")
-		}
+		sig := <-sigCh
+		fmt.Fprintf(os.Stderr, "\ncq serve: shutting down (signal: %s)...\n", sig)
 		cancel()
 
 		// Stop components
@@ -159,7 +156,7 @@ func runServeStop(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("no running cq serve found (PID file: %s): %w", pidPath, err)
 	}
 
-	pid, err := strconv.Atoi(string(data))
+	pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
 	if err != nil {
 		return fmt.Errorf("invalid PID file content: %w", err)
 	}
@@ -182,7 +179,7 @@ func runServeStop(cmd *cobra.Command, args []string) error {
 // acquireServePIDLock writes the current PID to a file and checks for existing process.
 func acquireServePIDLock(pidPath string) error {
 	if data, err := os.ReadFile(pidPath); err == nil {
-		pid, err := strconv.Atoi(string(data))
+		pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
 		if err == nil {
 			proc, err := os.FindProcess(pid)
 			if err == nil {

@@ -2,7 +2,9 @@ package serve
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"os"
 )
 
 // HealthResponse is the JSON structure returned by the health endpoint.
@@ -34,6 +36,8 @@ func HealthHandler(m *Manager) http.HandlerFunc {
 		if overall != "ok" {
 			w.WriteHeader(http.StatusServiceUnavailable)
 		}
-		json.NewEncoder(w).Encode(resp)
+		if err := json.NewEncoder(w).Encode(resp); err != nil {
+			fmt.Fprintf(os.Stderr, "cq serve: health encode error: %v\n", err)
+		}
 	}
 }
