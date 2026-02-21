@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 
 	"github.com/changmin/c4-core/internal/config"
+	"github.com/changmin/c4-core/internal/llm"
 )
 
 // hookConfigJSON is the schema written to {projectDir}/.c4/hook-config.json.
@@ -80,16 +81,11 @@ func hookConfigFromC4Config(cfg *config.C4Config) hookConfigJSON {
 
 // resolveHookModel maps short model aliases to full Anthropic model IDs.
 func resolveHookModel(model string) string {
-	switch model {
-	case "haiku", "":
+	// ResolveAlias does not define "" key — guard required
+	if model == "" {
 		return "claude-haiku-4-5-20251001"
-	case "sonnet":
-		return "claude-sonnet-4-5-20251001"
-	case "opus":
-		return "claude-opus-4-5-20241101"
-	default:
-		return model
 	}
+	return llm.ResolveAlias(model)
 }
 
 // writeHookConfigJSON writes {projectDir}/.c4/hook-config.json.

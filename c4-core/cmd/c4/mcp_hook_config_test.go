@@ -81,7 +81,7 @@ func TestWriteHookConfigJSON(t *testing.T) {
 		if !got.AutoApprove {
 			t.Error("expected auto_approve=true when fail_mode=allow")
 		}
-		if got.Model != "claude-sonnet-4-5-20251001" {
+		if got.Model != "claude-sonnet-4-6" {
 			t.Errorf("expected resolved sonnet model, got %q", got.Model)
 		}
 		if got.APIKeyEnv != "MY_API_KEY" {
@@ -160,8 +160,8 @@ func TestWriteHookConfigJSON(t *testing.T) {
 		}{
 			{"haiku", "claude-haiku-4-5-20251001"},
 			{"", "claude-haiku-4-5-20251001"},
-			{"sonnet", "claude-sonnet-4-5-20251001"},
-			{"opus", "claude-opus-4-5-20241101"},
+			{"sonnet", "claude-sonnet-4-6"},
+			{"opus", "claude-opus-4-6"},
 			{"claude-custom-model", "claude-custom-model"},
 		}
 		for _, tc := range cases {
