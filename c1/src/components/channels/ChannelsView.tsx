@@ -1,13 +1,11 @@
 import { useState, useEffect, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { useChannels } from '../../hooks/useChannels';
-import { useMessages } from '../../hooks/useMessages';
 import { useMembers } from '../../hooks/useMembers';
 import { usePresence } from '../../hooks/usePresence';
 import { useSessions } from '../../hooks/useSessions';
 import { ChannelListSidebar } from './ChannelListSidebar';
-import { MessageList } from './MessageList';
-import { MessageInput } from './MessageInput';
+import { ChannelContent } from './ChannelContent';
 import { MembersPanel } from './MembersPanel';
 import { SessionList } from '../sessions/SessionList';
 import { MessageViewer } from '../sessions/MessageViewer';
@@ -57,14 +55,6 @@ export function ChannelsView({ projectPath }: ChannelsViewProps) {
     createChannel,
     selectChannel,
   } = useChannels(projectId);
-
-  const {
-    messages: channelMessages,
-    loading: messagesLoading,
-    hasMore: channelHasMore,
-    loadMore: channelLoadMore,
-    sendMessage,
-  } = useMessages(selectedChannel?.id ?? null);
 
   const { members, getMember } = useMembers(projectId);
   usePresence(projectId);
@@ -162,22 +152,15 @@ export function ChannelsView({ projectPath }: ChannelsViewProps) {
                   </button>
                 </div>
                 <div className="chat-panel__body">
-                  <MessageList
-                    messages={channelMsgFilter.trim()
-                      ? channelMessages.filter(m =>
-                          m.content.toLowerCase().includes(channelMsgFilter.toLowerCase())
-                        )
-                      : channelMessages}
-                    loading={messagesLoading}
-                    hasMore={!channelMsgFilter.trim() && channelHasMore}
-                    onLoadMore={channelLoadMore}
+                  <ChannelContent
+                    channel={selectedChannel}
                     getMember={getMember}
+                    msgFilter={channelMsgFilter}
                   />
                   {showMembers && (
                     <MembersPanel members={members} />
                   )}
                 </div>
-                <MessageInput onSend={content => sendMessage(content)} />
               </>
             ) : (
               <div className="chat-panel__empty">
