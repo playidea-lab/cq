@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-02-21
+
+### ✨ Features
+
+- **`secrets`: AES-256-GCM 암호화 시크릿 스토어** (`~/.c4/secrets.db`)
+  - 마스터 키 자동 생성 (`~/.c4/master.key`, 0400) / CI: `C4_MASTER_KEY=<64 hex>` env var 지원
+  - CLI: `cq secret set/get/list/delete` — `set`은 stdin echo off (ioctl 기반)
+  - MCP: `c4_secret_set`, `c4_secret_get`, `c4_secret_list`, `c4_secret_delete`
+  - LLM Gateway 키 자동 해석: `config.yaml api_key` > `api_key_env` > `secrets.db (name.api_key)` 순
+
+### 🛡️ Security (secrets store 강화 — 5라운드 polish)
+
+- **O_EXCL 원자 키 생성** — `os.WriteFile` 대신 `O_EXCL|O_CREATE` + 실패 시 `os.Remove` 정리
+- **TOCTOU 방지** — `os.Open` FD 후 동일 FD의 `Stat()` 호출로 파일 교체 경쟁 제거
+- **EACCES vs ENOENT 구분** — 권한 오류 시 즉시 전파, ErrNotExist 시만 키 생성
+- **마스터 키 zeroing** — `Close()`에서 인메모리 키 바이트 초기화
+- **`io.LimitReader(f, 33)`** — 마스터 키 파일 읽기 크기 바운드
+- **이중 shutdown 방지** — `sync.Once`로 signal + stdin EOF 동시 발생 시 race 제거
+- `c4_secret_get`: plaintext 반환 경고 문구 handler description에 명시
+- MCP 핸들러: key 길이 상한(256B) + value 크기 상한(64KB) 적용
+
+### 🧪 Tests
+
+- `secrets`: 10개 테스트 — `TestCorruptMasterKey`, `TestWrongKeyDecryptionFailure`, `TestMasterKeyEnvVarPersistence` 신규 추가
+
+### 📚 Documentation
+
+- Go 테스트 수 현행화: c4-core ~1,262 + c5 174 = ~1,436
+
+---
+
 ## [0.10.0] - 2026-02-21
 
 ### ✨ Features
