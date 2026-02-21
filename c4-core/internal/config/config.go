@@ -165,11 +165,14 @@ type GuardConfig struct {
 
 // PermissionReviewerConfig holds settings for the Haiku-based permission auto-reviewer hook.
 type PermissionReviewerConfig struct {
-	Enabled   bool   `mapstructure:"enabled"     yaml:"enabled"`
-	Model     string `mapstructure:"model"       yaml:"model"`        // claude model: haiku, sonnet, opus
-	APIKeyEnv string `mapstructure:"api_key_env" yaml:"api_key_env"`  // env var name for Anthropic API key
-	FailMode  string `mapstructure:"fail_mode"   yaml:"fail_mode"`    // "ask" (prompt user) or "allow" (auto-approve)
-	Timeout   int    `mapstructure:"timeout"     yaml:"timeout"`      // API call timeout in seconds
+	Enabled       bool     `mapstructure:"enabled"        yaml:"enabled"`
+	Model         string   `mapstructure:"model"          yaml:"model"`          // claude model: haiku, sonnet, opus (or full model ID)
+	APIKeyEnv     string   `mapstructure:"api_key_env"    yaml:"api_key_env"`    // env var name for Anthropic API key
+	FailMode      string   `mapstructure:"fail_mode"      yaml:"fail_mode"`      // "ask" (prompt user) or "allow" (auto-approve)
+	Timeout       int      `mapstructure:"timeout"        yaml:"timeout"`        // API call timeout in seconds
+	AutoApprove   bool     `mapstructure:"auto_approve"   yaml:"auto_approve"`   // auto-approve matching commands
+	AllowPatterns []string `mapstructure:"allow_patterns" yaml:"allow_patterns"` // patterns to allow without review
+	BlockPatterns []string `mapstructure:"block_patterns" yaml:"block_patterns"` // patterns to always block
 }
 
 // C4Config is the top-level configuration schema.
@@ -332,6 +335,9 @@ func New(projectRoot string, cloudDefaults ...CloudDefaults) (*Manager, error) {
 	v.SetDefault("permission_reviewer.api_key_env", "ANTHROPIC_API_KEY")
 	v.SetDefault("permission_reviewer.fail_mode", "ask")
 	v.SetDefault("permission_reviewer.timeout", 10)
+	v.SetDefault("permission_reviewer.auto_approve", true)
+	v.SetDefault("permission_reviewer.allow_patterns", []string{})
+	v.SetDefault("permission_reviewer.block_patterns", []string{})
 
 	// Config file location
 	configDir := filepath.Join(projectRoot, ".c4")
