@@ -16,6 +16,24 @@ import (
 	"time"
 )
 
+// limitedWriter wraps a bytes.Buffer with a maximum size to prevent OOM from
+// unbounded process output.
+type limitedWriter struct {
+	buf   *bytes.Buffer
+	limit int
+}
+
+func (lw *limitedWriter) Write(p []byte) (int, error) {
+	if lw.buf.Len()+len(p) > lw.limit {
+		remaining := lw.limit - lw.buf.Len()
+		if remaining > 0 {
+			lw.buf.Write(p[:remaining])
+		}
+		return len(p), nil // silently discard excess (don't break the process)
+	}
+	return lw.buf.Write(p)
+}
+
 // cqMentionRe matches @cq mentions in message content.
 // Matches "@cq" preceded by whitespace/start-of-string and followed by
 // a non-alphanumeric character or end-of-string. Case-insensitive.
@@ -302,8 +320,9 @@ func (a *Agent) processMessage(messageID, channelID, content, senderName string)
 
 	cmd := exec.CommandContext(ctx, claudePath, "-p", prompt, "--output-format", "json")
 	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
+	const maxOutputSize = 1 << 20 // 1MB limit
+	cmd.Stdout = &limitedWriter{buf: &stdout, limit: maxOutputSize}
+	cmd.Stderr = &limitedWriter{buf: &stderr, limit: maxOutputSize}
 
 	err := cmd.Run()
 

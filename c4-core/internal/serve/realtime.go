@@ -233,6 +233,8 @@ func (rc *RealtimeClient) connectOnce(ctx context.Context) error {
 	defer heartbeatTicker.Stop()
 
 	readCh := make(chan readResult, 1)
+	readDone := make(chan struct{})
+	defer close(readDone)
 
 	// Spawn a read goroutine
 	go func() {
@@ -243,6 +245,8 @@ func (rc *RealtimeClient) connectOnce(ctx context.Context) error {
 			data, op, err := wsutil.ReadServerData(conn)
 			select {
 			case readCh <- readResult{data: data, op: op, err: err}:
+			case <-readDone:
+				return
 			case <-ctx.Done():
 				return
 			}
@@ -278,7 +282,7 @@ func (rc *RealtimeClient) connectOnce(ctx context.Context) error {
 				return fmt.Errorf("read: %w", result.err)
 			}
 			if result.op == ws.OpClose {
-				return fmt.Errorf("server closed connection")
+				return nil // clean server-side close → reset backoff in connectionLoop
 			}
 			if result.op == ws.OpText {
 				rc.handleMessage(result.data, callback)
