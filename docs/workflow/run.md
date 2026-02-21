@@ -39,3 +39,7 @@ A revision task (T-001-1) is created automatically. `/c4-run` will pick it up on
 ## Continuous mode
 
 `/c4-run` keeps respawning until all tasks are done — you don't need to re-run it manually.
+
+## After execution
+
+Once all tasks are complete, run `/c4-finish` to wrap up. `/c4-finish` runs `/c4-polish` automatically before committing.

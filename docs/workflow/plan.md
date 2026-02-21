@@ -36,4 +36,6 @@ Each task gets a DoD checklist:
 
 ## After planning
 
-Run `/c4-run` to start workers.
+Optional: run `/c4-refine` to stress-test the plan before implementation starts.
+
+When ready, run `/c4-run` to start workers.
