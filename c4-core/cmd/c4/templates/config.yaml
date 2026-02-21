@@ -50,7 +50,17 @@ permission_reviewer:
   fail_mode: ask             # model 실패 시: "ask" (사용자 확인) or "allow" (자동 승인)
   auto_approve: true         # 안전 판정 시 사용자 확인 없이 자동 실행
   timeout: 10
-  allow_patterns: []         # 예: ["git log", "go test ./\\.\\.\\."]
+  # allow_patterns: model mode에서 Haiku API 호출 없이 즉시 허용할 패턴 (bash ERE)
+  # hook mode에서도 block_patterns 체크 전에 먼저 허용됨
+  # 주의: 패턴이 일치하면 이후 안전 검사를 모두 건너뜀 (복합 명령 포함)
+  allow_patterns:
+    - "^git (log|show|diff|status|branch|tag|remote -v|stash list|ls-files|blame)"
+    - "^go (build|test|vet|run|env|list|mod tidy|mod graph|mod vendor)"
+    - "^uv (run|sync|pip list|pip show|pip freeze|lock|python)"
+    - "^(ls|ll|la|find|cat|head|tail|wc|stat) "
+    - "^(grep|rg) "
+    - "^(echo|pwd|which|env|printenv|whoami|date|uname) "
+    - "^cq "
   block_patterns: []         # 예: ["curl.*\\| bash"]
 
 # Worktree settings
