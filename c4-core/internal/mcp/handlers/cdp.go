@@ -262,7 +262,6 @@ func handleCDPAction(runner *cdp.Runner, raw json.RawMessage) (any, error) {
 		return map[string]any{
 			"action":     result.Action,
 			"ref":        result.Ref,
-			"value":      result.Value,
 			"elapsed_ms": result.ElapsedMs,
 		}, nil
 
