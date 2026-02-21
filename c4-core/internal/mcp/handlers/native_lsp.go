@@ -130,6 +130,7 @@ func handleGoFindSymbol(name, absPath, rootDir string) (any, error) {
 		if s.Doc != "" {
 			m["docstring"] = s.Doc
 		}
+		m["_edit_hint"] = "Go file: use Edit tool for modifications (c4_replace_symbol_body not supported)"
 		results = append(results, m)
 	}
 
@@ -190,6 +191,7 @@ func handleDartFindSymbol(name, absPath, rootDir string) (any, error) {
 		if s.Docstring != "" {
 			m["docstring"] = s.Docstring
 		}
+		m["_edit_hint"] = "Dart file: use Edit tool for modifications (c4_replace_symbol_body not supported)"
 		results = append(results, m)
 	}
 
