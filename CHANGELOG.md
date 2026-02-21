@@ -7,6 +7,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-02-22
+
+### ✨ Features
+
+#### C1 Messenger — Messenger-first UI/UX 완전 재설계 (14 tasks)
+
+- **3-column 레이아웃**: `WorkspaceNav`(48px 아이콘 네비) + `ChannelListArea`(240px) + `ContentArea`(flex-grow)
+  - `WorkspaceNav.tsx`: 5개 워크스페이스 모드 아이콘 (`messenger/documents/settings/team/search`)
+  - `MainLayout.tsx`: BEM 3-column CSS 레이아웃, `main-layout__nav/channel-list/content`
+- **`channel_type` 스키마 정립** (migration `00024_c1_channel_types.sql`):
+  - 5가지 타입: `general | project | knowledge | session | dm` (CHECK constraint)
+  - `c1_channel_pins` 테이블: ProductView 버전 히스토리용
+  - `agent_work_id` 컬럼: AgentThread 그루핑용
+  - session 채널 전용 UNIQUE INDEX
+- **`ChannelListSidebar v2`**: 5개 섹션 (General `#` / Projects `📂` / Knowledge `🧠` / Sessions `💬` / Direct `✉`)
+  - 섹션별 collapse/expand 토글, 빈 섹션 표시
+- **`ChannelContent`**: `productSlot` + `ConversationArea` 2-column 레이아웃 컴포넌트
+- **`ProductView`**: 채널 핀 마크다운 렌더링 + 버전 히스토리 드롭다운
+  - `useChannelPins(channelId)` 훅, Rust `create/list/delete_channel_pin` 명령어
+- **`AgentThread`**: `agent_work_id` 기반 메시지 그루핑 컴포넌트
+  - in-progress → 자동 확장, completed/failed/cancelled → 자동 접기
+  - `MessageList.tsx`: `groupMessages()` 알고리즘으로 연속 동일 `agent_work_id` 묶음
+- **`@mention` UI**: `@` 트리거 → `MentionPopup` 자동완성 (↑↓ 키보드 네비)
+  - `metadata.mention = {agent, task: ''}` 메타데이터 주입
+- **A2UI (Agent-to-UI) 시스템**: 에이전트가 UI 액션 버튼을 주입하는 프로토콜
+  - `types/a2ui.ts`: `A2UISpec`, `A2UIAction`, `isA2UISpec()` 타입 가드
+  - `A2UIRenderer.tsx`: primary/secondary/danger 스타일 액션 버튼 렌더링
+- **`sync_session_channels`**: 로컬 Claude 세션을 Supabase session 채널로 자동 동기화 (Rust)
+  - 이름 형식: `claude-{MMDD}-{session_uuid_8}`
+  - Supabase REST upsert (`Prefer: resolution=merge-duplicates`)
+  - `useSessionChannels()` 훅: `channel_type === 'session'` 필터링
+
+#### MCP
+
+- **`c4_task_list` `include_dod` 파라미터** 추가: 기본 `false` (brief listing), `true`일 때만 DoD 필드 포함
+
+### 🐛 Bug Fixes
+
+- **`c4_task_list`**: `include_dod` 기본값 `true` → `false`로 수정 (대용량 DoD로 응답 크기 급증 방지)
+
+### 📚 Documentation
+
+- AGENTS.md: Rust 테스트 수 85 → 92 (C1 재설계 +7 tests)
+- AGENTS.md: LSP 언어별 지원 범위 명확화 — Go/Dart native 추가, `c4_find_symbol` 사용 원칙 섹션
+
+---
+
 ## [0.12.0] - 2026-02-21
 
 ### ✨ Features
