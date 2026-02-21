@@ -19,10 +19,10 @@ Build-test-review-fix loop that runs until a reviewer finds zero modifications. 
 
 ## When to run
 
-After `/c4-refine` (or directly after `/c4-run`), before `/c4-finish`:
+After `/c4-run`, before `/c4-finish`:
 
 ```
-/c4-run → /c4-refine → /c4-polish → /c4-finish
+/c4-plan → /c4-refine → /c4-run → /c4-polish → /c4-finish
 ```
 
 `/c4-finish` runs `/c4-polish` automatically unless you pass `--no-polish`.
@@ -61,8 +61,8 @@ Polish stops when a reviewer finds **zero modifications** — not just when seve
 
 | | `/c4-refine` | `/c4-polish` |
 |---|---|---|
-| Loop unit | Review → Fix | Build → Test → Review → Fix |
-| Stop condition | CRITICAL + HIGH = 0 | Zero modifications found |
-| Build/test | Manual | Every round automatically |
-| Typical use | After checkpoint | Before finish |
-| Intensity | Quality gate | Full convergence |
+| Target | Plan (specs, DoDs, design) | Code |
+| Loop unit | Review plan → Update plan | Build → Test → Review → Fix |
+| Stop condition | Reviewer finds no plan issues | Zero code modifications found |
+| Phase | Plan (before /c4-run) | Polish (before /c4-finish) |
+| Output | Improved task queue | Converged codebase |
