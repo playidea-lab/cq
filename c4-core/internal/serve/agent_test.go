@@ -13,68 +13,6 @@ import (
 	"time"
 )
 
-// --- Component interface tests ---
-
-func TestComponentManager_StartStop(t *testing.T) {
-	m := NewComponentManager()
-	c1 := &mockComponent{name: "c1"}
-	c2 := &mockComponent{name: "c2"}
-	m.Add(c1)
-	m.Add(c2)
-
-	ctx := context.Background()
-	if err := m.Start(ctx); err != nil {
-		t.Fatalf("Start failed: %v", err)
-	}
-
-	statuses := m.Statuses()
-	if statuses["c1"] != StatusRunning {
-		t.Errorf("c1 status = %v, want %v", statuses["c1"], StatusRunning)
-	}
-	if statuses["c2"] != StatusRunning {
-		t.Errorf("c2 status = %v, want %v", statuses["c2"], StatusRunning)
-	}
-
-	if err := m.Stop(); err != nil {
-		t.Fatalf("Stop failed: %v", err)
-	}
-	if c1.Status() != StatusStopped {
-		t.Errorf("c1 status after stop = %v, want %v", c1.Status(), StatusStopped)
-	}
-}
-
-func TestComponentManager_StartRollback(t *testing.T) {
-	m := NewComponentManager()
-	c1 := &mockComponent{name: "c1"}
-	c2 := &mockComponent{name: "c2", startErr: fmt.Errorf("fail")}
-	m.Add(c1)
-	m.Add(c2)
-
-	err := m.Start(context.Background())
-	if err == nil {
-		t.Fatal("expected error from Start")
-	}
-	if !strings.Contains(err.Error(), "fail") {
-		t.Errorf("error = %v, want containing 'fail'", err)
-	}
-	// c1 should have been rolled back (stopped)
-	if c1.Status() != StatusStopped {
-		t.Errorf("c1 should be stopped after rollback, got %v", c1.Status())
-	}
-}
-
-func TestComponentManager_DoubleStart(t *testing.T) {
-	m := NewComponentManager()
-	m.Add(&mockComponent{name: "c1"})
-	if err := m.Start(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-	defer m.Stop()
-	if err := m.Start(context.Background()); err == nil {
-		t.Fatal("expected error on double start")
-	}
-}
-
 // --- @cq mention regex tests ---
 
 func TestCqMentionRegex(t *testing.T) {
@@ -585,10 +523,11 @@ func TestAgent_Name(t *testing.T) {
 	}
 }
 
-func TestAgent_InitialStatus(t *testing.T) {
+func TestAgent_InitialHealth(t *testing.T) {
 	agent := NewAgent(AgentConfig{})
-	if agent.Status() != StatusStopped {
-		t.Errorf("initial status = %v, want %v", agent.Status(), StatusStopped)
+	h := agent.Health()
+	if h.Status != "ok" {
+		t.Errorf("initial health status = %q, want %q", h.Status, "ok")
 	}
 }
 
@@ -600,27 +539,6 @@ func TestTruncate(t *testing.T) {
 	}
 	if got := truncate("abcde", 3); got != "abc...(truncated)" {
 		t.Errorf("truncate long = %q", got)
-	}
-}
-
-// --- Status type tests ---
-
-func TestStatusValues(t *testing.T) {
-	tests := []struct {
-		s    Status
-		want string
-	}{
-		{StatusStopped, "stopped"},
-		{StatusStarting, "starting"},
-		{StatusRunning, "running"},
-		{StatusDegraded, "degraded"},
-		{StatusStopping, "stopping"},
-		{StatusFailed, "failed"},
-	}
-	for _, tt := range tests {
-		if string(tt.s) != tt.want {
-			t.Errorf("Status %v = %q, want %q", tt.s, string(tt.s), tt.want)
-		}
 	}
 }
 
@@ -666,39 +584,3 @@ func TestAgent_PostMessage(t *testing.T) {
 	}
 }
 
-// --- mock component for ComponentManager tests ---
-
-type mockComponent struct {
-	name     string
-	startErr error
-	mu       sync.Mutex
-	status   Status
-}
-
-func (m *mockComponent) Name() string { return m.name }
-
-func (m *mockComponent) Start(ctx context.Context) error {
-	if m.startErr != nil {
-		m.mu.Lock()
-		m.status = StatusFailed
-		m.mu.Unlock()
-		return m.startErr
-	}
-	m.mu.Lock()
-	m.status = StatusRunning
-	m.mu.Unlock()
-	return nil
-}
-
-func (m *mockComponent) Stop() error {
-	m.mu.Lock()
-	m.status = StatusStopped
-	m.mu.Unlock()
-	return nil
-}
-
-func (m *mockComponent) Status() Status {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return m.status
-}

@@ -37,7 +37,7 @@ type Agent struct {
 	client *RealtimeClient
 
 	mu         sync.Mutex
-	status     Status
+	status     string // "stopped", "starting", "running", "degraded", "failed"
 	cancel     context.CancelFunc
 	claudePath string // path to claude CLI binary
 	httpClient *http.Client
@@ -50,7 +50,7 @@ func NewAgent(cfg AgentConfig) *Agent {
 	}
 	return &Agent{
 		cfg:    cfg,
-		status: StatusStopped,
+		status: "stopped",
 		httpClient: &http.Client{
 			Timeout: 15 * time.Second,
 		},
@@ -60,14 +60,23 @@ func NewAgent(cfg AgentConfig) *Agent {
 // Name implements Component.
 func (a *Agent) Name() string { return "agent" }
 
-// Status implements Component.
-func (a *Agent) Status() Status {
+// Health implements Component.
+func (a *Agent) Health() ComponentHealth {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	return a.status
+	switch a.status {
+	case "running":
+		return ComponentHealth{Status: "ok"}
+	case "degraded":
+		return ComponentHealth{Status: "degraded", Detail: "claude CLI not found"}
+	case "failed":
+		return ComponentHealth{Status: "error", Detail: "failed"}
+	default:
+		return ComponentHealth{Status: "ok", Detail: a.status}
+	}
 }
 
-func (a *Agent) setStatus(s Status) {
+func (a *Agent) setStatus(s string) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.status = s
@@ -76,18 +85,18 @@ func (a *Agent) setStatus(s Status) {
 // Start implements Component.
 func (a *Agent) Start(ctx context.Context) error {
 	a.mu.Lock()
-	if a.status == StatusRunning || a.status == StatusDegraded {
+	if a.status == "running" || a.status == "degraded" {
 		a.mu.Unlock()
 		return fmt.Errorf("agent already running")
 	}
-	a.status = StatusStarting
+	a.status = "starting"
 	a.mu.Unlock()
 
 	// Check for claude CLI
 	claudePath, err := exec.LookPath("claude")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "cq: [agent] claude CLI not found, running in degraded mode\n")
-		a.setStatus(StatusDegraded)
+		a.setStatus("degraded")
 		a.claudePath = ""
 	} else {
 		a.claudePath = claudePath
@@ -113,21 +122,21 @@ func (a *Agent) Start(ctx context.Context) error {
 
 	if err := a.client.Connect(childCtx); err != nil {
 		cancel()
-		a.setStatus(StatusFailed)
+		a.setStatus("failed")
 		return fmt.Errorf("realtime connect: %w", err)
 	}
 
 	if a.claudePath == "" {
-		a.setStatus(StatusDegraded)
+		a.setStatus("degraded")
 	} else {
-		a.setStatus(StatusRunning)
+		a.setStatus("running")
 	}
-	fmt.Fprintf(os.Stderr, "cq: [agent] started (status=%s)\n", a.Status())
+	fmt.Fprintf(os.Stderr, "cq: [agent] started (status=%s)\n", a.status)
 	return nil
 }
 
 // Stop implements Component.
-func (a *Agent) Stop() error {
+func (a *Agent) Stop(_ context.Context) error {
 	a.mu.Lock()
 	cancel := a.cancel
 	a.mu.Unlock()
@@ -138,7 +147,7 @@ func (a *Agent) Stop() error {
 	if a.client != nil {
 		a.client.Close()
 	}
-	a.setStatus(StatusStopped)
+	a.setStatus("stopped")
 	fmt.Fprintf(os.Stderr, "cq: [agent] stopped\n")
 	return nil
 }
