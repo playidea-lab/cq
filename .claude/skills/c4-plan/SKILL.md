@@ -553,11 +553,14 @@ Dependency tree: `T-XXX -> R-XXX -> CP-XXX -> T-YYY -> R-YYY`
 
 ---
 
-## Phase 4.5: Plan Critique Loop (Pre-Mortem)
+## Phase 4.5: Plan Critique Loop (Worker 기반 Pre-Mortem)
 
 > Entry: Phase 4 draft 완료 직후. DB 커밋 전.
 > Exit: 수렴 선언 → Phase 4.9 (DB 커밋) → Phase 5
-> Purpose: 실행 전에 실패 시나리오를 시뮬레이션하여 가정을 검증하고 계획을 개선합니다.
+> Purpose: 신선한 컨텍스트를 가진 Worker가 계획을 비판 — confirmation bias 제거.
+>
+> ⚠️ **인라인 자가 비판 금지**: 계획을 만든 세션이 직접 비판하면 confirmation bias 발생.
+>    매 라운드마다 반드시 새 Worker(Task agent)를 스폰하여 격리된 시각으로 검토.
 
 ### 4.5.0 Config 분기
 
@@ -568,93 +571,108 @@ if not LOOP_ACTIVE:
     print("   활성화: .c4/config.yaml → planning.critique_loop.enabled: true")
     → Phase 4.9 (DB Commit) 직행
 
-if CRITIQUE_MODE == "interactive":
-    # 라운드 시작 전마다 사용자에게 계속 진행 여부 묻기
-    INTERACTIVE = True
-else:
-    INTERACTIVE = False  # auto: 조용히 실행
+INTERACTIVE = (CRITIQUE_MODE == "interactive")
 ```
 
-### 4.5.0 Loop 초기화
+### 4.5.1 Loop 초기화
 
 ```
-round = 0 (max: 3)
+round = 0 (max: CRITIQUE_MAX_ROUNDS, 기본 3)
 converged = false
-prev_draft = Phase 4 draft
+current_draft = Phase 4에서 작성한 태스크 초안 (전체 텍스트)
 ```
 
-### 4.5.1 역할 전환: 사후 분석가 (Pre-Mortem)
+### 4.5.2 Worker 스폰: 격리된 Plan Critic
 
-**프레임**: "이 계획이 실행됐고 결과가 나빴다. 지금은 실패 후 3개월이 지난 회고 자리다. 가장 큰 실패 원인 3가지를 밝혀라."
+> c4-refine 패턴 적용 — 매 라운드마다 새 Worker를 스폰하여 fresh context 보장.
 
-역할을 "계획자"에서 "비판적 리뷰어"로 전환하여 각 태스크를 아래 렌즈로 검토합니다:
+```python
+# interactive 모드: 라운드 시작 전 확인
+if INTERACTIVE:
+    AskUserQuestion(question=f"Round {round+1}/{CRITIQUE_MAX_ROUNDS} critique를 실행할까요?")
+
+critique_result = Task(
+    subagent_type="general-purpose",
+    description=f"Plan critique round {round+1}",
+    prompt=f"""
+당신은 시니어 소프트웨어 아키텍트입니다.
+아래 C4 구현 계획 초안을 Pre-Mortem 방식으로 비판하세요.
+
+**프레임**: "이 계획대로 실행했고 3개월 후 실패했다. 가장 큰 실패 원인은?"
+
+## 계획 초안
+{current_draft}
+
+## 비판 렌즈 (각 태스크에 대해 검토)
 
 | 렌즈 | 질문 | 심각도 |
 |------|------|--------|
-| **가정 목록** | 이 태스크가 전제하는 것은? (파일 경로, API 형식, 외부 설정) | High |
-| **DoD 측정 가능성** | "완료됐음을 어떻게 증명하는가?" — 구체적 명령어/테스트가 있는가? | Critical |
-| **파일 충돌** | 두 태스크가 같은 파일을 동시에 수정하는가? | Critical |
-| **외부 의존성** | LLM API, 네트워크, 환경 변수, 외부 서비스가 전제되어 있는가? | High |
-| **범위 과잉** | 수정 파일 5개 초과? API 3개 초과? 도메인 2개 이상? | High |
-| **더 단순한 방법** | 50% 코드로 80% 결과를 내는 방법이 있는가? | Medium |
-| **의존성 누락** | 숨겨진 실행 순서 제약이 있는가? | High |
+| DoD 측정 가능성 | "완료됐음을 어떻게 증명하는가?" — 구체적 명령어/테스트가 있는가? | CRITICAL |
+| 파일 충돌 | 두 태스크가 같은 파일을 동시에 수정하는가? | CRITICAL |
+| 가정 목록 | 이 태스크가 전제하는 것은? (파일 경로, API 형식, 외부 설정) | HIGH |
+| 의존성 누락 | 숨겨진 실행 순서 제약이 있는가? | HIGH |
+| 범위 과잉 | 수정 파일 5개 초과? API 3개 초과? 도메인 2개 이상? | HIGH |
+| 더 단순한 방법 | 50% 코드로 80% 결과를 내는 방법이 있는가? | MEDIUM |
+| 외부 의존성 | 환경 변수, 외부 서비스가 전제되어 있는가? | MEDIUM |
 
-**출력 형식** (구조화된 비판):
-
-```
-## Critique Round N/3
-
-### Critical (즉시 수정)
-- [T-001-0] DoD: "X 구현" → 측정 불가. 수정: "go test ./... PASS + coverage > 80%"
-
-### High (수정 권장)
-- [T-002-0] 가정: c4_knowledge_reindex가 file_path를 재스캔함 — 미검증.
-  수정: Lighthouse로 동작 확인 후 진행, 또는 fallback 경로 명시
-
-### Medium (사용자 선택)
-- [T-003-0] 더 단순한 방법: SQL UPDATE 대신 reindex API로 처리 가능
-```
-
-### 4.5.2 수정 (Revise)
-
-각 비판 심각도에 따라:
-- **Critical**: 즉시 draft 수정 (DoD 재작성, 태스크 분리/병합)
-- **High**: 수정 적용 또는 Rationale에 리스크 명시
-- **Medium**: 사용자에게 선택 제시
-
-수정 후 draft를 갱신합니다.
-
-### 4.5.3 수렴 판정
+## 출력 형식 (반드시 이 형식으로)
 
 ```
-delta = diff(prev_draft, current_draft)
+## Plan Critique Round {round+1}
 
-converged = ALL of:
-  - delta.new_tasks == 0          # 새 태스크 없음
-  - delta.deleted_tasks == 0      # 삭제된 태스크 없음
-  - delta.dod_change_rate < 0.20  # DoD 변경 20% 미만
-  - delta.critical_issues == 0    # 미해결 Critical 없음
+### CRITICAL (즉시 수정 필요)
+- [T-XXX-0] 문제: ... → 권장 수정: ...
 
-if converged OR round >= 3:
-  → Phase 4.9
+### HIGH (수정 권장)
+- [T-XXX-0] 문제: ... → 권장 수정: ...
+
+### MEDIUM (선택적)
+- [T-XXX-0] 문제: ... → 권장 수정: ...
+
+### 수렴 판정
+CRITICAL: N건 / HIGH: N건 / MEDIUM: N건
+판정: CONVERGED (0건) | NOT_CONVERGED (N건 미해결)
+```
+"""
+)
+```
+
+### 4.5.3 수정 (Revise) — 메인 세션에서 적용
+
+Worker critique 결과를 받아 메인 세션에서 draft 수정:
+
+- **CRITICAL**: 즉시 draft 수정 (DoD 재작성, 태스크 분리/병합)
+- **HIGH**: 수정 적용 또는 Rationale에 리스크 명시
+- **MEDIUM**: 사용자에게 선택 제시 (INTERACTIVE 모드) 또는 자동 적용
+
+### 4.5.4 수렴 판정
+
+```python
+critical_count = critique_result.count("CRITICAL") - 해결된 수
+high_count = critique_result.count("HIGH") - 해결된 수
+
+converged = (critical_count == 0 and high_count == 0)
+
+if converged or round + 1 >= CRITIQUE_MAX_ROUNDS:
+    → 수렴 선언 출력 → Phase 4.9
 else:
-  round += 1
-  prev_draft = current_draft
-  → Phase 4.5.1 (다음 라운드)
+    round += 1
+    current_draft = 수정된 draft
+    → Phase 4.5.2 (새 Worker 스폰)
 ```
 
 **수렴 선언 출력**:
 ```
-## 계획 수렴 ✅ (Round N/3)
-변경 요약: +N 추가 / -N 삭제 / N DoD 수정
-미해결 Critical: 0
+## 계획 수렴 ✅ (Round N/MAX)
+CRITICAL: 0 / HIGH: 0 / MEDIUM: N (허용)
+Worker 비판 횟수: N회 (각 라운드 fresh context)
 → DB 커밋 진행
 ```
 
-**3 round 미수렴 시**:
+**MAX round 미수렴 시**:
 ```
-## 계획 미수렴 ⚠️ (3/3 rounds)
-미해결 항목: [목록]
+## 계획 미수렴 ⚠️ (MAX/MAX rounds)
+미해결: CRITICAL N건, HIGH N건
 ```
 → AskUserQuestion: "(1) 현재 상태로 진행  (2) 수동 수정 후 재시작"
 

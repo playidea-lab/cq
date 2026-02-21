@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/changmin/c4-core/internal/config"
 	"github.com/changmin/c4-core/internal/serve"
 	"github.com/spf13/cobra"
 )
@@ -88,11 +89,24 @@ func runServe(cmd *cobra.Command, args []string) error {
 	}
 	defer os.Remove(pidPath)
 
+	// Load project config
+	cfgMgr, err := config.New(projectDir)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "cq serve: config load warning: %v (using defaults)\n", err)
+	}
+	cfg := cfgMgr.GetConfig()
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("home dir: %w", err)
+	}
+
 	// Component manager
 	mgr := serve.NewManager()
 
-	// TODO: Register components based on config (future tasks)
-	// e.g. if cfg.Serve.EventBus.Enabled { mgr.Register(eventbusComponent) }
+	// Register components based on config
+	ebComp := registerCoreServeComponents(mgr, cfg, home)
+	registerEventSinkServeComponent(mgr, cfg, ebComp)
 
 	// Start all components
 	ctx, cancel := context.WithCancel(context.Background())
