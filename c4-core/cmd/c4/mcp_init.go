@@ -18,6 +18,7 @@ import (
 	"github.com/changmin/c4-core/internal/llm"
 	"github.com/changmin/c4-core/internal/mcp"
 	"github.com/changmin/c4-core/internal/mcp/handlers"
+	"github.com/changmin/c4-core/internal/secrets"
 	_ "modernc.org/sqlite"
 )
 
@@ -290,6 +291,14 @@ func newMCPServer() (*mcpServer, error) {
 	handlers.RegisterConfigHandler(reg, cfgMgr)
 	handlers.RegisterConfigSetHandler(reg, cfgMgr, projectDir)
 
+	// Register secret handlers (global ~/.c4/secrets.db)
+	if secretStore, secErr := secrets.New(); secErr != nil {
+		fmt.Fprintf(os.Stderr, "cq: secret store init failed: %v\n", secErr)
+	} else {
+		handlers.RegisterSecretHandlers(reg, secretStore)
+		fmt.Fprintln(os.Stderr, "cq: secret store ready (~/.c4/secrets.db)")
+	}
+
 	// --- Phase 4: Run post-store hooks (C1, Drive, Hub, CDP, EventBus) ---
 	// ctx.sqliteStore and ctx.proxy are now set; EventBus wiring can proceed.
 	for _, fn := range componentInitHooks {
@@ -325,13 +334,30 @@ func newMCPServer() (*mcpServer, error) {
 
 // toLLMGatewayConfig converts config.C4Config to llm.GatewayConfig,
 // breaking the llm→config import dependency.
+// Key resolution priority: config.api_key > config.api_key_env > secrets store (name.api_key).
 func toLLMGatewayConfig(cfg config.C4Config) llm.GatewayConfig {
+	// Open global secret store for fallback key lookup (best-effort, non-fatal).
+	var secretStore *secrets.Store
+	if ss, err := secrets.New(); err == nil {
+		secretStore = ss
+		defer ss.Close()
+	}
+
 	providers := make(map[string]llm.GatewayProviderConfig, len(cfg.LLMGateway.Providers))
 	for name, p := range cfg.LLMGateway.Providers {
+		apiKey := p.APIKey
+		if apiKey == "" && p.APIKeyEnv != "" {
+			apiKey = os.Getenv(p.APIKeyEnv)
+		}
+		if apiKey == "" && secretStore != nil {
+			if v, err := secretStore.Get(name + ".api_key"); err == nil {
+				apiKey = v
+			}
+		}
 		providers[name] = llm.GatewayProviderConfig{
 			Enabled:      p.Enabled,
-			APIKey:       p.APIKey,
-			APIKeyEnv:    p.APIKeyEnv,
+			APIKey:       apiKey,
+			APIKeyEnv:    "", // already resolved above
 			BaseURL:      p.BaseURL,
 			DefaultModel: p.DefaultModel,
 		}
