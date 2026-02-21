@@ -583,13 +583,10 @@ func TestSetupGlobalHooks_Install(t *testing.T) {
 		t.Error("hook script not executable")
 	}
 
+	// .conf file should NOT be created; hook config is sourced from .c4/config.yaml
 	confPath := filepath.Join(hooksDir, "c4-bash-security.conf")
-	confData, err := os.ReadFile(confPath)
-	if err != nil {
-		t.Fatalf("hook conf not created: %v", err)
-	}
-	if string(confData) != hookConfContent {
-		t.Error("hook conf content mismatch")
+	if _, err := os.Stat(confPath); err == nil {
+		t.Error("hook conf should not be created by setupGlobalHooks")
 	}
 }
 
@@ -602,15 +599,15 @@ func TestSetupGlobalHooks_Idempotent(t *testing.T) {
 	}
 
 	hooksDir := filepath.Join(homeDir, ".claude", "hooks")
-	confPath := filepath.Join(hooksDir, "c4-bash-security.conf")
 
-	// Modify conf to simulate user customization
+	// Place a pre-existing .conf to simulate backward-compat scenario
+	confPath := filepath.Join(hooksDir, "c4-bash-security.conf")
 	customConf := "# user customization\nALLOW_ALL=true\n"
 	if err := os.WriteFile(confPath, []byte(customConf), 0644); err != nil {
 		t.Fatalf("write custom conf: %v", err)
 	}
 
-	// Second install should not overwrite conf
+	// Second install should not touch the existing .conf
 	if err := setupGlobalHooks(homeDir); err != nil {
 		t.Fatalf("second setupGlobalHooks failed: %v", err)
 	}
@@ -620,7 +617,7 @@ func TestSetupGlobalHooks_Idempotent(t *testing.T) {
 		t.Fatalf("read conf: %v", err)
 	}
 	if string(data) != customConf {
-		t.Error("user conf was overwritten by idempotent install")
+		t.Error("pre-existing .conf was modified by setupGlobalHooks")
 	}
 
 	// Hook script should still match embedded content
