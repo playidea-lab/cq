@@ -636,17 +636,32 @@ func TestRequestChanges_RecordsRejected(t *testing.T) {
 }
 
 func TestRequestChanges_MaxRevisionBoundary(t *testing.T) {
+	// Policy: max_revision=N allows exactly N implementation attempts (versions 0..N-1).
+	// Requesting changes from R-XXX-(N-1) would create version N -- blocked (nextVersion >= MaxRevision).
 	tests := []struct {
 		name          string
 		maxRevision   int
 		reviewVersion int
 		wantErr       bool
 	}{
+		// max_revision=3: versions 0,1,2 allowed; blocked at version 3 (nextVersion=3 >= 3).
 		{
-			name:          "allow when next version equals max_revision",
+			name:          "allow when next version is below max_revision (v1 of 3)",
+			maxRevision:   3,
+			reviewVersion: 0,
+			wantErr:       false,
+		},
+		{
+			name:          "allow when next version is below max_revision (v2 of 3)",
+			maxRevision:   3,
+			reviewVersion: 1,
+			wantErr:       false,
+		},
+		{
+			name:          "block when next version equals max_revision",
 			maxRevision:   3,
 			reviewVersion: 2,
-			wantErr:       false,
+			wantErr:       true,
 		},
 		{
 			name:          "block when next version exceeds max_revision",
@@ -654,15 +669,23 @@ func TestRequestChanges_MaxRevisionBoundary(t *testing.T) {
 			reviewVersion: 3,
 			wantErr:       true,
 		},
+		// max_revision=1: only version 0 allowed; blocked at version 1 (nextVersion=1 >= 1).
 		{
-			name:          "allow first change at max_revision one",
+			name:          "block first change at max_revision one",
 			maxRevision:   1,
+			reviewVersion: 0,
+			wantErr:       true,
+		},
+		// max_revision=2: versions 0,1 allowed; blocked at version 2 (nextVersion=2 >= 2).
+		{
+			name:          "allow first change at max_revision two",
+			maxRevision:   2,
 			reviewVersion: 0,
 			wantErr:       false,
 		},
 		{
-			name:          "block second change at max_revision one",
-			maxRevision:   1,
+			name:          "block second change at max_revision two",
+			maxRevision:   2,
 			reviewVersion: 1,
 			wantErr:       true,
 		},

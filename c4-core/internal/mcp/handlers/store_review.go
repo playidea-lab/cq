@@ -125,7 +125,7 @@ func (s *SQLiteStore) Checkpoint(checkpointID, decision, notes string, requiredC
 		VALUES (?, ?, ?, ?, ?, ?, ?)`,
 		checkpointID, decision, notes, changesJSON, targetTaskID, targetReviewID, time.Now().Format(time.RFC3339),
 	); err != nil {
-		fmt.Fprintf(os.Stderr, "c4: checkpoint INSERT %s: %v\n", checkpointID, err)
+		return nil, fmt.Errorf("checkpoint INSERT %s: %w", checkpointID, err)
 	}
 
 	// Publish checkpoint event
@@ -188,10 +188,12 @@ func (s *SQLiteStore) RequestChanges(reviewTaskID string, comments string, requi
 
 	// 2. Check max_revision
 	// max_revision is the maximum allowed REQUEST_CHANGES count.
+	// Policy: max_revision=N allows exactly N implementation attempts (versions 0..N-1).
+	// Block when nextVersion >= MaxRevision: e.g. max_revision=3 allows versions 0,1,2 and blocks at version 3.
 	nextVersion := version + 1
 	if s.config != nil {
 		cfg := s.config.GetConfig()
-		if cfg.MaxRevision > 0 && nextVersion > cfg.MaxRevision {
+		if cfg.MaxRevision > 0 && nextVersion >= cfg.MaxRevision {
 			return nil, fmt.Errorf("max revision %d exceeded for base %s", cfg.MaxRevision, baseID)
 		}
 	}
