@@ -181,7 +181,7 @@ const scanElementsJS = `(function() {
       ref: ref,
       tag: el.tagName.toLowerCase(),
       type: el.getAttribute('type') || '',
-      text: (el.innerText || el.value || el.getAttribute('aria-label') || '').replace(/[\u2028\u2029\x00-\x1f]/g, ' ').slice(0, 120),
+      text: (el.innerText || el.value || el.getAttribute('aria-label') || '').replace(/[\u0080-\u009f\u2028\u2029\x00-\x1f]/g, ' ').slice(0, 120),
       placeholder: el.getAttribute('placeholder') || '',
       href: el.getAttribute('href') || '',
       visible: r.width > 0 && r.height > 0,

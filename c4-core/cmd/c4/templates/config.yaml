@@ -58,7 +58,8 @@ permission_reviewer:
     - "^go (build|test|vet|run|env|list|mod tidy|mod graph|mod vendor)( |$)"
     - "^uv (run|sync|pip list|pip show|pip freeze|lock|python)( |$)"
     - "^(ls|ll|la|cat|head|tail|wc|stat) "
-    - "^find (\\.|\\./)"              # find . / find ./src (상대경로만 허용)
+    - "^find \\. "                    # find . -name ... (현재 디렉토리만)
+    - "^find \\./[^.]"               # find ./src (첫 경로 컴포넌트가 ..이 아닌 상대경로)
     - "^(grep|rg) "
     - "^(echo|pwd|which|env|printenv|whoami|date|uname) "
     - "^cq (status|doctor|mcp|version|help)( |$)"
