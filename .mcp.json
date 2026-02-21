@@ -1,16 +1,16 @@
 {
   "mcpServers": {
     "cq": {
-      "type": "stdio",
-      "command": "/Users/changmin/git/cq/c4-core/bin/cq",
       "args": [
         "mcp",
         "--dir",
         "/Users/changmin/git/cq"
       ],
+      "command": "/Users/changmin/.local/bin/cq",
       "env": {
         "C4_PROJECT_ROOT": "/Users/changmin/git/cq"
-      }
+      },
+      "type": "stdio"
     }
   }
 }
