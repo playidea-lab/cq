@@ -6,12 +6,14 @@ CQ follows a structured loop:
 INIT → DISCOVERY → DESIGN → PLAN → EXECUTE ⇄ CHECKPOINT → REFINE → POLISH → COMPLETE
 ```
 
-## The five commands
+## Commands
 
 | Command | When to use |
 |---------|-------------|
 | [`/c4-plan`](/workflow/plan) | New feature or significant change |
 | [`/c4-run`](/workflow/run) | Execute the task queue |
+| [`/c4-refine`](/workflow/refine) | Quality gate — fix CRITICAL and HIGH issues |
+| [`/c4-polish`](/workflow/polish) | Full convergence — repeat until zero modifications |
 | [`/c4-finish`](/workflow/finish) | Wrap up after all tasks complete |
 | `/c4-status` | Check progress at any time |
 | `/c4-quick` | Single small task, skip the planning phase |

@@ -42,6 +42,8 @@ export default defineConfig({
             { text: 'Overview', link: '/workflow/' },
             { text: '/c4-plan', link: '/workflow/plan' },
             { text: '/c4-run', link: '/workflow/run' },
+            { text: '/c4-refine', link: '/workflow/refine' },
+            { text: '/c4-polish', link: '/workflow/polish' },
             { text: '/c4-finish', link: '/workflow/finish' },
           ]
         }
