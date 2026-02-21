@@ -963,12 +963,12 @@ func TestCheckpoint_ExplicitLinkage_NoCPTask(t *testing.T) {
 	}
 }
 
-// TestMarkBlocked_NotFound_DoesNotCreateTask: MarkBlocked on non-existent task_id does not create a row.
+// TestMarkBlocked_NotFound_DoesNotCreateTask: MarkBlocked on non-existent task_id returns error and does not create a row.
 func TestMarkBlocked_NotFound_DoesNotCreateTask(t *testing.T) {
 	store, _ := newTestSQLiteStore(t)
 	err := store.MarkBlocked("T-NONE-0", "worker-1", "sig", 1, "err")
-	if err != nil {
-		t.Fatalf("MarkBlocked (no row) should not error: %v", err)
+	if err == nil {
+		t.Fatal("MarkBlocked on non-existent task should return error")
 	}
 	_, getErr := store.GetTask("T-NONE-0")
 	if getErr == nil {
