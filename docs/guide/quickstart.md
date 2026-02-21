@@ -62,7 +62,7 @@ When all tasks complete:
 /c4-finish
 ```
 
-This runs build → tests → installs binary → updates docs → commits.
+This runs: polish → build → tests → docs → commit.
 
 ---
 

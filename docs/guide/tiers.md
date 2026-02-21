@@ -7,9 +7,9 @@ CQ is distributed in three tiers. Choose based on your setup.
 **Local only. No external services required.**
 
 ```sh
-curl -fsSL .../install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/install.sh | sh
 # or explicitly:
-curl -fsSL .../install.sh | sh -s -- --tier solo
+curl -fsSL https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/install.sh | sh -s -- --tier solo
 ```
 
 Included features:
@@ -29,7 +29,7 @@ Best for: personal projects, offline environments, getting started.
 **Adds cloud sync, LLM Gateway, and EventBus.**
 
 ```sh
-curl -fsSL .../install.sh | sh -s -- --tier connected
+curl -fsSL https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/install.sh | sh -s -- --tier connected
 ```
 
 Additional features on top of `solo`:
@@ -56,7 +56,7 @@ Best for: teams, multi-machine setups, AI-powered workflows.
 **All features, including distributed job queue and desktop app.**
 
 ```sh
-curl -fsSL .../install.sh | sh -s -- --tier full
+curl -fsSL https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/install.sh | sh -s -- --tier full
 ```
 
 Additional features on top of `connected`:
@@ -90,5 +90,8 @@ Best for: production deployments, ML workflows, large teams.
 Starter configs for each tier are in the [`configs/`](https://github.com/PlayIdea-Lab/cq/tree/main/configs) directory:
 
 ```sh
-cp configs/connected.yaml ~/.c4/config.yaml
+# Download and use directly
+curl -fsSL https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/configs/solo.yaml > ~/.c4/config.yaml
+curl -fsSL https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/configs/connected.yaml > ~/.c4/config.yaml
+curl -fsSL https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/configs/full.yaml > ~/.c4/config.yaml
 ```
