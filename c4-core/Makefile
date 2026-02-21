@@ -4,7 +4,7 @@
 .PHONY: build test test-grpc lint vet clean proto-gen fmt help \
         build-solo build-connected build-full build-nightly \
         install-solo install-connected install-full install-nightly \
-        embed-skills
+        embed-skills build-cross
 
 # Build variables
 BINARY_NAME := c4
@@ -28,6 +28,22 @@ embed-skills:
 	rsync -rL $(REPO_ROOT)/.claude/skills/ cmd/c4/skills_src/
 	echo "$(shell git -C $(REPO_ROOT) rev-parse --short HEAD)" > cmd/c4/skills_src/.version
 	@echo "Skills embedded from $(REPO_ROOT)/.claude/skills/ ($(shell git -C $(REPO_ROOT) rev-parse --short HEAD))"
+
+
+# Cross-compilation target — output goes to dist/ for CI artifact collection
+# Usage: make build-cross GOOS=linux GOARCH=amd64 TIER=solo
+TIER_TAGS_solo      = skills_embed
+TIER_TAGS_connected = c0_drive c3_eventbus llm_gateway skills_embed
+TIER_TAGS_full      = c0_drive c3_eventbus c5_hub llm_gateway cdp gpu c1_messenger research skills_embed
+
+## build-cross: Cross-compile for target GOOS/GOARCH/TIER (used by CI)
+build-cross: embed-skills
+	@mkdir -p dist
+	GOOS=$(GOOS) GOARCH=$(GOARCH) go build $(LDFLAGS) \
+		-tags '$(TIER_TAGS_$(TIER))' \
+		-o dist/cq-$(TIER)-$(GOOS)-$(GOARCH) \
+		./cmd/c4/
+
 
 ## build: Build the c4 binary (full, all tags)
 build:
@@ -115,7 +131,7 @@ proto-gen:
 
 ## clean: Remove build artifacts
 clean:
-	rm -rf $(BUILD_DIR)
+	rm -rf $(BUILD_DIR) dist
 	rm -f coverage.out coverage.html
 
 ## tidy: Tidy and verify module dependencies

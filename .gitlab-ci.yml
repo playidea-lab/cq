@@ -1,0 +1,125 @@
+# GitLab CI — CQ Binary Release Pipeline
+#
+# Triggers on version tags (v*). Builds 9 binaries across 3 tiers × 3 platforms,
+# then uploads all artifacts to PlayIdea-Lab/cq GitHub Releases.
+#
+# Required CI variable (Settings → CI/CD → Variables):
+#   GH_TOKEN  — GitHub PAT with `repo` scope for PlayIdea-Lab/cq
+#               Mark as "Protected" so it's only available on protected tags.
+
+variables:
+  GIT_SUBMODULE_STRATEGY: recursive
+
+stages:
+  - check-env
+  - build
+  - release
+
+check-env:
+  stage: check-env
+  script:
+    - test -n "$GH_TOKEN" || { echo "GH_TOKEN not set — add it in Settings → CI/CD → Variables"; exit 1; }
+  only:
+    - /^v.*/
+
+.build-template: &build-template
+  stage: build
+  script:
+    - cd c4-core
+    - make embed-skills
+    - make build-cross GOOS=$GOOS GOARCH=$GOARCH TIER=$TIER
+  artifacts:
+    paths:
+      - c4-core/dist/
+    expire_in: 1 week
+  only:
+    - /^v.*/
+  needs:
+    - check-env
+
+# ── solo tier ────────────────────────────────────────────────
+build-solo-linux-amd64:
+  <<: *build-template
+  variables:
+    GOOS: linux
+    GOARCH: amd64
+    TIER: solo
+
+build-solo-linux-arm64:
+  <<: *build-template
+  variables:
+    GOOS: linux
+    GOARCH: arm64
+    TIER: solo
+
+build-solo-darwin-arm64:
+  <<: *build-template
+  variables:
+    GOOS: darwin
+    GOARCH: arm64
+    TIER: solo
+
+# ── connected tier ───────────────────────────────────────────
+build-connected-linux-amd64:
+  <<: *build-template
+  variables:
+    GOOS: linux
+    GOARCH: amd64
+    TIER: connected
+
+build-connected-linux-arm64:
+  <<: *build-template
+  variables:
+    GOOS: linux
+    GOARCH: arm64
+    TIER: connected
+
+build-connected-darwin-arm64:
+  <<: *build-template
+  variables:
+    GOOS: darwin
+    GOARCH: arm64
+    TIER: connected
+
+# ── full tier ────────────────────────────────────────────────
+build-full-linux-amd64:
+  <<: *build-template
+  variables:
+    GOOS: linux
+    GOARCH: amd64
+    TIER: full
+
+build-full-linux-arm64:
+  <<: *build-template
+  variables:
+    GOOS: linux
+    GOARCH: arm64
+    TIER: full
+
+build-full-darwin-arm64:
+  <<: *build-template
+  variables:
+    GOOS: darwin
+    GOARCH: arm64
+    TIER: full
+
+# ── GitHub Release ───────────────────────────────────────────
+release-github:
+  stage: release
+  script:
+    - |
+      gh release create "$CI_COMMIT_TAG" c4-core/dist/* \
+        --repo PlayIdea-Lab/cq \
+        --title "$CI_COMMIT_TAG"
+  needs:
+    - build-solo-linux-amd64
+    - build-solo-linux-arm64
+    - build-solo-darwin-arm64
+    - build-connected-linux-amd64
+    - build-connected-linux-arm64
+    - build-connected-darwin-arm64
+    - build-full-linux-amd64
+    - build-full-linux-arm64
+    - build-full-darwin-arm64
+  only:
+    - /^v.*/
