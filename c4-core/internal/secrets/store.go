@@ -146,6 +146,13 @@ func (s *Store) Close() error {
 }
 
 func initDB(db *sql.DB) error {
+	db.SetMaxOpenConns(1)
+	if _, err := db.Exec(`PRAGMA journal_mode=WAL`); err != nil {
+		return fmt.Errorf("WAL pragma: %w", err)
+	}
+	if _, err := db.Exec(`PRAGMA busy_timeout=5000`); err != nil {
+		return fmt.Errorf("busy_timeout pragma: %w", err)
+	}
 	_, err := db.Exec(`CREATE TABLE IF NOT EXISTS secrets (
 		key        TEXT    PRIMARY KEY,
 		nonce      BLOB    NOT NULL,
@@ -163,14 +170,24 @@ func loadOrCreateMasterKey(path string) ([32]byte, error) {
 	if envKey := os.Getenv("C4_MASTER_KEY"); envKey != "" {
 		b, err := hex.DecodeString(envKey)
 		if err != nil || len(b) != 32 {
+			for i := range b {
+				b[i] = 0
+			}
 			return key, fmt.Errorf("C4_MASTER_KEY must be 64 hex chars (32 bytes)")
 		}
 		copy(key[:], b)
+		for i := range b {
+			b[i] = 0
+		}
 		return key, nil
 	}
 
 	// Load existing key file
 	if data, err := os.ReadFile(path); err == nil {
+		// Verify permissions haven't been widened from the expected 0400.
+		if info, statErr := os.Stat(path); statErr == nil && info.Mode().Perm() != 0400 {
+			return key, fmt.Errorf("master key file has insecure permissions %04o (expected 0400)", info.Mode().Perm())
+		}
 		if len(data) != 32 {
 			return key, fmt.Errorf("master key file corrupt: expected 32 bytes, got %d", len(data))
 		}

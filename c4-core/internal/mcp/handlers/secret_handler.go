@@ -9,6 +9,9 @@ import (
 	"github.com/changmin/c4-core/internal/secrets"
 )
 
+// maxSecretValueBytes caps secret values to prevent misuse of the store as a data store.
+const maxSecretValueBytes = 64 * 1024 // 64 KB
+
 // RegisterSecretHandlers registers c4_secret_set, c4_secret_get, c4_secret_list, c4_secret_delete.
 // store must not be nil.
 func RegisterSecretHandlers(reg *mcp.Registry, store *secrets.Store) {
@@ -39,6 +42,9 @@ func RegisterSecretHandlers(reg *mcp.Registry, store *secrets.Store) {
 		}
 		if p.Key == "" || p.Value == "" {
 			return nil, fmt.Errorf("key and value are required")
+		}
+		if len(p.Value) > maxSecretValueBytes {
+			return nil, fmt.Errorf("value exceeds maximum size of %d bytes", maxSecretValueBytes)
 		}
 		if err := store.Set(p.Key, p.Value); err != nil {
 			return nil, err

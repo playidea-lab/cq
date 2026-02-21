@@ -14,6 +14,7 @@ import (
 	"github.com/changmin/c4-core/internal/bridge"
 	"github.com/changmin/c4-core/internal/knowledge"
 	"github.com/changmin/c4-core/internal/mcp"
+	"github.com/changmin/c4-core/internal/secrets"
 )
 
 // NOTE: The "mcp" subcommand is registered by fallback.go (mcpFallbackCmd)
@@ -66,6 +67,7 @@ type mcpServer struct {
 	initCtx        *initContext
 	knowledgeStore *knowledge.Store        // Go native knowledge store (Tier 2)
 	knowledgeUsage *knowledge.UsageTracker // usage tracking for 3-way RRF
+	secretStore    *secrets.Store          // global encrypted secret store (~/.c4/secrets.db)
 }
 
 // serve runs the stdio MCP server loop with concurrent request handling.
@@ -175,6 +177,9 @@ func (s *mcpServer) shutdown() {
 	}
 	if s.knowledgeStore != nil {
 		s.knowledgeStore.Close()
+	}
+	if s.secretStore != nil {
+		_ = s.secretStore.Close()
 	}
 	if s.db != nil {
 		_ = s.db.Close()

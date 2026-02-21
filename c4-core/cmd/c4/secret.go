@@ -136,11 +136,13 @@ func readHiddenInput(prompt string) (string, error) {
 		// Disable echo
 		old, err := unix.IoctlGetTermios(fd, ioctlGetTermios)
 		if err != nil {
+			fmt.Fprintln(os.Stderr, "warning: could not disable echo; input will be visible")
 			return readLine()
 		}
 		noEcho := *old
 		noEcho.Lflag &^= syscall.ECHO
 		if err := unix.IoctlSetTermios(fd, ioctlSetTermios, &noEcho); err != nil {
+			fmt.Fprintln(os.Stderr, "warning: could not disable echo; input will be visible")
 			return readLine()
 		}
 		defer func() {
@@ -159,6 +161,9 @@ func readLine() (string, error) {
 		if n > 0 {
 			if buf[0] == '\n' {
 				break
+			}
+			if buf[0] == '\r' {
+				continue // strip carriage return (Windows-style line endings)
 			}
 			line.WriteByte(buf[0])
 		}

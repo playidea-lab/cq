@@ -41,8 +41,12 @@ func TestSetGet(t *testing.T) {
 func TestSetOverwrite(t *testing.T) {
 	s := newTestStore(t)
 
-	s.Set("key", "v1")
-	s.Set("key", "v2")
+	if err := s.Set("key", "v1"); err != nil {
+		t.Fatalf("Set v1: %v", err)
+	}
+	if err := s.Set("key", "v2"); err != nil {
+		t.Fatalf("Set v2: %v", err)
+	}
 
 	got, _ := s.Get("key")
 	if got != "v2" {
@@ -61,9 +65,15 @@ func TestGetNotFound(t *testing.T) {
 func TestList(t *testing.T) {
 	s := newTestStore(t)
 
-	s.Set("b.key", "v")
-	s.Set("a.key", "v")
-	s.Set("c.key", "v")
+	if err := s.Set("b.key", "v"); err != nil {
+		t.Fatalf("Set b.key: %v", err)
+	}
+	if err := s.Set("a.key", "v"); err != nil {
+		t.Fatalf("Set a.key: %v", err)
+	}
+	if err := s.Set("c.key", "v"); err != nil {
+		t.Fatalf("Set c.key: %v", err)
+	}
 
 	keys, err := s.List()
 	if err != nil {
@@ -81,7 +91,9 @@ func TestList(t *testing.T) {
 func TestDelete(t *testing.T) {
 	s := newTestStore(t)
 
-	s.Set("k", "v")
+	if err := s.Set("k", "v"); err != nil {
+		t.Fatalf("Set: %v", err)
+	}
 	if err := s.Delete("k"); err != nil {
 		t.Fatalf("Delete: %v", err)
 	}
@@ -125,6 +137,51 @@ func TestMasterKeyFile(t *testing.T) {
 	}
 	if got != "hello" {
 		t.Errorf("got %q, want %q", got, "hello")
+	}
+}
+
+func TestCorruptMasterKey(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "s.db")
+	keyPath := filepath.Join(dir, "master.key")
+
+	// Write a key file with wrong size (corrupt)
+	if err := os.WriteFile(keyPath, []byte("tooshort"), 0400); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	_, err := secrets.NewWithPaths(dbPath, keyPath)
+	if err == nil {
+		t.Fatal("expected error for corrupt master key, got nil")
+	}
+}
+
+func TestWrongKeyDecryptionFailure(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "s.db")
+	key1Path := filepath.Join(dir, "key1.key")
+	key2Path := filepath.Join(dir, "key2.key")
+
+	// Write secret with key1
+	s1, err := secrets.NewWithPaths(dbPath, key1Path)
+	if err != nil {
+		t.Fatalf("open with key1: %v", err)
+	}
+	if err := s1.Set("k", "secret"); err != nil {
+		t.Fatalf("Set: %v", err)
+	}
+	s1.Close()
+
+	// Attempt to read with key2 (different auto-generated key)
+	s2, err := secrets.NewWithPaths(dbPath, key2Path)
+	if err != nil {
+		t.Fatalf("open with key2: %v", err)
+	}
+	defer s2.Close()
+
+	_, err = s2.Get("k")
+	if err == nil {
+		t.Fatal("expected decryption error with wrong key, got nil")
 	}
 }
 

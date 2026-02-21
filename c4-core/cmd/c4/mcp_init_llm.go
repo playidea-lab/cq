@@ -21,7 +21,7 @@ func initLLM(ctx *initContext) error {
 	if ctx.cfgMgr == nil || !ctx.cfgMgr.GetConfig().LLMGateway.Enabled {
 		return nil
 	}
-	gw := llm.NewGatewayFromConfig(toLLMGatewayConfig(ctx.cfgMgr.GetConfig()))
+	gw := llm.NewGatewayFromConfig(toLLMGatewayConfig(ctx.cfgMgr.GetConfig(), ctx.secretStore))
 	ctx.llmGateway = gw
 	handlers.RegisterLLMHandlers(ctx.reg, gw)
 	fmt.Fprintf(os.Stderr, "cq: LLM gateway enabled (%d providers)\n", gw.ProviderCount())

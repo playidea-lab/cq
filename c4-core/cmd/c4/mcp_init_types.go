@@ -15,6 +15,7 @@ import (
 	"github.com/changmin/c4-core/internal/mcp"
 	"github.com/changmin/c4-core/internal/mcp/handlers"
 	"github.com/changmin/c4-core/internal/research"
+	"github.com/changmin/c4-core/internal/secrets"
 	"github.com/changmin/c4-core/internal/serve"
 )
 
@@ -30,6 +31,7 @@ type initContext struct {
 	store       handlers.Store
 	proxy       *handlers.BridgeProxy
 	lazySidecar *bridge.LazyStarter
+	secretStore *secrets.Store // global secret store (~/.c4/secrets.db)
 
 	// Cloud (set during core init if enabled)
 	cloudTP        *cloud.TokenProvider

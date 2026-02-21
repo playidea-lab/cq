@@ -125,6 +125,16 @@ func newMCPServer() (*mcpServer, error) {
 		cloudTP = cloud.NewStaticTokenProvider("")
 	}
 
+	// Open global secret store early (used by toLLMGatewayConfig for API key fallback).
+	// Opened before knowledge/LLM init so the same instance can be reused throughout.
+	var secretStore *secrets.Store
+	if ss, secErr := secrets.New(); secErr != nil {
+		fmt.Fprintf(os.Stderr, "cq: secret store init failed: %v\n", secErr)
+	} else {
+		secretStore = ss
+		fmt.Fprintln(os.Stderr, "cq: secret store ready (~/.c4/secrets.db)")
+	}
+
 	// Create knowledge store (optional — native knowledge tools use this, Tier 2)
 	knowledgeDir := filepath.Join(projectDir, ".c4", "knowledge")
 	os.MkdirAll(knowledgeDir, 0755)
@@ -140,7 +150,7 @@ func newMCPServer() (*mcpServer, error) {
 		var embedder knowledge.Embedder
 		embDim := 1536
 		if cfgMgr != nil && cfgMgr.GetConfig().LLMGateway.Enabled {
-			embGateway := llm.NewGatewayFromConfig(toLLMGatewayConfig(cfgMgr.GetConfig()))
+			embGateway := llm.NewGatewayFromConfig(toLLMGatewayConfig(cfgMgr.GetConfig(), secretStore))
 			// Add embedding route if not configured
 			embGateway.Resolve("embedding", "")
 			embedder = llm.NewEmbeddingProvider(embGateway, embDim)
@@ -183,6 +193,7 @@ func newMCPServer() (*mcpServer, error) {
 		knowledgeStore:    knowledgeStore,
 		knowledgeSearcher: knowledgeSearcher,
 		knowledgeUsage:    knowledgeUsage,
+		secretStore:       secretStore,
 	}
 
 	// --- Phase 2: Run pre-store hooks (LLM, GPU, Research) ---
@@ -291,12 +302,9 @@ func newMCPServer() (*mcpServer, error) {
 	handlers.RegisterConfigHandler(reg, cfgMgr)
 	handlers.RegisterConfigSetHandler(reg, cfgMgr, projectDir)
 
-	// Register secret handlers (global ~/.c4/secrets.db)
-	if secretStore, secErr := secrets.New(); secErr != nil {
-		fmt.Fprintf(os.Stderr, "cq: secret store init failed: %v\n", secErr)
-	} else {
-		handlers.RegisterSecretHandlers(reg, secretStore)
-		fmt.Fprintln(os.Stderr, "cq: secret store ready (~/.c4/secrets.db)")
+	// Register secret handlers using the already-open store from ctx.
+	if ctx.secretStore != nil {
+		handlers.RegisterSecretHandlers(reg, ctx.secretStore)
 	}
 
 	// --- Phase 4: Run post-store hooks (C1, Drive, Hub, CDP, EventBus) ---
@@ -329,28 +337,23 @@ func newMCPServer() (*mcpServer, error) {
 		initCtx:        ctx,
 		knowledgeStore: knowledgeStore,
 		knowledgeUsage: knowledgeUsage,
+		secretStore:    secretStore,
 	}, nil
 }
 
 // toLLMGatewayConfig converts config.C4Config to llm.GatewayConfig,
 // breaking the llm→config import dependency.
 // Key resolution priority: config.api_key > config.api_key_env > secrets store (name.api_key).
-func toLLMGatewayConfig(cfg config.C4Config) llm.GatewayConfig {
-	// Open global secret store for fallback key lookup (best-effort, non-fatal).
-	var secretStore *secrets.Store
-	if ss, err := secrets.New(); err == nil {
-		secretStore = ss
-		defer ss.Close()
-	}
-
+// ss may be nil (e.g. if the secret store failed to open); fallback is silently skipped.
+func toLLMGatewayConfig(cfg config.C4Config, ss *secrets.Store) llm.GatewayConfig {
 	providers := make(map[string]llm.GatewayProviderConfig, len(cfg.LLMGateway.Providers))
 	for name, p := range cfg.LLMGateway.Providers {
 		apiKey := p.APIKey
 		if apiKey == "" && p.APIKeyEnv != "" {
 			apiKey = os.Getenv(p.APIKeyEnv)
 		}
-		if apiKey == "" && secretStore != nil {
-			if v, err := secretStore.Get(name + ".api_key"); err == nil {
+		if apiKey == "" && ss != nil {
+			if v, err := ss.Get(name + ".api_key"); err == nil {
 				apiKey = v
 			}
 		}
