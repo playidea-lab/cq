@@ -459,6 +459,85 @@ func TestSubmitMissingTaskID(t *testing.T) {
 	}
 }
 
+func TestSubmitInvalidStatus(t *testing.T) {
+	s := newMockStore()
+	reg := mcp.NewRegistry()
+	RegisterTaskHandlers(reg, s)
+
+	args := `{
+		"task_id": "T-001-0",
+		"commit_sha": "abc123",
+		"worker_id": "worker-test",
+		"validation_results": [{"name": "lint", "status": "unknown"}]
+	}`
+	_, err := reg.Call("c4_submit", json.RawMessage(args))
+	if err == nil {
+		t.Fatal("expected error for status=unknown")
+	}
+}
+
+func TestSubmitEmptyValidationResults(t *testing.T) {
+	s := newMockStore()
+	reg := mcp.NewRegistry()
+	RegisterTaskHandlers(reg, s)
+
+	args := `{
+		"task_id": "T-001-0",
+		"commit_sha": "abc123",
+		"worker_id": "worker-test",
+		"validation_results": []
+	}`
+	_, err := reg.Call("c4_submit", json.RawMessage(args))
+	if err == nil {
+		t.Fatal("expected error for empty validation_results")
+	}
+}
+
+func TestSubmitAbsentValidationResults(t *testing.T) {
+	s := newMockStore()
+	reg := mcp.NewRegistry()
+	RegisterTaskHandlers(reg, s)
+
+	// validation_results field absent entirely — should succeed
+	args := `{
+		"task_id": "T-001-0",
+		"commit_sha": "abc123",
+		"worker_id": "worker-test"
+	}`
+	result, err := reg.Call("c4_submit", json.RawMessage(args))
+	if err != nil {
+		t.Fatalf("unexpected error for absent validation_results: %v", err)
+	}
+	r, ok := result.(*SubmitResult)
+	if !ok {
+		t.Fatalf("result type = %T, want *SubmitResult", result)
+	}
+	if !r.Success {
+		t.Errorf("expected success=true for absent validation_results, got message: %s", r.Message)
+	}
+}
+
+func TestSubmitSchemaValidationResultsNotRequired(t *testing.T) {
+	s := newMockStore()
+	reg := mcp.NewRegistry()
+	RegisterTaskHandlers(reg, s)
+
+	// Verify the schema: validation_results must NOT be in required list
+	toolSchema, ok := reg.GetToolSchema("c4_submit")
+	if !ok {
+		t.Fatal("c4_submit tool not registered")
+	}
+	required, ok := toolSchema.InputSchema["required"].([]string)
+	if !ok {
+		t.Fatal("required not a []string")
+	}
+	for _, field := range required {
+		if field == "validation_results" {
+			t.Error("validation_results must NOT be in required list (it is optional)")
+		}
+	}
+}
+
 // --- c4_add_todo tests ---
 
 func TestAddTodoSuccess(t *testing.T) {
