@@ -144,8 +144,8 @@ C9 Knowledge — 지식 관리 (FTS5 + pgvector + Embedding + Usage + Ingestion)
 |------|----------|------------|
 | Go | **~1,436** | 26 packages (all pass) — c4-core ~1,262 + c5 174 |
 | Python | **697** | tests/unit/ |
-| Rust | **85** | src-tauri |
-| **합계** | **~2,218** | |
+| Rust | **92** | src-tauri |
+| **합계** | **~2,225** | |
 
 ### Monorepo 구조
 ```
@@ -619,7 +619,7 @@ Go MCP Server ──JSON-RPC/TCP──→ Python Sidecar (10 tools)
 
 ## C1 Messenger (c1/)
 
-> Tauri 2.x 통합 대시보드 메신저. ~9.5K LOC(Rust) + ~11.8K LOC(TS+CSS). 85개 테스트.
+> Tauri 2.x 통합 대시보드 메신저. ~9.5K LOC(Rust) + ~11.8K LOC(TS+CSS). 92개 테스트.
 
 ### 아키텍처
 - **Rust 백엔드**: `src-tauri/src/{commands,models,analytics,cloud,scanner,messaging,eventbus,lib}.rs`
