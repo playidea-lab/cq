@@ -1,6 +1,6 @@
-# C4 for Gemini CLI Playbook
+# CQ for Gemini CLI Playbook
 
-This directory defines the operational protocols for using Gemini CLI within the C4 project.
+This directory defines the operational protocols for using Gemini CLI within the CQ project.
 
 ## Core Principles
 

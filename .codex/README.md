@@ -1,6 +1,6 @@
-# C4 for Codex Playbook
+# CQ for Codex Playbook
 
-이 디렉토리는 Codex CLI에서 C4를 안정적으로 운용하기 위한 실행 규약입니다.
+이 디렉토리는 Codex CLI에서 CQ를 안정적으로 운용하기 위한 실행 규약입니다.
 
 ## 기본 원칙
 

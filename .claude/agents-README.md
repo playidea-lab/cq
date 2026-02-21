@@ -1,6 +1,6 @@
-# C4 Claude Code Agents
+# CQ Claude Code Agents
 
-This directory contains specialized Claude Code agents for the C4 project.
+This directory contains specialized Claude Code agents for the CQ project.
 
 ## Available Agents
 

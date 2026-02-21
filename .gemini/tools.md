@@ -1,6 +1,6 @@
 # Gemini CLI Tool Handbook
 
-This document defines the **correct usage patterns** for C4 project tools.
+This document defines the **correct usage patterns** for CQ project tools.
 Gemini agents must consult this guide before executing commands to avoid syntax errors.
 
 ## 1. Task Management (`c4`)

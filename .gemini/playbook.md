@@ -1,6 +1,6 @@
 # Gemini Operational Playbook (SOP)
 
-This playbook defines the **Standard Operating Procedures** for Gemini agents in the C4 project.
+This playbook defines the **Standard Operating Procedures** for Gemini agents in the CQ project.
 Follow these phases sequentially to ensure high-quality, safe, and verifiable work.
 
 ## Phase 1: Context & Assessment
