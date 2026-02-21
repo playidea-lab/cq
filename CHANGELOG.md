@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.2] - 2026-02-21
+
+### ✨ Features
+
+- **`c4_cdp_action` MCP 도구 추가** — Element-ref 기반 DOM 인터랙션
+  - `scan_elements`: DOM 스캔 → `data-cdp-ref` 속성 부여 → `ElementRef` 배열 반환
+  - `click` / `type` / `get_text`: ref ID로 요소 조작 (해상도 독립)
+  - SPA에서 ref가 DOM 업데이트 후에도 유지되어 raw JS보다 안정적
+  - Chrome 미연결 시 명확한 오류 메시지 + `CDP_DEBUG_URL` 환경변수 안내
+
+- **`c4_run_validation` → `config.yaml` SSOT 연결** (T-SSOT-002)
+  - `validation.lint` / `validation.unit` 설정이 `c4_run_validation`에 즉시 반영
+  - `SetValidationConfig` 패턴: init-time 주입, 기존 파일 기반 자동 탐지를 fallback으로 유지
+  - `strings.Fields` 파싱: `parts[0]` → Command, `parts[1:]` → Args (shell 미경유 → injection 안전)
+
+### 🔧 Chores
+
+- **`resolveHookModel` → `llm.ResolveAlias` 위임** (T-SSOT-001)
+  - 별도 alias 테이블 제거, 모델 ID가 `llm/models.go` 단일 소스에서 관리됨
+  - 이전 하드코딩: `sonnet-4-5`, `opus-4-5` → 현재: `sonnet-4-6`, `opus-4-6`
+
+- **`.mcp.json` gitignore** (T-SSOT-004)
+  - `infra/supabase/.mcp.json` → `**/.mcp.json` (전역 패턴)
+  - `.mcp.json`은 개발자별 절대 경로를 포함하므로 버전 관리에서 제외
+
+- **`config.yaml` 템플릿 개선** (T-SSOT-003)
+  - `serve` 섹션에 v0.9.0 신규 컴포넌트 추가: `eventsink`, `sse_subscriber`, `agent`
+  - `validation` 섹션에 따옴표 포함 인자 미지원 주의사항 주석 추가
+  - `allow_patterns` 기본값 추가: git/go/uv/ls/grep/cq 등 안전한 개발 명령 즉시 허용
+
+### 📚 Documentation
+
+- **`AGENTS.md`**: `.mcp.json` 개발자별 파일 안내 추가 (`git rm --cached` 마이그레이션 가이드)
+- **`mcp_init.go`**: `validCfg` 스냅샷 특성 주석 추가 (c4_config_set 변경은 재시작 후 반영)
+
 ## [0.9.1] - 2026-02-21
 
 ### 🐛 Bug Fixes
