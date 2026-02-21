@@ -51,6 +51,15 @@ func TestGoOverviewHasEditHint(t *testing.T) {
 	if hint != "Go file: use Edit tool for modifications (c4_replace_symbol_body not supported)" {
 		t.Errorf("unexpected _edit_hint value: %v", hint)
 	}
+
+	// functions[] 각 항목에도 _edit_hint 있어야 함
+	if fns, ok := m["functions"].([]map[string]any); ok {
+		for i, fn := range fns {
+			if fn["_edit_hint"] == nil {
+				t.Errorf("functions[%d] missing _edit_hint", i)
+			}
+		}
+	}
 }
 
 func TestDartFindSymbolHasEditHint(t *testing.T) {

@@ -155,7 +155,15 @@ func handleGoSymbolsOverview(absPath string) (any, error) {
 		return nil, err
 	}
 	result["success"] = true
-	result["_edit_hint"] = "Go file: use Edit tool for modifications (c4_replace_symbol_body not supported)"
+	hint := "Go file: use Edit tool for modifications (c4_replace_symbol_body not supported)"
+	result["_edit_hint"] = hint
+	for _, key := range []string{"functions", "methods", "structs", "interfaces", "types", "constants", "variables"} {
+		if items, ok := result[key].([]map[string]any); ok {
+			for _, item := range items {
+				item["_edit_hint"] = hint
+			}
+		}
+	}
 	return result, nil
 }
 
@@ -216,6 +224,14 @@ func handleDartSymbolsOverview(absPath string) (any, error) {
 		return nil, err
 	}
 	result["success"] = true
-	result["_edit_hint"] = "Dart file: use Edit tool for modifications (c4_replace_symbol_body not supported)"
+	hint := "Dart file: use Edit tool for modifications (c4_replace_symbol_body not supported)"
+	result["_edit_hint"] = hint
+	for _, key := range []string{"classes", "functions", "methods", "enums", "mixins", "extensions", "variables", "constants"} {
+		if items, ok := result[key].([]map[string]any); ok {
+			for _, item := range items {
+				item["_edit_hint"] = hint
+			}
+		}
+	}
 	return result, nil
 }
