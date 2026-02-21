@@ -7,6 +7,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-02-21
+
+### ✨ Features
+
+- **멀티 세션 격리 개선 3종** (T-ISO-001~003)
+  - **State Machine BEGIN IMMEDIATE**: `Transition()` 에 `db.Conn` + `BEGIN IMMEDIATE` 트랜잭션 적용
+    - `ErrStateChanged` / `ErrInvalidTransition` / `ErrDatabase` 에러 3종 분류
+    - 동시성 테스트 3개 추가 (`-race` 통과): `TestTransitionBeginImmediate`, `TestTransitionConcurrentStateChange`, `TestTransitionConcurrentRecovery`
+  - **Advisory Phase Lock** (`c4_phase_lock_acquire` / `c4_phase_lock_release`, 신규 MCP 도구 2개)
+    - `.c4/phase_locks/{phase}.lock` JSON 파일 기반, `polish` / `finish` 단계 보호
+    - Stale 판정 5개 시나리오 (PID 생존/사망/EPERM + cross-host 2h 임계)
+    - `/c4-polish` Phase 0 · `/c4-finish` Step 1에 lock check 통합
+  - **Makefile atomic install**: `install-*` 타겟 `cp` → `cp .tmp && mv || rm .tmp` 원자적 교체
+
+- **`cq serve` 컴포넌트 연동 완성**
+  - EventBus / GPU Scheduler / EventSink / HubPoller config 로드 + 자동 등록
+  - HubPoller: `NoopPublisher` fallback으로 nil publisher panic 제거
+
+- **`c4-plan` Phase 4.5 Worker 기반 Plan Critique Loop**
+  - 인라인 자가 비판 → 매 라운드 새 Worker(Task agent) 스폰 (confirmation bias 제거)
+  - 수렴 조건: CRITICAL == 0 AND HIGH == 0 (최대 3라운드)
+
+- **`c4-run` R-task 리뷰 Worker 자동 스폰**
+  - 준비된 R- 태스크는 `review` 모델(opus)로 별도 Worker 할당
+
+- **Hook Config SSOT 전환** (`.c4/hook-config.json`)
+  - `permission_reviewer` 설정을 MCP 서버 시작 시 자동 내보내기
+  - `hook-config.json` 우선, `~/.claude/hooks/*.conf` fallback
+  - `AutoApprove` / `AllowPatterns` / `BlockPatterns` 필드 추가
+
+### 🐛 Bug Fixes
+
+- **`serve/realtime.go`**: 클린 disconnect 시 backoff가 계속 증가하는 버그 수정
+  - backoff 증가를 error 분기 내로 이동 → 클린 재연결은 항상 1s로 리셋
+- **`serve.go`**: `config.New()` 실패 시 `cfgMgr` nil 역참조 패닉 방지 (nil guard 추가)
+- **`handlers/phase_lock.go`**: phase 파라미터 서버 측 allowlist 검증 누락 수정
+- **`state/phase_lock.go`**: `lockFile()` path traversal 취약점 — `validPhase()` allowlist 강제
+- **`fix(hook)`**: `mapfile` → `while-read` 교체 (bash 3.2 호환)
+- **`fix(review)`**: R-task auto-cascade 제거 — 실제 리뷰 Worker가 처리하도록
+
+### ♻️ Refactoring
+
+- `cq init`: `.conf` embed/생성 제거, `hook-config.json` 패턴으로 통일
+
+### 📚 Documentation
+
+- MCP 도구 수: 154 → 156 (`c4_phase_lock_acquire/release` +2)
+- Go 테스트 수: ~1,423 → ~1,430, 합계: ~2,205 → ~2,212
+
+---
+
 ## [0.7.0] - 2026-02-21
 
 ### ✨ Features
