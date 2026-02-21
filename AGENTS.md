@@ -109,10 +109,10 @@ C9 Knowledge — 지식 관리 (FTS5 + pgvector + Embedding + Usage + Ingestion)
 ### 테스트 현황
 | 언어 | 테스트 수 | 패키지/모듈 |
 |------|----------|------------|
-| Go | **~1,423** | 22 packages (all pass) — c4-core ~1,268 + c5 155 |
+| Go | **~1,430** | 22 packages (all pass) — c4-core ~1,275 + c5 155 |
 | Python | **697** | tests/unit/ |
 | Rust | **85** | src-tauri |
-| **합계** | **~2,205** | |
+| **합계** | **~2,212** | |
 
 ### Monorepo 구조
 ```
@@ -248,12 +248,13 @@ c4_lighthouse get <tool_name>
 
 ---
 
-## MCP 도구 빠른 참조 (112개 base, Hub 활성화 시 138개)
+## MCP 도구 빠른 참조 (114개 base, Hub 활성화 시 140개)
 
 > **도구 상세 사용법**: `c4_lighthouse get <tool_name>`으로 워크플로우, 예시, 관련 도구, 주의사항 조회
 
 ```
 상태/설정(6): c4_status, c4_start, c4_clear, c4_config_get, c4_config_set, c4_health
+Phase Lock(2): c4_phase_lock_acquire, c4_phase_lock_release
 태스크(7):  c4_add_todo, c4_get_task, c4_submit, c4_mark_blocked,
             c4_claim, c4_report, c4_task_list
 리뷰(3):    c4_checkpoint, c4_request_changes, c4_ensure_supervisor

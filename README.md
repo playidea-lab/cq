@@ -10,7 +10,7 @@ Plan, execute, review, and learn — automated end-to-end.
 
 ![Go](https://img.shields.io/badge/Go-1.22+-00ADD8?logo=go&logoColor=white)
 ![Python](https://img.shields.io/badge/Python-3.11+-3776AB?logo=python&logoColor=white)
-![Tools](https://img.shields.io/badge/MCP_Tools-154-blueviolet)
+![Tools](https://img.shields.io/badge/MCP_Tools-156-blueviolet)
 ![Tests](https://img.shields.io/badge/Tests-2%2C205+-brightgreen)
 ![License](https://img.shields.io/badge/License-Personal_Study-orange)
 
@@ -18,7 +18,7 @@ Plan, execute, review, and learn — automated end-to-end.
 
 ---
 
-CQ turns Claude Code into a full project management system. It provides **154 MCP tools** (112 base + 26 Hub + 16 tiered C7/C6/C8), a structured workflow engine, multi-lens code review, knowledge feedback loops, distributed job scheduling, and GPU-aware task management — all through natural language. Run the CLI with `cq`.
+CQ turns Claude Code into a full project management system. It provides **156 MCP tools** (114 base + 26 Hub + 16 tiered C7/C6/C8), a structured workflow engine, multi-lens code review, knowledge feedback loops, distributed job scheduling, and GPU-aware task management — all through natural language. Run the CLI with `cq`.
 
 ```
 You: /c4-plan "Add user authentication with JWT"
@@ -53,7 +53,7 @@ CQ breaks features into tasks, assigns them to workers (parallel) or claims them
 ## Architecture
 
 ```
-Claude Code ──stdio──▶ Go MCP Server (112 base + 26 Hub + Tiered C7/C6/C8 = 154 tools)
+Claude Code ──stdio──▶ Go MCP Server (114 base + 26 Hub + Tiered C7/C6/C8 = 156 tools)
                         │
                         ├── Go Native ──────── State, Tasks, Files, Git, Validation
                         ├── SQLite Store ───── Specs, Designs, Checkpoints, Artifacts
@@ -107,7 +107,7 @@ Restart Claude Code, then:
 
 ```bash
 cq doctor           # Verify installation (8 health checks)
-/c4-status          # Verify connection (154 tools registered)
+/c4-status          # Verify connection (156 tools registered)
 /c4-plan "feature"  # Start planning
 /c4-run             # Execute tasks
 ```
@@ -189,7 +189,7 @@ c4_lighthouse(action="promote", name="export_api")
 - **7 hooks** — Secret scanning, force-push prevention, auto-lint (Python/TypeScript)
 - **Economic mode** — Model routing presets (standard / economic / ultra-economic / quality)
 
-## MCP Tools (154)
+## MCP Tools (156)
 
 | Category | Count | Examples |
 |----------|-------|---------|
@@ -219,7 +219,7 @@ c4_lighthouse(action="promote", name="export_api")
 | SQL (`infra/`) | ~1.1K | — | ~1.1K |
 | **Total** | **~90.9K** | **~50.8K** | **~141.7K LOC** |
 
-**Tests:** Go 1,423 (c4-core 1,268 + c5 155) · Python 697 · Rust 85 → **~2,205 total**
+**Tests:** Go 1,430 (c4-core 1,275 + c5 155) · Python 697 · Rust 85 → **~2,212 total**
 
 ## Configuration
 
