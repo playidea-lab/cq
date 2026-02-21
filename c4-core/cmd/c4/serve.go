@@ -108,7 +108,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 	mgr := serve.NewManager()
 
 	// Register components based on config
-	ebComp := registerCoreServeComponents(mgr, cfg, home)
+	ebComp, gpuComp := registerCoreServeComponents(mgr, cfg, home)
 	registerEventSinkServeComponent(mgr, cfg, ebComp)
 	registerHubPollerServeComponent(mgr, cfg, ebComp)
 
@@ -123,6 +123,9 @@ func runServe(cmd *cobra.Command, args []string) error {
 	// HTTP health server
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", serve.HealthHandler(mgr))
+	if gpuComp != nil {
+		mux.Handle("/daemon/", http.StripPrefix("/daemon", gpuComp.Handler()))
+	}
 
 	httpServer := &http.Server{
 		Addr:    fmt.Sprintf("127.0.0.1:%d", servePort),
