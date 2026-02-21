@@ -591,7 +591,7 @@ func (c *CloudStore) Checkpoint(checkpointID, decision, notes string, requiredCh
 	}
 
 	switch decision {
-	case "APPROVE":
+	case "APPROVE", "APPROVE_FINAL":
 		result.NextAction = "continue"
 	case "REQUEST_CHANGES":
 		result.NextAction = "apply_changes"

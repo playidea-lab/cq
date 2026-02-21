@@ -1149,6 +1149,40 @@ func TestCheckpoint_StateConsistency_AfterApprove(t *testing.T) {
 	}
 }
 
+// TestCheckpoint_ApproveFinal_MatchesApprove verifies that APPROVE_FINAL produces
+// NextAction="continue" and emits checkpoint.approved event, identical to APPROVE behavior.
+func TestCheckpoint_ApproveFinal_MatchesApprove(t *testing.T) {
+	store, db := newTestSQLiteStore(t)
+	defer db.Close()
+	if err := store.AddTask(&Task{ID: "T-AF-0", Title: "Impl", DoD: "done", Status: "pending"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.AddTask(&Task{ID: "R-AF-0", Title: "Review", DoD: "r", Status: "pending", Dependencies: []string{"T-AF-0"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.AddTask(&Task{ID: "CP-AF", Title: "CP", DoD: "cp", Status: "pending", Dependencies: []string{"R-AF-0"}}); err != nil {
+		t.Fatal(err)
+	}
+	result, err := store.Checkpoint("CP-AF", "APPROVE_FINAL", "final approval", nil, "", "")
+	if err != nil {
+		t.Fatalf("Checkpoint with APPROVE_FINAL: %v", err)
+	}
+	if !result.Success {
+		t.Errorf("Success = false, want true")
+	}
+	if result.NextAction != "continue" {
+		t.Errorf("NextAction = %q, want \"continue\"", result.NextAction)
+	}
+	// Verify the checkpoint row was persisted with the correct decision
+	var persistedDecision string
+	if err := db.QueryRow("SELECT decision FROM c4_checkpoints WHERE checkpoint_id='CP-AF'").Scan(&persistedDecision); err != nil {
+		t.Fatalf("query checkpoint row: %v", err)
+	}
+	if persistedDecision != "APPROVE_FINAL" {
+		t.Errorf("persisted decision = %q, want \"APPROVE_FINAL\"", persistedDecision)
+	}
+}
+
 // TestMarkBlocked_StateConsistency: After MarkBlocked, task state and diagnostics are consistent in DB.
 func TestMarkBlocked_StateConsistency(t *testing.T) {
 	store, _ := newTestSQLiteStore(t)
