@@ -109,10 +109,10 @@ C9 Knowledge — 지식 관리 (FTS5 + pgvector + Embedding + Usage + Ingestion)
 ### 테스트 현황
 | 언어 | 테스트 수 | 패키지/모듈 |
 |------|----------|------------|
-| Go | **~1,430** | 22 packages (all pass) — c4-core ~1,275 + c5 155 |
+| Go | **~1,651** | 26 packages (all pass) — c4-core ~1,477 + c5 174 |
 | Python | **697** | tests/unit/ |
 | Rust | **85** | src-tauri |
-| **합계** | **~2,212** | |
+| **합계** | **~2,433** | |
 
 ### Monorepo 구조
 ```
@@ -336,7 +336,7 @@ CP-001:    체크포인트
 
 ## Go Core (c4-core/) — Primary MCP Server
 
-> Go 기반 MCP 서버. ~45.0K LOC(src) + ~38.7K LOC(test). ~1,295개 테스트, 25 패키지.
+> Go 기반 MCP 서버. ~45.0K LOC(src) + ~38.7K LOC(test). ~1,477개 테스트, 26 패키지.
 
 ### 아키텍처
 ```
