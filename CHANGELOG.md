@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-02-22
+
+### ✨ Features
+- **eventbus**: C7 Observe → C3 EventBus 연결 — package-level publisher setter (`SetEventBus`), `tool.called` 이벤트 발행 (`c2f217d`)
+- **eventbus**: C6 Guard → C3 EventBus 연결 — ActionDeny 시 `guard.denied` 이벤트 발행 (`2ce1df8`)
+- **eventbus**: C8 Gate → C3 EventBus bridge — `task.completed`/`hub.job.completed` 구독 후 WebhookManager 트리거 (`adc7cdc`)
+- **workflow**: c4-finish quality gate system — DB 기반 polish gate 검증, 세션 메모리 의존 제거 (`91192ff`)
+
+### 📚 Documentation
+- **agents**: C3 EventBus 이벤트 종류 16종 → 18종 (`tool.called`, `guard.denied` 추가) (`de3cf84`)
+
+### 🔧 Chores
+- **user**: submodule 업데이트 (docs: cloud config, polish 설치/사용법, 전체 문서 리뷰 수정)
+
+---
+
 ## [0.13.0] - 2026-02-22
 
 ### ✨ Features
