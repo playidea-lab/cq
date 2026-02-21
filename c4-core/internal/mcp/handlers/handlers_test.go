@@ -706,6 +706,60 @@ func TestCheckpointApprove(t *testing.T) {
 	}
 }
 
+func TestCheckpointApproveFinal(t *testing.T) {
+	store := newMockStore()
+	reg := mcp.NewRegistry()
+	RegisterTrackingHandlers(reg, store)
+
+	args := `{
+		"checkpoint_id": "CP-002",
+		"decision": "APPROVE_FINAL",
+		"notes": "Final approval, project complete"
+	}`
+	result, err := reg.Call("c4_checkpoint", json.RawMessage(args))
+	if err != nil {
+		t.Fatalf("unexpected error for APPROVE_FINAL: %v", err)
+	}
+
+	r, ok := result.(map[string]any)
+	if !ok {
+		t.Fatalf("result type = %T, want map[string]any", result)
+	}
+	if success, _ := r["success"].(bool); !success {
+		t.Error("expected success=true for APPROVE_FINAL")
+	}
+
+	if len(store.checkpointCalls) != 1 {
+		t.Fatalf("expected 1 checkpoint call, got %d", len(store.checkpointCalls))
+	}
+	call := store.checkpointCalls[0]
+	if call.decision != "APPROVE_FINAL" {
+		t.Errorf("decision = %q, want %q", call.decision, "APPROVE_FINAL")
+	}
+}
+
+func TestCheckpointAllValidDecisions(t *testing.T) {
+	validDecisions := []string{"APPROVE", "APPROVE_FINAL", "REQUEST_CHANGES", "REPLAN"}
+
+	for _, decision := range validDecisions {
+		t.Run(decision, func(t *testing.T) {
+			store := newMockStore()
+			reg := mcp.NewRegistry()
+			RegisterTrackingHandlers(reg, store)
+
+			args := fmt.Sprintf(`{
+				"checkpoint_id": "CP-001",
+				"decision": %q,
+				"notes": "test"
+			}`, decision)
+			_, err := reg.Call("c4_checkpoint", json.RawMessage(args))
+			if err != nil {
+				t.Fatalf("unexpected error for decision %q: %v", decision, err)
+			}
+		})
+	}
+}
+
 func TestCheckpointInvalidDecision(t *testing.T) {
 	store := newMockStore()
 	reg := mcp.NewRegistry()

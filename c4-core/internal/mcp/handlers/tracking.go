@@ -23,7 +23,7 @@ type reportArgs struct {
 // checkpointArgs is the input for c4_checkpoint.
 type checkpointArgs struct {
 	CheckpointID    string   `json:"checkpoint_id"`
-	Decision        string   `json:"decision"` // "APPROVE", "REQUEST_CHANGES", "REPLAN"
+	Decision        string   `json:"decision"` // "APPROVE", "APPROVE_FINAL", "REQUEST_CHANGES", "REPLAN"
 	Notes           string   `json:"notes"`
 	RequiredChanges []string `json:"required_changes,omitempty"`
 	TargetTaskID    string   `json:"target_task_id,omitempty"`   // explicit linkage for attribution (no latest-in_progress heuristic)
@@ -85,7 +85,7 @@ func RegisterTrackingHandlers(reg *mcp.Registry, store Store) {
 			"type": "object",
 			"properties": map[string]any{
 				"checkpoint_id":    map[string]any{"type": "string"},
-				"decision":         map[string]any{"type": "string", "enum": []string{"APPROVE", "REQUEST_CHANGES", "REPLAN"}},
+				"decision":         map[string]any{"type": "string", "enum": []string{"APPROVE", "APPROVE_FINAL", "REQUEST_CHANGES", "REPLAN"}},
 				"notes":            map[string]any{"type": "string"},
 				"required_changes": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "List of required changes (for REQUEST_CHANGES)"},
 				"target_task_id":   map[string]any{"type": "string", "description": "Explicit target implementation task for attribution (optional)"},
@@ -214,10 +214,10 @@ func handleCheckpoint(store Store, rawArgs json.RawMessage) (any, error) {
 
 	// Validate decision value
 	switch args.Decision {
-	case "APPROVE", "REQUEST_CHANGES", "REPLAN":
-		// valid
+	case "APPROVE", "APPROVE_FINAL", "REQUEST_CHANGES", "REPLAN":
+		// valid; APPROVE_FINAL behaves identically to APPROVE (same state transition)
 	default:
-		return nil, fmt.Errorf("invalid decision: %s (must be APPROVE, REQUEST_CHANGES, or REPLAN)", args.Decision)
+		return nil, fmt.Errorf("invalid decision: %s (must be APPROVE, APPROVE_FINAL, REQUEST_CHANGES, or REPLAN)", args.Decision)
 	}
 
 	cpResult, err := store.Checkpoint(args.CheckpointID, args.Decision, args.Notes, args.RequiredChanges, args.TargetTaskID, args.TargetReviewID)
