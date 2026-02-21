@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 // shortTempDir creates a short temp dir under /tmp to avoid Unix socket path
@@ -157,6 +158,94 @@ func TestEBComp_StopIdempotent(t *testing.T) {
 	}
 	if err := c.Stop(ctx); err != nil {
 		t.Fatalf("second Stop failed: %v", err)
+	}
+}
+
+// TestEBComp_HealthCacheHit verifies that consecutive Health() calls within 5s
+// return the cached result without issuing a new gRPC connection.
+func TestEBComp_HealthCacheHit(t *testing.T) {
+	dataDir := shortTempDir(t)
+	c := NewEventBusComponent(EventBusConfig{DataDir: dataDir})
+
+	ctx := context.Background()
+	if err := c.Start(ctx); err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+	defer c.Stop(ctx)
+
+	// First call — populates cache.
+	h1 := c.Health()
+	if h1.Status != "ok" {
+		t.Fatalf("first Health() = %q, want %q (detail: %s)", h1.Status, "ok", h1.Detail)
+	}
+	cachedAt := c.healthCache.at
+
+	// Second call — must hit cache (same timestamp).
+	h2 := c.Health()
+	if h2.Status != h1.Status {
+		t.Errorf("second Health() = %q, want %q (cache miss?)", h2.Status, h1.Status)
+	}
+	if c.healthCache.at != cachedAt {
+		t.Error("cache timestamp changed on second call — cache miss occurred")
+	}
+
+	// Third call — must still hit cache.
+	h3 := c.Health()
+	if h3.Status != h1.Status {
+		t.Errorf("third Health() = %q, want %q (cache miss?)", h3.Status, h1.Status)
+	}
+	if c.healthCache.at != cachedAt {
+		t.Error("cache timestamp changed on third call — cache miss occurred")
+	}
+}
+
+// TestEBComp_HealthCacheExpiry verifies that after 5s the cache is refreshed.
+func TestEBComp_HealthCacheExpiry(t *testing.T) {
+	dataDir := shortTempDir(t)
+	c := NewEventBusComponent(EventBusConfig{DataDir: dataDir})
+
+	ctx := context.Background()
+	if err := c.Start(ctx); err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+	defer c.Stop(ctx)
+
+	// First call — populates cache.
+	h1 := c.Health()
+	if h1.Status != "ok" {
+		t.Fatalf("first Health() = %q, want %q (detail: %s)", h1.Status, "ok", h1.Detail)
+	}
+
+	// Artificially expire the cache by backdating the timestamp.
+	c.healthMu.Lock()
+	c.healthCache.at = time.Now().Add(-6 * time.Second)
+	c.healthMu.Unlock()
+
+	// Next call — must refresh (new timestamp).
+	beforeRefresh := time.Now()
+	h2 := c.Health()
+	if h2.Status != "ok" {
+		t.Errorf("refreshed Health() = %q, want %q (detail: %s)", h2.Status, "ok", h2.Detail)
+	}
+	if !c.healthCache.at.After(beforeRefresh) {
+		t.Error("cache timestamp not updated after expiry")
+	}
+}
+
+// TestEBComp_HealthCacheFirstCall verifies that the first call (at.IsZero())
+// immediately issues a gRPC call (no cache bypass or panic).
+func TestEBComp_HealthCacheFirstCall(t *testing.T) {
+	dataDir := shortTempDir(t)
+	c := NewEventBusComponent(EventBusConfig{DataDir: dataDir})
+
+	// Before Start: cache is zero, doHealth returns "not started".
+	h := c.Health()
+	if h.Status != "error" {
+		t.Errorf("Health() before start = %q, want %q", h.Status, "error")
+	}
+	// Cache should now be populated with the "not started" result.
+	if c.healthCache.at.IsZero() {
+		t.Error("cache.at should not be zero after first Health() call")
 	}
 }
 
