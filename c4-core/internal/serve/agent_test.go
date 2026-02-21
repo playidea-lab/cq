@@ -584,3 +584,52 @@ func TestAgent_PostMessage(t *testing.T) {
 	}
 }
 
+// --- Stop() context-awareness tests ---
+
+func TestAgent_Stop_NoGoroutines_ReturnsImmediately(t *testing.T) {
+	agent := NewAgent(AgentConfig{WorkerID: "test-worker"})
+	// No goroutines running — Stop should return immediately even with a tight deadline.
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	done := make(chan error, 1)
+	go func() { done <- agent.Stop(ctx) }()
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Errorf("Stop() error = %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Stop() blocked for >2s with no goroutines")
+	}
+}
+
+func TestAgent_Stop_CancelledCtx_ReturnsBeforeWg(t *testing.T) {
+	agent := NewAgent(AgentConfig{WorkerID: "test-worker"})
+
+	// Simulate an in-flight goroutine that will never finish.
+	agent.wg.Add(1)
+	agent.inFlight.Add(1)
+	defer func() {
+		// Clean up: release the WaitGroup after the test so the leaked goroutine exits.
+		agent.wg.Done()
+		agent.inFlight.Add(-1)
+	}()
+
+	// Stop with an already-cancelled context — must return within a short time.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // already cancelled
+
+	start := time.Now()
+	err := agent.Stop(ctx)
+	elapsed := time.Since(start)
+
+	if err != nil {
+		t.Errorf("Stop() error = %v", err)
+	}
+	if elapsed > 2*time.Second {
+		t.Errorf("Stop() took %v with cancelled ctx, want <2s", elapsed)
+	}
+}
+
