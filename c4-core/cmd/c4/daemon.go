@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/changmin/c4-core/internal/daemon"
+	"github.com/changmin/c4-core/internal/serve"
 	"github.com/spf13/cobra"
 )
 
@@ -61,6 +62,12 @@ func init() {
 }
 
 func runDaemon(cmd *cobra.Command, args []string) error {
+	// Deprecation warning: prefer cq serve when it is already running
+	if serve.IsServeRunning() {
+		fmt.Fprintln(os.Stderr, "WARNING: cq serve is running. GPU scheduling is managed by serve.")
+		fmt.Fprintln(os.Stderr, "Consider using 'cq serve' instead of 'cq daemon'.")
+	}
+
 	// Resolve data directory
 	dataDir := daemonDataDir
 	if dataDir == "" {

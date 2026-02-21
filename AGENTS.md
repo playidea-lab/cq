@@ -462,6 +462,34 @@ cq doctor --fix        # 자동 수정 가능한 문제 해결 시도
 - `--fix`: broken symlink 제거 등 안전한 자동 수정 (수정 후 WARN으로 표시)
 - `--json`: 구조화된 JSON 배열 출력 (name, status, message, fix 필드)
 
+### cq serve (통합 데몬)
+
+`cq daemon`의 후계자. GPU/CPU 작업 스케줄러를 포함한 여러 서비스 컴포넌트를 단일 프로세스로 실행합니다.
+
+```bash
+cq serve               # 기본 포트 :4140 에서 시작
+cq serve --port 4141   # 포트 지정
+```
+
+| 컴포넌트 | 경로 | 설명 |
+|----------|------|------|
+| health | `GET /health` | 서버 헬스 체크 |
+| gpu | `GET/POST /jobs/*, /gpu/*` | GPU/CPU 작업 스케줄러 (daemon 패키지 래핑) |
+
+**PID 파일**: `~/.c4/serve/serve.pid` (포트 `:4140`)
+
+**마이그레이션 가이드** (`cq daemon` → `cq serve`):
+
+| 기존 | 대체 |
+|------|------|
+| `cq daemon` | `cq serve` |
+| `cq daemon --port 7123` | `cq serve --port 7123` |
+| `cq daemon stop` | `cq serve stop` (예정) 또는 `POST /serve/stop` |
+| `cq daemon --data-dir` | `cq serve --data-dir` |
+
+- `cq daemon`은 하위 호환을 위해 유지되지만, `cq serve`가 실행 중이면 시작 시 경고를 출력합니다.
+- **감지 기준**: `~/.c4/serve/serve.pid` 존재 + 프로세스 생존 + `localhost:4140/health` 응답 200
+
 ### 주요 설정 섹션 (.c4/config.yaml)
 
 | 섹션 | 설명 |
