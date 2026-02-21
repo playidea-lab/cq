@@ -11,11 +11,11 @@ import (
 	"github.com/changmin/c4-core/internal/task"
 )
 
-// completeReviewTask marks the paired R-task as done when a T-task completes.
-// Returns the review task ID if cascaded, empty string otherwise.
+// completeReviewTask returns the paired R-task ID if it exists as pending,
+// leaving it for a real review Worker to process (no auto-cascade).
 // Uses ParseTaskID + ReviewID so the review ID is collision-safe and consistent with
 // validated task ID grammar; non-conforming taskID fails fast (ValidateTaskID) and is skipped.
-// Best-effort: DB errors are logged but don't block task completion.
+// Best-effort: DB errors don't block task completion.
 func (s *SQLiteStore) completeReviewTask(taskID string) string {
 	if task.ValidateTaskID(taskID) != nil {
 		return ""
@@ -25,23 +25,13 @@ func (s *SQLiteStore) completeReviewTask(taskID string) string {
 		return ""
 	}
 	reviewID := task.ReviewID(baseID, version)
-	result, err := s.db.Exec(
-		`UPDATE c4_tasks SET status='done', worker_id='auto-cascade', updated_at=CURRENT_TIMESTAMP
-		 WHERE task_id=? AND status IN ('pending','in_progress')`,
-		reviewID,
-	)
-	if err != nil {
+	var status string
+	if err := s.db.QueryRow(`SELECT status FROM c4_tasks WHERE task_id=?`, reviewID).Scan(&status); err != nil {
 		return ""
 	}
-	if n, _ := result.RowsAffected(); n > 0 {
-		s.logTrace("review_cascade", "system", reviewID,
-			fmt.Sprintf("Auto-completed review for %s", taskID))
-		s.notifyEventBus("task.updated", map[string]any{
-			"task_id":         reviewID,
-			"status":         "done",
-			"previous_status": "pending",
-			"worker_id":      "auto-cascade",
-		})
+	if status == "pending" || status == "in_progress" {
+		s.logTrace("review_pending", "system", reviewID,
+			fmt.Sprintf("Review task %s awaiting worker for %s", reviewID, taskID))
 		return reviewID
 	}
 	return ""

@@ -294,7 +294,7 @@ func TestSubmitTask_CascadeReview(t *testing.T) {
 	store, db := newTestSQLiteStore(t)
 	defer db.Close()
 
-	// Add T-task and its paired R-task
+	// Add T-task and its paired R-task (review_required=true scenario)
 	if err := store.AddTask(&Task{ID: "T-010-0", Title: "Impl", DoD: "done", Status: "pending"}); err != nil {
 		t.Fatal(err)
 	}
@@ -317,13 +317,13 @@ func TestSubmitTask_CascadeReview(t *testing.T) {
 		t.Fatalf("PendingReview = %q, want R-010-0", result.PendingReview)
 	}
 
-	// R-task should be auto-completed
+	// R-task should stay pending for a real review Worker (no auto-cascade)
 	review, err := store.GetTask("R-010-0")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if review.Status != "done" {
-		t.Fatalf("R-task status = %q, want done", review.Status)
+	if review.Status != "pending" {
+		t.Fatalf("R-task status = %q, want pending (review Worker must process it)", review.Status)
 	}
 }
 
@@ -346,12 +346,13 @@ func TestReportTask_CascadeReview(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// R-task should stay pending for a real review Worker (no auto-cascade)
 	review, err := store.GetTask("R-011-0")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if review.Status != "done" {
-		t.Fatalf("R-task status = %q, want done", review.Status)
+	if review.Status != "pending" {
+		t.Fatalf("R-task status = %q, want pending (review Worker must process it)", review.Status)
 	}
 }
 
@@ -406,6 +407,72 @@ func TestCompleteReviewTask_AlreadyDone(t *testing.T) {
 	// Already done R-task should not be re-cascaded
 	if result.PendingReview != "" {
 		t.Fatalf("PendingReview = %q, want empty (already done)", result.PendingReview)
+	}
+}
+
+// TestSubmitTask_ReviewRequiredTrue verifies that when a T-task has a paired R-task
+// (review_required=true), the R-task stays pending after SubmitTask so a real review
+// Worker can be assigned.
+func TestSubmitTask_ReviewRequiredTrue(t *testing.T) {
+	store, db := newTestSQLiteStore(t)
+	defer db.Close()
+
+	if err := store.AddTask(&Task{ID: "T-100-0", Title: "Impl", DoD: "done", Status: "pending"}); err != nil {
+		t.Fatal(err)
+	}
+	// Paired R-task simulates review_required=true
+	if err := store.AddTask(&Task{ID: "R-100-0", Title: "Review", DoD: "done", Status: "pending", Dependencies: []string{"T-100-0"}}); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := store.AssignTask("worker-1"); err != nil {
+		t.Fatal(err)
+	}
+	result, err := store.SubmitTask("T-100-0", "worker-1", "sha-rev-true", "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Success {
+		t.Fatalf("submit failed: %s", result.Message)
+	}
+	// PendingReview must be set so caller knows R-task needs a Worker
+	if result.PendingReview != "R-100-0" {
+		t.Fatalf("PendingReview = %q, want R-100-0", result.PendingReview)
+	}
+	// R-task must remain pending — not auto-cascaded to done
+	review, err := store.GetTask("R-100-0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if review.Status != "pending" {
+		t.Fatalf("R-task status = %q, want pending (review Worker must process it)", review.Status)
+	}
+}
+
+// TestSubmitTask_ReviewRequiredFalse verifies that when a T-task has no paired R-task
+// (review_required=false), SubmitTask succeeds with empty PendingReview.
+func TestSubmitTask_ReviewRequiredFalse(t *testing.T) {
+	store, db := newTestSQLiteStore(t)
+	defer db.Close()
+
+	// No R-task created — simulates review_required=false
+	if err := store.AddTask(&Task{ID: "T-101-0", Title: "Impl", DoD: "done", Status: "pending"}); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := store.AssignTask("worker-1"); err != nil {
+		t.Fatal(err)
+	}
+	result, err := store.SubmitTask("T-101-0", "worker-1", "sha-rev-false", "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Success {
+		t.Fatalf("submit failed: %s", result.Message)
+	}
+	// No R-task exists — PendingReview must be empty
+	if result.PendingReview != "" {
+		t.Fatalf("PendingReview = %q, want empty (no review task)", result.PendingReview)
 	}
 }
 
