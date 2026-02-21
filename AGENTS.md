@@ -747,7 +747,7 @@ pattern_suggest ← distill ← autoRecordKnowledge ← Worker 완료 (handoff)
 - **v3**: ToggleRule, ListLogs, GetStats, ReplayEvents, Embedded auto-start
 - **v4**: correlation_id, DLQ, Filter v2 ($eq/$ne/$gt/$lt/$in/$regex/$exists), WebSocket bridge, HMAC-SHA256 webhook
 
-### 이벤트 종류 (16종)
+### 이벤트 종류 (18종)
 ```
 task.completed, task.updated, task.blocked, task.created
 checkpoint.approved, checkpoint.rejected
@@ -755,6 +755,8 @@ review.changes_requested
 validation.passed, validation.failed
 knowledge.recorded, knowledge.searched
 hub.job.completed, hub.job.failed, hub.worker.started, hub.worker.offline
+tool.called       ← C7 Observe가 발행 (tool name, latency_ms, error bool)
+guard.denied      ← C6 Guard가 발행 (ActionDeny 시)
 ```
 
 ---
