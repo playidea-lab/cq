@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strings"
 	"testing"
 	"time"
 )
@@ -212,8 +213,8 @@ func TestTypeByRef_ValidationErrors(t *testing.T) {
 	})
 	t.Run("empty text", func(t *testing.T) {
 		_, err := r.TypeByRef(ctx, "http://localhost:9222", "c4r-0", "", "", 0)
-		if err == nil {
-			t.Fatal("expected error for empty text")
+		if err == nil || !strings.Contains(err.Error(), "text is required") {
+			t.Fatalf("expected 'text is required' error, got: %v", err)
 		}
 	})
 	t.Run("remote url rejected", func(t *testing.T) {

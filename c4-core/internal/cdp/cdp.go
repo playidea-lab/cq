@@ -276,6 +276,9 @@ func (r *Runner) TypeByRef(ctx context.Context, debugURL, ref, text, targetURL s
 	if err := validateRef(ref); err != nil {
 		return nil, err
 	}
+	if text == "" {
+		return nil, fmt.Errorf("cdp: text is required for type action")
+	}
 	selector := fmt.Sprintf(`[data-cdp-ref="%s"]`, ref) // ref validated: ^c4r-\d+$, safe to embed
 	start := time.Now()
 	if err := r.doActions(ctx, debugURL, targetURL, resolveTimeout(&RunOptions{TimeoutSeconds: timeoutSeconds}),
