@@ -751,12 +751,24 @@ Summarize the generated plan and confirm with user.
 - Checkpoint count
 - Validation strategy
 - Task list per phase
-- Next steps (/c4-run, /c4-status)
+- Next steps (전체 실행 플로우 포함)
 
 **Confirmation**:
-- "Proceed" -> guide to /c4-run
+- "Proceed" -> 아래 전체 플로우를 안내하고 `/c4-run` 시작 유도
 - "Modify" -> ask which part
 - "Cancel" -> delete tasks, restart
+
+**전체 실행 플로우 (반드시 이 순서로 안내)**:
+```
+/c4-run          # Worker 스폰 → 태스크 실행
+/c4-checkpoint   # (CP 도달 시) 체크포인트 리뷰
+/c4-refine       # (checkpoint 이후) 품질 수렴 (CRITICAL+HIGH=0)
+/c4-polish       # (refine 이후) 수정사항 0까지 정제 ← ⚠️ 빠트리기 쉬움
+/c4-finish       # 빌드 검증 + 바이너리 설치 + 커밋
+```
+
+> ⚠️ **Polish는 Finish 직전 필수 단계다.** `/c4-finish`는 Step 0에서 `polish gate` DB 레코드가 없으면 중단한다.
+> c4-run auto-finish 루틴도 polish → finish 순서로 자동 실행됨.
 
 ### Validation Checklist (must pass before confirmation)
 

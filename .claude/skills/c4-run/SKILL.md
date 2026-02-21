@@ -295,7 +295,10 @@ if single_round:
 ## One-round mode (--single)
 
 Workers run once; no auto-respawn.
-Monitor: /c4-status. When done, run `/c4-run` again for more or `/c4-finish` when all complete.
+Monitor: /c4-status. When done, run `/c4-run` again for more or
+`/c4-polish` → `/c4-finish` when all complete.
+
+> ⚠️ `/c4-finish` 전에 반드시 `/c4-polish`를 먼저 실행할 것.
 """)
 else:
     # Default: Continuous — monitor and respawn until queue empty
@@ -392,8 +395,11 @@ Ctrl+C to interrupt.
 
     print("🏁 Continuous mode ended")
 
-    # Auto-finish: build + test + install + commit
-    print("\n🏁 All tasks done — running finish routine...")
+    # Auto-polish → finish: quality loop first, then finalize
+    print("\n🔁 All tasks done — running polish loop first...")
+    Skill("c4-polish")   # ← 수정사항 0까지 수렴 (MANDATORY)
+
+    print("\n🏁 Polish complete — running finish routine...")
     Skill("c4-finish")
 ```
 

@@ -299,10 +299,14 @@ refine:
 
 | 조건 | 동작 |
 |------|------|
-| Quality gate 통과 | 정상 종료, `/c4-finish`로 진행 |
+| Quality gate 통과 | 정상 종료, **`/c4-polish` → `/c4-finish`** 순서로 진행 |
 | Max rounds 도달 | 경고 + 잔여 이슈 리포트, 사용자에게 판단 위임 |
 | 새 이슈가 이전보다 증가 | 경고 (regression 의심), 사용자 확인 |
 | 빌드/테스트 실패 | 수정 필수, 라운드 카운트 소비하지 않음 |
+
+> ⚠️ **Refine 완료 후 반드시 `/c4-polish`를 실행한다.**
+> Quality gate (CRITICAL+HIGH=0) 통과가 끝이 아님 — polish에서 MEDIUM/LOW까지 수렴시킨 뒤 finish로 간다.
+> 직접 `/c4-finish` 호출 시 polish gate DB 레코드가 없어 Step 0에서 차단됨.
 
 ## Task ID Convention
 
