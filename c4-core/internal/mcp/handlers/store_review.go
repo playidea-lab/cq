@@ -130,7 +130,7 @@ func (s *SQLiteStore) Checkpoint(checkpointID, decision, notes string, requiredC
 
 	// Publish checkpoint event
 	switch decision {
-	case "APPROVE":
+	case "APPROVE", "APPROVE_FINAL":
 		s.notifyEventBus("checkpoint.approved", map[string]any{
 			"checkpoint_id": checkpointID, "decision": "APPROVE", "notes": notes,
 		})
@@ -147,7 +147,7 @@ func (s *SQLiteStore) Checkpoint(checkpointID, decision, notes string, requiredC
 	}
 
 	switch decision {
-	case "APPROVE":
+	case "APPROVE", "APPROVE_FINAL":
 		result.NextAction = "continue"
 	case "REQUEST_CHANGES":
 		result.NextAction = "apply_changes"
