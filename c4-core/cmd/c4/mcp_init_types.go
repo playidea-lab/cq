@@ -68,6 +68,7 @@ type initContext struct {
 	// Gate (set by initGate post-store hook, c8_gate build tag)
 	gateWebhookManager gateWebhookManagerInterface
 	gateScheduler      gateSchedulerInterface
+	gateBridgeCancel   context.CancelFunc
 
 	// Guard (set by initGuard post-store hook, c6_guard build tag)
 	// Typed as any to avoid importing guard in build-tag-agnostic files.
