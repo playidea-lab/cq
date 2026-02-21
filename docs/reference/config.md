@@ -4,11 +4,15 @@ Config file location: `~/.c4/config.yaml` (global) or `.c4/config.yaml` (per-pro
 
 ## Starter template
 
-```sh
-cq serve --print-config > ~/.c4/config.yaml
-```
+Copy a pre-built template from the [configs/ directory](https://github.com/PlayIdea-Lab/cq/tree/main/configs):
 
-Or copy from the [configs/ directory](https://github.com/PlayIdea-Lab/cq/tree/main/configs).
+```sh
+# solo (local only)
+curl -fsSL https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/configs/solo.yaml > ~/.c4/config.yaml
+
+# connected (cloud + LLM)
+curl -fsSL https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/configs/connected.yaml > ~/.c4/config.yaml
+```
 
 ## Sections
 

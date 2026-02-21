@@ -72,13 +72,23 @@ Skills are invoked inside Claude Code as `/skill-name`.
 |-------|---------|-------------|
 | `/c4-plan` | "계획", "plan", "설계" | Discovery → Design → Tasks |
 | `/c4-run` | "실행", "run", "ㄱㄱ" | Spawn workers for pending tasks |
-| `/c4-finish` | "마무리", "finish" | Build → test → install → commit |
+| `/c4-finish` | "마무리", "finish" | Build → test → docs → commit |
 | `/c4-status` | "상태", "status" | Visual task progress |
 | `/c4-quick` | "quick", "빠르게" | Single task, no planning |
 | `/c4-polish` | "polish" | Fix until reviewer says zero changes |
 | `/c4-refine` | "refine" | Iterative review-fix loop |
-| `/c4-checkpoint` | checkpoint reached | Approve / request changes |
+| `/c4-checkpoint` | checkpoint reached | Approve / request changes / replan |
 | `/c4-validate` | "검증", "validate" | Run lint + tests |
+| `/c4-review` | "review" | 3-pass code review with 6-axis evaluation |
 | `/c4-add-task` | "태스크 추가" | Add task interactively |
 | `/c4-submit` | "제출", "submit" | Submit completed task |
-| `/c4-standby` | "대기", "standby" | Become a C5 Hub worker |
+| `/c4-interview` | "interview" | Deep requirements interview |
+| `/c4-stop` | "stop", "중단" | Halt execution, preserve progress |
+| `/c4-clear` | "clear" | Reset C4 state for debugging |
+| `/c4-swarm` | "swarm" | Spawn coordinator-led agent team |
+| `/c4-standby` | "대기", "standby" | Become a C5 Hub worker (full tier) |
+| `/c4-init` | "init", "초기화" | Initialize C4 in current project |
+| `/c4-release` | "release" | Generate CHANGELOG from git history |
+| `/c4-help` | "help" | Quick reference for all skills |
+| `/c2-paper-review` | "논문 리뷰", "paper review" | Academic paper review (C2 lifecycle) |
+| `/research-loop` | "research loop" | Paper-experiment improvement loop |

@@ -29,10 +29,10 @@ cq --help
 
 ```sh
 # connected — adds Supabase, LLM Gateway, EventBus
-curl -fsSL .../install.sh | sh -s -- --tier connected
+curl -fsSL https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/install.sh | sh -s -- --tier connected
 
 # full — all features including Hub, Drive, CDP, GPU
-curl -fsSL .../install.sh | sh -s -- --tier full
+curl -fsSL https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/install.sh | sh -s -- --tier full
 ```
 
 See [Tiers](/guide/tiers) for details on which tier to choose.
@@ -40,13 +40,13 @@ See [Tiers](/guide/tiers) for details on which tier to choose.
 ## Install to a custom directory
 
 ```sh
-curl -fsSL .../install.sh | sh -s -- --install-dir /usr/local/bin
+curl -fsSL https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/install.sh | sh -s -- --install-dir /usr/local/bin
 ```
 
 ## Dry run (preview only)
 
 ```sh
-curl -fsSL .../install.sh | sh -s -- --dry-run
+curl -fsSL https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/install.sh | sh -s -- --dry-run
 ```
 
 ## Update
