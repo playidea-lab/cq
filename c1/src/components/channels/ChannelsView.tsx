@@ -5,7 +5,7 @@ import { useMessages } from '../../hooks/useMessages';
 import { useMembers } from '../../hooks/useMembers';
 import { usePresence } from '../../hooks/usePresence';
 import { useSessions } from '../../hooks/useSessions';
-import { ChannelSidebar } from './ChannelSidebar';
+import { ChannelListSidebar } from './ChannelListSidebar';
 import { MessageList } from './MessageList';
 import { MessageInput } from './MessageInput';
 import { MembersPanel } from './MembersPanel';
@@ -53,7 +53,6 @@ export function ChannelsView({ projectPath }: ChannelsViewProps) {
   // --- Channels hooks ---
   const {
     channels,
-    loading: channelsLoading,
     selectedChannel,
     createChannel,
     selectChannel,
@@ -133,13 +132,11 @@ export function ChannelsView({ projectPath }: ChannelsViewProps) {
       {activeTab === 'channels' ? (
         /* --- Cloud Channels view --- */
         <>
-          <ChannelSidebar
+          <ChannelListSidebar
             channels={channels}
             selectedChannel={selectedChannel}
-            loading={channelsLoading}
             onSelect={selectChannel}
-            onCreate={createChannel}
-            members={members}
+            onCreate={(name, type) => { createChannel(name, '', type); }}
           />
           <div className="chat-panel">
             {selectedChannel ? (
