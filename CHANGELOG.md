@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-02-21
+
+### ✨ Features
+
+- **`skills_embed` 빌드 태그**: 배포 바이너리에 `.claude/skills/` 임베딩 지원
+  - `make embed-skills` → `cmd/c4/skills_src/` 복사 (symlink deref) + SHA 버전 파일 생성
+  - `//go:build skills_embed`: `embed.FS → fs.FS` 래퍼 + `!skills_embed` stub (기본 빌드 무영향)
+  - 3단계 폴백: 소스 루트 심링크(개발) → 임베디드 추출(설치) → graceful skip
+  - 버전 인식 추출: `~/.c4/skills/.version` SHA 비교, 동일 버전 재추출 생략
+- **LLM Gateway API 키 보안 강화**: `config.yaml`에서 `api_key`/`api_key_env` 필드 제거
+  - 키 해석 우선순위: `secrets.db (<provider>.api_key)` → 환경 변수 (`ANTHROPIC_API_KEY` 등)
+  - 구버전 YAML 설정 감지 시 `slog.Warn` deprecation 경고 출력 (`config.Manager.IsSet()` 활용)
+  - Ollama 예외 처리: 키 없어도 활성화 유지 (`name != "ollama"` 조건)
+- **공개 배포 서브모듈** (`user/` → [PlayIdea-Lab/cq](https://github.com/PlayIdea-Lab/cq)):
+  - `install.sh`: POSIX sh, `--tier solo|connected|full` (기본: solo), `--dry-run` 지원
+  - `configs/solo.yaml`, `configs/connected.yaml`, `configs/full.yaml` 샘플 설정 포함
+- **GitLab CI 크로스 컴파일 파이프라인** (`.gitlab-ci.yml`):
+  - 3단계: `check-env` → 9개 병렬 빌드 → `release-github`
+  - 9개 바이너리: 3 tier (solo/connected/full) × 3 platform (linux/darwin/windows-amd64)
+  - `gh release create` → `PlayIdea-Lab/cq` GitHub Releases 자동 업로드
+
+### 🔧 Build
+
+- **Makefile**: `TIER_TAGS_*` 변수 + `build-cross` 타겟 추가
+  - `make build-cross GOOS=linux GOARCH=amd64 TIER=solo` → `dist/cq-solo-linux-amd64`
+  - `build-solo/connected/full/nightly` 타겟이 `embed-skills`에 의존 + `skills_embed` 태그 포함
+
+### 📚 Documentation
+
+- AGENTS.md: `user/` submodule, `.gitlab-ci.yml`, LLM key 변경 사항 반영
+
+---
+
 ## [0.11.0] - 2026-02-21
 
 ### ✨ Features
