@@ -146,6 +146,7 @@ export interface C1Message {
   thread_id: string | null;
   metadata: Record<string, unknown> | null;
   member_id?: string;
+  agent_work_id?: string | null;
   created_at: string;
 }
 

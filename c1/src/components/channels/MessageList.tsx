@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { MessageBubble } from './MessageBubble';
+import { AgentThread } from './AgentThread';
 import { Skeleton } from '../shared/Skeleton';
 import type { C1Message, C1Member } from '../../types';
 
@@ -9,6 +10,55 @@ interface MessageListProps {
   hasMore: boolean;
   onLoadMore: () => void;
   getMember?: (memberId: string) => C1Member | undefined;
+}
+
+// Message grouping types
+type MessageGroup =
+  | { type: 'single'; message: C1Message }
+  | { type: 'thread'; workId: string; messages: C1Message[] };
+
+function groupMessages(messages: C1Message[]): MessageGroup[] {
+  const groups: MessageGroup[] = [];
+  let i = 0;
+  while (i < messages.length) {
+    const msg = messages[i];
+    const workId = msg.agent_work_id;
+    if (workId) {
+      // Collect all consecutive messages with the same agent_work_id
+      const threadMessages: C1Message[] = [msg];
+      while (i + 1 < messages.length && messages[i + 1].agent_work_id === workId) {
+        i++;
+        threadMessages.push(messages[i]);
+      }
+      groups.push({ type: 'thread', workId, messages: threadMessages });
+    } else {
+      groups.push({ type: 'single', message: msg });
+    }
+    i++;
+  }
+  return groups;
+}
+
+const COMPLETE_STATUSES = new Set(['completed', 'failed', 'cancelled']);
+
+function isThreadComplete(messages: C1Message[]): boolean {
+  const lastMsg = messages[messages.length - 1];
+  const status = lastMsg?.metadata?.status as string | undefined;
+  return COMPLETE_STATUSES.has(status ?? '');
+}
+
+function getAgentName(messages: C1Message[], getMember?: (id: string) => C1Member | undefined): string {
+  const firstMsg = messages[0];
+  if (!firstMsg) return 'Agent';
+  if (firstMsg.member_id && getMember) {
+    const member = getMember(firstMsg.member_id);
+    if (member?.display_name) return member.display_name;
+  }
+  // Fallback: parse participant_id
+  const pid = firstMsg.participant_id;
+  if (pid.startsWith('worker-')) return pid;
+  if (pid.startsWith('agent-')) return pid;
+  return 'Agent';
 }
 
 export function MessageList({ messages, loading, hasMore, onLoadMore, getMember }: MessageListProps) {
@@ -39,6 +89,8 @@ export function MessageList({ messages, loading, hasMore, onLoadMore, getMember 
     );
   }
 
+  const groups = groupMessages(messages);
+
   return (
     <div className="message-list">
       {hasMore && (
@@ -50,13 +102,29 @@ export function MessageList({ messages, loading, hasMore, onLoadMore, getMember 
           {loading ? 'Loading...' : 'Load older messages'}
         </button>
       )}
-      {messages.map(msg => (
-        <MessageBubble
-          key={msg.id}
-          message={msg}
-          member={msg.member_id && getMember ? getMember(msg.member_id) : undefined}
-        />
-      ))}
+      {groups.map((group, idx) => {
+        if (group.type === 'single') {
+          return (
+            <MessageBubble
+              key={group.message.id}
+              message={group.message}
+              member={group.message.member_id && getMember ? getMember(group.message.member_id) : undefined}
+            />
+          );
+        }
+        // type === 'thread'
+        const complete = isThreadComplete(group.messages);
+        const agentName = getAgentName(group.messages, getMember);
+        return (
+          <AgentThread
+            key={`thread-${group.workId}-${idx}`}
+            messages={group.messages}
+            agentName={agentName}
+            isComplete={complete}
+            getMember={getMember}
+          />
+        );
+      })}
       <div ref={bottomRef} />
     </div>
   );
