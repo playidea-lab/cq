@@ -204,6 +204,12 @@ func TestTypeByRef_ValidationErrors(t *testing.T) {
 			t.Fatal("expected error for invalid ref")
 		}
 	})
+	t.Run("remote url rejected", func(t *testing.T) {
+		_, err := r.TypeByRef(ctx, "http://remote.host:9222", "c4r-0", "text", "", 0)
+		if err == nil {
+			t.Fatal("expected error for remote url")
+		}
+	})
 }
 
 func TestGetTextByRef_ValidationErrors(t *testing.T) {

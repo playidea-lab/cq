@@ -252,6 +252,9 @@ func handleCDPAction(runner *cdp.Runner, raw json.RawMessage) (any, error) {
 		if params.Ref == "" {
 			return nil, fmt.Errorf("ref is required for action=type")
 		}
+		if params.Text == "" {
+			return nil, fmt.Errorf("text is required for action=type")
+		}
 		result, err := runner.TypeByRef(ctx, debugURL, params.Ref, params.Text, params.TargetURL, params.TimeoutSeconds)
 		if err != nil {
 			return nil, wrapErr(err)

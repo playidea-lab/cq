@@ -181,7 +181,7 @@ const scanElementsJS = `(function() {
       ref: ref,
       tag: el.tagName.toLowerCase(),
       type: el.getAttribute('type') || '',
-      text: (el.innerText || el.value || el.getAttribute('aria-label') || '').slice(0, 120),
+      text: (el.innerText || el.value || el.getAttribute('aria-label') || '').replace(/[\u2028\u2029\x00-\x1f]/g, ' ').slice(0, 120),
       placeholder: el.getAttribute('placeholder') || '',
       href: el.getAttribute('href') || '',
       visible: r.width > 0 && r.height > 0,
@@ -202,8 +202,28 @@ func validateRef(ref string) error {
 	return nil
 }
 
+// doActions runs chromedp actions against debugURL with the given timeout.
+// If targetURL is non-empty, a Navigate action is prepended. Manages allocator/context lifecycle.
+func (r *Runner) doActions(ctx context.Context, debugURL, targetURL string, timeout time.Duration, actions []chromedp.Action) error {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	allocCtx, allocCancel := chromedp.NewRemoteAllocator(ctx, debugURL)
+	defer allocCancel()
+	taskCtx, taskCancel := chromedp.NewContext(allocCtx)
+	defer taskCancel()
+
+	chain := make([]chromedp.Action, 0, len(actions)+1)
+	if targetURL != "" {
+		chain = append(chain, chromedp.Navigate(targetURL))
+	}
+	chain = append(chain, actions...)
+	return chromedp.Run(taskCtx, chain...)
+}
+
 // ScanElements assigns data-cdp-ref attributes to interactive DOM elements and returns their metadata.
 // Call this first to discover element refs, then use ClickByRef/TypeByRef/GetTextByRef.
+// Refs are reassigned on every call; discard refs from previous scans after any DOM change.
 func (r *Runner) ScanElements(ctx context.Context, debugURL, targetURL string, timeoutSeconds int) (*ScanResult, error) {
 	if err := validateURL(debugURL); err != nil {
 		return nil, err
@@ -239,25 +259,10 @@ func (r *Runner) ClickByRef(ctx context.Context, debugURL, ref, targetURL string
 	if err := validateRef(ref); err != nil {
 		return nil, err
 	}
-
-	timeout := resolveTimeout(&RunOptions{TimeoutSeconds: timeoutSeconds})
-	ctx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-
+	selector := fmt.Sprintf(`[data-cdp-ref="%s"]`, ref) // ref validated: ^c4r-\d+$, safe to embed
 	start := time.Now()
-	allocCtx, allocCancel := chromedp.NewRemoteAllocator(ctx, debugURL)
-	defer allocCancel()
-	taskCtx, taskCancel := chromedp.NewContext(allocCtx)
-	defer taskCancel()
-
-	selector := fmt.Sprintf(`[data-cdp-ref="%s"]`, ref)
-	var actions []chromedp.Action
-	if targetURL != "" {
-		actions = append(actions, chromedp.Navigate(targetURL))
-	}
-	actions = append(actions, chromedp.Click(selector, chromedp.ByQuery))
-
-	if err := chromedp.Run(taskCtx, actions...); err != nil {
+	if err := r.doActions(ctx, debugURL, targetURL, resolveTimeout(&RunOptions{TimeoutSeconds: timeoutSeconds}),
+		[]chromedp.Action{chromedp.Click(selector, chromedp.ByQuery)}); err != nil {
 		return nil, fmt.Errorf("cdp: click %s: %w", ref, err)
 	}
 	return &ActionResult{Action: "click", Ref: ref, ElapsedMs: time.Since(start).Milliseconds()}, nil
@@ -271,26 +276,13 @@ func (r *Runner) TypeByRef(ctx context.Context, debugURL, ref, text, targetURL s
 	if err := validateRef(ref); err != nil {
 		return nil, err
 	}
-
-	timeout := resolveTimeout(&RunOptions{TimeoutSeconds: timeoutSeconds})
-	ctx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-
+	selector := fmt.Sprintf(`[data-cdp-ref="%s"]`, ref) // ref validated: ^c4r-\d+$, safe to embed
 	start := time.Now()
-	allocCtx, allocCancel := chromedp.NewRemoteAllocator(ctx, debugURL)
-	defer allocCancel()
-	taskCtx, taskCancel := chromedp.NewContext(allocCtx)
-	defer taskCancel()
-
-	selector := fmt.Sprintf(`[data-cdp-ref="%s"]`, ref)
-	var actions []chromedp.Action
-	if targetURL != "" {
-		actions = append(actions, chromedp.Navigate(targetURL))
-	}
-	actions = append(actions, chromedp.Clear(selector, chromedp.ByQuery))
-	actions = append(actions, chromedp.SendKeys(selector, text, chromedp.ByQuery))
-
-	if err := chromedp.Run(taskCtx, actions...); err != nil {
+	if err := r.doActions(ctx, debugURL, targetURL, resolveTimeout(&RunOptions{TimeoutSeconds: timeoutSeconds}),
+		[]chromedp.Action{
+			chromedp.Clear(selector, chromedp.ByQuery),
+			chromedp.SendKeys(selector, text, chromedp.ByQuery),
+		}); err != nil {
 		return nil, fmt.Errorf("cdp: type into %s: %w", ref, err)
 	}
 	return &ActionResult{Action: "type", Ref: ref, Value: text, ElapsedMs: time.Since(start).Milliseconds()}, nil
@@ -305,7 +297,7 @@ func (r *Runner) GetTextByRef(ctx context.Context, debugURL, ref, targetURL stri
 		return nil, err
 	}
 	script := fmt.Sprintf(`(function() {
-  var el = document.querySelector('[data-cdp-ref="%s"]');
+  var el = document.querySelector('[data-cdp-ref="%s"]'); // ref validated: ^c4r-\d+$, safe to embed
   if (!el) return null;
   return el.innerText || el.value || el.textContent || '';
 })()`, ref)
