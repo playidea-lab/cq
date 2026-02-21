@@ -32,6 +32,7 @@ export default defineConfig({
             { text: 'Installation', link: '/guide/install' },
             { text: 'Quick Start', link: '/guide/quickstart' },
             { text: 'Tiers', link: '/guide/tiers' },
+            { text: 'C-Series Ecosystem', link: '/guide/ecosystem' },
           ]
         }
       ],
