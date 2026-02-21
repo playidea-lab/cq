@@ -28,9 +28,11 @@ pending → in_progress → (review) → completed
 ```
 
 - **T-001-0** — implementation task (version 0)
-- **R-001-0** — auto-generated review task
-- **T-001-1** — revision if review requests changes
-- **CP-001** — checkpoint after a phase completes
+- **R-001-0** — auto-generated review task after each implementation
+- **T-001-1** — revision task if a review requests changes
+- **CP-001** — checkpoint, auto-generated when a phase completes
+
+Checkpoints are created automatically — you don't trigger them manually. When a checkpoint appears, CQ pauses and asks you to review the phase output before continuing to the next phase.
 
 ## Worker isolation
 
