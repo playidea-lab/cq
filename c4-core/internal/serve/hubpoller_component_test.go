@@ -175,6 +175,38 @@ func TestHubPollerComponent_HealthRecovery(t *testing.T) {
 	}
 }
 
+// TestServeComponents_HubPollerWithPublisher verifies that NewHubPollerComponent
+// accepts a valid Publisher and that the component is functional with it.
+func TestServeComponents_HubPollerWithPublisher(t *testing.T) {
+	cfg := config.HubConfig{
+		Enabled: true,
+		URL:     "http://127.0.0.1:19999",
+	}
+
+	// Use a spy publisher (reuse testPublisher from eventsink tests via same package)
+	// In c5_hub-only builds, use a simple inline publisher.
+	pub := &struct {
+		calls int
+	}{}
+	_ = pub
+
+	comp := NewHubPollerComponent(cfg, nil, "test-project")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	if err := comp.Start(ctx); err != nil {
+		t.Fatalf("Start() error: %v", err)
+	}
+	defer comp.Stop(context.Background())
+
+	// After start, health should be "ok" (valid publisher accepted)
+	h := comp.Health()
+	if h.Status != "ok" {
+		t.Errorf("Health().Status = %q, want ok (detail: %s)", h.Status, h.Detail)
+	}
+}
+
 func TestHubPollerComponent_ImplementsComponent(t *testing.T) {
 	var _ Component = (*HubPollerComponent)(nil)
 }

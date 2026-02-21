@@ -16,6 +16,15 @@ import (
 // testPublisher implements eventbus.Publisher for testing.
 type testPublisher struct{}
 
+// spyPublisher records published events for test assertions.
+type spyPublisher struct {
+	calls []string
+}
+
+func (s *spyPublisher) PublishAsync(evType, source string, data json.RawMessage, projectID string) {
+	s.calls = append(s.calls, evType)
+}
+
 func (p testPublisher) PublishAsync(evType, source string, data json.RawMessage, projectID string) {}
 
 func freePort(t *testing.T) int {
@@ -150,5 +159,59 @@ func TestEventSinkComponent_IntegrationPost(t *testing.T) {
 
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("POST status = %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+}
+
+// TestServeComponents_EventSinkWithPublisher verifies that NewEventSinkComponent
+// accepts a valid Publisher and that the component is functional with it.
+func TestServeComponents_EventSinkWithPublisher(t *testing.T) {
+	port := freePort(t)
+	spy := &spyPublisher{}
+	comp := NewEventSinkComponent(port, "", spy)
+
+	ctx := context.Background()
+	if err := comp.Start(ctx); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	defer comp.Stop(ctx)
+
+	time.Sleep(50 * time.Millisecond)
+
+	// Health should be ok — publisher is valid
+	h := comp.Health()
+	if h.Status != "ok" {
+		t.Errorf("Health = %q (%s), want ok", h.Status, h.Detail)
+	}
+}
+
+func TestEventSinkComponent_PublishesEvent(t *testing.T) {
+	port := freePort(t)
+	spy := &spyPublisher{}
+	comp := NewEventSinkComponent(port, "", spy)
+
+	ctx := context.Background()
+	if err := comp.Start(ctx); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	defer comp.Stop(ctx)
+
+	time.Sleep(50 * time.Millisecond)
+
+	// POST a valid event.
+	url := fmt.Sprintf("http://localhost:%d/v1/events/publish", port)
+	body, _ := json.Marshal(map[string]any{"event_type": "hub.job.completed", "source": "c5"})
+	resp, err := http.Post(url, "application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("POST status = %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+
+	// The spy publisher should have received the event.
+	if len(spy.calls) == 0 {
+		t.Error("spy publisher received no events, want at least one")
 	}
 }

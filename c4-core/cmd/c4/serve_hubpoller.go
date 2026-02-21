@@ -14,13 +14,21 @@ import (
 // registerHubPollerServeComponent registers the HubPoller component when
 // the c5_hub build tag is active. The HubPoller periodically polls C5 Hub
 // for job status changes and publishes hub.job.completed/failed events.
-// eb is reserved for future publisher wiring; events are silently dropped for now.
+// eb may be nil (if EventBus is disabled); events will be dropped silently.
 func registerHubPollerServeComponent(mgr *serve.Manager, cfg config.C4Config, eb *serve.EventBusComponent) {
 	if !cfg.Serve.HubPoller.Enabled || !cfg.Hub.Enabled {
 		return
 	}
 
-	_ = eb // reserved for future publisher wiring
-	mgr.Register(serve.NewHubPollerComponent(cfg.Hub, eventbus.NoopPublisher{}, cfg.ProjectID))
+	var pub eventbus.Publisher = eventbus.NoopPublisher{}
+	if eb != nil {
+		if sockPath := eb.SocketPath(); sockPath != "" {
+			if client, err := eventbus.NewClient(sockPath); err == nil {
+				pub = client
+			}
+		}
+	}
+
+	mgr.Register(serve.NewHubPollerComponent(cfg.Hub, pub, cfg.ProjectID))
 	fmt.Fprintf(os.Stderr, "cq serve: registered hubpoller\n")
 }

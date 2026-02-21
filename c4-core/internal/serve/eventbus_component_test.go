@@ -160,6 +160,27 @@ func TestEBComp_StopIdempotent(t *testing.T) {
 	}
 }
 
+func TestEventBusComponent_SocketPath(t *testing.T) {
+	dataDir := shortTempDir(t)
+	c := NewEventBusComponent(EventBusConfig{DataDir: dataDir})
+
+	// Before start, SocketPath should be empty
+	if c.SocketPath() != "" {
+		t.Errorf("SocketPath() = %q before Start(), want empty", c.SocketPath())
+	}
+
+	ctx := context.Background()
+	if err := c.Start(ctx); err != nil {
+		t.Fatalf("Start() error: %v", err)
+	}
+	defer c.Stop(ctx)
+
+	// After start, SocketPath should be non-empty
+	if c.SocketPath() == "" {
+		t.Error("SocketPath() is empty after Start(), want non-empty")
+	}
+}
+
 func TestEBComp_ManagerIntegration(t *testing.T) {
 	dataDir := shortTempDir(t)
 	c := NewEventBusComponent(EventBusConfig{DataDir: dataDir})
