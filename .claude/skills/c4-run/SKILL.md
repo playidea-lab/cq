@@ -171,6 +171,16 @@ Execute **ONE** C4 task and exit. (Context isolation principle)
 2. IF task is None or no task_id:
        PRINT "No tasks available"
        EXIT
+3. IF task.task_id starts with "R-":
+       → REVIEW MODE (see below)
+   ELSE:
+       → IMPLEMENTATION MODE (see below)
+8. EXIT (Task complete - fresh context for next task!)
+```
+
+### Implementation Mode (T- tasks)
+
+```
 3. IF task.knowledge_context exists:
        READ the knowledge context (past patterns, insights)
        APPLY relevant lessons to implementation decisions
@@ -178,17 +188,37 @@ Execute **ONE** C4 task and exit. (Context isolation principle)
 5. Run validations, fix issues (max 3 retries)
 6. git commit
 7. c4_submit(task_id, ..., handoff=JSON with discoveries/concerns/rationale)
-8. EXIT (Task complete - fresh context for next task!)
+```
+
+### Review Mode (R- tasks)
+
+R-tasks require code review, NOT implementation. Do NOT write code.
+
+```
+3. Read the task DoD to find the implementation task_id being reviewed (e.g. T-XXX-0)
+4. Use c4_analyze_history or c4_search_commits to find the implementation commit
+5. Read all changed files in the commit
+6. Perform 6-axis review:
+   Axis 1 — Data integrity / security / permissions
+   Axis 2 — Failure recovery (rollback, idempotency, migration)
+   Axis 3 — Observability (logging, metrics, tracing)
+   Axis 4 — Test coverage / regression risk
+   Axis 5 — DoD compliance (all checklist items met?)
+   Axis 6 — Code quality / readability (lowest priority)
+7. Decision:
+   - APPROVE: All critical axes pass → c4_submit(task_id, commit_sha="review-approved", ...)
+   - REQUEST_CHANGES: Critical issues found → c4_request_changes(task_id, reason="...")
+8. handoff includes review findings
 ```
 
 **handoff 구조** (c4_submit 시 전달):
 ```json
 {
-  "summary": "구현 요약",
+  "summary": "구현 요약 또는 리뷰 결과",
   "files_changed": ["path/to/file.go"],
   "discoveries": ["발견한 사항들"],
   "concerns": ["우려 사항"],
-  "rationale": "이 접근을 선택한 이유"
+  "rationale": "이 접근을 선택한 이유 또는 리뷰 판단 근거"
 }
 ```
 이 handoff 데이터는 자동으로 knowledge DB에 기록되어 향후 재활용됩니다.
@@ -201,23 +231,32 @@ Next task → new Worker → fresh context → prevents context death.
 START NOW: Call `mcp__c4__c4_get_task(worker_id="{worker_id}")`, complete ONE task, then exit!
 """
 
+# Determine model per task type from economic_mode routing
+review_model = status.get("economic_mode", {}).get("model_routing", {}).get("review", "opus")
+impl_model = status.get("economic_mode", {}).get("model_routing", {}).get("implementation", "sonnet")
+ready_ids = status.get("ready_task_ids", [])
+review_ids = set(tid for tid in ready_ids if tid.startswith("R-"))
+
 workers = []
 for i in range(worker_count):
     worker_id = f"worker-{uuid.uuid4().hex[:8]}"
 
-    # Model selection (from by_model distribution or default opus)
-    model = "opus"  # default
+    # Use review model for R-tasks, implementation model otherwise
+    # Assign review model to first N workers matching R-task count
+    is_review = i < len(review_ids)
+    model = review_model if is_review else impl_model
+    desc = f"C4 Review Worker {i+1}/{worker_count}" if is_review else f"C4 Worker {i+1}/{worker_count}"
 
     result = Task(
         subagent_type="general-purpose",
-        description=f"C4 Worker {i+1}/{worker_count}",
+        description=desc,
         prompt=WORKER_PROMPT.format(worker_id=worker_id),
         model=model,
         run_in_background=True
     )
 
-    workers.append({"id": worker_id, "output": result.output_file})
-    print(f"🚀 Worker {i+1}/{worker_count} spawned: {worker_id}")
+    workers.append({"id": worker_id, "output": result.output_file, "model": model})
+    print(f"🚀 {desc} spawned: {worker_id} [{model}]")
 
 print(f"""
 🐝 C4 Run: {worker_count} workers spawned (background)
@@ -225,7 +264,7 @@ print(f"""
 Workers:
 """)
 for w in workers:
-    print(f"  • {w['id']}: {w['output']}")
+    print(f"  • {w['id']} [{w['model']}]: {w['output']}")
 
 if single_round:
     print("""
@@ -272,19 +311,42 @@ Ctrl+C to interrupt.
                 continue
 
         # Spawn new workers (up to ready count)
-        spawn_count = min(ready, 7 - len([w for w in status["workers"].values() if w["state"] == "busy"]))
+        # Detect R-tasks to use review model (opus) vs implementation model (sonnet)
+        ready_ids = status.get("ready_task_ids", [])
+        review_count = len([tid for tid in ready_ids if tid.startswith("R-")])
+        impl_count = ready - review_count
+
+        review_model = status.get("economic_mode", {}).get("model_routing", {}).get("review", "opus")
+        impl_model = status.get("economic_mode", {}).get("model_routing", {}).get("implementation", "sonnet")
+
+        busy_count = len([w for w in status["workers"].values() if w["state"] == "busy"])
+        spawn_count = min(ready, 7 - busy_count)
         if spawn_count > 0:
-            print(f"🚀 Spawning {spawn_count} more workers...")
-            for i in range(spawn_count):
+            print(f"🚀 Spawning {spawn_count} more workers ({review_count} review, {impl_count} impl)...")
+            spawned = 0
+            # Spawn review workers first (R-tasks, opus model)
+            for i in range(min(review_count, spawn_count)):
+                worker_id = f"worker-{uuid.uuid4().hex[:8]}"
+                Task(
+                    subagent_type="general-purpose",
+                    description=f"C4 Review Worker (continuous)",
+                    prompt=WORKER_PROMPT.format(worker_id=worker_id),
+                    model=review_model,
+                    run_in_background=True
+                )
+                print(f"  • {worker_id} [review/{review_model}]")
+                spawned += 1
+            # Spawn implementation workers for remaining slots
+            for i in range(min(impl_count, spawn_count - spawned)):
                 worker_id = f"worker-{uuid.uuid4().hex[:8]}"
                 Task(
                     subagent_type="general-purpose",
                     description=f"C4 Worker (continuous)",
                     prompt=WORKER_PROMPT.format(worker_id=worker_id),
-                    model="opus",
+                    model=impl_model,
                     run_in_background=True
                 )
-                print(f"  • {worker_id}")
+                print(f"  • {worker_id} [impl/{impl_model}]")
 
     print("🏁 Continuous mode ended")
 
