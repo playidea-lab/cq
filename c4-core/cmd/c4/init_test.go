@@ -254,6 +254,11 @@ func TestSetupSkills_NoC4Root(t *testing.T) {
 	builtinC4Root = ""
 	defer func() { builtinC4Root = oldRoot }()
 
+	// Disable embedded FS so we test the "no root, no embed" path
+	oldEmbed := EmbeddedSkillsFS
+	EmbeddedSkillsFS = nil
+	defer func() { EmbeddedSkillsFS = oldEmbed }()
+
 	targetDir := t.TempDir()
 
 	// Should not fail — just skip gracefully
