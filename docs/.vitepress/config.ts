@@ -73,7 +73,7 @@ export default defineConfig({
     ],
 
     footer: {
-      message: 'Released under the MIT License.',
+      message: 'Released under MIT + Commons Clause. Free to use, commercial resale prohibited.',
       copyright: 'Copyright © 2025 PlayIdea-Lab'
     },
 

@@ -79,4 +79,4 @@ curl -fsSL https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/install.sh | s
 
 ## License
 
-MIT
+[MIT + Commons Clause](LICENSE) — free to use and modify, commercial resale prohibited.
