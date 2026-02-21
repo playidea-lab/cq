@@ -9,6 +9,7 @@ interface ChannelContentProps {
   productSlot?: ReactNode;
   isReadOnly?: boolean;
   getMember?: (memberId: string) => C1Member | undefined;
+  agentMembers?: C1Member[];
   msgFilter?: string;
 }
 
@@ -17,6 +18,7 @@ export function ChannelContent({
   productSlot,
   isReadOnly = false,
   getMember,
+  agentMembers = [],
   msgFilter = '',
 }: ChannelContentProps) {
   const {
@@ -51,7 +53,10 @@ export function ChannelContent({
           getMember={getMember}
         />
         {!isReadOnly && (
-          <MessageInput onSend={content => sendMessage(content)} />
+          <MessageInput
+            onSend={(content, metadata) => sendMessage(content, undefined, metadata)}
+            agentMembers={agentMembers}
+          />
         )}
       </div>
     </div>
