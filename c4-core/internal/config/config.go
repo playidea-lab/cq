@@ -46,10 +46,9 @@ type CloudConfig struct {
 }
 
 // LLMProviderConfig holds per-provider settings.
+// API keys are stored in the secret store (~/.c4/secrets.db) via "cq secret set <provider>.api_key".
 type LLMProviderConfig struct {
 	Enabled      bool   `mapstructure:"enabled"       yaml:"enabled"`
-	APIKey       string `mapstructure:"api_key"       yaml:"api_key"`
-	APIKeyEnv    string `mapstructure:"api_key_env"   yaml:"api_key_env"`
 	BaseURL      string `mapstructure:"base_url"      yaml:"base_url"`
 	DefaultModel string `mapstructure:"default_model" yaml:"default_model"`
 }
@@ -484,6 +483,12 @@ func (c *C4Config) resolvePreset() {
 // For example: Get("economic_mode.preset") or Get("project_id").
 func (m *Manager) Get(key string) any {
 	return m.v.Get(key)
+}
+
+// IsSet reports whether a configuration key was explicitly set in the config file or environment.
+// Unlike Get, this returns false for keys that only have defaults.
+func (m *Manager) IsSet(key string) bool {
+	return m.v.IsSet(key)
 }
 
 // GetString returns a configuration value as a string.
