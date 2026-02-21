@@ -117,7 +117,7 @@ func (s *Store) List() ([]string, error) {
 	}
 	defer rows.Close()
 
-	var keys []string
+	keys := make([]string, 0)
 	for rows.Next() {
 		var k string
 		if err := rows.Scan(&k); err != nil {
@@ -140,8 +140,11 @@ func (s *Store) Delete(key string) error {
 	return nil
 }
 
-// Close releases the underlying database connection.
+// Close releases the underlying database connection and zeros the in-memory master key.
 func (s *Store) Close() error {
+	for i := range s.masterKey {
+		s.masterKey[i] = 0
+	}
 	return s.db.Close()
 }
 
@@ -182,11 +185,20 @@ func loadOrCreateMasterKey(path string) ([32]byte, error) {
 		return key, nil
 	}
 
-	// Load existing key file
-	if data, err := os.ReadFile(path); err == nil {
-		// Verify permissions haven't been widened from the expected 0400.
-		if info, statErr := os.Stat(path); statErr == nil && info.Mode().Perm() != 0400 {
+	// Load existing key file. Open the FD first, then stat on the same descriptor
+	// to avoid a TOCTOU race between the permission check and the read.
+	if f, openErr := os.Open(path); openErr == nil {
+		defer f.Close()
+		info, statErr := f.Stat()
+		if statErr != nil {
+			return key, fmt.Errorf("stat master key: %w", statErr)
+		}
+		if info.Mode().Perm() != 0400 {
 			return key, fmt.Errorf("master key file has insecure permissions %04o (expected 0400)", info.Mode().Perm())
+		}
+		data, readErr := io.ReadAll(f)
+		if readErr != nil {
+			return key, fmt.Errorf("read master key: %w", readErr)
 		}
 		if len(data) != 32 {
 			return key, fmt.Errorf("master key file corrupt: expected 32 bytes, got %d", len(data))

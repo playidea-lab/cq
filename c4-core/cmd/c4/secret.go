@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"syscall"
@@ -160,7 +161,7 @@ func readLine() (string, error) {
 		n, err := os.Stdin.Read(buf)
 		if n > 0 {
 			if buf[0] == '\n' {
-				break
+				return line.String(), nil
 			}
 			if buf[0] == '\r' {
 				continue // strip carriage return (Windows-style line endings)
@@ -168,10 +169,12 @@ func readLine() (string, error) {
 			line.WriteByte(buf[0])
 		}
 		if err != nil {
-			break
+			if err == io.EOF {
+				return line.String(), nil // partial or empty line on EOF is ok
+			}
+			return line.String(), err // propagate real I/O errors
 		}
 	}
-	return line.String(), nil
 }
 
 func isTerminal(fd int) bool {

@@ -72,6 +72,9 @@ func RegisterSecretHandlers(reg *mcp.Registry, store *secrets.Store) {
 		if err := json.Unmarshal(args, &p); err != nil {
 			return nil, fmt.Errorf("invalid args: %w", err)
 		}
+		if p.Key == "" {
+			return nil, fmt.Errorf("key is required")
+		}
 		val, err := store.Get(p.Key)
 		if errors.Is(err, secrets.ErrNotFound) {
 			return nil, fmt.Errorf("secret %q not found", p.Key)
@@ -116,6 +119,9 @@ func RegisterSecretHandlers(reg *mcp.Registry, store *secrets.Store) {
 		}
 		if err := json.Unmarshal(args, &p); err != nil {
 			return nil, fmt.Errorf("invalid args: %w", err)
+		}
+		if p.Key == "" {
+			return nil, fmt.Errorf("key is required")
 		}
 		if err := store.Delete(p.Key); errors.Is(err, secrets.ErrNotFound) {
 			return nil, fmt.Errorf("secret %q not found", p.Key)

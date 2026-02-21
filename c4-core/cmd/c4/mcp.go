@@ -290,7 +290,10 @@ func runMCP() error {
 	if err != nil {
 		return fmt.Errorf("initializing MCP server: %w", err)
 	}
-	defer srv.shutdown()
+	// Protect against double-close if signal and stdin-EOF occur concurrently.
+	var shutdownOnce sync.Once
+	doShutdown := func() { shutdownOnce.Do(srv.shutdown) }
+	defer doShutdown()
 
 	// Signal handler: ensure sidecar cleanup on SIGTERM/SIGINT.
 	// Without this, signals terminate the process before defer runs,
@@ -300,7 +303,7 @@ func runMCP() error {
 	go func() {
 		sig := <-sigCh
 		fmt.Fprintf(os.Stderr, "cq: received %s, shutting down\n", sig)
-		srv.shutdown()
+		doShutdown()
 		os.Exit(0)
 	}()
 
