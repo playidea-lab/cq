@@ -26,6 +26,9 @@ economic_mode:
 validation:
   lint: ""                  # e.g. "uv run ruff check ."
   unit: ""                  # e.g. "uv run pytest tests/unit/ -v"
+# 주의: 따옴표 포함 인자 미지원 — 공백 기준으로만 분리됨
+# OK:  lint: "uv run ruff check ."
+# NG:  lint: "uv run ruff check 'src/'"  (따옴표 포함 시 오동작)
 
 # Permission reviewer — Bash 명령 안전성 심사 훅
 # SSOT: 이 섹션 → .c4/hook-config.json (MCP 시작 시 자동 생성) → hook 스크립트
@@ -95,3 +98,10 @@ planning:
 #     enabled: true
 #   gpu:
 #     enabled: true
+#   eventsink:
+#     enabled: false   # C5→C4 이벤트 수신 HTTP 엔드포인트 (:4141)
+#     port: 4141
+#   sse_subscriber:
+#     enabled: false   # C5 Hub SSE 스트림 구독
+#   agent:
+#     enabled: false   # Supabase Realtime @cq mention 리스닝 → claude -p 디스패치

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/changmin/c4-core/internal/config"
 	"github.com/changmin/c4-core/internal/eventbus"
 	"github.com/changmin/c4-core/internal/mcp"
 )
@@ -18,6 +19,15 @@ var validationEventPub eventbus.Publisher
 // SetValidationEventBus sets the EventBus publisher for validation handlers.
 func SetValidationEventBus(pub eventbus.Publisher) {
 	validationEventPub = pub
+}
+
+// validationCfg holds the optional config-based validation command overrides.
+var validationCfg *config.ValidationConfig
+
+// SetValidationConfig sets config at init-time (written once before first handler call).
+// Go memory model guarantees visibility for single-threaded MCP init.
+func SetValidationConfig(cfg *config.ValidationConfig) {
+	validationCfg = cfg
 }
 
 // RegisterValidationHandlers registers the validation runner tool.
@@ -59,8 +69,8 @@ func handleRunValidation(rootDir string, rawArgs json.RawMessage) (any, error) {
 		}
 	}
 
-	// Detect available validations
-	available := detectValidations(rootDir)
+	// Detect available validations (config-based overrides take priority)
+	available := detectValidationsWithConfig(rootDir)
 
 	// Filter if names specified (supports aliases like lint/unit/test).
 	var toRun []validationDef
@@ -205,6 +215,31 @@ func buildValidationAliasMap(available []validationDef) map[string]string {
 	}
 
 	return alias
+}
+
+// detectValidationsWithConfig returns config-defined validations if any are set,
+// otherwise falls back to detectValidations auto-detection.
+// shell quoting is not supported: use strings.Fields (space-split only).
+func detectValidationsWithConfig(rootDir string) []validationDef {
+	if validationCfg != nil {
+		var defs []validationDef
+		if validationCfg.Lint != "" {
+			parts := strings.Fields(validationCfg.Lint)
+			if len(parts) > 0 {
+				defs = append(defs, validationDef{Name: "lint", Command: parts[0], Args: parts[1:]})
+			}
+		}
+		if validationCfg.Unit != "" {
+			parts := strings.Fields(validationCfg.Unit)
+			if len(parts) > 0 {
+				defs = append(defs, validationDef{Name: "unit", Command: parts[0], Args: parts[1:]})
+			}
+		}
+		if len(defs) > 0 {
+			return defs
+		}
+	}
+	return detectValidations(rootDir)
 }
 
 func detectValidations(rootDir string) []validationDef {

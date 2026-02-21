@@ -64,6 +64,12 @@ func newMCPServer() (*mcpServer, error) {
 	}
 	writeHookConfigJSON(projectDir, hookCfg)
 
+	// Wire validation config so c4_run_validation prefers config.yaml commands.
+	if cfgMgr != nil {
+		validCfg := cfgMgr.GetConfig().Validation
+		handlers.SetValidationConfig(&validCfg)
+	}
+
 	// Create lazy Python sidecar (will start on first proxy tool call)
 	bridgeCfg := bridge.DefaultSidecarConfig()
 	bridgeCfg.PidFile = filepath.Join(projectDir, ".c4", "sidecar.pid")

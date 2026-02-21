@@ -432,6 +432,7 @@ cq doctor --json       # CI/자동화용 JSON 출력
 | **hook 파일** | `~/.claude/hooks/c4-bash-security-hook.sh` | **대화형** | Bash 명령 Haiku 리뷰 hook |
 | **settings.json 패치** | `~/.claude/settings.json` | **대화형** | PreToolUse Bash hook 등록 |
 
+- `.mcp.json`은 **per-developer 파일** — 절대경로(`/Users/...`)가 포함되므로 git에 커밋하지 않음. clone 후 `cq init` 실행 시 자동 생성됨. 기존에 추적 중인 경우: `git rm --cached .mcp.json`
 - hook/settings 설치는 **대화형 확인** 필요 — 사용자가 N 입력 시 건너뜀 (C4 핵심 기능에 영향 없음)
 - `--yes` / `-y` 플래그: 모든 대화형 확인을 자동 승인 (CI/자동화 환경용)
 - hook 파일은 바이너리에 embed되어 있어 소스 없이도 설치 가능
