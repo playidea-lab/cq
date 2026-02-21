@@ -15,12 +15,11 @@ export default defineConfig({
 
     nav: [
       { text: 'Guide', link: '/guide/' },
+      { text: 'Workflow', link: '/workflow/' },
+      { text: 'Examples', link: '/examples/' },
       { text: 'Reference', link: '/reference/commands' },
       { text: 'For Agents', link: '/for-agents/' },
-      {
-        text: 'GitHub',
-        link: 'https://github.com/PlayIdea-Lab/cq'
-      }
+      { text: 'GitHub', link: 'https://github.com/PlayIdea-Lab/cq' }
     ],
 
     sidebar: {
@@ -54,6 +53,17 @@ export default defineConfig({
             { text: 'Commands', link: '/reference/commands' },
             { text: 'Config', link: '/reference/config' },
             { text: 'Skills', link: '/reference/skills' },
+          ]
+        }
+      ],
+      '/examples/': [
+        {
+          text: 'Examples',
+          items: [
+            { text: 'Overview', link: '/examples/' },
+            { text: 'Feature Planning', link: '/examples/feature-planning' },
+            { text: 'Quick Bug Fix', link: '/examples/quick-fix' },
+            { text: 'Distributed Experiments', link: '/examples/distributed-experiments' },
           ]
         }
       ],
