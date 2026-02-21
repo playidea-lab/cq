@@ -170,12 +170,13 @@ type ServeComponentToggle struct {
 
 // ServeConfig holds settings for the cq serve command.
 type ServeConfig struct {
-	HealthPort int                    `mapstructure:"health_port" yaml:"health_port"`
-	Agent      ServeComponentToggle   `mapstructure:"agent"       yaml:"agent"`
-	EventBus   ServeComponentToggle   `mapstructure:"eventbus"    yaml:"eventbus"`
-	EventSink  ServeComponentToggle   `mapstructure:"eventsink"   yaml:"eventsink"`
-	HubPoller  ServeComponentToggle   `mapstructure:"hubpoller"   yaml:"hubpoller"`
-	GPU        ServeComponentToggle   `mapstructure:"gpu"         yaml:"gpu"`
+	HealthPort    int                  `mapstructure:"health_port"    yaml:"health_port"`
+	Agent         ServeComponentToggle `mapstructure:"agent"          yaml:"agent"`
+	EventBus      ServeComponentToggle `mapstructure:"eventbus"       yaml:"eventbus"`
+	EventSink     ServeComponentToggle `mapstructure:"eventsink"      yaml:"eventsink"`
+	HubPoller     ServeComponentToggle `mapstructure:"hubpoller"      yaml:"hubpoller"`
+	GPU           ServeComponentToggle `mapstructure:"gpu"            yaml:"gpu"`
+	SSESubscriber ServeComponentToggle `mapstructure:"ssesubscriber"  yaml:"ssesubscriber"`
 }
 
 // PermissionReviewerConfig holds settings for the permission auto-reviewer hook.
@@ -355,6 +356,7 @@ func New(projectRoot string, cloudDefaults ...CloudDefaults) (*Manager, error) {
 	v.SetDefault("serve.eventsink.enabled", false)
 	v.SetDefault("serve.hubpoller.enabled", false)
 	v.SetDefault("serve.gpu.enabled", false)
+	v.SetDefault("serve.ssesubscriber.enabled", false)
 	v.SetDefault("permission_reviewer.enabled", false)
 	v.SetDefault("planning.critique_loop.enabled", true)
 	v.SetDefault("planning.critique_loop.max_rounds", 3)
