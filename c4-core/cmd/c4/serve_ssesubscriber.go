@@ -28,6 +28,8 @@ func registerSSESubscriberServeComponent(mgr *serve.Manager, cfg config.C4Config
 	var pub eventbus.Publisher
 	if eb != nil {
 		pub = eb.Publisher()
+	} else {
+		pub = eventbus.NoopPublisher{}
 	}
 
 	comp := serve.NewSSESubscriberComponent(serve.SSESubscriberConfig{

@@ -201,6 +201,8 @@ func (c *SSESubscriberComponent) connect(ctx context.Context) error {
 	c.mu.Unlock()
 
 	scanner := bufio.NewScanner(resp.Body)
+	// Raise token buffer to 1 MiB to handle large SSE event payloads.
+	scanner.Buffer(make([]byte, 0, 64*1024), 1*1024*1024)
 	for scanner.Scan() {
 		line := scanner.Text()
 		if !strings.HasPrefix(line, "data:") {
