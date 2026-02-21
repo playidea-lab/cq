@@ -47,6 +47,27 @@ func RegisterCDPHandlers(reg *mcp.Registry, runner *cdp.Runner) {
 	})
 
 	reg.Register(mcp.ToolSchema{
+		Name: "c4_cdp_action",
+		Description: "Interact with DOM elements via stable ref IDs (resolution-independent). " +
+			"Workflow: scan_elements → discover refs → click/type/get_text by ref. " +
+			"More reliable than raw JS for SPAs since refs persist across DOM updates.",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"action":          map[string]any{"type": "string", "enum": []string{"scan_elements", "click", "type", "get_text"}, "description": "Action: scan_elements (assign refs), click, type, get_text"},
+				"ref":             map[string]any{"type": "string", "description": "Element ref from scan_elements (e.g. c4r-3)"},
+				"text":            map[string]any{"type": "string", "description": "Text to type (required for action=type)"},
+				"url":             map[string]any{"type": "string", "description": "CDP debug URL (default: http://localhost:9222)"},
+				"target_url":      map[string]any{"type": "string", "description": "Navigate to URL before action"},
+				"timeout_seconds": map[string]any{"type": "integer", "description": "Timeout in seconds (default: 30)"},
+			},
+			"required": []string{"action"},
+		},
+	}, func(raw json.RawMessage) (any, error) {
+		return handleCDPAction(runner, raw)
+	})
+
+	reg.Register(mcp.ToolSchema{
 		Name:        "c4_webmcp_discover",
 		Description: "Discover WebMCP tools exposed by a web page via navigator.modelContext API (Chrome 146+). CDP auto-detected.",
 		InputSchema: map[string]any{
@@ -173,6 +194,93 @@ func handleCDPList(runner *cdp.Runner, raw json.RawMessage) (any, error) {
 		"targets": result,
 		"count":   len(result),
 	}, nil
+}
+
+func handleCDPAction(runner *cdp.Runner, raw json.RawMessage) (any, error) {
+	var params struct {
+		Action         string `json:"action"`
+		Ref            string `json:"ref"`
+		Text           string `json:"text"`
+		URL            string `json:"url"`
+		TargetURL      string `json:"target_url"`
+		TimeoutSeconds int    `json:"timeout_seconds"`
+	}
+	if err := json.Unmarshal(raw, &params); err != nil {
+		return nil, fmt.Errorf("parsing params: %w", err)
+	}
+	if params.Action == "" {
+		return nil, fmt.Errorf("action is required (scan_elements, click, type, get_text)")
+	}
+
+	debugURL := cdp.DiscoverCDPURL(params.URL)
+	ctx := context.Background()
+
+	wrapErr := func(err error) error {
+		if strings.Contains(err.Error(), "connection refused") || strings.Contains(err.Error(), "connect: connection") {
+			return fmt.Errorf("no Chrome browser found (tried %s). Start Chrome with: --remote-debugging-port=9222, or set CDP_DEBUG_URL env", debugURL)
+		}
+		return err
+	}
+
+	switch params.Action {
+	case "scan_elements":
+		result, err := runner.ScanElements(ctx, debugURL, params.TargetURL, params.TimeoutSeconds)
+		if err != nil {
+			return nil, wrapErr(err)
+		}
+		return map[string]any{
+			"elements":   result.Elements,
+			"count":      result.Count,
+			"elapsed_ms": result.ElapsedMs,
+		}, nil
+
+	case "click":
+		if params.Ref == "" {
+			return nil, fmt.Errorf("ref is required for action=click")
+		}
+		result, err := runner.ClickByRef(ctx, debugURL, params.Ref, params.TargetURL, params.TimeoutSeconds)
+		if err != nil {
+			return nil, wrapErr(err)
+		}
+		return map[string]any{
+			"action":     result.Action,
+			"ref":        result.Ref,
+			"elapsed_ms": result.ElapsedMs,
+		}, nil
+
+	case "type":
+		if params.Ref == "" {
+			return nil, fmt.Errorf("ref is required for action=type")
+		}
+		result, err := runner.TypeByRef(ctx, debugURL, params.Ref, params.Text, params.TargetURL, params.TimeoutSeconds)
+		if err != nil {
+			return nil, wrapErr(err)
+		}
+		return map[string]any{
+			"action":     result.Action,
+			"ref":        result.Ref,
+			"value":      result.Value,
+			"elapsed_ms": result.ElapsedMs,
+		}, nil
+
+	case "get_text":
+		if params.Ref == "" {
+			return nil, fmt.Errorf("ref is required for action=get_text")
+		}
+		result, err := runner.GetTextByRef(ctx, debugURL, params.Ref, params.TargetURL, params.TimeoutSeconds)
+		if err != nil {
+			return nil, wrapErr(err)
+		}
+		return map[string]any{
+			"action":     result.Action,
+			"ref":        result.Ref,
+			"value":      result.Value,
+			"elapsed_ms": result.ElapsedMs,
+		}, nil
+
+	default:
+		return nil, fmt.Errorf("unknown action %q: must be scan_elements, click, type, or get_text", params.Action)
+	}
 }
 
 func handleWebMCPDiscover(runner *cdp.Runner, raw json.RawMessage) (any, error) {

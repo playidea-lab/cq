@@ -127,6 +127,102 @@ func TestConstants(t *testing.T) {
 	}
 }
 
+// --- Element-ref unit tests ---
+
+func TestValidateRef(t *testing.T) {
+	tests := []struct {
+		name    string
+		ref     string
+		wantErr bool
+	}{
+		{"valid c4r-0", "c4r-0", false},
+		{"valid c4r-42", "c4r-42", false},
+		{"valid c4r-999", "c4r-999", false},
+		{"empty", "", true},
+		{"wrong prefix", "ref-0", true},
+		{"no number", "c4r-", true},
+		{"injection attempt", `c4r-0"]; alert(1);//`, true},
+		{"spaces", "c4r- 0", true},
+		{"old format", "cdp-ref-0", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateRef(tt.ref)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("validateRef(%q) error = %v, wantErr %v", tt.ref, err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestScanElements_ValidationErrors(t *testing.T) {
+	r := NewRunner()
+	ctx := context.Background()
+	t.Run("empty url", func(t *testing.T) {
+		_, err := r.ScanElements(ctx, "", "", 0)
+		if err == nil {
+			t.Fatal("expected error for empty url")
+		}
+	})
+	t.Run("remote url rejected", func(t *testing.T) {
+		_, err := r.ScanElements(ctx, "http://remote.host:9222", "", 0)
+		if err == nil {
+			t.Fatal("expected error for remote url")
+		}
+	})
+}
+
+func TestClickByRef_ValidationErrors(t *testing.T) {
+	r := NewRunner()
+	ctx := context.Background()
+	t.Run("empty url", func(t *testing.T) {
+		_, err := r.ClickByRef(ctx, "", "c4r-0", "", 0)
+		if err == nil {
+			t.Fatal("expected error for empty url")
+		}
+	})
+	t.Run("invalid ref", func(t *testing.T) {
+		_, err := r.ClickByRef(ctx, "http://localhost:9222", "bad-ref", "", 0)
+		if err == nil {
+			t.Fatal("expected error for invalid ref")
+		}
+	})
+}
+
+func TestTypeByRef_ValidationErrors(t *testing.T) {
+	r := NewRunner()
+	ctx := context.Background()
+	t.Run("empty url", func(t *testing.T) {
+		_, err := r.TypeByRef(ctx, "", "c4r-0", "text", "", 0)
+		if err == nil {
+			t.Fatal("expected error for empty url")
+		}
+	})
+	t.Run("invalid ref", func(t *testing.T) {
+		_, err := r.TypeByRef(ctx, "http://localhost:9222", "bad-ref", "text", "", 0)
+		if err == nil {
+			t.Fatal("expected error for invalid ref")
+		}
+	})
+}
+
+func TestGetTextByRef_ValidationErrors(t *testing.T) {
+	r := NewRunner()
+	ctx := context.Background()
+	t.Run("empty url", func(t *testing.T) {
+		_, err := r.GetTextByRef(ctx, "", "c4r-0", "", 0)
+		if err == nil {
+			t.Fatal("expected error for empty url")
+		}
+	})
+	t.Run("invalid ref", func(t *testing.T) {
+		_, err := r.GetTextByRef(ctx, "http://localhost:9222", "bad-ref", "", 0)
+		if err == nil {
+			t.Fatal("expected error for invalid ref")
+		}
+	})
+}
+
 // --- Integration tests (require a running browser with --remote-debugging-port) ---
 
 // cdpDebugURL returns the CDP debug URL if a browser is available, or skips the test.
