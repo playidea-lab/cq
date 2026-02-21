@@ -84,11 +84,14 @@ func handleConfigGet(cfgMgr *config.Manager, rawArgs json.RawMessage) (any, erro
 		}, nil
 	case "permission_reviewer":
 		return map[string]any{
-			"enabled":     cfg.PermissionReviewer.Enabled,
-			"model":       cfg.PermissionReviewer.Model,
-			"api_key_env": cfg.PermissionReviewer.APIKeyEnv,
-			"fail_mode":   cfg.PermissionReviewer.FailMode,
-			"timeout":     cfg.PermissionReviewer.Timeout,
+			"enabled":        cfg.PermissionReviewer.Enabled,
+			"model":          cfg.PermissionReviewer.Model,
+			"api_key_env":    cfg.PermissionReviewer.APIKeyEnv,
+			"fail_mode":      cfg.PermissionReviewer.FailMode,
+			"timeout":        cfg.PermissionReviewer.Timeout,
+			"auto_approve":   cfg.PermissionReviewer.AutoApprove,
+			"allow_patterns": cfg.PermissionReviewer.AllowPatterns,
+			"block_patterns": cfg.PermissionReviewer.BlockPatterns,
 		}, nil
 	default: // "all"
 		return map[string]any{
@@ -122,8 +125,11 @@ func handleConfigGet(cfgMgr *config.Manager, rawArgs json.RawMessage) (any, erro
 				"unit": cfg.Validation.Unit,
 			},
 			"permission_reviewer": map[string]any{
-				"enabled": cfg.PermissionReviewer.Enabled,
-				"model":   cfg.PermissionReviewer.Model,
+				"enabled":        cfg.PermissionReviewer.Enabled,
+				"model":          cfg.PermissionReviewer.Model,
+				"auto_approve":   cfg.PermissionReviewer.AutoApprove,
+				"allow_patterns": cfg.PermissionReviewer.AllowPatterns,
+				"block_patterns": cfg.PermissionReviewer.BlockPatterns,
 			},
 		}, nil
 	}
