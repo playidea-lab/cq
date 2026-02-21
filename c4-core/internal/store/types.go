@@ -85,7 +85,7 @@ type SubmitResult struct {
 	Success            bool   `json:"success"`
 	NextAction         string `json:"next_action"` // "get_next_task", "await_checkpoint", "complete"
 	Message            string `json:"message,omitempty"`
-	PendingReview      string `json:"pending_review,omitempty"` // R- task ID awaiting review (auto-judge hint)
+	PendingReview      string `json:"pending_review,omitempty"` // R- task ID pending Worker review (non-empty when review_required=true)
 	ValidationSkipped  bool   `json:"validation_skipped,omitempty"` // true when validation_results was omitted
 }
 

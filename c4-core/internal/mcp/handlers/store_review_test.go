@@ -60,17 +60,17 @@ func TestCompleteReviewTask(t *testing.T) {
 	db.Exec(`INSERT INTO c4_tasks (task_id, title, status, dod) VALUES ('T-001-0', 'Impl', 'done', 'test')`)
 	db.Exec(`INSERT INTO c4_tasks (task_id, title, status, dod) VALUES ('R-001-0', 'Review', 'pending', 'test')`)
 
-	// Completing T-001-0 should cascade to R-001-0
+	// completeReviewTask returns R-task ID when it is pending (for Worker assignment)
 	reviewID := store.completeReviewTask("T-001-0")
 	if reviewID != "R-001-0" {
-		t.Errorf("cascaded reviewID = %q, want %q", reviewID, "R-001-0")
+		t.Errorf("reviewID = %q, want %q", reviewID, "R-001-0")
 	}
 
-	// Verify R-task is now done
+	// R-task must stay pending — no auto-cascade; a review Worker will process it
 	var status string
 	db.QueryRow("SELECT status FROM c4_tasks WHERE task_id='R-001-0'").Scan(&status)
-	if status != "done" {
-		t.Errorf("R-001-0 status = %q, want %q", status, "done")
+	if status != "pending" {
+		t.Errorf("R-001-0 status = %q, want %q", status, "pending")
 	}
 }
 
