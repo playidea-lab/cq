@@ -2,17 +2,12 @@
 
 Config file location: `~/.c4/config.yaml` (global) or `.c4/config.yaml` (per-project).
 
-## Starter template
+## When do you need a config?
 
-Copy a pre-built template from the [configs/ directory](https://github.com/PlayIdea-Lab/cq/tree/main/configs):
+- **solo tier** — no config required. CQ works out of the box.
+- **connected / full tier** — config is provided by your team or organization. Place it at `~/.c4/config.yaml`.
 
-```sh
-# solo (local only)
-curl -fsSL https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/configs/solo.yaml > ~/.c4/config.yaml
-
-# connected (cloud + LLM)
-curl -fsSL https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/configs/connected.yaml > ~/.c4/config.yaml
-```
+The sections below document available options for reference.
 
 ## Sections
 
@@ -80,8 +75,10 @@ worktree:
 
 ### `cloud` — Supabase (connected / full tier)
 
+Configured by your organization. You should not need to modify this section directly.
+
 ```yaml
 cloud:
   url: "https://xxxx.supabase.co"
-  anon_key: ""   # use: cq secret set supabase.anon_key <value>
+  anon_key: ""
 ```

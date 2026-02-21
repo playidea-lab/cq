@@ -38,14 +38,7 @@ Additional features on top of `solo`:
 - **C3 EventBus** — gRPC event bus for real-time notifications
 - **C0 Drive** — file storage via Supabase Storage
 
-Requires: Supabase project URL + anon key. Create a free project at [supabase.com](https://supabase.com), then:
-
-```sh
-# Copy the connected config template
-curl -fsSL https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/configs/connected.yaml > ~/.c4/config.yaml
-# Edit cloud.url and cloud.anon_key (or use secret store)
-cq secret set supabase.anon_key your-anon-key
-```
+Requires a cloud config provided by your team or organization. Place it at `~/.c4/config.yaml` before first use.
 
 Best for: teams, multi-machine setups, AI-powered workflows.
 
@@ -85,13 +78,8 @@ Best for: production deployments, ML workflows, large teams.
 | CDP automation | — | — | ✅ |
 | GPU scheduler | — | — | ✅ |
 
-## Config templates
+## Config file location
 
-Starter configs for each tier are in the [`configs/`](https://github.com/PlayIdea-Lab/cq/tree/main/configs) directory:
+CQ looks for config at `~/.c4/config.yaml`. For `solo` tier, no config is required — it works out of the box.
 
-```sh
-# Download and use directly
-curl -fsSL https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/configs/solo.yaml > ~/.c4/config.yaml
-curl -fsSL https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/configs/connected.yaml > ~/.c4/config.yaml
-curl -fsSL https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/configs/full.yaml > ~/.c4/config.yaml
-```
+For `connected` and `full` tiers, the config file will be provided by your team or organization. Place it at `~/.c4/config.yaml` before running `cq claude` in your project.
