@@ -29,13 +29,31 @@ Post-implementation completion workflow. Execute ALL steps in order.
 > **건너뛰는 조건**: 이번 세션에서 `/c4-polish`가 이미 완료됐고, 그 이후 코드 변경이 없는 경우.
 > 의심스러우면 실행한다. 비용보다 품질이 우선.
 
-### 1. Verify Build
+### 1. Phase Lock Acquire (Advisory)
+
+동시 실행 방지를 위한 advisory lock을 획득합니다.
+
+```python
+result = c4_phase_lock_acquire(phase="finish")
+if not result["acquired"]:
+    err = result["error"]
+    print(f"다른 세션이 Finish 중입니다 ({err['message']})")
+    print("Override하시겠습니까? (Y/N)")
+    # N이면 종료
+    # Y면 강제 override로 진행
+```
+
+- `acquired: true` → 정상 진행
+- `acquired: false, code: LOCK_HELD` → 사용자에게 override 여부 확인
+- 완료 시 `c4_phase_lock_release(phase="finish")` 호출
+
+### 2. Verify Build
 ```bash
 cd c4-core && go build ./... && go vet ./...
 ```
 - Build/vet 실패 시 → 수정 후 재시도, 통과할 때까지 다음 단계 진행 금지
 
-### 2. Run Tests
+### 3. Run Tests
 ```bash
 cd c4-core && go test -count=1 -p 1 ./...
 ```
@@ -43,28 +61,28 @@ cd c4-core && go test -count=1 -p 1 ./...
 - Python 변경 있으면: `uv run pytest tests/ -x`
 - C5 변경 있으면: `cd c5 && go test ./...`
 
-### 3. Verify Worker Output (C4 workflow 사용 시)
+### 4. Verify Worker Output (C4 workflow 사용 시)
 - `c4_status`로 모든 태스크 상태 확인
 - 각 완료 태스크의 `commit_sha` 존재 여부 확인
 - `git diff` 또는 `git log`로 실제 코드 변경 확인
 - commit_sha 없는 완료 태스크 → 경고 보고
 
-### 4. Install Binary
+### 5. Install Binary
 ```bash
 cd c4-core && go build -o ~/.local/bin/cq ./cmd/c4/
 ```
 - `cp` 복사 금지 (macOS ARM64 코드 서명 무효화)
 
-### 5. Update Documentation
+### 6. Update Documentation
 - 변경된 기능에 해당하는 문서 업데이트 (AGENTS.md, README.md 등)
 - 테스트 수, LOC, 도구 수 등 수치 변경 시 AGENTS.md 반영
 - MEMORY.md에 주요 변경 기록
 
-### 6. Learn & Record
+### 7. Learn & Record
 - `c4_knowledge_record`로 이번 세션의 인사이트 기록
 - 반복될 수 있는 실수 패턴 → MEMORY.md에 추가
 
-### 6.5. Auto-Distill (조건부)
+### 7.5. Auto-Distill (조건부)
 ```python
 # 축적된 knowledge가 5건 이상이면 자동 distill 수행
 stats = c4_knowledge_stats()
@@ -75,13 +93,14 @@ if stats.total_docs >= 5:
 ```
 Cursor에서는 수동으로 `c4_knowledge_distill` 호출하거나 건너뜁니다.
 
-### 7. Git Commit
+### 8. Git Commit
 - `git status` → 변경 파일 확인
 - `git diff` → 변경 내용 검토
 - Conventional commit message 작성 (feat/fix/docs/refactor)
 - 커밋 생성 (push는 사용자 요청 시에만)
+- 완료 후: `c4_phase_lock_release(phase="finish")` 호출
 
-### 8. Release Notes (c4-release)
+### 9. Release Notes (c4-release)
 
 커밋 완료 후 자동으로 `/c4-release`를 실행합니다.
 
