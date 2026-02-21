@@ -45,26 +45,26 @@ build-nightly:
 
 ## install-nightly: Build nightly tier and install to ~/.local/bin/cq
 install-nightly: build-nightly
-	@mkdir -p $(INSTALL_DIR)
-	cp $(BUILD_DIR)/cq-nightly $(INSTALL_BIN)
+	@mkdir -p $(dir $(INSTALL_BIN))
+	@cp $(BUILD_DIR)/cq-nightly $(INSTALL_BIN).tmp && mv $(INSTALL_BIN).tmp $(INSTALL_BIN) || { rm -f $(INSTALL_BIN).tmp; exit 1; }
 	@echo "Installed nightly tier → $(INSTALL_BIN)"
 
 ## install-solo: Build solo tier and install to ~/.local/bin/cq
 install-solo: build-solo
-	@mkdir -p $(INSTALL_DIR)
-	cp $(BUILD_DIR)/cq-solo $(INSTALL_BIN)
+	@mkdir -p $(dir $(INSTALL_BIN))
+	@cp $(BUILD_DIR)/cq-solo $(INSTALL_BIN).tmp && mv $(INSTALL_BIN).tmp $(INSTALL_BIN) || { rm -f $(INSTALL_BIN).tmp; exit 1; }
 	@echo "Installed solo tier → $(INSTALL_BIN)"
 
 ## install-connected: Build connected tier and install to ~/.local/bin/cq
 install-connected: build-connected
-	@mkdir -p $(INSTALL_DIR)
-	cp $(BUILD_DIR)/cq-connected $(INSTALL_BIN)
+	@mkdir -p $(dir $(INSTALL_BIN))
+	@cp $(BUILD_DIR)/cq-connected $(INSTALL_BIN).tmp && mv $(INSTALL_BIN).tmp $(INSTALL_BIN) || { rm -f $(INSTALL_BIN).tmp; exit 1; }
 	@echo "Installed connected tier → $(INSTALL_BIN)"
 
 ## install-full: Build full tier and install to ~/.local/bin/cq
 install-full: build-full
-	@mkdir -p $(INSTALL_DIR)
-	cp $(BUILD_DIR)/cq-full $(INSTALL_BIN)
+	@mkdir -p $(dir $(INSTALL_BIN))
+	@cp $(BUILD_DIR)/cq-full $(INSTALL_BIN).tmp && mv $(INSTALL_BIN).tmp $(INSTALL_BIN) || { rm -f $(INSTALL_BIN).tmp; exit 1; }
 	@echo "Installed full tier → $(INSTALL_BIN)"
 
 ## test: Run all tests
