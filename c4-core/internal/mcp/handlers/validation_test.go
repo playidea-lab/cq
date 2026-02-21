@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/changmin/c4-core/internal/config"
 )
 
 func TestDetectValidations_GoProject(t *testing.T) {
@@ -155,5 +157,115 @@ func TestBuildValidationAliasMap_GoOnly(t *testing.T) {
 	}
 	if got := aliases["test"]; got != "go-test" {
 		t.Errorf("alias[test] = %q, want go-test", got)
+	}
+}
+
+func TestDetectValidationsWithConfig_LintOverride(t *testing.T) {
+	// Reset after test
+	orig := validationCfg
+	defer func() { validationCfg = orig }()
+
+	cfg := &config.ValidationConfig{
+		Lint: "uv run ruff check .",
+	}
+	SetValidationConfig(cfg)
+
+	dir := t.TempDir()
+	defs := detectValidationsWithConfig(dir)
+
+	if len(defs) != 1 {
+		t.Fatalf("expected 1 validation from config, got %d", len(defs))
+	}
+	if defs[0].Name != "lint" {
+		t.Errorf("Name = %q, want lint", defs[0].Name)
+	}
+	if defs[0].Command != "uv" {
+		t.Errorf("Command = %q, want uv", defs[0].Command)
+	}
+	wantArgs := []string{"run", "ruff", "check", "."}
+	if len(defs[0].Args) != len(wantArgs) {
+		t.Fatalf("Args = %v, want %v", defs[0].Args, wantArgs)
+	}
+	for i, a := range wantArgs {
+		if defs[0].Args[i] != a {
+			t.Errorf("Args[%d] = %q, want %q", i, defs[0].Args[i], a)
+		}
+	}
+}
+
+func TestDetectValidationsWithConfig_BothOverride(t *testing.T) {
+	orig := validationCfg
+	defer func() { validationCfg = orig }()
+
+	cfg := &config.ValidationConfig{
+		Lint: "golangci-lint run",
+		Unit: "go test ./...",
+	}
+	SetValidationConfig(cfg)
+
+	dir := t.TempDir()
+	defs := detectValidationsWithConfig(dir)
+
+	if len(defs) != 2 {
+		t.Fatalf("expected 2 validations from config, got %d", len(defs))
+	}
+	names := map[string]bool{}
+	for _, d := range defs {
+		names[d.Name] = true
+	}
+	if !names["lint"] {
+		t.Error("expected lint in config-based defs")
+	}
+	if !names["unit"] {
+		t.Error("expected unit in config-based defs")
+	}
+}
+
+func TestDetectValidationsWithConfig_FallbackWhenNilConfig(t *testing.T) {
+	orig := validationCfg
+	defer func() { validationCfg = orig }()
+
+	// Ensure no config set
+	validationCfg = nil
+
+	dir := t.TempDir()
+	// Create pyproject.toml so detectValidations finds something
+	if err := os.WriteFile(filepath.Join(dir, "pyproject.toml"), []byte("[project]"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	defs := detectValidationsWithConfig(dir)
+	found := map[string]bool{}
+	for _, d := range defs {
+		found[d.Name] = true
+	}
+	if !found["pytest"] {
+		t.Error("expected fallback to detectValidations to find pytest")
+	}
+}
+
+func TestDetectValidationsWithConfig_FallbackWhenEmptyConfig(t *testing.T) {
+	orig := validationCfg
+	defer func() { validationCfg = orig }()
+
+	// Config with empty strings → should fallback to auto-detection
+	cfg := &config.ValidationConfig{
+		Lint: "",
+		Unit: "",
+	}
+	SetValidationConfig(cfg)
+
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "pyproject.toml"), []byte("[project]"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	defs := detectValidationsWithConfig(dir)
+	found := map[string]bool{}
+	for _, d := range defs {
+		found[d.Name] = true
+	}
+	if !found["pytest"] {
+		t.Error("expected fallback to detectValidations when config has empty strings")
 	}
 }
