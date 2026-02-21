@@ -7,12 +7,16 @@ import (
 	"log/slog"
 	"os"
 
+	"github.com/changmin/c4-core/internal/eventbus"
 	"github.com/changmin/c4-core/internal/mcp/handlers"
 	"github.com/changmin/c4-core/internal/observe"
 )
 
 func init() {
 	registerPreStoreHook(initObserve)
+	registerEBWireHook(func(_ *initContext, ebClient *eventbus.Client) {
+		observe.SetEventBus(ebClient)
+	})
 }
 
 // initObserve creates the logger, metrics accumulator, and log ring buffer,

@@ -7,12 +7,22 @@ import (
 	"log/slog"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/changmin/c4-core/internal/mcp"
 	"github.com/changmin/c4-core/internal/observe"
 )
+
+// mockPublisher records PublishAsync calls for test assertions.
+type mockPublisher struct {
+	calls atomic.Int64
+}
+
+func (m *mockPublisher) PublishAsync(evType, source string, data json.RawMessage, projectID string) {
+	m.calls.Add(1)
+}
 
 // TestLoggerOutput verifies JSON structured output from the logger.
 func TestLoggerOutput(t *testing.T) {
@@ -291,4 +301,69 @@ func TestMiddlewarePlain(t *testing.T) {
 	if snap.Tools["_all"].Calls != 1 {
 		t.Errorf("expected 1 call in '_all' bucket, got %d", snap.Tools["_all"].Calls)
 	}
+}
+
+// TestSetEventBus_DynamicPublish verifies that after calling SetEventBus the
+// ContextualMiddlewareFunc dispatches PublishAsync on each tool call.
+func TestSetEventBus_DynamicPublish(t *testing.T) {
+	// Reset global publisher after the test to avoid test pollution.
+	t.Cleanup(func() { observe.SetEventBus(nil) })
+
+	pub := &mockPublisher{}
+	observe.SetEventBus(pub)
+
+	var logBuf bytes.Buffer
+	logger := observe.NewLogger(observe.LoggerOpts{Format: observe.FormatJSON, Output: &logBuf})
+	metrics := observe.NewMetrics()
+
+	reg := mcp.NewRegistry()
+	// Pass nil publisher so the global one is used.
+	reg.UseContextual(observe.ContextualMiddlewareFunc(logger, metrics, nil))
+	reg.Register(mcp.ToolSchema{Name: "ping", Description: "test"}, func(args json.RawMessage) (any, error) {
+		return "pong", nil
+	})
+
+	_, err := reg.Dispatch(t.Context(), "ping", json.RawMessage(`{}`))
+	if err != nil {
+		t.Fatalf("unexpected dispatch error: %v", err)
+	}
+
+	if got := pub.calls.Load(); got != 1 {
+		t.Errorf("expected 1 PublishAsync call, got %d", got)
+	}
+}
+
+// TestSetEventBus_Concurrent verifies that SetEventBus and PublishAsync are
+// safe under concurrent access (run with -race to detect data races).
+func TestSetEventBus_Concurrent(t *testing.T) {
+	t.Cleanup(func() { observe.SetEventBus(nil) })
+
+	var logBuf bytes.Buffer
+	logger := observe.NewLogger(observe.LoggerOpts{Format: observe.FormatJSON, Output: &logBuf})
+	metrics := observe.NewMetrics()
+
+	reg := mcp.NewRegistry()
+	reg.UseContextual(observe.ContextualMiddlewareFunc(logger, metrics, nil))
+	reg.Register(mcp.ToolSchema{Name: "concurrent_tool", Description: "test"}, func(args json.RawMessage) (any, error) {
+		return "ok", nil
+	})
+
+	pub := &mockPublisher{}
+
+	var wg sync.WaitGroup
+	const goroutines = 50
+
+	// Concurrently set the publisher and dispatch tool calls.
+	for i := 0; i < goroutines; i++ {
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			observe.SetEventBus(pub)
+		}()
+		go func() {
+			defer wg.Done()
+			_, _ = reg.Dispatch(t.Context(), "concurrent_tool", json.RawMessage(`{}`))
+		}()
+	}
+	wg.Wait()
 }
