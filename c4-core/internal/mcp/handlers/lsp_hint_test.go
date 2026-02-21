@@ -52,11 +52,13 @@ func TestGoOverviewHasEditHint(t *testing.T) {
 		t.Errorf("unexpected _edit_hint value: %v", hint)
 	}
 
-	// functions[] 각 항목에도 _edit_hint 있어야 함
-	if fns, ok := m["functions"].([]map[string]any); ok {
-		for i, fn := range fns {
-			if fn["_edit_hint"] == nil {
-				t.Errorf("functions[%d] missing _edit_hint", i)
+	// 모든 카테고리 항목에 _edit_hint 있어야 함 (fixture: structs/methods/constants/functions)
+	for _, key := range []string{"functions", "methods", "structs", "constants"} {
+		if items, ok := m[key].([]map[string]any); ok {
+			for i, item := range items {
+				if item["_edit_hint"] == nil {
+					t.Errorf("%s[%d] missing _edit_hint", key, i)
+				}
 			}
 		}
 	}
