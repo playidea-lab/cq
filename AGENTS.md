@@ -437,7 +437,30 @@ cq doctor --json       # CI/자동화용 JSON 출력
 - hook 파일은 바이너리에 embed되어 있어 소스 없이도 설치 가능
 - 기존 `.conf` 파일(`c4-bash-security.conf`)은 삭제하지 않음 (하위 호환, fallback용)
 - **hook 설정 SSOT**: `.c4/config.yaml`의 `permission_reviewer` 섹션 (`.conf` 파일 생성 안 함)
-- `permission_reviewer.enabled: true` 설정 시 Haiku API로 Bash 명령 안전성 검토
+- hook 설정 변경 시 MCP 서버 재시작 필요 (`.c4/hook-config.json`이 재생성됨)
+
+#### permission_reviewer 전체 스키마
+
+```yaml
+# .c4/config.yaml
+permission_reviewer:
+  enabled: true          # false → hook 즉시 통과 (비활성화)
+  mode: hook             # "hook": 정규식 패턴만 / "model": LLM API 호출
+  model: haiku           # model mode용: haiku, sonnet, opus (또는 full model ID)
+  api_key_env: ANTHROPIC_API_KEY
+  fail_mode: ask         # model mode 실패 시: "ask" (사용자 확인) / "allow" (자동 승인)
+  auto_approve: true     # true: 안전 판정 시 사용자 확인 없이 자동 실행
+  timeout: 10            # model mode API 타임아웃 (초)
+  allow_patterns: []     # 항상 허용할 정규식 패턴 (모든 mode에서 최우선)
+  block_patterns: []     # 항상 차단할 정규식 패턴 (hook mode + model fallback)
+```
+
+**흐름**: `.c4/config.yaml` → (MCP 서버 시작 시) → `.c4/hook-config.json` → hook 스크립트
+
+| mode | 동작 | 권장 상황 |
+|------|------|----------|
+| `hook` | 정규식 패턴 매칭 (빠름, 오프라인) | 일반 개발 [기본값] |
+| `model` | Haiku API 호출 (정확, 느림) | 보안 민감 프로젝트 |
 
 ### cq doctor (자가진단)
 

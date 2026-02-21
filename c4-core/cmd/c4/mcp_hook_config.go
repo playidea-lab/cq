@@ -44,12 +44,14 @@ func defaultHookConfig() hookConfigJSON {
 func hookConfigFromC4Config(cfg *config.C4Config) hookConfigJSON {
 	pr := cfg.PermissionReviewer
 
-	// Derive mode: if model name is set and differs from default, assume model mode.
-	// For now default to "hook" unless explicitly overridden.
-	mode := "hook"
+	// Mode: use config value, default to "hook" if unset.
+	mode := pr.Mode
+	if mode == "" {
+		mode = "hook"
+	}
 
-	// Derive auto_approve from fail_mode: "allow" means approve automatically.
-	autoApprove := pr.FailMode == "allow"
+	// AutoApprove: prefer explicit config field; fall back to fail_mode=="allow".
+	autoApprove := pr.AutoApprove || pr.FailMode == "allow"
 
 	// Resolve full model ID from short alias or keep as-is.
 	model := resolveHookModel(pr.Model)
@@ -71,8 +73,8 @@ func hookConfigFromC4Config(cfg *config.C4Config) hookConfigJSON {
 		Model:         model,
 		APIKeyEnv:     apiKeyEnv,
 		Timeout:       timeout,
-		AllowPatterns: []string{},
-		BlockPatterns: []string{},
+		AllowPatterns: pr.AllowPatterns,
+		BlockPatterns: pr.BlockPatterns,
 	}
 }
 
