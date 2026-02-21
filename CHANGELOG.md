@@ -7,6 +7,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-02-21
+
+### ✨ Features
+
+- **`permission_reviewer` Config SSOT 완성**
+  - `.c4/config.yaml` → `.c4/hook-config.json` → hook 스크립트 전체 파이프라인 연결
+  - `mode` (`hook` / `model`), `auto_approve`, `allow_patterns`, `block_patterns` 필드 추가
+  - `PermissionReviewerConfig` Go struct에 `Mode` 필드 추가 — 하드코딩 제거
+  - `hookConfigFromC4Config()`: config에서 모든 필드 읽도록 전환
+
+- **`cq init` 기본 `config.yaml` 자동 생성**
+  - 신규 사용자가 별도 설정 없이 hook이 즉시 동작 (`enabled: true`, `mode: hook`)
+  - 기존 파일 보존 (덮어쓰지 않음)
+  - optional 섹션 (cloud, hub, llm_gateway) 주석 처리로 포함 — 필요 시 uncomment
+
+- **C5 SSE 구독 컴포넌트 (`SSESubscriberComponent`)** (T-924-0)
+  - `cq serve`에서 C5 Hub SSE 스트림 구독 지원
+  - C5 → C4 이벤트 실시간 수신 경로 구현
+
+- **Agent lazy-start MCP lifecycle 통합** (T-925-0)
+  - `cq serve` Agent 컴포넌트를 MCP 서버 시작 시 자동 초기화
+  - Supabase Realtime 구독 → `claude -p` 디스패치
+
+- **`cq serve` 컴포넌트 안정화**
+  - lazyPublisher 패턴: EventSink / HubPoller에 EventBus publisher 지연 초기화 (T-930-0)
+  - EventBusComponent Health 5s TTL 캐시 추가 (T-934-0)
+  - GPU handler `/daemon/` prefix로 serve mux에 마운트 (T-931-0)
+
+### 🐛 Bug Fixes
+
+- **`fix(hook)`**: `2>/dev/null` false positive 수정 (T-hook)
+  - `>/dev/null`, `>/dev/stderr`, `>/dev/stdin`, `>/dev/stdout`, `>/dev/fd` 를 안전한 리다이렉션으로 허용
+  - 실제 위험 패턴 (`>/dev/sda` 등 블록 디바이스)만 차단 유지
+- **`fix(serve)`**: `Agent.Stop()` ctx 취소 미반영 수정 (T-933-0)
+  - `wg.Wait()` → `select { case <-done: case <-ctx.Done(): }` 교체 — graceful shutdown 보장
+- **`fix(serve)`**: 데드 코드 `status.go` 상수 제거 (T-932-0)
+
+### 🔧 Chores
+
+- `.mcp.json` command path `~/.local/bin/cq` (운영 바이너리)로 통일
+
+### 📚 Documentation
+
+- `AGENTS.md`: `permission_reviewer` 전체 스키마 + mode별 동작 + 설정 변경 절차 문서화
+
+---
+
 ## [0.8.0] - 2026-02-21
 
 ### ✨ Features
