@@ -43,8 +43,11 @@ func RegisterSecretHandlers(reg *mcp.Registry, store *secrets.Store) {
 		if err := json.Unmarshal(args, &p); err != nil {
 			return nil, fmt.Errorf("invalid args: %w", err)
 		}
-		if p.Key == "" || p.Value == "" {
-			return nil, fmt.Errorf("key and value are required")
+		if p.Key == "" {
+			return nil, fmt.Errorf("key is required")
+		}
+		if p.Value == "" {
+			return nil, fmt.Errorf("value is required")
 		}
 		if len(p.Key) > maxSecretKeyBytes {
 			return nil, fmt.Errorf("key too long (max %d chars)", maxSecretKeyBytes)
@@ -60,7 +63,7 @@ func RegisterSecretHandlers(reg *mcp.Registry, store *secrets.Store) {
 
 	reg.Register(mcp.ToolSchema{
 		Name:        "c4_secret_get",
-		Description: "Retrieve a secret from ~/.c4/secrets.db.",
+		Description: "Retrieve a secret from ~/.c4/secrets.db. WARNING: the plaintext value is returned in the response and will appear in the LLM context window. Prefer using c4_secret_set and relying on automatic key resolution in config rather than calling this tool directly.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{

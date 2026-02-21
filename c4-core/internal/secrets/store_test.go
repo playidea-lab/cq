@@ -213,3 +213,37 @@ func TestMasterKeyEnvVar(t *testing.T) {
 		t.Error("master.key should not be created when C4_MASTER_KEY env is set")
 	}
 }
+
+func TestMasterKeyEnvVarPersistence(t *testing.T) {
+	testKey := "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20"
+	t.Setenv("C4_MASTER_KEY", testKey)
+
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "s.db")
+	keyPath := filepath.Join(dir, "master.key")
+
+	// Write with env var key
+	s1, err := secrets.NewWithPaths(dbPath, keyPath)
+	if err != nil {
+		t.Fatalf("first open: %v", err)
+	}
+	if err := s1.Set("k", "persistent"); err != nil {
+		t.Fatalf("Set: %v", err)
+	}
+	s1.Close()
+
+	// Re-open with same env var — must decrypt successfully
+	s2, err := secrets.NewWithPaths(dbPath, keyPath)
+	if err != nil {
+		t.Fatalf("second open: %v", err)
+	}
+	defer s2.Close()
+
+	got, err := s2.Get("k")
+	if err != nil {
+		t.Fatalf("Get after reopen: %v", err)
+	}
+	if got != "persistent" {
+		t.Errorf("got %q, want %q", got, "persistent")
+	}
+}

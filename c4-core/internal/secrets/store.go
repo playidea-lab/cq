@@ -203,7 +203,7 @@ func loadOrCreateMasterKey(path string) ([32]byte, error) {
 		if info.Mode().Perm() != 0400 {
 			return key, fmt.Errorf("master key file has insecure permissions %04o (expected 0400)", info.Mode().Perm())
 		}
-		data, readErr := io.ReadAll(f)
+		data, readErr := io.ReadAll(io.LimitReader(f, 33)) // 33 = 32 valid + 1 to detect oversized
 		if readErr != nil {
 			return key, fmt.Errorf("read master key: %w", readErr)
 		}
@@ -214,12 +214,24 @@ func loadOrCreateMasterKey(path string) ([32]byte, error) {
 		return key, nil
 	}
 
-	// Generate new key
+	// Generate new key. Use O_EXCL to prevent overwriting an existing file
+	// (double-init race) and to avoid the brief world-readable window that
+	// os.WriteFile creates before chmod (create-with-mode is atomic via O_EXCL).
 	if _, err := io.ReadFull(rand.Reader, key[:]); err != nil {
 		return key, fmt.Errorf("generate: %w", err)
 	}
-	if err := os.WriteFile(path, key[:], 0400); err != nil {
-		return key, fmt.Errorf("write master key: %w", err)
+	kf, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0400)
+	if err != nil {
+		return key, fmt.Errorf("create master key: %w", err)
+	}
+	if _, writeErr := kf.Write(key[:]); writeErr != nil {
+		kf.Close()
+		os.Remove(path) // clean up partial file
+		return key, fmt.Errorf("write master key: %w", writeErr)
+	}
+	if closeErr := kf.Close(); closeErr != nil {
+		os.Remove(path) // clean up on close failure
+		return key, fmt.Errorf("close master key: %w", closeErr)
 	}
 	return key, nil
 }
