@@ -69,6 +69,7 @@ func NewEngine(dbPath string, config Config) (*Engine, error) {
 	if err != nil {
 		return nil, fmt.Errorf("guard: open db: %w", err)
 	}
+	db.SetMaxOpenConns(1)
 
 	// Enable WAL for concurrent read/write without blocking.
 	if _, err := db.Exec("PRAGMA journal_mode=WAL"); err != nil {
@@ -125,13 +126,19 @@ func (e *Engine) evaluate(ctx context.Context, actor, tool string, _ []byte) (Ac
 
 	// 2. DB-stored policies
 	dbAction, dbReason, found, err := e.dbPolicyCheck(ctx, tool)
-	if err == nil && found {
+	if err != nil {
+		return ActionDeny, "db error: policy check failed"
+	}
+	if found {
 		return dbAction, dbReason
 	}
 
 	// 3. RBAC: check actor's roles
 	rbacAction, rbacReason, found, err := e.rbacCheck(ctx, actor, tool)
-	if err == nil && found {
+	if err != nil {
+		return ActionDeny, "db error: rbac check failed"
+	}
+	if found {
 		return rbacAction, rbacReason
 	}
 
@@ -145,12 +152,16 @@ func (e *Engine) AuditLog(ctx context.Context, entry AuditEntry) error {
 }
 
 // AuditEntries returns the most recent n audit log entries (newest first).
-func (e *Engine) AuditEntries(ctx context.Context, n int) ([]AuditEntry, error) {
-	rows, err := e.db.QueryContext(ctx,
-		`SELECT id, actor, tool, action, reason, created_at
+// AuditEntries returns the last n audit log entries, optionally filtered by
+// tool and actor. Empty strings mean "no filter".
+func (e *Engine) AuditEntries(ctx context.Context, n int, toolFilter, actorFilter string) ([]AuditEntry, error) {
+	query := `SELECT id, actor, tool, action, reason, created_at
 		   FROM audit_log
+		  WHERE (? = '' OR tool = ?)
+		    AND (? = '' OR actor = ?)
 		  ORDER BY id DESC
-		  LIMIT ?`, n)
+		  LIMIT ?`
+	rows, err := e.db.QueryContext(ctx, query, toolFilter, toolFilter, actorFilter, actorFilter, n)
 	if err != nil {
 		return nil, fmt.Errorf("guard: audit query: %w", err)
 	}

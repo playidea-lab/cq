@@ -130,7 +130,7 @@ func TestAuditLog(t *testing.T) {
 	eng.Check(ctx, "alice", "c4_task_list", nil)
 	eng.Check(ctx, "bob", "c4_add_todo", json.RawMessage(`{"title":"test"}`))
 
-	entries, err := eng.AuditEntries(ctx, 10)
+	entries, err := eng.AuditEntries(ctx, 10, "", "")
 	if err != nil {
 		t.Fatalf("AuditEntries: %v", err)
 	}
@@ -342,7 +342,7 @@ func TestManualAuditLog(t *testing.T) {
 		t.Fatalf("AuditLog: %v", err)
 	}
 
-	entries, err := eng.AuditEntries(ctx, 5)
+	entries, err := eng.AuditEntries(ctx, 5, "", "")
 	if err != nil {
 		t.Fatalf("AuditEntries: %v", err)
 	}

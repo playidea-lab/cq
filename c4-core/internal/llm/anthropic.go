@@ -11,11 +11,10 @@ import (
 	"time"
 )
 
-const anthropicBetaCaching = "prompt-caching-2024-07-31"
-
 const (
 	defaultAnthropicBaseURL = "https://api.anthropic.com"
 	anthropicAPIVersion     = "2023-06-01"
+	anthropicBetaCaching    = "prompt-caching-2024-07-31"
 )
 
 // AnthropicProvider implements the Provider interface for Anthropic's Messages API.
@@ -140,7 +139,6 @@ func (p *AnthropicProvider) Chat(ctx context.Context, req *ChatRequest) (*ChatRe
 	if req.CacheSystemPrompt {
 		httpReq.Header.Set("anthropic-beta", anthropicBetaCaching)
 	}
-
 	resp, err := p.client.Do(httpReq)
 	if err != nil {
 		return nil, fmt.Errorf("http request: %w", err)

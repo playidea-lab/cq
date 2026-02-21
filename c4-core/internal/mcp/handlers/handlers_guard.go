@@ -73,19 +73,13 @@ func RegisterGuardHandlers(reg *mcp.Registry, eng *guard.Engine) {
 			args.Limit = 20
 		}
 
-		entries, err := eng.AuditEntries(context.Background(), args.Limit)
+		entries, err := eng.AuditEntries(context.Background(), args.Limit, args.ToolFilter, args.ActorFilter)
 		if err != nil {
 			return nil, fmt.Errorf("query audit log: %w", err)
 		}
 
 		items := make([]map[string]any, 0, len(entries))
 		for _, e := range entries {
-			if args.ToolFilter != "" && e.Tool != args.ToolFilter {
-				continue
-			}
-			if args.ActorFilter != "" && e.Actor != args.ActorFilter {
-				continue
-			}
 			items = append(items, map[string]any{
 				"id":         e.ID,
 				"actor":      e.Actor,

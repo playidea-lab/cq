@@ -63,11 +63,12 @@ type scheduledJob struct {
 // Scheduler manages periodic job execution using cron-like expressions.
 // Supports standard cron fields and the @every <duration> shorthand.
 type Scheduler struct {
-	store   JobStore
-	mu      sync.Mutex
-	running map[string]*scheduledJob
-	counter uint64
-	done    chan struct{}
+	store    JobStore
+	mu       sync.Mutex
+	running  map[string]*scheduledJob
+	counter  uint64
+	done     chan struct{}
+	stopOnce sync.Once
 }
 
 // NewScheduler creates a Scheduler backed by the given store.
@@ -141,9 +142,9 @@ func (s *Scheduler) Cancel(id string) {
 	}
 }
 
-// Stop halts all running jobs.
+// Stop halts all running jobs. Safe to call multiple times.
 func (s *Scheduler) Stop() {
-	close(s.done)
+	s.stopOnce.Do(func() { close(s.done) })
 }
 
 // ListJobs returns all jobs currently tracked in the store.

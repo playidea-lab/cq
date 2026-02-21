@@ -10,6 +10,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"sync"
 	"time"
@@ -164,7 +165,9 @@ func (m *WebhookManager) post(ep *Endpoint, event Event) error {
 	if err != nil {
 		return fmt.Errorf("webhook POST to %s: %w", ep.URL, err)
 	}
-	defer resp.Body.Close()
+	// Drain body to allow connection reuse, bounded to prevent resource exhaustion.
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<16))
+	resp.Body.Close()
 
 	if resp.StatusCode >= 400 {
 		return fmt.Errorf("webhook %s returned HTTP %d", ep.Name, resp.StatusCode)

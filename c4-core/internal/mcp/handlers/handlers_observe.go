@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 
 	"github.com/changmin/c4-core/internal/mcp"
@@ -320,7 +321,7 @@ func (r *logRingBuffer) Filter(limit int, minLevel slog.Level, toolFilter string
 		if e.Level < minLevel {
 			continue
 		}
-		if toolFilter != "" && e.Tool != toolFilter {
+		if toolFilter != "" && !strings.HasPrefix(e.Tool, toolFilter) {
 			continue
 		}
 		result = append(result, e)
