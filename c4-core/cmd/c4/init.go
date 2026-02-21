@@ -23,9 +23,6 @@ var claudeMDTemplate string
 //go:embed templates/hooks/c4-bash-security-hook.sh
 var hookShContent string
 
-//go:embed templates/hooks/c4-bash-security.conf
-var hookConfContent string
-
 // builtinC4Root is set at build time via -ldflags for skill deployment.
 var builtinC4Root string
 
@@ -313,8 +310,9 @@ func hookNeedsUpdate(path string, embeddedContent string) bool {
 }
 
 // setupGlobalHooks installs the C4 bash security hook to ~/.claude/hooks/.
-// The hook script is embedded in the binary. The .conf file is only created
-// if it doesn't exist (preserving user customizations).
+// The hook script is embedded in the binary. Hook configuration is read from
+// .c4/config.yaml (permission_reviewer section); any existing .conf files
+// are left untouched for backward compatibility.
 func setupGlobalHooks(homeDir string) error {
 	hooksDir := filepath.Join(homeDir, ".claude", "hooks")
 	if err := os.MkdirAll(hooksDir, 0700); err != nil {
@@ -329,14 +327,6 @@ func setupGlobalHooks(homeDir string) error {
 		fmt.Fprintln(os.Stderr, "cq: hook installed → "+hookPath)
 	} else {
 		fmt.Fprintln(os.Stderr, "cq: hooks up-to-date")
-	}
-
-	confPath := filepath.Join(hooksDir, "c4-bash-security.conf")
-	if _, err := os.Stat(confPath); os.IsNotExist(err) {
-		if err := os.WriteFile(confPath, []byte(hookConfContent), 0644); err != nil {
-			return fmt.Errorf("writing hook config: %w", err)
-		}
-		fmt.Fprintln(os.Stderr, "cq: hook config → "+confPath)
 	}
 
 	// Register hook in ~/.claude/settings.json

@@ -434,7 +434,8 @@ cq doctor --json       # CI/자동화용 JSON 출력
 - hook/settings 설치는 **대화형 확인** 필요 — 사용자가 N 입력 시 건너뜀 (C4 핵심 기능에 영향 없음)
 - `--yes` / `-y` 플래그: 모든 대화형 확인을 자동 승인 (CI/자동화 환경용)
 - hook 파일은 바이너리에 embed되어 있어 소스 없이도 설치 가능
-- `.conf` 파일(`c4-bash-security.conf`)은 없을 때만 생성 (기존 커스터마이징 보존)
+- 기존 `.conf` 파일(`c4-bash-security.conf`)은 삭제하지 않음 (하위 호환, fallback용)
+- **hook 설정 SSOT**: `.c4/config.yaml`의 `permission_reviewer` 섹션 (`.conf` 파일 생성 안 함)
 - `permission_reviewer.enabled: true` 설정 시 Haiku API로 Bash 명령 안전성 검토
 
 ### cq doctor (자가진단)
