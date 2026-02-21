@@ -29,8 +29,10 @@ type LoggerOpts struct {
 }
 
 // Logger wraps slog.Logger with C4-specific defaults.
+// Use SetLevel to adjust the minimum log level at runtime.
 type Logger struct {
-	slog *slog.Logger
+	slog     *slog.Logger
+	levelVar *slog.LevelVar
 }
 
 // NewLogger creates a Logger with the given options.
@@ -41,8 +43,9 @@ func NewLogger(opts LoggerOpts) *Logger {
 		out = os.Stderr
 	}
 
-	level := opts.Level
-	ho := &slog.HandlerOptions{Level: level}
+	lv := &slog.LevelVar{}
+	lv.Set(opts.Level)
+	ho := &slog.HandlerOptions{Level: lv}
 
 	var h slog.Handler
 	if opts.Format == FormatText {
@@ -51,7 +54,17 @@ func NewLogger(opts LoggerOpts) *Logger {
 		h = slog.NewJSONHandler(out, ho)
 	}
 
-	return &Logger{slog: slog.New(h)}
+	return &Logger{slog: slog.New(h), levelVar: lv}
+}
+
+// SetLevel updates the minimum log level at runtime without recreating the logger.
+func (l *Logger) SetLevel(level slog.Level) {
+	l.levelVar.Set(level)
+}
+
+// Level returns the current minimum log level.
+func (l *Logger) Level() slog.Level {
+	return l.levelVar.Level()
 }
 
 // Info logs a message at Info level with optional key-value pairs.

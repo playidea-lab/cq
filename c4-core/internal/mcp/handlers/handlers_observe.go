@@ -165,6 +165,9 @@ func RegisterObserveHandlers(reg *mcp.Registry) {
 				return nil, fmt.Errorf("unknown log_level %q", args.LogLevel)
 			}
 			observeState.level = lvl
+			if observeState.logger != nil {
+				observeState.logger.SetLevel(lvl)
+			}
 			changed["log_level"] = args.LogLevel
 		}
 
