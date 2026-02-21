@@ -76,14 +76,18 @@ func (s *SQLiteStore) enrichWithReviewContext(assignment *TaskAssignment) {
 
 	_, baseID, ver, _ := task.ParseTaskID(assignment.TaskID)
 	parentID := fmt.Sprintf("T-%s-%d", baseID, ver)
-	var commitSHA, legacyFilesChanged, handoff string
-	if err := s.db.QueryRow("SELECT commit_sha, branch, handoff FROM c4_tasks WHERE task_id=?", parentID).Scan(&commitSHA, &legacyFilesChanged, &handoff); err != nil {
+	var commitSHA, filesChangedCol, legacyBranchFiles, handoff string
+	if err := s.db.QueryRow("SELECT commit_sha, files_changed, branch, handoff FROM c4_tasks WHERE task_id=?", parentID).Scan(&commitSHA, &filesChangedCol, &legacyBranchFiles, &handoff); err != nil {
 		fmt.Fprintf(os.Stderr, "c4: assign-task: review context for %s: %v\n", parentID, err)
 	}
-	filesChanged := extractFilesChangedFromHandoff(handoff)
+	// Prefer the dedicated files_changed column, then handoff JSON, then legacy branch field.
+	filesChanged := filesChangedCol
+	if filesChanged == "" {
+		filesChanged = extractFilesChangedFromHandoff(handoff)
+	}
 	if filesChanged == "" {
 		// Backward compatibility for legacy rows that stored files in branch.
-		filesChanged = legacyFilesChanged
+		filesChanged = legacyBranchFiles
 	}
 	if commitSHA != "" || filesChanged != "" {
 		assignment.ReviewContext = &ReviewContext{

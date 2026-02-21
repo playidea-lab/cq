@@ -20,6 +20,8 @@ type Task struct {
 	WorkerID      string   `json:"worker_id,omitempty"`
 	Branch        string   `json:"branch,omitempty"`
 	CommitSHA     string   `json:"commit_sha,omitempty"`
+	// FilesChanged stores the CSV list of files changed during direct mode (c4_report).
+	FilesChanged string `json:"files_changed,omitempty"`
 	// ReviewDecisionEvidence stores REQUEST_CHANGES reason (comments) for R-tasks; do not use commit_sha for that.
 	ReviewDecisionEvidence string `json:"review_decision_evidence,omitempty"`
 	// Blocked-task diagnostics (persisted by mark_blocked)

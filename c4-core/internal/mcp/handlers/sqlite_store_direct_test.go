@@ -279,6 +279,105 @@ func TestSQLiteStoreReportTaskDirectSuccess(t *testing.T) {
 	}
 }
 
+// TestReportTask_FilesChangedColumn verifies that c4_report stores files_changed in the
+// dedicated column (not in branch or commit_sha), and GetTask exposes it via FilesChanged.
+func TestReportTask_FilesChangedColumn(t *testing.T) {
+	store, db := newTestSQLiteStore(t)
+	defer db.Close()
+
+	task := &Task{
+		ID:            "T-FC-0",
+		Title:         "Files changed column test",
+		DoD:           "Done",
+		Status:        "pending",
+		ExecutionMode: "direct",
+	}
+	if err := store.AddTask(task); err != nil {
+		t.Fatalf("add task: %v", err)
+	}
+	if _, err := store.ClaimTask("T-FC-0"); err != nil {
+		t.Fatalf("claim task: %v", err)
+	}
+
+	if err := store.ReportTask("T-FC-0", "summary", []string{"a.go", "b.go", "c.go"}); err != nil {
+		t.Fatalf("report task: %v", err)
+	}
+
+	// Verify files_changed column directly in the DB.
+	var filesChangedCol, commitSHA, branch string
+	if err := db.QueryRow("SELECT files_changed, commit_sha, branch FROM c4_tasks WHERE task_id='T-FC-0'").Scan(&filesChangedCol, &commitSHA, &branch); err != nil {
+		t.Fatalf("query files_changed column: %v", err)
+	}
+	if filesChangedCol != "a.go,b.go,c.go" {
+		t.Errorf("files_changed column = %q, want a.go,b.go,c.go", filesChangedCol)
+	}
+	if commitSHA != "" {
+		t.Errorf("commit_sha = %q, want empty for direct report", commitSHA)
+	}
+	if branch != "" {
+		t.Errorf("branch = %q, want empty for direct report", branch)
+	}
+
+	// Verify GetTask returns FilesChanged.
+	got, err := store.GetTask("T-FC-0")
+	if err != nil {
+		t.Fatalf("get task: %v", err)
+	}
+	if got.FilesChanged != "a.go,b.go,c.go" {
+		t.Errorf("Task.FilesChanged = %q, want a.go,b.go,c.go", got.FilesChanged)
+	}
+}
+
+// TestAssignTask_ReviewContextFromFilesChangedColumn verifies that enrichWithReviewContext
+// prefers the files_changed column over the handoff JSON or legacy branch field.
+func TestAssignTask_ReviewContextFromFilesChangedColumn(t *testing.T) {
+	store, db := newTestSQLiteStore(t)
+	defer db.Close()
+
+	if err := store.AddTask(&Task{ID: "T-FC2-0", Title: "Impl", DoD: "done", Status: "pending", ExecutionMode: "direct"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.ClaimTask("T-FC2-0"); err != nil {
+		t.Fatalf("claim task: %v", err)
+	}
+	if err := store.ReportTask("T-FC2-0", "direct summary", []string{"x.go", "y.go"}); err != nil {
+		t.Fatalf("report task: %v", err)
+	}
+
+	// Verify files_changed column was written.
+	var filesChangedCol string
+	if err := db.QueryRow("SELECT files_changed FROM c4_tasks WHERE task_id='T-FC2-0'").Scan(&filesChangedCol); err != nil {
+		t.Fatalf("query files_changed: %v", err)
+	}
+	if filesChangedCol != "x.go,y.go" {
+		t.Errorf("files_changed = %q, want x.go,y.go", filesChangedCol)
+	}
+
+	if err := store.AddTask(&Task{
+		ID:           "R-FC2-0",
+		Title:        "Review",
+		DoD:          "review",
+		Status:       "pending",
+		Dependencies: []string{"T-FC2-0"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	assignment, err := store.AssignTask("worker-review")
+	if err != nil {
+		t.Fatalf("assign review task: %v", err)
+	}
+	if assignment == nil || assignment.TaskID != "R-FC2-0" {
+		t.Fatalf("task_id = %v, want R-FC2-0", assignment)
+	}
+	if assignment.ReviewContext == nil {
+		t.Fatal("expected review_context, got nil")
+	}
+	if assignment.ReviewContext.FilesChanged != "x.go,y.go" {
+		t.Errorf("files_changed = %q, want x.go,y.go", assignment.ReviewContext.FilesChanged)
+	}
+}
+
 func TestAssignTask_ReviewContextFromDirectReportHandoff(t *testing.T) {
 	store, db := newTestSQLiteStore(t)
 	defer db.Close()

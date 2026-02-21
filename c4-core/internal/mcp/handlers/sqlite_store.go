@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -301,12 +302,13 @@ func (s *SQLiteStore) GetTask(taskID string) (*Task, error) {
 	var reviewEvidence sql.NullString
 	var failureSig, lastErr sql.NullString
 	var blockedAttempts sql.NullInt64
+	var filesChangedNull sql.NullString
 	err := s.db.QueryRow(`
-		SELECT task_id, title, scope, dod, status, dependencies, domain, priority, model, execution_mode, worker_id, branch, commit_sha, review_decision_evidence, failure_signature, blocked_attempts, last_error, created_at, updated_at
+		SELECT task_id, title, scope, dod, status, dependencies, domain, priority, model, execution_mode, worker_id, branch, commit_sha, files_changed, review_decision_evidence, failure_signature, blocked_attempts, last_error, created_at, updated_at
 		FROM c4_tasks WHERE task_id = ?`, taskID,
 	).Scan(&t.ID, &t.Title, &t.Scope, &t.DoD, &t.Status, &deps,
 		&t.Domain, &t.Priority, &t.Model, &t.ExecutionMode, &t.WorkerID, &t.Branch, &t.CommitSHA,
-		&reviewEvidence, &failureSig, &blockedAttempts, &lastErr, &createdAt, &updatedAt)
+		&filesChangedNull, &reviewEvidence, &failureSig, &blockedAttempts, &lastErr, &createdAt, &updatedAt)
 
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("task not found: %s", taskID)
@@ -319,6 +321,9 @@ func (s *SQLiteStore) GetTask(taskID string) (*Task, error) {
 		if err := json.Unmarshal([]byte(deps.String), &t.Dependencies); err != nil {
 			fmt.Fprintf(os.Stderr, "c4: warning: failed to parse dependencies for task %s: %v\n", taskID, err)
 		}
+	}
+	if filesChangedNull.Valid {
+		t.FilesChanged = filesChangedNull.String
 	}
 	if reviewEvidence.Valid {
 		t.ReviewDecisionEvidence = reviewEvidence.String
@@ -741,10 +746,11 @@ func (s *SQLiteStore) ReportTask(taskID, summary string, filesChanged []string) 
 	}
 
 	handoff := buildDirectReportHandoff(summary, filesChanged)
+	filesChangedCSV := strings.Join(filesChanged, ",")
 
 	_, err = s.db.Exec(`
-		UPDATE c4_tasks SET status = 'done', handoff = ?, updated_at = CURRENT_TIMESTAMP
-		WHERE task_id = ?`, handoff, taskID,
+		UPDATE c4_tasks SET status = 'done', handoff = ?, files_changed = ?, updated_at = CURRENT_TIMESTAMP
+		WHERE task_id = ?`, handoff, filesChangedCSV, taskID,
 	)
 	if err != nil {
 		return err
