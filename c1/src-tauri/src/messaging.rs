@@ -96,6 +96,23 @@ pub struct Message {
     #[serde(default)]
     pub member_id: Option<String>,
     #[serde(default)]
+    pub agent_work_id: Option<String>,
+    #[serde(default)]
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChannelPin {
+    pub id: String,
+    pub channel_id: String,
+    pub content: String,
+    #[serde(default)]
+    pub pin_type: String,
+    #[serde(default)]
+    pub version: i64,
+    #[serde(default)]
+    pub created_by: Option<String>,
+    #[serde(default)]
     pub created_at: String,
 }
 
@@ -733,6 +750,132 @@ pub async fn update_presence(
     .map_err(|e| format!("Task execution failed: {}", e))?
 }
 
+/// Create a channel pin
+#[tauri::command(rename_all = "camelCase")]
+pub async fn create_channel_pin(
+    channel_id: String,
+    content: String,
+    pin_type: String,
+) -> Result<ChannelPin, String> {
+    tokio::task::spawn_blocking(move || {
+        let (supabase_url, anon_key) = read_supabase_config()?;
+        let token = read_auth_token()?;
+        let user_id = extract_user_id_from_token(&token)?;
+
+        let client = build_client()?;
+        let url = format!(
+            "{}/rest/v1/c1_channel_pins",
+            supabase_url.trim_end_matches('/')
+        );
+
+        let payload = serde_json::json!({
+            "channel_id": channel_id,
+            "content": content,
+            "pin_type": pin_type,
+            "created_by": user_id,
+        });
+
+        let resp = retry_request(3, || {
+            client
+                .post(&url)
+                .header("Authorization", format!("Bearer {}", token))
+                .header("apikey", &anon_key)
+                .header("Content-Type", "application/json")
+                .header("Prefer", "return=representation")
+                .json(&payload)
+                .send()
+        })?;
+
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let body = resp.text().unwrap_or_default();
+            return Err(format!("Failed to create channel pin ({}): {}", status, body));
+        }
+
+        let pins: Vec<ChannelPin> = resp
+            .json()
+            .map_err(|e| format!("Failed to parse response: {}", e))?;
+
+        pins.into_iter()
+            .next()
+            .ok_or_else(|| "No pin returned".to_string())
+    })
+    .await
+    .map_err(|e| format!("Task execution failed: {}", e))?
+}
+
+/// List all pins for a channel, ordered by version descending
+#[tauri::command(rename_all = "camelCase")]
+pub async fn list_channel_pins(channel_id: String) -> Result<Vec<ChannelPin>, String> {
+    tokio::task::spawn_blocking(move || {
+        let (supabase_url, anon_key) = read_supabase_config()?;
+        let token = read_auth_token()?;
+
+        let client = build_client()?;
+        let url = format!(
+            "{}/rest/v1/c1_channel_pins?channel_id=eq.{}&select=*&order=version.desc",
+            supabase_url.trim_end_matches('/'),
+            urlencoding::encode(&channel_id),
+        );
+
+        let resp = retry_request(3, || {
+            client
+                .get(&url)
+                .header("Authorization", format!("Bearer {}", token))
+                .header("apikey", &anon_key)
+                .send()
+        })?;
+
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let body = resp.text().unwrap_or_default();
+            return Err(format!("Failed to list channel pins ({}): {}", status, body));
+        }
+
+        let pins: Vec<ChannelPin> = resp
+            .json()
+            .map_err(|e| format!("Failed to parse pins: {}", e))?;
+
+        Ok(pins)
+    })
+    .await
+    .map_err(|e| format!("Task execution failed: {}", e))?
+}
+
+/// Delete a channel pin by ID
+#[tauri::command(rename_all = "camelCase")]
+pub async fn delete_channel_pin(pin_id: String) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || {
+        let (supabase_url, anon_key) = read_supabase_config()?;
+        let token = read_auth_token()?;
+
+        let client = build_client()?;
+        let url = format!(
+            "{}/rest/v1/c1_channel_pins?id=eq.{}",
+            supabase_url.trim_end_matches('/'),
+            urlencoding::encode(&pin_id),
+        );
+
+        let resp = retry_request(3, || {
+            client
+                .delete(&url)
+                .header("Authorization", format!("Bearer {}", token))
+                .header("apikey", &anon_key)
+                .send()
+        })?;
+
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let body = resp.text().unwrap_or_default();
+            return Err(format!("Failed to delete channel pin ({}): {}", status, body));
+        }
+
+        Ok(())
+    })
+    .await
+    .map_err(|e| format!("Task execution failed: {}", e))?
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -768,6 +911,7 @@ mod tests {
             thread_id: None,
             metadata: None,
             member_id: None,
+            agent_work_id: None,
             created_at: "2026-02-14T00:00:00Z".to_string(),
         };
         let json = serde_json::to_string(&message).unwrap();
@@ -786,6 +930,7 @@ mod tests {
             thread_id: Some("msg-1".to_string()),
             metadata: Some(serde_json::json!({"emoji": "👍"})),
             member_id: None,
+            agent_work_id: None,
             created_at: "2026-02-14T00:01:00Z".to_string(),
         };
         let json = serde_json::to_string(&message).unwrap();
@@ -937,6 +1082,7 @@ mod tests {
             thread_id: None,
             metadata: None,
             member_id: Some("mem-1".to_string()),
+            agent_work_id: None,
             created_at: "2026-02-16T00:00:00Z".to_string(),
         };
         let json = serde_json::to_string(&message).unwrap();
@@ -950,5 +1096,63 @@ mod tests {
         let json = r#"{"id":"msg-4","channel_id":"ch-1","participant_id":"user-1","content":"legacy","created_at":"2026-02-16T00:00:00Z"}"#;
         let parsed: Message = serde_json::from_str(json).unwrap();
         assert!(parsed.member_id.is_none());
+    }
+
+    #[test]
+    fn test_message_with_agent_work_id() {
+        let message = Message {
+            id: "msg-5".to_string(),
+            channel_id: "ch-1".to_string(),
+            participant_id: "agent-1".to_string(),
+            content: "Working on T-942-0".to_string(),
+            thread_id: None,
+            metadata: None,
+            member_id: Some("mem-2".to_string()),
+            agent_work_id: Some("T-942-0".to_string()),
+            created_at: "2026-02-22T00:00:00Z".to_string(),
+        };
+        let json = serde_json::to_string(&message).unwrap();
+        let parsed: Message = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.agent_work_id, Some("T-942-0".to_string()));
+    }
+
+    #[test]
+    fn test_message_without_agent_work_id() {
+        // Message without agent_work_id (default None)
+        let json = r#"{"id":"msg-6","channel_id":"ch-1","participant_id":"user-1","content":"hello","created_at":"2026-02-22T00:00:00Z"}"#;
+        let parsed: Message = serde_json::from_str(json).unwrap();
+        assert!(parsed.agent_work_id.is_none());
+    }
+
+    #[test]
+    fn test_channel_pin_serialization() {
+        let pin = ChannelPin {
+            id: "pin-1".to_string(),
+            channel_id: "ch-1".to_string(),
+            content: "Important announcement".to_string(),
+            pin_type: "announcement".to_string(),
+            version: 1,
+            created_by: Some("user-1".to_string()),
+            created_at: "2026-02-22T00:00:00Z".to_string(),
+        };
+        let json = serde_json::to_string(&pin).unwrap();
+        let parsed: ChannelPin = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.content, "Important announcement");
+        assert_eq!(parsed.pin_type, "announcement");
+        assert_eq!(parsed.version, 1);
+        assert_eq!(parsed.created_by, Some("user-1".to_string()));
+    }
+
+    #[test]
+    fn test_channel_pin_default_fields() {
+        // Pin with only required fields (defaults for optional/default fields)
+        let json = r#"{"id":"pin-2","channel_id":"ch-1","content":"pinned content"}"#;
+        let parsed: ChannelPin = serde_json::from_str(json).unwrap();
+        assert_eq!(parsed.id, "pin-2");
+        assert_eq!(parsed.content, "pinned content");
+        assert_eq!(parsed.pin_type, "");
+        assert_eq!(parsed.version, 0);
+        assert!(parsed.created_by.is_none());
+        assert_eq!(parsed.created_at, "");
     }
 }

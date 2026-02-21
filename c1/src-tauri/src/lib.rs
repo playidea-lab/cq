@@ -118,6 +118,10 @@ pub fn run() {
             // Members
             messaging::list_members,
             messaging::update_presence,
+            // Channel Pins
+            messaging::create_channel_pin,
+            messaging::list_channel_pins,
+            messaging::delete_channel_pin,
             // Documents
             documents::list_documents,
             documents::get_document,
