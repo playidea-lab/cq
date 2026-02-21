@@ -471,10 +471,26 @@ cq serve               # 기본 포트 :4140 에서 시작
 cq serve --port 4141   # 포트 지정
 ```
 
-| 컴포넌트 | 경로 | 설명 |
-|----------|------|------|
-| health | `GET /health` | 서버 헬스 체크 |
-| gpu | `GET/POST /jobs/*, /gpu/*` | GPU/CPU 작업 스케줄러 (daemon 패키지 래핑) |
+| 컴포넌트 | 활성화 조건 | 설명 |
+|----------|------------|------|
+| `GET /health` | 항상 | 전체 컴포넌트 상태 JSON |
+| `eventbus` | `serve.eventbus.enabled: true` | C3 gRPC 이벤트 버스 |
+| `eventsink` | `serve.eventsink.enabled: true` + `c3_eventbus` 빌드 태그 | C5→C4 HTTP 이벤트 수신 (:4141) |
+| `gpu` | `serve.gpu.enabled: true` | GPU/CPU 작업 스케줄러 (daemon 패키지 래핑) |
+| `agent` | `serve.agent.enabled: true` + `cloud.url` 설정 | Supabase Realtime @cq mention → claude -p |
+
+**컴포넌트 활성화** (`.c4/config.yaml`):
+```yaml
+serve:
+  eventbus:
+    enabled: true
+  gpu:
+    enabled: true
+  eventsink:
+    enabled: true   # c3_eventbus 빌드 태그 필요
+  agent:
+    enabled: true   # cloud.url + cloud.anon_key 필요
+```
 
 **PID 파일**: `~/.c4/serve/serve.pid` (포트 `:4140`)
 
