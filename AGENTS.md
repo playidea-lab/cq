@@ -502,7 +502,8 @@ cq serve --port 4141   # 포트 지정
 | `eventbus` | `serve.eventbus.enabled: true` | C3 gRPC 이벤트 버스 |
 | `eventsink` | `serve.eventsink.enabled: true` + `c3_eventbus` 빌드 태그 | C5→C4 HTTP 이벤트 수신 (:4141) |
 | `gpu` | `serve.gpu.enabled: true` | GPU/CPU 작업 스케줄러 (daemon 패키지 래핑) |
-| `agent` | `serve.agent.enabled: true` + `cloud.url` 설정 | Supabase Realtime @cq mention → claude -p |
+| `agent` | `serve.agent.enabled: true` + `cloud.url` + `cloud.anon_key` 설정 | Supabase Realtime @cq mention → claude -p |
+| `ssesubscriber` | `serve.ssesubscriber.enabled: true` + `c5_hub && c3_eventbus` 빌드 태그 | C5 SSE 스트림 구독 → EventBus 전달 |
 
 **컴포넌트 활성화** (`.c4/config.yaml`):
 ```yaml
@@ -515,6 +516,8 @@ serve:
     enabled: true   # c3_eventbus 빌드 태그 필요
   agent:
     enabled: true   # cloud.url + cloud.anon_key 필요
+  ssesubscriber:
+    enabled: true   # c5_hub && c3_eventbus 빌드 태그 필요; hub.enabled: true 필요
 ```
 
 **PID 파일**: `~/.c4/serve/serve.pid` (포트 `:4140`)
