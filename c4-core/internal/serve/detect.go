@@ -88,41 +88,9 @@ func isServeRunningWithCtx(ctx context.Context, pidPath, healthURL string) bool 
 }
 
 // isServeRunningWith is the testable inner function.
+// Delegates to isServeRunningWithCtx with a background context to avoid duplication.
 func isServeRunningWith(pidPath, healthURL string) bool {
-	if pidPath == "" {
-		return false
-	}
-
-	// Step 1: Read PID file
-	data, err := os.ReadFile(pidPath)
-	if err != nil {
-		return false // no PID file → not running
-	}
-
-	pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
-	if err != nil || pid <= 0 {
-		return false // invalid PID
-	}
-
-	// Step 2: Check if process is alive
-	proc, err := os.FindProcess(pid)
-	if err != nil {
-		return false
-	}
-	if err := proc.Signal(syscall.Signal(0)); err != nil {
-		return false // process dead → stale PID file
-	}
-
-	// Step 3: HTTP health check
-	client := &http.Client{Timeout: 2 * time.Second}
-	resp, err := client.Get(healthURL)
-	if err != nil {
-		return false
-	}
-	defer resp.Body.Close()
-
-	// Accept both 200 (ok) and 503 (degraded) — a degraded serve is still running
-	return resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusServiceUnavailable
+	return isServeRunningWithCtx(context.Background(), pidPath, healthURL)
 }
 
 // StatusMessage returns a human-readable string for stderr logging.

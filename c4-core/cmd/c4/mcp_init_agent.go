@@ -47,7 +47,7 @@ func startAgentIfNeededWith(
 	}
 
 	// Guard 2: Supabase must be configured (same condition as serve_components.go)
-	if cfg.Cloud.URL == "" {
+	if cfg.Cloud.URL == "" || cfg.Cloud.AnonKey == "" {
 		return
 	}
 

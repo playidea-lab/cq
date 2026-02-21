@@ -145,7 +145,12 @@ func (c *SSESubscriberComponent) reconnectLoop(ctx context.Context, done chan st
 		}
 
 		// Exponential backoff with ±20% jitter.
-		backoff := sseBackoffBase * (1 << uint(attempt-1))
+		// Cap the exponent at 30 to prevent int64 overflow on large attempt counts.
+		exp := attempt - 1
+		if exp > 30 {
+			exp = 30
+		}
+		backoff := sseBackoffBase * (1 << uint(exp))
 		if backoff > sseBackoffMax {
 			backoff = sseBackoffMax
 		}
@@ -174,7 +179,14 @@ func (c *SSESubscriberComponent) connect(ctx context.Context) error {
 	req.Header.Set("Accept", "text/event-stream")
 	req.Header.Set("Cache-Control", "no-cache")
 
-	client := &http.Client{}
+	// Set ResponseHeaderTimeout so a hung server does not block the goroutine
+	// indefinitely before the response headers arrive. Body reads are cancelled
+	// via the request context (ctx) when Stop() is called.
+	client := &http.Client{
+		Transport: &http.Transport{
+			ResponseHeaderTimeout: 10 * time.Second,
+		},
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		return fmt.Errorf("connect: %w", err)
