@@ -89,6 +89,13 @@ export function ChannelsView({ projectPath }: ChannelsViewProps) {
     }
   }, [projectPath, searchContent, clearSearchResults]);
 
+  // Sync session channels on mount (best-effort, non-blocking)
+  useEffect(() => {
+    if (projectId && projectPath) {
+      invoke('sync_session_channels', { projectId, projectPath }).catch(console.error);
+    }
+  }, [projectId, projectPath]);
+
   // Load sessions when tab becomes active or provider changes
   useEffect(() => {
     if (activeTab === 'sessions' && projectPath) {
@@ -155,6 +162,7 @@ export function ChannelsView({ projectPath }: ChannelsViewProps) {
                   <ChannelContent
                     channel={selectedChannel}
                     getMember={getMember}
+                    agentMembers={members.filter(m => m.member_type === 'agent')}
                     msgFilter={channelMsgFilter}
                   />
                   {showMembers && (

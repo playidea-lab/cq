@@ -8,38 +8,30 @@ type SectionConfig = {
   match: (ch: Channel) => boolean;
 };
 
-const GENERAL_NAMES = ['general', 'tasks', 'events', 'knowledge'];
-
 const SECTIONS: SectionConfig[] = [
   {
     key: 'general',
     label: 'General',
     icon: '#',
-    match: (ch) => GENERAL_NAMES.includes(ch.name) || ch.channel_type === 'auto',
+    match: (ch) => ch.channel_type === 'general' || ch.channel_type === 'auto',
   },
   {
     key: 'project',
     label: 'Projects',
     icon: '📂',
-    match: (ch) =>
-      ch.channel_type === 'topic' &&
-      !GENERAL_NAMES.includes(ch.name) &&
-      ch.name.startsWith('project-'),
+    match: (ch) => ch.channel_type === 'project',
   },
   {
     key: 'knowledge',
     label: 'Knowledge',
     icon: '🧠',
-    match: (ch) =>
-      ch.channel_type === 'topic' &&
-      !GENERAL_NAMES.includes(ch.name) &&
-      ch.name.startsWith('knowledge-'),
+    match: (ch) => ch.channel_type === 'knowledge',
   },
   {
     key: 'session',
     label: 'Sessions',
     icon: '💬',
-    match: (ch) => ch.channel_type === 'worker',
+    match: (ch) => ch.channel_type === 'session',
   },
   {
     key: 'dm',

@@ -125,7 +125,7 @@ export type WorkspaceMode = 'messenger' | 'board' | 'docs' | 'knowledge' | 'sett
 
 // --- C1 Messaging types ---
 
-export type ChannelType = 'topic' | 'dm' | 'auto' | 'worker';
+export type ChannelType = 'general' | 'project' | 'knowledge' | 'session' | 'dm' | 'topic' | 'auto' | 'worker';
 export type SenderType = 'human' | 'agent' | 'system';
 
 export interface Channel {
