@@ -2,7 +2,9 @@ package llm
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"log/slog"
 	"strings"
 	"sync"
 	"time"
@@ -21,6 +23,30 @@ type RoutingTable struct {
 	Aliases map[string]string   `json:"aliases"`
 }
 
+// CacheAlertPublisher is a minimal interface for publishing cache miss alert events.
+// Satisfied by eventbus.Publisher, eventbus.NoopPublisher, and test stubs.
+type CacheAlertPublisher interface {
+	PublishAsync(evType, source string, data json.RawMessage, projectID string)
+}
+
+// cacheAlertMonitor tracks recent cache hit/miss attempts and fires alerts.
+// It uses a state-transition model: fires once when crossing below threshold,
+// resets when crossing back above.
+type cacheAlertMonitor struct {
+	threshold  float64
+	publisher  CacheAlertPublisher
+	projectID  string
+	alertFired bool // true = currently in "below threshold" state
+}
+
+// cacheAlertPayload is the event payload for llm.cache_miss_alert.
+type cacheAlertPayload struct {
+	GlobalCacheHitRate float64 `json:"global_cache_hit_rate"`
+	Threshold          float64 `json:"threshold"`
+	WindowCalls        int     `json:"window_calls"`
+	Provider           string  `json:"provider"`
+}
+
 // Gateway is the central LLM orchestration hub.
 // It manages provider registration, request routing, and cost tracking.
 type Gateway struct {
@@ -29,10 +55,30 @@ type Gateway struct {
 	routing        RoutingTable
 	tracker        *CostTracker
 	cacheByDefault bool
+	alertMu        sync.Mutex
+	alert          *cacheAlertMonitor
 }
 
 // CacheByDefault returns whether system prompt caching is enabled by default.
 func (g *Gateway) CacheByDefault() bool { return g.cacheByDefault }
+
+// SetCacheAlert configures cache hit rate alerting.
+// When GlobalCacheHitRate drops below threshold for the first time, a
+// "llm.cache_miss_alert" event is published via pub and a slog.Warn is emitted.
+// threshold=0.0 disables alerting.
+func (g *Gateway) SetCacheAlert(threshold float64, pub CacheAlertPublisher, projectID string) {
+	g.alertMu.Lock()
+	defer g.alertMu.Unlock()
+	if threshold == 0.0 || pub == nil {
+		g.alert = nil
+		return
+	}
+	g.alert = &cacheAlertMonitor{
+		threshold: threshold,
+		publisher: pub,
+		projectID: projectID,
+	}
+}
 
 // NewGateway creates a Gateway with the given routing table.
 func NewGateway(routing RoutingTable) *Gateway {
@@ -135,6 +181,7 @@ func (g *Gateway) Chat(ctx context.Context, taskType string, req *ChatRequest) (
 	}
 
 	g.tracker.Record(ref.Provider, resp.Model, resp.Usage, latency)
+	g.checkCacheAlert(ref.Provider)
 	return resp, nil
 }
 
@@ -202,4 +249,62 @@ func (g *Gateway) ProviderCount() int {
 	g.mu.RLock()
 	defer g.mu.RUnlock()
 	return len(g.providers)
+}
+
+// checkCacheAlert inspects the current GlobalCacheHitRate and fires an alert
+// if it has transitioned below the configured threshold.
+func (g *Gateway) checkCacheAlert(provider string) {
+	g.alertMu.Lock()
+	mon := g.alert
+	g.alertMu.Unlock()
+
+	if mon == nil {
+		return
+	}
+
+	report := g.tracker.Report()
+	// Only evaluate when there are cache attempts.
+	totalAttempts := 0
+	for _, pc := range report.ByProvider {
+		totalAttempts += pc.CacheReadTok + pc.CacheWriteTok
+	}
+	if totalAttempts == 0 {
+		return
+	}
+
+	rate := report.GlobalCacheHitRate
+
+	g.alertMu.Lock()
+	defer g.alertMu.Unlock()
+
+	if mon == nil {
+		return
+	}
+
+	belowThreshold := rate < mon.threshold
+
+	if belowThreshold && !mon.alertFired {
+		// State transition: above → below threshold. Fire alert once.
+		mon.alertFired = true
+
+		slog.Warn("llm: cache hit rate below threshold",
+			"rate", rate,
+			"threshold", mon.threshold,
+			"provider", provider,
+		)
+
+		payload := cacheAlertPayload{
+			GlobalCacheHitRate: rate,
+			Threshold:          mon.threshold,
+			WindowCalls:        report.TotalReqs,
+			Provider:           provider,
+		}
+		data, err := json.Marshal(payload)
+		if err == nil {
+			mon.publisher.PublishAsync("llm.cache_miss_alert", "c4.llm", data, mon.projectID)
+		}
+	} else if !belowThreshold {
+		// Reset state: allow future alert if it drops again.
+		mon.alertFired = false
+	}
 }
