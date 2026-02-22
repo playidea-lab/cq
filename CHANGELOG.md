@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.24.0] - 2026-02-23
+
+### ✨ Features
+- **hooks**: 프로젝트 단위 PreToolUse + PermissionRequest 2-layer hook 재설계 (`82179903`)
+  - 기존 전역 `~/.claude/hooks/` 방식 제거 (절대경로 고정 → 다른 사용자/컴퓨터 동작 불가 문제 해결)
+  - `cq init` 시 `{project}/.claude/hooks/c4-gate.sh` + `c4-permission-reviewer.sh` 배포
+  - `$CLAUDE_PROJECT_DIR` 사용 → 경로 하드코딩 없이 어느 환경에서도 동작
+  - **c4-gate.sh** (PreToolUse): 룰 기반 게이트. allow/block 패턴 매칭, gray-zone은 PermissionRequest로 위임
+  - **c4-permission-reviewer.sh** (PermissionRequest): Haiku API 판단 (Bash|Read|Edit|Write|... 전체 커버)
+  - Edit/Write 보안 우선순위: built-in allow(`.c4/`, `/tmp/`) → user allow → user block → built-in block
+
+### 🔧 Chores
+- **init**: `patchHookEvent` 3-phase 재작성 — baseName scan(Phase1) → matcher match(Phase2) → append(Phase3)
+  이전 버전의 다른 matcher로 등록된 stale entry를 중복 없이 in-place 업데이트 (`23fb393d`)
+- **init**: stale-path 업데이트 시 전체 hookEntry 교체 — timeout 필드 유실 방지 (`23fb393d`)
+- **hooks**: fallback echo 경로에서 단일따옴표 sanitize (`${reason//\'/}`) — jq 미설치 환경 대비 (`807ec145`)
+
+### 🧪 Tests
+- **init**: `TestPatchProjectSettings_StaleEntry` 추가 — Phase 1 stale-entry 업그레이드 경로 검증 (`807ec145`)
+
+### 📚 Documentation
+- **AGENTS.md**: hook 설치 항목 업데이트 — 구 전역 경로 → 신 프로젝트 단위 경로 (`23fb393d`)
+
+---
+
 ## [0.23.0] - 2026-02-22
 
 ### ✨ Features
