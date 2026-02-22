@@ -53,11 +53,19 @@ type TaskAssignment struct {
 	KnowledgeContext string             `json:"knowledge_context,omitempty"`
 }
 
+// HandoffEvidence is a reference to a CDP or test artifact attached to a submit.
+type HandoffEvidence struct {
+	Type        string `json:"type"`        // "screenshot" | "log" | "test_result"
+	ArtifactID  string `json:"artifact_id"` // c4_artifact_save로 저장된 ID
+	Description string `json:"description"`
+}
+
 // ReviewContext provides context from the parent implementation task for review tasks.
 type ReviewContext struct {
 	ParentTaskID string `json:"parent_task_id"`
 	CommitSHA    string `json:"commit_sha,omitempty"`
-	FilesChanged string `json:"files_changed,omitempty"`
+	FilesChanged string            `json:"files_changed,omitempty"`
+	Evidence     []HandoffEvidence `json:"evidence,omitempty"`
 }
 
 // RequestChangesResult holds the result of a REQUEST_CHANGES operation.

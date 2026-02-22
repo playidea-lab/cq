@@ -800,6 +800,16 @@ func (s *SQLiteStore) MarkBlocked(taskID, workerID, failureSignature string, att
 		"attempts":           attempts,
 		"last_error":         lastError,
 	})
+
+	// Auto-record failure pattern for knowledge feedback loop (best-effort)
+	if failureSignature != "" {
+		var t Task
+		if err2 := s.db.QueryRow(
+			"SELECT task_id, title, scope, domain, worker_id FROM c4_tasks WHERE task_id=?", taskID).
+			Scan(&t.ID, &t.Title, &t.Scope, &t.Domain, &t.WorkerID); err2 == nil {
+			go s.autoRecordFailurePattern(&t, failureSignature, lastError)
+		}
+	}
 	return nil
 }
 

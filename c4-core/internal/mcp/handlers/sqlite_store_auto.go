@@ -147,13 +147,6 @@ func (s *SQLiteStore) autoRecordKnowledge(task *Task, summary string, filesChang
 	}()
 }
 
-// HandoffEvidence attaches CDP or test artifacts to a submit.
-type HandoffEvidence struct {
-	Type        string `json:"type"`         // enum: "screenshot"|"log"|"test_result"
-	ArtifactID  string `json:"artifact_id"`  // c4_artifact_save로 저장된 ID
-	Description string `json:"description"`
-}
-
 // Evidence type constants
 const (
 	EvidenceTypeScreenshot = "screenshot"
@@ -186,6 +179,41 @@ func parseHandoff(handoff string) handoffData {
 		return handoffData{Summary: handoff}
 	}
 	return ho
+}
+
+// --- Failure Pattern Auto-Record ---
+
+// autoRecordFailurePattern records a blocked task's failure signature as a knowledge
+// experiment (best-effort). Uses goroutine + 10s timeout, same as autoRecordKnowledge.
+func (s *SQLiteStore) autoRecordFailurePattern(task *Task, sig, lastErr string) {
+	if s.knowledgeWriter == nil {
+		return
+	}
+
+	title := fmt.Sprintf("failure_pattern: %s %s", task.ID, task.Scope)
+	body := fmt.Sprintf("scope: %s\nsignature: %s\nlast_error: %s", task.Scope, sig, lastErr)
+	tags := []string{"failure_pattern", task.Scope, "auto-recorded"}
+	metadata := map[string]any{
+		"title":   title,
+		"domain":  task.Domain,
+		"tags":    tags,
+		"task_id": task.ID,
+	}
+
+	go func() {
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			if _, err := s.knowledgeWriter.CreateExperiment(metadata, body); err != nil {
+				fmt.Fprintf(os.Stderr, "c4: auto-record failure pattern failed for %s: %v\n", task.ID, err)
+			}
+		}()
+		select {
+		case <-done:
+		case <-time.After(10 * time.Second):
+			fmt.Fprintf(os.Stderr, "c4: auto-record failure pattern timed out for %s\n", task.ID)
+		}
+	}()
 }
 
 // --- Past Solutions Search ---

@@ -27,3 +27,4 @@ type ProjectStatus = store.ProjectStatus
 type PersonaSummary = store.PersonaSummary
 type Lighthouse = store.Lighthouse
 type LighthouseContext = store.LighthouseContext
+type HandoffEvidence = store.HandoffEvidence

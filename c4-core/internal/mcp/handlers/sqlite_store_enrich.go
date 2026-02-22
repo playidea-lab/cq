@@ -89,12 +89,24 @@ func (s *SQLiteStore) enrichWithReviewContext(assignment *TaskAssignment) {
 		// Backward compatibility for legacy rows that stored files in branch.
 		filesChanged = legacyBranchFiles
 	}
-	if commitSHA != "" || filesChanged != "" {
-		assignment.ReviewContext = &ReviewContext{
+	// Extract evidence from parent T handoff
+	var evidence []HandoffEvidence
+	if handoff != "" {
+		if ho := parseHandoff(handoff); len(ho.Evidence) > 0 {
+			evidence = ho.Evidence
+		}
+	}
+
+	if commitSHA != "" || filesChanged != "" || len(evidence) > 0 {
+		rc := &ReviewContext{
 			ParentTaskID: parentID,
 			CommitSHA:    commitSHA,
 			FilesChanged: filesChanged,
 		}
+		if len(evidence) > 0 {
+			rc.Evidence = evidence
+		}
+		assignment.ReviewContext = rc
 	}
 }
 
