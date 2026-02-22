@@ -807,7 +807,7 @@ func (s *SQLiteStore) MarkBlocked(taskID, workerID, failureSignature string, att
 		if err2 := s.db.QueryRow(
 			"SELECT task_id, title, scope, domain, worker_id FROM c4_tasks WHERE task_id=?", taskID).
 			Scan(&t.ID, &t.Title, &t.Scope, &t.Domain, &t.WorkerID); err2 == nil {
-			go s.autoRecordFailurePattern(&t, failureSignature, lastError)
+			s.autoRecordFailurePattern(&t, failureSignature, lastError)
 		}
 	}
 	return nil
