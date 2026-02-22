@@ -163,6 +163,12 @@ type GuardConfig struct {
 	Policies       []GuardPolicyRule `mapstructure:"policies"         yaml:"policies"`
 }
 
+// SessionsConfig holds session limit warning settings.
+type SessionsConfig struct {
+	Limit   int  `mapstructure:"limit"   yaml:"limit"`   // warn when active session count exceeds this (default 4)
+	Enabled bool `mapstructure:"enabled" yaml:"enabled"` // false → skip the check entirely
+}
+
 // ServeComponentToggle holds a single enabled flag for a serve sub-component.
 type ServeComponentToggle struct {
 	Enabled bool `mapstructure:"enabled" yaml:"enabled"`
@@ -218,6 +224,7 @@ type C4Config struct {
 	Observe          ObserveConfig              `mapstructure:"observe"              yaml:"observe"`
 	Guard            GuardConfig                `mapstructure:"guard"                yaml:"guard"`
 	Serve            ServeConfig                `mapstructure:"serve"                yaml:"serve"`
+	Sessions         SessionsConfig             `mapstructure:"sessions"             yaml:"sessions"`
 }
 
 // presetConfigs defines the economic mode presets.
@@ -294,6 +301,10 @@ func defaultConfig() C4Config {
 		Serve: ServeConfig{
 			HealthPort: 4140,
 		},
+		Sessions: SessionsConfig{
+			Limit:   4,
+			Enabled: true,
+		},
 	}
 }
 
@@ -368,6 +379,8 @@ func New(projectRoot string, cloudDefaults ...CloudDefaults) (*Manager, error) {
 	v.SetDefault("permission_reviewer.auto_approve", true)
 	v.SetDefault("permission_reviewer.allow_patterns", []string{})
 	v.SetDefault("permission_reviewer.block_patterns", []string{})
+	v.SetDefault("sessions.limit", defaults.Sessions.Limit)
+	v.SetDefault("sessions.enabled", defaults.Sessions.Enabled)
 
 	// Config file location
 	configDir := filepath.Join(projectRoot, ".c4")

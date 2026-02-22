@@ -17,6 +17,7 @@ import (
 	"github.com/changmin/c4-core/internal/research"
 	"github.com/changmin/c4-core/internal/secrets"
 	"github.com/changmin/c4-core/internal/serve"
+	"github.com/changmin/c4-core/internal/session"
 )
 
 // initContext carries shared dependencies between component init functions.
@@ -77,6 +78,9 @@ type initContext struct {
 	// Agent (set by startAgentIfNeeded in mcp_init_agent.go)
 	agentComp   *serve.Agent
 	agentCancel context.CancelFunc
+
+	// Session (set by initSession in mcp_init_session.go)
+	sessionMonitor *session.Monitor
 }
 
 // hubClientInterface abstracts hub.Client so the stub doesn't need to import hub.
