@@ -150,12 +150,14 @@ if [[ "$PERMISSION_MODE" == "model" ]]; then
     if [[ -n "$response" ]]; then
         text=$(echo "$response" | jq -r '.content[0].text' 2>/dev/null)
         if [[ -n "$text" && "$text" != "null" ]]; then
-            allow=$(echo "$text" | jq -r '.allow' 2>/dev/null)
-            reason=$(echo "$text" | jq -r '.reason' 2>/dev/null)
+            allow=$(echo "$text" | jq -r '.allow // "null"' 2>/dev/null)
+            reason=$(echo "$text" | jq -r '.reason // ""' 2>/dev/null)
             if [[ "$allow" == "false" ]]; then
                 _emit_deny "AI reviewer blocked: $reason"
+            elif [[ "$allow" == "true" ]]; then
+                _emit_allow "AI reviewer approved: $reason"
             fi
-            _emit_allow "AI reviewer approved: $reason"
+            # allow == "null" (parse failure) → fall through to fail-open exit 0
         fi
     fi
 fi

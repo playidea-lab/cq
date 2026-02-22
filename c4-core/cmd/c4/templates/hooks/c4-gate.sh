@@ -137,26 +137,28 @@ if [[ "$TOOL_NAME" == "Bash" ]] && [[ -n "$COMMAND" ]]; then
 fi
 
 # =============================================================================
-# Edit/Write tool: check block patterns against file_path
+# Edit/Write tool: check patterns against file_path
+# Priority: built-in allow > user allow > user block > built-in block
 # =============================================================================
 if [[ "$TOOL_NAME" == "Edit" || "$TOOL_NAME" == "Write" ]] && [[ -n "$FILE_PATH" ]]; then
-    for pattern in "${BLOCK_PATTERNS[@]}"; do
-        if [[ "$FILE_PATH" =~ $pattern ]]; then
-            _emit_deny "Blocked by config: matches '$pattern'"
-        fi
-    done
+    # Built-in allow: .c4/ system files and /tmp/ — checked first so user block patterns can't override
+    if [[ "$FILE_PATH" =~ (^|/)\.c4/ ]] || [[ "$FILE_PATH" =~ ^/tmp/ ]]; then
+        _emit_allow "C4 system or temp file"
+    fi
 
-    # Allow user allow patterns for file paths
+    # User allow patterns — checked before user block patterns
     for pattern in "${ALLOW_PATTERNS[@]}"; do
         if [[ "$FILE_PATH" =~ $pattern ]]; then
             _emit_allow "Allow pattern match"
         fi
     done
 
-    # Built-in allow: .c4/ system files and /tmp/
-    if [[ "$FILE_PATH" =~ (^|/)\.c4/ ]] || [[ "$FILE_PATH" =~ ^/tmp/ ]]; then
-        _emit_allow "C4 system or temp file"
-    fi
+    # User block patterns
+    for pattern in "${BLOCK_PATTERNS[@]}"; do
+        if [[ "$FILE_PATH" =~ $pattern ]]; then
+            _emit_deny "Blocked by config: matches '$pattern'"
+        fi
+    done
 
     # Built-in block: system directories
     if [[ "$FILE_PATH" =~ ^/(etc|usr/bin|usr/local/bin|bin|sbin)/ ]]; then

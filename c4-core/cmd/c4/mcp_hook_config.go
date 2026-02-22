@@ -12,8 +12,8 @@ import (
 )
 
 // hookConfigJSON is the schema written to {projectDir}/.c4/hook-config.json.
-// The bash hook (c4-bash-security-hook.sh) reads this file via jq to determine
-// whether permission review is enabled and how to call the LLM.
+// The project hooks (c4-gate.sh, c4-permission-reviewer.sh) read this file via jq
+// to determine whether permission review is enabled and how to call the LLM.
 type hookConfigJSON struct {
 	Enabled        bool     `json:"enabled"`
 	Mode           string   `json:"mode"`          // "hook" | "model"
