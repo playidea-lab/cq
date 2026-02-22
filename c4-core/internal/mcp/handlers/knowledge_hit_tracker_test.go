@@ -81,6 +81,15 @@ func TestKnowledgeHitTrackerAllHits(t *testing.T) {
 	}
 }
 
+func TestKnowledgeHitTrackerNegativeResultCount(t *testing.T) {
+	tracker := NewKnowledgeHitTracker()
+	tracker.Record("T-x", "q", -1)
+	r := tracker.Report()
+	if r.Hits != 0 || r.Misses != 1 {
+		t.Errorf("negative resultCount: expected 0 hits / 1 miss, got %d/%d", r.Hits, r.Misses)
+	}
+}
+
 func TestKnowledgeHitTrackerManualSimulation(t *testing.T) {
 	// Simulate the call pattern used by enrichWithKnowledge: hit then miss.
 	tracker := NewKnowledgeHitTracker()

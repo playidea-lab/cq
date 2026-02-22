@@ -241,7 +241,7 @@ func newMCPServer() (*mcpServer, error) {
 		w, r, s := handlers.AdaptKnowledge(knowledgeStore, knowledgeSearcher)
 		storeOpts = append(storeOpts, handlers.WithKnowledge(w, r, s))
 	}
-	if knowledgeSearcher != nil {
+	if knowledgeStore != nil || knowledgeSearcher != nil {
 		knowledgeHitTracker := handlers.NewKnowledgeHitTracker()
 		storeOpts = append(storeOpts, handlers.WithKnowledgeHitTracker(knowledgeHitTracker))
 	}
