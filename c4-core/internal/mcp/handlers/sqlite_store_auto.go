@@ -186,13 +186,16 @@ func parseHandoff(handoff string) handoffData {
 // autoRecordFailurePattern records a blocked task's failure signature as a knowledge
 // experiment (best-effort). Uses goroutine + 10s timeout, same as autoRecordKnowledge.
 func (s *SQLiteStore) autoRecordFailurePattern(task *Task, sig, lastErr string) {
-	if s.knowledgeWriter == nil {
+	if s.knowledgeWriter == nil && s.proxy == nil {
 		return
 	}
 
-	title := fmt.Sprintf("failure_pattern: %s %s", task.ID, task.Scope)
+	title := fmt.Sprintf("failure_pattern: %s: %s", task.ID, task.Title)
 	body := fmt.Sprintf("scope: %s\nsignature: %s\nlast_error: %s", task.Scope, sig, lastErr)
-	tags := []string{"failure_pattern", task.Scope, "auto-recorded"}
+	tags := []string{"failure_pattern", "auto-recorded"}
+	if task.Scope != "" {
+		tags = append(tags, task.Scope)
+	}
 	metadata := map[string]any{
 		"title":   title,
 		"domain":  task.Domain,
@@ -200,11 +203,28 @@ func (s *SQLiteStore) autoRecordFailurePattern(task *Task, sig, lastErr string) 
 		"task_id": task.ID,
 	}
 
+	// Prefer native knowledge writer over proxy
+	if s.knowledgeWriter != nil {
+		go func() {
+			if _, err := s.knowledgeWriter.CreateExperiment(metadata, body); err != nil {
+				fmt.Fprintf(os.Stderr, "c4: auto-record failure pattern failed for %s: %v\n", task.ID, err)
+			}
+		}()
+		return
+	}
+
+	// Fallback to proxy
+	params := map[string]any{
+		"doc_type": "experiment",
+		"title":    title,
+		"content":  body,
+		"tags":     tags,
+	}
 	go func() {
 		done := make(chan struct{})
 		go func() {
 			defer close(done)
-			if _, err := s.knowledgeWriter.CreateExperiment(metadata, body); err != nil {
+			if _, err := s.proxy.Call("KnowledgeRecord", params); err != nil {
 				fmt.Fprintf(os.Stderr, "c4: auto-record failure pattern failed for %s: %v\n", task.ID, err)
 			}
 		}()
@@ -237,6 +257,9 @@ func searchPastSolutions(searcher KnowledgeContextSearcher, reader KnowledgeRead
 	}
 	ch := make(chan result, 1)
 	go func() {
+		// NOTE: goroutine is not ctx-aware; if Search hangs beyond timeout, this
+		// goroutine will linger until Search returns and writes to the buffered ch.
+		// Acceptable for a best-effort best-latency call with a 2 s budget.
 		items, err := searcher.Search(query, n, nil)
 		ch <- result{items, err}
 	}()

@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -78,7 +79,9 @@ func (s *SQLiteStore) enrichWithReviewContext(assignment *TaskAssignment) {
 	parentID := fmt.Sprintf("T-%s-%d", baseID, ver)
 	var commitSHA, filesChangedCol, legacyBranchFiles, handoff string
 	if err := s.db.QueryRow("SELECT commit_sha, files_changed, branch, handoff FROM c4_tasks WHERE task_id=?", parentID).Scan(&commitSHA, &filesChangedCol, &legacyBranchFiles, &handoff); err != nil {
-		fmt.Fprintf(os.Stderr, "c4: assign-task: review context for %s: %v\n", parentID, err)
+		if err != sql.ErrNoRows {
+			fmt.Fprintf(os.Stderr, "c4: assign-task: review context for %s: %v\n", parentID, err)
+		}
 	}
 	// Prefer the dedicated files_changed column, then handoff JSON, then legacy branch field.
 	filesChanged := filesChangedCol
