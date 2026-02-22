@@ -1,19 +1,11 @@
 # CQ — AI Project Orchestration Engine
 
-**CQ** is a project management engine for Claude Code.
-It automates the full development lifecycle — planning, implementation, review, and delivery — through a structured workflow powered by C4 Engine.
-
-## Install
-
 ```sh
 curl -fsSL https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/install.sh | sh
 ```
 
-Opens a new terminal and you're ready:
-
-```sh
-cq --help
-```
+**CQ** is a project management engine for Claude Code.
+It automates the full development lifecycle — planning, implementation, review, and delivery — through a structured workflow powered by C4 Engine.
 
 ## Tiers
 
@@ -206,11 +198,7 @@ For `connected` / `full` tiers, place the config provided by your team at `~/.c4
 
 ## Update
 
-Re-run the install command to update to the latest release:
-
-```sh
-curl -fsSL https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/install.sh | sh
-```
+Re-run the same install command to update to the latest release.
 
 ## Requirements
 
