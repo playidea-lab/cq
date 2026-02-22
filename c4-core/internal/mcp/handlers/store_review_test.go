@@ -192,9 +192,6 @@ func (m *mockBodyReader) GetBody(docID string) (string, error) {
 	return m.bodies[docID], nil
 }
 
-func setupReviewTask(t *testing.T, store *SQLiteStore, db interface{ Exec(string, ...any) (interface{}, error) }, baseID string) {
-	t.Helper()
-}
 
 func TestRequestChanges_RPR_AppendsPastSolutions_WhenFound(t *testing.T) {
 	store, db := newTestSQLiteStore(t)

@@ -191,7 +191,7 @@ func (s *SQLiteStore) autoRecordFailurePattern(task *Task, sig, lastErr string) 
 	}
 
 	title := fmt.Sprintf("failure_pattern: %s: %s", task.ID, task.Title)
-	body := fmt.Sprintf("scope: %s\nsignature: %s\nlast_error: %s", task.Scope, sig, lastErr)
+	body := fmt.Sprintf("## Failure Pattern: %s\n\n**scope**: %s\n**signature**: %s\n**last_error**: %s", task.ID, task.Scope, sig, lastErr)
 	tags := []string{"failure_pattern", "auto-recorded"}
 	if task.Scope != "" {
 		tags = append(tags, task.Scope)
@@ -206,8 +206,17 @@ func (s *SQLiteStore) autoRecordFailurePattern(task *Task, sig, lastErr string) 
 	// Prefer native knowledge writer over proxy
 	if s.knowledgeWriter != nil {
 		go func() {
-			if _, err := s.knowledgeWriter.CreateExperiment(metadata, body); err != nil {
-				fmt.Fprintf(os.Stderr, "c4: auto-record failure pattern failed for %s: %v\n", task.ID, err)
+			done := make(chan struct{})
+			go func() {
+				defer close(done)
+				if _, err := s.knowledgeWriter.CreateExperiment(metadata, body); err != nil {
+					fmt.Fprintf(os.Stderr, "c4: auto-record failure pattern failed for %s: %v\n", task.ID, err)
+				}
+			}()
+			select {
+			case <-done:
+			case <-time.After(10 * time.Second):
+				fmt.Fprintf(os.Stderr, "c4: auto-record failure pattern timed out for %s\n", task.ID)
 			}
 		}()
 		return

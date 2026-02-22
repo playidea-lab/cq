@@ -22,8 +22,10 @@ func TestEnrichWithReviewContext_IncludesEvidence_WhenPresent(t *testing.T) {
 		t.Fatalf("add T task: %v", err)
 	}
 	// AddTask always inserts as 'pending'; set done + handoff manually
-	db.Exec(`UPDATE c4_tasks SET status='done', commit_sha='abc123', handoff=? WHERE task_id='T-001-0'`,
-		string(handoffPayload))
+	if _, err := db.Exec(`UPDATE c4_tasks SET status='done', commit_sha='abc123', handoff=? WHERE task_id='T-001-0'`,
+		string(handoffPayload)); err != nil {
+		t.Fatalf("update T-001-0: %v", err)
+	}
 
 	if err := store.AddTask(&Task{
 		ID:           "R-001-0",
@@ -64,7 +66,9 @@ func TestEnrichWithReviewContext_EmptyEvidence_WhenAbsent(t *testing.T) {
 	if err := store.AddTask(&Task{ID: "T-002-0", Title: "Impl 2", DoD: "done"}); err != nil {
 		t.Fatalf("add T task: %v", err)
 	}
-	db.Exec(`UPDATE c4_tasks SET status='done', commit_sha='def456' WHERE task_id='T-002-0'`)
+	if _, err := db.Exec(`UPDATE c4_tasks SET status='done', commit_sha='def456' WHERE task_id='T-002-0'`); err != nil {
+		t.Fatalf("update T-002-0: %v", err)
+	}
 
 	if err := store.AddTask(&Task{
 		ID:           "R-002-0",
