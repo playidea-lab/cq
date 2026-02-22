@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.23.0] - 2026-02-22
+
+### ✨ Features
+- **serve/agent**: A2UI 응답 라우팅 — 버튼 클릭 시 `cq serve agent`가 감지하고 `claude -p` 호출 (`a7857afa`)
+  - `msgRequest` struct으로 `actionID` 전달 (positional args 대체)
+  - `fetchChannelContext` — Supabase REST로 채널 최근 메시지 조회 (context 전파, 10s timeout)
+  - `buildA2UIPrompt` — 원본 A2UI 메시지 기반 컨텍스트 포함 프롬프트 빌드 (라벨 폴백)
+  - loop prevention: `sender_type == "agent"/"system"` 필터 A2UI 경로에도 적용
+
+### 🔧 Chores
+- **init**: `patchClaudeSettings` 3-arg 확장 — edit hook 지원 (`editHookPath` 추가), empty-path guard (`468d5dc8`)
+- **init**: edit hook 설치 시 `hookNeedsUpdate` boolean을 write 전 캡처 — "hooks up-to-date" 오탐 수정 (`f8d61cc3`)
+- **security**: `.c4/supabase/.temp/` git 추적 제거 (`7e76fa43`)
+- **submodule**: `user/` README one-liner install 업데이트 (`23a1031b`)
+
+### 📚 Documentation
+- **agents**: Go 테스트 수 ~1,330 → ~1,339 (A2UI routing +9 tests) (`7fa713d6`)
+- **templates**: `c4-edit-security-hook.sh` 추가 (`7fa713d6`)
+
 ## [0.22.1] - 2026-02-22
 
 ### 🐛 Bug Fixes
