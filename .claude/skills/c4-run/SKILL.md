@@ -96,7 +96,7 @@ parallelism = status["parallelism"]
 **State-based routing**:
 - **PLAN/HALTED**: → Step 2 (transition to EXECUTE)
 - **EXECUTE**: → Step 3 (spawn workers)
-- **CHECKPOINT**: Output "Checkpoint review pending." → exit
+- **CHECKPOINT**: `run.checkpoint_mode` 설정에 따라 분기 → `auto`: Worker 자동 리뷰 후 계속; `interactive`(기본): 사용자에게 `/c4-checkpoint` 안내 후 중단
 - **COMPLETE**: Output "Project complete." → exit
 - **INIT**: Output "Run /c4-plan first." → exit
 
@@ -324,8 +324,29 @@ Ctrl+C to interrupt.
             break
 
         if status["status"] == "CHECKPOINT":
-            print("⏸️ Checkpoint review pending. Run /c4-checkpoint.")
-            break
+            cfg = c4_config_get(section="all")
+            cp_mode = cfg.get("run", {}).get("checkpoint_mode", "interactive")
+
+            if cp_mode == "auto":
+                print("🔍 Checkpoint detected — auto-reviewing (run.checkpoint_mode=auto)...")
+                cp_worker_id = f"worker-{uuid.uuid4().hex[:8]}"
+                Task(
+                    subagent_type="general-purpose",
+                    description="C4 Checkpoint Auto-Review",
+                    prompt=f"""You are a C4 Checkpoint auto-reviewer.
+Call c4_status() to find the pending CP task, then perform 4-lens review:
+[holistic] architecture consistency, [user-flow] e2e, [cascade] previous feedback, [ship-ready] tests pass.
+If all lenses pass → c4_checkpoint(decision="APPROVE", notes="auto-approved: 4-lens passed").
+If issues found → c4_checkpoint(decision="REQUEST_CHANGES", notes="<issues>").
+Worker ID: {cp_worker_id}""",
+                    model=review_model,
+                    run_in_background=False
+                )
+                print("✅ Checkpoint auto-reviewed — continuing run...")
+                continue  # loop 재개
+            else:
+                print("⏸️ Checkpoint reached — /c4-checkpoint으로 리뷰 후 /c4-run 재실행")
+                break
 
         # Check ready tasks
         ready = status["parallelism"]["ready_now"]
@@ -461,6 +482,20 @@ Worker auto-selects appropriate agent.
 → ✅ All tasks complete
 ```
 
+## Configuration (.c4/config.yaml)
+
+```yaml
+run:
+  checkpoint_mode: interactive   # "auto" | "interactive" (기본값: interactive)
+  # auto        → Checkpoint 도달 시 Worker를 자동 스폰하여 4-lens 리뷰 수행 후 계속 진행
+  # interactive → Checkpoint 도달 시 중단 + "/c4-checkpoint으로 리뷰 후 /c4-run 재실행" 안내
+```
+
+| 값 | 동작 | 권장 상황 |
+|----|------|----------|
+| `interactive` (기본) | 체크포인트에서 멈추고 사람이 `/c4-checkpoint` 실행 | 중요한 설계 결정이 있는 CP |
+| `auto` | Worker가 4-lens 리뷰 후 자동 APPROVE/REQUEST_CHANGES | 단순 진행 확인용 CP |
+
 ## Constraints
 
 | Constraint | Description |
@@ -474,3 +509,4 @@ Worker auto-selects appropriate agent.
 - `/c4-status` - Check status (includes parallelism analysis)
 - `/c4-stop` - Stop execution
 - `/c4-submit` - Manual submission
+- `/c4-checkpoint` - Manual checkpoint review (interactive mode 전용)

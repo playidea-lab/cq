@@ -12,6 +12,12 @@ description: |
 
 체크포인트 상태를 확인하고 결정을 내립니다.
 
+> ℹ️ **Checkpoint는 c4-run에 내장되어 있습니다.**
+> - `run.checkpoint_mode: interactive` (기본): c4-run이 CP 도달 시 중단 → 이 스킬 수동 호출
+> - `run.checkpoint_mode: auto`: c4-run이 Worker를 자동 스폰하여 4-lens 리뷰 후 계속 진행
+>
+> 이 스킬은 `interactive` 모드 또는 별도 리뷰가 필요한 경우에만 직접 호출합니다.
+
 ## 사용법
 
 ```

@@ -760,14 +760,16 @@ Summarize the generated plan and confirm with user.
 
 **전체 실행 플로우 (반드시 이 순서로 안내)**:
 ```
-/c4-run          # Worker 스폰 → 태스크 실행
-/c4-checkpoint   # (CP 도달 시) 체크포인트 리뷰
-/c4-polish       # 구현 결과물 수렴 (CRITICAL+HIGH=0 → 수정사항 0) ← ⚠️ 빠트리기 쉬움
-/c4-finish       # 빌드 검증 + 바이너리 설치 + 커밋
+/c4-run          # Worker 스폰 → 태스크 실행 → (체크포인트 처리) → polish → finish 자동 실행
+/c4-finish       # c4-run이 완료되지 못한 경우 수동으로 마무리
 ```
 
-> ⚠️ **Polish는 Finish 직전 필수 단계다.** `/c4-finish`는 Step 0에서 `polish gate` DB 레코드가 없으면 중단한다.
-> c4-run auto-finish 루틴도 polish → finish 순서로 자동 실행됨.
+> ℹ️ **Checkpoint는 c4-run에 내장되어 있다.**
+> - `run.checkpoint_mode: interactive`(기본): CP 도달 시 중단 + 사용자가 `/c4-checkpoint` 호출
+> - `run.checkpoint_mode: auto`: Worker가 자동으로 4-lens 리뷰 후 계속 진행
+>
+> ℹ️ **Polish와 Finish도 c4-run 완료 시 자동 실행된다.**
+> c4-run이 끊겼거나 수동으로 마무리가 필요할 때만 `/c4-finish`를 별도 실행.
 
 ### Validation Checklist (must pass before confirmation)
 
