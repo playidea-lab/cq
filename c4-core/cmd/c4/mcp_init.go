@@ -241,6 +241,8 @@ func newMCPServer() (*mcpServer, error) {
 		w, r, s := handlers.AdaptKnowledge(knowledgeStore, knowledgeSearcher)
 		storeOpts = append(storeOpts, handlers.WithKnowledge(w, r, s))
 	}
+	knowledgeHitTracker := handlers.NewKnowledgeHitTracker()
+	storeOpts = append(storeOpts, handlers.WithKnowledgeHitTracker(knowledgeHitTracker))
 	storeOpts = append(storeOpts, handlers.WithRegistry(reg))
 	sqliteStore, err := handlers.NewSQLiteStore(db, storeOpts...)
 	if err != nil {

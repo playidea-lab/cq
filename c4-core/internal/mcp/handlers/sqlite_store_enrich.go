@@ -125,6 +125,13 @@ func (s *SQLiteStore) enrichWithKnowledge(assignment *TaskAssignment) {
 	}
 
 	results, err := s.knowledgeSearch.Search(query, 3, nil)
+	if s.knowledgeHitTracker != nil {
+		resultCount := len(results)
+		if err != nil {
+			resultCount = 0
+		}
+		s.knowledgeHitTracker.Record(assignment.TaskID, query, resultCount)
+	}
 	if err != nil || len(results) == 0 {
 		return
 	}

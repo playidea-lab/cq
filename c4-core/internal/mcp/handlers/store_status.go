@@ -135,6 +135,19 @@ func (s *SQLiteStore) GetStatus() (*ProjectStatus, error) {
 		}
 	}
 
+	// Add in-session knowledge search hit/miss statistics if tracker is set.
+	if s.knowledgeHitTracker != nil {
+		r := s.knowledgeHitTracker.Report()
+		if r.TotalSearches > 0 {
+			status.KnowledgeSearchStats = &store.KnowledgeSearchStats{
+				TotalSearches: r.TotalSearches,
+				Hits:          r.Hits,
+				Misses:        r.Misses,
+				HitRate:       r.HitRate,
+			}
+		}
+	}
+
 	// Add economic mode and worker config info if config is available
 	if s.config != nil {
 		cfg := s.config.GetConfig()

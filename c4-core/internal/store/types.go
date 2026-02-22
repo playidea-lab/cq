@@ -143,7 +143,16 @@ type ProjectStatus struct {
 	LighthouseStubs       int               `json:"lighthouse_stubs,omitempty"`
 	LighthouseImplemented int               `json:"lighthouse_implemented,omitempty"`
 	OrphanReviews         int               `json:"orphan_reviews,omitempty"`
-	PersonaDigest         *PersonaSummary   `json:"persona_digest,omitempty"`
+	PersonaDigest         *PersonaSummary        `json:"persona_digest,omitempty"`
+	KnowledgeSearchStats  *KnowledgeSearchStats  `json:"knowledge_search_stats,omitempty"`
+}
+
+// KnowledgeSearchStats holds in-session knowledge search hit/miss statistics.
+type KnowledgeSearchStats struct {
+	TotalSearches int     `json:"total_searches"`
+	Hits          int     `json:"hits"`
+	Misses        int     `json:"misses"`
+	HitRate       float64 `json:"hit_rate"` // Hits / TotalSearches (0 if TotalSearches == 0)
 }
 
 // PersonaSummary provides a quick overview of persona performance.

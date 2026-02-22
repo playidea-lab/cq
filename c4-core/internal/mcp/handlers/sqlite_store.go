@@ -25,10 +25,11 @@ type SQLiteStore struct {
 	projectRoot    string
 	config         *config.Manager
 	proxy           *BridgeProxy              // optional: for legacy proxy calls
-	knowledgeWriter KnowledgeWriter           // optional: for native knowledge recording
-	knowledgeReader KnowledgeReader           // optional: for knowledge body lookup
-	knowledgeSearch KnowledgeContextSearcher  // optional: for knowledge context injection
-	eventPub        EventPublisher            // optional: for C3 EventBus remote publishing
+	knowledgeWriter     KnowledgeWriter          // optional: for native knowledge recording
+	knowledgeReader     KnowledgeReader          // optional: for knowledge body lookup
+	knowledgeSearch     KnowledgeContextSearcher // optional: for knowledge context injection
+	knowledgeHitTracker *KnowledgeHitTracker     // optional: tracks search hit/miss in memory
+	eventPub            EventPublisher            // optional: for C3 EventBus remote publishing
 	dispatcher      EventDispatcher           // optional: local rule-based dispatch (C1 posting, etc.)
 	registry        *mcp.Registry             // optional: for lighthouse auto-promote registry cleanup
 
@@ -64,6 +65,11 @@ func WithKnowledge(writer KnowledgeWriter, reader KnowledgeReader, searcher Know
 		s.knowledgeReader = reader
 		s.knowledgeSearch = searcher
 	}
+}
+
+// WithKnowledgeHitTracker sets the knowledge hit tracker for monitoring search hit/miss rates.
+func WithKnowledgeHitTracker(t *KnowledgeHitTracker) StoreOption {
+	return func(s *SQLiteStore) { s.knowledgeHitTracker = t }
 }
 
 // WithRegistry sets the MCP registry for lighthouse auto-promote on T-LH task completion.
