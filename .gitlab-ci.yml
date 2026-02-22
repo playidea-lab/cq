@@ -115,9 +115,22 @@ release-github:
         apt-get update -qq && apt-get install -y gh
       fi
     - |
-      gh release create "$CI_COMMIT_TAG" c4-core/dist/* \
-        --repo PlayIdea-Lab/cq \
-        --title "$CI_COMMIT_TAG"
+      # Verify all 9 binaries (3 tiers × 3 platforms) are present before uploading
+      BINARY_COUNT=$(ls c4-core/dist/ | wc -l | tr -d ' ')
+      test "$BINARY_COUNT" = "9" || { echo "Expected 9 binaries, got $BINARY_COUNT"; exit 1; }
+    - |
+      # Idempotent release: upload to existing release or create new one
+      if gh release view "$CI_COMMIT_TAG" --repo PlayIdea-Lab/cq > /dev/null 2>&1; then
+        echo "Release $CI_COMMIT_TAG already exists — uploading binaries with --clobber"
+        gh release upload "$CI_COMMIT_TAG" c4-core/dist/* \
+          --repo PlayIdea-Lab/cq \
+          --clobber
+      else
+        gh release create "$CI_COMMIT_TAG" c4-core/dist/* \
+          --repo PlayIdea-Lab/cq \
+          --title "$CI_COMMIT_TAG" \
+          --notes "Binary release $CI_COMMIT_TAG"
+      fi
   needs:
     - build-solo-linux-amd64
     - build-solo-linux-arm64
