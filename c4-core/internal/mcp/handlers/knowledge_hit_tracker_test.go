@@ -81,21 +81,40 @@ func TestKnowledgeHitTrackerAllHits(t *testing.T) {
 	}
 }
 
-func TestKnowledgeHitTrackerEnrichIntegration(t *testing.T) {
-	// Verify that enrichWithKnowledge calls Record correctly
+func TestKnowledgeHitTrackerManualSimulation(t *testing.T) {
+	// Simulate the call pattern used by enrichWithKnowledge: hit then miss.
 	tracker := NewKnowledgeHitTracker()
 
-	// Simulate what enrichWithKnowledge does
-	// Hit: resultCount > 0
-	tracker.Record("T-010-0", "knowledge engineering", 2)
-	// Miss: resultCount == 0 (err != nil case)
-	tracker.Record("T-011-0", "no such concept", 0)
+	tracker.Record("T-010-0", "knowledge engineering", 2) // hit
+	tracker.Record("T-011-0", "no such concept", 0)       // miss
 
 	r := tracker.Report()
 	if r.TotalSearches != 2 {
-		t.Errorf("integration: expected 2 total searches, got %d", r.TotalSearches)
+		t.Errorf("expected 2 total searches, got %d", r.TotalSearches)
 	}
 	if r.Hits != 1 || r.Misses != 1 {
-		t.Errorf("integration: expected 1 hit / 1 miss, got %d/%d", r.Hits, r.Misses)
+		t.Errorf("expected 1 hit / 1 miss, got %d/%d", r.Hits, r.Misses)
+	}
+}
+
+func TestKnowledgeHitTrackerConcurrent(t *testing.T) {
+	tracker := NewKnowledgeHitTracker()
+	const n = 100
+	done := make(chan struct{})
+	for i := 0; i < n; i++ {
+		go func(i int) {
+			tracker.Record("T-concurrent", "query", i%2) // alternating hit/miss
+			done <- struct{}{}
+		}(i)
+	}
+	for i := 0; i < n; i++ {
+		<-done
+	}
+	r := tracker.Report()
+	if r.TotalSearches != n {
+		t.Errorf("concurrent: expected %d total searches, got %d", n, r.TotalSearches)
+	}
+	if r.Hits+r.Misses != n {
+		t.Errorf("concurrent: hits+misses=%d, want %d", r.Hits+r.Misses, n)
 	}
 }

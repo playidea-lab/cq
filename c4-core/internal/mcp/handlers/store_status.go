@@ -139,7 +139,7 @@ func (s *SQLiteStore) GetStatus() (*ProjectStatus, error) {
 	if s.knowledgeHitTracker != nil {
 		r := s.knowledgeHitTracker.Report()
 		if r.TotalSearches > 0 {
-			status.KnowledgeSearchStats = &store.KnowledgeSearchStats{
+			status.KnowledgeSearchStats = &KnowledgeSearchStats{
 				TotalSearches: r.TotalSearches,
 				Hits:          r.Hits,
 				Misses:        r.Misses,

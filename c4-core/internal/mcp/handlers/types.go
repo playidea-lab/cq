@@ -25,6 +25,7 @@ type WorkerInfo = store.WorkerInfo
 type EconomicModeInfo = store.EconomicModeInfo
 type ProjectStatus = store.ProjectStatus
 type PersonaSummary = store.PersonaSummary
+type KnowledgeSearchStats = store.KnowledgeSearchStats
 type Lighthouse = store.Lighthouse
 type LighthouseContext = store.LighthouseContext
 type HandoffEvidence = store.HandoffEvidence

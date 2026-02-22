@@ -31,8 +31,12 @@ func NewKnowledgeHitTracker() *KnowledgeHitTracker {
 }
 
 // Record logs one knowledge search result.
+// resultCount must be >= 0; negative values are treated as 0 (miss).
 // resultCount == 0 (or a prior err) counts as a miss; resultCount > 0 is a hit.
 func (t *KnowledgeHitTracker) Record(taskID, query string, resultCount int) {
+	if resultCount < 0 {
+		resultCount = 0
+	}
 	t.mu.Lock()
 	t.entries = append(t.entries, KnowledgeHitEntry{
 		TaskID:      taskID,
