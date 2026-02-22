@@ -575,7 +575,9 @@ func sectionYAMLValue(content, section, key string) string {
 			inSection = strings.HasPrefix(trimmed, sectionHeader)
 			continue
 		}
-		if inSection && strings.HasPrefix(trimmed, key) {
+		// Require exact key match: key followed by space, tab, or end-of-string.
+		// This prevents "url:" from matching "url_extra:" (prefix collision).
+		if inSection && (trimmed == key || strings.HasPrefix(trimmed, key+" ") || strings.HasPrefix(trimmed, key+"\t")) {
 			val := strings.TrimSpace(strings.TrimPrefix(trimmed, key))
 			val = strings.Trim(val, `"'`)
 			return val
@@ -597,24 +599,6 @@ func expandTilde(p string) string {
 }
 
 // isHubEnabled returns true only when the hub: YAML section contains enabled: true.
-// A plain strings.Contains(content, "enabled: true") produces false positives when
-// other top-level sections (e.g. observe) also have enabled: true.
 func isHubEnabled(content string) bool {
-	lines := strings.Split(content, "\n")
-	inHub := false
-	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
-			continue
-		}
-		// Top-level key detection (no leading whitespace)
-		if len(line) > 0 && line[0] != ' ' && line[0] != '\t' {
-			inHub = strings.HasPrefix(trimmed, "hub:")
-			continue
-		}
-		if inHub && strings.HasPrefix(trimmed, "enabled:") {
-			return strings.Contains(trimmed, "true")
-		}
-	}
-	return false
+	return sectionYAMLValue(content, "hub", "enabled:") == "true"
 }

@@ -236,4 +236,14 @@ cloud:
 	if v := sectionYAMLValue(content, "nosection", "url:"); v != "" {
 		t.Errorf("missing section: got %q, want empty", v)
 	}
+
+	// prefix collision: "url:" must NOT match "url_extra:" key
+	contentPrefixCollision := `
+hub:
+  url_extra: should-not-match
+  url: http://real-url
+`
+	if v := sectionYAMLValue(contentPrefixCollision, "hub", "url:"); v != "http://real-url" {
+		t.Errorf("prefix collision: url: should match http://real-url, got %q", v)
+	}
 }
