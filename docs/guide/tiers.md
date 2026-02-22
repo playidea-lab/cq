@@ -83,3 +83,68 @@ Best for: production deployments, ML workflows, large teams.
 CQ looks for config at `~/.c4/config.yaml`. For `solo` tier, no config is required — it works out of the box.
 
 For `connected` and `full` tiers, the config file will be provided by your team or organization. Place it at `~/.c4/config.yaml` before running `cq claude` in your project.
+
+## Config templates
+
+Copy to `~/.c4/config.yaml` and customize.
+
+### solo
+
+```yaml
+# CQ Solo tier configuration template
+# Copy to ~/.c4/config.yaml and customize
+
+# Task storage
+task_store:
+  type: sqlite
+  path: ~/.c4/tasks.db
+
+# LLM Gateway (optional - for c4_llm_call tool)
+# llm_gateway:
+#   default_provider: anthropic
+#   providers:
+#     anthropic:
+#       api_key_env: ANTHROPIC_API_KEY
+
+# Permission reviewer (bash hook)
+permission_reviewer:
+  enabled: true
+  mode: hook
+  auto_approve: true
+```
+
+### connected
+
+```yaml
+# CQ Connected tier configuration template
+# Copy to ~/.c4/config.yaml and customize
+# Requires: Supabase account, C3 EventBus (optional)
+
+# Task storage
+task_store:
+  type: supabase  # or sqlite for local fallback
+
+# Cloud (Supabase)
+cloud:
+  url: https://your-project.supabase.co
+  anon_key: your-anon-key
+  # service_role_key: your-service-role-key  # for admin operations
+
+# C3 EventBus (optional)
+# eventbus:
+#   host: localhost
+#   port: 50051
+
+# Permission reviewer
+permission_reviewer:
+  enabled: true
+  mode: hook
+  auto_approve: true
+
+# LLM Gateway
+# llm_gateway:
+#   default_provider: anthropic
+#   providers:
+#     anthropic:
+#       api_key_env: ANTHROPIC_API_KEY
+```

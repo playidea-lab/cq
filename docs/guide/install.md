@@ -51,7 +51,7 @@ curl -fsSL https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/install.sh | s
 
 ## Update
 
-Re-run the install command. The binary is replaced in-place.
+Re-run the install command. The installer only replaces the binary at `~/.local/bin/cq` — your config and project data in `~/.c4/` are not modified.
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/install.sh | sh
