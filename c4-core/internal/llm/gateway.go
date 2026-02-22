@@ -277,7 +277,7 @@ func (g *Gateway) checkCacheAlert(provider string) {
 	g.alertMu.Lock()
 	defer g.alertMu.Unlock()
 
-	if mon == nil {
+	if g.alert == nil {
 		return
 	}
 
