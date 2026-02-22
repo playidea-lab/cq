@@ -17,7 +17,6 @@ You describe a feature → /c4-plan creates tasks with DoD
                        → /c4-run spawns workers (one per task)
                        → each worker: implement → test → submit
                        → reviewer worker checks the output
-                       → polish loop: fix until zero changes remain
                        → build, test, commit
 ```
 

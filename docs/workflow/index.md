@@ -3,7 +3,7 @@
 CQ follows a structured loop:
 
 ```
-INIT → DISCOVERY → DESIGN → PLAN → EXECUTE → CHECKPOINT → POLISH → COMPLETE
+INIT → DISCOVERY → DESIGN → PLAN → EXECUTE → CHECKPOINT → COMPLETE
 ```
 
 ## Commands
@@ -11,8 +11,8 @@ INIT → DISCOVERY → DESIGN → PLAN → EXECUTE → CHECKPOINT → POLISH →
 | Command | Phase | When to use |
 |---------|-------|-------------|
 | [`/c4-plan`](/workflow/plan) | Plan | New feature or significant change |
-| [`/c4-run`](/workflow/run) | Execute | Spawn workers, implement, auto-polish, and finish |
-| [`/c4-finish`](/workflow/finish) | Complete | Final build, tests, docs, and commit (also called automatically by `/c4-run`) |
+| [`/c4-run`](/workflow/run) | Execute | Spawn workers and run the full cycle end-to-end |
+| [`/c4-finish`](/workflow/finish) | Complete | Build, tests, docs, and commit — called automatically by `/c4-run`, or manually after additional changes |
 | `/c4-status` | Any | Check progress at any time |
 | `/c4-quick` | — | Single small task, skip the planning phase |
 
