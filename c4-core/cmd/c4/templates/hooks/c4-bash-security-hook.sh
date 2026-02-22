@@ -268,10 +268,12 @@ if [[ "$COMMAND" =~ :\(\)\{[[:space:]]*:\|: ]]; then
 fi
 
 # Git force push to main/master
-# Note: --force-with-lease is intentionally NOT blocked — it is the safe alternative to
-# --force (fails if the remote has diverged), so worktree and rebase workflows can proceed.
-if [[ "$COMMAND" =~ git[[:space:]]+push[[:space:]]+(-f|--force)[[:space:]]+(origin[[:space:]]+)?(main|master) ]] || \
-   [[ "$COMMAND" =~ git[[:space:]]+push[[:space:]]+(origin[[:space:]]+)?(main|master)[[:space:]]+(-f|--force) ]]; then
+# --force-with-lease is explicitly excluded (safe: fails if remote diverged).
+# bash ERE has no word boundary, so we guard before the broader --force pattern.
+if [[ "$COMMAND" =~ git[[:space:]]+push[[:space:]].*--force-with-lease ]]; then
+    : # --force-with-lease is safe — fall through to allow
+elif [[ "$COMMAND" =~ git[[:space:]]+push[[:space:]]+(-f|--force)[[:space:]]+(origin[[:space:]]+)?(main|master) ]] || \
+     [[ "$COMMAND" =~ git[[:space:]]+push[[:space:]]+(origin[[:space:]]+)?(main|master)[[:space:]]+(-f|--force) ]]; then
     _emit_deny "Force push to main/master branch"
 fi
 

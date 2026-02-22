@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -70,7 +71,9 @@ func wireGateEventBus(ctx *initContext, ebClient *eventbus.Client) {
 	go func() {
 		ch, err := ebClient.Subscribe(gctx, "task.completed", "")
 		if err != nil {
-			slog.Warn("gate: failed to subscribe to task.completed", "err", err)
+			if !errors.Is(err, context.Canceled) {
+				slog.Warn("gate: failed to subscribe to task.completed", "err", err)
+			}
 			cancel() // release the context; sibling goroutine will observe Done()
 			return
 		}
@@ -90,7 +93,9 @@ func wireGateEventBus(ctx *initContext, ebClient *eventbus.Client) {
 	go func() {
 		ch, err := ebClient.Subscribe(gctx, "hub.job.completed", "")
 		if err != nil {
-			slog.Warn("gate: failed to subscribe to hub.job.completed", "err", err)
+			if !errors.Is(err, context.Canceled) {
+				slog.Warn("gate: failed to subscribe to hub.job.completed", "err", err)
+			}
 			cancel() // release the context; sibling goroutine will observe Done()
 			return
 		}

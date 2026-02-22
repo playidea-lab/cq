@@ -557,21 +557,6 @@ func tryFix(r *checkResult) string {
 	return ""
 }
 
-// extractYAMLValue is a simple line-by-line YAML value extractor (key: value).
-// It returns the trimmed value after the first occurrence of key on its own line.
-func extractYAMLValue(content, key string) string {
-	for _, line := range strings.Split(content, "\n") {
-		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, key) {
-			val := strings.TrimSpace(strings.TrimPrefix(trimmed, key))
-			// Strip surrounding quotes
-			val = strings.Trim(val, `"'`)
-			return val
-		}
-	}
-	return ""
-}
-
 // sectionYAMLValue returns the value of key within a specific top-level YAML section.
 // It scans lines looking for "section:" (no leading whitespace) and then reads
 // indented keys inside that section, stopping when a new top-level key is found.

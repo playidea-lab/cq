@@ -204,20 +204,36 @@ func TestDoctor_MissingC4Dir(t *testing.T) {
 	}
 }
 
-func TestDoctor_ExtractYAMLValue(t *testing.T) {
+func TestDoctor_SectionYAMLValue(t *testing.T) {
+	// Config with both hub.url and cloud.url to verify cross-section isolation.
 	content := `
 hub:
   enabled: true
   url: "http://localhost:8585"
-  api_key: secret
+  api_key: hub-secret
+cloud:
+  url: "https://xyz.supabase.co"
+  anon_key: anon-secret
 `
-	if v := extractYAMLValue(content, "url:"); v != "http://localhost:8585" {
-		t.Errorf("unexpected url: %q", v)
+	// hub section
+	if v := sectionYAMLValue(content, "hub", "url:"); v != "http://localhost:8585" {
+		t.Errorf("hub url: got %q, want http://localhost:8585", v)
 	}
-	if v := extractYAMLValue(content, "api_key:"); v != "secret" {
-		t.Errorf("unexpected api_key: %q", v)
+	if v := sectionYAMLValue(content, "hub", "api_key:"); v != "hub-secret" {
+		t.Errorf("hub api_key: got %q, want hub-secret", v)
 	}
-	if v := extractYAMLValue(content, "missing:"); v != "" {
-		t.Errorf("expected empty for missing key, got %q", v)
+	// cloud section — must not return hub.url
+	if v := sectionYAMLValue(content, "cloud", "url:"); v != "https://xyz.supabase.co" {
+		t.Errorf("cloud url: got %q, want https://xyz.supabase.co", v)
+	}
+	if v := sectionYAMLValue(content, "cloud", "anon_key:"); v != "anon-secret" {
+		t.Errorf("cloud anon_key: got %q, want anon-secret", v)
+	}
+	// missing section or key
+	if v := sectionYAMLValue(content, "hub", "missing:"); v != "" {
+		t.Errorf("missing key: got %q, want empty", v)
+	}
+	if v := sectionYAMLValue(content, "nosection", "url:"); v != "" {
+		t.Errorf("missing section: got %q, want empty", v)
 	}
 }
