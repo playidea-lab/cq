@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-02-22
+
+### ✨ Features
+- **session**: 신규 내부 패키지 `c4-core/internal/session` — PID lock 파일 기반 활성 MCP 세션 추적, 다중 세션 감지 지원 (`d3fcf15`)
+
+### 🐛 Bug Fixes
+- **doctor**: `sectionYAMLValue` 추가 — cross-section 격리 YAML 파싱 (hub.url과 cloud.url 혼용 방지), 정확한 키 토큰 매칭으로 prefix collision 수정 (`f3d978b`, `a2866ec`, `59d5d38`)
+- **gate**: `mcp_init_gate.go` Subscribe 실패 시 `context.Canceled` 필터 + cancel() 호출로 goroutine 누수 방지 (`f3d978b`, `a2866ec`)
+- **guard**: PRAGMA busy_timeout 30000ms로 통일 — 메인 DB와 일관성 확보 (`f3d978b`)
+- **lsp**: `native_lsp.go`에 `filepath.Clean()` 추가 — 상대 경로/trailing separator 처리 (`f3d978b`)
+- **hook**: `--force-with-lease` 허용 로직 — if/elif 명시 가드로 ERE prefix 매칭 버그 수정 (`a2866ec`)
+- **observe**: `MiddlewareWithPublisher` dead publisher block 제거, unused param 정리 (`f3d978b`)
+
+### 🧪 Tests
+- **guard**: `TestEngine_AuditOnly_NoPublish` 추가 — AuditOnly 시 PublishAsync 미발행 + audit log 기록 동시 검증 (`f3d978b`)
+- **doctor**: `TestDoctor_SectionYAMLValue` — cross-section 격리 + prefix collision 회귀 테스트 추가 (`a2866ec`, `59d5d38`)
+- **lsp**: `TestLanguageGuardPythonFile` nil map/interface 비교 버그 수정 (`f3d978b`)
+
+### ♻️ Refactoring
+- **skills**: `/c4-refine` → `/c4-polish` 통합 — plan→run→finish 3-step 워크플로우 완성, Plan Critique → Plan Refine 명명 개선 (`37ff4b8`, `e3b3e2a`)
+
+### 📚 Documentation
+- **agents**: Go 테스트 수 ~1,271 → ~1,294 반영 (`1b26131`)
+- **user**: submodule 업데이트 (plan→run→finish 워크플로우 문서 단순화)
+
+---
+
 ## [0.16.0] - 2026-02-22
 
 ### ✨ Features
