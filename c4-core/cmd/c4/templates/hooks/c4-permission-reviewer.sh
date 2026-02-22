@@ -76,7 +76,7 @@ _emit_allow() {
                 message: $msg
             }
         }
-    }' 2>/dev/null || echo "{\"hookSpecificOutput\":{\"hookEventName\":\"PermissionRequest\",\"decision\":{\"behavior\":\"allow\",\"message\":\"$message\"}}}"
+    }' 2>/dev/null || echo "{\"hookSpecificOutput\":{\"hookEventName\":\"PermissionRequest\",\"decision\":{\"behavior\":\"allow\",\"message\":\"${message//\'/}\"}}}"
     exit 0
 }
 
@@ -90,7 +90,7 @@ _emit_deny() {
                 message: $msg
             }
         }
-    }' 2>/dev/null || echo "{\"hookSpecificOutput\":{\"hookEventName\":\"PermissionRequest\",\"decision\":{\"behavior\":\"deny\",\"message\":\"$message\"}}}"
+    }' 2>/dev/null || echo "{\"hookSpecificOutput\":{\"hookEventName\":\"PermissionRequest\",\"decision\":{\"behavior\":\"deny\",\"message\":\"${message//\'/}\"}}}"
     exit 2
 }
 

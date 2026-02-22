@@ -92,7 +92,7 @@ _emit_deny() {
             permissionDecision: "deny",
             permissionDecisionReason: $reason
         }
-    }' 2>/dev/null || echo "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"$reason\"}}"
+    }' 2>/dev/null || echo "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"${reason//\'/}\"}}"
     exit 2
 }
 

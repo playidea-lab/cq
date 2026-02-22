@@ -844,6 +844,70 @@ func TestPatchProjectSettings_Idempotent(t *testing.T) {
 	}
 }
 
+// TestPatchProjectSettings_StaleEntry verifies that patchProjectSettings upgrades
+// a hook entry that exists under an outdated matcher (Phase 1 baseName scan).
+// This exercises the Round-2 fix: stale entry is replaced in-place rather than
+// creating a duplicate entry under the new matcher.
+func TestPatchProjectSettings_StaleEntry(t *testing.T) {
+	projectDir := t.TempDir()
+	settingsDir := filepath.Join(projectDir, ".claude")
+	os.MkdirAll(settingsDir, 0755)
+
+	hooksDir := filepath.Join(settingsDir, "hooks")
+	os.MkdirAll(hooksDir, 0755)
+	gateCmd := filepath.Join(hooksDir, "c4-gate.sh")
+
+	// Simulate an older settings.json where c4-gate.sh is registered under "Bash"
+	// (old matcher) instead of the current "Bash|Edit|Write" matcher.
+	staleSettings := map[string]any{
+		"hooks": map[string]any{
+			"PreToolUse": []any{
+				map[string]any{
+					"matcher": "Bash",
+					"hooks": []any{
+						map[string]any{
+							"type":    "command",
+							"command": gateCmd,
+						},
+					},
+				},
+			},
+		},
+	}
+	data, _ := json.Marshal(staleSettings)
+	settingsPath := filepath.Join(settingsDir, "settings.json")
+	if err := os.WriteFile(settingsPath, data, 0644); err != nil {
+		t.Fatalf("write stale settings: %v", err)
+	}
+
+	if err := patchProjectSettings(projectDir); err != nil {
+		t.Fatalf("patchProjectSettings: %v", err)
+	}
+
+	result, _ := os.ReadFile(settingsPath)
+	var settings map[string]any
+	json.Unmarshal(result, &settings)
+	hooks, _ := settings["hooks"].(map[string]any)
+	preToolUse, _ := hooks["PreToolUse"].([]any)
+
+	// Must still be exactly 1 PreToolUse entry (no duplicate appended).
+	if len(preToolUse) != 1 {
+		t.Errorf("expected 1 PreToolUse entry after stale upgrade, got %d", len(preToolUse))
+	}
+
+	// Matcher must be updated to the current value.
+	entry, _ := preToolUse[0].(map[string]any)
+	if entry["matcher"] != "Bash|Edit|Write" {
+		t.Errorf("matcher not upgraded: %v", entry["matcher"])
+	}
+
+	// c4-gate.sh must appear exactly once in the output.
+	count := strings.Count(string(result), "c4-gate.sh")
+	if count != 1 {
+		t.Errorf("c4-gate.sh appears %d times, want 1", count)
+	}
+}
+
 func TestPatchProjectSettings_CorruptedJSON(t *testing.T) {
 	projectDir := t.TempDir()
 	settingsDir := filepath.Join(projectDir, ".claude")
