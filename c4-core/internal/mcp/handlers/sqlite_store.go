@@ -304,12 +304,13 @@ func (s *SQLiteStore) GetTask(taskID string) (*Task, error) {
 	var failureSig, lastErr sql.NullString
 	var blockedAttempts sql.NullInt64
 	var filesChangedNull sql.NullString
+	var supersededByNull sql.NullString
 	err := s.db.QueryRow(`
-		SELECT task_id, title, scope, dod, status, dependencies, domain, priority, model, execution_mode, worker_id, branch, commit_sha, files_changed, review_decision_evidence, failure_signature, blocked_attempts, last_error, created_at, updated_at
+		SELECT task_id, title, scope, dod, status, dependencies, domain, priority, model, execution_mode, worker_id, branch, commit_sha, files_changed, review_decision_evidence, failure_signature, blocked_attempts, last_error, superseded_by, created_at, updated_at
 		FROM c4_tasks WHERE task_id = ?`, taskID,
 	).Scan(&t.ID, &t.Title, &t.Scope, &t.DoD, &t.Status, &deps,
 		&t.Domain, &t.Priority, &t.Model, &t.ExecutionMode, &t.WorkerID, &t.Branch, &t.CommitSHA,
-		&filesChangedNull, &reviewEvidence, &failureSig, &blockedAttempts, &lastErr, &createdAt, &updatedAt)
+		&filesChangedNull, &reviewEvidence, &failureSig, &blockedAttempts, &lastErr, &supersededByNull, &createdAt, &updatedAt)
 
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("task not found: %s", taskID)
@@ -337,6 +338,9 @@ func (s *SQLiteStore) GetTask(taskID string) (*Task, error) {
 	}
 	if lastErr.Valid {
 		t.LastError = lastErr.String
+	}
+	if supersededByNull.Valid {
+		t.SupersededBy = supersededByNull.String
 	}
 	if createdAt.Valid {
 		t.CreatedAt = createdAt.String
@@ -565,6 +569,7 @@ func (s *SQLiteStore) reassignStaleOrFindPendingTask(workerID string) (
 		AND (t.execution_mode IS NULL OR t.execution_mode IN ('', 'worker', 'auto'))
 		AND (julianday('now') - julianday(t.updated_at)) * 24 * 60 > 30
 		AND t.worker_id != ?
+		AND (t.superseded_by IS NULL OR t.superseded_by = '')
 		ORDER BY t.priority DESC, t.created_at ASC
 		LIMIT 1`, workerID,
 	).Scan(&taskID, &title, &scope, &dod, &deps, &domain, &priority, &model)
@@ -576,6 +581,7 @@ func (s *SQLiteStore) reassignStaleOrFindPendingTask(workerID string) (
 			FROM c4_tasks t
 			WHERE t.status = 'pending'
 			AND (t.execution_mode IS NULL OR t.execution_mode IN ('', 'worker', 'auto'))
+			AND (t.superseded_by IS NULL OR t.superseded_by = '')
 			AND NOT EXISTS (
 				SELECT 1 FROM json_each(CASE WHEN t.dependencies IS NULL OR t.dependencies = '' THEN '[]' ELSE t.dependencies END) AS dep
 				JOIN c4_tasks dt ON dt.task_id = dep.value

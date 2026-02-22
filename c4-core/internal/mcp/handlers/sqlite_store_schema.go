@@ -42,6 +42,7 @@ func (s *SQLiteStore) initSchema() error {
 			failure_signature TEXT DEFAULT '',
 			blocked_attempts INTEGER DEFAULT 0,
 			last_error TEXT DEFAULT '',
+			superseded_by TEXT NOT NULL DEFAULT '',
 			created_at   TEXT DEFAULT CURRENT_TIMESTAMP,
 			updated_at   TEXT DEFAULT CURRENT_TIMESTAMP
 		)`,
@@ -104,6 +105,7 @@ func (s *SQLiteStore) initSchema() error {
 		"ALTER TABLE c4_tasks ADD COLUMN blocked_attempts INTEGER DEFAULT 0",
 		"ALTER TABLE c4_tasks ADD COLUMN last_error TEXT DEFAULT ''",
 		"ALTER TABLE c4_tasks ADD COLUMN files_changed TEXT DEFAULT ''",
+		"ALTER TABLE c4_tasks ADD COLUMN superseded_by TEXT NOT NULL DEFAULT ''",
 		"ALTER TABLE c4_lighthouses ADD COLUMN task_id TEXT DEFAULT ''",
 		"ALTER TABLE c4_checkpoints ADD COLUMN target_task_id TEXT DEFAULT ''",
 		"ALTER TABLE c4_checkpoints ADD COLUMN target_review_id TEXT DEFAULT ''",
@@ -121,6 +123,16 @@ func (s *SQLiteStore) initSchema() error {
 			if !strings.Contains(err.Error(), "duplicate column") {
 				fmt.Fprintf(os.Stderr, "c4: warning: migration failed: %v\n", err)
 			}
+		}
+	}
+
+	// Best-effort: create indexes (idempotent via IF NOT EXISTS)
+	indexes := []string{
+		"CREATE INDEX IF NOT EXISTS idx_tasks_superseded_by ON c4_tasks(superseded_by) WHERE superseded_by != ''",
+	}
+	for _, idx := range indexes {
+		if _, err := s.db.Exec(idx); err != nil {
+			fmt.Fprintf(os.Stderr, "c4: warning: index creation failed: %v\n", err)
 		}
 	}
 

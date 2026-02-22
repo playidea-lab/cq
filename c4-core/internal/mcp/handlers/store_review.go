@@ -205,11 +205,16 @@ func (s *SQLiteStore) RequestChanges(reviewTaskID string, comments string, requi
 		return nil, fmt.Errorf("updating review task: %w", err)
 	}
 
-	// 4. Look up parent T's DoD and record rejection
+	// 4. Look up parent T's DoD, scope, and record rejection
 	parentTaskID := fmt.Sprintf("T-%s-%d", baseID, version)
 	var originalDoD string
 	if err := s.db.QueryRow("SELECT dod FROM c4_tasks WHERE task_id=?", parentTaskID).Scan(&originalDoD); err != nil {
 		fmt.Fprintf(os.Stderr, "c4: request-changes: original DoD lookup: %v\n", err)
+	}
+
+	var parentScope string
+	if err := s.db.QueryRow("SELECT scope FROM c4_tasks WHERE task_id=?", parentTaskID).Scan(&parentScope); err != nil {
+		fmt.Fprintf(os.Stderr, "c4: request-changes: scope lookup: %v\n", err)
 	}
 
 	// Record rejection for parent T-task's worker
@@ -230,9 +235,16 @@ func (s *SQLiteStore) RequestChanges(reviewTaskID string, comments string, requi
 	nextTaskID := task.NextVersionID("T", baseID, version)
 	nextReviewID := task.ReviewID(baseID, nextVersion)
 
-	// T-XXX-(N+1) — fix task
+	// Mark old R-task as superseded (best-effort, non-fatal)
+	if _, err2 := s.db.Exec(`UPDATE c4_tasks SET superseded_by=? WHERE task_id=?`,
+		nextReviewID, normalizedReviewID); err2 != nil {
+		fmt.Fprintf(os.Stderr, "c4: superseded_by update: %v\n", err2)
+	}
+
+	// T-XXX-(N+1) — fix task (inherits scope from parent T)
 	if err := s.AddTask(&Task{
 		ID:           nextTaskID,
+		Scope:        parentScope,
 		Title:        fmt.Sprintf("Fix: %s", parentTaskID),
 		DoD:          newDoD,
 		Status:       "pending",
@@ -242,9 +254,10 @@ func (s *SQLiteStore) RequestChanges(reviewTaskID string, comments string, requi
 		return nil, fmt.Errorf("creating fix task %s: %w", nextTaskID, err)
 	}
 
-	// R-XXX-(N+1) — review of fix
+	// R-XXX-(N+1) — review of fix (inherits scope from parent T)
 	if err := s.AddTask(&Task{
 		ID:           nextReviewID,
+		Scope:        parentScope,
 		Title:        fmt.Sprintf("Review: %s", nextTaskID),
 		DoD:          BuildReviewDoD(nextTaskID, fmt.Sprintf("Fix requested changes for %s:\n- %s", parentTaskID, changesText), 0),
 		Status:       "pending",

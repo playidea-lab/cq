@@ -24,6 +24,9 @@ type Task struct {
 	FilesChanged string `json:"files_changed,omitempty"`
 	// ReviewDecisionEvidence stores REQUEST_CHANGES reason (comments) for R-tasks; do not use commit_sha for that.
 	ReviewDecisionEvidence string `json:"review_decision_evidence,omitempty"`
+	// SupersededBy is set on an R-task when REQUEST_CHANGES creates a newer R-task.
+	// It holds the ID of the replacement R-task, making stale reviews easy to filter.
+	SupersededBy string `json:"superseded_by,omitempty"`
 	// Blocked-task diagnostics (persisted by mark_blocked)
 	FailureSignature string `json:"failure_signature,omitempty"`
 	Attempts         int    `json:"attempts,omitempty"`
