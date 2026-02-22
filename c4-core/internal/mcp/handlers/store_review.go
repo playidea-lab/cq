@@ -232,6 +232,11 @@ func (s *SQLiteStore) RequestChanges(reviewTaskID string, comments string, requi
 	changesText := strings.Join(requiredChanges, "\n- ")
 	newDoD := fmt.Sprintf("Changes requested:\n- %s\n\nOriginal DoD:\n%s", changesText, originalDoD)
 
+	// Append past solutions from knowledge (best-effort, 2s timeout)
+	if pastSols := searchPastSolutions(s.knowledgeSearch, s.knowledgeReader, comments, 3); len(pastSols) > 0 {
+		newDoD += "\n\n## Past Solutions\n" + strings.Join(pastSols, "\n")
+	}
+
 	nextTaskID := task.NextVersionID("T", baseID, version)
 	nextReviewID := task.ReviewID(baseID, nextVersion)
 

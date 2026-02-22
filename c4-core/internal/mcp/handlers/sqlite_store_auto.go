@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -185,4 +186,57 @@ func parseHandoff(handoff string) handoffData {
 		return handoffData{Summary: handoff}
 	}
 	return ho
+}
+
+// --- Past Solutions Search ---
+
+// searchPastSolutions queries the knowledge base for documents matching the query,
+// returning formatted "Past Solutions" lines (at most n items).
+// Uses a 2-second context timeout; returns nil on failure (graceful degradation).
+// searcher and reader may be nil (graceful no-op).
+func searchPastSolutions(searcher KnowledgeContextSearcher, reader KnowledgeReader, query string, n int) []string {
+	if searcher == nil || query == "" {
+		return nil
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	// Run search in goroutine so we can respect the timeout
+	type result struct {
+		items []KnowledgeSearchResult
+		err   error
+	}
+	ch := make(chan result, 1)
+	go func() {
+		items, err := searcher.Search(query, n, nil)
+		ch <- result{items, err}
+	}()
+
+	select {
+	case <-ctx.Done():
+		return nil
+	case r := <-ch:
+		if r.err != nil || len(r.items) == 0 {
+			return nil
+		}
+		lines := make([]string, 0, len(r.items))
+		for _, item := range r.items {
+			body := ""
+			if reader != nil {
+				if b, err := reader.GetBody(item.ID); err == nil {
+					body = b
+				}
+			}
+			// Truncate body to 150 runes (multibyte-safe)
+			runes := []rune(body)
+			suffix := ""
+			if len(runes) > 150 {
+				runes = runes[:150]
+				suffix = "..."
+			}
+			lines = append(lines, fmt.Sprintf("- [%s] %s: %s%s", item.Type, item.Title, string(runes), suffix))
+		}
+		return lines
+	}
 }
