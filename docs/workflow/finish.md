@@ -20,7 +20,9 @@ Post-implementation completion routine. Run once all tasks are done.
 
 ## When to run
 
-After `/c4-run` completes and `/c4-status` shows all tasks done.
+`/c4-run` calls `/c4-finish` automatically when the queue empties — you typically don't need to invoke it manually.
+
+Run it manually when you've made additional changes after `/c4-run` completed, or when running only `/c4-plan` + manual edits without workers.
 
 ## Build verification
 

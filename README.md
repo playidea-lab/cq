@@ -83,7 +83,7 @@ cq cursor   # for Cursor
   ✓ T-001  submitted (sha: a3f8c21)  →  R-001 review queued
   ✓ T-002  submitted (sha: 7b2e94d)  →  R-002 review queued
   ...
-  ✓ All tasks complete. Run /c4-finish to wrap up.
+  ✓ All tasks complete → auto-polish → /c4-finish → done
 ```
 
 ---

@@ -42,27 +42,29 @@ CQ will:
 3. Break it into tasks with Definition of Done
 4. Create the task queue
 
-## Step 4: Run the workers
+## Step 4: Run
 
 ```
 /c4-run
 ```
 
-Workers start automatically — one per task, each in an isolated git worktree. You can watch progress with:
+Workers start automatically — one per task, each in an isolated git worktree. When the queue empties, `/c4-run` automatically runs polish (fix until zero changes) then finish (build · tests · docs · commit).
+
+You can watch progress with:
 
 ```
 /c4-status
 ```
 
-## Step 5: Finish
+That's it. `/c4-run` handles implementation, review, polish, and finish end-to-end.
 
-When all tasks complete:
+---
+
+If you need to make manual changes afterward, wrap up with:
 
 ```
 /c4-finish
 ```
-
-This runs: polish → build → tests → docs → commit.
 
 ---
 

@@ -15,6 +15,8 @@ Spawns one worker per ready task. Workers run in parallel, each in an isolated g
 → review tasks (R-001, R-002) created automatically
 → review workers spawned for each
 → respawn continues until queue is empty
+→ /c4-polish: build-test-review-fix loop until zero changes
+→ /c4-finish: build · test · docs · commit
 ```
 
 ## Worker lifecycle
