@@ -535,10 +535,19 @@ permission_reviewer:
 
 **흐름**: `.c4/config.yaml` → (MCP 서버 시작 시) → `.c4/hook-config.json` → hook 스크립트
 
+**hook 실행 우선순위 (4단계)**:
+1. `allow_patterns` 매칭 → 즉시 allow (API 호출 없음)
+2. `mode: model` → Haiku API 판단 (allow_patterns 미매칭 명령만)
+3. API 실패 시 → `block_patterns` + 내장 위험 패턴으로 폴백
+4. `hook-config.json` 자체가 없을 때 → 내장 safe 패턴(hook mode)으로 폴백
+
+**`.c4/` 탐색**: hook은 `$PWD`에서 루트 방향으로 올라가며 `.c4/`를 탐색.
+서브디렉토리에서 Claude Code를 열거나 monorepo 구조에서도 올바른 프로젝트 config를 자동 인식.
+
 | mode | 동작 | 권장 상황 |
 |------|------|----------|
-| `hook` | 정규식 패턴 매칭 (빠름, 오프라인) | 일반 개발 [기본값] |
-| `model` | Haiku API 호출 (정확, 느림) | 보안 민감 프로젝트 |
+| `model` | allow_patterns 선필터 → Haiku API (정확) | 보안 민감 프로젝트 [권장] |
+| `hook` | 정규식 패턴 매칭만 (빠름, 오프라인) | 오프라인 환경 |
 
 ### cq doctor (자가진단)
 
@@ -556,13 +565,13 @@ cq doctor --fix        # 자동 수정 가능한 문제 해결 시도
 | .c4 directory | `.c4/` 존재 + DB 파일 (tasks.db 또는 c4.db) |
 | .mcp.json | JSON 유효성 + 참조된 바이너리 경로 존재 |
 | CLAUDE.md | 파일 존재 + symlink 유효성 |
-| hooks | hook 파일 존재 + settings.json 등록 |
+| hooks | hook 파일 존재 + 버전(SHA256) 체크 + settings.json 등록 |
 | Python sidecar | `uv` 존재 + pyproject.toml |
 | C5 Hub | hub 설정 + health 엔드포인트 |
 | Supabase | 클라우드 설정 + 연결 확인 |
 
 - non-CQ 디렉토리에서도 실행 가능 (누락 항목을 FAIL로 표시)
-- `--fix`: broken symlink 제거 등 안전한 자동 수정 (수정 후 WARN으로 표시)
+- `--fix`: broken symlink 제거, **outdated hook 자동 갱신** 등 안전한 자동 수정 (수정 후 WARN으로 표시)
 - `--json`: 구조화된 JSON 배열 출력 (name, status, message, fix 필드)
 
 ### cq serve (통합 데몬)
