@@ -72,6 +72,8 @@ Claude_Code_*.pdf
 
 # Supabase CLI local state
 infra/supabase/supabase/
+**/supabase/.temp/
+security-report.md
 **/.mcp.json
 
 # Keynote
