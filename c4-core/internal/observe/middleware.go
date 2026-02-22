@@ -38,12 +38,10 @@ func Middleware(logger *Logger, metrics *Metrics) mcp.Middleware {
 }
 
 // MiddlewareWithPublisher returns an mcp.Middleware that logs every tool call
-// and optionally publishes events to a C3 EventBus publisher.
-// If publisher is nil, eventbus integration is a no-op.
-//
-// Per-tool metrics are not tracked because mcp.Middleware does not receive
-// the tool name. Use ContextualMiddlewareFunc for per-tool tracking.
-func MiddlewareWithPublisher(logger *Logger, metrics *Metrics, publisher observeEventPublisher) mcp.Middleware {
+// and records aggregate metrics. The publisher parameter is unused here because
+// mcp.Middleware does not receive the tool name required for tool.called events.
+// EventBus integration (tool.called) is handled exclusively by ContextualMiddlewareFunc.
+func MiddlewareWithPublisher(logger *Logger, metrics *Metrics, _ observeEventPublisher) mcp.Middleware {
 	return func(next mcp.HandlerFunc) mcp.HandlerFunc {
 		return func(args json.RawMessage) (any, error) {
 			start := time.Now()
@@ -61,12 +59,6 @@ func MiddlewareWithPublisher(logger *Logger, metrics *Metrics, publisher observe
 					"latency_ms", elapsed.Milliseconds(),
 				)
 				metrics.Record("_all", elapsed, nil)
-			}
-
-			if publisher != nil {
-				// Optional: publish tool call event to C3 EventBus.
-				// Intentionally async and best-effort.
-				_ = publisher
 			}
 
 			return result, err

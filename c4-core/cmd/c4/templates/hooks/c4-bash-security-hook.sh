@@ -97,7 +97,6 @@ else
         "^go (build|test|vet|run|env|list|mod)( |$)"
         "^uv (run|sync|pip list|pip show|lock|python)( |$)"
         "^(ls|ll|la|cat|head|tail|wc|stat)( |$)"
-        "^ls$"
         "^find \\. "
         "^(grep|rg) "
         "^(echo|pwd|which|env|printenv|date|uname|whoami)( |$)"
@@ -269,6 +268,8 @@ if [[ "$COMMAND" =~ :\(\)\{[[:space:]]*:\|: ]]; then
 fi
 
 # Git force push to main/master
+# Note: --force-with-lease is intentionally NOT blocked — it is the safe alternative to
+# --force (fails if the remote has diverged), so worktree and rebase workflows can proceed.
 if [[ "$COMMAND" =~ git[[:space:]]+push[[:space:]]+(-f|--force)[[:space:]]+(origin[[:space:]]+)?(main|master) ]] || \
    [[ "$COMMAND" =~ git[[:space:]]+push[[:space:]]+(origin[[:space:]]+)?(main|master)[[:space:]]+(-f|--force) ]]; then
     _emit_deny "Force push to main/master branch"

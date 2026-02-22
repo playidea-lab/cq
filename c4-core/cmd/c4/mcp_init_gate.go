@@ -5,6 +5,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 
 	"github.com/changmin/c4-core/internal/eventbus"
@@ -69,6 +70,8 @@ func wireGateEventBus(ctx *initContext, ebClient *eventbus.Client) {
 	go func() {
 		ch, err := ebClient.Subscribe(gctx, "task.completed", "")
 		if err != nil {
+			slog.Warn("gate: failed to subscribe to task.completed", "err", err)
+			cancel() // release the context; sibling goroutine will observe Done()
 			return
 		}
 		for {
@@ -87,6 +90,8 @@ func wireGateEventBus(ctx *initContext, ebClient *eventbus.Client) {
 	go func() {
 		ch, err := ebClient.Subscribe(gctx, "hub.job.completed", "")
 		if err != nil {
+			slog.Warn("gate: failed to subscribe to hub.job.completed", "err", err)
+			cancel() // release the context; sibling goroutine will observe Done()
 			return
 		}
 		for {

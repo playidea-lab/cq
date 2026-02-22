@@ -429,8 +429,9 @@ func checkHub() checkResult {
 	}
 
 	content := string(data)
-	// Simple YAML scan — avoid pulling in a YAML library here
-	if !strings.Contains(content, "enabled: true") || !strings.Contains(content, "hub:") {
+	// Scope "enabled: true" check to the hub: section to avoid false positives
+	// from other sections (e.g. observe.enabled: true).
+	if !isHubEnabled(content) {
 		return checkResult{
 			Name:    "C5 Hub",
 			Status:  checkOK,
@@ -438,7 +439,7 @@ func checkHub() checkResult {
 		}
 	}
 
-	url := extractYAMLValue(content, "url:")
+	url := sectionYAMLValue(content, "hub", "url:")
 	if url == "" {
 		return checkResult{
 			Name:    "C5 Hub",
@@ -489,7 +490,7 @@ func checkSupabase() checkResult {
 		data = []byte{}
 	}
 
-	supabaseURL := extractYAMLValue(string(data), "url:")
+	supabaseURL := sectionYAMLValue(string(data), "cloud", "url:")
 	if supabaseURL == "" {
 		supabaseURL = builtinSupabaseURL
 	}
@@ -571,6 +572,33 @@ func extractYAMLValue(content, key string) string {
 	return ""
 }
 
+// sectionYAMLValue returns the value of key within a specific top-level YAML section.
+// It scans lines looking for "section:" (no leading whitespace) and then reads
+// indented keys inside that section, stopping when a new top-level key is found.
+// This prevents cross-section matches (e.g. hub.url vs cloud.url).
+func sectionYAMLValue(content, section, key string) string {
+	lines := strings.Split(content, "\n")
+	sectionHeader := section + ":"
+	inSection := false
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		// Top-level key detection (no leading whitespace)
+		if len(line) > 0 && line[0] != ' ' && line[0] != '\t' {
+			inSection = strings.HasPrefix(trimmed, sectionHeader)
+			continue
+		}
+		if inSection && strings.HasPrefix(trimmed, key) {
+			val := strings.TrimSpace(strings.TrimPrefix(trimmed, key))
+			val = strings.Trim(val, `"'`)
+			return val
+		}
+	}
+	return ""
+}
+
 // expandTilde replaces a leading ~ with the user home directory.
 func expandTilde(p string) string {
 	if !strings.HasPrefix(p, "~") {
@@ -583,5 +611,25 @@ func expandTilde(p string) string {
 	return filepath.Join(home, p[1:])
 }
 
-
-
+// isHubEnabled returns true only when the hub: YAML section contains enabled: true.
+// A plain strings.Contains(content, "enabled: true") produces false positives when
+// other top-level sections (e.g. observe) also have enabled: true.
+func isHubEnabled(content string) bool {
+	lines := strings.Split(content, "\n")
+	inHub := false
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		// Top-level key detection (no leading whitespace)
+		if len(line) > 0 && line[0] != ' ' && line[0] != '\t' {
+			inHub = strings.HasPrefix(trimmed, "hub:")
+			continue
+		}
+		if inHub && strings.HasPrefix(trimmed, "enabled:") {
+			return strings.Contains(trimmed, "true")
+		}
+	}
+	return false
+}

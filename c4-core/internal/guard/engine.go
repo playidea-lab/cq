@@ -85,6 +85,11 @@ func NewEngine(dbPath string, config Config) (*Engine, error) {
 		db.Close()
 		return nil, fmt.Errorf("guard: pragma WAL: %w", err)
 	}
+	// Prevent SQLITE_BUSY under multi-session concurrent access.
+	if _, err := db.Exec("PRAGMA busy_timeout=10000"); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("guard: pragma busy_timeout: %w", err)
+	}
 
 	if err := applySchema(db); err != nil {
 		db.Close()

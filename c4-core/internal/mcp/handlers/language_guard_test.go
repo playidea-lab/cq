@@ -66,24 +66,22 @@ func TestLanguageGuardRustFile(t *testing.T) {
 }
 
 func TestLanguageGuardPythonFile(t *testing.T) {
-	// Python files should be delegated to the sidecar, not early-returned.
-	// We verify by checking that the guard itself does NOT produce a language error.
-	// (Actual sidecar call would fail with nil proxy, so we test only the guard logic
-	//  by using a non-blocked extension and confirming no "language" key.)
+	// Python files must be delegated to the sidecar, not short-circuited by the guard.
+	// When the guard fires (wrong), it returns a map with a non-nil "language" key.
+	// When the guard passes through (correct), the proxy is called; with an empty addr
+	// it returns a nil map — so "language" is absent from the result.
 	args, err := json.Marshal(map[string]any{"file_path": "utils.py", "symbol_name": "foo", "new_body": "pass"})
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
-	// Inject a fake proxy that returns a sentinel value without panicking.
+	// BridgeProxy with empty addr: Call() returns (nil map, error).
 	fake := &BridgeProxy{}
 	handler := languageGuardedProxy(fake, "ReplaceSymbolBody", "c4_replace_symbol_body")
 	result, _ := handler(args)
-	if m, ok := result.(map[string]any); ok {
-		if m["language"] != nil {
-			t.Errorf("expected no language guard for .py, got language=%v", m["language"])
-		}
+	// Language guard must not set a "language" key for .py files.
+	if m, ok := result.(map[string]any); ok && m["language"] != nil {
+		t.Errorf("language guard must not fire for .py: got language=%v", m["language"])
 	}
-	// No panic means the guard passed through — test passes.
 }
 
 func TestLanguageGuardNoExtension(t *testing.T) {

@@ -23,7 +23,7 @@ func languageGuardedProxy(proxy *BridgeProxy, method, toolName string) mcp.Handl
 			return pyHandler(rawArgs)
 		}
 
-		ext := filepath.Ext(params.FilePath)
+		ext := filepath.Ext(filepath.Clean(params.FilePath))
 		var lang string
 		switch ext {
 		case ".go":

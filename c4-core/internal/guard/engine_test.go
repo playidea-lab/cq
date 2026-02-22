@@ -74,6 +74,48 @@ func TestEngine_Deny_NoPublisher_NoPanic(t *testing.T) {
 	}
 }
 
+// TestEngine_AuditOnly_NoPublish verifies that AuditOnly decisions do not emit a guard.denied event.
+func TestEngine_AuditOnly_NoPublish(t *testing.T) {
+	eng, err := guard.NewEngine(tempDB(t), defaultConfig())
+	if err != nil {
+		t.Fatalf("NewEngine: %v", err)
+	}
+	defer eng.Close()
+
+	pub := &mockPublisher{}
+	eng.SetPublisher(pub)
+
+	ctx := context.Background()
+
+	if err := eng.SavePolicy(ctx, guard.PolicyRule{
+		Tool:   "c4_sensitive",
+		Action: guard.ActionAuditOnly,
+		Reason: "audit only",
+	}); err != nil {
+		t.Fatalf("SavePolicy: %v", err)
+	}
+
+	result := eng.Check(ctx, "alice", "c4_sensitive", nil)
+	if result != guard.ActionAuditOnly {
+		t.Fatalf("expected ActionAuditOnly, got %v", result)
+	}
+	// AuditOnly is not a denial — must not emit guard.denied event.
+	if got := pub.count.Load(); got != 0 {
+		t.Errorf("PublishAsync call count: want 0 for AuditOnly, got %d", got)
+	}
+	// AuditOnly must still write an audit log entry.
+	entries, err := eng.AuditEntries(ctx, 5, "c4_sensitive", "alice")
+	if err != nil {
+		t.Fatalf("AuditEntries: %v", err)
+	}
+	if len(entries) == 0 {
+		t.Fatal("expected audit log entry for AuditOnly, got none")
+	}
+	if entries[0].Action != guard.ActionAuditOnly {
+		t.Errorf("audit entry action = %v, want ActionAuditOnly", entries[0].Action)
+	}
+}
+
 // TestEngine_Allow_NoPublish verifies that Allow decisions do not call PublishAsync.
 func TestEngine_Allow_NoPublish(t *testing.T) {
 	eng, err := guard.NewEngine(tempDB(t), defaultConfig())
