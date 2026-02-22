@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.18.0] - 2026-02-22
+
+### ✨ Features
+- **cloud**: `cloud.mode` config 필드 + `cq cloud mode get/set` CLI — `"local-first"(기본, HybridStore)` vs `"cloud-primary"(CloudPrimaryStore)` 전환 지원 (`96992ae`)
+- **cloud**: `CloudPrimaryStore` — Supabase 우선 쓰기 + `context.WithoutCancel` 기반 local async 미러 + compile-time `var _ store.Store` assertion (`96992ae`)
+
+### 🔧 Chores
+- **user**: submodule 업데이트 — user-facing workflow 문서 정리 (`529f1cb`)
+- **docs**: 테스트 수 현행화 — c4-core ~1,293개, 28 패키지 (`57f7ece`)
+
+---
+
 ## [0.17.0] - 2026-02-22
 
 ### ✨ Features
