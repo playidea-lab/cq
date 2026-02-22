@@ -164,6 +164,27 @@ type GuardConfig struct {
 	Policies       []GuardPolicyRule `mapstructure:"policies"         yaml:"policies"`
 }
 
+// RiskPathsConfig holds scope path lists for risk classification.
+type RiskPathsConfig struct {
+	High []string `mapstructure:"high" yaml:"high"`
+	Low  []string `mapstructure:"low"  yaml:"low"`
+}
+
+// RiskModelsConfig holds model aliases for each risk tier.
+type RiskModelsConfig struct {
+	High    string `mapstructure:"high"    yaml:"high"`
+	Low     string `mapstructure:"low"     yaml:"low"`
+	Default string `mapstructure:"default" yaml:"default"`
+}
+
+// RiskRoutingConfig controls scope-based reviewer model selection for R- tasks.
+// Independent of EconomicMode.ModelRouting — scope-based override only.
+type RiskRoutingConfig struct {
+	Enabled bool             `mapstructure:"enabled" yaml:"enabled"`
+	Paths   RiskPathsConfig  `mapstructure:"paths"   yaml:"paths"`
+	Models  RiskModelsConfig `mapstructure:"models"  yaml:"models"`
+}
+
 // SessionsConfig holds session limit warning settings.
 type SessionsConfig struct {
 	Limit   int  `mapstructure:"limit"   yaml:"limit"`   // warn when active session count exceeds this (default 4)
@@ -226,6 +247,7 @@ type C4Config struct {
 	Guard            GuardConfig                `mapstructure:"guard"                yaml:"guard"`
 	Serve            ServeConfig                `mapstructure:"serve"                yaml:"serve"`
 	Sessions         SessionsConfig             `mapstructure:"sessions"             yaml:"sessions"`
+	RiskRouting      RiskRoutingConfig          `mapstructure:"risk_routing"         yaml:"risk_routing"`
 }
 
 // presetConfigs defines the economic mode presets.
@@ -383,6 +405,12 @@ func New(projectRoot string, cloudDefaults ...CloudDefaults) (*Manager, error) {
 	v.SetDefault("permission_reviewer.block_patterns", []string{})
 	v.SetDefault("sessions.limit", defaults.Sessions.Limit)
 	v.SetDefault("sessions.enabled", defaults.Sessions.Enabled)
+	v.SetDefault("risk_routing.enabled", false)
+	v.SetDefault("risk_routing.paths.high", []string{"infra/", "internal/mcp/handlers/"})
+	v.SetDefault("risk_routing.paths.low", []string{"docs/", "user/", "*.md"})
+	v.SetDefault("risk_routing.models.high", "opus")
+	v.SetDefault("risk_routing.models.low", "sonnet")
+	v.SetDefault("risk_routing.models.default", "opus")
 
 	// Config file location
 	configDir := filepath.Join(projectRoot, ".c4")
@@ -557,6 +585,12 @@ func (m *Manager) GetModelForTask(taskID string) string {
 		// T- prefix, RPR- prefix, or any other defaults to implementation
 		return routing.Implementation
 	}
+}
+
+// GetRiskRouting returns the risk routing configuration.
+// Independent of EconomicMode.GetModelForTask — scope-based override only.
+func (m *Manager) GetRiskRouting() RiskRoutingConfig {
+	return m.config.RiskRouting
 }
 
 // Set updates a configuration value in memory (does not persist to file).

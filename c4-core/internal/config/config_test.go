@@ -555,3 +555,130 @@ eventsink:
 		}
 	})
 }
+
+func TestRiskRouting(t *testing.T) {
+	t.Run("disabled by default", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		mgr, err := New(tmpDir)
+		if err != nil {
+			t.Fatalf("New() failed: %v", err)
+		}
+		rr := mgr.GetRiskRouting()
+		if rr.Enabled {
+			t.Error("RiskRouting.Enabled should be false by default")
+		}
+		// Default models must be set even when disabled
+		if rr.Models.High != "opus" {
+			t.Errorf("Models.High = %q, want %q", rr.Models.High, "opus")
+		}
+		if rr.Models.Low != "sonnet" {
+			t.Errorf("Models.Low = %q, want %q", rr.Models.Low, "sonnet")
+		}
+		if rr.Models.Default != "opus" {
+			t.Errorf("Models.Default = %q, want %q", rr.Models.Default, "opus")
+		}
+	})
+
+	t.Run("enabled from yaml", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		c4Dir := filepath.Join(tmpDir, ".c4")
+		if err := os.MkdirAll(c4Dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+
+		configYAML := `
+risk_routing:
+  enabled: true
+  paths:
+    high: ["infra/", "internal/mcp/handlers/"]
+    low: ["docs/", "user/", "*.md"]
+  models:
+    high: "opus"
+    low: "sonnet"
+    default: "opus"
+`
+		if err := os.WriteFile(filepath.Join(c4Dir, "config.yaml"), []byte(configYAML), 0o644); err != nil {
+			t.Fatal(err)
+		}
+
+		mgr, err := New(tmpDir)
+		if err != nil {
+			t.Fatalf("New() failed: %v", err)
+		}
+
+		rr := mgr.GetRiskRouting()
+		if !rr.Enabled {
+			t.Error("RiskRouting.Enabled should be true")
+		}
+		if len(rr.Paths.High) != 2 {
+			t.Errorf("Paths.High len = %d, want 2", len(rr.Paths.High))
+		}
+		if len(rr.Paths.Low) != 3 {
+			t.Errorf("Paths.Low len = %d, want 3", len(rr.Paths.Low))
+		}
+		if rr.Models.High != "opus" {
+			t.Errorf("Models.High = %q, want %q", rr.Models.High, "opus")
+		}
+		if rr.Models.Low != "sonnet" {
+			t.Errorf("Models.Low = %q, want %q", rr.Models.Low, "sonnet")
+		}
+		if rr.Models.Default != "opus" {
+			t.Errorf("Models.Default = %q, want %q", rr.Models.Default, "opus")
+		}
+	})
+
+	t.Run("independent of economic mode", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		c4Dir := filepath.Join(tmpDir, ".c4")
+		if err := os.MkdirAll(c4Dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+
+		// economic_mode disabled, risk_routing enabled
+		configYAML := `
+economic_mode:
+  enabled: false
+  preset: economic
+risk_routing:
+  enabled: true
+  models:
+    high: "opus"
+    low: "haiku"
+    default: "sonnet"
+`
+		if err := os.WriteFile(filepath.Join(c4Dir, "config.yaml"), []byte(configYAML), 0o644); err != nil {
+			t.Fatal(err)
+		}
+
+		mgr, err := New(tmpDir)
+		if err != nil {
+			t.Fatalf("New() failed: %v", err)
+		}
+
+		// EconomicMode disabled → GetModelForTask returns ""
+		if got := mgr.GetModelForTask("R-001-0"); got != "" {
+			t.Errorf("GetModelForTask(R-001-0) = %q, want empty (economic mode disabled)", got)
+		}
+		// RiskRouting enabled independently
+		rr := mgr.GetRiskRouting()
+		if !rr.Enabled {
+			t.Error("RiskRouting.Enabled should be true")
+		}
+		if rr.Models.Default != "sonnet" {
+			t.Errorf("Models.Default = %q, want %q", rr.Models.Default, "sonnet")
+		}
+	})
+
+	t.Run("GetRiskRouting returns value not pointer", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		mgr, err := New(tmpDir)
+		if err != nil {
+			t.Fatalf("New() failed: %v", err)
+		}
+		// Verify it returns a value type (no nil pointer panic possible)
+		rr := mgr.GetRiskRouting()
+		_ = rr.Enabled
+		_ = rr.Models.High
+		_ = rr.Paths.High
+	})
+}
