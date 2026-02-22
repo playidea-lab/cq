@@ -47,6 +47,7 @@ type AgentConfig struct {
 	AuthToken   string // Supabase auth token (JWT)
 	ProjectID   string // C4 cloud project ID
 	WorkerID    string // Worker identifier (default: "cq-agent")
+	ProjectDir  string // Working directory passed to claude -p via --dir
 }
 
 // Agent is a Component that listens for @cq mentions in c1_messages
@@ -306,6 +307,23 @@ func (a *Agent) processMessage(messageID, channelID, content, senderName string)
 	claudePath := a.claudePath
 	a.mu.Unlock()
 
+	// Ensure member record exists before presence updates.
+	a.mu.Lock()
+	memberID := a.memberID
+	a.mu.Unlock()
+	if memberID == "" {
+		if id := a.ensureMember(); id != "" {
+			a.mu.Lock()
+			a.memberID = id
+			a.mu.Unlock()
+		}
+	}
+
+	// Async notification: signal "typing" presence immediately so the user sees
+	// feedback before the potentially long claude -p invocation completes.
+	a.updateMemberPresence("typing")
+	defer a.updateMemberPresence("online")
+
 	if claudePath == "" {
 		errMsg := "claude CLI is not available. The agent is running in degraded mode."
 		a.postMessage(channelID, errMsg)
@@ -331,7 +349,15 @@ func (a *Agent) processMessage(messageID, channelID, content, senderName string)
 	ctx, cancel := context.WithTimeout(parentCtx, 120*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, claudePath, "-p", prompt, "--output-format", "json")
+	args := []string{"-p", prompt, "--output-format", "json"}
+	a.mu.Lock()
+	projectDir := a.cfg.ProjectDir
+	a.mu.Unlock()
+	if projectDir != "" {
+		args = append(args, "--dir", projectDir)
+	}
+
+	cmd := exec.CommandContext(ctx, claudePath, args...)
 	var stdout, stderr bytes.Buffer
 	const maxOutputSize = 1 << 20 // 1MB limit
 	cmd.Stdout = &limitedWriter{buf: &stdout, limit: maxOutputSize}
@@ -355,6 +381,47 @@ func (a *Agent) processMessage(messageID, channelID, content, senderName string)
 
 	fmt.Fprintf(os.Stderr, "cq: [agent] posting response for msg %s (%d chars)\n", messageID, len(response))
 	a.postMessage(channelID, response)
+}
+
+// updateMemberPresence updates the agent member's status field in c1_members.
+// Used to emit an async "typing" notification before claude -p runs so the user
+// sees immediate feedback, and "online" after the response is posted.
+// No-op if memberID is not yet resolved or the request fails.
+func (a *Agent) updateMemberPresence(status string) {
+	a.mu.Lock()
+	memberID := a.memberID
+	a.mu.Unlock()
+	if memberID == "" {
+		return
+	}
+
+	payload := map[string]interface{}{
+		"status":       status,
+		"last_seen_at": time.Now().UTC().Format(time.RFC3339),
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return
+	}
+
+	patchURL := fmt.Sprintf("%s/rest/v1/c1_members?id=eq.%s", a.cfg.SupabaseURL, url.QueryEscape(memberID))
+	req, err := http.NewRequest("PATCH", patchURL, bytes.NewReader(body))
+	if err != nil {
+		return
+	}
+	a.setHeaders(req)
+	req.Header.Set("Prefer", "return=minimal")
+
+	resp, err := a.httpClient.Do(req)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "cq: [agent] updateMemberPresence %s: %v\n", status, err)
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		b, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+		fmt.Fprintf(os.Stderr, "cq: [agent] updateMemberPresence %s: %d %s\n", status, resp.StatusCode, string(b))
+	}
 }
 
 // parseClaudeOutput extracts the text result from claude --output-format json.

@@ -42,6 +42,7 @@ func registerCoreServeComponents(mgr *serve.Manager, cfg config.C4Config, home s
 			SupabaseURL: cfg.Cloud.URL,
 			APIKey:      cfg.Cloud.AnonKey,
 			ProjectID:   cfg.Cloud.ProjectID,
+			ProjectDir:  projectDir,
 		}))
 		fmt.Fprintf(os.Stderr, "cq serve: registered agent\n")
 	}

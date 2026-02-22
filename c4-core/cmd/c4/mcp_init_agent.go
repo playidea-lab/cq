@@ -61,6 +61,7 @@ func startAgentIfNeededWith(
 		SupabaseURL: cfg.Cloud.URL,
 		APIKey:      cfg.Cloud.AnonKey,
 		ProjectID:   cfg.Cloud.ProjectID,
+		ProjectDir:  projectDir,
 	})
 	ctx4.agentComp = agent
 

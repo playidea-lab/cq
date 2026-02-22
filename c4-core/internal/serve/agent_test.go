@@ -633,3 +633,107 @@ func TestAgent_Stop_CancelledCtx_ReturnsBeforeWg(t *testing.T) {
 	}
 }
 
+// --- updateMemberPresence tests ---
+
+func TestAgent_UpdateMemberPresence_Success(t *testing.T) {
+	var patchPath string
+	var patchBody map[string]interface{}
+	var mu sync.Mutex
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "PATCH" && strings.HasPrefix(r.URL.Path, "/rest/v1/c1_members") {
+			mu.Lock()
+			patchPath = r.URL.String()
+			body, _ := io.ReadAll(r.Body)
+			json.Unmarshal(body, &patchBody)
+			mu.Unlock()
+			w.WriteHeader(204)
+			return
+		}
+		w.WriteHeader(404)
+	}))
+	defer server.Close()
+
+	agent := NewAgent(AgentConfig{
+		SupabaseURL: server.URL,
+		APIKey:      "test-key",
+		ProjectID:   "proj-1",
+		WorkerID:    "cq-agent",
+	})
+	// Inject a known memberID so the PATCH is called
+	agent.memberID = "member-abc"
+
+	agent.updateMemberPresence("typing")
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	if !strings.Contains(patchPath, "id=eq.member-abc") {
+		t.Errorf("PATCH URL should filter by memberID, got: %s", patchPath)
+	}
+	if patchBody["status"] != "typing" {
+		t.Errorf("status = %v, want 'typing'", patchBody["status"])
+	}
+	if _, ok := patchBody["last_seen_at"]; !ok {
+		t.Error("last_seen_at should be set")
+	}
+}
+
+func TestAgent_UpdateMemberPresence_NoMemberID(t *testing.T) {
+	patchCalled := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "PATCH" {
+			patchCalled = true
+		}
+		w.WriteHeader(200)
+	}))
+	defer server.Close()
+
+	agent := NewAgent(AgentConfig{
+		SupabaseURL: server.URL,
+		APIKey:      "test-key",
+		ProjectID:   "proj-1",
+	})
+	// memberID is empty — updateMemberPresence should be a no-op
+	agent.updateMemberPresence("typing")
+
+	if patchCalled {
+		t.Error("PATCH should not be called when memberID is empty")
+	}
+}
+
+func TestAgent_UpdateMemberPresence_ServerError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(500)
+		w.Write([]byte(`{"message":"error"}`))
+	}))
+	defer server.Close()
+
+	agent := NewAgent(AgentConfig{
+		SupabaseURL: server.URL,
+		APIKey:      "test-key",
+		ProjectID:   "proj-1",
+	})
+	agent.memberID = "member-abc"
+
+	// Should not panic — errors are logged and swallowed
+	agent.updateMemberPresence("online")
+}
+
+// --- ProjectDir passthrough ---
+
+func TestAgent_ProjectDirConfig(t *testing.T) {
+	agent := NewAgent(AgentConfig{
+		SupabaseURL: "https://example.supabase.co",
+		APIKey:      "key",
+		ProjectID:   "proj-1",
+		ProjectDir:  "/home/user/myproject",
+	})
+	agent.mu.Lock()
+	dir := agent.cfg.ProjectDir
+	agent.mu.Unlock()
+	if dir != "/home/user/myproject" {
+		t.Errorf("ProjectDir = %q, want '/home/user/myproject'", dir)
+	}
+}
+
