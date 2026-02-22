@@ -161,6 +161,51 @@ Permission Reviewer는 별도 환경변수(`api_key_env`) 방식을 유지합니
 
 ---
 
+## 캐시 효율을 위한 파라미터 설계
+
+Anthropic prompt caching을 최대한 활용하려면, **변하지 않는 데이터**는 `system`에, **동적 데이터**는 `messages`의 첫 번째 항목으로 분리해야 합니다.
+
+**✅ 올바른 패턴 (시스템 프롬프트 stable):**
+```json
+{
+  "system": "당신은 코드 리뷰어입니다. 보안, 성능, 가독성 순으로 검토하세요.",
+  "cache_system_prompt": true,
+  "messages": [
+    {
+      "role": "user",
+      "content": "날짜: 2026-02-23\n현재 상태: EXECUTE\n태스크: T-974-0\n\n리뷰 요청: ..."
+    }
+  ]
+}
+```
+
+**❌ 잘못된 패턴 (날짜가 system에 → 매일 캐시 무효화):**
+```json
+{
+  "system": "당신은 코드 리뷰어입니다. 오늘 날짜: 2026-02-23. 현재 상태: EXECUTE.",
+  "cache_system_prompt": true,
+  "messages": [{"role": "user", "content": "리뷰 요청: ..."}]
+}
+```
+
+**`system`에 넣으면 안 되는 동적 데이터:**
+- 현재 날짜/시간
+- 프로젝트 상태 (INIT/DISCOVERY/.../COMPLETE)
+- 세션 정보 (task_id, worker_id)
+- 런타임 카운터/인덱스
+
+### 캐시 포인트 (Anthropic API 기준, 최대 4개)
+
+| 포인트 | 파라미터 | 최소 토큰 | 구현 상태 |
+|--------|---------|----------|----------|
+| 1. system 프롬프트 | `cache_system_prompt: true` | 1024 | ✅ 구현됨 |
+| 2. tools 목록 | `cache_tools: true` (게이트웨이 내부) | 1024 | ✅ 게이트웨이 구현 |
+| 3. messages[N] | 명시적 cache_control | — | 미구현 |
+
+> **Note**: `cache_system_prompt: true` 실제 동작 임계값은 **2048 토큰** (Anthropic 문서의 1024보다 높음, 실험적 확인).
+
+---
+
 ## MCP 도구 직접 호출
 
 ```
