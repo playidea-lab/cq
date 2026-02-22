@@ -506,15 +506,16 @@ cq doctor --json       # CI/자동화용 JSON 출력
 | `.mcp.json` | `{project}/.mcp.json` | 자동 | MCP 서버 설정 |
 | `CLAUDE.md` | `{project}/CLAUDE.md` | 자동 | C4 override 규칙 |
 | skills symlinks | `{project}/.claude/skills/` | 자동 | C4 스킬 심볼릭 링크 |
-| **hook 파일** | `~/.claude/hooks/c4-bash-security-hook.sh` | **대화형** | Bash 명령 Haiku 리뷰 hook |
-| **settings.json 패치** | `~/.claude/settings.json` | **대화형** | PreToolUse Bash hook 등록 |
+| **hook 파일** | `{project}/.claude/hooks/c4-gate.sh` | **대화형** | PreToolUse 룰 기반 게이트 |
+| **hook 파일** | `{project}/.claude/hooks/c4-permission-reviewer.sh` | **대화형** | PermissionRequest Haiku 심사 |
+| **settings.json 생성** | `{project}/.claude/settings.json` | **대화형** | `$CLAUDE_PROJECT_DIR` 경로로 훅 등록 |
 
 - `.mcp.json`은 **per-developer 파일** — 절대경로(`/Users/...`)가 포함되므로 git에 커밋하지 않음. clone 후 `cq init` 실행 시 자동 생성됨. 기존에 추적 중인 경우: `git rm --cached .mcp.json`
 - hook/settings 설치는 **대화형 확인** 필요 — 사용자가 N 입력 시 건너뜀 (C4 핵심 기능에 영향 없음)
 - `--yes` / `-y` 플래그: 모든 대화형 확인을 자동 승인 (CI/자동화 환경용)
 - hook 파일은 바이너리에 embed되어 있어 소스 없이도 설치 가능
-- 기존 `.conf` 파일(`c4-bash-security.conf`)은 삭제하지 않음 (하위 호환, fallback용)
-- **hook 설정 SSOT**: `.c4/config.yaml`의 `permission_reviewer` 섹션 (`.conf` 파일 생성 안 함)
+- **전역 `~/.claude/` 수정 없음** — 훅은 프로젝트 단위(`.claude/hooks/`)에 설치되며 `$CLAUDE_PROJECT_DIR`로 경로를 해소함
+- **hook 설정 SSOT**: `.c4/config.yaml`의 `permission_reviewer` 섹션
 - hook 설정 변경 시 MCP 서버 재시작 필요 (`.c4/hook-config.json`이 재생성됨)
 
 #### permission_reviewer 전체 스키마

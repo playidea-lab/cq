@@ -547,12 +547,12 @@ func patchProjectSettings(projectDir string) error {
 			hookEntry["timeout"] = timeout
 		}
 
+		// Phase 1: scan ALL entries for baseName match regardless of matcher.
+		// This handles stale entries with a different matcher string and ensures
+		// we never create duplicate entries for the same hook script.
 		for i, entry := range eventArr {
 			entryMap, ok := entry.(map[string]any)
 			if !ok {
-				continue
-			}
-			if entryMap["matcher"] != matcher {
 				continue
 			}
 			innerHooks, _ := entryMap["hooks"].([]any)
@@ -562,26 +562,38 @@ func patchProjectSettings(projectDir string) error {
 					continue
 				}
 				cmd, _ := hMap["command"].(string)
-				if cmd == cmdStr {
-					return // already correct
+				if cmd == cmdStr && entryMap["matcher"] == matcher {
+					return // already correct, nothing to do
 				}
 				if strings.Contains(cmd, baseName) {
-					// Stale path — update in place
-					hMap["command"] = cmdStr
-					innerHooks[j] = hMap
+					// Stale entry (wrong path or wrong matcher): replace entire hook entry
+					// and update matcher so the entry is fully current.
+					innerHooks[j] = hookEntry
 					entryMap["hooks"] = innerHooks
+					entryMap["matcher"] = matcher
 					eventArr[i] = entryMap
 					hooks[eventName] = eventArr
 					return
 				}
 			}
-			// matcher found but baseName not present: replace hooks list
+		}
+
+		// Phase 2: exact matcher match — replace hooks list (baseName not yet present).
+		for i, entry := range eventArr {
+			entryMap, ok := entry.(map[string]any)
+			if !ok {
+				continue
+			}
+			if entryMap["matcher"] != matcher {
+				continue
+			}
 			entryMap["hooks"] = []any{hookEntry}
 			eventArr[i] = entryMap
 			hooks[eventName] = eventArr
 			return
 		}
-		// No matching matcher: append new entry
+
+		// Phase 3: no existing entry — append new one.
 		eventArr = append(eventArr, map[string]any{
 			"matcher": matcher,
 			"hooks":   []any{hookEntry},
