@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.22.0] - 2026-02-22
+
+### ✨ Features
+- **worker**: `enrichWithReviewContext()` Evidence 주입 — R- 태스크 assign 시 parent T의 handoff JSON에서 `HandoffEvidence[]` 파싱, `ReviewContext.Evidence` 필드에 주입하여 리뷰어가 스크린샷·로그·테스트결과 아티팩트를 직접 참조 가능 (`e08d4b4`)
+- **worker**: `autoRecordFailurePattern()` — `MarkBlocked()` 호출 시 `failureSignature` 비어있지 않으면 goroutine + 10s timeout으로 `CreateExperiment` 자동 호출, `scope/signature/last_error` 구조화된 실패 패턴을 Knowledge 실험으로 기록 (`e08d4b4`)
+- **review**: `RequestChanges()` RPR DoD에 Past Solutions 첨부 — `searchPastSolutions()` 가 Knowledge Base에서 관련 패턴 최대 3개 조회 (2s context timeout, 150 rune 트런케이션), RPR 태스크 DoD 하단에 `## Past Solutions` 섹션 자동 첨부 (`af7f413`)
+- **knowledge**: `KnowledgeRecord()` pgvector 업로드 — 문서 임베딩 생성 후 `infra/supabase` pgvector 테이블에 자동 업로드, Supabase 미연결 시 graceful no-op (`f38c38c`)
+
+### 🧪 Tests
+- **handlers**: `TestEnrichWithReviewContext_IncludesEvidence_WhenPresent`, `TestEnrichWithReviewContext_EmptyEvidence_WhenAbsent` (enrich_test.go 신규) (`e08d4b4`)
+- **handlers**: `TestMarkBlocked_AutoRecordsFailurePattern_WhenSignatureNonEmpty`, `TestMarkBlocked_NoKnowledgeRecord_WhenSignatureEmpty`, `TestAutoRecordFailurePattern_ContentContainsScope` (auto_test.go 신규) (`e08d4b4`)
+- **handlers**: `TestRequestChanges_RPR_AppendsPastSolutions_WhenFound`, `TestRequestChanges_RPR_NoPastSolutions_WhenNotFound`, `TestRequestChanges_RPR_PastSolutionsFormat_TruncatesLongBody` (`af7f413`)
+- Tests: 1,322 → 1,330 (+8)
+
+---
+
 ## [0.21.0] - 2026-02-22
 
 ### ✨ Features
