@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.25.0] - 2026-02-23
+
+### ✨ Features
+- **llm**: LLM 캐시 히트율 경보 — `GlobalCacheHitRate`가 설정 임계값 미만으로 최초 진입 시 `llm.cache_miss_alert` EventBus 이벤트 발행 + slog.Warn 출력, 회복 시 상태 리셋 (`0f18951f`)
+  - `CacheAlertPublisher` 인터페이스 (circular import 방지, eventbus.Publisher로 구현)
+  - `Gateway.SetCacheAlert(threshold, pub, projectID)` API
+- **llm**: Anthropic tools 목록 캐싱 — `ChatRequest.CacheTools=true` 설정 시 마지막 tool에 `cache_control: {type:"ephemeral"}` 자동 부착 (`3e11da4a`)
+  - `Tool` struct + `ChatRequest.Tools []Tool` + `ChatRequest.CacheTools bool` 필드 추가
+  - beta 헤더 조건 확장: `CacheSystemPrompt || CacheTools`
+- **skill**: WORKER_PROMPT prefix 안정화 — worker_id를 첫 줄에서 `## Identity` 섹션(끝)으로 이동 (`66e72d89`)
+  - 동시에 스폰된 워커들이 공통 프롬프트 prefix를 공유 → Anthropic 프롬프트 캐싱 효율 향상
+
+### 🐛 Bug Fixes
+- **llm**: `checkCacheAlert` 이중 nil-check 버그 수정 — lock 획득 후 local 변수 `mon` 대신 `g.alert` 필드 직접 재읽기 (`4c959d43`)
+
+### 📚 Documentation
+- **llm**: `LLM-설정.md` 캐시 효율 가이드라인 추가 (`9b002e40`)
+  - 올바른/잘못된 파라미터 설계 패턴 (dynamic 데이터를 system에 넣으면 캐시 무효화)
+  - 캐시 포인트 표 (system 프롬프트·tools·messages), 실측 임계값 2048토큰 기록
+- **agents**: Go 테스트 수 ~1,339 → ~1,348 (캐싱 배치 +9) (`67c159d7`)
+
+---
+
 ## [0.24.0] - 2026-02-23
 
 ### ✨ Features
