@@ -45,6 +45,17 @@ func (h *HybridStore) Local() store.Store {
 // but never propagated — the local store is the source of truth.
 func (h *HybridStore) asyncCloud(op string, fn func() error) {
 	go func() {
+		// Recover from panics to prevent server crash.
+		// asyncCloud goroutines are fire-and-forget; a panic here must not
+		// kill the MCP server process.
+		defer func() {
+			if r := recover(); r != nil {
+				fmt.Fprintf(os.Stderr, "c4: cloud %s panic (non-fatal): %v\n", op, r)
+				h.mu.Lock()
+				h.failures++
+				h.mu.Unlock()
+			}
+		}()
 		if err := fn(); err != nil {
 			h.mu.Lock()
 			h.failures++

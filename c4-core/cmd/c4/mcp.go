@@ -130,6 +130,25 @@ func (s *mcpServer) serve() error {
 		go func(r mcpRequest) {
 			key := fmt.Sprint(r.ID)
 
+			// Recover from panics in handler goroutines to prevent server crash.
+			// An unrecovered panic in any goroutine kills the entire process,
+			// causing Claude Code to see "Connection closed".
+			defer func() {
+				if rec := recover(); rec != nil {
+					fmt.Fprintf(os.Stderr, "cq: panic in handler goroutine (id=%s): %v\n", key, rec)
+					if r.ID != nil {
+						errResp := &mcpResponse{
+							JSONRPC: "2.0",
+							ID:      r.ID,
+							Error:   &mcpError{Code: -32000, Message: fmt.Sprintf("internal error: %v", rec)},
+						}
+						writerMu.Lock()
+						_ = encoder.Encode(errResp)
+						writerMu.Unlock()
+					}
+				}
+			}()
+
 			// For tools/call, create a cancellable context and register it.
 			ctx := context.Background()
 			if r.Method == "tools/call" {
