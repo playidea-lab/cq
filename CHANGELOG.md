@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.21.0] - 2026-02-22
+
+### ✨ Features
+- **agent**: `AgentConfig.ProjectDir` — `claude -p --dir <projectDir>` 전달로 올바른 프로젝트 컨텍스트 보장; `cq serve`·MCP-embedded 모드 모두 적용 (`081f783`)
+- **agent**: `updateMemberPresence(status)` 비동기 알림 — `@cq` claim 직후 `c1_members.status="typing"` PATCH로 C1 Messenger에 즉시 피드백, 응답 완료 후 `"online"` 복원 (`081f783`)
+
+### 🧪 Tests
+- **agent**: `TestAgent_UpdateMemberPresence_{Success,NoMemberID,ServerError}`, `TestAgent_ProjectDirConfig` +4개 (1,318 → 1,322) (`081f783`)
+
+---
+
 ## [0.20.0] - 2026-02-22
 
 ### ✨ Features
