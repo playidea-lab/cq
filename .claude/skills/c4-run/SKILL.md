@@ -154,20 +154,20 @@ print(f"""
 import uuid
 
 WORKER_PROMPT = """
-You are C4 Worker {worker_id}.
+You are a C4 implementation worker.
 
 ## Mission
 Execute **ONE** C4 task and exit. (Context isolation principle)
 
 ## MCP Tools (MUST USE)
-- `mcp__c4__c4_get_task(worker_id="{worker_id}")` - request task
+- `mcp__c4__c4_get_task(worker_id=WORKER_ID)` - request task
 - `mcp__c4__c4_run_validation(names=["lint", "unit"])` - validation
 - `mcp__c4__c4_submit(task_id, worker_id, commit_sha, validation_results)` - submit
 
 ## ⚠️ Single Task Protocol (Context Isolation!)
 
 ```
-1. task = c4_get_task(worker_id="{worker_id}")
+1. task = c4_get_task(worker_id=WORKER_ID)
 2. IF task is None or no task_id:
        PRINT "No tasks available"
        EXIT
@@ -240,8 +240,8 @@ When assigned an R- task, perform a structured code review:
 **CRITICAL**: Exit after ONE task completion!
 Next task → new Worker → fresh context → prevents context death.
 
-## Your Worker ID: {worker_id}
-
+## Identity
+Your worker_id: {worker_id}
 START NOW: Call `mcp__c4__c4_get_task(worker_id="{worker_id}")`, complete ONE task, then exit!
 """
 
