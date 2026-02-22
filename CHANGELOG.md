@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.22.1] - 2026-02-22
+
+### 🐛 Bug Fixes
+- **worker**: `autoRecordFailurePattern()` proxy fallback 누락 수정 — `knowledgeWriter` nil 시 `proxy`로 폴백 (기존 `autoRecordKnowledge` 패턴 일치) (`e2308ae`)
+- **worker**: `autoRecordFailurePattern()` native-writer 경로에 10s timeout 추가 — goroutine 무한 대기 방지 (`e96e6f9`)
+- **worker**: `autoRecordFailurePattern()` 제목에 `task.Title` 사용 / 빈 Scope 태그 guard — 빈 scope 시 trailing space 및 빈 태그 오염 방지 (`e2308ae`)
+- **worker**: `enrichWithReviewContext()` `sql.ErrNoRows` spurious stderr 억제 — parent T 미존재 시 정상 케이스를 에러 로그로 출력하던 문제 수정 (`e2308ae`)
+- **worker**: `autoRecordFailurePattern()` body Markdown 형식으로 변경 — `## Failure Pattern:` 헤더 추가 (`e96e6f9`)
+
+### 🧪 Tests
+- **handlers**: `store_review_test.go` dead `setupReviewTask` stub 제거 (`e96e6f9`)
+- **handlers**: `sqlite_store_enrich_test.go` `db.Exec` 에러 체크 추가 (`e96e6f9`)
+
+---
+
 ## [0.22.0] - 2026-02-22
 
 ### ✨ Features
