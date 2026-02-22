@@ -1,11 +1,13 @@
 ---
 description: |
-  Continuous build-test-review-fix loop until reviewer finds zero modifications.
-  Each round: Build → Test → Spawn fresh reviewer → If issues found: fix + commit → repeat.
-  DoD: Reviewer returns "no changes needed" (0 modifications).
-  This is the coding version of c4-refine — wraps the full c4-finish quality loop.
+  Continuous build-test-review-fix loop that converges implementation quality end-to-end.
+  Phase 1: Quality gate (CRITICAL+HIGH=0, absorbed from c4-refine).
+  Phase 2: Full convergence (modifications=0).
+  Each round: Build → Test → Spawn fresh reviewer → Fix + commit → repeat.
+  c4-refine is deprecated — use c4-polish for all post-implementation quality loops.
   Triggers: "polish", "c4-polish", "polish loop", "수정 없을 때까지", "계속 돌려",
-  "refine loop", "반복 수정", "polish until clean", "빌드 테스트 리뷰 반복".
+  "refine loop", "반복 수정", "polish until clean", "빌드 테스트 리뷰 반복",
+  "리파인", "정제", "반복 리뷰", "refine", "/c4-refine", "quality loop".
 ---
 
 # C4 Polish — Build-Test-Review-Fix Loop
@@ -13,27 +15,20 @@ description: |
 빌드→테스트→리뷰→수정을 **수정사항이 0이 될 때까지** 반복합니다.
 매 라운드마다 새 리뷰어를 스폰하여 confirmation bias를 제거합니다.
 
+**c4-refine 통합**: CRITICAL+HIGH=0 품질 게이트도 이 스킬이 담당합니다.
+
 ## 위치: 구현 완료 → **Polish** → Finish
 
 ```
-/c4-run (구현) → /c4-polish (정제 루프) → /c4-finish (마무리)
+/c4-run (구현) → /c4-checkpoint → /c4-polish (품질 수렴) → /c4-finish (마무리)
 ```
-
-## c4-refine과의 차이
-
-| | c4-refine | c4-polish |
-|---|---|---|
-| **루프 단위** | 리뷰 → 수정 | 빌드 → 테스트 → 리뷰 → 수정 |
-| **종료 조건** | CRITICAL+HIGH = 0 | 수정사항 = 0 |
-| **빌드/테스트** | 수동 | 매 라운드 자동 |
-| **사용 시점** | checkpoint 이후 | 구현 직후, finish 직전 |
-| **강도** | 품질 게이트 기반 | 완전 수렴 기반 |
 
 ## DoD
 
 **"리뷰어가 수정할 것이 없다고 판단하는 라운드"** 에서 종료.
 
-- 리뷰어가 이슈 0개 반환 → 즉시 종료
+- 1단계: CRITICAL+HIGH = 0 (품질 게이트) — 달성 시 `refine` gate 기록
+- 2단계: 수정사항 = 0 (완전 수렴) — 달성 시 `polish` gate 기록
 - 이슈가 LOW만 남은 경우 → 기본적으로 종료 (--threshold low 시 계속)
 - max-rounds 도달 → 경고 후 종료
 
@@ -85,6 +80,17 @@ changed_files = shell("git diff --name-only HEAD~3")
 - Rust (`*.rs`) → `cargo check` / `cargo test`
 - TypeScript (`*.ts`) → `tsc --noEmit` / `pnpm test`
 
+### Phase 0.6. Knowledge Lookup (선택적)
+
+과거 polish/refine에서 발견된 반복 패턴을 조회합니다:
+
+```python
+patterns = c4_pattern_suggest(context="polish refine " + SCOPE_summary)
+# 결과가 있으면 Worker 프롬프트에 "주의 패턴"으로 전달
+```
+
+결과가 없으면 건너뜁니다.
+
 ### Phase 1. Build + Test
 
 ```bash
@@ -118,7 +124,7 @@ c4_add_todo(
     6-axis 코드 리뷰 수행. 반환 형식:
     ## Round N Review
     | # | File | Line | Severity | Axis | Description | Fix |
-    수정 필요 없으면: '## Round N Review\\n수정사항 없음 (PASS)'
+    수정 필요 없으면: '## Round N Review\n수정사항 없음 (PASS)'
     Summary: MODIFICATIONS: N (CRITICAL: a, HIGH: b, MEDIUM: c, LOW: d)
     """,
     mode="worker",
@@ -164,12 +170,18 @@ Task(
 ### Phase 3. Convergence Check
 
 ```python
+# 1단계: CRITICAL+HIGH = 0 (품질 게이트)
+if review.critical == 0 and review.high == 0 and not refine_gate_recorded:
+    record_gate("refine", f"quality gate passed at round {round}")
+    refine_gate_recorded = True
+
+# 2단계: 수정사항 = 0 (완전 수렴)
 if review.modifications == 0:
     print(f"✅ CONVERGED at round {round}")
-    break  # 루프 종료
+    break
 
-# threshold별 종료 조건
-if threshold == "medium" and review.critical == 0 and review.high == 0:
+# threshold별 조기 종료
+if threshold == "medium" and review.critical == 0 and review.high == 0 and review.medium == 0:
     print(f"✅ Quality gate PASSED at round {round}")
     break
 ```
@@ -203,7 +215,8 @@ round += 1
 ```python
 round = 1
 max_rounds = 8  # 기본값
-threshold = "medium"  # 기본값: MEDIUM 이하 이슈만 허용
+threshold = "medium"  # 기본값
+refine_gate_recorded = False
 
 while round <= max_rounds:
     # Phase 1: Build + Test
@@ -214,7 +227,7 @@ while round <= max_rounds:
     # Phase 2: 새 리뷰어 스폰
     review = spawn_fresh_reviewer(SCOPE, round)
 
-    # Phase 3: 수렴 체크
+    # Phase 3: 수렴 체크 (refine gate 자동 기록 포함)
     if is_converged(review, threshold):
         print(f"✅ Converged at round {round}/{max_rounds}")
         break
@@ -258,6 +271,11 @@ CREATE TABLE IF NOT EXISTS c4_gates (
   reason       TEXT,
   completed_at TEXT    DEFAULT (datetime('now'))
 );
+-- refine gate (CRITICAL+HIGH=0 달성 시점에 기록)
+INSERT OR IGNORE INTO c4_gates (gate, status, reason)
+  SELECT 'refine', 'done', 'quality gate passed' WHERE NOT EXISTS
+  (SELECT 1 FROM c4_gates WHERE gate='refine' AND status='done');
+-- polish gate (수정사항 0 달성 시점에 기록)
 INSERT INTO c4_gates (gate, status, reason)
   VALUES ('polish', 'done', 'converged at round ${round}/${max_rounds}');"
 
@@ -293,10 +311,8 @@ if recurring_issues:
 
 ### c4-finish와 연동
 
-`/c4-finish` 전에 `/c4-polish`를 먼저 실행하면 가장 깨끗한 상태로 마무리됩니다:
-
 ```
-/c4-polish        # 수정사항 0까지 정제
+/c4-polish        # 품질 수렴 (refine gate + polish gate 기록)
 /c4-finish        # 빌드 검증 + 바이너리 설치 + 커밋
 ```
 
@@ -318,13 +334,11 @@ T-PL-001-0  : Polish Round 1 리뷰 태스크
 T-PL-002-0  : Polish Round 2 리뷰 태스크
 ```
 
-`T-PL-` prefix로 일반 구현(T-), 리뷰(R-), 리파인(T-RF-)과 구분.
-
 ## Related Skills
 
 | 스킬 | 연결 |
 |------|------|
-| `/c4-refine` | 품질 게이트 기반 정제 (checkpoint 이후) |
+| `/c4-checkpoint` | Polish 전 체크포인트 리뷰 |
 | `/c4-finish` | Polish 완료 후 최종 마무리 |
 | `/c4-validate` | 단발성 검증 (루프 없음) |
 | `/c4-run` | 구현 태스크 실행 (polish 전 단계) |

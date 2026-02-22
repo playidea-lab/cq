@@ -1,14 +1,24 @@
 ---
 description: |
-  Iterative review-fix loop that runs after checkpoint and before finish.
-  Spawns C4 Workers with domain="refine" for true context isolation.
-  Each round: Worker reviews → Orchestrator fixes → new Worker re-reviews.
-  Converges until quality gate passes (CRITICAL+HIGH = 0).
+  [DEPRECATED] c4-refine은 c4-polish에 통합되었습니다.
+  /c4-polish를 사용하세요 — CRITICAL+HIGH=0 품질 게이트 + 수정사항=0 수렴을 모두 처리합니다.
   Triggers: "리파인", "정제", "반복 리뷰", "refine", "/c4-refine",
   "review and fix loop", "quality loop", "iterative review".
 ---
 
-# C4 Refine — Iterative Review-Fix Loop
+# C4 Refine — [DEPRECATED: c4-polish로 통합됨]
+
+> ⚠️ **이 스킬은 deprecated입니다.** `/c4-polish`를 사용하세요.
+>
+> c4-polish가 다음을 모두 처리합니다:
+> - CRITICAL+HIGH=0 품질 게이트 (기존 c4-refine 역할) → `refine` gate 기록
+> - 수정사항=0 완전 수렴 (기존 c4-polish 역할) → `polish` gate 기록
+>
+> **플로우**: `/c4-run → /c4-checkpoint → /c4-polish → /c4-finish`
+
+---
+
+# (참고용) C4 Refine — Iterative Review-Fix Loop
 
 반복적 품질 수렴 프로세스. Worker 기반 컨텍스트 격리로
 confirmation bias 없는 재리뷰를 보장합니다.

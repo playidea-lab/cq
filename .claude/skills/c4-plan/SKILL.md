@@ -69,10 +69,10 @@ LOOP_ACTIVE = CRITIQUE_ENABLED and CRITIQUE_MODE != "skip"
 
 # 설정 요약 출력
 if LOOP_ACTIVE:
-    print(f"📋 Plan Critique Loop: ON (mode={CRITIQUE_MODE}, max={CRITIQUE_MAX_ROUNDS} rounds)")
+    print(f"📋 Plan Refine: ON (mode={CRITIQUE_MODE}, max={CRITIQUE_MAX_ROUNDS} rounds)")
     print("   변경: .c4/config.yaml planning.critique_loop.mode = skip 으로 비활성화")
 else:
-    print(f"📋 Plan Critique Loop: OFF (enabled={CRITIQUE_ENABLED}, mode={CRITIQUE_MODE})")
+    print(f"📋 Plan Refine: OFF (enabled={CRITIQUE_ENABLED}, mode={CRITIQUE_MODE})")
 ```
 
 ### 0.1 Data Collection
@@ -586,7 +586,7 @@ Dependency tree: `T-XXX -> R-XXX -> CP-XXX -> T-YYY -> R-YYY`
 
 ---
 
-## Phase 4.5: Plan Critique Loop (Worker 기반 Pre-Mortem)
+## Phase 4.5: Plan Refine (Worker 기반 Pre-Mortem)
 
 > Entry: Phase 4 draft 완료 직후. DB 커밋 전.
 > Exit: 수렴 선언 → Phase 4.9 (DB 커밋) → Phase 5
@@ -600,7 +600,7 @@ Dependency tree: `T-XXX -> R-XXX -> CP-XXX -> T-YYY -> R-YYY`
 ```python
 # Phase 0.0에서 읽은 설정 사용
 if not LOOP_ACTIVE:
-    print("⏭️  Plan Critique Loop 비활성화 (config: planning.critique_loop)")
+    print("⏭️  Plan Refine 비활성화 (config: planning.critique_loop)")
     print("   활성화: .c4/config.yaml → planning.critique_loop.enabled: true")
     → Phase 4.9 (DB Commit) 직행
 
@@ -615,7 +615,7 @@ converged = false
 current_draft = Phase 4에서 작성한 태스크 초안 (전체 텍스트)
 ```
 
-### 4.5.2 Worker 스폰: 격리된 Plan Critic
+### 4.5.2 Worker 스폰: 격리된 Plan Refiner
 
 > c4-refine 패턴 적용 — 매 라운드마다 새 Worker를 스폰하여 fresh context 보장.
 
@@ -762,8 +762,7 @@ Summarize the generated plan and confirm with user.
 ```
 /c4-run          # Worker 스폰 → 태스크 실행
 /c4-checkpoint   # (CP 도달 시) 체크포인트 리뷰
-/c4-refine       # (checkpoint 이후) 품질 수렴 (CRITICAL+HIGH=0)
-/c4-polish       # (refine 이후) 수정사항 0까지 정제 ← ⚠️ 빠트리기 쉬움
+/c4-polish       # 구현 결과물 수렴 (CRITICAL+HIGH=0 → 수정사항 0) ← ⚠️ 빠트리기 쉬움
 /c4-finish       # 빌드 검증 + 바이너리 설치 + 커밋
 ```
 
