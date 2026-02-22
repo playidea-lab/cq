@@ -16,8 +16,8 @@ Skills are slash commands invoked inside Claude Code. All 22 skills are embedded
 
 | Skill | Triggers | Description |
 |-------|----------|-------------|
-| `/c4-polish` | polish | Continuous build-test-review-fix loop until reviewer finds zero changes. Coding equivalent of "done done". Run before `/c4-finish`. |
-| `/c4-refine` | refine | Stress-test the **plan** before implementation starts. Spawns fresh plan critic each round to review specs, DoDs, and task design. Stops when CRITICAL + HIGH = 0. Run after `/c4-plan`, before `/c4-run`. |
+| `/c4-polish` | polish | Continuous build-test-review-fix loop until reviewer finds zero changes. Two phases: quality gate (CRITICAL+HIGH=0) then full convergence (modifications=0). Called automatically by `/c4-run`. |
+| `/c4-refine` | refine | *(Deprecated — plan critique loop is now built into `/c4-plan` Phase 4.5)* |
 | `/c4-checkpoint` | (auto at checkpoint) | Phase gate: 4-lens review (holistic / user-flow / cascade / ship-ready). Approve, request changes, replan, or redesign. |
 | `/c4-validate` | validate, 검증 | Run lint + tests with severity-based handling. CRITICAL blocks commit, HIGH requires review, MEDIUM is recommended. |
 | `/c4-review` | review | Comprehensive 3-pass code or paper review with 6-axis evaluation. Generates formal review document. |

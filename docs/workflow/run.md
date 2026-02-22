@@ -42,4 +42,6 @@ A revision task (T-001-1) is created automatically. `/c4-run` will pick it up on
 
 ## After execution
 
-Once all tasks are complete, run `/c4-finish` to wrap up. `/c4-finish` runs `/c4-polish` automatically before committing.
+When all tasks are done, `/c4-run` automatically calls `/c4-polish` (build-test-review-fix loop until zero changes) and then `/c4-finish` (build · test · docs · commit). No extra steps needed.
+
+If you make additional manual changes, run `/c4-finish` to wrap up.

@@ -4,7 +4,12 @@ Trigger: `/c4-polish` or keywords: `polish`, `폴리쉬`, `수렴`
 
 ## What it does
 
-Build-test-review-fix loop that runs until a reviewer finds zero modifications. Every round includes a full build and test run before the review.
+Build-test-review-fix loop that runs in two phases:
+
+1. **Quality gate** — fix until CRITICAL + HIGH issues reach zero
+2. **Full convergence** — fix until a reviewer finds zero modifications
+
+Every round includes a full build and test run before the review.
 
 ```
 /c4-polish
@@ -19,13 +24,15 @@ Build-test-review-fix loop that runs until a reviewer finds zero modifications. 
 
 ## When to run
 
-After `/c4-run`, before `/c4-finish`:
+`/c4-run` calls `/c4-polish` automatically in continuous mode — you typically don't need to invoke it manually.
 
 ```
-/c4-plan → /c4-refine → /c4-run → /c4-polish → /c4-finish
+/c4-plan → /c4-run → [auto: polish → finish]
 ```
 
-`/c4-finish` runs `/c4-polish` automatically unless you pass `--no-polish`.
+Run it manually when:
+- You've made additional changes after `/c4-run` completed
+- You want to run a targeted polish pass on specific directories
 
 ## Convergence condition
 
@@ -56,13 +63,3 @@ Polish stops when a reviewer finds **zero modifications** — not just when seve
 | 2     | 0    | 1    | 2   | 1   | Fixed   |
 | 3     | 0    | 0    | 0   | 0   | PASS ✅ |
 ```
-
-## Difference from /c4-refine
-
-| | `/c4-refine` | `/c4-polish` |
-|---|---|---|
-| Target | Plan (specs, DoDs, design) | Code |
-| Loop unit | Review plan → Update plan | Build → Test → Review → Fix |
-| Stop condition | Reviewer finds no plan issues | Zero code modifications found |
-| Phase | Plan (before /c4-run) | Polish (before /c4-finish) |
-| Output | Improved task queue | Converged codebase |

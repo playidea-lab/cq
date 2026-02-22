@@ -75,8 +75,8 @@ Skills are invoked inside Claude Code as `/skill-name`.
 | `/c4-finish` | "마무리", "finish" | Build → test → docs → commit |
 | `/c4-status` | "상태", "status" | Visual task progress |
 | `/c4-quick` | "quick", "빠르게" | Single task, no planning |
-| `/c4-polish` | "polish" | Build-test-review-fix loop until zero changes (before `/c4-finish`) |
-| `/c4-refine` | "refine" | Stress-test the plan before `/c4-run` — reviews specs, DoDs, task design |
+| `/c4-polish` | "polish" | Build-test-review-fix loop until zero changes. Called automatically by `/c4-run`. |
+| `/c4-refine` | "refine" | *(Deprecated — plan critique is now built into `/c4-plan`)* |
 | `/c4-checkpoint` | checkpoint reached | Approve / request changes / replan |
 | `/c4-validate` | "검증", "validate" | Run lint + tests |
 | `/c4-review` | "review" | 3-pass code review with 6-axis evaluation |

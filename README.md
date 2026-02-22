@@ -193,10 +193,8 @@ T-022 완료 후 비교 리포트 자동 생성:
 
 ```
 /c4-plan "feature description"   → discovery + design + tasks
-/c4-refine                       → stress-test the plan (optional)
 /c4-run                          → spawn workers, implement in parallel
-/c4-polish                       → fix until reviewer finds zero changes
-/c4-finish                       → build · test · docs · commit
+/c4-finish                       → polish · build · test · commit
 /c4-status                       → check progress at any time
 ```
 
