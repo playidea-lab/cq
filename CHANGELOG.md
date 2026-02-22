@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.20.0] - 2026-02-22
+
+### ✨ Features
+- **store**: `superseded_by` 컬럼 추가 — `RequestChanges()` 시 이전 R- 태스크를 superseded 마킹, `reassignStaleOrFindPendingTask()` superseded 태스크 자동 필터, scope 상속 — 신규 T-/R- 태스크가 부모 T- 태스크의 `scope` 필드 계승 (`39011c7`)
+- **handoff**: `HandoffEvidence` 구조체 + 타입 검증 — `SubmitTask()`에서 `screenshot/log/test_result` 외 타입 거부, `evidence` 필드 누락 시 backward-compatible 처리 (`45260d0`)
+
+### 🧪 Tests
+- **store**: `TestRequestChanges_SetsSupersededBy`, `TestRequestChanges_ScopeInherited`, `TestAssignTask_SkipsSupersededReviews`, `TestAssignTask_SkipsSupersededPendingReviews` (4개) (`39011c7`)
+- **handoff**: `TestSubmitTask_Evidence_Valid`, `TestSubmitTask_Evidence_InvalidType`, `TestSubmitTask_Evidence_NoEvidence`, `TestSubmitTask_Evidence_EmptySlice` (4개) (`45260d0`)
+
+### 📚 Documentation
+- **agents**: Go 테스트 수 ~1,310 → ~1,318 반영 (`f69e5b9`)
+
+---
+
 ## [0.19.0] - 2026-02-22
 
 ### ✨ Features
