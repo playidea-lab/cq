@@ -737,3 +737,303 @@ func TestAgent_ProjectDirConfig(t *testing.T) {
 	}
 }
 
+// --- buildA2UIPrompt tests ---
+
+func TestBuildA2UIPrompt_WithContext(t *testing.T) {
+	msgs := []channelMsg{
+		{
+			ID:         "m1",
+			Content:    "user message",
+			SenderType: "user",
+			Metadata:   json.RawMessage(`{}`),
+		},
+		{
+			ID:         "m2",
+			Content:    "Here are your options:",
+			SenderType: "agent",
+			Metadata:   json.RawMessage(`{"a2ui":{"items":[{"id":"act-1","label":"Option A"}]}}`),
+		},
+	}
+	result := buildA2UIPrompt(msgs, "act-1", "Option A")
+	if !strings.Contains(result, "act-1") {
+		t.Errorf("result should contain actionID, got: %s", result)
+	}
+	if !strings.Contains(result, "Option A") {
+		t.Errorf("result should contain label, got: %s", result)
+	}
+	if !strings.Contains(result, "Here are your options:") {
+		t.Errorf("result should contain original agent content, got: %s", result)
+	}
+	if !strings.Contains(result, "[A2UI action selected]") {
+		t.Errorf("result should contain A2UI header, got: %s", result)
+	}
+}
+
+func TestBuildA2UIPrompt_NoContext(t *testing.T) {
+	msgs := []channelMsg{
+		{
+			ID:         "m1",
+			Content:    "user message",
+			SenderType: "user",
+			Metadata:   json.RawMessage(`{}`),
+		},
+		{
+			ID:         "m2",
+			Content:    "regular agent reply",
+			SenderType: "agent",
+			Metadata:   json.RawMessage(`{"other_key":"value"}`),
+		},
+	}
+	result := buildA2UIPrompt(msgs, "act-1", "My Label")
+	if result != "My Label" {
+		t.Errorf("result = %q, want %q (fallback to label)", result, "My Label")
+	}
+}
+
+func TestBuildA2UIPrompt_EmptyMessages(t *testing.T) {
+	result := buildA2UIPrompt([]channelMsg{}, "act-1", "Button Text")
+	if result != "Button Text" {
+		t.Errorf("result = %q, want %q (fallback to label)", result, "Button Text")
+	}
+}
+
+// --- handleEvent A2UI response tests ---
+
+func TestAgent_HandleEvent_A2UIResponse_Triggers(t *testing.T) {
+	var claimed bool
+	var claimMu sync.Mutex
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/rest/v1/rpc/claim_message" {
+			claimMu.Lock()
+			claimed = true
+			claimMu.Unlock()
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`[{"id":"msg-a2u"}]`))
+			return
+		}
+		if r.URL.Path == "/rest/v1/c1_members" {
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`[{"id":"member-1"}]`))
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(200)
+		w.Write([]byte(`[]`))
+	}))
+	defer server.Close()
+
+	agent := NewAgent(AgentConfig{
+		SupabaseURL: server.URL,
+		APIKey:      "test-key",
+		ProjectID:   "proj-1",
+		WorkerID:    "cq-agent",
+	})
+
+	event := RealtimeEvent{
+		Table:      "c1_messages",
+		ChangeType: "INSERT",
+		Record:     json.RawMessage(`{"id":"msg-a2u","channel_id":"ch-1","content":"Option A","sender_name":"alice","sender_type":"user","project_id":"proj-1","metadata":{"a2ui_response":{"action_id":"act-1"}}}`),
+	}
+	agent.handleEvent(event)
+	time.Sleep(50 * time.Millisecond)
+
+	claimMu.Lock()
+	gotClaim := claimed
+	claimMu.Unlock()
+
+	if !gotClaim {
+		t.Error("expected claim to be called for a2ui_response with action_id")
+	}
+}
+
+func TestAgent_HandleEvent_A2UIResponse_AgentSkipped(t *testing.T) {
+	var claimed bool
+	var claimMu sync.Mutex
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/rest/v1/rpc/claim_message" {
+			claimMu.Lock()
+			claimed = true
+			claimMu.Unlock()
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`[]`))
+	}))
+	defer server.Close()
+
+	agent := NewAgent(AgentConfig{
+		SupabaseURL: server.URL,
+		APIKey:      "test-key",
+		ProjectID:   "proj-1",
+	})
+
+	event := RealtimeEvent{
+		Table:      "c1_messages",
+		ChangeType: "INSERT",
+		Record:     json.RawMessage(`{"id":"msg-1","channel_id":"ch-1","content":"Option A","sender_type":"agent","project_id":"proj-1","metadata":{"a2ui_response":{"action_id":"act-1"}}}`),
+	}
+	agent.handleEvent(event)
+	time.Sleep(50 * time.Millisecond)
+
+	claimMu.Lock()
+	gotClaim := claimed
+	claimMu.Unlock()
+
+	if gotClaim {
+		t.Error("agent sender_type should be filtered before A2UI check — claim must NOT be called")
+	}
+}
+
+func TestAgent_HandleEvent_A2UIResponse_SystemSkipped(t *testing.T) {
+	var claimed bool
+	var claimMu sync.Mutex
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/rest/v1/rpc/claim_message" {
+			claimMu.Lock()
+			claimed = true
+			claimMu.Unlock()
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`[]`))
+	}))
+	defer server.Close()
+
+	agent := NewAgent(AgentConfig{
+		SupabaseURL: server.URL,
+		APIKey:      "test-key",
+		ProjectID:   "proj-1",
+	})
+
+	event := RealtimeEvent{
+		Table:      "c1_messages",
+		ChangeType: "INSERT",
+		Record:     json.RawMessage(`{"id":"msg-1","channel_id":"ch-1","content":"Option A","sender_type":"system","project_id":"proj-1","metadata":{"a2ui_response":{"action_id":"act-1"}}}`),
+	}
+	agent.handleEvent(event)
+	time.Sleep(50 * time.Millisecond)
+
+	claimMu.Lock()
+	gotClaim := claimed
+	claimMu.Unlock()
+
+	if gotClaim {
+		t.Error("system sender_type should be filtered before A2UI check — claim must NOT be called")
+	}
+}
+
+func TestAgent_HandleEvent_A2UIResponse_NoActionID(t *testing.T) {
+	var claimed bool
+	var claimMu sync.Mutex
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/rest/v1/rpc/claim_message" {
+			claimMu.Lock()
+			claimed = true
+			claimMu.Unlock()
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`[]`))
+	}))
+	defer server.Close()
+
+	agent := NewAgent(AgentConfig{
+		SupabaseURL: server.URL,
+		APIKey:      "test-key",
+		ProjectID:   "proj-1",
+	})
+
+	// a2ui_response present but action_id is empty string
+	event := RealtimeEvent{
+		Table:      "c1_messages",
+		ChangeType: "INSERT",
+		Record:     json.RawMessage(`{"id":"msg-1","channel_id":"ch-1","content":"something","sender_type":"user","project_id":"proj-1","metadata":{"a2ui_response":{"action_id":""}}}`),
+	}
+	agent.handleEvent(event)
+	time.Sleep(50 * time.Millisecond)
+
+	claimMu.Lock()
+	gotClaim := claimed
+	claimMu.Unlock()
+
+	if gotClaim {
+		t.Error("empty action_id with no @cq mention should NOT trigger claim")
+	}
+}
+
+// --- fetchChannelContext tests ---
+
+func TestAgent_FetchChannelContext_Success(t *testing.T) {
+	var capturedURL string
+	var capturedMu sync.Mutex
+
+	returnedMsgs := []map[string]interface{}{
+		{"id": "m1", "content": "hello", "sender_type": "user", "metadata": nil},
+		{"id": "m2", "content": "world", "sender_type": "agent", "metadata": map[string]interface{}{"a2ui": true}},
+	}
+	returnedJSON, _ := json.Marshal(returnedMsgs)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedMu.Lock()
+		capturedURL = r.URL.String()
+		capturedMu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(returnedJSON)
+	}))
+	defer server.Close()
+
+	agent := NewAgent(AgentConfig{
+		SupabaseURL: server.URL,
+		APIKey:      "test-key",
+		ProjectID:   "proj-1",
+	})
+
+	msgs, err := agent.fetchChannelContext("chan-xyz", 20)
+	if err != nil {
+		t.Fatalf("fetchChannelContext error: %v", err)
+	}
+	if len(msgs) != 2 {
+		t.Errorf("expected 2 messages, got %d", len(msgs))
+	}
+
+	capturedMu.Lock()
+	u := capturedURL
+	capturedMu.Unlock()
+
+	if !strings.Contains(u, "channel_id=eq.chan-xyz") {
+		t.Errorf("URL should filter by channel_id, got: %s", u)
+	}
+	if !strings.Contains(u, "order=created_at.desc") {
+		t.Errorf("URL should have order param, got: %s", u)
+	}
+	if !strings.Contains(u, "limit=20") {
+		t.Errorf("URL should have limit param, got: %s", u)
+	}
+	if !strings.Contains(u, "select=id,content,sender_type,metadata") {
+		t.Errorf("URL should have select param, got: %s", u)
+	}
+}
+
+func TestAgent_FetchChannelContext_ServerError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(500)
+		w.Write([]byte(`{"message":"internal server error"}`))
+	}))
+	defer server.Close()
+
+	agent := NewAgent(AgentConfig{
+		SupabaseURL: server.URL,
+		APIKey:      "test-key",
+		ProjectID:   "proj-1",
+	})
+
+	_, err := agent.fetchChannelContext("ch-1", 10)
+	if err == nil {
+		t.Fatal("expected error on 500 response")
+	}
+	if !strings.Contains(err.Error(), "500") {
+		t.Errorf("error should mention status code, got: %v", err)
+	}
+}
+

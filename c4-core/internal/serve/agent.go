@@ -40,6 +40,23 @@ func (lw *limitedWriter) Write(p []byte) (int, error) {
 // a non-alphanumeric character or end-of-string. Case-insensitive.
 var cqMentionRe = regexp.MustCompile(`(?i)(?:^|[\s,;:!?.(])@cq(?:$|[^a-zA-Z0-9_])`)
 
+// msgRequest holds parameters for a single message processing job.
+type msgRequest struct {
+	id         string
+	channelID  string
+	content    string
+	senderName string
+	actionID   string // non-empty if triggered by A2UI button click
+}
+
+// channelMsg is a lightweight message record fetched for context.
+type channelMsg struct {
+	ID         string          `json:"id"`
+	Content    string          `json:"content"`
+	SenderType string          `json:"sender_type"`
+	Metadata   json.RawMessage `json:"metadata"`
+}
+
 // AgentConfig holds configuration for the Agent component.
 type AgentConfig struct {
 	SupabaseURL string // Supabase project URL (e.g., https://xxx.supabase.co)
@@ -197,13 +214,14 @@ func (a *Agent) handleEvent(event RealtimeEvent) {
 
 	// Parse the message record
 	var msg struct {
-		ID          string `json:"id"`
-		ChannelID   string `json:"channel_id"`
-		Content     string `json:"content"`
-		SenderName  string `json:"sender_name"`
-		SenderType  string `json:"sender_type"`
-		ProjectID   string `json:"project_id"`
-		ClaimedBy   *string `json:"claimed_by"`
+		ID         string          `json:"id"`
+		ChannelID  string          `json:"channel_id"`
+		Content    string          `json:"content"`
+		SenderName string          `json:"sender_name"`
+		SenderType string          `json:"sender_type"`
+		ProjectID  string          `json:"project_id"`
+		ClaimedBy  *string         `json:"claimed_by"`
+		Metadata   json.RawMessage `json:"metadata"`
 	}
 	if err := json.Unmarshal(event.Record, &msg); err != nil {
 		return
@@ -214,13 +232,8 @@ func (a *Agent) handleEvent(event RealtimeEvent) {
 		return
 	}
 
-	// Filter: skip messages from agents (prevent loops)
+	// Filter: skip messages from agents (prevent loops) — applied before both @cq and A2UI checks
 	if msg.SenderType == "agent" || msg.SenderType == "system" {
-		return
-	}
-
-	// Filter: must contain @cq mention
-	if !cqMentionRe.MatchString(msg.Content) {
 		return
 	}
 
@@ -229,7 +242,31 @@ func (a *Agent) handleEvent(event RealtimeEvent) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "cq: [agent] @cq mention detected in msg %s from %s\n", msg.ID, msg.SenderName)
+	// Detect trigger: @cq mention OR a2ui_response action
+	var actionID string
+	if len(msg.Metadata) > 0 {
+		var meta struct {
+			A2UIResponse *struct {
+				ActionID string `json:"action_id"`
+			} `json:"a2ui_response"`
+		}
+		if err := json.Unmarshal(msg.Metadata, &meta); err == nil && meta.A2UIResponse != nil {
+			actionID = meta.A2UIResponse.ActionID
+		}
+	}
+
+	isCQMention := cqMentionRe.MatchString(msg.Content)
+	isA2UI := actionID != ""
+
+	if !isCQMention && !isA2UI {
+		return
+	}
+
+	if isCQMention {
+		fmt.Fprintf(os.Stderr, "cq: [agent] @cq mention detected in msg %s from %s\n", msg.ID, msg.SenderName)
+	} else {
+		fmt.Fprintf(os.Stderr, "cq: [agent] a2ui_response detected in msg %s from %s (action=%s)\n", msg.ID, msg.SenderName, actionID)
+	}
 
 	// Check concurrency limit before claiming (avoid claiming then dropping)
 	select {
@@ -260,7 +297,7 @@ func (a *Agent) handleEvent(event RealtimeEvent) {
 		defer a.wg.Done()
 		defer a.inFlight.Add(-1)
 		defer func() { <-a.sem }()
-		a.processMessage(msg.ID, msg.ChannelID, msg.Content, msg.SenderName)
+		a.processMessage(msgRequest{id: msg.ID, channelID: msg.ChannelID, content: msg.Content, senderName: msg.SenderName, actionID: actionID})
 	}()
 }
 
@@ -301,8 +338,62 @@ func (a *Agent) claimMessage(messageID string) (bool, error) {
 	return len(rows) > 0, nil
 }
 
+// fetchChannelContext fetches recent messages from a channel for A2UI context building.
+func (a *Agent) fetchChannelContext(channelID string, limit int) ([]channelMsg, error) {
+	fetchURL := fmt.Sprintf(
+		"%s/rest/v1/c1_messages?channel_id=eq.%s&order=created_at.desc&limit=%d&select=id,content,sender_type,metadata",
+		a.cfg.SupabaseURL, url.QueryEscape(channelID), limit,
+	)
+	req, err := http.NewRequest("GET", fetchURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	a.setHeaders(req)
+
+	resp, err := a.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("fetchChannelContext: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
+		return nil, fmt.Errorf("fetchChannelContext: %d %s", resp.StatusCode, string(body))
+	}
+
+	var msgs []channelMsg
+	if err := json.NewDecoder(resp.Body).Decode(&msgs); err != nil {
+		return nil, fmt.Errorf("fetchChannelContext decode: %w", err)
+	}
+	return msgs, nil
+}
+
+// buildA2UIPrompt builds a prompt string from channel context and the selected action.
+// It scans msgs for the most recent agent message that contains an "a2ui" key in metadata.
+// If found, it returns a formatted prompt with original context; otherwise returns just the label.
+func buildA2UIPrompt(msgs []channelMsg, actionID, label string) string {
+	for _, m := range msgs {
+		if m.SenderType != "agent" {
+			continue
+		}
+		if len(m.Metadata) == 0 {
+			continue
+		}
+		var meta map[string]json.RawMessage
+		if err := json.Unmarshal(m.Metadata, &meta); err != nil {
+			continue
+		}
+		if _, ok := meta["a2ui"]; !ok {
+			continue
+		}
+		// Found the original A2UI message
+		return fmt.Sprintf("[A2UI action selected]\nAction: %q (id: %s)\n\nOriginal context:\n%s", label, actionID, m.Content)
+	}
+	return label
+}
+
 // processMessage invokes `claude -p` with the message content and posts the response.
-func (a *Agent) processMessage(messageID, channelID, content, senderName string) {
+func (a *Agent) processMessage(req msgRequest) {
 	a.mu.Lock()
 	claudePath := a.claudePath
 	a.mu.Unlock()
@@ -326,18 +417,30 @@ func (a *Agent) processMessage(messageID, channelID, content, senderName string)
 
 	if claudePath == "" {
 		errMsg := "claude CLI is not available. The agent is running in degraded mode."
-		a.postMessage(channelID, errMsg)
+		a.postMessage(req.channelID, errMsg)
 		return
 	}
 
-	// Strip @cq from the prompt
-	prompt := cqMentionRe.ReplaceAllString(content, "")
-	prompt = strings.TrimSpace(prompt)
-	if prompt == "" {
-		prompt = "Hello! How can I help?"
+	var prompt string
+	if req.actionID != "" {
+		// A2UI path: fetch channel context and build contextual prompt
+		msgs, err := a.fetchChannelContext(req.channelID, 20)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "cq: [agent] fetchChannelContext for msg %s: %v (falling back to label)\n", req.id, err)
+			prompt = req.content
+		} else {
+			prompt = buildA2UIPrompt(msgs, req.actionID, req.content)
+		}
+	} else {
+		// @cq mention path: strip @cq from the prompt
+		prompt = cqMentionRe.ReplaceAllString(req.content, "")
+		prompt = strings.TrimSpace(prompt)
+		if prompt == "" {
+			prompt = "Hello! How can I help?"
+		}
 	}
 
-	fmt.Fprintf(os.Stderr, "cq: [agent] spawning claude -p for msg %s\n", messageID)
+	fmt.Fprintf(os.Stderr, "cq: [agent] spawning claude -p for msg %s\n", req.id)
 
 	// Run claude -p with timeout, derived from component context for graceful shutdown
 	a.mu.Lock()
@@ -379,8 +482,8 @@ func (a *Agent) processMessage(messageID, channelID, content, senderName string)
 		response = parseClaudeOutput(stdout.Bytes())
 	}
 
-	fmt.Fprintf(os.Stderr, "cq: [agent] posting response for msg %s (%d chars)\n", messageID, len(response))
-	a.postMessage(channelID, response)
+	fmt.Fprintf(os.Stderr, "cq: [agent] posting response for msg %s (%d chars)\n", req.id, len(response))
+	a.postMessage(req.channelID, response)
 }
 
 // updateMemberPresence updates the agent member's status field in c1_members.
