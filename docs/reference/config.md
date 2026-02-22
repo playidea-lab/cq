@@ -73,6 +73,18 @@ worktree:
   auto_cleanup: true   # remove worktrees after task submit
 ```
 
+### `validation` — build and test commands
+
+Override the auto-detected commands:
+
+```yaml
+validation:
+  build_command: "make build"    # default: auto-detected by language
+  test_command: "make test"      # default: auto-detected by language
+```
+
+Auto-detection: Go → `go build ./...`, Python → `uv run pytest`, Node → `npm run build`, Rust → `cargo build`.
+
 ### `cloud` — Supabase (connected / full tier)
 
 Configured by your organization. You should not need to modify this section directly.

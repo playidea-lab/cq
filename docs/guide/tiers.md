@@ -37,6 +37,7 @@ Additional features on top of `solo`:
 - **LLM Gateway** — unified API for Anthropic, OpenAI, Gemini, Ollama
 - **C3 EventBus** — gRPC event bus for real-time notifications
 - **C0 Drive** — file storage via Supabase Storage
+- **C9 Knowledge** — semantic search + pgvector for cross-project knowledge sharing
 
 Requires a cloud config provided by your team or organization. Place it at `~/.c4/config.yaml` before first use.
 
@@ -74,6 +75,7 @@ Best for: production deployments, ML workflows, large teams.
 | Supabase sync | — | ✅ | ✅ |
 | LLM Gateway | — | ✅ | ✅ |
 | EventBus | — | ✅ | ✅ |
+| C9 Knowledge (semantic) | — | ✅ | ✅ |
 | C5 Hub (distributed) | — | — | ✅ |
 | CDP automation | — | — | ✅ |
 | GPU scheduler | — | — | ✅ |

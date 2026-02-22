@@ -14,9 +14,11 @@ It adds structure to AI-assisted development:
 
 ```
 You describe a feature → /c4-plan creates tasks with DoD
+                       → /c4-refine stress-tests the plan (optional)
                        → /c4-run spawns workers (one per task)
                        → each worker: implement → test → submit
                        → reviewer worker checks the output
+                       → /c4-polish fixes until zero changes remain
                        → /c4-finish builds, tests, commits
 ```
 
