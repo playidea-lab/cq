@@ -43,6 +43,7 @@ type CloudConfig struct {
 	AnonKey      string `mapstructure:"anon_key"       yaml:"anon_key"`       // from env C4_CLOUD_ANON_KEY
 	ProjectID    string `mapstructure:"project_id"     yaml:"project_id"`     // cloud project identifier
 	BucketName   string `mapstructure:"bucket_name"    yaml:"bucket_name"`    // default "c4-drive"
+	Mode         string `mapstructure:"mode"           yaml:"mode"`           // "local-first" (default) or "cloud-primary"
 }
 
 // LLMProviderConfig holds per-provider settings.
@@ -345,6 +346,7 @@ func New(projectRoot string, cloudDefaults ...CloudDefaults) (*Manager, error) {
 	v.SetDefault("cloud.url", "")
 	v.SetDefault("cloud.anon_key", "")
 	v.SetDefault("cloud.project_id", "")
+	v.SetDefault("cloud.mode", "local-first")
 	v.SetDefault("llm_gateway.enabled", false)
 	v.SetDefault("llm_gateway.default", "anthropic")
 	v.SetDefault("llm_gateway.cache_by_default", true)

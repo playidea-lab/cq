@@ -248,15 +248,18 @@ func newMCPServer() (*mcpServer, error) {
 	}
 	ctx.sqliteStore = sqliteStore
 
-	// Wrap with HybridStore if cloud is enabled
+	// Wrap with cloud store if cloud is enabled.
+	// cloud.mode selects the strategy:
+	//   "local-first"   (default) → HybridStore: writes local first, async push to cloud
+	//   "cloud-primary"           → CloudPrimaryStore: writes cloud first, async sync to local
 	var store handlers.Store = sqliteStore
 	if cfgMgr != nil && cfgMgr.GetConfig().Cloud.Enabled {
 		cloudCfg := cfgMgr.GetConfig().Cloud
 		if cloudCfg.URL != "" && cloudCfg.AnonKey != "" {
 			cloudURL := cloudCfg.URL + "/rest/v1"
 			cloudStore := cloud.NewCloudStore(cloudURL, cloudCfg.AnonKey, cloudTP, cloudProjectID)
-			store = cloud.NewHybridStore(sqliteStore, cloudStore)
-			fmt.Fprintln(os.Stderr, "cq: cloud sync enabled (hybrid mode)")
+			store = selectCloudStore(cloudCfg.Mode, sqliteStore, cloudStore)
+			fmt.Fprintf(os.Stderr, "cq: cloud sync enabled (%s mode)\n", cloudCfg.Mode)
 		} else {
 			fmt.Fprintln(os.Stderr, "cq: cloud enabled but URL/key not configured, using local only")
 		}
