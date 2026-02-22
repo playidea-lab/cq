@@ -25,6 +25,9 @@ var claudeMDTemplate string
 //go:embed templates/hooks/c4-bash-security-hook.sh
 var hookShContent string
 
+//go:embed templates/hooks/c4-edit-security-hook.sh
+var editHookShContent string
+
 //go:embed templates/config.yaml
 var defaultConfigYAML string
 
@@ -460,8 +463,8 @@ func hookNeedsUpdate(path string, embeddedContent string) bool {
 	return existing != embedded
 }
 
-// setupGlobalHooks installs the C4 bash security hook to ~/.claude/hooks/.
-// The hook script is embedded in the binary. Hook configuration is read from
+// setupGlobalHooks installs C4 security hooks to ~/.claude/hooks/.
+// Hooks are embedded in the binary. Hook configuration is read from
 // .c4/config.yaml (permission_reviewer section); any existing .conf files
 // are left untouched for backward compatibility.
 func setupGlobalHooks(homeDir string) error {
@@ -470,28 +473,43 @@ func setupGlobalHooks(homeDir string) error {
 		return fmt.Errorf("creating hooks dir: %w", err)
 	}
 
-	hookPath := filepath.Join(hooksDir, "c4-bash-security-hook.sh")
-	if hookNeedsUpdate(hookPath, hookShContent) {
-		if err := os.WriteFile(hookPath, []byte(hookShContent), 0755); err != nil {
-			return fmt.Errorf("writing hook: %w", err)
+	bashHookPath := filepath.Join(hooksDir, "c4-bash-security-hook.sh")
+	if hookNeedsUpdate(bashHookPath, hookShContent) {
+		if err := os.WriteFile(bashHookPath, []byte(hookShContent), 0755); err != nil {
+			return fmt.Errorf("writing bash hook: %w", err)
 		}
-		fmt.Fprintln(os.Stderr, "cq: hook installed → "+hookPath)
-	} else {
+		fmt.Fprintln(os.Stderr, "cq: bash hook installed → "+bashHookPath)
+	}
+
+	editHookPath := filepath.Join(hooksDir, "c4-edit-security-hook.sh")
+	if hookNeedsUpdate(editHookPath, editHookShContent) {
+		if err := os.WriteFile(editHookPath, []byte(editHookShContent), 0755); err != nil {
+			return fmt.Errorf("writing edit hook: %w", err)
+		}
+		fmt.Fprintln(os.Stderr, "cq: edit hook installed → "+editHookPath)
+	}
+
+	if !hookNeedsUpdate(bashHookPath, hookShContent) && !hookNeedsUpdate(editHookPath, editHookShContent) {
 		fmt.Fprintln(os.Stderr, "cq: hooks up-to-date")
 	}
 
-	// Register hook in ~/.claude/settings.json
-	if err := patchClaudeSettings(homeDir, hookPath); err != nil {
+	// Register hooks in ~/.claude/settings.json
+	if err := patchClaudeSettings(homeDir, bashHookPath, editHookPath); err != nil {
 		return fmt.Errorf("patching settings.json: %w", err)
 	}
 
 	return nil
 }
 
-// patchClaudeSettings registers the Bash security hook in ~/.claude/settings.json.
-// It is idempotent: if the hook entry already exists, it does nothing.
+// patchClaudeSettings registers C4 security hooks in ~/.claude/settings.json.
+// Installs:
+//   - PreToolUse:Bash      → c4-bash-security-hook.sh
+//   - PreToolUse:Edit|Write → c4-edit-security-hook.sh (replaces old c4-file-edit-warning.sh)
+//   - permissions.allow: Read, Glob, Grep (safe read-only tools, auto-approved without prompt)
+//
+// It is idempotent: existing entries with matching paths are not duplicated.
 // Corrupted JSON is backed up and replaced with a fresh structure.
-func patchClaudeSettings(homeDir string, hookPath string) error {
+func patchClaudeSettings(homeDir string, bashHookPath string, editHookPath string) error {
 	settingsPath := filepath.Join(homeDir, ".claude", "settings.json")
 
 	// Read existing settings or start fresh
@@ -499,7 +517,6 @@ func patchClaudeSettings(homeDir string, hookPath string) error {
 	data, err := os.ReadFile(settingsPath)
 	if err == nil {
 		if jsonErr := json.Unmarshal(data, &settings); jsonErr != nil {
-			// Corrupted JSON → backup and start fresh
 			backupName := fmt.Sprintf("settings.json.bak.%s", time.Now().Format("20060102150405"))
 			backupPath := filepath.Join(filepath.Dir(settingsPath), backupName)
 			_ = os.WriteFile(backupPath, data, 0644)
@@ -515,65 +532,90 @@ func patchClaudeSettings(homeDir string, hookPath string) error {
 	if hooks == nil {
 		hooks = map[string]any{}
 	}
-
 	preToolUseRaw, _ := hooks["PreToolUse"]
 	var preToolUse []any
 	if arr, ok := preToolUseRaw.([]any); ok {
 		preToolUse = arr
 	}
 
-	// Check if Bash matcher with this hookPath already exists; update stale path in-place.
-	const hookBaseName = "c4-bash-security-hook.sh"
-	updated := false
-	for i, entry := range preToolUse {
-		entryMap, ok := entry.(map[string]any)
-		if !ok {
-			continue
+	// patchHookEntry: idempotently adds or updates a PreToolUse hook entry.
+	// matcher: "Bash" or "Edit|Write", hookPath: absolute path to hook script,
+	// baseName: unique suffix to identify the script family (for stale-path update).
+	// No-op when hookPath is empty (hook not configured).
+	patchHookEntry := func(matcher, hookPath, baseName string) {
+		if hookPath == "" {
+			return
 		}
-		if entryMap["matcher"] != "Bash" {
-			continue
-		}
-		innerHooks, _ := entryMap["hooks"].([]any)
-		for j, h := range innerHooks {
-			hMap, ok := h.(map[string]any)
+		for i, entry := range preToolUse {
+			entryMap, ok := entry.(map[string]any)
 			if !ok {
 				continue
 			}
-			cmd, _ := hMap["command"].(string)
-			if cmd == hookPath {
-				// Already registered with correct path
-				return nil
+			if entryMap["matcher"] != matcher {
+				continue
 			}
-			if strings.Contains(cmd, hookBaseName) {
-				// Same hook script, stale path – update in place
-				hMap["command"] = hookPath
-				innerHooks[j] = hMap
-				entryMap["hooks"] = innerHooks
-				preToolUse[i] = entryMap
-				updated = true
+			innerHooks, _ := entryMap["hooks"].([]any)
+			for j, h := range innerHooks {
+				hMap, ok := h.(map[string]any)
+				if !ok {
+					continue
+				}
+				cmd, _ := hMap["command"].(string)
+				if cmd == hookPath {
+					return // already registered with correct path
+				}
+				if strings.Contains(cmd, baseName) {
+					// Same hook family, stale path – update in place
+					hMap["command"] = hookPath
+					innerHooks[j] = hMap
+					entryMap["hooks"] = innerHooks
+					preToolUse[i] = entryMap
+					return
+				}
+			}
+			// matcher found but baseName not in hooks: replace entire hooks list
+			entryMap["hooks"] = []any{map[string]any{"type": "command", "command": hookPath}}
+			preToolUse[i] = entryMap
+			return
+		}
+		// No matching matcher entry found: add new
+		preToolUse = append(preToolUse, map[string]any{
+			"matcher": matcher,
+			"hooks":   []any{map[string]any{"type": "command", "command": hookPath}},
+		})
+	}
+
+	patchHookEntry("Bash", bashHookPath, "c4-bash-security-hook.sh")
+	patchHookEntry("Edit|Write", editHookPath, "c4-edit-security-hook.sh")
+
+	hooks["PreToolUse"] = preToolUse
+	settings["hooks"] = hooks
+
+	// Ensure permissions.allow contains Read, Glob, Grep (safe read-only tools).
+	// Users who want tighter control can remove these manually.
+	perms, _ := settings["permissions"].(map[string]any)
+	if perms == nil {
+		perms = map[string]any{}
+	}
+	allowRaw, _ := perms["allow"]
+	var allowList []any
+	if arr, ok := allowRaw.([]any); ok {
+		allowList = arr
+	}
+	for _, tool := range []string{"Read", "Glob", "Grep"} {
+		found := false
+		for _, v := range allowList {
+			if s, ok := v.(string); ok && s == tool {
+				found = true
 				break
 			}
 		}
-		if updated {
-			break
+		if !found {
+			allowList = append(allowList, tool)
 		}
 	}
-
-	if !updated {
-		// No existing Bash hook entry for this script; add new entry
-		newEntry := map[string]any{
-			"matcher": "Bash",
-			"hooks": []any{
-				map[string]any{
-					"type":    "command",
-					"command": hookPath,
-				},
-			},
-		}
-		preToolUse = append(preToolUse, newEntry)
-	}
-	hooks["PreToolUse"] = preToolUse
-	settings["hooks"] = hooks
+	perms["allow"] = allowList
+	settings["permissions"] = perms
 
 	// Atomic write: tempfile → rename
 	dir := filepath.Dir(settingsPath)
@@ -604,10 +646,9 @@ func patchClaudeSettings(homeDir string, hookPath string) error {
 		os.Remove(tmpPath)
 		return fmt.Errorf("renaming temp file: %w", rErr)
 	}
-	// Restore readable permissions (os.CreateTemp creates with 0600)
 	_ = os.Chmod(settingsPath, 0644)
 
-	fmt.Fprintln(os.Stderr, "cq: registered Bash hook in ~/.claude/settings.json")
+	fmt.Fprintln(os.Stderr, "cq: hooks registered in ~/.claude/settings.json")
 	return nil
 }
 

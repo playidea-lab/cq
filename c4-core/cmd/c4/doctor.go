@@ -334,8 +334,10 @@ func checkHooks() checkResult {
 		}
 	}
 
-	hookFile := filepath.Join(home, ".claude", "hooks", "c4-bash-security-hook.sh")
-	if _, err := os.Stat(hookFile); os.IsNotExist(err) {
+	bashHookFile := filepath.Join(home, ".claude", "hooks", "c4-bash-security-hook.sh")
+	editHookFile := filepath.Join(home, ".claude", "hooks", "c4-edit-security-hook.sh")
+
+	if _, err := os.Stat(bashHookFile); os.IsNotExist(err) {
 		return checkResult{
 			Name:    "hooks",
 			Status:  checkWarn,
@@ -344,12 +346,30 @@ func checkHooks() checkResult {
 		}
 	}
 
-	// Check if installed hook content matches the embedded template
-	if hookNeedsUpdate(hookFile, hookShContent) {
+	// Check if installed bash hook content matches embedded template
+	if hookNeedsUpdate(bashHookFile, hookShContent) {
 		return checkResult{
 			Name:    "hooks",
 			Status:  checkWarn,
-			Message: fmt.Sprintf("hook outdated at %s (binary has newer version)", hookFile),
+			Message: fmt.Sprintf("bash hook outdated at %s (binary has newer version)", bashHookFile),
+			Fix:     "cq doctor --fix  (or: cq claude)",
+		}
+	}
+
+	// Check edit hook
+	if _, err := os.Stat(editHookFile); os.IsNotExist(err) {
+		return checkResult{
+			Name:    "hooks",
+			Status:  checkWarn,
+			Message: "c4-edit-security-hook.sh not installed",
+			Fix:     "cq doctor --fix  (or: cq claude)",
+		}
+	}
+	if hookNeedsUpdate(editHookFile, editHookShContent) {
+		return checkResult{
+			Name:    "hooks",
+			Status:  checkWarn,
+			Message: fmt.Sprintf("edit hook outdated at %s (binary has newer version)", editHookFile),
 			Fix:     "cq doctor --fix  (or: cq claude)",
 		}
 	}
@@ -360,21 +380,30 @@ func checkHooks() checkResult {
 		return checkResult{
 			Name:    "hooks",
 			Status:  checkWarn,
-			Message: fmt.Sprintf("hook file found but ~/.claude/settings.json missing: %v", err),
+			Message: fmt.Sprintf("hook files found but ~/.claude/settings.json missing: %v", err),
 		}
 	}
-	if !strings.Contains(string(data), "c4-bash-security-hook") {
+	settingsStr := string(data)
+	if !strings.Contains(settingsStr, "c4-bash-security-hook") {
 		return checkResult{
 			Name:    "hooks",
 			Status:  checkWarn,
-			Message: "hook file exists but not registered in settings.json",
+			Message: "bash hook exists but not registered in settings.json",
 			Fix:     "cq claude to patch settings.json",
+		}
+	}
+	if !strings.Contains(settingsStr, "c4-edit-security-hook") {
+		return checkResult{
+			Name:    "hooks",
+			Status:  checkWarn,
+			Message: "edit hook exists but not registered in settings.json",
+			Fix:     "cq doctor --fix  (or: cq claude)",
 		}
 	}
 	return checkResult{
 		Name:    "hooks",
 		Status:  checkOK,
-		Message: fmt.Sprintf("%s (registered in settings.json)", hookFile),
+		Message: fmt.Sprintf("bash+edit hooks installed and registered in settings.json"),
 	}
 }
 

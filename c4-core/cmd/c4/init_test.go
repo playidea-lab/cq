@@ -720,8 +720,8 @@ func TestInitAndLaunch_Idempotent(t *testing.T) {
 
 	hooks, _ := settings["hooks"].(map[string]any)
 	preToolUse, _ := hooks["PreToolUse"].([]any)
-	if len(preToolUse) != 1 {
-		t.Errorf("expected 1 PreToolUse entry after 2 calls, got %d", len(preToolUse))
+	if len(preToolUse) != 2 {
+		t.Errorf("expected 2 PreToolUse entries (Bash+Edit|Write) after 2 calls, got %d", len(preToolUse))
 	}
 }
 
@@ -729,7 +729,7 @@ func TestPatchClaudeSettings_NewFile(t *testing.T) {
 	homeDir := t.TempDir()
 	hookPath := "/usr/local/bin/hook.sh"
 
-	if err := patchClaudeSettings(homeDir, hookPath); err != nil {
+	if err := patchClaudeSettings(homeDir, hookPath, hookPath); err != nil {
 		t.Fatalf("patchClaudeSettings: %v", err)
 	}
 
@@ -749,8 +749,8 @@ func TestPatchClaudeSettings_NewFile(t *testing.T) {
 		t.Fatal("missing hooks key")
 	}
 	preToolUse, _ := hooks["PreToolUse"].([]any)
-	if len(preToolUse) != 1 {
-		t.Fatalf("expected 1 PreToolUse entry, got %d", len(preToolUse))
+	if len(preToolUse) != 2 {
+		t.Fatalf("expected 2 PreToolUse entries (Bash+Edit|Write), got %d", len(preToolUse))
 	}
 	entry, _ := preToolUse[0].(map[string]any)
 	if entry["matcher"] != "Bash" {
@@ -784,7 +784,7 @@ func TestPatchClaudeSettings_AppendToExisting(t *testing.T) {
 	os.WriteFile(filepath.Join(settingsDir, "settings.json"), data, 0644)
 
 	hookPath := "/path/to/hook.sh"
-	if err := patchClaudeSettings(homeDir, hookPath); err != nil {
+	if err := patchClaudeSettings(homeDir, hookPath, hookPath); err != nil {
 		t.Fatalf("patchClaudeSettings: %v", err)
 	}
 
@@ -805,8 +805,8 @@ func TestPatchClaudeSettings_AppendToExisting(t *testing.T) {
 	// Hook added
 	hooks, _ := settings["hooks"].(map[string]any)
 	preToolUse, _ := hooks["PreToolUse"].([]any)
-	if len(preToolUse) != 1 {
-		t.Fatalf("expected 1 PreToolUse entry, got %d", len(preToolUse))
+	if len(preToolUse) != 2 {
+		t.Fatalf("expected 2 PreToolUse entries (Bash+Edit|Write), got %d", len(preToolUse))
 	}
 }
 
@@ -815,12 +815,12 @@ func TestPatchClaudeSettings_Idempotent(t *testing.T) {
 	hookPath := "/path/to/hook.sh"
 
 	// First call
-	if err := patchClaudeSettings(homeDir, hookPath); err != nil {
+	if err := patchClaudeSettings(homeDir, hookPath, hookPath); err != nil {
 		t.Fatalf("first call: %v", err)
 	}
 
 	// Second call — should not duplicate
-	if err := patchClaudeSettings(homeDir, hookPath); err != nil {
+	if err := patchClaudeSettings(homeDir, hookPath, hookPath); err != nil {
 		t.Fatalf("second call: %v", err)
 	}
 
@@ -832,15 +832,15 @@ func TestPatchClaudeSettings_Idempotent(t *testing.T) {
 	hooks, _ := settings["hooks"].(map[string]any)
 	preToolUse, _ := hooks["PreToolUse"].([]any)
 
-	if len(preToolUse) != 1 {
-		t.Errorf("expected 1 PreToolUse entry after 2 calls, got %d", len(preToolUse))
+	if len(preToolUse) != 2 {
+		t.Errorf("expected 2 PreToolUse entries (Bash+Edit|Write) after 2 calls, got %d", len(preToolUse))
 	}
 
-	// Count occurrences of hookPath in raw JSON
+	// hookPath appears twice: once for Bash matcher, once for Edit|Write matcher
 	content := string(data)
 	count := strings.Count(content, hookPath)
-	if count != 1 {
-		t.Errorf("hookPath appears %d times, want 1", count)
+	if count != 2 {
+		t.Errorf("hookPath appears %d times, want 2 (Bash+Edit|Write)", count)
 	}
 }
 
@@ -853,7 +853,7 @@ func TestPatchClaudeSettings_CorruptedJSON(t *testing.T) {
 	os.WriteFile(settingsPath, []byte("{invalid json!!!"), 0644)
 
 	hookPath := "/path/to/hook.sh"
-	if err := patchClaudeSettings(homeDir, hookPath); err != nil {
+	if err := patchClaudeSettings(homeDir, hookPath, hookPath); err != nil {
 		t.Fatalf("patchClaudeSettings: %v", err)
 	}
 
@@ -885,8 +885,8 @@ func TestPatchClaudeSettings_CorruptedJSON(t *testing.T) {
 	}
 	hooks, _ := settings["hooks"].(map[string]any)
 	preToolUse, _ := hooks["PreToolUse"].([]any)
-	if len(preToolUse) != 1 {
-		t.Fatalf("expected 1 PreToolUse entry, got %d", len(preToolUse))
+	if len(preToolUse) != 2 {
+		t.Fatalf("expected 2 PreToolUse entries (Bash+Edit|Write), got %d", len(preToolUse))
 	}
 }
 
