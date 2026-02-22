@@ -111,6 +111,6 @@ func openDB() (*sql.DB, error) {
 	// Single connection prevents WAL snapshot conflicts between pooled connections
 	db.SetMaxOpenConns(1)
 	db.Exec("PRAGMA journal_mode=WAL")
-	db.Exec("PRAGMA busy_timeout=5000")
+	db.Exec("PRAGMA busy_timeout=30000") // 30s: supports up to ~8 concurrent sessions
 	return db, nil
 }
