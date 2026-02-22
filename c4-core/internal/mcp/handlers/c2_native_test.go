@@ -183,6 +183,24 @@ func TestWorkspaceSave_MissingState(t *testing.T) {
 	}
 }
 
+func TestWorkspaceSaveHandler_InvalidJSON(t *testing.T) {
+	reg := newC2Registry(t)
+
+	result, err := reg.Call("c4_workspace_save", json.RawMessage("not-json"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	m := result.(map[string]any)
+	if m["error"] == nil {
+		t.Fatal("expected error for invalid JSON")
+	}
+	errStr, ok := m["error"].(string)
+	if !ok || len(errStr) == 0 {
+		t.Fatal("expected non-empty error string")
+	}
+}
+
 // =========================================================================
 // Persona Learn Tests
 // =========================================================================
@@ -297,6 +315,24 @@ func TestProfileSave_MissingData(t *testing.T) {
 	m := result.(map[string]any)
 	if m["error"] == nil {
 		t.Fatal("expected error for missing data")
+	}
+}
+
+func TestProfileSaveHandler_InvalidJSON(t *testing.T) {
+	reg := newC2Registry(t)
+
+	result, err := reg.Call("c4_profile_save", json.RawMessage("{broken"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	m := result.(map[string]any)
+	if m["error"] == nil {
+		t.Fatal("expected error for invalid JSON")
+	}
+	errStr, ok := m["error"].(string)
+	if !ok || len(errStr) == 0 {
+		t.Fatal("expected non-empty error string")
 	}
 }
 

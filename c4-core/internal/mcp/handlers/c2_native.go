@@ -191,7 +191,9 @@ func workspaceSaveHandler() mcp.HandlerFunc {
 	return func(rawArgs json.RawMessage) (any, error) {
 		var raw map[string]json.RawMessage
 		if len(rawArgs) > 0 {
-			json.Unmarshal(rawArgs, &raw)
+			if err := json.Unmarshal(rawArgs, &raw); err != nil {
+				return map[string]any{"error": fmt.Sprintf("invalid arguments: %v", err)}, nil
+			}
 		}
 
 		var projectDir string
@@ -286,7 +288,9 @@ func profileSaveHandler() mcp.HandlerFunc {
 	return func(rawArgs json.RawMessage) (any, error) {
 		var raw map[string]json.RawMessage
 		if len(rawArgs) > 0 {
-			json.Unmarshal(rawArgs, &raw)
+			if err := json.Unmarshal(rawArgs, &raw); err != nil {
+				return map[string]any{"error": fmt.Sprintf("invalid arguments: %v", err)}, nil
+			}
 		}
 
 		dataRaw, ok := raw["data"]
