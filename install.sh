@@ -8,6 +8,7 @@ set -e
 TIER="solo"
 DRY_RUN=0
 INSTALL_DIR="${HOME}/.local/bin"
+VERSION=""
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -16,8 +17,10 @@ while [ $# -gt 0 ]; do
     --dry-run)   DRY_RUN=1 ;;
     --install-dir) shift; INSTALL_DIR="$1" ;;
     --install-dir=*) INSTALL_DIR="${1#--install-dir=}" ;;
+    --version) shift; VERSION="$1" ;;
+    --version=*) VERSION="${1#--version=}" ;;
     -h|--help)
-      echo "Usage: install.sh [--tier solo|connected|full] [--dry-run]"
+      echo "Usage: install.sh [--tier solo|connected|full] [--dry-run] [--version vX.Y.Z]"
       exit 0 ;;
     *) echo "Unknown option: $1" >&2; exit 1 ;;
   esac
@@ -43,8 +46,23 @@ case "$ARCH" in
   *) echo "Error: unsupported arch '$ARCH'" >&2; exit 1 ;;
 esac
 
+if [ "$GOOS" = "darwin" ] && [ "$GOARCH" = "amd64" ]; then
+  echo "Error: Intel Mac (darwin/amd64) is not supported."
+  echo "CQ requires Apple Silicon (arm64). See: https://github.com/PlayIdea-Lab/cq/releases"
+  if [ "$DRY_RUN" = "1" ]; then exit 0; else exit 1; fi
+fi
+
 ARTIFACT="cq-${TIER}-${GOOS}-${GOARCH}"
-URL="https://github.com/PlayIdea-Lab/cq/releases/latest/download/${ARTIFACT}"
+if [ -z "$VERSION" ]; then
+  URL="https://github.com/PlayIdea-Lab/cq/releases/latest/download/${ARTIFACT}"
+else
+  API_URL="https://api.github.com/repos/PlayIdea-Lab/cq/releases/tags/${VERSION}"
+  if ! curl -sf "$API_URL" > /dev/null 2>&1; then
+    echo "Error: Version '${VERSION}' not found. See: https://github.com/PlayIdea-Lab/cq/releases" >&2
+    exit 1
+  fi
+  URL="https://github.com/PlayIdea-Lab/cq/releases/download/${VERSION}/${ARTIFACT}"
+fi
 
 if [ "$DRY_RUN" = "1" ]; then
   echo "Would download: ${URL}"
