@@ -78,10 +78,16 @@ func knowledgeRecordNativeHandler(opts *KnowledgeNativeOpts) mcp.HandlerFunc {
 			}
 		}
 
-		// Async cloud push
+		// Async cloud push — include embedding if available so Supabase pgvector is populated.
 		if opts.Cloud != nil {
+			var embedding []float32
+			if opts.Searcher != nil {
+				if vs := opts.Searcher.VectorStore(); vs != nil {
+					embedding = vs.Get(docID)
+				}
+			}
 			go func() {
-				if syncErr := knowledge.SyncAfterRecord(opts.Cloud, params, docID); syncErr != nil {
+				if syncErr := knowledge.SyncAfterRecord(opts.Cloud, params, docID, embedding); syncErr != nil {
 					fmt.Fprintf(os.Stderr, "c4: knowledge cloud sync: %v\n", syncErr)
 				}
 			}()

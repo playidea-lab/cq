@@ -195,7 +195,7 @@ func TestPullNilCloud(t *testing.T) {
 
 func TestSyncAfterRecord(t *testing.T) {
 	cloud := newMockCloud()
-	err := SyncAfterRecord(cloud, map[string]any{"title": "test"}, "exp-123")
+	err := SyncAfterRecord(cloud, map[string]any{"title": "test"}, "exp-123", nil)
 	if err != nil {
 		t.Fatalf("SyncAfterRecord: %v", err)
 	}
@@ -205,7 +205,7 @@ func TestSyncAfterRecord(t *testing.T) {
 }
 
 func TestSyncAfterRecordNilCloud(t *testing.T) {
-	err := SyncAfterRecord(nil, nil, "")
+	err := SyncAfterRecord(nil, nil, "", nil)
 	if err != nil {
 		t.Error("nil cloud should return nil")
 	}

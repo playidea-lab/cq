@@ -23,21 +23,22 @@ type KnowledgeCloudClient struct {
 
 // cloudDocRow maps to the c4_documents Supabase table.
 type cloudDocRow struct {
-	DocID           string `json:"doc_id"`
-	ProjectID       string `json:"project_id,omitempty"`
-	DocType         string `json:"doc_type"`
-	Title           string `json:"title"`
-	Domain          string `json:"domain"`
-	Tags            string `json:"tags"`                        // JSON array string
-	Body            string `json:"body"`
-	Metadata        string `json:"metadata"`                    // JSON object string
-	ContentHash     string `json:"content_hash"`
-	Version         int    `json:"version"`
-	CreatedBy       string `json:"created_by"`
-	Visibility      string `json:"visibility,omitempty"`        // private, team, public
-	CreatedByUserID string `json:"created_by_user_id,omitempty"`
-	CreatedAt       string `json:"created_at,omitempty"`
-	UpdatedAt       string `json:"updated_at,omitempty"`
+	DocID           string    `json:"doc_id"`
+	ProjectID       string    `json:"project_id,omitempty"`
+	DocType         string    `json:"doc_type"`
+	Title           string    `json:"title"`
+	Domain          string    `json:"domain"`
+	Tags            string    `json:"tags"`                        // JSON array string
+	Body            string    `json:"body"`
+	Metadata        string    `json:"metadata"`                    // JSON object string
+	ContentHash     string    `json:"content_hash"`
+	Version         int       `json:"version"`
+	CreatedBy       string    `json:"created_by"`
+	Visibility      string    `json:"visibility,omitempty"`        // private, team, public
+	CreatedByUserID string    `json:"created_by_user_id,omitempty"`
+	CreatedAt       string    `json:"created_at,omitempty"`
+	UpdatedAt       string    `json:"updated_at,omitempty"`
+	Embedding       []float32 `json:"embedding,omitempty"` // pgvector: uploaded when available
 }
 
 // NewKnowledgeCloudClient creates a new knowledge cloud sync client.
@@ -105,6 +106,23 @@ func (k *KnowledgeCloudClient) SyncDocument(params map[string]any, docID string)
 		}
 	}
 
+	// Embedding: passed via params["_embedding"] by SyncAfterRecord when available.
+	// pgvector accepts JSON float32 array directly via PostgREST.
+	var embedding []float32
+	if raw, ok := params["_embedding"]; ok {
+		switch v := raw.(type) {
+		case []float32:
+			embedding = v
+		case []any:
+			embedding = make([]float32, len(v))
+			for i, f := range v {
+				if fv, ok2 := f.(float64); ok2 {
+					embedding[i] = float32(fv)
+				}
+			}
+		}
+	}
+
 	row := cloudDocRow{
 		DocID:       docID,
 		ProjectID:   k.projectID,
@@ -118,6 +136,7 @@ func (k *KnowledgeCloudClient) SyncDocument(params map[string]any, docID string)
 		Version:     version,
 		Visibility:  visibility,
 		CreatedBy:   "",
+		Embedding:   embedding,
 	}
 
 	return k.post("c4_documents", row)

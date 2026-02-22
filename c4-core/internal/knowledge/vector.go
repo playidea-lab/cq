@@ -144,6 +144,16 @@ func (v *VectorStore) GetModel(docID string) string {
 	return model
 }
 
+// Get retrieves the stored embedding vector for a document.
+// Returns nil if not found.
+func (v *VectorStore) Get(docID string) []float32 {
+	var raw []byte
+	if err := v.db.QueryRow("SELECT embedding FROM knowledge_vectors WHERE doc_id = ?", docID).Scan(&raw); err != nil {
+		return nil
+	}
+	return decodeEmbedding(raw)
+}
+
 // CountByModel returns the count of embeddings grouped by model name.
 func (v *VectorStore) CountByModel() (map[string]int, error) {
 	rows, err := v.db.Query("SELECT COALESCE(model, ''), COUNT(*) FROM knowledge_vectors GROUP BY model")

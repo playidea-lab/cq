@@ -69,7 +69,7 @@ func experimentRecordNativeHandler(opts *KnowledgeNativeOpts) mcp.HandlerFunc {
 		if opts.Cloud != nil {
 			params["doc_type"] = "experiment"
 			go func() {
-				knowledge.SyncAfterRecord(opts.Cloud, params, docID)
+				knowledge.SyncAfterRecord(opts.Cloud, params, docID, nil)
 			}()
 		}
 		if knowledgeEventPub != nil {

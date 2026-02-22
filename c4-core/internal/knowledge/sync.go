@@ -147,9 +147,18 @@ func Pull(store *Store, cloud CloudSyncer, docType string, limit int, force bool
 }
 
 // SyncAfterRecord pushes a newly recorded document to cloud (async-safe).
-func SyncAfterRecord(cloud CloudSyncer, params map[string]any, docID string) error {
+// embedding may be nil if not yet generated; it will be uploaded when available.
+func SyncAfterRecord(cloud CloudSyncer, params map[string]any, docID string, embedding []float32) error {
 	if cloud == nil {
 		return nil
+	}
+	if len(embedding) > 0 {
+		merged := make(map[string]any, len(params)+1)
+		for k, v := range params {
+			merged[k] = v
+		}
+		merged["_embedding"] = embedding
+		return cloud.SyncDocument(merged, docID)
 	}
 	return cloud.SyncDocument(params, docID)
 }
