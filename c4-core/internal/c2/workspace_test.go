@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 func TestCreateWorkspace_AcademicPaper(t *testing.T) {
@@ -215,5 +216,40 @@ func TestLookupSectionStatus(t *testing.T) {
 		if got != tt.want {
 			t.Errorf("lookupSectionStatus(%q) = %q, want %q", tt.input, got, tt.want)
 		}
+	}
+}
+
+func TestParseDiscoverSection_KoreanSlug(t *testing.T) {
+	// 40 rune Korean title — slug should be exactly 40 runes, valid UTF-8
+	title40 := strings.Repeat("가", 40)
+	section40 := "| # | 자료 | 유형 | 관련도 | 상태 | 비고 |\n|---|------|------|--------|------|------|\n| 1 | " + title40 + " | paper | H | 발견 | - |\n"
+	sources40 := parseDiscoverSection(section40)
+	if len(sources40) != 1 {
+		t.Fatalf("expected 1 source, got %d", len(sources40))
+	}
+	slug40 := sources40[0].ID
+	if !utf8.ValidString(slug40) {
+		t.Errorf("slug is not valid UTF-8: %q", slug40)
+	}
+	if utf8.RuneCountInString(slug40) > 40 {
+		t.Errorf("slug rune count = %d, want <= 40", utf8.RuneCountInString(slug40))
+	}
+
+	// 41 rune Korean title — should be truncated to 40 runes, non-empty after Trim
+	title41 := strings.Repeat("나", 41)
+	section41 := "| # | 자료 | 유형 | 관련도 | 상태 | 비고 |\n|---|------|------|--------|------|------|\n| 1 | " + title41 + " | paper | H | 발견 | - |\n"
+	sources41 := parseDiscoverSection(section41)
+	if len(sources41) != 1 {
+		t.Fatalf("expected 1 source, got %d", len(sources41))
+	}
+	slug41 := sources41[0].ID
+	if !utf8.ValidString(slug41) {
+		t.Errorf("slug is not valid UTF-8: %q", slug41)
+	}
+	if utf8.RuneCountInString(slug41) != 40 {
+		t.Errorf("slug rune count = %d, want 40", utf8.RuneCountInString(slug41))
+	}
+	if slug41 == "" {
+		t.Error("slug must not be empty after Trim")
 	}
 }

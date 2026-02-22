@@ -440,8 +440,8 @@ func parseDiscoverSection(text string) []Source {
 			continue
 		}
 		slug := slugRe.ReplaceAllString(cells[1], "_")
-		if len(slug) > 40 {
-			slug = slug[:40]
+		if len([]rune(slug)) > 40 {
+			slug = string([]rune(slug)[:40])
 		}
 		slug = strings.Trim(slug, "_")
 		if slug == "" {
