@@ -23,8 +23,16 @@ type ProfileDiff struct {
 	Summary          string        `json:"summary"`
 }
 
+var defaultAssertiveWords = []string{"있습니다", "오류가", "잘못", "틀린", "부적절"}
+var defaultSoftWords = []string{"필요합니다", "생각됩니다", "확인", "바랍니다", "감사"}
+
 // AnalyzeEdits extracts edit patterns from AI draft vs user final version.
 func AnalyzeEdits(original, edited string) []EditPattern {
+	return analyzeEdits(original, edited, defaultAssertiveWords, defaultSoftWords)
+}
+
+// analyzeEdits is the unexported helper that accepts custom tone dictionaries.
+func analyzeEdits(original, edited string, assertive, soft []string) []EditPattern {
 	var patterns []EditPattern
 
 	origLines := strings.Split(original, "\n")
@@ -33,7 +41,7 @@ func AnalyzeEdits(original, edited string) []EditPattern {
 	deletions, additions := computeLineDiff(origLines, editLines)
 
 	// Detect tone softening
-	if examples := detectToneSoftening(deletions, additions); len(examples) > 0 {
+	if examples := detectToneSoftening(deletions, additions, assertive, soft); len(examples) > 0 {
 		patterns = append(patterns, EditPattern{
 			Category:    "tone",
 			Description: "User softened tone: assertive → questioning/hedging",
@@ -144,14 +152,18 @@ func RunPersonaLearn(draftPath, finalPath, profilePath string, autoApply bool) (
 		return nil, fmt.Errorf("read final: %w", err)
 	}
 
-	patterns := AnalyzeEdits(string(draftBytes), string(finalBytes))
+	// Load profile for custom tone dictionaries; ignore missing-file errors (silent fallback).
+	profile, _ := LoadProfile(profilePath)
+	if profile == nil {
+		profile = map[string]any{}
+	}
+	assertive := profileStringSlice(profile, "learned_patterns", "tone_assertive", defaultAssertiveWords)
+	soft := profileStringSlice(profile, "learned_patterns", "tone_soft", defaultSoftWords)
+
+	patterns := analyzeEdits(string(draftBytes), string(finalBytes), assertive, soft)
 	diff := SuggestProfileUpdates(patterns)
 
 	if autoApply && (len(diff.ToneUpdates) > 0 || len(diff.StructureUpdates) > 0) {
-		profile, err := LoadProfile(profilePath)
-		if err != nil {
-			return nil, fmt.Errorf("load profile: %w", err)
-		}
 		UpdateLearnedPatterns(profile, diff.ToneUpdates, diff.StructureUpdates, nil)
 		if err := SaveProfile(profile, profilePath); err != nil {
 			return nil, fmt.Errorf("save profile: %w", err)
@@ -159,6 +171,22 @@ func RunPersonaLearn(draftPath, finalPath, profilePath string, autoApply bool) (
 	}
 
 	return &diff, nil
+}
+
+// profileStringSlice retrieves a string slice from profile[section][key],
+// returning fallback if absent.
+func profileStringSlice(profile map[string]any, section, key string, fallback []string) []string {
+	if profile == nil {
+		return fallback
+	}
+	sec, ok := profile[section].(map[string]any)
+	if !ok {
+		return fallback
+	}
+	if v := toStringSlice(sec[key]); len(v) > 0 {
+		return v
+	}
+	return fallback
 }
 
 // =========================================================================
@@ -204,10 +232,7 @@ func computeLineDiff(orig, edit []string) (deletions, additions []string) {
 	return
 }
 
-func detectToneSoftening(deletions, additions []string) []string {
-	assertive := []string{"있습니다", "오류가", "잘못", "틀린", "부적절"}
-	soft := []string{"필요합니다", "생각됩니다", "확인", "바랍니다", "감사"}
-
+func detectToneSoftening(deletions, additions []string, assertive, soft []string) []string {
 	var examples []string
 	for _, d := range deletions {
 		if containsAny(d, assertive) {

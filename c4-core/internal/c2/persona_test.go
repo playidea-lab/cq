@@ -176,3 +176,89 @@ func TestDetectSectionReorder_NoReorder(t *testing.T) {
 		t.Error("expected false for same order")
 	}
 }
+
+func TestAnalyzeEditsWithWords_CustomDict(t *testing.T) {
+	original := "ERROR occurred in the module."
+	edited := "WARN observed in the module."
+
+	patterns := analyzeEdits(original, edited, []string{"ERROR"}, []string{"WARN"})
+	found := false
+	for _, p := range patterns {
+		if p.Category == "tone" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("expected tone softening pattern with custom dict")
+	}
+}
+
+func TestRunPersonaLearn_ProfileDict(t *testing.T) {
+	dir := t.TempDir()
+	draftPath := filepath.Join(dir, "draft.md")
+	finalPath := filepath.Join(dir, "final.md")
+	profilePath := filepath.Join(dir, "profile.yaml")
+
+	os.WriteFile(draftPath, []byte("ERROR occurred in the module."), 0644)
+	os.WriteFile(finalPath, []byte("WARN observed in the module."), 0644)
+	os.WriteFile(profilePath, []byte("learned_patterns:\n  tone_assertive:\n    - ERROR\n  tone_soft:\n    - WARN\n"), 0644)
+
+	diff, err := RunPersonaLearn(draftPath, finalPath, profilePath, false)
+	if err != nil {
+		t.Fatalf("RunPersonaLearn: %v", err)
+	}
+	found := false
+	for _, p := range diff.NewPatterns {
+		if p.Category == "tone" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("expected tone pattern with profile-injected custom dict")
+	}
+}
+
+func TestRunPersonaLearn_NoProfile(t *testing.T) {
+	dir := t.TempDir()
+	draftPath := filepath.Join(dir, "draft.md")
+	finalPath := filepath.Join(dir, "final.md")
+	// No profile file — should fall back to default dicts without error.
+	profilePath := filepath.Join(dir, "nonexistent_profile.yaml")
+
+	os.WriteFile(draftPath, []byte("이 코드에 오류가 있습니다."), 0644)
+	os.WriteFile(finalPath, []byte("이 코드에 확인이 필요합니다."), 0644)
+
+	diff, err := RunPersonaLearn(draftPath, finalPath, profilePath, false)
+	if err != nil {
+		t.Fatalf("expected no error without profile, got: %v", err)
+	}
+	if diff == nil {
+		t.Fatal("expected non-nil diff")
+	}
+}
+
+func TestRunPersonaLearn_MalformedYAMLAutoApply(t *testing.T) {
+	dir := t.TempDir()
+	draftPath := filepath.Join(dir, "draft.md")
+	finalPath := filepath.Join(dir, "final.md")
+	profilePath := filepath.Join(dir, "profile.yaml")
+
+	os.WriteFile(draftPath, []byte("이 코드에 오류가 있습니다."), 0644)
+	os.WriteFile(finalPath, []byte("이 코드에 확인이 필요합니다."), 0644)
+	// Write invalid YAML to trigger parse error → profile will be nil inside LoadProfile.
+	os.WriteFile(profilePath, []byte(":::invalid yaml:::\n\t\tbad: [unclosed"), 0644)
+
+	// Must not panic even with autoApply=true.
+	diff, err := RunPersonaLearn(draftPath, finalPath, profilePath, true)
+	if err != nil {
+		// Malformed YAML returns error from LoadProfile; nil-guard prevents panic.
+		// Either outcome (error or graceful fallback) is acceptable per DoD option (b).
+		t.Logf("RunPersonaLearn with malformed YAML returned error (acceptable): %v", err)
+		return
+	}
+	if diff == nil {
+		t.Fatal("expected non-nil diff on graceful fallback")
+	}
+}
