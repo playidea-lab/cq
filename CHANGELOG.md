@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.26.0] - 2026-02-23
+
+### ✨ Features
+- **knowledge**: `KnowledgeHitTracker` — 세션별 지식 검색 히트/미스 카운터 (`ab9f53d5`)
+  - `enrichWithKnowledge()` 호출마다 결과 수 기록 (hits: >0, misses: 0)
+  - `c4_status` 응답에 `knowledge_search_stats` 필드 추가 (`total_searches`, `hits`, `misses`, `hit_rate`)
+  - `llm_gateway` 빌드 태그 없이도 접근 가능 (CostTracker와 동일한 패턴)
+  - O(1) 메모리 카운터 방식 (`hits/misses int` — 슬라이스 아님), `sync.Mutex` 동시성 안전
+
+### 📚 Documentation
+- **agents**: 테스트 수 현행화 — KnowledgeHitTracker +7 (~1,348 → ~1,355) (`3efb506b`)
+
+---
+
 ## [0.25.0] - 2026-02-23
 
 ### ✨ Features
