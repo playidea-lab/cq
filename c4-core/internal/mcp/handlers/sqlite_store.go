@@ -690,6 +690,14 @@ func (s *SQLiteStore) SubmitTask(taskID, workerID, commitSHA, handoff string, re
 		}, nil
 	}
 
+	// Validate evidence types in handoff (if any)
+	ho := parseHandoff(handoff)
+	for _, e := range ho.Evidence {
+		if !isValidEvidenceType(e.Type) {
+			return nil, fmt.Errorf("invalid evidence type %q: allowed values are screenshot|log|test_result", e.Type)
+		}
+	}
+
 	// Store task completion + handoff
 	_, err = s.db.Exec(`
 		UPDATE c4_tasks SET status = 'done', commit_sha = ?, handoff = ?, updated_at = CURRENT_TIMESTAMP

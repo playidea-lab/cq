@@ -146,13 +146,33 @@ func (s *SQLiteStore) autoRecordKnowledge(task *Task, summary string, filesChang
 	}()
 }
 
+// HandoffEvidence attaches CDP or test artifacts to a submit.
+type HandoffEvidence struct {
+	Type        string `json:"type"`         // enum: "screenshot"|"log"|"test_result"
+	ArtifactID  string `json:"artifact_id"`  // c4_artifact_save로 저장된 ID
+	Description string `json:"description"`
+}
+
+// Evidence type constants
+const (
+	EvidenceTypeScreenshot = "screenshot"
+	EvidenceTypeLog        = "log"
+	EvidenceTypeTestResult = "test_result"
+)
+
+// isValidEvidenceType checks if the evidence type is one of the allowed values.
+func isValidEvidenceType(t string) bool {
+	return t == EvidenceTypeScreenshot || t == EvidenceTypeLog || t == EvidenceTypeTestResult
+}
+
 // handoffData holds structured data parsed from a handoff JSON string.
 type handoffData struct {
-	Summary      string   `json:"summary"`
-	FilesChanged []string `json:"files_changed"`
-	Discoveries  []string `json:"discoveries"`
-	Concerns     []string `json:"concerns"`
-	Rationale    string   `json:"rationale"`
+	Summary      string            `json:"summary"`
+	FilesChanged []string          `json:"files_changed"`
+	Discoveries  []string          `json:"discoveries"`
+	Concerns     []string          `json:"concerns"`
+	Rationale    string            `json:"rationale"`
+	Evidence     []HandoffEvidence `json:"evidence,omitempty"` // CDP/test artifact references
 }
 
 // parseHandoff extracts structured fields from a handoff JSON string.
