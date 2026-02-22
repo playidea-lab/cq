@@ -15,6 +15,14 @@ type Provider interface {
 	IsAvailable() bool
 }
 
+// Tool describes a tool that can be called by the LLM.
+// Currently only the Anthropic provider uses this for tool-list caching.
+type Tool struct {
+	Name        string         `json:"name"`
+	Description string         `json:"description,omitempty"`
+	InputSchema map[string]any `json:"input_schema,omitempty"`
+}
+
 // ChatRequest holds parameters for an LLM chat call.
 type ChatRequest struct {
 	Model             string         `json:"model,omitempty"`
@@ -24,6 +32,13 @@ type ChatRequest struct {
 	System            string         `json:"system,omitempty"`
 	Metadata          map[string]any `json:"metadata,omitempty"`
 	CacheSystemPrompt bool           `json:"cache_system_prompt,omitempty"`
+	// Tools is the list of tools available to the model (Anthropic only).
+	Tools []Tool `json:"tools,omitempty"`
+	// CacheTools instructs the Anthropic provider to attach cache_control to
+	// the last tool in the Tools slice, enabling prompt-cache reuse for the
+	// tool list. Implies the prompt-caching beta header even when
+	// CacheSystemPrompt is false.
+	CacheTools bool `json:"cache_tools,omitempty"`
 }
 
 // ChatResponse holds the result of an LLM chat call.

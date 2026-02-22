@@ -63,6 +63,15 @@ type anthropicSystemBlock struct {
 	CacheControl *anthropicCacheControl `json:"cache_control,omitempty"`
 }
 
+// anthropicTool is the wire format for a tool in the Anthropic Messages API.
+// It mirrors Tool but adds an optional cache_control field.
+type anthropicTool struct {
+	Name        string                 `json:"name"`
+	Description string                 `json:"description,omitempty"`
+	InputSchema map[string]any         `json:"input_schema,omitempty"`
+	CacheControl *anthropicCacheControl `json:"cache_control,omitempty"`
+}
+
 // anthropicRequest is the request body for the Anthropic Messages API.
 // System is json.RawMessage to support both plain string and content block array.
 type anthropicRequest struct {
@@ -70,6 +79,7 @@ type anthropicRequest struct {
 	MaxTokens int             `json:"max_tokens"`
 	System    json.RawMessage `json:"system,omitempty"`
 	Messages  []Message       `json:"messages"`
+	Tools     []anthropicTool `json:"tools,omitempty"`
 }
 
 // anthropicResponse is the response from the Anthropic Messages API.
@@ -124,6 +134,22 @@ func (p *AnthropicProvider) Chat(ctx context.Context, req *ChatRequest) (*ChatRe
 		}
 	}
 
+	// Tools: convert to wire format, optionally attaching cache_control to the last tool.
+	if len(req.Tools) > 0 {
+		tools := make([]anthropicTool, len(req.Tools))
+		for i, t := range req.Tools {
+			tools[i] = anthropicTool{
+				Name:        t.Name,
+				Description: t.Description,
+				InputSchema: t.InputSchema,
+			}
+		}
+		if req.CacheTools {
+			tools[len(tools)-1].CacheControl = &anthropicCacheControl{Type: "ephemeral"}
+		}
+		apiReq.Tools = tools
+	}
+
 	body, err := json.Marshal(apiReq)
 	if err != nil {
 		return nil, fmt.Errorf("marshal request: %w", err)
@@ -136,7 +162,7 @@ func (p *AnthropicProvider) Chat(ctx context.Context, req *ChatRequest) (*ChatRe
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("x-api-key", p.apiKey)
 	httpReq.Header.Set("anthropic-version", anthropicAPIVersion)
-	if req.CacheSystemPrompt {
+	if req.CacheSystemPrompt || req.CacheTools {
 		httpReq.Header.Set("anthropic-beta", anthropicBetaCaching)
 	}
 	resp, err := p.client.Do(httpReq)
