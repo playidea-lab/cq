@@ -989,7 +989,7 @@ func TestAgent_FetchChannelContext_Success(t *testing.T) {
 		ProjectID:   "proj-1",
 	})
 
-	msgs, err := agent.fetchChannelContext("chan-xyz", 20)
+	msgs, err := agent.fetchChannelContext(context.Background(), "chan-xyz", 20)
 	if err != nil {
 		t.Fatalf("fetchChannelContext error: %v", err)
 	}
@@ -1028,7 +1028,7 @@ func TestAgent_FetchChannelContext_ServerError(t *testing.T) {
 		ProjectID:   "proj-1",
 	})
 
-	_, err := agent.fetchChannelContext("ch-1", 10)
+	_, err := agent.fetchChannelContext(context.Background(), "ch-1", 10)
 	if err == nil {
 		t.Fatal("expected error on 500 response")
 	}

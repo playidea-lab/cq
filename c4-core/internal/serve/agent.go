@@ -42,11 +42,10 @@ var cqMentionRe = regexp.MustCompile(`(?i)(?:^|[\s,;:!?.(])@cq(?:$|[^a-zA-Z0-9_]
 
 // msgRequest holds parameters for a single message processing job.
 type msgRequest struct {
-	id         string
-	channelID  string
-	content    string
-	senderName string
-	actionID   string // non-empty if triggered by A2UI button click
+	id        string
+	channelID string
+	content   string
+	actionID  string // non-empty if triggered by A2UI button click
 }
 
 // channelMsg is a lightweight message record fetched for context.
@@ -297,7 +296,7 @@ func (a *Agent) handleEvent(event RealtimeEvent) {
 		defer a.wg.Done()
 		defer a.inFlight.Add(-1)
 		defer func() { <-a.sem }()
-		a.processMessage(msgRequest{id: msg.ID, channelID: msg.ChannelID, content: msg.Content, senderName: msg.SenderName, actionID: actionID})
+		a.processMessage(msgRequest{id: msg.ID, channelID: msg.ChannelID, content: msg.Content, actionID: actionID})
 	}()
 }
 
@@ -339,12 +338,12 @@ func (a *Agent) claimMessage(messageID string) (bool, error) {
 }
 
 // fetchChannelContext fetches recent messages from a channel for A2UI context building.
-func (a *Agent) fetchChannelContext(channelID string, limit int) ([]channelMsg, error) {
+func (a *Agent) fetchChannelContext(ctx context.Context, channelID string, limit int) ([]channelMsg, error) {
 	fetchURL := fmt.Sprintf(
 		"%s/rest/v1/c1_messages?channel_id=eq.%s&order=created_at.desc&limit=%d&select=id,content,sender_type,metadata",
 		a.cfg.SupabaseURL, url.QueryEscape(channelID), limit,
 	)
-	req, err := http.NewRequest("GET", fetchURL, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", fetchURL, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -421,10 +420,21 @@ func (a *Agent) processMessage(req msgRequest) {
 		return
 	}
 
+	// Derive parent context for graceful shutdown propagation.
+	a.mu.Lock()
+	parentCtx := a.childCtx
+	a.mu.Unlock()
+	if parentCtx == nil {
+		parentCtx = context.Background()
+	}
+
 	var prompt string
 	if req.actionID != "" {
-		// A2UI path: fetch channel context and build contextual prompt
-		msgs, err := a.fetchChannelContext(req.channelID, 20)
+		// A2UI path: fetch channel context and build contextual prompt.
+		// Use a short timeout so a slow Supabase call does not delay the 120s claude budget.
+		fetchCtx, fetchCancel := context.WithTimeout(parentCtx, 10*time.Second)
+		msgs, err := a.fetchChannelContext(fetchCtx, req.channelID, 20)
+		fetchCancel()
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "cq: [agent] fetchChannelContext for msg %s: %v (falling back to label)\n", req.id, err)
 			prompt = req.content
@@ -441,14 +451,6 @@ func (a *Agent) processMessage(req msgRequest) {
 	}
 
 	fmt.Fprintf(os.Stderr, "cq: [agent] spawning claude -p for msg %s\n", req.id)
-
-	// Run claude -p with timeout, derived from component context for graceful shutdown
-	a.mu.Lock()
-	parentCtx := a.childCtx
-	a.mu.Unlock()
-	if parentCtx == nil {
-		parentCtx = context.Background()
-	}
 	ctx, cancel := context.WithTimeout(parentCtx, 120*time.Second)
 	defer cancel()
 

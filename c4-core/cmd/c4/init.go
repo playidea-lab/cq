@@ -474,7 +474,8 @@ func setupGlobalHooks(homeDir string) error {
 	}
 
 	bashHookPath := filepath.Join(hooksDir, "c4-bash-security-hook.sh")
-	if hookNeedsUpdate(bashHookPath, hookShContent) {
+	bashUpdated := hookNeedsUpdate(bashHookPath, hookShContent)
+	if bashUpdated {
 		if err := os.WriteFile(bashHookPath, []byte(hookShContent), 0755); err != nil {
 			return fmt.Errorf("writing bash hook: %w", err)
 		}
@@ -482,14 +483,15 @@ func setupGlobalHooks(homeDir string) error {
 	}
 
 	editHookPath := filepath.Join(hooksDir, "c4-edit-security-hook.sh")
-	if hookNeedsUpdate(editHookPath, editHookShContent) {
+	editUpdated := hookNeedsUpdate(editHookPath, editHookShContent)
+	if editUpdated {
 		if err := os.WriteFile(editHookPath, []byte(editHookShContent), 0755); err != nil {
 			return fmt.Errorf("writing edit hook: %w", err)
 		}
 		fmt.Fprintln(os.Stderr, "cq: edit hook installed → "+editHookPath)
 	}
 
-	if !hookNeedsUpdate(bashHookPath, hookShContent) && !hookNeedsUpdate(editHookPath, editHookShContent) {
+	if !bashUpdated && !editUpdated {
 		fmt.Fprintln(os.Stderr, "cq: hooks up-to-date")
 	}
 
