@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -365,8 +366,28 @@ func (s *SQLiteStore) AssignTask(workerID string) (*TaskAssignment, error) {
 	}
 
 	// Apply config model hint if task has no explicit model
+	taskRowModel := model
 	if model == "" && s.config != nil {
 		model = s.config.GetModelForTask(taskID)
+	}
+
+	// Risk routing: override model for R- tasks based on scope
+	if strings.HasPrefix(taskID, "R-") && s.config != nil && taskRowModel == "" {
+		riskCfg := s.config.GetRiskRouting()
+		if riskCfg.Enabled {
+			if riskCfg.Models.High != "" && riskCfg.Models.Low != "" {
+				risk := classifyTaskRisk(scope, riskCfg)
+				switch risk {
+				case "high":
+					model = riskCfg.Models.High
+				case "low":
+					model = riskCfg.Models.Low
+				// default: model stays as-is (GetModelForTask result)
+				}
+			} else {
+				slog.Warn("risk_routing: Models.High or Models.Low is empty, skipping override")
+			}
+		}
 	}
 
 	// Build base assignment
@@ -414,6 +435,79 @@ func (s *SQLiteStore) AssignTask(workerID string) (*TaskAssignment, error) {
 	s.workerMu.Unlock()
 
 	return assignment, nil
+}
+
+// classifyTaskRisk determines risk level ("high", "low", or "default") for a
+// scope path based on the configured risk routing path patterns.
+//
+// Matching rules (priority order per pattern):
+//  1. Suffix '/' → strings.HasPrefix (directory match)
+//  2. Contains '*' → filepath.Match against filepath.Base (extension match)
+//  3. Otherwise → strings.Contains (substring match)
+//
+// Multi-scope (comma-separated): each part is classified independently;
+// the highest risk wins (high > low > default).
+func classifyTaskRisk(scope string, cfg config.RiskRoutingConfig) string {
+	if scope == "" {
+		return "default"
+	}
+
+	// Split comma-separated scopes and classify each independently.
+	parts := strings.Split(scope, ",")
+	hasHigh := false
+	hasLow := false
+
+	for _, part := range parts {
+		scopePath := filepath.ToSlash(strings.TrimSpace(part))
+		if scopePath == "" {
+			continue
+		}
+
+		// Check high-risk patterns first.
+		for _, pattern := range cfg.Paths.High {
+			if pattern == "" {
+				continue
+			}
+			if matchScopePattern(scopePath, pattern) {
+				hasHigh = true
+				break
+			}
+		}
+		if hasHigh {
+			break // high > low > default; no need to continue
+		}
+
+		// Check low-risk patterns.
+		for _, pattern := range cfg.Paths.Low {
+			if pattern == "" {
+				continue
+			}
+			if matchScopePattern(scopePath, pattern) {
+				hasLow = true
+				break
+			}
+		}
+	}
+
+	if hasHigh {
+		return "high"
+	}
+	if hasLow {
+		return "low"
+	}
+	return "default"
+}
+
+// matchScopePattern checks if scopePath matches a single pattern.
+func matchScopePattern(scopePath, pattern string) bool {
+	if strings.HasSuffix(pattern, "/") {
+		return strings.HasPrefix(scopePath, pattern)
+	}
+	if strings.Contains(pattern, "*") {
+		matched, _ := filepath.Match(pattern, filepath.Base(scopePath))
+		return matched
+	}
+	return strings.Contains(scopePath, pattern)
 }
 
 // reassignStaleOrFindPendingTask queries for the next task to assign.
