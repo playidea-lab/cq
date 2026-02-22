@@ -30,25 +30,25 @@ func TestHookNeedsUpdate(t *testing.T) {
 	}
 }
 
-func TestSetupGlobalHooks(t *testing.T) {
-	homeDir := t.TempDir()
+func TestSetupProjectHooks(t *testing.T) {
+	projectDir := t.TempDir()
 
-	// First run: installs hook
-	if err := setupGlobalHooks(homeDir); err != nil {
-		t.Fatalf("setupGlobalHooks: %v", err)
+	// First run: installs hooks
+	if err := setupProjectHooks(projectDir); err != nil {
+		t.Fatalf("setupProjectHooks: %v", err)
 	}
-	hookPath := filepath.Join(homeDir, ".claude", "hooks", "c4-bash-security-hook.sh")
-	if _, err := os.Stat(hookPath); err != nil {
-		t.Fatalf("hook file not created: %v", err)
+	gateHookPath := filepath.Join(projectDir, ".claude", "hooks", "c4-gate.sh")
+	if _, err := os.Stat(gateHookPath); err != nil {
+		t.Fatalf("gate hook file not created: %v", err)
 	}
-	info, _ := os.Stat(hookPath)
+	info, _ := os.Stat(gateHookPath)
 	if info.Mode()&0111 == 0 {
-		t.Error("hook file not executable")
+		t.Error("gate hook file not executable")
 	}
 
 	// Second run: idempotent
-	if err := setupGlobalHooks(homeDir); err != nil {
-		t.Fatalf("second setupGlobalHooks: %v", err)
+	if err := setupProjectHooks(projectDir); err != nil {
+		t.Fatalf("second setupProjectHooks: %v", err)
 	}
 }
 
@@ -562,112 +562,99 @@ func TestHookNeedsUpdate_HashMismatch(t *testing.T) {
 	}
 }
 
-func TestSetupGlobalHooks_Install(t *testing.T) {
-	homeDir := t.TempDir()
+func TestSetupProjectHooks_Install(t *testing.T) {
+	projectDir := t.TempDir()
 
-	if err := setupGlobalHooks(homeDir); err != nil {
-		t.Fatalf("setupGlobalHooks failed: %v", err)
+	if err := setupProjectHooks(projectDir); err != nil {
+		t.Fatalf("setupProjectHooks failed: %v", err)
 	}
 
-	hooksDir := filepath.Join(homeDir, ".claude", "hooks")
+	hooksDir := filepath.Join(projectDir, ".claude", "hooks")
 
-	hookPath := filepath.Join(hooksDir, "c4-bash-security-hook.sh")
-	data, err := os.ReadFile(hookPath)
+	gateHookPath := filepath.Join(hooksDir, "c4-gate.sh")
+	data, err := os.ReadFile(gateHookPath)
 	if err != nil {
-		t.Fatalf("hook script not created: %v", err)
+		t.Fatalf("gate hook script not created: %v", err)
 	}
-	if string(data) != hookShContent {
-		t.Error("hook script content mismatch")
+	if string(data) != gateHookContent {
+		t.Error("gate hook script content mismatch")
 	}
 	// Verify executable permission
-	info, err := os.Stat(hookPath)
+	info, err := os.Stat(gateHookPath)
 	if err != nil {
-		t.Fatalf("stat hook: %v", err)
+		t.Fatalf("stat gate hook: %v", err)
 	}
 	if info.Mode()&0100 == 0 {
-		t.Error("hook script not executable")
+		t.Error("gate hook script not executable")
 	}
 
-	// .conf file should NOT be created; hook config is sourced from .c4/config.yaml
-	confPath := filepath.Join(hooksDir, "c4-bash-security.conf")
-	if _, err := os.Stat(confPath); err == nil {
-		t.Error("hook conf should not be created by setupGlobalHooks")
+	permHookPath := filepath.Join(hooksDir, "c4-permission-reviewer.sh")
+	permData, err := os.ReadFile(permHookPath)
+	if err != nil {
+		t.Fatalf("permission reviewer hook not created: %v", err)
+	}
+	if string(permData) != permissionReviewerContent {
+		t.Error("permission reviewer hook content mismatch")
 	}
 }
 
-func TestSetupGlobalHooks_Idempotent(t *testing.T) {
-	homeDir := t.TempDir()
+func TestSetupProjectHooks_Idempotent(t *testing.T) {
+	projectDir := t.TempDir()
 
 	// First install
-	if err := setupGlobalHooks(homeDir); err != nil {
-		t.Fatalf("first setupGlobalHooks failed: %v", err)
+	if err := setupProjectHooks(projectDir); err != nil {
+		t.Fatalf("first setupProjectHooks failed: %v", err)
 	}
 
-	hooksDir := filepath.Join(homeDir, ".claude", "hooks")
-
-	// Place a pre-existing .conf to simulate backward-compat scenario
-	confPath := filepath.Join(hooksDir, "c4-bash-security.conf")
-	customConf := "# user customization\nALLOW_ALL=true\n"
-	if err := os.WriteFile(confPath, []byte(customConf), 0644); err != nil {
-		t.Fatalf("write custom conf: %v", err)
+	// Second install should be a no-op (hooks up-to-date)
+	if err := setupProjectHooks(projectDir); err != nil {
+		t.Fatalf("second setupProjectHooks failed: %v", err)
 	}
 
-	// Second install should not touch the existing .conf
-	if err := setupGlobalHooks(homeDir); err != nil {
-		t.Fatalf("second setupGlobalHooks failed: %v", err)
-	}
-
-	data, err := os.ReadFile(confPath)
+	// Gate hook content should still match embedded
+	hooksDir := filepath.Join(projectDir, ".claude", "hooks")
+	gateHookPath := filepath.Join(hooksDir, "c4-gate.sh")
+	hookData, err := os.ReadFile(gateHookPath)
 	if err != nil {
-		t.Fatalf("read conf: %v", err)
+		t.Fatalf("read gate hook: %v", err)
 	}
-	if string(data) != customConf {
-		t.Error("pre-existing .conf was modified by setupGlobalHooks")
-	}
-
-	// Hook script should still match embedded content
-	hookPath := filepath.Join(hooksDir, "c4-bash-security-hook.sh")
-	hookData, err := os.ReadFile(hookPath)
-	if err != nil {
-		t.Fatalf("read hook: %v", err)
-	}
-	if string(hookData) != hookShContent {
-		t.Error("hook script content mismatch after second install")
+	if string(hookData) != gateHookContent {
+		t.Error("gate hook script content mismatch after second install")
 	}
 }
 
-// --- Integration tests: setupGlobalHooks end-to-end ---
+// --- Integration tests: setupProjectHooks end-to-end ---
 
-// TestInitAndLaunch_HooksInstalled simulates a fresh install (empty home dir)
-// and verifies that setupGlobalHooks creates the hook file with 0755 permissions.
+// TestInitAndLaunch_HooksInstalled simulates a fresh install and verifies
+// that setupProjectHooks creates hook files with 0755 permissions.
 func TestInitAndLaunch_HooksInstalled(t *testing.T) {
-	tmpHome := t.TempDir()
+	tmpProject := t.TempDir()
 
-	if err := setupGlobalHooks(tmpHome); err != nil {
-		t.Fatalf("setupGlobalHooks: %v", err)
+	if err := setupProjectHooks(tmpProject); err != nil {
+		t.Fatalf("setupProjectHooks: %v", err)
 	}
 
-	hookPath := filepath.Join(tmpHome, ".claude", "hooks", "c4-bash-security-hook.sh")
-	info, err := os.Stat(hookPath)
+	gateHookPath := filepath.Join(tmpProject, ".claude", "hooks", "c4-gate.sh")
+	info, err := os.Stat(gateHookPath)
 	if err != nil {
-		t.Fatalf("hook file not created: %v", err)
+		t.Fatalf("gate hook file not created: %v", err)
 	}
 	// Verify executable permission (0755)
 	if info.Mode().Perm() != 0755 {
-		t.Errorf("hook permissions = %o, want 0755", info.Mode().Perm())
+		t.Errorf("gate hook permissions = %o, want 0755", info.Mode().Perm())
 	}
 }
 
 // TestInitAndLaunch_SettingsPatched simulates a fresh install and verifies
-// that settings.json is created with hooks.PreToolUse[0].matcher == "Bash".
+// that settings.json is created with the correct hooks structure.
 func TestInitAndLaunch_SettingsPatched(t *testing.T) {
-	tmpHome := t.TempDir()
+	tmpProject := t.TempDir()
 
-	if err := setupGlobalHooks(tmpHome); err != nil {
-		t.Fatalf("setupGlobalHooks: %v", err)
+	if err := setupProjectHooks(tmpProject); err != nil {
+		t.Fatalf("setupProjectHooks: %v", err)
 	}
 
-	settingsPath := filepath.Join(tmpHome, ".claude", "settings.json")
+	settingsPath := filepath.Join(tmpProject, ".claude", "settings.json")
 	data, err := os.ReadFile(settingsPath)
 	if err != nil {
 		t.Fatalf("settings.json not created: %v", err)
@@ -687,27 +674,32 @@ func TestInitAndLaunch_SettingsPatched(t *testing.T) {
 		t.Fatal("PreToolUse array is empty")
 	}
 	entry, _ := preToolUse[0].(map[string]any)
-	if entry["matcher"] != "Bash" {
-		t.Errorf("PreToolUse[0].matcher = %v, want Bash", entry["matcher"])
+	if entry["matcher"] != "Bash|Edit|Write" {
+		t.Errorf("PreToolUse[0].matcher = %v, want Bash|Edit|Write", entry["matcher"])
+	}
+	// PermissionRequest should also be registered
+	permRequest, _ := hooks["PermissionRequest"].([]any)
+	if len(permRequest) == 0 {
+		t.Fatal("PermissionRequest array is empty")
 	}
 }
 
-// TestInitAndLaunch_Idempotent calls setupGlobalHooks twice and verifies
+// TestInitAndLaunch_Idempotent calls setupProjectHooks twice and verifies
 // that hooks.PreToolUse has exactly 1 entry (no duplicates).
 func TestInitAndLaunch_Idempotent(t *testing.T) {
-	tmpHome := t.TempDir()
+	tmpProject := t.TempDir()
 
 	// First call
-	if err := setupGlobalHooks(tmpHome); err != nil {
-		t.Fatalf("first setupGlobalHooks: %v", err)
+	if err := setupProjectHooks(tmpProject); err != nil {
+		t.Fatalf("first setupProjectHooks: %v", err)
 	}
 
 	// Second call
-	if err := setupGlobalHooks(tmpHome); err != nil {
-		t.Fatalf("second setupGlobalHooks: %v", err)
+	if err := setupProjectHooks(tmpProject); err != nil {
+		t.Fatalf("second setupProjectHooks: %v", err)
 	}
 
-	settingsPath := filepath.Join(tmpHome, ".claude", "settings.json")
+	settingsPath := filepath.Join(tmpProject, ".claude", "settings.json")
 	data, err := os.ReadFile(settingsPath)
 	if err != nil {
 		t.Fatalf("settings.json not found: %v", err)
@@ -720,20 +712,20 @@ func TestInitAndLaunch_Idempotent(t *testing.T) {
 
 	hooks, _ := settings["hooks"].(map[string]any)
 	preToolUse, _ := hooks["PreToolUse"].([]any)
-	if len(preToolUse) != 2 {
-		t.Errorf("expected 2 PreToolUse entries (Bash+Edit|Write) after 2 calls, got %d", len(preToolUse))
+	// Should have exactly 1 entry (Bash|Edit|Write) after idempotent calls
+	if len(preToolUse) != 1 {
+		t.Errorf("expected 1 PreToolUse entry (Bash|Edit|Write) after 2 calls, got %d", len(preToolUse))
 	}
 }
 
-func TestPatchClaudeSettings_NewFile(t *testing.T) {
-	homeDir := t.TempDir()
-	hookPath := "/usr/local/bin/hook.sh"
+func TestPatchProjectSettings_NewFile(t *testing.T) {
+	projectDir := t.TempDir()
 
-	if err := patchClaudeSettings(homeDir, hookPath, hookPath); err != nil {
-		t.Fatalf("patchClaudeSettings: %v", err)
+	if err := patchProjectSettings(projectDir); err != nil {
+		t.Fatalf("patchProjectSettings: %v", err)
 	}
 
-	settingsPath := filepath.Join(homeDir, ".claude", "settings.json")
+	settingsPath := filepath.Join(projectDir, ".claude", "settings.json")
 	data, err := os.ReadFile(settingsPath)
 	if err != nil {
 		t.Fatalf("settings.json not created: %v", err)
@@ -749,29 +741,39 @@ func TestPatchClaudeSettings_NewFile(t *testing.T) {
 		t.Fatal("missing hooks key")
 	}
 	preToolUse, _ := hooks["PreToolUse"].([]any)
-	if len(preToolUse) != 2 {
-		t.Fatalf("expected 2 PreToolUse entries (Bash+Edit|Write), got %d", len(preToolUse))
+	if len(preToolUse) != 1 {
+		t.Fatalf("expected 1 PreToolUse entry (Bash|Edit|Write), got %d", len(preToolUse))
 	}
 	entry, _ := preToolUse[0].(map[string]any)
-	if entry["matcher"] != "Bash" {
-		t.Errorf("matcher = %v, want Bash", entry["matcher"])
+	if entry["matcher"] != "Bash|Edit|Write" {
+		t.Errorf("matcher = %v, want Bash|Edit|Write", entry["matcher"])
 	}
 	innerHooks, _ := entry["hooks"].([]any)
 	if len(innerHooks) != 1 {
 		t.Fatalf("expected 1 inner hook, got %d", len(innerHooks))
 	}
 	h, _ := innerHooks[0].(map[string]any)
-	if h["command"] != hookPath {
-		t.Errorf("command = %v, want %v", h["command"], hookPath)
-	}
 	if h["type"] != "command" {
 		t.Errorf("type = %v, want command", h["type"])
 	}
+	// Command should use $CLAUDE_PROJECT_DIR variable
+	cmd, _ := h["command"].(string)
+	if !strings.Contains(cmd, "CLAUDE_PROJECT_DIR") {
+		t.Errorf("command should use $CLAUDE_PROJECT_DIR, got %v", cmd)
+	}
+	if !strings.Contains(cmd, "c4-gate.sh") {
+		t.Errorf("command should reference c4-gate.sh, got %v", cmd)
+	}
+	// PermissionRequest should also be added
+	permRequest, _ := hooks["PermissionRequest"].([]any)
+	if len(permRequest) != 1 {
+		t.Fatalf("expected 1 PermissionRequest entry, got %d", len(permRequest))
+	}
 }
 
-func TestPatchClaudeSettings_AppendToExisting(t *testing.T) {
-	homeDir := t.TempDir()
-	settingsDir := filepath.Join(homeDir, ".claude")
+func TestPatchProjectSettings_AppendToExisting(t *testing.T) {
+	projectDir := t.TempDir()
+	settingsDir := filepath.Join(projectDir, ".claude")
 	os.MkdirAll(settingsDir, 0755)
 
 	existing := map[string]any{
@@ -783,9 +785,8 @@ func TestPatchClaudeSettings_AppendToExisting(t *testing.T) {
 	data, _ := json.MarshalIndent(existing, "", "  ")
 	os.WriteFile(filepath.Join(settingsDir, "settings.json"), data, 0644)
 
-	hookPath := "/path/to/hook.sh"
-	if err := patchClaudeSettings(homeDir, hookPath, hookPath); err != nil {
-		t.Fatalf("patchClaudeSettings: %v", err)
+	if err := patchProjectSettings(projectDir); err != nil {
+		t.Fatalf("patchProjectSettings: %v", err)
 	}
 
 	result, _ := os.ReadFile(filepath.Join(settingsDir, "settings.json"))
@@ -805,26 +806,25 @@ func TestPatchClaudeSettings_AppendToExisting(t *testing.T) {
 	// Hook added
 	hooks, _ := settings["hooks"].(map[string]any)
 	preToolUse, _ := hooks["PreToolUse"].([]any)
-	if len(preToolUse) != 2 {
-		t.Fatalf("expected 2 PreToolUse entries (Bash+Edit|Write), got %d", len(preToolUse))
+	if len(preToolUse) != 1 {
+		t.Fatalf("expected 1 PreToolUse entry (Bash|Edit|Write), got %d", len(preToolUse))
 	}
 }
 
-func TestPatchClaudeSettings_Idempotent(t *testing.T) {
-	homeDir := t.TempDir()
-	hookPath := "/path/to/hook.sh"
+func TestPatchProjectSettings_Idempotent(t *testing.T) {
+	projectDir := t.TempDir()
 
 	// First call
-	if err := patchClaudeSettings(homeDir, hookPath, hookPath); err != nil {
+	if err := patchProjectSettings(projectDir); err != nil {
 		t.Fatalf("first call: %v", err)
 	}
 
 	// Second call — should not duplicate
-	if err := patchClaudeSettings(homeDir, hookPath, hookPath); err != nil {
+	if err := patchProjectSettings(projectDir); err != nil {
 		t.Fatalf("second call: %v", err)
 	}
 
-	settingsPath := filepath.Join(homeDir, ".claude", "settings.json")
+	settingsPath := filepath.Join(projectDir, ".claude", "settings.json")
 	data, _ := os.ReadFile(settingsPath)
 
 	var settings map[string]any
@@ -832,29 +832,28 @@ func TestPatchClaudeSettings_Idempotent(t *testing.T) {
 	hooks, _ := settings["hooks"].(map[string]any)
 	preToolUse, _ := hooks["PreToolUse"].([]any)
 
-	if len(preToolUse) != 2 {
-		t.Errorf("expected 2 PreToolUse entries (Bash+Edit|Write) after 2 calls, got %d", len(preToolUse))
+	if len(preToolUse) != 1 {
+		t.Errorf("expected 1 PreToolUse entry (Bash|Edit|Write) after 2 calls, got %d", len(preToolUse))
 	}
 
-	// hookPath appears twice: once for Bash matcher, once for Edit|Write matcher
+	// c4-gate.sh should appear exactly once
 	content := string(data)
-	count := strings.Count(content, hookPath)
-	if count != 2 {
-		t.Errorf("hookPath appears %d times, want 2 (Bash+Edit|Write)", count)
+	count := strings.Count(content, "c4-gate.sh")
+	if count != 1 {
+		t.Errorf("c4-gate.sh appears %d times, want 1", count)
 	}
 }
 
-func TestPatchClaudeSettings_CorruptedJSON(t *testing.T) {
-	homeDir := t.TempDir()
-	settingsDir := filepath.Join(homeDir, ".claude")
+func TestPatchProjectSettings_CorruptedJSON(t *testing.T) {
+	projectDir := t.TempDir()
+	settingsDir := filepath.Join(projectDir, ".claude")
 	os.MkdirAll(settingsDir, 0755)
 
 	settingsPath := filepath.Join(settingsDir, "settings.json")
 	os.WriteFile(settingsPath, []byte("{invalid json!!!"), 0644)
 
-	hookPath := "/path/to/hook.sh"
-	if err := patchClaudeSettings(homeDir, hookPath, hookPath); err != nil {
-		t.Fatalf("patchClaudeSettings: %v", err)
+	if err := patchProjectSettings(projectDir); err != nil {
+		t.Fatalf("patchProjectSettings: %v", err)
 	}
 
 	// Backup should exist
@@ -885,43 +884,43 @@ func TestPatchClaudeSettings_CorruptedJSON(t *testing.T) {
 	}
 	hooks, _ := settings["hooks"].(map[string]any)
 	preToolUse, _ := hooks["PreToolUse"].([]any)
-	if len(preToolUse) != 2 {
-		t.Fatalf("expected 2 PreToolUse entries (Bash+Edit|Write), got %d", len(preToolUse))
+	if len(preToolUse) != 1 {
+		t.Fatalf("expected 1 PreToolUse entry (Bash|Edit|Write), got %d", len(preToolUse))
 	}
 }
 
-// TestInitInteractive_YesFlag verifies that when yesAll is set, confirmGlobalChanges
+// TestInitInteractive_YesFlag verifies that when yesAll is set, confirmProjectHooks
 // returns true without reading from stdin.
 func TestInitInteractive_YesFlag(t *testing.T) {
 	oldYesAll := yesAll
 	yesAll = true
 	defer func() { yesAll = oldYesAll }()
 
-	homeDir := t.TempDir()
+	projectDir := t.TempDir()
 
-	// With yesAll=true, confirmGlobalChanges should return true immediately.
-	if !confirmGlobalChanges(homeDir) {
-		t.Error("confirmGlobalChanges should return true when yesAll is set")
+	// With yesAll=true, confirmProjectHooks should return true immediately.
+	if !confirmProjectHooks(projectDir) {
+		t.Error("confirmProjectHooks should return true when yesAll is set")
 	}
 
-	// Verify that setupGlobalHooks proceeds (hook file created) when yesAll=true.
-	if err := setupGlobalHooks(homeDir); err != nil {
-		t.Fatalf("setupGlobalHooks failed: %v", err)
+	// Verify that setupProjectHooks proceeds (hook file created) when yesAll=true.
+	if err := setupProjectHooks(projectDir); err != nil {
+		t.Fatalf("setupProjectHooks failed: %v", err)
 	}
-	hookPath := filepath.Join(homeDir, ".claude", "hooks", "c4-bash-security-hook.sh")
+	hookPath := filepath.Join(projectDir, ".claude", "hooks", "c4-gate.sh")
 	if _, err := os.Stat(hookPath); err != nil {
 		t.Error("hook file should be created when --yes is set")
 	}
 }
 
-// TestInitInteractive_GlobalDeny verifies that when the user declines the global
-// confirmation prompt, confirmGlobalChanges returns false and the hook is skipped.
-func TestInitInteractive_GlobalDeny(t *testing.T) {
+// TestInitInteractive_ProjectDeny verifies that when the user declines the project
+// hook prompt, confirmProjectHooks returns false and the hook is skipped.
+func TestInitInteractive_ProjectDeny(t *testing.T) {
 	oldYesAll := yesAll
 	yesAll = false
 	defer func() { yesAll = oldYesAll }()
 
-	homeDir := t.TempDir()
+	projectDir := t.TempDir()
 
 	// Simulate stdin with "n" (deny)
 	r, w, err := os.Pipe()
@@ -935,13 +934,13 @@ func TestInitInteractive_GlobalDeny(t *testing.T) {
 	w.WriteString("n\n")
 	w.Close()
 
-	// confirmGlobalChanges should return false on "n".
-	if confirmGlobalChanges(homeDir) {
-		t.Error("confirmGlobalChanges should return false when user answers 'n'")
+	// confirmProjectHooks should return false on "n".
+	if confirmProjectHooks(projectDir) {
+		t.Error("confirmProjectHooks should return false when user answers 'n'")
 	}
 
 	// Hook file must NOT be created when user denies.
-	hookPath := filepath.Join(homeDir, ".claude", "hooks", "c4-bash-security-hook.sh")
+	hookPath := filepath.Join(projectDir, ".claude", "hooks", "c4-gate.sh")
 	if _, err := os.Stat(hookPath); err == nil {
 		t.Error("hook file should NOT exist after user denial")
 	}

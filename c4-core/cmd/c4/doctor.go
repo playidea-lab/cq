@@ -323,87 +323,78 @@ func checkClaudeMDSymlink() checkResult {
 	}
 }
 
-// checkHooks verifies ~/.claude/hooks/ setup and settings.json patch.
+// checkHooks verifies project-level .claude/hooks/ setup and settings.json registration.
 func checkHooks() checkResult {
-	home, err := os.UserHomeDir()
-	if err != nil {
+	gateHookFile := filepath.Join(projectDir, ".claude", "hooks", "c4-gate.sh")
+	permHookFile := filepath.Join(projectDir, ".claude", "hooks", "c4-permission-reviewer.sh")
+
+	if _, err := os.Stat(gateHookFile); os.IsNotExist(err) {
 		return checkResult{
 			Name:    "hooks",
 			Status:  checkWarn,
-			Message: "cannot determine home directory",
+			Message: "c4-gate.sh not installed in .claude/hooks/",
+			Fix:     "cq claude to install hooks",
 		}
 	}
 
-	bashHookFile := filepath.Join(home, ".claude", "hooks", "c4-bash-security-hook.sh")
-	editHookFile := filepath.Join(home, ".claude", "hooks", "c4-edit-security-hook.sh")
-
-	if _, err := os.Stat(bashHookFile); os.IsNotExist(err) {
+	// Check if installed gate hook content matches embedded template
+	if hookNeedsUpdate(gateHookFile, gateHookContent) {
 		return checkResult{
 			Name:    "hooks",
 			Status:  checkWarn,
-			Message: "c4-bash-security-hook.sh not installed",
-			Fix:     "cq claude to install hooks (run from any CQ project directory)",
-		}
-	}
-
-	// Check if installed bash hook content matches embedded template
-	if hookNeedsUpdate(bashHookFile, hookShContent) {
-		return checkResult{
-			Name:    "hooks",
-			Status:  checkWarn,
-			Message: fmt.Sprintf("bash hook outdated at %s (binary has newer version)", bashHookFile),
+			Message: fmt.Sprintf("gate hook outdated at %s (binary has newer version)", gateHookFile),
 			Fix:     "cq doctor --fix  (or: cq claude)",
 		}
 	}
 
-	// Check edit hook
-	if _, err := os.Stat(editHookFile); os.IsNotExist(err) {
+	if _, err := os.Stat(permHookFile); os.IsNotExist(err) {
 		return checkResult{
 			Name:    "hooks",
 			Status:  checkWarn,
-			Message: "c4-edit-security-hook.sh not installed",
+			Message: "c4-permission-reviewer.sh not installed in .claude/hooks/",
 			Fix:     "cq doctor --fix  (or: cq claude)",
 		}
 	}
-	if hookNeedsUpdate(editHookFile, editHookShContent) {
+	if hookNeedsUpdate(permHookFile, permissionReviewerContent) {
 		return checkResult{
 			Name:    "hooks",
 			Status:  checkWarn,
-			Message: fmt.Sprintf("edit hook outdated at %s (binary has newer version)", editHookFile),
+			Message: fmt.Sprintf("permission reviewer hook outdated at %s (binary has newer version)", permHookFile),
 			Fix:     "cq doctor --fix  (or: cq claude)",
 		}
 	}
 
-	settingsPath := filepath.Join(home, ".claude", "settings.json")
+	settingsPath := filepath.Join(projectDir, ".claude", "settings.json")
 	data, err := os.ReadFile(settingsPath)
 	if err != nil {
 		return checkResult{
 			Name:    "hooks",
 			Status:  checkWarn,
-			Message: fmt.Sprintf("hook files found but ~/.claude/settings.json missing: %v", err),
+			Message: fmt.Sprintf("hook files found but .claude/settings.json missing: %v", err),
+			Fix:     "cq claude to register hooks in settings.json",
 		}
 	}
 	settingsStr := string(data)
-	if !strings.Contains(settingsStr, "c4-bash-security-hook") {
+	if !strings.Contains(settingsStr, "c4-gate.sh") {
 		return checkResult{
 			Name:    "hooks",
 			Status:  checkWarn,
-			Message: "bash hook exists but not registered in settings.json",
+			Message: "gate hook exists but not registered in settings.json",
 			Fix:     "cq claude to patch settings.json",
 		}
 	}
-	if !strings.Contains(settingsStr, "c4-edit-security-hook") {
+	if !strings.Contains(settingsStr, "c4-permission-reviewer.sh") {
 		return checkResult{
 			Name:    "hooks",
 			Status:  checkWarn,
-			Message: "edit hook exists but not registered in settings.json",
+			Message: "permission reviewer hook exists but not registered in settings.json",
 			Fix:     "cq doctor --fix  (or: cq claude)",
 		}
 	}
 	return checkResult{
 		Name:    "hooks",
 		Status:  checkOK,
-		Message: fmt.Sprintf("bash+edit hooks installed and registered in settings.json"),
+		Message: "gate+permission-reviewer hooks installed and registered in settings.json",
 	}
 }
 
@@ -574,11 +565,7 @@ func tryFix(r *checkResult) string {
 			}
 		}
 	case "hooks":
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return ""
-		}
-		if err := setupGlobalHooks(home); err != nil {
+		if err := setupProjectHooks(projectDir); err != nil {
 			return ""
 		}
 		return "hook updated"
