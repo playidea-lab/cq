@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.19.0] - 2026-02-22
+
+### ✨ Features
+- **handlers**: `classifyTaskRisk` + `AssignTask` risk routing — R- 태스크에 scope 기반 모델 자동 선택 (high/low/default 티어) (`4867fa9`)
+- **config**: `RiskRoutingConfig` 스키마 추가 — `risk_routing.enabled`, `paths.high/low`, `models.high/low/default` 필드 + viper defaults + `GetRiskRouting()` value return (`16603af`)
+
+### 🐛 Bug Fixes
+- **c2/workspace**: `slug[:40]` byte slice → `string([]rune(slug)[:40])` rune slice — 한국어 title truncation 시 UTF-8 경계 파괴 수정 (`b95ba44`)
+- **c2/handlers**: `workspaceSaveHandler`/`profileSaveHandler` — `json.Unmarshal` 에러 무시 → 명시적 에러 반환으로 "invalid arguments" 원인 노출 (`a3e26f6`)
+- **c2/persona**: `RunPersonaLearn` — `LoadProfile` 반환 nil 프로파일에 nil guard 추가 + malformed YAML 시 `slog.Warn` 로그, autoApply panic 방지 (`bfb6e39`)
+- **c2/persona**: `detectToneSoftening` hardcoded 어조 단어 → `profile.yaml` `learned_patterns.tone_assertive/tone_soft` 외부화, `AnalyzeEdits` 공개 API 시그니처 유지 (`bfb6e39`)
+
+### 🧪 Tests
+- **c2**: `TestParseDiscoverSection_KoreanSlug` — 40/41 rune 경계, UTF-8 유효성 검증 (`b95ba44`)
+- **c2/handlers**: `TestWorkspaceSaveHandler_InvalidJSON`, `TestProfileSaveHandler_InvalidJSON` 추가 (`a3e26f6`)
+- **c2/persona**: `TestAnalyzeEditsWithWords_CustomDict`, `TestRunPersonaLearn_ProfileDict`, `TestRunPersonaLearn_NoProfile`, `TestRunPersonaLearn_MalformedYAMLAutoApply` 추가 (`bfb6e39`)
+- **handlers**: `TestClassifyTaskRisk` (11 케이스) + `TestAssignTask_RiskRouting_*` (6 케이스) — directory/glob/substring 매칭 + AssignTask 통합 (`4867fa9`)
+- **config**: `TestRiskRouting` 4 서브테스트 — defaults, YAML 파싱, EconomicMode 독립성, value return 안전성 (`16603af`)
+
+### 📚 Documentation
+- **agents**: Go 테스트 수 ~1,293 → ~1,310 반영 (`1677b01`)
+
+---
+
 ## [0.18.0] - 2026-02-22
 
 ### ✨ Features
