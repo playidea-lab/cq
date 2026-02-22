@@ -2,6 +2,7 @@ package c2
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 	"regexp"
 	"strings"
@@ -152,8 +153,12 @@ func RunPersonaLearn(draftPath, finalPath, profilePath string, autoApply bool) (
 		return nil, fmt.Errorf("read final: %w", err)
 	}
 
-	// Load profile for custom tone dictionaries; ignore missing-file errors (silent fallback).
-	profile, _ := LoadProfile(profilePath)
+	// Load profile for custom tone dictionaries; missing-file errors are silently ignored
+	// (fallback to defaults), but other errors (e.g. malformed YAML) are logged.
+	profile, loadErr := LoadProfile(profilePath)
+	if loadErr != nil {
+		slog.Warn("persona_learn: profile load failed, using default tone dicts", "error", loadErr, "path", profilePath)
+	}
 	if profile == nil {
 		profile = map[string]any{}
 	}

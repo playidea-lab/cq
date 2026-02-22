@@ -499,6 +499,11 @@ func classifyTaskRisk(scope string, cfg config.RiskRoutingConfig) string {
 }
 
 // matchScopePattern checks if scopePath matches a single pattern.
+// Three match types, evaluated in order:
+//   - Directory prefix: pattern ends with "/" → strings.HasPrefix match (e.g. "internal/auth/")
+//   - Glob: pattern contains "*" → filepath.Match on basename only (e.g. "*.md")
+//   - Substring: fallback → strings.Contains (intentionally broad; use directory-prefix patterns
+//     to avoid false positives like "auth" matching "oauth/handler.go")
 func matchScopePattern(scopePath, pattern string) bool {
 	if strings.HasSuffix(pattern, "/") {
 		return strings.HasPrefix(scopePath, pattern)
