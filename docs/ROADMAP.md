@@ -1,12 +1,12 @@
 # C4 Roadmap
 
-## Current Version: v0.22.2 (Phase 12.3 — CTO Codebase Cleanup)
+## Current Version: v0.25.0 (Phase 13 — Security Hooks + A2UI Routing + Prompt Caching)
 
-현재 버전은 **Go MCP Server (112 base + 26 Hub = 138 tools), Native Go/Dart LSP (goast/dartast), LLM Gateway, CDP Runner + WebMCP + Auto-Discovery, Cloud Foundation, Knowledge v4 (3-way RRF + FindRelated + Time-Weighted Usage + Auto-Distill + Observability), c4 daemon, C0 Drive, C1 Unified Dashboard Messenger (4-탭 뷰 + Members/Presence), C3 EventBus v4 (hub.* 이벤트 C1 라우팅), C5 Hub Server (Per-Project RBAC, 151 테스트, EventBus 통합), 20개 Skills, Lighthouse Docs SSOT (llms.txt export), Hook 자동 설치 (cq init), CTO 코드 정리 (~1,700 LOC 삭감)**을 포함합니다.
+현재 버전은 **Go MCP Server (118 base + 26 Hub + 15 tiered C6/C7/C8 = 159 tools), Native Go/Dart LSP (goast/dartast), LLM Gateway (캐시 최적화), CDP Runner + WebMCP + Auto-Discovery, Cloud Foundation (CloudPrimaryStore + Session Limit), Knowledge v4 (3-way RRF + pgvector 클라우드 동기화), C1 Unified Dashboard Messenger (A2UI 응답 라우팅), C3 EventBus v4, C5 Hub Server (174 테스트), 21개 Skills, 프로젝트 단위 2-layer Permission Hook, Prompt Caching 최적화**를 포함합니다.
 
 ### 핵심 구조
 
-- **Go MCP Server (Primary)** - 134 도구 (Base 108 + Hub 26), Registry-based, SQLite Store, JSON-RPC Bridge, LLM Gateway, CDP Runner + WebMCP, Hub Client, Native LSP (goast/dartast), Lighthouse Docs SSOT
+- **Go MCP Server (Primary)** - 159 도구 (Base 118 + Hub 26 + Tiered 15), Registry-based, SQLite Store, JSON-RPC Bridge, LLM Gateway (프롬프트 캐싱), CDP Runner + WebMCP, Hub Client, Native LSP (goast/dartast), Lighthouse Docs SSOT
 - **C9 Knowledge v4** - Store + FTS5 + Vector (OpenAI 1536d) + 3-way RRF (FTS+Vector+Popularity) + Time-Weighted UsageTracker (30일 반감기) + FindRelated + Community Blending + Auto-Distill (LLM 패턴 추출) + Chunker + BatchIngest + ReindexSync
 - **C0 Drive** - Supabase 파일 저장소, metadata JSONB, c4_drive_mkdir 6개 도구, PostgREST URL 인코딩, server-side filtering
 - **C1 Messenger** - Tauri 2.x 통합 대시보드 (4-탭: Messenger/Documents/Settings/Team), 통합 멤버 모델 (user/agent/system), Realtime Presence, MCP 5도구
@@ -18,7 +18,7 @@
 - **LLM Gateway** - 4개 Provider (Anthropic/OpenAI/Gemini/Ollama), 5단계 라우팅, CostTracker, 모델 카탈로그 9종
 - **Cloud Layer** - Go PostgREST client (Auth + CloudStore + HybridStore + KnowledgeCloudClient + TokenProvider auto-refresh)
 - **Python Sidecar** - LSP 10 proxy tools (7 LSP + 2 C2 Doc + 1 Onboard)
-- **Skills** - 19개 Claude Code Skills (.claude/skills/), Commands 완전 마이그레이션
+- **Skills** - 21개 Claude Code Skills (.claude/skills/), Commands 완전 마이그레이션 (c4-quick, c4-submit 추가)
 - **Lighthouse** - register_all, spec auto-generate, auto-seed, auto-backfill, llms.txt export
 - **Infra** - Supabase PostgreSQL (18 migrations, RLS, tsvector FTS, c1_members)
 
@@ -41,8 +41,38 @@
 - **C1 Context Hub** - 채널 메시징, Context Keeper (LLM 요약), Agent 통합 (notifyKeeper 4-param)
 - **C1 Documents** - 마크다운 파일 편집기, 지속성 (persona/skill/spec/config)
 - **C3 EventBus v4** - gRPC daemon (UDS) + WebSocket bridge + DLQ + Filter v2, Python sidecar piggyback, task lifecycle events
-- **코드베이스**: Go ~38.9K (c4-core) + Go ~6.7K (c5) + Python ~22.9K + Rust ~9.5K + TS+CSS ~11.8K + SQL ~1.1K = **~90.9K LOC (src)**, 테스트 ~50.8K LOC, **총 ~141.7K LOC**
-- **테스트**: Go ~1,404 (c4-core ~1,253 + c5 151) + Python 697 + Rust 85 = **~2,186 tests** (22 packages)
+- **코드베이스**: Go ~38.9K (c4-core) + Go ~6.9K (c5) + Python ~22.9K + Rust ~9.5K + TS+CSS ~11.8K + SQL ~1.1K = **~90.9K LOC (src)**, 테스트 ~50.8K LOC, **총 ~141.7K LOC**
+- **테스트**: Go ~1,513 (c4-core ~1,339 + c5 174) + Python 697 + Rust 92 = **~2,302 tests** (28 packages)
+
+---
+
+## 최신 추가사항 (2026-02-23)
+
+### Prompt Caching 최적화 ✅ (v0.25.0)
+
+- **WORKER_PROMPT prefix 안정화**: `worker_id`를 `## Identity` 섹션 끝으로 이동 → 동시 스폰 워커 간 시스템 프롬프트 캐시 공유
+- **CacheAlert**: `Gateway.SetCacheAlert(threshold, pub, projectID)` — 캐시 히트율 상태 전이 기반 1회 경보 (`CacheAlertPublisher` 인터페이스, circular import 방지)
+- **tools 캐싱**: `ChatRequest.CacheTools=true` → 마지막 tool에 `cache_control: ephemeral` 자동 주입, beta 헤더 조건 처리
+- **동적 데이터 분리**: 날짜/상태 등 동적 데이터를 system이 아닌 user message 첫 항목으로 분리 → 캐시 무효화 방지
+- **테스트**: `gateway_cache_alert_test.go` 5개 + `anthropic_tools_cache_test.go` 3개 추가
+
+### 프로젝트 단위 2-layer Permission Hook 재설계 ✅ (v0.24.0)
+
+- **이전 방식 제거**: `~/.claude/hooks/c4-bash-security-hook.sh`, `c4-edit-security-hook.sh` (전역 절대경로 hook)
+- **신규 방식**: `{project}/.claude/hooks/c4-gate.sh` + `c4-permission-reviewer.sh` (프로젝트 단위)
+  - `c4-gate.sh`: PreToolUse — 룰 기반 게이트 (Bash·Edit·Write). gray-zone은 exit 0 → PermissionRequest 위임
+  - `c4-permission-reviewer.sh`: PermissionRequest — Haiku API 판단 (전체 도구 대상)
+- **`$CLAUDE_PROJECT_DIR`**: Claude Code가 훅 실행 시 자동 설정 → 사용자/컴퓨터 무관
+- **응답 포맷 분리**: PreToolUse=`permissionDecision`, PermissionRequest=`decision.behavior`
+- **Edit/Write 우선순위**: built-in allow(`.c4/`,`/tmp/`) → user allow → user block → built-in block
+- **`patchHookEvent` 3-phase**: Phase1=baseName scan → Phase2=matcher match → Phase3=append
+
+### A2UI 응답 라우팅 + Edit Hook 지원 ✅ (v0.23.0)
+
+- **A2UI 응답 라우팅** (`serve/agent`): C1 메신저에서 버튼 클릭 시 `cq serve agent`가 `metadata.a2ui_response.action_id` 감지 → `fetchChannelContext` (Supabase REST, 10s timeout) + `buildA2UIPrompt` (원본 A2UI 메시지 기반 컨텍스트 포함 프롬프트) → `claude -p` 호출
+- **msgRequest struct**: positional args 대신 구조체로 `actionID` 전달, loop prevention(agent/system 필터) 재사용
+- **patchClaudeSettings 3-arg**: `(homeDir, bashHookPath, editHookPath)` — Edit/Write hook 지원 추가, empty-path guard
+- **신규 테스트 +9**: `buildA2UIPrompt` 3개 + handleEvent A2UI 경로 4개 + `fetchChannelContext` 2개
 
 ---
 

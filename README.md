@@ -11,7 +11,7 @@ Plan, execute, review, and learn — automated end-to-end.
 ![Go](https://img.shields.io/badge/Go-1.22+-00ADD8?logo=go&logoColor=white)
 ![Python](https://img.shields.io/badge/Python-3.11+-3776AB?logo=python&logoColor=white)
 ![Tools](https://img.shields.io/badge/MCP_Tools-156-blueviolet)
-![Tests](https://img.shields.io/badge/Tests-2%2C205+-brightgreen)
+![Tests](https://img.shields.io/badge/Tests-2%2C302+-brightgreen)
 ![License](https://img.shields.io/badge/License-Personal_Study-orange)
 
 </div>
@@ -184,7 +184,7 @@ c4_lighthouse(action="promote", name="export_api")
 - **CDP Runner** — Browser automation via Chrome DevTools Protocol
 
 ### Developer Experience
-- **15 slash commands** — `/c4-plan`, `/c4-run`, `/c4-status`, `/c4-checkpoint`, `/c4-swarm`, ...
+- **21 slash commands** — `/c4-plan`, `/c4-run`, `/c4-status`, `/c4-checkpoint`, `/c4-swarm`, `/c4-polish`, `/c4-finish`, `/c4-quick`, `/c4-submit`, `/c4-release`, ...
 - **37 specialized agents** — `code-reviewer`, `ml-engineer`, `security-auditor`, `debugger`, ...
 - **7 hooks** — Secret scanning, force-push prevention, auto-lint (Python/TypeScript)
 - **Economic mode** — Model routing presets (standard / economic / ultra-economic / quality)
@@ -219,7 +219,7 @@ c4_lighthouse(action="promote", name="export_api")
 | SQL (`infra/`) | ~1.1K | — | ~1.1K |
 | **Total** | **~90.9K** | **~50.8K** | **~141.7K LOC** |
 
-**Tests:** Go 1,430 (c4-core 1,275 + c5 155) · Python 697 · Rust 85 → **~2,212 total**
+**Tests:** Go ~1,513 (c4-core ~1,339 + c5 174) · Python 697 · Rust 92 → **~2,302 total**
 
 ## Configuration
 
