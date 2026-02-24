@@ -10,9 +10,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.28.3] - 2026-02-24
 
 ### ✨ Features
-- **sessions**: tmux 스타일 named Claude Code 세션 (`072823f3`)
+- **sessions**: tmux 스타일 named Claude Code 세션 (`072823f3`, `1288b234`)
   - `cq claude -t <name>`: 세션 이름 지정 — 첫 실행 시 UUID 자동 감지·저장, 재실행 시 `claude --resume` 자동 실행
-  - `cq sessions`: 저장된 세션 목록 출력 (NAME/UUID/UPDATED)
+  - `cq ls` (alias: `cq sessions`): tmux 스타일 목록 출력 — `name: (created DATE) [dir] uuid=XXXX (current)`
+    - `CQ_SESSION_NAME` env var로 현재 세션 자동 감지 및 `(current)` 표시
+  - `/reboot` 스킬: `~/.c4/.reboot` 플래그 작성 → `/exit` 후 cq가 동일 UUID로 즉시 재시작
+  - reboot loop: resume도 subprocess 방식으로 전환하여 부모 프로세스 유지
+  - `CQ_SESSION_NAME` / `CQ_SESSION_UUID` 환경변수를 claude 서브프로세스에 자동 주입
   - JSONL 파일 삭제 시 자동으로 새 세션 생성
 
 ---
