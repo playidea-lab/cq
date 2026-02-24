@@ -12,6 +12,7 @@ import (
 	"github.com/changmin/c4-core/internal/eventbus"
 	"github.com/changmin/c4-core/internal/knowledge"
 	"github.com/changmin/c4-core/internal/llm"
+	"github.com/changmin/c4-core/internal/mailbox"
 	"github.com/changmin/c4-core/internal/mcp"
 	"github.com/changmin/c4-core/internal/mcp/handlers"
 	"github.com/changmin/c4-core/internal/research"
@@ -81,6 +82,9 @@ type initContext struct {
 
 	// Session (set by initSession in mcp_init_session.go)
 	sessionMonitor *session.Monitor
+
+	// Mail (set by initMail in mcp_init_mail.go)
+	mailStore *mailbox.MailStore
 }
 
 // hubClientInterface abstracts hub.Client so the stub doesn't need to import hub.

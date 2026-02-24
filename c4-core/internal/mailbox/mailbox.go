@@ -6,6 +6,8 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -211,4 +213,13 @@ func (s *MailStore) Delete(id int64) error {
 		return ErrNotFound
 	}
 	return nil
+}
+
+// DefaultDBPath returns the default path for the mailbox database (~/.c4/mailbox.db).
+func DefaultDBPath() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("mailbox: resolve home dir: %w", err)
+	}
+	return filepath.Join(home, ".c4", "mailbox.db"), nil
 }
