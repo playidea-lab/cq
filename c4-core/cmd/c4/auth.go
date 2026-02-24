@@ -3,6 +3,8 @@ package main
 import (
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/changmin/c4-core/internal/cloud"
@@ -86,7 +88,16 @@ func runAuthLogin(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	return client.LoginWithGitHub()
+	if err := client.LoginWithGitHub(); err != nil {
+		return err
+	}
+
+	// Auto-patch .c4/config.yaml cloud section after successful login.
+	url := patchCloudConfigAfterLogin(projectDir)
+	if url != "" {
+		fmt.Fprintf(os.Stderr, "Cloud configured: %s\n", url)
+	}
+	return nil
 }
 
 func runAuthLogout(cmd *cobra.Command, args []string) error {
@@ -135,4 +146,160 @@ func runAuthStatus(cmd *cobra.Command, args []string) error {
 	}
 
 	return nil
+}
+
+// patchCloudConfigAfterLogin patches the cloud section of .c4/config.yaml
+// after a successful OAuth login. It sets cloud.enabled=true, cloud.url,
+// cloud.anon_key, and cloud.mode=local-first. If the user has already set
+// cloud.url, it is preserved (not overwritten). Returns the effective URL
+// on success, or "" if patching was skipped (e.g., .c4/ doesn't exist).
+func patchCloudConfigAfterLogin(projDir string) string {
+	c4DirPath := filepath.Join(projDir, ".c4")
+	if _, err := os.Stat(c4DirPath); os.IsNotExist(err) {
+		// .c4/ directory doesn't exist — cq init hasn't been run yet.
+		// Gracefully skip config patching.
+		return ""
+	}
+
+	configPath := filepath.Join(c4DirPath, "config.yaml")
+
+	var existing string
+	if data, err := os.ReadFile(configPath); err == nil {
+		existing = string(data)
+	}
+
+	// Determine the effective URL: preserve user's custom value if set.
+	effectiveURL := builtinSupabaseURL
+	if userURL := cloudYAMLValue(existing, "url:"); userURL != "" {
+		effectiveURL = userURL
+	}
+
+	effectiveAnonKey := builtinSupabaseKey
+	if userKey := cloudYAMLValue(existing, "anon_key:"); userKey != "" {
+		effectiveAnonKey = userKey
+	}
+
+	// Build the desired cloud section values.
+	desired := map[string]string{
+		"enabled:":  "true",
+		"url:":      effectiveURL,
+		"anon_key:": effectiveAnonKey,
+		"mode:":     "local-first",
+	}
+
+	result := writeCloudSectionToYAML(existing, desired)
+	if err := os.WriteFile(configPath, []byte(result), 0644); err != nil {
+		// Non-fatal: login succeeded, config patch failed.
+		fmt.Fprintf(os.Stderr, "Warning: failed to write config: %v\n", err)
+		return ""
+	}
+
+	return effectiveURL
+}
+
+// cloudYAMLValue extracts a value for a key within the cloud: section of a
+// YAML string. Returns "" if not found. The key must include the trailing colon
+// (e.g., "url:").
+func cloudYAMLValue(content, key string) string {
+	lines := strings.Split(content, "\n")
+	inCloud := false
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "cloud:" {
+			inCloud = true
+			continue
+		}
+		if inCloud {
+			// End of cloud section: non-empty, non-comment, non-indented line.
+			if trimmed != "" && !strings.HasPrefix(trimmed, "#") &&
+				!strings.HasPrefix(line, " ") && !strings.HasPrefix(line, "\t") {
+				break
+			}
+			if strings.HasPrefix(trimmed, key) {
+				val := strings.TrimSpace(strings.TrimPrefix(trimmed, key))
+				return val
+			}
+		}
+	}
+	return ""
+}
+
+// writeCloudSectionToYAML updates or creates the cloud: section with the given
+// key-value pairs. Keys must include trailing colon (e.g., "enabled:").
+func writeCloudSectionToYAML(existing string, desired map[string]string) string {
+	lines := strings.Split(existing, "\n")
+
+	// Find cloud: section boundaries.
+	cloudStart := -1
+	cloudEnd := -1
+	for i, line := range lines {
+		if strings.TrimSpace(line) == "cloud:" {
+			cloudStart = i
+			continue
+		}
+		if cloudStart >= 0 && cloudEnd < 0 {
+			trimmed := strings.TrimSpace(line)
+			if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+				continue
+			}
+			if !strings.HasPrefix(line, " ") && !strings.HasPrefix(line, "\t") {
+				cloudEnd = i
+				break
+			}
+		}
+	}
+	if cloudStart >= 0 && cloudEnd < 0 {
+		cloudEnd = len(lines)
+	}
+
+	if cloudStart >= 0 {
+		// Update existing cloud section: replace or insert keys.
+		remaining := make(map[string]string)
+		for k, v := range desired {
+			remaining[k] = v
+		}
+
+		for i := cloudStart + 1; i < cloudEnd; i++ {
+			trimmed := strings.TrimSpace(lines[i])
+			for key, val := range remaining {
+				if strings.HasPrefix(trimmed, key) {
+					lines[i] = "  " + key + " " + val
+					delete(remaining, key)
+					break
+				}
+			}
+		}
+
+		// Append any keys not found in existing section.
+		if len(remaining) > 0 {
+			var insertLines []string
+			// Insert in a deterministic order.
+			for _, key := range []string{"enabled:", "url:", "anon_key:", "mode:"} {
+				if val, ok := remaining[key]; ok {
+					insertLines = append(insertLines, "  "+key+" "+val)
+				}
+			}
+			newLines := make([]string, 0, len(lines)+len(insertLines))
+			newLines = append(newLines, lines[:cloudStart+1]...)
+			newLines = append(newLines, insertLines...)
+			newLines = append(newLines, lines[cloudStart+1:]...)
+			lines = newLines
+		}
+
+		return strings.Join(lines, "\n")
+	}
+
+	// No cloud: section — append one.
+	var sb strings.Builder
+	sb.WriteString(existing)
+	if existing != "" && !strings.HasSuffix(existing, "\n") {
+		sb.WriteString("\n")
+	}
+	sb.WriteString("cloud:\n")
+	for _, key := range []string{"enabled:", "url:", "anon_key:", "mode:"} {
+		if val, ok := desired[key]; ok {
+			sb.WriteString("  " + key + " " + val + "\n")
+		}
+	}
+	return sb.String()
 }
