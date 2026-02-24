@@ -1427,10 +1427,10 @@ func TestLsUnread(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewMailStore: %v", err)
 	}
-	if _, err := ms.Send("", "tmuxlike", "hello", "world", ""); err != nil {
+	if _, _, err := ms.Send("", "tmuxlike", "hello", "world", ""); err != nil {
 		t.Fatalf("Send 1: %v", err)
 	}
-	if _, err := ms.Send("", "tmuxlike", "hi", "there", ""); err != nil {
+	if _, _, err := ms.Send("", "tmuxlike", "hi", "there", ""); err != nil {
 		t.Fatalf("Send 2: %v", err)
 	}
 	ms.Close()

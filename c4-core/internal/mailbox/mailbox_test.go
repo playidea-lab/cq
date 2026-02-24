@@ -20,7 +20,7 @@ func newTestStore(t *testing.T) *MailStore {
 func TestMailSend(t *testing.T) {
 	s := newTestStore(t)
 
-	id, err := s.Send("alice", "bob", "hello", "world", "proj1")
+	id, _, err := s.Send("alice", "bob", "hello", "world", "proj1")
 	if err != nil {
 		t.Fatalf("Send: %v", err)
 	}
@@ -29,13 +29,13 @@ func TestMailSend(t *testing.T) {
 	}
 
 	// from="*" should be rejected
-	_, err = s.Send("*", "bob", "hi", "body", "")
+	_, _, err = s.Send("*", "bob", "hi", "body", "")
 	if err == nil {
 		t.Fatal("expected error for from='*', got nil")
 	}
 
 	// to="" should be rejected
-	_, err = s.Send("alice", "", "hi", "body", "")
+	_, _, err = s.Send("alice", "", "hi", "body", "")
 	if err == nil {
 		t.Fatal("expected error for empty to, got nil")
 	}
@@ -45,15 +45,15 @@ func TestUnreadCount(t *testing.T) {
 	s := newTestStore(t)
 
 	// Send direct message to bob
-	if _, err := s.Send("alice", "bob", "subj1", "body1", ""); err != nil {
+	if _, _, err := s.Send("alice", "bob", "subj1", "body1", ""); err != nil {
 		t.Fatalf("Send: %v", err)
 	}
 	// Send broadcast
-	if _, err := s.Send("alice", "*", "broadcast", "hello everyone", ""); err != nil {
+	if _, _, err := s.Send("alice", "*", "broadcast", "hello everyone", ""); err != nil {
 		t.Fatalf("Send broadcast: %v", err)
 	}
 	// Send to carol (should not count for bob)
-	if _, err := s.Send("alice", "carol", "subj2", "body2", ""); err != nil {
+	if _, _, err := s.Send("alice", "carol", "subj2", "body2", ""); err != nil {
 		t.Fatalf("Send: %v", err)
 	}
 
@@ -107,7 +107,7 @@ func TestMailSendAndMigrationIdempotent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewMailStore (1st): %v", err)
 	}
-	if _, err := s1.Send("a", "b", "s", "body", ""); err != nil {
+	if _, _, err := s1.Send("a", "b", "s", "body", ""); err != nil {
 		t.Fatalf("Send: %v", err)
 	}
 	s1.Close()
@@ -132,13 +132,13 @@ func TestMailList(t *testing.T) {
 	s := newTestStore(t)
 
 	// Send messages to bob, broadcast, and carol
-	if _, err := s.Send("alice", "bob", "direct", "body1", ""); err != nil {
+	if _, _, err := s.Send("alice", "bob", "direct", "body1", ""); err != nil {
 		t.Fatalf("Send: %v", err)
 	}
-	if _, err := s.Send("alice", "*", "broadcast", "hello", ""); err != nil {
+	if _, _, err := s.Send("alice", "*", "broadcast", "hello", ""); err != nil {
 		t.Fatalf("Send broadcast: %v", err)
 	}
-	if _, err := s.Send("alice", "carol", "to carol", "body3", ""); err != nil {
+	if _, _, err := s.Send("alice", "carol", "to carol", "body3", ""); err != nil {
 		t.Fatalf("Send: %v", err)
 	}
 
@@ -177,7 +177,7 @@ func TestMailList(t *testing.T) {
 func TestMailRead(t *testing.T) {
 	s := newTestStore(t)
 
-	id, err := s.Send("alice", "bob", "subj", "body", "proj")
+	id, _, err := s.Send("alice", "bob", "subj", "body", "proj")
 	if err != nil {
 		t.Fatalf("Send: %v", err)
 	}
@@ -200,7 +200,7 @@ func TestMailRead(t *testing.T) {
 func TestMailReadIdempotent(t *testing.T) {
 	s := newTestStore(t)
 
-	id, err := s.Send("alice", "bob", "subj", "body", "")
+	id, _, err := s.Send("alice", "bob", "subj", "body", "")
 	if err != nil {
 		t.Fatalf("Send: %v", err)
 	}
@@ -237,7 +237,7 @@ func TestMailReadNotFound(t *testing.T) {
 func TestMailDelete(t *testing.T) {
 	s := newTestStore(t)
 
-	id, err := s.Send("alice", "bob", "subj", "body", "")
+	id, _, err := s.Send("alice", "bob", "subj", "body", "")
 	if err != nil {
 		t.Fatalf("Send: %v", err)
 	}

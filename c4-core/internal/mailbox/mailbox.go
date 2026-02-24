@@ -36,6 +36,11 @@ type MailStore struct {
 // NewMailStore opens (or creates) the mailbox database at dbPath, runs the
 // migration, and returns a ready-to-use *MailStore.
 func NewMailStore(dbPath string) (*MailStore, error) {
+	// Ensure parent directory exists (e.g. ~/.c4/ on a fresh machine).
+	if err := os.MkdirAll(filepath.Dir(dbPath), 0700); err != nil {
+		return nil, fmt.Errorf("mailbox: create db dir: %w", err)
+	}
+
 	db, err := sql.Open("sqlite", dbPath)
 	if err != nil {
 		return nil, fmt.Errorf("mailbox: open db: %w", err)
@@ -46,7 +51,7 @@ func NewMailStore(dbPath string) (*MailStore, error) {
 		db.Close()
 		return nil, fmt.Errorf("mailbox: set WAL: %w", err)
 	}
-	if _, err := db.Exec("PRAGMA busy_timeout=5000"); err != nil {
+	if _, err := db.Exec("PRAGMA busy_timeout=30000"); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("mailbox: set busy_timeout: %w", err)
 	}
@@ -82,14 +87,16 @@ CREATE INDEX IF NOT EXISTS idx_mail_to ON c4_mail(to_sess);
 	return err
 }
 
-// Send inserts a new mail message and returns the new row ID.
+// Send inserts a new mail message and returns the new row ID and the stored
+// created_at timestamp (RFC3339). Both values come from a single clock read so
+// the response returned to the caller always matches what is persisted in the DB.
 // from="*" is rejected (reserved word). to="" is rejected (must specify a recipient).
-func (s *MailStore) Send(from, to, subject, body, projectID string) (int64, error) {
+func (s *MailStore) Send(from, to, subject, body, projectID string) (int64, string, error) {
 	if from == "*" {
-		return 0, fmt.Errorf("mailbox: from \"*\" is reserved")
+		return 0, "", fmt.Errorf("mailbox: from \"*\" is reserved")
 	}
 	if to == "" {
-		return 0, fmt.Errorf("mailbox: to must not be empty")
+		return 0, "", fmt.Errorf("mailbox: to must not be empty")
 	}
 
 	now := time.Now().UTC().Format(time.RFC3339)
@@ -99,9 +106,10 @@ func (s *MailStore) Send(from, to, subject, body, projectID string) (int64, erro
 		from, to, subject, body, projectID, now,
 	)
 	if err != nil {
-		return 0, fmt.Errorf("mailbox: send: %w", err)
+		return 0, "", fmt.Errorf("mailbox: send: %w", err)
 	}
-	return res.LastInsertId()
+	id, err := res.LastInsertId()
+	return id, now, err
 }
 
 // UnreadCount returns the number of unread messages for toSession.

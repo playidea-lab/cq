@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"time"
 
 	"github.com/changmin/c4-core/internal/mailbox"
 	"github.com/changmin/c4-core/internal/mcp"
@@ -47,10 +46,12 @@ func RegisterMailHandlers(reg *mcp.Registry, ms *mailbox.MailStore) {
 			args.From = os.Getenv("CQ_SESSION_NAME")
 		}
 
-		// Capture approximate created_at before Send so the response
-		// does not require a side-effectful Read() call.
-		createdAt := time.Now().UTC().Format(time.RFC3339)
-		id, err := ms.Send(args.From, args.To, args.Subject, args.Body, "")
+		if args.Body == "" {
+			return nil, fmt.Errorf("body is required")
+		}
+		// Send returns (id, created_at) from a single clock read so the response
+		// matches what is stored in the DB (no second Read() call needed).
+		id, createdAt, err := ms.Send(args.From, args.To, args.Subject, args.Body, "")
 		if err != nil {
 			return nil, err
 		}

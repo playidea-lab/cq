@@ -77,7 +77,7 @@ var mailSendCmd = &cobra.Command{
 		}
 		defer ms.Close()
 
-		id, err := ms.Send(from, to, mailSendSubject, body, "")
+		id, _, err := ms.Send(from, to, mailSendSubject, body, "")
 		if err != nil {
 			return err
 		}
