@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.28.0] - 2026-02-24
+
+### ✨ Features
+- **ci**: 릴리즈 바이너리에 Supabase URL/Key를 ldflags로 embed (`SUPABASE_URL`, `SUPABASE_ANON_KEY` env 주입) (`772efa73`) [T-976-0]
+- **auth**: `cq auth login` 성공 시 `.c4/config.yaml` cloud 섹션 자동 패치 (`2c2031fa`) [T-977-1]
+  - `enabled: true`, `url`, `anon_key`, `mode: local-first` 자동 설정
+  - `.c4/` 디렉토리 없으면 graceful skip (init 전 로그인 허용)
+  - 사용자 커스텀 `cloud.url`/`anon_key` 보호 (덮어쓰기 방지)
+  - auth 서브커맨드가 `.c4/` 없이도 실행되도록 `PersistentPreRunE` 예외 추가
+- **hub**: `hub.api_key` 미설정 시 cloud session JWT 자동 폴백 (`1267f959`) [T-978-0]
+  - `SetTokenFunc(tokenFunc func() string)` — per-request token 갱신 지원
+  - `mcp_init_hub.go`에서 `cloudTP.Token() != ""` 조건 충족 시 자동 주입
+- **init**: `cq init` 완료 후 cloud 인증 상태 체크 + 안내 메시지 (`6400f7e9`) [T-979-0]
+  - 로그인 상태: `✓ Cloud: <email> (expires in Xh)` 출력
+  - 미로그인: `→ Run 'cq auth login' to enable cloud sync & hub access` 안내
+  - URL 미설정(solo tier): 무출력
+
+### 🔧 Polish
+- **auth**: YAML key prefix collision 수정 — `cloudYAMLValue` + `writeCloudSectionToYAML` (`0f66e4bf`)
+  - `HasPrefix(trimmed, key)` → `trimmed == key || HasPrefix(trimmed, key+" ") || HasPrefix(trimmed, key+"\t")` (doctor.go 패턴 통일)
+- **hub**: cloud token guard 강화 — `ctx.cloudTP != nil` → `ctx.cloudTP.Token() != ""` 추가
+
+### 📚 Documentation
+- **agents**: 테스트 수 현행화 (~1,368 → ~1,375, 온보딩 배치 +21 테스트)
+
+---
+
 ## [0.27.0] - 2026-02-24
 
 ### ✨ Features
