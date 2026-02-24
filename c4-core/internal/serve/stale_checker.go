@@ -115,6 +115,11 @@ func (s *StaleCheckerComponent) Health() ComponentHealth {
 
 // run is the background goroutine that drives periodic stale-task checks.
 func (s *StaleCheckerComponent) run(ctx context.Context) {
+	defer func() {
+		if r := recover(); r != nil {
+			slog.Error("stale_checker: panic in run goroutine", "recover", r)
+		}
+	}()
 	ticker := s.newTicker(time.Duration(s.cfg.IntervalSeconds) * time.Second)
 	defer ticker.Stop()
 

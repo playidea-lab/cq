@@ -322,6 +322,63 @@ func (m *mockStaleStorePartialFail) getResetCalls() []string {
 	return cp
 }
 
+// mockCloser counts Close() calls for testing WithCloser.
+type mockCloser struct {
+	mu         sync.Mutex
+	closeCalls int
+}
+
+func (m *mockCloser) Close() error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.closeCalls++
+	return nil
+}
+
+func (m *mockCloser) getCloseCalls() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.closeCalls
+}
+
+// TestStaleChecker_WithCloser_ClosedOnStop verifies that the closer attached via
+// WithCloser is called exactly once when Stop is invoked.
+func TestStaleChecker_WithCloser_ClosedOnStop(t *testing.T) {
+	store := &mockStaleStore{}
+	closer := &mockCloser{}
+
+	ct := newControlledTicker()
+	sc := newStaleCheckerWithTicker(store, nil, config.StaleCheckerConfig{
+		Enabled:          true,
+		ThresholdMinutes: 30,
+		IntervalSeconds:  60,
+	}, ct.factory())
+	sc.WithCloser(closer)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	if err := sc.Start(ctx); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+
+	if err := sc.Stop(ctx); err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+
+	if n := closer.getCloseCalls(); n != 1 {
+		t.Errorf("Close() called %d times, want 1", n)
+	}
+
+	// Second Stop must not call Close() again (closer is set to nil after first Stop).
+	if err := sc.Stop(ctx); err != nil {
+		t.Fatalf("second Stop: %v", err)
+	}
+	if n := closer.getCloseCalls(); n != 1 {
+		t.Errorf("after second Stop: Close() called %d times, want still 1", n)
+	}
+}
+
 // TestStaleChecker_ResetTask_PartialFailure verifies that a ResetTask error on one task
 // does not prevent subsequent tasks from being processed (continue on error pattern).
 func TestStaleChecker_ResetTask_PartialFailure(t *testing.T) {
