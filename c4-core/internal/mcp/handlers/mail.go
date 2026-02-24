@@ -43,6 +43,9 @@ func RegisterMailHandlers(reg *mcp.Registry, ms *mailbox.MailStore) {
 		if args.To == "" {
 			return nil, fmt.Errorf("to is required")
 		}
+		if args.To == "*" {
+			return nil, fmt.Errorf("to \"*\" (broadcast) is not supported via MCP; specify a session name")
+		}
 		if args.From == "*" {
 			return nil, fmt.Errorf("from cannot be '*'")
 		}
@@ -128,6 +131,9 @@ func RegisterMailHandlers(reg *mcp.Registry, ms *mailbox.MailStore) {
 		if err := json.Unmarshal(raw, &args); err != nil {
 			return nil, fmt.Errorf("parse args: %w", err)
 		}
+		if args.ID <= 0 {
+			return nil, fmt.Errorf("id must be a positive integer")
+		}
 		msg, err := ms.Read(args.ID)
 		if errors.Is(err, mailbox.ErrNotFound) {
 			return nil, fmt.Errorf("message %d not found", args.ID)
@@ -163,6 +169,9 @@ func RegisterMailHandlers(reg *mcp.Registry, ms *mailbox.MailStore) {
 		}
 		if err := json.Unmarshal(raw, &args); err != nil {
 			return nil, fmt.Errorf("parse args: %w", err)
+		}
+		if args.ID <= 0 {
+			return nil, fmt.Errorf("id must be a positive integer")
 		}
 		if err := ms.Delete(args.ID); errors.Is(err, mailbox.ErrNotFound) {
 			return nil, fmt.Errorf("message %d not found", args.ID)
