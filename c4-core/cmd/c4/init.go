@@ -1355,6 +1355,12 @@ var sessionNameCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+		// Remove any existing entries pointing to the same UUID (rename, not add).
+		for k, v := range sessions {
+			if v.UUID == uuid {
+				delete(sessions, k)
+			}
+		}
 		sessions[name] = namedSessionEntry{
 			UUID:    uuid,
 			Dir:     projectDir,
