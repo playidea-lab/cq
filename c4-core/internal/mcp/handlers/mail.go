@@ -36,21 +36,22 @@ func RegisterMailHandlers(reg *mcp.Registry, ms *mailbox.MailStore) {
 		if err := json.Unmarshal(raw, &args); err != nil {
 			return nil, fmt.Errorf("parse args: %w", err)
 		}
+		// Resolve defaults before validating.
+		if args.From == "" {
+			args.From = os.Getenv("CQ_SESSION_NAME")
+		}
 		if args.To == "" {
 			return nil, fmt.Errorf("to is required")
 		}
 		if args.From == "*" {
 			return nil, fmt.Errorf("from cannot be '*'")
 		}
-		if args.From == "" {
-			args.From = os.Getenv("CQ_SESSION_NAME")
-		}
-
 		if args.Body == "" {
 			return nil, fmt.Errorf("body is required")
 		}
 		// Send returns (id, created_at) from a single clock read so the response
 		// matches what is stored in the DB (no second Read() call needed).
+		// project_id is reserved for future project-scoped mailbox filtering.
 		id, createdAt, err := ms.Send(args.From, args.To, args.Subject, args.Body, "")
 		if err != nil {
 			return nil, err

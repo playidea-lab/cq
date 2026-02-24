@@ -127,7 +127,7 @@ func (s *MailStore) UnreadCount(toSession string) (int, error) {
 	return count, nil
 }
 
-// List returns messages for toSession (direct + broadcast).
+// List returns messages for toSession (direct + broadcast), capped at 500 rows.
 // If toSession is empty, all messages are returned (admin view).
 // If unreadOnly is true, only messages with read_at='' are returned.
 // Results are ordered by created_at DESC.
@@ -138,20 +138,20 @@ func (s *MailStore) List(toSession string, unreadOnly bool) ([]MailMessage, erro
 	if toSession == "" {
 		if unreadOnly {
 			query = `SELECT id, from_sess, to_sess, subject, body, project_id, created_at, read_at
-			         FROM c4_mail WHERE read_at = '' ORDER BY created_at DESC`
+			         FROM c4_mail WHERE read_at = '' ORDER BY created_at DESC LIMIT 500`
 		} else {
 			query = `SELECT id, from_sess, to_sess, subject, body, project_id, created_at, read_at
-			         FROM c4_mail ORDER BY created_at DESC`
+			         FROM c4_mail ORDER BY created_at DESC LIMIT 500`
 		}
 	} else {
 		if unreadOnly {
 			query = `SELECT id, from_sess, to_sess, subject, body, project_id, created_at, read_at
 			         FROM c4_mail WHERE (to_sess = ? OR to_sess = '*') AND read_at = ''
-			         ORDER BY created_at DESC`
+			         ORDER BY created_at DESC LIMIT 500`
 		} else {
 			query = `SELECT id, from_sess, to_sess, subject, body, project_id, created_at, read_at
 			         FROM c4_mail WHERE (to_sess = ? OR to_sess = '*')
-			         ORDER BY created_at DESC`
+			         ORDER BY created_at DESC LIMIT 500`
 		}
 		args = append(args, toSession)
 	}

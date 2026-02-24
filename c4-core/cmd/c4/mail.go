@@ -61,6 +61,9 @@ var mailSendCmd = &cobra.Command{
 		if to == "*" {
 			return fmt.Errorf("--to \"*\" is reserved for broadcast; specify a session name")
 		}
+		if body == "" {
+			return fmt.Errorf("body required: use --body <text> or second positional arg")
+		}
 
 		from := mailSendFrom
 		if from == "" {
