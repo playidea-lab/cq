@@ -4,8 +4,11 @@
 # then uploads all artifacts to PlayIdea-Lab/cq GitHub Releases.
 #
 # Required CI variable (Settings → CI/CD → Variables):
-#   GH_TOKEN  — GitHub PAT with `repo` scope for PlayIdea-Lab/cq
-#               Mark as "Protected" so it's only available on protected tags.
+#   GH_TOKEN         — GitHub PAT with `repo` scope for PlayIdea-Lab/cq
+#                      Mark as "Protected" so it's only available on protected tags.
+#   CI_SUPABASE_URL  — Supabase project URL (e.g. https://xxx.supabase.co)
+#                      Embedded in release binaries so `cq auth login` works out of the box.
+#   CI_SUPABASE_KEY  — Supabase anon key (public, safe to embed; protected by RLS)
 
 variables:
   GIT_SUBMODULE_STRATEGY: recursive
@@ -19,6 +22,8 @@ check-env:
   stage: check-env
   script:
     - test -n "$GH_TOKEN" || { echo "GH_TOKEN not set — add it in Settings → CI/CD → Variables"; exit 1; }
+    - test -n "$CI_SUPABASE_URL" || echo "WARNING: CI_SUPABASE_URL not set — built-in auth will be disabled in release binaries"
+    - test -n "$CI_SUPABASE_KEY" || echo "WARNING: CI_SUPABASE_KEY not set — built-in auth will be disabled in release binaries"
   only:
     - /^v.*/
 
@@ -27,7 +32,7 @@ check-env:
   script:
     - cd c4-core
     - make embed-skills
-    - make build-cross GOOS=$GOOS GOARCH=$GOARCH TIER=$TIER
+    - make build-cross GOOS=$GOOS GOARCH=$GOARCH TIER=$TIER SUPABASE_URL=$CI_SUPABASE_URL SUPABASE_ANON_KEY=$CI_SUPABASE_KEY
   artifacts:
     paths:
       - c4-core/dist/
