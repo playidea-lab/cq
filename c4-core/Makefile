@@ -10,7 +10,18 @@
 BINARY_NAME := c4
 BUILD_DIR := bin
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
-LDFLAGS := -ldflags "-X main.version=$(VERSION)"
+
+# Supabase built-in credentials — injected only when CI env vars are set.
+# Local builds leave these empty; users can override via C4_CLOUD_URL / SUPABASE_URL env vars.
+_SUPABASE_FLAGS :=
+ifneq ($(SUPABASE_URL),)
+  _SUPABASE_FLAGS += -X main.builtinSupabaseURL=$(SUPABASE_URL)
+endif
+ifneq ($(SUPABASE_ANON_KEY),)
+  _SUPABASE_FLAGS += -X main.builtinSupabaseKey=$(SUPABASE_ANON_KEY)
+endif
+
+LDFLAGS := -ldflags "-X main.version=$(VERSION) $(_SUPABASE_FLAGS)"
 
 # Install destination (Claude Code reads this binary via .mcp.json)
 INSTALL_DIR := $(HOME)/.local/bin
