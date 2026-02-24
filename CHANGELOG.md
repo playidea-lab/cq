@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.27.0] - 2026-02-24
+
+### ✨ Features
+- **serve**: `StaleChecker` 컴포넌트 — 주기적으로 stale(`in_progress`) 태스크를 `pending`으로 리셋 (`f20526b8`)
+  - `serve.stale_checker.enabled`, `threshold_minutes`(기본 30), `interval_seconds`(기본 60) 설정
+  - `StaleTaskStore` 인터페이스 + `*handlers.SQLiteStore` 구현체 연결
+  - EventBus 연동: 리셋 성공 시 `task.stale` 이벤트 발행 (`task_id`, `worker_id`, `stale_minutes`)
+  - `WithCloser(db)` 패턴: `Stop()` 시 `*sql.DB` 자동 닫힘 (리소스 누수 방지)
+  - `tickerFn` 주입으로 단위 테스트 완전 제어 가능 (`controlledTicker` 패턴)
+- **serve**: OS 서비스 자동 시작 통합 — macOS LaunchAgent / Linux systemd / Windows Service (`f20526b8`)
+  - `cq serve install` / `cq serve uninstall` / `cq serve status` 서브커맨드
+  - `kardianos/service v1.2.4` 기반 크로스플랫폼 지원
+  - `cq doctor` `os-service` 항목: 설치/실행 상태 + PID liveness 확인
+- **init**: WebFetch, WebSearch를 기본 `permissions.allow` 목록에 추가 (`83163008`)
+
+### 🐛 Bug Fixes
+- **serve**: `serve_service.go` 병합 충돌 해결 (`051bb341`)
+
+### 🔧 Polish
+- **stale_checker**: `run()` goroutine에 `defer recover()` 추가 (panic 전파 방지) (`6b03348c`)
+- **stale_checker**: `runServeStatus`, `checkOSService`의 PID liveness check (`Signal(0)`) 추가 (`3d7258ed`)
+- **stale_checker**: `TestStaleChecker_WithCloser_ClosedOnStop`, `TestStaleChecker_ResetTask_PartialFailure` 테스트 추가
+
+### 📚 Documentation
+- **agents**: StaleChecker + OS 서비스 내용 추가, 테스트 수 현행화 (~1,355 → ~1,368, +13) (`6d208c1f`)
+
+---
+
 ## [0.26.0] - 2026-02-23
 
 ### ✨ Features
