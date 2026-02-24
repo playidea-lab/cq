@@ -28,12 +28,18 @@ curl -fsSL https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/install.sh | s
 # 1. Check environment
 cq doctor
 
-# 2. Initialize C4 in your project (generates .mcp.json + CLAUDE.md)
+# 2. Log in (connected / full tier)
+cq auth login   # opens GitHub OAuth in browser → auto-configures cloud
+
+# 3. Initialize C4 in your project (generates .mcp.json + CLAUDE.md)
 cd your-project
 cq claude   # for Claude Code
 cq cursor   # for Cursor
 
-# 3. Open Claude Code — C4 MCP tools are now available
+# 4. Open Claude Code — C4 MCP tools are now available
+#    cq init prints login status at startup:
+#      ✓ Cloud: user@example.com (expires in 47h)
+#      → Run 'cq auth login' to enable cloud sync & hub access
 ```
 
 ## How it looks
@@ -194,7 +200,13 @@ T-022 완료 후 비교 리포트 자동 생성:
 
 `solo` tier works out of the box — no config needed.
 
-For `connected` / `full` tiers, place the config provided by your team at `~/.c4/config.yaml`.
+For `connected` / `full` tiers:
+
+```sh
+cq auth login   # GitHub OAuth → auto-patches .c4/config.yaml (cloud.enabled, url, anon_key)
+```
+
+After login, cloud sync and Hub access are enabled automatically. No manual config editing required.
 
 ## Update
 
