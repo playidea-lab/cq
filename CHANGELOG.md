@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.28.3] - 2026-02-24
+
+### ✨ Features
+- **sessions**: tmux 스타일 named Claude Code 세션 (`072823f3`)
+  - `cq claude -t <name>`: 세션 이름 지정 — 첫 실행 시 UUID 자동 감지·저장, 재실행 시 `claude --resume` 자동 실행
+  - `cq sessions`: 저장된 세션 목록 출력 (NAME/UUID/UPDATED)
+  - JSONL 파일 삭제 시 자동으로 새 세션 생성
+
+---
+
 ## [0.28.2] - 2026-02-24
 
 ### 🐛 Bug Fixes
