@@ -73,7 +73,8 @@ func init() {
 	for _, cmd := range []*cobra.Command{rootCmd, claudeCmd} {
 		cmd.Flags().StringVarP(&sessionName, "tag", "t", "", "session name: resume or create named Claude Code session")
 	}
-	rootCmd.AddCommand(claudeCmd, codexCmd, cursorCmd, lsCmd)
+	sessionCmd.AddCommand(sessionNameCmd, sessionRmCmd)
+	rootCmd.AddCommand(claudeCmd, codexCmd, cursorCmd, lsCmd, sessionCmd)
 }
 
 // writeDefaultConfig writes the embedded default config.yaml to .c4/config.yaml
@@ -1215,8 +1216,37 @@ func launchToolNamed(projectDir, name string) error {
 	return nil
 }
 
+// currentSessionUUID detects the current Claude Code session UUID by finding
+// the most recently modified JSONL file in the project's Claude session directory.
+func currentSessionUUID(dir string) string {
+	sessionDir, err := claudeProjectDir(dir)
+	if err != nil {
+		return ""
+	}
+	entries, err := os.ReadDir(sessionDir)
+	if err != nil {
+		return ""
+	}
+	var newestTime time.Time
+	newestUUID := ""
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".jsonl") {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil {
+			continue
+		}
+		if info.ModTime().After(newestTime) {
+			newestTime = info.ModTime()
+			newestUUID = strings.TrimSuffix(e.Name(), ".jsonl")
+		}
+	}
+	return newestUUID
+}
+
 // lsCmd lists named sessions in tmux-style format.
-// Detects the current session via the CQ_SESSION_NAME environment variable.
+// Detects the current session via CQ_SESSION_UUID env var or filesystem.
 var lsCmd = &cobra.Command{
 	Use:     "ls",
 	Aliases: []string{"sessions"},
@@ -1231,13 +1261,16 @@ var lsCmd = &cobra.Command{
 			fmt.Println("No named sessions. Use 'cq claude -t <name>' to create one.")
 			return nil
 		}
-		current := os.Getenv("CQ_SESSION_NAME")
+		// Detect current session UUID: prefer env var, fall back to filesystem.
+		curUUID := os.Getenv("CQ_SESSION_UUID")
+		if curUUID == "" {
+			curUUID = currentSessionUUID(projectDir)
+		}
 		// Sort names for stable output
 		names := make([]string, 0, len(sessions))
 		for n := range sessions {
 			names = append(names, n)
 		}
-		// Simple alphabetical sort
 		for i := 0; i < len(names)-1; i++ {
 			for j := i + 1; j < len(names); j++ {
 				if names[i] > names[j] {
@@ -1247,19 +1280,17 @@ var lsCmd = &cobra.Command{
 		}
 		for _, n := range names {
 			entry := sessions[n]
-			// Parse stored time for friendly display
 			t, tErr := time.Parse(time.RFC3339, entry.Updated)
 			timeStr := entry.Updated
 			if tErr == nil {
 				timeStr = t.Format("Mon Jan 02 15:04:05 2006")
 			}
-			// Shorten dir for display
 			shortDir := entry.Dir
 			if homeDir, hErr := os.UserHomeDir(); hErr == nil {
 				shortDir = strings.Replace(shortDir, homeDir, "~", 1)
 			}
 			suffix := ""
-			if current != "" && n == current {
+			if curUUID != "" && entry.UUID == curUUID {
 				suffix = " (current)"
 			}
 			fmt.Printf("%s: (created %s) [%s] uuid=%s%s\n",
@@ -1271,6 +1302,62 @@ var lsCmd = &cobra.Command{
 
 // sessionsCmd is kept for backward compat (alias handled via lsCmd.Aliases).
 var sessionsCmd = lsCmd
+
+// sessionCmd provides session management subcommands.
+var sessionCmd = &cobra.Command{
+	Use:   "session",
+	Short: "Manage named Claude Code sessions",
+}
+
+var sessionNameCmd = &cobra.Command{
+	Use:   "name <session-name>",
+	Short: "Attach a name to the current session",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		name := args[0]
+		uuid := currentSessionUUID(projectDir)
+		if uuid == "" {
+			return fmt.Errorf("could not detect current session UUID (no JSONL files found)")
+		}
+		sessions, err := loadNamedSessions()
+		if err != nil {
+			return err
+		}
+		sessions[name] = namedSessionEntry{
+			UUID:    uuid,
+			Dir:     projectDir,
+			Updated: time.Now().Format(time.RFC3339),
+		}
+		if err := saveNamedSessions(sessions); err != nil {
+			return err
+		}
+		fmt.Printf("session '%s' → %s...\n", name, uuid[:8])
+		fmt.Printf("Next time: cq claude -t %s\n", name)
+		return nil
+	},
+}
+
+var sessionRmCmd = &cobra.Command{
+	Use:   "rm <session-name>",
+	Short: "Remove a named session",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		name := args[0]
+		sessions, err := loadNamedSessions()
+		if err != nil {
+			return err
+		}
+		if _, ok := sessions[name]; !ok {
+			return fmt.Errorf("session '%s' not found", name)
+		}
+		delete(sessions, name)
+		if err := saveNamedSessions(sessions); err != nil {
+			return err
+		}
+		fmt.Printf("session '%s' removed\n", name)
+		return nil
+	},
+}
 
 // launchTool launches the specified AI coding tool, replacing the current process.
 func launchTool(tool, dir string) error {
