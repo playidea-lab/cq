@@ -1,13 +1,17 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/changmin/c4-core/internal/mailbox"
 )
 
 func TestHookNeedsUpdate(t *testing.T) {
@@ -846,6 +850,74 @@ func TestPatchProjectSettings_Idempotent(t *testing.T) {
 	}
 }
 
+// TestPatchProjectSettings_DeprecatedBaseName verifies that patchProjectSettings
+// replaces a hook registered under a deprecated baseName (e.g. permission-reviewer.py)
+// with the current hook (c4-permission-reviewer.sh) without creating a duplicate entry.
+// This covers the real-world scenario where a project was set up with a pre-v0.24
+// Python-based permission reviewer.
+func TestPatchProjectSettings_DeprecatedBaseName(t *testing.T) {
+	projectDir := t.TempDir()
+	settingsDir := filepath.Join(projectDir, ".claude")
+	os.MkdirAll(settingsDir, 0755)
+
+	hooksDir := filepath.Join(settingsDir, "hooks")
+	os.MkdirAll(hooksDir, 0755)
+
+	// Simulate pre-v0.24 settings.json with the Python-based permission reviewer.
+	oldPermCmd := "python3 \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/permission-reviewer.py"
+	staleSettings := map[string]any{
+		"hooks": map[string]any{
+			"PermissionRequest": []any{
+				map[string]any{
+					"matcher": "Bash|Read|Edit|Write|MultiEdit|NotebookEdit|WebFetch",
+					"hooks": []any{
+						map[string]any{
+							"type":    "command",
+							"command": oldPermCmd,
+							"timeout": float64(15),
+						},
+					},
+				},
+			},
+		},
+	}
+	data, _ := json.Marshal(staleSettings)
+	settingsPath := filepath.Join(settingsDir, "settings.json")
+	if err := os.WriteFile(settingsPath, data, 0644); err != nil {
+		t.Fatalf("write stale settings: %v", err)
+	}
+
+	if err := patchProjectSettings(projectDir); err != nil {
+		t.Fatalf("patchProjectSettings: %v", err)
+	}
+
+	result, _ := os.ReadFile(settingsPath)
+	var settings map[string]any
+	json.Unmarshal(result, &settings)
+	hooks, _ := settings["hooks"].(map[string]any)
+	permReq, _ := hooks["PermissionRequest"].([]any)
+
+	// Must be exactly 1 PermissionRequest entry — no duplicate appended.
+	if len(permReq) != 1 {
+		t.Errorf("expected 1 PermissionRequest entry after deprecated upgrade, got %d\nJSON:\n%s", len(permReq), result)
+	}
+
+	// The entry must use the new shell-based reviewer, not the deprecated Python one.
+	content := string(result)
+	if strings.Contains(content, "permission-reviewer.py") {
+		t.Error("deprecated permission-reviewer.py still present in settings.json")
+	}
+	if !strings.Contains(content, "c4-permission-reviewer.sh") {
+		t.Error("c4-permission-reviewer.sh not found in settings.json")
+	}
+
+	// Matcher must be upgraded to the current value.
+	entry, _ := permReq[0].(map[string]any)
+	if entry["matcher"] != "Bash|Read|Edit|Write|NotebookEdit|WebFetch|WebSearch|Search|Skill" {
+		t.Errorf("matcher not upgraded: %v", entry["matcher"])
+	}
+}
+
 // TestPatchProjectSettings_StaleEntry verifies that patchProjectSettings upgrades
 // a hook entry that exists under an outdated matcher (Phase 1 baseName scan).
 // This exercises the Round-2 fix: stale entry is replaced in-place rather than
@@ -1335,5 +1407,73 @@ func TestCheckCloudAuthStatus_ExpiredSession(t *testing.T) {
 	}
 	if strings.Contains(output, "user@example.com") {
 		t.Errorf("should not show email for expired session, got: %q", output)
+	}
+}
+
+// TestLsUnread verifies that cq ls appends "[N unread]" for sessions that have
+// unread messages in the mailbox, and shows no suffix for sessions without unread messages.
+func TestLsUnread(t *testing.T) {
+	// Set up temp HOME with .c4/ directory.
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+	c4Dir := filepath.Join(tmpHome, ".c4")
+	if err := os.MkdirAll(c4Dir, 0755); err != nil {
+		t.Fatalf("mkdir .c4: %v", err)
+	}
+
+	// Create mailbox.db and send 2 unread messages to "tmuxlike".
+	dbPath := filepath.Join(c4Dir, "mailbox.db")
+	ms, err := mailbox.NewMailStore(dbPath)
+	if err != nil {
+		t.Fatalf("NewMailStore: %v", err)
+	}
+	if _, err := ms.Send("", "tmuxlike", "hello", "world", ""); err != nil {
+		t.Fatalf("Send 1: %v", err)
+	}
+	if _, err := ms.Send("", "tmuxlike", "hi", "there", ""); err != nil {
+		t.Fatalf("Send 2: %v", err)
+	}
+	ms.Close()
+
+	// Write named-sessions.json with two entries.
+	sessions := map[string]namedSessionEntry{
+		"tmuxlike": {UUID: "869fd61eaaaabbbb", Dir: "/home/user/git/cq", Updated: "2026-02-24T23:15:00Z"},
+		"cq-dev":   {UUID: "2ab09aa7ccccdddd", Dir: "/home/user/git/cq", Updated: "2026-02-23T10:00:00Z"},
+	}
+	sessData, _ := json.MarshalIndent(sessions, "", "  ")
+	if err := os.WriteFile(filepath.Join(c4Dir, "named-sessions.json"), sessData, 0600); err != nil {
+		t.Fatalf("write named-sessions.json: %v", err)
+	}
+
+	// Redirect lsCmd output to a buffer.
+	oldStdout := os.Stdout
+	r, w, pipeErr := os.Pipe()
+	if pipeErr != nil {
+		t.Fatalf("pipe: %v", pipeErr)
+	}
+	os.Stdout = w
+
+	// Clear CQ_SESSION_UUID so neither session is marked "(current)".
+	t.Setenv("CQ_SESSION_UUID", "")
+
+	// Run the command.
+	lsCmd.RunE(lsCmd, nil) //nolint:errcheck
+
+	w.Close()
+	os.Stdout = oldStdout
+
+	var buf bytes.Buffer
+	io.Copy(&buf, r) //nolint:errcheck
+	output := buf.String()
+
+	// "tmuxlike" should have [2 unread].
+	if !strings.Contains(output, "[2 unread]") {
+		t.Errorf("expected '[2 unread]' in output for tmuxlike; got:\n%s", output)
+	}
+	// "cq-dev" has no unread messages — must not show any suffix.
+	for _, line := range strings.Split(strings.TrimSpace(output), "\n") {
+		if strings.HasPrefix(line, "cq-dev:") && strings.Contains(line, "unread") {
+			t.Errorf("cq-dev should have no unread suffix; got: %s", line)
+		}
 	}
 }

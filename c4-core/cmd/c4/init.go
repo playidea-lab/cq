@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/changmin/c4-core/internal/cloud"
+	"github.com/changmin/c4-core/internal/mailbox"
 	"github.com/spf13/cobra"
 )
 
@@ -596,8 +597,10 @@ func patchProjectSettings(projectDir string) error {
 		hooks = map[string]any{}
 	}
 
-	// Helper: idempotently patch a hook event array
-	patchHookEvent := func(eventName, matcher, cmdStr, baseName string, timeout int) {
+	// Helper: idempotently patch a hook event array.
+	// deprecatedNames lists legacy basenames that should be replaced by the new entry
+	// (e.g. "permission-reviewer.py" superseded by "c4-permission-reviewer.sh").
+	patchHookEvent := func(eventName, matcher, cmdStr, baseName string, timeout int, deprecatedNames ...string) {
 		eventRaw, _ := hooks[eventName]
 		var eventArr []any
 		if arr, ok := eventRaw.([]any); ok {
@@ -609,9 +612,21 @@ func patchProjectSettings(projectDir string) error {
 			hookEntry["timeout"] = timeout
 		}
 
-		// Phase 1: scan ALL entries for baseName match regardless of matcher.
-		// This handles stale entries with a different matcher string and ensures
-		// we never create duplicate entries for the same hook script.
+		matchesKnownBaseName := func(cmd string) bool {
+			if strings.Contains(cmd, baseName) {
+				return true
+			}
+			for _, dep := range deprecatedNames {
+				if strings.Contains(cmd, dep) {
+					return true
+				}
+			}
+			return false
+		}
+
+		// Phase 1: scan ALL entries for baseName (or deprecated names) regardless of
+		// matcher. Handles stale entries with a different matcher string or a legacy
+		// script name, ensuring we never create duplicate entries.
 		for i, entry := range eventArr {
 			entryMap, ok := entry.(map[string]any)
 			if !ok {
@@ -627,9 +642,9 @@ func patchProjectSettings(projectDir string) error {
 				if cmd == cmdStr && entryMap["matcher"] == matcher {
 					return // already correct, nothing to do
 				}
-				if strings.Contains(cmd, baseName) {
-					// Stale entry (wrong path or wrong matcher): replace entire hook entry
-					// and update matcher so the entry is fully current.
+				if matchesKnownBaseName(cmd) {
+					// Stale entry (wrong path, wrong matcher, or deprecated script):
+					// replace entire hook entry and update matcher so it is fully current.
 					innerHooks[j] = hookEntry
 					entryMap["hooks"] = innerHooks
 					entryMap["matcher"] = matcher
@@ -664,11 +679,15 @@ func patchProjectSettings(projectDir string) error {
 	}
 
 	// PreToolUse: gate hook (Bash|Edit|Write)
-	patchHookEvent("PreToolUse", "Bash|Edit|Write", gateCmd, "c4-gate.sh", 0)
+	// deprecated: c4-bash-security-hook.sh, c4-edit-security-hook.sh (v0.23 global hooks)
+	patchHookEvent("PreToolUse", "Bash|Edit|Write", gateCmd, "c4-gate.sh", 0,
+		"c4-bash-security-hook.sh", "c4-edit-security-hook.sh")
 	// PermissionRequest: permission reviewer (explicit include list; excludes AskUserQuestion)
+	// deprecated: permission-reviewer.py (pre-v0.24 Python-based reviewer)
 	patchHookEvent("PermissionRequest",
 		"Bash|Read|Edit|Write|NotebookEdit|WebFetch|WebSearch|Search|Skill",
-		permCmd, "c4-permission-reviewer.sh", 20)
+		permCmd, "c4-permission-reviewer.sh", 20,
+		"permission-reviewer.py")
 
 	settings["hooks"] = hooks
 
@@ -1266,6 +1285,14 @@ var lsCmd = &cobra.Command{
 		if curUUID == "" {
 			curUUID = currentSessionUUID(projectDir)
 		}
+		// Open mailbox for unread counts (best-effort; errors silently skipped).
+		var ms *mailbox.MailStore
+		if homeDir, hErr := os.UserHomeDir(); hErr == nil {
+			if store, msErr := mailbox.NewMailStore(filepath.Join(homeDir, ".c4", "mailbox.db")); msErr == nil {
+				ms = store
+				defer ms.Close()
+			}
+		}
 		// Sort names for stable output
 		names := make([]string, 0, len(sessions))
 		for n := range sessions {
@@ -1292,6 +1319,11 @@ var lsCmd = &cobra.Command{
 			suffix := ""
 			if curUUID != "" && entry.UUID == curUUID {
 				suffix = " (current)"
+			}
+			if ms != nil {
+				if count, err := ms.UnreadCount(n); err == nil && count > 0 {
+					suffix += fmt.Sprintf(" [%d unread]", count)
+				}
 			}
 			fmt.Printf("%s: (created %s) [%s] uuid=%s%s\n",
 				n, timeStr, shortDir, entry.UUID[:8], suffix)
