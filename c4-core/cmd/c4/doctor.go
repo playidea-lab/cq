@@ -7,7 +7,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/kardianos/service"
@@ -644,26 +646,32 @@ func checkOSService(_ bool) checkResult {
 		return checkResult{
 			Name:    "os-service",
 			Status:  checkOK,
-			Message: "LaunchAgent installed (running)",
+			Message: "OS service installed (running)",
 		}
 	case service.StatusStopped:
 		return checkResult{
 			Name:    "os-service",
 			Status:  checkWarn,
 			Message: "service installed but stopped",
-			Fix:     "cq serve start  (or: launchctl start cq-serve)",
+			Fix:     "cq serve start  (or: launchctl start cq-serve / systemctl start cq-serve)",
 		}
 	default:
-		// Not installed — check for manual serve via PID file.
+		// Not installed — check for manual serve via PID file with liveness verification.
 		pidDir, _ := resolveServePIDDir()
 		pidPath := filepath.Join(pidDir, "serve.pid")
 		if data, readErr := os.ReadFile(pidPath); readErr == nil {
 			pid := strings.TrimSpace(string(data))
-			return checkResult{
-				Name:    "os-service",
-				Status:  checkOK,
-				Message: fmt.Sprintf("running manually (pid=%s), consider 'cq serve install'", pid),
+			if pidInt, parseErr := strconv.Atoi(pid); parseErr == nil {
+				if proc, findErr := os.FindProcess(pidInt); findErr == nil && proc.Signal(syscall.Signal(0)) == nil {
+					return checkResult{
+						Name:    "os-service",
+						Status:  checkOK,
+						Message: fmt.Sprintf("running manually (pid=%s), consider 'cq serve install'", pid),
+					}
+				}
 			}
+			// Stale PID file — clean up silently
+			os.Remove(pidPath)
 		}
 		return checkResult{
 			Name:    "os-service",

@@ -3,6 +3,7 @@ package serve
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"log/slog"
 	"sync"
 	"time"
@@ -29,6 +30,7 @@ type StaleCheckerComponent struct {
 	pub       eventbus.Publisher
 	cfg       config.StaleCheckerConfig
 	newTicker tickerFn
+	closer    io.Closer // optional; closed on Stop if non-nil (e.g. *sql.DB)
 
 	mu      sync.Mutex
 	cancel  context.CancelFunc
@@ -38,6 +40,13 @@ type StaleCheckerComponent struct {
 // NewStaleChecker creates a StaleCheckerComponent with production defaults.
 func NewStaleChecker(store StaleTaskStore, pub eventbus.Publisher, cfg config.StaleCheckerConfig) *StaleCheckerComponent {
 	return newStaleCheckerWithTicker(store, pub, cfg, time.NewTicker)
+}
+
+// WithCloser attaches an io.Closer (e.g. *sql.DB) that is closed when Stop() is called.
+// Returns the component itself for chaining: serve.NewStaleChecker(...).WithCloser(db).
+func (s *StaleCheckerComponent) WithCloser(c io.Closer) *StaleCheckerComponent {
+	s.closer = c
+	return s
 }
 
 // newStaleCheckerWithTicker creates a StaleCheckerComponent with a custom ticker factory.
@@ -76,7 +85,7 @@ func (s *StaleCheckerComponent) Start(ctx context.Context) error {
 	return nil
 }
 
-// Stop cancels the background loop.
+// Stop cancels the background loop and closes the optional closer (e.g. *sql.DB).
 func (s *StaleCheckerComponent) Stop(_ context.Context) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -84,6 +93,10 @@ func (s *StaleCheckerComponent) Stop(_ context.Context) error {
 	if s.cancel != nil {
 		s.cancel()
 		s.cancel = nil
+	}
+	if s.closer != nil {
+		_ = s.closer.Close()
+		s.closer = nil
 	}
 	return nil
 }

@@ -78,6 +78,6 @@ func registerStaleCheckerServeComponent(mgr *serve.Manager, cfg config.C4Config,
 		pub = eb.Publisher()
 	}
 
-	mgr.Register(serve.NewStaleChecker(sqliteStore, pub, cfg.Serve.StaleChecker))
+	mgr.Register(serve.NewStaleChecker(sqliteStore, pub, cfg.Serve.StaleChecker).WithCloser(db))
 	fmt.Fprintf(os.Stderr, "cq serve: registered stale_checker\n")
 }

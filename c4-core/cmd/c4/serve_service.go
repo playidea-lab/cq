@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"syscall"
 
 	"github.com/kardianos/service"
 	"github.com/spf13/cobra"
@@ -148,12 +150,21 @@ func runServeStatus(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Check for manual serve process via PID file.
+	// Check for manual serve process via PID file, with liveness verification.
 	pidDir, _ := resolveServePIDDir()
 	pidPath := filepath.Join(pidDir, "serve.pid")
 	if data, readErr := os.ReadFile(pidPath); readErr == nil {
 		pid := strings.TrimSpace(string(data))
-		fmt.Printf("manual: running (pid=%s)\n", pid)
+		if pidInt, parseErr := strconv.Atoi(pid); parseErr == nil {
+			if proc, findErr := os.FindProcess(pidInt); findErr == nil {
+				if proc.Signal(syscall.Signal(0)) == nil {
+					fmt.Printf("manual: running (pid=%s)\n", pid)
+				} else {
+					fmt.Println("manual: stale PID file (process not running)")
+					os.Remove(pidPath)
+				}
+			}
+		}
 	}
 
 	return nil

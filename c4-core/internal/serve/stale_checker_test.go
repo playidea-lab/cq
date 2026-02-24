@@ -288,3 +288,88 @@ func TestStaleChecker_StaleTasks_Error(t *testing.T) {
 		t.Errorf("ResetTask should not be called on StaleTasks error; got %d calls", len(calls))
 	}
 }
+
+// mockStaleStorePartialFail fails ResetTask on the first call and succeeds on subsequent ones.
+type mockStaleStorePartialFail struct {
+	mu         sync.Mutex
+	staleTasks []handlers.Task
+	resetCalls []string
+	callCount  int
+}
+
+func (m *mockStaleStorePartialFail) StaleTasks(_ int) ([]handlers.Task, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.staleTasks, nil
+}
+
+func (m *mockStaleStorePartialFail) ResetTask(taskID string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.callCount++
+	m.resetCalls = append(m.resetCalls, taskID)
+	if m.callCount == 1 {
+		return errors.New("reset failed")
+	}
+	return nil
+}
+
+func (m *mockStaleStorePartialFail) getResetCalls() []string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	cp := make([]string, len(m.resetCalls))
+	copy(cp, m.resetCalls)
+	return cp
+}
+
+// TestStaleChecker_ResetTask_PartialFailure verifies that a ResetTask error on one task
+// does not prevent subsequent tasks from being processed (continue on error pattern).
+func TestStaleChecker_ResetTask_PartialFailure(t *testing.T) {
+	store := &mockStaleStorePartialFail{
+		staleTasks: []handlers.Task{
+			{ID: "T-001-0", WorkerID: "w1", Status: "in_progress"},
+			{ID: "T-002-0", WorkerID: "w2", Status: "in_progress"},
+		},
+	}
+	pub := &mockPublisher{}
+
+	ct := newControlledTicker()
+	sc := newStaleCheckerWithTicker(store, pub, config.StaleCheckerConfig{
+		Enabled:          true,
+		ThresholdMinutes: 30,
+		IntervalSeconds:  60,
+	}, ct.factory())
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	if err := sc.Start(ctx); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	defer sc.Stop(ctx)
+
+	time.Sleep(10 * time.Millisecond)
+	ct.tick()
+	time.Sleep(50 * time.Millisecond)
+
+	// Both tasks should have been attempted (continue on error).
+	calls := store.getResetCalls()
+	if len(calls) != 2 {
+		t.Errorf("ResetTask called %d times, want 2 (both tasks attempted)", len(calls))
+	}
+
+	// Only the second task (success) should emit an event; the first (error) should not.
+	events := pub.getEvents()
+	if len(events) != 1 {
+		t.Errorf("PublishAsync called %d times, want 1 (only successful reset)", len(events))
+	}
+	if len(events) == 1 {
+		var payload map[string]any
+		if err := json.Unmarshal(events[0].data, &payload); err != nil {
+			t.Fatalf("unmarshal event: %v", err)
+		}
+		if got := payload["task_id"]; got != "T-002-0" {
+			t.Errorf("event task_id = %v, want T-002-0", got)
+		}
+	}
+}
