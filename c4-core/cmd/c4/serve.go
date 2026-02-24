@@ -58,6 +58,9 @@ func init() {
 	serveStopCmd.Flags().StringVar(&servePIDDir, "pid-dir", "", "PID file directory (default: ~/.c4/serve)")
 
 	serveCmd.AddCommand(serveStopCmd)
+	serveCmd.AddCommand(serveInstallCmd)
+	serveCmd.AddCommand(serveUninstallCmd)
+	serveCmd.AddCommand(serveStatusCmd)
 	rootCmd.AddCommand(serveCmd)
 }
 
