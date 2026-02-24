@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.29.0] - 2026-02-25
+
+### ✨ Features
+- **mail**: 세션 간 메일 시스템 — `c4_mail_*` MCP 도구 + `cq mail` CLI (`3542f60e`, `c9e966e4`)
+  - `~/.c4/mailbox.db` SQLite 기반 전역 메일 저장소 (프로젝트 독립)
+  - MCP 도구: `c4_mail_send`, `c4_mail_ls`, `c4_mail_read`, `c4_mail_rm`
+  - CLI: `cq mail send <to> <body>`, `cq mail ls [--unread]`, `cq mail read <id>`, `cq mail rm <id>`
+  - `cq ls` (세션 목록): 읽지 않은 메일 있으면 `[N unread]` 접미사 표시
+  - 브로드캐스트(`to="*"`) 수신 지원 — `UnreadCount`·`List` 쿼리가 직접 메시지 + 브로드캐스트 합산
+  - 발신자 기본값: `CQ_SESSION_NAME` 환경변수
+- **sessions**: `/reboot` 플래그 기반 자동 종료 — `kill -TERM $PPID` 후 재시작 (`3c6a5e24`)
+
+### 🔧 Polish
+- **mail**: `Send()` 단일 클럭 읽기로 `created_at` 반환 — 타임스탬프 불일치 제거 (`de57611c`)
+- **mail**: `NewMailStore` 에 `os.MkdirAll` + `busy_timeout=30000` 추가 (`de57611c`)
+- **mail**: CLI·MCP 양쪽에서 빈 body 거부 (`de57611c`, `41c19238`)
+- **mail**: `List()` 전 쿼리 변형에 `LIMIT 500` 안전 캡 추가 (`41c19238`)
+- **mail**: MCP `c4_mail_send`에서 `to="*"` 거부 (CLI와 동일한 브로드캐스트 제한) (`603118f4`)
+- **mail**: `c4_mail_read`·`c4_mail_rm`에서 `id<=0` 명확한 에러 반환 (`603118f4`)
+
+---
+
 ## [0.28.3] - 2026-02-24
 
 ### ✨ Features
