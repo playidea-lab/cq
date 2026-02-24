@@ -21,9 +21,9 @@ stages:
 check-env:
   stage: check-env
   script:
-    - test -n "$GH_TOKEN" || { echo "GH_TOKEN not set — add it in Settings → CI/CD → Variables"; exit 1; }
-    - test -n "$CI_SUPABASE_URL" || echo "WARNING: CI_SUPABASE_URL not set — built-in auth will be disabled in release binaries"
-    - test -n "$CI_SUPABASE_KEY" || echo "WARNING: CI_SUPABASE_KEY not set — built-in auth will be disabled in release binaries"
+    - 'test -n "$GH_TOKEN" || (echo "GH_TOKEN not set - add it in Settings > CI/CD > Variables" && exit 1)'
+    - 'test -n "$CI_SUPABASE_URL" || echo "WARNING: CI_SUPABASE_URL not set - built-in auth will be disabled"'
+    - 'test -n "$CI_SUPABASE_KEY" || echo "WARNING: CI_SUPABASE_KEY not set - built-in auth will be disabled"'
   only:
     - /^v.*/
 
