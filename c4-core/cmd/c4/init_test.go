@@ -2,10 +2,12 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestHookNeedsUpdate(t *testing.T) {
@@ -1171,5 +1173,167 @@ func TestWriteTierConfig_InvalidTier(t *testing.T) {
 	}
 	if err := writeTierConfig(dir, "premium"); err == nil {
 		t.Error("expected error for invalid tier 'premium'")
+	}
+}
+
+// TestCheckCloudAuthStatus_NoURL verifies that checkCloudAuthStatus prints nothing
+// when no cloud URL is configured (solo tier).
+func TestCheckCloudAuthStatus_NoURL(t *testing.T) {
+	t.Setenv("C4_CLOUD_URL", "")
+	t.Setenv("SUPABASE_URL", "")
+
+	// Capture stderr
+	oldStderr := os.Stderr
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("pipe: %v", err)
+	}
+	os.Stderr = w
+
+	// Save and clear builtinSupabaseURL
+	oldBuiltin := builtinSupabaseURL
+	builtinSupabaseURL = ""
+	defer func() { builtinSupabaseURL = oldBuiltin }()
+
+	checkCloudAuthStatus()
+
+	w.Close()
+	os.Stderr = oldStderr
+
+	buf := make([]byte, 256)
+	n, _ := r.Read(buf)
+	output := string(buf[:n])
+
+	if output != "" {
+		t.Errorf("expected no output when URL not configured, got: %q", output)
+	}
+}
+
+// TestCheckCloudAuthStatus_NotLoggedIn verifies that checkCloudAuthStatus prints
+// a login prompt when the URL is set but no session file exists.
+func TestCheckCloudAuthStatus_NotLoggedIn(t *testing.T) {
+	t.Setenv("C4_CLOUD_URL", "https://example.supabase.co")
+
+	// Use a temp HOME so session.json doesn't exist.
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+
+	// Capture stderr
+	oldStderr := os.Stderr
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("pipe: %v", err)
+	}
+	os.Stderr = w
+
+	checkCloudAuthStatus()
+
+	w.Close()
+	os.Stderr = oldStderr
+
+	buf := make([]byte, 512)
+	n, _ := r.Read(buf)
+	output := string(buf[:n])
+
+	if !strings.Contains(output, "cq auth login") {
+		t.Errorf("expected login prompt, got: %q", output)
+	}
+}
+
+// TestCheckCloudAuthStatus_LoggedIn verifies that checkCloudAuthStatus prints
+// the cloud user email and expiry when a valid session exists.
+func TestCheckCloudAuthStatus_LoggedIn(t *testing.T) {
+	t.Setenv("C4_CLOUD_URL", "https://example.supabase.co")
+
+	// Write a valid session file to temp HOME.
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+
+	sessionDir := filepath.Join(tmpHome, ".c4")
+	if err := os.MkdirAll(sessionDir, 0700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	expiresAt := time.Now().Add(48 * time.Hour).Unix()
+	sessionJSON := fmt.Sprintf(`{
+		"access_token": "tok",
+		"refresh_token": "rtok",
+		"expires_at": %d,
+		"user": {"id": "u1", "email": "user@example.com", "name": "Test User"}
+	}`, expiresAt)
+	if err := os.WriteFile(filepath.Join(sessionDir, "session.json"), []byte(sessionJSON), 0600); err != nil {
+		t.Fatalf("write session: %v", err)
+	}
+
+	// Capture stderr
+	oldStderr := os.Stderr
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("pipe: %v", err)
+	}
+	os.Stderr = w
+
+	checkCloudAuthStatus()
+
+	w.Close()
+	os.Stderr = oldStderr
+
+	buf := make([]byte, 512)
+	n, _ := r.Read(buf)
+	output := string(buf[:n])
+
+	if !strings.Contains(output, "user@example.com") {
+		t.Errorf("expected email in output, got: %q", output)
+	}
+	if !strings.Contains(output, "expires in") {
+		t.Errorf("expected expiry info in output, got: %q", output)
+	}
+}
+
+// TestCheckCloudAuthStatus_ExpiredSession verifies that checkCloudAuthStatus
+// treats an expired session as not logged in and prints a login prompt.
+func TestCheckCloudAuthStatus_ExpiredSession(t *testing.T) {
+	t.Setenv("C4_CLOUD_URL", "https://example.supabase.co")
+
+	// Write an expired session file to temp HOME.
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+
+	sessionDir := filepath.Join(tmpHome, ".c4")
+	if err := os.MkdirAll(sessionDir, 0700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	expiresAt := time.Now().Add(-1 * time.Hour).Unix() // expired 1h ago
+	sessionJSON := fmt.Sprintf(`{
+		"access_token": "tok",
+		"refresh_token": "rtok",
+		"expires_at": %d,
+		"user": {"id": "u1", "email": "user@example.com", "name": "Test User"}
+	}`, expiresAt)
+	if err := os.WriteFile(filepath.Join(sessionDir, "session.json"), []byte(sessionJSON), 0600); err != nil {
+		t.Fatalf("write session: %v", err)
+	}
+
+	// Capture stderr
+	oldStderr := os.Stderr
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("pipe: %v", err)
+	}
+	os.Stderr = w
+
+	checkCloudAuthStatus()
+
+	w.Close()
+	os.Stderr = oldStderr
+
+	buf := make([]byte, 512)
+	n, _ := r.Read(buf)
+	output := string(buf[:n])
+
+	if !strings.Contains(output, "cq auth login") {
+		t.Errorf("expected login prompt for expired session, got: %q", output)
+	}
+	if strings.Contains(output, "user@example.com") {
+		t.Errorf("should not show email for expired session, got: %q", output)
 	}
 }
