@@ -682,3 +682,24 @@ risk_routing:
 		_ = rr.Paths.High
 	})
 }
+
+func TestStaleCheckerConfigDefaults(t *testing.T) {
+	tmpDir := t.TempDir()
+	mgr, err := New(tmpDir)
+	if err != nil {
+		t.Fatalf("New() failed: %v", err)
+	}
+
+	cfg := mgr.GetConfig()
+	sc := cfg.Serve.StaleChecker
+
+	if sc.Enabled {
+		t.Error("StaleChecker.Enabled should be false by default")
+	}
+	if sc.ThresholdMinutes != 30 {
+		t.Errorf("ThresholdMinutes = %d, want 30", sc.ThresholdMinutes)
+	}
+	if sc.IntervalSeconds != 60 {
+		t.Errorf("IntervalSeconds = %d, want 60", sc.IntervalSeconds)
+	}
+}

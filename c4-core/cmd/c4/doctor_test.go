@@ -204,6 +204,36 @@ func TestDoctor_MissingC4Dir(t *testing.T) {
 	}
 }
 
+// TestCheckOSService_NotInstalled_NoPID verifies that checkOSService returns WARN
+// (not FAIL) when the OS service is not installed and no PID file exists.
+// This is the most common scenario for users who have not yet run `cq serve install`.
+func TestCheckOSService_NotInstalled_NoPID(t *testing.T) {
+	// Point servePIDDir at a temp directory that has no serve.pid, so the
+	// PID-file branch is not taken regardless of the developer's actual ~/.c4/serve/.
+	tmp := t.TempDir()
+	origPIDDir := servePIDDir
+	servePIDDir = tmp
+	defer func() { servePIDDir = origPIDDir }()
+
+	r := checkOSService(false)
+	// When not installed and no PID, result must be WARN (not FAIL).
+	// The message must contain the fix hint.
+	if r.Status == checkFail {
+		t.Errorf("expected WARN or OK, got FAIL: %s", r.Message)
+	}
+	if !strings.Contains(r.Fix, "cq serve install") && !strings.Contains(r.Message, "cq serve install") {
+		// For the not-installed+no-PID path the fix should suggest installation.
+		// (status==OK means service is running, which is also acceptable)
+		if r.Status != checkOK {
+			t.Errorf("expected Fix or Message to mention 'cq serve install', got fix=%q message=%q", r.Fix, r.Message)
+		}
+	}
+	// Name must be "os-service" for `cq doctor | grep os-service` to work.
+	if r.Name != "os-service" {
+		t.Errorf("expected Name='os-service', got %q", r.Name)
+	}
+}
+
 func TestDoctor_SectionYAMLValue(t *testing.T) {
 	// Config with both hub.url and cloud.url to verify cross-section isolation.
 	content := `

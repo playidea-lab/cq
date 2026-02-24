@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/changmin/c4-core/internal/config"
 	"github.com/changmin/c4-core/internal/serve"
 )
 
@@ -48,5 +49,25 @@ func TestServeMux_DaemonPrefix_GPUDisabled(t *testing.T) {
 
 	if rec.Code != http.StatusNotFound {
 		t.Errorf("GET /daemon/jobs status = %d, want %d", rec.Code, http.StatusNotFound)
+	}
+}
+
+// TestServeStaleCheckerRegistration verifies that when StaleChecker.Enabled=false,
+// calling registerStaleCheckerServeComponent does not add a component to the manager.
+func TestServeStaleCheckerRegistration(t *testing.T) {
+	mgr := serve.NewManager()
+	cfg := config.C4Config{
+		Serve: config.ServeConfig{
+			StaleChecker: config.StaleCheckerConfig{
+				Enabled: false,
+			},
+		},
+	}
+
+	// When disabled, no component should be registered.
+	registerStaleCheckerServeComponent(mgr, cfg, nil)
+
+	if mgr.ComponentCount() != 0 {
+		t.Errorf("ComponentCount = %d, want 0 when StaleChecker disabled", mgr.ComponentCount())
 	}
 }

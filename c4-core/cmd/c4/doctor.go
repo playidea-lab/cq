@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/kardianos/service"
 	"github.com/spf13/cobra"
 )
 
@@ -77,6 +78,7 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 		checkPythonSidecar,
 		checkHub,
 		checkSupabase,
+		func() checkResult { return checkOSService(doctorFix) },
 	}
 
 	results := make([]checkResult, 0, len(checks))
@@ -617,4 +619,57 @@ func expandTilde(p string) string {
 // isHubEnabled returns true only when the hub: YAML section contains enabled: true.
 func isHubEnabled(content string) bool {
 	return sectionYAMLValue(content, "hub", "enabled:") == "true"
+}
+
+// checkOSService checks whether the cq-serve OS service (LaunchAgent/systemd/Windows) is installed.
+// fix is accepted for signature consistency but --fix does not auto-install (side-effect risk in CI).
+func checkOSService(_ bool) checkResult {
+	svcConfig := service.Config{
+		Name:        "cq-serve",
+		DisplayName: "CQ Serve",
+	}
+	svc, err := service.New(&serviceWrapper{}, &svcConfig)
+	if err != nil {
+		return checkResult{
+			Name:    "os-service",
+			Status:  checkWarn,
+			Message: fmt.Sprintf("cannot query OS service: %v", err),
+			Fix:     "cq serve install",
+		}
+	}
+
+	status, _ := svc.Status()
+	switch status {
+	case service.StatusRunning:
+		return checkResult{
+			Name:    "os-service",
+			Status:  checkOK,
+			Message: "LaunchAgent installed (running)",
+		}
+	case service.StatusStopped:
+		return checkResult{
+			Name:    "os-service",
+			Status:  checkWarn,
+			Message: "service installed but stopped",
+			Fix:     "cq serve start  (or: launchctl start cq-serve)",
+		}
+	default:
+		// Not installed — check for manual serve via PID file.
+		pidDir, _ := resolveServePIDDir()
+		pidPath := filepath.Join(pidDir, "serve.pid")
+		if data, readErr := os.ReadFile(pidPath); readErr == nil {
+			pid := strings.TrimSpace(string(data))
+			return checkResult{
+				Name:    "os-service",
+				Status:  checkOK,
+				Message: fmt.Sprintf("running manually (pid=%s), consider 'cq serve install'", pid),
+			}
+		}
+		return checkResult{
+			Name:    "os-service",
+			Status:  checkWarn,
+			Message: "service not installed",
+			Fix:     "cq serve install",
+		}
+	}
 }

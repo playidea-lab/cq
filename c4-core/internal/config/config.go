@@ -196,6 +196,13 @@ type ServeComponentToggle struct {
 	Enabled bool `mapstructure:"enabled" yaml:"enabled"`
 }
 
+// StaleCheckerConfig holds configuration for the stale task checker component.
+type StaleCheckerConfig struct {
+	Enabled          bool `mapstructure:"enabled"           yaml:"enabled"`
+	ThresholdMinutes int  `mapstructure:"threshold_minutes" yaml:"threshold_minutes"` // default 30
+	IntervalSeconds  int  `mapstructure:"interval_seconds"  yaml:"interval_seconds"`  // default 60
+}
+
 // ServeConfig holds settings for the cq serve command.
 type ServeConfig struct {
 	HealthPort    int                  `mapstructure:"health_port"    yaml:"health_port"`
@@ -205,6 +212,7 @@ type ServeConfig struct {
 	HubPoller     ServeComponentToggle `mapstructure:"hubpoller"      yaml:"hubpoller"`
 	GPU           ServeComponentToggle `mapstructure:"gpu"            yaml:"gpu"`
 	SSESubscriber ServeComponentToggle `mapstructure:"ssesubscriber"  yaml:"ssesubscriber"`
+	StaleChecker  StaleCheckerConfig   `mapstructure:"stale_checker"  yaml:"stale_checker"`
 }
 
 // PermissionReviewerConfig holds settings for the permission auto-reviewer hook.
@@ -392,6 +400,9 @@ func New(projectRoot string, cloudDefaults ...CloudDefaults) (*Manager, error) {
 	v.SetDefault("serve.hubpoller.enabled", false)
 	v.SetDefault("serve.gpu.enabled", false)
 	v.SetDefault("serve.ssesubscriber.enabled", false)
+	v.SetDefault("serve.stale_checker.enabled", false)
+	v.SetDefault("serve.stale_checker.threshold_minutes", 30)
+	v.SetDefault("serve.stale_checker.interval_seconds", 60)
 	v.SetDefault("permission_reviewer.enabled", false)
 	v.SetDefault("planning.critique_loop.enabled", true)
 	v.SetDefault("planning.critique_loop.max_rounds", 3)

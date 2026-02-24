@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 
 	"github.com/changmin/c4-core/internal/config"
+	"github.com/changmin/c4-core/internal/eventbus"
+	"github.com/changmin/c4-core/internal/mcp/handlers"
 	"github.com/changmin/c4-core/internal/serve"
 )
 
@@ -48,4 +50,34 @@ func registerCoreServeComponents(mgr *serve.Manager, cfg config.C4Config, home s
 	}
 
 	return ebComp, gpuComp
+}
+
+// registerStaleCheckerServeComponent registers the StaleChecker component when enabled.
+// It opens the project database and creates a minimal SQLiteStore for stale-task queries.
+// eb is the EventBus component used to wire a publisher (nil if EventBus is disabled).
+func registerStaleCheckerServeComponent(mgr *serve.Manager, cfg config.C4Config, eb *serve.EventBusComponent) {
+	if !cfg.Serve.StaleChecker.Enabled {
+		return
+	}
+
+	db, err := openDB()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "cq serve: stale_checker: open db failed: %v\n", err)
+		return
+	}
+
+	sqliteStore, err := handlers.NewSQLiteStore(db)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "cq serve: stale_checker: create store failed: %v\n", err)
+		db.Close()
+		return
+	}
+
+	var pub eventbus.Publisher
+	if eb != nil {
+		pub = eb.Publisher()
+	}
+
+	mgr.Register(serve.NewStaleChecker(sqliteStore, pub, cfg.Serve.StaleChecker))
+	fmt.Fprintf(os.Stderr, "cq serve: registered stale_checker\n")
 }
