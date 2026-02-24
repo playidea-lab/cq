@@ -41,7 +41,7 @@ func initHub(ctx *initContext) error {
 
 	// If hub.api_key is not configured but a cloud session token is available,
 	// use the cloud JWT as the Hub Bearer token with automatic refresh support.
-	if hubCfg.APIKey == "" && hubCfg.APIKeyEnv == "" && ctx.cloudTP != nil {
+	if hubCfg.APIKey == "" && hubCfg.APIKeyEnv == "" && ctx.cloudTP != nil && ctx.cloudTP.Token() != "" {
 		hc.SetTokenFunc(ctx.cloudTP.Token)
 		fmt.Fprintln(os.Stderr, "cq: hub using cloud session token (auto-refresh enabled)")
 	}

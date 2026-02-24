@@ -215,7 +215,7 @@ func cloudYAMLValue(content, key string) string {
 				!strings.HasPrefix(line, " ") && !strings.HasPrefix(line, "\t") {
 				break
 			}
-			if strings.HasPrefix(trimmed, key) {
+			if trimmed == key || strings.HasPrefix(trimmed, key+" ") || strings.HasPrefix(trimmed, key+"	") {
 				val := strings.TrimSpace(strings.TrimPrefix(trimmed, key))
 				return val
 			}
@@ -262,7 +262,7 @@ func writeCloudSectionToYAML(existing string, desired map[string]string) string 
 		for i := cloudStart + 1; i < cloudEnd; i++ {
 			trimmed := strings.TrimSpace(lines[i])
 			for key, val := range remaining {
-				if strings.HasPrefix(trimmed, key) {
+				if trimmed == key || strings.HasPrefix(trimmed, key+" ") || strings.HasPrefix(trimmed, key+"	") {
 					lines[i] = "  " + key + " " + val
 					delete(remaining, key)
 					break
