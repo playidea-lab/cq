@@ -142,7 +142,7 @@ C9 Knowledge — 지식 관리 (FTS5 + pgvector + Embedding + Usage + Ingestion)
 ### 테스트 현황
 | 언어 | 테스트 수 | 패키지/모듈 |
 |------|----------|------------|
-| Go | **~1,529** | 28 packages (all pass) — c4-core ~1,355 + c5 174 |
+| Go | **~1,542** | 28 packages (all pass) — c4-core ~1,368 + c5 174 |
 | Python | **697** | tests/unit/ |
 | Rust | **92** | src-tauri |
 | **합계** | **~2,302** | |
@@ -413,7 +413,7 @@ CP-001:    체크포인트
 
 ## Go Core (c4-core/) — Primary MCP Server
 
-> Go 기반 MCP 서버. ~45.0K LOC(src) + ~38.7K LOC(test). ~1,355개 테스트, 28 패키지.
+> Go 기반 MCP 서버. ~45.0K LOC(src) + ~38.7K LOC(test). ~1,368개 테스트, 28 패키지.
 
 ### 아키텍처
 ```
@@ -592,6 +592,7 @@ cq serve --port 4141   # 포트 지정
 | `gpu` | `serve.gpu.enabled: true` | GPU/CPU 작업 스케줄러 (daemon 패키지 래핑) |
 | `agent` | `serve.agent.enabled: true` + `cloud.url` + `cloud.anon_key` 설정 | Supabase Realtime @cq mention → claude -p 디스패치; claim 직후 `c1_members.status="typing"` 비동기 알림, 완료 시 `"online"` 복원; `claude -p --dir <projectDir>` |
 | `ssesubscriber` | `serve.ssesubscriber.enabled: true` + `c5_hub && c3_eventbus` 빌드 태그 | C5 SSE 스트림 구독 → EventBus 전달 |
+| `stale_checker` | `serve.stale_checker.enabled: true` | 주기적 stale 태스크(in_progress stuck) 감지 → pending 리셋 + `task.stale` 이벤트 발행 |
 
 **컴포넌트 활성화** (`.c4/config.yaml`):
 ```yaml
@@ -606,6 +607,10 @@ serve:
     enabled: true   # cloud.url + cloud.anon_key 필요
   ssesubscriber:
     enabled: true   # c5_hub && c3_eventbus 빌드 태그 필요; hub.enabled: true 필요
+  stale_checker:
+    enabled: true
+    threshold_minutes: 30   # 이 시간 이상 in_progress이면 stale 판정
+    interval_seconds: 60    # 체크 주기
 ```
 
 **PID 파일**: `~/.c4/serve/serve.pid` (포트 `:4140`)
@@ -621,6 +626,17 @@ serve:
 
 - `cq daemon`은 하위 호환을 위해 유지되지만, `cq serve`가 실행 중이면 시작 시 경고를 출력합니다.
 - **감지 기준**: `~/.c4/serve/serve.pid` 존재 + 프로세스 생존 + `localhost:4140/health` 응답 200
+
+**OS 서비스 자동 시작** (macOS LaunchAgent / Linux systemd / Windows Service):
+
+```bash
+cq serve install    # OS 서비스 등록 (부팅 시 자동 시작)
+cq serve uninstall  # OS 서비스 제거
+cq serve status     # OS 서비스 상태 + 수동 실행 PID 확인
+```
+
+- `kardianos/service` 기반 크로스플랫폼 지원
+- `cq doctor`의 `os-service` 항목에서 설치/실행 상태 확인 가능
 
 ### 주요 설정 섹션 (.c4/config.yaml)
 
