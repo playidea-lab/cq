@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.28.1] - 2026-02-24
+## [0.28.2] - 2026-02-24
 
 ### 🐛 Bug Fixes
 - **knowledge**: `c4_knowledge_search` / `c4_pattern_suggest` 호출 시 nil pointer dereference 패닉 수정 (`b3ffa06f`)
