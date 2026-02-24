@@ -212,13 +212,21 @@ func newMCPServer() (*mcpServer, error) {
 		ResearchStore:     ctx.researchStore,
 		KnowledgeStore:    knowledgeStore,
 		KnowledgeSearcher: knowledgeSearcher,
-		KnowledgeCloud:    knowledgeCloud,
 		KnowledgeUsage:    knowledgeUsage,
 		LLMGateway:        ctx.llmGateway,
 		GPUStore:          ctx.daemonStore,
 		GPUScheduler:      ctx.scheduler,
 	}
-	proxy := handlers.RegisterAllHandlersLazyWithOpts(reg, nil, projectDir, lazySidecar, knowledgeCloud, nativeOpts)
+	// Avoid typed-nil interface bug: only assign when concrete pointer is non-nil.
+	// A nil *cloud.KnowledgeCloudClient assigned to an interface field creates a
+	// non-nil interface (typed nil), causing opts.Cloud != nil to be true and
+	// subsequent method calls to panic with nil pointer dereference.
+	var kcForProxy handlers.KnowledgeSyncer
+	if knowledgeCloud != nil {
+		nativeOpts.KnowledgeCloud = knowledgeCloud
+		kcForProxy = knowledgeCloud
+	}
+	proxy := handlers.RegisterAllHandlersLazyWithOpts(reg, nil, projectDir, lazySidecar, kcForProxy, nativeOpts)
 	ctx.proxy = proxy
 
 	// Wire proxy restart and sidecar health check onRestart callback
