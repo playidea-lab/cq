@@ -110,6 +110,35 @@ func TestSetHeaders_NoWorkerID(t *testing.T) {
 	}
 }
 
+func TestSetTokenFunc_OverridesAPIKey(t *testing.T) {
+	c := &Client{apiKey: "static-key"}
+	c.SetTokenFunc(func() string { return "dynamic-jwt" })
+	req, _ := http.NewRequest("GET", "http://example.com", nil)
+	c.setHeaders(req)
+	if got := req.Header.Get("X-API-Key"); got != "dynamic-jwt" {
+		t.Errorf("X-API-Key = %q, want dynamic-jwt (tokenFunc should override apiKey)", got)
+	}
+}
+
+func TestSetTokenFunc_EmptyTokenFallsBackToAPIKey(t *testing.T) {
+	c := &Client{apiKey: "static-key"}
+	c.SetTokenFunc(func() string { return "" })
+	req, _ := http.NewRequest("GET", "http://example.com", nil)
+	c.setHeaders(req)
+	if got := req.Header.Get("X-API-Key"); got != "static-key" {
+		t.Errorf("X-API-Key = %q, want static-key (empty tokenFunc should fall back to apiKey)", got)
+	}
+}
+
+func TestSetTokenFunc_NoAPIKeyNoToken(t *testing.T) {
+	c := &Client{} // no apiKey, no tokenFunc
+	req, _ := http.NewRequest("GET", "http://example.com", nil)
+	c.setHeaders(req)
+	if got := req.Header.Get("X-API-Key"); got != "" {
+		t.Errorf("X-API-Key should be empty, got %q", got)
+	}
+}
+
 // =========================================================================
 // HealthCheck
 // =========================================================================

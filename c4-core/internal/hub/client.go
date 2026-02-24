@@ -20,6 +20,7 @@ type Client struct {
 	baseURL    string
 	apiPrefix  string // e.g. "/v1" for Hub server, "" for local daemon
 	apiKey     string
+	tokenFunc  func() string // optional: overrides apiKey per request (e.g. cloud JWT auto-refresh)
 	teamID     string
 	workerID   string // set after RegisterWorker
 	httpClient *http.Client
@@ -62,11 +63,25 @@ func (c *Client) IsAvailable() bool {
 	return c.baseURL != ""
 }
 
+// SetTokenFunc sets a dynamic token function that overrides the static apiKey
+// on every Hub request. This allows the cloud session JWT (with auto-refresh)
+// to be used as the Hub Bearer token without re-creating the client.
+func (c *Client) SetTokenFunc(fn func() string) {
+	c.tokenFunc = fn
+}
+
 // setHeaders adds Hub authentication headers.
 func (c *Client) setHeaders(req *http.Request) {
 	req.Header.Set("Content-Type", "application/json")
-	if c.apiKey != "" {
-		req.Header.Set("X-API-Key", c.apiKey)
+	// Dynamic tokenFunc takes precedence over static apiKey (supports auto-refresh).
+	apiKey := c.apiKey
+	if c.tokenFunc != nil {
+		if t := c.tokenFunc(); t != "" {
+			apiKey = t
+		}
+	}
+	if apiKey != "" {
+		req.Header.Set("X-API-Key", apiKey)
 	}
 	if c.teamID != "" {
 		req.Header.Set("X-Team-ID", c.teamID)

@@ -38,6 +38,14 @@ func initHub(ctx *initContext) error {
 		fmt.Fprintln(os.Stderr, "cq: hub enabled but URL not configured")
 		return nil
 	}
+
+	// If hub.api_key is not configured but a cloud session token is available,
+	// use the cloud JWT as the Hub Bearer token with automatic refresh support.
+	if hubCfg.APIKey == "" && hubCfg.APIKeyEnv == "" && ctx.cloudTP != nil {
+		hc.SetTokenFunc(ctx.cloudTP.Token)
+		fmt.Fprintln(os.Stderr, "cq: hub using cloud session token (auto-refresh enabled)")
+	}
+
 	ctx.hubClient = hc
 	handlers.RegisterHubHandlers(ctx.reg, hc)
 	fmt.Fprintf(os.Stderr, "cq: hub connected (%s)\n", hubCfg.URL)
