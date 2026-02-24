@@ -39,6 +39,9 @@ var builtinC4Root string
 // Valid values: "solo", "connected", "full" (default).
 var initTier string
 
+// sessionName is an optional name for the Claude Code session (-t flag).
+var sessionName string
+
 // Tool launcher commands: cq claude, cq codex, cq cursor
 var (
 	claudeCmd = &cobra.Command{
@@ -66,7 +69,11 @@ func init() {
 	for _, cmd := range []*cobra.Command{rootCmd, claudeCmd, codexCmd, cursorCmd} {
 		cmd.Flags().StringVar(&initTier, "tier", "", "build tier: solo|connected|full (written to .c4/config.yaml)")
 	}
-	rootCmd.AddCommand(claudeCmd, codexCmd, cursorCmd)
+	// Register -t/--tag flag for named sessions (claude only, and root default).
+	for _, cmd := range []*cobra.Command{rootCmd, claudeCmd} {
+		cmd.Flags().StringVarP(&sessionName, "tag", "t", "", "session name: resume or create named Claude Code session")
+	}
+	rootCmd.AddCommand(claudeCmd, codexCmd, cursorCmd, sessionsCmd)
 }
 
 // writeDefaultConfig writes the embedded default config.yaml to .c4/config.yaml
@@ -235,6 +242,9 @@ func initAndLaunch(tool string) error {
 	checkCloudAuthStatus()
 
 	// 8. Launch AI tool
+	if tool == "claude" && sessionName != "" {
+		return launchToolNamed(dir, sessionName)
+	}
 	return launchTool(tool, dir)
 }
 
@@ -1030,6 +1040,170 @@ func findCQBinary() (string, error) {
 		return filepath.Abs(p)
 	}
 	return "", fmt.Errorf("cannot determine cq binary path")
+}
+
+// --- Named session support ---
+
+type namedSessionEntry struct {
+	UUID    string `json:"uuid"`
+	Dir     string `json:"dir"`
+	Updated string `json:"updated"`
+}
+
+func namedSessionsFile() string {
+	homeDir, _ := os.UserHomeDir()
+	return filepath.Join(homeDir, ".c4", "named-sessions.json")
+}
+
+func loadNamedSessions() (map[string]namedSessionEntry, error) {
+	data, err := os.ReadFile(namedSessionsFile())
+	if os.IsNotExist(err) {
+		return map[string]namedSessionEntry{}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var m map[string]namedSessionEntry
+	if err := json.Unmarshal(data, &m); err != nil {
+		return map[string]namedSessionEntry{}, nil
+	}
+	return m, nil
+}
+
+func saveNamedSessions(m map[string]namedSessionEntry) error {
+	f := namedSessionsFile()
+	if err := os.MkdirAll(filepath.Dir(f), 0755); err != nil {
+		return err
+	}
+	data, err := json.MarshalIndent(m, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(f, data, 0600)
+}
+
+// claudeProjectDir returns the ~/.claude/projects/<encoded-path> directory for the given project.
+func claudeProjectDir(projectDir string) (string, error) {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	absDir, err := filepath.Abs(projectDir)
+	if err != nil {
+		return "", err
+	}
+	// Claude Code encodes the path: replace path separators with '-'
+	encoded := strings.ReplaceAll(absDir, string(os.PathSeparator), "-")
+	return filepath.Join(homeDir, ".claude", "projects", encoded), nil
+}
+
+// listJSONLNames returns a set of JSONL filenames in the given directory.
+func listJSONLNames(dir string) map[string]struct{} {
+	m := map[string]struct{}{}
+	entries, _ := os.ReadDir(dir)
+	for _, e := range entries {
+		if !e.IsDir() && strings.HasSuffix(e.Name(), ".jsonl") {
+			m[e.Name()] = struct{}{}
+		}
+	}
+	return m
+}
+
+// launchToolNamed starts or resumes a named Claude Code session.
+// On first run with a new name, it detects the new session UUID after Claude exits
+// and saves the mapping to ~/.c4/named-sessions.json.
+func launchToolNamed(projectDir, name string) error {
+	sessions, err := loadNamedSessions()
+	if err != nil {
+		return fmt.Errorf("loading named sessions: %w", err)
+	}
+
+	if entry, ok := sessions[name]; ok {
+		// Verify the JSONL still exists
+		sessionDir, _ := claudeProjectDir(projectDir)
+		jsonlPath := filepath.Join(sessionDir, entry.UUID+".jsonl")
+		if _, statErr := os.Stat(jsonlPath); statErr == nil {
+			// Resume
+			toolPath, err := exec.LookPath("claude")
+			if err != nil {
+				return fmt.Errorf("claude not found in PATH: %w", err)
+			}
+			fmt.Fprintf(os.Stderr, "cq: resuming session '%s' (%s...)...\n", name, entry.UUID[:8])
+			return syscall.Exec(toolPath, []string{"claude", "--resume", entry.UUID}, os.Environ())
+		}
+		fmt.Fprintf(os.Stderr, "cq: session '%s' not found (JSONL deleted), starting new session...\n", name)
+		delete(sessions, name)
+	}
+
+	// New session: snapshot current JSONL files, launch as subprocess, then detect new UUID.
+	sessionDir, err := claudeProjectDir(projectDir)
+	if err != nil {
+		return fmt.Errorf("resolving Claude session dir: %w", err)
+	}
+	before := listJSONLNames(sessionDir)
+
+	toolPath, err := exec.LookPath("claude")
+	if err != nil {
+		return fmt.Errorf("claude not found in PATH: %w", err)
+	}
+
+	fmt.Fprintf(os.Stderr, "cq: launching claude (session: '%s')...\n", name)
+	cmd := exec.Command(toolPath)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	cmd.Env = os.Environ()
+	_ = cmd.Run() // ignore exit code
+
+	// Detect new JSONL
+	after := listJSONLNames(sessionDir)
+	newUUID := ""
+	for fname := range after {
+		if _, existed := before[fname]; !existed {
+			newUUID = strings.TrimSuffix(fname, ".jsonl")
+			break
+		}
+	}
+
+	if newUUID != "" {
+		sessions[name] = namedSessionEntry{
+			UUID:    newUUID,
+			Dir:     projectDir,
+			Updated: time.Now().Format(time.RFC3339),
+		}
+		if saveErr := saveNamedSessions(sessions); saveErr != nil {
+			fmt.Fprintf(os.Stderr, "cq: warning: failed to save session name: %v\n", saveErr)
+		} else {
+			fmt.Fprintf(os.Stderr, "cq: session '%s' saved (%s...)\n", name, newUUID[:8])
+		}
+	} else {
+		fmt.Fprintf(os.Stderr, "cq: warning: could not detect new session UUID for '%s'\n", name)
+	}
+
+	return nil
+}
+
+// sessionsCmd lists named sessions.
+var sessionsCmd = &cobra.Command{
+	Use:   "sessions",
+	Short: "List named Claude Code sessions",
+	Args:  cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		sessions, err := loadNamedSessions()
+		if err != nil {
+			return err
+		}
+		if len(sessions) == 0 {
+			fmt.Println("No named sessions. Use 'cq claude -t <name>' to create one.")
+			return nil
+		}
+		fmt.Printf("%-20s  %-36s  %s\n", "NAME", "UUID", "UPDATED")
+		fmt.Printf("%-20s  %-36s  %s\n", "----", "----", "-------")
+		for name, entry := range sessions {
+			fmt.Printf("%-20s  %-36s  %s\n", name, entry.UUID, entry.Updated)
+		}
+		return nil
+	},
 }
 
 // launchTool launches the specified AI coding tool, replacing the current process.
