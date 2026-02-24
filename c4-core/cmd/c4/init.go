@@ -502,7 +502,7 @@ func setupProjectHooks(projectDir string) error {
 // Installs:
 //   - PreToolUse: Bash|Edit|Write   → c4-gate.sh
 //   - PermissionRequest: (all tools except AskUserQuestion) → c4-permission-reviewer.sh
-//   - permissions.allow: Read, Glob, Grep
+//   - permissions.allow: Read, Glob, Grep, WebFetch, WebSearch
 //
 // It is idempotent. Corrupted JSON is backed up and replaced.
 func patchProjectSettings(projectDir string) error {
@@ -610,7 +610,7 @@ func patchProjectSettings(projectDir string) error {
 
 	settings["hooks"] = hooks
 
-	// Ensure permissions.allow contains Read, Glob, Grep (safe read-only tools)
+	// Ensure permissions.allow contains safe read-only tools (no side effects)
 	perms, _ := settings["permissions"].(map[string]any)
 	if perms == nil {
 		perms = map[string]any{}
@@ -620,7 +620,7 @@ func patchProjectSettings(projectDir string) error {
 	if arr, ok := allowRaw.([]any); ok {
 		allowList = arr
 	}
-	for _, tool := range []string{"Read", "Glob", "Grep"} {
+	for _, tool := range []string{"Read", "Glob", "Grep", "WebFetch", "WebSearch"} {
 		found := false
 		for _, v := range allowList {
 			if s, ok := v.(string); ok && s == tool {
