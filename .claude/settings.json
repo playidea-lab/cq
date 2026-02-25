@@ -1,4 +1,47 @@
 {
+  "enableAllProjectMcpServers": true,
+  "hooks": {
+    "PermissionRequest": [
+      {
+        "hooks": [
+          {
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/c4-permission-reviewer.sh",
+            "timeout": 20,
+            "type": "command"
+          }
+        ],
+        "matcher": "Bash|Read|Edit|Write|NotebookEdit|WebFetch|WebSearch|Search|Skill"
+      }
+    ],
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "command": "FILE=$(echo \"$ARGUMENTS\" | jq -r '.file_path // empty') \u0026\u0026 if [[ \"$FILE\" == *.go ]]; then cd \"$(git rev-parse --show-toplevel)\" \u0026\u0026 go build ./... 2\u003e\u00261 | head -20; fi",
+            "timeout": 30,
+            "type": "command"
+          },
+          {
+            "command": "FILE=$(echo \"$ARGUMENTS\" | jq -r '.file_path // empty') \u0026\u0026 if [[ \"$FILE\" == *.py ]]; then python -m py_compile \"$FILE\"; fi",
+            "timeout": 10,
+            "type": "command"
+          }
+        ],
+        "matcher": "Edit|Write"
+      }
+    ],
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/c4-gate.sh",
+            "type": "command"
+          }
+        ],
+        "matcher": "Bash|Edit|Write"
+      }
+    ]
+  },
   "permissions": {
     "allow": [
       "Skill(c4-*)",
@@ -81,40 +124,12 @@
       "Write(/Users/changmin/git/cq/**)",
       "Edit(/Users/changmin/git/cq/**)",
       "MultiEdit(/Users/changmin/git/cq/**)",
-      "Read(/Users/changmin/git/cq/**)"
+      "Read(/Users/changmin/git/cq/**)",
+      "Read",
+      "Glob",
+      "Grep",
+      "WebFetch"
     ],
     "defaultMode": "acceptEdits"
-  },
-  "enableAllProjectMcpServers": true,
-  "hooks": {
-    "PermissionRequest": [
-      {
-        "matcher": "Bash|Read|Edit|Write|MultiEdit|NotebookEdit|WebFetch",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/permission-reviewer.py",
-            "timeout": 15
-          }
-        ]
-      }
-    ],
-    "PostToolUse": [
-      {
-        "matcher": "Edit|Write",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "FILE=$(echo \"$ARGUMENTS\" | jq -r '.file_path // empty') && if [[ \"$FILE\" == *.go ]]; then cd \"$(git rev-parse --show-toplevel)\" && go build ./... 2>&1 | head -20; fi",
-            "timeout": 30
-          },
-          {
-            "type": "command",
-            "command": "FILE=$(echo \"$ARGUMENTS\" | jq -r '.file_path // empty') && if [[ \"$FILE\" == *.py ]]; then python -m py_compile \"$FILE\"; fi",
-            "timeout": 10
-          }
-        ]
-      }
-    ]
   }
 }

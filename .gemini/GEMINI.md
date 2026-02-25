@@ -9,6 +9,15 @@ Before taking any complex action, consult these guides:
 - **Tool Handbook**: `.gemini/tools.md` (Correct CLI Syntax)
 - **Agents**: `.gemini/agents/` (Specialized roles)
 
+## Specialized Agents
+The project includes specialized agents in `.gemini/agents/` that can be activated to perform specific tasks:
+- **c4-scout**: High-efficiency codebase exploration and context compression (≤500 tokens).
+- **ai-engineer**: TDD-driven development of AI features and RAG systems.
+- **backend-architect**: Complex backend system design and refactoring.
+- **security-auditor**: Vulnerability scanning and security best practices.
+
+Use `activate_skill <agent-name>` to load specialized instructions for a specific task.
+
 ## Core Identity
 - **Role**: Lead Developer & Operator.
 - **Tone**: Professional, concise, code-centric, and action-oriented.

@@ -51,7 +51,15 @@ cq add-task --title "Refactor Auth" --scope "src/auth/" --priority 3 --dod "Impl
 - **Frontend (c1)**: `npm install`, `npm run build`, `npm test`
 - **Python**: `uv sync`, `pytest`
 
-## 4. Best Practices
+## 4. Agent & Skill Management
+
+### `activate_skill` (Load specialized persona)
+**Syntax**: `activate_skill <agent-name>`
+- Loads specialized instructions and constraints from `.gemini/agents/<agent-name>.md`.
+- **Available Agents**: `c4-scout`, `ai-engineer`, `backend-architect`, `frontend-developer`, `security-auditor`, etc.
+
+## 5. Best Practices
 1.  **Always use flags**: Do not rely on positional arguments for `c4` commands.
 2.  **Quote strings**: Always quote titles and descriptions to avoid shell parsing errors.
 3.  **Check exit codes**: If a command fails, read the error message and check this handbook.
+4.  **Specialized Context**: Use `activate_skill c4-scout` before any broad codebase exploration to save tokens and time.

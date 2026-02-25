@@ -8,6 +8,7 @@ Follow these phases sequentially to ensure high-quality, safe, and verifiable wo
 
 1.  **Check Status**: Run `cq status` (or `./.gemini/skills/c4-status.sh`).
 2.  **Scan Environment**:
+    - **Discovery**: Run `activate_skill c4-scout` to explore the codebase with high efficiency.
     - `ls -F`: Check directory structure.
     - `git status`: Check for uncommitted changes.
     - `read_file .gemini/memory/global_context.md`: Read shared project knowledge.
@@ -18,7 +19,7 @@ Follow these phases sequentially to ensure high-quality, safe, and verifiable wo
 
 1.  **Requirement Analysis**:
     - If ambiguous, ask questions (EARS pattern).
-    - If complex, run `gemini activate_skill c4-plan` (simulated).
+    - **Expert Consultation**: Use `activate_skill <agent>` (e.g., `backend-architect`, `ai-engineer`) to get domain-specific guidance.
 2.  **Task Breakdown**:
     - Split large goals into small, atomic tasks.
     - **Critical**: Ensure each task has a clear **Definition of Done (DoD)**.
