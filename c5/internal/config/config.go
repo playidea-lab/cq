@@ -27,9 +27,10 @@ type EventBusConfig struct {
 
 // StorageConfig holds local storage settings.
 type StorageConfig struct {
-	Path        string `yaml:"path"`         // default "~/.local/share/c5"
-	SupabaseURL string `yaml:"supabase_url"` // "" = disabled
-	SupabaseKey string `yaml:"supabase_key"`
+	Path             string `yaml:"path"`               // default "~/.local/share/c5"
+	SupabaseURL      string `yaml:"supabase_url"`       // "" = disabled
+	SupabaseKey      string `yaml:"supabase_key"`
+	MaxArtifactBytes int64  `yaml:"max_artifact_bytes"` // default 10GB (local backend only)
 }
 
 // Default returns a Config populated with default values.
@@ -44,7 +45,8 @@ func Default() Config {
 			Token: "",
 		},
 		Storage: StorageConfig{
-			Path: defaultStoragePath(),
+			Path:             defaultStoragePath(),
+			MaxArtifactBytes: 10 << 30, // 10GB
 		},
 	}
 }

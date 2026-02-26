@@ -279,7 +279,7 @@ func (s *Server) handleStoragePut(w http.ResponseWriter, r *http.Request) {
 	}
 	defer f.Close()
 
-	r.Body = http.MaxBytesReader(w, r.Body, 1<<30) // 1GB limit
+	r.Body = http.MaxBytesReader(w, r.Body, s.maxArtifactBytes)
 	if _, err := io.Copy(f, r.Body); err != nil {
 		f.Close()
 		os.Remove(localPath)

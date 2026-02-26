@@ -36,7 +36,8 @@ type Server struct {
 	mux       *http.ServeMux
 	done      chan struct{} // closed on shutdown to stop background goroutines
 	eventPub         *eventpub.Publisher
-	gpuWorkerGPUOnly bool // if true, GPU workers only accept GPU jobs (no CPU fallback)
+	maxArtifactBytes int64 // max upload size for local backend
+	gpuWorkerGPUOnly bool  // if true, GPU workers only accept GPU jobs (no CPU fallback)
 
 	// jobMu protects jobNotify. When a new job is queued, jobNotify is closed
 	// (broadcasting to all long-poll waiters) and replaced with a new channel.
@@ -50,15 +51,16 @@ type Server struct {
 
 // Config holds server configuration.
 type Config struct {
-	Store          *store.Store
-	Storage        storage.Backend // if nil, auto-detected from env
-	Version        string
-	APIKey         string // if non-empty, X-API-Key header is required
-	ServerURL      string // server's external URL (for local storage fallback)
-	LLMSTxt        string // llms.txt content (served at /.well-known/llms.txt)
-	DocsFS         fs.FS  // embedded docs filesystem (served at /v1/docs/)
-	EventBusURL    string // C3 EventBus base URL (empty = disabled)
+	Store            *store.Store
+	Storage          storage.Backend // if nil, auto-detected from env
+	Version          string
+	APIKey           string // if non-empty, X-API-Key header is required
+	ServerURL        string // server's external URL (for local storage fallback)
+	LLMSTxt          string // llms.txt content (served at /.well-known/llms.txt)
+	DocsFS           fs.FS  // embedded docs filesystem (served at /v1/docs/)
+	EventBusURL      string // C3 EventBus base URL (empty = disabled)
 	EventBusToken    string // Bearer token for EventBus (optional)
+	MaxArtifactBytes int64  // max upload size for local backend (default 10GB)
 	GPUWorkerGPUOnly bool   // if true, GPU workers only accept GPU jobs (no CPU fallback)
 }
 
@@ -69,19 +71,25 @@ func NewServer(cfg Config) *Server {
 		stor = storage.NewBackend(cfg.ServerURL)
 	}
 
+	maxBytes := cfg.MaxArtifactBytes
+	if maxBytes <= 0 {
+		maxBytes = 10 << 30 // 10GB default
+	}
+
 	s := &Server{
-		store:     cfg.Store,
-		storage:   stor,
-		estimator: NewEstimator(cfg.Store),
-		startTime: time.Now(),
-		version:   cfg.Version,
-		apiKey:    cfg.APIKey,
-		llmsTxt:   cfg.LLMSTxt,
-		docsFS:    cfg.DocsFS,
-		mux:       http.NewServeMux(),
-		done:      make(chan struct{}),
+		store:            cfg.Store,
+		storage:          stor,
+		estimator:        NewEstimator(cfg.Store),
+		startTime:        time.Now(),
+		version:          cfg.Version,
+		apiKey:           cfg.APIKey,
+		llmsTxt:          cfg.LLMSTxt,
+		docsFS:           cfg.DocsFS,
+		mux:              http.NewServeMux(),
+		done:             make(chan struct{}),
 		eventPub:         eventpub.New(cfg.EventBusURL, cfg.EventBusToken),
 		jobNotify:        make(chan struct{}),
+		maxArtifactBytes: maxBytes,
 		gpuWorkerGPUOnly: cfg.GPUWorkerGPUOnly,
 	}
 	s.registerRoutes()

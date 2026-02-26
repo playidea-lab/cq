@@ -211,3 +211,43 @@ func TestSSEHandler_MethodNotAllowed(t *testing.T) {
 		t.Fatalf("status = %d, want 405", w.Code)
 	}
 }
+
+// TestSSE_Keepalive verifies that the SSE handler sends keepalive comments
+// at a regular interval even when no events are being broadcast.
+func TestSSE_Keepalive(t *testing.T) {
+	srv := newTestServer(t)
+
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, ts.URL+"/v1/events/stream", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+
+	// Read lines until we see a keepalive comment (": keepalive").
+	// The ticker fires every 15s, so we should see one within ~16s.
+	scanner := bufio.NewScanner(resp.Body)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if strings.TrimSpace(line) == ": keepalive" {
+			return // success
+		}
+	}
+	if err := scanner.Err(); err != nil && ctx.Err() != nil {
+		t.Fatalf("timed out waiting for keepalive comment")
+	}
+	t.Fatal("stream ended without receiving keepalive comment")
+}

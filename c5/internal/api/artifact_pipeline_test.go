@@ -268,3 +268,61 @@ func TestArtifactPipelineE2E(t *testing.T) {
 		t.Fatalf("summary name: %s", summary.Name)
 	}
 }
+
+// TestLocalBackendConfigLimit verifies that the MaxArtifactBytes config
+// controls the upload size limit (instead of the old hardcoded 1GB).
+func TestLocalBackendConfigLimit(t *testing.T) {
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "test.db")
+	storageDir := filepath.Join(tmpDir, "artifacts")
+
+	st, err := store.New(dbPath)
+	if err != nil {
+		t.Fatalf("new store: %v", err)
+	}
+	t.Cleanup(func() { st.Close() })
+
+	local := storage.NewLocal(storageDir, "http://localhost:9999")
+
+	// Set a small limit (1KB) to verify enforcement.
+	srv := NewServer(Config{
+		Store:            st,
+		Storage:          local,
+		Version:          "test",
+		MaxArtifactBytes: 1024, // 1KB
+	})
+	t.Cleanup(func() { srv.Close() })
+
+	// Verify the server picked up the limit.
+	if srv.maxArtifactBytes != 1024 {
+		t.Fatalf("maxArtifactBytes = %d, want 1024", srv.maxArtifactBytes)
+	}
+
+	// Upload a body larger than 1KB — should be rejected.
+	bigBody := strings.NewReader(strings.Repeat("x", 2048)) // 2KB
+	req := httptest.NewRequest("PUT", "/v1/storage/upload/test/big.bin", bigBody)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("expected 413, got %d (body: %s)", w.Code, w.Body.String())
+	}
+
+	// Upload a body within the limit — should succeed.
+	smallBody := strings.NewReader(strings.Repeat("y", 512)) // 512B
+	req2 := httptest.NewRequest("PUT", "/v1/storage/upload/test/small.bin", smallBody)
+	w2 := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w2, req2)
+	if w2.Code != http.StatusOK {
+		t.Fatalf("expected 200 for small upload, got %d (body: %s)", w2.Code, w2.Body.String())
+	}
+}
+
+// TestLocalBackendConfigLimit_Default verifies the default 10GB limit when
+// MaxArtifactBytes is not specified.
+func TestLocalBackendConfigLimit_Default(t *testing.T) {
+	srv := newTestServer(t)
+	want := int64(10 << 30)
+	if srv.maxArtifactBytes != want {
+		t.Fatalf("default maxArtifactBytes = %d, want %d", srv.maxArtifactBytes, want)
+	}
+}

@@ -71,5 +71,7 @@ storage:
   supabase_url: ""
   # Supabase service-role key. Required when supabase_url is set.
   supabase_key: ""
+  # Maximum artifact upload size in bytes (local backend only). Default: 10GB.
+  # max_artifact_bytes: 10737418240
 `
 }

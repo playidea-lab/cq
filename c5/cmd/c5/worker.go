@@ -89,7 +89,7 @@ func runWorker(cfg workerConfig) error {
 		baseURL:      strings.TrimRight(cfg.serverURL, "/"),
 		apiKey:       cfg.apiKey,
 		http:         &http.Client{Timeout: WorkerHeartbeatInterval},
-		artifactHTTP: &http.Client{Timeout: 10 * time.Minute},
+		artifactHTTP: &http.Client{Timeout: 0}, // no timeout for large artifact uploads/downloads
 	}
 
 	// Register

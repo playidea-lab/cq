@@ -47,6 +47,9 @@ func (s *Server) handleSSEStream(w http.ResponseWriter, r *http.Request) {
 	flusher.Flush()
 
 	ctx := r.Context()
+	keepalive := time.NewTicker(15 * time.Second)
+	defer keepalive.Stop()
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -56,6 +59,10 @@ func (s *Server) handleSSEStream(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			fmt.Fprintf(w, "data: %s\n\n", msg)
+			flusher.Flush()
+		case <-keepalive.C:
+			// SSE comment to keep the connection alive through proxies/load balancers.
+			fmt.Fprintf(w, ": keepalive\n\n")
 			flusher.Flush()
 		}
 	}

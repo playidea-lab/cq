@@ -130,15 +130,16 @@ func runServe(cmd *cobra.Command, configPath string, port int, dbPath, apiKey, e
 	defer st.Close()
 
 	srv := api.NewServer(api.Config{
-		Store:         st,
-		Storage:       storageBackend,
-		ServerURL:     serverURL,
-		Version:       version,
-		APIKey:        apiKey,
-		LLMSTxt:       c5.LLMSTxt,
-		DocsFS:        c5.DocsFS,
+		Store:            st,
+		Storage:          storageBackend,
+		ServerURL:        serverURL,
+		Version:          version,
+		APIKey:           apiKey,
+		LLMSTxt:          c5.LLMSTxt,
+		DocsFS:           c5.DocsFS,
 		EventBusURL:      resolvedEventBusURL,
 		EventBusToken:    resolvedEventBusToken,
+		MaxArtifactBytes: cfg.Storage.MaxArtifactBytes,
 		GPUWorkerGPUOnly: cfg.Server.GPUWorkerGPUOnly,
 	})
 	defer srv.Close()
@@ -147,7 +148,7 @@ func runServe(cmd *cobra.Command, configPath string, port int, dbPath, apiKey, e
 		Addr:         fmt.Sprintf(":%d", resolvedPort),
 		Handler:      srv.Handler(),
 		ReadTimeout:  30 * time.Second,
-		WriteTimeout: 30 * time.Second,
+		WriteTimeout: 0, // disabled: large artifact uploads and SSE streams require unbounded write time
 		IdleTimeout:  120 * time.Second,
 	}
 
