@@ -1345,6 +1345,8 @@ var sessionCmd = &cobra.Command{
 	Short: "Manage named Claude Code sessions",
 }
 
+var sessionNameForce bool
+
 var sessionNameCmd = &cobra.Command{
 	Use:   "name <session-name>",
 	Short: "Attach a name to the current session",
@@ -1358,6 +1360,19 @@ var sessionNameCmd = &cobra.Command{
 		sessions, err := loadNamedSessions()
 		if err != nil {
 			return err
+		}
+		// Conflict check: name already used by a different session.
+		if existing, ok := sessions[name]; ok && existing.UUID != uuid {
+			if !sessionNameForce {
+				fmt.Printf("session '%s' already exists (uuid=%s...)\n", name, existing.UUID[:8])
+				fmt.Printf("overwrite? [y/N] ")
+				var answer string
+				fmt.Fscan(cmd.InOrStdin(), &answer)
+				if answer != "y" && answer != "Y" {
+					fmt.Println("aborted")
+					return nil
+				}
+			}
 		}
 		// Remove any existing entries pointing to the same UUID (rename, not add).
 		for k, v := range sessions {
@@ -1377,6 +1392,10 @@ var sessionNameCmd = &cobra.Command{
 		fmt.Printf("Next time: cq claude -t %s\n", name)
 		return nil
 	},
+}
+
+func init() {
+	sessionNameCmd.Flags().BoolVarP(&sessionNameForce, "force", "f", false, "overwrite existing session name without confirmation")
 }
 
 var sessionRmCmd = &cobra.Command{

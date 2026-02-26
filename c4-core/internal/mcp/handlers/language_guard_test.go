@@ -55,13 +55,17 @@ func TestLanguageGuardDartFile(t *testing.T) {
 }
 
 func TestLanguageGuardRustFile(t *testing.T) {
-	m := callLanguageGuard(t, "c4_rename_symbol", "RenameSymbol", "src/main.rs")
-
-	if m["error"] == nil {
-		t.Error("expected error field for rust file")
+	// Rust files must be delegated to the sidecar (multilspy supports rust-analyzer).
+	// The guard must NOT fire for .rs files — language key must be absent.
+	args, err := json.Marshal(map[string]any{"file_path": "src/main.rs", "symbol_name": "MyStruct", "new_body": "body"})
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
 	}
-	if m["language"] != "rust" {
-		t.Errorf("language = %v, want rust", m["language"])
+	fake := &BridgeProxy{}
+	handler := languageGuardedProxy(fake, "RenameSymbol", "c4_rename_symbol")
+	result, _ := handler(args)
+	if m, ok := result.(map[string]any); ok && m["language"] != nil {
+		t.Errorf("language guard must not fire for .rs: got language=%v", m["language"])
 	}
 }
 

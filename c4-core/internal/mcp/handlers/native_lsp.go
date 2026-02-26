@@ -11,7 +11,7 @@ import (
 )
 
 // languageGuardedProxy wraps a Python sidecar method with a language check.
-// For Go/Dart/Rust files it returns an early error with a hint to use the Edit tool.
+// For Go/Dart files it returns an early error with a hint to use the Edit tool.
 // toolName is the registered MCP tool name (e.g. "c4_replace_symbol_body").
 func languageGuardedProxy(proxy *BridgeProxy, method, toolName string) mcp.HandlerFunc {
 	pyHandler := proxyHandler(proxy, method)
@@ -30,17 +30,15 @@ func languageGuardedProxy(proxy *BridgeProxy, method, toolName string) mcp.Handl
 			lang = "go"
 		case ".dart":
 			lang = "dart"
-		case ".rs":
-			lang = "rust"
 		}
 		if lang != "" {
 			return map[string]any{
 				"success":             false,
 				"error":               fmt.Sprintf("%s does not support %s files", toolName, lang),
 				"language":            lang,
-				"hint":                "Use Edit tool for Go/Dart/Rust. Supported: Python/JS/TS only.",
+				"hint":                "Use Edit tool for Go/Dart. Supported: Python/JS/TS/Rust (with rust-analyzer).",
 				"edit_example":        "Edit(file_path=..., old_string=..., new_string=...)",
-				"supported_languages": []string{"python", "javascript", "typescript"},
+				"supported_languages": []string{"python", "javascript", "typescript", "rust"},
 			}, nil
 		}
 		return pyHandler(rawArgs)

@@ -440,10 +440,25 @@ class MultilspyProvider:
             "other": [],
         }
 
+        # multilspy may return a tuple (list, ...) for some LSP servers (e.g. rust-analyzer).
+        # Normalise to a flat list of symbol items.
+        if isinstance(symbols, tuple):
+            flat: list[Any] = []
+            for part in symbols:
+                if isinstance(part, list):
+                    flat.extend(part)
+            symbols = flat
+
+        def _get(sym: Any, key: str, default: Any = None) -> Any:
+            """Uniform field access for both object-style and dict-style symbols."""
+            if isinstance(sym, dict):
+                return sym.get(key, default)
+            return getattr(sym, key, default)
+
         def process_symbol(sym: Any, current_depth: int = 0) -> dict[str, Any] | None:
             try:
-                name = getattr(sym, "name", "")
-                kind = getattr(sym, "kind", None)
+                name = _get(sym, "name", "")
+                kind = _get(sym, "kind", None)
                 kind_str = self._kind_to_type(kind)
 
                 symbol_dict: dict[str, Any] = {
@@ -453,7 +468,7 @@ class MultilspyProvider:
                 }
 
                 # Process children if depth allows
-                children = getattr(sym, "children", []) or []
+                children = _get(sym, "children", []) or []
                 if children and current_depth < depth:
                     symbol_dict["children"] = [c for c in (process_symbol(child, current_depth + 1) for child in children) if c is not None]
 
@@ -627,23 +642,28 @@ class MultilspyProvider:
 
         Tries multiple attributes in order of preference.
         """
+        def _f(obj: Any, key: str, default: Any = None) -> Any:
+            if isinstance(obj, dict):
+                return obj.get(key, default)
+            return getattr(obj, key, default)
+
         try:
             if sym is None:
                 return 0
             # Try range first
-            range_obj = getattr(sym, "range", None)
+            range_obj = _f(sym, "range")
             if range_obj is not None:
-                start = getattr(range_obj, "start", None)
+                start = _f(range_obj, "start")
                 if start is not None:
-                    return getattr(start, "line", 0) or 0
+                    return _f(start, "line", 0) or 0
             # Try selection_range
-            sel_range = getattr(sym, "selection_range", None)
+            sel_range = _f(sym, "selection_range") or _f(sym, "selectionRange")
             if sel_range is not None:
-                start = getattr(sel_range, "start", None)
+                start = _f(sel_range, "start")
                 if start is not None:
-                    return getattr(start, "line", 0) or 0
+                    return _f(start, "line", 0) or 0
             # Try location
-            location = getattr(sym, "location", None)
+            location = _f(sym, "location")
             if location is not None:
                 return self._extract_line(location)
             return 0
