@@ -184,7 +184,9 @@ func runServeStatus(cmd *cobra.Command, args []string) error {
 					fmt.Printf("manual: running (pid=%s)\n", pid)
 				} else {
 					fmt.Println("manual: stale PID file (process not running)")
-					os.Remove(pidPath)
+					if removeErr := os.Remove(pidPath); removeErr != nil {
+						fmt.Fprintf(os.Stderr, "cq: warning: remove stale pid: %v\n", removeErr)
+					}
 				}
 			}
 		}
