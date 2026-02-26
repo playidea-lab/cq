@@ -27,6 +27,7 @@ var (
 	verbose    bool
 	projectDir string
 	yesAll     bool // --yes / -y: skip all interactive confirmations
+	noServe    bool // --no-serve: skip auto-starting cq serve
 )
 
 var rootCmd = &cobra.Command{
@@ -117,6 +118,7 @@ func init() {
 	rootCmd.PersistentFlags().BoolVar(&verbose, "verbose", false, "enable verbose output")
 	rootCmd.PersistentFlags().StringVar(&projectDir, "dir", "", "project root directory (default: current directory)")
 	rootCmd.PersistentFlags().BoolVarP(&yesAll, "yes", "y", false, "skip interactive confirmations (non-interactive/CI mode)")
+	rootCmd.PersistentFlags().BoolVar(&noServe, "no-serve", false, "skip auto-starting cq serve in background")
 	rootCmd.AddCommand(completionCmd)
 }
 

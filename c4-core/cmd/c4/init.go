@@ -10,9 +10,11 @@ import (
 	"io"
 	"io/fs"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -346,6 +348,9 @@ func initAndLaunch(tool string) error {
 
 	// 7. Check cloud auth status and prompt login if needed
 	ensureCloudAuth(nil, yesAll)
+
+	// 7b. Ensure cq serve is running in background (non-fatal if it fails)
+	ensureServeRunning(noServe)
 
 	// 8. Launch AI tool
 	if tool == "claude" && sessionName != "" {
@@ -1596,6 +1601,93 @@ var sessionRmCmd = &cobra.Command{
 		fmt.Printf("session '%s' removed\n", name)
 		return nil
 	},
+}
+
+// ensureServeRunning checks if cq serve is running and starts it in the background if not.
+// If noServe is true, it skips the check entirely.
+// Failures are non-fatal: a warning is printed and execution continues.
+func ensureServeRunning(noServe bool) {
+	if noServe {
+		return
+	}
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return
+	}
+
+	pidPath := filepath.Join(home, ".c4", "serve", "serve.pid")
+	data, err := os.ReadFile(pidPath)
+	if err == nil {
+		pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
+		if err == nil && isCQServeProcess(pid) {
+			// Already running — nothing to do.
+			return
+		}
+	}
+
+	// Not running — start cq serve in background.
+	cqPath, err := os.Executable()
+	if err != nil {
+		return
+	}
+
+	cmd := exec.Command(cqPath, "serve")
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	if err := cmd.Start(); err != nil {
+		fmt.Fprintf(os.Stderr, "cq: warn: could not start serve: %v\n", err)
+		return
+	}
+	// Release resources; we don't wait for this background process.
+	_ = cmd.Process.Release()
+
+	// Wait up to 2s for serve to become healthy.
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		resp, err := http.Get("http://127.0.0.1:4140/health")
+		if err == nil {
+			resp.Body.Close()
+			if resp.StatusCode == http.StatusOK {
+				return
+			}
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	fmt.Fprintf(os.Stderr, "cq: warn: cq serve started but health check timed out\n")
+}
+
+// isCQServeProcess returns true if the given PID is a running "cq serve" process.
+func isCQServeProcess(pid int) bool {
+	switch runtime.GOOS {
+	case "linux":
+		data, err := os.ReadFile(fmt.Sprintf("/proc/%d/cmdline", pid))
+		if err != nil {
+			return false
+		}
+		// cmdline fields are NUL-separated
+		parts := strings.Split(string(data), "\x00")
+		hasCQ, hasServe := false, false
+		for _, p := range parts {
+			base := filepath.Base(p)
+			if base == "cq" || strings.HasSuffix(p, "/cq") {
+				hasCQ = true
+			}
+			if p == "serve" {
+				hasServe = true
+			}
+		}
+		return hasCQ && hasServe
+	case "darwin":
+		out, err := exec.Command("ps", "-p", strconv.Itoa(pid), "-o", "command=").Output()
+		if err != nil {
+			return false
+		}
+		cmdline := strings.TrimSpace(string(out))
+		return strings.Contains(cmdline, "cq") && strings.Contains(cmdline, "serve")
+	default:
+		// Unsupported OS — assume not running to trigger a start attempt.
+		return false
+	}
 }
 
 // launchTool launches the specified AI coding tool, replacing the current process.
