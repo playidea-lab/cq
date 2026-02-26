@@ -464,7 +464,7 @@ func TestInsertAndGetMetrics(t *testing.T) {
 		Metrics: map[string]any{"loss": 0.3, "acc": 0.9},
 	})
 
-	entries, err := s.GetMetrics(job.ID, 10)
+	entries, err := s.GetMetrics(job.ID, 0, 10)
 	if err != nil {
 		t.Fatalf("get metrics: %v", err)
 	}
@@ -473,6 +473,52 @@ func TestInsertAndGetMetrics(t *testing.T) {
 	}
 	if entries[0].Step != 0 {
 		t.Fatalf("expected step 0 first, got %d", entries[0].Step)
+	}
+}
+
+func TestGetMetrics_MinStep(t *testing.T) {
+	s := newTestStore(t)
+
+	job, _ := s.CreateJob(&model.JobSubmitRequest{Name: "job", Command: "echo"})
+
+	for step := 0; step < 5; step++ {
+		s.InsertMetric(job.ID, &model.MetricsLogRequest{
+			Step:    step,
+			Metrics: map[string]any{"loss": float64(step)},
+		})
+	}
+
+	// minStep=0 → all 5 rows
+	all, err := s.GetMetrics(job.ID, 0, 0)
+	if err != nil {
+		t.Fatalf("get all metrics: %v", err)
+	}
+	if len(all) != 5 {
+		t.Fatalf("expected 5 entries, got %d", len(all))
+	}
+
+	// minStep=2 → rows with step > 2 → steps 3, 4
+	incremental, err := s.GetMetrics(job.ID, 2, 0)
+	if err != nil {
+		t.Fatalf("get incremental metrics: %v", err)
+	}
+	if len(incremental) != 2 {
+		t.Fatalf("expected 2 entries (step>2), got %d", len(incremental))
+	}
+	if incremental[0].Step != 3 {
+		t.Fatalf("expected first step=3, got %d", incremental[0].Step)
+	}
+	if incremental[1].Step != 4 {
+		t.Fatalf("expected second step=4, got %d", incremental[1].Step)
+	}
+
+	// minStep=4 → no new rows
+	empty, err := s.GetMetrics(job.ID, 4, 0)
+	if err != nil {
+		t.Fatalf("get empty metrics: %v", err)
+	}
+	if len(empty) != 0 {
+		t.Fatalf("expected 0 entries (step>4), got %d", len(empty))
 	}
 }
 

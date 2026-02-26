@@ -51,7 +51,7 @@ func (s *Server) handleMetricsGet(w http.ResponseWriter, r *http.Request, jobID 
 		limit = 100
 	}
 
-	entries, err := s.store.GetMetrics(jobID, limit)
+	entries, err := s.store.GetMetrics(jobID, 0, limit)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return

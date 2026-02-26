@@ -47,9 +47,20 @@ func (s *Server) handleWSMetrics(w http.ResponseWriter, r *http.Request) {
 
 	includeHistory := r.URL.Query().Get("include_history") == "true"
 
+	// Determine initial lastStep before sending history.
+	// For include_history=false, initialise to the current DB max step so the
+	// poll loop only returns rows inserted after the connection was established.
+	lastStep := -1
+	if !includeHistory {
+		existing, _ := s.store.GetMetrics(jobID, 0, 0)
+		if len(existing) > 0 {
+			lastStep = existing[len(existing)-1].Step
+		}
+	}
+
 	// Send history if requested
 	if includeHistory {
-		metrics, _ := s.store.GetMetrics(jobID, 0)
+		metrics, _ := s.store.GetMetrics(jobID, 0, 0)
 		for _, m := range metrics {
 			msg := model.MetricMessage{
 				Type:    "history",
@@ -59,6 +70,9 @@ func (s *Server) handleWSMetrics(w http.ResponseWriter, r *http.Request) {
 			}
 			if err := writeWSJSON(conn, msg); err != nil {
 				return
+			}
+			if m.Step > lastStep {
+				lastStep = m.Step
 			}
 		}
 	}
@@ -75,15 +89,6 @@ func (s *Server) handleWSMetrics(w http.ResponseWriter, r *http.Request) {
 	// If already terminal, close after sending status
 	if job.Status.IsTerminal() {
 		return
-	}
-
-	// Poll for new metrics and status changes
-	lastStep := -1
-	if includeHistory {
-		metrics, _ := s.store.GetMetrics(jobID, 0)
-		if len(metrics) > 0 {
-			lastStep = metrics[len(metrics)-1].Step
-		}
 	}
 
 	ticker := time.NewTicker(wsPollInterval)
@@ -107,21 +112,19 @@ func (s *Server) handleWSMetrics(w http.ResponseWriter, r *http.Request) {
 		case <-done:
 			return
 		case <-ticker.C:
-			// Check for new metrics
-			allMetrics, _ := s.store.GetMetrics(jobID, 0)
-			for _, m := range allMetrics {
-				if m.Step > lastStep {
-					msg := model.MetricMessage{
-						Type:    "metric",
-						JobID:   jobID,
-						Step:    m.Step,
-						Metrics: m.Metrics,
-					}
-					if err := writeWSJSON(conn, msg); err != nil {
-						return
-					}
-					lastStep = m.Step
+			// Incremental fetch: only rows with step > lastStep
+			newMetrics, _ := s.store.GetMetrics(jobID, lastStep, 0)
+			for _, m := range newMetrics {
+				msg := model.MetricMessage{
+					Type:    "metric",
+					JobID:   jobID,
+					Step:    m.Step,
+					Metrics: m.Metrics,
 				}
+				if err := writeWSJSON(conn, msg); err != nil {
+					return
+				}
+				lastStep = m.Step
 			}
 
 			// Check job status

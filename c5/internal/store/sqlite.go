@@ -790,14 +790,23 @@ func (s *Store) InsertMetric(jobID string, entry *model.MetricsLogRequest) error
 	return nil
 }
 
-// GetMetrics retrieves metrics for a job, optionally limited.
-func (s *Store) GetMetrics(jobID string, limit int) ([]model.MetricEntry, error) {
-	query := `SELECT step, metrics, created_at FROM metrics WHERE job_id = ? ORDER BY step ASC`
+// GetMetrics retrieves metrics for a job, optionally filtered by minStep and limited.
+// If minStep > 0, only rows with step > minStep are returned (incremental fetch).
+func (s *Store) GetMetrics(jobID string, minStep int, limit int) ([]model.MetricEntry, error) {
+	var query string
+	var args []any
+	if minStep > 0 {
+		query = `SELECT step, metrics, created_at FROM metrics WHERE job_id = ? AND step > ? ORDER BY step ASC`
+		args = []any{jobID, minStep}
+	} else {
+		query = `SELECT step, metrics, created_at FROM metrics WHERE job_id = ? ORDER BY step ASC`
+		args = []any{jobID}
+	}
 	if limit > 0 {
 		query += fmt.Sprintf(" LIMIT %d", limit)
 	}
 
-	rows, err := s.db.Query(query, jobID)
+	rows, err := s.db.Query(query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("get metrics: %w", err)
 	}

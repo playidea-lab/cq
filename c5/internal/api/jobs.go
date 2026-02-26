@@ -300,7 +300,7 @@ func (s *Server) handleJobSummary(w http.ResponseWriter, r *http.Request, jobID 
 	}
 
 	// Get latest metrics
-	metrics, _ := s.store.GetMetrics(jobID, 0)
+	metrics, _ := s.store.GetMetrics(jobID, 0, 0)
 	var latestMetrics map[string]any
 	if len(metrics) > 0 {
 		latestMetrics = metrics[len(metrics)-1].Metrics
