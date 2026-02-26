@@ -7,8 +7,19 @@ Spec: https://agents.md/
 
 # CQ Project - AI Agent Instructions
 
-> **CQ** = 프로젝트·CLI 이름. C1·C2·C3·C4·C5·C9가 유기적으로 연결된 생태계.  
+> **CQ** = 프로젝트·CLI 이름. C1·C2·C3·C4·C5·C9가 유기적으로 연결된 생태계.
 > 이 리포지토리는 C4 Engine을 포함하며, CLI는 `cq`, MCP 도구는 `c4_*` 접두사. 계획부터 완료까지 자동화된 프로젝트 관리.
+
+---
+
+## Core Agent Principles
+
+> Karpathy-inspired 4원칙 — 구현 전 가정 선언, 최소 코드, 정확한 범위, 목표 기반 루프.
+
+1. **Think Before Coding** — 구현 시작 전 3줄 이내로 가정을 선언한다. 모호하지 않아도.
+2. **Simplicity First** — 200줄이 50줄로 쓸 수 있다면 다시 써라. 최소 코드가 기본값이다.
+3. **Surgical Changes** — 요청과 직접 연관된 줄만 수정한다. 인접 코드는 건드리지 않는다.
+4. **Goal-Driven Execution** — 명령이 아닌 목표로 실행한다. 실패 테스트 → 통과가 기본 루프다.
 
 ---
 
@@ -254,7 +265,9 @@ c4_add_todo(mode="direct", review_required=False)
 
 ## Agent Behavioral Rules
 
-### Stop & Ask (모호하면 멈춰라)
+### Think Before Coding (구현 전 가정 선언)
+- 구현 시작 전, **모호하지 않아도** 3줄 이내로 가정을 선언한다.
+  예시: "가정: 이 함수가 nil을 받지 않는다 / 파일이 이미 존재한다 / 기존 테스트가 통과 상태다"
 - 요구사항에 **여러 해석**이 가능하면 → 가정을 나열하고 사용자에게 확인
 - 더 단순한 방법이 있으면 → 제안하고 push back
 - 혼란스러우면 → **멈추고**, 무엇이 불명확한지 명시한 뒤 질문
@@ -278,7 +291,7 @@ c4_add_todo(mode="direct", review_required=False)
 - 비슷한 코드 3줄이 조기 추상화보다 낫다
 - docstring, 주석, type annotation은 **내가 수정한 코드에만** 추가
 
-**기준**: 시니어 엔지니어가 "과하다"고 할 만하면 → 단순화.
+**기준**: 200줄이 50줄로 쓸 수 있다면 → 다시 써라. 시니어 엔지니어가 "과하다"고 할 만하면 → 단순화.
 
 ### Efficiency Rules (컨텍스트 절약)
 - 큰 파일을 읽기 전에 **항상 line range를 제한**한다. 일부만 필요하면 전체를 읽지 않는다.
@@ -287,6 +300,17 @@ c4_add_todo(mode="direct", review_required=False)
 ### Debugging (디버깅 원칙)
 - MCP 서버나 도구 연결 문제 디버깅 시, 우회책 대신 **근본 원인(모듈 경로, config 오류 등)을 수정**한다.
 - 도구/서버 연결 실패 시 설정과 모듈 경로부터 확인한다.
+
+### Goal-Driven Execution (목표 기반 실행)
+명령형 지시를 선언적 목표로 변환하여 실행한다. LLM은 구체적 목표를 루프로 달성하는 데 최적화되어 있다.
+
+| 대신에... | 이렇게 |
+|----------|--------|
+| "X 추가해" | "X 실패 테스트 작성 → 통과시켜라" |
+| "버그 수정해" | "재현 테스트 작성 → 통과시켜라" |
+| "X 최적화해" | "현재 수치 측정 → 목표 달성 테스트" |
+
+> "LLMs are exceptionally good at looping until they meet specific goals." — Karpathy
 
 ---
 
