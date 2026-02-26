@@ -36,7 +36,7 @@ REPO_ROOT := $(shell git -C $(dir $(abspath $(lastword $(MAKEFILE_LIST)))) rev-p
 
 # C5 embed variables (used by CI embed-c5 target)
 # C5_BIN: path to the compiled c5 binary (set by CI after build-c5 stage)
-# C5_VERSION: version string injected into embeddedVersion ldflags
+# C5_VERSION: version string injected into embeddedC5Version ldflags
 C5_BIN     ?=
 C5_VERSION ?= dev
 EXT        ?=

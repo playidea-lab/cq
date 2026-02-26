@@ -90,8 +90,7 @@ var serveStatusCmd = &cobra.Command{
 }
 
 // installServeService registers cq as an OS service.
-// If yesAll is true, skips user confirmation.
-// Returns nil if already installed.
+// Returns nil if already installed (detected by string-matching the error message).
 func installServeService(_ context.Context, _ bool) error {
 	execPath, configPath, err := resolveInstallPaths()
 	if err != nil {
