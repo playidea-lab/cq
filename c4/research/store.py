@@ -263,11 +263,21 @@ class ResearchStore:
                 if g.get("type") == "experiment" and g.get("status") != "completed"
             ]
             if pending:
-                return {"action": "run_experiments", "reason": f"{len(pending)} experiments remaining", "iteration": current.iteration_num}
+                return {
+                    "action": "run_experiments",
+                    "reason": (
+                        f"{len(pending)} experiments remaining. "
+                        "Suggestion: Use Gemini 3.0 (c4-research-scientist) for real-time benchmark grounding."
+                    ),
+                    "iteration": current.iteration_num
+                }
 
         return {
             "action": "plan_experiments",
-            "reason": "Review done. Plan experiments for identified gaps.",
+            "reason": (
+                "Review done. Plan experiments for identified gaps. "
+                "Suggestion: Consult c4-global-brain to verify paper-to-code alignment."
+            ),
             "iteration": current.iteration_num,
         }
 

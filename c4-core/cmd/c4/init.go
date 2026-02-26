@@ -232,10 +232,8 @@ func setupShellCompletion() {
 			f.Close()
 			continue
 		}
-		if closeErr := f.Close(); closeErr != nil {
-			continue
-		}
 		fmt.Fprintf(os.Stderr, "cq: shell completion added to %s\n", e.path)
+		f.Close()
 	}
 }
 

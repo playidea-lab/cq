@@ -40,8 +40,7 @@ func newServiceConfig(execPath, configPath string) service.Config {
 	opt := service.KeyValue{}
 	// macOS: user LaunchAgent (~/.Library/LaunchAgents/) — no sudo required.
 	// Linux systemd: user unit (~/.config/systemd/user/) — no sudo required.
-	// Other Linux init systems (SysV, OpenRC) do not support UserService;
-	// install will fall back to a system-level service there.
+	// On unsupported Linux init systems (SysV, OpenRC), Install() will return an error.
 	if runtime.GOOS == "darwin" || runtime.GOOS == "linux" {
 		opt["UserService"] = true
 	}
@@ -172,7 +171,10 @@ func runServeStatus(cmd *cobra.Command, args []string) error {
 	}
 
 	// Check for manual serve process via PID file, with liveness verification.
-	pidDir, _ := resolveServePIDDir()
+	pidDir, pidDirErr := resolveServePIDDir()
+	if pidDirErr != nil {
+		return nil
+	}
 	pidPath := filepath.Join(pidDir, "serve.pid")
 	if data, readErr := os.ReadFile(pidPath); readErr == nil {
 		pid := strings.TrimSpace(string(data))
