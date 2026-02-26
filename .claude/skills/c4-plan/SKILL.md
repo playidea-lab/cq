@@ -512,6 +512,17 @@ For Worker Packet format and DoD principles, see `references/worker-packet.md`.
 - **Specific**: No vague terms ("improve", "optimize")
 - **Independent**: Checkable without other tasks
 
+#### Goal-Driven 변환 원칙 (Karpathy)
+
+> "Don't tell it what to do — give it success criteria and watch it go."
+
+| 명령형 (피할 것) | 선언형 목표로 변환 |
+|----------------|-----------------|
+| "X validation 추가해" | "잘못된 입력 테스트 작성 → 모두 통과시켜라" |
+| "버그 수정해" | "버그를 재현하는 테스트 작성 → 통과시켜라" |
+| "X 최적화해" | "현재 수치 측정 → 목표(N ms/N%) 달성 테스트 → 통과" |
+| "리팩토링해" | "기존 테스트 통과 확인 → 리팩토링 → 여전히 통과" |
+
 | Bad DoD | Good DoD |
 |---------|----------|
 | "Implement login" | "Email/password login returns JWT, wrong password returns 401" |
@@ -554,6 +565,17 @@ QualityGates:
 
 If exceeded, ask user whether to split.
 
+### DoD Starter Template
+
+DoD 초안 작성 시 아래 구조를 시작점으로 사용한다:
+
+```
+1. Assumptions: 이 태스크가 전제하는 것 (명시적으로)
+2. Success Criteria: 테스트/명령으로 검증 가능한 완료 상태
+3. Failure Modes Top 3: 예상 실패 케이스 + 대응
+4. QualityGates: 파일 존재 확인 + 테스트 실행
+```
+
 ### Task Draft Format (텍스트만, DB 저장 금지)
 
 ```
@@ -565,6 +587,8 @@ If exceeded, ask user whether to split.
     ContractSpec:
       API: ...
       Tests: ...
+      **Assumptions** (구현 전 선제 선언 — 틀리면 멈추고 확인):
+        - [이 태스크가 전제하는 파일 경로, API 형식, 외부 의존성]
     CodePlacement:
       Modify: ...
   dependencies: []
