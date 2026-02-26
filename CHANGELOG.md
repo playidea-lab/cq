@@ -33,7 +33,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### 🔧 Polish
 - **serve**: `hub_component` double-Wait race 수정 — 단일 reaper goroutine + `done` channel 패턴 (`e0ecf5ea`)
-- **config**: `serve.hub.*` viper SetDefault 누락 추가 (`e0ecf5ea`)
+- **serve**: `hub_component` Stop() mutex 해제 후 대기 — Health() 블로킹 방지 (`59189e6b`)
+- **serve**: Health check URL `/health` → `/v1/health` (c5 라우트 매칭) (`7a6072a5`)
+- **c5**: `WriteTimeout: 0` → `10 * time.Minute` — 무한 hang 방지 (`59189e6b`)
+- **c5**: dual retention 메커니즘 문서화 (row-count + time-based) (`59189e6b`)
+- **hub**: `VRAMRequiredGB` 3-point 계약 동기화 (c5 model ↔ hub/models.go ↔ MCP schema) (`6cf0d074`, `b5d3ab7d`)
+- **config**: `serve.hub.args` SetDefault 추가 + `gpu_worker_gpu_only` ExampleConfigYAML (`6cf0d074`, `59189e6b`)
 - **c5/worker**: artifact HTTP 클라이언트 타임아웃 `0` → `30분` (`e0ecf5ea`)
 
 ### 📚 Documentation
