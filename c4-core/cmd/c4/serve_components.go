@@ -12,7 +12,7 @@ import (
 )
 
 // registerCoreServeComponents registers always-available components:
-// EventBus, GPU, and Agent. Returns the started EventBus component
+// EventBus, GPU, Hub, and Agent. Returns the started EventBus component
 // so optional components (EventSink, HubPoller) can wire up a publisher,
 // and the GPU component so the caller can mount its HTTP handler.
 func registerCoreServeComponents(mgr *serve.Manager, cfg config.C4Config, home string) (*serve.EventBusComponent, *serve.GPUComponent) {
@@ -36,6 +36,16 @@ func registerCoreServeComponents(mgr *serve.Manager, cfg config.C4Config, home s
 		})
 		mgr.Register(gpuComp)
 		fmt.Fprintf(os.Stderr, "cq serve: registered gpu\n")
+	}
+
+	// C5 Hub subprocess
+	if cfg.Serve.Hub.Enabled {
+		mgr.Register(serve.NewHubComponent(serve.HubComponentConfig{
+			Binary: cfg.Serve.Hub.Binary,
+			Port:   cfg.Serve.Hub.Port,
+			Args:   cfg.Serve.Hub.Args,
+		}))
+		fmt.Fprintf(os.Stderr, "cq serve: registered hub\n")
 	}
 
 	// Agent (Supabase Realtime @cq mention listener)
