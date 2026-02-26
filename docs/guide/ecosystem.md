@@ -96,8 +96,12 @@ Distributed job queue for running workers at scale:
 
 - **Pull model** — workers poll for jobs, no push dependencies
 - **Lease-based** — jobs are leased with timeout, auto-requeued on failure
+- **VRAM-aware scheduling** — GPU workers matched by free VRAM; CPU fallback configurable
 - **Artifact pipeline** — workers download inputs, upload outputs via signed URLs
+- **Log retention** — automatic rotation (50k rows) + 7-day cleanup
 - REST + WebSocket API
+
+**`cq serve` integration**: `cq serve` can manage C5 Hub as a subprocess. Enable with `serve.hub.enabled: true` — no separate process manager needed. Lifecycle (start/stop/health) is handled automatically alongside other `cq serve` components.
 
 ---
 

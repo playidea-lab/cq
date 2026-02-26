@@ -58,6 +58,11 @@ permission_reviewer:
 
 ```yaml
 serve:
+  hub:
+    enabled: false       # start C5 Hub as a subprocess (full tier)
+    binary: "c5"         # binary name to find in PATH
+    port: 8585           # port to pass as --port to c5
+    args: []             # additional CLI args
   eventbus:
     enabled: false
   gpu:
@@ -75,6 +80,11 @@ serve:
   ssesubscriber:
     enabled: false   # full tier 전용 (C5 Hub + C3 EventBus 빌드 태그 필요)
 ```
+
+When `serve.hub.enabled: true`, `cq serve` automatically starts the `c5` binary as a child process and manages its lifecycle:
+- Starts on `cq serve` launch (skips gracefully if binary not found in PATH)
+- Health-checked at `http://127.0.0.1:{port}/v1/health` every few seconds
+- Stopped cleanly on `cq serve` exit (SIGTERM → 5s wait → SIGKILL)
 
 ### `worktree`
 

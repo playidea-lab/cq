@@ -128,6 +128,14 @@ cq cursor   # for Cursor
 
 > **You:** "backbone 3개 비교 실험 돌려야 해. ResNet / EfficientNet / ViT"
 
+먼저 C5 Hub를 시작합니다 (한 번만):
+
+```sh
+# .c4/config.yaml에 serve.hub.enabled: true 설정 후
+cq serve   # C5 Hub가 자동으로 서브프로세스로 시작됨
+# → {"status":"ok","components":{"hub":{"status":"ok","detail":"port 8585"}}}
+```
+
 ```
 /c4-plan "backbone ablation: ResNet50 vs EfficientNet-B4 vs ViT-B/16"
 

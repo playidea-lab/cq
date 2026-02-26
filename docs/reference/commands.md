@@ -99,7 +99,7 @@ cq mail rm <id>            # Delete a message
 
 ### `cq serve`
 
-Run background services (EventBus, GPU scheduler, Agent listener).
+Run background services (EventBus, GPU scheduler, Agent listener, C5 Hub).
 
 ```sh
 cq serve              # start on :4140
@@ -107,6 +107,16 @@ cq serve --port 4141
 cq serve install      # Install as OS service (macOS LaunchAgent / Linux systemd / Windows Service)
 cq serve uninstall    # Uninstall the OS service
 cq serve status       # Show OS service status and manual serve process status
+```
+
+Health endpoint: `GET http://127.0.0.1:4140/health` — returns status of all registered components.
+
+**Hub component** (`full` tier): when `serve.hub.enabled: true` in config, `cq serve` automatically starts the `c5` binary as a managed subprocess. No separate process management needed.
+
+```sh
+# Check component health (hub + any others)
+curl http://127.0.0.1:4140/health
+# {"status":"ok","components":{"hub":{"status":"ok","detail":"port 8585"}}}
 ```
 
 ### `cq version`

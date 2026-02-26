@@ -167,7 +167,7 @@ serve:
 
 # (include all connected settings above, plus:)
 
-# C5 Hub — distributed worker queue
+# C5 Hub — distributed worker queue (client side)
 hub:
   enabled: true
   url: http://localhost:8585
@@ -175,6 +175,11 @@ hub:
 
 # Background daemon (cq serve)
 serve:
+  # Hub subprocess — cq serve starts c5 automatically
+  hub:
+    enabled: true      # start C5 Hub as a child process
+    binary: "c5"       # must be in PATH (install: cq install c5)
+    port: 8585
   stale_checker:
     enabled: true
     threshold_minutes: 30
