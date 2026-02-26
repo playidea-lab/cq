@@ -32,6 +32,7 @@ type HubComponent struct {
 	cmd     *exec.Cmd
 	cancel  context.CancelFunc
 	running bool
+	done    chan struct{} // closed by reaper goroutine when process exits
 }
 
 // NewHubComponent creates a HubComponent with the given config.
@@ -78,16 +79,20 @@ func (h *HubComponent) Start(ctx context.Context) error {
 		return fmt.Errorf("hub: start subprocess: %w", err)
 	}
 
+	done := make(chan struct{})
 	h.cmd = cmd
 	h.cancel = cancel
 	h.running = true
+	h.done = done
 
 	fmt.Fprintf(os.Stderr, "cq serve: hub component started (binary: %s, port: %d, pid: %d)\n",
 		binPath, h.cfg.Port, cmd.Process.Pid)
 
-	// Reap the child process in a goroutine so it doesn't become a zombie.
+	// Single reaper goroutine: calls Wait exactly once and closes done.
+	// Stop() listens on done instead of calling Wait again.
 	go func() {
 		_ = cmd.Wait()
+		close(done)
 	}()
 
 	return nil
@@ -107,19 +112,14 @@ func (h *HubComponent) Stop(ctx context.Context) error {
 		// Graceful: SIGTERM
 		_ = h.cmd.Process.Signal(syscall.SIGTERM)
 
-		// Wait up to 5 s for the process to exit.
-		done := make(chan struct{})
-		go func() {
-			_ = h.cmd.Wait()
-			close(done)
-		}()
-
+		// Wait for the reaper goroutine (single Wait() caller) to signal exit.
 		select {
-		case <-done:
+		case <-h.done:
 			// exited cleanly
 		case <-time.After(5 * time.Second):
 			// Force-kill if still running.
 			_ = h.cmd.Process.Signal(syscall.SIGKILL)
+			<-h.done // drain to avoid goroutine leak
 		}
 	}
 
