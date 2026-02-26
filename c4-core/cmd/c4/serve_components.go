@@ -44,6 +44,7 @@ func registerCoreServeComponents(mgr *serve.Manager, cfg config.C4Config, home s
 			Binary: cfg.Serve.Hub.Binary,
 			Port:   cfg.Serve.Hub.Port,
 			Args:   cfg.Serve.Hub.Args,
+			Env:    loadC4CloudEnv(cfg),
 		}
 		// Wire embedded binary extractor when available (c5_embed build tag).
 		if EmbeddedC5FS != nil {
@@ -65,6 +66,18 @@ func registerCoreServeComponents(mgr *serve.Manager, cfg config.C4Config, home s
 	}
 
 	return ebComp, gpuComp
+}
+
+// loadC4CloudEnv returns env vars to inject into the C5 subprocess from cfg.Cloud.
+func loadC4CloudEnv(cfg config.C4Config) []string {
+	var envs []string
+	if cfg.Cloud.URL != "" {
+		envs = append(envs, "C5_SUPABASE_URL="+cfg.Cloud.URL)
+	}
+	if cfg.Cloud.AnonKey != "" {
+		envs = append(envs, "C5_SUPABASE_KEY="+cfg.Cloud.AnonKey)
+	}
+	return envs
 }
 
 // registerStaleCheckerServeComponent registers the StaleChecker component when enabled.

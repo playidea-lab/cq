@@ -20,6 +20,8 @@ type HubComponentConfig struct {
 	Port int
 	// Args are extra CLI arguments passed after "serve --port <port>".
 	Args []string
+	// Env contains extra environment variables injected into the C5 subprocess (e.g., C5_SUPABASE_URL).
+	Env []string
 	// ExtractBinary is an optional function that extracts an embedded c5 binary
 	// and returns its path. When set, it is called if the binary is not found
 	// in PATH (c5_embed build tag scenario).
@@ -86,6 +88,9 @@ func (h *HubComponent) Start(ctx context.Context) error {
 	cmd := exec.CommandContext(procCtx, binPath, args...)
 	cmd.Stdout = os.Stderr // route subprocess output to our stderr
 	cmd.Stderr = os.Stderr
+	if len(h.cfg.Env) > 0 {
+		cmd.Env = append(os.Environ(), h.cfg.Env...)
+	}
 
 	if err := cmd.Start(); err != nil {
 		cancel()

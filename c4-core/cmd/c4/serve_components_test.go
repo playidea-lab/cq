@@ -52,6 +52,33 @@ func TestServeMux_DaemonPrefix_GPUDisabled(t *testing.T) {
 	}
 }
 
+func TestLoadC4CloudEnv_BothSet(t *testing.T) {
+	cfg := config.C4Config{}
+	cfg.Cloud.URL = "https://example.supabase.co"
+	cfg.Cloud.AnonKey = "test-anon-key"
+	envs := loadC4CloudEnv(cfg)
+	if len(envs) != 2 {
+		t.Fatalf("expected 2 env vars, got %d", len(envs))
+	}
+}
+
+func TestLoadC4CloudEnv_Empty(t *testing.T) {
+	cfg := config.C4Config{}
+	envs := loadC4CloudEnv(cfg)
+	if len(envs) != 0 {
+		t.Fatalf("expected 0 env vars, got %d: %v", len(envs), envs)
+	}
+}
+
+func TestLoadC4CloudEnv_URLOnly(t *testing.T) {
+	cfg := config.C4Config{}
+	cfg.Cloud.URL = "https://example.supabase.co"
+	envs := loadC4CloudEnv(cfg)
+	if len(envs) != 1 {
+		t.Fatalf("expected 1 env var, got %d", len(envs))
+	}
+}
+
 // TestServeStaleCheckerRegistration verifies that when StaleChecker.Enabled=false,
 // calling registerStaleCheckerServeComponent does not add a component to the manager.
 func TestServeStaleCheckerRegistration(t *testing.T) {

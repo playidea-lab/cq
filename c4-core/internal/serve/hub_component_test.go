@@ -177,6 +177,19 @@ func TestHubComponent_FallbackToEmbed(t *testing.T) {
 	}
 }
 
+// TestHubComponentConfig_EnvInjected verifies that the Env field is stored in cfg.
+func TestHubComponentConfig_EnvInjected(t *testing.T) {
+	cfg := HubComponentConfig{
+		Binary: "echo",
+		Port:   8585,
+		Env:    []string{"TEST_VAR=hello"},
+	}
+	h := NewHubComponent(cfg)
+	if len(h.cfg.Env) != 1 || h.cfg.Env[0] != "TEST_VAR=hello" {
+		t.Errorf("expected Env=[TEST_VAR=hello], got %v", h.cfg.Env)
+	}
+}
+
 // testServerPort extracts the numeric port from a URL like "http://127.0.0.1:NNNNN".
 func testServerPort(t *testing.T, rawURL string) int {
 	t.Helper()
