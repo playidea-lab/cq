@@ -156,7 +156,11 @@ func TestHubComponent_FallbackToEmbed(t *testing.T) {
 	})
 
 	ctx := context.Background()
-	_ = c.Start(ctx) // error expected (nonexistent path), but ExtractBinary must be called.
+	err := c.Start(ctx) // error expected (nonexistent path), but ExtractBinary must be called.
+	if err == nil {
+		t.Error("expected error starting component with nonexistent extracted binary path")
+		_ = c.Stop(ctx)
+	}
 
 	// ExtractBinary must have been called when binary is not in PATH.
 	if !extractCalled {

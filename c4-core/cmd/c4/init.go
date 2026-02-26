@@ -2,10 +2,12 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"crypto/sha256"
 	_ "embed"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/fs"
 	"log/slog"
 	"os"
@@ -208,7 +210,7 @@ func confirmServeInstall() {
 			return
 		}
 	}
-	if err := svc.Install(); err != nil {
+	if err := installServeService(context.Background(), true); err != nil {
 		fmt.Fprintf(os.Stderr, "cq init: WARNING: serve install failed: %v\n", err)
 	}
 }
@@ -1281,10 +1283,10 @@ func launchToolNamed(projectDir, name string) error {
 	return nil
 }
 
-// currentSessionUUID detects the current Claude Code session UUID by finding
-// the most recently modified JSONL file in the project's Claude session directory.
+// currentSessionUUID detects the current Claude Code session UUID.
+// Priority: CQ_SESSION_UUID env var → JSONL content timestamp → file ModTime.
 func currentSessionUUID(dir string) string {
-	// Prefer env var (set by cq claude -t).
+	// 1. Prefer env var (set by cq claude -t).
 	if uuid := os.Getenv("CQ_SESSION_UUID"); uuid != "" {
 		return uuid
 	}
@@ -1296,8 +1298,14 @@ func currentSessionUUID(dir string) string {
 	if err != nil {
 		return ""
 	}
-	var newestTime time.Time
-	newestUUID := ""
+
+	type candidate struct {
+		uuid      string
+		timestamp time.Time // from JSONL content
+		modTime   time.Time // file system fallback
+	}
+	var best candidate
+
 	for _, e := range entries {
 		if e.IsDir() || !strings.HasSuffix(e.Name(), ".jsonl") {
 			continue
@@ -1306,12 +1314,69 @@ func currentSessionUUID(dir string) string {
 		if err != nil {
 			continue
 		}
-		if info.ModTime().After(newestTime) {
-			newestTime = info.ModTime()
-			newestUUID = strings.TrimSuffix(e.Name(), ".jsonl")
+		uuid := strings.TrimSuffix(e.Name(), ".jsonl")
+		ts := jsonlLastTimestamp(filepath.Join(sessionDir, e.Name()))
+		c := candidate{uuid: uuid, timestamp: ts, modTime: info.ModTime()}
+
+		// Prefer the candidate with the most recent JSONL content timestamp.
+		// Fall back to modTime when timestamps are equal or unavailable.
+		var bestTs, cTs time.Time
+		if !best.timestamp.IsZero() {
+			bestTs = best.timestamp
+		} else {
+			bestTs = best.modTime
+		}
+		if !c.timestamp.IsZero() {
+			cTs = c.timestamp
+		} else {
+			cTs = c.modTime
+		}
+		if cTs.After(bestTs) {
+			best = c
 		}
 	}
-	return newestUUID
+	return best.uuid
+}
+
+// jsonlLastTimestamp reads the last JSON record from a JSONL file and returns
+// its "timestamp" field. Returns zero time if unreadable or not present.
+func jsonlLastTimestamp(path string) time.Time {
+	f, err := os.Open(path)
+	if err != nil {
+		return time.Time{}
+	}
+	defer f.Close()
+
+	// Seek to last 4KB to find the last complete line efficiently.
+	const tailSize = 4096
+	if fi, err := f.Stat(); err == nil && fi.Size() > tailSize {
+		_, _ = f.Seek(-tailSize, io.SeekEnd)
+	}
+	buf, err := io.ReadAll(f)
+	if err != nil || len(buf) == 0 {
+		return time.Time{}
+	}
+	// Find the last non-empty line.
+	lines := strings.Split(strings.TrimRight(string(buf), "\n"), "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		line := strings.TrimSpace(lines[i])
+		if line == "" {
+			continue
+		}
+		var rec struct {
+			Timestamp string `json:"timestamp"`
+		}
+		if err := json.Unmarshal([]byte(line), &rec); err == nil && rec.Timestamp != "" {
+			if t, err := time.Parse(time.RFC3339Nano, rec.Timestamp); err == nil {
+				return t
+			}
+			if t, err := time.Parse(time.RFC3339, rec.Timestamp); err == nil {
+				return t
+			}
+		}
+		break
+	}
+	return time.Time{}
 }
 
 // lsCmd lists named sessions in tmux-style format.

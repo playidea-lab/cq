@@ -64,10 +64,10 @@ TIER_TAGS_solo      = skills_embed
 TIER_TAGS_connected = c0_drive c3_eventbus llm_gateway skills_embed
 TIER_TAGS_full      = c0_drive c3_eventbus c5_hub llm_gateway cdp gpu c1_messenger research skills_embed c5_embed
 
-# Extra ldflags for c5_embed tier: inject embeddedVersion
+# Extra ldflags for c5_embed tier: inject embeddedC5Version
 _C5_EMBED_FLAGS :=
 ifeq ($(TIER),full)
-  _C5_EMBED_FLAGS := -X 'github.com/changmin/c4-core/cmd/c4.embeddedVersion=$(C5_VERSION)'
+  _C5_EMBED_FLAGS := -X 'github.com/changmin/c4-core/cmd/c4.embeddedC5Version=$(C5_VERSION)'
 endif
 
 ## build-cross: Cross-compile for target GOOS/GOARCH/TIER (used by CI)

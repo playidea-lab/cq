@@ -91,6 +91,7 @@ func extractC5(embFS fs.FS, version string) (string, error) {
 	// Atomically write the version file.
 	if version != "" {
 		tmpVer := fmt.Sprintf("%s.tmp.%d.%d", versionPath, os.Getpid(), atomicExtractCounter.Add(1))
+		defer os.Remove(tmpVer) // no-op if rename succeeds
 		if err := os.WriteFile(tmpVer, []byte(version), 0644); err == nil {
 			_ = os.Rename(tmpVer, versionPath)
 		}
