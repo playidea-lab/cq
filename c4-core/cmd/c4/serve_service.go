@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -88,7 +89,10 @@ var serveStatusCmd = &cobra.Command{
 	RunE:  runServeStatus,
 }
 
-func runServeInstall(cmd *cobra.Command, args []string) error {
+// installServeService registers cq as an OS service.
+// If yesAll is true, skips user confirmation.
+// Returns nil if already installed.
+func installServeService(_ context.Context, _ bool) error {
 	execPath, configPath, err := resolveInstallPaths()
 	if err != nil {
 		return err
@@ -99,6 +103,10 @@ func runServeInstall(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("create service: %w", err)
 	}
 	if err := svc.Install(); err != nil {
+		if strings.Contains(err.Error(), "already exists") || strings.Contains(err.Error(), "already installed") {
+			fmt.Println("WARN: cq-serve service already installed, skipping.")
+			return nil
+		}
 		return fmt.Errorf("install service: %w", err)
 	}
 	fmt.Println("cq-serve service installed.")
@@ -106,6 +114,10 @@ func runServeInstall(cmd *cobra.Command, args []string) error {
 		fmt.Printf("Config: %s\n", configPath)
 	}
 	return nil
+}
+
+func runServeInstall(cmd *cobra.Command, args []string) error {
+	return installServeService(cmd.Context(), false)
 }
 
 func runServeUninstall(cmd *cobra.Command, args []string) error {
