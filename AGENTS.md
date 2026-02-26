@@ -467,3 +467,18 @@ CP-001:    체크포인트
 
 ## C5 Hub (c5/) → [docs/ARCHITECTURE.md#c5-hub-c5](docs/ARCHITECTURE.md)
 주요: Worker Pull 모델, Lease 기반. `hub.enabled: true` + `hub.url` 설정 후 `c4_hub_submit`으로 잡 제출.
+
+### cq serve 통합
+`cq serve`의 `hub` 컴포넌트가 C5 바이너리를 서브프로세스로 자동 시작합니다.
+```yaml
+# .c4/config.yaml
+serve:
+  hub:
+    enabled: true    # c5 바이너리를 자동 시작
+    binary: "c5"     # PATH에서 찾을 바이너리명
+    port: 8585       # c5 serve --port
+    args: []         # 추가 CLI 인자
+```
+- SIGTERM → 5s 대기 → SIGKILL 종료 패턴
+- Health check: `GET http://127.0.0.1:{port}/v1/health`
+- 바이너리 미설치 시 graceful skip (WARN 로그 후 계속)
