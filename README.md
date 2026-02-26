@@ -187,6 +187,28 @@ T-022 완료 후 비교 리포트 자동 생성:
 
 ---
 
+## Sessions
+
+Resume a previous Claude Code session by name:
+
+```sh
+cq claude -t myproject    # start or resume a named session
+cq ls                     # list all sessions (shows unread mail count)
+```
+
+Named sessions allow you to resume context across terminal restarts. Attach a name to an existing session with `/c4-attach`.
+
+## Mail (inter-session messaging)
+
+Send messages between sessions or from the CLI:
+
+```sh
+cq mail ls                # list messages
+cq mail read <id>         # read a message
+```
+
+In Claude Code, use `c4_mail_send` / `c4_mail_ls` / `c4_mail_read` / `c4_mail_rm` MCP tools to communicate across sessions.
+
 ## Workflow
 
 ```

@@ -32,4 +32,20 @@ features:
   - icon: 🔒
     title: Secure by Default
     details: AES-256-GCM secret store. API keys never in config files. Shell command review via pre-commit hooks.
+
+  - icon: 🏷️
+    title: Named Sessions
+    details: Resume any Claude Code session by name with `cq claude -t <name>`. List sessions and unread mail with `cq ls`.
+
+  - icon: 📬
+    title: Inter-Session Mail
+    details: Send messages between sessions from CLI or MCP tools. Coordinate across parallel agents without leaving the terminal.
+
+  - icon: 🩺
+    title: Auto-Heal
+    details: StaleChecker automatically detects and resets stuck in-progress tasks. No more manually unblocking frozen workers.
+
+  - icon: ☁️
+    title: One-Command Cloud Setup
+    details: "`cq auth login` opens GitHub OAuth and auto-configures Supabase credentials. No manual config editing required."
 ---

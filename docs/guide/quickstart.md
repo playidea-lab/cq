@@ -18,6 +18,22 @@ This creates:
 
 Then **restart Claude Code** so it picks up the new MCP server.
 
+## Step 1.5: Log in (connected / full tier)
+
+If you're using the `connected` or `full` tier, authenticate once:
+
+```sh
+cq auth login
+```
+
+This opens GitHub OAuth in your browser and automatically patches `.c4/config.yaml` with `cloud.enabled`, `url`, and `anon_key`. After login, startup prints:
+
+```
+✓ Cloud: user@example.com (expires in 47h)
+```
+
+Skip this step for the `solo` tier — no login required.
+
 ## Step 2: Verify the connection
 
 In Claude Code, run:

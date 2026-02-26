@@ -149,4 +149,36 @@ permission_reviewer:
 #   providers:
 #     anthropic:
 #       api_key_env: ANTHROPIC_API_KEY
+
+# Background daemon (cq serve)
+serve:
+  stale_checker:
+    enabled: true
+    threshold_minutes: 30   # reset in_progress tasks stuck longer than this
+    interval_seconds: 60
+```
+
+### full
+
+```yaml
+# CQ Full tier configuration template
+# Copy to ~/.c4/config.yaml and customize
+# Requires: connected tier setup + C5 Hub
+
+# (include all connected settings above, plus:)
+
+# C5 Hub — distributed worker queue
+hub:
+  enabled: true
+  url: http://localhost:8585
+  # api_key: optional — cloud session JWT is used as fallback when omitted
+
+# Background daemon (cq serve)
+serve:
+  stale_checker:
+    enabled: true
+    threshold_minutes: 30
+    interval_seconds: 60
+  ssesubscriber:
+    enabled: true   # subscribe to C5 Hub SSE stream → forward to EventBus
 ```
