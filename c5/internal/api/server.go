@@ -281,6 +281,14 @@ func (s *Server) leaseExpiryLoop() {
 		} else if staleEdges > 0 {
 			log.Printf("c5: marked %d edges as offline", staleEdges)
 		}
+
+		// Cleanup old job logs/metrics (7-day retention)
+		cleaned, err := s.store.CleanupOldJobs(7 * 24 * time.Hour)
+		if err != nil {
+			log.Printf("c5: cleanup old jobs error: %v", err)
+		} else if cleaned > 0 {
+			log.Printf("c5: cleaned %d old log/metric rows", cleaned)
+		}
 	}
 }
 

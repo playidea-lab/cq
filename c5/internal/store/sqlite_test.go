@@ -1650,3 +1650,108 @@ func TestStore_ExistingRows_NullSafe(t *testing.T) {
 		t.Errorf("expected nil OutputArtifacts for legacy row, got %v", got.OutputArtifacts)
 	}
 }
+
+// =========================================================================
+// Log rotation
+// =========================================================================
+
+func TestAppendLog_RotatesOld(t *testing.T) {
+	s := newTestStore(t)
+
+	job, _ := s.CreateJob(&model.JobSubmitRequest{Name: "job", Command: "echo"})
+
+	// Insert logs until AUTOINCREMENT id reaches a multiple of 1000.
+	// We manually insert rows to control the id counter.
+	// First, bulk-insert 50001 rows via direct SQL for speed.
+	tx, err := s.db.Begin()
+	if err != nil {
+		t.Fatalf("begin tx: %v", err)
+	}
+	stmt, err := tx.Prepare(`INSERT INTO job_logs (job_id, line, stream, created_at) VALUES (?, ?, 'stdout', '2025-01-01T00:00:00Z')`)
+	if err != nil {
+		t.Fatalf("prepare: %v", err)
+	}
+	for i := 0; i < 50001; i++ {
+		stmt.Exec(job.ID, "line")
+	}
+	stmt.Close()
+	tx.Commit()
+
+	// Verify we have 50001 rows
+	var cnt int
+	s.db.QueryRow(`SELECT COUNT(*) FROM job_logs`).Scan(&cnt)
+	if cnt != 50001 {
+		t.Fatalf("expected 50001, got %d", cnt)
+	}
+
+	// Now we need the next insert's AUTOINCREMENT id to be a multiple of 1000.
+	// Current max id is 50001. We need to get to id=51000 (next multiple of 1000).
+	// Insert 998 more rows (50001+998=50999 rows, last id=50999).
+	for i := 0; i < 998; i++ {
+		s.db.Exec(`INSERT INTO job_logs (job_id, line, stream, created_at) VALUES (?, 'pad', 'stdout', '2025-01-01T00:00:00Z')`, job.ID)
+	}
+
+	// The next AppendLog should get id=51000 (multiple of 1000) and trigger rotation.
+	if err := s.AppendLog(job.ID, "trigger", "stdout"); err != nil {
+		t.Fatalf("append log: %v", err)
+	}
+
+	// After rotation: should be at most 50000 rows.
+	s.db.QueryRow(`SELECT COUNT(*) FROM job_logs`).Scan(&cnt)
+	if cnt > 50000 {
+		t.Fatalf("expected <= 50000 after rotation, got %d", cnt)
+	}
+}
+
+func TestCleanupOldJobs(t *testing.T) {
+	s := newTestStore(t)
+
+	// Create two jobs
+	oldJob, _ := s.CreateJob(&model.JobSubmitRequest{Name: "old-job", Command: "echo old"})
+	newJob, _ := s.CreateJob(&model.JobSubmitRequest{Name: "new-job", Command: "echo new"})
+
+	// Mark both as SUCCEEDED with different finished_at times
+	oldFinished := time.Now().UTC().Add(-10 * 24 * time.Hour).Format(time.RFC3339) // 10 days ago
+	newFinished := time.Now().UTC().Add(-1 * 24 * time.Hour).Format(time.RFC3339)  // 1 day ago
+
+	s.db.Exec(`UPDATE jobs SET status='SUCCEEDED', finished_at=? WHERE id=?`, oldFinished, oldJob.ID)
+	s.db.Exec(`UPDATE jobs SET status='SUCCEEDED', finished_at=? WHERE id=?`, newFinished, newJob.ID)
+
+	// Add logs and metrics for both
+	s.AppendLog(oldJob.ID, "old line 1", "stdout")
+	s.AppendLog(oldJob.ID, "old line 2", "stdout")
+	s.AppendLog(newJob.ID, "new line 1", "stdout")
+
+	s.InsertMetric(oldJob.ID, &model.MetricsLogRequest{Step: 0, Metrics: map[string]any{"loss": 0.1}})
+	s.InsertMetric(newJob.ID, &model.MetricsLogRequest{Step: 0, Metrics: map[string]any{"loss": 0.2}})
+
+	// Cleanup with 7-day retention
+	cleaned, err := s.CleanupOldJobs(7 * 24 * time.Hour)
+	if err != nil {
+		t.Fatalf("cleanup: %v", err)
+	}
+	if cleaned != 3 { // 2 logs + 1 metric for old job
+		t.Fatalf("expected 3 cleaned rows, got %d", cleaned)
+	}
+
+	// Verify old job's logs and metrics are gone
+	var logCnt, metricCnt int
+	s.db.QueryRow(`SELECT COUNT(*) FROM job_logs WHERE job_id=?`, oldJob.ID).Scan(&logCnt)
+	s.db.QueryRow(`SELECT COUNT(*) FROM metrics WHERE job_id=?`, oldJob.ID).Scan(&metricCnt)
+	if logCnt != 0 {
+		t.Fatalf("expected 0 logs for old job, got %d", logCnt)
+	}
+	if metricCnt != 0 {
+		t.Fatalf("expected 0 metrics for old job, got %d", metricCnt)
+	}
+
+	// Verify new job's logs and metrics are untouched
+	s.db.QueryRow(`SELECT COUNT(*) FROM job_logs WHERE job_id=?`, newJob.ID).Scan(&logCnt)
+	s.db.QueryRow(`SELECT COUNT(*) FROM metrics WHERE job_id=?`, newJob.ID).Scan(&metricCnt)
+	if logCnt != 1 {
+		t.Fatalf("expected 1 log for new job, got %d", logCnt)
+	}
+	if metricCnt != 1 {
+		t.Fatalf("expected 1 metric for new job, got %d", metricCnt)
+	}
+}

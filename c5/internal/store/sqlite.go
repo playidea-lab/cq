@@ -855,11 +855,25 @@ func (s *Store) GetMetrics(jobID string, minStep int, limit int) ([]model.Metric
 // AppendLog appends a log line for a job.
 func (s *Store) AppendLog(jobID, line, stream string) error {
 	now := time.Now().UTC().Format(time.RFC3339)
-	_, err := s.db.Exec(`
+	res, err := s.db.Exec(`
 		INSERT INTO job_logs (job_id, line, stream, created_at)
 		VALUES (?, ?, ?, ?)`,
 		jobID, line, stream, now)
-	return err
+	if err != nil {
+		return err
+	}
+
+	// Check rotation every 1000 inserts (amortised cost).
+	if id, _ := res.LastInsertId(); id > 0 && id%1000 == 0 {
+		const maxLogs = 50000
+		var cnt int
+		if err2 := s.db.QueryRow(`SELECT COUNT(*) FROM job_logs`).Scan(&cnt); err2 == nil && cnt > maxLogs {
+			excess := cnt - maxLogs
+			s.db.Exec(`DELETE FROM job_logs WHERE id IN (
+				SELECT id FROM job_logs ORDER BY id ASC LIMIT ?)`, excess)
+		}
+	}
+	return nil
 }
 
 // GetLogs retrieves log lines for a job with offset/limit.
@@ -2164,6 +2178,36 @@ func (s *Store) DeleteAPIKey(keyHash string) error {
 		return fmt.Errorf("api key not found")
 	}
 	return nil
+}
+
+// CleanupOldJobs deletes logs and metrics for completed/failed/cancelled jobs
+// older than the given retention period.
+func (s *Store) CleanupOldJobs(retention time.Duration) (int64, error) {
+	cutoff := time.Now().UTC().Add(-retention).Format(time.RFC3339)
+
+	var total int64
+
+	res, err := s.db.Exec(`DELETE FROM job_logs WHERE job_id IN (
+		SELECT id FROM jobs WHERE status IN ('SUCCEEDED','FAILED','CANCELLED')
+		AND finished_at < ?)`, cutoff)
+	if err != nil {
+		return 0, fmt.Errorf("cleanup job_logs: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n > 0 {
+		total += n
+	}
+
+	res, err = s.db.Exec(`DELETE FROM metrics WHERE job_id IN (
+		SELECT id FROM jobs WHERE status IN ('SUCCEEDED','FAILED','CANCELLED')
+		AND finished_at < ?)`, cutoff)
+	if err != nil {
+		return total, fmt.Errorf("cleanup metrics: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n > 0 {
+		total += n
+	}
+
+	return total, nil
 }
 
 // ListAPIKeys returns all API keys (without the raw key).
