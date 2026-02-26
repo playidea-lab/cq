@@ -10,7 +10,7 @@ A single plain-text file following the [llms.txt standard](https://llmstxt.org).
 Optimized for LLM consumption — concise, structured, no noise.
 
 ```
-GET https://playidealab.github.io/cq/llms.txt
+GET https://playidea-lab.github.io/cq/llms.txt
 ```
 
 ### `skills.jsonl`
@@ -18,7 +18,7 @@ GET https://playidealab.github.io/cq/llms.txt
 One JSON object per line, describing each CQ skill:
 
 ```
-GET https://playidealab.github.io/cq/api/skills.jsonl
+GET https://playidea-lab.github.io/cq/api/skills.jsonl
 ```
 
 ### `tools.jsonl`
@@ -26,7 +26,7 @@ GET https://playidealab.github.io/cq/api/skills.jsonl
 One JSON object per line, describing each MCP tool:
 
 ```
-GET https://playidealab.github.io/cq/api/tools.jsonl
+GET https://playidea-lab.github.io/cq/api/tools.jsonl
 ```
 
 ## Usage example
@@ -36,7 +36,7 @@ import httpx, json
 
 skills = [
     json.loads(line)
-    for line in httpx.get("https://playidealab.github.io/cq/api/skills.jsonl").text.splitlines()
+    for line in httpx.get("https://playidea-lab.github.io/cq/api/skills.jsonl").text.splitlines()
     if line.strip()
 ]
 ```

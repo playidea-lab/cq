@@ -49,6 +49,46 @@ cq secret delete anthropic.api_key
 
 Keys are never stored in config files.
 
+### `cq auth`
+
+Authenticate with C4 Cloud (GitHub OAuth).
+
+```sh
+cq auth login    # Open browser for GitHub OAuth flow
+cq auth logout   # Clear stored credentials (~/.c4/session.json)
+cq auth status   # Show current authentication status
+```
+
+### `cq ls`
+
+List named Claude Code sessions (tmux-style).
+
+```sh
+cq ls            # Show all named sessions with their UUIDs
+```
+
+### `cq session`
+
+Manage named Claude Code sessions.
+
+```sh
+cq session name <session-name>   # Attach a name to the current session
+cq session rm <session-name>     # Remove a named session
+```
+
+Sessions can be resumed with `cq claude -t <session-name>`.
+
+### `cq mail`
+
+Inter-session mail for passing messages between Claude Code sessions.
+
+```sh
+cq mail send <to> <body>   # Send a message to a named session
+cq mail ls                 # List messages (shows unread count)
+cq mail read <id>          # Read a message (marks as read)
+cq mail rm <id>            # Delete a message
+```
+
 ### `cq serve`
 
 Run background services (EventBus, GPU scheduler, Agent listener).
@@ -56,6 +96,9 @@ Run background services (EventBus, GPU scheduler, Agent listener).
 ```sh
 cq serve              # start on :4140
 cq serve --port 4141
+cq serve install      # Install as OS service (macOS LaunchAgent / Linux systemd / Windows Service)
+cq serve uninstall    # Uninstall the OS service
+cq serve status       # Show OS service status and manual serve process status
 ```
 
 ### `cq version`

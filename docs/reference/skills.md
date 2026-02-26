@@ -61,5 +61,5 @@ Skills are slash commands invoked inside Claude Code. All 22 skills are embedded
 Download as JSONL for programmatic use:
 
 ```sh
-curl https://playidealab.github.io/cq/api/skills.jsonl
+curl https://playidea-lab.github.io/cq/api/skills.jsonl
 ```

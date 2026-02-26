@@ -5,7 +5,7 @@ Structured data for programmatic consumption by AI agents and tooling.
 ## Skills JSONL
 
 ```
-GET https://playidealab.github.io/cq/api/skills.jsonl
+GET https://playidea-lab.github.io/cq/api/skills.jsonl
 ```
 
 Schema:
@@ -21,7 +21,7 @@ Schema:
 ## Tools JSONL
 
 ```
-GET https://playidealab.github.io/cq/api/tools.jsonl
+GET https://playidea-lab.github.io/cq/api/tools.jsonl
 ```
 
 Schema:
@@ -53,7 +53,7 @@ import httpx, json
 
 skills = [
     json.loads(line)
-    for line in httpx.get("https://playidealab.github.io/cq/api/skills.jsonl").text.splitlines()
+    for line in httpx.get("https://playidea-lab.github.io/cq/api/skills.jsonl").text.splitlines()
     if line.strip()
 ]
 

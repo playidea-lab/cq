@@ -45,7 +45,7 @@ C6/C7/C8 are activated via build tags (`c6_guard`, `c7_observe`, `c8_gate`) — 
 
 ## C4 Engine (this project)
 
-C4 is the orchestration core. It exposes **100+ MCP tools** (`c4_*`) to Claude Code and manages:
+C4 is the orchestration core. It exposes **100+ MCP tools (varies by tier)** (`c4_*`) to Claude Code and manages:
 
 - **Task lifecycle** — create, assign, review, checkpoint, complete
 - **Worker isolation** — each worker gets a fresh git worktree
@@ -83,7 +83,7 @@ Document lifecycle management:
 
 gRPC event bus connecting all components:
 
-- **16 event types**: `task.completed`, `knowledge.recorded`, `hub.job.completed`, etc.
+- **19+ event types (28+ with Hub enabled)**: `task.created/started/completed/blocked/stale`, `checkpoint.approved/rejected`, `review.changes_requested`, `validation.passed/failed`, `knowledge.recorded/searched`, `lighthouse.promoted`, `llm.cache_miss_alert`, `persona.evolved`, `soul.updated`, `research.recorded/started`; Hub adds `hub.job.completed/failed/submitted/cancelled/retried`, `hub.dag.executed`, `hub.worker.registered`
 - **DLQ** (dead letter queue) for failed deliveries
 - **Filter v2**: `$eq`, `$ne`, `$gt`, `$in`, `$regex`, `$exists`
 - **HMAC-SHA256 webhooks** for external integrations

@@ -64,6 +64,16 @@ serve:
     enabled: false
   agent:
     enabled: false   # requires cloud.url + cloud.anon_key
+  eventsink:
+    enabled: false
+    port: 4141       # C5 Hub → C4 이벤트 수신 엔드포인트
+    token: ""
+  stale_checker:
+    enabled: true
+    threshold_minutes: 30   # 이 시간 이상 in_progress이면 stale 판정
+    interval_seconds: 60
+  ssesubscriber:
+    enabled: false   # full tier 전용 (C5 Hub + C3 EventBus 빌드 태그 필요)
 ```
 
 ### `worktree`

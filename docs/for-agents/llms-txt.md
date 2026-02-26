@@ -5,14 +5,14 @@ CQ publishes a machine-readable summary following the [llms.txt standard](https:
 ## URL
 
 ```
-https://playidealab.github.io/cq/llms.txt
+https://playidea-lab.github.io/cq/llms.txt
 ```
 
 ## Usage
 
 ```python
 import httpx
-text = httpx.get("https://playidealab.github.io/cq/llms.txt").text
+text = httpx.get("https://playidea-lab.github.io/cq/llms.txt").text
 # Pass as system context to your LLM
 ```
 
