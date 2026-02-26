@@ -40,11 +40,16 @@ func registerCoreServeComponents(mgr *serve.Manager, cfg config.C4Config, home s
 
 	// C5 Hub subprocess
 	if cfg.Serve.Hub.Enabled {
-		mgr.Register(serve.NewHubComponent(serve.HubComponentConfig{
+		hubCfg := serve.HubComponentConfig{
 			Binary: cfg.Serve.Hub.Binary,
 			Port:   cfg.Serve.Hub.Port,
 			Args:   cfg.Serve.Hub.Args,
-		}))
+		}
+		// Wire embedded binary extractor when available (c5_embed build tag).
+		if EmbeddedC5FS != nil {
+			hubCfg.ExtractBinary = ExtractEmbeddedC5
+		}
+		mgr.Register(serve.NewHubComponent(hubCfg))
 		fmt.Fprintf(os.Stderr, "cq serve: registered hub\n")
 	}
 

@@ -140,6 +140,39 @@ func TestHubComponent_Health_Running_Unreachable(t *testing.T) {
 	}
 }
 
+// TestHubComponent_FallbackToEmbed verifies that when the binary is not found in PATH
+// but ExtractBinary is set, the callback is invoked (embedded fallback path).
+func TestHubComponent_FallbackToEmbed(t *testing.T) {
+	extractCalled := false
+	fakeExtractedPath := "/nonexistent/c5-extracted-for-test"
+
+	c := NewHubComponent(HubComponentConfig{
+		Binary: "c5-binary-that-does-not-exist-xyz",
+		Port:   19997,
+		ExtractBinary: func() (string, error) {
+			extractCalled = true
+			return fakeExtractedPath, nil
+		},
+	})
+
+	ctx := context.Background()
+	_ = c.Start(ctx) // error expected (nonexistent path), but ExtractBinary must be called.
+
+	// ExtractBinary must have been called when binary is not in PATH.
+	if !extractCalled {
+		t.Error("ExtractBinary was not called when binary not in PATH")
+	}
+
+	// Component should not be running since the fake path doesn't exist.
+	c.mu.Lock()
+	running := c.running
+	c.mu.Unlock()
+	if running {
+		t.Error("component should not be running with a nonexistent extracted binary")
+		_ = c.Stop(context.Background())
+	}
+}
+
 // testServerPort extracts the numeric port from a URL like "http://127.0.0.1:NNNNN".
 func testServerPort(t *testing.T, rawURL string) int {
 	t.Helper()

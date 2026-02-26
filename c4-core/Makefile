@@ -21,7 +21,11 @@ ifneq ($(SUPABASE_ANON_KEY),)
   _SUPABASE_FLAGS += -X main.builtinSupabaseKey=$(SUPABASE_ANON_KEY)
 endif
 
-LDFLAGS := -ldflags "-X main.version=$(VERSION) $(_SUPABASE_FLAGS)"
+# C5 Hub version to embed when building with c5_embed tag.
+# Set C5_VERSION in CI (e.g. from git tag or release version).
+C5_VERSION ?= $(shell cd $(REPO_ROOT)/c5 2>/dev/null && git describe --tags --always --dirty 2>/dev/null || echo "dev")
+
+LDFLAGS := -ldflags "-X main.version=$(VERSION) -X 'github.com/changmin/c4-core/cmd/c4.embeddedC5Version=$(C5_VERSION)' $(_SUPABASE_FLAGS)"
 
 # Install destination (Claude Code reads this binary via .mcp.json)
 INSTALL_DIR := $(HOME)/.local/bin

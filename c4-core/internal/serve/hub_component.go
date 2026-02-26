@@ -20,6 +20,10 @@ type HubComponentConfig struct {
 	Port int
 	// Args are extra CLI arguments passed after "serve --port <port>".
 	Args []string
+	// ExtractBinary is an optional function that extracts an embedded c5 binary
+	// and returns its path. When set, it is called if the binary is not found
+	// in PATH (c5_embed build tag scenario).
+	ExtractBinary func() (string, error)
 }
 
 // HubComponent manages a C5 Hub server subprocess.
@@ -62,6 +66,15 @@ func (h *HubComponent) Start(ctx context.Context) error {
 
 	// Check binary existence before attempting to start.
 	binPath, err := exec.LookPath(h.cfg.Binary)
+	if err != nil && h.cfg.ExtractBinary != nil {
+		// Binary not in PATH but we have an embedded binary — extract it.
+		extracted, extractErr := h.cfg.ExtractBinary()
+		if extractErr != nil {
+			return fmt.Errorf("hub: extract embedded binary: %w", extractErr)
+		}
+		binPath = extracted
+		err = nil
+	}
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "cq serve: hub component: binary %q not found in PATH — skipping (WARN)\n", h.cfg.Binary)
 		return nil
