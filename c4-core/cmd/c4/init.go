@@ -1238,6 +1238,10 @@ func launchToolNamed(projectDir, name string) error {
 // currentSessionUUID detects the current Claude Code session UUID by finding
 // the most recently modified JSONL file in the project's Claude session directory.
 func currentSessionUUID(dir string) string {
+	// Prefer env var (set by cq claude -t).
+	if uuid := os.Getenv("CQ_SESSION_UUID"); uuid != "" {
+		return uuid
+	}
 	sessionDir, err := claudeProjectDir(dir)
 	if err != nil {
 		return ""
