@@ -1248,8 +1248,8 @@ func TestWriteTierConfig_InvalidTier(t *testing.T) {
 	}
 }
 
-// TestCheckCloudAuthStatus_NoURL verifies that checkCloudAuthStatus prints nothing
-// when no cloud URL is configured (solo tier).
+// TestCheckCloudAuthStatus_NoURL verifies that ensureCloudAuth returns true
+// immediately and prints nothing when no cloud URL is configured (solo tier).
 func TestCheckCloudAuthStatus_NoURL(t *testing.T) {
 	t.Setenv("C4_CLOUD_URL", "")
 	t.Setenv("SUPABASE_URL", "")
@@ -1267,7 +1267,7 @@ func TestCheckCloudAuthStatus_NoURL(t *testing.T) {
 	builtinSupabaseURL = ""
 	defer func() { builtinSupabaseURL = oldBuiltin }()
 
-	checkCloudAuthStatus()
+	got := ensureCloudAuth(nil, false)
 
 	w.Close()
 	os.Stderr = oldStderr
@@ -1279,9 +1279,12 @@ func TestCheckCloudAuthStatus_NoURL(t *testing.T) {
 	if output != "" {
 		t.Errorf("expected no output when URL not configured, got: %q", output)
 	}
+	if !got {
+		t.Error("expected true for solo mode")
+	}
 }
 
-// TestCheckCloudAuthStatus_NotLoggedIn verifies that checkCloudAuthStatus prints
+// TestCheckCloudAuthStatus_NotLoggedIn verifies that ensureCloudAuth prints
 // a login prompt when the URL is set but no session file exists.
 func TestCheckCloudAuthStatus_NotLoggedIn(t *testing.T) {
 	t.Setenv("C4_CLOUD_URL", "https://example.supabase.co")
@@ -1298,7 +1301,8 @@ func TestCheckCloudAuthStatus_NotLoggedIn(t *testing.T) {
 	}
 	os.Stderr = w
 
-	checkCloudAuthStatus()
+	// Pass "n" to decline login prompt.
+	got := ensureCloudAuth(strings.NewReader("n\n"), false)
 
 	w.Close()
 	os.Stderr = oldStderr
@@ -1307,13 +1311,16 @@ func TestCheckCloudAuthStatus_NotLoggedIn(t *testing.T) {
 	n, _ := r.Read(buf)
 	output := string(buf[:n])
 
-	if !strings.Contains(output, "cq auth login") {
+	if !strings.Contains(output, "로그인") {
 		t.Errorf("expected login prompt, got: %q", output)
+	}
+	if got {
+		t.Error("expected false when user declines login")
 	}
 }
 
-// TestCheckCloudAuthStatus_LoggedIn verifies that checkCloudAuthStatus prints
-// the cloud user email and expiry when a valid session exists.
+// TestCheckCloudAuthStatus_LoggedIn verifies that ensureCloudAuth returns true
+// without reading stdin when a valid session exists.
 func TestCheckCloudAuthStatus_LoggedIn(t *testing.T) {
 	t.Setenv("C4_CLOUD_URL", "https://example.supabase.co")
 
@@ -1336,33 +1343,15 @@ func TestCheckCloudAuthStatus_LoggedIn(t *testing.T) {
 		t.Fatalf("write session: %v", err)
 	}
 
-	// Capture stderr
-	oldStderr := os.Stderr
-	r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatalf("pipe: %v", err)
-	}
-	os.Stderr = w
-
-	checkCloudAuthStatus()
-
-	w.Close()
-	os.Stderr = oldStderr
-
-	buf := make([]byte, 512)
-	n, _ := r.Read(buf)
-	output := string(buf[:n])
-
-	if !strings.Contains(output, "user@example.com") {
-		t.Errorf("expected email in output, got: %q", output)
-	}
-	if !strings.Contains(output, "expires in") {
-		t.Errorf("expected expiry info in output, got: %q", output)
+	// Pass nil reader — valid session should return true without reading stdin.
+	got := ensureCloudAuth(nil, false)
+	if !got {
+		t.Error("expected true when valid session exists")
 	}
 }
 
-// TestCheckCloudAuthStatus_ExpiredSession verifies that checkCloudAuthStatus
-// treats an expired session as not logged in and prints a login prompt.
+// TestCheckCloudAuthStatus_ExpiredSession verifies that ensureCloudAuth
+// treats an expired session as not logged in and prompts for login.
 func TestCheckCloudAuthStatus_ExpiredSession(t *testing.T) {
 	t.Setenv("C4_CLOUD_URL", "https://example.supabase.co")
 
@@ -1393,7 +1382,8 @@ func TestCheckCloudAuthStatus_ExpiredSession(t *testing.T) {
 	}
 	os.Stderr = w
 
-	checkCloudAuthStatus()
+	// Pass "n" to decline login prompt.
+	got := ensureCloudAuth(strings.NewReader("n\n"), false)
 
 	w.Close()
 	os.Stderr = oldStderr
@@ -1402,11 +1392,11 @@ func TestCheckCloudAuthStatus_ExpiredSession(t *testing.T) {
 	n, _ := r.Read(buf)
 	output := string(buf[:n])
 
-	if !strings.Contains(output, "cq auth login") {
+	if !strings.Contains(output, "로그인") {
 		t.Errorf("expected login prompt for expired session, got: %q", output)
 	}
-	if strings.Contains(output, "user@example.com") {
-		t.Errorf("should not show email for expired session, got: %q", output)
+	if got {
+		t.Error("expected false when user declines login after expired session")
 	}
 }
 

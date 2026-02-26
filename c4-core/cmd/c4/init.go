@@ -18,7 +18,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/changmin/c4-core/internal/cloud"
 	"github.com/changmin/c4-core/internal/mailbox"
 	"github.com/kardianos/service"
 	"github.com/spf13/cobra"
@@ -345,61 +344,14 @@ func initAndLaunch(tool string) error {
 		}
 	}
 
-	// 7. Check cloud auth status and print guidance
-	checkCloudAuthStatus()
+	// 7. Check cloud auth status and prompt login if needed
+	ensureCloudAuth(nil, yesAll)
 
 	// 8. Launch AI tool
 	if tool == "claude" && sessionName != "" {
 		return launchToolNamed(dir, sessionName)
 	}
 	return launchTool(tool, dir)
-}
-
-// checkCloudAuthStatus prints a cloud auth status line after cq init completes.
-//
-// Behaviour (per ContractSpec):
-//
-//	Logged in:    "✓ Cloud: <user@email> (expires in Xh)"
-//	Not logged in: "→ Run 'cq auth login' to enable cloud sync & hub access"
-//	URL not set:  (no output — solo tier binary etc.)
-//
-// Auth check failures (network, parse errors) are silently ignored so init
-// always completes successfully regardless of cloud connectivity.
-func checkCloudAuthStatus() {
-	// Resolve cloud URL using the same priority as newAuthClient():
-	// 1. C4_CLOUD_URL env, 2. SUPABASE_URL env, 3. build-time default.
-	supabaseURL := os.Getenv("C4_CLOUD_URL")
-	if supabaseURL == "" {
-		supabaseURL = os.Getenv("SUPABASE_URL")
-	}
-	if supabaseURL == "" {
-		supabaseURL = builtinSupabaseURL
-	}
-
-	// URL not configured → solo tier binary or unconfigured env: print nothing.
-	if supabaseURL == "" {
-		return
-	}
-
-	// We only need the session file — no network call required.
-	client := cloud.NewAuthClient(supabaseURL, "") // anonKey not needed for local session read
-	session, err := client.GetSession()
-	if err != nil || session == nil {
-		// No session or unreadable: guide the user to log in.
-		fmt.Fprintln(os.Stderr, "cq: → Run 'cq auth login' to enable cloud sync & hub access")
-		return
-	}
-
-	expiresAt := time.Unix(session.ExpiresAt, 0)
-	if time.Now().After(expiresAt) {
-		// Expired session: treat as not logged in.
-		fmt.Fprintln(os.Stderr, "cq: → Run 'cq auth login' to enable cloud sync & hub access")
-		return
-	}
-
-	remaining := time.Until(expiresAt)
-	hours := int(remaining.Hours())
-	fmt.Fprintf(os.Stderr, "cq: ✓ Cloud: %s (expires in %dh)\n", session.User.Email, hours)
 }
 
 // setupClaudeMD creates or updates CLAUDE.md with C4 override rules.

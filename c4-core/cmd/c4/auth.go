@@ -1,7 +1,9 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,6 +12,11 @@ import (
 	"github.com/changmin/c4-core/internal/cloud"
 	"github.com/spf13/cobra"
 )
+
+// authLoginFunc is a package-level variable so tests can stub the login call.
+var authLoginFunc = func() error {
+	return runAuthLogin(nil, nil)
+}
 
 var authCmd = &cobra.Command{
 	Use:   "auth",
@@ -98,6 +105,62 @@ func runAuthLogin(cmd *cobra.Command, args []string) error {
 		fmt.Fprintf(os.Stderr, "Cloud configured: %s\n", url)
 	}
 	return nil
+}
+
+// ensureCloudAuth checks cloud authentication and prompts the user to log in if
+// needed. Returns true if the caller should continue (solo mode, valid session,
+// or login succeeded). Returns false if the user declined or login failed.
+//
+//   - r == nil → uses os.Stdin
+//   - builtinSupabaseURL == "" → solo mode → returns true immediately
+//   - valid session exists → returns true
+//   - not logged in → prompts; yesAll=true skips the prompt
+//   - user inputs "y" → calls authLoginFunc() → returns true on success
+//   - user inputs "n" or EOF → returns false
+func ensureCloudAuth(r io.Reader, yesAll bool) bool {
+	// Resolve cloud URL (same priority as newAuthClient).
+	supabaseURL := os.Getenv("C4_CLOUD_URL")
+	if supabaseURL == "" {
+		supabaseURL = os.Getenv("SUPABASE_URL")
+	}
+	if supabaseURL == "" {
+		supabaseURL = builtinSupabaseURL
+	}
+
+	// Solo mode: no cloud URL configured.
+	if supabaseURL == "" {
+		return true
+	}
+
+	// Check for a valid existing session.
+	client := cloud.NewAuthClient(supabaseURL, "")
+	session, err := client.GetSession()
+	if err == nil && session != nil && !time.Now().After(time.Unix(session.ExpiresAt, 0)) {
+		return true
+	}
+
+	// Not logged in — prompt the user (or skip prompt if yesAll).
+	fmt.Fprintln(os.Stderr, "cq: [cloud] 로그인 필요. 'cq auth login'으로 GitHub OAuth 인증 후 클라우드 동기화 및 Hub 이용 가능.")
+	if !yesAll {
+		if r == nil {
+			r = os.Stdin
+		}
+		fmt.Fprint(os.Stderr, "지금 로그인하시겠습니까? [y/N] ")
+		scanner := bufio.NewScanner(r)
+		if !scanner.Scan() {
+			return false
+		}
+		answer := strings.TrimSpace(strings.ToLower(scanner.Text()))
+		if answer != "y" && answer != "yes" {
+			return false
+		}
+	}
+
+	if err := authLoginFunc(); err != nil {
+		fmt.Fprintf(os.Stderr, "cq: login failed: %v\n", err)
+		return false
+	}
+	return true
 }
 
 func runAuthLogout(cmd *cobra.Command, args []string) error {
