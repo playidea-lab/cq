@@ -152,7 +152,7 @@ func (h *HubComponent) Health() ComponentHealth {
 		return ComponentHealth{Status: "error", Detail: "not running"}
 	}
 
-	url := fmt.Sprintf("http://127.0.0.1:%d/health", port)
+	url := fmt.Sprintf("http://127.0.0.1:%d/v1/health", port)
 	client := &http.Client{Timeout: 2 * time.Second}
 	resp, err := client.Get(url)
 	if err != nil {
