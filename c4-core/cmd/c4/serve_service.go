@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -36,12 +37,21 @@ func newServiceConfig(execPath, configPath string) service.Config {
 	if configPath != "" {
 		args = append(args, "--config", configPath)
 	}
+	opt := service.KeyValue{}
+	// macOS: user LaunchAgent (~/.Library/LaunchAgents/) — no sudo required.
+	// Linux systemd: user unit (~/.config/systemd/user/) — no sudo required.
+	// Other Linux init systems (SysV, OpenRC) do not support UserService;
+	// install will fall back to a system-level service there.
+	if runtime.GOOS == "darwin" || runtime.GOOS == "linux" {
+		opt["UserService"] = true
+	}
 	return service.Config{
 		Name:        "cq-serve",
 		DisplayName: "CQ Serve",
 		Description: "CQ long-running service (StaleChecker, EventBus, EventSink, HubPoller, Agent, GPU)",
 		Executable:  execPath,
 		Arguments:   args,
+		Option:      opt,
 	}
 }
 

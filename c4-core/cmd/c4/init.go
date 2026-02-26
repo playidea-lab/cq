@@ -77,6 +77,10 @@ func init() {
 	for _, cmd := range []*cobra.Command{rootCmd, claudeCmd} {
 		cmd.Flags().StringVarP(&sessionName, "tag", "t", "", "session name: resume or create named Claude Code session")
 	}
+	// Register -t/--tag flag completion: list named session names.
+	for _, cmd := range []*cobra.Command{rootCmd, claudeCmd} {
+		_ = cmd.RegisterFlagCompletionFunc("tag", completeSessionNames)
+	}
 	sessionCmd.AddCommand(sessionNameCmd, sessionRmCmd, sessionMemoCmd)
 	rootCmd.AddCommand(claudeCmd, codexCmd, cursorCmd, lsCmd, sessionCmd)
 }
@@ -178,6 +182,63 @@ func confirmProjectHooks(projectDir string) bool {
 	return false
 }
 
+// completeSessionNames is a cobra flag completion function for -t/--tag.
+// It returns the list of saved named session names.
+func completeSessionNames(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
+	sessions, err := loadNamedSessions()
+	if err != nil || len(sessions) == 0 {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+	names := make([]string, 0, len(sessions))
+	for name := range sessions {
+		names = append(names, name)
+	}
+	return names, cobra.ShellCompDirectiveNoFileComp
+}
+
+// setupShellCompletion adds `eval "$(cq completion <shell>)"` to shell rc files
+// if not already present. Non-fatal: errors are silently skipped.
+func setupShellCompletion() {
+	type rcEntry struct {
+		path  string
+		shell string
+	}
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return
+	}
+	entries := []rcEntry{
+		{filepath.Join(homeDir, ".zshrc"), "zsh"},
+		{filepath.Join(homeDir, ".bashrc"), "bash"},
+	}
+	for _, e := range entries {
+		if _, statErr := os.Stat(e.path); statErr != nil {
+			continue // rc file doesn't exist
+		}
+		data, readErr := os.ReadFile(e.path)
+		if readErr != nil {
+			continue
+		}
+		marker := `cq completion ` + e.shell
+		if strings.Contains(string(data), marker) {
+			continue // already set up
+		}
+		line := "\n# cq shell completion\neval \"$(cq completion " + e.shell + ")\"\n"
+		f, openErr := os.OpenFile(e.path, os.O_APPEND|os.O_WRONLY, 0644)
+		if openErr != nil {
+			continue
+		}
+		if _, writeErr := f.WriteString(line); writeErr != nil {
+			f.Close()
+			continue
+		}
+		if closeErr := f.Close(); closeErr != nil {
+			continue
+		}
+		fmt.Fprintf(os.Stderr, "cq: shell completion added to %s\n", e.path)
+	}
+}
+
 // confirmServeInstall prompts the user to install cq serve as an OS service.
 // If the service is already installed (StatusRunning or StatusStopped), it is skipped.
 // Installation failures are non-fatal — a warning is printed and init continues.
@@ -265,6 +326,9 @@ func initAndLaunch(tool string) error {
 
 	// 5b. Offer OS service installation for cq serve (non-fatal)
 	confirmServeInstall()
+
+	// 5c. Add shell completion to ~/.zshrc / ~/.bashrc (non-fatal)
+	setupShellCompletion()
 
 	// 6. Codex-specific setup
 	if tool == "codex" {

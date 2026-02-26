@@ -62,10 +62,11 @@ Run 'cq codex' or 'cq cursor' for other AI tools.`,
 		if _, err := os.Stat(c4Dir); os.IsNotExist(err) {
 			// Allow certain commands without .c4/
 			if cmd.Name() != "mcp" && cmd.Name() != "cq" &&
-			cmd.Name() != "claude" && cmd.Name() != "codex" && cmd.Name() != "cursor" &&
-			cmd.Name() != "serve" && cmd.Name() != "mail" &&
-			cmd.Parent() != nil && cmd.Parent().Name() != "hub" && cmd.Parent().Name() != "serve" &&
-			cmd.Parent() != nil && cmd.Parent().Name() != "auth" && cmd.Parent().Name() != "mail" {
+				cmd.Name() != "claude" && cmd.Name() != "codex" && cmd.Name() != "cursor" &&
+				cmd.Name() != "serve" && cmd.Name() != "mail" && cmd.Name() != "completion" &&
+				cmd.Name() != "__complete" && cmd.Name() != "__completeNoDesc" &&
+				cmd.Parent() != nil && cmd.Parent().Name() != "hub" && cmd.Parent().Name() != "serve" &&
+				cmd.Parent().Name() != "auth" && cmd.Parent().Name() != "mail" {
 				return fmt.Errorf("not a CQ project: %s (missing .c4/ directory)\n\nRun 'cq claude' to initialize this project.", projectDir)
 			}
 		}
@@ -78,11 +79,45 @@ Run 'cq codex' or 'cq cursor' for other AI tools.`,
 	},
 }
 
+// completionCmd generates shell completion scripts.
+var completionCmd = &cobra.Command{
+	Use:   "completion [bash|zsh|fish]",
+	Short: "Generate shell completion script",
+	Long: `Generate a shell completion script for cq.
+
+Add to your shell profile:
+
+  # bash (~/.bashrc or ~/.bash_profile)
+  eval "$(cq completion bash)"
+
+  # zsh (~/.zshrc)
+  eval "$(cq completion zsh)"
+
+  # fish (~/.config/fish/config.fish)
+  cq completion fish | source
+`,
+	ValidArgs:             []string{"bash", "zsh", "fish"},
+	Args:                  cobra.MatchAll(cobra.ExactArgs(1), cobra.OnlyValidArgs),
+	DisableFlagsInUseLine: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		switch args[0] {
+		case "bash":
+			return rootCmd.GenBashCompletion(os.Stdout)
+		case "zsh":
+			return rootCmd.GenZshCompletion(os.Stdout)
+		case "fish":
+			return rootCmd.GenFishCompletion(os.Stdout, true)
+		}
+		return nil
+	},
+}
+
 func init() {
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default: .c4/config.yaml)")
 	rootCmd.PersistentFlags().BoolVar(&verbose, "verbose", false, "enable verbose output")
 	rootCmd.PersistentFlags().StringVar(&projectDir, "dir", "", "project root directory (default: current directory)")
 	rootCmd.PersistentFlags().BoolVarP(&yesAll, "yes", "y", false, "skip interactive confirmations (non-interactive/CI mode)")
+	rootCmd.AddCommand(completionCmd)
 }
 
 // c4Dir returns the path to the .c4 directory.
