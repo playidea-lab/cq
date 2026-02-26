@@ -74,7 +74,7 @@ func init() {
 	for _, cmd := range []*cobra.Command{rootCmd, claudeCmd} {
 		cmd.Flags().StringVarP(&sessionName, "tag", "t", "", "session name: resume or create named Claude Code session")
 	}
-	sessionCmd.AddCommand(sessionNameCmd, sessionRmCmd)
+	sessionCmd.AddCommand(sessionNameCmd, sessionRmCmd, sessionMemoCmd)
 	rootCmd.AddCommand(claudeCmd, codexCmd, cursorCmd, lsCmd, sessionCmd)
 }
 
@@ -1067,6 +1067,8 @@ func findCQBinary() (string, error) {
 type namedSessionEntry struct {
 	UUID    string `json:"uuid"`
 	Dir     string `json:"dir"`
+	Tool    string `json:"tool,omitempty"` // claude, codex, cursor
+	Memo    string `json:"memo,omitempty"` // user-defined description
 	Updated string `json:"updated"`
 }
 
@@ -1207,9 +1209,12 @@ func launchToolNamed(projectDir, name string) error {
 				}
 			}
 			if currentUUID != "" {
+				prev := sessions[name]
 				sessions[name] = namedSessionEntry{
 					UUID:    currentUUID,
 					Dir:     projectDir,
+					Tool:    "claude",
+					Memo:    prev.Memo,
 					Updated: time.Now().Format(time.RFC3339),
 				}
 				if saveErr := saveNamedSessions(sessions); saveErr != nil {
@@ -1329,8 +1334,15 @@ var lsCmd = &cobra.Command{
 					suffix += fmt.Sprintf(" [%d unread]", count)
 				}
 			}
-			fmt.Printf("%s: (created %s) [%s] uuid=%s%s\n",
-				n, timeStr, shortDir, entry.UUID[:8], suffix)
+			tool := entry.Tool
+			if tool == "" {
+				tool = "?"
+			}
+			fmt.Printf("%s [%s]: (created %s) [%s] uuid=%s%s\n",
+				n, tool, timeStr, shortDir, entry.UUID[:8], suffix)
+			if entry.Memo != "" {
+				fmt.Printf("  memo: %s\n", entry.Memo)
+			}
 		}
 		return nil
 	},
@@ -1346,6 +1358,7 @@ var sessionCmd = &cobra.Command{
 }
 
 var sessionNameForce bool
+var sessionNameMemo string
 
 var sessionNameCmd = &cobra.Command{
 	Use:   "name <session-name>",
@@ -1374,15 +1387,30 @@ var sessionNameCmd = &cobra.Command{
 				}
 			}
 		}
-		// Remove any existing entries pointing to the same UUID (rename, not add).
+		// Preserve memo/tool from existing entry for the same UUID (rename).
+		var prevMemo, prevTool string
 		for k, v := range sessions {
 			if v.UUID == uuid {
+				prevMemo = v.Memo
+				prevTool = v.Tool
 				delete(sessions, k)
+				break
+			}
+		}
+		if sessionNameMemo != "" {
+			prevMemo = sessionNameMemo
+		}
+		// Infer tool from environment if not already known.
+		if prevTool == "" {
+			if os.Getenv("CQ_SESSION_UUID") != "" || os.Getenv("CQ_SESSION_NAME") != "" {
+				prevTool = "claude"
 			}
 		}
 		sessions[name] = namedSessionEntry{
 			UUID:    uuid,
 			Dir:     projectDir,
+			Tool:    prevTool,
+			Memo:    prevMemo,
 			Updated: time.Now().Format(time.RFC3339),
 		}
 		if err := saveNamedSessions(sessions); err != nil {
@@ -1394,8 +1422,33 @@ var sessionNameCmd = &cobra.Command{
 	},
 }
 
+var sessionMemoCmd = &cobra.Command{
+	Use:   "memo <session-name> <text>",
+	Short: "Set or update the memo for a named session",
+	Args:  cobra.ExactArgs(2),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		name, memo := args[0], args[1]
+		sessions, err := loadNamedSessions()
+		if err != nil {
+			return err
+		}
+		entry, ok := sessions[name]
+		if !ok {
+			return fmt.Errorf("session '%s' not found", name)
+		}
+		entry.Memo = memo
+		sessions[name] = entry
+		if err := saveNamedSessions(sessions); err != nil {
+			return err
+		}
+		fmt.Printf("session '%s' memo updated\n", name)
+		return nil
+	},
+}
+
 func init() {
 	sessionNameCmd.Flags().BoolVarP(&sessionNameForce, "force", "f", false, "overwrite existing session name without confirmation")
+	sessionNameCmd.Flags().StringVarP(&sessionNameMemo, "memo", "m", "", "short description of this session")
 }
 
 var sessionRmCmd = &cobra.Command{
