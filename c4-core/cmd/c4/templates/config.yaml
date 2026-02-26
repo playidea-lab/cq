@@ -123,3 +123,11 @@ planning:
 #     enabled: false   # C5 Hub SSE 스트림 구독
 #   agent:
 #     enabled: false   # Supabase Realtime @cq mention 리스닝 → claude -p 디스패치
+#   hub:
+#     enabled: false   # c5 embedded binary (if c5_embed build tag)
+#     binary: c5
+#     port: 8585
+#   stale_checker:
+#     enabled: false   # 주기적 stale 태스크 감지 → pending 리셋
+#     threshold_minutes: 30
+#     interval_seconds: 60

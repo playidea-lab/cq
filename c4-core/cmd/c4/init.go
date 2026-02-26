@@ -18,6 +18,7 @@ import (
 
 	"github.com/changmin/c4-core/internal/cloud"
 	"github.com/changmin/c4-core/internal/mailbox"
+	"github.com/kardianos/service"
 	"github.com/spf13/cobra"
 )
 
@@ -175,6 +176,43 @@ func confirmProjectHooks(projectDir string) bool {
 	return false
 }
 
+// confirmServeInstall prompts the user to install cq serve as an OS service.
+// If the service is already installed (StatusRunning or StatusStopped), it is skipped.
+// Installation failures are non-fatal — a warning is printed and init continues.
+func confirmServeInstall() {
+	execPath, configPath, err := resolveInstallPaths()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "cq init: WARNING: cannot resolve install paths: %v\n", err)
+		return
+	}
+	svcConfig := newServiceConfig(execPath, configPath)
+	svc, err := service.New(newServiceWrapper(), &svcConfig)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "cq init: WARNING: cannot create service: %v\n", err)
+		return
+	}
+	st, _ := svc.Status()
+	if st == service.StatusRunning || st == service.StatusStopped {
+		fmt.Fprintln(os.Stderr, "cq init: serve already installed as OS service")
+		return
+	}
+	if !yesAll {
+		fmt.Fprint(os.Stderr, "Install cq serve as OS service (auto-start on boot)? [y/N] ")
+		scanner := bufio.NewScanner(os.Stdin)
+		if scanner.Scan() {
+			answer := strings.TrimSpace(scanner.Text())
+			if answer != "y" && answer != "Y" {
+				return
+			}
+		} else {
+			return
+		}
+	}
+	if err := svc.Install(); err != nil {
+		fmt.Fprintf(os.Stderr, "cq init: WARNING: serve install failed: %v\n", err)
+	}
+}
+
 // initAndLaunch initializes the C4 project and launches the AI tool.
 func initAndLaunch(tool string) error {
 	dir := projectDir
@@ -222,6 +260,9 @@ func initAndLaunch(tool string) error {
 			fmt.Fprintf(os.Stderr, "cq: warning: hooks setup failed: %v\n", err)
 		}
 	}
+
+	// 5b. Offer OS service installation for cq serve (non-fatal)
+	confirmServeInstall()
 
 	// 6. Codex-specific setup
 	if tool == "codex" {
