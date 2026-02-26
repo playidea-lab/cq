@@ -7,6 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.30.0] - 2026-02-27
+
+### ✨ Features
+- **serve**: `HubComponent` — C5 Hub 바이너리를 자식 프로세스로 관리 (`654da19e`)
+  - `cq serve` 시작 시 `c5` 바이너리를 자동 실행 (PATH에 없으면 WARN 후 건너뜀)
+  - SIGTERM → 5초 대기 → SIGKILL 우아한 종료 시퀀스
+  - `GET /health` 응답에 hub 컴포넌트 상태 포함
+  - 설정: `serve.hub.{enabled,binary,port}` (`.c4/config.yaml`)
+- **c5**: WebSocket 메트릭 증분 조회 — `GetMetrics(minStep)` 인터페이스 (`b416a05f`)
+- **c5**: GPU VRAM 매칭 + fallback 제어 — 요구 VRAM 초과 시 CPU 폴백 설정 가능 (`455c1115`)
+- **c5**: Artifact 업로드 타임아웃 제거 + 설정 가능 제한 + SSE keepalive (`ab7f796d`)
+  - 대용량 artifact 업로드 시 무한 대기 방지 제거 (Worker 측 30분 타임아웃으로 대체)
+  - SSE 스트림 keepalive ping 추가
+- **c5**: job_logs/metrics 보존 정책 — 주기적 회전 + 정리 (`23f2cdc2`)
+- **c5/worker**: renewLease 에러 로깅 + 3회 연속 실패 시 WARN (`b5f1e111`)
+- **gemini**: 특화 에이전트 동기화 및 워크플로우 강화 (`872c7ffe`)
+- **codex**: c4 에이전트 확장 및 워크플로우 하드닝 (`2b0e74a4`)
+
+### 🐛 Bug Fixes
+- **c5/store**: heartbeat 인식 리스 만료 + 트랜잭션 안전성 (`380b80c7`)
+  - 리스 만료 시 heartbeat 타임스탬프도 함께 고려하여 spurious expiry 방지
+- **sessions**: `CQ_SESSION_UUID` 환경변수 우선 사용 (`87d5b24c`)
+- **sessions**: 동일 UUID의 이전 이름 자동 제거 (`d60212f5`)
+
+### 🔧 Polish
+- **serve**: `hub_component` double-Wait race 수정 — 단일 reaper goroutine + `done` channel 패턴 (`e0ecf5ea`)
+- **config**: `serve.hub.*` viper SetDefault 누락 추가 (`e0ecf5ea`)
+- **c5/worker**: artifact HTTP 클라이언트 타임아웃 `0` → `30분` (`e0ecf5ea`)
+
+### 📚 Documentation
+- **agents**: Core Agent Principles 추가 — Karpathy 4원칙 내재화 (`f795982a`)
+- **c4-plan**: Goal-Driven 패턴 + Assumptions starter DoD 가이드 추가 (`3995f52e`)
+- **architecture**: AGENTS.md 참조 섹션 → `docs/ARCHITECTURE.md` 분리 (`e45558a6`)
+- **architecture**: serve.hub 컴포넌트 문서화, Go 테스트 수 업데이트 (`f4a4591a`)
+- **c4-help**: 스킬 수 19 → 22 교정 (`9a2661e0`)
+
+---
+
 ## [0.29.0] - 2026-02-25
 
 ### ✨ Features
