@@ -203,6 +203,14 @@ type StaleCheckerConfig struct {
 	IntervalSeconds  int  `mapstructure:"interval_seconds"  yaml:"interval_seconds"`  // default 60
 }
 
+// ServeHubConfig holds configuration for the C5 Hub subprocess component.
+type ServeHubConfig struct {
+	Enabled bool     `mapstructure:"enabled" yaml:"enabled"`
+	Binary  string   `mapstructure:"binary"  yaml:"binary"`  // default: "c5"
+	Port    int      `mapstructure:"port"    yaml:"port"`    // default: 8585
+	Args    []string `mapstructure:"args"    yaml:"args"`    // extra CLI args
+}
+
 // ServeConfig holds settings for the cq serve command.
 type ServeConfig struct {
 	HealthPort    int                  `mapstructure:"health_port"    yaml:"health_port"`
@@ -213,6 +221,7 @@ type ServeConfig struct {
 	GPU           ServeComponentToggle `mapstructure:"gpu"            yaml:"gpu"`
 	SSESubscriber ServeComponentToggle `mapstructure:"ssesubscriber"  yaml:"ssesubscriber"`
 	StaleChecker  StaleCheckerConfig   `mapstructure:"stale_checker"  yaml:"stale_checker"`
+	Hub           ServeHubConfig       `mapstructure:"hub"            yaml:"hub"`
 }
 
 // PermissionReviewerConfig holds settings for the permission auto-reviewer hook.
