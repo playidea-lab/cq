@@ -871,7 +871,10 @@ func (s *Store) AppendLog(jobID, line, stream string) error {
 		return err
 	}
 
-	// Check rotation every 1000 inserts (amortised cost).
+	// Row-count rotation (hot path): caps job_logs at 50k rows.
+	// Works alongside time-based CleanupOldJobs (background, 7-day retention).
+	// Both are needed: rotation prevents unbounded growth between cleanup cycles,
+	// cleanup removes stale data that rotation alone would keep.
 	if id, _ := res.LastInsertId(); id > 0 && id%1000 == 0 {
 		const maxLogs = 50000
 		var cnt int

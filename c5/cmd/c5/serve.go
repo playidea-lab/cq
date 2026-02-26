@@ -148,7 +148,7 @@ func runServe(cmd *cobra.Command, configPath string, port int, dbPath, apiKey, e
 		Addr:         fmt.Sprintf(":%d", resolvedPort),
 		Handler:      srv.Handler(),
 		ReadTimeout:  30 * time.Second,
-		WriteTimeout: 0, // disabled: large artifact uploads and SSE streams require unbounded write time
+		WriteTimeout: 10 * time.Minute, // generous: large artifact uploads and SSE reconnect within 10m
 		IdleTimeout:  120 * time.Second,
 	}
 

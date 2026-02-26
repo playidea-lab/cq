@@ -57,6 +57,8 @@ server:
   host: "0.0.0.0"
   # Port to listen on.
   port: 8585
+  # If true, GPU workers only accept GPU jobs (no CPU fallback).
+  # gpu_worker_gpu_only: false
 
 eventbus:
   # C3 EventBus base URL. Leave empty to disable integration.

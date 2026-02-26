@@ -158,7 +158,8 @@ func (s *Server) handleLeaseAcquire(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if lease == nil {
-		// No GPU jobs? Try non-GPU jobs (unless gpu_worker_gpu_only is set)
+		// No GPU jobs available — fall back to CPU jobs if allowed.
+		// When gpuWorkerGPUOnly is true, GPU workers only accept GPU jobs (no CPU fallback).
 		if hasGPU && !s.gpuWorkerGPUOnly {
 			lease, job, err = s.store.AcquireLease(req.WorkerID, false, worker.ProjectID)
 			if err != nil {

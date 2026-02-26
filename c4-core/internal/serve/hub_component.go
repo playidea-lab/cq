@@ -102,32 +102,41 @@ func (h *HubComponent) Start(ctx context.Context) error {
 // If the process does not exit in time, SIGKILL is sent.
 func (h *HubComponent) Stop(ctx context.Context) error {
 	h.mu.Lock()
-	defer h.mu.Unlock()
-
 	if !h.running {
+		h.mu.Unlock()
 		return nil
 	}
 
-	if h.cmd != nil && h.cmd.Process != nil {
+	// Copy state under lock, then release so Health() is not blocked during shutdown.
+	proc := h.cmd.Process
+	done := h.done
+	cancel := h.cancel
+	h.running = false
+	h.mu.Unlock()
+
+	if proc != nil {
 		// Graceful: SIGTERM
-		_ = h.cmd.Process.Signal(syscall.SIGTERM)
+		_ = proc.Signal(syscall.SIGTERM)
 
 		// Wait for the reaper goroutine (single Wait() caller) to signal exit.
 		select {
-		case <-h.done:
+		case <-done:
 			// exited cleanly
+		case <-ctx.Done():
+			// caller cancelled — force-kill
+			_ = proc.Signal(syscall.SIGKILL)
+			<-done
 		case <-time.After(5 * time.Second):
 			// Force-kill if still running.
-			_ = h.cmd.Process.Signal(syscall.SIGKILL)
-			<-h.done // drain to avoid goroutine leak
+			_ = proc.Signal(syscall.SIGKILL)
+			<-done
 		}
 	}
 
-	if h.cancel != nil {
-		h.cancel()
+	if cancel != nil {
+		cancel()
 	}
 
-	h.running = false
 	fmt.Fprintf(os.Stderr, "cq serve: hub component stopped\n")
 	return nil
 }
