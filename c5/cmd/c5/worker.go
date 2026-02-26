@@ -238,6 +238,7 @@ func executeJob(client *workerClient, job *model.Job, leaseID, workerID string, 
 	// Lease renew + cancel detection goroutine
 	done := make(chan struct{})
 	go func() {
+		var renewFailures int
 		renewTicker := time.NewTicker(LeaseRenewInterval)
 		cancelTicker := time.NewTicker(WorkerHeartbeatInterval)
 		defer renewTicker.Stop()
@@ -247,7 +248,16 @@ func executeJob(client *workerClient, job *model.Job, leaseID, workerID string, 
 			case <-done:
 				return
 			case <-renewTicker.C:
-				client.renewLease(leaseID, workerID)
+				if err := client.renewLease(leaseID, workerID); err != nil {
+					renewFailures++
+					if renewFailures >= 3 {
+						log.Printf("c5-worker: WARNING: lease %s renewal failed %d times consecutively: %v", leaseID, renewFailures, err)
+					} else {
+						log.Printf("c5-worker: lease %s renewal error: %v", leaseID, err)
+					}
+				} else {
+					renewFailures = 0
+				}
 			case <-cancelTicker.C:
 				// Check if job was cancelled on server
 				status, err := client.getJobStatus(job.ID)
@@ -640,8 +650,8 @@ func (c *workerClient) acquireLease(workerID string) (*model.Lease, *model.Job, 
 	return lease, &resp.Job, resp.InputPresignedURLs, nil
 }
 
-func (c *workerClient) renewLease(leaseID, workerID string) {
-	c.doJSON("POST", "/v1/leases/renew", &model.LeaseRenewRequest{
+func (c *workerClient) renewLease(leaseID, workerID string) error {
+	return c.doJSON("POST", "/v1/leases/renew", &model.LeaseRenewRequest{
 		LeaseID:  leaseID,
 		WorkerID: workerID,
 	}, nil)
