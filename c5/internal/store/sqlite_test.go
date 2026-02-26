@@ -423,9 +423,10 @@ func TestExpireLeases(t *testing.T) {
 
 	lease, _, _ := s.AcquireLease(w.ID, false, "")
 
-	// Set lease to expired (UTC to match ExpireLeases)
-	s.db.Exec(`UPDATE leases SET expires_at = ? WHERE id = ?`,
-		time.Now().UTC().Add(-1*time.Hour).Format(time.RFC3339), lease.ID)
+	// Set lease to expired and worker heartbeat to stale (UTC to match ExpireLeases)
+	stale := time.Now().UTC().Add(-1 * time.Hour).Format(time.RFC3339)
+	s.db.Exec(`UPDATE leases SET expires_at = ? WHERE id = ?`, stale, lease.ID)
+	s.db.Exec(`UPDATE workers SET last_heartbeat = ? WHERE id = ?`, stale, w.ID)
 
 	n, err := s.ExpireLeases()
 	if err != nil {
@@ -439,6 +440,122 @@ func TestExpireLeases(t *testing.T) {
 	job, _ := s.GetHighestPriorityQueuedJob(false, "")
 	if job == nil {
 		t.Fatal("job should be re-queued after lease expiry")
+	}
+}
+
+func TestExpireLeases_WorkerAlive_NoExpiry(t *testing.T) {
+	s := newTestStore(t)
+
+	w, _ := s.RegisterWorker(&model.WorkerRegisterRequest{Hostname: "alive"})
+	s.CreateJob(&model.JobSubmitRequest{Name: "job", Command: "echo"})
+
+	lease, _, _ := s.AcquireLease(w.ID, false, "")
+
+	// Set lease to expired but keep worker heartbeat recent (< 2 min ago)
+	s.db.Exec(`UPDATE leases SET expires_at = ? WHERE id = ?`,
+		time.Now().UTC().Add(-1*time.Hour).Format(time.RFC3339), lease.ID)
+	// Worker heartbeat is still fresh (set by RegisterWorker = now)
+
+	n, err := s.ExpireLeases()
+	if err != nil {
+		t.Fatalf("expire: %v", err)
+	}
+	if n != 0 {
+		t.Fatalf("expected 0 expired (worker alive), got %d", n)
+	}
+
+	// Job should NOT be re-queued
+	job, _ := s.GetHighestPriorityQueuedJob(false, "")
+	if job != nil {
+		t.Fatal("job should not be re-queued when worker is alive")
+	}
+}
+
+func TestExpireLeases_WorkerStale_Expires(t *testing.T) {
+	s := newTestStore(t)
+
+	w, _ := s.RegisterWorker(&model.WorkerRegisterRequest{Hostname: "stale"})
+	s.CreateJob(&model.JobSubmitRequest{Name: "job", Command: "echo"})
+
+	lease, _, _ := s.AcquireLease(w.ID, false, "")
+
+	stale := time.Now().UTC().Add(-10 * time.Minute).Format(time.RFC3339)
+	s.db.Exec(`UPDATE leases SET expires_at = ? WHERE id = ?`, stale, lease.ID)
+	s.db.Exec(`UPDATE workers SET last_heartbeat = ? WHERE id = ?`, stale, w.ID)
+
+	n, err := s.ExpireLeases()
+	if err != nil {
+		t.Fatalf("expire: %v", err)
+	}
+	if n != 1 {
+		t.Fatalf("expected 1 expired (worker stale), got %d", n)
+	}
+
+	job, _ := s.GetHighestPriorityQueuedJob(false, "")
+	if job == nil {
+		t.Fatal("job should be re-queued when worker is stale")
+	}
+}
+
+func TestExpireLeases_Transaction_Atomicity(t *testing.T) {
+	s := newTestStore(t)
+
+	w, _ := s.RegisterWorker(&model.WorkerRegisterRequest{Hostname: "tx-test"})
+	s.CreateJob(&model.JobSubmitRequest{Name: "job1", Command: "echo"})
+	s.CreateJob(&model.JobSubmitRequest{Name: "job2", Command: "echo"})
+
+	lease1, _, _ := s.AcquireLease(w.ID, false, "")
+	lease2, _, _ := s.AcquireLease(w.ID, false, "")
+
+	stale := time.Now().UTC().Add(-10 * time.Minute).Format(time.RFC3339)
+	s.db.Exec(`UPDATE leases SET expires_at = ? WHERE id = ?`, stale, lease1.ID)
+	s.db.Exec(`UPDATE leases SET expires_at = ? WHERE id = ?`, stale, lease2.ID)
+	s.db.Exec(`UPDATE workers SET last_heartbeat = ? WHERE id = ?`, stale, w.ID)
+
+	n, err := s.ExpireLeases()
+	if err != nil {
+		t.Fatalf("expire: %v", err)
+	}
+	if n != 2 {
+		t.Fatalf("expected 2 expired, got %d", n)
+	}
+
+	// Both leases should be gone
+	var count int
+	s.db.QueryRow(`SELECT COUNT(*) FROM leases`).Scan(&count)
+	if count != 0 {
+		t.Fatalf("expected 0 leases remaining, got %d", count)
+	}
+}
+
+func TestExpireLeases_ErrorHandling(t *testing.T) {
+	s := newTestStore(t)
+
+	w, _ := s.RegisterWorker(&model.WorkerRegisterRequest{Hostname: "err-test"})
+	s.CreateJob(&model.JobSubmitRequest{Name: "job", Command: "echo"})
+
+	lease, _, _ := s.AcquireLease(w.ID, false, "")
+
+	stale := time.Now().UTC().Add(-10 * time.Minute).Format(time.RFC3339)
+	s.db.Exec(`UPDATE leases SET expires_at = ? WHERE id = ?`, stale, lease.ID)
+	s.db.Exec(`UPDATE workers SET last_heartbeat = ? WHERE id = ?`, stale, w.ID)
+
+	// Normal expiry should succeed without error
+	n, err := s.ExpireLeases()
+	if err != nil {
+		t.Fatalf("ExpireLeases returned unexpected error: %v", err)
+	}
+	if n != 1 {
+		t.Fatalf("expected 1 expired, got %d", n)
+	}
+
+	// Second call should return 0 (lease already deleted) without error
+	n2, err2 := s.ExpireLeases()
+	if err2 != nil {
+		t.Fatalf("second ExpireLeases returned error: %v", err2)
+	}
+	if n2 != 0 {
+		t.Fatalf("expected 0 on second call, got %d", n2)
 	}
 }
 

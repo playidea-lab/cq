@@ -41,8 +41,8 @@ func New(dbPath string) (*Store, error) {
 	if _, err := db.Exec("PRAGMA journal_mode=WAL"); err != nil {
 		fmt.Fprintf(os.Stderr, "c5: PRAGMA journal_mode=WAL failed: %v\n", err)
 	}
-	if _, err := db.Exec("PRAGMA busy_timeout=5000"); err != nil {
-		fmt.Fprintf(os.Stderr, "c5: PRAGMA busy_timeout=5000 failed: %v\n", err)
+	if _, err := db.Exec("PRAGMA busy_timeout=30000"); err != nil {
+		fmt.Fprintf(os.Stderr, "c5: PRAGMA busy_timeout=30000 failed: %v\n", err)
 	}
 
 	s := &Store{db: db}
@@ -731,13 +731,17 @@ func (s *Store) RenewLease(leaseID, workerID string) (*time.Time, error) {
 }
 
 // ExpireLeases finds and handles expired leases.
-// Returns the number of expired leases processed.
+// Leases belonging to workers that sent a heartbeat within the last 2 minutes are skipped.
+// Each expiry is wrapped in a transaction. Returns the number of expired leases processed.
 func (s *Store) ExpireLeases() (int, error) {
-	now := time.Now().UTC().Format(time.RFC3339)
+	now := time.Now().UTC()
+	nowStr := now.Format(time.RFC3339)
+	heartbeatCutoff := now.Add(-2 * time.Minute).Format(time.RFC3339)
 
 	rows, err := s.db.Query(`
-		SELECT id, job_id, worker_id FROM leases
-		WHERE expires_at < ?`, now)
+		SELECT l.id, l.job_id, l.worker_id FROM leases l
+		JOIN workers w ON w.id = l.worker_id
+		WHERE l.expires_at < ? AND w.last_heartbeat < ?`, nowStr, heartbeatCutoff)
 	if err != nil {
 		return 0, err
 	}
@@ -755,16 +759,33 @@ func (s *Store) ExpireLeases() (int, error) {
 		return 0, err
 	}
 
+	count := 0
 	for _, l := range expired {
+		tx, err := s.db.Begin()
+		if err != nil {
+			return count, fmt.Errorf("begin tx for lease %s: %w", l.id, err)
+		}
+
 		// Re-queue the job
-		s.db.Exec(`UPDATE jobs SET status = 'QUEUED', started_at = NULL, worker_id = '' WHERE id = ? AND status = 'RUNNING'`, l.jobID)
+		if _, err := tx.Exec(`UPDATE jobs SET status = 'QUEUED', started_at = NULL, worker_id = '' WHERE id = ? AND status = 'RUNNING'`, l.jobID); err != nil {
+			tx.Rollback()
+			return count, fmt.Errorf("re-queue job %s: %w", l.jobID, err)
+		}
 		// Remove the lease
-		s.db.Exec(`DELETE FROM leases WHERE id = ?`, l.id)
-		// Mark worker as online (available again)
+		if _, err := tx.Exec(`DELETE FROM leases WHERE id = ?`, l.id); err != nil {
+			tx.Rollback()
+			return count, fmt.Errorf("delete lease %s: %w", l.id, err)
+		}
+
+		if err := tx.Commit(); err != nil {
+			return count, fmt.Errorf("commit lease expiry %s: %w", l.id, err)
+		}
+		// Mark worker as online (available again) — best-effort, outside tx
 		s.db.Exec(`UPDATE workers SET status = 'online' WHERE id = ?`, l.workerID)
+		count++
 	}
 
-	return len(expired), nil
+	return count, nil
 }
 
 // DeleteLease removes a lease (called after job completion).
