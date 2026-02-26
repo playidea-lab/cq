@@ -1755,3 +1755,172 @@ func TestCleanupOldJobs(t *testing.T) {
 		t.Fatalf("expected 1 metric for new job, got %d", metricCnt)
 	}
 }
+
+// =========================================================================
+// VRAM filtering + GPU-only mode
+// =========================================================================
+
+func TestAcquireLease_VRAMFilter(t *testing.T) {
+	s := newTestStore(t)
+
+	// Register a worker with 8 GB VRAM
+	w, _ := s.RegisterWorker(&model.WorkerRegisterRequest{
+		Hostname:  "gpu-worker",
+		GPUCount:  1,
+		TotalVRAM: 8.0,
+		FreeVRAM:  8.0,
+	})
+
+	// Submit a job requiring 16 GB VRAM (more than worker has)
+	s.CreateJob(&model.JobSubmitRequest{
+		Name:           "big-model",
+		Command:        "train --large",
+		RequiresGPU:    true,
+		VRAMRequiredGB: 16.0,
+	})
+
+	// Worker with 8 GB should NOT get the 16 GB job
+	lease, job, err := s.AcquireLease(w.ID, true, "", 8.0)
+	if err != nil {
+		t.Fatalf("acquire: %v", err)
+	}
+	if lease != nil || job != nil {
+		t.Fatal("expected nil — worker VRAM (8) < job requirement (16)")
+	}
+
+	// Submit a job requiring 4 GB VRAM (fits)
+	s.CreateJob(&model.JobSubmitRequest{
+		Name:           "small-model",
+		Command:        "train --small",
+		RequiresGPU:    true,
+		VRAMRequiredGB: 4.0,
+	})
+
+	// Worker with 8 GB should get the 4 GB job
+	lease, job, err = s.AcquireLease(w.ID, true, "", 8.0)
+	if err != nil {
+		t.Fatalf("acquire: %v", err)
+	}
+	if lease == nil || job == nil {
+		t.Fatal("expected a lease for the 4 GB job")
+	}
+	if job.Name != "small-model" {
+		t.Fatalf("expected small-model, got %s", job.Name)
+	}
+	if job.VRAMRequiredGB != 4.0 {
+		t.Fatalf("expected VRAMRequiredGB=4.0, got %f", job.VRAMRequiredGB)
+	}
+}
+
+func TestAcquireLease_GPUOnlyMode(t *testing.T) {
+	// This tests that when workerVRAM is not passed (simulating non-GPU filtering),
+	// AcquireLease still works with backward compatibility (variadic workerVRAM).
+	s := newTestStore(t)
+
+	w, _ := s.RegisterWorker(&model.WorkerRegisterRequest{
+		Hostname: "cpu-worker",
+	})
+
+	// Submit a CPU job (vram_required_gb = 0, requires_gpu = false)
+	s.CreateJob(&model.JobSubmitRequest{
+		Name:    "cpu-task",
+		Command: "echo cpu",
+	})
+
+	// Submit a GPU job (requires_gpu = true, no VRAM requirement)
+	s.CreateJob(&model.JobSubmitRequest{
+		Name:        "gpu-task",
+		Command:     "train",
+		RequiresGPU: true,
+	})
+
+	// Non-GPU acquire: should only get CPU job
+	lease, job, err := s.AcquireLease(w.ID, false, "")
+	if err != nil {
+		t.Fatalf("acquire: %v", err)
+	}
+	if lease == nil || job == nil {
+		t.Fatal("expected a lease for CPU job")
+	}
+	if job.Name != "cpu-task" {
+		t.Fatalf("expected cpu-task, got %s", job.Name)
+	}
+
+	// GPU acquire without VRAM filter: should get the GPU job
+	wGPU, _ := s.RegisterWorker(&model.WorkerRegisterRequest{
+		Hostname: "gpu-worker",
+		GPUCount: 1,
+	})
+	lease, job, err = s.AcquireLease(wGPU.ID, true, "")
+	if err != nil {
+		t.Fatalf("acquire: %v", err)
+	}
+	if lease == nil || job == nil {
+		t.Fatal("expected a lease for GPU job")
+	}
+	if job.Name != "gpu-task" {
+		t.Fatalf("expected gpu-task, got %s", job.Name)
+	}
+}
+
+func TestMigrate_VRAMColumn(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "migrate_vram.db")
+
+	// Create store (runs migrate with vram_required_gb column)
+	s, err := New(dbPath)
+	if err != nil {
+		t.Fatalf("new store: %v", err)
+	}
+
+	// Insert a job with VRAM requirement
+	job, err := s.CreateJob(&model.JobSubmitRequest{
+		Name:           "vram-job",
+		Command:        "train",
+		RequiresGPU:    true,
+		VRAMRequiredGB: 12.5,
+	})
+	if err != nil {
+		t.Fatalf("create job: %v", err)
+	}
+	if job.VRAMRequiredGB != 12.5 {
+		t.Fatalf("expected 12.5, got %f", job.VRAMRequiredGB)
+	}
+
+	// Re-read from DB to confirm persistence
+	got, err := s.GetJob(job.ID)
+	if err != nil {
+		t.Fatalf("get job: %v", err)
+	}
+	if got.VRAMRequiredGB != 12.5 {
+		t.Fatalf("expected 12.5 after re-read, got %f", got.VRAMRequiredGB)
+	}
+
+	// Default value: job without VRAM requirement should have 0
+	job2, _ := s.CreateJob(&model.JobSubmitRequest{
+		Name:    "no-vram",
+		Command: "echo",
+	})
+	got2, _ := s.GetJob(job2.ID)
+	if got2.VRAMRequiredGB != 0 {
+		t.Fatalf("expected 0 default, got %f", got2.VRAMRequiredGB)
+	}
+
+	s.Close()
+
+	// Re-open to verify migrate is idempotent (ALTER TABLE duplicate column is ignored)
+	s2, err := New(dbPath)
+	if err != nil {
+		t.Fatalf("re-open store: %v", err)
+	}
+	defer s2.Close()
+
+	// Should still read the job correctly
+	got3, err := s2.GetJob(job.ID)
+	if err != nil {
+		t.Fatalf("get job after reopen: %v", err)
+	}
+	if got3.VRAMRequiredGB != 12.5 {
+		t.Fatalf("expected 12.5 after reopen, got %f", got3.VRAMRequiredGB)
+	}
+}

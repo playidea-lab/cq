@@ -35,7 +35,8 @@ type Server struct {
 	docsFS    fs.FS  // docs filesystem (may be nil)
 	mux       *http.ServeMux
 	done      chan struct{} // closed on shutdown to stop background goroutines
-	eventPub  *eventpub.Publisher
+	eventPub         *eventpub.Publisher
+	gpuWorkerGPUOnly bool // if true, GPU workers only accept GPU jobs (no CPU fallback)
 
 	// jobMu protects jobNotify. When a new job is queued, jobNotify is closed
 	// (broadcasting to all long-poll waiters) and replaced with a new channel.
@@ -57,7 +58,8 @@ type Config struct {
 	LLMSTxt        string // llms.txt content (served at /.well-known/llms.txt)
 	DocsFS         fs.FS  // embedded docs filesystem (served at /v1/docs/)
 	EventBusURL    string // C3 EventBus base URL (empty = disabled)
-	EventBusToken  string // Bearer token for EventBus (optional)
+	EventBusToken    string // Bearer token for EventBus (optional)
+	GPUWorkerGPUOnly bool   // if true, GPU workers only accept GPU jobs (no CPU fallback)
 }
 
 // NewServer creates an HTTP API server.
@@ -78,8 +80,9 @@ func NewServer(cfg Config) *Server {
 		docsFS:    cfg.DocsFS,
 		mux:       http.NewServeMux(),
 		done:      make(chan struct{}),
-		eventPub:  eventpub.New(cfg.EventBusURL, cfg.EventBusToken),
-		jobNotify: make(chan struct{}),
+		eventPub:         eventpub.New(cfg.EventBusURL, cfg.EventBusToken),
+		jobNotify:        make(chan struct{}),
+		gpuWorkerGPUOnly: cfg.GPUWorkerGPUOnly,
 	}
 	s.registerRoutes()
 

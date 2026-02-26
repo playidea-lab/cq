@@ -145,16 +145,21 @@ func (s *Server) handleLeaseAcquire(w http.ResponseWriter, r *http.Request) {
 	}
 
 	hasGPU := worker.GPUCount > 0
+	// Use free_vram from request if provided (fresh value), else fall back to stored value.
+	workerVRAM := worker.FreeVRAM
+	if req.FreeVRAM > 0 {
+		workerVRAM = req.FreeVRAM
+	}
 
-	lease, job, err := s.store.AcquireLease(req.WorkerID, hasGPU, worker.ProjectID)
+	lease, job, err := s.store.AcquireLease(req.WorkerID, hasGPU, worker.ProjectID, workerVRAM)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
 	if lease == nil {
-		// No GPU jobs? Try non-GPU jobs
-		if hasGPU {
+		// No GPU jobs? Try non-GPU jobs (unless gpu_worker_gpu_only is set)
+		if hasGPU && !s.gpuWorkerGPUOnly {
 			lease, job, err = s.store.AcquireLease(req.WorkerID, false, worker.ProjectID)
 			if err != nil {
 				writeError(w, http.StatusInternalServerError, err.Error())
@@ -179,12 +184,12 @@ func (s *Server) handleLeaseAcquire(w http.ResponseWriter, r *http.Request) {
 				writeJSON(w, map[string]any{"job_id": nil, "lease_id": nil, "message": "no jobs available"})
 				return
 			}
-			lease, job, err = s.store.AcquireLease(req.WorkerID, hasGPU, worker.ProjectID)
+			lease, job, err = s.store.AcquireLease(req.WorkerID, hasGPU, worker.ProjectID, workerVRAM)
 			if err != nil {
 				writeError(w, http.StatusInternalServerError, err.Error())
 				return
 			}
-			if lease == nil && hasGPU {
+			if lease == nil && hasGPU && !s.gpuWorkerGPUOnly {
 				lease, job, err = s.store.AcquireLease(req.WorkerID, false, worker.ProjectID)
 				if err != nil {
 					writeError(w, http.StatusInternalServerError, err.Error())

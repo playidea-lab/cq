@@ -249,6 +249,8 @@ func (s *Store) migrate() error {
 		// Migration: add input/output artifact JSON columns.
 		`ALTER TABLE jobs ADD COLUMN input_artifacts TEXT NOT NULL DEFAULT '[]'`,
 		`ALTER TABLE jobs ADD COLUMN output_artifacts TEXT NOT NULL DEFAULT '[]'`,
+		// Migration: add VRAM requirement for GPU job matching.
+		`ALTER TABLE jobs ADD COLUMN vram_required_gb REAL NOT NULL DEFAULT 0`,
 	} {
 		if _, err := s.db.Exec(stmt); err != nil {
 			if !strings.Contains(err.Error(), "duplicate column") {
@@ -277,6 +279,7 @@ func (s *Store) CreateJob(req *model.JobSubmitRequest) (*model.Job, error) {
 		Workdir:         req.Workdir,
 		Command:         req.Command,
 		RequiresGPU:     req.RequiresGPU,
+		VRAMRequiredGB:  req.VRAMRequiredGB,
 		Env:             req.Env,
 		Tags:            req.Tags,
 		ExpID:           req.ExpID,
@@ -290,11 +293,11 @@ func (s *Store) CreateJob(req *model.JobSubmitRequest) (*model.Job, error) {
 
 	_, err := s.db.Exec(`
 		INSERT INTO jobs (id, name, status, priority, workdir, command,
-			requires_gpu, env, tags, exp_id, memo, timeout_sec, project_id,
+			requires_gpu, vram_required_gb, env, tags, exp_id, memo, timeout_sec, project_id,
 			input_artifacts, output_artifacts, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		job.ID, job.Name, string(job.Status), job.Priority, job.Workdir, job.Command,
-		boolToInt(job.RequiresGPU),
+		boolToInt(job.RequiresGPU), job.VRAMRequiredGB,
 		marshalJSON(job.Env), marshalJSON(job.Tags),
 		job.ExpID, job.Memo, job.TimeoutSec, job.ProjectID,
 		marshalArtifacts(job.InputArtifacts), marshalArtifacts(job.OutputArtifacts),
@@ -638,7 +641,7 @@ const defaultLeaseDuration = 5 * time.Minute
 // Uses UPDATE-first pattern: atomically claims the highest-priority queued
 // job, then reads the claimed data. Prevents race conditions where two
 // workers could SELECT the same job before either UPDATEs it.
-func (s *Store) AcquireLease(workerID string, requiresGPU bool, projectID string) (*model.Lease, *model.Job, error) {
+func (s *Store) AcquireLease(workerID string, requiresGPU bool, projectID string, workerVRAM ...float64) (*model.Lease, *model.Job, error) {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return nil, nil, fmt.Errorf("begin tx: %w", err)
@@ -655,6 +658,11 @@ func (s *Store) AcquireLease(workerID string, requiresGPU bool, projectID string
 	args := []any{nowStr, workerID}
 	if requiresGPU {
 		extraFilter += " AND requires_gpu = 1"
+	}
+	// VRAM filter: only match jobs whose vram_required_gb <= worker's available VRAM.
+	if len(workerVRAM) > 0 && workerVRAM[0] > 0 {
+		extraFilter += " AND vram_required_gb <= ?"
+		args = append(args, workerVRAM[0])
 	}
 	if projectID != "" {
 		extraFilter += " AND project_id = ?"
@@ -1979,7 +1987,7 @@ func (s *Store) ListArtifacts(jobID string) ([]model.Artifact, error) {
 // =========================================================================
 
 const jobSelectCols = `SELECT id, name, status, priority, workdir, command,
-	requires_gpu, env, tags, exp_id, memo, timeout_sec, worker_id,
+	requires_gpu, vram_required_gb, env, tags, exp_id, memo, timeout_sec, worker_id,
 	created_at, started_at, finished_at, exit_code, project_id,
 	input_artifacts, output_artifacts`
 
@@ -2003,7 +2011,7 @@ func populateJob(sc scanner) (*model.Job, error) {
 	)
 	err := sc.Scan(
 		&j.ID, &j.Name, &status, &j.Priority, &j.Workdir, &j.Command,
-		&requiresGPU, &envJSON, &tagsJSON,
+		&requiresGPU, &j.VRAMRequiredGB, &envJSON, &tagsJSON,
 		&j.ExpID, &j.Memo, &j.TimeoutSec, &j.WorkerID,
 		&createdAt, &startedAt, &finishedAt, &exitCode,
 		&j.ProjectID,

@@ -14,8 +14,9 @@ type Config struct {
 
 // ServerConfig holds HTTP server settings.
 type ServerConfig struct {
-	Host string `yaml:"host"` // default "0.0.0.0"
-	Port int    `yaml:"port"` // default 8585
+	Host             string `yaml:"host"`               // default "0.0.0.0"
+	Port             int    `yaml:"port"`               // default 8585
+	GPUWorkerGPUOnly bool   `yaml:"gpu_worker_gpu_only"` // default false; if true, GPU workers only accept GPU jobs
 }
 
 // EventBusConfig holds C3 EventBus connection settings.

@@ -48,6 +48,7 @@ type Job struct {
 	Workdir         string            `json:"workdir"`
 	Command         string            `json:"command"`
 	RequiresGPU     bool              `json:"requires_gpu"`
+	VRAMRequiredGB  float64           `json:"vram_required_gb,omitempty"`
 	Env             map[string]string `json:"env,omitempty"`
 	Tags            []string          `json:"tags,omitempty"`
 	ExpID           string            `json:"exp_id,omitempty"`
@@ -126,6 +127,7 @@ type JobSubmitRequest struct {
 	Env             map[string]string `json:"env,omitempty"`
 	Tags            []string          `json:"tags,omitempty"`
 	RequiresGPU     bool              `json:"requires_gpu"`
+	VRAMRequiredGB  float64           `json:"vram_required_gb,omitempty"`
 	Priority        int               `json:"priority,omitempty"`
 	ExpID           string            `json:"exp_id,omitempty"`
 	Memo            string            `json:"memo,omitempty"`

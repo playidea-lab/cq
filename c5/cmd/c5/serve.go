@@ -137,8 +137,9 @@ func runServe(cmd *cobra.Command, configPath string, port int, dbPath, apiKey, e
 		APIKey:        apiKey,
 		LLMSTxt:       c5.LLMSTxt,
 		DocsFS:        c5.DocsFS,
-		EventBusURL:   resolvedEventBusURL,
-		EventBusToken: resolvedEventBusToken,
+		EventBusURL:      resolvedEventBusURL,
+		EventBusToken:    resolvedEventBusToken,
+		GPUWorkerGPUOnly: cfg.Server.GPUWorkerGPUOnly,
 	})
 	defer srv.Close()
 
