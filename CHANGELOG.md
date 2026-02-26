@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.31.0] - 2026-02-27
+
+### ✨ Features
+- **embed**: c5 바이너리를 cq 내부에 내장 (`c5_embed` 빌드 태그) — PATH에 c5 없으면 `~/.c4/bin/c5`로 자동 추출 (`b4066971`)
+- **ci**: c5 빌드 전용 `build-c5` CI 스테이지 추가, `embed-c5` Makefile 타겟, `embeddedC5Version` ldflags 주입 (`1320a824`)
+- **init**: `cq init` 시 OS 서비스 등록 프롬프트(`confirmServeInstall`) 추가, `templates/config.yaml`에 serve.hub 섹션 문서화 (`620d5ea7`)
+- **session**: named session에 `tool` 라벨 및 `memo` 필드 추가 (`753b8007`)
+- **session**: `cq session name`에 `--uuid` 플래그 추가 (`23edc723`)
+- **skill/c4-attach**: `memo` 인수 지원 (`c76f5b7a`)
+- **lsp**: Rust write 지원 활성화 (rust-analyzer), session name 충돌 가드 (`4be64649`)
+
+### 🐛 Bug Fixes
+- **embed**: 중복 `c5_embed.go`/`c5_embed_stub.go` 제거 (T-EMBED-002의 `embed_c5.go`로 대체) (`6a130355`)
+
+### ♻️ Refactoring
+- **serve**: `installServeService()` 공개 함수 추출 — `runServeInstall()`에서 위임, `confirmServeInstall()`과 공유 (`56f1a830`)
+
+### 🔧 Polish
+- ldflags 변수명 불일치 수정 (`embeddedVersion` → `embeddedC5Version`), version tmpfile `defer os.Remove` 추가, 테스트 어설션 강화 (`f6b4beb2`)
+- Makefile 주석 및 `installServeService` godoc 정확도 수정 (`f5d72f82`)
+
+### 📚 Documentation
+- AGENTS.md: 테스트 수 업데이트 (~1,595/~2,345), c5 embed 패턴 섹션 추가 (`46330599`)
+
+---
+
 ## [0.30.0] - 2026-02-27
 
 ### ✨ Features
