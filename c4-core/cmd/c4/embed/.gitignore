@@ -1,0 +1,4 @@
+# Ignore embedded c5 binaries (copied by CI before build)
+# .gitkeep is tracked to preserve the directory
+c5/c5
+c5/c5.exe

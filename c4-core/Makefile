@@ -4,7 +4,7 @@
 .PHONY: build test test-grpc lint vet clean proto-gen fmt help \
         build-solo build-connected build-full build-nightly \
         install-solo install-connected install-full install-nightly \
-        embed-skills build-cross
+        embed-skills embed-c5 build-cross
 
 # Build variables
 BINARY_NAME := c4
@@ -30,6 +30,13 @@ INSTALL_BIN := $(INSTALL_DIR)/cq
 # Repository root (absolute path, used for embed-skills)
 REPO_ROOT := $(shell git -C $(dir $(abspath $(lastword $(MAKEFILE_LIST)))) rev-parse --show-toplevel)
 
+# C5 embed variables (used by CI embed-c5 target)
+# C5_BIN: path to the compiled c5 binary (set by CI after build-c5 stage)
+# C5_VERSION: version string injected into embeddedVersion ldflags
+C5_BIN     ?=
+C5_VERSION ?= dev
+EXT        ?=
+
 # Default target
 .DEFAULT_GOAL := help
 
@@ -40,17 +47,30 @@ embed-skills:
 	echo "$(shell git -C $(REPO_ROOT) rev-parse --short HEAD)" > cmd/c4/skills_src/.version
 	@echo "Skills embedded from $(REPO_ROOT)/.claude/skills/ ($(shell git -C $(REPO_ROOT) rev-parse --short HEAD))"
 
+## embed-c5: Copy c5 binary into cmd/c4/embed/c5/ (CI use only; C5_BIN must be set)
+embed-c5:
+	@test -n "$(C5_BIN)" || (echo "Error: C5_BIN not set. Usage: make embed-c5 C5_BIN=../c5/bin/c5-linux-amd64" && exit 1)
+	mkdir -p cmd/c4/embed/c5
+	cp $(C5_BIN) cmd/c4/embed/c5/c5$(EXT)
+	@echo "Embedded c5 binary: $(C5_BIN) → cmd/c4/embed/c5/c5$(EXT)"
 
 # Cross-compilation target — output goes to dist/ for CI artifact collection
 # Usage: make build-cross GOOS=linux GOARCH=amd64 TIER=solo
 TIER_TAGS_solo      = skills_embed
 TIER_TAGS_connected = c0_drive c3_eventbus llm_gateway skills_embed
-TIER_TAGS_full      = c0_drive c3_eventbus c5_hub llm_gateway cdp gpu c1_messenger research skills_embed
+TIER_TAGS_full      = c0_drive c3_eventbus c5_hub llm_gateway cdp gpu c1_messenger research skills_embed c5_embed
+
+# Extra ldflags for c5_embed tier: inject embeddedVersion
+_C5_EMBED_FLAGS :=
+ifeq ($(TIER),full)
+  _C5_EMBED_FLAGS := -X 'github.com/changmin/c4-core/cmd/c4.embeddedVersion=$(C5_VERSION)'
+endif
 
 ## build-cross: Cross-compile for target GOOS/GOARCH/TIER (used by CI)
 build-cross: embed-skills
 	@mkdir -p dist
-	GOOS=$(GOOS) GOARCH=$(GOARCH) go build $(LDFLAGS) \
+	GOOS=$(GOOS) GOARCH=$(GOARCH) go build \
+		-ldflags "-X main.version=$(VERSION) $(_SUPABASE_FLAGS) $(_C5_EMBED_FLAGS)" \
 		-tags '$(TIER_TAGS_$(TIER))' \
 		-o dist/cq-$(TIER)-$(GOOS)-$(GOARCH) \
 		./cmd/c4/

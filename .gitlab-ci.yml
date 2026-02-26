@@ -15,6 +15,7 @@ variables:
 
 stages:
   - check-env
+  - build-c5
   - build
   - release
 
@@ -26,6 +27,46 @@ check-env:
     - 'test -n "$CI_SUPABASE_KEY" || echo "WARNING: CI_SUPABASE_KEY not set - built-in auth will be disabled"'
   only:
     - /^v.*/
+
+# ── build-c5 stage ───────────────────────────────────────────
+# Build c5 binary per platform; artifacts passed to build-full-* jobs.
+
+.build-c5-template: &build-c5-template
+  stage: build-c5
+  script:
+    - cd c5
+    - GOOS=$GOOS GOARCH=$GOARCH go build -o bin/c5-$GOOS-$GOARCH$EXT ./cmd/c5/
+  artifacts:
+    paths:
+      - c5/bin/
+    expire_in: 1 hour
+  only:
+    - /^v.*/
+  needs:
+    - check-env
+
+build-c5-linux-amd64:
+  <<: *build-c5-template
+  variables:
+    GOOS: linux
+    GOARCH: amd64
+    EXT: ""
+
+build-c5-linux-arm64:
+  <<: *build-c5-template
+  variables:
+    GOOS: linux
+    GOARCH: arm64
+    EXT: ""
+
+build-c5-darwin-arm64:
+  <<: *build-c5-template
+  variables:
+    GOOS: darwin
+    GOARCH: arm64
+    EXT: ""
+
+# ── build stage templates ─────────────────────────────────────
 
 .build-template: &build-template
   stage: build
@@ -41,6 +82,20 @@ check-env:
     - /^v.*/
   needs:
     - check-env
+
+.build-full-template: &build-full-template
+  stage: build
+  script:
+    - cd c4-core
+    - make embed-skills
+    - make embed-c5 C5_BIN=../c5/bin/c5-$GOOS-$GOARCH$EXT EXT=$EXT
+    - make build-cross GOOS=$GOOS GOARCH=$GOARCH TIER=full C5_VERSION=$CI_COMMIT_TAG SUPABASE_URL=$CI_SUPABASE_URL SUPABASE_ANON_KEY=$CI_SUPABASE_KEY
+  artifacts:
+    paths:
+      - c4-core/dist/
+    expire_in: 1 week
+  only:
+    - /^v.*/
 
 # ── solo tier ────────────────────────────────────────────────
 build-solo-linux-amd64:
@@ -86,27 +141,36 @@ build-connected-darwin-arm64:
     GOARCH: arm64
     TIER: connected
 
-# ── full tier ────────────────────────────────────────────────
+# ── full tier (needs build-c5 artifacts) ─────────────────────
 build-full-linux-amd64:
-  <<: *build-template
+  <<: *build-full-template
   variables:
     GOOS: linux
     GOARCH: amd64
-    TIER: full
+    EXT: ""
+  needs:
+    - check-env
+    - build-c5-linux-amd64
 
 build-full-linux-arm64:
-  <<: *build-template
+  <<: *build-full-template
   variables:
     GOOS: linux
     GOARCH: arm64
-    TIER: full
+    EXT: ""
+  needs:
+    - check-env
+    - build-c5-linux-arm64
 
 build-full-darwin-arm64:
-  <<: *build-template
+  <<: *build-full-template
   variables:
     GOOS: darwin
     GOARCH: arm64
-    TIER: full
+    EXT: ""
+  needs:
+    - check-env
+    - build-c5-darwin-arm64
 
 # ── GitHub Release ───────────────────────────────────────────
 release-github:
