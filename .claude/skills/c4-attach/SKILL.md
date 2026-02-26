@@ -37,16 +37,23 @@ basename $(pwd)
 
 예: "기본값은 `cq`입니다. 이 이름으로 설정할까요?" → 사용자가 확인하면 진행.
 
-### 2. 세션 이름 저장
+### 2. 현재 세션 UUID 확인 (CRITICAL)
+
+Claude는 현재 대화의 세션 UUID를 시스템 컨텍스트에서 직접 알고 있다.
+JSONL 파일 경로 형식: `~/.claude/projects/<project>/<uuid>.jsonl`
+
+자동 감지는 불안정하므로, 반드시 `--uuid` 플래그로 명시적으로 전달한다.
+
+### 3. 세션 이름 저장
 
 메모가 있는 경우:
 ```bash
-cq session name <이름> -m "<메모>"
+cq session name <이름> --uuid <uuid> -m "<메모>"
 ```
 
 메모가 없는 경우:
 ```bash
-cq session name <이름>
+cq session name <이름> --uuid <uuid>
 ```
 
 성공하면 다음과 같이 출력됩니다:
@@ -55,7 +62,7 @@ session '<name>' → <uuid8>...
 Next time: cq claude -t <name>
 ```
 
-### 3. 목록 확인
+### 4. 목록 확인
 
 ```bash
 cq ls

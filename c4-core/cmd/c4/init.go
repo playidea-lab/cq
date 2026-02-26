@@ -1465,6 +1465,7 @@ var sessionCmd = &cobra.Command{
 
 var sessionNameForce bool
 var sessionNameMemo string
+var sessionNameUUID string
 
 var sessionNameCmd = &cobra.Command{
 	Use:   "name <session-name>",
@@ -1472,7 +1473,10 @@ var sessionNameCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
-		uuid := currentSessionUUID(projectDir)
+		uuid := sessionNameUUID
+		if uuid == "" {
+			uuid = currentSessionUUID(projectDir)
+		}
 		if uuid == "" {
 			return fmt.Errorf("could not detect current session UUID (no JSONL files found)")
 		}
@@ -1555,6 +1559,7 @@ var sessionMemoCmd = &cobra.Command{
 func init() {
 	sessionNameCmd.Flags().BoolVarP(&sessionNameForce, "force", "f", false, "overwrite existing session name without confirmation")
 	sessionNameCmd.Flags().StringVarP(&sessionNameMemo, "memo", "m", "", "short description of this session")
+	sessionNameCmd.Flags().StringVar(&sessionNameUUID, "uuid", "", "explicitly set session UUID (bypass auto-detection)")
 }
 
 var sessionRmCmd = &cobra.Command{
