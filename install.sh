@@ -116,6 +116,27 @@ case ":$PATH:" in
     ;;
 esac
 
+# Auto-add shell completion to rc files
+add_completion() {
+  for RC_SHELL in "zsh:.zshrc" "bash:.bashrc"; do
+    SHELL_NAME="${RC_SHELL%%:*}"
+    RC_FILE="${HOME}/${RC_SHELL##*:}"
+    if [ ! -f "$RC_FILE" ]; then
+      continue
+    fi
+    MARKER="cq completion ${SHELL_NAME}"
+    if grep -qF "$MARKER" "$RC_FILE" 2>/dev/null; then
+      continue # already set up
+    fi
+    printf '\n# cq shell completion\neval "$(cq completion %s)"\n' "$SHELL_NAME" >> "$RC_FILE"
+    echo "Shell completion added: $RC_FILE"
+  done
+}
+
+add_completion
+# fish shell requires manual setup (eval-based sourcing differs from bash/zsh):
+#   Add to ~/.config/fish/config.fish:  cq completion fish | source
+
 if [ -x "${INSTALL_DIR}/cq" ]; then
   echo ""
   "${INSTALL_DIR}/cq" doctor || true
