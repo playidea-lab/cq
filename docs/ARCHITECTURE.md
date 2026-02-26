@@ -189,6 +189,7 @@ cq serve --port 4141   # 포트 지정
 | `agent` | `serve.agent.enabled: true` + `cloud.url` + `cloud.anon_key` 설정 | Supabase Realtime @cq mention → claude -p 디스패치; claim 직후 `c1_members.status="typing"` 비동기 알림, 완료 시 `"online"` 복원; `claude -p --dir <projectDir>` |
 | `ssesubscriber` | `serve.ssesubscriber.enabled: true` + `c5_hub && c3_eventbus` 빌드 태그 | C5 SSE 스트림 구독 → EventBus 전달 |
 | `stale_checker` | `serve.stale_checker.enabled: true` | 주기적 stale 태스크(in_progress stuck) 감지 → pending 리셋 + `task.stale` 이벤트 발행 |
+| `hub` | `serve.hub.enabled: true` | C5 Hub 서버를 자식 프로세스로 관리 (c5 바이너리 필요; PATH에 없으면 WARN 후 건너뜀) |
 
 **컴포넌트 활성화** (`.c4/config.yaml`):
 ```yaml
@@ -207,6 +208,10 @@ serve:
     enabled: true
     threshold_minutes: 30   # 이 시간 이상 in_progress이면 stale 판정
     interval_seconds: 60    # 체크 주기
+  hub:
+    enabled: false          # true 시 c5 바이너리를 자식 프로세스로 시작
+    binary: c5              # PATH에서 탐색 (기본값)
+    port: 8585              # c5 serve --port 값
 ```
 
 **PID 파일**: `~/.c4/serve/serve.pid` (포트 `:4140`)
