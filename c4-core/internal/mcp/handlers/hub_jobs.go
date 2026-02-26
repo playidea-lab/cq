@@ -255,6 +255,7 @@ func handleHubSubmit(client *hub.Client, raw json.RawMessage) (any, error) {
 		Env             map[string]string `json:"env"`
 		Tags            []string          `json:"tags"`
 		RequiresGPU     *bool             `json:"requires_gpu"`
+		VRAMRequiredGB  float64           `json:"vram_required_gb"`
 		Priority        int               `json:"priority"`
 		ExpID           string            `json:"exp_id"`
 		Memo            string            `json:"memo"`
@@ -281,6 +282,7 @@ func handleHubSubmit(client *hub.Client, raw json.RawMessage) (any, error) {
 		Env:             params.Env,
 		Tags:            params.Tags,
 		RequiresGPU:     requiresGPU,
+		VRAMRequiredGB:  params.VRAMRequiredGB,
 		Priority:        params.Priority,
 		ExpID:           params.ExpID,
 		Memo:            params.Memo,

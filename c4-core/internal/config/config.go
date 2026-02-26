@@ -415,6 +415,7 @@ func New(projectRoot string, cloudDefaults ...CloudDefaults) (*Manager, error) {
 	v.SetDefault("serve.hub.enabled", false)
 	v.SetDefault("serve.hub.binary", "c5")
 	v.SetDefault("serve.hub.port", 8585)
+	v.SetDefault("serve.hub.args", []string{})
 	v.SetDefault("permission_reviewer.enabled", false)
 	v.SetDefault("planning.critique_loop.enabled", true)
 	v.SetDefault("planning.critique_loop.max_rounds", 3)

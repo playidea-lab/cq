@@ -146,6 +146,7 @@ func (s *Server) handleLeaseAcquire(w http.ResponseWriter, r *http.Request) {
 
 	hasGPU := worker.GPUCount > 0
 	// Use free_vram from request if provided (fresh value), else fall back to stored value.
+	// workerVRAM 0.0 means "unspecified" — VRAM filter is skipped for backward compatibility.
 	workerVRAM := worker.FreeVRAM
 	if req.FreeVRAM > 0 {
 		workerVRAM = req.FreeVRAM
