@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 
 	"gopkg.in/yaml.v3"
 )
@@ -32,6 +33,7 @@ func Load(configPath string) (*Config, error) {
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			cfg := Default()
+			applyEnvOverrides(&cfg)
 			return &cfg, nil
 		}
 		return nil, fmt.Errorf("config: read %q: %w", configPath, err)
@@ -42,8 +44,25 @@ func Load(configPath string) (*Config, error) {
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return nil, fmt.Errorf("config: parse %q: %w", configPath, err)
 	}
+	applyEnvOverrides(&cfg)
 
 	return &cfg, nil
+}
+
+// applyEnvOverrides overrides config values from environment variables.
+// C5_SUPABASE_URL, C5_SUPABASE_KEY, and C5_PORT are supported.
+func applyEnvOverrides(cfg *Config) {
+	if v, ok := os.LookupEnv("C5_SUPABASE_URL"); ok {
+		cfg.Storage.SupabaseURL = v
+	}
+	if v, ok := os.LookupEnv("C5_SUPABASE_KEY"); ok {
+		cfg.Storage.SupabaseKey = v
+	}
+	if v, ok := os.LookupEnv("C5_PORT"); ok {
+		if port, err := strconv.Atoi(v); err == nil {
+			cfg.Server.Port = port
+		}
+	}
 }
 
 // ExampleConfigYAML returns a commented example configuration YAML string
