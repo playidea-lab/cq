@@ -153,10 +153,10 @@ C9 Knowledge — 지식 관리 (FTS5 + pgvector + Embedding + Usage + Ingestion)
 ### 테스트 현황
 | 언어 | 테스트 수 | 패키지/모듈 |
 |------|----------|------------|
-| Go | **~1,591** | 29 packages (all pass) — c4-core ~1,402 + c5 ~189 |
+| Go | **~1,595** | 29 packages (all pass) — c4-core ~1,406 + c5 ~189 |
 | Python | **697** | tests/unit/ |
 | Rust | **92** | src-tauri |
-| **합계** | **~2,341** | |
+| **합계** | **~2,345** | |
 
 ### Monorepo 구조
 ```
@@ -481,4 +481,11 @@ serve:
 ```
 - SIGTERM → 5s 대기 → SIGKILL 종료 패턴
 - Health check: `GET http://127.0.0.1:{port}/v1/health`
-- 바이너리 미설치 시 graceful skip (WARN 로그 후 계속)
+- 바이너리 미설치 시: `c5_embed` 빌드 태그로 빌드된 경우 `~/.c4/bin/c5`로 자동 추출 후 사용, 없으면 graceful skip
+
+#### c5 embed (c5_embed 빌드 태그)
+`TIER=full` CI 빌드 시 c5 바이너리를 cq 내부에 내장합니다.
+- 추출 경로: `~/.c4/bin/c5` (버전 캐시: `~/.c4/bin/.c5-version`)
+- 버전 일치 시 fast-path (재추출 생략)
+- CI: `build-c5` 스테이지 → `embed/c5/` 복사 → `build-cross TIER=full`
+- 로컬 개발: `make embed-c5 C5_BIN=<path> C5_VERSION=<ver>` 후 `-tags c5_embed` 빌드
