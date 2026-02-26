@@ -4,15 +4,23 @@
 
 ### `cq claude` / `cq cursor` / `cq codex`
 
-Initialize CQ in the current project for a specific AI agent.
+Initialize CQ in the current project for a specific AI coding tool.
 
 ```sh
 cq claude    # Claude Code
 cq cursor    # Cursor
-cq codex     # Codex CLI
+cq codex     # OpenAI Codex CLI
 ```
 
-Creates `.mcp.json`, `CLAUDE.md`, `.c4/` directory, and skill symlinks.
+Each command creates `CLAUDE.md`, `.c4/`, skills, and the MCP config for that tool:
+
+| Command | MCP config | Agent instructions |
+|---------|-----------|-------------------|
+| `cq claude` | `.mcp.json` | `CLAUDE.md` |
+| `cq cursor` | `.cursor/mcp.json` | `CLAUDE.md` |
+| `cq codex` | `~/.codex/config.toml` | `.codex/agents/` |
+
+> Any tool supporting the [AGENTS.md standard](https://agents.md) (e.g. Gemini Code Assist) can read `CLAUDE.md` directly without a dedicated `cq` command.
 
 ### `cq doctor`
 

@@ -1,11 +1,11 @@
 # What is CQ?
 
-**CQ** is a project management engine that runs alongside Claude Code.
+**CQ** is a project management engine that works with Claude Code, Cursor, and Codex CLI.
 
 It adds structure to AI-assisted development:
 
 - **Tasks** have a Definition of Done and are tracked in a local SQLite database
-- **Workers** are Claude Code instances that each handle one task in an isolated git worktree
+- **Workers** are AI agent instances (Claude Code, Cursor, or Codex CLI) that each handle one task in an isolated git worktree
 - **Reviews** are automatic — every implementation task gets a review task
 - **Checkpoints** act as phase gates before moving forward
 - **Knowledge** is recorded from every completed task and used to improve future ones
@@ -24,7 +24,7 @@ CQ uses the **Model Context Protocol (MCP)** — Claude Code talks to the CQ bin
 
 ## What CQ is not
 
-- Not an AI model — it orchestrates Claude Code
+- Not an AI model — it orchestrates AI coding tools
 - Not a code generator — workers write code, CQ manages the process
 - Not opinionated about your stack — works with any language or framework
 

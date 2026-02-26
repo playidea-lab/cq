@@ -4,19 +4,28 @@ This guide takes you from zero to your first CQ-managed task in under 5 minutes.
 
 ## Step 1: Initialize your project
 
-Open a terminal in your project directory and run:
+Open a terminal in your project directory and run the command for your AI tool:
 
 ```sh
 cd your-project
-cq claude
+cq claude   # Claude Code
+cq cursor   # Cursor
+cq codex    # OpenAI Codex CLI
 ```
 
-This creates:
-- `.mcp.json` — tells Claude Code where the CQ binary is
-- `CLAUDE.md` — injects CQ rules into Claude Code's context
-- `.c4/` — local database and config directory
+Each command creates `.CLAUDE.md`, `.c4/`, and the MCP config for your tool:
 
-Then **restart Claude Code** so it picks up the new MCP server.
+| Command | MCP config | Agent instructions |
+|---------|-----------|-------------------|
+| `cq claude` | `.mcp.json` | `CLAUDE.md` |
+| `cq cursor` | `.cursor/mcp.json` | `CLAUDE.md` |
+| `cq codex` | `~/.codex/config.toml` | `.codex/agents/` |
+
+Then **restart your AI tool** so it picks up the new MCP server.
+
+::: tip Other AI tools
+Any tool that supports the [AGENTS.md standard](https://agents.md) can read `CLAUDE.md` directly — no `cq init` required.
+:::
 
 ## Step 1.5: Log in (connected / full tier)
 
