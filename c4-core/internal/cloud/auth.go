@@ -269,6 +269,47 @@ func (c *AuthClient) RefreshToken() (*Session, error) {
 	return newSession, nil
 }
 
+// RefreshTokenWithToken exchanges a raw refresh token string for a new session
+// without requiring an existing session on disk. Useful for headless login.
+func (c *AuthClient) RefreshTokenWithToken(refreshToken string) (*Session, error) {
+	body := map[string]string{"refresh_token": refreshToken}
+	bodyJSON, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("marshaling refresh request: %w", err)
+	}
+
+	url := c.supabaseURL + "/auth/v1/token?grant_type=refresh_token"
+	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(bodyJSON))
+	if err != nil {
+		return nil, fmt.Errorf("creating refresh request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("apikey", c.anonKey)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("refresh request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		var errResp supabaseErrorResponse
+		json.NewDecoder(resp.Body).Decode(&errResp)
+		return nil, fmt.Errorf("refresh failed (HTTP %d): %s", resp.StatusCode, errResp.ErrorDescription)
+	}
+
+	var tokenResp supabaseTokenResponse
+	if err := json.NewDecoder(resp.Body).Decode(&tokenResp); err != nil {
+		return nil, fmt.Errorf("decoding refresh response: %w", err)
+	}
+
+	newSession := tokenResponseToSession(&tokenResp)
+	if err := c.saveSession(newSession); err != nil {
+		return nil, fmt.Errorf("saving refreshed session: %w", err)
+	}
+	return newSession, nil
+}
+
 // startCallbackServer2 starts a temporary HTTP server that handles Supabase's
 // implicit OAuth flow. Supabase returns tokens as URL fragments (#access_token=...),
 // so the callback page uses JavaScript to extract them and POST to /auth/token.

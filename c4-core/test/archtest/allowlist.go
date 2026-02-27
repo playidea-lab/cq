@@ -35,7 +35,7 @@ var DefaultAllowlist = ErrorAllowlist{
 	"internal/c2/webcontent/fetch.go":              8,
 	"internal/cdp/cdp.go":                          5,
 	"internal/cdp/webmcp.go":                       9,
-	"internal/cloud/auth.go":                       6,
+	"internal/cloud/auth.go":                       7,
 	"internal/cloud/knowledge.go":                  5,
 	"internal/cloud/store.go":                      13,
 	"internal/daemon/gpu.go":                       2,

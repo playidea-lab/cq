@@ -54,6 +54,18 @@ var authStatusCmd = &cobra.Command{
 	RunE:  runAuthStatus,
 }
 
+var authRefreshCmd = &cobra.Command{
+	Use:   "refresh <token>",
+	Short: "Login using a refresh token (headless)",
+	Long: `Exchange a refresh token for a new session without browser OAuth.
+
+Get your refresh token from another machine with: cq auth status
+Then run on the remote server:
+  cq auth refresh <refresh-token>`,
+	Args: cobra.ExactArgs(1),
+	RunE: runAuthRefresh,
+}
+
 var authTokenCmd = &cobra.Command{
 	Use:   "token",
 	Short: "Import a session token (headless login)",
@@ -80,6 +92,7 @@ func init() {
 	authCmd.AddCommand(authLoginCmd)
 	authCmd.AddCommand(authLogoutCmd)
 	authCmd.AddCommand(authStatusCmd)
+	authCmd.AddCommand(authRefreshCmd)
 	authCmd.AddCommand(authTokenCmd)
 	rootCmd.AddCommand(authCmd)
 }
@@ -228,6 +241,7 @@ func runAuthStatus(cmd *cobra.Command, args []string) error {
 
 	fmt.Printf("User:    %s (%s)\n", session.User.Name, session.User.Email)
 	fmt.Printf("ID:      %s\n", session.User.ID)
+	fmt.Printf("Refresh: %s\n", session.RefreshToken)
 
 	if expired {
 		fmt.Printf("Status:  expired (at %s)\n", expiresAt.Format(time.RFC3339))
@@ -237,6 +251,21 @@ func runAuthStatus(cmd *cobra.Command, args []string) error {
 		fmt.Printf("Status:  authenticated (expires in %s)\n", remaining)
 	}
 
+	return nil
+}
+
+func runAuthRefresh(cmd *cobra.Command, args []string) error {
+	client, err := newAuthClient()
+	if err != nil {
+		return err
+	}
+	session, err := client.RefreshTokenWithToken(args[0])
+	if err != nil {
+		return err
+	}
+	expiresAt := time.Unix(session.ExpiresAt, 0)
+	fmt.Printf("Logged in as %s (%s)\n", session.User.Name, session.User.Email)
+	fmt.Printf("Expires: %s\n", expiresAt.Format(time.RFC3339))
 	return nil
 }
 
