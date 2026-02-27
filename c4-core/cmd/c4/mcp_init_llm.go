@@ -28,7 +28,7 @@ func initLLM(ctx *initContext) error {
 	if ctx.db != nil {
 		gw.Tracker().SetDB(ctx.db)
 	}
-	llmhandler.RegisterLLMHandlers(ctx.reg, gw)
+	llmhandler.RegisterLLMHandlers(ctx.reg, gw, ctx.db)
 	fmt.Fprintf(os.Stderr, "cq: LLM gateway enabled (%d providers)\n", gw.ProviderCount())
 	return nil
 }

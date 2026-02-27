@@ -8,6 +8,7 @@ import (
 
 	"github.com/changmin/c4-core/internal/llm"
 	"github.com/changmin/c4-core/internal/mcp"
+	"github.com/changmin/c4-core/internal/mcp/handlers/llmhandler"
 )
 
 func setupLLMGateway(t *testing.T) (*mcp.Registry, *llm.Gateway, *llm.MockProvider) {
@@ -28,7 +29,7 @@ func setupLLMGateway(t *testing.T) (*mcp.Registry, *llm.Gateway, *llm.MockProvid
 	gw.Register(mock)
 
 	reg := mcp.NewRegistry()
-	RegisterLLMHandlers(reg, gw)
+	llmhandler.RegisterLLMHandlers(reg, gw, nil)
 	return reg, gw, mock
 }
 
@@ -209,7 +210,7 @@ func TestLLMCosts_CacheMetrics(t *testing.T) {
 	gw.Register(mock)
 
 	reg := mcp.NewRegistry()
-	RegisterLLMHandlers(reg, gw)
+	llmhandler.RegisterLLMHandlers(reg, gw, nil)
 
 	// Make one call to populate cost data.
 	_, err := reg.Call("c4_llm_call", json.RawMessage(`{"messages":[{"role":"user","content":"hi"}]}`))

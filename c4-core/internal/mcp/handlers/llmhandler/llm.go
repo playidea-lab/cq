@@ -4,6 +4,7 @@ package llmhandler
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"time"
@@ -12,8 +13,10 @@ import (
 	"github.com/changmin/c4-core/internal/mcp"
 )
 
-// RegisterLLMHandlers registers c4_llm_call, c4_llm_providers, and c4_llm_costs tools.
-func RegisterLLMHandlers(reg *mcp.Registry, gateway *llm.Gateway) {
+// RegisterLLMHandlers registers c4_llm_call, c4_llm_providers, c4_llm_costs,
+// and c4_llm_usage_stats tools.
+// db may be nil (stats tool returns zeros when DB is unavailable).
+func RegisterLLMHandlers(reg *mcp.Registry, gateway *llm.Gateway, db *sql.DB) {
 	reg.Register(mcp.ToolSchema{
 		Name:        "c4_llm_call",
 		Description: "Send a chat request through the LLM gateway with automatic routing and cost tracking",
@@ -68,6 +71,22 @@ func RegisterLLMHandlers(reg *mcp.Registry, gateway *llm.Gateway) {
 		},
 	}, func(_ json.RawMessage) (any, error) {
 		return handleLLMCosts(gateway)
+	})
+
+	reg.Register(mcp.ToolSchema{
+		Name:        "c4_llm_usage_stats",
+		Description: "Get LLM usage cost and cache statistics for the last N hours from persistent storage",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"hours": map[string]any{
+					"type":        "integer",
+					"description": "Number of hours to look back (default: 24)",
+				},
+			},
+		},
+	}, func(raw json.RawMessage) (any, error) {
+		return handleLLMUsageStats(db, raw)
 	})
 }
 
@@ -193,5 +212,91 @@ func handleLLMCosts(gateway *llm.Gateway) (any, error) {
 		"global_cache_savings_rate": globalSavingsRate,
 		"by_provider":               byProvider,
 		"by_model":                  report.ByModel,
+	}, nil
+}
+
+// handleLLMUsageStats queries the llm_usage SQLite table for the last N hours
+// and returns aggregate cost/cache statistics.
+func handleLLMUsageStats(db *sql.DB, raw json.RawMessage) (any, error) {
+	var params struct {
+		Hours int `json:"hours"`
+	}
+	if err := json.Unmarshal(raw, &params); err != nil {
+		return nil, fmt.Errorf("parsing params: %w", err)
+	}
+	if params.Hours <= 0 {
+		params.Hours = 24
+	}
+
+	// Return zeros when DB is unavailable.
+	if db == nil {
+		return map[string]any{
+			"total_cost_usd": 0.0,
+			"cache_hit_rate": 0.0,
+			"total_tokens":   0,
+			"top_models":     []any{},
+			"period_hours":   params.Hours,
+		}, nil
+	}
+
+	since := time.Now().UTC().Add(-time.Duration(params.Hours) * time.Hour).Format(time.RFC3339)
+
+	// Aggregate totals.
+	var totalCost float64
+	var totalPrompt, totalCompletion, totalCacheRead int64
+	err := db.QueryRow(`
+		SELECT COALESCE(SUM(cost_usd), 0),
+		       COALESCE(SUM(prompt_tok), 0),
+		       COALESCE(SUM(completion_tok), 0),
+		       COALESCE(SUM(cache_read_tok), 0)
+		FROM llm_usage WHERE ts >= ?`, since,
+	).Scan(&totalCost, &totalPrompt, &totalCompletion, &totalCacheRead)
+	if err != nil {
+		return nil, fmt.Errorf("querying llm_usage: %w", err)
+	}
+
+	// cache_hit_rate = sum(cache_read_tok) / (sum(prompt_tok) + sum(cache_read_tok))
+	// prompt_tok is the new (non-cached) input tokens; cache_read_tok is the cached portion.
+	var cacheHitRate float64
+	if denom := totalPrompt + totalCacheRead; denom > 0 {
+		cacheHitRate = float64(totalCacheRead) / float64(denom)
+	}
+
+	totalTokens := totalPrompt + totalCompletion + totalCacheRead
+
+	// Top 5 models by cost desc.
+	rows, err := db.Query(`
+		SELECT model, COALESCE(SUM(cost_usd), 0) AS total_cost, COUNT(*) AS call_count
+		FROM llm_usage WHERE ts >= ?
+		GROUP BY model ORDER BY total_cost DESC LIMIT 5`, since)
+	if err != nil {
+		return nil, fmt.Errorf("querying top models: %w", err)
+	}
+	defer rows.Close()
+
+	topModels := make([]map[string]any, 0, 5)
+	for rows.Next() {
+		var model string
+		var modelCost float64
+		var callCount int
+		if err := rows.Scan(&model, &modelCost, &callCount); err != nil {
+			return nil, fmt.Errorf("scanning top model row: %w", err)
+		}
+		topModels = append(topModels, map[string]any{
+			"model":          model,
+			"total_cost_usd": modelCost,
+			"call_count":     callCount,
+		})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating top models: %w", err)
+	}
+
+	return map[string]any{
+		"total_cost_usd": totalCost,
+		"cache_hit_rate": cacheHitRate,
+		"total_tokens":   totalTokens,
+		"top_models":     topModels,
+		"period_hours":   params.Hours,
 	}, nil
 }
