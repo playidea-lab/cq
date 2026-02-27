@@ -1,6 +1,6 @@
 //go:build c5_hub
 
-package handlers
+package hubhandler
 
 import (
 	"encoding/json"
@@ -26,6 +26,11 @@ func GetHubEventPub() eventbus.Publisher {
 		return hubEventPub
 	}
 	return eventbus.NoopPublisher{}
+}
+
+// GetHubProjectID returns the current project ID for Hub event publishing.
+func GetHubProjectID() string {
+	return hubProjectID
 }
 
 func registerHubJobHandlers(reg *mcp.Registry, hubClient *hub.Client) {

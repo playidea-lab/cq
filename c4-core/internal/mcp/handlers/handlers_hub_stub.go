@@ -3,12 +3,16 @@
 package handlers
 
 import (
-	"context"
-	"time"
-
 	"github.com/changmin/c4-core/internal/eventbus"
 	"github.com/changmin/c4-core/internal/mcp"
+	"github.com/changmin/c4-core/internal/mcp/handlers/hubhandler"
 )
+
+// HubPoller is a type alias for hubhandler.HubPoller.
+type HubPoller = hubhandler.HubPoller
+
+// HubPollerOption is a type alias for hubhandler.HubPollerOption.
+type HubPollerOption = hubhandler.HubPollerOption
 
 // RegisterHubHandlers is a no-op stub when c5_hub build tag is disabled.
 func RegisterHubHandlers(_ *mcp.Registry, _ any) {}
@@ -16,30 +20,15 @@ func RegisterHubHandlers(_ *mcp.Registry, _ any) {}
 // SetHubEventBus is a no-op stub when c5_hub build tag is disabled.
 func SetHubEventBus(_ eventbus.Publisher, _ string) {}
 
-// GetHubEventPub returns a no-op publisher when c5_hub build tag is disabled.
+// GetHubEventPub delegates to hubhandler.GetHubEventPub.
 func GetHubEventPub() eventbus.Publisher {
-	return eventbus.NoopPublisher{}
+	return hubhandler.GetHubEventPub()
 }
 
-// HubPoller is a placeholder type when c5_hub build tag is disabled.
-type HubPoller struct{}
-
-// NewHubPoller returns nil when c5_hub is disabled.
-func NewHubPoller(_ any, _ eventbus.Publisher, _ time.Duration, _ ...HubPollerOption) *HubPoller {
-	return nil
+// GetHubProjectID delegates to hubhandler.GetHubProjectID.
+func GetHubProjectID() string {
+	return hubhandler.GetHubProjectID()
 }
-
-// HubPollerOption is a placeholder when c5_hub build tag is disabled.
-type HubPollerOption func(*HubPoller)
-
-// WithMaxJobs is a no-op stub when c5_hub build tag is disabled.
-func WithMaxJobs(_ int) HubPollerOption { return func(*HubPoller) {} }
-
-// SetProjectID is a no-op when c5_hub is disabled.
-func (p *HubPoller) SetProjectID(_ string) {}
-
-// Start is a no-op when c5_hub is disabled.
-func (p *HubPoller) Start(_ context.Context) {}
 
 // WorkerDeps is a placeholder type when c5_hub build tag is disabled.
 type WorkerDeps struct {

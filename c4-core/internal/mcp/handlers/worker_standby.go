@@ -137,9 +137,9 @@ func handleWorkerStandby(mcpCtx context.Context, deps *WorkerDeps, raw json.RawM
 		return nil, fmt.Errorf("register worker: %w", err)
 	}
 	fmt.Fprintf(os.Stderr, "c4: worker %s registered (hub_id=%s)\n", params.WorkerID, hubWorkerID)
-	if hubEventPub != nil {
+	if pub := GetHubEventPub(); pub != nil {
 		payload, _ := json.Marshal(map[string]any{"worker_id": params.WorkerID, "hub_worker_id": hubWorkerID, "capabilities": caps})
-		hubEventPub.PublishAsync("hub.worker.registered", "c4.hub", payload, hubProjectID)
+		pub.PublishAsync("hub.worker.registered", "c4.hub", payload, GetHubProjectID())
 	}
 
 	// Setup shared #cq channel and presence if keeper available
@@ -346,12 +346,12 @@ func handleWorkerComplete(deps *WorkerDeps, raw json.RawMessage) (any, error) {
 	if params.Status == "FAILED" {
 		evType = "hub.job.failed"
 	}
-	if hubEventPub != nil {
+	if pub := GetHubEventPub(); pub != nil {
 		payload, _ := json.Marshal(map[string]any{
 			"job_id": params.JobID, "status": params.Status, "exit_code": exitCode,
 			"commit_sha": params.CommitSHA, "summary": params.Summary, "worker_id": params.WorkerID,
 		})
-		hubEventPub.PublishAsync(evType, "c4.hub", payload, hubProjectID)
+		pub.PublishAsync(evType, "c4.hub", payload, GetHubProjectID())
 	}
 	return map[string]any{
 		"status": "completed",

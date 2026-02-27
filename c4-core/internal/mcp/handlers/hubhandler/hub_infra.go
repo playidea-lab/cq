@@ -1,6 +1,6 @@
 //go:build c5_hub
 
-package handlers
+package hubhandler
 
 import (
 	"encoding/json"

@@ -212,6 +212,7 @@ func TestDependencyMatrix(t *testing.T) {
 			"internal/mcp/handlers/cfghandler",
 			"internal/mcp/handlers/fileops",
 			"internal/mcp/handlers/gitops",
+			"internal/mcp/handlers/hubhandler",
 			"internal/mcp/handlers/mailhandler",
 			"internal/mcp/handlers/secrethandler",
 			"internal/mcp/handlers/webcontent",
