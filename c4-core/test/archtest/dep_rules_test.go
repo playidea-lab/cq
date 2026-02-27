@@ -236,6 +236,60 @@ func TestDependencyMatrix(t *testing.T) {
 	}
 }
 
+// TestSubpackageNoSQLiteStore enforces that handlers/ subpackages do NOT
+// import the parent internal/mcp/handlers package.  Subpackages (fileops,
+// gitops, webcontent, cfghandler, secrethandler, mailhandler, artifacthandler,
+// etc.) should only depend on mcp.Registry and their own external deps — not
+// on the parent handlers package which contains SQLiteStore and heavy coupling.
+func TestSubpackageNoSQLiteStore(t *testing.T) {
+	t.Helper()
+	root := archtest.FindRoot(t)
+	pkgs := archtest.ParsePackages(root)
+	modPath := archtest.ModulePath(root)
+
+	handlersPkg := modPath + "/internal/mcp/handlers"
+	subpkgPrefix := "internal/mcp/handlers/"
+
+	for _, pkg := range pkgs {
+		if !strings.HasPrefix(pkg.PkgPath, subpkgPrefix) {
+			continue
+		}
+		// This is a subpackage of handlers/
+		for imp := range pkg.Imports {
+			if imp == handlersPkg {
+				t.Errorf("subpackage %s imports parent handlers package — forbidden (SQLiteStore coupling)", pkg.PkgPath)
+			}
+		}
+	}
+}
+
+// TestSubpackageNoCrossImport enforces that handlers/ subpackages do NOT
+// import each other (sibling imports forbidden).  Each subpackage must be
+// independently composable via mcp.Registry; sibling coupling would recreate
+// the same God-package problem the Wave 1/2 refactor aims to eliminate.
+func TestSubpackageNoCrossImport(t *testing.T) {
+	t.Helper()
+	root := archtest.FindRoot(t)
+	pkgs := archtest.ParsePackages(root)
+	modPath := archtest.ModulePath(root)
+
+	subpkgRelPrefix := "internal/mcp/handlers/"
+	subpkgFullPrefix := modPath + "/internal/mcp/handlers/"
+
+	for _, pkg := range pkgs {
+		if !strings.HasPrefix(pkg.PkgPath, subpkgRelPrefix) {
+			continue
+		}
+		// This is a subpackage — check it doesn't import other subpackages
+		pkgFull := modPath + "/" + pkg.PkgPath
+		for imp := range pkg.Imports {
+			if imp != pkgFull && strings.HasPrefix(imp, subpkgFullPrefix) {
+				t.Errorf("%s imports sibling subpackage %s — cross-import forbidden", pkg.PkgPath, imp)
+			}
+		}
+	}
+}
+
 // TestHandlersNoCmd enforces that internal/mcp/handlers does not import any
 // cmd/ package.  The handlers layer is library code; it must be usable without
 // pulling in the application entry-point binary.
