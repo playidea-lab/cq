@@ -4,10 +4,7 @@ from __future__ import annotations
 
 import sqlite3
 from pathlib import Path
-from unittest.mock import MagicMock, patch
-
-import pytest
-
+from unittest.mock import patch
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -61,7 +58,7 @@ class TestReindexWithOllamaMock:
 
     def test_reindex_five_docs_with_mock(self, tmp_path: Path) -> None:
         """Inject mock embedder; verify 5 docs are reindexed successfully."""
-        db = _make_knowledge_db(tmp_path / "knowledge")
+        _make_knowledge_db(tmp_path / "knowledge")
 
         mock_embedder = MockEmbedderForReindex(dimension=768)
 
@@ -88,7 +85,7 @@ class TestReindexWithOllamaMock:
 
     def test_reindex_partial_failure_counts_skipped(self, tmp_path: Path) -> None:
         """Documents that fail to index are counted as skipped."""
-        db = _make_knowledge_db(tmp_path / "knowledge", n_docs=3)
+        _make_knowledge_db(tmp_path / "knowledge", n_docs=3)
 
         class FailingEmbedder:
             call_count = 0

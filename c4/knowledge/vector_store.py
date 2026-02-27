@@ -366,6 +366,38 @@ class VectorStore:
         # Update stored dimension
         self.dimension = dim
 
+    def all_embeddings(self) -> dict[str, list[float]]:
+        """Return all stored embeddings as {id: vector} dict.
+
+        Used by distill/clustering to compute pairwise similarities.
+        Excludes chunk IDs (containing '-chunk-').
+
+        Returns:
+            Dict mapping external_id to embedding vector.
+        """
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            f"""
+            SELECT ids.external_id, vec.embedding
+            FROM {self.table_name} AS vec
+            JOIN c4_embedding_ids AS ids ON vec.rowid = ids.rowid
+            """
+        )
+        result: dict[str, list[float]] = {}
+        for external_id, embedding_blob in cursor.fetchall():
+            if "-chunk-" in external_id:
+                continue
+            if isinstance(embedding_blob, str):
+                result[external_id] = json.loads(embedding_blob)
+            elif isinstance(embedding_blob, bytes):
+                import struct
+                n = len(embedding_blob) // 4
+                result[external_id] = list(struct.unpack(f"{n}f", embedding_blob))
+            else:
+                result[external_id] = list(embedding_blob)
+        return result
+
     def close(self) -> None:
         """Close the database connection."""
         if self._conn is not None:
