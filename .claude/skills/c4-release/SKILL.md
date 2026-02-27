@@ -87,27 +87,28 @@ git log $(git describe --tags --abbrev=0 2>/dev/null || echo "HEAD~50")..HEAD \
 | Features | Minor (1.0.0 → 1.1.0) |
 | Bug Fixes only | Patch (1.0.0 → 1.0.1) |
 
-### 6. 태그 생성 (선택)
+### 6. 태그 생성 + Push
+
+CHANGELOG.md 커밋 후 자동으로 태그를 생성하고 origin에 push합니다.
 
 ```bash
-# 새 버전 태그
-git tag -a v0.2.0 -m "Release v0.2.0"
+# 태그 생성
+git tag -a vX.Y.Z -m "Release vX.Y.Z"
 
-# 원격에 푸시
-git push origin v0.2.0
+# main + 태그 push
+git push origin main
+git push origin vX.Y.Z
 ```
+
+`--no-push` 플래그 명시 시 로컬 태그 생성까지만 수행.
 
 ## Usage
 
 ```
-/c4-release
-```
-
-또는:
-
-```
+/c4-release            # CHANGELOG → 태그 → push (기본)
 /c4-release v0.2.0    # 특정 버전 지정
-/c4-release --dry-run # 미리보기만
+/c4-release --dry-run  # 미리보기만 (커밋/태그/push 없음)
+/c4-release --no-push  # 로컬 태그 생성까지만 (push 생략)
 ```
 
 ## Output 예시
@@ -127,10 +128,9 @@ Period: 2025-01-15 ~ 2025-01-21
 - 📚 Docs: 4
 - 🔧 Chores: 3
 
-📄 CHANGELOG.md updated
-🏷️ Tag v0.2.0 created (not pushed)
-
-Next: git push origin v0.2.0
+📄 CHANGELOG.md updated + committed
+🏷️  Tag v0.2.0 created
+🚀 Pushed: origin/main, origin/v0.2.0
 ```
 
 ## 자동화 옵션
