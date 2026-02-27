@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.35.0] - 2026-02-27
+
+### ✨ Features
+- **c4-tasks**: 세션 격리 — `session_id` 컬럼 추가로 다중 Claude Code 세션 간 태스크 그래프 혼합 방지 (`7ea3c2e1`)
+  - `CQ_SESSION_NAME` env var 또는 `pid-<PID>` fallback으로 세션 ID 자동 부여
+  - `AddTask` / `AssignTask` / `ListTasks` / `GetStatus` / `StaleTasks` 5곳에 세션 필터 적용
+  - `session_id=''` 레거시 태스크는 모든 세션에서 접근 가능 (하위 호환)
+  - `WithSessionID` Store 옵션 + `sessionClause/sessionArgs` 헬퍼
+  - 세션 격리 테스트 5개 추가 (TestSessionIsolation_*)
+  - Go 테스트: ~1,447 → ~1,452 (37 packages all pass)
+
+---
+
 ## [v0.34.0] - 2026-02-27
 
 ### ♻️ Refactoring
