@@ -1,6 +1,8 @@
-package handlers
+package knowledgehandler
 
 import (
+	"encoding/json"
+
 	"github.com/changmin/c4-core/internal/eventbus"
 	"github.com/changmin/c4-core/internal/knowledge"
 	"github.com/changmin/c4-core/internal/llm"
@@ -291,3 +293,23 @@ func toStringSliceAny(v any) []string {
 	return nil
 }
 
+
+func parseParams(rawArgs json.RawMessage) map[string]any {
+	var params map[string]any
+	if len(rawArgs) > 0 {
+		if err := json.Unmarshal(rawArgs, &params); err != nil {
+			params = nil
+		}
+	}
+	if params == nil {
+		params = make(map[string]any)
+	}
+	return params
+}
+
+func truncate(s string, max int) string {
+	if len(s) <= max {
+		return s
+	}
+	return s[:max] + "..."
+}

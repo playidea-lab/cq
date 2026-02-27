@@ -1,6 +1,6 @@
 //go:build !c1_messenger
 
-package handlers
+package c1handler
 
 import "github.com/changmin/c4-core/internal/mcp"
 
@@ -49,7 +49,7 @@ func (h *C1Handler) SendMessage(_, _, _ string, _ string, _ map[string]any) (map
 
 // ContextKeeper is a placeholder type when c1_messenger is disabled.
 type ContextKeeper struct {
-	c1 *C1Handler
+	C1 *C1Handler
 }
 
 // NewContextKeeper returns nil when c1_messenger is disabled.

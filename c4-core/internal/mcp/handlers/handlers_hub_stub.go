@@ -5,6 +5,7 @@ package handlers
 import (
 	"github.com/changmin/c4-core/internal/eventbus"
 	"github.com/changmin/c4-core/internal/mcp"
+	"github.com/changmin/c4-core/internal/mcp/handlers/c1handler"
 	"github.com/changmin/c4-core/internal/mcp/handlers/hubhandler"
 )
 
@@ -34,7 +35,7 @@ func GetHubProjectID() string {
 type WorkerDeps struct {
 	HubClient     any
 	ShutdownStore any
-	Keeper        *ContextKeeper
+	Keeper        *c1handler.ContextKeeper
 }
 
 // RegisterWorkerHandlers is a no-op stub when c5_hub build tag is disabled.

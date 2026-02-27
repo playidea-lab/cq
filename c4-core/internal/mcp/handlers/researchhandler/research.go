@@ -1,12 +1,12 @@
 //go:build research
 
-package handlers
+package researchhandler
 
 import "github.com/changmin/c4-core/internal/mcp"
 
 // RegisterResearchProxyHandlers registers MCP tools for the research loop tracker.
 // All tools proxy to the Python sidecar's ResearchStore via JSON-RPC.
-func RegisterResearchProxyHandlers(reg *mcp.Registry, proxy *BridgeProxy) {
+func RegisterResearchProxyHandlers(reg *mcp.Registry, proxy Caller) {
 	reg.Register(mcp.ToolSchema{
 		Name:        "c4_research_start",
 		Description: "Start a research project (paper + experiments iteration loop)",

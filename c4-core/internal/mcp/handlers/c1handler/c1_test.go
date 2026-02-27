@@ -1,7 +1,7 @@
 //go:build c1_messenger
 
 
-package handlers
+package c1handler
 
 import (
 	"encoding/json"

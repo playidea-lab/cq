@@ -1,4 +1,4 @@
-package handlers
+package knowledgehandler
 
 import (
 	"encoding/json"

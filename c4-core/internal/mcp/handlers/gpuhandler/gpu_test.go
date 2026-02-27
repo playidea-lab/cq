@@ -1,7 +1,7 @@
 //go:build gpu
 
 
-package handlers
+package gpuhandler
 
 import (
 	"encoding/json"

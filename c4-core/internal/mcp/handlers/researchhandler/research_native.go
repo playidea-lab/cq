@@ -1,7 +1,7 @@
 //go:build research
 
 
-package handlers
+package researchhandler
 
 import (
 	"encoding/json"

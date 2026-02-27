@@ -1,7 +1,7 @@
 //go:build c1_messenger
 
 
-package handlers
+package c1handler
 
 import (
 	"bytes"
@@ -22,7 +22,7 @@ import (
 // ContextKeeper generates and maintains channel summaries using LLM.
 // It is event-driven: triggered by task completions, checkpoints, or explicit requests.
 type ContextKeeper struct {
-	c1            *C1Handler
+	C1            *C1Handler
 	gateway       *llm.Gateway
 	minMessages   int    // minimum new messages before triggering summary update
 	systemMemberID string // cached system member ID
@@ -32,7 +32,7 @@ type ContextKeeper struct {
 // gateway may be nil if LLM is not configured (summary updates will be skipped).
 func NewContextKeeper(c1 *C1Handler, gateway *llm.Gateway) *ContextKeeper {
 	return &ContextKeeper{
-		c1:          c1,
+		C1:          c1,
 		gateway:     gateway,
 		minMessages: 5,
 	}
@@ -109,7 +109,7 @@ func (k *ContextKeeper) UpdateChannelSummary(channelID string) error {
 // EnsureChannel creates the channel if it doesn't exist, or returns the existing ID.
 func (k *ContextKeeper) EnsureChannel(name, description, channelType string) (string, error) {
 	// Try to resolve existing
-	channelID, err := k.c1.resolveChannelID(name)
+	channelID, err := k.C1.resolveChannelID(name)
 	if err != nil {
 		return "", fmt.Errorf("resolve channel %s: %w", name, err)
 	}
@@ -119,7 +119,7 @@ func (k *ContextKeeper) EnsureChannel(name, description, channelType string) (st
 
 	// Create new channel
 	payload := map[string]any{
-		"project_id":   k.c1.projectID,
+		"project_id":   k.C1.projectID,
 		"name":         name,
 		"description":  description,
 		"channel_type": channelType,
@@ -127,7 +127,7 @@ func (k *ContextKeeper) EnsureChannel(name, description, channelType string) (st
 	var rows []struct {
 		ID string `json:"id"`
 	}
-	if err := k.c1.httpPostReturn("c1_channels", payload, &rows); err != nil {
+	if err := k.C1.httpPostReturn("c1_channels", payload, &rows); err != nil {
 		return "", fmt.Errorf("create channel %s: %w", name, err)
 	}
 	if len(rows) > 0 {
@@ -141,7 +141,7 @@ func (k *ContextKeeper) ensureSystemMember() string {
 	if k.systemMemberID != "" {
 		return k.systemMemberID
 	}
-	memberID, err := k.c1.EnsureMember("system", "c4-engine", "C4 System")
+	memberID, err := k.C1.EnsureMember("system", "c4-engine", "C4 System")
 	if err != nil {
 		log.Printf("[keeper] failed to ensure system member: %v", err)
 		return ""
@@ -163,7 +163,7 @@ func (k *ContextKeeper) AutoPost(channelName, content string) error {
 	// Post system message
 	payload := map[string]any{
 		"channel_id":  channelID,
-		"project_id":  k.c1.projectID,
+		"project_id":  k.C1.projectID,
 		"sender_type": "system",
 		"sender_id":   "c4-engine",
 		"sender_name": "system",
@@ -172,7 +172,7 @@ func (k *ContextKeeper) AutoPost(channelName, content string) error {
 	if memberID != "" {
 		payload["member_id"] = memberID
 	}
-	if err := k.c1.httpPost("c1_messages", payload); err != nil {
+	if err := k.C1.httpPost("c1_messages", payload); err != nil {
 		return fmt.Errorf("auto-post to %s: %w", channelName, err)
 	}
 
@@ -218,8 +218,8 @@ func (k *ContextKeeper) deleteLegacyChannels() {
 		Name string `json:"name"`
 	}
 	var rows []channelRow
-	filter := fmt.Sprintf("project_id=eq.%s&select=id,name", url.QueryEscape(k.c1.projectID))
-	if err := k.c1.httpGet("c1_channels", filter, &rows); err != nil {
+	filter := fmt.Sprintf("project_id=eq.%s&select=id,name", url.QueryEscape(k.C1.projectID))
+	if err := k.C1.httpGet("c1_channels", filter, &rows); err != nil {
 		fmt.Fprintf(os.Stderr, "cq: [keeper] list channels for cleanup: %v\n", err)
 		return
 	}
@@ -227,7 +227,7 @@ func (k *ContextKeeper) deleteLegacyChannels() {
 		// Delete old per-worker channels (worker-*)
 		// Delete channels whose name starts with '#' (e.g. #updates duplicate)
 		if strings.HasPrefix(ch.Name, "worker-") || strings.HasPrefix(ch.Name, "#") {
-			if err := k.c1.httpDelete("c1_channels", fmt.Sprintf("id=eq.%s", ch.ID)); err != nil {
+			if err := k.C1.httpDelete("c1_channels", fmt.Sprintf("id=eq.%s", ch.ID)); err != nil {
 				fmt.Fprintf(os.Stderr, "cq: [keeper] delete legacy channel %q: %v\n", ch.Name, err)
 			} else {
 				fmt.Fprintf(os.Stderr, "cq: [keeper] deleted legacy channel %q\n", ch.Name)
@@ -245,9 +245,9 @@ func (k *ContextKeeper) resetStaleAgentPresence() {
 	var rows []memberRow
 	filter := fmt.Sprintf(
 		"project_id=eq.%s&member_type=eq.agent&status=in.(online,working,idle)&select=id",
-		url.QueryEscape(k.c1.projectID),
+		url.QueryEscape(k.C1.projectID),
 	)
-	if err := k.c1.httpGet("c1_members", filter, &rows); err != nil {
+	if err := k.C1.httpGet("c1_members", filter, &rows); err != nil {
 		fmt.Fprintf(os.Stderr, "cq: [keeper] list stale agents: %v\n", err)
 		return
 	}
@@ -259,16 +259,16 @@ func (k *ContextKeeper) resetStaleAgentPresence() {
 	patchBody, _ := json.Marshal(patch)
 	patchFilter := fmt.Sprintf(
 		"project_id=eq.%s&member_type=eq.agent&status=in.(online,working,idle)",
-		url.QueryEscape(k.c1.projectID),
+		url.QueryEscape(k.C1.projectID),
 	)
-	u := k.c1.baseURL + "/c1_members?" + patchFilter
+	u := k.C1.baseURL + "/c1_members?" + patchFilter
 	req, err := http.NewRequest("PATCH", u, bytes.NewReader(patchBody))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "cq: [keeper] patch stale agents: %v\n", err)
 		return
 	}
-	k.c1.setHeaders(req)
-	resp, err := k.c1.httpClient.Do(req)
+	k.C1.setHeaders(req)
+	resp, err := k.C1.httpClient.Do(req)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "cq: [keeper] patch stale agents: %v\n", err)
 		return
@@ -282,7 +282,7 @@ func (k *ContextKeeper) getSummary(channelID string) (*keeperSummaryRow, error) 
 	var rows []keeperSummaryRow
 	filter := fmt.Sprintf("channel_id=eq.%s&select=channel_id,summary,key_decisions,open_questions,active_tasks,last_message_id,message_count",
 		url.QueryEscape(channelID))
-	if err := k.c1.httpGet("c1_channel_summaries", filter, &rows); err != nil {
+	if err := k.C1.httpGet("c1_channel_summaries", filter, &rows); err != nil {
 		return nil, err
 	}
 	if len(rows) == 0 {
@@ -305,13 +305,13 @@ func (k *ContextKeeper) getMessagesSince(channelID, lastMessageID string) ([]kee
 		// This is simpler than filtering by ID ordering
 		var lastMsgs []keeperMessageRow
 		lastFilter := fmt.Sprintf("id=eq.%s&select=id,sender_name,content,created_at", url.QueryEscape(lastMessageID))
-		if err := k.c1.httpGet("c1_messages", lastFilter, &lastMsgs); err == nil && len(lastMsgs) > 0 {
+		if err := k.C1.httpGet("c1_messages", lastFilter, &lastMsgs); err == nil && len(lastMsgs) > 0 {
 			filters = append(filters, fmt.Sprintf("created_at=gt.%s", url.QueryEscape(lastMsgs[0].CreatedAt)))
 		}
 	}
 
 	filter := strings.Join(filters, "&")
-	if err := k.c1.httpGet("c1_messages", filter, &messages); err != nil {
+	if err := k.C1.httpGet("c1_messages", filter, &messages); err != nil {
 		return nil, err
 	}
 	return messages, nil
@@ -384,7 +384,7 @@ func (k *ContextKeeper) upsertSummary(channelID string, result *summaryResult, l
 		"message_count":   messageCount,
 	}
 
-	return k.c1.httpUpsert("c1_channel_summaries", "channel_id", payload)
+	return k.C1.httpUpsert("c1_channel_summaries", "channel_id", payload)
 }
 
 // httpPostReturn performs a POST request and decodes the response body.

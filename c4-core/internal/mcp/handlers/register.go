@@ -10,6 +10,9 @@ import (
 	"github.com/changmin/c4-core/internal/mcp/handlers/cfghandler"
 	"github.com/changmin/c4-core/internal/mcp/handlers/fileops"
 	"github.com/changmin/c4-core/internal/mcp/handlers/gitops"
+	"github.com/changmin/c4-core/internal/mcp/handlers/gpuhandler"
+	"github.com/changmin/c4-core/internal/mcp/handlers/knowledgehandler"
+	"github.com/changmin/c4-core/internal/mcp/handlers/researchhandler"
 	"github.com/changmin/c4-core/internal/mcp/handlers/secrethandler"
 	handlerswc "github.com/changmin/c4-core/internal/mcp/handlers/webcontent"
 	"github.com/changmin/c4-core/internal/research"
@@ -77,14 +80,34 @@ func RegisterAllHandlersWithOpts(reg *mcp.Registry, store Store, rootDir string,
 
 	// Register native tools that replaced proxy calls.
 	// Each component has its own build-tagged wrapper or is always-compiled inline.
-	// Research (5 tools) — build-tagged: registerResearchNative in handlers_research_wrapper.go / handlers_research_stub.go
-	registerResearchNative(reg, proxy, opts)
-	// GPU (6 tools) — build-tagged: registerGPUNative in handlers_gpu_wrapper.go / handlers_gpu_stub.go
-	registerGPUNative(reg, opts)
+	// Research (5 tools) — build-tagged via researchhandler subpackage
+	var researchStore *research.Store
+	if opts != nil {
+		researchStore = opts.ResearchStore
+	}
+	researchhandler.Register(reg, researchStore, proxy)
+	// GPU (6 tools) — build-tagged via gpuhandler subpackage
+	var gpuStore *daemon.Store
+	var gpuScheduler *daemon.Scheduler
+	if opts != nil {
+		gpuStore = opts.GPUStore
+		gpuScheduler = opts.GPUScheduler
+	}
+	gpuhandler.Register(reg, gpuStore, gpuScheduler)
 	// C2 (8 tools) — always compiled (no heavy deps)
 	registerC2Native(reg, proxy)
-	// Knowledge (13+ tools) — always compiled (uses interfaces from interfaces.go)
-	registerKnowledgeNative(reg, proxy, opts, knowledgeCloud)
+	// Knowledge (13+ tools) — build-tagged via knowledgehandler subpackage
+	if opts != nil && opts.KnowledgeStore != nil {
+		knowledgehandler.RegisterKnowledgeNativeHandlers(reg, &knowledgehandler.KnowledgeNativeOpts{
+			Store:    opts.KnowledgeStore,
+			Searcher: opts.KnowledgeSearcher,
+			Cloud:    opts.KnowledgeCloud,
+			Usage:    opts.KnowledgeUsage,
+			LLM:      opts.LLMGateway,
+		})
+	} else {
+		registerKnowledgeProxy(reg, proxy, knowledgeCloud)
+	}
 
 	return proxy
 }
@@ -101,21 +124,6 @@ func registerC2Native(reg *mcp.Registry, proxy *BridgeProxy) {
 	RegisterC2DocProxyHandlers(reg, proxy)
 }
 
-// registerKnowledgeNative registers Knowledge tools (13+).
-// Always compiled — no build tag (Knowledge native uses interfaces from interfaces.go).
-func registerKnowledgeNative(reg *mcp.Registry, proxy *BridgeProxy, opts *NativeOpts, knowledgeCloud KnowledgeSyncer) {
-	if opts != nil && opts.KnowledgeStore != nil {
-		RegisterKnowledgeNativeHandlers(reg, &KnowledgeNativeOpts{
-			Store:    opts.KnowledgeStore,
-			Searcher: opts.KnowledgeSearcher,
-			Cloud:    opts.KnowledgeCloud,
-			Usage:    opts.KnowledgeUsage,
-			LLM:      opts.LLMGateway,
-		})
-	} else {
-		registerKnowledgeProxy(reg, proxy, knowledgeCloud)
-	}
-}
 
 // RegisterConfigHandlers registers c4_config_get and c4_config_set via cfghandler subpackage.
 func RegisterConfigHandlers(reg *mcp.Registry, mgr *config.Manager, projectRoot string) {

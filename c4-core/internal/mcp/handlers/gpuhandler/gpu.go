@@ -1,7 +1,7 @@
 //go:build gpu
 
 
-package handlers
+package gpuhandler
 
 import (
 	"encoding/json"
@@ -11,6 +11,11 @@ import (
 	"github.com/changmin/c4-core/internal/daemon"
 	"github.com/changmin/c4-core/internal/mcp"
 )
+
+// Register is the subpackage entry point — registers all GPU tools.
+func Register(reg *mcp.Registry, gpuStore *daemon.Store, scheduler *daemon.Scheduler) {
+	RegisterGPUNativeHandlers(reg, gpuStore, scheduler)
+}
 
 // RegisterGPUNativeHandlers registers GPU tools as Go native handlers.
 // Uses daemon.GpuMonitor for nvidia-smi detection and daemon.Store for job management.

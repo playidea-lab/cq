@@ -13,6 +13,7 @@ import (
 	"github.com/changmin/c4-core/internal/cloud"
 	"github.com/changmin/c4-core/internal/hub"
 	"github.com/changmin/c4-core/internal/mcp"
+	"github.com/changmin/c4-core/internal/mcp/handlers/c1handler"
 	"github.com/changmin/c4-core/internal/worker"
 	_ "modernc.org/sqlite"
 )
@@ -51,8 +52,8 @@ func testWorkerDeps(t *testing.T, hubHandler http.HandlerFunc, keeperHandler htt
 	if keeperHandler != nil {
 		keeperServer := httptest.NewServer(keeperHandler)
 		t.Cleanup(keeperServer.Close)
-		c1 := NewC1Handler(keeperServer.URL, "test-key", cloud.NewStaticTokenProvider("test-token"), "proj-1")
-		deps.Keeper = NewContextKeeper(c1, nil)
+		c1 := c1handler.NewC1Handler(keeperServer.URL, "test-key", cloud.NewStaticTokenProvider("test-token"), "proj-1")
+		deps.Keeper = c1handler.NewContextKeeper(c1, nil)
 	}
 
 	return deps, hubServer

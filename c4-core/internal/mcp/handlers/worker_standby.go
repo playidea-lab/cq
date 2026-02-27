@@ -12,6 +12,7 @@ import (
 
 	"github.com/changmin/c4-core/internal/hub"
 	"github.com/changmin/c4-core/internal/mcp"
+	"github.com/changmin/c4-core/internal/mcp/handlers/c1handler"
 	"github.com/changmin/c4-core/internal/worker"
 )
 
@@ -25,7 +26,7 @@ type workerEntry struct {
 type WorkerDeps struct {
 	HubClient     *hub.Client
 	ShutdownStore *worker.ShutdownStore
-	Keeper        *ContextKeeper // may be nil if C1 not enabled
+	Keeper        *c1handler.ContextKeeper // may be nil if C1 not enabled
 
 	// activeWorkers tracks running standby goroutines by worker_id.
 	// A new standby cancels the previous goroutine for the same worker_id.
@@ -112,7 +113,7 @@ func handleWorkerStandby(mcpCtx context.Context, deps *WorkerDeps, raw json.RawM
 			delete(deps.activeWorkers, params.WorkerID)
 			deps.activeWorkersMu.Unlock()
 			if deps.Keeper != nil {
-				deps.Keeper.c1.UpdatePresence("agent", params.WorkerID, "offline", "Standby ended")
+				deps.Keeper.C1.UpdatePresence("agent", params.WorkerID, "offline", "Standby ended")
 			}
 		} else {
 			deps.activeWorkersMu.Unlock()
@@ -150,8 +151,8 @@ func handleWorkerStandby(mcpCtx context.Context, deps *WorkerDeps, raw json.RawM
 		if chErr != nil {
 			fmt.Fprintf(os.Stderr, "c4: #cq channel creation failed: %v\n", chErr)
 		}
-		deps.Keeper.c1.EnsureMember("agent", params.WorkerID, params.WorkerID)
-		deps.Keeper.c1.UpdatePresence("agent", params.WorkerID, "online", "Waiting for jobs in #cq")
+		deps.Keeper.C1.EnsureMember("agent", params.WorkerID, params.WorkerID)
+		deps.Keeper.C1.UpdatePresence("agent", params.WorkerID, "online", "Waiting for jobs in #cq")
 	}
 
 	// hubPollResult carries the result of a Hub long-poll attempt.
@@ -206,7 +207,7 @@ func handleWorkerStandby(mcpCtx context.Context, deps *WorkerDeps, raw json.RawM
 			}
 			// Hub job found — update presence and return
 			if deps.Keeper != nil {
-				deps.Keeper.c1.UpdatePresence("agent", params.WorkerID, "working", "Job: "+result.job.GetID())
+				deps.Keeper.C1.UpdatePresence("agent", params.WorkerID, "working", "Job: "+result.job.GetID())
 				deps.Keeper.AutoPost("cq", fmt.Sprintf("Worker %s claimed job %s: %s", params.WorkerID, result.job.GetID(), result.job.Command))
 			}
 			// Start background lease renewal goroutine for this job.
@@ -227,25 +228,25 @@ func handleWorkerStandby(mcpCtx context.Context, deps *WorkerDeps, raw json.RawM
 			// Check shutdown signal
 			if reason, ok := deps.ShutdownStore.ConsumeSignal(params.WorkerID); ok {
 				if deps.Keeper != nil {
-					deps.Keeper.c1.UpdatePresence("agent", params.WorkerID, "offline", "Shutdown: "+reason)
+					deps.Keeper.C1.UpdatePresence("agent", params.WorkerID, "offline", "Shutdown: "+reason)
 				}
 				return map[string]any{"shutdown": true, "reason": reason}, nil
 			}
 
 			// Poll #cq channel for @cq mentions
 			if deps.Keeper != nil && cqChannelID != "" {
-				mentions, pollErr := deps.Keeper.c1.PollCqMentions(cqChannelID, 5)
+				mentions, pollErr := deps.Keeper.C1.PollCqMentions(cqChannelID, 5)
 				if pollErr != nil {
 					fmt.Fprintf(os.Stderr, "c4: worker %s poll #cq error: %v\n", params.WorkerID, pollErr)
 				}
 				for _, msg := range mentions {
-					claimed, claimErr := deps.Keeper.c1.ClaimMessage(msg.ID, params.WorkerID)
+					claimed, claimErr := deps.Keeper.C1.ClaimMessage(msg.ID, params.WorkerID)
 					if claimErr != nil {
 						fmt.Fprintf(os.Stderr, "c4: worker %s claim msg %s error: %v\n", params.WorkerID, msg.ID, claimErr)
 						continue
 					}
 					if claimed {
-						deps.Keeper.c1.UpdatePresence("agent", params.WorkerID, "idle", "Dispatched: "+msg.ID)
+						deps.Keeper.C1.UpdatePresence("agent", params.WorkerID, "idle", "Dispatched: "+msg.ID)
 						return map[string]any{
 							"dispatched":  true,
 							"message_id":  msg.ID,
@@ -327,7 +328,7 @@ func handleWorkerComplete(deps *WorkerDeps, raw json.RawMessage) (any, error) {
 
 	// Update C1 presence and post to #cq channel
 	if deps.Keeper != nil {
-		deps.Keeper.c1.UpdatePresence("agent", params.WorkerID, "idle", "Job done, waiting for next")
+		deps.Keeper.C1.UpdatePresence("agent", params.WorkerID, "idle", "Job done, waiting for next")
 
 		statusIcon := "done"
 		if params.Status == "FAILED" {
@@ -402,7 +403,7 @@ func handleWorkerShutdown(deps *WorkerDeps, raw json.RawMessage) (any, error) {
 
 	// Update presence and post to #cq channel
 	if deps.Keeper != nil {
-		deps.Keeper.c1.UpdatePresence("agent", params.WorkerID, "offline", "Shutdown: "+params.Reason)
+		deps.Keeper.C1.UpdatePresence("agent", params.WorkerID, "offline", "Shutdown: "+params.Reason)
 		deps.Keeper.AutoPost("cq", "Worker "+params.WorkerID+" shutdown: "+params.Reason)
 	}
 

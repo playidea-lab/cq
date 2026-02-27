@@ -10,6 +10,7 @@ import (
 	"github.com/changmin/c4-core/internal/eventbus"
 	"github.com/changmin/c4-core/internal/mcp/handlers"
 	"github.com/changmin/c4-core/internal/mcp/handlers/eventbushandler"
+	"github.com/changmin/c4-core/internal/mcp/handlers/knowledgehandler"
 	"github.com/changmin/c4-core/internal/serve"
 )
 
@@ -123,7 +124,7 @@ func wireAllEventBus(ctx *initContext, ebClient *eventbus.Client) {
 	}
 	// Core wiring (always active, not build-tagged)
 	handlers.SetValidationEventBus(ebClient)
-	handlers.SetKnowledgeEventBus(ebClient, ctx.sqliteStore.GetProjectID())
+	knowledgehandler.SetKnowledgeEventBus(ebClient, ctx.sqliteStore.GetProjectID())
 }
 
 // wireLocalDispatcher creates a minimal local dispatcher for C1 posting

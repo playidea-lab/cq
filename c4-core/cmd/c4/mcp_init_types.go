@@ -15,6 +15,7 @@ import (
 	"github.com/changmin/c4-core/internal/mailbox"
 	"github.com/changmin/c4-core/internal/mcp"
 	"github.com/changmin/c4-core/internal/mcp/handlers"
+	"github.com/changmin/c4-core/internal/mcp/handlers/c1handler"
 	"github.com/changmin/c4-core/internal/research"
 	"github.com/changmin/c4-core/internal/secrets"
 	"github.com/changmin/c4-core/internal/serve"
@@ -61,7 +62,7 @@ type initContext struct {
 	hubPollerCancel context.CancelFunc
 
 	// C1 (set by initC1 post-store hook)
-	keeper *handlers.ContextKeeper
+	keeper *c1handler.ContextKeeper
 
 	// EventBus (set by initEventBus post-store hook)
 	embeddedEB   *eventbus.EmbeddedServer

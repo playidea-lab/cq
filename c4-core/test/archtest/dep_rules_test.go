@@ -209,15 +209,19 @@ func TestDependencyMatrix(t *testing.T) {
 			"internal/mailbox",
 			"internal/mcp",
 			"internal/mcp/handlers/artifacthandler",
+			"internal/mcp/handlers/c1handler",
 			"internal/mcp/handlers/cfghandler",
 			"internal/mcp/handlers/fileops",
 			"internal/mcp/handlers/gitops",
 			"internal/mcp/handlers/cdphandler",
 			"internal/mcp/handlers/drivehandler",
 			"internal/mcp/handlers/eventbushandler",
+			"internal/mcp/handlers/gpuhandler",
 			"internal/mcp/handlers/hubhandler",
+			"internal/mcp/handlers/knowledgehandler",
 			"internal/mcp/handlers/llmhandler",
 			"internal/mcp/handlers/mailhandler",
+			"internal/mcp/handlers/researchhandler",
 			"internal/mcp/handlers/secrethandler",
 			"internal/mcp/handlers/webcontent",
 			"internal/observe",
@@ -244,6 +248,28 @@ func TestDependencyMatrix(t *testing.T) {
 		},
 		"internal/mcp/handlers/artifacthandler": {
 			"internal/mcp",
+		},
+		// Wave 2c sub-packages: c1handler, gpuhandler, knowledgehandler, researchhandler
+		"internal/mcp/handlers/c1handler": {
+			"internal/cloud",
+			"internal/llm",
+			"internal/mcp",
+		},
+		"internal/mcp/handlers/gpuhandler": {
+			"internal/daemon",
+			"internal/mcp",
+		},
+		"internal/mcp/handlers/knowledgehandler": {
+			"internal/c2/webcontent",
+			"internal/eventbus",
+			"internal/knowledge",
+			"internal/llm",
+			"internal/mcp",
+		},
+		"internal/mcp/handlers/researchhandler": {
+			"internal/eventbus",
+			"internal/mcp",
+			"internal/research",
 		},
 	}
 

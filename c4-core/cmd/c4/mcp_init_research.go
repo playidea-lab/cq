@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 
 	"github.com/changmin/c4-core/internal/eventbus"
-	"github.com/changmin/c4-core/internal/mcp/handlers"
+	"github.com/changmin/c4-core/internal/mcp/handlers/researchhandler"
 	"github.com/changmin/c4-core/internal/research"
 )
 
@@ -35,7 +35,7 @@ func initResearch(ctx *initContext) error {
 
 // wireResearchEventBus wires the eventbus to Research components.
 func wireResearchEventBus(ctx *initContext, ebClient *eventbus.Client) {
-	handlers.SetResearchEventBus(ebClient, ctx.sqliteStore.GetProjectID())
+	researchhandler.SetResearchEventBus(ebClient, ctx.sqliteStore.GetProjectID())
 }
 
 // shutdownResearch cleans up research resources.
