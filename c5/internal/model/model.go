@@ -599,6 +599,24 @@ type CreateAPIKeyResponse struct {
 	ProjectID string `json:"project_id"`
 }
 
+// =========================================================================
+// Device Auth Models (OAuth 2.0 Device Authorization Grant)
+// =========================================================================
+
+// DeviceSession tracks a device authorization flow session.
+type DeviceSession struct {
+	State         string    `json:"state"`
+	UserCode      string    `json:"user_code"`
+	CSRFToken     string    `json:"csrf_token,omitempty"`
+	CodeChallenge string    `json:"code_challenge"`
+	SupabaseURL   string    `json:"supabase_url"`
+	AuthCode      string    `json:"auth_code,omitempty"`
+	Status        string    `json:"status"` // pending, ready, expired
+	PollCount     int       `json:"poll_count"`
+	ExpiresAt     time.Time `json:"expires_at"`
+	CreatedAt     time.Time `json:"created_at"`
+}
+
 // ctxKey is a context key type for auth data.
 type ctxKey string
 
