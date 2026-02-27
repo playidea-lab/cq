@@ -13,6 +13,8 @@ import (
 
 const defaultOllamaBaseURL = "http://localhost:11434"
 
+var _ Provider = (*OllamaProvider)(nil)
+
 // OllamaProvider implements the Provider interface for the Ollama local API.
 type OllamaProvider struct {
 	baseURL string

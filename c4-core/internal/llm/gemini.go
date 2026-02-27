@@ -13,6 +13,8 @@ import (
 
 const defaultGeminiBaseURL = "https://generativelanguage.googleapis.com"
 
+var _ Provider = (*GeminiProvider)(nil)
+
 // GeminiProvider implements the Provider interface for Google's Gemini GenerateContent API.
 type GeminiProvider struct {
 	apiKey  string

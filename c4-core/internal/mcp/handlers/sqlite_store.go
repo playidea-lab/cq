@@ -15,7 +15,10 @@ import (
 	"github.com/changmin/c4-core/internal/config"
 	"github.com/changmin/c4-core/internal/mcp"
 	"github.com/changmin/c4-core/internal/state"
+	"github.com/changmin/c4-core/internal/store"
 )
+
+var _ store.Store = (*SQLiteStore)(nil)
 
 // SQLiteStore implements the handlers.Store interface backed by SQLite.
 // It operates on the shared .c4/tasks.db used by both Go and Python.

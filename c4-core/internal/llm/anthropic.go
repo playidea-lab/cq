@@ -17,6 +17,8 @@ const (
 	anthropicBetaCaching    = "prompt-caching-2024-07-31"
 )
 
+var _ Provider = (*AnthropicProvider)(nil)
+
 // AnthropicProvider implements the Provider interface for Anthropic's Messages API.
 type AnthropicProvider struct {
 	apiKey  string

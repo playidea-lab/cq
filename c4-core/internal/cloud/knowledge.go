@@ -9,7 +9,11 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/changmin/c4-core/internal/knowledge"
 )
+
+var _ knowledge.CloudSyncer = (*KnowledgeCloudClient)(nil)
 
 // KnowledgeCloudClient handles cloud sync for knowledge documents.
 // Uses the same PostgREST REST API pattern as CloudStore.

@@ -13,6 +13,8 @@ import (
 
 const defaultOpenAIBaseURL = "https://api.openai.com"
 
+var _ Provider = (*OpenAIProvider)(nil)
+
 // OpenAIProvider implements the Provider interface for the OpenAI Chat Completions API.
 type OpenAIProvider struct {
 	apiKey  string
