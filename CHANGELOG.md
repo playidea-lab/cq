@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.35.1] - 2026-02-27
+
+### 📚 Documentation
+- **agents**: LOC 및 테스트 수 현행화 — c4-core ~107.7K LOC, 전체 ~179.0K LOC, Go 테스트 ~1,970 (총 ~2,759) (`541098e9`)
+
+---
+
 ## [v0.35.0] - 2026-02-27
 
 ### ✨ Features
