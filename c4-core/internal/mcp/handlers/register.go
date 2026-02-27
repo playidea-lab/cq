@@ -6,6 +6,7 @@ import (
 	"github.com/changmin/c4-core/internal/knowledge"
 	"github.com/changmin/c4-core/internal/llm"
 	"github.com/changmin/c4-core/internal/mcp"
+	"github.com/changmin/c4-core/internal/mcp/handlers/artifacthandler"
 	"github.com/changmin/c4-core/internal/mcp/handlers/cfghandler"
 	"github.com/changmin/c4-core/internal/mcp/handlers/fileops"
 	"github.com/changmin/c4-core/internal/mcp/handlers/gitops"
@@ -36,7 +37,7 @@ func RegisterNativeHandlers(reg *mcp.Registry, rootDir string, store Store) {
 	if store != nil {
 		RegisterDiscoveryHandlers(reg, store, rootDir)
 	}
-	RegisterArtifactHandlers(reg, rootDir)
+	artifacthandler.Register(reg, rootDir)
 	RegisterPhaseLockHandlers(reg, rootDir)
 }
 

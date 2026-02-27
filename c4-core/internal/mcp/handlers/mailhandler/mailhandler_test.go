@@ -1,4 +1,4 @@
-package handlers
+package mailhandler_test
 
 import (
 	"encoding/json"
@@ -7,6 +7,7 @@ import (
 
 	"github.com/changmin/c4-core/internal/mailbox"
 	"github.com/changmin/c4-core/internal/mcp"
+	"github.com/changmin/c4-core/internal/mcp/handlers/mailhandler"
 )
 
 func setupMailTest(t *testing.T) (*mcp.Registry, *mailbox.MailStore) {
@@ -20,7 +21,7 @@ func setupMailTest(t *testing.T) (*mcp.Registry, *mailbox.MailStore) {
 	t.Cleanup(func() { ms.Close() })
 
 	reg := mcp.NewRegistry()
-	RegisterMailHandlers(reg, ms)
+	mailhandler.Register(reg, ms)
 	return reg, ms
 }
 
@@ -238,4 +239,3 @@ func TestMailRmNotFound(t *testing.T) {
 		t.Error("expected error for non-existent message ID")
 	}
 }
-

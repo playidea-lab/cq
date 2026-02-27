@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 
 	"github.com/changmin/c4-core/internal/mailbox"
-	"github.com/changmin/c4-core/internal/mcp/handlers"
+	"github.com/changmin/c4-core/internal/mcp/handlers/mailhandler"
 )
 
 func init() {
@@ -28,7 +28,7 @@ func initMail(ctx *initContext) error {
 		return nil
 	}
 	ctx.mailStore = ms
-	handlers.RegisterMailHandlers(ctx.reg, ms)
+	mailhandler.Register(ctx.reg, ms)
 	return nil
 }
 

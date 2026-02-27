@@ -1,4 +1,4 @@
-package handlers
+package artifacthandler
 
 import (
 	"crypto/sha256"
@@ -7,13 +7,14 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/changmin/c4-core/internal/mcp"
 )
 
-// RegisterArtifactHandlers registers artifact management tools.
-func RegisterArtifactHandlers(reg *mcp.Registry, rootDir string) {
+// Register registers artifact management tools.
+func Register(reg *mcp.Registry, rootDir string) {
 	// c4_artifact_save
 	reg.Register(mcp.ToolSchema{
 		Name:        "c4_artifact_save",
@@ -188,4 +189,21 @@ func handleArtifactGet(rootDir string, rawArgs json.RawMessage) (any, error) {
 	}
 
 	return meta, nil
+}
+
+// resolvePath resolves a path relative to rootDir, preventing directory traversal.
+func resolvePath(rootDir, path string) (string, error) {
+	if filepath.IsAbs(path) {
+		cleaned := filepath.Clean(path)
+		if !strings.HasPrefix(cleaned, filepath.Clean(rootDir)) {
+			return "", fmt.Errorf("absolute path escapes project root: %s", path)
+		}
+		return cleaned, nil
+	}
+	resolved := filepath.Join(rootDir, path)
+	resolved = filepath.Clean(resolved)
+	if !strings.HasPrefix(resolved, filepath.Clean(rootDir)) {
+		return "", fmt.Errorf("path escapes project root: %s", path)
+	}
+	return resolved, nil
 }

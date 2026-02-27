@@ -1,4 +1,4 @@
-package handlers
+package artifacthandler
 
 import (
 	"encoding/json"

@@ -1,4 +1,4 @@
-package handlers
+package mailhandler
 
 import (
 	"encoding/json"
@@ -10,8 +10,8 @@ import (
 	"github.com/changmin/c4-core/internal/mcp"
 )
 
-// RegisterMailHandlers registers c4_mail_* MCP tools.
-func RegisterMailHandlers(reg *mcp.Registry, ms *mailbox.MailStore) {
+// Register registers c4_mail_* MCP tools.
+func Register(reg *mcp.Registry, ms *mailbox.MailStore) {
 	// c4_mail_send — send a message to a session
 	reg.Register(mcp.ToolSchema{
 		Name:        "c4_mail_send",
