@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.33.0] - 2026-02-27
+
+### ✨ Features
+- **auth**: `cq auth login --no-browser` 플래그 추가 — headless/tunnel 환경에서 URL 출력 + SSH 포워딩 힌트, 브라우저 미오픈 (`0f8f0a08`)
+- **serve**: `cq serve` 시작 요약 출력 및 `cq stop`에 OS 서비스 포함 (`d9ab13d9`)
+- **archtest**: 아키텍처 테스트 인프라 — `helpers.go`, 의존성 방향 5개, 네이밍 규칙 3개, 인터페이스 패턴 3개, fmt.Errorf %w ratchet (396개 위반 베이스라인 캡처) (`1491c9b7`–`6c6823c5`)
+- **arch**: 6개 인터페이스 쌍 컴파일타임 어서션 추가 (`b12e26a9`)
+- **arch**: Wave 1c — mailhandler/artifacthandler 서브패키지 분리 (`146b5e5e`)
+
+### 🐛 Bug Fixes
+- **doctor**: `checkOSService`에서 `newServiceConfig` 재사용으로 `UserService` 옵션 누락 수정 — macOS/Linux user-level 서비스 설치 시 spurious WARN 방지 (`2b476afd`)
+- **archtest**: `internal/knowledge`를 cloud 허용 의존성에 추가 (`47085c27`)
+
+### ♻️ Refactoring
+- **handlers**: Wave 2a — hubhandler 서브패키지 분리 (`cee7b1f3`)
+- **arch**: Wave 1b — cfghandler/secrethandler 서브패키지 분리 (`33f10b13`)
+- **handlers**: Wave 1a — fileops/gitops/webcontent 서브패키지 분리 (`7f2eeb20`)
+
+### 🔧 Polish
+- **auth**: `AuthClient.callbackTimeout` 필드 주입 — 테스트에서 goroutine leak 방지 (`5e635fbd`)
+
+### 📚 Documentation
+- **user**: `--no-browser` 플래그 사용법 user/README.md 2곳 추가 (`3dc64b7b`)
+- **archtest**: 서브패키지 크로스 임포트 가드 테스트 추가 (`0a329888`)
+
+---
+
 ## [v0.32.0] - 2026-02-27
 
 ### ✨ Features
