@@ -185,6 +185,144 @@ func TestCallWebMCPTool_ArgsSerialization(t *testing.T) {
 	}
 }
 
+func TestGetWebMCPContext_ValidationErrors(t *testing.T) {
+	r := NewRunner()
+	ctx := context.Background()
+
+	t.Run("empty debug url", func(t *testing.T) {
+		_, err := r.GetWebMCPContext(ctx, "", "https://example.com", 0)
+		if err == nil {
+			t.Fatal("expected error for empty debug url")
+		}
+	})
+
+	t.Run("remote debug url rejected", func(t *testing.T) {
+		_, err := r.GetWebMCPContext(ctx, "http://evil.com:9222", "https://example.com", 0)
+		if err == nil {
+			t.Fatal("expected error for remote debug url")
+		}
+	})
+
+	t.Run("empty page url", func(t *testing.T) {
+		_, err := r.GetWebMCPContext(ctx, "http://localhost:9222", "", 0)
+		if err == nil {
+			t.Fatal("expected error for empty page url")
+		}
+		if err.Error() != "cdp: page_url is required" {
+			t.Errorf("unexpected error: %v", err)
+		}
+	})
+}
+
+func TestProvideWebMCPContext_ValidationErrors(t *testing.T) {
+	r := NewRunner()
+	ctx := context.Background()
+
+	t.Run("empty debug url", func(t *testing.T) {
+		_, err := r.ProvideWebMCPContext(ctx, "", "https://example.com", nil, 0)
+		if err == nil {
+			t.Fatal("expected error for empty debug url")
+		}
+	})
+
+	t.Run("remote debug url rejected", func(t *testing.T) {
+		_, err := r.ProvideWebMCPContext(ctx, "http://evil.com:9222", "https://example.com", nil, 0)
+		if err == nil {
+			t.Fatal("expected error for remote debug url")
+		}
+	})
+
+	t.Run("empty page url", func(t *testing.T) {
+		_, err := r.ProvideWebMCPContext(ctx, "http://localhost:9222", "", nil, 0)
+		if err == nil {
+			t.Fatal("expected error for empty page url")
+		}
+		if err.Error() != "cdp: page_url is required" {
+			t.Errorf("unexpected error: %v", err)
+		}
+	})
+}
+
+func TestClearWebMCPContext_ValidationErrors(t *testing.T) {
+	r := NewRunner()
+	ctx := context.Background()
+
+	t.Run("empty debug url", func(t *testing.T) {
+		_, err := r.ClearWebMCPContext(ctx, "", "https://example.com", 0)
+		if err == nil {
+			t.Fatal("expected error for empty debug url")
+		}
+	})
+
+	t.Run("remote debug url rejected", func(t *testing.T) {
+		_, err := r.ClearWebMCPContext(ctx, "http://evil.com:9222", "https://example.com", 0)
+		if err == nil {
+			t.Fatal("expected error for remote debug url")
+		}
+	})
+
+	t.Run("empty page url", func(t *testing.T) {
+		_, err := r.ClearWebMCPContext(ctx, "http://localhost:9222", "", 0)
+		if err == nil {
+			t.Fatal("expected error for empty page url")
+		}
+		if err.Error() != "cdp: page_url is required" {
+			t.Errorf("unexpected error: %v", err)
+		}
+	})
+}
+
+func TestDiscoverWebMCPToolsWithOpts_ValidationErrors(t *testing.T) {
+	r := NewRunner()
+	ctx := context.Background()
+
+	t.Run("empty debug url", func(t *testing.T) {
+		_, err := r.DiscoverWebMCPToolsWithOpts(ctx, "", "https://example.com", 0, nil)
+		if err == nil {
+			t.Fatal("expected error for empty debug url")
+		}
+	})
+
+	t.Run("remote debug url rejected", func(t *testing.T) {
+		_, err := r.DiscoverWebMCPToolsWithOpts(ctx, "http://evil.com:9222", "https://example.com", 0, nil)
+		if err == nil {
+			t.Fatal("expected error for remote debug url")
+		}
+	})
+
+	t.Run("empty page url", func(t *testing.T) {
+		_, err := r.DiscoverWebMCPToolsWithOpts(ctx, "http://localhost:9222", "", 0, nil)
+		if err == nil {
+			t.Fatal("expected error for empty page url")
+		}
+	})
+
+	t.Run("with opts wait for tools false", func(t *testing.T) {
+		_, err := r.DiscoverWebMCPToolsWithOpts(ctx, "http://localhost:9222", "", 0, &DiscoverOpts{WaitForTools: false})
+		if err == nil {
+			t.Fatal("expected error for empty page url")
+		}
+	})
+}
+
+func TestWebMCPContextResult_Fields(t *testing.T) {
+	result := WebMCPContextResult{
+		Context:   map[string]any{"key": "value"},
+		Action:    "provide",
+		Origin:    "https://example.com",
+		Available: true,
+	}
+	if result.Action != "provide" {
+		t.Errorf("Action = %q, want provide", result.Action)
+	}
+	if result.Origin != "https://example.com" {
+		t.Errorf("Origin = %q, want https://example.com", result.Origin)
+	}
+	if !result.Available {
+		t.Error("Available should be true")
+	}
+}
+
 // --- Integration tests (require a running browser with --remote-debugging-port) ---
 
 // webmcpDebugURL returns the CDP debug URL if a browser is available, or skips.

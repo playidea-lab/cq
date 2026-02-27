@@ -106,6 +106,65 @@ func TestDiscoverOpts_Defaults(t *testing.T) {
 	}
 }
 
+func TestReadDevToolsActivePort_ValidPortNoTrailingNewline(t *testing.T) {
+	tmpDir := t.TempDir()
+	portFile := filepath.Join(tmpDir, "DevToolsActivePort")
+	if err := os.WriteFile(portFile, []byte("9333"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	port := readDevToolsActivePortFrom(portFile)
+	if port != 9333 {
+		t.Errorf("port = %d, want 9333", port)
+	}
+}
+
+func TestReadDevToolsActivePort_OutOfRange(t *testing.T) {
+	tmpDir := t.TempDir()
+	portFile := filepath.Join(tmpDir, "DevToolsActivePort")
+
+	// Port 0 is invalid
+	if err := os.WriteFile(portFile, []byte("0\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	port := readDevToolsActivePortFrom(portFile)
+	if port != 0 {
+		t.Errorf("port = %d, want 0 for port=0", port)
+	}
+
+	// Port > 65535 is invalid
+	if err := os.WriteFile(portFile, []byte("99999\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	port = readDevToolsActivePortFrom(portFile)
+	if port != 0 {
+		t.Errorf("port = %d, want 0 for port=99999", port)
+	}
+}
+
+func TestReadDevToolsActivePort_NonexistentFile(t *testing.T) {
+	port := readDevToolsActivePortFrom("/nonexistent/path/DevToolsActivePort")
+	if port != 0 {
+		t.Errorf("port = %d, want 0 for nonexistent file", port)
+	}
+}
+
+func TestProbeCDP_InvalidURL(t *testing.T) {
+	// An invalid URL format should return false without panicking
+	result := probeCDP("http://localhost:99999")
+	if result {
+		t.Error("probeCDP should return false for unusable port")
+	}
+}
+
+func TestDiscoverCDPURL_NoEnvNoPort(t *testing.T) {
+	// With env cleared and no active port file, should fall back to defaultDebugURL or a valid found URL
+	t.Setenv("CDP_DEBUG_URL", "")
+	got := DiscoverCDPURL("")
+	if got == "" {
+		t.Error("DiscoverCDPURL should always return a non-empty URL")
+	}
+}
+
 // Helper: split first line (extracted from readDevToolsActivePort logic)
 func splitFirst(s string) string {
 	for i, c := range s {

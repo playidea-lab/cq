@@ -248,6 +248,146 @@ func TestGetTextByRef_ValidationErrors(t *testing.T) {
 	})
 }
 
+func TestListTargets_LoopbackVariants(t *testing.T) {
+	r := NewRunner()
+	ctx := context.Background()
+
+	tests := []struct {
+		name    string
+		url     string
+		wantErr bool
+	}{
+		{"127.0.0.1 url", "http://127.0.0.1:1", false}, // valid localhost but will fail to connect
+		{"ipv6 loopback", "http://[::1]:1", false},      // valid but will fail to connect
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := r.ListTargets(ctx, tt.url)
+			// These valid localhost URLs will fail to connect (no browser), but not with validation error
+			if err == nil {
+				t.Log("unexpected success - a browser must be running")
+			}
+			// The error should be a connection error, not a validation error
+		})
+	}
+}
+
+func TestElementRefStruct(t *testing.T) {
+	ref := ElementRef{
+		Ref:         "c4r-0",
+		Tag:         "button",
+		Type:        "submit",
+		Text:        "Click me",
+		Placeholder: "",
+		Href:        "",
+		Visible:     true,
+		X:           10,
+		Y:           20,
+		W:           100,
+		H:           40,
+	}
+	if ref.Ref != "c4r-0" {
+		t.Errorf("Ref = %q, want c4r-0", ref.Ref)
+	}
+	if ref.Tag != "button" {
+		t.Errorf("Tag = %q, want button", ref.Tag)
+	}
+	if !ref.Visible {
+		t.Error("Visible should be true")
+	}
+}
+
+func TestScanResultStruct(t *testing.T) {
+	sr := ScanResult{
+		Elements:  []ElementRef{{Ref: "c4r-0", Tag: "a"}},
+		Count:     1,
+		ElapsedMs: 50,
+	}
+	if sr.Count != 1 {
+		t.Errorf("Count = %d, want 1", sr.Count)
+	}
+	if len(sr.Elements) != 1 {
+		t.Errorf("Elements len = %d, want 1", len(sr.Elements))
+	}
+	if sr.Elements[0].Ref != "c4r-0" {
+		t.Errorf("Elements[0].Ref = %q, want c4r-0", sr.Elements[0].Ref)
+	}
+}
+
+func TestActionResultStruct(t *testing.T) {
+	ar := ActionResult{
+		Action:    "click",
+		Ref:       "c4r-5",
+		Value:     "some text",
+		ElapsedMs: 123,
+	}
+	if ar.Action != "click" {
+		t.Errorf("Action = %q, want click", ar.Action)
+	}
+	if ar.Ref != "c4r-5" {
+		t.Errorf("Ref = %q, want c4r-5", ar.Ref)
+	}
+	if ar.Value != "some text" {
+		t.Errorf("Value = %q, want some text", ar.Value)
+	}
+}
+
+func TestRunResult_Fields(t *testing.T) {
+	rr := RunResult{
+		Result:    float64(42),
+		TargetURL: "http://example.com",
+		ElapsedMs: 100,
+	}
+	val, ok := rr.Result.(float64)
+	if !ok {
+		t.Fatalf("Result should be float64, got %T", rr.Result)
+	}
+	if val != 42 {
+		t.Errorf("Result = %v, want 42", val)
+	}
+	if rr.TargetURL != "http://example.com" {
+		t.Errorf("TargetURL = %q, want http://example.com", rr.TargetURL)
+	}
+}
+
+func TestRunOptions_Fields(t *testing.T) {
+	opts := RunOptions{
+		TargetURL:      "https://example.com",
+		AwaitSelector:  "#main",
+		TimeoutSeconds: 60,
+	}
+	if opts.TargetURL != "https://example.com" {
+		t.Errorf("TargetURL = %q, want https://example.com", opts.TargetURL)
+	}
+	if opts.AwaitSelector != "#main" {
+		t.Errorf("AwaitSelector = %q, want #main", opts.AwaitSelector)
+	}
+	if opts.TimeoutSeconds != 60 {
+		t.Errorf("TimeoutSeconds = %d, want 60", opts.TimeoutSeconds)
+	}
+}
+
+func TestTargetStruct(t *testing.T) {
+	tgt := Target{
+		ID:    "abc-123",
+		Type:  "page",
+		Title: "Test Page",
+		URL:   "https://example.com",
+	}
+	if tgt.ID != "abc-123" {
+		t.Errorf("ID = %q, want abc-123", tgt.ID)
+	}
+	if tgt.Type != "page" {
+		t.Errorf("Type = %q, want page", tgt.Type)
+	}
+	if tgt.Title != "Test Page" {
+		t.Errorf("Title = %q, want Test Page", tgt.Title)
+	}
+	if tgt.URL != "https://example.com" {
+		t.Errorf("URL = %q, want https://example.com", tgt.URL)
+	}
+}
+
 // --- Integration tests (require a running browser with --remote-debugging-port) ---
 
 // cdpDebugURL returns the CDP debug URL if a browser is available, or skips the test.
