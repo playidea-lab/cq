@@ -108,6 +108,66 @@ if [[ "$TOOL_NAME" == "EnterPlanMode" ]]; then
 fi
 
 # =============================================================================
+# C4 워크플로우 게이트 (c4-finish 및 git commit 순서 강제)
+# =============================================================================
+_SKILL_NAME=$(echo "$INPUT" | jq -r '.tool_input.skill // empty' 2>/dev/null)
+_DB_PATH="${DB_PATH:-${C4_ROOT}/.c4/c4.db}"
+
+# 인라인 우회: C4_SKIP_GATE=1 (export 금지 — 세션 전체 bypass 방지)
+_GATES_ENABLED=1
+[[ -n "${C4_SKIP_GATE:-}" ]] && _GATES_ENABLED=0
+
+# c4_gates 테이블 존재 여부 확인 (없으면 skip)
+if [[ "$_GATES_ENABLED" == 1 ]]; then
+    if [[ -f "$_DB_PATH" ]] && command -v sqlite3 &>/dev/null; then
+        _cnt=$(sqlite3 "$_DB_PATH" \
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='c4_gates'" 2>/dev/null)
+        [[ "${_cnt:-0}" -eq 0 ]] && _GATES_ENABLED=0
+    else
+        _GATES_ENABLED=0
+    fi
+fi
+
+# _c4_polish_done: 현재 배치의 polish 게이트가 완료되었는지 확인
+_c4_polish_done() {
+    # 현재 배치 시작 시점 = active 태스크 중 가장 최근 created_at
+    local _batch_start
+    _batch_start=$(sqlite3 "$_DB_PATH" \
+        "SELECT MAX(created_at) FROM c4_tasks WHERE status IN ('pending','in_progress')" 2>/dev/null)
+    if [[ -z "$_batch_start" || "$_batch_start" == "NULL" ]]; then
+        echo "no_active"
+        return
+    fi
+    sqlite3 "$_DB_PATH" \
+        "SELECT 1 FROM c4_gates WHERE gate='polish' AND status IN ('done','skipped')
+         AND completed_at >= '${_batch_start}' LIMIT 1" 2>/dev/null
+}
+
+# BLOCK A: Skill c4-finish 인터셉트
+if [[ "$TOOL_NAME" == "Skill" && "$_SKILL_NAME" == "c4-finish" ]]; then
+    if [[ "$_GATES_ENABLED" == 1 ]]; then
+        _pdone=$(_c4_polish_done)
+        if [[ -z "$_pdone" ]]; then
+            _emit_deny "c4-finish 차단: /c4-polish 먼저 실행 필요. 우회(inline only): C4_SKIP_GATE=1 /c4-finish (export 금지)"
+        fi
+    fi
+fi
+
+# BLOCK B: git commit 가드 (진행 중 태스크 + polish 미완료 시 차단)
+if [[ "$TOOL_NAME" == "Bash" && "$COMMAND" =~ ^git[[:space:]]+commit ]]; then
+    if [[ "$_GATES_ENABLED" == 1 ]]; then
+        _in_prog=$(sqlite3 "$_DB_PATH" \
+            "SELECT COUNT(*) FROM c4_tasks WHERE status='in_progress'" 2>/dev/null)
+        if [[ "${_in_prog:-0}" -gt 0 ]]; then
+            _pdone=$(_c4_polish_done)
+            if [[ -z "$_pdone" ]]; then
+                _emit_deny "git commit 차단: 진행 중 태스크 ${_in_prog}개 + polish 미완료. 우회(inline only): C4_SKIP_GATE=1 git commit -m '...'"
+            fi
+        fi
+    fi
+fi
+
+# =============================================================================
 # Bash tool: check allow/block patterns against command
 # =============================================================================
 if [[ "$TOOL_NAME" == "Bash" ]] && [[ -n "$COMMAND" ]]; then
