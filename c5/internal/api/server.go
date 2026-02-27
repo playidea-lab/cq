@@ -25,16 +25,19 @@ import (
 
 // Server is the C5 HTTP API server.
 type Server struct {
-	store     *store.Store
-	storage   storage.Backend
-	estimator *Estimator
-	startTime time.Time
-	version   string
-	apiKey    string // optional API key for authentication
-	llmsTxt   string // llms.txt content
-	docsFS    fs.FS  // docs filesystem (may be nil)
-	mux       *http.ServeMux
-	done      chan struct{} // closed on shutdown to stop background goroutines
+	store       *store.Store
+	storage     storage.Backend
+	estimator   *Estimator
+	startTime   time.Time
+	version     string
+	apiKey      string // optional API key for authentication
+	llmsTxt     string // llms.txt content
+	docsFS      fs.FS  // docs filesystem (may be nil)
+	serverURL   string // local server URL (fallback for publicURL)
+	publicURL   string // external public URL (for device auth redirects)
+	supabaseURL string // Supabase project URL for PKCE token exchange
+	mux         *http.ServeMux
+	done        chan struct{} // closed on shutdown to stop background goroutines
 	eventPub         *eventpub.Publisher
 	maxArtifactBytes int64 // max upload size for local backend
 	gpuWorkerGPUOnly bool  // if true, GPU workers only accept GPU jobs (no CPU fallback)
@@ -56,12 +59,14 @@ type Config struct {
 	Version          string
 	APIKey           string // if non-empty, X-API-Key header is required
 	ServerURL        string // server's external URL (for local storage fallback)
+	PublicURL        string // external public URL (for device auth redirects, empty = ServerURL)
 	LLMSTxt          string // llms.txt content (served at /.well-known/llms.txt)
 	DocsFS           fs.FS  // embedded docs filesystem (served at /v1/docs/)
 	EventBusURL      string // C3 EventBus base URL (empty = disabled)
 	EventBusToken    string // Bearer token for EventBus (optional)
 	MaxArtifactBytes int64  // max upload size for local backend (default 10GB)
 	GPUWorkerGPUOnly bool   // if true, GPU workers only accept GPU jobs (no CPU fallback)
+	SupabaseURL      string // Supabase project URL for PKCE token exchange (optional)
 }
 
 // NewServer creates an HTTP API server.
@@ -85,6 +90,9 @@ func NewServer(cfg Config) *Server {
 		apiKey:           cfg.APIKey,
 		llmsTxt:          cfg.LLMSTxt,
 		docsFS:           cfg.DocsFS,
+		serverURL:        cfg.ServerURL,
+		publicURL:        cfg.PublicURL,
+		supabaseURL:      cfg.SupabaseURL,
 		mux:              http.NewServeMux(),
 		done:             make(chan struct{}),
 		eventPub:         eventpub.New(cfg.EventBusURL, cfg.EventBusToken),
@@ -164,9 +172,20 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("/ws/metrics/", s.handleWSMetrics)
 	s.mux.HandleFunc("/v1/ws/metrics/", s.handleWSMetrics)
 
+	// Auth (OAuth PKCE device flow — no API key required)
+	s.mux.HandleFunc("/auth/callback", s.handleAuthCallback)
+	s.mux.HandleFunc("/auth/activate", s.handleActivate) // GET form, POST validate
+
 	// Admin (requires master key)
 	s.mux.HandleFunc("/v1/admin/api-keys", s.handleAdminAPIKeys)
 	s.mux.HandleFunc("/v1/admin/api-keys/", s.handleAdminAPIKeyByHash)
+
+	// Device auth (public endpoints)
+	// /v1/auth/device  — POST create
+	// /v1/auth/device/{state}       — GET poll
+	// /v1/auth/device/{state}/token — POST token exchange
+	s.mux.HandleFunc("/v1/auth/device", s.handleDeviceAuth)
+	s.mux.HandleFunc("/v1/auth/device/", s.handleDeviceAuth)
 
 	// LLMs.txt + docs
 	s.registerLLMSTxtRoutes()
@@ -174,12 +193,16 @@ func (s *Server) registerRoutes() {
 
 func (s *Server) authMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Public endpoints: health, llms.txt, docs
+		// Public endpoints: health, llms.txt, docs, device auth, auth callback
 		switch {
 		case r.URL.Path == "/v1/health",
 			r.URL.Path == "/llms.txt",
 			r.URL.Path == "/.well-known/llms.txt",
-			strings.HasPrefix(r.URL.Path, "/v1/docs/"):
+			strings.HasPrefix(r.URL.Path, "/v1/docs/"),
+			r.URL.Path == "/v1/auth/device",
+			strings.HasPrefix(r.URL.Path, "/v1/auth/device/"),
+			strings.HasPrefix(r.URL.Path, "/auth/activate"),
+			r.URL.Path == "/auth/callback":
 			next.ServeHTTP(w, r)
 			return
 		}

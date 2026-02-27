@@ -2,7 +2,9 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -88,6 +90,9 @@ Examples:
 
 func init() {
 	authLoginCmd.Flags().Bool("no-browser", false, "Do not open the browser; print the URL and SSH hint to stderr instead")
+	authLoginCmd.Flags().Bool("device", false, "Device Flow: print user_code, user enters it in browser")
+	authLoginCmd.Flags().Bool("link", false, "Direct Link: print a long URL, user opens it in browser")
+	authLoginCmd.MarkFlagsMutuallyExclusive("device", "link")
 	authTokenCmd.Flags().String("json", "", "Session JSON string (reads from stdin if not set)")
 	authCmd.AddCommand(authLoginCmd)
 	authCmd.AddCommand(authLogoutCmd)
@@ -128,6 +133,21 @@ func newAuthClient() (*cloud.AuthClient, error) {
 }
 
 func runAuthLogin(cmd *cobra.Command, args []string) error {
+	// Check --device / --link flags.
+	var useDevice, useLink bool
+	if cmd != nil {
+		if v, err := cmd.Flags().GetBool("device"); err == nil {
+			useDevice = v
+		}
+		if v, err := cmd.Flags().GetBool("link"); err == nil {
+			useLink = v
+		}
+	}
+
+	if useDevice || useLink {
+		return runAuthLoginHeadless(cmd, useDevice)
+	}
+
 	client, err := newAuthClient()
 	if err != nil {
 		return err
@@ -147,6 +167,69 @@ func runAuthLogin(cmd *cobra.Command, args []string) error {
 		fmt.Fprintf(os.Stderr, "Cloud configured: %s\n", url)
 	}
 	return nil
+}
+
+// runAuthLoginHeadless handles --device and --link flows via C5 Hub.
+func runAuthLoginHeadless(cmd *cobra.Command, isDevice bool) error {
+	hubURL := resolveHubURL()
+	if hubURL == "" {
+		return fmt.Errorf("C5 Hub URL이 설정되지 않았습니다. cq config set hub.url <URL>")
+	}
+
+	supabaseURL := os.Getenv("C4_CLOUD_URL")
+	if supabaseURL == "" {
+		supabaseURL = os.Getenv("SUPABASE_URL")
+	}
+	if supabaseURL == "" {
+		supabaseURL = builtinSupabaseURL
+	}
+
+	cfg := cloud.DeviceFlowConfig{
+		HubURL:      hubURL,
+		SupabaseURL: supabaseURL,
+	}
+
+	ctx := context.Background()
+	var session *cloud.Session
+	var err error
+	if isDevice {
+		session, err = cloud.LoginWithDevice(ctx, cfg)
+	} else {
+		session, err = cloud.LoginWithLink(ctx, cfg)
+	}
+	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			return fmt.Errorf("인증 시간 초과 (5분)")
+		}
+		return err
+	}
+
+	authClient, err := newAuthClient()
+	if err != nil {
+		return err
+	}
+	if err := authClient.SaveSessionPublic(session); err != nil {
+		return fmt.Errorf("saving session: %w", err)
+	}
+
+	fmt.Println("✓ 로그인 성공. 세션이 저장되었습니다.")
+
+	// Auto-patch .c4/config.yaml cloud section after successful login.
+	url := patchCloudConfigAfterLogin(projectDir)
+	if url != "" {
+		fmt.Fprintf(os.Stderr, "Cloud configured: %s\n", url)
+	}
+	return nil
+}
+
+// resolveHubURL reads hub.url from .c4/config.yaml via the doctor helper.
+func resolveHubURL() string {
+	configPath := filepath.Join(projectDir, ".c4", "config.yaml")
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return ""
+	}
+	return sectionYAMLValue(string(data), "hub", "url:")
 }
 
 // ensureCloudAuth checks cloud authentication and prompts the user to log in if

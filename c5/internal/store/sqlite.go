@@ -5,8 +5,10 @@
 package store
 
 import (
+	"context"
 	"crypto/rand"
 	"database/sql"
+	"encoding/base32"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -235,6 +237,22 @@ func (s *Store) migrate() error {
 			created_at  TEXT NOT NULL DEFAULT (datetime('now'))
 		);
 		CREATE INDEX IF NOT EXISTS idx_api_keys_project ON api_keys(project_id);
+
+		CREATE TABLE IF NOT EXISTS device_sessions (
+			state          TEXT PRIMARY KEY,
+			user_code      TEXT UNIQUE NOT NULL,
+			csrf_token     TEXT NOT NULL DEFAULT '',
+			code_challenge TEXT NOT NULL,
+			supabase_url   TEXT NOT NULL,
+			auth_code      TEXT NOT NULL DEFAULT '',
+			status         TEXT NOT NULL DEFAULT 'pending',
+			poll_count     INTEGER NOT NULL DEFAULT 0,
+			token_attempts INTEGER NOT NULL DEFAULT 0,
+			expires_at     INTEGER NOT NULL,
+			created_at     INTEGER NOT NULL
+		);
+		CREATE INDEX IF NOT EXISTS idx_device_sessions_user_code ON device_sessions(user_code);
+		CREATE INDEX IF NOT EXISTS idx_device_sessions_expires_at ON device_sessions(expires_at);
 	`)
 	if err != nil {
 		return err
@@ -2238,4 +2256,209 @@ func (s *Store) ListAPIKeys() ([]model.APIKeyInfo, error) {
 		keys = append(keys, k)
 	}
 	return keys, rows.Err()
+}
+
+// =========================================================================
+// Device Sessions (OAuth 2.0 Device Authorization Grant)
+// =========================================================================
+
+// generateUserCode generates a random 8-character base32 user code (e.g. "ABCD1234").
+func generateUserCode() (string, error) {
+	b := make([]byte, 5) // 5 bytes → 8 base32 chars
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(b), nil
+}
+
+// scanDeviceSession scans a device_sessions row into a DeviceSession.
+func scanDeviceSession(sc interface {
+	Scan(dest ...any) error
+}) (*model.DeviceSession, error) {
+	var ds model.DeviceSession
+	var expiresAtUnix, createdAtUnix int64
+	if err := sc.Scan(
+		&ds.State, &ds.UserCode, &ds.CSRFToken, &ds.CodeChallenge,
+		&ds.SupabaseURL, &ds.AuthCode, &ds.Status, &ds.PollCount,
+		&ds.TokenAttempts, &expiresAtUnix, &createdAtUnix,
+	); err != nil {
+		return nil, err
+	}
+	ds.ExpiresAt = time.Unix(expiresAtUnix, 0).UTC()
+	ds.CreatedAt = time.Unix(createdAtUnix, 0).UTC()
+	return &ds, nil
+}
+
+const deviceSessionCols = `state, user_code, csrf_token, code_challenge, supabase_url, auth_code, status, poll_count, token_attempts, expires_at, created_at`
+
+// CreateDeviceSession inserts a new device session with a unique user_code.
+// Expired sessions are deleted first. Retries up to 3 times on user_code conflict.
+func (s *Store) CreateDeviceSession(state, userCode, codeChallenge, supabaseURL string, expiresAt time.Time) error {
+	now := time.Now().Unix()
+	exp := expiresAt.Unix()
+
+	for attempt := 0; attempt < 3; attempt++ {
+		code := userCode
+		if attempt > 0 {
+			var err error
+			code, err = generateUserCode()
+			if err != nil {
+				return fmt.Errorf("generate user code: %w", err)
+			}
+		}
+
+		tx, err := s.db.Begin()
+		if err != nil {
+			return fmt.Errorf("begin tx: %w", err)
+		}
+
+		// Delete expired sessions first.
+		if _, err := tx.Exec(`DELETE FROM device_sessions WHERE expires_at < ?`, now); err != nil {
+			tx.Rollback() //nolint:errcheck
+			return fmt.Errorf("cleanup expired: %w", err)
+		}
+
+		_, err = tx.Exec(
+			`INSERT INTO device_sessions (state, user_code, code_challenge, supabase_url, expires_at, created_at)
+			 VALUES (?, ?, ?, ?, ?, ?)`,
+			state, code, codeChallenge, supabaseURL, exp, now,
+		)
+		if err != nil {
+			tx.Rollback() //nolint:errcheck
+			if strings.Contains(err.Error(), "UNIQUE constraint") && strings.Contains(err.Error(), "user_code") {
+				continue // retry with new user_code
+			}
+			return fmt.Errorf("insert device session: %w", err)
+		}
+		return tx.Commit()
+	}
+	return fmt.Errorf("failed to generate unique user_code after 3 attempts")
+}
+
+// GetDeviceSession retrieves a device session by state, incrementing poll_count atomically.
+// Returns sql.ErrNoRows if not found or already expired.
+func (s *Store) GetDeviceSession(state string) (*model.DeviceSession, error) {
+	now := time.Now().Unix()
+
+	// Atomically increment poll_count and expire if over limit.
+	_, err := s.db.Exec(`
+		UPDATE device_sessions
+		SET poll_count = poll_count + 1,
+		    status = CASE WHEN poll_count + 1 > 20 THEN 'expired' ELSE status END
+		WHERE state = ? AND expires_at >= ? AND status != 'expired'`,
+		state, now,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("update poll_count: %w", err)
+	}
+
+	row := s.db.QueryRow(
+		`SELECT `+deviceSessionCols+` FROM device_sessions WHERE state = ? AND expires_at >= ? AND status != 'expired'`,
+		state, now,
+	)
+	ds, err := scanDeviceSession(row)
+	if err != nil {
+		return nil, sql.ErrNoRows
+	}
+	return ds, nil
+}
+
+// GetDeviceSessionByUserCode retrieves a device session by user_code.
+func (s *Store) GetDeviceSessionByUserCode(userCode string) (*model.DeviceSession, error) {
+	row := s.db.QueryRow(
+		`SELECT `+deviceSessionCols+` FROM device_sessions WHERE user_code = ?`,
+		userCode,
+	)
+	ds, err := scanDeviceSession(row)
+	if err != nil {
+		return nil, sql.ErrNoRows
+	}
+	return ds, nil
+}
+
+// SetDeviceSessionAuthCode sets the auth_code and transitions status from pending to ready.
+// Idempotent: if already ready, no error is returned.
+func (s *Store) SetDeviceSessionAuthCode(state, authCode string) error {
+	res, err := s.db.Exec(
+		`UPDATE device_sessions SET auth_code = ?, status = 'ready'
+		 WHERE state = ? AND status IN ('pending', 'ready')`,
+		authCode, state,
+	)
+	if err != nil {
+		return fmt.Errorf("set device session auth code: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		// Already ready or not found — check if session exists
+		ds, err := s.GetDeviceSession(state)
+		if err != nil {
+			return fmt.Errorf("device session not found or expired")
+		}
+		if ds.Status == "ready" {
+			return nil // idempotent
+		}
+		return fmt.Errorf("device session not found or expired")
+	}
+	return nil
+}
+
+// SetDeviceSessionCSRF sets the csrf_token for a device session.
+func (s *Store) SetDeviceSessionCSRF(state, csrfToken string) error {
+	_, err := s.db.Exec(
+		`UPDATE device_sessions SET csrf_token = ? WHERE state = ?`,
+		csrfToken, state,
+	)
+	return err
+}
+
+// IncrementTokenAttempts atomically increments token_attempts and marks the session
+// expired when the limit is reached. Returns the new attempt count.
+func (s *Store) IncrementTokenAttempts(state string, limit int) (int, error) {
+	_, err := s.db.Exec(
+		`UPDATE device_sessions SET token_attempts = token_attempts + 1 WHERE state = ?`, state,
+	)
+	if err != nil {
+		return 0, fmt.Errorf("increment token attempts: %w", err)
+	}
+	row := s.db.QueryRow(`SELECT token_attempts FROM device_sessions WHERE state = ?`, state)
+	var n int
+	if err := row.Scan(&n); err != nil {
+		return 0, fmt.Errorf("read token attempts: %w", err)
+	}
+	if n >= limit {
+		if _, err := s.db.Exec(
+			`UPDATE device_sessions SET status = 'expired' WHERE state = ? AND status != 'expired'`, state,
+		); err != nil {
+			return n, fmt.Errorf("expire device session: %w", err)
+		}
+	}
+	return n, nil
+}
+
+// DeleteExpiredDeviceSessions removes sessions older than the given duration. Called by cleanup loop.
+func (s *Store) DeleteExpiredDeviceSessions(olderThan time.Duration) (int64, error) {
+	cutoff := time.Now().Unix() - int64(olderThan.Seconds())
+	res, err := s.db.Exec(`DELETE FROM device_sessions WHERE created_at < ?`, cutoff)
+	if err != nil {
+		return 0, fmt.Errorf("delete expired device sessions: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	return n, nil
+}
+
+// StartBackgroundCleanup starts a goroutine that deletes expired device_sessions every minute.
+func (s *Store) StartBackgroundCleanup(ctx context.Context) {
+	go func() {
+		ticker := time.NewTicker(time.Minute)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				now := time.Now().Unix()
+				s.db.Exec(`DELETE FROM device_sessions WHERE expires_at < ?`, now) //nolint:errcheck
+			}
+		}
+	}()
 }

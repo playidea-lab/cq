@@ -599,6 +599,39 @@ type CreateAPIKeyResponse struct {
 	ProjectID string `json:"project_id"`
 }
 
+// =========================================================================
+// Device Auth Models (OAuth 2.0 Device Authorization Grant)
+// =========================================================================
+
+// DeviceSessionStatus is the lifecycle state of an OAuth device session.
+type DeviceSessionStatus string
+
+const (
+	DeviceSessionPending DeviceSessionStatus = "pending" // waiting for browser callback
+	DeviceSessionReady   DeviceSessionStatus = "ready"   // auth_code received, ready for token exchange
+	DeviceSessionExpired DeviceSessionStatus = "expired" // expired or rate-limited
+)
+
+// DeviceSession tracks a device authorization flow session.
+type DeviceSession struct {
+	State         string    `json:"state"`
+	UserCode      string    `json:"user_code"`
+	CSRFToken     string    `json:"csrf_token,omitempty"`
+	CodeChallenge string    `json:"code_challenge"`
+	SupabaseURL   string    `json:"supabase_url"`
+	AuthCode      string    `json:"-"`      // never serialised to client
+	Status        string    `json:"status"` // pending, ready, expired
+	PollCount     int       `json:"poll_count"`
+	TokenAttempts int       `json:"token_attempts"`
+	ExpiresAt     time.Time `json:"expires_at"`
+	CreatedAt     time.Time `json:"created_at"`
+}
+
+// TokenRequest is the body for POST /v1/auth/device/{state}/token.
+type TokenRequest struct {
+	CodeVerifier string `json:"code_verifier"`
+}
+
 // ctxKey is a context key type for auth data.
 type ctxKey string
 
