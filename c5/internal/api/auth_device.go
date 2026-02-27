@@ -49,9 +49,21 @@ func (s *Server) handleDeviceAuthCreate(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusBadRequest, "missing code_challenge")
 		return
 	}
-	if req.SupabaseURL == "" {
-		writeError(w, http.StatusBadRequest, "missing supabase_url")
+
+	// MEDIUM #7: validate code_challenge_method — only S256 is supported.
+	if req.CodeChallengeMethod != "" && req.CodeChallengeMethod != "S256" {
+		writeError(w, http.StatusBadRequest, "only S256 code_challenge_method is supported")
 		return
+	}
+
+	// HIGH #1: prefer server-configured supabaseURL to prevent SSRF via client-supplied URL.
+	supabaseURL := s.supabaseURL
+	if supabaseURL == "" {
+		if req.SupabaseURL == "" {
+			writeError(w, http.StatusBadRequest, "missing supabase_url")
+			return
+		}
+		supabaseURL = req.SupabaseURL
 	}
 
 	// Generate state (32 bytes hex)
@@ -73,7 +85,7 @@ func (s *Server) handleDeviceAuthCreate(w http.ResponseWriter, r *http.Request) 
 
 	expiresAt := time.Now().Add(10 * time.Minute)
 
-	if err := s.store.CreateDeviceSession(state, userCode, req.CodeChallenge, req.SupabaseURL, expiresAt); err != nil {
+	if err := s.store.CreateDeviceSession(state, userCode, req.CodeChallenge, supabaseURL, expiresAt); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to create session")
 		return
 	}
@@ -83,10 +95,10 @@ func (s *Server) handleDeviceAuthCreate(w http.ResponseWriter, r *http.Request) 
 		publicURL = s.serverURL
 	}
 
-	// Build auth_url: supabase_url/auth/v1/authorize?provider=github&code_challenge=...&code_challenge_method=S256&redirect_to={public_url}/auth/callback?state={state}
+	// Build auth_url using the effective supabaseURL (server config or validated client value).
 	redirectTo := fmt.Sprintf("%s/auth/callback?state=%s", publicURL, url.QueryEscape(state))
 	authURL := fmt.Sprintf("%s/auth/v1/authorize?provider=github&code_challenge=%s&code_challenge_method=S256&redirect_to=%s",
-		strings.TrimRight(req.SupabaseURL, "/"),
+		strings.TrimRight(supabaseURL, "/"),
 		url.QueryEscape(req.CodeChallenge),
 		url.QueryEscape(redirectTo),
 	)
@@ -108,6 +120,11 @@ func (s *Server) handleDeviceAuthPoll(w http.ResponseWriter, r *http.Request) {
 	state := strings.TrimPrefix(r.URL.Path, "/v1/auth/device/")
 	if state == "" || state == r.URL.Path {
 		writeError(w, http.StatusBadRequest, "missing state")
+		return
+	}
+	// LOW #13: prevent path traversal and reject obviously invalid states.
+	if strings.Contains(state, "/") || len(state) > 128 {
+		writeError(w, http.StatusBadRequest, "invalid state format")
 		return
 	}
 
@@ -132,12 +149,14 @@ func (s *Server) handleActivateGet(w http.ResponseWriter, r *http.Request) {
 	}
 	csrfToken := hex.EncodeToString(csrfBytes)
 
-	// Set CSRF cookie
+	// Set CSRF cookie. Secure flag is set when the server is accessed via HTTPS (MEDIUM #5).
+	secureCookie := strings.HasPrefix(s.publicURL, "https://") || strings.HasPrefix(s.serverURL, "https://")
 	http.SetCookie(w, &http.Cookie{
 		Name:     "csrf",
 		Value:    csrfToken,
 		Path:     "/auth/activate",
 		HttpOnly: true,
+		Secure:   secureCookie,
 		SameSite: http.SameSiteStrictMode,
 		MaxAge:   600, // 10 minutes
 	})

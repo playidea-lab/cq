@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"html"
 	"io"
 	"net/http"
 	"strings"
@@ -65,7 +66,8 @@ func (s *Server) handleAuthDeviceToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ds, err := s.store.GetDeviceSession(state)
+	// Use PeekDeviceSession to avoid incrementing poll_count on token exchange path (MEDIUM #4).
+	ds, err := s.store.PeekDeviceSession(state)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			writeError(w, http.StatusNotFound, "session not found or expired")
@@ -88,7 +90,16 @@ func (s *Server) handleAuthDeviceToken(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
-	if attempts > tokenAttemptLimit {
+	// HIGH #2: >= prevents an extra attempt when session is marked expired at the limit boundary.
+	if attempts >= tokenAttemptLimit {
+		writeError(w, http.StatusNotFound, "session not found or expired")
+		return
+	}
+
+	// MEDIUM #3: Re-read session to get fresh status after IncrementTokenAttempts
+	// (avoids TOCTOU: ds.Status may be stale if IncrementTokenAttempts just expired the session).
+	ds, err = s.store.PeekDeviceSession(state)
+	if err != nil {
 		writeError(w, http.StatusNotFound, "session not found or expired")
 		return
 	}
@@ -173,11 +184,11 @@ func exchangePKCEToken(supabaseURL, authCode, codeVerifier string) (map[string]a
 	return session, "", 0
 }
 
-// htmlPage renders a minimal HTML page with a title and body text.
+// htmlPage renders a minimal HTML page. title is HTML-escaped; body is trusted HTML (caller's responsibility).
 func htmlPage(title, body string) string {
 	return fmt.Sprintf(`<!DOCTYPE html>
 <html lang="ko">
 <head><meta charset="utf-8"><title>%s</title></head>
 <body><h1>%s</h1></body>
-</html>`, title, body)
+</html>`, html.EscapeString(title), body)
 }

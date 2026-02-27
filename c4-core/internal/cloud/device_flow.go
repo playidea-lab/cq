@@ -22,8 +22,8 @@ type DeviceFlowConfig struct {
 type deviceInitResponse struct {
 	State         string `json:"state"`
 	UserCode      string `json:"user_code"`
-	DeviceAuthURL string `json:"device_auth_url"`
-	AuthURL       string `json:"auth_url"` // for link flow
+	DeviceAuthURL string `json:"activate_url"` // MEDIUM #9: matches server's "activate_url" key
+	AuthURL       string `json:"auth_url"`     // for link flow
 }
 
 // deviceStatusResponse is returned by GET /v1/auth/device/{state}.
@@ -126,7 +126,7 @@ func postDeviceInit(ctx context.Context, cfg DeviceFlowConfig, challenge, flow s
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
-		data, _ := io.ReadAll(resp.Body)
+		data, _ := io.ReadAll(io.LimitReader(resp.Body, 4096)) // LOW #10: cap error body
 		return nil, fmt.Errorf("device init failed (status %d): %s", resp.StatusCode, string(data))
 	}
 
@@ -202,7 +202,7 @@ func exchangeDeviceToken(ctx context.Context, client *http.Client, hubURL, state
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		data, _ := io.ReadAll(resp.Body)
+		data, _ := io.ReadAll(io.LimitReader(resp.Body, 4096)) // LOW #10: cap error body
 		return nil, fmt.Errorf("token exchange failed (status %d): %s", resp.StatusCode, string(data))
 	}
 

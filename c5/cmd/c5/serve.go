@@ -133,6 +133,7 @@ func runServe(cmd *cobra.Command, configPath string, port int, dbPath, apiKey, e
 		Store:            st,
 		Storage:          storageBackend,
 		ServerURL:        serverURL,
+		PublicURL:        cfg.Server.PublicURL, // MEDIUM #6: wire external URL for OAuth redirects
 		Version:          version,
 		APIKey:           apiKey,
 		LLMSTxt:          c5.LLMSTxt,
@@ -156,6 +157,9 @@ func runServe(cmd *cobra.Command, configPath string, port int, dbPath, apiKey, e
 	// Graceful shutdown
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	// LOW #12: start background cleanup of expired device sessions.
+	st.StartBackgroundCleanup(ctx)
 
 	go func() {
 		<-ctx.Done()

@@ -2335,6 +2335,22 @@ func (s *Store) CreateDeviceSession(state, userCode, codeChallenge, supabaseURL 
 	return fmt.Errorf("failed to generate unique user_code after 3 attempts")
 }
 
+// PeekDeviceSession retrieves a device session by state WITHOUT incrementing poll_count.
+// Use this for operations that should not count as a poll (e.g. token exchange, idempotent writes).
+// Returns sql.ErrNoRows if not found or already expired.
+func (s *Store) PeekDeviceSession(state string) (*model.DeviceSession, error) {
+	now := time.Now().Unix()
+	row := s.db.QueryRow(
+		`SELECT `+deviceSessionCols+` FROM device_sessions WHERE state = ? AND expires_at >= ? AND status != 'expired'`,
+		state, now,
+	)
+	ds, err := scanDeviceSession(row)
+	if err != nil {
+		return nil, sql.ErrNoRows
+	}
+	return ds, nil
+}
+
 // GetDeviceSession retrieves a device session by state, incrementing poll_count atomically.
 // Returns sql.ErrNoRows if not found or already expired.
 func (s *Store) GetDeviceSession(state string) (*model.DeviceSession, error) {
@@ -2389,8 +2405,8 @@ func (s *Store) SetDeviceSessionAuthCode(state, authCode string) error {
 	}
 	n, _ := res.RowsAffected()
 	if n == 0 {
-		// Already ready or not found — check if session exists
-		ds, err := s.GetDeviceSession(state)
+		// Already ready or not found — check if session exists (no poll_count side-effect).
+		ds, err := s.PeekDeviceSession(state)
 		if err != nil {
 			return fmt.Errorf("device session not found or expired")
 		}
