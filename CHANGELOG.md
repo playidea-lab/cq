@@ -24,9 +24,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **guide**: 설치 가이드에 Shell 자동완성 및 OS 서비스 등록 섹션 추가 (`4893c8ce`)
 - **reference**: 명령어 레퍼런스에 cq session·completion·serve·misc 전체 섹션 추가 (`4893c8ce`)
 - **install**: `install.sh` — `add_completion()` 으로 zsh/bash RC 파일에 completion 자동 등록 (`4893c8ce`)
+- AGENTS.md: 테스트 수 업데이트 (~1,609/~2,350), HubComponent credential passthrough 문서 추가 (`f1b60d5a`)
 
 ### 🔧 Polish
 - `serve status` PID 파일 경로 오류 처리 강화, stale pid 삭제 실패 경고 출력 (`57948926`, `2c8d321c`, `31572615`)
+- **auth**: `t.Setenv` 로 env var 테스트 정리 자동화, `serveHealthURL` 상수 추출 (`bf092167`)
+- **init**: HOME 격리 + `servePIDPath` 주입으로 테스트 결정론적 실행, darwin 프로세스 매칭 정밀화 (`3416a947`)
 
 ---
 
