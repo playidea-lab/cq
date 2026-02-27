@@ -1642,9 +1642,11 @@ func ensureServeRunning(noServe bool) {
 	_ = cmd.Process.Release()
 
 	// Wait up to 2s for serve to become healthy.
+	// 4140 is cq serve's default listen port (matches serve command default).
+	const serveHealthURL = "http://127.0.0.1:4140/health"
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
-		resp, err := http.Get("http://127.0.0.1:4140/health")
+		resp, err := http.Get(serveHealthURL)
 		if err == nil {
 			resp.Body.Close()
 			if resp.StatusCode == http.StatusOK {
@@ -1653,7 +1655,7 @@ func ensureServeRunning(noServe bool) {
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
-	fmt.Fprintf(os.Stderr, "cq: warn: cq serve started but health check timed out\n")
+	fmt.Fprintf(os.Stderr, "cq: warn: cq serve started but health check timed out (%s)\n", serveHealthURL)
 }
 
 // isCQServeProcess returns true if the given PID is a running "cq serve" process.

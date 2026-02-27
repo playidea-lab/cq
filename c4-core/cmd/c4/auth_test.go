@@ -221,8 +221,8 @@ func TestEnsureCloudAuth_SoloMode(t *testing.T) {
 	defer func() { builtinSupabaseURL = origURL }()
 
 	builtinSupabaseURL = ""
-	os.Unsetenv("C4_CLOUD_URL")
-	os.Unsetenv("SUPABASE_URL")
+	t.Setenv("C4_CLOUD_URL", "")
+	t.Setenv("SUPABASE_URL", "")
 
 	// Pass nil reader — if it reads from reader, it will panic (nil dereference),
 	// proving the solo-mode fast path doesn't touch stdin.
@@ -243,8 +243,8 @@ func TestEnsureCloudAuth_ValidSession(t *testing.T) {
 	// to the prompt. To test the valid-session path we need a real session
 	// file. Skip if no session is available.
 	builtinSupabaseURL = "https://test.supabase.co"
-	os.Unsetenv("C4_CLOUD_URL")
-	os.Unsetenv("SUPABASE_URL")
+	t.Setenv("C4_CLOUD_URL", "")
+	t.Setenv("SUPABASE_URL", "")
 
 	// In CI there's no session, so this test only validates no panic.
 	// We use "n\n" as input to decline, confirming we reach the prompt path.
@@ -260,8 +260,8 @@ func TestEnsureCloudAuth_Decline(t *testing.T) {
 	defer func() { builtinSupabaseURL = origURL }()
 
 	builtinSupabaseURL = "https://test.supabase.co"
-	os.Unsetenv("C4_CLOUD_URL")
-	os.Unsetenv("SUPABASE_URL")
+	t.Setenv("C4_CLOUD_URL", "")
+	t.Setenv("SUPABASE_URL", "")
 
 	r := strings.NewReader("n\n")
 	got := ensureCloudAuth(r, false)
@@ -277,8 +277,8 @@ func TestEnsureCloudAuth_EmptyInput(t *testing.T) {
 	defer func() { builtinSupabaseURL = origURL }()
 
 	builtinSupabaseURL = "https://test.supabase.co"
-	os.Unsetenv("C4_CLOUD_URL")
-	os.Unsetenv("SUPABASE_URL")
+	t.Setenv("C4_CLOUD_URL", "")
+	t.Setenv("SUPABASE_URL", "")
 
 	r := strings.NewReader("") // EOF immediately
 	// If no valid session: scanner returns false on EOF → returns false.
@@ -298,8 +298,8 @@ func TestEnsureCloudAuth_YesAll(t *testing.T) {
 	}()
 
 	builtinSupabaseURL = "https://test.supabase.co"
-	os.Unsetenv("C4_CLOUD_URL")
-	os.Unsetenv("SUPABASE_URL")
+	t.Setenv("C4_CLOUD_URL", "")
+	t.Setenv("SUPABASE_URL", "")
 
 	// Stub authLoginFunc to succeed without network.
 	loginCalled := false
