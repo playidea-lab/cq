@@ -1,9 +1,12 @@
 package llm
 
 import (
+	"database/sql"
 	"math"
 	"testing"
 	"time"
+
+	_ "modernc.org/sqlite"
 )
 
 func TestCostTrackerWithCacheTokens(t *testing.T) {
@@ -139,5 +142,91 @@ func TestCostTrackerWithCacheTokensAccumulates(t *testing.T) {
 	}
 	if pc.Requests != 2 {
 		t.Errorf("Requests: got %d, want 2", pc.Requests)
+	}
+}
+
+// newTestDB opens an in-memory SQLite database for testing.
+func newTestDB(t *testing.T) *sql.DB {
+	t.Helper()
+	db, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatalf("open test db: %v", err)
+	}
+	t.Cleanup(func() { db.Close() })
+	return db
+}
+
+func TestCostTrackerPersist(t *testing.T) {
+	db := newTestDB(t)
+	ct := NewCostTracker()
+	ct.SetDB(db)
+
+	usage := TokenUsage{InputTokens: 100, OutputTokens: 50}
+	ct.Record("anthropic", "claude-sonnet-4-5", usage, 42*time.Millisecond)
+
+	ct.Close()
+
+	var count int
+	if err := db.QueryRow("SELECT COUNT(*) FROM llm_usage").Scan(&count); err != nil {
+		t.Fatalf("query: %v", err)
+	}
+	if count != 1 {
+		t.Errorf("llm_usage rows: got %d, want 1", count)
+	}
+}
+
+func TestCostTrackerClose_Drain(t *testing.T) {
+	db := newTestDB(t)
+	ct := NewCostTracker()
+	ct.SetDB(db)
+
+	const n = 100
+	usage := TokenUsage{InputTokens: 10, OutputTokens: 5}
+	for i := 0; i < n; i++ {
+		ct.Record("openai", "gpt-4o", usage, time.Millisecond)
+	}
+	ct.Close()
+
+	var count int
+	if err := db.QueryRow("SELECT COUNT(*) FROM llm_usage").Scan(&count); err != nil {
+		t.Fatalf("query: %v", err)
+	}
+	if count != n {
+		t.Errorf("llm_usage rows after drain: got %d, want %d", count, n)
+	}
+}
+
+func TestCostTrackerNoDB(t *testing.T) {
+	// SetDB not called — in-memory mode should work without panic.
+	ct := NewCostTracker()
+	usage := TokenUsage{InputTokens: 100, OutputTokens: 50}
+	ct.Record("anthropic", "claude-sonnet-4-5", usage, 0)
+
+	if ct.EntryCount() != 1 {
+		t.Errorf("EntryCount: got %d, want 1", ct.EntryCount())
+	}
+	ct.Close() // no-op, must not panic
+}
+
+func TestCostTrackerBufferOverflow(t *testing.T) {
+	// Fill a tracker whose channel is blocked to verify drop+warn without panic.
+	ct := NewCostTracker()
+	// Use a small-capacity channel by directly setting it (white-box: same package).
+	ct.ch = make(chan dbRow, 2)
+	// Do NOT start the writer goroutine — channel will fill immediately.
+	// WaitGroup is zero so Close() returns immediately.
+
+	usage := TokenUsage{InputTokens: 10, OutputTokens: 5}
+	// Send more records than channel capacity; overflow must not panic.
+	for i := 0; i < 10; i++ {
+		ct.Record("anthropic", "claude-sonnet-4-5", usage, 0)
+	}
+	// In-memory entries still recorded.
+	if ct.EntryCount() != 10 {
+		t.Errorf("EntryCount: got %d, want 10", ct.EntryCount())
+	}
+	// Drain remaining items so no goroutine leak.
+	for len(ct.ch) > 0 {
+		<-ct.ch
 	}
 }

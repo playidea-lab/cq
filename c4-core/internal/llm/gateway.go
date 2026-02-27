@@ -95,6 +95,11 @@ func NewGateway(routing RoutingTable) *Gateway {
 	}
 }
 
+// Tracker returns the Gateway's CostTracker, allowing callers to wire DB persistence.
+func (g *Gateway) Tracker() *CostTracker {
+	return g.tracker
+}
+
 // Register adds a provider to the gateway.
 func (g *Gateway) Register(p Provider) {
 	g.mu.Lock()

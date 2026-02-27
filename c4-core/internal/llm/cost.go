@@ -1,6 +1,8 @@
 package llm
 
 import (
+	"database/sql"
+	"log/slog"
 	"sync"
 	"time"
 )
@@ -34,23 +36,96 @@ type ProviderCost struct {
 
 // CostReport is the aggregate cost summary.
 type CostReport struct {
-	TotalUSD              float64                 `json:"total_usd"`
-	TotalReqs             int                     `json:"total_requests"`
-	ByProvider            map[string]ProviderCost `json:"by_provider"`
-	ByModel               map[string]float64      `json:"by_model"`
-	GlobalCacheHitRate    float64                 `json:"global_cache_hit_rate,omitempty"`
-	GlobalCacheSavingsRate float64                `json:"global_cache_savings_rate,omitempty"`
+	TotalUSD               float64                 `json:"total_usd"`
+	TotalReqs              int                     `json:"total_requests"`
+	ByProvider             map[string]ProviderCost `json:"by_provider"`
+	ByModel                map[string]float64      `json:"by_model"`
+	GlobalCacheHitRate     float64                 `json:"global_cache_hit_rate,omitempty"`
+	GlobalCacheSavingsRate float64                 `json:"global_cache_savings_rate,omitempty"`
 }
 
-// CostTracker accumulates LLM usage costs in memory.
+// dbRow is a single row sent to the async writer goroutine.
+type dbRow struct {
+	ts              time.Time
+	provider        string
+	model           string
+	promptTok       int
+	completionTok   int
+	cacheReadTok    int
+	cacheWriteTok   int
+	costUSD         float64
+	latencyMS       int64
+}
+
+const dbChanCap = 1000
+
+// CostTracker accumulates LLM usage costs in memory and optionally persists to SQLite.
 type CostTracker struct {
 	mu      sync.Mutex
 	entries []CostEntry
+
+	// async SQLite persistence (nil if SetDB not called)
+	ch chan dbRow
+	wg sync.WaitGroup
 }
 
 // NewCostTracker creates a new CostTracker.
 func NewCostTracker() *CostTracker {
 	return &CostTracker{}
+}
+
+// SetDB wires an open *sql.DB for async persistence.
+// It creates the llm_usage table if needed and starts a background writer goroutine.
+// Must be called at most once. Safe to skip (in-memory-only mode remains).
+func (ct *CostTracker) SetDB(db *sql.DB) {
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS llm_usage (
+		id              INTEGER PRIMARY KEY AUTOINCREMENT,
+		ts              DATETIME NOT NULL,
+		provider        TEXT NOT NULL,
+		model           TEXT NOT NULL,
+		prompt_tok      INTEGER NOT NULL DEFAULT 0,
+		completion_tok  INTEGER NOT NULL DEFAULT 0,
+		cache_read_tok  INTEGER NOT NULL DEFAULT 0,
+		cache_write_tok INTEGER NOT NULL DEFAULT 0,
+		cost_usd        REAL NOT NULL DEFAULT 0,
+		latency_ms      INTEGER NOT NULL DEFAULT 0
+	)`); err != nil {
+		slog.Warn("llm: failed to create llm_usage table", "err", err)
+		return
+	}
+
+	ct.ch = make(chan dbRow, dbChanCap)
+	ct.wg.Add(1)
+	go ct.writer(db)
+}
+
+// writer is the background goroutine that drains ct.ch and inserts rows.
+func (ct *CostTracker) writer(db *sql.DB) {
+	defer ct.wg.Done()
+	for row := range ct.ch {
+		if _, err := db.Exec(
+			`INSERT INTO llm_usage
+				(ts, provider, model, prompt_tok, completion_tok, cache_read_tok, cache_write_tok, cost_usd, latency_ms)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			row.ts.UTC().Format(time.RFC3339),
+			row.provider, row.model,
+			row.promptTok, row.completionTok,
+			row.cacheReadTok, row.cacheWriteTok,
+			row.costUSD, row.latencyMS,
+		); err != nil {
+			slog.Warn("llm: failed to write llm_usage row", "err", err)
+		}
+	}
+}
+
+// Close drains the channel and waits for the writer goroutine to finish.
+// No-op if SetDB was never called.
+func (ct *CostTracker) Close() {
+	if ct.ch == nil {
+		return
+	}
+	close(ct.ch)
+	ct.wg.Wait()
 }
 
 // Record logs a single LLM API call.
@@ -61,21 +136,43 @@ func (ct *CostTracker) Record(provider, model string, usage TokenUsage, latency 
 	cacheCost := float64(usage.CacheWriteTokens)*info.InputPer1M*1.25/1_000_000 +
 		float64(usage.CacheReadTokens)*info.InputPer1M*0.10/1_000_000
 	saved := float64(usage.CacheReadTokens) * info.InputPer1M * 0.90 / 1_000_000
+	totalCost := regularCost + cacheCost
 
+	now := time.Now()
 	ct.mu.Lock()
 	ct.entries = append(ct.entries, CostEntry{
-		Time:       time.Now(),
+		Time:       now,
 		Provider:   provider,
 		Model:      model,
 		Input:      usage.InputTokens,
 		Output:     usage.OutputTokens,
-		CostUSD:    regularCost + cacheCost,
+		CostUSD:    totalCost,
 		Latency:    latency,
 		CacheRead:  usage.CacheReadTokens,
 		CacheWrite: usage.CacheWriteTokens,
 		SavedUSD:   saved,
 	})
 	ct.mu.Unlock()
+
+	// Async DB write: non-blocking, drop on overflow with warning.
+	if ct.ch != nil {
+		row := dbRow{
+			ts:            now,
+			provider:      provider,
+			model:         model,
+			promptTok:     usage.InputTokens,
+			completionTok: usage.OutputTokens,
+			cacheReadTok:  usage.CacheReadTokens,
+			cacheWriteTok: usage.CacheWriteTokens,
+			costUSD:       totalCost,
+			latencyMS:     latency.Milliseconds(),
+		}
+		select {
+		case ct.ch <- row:
+		default:
+			slog.Warn("llm: cost tracker buffer full, dropping row", "provider", provider, "model", model)
+		}
+	}
 }
 
 // Report returns an aggregate cost report.
