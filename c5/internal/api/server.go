@@ -33,6 +33,8 @@ type Server struct {
 	apiKey    string // optional API key for authentication
 	llmsTxt   string // llms.txt content
 	docsFS    fs.FS  // docs filesystem (may be nil)
+	serverURL string // local server URL (fallback for publicURL)
+	publicURL string // external public URL (for device auth redirects)
 	mux       *http.ServeMux
 	done      chan struct{} // closed on shutdown to stop background goroutines
 	eventPub         *eventpub.Publisher
@@ -56,6 +58,7 @@ type Config struct {
 	Version          string
 	APIKey           string // if non-empty, X-API-Key header is required
 	ServerURL        string // server's external URL (for local storage fallback)
+	PublicURL        string // external public URL (for device auth redirects, empty = ServerURL)
 	LLMSTxt          string // llms.txt content (served at /.well-known/llms.txt)
 	DocsFS           fs.FS  // embedded docs filesystem (served at /v1/docs/)
 	EventBusURL      string // C3 EventBus base URL (empty = disabled)
@@ -85,6 +88,8 @@ func NewServer(cfg Config) *Server {
 		apiKey:           cfg.APIKey,
 		llmsTxt:          cfg.LLMSTxt,
 		docsFS:           cfg.DocsFS,
+		serverURL:        cfg.ServerURL,
+		publicURL:        cfg.PublicURL,
 		mux:              http.NewServeMux(),
 		done:             make(chan struct{}),
 		eventPub:         eventpub.New(cfg.EventBusURL, cfg.EventBusToken),
@@ -168,18 +173,26 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("/v1/admin/api-keys", s.handleAdminAPIKeys)
 	s.mux.HandleFunc("/v1/admin/api-keys/", s.handleAdminAPIKeyByHash)
 
+	// Device auth (public endpoints)
+	s.mux.HandleFunc("/v1/auth/device", s.handleDeviceAuth)  // POST create, GET not valid at root
+	s.mux.HandleFunc("/v1/auth/device/", s.handleDeviceAuth) // GET /v1/auth/device/{state}
+	s.mux.HandleFunc("/auth/activate", s.handleActivate)     // GET form, POST validate
+
 	// LLMs.txt + docs
 	s.registerLLMSTxtRoutes()
 }
 
 func (s *Server) authMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Public endpoints: health, llms.txt, docs
+		// Public endpoints: health, llms.txt, docs, device auth
 		switch {
 		case r.URL.Path == "/v1/health",
 			r.URL.Path == "/llms.txt",
 			r.URL.Path == "/.well-known/llms.txt",
-			strings.HasPrefix(r.URL.Path, "/v1/docs/"):
+			strings.HasPrefix(r.URL.Path, "/v1/docs/"),
+			r.URL.Path == "/v1/auth/device",
+			strings.HasPrefix(r.URL.Path, "/v1/auth/device/"),
+			strings.HasPrefix(r.URL.Path, "/auth/activate"):
 			next.ServeHTTP(w, r)
 			return
 		}
