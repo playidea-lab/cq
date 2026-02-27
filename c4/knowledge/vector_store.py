@@ -337,6 +337,35 @@ class VectorStore:
         )
         return cursor.fetchone() is not None
 
+    def recreate_for_dimension(self, dim: int) -> None:
+        """Recreate the vector table for a new embedding dimension.
+
+        Destructive operation: deletes all existing vectors and ID mappings,
+        then recreates the vector table with the new dimension. Document
+        metadata stored elsewhere is not affected.
+
+        Args:
+            dim: New embedding dimension (e.g., 768 for text-embedding-3-small).
+        """
+        conn = self._get_connection()
+
+        # Drop and recreate vector table with new dimension
+        conn.execute(f"DROP TABLE IF EXISTS {self.table_name}")
+        conn.execute(
+            f"""
+            CREATE VIRTUAL TABLE {self.table_name}
+            USING vec0(embedding float[{dim}])
+            """
+        )
+
+        # Clear ID mapping table
+        conn.execute("DELETE FROM c4_embedding_ids")
+
+        conn.commit()
+
+        # Update stored dimension
+        self.dimension = dim
+
     def close(self) -> None:
         """Close the database connection."""
         if self._conn is not None:
