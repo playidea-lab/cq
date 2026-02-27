@@ -120,31 +120,19 @@ Cursor에서는 수동으로 `c4_knowledge_distill` 호출하거나 건너뜁니
 - 커밋 생성 (push는 사용자 요청 시에만)
 - 완료 후: `c4_phase_lock_release(phase="finish")` 호출
 
-### 9. Release Notes + Push (c4-release)
+### 9. Release Notes (c4-release)
 
-커밋 완료 후 자동으로 `/c4-release`를 실행한 뒤, main과 태그를 push합니다.
+커밋 완료 후 자동으로 `/c4-release`를 실행합니다.
 
 ```
 /c4-release
 ```
 
 - 마지막 태그 이후 커밋 분석 → CHANGELOG.md 업데이트
-- 버전 bump 결정 (Major/Minor/Patch)
-- CHANGELOG.md 커밋 후 자동으로 아래 순서 실행:
-
-```bash
-# 1. 태그 생성
-git tag -a v{X.Y.Z} -m "Release v{X.Y.Z}"
-
-# 2. main 브랜치 push
-git push origin main
-
-# 3. 태그 push
-git push origin v{X.Y.Z}
-```
-
-- `--no-push` 플래그 명시 시 push 단계 생략 (로컬 커밋/태그만)
-- `--no-release` 플래그 명시 시 Step 9 전체 생략
+- 버전 bump 제안 (Major/Minor/Patch)
+- CHANGELOG.md 커밋 + 로컬 태그 생성까지만 수행
+- **push는 사용자가 직접 실행** (`git push origin main && git push origin vX.Y.Z`)
+- `--no-release` 플래그 명시 시 생략 가능
 
 ## Rules
 - 단계를 건너뛰지 않는다
