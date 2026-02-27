@@ -174,16 +174,18 @@ func (s *Server) registerRoutes() {
 
 	// Auth (OAuth PKCE device flow — no API key required)
 	s.mux.HandleFunc("/auth/callback", s.handleAuthCallback)
-	s.mux.HandleFunc("/v1/auth/device/", s.handleAuthDeviceToken)
+	s.mux.HandleFunc("/auth/activate", s.handleActivate) // GET form, POST validate
 
 	// Admin (requires master key)
 	s.mux.HandleFunc("/v1/admin/api-keys", s.handleAdminAPIKeys)
 	s.mux.HandleFunc("/v1/admin/api-keys/", s.handleAdminAPIKeyByHash)
 
 	// Device auth (public endpoints)
-	s.mux.HandleFunc("/v1/auth/device", s.handleDeviceAuth)  // POST create, GET not valid at root
-	s.mux.HandleFunc("/v1/auth/device/", s.handleDeviceAuth) // GET /v1/auth/device/{state}
-	s.mux.HandleFunc("/auth/activate", s.handleActivate)     // GET form, POST validate
+	// /v1/auth/device  — POST create
+	// /v1/auth/device/{state}       — GET poll
+	// /v1/auth/device/{state}/token — POST token exchange
+	s.mux.HandleFunc("/v1/auth/device", s.handleDeviceAuth)
+	s.mux.HandleFunc("/v1/auth/device/", s.handleDeviceAuth)
 
 	// LLMs.txt + docs
 	s.registerLLMSTxtRoutes()

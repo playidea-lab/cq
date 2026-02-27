@@ -103,8 +103,8 @@ func TestLoginWithDevice_Expired(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for expired status, got nil")
 	}
-	if !strings.Contains(err.Error(), "expired") {
-		t.Errorf("error = %q, want to contain \"expired\"", err.Error())
+	if !strings.Contains(err.Error(), "expired") && !strings.Contains(err.Error(), "만료") {
+		t.Errorf("error = %q, want to contain \"expired\" or \"만료\"", err.Error())
 	}
 }
 

@@ -12,7 +12,13 @@ import (
 )
 
 // handleDeviceAuth routes POST/GET /v1/auth/device and /v1/auth/device/{state}.
+// Also handles POST /v1/auth/device/{state}/token for PKCE token exchange.
 func (s *Server) handleDeviceAuth(w http.ResponseWriter, r *http.Request) {
+	// Dispatch token exchange: POST /v1/auth/device/{state}/token
+	if r.Method == http.MethodPost && strings.HasSuffix(strings.TrimRight(r.URL.Path, "/"), "/token") {
+		s.handleAuthDeviceToken(w, r)
+		return
+	}
 	switch r.Method {
 	case http.MethodPost:
 		s.handleDeviceAuthCreate(w, r)

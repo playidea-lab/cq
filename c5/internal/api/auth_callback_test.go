@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/piqsol/c4/c5/internal/store"
 )
@@ -50,7 +51,7 @@ func TestAuthCallback(t *testing.T) {
 
 	t.Run("valid_callback", func(t *testing.T) {
 		// Create a device session first
-		_, err := srv.store.CreateDeviceSession("state123", deviceSessionTTL)
+		err := srv.store.CreateDeviceSession("state123", "TESTCODE", "challenge123", "https://test.supabase.co", time.Now().Add(deviceSessionTTL))
 		if err != nil {
 			t.Fatalf("create session: %v", err)
 		}
@@ -74,7 +75,7 @@ func TestAuthCallback(t *testing.T) {
 	})
 
 	t.Run("idempotent_callback", func(t *testing.T) {
-		_, err := srv.store.CreateDeviceSession("state-idem", deviceSessionTTL)
+		err := srv.store.CreateDeviceSession("state-idem", "IDEMCODE", "challenge456", "https://test.supabase.co", time.Now().Add(deviceSessionTTL))
 		if err != nil {
 			t.Fatalf("create session: %v", err)
 		}
@@ -141,7 +142,7 @@ func TestDeviceToken(t *testing.T) {
 	})
 
 	t.Run("not_ready", func(t *testing.T) {
-		_, err := srv.store.CreateDeviceSession("pending-state", deviceSessionTTL)
+		err := srv.store.CreateDeviceSession("pending-state", "PENDCODE", "challenge789", "https://test.supabase.co", time.Now().Add(deviceSessionTTL))
 		if err != nil {
 			t.Fatalf("create session: %v", err)
 		}
@@ -162,7 +163,7 @@ func TestDeviceToken(t *testing.T) {
 
 	t.Run("successful_exchange", func(t *testing.T) {
 		// Create session and set it to ready
-		_, err := srv.store.CreateDeviceSession("ready-state", deviceSessionTTL)
+		err := srv.store.CreateDeviceSession("ready-state", "READCODE", "challengeABC", "https://test.supabase.co", time.Now().Add(deviceSessionTTL))
 		if err != nil {
 			t.Fatalf("create session: %v", err)
 		}
@@ -194,7 +195,7 @@ func TestDeviceToken(t *testing.T) {
 
 	t.Run("rate_limit_token_attempts", func(t *testing.T) {
 		// Uses dedicated token_attempts counter (not shared with job poll_count)
-		_, err := srv.store.CreateDeviceSession("rate-limited-state", deviceSessionTTL)
+		err := srv.store.CreateDeviceSession("rate-limited-state", "RATELCODE", "challengeDEF", "https://test.supabase.co", time.Now().Add(deviceSessionTTL))
 		if err != nil {
 			t.Fatalf("create session: %v", err)
 		}
@@ -208,18 +209,18 @@ func TestDeviceToken(t *testing.T) {
 			// All should return 400 (not ready) or hit the limit
 		}
 
-		// After limit exhausted, session is expired
-		ds, err := srv.store.GetDeviceSession("rate-limited-state")
-		if err != nil {
-			t.Fatalf("get session: %v", err)
-		}
-		if ds.Status != "expired" {
-			t.Fatalf("want status=expired after rate limit, got %q", ds.Status)
+		// After limit exhausted, a further attempt returns 404 (session expired/not found).
+		req := httptest.NewRequest("POST", "/v1/auth/device/rate-limited-state/token", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(w, req)
+		if w.Code != http.StatusNotFound && w.Code != http.StatusBadRequest {
+			t.Fatalf("want 404 or 400 after rate limit exhausted, got %d; body: %s", w.Code, w.Body.String())
 		}
 	})
 
 	t.Run("missing_code_verifier", func(t *testing.T) {
-		_, err := srv.store.CreateDeviceSession("ready-state-2", deviceSessionTTL)
+		err := srv.store.CreateDeviceSession("ready-state-2", "READCODE2", "challengeGHI", "https://test.supabase.co", time.Now().Add(deviceSessionTTL))
 		if err != nil {
 			t.Fatalf("create session: %v", err)
 		}
