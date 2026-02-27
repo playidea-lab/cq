@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -291,14 +292,29 @@ func TestEnsureCloudAuth_EmptyInput(t *testing.T) {
 	}
 }
 
-// TestEnsureCloudAuth_YesAll: yesAll=true, cloud URL set, no valid session →
-// skips the prompt and calls authLoginFunc (stubbed to succeed) → returns true.
+// writeHubConfig writes a minimal .c4/config.yaml with hub.url set for testing.
+func writeHubConfig(t *testing.T, dir, hubURL string) {
+	t.Helper()
+	c4Dir := filepath.Join(dir, ".c4")
+	if err := os.MkdirAll(c4Dir, 0755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	content := fmt.Sprintf("hub:\n  url: %s\n", hubURL)
+	if err := os.WriteFile(filepath.Join(c4Dir, "config.yaml"), []byte(content), 0644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+}
+
+// TestEnsureCloudAuth_YesAll: yesAll=true, no hub, no valid session →
+// skips the prompt and calls authLoginFunc with mode="" (browser OAuth) → returns true.
 func TestEnsureCloudAuth_YesAll(t *testing.T) {
 	origURL := builtinSupabaseURL
 	origLoginFunc := authLoginFunc
+	origDir := projectDir
 	defer func() {
 		builtinSupabaseURL = origURL
 		authLoginFunc = origLoginFunc
+		projectDir = origDir
 	}()
 
 	builtinSupabaseURL = "https://test.supabase.co"
@@ -306,10 +322,15 @@ func TestEnsureCloudAuth_YesAll(t *testing.T) {
 	t.Setenv("SUPABASE_URL", "")
 	t.Setenv("HOME", t.TempDir()) // isolate: no session.json → deterministic no-session path
 
+	// No hub configured → mode should be "" (browser OAuth).
+	projectDir = t.TempDir()
+
 	// Stub authLoginFunc to succeed without network.
 	loginCalled := false
-	authLoginFunc = func() error {
+	var calledMode string
+	authLoginFunc = func(mode string) error {
 		loginCalled = true
+		calledMode = mode
 		return nil
 	}
 
@@ -321,5 +342,190 @@ func TestEnsureCloudAuth_YesAll(t *testing.T) {
 	}
 	if !loginCalled {
 		t.Error("expected authLoginFunc to be called when yesAll=true and no session")
+	}
+	if calledMode != "" {
+		t.Errorf("expected mode=\"\" (no hub→browser OAuth), got %q", calledMode)
+	}
+}
+
+// TestEnsureCloudAuth_LinkMode: Hub configured + "y" input → mode=="link".
+func TestEnsureCloudAuth_LinkMode(t *testing.T) {
+	origURL := builtinSupabaseURL
+	origLoginFunc := authLoginFunc
+	origDir := projectDir
+	defer func() {
+		builtinSupabaseURL = origURL
+		authLoginFunc = origLoginFunc
+		projectDir = origDir
+	}()
+
+	builtinSupabaseURL = "https://test.supabase.co"
+	t.Setenv("C4_CLOUD_URL", "")
+	t.Setenv("SUPABASE_URL", "")
+	t.Setenv("HOME", t.TempDir())
+
+	tmpDir := t.TempDir()
+	writeHubConfig(t, tmpDir, "https://hub.example.com")
+	projectDir = tmpDir
+
+	var calledMode string
+	authLoginFunc = func(mode string) error {
+		calledMode = mode
+		return nil
+	}
+
+	r := strings.NewReader("y\n")
+	got := ensureCloudAuth(r, false)
+	if !got {
+		t.Error("expected true when hub configured and user inputs 'y'")
+	}
+	if calledMode != "link" {
+		t.Errorf("expected mode=\"link\", got %q", calledMode)
+	}
+}
+
+// TestEnsureCloudAuth_DeviceMode: Hub configured + "d" input → mode=="device".
+func TestEnsureCloudAuth_DeviceMode(t *testing.T) {
+	origURL := builtinSupabaseURL
+	origLoginFunc := authLoginFunc
+	origDir := projectDir
+	defer func() {
+		builtinSupabaseURL = origURL
+		authLoginFunc = origLoginFunc
+		projectDir = origDir
+	}()
+
+	builtinSupabaseURL = "https://test.supabase.co"
+	t.Setenv("C4_CLOUD_URL", "")
+	t.Setenv("SUPABASE_URL", "")
+	t.Setenv("HOME", t.TempDir())
+
+	tmpDir := t.TempDir()
+	writeHubConfig(t, tmpDir, "https://hub.example.com")
+	projectDir = tmpDir
+
+	var calledMode string
+	authLoginFunc = func(mode string) error {
+		calledMode = mode
+		return nil
+	}
+
+	r := strings.NewReader("d\n")
+	got := ensureCloudAuth(r, false)
+	if !got {
+		t.Error("expected true when hub configured and user inputs 'd'")
+	}
+	if calledMode != "device" {
+		t.Errorf("expected mode=\"device\", got %q", calledMode)
+	}
+}
+
+// TestEnsureCloudAuth_NoHubFallback: Hub not configured + "y" → mode=="" (browser OAuth).
+func TestEnsureCloudAuth_NoHubFallback(t *testing.T) {
+	origURL := builtinSupabaseURL
+	origLoginFunc := authLoginFunc
+	origDir := projectDir
+	defer func() {
+		builtinSupabaseURL = origURL
+		authLoginFunc = origLoginFunc
+		projectDir = origDir
+	}()
+
+	builtinSupabaseURL = "https://test.supabase.co"
+	t.Setenv("C4_CLOUD_URL", "")
+	t.Setenv("SUPABASE_URL", "")
+	t.Setenv("HOME", t.TempDir())
+
+	// No hub config in projectDir.
+	projectDir = t.TempDir()
+
+	loginCalled := false
+	var calledMode string
+	authLoginFunc = func(mode string) error {
+		loginCalled = true
+		calledMode = mode
+		return nil
+	}
+
+	r := strings.NewReader("y\n")
+	got := ensureCloudAuth(r, false)
+	if !got {
+		t.Error("expected true when no hub and user inputs 'y'")
+	}
+	if !loginCalled {
+		t.Error("expected authLoginFunc to be called")
+	}
+	if calledMode != "" {
+		t.Errorf("expected mode=\"\" (no hub→browser OAuth), got %q", calledMode)
+	}
+}
+
+// TestEnsureCloudAuth_DeviceWithoutHub: Hub not configured + "d" input → returns false.
+func TestEnsureCloudAuth_DeviceWithoutHub(t *testing.T) {
+	origURL := builtinSupabaseURL
+	origLoginFunc := authLoginFunc
+	origDir := projectDir
+	defer func() {
+		builtinSupabaseURL = origURL
+		authLoginFunc = origLoginFunc
+		projectDir = origDir
+	}()
+
+	builtinSupabaseURL = "https://test.supabase.co"
+	t.Setenv("C4_CLOUD_URL", "")
+	t.Setenv("SUPABASE_URL", "")
+	t.Setenv("HOME", t.TempDir())
+
+	// No hub config.
+	projectDir = t.TempDir()
+
+	loginCalled := false
+	authLoginFunc = func(mode string) error {
+		loginCalled = true
+		return nil
+	}
+
+	r := strings.NewReader("d\n")
+	got := ensureCloudAuth(r, false)
+	if got {
+		t.Error("expected false when device mode requested without hub")
+	}
+	if loginCalled {
+		t.Error("expected authLoginFunc NOT to be called when hub missing")
+	}
+}
+
+// TestEnsureCloudAuth_YesAllWithHub: Hub configured + yesAll=true → mode=="link".
+func TestEnsureCloudAuth_YesAllWithHub(t *testing.T) {
+	origURL := builtinSupabaseURL
+	origLoginFunc := authLoginFunc
+	origDir := projectDir
+	defer func() {
+		builtinSupabaseURL = origURL
+		authLoginFunc = origLoginFunc
+		projectDir = origDir
+	}()
+
+	builtinSupabaseURL = "https://test.supabase.co"
+	t.Setenv("C4_CLOUD_URL", "")
+	t.Setenv("SUPABASE_URL", "")
+	t.Setenv("HOME", t.TempDir())
+
+	tmpDir := t.TempDir()
+	writeHubConfig(t, tmpDir, "https://hub.example.com")
+	projectDir = tmpDir
+
+	var calledMode string
+	authLoginFunc = func(mode string) error {
+		calledMode = mode
+		return nil
+	}
+
+	got := ensureCloudAuth(nil, true)
+	if !got {
+		t.Error("expected true when hub configured and yesAll=true")
+	}
+	if calledMode != "link" {
+		t.Errorf("expected mode=\"link\" (hub+yesAll), got %q", calledMode)
 	}
 }

@@ -17,8 +17,16 @@ import (
 )
 
 // authLoginFunc is a package-level variable so tests can stub the login call.
-var authLoginFunc = func() error {
-	return runAuthLogin(nil, nil)
+// mode: "" = browser OAuth, "link" = Direct Link, "device" = Device Flow.
+var authLoginFunc = func(mode string) error {
+	switch mode {
+	case "device":
+		return runAuthLoginHeadless(nil, true)
+	case "link":
+		return runAuthLoginHeadless(nil, false)
+	default:
+		return runAuthLogin(nil, nil) // browser OAuth fallback
+	}
 }
 
 var authCmd = &cobra.Command{
@@ -240,7 +248,10 @@ func resolveHubURL() string {
 //   - builtinSupabaseURL == "" → solo mode → returns true immediately
 //   - valid session exists → returns true
 //   - not logged in → prompts; yesAll=true skips the prompt
-//   - user inputs "y" → calls authLoginFunc() → returns true on success
+//   - Hub configured: shows [y/d/N] prompt (y=link, d=device)
+//   - Hub not configured: shows [y/N] prompt (y=browser OAuth)
+//   - user inputs "y" → link (hub) or browser OAuth (no hub)
+//   - user inputs "d" → device flow (hub required)
 //   - user inputs "n" or EOF → returns false
 func ensureCloudAuth(r io.Reader, yesAll bool) bool {
 	// Resolve cloud URL (same priority as newAuthClient).
@@ -266,22 +277,45 @@ func ensureCloudAuth(r io.Reader, yesAll bool) bool {
 
 	// Not logged in — prompt the user (or skip prompt if yesAll).
 	fmt.Fprintln(os.Stderr, "cq: [cloud] 로그인 필요. 'cq auth login'으로 GitHub OAuth 인증 후 클라우드 동기화 및 Hub 이용 가능.")
+
+	hasHub := resolveHubURL() != ""
+	mode := ""
+
 	if !yesAll {
 		if r == nil {
 			r = os.Stdin
 		}
-		fmt.Fprint(os.Stderr, "지금 로그인하시겠습니까? [y/N] ")
+		if hasHub {
+			fmt.Fprint(os.Stderr, "지금 로그인하시겠습니까? (y=링크, d=디바이스 코드) [y/d/N] ")
+		} else {
+			fmt.Fprint(os.Stderr, "지금 로그인하시겠습니까? [y/N] ")
+		}
 		scanner := bufio.NewScanner(r)
 		if !scanner.Scan() {
 			return false
 		}
 		answer := strings.TrimSpace(strings.ToLower(scanner.Text()))
-		if answer != "y" && answer != "yes" {
+		switch answer {
+		case "y", "yes":
+			if hasHub {
+				mode = "link"
+			}
+		case "d", "device":
+			if !hasHub {
+				fmt.Fprintln(os.Stderr, "cq: 디바이스 코드 방식은 Hub URL 설정이 필요합니다. 'cq config set hub.url <URL>'")
+				return false
+			}
+			mode = "device"
+		default:
 			return false
+		}
+	} else {
+		if hasHub {
+			mode = "link"
 		}
 	}
 
-	if err := authLoginFunc(); err != nil {
+	if err := authLoginFunc(mode); err != nil {
 		fmt.Fprintf(os.Stderr, "cq: login failed: %v\n", err)
 		return false
 	}
