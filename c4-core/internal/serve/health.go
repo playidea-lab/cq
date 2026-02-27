@@ -21,7 +21,7 @@ func HealthHandler(m *Manager) http.HandlerFunc {
 
 		overall := "ok"
 		for _, h := range components {
-			if h.Status != "ok" {
+			if h.Status != "ok" && h.Status != "skipped" {
 				overall = "degraded"
 				break
 			}

@@ -3,10 +3,12 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"syscall"
@@ -124,6 +126,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 	if err := mgr.StartAll(ctx); err != nil {
 		return fmt.Errorf("start components: %w", err)
 	}
+	printServeStartupSummary(os.Stderr, os.Getpid(), servePort, mgr.HealthMap())
 
 	// HTTP health server
 	mux := http.NewServeMux()
@@ -179,7 +182,8 @@ func runServeStop(cmd *cobra.Command, args []string) error {
 	pidPath := filepath.Join(pidDir, "serve.pid")
 	data, err := os.ReadFile(pidPath)
 	if err != nil {
-		return fmt.Errorf("no running cq serve found (PID file: %s): %w", pidPath, err)
+		// No manual PID file — try stopping the OS service.
+		return tryStopOSService(func() error { return stopOSService() })
 	}
 
 	pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
@@ -200,6 +204,43 @@ func runServeStop(cmd *cobra.Command, args []string) error {
 
 	fmt.Fprintf(os.Stderr, "cq serve: sent SIGTERM to PID %d\n", pid)
 	return nil
+}
+
+// printServeStartupSummary prints a one-line startup summary and per-component status.
+// Components are sorted alphabetically. Components absent from the map (disabled) are omitted.
+func printServeStartupSummary(w io.Writer, pid, port int, components map[string]serve.ComponentHealth) {
+	fmt.Fprintf(w, "cq serve: started (pid=%d, port=%d)\n", pid, port)
+	names := make([]string, 0, len(components))
+	for name := range components {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		h := components[name]
+		if h.Status == "ok" {
+			fmt.Fprintf(w, "  ✓ %-12s %s\n", name, h.Status)
+		} else if h.Detail != "" {
+			fmt.Fprintf(w, "  ✗ %-12s %s (%s)\n", name, h.Status, h.Detail)
+		} else {
+			fmt.Fprintf(w, "  ✗ %-12s %s\n", name, h.Status)
+		}
+	}
+}
+
+// tryStopOSService calls stopFn to stop the OS service.
+// "not loaded/installed/found" errors are treated as "not running" and return nil.
+func tryStopOSService(stopFn func() error) error {
+	err := stopFn()
+	if err == nil {
+		fmt.Fprintln(os.Stderr, "cq serve stop: no manual process, stopped OS service")
+		return nil
+	}
+	msg := err.Error()
+	if strings.Contains(msg, "not loaded") || strings.Contains(msg, "not installed") || strings.Contains(msg, "not found") {
+		fmt.Fprintln(os.Stderr, "cq serve stop: no running cq serve found (manual or OS service)")
+		return nil
+	}
+	return err
 }
 
 // acquireServePIDLock writes the current PID to a file and checks for existing process.

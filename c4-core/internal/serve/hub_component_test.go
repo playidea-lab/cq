@@ -190,6 +190,28 @@ func TestHubComponentConfig_EnvInjected(t *testing.T) {
 	}
 }
 
+// TestHubComponent_Health_Skipped verifies that when the binary is not found,
+// Start() returns nil (graceful skip) and Health() returns "skipped" status.
+func TestHubComponent_Health_Skipped(t *testing.T) {
+	c := NewHubComponent(HubComponentConfig{
+		Binary: "c5-binary-that-does-not-exist-xyz",
+		Port:   19996,
+	})
+
+	ctx := context.Background()
+	if err := c.Start(ctx); err != nil {
+		t.Fatalf("Start returned error for missing binary: %v (want nil / graceful skip)", err)
+	}
+
+	h := c.Health()
+	if h.Status != "skipped" {
+		t.Errorf("Health().Status = %q, want %q", h.Status, "skipped")
+	}
+	if !strings.Contains(h.Detail, "not found") {
+		t.Errorf("Health().Detail = %q, want contains 'not found'", h.Detail)
+	}
+}
+
 // testServerPort extracts the numeric port from a URL like "http://127.0.0.1:NNNNN".
 func testServerPort(t *testing.T, rawURL string) int {
 	t.Helper()

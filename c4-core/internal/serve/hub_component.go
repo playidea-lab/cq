@@ -34,11 +34,12 @@ type HubComponentConfig struct {
 type HubComponent struct {
 	cfg HubComponentConfig
 
-	mu      sync.Mutex
-	cmd     *exec.Cmd
-	cancel  context.CancelFunc
-	running bool
-	done    chan struct{} // closed by reaper goroutine when process exits
+	mu       sync.Mutex
+	cmd      *exec.Cmd
+	cancel   context.CancelFunc
+	running  bool
+	done     chan struct{} // closed by reaper goroutine when process exits
+	startErr error        // set when binary not found; causes Health() to return "skipped"
 }
 
 // NewHubComponent creates a HubComponent with the given config.
@@ -78,6 +79,7 @@ func (h *HubComponent) Start(ctx context.Context) error {
 		err = nil
 	}
 	if err != nil {
+		h.startErr = fmt.Errorf("binary %q not found", h.cfg.Binary)
 		fmt.Fprintf(os.Stderr, "cq serve: hub component: binary %q not found in PATH — skipping (WARN)\n", h.cfg.Binary)
 		return nil
 	}
@@ -163,9 +165,13 @@ func (h *HubComponent) Stop(ctx context.Context) error {
 func (h *HubComponent) Health() ComponentHealth {
 	h.mu.Lock()
 	running := h.running
+	startErr := h.startErr
 	port := h.cfg.Port
 	h.mu.Unlock()
 
+	if startErr != nil {
+		return ComponentHealth{Status: "skipped", Detail: startErr.Error()}
+	}
 	if !running {
 		return ComponentHealth{Status: "error", Detail: "not running"}
 	}

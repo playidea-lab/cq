@@ -2,14 +2,18 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 
+	"github.com/changmin/c4-core/internal/serve"
 	"github.com/kardianos/service"
 	"github.com/spf13/cobra"
 )
@@ -128,6 +132,20 @@ func runServeInstall(cmd *cobra.Command, args []string) error {
 	return installServeService(cmd.Context(), false)
 }
 
+// stopOSService stops the cq-serve OS service via the service manager.
+func stopOSService() error {
+	execPath, configPath, err := resolveInstallPaths()
+	if err != nil {
+		return err
+	}
+	svcConfig := newServiceConfig(execPath, configPath)
+	svc, err := service.New(newServiceWrapper(), &svcConfig)
+	if err != nil {
+		return fmt.Errorf("create service: %w", err)
+	}
+	return svc.Stop()
+}
+
 func runServeUninstall(cmd *cobra.Command, args []string) error {
 	execPath, configPath, err := resolveInstallPaths()
 	if err != nil {
@@ -143,6 +161,24 @@ func runServeUninstall(cmd *cobra.Command, args []string) error {
 	}
 	fmt.Println("cq-serve service uninstalled.")
 	return nil
+}
+
+// fetchServeHealth calls the /health endpoint on the given port and returns
+// the per-component health map. Returns an error if the server is unreachable.
+func fetchServeHealth(port int) (map[string]serve.ComponentHealth, error) {
+	url := fmt.Sprintf("http://127.0.0.1:%d/health", port)
+	client := &http.Client{Timeout: 2 * time.Second}
+	resp, err := client.Get(url)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var hr serve.HealthResponse
+	if err := json.NewDecoder(resp.Body).Decode(&hr); err != nil {
+		return nil, fmt.Errorf("decode health response: %w", err)
+	}
+	return hr.Components, nil
 }
 
 func runServeStatus(cmd *cobra.Command, args []string) error {
@@ -182,6 +218,24 @@ func runServeStatus(cmd *cobra.Command, args []string) error {
 			if proc, findErr := os.FindProcess(pidInt); findErr == nil {
 				if proc.Signal(syscall.Signal(0)) == nil {
 					fmt.Printf("manual: running (pid=%s)\n", pid)
+					// Fetch component health from /health endpoint.
+					components, healthErr := fetchServeHealth(servePort)
+					if healthErr != nil {
+						fmt.Printf("  (serve not responding on port %d)\n", servePort)
+					} else {
+						for name, h := range components {
+							if h.Status == "ok" {
+								fmt.Printf("  \u2713 %-12s %s\n", name, h.Status)
+							} else {
+								detail := h.Detail
+								if detail != "" {
+									fmt.Printf("  \u2717 %-12s %s (%s)\n", name, h.Status, detail)
+								} else {
+									fmt.Printf("  \u2717 %-12s %s\n", name, h.Status)
+								}
+							}
+						}
+					}
 				} else {
 					fmt.Println("manual: stale PID file (process not running)")
 					if removeErr := os.Remove(pidPath); removeErr != nil {

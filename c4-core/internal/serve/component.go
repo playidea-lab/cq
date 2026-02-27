@@ -7,7 +7,7 @@ import "context"
 
 // ComponentHealth represents the health status of a single component.
 type ComponentHealth struct {
-	Status string `json:"status"` // "ok", "degraded", "error"
+	Status string `json:"status"` // "ok", "degraded", "error", "skipped"
 	Detail string `json:"detail,omitempty"`
 }
 
