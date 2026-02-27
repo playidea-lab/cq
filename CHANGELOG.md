@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.39.0] - 2026-02-28
+
+### ✨ Features
+- **hooks**: `c4-gate.sh` — `TaskCreate` / `TaskUpdate` 차단 추가 + MCP namespace 정규화
+  - `mcp__<ns>__ToolName` 형식을 bare 이름으로 정규화 (`_BARE_TOOL`)
+  - `TaskCreate` → `c4_add_todo` 대체 안내, `TaskUpdate` → `c4_submit` 대체 안내
+  - `.claude/hooks/c4-gate.sh` ↔ `c4-core/cmd/c4/templates/hooks/c4-gate.sh` 동기화
+- **hooks**: 워크플로우 게이트 — `git commit` / `/c4-finish` polish 미완료 차단
+  - `C4_SKIP_GATE=1` 인라인 우회 지원 (export 금지)
+  - `.c4/` 디렉토리 존재 여부로 C4 프로젝트 판별
+- **hooks**: `c4-gate.sh` `TodoWrite` / `EnterPlanMode` 차단 기반 구축
+
+### 🧪 Tests
+- **hooktest**: `bats` 테스트 스위트 추가 (10개 테스트)
+  - `test_global_antipattern.bats` (8개): pip/python/pytest 안티패턴 차단 검증
+  - `test_c4gate_mcp.bats` (10개): TodoWrite/EnterPlanMode/TaskCreate/TaskUpdate + namespace 정규화
+
+### 🔧 Chores
+- **polish**: `global-antipattern.sh` echo 폴백 `\` / `"` 이스케이핑 (`_r` 패턴)
+- **polish**: `python[0-9.]*` 정규식 — python3.11, python3.12 등 버전 명시형 차단 확장
+
+### 📚 Documentation
+- `docs/antipattern-hooks-install.md`: 차단 도구 테이블 갱신 + bats 테스트 수 업데이트 (4→10)
+- `AGENTS.md`: Go 테스트 수 업데이트 (c4-core ~1,582 + c5 ~215 = ~1,797, 합계 ~2,581)
+
+---
+
 ## [v0.38.0] - 2026-02-28
 
 ### ✨ Features
