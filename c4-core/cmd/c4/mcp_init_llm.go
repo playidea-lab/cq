@@ -7,7 +7,7 @@ import (
 	"os"
 
 	"github.com/changmin/c4-core/internal/llm"
-	"github.com/changmin/c4-core/internal/mcp/handlers"
+	"github.com/changmin/c4-core/internal/mcp/handlers/llmhandler"
 )
 
 func init() {
@@ -23,7 +23,7 @@ func initLLM(ctx *initContext) error {
 	}
 	gw := llm.NewGatewayFromConfig(toLLMGatewayConfig(ctx.cfgMgr, ctx.secretStore))
 	ctx.llmGateway = gw
-	handlers.RegisterLLMHandlers(ctx.reg, gw)
+	llmhandler.RegisterLLMHandlers(ctx.reg, gw)
 	fmt.Fprintf(os.Stderr, "cq: LLM gateway enabled (%d providers)\n", gw.ProviderCount())
 	return nil
 }

@@ -1,6 +1,6 @@
 //go:build !llm_gateway
 
-package handlers
+package llmhandler
 
 import "github.com/changmin/c4-core/internal/mcp"
 

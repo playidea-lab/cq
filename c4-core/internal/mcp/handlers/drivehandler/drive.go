@@ -1,6 +1,6 @@
 //go:build c0_drive
 
-package handlers
+package drivehandler
 
 import (
 	"encoding/json"

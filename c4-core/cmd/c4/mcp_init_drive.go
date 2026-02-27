@@ -8,7 +8,7 @@ import (
 
 	"github.com/changmin/c4-core/internal/drive"
 	"github.com/changmin/c4-core/internal/eventbus"
-	"github.com/changmin/c4-core/internal/mcp/handlers"
+	"github.com/changmin/c4-core/internal/mcp/handlers/drivehandler"
 )
 
 func init() {
@@ -26,12 +26,12 @@ func initDrive(ctx *initContext) error {
 		return nil
 	}
 	driveClient := drive.NewClient(cloudCfg.URL, cloudCfg.AnonKey, ctx.cloudTP, ctx.cloudProjectID, cloudCfg.BucketName)
-	handlers.RegisterDriveHandlers(ctx.reg, driveClient)
+	drivehandler.RegisterDriveHandlers(ctx.reg, driveClient)
 	fmt.Fprintln(os.Stderr, "cq: drive enabled (6 tools)")
 	return nil
 }
 
 // wireDriveEventBus wires the eventbus to Drive components.
 func wireDriveEventBus(_ *initContext, ebClient *eventbus.Client) {
-	handlers.SetDriveEventBus(ebClient)
+	drivehandler.SetDriveEventBus(ebClient)
 }

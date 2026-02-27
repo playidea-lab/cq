@@ -1,6 +1,6 @@
 //go:build c3_eventbus
 
-package handlers
+package eventbushandler
 
 import (
 	"encoding/json"

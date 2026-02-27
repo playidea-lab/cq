@@ -4,7 +4,7 @@ package main
 
 import (
 	"github.com/changmin/c4-core/internal/cdp"
-	"github.com/changmin/c4-core/internal/mcp/handlers"
+	"github.com/changmin/c4-core/internal/mcp/handlers/cdphandler"
 )
 
 func init() {
@@ -14,6 +14,6 @@ func init() {
 // initCDP registers CDP and WebMCP handlers.
 func initCDP(ctx *initContext) error {
 	cdpRunner := cdp.NewRunner()
-	handlers.RegisterCDPHandlers(ctx.reg, cdpRunner)
+	cdphandler.RegisterCDPHandlers(ctx.reg, cdpRunner)
 	return nil
 }

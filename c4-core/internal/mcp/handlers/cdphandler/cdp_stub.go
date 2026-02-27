@@ -1,6 +1,6 @@
 //go:build !cdp
 
-package handlers
+package cdphandler
 
 import "github.com/changmin/c4-core/internal/mcp"
 

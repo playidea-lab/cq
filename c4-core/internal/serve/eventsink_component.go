@@ -10,10 +10,10 @@ import (
 	"time"
 
 	"github.com/changmin/c4-core/internal/eventbus"
-	"github.com/changmin/c4-core/internal/mcp/handlers"
+	"github.com/changmin/c4-core/internal/mcp/handlers/eventbushandler"
 )
 
-// EventSinkComponent wraps handlers.StartEventSinkServer as a Component.
+// EventSinkComponent wraps eventbushandler.StartEventSinkServer as a Component.
 type EventSinkComponent struct {
 	port  int
 	token string
@@ -39,7 +39,7 @@ func (c *EventSinkComponent) Start(_ context.Context) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	srv, err := handlers.StartEventSinkServer(c.port, c.token, c.pub)
+	srv, err := eventbushandler.StartEventSinkServer(c.port, c.token, c.pub)
 	if err != nil {
 		return fmt.Errorf("eventsink start: %w", err)
 	}

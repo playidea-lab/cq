@@ -9,6 +9,7 @@ import (
 
 	"github.com/changmin/c4-core/internal/eventbus"
 	"github.com/changmin/c4-core/internal/mcp/handlers"
+	"github.com/changmin/c4-core/internal/mcp/handlers/eventbushandler"
 	"github.com/changmin/c4-core/internal/serve"
 )
 
@@ -80,7 +81,7 @@ func initEmbeddedEB(ctx *initContext) {
 	}
 
 	wireAllEventBus(ctx, ebClient)
-	handlers.RegisterEventBusHandlers(ctx.reg, ebClient)
+	eventbushandler.RegisterEventBusHandlers(ctx.reg, ebClient)
 	ctx.sqliteStore.SetEventBus(ebClient)
 	ctx.proxy.SetEventBus(ebClient)
 
@@ -108,7 +109,7 @@ func initRemoteEB(ctx *initContext) {
 	}
 
 	wireAllEventBus(ctx, ebClient)
-	handlers.RegisterEventBusHandlers(ctx.reg, ebClient)
+	eventbushandler.RegisterEventBusHandlers(ctx.reg, ebClient)
 	ctx.sqliteStore.SetEventBus(ebClient)
 	ctx.proxy.SetEventBus(ebClient)
 
@@ -168,7 +169,7 @@ func startEventSink(ctx *initContext) {
 	}
 	esCfg := ctx.cfgMgr.GetConfig().EventSink
 	hubEventPub := handlers.GetHubEventPub()
-	esSrv, esErr := handlers.StartEventSinkServer(esCfg.Port, esCfg.Token, hubEventPub)
+	esSrv, esErr := eventbushandler.StartEventSinkServer(esCfg.Port, esCfg.Token, hubEventPub)
 	if esErr != nil {
 		fmt.Fprintf(os.Stderr, "cq: eventsink start failed: %v\n", esErr)
 		return

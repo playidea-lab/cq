@@ -1,7 +1,7 @@
 //go:build cdp
 
 
-package handlers
+package cdphandler
 
 import (
 	"context"
