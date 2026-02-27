@@ -29,8 +29,10 @@ func (s *SQLiteStore) GetStatus() (*ProjectStatus, error) {
 		}
 	}
 
-	// Count tasks by status
-	rows, err := s.db.Query("SELECT status, COUNT(*) FROM c4_tasks GROUP BY status")
+	// Count tasks by status (scoped to this session + legacy tasks)
+	sfClause := s.sessionClause("WHERE", "")
+	sfArgs := s.sessionArgs()
+	rows, err := s.db.Query("SELECT status, COUNT(*) FROM c4_tasks"+sfClause+" GROUP BY status", sfArgs...)
 	if err != nil {
 		return status, nil
 	}
@@ -57,15 +59,17 @@ func (s *SQLiteStore) GetStatus() (*ProjectStatus, error) {
 
 	// Calculate how many pending tasks are runnable now (all deps done).
 	// This helps direct-mode operators pick tasks without extra DB queries.
+	readySFClause := s.sessionClause("AND", "t.")
+	readySFArgs := s.sessionArgs()
 	if err := s.db.QueryRow(`
 		SELECT COUNT(*)
 		FROM c4_tasks t
-		WHERE t.status = 'pending'
+		WHERE t.status = 'pending'`+readySFClause+`
 		AND NOT EXISTS (
 			SELECT 1 FROM json_each(CASE WHEN t.dependencies IS NULL OR t.dependencies = '' THEN '[]' ELSE t.dependencies END) AS dep
 			JOIN c4_tasks dt ON dt.task_id = dep.value
 			WHERE dt.status != 'done'
-		)`).
+		)`, readySFArgs...).
 		Scan(&status.ReadyTasks); err != nil {
 		fmt.Fprintf(os.Stderr, "c4: get-status: ready tasks count: %v\n", err)
 	}
@@ -77,14 +81,14 @@ func (s *SQLiteStore) GetStatus() (*ProjectStatus, error) {
 	readyRows, err := s.db.Query(`
 		SELECT t.task_id
 		FROM c4_tasks t
-		WHERE t.status = 'pending'
+		WHERE t.status = 'pending'`+readySFClause+`
 		AND NOT EXISTS (
 			SELECT 1 FROM json_each(CASE WHEN t.dependencies IS NULL OR t.dependencies = '' THEN '[]' ELSE t.dependencies END) AS dep
 			JOIN c4_tasks dt ON dt.task_id = dep.value
 			WHERE dt.status != 'done'
 		)
 		ORDER BY t.priority DESC, t.created_at ASC
-		LIMIT 10`)
+		LIMIT 10`, readySFArgs...)
 	if err == nil {
 		defer readyRows.Close()
 		for readyRows.Next() {
@@ -254,9 +258,11 @@ func (s *SQLiteStore) ListTasks(filter store.TaskFilter) ([]store.Task, int, err
 		filter.Limit = 50
 	}
 
-	// Total count (unfiltered)
+	// Total count (scoped to session + legacy)
+	sfTotalClause := s.sessionClause("WHERE", "")
+	sfTotalArgs := s.sessionArgs()
 	var total int
-	if err := s.db.QueryRow("SELECT COUNT(*) FROM c4_tasks").Scan(&total); err != nil {
+	if err := s.db.QueryRow("SELECT COUNT(*) FROM c4_tasks"+sfTotalClause, sfTotalArgs...).Scan(&total); err != nil {
 		return nil, 0, err
 	}
 
@@ -275,6 +281,11 @@ func (s *SQLiteStore) ListTasks(filter store.TaskFilter) ([]store.Task, int, err
 	if filter.WorkerID != "" {
 		conditions = append(conditions, "worker_id = ?")
 		args = append(args, filter.WorkerID)
+	}
+	// Session isolation: show only this session's tasks + legacy tasks (session_id='')
+	if s.sessionID != "" {
+		conditions = append(conditions, "(session_id = ? OR session_id = '')")
+		args = append(args, s.sessionID)
 	}
 
 	if len(conditions) > 0 {

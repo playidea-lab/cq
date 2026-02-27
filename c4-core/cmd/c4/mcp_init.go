@@ -236,8 +236,13 @@ func newMCPServer() (*mcpServer, error) {
 	})
 
 	// Create store with all options
+	sessionID := os.Getenv("CQ_SESSION_NAME")
+	if sessionID == "" {
+		sessionID = fmt.Sprintf("pid-%d", os.Getpid())
+	}
 	storeOpts := []handlers.StoreOption{
 		handlers.WithProjectRoot(projectDir),
+		handlers.WithSessionID(sessionID),
 	}
 	if cfgMgr != nil {
 		storeOpts = append(storeOpts, handlers.WithConfig(cfgMgr))

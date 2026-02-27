@@ -26,6 +26,7 @@ type SQLiteStore struct {
 	db             *sql.DB
 	projectID      string
 	projectRoot    string
+	sessionID      string                    // optional: isolates tasks by session (CQ_SESSION_NAME)
 	config         *config.Manager
 	proxy           *BridgeProxy              // optional: for legacy proxy calls
 	knowledgeWriter     KnowledgeWriter          // optional: for native knowledge recording
@@ -48,6 +49,34 @@ type StoreOption func(*SQLiteStore)
 // WithProjectRoot sets the project root directory (for .c4/active_claim.json).
 func WithProjectRoot(root string) StoreOption {
 	return func(s *SQLiteStore) { s.projectRoot = root }
+}
+
+// WithSessionID sets the session isolation key for this store.
+// Tasks created by this store are tagged with sessionID, and task queries
+// return only tasks belonging to this session or legacy tasks (session_id="").
+// If sessionID is "", all tasks are visible (legacy/no-isolation mode).
+func WithSessionID(id string) StoreOption {
+	return func(s *SQLiteStore) { s.sessionID = id }
+}
+
+// sessionClause returns a SQL condition fragment (with conjunction prefix like "AND" or "WHERE")
+// that restricts rows to this session or legacy rows (session_id='').
+// colPrefix is the table alias, e.g. "t." or "".
+// Returns "" when no session is configured (all rows visible).
+func (s *SQLiteStore) sessionClause(conjunction, colPrefix string) string {
+	if s.sessionID == "" {
+		return ""
+	}
+	col := colPrefix + "session_id"
+	return " " + conjunction + " (" + col + " = ? OR " + col + " = '')"
+}
+
+// sessionArgs returns the bound parameters for sessionClause, or nil if no session.
+func (s *SQLiteStore) sessionArgs() []any {
+	if s.sessionID == "" {
+		return nil
+	}
+	return []any{s.sessionID}
 }
 
 // WithConfig sets the config manager for economic mode and settings.
@@ -261,10 +290,10 @@ func (s *SQLiteStore) AddTask(task *Task) error {
 	}
 
 	_, err := s.db.Exec(`
-		INSERT INTO c4_tasks (task_id, title, scope, dod, status, dependencies, domain, priority, model, execution_mode, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+		INSERT INTO c4_tasks (task_id, title, scope, dod, status, dependencies, domain, priority, model, execution_mode, session_id, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
 		task.ID, task.Title, task.Scope, task.DoD, "pending",
-		deps, task.Domain, task.Priority, model, executionMode,
+		deps, task.Domain, task.Priority, model, executionMode, s.sessionID,
 	)
 	if err == nil {
 		// C3 EventBus: publish task.created event (domain vs execution_mode separated; mode kept for backward compat)
@@ -570,7 +599,11 @@ func (s *SQLiteStore) reassignStaleOrFindPendingTask(workerID string) (
 	var priority int
 	var isStale bool
 
+	sfClause := s.sessionClause("AND", "t.")
+	sfArgs := s.sessionArgs()
+
 	// Anti-fragility: try to reassign stale in_progress tasks first (>30 min without update)
+	staleArgs := append([]any{workerID}, sfArgs...)
 	err = conn.QueryRowContext(ctx, `
 		SELECT t.task_id, t.title, t.scope, t.dod, t.dependencies, t.domain, t.priority, t.model
 		FROM c4_tasks t
@@ -578,9 +611,9 @@ func (s *SQLiteStore) reassignStaleOrFindPendingTask(workerID string) (
 		AND (t.execution_mode IS NULL OR t.execution_mode IN ('', 'worker', 'auto'))
 		AND (julianday('now') - julianday(t.updated_at)) * 24 * 60 > 30
 		AND t.worker_id != ?
-		AND (t.superseded_by IS NULL OR t.superseded_by = '')
+		AND (t.superseded_by IS NULL OR t.superseded_by = '')`+sfClause+`
 		ORDER BY t.priority DESC, t.created_at ASC
-		LIMIT 1`, workerID,
+		LIMIT 1`, staleArgs...,
 	).Scan(&taskID, &title, &scope, &dod, &deps, &domain, &priority, &model)
 
 	if err == sql.ErrNoRows {
@@ -590,14 +623,14 @@ func (s *SQLiteStore) reassignStaleOrFindPendingTask(workerID string) (
 			FROM c4_tasks t
 			WHERE t.status = 'pending'
 			AND (t.execution_mode IS NULL OR t.execution_mode IN ('', 'worker', 'auto'))
-			AND (t.superseded_by IS NULL OR t.superseded_by = '')
+			AND (t.superseded_by IS NULL OR t.superseded_by = '')`+sfClause+`
 			AND NOT EXISTS (
 				SELECT 1 FROM json_each(CASE WHEN t.dependencies IS NULL OR t.dependencies = '' THEN '[]' ELSE t.dependencies END) AS dep
 				JOIN c4_tasks dt ON dt.task_id = dep.value
 				WHERE dt.status != 'done'
 			)
 			ORDER BY t.priority DESC, t.created_at ASC
-			LIMIT 1`,
+			LIMIT 1`, sfArgs...,
 		).Scan(&taskID, &title, &scope, &dod, &deps, &domain, &priority, &model)
 		isStale = false
 	} else if err == nil {
@@ -977,13 +1010,16 @@ func (s *SQLiteStore) removeClaimFile() {
 // StaleTasks returns in_progress tasks whose updated_at is older than minMinutes.
 // Used by the admin c4_stale_tasks tool to surface stuck workers.
 func (s *SQLiteStore) StaleTasks(minMinutes int) ([]Task, error) {
+	sfClause := s.sessionClause("AND", "")
+	sfArgs := s.sessionArgs()
+	args := append([]any{minMinutes}, sfArgs...)
 	rows, err := s.db.Query(`
 		SELECT task_id, title, worker_id, updated_at, domain
 		FROM c4_tasks
 		WHERE status = 'in_progress'
-		  AND (julianday('now') - julianday(updated_at)) * 24 * 60 > ?
+		  AND (julianday('now') - julianday(updated_at)) * 24 * 60 > ?`+sfClause+`
 		ORDER BY updated_at ASC`,
-		minMinutes)
+		args...)
 	if err != nil {
 		return nil, err
 	}
