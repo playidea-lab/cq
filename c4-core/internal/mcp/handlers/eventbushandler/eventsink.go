@@ -3,10 +3,12 @@
 package eventbushandler
 
 import (
+	"crypto/subtle"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/changmin/c4-core/internal/eventbus"
 )
@@ -30,7 +32,7 @@ func StartEventSinkServer(port int, token string, pub eventbus.Publisher) (*http
 		if token != "" {
 			auth := r.Header.Get("Authorization")
 			expected := "Bearer " + token
-			if auth != expected {
+			if subtle.ConstantTimeCompare([]byte(auth), []byte(expected)) != 1 {
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusUnauthorized)
 				json.NewEncoder(w).Encode(map[string]any{"ok": false, "error": "unauthorized"})
@@ -75,8 +77,10 @@ func StartEventSinkServer(port int, token string, pub eventbus.Publisher) (*http
 	})
 
 	srv := &http.Server{
-		Addr:    fmt.Sprintf("127.0.0.1:%d", port),
-		Handler: mux,
+		Addr:              fmt.Sprintf("127.0.0.1:%d", port),
+		Handler:           mux,
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       15 * time.Second,
 	}
 
 	go func() {
