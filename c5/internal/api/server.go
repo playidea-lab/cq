@@ -25,18 +25,19 @@ import (
 
 // Server is the C5 HTTP API server.
 type Server struct {
-	store     *store.Store
-	storage   storage.Backend
-	estimator *Estimator
-	startTime time.Time
-	version   string
-	apiKey    string // optional API key for authentication
-	llmsTxt   string // llms.txt content
-	docsFS    fs.FS  // docs filesystem (may be nil)
-	serverURL string // local server URL (fallback for publicURL)
-	publicURL string // external public URL (for device auth redirects)
-	mux       *http.ServeMux
-	done      chan struct{} // closed on shutdown to stop background goroutines
+	store       *store.Store
+	storage     storage.Backend
+	estimator   *Estimator
+	startTime   time.Time
+	version     string
+	apiKey      string // optional API key for authentication
+	llmsTxt     string // llms.txt content
+	docsFS      fs.FS  // docs filesystem (may be nil)
+	serverURL   string // local server URL (fallback for publicURL)
+	publicURL   string // external public URL (for device auth redirects)
+	supabaseURL string // Supabase project URL for PKCE token exchange
+	mux         *http.ServeMux
+	done        chan struct{} // closed on shutdown to stop background goroutines
 	eventPub         *eventpub.Publisher
 	maxArtifactBytes int64 // max upload size for local backend
 	gpuWorkerGPUOnly bool  // if true, GPU workers only accept GPU jobs (no CPU fallback)
@@ -65,6 +66,7 @@ type Config struct {
 	EventBusToken    string // Bearer token for EventBus (optional)
 	MaxArtifactBytes int64  // max upload size for local backend (default 10GB)
 	GPUWorkerGPUOnly bool   // if true, GPU workers only accept GPU jobs (no CPU fallback)
+	SupabaseURL      string // Supabase project URL for PKCE token exchange (optional)
 }
 
 // NewServer creates an HTTP API server.
@@ -90,6 +92,7 @@ func NewServer(cfg Config) *Server {
 		docsFS:           cfg.DocsFS,
 		serverURL:        cfg.ServerURL,
 		publicURL:        cfg.PublicURL,
+		supabaseURL:      cfg.SupabaseURL,
 		mux:              http.NewServeMux(),
 		done:             make(chan struct{}),
 		eventPub:         eventpub.New(cfg.EventBusURL, cfg.EventBusToken),
@@ -169,6 +172,10 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("/ws/metrics/", s.handleWSMetrics)
 	s.mux.HandleFunc("/v1/ws/metrics/", s.handleWSMetrics)
 
+	// Auth (OAuth PKCE device flow — no API key required)
+	s.mux.HandleFunc("/auth/callback", s.handleAuthCallback)
+	s.mux.HandleFunc("/v1/auth/device/", s.handleAuthDeviceToken)
+
 	// Admin (requires master key)
 	s.mux.HandleFunc("/v1/admin/api-keys", s.handleAdminAPIKeys)
 	s.mux.HandleFunc("/v1/admin/api-keys/", s.handleAdminAPIKeyByHash)
@@ -184,7 +191,7 @@ func (s *Server) registerRoutes() {
 
 func (s *Server) authMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Public endpoints: health, llms.txt, docs, device auth
+		// Public endpoints: health, llms.txt, docs, device auth, auth callback
 		switch {
 		case r.URL.Path == "/v1/health",
 			r.URL.Path == "/llms.txt",
@@ -192,7 +199,8 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 			strings.HasPrefix(r.URL.Path, "/v1/docs/"),
 			r.URL.Path == "/v1/auth/device",
 			strings.HasPrefix(r.URL.Path, "/v1/auth/device/"),
-			strings.HasPrefix(r.URL.Path, "/auth/activate"):
+			strings.HasPrefix(r.URL.Path, "/auth/activate"),
+			r.URL.Path == "/auth/callback":
 			next.ServeHTTP(w, r)
 			return
 		}

@@ -247,6 +247,7 @@ func (s *Store) migrate() error {
 			auth_code      TEXT NOT NULL DEFAULT '',
 			status         TEXT NOT NULL DEFAULT 'pending',
 			poll_count     INTEGER NOT NULL DEFAULT 0,
+			token_attempts INTEGER NOT NULL DEFAULT 0,
 			expires_at     INTEGER NOT NULL,
 			created_at     INTEGER NOT NULL
 		);
@@ -2279,7 +2280,7 @@ func scanDeviceSession(sc interface {
 	if err := sc.Scan(
 		&ds.State, &ds.UserCode, &ds.CSRFToken, &ds.CodeChallenge,
 		&ds.SupabaseURL, &ds.AuthCode, &ds.Status, &ds.PollCount,
-		&expiresAtUnix, &createdAtUnix,
+		&ds.TokenAttempts, &expiresAtUnix, &createdAtUnix,
 	); err != nil {
 		return nil, err
 	}
@@ -2288,7 +2289,7 @@ func scanDeviceSession(sc interface {
 	return &ds, nil
 }
 
-const deviceSessionCols = `state, user_code, csrf_token, code_challenge, supabase_url, auth_code, status, poll_count, expires_at, created_at`
+const deviceSessionCols = `state, user_code, csrf_token, code_challenge, supabase_url, auth_code, status, poll_count, token_attempts, expires_at, created_at`
 
 // CreateDeviceSession inserts a new device session with a unique user_code.
 // Expired sessions are deleted first. Retries up to 3 times on user_code conflict.
@@ -2378,12 +2379,27 @@ func (s *Store) GetDeviceSessionByUserCode(userCode string) (*model.DeviceSessio
 // SetDeviceSessionAuthCode sets the auth_code and transitions status from pending to ready.
 // Idempotent: if already ready, no error is returned.
 func (s *Store) SetDeviceSessionAuthCode(state, authCode string) error {
-	_, err := s.db.Exec(
+	res, err := s.db.Exec(
 		`UPDATE device_sessions SET auth_code = ?, status = 'ready'
 		 WHERE state = ? AND status IN ('pending', 'ready')`,
 		authCode, state,
 	)
-	return err
+	if err != nil {
+		return fmt.Errorf("set device session auth code: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		// Already ready or not found — check if session exists
+		ds, err := s.GetDeviceSession(state)
+		if err != nil {
+			return fmt.Errorf("device session not found or expired")
+		}
+		if ds.Status == "ready" {
+			return nil // idempotent
+		}
+		return fmt.Errorf("device session not found or expired")
+	}
+	return nil
 }
 
 // SetDeviceSessionCSRF sets the csrf_token for a device session.
@@ -2393,6 +2409,41 @@ func (s *Store) SetDeviceSessionCSRF(state, csrfToken string) error {
 		csrfToken, state,
 	)
 	return err
+}
+
+// IncrementTokenAttempts atomically increments token_attempts and marks the session
+// expired when the limit is reached. Returns the new attempt count.
+func (s *Store) IncrementTokenAttempts(state string, limit int) (int, error) {
+	_, err := s.db.Exec(
+		`UPDATE device_sessions SET token_attempts = token_attempts + 1 WHERE state = ?`, state,
+	)
+	if err != nil {
+		return 0, fmt.Errorf("increment token attempts: %w", err)
+	}
+	row := s.db.QueryRow(`SELECT token_attempts FROM device_sessions WHERE state = ?`, state)
+	var n int
+	if err := row.Scan(&n); err != nil {
+		return 0, fmt.Errorf("read token attempts: %w", err)
+	}
+	if n >= limit {
+		if _, err := s.db.Exec(
+			`UPDATE device_sessions SET status = 'expired' WHERE state = ? AND status != 'expired'`, state,
+		); err != nil {
+			return n, fmt.Errorf("expire device session: %w", err)
+		}
+	}
+	return n, nil
+}
+
+// DeleteExpiredDeviceSessions removes sessions older than the given duration. Called by cleanup loop.
+func (s *Store) DeleteExpiredDeviceSessions(olderThan time.Duration) (int64, error) {
+	cutoff := time.Now().Unix() - int64(olderThan.Seconds())
+	res, err := s.db.Exec(`DELETE FROM device_sessions WHERE created_at < ?`, cutoff)
+	if err != nil {
+		return 0, fmt.Errorf("delete expired device sessions: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	return n, nil
 }
 
 // StartBackgroundCleanup starts a goroutine that deletes expired device_sessions every minute.
