@@ -316,8 +316,7 @@ func newMCPServer() (*mcpServer, error) {
 	})
 
 	// Register config handlers
-	handlers.RegisterConfigHandler(reg, cfgMgr)
-	handlers.RegisterConfigSetHandler(reg, cfgMgr, projectDir)
+	handlers.RegisterConfigHandlers(reg, cfgMgr, projectDir)
 
 	// Register secret handlers using the already-open store from ctx.
 	if ctx.secretStore != nil {

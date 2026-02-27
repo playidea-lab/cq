@@ -208,8 +208,10 @@ func TestDependencyMatrix(t *testing.T) {
 			"internal/llm",
 			"internal/mailbox",
 			"internal/mcp",
+			"internal/mcp/handlers/cfghandler",
 			"internal/mcp/handlers/fileops",
 			"internal/mcp/handlers/gitops",
+			"internal/mcp/handlers/secrethandler",
 			"internal/mcp/handlers/webcontent",
 			"internal/observe",
 			"internal/research",
@@ -218,6 +220,15 @@ func TestDependencyMatrix(t *testing.T) {
 			"internal/store",
 			"internal/task",
 			"internal/worker",
+		},
+		// Wave 1b sub-packages: cfghandler and secrethandler
+		"internal/mcp/handlers/cfghandler": {
+			"internal/config",
+			"internal/mcp",
+		},
+		"internal/mcp/handlers/secrethandler": {
+			"internal/mcp",
+			"internal/secrets",
 		},
 	}
 

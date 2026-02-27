@@ -1,4 +1,4 @@
-package handlers
+package secrethandler
 
 import (
 	"encoding/json"
@@ -15,9 +15,9 @@ const maxSecretValueBytes = 64 * 1024 // 64 KB
 // maxSecretKeyBytes caps key names to prevent unbounded SQL parameter allocation.
 const maxSecretKeyBytes = 256
 
-// RegisterSecretHandlers registers c4_secret_set, c4_secret_get, c4_secret_list, c4_secret_delete.
+// Register registers c4_secret_set, c4_secret_get, c4_secret_list, c4_secret_delete.
 // store must not be nil.
-func RegisterSecretHandlers(reg *mcp.Registry, store *secrets.Store) {
+func Register(reg *mcp.Registry, store *secrets.Store) {
 	reg.Register(mcp.ToolSchema{
 		Name:        "c4_secret_set",
 		Description: "Store an encrypted secret in ~/.c4/secrets.db. Use for API keys and credentials instead of config.yaml.",

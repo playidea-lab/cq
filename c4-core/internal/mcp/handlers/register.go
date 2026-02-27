@@ -1,14 +1,18 @@
 package handlers
 
 import (
+	"github.com/changmin/c4-core/internal/config"
 	"github.com/changmin/c4-core/internal/daemon"
 	"github.com/changmin/c4-core/internal/knowledge"
 	"github.com/changmin/c4-core/internal/llm"
 	"github.com/changmin/c4-core/internal/mcp"
+	"github.com/changmin/c4-core/internal/mcp/handlers/cfghandler"
 	"github.com/changmin/c4-core/internal/mcp/handlers/fileops"
 	"github.com/changmin/c4-core/internal/mcp/handlers/gitops"
+	"github.com/changmin/c4-core/internal/mcp/handlers/secrethandler"
 	handlerswc "github.com/changmin/c4-core/internal/mcp/handlers/webcontent"
 	"github.com/changmin/c4-core/internal/research"
+	"github.com/changmin/c4-core/internal/secrets"
 )
 
 // RegisterAll registers all MCP tool handlers on the registry.
@@ -110,4 +114,14 @@ func registerKnowledgeNative(reg *mcp.Registry, proxy *BridgeProxy, opts *Native
 	} else {
 		registerKnowledgeProxy(reg, proxy, knowledgeCloud)
 	}
+}
+
+// RegisterConfigHandlers registers c4_config_get and c4_config_set via cfghandler subpackage.
+func RegisterConfigHandlers(reg *mcp.Registry, mgr *config.Manager, projectRoot string) {
+	cfghandler.Register(reg, mgr, projectRoot)
+}
+
+// RegisterSecretHandlers registers c4_secret_* tools via secrethandler subpackage.
+func RegisterSecretHandlers(reg *mcp.Registry, store *secrets.Store) {
+	secrethandler.Register(reg, store)
 }
