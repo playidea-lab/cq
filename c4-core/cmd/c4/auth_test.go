@@ -245,13 +245,14 @@ func TestEnsureCloudAuth_ValidSession(t *testing.T) {
 	builtinSupabaseURL = "https://test.supabase.co"
 	t.Setenv("C4_CLOUD_URL", "")
 	t.Setenv("SUPABASE_URL", "")
+	t.Setenv("HOME", t.TempDir()) // isolate: no session.json → deterministic no-session path
 
-	// In CI there's no session, so this test only validates no panic.
-	// We use "n\n" as input to decline, confirming we reach the prompt path.
+	// No session in isolated HOME → prompt shown, user inputs "n".
 	r := strings.NewReader("n\n")
 	got := ensureCloudAuth(r, false)
-	// Either true (valid session) or false (declined) — just must not panic.
-	_ = got
+	if got {
+		t.Error("expected false when user declines (no session)")
+	}
 }
 
 // TestEnsureCloudAuth_Decline: cloud URL set, no session, user inputs "n" → returns false.
@@ -262,13 +263,14 @@ func TestEnsureCloudAuth_Decline(t *testing.T) {
 	builtinSupabaseURL = "https://test.supabase.co"
 	t.Setenv("C4_CLOUD_URL", "")
 	t.Setenv("SUPABASE_URL", "")
+	t.Setenv("HOME", t.TempDir()) // isolate: no session.json → deterministic no-session path
 
 	r := strings.NewReader("n\n")
 	got := ensureCloudAuth(r, false)
-	// If there's already a valid session in the test env, result is true.
-	// Otherwise (no session) the user declined → false.
-	// Either outcome is acceptable; the key assertion is no panic.
-	_ = got
+	// No session in isolated HOME → prompt shown, user declines → false.
+	if got {
+		t.Error("expected false when user inputs 'n' (no session)")
+	}
 }
 
 // TestEnsureCloudAuth_EmptyInput: EOF input → returns false (no session case).
@@ -279,12 +281,14 @@ func TestEnsureCloudAuth_EmptyInput(t *testing.T) {
 	builtinSupabaseURL = "https://test.supabase.co"
 	t.Setenv("C4_CLOUD_URL", "")
 	t.Setenv("SUPABASE_URL", "")
+	t.Setenv("HOME", t.TempDir()) // isolate: no session.json → deterministic no-session path
 
 	r := strings.NewReader("") // EOF immediately
-	// If no valid session: scanner returns false on EOF → returns false.
-	// If valid session: returns true immediately (doesn't read r).
+	// No session in isolated HOME → prompt shown, EOF → scanner returns false → false.
 	got := ensureCloudAuth(r, false)
-	_ = got // no panic is the assertion
+	if got {
+		t.Error("expected false on EOF input (no session)")
+	}
 }
 
 // TestEnsureCloudAuth_YesAll: yesAll=true, cloud URL set, no valid session →
@@ -300,6 +304,7 @@ func TestEnsureCloudAuth_YesAll(t *testing.T) {
 	builtinSupabaseURL = "https://test.supabase.co"
 	t.Setenv("C4_CLOUD_URL", "")
 	t.Setenv("SUPABASE_URL", "")
+	t.Setenv("HOME", t.TempDir()) // isolate: no session.json → deterministic no-session path
 
 	// Stub authLoginFunc to succeed without network.
 	loginCalled := false
@@ -309,14 +314,12 @@ func TestEnsureCloudAuth_YesAll(t *testing.T) {
 	}
 
 	// Pass nil reader — if the code reads from stdin when yesAll=true, it panics.
-	// No panic + loginCalled=true proves the yesAll path is exercised.
-	// Note: if a valid session exists, we return true before calling login.
-	// In that case loginCalled stays false but got is still true.
+	// Isolated HOME guarantees no session → yesAll skips prompt → calls authLoginFunc.
 	got := ensureCloudAuth(nil, true)
 	if !got {
 		t.Error("expected true when yesAll=true and login succeeds")
 	}
-	// loginCalled is true only when there's no valid session (typical in CI).
-	// We don't assert loginCalled because CI may or may not have a session.
-	_ = loginCalled
+	if !loginCalled {
+		t.Error("expected authLoginFunc to be called when yesAll=true and no session")
+	}
 }

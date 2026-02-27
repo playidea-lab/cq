@@ -60,6 +60,12 @@ func TestLoadC4CloudEnv_BothSet(t *testing.T) {
 	if len(envs) != 2 {
 		t.Fatalf("expected 2 env vars, got %d", len(envs))
 	}
+	if envs[0] != "C5_SUPABASE_URL=https://example.supabase.co" {
+		t.Errorf("envs[0] = %q, want %q", envs[0], "C5_SUPABASE_URL=https://example.supabase.co")
+	}
+	if envs[1] != "C5_SUPABASE_KEY=test-anon-key" {
+		t.Errorf("envs[1] = %q, want %q", envs[1], "C5_SUPABASE_KEY=test-anon-key")
+	}
 }
 
 func TestLoadC4CloudEnv_Empty(t *testing.T) {
@@ -76,6 +82,9 @@ func TestLoadC4CloudEnv_URLOnly(t *testing.T) {
 	envs := loadC4CloudEnv(cfg)
 	if len(envs) != 1 {
 		t.Fatalf("expected 1 env var, got %d", len(envs))
+	}
+	if envs[0] != "C5_SUPABASE_URL=https://example.supabase.co" {
+		t.Errorf("envs[0] = %q, want %q", envs[0], "C5_SUPABASE_URL=https://example.supabase.co")
 	}
 }
 

@@ -1603,6 +1603,9 @@ var sessionRmCmd = &cobra.Command{
 	},
 }
 
+// servePIDPath overrides the default PID file location; used in tests for path isolation.
+var servePIDPath string
+
 // ensureServeRunning checks if cq serve is running and starts it in the background if not.
 // If noServe is true, it skips the check entirely.
 // Failures are non-fatal: a warning is printed and execution continues.
@@ -1611,12 +1614,14 @@ func ensureServeRunning(noServe bool) {
 		return
 	}
 
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return
+	pidPath := servePIDPath
+	if pidPath == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return
+		}
+		pidPath = filepath.Join(home, ".c4", "serve", "serve.pid")
 	}
-
-	pidPath := filepath.Join(home, ".c4", "serve", "serve.pid")
 	data, err := os.ReadFile(pidPath)
 	if err == nil {
 		pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
@@ -1684,8 +1689,11 @@ func isCQServeProcess(pid int) bool {
 		if err != nil {
 			return false
 		}
-		cmdline := strings.TrimSpace(string(out))
-		return strings.Contains(cmdline, "cq") && strings.Contains(cmdline, "serve")
+		parts := strings.Fields(strings.TrimSpace(string(out)))
+		if len(parts) < 2 {
+			return false
+		}
+		return filepath.Base(parts[0]) == "cq" && parts[1] == "serve"
 	default:
 		// Unsupported OS — assume not running to trigger a start attempt.
 		return false

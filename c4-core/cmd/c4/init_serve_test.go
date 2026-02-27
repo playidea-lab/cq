@@ -20,41 +20,39 @@ func TestIsCQServeProcess_NotRunning(t *testing.T) {
 }
 
 // TestEnsureServeRunning_AlreadyRunning exercises the PID file read path.
-// It calls ensureServeRunning(false) which reads the PID file (may be absent),
-// checks isCQServeProcess, and attempts to fork cq serve if not running.
-// The fork will fail gracefully in the test environment since this is not a serve process.
+// It isolates the PID path to a tmpdir so the real ~/.c4/ is not touched.
 func TestEnsureServeRunning_AlreadyRunning(t *testing.T) {
-	// Write current process PID to a temp file to verify isCQServeProcess works.
-	// The current test process is not "cq serve", so isCQServeProcess returns false.
-	pid := os.Getpid()
-	if isCQServeProcess(pid) {
-		t.Log("isCQServeProcess returned true for test process (unexpected but non-fatal)")
-	}
+	// Isolate PID file path to tmpDir.
+	orig := servePIDPath
+	servePIDPath = tmpServePID(t, os.Getpid())
+	defer func() { servePIDPath = orig }()
 
 	// Call ensureServeRunning(false) — exercises:
-	//   - os.UserHomeDir()
-	//   - os.ReadFile of serve.pid (may fail, which is fine)
-	//   - strconv.Atoi + isCQServeProcess (if pid file exists)
-	//   - os.Executable() + exec.Command fork attempt
+	//   - os.ReadFile of serve.pid (reads our tmpdir file)
+	//   - strconv.Atoi + isCQServeProcess (returns false for test process)
+	//   - os.Executable() + exec.Command fork attempt (gracefully fails)
 	// Should not panic.
 	ensureServeRunning(false)
 }
 
-// TestEnsureServeRunning_WithPIDFile writes a PID file pointing to a dead PID
-// and verifies ensureServeRunning(false) attempts to start serve (non-panic).
+// TestEnsureServeRunning_WithPIDFile writes a PID file pointing to the current process
+// and injects the path via servePIDPath, verifying ensureServeRunning reads it correctly.
 func TestEnsureServeRunning_WithPIDFile(t *testing.T) {
-	// Write a PID file pointing to the current process.
-	// isCQServeProcess will return false for a test process,
-	// so ensureServeRunning will attempt to fork cq serve (which may fail gracefully).
-	tmpDir := t.TempDir()
-	pidFile := tmpDir + "/serve.pid"
-	if err := os.WriteFile(pidFile, []byte(strconv.Itoa(os.Getpid())), 0644); err != nil {
+	orig := servePIDPath
+	servePIDPath = tmpServePID(t, os.Getpid())
+	defer func() { servePIDPath = orig }()
+
+	// isCQServeProcess returns false for the test process (not "cq serve"),
+	// so ensureServeRunning will attempt to fork (gracefully fails in tests).
+	ensureServeRunning(false) // must not panic
+}
+
+// tmpServePID writes a PID file to a temp location and returns the path.
+func tmpServePID(t *testing.T, pid int) string {
+	t.Helper()
+	pidFile := t.TempDir() + "/serve.pid"
+	if err := os.WriteFile(pidFile, []byte(strconv.Itoa(pid)), 0644); err != nil {
 		t.Fatal(err)
 	}
-
-	// We cannot easily inject the tmpDir into ensureServeRunning without refactoring,
-	// so just verify isCQServeProcess returns false for our PID (not a cq serve process).
-	if isCQServeProcess(os.Getpid()) {
-		t.Log("test process unexpectedly matches cq serve signature")
-	}
+	return pidFile
 }
