@@ -228,6 +228,69 @@ class LocalEmbeddings:
         return [emb.tolist() for emb in embeddings]
 
 
+class OllamaEmbeddings:
+    """Ollama embeddings provider using nomic-embed-text (768-dim).
+
+    Uses a local Ollama server for embedding generation without external API calls.
+    Defaults to nomic-embed-text model which produces 768-dimensional embeddings.
+
+    Attributes:
+        model: The Ollama model to use (default: nomic-embed-text)
+        base_url: The Ollama server URL (default: http://localhost:11434)
+        dimension: The embedding dimension (768 for nomic-embed-text)
+    """
+
+    def __init__(
+        self,
+        model: str = "nomic-embed-text",
+        base_url: str = "http://localhost:11434",
+    ) -> None:
+        self.model = model
+        self.base_url = base_url.rstrip("/")
+
+        # Known model dimensions
+        self._known_dimensions = {
+            "nomic-embed-text": 768,
+            "mxbai-embed-large": 1024,
+            "all-minilm": 384,
+        }
+
+    @property
+    def dimension(self) -> int:
+        """Return the embedding dimension for this model."""
+        return self._known_dimensions.get(self.model, 768)
+
+    def embed(self, text: str) -> list[float]:
+        """Convert text to an embedding vector using Ollama API."""
+        import json
+        import urllib.error
+        import urllib.request
+
+        payload = json.dumps({"model": self.model, "prompt": text}).encode()
+        url = f"{self.base_url}/api/embeddings"
+        try:
+            req = urllib.request.Request(
+                url,
+                data=payload,
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                data = json.loads(resp.read())
+                return data["embedding"]
+        except urllib.error.URLError as e:
+            raise RuntimeError(
+                f"Cannot connect to Ollama at {self.base_url}. "
+                "Ensure Ollama is running: `ollama serve`"
+            ) from e
+        except KeyError as e:
+            raise RuntimeError("Unexpected response from Ollama (missing 'embedding' key)") from e
+
+    def embed_batch(self, texts: list[str]) -> list[list[float]]:
+        """Convert multiple texts to embedding vectors (sequential calls)."""
+        return [self.embed(text) for text in texts]
+
+
 class MockEmbeddings:
     """Mock embeddings provider for testing.
 
@@ -289,6 +352,7 @@ _PROVIDERS = {
     "openai": OpenAIEmbeddings,
     "local": LocalEmbeddings,
     "mock": MockEmbeddings,
+    "ollama": OllamaEmbeddings,
 }
 
 
