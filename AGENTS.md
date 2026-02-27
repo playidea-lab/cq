@@ -142,21 +142,21 @@ C9 Knowledge — 지식 관리 (FTS5 + pgvector + Embedding + Usage + Ingestion)
 ### 코드베이스 규모
 | 언어 | 소스 | 테스트 | 합계 |
 |------|------|--------|------|
-| Go (`c4-core/`) | ~38.9K LOC | ~36.8K LOC | ~75.7K |
-| Go (`c5/`) | ~6.9K LOC | ~4.8K LOC | ~11.7K |
+| Go (`c4-core/`) | ~54.9K LOC | ~52.8K LOC | ~107.7K |
+| Go (`c5/`) | ~7.3K LOC | ~6.4K LOC | ~13.7K |
 | Python (`c4/`) | ~22.9K LOC | ~9.5K LOC | ~32.4K |
-| Rust (`c1/src-tauri/`) | ~9.5K LOC | (내장) | ~9.5K |
-| TS+CSS (`c1/src/`) | ~11.8K LOC | | ~11.8K |
-| SQL (`infra/`) | ~1.1K LOC | | ~1.1K |
-| **합계** | ~90.9K | ~50.8K | **~141.7K LOC** |
+| Rust (`c1/src-tauri/`) | ~10.2K LOC | (내장) | ~10.2K |
+| TS+CSS (`c1/src/`) | ~13.7K LOC | | ~13.7K |
+| SQL (`infra/`) | ~1.3K LOC | | ~1.3K |
+| **합계** | ~110.3K | ~68.7K | **~179.0K LOC** |
 
 ### 테스트 현황
 | 언어 | 테스트 수 | 패키지/모듈 |
 |------|----------|------------|
-| Go | **~1,645** | 37 packages (all pass) — c4-core ~1,452 + c5 ~193 |
+| Go | **~1,970** | 37 packages (all pass) — c4-core ~1,774 + c5 ~196 |
 | Python | **697** | tests/unit/ |
 | Rust | **92** | src-tauri |
-| **합계** | **~2,350** | |
+| **합계** | **~2,759** | |
 
 ### Monorepo 구조
 ```
