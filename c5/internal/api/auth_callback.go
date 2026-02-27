@@ -129,7 +129,12 @@ func (s *Server) handleAuthDeviceToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Use server-configured supabaseURL; fall back to the value stored in the device session
+	// (set at creation time from the client-supplied supabase_url when server has no config).
 	supabaseURL := s.supabaseURL
+	if supabaseURL == "" {
+		supabaseURL = ds.SupabaseURL
+	}
 	if supabaseURL == "" {
 		writeError(w, http.StatusBadRequest, "supabase not configured")
 		return
