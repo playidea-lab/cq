@@ -3,6 +3,8 @@ package hub
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -137,6 +139,240 @@ func TestStreamMetrics_ReceivesAndStopsOnTerminal(t *testing.T) {
 	last := received[len(received)-1]
 	if last.Type != "status" || last.Status != "SUCCEEDED" {
 		t.Errorf("last message = %+v, want status=SUCCEEDED", last)
+	}
+}
+
+// =========================================================================
+// isTerminalStatus + isTimeout (non-integration, deterministic)
+// =========================================================================
+
+func TestIsTerminalStatus(t *testing.T) {
+	tests := []struct {
+		status string
+		want   bool
+	}{
+		{"SUCCEEDED", true},
+		{"FAILED", true},
+		{"CANCELLED", true},
+		{"RUNNING", false},
+		{"QUEUED", false},
+		{"", false},
+		{"succeeded", false}, // case-sensitive
+	}
+	for _, tt := range tests {
+		if got := isTerminalStatus(tt.status); got != tt.want {
+			t.Errorf("isTerminalStatus(%q) = %v, want %v", tt.status, got, tt.want)
+		}
+	}
+}
+
+func TestIsTimeout_NetError(t *testing.T) {
+	// Create a fake net.Error that times out
+	ne := &fakeNetError{timeout: true}
+	if !isTimeout(ne) {
+		t.Error("isTimeout(net.Error{timeout:true}) should be true")
+	}
+}
+
+func TestIsTimeout_NetErrorNotTimeout(t *testing.T) {
+	ne := &fakeNetError{timeout: false}
+	if isTimeout(ne) {
+		t.Error("isTimeout(net.Error{timeout:false}) should be false")
+	}
+}
+
+func TestIsTimeout_NonNetError(t *testing.T) {
+	err := fmt.Errorf("some generic error")
+	if isTimeout(err) {
+		t.Error("isTimeout(generic error) should be false")
+	}
+}
+
+func TestIsTimeout_EOF(t *testing.T) {
+	if isTimeout(io.EOF) {
+		t.Error("isTimeout(io.EOF) should be false")
+	}
+}
+
+// fakeNetError implements net.Error for testing.
+type fakeNetError struct {
+	timeout bool
+}
+
+func (e *fakeNetError) Error() string   { return "fake net error" }
+func (e *fakeNetError) Timeout() bool   { return e.timeout }
+func (e *fakeNetError) Temporary() bool { return false }
+
+// =========================================================================
+// StreamMetrics + streamOnce — local WebSocket server tests (no env var)
+// =========================================================================
+
+// newWSTestClient creates a Client pointing at ts.URL (http://) with
+// apiPrefix="/v1". The Client uses the default http transport.
+func newWSTestClient(ts *httptest.Server) *Client {
+	return &Client{
+		baseURL:    ts.URL,
+		apiPrefix:  "/v1",
+		apiKey:     "test",
+		teamID:     "test",
+		httpClient: &http.Client{Transport: http.DefaultTransport},
+	}
+}
+
+func TestStreamMetrics_StopsOnTerminalStatus(t *testing.T) {
+	skipUnlessIntegration(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, _, _, err := ws.UpgradeHTTP(r, w)
+		if err != nil {
+			t.Errorf("upgrade: %v", err)
+			return
+		}
+		defer conn.Close()
+
+		messages := []MetricMessage{
+			{Type: "metric", JobID: "j1", Step: 0, Metrics: map[string]any{"loss": 1.0}},
+			{Type: "status", JobID: "j1", Status: "SUCCEEDED"},
+		}
+		for _, msg := range messages {
+			data, _ := json.Marshal(msg)
+			if err := wsutil.WriteServerText(conn, data); err != nil {
+				return
+			}
+		}
+	}))
+	defer server.Close()
+
+	client := newWSTestClient(server)
+
+	var received []MetricMessage
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	err := client.StreamMetrics(ctx, "j1", false, func(msg MetricMessage) {
+		received = append(received, msg)
+	})
+	if err != nil {
+		t.Fatalf("StreamMetrics: %v", err)
+	}
+	if len(received) < 2 {
+		t.Fatalf("received %d messages, want >= 2", len(received))
+	}
+	last := received[len(received)-1]
+	if last.Type != "status" || last.Status != "SUCCEEDED" {
+		t.Errorf("last = %+v, want status=SUCCEEDED", last)
+	}
+}
+
+func TestStreamMetrics_ContextCancelStops(t *testing.T) {
+	skipUnlessIntegration(t)
+	var mu sync.Mutex
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, _, _, err := ws.UpgradeHTTP(r, w)
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+
+		for i := 0; i < 100; i++ {
+			mu.Lock()
+			data, _ := json.Marshal(MetricMessage{Type: "metric", Step: i})
+			writeErr := wsutil.WriteServerText(conn, data)
+			mu.Unlock()
+			if writeErr != nil {
+				return
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+	}))
+	defer server.Close()
+
+	client := newWSTestClient(server)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+
+	count := 0
+	err := client.StreamMetrics(ctx, "j-cancel", false, func(msg MetricMessage) {
+		count++
+	})
+	if err == nil {
+		t.Error("expected error on context cancel")
+	}
+	if count == 0 {
+		t.Error("expected at least one message before cancel")
+	}
+}
+
+func TestStreamMetrics_InvalidJSONSkipped(t *testing.T) {
+	skipUnlessIntegration(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, _, _, err := ws.UpgradeHTTP(r, w)
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+
+		wsutil.WriteServerText(conn, []byte("not-json"))
+		data, _ := json.Marshal(MetricMessage{Type: "status", Status: "SUCCEEDED"})
+		wsutil.WriteServerText(conn, data)
+	}))
+	defer server.Close()
+
+	client := newWSTestClient(server)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	var received []MetricMessage
+	err := client.StreamMetrics(ctx, "j-invalid-json", false, func(msg MetricMessage) {
+		received = append(received, msg)
+	})
+	if err != nil {
+		t.Fatalf("StreamMetrics with invalid JSON: %v", err)
+	}
+	if len(received) != 1 || received[0].Status != "SUCCEEDED" {
+		t.Errorf("received = %+v, want [{status:SUCCEEDED}]", received)
+	}
+}
+
+func TestStreamMetrics_ReconnectsOnDisconnect(t *testing.T) {
+	skipUnlessIntegration(t)
+	var connectCount int
+	var mu sync.Mutex
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		connectCount++
+		count := connectCount
+		mu.Unlock()
+
+		conn, _, _, err := ws.UpgradeHTTP(r, w)
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+
+		if count == 1 {
+			return
+		}
+		data, _ := json.Marshal(MetricMessage{Type: "status", Status: "SUCCEEDED"})
+		wsutil.WriteServerText(conn, data)
+	}))
+	defer server.Close()
+
+	client := newWSTestClient(server)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	err := client.StreamMetrics(ctx, "j-reconnect", false, func(msg MetricMessage) {})
+	if err != nil {
+		t.Fatalf("StreamMetrics reconnect: %v", err)
+	}
+
+	mu.Lock()
+	count := connectCount
+	mu.Unlock()
+	if count < 2 {
+		t.Errorf("expected at least 2 connections (reconnect), got %d", count)
 	}
 }
 
