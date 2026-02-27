@@ -1,0 +1,28 @@
+# C5 Hub — Fly.io deployment
+# Deploy: fly deploy (from c5/ directory)
+
+app = "piqsol-c5"
+primary_region = "nrt"  # Tokyo — 한국 실험 서버와 인접
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  C5_PORT = "8585"
+
+[[mounts]]
+  source      = "c5_data"
+  destination = "/data"
+  size        = 10  # GB
+
+[http_service]
+  internal_port       = 8585
+  force_https         = true
+  auto_stop_machines  = false   # 항상 켜둠 (worker/edge 연결 유지)
+  auto_start_machines = true
+  min_machines_running = 1
+
+[[vm]]
+  memory   = "512mb"
+  cpu_kind = "shared"
+  cpus     = 1

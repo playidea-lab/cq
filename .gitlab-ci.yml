@@ -184,18 +184,23 @@ release-github:
         apt-get update -qq && apt-get install -y gh
       fi
     - |
-      # Verify all 9 binaries (3 tiers × 3 platforms) are present before uploading
+      # Verify all 9 cq binaries (3 tiers × 3 platforms) are present before uploading
       BINARY_COUNT=$(ls c4-core/dist/ | wc -l | tr -d ' ')
       test "$BINARY_COUNT" = "9" || { echo "Expected 9 binaries, got $BINARY_COUNT"; exit 1; }
     - |
+      # Verify all 3 c5 standalone binaries are present
+      C5_COUNT=$(ls c5/bin/ | wc -l | tr -d ' ')
+      test "$C5_COUNT" = "3" || { echo "Expected 3 c5 binaries, got $C5_COUNT"; exit 1; }
+    - |
       # Idempotent release: upload to existing release or create new one
+      # Uploads: 9 cq binaries + 3 c5 standalone binaries + install.sh = 13 assets
       if gh release view "$CI_COMMIT_TAG" --repo PlayIdea-Lab/cq > /dev/null 2>&1; then
         echo "Release $CI_COMMIT_TAG already exists — uploading binaries with --clobber"
-        gh release upload "$CI_COMMIT_TAG" c4-core/dist/* \
+        gh release upload "$CI_COMMIT_TAG" c4-core/dist/* c5/bin/* c5/install.sh \
           --repo PlayIdea-Lab/cq \
           --clobber
       else
-        gh release create "$CI_COMMIT_TAG" c4-core/dist/* \
+        gh release create "$CI_COMMIT_TAG" c4-core/dist/* c5/bin/* c5/install.sh \
           --repo PlayIdea-Lab/cq \
           --title "$CI_COMMIT_TAG" \
           --notes "Binary release $CI_COMMIT_TAG"
@@ -210,5 +215,8 @@ release-github:
     - build-full-linux-amd64
     - build-full-linux-arm64
     - build-full-darwin-arm64
+    - build-c5-linux-amd64
+    - build-c5-linux-arm64
+    - build-c5-darwin-arm64
   only:
     - /^v.*/

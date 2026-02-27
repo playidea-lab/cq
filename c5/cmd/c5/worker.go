@@ -232,8 +232,10 @@ func executeJob(client *workerClient, job *model.Job, leaseID, workerID string, 
 
 	// Stream logs with metrics auto-parsing on stdout
 	mc := newMetricsCollector(client, job.ID)
-	go streamLogs(client, job.ID, stdout, "stdout", mc)
-	go streamLogs(client, job.ID, stderr, "stderr", nil)
+	var logWg sync.WaitGroup
+	logWg.Add(2)
+	go func() { defer logWg.Done(); streamLogs(client, job.ID, stdout, "stdout", mc) }()
+	go func() { defer logWg.Done(); streamLogs(client, job.ID, stderr, "stderr", nil) }()
 
 	// Lease renew + cancel detection goroutine
 	done := make(chan struct{})
@@ -272,6 +274,7 @@ func executeJob(client *workerClient, job *model.Job, leaseID, workerID string, 
 
 	err := cmd.Wait()
 	close(done)
+	logWg.Wait() // ensure all log lines are flushed before returning
 
 	if err != nil {
 		// Check if killed by timeout
