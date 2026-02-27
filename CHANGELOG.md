@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.38.0] - 2026-02-28
+
+### ✨ Features
+- **auth**: `ensureCloudAuth` Hub-aware 로그인 프롬프트
+  - Hub URL 설정 시 `[y/d/N]` 프롬프트 (y=링크, d=디바이스 코드)
+  - Hub 미설정 시 기존 `[y/N]` 브라우저 OAuth fallback 유지
+  - `yesAll=true` + Hub 설정 → 자동으로 Link 모드 선택
+  - `authLoginFunc(mode string)` — `""` (브라우저) / `"link"` / `"device"` 모드 분기
+  - SSH/원격 환경에서 브라우저 없이 `d` 입력으로 Device Flow 바로 진입 가능
+
+---
+
 ## [v0.37.0] - 2026-02-28
 
 ### ✨ Features
