@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -600,6 +601,105 @@ func TestSessionUnmarshal_InvalidStr(t *testing.T) {
 	err := json.Unmarshal([]byte(data), &s)
 	if err == nil {
 		t.Fatal("expected error for invalid expires_at string, got nil")
+	}
+}
+
+// TestLoginNoBrowser verifies that NoBrowser=true skips openBrowserFunc and
+// prints the OAuth URL and SSH hint to stderr.
+func TestLoginNoBrowser(t *testing.T) {
+	// Stub openBrowserFunc to detect if it is called.
+	orig := openBrowserFunc
+	defer func() { openBrowserFunc = orig }()
+
+	browserCalled := false
+	openBrowserFunc = func(url string) error {
+		browserCalled = true
+		return nil
+	}
+
+	// Mock Supabase /auth/v1/user endpoint.
+	mockSupabase := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/auth/v1/user" {
+			user := supabaseUser{
+				ID:    "nb-user",
+				Email: "nb@example.com",
+				UserMetadata: map[string]any{
+					"full_name": "NoBrowser User",
+				},
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(user)
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer mockSupabase.Close()
+
+	tmpDir := t.TempDir()
+	sessionPath := tmpDir + "/session.json"
+
+	client := NewAuthClient(mockSupabase.URL, "anon-key")
+	client.SetSessionPath(sessionPath)
+	client.NoBrowser = true
+
+	// Capture stderr output by redirecting os.Stderr.
+	origStderr := os.Stderr
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe: %v", err)
+	}
+	os.Stderr = w
+
+	// Run LoginWithGitHub in a goroutine so we can POST the token concurrently.
+	loginErr := make(chan error, 1)
+	go func() {
+		loginErr <- client.LoginWithGitHub()
+	}()
+
+	// Give the callback server a moment to start, then find its port from stderr.
+	// We need to read stderr output to get the port.
+	// But LoginWithGitHub writes to stderr before blocking — read it.
+	// Use a small buffer read with a timeout via the channel approach.
+	// Strategy: wait briefly, then scan stderr for the port number.
+	time.Sleep(50 * time.Millisecond)
+
+	// Read what's been written to stderr so far (non-blocking read from pipe).
+	w.Close()
+	os.Stderr = origStderr
+
+	stderrBuf := new(strings.Builder)
+	buf := make([]byte, 4096)
+	n, _ := r.Read(buf)
+	stderrBuf.Write(buf[:n])
+	r.Close()
+
+	stderrOutput := stderrBuf.String()
+
+	// Verify URL is printed to stderr.
+	if !strings.Contains(stderrOutput, mockSupabase.URL) {
+		t.Errorf("expected stderr to contain OAuth URL %q, got:\n%s", mockSupabase.URL, stderrOutput)
+	}
+	// Verify SSH hint is printed.
+	if !strings.Contains(stderrOutput, "ssh -L") {
+		t.Errorf("expected stderr to contain SSH hint, got:\n%s", stderrOutput)
+	}
+	// Verify "Waiting for authorization" is printed.
+	if !strings.Contains(stderrOutput, "Waiting for authorization") {
+		t.Errorf("expected stderr to contain 'Waiting for authorization', got:\n%s", stderrOutput)
+	}
+
+	// Verify browser was NOT called.
+	if browserCalled {
+		t.Error("expected openBrowserFunc NOT to be called with NoBrowser=true")
+	}
+
+	// LoginWithGitHub is still waiting for the callback — drain the channel
+	// to avoid goroutine leak (the server will be closed by defer).
+	// We don't need to verify the full login flow here; the key assertions above suffice.
+	select {
+	case <-loginErr:
+	case <-time.After(3 * time.Second):
+		// Timeout is acceptable: LoginWithGitHub is blocked on callback, which is expected.
 	}
 }
 

@@ -54,6 +54,7 @@ var authStatusCmd = &cobra.Command{
 }
 
 func init() {
+	authLoginCmd.Flags().Bool("no-browser", false, "Do not open the browser; print the URL and SSH hint to stderr instead")
 	authCmd.AddCommand(authLoginCmd)
 	authCmd.AddCommand(authLogoutCmd)
 	authCmd.AddCommand(authStatusCmd)
@@ -94,6 +95,11 @@ func runAuthLogin(cmd *cobra.Command, args []string) error {
 	client, err := newAuthClient()
 	if err != nil {
 		return err
+	}
+	if cmd != nil {
+		if noBrowser, err := cmd.Flags().GetBool("no-browser"); err == nil {
+			client.NoBrowser = noBrowser
+		}
 	}
 	if err := client.LoginWithGitHub(); err != nil {
 		return err

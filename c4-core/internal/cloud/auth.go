@@ -83,12 +83,18 @@ func (s *Session) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// openBrowserFunc is a package-level variable so tests can stub browser opening.
+var openBrowserFunc = openBrowser
+
 // AuthClient is a Supabase Auth REST API client that handles GitHub OAuth flow.
 type AuthClient struct {
 	supabaseURL string
 	anonKey     string
 	sessionPath string
 	httpClient  *http.Client
+	// NoBrowser disables automatic browser opening. When true, the OAuth URL
+	// and SSH port-forwarding hint are printed to stderr instead.
+	NoBrowser bool
 }
 
 // NewAuthClient creates a new AuthClient for the given Supabase project.
@@ -127,15 +133,20 @@ func (c *AuthClient) LoginWithGitHub() error {
 		return fmt.Errorf("starting callback server: %w", err)
 	}
 
-	// Build and open the OAuth URL
+	// Build the OAuth URL and either open browser or print instructions.
 	authURL := c.oauthURL(port)
-	if err := openBrowser(authURL); err != nil {
-		srv.Close()
-		return fmt.Errorf("opening browser: %w", err)
+	if c.NoBrowser {
+		fmt.Fprintf(os.Stderr, "Open this URL in your browser:\n  %s\n", authURL)
+		fmt.Fprintf(os.Stderr, "Waiting for authorization (http://localhost:%d)...\n", port)
+		fmt.Fprintf(os.Stderr, "(Use SSH port forwarding: ssh -L %d:localhost:%d user@host)\n", port, port)
+	} else {
+		if err := openBrowserFunc(authURL); err != nil {
+			srv.Close()
+			return fmt.Errorf("opening browser: %w", err)
+		}
+		fmt.Printf("Waiting for GitHub authorization...\n")
+		fmt.Printf("If your browser didn't open, visit:\n  %s\n\n", authURL)
 	}
-
-	fmt.Printf("Waiting for GitHub authorization...\n")
-	fmt.Printf("If your browser didn't open, visit:\n  %s\n\n", authURL)
 
 	// Wait for the callback
 	var session *Session
