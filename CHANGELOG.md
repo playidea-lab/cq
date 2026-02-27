@@ -7,6 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.37.0] - 2026-02-28
+
+### ✨ Features
+- **c5/auth**: RFC 8628 Device Flow 및 Direct Link Flow headless 인증 구현
+  - `POST /v1/auth/device` — PKCE 기반 device session 생성 (user_code + activate_url + auth_url)
+  - `GET /v1/auth/device/{state}` — 폴링 엔드포인트 (pending/ready/expired)
+  - `POST /v1/auth/device/{state}/token` — PKCE 토큰 교환 (Supabase 프록시)
+  - `GET /auth/activate` — user_code 입력 HTML 폼 (CSRF 보호)
+  - `POST /auth/activate` — CSRF 검증 후 Supabase OAuth 리다이렉트
+  - `GET /auth/callback` — auth_code 저장 + 성공 페이지
+- **cli**: `cq login --device` / `cq login --link` 플래그 추가
+  - `--device`: user_code 출력 → 브라우저에서 코드 입력
+  - `--link`: auth URL 직접 출력 → 브라우저에서 열기
+  - PKCE (S256 code_challenge) 자동 생성 및 관리
+- **c5/store**: `device_sessions` 테이블 + CRUD 메서드
+  - `PeekDeviceSession` — poll_count 부작용 없는 읽기
+  - `IncrementTokenAttempts` — 트랜잭션으로 원자적 카운터 증가
+  - `StartBackgroundCleanup` — 만료 세션 정기 삭제
+- **c5/config**: `ServerConfig.PublicURL` 추가 (OAuth 리다이렉트용 외부 URL)
+
+### 🐛 Bug Fixes (Security Polish)
+- **c5/auth**: SSRF 방지 — 서버 `supabaseURL` 설정 시 클라이언트 제공 URL 무시 (HIGH)
+- **c5/auth**: rate-limit off-by-one — `>= tokenAttemptLimit` 로 수정 (HIGH)
+- **c5/auth**: `GetDeviceSessionByUserCode` 만료 필터 누락 수정 (HIGH)
+- **c5/auth**: `IncrementTokenAttempts` UPDATE+SELECT 트랜잭션으로 원자화 (HIGH)
+- **c5/auth**: 토큰 교환 시 `ds.SupabaseURL` fallback 추가 (HIGH)
+- **c5/auth**: TOCTOU 해소 — `IncrementTokenAttempts` 후 세션 상태 재읽기 (MEDIUM)
+- **c5/auth**: CSRF Secure 쿠키 플래그 HTTPS 시 자동 설정 (MEDIUM)
+- **c5/auth**: HTML XSS — `html.EscapeString` on title/csrfToken (MEDIUM)
+- **c5/auth**: CSRF 쿠키 POST 성공 후 즉시 만료 (MEDIUM)
+- **c5/auth**: `code`/`state` 파라미터 길이 검증 (MEDIUM)
+- **c5/auth**: `DeleteExpiredDeviceSessions` `expires_at` 기준으로 통일 (MEDIUM)
+- **c4-core/cloud**: JSON key `device_auth_url` → `activate_url` 수정 (MEDIUM)
+- **c5/serve**: `StartBackgroundCleanup` 미호출 수정 (LOW)
+
+### 📚 Documentation
+- **agents**: Go 테스트 수 현행화 — c4-core ~1,463 + c5 ~214 = ~1,677 (총 ~2,466) (`d31beea9`)
+
+---
+
 ## [v0.35.1] - 2026-02-27
 
 ### 📚 Documentation
