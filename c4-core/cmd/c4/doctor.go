@@ -626,10 +626,7 @@ func isHubEnabled(content string) bool {
 // checkOSService checks whether the cq-serve OS service (LaunchAgent/systemd/Windows) is installed.
 // fix is accepted for signature consistency but --fix does not auto-install (side-effect risk in CI).
 func checkOSService(_ bool) checkResult {
-	svcConfig := service.Config{
-		Name:        "cq-serve",
-		DisplayName: "CQ Serve",
-	}
+	svcConfig := newServiceConfig("", "")
 	svc, err := service.New(&serviceWrapper{}, &svcConfig)
 	if err != nil {
 		return checkResult{
