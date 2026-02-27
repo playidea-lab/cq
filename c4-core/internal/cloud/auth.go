@@ -192,6 +192,12 @@ func (c *AuthClient) GetSession() (*Session, error) {
 	return c.loadSession()
 }
 
+// SaveSessionPublic saves a session to disk. Used by cq auth token to import
+// a pre-existing session without going through the OAuth flow.
+func (c *AuthClient) SaveSessionPublic(session *Session) error {
+	return c.saveSession(session)
+}
+
 // IsAuthenticated returns true if a valid, non-expired session exists.
 func (c *AuthClient) IsAuthenticated() bool {
 	session, err := c.loadSession()

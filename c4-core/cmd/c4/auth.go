@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -53,11 +54,33 @@ var authStatusCmd = &cobra.Command{
 	RunE:  runAuthStatus,
 }
 
+var authTokenCmd = &cobra.Command{
+	Use:   "token",
+	Short: "Import a session token (headless login)",
+	Long: `Import a pre-existing session token from JSON without browser OAuth.
+
+Reads session JSON from stdin or --json flag and saves it to ~/.c4/session.json.
+Useful for headless/remote servers where browser-based OAuth is not available.
+
+Examples:
+  # Pipe from stdin
+  echo '{"access_token":"...","refresh_token":"...","expires_at":...}' | cq auth token
+
+  # From a file
+  cat ~/.c4/session.json | ssh user@remote-server cq auth token
+
+  # Via --json flag
+  cq auth token --json '{"access_token":"..."}'`,
+	RunE: runAuthToken,
+}
+
 func init() {
 	authLoginCmd.Flags().Bool("no-browser", false, "Do not open the browser; print the URL and SSH hint to stderr instead")
+	authTokenCmd.Flags().String("json", "", "Session JSON string (reads from stdin if not set)")
 	authCmd.AddCommand(authLoginCmd)
 	authCmd.AddCommand(authLogoutCmd)
 	authCmd.AddCommand(authStatusCmd)
+	authCmd.AddCommand(authTokenCmd)
 	rootCmd.AddCommand(authCmd)
 }
 
@@ -214,6 +237,45 @@ func runAuthStatus(cmd *cobra.Command, args []string) error {
 		fmt.Printf("Status:  authenticated (expires in %s)\n", remaining)
 	}
 
+	return nil
+}
+
+func runAuthToken(cmd *cobra.Command, args []string) error {
+	// Read JSON from --json flag or stdin.
+	var raw string
+	if jsonFlag, err := cmd.Flags().GetString("json"); err == nil && jsonFlag != "" {
+		raw = jsonFlag
+	} else {
+		data, err := io.ReadAll(os.Stdin)
+		if err != nil {
+			return fmt.Errorf("reading stdin: %w", err)
+		}
+		raw = strings.TrimSpace(string(data))
+	}
+
+	if raw == "" {
+		return fmt.Errorf("no session JSON provided (use --json flag or pipe via stdin)")
+	}
+
+	var session cloud.Session
+	if err := json.Unmarshal([]byte(raw), &session); err != nil {
+		return fmt.Errorf("invalid session JSON: %w", err)
+	}
+	if session.AccessToken == "" {
+		return fmt.Errorf("session JSON missing access_token")
+	}
+
+	client, err := newAuthClient()
+	if err != nil {
+		return err
+	}
+	if err := client.SaveSessionPublic(&session); err != nil {
+		return fmt.Errorf("saving session: %w", err)
+	}
+
+	expiresAt := time.Unix(session.ExpiresAt, 0)
+	fmt.Printf("Session imported: %s (%s)\n", session.User.Name, session.User.Email)
+	fmt.Printf("Expires: %s\n", expiresAt.Format(time.RFC3339))
 	return nil
 }
 
