@@ -58,6 +58,15 @@ cq add-task --title "Refactor Auth" --scope "src/auth/" --priority 3 --dod "Impl
 - Loads specialized instructions and constraints from `.gemini/agents/<agent-name>.md`.
 - **Available Agents**: `c4-scout`, `ai-engineer`, `backend-architect`, `frontend-developer`, `security-auditor`, etc.
 
+### Gemini Setup (Prerequisites)
+To use Gemini-exclusive features or the "Ultimate Duo" mode:
+1. **Install Gemini CLI**: Ensure the `gemini` command is available in your PATH.
+2. **Set API Key**: 
+   ```bash
+   cq secret set gemini.api_key  # Enter your Google AI API Key
+   ```
+   Or set the `GOOGLE_API_KEY` environment variable.
+
 ## 5. Best Practices
 1.  **Always use flags**: Do not rely on positional arguments for `c4` commands.
 2.  **Quote strings**: Always quote titles and descriptions to avoid shell parsing errors.

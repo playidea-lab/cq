@@ -409,7 +409,7 @@ func (h *C1Handler) httpPostReturn(table string, payload any, dest any) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode >= 400 {
-		respBody, _ := io.ReadAll(resp.Body)
+		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<16))
 		return fmt.Errorf("POST %s: %d %s", table, resp.StatusCode, string(respBody))
 	}
 
@@ -442,7 +442,7 @@ func (h *C1Handler) httpPost(table string, payload any) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode >= 400 {
-		respBody, _ := io.ReadAll(resp.Body)
+		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<16))
 		return fmt.Errorf("POST %s: %d %s", table, resp.StatusCode, string(respBody))
 	}
 	return nil
@@ -464,7 +464,7 @@ func (h *C1Handler) httpDelete(table, filter string) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode >= 400 {
-		respBody, _ := io.ReadAll(resp.Body)
+		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<16))
 		return fmt.Errorf("DELETE %s: %d %s", table, resp.StatusCode, string(respBody))
 	}
 	return nil
@@ -493,7 +493,7 @@ func (h *C1Handler) httpUpsert(table, conflictColumn string, payload any) error 
 	defer resp.Body.Close()
 
 	if resp.StatusCode >= 400 {
-		respBody, _ := io.ReadAll(resp.Body)
+		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<16))
 		return fmt.Errorf("UPSERT %s: %d %s", table, resp.StatusCode, string(respBody))
 	}
 	return nil

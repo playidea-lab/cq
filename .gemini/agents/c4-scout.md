@@ -1,7 +1,7 @@
 ---
 name: c4-scout
 description: Lightweight codebase explorer that compresses context to under 500 tokens for efficient handoff
-model: gemini-2.0-flash-exp
+model: gemini-3.0-flash
 color: blue
 memory: project
 tools:

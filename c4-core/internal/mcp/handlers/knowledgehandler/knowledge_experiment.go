@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/changmin/c4-core/internal/c2/webcontent"
 	"github.com/changmin/c4-core/internal/knowledge"
@@ -430,12 +431,14 @@ func knowledgeDistillNativeHandler(opts *KnowledgeNativeOpts) mcp.HandlerFunc {
 			if len(docTexts) > 0 {
 				prompt := fmt.Sprintf(distillPrompt, strings.Join(docTexts, "\n"))
 				ref := opts.LLM.Resolve("scout", "")
-				resp, err := opts.LLM.Chat(context.Background(), "scout", &llm.ChatRequest{
+				llmCtx, llmCancel := context.WithTimeout(context.Background(), 60*time.Second)
+				resp, err := opts.LLM.Chat(llmCtx, "scout", &llm.ChatRequest{
 					Model:       ref.Model,
 					Messages:    []llm.Message{{Role: "user", Content: prompt}},
 					MaxTokens:   200,
 					Temperature: 0.3,
 				})
+				llmCancel()
 				if err != nil {
 					clusterResult["llm_error"] = err.Error()
 				} else {

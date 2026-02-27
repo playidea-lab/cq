@@ -9,6 +9,7 @@ pub mod cloud;
 pub mod commands;
 pub mod documents;
 pub mod eventbus;
+pub mod hands;
 pub mod knowledge;
 pub mod layout;
 pub mod messaging;
@@ -19,6 +20,7 @@ pub mod scanner;
 pub mod watcher;
 
 use tauri::Manager;
+use std::sync::Arc;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -136,6 +138,13 @@ pub fn run() {
             knowledge::get_knowledge_stats,
         ])
         .setup(|app| {
+            // Hands Execution Bridge (T-983-0)
+            let app_handle = app.handle().clone();
+            let hands_manager = Arc::new(hands::HandsManager::new(8586));
+            tauri::async_runtime::spawn(async move {
+                hands_manager.start_server(app_handle).await;
+            });
+
             // Log startup
             #[cfg(debug_assertions)]
             {

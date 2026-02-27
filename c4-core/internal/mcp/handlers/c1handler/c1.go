@@ -106,22 +106,26 @@ func (h *C1Handler) httpGet(table, filter string, dest any) error {
 
 		if resp.StatusCode == http.StatusUnauthorized && attempt == 0 {
 			resp.Body.Close()
-			if _, err := h.tp.Refresh(); err == nil {
+			if _, refreshErr := h.tp.Refresh(); refreshErr == nil {
 				continue
+			} else {
+				return fmt.Errorf("GET %s: 401 unauthorized, token refresh: %w", table, refreshErr)
 			}
 		}
 
-		defer resp.Body.Close()
-
 		if resp.StatusCode >= 400 {
-			body, _ := io.ReadAll(resp.Body)
+			body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<16))
+			resp.Body.Close()
 			return fmt.Errorf("GET %s: %d %s", table, resp.StatusCode, string(body))
 		}
 
+		var decodeErr error
 		if dest != nil {
-			if err := json.NewDecoder(resp.Body).Decode(dest); err != nil {
-				return fmt.Errorf("decode %s: %w", table, err)
-			}
+			decodeErr = json.NewDecoder(resp.Body).Decode(dest)
+		}
+		resp.Body.Close()
+		if decodeErr != nil {
+			return fmt.Errorf("decode %s: %w", table, decodeErr)
 		}
 		return nil
 	}
@@ -496,7 +500,7 @@ func (h *C1Handler) httpPatch(table, filter string, payload any) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode >= 400 {
-		respBody, _ := io.ReadAll(resp.Body)
+		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<16))
 		return fmt.Errorf("PATCH %s: %d %s", table, resp.StatusCode, string(respBody))
 	}
 	return nil
@@ -530,7 +534,7 @@ func (h *C1Handler) ClaimMessage(messageID, workerID string) (bool, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode >= 400 {
-		respBody, _ := io.ReadAll(resp.Body)
+		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<16))
 		return false, fmt.Errorf("RPC claim_message: %d %s", resp.StatusCode, string(respBody))
 	}
 

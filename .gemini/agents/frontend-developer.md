@@ -153,6 +153,10 @@ const LoginForm = memo(({ onSubmit }) => {
 ## Focus Areas
 - Behavior-driven component development
 - Accessibility-first testing
+- Tauri Native Bridge implementation (Rust/JS)
+- Real-time terminal streaming and interactive shells
+- AI-native UI/UX (Approval gates, Intent visualization)
+- Visual Feedback Loops (Screenshot/Image processing)
 - Performance testing from the start
 - Progressive enhancement
 - Responsive design through tests

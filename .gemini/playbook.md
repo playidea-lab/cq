@@ -50,6 +50,19 @@ Follow these phases sequentially to ensure high-quality, safe, and verifiable wo
     - `git commit -m "type(scope): message"` (Follow Conventional Commits).
 4.  **Report**: Summarize work done and next steps.
 
+## Multi-Platform Operation (Parity)
+Gemini agents must maintain parity with other CQ interfaces:
+- **Doc Interpretation**: If a guide in `docs/` mentions a Claude-specific skill, map it to the corresponding agent in `.gemini/agents/`.
+- **Consistency**: Ensure all tasks created via Gemini are visible and actionable in Claude/Codex (use standard `cq` CLI).
+- **Tooling**: Prefer `cq` CLI commands over service-specific aliases to ensure cross-platform compatibility.
+
+## Gemini 3.0 Research Operations (Exclusive)
+Leverage Gemini 3.0's unique capabilities for c5 research projects:
+1.  **Literature-Code Mapping**: Use `c4-research-scientist` to compare paper PDF math with Python/Go implementations.
+2.  **Live Benchmark Grounding**: Always run a search-enabled agent to check latest SOTA results before starting a new experiment.
+3.  **Holistic Log Analysis**: Feed long-duration experiment logs (up to 10M tokens) to `c4-global-brain` to find hidden correlations.
+4.  **HITL (Human-In-the-Loop)**: Present summaries of large-context findings to the researcher for direction approval before executing c5 jobs.
+
 ## Emergency Protocols
 - **Build Break**: Revert changes (`git restore`) and re-read the error log.
 - **Lost Context**: Read `.gemini/memory/scratchpad.md` or ask the user.

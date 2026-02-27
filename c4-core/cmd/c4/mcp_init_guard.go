@@ -51,6 +51,9 @@ func initGuard(ctx *initContext) error {
 	}
 
 	ctx.guardEngine = eng
+	if cfg.Enabled {
+		ctx.reg.UseContextual(guard.ContextualMiddlewareFunc(eng, "mcp-session"))
+	}
 	handlers.RegisterGuardHandlers(ctx.reg, eng)
 	fmt.Fprintf(os.Stderr, "cq: guard enabled (5 tools, db=%s)\n", dbPath)
 	return nil

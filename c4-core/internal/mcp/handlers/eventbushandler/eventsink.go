@@ -38,6 +38,7 @@ func StartEventSinkServer(port int, token string, pub eventbus.Publisher) (*http
 			}
 		}
 
+		r.Body = http.MaxBytesReader(w, r.Body, 1<<20) // 1 MB limit
 		var req struct {
 			EventType string          `json:"event_type"`
 			Source    string          `json:"source"`
@@ -74,7 +75,7 @@ func StartEventSinkServer(port int, token string, pub eventbus.Publisher) (*http
 	})
 
 	srv := &http.Server{
-		Addr:    fmt.Sprintf(":%d", port),
+		Addr:    fmt.Sprintf("127.0.0.1:%d", port),
 		Handler: mux,
 	}
 

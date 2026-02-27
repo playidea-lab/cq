@@ -251,10 +251,14 @@ func researchApproveHandler(store *research.Store) mcp.HandlerFunc {
 
 		switch params.Action {
 		case "continue":
-			store.UpdateProject(params.ProjectID, map[string]any{"status": "active"})
+			if err := store.UpdateProject(params.ProjectID, map[string]any{"status": "active"}); err != nil {
+				return map[string]any{"error": fmt.Sprintf("update project: %v", err)}, nil
+			}
 			current, _ := store.GetCurrentIteration(params.ProjectID)
 			if current != nil && current.Status != research.IterDone {
-				store.UpdateIteration(current.ID, map[string]any{"status": "done"})
+				if err := store.UpdateIteration(current.ID, map[string]any{"status": "done"}); err != nil {
+					return map[string]any{"error": fmt.Sprintf("update iteration: %v", err)}, nil
+				}
 			}
 			iterID, err := store.CreateIteration(params.ProjectID)
 			if err != nil {
@@ -263,14 +267,20 @@ func researchApproveHandler(store *research.Store) mcp.HandlerFunc {
 			return map[string]any{"success": true, "iteration_id": iterID}, nil
 
 		case "pause":
-			store.UpdateProject(params.ProjectID, map[string]any{"status": "paused"})
+			if err := store.UpdateProject(params.ProjectID, map[string]any{"status": "paused"}); err != nil {
+				return map[string]any{"error": fmt.Sprintf("update project: %v", err)}, nil
+			}
 			return map[string]any{"success": true}, nil
 
 		case "complete":
-			store.UpdateProject(params.ProjectID, map[string]any{"status": "completed"})
+			if err := store.UpdateProject(params.ProjectID, map[string]any{"status": "completed"}); err != nil {
+				return map[string]any{"error": fmt.Sprintf("update project: %v", err)}, nil
+			}
 			current, _ := store.GetCurrentIteration(params.ProjectID)
 			if current != nil && current.Status != research.IterDone {
-				store.UpdateIteration(current.ID, map[string]any{"status": "done"})
+				if err := store.UpdateIteration(current.ID, map[string]any{"status": "done"}); err != nil {
+					return map[string]any{"error": fmt.Sprintf("update iteration: %v", err)}, nil
+				}
 			}
 			return map[string]any{"success": true}, nil
 		}

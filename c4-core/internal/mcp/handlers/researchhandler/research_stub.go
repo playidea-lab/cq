@@ -3,18 +3,18 @@
 package researchhandler
 
 import (
+	"github.com/changmin/c4-core/internal/eventbus"
 	"github.com/changmin/c4-core/internal/mcp"
-	"github.com/changmin/c4-core/internal/research"
 )
 
 // Register is a no-op stub when the research build tag is disabled.
-func Register(_ *mcp.Registry, _ *research.Store, _ Caller) {}
+func Register(_ *mcp.Registry, _ any, _ Caller) {}
 
 // RegisterResearchNativeHandlers is a no-op stub when the research build tag is disabled.
-func RegisterResearchNativeHandlers(_ *mcp.Registry, _ *research.Store) {}
+func RegisterResearchNativeHandlers(_ *mcp.Registry, _ any) {}
 
 // RegisterResearchProxyHandlers is a no-op stub when the research build tag is disabled.
 func RegisterResearchProxyHandlers(_ *mcp.Registry, _ Caller) {}
 
 // SetResearchEventBus is a no-op stub when the research build tag is disabled.
-func SetResearchEventBus(_ any, _ string) {}
+func SetResearchEventBus(_ eventbus.Publisher, _ string) {}

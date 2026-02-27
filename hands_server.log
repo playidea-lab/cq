@@ -1,0 +1,4 @@
+   Compiling c1 v0.1.0 (/Users/changmin/git/cq/c1/src-tauri)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 9.32s
+     Running `target/debug/test_hands_server`
+[TestServer] Listening on: ws://127.0.0.1:8586

@@ -13,6 +13,7 @@ import { TaskProvider, useTask } from './contexts/TaskContext';
 import { UIProvider } from './contexts/UIContext';
 import { MainLayout } from './components/layout/MainLayout';
 import { CommandPalette } from './components/shared/CommandPalette';
+import { Terminal } from './components/shared/Terminal';
 import { useAuth } from './hooks/useAuth';
 import type { WorkspaceMode } from './types';
 import './styles/auth.css';
@@ -48,12 +49,17 @@ function AppContent() {
   const { user, loading } = useAuth();
   const [workspaceMode, setWorkspaceMode] = useState<WorkspaceMode>('messenger');
   const [projectPath, setProjectPath] = useState<string | null>(null);
+  const [showTerminal, setShowTerminal] = useState(false);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && MODE_SHORTCUTS[e.key]) {
         e.preventDefault();
         setWorkspaceMode(MODE_SHORTCUTS[e.key]);
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key === 'j') {
+        e.preventDefault();
+        setShowTerminal(prev => !prev);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
@@ -86,18 +92,14 @@ function AppContent() {
   }, [isTauri]);
 
   // Render the channel list area based on workspace mode.
-  // When mode is 'messenger', show channel list placeholder (ChannelListSidebar in T-943).
-  // Other modes render their secondary view here.
   const renderChannelList = () => {
     if (workspaceMode === 'messenger') {
-      // Placeholder: ChannelListSidebar will be wired in T-943
       return (
         <div className="channel-list-placeholder">
           {/* Channel list will be rendered in T-943 */}
         </div>
       );
     }
-    // Non-messenger modes: show the relevant view in the channel list area
     if (!projectPath) {
       return (
         <div className="channel-list-placeholder" />
@@ -139,7 +141,6 @@ function AppContent() {
       );
     }
 
-    // NOTE: ChannelsView is not rendered here yet (done in T-945)
     return null;
   };
 
@@ -153,7 +154,18 @@ function AppContent() {
       <MainLayout
         leftNav={workspaceNav}
         channelList={renderChannelList()}
-        content={<ErrorBoundary>{renderContent()}</ErrorBoundary>}
+        content={
+          <div className="flex flex-col h-full overflow-hidden">
+            <div className="flex-1 overflow-hidden">
+              <ErrorBoundary>{renderContent()}</ErrorBoundary>
+            </div>
+            {showTerminal && (
+              <div className="h-64 border-t border-[#333]">
+                <Terminal onClear={() => {}} />
+              </div>
+            )}
+          </div>
+        }
       />
       <CommandPalette
         onViewChange={(view) => setWorkspaceMode(view as WorkspaceMode)}

@@ -111,6 +111,27 @@ func wireGateEventBus(ctx *initContext, ebClient *eventbus.Client) {
 			}
 		}
 	}()
+
+	go func() {
+		ch, err := ebClient.Subscribe(gctx, "guard.denied", "")
+		if err != nil {
+			if !errors.Is(err, context.Canceled) {
+				slog.Warn("gate: failed to subscribe to guard.denied", "err", err)
+			}
+			return
+		}
+		for {
+			select {
+			case ev, ok := <-ch:
+				if !ok {
+					return
+				}
+				bridge.Feed("guard.denied", ev.Data)
+			case <-gctx.Done():
+				return
+			}
+		}
+	}()
 }
 
 // shutdownGate stops the scheduler and bridge goroutines on server shutdown.

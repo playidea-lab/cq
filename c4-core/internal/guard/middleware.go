@@ -101,6 +101,30 @@ func MiddlewareForTool(eng *Engine, defaultActor, toolName string) mcp.Middlewar
 	}
 }
 
+// ContextualMiddlewareFunc returns a ContextualMiddleware that enforces guard
+// policies using the real request context and tool name provided by
+// Registry.UseContextual. This is the preferred integration point for the MCP
+// server because it receives both context (actor identity) and the tool name.
+//
+// actor precedence: ActorFromContext(ctx) → defaultActor.
+// ActionAuditOnly passes through to next (the engine records the audit entry).
+// ActionDeny returns an error and does not call next.
+func ContextualMiddlewareFunc(eng *Engine, defaultActor string) mcp.ContextualMiddleware {
+	return func(ctx context.Context, name string, next mcp.HandlerFunc) mcp.HandlerFunc {
+		return func(args json.RawMessage) (any, error) {
+			actor := ActorFromContext(ctx)
+			if actor == "" {
+				actor = defaultActor
+			}
+			action := eng.Check(ctx, actor, name, args)
+			if action == ActionDeny {
+				return nil, fmt.Errorf("guard: access denied: actor=%q tool=%q", actor, name)
+			}
+			return next(args)
+		}
+	}
+}
+
 // MiddlewareWithResolver returns a middleware that calls resolverFn() at
 // runtime to determine the tool name.  This is the production integration
 // point when a shared resolver is updated by the dispatch layer.
