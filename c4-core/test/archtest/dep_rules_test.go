@@ -174,6 +174,7 @@ func TestDependencyMatrix(t *testing.T) {
 		},
 		"internal/cloud": {
 			"internal/store",
+			"internal/knowledge", // KnowledgeCloudClient implements knowledge.CloudSyncer
 		},
 		"internal/mcp/handlers": {
 			"internal/c2",
