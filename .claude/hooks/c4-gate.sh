@@ -223,9 +223,15 @@ if [[ "$TOOL_NAME" == "Bash" ]] && [[ -n "$COMMAND" ]]; then
         _emit_deny "Force push to main/master branch"
     fi
 
-    # Remote code execution via curl/wget pipe
-    if [[ "$COMMAND" =~ (curl|wget)[[:space:]].*\|[[:space:]]*(sh|bash|zsh|python|perl|ruby) ]]; then
+    # Remote code execution via curl/wget pipe to shell (always dangerous)
+    if [[ "$COMMAND" =~ (curl|wget)[[:space:]].*\|[[:space:]]*(sh|bash|zsh)([[:space:]]|$) ]]; then
         _emit_deny "Piping remote content to shell"
+    fi
+
+    # Piping to interpreter with NO local code: | python3 (bare) → stdin이 코드로 실행됨
+    # Allow: | python3 -c "...", | python3 script.py, | python -m json.tool
+    if [[ "$COMMAND" =~ (curl|wget)[[:space:]].*\|[[:space:]]*(python[0-9.]*|perl|ruby)[[:space:]]*$ ]]; then
+        _emit_deny "Piping remote content to bare interpreter (stdin executed as code). Use -c or a local script."
     fi
 fi
 
