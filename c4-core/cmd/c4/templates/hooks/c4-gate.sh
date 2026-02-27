@@ -80,7 +80,10 @@ _emit_allow() {
             permissionDecision: "allow",
             permissionDecisionReason: $reason
         }
-    }' 2>/dev/null || echo "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"allow\",\"permissionDecisionReason\":\"$reason\"}}"
+    }' 2>/dev/null || {
+        local _r="${reason//\\/\\\\}"; _r="${_r//\"/\\\"}"
+        echo "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"allow\",\"permissionDecisionReason\":\"$_r\"}}"
+    }
     exit 0
 }
 
@@ -92,7 +95,10 @@ _emit_deny() {
             permissionDecision: "deny",
             permissionDecisionReason: $reason
         }
-    }' 2>/dev/null || echo "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"${reason//\'/}\"}}"
+    }' 2>/dev/null || {
+        local _r="${reason//\\/\\\\}"; _r="${_r//\"/\\\"}"
+        echo "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"$_r\"}}"
+    }
     exit 2
 }
 

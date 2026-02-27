@@ -50,12 +50,12 @@ if [[ "$COMMAND" =~ ^pip[[:space:]]+install ]] || \
 fi
 
 # REQ-002: python *.py / python3 *.py → uv run python
-# Block: python script.py, python3 script.py (bare, no uv run prefix)
+# Block: python script.py, python3 script.py, python3.11 script.py (bare, no uv run prefix)
 # Allow: uv run python ..., echo | python, python --version, python -c "...", python -m module
-if [[ "$COMMAND" =~ (^|[[:space:];&|])(python|python3)[[:space:]]+[^-] ]]; then
+if [[ "$COMMAND" =~ (^|[[:space:];&|])(python[0-9.]*)[[:space:]]+[^-] ]]; then
     # Exclude: uv run python, python --version/-V, python -c/python -m
-    if ! [[ "$COMMAND" =~ uv[[:space:]]+run[[:space:]]+(python|python3) ]] && \
-       ! [[ "$COMMAND" =~ (python|python3)[[:space:]]+(--version|-V|-c|-m) ]]; then
+    if ! [[ "$COMMAND" =~ uv[[:space:]]+run[[:space:]]+python ]] && \
+       ! [[ "$COMMAND" =~ python[0-9.]*[[:space:]]+(--version|-V|-c|-m) ]]; then
         _emit_deny "python *.py 직접 실행 금지. 대신: uv run python <스크립트>"
     fi
 fi

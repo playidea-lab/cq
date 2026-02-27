@@ -1,6 +1,7 @@
 #!/usr/bin/env bats
 # test_c4gate_mcp.bats
-# Tests for .claude/hooks/c4-gate.sh — MCP tool blocking (TodoWrite/EnterPlanMode).
+# Tests for .claude/hooks/c4-gate.sh — MCP tool blocking
+# (TodoWrite, EnterPlanMode, TaskCreate, TaskUpdate + namespace normalization).
 # Requires CLAUDE_PROJECT_DIR or a .c4/ directory reachable from the working dir.
 
 # Resolve project root: look for .claude/hooks/c4-gate.sh walking up from this file
@@ -58,4 +59,46 @@ _run_hook() {
     _run_hook '{"tool_name":"EnterPlanMode","tool_input":{}}'
     [ "$status" -eq 2 ]
     [[ "$output" =~ "c4-plan" ]]
+}
+
+# ─── TaskCreate 차단 ──────────────────────────────────────────────────────────
+
+@test "TaskCreate → denied (exit 2)" {
+    _run_hook '{"tool_name":"TaskCreate","tool_input":{"subject":"test"}}'
+    [ "$status" -eq 2 ]
+    [[ "$output" =~ "deny" ]]
+}
+
+@test "TaskCreate deny message mentions c4_add_todo" {
+    _run_hook '{"tool_name":"TaskCreate","tool_input":{"subject":"test"}}'
+    [ "$status" -eq 2 ]
+    [[ "$output" =~ "c4_add_todo" ]]
+}
+
+# ─── TaskUpdate 차단 ──────────────────────────────────────────────────────────
+
+@test "TaskUpdate → denied (exit 2)" {
+    _run_hook '{"tool_name":"TaskUpdate","tool_input":{"taskId":"1","status":"completed"}}'
+    [ "$status" -eq 2 ]
+    [[ "$output" =~ "deny" ]]
+}
+
+@test "TaskUpdate deny message mentions c4_submit" {
+    _run_hook '{"tool_name":"TaskUpdate","tool_input":{"taskId":"1","status":"completed"}}'
+    [ "$status" -eq 2 ]
+    [[ "$output" =~ "c4_submit" ]]
+}
+
+# ─── MCP namespace 정규화 ─────────────────────────────────────────────────────
+
+@test "mcp__builtin__TodoWrite → denied via namespace normalization" {
+    _run_hook '{"tool_name":"mcp__builtin__TodoWrite","tool_input":{"todos":[]}}'
+    [ "$status" -eq 2 ]
+    [[ "$output" =~ "deny" ]]
+}
+
+@test "mcp__claude__TaskCreate → denied via namespace normalization" {
+    _run_hook '{"tool_name":"mcp__claude__TaskCreate","tool_input":{"subject":"test"}}'
+    [ "$status" -eq 2 ]
+    [[ "$output" =~ "deny" ]]
 }
