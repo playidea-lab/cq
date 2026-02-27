@@ -1,4 +1,4 @@
-package handlers
+package webcontent
 
 import (
 	"encoding/json"
@@ -7,13 +7,13 @@ import (
 	"strings"
 	"testing"
 
+	c2webcontent "github.com/changmin/c4-core/internal/c2/webcontent"
 	"github.com/changmin/c4-core/internal/mcp"
-	"github.com/changmin/c4-core/internal/c2/webcontent"
 )
 
 // testWebFetchHandler creates a handler with SSRF check disabled for testing.
 func testWebFetchHandler() mcp.HandlerFunc {
-	return makeWebFetchHandler(&webcontent.FetchOpts{SkipSSRFCheck: true})
+	return makeWebFetchHandler(&c2webcontent.FetchOpts{SkipSSRFCheck: true})
 }
 
 func TestHandleWebFetch(t *testing.T) {
@@ -141,7 +141,7 @@ func TestHandleWebFetchWithLLMSTxt(t *testing.T) {
 
 func TestRegisterWebContentHandlers(t *testing.T) {
 	reg := mcp.NewRegistry()
-	RegisterWebContentHandlers(reg)
+	Register(reg)
 
 	tools := reg.ListTools()
 	found := false

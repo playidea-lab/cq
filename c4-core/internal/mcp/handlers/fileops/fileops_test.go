@@ -1,4 +1,4 @@
-package handlers
+package fileops
 
 import (
 	"encoding/json"

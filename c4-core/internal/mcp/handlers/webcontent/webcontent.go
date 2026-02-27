@@ -1,4 +1,4 @@
-package handlers
+package webcontent
 
 import (
 	"encoding/json"
@@ -6,16 +6,16 @@ import (
 	"net/url"
 	"strings"
 
+	c2webcontent "github.com/changmin/c4-core/internal/c2/webcontent"
 	"github.com/changmin/c4-core/internal/mcp"
-	"github.com/changmin/c4-core/internal/c2/webcontent"
 )
 
-// RegisterWebContentHandlers registers c4_web_fetch tool.
-func RegisterWebContentHandlers(reg *mcp.Registry) {
-	registerWebContentHandlersWithOpts(reg, nil)
+// Register registers c4_web_fetch tool.
+func Register(reg *mcp.Registry) {
+	registerWithOpts(reg, nil)
 }
 
-func registerWebContentHandlersWithOpts(reg *mcp.Registry, defaultOpts *webcontent.FetchOpts) {
+func registerWithOpts(reg *mcp.Registry, defaultOpts *c2webcontent.FetchOpts) {
 	reg.Register(mcp.ToolSchema{
 		Name:        "c4_web_fetch",
 		Description: "Fetch web content as clean markdown. Uses native markdown (Cloudflare/Vercel) when available, HTML-to-markdown fallback otherwise.",
@@ -33,7 +33,7 @@ func registerWebContentHandlersWithOpts(reg *mcp.Registry, defaultOpts *webconte
 
 const defaultMaxLength = 50000
 
-func makeWebFetchHandler(defaultOpts *webcontent.FetchOpts) mcp.HandlerFunc {
+func makeWebFetchHandler(defaultOpts *c2webcontent.FetchOpts) mcp.HandlerFunc {
 	return func(rawArgs json.RawMessage) (any, error) {
 		params := parseParams(rawArgs)
 
@@ -49,7 +49,7 @@ func makeWebFetchHandler(defaultOpts *webcontent.FetchOpts) mcp.HandlerFunc {
 
 		includeLLMSTxt, _ := params["include_llms_txt"].(bool)
 
-		result, err := webcontent.Fetch(rawURL, defaultOpts)
+		result, err := c2webcontent.Fetch(rawURL, defaultOpts)
 		if err != nil {
 			return map[string]any{"error": fmt.Sprintf("fetch failed: %v", err)}, nil
 		}
@@ -85,21 +85,21 @@ func makeWebFetchHandler(defaultOpts *webcontent.FetchOpts) mcp.HandlerFunc {
 }
 
 // fetchLLMSTxt tries to fetch /.well-known/llms.txt from the same origin.
-func fetchLLMSTxt(rawURL string, baseOpts *webcontent.FetchOpts) map[string]any {
+func fetchLLMSTxt(rawURL string, baseOpts *c2webcontent.FetchOpts) map[string]any {
 	parsed, err := url.Parse(rawURL)
 	if err != nil {
 		return nil
 	}
 
 	llmsURL := fmt.Sprintf("%s://%s/.well-known/llms.txt", parsed.Scheme, parsed.Host)
-	opts := &webcontent.FetchOpts{
+	opts := &c2webcontent.FetchOpts{
 		Timeout: 5_000_000_000, // 5s
 	}
 	if baseOpts != nil {
 		opts.SkipSSRFCheck = baseOpts.SkipSSRFCheck
 	}
 
-	result, err := webcontent.Fetch(llmsURL, opts)
+	result, err := c2webcontent.Fetch(llmsURL, opts)
 	if err != nil {
 		return nil
 	}
@@ -109,7 +109,7 @@ func fetchLLMSTxt(rawURL string, baseOpts *webcontent.FetchOpts) map[string]any 
 		return nil
 	}
 
-	llms, err := webcontent.ParseLLMSTxt(result.Content)
+	llms, err := c2webcontent.ParseLLMSTxt(result.Content)
 	if err != nil || llms.Title == "" {
 		return nil
 	}
@@ -135,4 +135,18 @@ func fetchLLMSTxt(rawURL string, baseOpts *webcontent.FetchOpts) map[string]any 
 		"description": llms.Description,
 		"sections":    sections,
 	}
+}
+
+// parseParams unmarshals rawArgs into a map, returning an empty map on failure.
+func parseParams(rawArgs json.RawMessage) map[string]any {
+	var params map[string]any
+	if len(rawArgs) > 0 {
+		if err := json.Unmarshal(rawArgs, &params); err != nil {
+			params = nil
+		}
+	}
+	if params == nil {
+		params = make(map[string]any)
+	}
+	return params
 }

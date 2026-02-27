@@ -1,4 +1,4 @@
-package handlers
+package fileops
 
 import (
 	"encoding/json"
@@ -12,9 +12,9 @@ import (
 	"github.com/changmin/c4-core/internal/mcp"
 )
 
-// RegisterFileHandlers registers file operation tools.
+// Register registers file operation tools.
 // Pure Go implementation — no Python dependency.
-func RegisterFileHandlers(reg *mcp.Registry, rootDir string) {
+func Register(reg *mcp.Registry, rootDir string) {
 	// c4_find_file
 	reg.Register(mcp.ToolSchema{
 		Name:        "c4_find_file",

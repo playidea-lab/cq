@@ -176,6 +176,19 @@ func TestDependencyMatrix(t *testing.T) {
 			"internal/store",
 			"internal/knowledge", // KnowledgeCloudClient implements knowledge.CloudSyncer
 		},
+		"internal/mcp/handlers/fileops": {
+			// fileops depends only on internal/mcp (Registry)
+			"internal/mcp",
+		},
+		"internal/mcp/handlers/gitops": {
+			// gitops depends only on internal/mcp (Registry)
+			"internal/mcp",
+		},
+		"internal/mcp/handlers/webcontent": {
+			// webcontent depends on internal/mcp and internal/c2/webcontent
+			"internal/mcp",
+			"internal/c2/webcontent",
+		},
 		"internal/mcp/handlers": {
 			"internal/c2",
 			"internal/c2/webcontent",
@@ -195,6 +208,9 @@ func TestDependencyMatrix(t *testing.T) {
 			"internal/llm",
 			"internal/mailbox",
 			"internal/mcp",
+			"internal/mcp/handlers/fileops",
+			"internal/mcp/handlers/gitops",
+			"internal/mcp/handlers/webcontent",
 			"internal/observe",
 			"internal/research",
 			"internal/secrets",

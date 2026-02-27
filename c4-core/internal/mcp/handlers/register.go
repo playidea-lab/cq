@@ -5,6 +5,9 @@ import (
 	"github.com/changmin/c4-core/internal/knowledge"
 	"github.com/changmin/c4-core/internal/llm"
 	"github.com/changmin/c4-core/internal/mcp"
+	"github.com/changmin/c4-core/internal/mcp/handlers/fileops"
+	"github.com/changmin/c4-core/internal/mcp/handlers/gitops"
+	handlerswc "github.com/changmin/c4-core/internal/mcp/handlers/webcontent"
 	"github.com/changmin/c4-core/internal/research"
 )
 
@@ -23,8 +26,8 @@ func RegisterAll(reg *mcp.Registry, store Store) {
 // RegisterNativeHandlers registers Go-native file, git, validation, discovery, and artifact handlers.
 // These do not require Python — they operate directly on the filesystem and git.
 func RegisterNativeHandlers(reg *mcp.Registry, rootDir string, store Store) {
-	RegisterFileHandlers(reg, rootDir)
-	RegisterGitHandlers(reg, rootDir)
+	fileops.Register(reg, rootDir)
+	gitops.Register(reg, rootDir)
 	RegisterValidationHandlers(reg, rootDir)
 	if store != nil {
 		RegisterDiscoveryHandlers(reg, store, rootDir)
@@ -65,7 +68,7 @@ func RegisterAllHandlersWithOpts(reg *mcp.Registry, store Store, rootDir string,
 	RegisterProxyHandlers(reg, proxy, rootDir)
 
 	// Register web content tools (c4_web_fetch — no dependencies)
-	RegisterWebContentHandlers(reg)
+	handlerswc.Register(reg)
 
 	// Register native tools that replaced proxy calls.
 	// Each component has its own build-tagged wrapper or is always-compiled inline.

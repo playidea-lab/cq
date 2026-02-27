@@ -1,4 +1,4 @@
-package handlers
+package gitops
 
 import (
 	"encoding/json"
@@ -9,9 +9,9 @@ import (
 	"github.com/changmin/c4-core/internal/mcp"
 )
 
-// RegisterGitHandlers registers git-related tools.
+// Register registers git-related tools.
 // Pure Go implementation using git CLI.
-func RegisterGitHandlers(reg *mcp.Registry, rootDir string) {
+func Register(reg *mcp.Registry, rootDir string) {
 	// c4_worktree_status
 	reg.Register(mcp.ToolSchema{
 		Name:        "c4_worktree_status",
