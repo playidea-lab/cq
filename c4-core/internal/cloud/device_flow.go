@@ -55,7 +55,7 @@ func LoginWithDevice(ctx context.Context, cfg DeviceFlowConfig) (*Session, error
 	}
 
 	// Step 1: initiate device flow.
-	initResp, err := postDeviceInit(ctx, cfg, challenge, "")
+	initResp, err := postDeviceInit(ctx, cfg, challenge)
 	if err != nil {
 		return nil, err
 	}
@@ -86,7 +86,7 @@ func LoginWithLink(ctx context.Context, cfg DeviceFlowConfig) (*Session, error) 
 		return nil, fmt.Errorf("generating PKCE: %w", err)
 	}
 
-	initResp, err := postDeviceInit(ctx, cfg, challenge, "link")
+	initResp, err := postDeviceInit(ctx, cfg, challenge)
 	if err != nil {
 		return nil, err
 	}
@@ -102,13 +102,12 @@ func LoginWithLink(ctx context.Context, cfg DeviceFlowConfig) (*Session, error) 
 }
 
 // postDeviceInit sends POST /v1/auth/device to start the flow.
-func postDeviceInit(ctx context.Context, cfg DeviceFlowConfig, challenge, flow string) (*deviceInitResponse, error) {
+// The server returns both auth_url (for link flow) and activate_url (for device flow);
+// callers choose which URL to use based on the desired flow.
+func postDeviceInit(ctx context.Context, cfg DeviceFlowConfig, challenge string) (*deviceInitResponse, error) {
 	body := map[string]string{
 		"code_challenge": challenge,
 		"supabase_url":   cfg.SupabaseURL,
-	}
-	if flow != "" {
-		body["flow"] = flow
 	}
 
 	b, _ := json.Marshal(body)

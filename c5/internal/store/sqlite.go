@@ -2379,11 +2379,13 @@ func (s *Store) GetDeviceSession(state string) (*model.DeviceSession, error) {
 	return ds, nil
 }
 
-// GetDeviceSessionByUserCode retrieves a device session by user_code.
+// GetDeviceSessionByUserCode retrieves a non-expired device session by user_code.
+// Only returns sessions that have not expired, consistent with GetDeviceSession/PeekDeviceSession.
 func (s *Store) GetDeviceSessionByUserCode(userCode string) (*model.DeviceSession, error) {
+	now := time.Now().Unix()
 	row := s.db.QueryRow(
-		`SELECT `+deviceSessionCols+` FROM device_sessions WHERE user_code = ?`,
-		userCode,
+		`SELECT `+deviceSessionCols+` FROM device_sessions WHERE user_code = ? AND expires_at >= ? AND status != 'expired'`,
+		userCode, now,
 	)
 	ds, err := scanDeviceSession(row)
 	if err != nil {
@@ -2429,32 +2431,44 @@ func (s *Store) SetDeviceSessionCSRF(state, csrfToken string) error {
 
 // IncrementTokenAttempts atomically increments token_attempts and marks the session
 // expired when the limit is reached. Returns the new attempt count.
+// Uses a transaction to ensure the increment and read are atomic.
 func (s *Store) IncrementTokenAttempts(state string, limit int) (int, error) {
-	_, err := s.db.Exec(
-		`UPDATE device_sessions SET token_attempts = token_attempts + 1 WHERE state = ?`, state,
-	)
+	tx, err := s.db.Begin()
 	if err != nil {
+		return 0, fmt.Errorf("begin transaction: %w", err)
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	if _, err := tx.Exec(
+		`UPDATE device_sessions SET token_attempts = token_attempts + 1 WHERE state = ?`, state,
+	); err != nil {
 		return 0, fmt.Errorf("increment token attempts: %w", err)
 	}
-	row := s.db.QueryRow(`SELECT token_attempts FROM device_sessions WHERE state = ?`, state)
+
 	var n int
-	if err := row.Scan(&n); err != nil {
+	if err := tx.QueryRow(`SELECT token_attempts FROM device_sessions WHERE state = ?`, state).Scan(&n); err != nil {
 		return 0, fmt.Errorf("read token attempts: %w", err)
 	}
+
 	if n >= limit {
-		if _, err := s.db.Exec(
+		if _, err := tx.Exec(
 			`UPDATE device_sessions SET status = 'expired' WHERE state = ? AND status != 'expired'`, state,
 		); err != nil {
 			return n, fmt.Errorf("expire device session: %w", err)
 		}
 	}
+
+	if err := tx.Commit(); err != nil {
+		return 0, fmt.Errorf("commit token attempts: %w", err)
+	}
 	return n, nil
 }
 
-// DeleteExpiredDeviceSessions removes sessions older than the given duration. Called by cleanup loop.
-func (s *Store) DeleteExpiredDeviceSessions(olderThan time.Duration) (int64, error) {
-	cutoff := time.Now().Unix() - int64(olderThan.Seconds())
-	res, err := s.db.Exec(`DELETE FROM device_sessions WHERE created_at < ?`, cutoff)
+// DeleteExpiredDeviceSessions removes sessions whose expiry time has passed plus the given grace period.
+// Uses expires_at (not created_at) to be consistent with GetDeviceSession/PeekDeviceSession filters.
+func (s *Store) DeleteExpiredDeviceSessions(gracePeriod time.Duration) (int64, error) {
+	cutoff := time.Now().Unix() - int64(gracePeriod.Seconds())
+	res, err := s.db.Exec(`DELETE FROM device_sessions WHERE expires_at < ?`, cutoff)
 	if err != nil {
 		return 0, fmt.Errorf("delete expired device sessions: %w", err)
 	}

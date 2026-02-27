@@ -30,6 +30,14 @@ func (s *Server) handleAuthCallback(w http.ResponseWriter, r *http.Request) {
 	state := r.URL.Query().Get("state")
 	code := r.URL.Query().Get("code")
 
+	// MEDIUM: cap query param lengths to prevent oversized DB writes.
+	if len(state) > 128 || len(code) > 2048 {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.WriteHeader(http.StatusBadRequest)
+		fmt.Fprint(w, htmlPage("오류", "잘못된 요청입니다."))
+		return
+	}
+
 	if state == "" || code == "" {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.WriteHeader(http.StatusBadRequest)

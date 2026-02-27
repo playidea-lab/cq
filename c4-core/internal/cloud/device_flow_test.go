@@ -152,13 +152,7 @@ func TestLoginWithLink_PrintsURL(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/auth/device":
-			// Verify flow=link is set
-			var body map[string]string
-			json.NewDecoder(r.Body).Decode(&body)
-			if body["flow"] != "link" {
-				http.Error(w, "missing flow=link", http.StatusBadRequest)
-				return
-			}
+			// Server returns both auth_url and activate_url; client selects based on flow type.
 			json.NewEncoder(w).Encode(deviceInitResponse{
 				State:   "link-state",
 				AuthURL: wantURL,

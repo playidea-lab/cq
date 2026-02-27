@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"html"
 	"net/http"
 	"net/url"
 	"strings"
@@ -162,7 +163,7 @@ func (s *Server) handleActivateGet(w http.ResponseWriter, r *http.Request) {
 	})
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	fmt.Fprintf(w, activatePageHTML, csrfToken)
+	fmt.Fprintf(w, activatePageHTML, html.EscapeString(csrfToken))
 }
 
 // handleActivatePost handles POST /auth/activate — validates CSRF + user_code, redirects to auth_url.
@@ -197,7 +198,7 @@ func (s *Server) handleActivatePost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Check if expired
+	// Check if expired (GetDeviceSessionByUserCode already filters expired rows, this is a belt-and-suspenders check)
 	if ds.Status == "expired" || ds.ExpiresAt.Before(time.Now()) {
 		writeError(w, http.StatusNotFound, "invalid or expired code")
 		return
@@ -215,6 +216,12 @@ func (s *Server) handleActivatePost(w http.ResponseWriter, r *http.Request) {
 		url.QueryEscape(redirectTo),
 	)
 
+	// MEDIUM: Expire CSRF cookie after successful use (defense in depth against replay).
+	http.SetCookie(w, &http.Cookie{
+		Name:   "csrf",
+		MaxAge: -1,
+		Path:   "/auth/activate",
+	})
 	http.Redirect(w, r, authURL, http.StatusFound)
 }
 
