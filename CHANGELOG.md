@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.34.0] - 2026-02-27
+
+### ♻️ Refactoring
+- **handlers**: Wave 2b — drivehandler/cdphandler/llmhandler/eventbushandler 서브패키지 분리 (`9e41ff5d`)
+- **handlers**: Wave 2c — c1handler/gpuhandler/knowledgehandler/researchhandler 서브패키지 분리 (`aab3d109`)
+  - handlers/ God Package 해체 완료: 16개 서브패키지 (Wave 1a–1c + Wave 2a–2c)
+  - c4-core 테스트: ~1,447 (37 packages), Go 전체: ~1,640
+
+### 🔒 Security
+- **eventsink**: bearer token 비교에 `crypto/subtle.ConstantTimeCompare` 사용 — timing side-channel 방지 (`4893cd80`)
+- **eventsink**: `127.0.0.1` localhost-only binding, `MaxBytesReader(1MB)` 추가 (`cf001252`)
+- **c1handler**: HTTP 응답 body에 `io.LimitReader(64KB)` 추가 — unbounded read 방지 (`cf001252`)
+- **eventsink**: `ReadHeaderTimeout(10s)` + `ReadTimeout(15s)` — slow-read goroutine 방지 (`4893cd80`)
+
+### 🐛 Bug Fixes
+- **c1handler**: `httpGet` defer-in-loop 제거 + 명시적 `Body.Close()` — double-close + goroutine leak 방지 (`cf001252`)
+- **researchhandler**: `UpdateProject`/`UpdateIteration` 반환 에러 체크 추가 (`cf001252`)
+- **research_stub**: `research` 패키지 import 제거, `eventbus.Publisher` 타입 통일 — 빌드 태그 의미 복원 (`cf001252`)
+- **knowledgehandler**: `experimentRecordNativeHandler` — `SyncAfterRecord` 호출 시 VectorStore에서 embedding 추출 전달 — Supabase pgvector 누락 수정 (`aae03b0d`)
+
+### 📚 Documentation
+- **agents**: Go 테스트 수 업데이트: c4-core ~1,447 (37 packages), 전체 ~1,640 (`3f0e2963`)
+
+---
+
 ## [v0.33.0] - 2026-02-27
 
 ### ✨ Features
