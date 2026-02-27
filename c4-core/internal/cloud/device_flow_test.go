@@ -13,21 +13,6 @@ import (
 	"time"
 )
 
-// roundTripFunc is a helper that makes an http.RoundTripper from a func.
-type roundTripFunc func(*http.Request) (*http.Response, error)
-
-func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
-
-// newJSONResponse builds an *http.Response with JSON body and given status code.
-func newJSONResponse(code int, body interface{}) *http.Response {
-	b, _ := json.Marshal(body)
-	return &http.Response{
-		StatusCode: code,
-		Header:     http.Header{"Content-Type": []string{"application/json"}},
-		Body:       io.NopCloser(bytes.NewReader(b)),
-	}
-}
-
 // TestLoginWithDevice_PollUntilReady simulates: pending×2 → ready → token exchange.
 func TestLoginWithDevice_PollUntilReady(t *testing.T) {
 	pollCount := 0
@@ -45,9 +30,9 @@ func TestLoginWithDevice_PollUntilReady(t *testing.T) {
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/auth/device/test-state-001":
 			pollCount++
 			if pollCount <= 2 {
-				json.NewEncoder(w).Encode(devicePollResponse{Status: "pending"})
+				json.NewEncoder(w).Encode(deviceStatusResponse{Status: "pending"})
 			} else {
-				json.NewEncoder(w).Encode(devicePollResponse{Status: "ready"})
+				json.NewEncoder(w).Encode(deviceStatusResponse{Status: "ready"})
 			}
 
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/auth/device/test-state-001/token":
@@ -58,7 +43,7 @@ func TestLoginWithDevice_PollUntilReady(t *testing.T) {
 				http.Error(w, "missing code_verifier", http.StatusBadRequest)
 				return
 			}
-			json.NewEncoder(w).Encode(deviceTokenResponse{
+			json.NewEncoder(w).Encode(Session{
 				AccessToken:  "access-tok",
 				RefreshToken: "refresh-tok",
 				ExpiresAt:    time.Now().Add(time.Hour).Unix(),
@@ -76,7 +61,7 @@ func TestLoginWithDevice_PollUntilReady(t *testing.T) {
 	devicePollInterval = 10 * time.Millisecond
 	defer func() { devicePollInterval = origInterval }()
 
-	cfg := DeviceCloudConfig{HubURL: srv.URL, SupabaseURL: "https://test.supabase.co"}
+	cfg := DeviceFlowConfig{HubURL: srv.URL, SupabaseURL: "https://test.supabase.co"}
 	ctx := context.Background()
 
 	session, err := LoginWithDevice(ctx, cfg)
@@ -102,7 +87,7 @@ func TestLoginWithDevice_Expired(t *testing.T) {
 				DeviceAuthURL: "https://hub.example.com/device",
 			})
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/auth/device/exp-state":
-			json.NewEncoder(w).Encode(devicePollResponse{Status: "expired"})
+			json.NewEncoder(w).Encode(deviceStatusResponse{Status: "expired"})
 		default:
 			http.NotFound(w, r)
 		}
@@ -113,7 +98,7 @@ func TestLoginWithDevice_Expired(t *testing.T) {
 	devicePollInterval = 10 * time.Millisecond
 	defer func() { devicePollInterval = origInterval }()
 
-	cfg := DeviceCloudConfig{HubURL: srv.URL, SupabaseURL: "https://test.supabase.co"}
+	cfg := DeviceFlowConfig{HubURL: srv.URL, SupabaseURL: "https://test.supabase.co"}
 	_, err := LoginWithDevice(context.Background(), cfg)
 	if err == nil {
 		t.Fatal("expected error for expired status, got nil")
@@ -135,7 +120,7 @@ func TestLoginWithDevice_Timeout(t *testing.T) {
 			})
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/auth/device/timeout-state":
 			// Always pending — simulate timeout
-			json.NewEncoder(w).Encode(devicePollResponse{Status: "pending"})
+			json.NewEncoder(w).Encode(deviceStatusResponse{Status: "pending"})
 		default:
 			http.NotFound(w, r)
 		}
@@ -150,7 +135,7 @@ func TestLoginWithDevice_Timeout(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
 
-	cfg := DeviceCloudConfig{HubURL: srv.URL, SupabaseURL: "https://test.supabase.co"}
+	cfg := DeviceFlowConfig{HubURL: srv.URL, SupabaseURL: "https://test.supabase.co"}
 
 	// We need to bypass the internal deviceFlowTimeout and use our ctx directly.
 	// LoginWithDevice wraps ctx with deviceFlowTimeout; our cancel fires first.
@@ -179,9 +164,9 @@ func TestLoginWithLink_PrintsURL(t *testing.T) {
 				AuthURL: wantURL,
 			})
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/auth/device/link-state":
-			json.NewEncoder(w).Encode(devicePollResponse{Status: "ready"})
+			json.NewEncoder(w).Encode(deviceStatusResponse{Status: "ready"})
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/auth/device/link-state/token":
-			json.NewEncoder(w).Encode(deviceTokenResponse{
+			json.NewEncoder(w).Encode(Session{
 				AccessToken:  "link-tok",
 				RefreshToken: "link-refresh",
 				ExpiresAt:    time.Now().Add(time.Hour).Unix(),
@@ -202,7 +187,7 @@ func TestLoginWithLink_PrintsURL(t *testing.T) {
 	r, w, _ := os.Pipe()
 	os.Stdout = w
 
-	cfg := DeviceCloudConfig{HubURL: srv.URL, SupabaseURL: "https://test.supabase.co"}
+	cfg := DeviceFlowConfig{HubURL: srv.URL, SupabaseURL: "https://test.supabase.co"}
 	session, err := LoginWithLink(context.Background(), cfg)
 
 	w.Close()
