@@ -97,13 +97,29 @@ _emit_deny() {
 }
 
 # =============================================================================
-# C4 프로젝트 전용: TodoWrite / EnterPlanMode 차단
+# C4 프로젝트 전용: MCP 내장 도구 차단 (TodoWrite / TaskCreate / TaskUpdate / EnterPlanMode)
+# tool_name은 "TodoWrite" 또는 MCP 네임스페이스 형식 "mcp__<ns>__TodoWrite" 두 가지 모두 처리
 # =============================================================================
-if [[ "$TOOL_NAME" == "TodoWrite" ]]; then
+
+# Normalize: mcp__*__ToolName → ToolName (마지막 __ 구분자 이후 추출)
+_BARE_TOOL="$TOOL_NAME"
+if [[ "$TOOL_NAME" =~ ^mcp__.*__(.+)$ ]]; then
+    _BARE_TOOL="${BASH_REMATCH[1]}"
+fi
+
+if [[ "$_BARE_TOOL" == "TodoWrite" ]]; then
     _emit_deny "TodoWrite 금지 (C4 프로젝트). c4_add_todo 또는 /c4-add-task 스킬 사용"
 fi
 
-if [[ "$TOOL_NAME" == "EnterPlanMode" ]]; then
+if [[ "$_BARE_TOOL" == "TaskCreate" ]]; then
+    _emit_deny "TaskCreate 금지 (C4 프로젝트). c4_add_todo 사용 (단일 소스: .c4/tasks.db)"
+fi
+
+if [[ "$_BARE_TOOL" == "TaskUpdate" ]]; then
+    _emit_deny "TaskUpdate 금지 (C4 프로젝트). c4_task_list 또는 c4_status로 확인 후 c4_submit 사용"
+fi
+
+if [[ "$_BARE_TOOL" == "EnterPlanMode" ]]; then
     _emit_deny "EnterPlanMode 금지 (C4 프로젝트). /c4-plan 스킬 사용 (Discovery→Design→Lighthouse→Tasks)"
 fi
 
@@ -144,7 +160,7 @@ _c4_polish_done() {
 }
 
 # BLOCK A: Skill c4-finish 인터셉트
-if [[ "$TOOL_NAME" == "Skill" && "$_SKILL_NAME" == "c4-finish" ]]; then
+if [[ "$_BARE_TOOL" == "Skill" && "$_SKILL_NAME" == "c4-finish" ]]; then
     if [[ "$_GATES_ENABLED" == 1 ]]; then
         _pdone=$(_c4_polish_done)
         if [[ -z "$_pdone" ]]; then

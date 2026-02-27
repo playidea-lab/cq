@@ -97,6 +97,93 @@ _emit_deny() {
 }
 
 # =============================================================================
+# C4 프로젝트 전용: MCP 내장 도구 차단 (TodoWrite / TaskCreate / TaskUpdate / EnterPlanMode)
+# tool_name은 "TodoWrite" 또는 MCP 네임스페이스 형식 "mcp__<ns>__TodoWrite" 두 가지 모두 처리
+# =============================================================================
+
+# Normalize: mcp__*__ToolName → ToolName (마지막 __ 구분자 이후 추출)
+_BARE_TOOL="$TOOL_NAME"
+if [[ "$TOOL_NAME" =~ ^mcp__.*__(.+)$ ]]; then
+    _BARE_TOOL="${BASH_REMATCH[1]}"
+fi
+
+if [[ "$_BARE_TOOL" == "TodoWrite" ]]; then
+    _emit_deny "TodoWrite 금지 (C4 프로젝트). c4_add_todo 또는 /c4-add-task 스킬 사용"
+fi
+
+if [[ "$_BARE_TOOL" == "TaskCreate" ]]; then
+    _emit_deny "TaskCreate 금지 (C4 프로젝트). c4_add_todo 사용 (단일 소스: .c4/tasks.db)"
+fi
+
+if [[ "$_BARE_TOOL" == "TaskUpdate" ]]; then
+    _emit_deny "TaskUpdate 금지 (C4 프로젝트). c4_task_list 또는 c4_status로 확인 후 c4_submit 사용"
+fi
+
+if [[ "$_BARE_TOOL" == "EnterPlanMode" ]]; then
+    _emit_deny "EnterPlanMode 금지 (C4 프로젝트). /c4-plan 스킬 사용 (Discovery→Design→Lighthouse→Tasks)"
+fi
+
+# =============================================================================
+# C4 워크플로우 게이트 (c4-finish 및 git commit 순서 강제)
+# =============================================================================
+_SKILL_NAME=$(echo "$INPUT" | jq -r '.tool_input.skill // empty' 2>/dev/null)
+_DB_PATH="${DB_PATH:-${C4_ROOT}/.c4/c4.db}"
+
+# 인라인 우회: C4_SKIP_GATE=1 (export 금지 — 세션 전체 bypass 방지)
+_GATES_ENABLED=1
+[[ -n "${C4_SKIP_GATE:-}" ]] && _GATES_ENABLED=0
+
+# c4_gates 테이블 존재 여부 확인 (없으면 skip)
+if [[ "$_GATES_ENABLED" == 1 ]]; then
+    if [[ -f "$_DB_PATH" ]] && command -v sqlite3 &>/dev/null; then
+        _cnt=$(sqlite3 "$_DB_PATH" \
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='c4_gates'" 2>/dev/null)
+        [[ "${_cnt:-0}" -eq 0 ]] && _GATES_ENABLED=0
+    else
+        _GATES_ENABLED=0
+    fi
+fi
+
+# _c4_polish_done: 현재 배치의 polish 게이트가 완료되었는지 확인
+_c4_polish_done() {
+    # 현재 배치 시작 시점 = active 태스크 중 가장 최근 created_at
+    local _batch_start
+    _batch_start=$(sqlite3 "$_DB_PATH" \
+        "SELECT MAX(created_at) FROM c4_tasks WHERE status IN ('pending','in_progress')" 2>/dev/null)
+    if [[ -z "$_batch_start" || "$_batch_start" == "NULL" ]]; then
+        echo "no_active"
+        return
+    fi
+    sqlite3 "$_DB_PATH" \
+        "SELECT 1 FROM c4_gates WHERE gate='polish' AND status IN ('done','skipped')
+         AND completed_at >= '${_batch_start}' LIMIT 1" 2>/dev/null
+}
+
+# BLOCK A: Skill c4-finish 인터셉트
+if [[ "$_BARE_TOOL" == "Skill" && "$_SKILL_NAME" == "c4-finish" ]]; then
+    if [[ "$_GATES_ENABLED" == 1 ]]; then
+        _pdone=$(_c4_polish_done)
+        if [[ -z "$_pdone" ]]; then
+            _emit_deny "c4-finish 차단: /c4-polish 먼저 실행 필요. 우회(inline only): C4_SKIP_GATE=1 /c4-finish (export 금지)"
+        fi
+    fi
+fi
+
+# BLOCK B: git commit 가드 (진행 중 태스크 + polish 미완료 시 차단)
+if [[ "$TOOL_NAME" == "Bash" && "$COMMAND" =~ ^git[[:space:]]+commit ]]; then
+    if [[ "$_GATES_ENABLED" == 1 ]]; then
+        _in_prog=$(sqlite3 "$_DB_PATH" \
+            "SELECT COUNT(*) FROM c4_tasks WHERE status='in_progress'" 2>/dev/null)
+        if [[ "${_in_prog:-0}" -gt 0 ]]; then
+            _pdone=$(_c4_polish_done)
+            if [[ -z "$_pdone" ]]; then
+                _emit_deny "git commit 차단: 진행 중 태스크 ${_in_prog}개 + polish 미완료. 우회(inline only): C4_SKIP_GATE=1 git commit -m '...'"
+            fi
+        fi
+    fi
+fi
+
+# =============================================================================
 # Bash tool: check allow/block patterns against command
 # =============================================================================
 if [[ "$TOOL_NAME" == "Bash" ]] && [[ -n "$COMMAND" ]]; then
