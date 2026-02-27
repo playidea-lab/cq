@@ -69,8 +69,16 @@ func experimentRecordNativeHandler(opts *KnowledgeNativeOpts) mcp.HandlerFunc {
 
 		if opts.Cloud != nil {
 			params["doc_type"] = "experiment"
+			var embedding []float32
+			if opts.Searcher != nil {
+				if vs := opts.Searcher.VectorStore(); vs != nil {
+					embedding = vs.Get(docID)
+				}
+			}
 			go func() {
-				knowledge.SyncAfterRecord(opts.Cloud, params, docID, nil)
+				if syncErr := knowledge.SyncAfterRecord(opts.Cloud, params, docID, embedding); syncErr != nil {
+					fmt.Fprintf(os.Stderr, "c4: knowledge cloud sync: %v\n", syncErr)
+				}
 			}()
 		}
 		if knowledgeEventPub != nil {
