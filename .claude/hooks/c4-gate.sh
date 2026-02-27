@@ -97,6 +97,17 @@ _emit_deny() {
 }
 
 # =============================================================================
+# C4 프로젝트 전용: TodoWrite / EnterPlanMode 차단
+# =============================================================================
+if [[ "$TOOL_NAME" == "TodoWrite" ]]; then
+    _emit_deny "TodoWrite 금지 (C4 프로젝트). c4_add_todo 또는 /c4-add-task 스킬 사용"
+fi
+
+if [[ "$TOOL_NAME" == "EnterPlanMode" ]]; then
+    _emit_deny "EnterPlanMode 금지 (C4 프로젝트). /c4-plan 스킬 사용 (Discovery→Design→Lighthouse→Tasks)"
+fi
+
+# =============================================================================
 # Bash tool: check allow/block patterns against command
 # =============================================================================
 if [[ "$TOOL_NAME" == "Bash" ]] && [[ -n "$COMMAND" ]]; then
