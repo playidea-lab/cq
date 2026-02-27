@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.32.0] - 2026-02-27
+
+### ✨ Features
+- **serve**: `cq serve install` 이제 sudo 없이 user-level 설치 — macOS: `~/Library/LaunchAgents/`, Linux: `~/.config/systemd/user/` (`31572615`)
+- **completion**: `cq completion [bash|zsh|fish]` 서브커맨드 추가 — 셸 탭 자동완성 스크립트 생성 (`31572615`)
+- **completion**: `-t` 플래그에 named session 이름 탭 자동완성 지원, `cq init` 및 `install.sh` 에서 RC 파일 자동 추가 (`31572615`)
+- **hub**: cq serve가 C5 서브프로세스에 `C5_SUPABASE_URL`/`C5_SUPABASE_KEY` 환경변수 자동 주입 (`8727fc92`)
+- **c5**: `applyEnvOverrides` — `C5_SUPABASE_URL/KEY/PORT` 환경변수 오버라이드 지원 (`6bcff929`)
+
+### 🐛 Bug Fixes
+- **init**: `ensureServeRunning` + `isCQServeProcess` 추가 — `~/.c4/serve/serve.pid` 기반 serve 자동 시작·검증, `--no-serve` 플래그 지원 (`0473f82b`)
+- **auth**: `ensureCloudAuth` — `yesAll` 모드 지원, solo 모드 자동 통과 (`131d389a`)
+
+### 📚 Documentation
+- **guide**: 설치 가이드에 Shell 자동완성 및 OS 서비스 등록 섹션 추가 (`4893c8ce`)
+- **reference**: 명령어 레퍼런스에 cq session·completion·serve·misc 전체 섹션 추가 (`4893c8ce`)
+- **install**: `install.sh` — `add_completion()` 으로 zsh/bash RC 파일에 completion 자동 등록 (`4893c8ce`)
+
+### 🔧 Polish
+- `serve status` PID 파일 경로 오류 처리 강화, stale pid 삭제 실패 경고 출력 (`57948926`, `2c8d321c`, `31572615`)
+
+---
+
 ## [v0.31.0] - 2026-02-27
 
 ### ✨ Features
