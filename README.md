@@ -29,7 +29,8 @@ curl -fsSL https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/install.sh | s
 cq doctor
 
 # 2. Log in (connected / full tier)
-cq auth login   # opens GitHub OAuth in browser → auto-configures cloud
+cq auth login               # opens GitHub OAuth in browser → auto-configures cloud
+cq auth login --no-browser # headless/tunnel: prints URL + SSH hint, no browser
 
 # 3. Initialize C4 in your project (generates .mcp.json + CLAUDE.md)
 cd your-project
@@ -233,7 +234,8 @@ In Claude Code, use `c4_mail_send` / `c4_mail_ls` / `c4_mail_read` / `c4_mail_rm
 For `connected` / `full` tiers:
 
 ```sh
-cq auth login   # GitHub OAuth → auto-patches .c4/config.yaml (cloud.enabled, url, anon_key)
+cq auth login               # GitHub OAuth → auto-patches .c4/config.yaml (cloud.enabled, url, anon_key)
+cq auth login --no-browser # headless/tunnel environments: prints URL + SSH forwarding hint
 ```
 
 After login, cloud sync and Hub access are enabled automatically. No manual config editing required.
