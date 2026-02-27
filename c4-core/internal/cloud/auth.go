@@ -95,6 +95,10 @@ type AuthClient struct {
 	// NoBrowser disables automatic browser opening. When true, the OAuth URL
 	// and SSH port-forwarding hint are printed to stderr instead.
 	NoBrowser bool
+	// callbackTimeout overrides the default OAuth callback wait duration.
+	// Zero means use the package-level callbackTimeout constant.
+	// Set in tests to keep them fast.
+	callbackTimeout time.Duration
 }
 
 // NewAuthClient creates a new AuthClient for the given Supabase project.
@@ -156,9 +160,9 @@ func (c *AuthClient) LoginWithGitHub() error {
 	case err := <-errCh:
 		srv.Close()
 		return fmt.Errorf("OAuth callback error: %w", err)
-	case <-time.After(callbackTimeout):
+	case <-time.After(c.effectiveCallbackTimeout()):
 		srv.Close()
-		return fmt.Errorf("OAuth login timed out after %s", callbackTimeout)
+		return fmt.Errorf("OAuth login timed out after %s", c.effectiveCallbackTimeout())
 	}
 
 	// Shut down the callback server
@@ -370,6 +374,14 @@ func (c *AuthClient) startCallbackServer2(sessionCh chan<- *Session, errCh chan<
 	}()
 
 	return srv, port, nil
+}
+
+// effectiveCallbackTimeout returns the configured timeout or the package default.
+func (c *AuthClient) effectiveCallbackTimeout() time.Duration {
+	if c.callbackTimeout > 0 {
+		return c.callbackTimeout
+	}
+	return callbackTimeout
 }
 
 // oauthURL constructs the Supabase OAuth authorization URL for GitHub.

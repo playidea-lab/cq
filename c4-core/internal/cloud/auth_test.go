@@ -641,6 +641,7 @@ func TestLoginNoBrowser(t *testing.T) {
 	client := NewAuthClient(mockSupabase.URL, "anon-key")
 	client.SetSessionPath(sessionPath)
 	client.NoBrowser = true
+	client.callbackTimeout = 200 * time.Millisecond // keep test fast; no real browser
 
 	// Capture stderr output by redirecting os.Stderr.
 	origStderr := os.Stderr
@@ -693,13 +694,12 @@ func TestLoginNoBrowser(t *testing.T) {
 		t.Error("expected openBrowserFunc NOT to be called with NoBrowser=true")
 	}
 
-	// LoginWithGitHub is still waiting for the callback — drain the channel
-	// to avoid goroutine leak (the server will be closed by defer).
-	// We don't need to verify the full login flow here; the key assertions above suffice.
+	// Wait for LoginWithGitHub to finish (it will time out via callbackTimeout=200ms).
 	select {
 	case <-loginErr:
-	case <-time.After(3 * time.Second):
-		// Timeout is acceptable: LoginWithGitHub is blocked on callback, which is expected.
+		// Returned (timeout error expected — no callback was sent).
+	case <-time.After(2 * time.Second):
+		t.Error("LoginWithGitHub did not return within 2s; possible goroutine leak")
 	}
 }
 
