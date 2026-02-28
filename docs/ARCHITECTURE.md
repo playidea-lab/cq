@@ -9,11 +9,11 @@
 
 ## Go Core (c4-core/) — Primary MCP Server
 
-> Go 기반 MCP 서버. ~45.0K LOC(src) + ~38.7K LOC(test). ~1,375개 테스트, 28 패키지.
+> Go 기반 MCP 서버. ~45.0K LOC(src) + ~38.7K LOC(test). ~1,950개 테스트, 37 패키지.
 
 ### 아키텍처
 ```
-Claude Code → Go MCP Server (stdio, 131 base + 26 Hub = 157 tools)
+Claude Code → Go MCP Server (stdio, 118 base + 26 Hub = 144 tools)
                 ├→ Go native (28): 상태/설정, 태스크, 파일, git, validation, config, health, eventbus rules
                 ├→ Go + SQLite (13): spec, design, checkpoint, artifact, lighthouse
                 ├→ Soul/Persona/Twin (7): soul CRUD, persona evolve, whoami, reflect
