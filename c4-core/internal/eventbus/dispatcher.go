@@ -136,6 +136,8 @@ func (d *Dispatcher) ReplayRule(eventID, eventType string, eventData json.RawMes
 			execErr = d.executeHubSubmit(eventType, eventData, rule)
 		case "dooray_respond":
 			execErr = d.executeDoorayRespond(eventType, eventData, rule)
+		case "dooray_dispatch":
+			execErr = d.executeDoorayDispatch(eventType, eventData, rule)
 		default:
 			execErr = fmt.Errorf("unknown action type: %s", rule.ActionType)
 		}
@@ -176,6 +178,8 @@ func (d *Dispatcher) executeRule(eventID, eventType string, eventData json.RawMe
 		err = d.executeHubSubmit(eventType, eventData, rule)
 	case "dooray_respond":
 		err = d.executeDoorayRespond(eventType, eventData, rule)
+	case "dooray_dispatch":
+		err = d.executeDoorayDispatch(eventType, eventData, rule)
 	default:
 		err = fmt.Errorf("unknown action type: %s", rule.ActionType)
 	}
@@ -718,9 +722,10 @@ func matchDomain(hostname, pattern string) bool {
 	return hostname == pattern
 }
 
-// validateDoorayResponseURL validates that the URL is a valid *.dooray.com HTTPS URL.
+// ValidateDoorayResponseURL validates that the URL is a valid *.dooray.com HTTPS URL.
 // Used by dooray_respond to prevent SSRF through attacker-controlled response_url values.
-func validateDoorayResponseURL(rawURL string) error {
+// Exported so eventbushandler (c4_dooray_respond MCP tool) can reuse the same check.
+func ValidateDoorayResponseURL(rawURL string) error {
 	return validateWebhookURL(rawURL, []string{"*.dooray.com"})
 }
 
@@ -749,7 +754,7 @@ func (d *Dispatcher) executeDoorayRespond(eventType string, eventData json.RawMe
 	}
 
 	// Security: validate the response URL is a Dooray domain to prevent SSRF
-	if err := validateDoorayResponseURL(responseURL); err != nil {
+	if err := ValidateDoorayResponseURL(responseURL); err != nil {
 		return fmt.Errorf("invalid response_url: %w", err)
 	}
 
@@ -802,6 +807,75 @@ func (d *Dispatcher) executeDoorayRespond(eventType string, eventData json.RawMe
 		return fmt.Errorf("dooray_respond returned HTTP %d", resp.StatusCode)
 	}
 	return nil
+}
+
+// executeDoorayDispatch submits a Hub job with Dooray context (response_url, text)
+// included in the job metadata. The assigned Worker can call c4_dooray_respond
+// with metadata.dooray_response_url to send a reply back to Dooray.
+func (d *Dispatcher) executeDoorayDispatch(eventType string, eventData json.RawMessage, rule StoredRule) error {
+	d.mu.RLock()
+	submitter := d.hubSubmitter
+	d.mu.RUnlock()
+
+	if submitter == nil {
+		return fmt.Errorf("dooray_dispatch action: hub submitter not configured")
+	}
+
+	var cfg struct {
+		Name       string            `json:"name"`
+		Workdir    string            `json:"workdir"`
+		Command    string            `json:"command"`
+		Env        map[string]string `json:"env"`
+		Tags       []string          `json:"tags"`
+		Priority   int               `json:"priority"`
+		TimeoutSec int               `json:"timeout_sec"`
+	}
+	if err := json.Unmarshal([]byte(rule.ActionConfig), &cfg); err != nil {
+		return fmt.Errorf("parse dooray_dispatch action_config: %w", err)
+	}
+	if cfg.Name == "" || cfg.Workdir == "" || cfg.Command == "" {
+		return fmt.Errorf("dooray_dispatch action_config requires name, workdir, and command")
+	}
+
+	var data map[string]any
+	if err := json.Unmarshal(eventData, &data); err != nil {
+		data = make(map[string]any)
+	}
+	if idx := strings.LastIndex(eventType, "."); idx >= 0 {
+		data["event_type"] = eventType[idx+1:]
+	} else {
+		data["event_type"] = eventType
+	}
+
+	// Resolve template placeholders in string fields
+	cfg.Name = resolveTemplateString(cfg.Name, data)
+	cfg.Workdir = resolveTemplateString(cfg.Workdir, data)
+	cfg.Command = resolveTemplateString(cfg.Command, data)
+
+	// Pass dooray_response_url and text in job metadata env so Worker can reply
+	responseURL, _ := data["response_url"].(string)
+	userText, _ := data["text"].(string)
+	if cfg.Env == nil {
+		cfg.Env = make(map[string]string)
+	}
+	if responseURL != "" {
+		cfg.Env["DOORAY_RESPONSE_URL"] = responseURL
+	}
+	if userText != "" {
+		cfg.Env["DOORAY_TEXT"] = userText
+	}
+
+	spec := &JobSubmitSpec{
+		Name:       cfg.Name,
+		Workdir:    cfg.Workdir,
+		Command:    cfg.Command,
+		Env:        cfg.Env,
+		Tags:       cfg.Tags,
+		Priority:   cfg.Priority,
+		TimeoutSec: cfg.TimeoutSec,
+	}
+	_, err := submitter.Submit(spec)
+	return err
 }
 
 var privateCIDRs []*net.IPNet
