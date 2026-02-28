@@ -107,14 +107,14 @@ func (c *WebhookGatewayComponent) Start(_ context.Context) error {
 
 func (c *WebhookGatewayComponent) Stop(ctx context.Context) error {
 	c.mu.Lock()
-	defer c.mu.Unlock()
+	srv := c.srv
+	c.srv = nil // mark stopped before Shutdown so Health() returns "error" immediately
+	c.mu.Unlock()
 
-	if c.srv == nil {
+	if srv == nil {
 		return nil
 	}
-	err := c.srv.Shutdown(ctx)
-	c.srv = nil
-	return err
+	return srv.Shutdown(ctx)
 }
 
 func (c *WebhookGatewayComponent) Health() ComponentHealth {
@@ -167,6 +167,8 @@ func (c *WebhookGatewayComponent) handleDooray(w http.ResponseWriter, r *http.Re
 	// Token verification (skip if no token configured).
 	// Dooray sends appToken (app-level) in every request; cmdToken is per-command and may differ.
 	// We accept a match on either field so that operators can configure either token.
+	// Note: subtle.ConstantTimeCompare returns 0 immediately when lengths differ (length oracle).
+	// This is acceptable for static webhook tokens; HMAC-based dynamic tokens would need padding.
 	if c.doorayCfg.CmdToken != "" {
 		expected := []byte(c.doorayCfg.CmdToken)
 		appMatch := subtle.ConstantTimeCompare(expected, []byte(payload.AppToken))
