@@ -47,11 +47,9 @@ Date: [날짜]
 ```
 
 ### Step 4: c9-conference 연계 (선택)
-Survey 완료 후 "이걸로 토론해줘" → `C9 Conference Input` 섹션을 컨텍스트로 `/c9-conference` 자동 실행.
+Survey 완료 후 "이걸로 토론해줘" → `C9 Conference Input` 섹션을 컨텍스트로 `/c9-conference` 스킬 직접 실행.
 
-```bash
-echo "<C9 Conference Input 내용>" | ./scripts/c9-conference.sh "<Claude 초기 포지션>"
-```
+`C9 Conference Input` 내용을 초기 포지션으로 삼아 `/c9-conference` 호출 (bash pipe 방식 아님).
 
 ### Step 5: Knowledge DB 저장
 

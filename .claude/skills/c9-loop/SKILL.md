@@ -8,8 +8,9 @@ state.yaml의 현재 phase를 읽어 다음 단계를 자동 실행.
 ## Phase 상태 머신
 
 ```
-CONFERENCE → IMPLEMENT → RUN → CHECK → REFINE → (다시 CONFERENCE)
+CONFERENCE → IMPLEMENT → RUN → CHECK → REFINE → CONFERENCE (반복)
                                     └→ FINISH (수렴)
+※ SURVEY는 수동 실행만 (`/c9-survey`). 루프 자동 실행 대상 아님.
 ```
 
 IMPLEMENT는 CONFERENCE에서 결정된 실험을 실제로 실행 가능하게 만드는 단계.
@@ -29,10 +30,9 @@ cat .c9/state.yaml
 → `/c9-conference` 스킬 실행
 - **[Knowledge] 과거 실험 검색 먼저** (설계 컨텍스트 보강, non-blocking):
   ```
-  c4_knowledge_search("HMR experiment round N", tags=["c9","hmr"])
+  c4_knowledge_search("HMR experiment round N", doc_type="experiment")
   → 결과 있으면 컨텍스트로 주입 후 토론 시작
   # 실패 시(도구 미존재/네트워크 오류) → 무시하고 진행
-  # 파라미터 오류 시 → 경고 후 진행
   ```
 - mpjpe_history와 이전 round conference.txt를 컨텍스트로 제공
 - 합의된 다음 실험들을 `.c9/experiments/rN_*.yaml`로 저장
@@ -80,10 +80,9 @@ cat .c9/state.yaml
 → `/c9-conference` 스킬 실행 (새 가설로)
 - **[Knowledge] 과거 실험 검색 먼저** (토론 컨텍스트 보강, non-blocking):
   ```
-  c4_knowledge_search("HMR experiment round N", tags=["c9","hmr"])
+  c4_knowledge_search("HMR experiment round N", doc_type="experiment")
   → 결과 있으면 컨텍스트로 주입 후 토론 시작
   # 실패 시(도구 미존재/네트워크 오류) → 무시하고 진행
-  # 파라미터 오류 시 → 경고 후 진행
   ```
 - 이전 결과를 컨텍스트로 제공
 - 새 실험 `.c9/experiments/r(N+1)_*.yaml` 생성
