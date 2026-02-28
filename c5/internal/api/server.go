@@ -36,6 +36,7 @@ type Server struct {
 	serverURL   string // local server URL (fallback for publicURL)
 	publicURL   string // external public URL (for device auth redirects)
 	supabaseURL string // Supabase project URL for PKCE token exchange
+	supabaseKey string // Supabase anon key for PKCE token exchange (apikey header)
 	mux         *http.ServeMux
 	done        chan struct{} // closed on shutdown to stop background goroutines
 	eventPub         *eventpub.Publisher
@@ -67,6 +68,7 @@ type Config struct {
 	MaxArtifactBytes int64  // max upload size for local backend (default 10GB)
 	GPUWorkerGPUOnly bool   // if true, GPU workers only accept GPU jobs (no CPU fallback)
 	SupabaseURL      string // Supabase project URL for PKCE token exchange (optional)
+	SupabaseKey      string // Supabase anon key for PKCE token exchange (optional)
 }
 
 // NewServer creates an HTTP API server.
@@ -93,6 +95,7 @@ func NewServer(cfg Config) *Server {
 		serverURL:        cfg.ServerURL,
 		publicURL:        cfg.PublicURL,
 		supabaseURL:      cfg.SupabaseURL,
+		supabaseKey:      cfg.SupabaseKey,
 		mux:              http.NewServeMux(),
 		done:             make(chan struct{}),
 		eventPub:         eventpub.New(cfg.EventBusURL, cfg.EventBusToken),

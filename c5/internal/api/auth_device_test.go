@@ -151,12 +151,12 @@ func TestDeviceAuthPollExpiry(t *testing.T) {
 	json.NewDecoder(w.Body).Decode(&createResp)
 	state := createResp["state"].(string)
 
-	// Poll 21 times — should expire after 20
-	for i := 0; i < 21; i++ {
+	// Poll 61 times — should expire after 60 (pending sessions only)
+	for i := 0; i < 61; i++ {
 		doRequest(t, srv, http.MethodGet, "/v1/auth/device/"+state, nil)
 	}
 
-	// 22nd poll should return 404 (expired)
+	// 62nd poll should return 404 (expired)
 	w = doRequest(t, srv, http.MethodGet, "/v1/auth/device/"+state, nil)
 	if w.Code != http.StatusNotFound {
 		t.Errorf("expected 404 after expiry, got %d: %s", w.Code, w.Body.String())
@@ -166,57 +166,73 @@ func TestDeviceAuthPollExpiry(t *testing.T) {
 func TestActivateGet(t *testing.T) {
 	srv := newTestServer(t)
 
-	req := httptest.NewRequest(http.MethodGet, "/auth/activate", nil)
-	w := httptest.NewRecorder()
-	srv.Handler().ServeHTTP(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d", w.Code)
+	// Create a device session to get a valid state.
+	createBody := map[string]string{
+		"code_challenge":        "test-challenge",
+		"supabase_url":          "https://example.supabase.co",
+		"code_challenge_method": "S256",
 	}
-
-	// Check Content-Type
-	ct := w.Header().Get("Content-Type")
-	if !strings.Contains(ct, "text/html") {
-		t.Errorf("expected text/html content-type, got %s", ct)
+	cw := doRequest(t, srv, http.MethodPost, "/v1/auth/device", createBody)
+	if cw.Code != http.StatusOK {
+		t.Fatalf("create device session failed: %d", cw.Code)
 	}
+	var createResp map[string]any
+	json.NewDecoder(cw.Body).Decode(&createResp)
+	state := createResp["state"].(string)
 
-	// Check CSRF cookie
-	cookies := w.Result().Cookies()
-	var csrfCookie *http.Cookie
-	for _, c := range cookies {
-		if c.Name == "csrf" {
-			csrfCookie = c
-			break
+	t.Run("success with valid state", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/auth/activate?state="+state, nil)
+		w := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
 		}
-	}
-	if csrfCookie == nil {
-		t.Fatal("missing csrf cookie")
-	}
-	if csrfCookie.HttpOnly != true {
-		t.Error("csrf cookie should be HttpOnly")
-	}
-	if csrfCookie.SameSite != http.SameSiteStrictMode {
-		t.Error("csrf cookie should be SameSiteStrict")
-	}
 
-	// Body should contain form with user_code input
-	bodyStr := w.Body.String()
-	if !strings.Contains(bodyStr, `name="user_code"`) {
-		t.Error("HTML should contain user_code input")
-	}
-	if !strings.Contains(bodyStr, `name="csrf"`) {
-		t.Error("HTML should contain csrf hidden input")
-	}
-	// CSRF value in hidden field should match cookie
-	if !strings.Contains(bodyStr, csrfCookie.Value) {
-		t.Error("CSRF value in HTML should match cookie value")
-	}
+		ct := w.Header().Get("Content-Type")
+		if !strings.Contains(ct, "text/html") {
+			t.Errorf("expected text/html content-type, got %s", ct)
+		}
+
+		bodyStr := w.Body.String()
+		if !strings.Contains(bodyStr, `name="user_code"`) {
+			t.Error("HTML should contain user_code input")
+		}
+		// Form action should include state parameter.
+		if !strings.Contains(bodyStr, `state=`+state) {
+			t.Errorf("form action should contain state=%s", state)
+		}
+		// No CSRF cookie should be set.
+		for _, c := range w.Result().Cookies() {
+			if c.Name == "csrf" {
+				t.Error("unexpected csrf cookie — state-based CSRF should not set cookies")
+			}
+		}
+	})
+
+	t.Run("missing state returns 400", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/auth/activate", nil)
+		w := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(w, req)
+		if w.Code != http.StatusBadRequest {
+			t.Fatalf("expected 400, got %d", w.Code)
+		}
+	})
+
+	t.Run("unknown state returns 404", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/auth/activate?state=unknownstate123", nil)
+		w := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(w, req)
+		if w.Code != http.StatusNotFound {
+			t.Fatalf("expected 404, got %d", w.Code)
+		}
+	})
 }
 
 func TestActivatePost(t *testing.T) {
 	srv := newTestServer(t)
 
-	// Create a device session first
+	// Create a device session first.
 	createBody := map[string]string{
 		"code_challenge":        "test-challenge",
 		"supabase_url":          "https://example.supabase.co",
@@ -229,16 +245,14 @@ func TestActivatePost(t *testing.T) {
 	var createResp map[string]any
 	json.NewDecoder(w.Body).Decode(&createResp)
 	userCode := createResp["user_code"].(string)
+	state := createResp["state"].(string)
 
 	t.Run("success redirect", func(t *testing.T) {
-		csrfToken := "test-csrf-token"
 		form := url.Values{}
 		form.Set("user_code", userCode)
-		form.Set("csrf", csrfToken)
 
-		req := httptest.NewRequest(http.MethodPost, "/auth/activate", strings.NewReader(form.Encode()))
+		req := httptest.NewRequest(http.MethodPost, "/auth/activate?state="+state, strings.NewReader(form.Encode()))
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-		req.AddCookie(&http.Cookie{Name: "csrf", Value: csrfToken})
 		w := httptest.NewRecorder()
 		srv.Handler().ServeHTTP(w, req)
 
@@ -255,52 +269,51 @@ func TestActivatePost(t *testing.T) {
 		}
 	})
 
-	t.Run("csrf mismatch", func(t *testing.T) {
+	t.Run("state mismatch returns 403", func(t *testing.T) {
 		form := url.Values{}
 		form.Set("user_code", userCode)
-		form.Set("csrf", "wrong-token")
 
-		req := httptest.NewRequest(http.MethodPost, "/auth/activate", strings.NewReader(form.Encode()))
+		req := httptest.NewRequest(http.MethodPost, "/auth/activate?state=wrongstate000000000000000000000000000000000000000000000000000000", strings.NewReader(form.Encode()))
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-		req.AddCookie(&http.Cookie{Name: "csrf", Value: "different-token"})
 		w := httptest.NewRecorder()
 		srv.Handler().ServeHTTP(w, req)
 
 		if w.Code != http.StatusForbidden {
-			t.Fatalf("expected 403, got %d", w.Code)
+			t.Fatalf("expected 403, got %d: %s", w.Code, w.Body.String())
 		}
 	})
 
-	t.Run("missing csrf cookie", func(t *testing.T) {
+	t.Run("missing state returns 400", func(t *testing.T) {
 		form := url.Values{}
 		form.Set("user_code", userCode)
-		form.Set("csrf", "some-token")
 
 		req := httptest.NewRequest(http.MethodPost, "/auth/activate", strings.NewReader(form.Encode()))
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-		// No csrf cookie
 		w := httptest.NewRecorder()
 		srv.Handler().ServeHTTP(w, req)
 
-		if w.Code != http.StatusForbidden {
-			t.Fatalf("expected 403, got %d", w.Code)
+		if w.Code != http.StatusBadRequest {
+			t.Fatalf("expected 400, got %d", w.Code)
 		}
 	})
 
-	t.Run("invalid user code", func(t *testing.T) {
-		csrfToken := "test-csrf-token"
+	t.Run("invalid user code shows form again", func(t *testing.T) {
 		form := url.Values{}
 		form.Set("user_code", "INVALID1")
-		form.Set("csrf", csrfToken)
 
-		req := httptest.NewRequest(http.MethodPost, "/auth/activate", strings.NewReader(form.Encode()))
+		req := httptest.NewRequest(http.MethodPost, "/auth/activate?state="+state, strings.NewReader(form.Encode()))
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-		req.AddCookie(&http.Cookie{Name: "csrf", Value: csrfToken})
 		w := httptest.NewRecorder()
 		srv.Handler().ServeHTTP(w, req)
 
-		if w.Code != http.StatusNotFound {
-			t.Fatalf("expected 404, got %d: %s", w.Code, w.Body.String())
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected 200 (form re-render), got %d: %s", w.Code, w.Body.String())
+		}
+		if !strings.Contains(w.Body.String(), `name="user_code"`) {
+			t.Error("response should re-render the activation form")
+		}
+		if !strings.Contains(w.Body.String(), "잘못된") {
+			t.Error("response should contain an error message")
 		}
 	})
 }
@@ -335,15 +348,13 @@ func TestDeviceAuthPublicEndpoint(t *testing.T) {
 	})
 
 	t.Run("GET /auth/activate without API key", func(t *testing.T) {
+		// Without a valid state we get 400, but NOT 401 — endpoint is public.
 		req := httptest.NewRequest(http.MethodGet, "/auth/activate", nil)
 		w := httptest.NewRecorder()
 		srv.Handler().ServeHTTP(w, req)
 
 		if w.Code == http.StatusUnauthorized {
 			t.Fatal("activate endpoint should be public (bypass API key)")
-		}
-		if w.Code != http.StatusOK {
-			t.Fatalf("expected 200, got %d", w.Code)
 		}
 	})
 }

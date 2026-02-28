@@ -104,7 +104,7 @@ func (s *Server) handleDeviceAuthCreate(w http.ResponseWriter, r *http.Request) 
 		url.QueryEscape(redirectTo),
 	)
 
-	activateURL := fmt.Sprintf("%s/auth/activate", publicURL)
+	activateURL := fmt.Sprintf("%s/auth/activate?state=%s", publicURL, url.QueryEscape(state))
 
 	writeJSON(w, map[string]any{
 		"state":        state,
@@ -140,67 +140,66 @@ func (s *Server) handleDeviceAuthPoll(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// handleActivateGet handles GET /auth/activate — serves the HTML form.
+// handleActivateGet handles GET /auth/activate?state=STATE — serves the HTML form.
+// CSRF protection is achieved via the unguessable state parameter in the URL and form action,
+// eliminating the need for cookies (which can fail due to SameSite/Secure browser policies).
 func (s *Server) handleActivateGet(w http.ResponseWriter, r *http.Request) {
-	// Generate CSRF token
-	csrfBytes := make([]byte, 32)
-	if _, err := rand.Read(csrfBytes); err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to generate csrf")
+	state := r.URL.Query().Get("state")
+	if state == "" || len(state) > 128 || strings.Contains(state, "/") {
+		writeError(w, http.StatusBadRequest, "missing or invalid state")
 		return
 	}
-	csrfToken := hex.EncodeToString(csrfBytes)
 
-	// Set CSRF cookie. Secure flag is set when the server is accessed via HTTPS (MEDIUM #5).
-	secureCookie := strings.HasPrefix(s.publicURL, "https://") || strings.HasPrefix(s.serverURL, "https://")
-	http.SetCookie(w, &http.Cookie{
-		Name:     "csrf",
-		Value:    csrfToken,
-		Path:     "/auth/activate",
-		HttpOnly: true,
-		Secure:   secureCookie,
-		SameSite: http.SameSiteStrictMode,
-		MaxAge:   600, // 10 minutes
-	})
+	// Validate state exists in DB before serving the form.
+	ds, err := s.store.PeekDeviceSession(state)
+	if err != nil || ds == nil {
+		writeError(w, http.StatusNotFound, "session not found or expired")
+		return
+	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	fmt.Fprintf(w, activatePageHTML, html.EscapeString(csrfToken))
+	fmt.Fprint(w, activateFormPage(state, ""))
 }
 
-// handleActivatePost handles POST /auth/activate — validates CSRF + user_code, redirects to auth_url.
+// handleActivatePost handles POST /auth/activate?state=STATE — validates state + user_code, redirects to auth_url.
+// The state query parameter serves as CSRF protection: it is unguessable (32 random bytes) and
+// ties the form submission to a specific device session, so no cookie-based CSRF is needed.
 func (s *Server) handleActivatePost(w http.ResponseWriter, r *http.Request) {
+	state := r.URL.Query().Get("state")
+	if state == "" || len(state) > 128 || strings.Contains(state, "/") {
+		writeError(w, http.StatusBadRequest, "missing or invalid state")
+		return
+	}
+
 	if err := r.ParseForm(); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid form data")
 		return
 	}
 
 	userCode := strings.TrimSpace(r.FormValue("user_code"))
-	csrfBody := r.FormValue("csrf")
-
-	// Validate CSRF: cookie value must match body value
-	csrfCookie, err := r.Cookie("csrf")
-	if err != nil || csrfCookie.Value == "" {
-		writeError(w, http.StatusForbidden, "missing csrf cookie")
-		return
-	}
-	if csrfCookie.Value != csrfBody {
-		writeError(w, http.StatusForbidden, "csrf mismatch")
-		return
-	}
-
 	if userCode == "" {
-		writeError(w, http.StatusBadRequest, "missing user_code")
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		fmt.Fprint(w, activateFormPage(state, "코드를 입력해주세요."))
 		return
 	}
 
 	ds, err := s.store.GetDeviceSessionByUserCode(strings.ToUpper(userCode))
 	if err != nil || ds == nil {
-		writeError(w, http.StatusNotFound, "invalid or expired code")
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		fmt.Fprint(w, activateFormPage(state, "잘못된 코드입니다. 다시 확인해주세요."))
 		return
 	}
 
-	// Check if expired (GetDeviceSessionByUserCode already filters expired rows, this is a belt-and-suspenders check)
+	// Verify state matches — prevents cross-session code reuse.
+	if ds.State != state {
+		writeError(w, http.StatusForbidden, "state mismatch")
+		return
+	}
+
+	// Belt-and-suspenders expiry check (GetDeviceSessionByUserCode already filters expired rows).
 	if ds.Status == "expired" || ds.ExpiresAt.Before(time.Now()) {
-		writeError(w, http.StatusNotFound, "invalid or expired code")
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		fmt.Fprint(w, activateFormPage(state, "세션이 만료되었습니다. 터미널에서 다시 시도해주세요."))
 		return
 	}
 
@@ -216,12 +215,6 @@ func (s *Server) handleActivatePost(w http.ResponseWriter, r *http.Request) {
 		url.QueryEscape(redirectTo),
 	)
 
-	// MEDIUM: Expire CSRF cookie after successful use (defense in depth against replay).
-	http.SetCookie(w, &http.Cookie{
-		Name:   "csrf",
-		MaxAge: -1,
-		Path:   "/auth/activate",
-	})
 	http.Redirect(w, r, authURL, http.StatusFound)
 }
 
@@ -237,7 +230,17 @@ func (s *Server) handleActivate(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-const activatePageHTML = `<!DOCTYPE html>
+// activateFormPage renders the device activation HTML form.
+// If errMsg is non-empty, an error banner is shown above the form.
+func activateFormPage(state, errMsg string) string {
+	errorBanner := ""
+	if errMsg != "" {
+		errorBanner = `<div class="error">` + html.EscapeString(errMsg) + `</div>`
+	}
+	return fmt.Sprintf(activatePageHTMLTmpl, errorBanner, html.EscapeString(state))
+}
+
+const activatePageHTMLTmpl = `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -251,6 +254,8 @@ const activatePageHTML = `<!DOCTYPE html>
           max-width: 400px; width: 100%%; text-align: center; }
   h1 { font-size: 1.5rem; margin-bottom: 0.5rem; }
   p { color: #666; margin-bottom: 1.5rem; }
+  .error { color: #c62828; background: #ffebee; border-radius: 6px; padding: 0.6rem 1rem;
+           margin-bottom: 1rem; font-size: 0.9rem; }
   input[type=text] { font-size: 1.5rem; text-align: center; padding: 0.75rem; width: 80%%;
                      border: 2px solid #ddd; border-radius: 6px; letter-spacing: 0.2em;
                      text-transform: uppercase; }
@@ -264,9 +269,9 @@ const activatePageHTML = `<!DOCTYPE html>
 <div class="card">
   <h1>Device Authorization</h1>
   <p>Enter the code shown in your terminal</p>
-  <form method="POST" action="/auth/activate">
+  %s
+  <form method="POST" action="/auth/activate?state=%s">
     <input type="text" name="user_code" placeholder="ABCD1234" maxlength="8" autocomplete="off" autofocus>
-    <input type="hidden" name="csrf" value="%s">
     <br>
     <button type="submit">Authorize</button>
   </form>

@@ -143,6 +143,7 @@ func runServe(cmd *cobra.Command, configPath string, port int, dbPath, apiKey, e
 		MaxArtifactBytes: cfg.Storage.MaxArtifactBytes,
 		GPUWorkerGPUOnly: cfg.Server.GPUWorkerGPUOnly,
 		SupabaseURL:      cfg.Storage.SupabaseURL,
+		SupabaseKey:      cfg.Storage.SupabaseKey,
 	})
 	defer srv.Close()
 

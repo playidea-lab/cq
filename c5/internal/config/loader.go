@@ -50,7 +50,7 @@ func Load(configPath string) (*Config, error) {
 }
 
 // applyEnvOverrides overrides config values from environment variables.
-// C5_SUPABASE_URL, C5_SUPABASE_KEY, and C5_PORT are supported.
+// C5_SUPABASE_URL, C5_SUPABASE_KEY, C5_PORT, and C5_PUBLIC_URL are supported.
 func applyEnvOverrides(cfg *Config) {
 	if v, ok := os.LookupEnv("C5_SUPABASE_URL"); ok {
 		cfg.Storage.SupabaseURL = v
@@ -62,6 +62,9 @@ func applyEnvOverrides(cfg *Config) {
 		if port, err := strconv.Atoi(v); err == nil {
 			cfg.Server.Port = port
 		}
+	}
+	if v, ok := os.LookupEnv("C5_PUBLIC_URL"); ok {
+		cfg.Server.PublicURL = v
 	}
 }
 

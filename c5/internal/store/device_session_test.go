@@ -76,18 +76,50 @@ func TestDeviceSessionExpireAfterMaxPolls(t *testing.T) {
 		t.Fatalf("CreateDeviceSession: %v", err)
 	}
 
-	// Poll 20 times — on the 21st get, status should be expired (poll_count > 20).
-	for i := 0; i < 20; i++ {
+	// Poll 60 times — on the 61st get, status should be expired (poll_count > 60).
+	for i := 0; i < 60; i++ {
 		_, err := s.GetDeviceSession(state)
 		if err != nil {
 			t.Fatalf("GetDeviceSession call %d: %v", i+1, err)
 		}
 	}
 
-	// 21st call: poll_count becomes 21 > 20 → status = expired → should return ErrNoRows.
+	// 61st call: poll_count becomes 61 > 60 → status = expired → should return ErrNoRows.
 	_, err := s.GetDeviceSession(state)
 	if err != sql.ErrNoRows {
 		t.Errorf("expected sql.ErrNoRows after max polls, got %v", err)
+	}
+}
+
+// TestDeviceSessionReadyNotExpiredByPollCount verifies that a 'ready' session
+// is not overwritten to 'expired' even when poll_count exceeds the limit.
+func TestDeviceSessionReadyNotExpiredByPollCount(t *testing.T) {
+	s := newTestStore(t)
+
+	state := "test-state-ready-protect"
+	if err := s.CreateDeviceSession(state, "REDY1234", "challenge", "https://example.supabase.co", time.Now().Add(10*time.Minute)); err != nil {
+		t.Fatalf("CreateDeviceSession: %v", err)
+	}
+
+	// Advance poll_count to 60 (at the limit).
+	for i := 0; i < 60; i++ {
+		if _, err := s.GetDeviceSession(state); err != nil {
+			t.Fatalf("GetDeviceSession call %d: %v", i+1, err)
+		}
+	}
+
+	// Set status to 'ready' (simulates OAuth callback completing).
+	if err := s.SetDeviceSessionAuthCode(state, "auth-code-xyz"); err != nil {
+		t.Fatalf("SetDeviceSessionAuthCode: %v", err)
+	}
+
+	// 61st poll: poll_count becomes 61 > 60, but status='ready' → must NOT expire.
+	ds, err := s.GetDeviceSession(state)
+	if err != nil {
+		t.Fatalf("expected session to survive after ready: %v", err)
+	}
+	if ds.Status != "ready" {
+		t.Errorf("expected status='ready', got %q", ds.Status)
 	}
 }
 

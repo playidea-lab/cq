@@ -54,7 +54,7 @@ func (s *Server) handleAuthCallback(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
-	fmt.Fprint(w, htmlPage("인증 완료", "인증 완료! 터미널로 돌아가세요.<script>window.close();</script>"))
+	fmt.Fprint(w, authSuccessPageHTML)
 }
 
 // handleAuthDeviceToken handles POST /v1/auth/device/{state}/token
@@ -140,7 +140,7 @@ func (s *Server) handleAuthDeviceToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	session, apiErr, statusCode := exchangePKCEToken(supabaseURL, ds.AuthCode, req.CodeVerifier)
+	session, apiErr, statusCode := exchangePKCEToken(supabaseURL, s.supabaseKey, ds.AuthCode, req.CodeVerifier)
 	if apiErr != "" {
 		writeError(w, statusCode, apiErr)
 		return
@@ -150,9 +150,10 @@ func (s *Server) handleAuthDeviceToken(w http.ResponseWriter, r *http.Request) {
 }
 
 // exchangePKCEToken calls Supabase to exchange an auth_code + code_verifier for session tokens.
+// supabaseKey is the project's anon key (sent as apikey header). May be empty for self-hosted Supabase.
 // Returns (session JSON object, error message, HTTP status code for error).
 // Uses a 30s HTTP client timeout to prevent goroutine leaks if Supabase hangs.
-func exchangePKCEToken(supabaseURL, authCode, codeVerifier string) (map[string]any, string, int) {
+func exchangePKCEToken(supabaseURL, supabaseKey, authCode, codeVerifier string) (map[string]any, string, int) {
 	body, _ := json.Marshal(map[string]string{
 		"auth_code":     authCode,
 		"code_verifier": codeVerifier,
@@ -160,8 +161,18 @@ func exchangePKCEToken(supabaseURL, authCode, codeVerifier string) (map[string]a
 
 	url := strings.TrimRight(supabaseURL, "/") + "/auth/v1/token?grant_type=pkce"
 
+	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(body)) //nolint:noctx
+	if err != nil {
+		return nil, fmt.Sprintf("creating request: %v", err), http.StatusInternalServerError
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if supabaseKey != "" {
+		req.Header.Set("apikey", supabaseKey)
+		req.Header.Set("Authorization", "Bearer "+supabaseKey)
+	}
+
 	client := &http.Client{Timeout: pkceHTTPTimeout}
-	resp, err := client.Post(url, "application/json", bytes.NewReader(body)) //nolint:noctx
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Sprintf("supabase unreachable: %v", err), http.StatusBadGateway
 	}
@@ -205,3 +216,37 @@ func htmlPage(title, body string) string {
 <body><h1>%s</h1></body>
 </html>`, html.EscapeString(title), body)
 }
+
+const authSuccessPageHTML = `<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>인증 완료 — CQ</title>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+         display: flex; justify-content: center; align-items: center; min-height: 100vh;
+         margin: 0; background: #f0faf4; }
+  .card { background: white; padding: 2.5rem 2rem; border-radius: 12px;
+          box-shadow: 0 2px 12px rgba(0,0,0,0.1); max-width: 380px; width: 100%;
+          text-align: center; }
+  .icon { width: 72px; height: 72px; margin: 0 auto 1.5rem; }
+  h1 { font-size: 1.5rem; color: #1a1a1a; margin: 0 0 0.5rem; }
+  p { color: #555; font-size: 0.95rem; margin: 0; line-height: 1.5; }
+  .hint { margin-top: 1.5rem; font-size: 0.8rem; color: #999; }
+</style>
+</head>
+<body>
+<div class="card">
+  <svg class="icon" viewBox="0 0 72 72" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <circle cx="36" cy="36" r="36" fill="#e8f5e9"/>
+    <path d="M20 36l12 12 20-24" stroke="#2e7d32" stroke-width="4"
+          stroke-linecap="round" stroke-linejoin="round"/>
+  </svg>
+  <h1>인증 완료!</h1>
+  <p>터미널로 돌아가세요.<br>이 창은 닫아도 됩니다.</p>
+  <p class="hint">3초 후 자동으로 닫힙니다.</p>
+</div>
+<script>setTimeout(function(){ window.close(); }, 3000);</script>
+</body>
+</html>`

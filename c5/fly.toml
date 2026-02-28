@@ -9,6 +9,7 @@ primary_region = "nrt"  # Tokyo — 한국 실험 서버와 인접
 
 [env]
   C5_PORT = "8585"
+  C5_PUBLIC_URL = "https://piqsol-c5.fly.dev"
 
 [[mounts]]
   source      = "c5_data"

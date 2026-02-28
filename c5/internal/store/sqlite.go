@@ -2357,10 +2357,11 @@ func (s *Store) GetDeviceSession(state string) (*model.DeviceSession, error) {
 	now := time.Now().Unix()
 
 	// Atomically increment poll_count and expire if over limit.
+	// Only expire 'pending' sessions: once status='ready', poll_count must not override it.
 	_, err := s.db.Exec(`
 		UPDATE device_sessions
 		SET poll_count = poll_count + 1,
-		    status = CASE WHEN poll_count + 1 > 20 THEN 'expired' ELSE status END
+		    status = CASE WHEN poll_count + 1 > 60 AND status = 'pending' THEN 'expired' ELSE status END
 		WHERE state = ? AND expires_at >= ? AND status != 'expired'`,
 		state, now,
 	)
