@@ -100,7 +100,6 @@ var DefaultAllowlist = ErrorAllowlist{
 	"internal/mcp/mcp.go":                          1,
 	"internal/secrets/store.go":                    3,
 	"internal/serve/agent.go":                      4,
-	"internal/serve/webhookgw_component.go":        1,
 	"internal/serve/gpu_component.go":              1,
 	"internal/serve/hub_component.go":              2,
 	"internal/serve/hubpoller_component.go":        2,

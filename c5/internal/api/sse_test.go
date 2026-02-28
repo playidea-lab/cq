@@ -103,13 +103,13 @@ func TestSSEHandler_SlowConsumer(t *testing.T) {
 	// We fill the channel so the next broadcastSSEEvent call must drop.
 	slowCh := make(chan string, 1)
 	slowCh <- "existing" // pre-fill
-	srv.sseSubs.Store(slowCh, struct{}{})
+	srv.sseSubs.Store(slowCh, "") // master subscriber (receives all)
 	defer srv.sseSubs.Delete(slowCh)
 
 	// broadcastSSEEvent should not block even though the channel is full.
 	done := make(chan struct{})
 	go func() {
-		srv.broadcastSSEEvent("test", nil)
+		srv.broadcastSSEEvent("", "test", nil)
 		close(done)
 	}()
 
@@ -210,6 +210,89 @@ func TestSSEHandler_MethodNotAllowed(t *testing.T) {
 	if w.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("status = %d, want 405", w.Code)
 	}
+}
+
+// TestSSEProjectIsolation verifies that a subscriber for project-A does NOT
+// receive events broadcast for project-B.
+func TestSSEProjectIsolation(t *testing.T) {
+	srv := newTestServer(t)
+
+	chA := make(chan string, 16)
+	srv.sseSubs.Store(chA, "project-A")
+	defer srv.sseSubs.Delete(chA)
+
+	// Broadcast an event for project-B only.
+	srv.broadcastSSEEvent("project-B", "job.completed", nil)
+
+	select {
+	case msg := <-chA:
+		t.Fatalf("project-A subscriber received event meant for project-B: %s", msg)
+	case <-time.After(50 * time.Millisecond):
+		// OK — not delivered
+	}
+}
+
+// TestSSEProjectReceivesOwn verifies that a subscriber for project-A receives
+// events broadcast for project-A.
+func TestSSEProjectReceivesOwn(t *testing.T) {
+	srv := newTestServer(t)
+
+	chA := make(chan string, 16)
+	srv.sseSubs.Store(chA, "project-A")
+	defer srv.sseSubs.Delete(chA)
+
+	srv.broadcastSSEEvent("project-A", "job.completed", nil)
+
+	select {
+	case <-chA:
+		// OK — received
+	case <-time.After(2 * time.Second):
+		t.Fatal("project-A subscriber did not receive its own event")
+	}
+}
+
+// TestSSEMasterKeyReceivesAll verifies that a master-key subscriber (pid=="")
+// receives events broadcast for any project.
+func TestSSEMasterKeyReceivesAll(t *testing.T) {
+	srv := newTestServer(t)
+
+	chMaster := make(chan string, 16)
+	srv.sseSubs.Store(chMaster, "") // master key
+	defer srv.sseSubs.Delete(chMaster)
+
+	// Broadcast an event for an arbitrary project.
+	srv.broadcastSSEEvent("project-X", "job.completed", nil)
+
+	select {
+	case <-chMaster:
+		// OK — master receives all
+	case <-time.After(2 * time.Second):
+		t.Fatal("master subscriber did not receive project-X event")
+	}
+}
+
+// TestSSEConcurrentSubscribers verifies that concurrent subscribe/unsubscribe
+// operations are race-free.
+func TestSSEConcurrentSubscribers(t *testing.T) {
+	srv := newTestServer(t)
+
+	const n = 10
+	var wg sync.WaitGroup
+	wg.Add(n)
+	for i := 0; i < n; i++ {
+		go func() {
+			defer wg.Done()
+			ch := make(chan string, 16)
+			srv.sseSubs.Store(ch, "")
+			srv.broadcastSSEEvent("", "ping", nil)
+			srv.sseSubs.Delete(ch)
+			// drain
+			for len(ch) > 0 {
+				<-ch
+			}
+		}()
+	}
+	wg.Wait()
 }
 
 // TestSSE_Keepalive verifies that the SSE handler sends keepalive comments

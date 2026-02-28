@@ -206,7 +206,7 @@ func (s *Server) handleJobComplete(w http.ResponseWriter, r *http.Request, jobID
 			if tags == nil {
 				tags = []string{}
 			}
-			if n, _ := s.store.EvaluateDeployRulesForJob(jobID, tags); n > 0 {
+			if n, _ := s.store.EvaluateDeployRulesForJob(jobID, tags, job.ProjectID); n > 0 {
 				log.Printf("c5: deploy rules matched for job %s, created %d deployment(s)", jobID, n)
 			}
 		}

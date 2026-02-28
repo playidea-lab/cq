@@ -288,6 +288,7 @@ type DAG struct {
 	Name         string          `json:"name"`
 	Description  string          `json:"description,omitempty"`
 	Tags         []string        `json:"tags,omitempty"`
+	ProjectID    string          `json:"project_id,omitempty"`
 	Status       string          `json:"status,omitempty"` // pending, running, completed, failed
 	Nodes        []DAGNode       `json:"nodes,omitempty"`
 	Dependencies []DAGDependency `json:"dependencies,omitempty"`
@@ -382,15 +383,16 @@ type DAGFromYAMLRequest struct {
 
 // Edge represents a registered edge device for artifact deployment.
 type Edge struct {
-	ID       string            `json:"id"`
-	Name     string            `json:"name"`
-	Status   string            `json:"status"` // online, offline
-	Tags     []string          `json:"tags,omitempty"`
-	Arch     string            `json:"arch,omitempty"`
-	Runtime  string            `json:"runtime,omitempty"`
-	Storage  float64           `json:"storage_gb,omitempty"`
-	Metadata map[string]string `json:"metadata,omitempty"`
-	LastSeen string            `json:"last_seen,omitempty"`
+	ID        string            `json:"id"`
+	Name      string            `json:"name"`
+	ProjectID string            `json:"project_id,omitempty"`
+	Status    string            `json:"status"` // online, offline
+	Tags      []string          `json:"tags,omitempty"`
+	Arch      string            `json:"arch,omitempty"`
+	Runtime   string            `json:"runtime,omitempty"`
+	Storage   float64           `json:"storage_gb,omitempty"`
+	Metadata  map[string]string `json:"metadata,omitempty"`
+	LastSeen  string            `json:"last_seen,omitempty"`
 }
 
 // EdgeRegisterRequest is the payload for POST /v1/edges/register.
@@ -422,6 +424,7 @@ type EdgeHeartbeatRequest struct {
 type DeployRule struct {
 	ID              string `json:"id"`
 	Name            string `json:"name,omitempty"`
+	ProjectID       string `json:"project_id,omitempty"`
 	Trigger         string `json:"trigger"`
 	EdgeFilter      string `json:"edge_filter"`
 	ArtifactPattern string `json:"artifact_pattern"`

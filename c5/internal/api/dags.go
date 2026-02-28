@@ -22,7 +22,7 @@ func (s *Server) handleDAGCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	dag, err := s.store.CreateDAG(req)
+	dag, err := s.store.CreateDAG(projectIDFromContext(r), req)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -48,7 +48,8 @@ func (s *Server) handleDAGsList(w http.ResponseWriter, r *http.Request) {
 		limit = 20
 	}
 
-	dags, err := s.store.ListDAGs(status, limit)
+	pid := projectIDFromContext(r)
+	dags, err := s.store.ListDAGs(pid, status, limit)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -241,7 +242,7 @@ func (s *Server) handleDAGFromYAML(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Create DAG
-	dag, err := s.store.CreateDAG(&model.DAGCreateRequest{
+	dag, err := s.store.CreateDAG(projectIDFromContext(r), &model.DAGCreateRequest{
 		Name:        def.Name,
 		Description: def.Description,
 		Tags:        def.Tags,

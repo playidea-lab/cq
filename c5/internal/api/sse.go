@@ -17,6 +17,10 @@ import (
 //
 // The channel buffer is 16.  When the buffer is full the event is dropped
 // (non-blocking) to avoid back-pressure stalls in the server.
+//
+// Project isolation: the subscriber's project ID (from auth context) is
+// stored as the sync.Map value. Master key subscribers store "" and receive
+// all events regardless of project.
 func (s *Server) handleSSEStream(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		methodNotAllowed(w)
@@ -29,9 +33,11 @@ func (s *Server) handleSSEStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Register subscriber channel.
+	// Register subscriber channel with caller's project ID.
+	// Master key sets pid="" which receives all events.
 	ch := make(chan string, 16)
-	s.sseSubs.Store(ch, struct{}{})
+	pid := projectIDFromContext(r)
+	s.sseSubs.Store(ch, pid)
 	defer func() {
 		s.sseSubs.Delete(ch)
 		// Drain to unblock any concurrent senders.
@@ -68,9 +74,14 @@ func (s *Server) handleSSEStream(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// broadcastSSEEvent sends a JSON-encoded event to all registered SSE subscribers.
-// Full when a subscriber's channel is full, the event is dropped for that subscriber.
-func (s *Server) broadcastSSEEvent(eventType string, data any) {
+// broadcastSSEEvent sends a JSON-encoded event to SSE subscribers whose
+// project ID matches projectID, plus all master-key subscribers (value == "").
+//
+// Pass projectID="" to deliver to all subscribers (worker-level broadcasts
+// such as "job.available").
+//
+// When a subscriber's channel is full the event is dropped for that subscriber.
+func (s *Server) broadcastSSEEvent(projectID string, eventType string, data any) {
 	payload, err := json.Marshal(map[string]any{
 		"type":      eventType,
 		"timestamp": time.Now().UTC().Format(time.RFC3339),
@@ -81,15 +92,23 @@ func (s *Server) broadcastSSEEvent(eventType string, data any) {
 	}
 	msg := string(payload)
 
-	s.sseSubs.Range(func(key, _ any) bool {
-		ch, ok := key.(chan string)
+	s.sseSubs.Range(func(k, v any) bool {
+		subPID, ok := v.(string)
 		if !ok {
 			return true
 		}
-		// Non-blocking send: drop if buffer is full.
-		select {
-		case ch <- msg:
-		default:
+		// Deliver if: subscriber is master (subPID=="") OR same project OR
+		// broadcast (projectID=="") which delivers to everyone.
+		if subPID == "" || projectID == "" || subPID == projectID {
+			ch, ok := k.(chan string)
+			if !ok {
+				return true
+			}
+			// Non-blocking send: drop if buffer is full.
+			select {
+			case ch <- msg:
+			default:
+			}
 		}
 		return true
 	})

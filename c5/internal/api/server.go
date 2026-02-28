@@ -48,7 +48,9 @@ type Server struct {
 	jobMu     sync.Mutex
 	jobNotify chan struct{}
 
-	// sseSubs holds active SSE subscriber channels (map[chan string]struct{}).
+	// sseSubs holds active SSE subscriber channels.
+	// key: chan string (unique pointer), value: projectID string
+	// Master key subscribers store "" and receive all events.
 	// Entries are added in handleSSEStream and removed when the connection closes.
 	sseSubs sync.Map
 }
@@ -273,7 +275,8 @@ func (s *Server) notifyJobAvailable() {
 	close(old)
 
 	// Broadcast to SSE subscribers (non-blocking, fire-and-forget).
-	s.broadcastSSEEvent("job.available", nil)
+	// "" projectID = worker-level broadcast (all subscribers receive it).
+	s.broadcastSSEEvent("", "job.available", nil)
 }
 
 // getJobNotifyChan returns the current job notification channel.

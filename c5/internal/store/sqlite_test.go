@@ -720,7 +720,7 @@ func TestGetGlobalDurations(t *testing.T) {
 func TestCreateAndGetDAG(t *testing.T) {
 	s := newTestStore(t)
 
-	dag, err := s.CreateDAG(&model.DAGCreateRequest{
+	dag, err := s.CreateDAG("", &model.DAGCreateRequest{
 		Name:        "test-pipeline",
 		Description: "A test pipeline",
 		Tags:        []string{"test", "ci"},
@@ -761,11 +761,11 @@ func TestGetDAGNotFound(t *testing.T) {
 func TestListDAGs(t *testing.T) {
 	s := newTestStore(t)
 
-	s.CreateDAG(&model.DAGCreateRequest{Name: "dag1"})
-	s.CreateDAG(&model.DAGCreateRequest{Name: "dag2"})
-	s.CreateDAG(&model.DAGCreateRequest{Name: "dag3"})
+	s.CreateDAG("", &model.DAGCreateRequest{Name: "dag1"})
+	s.CreateDAG("", &model.DAGCreateRequest{Name: "dag2"})
+	s.CreateDAG("", &model.DAGCreateRequest{Name: "dag3"})
 
-	dags, err := s.ListDAGs("", 10)
+	dags, err := s.ListDAGs("", "", 10)
 	if err != nil {
 		t.Fatalf("list dags: %v", err)
 	}
@@ -774,7 +774,7 @@ func TestListDAGs(t *testing.T) {
 	}
 
 	// Filter by status
-	dags, err = s.ListDAGs("running", 10)
+	dags, err = s.ListDAGs("", "running", 10)
 	if err != nil {
 		t.Fatalf("list running: %v", err)
 	}
@@ -786,7 +786,7 @@ func TestListDAGs(t *testing.T) {
 func TestAddDAGNodeAndDependency(t *testing.T) {
 	s := newTestStore(t)
 
-	dag, _ := s.CreateDAG(&model.DAGCreateRequest{Name: "pipeline"})
+	dag, _ := s.CreateDAG("", &model.DAGCreateRequest{Name: "pipeline"})
 
 	node1, err := s.AddDAGNode(dag.ID, &model.DAGAddNodeRequest{
 		Name:    "preprocess",
@@ -832,7 +832,7 @@ func TestAddDAGNodeAndDependency(t *testing.T) {
 
 func TestTopologicalSort(t *testing.T) {
 	s := newTestStore(t)
-	dag, _ := s.CreateDAG(&model.DAGCreateRequest{Name: "topo"})
+	dag, _ := s.CreateDAG("", &model.DAGCreateRequest{Name: "topo"})
 
 	// A -> B -> C
 	a, _ := s.AddDAGNode(dag.ID, &model.DAGAddNodeRequest{Name: "A", Command: "echo A"})
@@ -868,7 +868,7 @@ func TestTopologicalSort(t *testing.T) {
 
 func TestTopologicalSortCycleDetection(t *testing.T) {
 	s := newTestStore(t)
-	dag, _ := s.CreateDAG(&model.DAGCreateRequest{Name: "cycle"})
+	dag, _ := s.CreateDAG("", &model.DAGCreateRequest{Name: "cycle"})
 
 	a, _ := s.AddDAGNode(dag.ID, &model.DAGAddNodeRequest{Name: "A", Command: "echo"})
 	b, _ := s.AddDAGNode(dag.ID, &model.DAGAddNodeRequest{Name: "B", Command: "echo"})
@@ -885,7 +885,7 @@ func TestTopologicalSortCycleDetection(t *testing.T) {
 
 func TestGetReadyNodes(t *testing.T) {
 	s := newTestStore(t)
-	dag, _ := s.CreateDAG(&model.DAGCreateRequest{Name: "ready"})
+	dag, _ := s.CreateDAG("", &model.DAGCreateRequest{Name: "ready"})
 
 	a, _ := s.AddDAGNode(dag.ID, &model.DAGAddNodeRequest{Name: "A", Command: "echo A"})
 	b, _ := s.AddDAGNode(dag.ID, &model.DAGAddNodeRequest{Name: "B", Command: "echo B"})
@@ -918,7 +918,7 @@ func TestGetReadyNodes(t *testing.T) {
 
 func TestAdvanceDAG(t *testing.T) {
 	s := newTestStore(t)
-	dag, _ := s.CreateDAG(&model.DAGCreateRequest{Name: "advance"})
+	dag, _ := s.CreateDAG("", &model.DAGCreateRequest{Name: "advance"})
 
 	a, _ := s.AddDAGNode(dag.ID, &model.DAGAddNodeRequest{Name: "A", Command: "echo A"})
 	s.AddDAGNode(dag.ID, &model.DAGAddNodeRequest{Name: "B", Command: "echo B"})
@@ -962,7 +962,7 @@ func TestAdvanceDAG(t *testing.T) {
 
 func TestUpdateDAGNodeFromJob(t *testing.T) {
 	s := newTestStore(t)
-	dag, _ := s.CreateDAG(&model.DAGCreateRequest{Name: "update-node"})
+	dag, _ := s.CreateDAG("", &model.DAGCreateRequest{Name: "update-node"})
 
 	node, _ := s.AddDAGNode(dag.ID, &model.DAGAddNodeRequest{Name: "A", Command: "echo"})
 
@@ -999,7 +999,7 @@ func TestUpdateDAGNodeFromJobNonDAGJob(t *testing.T) {
 
 func TestDAGCompletionStatus(t *testing.T) {
 	s := newTestStore(t)
-	dag, _ := s.CreateDAG(&model.DAGCreateRequest{Name: "completion"})
+	dag, _ := s.CreateDAG("", &model.DAGCreateRequest{Name: "completion"})
 	s.UpdateDAGStatus(dag.ID, "running")
 
 	node, _ := s.AddDAGNode(dag.ID, &model.DAGAddNodeRequest{Name: "only", Command: "echo"})
@@ -1021,7 +1021,7 @@ func TestDAGCompletionStatus(t *testing.T) {
 
 func TestDAGFailedStatus(t *testing.T) {
 	s := newTestStore(t)
-	dag, _ := s.CreateDAG(&model.DAGCreateRequest{Name: "fail"})
+	dag, _ := s.CreateDAG("", &model.DAGCreateRequest{Name: "fail"})
 	s.UpdateDAGStatus(dag.ID, "running")
 
 	node, _ := s.AddDAGNode(dag.ID, &model.DAGAddNodeRequest{Name: "only", Command: "echo"})
@@ -1044,7 +1044,7 @@ func TestDAGFailedStatus(t *testing.T) {
 func TestRegisterAndGetEdge(t *testing.T) {
 	s := newTestStore(t)
 
-	edge, err := s.RegisterEdge(&model.EdgeRegisterRequest{
+	edge, err := s.RegisterEdge("", &model.EdgeRegisterRequest{
 		Name:    "jetson-1",
 		Tags:    []string{"arm64", "onnx"},
 		Arch:    "arm64",
@@ -1079,10 +1079,10 @@ func TestRegisterAndGetEdge(t *testing.T) {
 func TestListEdges(t *testing.T) {
 	s := newTestStore(t)
 
-	s.RegisterEdge(&model.EdgeRegisterRequest{Name: "edge1"})
-	s.RegisterEdge(&model.EdgeRegisterRequest{Name: "edge2"})
+	s.RegisterEdge("", &model.EdgeRegisterRequest{Name: "edge1"})
+	s.RegisterEdge("", &model.EdgeRegisterRequest{Name: "edge2"})
 
-	edges, err := s.ListEdges()
+	edges, err := s.ListEdges("")
 	if err != nil {
 		t.Fatalf("list edges: %v", err)
 	}
@@ -1094,7 +1094,7 @@ func TestListEdges(t *testing.T) {
 func TestUpdateEdgeHeartbeat(t *testing.T) {
 	s := newTestStore(t)
 
-	edge, _ := s.RegisterEdge(&model.EdgeRegisterRequest{Name: "hb-test"})
+	edge, _ := s.RegisterEdge("", &model.EdgeRegisterRequest{Name: "hb-test"})
 
 	err := s.UpdateEdgeHeartbeat(&model.EdgeHeartbeatRequest{
 		EdgeID: edge.ID,
@@ -1121,9 +1121,9 @@ func TestUpdateEdgeHeartbeatNotFound(t *testing.T) {
 func TestRemoveEdge(t *testing.T) {
 	s := newTestStore(t)
 
-	edge, _ := s.RegisterEdge(&model.EdgeRegisterRequest{Name: "remove-me"})
+	edge, _ := s.RegisterEdge("", &model.EdgeRegisterRequest{Name: "remove-me"})
 
-	err := s.RemoveEdge(edge.ID)
+	err := s.RemoveEdge(edge.ID, "")
 	if err != nil {
 		t.Fatalf("remove edge: %v", err)
 	}
@@ -1136,7 +1136,7 @@ func TestRemoveEdge(t *testing.T) {
 
 func TestRemoveEdgeNotFound(t *testing.T) {
 	s := newTestStore(t)
-	err := s.RemoveEdge("nonexistent")
+	err := s.RemoveEdge("nonexistent", "")
 	if err == nil {
 		t.Fatal("expected error for nonexistent edge")
 	}
@@ -1145,7 +1145,7 @@ func TestRemoveEdgeNotFound(t *testing.T) {
 func TestMarkStaleEdges(t *testing.T) {
 	s := newTestStore(t)
 
-	edge, _ := s.RegisterEdge(&model.EdgeRegisterRequest{Name: "stale-edge"})
+	edge, _ := s.RegisterEdge("", &model.EdgeRegisterRequest{Name: "stale-edge"})
 
 	// Set old last_seen
 	s.db.Exec(`UPDATE edges SET last_seen = ? WHERE id = ?`,
@@ -1168,11 +1168,11 @@ func TestMarkStaleEdges(t *testing.T) {
 func TestMatchEdgesTag(t *testing.T) {
 	s := newTestStore(t)
 
-	s.RegisterEdge(&model.EdgeRegisterRequest{Name: "e1", Tags: []string{"onnx", "arm64"}})
-	s.RegisterEdge(&model.EdgeRegisterRequest{Name: "e2", Tags: []string{"tensorrt"}})
-	s.RegisterEdge(&model.EdgeRegisterRequest{Name: "e3", Tags: []string{"onnx"}})
+	s.RegisterEdge("", &model.EdgeRegisterRequest{Name: "e1", Tags: []string{"onnx", "arm64"}})
+	s.RegisterEdge("", &model.EdgeRegisterRequest{Name: "e2", Tags: []string{"tensorrt"}})
+	s.RegisterEdge("", &model.EdgeRegisterRequest{Name: "e3", Tags: []string{"onnx"}})
 
-	matched, err := s.MatchEdges("tag:onnx")
+	matched, err := s.MatchEdges("tag:onnx", "")
 	if err != nil {
 		t.Fatalf("match: %v", err)
 	}
@@ -1184,11 +1184,11 @@ func TestMatchEdgesTag(t *testing.T) {
 func TestMatchEdgesName(t *testing.T) {
 	s := newTestStore(t)
 
-	s.RegisterEdge(&model.EdgeRegisterRequest{Name: "jetson-factory-1"})
-	s.RegisterEdge(&model.EdgeRegisterRequest{Name: "jetson-factory-2"})
-	s.RegisterEdge(&model.EdgeRegisterRequest{Name: "rpi-lab-1"})
+	s.RegisterEdge("", &model.EdgeRegisterRequest{Name: "jetson-factory-1"})
+	s.RegisterEdge("", &model.EdgeRegisterRequest{Name: "jetson-factory-2"})
+	s.RegisterEdge("", &model.EdgeRegisterRequest{Name: "rpi-lab-1"})
 
-	matched, err := s.MatchEdges("name:jetson-*")
+	matched, err := s.MatchEdges("name:jetson-*", "")
 	if err != nil {
 		t.Fatalf("match: %v", err)
 	}
@@ -1200,15 +1200,15 @@ func TestMatchEdgesName(t *testing.T) {
 func TestMatchEdgesAll(t *testing.T) {
 	s := newTestStore(t)
 
-	s.RegisterEdge(&model.EdgeRegisterRequest{Name: "e1"})
-	s.RegisterEdge(&model.EdgeRegisterRequest{Name: "e2"})
+	s.RegisterEdge("", &model.EdgeRegisterRequest{Name: "e1"})
+	s.RegisterEdge("", &model.EdgeRegisterRequest{Name: "e2"})
 
-	matched, _ := s.MatchEdges("all")
+	matched, _ := s.MatchEdges("all", "")
 	if len(matched) != 2 {
 		t.Fatalf("expected 2, got %d", len(matched))
 	}
 
-	matched2, _ := s.MatchEdges("")
+	matched2, _ := s.MatchEdges("", "")
 	if len(matched2) != 2 {
 		t.Fatalf("expected 2 for empty filter, got %d", len(matched2))
 	}
@@ -1221,7 +1221,7 @@ func TestMatchEdgesAll(t *testing.T) {
 func TestCreateAndListDeployRules(t *testing.T) {
 	s := newTestStore(t)
 
-	rule, err := s.CreateDeployRule(&model.DeployRuleCreateRequest{
+	rule, err := s.CreateDeployRule("", &model.DeployRuleCreateRequest{
 		Name:            "auto-deploy",
 		Trigger:         "job_tag:production",
 		EdgeFilter:      "tag:onnx",
@@ -1238,7 +1238,7 @@ func TestCreateAndListDeployRules(t *testing.T) {
 		t.Fatal("rule should be enabled by default")
 	}
 
-	rules, err := s.ListDeployRules()
+	rules, err := s.ListDeployRules("")
 	if err != nil {
 		t.Fatalf("list rules: %v", err)
 	}
@@ -1253,18 +1253,18 @@ func TestCreateAndListDeployRules(t *testing.T) {
 func TestDeleteDeployRule(t *testing.T) {
 	s := newTestStore(t)
 
-	rule, _ := s.CreateDeployRule(&model.DeployRuleCreateRequest{
+	rule, _ := s.CreateDeployRule("", &model.DeployRuleCreateRequest{
 		Trigger:         "test",
 		EdgeFilter:      "all",
 		ArtifactPattern: "*",
 	})
 
-	err := s.DeleteDeployRule(rule.ID)
+	err := s.DeleteDeployRule(rule.ID, "")
 	if err != nil {
 		t.Fatalf("delete: %v", err)
 	}
 
-	rules, _ := s.ListDeployRules()
+	rules, _ := s.ListDeployRules("")
 	if len(rules) != 0 {
 		t.Fatalf("expected 0 rules after delete, got %d", len(rules))
 	}
@@ -1272,7 +1272,7 @@ func TestDeleteDeployRule(t *testing.T) {
 
 func TestDeleteDeployRuleNotFound(t *testing.T) {
 	s := newTestStore(t)
-	err := s.DeleteDeployRule("nonexistent")
+	err := s.DeleteDeployRule("nonexistent", "")
 	if err == nil {
 		t.Fatal("expected error for nonexistent rule")
 	}
@@ -1282,8 +1282,8 @@ func TestCreateAndGetDeployment(t *testing.T) {
 	s := newTestStore(t)
 
 	// Create edges
-	e1, _ := s.RegisterEdge(&model.EdgeRegisterRequest{Name: "edge-1"})
-	e2, _ := s.RegisterEdge(&model.EdgeRegisterRequest{Name: "edge-2"})
+	e1, _ := s.RegisterEdge("", &model.EdgeRegisterRequest{Name: "edge-1"})
+	e2, _ := s.RegisterEdge("", &model.EdgeRegisterRequest{Name: "edge-2"})
 
 	// Create a job
 	job, _ := s.CreateJob(&model.JobSubmitRequest{Name: "model-train", Command: "train"})
@@ -1323,8 +1323,8 @@ func TestCreateAndGetDeployment(t *testing.T) {
 func TestUpdateDeployTargetComplete(t *testing.T) {
 	s := newTestStore(t)
 
-	e1, _ := s.RegisterEdge(&model.EdgeRegisterRequest{Name: "e1"})
-	e2, _ := s.RegisterEdge(&model.EdgeRegisterRequest{Name: "e2"})
+	e1, _ := s.RegisterEdge("", &model.EdgeRegisterRequest{Name: "e1"})
+	e2, _ := s.RegisterEdge("", &model.EdgeRegisterRequest{Name: "e2"})
 	job, _ := s.CreateJob(&model.JobSubmitRequest{Name: "j", Command: "echo"})
 
 	edges := []model.Edge{{ID: e1.ID, Name: "e1"}, {ID: e2.ID, Name: "e2"}}
@@ -1343,8 +1343,8 @@ func TestUpdateDeployTargetComplete(t *testing.T) {
 func TestUpdateDeployTargetPartial(t *testing.T) {
 	s := newTestStore(t)
 
-	e1, _ := s.RegisterEdge(&model.EdgeRegisterRequest{Name: "e1"})
-	e2, _ := s.RegisterEdge(&model.EdgeRegisterRequest{Name: "e2"})
+	e1, _ := s.RegisterEdge("", &model.EdgeRegisterRequest{Name: "e1"})
+	e2, _ := s.RegisterEdge("", &model.EdgeRegisterRequest{Name: "e2"})
 	job, _ := s.CreateJob(&model.JobSubmitRequest{Name: "j", Command: "echo"})
 
 	edges := []model.Edge{{ID: e1.ID, Name: "e1"}, {ID: e2.ID, Name: "e2"}}
@@ -1363,7 +1363,7 @@ func TestUpdateDeployTargetPartial(t *testing.T) {
 func TestUpdateDeployTargetAllFailed(t *testing.T) {
 	s := newTestStore(t)
 
-	e1, _ := s.RegisterEdge(&model.EdgeRegisterRequest{Name: "e1"})
+	e1, _ := s.RegisterEdge("", &model.EdgeRegisterRequest{Name: "e1"})
 	job, _ := s.CreateJob(&model.JobSubmitRequest{Name: "j", Command: "echo"})
 
 	edges := []model.Edge{{ID: e1.ID, Name: "e1"}}
@@ -1380,10 +1380,10 @@ func TestUpdateDeployTargetAllFailed(t *testing.T) {
 func TestListPendingAssignmentsForEdge(t *testing.T) {
 	s := newTestStore(t)
 
-	e1, _ := s.RegisterEdge(&model.EdgeRegisterRequest{Name: "e1"})
-	e2, _ := s.RegisterEdge(&model.EdgeRegisterRequest{Name: "e2"})
+	e1, _ := s.RegisterEdge("", &model.EdgeRegisterRequest{Name: "e1"})
+	e2, _ := s.RegisterEdge("", &model.EdgeRegisterRequest{Name: "e2"})
 	job, _ := s.CreateJob(&model.JobSubmitRequest{Name: "j", Command: "echo"})
-	rule, _ := s.CreateDeployRule(&model.DeployRuleCreateRequest{
+	rule, _ := s.CreateDeployRule("", &model.DeployRuleCreateRequest{
 		Name: "r1", Trigger: "job_id:*", EdgeFilter: "all", ArtifactPattern: "*", PostCommand: "",
 	})
 	dep, _ := s.CreateDeployment(&model.DeployTriggerRequest{
@@ -1417,19 +1417,19 @@ func TestListPendingAssignmentsForEdge(t *testing.T) {
 func TestEvaluateDeployRulesForDAG(t *testing.T) {
 	s := newTestStore(t)
 
-	_, _ = s.RegisterEdge(&model.EdgeRegisterRequest{Name: "e1"})
-	rule, _ := s.CreateDeployRule(&model.DeployRuleCreateRequest{
+	_, _ = s.RegisterEdge("", &model.EdgeRegisterRequest{Name: "e1"})
+	rule, _ := s.CreateDeployRule("", &model.DeployRuleCreateRequest{
 		Name: "dag-rule", Trigger: "dag_complete:pipeline-*", EdgeFilter: "all", ArtifactPattern: "*", PostCommand: "",
 	})
 	_ = rule
 
-	dag, _ := s.CreateDAG(&model.DAGCreateRequest{Name: "pipeline-1", Description: "pipeline-1"})
+	dag, _ := s.CreateDAG("", &model.DAGCreateRequest{Name: "pipeline-1", Description: "pipeline-1"})
 	n1, _ := s.AddDAGNode(dag.ID, &model.DAGAddNodeRequest{Name: "n1", Command: "echo a"})
 	job, _ := s.CreateJob(&model.JobSubmitRequest{Name: "dag:j", Command: "echo"})
 	now := time.Now().UTC().Format(time.RFC3339)
 	s.db.Exec(`UPDATE dag_nodes SET status = 'succeeded', job_id = ?, started_at = ?, done_at = ? WHERE id = ?`, job.ID, now, now, n1.ID)
 
-	n, err := s.EvaluateDeployRulesForDAG("pipeline-1", job.ID)
+	n, err := s.EvaluateDeployRulesForDAG("pipeline-1", job.ID, "")
 	if err != nil {
 		t.Fatalf("evaluate: %v", err)
 	}
@@ -1438,7 +1438,7 @@ func TestEvaluateDeployRulesForDAG(t *testing.T) {
 	}
 
 	// Non-matching DAG
-	n2, _ := s.EvaluateDeployRulesForDAG("other-dag", job.ID)
+	n2, _ := s.EvaluateDeployRulesForDAG("other-dag", job.ID, "")
 	if n2 != 0 {
 		t.Fatalf("expected 0 for non-matching dag, got %d", n2)
 	}
@@ -1923,4 +1923,84 @@ func TestMigrate_VRAMColumn(t *testing.T) {
 	if got3.VRAMRequiredGB != 12.5 {
 		t.Fatalf("expected 12.5 after reopen, got %f", got3.VRAMRequiredGB)
 	}
+}
+
+// =========================================================================
+// project_id persistence tests (T-MT-001)
+// =========================================================================
+
+func TestEdgeProjectIDPersist(t *testing.T) {
+	s := newTestStore(t)
+
+	edge, err := s.RegisterEdge("proj-a", &model.EdgeRegisterRequest{
+		Name: "edge-proj-a",
+	})
+	if err != nil {
+		t.Fatalf("register edge: %v", err)
+	}
+	if edge.ProjectID != "proj-a" {
+		t.Fatalf("expected project_id proj-a, got %q", edge.ProjectID)
+	}
+}
+
+func TestDAGProjectIDPersist(t *testing.T) {
+	s := newTestStore(t)
+
+	dag, err := s.CreateDAG("proj-b", &model.DAGCreateRequest{
+		Name: "dag-proj-b",
+	})
+	if err != nil {
+		t.Fatalf("create dag: %v", err)
+	}
+	if dag.ProjectID != "proj-b" {
+		t.Fatalf("expected project_id proj-b, got %q", dag.ProjectID)
+	}
+}
+
+func TestDeployRuleProjectIDPersist(t *testing.T) {
+	s := newTestStore(t)
+
+	rule, err := s.CreateDeployRule("proj-c", &model.DeployRuleCreateRequest{
+		Trigger:         "job_tag:prod",
+		EdgeFilter:      "all",
+		ArtifactPattern: "*",
+	})
+	if err != nil {
+		t.Fatalf("create deploy rule: %v", err)
+	}
+	if rule.ProjectID != "proj-c" {
+		t.Fatalf("expected project_id proj-c, got %q", rule.ProjectID)
+	}
+}
+
+func TestBackwardCompatEmptyProject(t *testing.T) {
+	s := newTestStore(t)
+
+	edge, err := s.RegisterEdge("", &model.EdgeRegisterRequest{
+		Name: "edge-no-project",
+	})
+	if err != nil {
+		t.Fatalf("register edge: %v", err)
+	}
+	if edge.ProjectID != "" {
+		t.Fatalf("expected empty project_id (master key), got %q", edge.ProjectID)
+	}
+}
+
+func TestAlterTableIdempotent(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "idempotent.db")
+
+	s1, err := New(dbPath)
+	if err != nil {
+		t.Fatalf("first open: %v", err)
+	}
+	s1.Close()
+
+	// Second open triggers migrate() again — duplicate column errors must be ignored.
+	s2, err := New(dbPath)
+	if err != nil {
+		t.Fatalf("second open (migrate idempotent): %v", err)
+	}
+	s2.Close()
 }

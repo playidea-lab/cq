@@ -141,6 +141,7 @@ func (s *Store) migrate() error {
 			name        TEXT NOT NULL,
 			description TEXT NOT NULL DEFAULT '',
 			tags        TEXT NOT NULL DEFAULT '[]',
+			project_id  TEXT NOT NULL DEFAULT '',
 			status      TEXT NOT NULL DEFAULT 'pending',
 			created_at  TEXT NOT NULL,
 			started_at  TEXT,
@@ -175,21 +176,23 @@ func (s *Store) migrate() error {
 		CREATE INDEX IF NOT EXISTS idx_dag_deps_dag ON dag_dependencies(dag_id);
 
 		CREATE TABLE IF NOT EXISTS edges (
-			id        TEXT PRIMARY KEY,
-			name      TEXT NOT NULL,
-			status    TEXT NOT NULL DEFAULT 'online',
-			tags      TEXT NOT NULL DEFAULT '[]',
-			arch      TEXT NOT NULL DEFAULT '',
-			runtime   TEXT NOT NULL DEFAULT '',
-			storage   REAL NOT NULL DEFAULT 0,
-			metadata  TEXT NOT NULL DEFAULT '{}',
-			last_seen TEXT NOT NULL,
+			id         TEXT PRIMARY KEY,
+			name       TEXT NOT NULL,
+			project_id TEXT NOT NULL DEFAULT '',
+			status     TEXT NOT NULL DEFAULT 'online',
+			tags       TEXT NOT NULL DEFAULT '[]',
+			arch       TEXT NOT NULL DEFAULT '',
+			runtime    TEXT NOT NULL DEFAULT '',
+			storage    REAL NOT NULL DEFAULT 0,
+			metadata   TEXT NOT NULL DEFAULT '{}',
+			last_seen  TEXT NOT NULL,
 			created_at TEXT NOT NULL
 		);
 
 		CREATE TABLE IF NOT EXISTS deploy_rules (
 			id               TEXT PRIMARY KEY,
 			name             TEXT NOT NULL DEFAULT '',
+			project_id       TEXT NOT NULL DEFAULT '',
 			trigger_expr     TEXT NOT NULL,
 			edge_filter      TEXT NOT NULL,
 			artifact_pattern TEXT NOT NULL,
@@ -202,6 +205,7 @@ func (s *Store) migrate() error {
 			id          TEXT PRIMARY KEY,
 			rule_id     TEXT NOT NULL DEFAULT '',
 			job_id      TEXT NOT NULL DEFAULT '',
+			project_id  TEXT NOT NULL DEFAULT '',
 			status      TEXT NOT NULL DEFAULT 'pending',
 			created_at  TEXT NOT NULL,
 			finished_at TEXT
@@ -269,6 +273,11 @@ func (s *Store) migrate() error {
 		`ALTER TABLE jobs ADD COLUMN output_artifacts TEXT NOT NULL DEFAULT '[]'`,
 		// Migration: add VRAM requirement for GPU job matching.
 		`ALTER TABLE jobs ADD COLUMN vram_required_gb REAL NOT NULL DEFAULT 0`,
+		// Migration: add project_id to edges, dags, deploy_rules, deployments.
+		`ALTER TABLE edges ADD COLUMN project_id TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE dags ADD COLUMN project_id TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE deploy_rules ADD COLUMN project_id TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE deployments ADD COLUMN project_id TEXT NOT NULL DEFAULT ''`,
 	} {
 		if _, err := s.db.Exec(stmt); err != nil {
 			if !strings.Contains(err.Error(), "duplicate column") {
@@ -987,14 +996,14 @@ func (s *Store) GetGlobalDurations(limit int) ([]float64, error) {
 // =========================================================================
 
 // CreateDAG creates a new DAG.
-func (s *Store) CreateDAG(req *model.DAGCreateRequest) (*model.DAG, error) {
+func (s *Store) CreateDAG(projectID string, req *model.DAGCreateRequest) (*model.DAG, error) {
 	id := generateID("dag")
 	now := time.Now().UTC().Format(time.RFC3339)
 
 	_, err := s.db.Exec(`
-		INSERT INTO dags (id, name, description, tags, status, created_at)
-		VALUES (?, ?, ?, ?, 'pending', ?)`,
-		id, req.Name, req.Description, marshalJSON(req.Tags), now)
+		INSERT INTO dags (id, name, description, tags, project_id, status, created_at)
+		VALUES (?, ?, ?, ?, ?, 'pending', ?)`,
+		id, req.Name, req.Description, marshalJSON(req.Tags), projectID, now)
 	if err != nil {
 		return nil, fmt.Errorf("create dag: %w", err)
 	}
@@ -1004,6 +1013,7 @@ func (s *Store) CreateDAG(req *model.DAGCreateRequest) (*model.DAG, error) {
 		Name:        req.Name,
 		Description: req.Description,
 		Tags:        req.Tags,
+		ProjectID:   projectID,
 		Status:      "pending",
 		CreatedAt:   now,
 	}, nil
@@ -1051,13 +1061,22 @@ func (s *Store) GetDAG(id string) (*model.DAG, error) {
 	return &dag, nil
 }
 
-// ListDAGs returns DAGs with optional status filter.
-func (s *Store) ListDAGs(status string, limit int) ([]model.DAG, error) {
-	query := `SELECT id, name, description, tags, status, created_at, started_at, finished_at FROM dags`
+// ListDAGs returns DAGs with optional status and project filters.
+// Pass "" as projectID to list all DAGs (master key or internal callers).
+func (s *Store) ListDAGs(projectID, status string, limit int) ([]model.DAG, error) {
+	query := `SELECT id, name, description, project_id, tags, status, created_at, started_at, finished_at FROM dags`
 	args := []any{}
+	conditions := []string{}
+	if projectID != "" {
+		conditions = append(conditions, "(project_id = ? OR project_id = '')")
+		args = append(args, projectID)
+	}
 	if status != "" {
-		query += " WHERE status = ?"
+		conditions = append(conditions, "status = ?")
 		args = append(args, status)
+	}
+	if len(conditions) > 0 {
+		query += " WHERE " + strings.Join(conditions, " AND ")
 	}
 	query += " ORDER BY created_at DESC"
 	if limit > 0 {
@@ -1075,7 +1094,7 @@ func (s *Store) ListDAGs(status string, limit int) ([]model.DAG, error) {
 		var d model.DAG
 		var tagsJSON string
 		var startedAt, finishedAt sql.NullString
-		if err := rows.Scan(&d.ID, &d.Name, &d.Description, &tagsJSON, &d.Status,
+		if err := rows.Scan(&d.ID, &d.Name, &d.Description, &d.ProjectID, &tagsJSON, &d.Status,
 			&d.CreatedAt, &startedAt, &finishedAt); err != nil {
 			return nil, err
 		}
@@ -1259,7 +1278,7 @@ func (s *Store) AdvanceDAG(dagID string) (int, error) {
 				s.UpdateDAGStatus(dagID, "completed")
 				var repJobID string
 				if err := s.db.QueryRow(`SELECT job_id FROM dag_nodes WHERE dag_id = ? AND status = 'succeeded' LIMIT 1`, dagID).Scan(&repJobID); err == nil && repJobID != "" {
-					_, _ = s.EvaluateDeployRulesForDAG(dagID, repJobID)
+					_, _ = s.EvaluateDeployRulesForDAG(dagID, repJobID, "")
 				}
 			}
 		}
@@ -1360,28 +1379,29 @@ func scanDAGNodes(rows *sql.Rows) ([]model.DAGNode, error) {
 // =========================================================================
 
 // RegisterEdge inserts a new edge device.
-func (s *Store) RegisterEdge(req *model.EdgeRegisterRequest) (*model.Edge, error) {
+func (s *Store) RegisterEdge(projectID string, req *model.EdgeRegisterRequest) (*model.Edge, error) {
 	id := generateID("edge")
 	now := time.Now().UTC().Format(time.RFC3339)
 
 	_, err := s.db.Exec(`
-		INSERT INTO edges (id, name, status, tags, arch, runtime, storage, metadata, last_seen, created_at)
-		VALUES (?, ?, 'online', ?, ?, ?, ?, ?, ?, ?)`,
-		id, req.Name, marshalJSON(req.Tags), req.Arch, req.Runtime,
+		INSERT INTO edges (id, name, project_id, status, tags, arch, runtime, storage, metadata, last_seen, created_at)
+		VALUES (?, ?, ?, 'online', ?, ?, ?, ?, ?, ?, ?)`,
+		id, req.Name, projectID, marshalJSON(req.Tags), req.Arch, req.Runtime,
 		req.Storage, marshalJSON(req.Meta), now, now)
 	if err != nil {
 		return nil, fmt.Errorf("register edge: %w", err)
 	}
 	return &model.Edge{
-		ID:       id,
-		Name:     req.Name,
-		Status:   "online",
-		Tags:     req.Tags,
-		Arch:     req.Arch,
-		Runtime:  req.Runtime,
-		Storage:  req.Storage,
-		Metadata: req.Meta,
-		LastSeen: now,
+		ID:        id,
+		Name:      req.Name,
+		ProjectID: projectID,
+		Status:    "online",
+		Tags:      req.Tags,
+		Arch:      req.Arch,
+		Runtime:   req.Runtime,
+		Storage:   req.Storage,
+		Metadata:  req.Meta,
+		LastSeen:  now,
 	}, nil
 }
 
@@ -1390,9 +1410,9 @@ func (s *Store) GetEdge(id string) (*model.Edge, error) {
 	var e model.Edge
 	var tagsJSON, metaJSON string
 	err := s.db.QueryRow(`
-		SELECT id, name, status, tags, arch, runtime, storage, metadata, last_seen
+		SELECT id, name, project_id, status, tags, arch, runtime, storage, metadata, last_seen
 		FROM edges WHERE id = ?`, id).Scan(
-		&e.ID, &e.Name, &e.Status, &tagsJSON, &e.Arch, &e.Runtime,
+		&e.ID, &e.Name, &e.ProjectID, &e.Status, &tagsJSON, &e.Arch, &e.Runtime,
 		&e.Storage, &metaJSON, &e.LastSeen)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -1405,11 +1425,17 @@ func (s *Store) GetEdge(id string) (*model.Edge, error) {
 	return &e, nil
 }
 
-// ListEdges returns all registered edge devices.
-func (s *Store) ListEdges() ([]model.Edge, error) {
-	rows, err := s.db.Query(`
-		SELECT id, name, status, tags, arch, runtime, storage, metadata, last_seen
-		FROM edges ORDER BY created_at DESC`)
+// ListEdges returns registered edge devices, optionally scoped to a project.
+// Pass "" to list all edges (master key or internal callers).
+func (s *Store) ListEdges(projectID string) ([]model.Edge, error) {
+	query := `SELECT id, name, project_id, status, tags, arch, runtime, storage, metadata, last_seen FROM edges`
+	args := []any{}
+	if projectID != "" {
+		query += " WHERE project_id = ? OR project_id = ''"
+		args = append(args, projectID)
+	}
+	query += " ORDER BY created_at DESC"
+	rows, err := s.db.Query(query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list edges: %w", err)
 	}
@@ -1419,7 +1445,7 @@ func (s *Store) ListEdges() ([]model.Edge, error) {
 	for rows.Next() {
 		var e model.Edge
 		var tagsJSON, metaJSON string
-		if err := rows.Scan(&e.ID, &e.Name, &e.Status, &tagsJSON, &e.Arch, &e.Runtime,
+		if err := rows.Scan(&e.ID, &e.Name, &e.ProjectID, &e.Status, &tagsJSON, &e.Arch, &e.Runtime,
 			&e.Storage, &metaJSON, &e.LastSeen); err != nil {
 			return nil, err
 		}
@@ -1454,9 +1480,16 @@ func (s *Store) UpdateEdgeHeartbeat(req *model.EdgeHeartbeatRequest) error {
 	return nil
 }
 
-// RemoveEdge deletes an edge device.
-func (s *Store) RemoveEdge(id string) error {
-	result, err := s.db.Exec(`DELETE FROM edges WHERE id = ?`, id)
+// RemoveEdge deletes an edge device with optional project ownership check.
+// Pass "" as projectID for master-key callers (no ownership restriction).
+func (s *Store) RemoveEdge(id, projectID string) error {
+	var result sql.Result
+	var err error
+	if projectID != "" {
+		result, err = s.db.Exec(`DELETE FROM edges WHERE id = ? AND (project_id = ? OR project_id = '')`, id, projectID)
+	} else {
+		result, err = s.db.Exec(`DELETE FROM edges WHERE id = ?`, id)
+	}
 	if err != nil {
 		return fmt.Errorf("remove edge: %w", err)
 	}
@@ -1480,10 +1513,11 @@ func (s *Store) MarkStaleEdges(threshold time.Duration) (int, error) {
 	return int(n), nil
 }
 
-// MatchEdges returns edges matching a filter expression.
+// MatchEdges returns edges matching a filter expression, scoped to a project.
 // Supports: "tag:xxx" (tag match), "name:xxx" (glob match), "all" (all edges).
-func (s *Store) MatchEdges(filter string) ([]model.Edge, error) {
-	edges, err := s.ListEdges()
+// Pass "" as projectID for master-key callers.
+func (s *Store) MatchEdges(filter, projectID string) ([]model.Edge, error) {
+	edges, err := s.ListEdges(projectID)
 	if err != nil {
 		return nil, err
 	}
@@ -1528,20 +1562,21 @@ func matchEdgeFilter(e model.Edge, filter string) bool {
 // =========================================================================
 
 // CreateDeployRule creates a new auto-deployment rule.
-func (s *Store) CreateDeployRule(req *model.DeployRuleCreateRequest) (*model.DeployRule, error) {
+func (s *Store) CreateDeployRule(projectID string, req *model.DeployRuleCreateRequest) (*model.DeployRule, error) {
 	id := generateID("dr")
 	now := time.Now().UTC().Format(time.RFC3339)
 
 	_, err := s.db.Exec(`
-		INSERT INTO deploy_rules (id, name, trigger_expr, edge_filter, artifact_pattern, post_command, enabled, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, 1, ?)`,
-		id, req.Name, req.Trigger, req.EdgeFilter, req.ArtifactPattern, req.PostCommand, now)
+		INSERT INTO deploy_rules (id, name, project_id, trigger_expr, edge_filter, artifact_pattern, post_command, enabled, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?)`,
+		id, req.Name, projectID, req.Trigger, req.EdgeFilter, req.ArtifactPattern, req.PostCommand, now)
 	if err != nil {
 		return nil, fmt.Errorf("create deploy rule: %w", err)
 	}
 	return &model.DeployRule{
 		ID:              id,
 		Name:            req.Name,
+		ProjectID:       projectID,
 		Trigger:         req.Trigger,
 		EdgeFilter:      req.EdgeFilter,
 		ArtifactPattern: req.ArtifactPattern,
@@ -1551,11 +1586,17 @@ func (s *Store) CreateDeployRule(req *model.DeployRuleCreateRequest) (*model.Dep
 	}, nil
 }
 
-// ListDeployRules returns all deploy rules.
-func (s *Store) ListDeployRules() ([]model.DeployRule, error) {
-	rows, err := s.db.Query(`
-		SELECT id, name, trigger_expr, edge_filter, artifact_pattern, post_command, enabled, created_at
-		FROM deploy_rules ORDER BY created_at DESC`)
+// ListDeployRules returns deploy rules, optionally scoped to a project.
+// Pass "" to list all rules (master key or internal callers).
+func (s *Store) ListDeployRules(projectID string) ([]model.DeployRule, error) {
+	query := `SELECT id, name, project_id, trigger_expr, edge_filter, artifact_pattern, post_command, enabled, created_at FROM deploy_rules`
+	args := []any{}
+	if projectID != "" {
+		query += " WHERE project_id = ? OR project_id = ''"
+		args = append(args, projectID)
+	}
+	query += " ORDER BY created_at DESC"
+	rows, err := s.db.Query(query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list deploy rules: %w", err)
 	}
@@ -1565,7 +1606,7 @@ func (s *Store) ListDeployRules() ([]model.DeployRule, error) {
 	for rows.Next() {
 		var r model.DeployRule
 		var enabled int
-		if err := rows.Scan(&r.ID, &r.Name, &r.Trigger, &r.EdgeFilter,
+		if err := rows.Scan(&r.ID, &r.Name, &r.ProjectID, &r.Trigger, &r.EdgeFilter,
 			&r.ArtifactPattern, &r.PostCommand, &enabled, &r.CreatedAt); err != nil {
 			return nil, err
 		}
@@ -1575,9 +1616,16 @@ func (s *Store) ListDeployRules() ([]model.DeployRule, error) {
 	return rules, rows.Err()
 }
 
-// DeleteDeployRule removes a deploy rule by ID.
-func (s *Store) DeleteDeployRule(id string) error {
-	result, err := s.db.Exec(`DELETE FROM deploy_rules WHERE id = ?`, id)
+// DeleteDeployRule removes a deploy rule with optional project ownership check.
+// Pass "" as projectID for master-key callers.
+func (s *Store) DeleteDeployRule(id, projectID string) error {
+	var result sql.Result
+	var err error
+	if projectID != "" {
+		result, err = s.db.Exec(`DELETE FROM deploy_rules WHERE id = ? AND (project_id = ? OR project_id = '')`, id, projectID)
+	} else {
+		result, err = s.db.Exec(`DELETE FROM deploy_rules WHERE id = ?`, id)
+	}
 	if err != nil {
 		return fmt.Errorf("delete deploy rule: %w", err)
 	}
@@ -1615,8 +1663,9 @@ func matchRuleTriggerForJob(triggerExpr, jobID string, jobTags []string) bool {
 }
 
 // EvaluateDeployRulesForJob evaluates enabled deploy rules for a completed job and creates deployments for matching rules.
-func (s *Store) EvaluateDeployRulesForJob(jobID string, jobTags []string) (int, error) {
-	rules, err := s.ListDeployRules()
+// Pass "" as projectID for master-key callers (no project restriction).
+func (s *Store) EvaluateDeployRulesForJob(jobID string, jobTags []string, projectID string) (int, error) {
+	rules, err := s.ListDeployRules(projectID)
 	if err != nil {
 		return 0, err
 	}
@@ -1628,7 +1677,7 @@ func (s *Store) EvaluateDeployRulesForJob(jobID string, jobTags []string) (int, 
 		if !matchRuleTriggerForJob(rule.Trigger, jobID, jobTags) {
 			continue
 		}
-		edges, err := s.MatchEdges(rule.EdgeFilter)
+		edges, err := s.MatchEdges(rule.EdgeFilter, projectID)
 		if err != nil {
 			continue
 		}
@@ -1672,11 +1721,12 @@ func matchRuleTriggerForDAG(triggerExpr, dagID string) bool {
 
 // EvaluateDeployRulesForDAG evaluates enabled deploy rules for a completed DAG and creates deployments for matching rules.
 // representativeJobID is used as the deployment job_id (e.g. one succeeded job from the DAG).
-func (s *Store) EvaluateDeployRulesForDAG(dagID, representativeJobID string) (int, error) {
+// Pass "" as projectID for master-key callers.
+func (s *Store) EvaluateDeployRulesForDAG(dagID, representativeJobID, projectID string) (int, error) {
 	if representativeJobID == "" {
 		return 0, nil
 	}
-	rules, err := s.ListDeployRules()
+	rules, err := s.ListDeployRules(projectID)
 	if err != nil {
 		return 0, err
 	}
@@ -1688,7 +1738,7 @@ func (s *Store) EvaluateDeployRulesForDAG(dagID, representativeJobID string) (in
 		if !matchRuleTriggerForDAG(rule.Trigger, dagID) {
 			continue
 		}
-		edges, err := s.MatchEdges(rule.EdgeFilter)
+		edges, err := s.MatchEdges(rule.EdgeFilter, projectID)
 		if err != nil {
 			continue
 		}

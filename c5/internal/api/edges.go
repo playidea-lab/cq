@@ -24,7 +24,7 @@ func (s *Server) handleEdgeRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	edge, err := s.store.RegisterEdge(req)
+	edge, err := s.store.RegisterEdge(projectIDFromContext(r), req)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -61,7 +61,8 @@ func (s *Server) handleEdgesList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	edges, err := s.store.ListEdges()
+	pid := projectIDFromContext(r)
+	edges, err := s.store.ListEdges(pid)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -80,6 +81,7 @@ func (s *Server) handleEdgeByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	pid := projectIDFromContext(r)
 	switch r.Method {
 	case "GET":
 		edge, err := s.store.GetEdge(edgeID)
@@ -87,10 +89,14 @@ func (s *Server) handleEdgeByID(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusNotFound, err.Error())
 			return
 		}
+		if pid != "" && edge.ProjectID != "" && edge.ProjectID != pid {
+			writeError(w, http.StatusNotFound, "not found")
+			return
+		}
 		writeJSON(w, edge)
 
 	case "DELETE":
-		if err := s.store.RemoveEdge(edgeID); err != nil {
+		if err := s.store.RemoveEdge(edgeID, pid); err != nil {
 			writeError(w, http.StatusNotFound, err.Error())
 			return
 		}
@@ -116,7 +122,7 @@ func (s *Server) handleDeployRuleCreate(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	rule, err := s.store.CreateDeployRule(req)
+	rule, err := s.store.CreateDeployRule(projectIDFromContext(r), req)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -138,7 +144,8 @@ func (s *Server) handleDeployRulesList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rules, err := s.store.ListDeployRules()
+	pid := projectIDFromContext(r)
+	rules, err := s.store.ListDeployRules(pid)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -162,7 +169,8 @@ func (s *Server) handleDeployRuleByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.store.DeleteDeployRule(ruleID); err != nil {
+	pid := projectIDFromContext(r)
+	if err := s.store.DeleteDeployRule(ruleID, pid); err != nil {
 		writeError(w, http.StatusNotFound, err.Error())
 		return
 	}
@@ -200,7 +208,7 @@ func (s *Server) handleDeployTrigger(w http.ResponseWriter, r *http.Request) {
 			edges = append(edges, *e)
 		}
 	} else if req.EdgeFilter != "" {
-		edges, err = s.store.MatchEdges(req.EdgeFilter)
+		edges, err = s.store.MatchEdges(req.EdgeFilter, projectIDFromContext(r))
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
