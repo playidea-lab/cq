@@ -906,6 +906,83 @@ func TestClear(t *testing.T) {
 	}
 }
 
+// --- ListTasks ---
+
+func TestListTasks(t *testing.T) {
+	srv := newTestServer(t, map[string]func(r *http.Request) (int, string){
+		"GET /rest/v1/c4_tasks": func(r *http.Request) (int, string) {
+			assertHeaders(t, r)
+			q := r.URL.RawQuery
+			if !strings.Contains(q, "project_id=eq.proj-123") {
+				t.Errorf("query missing project_id filter: %s", q)
+			}
+			return 200, `[
+				{"task_id":"T-001-0","title":"Task 1","status":"pending","project_id":"proj-123","dependencies":"[]"},
+				{"task_id":"T-002-0","title":"Task 2","status":"done","project_id":"proj-123","dependencies":"[]"}
+			]`
+		},
+	})
+	defer srv.Close()
+
+	cs := newTestStore(srv.URL)
+	tasks, total, err := cs.ListTasks(corestore.TaskFilter{})
+	if err != nil {
+		t.Fatalf("ListTasks() error: %v", err)
+	}
+	if total != 2 {
+		t.Errorf("total = %d, want 2", total)
+	}
+	if len(tasks) != 2 {
+		t.Errorf("len(tasks) = %d, want 2", len(tasks))
+	}
+}
+
+func TestListTasks_WithFilters(t *testing.T) {
+	srv := newTestServer(t, map[string]func(r *http.Request) (int, string){
+		"GET /rest/v1/c4_tasks": func(r *http.Request) (int, string) {
+			q := r.URL.RawQuery
+			if !strings.Contains(q, "status=eq.pending") {
+				t.Errorf("query missing status filter: %s", q)
+			}
+			if !strings.Contains(q, "domain=eq.go") {
+				t.Errorf("query missing domain filter: %s", q)
+			}
+			return 200, `[{"task_id":"T-001-0","title":"Task 1","status":"pending","project_id":"proj-123","dependencies":"[]"}]`
+		},
+	})
+	defer srv.Close()
+
+	cs := newTestStore(srv.URL)
+	tasks, total, err := cs.ListTasks(corestore.TaskFilter{Status: "pending", Domain: "go", Limit: 10})
+	if err != nil {
+		t.Fatalf("ListTasks() error: %v", err)
+	}
+	if total != 1 || len(tasks) != 1 {
+		t.Errorf("ListTasks() = %v tasks, %d total, want 1, 1", len(tasks), total)
+	}
+}
+
+// --- DeleteTask ---
+
+func TestDeleteTask(t *testing.T) {
+	srv := newTestServer(t, map[string]func(r *http.Request) (int, string){
+		"DELETE /rest/v1/c4_tasks": func(r *http.Request) (int, string) {
+			assertHeaders(t, r)
+			q := r.URL.RawQuery
+			if !strings.Contains(q, "task_id=eq.T-001-0") {
+				t.Errorf("query missing task_id filter: %s", q)
+			}
+			return 204, ""
+		},
+	})
+	defer srv.Close()
+
+	cs := newTestStore(srv.URL)
+	if err := cs.DeleteTask("T-001-0"); err != nil {
+		t.Fatalf("DeleteTask() error: %v", err)
+	}
+}
+
 // --- HTTP error handling ---
 
 func TestHTTPErrorPropagation(t *testing.T) {
