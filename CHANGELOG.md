@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.44.0] - 2026-03-01
+
+### ✨ Features
+- **c5/sse**: SSE 이벤트 스트림 프로젝트 격리 — `broadcastSSEEvent(projectID)` 3-arg 시그니처, sync.Map value에 project_id 저장, 테넌트 간 이벤트 누출 차단
+- **c5/tenant**: DAG.ProjectID, Edge.ProjectID, DeployRule.ProjectID 필드 추가 — API 레이어에서 `projectIDFromContext(r)` 기반 격리 쿼리 (`WHERE project_id = ? OR project_id = ''`)
+- **c5/dooray**: Dooray webhook 핸들러 추가 — `POST /v1/webhooks/dooray` 수신, fly.io 배포 E2E 검증 완료
+
+### 🐛 Bug Fixes
+- **c4-attach**: `CQ_SESSION_UUID` env var로 세션 UUID 확인 (JSONL 경로 추론 금지)
+
+### ♻️ Refactoring
+- **c4-gate**: c4-finish 인터셉트 게이트 강화 — polish 미완료 시 c4-finish 차단, git commit은 in_progress + polish 미완료 AND 조건으로 완화 (deprecated 스킬 차단 블록 제거)
+- **dooray**: 로컬 webhook-gateway Dooray inbound 코드 제거 (방향 B 정리) — fly.io 배포로 통합
+
+### 📚 Documentation
+- **agents**: Go 테스트 수 업데이트 (c4-core ~1,767 + c5 ~232 = ~1,999, 45 packages)
+
+---
+
 ## [v0.42.1] - 2026-02-28
 
 ### 🧪 Tests
