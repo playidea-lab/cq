@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"sync"
 	"testing"
 	"time"
 
@@ -93,11 +94,12 @@ func TestWebhookGatewayComponent_DoorayHandlerBasic(t *testing.T) {
 		t.Errorf("status = %d, want %d", resp.StatusCode, http.StatusOK)
 	}
 
-	if len(spy.calls) == 0 {
+	time.Sleep(20 * time.Millisecond) // wait for goroutine-dispatched PublishAsync
+	if spy.len() == 0 {
 		t.Error("spy publisher received no events")
 	}
-	if spy.calls[0] != "webhook.dooray.inbound" {
-		t.Errorf("event type = %q, want %q", spy.calls[0], "webhook.dooray.inbound")
+	if spy.get(0) != "webhook.dooray.inbound" {
+		t.Errorf("event type = %q, want %q", spy.get(0), "webhook.dooray.inbound")
 	}
 }
 
@@ -148,7 +150,8 @@ func TestWebhookGatewayComponent_TokenVerification(t *testing.T) {
 	url := fmt.Sprintf("http://127.0.0.1:%d/v1/webhooks/dooray", port)
 
 	t.Run("wrong token rejected", func(t *testing.T) {
-		body, _ := json.Marshal(DoorayInbound{CmdToken: "wrong", Text: "hi"})
+		spy.reset()
+		body, _ := json.Marshal(DoorayInbound{AppToken: "wrong", CmdToken: "wrong", Text: "hi"})
 		resp, err := http.Post(url, "application/json", bytes.NewReader(body))
 		if err != nil {
 			t.Fatalf("POST: %v", err)
@@ -157,12 +160,13 @@ func TestWebhookGatewayComponent_TokenVerification(t *testing.T) {
 		if resp.StatusCode != http.StatusUnauthorized {
 			t.Errorf("status = %d, want %d", resp.StatusCode, http.StatusUnauthorized)
 		}
-		if len(spy.calls) != 0 {
+		if spy.len() != 0 {
 			t.Error("event should not be published on wrong token")
 		}
 	})
 
-	t.Run("correct token accepted", func(t *testing.T) {
+	t.Run("correct cmdToken accepted", func(t *testing.T) {
+		spy.reset()
 		body, _ := json.Marshal(DoorayInbound{CmdToken: "secret-token", Text: "hi"})
 		resp, err := http.Post(url, "application/json", bytes.NewReader(body))
 		if err != nil {
@@ -172,13 +176,32 @@ func TestWebhookGatewayComponent_TokenVerification(t *testing.T) {
 		if resp.StatusCode != http.StatusOK {
 			t.Errorf("status = %d, want %d", resp.StatusCode, http.StatusOK)
 		}
-		if len(spy.calls) == 0 {
-			t.Error("event should be published on correct token")
+		time.Sleep(20 * time.Millisecond) // wait for goroutine-dispatched PublishAsync
+		if spy.len() == 0 {
+			t.Error("event should be published on correct cmdToken")
+		}
+	})
+
+	t.Run("correct appToken accepted", func(t *testing.T) {
+		spy.reset()
+		// Dooray sends the app-level token in appToken; cmdToken may differ per command.
+		body, _ := json.Marshal(DoorayInbound{AppToken: "secret-token", CmdToken: "per-cmd-token", Text: "hi"})
+		resp, err := http.Post(url, "application/json", bytes.NewReader(body))
+		if err != nil {
+			t.Fatalf("POST: %v", err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			t.Errorf("status = %d, want %d", resp.StatusCode, http.StatusOK)
+		}
+		time.Sleep(20 * time.Millisecond) // wait for goroutine-dispatched PublishAsync
+		if spy.len() == 0 {
+			t.Error("event should be published when appToken matches")
 		}
 	})
 }
 
-func TestWebhookGatewayComponent_MethodNotAllowed(t *testing.T) {
+func TestWebhookGatewayComponent_GetURLVerification(t *testing.T) {
 	port := freePort(t)
 	comp := NewWebhookGatewayComponent("127.0.0.1", port, config.DoorayWebhookConfig{}, nil)
 
@@ -195,8 +218,9 @@ func TestWebhookGatewayComponent_MethodNotAllowed(t *testing.T) {
 		t.Fatalf("GET: %v", err)
 	}
 	resp.Body.Close()
-	if resp.StatusCode != http.StatusMethodNotAllowed {
-		t.Errorf("status = %d, want %d", resp.StatusCode, http.StatusMethodNotAllowed)
+	// GET returns 200 OK — used by Dooray for URL verification.
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("status = %d, want %d", resp.StatusCode, http.StatusOK)
 	}
 }
 
@@ -227,14 +251,6 @@ func TestWebhookGatewayComponent_NilPublisher(t *testing.T) {
 func TestWebhookGatewayComponent_EventDataSecurity(t *testing.T) {
 	port := freePort(t)
 
-	// Use a custom spy that captures the raw event data.
-	type eventCapture struct {
-		evType string
-		data   json.RawMessage
-	}
-	captures := make([]eventCapture, 0)
-	type capturingPublisher struct{}
-
 	// We need to capture data, so wire a spyDataPublisher inline.
 	var captured []json.RawMessage
 	pub := &dataCapturingPublisher{fn: func(data json.RawMessage) { captured = append(captured, data) }}
@@ -262,13 +278,22 @@ func TestWebhookGatewayComponent_EventDataSecurity(t *testing.T) {
 		t.Fatalf("POST: %v", err)
 	}
 	resp.Body.Close()
+	time.Sleep(20 * time.Millisecond) // wait for goroutine-dispatched PublishAsync
 
-	if len(captured) == 0 {
+	pub.mu.Lock()
+	capturedLen := len(captured)
+	var firstCapture json.RawMessage
+	if capturedLen > 0 {
+		firstCapture = captured[0]
+	}
+	pub.mu.Unlock()
+
+	if capturedLen == 0 {
 		t.Fatal("no event captured")
 	}
 
 	var eventData map[string]any
-	if err := json.Unmarshal(captured[0], &eventData); err != nil {
+	if err := json.Unmarshal(firstCapture, &eventData); err != nil {
 		t.Fatalf("unmarshal event: %v", err)
 	}
 
@@ -286,15 +311,17 @@ func TestWebhookGatewayComponent_EventDataSecurity(t *testing.T) {
 	if eventData["text"] != "hello" {
 		t.Errorf("text = %v, want %q", eventData["text"], "hello")
 	}
-	_ = captures
 }
 
 // dataCapturingPublisher captures event data for test assertions.
 type dataCapturingPublisher struct {
+	mu sync.Mutex
 	fn func(json.RawMessage)
 }
 
 func (p *dataCapturingPublisher) PublishAsync(evType, source string, data json.RawMessage, projectID string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	if p.fn != nil {
 		p.fn(data)
 	}

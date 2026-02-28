@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"sync"
@@ -48,18 +49,20 @@ type WebhookGatewayComponent struct {
 	doorayCfg config.DoorayWebhookConfig
 	pub       eventbus.Publisher
 
-	mu  sync.Mutex
-	srv *http.Server
+	mu         sync.Mutex
+	srv        *http.Server
+	httpClient *http.Client // reused for health probes
 }
 
 // NewWebhookGatewayComponent creates a WebhookGateway component.
 // pub may be nil; events will be dropped silently.
 func NewWebhookGatewayComponent(host string, port int, doorayCfg config.DoorayWebhookConfig, pub eventbus.Publisher) *WebhookGatewayComponent {
 	return &WebhookGatewayComponent{
-		host:      host,
-		port:      port,
-		doorayCfg: doorayCfg,
-		pub:       pub,
+		host:       host,
+		port:       port,
+		doorayCfg:  doorayCfg,
+		pub:        pub,
+		httpClient: &http.Client{Timeout: 2 * time.Second},
 	}
 }
 
@@ -69,8 +72,19 @@ func (c *WebhookGatewayComponent) Start(_ context.Context) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
+	if c.srv != nil {
+		return fmt.Errorf("webhook-gateway: already started")
+	}
+
+	if c.doorayCfg.CmdToken == "" {
+		slog.Warn("webhook-gateway: no cmd_token configured — all inbound requests accepted without authentication")
+	}
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/webhooks/dooray", c.handleDooray)
+	mux.HandleFunc("/v1/health", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
 
 	addr := fmt.Sprintf("%s:%d", c.host, c.port)
 	srv := &http.Server{
@@ -78,6 +92,7 @@ func (c *WebhookGatewayComponent) Start(_ context.Context) error {
 		Handler:           mux,
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       15 * time.Second,
+		WriteTimeout:      10 * time.Second,
 	}
 
 	ln, err := net.Listen("tcp", addr)
@@ -111,23 +126,26 @@ func (c *WebhookGatewayComponent) Health() ComponentHealth {
 		return ComponentHealth{Status: "error", Detail: "not started"}
 	}
 
-	url := fmt.Sprintf("http://%s:%d/v1/webhooks/dooray", c.host, c.port)
-	client := &http.Client{Timeout: 2 * time.Second}
-	resp, err := client.Get(url)
+	url := fmt.Sprintf("http://%s:%d/v1/health", c.host, c.port)
+	resp, err := c.httpClient.Get(url)
 	if err != nil {
 		return ComponentHealth{Status: "error", Detail: err.Error()}
 	}
 	resp.Body.Close()
 
-	// GET returns 405 Method Not Allowed — server is alive.
-	if resp.StatusCode == http.StatusMethodNotAllowed {
+	if resp.StatusCode == http.StatusOK {
 		return ComponentHealth{Status: "ok"}
 	}
 	return ComponentHealth{Status: "degraded", Detail: fmt.Sprintf("unexpected status %d", resp.StatusCode)}
 }
 
 // handleDooray handles POST /v1/webhooks/dooray.
+// GET requests return 200 OK to satisfy Dooray's URL verification check.
 func (c *WebhookGatewayComponent) handleDooray(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodGet {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -147,10 +165,13 @@ func (c *WebhookGatewayComponent) handleDooray(w http.ResponseWriter, r *http.Re
 	}
 
 	// Token verification (skip if no token configured).
+	// Dooray sends appToken (app-level) in every request; cmdToken is per-command and may differ.
+	// We accept a match on either field so that operators can configure either token.
 	if c.doorayCfg.CmdToken != "" {
 		expected := []byte(c.doorayCfg.CmdToken)
-		got := []byte(payload.CmdToken)
-		if subtle.ConstantTimeCompare(expected, got) != 1 {
+		appMatch := subtle.ConstantTimeCompare(expected, []byte(payload.AppToken))
+		cmdMatch := subtle.ConstantTimeCompare(expected, []byte(payload.CmdToken))
+		if appMatch != 1 && cmdMatch != 1 {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
@@ -171,7 +192,7 @@ func (c *WebhookGatewayComponent) handleDooray(w http.ResponseWriter, r *http.Re
 			"trigger_id":    payload.TriggerID,
 		}
 		data, _ := json.Marshal(eventData)
-		c.pub.PublishAsync("webhook.dooray.inbound", "dooray", data, "")
+		go c.pub.PublishAsync("webhook.dooray.inbound", "dooray", data, "")
 	}
 
 	// Respond to Dooray: ephemeral = visible only to the slash command sender.

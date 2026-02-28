@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"sync"
 	"testing"
 	"time"
 )
@@ -18,11 +19,32 @@ type testPublisher struct{}
 
 // spyPublisher records published events for test assertions.
 type spyPublisher struct {
+	mu    sync.Mutex
 	calls []string
 }
 
 func (s *spyPublisher) PublishAsync(evType, source string, data json.RawMessage, projectID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.calls = append(s.calls, evType)
+}
+
+func (s *spyPublisher) reset() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.calls = nil
+}
+
+func (s *spyPublisher) len() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.calls)
+}
+
+func (s *spyPublisher) get(i int) string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.calls[i]
 }
 
 func (p testPublisher) PublishAsync(evType, source string, data json.RawMessage, projectID string) {}
