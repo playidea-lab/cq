@@ -1456,35 +1456,52 @@ var lsCmd = &cobra.Command{
 				}
 			}
 		}
+		// Compute max name display width for column alignment.
+		maxNameW := 8
+		for _, n := range names {
+			if w := lsDispWidth(n); w > maxNameW {
+				maxNameW = w
+			}
+		}
+		const dirColW = 22
+		activeCurUUID := curUUID // snapshot for first-match duplicate prevention
 		for _, n := range names {
 			entry := sessions[n]
 			t, tErr := time.Parse(time.RFC3339, entry.Updated)
-			timeStr := entry.Updated
+			dateStr := "--"
 			if tErr == nil {
-				timeStr = t.Format("Mon Jan 02 15:04:05 2006")
+				dateStr = t.Format("Jan 02 15:04")
 			}
 			shortDir := entry.Dir
 			if homeDir, hErr := os.UserHomeDir(); hErr == nil {
 				shortDir = strings.Replace(shortDir, homeDir, "~", 1)
 			}
-			suffix := ""
-			if curUUID != "" && entry.UUID == curUUID {
-				suffix = " (current)"
-				curUUID = "" // only mark the first matching name as current (prevent duplicates)
+			if lsDispWidth(shortDir) > dirColW {
+				shortDir = lsTruncateToWidth(shortDir, dirColW-1) + "…"
 			}
+			isCurrent := activeCurUUID != "" && entry.UUID == activeCurUUID
+			if isCurrent {
+				activeCurUUID = ""
+			}
+			indicator := "  "
+			if isCurrent {
+				indicator = "● "
+			}
+			extra := ""
 			if ms != nil {
 				if count, err := ms.UnreadCount(n); err == nil && count > 0 {
-					suffix += fmt.Sprintf(" [%d unread]", count)
+					extra = fmt.Sprintf("  ✉%d", count)
 				}
 			}
-			tool := entry.Tool
-			if tool == "" {
-				tool = "?"
-			}
-			fmt.Printf("%s [%s]: (created %s) [%s] uuid=%s%s\n",
-				n, tool, timeStr, shortDir, entry.UUID[:8], suffix)
+			fmt.Printf("%s%s  %s  %s  %s%s\n",
+				indicator,
+				lsPadToWidth(n, maxNameW),
+				entry.UUID[:8],
+				lsPadToWidth(shortDir, dirColW),
+				dateStr,
+				extra)
 			if entry.Memo != "" {
-				fmt.Printf("  memo: %s\n", entry.Memo)
+				fmt.Printf("    %s\n", entry.Memo)
 			}
 		}
 		return nil
@@ -1493,6 +1510,60 @@ var lsCmd = &cobra.Command{
 
 // sessionsCmd is kept for backward compat (alias handled via lsCmd.Aliases).
 var sessionsCmd = lsCmd
+
+// lsIsWide reports whether rune r occupies 2 terminal columns (CJK, Hangul, etc.).
+func lsIsWide(r rune) bool {
+	return (r >= 0x1100 && r <= 0x115F) || // Hangul Jamo
+		(r >= 0x2E80 && r <= 0x303E) || // CJK Radicals, Kangxi
+		(r >= 0x3040 && r <= 0xA4CF) || // Hiragana/Katakana/CJK Unified
+		(r >= 0xAC00 && r <= 0xD7A3) || // Hangul Syllables
+		(r >= 0xF900 && r <= 0xFAFF) || // CJK Compatibility
+		(r >= 0xFE10 && r <= 0xFE1F) ||
+		(r >= 0xFE30 && r <= 0xFE4F) ||
+		(r >= 0xFF00 && r <= 0xFF60) || // Fullwidth forms
+		(r >= 0xFFE0 && r <= 0xFFE6) ||
+		(r >= 0x1F300 && r <= 0x1F64F) || // Emoji
+		(r >= 0x20000 && r <= 0x2FFFD) || // CJK Extension B+
+		(r >= 0x30000 && r <= 0x3FFFD)
+}
+
+// lsDispWidth returns the terminal display width of s.
+func lsDispWidth(s string) int {
+	w := 0
+	for _, r := range s {
+		if lsIsWide(r) {
+			w += 2
+		} else {
+			w++
+		}
+	}
+	return w
+}
+
+// lsPadToWidth pads s with spaces until its display width equals width.
+func lsPadToWidth(s string, width int) string {
+	w := lsDispWidth(s)
+	if w >= width {
+		return s
+	}
+	return s + strings.Repeat(" ", width-w)
+}
+
+// lsTruncateToWidth truncates s so that its display width does not exceed maxW.
+func lsTruncateToWidth(s string, maxW int) string {
+	w := 0
+	for i, r := range s {
+		rw := 1
+		if lsIsWide(r) {
+			rw = 2
+		}
+		if w+rw > maxW {
+			return s[:i]
+		}
+		w += rw
+	}
+	return s
+}
 
 // sessionCmd provides session management subcommands.
 var sessionCmd = &cobra.Command{

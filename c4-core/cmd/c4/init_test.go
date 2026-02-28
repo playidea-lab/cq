@@ -1456,14 +1456,14 @@ func TestLsUnread(t *testing.T) {
 	io.Copy(&buf, r) //nolint:errcheck
 	output := buf.String()
 
-	// "tmuxlike" should have [2 unread].
-	if !strings.Contains(output, "[2 unread]") {
-		t.Errorf("expected '[2 unread]' in output for tmuxlike; got:\n%s", output)
+	// "tmuxlike" should have unread indicator (✉2).
+	if !strings.Contains(output, "✉2") {
+		t.Errorf("expected '✉2' in output for tmuxlike; got:\n%s", output)
 	}
-	// "cq-dev" has no unread messages — must not show any suffix.
+	// "cq-dev" has no unread messages — must not show any unread indicator.
 	for _, line := range strings.Split(strings.TrimSpace(output), "\n") {
-		if strings.HasPrefix(line, "cq-dev:") && strings.Contains(line, "unread") {
-			t.Errorf("cq-dev should have no unread suffix; got: %s", line)
+		if strings.Contains(line, "cq-dev") && strings.Contains(line, "✉") {
+			t.Errorf("cq-dev should have no unread indicator; got: %s", line)
 		}
 	}
 }
