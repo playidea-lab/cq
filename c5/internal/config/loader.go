@@ -129,5 +129,33 @@ storage:
   supabase_key: ""
   # Maximum artifact upload size in bytes (local backend only). Default: 10GB.
   # max_artifact_bytes: 10737418240
+
+llm:
+  # OpenAI-compatible LLM base URL (required for server-side Dooray processing).
+  # Examples:
+  #   Gemini:  https://generativelanguage.googleapis.com/v1beta/openai
+  #   Ollama:  http://localhost:11434/v1
+  #   OpenAI:  https://api.openai.com/v1
+  # base_url: ""
+  # LLM API key. Also settable via C5_LLM_API_KEY env var.
+  # api_key: ""
+  # Model ID. Default: gemini-2.0-flash-lite
+  # model: "gemini-2.0-flash-lite"
+  # Max tokens in the LLM response. Default: 4096.
+  # max_tokens: 4096
+
+dooray:
+  # Default Incoming Webhook URL for LLM responses.
+  # Also settable via C5_DOORAY_WEBHOOK_URL env var.
+  # webhook_url: ""
+  # Slash command token for verifying Dooray requests.
+  # Also settable via C5_DOORAY_CMD_TOKEN env var.
+  # cmd_token: ""
+  # Per-channel routing: maps channelID to projectID (and optional per-channel webhook).
+  # Also settable via C5_DOORAY_CHANNELS env var (format: "ch1=proj1,ch2=proj2").
+  # channels:
+  #   "4225637197401340462":
+  #     project_id: "c4"
+  #     webhook_url: ""  # optional; falls back to dooray.webhook_url
 `
 }

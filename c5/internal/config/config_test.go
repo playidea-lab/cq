@@ -281,8 +281,8 @@ func TestEnvOverrides_Dooray(t *testing.T) {
 
 func TestLLMDefaults(t *testing.T) {
 	cfg := config.Default()
-	if cfg.LLM.Model != "gemini-3.0-flash" {
-		t.Errorf("LLM.Model default: got %q, want gemini-3.0-flash", cfg.LLM.Model)
+	if cfg.LLM.Model != "gemini-2.0-flash-lite" {
+		t.Errorf("LLM.Model default: got %q, want gemini-2.0-flash-lite", cfg.LLM.Model)
 	}
 	if cfg.LLM.MaxTokens != 4096 {
 		t.Errorf("LLM.MaxTokens default: got %d, want 4096", cfg.LLM.MaxTokens)
