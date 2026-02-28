@@ -4,7 +4,10 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	"github.com/changmin/c4-core/internal/mcp"
 )
 
 func TestArtifactSave_Success(t *testing.T) {
@@ -173,5 +176,113 @@ func TestArtifactGet_NotFound(t *testing.T) {
 	m := result.(map[string]any)
 	if _, hasError := m["error"]; !hasError {
 		t.Error("expected error field for missing artifact")
+	}
+}
+
+func TestRegister_RegistersExpectedTools(t *testing.T) {
+	dir := t.TempDir()
+	reg := mcp.NewRegistry()
+	Register(reg, dir)
+
+	expected := []string{"c4_artifact_save", "c4_artifact_list", "c4_artifact_get"}
+	for _, name := range expected {
+		if !reg.HasTool(name) {
+			t.Errorf("expected tool %q to be registered", name)
+		}
+	}
+
+	tools := reg.ListTools()
+	if len(tools) != len(expected) {
+		t.Errorf("ListTools() returned %d tools, want %d", len(tools), len(expected))
+	}
+}
+
+func TestRegister_CallsRouteToHandlers(t *testing.T) {
+	dir := t.TempDir()
+	reg := mcp.NewRegistry()
+	Register(reg, dir)
+
+	// c4_artifact_list should succeed (returns empty list)
+	result, err := reg.Call("c4_artifact_list", json.RawMessage("{}"))
+	if err != nil {
+		t.Fatalf("c4_artifact_list: unexpected error: %v", err)
+	}
+	m := result.(map[string]any)
+	if m["count"] == nil {
+		t.Error("expected count field in c4_artifact_list result")
+	}
+
+	// c4_artifact_get with missing artifact returns error field (not Go error)
+	getArgs, _ := json.Marshal(map[string]string{"name": "no-such-artifact"})
+	result2, err := reg.Call("c4_artifact_get", json.RawMessage(getArgs))
+	if err != nil {
+		t.Fatalf("c4_artifact_get: unexpected error: %v", err)
+	}
+	m2 := result2.(map[string]any)
+	if _, hasError := m2["error"]; !hasError {
+		t.Error("expected error field for missing artifact in c4_artifact_get")
+	}
+}
+
+func TestResolvePath_AbsoluteInRoot(t *testing.T) {
+	dir := t.TempDir()
+	absPath := filepath.Join(dir, "subdir", "file.txt")
+
+	got, err := resolvePath(dir, absPath)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != absPath {
+		t.Errorf("resolvePath = %q, want %q", got, absPath)
+	}
+}
+
+func TestResolvePath_AbsoluteEscapes(t *testing.T) {
+	dir := t.TempDir()
+	outsidePath := "/tmp/evil/file.txt"
+
+	_, err := resolvePath(dir, outsidePath)
+	if err == nil {
+		t.Fatal("expected error for absolute path escaping root")
+	}
+	if !strings.Contains(err.Error(), "escapes") {
+		t.Errorf("error message %q should mention 'escapes'", err.Error())
+	}
+}
+
+func TestResolvePath_Relative(t *testing.T) {
+	dir := t.TempDir()
+	want := filepath.Join(dir, "models", "v1.pt")
+
+	got, err := resolvePath(dir, "models/v1.pt")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != want {
+		t.Errorf("resolvePath = %q, want %q", got, want)
+	}
+}
+
+func TestResolvePath_Empty(t *testing.T) {
+	dir := t.TempDir()
+
+	got, err := resolvePath(dir, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != filepath.Clean(dir) {
+		t.Errorf("resolvePath(\"\") = %q, want %q", got, filepath.Clean(dir))
+	}
+}
+
+func TestResolvePath_TraversalBlocked(t *testing.T) {
+	dir := t.TempDir()
+
+	_, err := resolvePath(dir, "../../etc/passwd")
+	if err == nil {
+		t.Fatal("expected error for path traversal attempt")
+	}
+	if !strings.Contains(err.Error(), "escapes") {
+		t.Errorf("error message %q should mention 'escapes'", err.Error())
 	}
 }
