@@ -1010,7 +1010,7 @@ func TestValidateDoorayResponseURL(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			err := validateDoorayResponseURL(tc.rawURL)
+			err := ValidateDoorayResponseURL(tc.rawURL)
 			if tc.wantErr && err == nil {
 				t.Errorf("expected error, got nil")
 			}
@@ -1191,3 +1191,68 @@ var _ = bytes.NewReader
 var _ = errors.New
 var _ = sync.Once{}
 var _ = context.Background
+
+// --- dooray_dispatch tests ---
+
+// mockJobSubmitter records submitted jobs for inspection.
+type mockJobSubmitter struct {
+	mu   sync.Mutex
+	jobs []*JobSubmitSpec
+	err  error
+}
+
+func (m *mockJobSubmitter) Submit(spec *JobSubmitSpec) (string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.jobs = append(m.jobs, spec)
+	return "job-123", m.err
+}
+
+func TestDispatcher_DoorayDispatch_Success(t *testing.T) {
+	s := tempStore(t)
+	d := NewDispatcher(s)
+
+	submitter := &mockJobSubmitter{}
+	d.SetHubSubmitter(submitter)
+
+	cfg := `{"name":"dooray-task","workdir":"/tmp","command":"cq worker"}`
+	s.AddRule("dispatch-test", "webhook.dooray.inbound", "", "dooray_dispatch", cfg, true, 0)
+
+	eventData := json.RawMessage(`{"response_url":"https://hooks.dooray.com/services/123/abc","text":"run deploy"}`)
+	evID, _ := s.StoreEvent("webhook.dooray.inbound", "dooray", eventData, "")
+	d.DispatchSync(evID, "webhook.dooray.inbound", eventData)
+
+	submitter.mu.Lock()
+	defer submitter.mu.Unlock()
+
+	if len(submitter.jobs) != 1 {
+		t.Fatalf("expected 1 submitted job, got %d", len(submitter.jobs))
+	}
+	job := submitter.jobs[0]
+	if job.Name != "dooray-task" {
+		t.Errorf("expected job name 'dooray-task', got %q", job.Name)
+	}
+	if job.Env["DOORAY_RESPONSE_URL"] != "https://hooks.dooray.com/services/123/abc" {
+		t.Errorf("expected DOORAY_RESPONSE_URL in env, got %q", job.Env["DOORAY_RESPONSE_URL"])
+	}
+	if job.Env["DOORAY_TEXT"] != "run deploy" {
+		t.Errorf("expected DOORAY_TEXT='run deploy', got %q", job.Env["DOORAY_TEXT"])
+	}
+}
+
+func TestDispatcher_DoorayDispatch_NoSubmitter(t *testing.T) {
+	s := tempStore(t)
+	d := NewDispatcher(s)
+	// No hub submitter configured
+
+	cfg := `{"name":"dooray-task","workdir":"/tmp","command":"cq worker"}`
+	rule := StoredRule{Name: "test", ActionType: "dooray_dispatch", ActionConfig: cfg, Enabled: true}
+	eventData := json.RawMessage(`{"response_url":"https://hooks.dooray.com/s/1","text":"hi"}`)
+	err := d.executeDoorayDispatch("webhook.dooray.inbound", eventData, rule)
+	if err == nil {
+		t.Error("expected error when hub submitter not configured")
+	}
+	if !strings.Contains(err.Error(), "hub submitter not configured") {
+		t.Errorf("expected 'hub submitter not configured' in error, got: %v", err)
+	}
+}
