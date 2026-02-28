@@ -18,10 +18,18 @@ import (
 	"crypto/sha256"
 
 	"github.com/piqsol/c4/c5/internal/eventpub"
+	"github.com/piqsol/c4/c5/internal/knowledge"
+	"github.com/piqsol/c4/c5/internal/llmclient"
 	"github.com/piqsol/c4/c5/internal/model"
 	"github.com/piqsol/c4/c5/internal/storage"
 	"github.com/piqsol/c4/c5/internal/store"
 )
+
+// DoorayChannel holds per-channel routing configuration for Dooray messages.
+type DoorayChannel struct {
+	ProjectID  string
+	WebhookURL string // optional; falls back to Server.doorayWebhookURL
+}
 
 // Server is the C5 HTTP API server.
 type Server struct {
@@ -42,6 +50,13 @@ type Server struct {
 	eventPub         *eventpub.Publisher
 	maxArtifactBytes int64 // max upload size for local backend
 	gpuWorkerGPUOnly bool  // if true, GPU workers only accept GPU jobs (no CPU fallback)
+
+	// LLM / Dooray server-side processing fields.
+	llmClient        *llmclient.Client            // nil = server-side LLM disabled
+	knowledgeClient  *knowledge.Client            // nil = knowledge search disabled
+	doorayWebhookURL string                       // default Incoming Webhook URL
+	doorayCmdToken   string                       // cmd token for slash command auth
+	channelMap       map[string]DoorayChannel     // channelID → project routing
 
 	// jobMu protects jobNotify. When a new job is queued, jobNotify is closed
 	// (broadcasting to all long-poll waiters) and replaced with a new channel.
@@ -71,6 +86,12 @@ type Config struct {
 	GPUWorkerGPUOnly bool   // if true, GPU workers only accept GPU jobs (no CPU fallback)
 	SupabaseURL      string // Supabase project URL for PKCE token exchange (optional)
 	SupabaseKey      string // Supabase anon key for PKCE token exchange (optional)
+	// LLM / Dooray server-side processing (optional).
+	LLMClient        *llmclient.Client        // nil = server-side LLM disabled
+	KnowledgeClient  *knowledge.Client        // nil = knowledge search disabled
+	DoorayWebhookURL string                   // default Incoming Webhook URL for LLM responses
+	DoorayCmdToken   string                   // slash command token (overrides env var)
+	ChannelMap       map[string]DoorayChannel // channelID → project routing
 }
 
 // NewServer creates an HTTP API server.
@@ -104,6 +125,11 @@ func NewServer(cfg Config) *Server {
 		jobNotify:        make(chan struct{}),
 		maxArtifactBytes: maxBytes,
 		gpuWorkerGPUOnly: cfg.GPUWorkerGPUOnly,
+		llmClient:        cfg.LLMClient,
+		knowledgeClient:  cfg.KnowledgeClient,
+		doorayWebhookURL: cfg.DoorayWebhookURL,
+		doorayCmdToken:   cfg.DoorayCmdToken,
+		channelMap:       cfg.ChannelMap,
 	}
 	s.registerRoutes()
 

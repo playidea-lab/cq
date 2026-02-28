@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -50,7 +51,6 @@ func Load(configPath string) (*Config, error) {
 }
 
 // applyEnvOverrides overrides config values from environment variables.
-// C5_SUPABASE_URL, C5_SUPABASE_KEY, C5_PORT, and C5_PUBLIC_URL are supported.
 func applyEnvOverrides(cfg *Config) {
 	if v, ok := os.LookupEnv("C5_SUPABASE_URL"); ok {
 		cfg.Storage.SupabaseURL = v
@@ -66,6 +66,38 @@ func applyEnvOverrides(cfg *Config) {
 	if v, ok := os.LookupEnv("C5_PUBLIC_URL"); ok {
 		cfg.Server.PublicURL = v
 	}
+	if v, ok := os.LookupEnv("C5_LLM_BASE_URL"); ok {
+		cfg.LLM.BaseURL = v
+	}
+	if v, ok := os.LookupEnv("C5_LLM_API_KEY"); ok {
+		cfg.LLM.APIKey = v
+	}
+	if v, ok := os.LookupEnv("C5_LLM_MODEL"); ok {
+		cfg.LLM.Model = v
+	}
+	if v, ok := os.LookupEnv("C5_DOORAY_WEBHOOK_URL"); ok {
+		cfg.Dooray.WebhookURL = v
+	}
+	if v, ok := os.LookupEnv("C5_DOORAY_CMD_TOKEN"); ok {
+		cfg.Dooray.CmdToken = v
+	}
+	if v, ok := os.LookupEnv("C5_DOORAY_CHANNELS"); ok && v != "" {
+		cfg.Dooray.Channels = parseDoorayChannels(v)
+	}
+}
+
+// parseDoorayChannels parses "channelId1=projectId1,channelId2=projectId2" format.
+func parseDoorayChannels(s string) map[string]DoorayChannelCfg {
+	result := make(map[string]DoorayChannelCfg)
+	for _, part := range strings.Split(s, ",") {
+		kv := strings.SplitN(strings.TrimSpace(part), "=", 2)
+		if len(kv) == 2 && kv[0] != "" && kv[1] != "" {
+			result[strings.TrimSpace(kv[0])] = DoorayChannelCfg{
+				ProjectID: strings.TrimSpace(kv[1]),
+			}
+		}
+	}
+	return result
 }
 
 // ExampleConfigYAML returns a commented example configuration YAML string
