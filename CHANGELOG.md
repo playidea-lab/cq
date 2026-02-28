@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.41.0] - 2026-02-28
+
+### ✨ Features
+- **c3/eventbus**: Dooray/Discord/Slack/Teams 외부 알람 채널 연동
+  - `notifications.channels` config: `type` 기반 프리셋 (dooray/discord/slack/teams/generic)
+  - `c4_rule_add`에 `channel` 단축 파라미터 추가 — JSON payload 없이 채널명만 지정
+  - `c4_notification_channels` MCP 도구: 등록된 채널 목록 + URL masking 조회
+  - `payload_template` + `payload_content_type` webhook action 파라미터 지원
+  - `BuildPayloadTemplate()`: type → JSON payload 자동 생성, `jsonStr()` 헬퍼로 proper escaping
+
+### 🐛 Bug Fixes
+- **c3/eventbus**: `resolveJSONTemplateString()` 추가 — application/json 템플릿에서 `"`, `\n` 등 특수문자 포함 이벤트 데이터 시 알림 무음 실패 방지
+- **c3/eventbus**: `resolveTemplateString`/`resolveJSONTemplateString` cursor 기반 스캔 — 치환된 값에 `{{}}` 포함 시 템플릿 인젝션 방지
+- **c3/eventbus**: webhook POST 후 `resp.Body` drain (LimitReader 4096B) — HTTP keep-alive 연결 재사용 보장
+- **config**: `GetNotificationChannel()` 포인터 → 값 반환 — `Set()` 동시 호출 시 aliasing 위험 제거
+- **config**: generic 타입 채널에 `payload_template` 미설정 시 명시적 에러 반환 (기존: CloudEvents silent fallback)
+- **c3/eventbus**: eventData unmarshal 실패 시 `log.Printf` 경고 추가
+
+### 📚 Documentation
+- **AGENTS.md**: 테스트 수 갱신 (c4-core ~1,970, c5 ~215), C3 EventBus notification channel 사용법 추가
+
+---
+
 ## [v0.40.1] - 2026-02-28
 
 ### 📚 Documentation
