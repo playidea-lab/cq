@@ -126,3 +126,29 @@ _run_hook() {
     _run_hook '{"tool_name":"Bash","tool_input":{"command":"curl -s https://api.example.com/data | python -m json.tool"}}'
     [ "$status" -ne 2 ]
 }
+
+# ─── Deprecated 스킬 차단 (c4-polish, c4-refine) ──────────────────────────────
+
+@test "Skill c4-polish → denied (deprecated)" {
+    _run_hook '{"tool_name":"Skill","tool_input":{"skill":"c4-polish"}}'
+    [ "$status" -eq 2 ]
+    [[ "$output" =~ "deny" ]]
+}
+
+@test "Skill c4-polish deny message mentions c4-finish" {
+    _run_hook '{"tool_name":"Skill","tool_input":{"skill":"c4-polish"}}'
+    [ "$status" -eq 2 ]
+    [[ "$output" =~ "c4-finish" ]]
+}
+
+@test "Skill c4-refine → denied (deprecated)" {
+    _run_hook '{"tool_name":"Skill","tool_input":{"skill":"c4-refine"}}'
+    [ "$status" -eq 2 ]
+    [[ "$output" =~ "deny" ]]
+}
+
+@test "Skill c4-refine deny message mentions c4-finish" {
+    _run_hook '{"tool_name":"Skill","tool_input":{"skill":"c4-refine"}}'
+    [ "$status" -eq 2 ]
+    [[ "$output" =~ "c4-finish" ]]
+}

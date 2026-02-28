@@ -174,6 +174,10 @@ tidy:
 	go mod tidy
 	go mod verify
 
+## lint-skills: Skill 계약 검증 (deprecated stub 크기 + knowledge gate)
+lint-skills:
+	bash ../scripts/lint-skills.sh
+
 ## check: Run all checks (vet, lint, test)
 check: vet lint test
 
