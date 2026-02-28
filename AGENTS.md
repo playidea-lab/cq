@@ -165,7 +165,7 @@ c4/
 ├── c4/               # Python Sidecar (LSP, Doc parsing)
 ├── c5/               # Go 분산 작업 큐 서버 (Hub)
 ├── c1/               # Tauri 2.x 데스크톱 앱
-├── .claude/skills/   # Claude Code Skills (20개, 자동 발동 워크플로우)
+├── .claude/skills/   # Claude Code Skills (22개, 자동 발동 워크플로우)
 ├── infra/supabase/   # PostgreSQL 마이그레이션 (21개)
 ├── docs/             # ROADMAP, guides
 ├── scripts/          # 유틸리티 스크립트
@@ -348,7 +348,7 @@ c4_lighthouse get <tool_name>
 
 ---
 
-## MCP 도구 빠른 참조 (118개 base, Hub 활성화 시 144개)
+## MCP 도구 빠른 참조 (118개 base, Hub 활성화 시 148개)
 
 > **도구 상세 사용법**: `c4_lighthouse get <tool_name>`으로 워크플로우, 예시, 관련 도구, 주의사항 조회
 
@@ -404,11 +404,12 @@ C7 Observe(4): c4_observe_metrics, c4_observe_logs, c4_observe_config, c4_observ
 C6 Guard(5): c4_guard_check, c4_guard_audit, c4_guard_policy_set, c4_guard_policy_list, c4_guard_role_assign
 C8 Gate(6): c4_gate_webhook_register, c4_gate_webhook_list, c4_gate_webhook_test,
             c4_gate_schedule_add, c4_gate_schedule_list, c4_gate_connector_status
---- Hub (hub.enabled=true 시 추가 등록, +29) ---
+--- Hub (hub.enabled=true 시 추가 등록, +30) ---
 Worker(3): c4_worker_standby, c4_worker_complete, c4_worker_shutdown
-Hub-Job(10): c4_hub_submit, c4_hub_status, c4_hub_list,
+Hub-Job(11): c4_hub_submit, c4_hub_status, c4_hub_list,
             c4_hub_cancel, c4_hub_metrics, c4_hub_log_metrics,
-            c4_hub_watch, c4_hub_summary, c4_hub_retry, c4_hub_estimate
+            c4_hub_watch, c4_hub_summary, c4_hub_retry, c4_hub_estimate,
+            c4_hub_lease_renew
 Hub-Infra(4): c4_hub_workers, c4_hub_stats, c4_hub_upload, c4_hub_download
 Hub-DAG(7): c4_hub_dag_create, c4_hub_dag_add_node, c4_hub_dag_add_dep,
             c4_hub_dag_execute, c4_hub_dag_status, c4_hub_dag_list,

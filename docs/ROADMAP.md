@@ -6,7 +6,7 @@
 
 ### 핵심 구조
 
-- **Go MCP Server (Primary)** - 144 도구 (Base 118 + Hub 26, Tiered 15 조건부), Registry-based, SQLite Store, JSON-RPC Bridge, LLM Gateway (프롬프트 캐싱), CDP Runner + WebMCP, Hub Client, Native LSP (goast/dartast), Lighthouse Docs SSOT
+- **Go MCP Server (Primary)** - 148 도구 (Base 118 + Hub 30, Tiered 15 조건부), Registry-based, SQLite Store, JSON-RPC Bridge, LLM Gateway (프롬프트 캐싱), CDP Runner + WebMCP, Hub Client, Native LSP (goast/dartast), Lighthouse Docs SSOT
 - **C9 Knowledge v4** - Store + FTS5 + Vector (OpenAI 1536d) + 3-way RRF (FTS+Vector+Popularity) + Time-Weighted UsageTracker (30일 반감기) + FindRelated + Community Blending + Auto-Distill (LLM 패턴 추출) + Chunker + BatchIngest + ReindexSync
 - **C0 Drive** - Supabase 파일 저장소, metadata JSONB, c4_drive_mkdir 6개 도구, PostgREST URL 인코딩, server-side filtering
 - **C1 Messenger** - Tauri 2.x 통합 대시보드 (4-탭: Messenger/Documents/Settings/Team), 통합 멤버 모델 (user/agent/system), Realtime Presence, MCP 5도구

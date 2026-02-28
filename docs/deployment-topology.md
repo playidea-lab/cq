@@ -120,11 +120,11 @@ Tauri 2.x 앱
 curl -sSL https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/install.sh | bash
 
 # 2. 로그인 (SSO)
-c4 auth login
+cq auth login
 # → 브라우저가 열림 → GitHub OAuth → 토큰 자동 저장
 
 # 3. 확인
-c4 auth status
+cq auth status
 # → User: changmin (changmin@pilab.co.kr)
 # → Status: authenticated (expires in 23h 45m)
 ```
@@ -137,7 +137,7 @@ c4 auth status
 3. 빌트인 기본값: ldflags로 바이너리에 주입           (서비스 배포)
 ```
 
-**사용자가 설정할 것**: 없음. `c4 auth login`만 하면 됨.
+**사용자가 설정할 것**: 없음. `cq auth login`만 하면 됨.
 **개발자가 오버라이드**: `.env`에 `SUPABASE_URL`/`SUPABASE_KEY` 설정 가능.
 
 ### .env 파일 — 선택적 (고급 사용자/개발자만)
@@ -178,7 +178,7 @@ C4_HUB_API_KEY=...
 │  │  소스 코드 배포                          │    │
 │  └─────────────────────────────────────────┘    │
 └─────────────────────────────────────────────────┘
-                    ↕ (c4 auth login 후 자동 연결)
+                    ↕ (cq auth login 후 자동 연결)
 ┌─────────────────────────────────────────────────┐
 │            사용자 로컬                            │
 │                                                  │
@@ -209,14 +209,14 @@ C4_HUB_API_KEY=...
 
 | 시나리오 | 로그인 필수? | 클라우드 사용? | 사용자 설정 |
 |----------|:---:|:---:|------|
-| **Solo 개발 (오프라인)** | 첫 설치 시만 | 태스크 백업만 | `install.sh` + `c4 auth login` |
+| **Solo 개발 (오프라인)** | 첫 설치 시만 | 태스크 백업만 | `install.sh` + `cq auth login` |
 | **Solo + 지식 동기화** | O | Knowledge sync | 위와 동일 |
 | **팀 협업 (C1 채널)** | O | Realtime | 위와 동일 |
 | **파일 공유 (Drive)** | O | Storage | 위와 동일 |
 | **원격 GPU 학습** | O | Hub | `.env`에 `C4_HUB_URL` 추가 |
 | **LLM Gateway** | O | 외부 API | `.env`에 LLM API 키 추가 |
 
-**핵심**: 기본 사용은 `install.sh` + `c4 auth login`이면 끝. 추가 설정은 Hub/LLM 사용 시에만.
+**핵심**: 기본 사용은 `install.sh` + `cq auth login`이면 끝. 추가 설정은 Hub/LLM 사용 시에만.
 
 ---
 
@@ -267,7 +267,7 @@ cd c4-core && go build \
 | `SOUL.md` | 소스에 포함 | 커스텀 가능 |
 | `.env` | **사용자 직접 (선택)** | Hub/LLM 키만 |
 | Supabase URL/Key | **바이너리 내장** | 없음 |
-| OAuth 세션 | `c4 auth login` | GitHub 인증만 |
+| OAuth 세션 | `cq auth login` | GitHub 인증만 |
 
 ---
 
