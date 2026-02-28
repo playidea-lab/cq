@@ -1290,8 +1290,14 @@ func launchToolNamed(projectDir, name string) error {
 		}
 
 		// Check reboot flag written by the /reboot skill.
-		if _, err := os.Stat(rebootFlagFile()); err == nil {
+		// The file may contain a UUID to resume; if so, override currentUUID to ensure
+		// the correct session is resumed regardless of in-memory state.
+		if data, err := os.ReadFile(rebootFlagFile()); err == nil {
 			os.Remove(rebootFlagFile())
+			if uuid := strings.TrimSpace(string(data)); uuid != "" && uuid != currentUUID {
+				fmt.Fprintf(os.Stderr, "cq: reboot: overriding UUID %s → %s\n", currentUUID, uuid[:min(8, len(uuid))])
+				currentUUID = uuid
+			}
 			fmt.Fprintf(os.Stderr, "cq: rebooting session '%s'...\n", name)
 			continue
 		}

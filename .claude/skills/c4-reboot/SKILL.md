@@ -36,10 +36,10 @@ echo "SESSION: ${CQ_SESSION_NAME:-<unnamed>} / UUID: ${CQ_SESSION_UUID:-<unknown
 ### 2. Reboot 플래그 작성 + 자동 종료
 
 ```bash
-touch ~/.c4/.reboot && echo "rebooting session '${CQ_SESSION_NAME}'..." && kill -TERM $PPID
+echo "${CQ_SESSION_UUID:-}" > ~/.c4/.reboot && echo "rebooting session '${CQ_SESSION_NAME}' (${CQ_SESSION_UUID})..." && kill -TERM $PPID
 ```
 
-`$PPID`는 Bash 툴을 실행한 claude 프로세스. SIGTERM을 보내면 claude가 즉시 종료되고,
-cq 부모 프로세스가 `.reboot` 파일을 감지하여 `claude --resume <uuid>`를 자동 실행합니다.
+`.reboot` 파일에 UUID를 기록합니다. `cq` 부모 프로세스가 파일에서 UUID를 읽어
+`claude --resume <uuid>`를 실행합니다. UUID가 파일에 있으므로 cq 메모리 상태와 무관하게 올바른 세션으로 복귀합니다.
 
 > **SIGTERM이 실패한 경우** (claude가 살아있으면): 수동으로 `/exit` 또는 `Ctrl+C`를 누르세요.
