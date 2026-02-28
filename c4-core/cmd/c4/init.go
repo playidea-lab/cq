@@ -1298,6 +1298,17 @@ func launchToolNamed(projectDir, name string) error {
 				fmt.Fprintf(os.Stderr, "cq: reboot: overriding UUID %s → %s\n", currentUUID, uuid[:min(8, len(uuid))])
 				currentUUID = uuid
 			}
+			// Re-read sessions store: the user may have renamed the session via
+			// `cq session name` between launch and reboot. Pick up the new name.
+			if freshSessions, loadErr := loadNamedSessions(); loadErr == nil {
+				for n, entry := range freshSessions {
+					if entry.UUID == currentUUID && n != name {
+						fmt.Fprintf(os.Stderr, "cq: reboot: session renamed '%s' → '%s'\n", name, n)
+						name = n
+						break
+					}
+				}
+			}
 			fmt.Fprintf(os.Stderr, "cq: rebooting session '%s'...\n", name)
 			continue
 		}
@@ -1459,6 +1470,7 @@ var lsCmd = &cobra.Command{
 			suffix := ""
 			if curUUID != "" && entry.UUID == curUUID {
 				suffix = " (current)"
+				curUUID = "" // only mark the first matching name as current (prevent duplicates)
 			}
 			if ms != nil {
 				if count, err := ms.UnreadCount(n); err == nil && count > 0 {
@@ -1523,13 +1535,17 @@ var sessionNameCmd = &cobra.Command{
 			}
 		}
 		// Preserve memo/tool from existing entry for the same UUID (rename).
+		// Delete ALL entries pointing to this UUID to avoid duplicate aliases.
 		var prevMemo, prevTool string
 		for k, v := range sessions {
 			if v.UUID == uuid {
-				prevMemo = v.Memo
-				prevTool = v.Tool
+				if prevMemo == "" {
+					prevMemo = v.Memo
+				}
+				if prevTool == "" {
+					prevTool = v.Tool
+				}
 				delete(sessions, k)
-				break
 			}
 		}
 		if sessionNameMemo != "" {

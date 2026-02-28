@@ -56,13 +56,15 @@ echo "CQ_SESSION_UUID=${CQ_SESSION_UUID:-<not set>}"
 
 메모가 있는 경우:
 ```bash
-cq session name <이름> --uuid <uuid> -m "<메모>"
+cq session name <이름> --uuid <uuid> --force -m "<메모>"
 ```
 
 메모가 없는 경우:
 ```bash
-cq session name <이름> --uuid <uuid>
+cq session name <이름> --uuid <uuid> --force
 ```
+
+`--force`: 이미 같은 이름이 있어도 overwrite 프롬프트 없이 즉시 덮어씀.
 
 성공하면 다음과 같이 출력됩니다:
 ```
