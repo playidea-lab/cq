@@ -6,7 +6,7 @@
 
 ### 핵심 구조
 
-- **Go MCP Server (Primary)** - 159 도구 (Base 118 + Hub 26 + Tiered 15), Registry-based, SQLite Store, JSON-RPC Bridge, LLM Gateway (프롬프트 캐싱), CDP Runner + WebMCP, Hub Client, Native LSP (goast/dartast), Lighthouse Docs SSOT
+- **Go MCP Server (Primary)** - 144 도구 (Base 118 + Hub 26, Tiered 15 조건부), Registry-based, SQLite Store, JSON-RPC Bridge, LLM Gateway (프롬프트 캐싱), CDP Runner + WebMCP, Hub Client, Native LSP (goast/dartast), Lighthouse Docs SSOT
 - **C9 Knowledge v4** - Store + FTS5 + Vector (OpenAI 1536d) + 3-way RRF (FTS+Vector+Popularity) + Time-Weighted UsageTracker (30일 반감기) + FindRelated + Community Blending + Auto-Distill (LLM 패턴 추출) + Chunker + BatchIngest + ReindexSync
 - **C0 Drive** - Supabase 파일 저장소, metadata JSONB, c4_drive_mkdir 6개 도구, PostgREST URL 인코딩, server-side filtering
 - **C1 Messenger** - Tauri 2.x 통합 대시보드 (4-탭: Messenger/Documents/Settings/Team), 통합 멤버 모델 (user/agent/system), Realtime Presence, MCP 5도구
@@ -18,13 +18,13 @@
 - **LLM Gateway** - 4개 Provider (Anthropic/OpenAI/Gemini/Ollama), 5단계 라우팅, CostTracker, 모델 카탈로그 9종
 - **Cloud Layer** - Go PostgREST client (Auth + CloudStore + HybridStore + KnowledgeCloudClient + TokenProvider auto-refresh)
 - **Python Sidecar** - LSP 10 proxy tools (7 LSP + 2 C2 Doc + 1 Onboard)
-- **Skills** - 21개 Claude Code Skills (.claude/skills/), Commands 완전 마이그레이션 (c4-quick, c4-submit 추가)
+- **Skills** - 22개 Claude Code Skills (.claude/skills/), Commands 완전 마이그레이션 (c4-quick, c4-submit 추가)
 - **Lighthouse** - register_all, spec auto-generate, auto-seed, auto-backfill, llms.txt export
-- **Infra** - Supabase PostgreSQL (18 migrations, RLS, tsvector FTS, c1_members)
+- **Infra** - Supabase PostgreSQL (21 migrations, RLS, tsvector FTS, c1_members)
 
 ### 지원 기능
 
-- State Machine (INIT → DISCOVERY → DESIGN → PLAN → EXECUTE ⇄ CHECKPOINT → COMPLETE)
+- State Machine (INIT → DISCOVERY → DESIGN → PLAN → EXECUTE ⇄ CHECKPOINT → REFINE → POLISH → COMPLETE)
 - Multi-Worker (SQLite WAL 모드, race-condition free)
 - Direct Mode (c4_claim/c4_report) + Worker Mode (c4_get_task/c4_submit)
 - EARS Requirements + ADR (Architecture Decision Records)

@@ -11,7 +11,7 @@
 
 | 항목 | 내용 |
 |------|------|
-| **PostgreSQL** | 14개 마이그레이션, 멀티테넌트 RLS |
+| **PostgreSQL** | 21개 마이그레이션, 멀티테넌트 RLS |
 | **Auth** | GitHub OAuth (SSO 로그인) |
 | **Storage** | `c4-drive` 버킷 (파일 아티팩트) |
 | **Realtime** | C1 Channels/Messages 실시간 구독 |
@@ -59,7 +59,7 @@ c1_participants, c1_channel_summaries — C1 참여자/요약
 ```
 ~/.local/bin/cq  또는  c4-core/bin/cq
 ```
-- 112개 MCP 도구의 실행 엔진
+- 118개 MCP 도구의 실행 엔진
 - Claude Code가 stdio로 직접 실행
 - **Supabase URL/AnonKey가 바이너리에 내장** (ldflags)
 - 오프라인에서도 로컬 기능 100% 동작
@@ -183,7 +183,7 @@ C4_HUB_API_KEY=...
 │            사용자 로컬                            │
 │                                                  │
 │  ┌─ C4 Engine ─────────────────────────────┐    │
-│  │  Go MCP Binary (112 tools)              │    │
+│  │  Go MCP Binary (118 tools)              │    │
 │  │    └─ Supabase URL/Key 내장 (ldflags)   │    │
 │  │  Python Sidecar (10 tools, lazy)        │    │
 │  │  SQLite stores (tasks/knowledge/        │    │
