@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.40.1] - 2026-02-28
+
+### 📚 Documentation
+- **AGENTS.md**: MCP 도구 수 148개 (Base 118 + Hub 30), `c4_hub_lease_renew` 추가, Skills 22개 수정
+- **설치-가이드.md**: 148 tools 수정 (118 base + 30 Hub), GitLab→GitHub URL, LLM 키 우선순위 현행화
+- **deployment-topology.md**: `c4 auth` → `cq auth` 정정, 마이그레이션 수 21개, 도구 수 118/148개
+- **배포-체크리스트.md**: 마이그레이션 21개, MCP 도구 수 118 base / Hub 활성 시 148개 정정
+- **ROADMAP.md**: Hub 도구 수 30개 (총 148개), 릴리즈 이력 v0.26~v0.40 현행화
+- **워크플로우-개요.md**: REFINE/POLISH 상태, DISCOVERY/DESIGN 서브페이즈 추가
+- **빠른-시작.md**: 워크플로우 명령어 현행화
+- **ARCHITECTURE.md**: 테스트 수치 AGENTS.md SSOT 기준 동기화
+- **LLM-설정.md**, **config-guide.md**: LLM 키 우선순위 구버전 제거 (`~/.c4/secrets.db > 환경변수`)
+- GitLab→GitHub URL 전체 현행화 (6개 파일)
+
+---
+
 ## [v0.40.0] - 2026-02-28
 
 ### ✨ Features
