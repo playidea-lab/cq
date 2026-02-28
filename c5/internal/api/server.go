@@ -175,6 +175,9 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("/ws/metrics/", s.handleWSMetrics)
 	s.mux.HandleFunc("/v1/ws/metrics/", s.handleWSMetrics)
 
+	// Webhooks (public — token auth is self-contained per handler)
+	s.mux.HandleFunc("/v1/webhooks/dooray", s.handleDooray)
+
 	// Auth (OAuth PKCE device flow — no API key required)
 	s.mux.HandleFunc("/auth/callback", s.handleAuthCallback)
 	s.mux.HandleFunc("/auth/activate", s.handleActivate) // GET form, POST validate
@@ -205,7 +208,8 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 			r.URL.Path == "/v1/auth/device",
 			strings.HasPrefix(r.URL.Path, "/v1/auth/device/"),
 			strings.HasPrefix(r.URL.Path, "/auth/activate"),
-			r.URL.Path == "/auth/callback":
+			r.URL.Path == "/auth/callback",
+			r.URL.Path == "/v1/webhooks/dooray":
 			next.ServeHTTP(w, r)
 			return
 		}
