@@ -1,20 +1,20 @@
 ---
 description: |
-  [DEPRECATED] c4-refine은 c4-polish에 통합되었습니다.
-  /c4-polish를 사용하세요 — CRITICAL+HIGH=0 품질 게이트 + 수정사항=0 수렴을 모두 처리합니다.
+  [DEPRECATED] c4-refine은 c4-finish에 통합되었습니다.
+  /c4-finish를 사용하세요 — polish 루프(품질 수렴)가 내장되어 있습니다.
   Triggers: "리파인", "정제", "반복 리뷰", "refine", "/c4-refine",
   "review and fix loop", "quality loop", "iterative review".
 ---
 
-# C4 Refine — [DEPRECATED: c4-polish로 통합됨]
+# C4 Refine — [DEPRECATED: c4-finish로 통합됨]
 
-> ⚠️ **이 스킬은 deprecated입니다.** `/c4-polish`를 사용하세요.
+> ⚠️ **이 스킬은 deprecated입니다.** `/c4-finish`를 사용하세요.
 >
-> c4-polish가 다음을 모두 처리합니다:
-> - CRITICAL+HIGH=0 품질 게이트 (기존 c4-refine 역할) → `refine` gate 기록
-> - 수정사항=0 완전 수렴 (기존 c4-polish 역할) → `polish` gate 기록
+> c4-finish가 다음을 모두 처리합니다:
+> - Step 0: Polish Loop — 수정사항 0이 될 때까지 빌드→테스트→리뷰→수정 반복
+> - Step 1~9: 빌드 검증 → 바이너리 설치 → 문서 → 커밋 → 릴리즈
 >
-> **플로우**: `/c4-run → /c4-checkpoint → /c4-polish → /c4-finish`
+> **플로우**: `/c4-plan → /c4-run → /c4-finish`
 
 ---
 

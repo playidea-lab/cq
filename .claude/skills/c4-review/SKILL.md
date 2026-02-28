@@ -97,6 +97,19 @@ Check if `projects/{project_name}/c2_workspace.md` exists:
   )
   ```
 
+### 1.5 Knowledge 조회 (plan 패턴)
+
+리뷰 시작 전, 관련 도메인의 과거 리뷰 패턴을 조회:
+
+```
+c4_knowledge_search(query="{paper_title} {domain}")
+c4_pattern_suggest(context="paper review {domain} {venue}")
+```
+
+→ 결과가 있으면 Phase 2-3 분석 시 참고 컨텍스트로 사용
+  (과거 같은 분야 리뷰에서 발견된 공통 이슈, 주의점 등)
+→ 결과가 없으면 건너뜁니다.
+
 ---
 
 ## Phase 2: Pass 1 — Structure Analysis
@@ -336,6 +349,32 @@ Tell the user:
 > "수정이 완료되면 알려주세요. 수정 패턴을 분석하여 프로필을 업데이트합니다."
 
 **IMPORTANT**: The user ALWAYS reviews and edits the draft. Do not skip this step.
+
+---
+
+## Phase 5.5: Knowledge Recording (finish 패턴)
+
+6축 평가에서 발견된 기술적 인사이트를 Knowledge DB에 기록.
+
+```
+c4_knowledge_record(
+  doc_type: "insight",
+  title: "Review: {paper_title} — {핵심 발견 1줄}",
+  content: |
+    ## 논문: {paper_title}
+    Venue: {journal}, Score: {score}/10, Recommendation: {recommendation}
+
+    ## 핵심 발견
+    - {Major Comment 요약들}
+
+    ## 기술 인사이트
+    {Technical Soundness 축 주요 인사이트}
+  tags: ["review", "{venue}", "{domain}"],
+  visibility: "team"
+)
+```
+
+→ 결과가 없거나 인사이트가 명확하지 않으면 건너뜁니다.
 
 ---
 

@@ -198,10 +198,9 @@ c4/
 
 ### Quick Start
 ```
-/c4-plan "기능 설명"    # 계획 수립 + 태스크 생성
-/c4-run                 # Worker 스폰 → 자동 실행
-/c4-polish              # 수정사항 0될 때까지 정제 (필수)
-/c4-finish              # 빌드·설치·문서·커밋 마무리
+/c4-plan "기능 설명"    # 계획 수립 + 태스크 생성 (지식 출구: plan 패턴)
+/c4-run                 # Worker 스폰 → 자동 실행 → /c4-finish 자동 호출
+/c4-finish              # polish 루프 내장 → 빌드·설치·문서·커밋 (지식 입구: finish 패턴)
 /c4-status              # 진행 상황 확인
 ```
 
@@ -218,8 +217,8 @@ sqlite3 .c4/c4.db \
 
 | 조회 결과 | 판단 |
 |---------|------|
-| `polish \| done` 레코드 있음 | ✅ c4-finish 진행 가능 |
-| 레코드 없음 | ⛔ polish/refine 먼저 실행 필요 |
+| `polish \| done` 레코드 있음 | ✅ c4-finish Step 1로 진행 가능 (polish 이미 완료) |
+| 레코드 없음 | ℹ️ c4-finish Step 0에서 polish 루프 자동 실행 예정 → 정상 |
 | `polish \| skipped` | ⚠️ 사유 확인 후 사용자에게 명시 |
 
 **재개 시 선언 형식** (항상 이 형식으로 현재 상태를 명시):

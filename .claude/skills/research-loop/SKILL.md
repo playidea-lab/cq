@@ -186,6 +186,25 @@ Target score reached! Score: {score} >= Target: {target}
 
 Call `c4_research_approve(project_id, action: "complete")`
 
+#### Knowledge 기록 (finish 패턴)
+
+연구 루프 완료 시, Research DB 결과를 Knowledge DB에도 기록:
+
+```
+c4_experiment_record(
+  title: "Research: {project_name} iteration {N} — score {score}/10",
+  content: |
+    Project: {project_name}
+    Total iterations: {N}
+    Final score: {score}/10 (target: {target}/10)
+    Axis scores: quality={q}, novelty={nv}, technical={tc}, experimental={ex}, discussion={di}, presentation={pr}
+    Resolved gaps: {resolved_gaps_summary}
+  tags: ["research-loop", "{project_name}", "iteration-{N}"]
+)
+```
+
+→ 이전 세션의 실험 기록이 누적되어 있으면 `c4_experiment_search(query="{project_name}")`로 조회 가능
+
 ### action = "none"
 
 ```

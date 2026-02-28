@@ -1,16 +1,23 @@
 ---
 description: |
-  Continuous build-test-review-fix loop that converges implementation quality end-to-end.
-  Phase 1: Quality gate (CRITICAL+HIGH=0, absorbed from c4-refine).
-  Phase 2: Full convergence (modifications=0).
-  Each round: Build → Test → Spawn fresh reviewer → Fix + commit → repeat.
-  c4-refine is deprecated — use c4-polish for all post-implementation quality loops.
+  [DEPRECATED] c4-finish에 통합되었습니다.
+  /c4-finish를 사용하세요 — polish 루프(빌드→테스트→리뷰→수정 수렴)가 내장되어 있습니다.
   Triggers: "polish", "c4-polish", "polish loop", "수정 없을 때까지", "계속 돌려",
   "refine loop", "반복 수정", "polish until clean", "빌드 테스트 리뷰 반복",
   "리파인", "정제", "반복 리뷰", "refine", "/c4-refine", "quality loop".
 ---
 
-# C4 Polish — Build-Test-Review-Fix Loop
+# C4 Polish — [DEPRECATED: c4-finish로 통합됨]
+
+> ⚠️ **이 스킬은 deprecated입니다.** `/c4-finish`를 사용하세요.
+>
+> c4-finish가 다음을 모두 처리합니다:
+> - **Step 0**: Polish Loop — 수정사항 0이 될 때까지 빌드→테스트→리뷰→수정 반복
+> - **Step 1~9**: 빌드 검증 → 바이너리 설치 → 문서 → 커밋 → 릴리즈
+>
+> **플로우**: `/c4-plan → /c4-run → /c4-finish`
+
+---
 
 빌드→테스트→리뷰→수정을 **수정사항이 0이 될 때까지** 반복합니다.
 매 라운드마다 새 리뷰어를 스폰하여 confirmation bias를 제거합니다.
@@ -280,21 +287,6 @@ INSERT INTO c4_gates (gate, status, reason)
   VALUES ('polish', 'done', 'converged at round ${round}/${max_rounds}');"
 
 echo "✅ polish gate recorded → c4-finish 진행 가능"
-```
-
-### Phase 6.5. Knowledge Recording
-
-반복 발견 패턴을 기록합니다:
-
-```python
-# 2회 이상 같은 axis에서 이슈 발견 시
-if recurring_issues:
-    c4_knowledge_record(
-        doc_type="pattern",
-        title=f"Polish pattern: {axis} ({count}x rounds)",
-        content=issue_summary,
-        tags=["polish", "auto-pattern", axis],
-    )
 ```
 
 ## Exit Conditions

@@ -1,53 +1,86 @@
 ---
 description: |
-  Post-implementation completion workflow with build verification, testing,
-  binary installation, documentation updates, and knowledge recording.
-  Execute after implementing features or fixes. Triggers: "마무리", "완료 루틴",
-  "구현 마무리", "finish", "c4-finish", "wrap up", "finalize", "complete implementation",
-  "post-implementation".
+  Post-implementation completion workflow: Polish Loop (quality convergence) →
+  build verification → testing → binary installation → documentation → knowledge
+  recording → commit. Polish loop is built-in — no separate /c4-polish needed.
+  Triggers: "마무리", "완료 루틴", "구현 마무리", "finish", "c4-finish", "wrap up",
+  "finalize", "complete implementation", "post-implementation".
 ---
 
 # C4 Finish Routine
 
-Post-implementation completion workflow. Execute ALL steps in order.
+구현 완료 후 품질 수렴 + 마무리 워크플로우. **순서대로 모든 단계를 실행한다.**
+
+```
+/c4-plan (지식 출구) → /c4-run → /c4-finish (지식 입구)
+```
 
 ## Steps
 
-### 0. Gate Check (MANDATORY — 항상 첫 번째)
+### 0. Polish Loop (Build-Test-Review-Fix, 내장)
 
-**세션 메모리가 아닌 DB 상태로 판단한다. 컨텍스트 소진 후 재개해도 동일하게 동작.**
+**수정사항이 0이 될 때까지 반복.** 별도 `/c4-polish` 실행 불필요.
+
+#### 0.1 Phase Lock + Scope
+
+```python
+result = c4_phase_lock_acquire(phase="polish")
+# acquired: false → 사용자에게 override 여부 확인 후 진행 또는 종료
+changed_files = shell("git diff --name-only origin/main..HEAD")
+```
+
+#### 0.2 Knowledge Lookup (plan 패턴)
+
+```python
+patterns = c4_pattern_suggest(context="polish refine " + SCOPE_summary)
+# 결과가 있으면 리뷰어 프롬프트에 "주의 패턴"으로 전달. 없으면 건너뜀.
+```
+
+#### 0.3 Loop (최대 8라운드, threshold=medium)
+
+```python
+round = 1
+while round <= 8:
+    # Build + Test
+    shell("cd c4-core && go build ./... && go vet ./...")
+    shell("cd c4-core && go test -count=1 -p 1 ./...")
+    # 실패 시 즉시 수정 → 라운드 카운트 미소모
+
+    # 새 리뷰어 스폰 (fresh context — confirmation bias 제거)
+    review = Task(subagent_type="code-reviewer", prompt=f"""
+    Review: {SCOPE}
+    6-axis: correctness, security, resilience, consistency, contract, integration
+    반환: | # | File | Line | Severity | Axis | Description | Fix |
+    수정 없으면: '수정사항 없음 (PASS)' + MODIFICATIONS: 0
+    """)
+
+    # 수렴 체크
+    if review.modifications == 0:
+        print(f"✅ CONVERGED at round {round}")
+        break
+    if review.critical == 0 and review.high == 0 and review.medium == 0:
+        print(f"✅ Quality gate PASSED at round {round}")
+        break
+
+    # Fix + Commit
+    fix_issues(review)  # CRITICAL → HIGH → MEDIUM 순
+    shell(f'git add -A && git commit -m "polish(round-{round}): {summary}"')
+    round += 1
+```
+
+#### 0.4 Gate Recording
 
 ```bash
-# Step 0.1: c4_gates 테이블 생성 (없으면)
 sqlite3 .c4/c4.db "
 CREATE TABLE IF NOT EXISTS c4_gates (
-  id           INTEGER PRIMARY KEY AUTOINCREMENT,
-  batch_id     TEXT,
-  gate         TEXT    NOT NULL,
-  status       TEXT    NOT NULL CHECK(status IN ('done','skipped','override')),
-  reason       TEXT,
-  completed_at TEXT    DEFAULT (datetime('now'))
-);"
-
-# Step 0.2: polish 게이트 상태 조회
-sqlite3 .c4/c4.db \
-  "SELECT gate, status, reason, completed_at FROM c4_gates ORDER BY completed_at DESC LIMIT 5;"
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  gate TEXT NOT NULL, status TEXT NOT NULL, reason TEXT,
+  completed_at TEXT DEFAULT (datetime('now'))
+);
+INSERT INTO c4_gates (gate, status, reason)
+  VALUES ('polish', 'done', 'converged at round ${round}/${max_rounds}');"
+c4_phase_lock_release(phase="polish")
 ```
-
-| 조회 결과 | 동작 |
-|---------|------|
-| `polish \| done` 레코드 있음 | ✅ Step 1로 진행 |
-| 레코드 없음 | ⛔ **중단** → `/c4-polish` 먼저 실행 |
-| `polish \| skipped` | ⚠️ 사유 표시 + 사용자 명시 확인 후 진행 |
-
-**`--no-polish` 긴급 예외 시** (사유 없이는 불가):
-```bash
-sqlite3 .c4/c4.db \
-  "INSERT INTO c4_gates (gate, status, reason) VALUES ('polish', 'skipped', '${사유 필수}')"
-```
-
-> ⛔ **레코드가 없으면 c4-finish를 진행하지 않는다.**
-> "이번 세션에서 polish를 했다"는 기억에 의존하지 않는다.
 
 ### 1. Phase Lock Acquire (Advisory)
 
