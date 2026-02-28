@@ -691,14 +691,15 @@ func (m *Manager) GetRiskRouting() RiskRoutingConfig {
 	return m.config.RiskRouting
 }
 
-// GetNotificationChannel returns the named channel or nil if not found.
-func (m *Manager) GetNotificationChannel(name string) *NotificationChannel {
-	for i := range m.config.Notifications.Channels {
-		if m.config.Notifications.Channels[i].Name == name {
-			return &m.config.Notifications.Channels[i]
+// GetNotificationChannel returns a copy of the named channel and true, or zero value and false if not found.
+// Returns a value copy to avoid aliasing the live config slice.
+func (m *Manager) GetNotificationChannel(name string) (NotificationChannel, bool) {
+	for _, ch := range m.config.Notifications.Channels {
+		if ch.Name == name {
+			return ch, true
 		}
 	}
-	return nil
+	return NotificationChannel{}, false
 }
 
 // Set updates a configuration value in memory (does not persist to file).

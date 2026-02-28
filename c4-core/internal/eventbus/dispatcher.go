@@ -228,6 +228,7 @@ func (d *Dispatcher) executeWebhook(eventID, eventType string, eventData json.Ra
 		// Build data map for template resolution
 		var data map[string]any
 		if err := json.Unmarshal(eventData, &data); err != nil {
+			log.Printf("[eventbus] webhook: failed to unmarshal event data for template resolution: %v", err)
 			data = make(map[string]any)
 		}
 		shortType := eventType
@@ -236,13 +237,20 @@ func (d *Dispatcher) executeWebhook(eventID, eventType string, eventData json.Ra
 		}
 		data["event_type"] = shortType
 
-		rendered := resolveTemplateString(cfg.PayloadTemplate, data)
-
 		// Validate JSON if content type is application/json
 		ct := cfg.PayloadContentType
 		if ct == "" {
 			ct = "application/json"
 		}
+
+		var rendered string
+		if ct == "application/json" {
+			// JSON-escape string values to prevent malformed JSON
+			rendered = resolveJSONTemplateString(cfg.PayloadTemplate, data)
+		} else {
+			rendered = resolveTemplateString(cfg.PayloadTemplate, data)
+		}
+
 		if ct == "application/json" && !json.Valid([]byte(rendered)) {
 			return fmt.Errorf("payload_template rendered invalid JSON")
 		}
@@ -562,6 +570,41 @@ func toFloat64(v any) (float64, bool) {
 }
 
 // resolveTemplateString replaces {{data.key}} or {{nested.path}} with actual values.
+// resolveJSONTemplateString resolves template placeholders like resolveTemplateString,
+// but JSON-escapes string values so the result is safe to embed inside a JSON document.
+// Non-string values (numbers, booleans) are formatted with %v which is already JSON-safe.
+func resolveJSONTemplateString(s string, data map[string]any) string {
+	result := s
+	for {
+		start := strings.Index(result, "{{")
+		if start == -1 {
+			break
+		}
+		end := strings.Index(result[start:], "}}")
+		if end == -1 {
+			break
+		}
+		end += start
+
+		key := strings.TrimSpace(result[start+2 : end])
+		key = strings.TrimPrefix(key, "data.")
+
+		val := ""
+		if v, ok := resolveNestedField(data, key); ok {
+			if sv, isStr := v.(string); isStr {
+				// JSON-escape string values (strip surrounding quotes produced by Marshal)
+				b, _ := json.Marshal(sv)
+				val = string(b[1 : len(b)-1])
+			} else {
+				val = fmt.Sprintf("%v", v)
+			}
+		}
+
+		result = result[:start] + val + result[end+2:]
+	}
+	return result
+}
+
 func resolveTemplateString(s string, data map[string]any) string {
 	result := s
 	for {

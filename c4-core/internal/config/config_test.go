@@ -880,9 +880,9 @@ notifications:
 		t.Fatalf("New() failed: %v", err)
 	}
 
-	ch := mgr.GetNotificationChannel("dooray-team")
-	if ch == nil {
-		t.Fatal("expected to find dooray-team channel, got nil")
+	ch, ok := mgr.GetNotificationChannel("dooray-team")
+	if !ok {
+		t.Fatal("expected to find dooray-team channel, got not found")
 	}
 	if ch.Type != "dooray" {
 		t.Errorf("Type = %q, want dooray", ch.Type)
@@ -891,9 +891,9 @@ notifications:
 		t.Errorf("BotName = %q, want CQ Bot", ch.BotName)
 	}
 
-	missing := mgr.GetNotificationChannel("does-not-exist")
-	if missing != nil {
-		t.Errorf("expected nil for missing channel, got %+v", missing)
+	_, missing := mgr.GetNotificationChannel("does-not-exist")
+	if missing {
+		t.Error("expected not found for missing channel")
 	}
 }
 

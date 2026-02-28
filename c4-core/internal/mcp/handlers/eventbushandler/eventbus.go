@@ -319,12 +319,17 @@ func resolveChannelConfig(actionConfig string, cfgMgr *config.Manager) (string, 
 		return "", fmt.Errorf("channel %q specified but config manager not available", channelName)
 	}
 
-	ch := cfgMgr.GetNotificationChannel(channelName)
-	if ch == nil {
+	ch, ok := cfgMgr.GetNotificationChannel(channelName)
+	if !ok {
 		return "", fmt.Errorf("notification channel %q not found in config", channelName)
 	}
 
-	payloadTemplate, contentType := config.BuildPayloadTemplate(*ch)
+	payloadTemplate, contentType := config.BuildPayloadTemplate(ch)
+
+	// For generic channels, payload_template must be explicitly configured.
+	if ch.Type == "generic" && payloadTemplate == "" {
+		return "", fmt.Errorf("notification channel %q (type=generic): payload_template is required but not configured", channelName)
+	}
 
 	// Inject resolved fields; remove the "channel" shortcut key
 	delete(obj, "channel")

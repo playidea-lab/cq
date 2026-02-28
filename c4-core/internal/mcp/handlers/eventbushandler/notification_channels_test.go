@@ -133,6 +133,26 @@ func TestNotification_ResolveChannelNoKey(t *testing.T) {
 	}
 }
 
+// TestNotification_GenericNoTemplate verifies error for generic channel with empty payload_template.
+func TestNotification_GenericNoTemplate(t *testing.T) {
+	cfgYAML := `
+notifications:
+  channels:
+    - name: custom-hook
+      type: generic
+      url: "https://example.com/hook"
+`
+	mgr := newTestCfgMgr(t, cfgYAML)
+
+	_, err := resolveChannelConfig(`{"channel":"custom-hook"}`, mgr)
+	if err == nil {
+		t.Fatal("expected error for generic channel with no payload_template")
+	}
+	if !strings.Contains(err.Error(), "payload_template is required") {
+		t.Errorf("error should mention payload_template requirement, got: %v", err)
+	}
+}
+
 // TestNotification_MaskURL verifies URL path masking.
 func TestNotification_MaskURL(t *testing.T) {
 	tests := []struct {

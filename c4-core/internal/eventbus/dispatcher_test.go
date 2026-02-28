@@ -821,6 +821,37 @@ func TestWebhookInvalidJSONTemplate(t *testing.T) {
 	}
 }
 
+func TestWebhookJSONEscapingInTemplate(t *testing.T) {
+	// Event data with double-quotes and newlines must not break JSON template.
+	// Uses captureTransport (mock) to bypass SSRF validation.
+	s := tempStore(t)
+	d, ct := newCaptureDispatcher(s)
+
+	// Use fmt.Sprintf %q to correctly embed the template string inside action_config JSON.
+	payloadTemplate := `{"text":"[{{event_type}}] {{title}}"}`
+	cfg := fmt.Sprintf(`{"url":"https://example.com/hook","payload_template":%q,"payload_content_type":"application/json"}`, payloadTemplate)
+	rule := StoredRule{Name: "test-escape", EventPattern: "task.*", ActionType: "webhook", ActionConfig: cfg, Enabled: true}
+
+	// Title contains double-quote and newline — would break naive string substitution
+	eventData := json.RawMessage(`{"title":"My \"awesome\"\nfeature"}`)
+	err := d.executeWebhook("ev-esc", "task.completed", eventData, rule)
+	if err != nil {
+		t.Fatalf("unexpected error: %v (event data with special chars should produce valid JSON)", err)
+	}
+	gotBody, _ := io.ReadAll(ct.req.Body)
+	var body map[string]any
+	if err := json.Unmarshal(gotBody, &body); err != nil {
+		t.Fatalf("body is not valid JSON: %v\nbody=%s", err, gotBody)
+	}
+	text, _ := body["text"].(string)
+	if !strings.Contains(text, `My "awesome"`) {
+		t.Errorf("expected unescaped quote in text, got: %q", text)
+	}
+	if !strings.Contains(text, "\n") {
+		t.Errorf("expected newline in text, got: %q", text)
+	}
+}
+
 func TestDispatchBoundedConcurrency(t *testing.T) {
 	dir := t.TempDir()
 	store, _ := NewStore(filepath.Join(dir, "test.db"))
