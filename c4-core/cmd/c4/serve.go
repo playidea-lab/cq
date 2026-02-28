@@ -118,7 +118,6 @@ func runServe(cmd *cobra.Command, args []string) error {
 	registerHubPollerServeComponent(mgr, cfg, ebComp)
 	registerSSESubscriberServeComponent(mgr, cfg, ebComp)
 	registerStaleCheckerServeComponent(mgr, cfg, ebComp)
-	registerWebhookGatewayServeComponent(mgr, cfg, ebComp)
 
 	// Start all components
 	ctx, cancel := context.WithCancel(context.Background())
