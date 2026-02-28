@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.47.0] - 2026-03-01
+
+### ✨ Features
+- **c5/dooray**: 서버사이드 LLM 워커 — `POST /v1/webhooks/dooray` 수신 즉시 ephemeral ack 후 goroutine에서 LLM 호출 + Dooray Incoming Webhook 응답 (LLM 미설정 시 Hub Job fallback으로 후방 호환)
+- **c5/llmclient**: OpenAI-compatible chat completion 클라이언트 신규 추가 — Gemini/Ollama/OpenAI 지원, stdlib only, 4MiB LimitReader
+- **c5/knowledge**: Supabase PostgREST `c4_documents` 검색 클라이언트 신규 추가 — channelId→projectId 라우팅, 2000 rune body truncation
+- **c5/config**: `LLMConfig`, `DoorayConfig`, `DoorayChannelCfg` 신규 — env override 지원 (`C5_LLM_*`, `C5_DOORAY_*`)
+
+### 🐛 Bug Fixes
+- **c5/dooray**: request body 512KiB 제한 — OOM 방지
+- **c5/dooray**: `doorayHTTPClient` 15s timeout + response body drain — goroutine leak 방지
+- **c5/dooray**: `llmSem` (cap=16) goroutine 동시 실행 제한 — 고부하 시 goroutine 폭증 방지
+- **c5/knowledge**: PostgREST metachar strip (`(`, `)`, `,`, `*`) — filter injection 방지
+- **c5/llmclient**: 기본 모델 `gemini-3.0-flash` → `gemini-2.0-flash-lite` 수정 (존재하는 모델 ID)
+- **c5/llmclient**: HTTP status 체크를 API error 체크 이전으로 이동 + 에러 body 512B 절단
+
+### 📚 Documentation
+- **agents**: Go 테스트 수 업데이트 (c5 ~249, 합계 ~2,836)
+- **c5/config**: `ExampleConfigYAML`에 `llm:` / `dooray:` 섹션 추가
+
+---
+
 ## [v0.46.0] - 2026-03-01
 
 ### ✨ Features
