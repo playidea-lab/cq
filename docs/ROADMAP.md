@@ -1,8 +1,8 @@
 # C4 Roadmap
 
-## Current Version: v0.25.0 (Phase 13 — Security Hooks + A2UI Routing + Prompt Caching)
+## Current Version: v0.40.0 (Knowledge Reindex + OllamaEmbeddings + QM 배치 품질 수렴)
 
-현재 버전은 **Go MCP Server (118 base + 26 Hub + 15 tiered C6/C7/C8 = 159 tools), Native Go/Dart LSP (goast/dartast), LLM Gateway (캐시 최적화), CDP Runner + WebMCP + Auto-Discovery, Cloud Foundation (CloudPrimaryStore + Session Limit), Knowledge v4 (3-way RRF + pgvector 클라우드 동기화), C1 Unified Dashboard Messenger (A2UI 응답 라우팅), C3 EventBus v4, C5 Hub Server (174 테스트), 21개 Skills, 프로젝트 단위 2-layer Permission Hook, Prompt Caching 최적화**를 포함합니다.
+현재 버전은 **Go MCP Server (118 base + Hub tiered 등), Native Go/Dart LSP (goast/dartast), LLM Gateway (캐시 최적화), CDP Runner + WebMCP + Auto-Discovery, Cloud Foundation (CloudPrimaryStore + Session Limit), Knowledge v4 (OllamaEmbeddings + reindex + distill), C1 Unified Dashboard Messenger (A2UI 응답 라우팅), C3 EventBus v4, C5 Hub Server (headless auth + Device/Link Flow), 22개 Skills, 프로젝트 단위 2-layer Permission Hook, bats 테스트 스위트, 쉘 자동완성, OS 서비스 통합**를 포함합니다.
 
 ### 핵심 구조
 
@@ -41,8 +41,109 @@
 - **C1 Context Hub** - 채널 메시징, Context Keeper (LLM 요약), Agent 통합 (notifyKeeper 4-param)
 - **C1 Documents** - 마크다운 파일 편집기, 지속성 (persona/skill/spec/config)
 - **C3 EventBus v4** - gRPC daemon (UDS) + WebSocket bridge + DLQ + Filter v2, Python sidecar piggyback, task lifecycle events
-- **코드베이스**: Go ~38.9K (c4-core) + Go ~6.9K (c5) + Python ~22.9K + Rust ~9.5K + TS+CSS ~11.8K + SQL ~1.1K = **~90.9K LOC (src)**, 테스트 ~50.8K LOC, **총 ~141.7K LOC**
-- **테스트**: Go ~1,513 (c4-core ~1,339 + c5 174) + Python 697 + Rust 92 = **~2,302 tests** (28 packages)
+- **코드베이스**: Go ~54.9K (c4-core) + Go ~7.3K (c5) + Python ~22.9K + Rust ~10.2K + TS+CSS ~13.7K + SQL ~1.3K = **~110.3K LOC (src)**, 테스트 ~68.7K LOC, **총 ~179.0K LOC**
+- **테스트**: Go ~2,192 (c4-core ~1,950 + c5 ~242) + Python 728 + Rust 92 = **~3,012 tests** (37 packages)
+
+---
+
+## 완료된 릴리즈 이력
+
+### v0.40.0 ✅ (2026-02-28)
+- **knowledge**: `OllamaEmbeddings` 프로바이더 추가 + `c4_knowledge_reindex` MCP 도구 `provider` 파라미터 연동
+- **knowledge**: `recreate_for_dimension(768)` + migration 00026 — pgvector 컬럼 1536→768 마이그레이션
+- **knowledge**: `distill` 모듈 — 빈/소규모 코퍼스 guard 포함 (`cosine_similarity`, `find_clusters`, `distill_knowledge`)
+- **skills**: `c4-release` 태그 생성 + origin push 자동 포함, `c4-finish` Step 9 auto tag 연동
+- **QM 배치 품질 수렴**: `reindex.py` conn 이중 close 수정, `vector_store.py` SQL injection 방어, `cost.go` nil guard
+- **c5/auth**: CSRF state 파라미터 교체, PKCE 헤더 추가, poll_count 상한 60으로 확대, ready 세션 만료 방지
+- **hooks**: `curl|python3 -c` inline 코드 통과 허용 (bare 인터프리터만 차단)
+
+### v0.39.0 ✅ (2026-02-28)
+- **hooks**: `c4-gate.sh` — `TaskCreate`/`TaskUpdate` 차단 + MCP namespace 정규화 (`mcp__<ns>__ToolName` → bare)
+- **hooks**: 워크플로우 게이트 — `git commit`/`/c4-finish` polish 미완료 차단, `C4_SKIP_GATE=1` 우회 지원
+- **테스트**: `bats` 테스트 스위트 추가 — `test_global_antipattern.bats`(8개) + `test_c4gate_mcp.bats`(10개)
+- **polish**: `global-antipattern.sh` echo 폴백 이스케이핑, `python[0-9.]*` 버전 명시형 차단 확장
+
+### v0.38.0 ✅ (2026-02-28)
+- **auth**: `ensureCloudAuth` Hub-aware 로그인 프롬프트 — Hub URL 설정 시 `[y/d/N]` 옵션 (y=링크, d=디바이스)
+- SSH/원격 환경에서 브라우저 없이 Device Flow 바로 진입 가능, `yesAll=true` + Hub → Link 모드 자동 선택
+
+### v0.37.0 ✅ (2026-02-28)
+- **c5/auth**: RFC 8628 Device Flow + Direct Link Flow headless 인증 구현
+  - `POST /v1/auth/device`, `GET /v1/auth/device/{state}`, `POST /v1/auth/device/{state}/token`
+  - `GET /auth/activate` HTML 폼 (CSRF 보호), `GET /auth/callback` auth_code 저장
+- **cli**: `cq login --device`/`--link` 플래그 추가, PKCE(S256) 자동 생성
+- **c5/store**: `device_sessions` 테이블 + CRUD (`PeekDeviceSession`, `IncrementTokenAttempts`, `StartBackgroundCleanup`)
+- **보안 polish**: SSRF 방지, rate-limit off-by-one 수정, TOCTOU 해소, HTML XSS `html.EscapeString` 적용
+
+### v0.36.1 ✅ (2026-02-27)
+- **c5**: standalone 바이너리 릴리즈 + log flush 수정
+
+### v0.36.0 ✅ (2026-02-27)
+- **auth**: `cq auth refresh <token>` headless 로그인 지원
+- **auth**: `cq auth token` 명령 추가 — headless 세션 임포트
+
+### v0.35.1 ✅ (2026-02-27)
+- **docs**: LOC 및 테스트 수 현행화 — c4-core ~107.7K LOC, 전체 ~179.0K LOC, Go 테스트 ~1,970
+
+### v0.35.0 ✅ (2026-02-27)
+- **c4-tasks**: 세션 격리 — `session_id` 컬럼으로 다중 Claude Code 세션 간 태스크 혼합 방지
+- `CQ_SESSION_NAME`/`pid-<PID>` fallback, `WithSessionID` Store 옵션, 세션 격리 테스트 5개 추가
+
+### v0.34.0 ✅ (2026-02-27)
+- **handlers**: Wave 2b/2c — drive/cdp/llm/eventbus/c1/gpu/knowledge/research handler 서브패키지 분리 (God Package 해체 완료)
+- **security**: `crypto/subtle.ConstantTimeCompare` timing side-channel 방지, localhost-only binding, `MaxBytesReader(1MB)`
+- **fix**: `knowledgehandler` — Supabase pgvector 임베딩 누락 수정 (`SyncAfterRecord` 호출 시 embedding 전달)
+
+### v0.33.0 ✅ (2026-02-27)
+- **auth**: `cq auth login --no-browser` 플래그 — headless/tunnel 환경 URL 출력 + SSH 포워딩 힌트
+- **archtest**: 아키텍처 테스트 인프라 — 의존성 방향 5개, 네이밍 규칙 3개, 인터페이스 패턴 3개
+- **handlers**: Wave 1a/1b/1c/2a — fileops/gitops/webcontent/cfghandler/secrethandler/mailhandler/artifacthandler/hubhandler 분리
+- **fix**: `checkOSService` `UserService` 옵션 누락 수정 — macOS/Linux user-level 서비스 spurious WARN 방지
+
+### v0.32.0 ✅ (2026-02-27)
+- **serve**: `cq serve install` sudo 없이 user-level 설치 (macOS: LaunchAgents, Linux: systemd/user)
+- **completion**: `cq completion [bash|zsh|fish]` 서브커맨드 + `-t` 플래그 named session 탭 자동완성
+- **hub**: C5 서브프로세스에 `C5_SUPABASE_URL`/`C5_SUPABASE_KEY` 환경변수 자동 주입
+- **init**: `ensureServeRunning` + PID 파일 기반 serve 자동 시작·검증, `--no-serve` 플래그
+
+### v0.31.0 ✅ (2026-02-27)
+- **embed**: c5 바이너리 cq 내부 내장 (`c5_embed` 빌드 태그) — `~/.c4/bin/c5`로 자동 추출
+- **ci**: `build-c5` CI 스테이지 추가, `embed-c5` Makefile 타겟, `embeddedC5Version` ldflags 주입
+- **init**: `cq init` 시 OS 서비스 등록 프롬프트(`confirmServeInstall`) 추가
+- **session**: named session에 `tool` 라벨·`memo` 필드, `--uuid` 플래그 추가
+
+### v0.30.0 ✅ (2026-02-27)
+- **serve**: `HubComponent` — C5 Hub 바이너리를 자식 프로세스로 관리 (SIGTERM→5s→SIGKILL, `/v1/health` 체크)
+- **c5**: WebSocket 메트릭 증분 조회, GPU VRAM 매칭 + fallback 제어, Artifact 업로드 타임아웃 제거, 로그 보존 rotation
+- **fix**: `hub_component` double-Wait race 수정 — 단일 reaper goroutine + `done` channel 패턴
+- **docs**: Core Agent Principles (Karpathy 4원칙), `docs/ARCHITECTURE.md` 분리
+
+### v0.29.0 ✅ (2026-02-25)
+- **mail**: 세션 간 메일 시스템 — `c4_mail_send/ls/read/rm` MCP 도구 + `cq mail` CLI
+  - `~/.c4/mailbox.db` SQLite 기반, 브로드캐스트(`to="*"`) 수신, `cq ls`에 `[N unread]` 표시
+- **sessions**: `/reboot` 플래그 기반 자동 종료·재시작
+
+### v0.28.3 ✅ (2026-02-24)
+- **sessions**: tmux 스타일 named Claude Code 세션 (`cq claude -t <name>`, `cq ls`)
+- `/reboot` 스킬, `CQ_SESSION_NAME`/`CQ_SESSION_UUID` env var 자동 주입
+
+### v0.28.2 ✅ (2026-02-24)
+- **fix**: `c4_knowledge_search` nil pointer panic 수정 (typed nil interface 버그 — solo tier 환경)
+
+### v0.28.0 ✅ (2026-02-24)
+- **ci**: 릴리즈 바이너리에 Supabase URL/Key ldflags embed
+- **auth**: `cq auth login` 성공 시 `.c4/config.yaml` cloud 섹션 자동 패치
+- **hub**: `hub.api_key` 미설정 시 cloud session JWT 자동 폴백 (`SetTokenFunc`)
+- **init**: `cq init` 완료 후 cloud 인증 상태 체크 + 안내 메시지
+
+### v0.27.0 ✅ (2026-02-24)
+- **serve**: `StaleChecker` — 주기적 stale 태스크 reset, EventBus `task.stale` 이벤트 발행
+- **serve**: OS 서비스 자동 시작 통합 (macOS LaunchAgent / Linux systemd / Windows Service), `cq serve install/uninstall/status`
+- **init**: WebFetch, WebSearch를 기본 `permissions.allow` 목록에 추가
+
+### v0.26.0 ✅ (2026-02-23)
+- **knowledge**: `KnowledgeHitTracker` — 세션별 검색 히트/미스 카운터, `c4_status`에 `knowledge_search_stats` 추가
+- O(1) 메모리 카운터, `sync.Mutex` 동시성 안전, `llm_gateway` 빌드 태그 없이도 접근 가능
 
 ---
 
