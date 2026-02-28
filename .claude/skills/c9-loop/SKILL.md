@@ -27,6 +27,13 @@ cat .c9/state.yaml
 
 **phase=CONFERENCE** (실험 설계):
 → `/c9-conference` 스킬 실행
+- **[Knowledge] 과거 실험 검색 먼저** (설계 컨텍스트 보강, non-blocking):
+  ```
+  c4_knowledge_search("HMR experiment round N", tags=["c9","hmr"])
+  → 결과 있으면 컨텍스트로 주입 후 토론 시작
+  # 실패 시(도구 미존재/네트워크 오류) → 무시하고 진행
+  # 파라미터 오류 시 → 경고 후 진행
+  ```
 - mpjpe_history와 이전 round conference.txt를 컨텍스트로 제공
 - 합의된 다음 실험들을 `.c9/experiments/rN_*.yaml`로 저장
 - 각 실험의 `blocked_by` 확인 → 구현 필요 시 state.yaml phase → IMPLEMENT
@@ -57,10 +64,27 @@ cat .c9/state.yaml
   - 미수렴 → phase=REFINE, round++
   - BLOCKED → phase=CONFERENCE
 - Dooray 알림: `./scripts/c9-notify.sh CHECK "Round N 결과: MPJPE=Xmm (개선 Y.Ymm)" N "mpjpe=X,pa=Y,util=Z"`
+- **[Knowledge] 실험 결과 기록** (non-blocking):
+  ```
+  c4_experiment_record(
+    title="C9 Round N exp_name",
+    content="mpjpe=X, pa=Y, util=Z",
+    tags=["c9", "hmr", "round-N"]
+  )
+  # 실패 시(도구 미존재/네트워크 오류) → 무시하고 진행
+  # 파라미터 오류 시 → 경고 후 진행
+  ```
 - **즉시 다음 phase 자동 실행** (사용자 승인 없이)
 
 **phase=REFINE** (재설계):
 → `/c9-conference` 스킬 실행 (새 가설로)
+- **[Knowledge] 과거 실험 검색 먼저** (토론 컨텍스트 보강, non-blocking):
+  ```
+  c4_knowledge_search("HMR experiment round N", tags=["c9","hmr"])
+  → 결과 있으면 컨텍스트로 주입 후 토론 시작
+  # 실패 시(도구 미존재/네트워크 오류) → 무시하고 진행
+  # 파라미터 오류 시 → 경고 후 진행
+  ```
 - 이전 결과를 컨텍스트로 제공
 - 새 실험 `.c9/experiments/r(N+1)_*.yaml` 생성
 - state.yaml phase → IMPLEMENT (또는 RUN), round → N+1
@@ -71,6 +95,17 @@ cat .c9/state.yaml
 → `/c9-finish` 스킬 실행
 - best model 저장 + 결과 문서화
 - Dooray 알림: `./scripts/c9-notify.sh FINISH "연구 완료! Best MPJPE=Xmm (개선 Y.Ymm, Z라운드)" N "best_mpjpe=X,baseline=102.6,improvement=Y"`
+- **[Knowledge] 연구 인사이트 기록** (non-blocking):
+  ```
+  c4_knowledge_record(
+    doc_type="insight",
+    title="C9 Research Completed: Best MPJPE=Xmm",
+    content="Best round: N, exp: exp_name. MPJPE=Xmm, PA=Ymm. 개선: Zmm vs baseline 102.6mm. 핵심 발견: ...",
+    tags=["c9","hmr","completed"]
+  )
+  # 실패 시(도구 미존재/네트워크 오류) → 무시하고 진행
+  # 파라미터 오류 시 → 경고 후 진행
+  ```
 
 **phase=DONE**:
 → 루프 종료. `/c9-deploy`는 별도 실행.
