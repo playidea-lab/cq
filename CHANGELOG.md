@@ -7,6 +7,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.40.0] - 2026-02-28
+
+### ✨ Features
+- **knowledge**: `OllamaEmbeddings` 프로바이더 + `reindex` 모듈 (`provider` 파라미터 지원)
+  - `get_embeddings_provider("ollama")` — `nomic-embed-text`(768dim) / `mxbai-embed-large`(1024dim)
+  - `reindex_all(provider, base_path, _embedder)` — knowledge.db 전체 재임베딩 + legacy `documents` 테이블 fallback
+  - `c4_knowledge_reindex` MCP 도구 `provider` 파라미터 연동
+- **knowledge**: `recreate_for_dimension(768)` + migration `00026`
+  - `VectorStore.recreate_for_dimension(dim)` — 기존 벡터 삭제 후 새 차원으로 테이블 재생성
+  - migration `00026_knowledge_vectors_768dim.sql`: pgvector 컬럼 1536→768 마이그레이션 + rollback SQL 주석
+- **knowledge**: `distill` 모듈 — 빈/소규모 코퍼스 guard 포함
+  - `cosine_similarity`, `find_clusters`, `distill_knowledge` 함수
+  - 코퍼스 0건 / 임베딩 부족 시 graceful early-return
+- **skills**: `c4-release` — 태그 생성 + origin push 자동 포함 (`--no-push` 옵션)
+- **skills**: `c4-finish` Step 9 — auto tag + release notes 자동 실행
+
+### 🐛 Bug Fixes
+- **knowledge/llm**: QM batch 3-round quality convergence
+  - `reindex.py`: conn 이중 close 수정 (loop 전체를 outer try/finally로 감쌈)
+  - `vector_store.py`: SQL injection 방어 (table_name regex 검증), dim 유효성 검사, struct little-endian 명시
+  - `cost.go`: `SetDB` nil guard + 중복 호출 guard (goroutine 누출 방지)
+  - `llm.go`: `cache_hit_rate` → `cache_utilization_rate` (공식: `read/(prompt+read)`)
+  - `handler_test.go`: 3개 테스트 키 이름 동기화
+- **c5/auth**: polish round 4 — state 기반 CSRF + supabaseKey PKCE + ready 보호
+  - `auth_device.go`: 쿠키 기반 CSRF → URL state 파라미터로 교체 (SameSite/Secure 문제 해소)
+  - `auth_callback.go`: `exchangePKCEToken`에 `apikey`/`Authorization` 헤더 추가
+  - `sqlite.go`: 최대 poll_count 20→60, `'ready'` 세션은 만료 방지
+  - `fly.toml`: `C5_PUBLIC_URL` 환경변수 추가
+- **hooks**: `curl|python3 -c` 허용 — bare 인터프리터만 차단, inline `-c` 코드는 통과
+
+### 🧪 Tests
+- **hub**: +7.1%p 커버리지 — `GetID`/`isTimeout`/`ClaimJobWithWait` (68.1% → 75.2%)
+- **cdp**: +6.8%p 커버리지 — 25.3% → 32.1%
+- **knowledge**: `test_reindex.py` legacy `documents` 테이블 fallback 테스트 추가
+- **c5/store**: `TestDeviceSessionReadyNotExpiredByPollCount` 회귀 테스트 추가
+
+### 📚 Documentation
+- `AGENTS.md`: 테스트 수 업데이트 (Go ~2,192, Python 728, 합계 ~3,012)
+
+---
+
 ## [v0.39.0] - 2026-02-28
 
 ### ✨ Features
