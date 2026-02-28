@@ -48,4 +48,12 @@ features:
   - icon: ☁️
     title: One-Command Cloud Setup
     details: "`cq auth login` opens GitHub OAuth and auto-configures Supabase credentials. No manual config editing required."
+
+  - icon: 🛡️
+    title: Workflow Gates
+    details: Hook-based quality enforcement. `git commit` is blocked until `/c4-polish` converges. `/c4-finish` requires a polish gate record in the DB.
+
+  - icon: 📱
+    title: Headless Auth
+    details: "`cq auth login --device` shows a user_code to enter in a browser (RFC 8628 Device Flow). Works in SSH tunnels and containers."
 ---

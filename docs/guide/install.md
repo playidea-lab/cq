@@ -17,7 +17,8 @@ This will:
 2. Download the `solo` tier binary from GitHub Releases
 3. Install to `~/.local/bin/cq`
 4. Add `~/.local/bin` to your PATH (`.zshrc` / `.bashrc` / `.profile`)
-5. Run `cq doctor` to verify the environment
+5. Add shell completion to your RC file (`cq completion zsh/bash/fish`)
+6. Run `cq doctor` to verify the environment
 
 Open a new terminal and confirm:
 

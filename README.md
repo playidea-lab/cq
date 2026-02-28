@@ -30,7 +30,8 @@ cq doctor
 
 # 2. Log in (connected / full tier)
 cq auth login               # opens GitHub OAuth in browser → auto-configures cloud
-cq auth login --no-browser # headless/tunnel: prints URL + SSH hint, no browser
+cq auth login --device     # headless/SSH: shows user_code to enter in browser
+cq auth login --link       # prints auth URL to open manually
 
 # 3. Initialize C4 in your project (generates .mcp.json + CLAUDE.md)
 cd your-project
@@ -235,7 +236,8 @@ For `connected` / `full` tiers:
 
 ```sh
 cq auth login               # GitHub OAuth → auto-patches .c4/config.yaml (cloud.enabled, url, anon_key)
-cq auth login --no-browser # headless/tunnel environments: prints URL + SSH forwarding hint
+cq auth login --device     # headless/SSH: shows user_code to enter in browser (RFC 8628 Device Flow)
+cq auth login --link       # prints auth URL to open manually
 ```
 
 After login, cloud sync and Hub access are enabled automatically. No manual config editing required.
