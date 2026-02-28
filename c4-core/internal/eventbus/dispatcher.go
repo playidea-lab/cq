@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"net/http"
@@ -293,7 +294,11 @@ func (d *Dispatcher) executeWebhook(eventID, eventType string, eventData json.Ra
 	if err != nil {
 		return fmt.Errorf("webhook POST: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		// Drain body to allow HTTP keep-alive connection reuse.
+		io.Copy(io.Discard, io.LimitReader(resp.Body, 4096)) //nolint:errcheck
+		resp.Body.Close()
+	}()
 
 	if resp.StatusCode >= 400 {
 		return fmt.Errorf("webhook returned HTTP %d", resp.StatusCode)
@@ -569,17 +574,19 @@ func toFloat64(v any) (float64, bool) {
 	return 0, false
 }
 
-// resolveTemplateString replaces {{data.key}} or {{nested.path}} with actual values.
 // resolveJSONTemplateString resolves template placeholders like resolveTemplateString,
 // but JSON-escapes string values so the result is safe to embed inside a JSON document.
 // Non-string values (numbers, booleans) are formatted with %v which is already JSON-safe.
+// Uses cursor-based scanning to prevent template injection via resolved values.
 func resolveJSONTemplateString(s string, data map[string]any) string {
 	result := s
+	pos := 0
 	for {
-		start := strings.Index(result, "{{")
-		if start == -1 {
+		idx := strings.Index(result[pos:], "{{")
+		if idx == -1 {
 			break
 		}
+		start := pos + idx
 		end := strings.Index(result[start:], "}}")
 		if end == -1 {
 			break
@@ -601,17 +608,22 @@ func resolveJSONTemplateString(s string, data map[string]any) string {
 		}
 
 		result = result[:start] + val + result[end+2:]
+		pos = start + len(val) // advance cursor past resolved value to prevent re-scanning
 	}
 	return result
 }
 
+// resolveTemplateString replaces {{key}} or {{data.key}} placeholders with values from data.
+// Uses cursor-based scanning to prevent template injection via resolved values.
 func resolveTemplateString(s string, data map[string]any) string {
 	result := s
+	pos := 0
 	for {
-		start := strings.Index(result, "{{")
-		if start == -1 {
+		idx := strings.Index(result[pos:], "{{")
+		if idx == -1 {
 			break
 		}
+		start := pos + idx
 		end := strings.Index(result[start:], "}}")
 		if end == -1 {
 			break
@@ -628,6 +640,7 @@ func resolveTemplateString(s string, data map[string]any) string {
 		}
 
 		result = result[:start] + val + result[end+2:]
+		pos = start + len(val) // advance cursor past resolved value to prevent re-scanning
 	}
 	return result
 }
