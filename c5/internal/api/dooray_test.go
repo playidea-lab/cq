@@ -62,8 +62,8 @@ func TestDoorayPOST_NoToken(t *testing.T) {
 
 	var resp doorayResponse
 	decodeJSON(t, w, &resp)
-	if resp.Text != "수신 완료" {
-		t.Errorf("response text: got %q, want %q", resp.Text, "수신 완료")
+	if resp.Text != "⏳ 수신: hello world" {
+		t.Errorf("response text: got %q, want %q", resp.Text, "⏳ 수신: hello world")
 	}
 	if resp.ResponseType != "ephemeral" {
 		t.Errorf("responseType: got %q, want %q", resp.ResponseType, "ephemeral")

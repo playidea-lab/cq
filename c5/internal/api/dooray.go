@@ -109,9 +109,14 @@ func (s *Server) handleDooray(w http.ResponseWriter, r *http.Request) {
 
 	_ = job // job ID available for future logging
 
+	ackText := "⏳ 수신: " + payload.Text
+	if payload.Text == "" {
+		ackText = "⏳ 수신 완료"
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(doorayResponse{
-		Text:         "수신 완료",
+		Text:         ackText,
 		ResponseType: "ephemeral",
 	})
 }
