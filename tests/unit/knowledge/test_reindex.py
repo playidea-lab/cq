@@ -29,6 +29,25 @@ def _make_knowledge_db(path: Path, n_docs: int = 5) -> Path:
     return db
 
 
+def _make_legacy_db(path: Path, n_docs: int = 3) -> Path:
+    """Create a minimal knowledge.db using legacy 'documents' table name."""
+    path.mkdir(parents=True, exist_ok=True)
+    db = path / "knowledge.db"
+    conn = sqlite3.connect(str(db))
+    conn.execute(
+        "CREATE TABLE documents "
+        "(id TEXT PRIMARY KEY, title TEXT, body TEXT, tags TEXT, doc_type TEXT)"
+    )
+    for i in range(n_docs):
+        conn.execute(
+            "INSERT INTO documents VALUES (?,?,?,?,?)",
+            (f"leg-{i:03d}", f"Legacy {i}", f"Legacy body {i}", "tag1", "insight"),
+        )
+    conn.commit()
+    conn.close()
+    return db
+
+
 # ---------------------------------------------------------------------------
 # Mock embedder that records calls
 # ---------------------------------------------------------------------------
@@ -82,6 +101,25 @@ class TestReindexWithOllamaMock:
         result = reindex_all(provider="ollama", base_path=tmp_path / "nonexistent")
 
         assert result == {"success": 0, "skipped": 0, "total": 0}
+
+    def test_reindex_legacy_documents_table_fallback(self, tmp_path: Path) -> None:
+        """Legacy 'documents' table is used when 'knowledge_docs' does not exist."""
+        _make_legacy_db(tmp_path / "knowledge", n_docs=3)
+
+        mock_embedder = MockEmbedderForReindex(dimension=768)
+
+        from c4.knowledge.reindex import reindex_all
+
+        result = reindex_all(
+            provider="ollama",
+            base_path=tmp_path / "knowledge",
+            _embedder=mock_embedder,
+        )
+
+        assert result["total"] == 3
+        assert result["success"] == 3
+        assert result["skipped"] == 0
+        assert len(mock_embedder.indexed) == 3
 
     def test_reindex_partial_failure_counts_skipped(self, tmp_path: Path) -> None:
         """Documents that fail to index are counted as skipped."""

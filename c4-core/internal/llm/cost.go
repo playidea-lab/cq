@@ -78,6 +78,13 @@ func NewCostTracker() *CostTracker {
 // It creates the llm_usage table if needed and starts a background writer goroutine.
 // Must be called at most once. Safe to skip (in-memory-only mode remains).
 func (ct *CostTracker) SetDB(db *sql.DB) {
+	if db == nil {
+		return
+	}
+	if ct.ch != nil {
+		slog.Warn("llm: SetDB called more than once, ignoring")
+		return
+	}
 	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS llm_usage (
 		id              INTEGER PRIMARY KEY AUTOINCREMENT,
 		ts              DATETIME NOT NULL,

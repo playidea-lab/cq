@@ -13,6 +13,7 @@ Usage:
 """
 
 import json
+import re
 import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
@@ -75,6 +76,11 @@ class VectorStore:
         """
         if not _SQLITE_VEC_AVAILABLE:
             raise ImportError("sqlite_vec is required for VectorStore. Install with: pip install sqlite-vec")
+
+        if not re.match(r"^[a-zA-Z_][a-zA-Z0-9_]*$", table_name):
+            raise ValueError(
+                f"table_name must be a valid SQL identifier, got {table_name!r}"
+            )
 
         self.db_path = str(db_path)
         self.dimension = dimension
@@ -160,6 +166,10 @@ class VectorStore:
 
     def add_batch(self, items: list[tuple[str, list[float]]]) -> None:
         """Add multiple embeddings in a batch.
+
+        All insertions are committed atomically: Python's sqlite3 defers
+        commit until conn.commit() is called, so a failure mid-batch rolls
+        back all insertions from this call.
 
         Args:
             items: List of (id, embedding) tuples.
@@ -346,7 +356,12 @@ class VectorStore:
 
         Args:
             dim: New embedding dimension (e.g., 768 for text-embedding-3-small).
+
+        Raises:
+            ValueError: If dim is not a positive integer.
         """
+        if not isinstance(dim, int) or dim <= 0:
+            raise ValueError(f"dim must be a positive integer, got {dim!r}")
         conn = self._get_connection()
 
         # Drop and recreate vector table with new dimension
@@ -393,7 +408,7 @@ class VectorStore:
             elif isinstance(embedding_blob, bytes):
                 import struct
                 n = len(embedding_blob) // 4
-                result[external_id] = list(struct.unpack(f"{n}f", embedding_blob))
+                result[external_id] = list(struct.unpack(f"<{n}f", embedding_blob))
             else:
                 result[external_id] = list(embedding_blob)
         return result

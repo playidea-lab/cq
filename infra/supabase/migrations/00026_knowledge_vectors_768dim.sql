@@ -6,6 +6,20 @@
 -- embeddings is confirmed successful (T-QM-004b-0 prerequisite).
 -- Rollback strategy: restore from backup taken before applying this migration.
 --
+-- ============================================================
+-- ROLLBACK SQL (run manually to revert; requires backup restore
+-- because existing 768-dim embedding data will be lost):
+--
+-- DROP INDEX IF EXISTS idx_c4_documents_embedding;
+-- ALTER TABLE c4_documents DROP COLUMN IF EXISTS embedding;
+-- ALTER TABLE c4_documents ADD COLUMN embedding vector(1536);
+-- CREATE INDEX idx_c4_documents_embedding
+--     ON c4_documents USING hnsw (embedding vector_cosine_ops);
+-- DROP FUNCTION IF EXISTS c4_knowledge_search_semantic(vector(768), int, float, text, uuid);
+-- -- Restore original 1536-dim function from migration 00024 backup.
+-- -- Then re-run reindex with openai/1536-dim embeddings to repopulate.
+-- ============================================================
+--
 -- WARNING: This drops and recreates the HNSW index and alters the column type.
 -- Existing 1536-dim embedding data will be lost.
 -- Run local reindex (T-QM-004b-0) to repopulate with 768-dim embeddings.

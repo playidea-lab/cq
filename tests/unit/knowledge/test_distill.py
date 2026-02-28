@@ -12,7 +12,6 @@ from c4.knowledge.distill import (
     find_clusters,
 )
 
-
 # --- Unit tests for cosine_similarity ---
 
 

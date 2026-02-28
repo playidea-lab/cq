@@ -231,11 +231,11 @@ func handleLLMUsageStats(db *sql.DB, raw json.RawMessage) (any, error) {
 	// Return zeros when DB is unavailable.
 	if db == nil {
 		return map[string]any{
-			"total_cost_usd": 0.0,
-			"cache_hit_rate": 0.0,
-			"total_tokens":   0,
-			"top_models":     []any{},
-			"period_hours":   params.Hours,
+			"total_cost_usd":         0.0,
+			"cache_utilization_rate": 0.0,
+			"total_tokens":           0,
+			"top_models":             []map[string]any{},
+			"period_hours":           params.Hours,
 		}, nil
 	}
 
@@ -255,11 +255,12 @@ func handleLLMUsageStats(db *sql.DB, raw json.RawMessage) (any, error) {
 		return nil, fmt.Errorf("querying llm_usage: %w", err)
 	}
 
-	// cache_hit_rate = sum(cache_read_tok) / (sum(prompt_tok) + sum(cache_read_tok))
-	// prompt_tok is the new (non-cached) input tokens; cache_read_tok is the cached portion.
-	var cacheHitRate float64
+	// cache_utilization_rate = cache_read_tok / (prompt_tok + cache_read_tok)
+	// Measures what fraction of total input tokens were served from cache.
+	// Distinct from cache_hit_rate in c4_llm_costs (read/(read+write) among cache ops).
+	var cacheUtilizationRate float64
 	if denom := totalPrompt + totalCacheRead; denom > 0 {
-		cacheHitRate = float64(totalCacheRead) / float64(denom)
+		cacheUtilizationRate = float64(totalCacheRead) / float64(denom)
 	}
 
 	totalTokens := totalPrompt + totalCompletion + totalCacheRead
@@ -293,10 +294,10 @@ func handleLLMUsageStats(db *sql.DB, raw json.RawMessage) (any, error) {
 	}
 
 	return map[string]any{
-		"total_cost_usd": totalCost,
-		"cache_hit_rate": cacheHitRate,
-		"total_tokens":   totalTokens,
-		"top_models":     topModels,
-		"period_hours":   params.Hours,
+		"total_cost_usd":          totalCost,
+		"cache_utilization_rate":  cacheUtilizationRate,
+		"total_tokens":            totalTokens,
+		"top_models":              topModels,
+		"period_hours":            params.Hours,
 	}, nil
 }

@@ -55,44 +55,46 @@ def reindex_all(
 
     conn = sqlite3.connect(str(db_path))
     conn.row_factory = sqlite3.Row
-    try:
-        rows = conn.execute(
-            "SELECT id, title, body, tags, doc_type FROM knowledge_docs"
-        ).fetchall()
-    except sqlite3.OperationalError:
-        # Table may be named differently in older schemas
-        try:
-            rows = conn.execute(
-                "SELECT id, title, body, tags, doc_type FROM documents"
-            ).fetchall()
-        except sqlite3.OperationalError:
-            logger.warning("No knowledge table found in %s", db_path)
-            conn.close()
-            return {"success": 0, "skipped": 0, "total": 0}
-    finally:
-        conn.close()
 
     success = 0
     skipped = 0
-    total = len(rows)
+    total = 0
 
-    for row in rows:
-        doc_id = row["id"]
-        doc = {
-            "title": row["title"] or "",
-            "body": row["body"] or "",
-            "tags": (row["tags"] or "").split(",") if row["tags"] else [],
-            "doc_type": row["doc_type"] or "",
-        }
+    try:
         try:
-            ok = embedder.index_document(doc_id, doc)
-            if ok:
-                success += 1
-            else:
+            rows = conn.execute(
+                "SELECT id, title, body, tags, doc_type FROM knowledge_docs"
+            ).fetchall()
+        except sqlite3.OperationalError:
+            # Table may be named differently in older schemas
+            try:
+                rows = conn.execute(
+                    "SELECT id, title, body, tags, doc_type FROM documents"
+                ).fetchall()
+            except sqlite3.OperationalError:
+                logger.warning("No knowledge table found in %s", db_path)
+                return {"success": 0, "skipped": 0, "total": 0}
+
+        total = len(rows)
+        for row in rows:
+            doc_id = row["id"]
+            doc = {
+                "title": row["title"] or "",
+                "body": row["body"] or "",
+                "tags": (row["tags"] or "").split(",") if row["tags"] else [],
+                "doc_type": row["doc_type"] or "",
+            }
+            try:
+                ok = embedder.index_document(doc_id, doc)
+                if ok:
+                    success += 1
+                else:
+                    skipped += 1
+            except Exception:
+                logger.exception("Failed to reindex document %s", doc_id)
                 skipped += 1
-        except Exception:
-            logger.exception("Failed to reindex document %s", doc_id)
-            skipped += 1
+    finally:
+        conn.close()
 
     logger.info("Reindex complete: %d/%d success, %d skipped", success, total, skipped)
     return {"success": success, "skipped": skipped, "total": total}

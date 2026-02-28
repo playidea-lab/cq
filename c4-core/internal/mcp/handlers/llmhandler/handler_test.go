@@ -65,7 +65,7 @@ func TestLLMUsageStats_Basic(t *testing.T) {
 	insertRow(t, db, now.Add(-3*time.Hour), "openai", "gpt-4o", 400, 200, 0, 0, 0.12, 600)
 
 	reg := mcp.NewRegistry()
-	RegisterLLMHandlers(reg, nil, db)
+	RegisterLLMHandlers(reg, nil, db) // nil gateway: only c4_llm_usage_stats is exercised here
 
 	result, err := reg.Call("c4_llm_usage_stats", json.RawMessage(`{"hours": 24}`))
 	if err != nil {
@@ -95,15 +95,15 @@ func TestLLMUsageStats_Basic(t *testing.T) {
 		t.Errorf("total_tokens = %d, want 1500", totalTokens)
 	}
 
-	// cache_hit_rate = sum(cache_read) / (sum(prompt) + sum(cache_read))
+	// cache_utilization_rate = sum(cache_read) / (sum(prompt) + sum(cache_read))
 	// = 150 / (900 + 150) = 150 / 1050 ≈ 0.1428...
-	cacheHitRate, ok := m["cache_hit_rate"].(float64)
+	cacheHitRate, ok := m["cache_utilization_rate"].(float64)
 	if !ok {
-		t.Fatalf("cache_hit_rate type = %T", m["cache_hit_rate"])
+		t.Fatalf("cache_utilization_rate type = %T", m["cache_utilization_rate"])
 	}
 	wantRate := 150.0 / 1050.0
 	if math.Abs(cacheHitRate-wantRate) > 1e-9 {
-		t.Errorf("cache_hit_rate = %v, want %v", cacheHitRate, wantRate)
+		t.Errorf("cache_utilization_rate = %v, want %v", cacheHitRate, wantRate)
 	}
 
 	// top_models: 2 models, ordered by cost desc (gpt-4o: 0.12, claude-sonnet: 0.13)
@@ -135,7 +135,7 @@ func TestLLMUsageStats_EmptyDB(t *testing.T) {
 	db := setupTestDB(t)
 
 	reg := mcp.NewRegistry()
-	RegisterLLMHandlers(reg, nil, db)
+	RegisterLLMHandlers(reg, nil, db) // nil gateway: only c4_llm_usage_stats is exercised here
 
 	result, err := reg.Call("c4_llm_usage_stats", json.RawMessage(`{}`))
 	if err != nil {
@@ -153,9 +153,9 @@ func TestLLMUsageStats_EmptyDB(t *testing.T) {
 		t.Errorf("total_cost_usd = %v, want 0", totalCost)
 	}
 
-	cacheHitRate, _ := m["cache_hit_rate"].(float64)
+	cacheHitRate, _ := m["cache_utilization_rate"].(float64)
 	if cacheHitRate != 0 {
-		t.Errorf("cache_hit_rate = %v, want 0", cacheHitRate)
+		t.Errorf("cache_utilization_rate = %v, want 0", cacheHitRate)
 	}
 
 	totalTokens, _ := m["total_tokens"].(int64)
@@ -178,7 +178,7 @@ func TestLLMUsageStats_EmptyDB(t *testing.T) {
 }
 
 // TestLLMUsageStats_CacheHitRateFormula verifies the specific formula:
-// cache_hit_rate = sum(cache_read_tok) / (sum(prompt_tok) + sum(cache_read_tok))
+// cache_utilization_rate = sum(cache_read_tok) / (sum(prompt_tok) + sum(cache_read_tok))
 // where prompt_tok is the new (non-cached) input tokens.
 // Example: prompt_tok=100, cache_read_tok=50 → 50 / (100+50) = 50/150 = 0.333...
 func TestLLMUsageStats_CacheHitRateFormula(t *testing.T) {
@@ -189,7 +189,7 @@ func TestLLMUsageStats_CacheHitRateFormula(t *testing.T) {
 	insertRow(t, db, now.Add(-1*time.Hour), "anthropic", "claude-sonnet", 100, 30, 50, 10, 0.01, 100)
 
 	reg := mcp.NewRegistry()
-	RegisterLLMHandlers(reg, nil, db)
+	RegisterLLMHandlers(reg, nil, db) // nil gateway: only c4_llm_usage_stats is exercised here
 
 	result, err := reg.Call("c4_llm_usage_stats", json.RawMessage(`{"hours": 24}`))
 	if err != nil {
@@ -198,13 +198,13 @@ func TestLLMUsageStats_CacheHitRateFormula(t *testing.T) {
 
 	m := result.(map[string]any)
 
-	// cache_hit_rate = 50 / (100 + 50) = 50 / 150 ≈ 0.333...
-	cacheHitRate, ok := m["cache_hit_rate"].(float64)
+	// cache_utilization_rate = 50 / (100 + 50) = 50 / 150 ≈ 0.333...
+	cacheHitRate, ok := m["cache_utilization_rate"].(float64)
 	if !ok {
-		t.Fatalf("cache_hit_rate type = %T", m["cache_hit_rate"])
+		t.Fatalf("cache_utilization_rate type = %T", m["cache_utilization_rate"])
 	}
 	want := 50.0 / 150.0
 	if math.Abs(cacheHitRate-want) > 1e-9 {
-		t.Errorf("cache_hit_rate = %v, want %v (50/150)", cacheHitRate, want)
+		t.Errorf("cache_utilization_rate = %v, want %v (50/150)", cacheHitRate, want)
 	}
 }
