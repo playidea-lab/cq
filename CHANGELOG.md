@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.42.1] - 2026-02-28
+
+### 🧪 Tests
+- **internal/cloud**: CloudPrimaryStore + HybridStore 커버리지 60.7% → 75.0% (30+ 신규 테스트)
+  - mock store injection 패턴 (httptest 금지), compile-time assertion
+- **internal/eventbus**: client.go 커버리지 67.2% → 78.2% (28 신규 테스트)
+  - 실제 Unix Domain Socket + gRPC 서버 패턴, macOS 104-byte 경로 제한 해결
+- **internal/secrets**: store 커버리지 68.0% → 83.6% (16 신규 테스트)
+  - NewWithPaths edge cases, 잘못된 권한/hex/length, closed store 에러 경로
+- **internal/drive**: client 커버리지 68.2% → 79.1% (14 신규 테스트)
+  - doWithRetry 35% → 95%, 5xx 재시도/연결 실패/4xx 즉시 실패/POST body 재읽기
+- **artifacthandler**: Register() + resolvePath() 커버리지 67.5% → 81.8% (7 신규 테스트)
+- **knowledgehandler**: knowledge_coverage_test.go 475줄 추가, 62.3% → 77.1%
+
+### 📚 Documentation
+- **agents**: Go 테스트 수 수치 보정 (c4-core ~1,753 + c5 ~214 = ~1,967)
+
+---
+
 ## [v0.42.0] - 2026-02-28
 
 ### ✨ Features
