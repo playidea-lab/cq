@@ -139,8 +139,8 @@ llm:
   # base_url: ""
   # LLM API key. Also settable via C5_LLM_API_KEY env var.
   # api_key: ""
-  # Model ID. Default: gemini-2.0-flash-lite
-  # model: "gemini-2.0-flash-lite"
+  # Model ID. Default: gemini-3-flash-preview
+  # model: "gemini-3-flash-preview"
   # Max tokens in the LLM response. Default: 4096.
   # max_tokens: 4096
 
