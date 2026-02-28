@@ -132,7 +132,6 @@ fi
 # =============================================================================
 # C4 워크플로우 게이트 (deprecated 스킬 차단 및 git commit 순서 강제)
 # =============================================================================
-_SKILL_NAME=$(echo "$INPUT" | jq -r '.tool_input.skill // empty' 2>/dev/null)
 _DB_PATH="${DB_PATH:-${C4_ROOT}/.c4/c4.db}"
 
 # 인라인 우회: C4_SKIP_GATE=1 (export 금지 — 세션 전체 bypass 방지)
@@ -140,7 +139,9 @@ _SKIP_GATE=0
 [[ -n "${C4_SKIP_GATE:-}" ]] && _SKIP_GATE=1
 
 # BLOCK A: Deprecated 스킬 차단 (c4-polish/c4-refine → c4-finish 사용)
+# _SKILL_NAME 추출은 Skill 도구 호출 시에만 수행 (매 훅 호출마다 jq 실행 방지)
 if [[ "$_BARE_TOOL" == "Skill" ]]; then
+    _SKILL_NAME=$(echo "$INPUT" | jq -r '.tool_input.skill // empty' 2>/dev/null)
     if [[ "$_SKILL_NAME" == "c4-polish" ]]; then
         _emit_deny "c4-polish deprecated → /c4-finish 사용 (polish 루프 내장)"
     fi
@@ -153,6 +154,7 @@ fi
 if [[ "$TOOL_NAME" == "Bash" && "$COMMAND" =~ ^git[[:space:]]+commit ]]; then
     if [[ "$_SKIP_GATE" -eq 0 ]]; then
         if [[ -f "$_DB_PATH" ]] && command -v sqlite3 &>/dev/null; then
+            # Advisory check — DB 조회와 commit 사이는 원자적이지 않음 (UX 게이트로서 허용)
             _in_prog=$(sqlite3 "$_DB_PATH" \
                 "SELECT COUNT(*) FROM c4_tasks WHERE status='in_progress'" 2>/dev/null)
             if [[ "${_in_prog:-0}" -gt 0 ]]; then
@@ -210,7 +212,8 @@ fi
 
 # =============================================================================
 # Edit/Write tool: check patterns against file_path
-# Priority: built-in allow > user allow > user block > built-in block
+# Priority: built-in allow (.c4/,/tmp/) 먼저 (불변) → user allow → user block → built-in block
+# 주의: .c4/ 와 /tmp/ 는 user block_patterns 로도 차단 불가 (시스템 파일 항상 쓰기 허용)
 # =============================================================================
 if [[ "$TOOL_NAME" == "Edit" || "$TOOL_NAME" == "Write" ]] && [[ -n "$FILE_PATH" ]]; then
     # Built-in allow: .c4/ system files and /tmp/ — checked first so user block patterns can't override

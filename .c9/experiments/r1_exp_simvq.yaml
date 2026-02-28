@@ -1,0 +1,20 @@
+# Round 1 — Experiment: SimVQ 교체
+name: exp_simvq
+round: 1
+hypothesis: "STE Straight-Through Estimator를 SimVQ linear basis reparameterization으로 교체해 codebook utilization near-100% 달성"
+priority: 1
+
+# pi 서버에서 실행할 명령 (IMPLEMENT 완료 후 업데이트됨)
+# 구현 완료:
+#   - SimVQ.py: external/Mesh-VQ-VAE/mesh_vq_vae/model/SimVQ.py
+#   - config_simvq.yaml: external/Mesh-VQ-VAE/config_autoencoder/config_simvq.yaml
+#   - run_exp_simvq.sh: scripts/run_exp_simvq.sh (5-step pipeline)
+#   - gen_aux patched: vq_type 지원 추가됨
+command: |
+  bash /home/pi/git/hmr_unified/scripts/run_exp_simvq.sh
+
+report:
+  start_marker: "[C9-START] exp_simvq"
+  done_marker: "[C9-DONE] exp_simvq mpjpe={mpjpe} pa={pa_mpjpe} util={codebook_util}"
+  blocked_marker: "[C9-BLOCKED]"
+depends_on: []

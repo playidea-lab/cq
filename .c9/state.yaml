@@ -1,0 +1,54 @@
+# C9 Research Loop State
+# phase: CONFERENCE | IMPLEMENT | RUN | CHECK | REFINE | FINISH | DONE
+phase: CHECK
+round: 2
+
+last_check:
+  round: 2
+  exp: "exp_simvq_r2"
+  mpjpe: 102.71
+  pa_mpjpe: 72.77
+  mpjpe_std: 35.66
+  delta_vs_baseline: +0.11  # still slightly worse
+  delta_vs_r1: -0.18        # improved vs Round 1
+  verdict: "MARGINAL — lambda_aux=0.5 분산 감소(std 43→36mm)는 확인, 평균 MPJPE 개선 없음"
+  completed_at: "2026-02-28T09:00:00Z"
+
+convergence_threshold_mm: 0.5
+max_rounds: 10
+
+notify:
+  dooray_webhook: "https://playidealab.dooray.com/services/3474793830228675130/4225637319450023073/enubd_9kTkyNRQTyumJYPA"
+  session: "login-test"  # cq session name (cq session name <name> 으로 설정)
+  bot_name: "C9 Lab"
+  server_id: "pi-main"
+  templates:
+    dooray: "{emoji} **[C9 R{round} · {phase}]** [{server}] {message}"
+    mail: "[C9-{phase}] Round={round} server={server} {message}"
+
+active_jobs: []
+
+mpjpe_history:
+  - round: 0
+    best_mpjpe: 102.6
+    pa_mpjpe: 72.2
+    note: "baseline (exp056_aux_vqvae_base_pca128)"
+  - round: 1
+    exp: "exp_simvq"
+    best_mpjpe: 102.89
+    pa_mpjpe: 72.43
+    mpjpe_std: 43.11
+    note: "SimVQ lambda_aux=0.0 (버그) — aux loss 미적용, baseline 동일"
+  - round: 2
+    exp: "exp_simvq_r2"
+    best_mpjpe: 102.71
+    pa_mpjpe: 72.77
+    mpjpe_std: 35.66
+    note: "SimVQ lambda_aux=0.5 — std 43→36mm 감소, mean MPJPE 개선 없음"
+
+finish:
+  best_round: ~
+  best_mpjpe: ~
+  best_model_path: ~
+  artifact_path: ~
+  completed_at: ~

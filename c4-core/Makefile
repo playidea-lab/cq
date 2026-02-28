@@ -174,11 +174,12 @@ tidy:
 	go mod tidy
 	go mod verify
 
-## lint-skills: Skill 계약 검증 (deprecated stub 크기 + knowledge gate)
+## lint-skills: Skill 계약 검증 (deprecated stub 크기 + knowledge gate); archtest는 test 타겟에서도 실행됨
 lint-skills:
-	bash ../scripts/lint-skills.sh
+	bash ../scripts/lint-skills.sh -race -count=1
 
 ## check: Run all checks (vet, lint, test)
+## NOTE: lint-skills archtest는 test 타겟(go test ./...)에 포함되어 있어 check에서 중복 제외
 check: vet lint test
 
 ## help: Show this help message

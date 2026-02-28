@@ -22,23 +22,29 @@ func TestDeprecatedSkillsAreStubs(t *testing.T) {
 		"c2-paper-review",
 	}
 
+	found := 0
 	for _, skill := range deprecated {
 		skill := skill
 		t.Run(skill, func(t *testing.T) {
 			path := filepath.Join(skillsDir, skill, "SKILL.md")
 			data, err := os.ReadFile(path)
 			if os.IsNotExist(err) {
-				t.Skipf("skill %q not found (skipping)", skill)
+				t.Logf("skill %q not found (skipping)", skill)
+				return
 			}
 			if err != nil {
 				t.Fatalf("read %s: %v", path, err)
 			}
+			found++
 			lines := strings.Split(strings.TrimRight(string(data), "\n"), "\n")
 			if len(lines) > 20 {
 				t.Errorf("deprecated skill %q SKILL.md has %d lines (want ≤ 20); reduce to a stub redirecting to the replacement skill",
 					skill, len(lines))
 			}
 		})
+	}
+	if found == 0 {
+		t.Fatalf("skillsDir %s appears unreachable — all deprecated skills missing; verify archtest.FindRoot() and path join", skillsDir)
 	}
 }
 

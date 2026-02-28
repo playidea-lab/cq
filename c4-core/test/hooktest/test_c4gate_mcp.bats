@@ -152,3 +152,8 @@ _run_hook() {
     [ "$status" -eq 2 ]
     [[ "$output" =~ "c4-finish" ]]
 }
+
+@test "Skill c4-finish → allowed (not deprecated)" {
+    _run_hook '{"tool_name":"Skill","tool_input":{"skill":"c4-finish"}}'
+    [ "$status" -ne 2 ]
+}

@@ -67,7 +67,15 @@ To use Gemini-exclusive features or the "Ultimate Duo" mode:
    ```
    Or set the `GOOGLE_API_KEY` environment variable.
 
-## 5. Best Practices
+## 5. Knowledge Alchemy (Advanced)
+
+### `c4-alchemy` (Synthesize knowledge)
+**Syntax**: `./scripts/c4-alchemy.sh`
+- Analyzes all research experiments, insights, and patterns in `.c4/knowledge/`.
+- **Value**: Discovers hidden correlations and proposes the most impactful "Next Action" based on project-wide data.
+- **When to use**: When you feel stuck, need a new research direction, or want to audit project integrity.
+
+## 6. Best Practices
 1.  **Always use flags**: Do not rely on positional arguments for `c4` commands.
 2.  **Quote strings**: Always quote titles and descriptions to avoid shell parsing errors.
 3.  **Check exit codes**: If a command fails, read the error message and check this handbook.

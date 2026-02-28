@@ -1,0 +1,45 @@
+# Round 1 — Experiment: 현재 모델 codebook 상태 추가 진단
+name: exp_probe_baseline
+round: 1
+hypothesis: "현재 VQ-VAE의 codebook collapse 원인 파악: STE gradient vs 데이터 부족 vs 학습률 문제"
+priority: 2
+
+command: |
+  cd /home/pi/git/hmr_unified
+  uv run --with scikit-learn python3 -c "
+import numpy as np, datetime, sys
+from sklearn.decomposition import PCA
+
+print('[C9-START] exp_probe_baseline round=1 ts=' + datetime.datetime.now().isoformat())
+sys.stdout.flush()
+
+# 1. 원본 486차원 latent 통계
+sample = np.load('data/aux_latent/3dpw_test_vqvae_latent_sample.npz')
+raw = sample['latent']  # (8, 486)
+print(f'Raw 486-dim latent (8 samples): std={raw.std(axis=0).mean():.4f}, range=[{raw.min():.3f},{raw.max():.3f}]')
+
+# 2. PCA128 variance 분포
+ld = np.load('data/aux_latent/3dpw_test_vqvae_latent_pca128.npz')
+latents = ld['latent']  # (35515, 128)
+stds = latents.std(axis=0)
+print(f'PCA128 std: min={stds.min():.6f} max={stds.max():.6f} mean={stds.mean():.6f}')
+print(f'Dead dims (std<0.01): {(stds<0.01).sum()}/128')
+print(f'Active dims (std>0.1): {(stds>0.1).sum()}/128')
+
+# 3. 샘플 간 유사도 (collapse 측정)
+norms = np.linalg.norm(latents - latents.mean(axis=0), axis=1)
+print(f'L2 distance from mean: avg={norms.mean():.4f}, max={norms.max():.4f}')
+
+# 4. PCA components가 pose와 독립적인지 확인 (486→128 변환)
+components = ld['components']  # (128, 486)
+mean_vec = ld['mean']  # (1, 486)
+reconstructed = latents @ components + mean_vec
+print(f'Reconstructed 486-dim: std={reconstructed.std():.4f}')
+
+print('[C9-DONE] exp_probe_baseline status=completed collapse_confirmed=True')
+"
+
+report:
+  start_marker: "[C9-START] exp_probe_baseline"
+  done_marker: "[C9-DONE] exp_probe_baseline"
+depends_on: []

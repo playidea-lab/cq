@@ -1,0 +1,69 @@
+# Round 2 — Experiment: KD Loss 강화 + Learned Projection Head (Option B)
+name: exp_kd_proj
+round: 2
+hypothesis: "aux latent(486dim)을 학습된 linear projection으로 128dim으로 압축하고
+  KD loss weight λ=1.0으로 높여 HMR이 aux 정보를 더 강하게 활용하게 함.
+  PCA 고정 proj보다 task-adaptive projection이 더 유용한 aux representation을 만듦"
+priority: 2  # C(분석) 완료 후 실행 권장. 분석 무관하게 병렬 실행 가능
+
+blocked_by: []  # C 분석 결과와 무관하게 독립 실행 가능
+
+implement:
+  description: |
+    train_exp056_hmr2b_pseudogt_kd.py 수정:
+    1. AuxProjectionHead 추가: Linear(486→128) + LayerNorm (학습 파라미터)
+    2. KD loss weight argparse: --kd_weight (default: 1.0)
+    3. run_dir 저장에 kd_weight 기록 (exp_kd_proj/kd1.0/)
+  files_to_modify:
+    - "scripts/train_exp056_hmr2b_pseudogt_kd.py"
+  new_files:
+    - "scripts/run_exp_kd_proj.sh"
+
+command: |
+  bash /home/pi/git/hmr_unified/scripts/run_exp_kd_proj.sh
+
+run_script_template: |
+  #!/bin/bash
+  set -e
+  cd /home/pi/git/hmr_unified
+  RUN_DIR="experiments/paper1/exp_kd_proj"
+  mkdir -p "$RUN_DIR"
+  echo "[C9-START] exp_kd_proj round=2 ts=$(date -Iseconds)"
+
+  # Step 1: KD weight=1.0으로 훈련 (proj head 포함)
+  echo "=== Training with KD weight=1.0 + learned projection ==="
+  uv run python3 scripts/train_exp056_hmr2b_pseudogt_kd.py \
+    --run_dir "$RUN_DIR" \
+    --aux_latent_path data/aux_latent/3dpw_simvq_latent.npz \
+    --aux_dim 486 \
+    --proj_dim 128 \
+    --kd_weight 1.0 \
+    --epochs 30 \
+    2>&1 | tee ${RUN_DIR}/hmr_train.log
+
+  # Step 2: MPJPE 평가
+  echo "=== Evaluating MPJPE ==="
+  uv run python3 scripts/eval_exp056.py \
+    --checkpoint ${RUN_DIR}/best_checkpoint.pt \
+    --h5_path data/preprocessed/3dpw_test_hmr2b.h5 \
+    --batch_size 64 \
+    --run_dir "$RUN_DIR" \
+    2>&1 | tee ${RUN_DIR}/eval.log
+
+  MPJPE=$(grep -oP '(?<=Mean   : )[0-9.]+' ${RUN_DIR}/eval.log | head -1)
+  PA=$(grep -oP '(?<=Mean   : )[0-9.]+' ${RUN_DIR}/eval.log | tail -1)
+  echo "[C9-DONE] exp_kd_proj mpjpe=${MPJPE:-?} pa=${PA:-?}" | tee -a ${RUN_DIR}/hmr_train.log
+
+  WEBHOOK="https://playidealab.dooray.com/services/3474793830228675130/4225637319450023073/enubd_9kTkyNRQTyumJYPA"
+  curl -s -X POST "$WEBHOOK" \
+    -H 'Content-Type: application/json' \
+    -d "{\"botName\":\"C9 Research\",\"text\":\"📊 [C9 Round 2] exp_kd_proj — MPJPE=${MPJPE:-?}mm PA=${PA:-?}mm\"}" \
+    -o /dev/null 2>/dev/null || true
+
+report:
+  start_marker: "[C9-START] exp_kd_proj"
+  done_marker: "[C9-DONE] exp_kd_proj mpjpe={mpjpe} pa={pa_mpjpe}"
+  blocked_marker: "[C9-BLOCKED]"
+
+requires_gpu: true
+estimated_time_min: 120  # VQ-VAE 재훈련 없음, HMR만 30 epochs
