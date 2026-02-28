@@ -45,7 +45,7 @@ c1_participants, c1_channel_summaries — C1 참여자/요약
 
 | 항목 | 내용 |
 |------|------|
-| **URL** | `https://git.pilab.co.kr/pi/cq/raw/main/install.sh` |
+| **URL** | `https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/install.sh` |
 | **용도** | `curl \| bash` 원라인 설치 |
 
 **운영 할 일**: Git 서버에서 main 브랜치의 install.sh 접근 가능하게 유지
@@ -117,7 +117,7 @@ Tauri 2.x 앱
 
 ```bash
 # 1. 설치
-curl -sSL https://git.pilab.co.kr/pi/cq/raw/main/install.sh | bash
+curl -sSL https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/install.sh | bash
 
 # 2. 로그인 (SSO)
 c4 auth login
