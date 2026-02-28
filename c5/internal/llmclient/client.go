@@ -24,11 +24,9 @@ type Client struct {
 // New creates a Client. baseURL should be the provider's OpenAI-compatible endpoint prefix
 // (e.g. "https://generativelanguage.googleapis.com/v1beta/openai" for Gemini,
 // "http://localhost:11434/v1" for Ollama, "https://api.openai.com/v1" for OpenAI).
-// If model is empty, "gemini-3-flash-preview" is used. If maxTokens <= 0, 4096 is used.
+// If maxTokens <= 0, 4096 is used.
+// model should be set by the caller (e.g. from config.LLM.Model); empty string is passed through.
 func New(baseURL, apiKey, model string, maxTokens int) *Client {
-	if model == "" {
-		model = "gemini-3-flash-preview"
-	}
 	if maxTokens <= 0 {
 		maxTokens = 4096
 	}
