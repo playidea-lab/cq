@@ -14,6 +14,8 @@ import (
 	c5 "github.com/piqsol/c4/c5"
 	"github.com/piqsol/c4/c5/internal/api"
 	"github.com/piqsol/c4/c5/internal/config"
+	"github.com/piqsol/c4/c5/internal/knowledge"
+	"github.com/piqsol/c4/c5/internal/llmclient"
 	"github.com/piqsol/c4/c5/internal/storage"
 	"github.com/piqsol/c4/c5/internal/store"
 	"github.com/spf13/cobra"
@@ -129,6 +131,31 @@ func runServe(cmd *cobra.Command, configPath string, port int, dbPath, apiKey, e
 	}
 	defer st.Close()
 
+	// Build optional LLM client for server-side Dooray processing.
+	var llmCli *llmclient.Client
+	if cfg.IsLLMEnabled() {
+		llmCli = llmclient.New(cfg.LLM.BaseURL, cfg.LLM.APIKey, cfg.LLM.Model, cfg.LLM.MaxTokens)
+		log.Printf("c5: LLM enabled (model: %s)", cfg.LLM.Model)
+	}
+
+	// Build optional knowledge client.
+	var knowledgeCli *knowledge.Client
+	if cfg.IsSupabaseEnabled() {
+		knowledgeCli = knowledge.New(cfg.Storage.SupabaseURL, cfg.Storage.SupabaseKey)
+	}
+
+	// Build Dooray channel map from config.
+	var channelMap map[string]api.DoorayChannel
+	if len(cfg.Dooray.Channels) > 0 {
+		channelMap = make(map[string]api.DoorayChannel, len(cfg.Dooray.Channels))
+		for id, ch := range cfg.Dooray.Channels {
+			channelMap[id] = api.DoorayChannel{
+				ProjectID:  ch.ProjectID,
+				WebhookURL: ch.WebhookURL,
+			}
+		}
+	}
+
 	srv := api.NewServer(api.Config{
 		Store:            st,
 		Storage:          storageBackend,
@@ -144,6 +171,11 @@ func runServe(cmd *cobra.Command, configPath string, port int, dbPath, apiKey, e
 		GPUWorkerGPUOnly: cfg.Server.GPUWorkerGPUOnly,
 		SupabaseURL:      cfg.Storage.SupabaseURL,
 		SupabaseKey:      cfg.Storage.SupabaseKey,
+		LLMClient:        llmCli,
+		KnowledgeClient:  knowledgeCli,
+		DoorayWebhookURL: cfg.Dooray.WebhookURL,
+		DoorayCmdToken:   cfg.Dooray.CmdToken,
+		ChannelMap:       channelMap,
 	})
 	defer srv.Close()
 
