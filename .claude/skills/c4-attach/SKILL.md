@@ -39,10 +39,18 @@ basename $(pwd)
 
 ### 2. 현재 세션 UUID 확인 (CRITICAL)
 
-Claude는 현재 대화의 세션 UUID를 시스템 컨텍스트에서 직접 알고 있다.
-JSONL 파일 경로 형식: `~/.claude/projects/<project>/<uuid>.jsonl`
+반드시 `$CQ_SESSION_UUID` 환경변수에서 읽는다. JSONL 경로 추론 절대 금지.
 
-자동 감지는 불안정하므로, 반드시 `--uuid` 플래그로 명시적으로 전달한다.
+```bash
+echo "CQ_SESSION_UUID=${CQ_SESSION_UUID:-<not set>}"
+```
+
+- `CQ_SESSION_UUID`가 설정된 경우: 해당 값을 `--uuid`로 사용.
+- `CQ_SESSION_UUID`가 비어 있는 경우: `cq claude -t <name>` 없이 시작된 세션.
+  attach 불가 — 사용자에게 알리고 중단.
+
+> **CRITICAL**: Claude 컨텍스트에 보이는 JSONL 경로(conversation transcript UUID)와
+> `CQ_SESSION_UUID`(cq session UUID)는 **다를 수 있다**. 반드시 env var 사용.
 
 ### 3. 세션 이름 저장
 
