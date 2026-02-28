@@ -5,12 +5,13 @@ package eventbushandler
 import (
 	"net/http"
 
+	"github.com/changmin/c4-core/internal/config"
 	"github.com/changmin/c4-core/internal/eventbus"
 	"github.com/changmin/c4-core/internal/mcp"
 )
 
 // RegisterEventBusHandlers is a no-op stub when c3_eventbus build tag is disabled.
-func RegisterEventBusHandlers(_ *mcp.Registry, _ *eventbus.Client) {}
+func RegisterEventBusHandlers(_ *mcp.Registry, _ *eventbus.Client, _ *config.Manager) {}
 
 // StartEventSinkServer is a no-op stub when c3_eventbus build tag is disabled.
 // Returns nil server (disabled).

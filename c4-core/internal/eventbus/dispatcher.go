@@ -203,9 +203,11 @@ func (d *Dispatcher) executeLog(eventID, eventType string, eventData json.RawMes
 
 func (d *Dispatcher) executeWebhook(eventID, eventType string, eventData json.RawMessage, rule StoredRule) error {
 	var cfg struct {
-		URL     string            `json:"url"`
-		Headers map[string]string `json:"headers"`
-		Secret  string            `json:"secret"` // HMAC secret (optional)
+		URL                string            `json:"url"`
+		Headers            map[string]string `json:"headers"`
+		Secret             string            `json:"secret"` // HMAC secret (optional)
+		PayloadTemplate    string            `json:"payload_template"`
+		PayloadContentType string            `json:"payload_content_type"`
 	}
 	if err := json.Unmarshal([]byte(rule.ActionConfig), &cfg); err != nil {
 		return fmt.Errorf("parse action_config: %w", err)
@@ -219,20 +221,53 @@ func (d *Dispatcher) executeWebhook(eventID, eventType string, eventData json.Ra
 		return fmt.Errorf("invalid webhook URL: %w", err)
 	}
 
-	// CloudEvents-style payload
-	payload := map[string]any{
-		"id":     eventID,
-		"type":   eventType,
-		"source": "c4.eventbus",
-		"data":   json.RawMessage(eventData),
+	var body []byte
+	var contentType string
+
+	if cfg.PayloadTemplate != "" {
+		// Build data map for template resolution
+		var data map[string]any
+		if err := json.Unmarshal(eventData, &data); err != nil {
+			data = make(map[string]any)
+		}
+		shortType := eventType
+		if idx := strings.LastIndex(eventType, "."); idx >= 0 {
+			shortType = eventType[idx+1:]
+		}
+		data["event_type"] = shortType
+
+		rendered := resolveTemplateString(cfg.PayloadTemplate, data)
+
+		// Validate JSON if content type is application/json
+		ct := cfg.PayloadContentType
+		if ct == "" {
+			ct = "application/json"
+		}
+		if ct == "application/json" && !json.Valid([]byte(rendered)) {
+			return fmt.Errorf("payload_template rendered invalid JSON")
+		}
+		body = []byte(rendered)
+		contentType = ct
+	} else {
+		// CloudEvents-style payload (default)
+		payload := map[string]any{
+			"id":     eventID,
+			"type":   eventType,
+			"source": "c4.eventbus",
+			"data":   json.RawMessage(eventData),
+		}
+		body, _ = json.Marshal(payload)
+		contentType = "application/cloudevents+json"
+		if cfg.PayloadContentType != "" {
+			contentType = cfg.PayloadContentType
+		}
 	}
-	body, _ := json.Marshal(payload)
 
 	req, err := http.NewRequest("POST", cfg.URL, bytes.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("create request: %w", err)
 	}
-	req.Header.Set("Content-Type", "application/cloudevents+json")
+	req.Header.Set("Content-Type", contentType)
 	for k, v := range cfg.Headers {
 		req.Header.Set(k, v)
 	}

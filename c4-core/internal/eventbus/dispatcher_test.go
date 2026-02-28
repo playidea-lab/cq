@@ -3,10 +3,12 @@ package eventbus
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -657,6 +659,165 @@ func TestTemplateNestedField(t *testing.T) {
 	result3 := resolveTemplateString("Missing: {{task.nonexistent}}", data)
 	if result3 != "Missing: " {
 		t.Errorf("expected 'Missing: ', got %q", result3)
+	}
+}
+
+// --- Webhook payload_template tests ---
+
+// captureTransport is a mock RoundTripper that captures the outgoing request
+// and returns a 200 OK response, bypassing actual network I/O.
+type captureTransport struct {
+	req *http.Request
+}
+
+func (ct *captureTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	// Drain and re-buffer the body so callers can inspect it
+	body, _ := io.ReadAll(r.Body)
+	r.Body = io.NopCloser(strings.NewReader(string(body)))
+	ct.req = r
+	return &http.Response{
+		StatusCode: 200,
+		Body:       io.NopCloser(strings.NewReader("")),
+		Header:     make(http.Header),
+	}, nil
+}
+
+// newCaptureDispatcher returns a dispatcher with a mock transport and the captured request holder.
+// The URL must pass validateWebhookURL (i.e. resolve to a public IP); we use a real public hostname.
+func newCaptureDispatcher(s *Store) (*Dispatcher, *captureTransport) {
+	d := NewDispatcher(s)
+	ct := &captureTransport{}
+	d.httpClient = &http.Client{Transport: ct}
+	return d, ct
+}
+
+func TestWebhookNoTemplate(t *testing.T) {
+	// template not set → CloudEvents body + application/cloudevents+json
+	s := tempStore(t)
+	d, ct := newCaptureDispatcher(s)
+
+	cfg := `{"url":"https://example.com/hook"}`
+	rule := StoredRule{Name: "test", EventPattern: "task.*", ActionType: "webhook", ActionConfig: cfg, Enabled: true}
+	err := d.executeWebhook("ev-1", "task.completed", json.RawMessage(`{"task_id":"T-001","title":"Test"}`), rule)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	gotContentType := ct.req.Header.Get("Content-Type")
+	if gotContentType != "application/cloudevents+json" {
+		t.Errorf("expected application/cloudevents+json, got %s", gotContentType)
+	}
+	gotBody, _ := io.ReadAll(ct.req.Body)
+	var payload map[string]any
+	if err := json.Unmarshal(gotBody, &payload); err != nil {
+		t.Fatalf("body not valid JSON: %v", err)
+	}
+	if payload["type"] != "task.completed" {
+		t.Errorf("expected type=task.completed in CloudEvents payload, got %v", payload["type"])
+	}
+}
+
+func TestWebhookWithTemplate(t *testing.T) {
+	// template present → rendered body + application/json (default)
+	s := tempStore(t)
+	d, ct := newCaptureDispatcher(s)
+
+	tmpl := `{"botName":"CQ","text":"[{{event_type}}] {{task_id}}: {{title}}"}`
+	cfg := fmt.Sprintf(`{"url":"https://example.com/hook","payload_template":%q}`, tmpl)
+	rule := StoredRule{Name: "test", EventPattern: "task.*", ActionType: "webhook", ActionConfig: cfg, Enabled: true}
+	err := d.executeWebhook("ev-2", "task.completed", json.RawMessage(`{"task_id":"T-001","title":"Implement feature"}`), rule)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	gotContentType := ct.req.Header.Get("Content-Type")
+	if gotContentType != "application/json" {
+		t.Errorf("expected application/json, got %s", gotContentType)
+	}
+	gotBody, _ := io.ReadAll(ct.req.Body)
+	var payload map[string]any
+	if err := json.Unmarshal(gotBody, &payload); err != nil {
+		t.Fatalf("body not valid JSON: %v", err)
+	}
+	wantText := "[completed] T-001: Implement feature"
+	if payload["text"] != wantText {
+		t.Errorf("expected text=%q, got %q", wantText, payload["text"])
+	}
+}
+
+func TestWebhookTemplatePlaceholders(t *testing.T) {
+	// {{event_type}}, {{task_id}}, {{title}} are replaced correctly
+	s := tempStore(t)
+	d, ct := newCaptureDispatcher(s)
+
+	tmpl := `{"et":"{{event_type}}","tid":"{{task_id}}","ttl":"{{title}}"}`
+	cfg := fmt.Sprintf(`{"url":"https://example.com/hook","payload_template":%q}`, tmpl)
+	rule := StoredRule{Name: "test", EventPattern: "task.*", ActionType: "webhook", ActionConfig: cfg, Enabled: true}
+	err := d.executeWebhook("ev-3", "task.done", json.RawMessage(`{"task_id":"T-002","title":"My Task"}`), rule)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	gotBody, _ := io.ReadAll(ct.req.Body)
+	var payload map[string]any
+	if err := json.Unmarshal(gotBody, &payload); err != nil {
+		t.Fatalf("body not valid JSON: %v", err)
+	}
+	if payload["et"] != "done" {
+		t.Errorf("expected et=done, got %v", payload["et"])
+	}
+	if payload["tid"] != "T-002" {
+		t.Errorf("expected tid=T-002, got %v", payload["tid"])
+	}
+	if payload["ttl"] != "My Task" {
+		t.Errorf("expected ttl=My Task, got %v", payload["ttl"])
+	}
+}
+
+func TestWebhookCustomContentType(t *testing.T) {
+	// payload_content_type="text/plain" → reflected in Content-Type header
+	s := tempStore(t)
+	d, ct := newCaptureDispatcher(s)
+
+	cfg := `{"url":"https://example.com/hook","payload_template":"hello {{event_type}}","payload_content_type":"text/plain"}`
+	rule := StoredRule{Name: "test", EventPattern: "task.*", ActionType: "webhook", ActionConfig: cfg, Enabled: true}
+	err := d.executeWebhook("ev-4", "task.started", json.RawMessage(`{}`), rule)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	gotContentType := ct.req.Header.Get("Content-Type")
+	if gotContentType != "text/plain" {
+		t.Errorf("expected text/plain, got %s", gotContentType)
+	}
+}
+
+func TestWebhookEmptyTemplateFallback(t *testing.T) {
+	// payload_template="" → CloudEvents fallback (same as no template)
+	s := tempStore(t)
+	d, ct := newCaptureDispatcher(s)
+
+	cfg := `{"url":"https://example.com/hook","payload_template":""}`
+	rule := StoredRule{Name: "test", EventPattern: "task.*", ActionType: "webhook", ActionConfig: cfg, Enabled: true}
+	err := d.executeWebhook("ev-5", "task.completed", json.RawMessage(`{}`), rule)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	gotContentType := ct.req.Header.Get("Content-Type")
+	if gotContentType != "application/cloudevents+json" {
+		t.Errorf("expected application/cloudevents+json fallback, got %s", gotContentType)
+	}
+}
+
+func TestWebhookInvalidJSONTemplate(t *testing.T) {
+	// content_type=application/json + invalid JSON template → executeWebhook error (before HTTP call)
+	s := tempStore(t)
+	d := NewDispatcher(s)
+
+	cfg := `{"url":"https://example.com/hook","payload_template":"{invalid json","payload_content_type":"application/json"}`
+	rule := StoredRule{Name: "test", EventPattern: "task.*", ActionType: "webhook", ActionConfig: cfg, Enabled: true}
+	err := d.executeWebhook("ev-6", "task.completed", json.RawMessage(`{}`), rule)
+	if err == nil {
+		t.Fatal("expected error for invalid JSON template, got nil")
+	}
+	if !strings.Contains(err.Error(), "invalid JSON") {
+		t.Errorf("expected 'invalid JSON' in error, got: %v", err)
 	}
 }
 

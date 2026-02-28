@@ -10,6 +10,7 @@
 package config
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -164,6 +165,78 @@ type GuardConfig struct {
 	Policies       []GuardPolicyRule `mapstructure:"policies"         yaml:"policies"`
 }
 
+// NotificationChannel holds a single notification destination configuration.
+type NotificationChannel struct {
+	Name            string            `mapstructure:"name"             yaml:"name"`
+	Type            string            `mapstructure:"type"             yaml:"type"` // dooray|discord|slack|teams|generic
+	URL             string            `mapstructure:"url"              yaml:"url"`
+	MessageTemplate string            `mapstructure:"message_template" yaml:"message_template"`
+	BotName         string            `mapstructure:"bot_name"         yaml:"bot_name"`
+	Username        string            `mapstructure:"username"         yaml:"username"`
+	Headers         map[string]string `mapstructure:"headers"          yaml:"headers"`
+	PayloadTemplate string            `mapstructure:"payload_template" yaml:"payload_template"` // generic only
+	ContentType     string            `mapstructure:"content_type"     yaml:"content_type"`     // generic optional
+}
+
+// defaultMessageTemplate returns the type-specific default message template.
+func defaultMessageTemplate(channelType string) string {
+	switch channelType {
+	case "dooray":
+		return "[{{event_type}}] {{title}}"
+	case "discord":
+		return "**[{{event_type}}]** {{title}} ({{task_id}})"
+	case "slack":
+		return "[{{event_type}}] {{title}} - {{task_id}}"
+	case "teams":
+		return "[{{event_type}}] {{title}}"
+	default:
+		return "[{{event_type}}] {{title}}"
+	}
+}
+
+// jsonStr returns the JSON-encoded string content of s (without surrounding quotes).
+// Uses encoding/json.Marshal to properly escape \, ", \n, \r, \t, and control chars.
+func jsonStr(s string) string {
+	b, _ := json.Marshal(s)
+	return string(b[1 : len(b)-1]) // strip surrounding quotes
+}
+
+// BuildPayloadTemplate returns (payload, contentType) for the given channel.
+// For typed channels it auto-generates the payload from message_template.
+// For generic channels it returns PayloadTemplate as-is.
+func BuildPayloadTemplate(ch NotificationChannel) (string, string) {
+	msg := ch.MessageTemplate
+	if msg == "" {
+		msg = defaultMessageTemplate(ch.Type)
+	}
+
+	switch ch.Type {
+	case "dooray":
+		payload := `{"botName":"` + jsonStr(ch.BotName) + `","text":"` + jsonStr(msg) + `"}`
+		return payload, "application/json"
+	case "discord":
+		payload := `{"content":"` + jsonStr(msg) + `","username":"` + jsonStr(ch.Username) + `"}`
+		return payload, "application/json"
+	case "slack":
+		payload := `{"text":"` + jsonStr(msg) + `"}`
+		return payload, "application/json"
+	case "teams":
+		payload := `{"@type":"MessageCard","text":"` + jsonStr(msg) + `"}`
+		return payload, "application/json"
+	default: // generic
+		ct := ch.ContentType
+		if ct == "" {
+			ct = "application/json"
+		}
+		return ch.PayloadTemplate, ct
+	}
+}
+
+// NotificationsConfig holds all notification channel configurations.
+type NotificationsConfig struct {
+	Channels []NotificationChannel `mapstructure:"channels" yaml:"channels"`
+}
+
 // RiskPathsConfig holds scope path lists for risk classification.
 type RiskPathsConfig struct {
 	High []string `mapstructure:"high" yaml:"high"`
@@ -265,6 +338,7 @@ type C4Config struct {
 	Serve            ServeConfig                `mapstructure:"serve"                yaml:"serve"`
 	Sessions         SessionsConfig             `mapstructure:"sessions"             yaml:"sessions"`
 	RiskRouting      RiskRoutingConfig          `mapstructure:"risk_routing"         yaml:"risk_routing"`
+	Notifications    NotificationsConfig        `mapstructure:"notifications"        yaml:"notifications"`
 }
 
 // presetConfigs defines the economic mode presets.
@@ -615,6 +689,16 @@ func (m *Manager) GetModelForTask(taskID string) string {
 // Independent of EconomicMode.GetModelForTask — scope-based override only.
 func (m *Manager) GetRiskRouting() RiskRoutingConfig {
 	return m.config.RiskRouting
+}
+
+// GetNotificationChannel returns the named channel or nil if not found.
+func (m *Manager) GetNotificationChannel(name string) *NotificationChannel {
+	for i := range m.config.Notifications.Channels {
+		if m.config.Notifications.Channels[i].Name == name {
+			return &m.config.Notifications.Channels[i]
+		}
+	}
+	return nil
 }
 
 // Set updates a configuration value in memory (does not persist to file).

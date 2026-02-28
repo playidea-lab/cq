@@ -5,13 +5,15 @@ package eventbushandler
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 
+	"github.com/changmin/c4-core/internal/config"
 	"github.com/changmin/c4-core/internal/eventbus"
 	"github.com/changmin/c4-core/internal/mcp"
 )
 
 // RegisterEventBusHandlers registers c4_event_* and c4_rule_* MCP tools.
-func RegisterEventBusHandlers(reg *mcp.Registry, client *eventbus.Client) {
+func RegisterEventBusHandlers(reg *mcp.Registry, client *eventbus.Client, cfgMgr *config.Manager) {
 	// c4_event_publish — Publish an event to the EventBus
 	reg.Register(mcp.ToolSchema{
 		Name:        "c4_event_publish",
@@ -116,7 +118,7 @@ func RegisterEventBusHandlers(reg *mcp.Registry, client *eventbus.Client) {
 				"event_pattern": map[string]any{"type": "string", "description": "Event pattern to match (e.g. drive.*, task.completed)"},
 				"filter_json":   map[string]any{"type": "string", "description": "Optional JSON filter (e.g. {\"content_type\":\"application/pdf\"})"},
 				"action_type":   map[string]any{"type": "string", "description": "Action type: rpc, webhook, or log"},
-				"action_config": map[string]any{"type": "string", "description": "Action config as JSON string"},
+				"action_config": map[string]any{"type": "string", "description": "Action config as JSON string. For webhook, use {\"url\":\"...\"}. Shortcut: {\"channel\":\"name\"} to use a configured notification channel."},
 				"enabled":       map[string]any{"type": "boolean", "description": "Whether rule is enabled (default: true)"},
 				"priority":      map[string]any{"type": "integer", "description": "Rule priority (higher = runs first)"},
 			},
@@ -137,6 +139,15 @@ func RegisterEventBusHandlers(reg *mcp.Registry, client *eventbus.Client) {
 		}
 		if args.Name == "" || args.EventPattern == "" || args.ActionType == "" {
 			return nil, fmt.Errorf("name, event_pattern, and action_type are required")
+		}
+
+		// Channel shortcut: resolve notification channel from config
+		if args.ActionConfig != "" {
+			resolved, err := resolveChannelConfig(args.ActionConfig, cfgMgr)
+			if err != nil {
+				return nil, err
+			}
+			args.ActionConfig = resolved
 		}
 
 		enabled := true
@@ -260,4 +271,95 @@ func RegisterEventBusHandlers(reg *mcp.Registry, client *eventbus.Client) {
 			"name":   args.Name,
 		}, nil
 	})
+
+	// c4_notification_channels — List configured notification channels
+	reg.Register(mcp.ToolSchema{
+		Name:        "c4_notification_channels",
+		Description: "List configured notification channels from config (notifications.channels). URL is masked for security.",
+		InputSchema: map[string]any{
+			"type":       "object",
+			"properties": map[string]any{},
+		},
+	}, func(raw json.RawMessage) (any, error) {
+		if cfgMgr == nil {
+			return []map[string]any{}, nil
+		}
+		channels := cfgMgr.GetConfig().Notifications.Channels
+		items := make([]map[string]any, 0, len(channels))
+		for _, ch := range channels {
+			template, _ := config.BuildPayloadTemplate(ch)
+			items = append(items, map[string]any{
+				"name":         ch.Name,
+				"type":         ch.Type,
+				"url_masked":   maskURL(ch.URL),
+				"has_template": template != "",
+			})
+		}
+		return items, nil
+	})
+}
+
+// resolveChannelConfig checks action_config for a "channel" key.
+// If found, looks up the channel in cfgMgr and injects url + payload_template + payload_content_type.
+// If no "channel" key, returns action_config unchanged.
+func resolveChannelConfig(actionConfig string, cfgMgr *config.Manager) (string, error) {
+	var obj map[string]any
+	if err := json.Unmarshal([]byte(actionConfig), &obj); err != nil {
+		// Not a JSON object — pass through unchanged
+		return actionConfig, nil
+	}
+
+	channelName, ok := obj["channel"].(string)
+	if !ok || channelName == "" {
+		// No "channel" key — pass through unchanged
+		return actionConfig, nil
+	}
+
+	if cfgMgr == nil {
+		return "", fmt.Errorf("channel %q specified but config manager not available", channelName)
+	}
+
+	ch := cfgMgr.GetNotificationChannel(channelName)
+	if ch == nil {
+		return "", fmt.Errorf("notification channel %q not found in config", channelName)
+	}
+
+	payloadTemplate, contentType := config.BuildPayloadTemplate(*ch)
+
+	// Inject resolved fields; remove the "channel" shortcut key
+	delete(obj, "channel")
+	obj["url"] = ch.URL
+	if payloadTemplate != "" {
+		obj["payload_template"] = payloadTemplate
+		obj["payload_content_type"] = contentType
+		// Validate JSON template for application/json channels
+		if contentType == "application/json" && !json.Valid([]byte(payloadTemplate)) {
+			return "", fmt.Errorf("channel %q: payload_template is not valid JSON", channelName)
+		}
+	}
+
+	result, err := json.Marshal(obj)
+	if err != nil {
+		return "", fmt.Errorf("marshal resolved action_config: %w", err)
+	}
+	return string(result), nil
+}
+
+// maskURL returns a URL with the path component replaced by "****".
+// Example: "https://hook.dooray.com/services/123/456" → "https://hook.dooray.com/****"
+func maskURL(rawURL string) string {
+	if rawURL == "" {
+		return ""
+	}
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return "****"
+	}
+	// Build scheme://host/****  without URL-encoding the asterisks.
+	scheme := u.Scheme
+	host := u.Host
+	if scheme == "" || host == "" {
+		return "****"
+	}
+	return scheme + "://" + host + "/****"
 }

@@ -82,7 +82,7 @@ func initEmbeddedEB(ctx *initContext) {
 	}
 
 	wireAllEventBus(ctx, ebClient)
-	eventbushandler.RegisterEventBusHandlers(ctx.reg, ebClient)
+	eventbushandler.RegisterEventBusHandlers(ctx.reg, ebClient, ctx.cfgMgr)
 	ctx.sqliteStore.SetEventBus(ebClient)
 	ctx.proxy.SetEventBus(ebClient)
 
@@ -110,11 +110,11 @@ func initRemoteEB(ctx *initContext) {
 	}
 
 	wireAllEventBus(ctx, ebClient)
-	eventbushandler.RegisterEventBusHandlers(ctx.reg, ebClient)
+	eventbushandler.RegisterEventBusHandlers(ctx.reg, ebClient, ctx.cfgMgr)
 	ctx.sqliteStore.SetEventBus(ebClient)
 	ctx.proxy.SetEventBus(ebClient)
 
-	fmt.Fprintf(os.Stderr, "cq: eventbus connected (unix:%s, 6 tools)\n", sockPath)
+	fmt.Fprintf(os.Stderr, "cq: eventbus connected (unix:%s, 7 tools)\n", sockPath)
 }
 
 // wireAllEventBus fires all component EB wiring hooks plus core wiring.

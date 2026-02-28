@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -702,4 +703,224 @@ func TestStaleCheckerConfigDefaults(t *testing.T) {
 	if sc.IntervalSeconds != 60 {
 		t.Errorf("IntervalSeconds = %d, want 60", sc.IntervalSeconds)
 	}
+}
+
+// TestNotificationBuildPayloadTemplate_Dooray tests dooray payload generation.
+func TestNotificationBuildPayloadTemplate_Dooray(t *testing.T) {
+	ch := NotificationChannel{
+		Type:            "dooray",
+		BotName:         "CQ Bot",
+		MessageTemplate: "[{{event_type}}] {{title}}",
+	}
+	payload, ct := BuildPayloadTemplate(ch)
+	if ct != "application/json" {
+		t.Errorf("contentType = %q, want application/json", ct)
+	}
+	if !contains(payload, `"botName":"CQ Bot"`) {
+		t.Errorf("payload missing botName: %s", payload)
+	}
+	if !contains(payload, `"text":"[{{event_type}}] {{title}}"`) {
+		t.Errorf("payload missing text: %s", payload)
+	}
+}
+
+// TestNotificationBuildPayloadTemplate_Discord tests discord payload generation.
+func TestNotificationBuildPayloadTemplate_Discord(t *testing.T) {
+	ch := NotificationChannel{
+		Type:            "discord",
+		Username:        "CQ Bot",
+		MessageTemplate: "**[{{event_type}}]** {{title}} ({{task_id}})",
+	}
+	payload, ct := BuildPayloadTemplate(ch)
+	if ct != "application/json" {
+		t.Errorf("contentType = %q, want application/json", ct)
+	}
+	if !contains(payload, `"content":`) {
+		t.Errorf("payload missing content: %s", payload)
+	}
+	if !contains(payload, `"username":"CQ Bot"`) {
+		t.Errorf("payload missing username: %s", payload)
+	}
+}
+
+// TestNotificationBuildPayloadTemplate_Slack tests slack payload generation.
+func TestNotificationBuildPayloadTemplate_Slack(t *testing.T) {
+	ch := NotificationChannel{
+		Type:            "slack",
+		MessageTemplate: "[{{event_type}}] {{title}} - {{task_id}}",
+	}
+	payload, ct := BuildPayloadTemplate(ch)
+	if ct != "application/json" {
+		t.Errorf("contentType = %q, want application/json", ct)
+	}
+	if !contains(payload, `"text":`) {
+		t.Errorf("payload missing text: %s", payload)
+	}
+	if contains(payload, `"username"`) {
+		t.Errorf("slack payload should not have username: %s", payload)
+	}
+}
+
+// TestNotificationBuildPayloadTemplate_Generic tests generic payload passthrough.
+func TestNotificationBuildPayloadTemplate_Generic(t *testing.T) {
+	rawPayload := `{"custom":"value","msg":"hello"}`
+	ch := NotificationChannel{
+		Type:            "generic",
+		PayloadTemplate: rawPayload,
+		ContentType:     "application/json",
+	}
+	payload, ct := BuildPayloadTemplate(ch)
+	if payload != rawPayload {
+		t.Errorf("generic payload = %q, want %q", payload, rawPayload)
+	}
+	if ct != "application/json" {
+		t.Errorf("contentType = %q, want application/json", ct)
+	}
+}
+
+// TestNotificationBuildPayloadTemplate_DefaultMessageTemplate tests that omitting
+// message_template falls back to the type-specific default.
+func TestNotificationBuildPayloadTemplate_DefaultMessageTemplate(t *testing.T) {
+	cases := []struct {
+		chType      string
+		wantContain string
+	}{
+		{"dooray", "[{{event_type}}] {{title}}"},
+		{"discord", "{{title}} ({{task_id}})"},
+		{"slack", "[{{event_type}}] {{title}} - {{task_id}}"},
+		{"teams", "[{{event_type}}] {{title}}"},
+	}
+	for _, tc := range cases {
+		ch := NotificationChannel{Type: tc.chType}
+		payload, _ := BuildPayloadTemplate(ch)
+		if !contains(payload, tc.wantContain) {
+			t.Errorf("type=%s: payload %q missing %q", tc.chType, payload, tc.wantContain)
+		}
+	}
+}
+
+// TestNotificationBuildPayloadTemplate_JSONEscaping tests that special characters
+// in BotName, Username, and MessageTemplate are properly JSON-escaped.
+func TestNotificationBuildPayloadTemplate_JSONEscaping(t *testing.T) {
+	cases := []struct {
+		name        string
+		ch          NotificationChannel
+		wantContain string
+	}{
+		{
+			name: "dooray botName with double quote",
+			ch: NotificationChannel{
+				Type:            "dooray",
+				BotName:         `Bot"Name`,
+				MessageTemplate: "hello",
+			},
+			wantContain: `"botName":"Bot\"Name"`,
+		},
+		{
+			name: "dooray botName with backslash",
+			ch: NotificationChannel{
+				Type:            "dooray",
+				BotName:         `Bot\Name`,
+				MessageTemplate: "hello",
+			},
+			wantContain: `"botName":"Bot\\Name"`,
+		},
+		{
+			name: "discord username with double quote",
+			ch: NotificationChannel{
+				Type:            "discord",
+				Username:        `CQ"Bot`,
+				MessageTemplate: "msg",
+			},
+			wantContain: `"username":"CQ\"Bot"`,
+		},
+		{
+			name: "message template with newline",
+			ch: NotificationChannel{
+				Type:            "slack",
+				MessageTemplate: "line1\nline2",
+			},
+			wantContain: `"text":"line1\nline2"`,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			payload, _ := BuildPayloadTemplate(tc.ch)
+			if !contains(payload, tc.wantContain) {
+				t.Errorf("payload = %q, want substring %q", payload, tc.wantContain)
+			}
+		})
+	}
+}
+
+// TestNotificationGetChannel tests GetNotificationChannel helper.
+func TestNotificationGetChannel(t *testing.T) {
+	tmpDir := t.TempDir()
+	c4Dir := filepath.Join(tmpDir, ".c4")
+	if err := os.MkdirAll(c4Dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	configYAML := `
+notifications:
+  channels:
+    - name: dooray-team
+      type: dooray
+      url: "https://hook.dooray.com/services/test"
+      bot_name: "CQ Bot"
+    - name: discord-dev
+      type: discord
+      url: "https://discord.com/api/webhooks/test"
+      username: "CQ Bot"
+`
+	if err := os.WriteFile(filepath.Join(c4Dir, "config.yaml"), []byte(configYAML), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	mgr, err := New(tmpDir)
+	if err != nil {
+		t.Fatalf("New() failed: %v", err)
+	}
+
+	ch := mgr.GetNotificationChannel("dooray-team")
+	if ch == nil {
+		t.Fatal("expected to find dooray-team channel, got nil")
+	}
+	if ch.Type != "dooray" {
+		t.Errorf("Type = %q, want dooray", ch.Type)
+	}
+	if ch.BotName != "CQ Bot" {
+		t.Errorf("BotName = %q, want CQ Bot", ch.BotName)
+	}
+
+	missing := mgr.GetNotificationChannel("does-not-exist")
+	if missing != nil {
+		t.Errorf("expected nil for missing channel, got %+v", missing)
+	}
+}
+
+// TestNotificationBackwardCompat tests that configs without notifications still load fine.
+func TestNotificationBackwardCompat(t *testing.T) {
+	tmpDir := t.TempDir()
+	c4Dir := filepath.Join(tmpDir, ".c4")
+	if err := os.MkdirAll(c4Dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	configYAML := `
+project_id: legacy-project
+`
+	if err := os.WriteFile(filepath.Join(c4Dir, "config.yaml"), []byte(configYAML), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	mgr, err := New(tmpDir)
+	if err != nil {
+		t.Fatalf("New() failed: %v", err)
+	}
+	cfg := mgr.GetConfig()
+	if len(cfg.Notifications.Channels) != 0 {
+		t.Errorf("expected 0 channels in legacy config, got %d", len(cfg.Notifications.Channels))
+	}
+}
+
+// contains is a helper for substring checks in tests.
+func contains(s, substr string) bool {
+	return strings.Contains(s, substr)
 }
