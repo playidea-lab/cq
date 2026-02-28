@@ -153,10 +153,10 @@ C9 Knowledge — 지식 관리 (FTS5 + pgvector + Embedding + Usage + Ingestion)
 ### 테스트 현황
 | 언어 | 테스트 수 | 패키지/모듈 |
 |------|----------|------------|
-| Go | **~2,192** | 37 packages (all pass) — c4-core ~1,950 + c5 ~242 |
+| Go | **~2,185** | 37 packages (all pass) — c4-core ~1,970 + c5 ~215 |
 | Python | **728** | tests/unit/ |
 | Rust | **92** | src-tauri |
-| **합계** | **~3,012** | |
+| **합계** | **~3,005** | |
 
 ### Monorepo 구조
 ```
@@ -463,6 +463,8 @@ CP-001:    체크포인트
 
 ## C3 EventBus (internal/eventbus/) → [docs/ARCHITECTURE.md#c3-eventbus-internaleventbus](docs/ARCHITECTURE.md)
 주요: gRPC UDS + WebSocket bridge + DLQ (v4). 18종 이벤트. `c4_event_publish`로 발행, `c4_rule_add`로 구독.
+외부 알람: `notifications.channels` (config.yaml) 설정 후 `c4_rule_add`의 `channel` 파라미터로 Dooray/Discord/Slack/Teams 연동.
+`c4_notification_channels`로 등록된 채널 목록 조회.
 
 ---
 
