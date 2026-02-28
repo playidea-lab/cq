@@ -18,7 +18,7 @@ type Config struct {
 type LLMConfig struct {
 	BaseURL   string `yaml:"base_url"`   // e.g. "https://generativelanguage.googleapis.com/v1beta/openai"
 	APIKey    string `yaml:"api_key"`    // API key for the LLM provider
-	Model     string `yaml:"model"`      // default "gemini-3.0-flash"
+	Model     string `yaml:"model"`      // default "gemini-2.0-flash-lite"
 	MaxTokens int    `yaml:"max_tokens"` // default 4096
 }
 
@@ -73,7 +73,7 @@ func Default() Config {
 			MaxArtifactBytes: 10 << 30, // 10GB
 		},
 		LLM: LLMConfig{
-			Model:     "gemini-3.0-flash",
+			Model:     "gemini-2.0-flash-lite",
 			MaxTokens: 4096,
 		},
 	}

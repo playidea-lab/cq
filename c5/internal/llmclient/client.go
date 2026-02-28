@@ -24,10 +24,10 @@ type Client struct {
 // New creates a Client. baseURL should be the provider's OpenAI-compatible endpoint prefix
 // (e.g. "https://generativelanguage.googleapis.com/v1beta/openai" for Gemini,
 // "http://localhost:11434/v1" for Ollama, "https://api.openai.com/v1" for OpenAI).
-// If model is empty, "gemini-3.0-flash" is used. If maxTokens <= 0, 4096 is used.
+// If model is empty, "gemini-2.0-flash-lite" is used. If maxTokens <= 0, 4096 is used.
 func New(baseURL, apiKey, model string, maxTokens int) *Client {
 	if model == "" {
-		model = "gemini-3.0-flash"
+		model = "gemini-2.0-flash-lite"
 	}
 	if maxTokens <= 0 {
 		maxTokens = 4096
@@ -111,11 +111,11 @@ func (c *Client) Chat(ctx context.Context, system, userMsg string) (string, erro
 		return "", fmt.Errorf("llmclient: decode response: %w", err)
 	}
 
-	if cr.Error != nil {
-		return "", fmt.Errorf("llmclient: API error: %s", cr.Error.Message)
-	}
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("llmclient: unexpected status %d: %s", resp.StatusCode, string(body))
+	}
+	if cr.Error != nil {
+		return "", fmt.Errorf("llmclient: API error: %s", cr.Error.Message)
 	}
 	if len(cr.Choices) == 0 {
 		return "", fmt.Errorf("llmclient: no choices in response")

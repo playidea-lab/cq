@@ -17,6 +17,10 @@ import (
 	"github.com/piqsol/c4/c5/internal/model"
 )
 
+// doorayHTTPClient is used for outbound Dooray webhook calls.
+// A dedicated client with timeout prevents goroutine leaks on unresponsive endpoints.
+var doorayHTTPClient = &http.Client{Timeout: 15 * time.Second}
+
 // doorayInbound is the POST body sent by Dooray Slash Command.
 // Field names follow the NHN Cloud Dooray API specification.
 type doorayInbound struct {
@@ -57,7 +61,7 @@ func (s *Server) handleDooray(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	body, err := io.ReadAll(r.Body)
+	body, err := io.ReadAll(io.LimitReader(r.Body, 512<<10)) // 512 KiB limit
 	if err != nil {
 		http.Error(w, "read error", http.StatusBadRequest)
 		return
@@ -247,7 +251,7 @@ func postToDooray(ctx context.Context, webhookURL, text string) {
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := doorayHTTPClient.Do(req)
 	if err != nil {
 		log.Printf("c5: dooray: post webhook: %v", err)
 		return

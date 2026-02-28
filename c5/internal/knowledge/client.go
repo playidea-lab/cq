@@ -48,6 +48,10 @@ func (c *Client) Search(ctx context.Context, projectID, query string, limit int)
 		return nil, nil
 	}
 
+	// Truncate query to 100 runes to limit PostgREST filter injection surface.
+	if utf8.RuneCountInString(query) > 100 {
+		query = string([]rune(query)[:100])
+	}
 	orFilter := fmt.Sprintf("(title.ilike.*%s*,body.ilike.*%s*)", query, query)
 	params := url.Values{
 		"project_id": {"eq." + projectID},
@@ -79,7 +83,7 @@ func (c *Client) Search(ctx context.Context, projectID, query string, limit int)
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("knowledge: unexpected status %d", resp.StatusCode)
+		return nil, fmt.Errorf("knowledge: unexpected status %d: %s", resp.StatusCode, string(body))
 	}
 
 	var results []SearchResult
