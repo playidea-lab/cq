@@ -244,6 +244,321 @@ func TestMasterKeyEnvVarPersistence(t *testing.T) {
 		t.Fatalf("Get after reopen: %v", err)
 	}
 	if got != "persistent" {
-		t.Errorf("got %q, want %q", got, "persistent")
+		t.Errorf("got %q, want %q\n", got, "persistent")
+	}
+}
+
+// TestNewWithPaths_CreatesDB verifies that NewWithPaths creates a new DB file when one does not exist.
+func TestNewWithPaths_CreatesDB(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "new.db")
+	keyPath := filepath.Join(dir, "master.key")
+
+	// DB file must not exist yet
+	if _, err := os.Stat(dbPath); !os.IsNotExist(err) {
+		t.Fatal("pre-condition: DB file should not exist")
+	}
+
+	s, err := secrets.NewWithPaths(dbPath, keyPath)
+	if err != nil {
+		t.Fatalf("NewWithPaths: %v", err)
+	}
+	defer s.Close()
+
+	// DB file should now exist
+	if _, err := os.Stat(dbPath); err != nil {
+		t.Errorf("expected DB file to exist after NewWithPaths, got: %v", err)
+	}
+	// Should be usable
+	if err := s.Set("ping", "pong"); err != nil {
+		t.Errorf("Set on fresh DB: %v", err)
+	}
+}
+
+// TestNewWithPaths_ExistingDB verifies that reopening an existing DB with the same key works.
+func TestNewWithPaths_ExistingDB(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "reopen.db")
+	keyPath := filepath.Join(dir, "master.key")
+
+	// First open: create and write
+	s1, err := secrets.NewWithPaths(dbPath, keyPath)
+	if err != nil {
+		t.Fatalf("first open: %v", err)
+	}
+	if err := s1.Set("foo", "bar"); err != nil {
+		t.Fatalf("Set: %v", err)
+	}
+	s1.Close()
+
+	// Second open: same paths — must reuse existing DB and key
+	s2, err := secrets.NewWithPaths(dbPath, keyPath)
+	if err != nil {
+		t.Fatalf("second open: %v", err)
+	}
+	defer s2.Close()
+
+	got, err := s2.Get("foo")
+	if err != nil {
+		t.Fatalf("Get after reopen: %v", err)
+	}
+	if got != "bar" {
+		t.Errorf("got %q, want %q", got, "bar")
+	}
+}
+
+// TestStore_Delete_NotFound verifies ErrNotFound is returned when deleting a non-existent key.
+func TestStore_Delete_NotFound(t *testing.T) {
+	s := newTestStore(t)
+	err := s.Delete("no-such-key")
+	if !errors.Is(err, secrets.ErrNotFound) {
+		t.Errorf("Delete non-existent: got %v, want ErrNotFound", err)
+	}
+}
+
+// TestMasterKey_InsecurePermissions verifies that a key file with wrong permissions is rejected.
+func TestMasterKey_InsecurePermissions(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "s.db")
+	keyPath := filepath.Join(dir, "master.key")
+
+	// Write a valid-length key file but with insecure permissions (0644 instead of 0400)
+	key := make([]byte, 32)
+	if err := os.WriteFile(keyPath, key, 0644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	_, err := secrets.NewWithPaths(dbPath, keyPath)
+	if err == nil {
+		t.Fatal("expected error for insecure master key permissions, got nil")
+	}
+}
+
+// TestMasterKeyEnvVar_InvalidHex verifies that a malformed C4_MASTER_KEY env var returns an error.
+func TestMasterKeyEnvVar_InvalidHex(t *testing.T) {
+	t.Setenv("C4_MASTER_KEY", "not-valid-hex-string-at-all-!!!!")
+
+	dir := t.TempDir()
+	_, err := secrets.NewWithPaths(
+		filepath.Join(dir, "s.db"),
+		filepath.Join(dir, "master.key"),
+	)
+	if err == nil {
+		t.Fatal("expected error for invalid C4_MASTER_KEY hex, got nil")
+	}
+}
+
+// TestMasterKeyEnvVar_WrongLength verifies that a hex string with wrong byte count is rejected.
+func TestMasterKeyEnvVar_WrongLength(t *testing.T) {
+	// Valid hex but only 16 bytes (32 hex chars) instead of 32 bytes (64 hex chars)
+	t.Setenv("C4_MASTER_KEY", "0102030405060708090a0b0c0d0e0f10")
+
+	dir := t.TempDir()
+	_, err := secrets.NewWithPaths(
+		filepath.Join(dir, "s.db"),
+		filepath.Join(dir, "master.key"),
+	)
+	if err == nil {
+		t.Fatal("expected error for short C4_MASTER_KEY, got nil")
+	}
+}
+
+// TestNewWithPaths_DBOpenFailure verifies error when the DB path is not writable.
+func TestNewWithPaths_DBOpenFailure(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("root bypasses file permissions")
+	}
+	dir := t.TempDir()
+	keyPath := filepath.Join(dir, "master.key")
+
+	// Make a subdirectory that is read-only so creating DB inside it fails
+	roDir := filepath.Join(dir, "readonly")
+	if err := os.MkdirAll(roDir, 0755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.Chmod(roDir, 0555); err != nil {
+		t.Fatalf("Chmod: %v", err)
+	}
+	t.Cleanup(func() { os.Chmod(roDir, 0755) })
+
+	dbPath := filepath.Join(roDir, "sub", "nested.db") // non-existent intermediate dir
+
+	_, err := secrets.NewWithPaths(dbPath, keyPath)
+	// sql.Open is lazy; the real error surfaces at initDB (first Exec).
+	// Either open or init will fail — we just need an error.
+	if err == nil {
+		t.Skip("filesystem did not prevent DB creation (may be root or special fs)")
+	}
+}
+
+// TestSet_ClosedStore verifies that Set on a closed store returns an error.
+func TestSet_ClosedStore(t *testing.T) {
+	dir := t.TempDir()
+	s, err := secrets.NewWithPaths(
+		filepath.Join(dir, "s.db"),
+		filepath.Join(dir, "master.key"),
+	)
+	if err != nil {
+		t.Fatalf("NewWithPaths: %v", err)
+	}
+	s.Close()
+
+	if err := s.Set("k", "v"); err == nil {
+		t.Error("expected error from Set on closed store, got nil")
+	}
+}
+
+// TestGet_ClosedStore verifies that Get on a closed store returns an error.
+func TestGet_ClosedStore(t *testing.T) {
+	dir := t.TempDir()
+	s, err := secrets.NewWithPaths(
+		filepath.Join(dir, "s.db"),
+		filepath.Join(dir, "master.key"),
+	)
+	if err != nil {
+		t.Fatalf("NewWithPaths: %v", err)
+	}
+	s.Close()
+
+	_, err = s.Get("k")
+	if err == nil {
+		t.Error("expected error from Get on closed store, got nil")
+	}
+}
+
+// TestList_ClosedStore verifies that List on a closed store returns an error.
+func TestList_ClosedStore(t *testing.T) {
+	dir := t.TempDir()
+	s, err := secrets.NewWithPaths(
+		filepath.Join(dir, "s.db"),
+		filepath.Join(dir, "master.key"),
+	)
+	if err != nil {
+		t.Fatalf("NewWithPaths: %v", err)
+	}
+	s.Close()
+
+	_, err = s.List()
+	if err == nil {
+		t.Error("expected error from List on closed store, got nil")
+	}
+}
+
+// TestDelete_ClosedStore verifies that Delete on a closed store returns an error.
+func TestDelete_ClosedStore(t *testing.T) {
+	dir := t.TempDir()
+	s, err := secrets.NewWithPaths(
+		filepath.Join(dir, "s.db"),
+		filepath.Join(dir, "master.key"),
+	)
+	if err != nil {
+		t.Fatalf("NewWithPaths: %v", err)
+	}
+	s.Close()
+
+	if err := s.Delete("k"); err == nil {
+		t.Error("expected error from Delete on closed store, got nil")
+	}
+}
+
+// TestMasterKey_OpenError verifies that an unreadable key file (non-ErrNotExist) returns an error.
+func TestMasterKey_OpenError(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("root bypasses file permissions")
+	}
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "s.db")
+
+	// Create a directory where the key file should be — os.Open will fail with EISDIR or similar
+	keyPath := filepath.Join(dir, "key-as-dir")
+	if err := os.MkdirAll(keyPath, 0700); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+
+	_, err := secrets.NewWithPaths(dbPath, keyPath)
+	if err == nil {
+		t.Fatal("expected error when key path is a directory, got nil")
+	}
+}
+
+// TestMasterKey_UnreadableFile verifies that a key file with no read permission returns an error.
+func TestMasterKey_UnreadableFile(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("root bypasses file permissions")
+	}
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "s.db")
+	keyPath := filepath.Join(dir, "master.key")
+
+	// Write a valid-length key file and then remove all permissions
+	key := make([]byte, 32)
+	if err := os.WriteFile(keyPath, key, 0000); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	t.Cleanup(func() { os.Chmod(keyPath, 0600) })
+
+	_, err := secrets.NewWithPaths(dbPath, keyPath)
+	if err == nil {
+		t.Fatal("expected error for unreadable master key file, got nil")
+	}
+}
+
+// TestNewWithPaths_CorruptZeroByteKey verifies that a zero-byte key file is rejected as corrupt.
+func TestNewWithPaths_CorruptZeroByteKey(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "s.db")
+	keyPath := filepath.Join(dir, "master.key")
+
+	// Zero-byte file — triggers "corrupt: expected 32 bytes, got 0"
+	if err := os.WriteFile(keyPath, []byte{}, 0400); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	_, err := secrets.NewWithPaths(dbPath, keyPath)
+	if err == nil {
+		t.Fatal("expected error for zero-byte (corrupt) master key file, got nil")
+	}
+}
+
+// TestNew_GlobalDir exercises the New() constructor which resolves the global ~/.c4 directory.
+// Skips if the home directory is unavailable (CI environments without HOME set).
+// This is a lightweight smoke test: open, set a sentinel key, close.
+// It does NOT assert on the sentinel value to avoid cross-test pollution.
+func TestNew_GlobalDir(t *testing.T) {
+	s, err := secrets.New()
+	if err != nil {
+		t.Skipf("New() unavailable in this environment: %v", err)
+	}
+	defer s.Close()
+	// Exercise the store minimally to confirm it is functional
+	if err := s.Set("__test_new_smoke__", "ok"); err != nil {
+		t.Errorf("Set on global store: %v", err)
+	}
+	// Clean up the sentinel key so we don't pollute the real store
+	_ = s.Delete("__test_new_smoke__")
+}
+
+// TestNewWithPaths_CreateKeyInReadOnlyDir verifies that attempting to create a master key
+// in a read-only directory returns an error (covers the O_EXCL create failure path).
+func TestNewWithPaths_CreateKeyInReadOnlyDir(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("root bypasses file permissions")
+	}
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "s.db")
+
+	// Create a read-only subdirectory for the key
+	roDir := filepath.Join(dir, "ro")
+	if err := os.MkdirAll(roDir, 0500); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	t.Cleanup(func() { os.Chmod(roDir, 0700) })
+
+	keyPath := filepath.Join(roDir, "master.key")
+	// keyPath does not exist, but roDir is read-only — os.OpenFile(O_EXCL) will fail
+
+	_, err := secrets.NewWithPaths(dbPath, keyPath)
+	if err == nil {
+		t.Fatal("expected error creating master key in read-only directory, got nil")
 	}
 }

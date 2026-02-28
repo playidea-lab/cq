@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 )
 
@@ -435,5 +436,279 @@ func TestNormalizePath(t *testing.T) {
 		if got != tc.want {
 			t.Errorf("normalizePath(%q) = %q, want %q", tc.input, got, tc.want)
 		}
+	}
+}
+
+// TestRetry5xxThenSuccess verifies doWithRetry retries on 5xx and succeeds on a later attempt.
+// Server returns 503 on the first request, then 200 on the second.
+// This exercises the "resp.StatusCode >= 500 → continue" branch and the eventual success path.
+func TestRetry5xxThenSuccess(t *testing.T) {
+	var callCount atomic.Int32
+
+	mux := http.NewServeMux()
+	// List endpoint: fail with 503 once, then succeed.
+	mux.HandleFunc("GET /rest/v1/c4_drive_files", func(w http.ResponseWriter, r *http.Request) {
+		n := callCount.Add(1)
+		if n == 1 {
+			// First call: return 503 to trigger retry.
+			w.WriteHeader(http.StatusServiceUnavailable)
+			w.Write([]byte(`service unavailable`))
+			return
+		}
+		// Second call: return empty list.
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`[]`))
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	client := NewClient(srv.URL, "test-key", &staticTP{"test-token"}, "test-project")
+
+	files, err := client.List("/")
+	if err != nil {
+		t.Fatalf("List failed after retry: %v", err)
+	}
+	if len(files) != 0 {
+		t.Errorf("List returned %d files, want 0", len(files))
+	}
+	if got := callCount.Load(); got < 2 {
+		t.Errorf("expected at least 2 server calls (retry), got %d", got)
+	}
+}
+
+// TestRetryExhausted5xx verifies doWithRetry returns an error after all retries are exhausted on 5xx.
+func TestRetryExhausted5xx(t *testing.T) {
+	var callCount atomic.Int32
+
+	mux := http.NewServeMux()
+	// Always return 503.
+	mux.HandleFunc("GET /rest/v1/c4_drive_files", func(w http.ResponseWriter, r *http.Request) {
+		callCount.Add(1)
+		w.WriteHeader(http.StatusServiceUnavailable)
+		w.Write([]byte(`always unavailable`))
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	client := NewClient(srv.URL, "test-key", &staticTP{"test-token"}, "test-project")
+
+	_, err := client.List("/")
+	if err == nil {
+		t.Fatal("expected error when all retries exhausted, got nil")
+	}
+	if !strings.Contains(err.Error(), "503") {
+		t.Errorf("error = %q, want to contain '503'", err.Error())
+	}
+	// All driveMaxRetries (3) attempts should have been made.
+	if got := callCount.Load(); got != int32(driveMaxRetries) {
+		t.Errorf("expected %d server calls, got %d", driveMaxRetries, got)
+	}
+}
+
+// TestRetryConnectionFailure verifies doWithRetry returns an error when the server is unreachable.
+// Uses a port that is not listening to trigger a net.Error (connection refused).
+func TestRetryConnectionFailure(t *testing.T) {
+	// Use a server that we immediately close so the port is not listening.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	srv.Close() // Close before making requests — port no longer accepts connections.
+
+	client := NewClient(srv.URL, "test-key", &staticTP{"test-token"}, "test-project")
+
+	_, err := client.List("/")
+	if err == nil {
+		t.Fatal("expected connection error, got nil")
+	}
+}
+
+// TestRetry4xxNoRetry verifies doWithRetry does NOT retry on 4xx responses.
+// A 4xx response means the request is returned immediately (non-retryable).
+func TestRetry4xxNoRetry(t *testing.T) {
+	var callCount atomic.Int32
+
+	mux := http.NewServeMux()
+	// Return 401 Unauthorized.
+	mux.HandleFunc("GET /rest/v1/c4_drive_files", func(w http.ResponseWriter, r *http.Request) {
+		callCount.Add(1)
+		w.WriteHeader(http.StatusUnauthorized)
+		w.Write([]byte(`unauthorized`))
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	client := NewClient(srv.URL, "test-key", &staticTP{"test-token"}, "test-project")
+
+	// List calls doWithRetry; 401 should be returned without retry.
+	// The 401 response propagates as an HTTP error from the List() caller.
+	_, err := client.List("/")
+	if err == nil {
+		t.Fatal("expected error for 401 response, got nil")
+	}
+	// Only 1 server call should have been made (no retry on 4xx).
+	if got := callCount.Load(); got != 1 {
+		t.Errorf("expected 1 server call (no retry on 4xx), got %d", got)
+	}
+}
+
+// TestNewClientCustomBucket verifies that a non-empty bucketName variadic arg is used.
+func TestNewClientCustomBucket(t *testing.T) {
+	client := NewClient("https://example.supabase.co", "key", &staticTP{"tok"}, "proj", "custom-bucket")
+	if client.bucketName != "custom-bucket" {
+		t.Errorf("bucketName = %q, want %q", client.bucketName, "custom-bucket")
+	}
+}
+
+// TestNewClientDefaultBucket verifies that an empty bucketName variadic arg uses the default.
+func TestNewClientDefaultBucket(t *testing.T) {
+	client := NewClient("https://example.supabase.co", "key", &staticTP{"tok"}, "proj", "")
+	if client.bucketName != DefaultBucketName {
+		t.Errorf("bucketName = %q, want %q", client.bucketName, DefaultBucketName)
+	}
+}
+
+// TestNormalizePathRoot verifies normalizePath returns "/" for empty string.
+func TestNormalizePathRoot(t *testing.T) {
+	if got := normalizePath(""); got != "/" {
+		t.Errorf("normalizePath(%q) = %q, want %q", "", got, "/")
+	}
+}
+
+// TestDownloadIsFolder verifies Download returns an error when the path is a folder.
+func TestDownloadIsFolder(t *testing.T) {
+	srv := newTestServer(t)
+	defer srv.Close()
+
+	client := NewClient(srv.URL, "test-key", &staticTP{"test-token"}, "test-project")
+
+	// Create a folder entry.
+	if _, err := client.Mkdir("/downloads", nil); err != nil {
+		t.Fatalf("Mkdir failed: %v", err)
+	}
+
+	tmpDir := t.TempDir()
+	err := client.Download("/downloads", filepath.Join(tmpDir, "out"))
+	if err == nil {
+		t.Fatal("expected error downloading a folder, got nil")
+	}
+	if !strings.Contains(err.Error(), "folder") {
+		t.Errorf("error = %q, want 'folder' substring", err.Error())
+	}
+}
+
+// TestListError4xx verifies List returns an error on a 4xx response.
+func TestListError4xx(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /rest/v1/c4_drive_files", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		w.Write([]byte(`forbidden`))
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	client := NewClient(srv.URL, "test-key", &staticTP{"test-token"}, "test-project")
+	_, err := client.List("/")
+	if err == nil {
+		t.Fatal("expected error on 403, got nil")
+	}
+	if !strings.Contains(err.Error(), "403") {
+		t.Errorf("error = %q, want '403' substring", err.Error())
+	}
+}
+
+// TestMkdirError4xx verifies Mkdir returns an error on a 4xx response.
+func TestMkdirError4xx(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /rest/v1/c4_drive_files", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		w.Write([]byte(`forbidden`))
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	client := NewClient(srv.URL, "test-key", &staticTP{"test-token"}, "test-project")
+	_, err := client.Mkdir("/nope", nil)
+	if err == nil {
+		t.Fatal("expected error on 403, got nil")
+	}
+	if !strings.Contains(err.Error(), "403") {
+		t.Errorf("error = %q, want '403' substring", err.Error())
+	}
+}
+
+// TestInfoError4xx verifies Info returns an error on a 4xx response.
+func TestInfoError4xx(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /rest/v1/c4_drive_files", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		w.Write([]byte(`forbidden`))
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	client := NewClient(srv.URL, "test-key", &staticTP{"test-token"}, "test-project")
+	_, err := client.Info("/some/path")
+	if err == nil {
+		t.Fatal("expected error on 403, got nil")
+	}
+	if !strings.Contains(err.Error(), "403") {
+		t.Errorf("error = %q, want '403' substring", err.Error())
+	}
+}
+
+// TestMkdirWithMetadata verifies Mkdir passes metadata correctly and succeeds.
+func TestMkdirWithMetadata(t *testing.T) {
+	srv := newTestServer(t)
+	defer srv.Close()
+
+	client := NewClient(srv.URL, "test-key", &staticTP{"test-token"}, "test-project")
+	meta := json.RawMessage(`{"color":"blue"}`)
+	info, err := client.Mkdir("/colored-folder", meta)
+	if err != nil {
+		t.Fatalf("Mkdir with metadata failed: %v", err)
+	}
+	if !info.IsFolder {
+		t.Error("IsFolder should be true")
+	}
+}
+
+// TestRetryGetBodyRefresh verifies that doWithRetry re-reads the body via GetBody on retry.
+// Uses Mkdir (POST with body) and a server that fails the first POST with 503.
+func TestRetryGetBodyRefresh(t *testing.T) {
+	var callCount atomic.Int32
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /rest/v1/c4_drive_files", func(w http.ResponseWriter, r *http.Request) {
+		n := callCount.Add(1)
+		if n == 1 {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		// Second call succeeds: decode and echo back.
+		var row map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&row); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		row["id"] = "test-uuid"
+		row["created_at"] = "2026-01-01T00:00:00Z"
+		row["updated_at"] = "2026-01-01T00:00:00Z"
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode([]map[string]any{row})
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	client := NewClient(srv.URL, "test-key", &staticTP{"test-token"}, "test-project")
+
+	info, err := client.Mkdir("/test-retry-body", nil)
+	if err != nil {
+		t.Fatalf("Mkdir failed after retry: %v", err)
+	}
+	if info == nil {
+		t.Fatal("Mkdir returned nil FileInfo")
+	}
+	if got := callCount.Load(); got < 2 {
+		t.Errorf("expected at least 2 server calls (retry), got %d", got)
 	}
 }
