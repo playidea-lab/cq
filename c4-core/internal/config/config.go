@@ -118,6 +118,22 @@ type EventSinkConfig struct {
 	Token   string `mapstructure:"token"   yaml:"token"`   // default "", no auth
 }
 
+// WebhookGatewayConfig holds inbound webhook HTTP server settings.
+// WebhookGateway receives POST requests from external services (e.g. Dooray slash commands)
+// and publishes them to the local EventBus.
+type WebhookGatewayConfig struct {
+	Enabled bool   `mapstructure:"enabled" yaml:"enabled"` // default false
+	Port    int    `mapstructure:"port"    yaml:"port"`    // default 4142
+	Host    string `mapstructure:"host"    yaml:"host"`    // default "127.0.0.1"
+}
+
+// DoorayWebhookConfig holds Dooray inbound slash command settings.
+type DoorayWebhookConfig struct {
+	Enabled        bool   `mapstructure:"enabled"         yaml:"enabled"`
+	CmdToken       string `mapstructure:"cmd_token"       yaml:"cmd_token"`       // Dooray slash command token
+	DefaultChannel string `mapstructure:"default_channel" yaml:"default_channel"` // C1 channel (default "#dooray")
+}
+
 // GateSlackConnectorConfig holds Slack connector settings.
 type GateSlackConnectorConfig struct {
 	Enabled    bool   `mapstructure:"enabled"     yaml:"enabled"`
@@ -293,8 +309,9 @@ type ServeConfig struct {
 	HubPoller     ServeComponentToggle `mapstructure:"hubpoller"      yaml:"hubpoller"`
 	GPU           ServeComponentToggle `mapstructure:"gpu"            yaml:"gpu"`
 	SSESubscriber ServeComponentToggle `mapstructure:"ssesubscriber"  yaml:"ssesubscriber"`
-	StaleChecker  StaleCheckerConfig   `mapstructure:"stale_checker"  yaml:"stale_checker"`
-	Hub           ServeHubConfig       `mapstructure:"hub"            yaml:"hub"`
+	StaleChecker   StaleCheckerConfig   `mapstructure:"stale_checker"   yaml:"stale_checker"`
+	Hub            ServeHubConfig       `mapstructure:"hub"             yaml:"hub"`
+	WebhookGateway ServeComponentToggle `mapstructure:"webhook_gateway" yaml:"webhook_gateway"`
 }
 
 // PermissionReviewerConfig holds settings for the permission auto-reviewer hook.
@@ -339,6 +356,8 @@ type C4Config struct {
 	Sessions         SessionsConfig             `mapstructure:"sessions"             yaml:"sessions"`
 	RiskRouting      RiskRoutingConfig          `mapstructure:"risk_routing"         yaml:"risk_routing"`
 	Notifications    NotificationsConfig        `mapstructure:"notifications"        yaml:"notifications"`
+	WebhookGateway   WebhookGatewayConfig       `mapstructure:"webhook_gateway"      yaml:"webhook_gateway"`
+	Dooray           DoorayWebhookConfig        `mapstructure:"dooray"               yaml:"dooray"`
 }
 
 // presetConfigs defines the economic mode presets.

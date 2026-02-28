@@ -924,3 +924,76 @@ project_id: legacy-project
 func contains(s, substr string) bool {
 	return strings.Contains(s, substr)
 }
+
+func TestWebhookGatewayConfigParsing(t *testing.T) {
+	tmpDir := t.TempDir()
+	c4Dir := filepath.Join(tmpDir, ".c4")
+	if err := os.MkdirAll(c4Dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	configYAML := `
+webhook_gateway:
+  enabled: true
+  port: 4142
+  host: "0.0.0.0"
+
+dooray:
+  enabled: true
+  cmd_token: "secret-from-dooray"
+  default_channel: "#dooray"
+
+serve:
+  webhook_gateway:
+    enabled: true
+`
+	if err := os.WriteFile(filepath.Join(c4Dir, "config.yaml"), []byte(configYAML), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	mgr, err := New(tmpDir)
+	if err != nil {
+		t.Fatalf("New() failed: %v", err)
+	}
+	cfg := mgr.GetConfig()
+
+	if !cfg.WebhookGateway.Enabled {
+		t.Error("WebhookGateway.Enabled should be true")
+	}
+	if cfg.WebhookGateway.Port != 4142 {
+		t.Errorf("WebhookGateway.Port = %d, want 4142", cfg.WebhookGateway.Port)
+	}
+	if cfg.WebhookGateway.Host != "0.0.0.0" {
+		t.Errorf("WebhookGateway.Host = %q, want %q", cfg.WebhookGateway.Host, "0.0.0.0")
+	}
+	if !cfg.Dooray.Enabled {
+		t.Error("Dooray.Enabled should be true")
+	}
+	if cfg.Dooray.CmdToken != "secret-from-dooray" {
+		t.Errorf("Dooray.CmdToken = %q, want %q", cfg.Dooray.CmdToken, "secret-from-dooray")
+	}
+	if cfg.Dooray.DefaultChannel != "#dooray" {
+		t.Errorf("Dooray.DefaultChannel = %q, want %q", cfg.Dooray.DefaultChannel, "#dooray")
+	}
+	if !cfg.Serve.WebhookGateway.Enabled {
+		t.Error("Serve.WebhookGateway.Enabled should be true")
+	}
+}
+
+func TestWebhookGatewayConfigDefaults(t *testing.T) {
+	tmpDir := t.TempDir()
+	// No config.yaml → defaults used.
+	mgr, err := New(tmpDir)
+	if err != nil {
+		t.Fatalf("New() failed: %v", err)
+	}
+	cfg := mgr.GetConfig()
+
+	// Defaults: disabled, port 0 (unset), empty host.
+	if cfg.WebhookGateway.Enabled {
+		t.Error("WebhookGateway.Enabled should be false by default")
+	}
+	if cfg.Serve.WebhookGateway.Enabled {
+		t.Error("Serve.WebhookGateway.Enabled should be false by default")
+	}
+}
