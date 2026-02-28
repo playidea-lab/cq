@@ -1,7 +1,10 @@
 package eventbus
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -1042,3 +1045,149 @@ func TestMatchDomain(t *testing.T) {
 		}
 	}
 }
+
+// --- dooray_respond_llm tests ---
+
+func TestDispatcher_DoorayRespondLLM_Success(t *testing.T) {
+	s := tempStore(t)
+	d := NewDispatcher(s)
+
+	// Mock LLM returns a fixed answer.
+	mock := &mockLLMCaller{response: "안녕! 무엇을 도와드릴까요?"}
+	d.SetLLMCaller(mock)
+
+	// Mock HTTP transport to capture the POST to Dooray.
+	var capturedBody []byte
+	ct := &captureTransport{}
+	d.httpClient = &http.Client{Transport: ct}
+
+	eventData := json.RawMessage(`{"response_url":"https://hooks.dooray.com/services/1/2/tok","text":"안녕?"}`)
+	cfg := `{"system_prompt":"You are a helpful assistant.","model":"claude-haiku-test"}`
+	rule := StoredRule{Name: "llm-test", ActionType: "dooray_respond_llm", ActionConfig: cfg, Enabled: true}
+
+	err := d.executeDoorayRespondLLM("webhook.dooray.inbound", eventData, rule)
+	if err != nil {
+		t.Fatalf("executeDoorayRespondLLM: %v", err)
+	}
+
+	// Allow the goroutine to complete.
+	time.Sleep(200 * time.Millisecond)
+
+	if ct.req == nil {
+		t.Fatal("expected HTTP POST to Dooray, got none")
+	}
+	capturedBody, _ = io.ReadAll(ct.req.Body)
+	var payload map[string]any
+	if err := json.Unmarshal(capturedBody, &payload); err != nil {
+		t.Fatalf("body not valid JSON: %v\nbody=%s", err, capturedBody)
+	}
+	if payload["text"] != "안녕! 무엇을 도와드릴까요?" {
+		t.Errorf("text = %v, want LLM reply", payload["text"])
+	}
+	if payload["responseType"] != "ephemeral" {
+		t.Errorf("responseType = %v, want ephemeral", payload["responseType"])
+	}
+	if !mock.called {
+		t.Error("expected LLMCaller.Call to be called")
+	}
+	if mock.lastModel != "claude-haiku-test" {
+		t.Errorf("model = %q, want %q", mock.lastModel, "claude-haiku-test")
+	}
+}
+
+func TestDispatcher_DoorayRespondLLM_NilCaller(t *testing.T) {
+	s := tempStore(t)
+	d := NewDispatcher(s) // no LLMCaller set
+
+	eventData := json.RawMessage(`{"response_url":"https://hooks.dooray.com/services/1/2/tok","text":"hi"}`)
+	rule := StoredRule{Name: "nil-llm", ActionType: "dooray_respond_llm", ActionConfig: `{}`, Enabled: true}
+
+	err := d.executeDoorayRespondLLM("webhook.dooray.inbound", eventData, rule)
+	if err == nil {
+		t.Fatal("expected error for nil LLMCaller, got nil")
+	}
+	if !strings.Contains(err.Error(), "LLM not configured") {
+		t.Errorf("expected 'LLM not configured' in error, got: %v", err)
+	}
+}
+
+func TestDispatcher_DoorayRespondLLM_NoResponseUrl(t *testing.T) {
+	s := tempStore(t)
+	d := NewDispatcher(s)
+	d.SetLLMCaller(&mockLLMCaller{response: "hello"})
+
+	// Event data without response_url — should skip silently (return nil).
+	eventData := json.RawMessage(`{"text":"no url here"}`)
+	rule := StoredRule{Name: "no-url", ActionType: "dooray_respond_llm", ActionConfig: `{}`, Enabled: true}
+
+	err := d.executeDoorayRespondLLM("webhook.dooray.inbound", eventData, rule)
+	if err != nil {
+		t.Errorf("expected nil error when response_url missing, got: %v", err)
+	}
+}
+
+func TestDispatcher_DoorayRespondLLM_Timeout(t *testing.T) {
+	s := tempStore(t)
+	d := NewDispatcher(s)
+
+	// LLM caller that immediately returns a context-deadline error (simulating timeout).
+	done := make(chan struct{})
+	errCaller := &errLLMCaller{err: context.DeadlineExceeded, done: done}
+	d.SetLLMCaller(errCaller)
+
+	eventData := json.RawMessage(`{"response_url":"https://hooks.dooray.com/services/1/2/tok","text":"slow"}`)
+	rule := StoredRule{Name: "timeout-test", ActionType: "dooray_respond_llm", ActionConfig: `{}`, Enabled: true}
+
+	err := d.executeDoorayRespondLLM("webhook.dooray.inbound", eventData, rule)
+	if err != nil {
+		t.Fatalf("executeDoorayRespondLLM should return immediately: %v", err)
+	}
+
+	// Wait briefly for the goroutine to finish after the LLM returns an error.
+	select {
+	case <-done:
+		// goroutine finished and logged the error as expected
+	case <-time.After(2 * time.Second):
+		t.Error("goroutine did not finish within 2s")
+	}
+}
+
+func TestDispatcher_DoorayRespondLLM_InvalidURL(t *testing.T) {
+	s := tempStore(t)
+	d := NewDispatcher(s)
+
+	// LLM caller that returns immediately.
+	d.SetLLMCaller(&mockLLMCaller{response: "hello"})
+
+	// response_url points to a non-dooray.com domain — must be rejected.
+	eventData := json.RawMessage(`{"response_url":"https://attacker.example.com/hook","text":"hi"}`)
+	rule := StoredRule{Name: "invalid-url-llm", ActionType: "dooray_respond_llm", ActionConfig: `{}`, Enabled: true}
+
+	err := d.executeDoorayRespondLLM("webhook.dooray.inbound", eventData, rule)
+	if err != nil {
+		t.Fatalf("executeDoorayRespondLLM should return immediately (async): %v", err)
+	}
+
+	// Give goroutine time to run and (silently) reject the URL.
+	time.Sleep(200 * time.Millisecond)
+	// The validation error is only logged, not returned; this test verifies no panic.
+}
+
+// errLLMCaller returns an immediate error and signals done.
+type errLLMCaller struct {
+	err  error
+	done chan struct{}
+}
+
+func (e *errLLMCaller) Call(_ context.Context, _, _, _ string) (string, error) {
+	if e.done != nil {
+		defer close(e.done)
+	}
+	return "", e.err
+}
+
+// Ensure unused imports compile cleanly.
+var _ = bytes.NewReader
+var _ = errors.New
+var _ = sync.Once{}
+var _ = context.Background

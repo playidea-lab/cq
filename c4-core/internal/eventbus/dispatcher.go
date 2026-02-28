@@ -2,6 +2,7 @@ package eventbus
 
 import (
 	"bytes"
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
@@ -32,6 +33,7 @@ type Dispatcher struct {
 	httpClient   *http.Client
 	c1Poster     C1Poster     // optional: for "c1_post" action type
 	hubSubmitter JobSubmitter // optional: for "hub_submit" action type
+	llmCaller    LLMCaller    // optional: for "dooray_respond_llm" action type
 	sem          chan struct{} // bounded concurrency for dispatch goroutines
 }
 
@@ -66,6 +68,13 @@ func (d *Dispatcher) SetHubSubmitter(s JobSubmitter) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.hubSubmitter = s
+}
+
+// SetLLMCaller sets the LLM caller for "dooray_respond_llm" action type.
+func (d *Dispatcher) SetLLMCaller(caller LLMCaller) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.llmCaller = caller
 }
 
 // Dispatch matches rules against an event and executes their actions.
@@ -136,6 +145,8 @@ func (d *Dispatcher) ReplayRule(eventID, eventType string, eventData json.RawMes
 			execErr = d.executeHubSubmit(eventType, eventData, rule)
 		case "dooray_respond":
 			execErr = d.executeDoorayRespond(eventType, eventData, rule)
+		case "dooray_respond_llm":
+			execErr = d.executeDoorayRespondLLM(eventType, eventData, rule)
 		default:
 			execErr = fmt.Errorf("unknown action type: %s", rule.ActionType)
 		}
@@ -176,6 +187,8 @@ func (d *Dispatcher) executeRule(eventID, eventType string, eventData json.RawMe
 		err = d.executeHubSubmit(eventType, eventData, rule)
 	case "dooray_respond":
 		err = d.executeDoorayRespond(eventType, eventData, rule)
+	case "dooray_respond_llm":
+		err = d.executeDoorayRespondLLM(eventType, eventData, rule)
 	default:
 		err = fmt.Errorf("unknown action type: %s", rule.ActionType)
 	}
@@ -801,6 +814,108 @@ func (d *Dispatcher) executeDoorayRespond(eventType string, eventData json.RawMe
 	if resp.StatusCode >= 400 {
 		return fmt.Errorf("dooray_respond returned HTTP %d", resp.StatusCode)
 	}
+	return nil
+}
+
+// defaultDoorayLLMModel is the fallback model used by dooray_respond_llm
+// when no model is specified in the action config.
+const defaultDoorayLLMModel = "claude-haiku-4-5-20251001"
+
+// executeDoorayRespondLLM calls an LLM with the incoming Dooray slash-command
+// text as the user message, then POSTs the reply to the response_url.
+// Processing is asynchronous: the function returns immediately and the
+// LLM call + POST happen in a background goroutine (30 s timeout).
+func (d *Dispatcher) executeDoorayRespondLLM(eventType string, eventData json.RawMessage, rule StoredRule) error {
+	d.mu.RLock()
+	caller := d.llmCaller
+	d.mu.RUnlock()
+
+	if caller == nil {
+		return fmt.Errorf("dooray_respond_llm action: LLM not configured")
+	}
+
+	var cfg struct {
+		SystemPrompt string `json:"system_prompt"`
+		Model        string `json:"model"`
+		ResponseType string `json:"response_type"`
+	}
+	if err := json.Unmarshal([]byte(rule.ActionConfig), &cfg); err != nil {
+		return fmt.Errorf("parse dooray_respond_llm action_config: %w", err)
+	}
+
+	var data map[string]any
+	if err := json.Unmarshal(eventData, &data); err != nil {
+		return fmt.Errorf("unmarshal event data: %w", err)
+	}
+
+	responseURL, _ := data["response_url"].(string)
+	if responseURL == "" {
+		// No response_url — nothing to reply to; skip silently.
+		return nil
+	}
+
+	userText, _ := data["text"].(string)
+
+	model := cfg.Model
+	if model == "" {
+		model = defaultDoorayLLMModel
+	}
+	responseType := cfg.ResponseType
+	if responseType == "" {
+		responseType = "ephemeral"
+	}
+
+	// Async: return 200 immediately; LLM call happens in background.
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		reply, err := caller.Call(ctx, cfg.SystemPrompt, userText, model)
+		if err != nil {
+			log.Printf("[eventbus] dooray_respond_llm: LLM error (rule %q): %v\n", rule.Name, err)
+			return
+		}
+
+		// Security: validate response URL before POST.
+		if err := validateDoorayResponseURL(responseURL); err != nil {
+			log.Printf("[eventbus] dooray_respond_llm: invalid response_url (rule %q): %v\n", rule.Name, err)
+			return
+		}
+
+		payload := map[string]any{
+			"text":         reply,
+			"responseType": responseType,
+		}
+		body, err := json.Marshal(payload)
+		if err != nil {
+			log.Printf("[eventbus] dooray_respond_llm: marshal payload (rule %q): %v\n", rule.Name, err)
+			return
+		}
+
+		req, err := http.NewRequestWithContext(ctx, "POST", responseURL, bytes.NewReader(body))
+		if err != nil {
+			log.Printf("[eventbus] dooray_respond_llm: create request (rule %q): %v\n", rule.Name, err)
+			return
+		}
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := d.httpClient.Do(req)
+		if err != nil {
+			log.Printf("[eventbus] dooray_respond_llm: POST error (rule %q): %v\n", rule.Name, err)
+			return
+		}
+		defer func() {
+			io.Copy(io.Discard, io.LimitReader(resp.Body, 4096)) //nolint:errcheck
+			resp.Body.Close()
+		}()
+
+		if resp.StatusCode >= 500 {
+			log.Printf("[eventbus] dooray_respond_llm: Dooray server error HTTP %d (rule %q)\n", resp.StatusCode, rule.Name)
+		} else if resp.StatusCode >= 400 {
+			log.Printf("[eventbus] dooray_respond_llm: Dooray client error HTTP %d (rule %q)\n", resp.StatusCode, rule.Name)
+		}
+	}()
+
 	return nil
 }
 
