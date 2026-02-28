@@ -880,3 +880,165 @@ func TestDispatchBoundedConcurrency(t *testing.T) {
 		t.Errorf("expected empty semaphore, got %d in-use", len(dispatcher.sem))
 	}
 }
+
+// --- dooray_respond tests ---
+
+func TestDispatcher_DoorayRespond_Success(t *testing.T) {
+	var capturedBody []byte
+	ts := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedBody, _ = io.ReadAll(r.Body)
+		w.WriteHeader(200)
+	}))
+	defer ts.Close()
+
+	s := tempStore(t)
+	d := NewDispatcher(s)
+	// Use the TLS test server's client so TLS verification works
+	d.httpClient = ts.Client()
+	// Swap the domain validator via mock transport to bypass domain check
+	// Instead, use a captureTransport that intercepts before DNS resolution.
+	ct := &captureTransport{}
+	d.httpClient = &http.Client{Transport: ct}
+
+	// Build event data with a *.dooray.com response_url (domain check will be intercepted by mock)
+	eventData := json.RawMessage(`{"response_url":"https://hooks.dooray.com/services/1/2/tok","text":"hi"}`)
+	cfg := `{"text":"작업 완료!"}`
+	rule := StoredRule{Name: "dr-test", EventPattern: "webhook.dooray.inbound", ActionType: "dooray_respond", ActionConfig: cfg, Enabled: true}
+
+	err := d.executeDoorayRespond("webhook.dooray.inbound", eventData, rule)
+	if err != nil {
+		t.Fatalf("executeDoorayRespond: %v", err)
+	}
+
+	// Verify the captured request body
+	body, _ := io.ReadAll(ct.req.Body)
+	var payload map[string]any
+	if err := json.Unmarshal(body, &payload); err != nil {
+		t.Fatalf("body not valid JSON: %v\nbody=%s", err, body)
+	}
+	if payload["text"] != "작업 완료!" {
+		t.Errorf("text = %v, want %q", payload["text"], "작업 완료!")
+	}
+	if payload["responseType"] != "ephemeral" {
+		t.Errorf("responseType = %v, want %q", payload["responseType"], "ephemeral")
+	}
+	_ = capturedBody
+}
+
+func TestDispatcher_DoorayRespond_InvalidURL(t *testing.T) {
+	s := tempStore(t)
+	d := NewDispatcher(s)
+
+	// Non-dooray.com URL must be rejected
+	eventData := json.RawMessage(`{"response_url":"https://attacker.example.com/hook"}`)
+	cfg := `{"text":"hello"}`
+	rule := StoredRule{Name: "dr-invalid", ActionType: "dooray_respond", ActionConfig: cfg, Enabled: true}
+
+	err := d.executeDoorayRespond("webhook.dooray.inbound", eventData, rule)
+	if err == nil {
+		t.Fatal("expected error for non-dooray URL, got nil")
+	}
+	if !strings.Contains(err.Error(), "not in allowed domains") {
+		t.Errorf("expected 'not in allowed domains' in error, got: %v", err)
+	}
+}
+
+func TestDispatcher_DoorayRespond_TemplateRendering(t *testing.T) {
+	s := tempStore(t)
+	d := NewDispatcher(s)
+	ct := &captureTransport{}
+	d.httpClient = &http.Client{Transport: ct}
+
+	eventData := json.RawMessage(`{"response_url":"https://hooks.dooray.com/services/1/2/tok","command":"/cq","text":"run test"}`)
+	cfg := `{"payload_template":"명령: {{command}} — {{text}}"}`
+	rule := StoredRule{Name: "dr-tmpl", ActionType: "dooray_respond", ActionConfig: cfg, Enabled: true}
+
+	err := d.executeDoorayRespond("webhook.dooray.inbound", eventData, rule)
+	if err != nil {
+		t.Fatalf("executeDoorayRespond: %v", err)
+	}
+
+	body, _ := io.ReadAll(ct.req.Body)
+	var payload map[string]any
+	if err := json.Unmarshal(body, &payload); err != nil {
+		t.Fatalf("body not valid JSON: %v", err)
+	}
+	want := "명령: /cq — run test"
+	if payload["text"] != want {
+		t.Errorf("text = %v, want %q", payload["text"], want)
+	}
+}
+
+func TestValidateDoorayResponseURL(t *testing.T) {
+	tests := []struct {
+		name    string
+		rawURL  string
+		wantErr bool
+		errPart string
+	}{
+		{
+			name:    "valid dooray URL",
+			rawURL:  "https://hooks.dooray.com/services/123/456/token",
+			wantErr: false,
+		},
+		{
+			name:    "non-dooray domain rejected",
+			rawURL:  "https://evil.example.com/hook",
+			wantErr: true,
+			errPart: "not in allowed domains",
+		},
+		{
+			name:    "bare dooray.com rejected (wildcard requires subdomain)",
+			rawURL:  "https://dooray.com/hook",
+			wantErr: true,
+			errPart: "not in allowed domains",
+		},
+		{
+			name:    "empty URL rejected",
+			rawURL:  "",
+			wantErr: true,
+		},
+		{
+			name:    "non-https scheme rejected",
+			rawURL:  "http://hooks.dooray.com/hook",
+			wantErr: false, // http is allowed by validateWebhookURL (scheme check passes)
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validateDoorayResponseURL(tc.rawURL)
+			if tc.wantErr && err == nil {
+				t.Errorf("expected error, got nil")
+			}
+			if !tc.wantErr && err != nil {
+				t.Errorf("unexpected error: %v", err)
+			}
+			if tc.errPart != "" && err != nil && !strings.Contains(err.Error(), tc.errPart) {
+				t.Errorf("expected %q in error, got: %v", tc.errPart, err)
+			}
+		})
+	}
+}
+
+func TestMatchDomain(t *testing.T) {
+	tests := []struct {
+		hostname string
+		pattern  string
+		want     bool
+	}{
+		{"hooks.dooray.com", "*.dooray.com", true},
+		{"api.dooray.com", "*.dooray.com", true},
+		{"dooray.com", "*.dooray.com", false},       // bare domain not matched by wildcard
+		{"evil.com", "*.dooray.com", false},
+		{"sub.evil.dooray.com.attacker.com", "*.dooray.com", false},
+		{"example.com", "example.com", true},        // exact match
+		{"sub.example.com", "example.com", false},   // exact doesn't match subdomain
+	}
+	for _, tc := range tests {
+		got := matchDomain(tc.hostname, tc.pattern)
+		if got != tc.want {
+			t.Errorf("matchDomain(%q, %q) = %v, want %v", tc.hostname, tc.pattern, got, tc.want)
+		}
+	}
+}

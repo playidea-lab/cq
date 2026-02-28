@@ -297,8 +297,8 @@ func TestWebhookGatewayComponent_EventDataSecurity(t *testing.T) {
 		t.Fatalf("unmarshal event: %v", err)
 	}
 
-	// Sensitive fields must not be in the published event.
-	for _, forbidden := range []string{"cmd_token", "cmdToken", "app_token", "appToken", "response_url", "responseUrl"} {
+	// Sensitive authentication fields must not be in the published event.
+	for _, forbidden := range []string{"cmd_token", "cmdToken", "app_token", "appToken"} {
 		if _, ok := eventData[forbidden]; ok {
 			t.Errorf("sensitive field %q should not be in event data", forbidden)
 		}
@@ -310,6 +310,62 @@ func TestWebhookGatewayComponent_EventDataSecurity(t *testing.T) {
 	}
 	if eventData["text"] != "hello" {
 		t.Errorf("text = %v, want %q", eventData["text"], "hello")
+	}
+
+	// response_url must be included (needed for dooray_respond action).
+	if eventData["response_url"] != "https://secret-url" {
+		t.Errorf("response_url = %v, want %q", eventData["response_url"], "https://secret-url")
+	}
+}
+
+func TestWebhookGatewayComponent_ResponseUrlInEvent(t *testing.T) {
+	port := freePort(t)
+
+	var captured []json.RawMessage
+	pub := &dataCapturingPublisher{fn: func(data json.RawMessage) { captured = append(captured, data) }}
+
+	comp := NewWebhookGatewayComponent("127.0.0.1", port, config.DoorayWebhookConfig{}, pub)
+
+	ctx := context.Background()
+	if err := comp.Start(ctx); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	defer comp.Stop(ctx)
+	time.Sleep(50 * time.Millisecond)
+
+	wantResponseURL := "https://hooks.dooray.com/services/123/456/abc"
+	payload := DoorayInbound{
+		Text:        "hello",
+		ResponseURL: wantResponseURL,
+	}
+	body, _ := json.Marshal(payload)
+	url := fmt.Sprintf("http://127.0.0.1:%d/v1/webhooks/dooray", port)
+	resp, err := http.Post(url, "application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	resp.Body.Close()
+	time.Sleep(20 * time.Millisecond)
+
+	pub.mu.Lock()
+	capturedLen := len(captured)
+	var firstCapture json.RawMessage
+	if capturedLen > 0 {
+		firstCapture = captured[0]
+	}
+	pub.mu.Unlock()
+
+	if capturedLen == 0 {
+		t.Fatal("no event captured")
+	}
+
+	var eventData map[string]any
+	if err := json.Unmarshal(firstCapture, &eventData); err != nil {
+		t.Fatalf("unmarshal event: %v", err)
+	}
+
+	if eventData["response_url"] != wantResponseURL {
+		t.Errorf("response_url = %v, want %q", eventData["response_url"], wantResponseURL)
 	}
 }
 

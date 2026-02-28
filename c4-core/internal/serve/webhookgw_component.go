@@ -179,7 +179,7 @@ func (c *WebhookGatewayComponent) handleDooray(w http.ResponseWriter, r *http.Re
 		}
 	}
 
-	// Publish to EventBus (security: omit appToken, cmdToken, responseUrl).
+	// Publish to EventBus (security: omit appToken, cmdToken; include responseUrl for reply routing).
 	if c.pub != nil {
 		eventData := map[string]any{
 			"source":        "dooray",
@@ -192,6 +192,7 @@ func (c *WebhookGatewayComponent) handleDooray(w http.ResponseWriter, r *http.Re
 			"text":          payload.Text,
 			"command":       payload.Command,
 			"trigger_id":    payload.TriggerID,
+			"response_url":  payload.ResponseURL,
 		}
 		data, _ := json.Marshal(eventData)
 		go c.pub.PublishAsync("webhook.dooray.inbound", "dooray", data, "")

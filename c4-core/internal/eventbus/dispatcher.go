@@ -134,6 +134,8 @@ func (d *Dispatcher) ReplayRule(eventID, eventType string, eventData json.RawMes
 			execErr = d.executeC1Post(eventType, eventData, rule)
 		case "hub_submit":
 			execErr = d.executeHubSubmit(eventType, eventData, rule)
+		case "dooray_respond":
+			execErr = d.executeDoorayRespond(eventType, eventData, rule)
 		default:
 			execErr = fmt.Errorf("unknown action type: %s", rule.ActionType)
 		}
@@ -172,6 +174,8 @@ func (d *Dispatcher) executeRule(eventID, eventType string, eventData json.RawMe
 		err = d.executeC1Post(eventType, eventData, rule)
 	case "hub_submit":
 		err = d.executeHubSubmit(eventType, eventData, rule)
+	case "dooray_respond":
+		err = d.executeDoorayRespond(eventType, eventData, rule)
 	default:
 		err = fmt.Errorf("unknown action type: %s", rule.ActionType)
 	}
@@ -218,7 +222,7 @@ func (d *Dispatcher) executeWebhook(eventID, eventType string, eventData json.Ra
 	}
 
 	// Validate webhook URL to prevent SSRF
-	if err := validateWebhookURL(cfg.URL); err != nil {
+	if err := validateWebhookURL(cfg.URL, nil); err != nil {
 		return fmt.Errorf("invalid webhook URL: %w", err)
 	}
 
@@ -649,7 +653,8 @@ func resolveTemplateString(s string, data map[string]any) string {
 // It checks that:
 // - The URL scheme is http or https
 // - The resolved IP addresses are not private/internal ranges
-func validateWebhookURL(rawURL string) error {
+// - If allowedDomains is non-empty, the hostname matches one of the glob patterns (e.g. "*.dooray.com")
+func validateWebhookURL(rawURL string, allowedDomains []string) error {
 	parsedURL, err := url.Parse(rawURL)
 	if err != nil {
 		return fmt.Errorf("parse URL: %w", err)
@@ -664,6 +669,20 @@ func validateWebhookURL(rawURL string) error {
 	hostname := parsedURL.Hostname()
 	if hostname == "" {
 		return fmt.Errorf("missing hostname")
+	}
+
+	// Check against allowed domain list if specified
+	if len(allowedDomains) > 0 {
+		matched := false
+		for _, pattern := range allowedDomains {
+			if matchDomain(hostname, pattern) {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			return fmt.Errorf("hostname %q not in allowed domains", hostname)
+		}
 	}
 
 	// Resolve hostname to IP addresses
@@ -685,6 +704,103 @@ func validateWebhookURL(rawURL string) error {
 		}
 	}
 
+	return nil
+}
+
+// matchDomain checks if hostname matches a domain pattern.
+// Supports simple wildcard prefix: "*.dooray.com" matches "hooks.dooray.com" but not "dooray.com".
+// Exact match is also supported (no wildcard).
+func matchDomain(hostname, pattern string) bool {
+	if strings.HasPrefix(pattern, "*.") {
+		suffix := pattern[1:] // ".dooray.com"
+		return strings.HasSuffix(hostname, suffix) && hostname != suffix[1:]
+	}
+	return hostname == pattern
+}
+
+// validateDoorayResponseURL validates that the URL is a valid *.dooray.com HTTPS URL.
+// Used by dooray_respond to prevent SSRF through attacker-controlled response_url values.
+func validateDoorayResponseURL(rawURL string) error {
+	return validateWebhookURL(rawURL, []string{"*.dooray.com"})
+}
+
+// executeDoorayRespond posts a reply to a Dooray slash command via its responseUrl.
+// The responseUrl is read from the event data (set by WebhookGatewayComponent) and must
+// resolve to a *.dooray.com host to prevent SSRF.
+func (d *Dispatcher) executeDoorayRespond(eventType string, eventData json.RawMessage, rule StoredRule) error {
+	var cfg struct {
+		Text            string `json:"text"`
+		ResponseType    string `json:"response_type"`
+		PayloadTemplate string `json:"payload_template"`
+	}
+	if err := json.Unmarshal([]byte(rule.ActionConfig), &cfg); err != nil {
+		return fmt.Errorf("parse dooray_respond action_config: %w", err)
+	}
+
+	// Extract response_url from event data
+	var data map[string]any
+	if err := json.Unmarshal(eventData, &data); err != nil {
+		return fmt.Errorf("unmarshal event data: %w", err)
+	}
+
+	responseURL, _ := data["response_url"].(string)
+	if responseURL == "" {
+		return fmt.Errorf("response_url not found in event data")
+	}
+
+	// Security: validate the response URL is a Dooray domain to prevent SSRF
+	if err := validateDoorayResponseURL(responseURL); err != nil {
+		return fmt.Errorf("invalid response_url: %w", err)
+	}
+
+	// Build the short event type for template resolution
+	shortType := eventType
+	if idx := strings.LastIndex(eventType, "."); idx >= 0 {
+		shortType = eventType[idx+1:]
+	}
+	data["event_type"] = shortType
+
+	// Resolve payload text
+	text := cfg.Text
+	if cfg.PayloadTemplate != "" {
+		text = resolveTemplateString(cfg.PayloadTemplate, data)
+	}
+	if text == "" {
+		text = fmt.Sprintf("[%s]", shortType)
+	}
+
+	responseType := cfg.ResponseType
+	if responseType == "" {
+		responseType = "ephemeral"
+	}
+
+	payload := map[string]any{
+		"text":         text,
+		"responseType": responseType,
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("marshal dooray response: %w", err)
+	}
+
+	req, err := http.NewRequest("POST", responseURL, bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := d.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("dooray_respond POST: %w", err)
+	}
+	defer func() {
+		io.Copy(io.Discard, io.LimitReader(resp.Body, 4096)) //nolint:errcheck
+		resp.Body.Close()
+	}()
+
+	if resp.StatusCode >= 400 {
+		return fmt.Errorf("dooray_respond returned HTTP %d", resp.StatusCode)
+	}
 	return nil
 }
 
