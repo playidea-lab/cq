@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.46.0] - 2026-03-01
+
+### ✨ Features
+- **c9-loop**: Knowledge integration 추가 — CHECK phase `c4_experiment_record`, CONFERENCE/REFINE phase `c4_knowledge_search(doc_type="experiment")`, FINISH phase `c4_knowledge_record`
+- **c9-survey**: Step 5 `c4_knowledge_record` 연동 추가 — survey 결과를 Knowledge DB에 insight로 저장
+- **skills**: c9-loop/c9-survey 파라미터 수정 및 호출 방식 명확화 — `tags=` → `doc_type=` 대체, bash pipe → 스킬 직접 호출
+- **c5**: LLM + Knowledge client integration for Dooray server-side processing
+
+### 🔧 Chores
+- **docs**: user/ 서브모듈 v0.45.0 현행화
+
+---
+
 ## [v0.45.0] - 2026-03-01
 
 ### ✨ Features
