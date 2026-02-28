@@ -1,65 +1,21 @@
-# /c4-polish
+# /c4-polish (Deprecated)
 
-Trigger: `/c4-polish` or keywords: `polish`, `폴리쉬`, `수렴`
+> **`/c4-polish` has been merged into `/c4-finish`.**
 
-## What it does
-
-Build-test-review-fix loop that runs in two phases:
-
-1. **Quality gate** — fix until CRITICAL + HIGH issues reach zero
-2. **Full convergence** — fix until a reviewer finds zero modifications
-
-Every round includes a full build and test run before the review.
+The build-test-review-fix loop is now a built-in phase of `/c4-finish`. No separate invocation is needed.
 
 ```
-/c4-polish
-→ build + test
-→ spawn fresh reviewer
-→ reviewer finds issues → fix + commit
-→ build + test again
-→ spawn new reviewer (clean context)
-→ repeat
-→ reviewer returns "no changes needed" → CONVERGED ✅
+/c4-plan "feature description"   → discovery + design + tasks
+/c4-run                          → implement in parallel
+/c4-finish                       → polish loop (built-in) → build → test → commit ✅
 ```
 
-## When to run
+## What moved where
 
-`/c4-run` calls `/c4-polish` automatically in continuous mode — you typically don't need to invoke it manually.
+| Previously | Now |
+|-----------|-----|
+| `/c4-polish` — build-test-review-fix loop | Built into `/c4-finish` (Step 0: Polish Loop) |
+| Two-phase: quality gate → full convergence | Same logic, auto-runs inside `/c4-finish` |
+| Called automatically by `/c4-run` | Still auto-called, via `/c4-finish` |
 
-```
-/c4-plan → /c4-run → [auto: polish → finish]
-```
-
-Run it manually when:
-- You've made additional changes after `/c4-run` completed
-- You want to run a targeted polish pass on specific directories
-
-## Convergence condition
-
-Polish stops when a reviewer finds **zero modifications** — not just when severity counts drop, but when there is genuinely nothing left to change.
-
-## Options
-
-```
-/c4-polish                        # default (max 8 rounds, threshold=medium)
-/c4-polish --max-rounds 5         # stop after 5 rounds
-/c4-polish --threshold low        # also fix LOW severity issues
-/c4-polish --scope "hub/ llm/"    # limit to specific directories
-/c4-polish --no-test              # skip test phase (fast UI-only changes)
-```
-
-## Round history output
-
-```
-## Polish Summary
-
-- Rounds: 3/8 (converged)
-- Total modifications found: 13 → Fixed: 13
-- Remaining: 0
-
-| Round | CRIT | HIGH | MED | LOW | Action  |
-|-------|------|------|-----|-----|---------|
-| 1     | 1    | 2    | 4   | 2   | Fixed   |
-| 2     | 0    | 1    | 2   | 1   | Fixed   |
-| 3     | 0    | 0    | 0   | 0   | PASS ✅ |
-```
+See [/c4-finish](/workflow/finish) for the complete post-implementation workflow.

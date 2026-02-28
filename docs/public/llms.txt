@@ -35,8 +35,9 @@ cd your-project && cq claude
 | /c4-finish | finish, 마무리 | Build/test/docs/commit routine |
 | /c4-status | status, 상태 | Visual progress report |
 | /c4-quick | quick, 빠르게 | Single task without planning phase |
-| /c4-polish | polish | Fix loop until zero reviewer changes |
 | /c4-checkpoint | (auto) | Phase gate: approve or request changes |
+| /c4-attach | 세션 이름, attach | Name the current session for later resume |
+| /c4-reboot | reboot, 재시작 | Reboot the current named session |
 
 ## Key MCP Tools
 

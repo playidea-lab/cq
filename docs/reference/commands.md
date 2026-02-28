@@ -69,22 +69,38 @@ cq auth status   # Show current authentication status
 
 ### `cq ls`
 
-List named Claude Code sessions (tmux-style).
+List named Claude Code sessions with columnar output.
 
 ```sh
-cq ls            # Show all named sessions with their UUIDs
+cq ls
 ```
+
+Example output:
+
+```
+● my-feature   a07c5035  ~/git/myproject       Mar 01 10:30
+  auth-fix     5a98a761  ~/git/myproject        Feb 28 23:12  ✉2
+  data-work    869fd61e  ~/git/data             Feb 26 18:03
+    Analyzing training data pipeline
+```
+
+- `●` marks the current active session
+- `✉N` shows unread inter-session mail count
+- Memo (if set) is displayed on the line below
 
 ### `cq session`
 
 Manage named Claude Code sessions.
 
 ```sh
-cq session name <session-name>   # Attach a name to the current session
-cq session rm <session-name>     # Remove a named session
+cq session name <session-name>              # Attach a name to the current session
+cq session name <session-name> -m "memo"   # Attach name with memo
+cq session rm <session-name>               # Remove a named session
 ```
 
 Sessions can be resumed with `cq claude -t <session-name>`.
+
+Use `/c4-attach` inside Claude Code to name a session without leaving the editor.
 
 ### `cq mail`
 
@@ -136,8 +152,8 @@ Skills are invoked inside Claude Code as `/skill-name`.
 | `/c4-finish` | "마무리", "finish" | Build → test → docs → commit |
 | `/c4-status` | "상태", "status" | Visual task progress |
 | `/c4-quick` | "quick", "빠르게" | Single task, no planning |
-| `/c4-polish` | "polish" | Build-test-review-fix loop until zero changes. Called automatically by `/c4-run`. |
-| `/c4-refine` | "refine" | *(Deprecated — plan critique is now built into `/c4-plan`)* |
+| `/c4-polish` | "polish" | *(Deprecated — built into `/c4-finish`)* |
+| `/c4-refine` | "refine" | *(Deprecated — built into `/c4-finish`)* |
 | `/c4-checkpoint` | checkpoint reached | Approve / request changes / replan |
 | `/c4-validate` | "검증", "validate" | Run lint + tests |
 | `/c4-review` | "review" | 3-pass code review with 6-axis evaluation |
@@ -148,6 +164,8 @@ Skills are invoked inside Claude Code as `/skill-name`.
 | `/c4-clear` | "clear" | Reset C4 state for debugging |
 | `/c4-swarm` | "swarm" | Spawn coordinator-led agent team |
 | `/c4-standby` | "대기", "standby" | Become a C5 Hub worker (full tier) |
+| `/c4-attach` | "세션 이름", "attach" | Name the current session for later resume |
+| `/c4-reboot` | "reboot", "재시작" | Reboot the current named session |
 | `/c4-init` | "init", "초기화" | Initialize C4 in current project |
 | `/c4-release` | "release" | Generate CHANGELOG from git history |
 | `/c4-help` | "help" | Quick reference for all skills |

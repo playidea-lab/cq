@@ -51,7 +51,7 @@ features:
 
   - icon: 🛡️
     title: Workflow Gates
-    details: Hook-based quality enforcement. `git commit` is blocked until `/c4-polish` converges. `/c4-finish` requires a polish gate record in the DB.
+    details: Hook-based quality enforcement. `git commit` is blocked until `/c4-finish` completes the built-in polish loop. Deprecated skills (`/c4-polish`, `/c4-refine`) are intercepted and redirected automatically.
 
   - icon: 📱
     title: Headless Auth

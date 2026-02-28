@@ -3,8 +3,8 @@
 {"name":"c4-finish","trigger":["/c4-finish","마무리","finish","완료"],"description":"Build → test → docs → commit. Post-implementation routine.","tier":"all","category":"workflow"}
 {"name":"c4-status","trigger":["/c4-status","상태","status"],"description":"Visual task graph with progress, dependency graph, queue summary.","tier":"all","category":"workflow"}
 {"name":"c4-quick","trigger":["/c4-quick","quick","빠르게"],"description":"Create + assign one task immediately, skip planning phase.","tier":"all","category":"workflow"}
-{"name":"c4-polish","trigger":["/c4-polish","polish"],"description":"Build-test-review-fix loop until reviewer finds zero changes.","tier":"all","category":"quality"}
-{"name":"c4-refine","trigger":["/c4-refine","refine"],"description":"Iterative review-fix loop using isolated worker context.","tier":"all","category":"quality"}
+{"name":"c4-polish","trigger":["/c4-polish","polish"],"description":"[DEPRECATED] Built into /c4-finish. No separate invocation needed.","tier":"all","category":"quality","deprecated":true}
+{"name":"c4-refine","trigger":["/c4-refine","refine"],"description":"[DEPRECATED] Built into /c4-finish. No separate invocation needed.","tier":"all","category":"quality","deprecated":true}
 {"name":"c4-checkpoint","trigger":["/c4-checkpoint"],"description":"4-lens phase gate: approve, request-changes, replan, or redesign.","tier":"all","category":"quality"}
 {"name":"c4-validate","trigger":["/c4-validate","검증","validate"],"description":"Run lint + tests. CRITICAL blocks commit, HIGH requires review.","tier":"all","category":"quality"}
 {"name":"c4-review","trigger":["/c4-review","review"],"description":"3-pass review with 6-axis evaluation. Generates formal review document.","tier":"all","category":"quality"}
@@ -15,8 +15,10 @@
 {"name":"c4-clear","trigger":["/c4-clear","clear"],"description":"Reset C4 state for debugging. Clears tasks, events, locks.","tier":"all","category":"task"}
 {"name":"c4-swarm","trigger":["/c4-swarm","swarm"],"description":"Spawn coordinator-led agent team. Modes: standard, review, investigate.","tier":"all","category":"collaboration"}
 {"name":"c4-standby","trigger":["/c4-standby","대기","standby","worker mode"],"description":"Convert session into persistent C5 Hub worker.","tier":"full","category":"collaboration"}
-{"name":"c2-paper-review","trigger":["논문 리뷰","paper review","/c2-paper-review"],"description":"Academic paper review via C2. 3-pass, 6-axis evaluation, bilingual output.","tier":"all","category":"research"}
+{"name":"c2-paper-review","trigger":["논문 리뷰","paper review","/c2-paper-review"],"description":"[DEPRECATED] Use /c4-review instead.","tier":"all","category":"research","deprecated":true}
 {"name":"research-loop","trigger":["research loop","/research-loop"],"description":"Paper-experiment improvement loop. Iterates until target quality reached.","tier":"all","category":"research"}
 {"name":"c4-init","trigger":["/c4-init","init","초기화"],"description":"Initialize C4 in current project. Runs cq claude/cursor/codex.","tier":"all","category":"utility"}
 {"name":"c4-release","trigger":["/c4-release","release"],"description":"Generate CHANGELOG from git history. Semantic version suggestion.","tier":"all","category":"utility"}
 {"name":"c4-help","trigger":["/c4-help","help"],"description":"Quick reference for all skills, agents, and MCP tools.","tier":"all","category":"utility"}
+{"name":"c4-attach","trigger":["/c4-attach","세션 이름","attach","name this session"],"description":"Attach a name to the current session for later resume with `cq claude -t <name>`. Optionally add a memo.","tier":"all","category":"utility"}
+{"name":"c4-reboot","trigger":["/c4-reboot","reboot","재시작","restart session"],"description":"Reboot current named session. cq resumes the same session UUID automatically.","tier":"all","category":"utility"}

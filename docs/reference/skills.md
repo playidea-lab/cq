@@ -1,6 +1,6 @@
 # Skills Reference
 
-Skills are slash commands invoked inside Claude Code. All 22 skills are embedded in the CQ binary (`skills_embed` build tag) — no internet required after install.
+Skills are slash commands invoked inside Claude Code. All 24 skills are embedded in the CQ binary (`skills_embed` build tag) — no internet required after install.
 
 ## Core Workflow
 
@@ -16,8 +16,8 @@ Skills are slash commands invoked inside Claude Code. All 22 skills are embedded
 
 | Skill | Triggers | Description |
 |-------|----------|-------------|
-| `/c4-polish` | polish | Continuous build-test-review-fix loop until reviewer finds zero changes. Two phases: quality gate (CRITICAL+HIGH=0) then full convergence (modifications=0). Called automatically by `/c4-run`. |
-| `/c4-refine` | refine | *(Deprecated — plan critique loop is now built into `/c4-plan` Phase 4.5)* |
+| `/c4-polish` | polish | *(Deprecated — polish loop is now built into `/c4-finish`. No separate invocation needed.)* |
+| `/c4-refine` | refine | *(Deprecated — quality loop is now built into `/c4-finish`. No separate invocation needed.)* |
 | `/c4-checkpoint` | (auto at checkpoint) | Phase gate: 4-lens review (holistic / user-flow / cascade / ship-ready). Approve, request changes, replan, or redesign. |
 | `/c4-validate` | validate, 검증 | Run lint + tests with severity-based handling. CRITICAL blocks commit, HIGH requires review, MEDIUM is recommended. |
 | `/c4-review` | review | Comprehensive 3-pass code or paper review with 6-axis evaluation. Generates formal review document. |
@@ -43,7 +43,7 @@ Skills are slash commands invoked inside Claude Code. All 22 skills are embedded
 
 | Skill | Triggers | Description |
 |-------|----------|-------------|
-| `/c2-paper-review` | 논문 리뷰, paper review | Academic paper review via C2 document lifecycle. 3-pass review, 6-axis evaluation, bilingual output, persona learning. |
+| `/c2-paper-review` | 논문 리뷰, paper review | *(Deprecated — use `/c4-review` instead.)* |
 | `/research-loop` | research loop | Paper-experiment improvement loop. Iterates review → plan → experiment → re-review until target quality reached. |
 
 ## Utilities
@@ -52,7 +52,9 @@ Skills are slash commands invoked inside Claude Code. All 22 skills are embedded
 |-------|----------|-------------|
 | `/c4-init` | init, 초기화 | Initialize C4 in current project. Detects installation path, runs `cq claude/cursor/codex`. |
 | `/c4-release` | release | Generate CHANGELOG from git history. Conventional Commits analysis, semantic version suggestion, tag creation. |
-| `/c4-help` | help | Quick reference for skills, agents, and MCP tools. Decision tree + keyword search across all 22 skills. |
+| `/c4-help` | help | Quick reference for skills, agents, and MCP tools. Decision tree + keyword search across all 24 skills. |
+| `/c4-attach` | 세션 이름, attach, name this session | Attach a name to the current session for later resume with `cq claude -t <name>`. Optionally add a memo. |
+| `/c4-reboot` | reboot, 재시작 | Reboot the current named session. `cq` resumes with the same session UUID automatically. |
 
 ---
 
