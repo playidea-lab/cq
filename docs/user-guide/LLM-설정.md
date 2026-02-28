@@ -23,10 +23,10 @@ cq secret list                     # 저장된 키 이름 확인
 ### 키 해석 우선순위
 
 ```
-config.yaml api_key  →  api_key_env (환경변수)  →  ~/.c4/secrets.db
+~/.c4/secrets.db (cq secret set)  →  환경변수 (예: ANTHROPIC_API_KEY)
 ```
 
-세 방법 모두 지원되며 앞쪽이 우선합니다. 권장 방식은 `cq secret` 입니다.
+권장 방식은 `cq secret set`으로 암호화 저장하는 것입니다.
 
 ---
 

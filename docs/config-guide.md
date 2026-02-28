@@ -38,8 +38,8 @@ cloud:
   oauth_timeout: 120          # 초 단위
 
 # LLM 게이트웨이
-# API 키: cq secret set openai.api_key (권장) 또는 api_key_env / api_key 필드
-# 키 해석 우선순위: api_key > api_key_env > ~/.c4/secrets.db
+# API 키: cq secret set openai.api_key (권장)
+# 키 해석 우선순위: ~/.c4/secrets.db (cq secret set) > 환경변수 (예: OPENAI_API_KEY)
 llm_gateway:
   enabled: false
   default: "openai"
