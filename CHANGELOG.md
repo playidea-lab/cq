@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.42.0] - 2026-02-28
+
+### ✨ Features
+- **c3/webhookgw**: 양방향 Dooray 연동 — WebhookGateway inbound 수신 (v0.41.0 outbound 완성)
+  - `WebhookGatewayComponent`: `POST /v1/webhooks/dooray` 핸들러 (port 4142, configurable)
+  - `subtle.ConstantTimeCompare` cmdToken 검증 — timing side-channel 방지
+  - `webhook.dooray.inbound` EventBus 이벤트 발행 (appToken/cmdToken/responseUrl 제외)
+  - Dooray 응답: `{"text":"수신 완료","responseType":"ephemeral"}`
+  - `serve.webhook_gateway.enabled` + `dooray.cmd_token` config 스키마 추가
+  - `DOORAY_CMD_TOKEN` 환경변수 폴백 지원
+  - `serve_webhookgw.go` (c3_eventbus) + stub 빌드 태그 분리
+  - 테스트 12개 추가 (token 검증, 보안 필드 노출 방지, nil publisher, method 검증 등)
+
+### 📚 Documentation
+- **AGENTS.md**: 테스트 수 갱신 (c4-core ~1,982, 합계 ~2,197)
+
+---
+
 ## [v0.41.0] - 2026-02-28
 
 ### ✨ Features
