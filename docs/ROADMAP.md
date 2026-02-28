@@ -1,8 +1,8 @@
 # C4 Roadmap
 
-## Current Version: v0.40.0 (Knowledge Reindex + OllamaEmbeddings + QM 배치 품질 수렴)
+## Current Version: v0.45.0 (Named Session UX + cq ls 포맷 개선)
 
-현재 버전은 **Go MCP Server (118 base + Hub tiered 등), Native Go/Dart LSP (goast/dartast), LLM Gateway (캐시 최적화), CDP Runner + WebMCP + Auto-Discovery, Cloud Foundation (CloudPrimaryStore + Session Limit), Knowledge v4 (OllamaEmbeddings + reindex + distill), C1 Unified Dashboard Messenger (A2UI 응답 라우팅), C3 EventBus v4, C5 Hub Server (headless auth + Device/Link Flow), 22개 Skills, 프로젝트 단위 2-layer Permission Hook, bats 테스트 스위트, 쉘 자동완성, OS 서비스 통합**를 포함합니다.
+현재 버전은 **Go MCP Server (118 base + Hub tiered 등), Native Go/Dart LSP (goast/dartast), LLM Gateway (캐시 최적화), CDP Runner + WebMCP + Auto-Discovery, Cloud Foundation (CloudPrimaryStore + Session Limit), Knowledge v4 (OllamaEmbeddings + reindex + distill), C1 Unified Dashboard Messenger (A2UI 응답 라우팅), C3 EventBus v4, C5 Hub Server (Tenant Isolation + Dooray webhook), 22개 Skills, 3-layer Deprecated 스킬 강제 시스템, 프로젝트 단위 2-layer Permission Hook, bats 테스트 스위트, Named Session (reboot/attach/ls), 쉘 자동완성, OS 서비스 통합**를 포함합니다.
 
 ### 핵심 구조
 
@@ -42,11 +42,41 @@
 - **C1 Documents** - 마크다운 파일 편집기, 지속성 (persona/skill/spec/config)
 - **C3 EventBus v4** - gRPC daemon (UDS) + WebSocket bridge + DLQ + Filter v2, Python sidecar piggyback, task lifecycle events
 - **코드베이스**: Go ~54.9K (c4-core) + Go ~7.3K (c5) + Python ~22.9K + Rust ~10.2K + TS+CSS ~13.7K + SQL ~1.3K = **~110.3K LOC (src)**, 테스트 ~68.7K LOC, **총 ~179.0K LOC**
-- **테스트**: Go ~2,192 (c4-core ~1,950 + c5 ~242) + Python 728 + Rust 92 = **~3,012 tests** (37 packages)
+- **테스트**: Go ~1,999 (c4-core ~1,767 + c5 ~232) + Python 728 + Rust 92 = **~2,819 tests** (45 packages)
 
 ---
 
 ## 완료된 릴리즈 이력
+
+### v0.45.0 ✅ (2026-03-01)
+- **ls**: `cq ls` 출력 포맷 전면 개선 — 컬럼 정렬, CJK 폭 인식, `●` 인디케이터, `✉N` unread 아이콘
+- **session**: reboot 후 세션 이름 갱신 + 중복 alias 방지 + `cq ls (current)` 중복 제거
+- **c4-attach**: `$CQ_SESSION_UUID` env var 사용 강제 (JSONL 경로 추론 금지, `--force` 플래그 추가)
+
+### v0.44.0 ✅ (2026-03-01)
+- **c5/sse**: SSE 이벤트 프로젝트 격리 — `broadcastSSEEvent(projectID)` 테넌트 간 누출 차단
+- **c5/tenant**: DAG/Edge/DeployRule ProjectID 필드 + `projectIDFromContext` 격리 쿼리
+- **c5/dooray**: Dooray webhook 핸들러 + fly.io 배포 E2E 검증
+- **c4-gate**: c4-finish 인터셉트 게이트 강화 (AND 조건 완화)
+- **dooray**: 로컬 inbound 코드 제거 (fly.io 배포로 통합)
+
+### v0.43.0 ✅ (2026-03-01)
+- **gemini**: Gemini 3.0 에이전트 업그레이드 + C1 "Hands" 브리지
+- **enforce**: 3-layer deprecated 스킬 강제 시스템 (hook + archtest + lint-skills)
+- **c3/eventbus**: Dooray 양방향 응답 (`c4_dooray_respond` MCP 도구)
+- **skills**: plan-run-finish 워크플로우 + C9 지식 게이트 패턴
+
+### v0.42.1 ✅ (2026-02-28)
+- **coverage**: cloud/eventbus/secrets/drive/artifact 커버리지 대폭 향상 (30~95% 경로 포함)
+
+### v0.42.0 ✅ (2026-02-28)
+- **ls**: `cq ls` → `✉N unread` 아이콘 (기존 `[N unread]` 개선)
+- **sessions**: named session `--force` 오버라이트 지원, `cq session rm` 전체 삭제
+- **dooray**: WebhookGateway HTTP Component + spyPublisher goroutine-safe 패턴
+
+### v0.41.0 ✅ (2026-02-28)
+- **knowledge**: c4_knowledge_stats, c4_knowledge_reindex, c4_knowledge_distill MCP 도구
+- **c5/coverage**: Worker API 테스트 커버리지 향상, DAG 실패 전파 수정
 
 ### v0.40.0 ✅ (2026-02-28)
 - **knowledge**: `OllamaEmbeddings` 프로바이더 추가 + `c4_knowledge_reindex` MCP 도구 `provider` 파라미터 연동

@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.45.0] - 2026-03-01
+
+### ✨ Features
+- **ls**: `cq ls` 출력 포맷 전면 개선 — 컬럼 정렬, CJK 폭 인식 (`lsDispWidth/lsPadToWidth/lsTruncateToWidth`), `●` 현재 세션 인디케이터, `Jan 02 15:04` 간소화 날짜, `✉N` unread 아이콘
+
+### 🐛 Bug Fixes
+- **session**: reboot 후 세션 이름 미갱신 수정 — `launchToolNamed` reboot 핸들러에서 `named-sessions.json` 재조회하여 `name` 변수 갱신
+- **session**: `cq session name` 동일 UUID 중복 alias 방지 — `break` 제거로 같은 UUID 항목 전체 삭제 (first-memo/tool 보존)
+- **ls**: `cq ls`에서 동일 UUID `(current)` 중복 표시 방지 — 첫 일치 후 `curUUID` 초기화
+
+---
+
 ## [v0.44.0] - 2026-03-01
 
 ### ✨ Features
@@ -23,6 +35,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### 📚 Documentation
 - **agents**: Go 테스트 수 업데이트 (c4-core ~1,767 + c5 ~232 = ~1,999, 45 packages)
+
+---
+
+## [v0.43.0] - 2026-03-01
+
+### ✨ Features
+- **gemini**: Gemini 3.0 에이전트 업그레이드 + C1 "Hands" 브리지 (WebSocket 기반 네이티브 셸 실행)
+- **enforce**: 3-layer deprecated 스킬 강제 시스템
+  - Layer 1: `c4-gate.sh` Hook Gate — c4-polish/c4-refine → c4-finish 리다이렉트 차단
+  - Layer 2: Arch Test — `TestDeprecatedSkillsAreStubs`, `TestFinishSkillsHaveKnowledgeGate`, `TestPlanSkillsHaveKnowledgeRead`
+  - Layer 3: Skill Linter — `scripts/lint-skills.sh`, `make lint-skills`
+- **c3/eventbus**: Dooray 양방향 응답 — `c4_dooray_respond` MCP 도구 + `dooray_respond_llm` action type + LLM caller
+- **skills**: plan-run-finish 3단계 워크플로우 + C9 지식 게이트 패턴 (finish=기록 게이트, plan=조회 게이트)
+
+### 🐛 Bug Fixes
+- **reboot**: `.reboot` 파일에 UUID 기록하여 올바른 세션 복구 보장
+- **archtest**: C3 EventBus dooray_respond 추가에 따른 ratchet allowlist 업데이트
+
+### ♻️ Refactoring
+- **skills**: c4-polish(336→17줄), c4-refine(339→17줄) deprecated stub으로 축약
+
+### 🔧 Chores
+- **dooray**: WebhookGateway Stop() mutex 해제 후 Shutdown 패턴 + HTTPS 강제 + 보안 모델 문서화
+- **bats**: c4gate hooktest 케이스 14→19개 (deprecated 차단 4 + c4-finish 긍정 케이스 1 추가)
 
 ---
 
