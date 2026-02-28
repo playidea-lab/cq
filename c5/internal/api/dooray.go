@@ -103,7 +103,15 @@ func (s *Server) handleDooray(w http.ResponseWriter, r *http.Request) {
 
 	// Server-side LLM path.
 	if s.llmClient != nil {
-		go s.processDoorayServerSide(payload)
+		select {
+		case s.llmSem <- struct{}{}: // acquire slot
+			go func() {
+				defer func() { <-s.llmSem }() // release slot
+				s.processDoorayServerSide(payload)
+			}()
+		default:
+			log.Printf("c5: dooray: LLM goroutine pool full — dropping request from %q", payload.UserID)
+		}
 		return
 	}
 
@@ -257,6 +265,7 @@ func postToDooray(ctx context.Context, webhookURL, text string) {
 		return
 	}
 	defer resp.Body.Close()
+	io.Copy(io.Discard, resp.Body) //nolint:errcheck // drain for connection reuse
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		log.Printf("c5: dooray: webhook returned status %d", resp.StatusCode)
 	}

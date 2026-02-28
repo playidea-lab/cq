@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 	"unicode/utf8"
 )
@@ -52,6 +53,8 @@ func (c *Client) Search(ctx context.Context, projectID, query string, limit int)
 	if utf8.RuneCountInString(query) > 100 {
 		query = string([]rune(query)[:100])
 	}
+	// Strip PostgREST or-filter metacharacters to prevent filter injection.
+	query = strings.NewReplacer("(", "", ")", "", ",", " ", "*", "").Replace(query)
 	orFilter := fmt.Sprintf("(title.ilike.*%s*,body.ilike.*%s*)", query, query)
 	params := url.Values{
 		"project_id": {"eq." + projectID},

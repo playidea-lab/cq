@@ -57,6 +57,7 @@ type Server struct {
 	doorayWebhookURL string                       // default Incoming Webhook URL
 	doorayCmdToken   string                       // cmd token for slash command auth
 	channelMap       map[string]DoorayChannel     // channelID → project routing
+	llmSem           chan struct{}                 // semaphore: max concurrent LLM goroutines
 
 	// jobMu protects jobNotify. When a new job is queued, jobNotify is closed
 	// (broadcasting to all long-poll waiters) and replaced with a new channel.
@@ -130,6 +131,7 @@ func NewServer(cfg Config) *Server {
 		doorayWebhookURL: cfg.DoorayWebhookURL,
 		doorayCmdToken:   cfg.DoorayCmdToken,
 		channelMap:       cfg.ChannelMap,
+		llmSem:           make(chan struct{}, 16), // max 16 concurrent LLM goroutines
 	}
 	s.registerRoutes()
 

@@ -112,7 +112,11 @@ func (c *Client) Chat(ctx context.Context, system, userMsg string) (string, erro
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("llmclient: unexpected status %d: %s", resp.StatusCode, string(body))
+		errBody := body
+		if len(errBody) > 512 {
+			errBody = errBody[:512]
+		}
+		return "", fmt.Errorf("llmclient: unexpected status %d: %s", resp.StatusCode, string(errBody))
 	}
 	if cr.Error != nil {
 		return "", fmt.Errorf("llmclient: API error: %s", cr.Error.Message)
