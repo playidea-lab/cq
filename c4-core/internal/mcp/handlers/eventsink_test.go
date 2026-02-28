@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/changmin/c4-core/internal/eventbus"
+	"github.com/changmin/c4-core/internal/mcp/handlers/eventbushandler"
 )
 
 // capturePublisher records PublishAsync calls for test assertions.
@@ -31,7 +32,7 @@ func (c *capturePublisher) PublishAsync(evType, source string, data json.RawMess
 
 func TestEventSinkServer_PublishSuccess(t *testing.T) {
 	pub := &capturePublisher{}
-	srv, err := StartEventSinkServer(0, "", pub) // port=0 → disabled
+	srv, err := eventbushandler.StartEventSinkServer(0, "", pub) // port=0 → disabled
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -170,7 +171,7 @@ func TestEventSinkServer_MissingEventType400(t *testing.T) {
 
 func TestEventSinkServer_Disabled(t *testing.T) {
 	pub := &capturePublisher{}
-	srv, err := StartEventSinkServer(0, "", pub)
+	srv, err := eventbushandler.StartEventSinkServer(0, "", pub)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -182,7 +183,7 @@ func TestEventSinkServer_Disabled(t *testing.T) {
 func TestEventSinkServer_StartAndStop(t *testing.T) {
 	pub := &capturePublisher{}
 	// Use a random high port to avoid conflicts
-	srv, err := StartEventSinkServer(14242, "", pub)
+	srv, err := eventbushandler.StartEventSinkServer(14242, "", pub)
 	if err != nil {
 		t.Fatalf("start failed: %v", err)
 	}

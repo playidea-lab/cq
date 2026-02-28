@@ -167,6 +167,9 @@ func (c *WebhookGatewayComponent) handleDooray(w http.ResponseWriter, r *http.Re
 	// Token verification (skip if no token configured).
 	// Dooray sends appToken (app-level) in every request; cmdToken is per-command and may differ.
 	// We accept a match on either field so that operators can configure either token.
+	// Security model: accepting appToken match means the configured token grants access to ALL
+	// slash commands registered under the same Dooray app. If per-command isolation is required,
+	// deploy a separate WebhookGatewayComponent per command with a distinct CmdToken.
 	// Note: subtle.ConstantTimeCompare returns 0 immediately when lengths differ (length oracle).
 	// This is acceptable for static webhook tokens; HMAC-based dynamic tokens would need padding.
 	if c.doorayCfg.CmdToken != "" {

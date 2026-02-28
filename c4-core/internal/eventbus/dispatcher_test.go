@@ -1004,7 +1004,7 @@ func TestValidateDoorayResponseURL(t *testing.T) {
 		{
 			name:    "non-https scheme rejected",
 			rawURL:  "http://hooks.dooray.com/hook",
-			wantErr: false, // http is allowed by validateWebhookURL (scheme check passes)
+			wantErr: true, // ValidateDoorayResponseURL enforces https only
 		},
 	}
 

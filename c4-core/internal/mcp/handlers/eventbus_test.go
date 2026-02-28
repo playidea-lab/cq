@@ -11,6 +11,7 @@ import (
 	"github.com/changmin/c4-core/internal/eventbus"
 	pb "github.com/changmin/c4-core/internal/eventbus/pb"
 	"github.com/changmin/c4-core/internal/mcp"
+	"github.com/changmin/c4-core/internal/mcp/handlers/eventbushandler"
 	"google.golang.org/grpc"
 )
 
@@ -47,7 +48,7 @@ func setupEventBusTest(t *testing.T) (*mcp.Registry, func()) {
 	}
 
 	reg := mcp.NewRegistry()
-	RegisterEventBusHandlers(reg, ebClient)
+	eventbushandler.RegisterEventBusHandlers(reg, ebClient, nil)
 
 	cleanup := func() {
 		ebClient.Close()

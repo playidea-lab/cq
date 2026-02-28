@@ -738,7 +738,17 @@ func matchDomain(hostname, pattern string) bool {
 // ValidateDoorayResponseURL validates that the URL is a valid *.dooray.com HTTPS URL.
 // Used by dooray_respond to prevent SSRF through attacker-controlled response_url values.
 // Exported so eventbushandler (c4_dooray_respond MCP tool) can reuse the same check.
+// Note: pre-flight DNS validation does not fully mitigate DNS rebinding. The IP check
+// happens here but http.Client re-resolves DNS independently at connect time. For
+// *.dooray.com this is an acceptable residual risk (operator-controlled domain).
 func ValidateDoorayResponseURL(rawURL string) error {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return fmt.Errorf("parse response_url: %w", err)
+	}
+	if parsed.Scheme != "https" {
+		return fmt.Errorf("response_url must use https, got %s", parsed.Scheme)
+	}
 	return validateWebhookURL(rawURL, []string{"*.dooray.com"})
 }
 
@@ -870,7 +880,12 @@ func (d *Dispatcher) executeDoorayRespondLLM(eventType string, eventData json.Ra
 		responseType = "ephemeral"
 	}
 
-	// Async: return 200 immediately; LLM call happens in background.
+	// Async: return nil immediately so executeRule records "ok" and the event is NOT sent to DLQ.
+	// Failures inside this goroutine (LLM error, HTTP POST error) are only logged;
+	// they do not surface to the DLQ or the dispatch log.
+	// Concurrency: each invocation spawns one unbounded goroutine (not bounded by d.sem).
+	// The LLM call is capped at 30s per goroutine, so maximum in-flight goroutines
+	// equals the number of simultaneous dooray_respond_llm events (typically low).
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
