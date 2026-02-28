@@ -10,15 +10,15 @@ Plan, execute, review, and learn — automated end-to-end.
 
 ![Go](https://img.shields.io/badge/Go-1.22+-00ADD8?logo=go&logoColor=white)
 ![Python](https://img.shields.io/badge/Python-3.11+-3776AB?logo=python&logoColor=white)
-![Tools](https://img.shields.io/badge/MCP_Tools-156-blueviolet)
-![Tests](https://img.shields.io/badge/Tests-2%2C302+-brightgreen)
+![Tools](https://img.shields.io/badge/MCP_Tools-144-blueviolet)
+![Tests](https://img.shields.io/badge/Tests-2%2C581+-brightgreen)
 ![License](https://img.shields.io/badge/License-Personal_Study-orange)
 
 </div>
 
 ---
 
-CQ turns Claude Code into a full project management system. It provides **156 MCP tools** (114 base + 26 Hub + 16 tiered C7/C6/C8), a structured workflow engine, multi-lens code review, knowledge feedback loops, distributed job scheduling, and GPU-aware task management — all through natural language. Run the CLI with `cq`.
+CQ turns Claude Code into a full project management system. It provides **144 MCP tools** (118 base + 26 Hub), plus 15 optional tiered tools (C6/C7/C8), a structured workflow engine, multi-lens code review, knowledge feedback loops, distributed job scheduling, and GPU-aware task management — all through natural language. Run the CLI with `cq`.
 
 ```
 You: /c4-plan "Add user authentication with JWT"
@@ -53,7 +53,7 @@ CQ breaks features into tasks, assigns them to workers (parallel) or claims them
 ## Architecture
 
 ```
-Claude Code ──stdio──▶ Go MCP Server (114 base + 26 Hub + Tiered C7/C6/C8 = 156 tools)
+Claude Code ──stdio──▶ Go MCP Server (118 base + 26 Hub = 144 tools, +15 optional tiered)
                         │
                         ├── Go Native ──────── State, Tasks, Files, Git, Validation
                         ├── SQLite Store ───── Specs, Designs, Checkpoints, Artifacts
@@ -107,7 +107,7 @@ Restart Claude Code, then:
 
 ```bash
 cq doctor           # Verify installation (8 health checks)
-/c4-status          # Verify connection (156 tools registered)
+/c4-status          # Verify connection (144 tools registered)
 /c4-plan "feature"  # Start planning
 /c4-run             # Execute tasks
 ```
@@ -182,14 +182,18 @@ c4_lighthouse(action="promote", name="export_api")
 - **C3 EventBus** — gRPC event daemon with WebSocket bridge, DLQ, correlation tracking
 - **C0 Drive** — Supabase Storage integration (upload, download, mkdir, list)
 - **CDP Runner** — Browser automation via Chrome DevTools Protocol
+- **cq serve** — Long-running service manager (StaleChecker, EventBus, C5 Hub subprocess); install as OS service via `cq serve install`
 
 ### Developer Experience
-- **21 slash commands** — `/c4-plan`, `/c4-run`, `/c4-status`, `/c4-checkpoint`, `/c4-swarm`, `/c4-polish`, `/c4-finish`, `/c4-quick`, `/c4-submit`, `/c4-release`, ...
+- **24 slash commands** — `/c4-plan`, `/c4-run`, `/c4-status`, `/c4-checkpoint`, `/c4-swarm`, `/c4-polish`, `/c4-finish`, `/c4-quick`, `/c4-submit`, `/c4-release`, `/c4-attach`, `/c4-reboot`, ...
 - **37 specialized agents** — `code-reviewer`, `ml-engineer`, `security-auditor`, `debugger`, ...
+- **Shell completion** — `cq completion bash/zsh/fish`; auto-installed by `install.sh`
+- **Workflow gates** — Hook-based: `git commit` blocked until `/c4-polish` done; `/c4-finish` requires polish gate
+- **Headless auth** — `cq auth login --device` (user_code) / `--link` (URL) for SSH/container environments
 - **7 hooks** — Secret scanning, force-push prevention, auto-lint (Python/TypeScript)
 - **Economic mode** — Model routing presets (standard / economic / ultra-economic / quality)
 
-## MCP Tools (156)
+## MCP Tools (144)
 
 | Category | Count | Examples |
 |----------|-------|---------|
@@ -219,7 +223,7 @@ c4_lighthouse(action="promote", name="export_api")
 | SQL (`infra/`) | ~1.1K | — | ~1.1K |
 | **Total** | **~90.9K** | **~50.8K** | **~141.7K LOC** |
 
-**Tests:** Go ~1,513 (c4-core ~1,339 + c5 174) · Python 697 · Rust 92 → **~2,302 total**
+**Tests:** Go ~1,797 (c4-core ~1,582 + c5 ~215) · Python 697 · Rust 92 → **~2,581 total**
 
 ## Configuration
 

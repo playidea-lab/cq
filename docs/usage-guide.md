@@ -1,6 +1,6 @@
 # CQ Usage Guide
 
-> 103개 도구, 16개 커맨드, 37개 에이전트 — 상황에 맞는 최적 경로를 30초 안에 선택하기
+> 144개 도구, 24개 커맨드, 37개 에이전트 — 상황에 맞는 최적 경로를 30초 안에 선택하기
 
 ---
 
@@ -18,7 +18,7 @@
 │  → /c4-quick "설명" → 작업 → /c4-submit
 │
 ├─ 중규모 (5-15파일, 아키텍처 확정)
-│  → /c4-add-task 반복 → /c4-run → /c4-polish → /c4-finish
+│  → /c4-add-task 반복 → /c4-run → /c4-polish → /c4-finish → /c4-release
 │    또는 Direct: c4_claim → c4_report
 │
 ├─ 대규모 (15+파일, 새 도메인)
@@ -231,7 +231,7 @@ c4_parse_document(file_path="thesis.docx")
 | 커맨드 | 용도 | 인자 형식 | 사용 시점 |
 |--------|------|----------|-----------|
 | `/c4-interview` | 심층 인터뷰 | `"주제"` | 모호한 요구사항 탐색 |
-| `/c4-release` | 체인지로그 생성 | (없음) | 릴리즈 전 |
+| `/c4-release` | 체인지로그 + 태그 생성 | `[vX.Y.Z]` `[--dry-run]` `[--no-push]` | `/c4-finish` 후 자동 실행 (또는 수동) |
 | `/c4-research` | 연구 반복 | `[start\|status\|next\|record\|approve]` | 논문 품질 반복 개선 (alias: `/research-loop`) |
 | `/c4-review` | 논문 리뷰 | `<pdf_path>` | 학술 논문 6축 분석 (alias: `/c2-review`) |
 | `/c4-init` | 프로젝트 초기화 | (없음) | 새 프로젝트 시작 (또는 터미널에서 `c4`) |
@@ -429,7 +429,7 @@ c4_llm_costs()                                     # 누적 비용 추적
 
 ## 7. 도구 우선순위 종합
 
-103개 도구를 다 외울 필요 없습니다.
+144개 도구를 다 외울 필요 없습니다.
 
 ### 3계층 분류
 
