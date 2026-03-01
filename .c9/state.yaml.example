@@ -1,0 +1,51 @@
+# C9 Research Loop State
+# This file is the single source of truth for research loop configuration.
+# SECURITY: Never store api_key here. Use `cq secret set` instead.
+#
+# phase: CONFERENCE | IMPLEMENT | RUN | CHECK | REFINE | FINISH | DONE
+phase: CONFERENCE
+round: 0
+
+# Domain-neutral primary metric
+metric:
+  name: "MPJPE"                  # metric name (MPJPE, F1, BLEU, etc.)
+  lower_is_better: true          # true for error metrics, false for accuracy
+  convergence_threshold: 0.5     # minimum improvement to continue
+  baseline: ~                    # initial value (set after round 0)
+
+# Hub connection (api_key via `cq secret set hub.api_key`)
+hub:
+  url: "http://localhost:8585"
+
+# Notification channels
+notify:
+  dooray_webhook: ~              # optional Dooray webhook URL
+  session: ~                     # optional cq session name
+  bot_name: "C9 Lab"
+  server_id: ~
+  templates:
+    dooray: "{emoji} **[C9 R{round} · {phase}]** [{server}] {message}"
+    mail: "[C9-{phase}] Round={round} server={server} {message}"
+
+# Currently running jobs
+active_jobs: []
+
+# Experiment history (domain-neutral)
+metric_history: []
+# Example entry:
+#   - round: 0
+#     best_exp: "exp001_baseline"
+#     value: 102.6               # primary metric value
+#     pa_value: 72.2             # optional secondary metric
+#     improvement: ~             # delta vs previous round
+#     note: "baseline"
+
+# Finish state
+finish:
+  best_round: ~
+  best_value: ~
+  best_model_path: ~
+  artifact_path: ~
+  completed_at: ~
+
+max_rounds: 10

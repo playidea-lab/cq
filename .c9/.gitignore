@@ -1,0 +1,9 @@
+# C9 research loop runtime state (contains env-specific values)
+/state.yaml
+
+# Experiment outputs
+/experiments/
+
+# Survey results
+/surveys/
+
