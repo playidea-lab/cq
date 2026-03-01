@@ -141,6 +141,10 @@ fi
 # ── POLL ───────────────────────────────────────────────────────
 echo "[c9-run] 완료 폴링 시작 (${POLL_INTERVAL}s 간격)"
 JOBS_FILE="$ROUNDS_DIR/jobs.json"
+if [[ ! -f "$JOBS_FILE" ]]; then
+    echo "[c9-run] Error: $JOBS_FILE 없음. 먼저 제출을 실행하세요 (--poll-only 없이)." >&2
+    exit 1
+fi
 MAX_WAIT_MIN=360
 MAX_POLLS=$(( MAX_WAIT_MIN * 60 / POLL_INTERVAL ))
 poll_count=0

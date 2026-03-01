@@ -68,19 +68,25 @@ case "$PHASE" in
     *)          EMOJI="ℹ️"  ;;
 esac
 
-# ── 템플릿 렌더링 ─────────────────────────────────────────────
+# ── 템플릿 렌더링 (env var 패턴 — sed 구분자 충돌 방지) ──────
 render_template() {
     local tmpl="$1"
-    local safe_msg safe_server
-    safe_msg=$(printf '%s' "$MESSAGE" | sed 's/[&|\\]/\\&/g')
-    safe_server=$(printf '%s' "$SERVER_ID" | sed 's/[&|\\]/\\&/g')
-    echo "$tmpl" \
-        | sed "s|{emoji}|${EMOJI}|g" \
-        | sed "s|{phase}|${PHASE}|g" \
-        | sed "s|{round}|${ROUND}|g" \
-        | sed "s|{server}|${safe_server}|g" \
-        | sed "s|{message}|${safe_msg}|g" \
-        | sed "s|{timestamp}|${TIMESTAMP}|g"
+    C9_TMPL="$tmpl" C9_EMOJI="$EMOJI" C9_PHASE="$PHASE" C9_ROUND="$ROUND" \
+    C9_SERVER="$SERVER_ID" C9_MSG="$MESSAGE" C9_TIMESTAMP="$TIMESTAMP" \
+    python3 -c "
+import os
+tmpl = os.environ['C9_TMPL']
+for k, v in [
+    ('{emoji}', os.environ['C9_EMOJI']),
+    ('{phase}', os.environ['C9_PHASE']),
+    ('{round}', os.environ['C9_ROUND']),
+    ('{server}', os.environ['C9_SERVER']),
+    ('{message}', os.environ['C9_MSG']),
+    ('{timestamp}', os.environ['C9_TIMESTAMP']),
+]:
+    tmpl = tmpl.replace(k, v)
+print(tmpl, end='')
+"
 }
 
 # ── Dooray 발송 ──────────────────────────────────────────────

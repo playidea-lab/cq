@@ -137,13 +137,19 @@ if findings:
     # lower_is_better=True: improvement>0이면 개선 / False: best가 크면 개선
     improvement = (prev_best - best['mpjpe']) if lower_is_better else (best['mpjpe'] - prev_best)
 
-    history.append({
+    new_entry = {
         'round': round_num,
         'value': best['mpjpe'],          # 신규 schema 키 (metric_history[].value)
         'pa_value': best['pa_mpjpe'],    # 선택적 secondary metric
         'best_exp': best['exp'],
         'improvement': round(improvement, 3)
-    })
+    }
+    # 동일 라운드 재실행 시 중복 기록 방지 (수렴 판정 오류 방지)
+    existing_idx = next((i for i, h in enumerate(history) if h.get('round') == round_num), None)
+    if existing_idx is not None:
+        history[existing_idx] = new_entry
+    else:
+        history.append(new_entry)
 
     if use_legacy_key:
         state['mpjpe_history'] = history
