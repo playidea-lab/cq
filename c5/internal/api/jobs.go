@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -196,21 +197,28 @@ func (s *Server) handleJobComplete(w http.ResponseWriter, r *http.Request, jobID
 	// Clean up lease
 	s.store.DeleteLease(jobID)
 
+	// Fetch job once for both deploy rules and Dooray notification.
+	var completedJob *model.Job
+	if j, err := s.store.GetJob(jobID); err == nil {
+		completedJob = j
+	}
+
 	// DAG orchestrator hook: advance DAG if this job was a DAG node
 	s.onJobComplete(jobID, status, exitCode)
 
 	// Deploy rules: evaluate on job success and create deployments for matching rules
-	if status == model.StatusSucceeded {
-		if job, err := s.store.GetJob(jobID); err == nil {
-			tags := job.Tags
-			if tags == nil {
-				tags = []string{}
-			}
-			if n, _ := s.store.EvaluateDeployRulesForJob(jobID, tags, job.ProjectID); n > 0 {
-				log.Printf("c5: deploy rules matched for job %s, created %d deployment(s)", jobID, n)
-			}
+	if status == model.StatusSucceeded && completedJob != nil {
+		tags := completedJob.Tags
+		if tags == nil {
+			tags = []string{}
+		}
+		if n, _ := s.store.EvaluateDeployRulesForJob(jobID, tags, completedJob.ProjectID); n > 0 {
+			log.Printf("c5: deploy rules matched for job %s, created %d deployment(s)", jobID, n)
 		}
 	}
+
+	// Dooray completion notification (no-op if job was not from Dooray).
+	s.notifyDoorayJobComplete(completedJob, status, exitCode)
 
 	if s.eventPub.IsEnabled() {
 		evType := "hub.job.completed"
@@ -375,4 +383,57 @@ func (s *Server) handleJobRetry(w http.ResponseWriter, r *http.Request, jobID st
 		Status:        string(newJob.Status),
 		OriginalJobID: jobID,
 	})
+}
+
+// notifyDoorayJobComplete sends a job completion notification to Dooray if the
+// job was submitted via the Dooray integration (DOORAY_CHANNEL env set).
+// It is a no-op when job is nil or lacks the DOORAY_CHANNEL env var.
+func (s *Server) notifyDoorayJobComplete(job *model.Job, status model.JobStatus, exitCode int) {
+	if job == nil {
+		return
+	}
+	channelID, ok := job.Env["DOORAY_CHANNEL"]
+	if !ok || channelID == "" {
+		return // Not a Dooray-originated job.
+	}
+	webhookURL := s.resolveWebhookURL(channelID)
+	if webhookURL == "" {
+		log.Printf("c5: dooray complete notify: no webhook URL for channel %q", channelID)
+		return
+	}
+	shortID := job.ID
+	if len(shortID) > 8 {
+		shortID = shortID[:8]
+	}
+
+	var text string
+	if status == model.StatusSucceeded {
+		var sb strings.Builder
+		fmt.Fprintf(&sb, "✅ 실험 완료: %s (%s)\n", job.Name, shortID)
+		metrics, _ := s.store.GetMetrics(job.ID, 0, 0)
+		if len(metrics) > 0 {
+			latest := metrics[len(metrics)-1].Metrics
+			sb.WriteString("\n최종 메트릭:\n")
+			for k, v := range latest {
+				fmt.Fprintf(&sb, "• %s: %v\n", k, v)
+			}
+		}
+		text = strings.TrimSpace(sb.String())
+	} else {
+		var sb strings.Builder
+		fmt.Fprintf(&sb, "❌ 실험 실패: %s (%s) — exit %d\n", job.Name, shortID, exitCode)
+		// Fetch actual last 3 lines (not the first 200 then tail).
+		_, total, _, _ := s.store.GetLogs(job.ID, 0, 1)
+		offset := 0
+		if total > 3 {
+			offset = total - 3
+		}
+		tail, _, _, _ := s.store.GetLogs(job.ID, offset, 3)
+		if len(tail) > 0 {
+			fmt.Fprintf(&sb, "\n마지막 로그:\n%s", strings.Join(tail, "\n"))
+		}
+		text = strings.TrimSpace(sb.String())
+	}
+
+	go postToDooray(context.Background(), webhookURL, text)
 }

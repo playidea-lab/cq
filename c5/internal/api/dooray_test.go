@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/piqsol/c4/c5/internal/llmclient"
+	"github.com/piqsol/c4/c5/internal/model"
 	"github.com/piqsol/c4/c5/internal/store"
 )
 
@@ -424,6 +425,338 @@ func TestDooray_SanitizeText(t *testing.T) {
 				t.Errorf("sanitizeDoorayText(%q) = %q, want %q", tt.input, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestExtractAction_QueryWorkers(t *testing.T) {
+	action, ok := extractAction(`{"action":"query_workers"}`)
+	if !ok {
+		t.Fatal("extractAction: expected ok=true for query_workers")
+	}
+	if action.Action != "query_workers" {
+		t.Errorf("action.Action: got %q, want %q", action.Action, "query_workers")
+	}
+}
+
+func TestExtractAction_QueryJobs(t *testing.T) {
+	action, ok := extractAction(`{"action":"query_jobs","limit":5,"status":"FAILED"}`)
+	if !ok {
+		t.Fatal("extractAction: expected ok=true for query_jobs")
+	}
+	if action.Action != "query_jobs" {
+		t.Errorf("action.Action: got %q, want %q", action.Action, "query_jobs")
+	}
+	if action.Limit != 5 {
+		t.Errorf("action.Limit: got %d, want 5", action.Limit)
+	}
+	if action.Status != "FAILED" {
+		t.Errorf("action.Status: got %q, want FAILED", action.Status)
+	}
+}
+
+func TestExtractAction_SubmitJob_RequiresCommand(t *testing.T) {
+	// submit_job without command must fail.
+	if _, ok := extractAction(`{"action":"submit_job","name":"test"}`); ok {
+		t.Error("submit_job without command should return ok=false")
+	}
+	// submit_job with command must succeed.
+	action, ok := extractAction(`{"action":"submit_job","name":"test","command":"echo hi"}`)
+	if !ok {
+		t.Fatal("submit_job with command: expected ok=true")
+	}
+	if action.Command != "echo hi" {
+		t.Errorf("action.Command: got %q, want %q", action.Command, "echo hi")
+	}
+}
+
+func TestExtractAction_EmptyAction(t *testing.T) {
+	if _, ok := extractAction(`{"action":""}`); ok {
+		t.Error("empty action should return ok=false")
+	}
+}
+
+func TestDooray_ServerSide_QueryWorkers(t *testing.T) {
+	// LLM returns query_workers action.
+	llmSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{"message": map[string]string{"content": `{"action":"query_workers"}`}},
+			},
+		})
+	}))
+	defer llmSrv.Close()
+
+	done := make(chan string, 1)
+	webhookSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]string
+		json.NewDecoder(r.Body).Decode(&body)
+		done <- body["text"]
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer webhookSrv.Close()
+
+	llmCli := llmclient.New(llmSrv.URL, "test-key", "test-model", 100)
+	srv := newTestServerWithLLM(t, llmCli, webhookSrv.URL)
+
+	t.Setenv("C5_DOORAY_CMD_TOKEN", "")
+	payload := doorayPayload("서버 상태 봐바", "/cq", "", "", "")
+	w := doRequest(t, srv, http.MethodPost, "/v1/webhooks/dooray", payload)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d — body: %s", w.Code, w.Body.String())
+	}
+
+	select {
+	case text := <-done:
+		// No workers registered → "현재 등록된 워커가 없습니다"
+		if !strings.Contains(text, "워커") {
+			t.Errorf("webhook text: got %q, expected worker-related content", text)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for webhook response")
+	}
+}
+
+func TestDooray_ServerSide_QueryJobs(t *testing.T) {
+	// LLM returns query_jobs action.
+	llmSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{"message": map[string]string{"content": `{"action":"query_jobs","limit":5}`}},
+			},
+		})
+	}))
+	defer llmSrv.Close()
+
+	done := make(chan string, 1)
+	webhookSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]string
+		json.NewDecoder(r.Body).Decode(&body)
+		done <- body["text"]
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer webhookSrv.Close()
+
+	llmCli := llmclient.New(llmSrv.URL, "test-key", "test-model", 100)
+	srv := newTestServerWithLLM(t, llmCli, webhookSrv.URL)
+
+	t.Setenv("C5_DOORAY_CMD_TOKEN", "")
+	payload := doorayPayload("최근 실험 뭐 있어", "/cq", "", "", "")
+	w := doRequest(t, srv, http.MethodPost, "/v1/webhooks/dooray", payload)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d — body: %s", w.Code, w.Body.String())
+	}
+
+	select {
+	case text := <-done:
+		// No jobs → "조건에 맞는 잡이 없습니다"
+		if !strings.Contains(text, "잡") {
+			t.Errorf("webhook text: got %q, expected job-related content", text)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for webhook response")
+	}
+}
+
+func TestDooray_ServerSide_SubmitJob_HasDoorayChannel(t *testing.T) {
+	// LLM returns submit_job; resulting job must have DOORAY_CHANNEL in env.
+	llmSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{"message": map[string]string{"content": `{"action":"submit_job","name":"exp401","command":"echo hi","requires_gpu":false}`}},
+			},
+		})
+	}))
+	defer llmSrv.Close()
+
+	done := make(chan string, 1)
+	webhookSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]string
+		json.NewDecoder(r.Body).Decode(&body)
+		done <- body["text"]
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer webhookSrv.Close()
+
+	llmCli := llmclient.New(llmSrv.URL, "test-key", "test-model", 100)
+	srv := newTestServerWithLLM(t, llmCli, webhookSrv.URL)
+
+	t.Setenv("C5_DOORAY_CMD_TOKEN", "")
+	payload := doorayPayload("exp401 실행", "/cq", "", "", "")
+	w := doRequest(t, srv, http.MethodPost, "/v1/webhooks/dooray", payload)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d — body: %s", w.Code, w.Body.String())
+	}
+
+	select {
+	case text := <-done:
+		if !strings.Contains(text, "🚀") {
+			t.Errorf("webhook text: got %q, expected job submitted message", text)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for webhook response")
+	}
+
+	// Verify job has DOORAY_CHANNEL in env.
+	wJobs := doRequest(t, srv, http.MethodGet, "/v1/jobs", nil)
+	var jobs []map[string]any
+	json.NewDecoder(wJobs.Body).Decode(&jobs)
+	if len(jobs) != 1 {
+		t.Fatalf("expected 1 job, got %d", len(jobs))
+	}
+	env, _ := jobs[0]["env"].(map[string]any)
+	if env["DOORAY_CHANNEL"] != "ch-1" {
+		t.Errorf("DOORAY_CHANNEL: got %v, want %q", env["DOORAY_CHANNEL"], "ch-1")
+	}
+}
+
+func TestNotifyDoorayJobComplete_Succeeded(t *testing.T) {
+	done := make(chan string, 1)
+	webhookSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]string
+		json.NewDecoder(r.Body).Decode(&body)
+		done <- body["text"]
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer webhookSrv.Close()
+
+	dir := t.TempDir()
+	st, err := store.New(filepath.Join(dir, "test.db"))
+	if err != nil {
+		t.Fatalf("new store: %v", err)
+	}
+	t.Cleanup(func() { st.Close() })
+
+	srv := NewServer(Config{
+		Store:            st,
+		Version:          "test",
+		DoorayWebhookURL: webhookSrv.URL,
+	})
+
+	// Create a job with DOORAY_CHANNEL in env.
+	job, err := st.CreateJob(&model.JobSubmitRequest{
+		Name:    "test-exp",
+		Command: "echo hi",
+		Workdir: ".",
+		Env:     map[string]string{"DOORAY_CHANNEL": "ch-1"},
+	})
+	if err != nil {
+		t.Fatalf("create job: %v", err)
+	}
+
+	completedJob, err := st.GetJob(job.ID)
+	if err != nil {
+		t.Fatalf("get job: %v", err)
+	}
+	srv.notifyDoorayJobComplete(completedJob, model.StatusSucceeded, 0)
+
+	select {
+	case text := <-done:
+		if !strings.Contains(text, "✅") {
+			t.Errorf("completion text: got %q, expected success marker", text)
+		}
+		if !strings.Contains(text, "test-exp") {
+			t.Errorf("completion text: got %q, expected job name", text)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for Dooray completion notification")
+	}
+}
+
+func TestNotifyDoorayJobComplete_Failed(t *testing.T) {
+	done := make(chan string, 1)
+	webhookSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]string
+		json.NewDecoder(r.Body).Decode(&body)
+		done <- body["text"]
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer webhookSrv.Close()
+
+	dir := t.TempDir()
+	st, err := store.New(filepath.Join(dir, "test.db"))
+	if err != nil {
+		t.Fatalf("new store: %v", err)
+	}
+	t.Cleanup(func() { st.Close() })
+
+	srv := NewServer(Config{
+		Store:            st,
+		Version:          "test",
+		DoorayWebhookURL: webhookSrv.URL,
+	})
+
+	job, err := st.CreateJob(&model.JobSubmitRequest{
+		Name:    "fail-exp",
+		Command: "exit 1",
+		Workdir: ".",
+		Env:     map[string]string{"DOORAY_CHANNEL": "ch-1"},
+	})
+	if err != nil {
+		t.Fatalf("create job: %v", err)
+	}
+
+	failedJob, err := st.GetJob(job.ID)
+	if err != nil {
+		t.Fatalf("get job: %v", err)
+	}
+	srv.notifyDoorayJobComplete(failedJob, model.StatusFailed, 1)
+
+	select {
+	case text := <-done:
+		if !strings.Contains(text, "❌") {
+			t.Errorf("failure text: got %q, expected failure marker", text)
+		}
+		if !strings.Contains(text, "fail-exp") {
+			t.Errorf("failure text: got %q, expected job name", text)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for Dooray failure notification")
+	}
+}
+
+func TestNotifyDoorayJobComplete_NoDoorayChannel(t *testing.T) {
+	// Job without DOORAY_CHANNEL must not post to webhook.
+	posted := make(chan struct{}, 1)
+	webhookSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		posted <- struct{}{}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer webhookSrv.Close()
+
+	dir := t.TempDir()
+	st, err := store.New(filepath.Join(dir, "test.db"))
+	if err != nil {
+		t.Fatalf("new store: %v", err)
+	}
+	t.Cleanup(func() { st.Close() })
+
+	srv := NewServer(Config{
+		Store:            st,
+		Version:          "test",
+		DoorayWebhookURL: webhookSrv.URL,
+	})
+
+	job, err := st.CreateJob(&model.JobSubmitRequest{
+		Name:    "non-dooray",
+		Command: "echo hi",
+		Workdir: ".",
+	})
+	if err != nil {
+		t.Fatalf("create job: %v", err)
+	}
+
+	nonDoorayJob, err := st.GetJob(job.ID)
+	if err != nil {
+		t.Fatalf("get job: %v", err)
+	}
+	srv.notifyDoorayJobComplete(nonDoorayJob, model.StatusSucceeded, 0)
+
+	// Give goroutine time to post (if it were to post).
+	select {
+	case <-posted:
+		t.Error("webhook was called for job without DOORAY_CHANNEL")
+	case <-time.After(200 * time.Millisecond):
+		// Expected: no webhook call.
 	}
 }
 

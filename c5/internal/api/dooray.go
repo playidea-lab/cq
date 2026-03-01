@@ -111,6 +111,13 @@ func (s *Server) handleDooray(w http.ResponseWriter, r *http.Request) {
 			}()
 		default:
 			log.Printf("c5: dooray: LLM goroutine pool full — dropping request from %q", payload.UserID)
+			notifyURL := s.resolveWebhookURL(payload.ChannelID)
+			if notifyURL == "" {
+				notifyURL = payload.ResponseURL
+			}
+			if notifyURL != "" {
+				go postToDooray(context.Background(), notifyURL, "⚠️ 현재 요청이 많아 처리할 수 없습니다. 잠시 후 다시 시도해 주세요.")
+			}
 		}
 		return
 	}
@@ -146,9 +153,56 @@ func (s *Server) handleDooray(w http.ResponseWriter, r *http.Request) {
 	_ = job
 }
 
+// llmAction is the structured response the LLM returns when it decides to
+// take an action. The action field determines how the server responds:
+// "submit_job" | "query_workers" | "query_jobs".
+type llmAction struct {
+	Action      string `json:"action"`
+	Name        string `json:"name,omitempty"`
+	Command     string `json:"command,omitempty"`
+	RequiresGPU bool   `json:"requires_gpu,omitempty"`
+	ExpID       string `json:"exp_id,omitempty"`
+	Memo        string `json:"memo,omitempty"`
+	Limit       int    `json:"limit,omitempty"`
+	Status      string `json:"status,omitempty"`
+}
+
+// extractAction tries to find an action JSON object in the LLM response.
+// It handles plain JSON and markdown code blocks.
+func extractAction(answer string) (llmAction, bool) {
+	// Strip markdown code fences if present.
+	s := strings.TrimSpace(answer)
+	if idx := strings.Index(s, "```"); idx != -1 {
+		s = s[idx+3:]
+		if nl := strings.Index(s, "\n"); nl != -1 {
+			s = s[nl+1:]
+		}
+		if end := strings.Index(s, "```"); end != -1 {
+			s = s[:end]
+		}
+	}
+	s = strings.TrimSpace(s)
+	if !strings.HasPrefix(s, "{") {
+		return llmAction{}, false
+	}
+	var action llmAction
+	if err := json.Unmarshal([]byte(s), &action); err != nil {
+		return llmAction{}, false
+	}
+	if action.Action == "" {
+		return llmAction{}, false
+	}
+	// submit_job requires a command to execute.
+	if action.Action == "submit_job" && action.Command == "" {
+		return llmAction{}, false
+	}
+	return action, true
+}
+
 // processDoorayServerSide handles server-side LLM processing in a goroutine.
 // It queries the knowledge base (if configured), calls the LLM, and posts the
-// response to the Dooray Incoming Webhook.
+// response to the Dooray Incoming Webhook. If the LLM returns a submit_job
+// intent, a Hub job is created instead of posting plain text.
 func (s *Server) processDoorayServerSide(payload doorayInbound) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
@@ -187,7 +241,48 @@ func (s *Server) processDoorayServerSide(payload doorayInbound) {
 		return
 	}
 
-	// 4. Sanitize and post.
+	// 4. Dispatch on structured action or post plain text.
+	if action, ok := extractAction(answer); ok {
+		switch action.Action {
+		case "submit_job":
+			tags := []string{"dooray", "experiment"}
+			if action.ExpID != "" {
+				tags = append(tags, action.ExpID)
+			}
+			req := model.JobSubmitRequest{
+				Name:        action.Name,
+				Command:     action.Command,
+				RequiresGPU: action.RequiresGPU,
+				ExpID:       action.ExpID,
+				Memo:        action.Memo,
+				Tags:        tags,
+				Workdir:     ".",
+				Env:         map[string]string{"DOORAY_CHANNEL": payload.ChannelID},
+			}
+			job, err := s.store.CreateJob(&req)
+			if err != nil {
+				log.Printf("c5: dooray: job submit error: %v", err)
+				postToDooray(ctx, webhookURL, "⚠️ 잡 제출 실패: "+err.Error())
+				return
+			}
+			s.notifyJobAvailable()
+			gpuMark := ""
+			if action.RequiresGPU {
+				gpuMark = " 🖥️GPU"
+			}
+			postToDooray(ctx, webhookURL, fmt.Sprintf("🚀 실험 잡 제출됨%s\n이름: %s\nID: %s\n커맨드: %s", gpuMark, action.Name, job.ID, action.Command))
+		case "query_workers":
+			s.handleActionQueryWorkers(ctx, webhookURL)
+		case "query_jobs":
+			s.handleActionQueryJobs(ctx, webhookURL, action.Limit, action.Status)
+		default:
+			log.Printf("c5: dooray: unknown action %q — posting as text", action.Action)
+			postToDooray(ctx, webhookURL, sanitizeDoorayText(answer))
+		}
+		return
+	}
+
+	// 5. Plain text answer — sanitize and post.
 	postToDooray(ctx, webhookURL, sanitizeDoorayText(answer))
 }
 
@@ -210,10 +305,97 @@ func formatKnowledgeContext(results []knowledge.SearchResult) string {
 	return strings.TrimSpace(sb.String())
 }
 
+// handleActionQueryWorkers fetches the worker list and posts it to Dooray.
+func (s *Server) handleActionQueryWorkers(ctx context.Context, webhookURL string) {
+	workers, err := s.store.ListWorkers("")
+	if err != nil {
+		log.Printf("c5: dooray: list workers: %v", err)
+		postToDooray(ctx, webhookURL, "⚠️ 워커 목록 조회 실패: "+err.Error())
+		return
+	}
+	if len(workers) == 0 {
+		postToDooray(ctx, webhookURL, "📋 현재 등록된 워커가 없습니다.")
+		return
+	}
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "📋 워커 목록 (%d개)\n\n", len(workers))
+	for _, w := range workers {
+		gpuInfo := ""
+		if w.GPUModel != "" {
+			gpuInfo = fmt.Sprintf(" | GPU: %s (%.0fGB)", w.GPUModel, w.TotalVRAM)
+		}
+		age := time.Since(w.LastHeartbeat).Round(time.Second)
+		fmt.Fprintf(&sb, "• %s — %s%s | 마지막 신호: %s 전\n", w.Hostname, w.Status, gpuInfo, age)
+	}
+	postToDooray(ctx, webhookURL, strings.TrimSpace(sb.String()))
+}
+
+// handleActionQueryJobs fetches the job list and posts it to Dooray.
+func (s *Server) handleActionQueryJobs(ctx context.Context, webhookURL string, limit int, status string) {
+	if limit <= 0 {
+		limit = 10
+	}
+	if limit > 100 {
+		limit = 100
+	}
+	status = strings.ToUpper(strings.TrimSpace(status))
+	jobs, err := s.store.ListJobs(status, "", limit, 0)
+	if err != nil {
+		log.Printf("c5: dooray: list jobs: %v", err)
+		postToDooray(ctx, webhookURL, "⚠️ 잡 목록 조회 실패: "+err.Error())
+		return
+	}
+	if len(jobs) == 0 {
+		postToDooray(ctx, webhookURL, "📋 조건에 맞는 잡이 없습니다.")
+		return
+	}
+	label := "최근"
+	if status != "" {
+		label = status
+	}
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "📋 잡 목록 (%s, %d개)\n\n", label, len(jobs))
+	for _, j := range jobs {
+		expInfo := ""
+		if j.ExpID != "" {
+			expInfo = " [" + j.ExpID + "]"
+		}
+		shortID := j.ID
+		if len(shortID) > 8 {
+			shortID = shortID[:8]
+		}
+		fmt.Fprintf(&sb, "• %s%s %s — %s\n", shortID, expInfo, j.Name, string(j.Status))
+	}
+	postToDooray(ctx, webhookURL, strings.TrimSpace(sb.String()))
+}
+
 // buildDooraySystemPrompt assembles the system prompt with optional project
 // and knowledge context.
 func buildDooraySystemPrompt(projectID, knowledgeCtx string) string {
-	prompt := "당신은 Dooray 메신저 봇입니다. 사용자의 질문에 간결하고 정확하게 답변하세요."
+	prompt := `당신은 CQ 봇입니다. Google/Gemini/OpenAI를 언급하지 마세요.
+
+## 사용 가능한 액션 (JSON으로만 응답)
+
+### 실험 실행
+"exp401 실행", "TTO 학습 시작" 등 → {"action":"submit_job","name":"<실험명>","command":"<전체 실행 커맨드>","requires_gpu":true,"exp_id":"<expXXX>","memo":"<한줄 설명>"}
+
+### 서버/워커 상태 조회
+"서버 상태", "워커 목록", "GPU 현황" 등 → {"action":"query_workers"}
+
+### 잡 목록 조회
+"최근 실험", "실패한 잡", "잡 목록" 등 → {"action":"query_jobs","limit":10,"status":""}
+
+### 일반 질문
+위에 해당하지 않는 질문은 텍스트로 답변하세요.
+
+## hmr_postproc 프로젝트 스크립트 매핑 (pi-server: /home/pi/git/hmr_postproc)
+- exp401 (TTO Baseline): uv run python /home/pi/git/hmr_postproc/scripts/train_tto_baseline.py
+- exp410 (SAC Env): uv run python /home/pi/git/hmr_postproc/scripts/train_rl_refinement.py --mode sac
+- exp411 (SAC+DualLoss): uv run python /home/pi/git/hmr_postproc/scripts/train_rl_refinement.py --mode sac --dual_loss
+- exp700 (Multi-backbone LOO): uv run python /home/pi/git/hmr_postproc/scripts/exp700_4backbone_loo.py
+- exp750 (DiNOv3 conditioned): uv run python /home/pi/git/hmr_postproc/scripts/exp750_dinov3_conditioned.py
+- 평가: uv run python /home/pi/git/hmr_postproc/scripts/eval_rl_refinement.py`
+
 	if projectID != "" {
 		prompt += "\n\n프로젝트 ID: " + projectID
 	}
