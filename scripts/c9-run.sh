@@ -14,12 +14,12 @@ STATE_FILE="$C9_DIR/state.yaml"
 POLL_INTERVAL=15
 
 # ── Pre-conditions ─────────────────────────────────────────────
-if ! command -v python3 &>/dev/null; then
-    echo "[c9-run] Error: python3가 설치되어 있지 않습니다." >&2
+if ! command -v uv &>/dev/null; then
+    echo "[c9-run] Error: uv가 설치되어 있지 않습니다. https://docs.astral.sh/uv/getting-started/installation/" >&2
     exit 1
 fi
-if ! python3 -c "import yaml" &>/dev/null; then
-    echo "[c9-run] Error: python3 yaml 모듈이 없습니다. uv add pyyaml 또는 pip install pyyaml" >&2
+if ! uv run python -c "import yaml" &>/dev/null; then
+    echo "[c9-run] Error: pyyaml이 없습니다. uv add pyyaml" >&2
     exit 1
 fi
 
@@ -27,7 +27,7 @@ fi
 if [[ -n "${C9_HUB_URL:-}" ]]; then
     HUB_URL="$C9_HUB_URL"
 else
-    HUB_URL=$(STATE_FILE="$STATE_FILE" python3 -c "
+    HUB_URL=$(STATE_FILE="$STATE_FILE" uv run python -c "
 import yaml, sys, os
 s = yaml.safe_load(open(os.environ['STATE_FILE']))
 hub = s.get('hub', {})
@@ -55,7 +55,7 @@ fi
 
 # 현재 round 읽기
 get_state() {
-    STATE_FILE="$STATE_FILE" KEY="$1" python3 -c "
+    STATE_FILE="$STATE_FILE" KEY="$1" uv run python -c "
 import yaml, sys, os
 s = yaml.safe_load(open(os.environ['STATE_FILE']))
 print(s.get(os.environ['KEY'], ''))
@@ -64,7 +64,7 @@ print(s.get(os.environ['KEY'], ''))
 
 set_phase() {
     # docs/c9-state-schema.md 권장: NamedTemporaryFile → yaml.dump → os.replace (원자 저장)
-    STATE_FILE="$STATE_FILE" PHASE="$1" python3 -c "
+    STATE_FILE="$STATE_FILE" PHASE="$1" uv run python -c "
 import yaml, tempfile, os
 state_file = os.environ['STATE_FILE']
 s = yaml.safe_load(open(state_file))
@@ -103,7 +103,7 @@ if [[ "$1" != "--poll-only" ]]; then
     for exp_file in "$C9_DIR/experiments/r${ROUND}_"*.yaml; do
         [[ -f "$exp_file" ]] || continue
         EXP_NAME=$(grep -m 1 "^name:" "$exp_file" | awk '{print $2}')
-        CMD=$(EXP_FILE="$exp_file" python3 -c "
+        CMD=$(EXP_FILE="$exp_file" uv run python -c "
 import yaml, os
 cfg = yaml.safe_load(open(os.environ['EXP_FILE']))
 cmd = cfg.get('command','').strip()
@@ -111,7 +111,7 @@ print(cmd)
 ")
         echo "[c9-run] 제출: $EXP_NAME"
 
-        PAYLOAD=$(EXP_FILE="$exp_file" EXP_NAME_ENV="$EXP_NAME" ROUND_ENV="$ROUND" python3 -c "
+        PAYLOAD=$(EXP_FILE="$exp_file" EXP_NAME_ENV="$EXP_NAME" ROUND_ENV="$ROUND" uv run python -c "
 import yaml, json, os
 cfg = yaml.safe_load(open(os.environ['EXP_FILE']))
 cmd = cfg.get('command', '').strip()
@@ -122,7 +122,7 @@ print(json.dumps({'name': exp_name, 'command': cmd, 'tags': ['c9', 'r' + os.envi
         [[ -n "$API_KEY" ]] && curl_args+=(-H "X-API-Key: $API_KEY")
         RESPONSE=$(echo "$PAYLOAD" | curl "${curl_args[@]}")
 
-        JOB_ID=$(echo "$RESPONSE" | python3 -c "import json,sys; print(json.load(sys.stdin).get('job_id','ERROR'))" 2>/dev/null || echo "ERROR")
+        JOB_ID=$(echo "$RESPONSE" | uv run python -c "import json,sys; print(json.load(sys.stdin).get('job_id','ERROR'))" 2>/dev/null || echo "ERROR")
         if [[ "$JOB_ID" == "ERROR" || -z "$JOB_ID" ]]; then
             echo "[c9-run] Error: $EXP_NAME 제출 실패. 응답: $RESPONSE" >&2
             continue
@@ -130,7 +130,7 @@ print(json.dumps({'name': exp_name, 'command': cmd, 'tags': ['c9', 'r' + os.envi
         echo "[c9-run] $EXP_NAME → $JOB_ID"
 
         # jobs.json 업데이트 (원자 저장 — partial write 방지)
-        EXP_NAME_ENV="$EXP_NAME" JOB_ID_ENV="$JOB_ID" JOBS_FILE="$JOBS_FILE" python3 -c "
+        EXP_NAME_ENV="$EXP_NAME" JOB_ID_ENV="$JOB_ID" JOBS_FILE="$JOBS_FILE" uv run python -c "
 import json, tempfile, os
 jobs_file = os.environ['JOBS_FILE']
 jobs = json.load(open(jobs_file))
@@ -158,7 +158,7 @@ poll_count=0
 
 while [[ $poll_count -lt $MAX_POLLS ]]; do
     poll_count=$(( poll_count + 1 ))
-    C9_API_KEY_ENV="$API_KEY" C9_HUB_URL_ENV="$HUB_URL" JOBS_FILE="$JOBS_FILE" python3 -c "
+    C9_API_KEY_ENV="$API_KEY" C9_HUB_URL_ENV="$HUB_URL" JOBS_FILE="$JOBS_FILE" uv run python -c "
 import json, urllib.request, sys, os
 
 jobs_file = os.environ['JOBS_FILE']
@@ -210,7 +210,7 @@ fi
 
 # 로그 수집
 echo "[c9-run] 결과 로그 수집"
-C9_API_KEY_ENV="$API_KEY" C9_HUB_URL_ENV="$HUB_URL" JOBS_FILE="$JOBS_FILE" ROUNDS_DIR="$ROUNDS_DIR" python3 -c "
+C9_API_KEY_ENV="$API_KEY" C9_HUB_URL_ENV="$HUB_URL" JOBS_FILE="$JOBS_FILE" ROUNDS_DIR="$ROUNDS_DIR" uv run python -c "
 import json, urllib.request, os
 
 jobs_file = os.environ['JOBS_FILE']

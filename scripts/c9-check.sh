@@ -19,7 +19,7 @@ STATE_FILE="$C9_DIR/state.yaml"
 if [[ -n "${C9_HUB_URL:-}" ]]; then
     HUB_URL="$C9_HUB_URL"
 else
-    HUB_URL=$(STATE_FILE="$STATE_FILE" python3 -c "
+    HUB_URL=$(STATE_FILE="$STATE_FILE" uv run python -c "
 import yaml, sys, os
 s = yaml.safe_load(open(os.environ['STATE_FILE']))
 hub = s.get('hub', {})
@@ -37,7 +37,7 @@ if [[ -z "$API_KEY" && -n "${C9_API_KEY:-}" ]]; then
     API_KEY="$C9_API_KEY"
 fi
 
-ROUND=${1:-$(STATE_FILE="$STATE_FILE" python3 -c "
+ROUND=${1:-$(STATE_FILE="$STATE_FILE" uv run python -c "
 import yaml, os
 print(yaml.safe_load(open(os.environ['STATE_FILE'])).get('round', 1))
 " 2>/dev/null)}
@@ -57,7 +57,7 @@ echo "[c9-check] Round $ROUND 결과 분석"
 echo ""
 
 # [C9-DONE] 파서: state.yaml metric.name 기반 범용화 (MPJPE 고정 제거)
-RESULTS_FILE="$RESULTS_FILE" STATE_FILE="$STATE_FILE" ROUND_NUM="$ROUND" python3 << 'PYEOF'
+RESULTS_FILE="$RESULTS_FILE" STATE_FILE="$STATE_FILE" ROUND_NUM="$ROUND" uv run python << 'PYEOF'
 import re, yaml, sys, os
 
 results = open(os.environ['RESULTS_FILE']).read()

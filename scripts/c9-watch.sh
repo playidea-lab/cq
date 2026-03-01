@@ -19,7 +19,7 @@ STATE_FILE="$PROJECT_DIR/.c9/state.yaml"
 if [[ -n "${C9_HUB_URL:-}" ]]; then
     HUB_URL="$C9_HUB_URL"
 else
-    HUB_URL=$(STATE_FILE="$STATE_FILE" python3 -c "
+    HUB_URL=$(STATE_FILE="$STATE_FILE" uv run python -c "
 import yaml, sys, os
 s = yaml.safe_load(open(os.environ['STATE_FILE']))
 hub = s.get('hub', {})
@@ -53,7 +53,7 @@ ROUND="${2:?Usage: $0 <job_id> <round> <exp_name>}"
 EXP_NAME="${3:?Usage: $0 <job_id> <round> <exp_name>}"
 EVAL_JOB_ID="${4:-}"
 
-SESSION_NAME=$(STATE_FILE="$STATE_FILE" python3 -c "
+SESSION_NAME=$(STATE_FILE="$STATE_FILE" uv run python -c "
 import yaml, os
 s = yaml.safe_load(open(os.environ['STATE_FILE']))
 print(s.get('notify', {}).get('session', ''))
@@ -76,7 +76,7 @@ poll_job() {
     [[ -n "$API_KEY" ]] && curl_args+=(-H "X-API-Key: $API_KEY")
     curl "${curl_args[@]}" "$HUB_URL/v1/jobs/$job_id" \
         -o "$poll_tmp" 2>/dev/null
-    C9_POLL_TMP="$poll_tmp" python3 -c "
+    C9_POLL_TMP="$poll_tmp" uv run python -c "
 import json, os
 d = json.load(open(os.environ['C9_POLL_TMP']))
 print(d.get('status', 'UNKNOWN'))
@@ -121,7 +121,7 @@ while [ $count -lt $MAX_POLLS ]; do
 
             # Job 로그에서 [C9-DONE] 마커 파싱 (metric.name 기반 범용화)
             # state.yaml을 1회만 파싱하여 TOCTOU 방지
-            _METRIC_CFG=$(STATE_FILE="$STATE_FILE" python3 -c "
+            _METRIC_CFG=$(STATE_FILE="$STATE_FILE" uv run python -c "
 import yaml, os, json
 s = yaml.safe_load(open(os.environ['STATE_FILE']))
 m = s.get('metric', {})
@@ -129,16 +129,16 @@ name = m.get('name', 'value') if isinstance(m, dict) else 'value'
 unit = m.get('unit', '') if isinstance(m, dict) else ''
 print(json.dumps({'name': name, 'unit': unit}))
 " 2>/dev/null || echo '{"name":"value","unit":""}')
-            METRIC_NAME=$(echo "$_METRIC_CFG" | python3 -c "import json,sys; print(json.load(sys.stdin)['name'])" 2>/dev/null || echo "value")
-            METRIC_UNIT=$(echo "$_METRIC_CFG" | python3 -c "import json,sys; print(json.load(sys.stdin)['unit'])" 2>/dev/null || echo "")
+            METRIC_NAME=$(echo "$_METRIC_CFG" | uv run python -c "import json,sys; print(json.load(sys.stdin)['name'])" 2>/dev/null || echo "value")
+            METRIC_UNIT=$(echo "$_METRIC_CFG" | uv run python -c "import json,sys; print(json.load(sys.stdin)['unit'])" 2>/dev/null || echo "")
 
             TARGET_JOB_ID="${EVAL_JOB_ID:-$TRAIN_JOB_ID}"
             curl_log_args=(-s)
             [[ -n "$API_KEY" ]] && curl_log_args+=(-H "X-API-Key: $API_KEY")
             # metric_name 기반 필터: c9-check.sh와 동일한 패턴으로 파싱 (contract alignment)
-            # C9_METRIC_NAME은 파이프 우측 python3에 붙여야 함 (파이프 좌측 curl에는 전달 안 됨)
+            # C9_METRIC_NAME은 파이프 우측 uv run python에 붙여야 함 (파이프 좌측 curl에는 전달 안 됨)
             RESULT=$(curl "${curl_log_args[@]}" "$HUB_URL/v1/jobs/$TARGET_JOB_ID/logs" | \
-                C9_METRIC_NAME="$METRIC_NAME" python3 -c "
+                C9_METRIC_NAME="$METRIC_NAME" uv run python -c "
 import json, re, sys, os
 metric_name = os.environ.get('C9_METRIC_NAME', 'value')
 try:
