@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.52.0] - 2026-03-01
+
+### ✨ Features
+- **c5**: `/v1/research/state` REST API — C9 분산 라운드/페이즈 상태 관리 (G12)
+  - Optimistic lock (CAS) — `version` 컬럼 불일치 시 409 Conflict
+  - Advisory lock — `POST/DELETE /v1/research/state/lock` (TTL + stale auto-evict)
+  - `GetOrCreateResearchState`, `UpdateResearchState`, `AcquireResearchLock`, `ReleaseResearchLock`
+  - 테스트 6개: GetInitial, PutVersionMatch, PutVersionConflict, Lock, LockExpiry, ConcurrentPut
+- **c4**: SQLite advisory scope lock — C4 Worker 파일 충돌 방지 (G11)
+  - `c4_phase_lock_acquire` / `c4_phase_lock_release` MCP 도구
+- **c3/eventbus**: `SubscribeWithProject` 헬퍼 + 프로젝트 ID 누락 시 WARN 로그
+- **c9-scripts**: `c9-state-api.py` stdlib-only CLI helper — API-first + state.yaml fallback
+  - `c9-run.sh` `set_phase()`: API PUT → 성공 시 state.yaml 동기화, 409 시 GET version 재동기화
+  - `c9-check.sh`: yaml.dump 후 Research State API 비동기 동기화 (non-fatal)
+
+### 🐛 Bug Fixes
+- **c9-run.sh**: 409 충돌 후 GET으로 version 재동기화 (version drift 방지)
+- **research.go**: DELETE `/lock` body → query param (`?worker_id=`) 으로 변경 (HTTP intermediary 호환)
+
+### 🔧 Chores
+- **research.go**: PUT/POST handler에 `http.MaxBytesReader(64KiB)` 추가
+- **model.go**: `ResearchState.LockHolder`에 `omitempty` 추가
+- **store/sqlite.go**: `AcquireResearchLock` 설계 주석 추가 (row-exists gap, 포맷 차이)
+
 ## [v0.51.0] - 2026-03-01
 
 ### ✨ Features
