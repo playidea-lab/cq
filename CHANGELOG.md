@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.50.1] - 2026-03-01
+
+### 🐛 Bug Fixes
+- **c9-scripts**: Shell injection 전면 제거 — 21개 injection site → 0 (CRITICAL 보안 수정)
+  - `python3 -c "... '$VAR' ..."` → `VAR="$VAR" python3 -c "os.environ['VAR']"` env var passthrough 패턴 전면 적용
+  - `<<'PYEOF'` single-quoted heredoc으로 bash 확장 차단
+  - curl word-splitting 방지: `curl_args=(); curl "${curl_args[@]}"` 배열 패턴
+  - path traversal 방지: `mktemp + trap 'rm -f "$TMPFILE"' RETURN + job_id regex 검증`
+  - `grep -F` 고정문자열 매칭 (regex 메타문자 injection 방지)
+  - ROUND 검증 guard: `[[ ! "$ROUND" =~ ^[0-9]+$ ]]` exit 1
+- **c9-watch.sh**: `C9_METRIC_NAME` env var 파이프라인 위치 수정
+  - 파이프 좌측 curl 앞이 아닌 우측 python3 앞에 위치해야 python3가 env var 수신 가능
+  - `curl ... | C9_METRIC_NAME="$M" python3 -c "os.environ.get('C9_METRIC_NAME', ...)"` 올바른 패턴
+- **c9-watch.sh**: metric_name 계약 정렬 — c9-check.sh와 동일한 `re.escape(metric_name)` 패턴으로 파싱
+- **c9-watch.sh**: TOCTOU 방지 — state.yaml metric 설정을 1회만 파싱 후 env var 전달
+
+### 🔧 Chores
+- **c9-check.sh**: ROUND 검증 guard 추가 (`^[0-9]+$` 정규식)
+- **c9-run.sh**: `with open()` context manager, `grep -m 1` 첫 매칭만, curl_args 배열
+
+---
+
 ## [v0.50.0] - 2026-03-01
 
 ### ✨ Features
