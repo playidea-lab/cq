@@ -206,6 +206,8 @@ hub_url = ''
 hub_cfg = state.get('hub', {})
 if isinstance(hub_cfg, dict):
     hub_url = hub_cfg.get('url', '')
+elif isinstance(hub_cfg, str):
+    hub_url = hub_cfg
 if hub_url:
     import subprocess, sys as _sys
     api_key = _os.environ.get('C9_API_KEY_ENV', '')

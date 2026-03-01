@@ -6,6 +6,8 @@ import (
 	"strings"
 )
 
+const researchBodyLimit = 64 * 1024 // 64 KiB
+
 // handleResearchState routes GET and PUT for /v1/research/state.
 func (s *Server) handleResearchState(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
@@ -51,6 +53,7 @@ type researchStatePutRequest struct {
 
 // handleResearchStatePut handles PUT /v1/research/state.
 func (s *Server) handleResearchStatePut(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, researchBodyLimit)
 	var req researchStatePutRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
@@ -78,6 +81,7 @@ type researchStateLockRequest struct {
 
 // handleResearchStateLockAcquire handles POST /v1/research/state/lock.
 func (s *Server) handleResearchStateLockAcquire(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, researchBodyLimit)
 	var req researchStateLockRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
@@ -104,25 +108,17 @@ func (s *Server) handleResearchStateLockAcquire(w http.ResponseWriter, r *http.R
 	})
 }
 
-// researchStateLockReleaseRequest is the body for DELETE /v1/research/state/lock.
-type researchStateLockReleaseRequest struct {
-	WorkerID string `json:"worker_id"`
-}
-
 // handleResearchStateLockRelease handles DELETE /v1/research/state/lock.
+// worker_id is passed as a query parameter to avoid HTTP intermediaries stripping DELETE bodies.
 func (s *Server) handleResearchStateLockRelease(w http.ResponseWriter, r *http.Request) {
-	var req researchStateLockReleaseRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
-		return
-	}
-	if req.WorkerID == "" {
-		writeError(w, http.StatusBadRequest, "worker_id is required")
+	workerID := r.URL.Query().Get("worker_id")
+	if workerID == "" {
+		writeError(w, http.StatusBadRequest, "worker_id query param is required")
 		return
 	}
 
 	projectID := projectIDFromContext(r)
-	if err := s.store.ReleaseResearchLock(projectID, req.WorkerID); err != nil {
+	if err := s.store.ReleaseResearchLock(projectID, workerID); err != nil {
 		if strings.Contains(err.Error(), "not held") {
 			writeError(w, http.StatusConflict, err.Error())
 			return

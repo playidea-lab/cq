@@ -82,8 +82,7 @@ print(s.get('version', 0))
         _version=${_version:-0}
 
         # API PUT 호출 (c9-state-api.py)
-        SCRIPT_DIR_INNER="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-        uv run python "$SCRIPT_DIR_INNER/c9-state-api.py" set \
+        uv run python "$SCRIPT_DIR/c9-state-api.py" set \
             "$HUB_URL" "${API_KEY:-}" "$_round" "$new_phase" "$_version"
         _api_result=$?
 
@@ -103,7 +102,26 @@ os.replace(tmp.name, state_file)
             echo "[c9-run] phase → $new_phase (API + state.yaml 동기화)"
             return 0
         elif [[ $_api_result -eq 2 ]]; then
-            echo "[c9-run] Warning: API 409 충돌 — state.yaml fallback으로 진행" >&2
+            echo "[c9-run] Warning: API 409 충돌 — 최신 version 재동기화 후 fallback 진행" >&2
+            # 409 후 version 재동기화: 최신 state를 GET해 state.yaml에 기록
+            # (다음 set_phase 호출이 올바른 version을 사용하도록)
+            _fresh=$(SCRIPT_DIR="$SCRIPT_DIR" uv run python "$SCRIPT_DIR/c9-state-api.py" get \
+                "$HUB_URL" "${API_KEY:-}" 2>/dev/null)
+            if [[ -n "$_fresh" ]]; then
+                STATE_FILE="$STATE_FILE" FRESH_JSON="$_fresh" uv run python -c "
+import yaml, json, tempfile, os
+state_file = os.environ['STATE_FILE']
+fresh = json.loads(os.environ['FRESH_JSON'])
+s = yaml.safe_load(open(state_file))
+s['version'] = fresh.get('version', s.get('version', 0))
+tmp = tempfile.NamedTemporaryFile(mode='w', dir=os.path.dirname(state_file) or '.', delete=False, suffix='.tmp')
+yaml.dump(s, tmp, default_flow_style=False, allow_unicode=True)
+tmp.close()
+os.replace(tmp.name, state_file)
+" 2>/dev/null && echo "[c9-run] version 재동기화 완료"
+            else
+                echo "[c9-run] Warning: version 재동기화 GET 실패 — 다음 호출도 409 발생 가능. fallback으로 진행" >&2
+            fi
         else
             echo "[c9-run] Warning: API 호출 실패 — state.yaml fallback으로 진행" >&2
         fi

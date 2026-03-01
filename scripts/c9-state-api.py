@@ -18,9 +18,8 @@ Returns:
 
 import json
 import sys
-import urllib.request
 import urllib.error
-
+import urllib.request
 
 _PREFIX = "[c9-state-api]"
 _TIMEOUT = 10  # seconds
@@ -54,7 +53,12 @@ def set_research_state(
     phase: str,
     current_version: int,
 ) -> bool:
-    """PUT /v1/research/state — returns True on success, False on 409 or error."""
+    """PUT /v1/research/state — returns True on success, False on 409 or error.
+
+    Note: 409 Conflict (version mismatch) is indistinguishable from other errors
+    in the return value. CLI callers should use _cmd_set_with_409() directly to
+    obtain exit code 2 for 409 vs 1 for generic errors.
+    """
     if not hub_url:
         return False
     url = hub_url.rstrip("/") + "/v1/research/state"
@@ -90,18 +94,6 @@ def _cmd_get(hub_url: str, api_key: str) -> int:
         return 1
     print(json.dumps(state))
     return 0
-
-
-def _cmd_set(hub_url: str, api_key: str, round_: int, phase: str, version: int) -> int:
-    """CLI: set — return 0=ok, 2=409, 1=error."""
-    ok = set_research_state(hub_url, api_key, round_, phase, version)
-    if ok:
-        return 0
-    # Distinguish 409 (already printed) from generic error
-    # Re-run to check: we rely on stderr message; exit 2 for 409, 1 otherwise.
-    # Since set_research_state already printed the error, just return appropriate code.
-    # We use a wrapper that tracks 409 specifically.
-    return 1
 
 
 def _cmd_set_with_409(hub_url: str, api_key: str, round_: int, phase: str, version: int) -> int:

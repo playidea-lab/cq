@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/piqsol/c4/c5/internal/model"
 	"github.com/piqsol/c4/c5/internal/store"
@@ -155,12 +156,12 @@ func TestResearchState_Lock(t *testing.T) {
 		t.Errorf("expected acquired=false for second worker")
 	}
 
-	// Release lock.
-	wd := doResearchRequest(t, srv, http.MethodDelete, "/v1/research/state/lock", map[string]any{
-		"worker_id": "worker-1",
-	})
-	if wd.Code != http.StatusOK {
-		t.Fatalf("release lock: expected 200, got %d: %s", wd.Code, wd.Body.String())
+	// Release lock via query param (DELETE body not reliable through HTTP intermediaries).
+	wd := httptest.NewRequest(http.MethodDelete, "/v1/research/state/lock?worker_id=worker-1", nil)
+	wdRec := httptest.NewRecorder()
+	srv.mux.ServeHTTP(wdRec, wd)
+	if wdRec.Code != http.StatusOK {
+		t.Fatalf("release lock: expected 200, got %d: %s", wdRec.Code, wdRec.Body.String())
 	}
 
 	// Now worker-2 can acquire.
@@ -177,6 +178,52 @@ func TestResearchState_Lock(t *testing.T) {
 	}
 	if acquired, _ := resp3["acquired"].(bool); !acquired {
 		t.Errorf("expected acquired=true for worker-2 after release")
+	}
+}
+
+// TestResearchState_LockExpiry verifies that a stale lock (past TTL) is auto-evicted
+// on the next acquire attempt.
+func TestResearchState_LockExpiry(t *testing.T) {
+	srv := newResearchTestServer(t)
+
+	// Ensure row exists.
+	doResearchRequest(t, srv, http.MethodGet, "/v1/research/state", nil)
+
+	// Acquire lock with a 1-second TTL.
+	w := doResearchRequest(t, srv, http.MethodPost, "/v1/research/state/lock", map[string]any{
+		"worker_id": "worker-expire",
+		"ttl_sec":   1,
+	})
+	if w.Code != http.StatusOK {
+		t.Fatalf("acquire: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp map[string]any
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if acquired, _ := resp["acquired"].(bool); !acquired {
+		t.Fatalf("expected acquired=true")
+	}
+
+	// Wait for the lock to expire.
+	// lock_expires_at uses ISO 8601 with T separator (stored by Go, not SQLite datetime()),
+	// so string comparison is safe within UTC timezone.
+	time.Sleep(2 * time.Second)
+
+	// A different worker should now be able to acquire (stale lock auto-evicted).
+	w2 := doResearchRequest(t, srv, http.MethodPost, "/v1/research/state/lock", map[string]any{
+		"worker_id": "worker-new",
+		"ttl_sec":   60,
+	})
+	if w2.Code != http.StatusOK {
+		t.Fatalf("acquire after expiry: expected 200, got %d: %s", w2.Code, w2.Body.String())
+	}
+	var resp2 map[string]any
+	if err := json.NewDecoder(w2.Body).Decode(&resp2); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if acquired, _ := resp2["acquired"].(bool); !acquired {
+		t.Errorf("expected acquired=true after stale lock expiry, got %v", resp2)
 	}
 }
 

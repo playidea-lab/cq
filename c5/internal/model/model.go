@@ -758,7 +758,7 @@ type ResearchState struct {
 	Round       int     `json:"round"`
 	Phase       string  `json:"phase"`
 	Version     int     `json:"version"`
-	LockHolder  string  `json:"lock_holder"`
+	LockHolder  string  `json:"lock_holder,omitempty"`
 	LockExpires *string `json:"lock_expires_at,omitempty"`
 	UpdatedAt   string  `json:"updated_at"`
 }

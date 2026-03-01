@@ -2811,6 +2811,13 @@ func (s *Store) UpdateResearchState(projectID string, round int, phase string, v
 // Returns (acquired, currentHolder, error).
 // Stale locks (lock_expires_at < now) are auto-evicted.
 // If the same worker already holds the lock, it is renewed.
+//
+// Note: GetOrCreateResearchState is called outside the transaction to ensure the
+// row exists before the TX begins. With MaxOpenConns(1) this is serialized.
+// Do not remove this pre-call; the in-TX SELECT relies on the row being present.
+// lock_expires_at is stored in ISO 8601 format ("2006-01-02T15:04:05Z") by Go,
+// distinct from updated_at which uses SQLite datetime('now') (space separator).
+// Do not use updated_at for expiry comparisons.
 func (s *Store) AcquireResearchLock(projectID, workerID string, ttlSec int) (bool, string, error) {
 	if _, err := s.GetOrCreateResearchState(projectID); err != nil {
 		return false, "", err
