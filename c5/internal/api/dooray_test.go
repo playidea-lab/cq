@@ -428,6 +428,57 @@ func TestDooray_SanitizeText(t *testing.T) {
 	}
 }
 
+func TestExtractAction_QueryStatus(t *testing.T) {
+	action, ok := extractAction(`{"action":"query_status"}`)
+	if !ok {
+		t.Fatal("extractAction: expected ok=true for query_status")
+	}
+	if action.Action != "query_status" {
+		t.Errorf("action.Action: got %q, want %q", action.Action, "query_status")
+	}
+}
+
+func TestDooray_ServerSide_QueryStatus(t *testing.T) {
+	// LLM returns query_status action; server fetches workers + jobs and responds.
+	llmSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{"message": map[string]string{"content": `{"action":"query_status"}`}},
+			},
+		})
+	}))
+	defer llmSrv.Close()
+
+	done := make(chan string, 1)
+	webhookSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]string
+		json.NewDecoder(r.Body).Decode(&body)
+		done <- body["text"]
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer webhookSrv.Close()
+
+	llmCli := llmclient.New(llmSrv.URL, "test-key", "test-model", 100)
+	srv := newTestServerWithLLM(t, llmCli, webhookSrv.URL)
+
+	t.Setenv("C5_DOORAY_CMD_TOKEN", "")
+	payload := doorayPayload("현재 실험상황 및 워커 상태 체크", "/cq", "", "", "")
+	w := doRequest(t, srv, http.MethodPost, "/v1/webhooks/dooray", payload)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d — body: %s", w.Code, w.Body.String())
+	}
+
+	select {
+	case text := <-done:
+		// Empty store → "워커: 없음" and "대기/실행 중인 잡 없음"
+		if !strings.Contains(text, "워커") {
+			t.Errorf("query_status text: got %q, expected worker section", text)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for webhook response")
+	}
+}
+
 func TestExtractAction_QueryWorkers(t *testing.T) {
 	action, ok := extractAction(`{"action":"query_workers"}`)
 	if !ok {

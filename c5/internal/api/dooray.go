@@ -271,6 +271,8 @@ func (s *Server) processDoorayServerSide(payload doorayInbound) {
 				gpuMark = " 🖥️GPU"
 			}
 			postToDooray(ctx, webhookURL, fmt.Sprintf("🚀 실험 잡 제출됨%s\n이름: %s\nID: %s\n커맨드: %s", gpuMark, action.Name, job.ID, action.Command))
+		case "query_status":
+			s.handleActionQueryStatus(ctx, webhookURL)
 		case "query_workers":
 			s.handleActionQueryWorkers(ctx, webhookURL)
 		case "query_jobs":
@@ -303,6 +305,91 @@ func formatKnowledgeContext(results []knowledge.SearchResult) string {
 		fmt.Fprintf(&sb, "[%d] %s\n%s\n\n", i+1, r.Title, r.Body)
 	}
 	return strings.TrimSpace(sb.String())
+}
+
+// handleActionQueryStatus fetches workers and running/queued jobs, cross-references
+// them (worker → current job), and posts a combined status report to Dooray.
+func (s *Server) handleActionQueryStatus(ctx context.Context, webhookURL string) {
+	workers, err := s.store.ListWorkers("")
+	if err != nil {
+		log.Printf("c5: dooray: query_status workers: %v", err)
+		postToDooray(ctx, webhookURL, "⚠️ 상태 조회 실패: "+err.Error())
+		return
+	}
+
+	running, _ := s.store.ListJobs("RUNNING", "", 20, 0)
+	queued, _ := s.store.ListJobs("QUEUED", "", 10, 0)
+
+	// Build workerID → running job map for cross-reference.
+	workerJob := map[string]*model.Job{}
+	for _, j := range running {
+		if j.WorkerID != "" {
+			workerJob[j.WorkerID] = j
+		}
+	}
+
+	var sb strings.Builder
+
+	// Workers section.
+	if len(workers) == 0 {
+		sb.WriteString("📋 워커: 없음\n")
+	} else {
+		fmt.Fprintf(&sb, "📋 워커 (%d개)\n", len(workers))
+		for _, w := range workers {
+			gpuInfo := ""
+			if w.GPUModel != "" {
+				gpuInfo = fmt.Sprintf(" | %s %.0f/%.0fGB", w.GPUModel, w.FreeVRAM, w.TotalVRAM)
+			}
+			age := time.Since(w.LastHeartbeat).Round(time.Second)
+			currentJob := ""
+			if j, ok := workerJob[w.ID]; ok {
+				expInfo := ""
+				if j.ExpID != "" {
+					expInfo = " [" + j.ExpID + "]"
+				}
+				currentJob = " → 실행중: " + j.Name + expInfo
+			}
+			fmt.Fprintf(&sb, "• %s — %s%s%s | %s 전\n", w.Hostname, w.Status, gpuInfo, currentJob, age)
+		}
+	}
+
+	sb.WriteString("\n")
+
+	// Jobs section.
+	if len(running) == 0 && len(queued) == 0 {
+		sb.WriteString("🔄 대기/실행 중인 잡 없음")
+	} else {
+		if len(running) > 0 {
+			fmt.Fprintf(&sb, "🔄 실행 중 (%d개)\n", len(running))
+			for _, j := range running {
+				shortID := j.ID
+				if len(shortID) > 8 {
+					shortID = shortID[:8]
+				}
+				expInfo := ""
+				if j.ExpID != "" {
+					expInfo = " [" + j.ExpID + "]"
+				}
+				fmt.Fprintf(&sb, "• %s%s %s\n", shortID, expInfo, j.Name)
+			}
+		}
+		if len(queued) > 0 {
+			fmt.Fprintf(&sb, "⏳ 대기 중 (%d개)\n", len(queued))
+			for _, j := range queued {
+				shortID := j.ID
+				if len(shortID) > 8 {
+					shortID = shortID[:8]
+				}
+				expInfo := ""
+				if j.ExpID != "" {
+					expInfo = " [" + j.ExpID + "]"
+				}
+				fmt.Fprintf(&sb, "• %s%s %s\n", shortID, expInfo, j.Name)
+			}
+		}
+	}
+
+	postToDooray(ctx, webhookURL, strings.TrimSpace(sb.String()))
 }
 
 // handleActionQueryWorkers fetches the worker list and posts it to Dooray.
@@ -374,19 +461,30 @@ func (s *Server) handleActionQueryJobs(ctx context.Context, webhookURL string, l
 func buildDooraySystemPrompt(projectID, knowledgeCtx string) string {
 	prompt := `당신은 CQ 봇입니다. Google/Gemini/OpenAI를 언급하지 마세요.
 
-## 사용 가능한 액션 (JSON으로만 응답)
+⚠️ 핵심 규칙: 상태/현황/목록 조회 요청에 절대 텍스트로 설명하거나 추측하지 마세요.
+실제 데이터가 없으므로 반드시 JSON action으로 서버에 위임합니다.
+
+## 사용 가능한 액션 (JSON만 반환)
+
+### 종합 현황 (워커 + 실행/대기 잡 통합) ← 기본 선택
+"현황 체크", "상태 봐바", "실험상황 및 워커", "뭐 돌고 있어", "지금 상태",
+"현재 상황", "서버 상태", "GPU 현황", "지금 뭐 돌려", "현황 보고", "상황 어때" 등
+→ {"action":"query_status"}
+
+### 잡 목록 상세 조회
+"최근 실험", "실패한 잡", "잡 목록", "완료된 거 보여줘" 등
+→ {"action":"query_jobs","limit":10,"status":""}
+
+### 워커 목록 상세 조회
+"워커만 봐", "등록된 워커", "워커 목록만" 등
+→ {"action":"query_workers"}
 
 ### 실험 실행
-"exp401 실행", "TTO 학습 시작" 등 → {"action":"submit_job","name":"<실험명>","command":"<전체 실행 커맨드>","requires_gpu":true,"exp_id":"<expXXX>","memo":"<한줄 설명>"}
+"exp401 실행", "TTO 학습 시작" 등
+→ {"action":"submit_job","name":"<실험명>","command":"<전체 실행 커맨드>","requires_gpu":true,"exp_id":"<expXXX>","memo":"<한줄 설명>"}
 
-### 서버/워커 상태 조회
-"서버 상태", "워커 목록", "GPU 현황" 등 → {"action":"query_workers"}
-
-### 잡 목록 조회
-"최근 실험", "실패한 잡", "잡 목록" 등 → {"action":"query_jobs","limit":10,"status":""}
-
-### 일반 질문
-위에 해당하지 않는 질문은 텍스트로 답변하세요.
+### 일반 질문 (위 4가지 외)
+위에 해당하지 않는 질문만 텍스트로 답변하세요.
 
 ## hmr_postproc 프로젝트 스크립트 매핑 (pi-server: /home/pi/git/hmr_postproc)
 - exp401 (TTO Baseline): uv run python /home/pi/git/hmr_postproc/scripts/train_tto_baseline.py
