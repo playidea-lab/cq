@@ -57,7 +57,8 @@ echo "[c9-check] Round $ROUND 결과 분석"
 echo ""
 
 # [C9-DONE] 파서: state.yaml metric.name 기반 범용화 (MPJPE 고정 제거)
-RESULTS_FILE="$RESULTS_FILE" STATE_FILE="$STATE_FILE" ROUND_NUM="$ROUND" uv run python << 'PYEOF'
+RESULTS_FILE="$RESULTS_FILE" STATE_FILE="$STATE_FILE" ROUND_NUM="$ROUND" \
+    C9_API_KEY_ENV="$API_KEY" SCRIPT_DIR_ENV="$SCRIPT_DIR" uv run python << 'PYEOF'
 import re, yaml, sys, os
 
 results = open(os.environ['RESULTS_FILE']).read()
@@ -199,4 +200,33 @@ yaml.dump(state, tmp, default_flow_style=False, allow_unicode=True)
 tmp.close()
 _os.replace(tmp.name, state_file)
 print(f'\n[c9-check] state.yaml 업데이트 완료: phase={state["phase"]}')
+
+# G12-B: state.yaml 갱신 후 Research State API에도 동기화 (non-fatal)
+hub_url = ''
+hub_cfg = state.get('hub', {})
+if isinstance(hub_cfg, dict):
+    hub_url = hub_cfg.get('url', '')
+if hub_url:
+    import subprocess, sys as _sys
+    api_key = _os.environ.get('C9_API_KEY_ENV', '')
+    _round = state.get('round', round_num)
+    _version = state.get('version', 0)
+    _scripts_dir = _os.environ.get('SCRIPT_DIR_ENV', _os.path.dirname(state_file))
+    _script = _os.path.join(_scripts_dir, 'c9-state-api.py')
+    try:
+        _proc = subprocess.run(
+            ['uv', 'run', 'python', _script, 'set',
+             hub_url, api_key, str(_round), state['phase'], str(_version)],
+            capture_output=True, text=True, timeout=15
+        )
+        if _proc.returncode == 0:
+            print(f'[c9-check] Research State API 동기화 완료: phase={state["phase"]}')
+        elif _proc.returncode == 2:
+            print(f'[c9-check] Warning: Research State API 409 충돌 (state.yaml은 갱신됨)', file=_sys.stderr)
+        else:
+            print(f'[c9-check] Warning: Research State API 동기화 실패 (state.yaml은 갱신됨)', file=_sys.stderr)
+            if _proc.stderr:
+                print(_proc.stderr.strip(), file=_sys.stderr)
+    except Exception as _e:
+        print(f'[c9-check] Warning: Research State API 동기화 오류: {_e} (state.yaml은 갱신됨)', file=_sys.stderr)
 PYEOF

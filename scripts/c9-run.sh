@@ -63,8 +63,54 @@ print(s.get(os.environ['KEY'], ''))
 }
 
 set_phase() {
-    # docs/c9-state-schema.md 권장: NamedTemporaryFile → yaml.dump → os.replace (원자 저장)
-    STATE_FILE="$STATE_FILE" PHASE="$1" uv run python -c "
+    local new_phase="$1"
+    # G12-B: API 우선, fallback → state.yaml 직접 수정
+    if [[ -n "${HUB_URL:-}" ]]; then
+        # state.yaml에서 현재 round와 version 읽기 (API 호출용)
+        local _round _version _api_result
+        _round=$(STATE_FILE="$STATE_FILE" uv run python -c "
+import yaml, os
+s = yaml.safe_load(open(os.environ['STATE_FILE']))
+print(s.get('round', 1))
+" 2>/dev/null)
+        _version=$(STATE_FILE="$STATE_FILE" uv run python -c "
+import yaml, os
+s = yaml.safe_load(open(os.environ['STATE_FILE']))
+print(s.get('version', 0))
+" 2>/dev/null)
+        _round=${_round:-1}
+        _version=${_version:-0}
+
+        # API PUT 호출 (c9-state-api.py)
+        SCRIPT_DIR_INNER="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+        uv run python "$SCRIPT_DIR_INNER/c9-state-api.py" set \
+            "$HUB_URL" "${API_KEY:-}" "$_round" "$new_phase" "$_version"
+        _api_result=$?
+
+        if [[ $_api_result -eq 0 ]]; then
+            # 성공: state.yaml도 동기화 (읽기 캐시 갱신)
+            STATE_FILE="$STATE_FILE" PHASE="$new_phase" uv run python -c "
+import yaml, tempfile, os
+state_file = os.environ['STATE_FILE']
+s = yaml.safe_load(open(state_file))
+s['phase'] = os.environ['PHASE']
+s['version'] = s.get('version', 0) + 1
+tmp = tempfile.NamedTemporaryFile(mode='w', dir=os.path.dirname(state_file) or '.', delete=False, suffix='.tmp')
+yaml.dump(s, tmp, default_flow_style=False, allow_unicode=True)
+tmp.close()
+os.replace(tmp.name, state_file)
+" 2>/dev/null
+            echo "[c9-run] phase → $new_phase (API + state.yaml 동기화)"
+            return 0
+        elif [[ $_api_result -eq 2 ]]; then
+            echo "[c9-run] Warning: API 409 충돌 — state.yaml fallback으로 진행" >&2
+        else
+            echo "[c9-run] Warning: API 호출 실패 — state.yaml fallback으로 진행" >&2
+        fi
+    fi
+
+    # Fallback: state.yaml 직접 수정 (docs/c9-state-schema.md 권장: NamedTemporaryFile → yaml.dump → os.replace)
+    STATE_FILE="$STATE_FILE" PHASE="$new_phase" uv run python -c "
 import yaml, tempfile, os
 state_file = os.environ['STATE_FILE']
 s = yaml.safe_load(open(state_file))
@@ -74,7 +120,7 @@ yaml.dump(s, tmp, default_flow_style=False, allow_unicode=True)
 tmp.close()
 os.replace(tmp.name, state_file)
 "
-    echo "[c9-run] phase → $1"
+    echo "[c9-run] phase → $new_phase"
 }
 
 if [[ "$1" == "--poll-only" ]]; then
