@@ -17,6 +17,7 @@ import (
 
 	"crypto/sha256"
 
+	"github.com/piqsol/c4/c5/internal/conversation"
 	"github.com/piqsol/c4/c5/internal/eventpub"
 	"github.com/piqsol/c4/c5/internal/knowledge"
 	"github.com/piqsol/c4/c5/internal/llmclient"
@@ -58,6 +59,7 @@ type Server struct {
 	doorayCmdToken   string                       // cmd token for slash command auth
 	channelMap       map[string]DoorayChannel     // channelID → project routing
 	llmSem           chan struct{}                 // semaphore: max concurrent LLM goroutines
+	convStore        conversation.Store           // per-channel multi-turn conversation history
 
 	// jobMu protects jobNotify. When a new job is queued, jobNotify is closed
 	// (broadcasting to all long-poll waiters) and replaced with a new channel.
@@ -130,8 +132,14 @@ func NewServer(cfg Config) *Server {
 		knowledgeClient:  cfg.KnowledgeClient,
 		doorayWebhookURL: cfg.DoorayWebhookURL,
 		doorayCmdToken:   cfg.DoorayCmdToken,
-		channelMap:       cfg.ChannelMap,
-		llmSem:           make(chan struct{}, 16), // max 16 concurrent LLM goroutines
+		channelMap: cfg.ChannelMap,
+		llmSem:     make(chan struct{}, 16), // max 16 concurrent LLM goroutines
+		convStore: func() conversation.Store {
+			if ss := conversation.NewSupabaseStore(cfg.SupabaseURL, cfg.SupabaseKey); ss != nil {
+				return ss
+			}
+			return conversation.NewMemoryStore(20, 30*time.Minute)
+		}(),
 	}
 	s.registerRoutes()
 
@@ -369,6 +377,9 @@ func (s *Server) leaseExpiryLoop() {
 		} else if cleaned > 0 {
 			log.Printf("c5: cleaned %d old log/metric rows", cleaned)
 		}
+
+		// Cleanup expired conversation history entries.
+		s.convStore.Cleanup()
 	}
 }
 

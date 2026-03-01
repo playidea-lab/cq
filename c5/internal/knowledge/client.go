@@ -2,6 +2,7 @@
 package knowledge
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -103,4 +104,51 @@ func (c *Client) Search(ctx context.Context, projectID, query string, limit int)
 	}
 
 	return results, nil
+}
+
+// Record inserts a new document into c4_documents for the given projectID.
+// source is set to "conversation" to distinguish bot-generated entries.
+func (c *Client) Record(ctx context.Context, projectID, title, body string) error {
+	if c.supabaseURL == "" || c.supabaseKey == "" {
+		return nil
+	}
+
+	type docRow struct {
+		ProjectID string `json:"project_id"`
+		Title     string `json:"title"`
+		Body      string `json:"body"`
+		Source    string `json:"source"`
+	}
+	row := docRow{
+		ProjectID: projectID,
+		Title:     title,
+		Body:      body,
+		Source:    "conversation",
+	}
+	payload, err := json.Marshal(row)
+	if err != nil {
+		return fmt.Errorf("knowledge: record: marshal: %w", err)
+	}
+
+	endpoint := c.supabaseURL + "/rest/v1/c4_documents"
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
+	if err != nil {
+		return fmt.Errorf("knowledge: record: create request: %w", err)
+	}
+	req.Header.Set("apikey", c.supabaseKey)
+	req.Header.Set("Authorization", "Bearer "+c.supabaseKey)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Prefer", "return=minimal")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("knowledge: record: http: %w", err)
+	}
+	defer resp.Body.Close()
+	io.Copy(io.Discard, resp.Body) //nolint:errcheck
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("knowledge: record: unexpected status %d", resp.StatusCode)
+	}
+	return nil
 }

@@ -62,9 +62,21 @@ type chatResponse struct {
 	} `json:"error,omitempty"`
 }
 
+// Message is an exported chat message for multi-turn conversations.
+type Message struct {
+	Role    string // "user" or "assistant"
+	Content string
+}
+
 // Chat sends a chat completion request with the given system and user messages.
 // Returns an error if apiKey is empty or if the API returns a non-200 status or error body.
 func (c *Client) Chat(ctx context.Context, system, userMsg string) (string, error) {
+	return c.ChatWithHistory(ctx, system, nil, userMsg)
+}
+
+// ChatWithHistory sends a multi-turn chat completion request.
+// history contains prior user/assistant turns (oldest first); userMsg is the new user message.
+func (c *Client) ChatWithHistory(ctx context.Context, system string, history []Message, userMsg string) (string, error) {
 	if c.apiKey == "" {
 		return "", fmt.Errorf("llmclient: apiKey is required")
 	}
@@ -72,6 +84,9 @@ func (c *Client) Chat(ctx context.Context, system, userMsg string) (string, erro
 	var messages []chatMessage
 	if system != "" {
 		messages = append(messages, chatMessage{Role: "system", Content: system})
+	}
+	for _, m := range history {
+		messages = append(messages, chatMessage{Role: m.Role, Content: m.Content})
 	}
 	messages = append(messages, chatMessage{Role: "user", Content: userMsg})
 

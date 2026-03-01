@@ -13,7 +13,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/piqsol/c4/c5/internal/conversation"
 	"github.com/piqsol/c4/c5/internal/knowledge"
+	"github.com/piqsol/c4/c5/internal/llmclient"
 	"github.com/piqsol/c4/c5/internal/model"
 )
 
@@ -206,6 +208,10 @@ func extractAction(answer string) (llmAction, bool) {
 // response to the Dooray Incoming Webhook. If the LLM returns a submit_job
 // intent, a Hub job is created instead of posting plain text.
 func (s *Server) processDoorayServerSide(payload doorayInbound) {
+	if payload.Text == "" {
+		return // nothing to process; avoid polluting conversation history
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
@@ -252,16 +258,47 @@ func (s *Server) processDoorayServerSide(payload doorayInbound) {
 		capsCtx = sb.String()
 	}
 
-	// 4. Build system prompt and call LLM.
+	// 4. Build system prompt and call LLM (with conversation history).
 	systemPrompt := buildDooraySystemPrompt(projectID, knowledgeCtx, capsCtx)
-	answer, err := s.llmClient.Chat(ctx, systemPrompt, payload.Text)
+
+	var history []llmclient.Message
+	if convMsgs, err := s.convStore.Get(ctx, payload.ChannelID, 20); err != nil {
+		log.Printf("c5: dooray: conversation get error: %v", err)
+	} else {
+		history = make([]llmclient.Message, len(convMsgs))
+		for i, m := range convMsgs {
+			history[i] = llmclient.Message{Role: m.Role, Content: m.Content}
+		}
+	}
+
+	answer, err := s.llmClient.ChatWithHistory(ctx, systemPrompt, history, payload.Text)
 	if err != nil {
 		log.Printf("c5: dooray: LLM error: %v", err)
 		postToDooray(ctx, webhookURL, "⚠️ LLM 오류가 발생했습니다.")
 		return
 	}
 
-	// 5. Dispatch on structured action or post plain text.
+	// 5. Persist turn — before dispatch so even action answers are part of history.
+	appendMsgs := []conversation.Message{
+		{Role: "user", Content: payload.Text},
+		{Role: "assistant", Content: answer},
+	}
+	if err := s.convStore.Append(ctx, payload.ChannelID, "dooray", projectID, appendMsgs); err != nil {
+		log.Printf("c5: dooray: conversation append error: %v", err)
+	}
+
+	// Async knowledge ingestion — fire-and-forget, non-fatal.
+	if s.knowledgeClient != nil && projectID != "" {
+		go func() {
+			title := "대화: " + payload.ChannelID + " " + time.Now().Format("2006-01-02")
+			body := "User: " + payload.Text + "\nAssistant: " + answer
+			if err := s.knowledgeClient.Record(context.Background(), projectID, title, body); err != nil {
+				log.Printf("c5: dooray: knowledge record error: %v", err)
+			}
+		}()
+	}
+
+	// 6. Dispatch on structured action or post plain text.
 	if action, ok := extractAction(answer); ok {
 		switch action.Action {
 		case "submit_job":
@@ -306,7 +343,7 @@ func (s *Server) processDoorayServerSide(payload doorayInbound) {
 		return
 	}
 
-	// 5. Plain text answer — sanitize and post.
+	// 7. Plain text answer — sanitize and post.
 	postToDooray(ctx, webhookURL, sanitizeDoorayText(answer))
 }
 
