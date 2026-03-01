@@ -205,6 +205,14 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("/ws/metrics/", s.handleWSMetrics)
 	s.mux.HandleFunc("/v1/ws/metrics/", s.handleWSMetrics)
 
+	// Capabilities (MCP-like worker capability registry)
+	s.mux.HandleFunc("/v1/capabilities", s.handleCapabilitiesList)
+	s.mux.HandleFunc("/v1/capabilities/update", s.handleCapabilitiesUpdate)
+	s.mux.HandleFunc("/v1/capabilities/invoke", s.handleCapabilitiesInvoke)
+
+	// MCP server endpoint (Streamable HTTP, JSON-RPC 2.0)
+	s.mux.HandleFunc("/v1/mcp", s.handleMCP)
+
 	// Webhooks (public — token auth is self-contained per handler)
 	s.mux.HandleFunc("/v1/webhooks/dooray", s.handleDooray)
 

@@ -242,6 +242,23 @@ func (s *Store) migrate() error {
 		);
 		CREATE INDEX IF NOT EXISTS idx_api_keys_project ON api_keys(project_id);
 
+		CREATE TABLE IF NOT EXISTS capabilities (
+			id          TEXT PRIMARY KEY,
+			worker_id   TEXT NOT NULL,
+			name        TEXT NOT NULL,
+			description TEXT NOT NULL DEFAULT '',
+			input_schema TEXT NOT NULL DEFAULT '{}',
+			tags        TEXT NOT NULL DEFAULT '[]',
+			version     TEXT NOT NULL DEFAULT '',
+			command     TEXT NOT NULL DEFAULT '',
+			project_id  TEXT NOT NULL DEFAULT '',
+			updated_at  TEXT NOT NULL,
+			UNIQUE(worker_id, name)
+		);
+		CREATE INDEX IF NOT EXISTS idx_capabilities_name ON capabilities(name);
+		CREATE INDEX IF NOT EXISTS idx_capabilities_project ON capabilities(project_id);
+		CREATE INDEX IF NOT EXISTS idx_capabilities_worker ON capabilities(worker_id);
+
 		CREATE TABLE IF NOT EXISTS device_sessions (
 			state          TEXT PRIMARY KEY,
 			user_code      TEXT UNIQUE NOT NULL,
@@ -278,6 +295,11 @@ func (s *Store) migrate() error {
 		`ALTER TABLE dags ADD COLUMN project_id TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE deploy_rules ADD COLUMN project_id TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE deployments ADD COLUMN project_id TEXT NOT NULL DEFAULT ''`,
+		// Migration: capability-typed jobs.
+		`ALTER TABLE jobs ADD COLUMN capability TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE jobs ADD COLUMN params TEXT NOT NULL DEFAULT '{}'`,
+		`ALTER TABLE jobs ADD COLUMN result TEXT NOT NULL DEFAULT '{}'`,
+		`CREATE INDEX IF NOT EXISTS idx_jobs_capability ON jobs(capability)`,
 	} {
 		if _, err := s.db.Exec(stmt); err != nil {
 			if !strings.Contains(err.Error(), "duplicate column") {
@@ -315,19 +337,22 @@ func (s *Store) CreateJob(req *model.JobSubmitRequest) (*model.Job, error) {
 		ProjectID:       req.ProjectID,
 		InputArtifacts:  req.InputArtifacts,
 		OutputArtifacts: req.OutputArtifacts,
+		Capability:      req.Capability,
+		Params:          req.Params,
 		CreatedAt:       now,
 	}
 
 	_, err := s.db.Exec(`
 		INSERT INTO jobs (id, name, status, priority, workdir, command,
 			requires_gpu, vram_required_gb, env, tags, exp_id, memo, timeout_sec, project_id,
-			input_artifacts, output_artifacts, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			input_artifacts, output_artifacts, capability, params, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		job.ID, job.Name, string(job.Status), job.Priority, job.Workdir, job.Command,
 		boolToInt(job.RequiresGPU), job.VRAMRequiredGB,
 		marshalJSON(job.Env), marshalJSON(job.Tags),
 		job.ExpID, job.Memo, job.TimeoutSec, job.ProjectID,
 		marshalArtifacts(job.InputArtifacts), marshalArtifacts(job.OutputArtifacts),
+		job.Capability, marshalJSON(job.Params),
 		now.Format(time.RFC3339),
 	)
 	if err != nil {
@@ -472,6 +497,19 @@ func (s *Store) CompleteJob(id string, status model.JobStatus, exitCode int) err
 	}
 
 	return tx.Commit()
+}
+
+// SetJobResult stores a structured result map for a completed capability job.
+func (s *Store) SetJobResult(id string, result map[string]any) error {
+	if len(result) == 0 {
+		return nil
+	}
+	b, err := json.Marshal(result)
+	if err != nil {
+		return fmt.Errorf("marshal result: %w", err)
+	}
+	_, err = s.db.Exec(`UPDATE jobs SET result = ? WHERE id = ?`, string(b), id)
+	return err
 }
 
 // GetQueueStats returns aggregate counts by status.
@@ -695,6 +733,10 @@ func (s *Store) AcquireLease(workerID string, requiresGPU bool, projectID string
 		extraFilter += " AND project_id = ?"
 		args = append(args, projectID)
 	}
+	// Capability filter: only pick capability jobs if worker has that capability registered.
+	// Non-capability jobs (capability='') are always eligible.
+	extraFilter += " AND (capability = '' OR capability IN (SELECT name FROM capabilities WHERE worker_id = ?))"
+	args = append(args, workerID)
 	result, err := tx.Exec(`
 		UPDATE jobs SET status = 'RUNNING', started_at = ?, worker_id = ?
 		WHERE id = (
@@ -2060,7 +2102,7 @@ func (s *Store) ListArtifacts(jobID string) ([]model.Artifact, error) {
 const jobSelectCols = `SELECT id, name, status, priority, workdir, command,
 	requires_gpu, vram_required_gb, env, tags, exp_id, memo, timeout_sec, worker_id,
 	created_at, started_at, finished_at, exit_code, project_id,
-	input_artifacts, output_artifacts`
+	input_artifacts, output_artifacts, capability, params, result`
 
 type scanner interface {
 	Scan(dest ...any) error
@@ -2079,6 +2121,8 @@ func populateJob(sc scanner) (*model.Job, error) {
 		exitCode            sql.NullInt64
 		inputArtifactsJSON  string
 		outputArtifactsJSON string
+		paramsJSON          string
+		resultJSON          string
 	)
 	err := sc.Scan(
 		&j.ID, &j.Name, &status, &j.Priority, &j.Workdir, &j.Command,
@@ -2087,6 +2131,7 @@ func populateJob(sc scanner) (*model.Job, error) {
 		&createdAt, &startedAt, &finishedAt, &exitCode,
 		&j.ProjectID,
 		&inputArtifactsJSON, &outputArtifactsJSON,
+		&j.Capability, &paramsJSON, &resultJSON,
 	)
 	if err != nil {
 		return nil, err
@@ -2110,6 +2155,12 @@ func populateJob(sc scanner) (*model.Job, error) {
 	json.Unmarshal([]byte(tagsJSON), &j.Tags)
 	j.InputArtifacts = unmarshalArtifacts(inputArtifactsJSON)
 	j.OutputArtifacts = unmarshalArtifacts(outputArtifactsJSON)
+	if paramsJSON != "" && paramsJSON != "{}" {
+		json.Unmarshal([]byte(paramsJSON), &j.Params)
+	}
+	if resultJSON != "" && resultJSON != "{}" {
+		json.Unmarshal([]byte(resultJSON), &j.Result)
+	}
 	return &j, nil
 }
 
@@ -2306,6 +2357,149 @@ func (s *Store) ListAPIKeys() ([]model.APIKeyInfo, error) {
 		keys = append(keys, k)
 	}
 	return keys, rows.Err()
+}
+
+// =========================================================================
+// Capabilities
+// =========================================================================
+
+// UpsertCapabilities inserts or replaces a worker's capability set.
+func (s *Store) UpsertCapabilities(workerID, projectID string, caps []model.Capability) error {
+	if len(caps) == 0 {
+		return nil
+	}
+	now := time.Now().UTC().Format(time.RFC3339)
+	for _, c := range caps {
+		if c.Name == "" {
+			continue // skip unnamed capabilities to avoid routing non-capability jobs
+		}
+		id := generateID("cap")
+		tagsJSON := marshalJSON(c.Tags)
+		schemaJSON := marshalJSON(c.InputSchema)
+		if schemaJSON == "null" {
+			schemaJSON = "{}"
+		}
+		_, err := s.db.Exec(`
+			INSERT INTO capabilities (id, worker_id, name, description, input_schema, tags, version, command, project_id, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			ON CONFLICT(worker_id, name) DO UPDATE SET
+				description=excluded.description,
+				input_schema=excluded.input_schema,
+				tags=excluded.tags,
+				version=excluded.version,
+				command=excluded.command,
+				project_id=excluded.project_id,
+				updated_at=excluded.updated_at`,
+			id, workerID, c.Name, c.Description, schemaJSON, tagsJSON, c.Version, c.Command, projectID, now)
+		if err != nil {
+			return fmt.Errorf("upsert capability %q: %w", c.Name, err)
+		}
+	}
+	return nil
+}
+
+// DeleteWorkerCapabilities removes all capabilities for a worker.
+func (s *Store) DeleteWorkerCapabilities(workerID string) error {
+	_, err := s.db.Exec(`DELETE FROM capabilities WHERE worker_id = ?`, workerID)
+	return err
+}
+
+// ListCapabilities returns capabilities scoped to a project (or all if projectID is empty).
+// Results are grouped by capability name with worker summaries.
+func (s *Store) ListCapabilities(projectID string) ([]model.CapabilityGroup, error) {
+	query := `
+		SELECT c.name, c.description, c.input_schema, c.tags, c.version,
+		       w.id, w.hostname, w.status, w.gpu_model
+		FROM capabilities c
+		JOIN workers w ON w.id = c.worker_id
+		WHERE w.status != 'offline'`
+	args := []any{}
+	if projectID != "" {
+		query += " AND c.project_id = ?"
+		args = append(args, projectID)
+	}
+	query += " ORDER BY c.name, w.id"
+
+	rows, err := s.db.Query(query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list capabilities: %w", err)
+	}
+	defer rows.Close()
+
+	// Group by capability name
+	grouped := map[string]*model.CapabilityGroup{}
+	var order []string
+	for rows.Next() {
+		var (
+			name, description, schemaJSON, tagsJSON, version string
+			workerID, hostname, status, gpuModel             string
+		)
+		if err := rows.Scan(&name, &description, &schemaJSON, &tagsJSON, &version,
+			&workerID, &hostname, &status, &gpuModel); err != nil {
+			continue
+		}
+		g, ok := grouped[name]
+		if !ok {
+			g = &model.CapabilityGroup{
+				Capability: model.Capability{
+					Name:        name,
+					Description: description,
+					Version:     version,
+				},
+			}
+			json.Unmarshal([]byte(schemaJSON), &g.InputSchema)
+			json.Unmarshal([]byte(tagsJSON), &g.Tags)
+			grouped[name] = g
+			order = append(order, name)
+		}
+		g.Workers = append(g.Workers, model.CapabilityWorker{
+			WorkerID: workerID,
+			Hostname: hostname,
+			Status:   status,
+			GPUModel: gpuModel,
+		})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	result := make([]model.CapabilityGroup, 0, len(order))
+	for _, name := range order {
+		result = append(result, *grouped[name])
+	}
+	return result, nil
+}
+
+// FindCapability returns capability registrations matching the given name and project.
+func (s *Store) FindCapability(name, projectID string) ([]model.CapabilityRegistration, error) {
+	query := `SELECT c.worker_id, c.name, c.description, c.input_schema, c.tags, c.version, c.command, c.project_id, c.updated_at
+	          FROM capabilities c
+	          JOIN workers w ON w.id = c.worker_id
+	          WHERE c.name = ? AND w.status != 'offline'`
+	args := []any{name}
+	if projectID != "" {
+		query += " AND c.project_id = ?"
+		args = append(args, projectID)
+	}
+	rows, err := s.db.Query(query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("find capability: %w", err)
+	}
+	defer rows.Close()
+
+	var regs []model.CapabilityRegistration
+	for rows.Next() {
+		var r model.CapabilityRegistration
+		var schemaJSON, tagsJSON string
+		if err := rows.Scan(&r.WorkerID, &r.Name, &r.Description, &schemaJSON, &tagsJSON,
+			&r.Version, &r.Command, &r.ProjectID, &r.UpdatedAt); err != nil {
+			continue
+		}
+		json.Unmarshal([]byte(schemaJSON), &r.InputSchema)
+		json.Unmarshal([]byte(tagsJSON), &r.Tags)
+		regs = append(regs, r)
+	}
+	return regs, rows.Err()
 }
 
 // =========================================================================

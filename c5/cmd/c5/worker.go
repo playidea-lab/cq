@@ -23,6 +23,7 @@ import (
 
 	"github.com/piqsol/c4/c5/internal/model"
 	"github.com/spf13/cobra"
+	"gopkg.in/yaml.v3"
 )
 
 const (
@@ -32,15 +33,64 @@ const (
 	MetricsBufferFlushThreshold = 10
 )
 
+// capabilitiesFile is a YAML file declaring worker capabilities.
+// Format:
+//
+//	capabilities:
+//	  - name: train_model
+//	    description: "Run PyTorch training"
+//	    command: "python scripts/train.py"
+//	    input_schema:
+//	      type: object
+//	      properties:
+//	        config_path: {type: string}
+//	        epochs: {type: integer}
+//	    tags: [gpu, pytorch]
+type capabilitiesYAML struct {
+	Capabilities []struct {
+		Name        string         `yaml:"name"`
+		Description string         `yaml:"description"`
+		Command     string         `yaml:"command"`
+		InputSchema map[string]any `yaml:"input_schema"`
+		Tags        []string       `yaml:"tags"`
+		Version     string         `yaml:"version"`
+	} `yaml:"capabilities"`
+}
+
+// loadCapabilities reads a YAML capabilities file and returns model.Capability slice.
+func loadCapabilities(path string) ([]model.Capability, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read capabilities file: %w", err)
+	}
+	var cf capabilitiesYAML
+	if err := yaml.Unmarshal(data, &cf); err != nil {
+		return nil, fmt.Errorf("parse capabilities YAML: %w", err)
+	}
+	caps := make([]model.Capability, 0, len(cf.Capabilities))
+	for _, c := range cf.Capabilities {
+		caps = append(caps, model.Capability{
+			Name:        c.Name,
+			Description: c.Description,
+			Command:     c.Command,
+			InputSchema: c.InputSchema,
+			Tags:        c.Tags,
+			Version:     c.Version,
+		})
+	}
+	return caps, nil
+}
+
 func workerCmd() *cobra.Command {
 	var (
-		serverURL string
-		hostname  string
-		gpuCount  int
-		gpuModel  string
-		totalVRAM float64
-		pollSec   int
-		apiKey    string
+		serverURL        string
+		hostname         string
+		gpuCount         int
+		gpuModel         string
+		totalVRAM        float64
+		pollSec          int
+		apiKey           string
+		capabilitiesFile string
 	)
 
 	cmd := &cobra.Command{
@@ -51,14 +101,26 @@ func workerCmd() *cobra.Command {
 				h, _ := os.Hostname()
 				hostname = h
 			}
+
+			var caps []model.Capability
+			if capabilitiesFile != "" {
+				var err error
+				caps, err = loadCapabilities(capabilitiesFile)
+				if err != nil {
+					return fmt.Errorf("load capabilities: %w", err)
+				}
+				log.Printf("c5-worker: loaded %d capabilities from %s", len(caps), capabilitiesFile)
+			}
+
 			return runWorker(workerConfig{
-				serverURL: serverURL,
-				hostname:  hostname,
-				gpuCount:  gpuCount,
-				gpuModel:  gpuModel,
-				totalVRAM: totalVRAM,
-				pollSec:   pollSec,
-				apiKey:    apiKey,
+				serverURL:    serverURL,
+				hostname:     hostname,
+				gpuCount:     gpuCount,
+				gpuModel:     gpuModel,
+				totalVRAM:    totalVRAM,
+				pollSec:      pollSec,
+				apiKey:       apiKey,
+				capabilities: caps,
 			})
 		},
 	}
@@ -70,18 +132,20 @@ func workerCmd() *cobra.Command {
 	cmd.Flags().Float64Var(&totalVRAM, "total-vram", 0, "Total VRAM in GB")
 	cmd.Flags().IntVar(&pollSec, "poll-interval", 5, "Poll interval in seconds")
 	cmd.Flags().StringVar(&apiKey, "api-key", os.Getenv("C5_API_KEY"), "API key for authentication")
+	cmd.Flags().StringVar(&capabilitiesFile, "capabilities", "", "Path to capabilities YAML file")
 
 	return cmd
 }
 
 type workerConfig struct {
-	serverURL string
-	hostname  string
-	gpuCount  int
-	gpuModel  string
-	totalVRAM float64
-	pollSec   int
-	apiKey    string
+	serverURL    string
+	hostname     string
+	gpuCount     int
+	gpuModel     string
+	totalVRAM    float64
+	pollSec      int
+	apiKey       string
+	capabilities []model.Capability
 }
 
 func runWorker(cfg workerConfig) error {
@@ -94,11 +158,12 @@ func runWorker(cfg workerConfig) error {
 
 	// Register
 	workerID, err := client.register(&model.WorkerRegisterRequest{
-		Hostname:  cfg.hostname,
-		GPUCount:  cfg.gpuCount,
-		GPUModel:  cfg.gpuModel,
-		TotalVRAM: cfg.totalVRAM,
-		FreeVRAM:  cfg.totalVRAM,
+		Hostname:      cfg.hostname,
+		GPUCount:      cfg.gpuCount,
+		GPUModel:      cfg.gpuModel,
+		TotalVRAM:     cfg.totalVRAM,
+		FreeVRAM:      cfg.totalVRAM,
+		CapabilitySet: cfg.capabilities,
 	})
 	if err != nil {
 		return fmt.Errorf("register worker: %w", err)
@@ -153,14 +218,14 @@ func runWorker(cfg workerConfig) error {
 					if err := downloadInputArtifacts(client.artifactHTTP, artifacts); err != nil {
 						log.Printf("c5-worker: input artifact download failed: %v", err)
 						exitCode := 1
-						if cErr := client.completeJob(j.ID, "FAILED", exitCode); cErr != nil {
+						if cErr := client.completeJob(j.ID, "FAILED", exitCode, nil); cErr != nil {
 							log.Printf("c5-worker: complete error: %v", cErr)
 						}
 						return
 					}
 				}
 
-				exitCode := executeJob(client, j, leaseID, workerID, cfg.gpuCount)
+				exitCode, resultFile := executeJob(client, j, leaseID, workerID, cfg.gpuCount)
 
 				// Upload output artifacts on success
 				if exitCode == 0 && len(j.OutputArtifacts) > 0 {
@@ -176,7 +241,19 @@ func runWorker(cfg workerConfig) error {
 					status = "FAILED"
 				}
 
-				if err := client.completeJob(j.ID, status, exitCode); err != nil {
+				// Read structured result from C5_RESULT_FILE if capability handler wrote one.
+				var result map[string]any
+				if resultFile != "" && exitCode == 0 {
+					if data, err := os.ReadFile(resultFile); err == nil {
+						if jsonErr := json.Unmarshal(data, &result); jsonErr != nil {
+							log.Printf("c5-worker: job %s: result file invalid JSON: %v", j.ID, jsonErr)
+							result = nil
+						}
+					}
+					os.Remove(resultFile)
+				}
+
+				if err := client.completeJob(j.ID, status, exitCode, result); err != nil {
 					log.Printf("c5-worker: complete error: %v", err)
 				} else {
 					log.Printf("c5-worker: job %s %s (exit %d)", j.ID, status, exitCode)
@@ -186,7 +263,7 @@ func runWorker(cfg workerConfig) error {
 	}
 }
 
-func executeJob(client *workerClient, job *model.Job, leaseID, workerID string, gpuCount int) int {
+func executeJob(client *workerClient, job *model.Job, leaseID, workerID string, gpuCount int) (int, string) {
 	// Set up context with optional timeout
 	ctx := context.Background()
 	var cancel context.CancelFunc
@@ -197,13 +274,59 @@ func executeJob(client *workerClient, job *model.Job, leaseID, workerID string, 
 	}
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "sh", "-c", job.Command)
+	// Resolve command: capability sentinel → look up in YAML if needed.
+	// The hub sets Command = "__capability__:<name>" when no explicit command was
+	// defined in the capability registration. In that case, let the capability
+	// handler discover what to run via C5_CAPABILITY env var (e.g. a script in
+	// ./capabilities/<name>). We fall back to a no-op echo so the job completes.
+	command := job.Command
+	if strings.HasPrefix(command, "__capability__:") {
+		rawName := strings.TrimPrefix(command, "__capability__:")
+		// Sanitize: reject names with path separators to prevent traversal.
+		capName := filepath.Base(rawName)
+		if capName == "." || capName == ".." || strings.ContainsAny(rawName, "/\\") {
+			log.Printf("c5-worker: unsafe capability name %q — running no-op", rawName)
+			command = "true"
+		} else {
+			// Try conventional script location: capabilities/<name> or capabilities/<name>.sh
+			found := false
+			for _, candidate := range []string{
+				filepath.Join("capabilities", capName),
+				filepath.Join("capabilities", capName+".sh"),
+			} {
+				if _, err := os.Stat(candidate); err == nil {
+					command = candidate
+					found = true
+					break
+				}
+			}
+			if !found {
+				log.Printf("c5-worker: no handler found for capability %q, running no-op", capName)
+				command = "true"
+			}
+		}
+	}
+
+	cmd := exec.CommandContext(ctx, "sh", "-c", command)
 	cmd.Dir = job.Workdir
 
 	// Env injection: inherit current env + job env vars
 	env := os.Environ()
 	for k, v := range job.Env {
 		env = append(env, k+"="+v)
+	}
+
+	// Capability params injection: C5_PARAMS (JSON) + C5_CAPABILITY + C5_RESULT_FILE
+	var resultFile string
+	if job.Capability != "" {
+		env = append(env, "C5_CAPABILITY="+job.Capability)
+		if job.Params != nil {
+			paramsJSON, _ := json.Marshal(job.Params)
+			env = append(env, "C5_PARAMS="+string(paramsJSON))
+		}
+		// Provide a temp file path for the handler to write structured JSON result.
+		resultFile = filepath.Join(os.TempDir(), "c5-result-"+job.ID+".json")
+		env = append(env, "C5_RESULT_FILE="+resultFile)
 	}
 
 	// GPU assignment: set CUDA_VISIBLE_DEVICES if job requires GPU
@@ -227,7 +350,7 @@ func executeJob(client *workerClient, job *model.Job, leaseID, workerID string, 
 
 	if err := cmd.Start(); err != nil {
 		log.Printf("c5-worker: start error: %v", err)
-		return 1
+		return 1, resultFile
 	}
 
 	// Stream logs with metrics auto-parsing on stdout
@@ -280,19 +403,19 @@ func executeJob(client *workerClient, job *model.Job, leaseID, workerID string, 
 		// Check if killed by timeout
 		if ctx.Err() == context.DeadlineExceeded {
 			log.Printf("c5-worker: job %s timed out after %ds", job.ID, job.TimeoutSec)
-			return 124
+			return 124, resultFile
 		}
 		// Check if killed by cancel
 		if ctx.Err() == context.Canceled {
 			log.Printf("c5-worker: job %s cancelled", job.ID)
-			return 130
+			return 130, resultFile
 		}
 		if exitErr, ok := err.(*exec.ExitError); ok {
-			return exitErr.ExitCode()
+			return exitErr.ExitCode(), resultFile
 		}
-		return 1
+		return 1, resultFile
 	}
-	return 0
+	return 0, resultFile
 }
 
 // downloadInputArtifacts fetches each presigned artifact URL to its local path.
@@ -660,10 +783,11 @@ func (c *workerClient) renewLease(leaseID, workerID string) error {
 	}, nil)
 }
 
-func (c *workerClient) completeJob(jobID, status string, exitCode int) error {
+func (c *workerClient) completeJob(jobID, status string, exitCode int, result map[string]any) error {
 	return c.doJSON("POST", "/v1/jobs/"+jobID+"/complete", &model.JobCompleteRequest{
 		Status:   status,
 		ExitCode: &exitCode,
+		Result:   result,
 	}, nil)
 }
 

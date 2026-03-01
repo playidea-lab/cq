@@ -194,6 +194,13 @@ func (s *Server) handleJobComplete(w http.ResponseWriter, r *http.Request, jobID
 		return
 	}
 
+	// Store structured result if provided (capability jobs).
+	if req.Result != nil {
+		if err := s.store.SetJobResult(jobID, req.Result); err != nil {
+			log.Printf("c5: set job result for %s: %v", jobID, err)
+		}
+	}
+
 	// Clean up lease
 	s.store.DeleteLease(jobID)
 

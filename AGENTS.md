@@ -135,7 +135,7 @@ C1 Messenger — Tauri 2.x 통합 대시보드 메신저 (4-탭 뷰)
 C2 Docs     — 문서 라이프사이클 (파싱/워크스페이스/프로필)
 C3 EventBus — gRPC 이벤트 버스 (UDS + WebSocket + DLQ)
 C4 Engine   — MCP 오케스트레이션 엔진 (이 리포)
-C5 Hub      — 분산 작업 큐 서버 (Worker Pull 모델, Lease 기반)
+C5 Hub      — Capability Broker + 분산 작업 큐 (Worker Pull, Lease, MCP Streamable HTTP)
 C9 Knowledge — 지식 관리 (FTS5 + pgvector + Embedding + Usage + Ingestion)
 ```
 
@@ -468,7 +468,12 @@ CP-001:    체크포인트
 ---
 
 ## C5 Hub (c5/) → [docs/ARCHITECTURE.md#c5-hub-c5](docs/ARCHITECTURE.md)
-주요: Worker Pull 모델, Lease 기반. `hub.enabled: true` + `hub.url` 설정 후 `c4_hub_submit`으로 잡 제출.
+주요: Capability Broker + Worker Pull 모델, Lease 기반.
+- `POST /v1/mcp` — MCP Streamable HTTP (JSON-RPC 2.0): Claude Code에서 `.mcp.json`으로 직접 연결 가능
+- `GET /v1/capabilities` — 등록된 capability 목록 (타입, schema, online 워커 수)
+- `POST /v1/capabilities/invoke` — capability 잡 생성
+- 워커: `c5 worker --capabilities caps.yaml` — capability YAML로 자기 선언; `C5_PARAMS`/`C5_RESULT_FILE` env로 파라미터/결과 교환
+- `hub.enabled: true` + `hub.url` 설정 후 `c4_hub_submit`으로 잡 제출.
 
 ### cq serve 통합
 `cq serve`의 `hub` 컴포넌트가 C5 바이너리를 서브프로세스로 자동 시작합니다.

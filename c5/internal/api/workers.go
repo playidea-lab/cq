@@ -59,6 +59,13 @@ func (s *Server) handleWorkerRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Register structured capabilities if provided.
+	if len(req.CapabilitySet) > 0 {
+		if err := s.store.UpsertCapabilities(worker.ID, worker.ProjectID, req.CapabilitySet); err != nil {
+			log.Printf("c5: upsert capabilities for worker %s: %v", worker.ID, err)
+		}
+	}
+
 	w.WriteHeader(http.StatusCreated)
 	writeJSON(w, model.WorkerRegisterResponse{
 		WorkerID: worker.ID,

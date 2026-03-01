@@ -559,7 +559,7 @@ func TestExecuteJob_OutputDirEnv(t *testing.T) {
 		http:    &http.Client{},
 	}
 
-	exitCode := executeJob(client, job, "lease-1", "worker-1", 0)
+	exitCode, _ := executeJob(client, job, "lease-1", "worker-1", 0)
 	if exitCode != 0 {
 		t.Fatalf("executeJob() exit code = %d, want 0", exitCode)
 	}

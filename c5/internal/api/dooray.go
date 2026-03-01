@@ -155,16 +155,18 @@ func (s *Server) handleDooray(w http.ResponseWriter, r *http.Request) {
 
 // llmAction is the structured response the LLM returns when it decides to
 // take an action. The action field determines how the server responds:
-// "submit_job" | "query_workers" | "query_jobs".
+// "submit_job" | "query_workers" | "query_jobs" | "invoke_capability".
 type llmAction struct {
-	Action      string `json:"action"`
-	Name        string `json:"name,omitempty"`
-	Command     string `json:"command,omitempty"`
-	RequiresGPU bool   `json:"requires_gpu,omitempty"`
-	ExpID       string `json:"exp_id,omitempty"`
-	Memo        string `json:"memo,omitempty"`
-	Limit       int    `json:"limit,omitempty"`
-	Status      string `json:"status,omitempty"`
+	Action      string         `json:"action"`
+	Name        string         `json:"name,omitempty"`
+	Command     string         `json:"command,omitempty"`
+	RequiresGPU bool           `json:"requires_gpu,omitempty"`
+	ExpID       string         `json:"exp_id,omitempty"`
+	Memo        string         `json:"memo,omitempty"`
+	Limit       int            `json:"limit,omitempty"`
+	Status      string         `json:"status,omitempty"`
+	Capability  string         `json:"capability,omitempty"`
+	Params      map[string]any `json:"params,omitempty"`
 }
 
 // extractAction tries to find an action JSON object in the LLM response.
@@ -232,8 +234,26 @@ func (s *Server) processDoorayServerSide(payload doorayInbound) {
 		}
 	}
 
-	// 3. Build system prompt and call LLM.
-	systemPrompt := buildDooraySystemPrompt(projectID, knowledgeCtx)
+	// 3. Fetch registered capabilities for dynamic prompt enrichment.
+	var capsCtx string
+	if caps, err := s.store.ListCapabilities(projectID); err == nil && len(caps) > 0 {
+		var sb strings.Builder
+		sb.WriteString("\n\n## 사용 가능한 워커 Capability (invoke_capability action으로 실행)\n")
+		for _, c := range caps {
+			sb.WriteString("- ")
+			sb.WriteString(c.Name)
+			if c.Description != "" {
+				sb.WriteString(": ")
+				sb.WriteString(c.Description)
+			}
+			sb.WriteString("\n")
+		}
+		sb.WriteString("→ {\"action\":\"invoke_capability\",\"capability\":\"<name>\",\"params\":{...}}")
+		capsCtx = sb.String()
+	}
+
+	// 4. Build system prompt and call LLM.
+	systemPrompt := buildDooraySystemPrompt(projectID, knowledgeCtx, capsCtx)
 	answer, err := s.llmClient.Chat(ctx, systemPrompt, payload.Text)
 	if err != nil {
 		log.Printf("c5: dooray: LLM error: %v", err)
@@ -241,7 +261,7 @@ func (s *Server) processDoorayServerSide(payload doorayInbound) {
 		return
 	}
 
-	// 4. Dispatch on structured action or post plain text.
+	// 5. Dispatch on structured action or post plain text.
 	if action, ok := extractAction(answer); ok {
 		switch action.Action {
 		case "submit_job":
@@ -277,6 +297,8 @@ func (s *Server) processDoorayServerSide(payload doorayInbound) {
 			s.handleActionQueryWorkers(ctx, webhookURL)
 		case "query_jobs":
 			s.handleActionQueryJobs(ctx, webhookURL, action.Limit, action.Status)
+		case "invoke_capability":
+			s.handleActionInvokeCapability(ctx, webhookURL, payload.ChannelID, projectID, action.Capability, action.Name, action.Params)
 		default:
 			log.Printf("c5: dooray: unknown action %q — posting as text", action.Action)
 			postToDooray(ctx, webhookURL, sanitizeDoorayText(answer))
@@ -456,9 +478,49 @@ func (s *Server) handleActionQueryJobs(ctx context.Context, webhookURL string, l
 	postToDooray(ctx, webhookURL, strings.TrimSpace(sb.String()))
 }
 
-// buildDooraySystemPrompt assembles the system prompt with optional project
-// and knowledge context.
-func buildDooraySystemPrompt(projectID, knowledgeCtx string) string {
+// handleActionInvokeCapability creates a capability job and notifies Dooray.
+func (s *Server) handleActionInvokeCapability(ctx context.Context, webhookURL, channelID, projectID, capability, name string, params map[string]any) {
+	if capability == "" {
+		postToDooray(ctx, webhookURL, "⚠️ capability 이름이 없습니다.")
+		return
+	}
+	regs, err := s.store.FindCapability(capability, projectID)
+	if err != nil || len(regs) == 0 {
+		postToDooray(ctx, webhookURL, "⚠️ capability를 찾을 수 없습니다: "+capability)
+		return
+	}
+	command := regs[0].Command
+	if command == "" {
+		command = "__capability__:" + capability
+	}
+	if name == "" {
+		name = capability
+	}
+	job, err := s.store.CreateJob(&model.JobSubmitRequest{
+		Name:       name,
+		Workdir:    ".",
+		Command:    command,
+		ProjectID:  projectID,
+		Capability: capability,
+		Params:     params,
+		Env:        map[string]string{"DOORAY_CHANNEL": channelID},
+	})
+	if err != nil {
+		log.Printf("c5: dooray: invoke capability %q: %v", capability, err)
+		postToDooray(ctx, webhookURL, "⚠️ capability 실행 실패: "+err.Error())
+		return
+	}
+	s.notifyJobAvailable()
+	shortID := job.ID
+	if len(shortID) > 8 {
+		shortID = shortID[:8]
+	}
+	postToDooray(ctx, webhookURL, fmt.Sprintf("⚙️ capability 실행 요청됨\n이름: %s\n잡 ID: %s", name, shortID))
+}
+
+// buildDooraySystemPrompt assembles the system prompt with optional project,
+// knowledge, and capability context.
+func buildDooraySystemPrompt(projectID, knowledgeCtx, capsCtx string) string {
 	prompt := `당신은 CQ 봇입니다. Google/Gemini/OpenAI를 언급하지 마세요.
 
 ⚠️ 핵심 규칙: 상태/현황/목록 조회 요청에 절대 텍스트로 설명하거나 추측하지 마세요.
@@ -494,6 +556,9 @@ func buildDooraySystemPrompt(projectID, knowledgeCtx string) string {
 - exp750 (DiNOv3 conditioned): uv run python /home/pi/git/hmr_postproc/scripts/exp750_dinov3_conditioned.py
 - 평가: uv run python /home/pi/git/hmr_postproc/scripts/eval_rl_refinement.py`
 
+	if capsCtx != "" {
+		prompt += capsCtx
+	}
 	if projectID != "" {
 		prompt += "\n\n프로젝트 ID: " + projectID
 	}

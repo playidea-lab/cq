@@ -62,6 +62,9 @@ type Job struct {
 	StartedAt       *time.Time        `json:"started_at,omitempty"`
 	FinishedAt      *time.Time        `json:"finished_at,omitempty"`
 	ExitCode        *int              `json:"exit_code,omitempty"`
+	Capability      string            `json:"capability,omitempty"`
+	Params          map[string]any    `json:"params,omitempty"`
+	Result          map[string]any    `json:"result,omitempty"`
 }
 
 // DurationSec returns the job duration in seconds, or nil if not yet finished.
@@ -77,6 +80,69 @@ func (j *Job) DurationSec() *float64 {
 // used for duration estimation based on similar past jobs.
 func (j *Job) CommandHash() string {
 	return NormalizeCommandHash(j.Command)
+}
+
+// Capability describes a named function a worker can perform (MCP tool equivalent).
+// Workers declare capabilities at registration; agents discover and invoke them.
+type Capability struct {
+	Name        string         `json:"name"`
+	Description string         `json:"description,omitempty"`
+	InputSchema map[string]any `json:"input_schema,omitempty"`
+	Tags        []string       `json:"tags,omitempty"`
+	Version     string         `json:"version,omitempty"`
+	Command     string         `json:"command,omitempty"` // script to run; receives C5_PARAMS env var
+}
+
+// CapabilityRegistration is a Capability with worker routing metadata.
+type CapabilityRegistration struct {
+	Capability
+	WorkerID  string `json:"worker_id"`
+	ProjectID string `json:"project_id,omitempty"`
+	UpdatedAt string `json:"updated_at"`
+}
+
+// CapabilityWorker is a worker summary inside a CapabilityGroup.
+type CapabilityWorker struct {
+	WorkerID string `json:"worker_id"`
+	Hostname string `json:"hostname,omitempty"`
+	Status   string `json:"status"`
+	GPUModel string `json:"gpu_model,omitempty"`
+}
+
+// CapabilityGroup aggregates workers that offer the same capability.
+type CapabilityGroup struct {
+	Capability
+	Workers []CapabilityWorker `json:"workers"`
+}
+
+// CapabilityListResponse is returned from GET /v1/capabilities.
+type CapabilityListResponse struct {
+	Capabilities []CapabilityGroup `json:"capabilities"`
+}
+
+// CapabilityInvokeRequest is the payload for POST /v1/capabilities/invoke.
+type CapabilityInvokeRequest struct {
+	Capability string         `json:"capability"`
+	Params     map[string]any `json:"params,omitempty"`
+	Name       string         `json:"name,omitempty"`
+	Priority   int            `json:"priority,omitempty"`
+	TimeoutSec int            `json:"timeout_sec,omitempty"`
+	Memo       string         `json:"memo,omitempty"`
+	ProjectID  string         `json:"project_id,omitempty"`
+}
+
+// CapabilityInvokeResponse is returned from POST /v1/capabilities/invoke.
+type CapabilityInvokeResponse struct {
+	JobID         string `json:"job_id"`
+	Status        string `json:"status"`
+	QueuePosition int    `json:"queue_position"`
+	Capability    string `json:"capability"`
+}
+
+// CapabilityUpdateRequest is the payload for POST /v1/capabilities/update.
+type CapabilityUpdateRequest struct {
+	WorkerID      string       `json:"worker_id"`
+	CapabilitySet []Capability `json:"capability_set"`
 }
 
 // Worker represents a remote worker node.
@@ -135,6 +201,8 @@ type JobSubmitRequest struct {
 	ProjectID       string            `json:"project_id,omitempty"`
 	InputArtifacts  []ArtifactRef     `json:"input_artifacts,omitempty"`
 	OutputArtifacts []ArtifactRef     `json:"output_artifacts,omitempty"`
+	Capability      string            `json:"capability,omitempty"`
+	Params          map[string]any    `json:"params,omitempty"`
 }
 
 // JobSubmitResponse is returned from POST /v1/jobs/submit.
@@ -146,8 +214,9 @@ type JobSubmitResponse struct {
 
 // JobCompleteRequest is the payload for POST /v1/jobs/{id}/complete.
 type JobCompleteRequest struct {
-	Status   string `json:"status"`
-	ExitCode *int   `json:"exit_code,omitempty"`
+	Status   string         `json:"status"`
+	ExitCode *int           `json:"exit_code,omitempty"`
+	Result   map[string]any `json:"result,omitempty"` // structured result from capability execution
 }
 
 // QueueStats holds aggregate counts by status.
@@ -169,7 +238,8 @@ type WorkerRegisterRequest struct {
 	FreeVRAM     float64        `json:"free_vram_gb"`
 	Tags         []string       `json:"tags,omitempty"`
 	ProjectID    string         `json:"project_id,omitempty"`
-	Capabilities map[string]any `json:"capabilities,omitempty"`
+	Capabilities  map[string]any `json:"capabilities,omitempty"`
+	CapabilitySet []Capability   `json:"capability_set,omitempty"` // structured capabilities
 }
 
 // WorkerRegisterResponse is returned from POST /v1/workers/register.
