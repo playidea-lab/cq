@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.49.0] - 2026-03-01
+
+### ✨ Features
+- **c9**: domain-neutral `state.yaml` 스키마 도입 — `metric.name/unit/lower_is_better/convergence_threshold` 범용화, HMR(MPJPE) 하드코딩 제거 + migration guide 포함
+- **c5/dooray**: `query_status` action — 워커+잡 교차 참조 종합 현황 조회 + 프롬프트 강화
+
+### ♻️ Refactoring
+- **c9-run/check/watch**: HMR 하드코딩 제거 — `metric.name` 동적 참조로 범용화
+- **c9-loop/c9-survey**: HMR 하드코딩 제거 — `metric.name/unit/lower_is_better` 동적 참조
+
+### 🔧 Chores
+- **c9 polish(rounds 1-9)**: C9 스크립트 품질 강화
+  - JSON 직렬화로 다줄 템플릿 값 안전 파싱 (notify.sh)
+  - env var injection 방지 (`EXP_NAME_ENV`/`C9_API_KEY_ENV` 패턴)
+  - urllib/curl 타임아웃 추가 — 서버 비응답 행잠 방지 (`urlopen(timeout=30/60)`, `--max-time 10`)
+  - webhook curl `--max-time 10 --connect-timeout 5`
+  - HUB_URL 로드 블록 `STATE_FILE` env var 통일
+  - `--poll-only` 모드 ROUND 변수 버그 수정
+  - eval 타임아웃 후 SUCCEEDED/DONE 명시 검증 (조건 반전)
+  - 원자 저장 (`NamedTemporaryFile → os.replace`) 전체 적용
+  - `metric_unit None` → 빈문자열 처리 (`or ''` 패턴)
+
+### 📚 Documentation
+- **AGENTS.md**: skills 수 22 → 35 업데이트
+
+---
+
 ## [v0.48.0] - 2026-03-01
 
 ### ✨ Features
