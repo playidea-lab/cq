@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.50.0] - 2026-03-01
+
+### ✨ Features
+- **c5**: Capability Broker — 워커 자기선언(YAML), typed invocation, project-scoped discovery
+  - `GET /v1/capabilities`: online 워커 그룹핑, input_schema 포함
+  - `POST /v1/capabilities/invoke`: capability 잡 생성 + 큐잉
+  - `POST /v1/capabilities/update`: 워커 capability 실시간 갱신 (worker ownership 검증)
+  - `AcquireLease`: capability 필터 — 등록 워커만 해당 잡 acquire
+  - Worker: `--capabilities caps.yaml` 플래그 + `C5_PARAMS`/`C5_CAPABILITY`/`C5_RESULT_FILE` env 주입
+  - `SetJobResult`: capability 잡 structured result 저장
+- **c5/mcp**: MCP Streamable HTTP 서버 (`POST /v1/mcp`, JSON-RPC 2.0)
+  - `initialize` / `tools/list` / `tools/call` / `ping` 지원
+  - capability → MCP tool 1:1 매핑 + 5개 내장 hub tools
+  - `tools/call`: client disconnect 감지 (r.Context().Done()) — goroutine leak 방지
+  - `.mcp.json`에서 `{"type":"url","url":"https://hub/v1/mcp"}` 직접 연결
+- **c5/dooray**: `invoke_capability` action 추가 + 동적 capability 목록 시스템 프롬프트 주입
+
+### 🐛 Bug Fixes
+- **c5/mcp**: `hub_cancel_job` EventBus publish 누락 수정 (handleJobCancel과 일관성)
+- **c5/worker**: capability sentinel path traversal 방지 (`filepath.Base` 검증)
+- **c5/mcp**: `tools/call` nil params 가드 추가
+
+---
+
 ## [v0.49.0] - 2026-03-01
 
 ### ✨ Features
