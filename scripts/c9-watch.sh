@@ -136,7 +136,9 @@ print(json.dumps({'name': name, 'unit': unit}))
             curl_log_args=(-s)
             [[ -n "$API_KEY" ]] && curl_log_args+=(-H "X-API-Key: $API_KEY")
             # metric_name 기반 필터: c9-check.sh와 동일한 패턴으로 파싱 (contract alignment)
-            RESULT=$(C9_METRIC_NAME="$METRIC_NAME" curl "${curl_log_args[@]}" "$HUB_URL/v1/jobs/$TARGET_JOB_ID/logs" | python3 -c "
+            # C9_METRIC_NAME은 파이프 우측 python3에 붙여야 함 (파이프 좌측 curl에는 전달 안 됨)
+            RESULT=$(curl "${curl_log_args[@]}" "$HUB_URL/v1/jobs/$TARGET_JOB_ID/logs" | \
+                C9_METRIC_NAME="$METRIC_NAME" python3 -c "
 import json, re, sys, os
 metric_name = os.environ.get('C9_METRIC_NAME', 'value')
 try:
