@@ -15,8 +15,36 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 STATE_FILE="$PROJECT_DIR/.c9/state.yaml"
 
-HUB_URL="https://piqsol-c5.fly.dev"
-API_KEY="cq-test-key-2026"
+# ── HUB_URL 로드 (C9_HUB_URL env → state.yaml hub.url) ────────
+if [[ -n "${C9_HUB_URL:-}" ]]; then
+    HUB_URL="$C9_HUB_URL"
+else
+    HUB_URL=$(python3 -c "
+import yaml, sys
+s = yaml.safe_load(open('$STATE_FILE'))
+hub = s.get('hub', {})
+url = hub.get('url', '') if isinstance(hub, dict) else ''
+if not url:
+    sys.exit(1)
+print(url)
+" 2>/dev/null) || {
+        echo "[c9-watch] Error: HUB_URL 미설정. C9_HUB_URL 환경변수 또는 state.yaml hub.url을 설정하세요." >&2
+        exit 1
+    }
+fi
+
+# ── API Key 로드 (cq secret → C9_API_KEY env → 경고 후 진행) ──
+API_KEY=""
+if command -v cq &>/dev/null; then
+    API_KEY=$(cq secret get c9.hub.api_key 2>/dev/null | tr -d '\n\r')
+fi
+if [[ -z "$API_KEY" && -n "${C9_API_KEY:-}" ]]; then
+    API_KEY="$C9_API_KEY"
+fi
+if [[ -z "$API_KEY" ]]; then
+    echo "[c9-watch] Warning: API key 미설정 — 인증 없이 진행합니다. (.env 파일 커밋 금지)" >&2
+fi
+
 POLL_INTERVAL=30
 MAX_WAIT_MIN=180
 
@@ -37,7 +65,7 @@ echo "[c9-watch] session=$SESSION_NAME interval=${POLL_INTERVAL}s max=${MAX_WAIT
 poll_job() {
     local job_id="$1"
     curl -s "$HUB_URL/v1/jobs/$job_id" \
-        -H "X-API-Key: $API_KEY" \
+        ${API_KEY:+-H "X-API-Key: $API_KEY"} \
         -o /tmp/c9_watch_poll_${job_id}.json 2>/dev/null
     python3 -c "
 import json
@@ -75,7 +103,7 @@ while [ $count -lt $MAX_POLLS ]; do
 
             # metrics.json에서 결과 파싱
             METRICS_JOB=$(curl -s -X POST "$HUB_URL/v1/jobs/submit" \
-                -H "X-API-Key: $API_KEY" \
+                ${API_KEY:+-H "X-API-Key: $API_KEY"} \
                 -H "Content-Type: application/json" \
                 -d "{\"name\":\"c9-read-metrics-r${ROUND}\",\"command\":\"python3 -c \\\"import json; m=json.load(open('/home/pi/git/hmr_unified/experiments/paper1/${EXP_NAME}/metrics.json')); e=json.load(open('/home/pi/git/hmr_unified/experiments/paper1/${EXP_NAME}/eval_results.json')) if __import__('os').path.exists('/home/pi/git/hmr_unified/experiments/paper1/${EXP_NAME}/eval_results.json') else {}; print('MPJPE=' + str(e.get('mpjpe', '?')) + ' PA=' + str(e.get('pa_mpjpe', '?')) + ' loss=' + str(m.get('best_val_loss','?')))\\\"\"}" \
                 -o /tmp/c9_metrics_job.json 2>/dev/null)
@@ -86,7 +114,7 @@ while [ $count -lt $MAX_POLLS ]; do
             PA="?"
             if [ -n "$METRICS_JID" ]; then
                 curl -s "$HUB_URL/v1/jobs/$METRICS_JID/logs" \
-                    -H "X-API-Key: $API_KEY" \
+                    ${API_KEY:+-H "X-API-Key: $API_KEY"} \
                     -o /tmp/c9_metrics_out.json 2>/dev/null
                 RESULT=$(python3 -c "
 import json, re
