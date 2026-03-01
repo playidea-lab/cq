@@ -19,9 +19,9 @@ STATE_FILE="$PROJECT_DIR/.c9/state.yaml"
 if [[ -n "${C9_HUB_URL:-}" ]]; then
     HUB_URL="$C9_HUB_URL"
 else
-    HUB_URL=$(python3 -c "
-import yaml, sys
-s = yaml.safe_load(open('$STATE_FILE'))
+    HUB_URL=$(STATE_FILE="$STATE_FILE" python3 -c "
+import yaml, sys, os
+s = yaml.safe_load(open(os.environ['STATE_FILE']))
 hub = s.get('hub', {})
 url = hub.get('url', '') if isinstance(hub, dict) else ''
 if not url:
@@ -53,9 +53,9 @@ ROUND="${2:?Usage: $0 <job_id> <round> <exp_name>}"
 EXP_NAME="${3:?Usage: $0 <job_id> <round> <exp_name>}"
 EVAL_JOB_ID="${4:-}"
 
-SESSION_NAME=$(python3 -c "
-import yaml
-s = yaml.safe_load(open('$STATE_FILE'))
+SESSION_NAME=$(STATE_FILE="$STATE_FILE" python3 -c "
+import yaml, os
+s = yaml.safe_load(open(os.environ['STATE_FILE']))
 print(s.get('notify', {}).get('session', ''))
 " 2>/dev/null)
 
@@ -64,16 +64,23 @@ echo "[c9-watch] session=$SESSION_NAME interval=${POLL_INTERVAL}s max=${MAX_WAIT
 
 poll_job() {
     local job_id="$1"
-    local poll_tmp="/tmp/c9_watch_poll_${job_id}_$$.json"
-    curl -s --max-time 10 "$HUB_URL/v1/jobs/$job_id" \
-        ${API_KEY:+-H "X-API-Key: $API_KEY"} \
+    # job_id 형식 검증 (C5 Hub 형식: [a-zA-Z0-9_-]+)
+    if ! [[ "$job_id" =~ ^[a-zA-Z0-9_-]+$ ]]; then
+        echo "ERROR"
+        return 1
+    fi
+    local poll_tmp
+    poll_tmp=$(mktemp "/tmp/c9_watch_poll_${job_id}_XXXXXX.json")
+    trap 'rm -f "$poll_tmp"' RETURN
+    curl_args=(-s --max-time 10)
+    [[ -n "$API_KEY" ]] && curl_args+=(-H "X-API-Key: $API_KEY")
+    curl "${curl_args[@]}" "$HUB_URL/v1/jobs/$job_id" \
         -o "$poll_tmp" 2>/dev/null
     C9_POLL_TMP="$poll_tmp" python3 -c "
 import json, os
 d = json.load(open(os.environ['C9_POLL_TMP']))
 print(d.get('status', 'UNKNOWN'))
 " 2>/dev/null || echo "ERROR"
-    rm -f "$poll_tmp"
 }
 
 # 최대 대기 횟수 계산
@@ -113,22 +120,23 @@ while [ $count -lt $MAX_POLLS ]; do
             fi
 
             # Job 로그에서 [C9-DONE] 마커 파싱 (metric.name 기반 범용화)
-            METRIC_NAME=$(python3 -c "
-import yaml
-s = yaml.safe_load(open('$STATE_FILE'))
+            METRIC_NAME=$(STATE_FILE="$STATE_FILE" python3 -c "
+import yaml, os
+s = yaml.safe_load(open(os.environ['STATE_FILE']))
 m = s.get('metric', {})
 print(m.get('name', 'value') if isinstance(m, dict) else 'value')
 " 2>/dev/null || echo "value")
-            METRIC_UNIT=$(python3 -c "
-import yaml
-s = yaml.safe_load(open('$STATE_FILE'))
+            METRIC_UNIT=$(STATE_FILE="$STATE_FILE" python3 -c "
+import yaml, os
+s = yaml.safe_load(open(os.environ['STATE_FILE']))
 m = s.get('metric', {})
 print(m.get('unit', '') if isinstance(m, dict) else '')
 " 2>/dev/null || echo "")
 
             TARGET_JOB_ID="${EVAL_JOB_ID:-$TRAIN_JOB_ID}"
-            RESULT=$(curl -s "$HUB_URL/v1/jobs/$TARGET_JOB_ID/logs" \
-                ${API_KEY:+-H "X-API-Key: $API_KEY"} | python3 -c "
+            curl_log_args=(-s)
+            [[ -n "$API_KEY" ]] && curl_log_args+=(-H "X-API-Key: $API_KEY")
+            RESULT=$(curl "${curl_log_args[@]}" "$HUB_URL/v1/jobs/$TARGET_JOB_ID/logs" | python3 -c "
 import json, re, sys
 try:
     d = json.load(sys.stdin)

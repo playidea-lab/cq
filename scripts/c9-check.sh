@@ -19,9 +19,9 @@ STATE_FILE="$C9_DIR/state.yaml"
 if [[ -n "${C9_HUB_URL:-}" ]]; then
     HUB_URL="$C9_HUB_URL"
 else
-    HUB_URL=$(python3 -c "
-import yaml, sys
-s = yaml.safe_load(open('$STATE_FILE'))
+    HUB_URL=$(STATE_FILE="$STATE_FILE" python3 -c "
+import yaml, sys, os
+s = yaml.safe_load(open(os.environ['STATE_FILE']))
 hub = s.get('hub', {})
 url = hub.get('url', '') if isinstance(hub, dict) else ''
 print(url)
@@ -37,9 +37,9 @@ if [[ -z "$API_KEY" && -n "${C9_API_KEY:-}" ]]; then
     API_KEY="$C9_API_KEY"
 fi
 
-ROUND=${1:-$(python3 -c "
-import yaml
-print(yaml.safe_load(open('$STATE_FILE')).get('round', 1))
+ROUND=${1:-$(STATE_FILE="$STATE_FILE" python3 -c "
+import yaml, os
+print(yaml.safe_load(open(os.environ['STATE_FILE'])).get('round', 1))
 " 2>/dev/null)}
 
 RESULTS_FILE="$C9_DIR/rounds/r${ROUND}/results.txt"
@@ -53,12 +53,12 @@ echo "[c9-check] Round $ROUND 결과 분석"
 echo ""
 
 # [C9-DONE] 파서: state.yaml metric.name 기반 범용화 (MPJPE 고정 제거)
-python3 << PYEOF
+RESULTS_FILE="$RESULTS_FILE" STATE_FILE="$STATE_FILE" ROUND_NUM="$ROUND" python3 << 'PYEOF'
 import re, yaml, sys, os
 
-results = open('$RESULTS_FILE').read()
-state_file = '$STATE_FILE'
-round_num = $ROUND
+results = open(os.environ['RESULTS_FILE']).read()
+state_file = os.environ['STATE_FILE']
+round_num = int(os.environ['ROUND_NUM'])
 
 state = yaml.safe_load(open(state_file))
 
@@ -82,8 +82,8 @@ blocked = []
 for m in done_pattern.finditer(results):
     findings.append({
         'exp': m.group(1),
-        'mpjpe': float(m.group(2)),        # primary metric value
-        'pa_mpjpe': float(m.group(3)) if m.group(3) else None,
+        'primary_value': float(m.group(2)),        # primary metric value
+        'pa_value': float(m.group(3)) if m.group(3) else None,
         'codebook_util': float(m.group(4)) if m.group(4) else None
     })
 
@@ -95,8 +95,8 @@ if findings:
     print('=== 실험 결과 ===')
     for f in findings:
         util_str = f' util={f["codebook_util"]:.2f}' if f['codebook_util'] else ''
-        pa_str = f' PA={f["pa_mpjpe"]}{metric_unit}' if f['pa_mpjpe'] is not None else ''
-        print(f'  {f["exp"]}: {metric_name}={f["mpjpe"]}{metric_unit}{pa_str}{util_str}')
+        pa_str = f' PA={f["pa_value"]}{metric_unit}' if f['pa_value'] is not None else ''
+        print(f'  {f["exp"]}: {metric_name}={f["primary_value"]}{metric_unit}{pa_str}{util_str}')
 else:
     print('=== C9-DONE 마커 없음 (실험 미완료 또는 blocked) ===')
 
@@ -131,16 +131,16 @@ prev_best = _get_val(history[-1]) if history else baseline
 
 if findings:
     if lower_is_better:
-        best = min(findings, key=lambda x: x['mpjpe'])
+        best = min(findings, key=lambda x: x['primary_value'])
     else:
-        best = max(findings, key=lambda x: x['mpjpe'])
+        best = max(findings, key=lambda x: x['primary_value'])
     # lower_is_better=True: improvement>0이면 개선 / False: best가 크면 개선
-    improvement = (prev_best - best['mpjpe']) if lower_is_better else (best['mpjpe'] - prev_best)
+    improvement = (prev_best - best['primary_value']) if lower_is_better else (best['primary_value'] - prev_best)
 
     new_entry = {
         'round': round_num,
-        'value': best['mpjpe'],          # 신규 schema 키 (metric_history[].value)
-        'pa_value': best['pa_mpjpe'],    # 선택적 secondary metric
+        'value': best['primary_value'],  # 신규 schema 키 (metric_history[].value)
+        'pa_value': best['pa_value'],    # 선택적 secondary metric
         'best_exp': best['exp'],
         'improvement': round(improvement, 3)
     }
@@ -159,7 +159,7 @@ if findings:
     direction = '↓' if lower_is_better else '↑'
     print(f'\n=== 수렴 판정 ===')
     print(f'  이전 best: {prev_best}{metric_unit}')
-    print(f'  현재 best: {best["mpjpe"]}{metric_unit} ({best["exp"]}) {direction}')
+    print(f'  현재 best: {best["primary_value"]}{metric_unit} ({best["exp"]}) {direction}')
     print(f'  개선량: {improvement:.3f}{metric_unit} (threshold: {threshold}{metric_unit})')
 
     # 2라운드 연속 threshold 미달 체크

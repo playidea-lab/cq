@@ -55,20 +55,20 @@ fi
 
 # 현재 round 읽기
 get_state() {
-    python3 -c "
-import yaml, sys
-s = yaml.safe_load(open('$STATE_FILE'))
-print(s.get('$1', ''))
+    STATE_FILE="$STATE_FILE" KEY="$1" python3 -c "
+import yaml, sys, os
+s = yaml.safe_load(open(os.environ['STATE_FILE']))
+print(s.get(os.environ['KEY'], ''))
 " 2>/dev/null || grep "^$1:" "$STATE_FILE" | awk '{print $2}'
 }
 
 set_phase() {
     # docs/c9-state-schema.md 권장: NamedTemporaryFile → yaml.dump → os.replace (원자 저장)
-    python3 -c "
+    STATE_FILE="$STATE_FILE" PHASE="$1" python3 -c "
 import yaml, tempfile, os
-state_file = '$STATE_FILE'
+state_file = os.environ['STATE_FILE']
 s = yaml.safe_load(open(state_file))
-s['phase'] = '$1'
+s['phase'] = os.environ['PHASE']
 tmp = tempfile.NamedTemporaryFile(mode='w', dir=os.path.dirname(state_file) or '.', delete=False, suffix='.tmp')
 yaml.dump(s, tmp, default_flow_style=False, allow_unicode=True)
 tmp.close()
@@ -99,25 +99,24 @@ if [[ "$1" != "--poll-only" ]]; then
     for exp_file in "$C9_DIR/experiments/r${ROUND}_"*.yaml; do
         [[ -f "$exp_file" ]] || continue
         EXP_NAME=$(grep "^name:" "$exp_file" | awk '{print $2}')
-        CMD=$(python3 -c "
-import yaml
-cfg = yaml.safe_load(open('$exp_file'))
+        CMD=$(EXP_FILE="$exp_file" python3 -c "
+import yaml, os
+cfg = yaml.safe_load(open(os.environ['EXP_FILE']))
 cmd = cfg.get('command','').strip()
 print(cmd)
 ")
         echo "[c9-run] 제출: $EXP_NAME"
 
-        PAYLOAD=$(python3 -c "
-import yaml, json
-cfg = yaml.safe_load(open('$exp_file'))
+        PAYLOAD=$(EXP_FILE="$exp_file" EXP_NAME_ENV="$EXP_NAME" ROUND_ENV="$ROUND" python3 -c "
+import yaml, json, os
+cfg = yaml.safe_load(open(os.environ['EXP_FILE']))
 cmd = cfg.get('command', '').strip()
-exp_name = cfg.get('name', '$EXP_NAME')
-print(json.dumps({'name': exp_name, 'command': cmd, 'tags': ['c9', 'r${ROUND}', exp_name]}))
+exp_name = cfg.get('name', os.environ['EXP_NAME_ENV'])
+print(json.dumps({'name': exp_name, 'command': cmd, 'tags': ['c9', 'r' + os.environ['ROUND_ENV'], exp_name]}))
 ")
-        RESPONSE=$(echo "$PAYLOAD" | curl -s -X POST "$HUB_URL/v1/jobs/submit" \
-            ${API_KEY:+-H "X-API-Key: $API_KEY"} \
-            -H "Content-Type: application/json" \
-            -d @-)
+        curl_args=(-s -X POST "$HUB_URL/v1/jobs/submit" -H "Content-Type: application/json" -d @-)
+        [[ -n "$API_KEY" ]] && curl_args+=(-H "X-API-Key: $API_KEY")
+        RESPONSE=$(echo "$PAYLOAD" | curl "${curl_args[@]}")
 
         JOB_ID=$(echo "$RESPONSE" | python3 -c "import json,sys; print(json.load(sys.stdin).get('job_id','ERROR'))" 2>/dev/null || echo "ERROR")
         if [[ "$JOB_ID" == "ERROR" || -z "$JOB_ID" ]]; then
@@ -127,9 +126,9 @@ print(json.dumps({'name': exp_name, 'command': cmd, 'tags': ['c9', 'r${ROUND}', 
         echo "[c9-run] $EXP_NAME → $JOB_ID"
 
         # jobs.json 업데이트 (원자 저장 — partial write 방지)
-        EXP_NAME_ENV="$EXP_NAME" JOB_ID_ENV="$JOB_ID" python3 -c "
+        EXP_NAME_ENV="$EXP_NAME" JOB_ID_ENV="$JOB_ID" JOBS_FILE="$JOBS_FILE" python3 -c "
 import json, tempfile, os
-jobs_file = '$JOBS_FILE'
+jobs_file = os.environ['JOBS_FILE']
 jobs = json.load(open(jobs_file))
 jobs.append({'name': os.environ['EXP_NAME_ENV'], 'job_id': os.environ['JOB_ID_ENV'], 'status': 'QUEUED'})
 tmp = tempfile.NamedTemporaryFile(mode='w', dir=os.path.dirname(jobs_file) or '.', delete=False, suffix='.tmp')
@@ -155,10 +154,11 @@ poll_count=0
 
 while [[ $poll_count -lt $MAX_POLLS ]]; do
     poll_count=$(( poll_count + 1 ))
-    C9_API_KEY_ENV="$API_KEY" C9_HUB_URL_ENV="$HUB_URL" python3 -c "
+    C9_API_KEY_ENV="$API_KEY" C9_HUB_URL_ENV="$HUB_URL" JOBS_FILE="$JOBS_FILE" python3 -c "
 import json, urllib.request, sys, os
 
-jobs = json.load(open('$JOBS_FILE'))
+jobs_file = os.environ['JOBS_FILE']
+jobs = json.load(open(jobs_file))
 api_key = os.environ.get('C9_API_KEY_ENV', '')
 hub_url = os.environ.get('C9_HUB_URL_ENV', '')
 all_done = True
@@ -181,10 +181,10 @@ for job in jobs:
 
 # 폴링 결과 원자 저장
 import tempfile as _tf, os as _os
-_tmp = _tf.NamedTemporaryFile(mode='w', dir=_os.path.dirname('$JOBS_FILE') or '.', delete=False, suffix='.tmp')
+_tmp = _tf.NamedTemporaryFile(mode='w', dir=_os.path.dirname(jobs_file) or '.', delete=False, suffix='.tmp')
 json.dump(jobs, _tmp, indent=2)
 _tmp.close()
-_os.replace(_tmp.name, '$JOBS_FILE')
+_os.replace(_tmp.name, jobs_file)
 sys.exit(0 if all_done else 1)
 "
     POLL_EXIT=$?
@@ -206,10 +206,12 @@ fi
 
 # 로그 수집
 echo "[c9-run] 결과 로그 수집"
-C9_API_KEY_ENV="$API_KEY" C9_HUB_URL_ENV="$HUB_URL" python3 -c "
+C9_API_KEY_ENV="$API_KEY" C9_HUB_URL_ENV="$HUB_URL" JOBS_FILE="$JOBS_FILE" ROUNDS_DIR="$ROUNDS_DIR" python3 -c "
 import json, urllib.request, os
 
-jobs = json.load(open('$JOBS_FILE'))
+jobs_file = os.environ['JOBS_FILE']
+rounds_dir = os.environ['ROUNDS_DIR']
+jobs = json.load(open(jobs_file))
 api_key = os.environ.get('C9_API_KEY_ENV', '')
 hub_url = os.environ.get('C9_HUB_URL_ENV', '')
 results = []
@@ -226,8 +228,8 @@ for job in jobs:
     except Exception as e:
         results.append(f'=== {job[\"name\"]} ERROR: {e} ===')
 
-open('$ROUNDS_DIR/results.txt', 'w').write('\n'.join(results))
-print('Results saved to $ROUNDS_DIR/results.txt')
+open(rounds_dir + '/results.txt', 'w').write('\n'.join(results))
+print('Results saved to ' + rounds_dir + '/results.txt')
 "
 
 set_phase "CHECK"
