@@ -55,6 +55,7 @@ type Job struct {
 	Memo            string            `json:"memo,omitempty"`
 	TimeoutSec      int               `json:"timeout_sec,omitempty"`
 	ProjectID       string            `json:"project_id,omitempty"`
+	SubmittedBy     string            `json:"submitted_by,omitempty"`
 	WorkerID        string            `json:"worker_id,omitempty"`
 	InputArtifacts  []ArtifactRef     `json:"input_artifacts,omitempty"`
 	OutputArtifacts []ArtifactRef     `json:"output_artifacts,omitempty"`
@@ -199,6 +200,7 @@ type JobSubmitRequest struct {
 	Memo            string            `json:"memo,omitempty"`
 	TimeoutSec      int               `json:"timeout_sec,omitempty"`
 	ProjectID       string            `json:"project_id,omitempty"`
+	SubmittedBy     string            `json:"submitted_by,omitempty"`
 	InputArtifacts  []ArtifactRef     `json:"input_artifacts,omitempty"`
 	OutputArtifacts []ArtifactRef     `json:"output_artifacts,omitempty"`
 	Capability      string            `json:"capability,omitempty"`

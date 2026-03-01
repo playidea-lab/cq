@@ -300,6 +300,8 @@ func (s *Store) migrate() error {
 		`ALTER TABLE jobs ADD COLUMN params TEXT NOT NULL DEFAULT '{}'`,
 		`ALTER TABLE jobs ADD COLUMN result TEXT NOT NULL DEFAULT '{}'`,
 		`CREATE INDEX IF NOT EXISTS idx_jobs_capability ON jobs(capability)`,
+		// Migration: submitted_by for audit trail (nullable; master key → empty).
+		`ALTER TABLE jobs ADD COLUMN submitted_by TEXT DEFAULT NULL`,
 	} {
 		if _, err := s.db.Exec(stmt); err != nil {
 			if !strings.Contains(err.Error(), "duplicate column") {
@@ -335,6 +337,7 @@ func (s *Store) CreateJob(req *model.JobSubmitRequest) (*model.Job, error) {
 		Memo:            req.Memo,
 		TimeoutSec:      req.TimeoutSec,
 		ProjectID:       req.ProjectID,
+		SubmittedBy:     req.SubmittedBy,
 		InputArtifacts:  req.InputArtifacts,
 		OutputArtifacts: req.OutputArtifacts,
 		Capability:      req.Capability,
@@ -345,12 +348,13 @@ func (s *Store) CreateJob(req *model.JobSubmitRequest) (*model.Job, error) {
 	_, err := s.db.Exec(`
 		INSERT INTO jobs (id, name, status, priority, workdir, command,
 			requires_gpu, vram_required_gb, env, tags, exp_id, memo, timeout_sec, project_id,
-			input_artifacts, output_artifacts, capability, params, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			submitted_by, input_artifacts, output_artifacts, capability, params, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		job.ID, job.Name, string(job.Status), job.Priority, job.Workdir, job.Command,
 		boolToInt(job.RequiresGPU), job.VRAMRequiredGB,
 		marshalJSON(job.Env), marshalJSON(job.Tags),
 		job.ExpID, job.Memo, job.TimeoutSec, job.ProjectID,
+		nullableText(job.SubmittedBy),
 		marshalArtifacts(job.InputArtifacts), marshalArtifacts(job.OutputArtifacts),
 		job.Capability, marshalJSON(job.Params),
 		now.Format(time.RFC3339),
@@ -2101,7 +2105,7 @@ func (s *Store) ListArtifacts(jobID string) ([]model.Artifact, error) {
 
 const jobSelectCols = `SELECT id, name, status, priority, workdir, command,
 	requires_gpu, vram_required_gb, env, tags, exp_id, memo, timeout_sec, worker_id,
-	created_at, started_at, finished_at, exit_code, project_id,
+	created_at, started_at, finished_at, exit_code, project_id, submitted_by,
 	input_artifacts, output_artifacts, capability, params, result`
 
 type scanner interface {
@@ -2119,6 +2123,7 @@ func populateJob(sc scanner) (*model.Job, error) {
 		startedAt           sql.NullString
 		finishedAt          sql.NullString
 		exitCode            sql.NullInt64
+		submittedBy         sql.NullString
 		inputArtifactsJSON  string
 		outputArtifactsJSON string
 		paramsJSON          string
@@ -2129,7 +2134,7 @@ func populateJob(sc scanner) (*model.Job, error) {
 		&requiresGPU, &j.VRAMRequiredGB, &envJSON, &tagsJSON,
 		&j.ExpID, &j.Memo, &j.TimeoutSec, &j.WorkerID,
 		&createdAt, &startedAt, &finishedAt, &exitCode,
-		&j.ProjectID,
+		&j.ProjectID, &submittedBy,
 		&inputArtifactsJSON, &outputArtifactsJSON,
 		&j.Capability, &paramsJSON, &resultJSON,
 	)
@@ -2150,6 +2155,9 @@ func populateJob(sc scanner) (*model.Job, error) {
 	if exitCode.Valid {
 		ec := int(exitCode.Int64)
 		j.ExitCode = &ec
+	}
+	if submittedBy.Valid {
+		j.SubmittedBy = submittedBy.String
 	}
 	json.Unmarshal([]byte(envJSON), &j.Env)
 	json.Unmarshal([]byte(tagsJSON), &j.Tags)
@@ -2220,6 +2228,12 @@ func boolToInt(b bool) int {
 		return 1
 	}
 	return 0
+}
+
+// nullableText converts a string to sql.NullString so that empty strings
+// are stored as NULL (preserving the nullable semantics of submitted_by).
+func nullableText(s string) sql.NullString {
+	return sql.NullString{String: s, Valid: s != ""}
 }
 
 func generateID(prefix string) string {

@@ -29,9 +29,10 @@ func (s *Server) handleJobSubmit(w http.ResponseWriter, r *http.Request) {
 		req.Name = "untitled"
 	}
 
-	// Override project_id from auth context
+	// Override project_id from auth context and set submitted_by for audit trail.
 	if pid := projectIDFromContext(r); pid != "" {
 		req.ProjectID = pid
+		req.SubmittedBy = pid
 	}
 
 	job, err := s.store.CreateJob(req)
