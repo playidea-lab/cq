@@ -24,6 +24,14 @@ import (
 // ErrNotFound is returned when a secret key does not exist.
 var ErrNotFound = errors.New("secret not found")
 
+// ErrInvalidProjectID is returned when projectID contains ":" (namespace separator).
+var ErrInvalidProjectID = errors.New("projectID must not contain \":\"")
+
+// nsKey formats a namespaced storage key as "{projectID}:{key}".
+func nsKey(projectID, key string) string {
+	return projectID + ":" + key
+}
+
 // Store is a thread-safe encrypted secret store backed by SQLite.
 type Store struct {
 	db        *sql.DB
@@ -108,6 +116,39 @@ func (s *Store) Get(key string) (string, error) {
 		return "", fmt.Errorf("decrypt: %w", err)
 	}
 	return string(plain), nil
+}
+
+// SetNS stores (or updates) an encrypted secret scoped to projectID.
+// The key is stored internally as "{projectID}:{key}".
+// Returns ErrInvalidProjectID if projectID contains ":".
+func (s *Store) SetNS(projectID, key, value string) error {
+	if strings.Contains(projectID, ":") {
+		return ErrInvalidProjectID
+	}
+	return s.Set(nsKey(projectID, key), value)
+}
+
+// GetNS retrieves a secret scoped to projectID.
+//
+// Security Decision — fallback policy (DX-first):
+//  1. Look up "{projectID}:{key}" first.
+//  2. If not found, fall back to the global "{key}" (shared keys like anthropic.api_key).
+//  3. Never fall back to another project's namespaced key (cross-project boundary = forbidden).
+//
+// Returns ErrInvalidProjectID if projectID contains ":".
+func (s *Store) GetNS(projectID, key string) (string, error) {
+	if strings.Contains(projectID, ":") {
+		return "", ErrInvalidProjectID
+	}
+	val, err := s.Get(nsKey(projectID, key))
+	if err == nil {
+		return val, nil
+	}
+	if !errors.Is(err, ErrNotFound) {
+		return "", err
+	}
+	// Global fallback (DX-first): shared keys like anthropic.api_key.
+	return s.Get(key)
 }
 
 // List returns all secret key names (not values), sorted alphabetically.

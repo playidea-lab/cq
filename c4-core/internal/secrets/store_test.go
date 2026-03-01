@@ -562,3 +562,111 @@ func TestNewWithPaths_CreateKeyInReadOnlyDir(t *testing.T) {
 		t.Fatal("expected error creating master key in read-only directory, got nil")
 	}
 }
+
+// TestSecretNS_SetGet verifies SetNS/GetNS round-trip for a namespaced key.
+func TestSecretNS_SetGet(t *testing.T) {
+	s := newTestStore(t)
+
+	if err := s.SetNS("projA", "api_key", "sk-proj-a"); err != nil {
+		t.Fatalf("SetNS: %v", err)
+	}
+	got, err := s.GetNS("projA", "api_key")
+	if err != nil {
+		t.Fatalf("GetNS: %v", err)
+	}
+	if got != "sk-proj-a" {
+		t.Errorf("GetNS = %q, want %q", got, "sk-proj-a")
+	}
+}
+
+// TestSecretNS_Fallback verifies that GetNS falls back to the global key when
+// the namespaced key does not exist.
+func TestSecretNS_Fallback(t *testing.T) {
+	s := newTestStore(t)
+
+	// Set a global key only (no namespace).
+	if err := s.Set("anthropic.api_key", "global-val"); err != nil {
+		t.Fatalf("Set: %v", err)
+	}
+
+	// GetNS for a project that has no project-specific key → must return global.
+	got, err := s.GetNS("projA", "anthropic.api_key")
+	if err != nil {
+		t.Fatalf("GetNS fallback: %v", err)
+	}
+	if got != "global-val" {
+		t.Errorf("GetNS fallback = %q, want %q", got, "global-val")
+	}
+}
+
+// TestSecretNS_Fallback_DoesNotCrossProjectBoundary verifies that when projA has
+// no namespaced key, GetNS falls back to the global key only — not to projB's key.
+func TestSecretNS_Fallback_DoesNotCrossProjectBoundary(t *testing.T) {
+	s := newTestStore(t)
+
+	// Set a key for projB (and global), but NOT for projA.
+	if err := s.SetNS("projB", "api_key", "sk-proj-b"); err != nil {
+		t.Fatalf("SetNS projB: %v", err)
+	}
+	if err := s.Set("api_key", "global-val"); err != nil {
+		t.Fatalf("Set global: %v", err)
+	}
+
+	// projA has no namespaced key → must fall back to global, never to projB.
+	got, err := s.GetNS("projA", "api_key")
+	if err != nil {
+		t.Fatalf("GetNS: %v", err)
+	}
+	if got != "global-val" {
+		t.Errorf("GetNS fallback = %q, want %q (must not cross project boundary)", got, "global-val")
+	}
+	if got == "sk-proj-b" {
+		t.Fatal("cross-project boundary violation: projA received projB's secret")
+	}
+}
+
+// TestSecretNS_ColonInProjectID verifies that a projectID containing ":" returns ErrInvalidProjectID.
+func TestSecretNS_ColonInProjectID(t *testing.T) {
+	s := newTestStore(t)
+
+	if err := s.SetNS("proj:bad", "key", "val"); !errors.Is(err, secrets.ErrInvalidProjectID) {
+		t.Errorf("SetNS with colon in projectID: got %v, want ErrInvalidProjectID", err)
+	}
+	_, err := s.GetNS("proj:bad", "key")
+	if !errors.Is(err, secrets.ErrInvalidProjectID) {
+		t.Errorf("GetNS with colon in projectID: got %v, want ErrInvalidProjectID", err)
+	}
+}
+
+// TestSecretNS_ColonInKey verifies that a key containing ":" is stored and retrieved correctly.
+// The first ":" is the project/key separator; additional ":" in key are harmless.
+func TestSecretNS_ColonInKey(t *testing.T) {
+	s := newTestStore(t)
+
+	if err := s.SetNS("projA", ":api:subkey", "val"); err != nil {
+		t.Fatalf("SetNS colon-key: %v", err)
+	}
+	got, err := s.GetNS("projA", ":api:subkey")
+	if err != nil {
+		t.Fatalf("GetNS colon-key: %v", err)
+	}
+	if got != "val" {
+		t.Errorf("GetNS colon-key = %q, want %q", got, "val")
+	}
+}
+
+// TestSecret_BackwardCompat verifies that the existing Get/Set API is unchanged.
+func TestSecret_BackwardCompat(t *testing.T) {
+	s := newTestStore(t)
+
+	if err := s.Set("openai.api_key", "sk-global"); err != nil {
+		t.Fatalf("Set: %v", err)
+	}
+	got, err := s.Get("openai.api_key")
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if got != "sk-global" {
+		t.Errorf("Get = %q, want %q", got, "sk-global")
+	}
+}
