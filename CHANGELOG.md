@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.53.0] - 2026-03-02
+
+### ✨ Features
+- **c5/conversation**: 통합 대화 플랫폼 — Dooray 봇 대화를 C1 `c1_*` 테이블로 통합
+  - Supabase migration 00028: `tenant_id`/`platform` 컬럼, `project_id` nullable, `channel_type IN ('bot','event')` 확장
+  - 부분 유니크 인덱스 `uniq_c1_channels_bot`, `uniq_c1_members_platform` (PostgreSQL NULL 중복 방지)
+  - `conversations` 테이블 → `conversations_legacy` 리네임 + 하위호환 읽기 뷰
+  - `conv_to_knowledge` DB 트리거: bot 채널 어시스턴트 답변 → `c4_documents` 자동 ingestion
+  - `Store` 인터페이스: `EnsureChannel`, `ListChannels`, `EnsureParticipant` 추가
+  - `SupabaseStore`: `c1_messages`/`c1_channels`/`c1_members` 직접 사용 (PostgREST)
+  - `MemoryStore`: in-process fallback, null-byte 키 구분자(`\x00`)
+- **c5/dooray**: Dooray 봇 채널 UUID 관리 — `EnsureChannel`/`EnsureParticipant` 호출, knowledge goroutine 제거 (DB 트리거 대체)
+
 ## [v0.52.0] - 2026-03-01
 
 ### ✨ Features
