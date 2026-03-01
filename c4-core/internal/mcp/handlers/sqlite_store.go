@@ -407,6 +407,22 @@ func (s *SQLiteStore) AssignTask(workerID string) (*TaskAssignment, error) {
 		s.logTrace("stale_reassign", workerID, taskID, "Reassigned stale in_progress task")
 	}
 
+	// 2. Advisory scope lock: prevent concurrent workers from editing the same scope.
+	if scope != "" {
+		acquired, lockErr := s.TryAcquireScopeLock(scope, workerID, 10*time.Minute)
+		if lockErr != nil {
+			// Best-effort: log and continue (lock table may not exist on older DBs)
+			fmt.Fprintf(os.Stderr, "c4: scope lock error for %s: %v\n", scope, lockErr)
+		} else if !acquired {
+			// Another worker holds this scope — reset task to pending and report no task.
+			_, _ = s.db.Exec(
+				`UPDATE c4_tasks SET status = 'pending', worker_id = '', updated_at = CURRENT_TIMESTAMP
+				 WHERE task_id = ? AND worker_id = ?`, taskID, workerID,
+			)
+			return nil, nil
+		}
+	}
+
 	// Apply config model hint if task has no explicit model
 	taskRowModel := model
 	if model == "" && s.config != nil {
@@ -747,6 +763,11 @@ func (s *SQLiteStore) SubmitTask(taskID, workerID, commitSHA, handoff string, re
 	)
 	if err != nil {
 		return nil, fmt.Errorf("updating task: %w", err)
+	}
+
+	// Release advisory scope lock (best-effort)
+	if task.Scope != "" {
+		_ = s.ReleaseScopeLock(task.Scope, workerID)
 	}
 
 	// Record persona stats (best-effort)

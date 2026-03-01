@@ -23,6 +23,12 @@ func (s *SQLiteStore) initSchema() error {
 			state_json TEXT NOT NULL,
 			updated_at TEXT DEFAULT CURRENT_TIMESTAMP
 		)`,
+		`CREATE TABLE IF NOT EXISTS c4_scope_locks (
+			scope       TEXT PRIMARY KEY,
+			worker_id   TEXT NOT NULL,
+			acquired_at TEXT NOT NULL,
+			expires_at  TEXT NOT NULL
+		)`,
 		`CREATE TABLE IF NOT EXISTS c4_tasks (
 			task_id      TEXT PRIMARY KEY,
 			title        TEXT NOT NULL,
