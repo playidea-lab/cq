@@ -115,7 +115,11 @@ print(json.dumps({'name': exp_name, 'command': cmd, 'tags': ['c9', 'r${ROUND}', 
             -H "Content-Type: application/json" \
             -d @-)
 
-        JOB_ID=$(echo "$RESPONSE" | python3 -c "import json,sys; print(json.load(sys.stdin).get('job_id','ERROR'))")
+        JOB_ID=$(echo "$RESPONSE" | python3 -c "import json,sys; print(json.load(sys.stdin).get('job_id','ERROR'))" 2>/dev/null || echo "ERROR")
+        if [[ "$JOB_ID" == "ERROR" || -z "$JOB_ID" ]]; then
+            echo "[c9-run] Error: $EXP_NAME 제출 실패. 응답: $RESPONSE" >&2
+            continue
+        fi
         echo "[c9-run] $EXP_NAME → $JOB_ID"
 
         # jobs.json 업데이트 (원자 저장 — partial write 방지)
@@ -137,8 +141,12 @@ fi
 # ── POLL ───────────────────────────────────────────────────────
 echo "[c9-run] 완료 폴링 시작 (${POLL_INTERVAL}s 간격)"
 JOBS_FILE="$ROUNDS_DIR/jobs.json"
+MAX_WAIT_MIN=360
+MAX_POLLS=$(( MAX_WAIT_MIN * 60 / POLL_INTERVAL ))
+poll_count=0
 
-while true; do
+while [[ $poll_count -lt $MAX_POLLS ]]; do
+    poll_count=$(( poll_count + 1 ))
     python3 -c "
 import json, urllib.request, sys
 
@@ -181,6 +189,12 @@ sys.exit(0 if all_done else 1)
     echo "[c9-run] 대기 중... ${POLL_INTERVAL}s"
     sleep $POLL_INTERVAL
 done
+
+if [[ $poll_count -ge $MAX_POLLS ]]; then
+    echo "[c9-run] Error: 폴링 타임아웃 (${MAX_WAIT_MIN}분)" >&2
+    set_phase "CONFERENCE"
+    exit 1
+fi
 
 # 로그 수집
 echo "[c9-run] 결과 로그 수집"
