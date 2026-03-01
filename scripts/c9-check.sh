@@ -162,8 +162,8 @@ if findings:
 
     if consecutive_small:
         state['phase'] = 'FINISH'
-        print(f'  → 수렴! phase=FINISH (2라운드 연속 개선 < {threshold}mm)')
-    elif improvement < threshold and round_num >= state.get('max_rounds', 10):
+        print(f'  → 수렴! phase=FINISH (2라운드 연속 개선 < {threshold}{metric_unit})')
+    elif abs(improvement) < threshold and round_num >= state.get('max_rounds', 10):
         state['phase'] = 'FINISH'
         print(f'  → 최대 라운드 도달. phase=FINISH')
     elif blocked:

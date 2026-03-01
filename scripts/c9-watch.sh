@@ -88,17 +88,19 @@ while [ $count -lt $MAX_POLLS ]; do
     echo "[c9-watch] min=${elapsed} job=${TRAIN_JOB_ID} status=${STATUS}"
 
     case "$STATUS" in
-        SUCCEEDED)
-            echo "[c9-watch] 훈련 완료 (SUCCEEDED)"
+        SUCCEEDED|DONE)
+            echo "[c9-watch] 훈련 완료 (${STATUS})"
 
             # eval job이 있으면 완료 대기
             if [ -n "$EVAL_JOB_ID" ]; then
                 echo "[c9-watch] eval job 완료 대기: $EVAL_JOB_ID"
                 EVAL_STATUS="UNKNOWN"
-                for i in $(seq 1 60); do
+                MAX_EVAL_POLLS=$(( MAX_WAIT_MIN * 60 / POLL_INTERVAL / 2 ))
+                for i in $(seq 1 "$MAX_EVAL_POLLS"); do
                     EVAL_STATUS=$(poll_job "$EVAL_JOB_ID")
                     echo "[c9-watch] eval status=$EVAL_STATUS"
                     [ "$EVAL_STATUS" = "SUCCEEDED" ] && break
+                    [ "$EVAL_STATUS" = "DONE" ] && break
                     [ "$EVAL_STATUS" = "FAILED" ] && break
                     [ "$EVAL_STATUS" = "CANCELLED" ] && break
                     sleep "$POLL_INTERVAL"

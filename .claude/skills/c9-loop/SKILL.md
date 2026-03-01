@@ -55,7 +55,7 @@ cat .c9/state.yaml
 → C5 Hub Job으로 원격 서버에 코드 작성/배포
 - `.c9/experiments/rN_*.yaml`의 `implement` 섹션에 명시된 작업 실행:
   - 코드 파일 생성/수정 (모델, 학습 스크립트, 설정 등)
-  - 의존성 설치 (`pip install`, `apt install` 등)
+  - 의존성 설치 (`uv add`, `apt install` 등)
   - 데이터 전처리 스크립트 실행
 - 구현 완료 검증 (`[C9-IMPL-DONE]` 마커 확인)
 - state.yaml phase → RUN

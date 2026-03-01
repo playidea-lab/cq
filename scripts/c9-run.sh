@@ -87,6 +87,9 @@ if [[ "$1" != "--poll-only" ]]; then
     set_phase "RUN"
 
     JOBS_FILE="$ROUNDS_DIR/jobs.json"
+    if [[ -f "$JOBS_FILE" ]] && [[ "$(cat "$JOBS_FILE")" != "[]" ]]; then
+        echo "[c9-run] Warning: $JOBS_FILE 이미 존재. 덮어씁니다 (재제출)." >&2
+    fi
     echo "[]" > "$JOBS_FILE"
 
     for exp_file in "$C9_DIR/experiments/r${ROUND}_"*.yaml; do
