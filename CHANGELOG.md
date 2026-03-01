@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.51.0] - 2026-03-01
+
+### ✨ Features
+- **c5**: Dooray 멀티턴 대화 히스토리 + Supabase 영구 저장
+  - `conversation.Store` 인터페이스 — MemoryStore (TTL fallback) + SupabaseStore (PostgREST)
+  - `llmclient.ChatWithHistory` — 채널별 20턴 히스토리를 LLM context로 전달
+  - `knowledge.Client.Record` — 대화 내용 C9 Knowledge async ingestion
+  - Supabase migration 00027: conversations 테이블 + RLS 정책
+- **secrets**: `GetNS` / `SetNS` project-namespaced secret API 추가
+- **c5**: job 제출 시 `submitted_by` audit trail 기록
+
+### 🐛 Bug Fixes
+- **c9-scripts**: `python3` → `uv run python` (uv 환경 기준 통일)
+
+### 🔧 Chores
+- **c4-core**: CLI 표기 `c4` → `cq` 일관성 정렬 (daemon/auth/doctor/hub/root)
+- **c4-core**: `version` 명령 추가 — tier 빌드 정보 포함
+
+### 📚 Documentation
+- **AGENTS**: 테스트 수 업데이트 — c5 9개 패키지, ~2,038 Go 테스트
+
+---
+
 ## [v0.50.1] - 2026-03-01
 
 ### 🐛 Bug Fixes
