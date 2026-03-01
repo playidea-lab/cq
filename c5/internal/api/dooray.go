@@ -229,7 +229,35 @@ func (s *Server) processDoorayServerSide(payload doorayInbound) {
 		return
 	}
 
-	// 2. Search knowledge (optional, non-fatal).
+	// 2. Ensure c1_channels row exists. On error, channelUUID is empty and
+	// history Get/Append are skipped for this turn (LLM answer still delivered).
+	channelUUID, err := s.convStore.EnsureChannel(ctx, conversation.Channel{
+		TenantID:    "default",
+		ProjectID:   projectID,
+		Name:        "dooray-" + payload.ChannelID,
+		ChannelType: "bot",
+		Platform:    "dooray",
+	})
+	if err != nil {
+		log.Printf("c5: dooray: WARN ensure channel failed, history skipped for this turn: %v", err)
+	}
+
+	// Register Dooray user as a c1_members participant (best-effort, non-fatal).
+	if payload.UserID != "" {
+		if _, err := s.convStore.EnsureParticipant(ctx, conversation.Participant{
+			TenantID:    "default",
+			ProjectID:   projectID,
+			MemberType:  "user",
+			ExternalID:  payload.UserID,
+			DisplayName: payload.UserNickname,
+			Platform:    "dooray",
+			PlatformID:  payload.UserID,
+		}); err != nil {
+			log.Printf("c5: dooray: ensure participant error: %v", err)
+		}
+	}
+
+	// 3. Search knowledge (optional, non-fatal).
 	var knowledgeCtx string
 	if s.knowledgeClient != nil && projectID != "" {
 		results, err := s.knowledgeClient.Search(ctx, projectID, payload.Text, 5)
@@ -240,7 +268,7 @@ func (s *Server) processDoorayServerSide(payload doorayInbound) {
 		}
 	}
 
-	// 3. Fetch registered capabilities for dynamic prompt enrichment.
+	// 4. Fetch registered capabilities for dynamic prompt enrichment.
 	var capsCtx string
 	if caps, err := s.store.ListCapabilities(projectID); err == nil && len(caps) > 0 {
 		var sb strings.Builder
@@ -258,16 +286,18 @@ func (s *Server) processDoorayServerSide(payload doorayInbound) {
 		capsCtx = sb.String()
 	}
 
-	// 4. Build system prompt and call LLM (with conversation history).
+	// 5. Build system prompt and call LLM (with conversation history).
 	systemPrompt := buildDooraySystemPrompt(projectID, knowledgeCtx, capsCtx)
 
 	var history []llmclient.Message
-	if convMsgs, err := s.convStore.Get(ctx, payload.ChannelID, 20); err != nil {
-		log.Printf("c5: dooray: conversation get error: %v", err)
-	} else {
-		history = make([]llmclient.Message, len(convMsgs))
-		for i, m := range convMsgs {
-			history[i] = llmclient.Message{Role: m.Role, Content: m.Content}
+	if channelUUID != "" {
+		if convMsgs, err := s.convStore.Get(ctx, channelUUID, 20); err != nil {
+			log.Printf("c5: dooray: conversation get error: %v", err)
+		} else {
+			history = make([]llmclient.Message, len(convMsgs))
+			for i, m := range convMsgs {
+				history[i] = llmclient.Message{Role: m.Role, Content: m.Content}
+			}
 		}
 	}
 
@@ -278,27 +308,20 @@ func (s *Server) processDoorayServerSide(payload doorayInbound) {
 		return
 	}
 
-	// 5. Persist turn — before dispatch so even action answers are part of history.
-	appendMsgs := []conversation.Message{
-		{Role: "user", Content: payload.Text},
-		{Role: "assistant", Content: answer},
+	// 6. Persist turn using channel UUID — before dispatch so actions are part of history.
+	if channelUUID != "" {
+		appendMsgs := []conversation.Message{
+			{Role: "user", Content: payload.Text},
+			{Role: "assistant", Content: answer},
+		}
+		if err := s.convStore.Append(ctx, channelUUID, "dooray", projectID, appendMsgs); err != nil {
+			log.Printf("c5: dooray: conversation append error: %v", err)
+		}
 	}
-	if err := s.convStore.Append(ctx, payload.ChannelID, "dooray", projectID, appendMsgs); err != nil {
-		log.Printf("c5: dooray: conversation append error: %v", err)
-	}
+	// Knowledge ingestion is handled automatically by the trg_conv_knowledge DB trigger
+	// (migration 00028_unified_conversation.sql) when SupabaseStore is active.
 
-	// Async knowledge ingestion — fire-and-forget, non-fatal.
-	if s.knowledgeClient != nil && projectID != "" {
-		go func() {
-			title := "대화: " + payload.ChannelID + " " + time.Now().Format("2006-01-02")
-			body := "User: " + payload.Text + "\nAssistant: " + answer
-			if err := s.knowledgeClient.Record(context.Background(), projectID, title, body); err != nil {
-				log.Printf("c5: dooray: knowledge record error: %v", err)
-			}
-		}()
-	}
-
-	// 6. Dispatch on structured action or post plain text.
+	// 7. Dispatch on structured action or post plain text.
 	if action, ok := extractAction(answer); ok {
 		switch action.Action {
 		case "submit_job":
@@ -647,7 +670,7 @@ func postToDooray(ctx context.Context, webhookURL, text string) {
 		return
 	}
 	defer resp.Body.Close()
-	io.Copy(io.Discard, resp.Body) //nolint:errcheck // drain for connection reuse
+	io.Copy(io.Discard, io.LimitReader(resp.Body, 64<<10)) //nolint:errcheck // drain for connection reuse
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		log.Printf("c5: dooray: webhook returned status %d", resp.StatusCode)
 	}

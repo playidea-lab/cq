@@ -2,6 +2,7 @@ package conversation
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 )
@@ -10,10 +11,13 @@ import (
 // It keeps the most recent maxMsgs messages per channel and discards entries
 // after ttl of inactivity. Use as a fallback when Supabase is not configured.
 type MemoryStore struct {
-	mu      sync.Mutex
-	entries map[string]*memEntry
-	maxMsgs int
-	ttl     time.Duration
+	mu           sync.Mutex
+	entries      map[string]*memEntry
+	channels     map[string]string // channelKey → synthetic id
+	participants map[string]string // participantKey → synthetic id
+	counters     [2]int            // [0]=channels count, [1]=participants count
+	maxMsgs      int
+	ttl          time.Duration
 }
 
 type memEntry struct {
@@ -24,9 +28,11 @@ type memEntry struct {
 // NewMemoryStore creates a MemoryStore with the given capacity and TTL.
 func NewMemoryStore(maxMsgs int, ttl time.Duration) *MemoryStore {
 	return &MemoryStore{
-		entries: make(map[string]*memEntry),
-		maxMsgs: maxMsgs,
-		ttl:     ttl,
+		entries:      make(map[string]*memEntry),
+		channels:     make(map[string]string),
+		participants: make(map[string]string),
+		maxMsgs:      maxMsgs,
+		ttl:          ttl,
 	}
 }
 
@@ -69,6 +75,52 @@ func (m *MemoryStore) Append(_ context.Context, channelID, _, _ string, msgs []M
 		e.msgs = e.msgs[len(e.msgs)-m.maxMsgs:]
 	}
 	return nil
+}
+
+// EnsureChannel creates or returns an in-memory synthetic ID for the channel.
+// IDs are stable within a process lifetime but not persisted across restarts.
+func (m *MemoryStore) EnsureChannel(_ context.Context, ch Channel) (string, error) {
+	tenant := ch.TenantID
+	if tenant == "" {
+		tenant = "default"
+	}
+	key := tenant + "\x00" + ch.Platform + "\x00" + ch.Name
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if id, ok := m.channels[key]; ok {
+		return id, nil
+	}
+	id := fmt.Sprintf("mem-ch-%d", m.counters[0])
+	m.counters[0]++
+	m.channels[key] = id
+	return id, nil
+}
+
+// ListChannels returns an empty slice; not meaningful for the in-memory fallback.
+func (m *MemoryStore) ListChannels(_ context.Context, _, _ string) ([]Channel, error) {
+	return nil, nil
+}
+
+// EnsureParticipant creates or returns an in-memory synthetic ID for the participant.
+// IDs are stable within a process lifetime but not persisted across restarts.
+func (m *MemoryStore) EnsureParticipant(_ context.Context, p Participant) (string, error) {
+	if p.PlatformID == "" {
+		return "", nil // no-op: matches SupabaseStore behaviour
+	}
+	tenant := p.TenantID
+	if tenant == "" {
+		tenant = "default"
+	}
+	key := tenant + "\x00" + p.Platform + "\x00" + p.PlatformID
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if id, ok := m.participants[key]; ok {
+		return id, nil
+	}
+	id := fmt.Sprintf("mem-p-%d", m.counters[1])
+	m.counters[1]++
+	m.participants[key] = id
+	return id, nil
 }
 
 // Cleanup removes expired entries.
