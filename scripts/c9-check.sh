@@ -41,6 +41,10 @@ ROUND=${1:-$(STATE_FILE="$STATE_FILE" python3 -c "
 import yaml, os
 print(yaml.safe_load(open(os.environ['STATE_FILE'])).get('round', 1))
 " 2>/dev/null)}
+if [[ -z "$ROUND" || ! "$ROUND" =~ ^[0-9]+$ ]]; then
+    echo "[c9-check] Error: ROUND 읽기 실패 (state.yaml 파싱 오류 또는 round 키 없음)" >&2
+    exit 1
+fi
 
 RESULTS_FILE="$C9_DIR/rounds/r${ROUND}/results.txt"
 

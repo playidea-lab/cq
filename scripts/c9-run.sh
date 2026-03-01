@@ -59,7 +59,7 @@ get_state() {
 import yaml, sys, os
 s = yaml.safe_load(open(os.environ['STATE_FILE']))
 print(s.get(os.environ['KEY'], ''))
-" 2>/dev/null || grep "^$1:" "$STATE_FILE" | awk '{print $2}'
+" 2>/dev/null || grep -F "^${1}:" "$STATE_FILE" | awk '{print $2}'
 }
 
 set_phase() {
@@ -82,6 +82,10 @@ if [[ "$1" == "--poll-only" ]]; then
 else
     ROUND=${1:-$(get_state round)}
 fi
+if [[ -z "$ROUND" || ! "$ROUND" =~ ^[0-9]+$ ]]; then
+    echo "[c9-run] Error: ROUND 읽기 실패 (state.yaml 파싱 오류 또는 round 키 없음)" >&2
+    exit 1
+fi
 ROUNDS_DIR="$C9_DIR/rounds/r${ROUND}"
 mkdir -p "$ROUNDS_DIR"
 
@@ -98,7 +102,7 @@ if [[ "$1" != "--poll-only" ]]; then
 
     for exp_file in "$C9_DIR/experiments/r${ROUND}_"*.yaml; do
         [[ -f "$exp_file" ]] || continue
-        EXP_NAME=$(grep "^name:" "$exp_file" | awk '{print $2}')
+        EXP_NAME=$(grep -m 1 "^name:" "$exp_file" | awk '{print $2}')
         CMD=$(EXP_FILE="$exp_file" python3 -c "
 import yaml, os
 cfg = yaml.safe_load(open(os.environ['EXP_FILE']))
@@ -228,8 +232,10 @@ for job in jobs:
     except Exception as e:
         results.append(f'=== {job[\"name\"]} ERROR: {e} ===')
 
-open(rounds_dir + '/results.txt', 'w').write('\n'.join(results))
-print('Results saved to ' + rounds_dir + '/results.txt')
+result_path = os.path.join(rounds_dir, 'results.txt')
+with open(result_path, 'w') as f:
+    f.write('\n'.join(results))
+print('Results saved to ' + result_path)
 "
 
 set_phase "CHECK"

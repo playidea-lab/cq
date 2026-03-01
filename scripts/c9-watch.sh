@@ -103,7 +103,7 @@ while [ $count -lt $MAX_POLLS ]; do
                 echo "[c9-watch] eval job 완료 대기: $EVAL_JOB_ID"
                 EVAL_STATUS="UNKNOWN"
                 MAX_EVAL_POLLS=$(( MAX_WAIT_MIN * 60 / POLL_INTERVAL / 2 ))
-                for i in $(seq 1 "$MAX_EVAL_POLLS"); do
+                for ((i=1; i<=MAX_EVAL_POLLS; i++)); do
                     EVAL_STATUS=$(poll_job "$EVAL_JOB_ID")
                     echo "[c9-watch] eval status=$EVAL_STATUS"
                     [ "$EVAL_STATUS" = "SUCCEEDED" ] && break
@@ -120,33 +120,34 @@ while [ $count -lt $MAX_POLLS ]; do
             fi
 
             # Job 로그에서 [C9-DONE] 마커 파싱 (metric.name 기반 범용화)
-            METRIC_NAME=$(STATE_FILE="$STATE_FILE" python3 -c "
-import yaml, os
+            # state.yaml을 1회만 파싱하여 TOCTOU 방지
+            _METRIC_CFG=$(STATE_FILE="$STATE_FILE" python3 -c "
+import yaml, os, json
 s = yaml.safe_load(open(os.environ['STATE_FILE']))
 m = s.get('metric', {})
-print(m.get('name', 'value') if isinstance(m, dict) else 'value')
-" 2>/dev/null || echo "value")
-            METRIC_UNIT=$(STATE_FILE="$STATE_FILE" python3 -c "
-import yaml, os
-s = yaml.safe_load(open(os.environ['STATE_FILE']))
-m = s.get('metric', {})
-print(m.get('unit', '') if isinstance(m, dict) else '')
-" 2>/dev/null || echo "")
+name = m.get('name', 'value') if isinstance(m, dict) else 'value'
+unit = m.get('unit', '') if isinstance(m, dict) else ''
+print(json.dumps({'name': name, 'unit': unit}))
+" 2>/dev/null || echo '{"name":"value","unit":""}')
+            METRIC_NAME=$(echo "$_METRIC_CFG" | python3 -c "import json,sys; print(json.load(sys.stdin)['name'])" 2>/dev/null || echo "value")
+            METRIC_UNIT=$(echo "$_METRIC_CFG" | python3 -c "import json,sys; print(json.load(sys.stdin)['unit'])" 2>/dev/null || echo "")
 
             TARGET_JOB_ID="${EVAL_JOB_ID:-$TRAIN_JOB_ID}"
             curl_log_args=(-s)
             [[ -n "$API_KEY" ]] && curl_log_args+=(-H "X-API-Key: $API_KEY")
-            RESULT=$(curl "${curl_log_args[@]}" "$HUB_URL/v1/jobs/$TARGET_JOB_ID/logs" | python3 -c "
-import json, re, sys
+            # metric_name 기반 필터: c9-check.sh와 동일한 패턴으로 파싱 (contract alignment)
+            RESULT=$(C9_METRIC_NAME="$METRIC_NAME" curl "${curl_log_args[@]}" "$HUB_URL/v1/jobs/$TARGET_JOB_ID/logs" | python3 -c "
+import json, re, sys, os
+metric_name = os.environ.get('C9_METRIC_NAME', 'value')
 try:
     d = json.load(sys.stdin)
 except Exception:
     sys.exit(1)
 lines = d.get('lines', [])
 for l in lines:
-    m = re.search(r'\[C9-DONE\]\s+\S+\s+(\S+)=([\d.]+)', l)
+    m = re.search(r'\[C9-DONE\]\s+\S+\s+' + re.escape(metric_name) + r'=([\d.]+)', l)
     if m:
-        print(m.group(1), m.group(2))
+        print(metric_name, m.group(1))
         break
 " 2>/dev/null)
 
