@@ -239,6 +239,10 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("/v1/auth/device", s.handleDeviceAuth)
 	s.mux.HandleFunc("/v1/auth/device/", s.handleDeviceAuth)
 
+	// Research state (C9 distributed state sharing)
+	s.mux.HandleFunc("/v1/research/state", s.handleResearchState)
+	s.mux.HandleFunc("/v1/research/state/lock", s.handleResearchStateLock)
+
 	// LLMs.txt + docs
 	s.registerLLMSTxtRoutes()
 }

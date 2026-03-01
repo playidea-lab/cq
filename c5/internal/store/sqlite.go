@@ -274,6 +274,17 @@ func (s *Store) migrate() error {
 		);
 		CREATE INDEX IF NOT EXISTS idx_device_sessions_user_code ON device_sessions(user_code);
 		CREATE INDEX IF NOT EXISTS idx_device_sessions_expires_at ON device_sessions(expires_at);
+
+		CREATE TABLE IF NOT EXISTS c9_research_state (
+			project_id      TEXT NOT NULL DEFAULT '',
+			round           INTEGER NOT NULL DEFAULT 1,
+			phase           TEXT NOT NULL DEFAULT 'CONFERENCE',
+			version         INTEGER NOT NULL DEFAULT 0,
+			lock_holder     TEXT NOT NULL DEFAULT '',
+			lock_expires_at DATETIME,
+			updated_at      DATETIME NOT NULL DEFAULT (datetime('now')),
+			UNIQUE(project_id)
+		);
 	`)
 	if err != nil {
 		return err
@@ -2750,4 +2761,138 @@ func (s *Store) StartBackgroundCleanup(ctx context.Context) {
 			}
 		}
 	}()
+}
+
+// =========================================================================
+// C9 Research State
+// =========================================================================
+
+// GetOrCreateResearchState returns the research state for the given project,
+// creating a default row on first access.
+func (s *Store) GetOrCreateResearchState(projectID string) (*model.ResearchState, error) {
+	_, err := s.db.Exec(`
+		INSERT INTO c9_research_state (project_id, round, phase, version, lock_holder, updated_at)
+		VALUES (?, 1, 'CONFERENCE', 0, '', datetime('now'))
+		ON CONFLICT(project_id) DO NOTHING`,
+		projectID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("upsert research state: %w", err)
+	}
+	return s.scanResearchState(projectID)
+}
+
+// UpdateResearchState performs an optimistic-lock update of round/phase/version.
+// Returns (state, true, nil) on success, (nil, false, nil) on version conflict.
+func (s *Store) UpdateResearchState(projectID string, round int, phase string, version int) (*model.ResearchState, bool, error) {
+	// Ensure row exists first.
+	if _, err := s.GetOrCreateResearchState(projectID); err != nil {
+		return nil, false, err
+	}
+
+	res, err := s.db.Exec(`
+		UPDATE c9_research_state
+		SET round = ?, phase = ?, version = version + 1, updated_at = datetime('now')
+		WHERE project_id = ? AND version = ?`,
+		round, phase, projectID, version,
+	)
+	if err != nil {
+		return nil, false, fmt.Errorf("update research state: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return nil, false, nil
+	}
+	st, err := s.scanResearchState(projectID)
+	return st, true, err
+}
+
+// AcquireResearchLock tries to acquire the advisory lock for the given project.
+// Returns (acquired, currentHolder, error).
+// Stale locks (lock_expires_at < now) are auto-evicted.
+// If the same worker already holds the lock, it is renewed.
+func (s *Store) AcquireResearchLock(projectID, workerID string, ttlSec int) (bool, string, error) {
+	if _, err := s.GetOrCreateResearchState(projectID); err != nil {
+		return false, "", err
+	}
+
+	tx, err := s.db.Begin()
+	if err != nil {
+		return false, "", fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	var lockHolder string
+	var lockExpires *string
+	err = tx.QueryRow(
+		`SELECT lock_holder, lock_expires_at FROM c9_research_state WHERE project_id = ?`,
+		projectID,
+	).Scan(&lockHolder, &lockExpires)
+	if err != nil {
+		return false, "", fmt.Errorf("read lock: %w", err)
+	}
+
+	now := time.Now().UTC()
+	expires := now.Add(time.Duration(ttlSec) * time.Second).UTC().Format("2006-01-02T15:04:05Z")
+
+	// Check if lock is free, stale, or held by same worker.
+	lockFree := lockHolder == "" ||
+		(lockExpires != nil && *lockExpires < now.Format("2006-01-02T15:04:05Z")) ||
+		lockHolder == workerID
+
+	if !lockFree {
+		if err := tx.Commit(); err != nil {
+			return false, lockHolder, fmt.Errorf("commit: %w", err)
+		}
+		return false, lockHolder, nil
+	}
+
+	_, err = tx.Exec(`
+		UPDATE c9_research_state
+		SET lock_holder = ?, lock_expires_at = ?, updated_at = datetime('now')
+		WHERE project_id = ?`,
+		workerID, expires, projectID,
+	)
+	if err != nil {
+		return false, "", fmt.Errorf("acquire lock: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return false, "", fmt.Errorf("commit: %w", err)
+	}
+	return true, workerID, nil
+}
+
+// ReleaseResearchLock releases the advisory lock if held by workerID.
+func (s *Store) ReleaseResearchLock(projectID, workerID string) error {
+	res, err := s.db.Exec(`
+		UPDATE c9_research_state
+		SET lock_holder = '', lock_expires_at = NULL, updated_at = datetime('now')
+		WHERE project_id = ? AND lock_holder = ?`,
+		projectID, workerID,
+	)
+	if err != nil {
+		return fmt.Errorf("release lock: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return fmt.Errorf("lock not held by %s", workerID)
+	}
+	return nil
+}
+
+func (s *Store) scanResearchState(projectID string) (*model.ResearchState, error) {
+	var st model.ResearchState
+	var lockExpires *string
+	err := s.db.QueryRow(`
+		SELECT project_id, round, phase, version, lock_holder, lock_expires_at,
+		       strftime('%Y-%m-%dT%H:%M:%SZ', updated_at)
+		FROM c9_research_state
+		WHERE project_id = ?`,
+		projectID,
+	).Scan(&st.ProjectID, &st.Round, &st.Phase, &st.Version, &st.LockHolder, &lockExpires, &st.UpdatedAt)
+	if err != nil {
+		return nil, fmt.Errorf("scan research state: %w", err)
+	}
+	st.LockExpires = lockExpires
+	return &st, nil
 }

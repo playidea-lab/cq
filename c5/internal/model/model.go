@@ -749,3 +749,16 @@ func normalizeCommand(cmd string) string {
 	cmd = strings.Join(strings.Fields(cmd), " ")
 	return cmd
 }
+
+// ----- C9 Research State -----
+
+// ResearchState holds the distributed round/phase state for C9 research scripts.
+type ResearchState struct {
+	ProjectID   string  `json:"project_id"`
+	Round       int     `json:"round"`
+	Phase       string  `json:"phase"`
+	Version     int     `json:"version"`
+	LockHolder  string  `json:"lock_holder"`
+	LockExpires *string `json:"lock_expires_at,omitempty"`
+	UpdatedAt   string  `json:"updated_at"`
+}
