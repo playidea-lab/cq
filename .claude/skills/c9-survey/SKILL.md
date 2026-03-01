@@ -61,14 +61,21 @@ c4_knowledge_record(
   doc_type="insight",
   title="C9 Survey: {주제} — {날짜}",
   content="{Survey 결과 전체 내용}",
-  tags=["survey", "sota", "hmr"]
+  tags=["survey", "sota"]
 )
 # 실패 시(도구 미존재/네트워크 오류) → 무시하고 진행
 ```
 
-저장된 내용은 다음 /c9-conference에서 c4_knowledge_search("HMR survey sota")로 조회 가능.
+저장된 내용은 다음 /c9-conference에서 c4_knowledge_search("{주제} survey sota")로 조회 가능.
 
 ## 활용 패턴
+
+### 프로젝트 시작 전 배경조사 (권장 순서)
+```
+/c9-init          # C9 프로젝트 초기화 (state.yaml, metric 설정)
+→ /c9-survey <주제>  # 배경조사 후 knowledge DB 저장
+→ /c9-loop        # 루프 시작 (CONFERENCE phase에서 survey 결과 활용)
+```
 
 ### 독립 사용
 ```
@@ -85,8 +92,8 @@ c4_knowledge_record(
 
 ### c9-report 이후 후속 조사
 ```
-c9-report 결과: attention이 2.5mm 악화
-→ /c9-survey "attention VQ-VAE latent space"
+c9-report 결과: metric 악화
+→ /c9-survey "<관련 주제>"
 → 왜 실패하는지 문헌에서 근거 확인
 ```
 

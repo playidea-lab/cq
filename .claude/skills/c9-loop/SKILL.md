@@ -18,11 +18,22 @@ IMPLEMENT는 CONFERENCE에서 결정된 실험을 실제로 실행 가능하게 
 
 ## 실행 순서
 
+### Step 0: state.yaml 존재 확인
+```bash
+ls .c9/state.yaml 2>/dev/null || echo "NOT FOUND"
+```
+- **없으면**: "/c9-init을 먼저 실행해 C9 프로젝트를 초기화하세요." 안내 후 종료.
+- **있으면**: Step 1로 진행.
+
 ### Step 1: state.yaml 읽기
 ```bash
 cat .c9/state.yaml
 ```
-현재 phase, round, mpjpe_history, active_jobs, notify 확인.
+현재 phase, round, metric_history, active_jobs, notify 확인.
+- `metric.name`: 측정 지표명 (예: MPJPE, accuracy, F1)
+- `metric.baseline`: 기준 수치
+- `metric.unit`: 단위 (예: mm, %, score)
+- `metric.lower_is_better`: true/false (낮을수록 좋은지 여부)
 
 ### Step 2: Phase별 행동
 
@@ -30,19 +41,22 @@ cat .c9/state.yaml
 → `/c9-conference` 스킬 실행
 - **[Knowledge] 과거 실험 검색 먼저** (설계 컨텍스트 보강, non-blocking):
   ```
-  c4_knowledge_search("HMR experiment round N", doc_type="experiment")
+  c4_knowledge_search("{metric.name} experiment round N", doc_type="experiment")
   → 결과 있으면 컨텍스트로 주입 후 토론 시작
   # 실패 시(도구 미존재/네트워크 오류) → 무시하고 진행
   ```
-- mpjpe_history와 이전 round conference.txt를 컨텍스트로 제공
+- metric_history와 이전 round conference.txt를 컨텍스트로 제공
 - 합의된 다음 실험들을 `.c9/experiments/rN_*.yaml`로 저장
 - 각 실험의 `blocked_by` 확인 → 구현 필요 시 state.yaml phase → IMPLEMENT
 - 구현 불필요 시 바로 phase → RUN
 - Dooray 알림: `./scripts/c9-notify.sh CONFERENCE "Round N 실험 계획 수립" N`
 
 **phase=IMPLEMENT** (코드 구현):
-→ C5 Hub Job으로 pi 서버에 코드 작성/배포
-- `.c9/experiments/rN_*.yaml`의 `implement` 섹션 실행
+→ C5 Hub Job으로 원격 서버에 코드 작성/배포
+- `.c9/experiments/rN_*.yaml`의 `implement` 섹션에 명시된 작업 실행:
+  - 코드 파일 생성/수정 (모델, 학습 스크립트, 설정 등)
+  - 의존성 설치 (`pip install`, `apt install` 등)
+  - 데이터 전처리 스크립트 실행
 - 구현 완료 검증 (`[C9-IMPL-DONE]` 마커 확인)
 - state.yaml phase → RUN
 - Dooray 알림: `./scripts/c9-notify.sh IMPLEMENT "구현 완료 → RUN 전환" N`
@@ -58,18 +72,18 @@ cat .c9/state.yaml
 
 **phase=CHECK** (결과 판정):
 → `./scripts/c9-check.sh [round]` 실행
-- `.c9/rounds/rN/results.txt`에서 MPJPE 파싱
+- `.c9/rounds/rN/results.txt`에서 `{metric.name}` 파싱
 - 수렴 여부 판단:
   - 수렴 → phase=FINISH
   - 미수렴 → phase=REFINE, round++
   - BLOCKED → phase=CONFERENCE
-- Dooray 알림: `./scripts/c9-notify.sh CHECK "Round N 결과: MPJPE=Xmm (개선 Y.Ymm)" N "mpjpe=X,pa=Y,util=Z"`
+- Dooray 알림: `./scripts/c9-notify.sh CHECK "Round N 결과: {metric.name}=X{metric.unit} (개선 Y.Y{metric.unit})" N "{metric.name}=X,util=Z"`
 - **[Knowledge] 실험 결과 기록** (non-blocking):
   ```
   c4_experiment_record(
     title="C9 Round N exp_name",
-    content="mpjpe=X, pa=Y, util=Z",
-    tags=["c9", "hmr", "round-N"]
+    content="{metric.name}=X{metric.unit}, util=Z",
+    tags=["c9", "round-N"]
   )
   # 실패 시(도구 미존재/네트워크 오류) → 무시하고 진행
   # 파라미터 오류 시 → 경고 후 진행
@@ -80,7 +94,7 @@ cat .c9/state.yaml
 → `/c9-conference` 스킬 실행 (새 가설로)
 - **[Knowledge] 과거 실험 검색 먼저** (토론 컨텍스트 보강, non-blocking):
   ```
-  c4_knowledge_search("HMR experiment round N", doc_type="experiment")
+  c4_knowledge_search("{metric.name} experiment round N", doc_type="experiment")
   → 결과 있으면 컨텍스트로 주입 후 토론 시작
   # 실패 시(도구 미존재/네트워크 오류) → 무시하고 진행
   ```
@@ -93,14 +107,14 @@ cat .c9/state.yaml
 **phase=FINISH** (완료):
 → `/c9-finish` 스킬 실행
 - best model 저장 + 결과 문서화
-- Dooray 알림: `./scripts/c9-notify.sh FINISH "연구 완료! Best MPJPE=Xmm (개선 Y.Ymm, Z라운드)" N "best_mpjpe=X,baseline=102.6,improvement=Y"`
+- Dooray 알림: `./scripts/c9-notify.sh FINISH "연구 완료! Best {metric.name}=X{metric.unit} (개선 Y.Y{metric.unit}, Z라운드)" N "best_{metric.name}=X,baseline={metric.baseline},improvement=Y"`
 - **[Knowledge] 연구 인사이트 기록** (non-blocking):
   ```
   c4_knowledge_record(
     doc_type="insight",
-    title="C9 Research Completed: Best MPJPE=Xmm",
-    content="Best round: N, exp: exp_name. MPJPE=Xmm, PA=Ymm. 개선: Zmm vs baseline 102.6mm. 핵심 발견: ...",
-    tags=["c9","hmr","completed"]
+    title="C9 Research Completed: Best {metric.name}=X{metric.unit}",
+    content="Best round: N, exp: exp_name. {metric.name}=X{metric.unit}. 개선: Z{metric.unit} vs baseline {metric.baseline}{metric.unit}. 핵심 발견: ...",
+    tags=["c9", "completed"]
   )
   # 실패 시(도구 미존재/네트워크 오류) → 무시하고 진행
   # 파라미터 오류 시 → 경고 후 진행
@@ -115,11 +129,11 @@ cat .c9/state.yaml
 ## C9 Loop 상태
 Round: N / 최대 10
 Phase: [현재 phase]
-Best MPJPE: Xmm (Round N, exp_name)
-Baseline: 102.6mm (개선: X.Xmm)
+Best {metric.name}: X{metric.unit} (Round N, exp_name)
+Baseline: {metric.baseline}{metric.unit} (개선: X.X{metric.unit})
 
 [히스토리 테이블]
-| Round | Best Exp | MPJPE | PA-MPJPE | 개선 |
+| Round | Best Exp | {metric.name} | 개선 |
 ```
 
 ## 자율 실행 규칙
@@ -139,8 +153,8 @@ Baseline: 102.6mm (개선: X.Xmm)
 ## Round N — [날짜]
 - 가설: ...
 - 실험: exp_name
-- 결과: MPJPE=Xmm, PA=Ymm, Util=Z%
-- 개선: +/-X.Xmm vs baseline
+- 결과: {metric.name}=X{metric.unit}, Util=Z%
+- 개선: +/-X.X{metric.unit} vs baseline
 - 핵심 발견: ...
 - 다음 방향: ...
 ```
