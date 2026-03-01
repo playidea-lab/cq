@@ -37,7 +37,9 @@ var authCmd = &cobra.Command{
 Subcommands:
   login   - Authenticate with GitHub
   logout  - Clear stored credentials
-  status  - Show current authentication status`,
+  status  - Show current authentication status
+  refresh - Login using a refresh token (headless)
+  token   - Import a session token (headless login)`,
 }
 
 var authLoginCmd = &cobra.Command{

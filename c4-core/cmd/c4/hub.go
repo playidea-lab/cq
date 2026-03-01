@@ -25,7 +25,9 @@ var hubCmd = &cobra.Command{
 Subcommands:
   status   - Check Hub connection and show queue stats
   register - Register this machine as a worker
-  run      - Register + claim jobs in a loop (worker daemon)`,
+  run      - Register + claim jobs in a loop (worker daemon)
+  watch    - Watch job metrics in real-time via WebSocket
+  edge     - Manage edge devices for artifact deployment`,
 }
 
 var hubStatusCmd = &cobra.Command{

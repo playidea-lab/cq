@@ -65,6 +65,7 @@ Run 'cq codex' or 'cq cursor' for other AI tools.`,
 			if cmd.Name() != "mcp" && cmd.Name() != "cq" &&
 				cmd.Name() != "claude" && cmd.Name() != "codex" && cmd.Name() != "cursor" &&
 				cmd.Name() != "serve" && cmd.Name() != "mail" && cmd.Name() != "completion" &&
+				cmd.Name() != "version" &&
 				cmd.Name() != "__complete" && cmd.Name() != "__completeNoDesc" &&
 				cmd.Parent() != nil && cmd.Parent().Name() != "hub" && cmd.Parent().Name() != "serve" &&
 				cmd.Parent().Name() != "auth" && cmd.Parent().Name() != "mail" {

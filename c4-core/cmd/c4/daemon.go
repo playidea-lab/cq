@@ -33,20 +33,20 @@ log streaming, and GPU monitoring.
 The daemon runs until interrupted (Ctrl+C) or stopped via POST /daemon/stop.
 
 Example:
-  c4 daemon
-  c4 daemon --port 7123
-  c4 daemon --port 7123 --data-dir ~/.c4/daemon --max-jobs 4`,
+  cq daemon
+  cq daemon --port 7123
+  cq daemon --port 7123 --data-dir ~/.c4/daemon --max-jobs 4`,
 	RunE: runDaemon,
 }
 
 var daemonStopCmd = &cobra.Command{
 	Use:   "stop",
 	Short: "Stop a running daemon",
-	Long: `Send a stop request to a running c4 daemon.
+	Long: `Send a stop request to a running cq daemon.
 
 Example:
-  c4 daemon stop
-  c4 daemon stop --port 7123`,
+  cq daemon stop
+  cq daemon stop --port 7123`,
 	RunE: runDaemonStop,
 }
 
@@ -134,9 +134,9 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 	go func() {
 		select {
 		case <-sigCh:
-			fmt.Fprintln(os.Stderr, "\nc4 daemon: shutting down (signal)...")
+			fmt.Fprintln(os.Stderr, "\ncq daemon: shutting down (signal)...")
 		case <-ctx.Done():
-			fmt.Fprintln(os.Stderr, "c4 daemon: shutting down (API stop)...")
+			fmt.Fprintln(os.Stderr, "cq daemon: shutting down (API stop)...")
 		}
 		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer shutdownCancel()
@@ -148,13 +148,13 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 	if gpuCount > 0 {
 		gpuStr = fmt.Sprintf("%d GPU(s)", gpuCount)
 	}
-	fmt.Fprintf(os.Stderr, "c4 daemon: listening on :%d (%s, data: %s)\n", daemonPort, gpuStr, dataDir)
+	fmt.Fprintf(os.Stderr, "cq daemon: listening on :%d (%s, data: %s)\n", daemonPort, gpuStr, dataDir)
 
 	if err := httpServer.ListenAndServe(); err != http.ErrServerClosed {
 		return fmt.Errorf("server: %w", err)
 	}
 
-	fmt.Fprintln(os.Stderr, "c4 daemon: stopped")
+	fmt.Fprintln(os.Stderr, "cq daemon: stopped")
 	return nil
 }
 
@@ -184,7 +184,7 @@ func acquirePIDLock(pidPath string) error {
 			proc, err := os.FindProcess(pid)
 			if err == nil {
 				if err := proc.Signal(syscall.Signal(0)); err == nil {
-					return fmt.Errorf("daemon already running (PID %d). Stop it with: c4 daemon stop", pid)
+					return fmt.Errorf("daemon already running (PID %d). Stop it with: cq daemon stop", pid)
 				}
 			}
 		}
