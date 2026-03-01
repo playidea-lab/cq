@@ -202,12 +202,12 @@ fi
 
 # 로그 수집
 echo "[c9-run] 결과 로그 수집"
-python3 -c "
-import json, urllib.request
+C9_API_KEY_ENV="$API_KEY" C9_HUB_URL_ENV="$HUB_URL" python3 -c "
+import json, urllib.request, os
 
 jobs = json.load(open('$JOBS_FILE'))
-api_key = '$API_KEY'
-hub_url = '$HUB_URL'
+api_key = os.environ.get('C9_API_KEY_ENV', '')
+hub_url = os.environ.get('C9_HUB_URL_ENV', '')
 results = []
 
 for job in jobs:

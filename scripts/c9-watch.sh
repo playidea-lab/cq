@@ -105,9 +105,9 @@ while [ $count -lt $MAX_POLLS ]; do
                     [ "$EVAL_STATUS" = "CANCELLED" ] && break
                     sleep "$POLL_INTERVAL"
                 done
-                if [ "$EVAL_STATUS" = "FAILED" ] || [ "$EVAL_STATUS" = "CANCELLED" ]; then
-                    echo "[c9-watch] eval job 실패: $EVAL_JOB_ID ($EVAL_STATUS)"
-                    "$SCRIPT_DIR/c9-notify.sh" BLOCKED "eval 실패 — job $EVAL_JOB_ID ($EVAL_STATUS)" "$ROUND"
+                if [ "$EVAL_STATUS" != "SUCCEEDED" ] && [ "$EVAL_STATUS" != "DONE" ]; then
+                    echo "[c9-watch] eval job 미완료/실패: $EVAL_JOB_ID ($EVAL_STATUS)"
+                    "$SCRIPT_DIR/c9-notify.sh" BLOCKED "eval 미완료/실패 — job $EVAL_JOB_ID ($EVAL_STATUS)" "$ROUND"
                     exit 1
                 fi
             fi
