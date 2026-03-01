@@ -65,7 +65,7 @@ state = yaml.safe_load(open(state_file))
 # metric 설정 읽기 (범용화)
 metric_cfg = state.get('metric', {})
 metric_name = metric_cfg.get('name', 'mpjpe') if isinstance(metric_cfg, dict) else 'mpjpe'
-metric_unit = metric_cfg.get('unit', '') if isinstance(metric_cfg, dict) else ''
+metric_unit = (metric_cfg.get('unit') or '') if isinstance(metric_cfg, dict) else ''
 lower_is_better = metric_cfg.get('lower_is_better', True) if isinstance(metric_cfg, dict) else True
 
 # [C9-DONE] 마커 파싱 — metric.name 기반 범용화

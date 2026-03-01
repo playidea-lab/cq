@@ -123,11 +123,11 @@ print(json.dumps({'name': exp_name, 'command': cmd, 'tags': ['c9', 'r${ROUND}', 
         echo "[c9-run] $EXP_NAME → $JOB_ID"
 
         # jobs.json 업데이트 (원자 저장 — partial write 방지)
-        python3 -c "
+        EXP_NAME_ENV="$EXP_NAME" JOB_ID_ENV="$JOB_ID" python3 -c "
 import json, tempfile, os
 jobs_file = '$JOBS_FILE'
 jobs = json.load(open(jobs_file))
-jobs.append({'name': '$EXP_NAME', 'job_id': '$JOB_ID', 'status': 'QUEUED'})
+jobs.append({'name': os.environ['EXP_NAME_ENV'], 'job_id': os.environ['JOB_ID_ENV'], 'status': 'QUEUED'})
 tmp = tempfile.NamedTemporaryFile(mode='w', dir=os.path.dirname(jobs_file) or '.', delete=False, suffix='.tmp')
 json.dump(jobs, tmp, indent=2)
 tmp.close()
@@ -151,12 +151,12 @@ poll_count=0
 
 while [[ $poll_count -lt $MAX_POLLS ]]; do
     poll_count=$(( poll_count + 1 ))
-    python3 -c "
-import json, urllib.request, sys
+    C9_API_KEY_ENV="$API_KEY" C9_HUB_URL_ENV="$HUB_URL" python3 -c "
+import json, urllib.request, sys, os
 
 jobs = json.load(open('$JOBS_FILE'))
-api_key = '$API_KEY'
-hub_url = '$HUB_URL'
+api_key = os.environ.get('C9_API_KEY_ENV', '')
+hub_url = os.environ.get('C9_HUB_URL_ENV', '')
 all_done = True
 
 for job in jobs:

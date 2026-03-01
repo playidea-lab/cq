@@ -22,31 +22,31 @@ TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
 
 # ── state.yaml에서 notify 설정 한 번에 파싱 ───────────────────
 _CONFIG=$(STATE_FILE="$STATE_FILE" ROUND_ARG="${3:-}" python3 - <<'PYEOF'
-import yaml, socket, os
+import yaml, socket, os, json
 s = yaml.safe_load(open(os.environ['STATE_FILE']))
 n = s.get('notify', {})
 r = os.environ.get('ROUND_ARG') or str(s.get('round', 0))
 t = n.get('templates', {})
-vals = [
-    n.get('dooray_webhook', ''),
-    n.get('session', ''),
-    n.get('bot_name', 'C9 Lab'),
-    n.get('server_id', socket.gethostname()),
-    r,
-    t.get('dooray', '{emoji} **[C9 R{round} · {phase}]** [{server}] {message}'),
-    t.get('mail', '[C9-{phase}] Round={round} server={server} {message}'),
-]
-print('\n'.join(vals))
+print(json.dumps({
+    'dooray_webhook': n.get('dooray_webhook', ''),
+    'session': n.get('session', ''),
+    'bot_name': n.get('bot_name', 'C9 Lab'),
+    'server_id': n.get('server_id', socket.gethostname()),
+    'round': r,
+    'tmpl_dooray': t.get('dooray', '{emoji} **[C9 R{round} · {phase}]** [{server}] {message}'),
+    'tmpl_mail': t.get('mail', '[C9-{phase}] Round={round} server={server} {message}'),
+}))
 PYEOF
 ) 2>/dev/null
 
-DOORAY_WEBHOOK=$(echo "$_CONFIG" | sed -n '1p')
-SESSION_NAME=$(echo  "$_CONFIG" | sed -n '2p')
-BOT_NAME=$(echo      "$_CONFIG" | sed -n '3p')
-SERVER_ID=$(echo     "$_CONFIG" | sed -n '4p')
-ROUND=$(echo         "$_CONFIG" | sed -n '5p')
-TMPL_DOORAY=$(echo   "$_CONFIG" | sed -n '6p')
-TMPL_MAIL=$(echo     "$_CONFIG" | sed -n '7p')
+# JSON에서 키별 추출 (다줄 값 및 특수문자 안전 처리)
+DOORAY_WEBHOOK=$(echo "$_CONFIG" | python3 -c "import json,sys; print(json.load(sys.stdin).get('dooray_webhook',''))")
+SESSION_NAME=$(echo  "$_CONFIG" | python3 -c "import json,sys; print(json.load(sys.stdin).get('session',''))")
+BOT_NAME=$(echo      "$_CONFIG" | python3 -c "import json,sys; print(json.load(sys.stdin).get('bot_name','C9 Lab'))")
+SERVER_ID=$(echo     "$_CONFIG" | python3 -c "import json,sys; print(json.load(sys.stdin).get('server_id',''))")
+ROUND=$(echo         "$_CONFIG" | python3 -c "import json,sys; print(json.load(sys.stdin).get('round','0'))")
+TMPL_DOORAY=$(echo   "$_CONFIG" | python3 -c "import json,sys; print(json.load(sys.stdin).get('tmpl_dooray',''))")
+TMPL_MAIL=$(echo     "$_CONFIG" | python3 -c "import json,sys; print(json.load(sys.stdin).get('tmpl_mail',''))")
 
 # fallback defaults
 ROUND="${ROUND:-0}"
