@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"sync"
 	"time"
@@ -12,6 +13,10 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
+
+// warnf is the package-level warning logger used by the EventBus server.
+// It may be overridden in tests for log capture.
+var warnf = log.Printf
 
 // ServerConfig holds configuration for the gRPC EventBus server.
 type ServerConfig struct {
@@ -87,6 +92,10 @@ func (s *Server) Subscribe(req *pb.SubscribeRequest, stream pb.EventBus_Subscrib
 	pattern := req.EventPattern
 	if pattern == "" {
 		pattern = "*"
+	}
+
+	if req.ProjectId == "" {
+		warnf("[eventbus] WARN: subscribe without project_id (pattern=%s). Use SubscribeWithProject.", pattern)
 	}
 
 	ch := make(chan *pb.Event, 64)

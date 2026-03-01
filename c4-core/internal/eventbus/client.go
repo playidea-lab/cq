@@ -3,6 +3,7 @@ package eventbus
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"time"
@@ -11,6 +12,9 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
+
+// ErrMissingProjectID is returned by SubscribeWithProject when projectID is empty.
+var ErrMissingProjectID = errors.New("eventbus: project_id is required")
 
 // Client provides a gRPC client for the EventBus daemon over Unix Domain Socket.
 type Client struct {
@@ -96,6 +100,14 @@ func (c *Client) ListEvents(evType string, limit int, sinceMs int64) ([]*pb.Even
 
 // Subscribe returns a channel of events matching the pattern.
 // The caller should cancel the context to stop the subscription.
+//
+// Deprecated: Use SubscribeWithProject instead.
+// Subscribing without a project_id causes a server-side warning log.
+// Internal callers with empty project_id (migration targets):
+//   - cmd/c4/mcp_init_gate.go: Subscribe(gctx, "task.completed", "")
+//   - cmd/c4/mcp_init_gate.go: Subscribe(gctx, "hub.job.completed", "")
+//   - cmd/c4/mcp_init_gate.go: Subscribe(gctx, "guard.denied", "")
+//   - cmd/c4/eventbus.go: Subscribe(ctx, monitorPattern, "")
 func (c *Client) Subscribe(ctx context.Context, pattern string, projectID string) (<-chan *pb.Event, error) {
 	stream, err := c.client.Subscribe(ctx, &pb.SubscribeRequest{
 		EventPattern: pattern,
@@ -122,6 +134,15 @@ func (c *Client) Subscribe(ctx context.Context, pattern string, projectID string
 	}()
 
 	return ch, nil
+}
+
+// SubscribeWithProject returns a channel of events matching the pattern, scoped to projectID.
+// Returns ErrMissingProjectID if projectID is empty.
+func (c *Client) SubscribeWithProject(ctx context.Context, pattern, projectID string) (<-chan *pb.Event, error) {
+	if projectID == "" {
+		return nil, ErrMissingProjectID
+	}
+	return c.Subscribe(ctx, pattern, projectID)
 }
 
 // AddRule creates a new event routing rule.

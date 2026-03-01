@@ -3,9 +3,13 @@ package eventbus
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -613,4 +617,110 @@ func TestNoopPublisher(t *testing.T) {
 	var p Publisher = NoopPublisher{}
 	// Should not panic.
 	p.PublishAsync("test", "src", json.RawMessage(`{}`), "proj")
+}
+
+// TestSubscribe_EmptyProjectID_Warns verifies that the server emits a WARN log
+// when Subscribe is called without a project_id.
+func TestSubscribe_EmptyProjectID_Warns(t *testing.T) {
+	// Swap the package-level warnf to capture the log message.
+	var mu sync.Mutex
+	var logged string
+	orig := warnf
+	warnf = func(format string, args ...any) {
+		msg := fmt.Sprintf(format, args...)
+		mu.Lock()
+		logged = msg
+		mu.Unlock()
+	}
+	defer func() { warnf = orig }()
+
+	sockPath, cleanup := startClientTestServer(t)
+	defer cleanup()
+
+	c, err := NewClient(sockPath)
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+	defer c.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	ch, err := c.Subscribe(ctx, "warn.event.*", "")
+	if err != nil {
+		cancel()
+		t.Fatalf("Subscribe: %v", err)
+	}
+	// Give the server goroutine time to start the handler and emit the warning.
+	time.Sleep(100 * time.Millisecond)
+	cancel()
+	// Drain the channel.
+	for range ch {
+	}
+
+	mu.Lock()
+	got := logged
+	mu.Unlock()
+
+	if !strings.Contains(got, "WARN: subscribe without project_id") {
+		t.Errorf("expected WARN log for empty project_id, got: %q", got)
+	}
+}
+
+// TestSubscribeWithProject_RejectsEmpty verifies that SubscribeWithProject
+// returns ErrMissingProjectID when called with an empty project_id.
+func TestSubscribeWithProject_RejectsEmpty(t *testing.T) {
+	sockPath, cleanup := startClientTestServer(t)
+	defer cleanup()
+
+	c, err := NewClient(sockPath)
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+	defer c.Close()
+
+	ctx := context.Background()
+	ch, err := c.SubscribeWithProject(ctx, "proj.event.*", "")
+	if ch != nil {
+		t.Error("expected nil channel for empty project_id")
+	}
+	if !errors.Is(err, ErrMissingProjectID) {
+		t.Errorf("expected ErrMissingProjectID, got: %v", err)
+	}
+}
+
+// TestSubscribeWithProject_RoundTrip verifies that SubscribeWithProject with a
+// non-empty project_id correctly receives published events.
+func TestSubscribeWithProject_RoundTrip(t *testing.T) {
+	sockPath, cleanup := startClientTestServer(t)
+	defer cleanup()
+
+	c, err := NewClient(sockPath)
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+	defer c.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	ch, err := c.SubscribeWithProject(ctx, "proj.event.*", "test")
+	if err != nil {
+		t.Fatalf("SubscribeWithProject: %v", err)
+	}
+
+	data, _ := json.Marshal(map[string]string{"key": "val"})
+	if _, err := c.Publish("proj.event.x", "src", data, "test"); err != nil {
+		t.Fatalf("Publish: %v", err)
+	}
+
+	select {
+	case ev := <-ch:
+		if ev == nil {
+			t.Fatal("received nil event")
+		}
+		if ev.Type != "proj.event.x" {
+			t.Errorf("unexpected event type: %s", ev.Type)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for event")
+	}
 }
