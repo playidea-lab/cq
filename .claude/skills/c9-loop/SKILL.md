@@ -100,7 +100,8 @@ cat .c9/state.yaml
   ```
 - 이전 결과를 컨텍스트로 제공
 - 새 실험 `.c9/experiments/r(N+1)_*.yaml` 생성
-- state.yaml phase → IMPLEMENT (또는 RUN), round → N+1
+- state.yaml round → N+1
+- 새 실험 yaml에 `blocked_by:` 구현 필요 항목이 있으면 phase → IMPLEMENT, 없으면 phase → RUN
 - **즉시 IMPLEMENT → RUN 진행**
 - Dooray 알림: `./scripts/c9-notify.sh REFINE "Round N+1 새 가설 수립" N+1`
 

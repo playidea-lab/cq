@@ -64,14 +64,16 @@ echo "[c9-watch] session=$SESSION_NAME interval=${POLL_INTERVAL}s max=${MAX_WAIT
 
 poll_job() {
     local job_id="$1"
+    local poll_tmp="/tmp/c9_watch_poll_${job_id}_$$.json"
     curl -s "$HUB_URL/v1/jobs/$job_id" \
         ${API_KEY:+-H "X-API-Key: $API_KEY"} \
-        -o /tmp/c9_watch_poll_${job_id}.json 2>/dev/null
-    python3 -c "
-import json
-d = json.load(open('/tmp/c9_watch_poll_$job_id.json'))
+        -o "$poll_tmp" 2>/dev/null
+    C9_POLL_TMP="$poll_tmp" python3 -c "
+import json, os
+d = json.load(open(os.environ['C9_POLL_TMP']))
 print(d.get('status', 'UNKNOWN'))
 " 2>/dev/null || echo "ERROR"
+    rm -f "$poll_tmp"
 }
 
 # 최대 대기 횟수 계산
@@ -92,13 +94,20 @@ while [ $count -lt $MAX_POLLS ]; do
             # eval job이 있으면 완료 대기
             if [ -n "$EVAL_JOB_ID" ]; then
                 echo "[c9-watch] eval job 완료 대기: $EVAL_JOB_ID"
+                EVAL_STATUS="UNKNOWN"
                 for i in $(seq 1 60); do
                     EVAL_STATUS=$(poll_job "$EVAL_JOB_ID")
                     echo "[c9-watch] eval status=$EVAL_STATUS"
                     [ "$EVAL_STATUS" = "SUCCEEDED" ] && break
                     [ "$EVAL_STATUS" = "FAILED" ] && break
+                    [ "$EVAL_STATUS" = "CANCELLED" ] && break
                     sleep "$POLL_INTERVAL"
                 done
+                if [ "$EVAL_STATUS" = "FAILED" ] || [ "$EVAL_STATUS" = "CANCELLED" ]; then
+                    echo "[c9-watch] eval job 실패: $EVAL_JOB_ID ($EVAL_STATUS)"
+                    "$SCRIPT_DIR/c9-notify.sh" BLOCKED "eval 실패 — job $EVAL_JOB_ID ($EVAL_STATUS)" "$ROUND"
+                    exit 1
+                fi
             fi
 
             # Job 로그에서 [C9-DONE] 마커 파싱 (metric.name 기반 범용화)

@@ -22,7 +22,7 @@ partial write 방지를 위해 원자 저장 패턴(NamedTemporaryFile → os.re
 | CONFERENCE | reason 업데이트 | — | (round=1이면 경계 안내) |
 | IMPLEMENT | reason 업데이트 | → RUN | → CONFERENCE |
 | RUN | reason 업데이트 (경고 포함) | → CHECK | → IMPLEMENT |
-| CHECK | reason 업데이트 | — | → RUN |
+| CHECK | reason 업데이트 | → REFINE | → RUN |
 | REFINE | reason 업데이트 + → CONFERENCE | — | → CHECK |
 | FINISH | — | — | → REFINE |
 | DONE | — | — | → FINISH |

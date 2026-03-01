@@ -70,9 +70,8 @@ lower_is_better = metric_cfg.get('lower_is_better', True) if isinstance(metric_c
 
 # [C9-DONE] 마커 파싱 — metric.name 기반 범용화
 # 형식: [C9-DONE] exp_name {metric_name}=X.X [secondary=X.X] [util=X.X]
-import re as _re
-done_pattern = _re.compile(
-    rf'\[C9-DONE\]\s+(\S+)\s+{_re.escape(metric_name)}=([\d.]+)'
+done_pattern = re.compile(
+    rf'\[C9-DONE\]\s+(\S+)\s+{re.escape(metric_name)}=([\d.]+)'
     r'(?:\s+\S+=([\d.]+))?(?:\s+util=([\d.]+))?'
 )
 blocked_pattern = re.compile(r'\[C9-BLOCKED\]\s+(.*)')
@@ -135,7 +134,8 @@ if findings:
         best = min(findings, key=lambda x: x['mpjpe'])
     else:
         best = max(findings, key=lambda x: x['mpjpe'])
-    improvement = prev_best - best['mpjpe']
+    # lower_is_better=True: improvement>0이면 개선 / False: best가 크면 개선
+    improvement = (prev_best - best['mpjpe']) if lower_is_better else (best['mpjpe'] - prev_best)
 
     history.append({
         'round': round_num,

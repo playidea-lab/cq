@@ -16,8 +16,9 @@ project:
 
 # Primary metric (domain-neutral)
 metric:
-  name: string                  # metric identifier (MPJPE, F1, BLEU, etc.)
-  lower_is_better: bool         # true for error metrics, false for accuracy
+  name: string                  # metric identifier (MPJPE, F1, BLEU, accuracy, etc.)
+  unit: string | null           # display unit (e.g., mm, %, score) — used in logs/notifications
+  lower_is_better: bool         # true for error metrics (MPJPE), false for accuracy (F1)
   convergence_threshold: float  # minimum improvement to continue loop
   baseline: float | null        # initial metric value (set after round 0)
 
@@ -67,10 +68,10 @@ finish:
 Use the CQ secret store:
 
 ```bash
-cq secret set hub.api_key <value>
+cq secret set c9.hub.api_key <value>
 ```
 
-Scripts should resolve keys via `cq secret get hub.api_key` or environment variables.
+Scripts should resolve keys via `cq secret get c9.hub.api_key` or the `C9_API_KEY` environment variable.
 
 ## Migration Guide
 

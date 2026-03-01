@@ -19,7 +19,7 @@ if ! command -v python3 &>/dev/null; then
     exit 1
 fi
 if ! python3 -c "import yaml" &>/dev/null; then
-    echo "[c9-run] Error: python3 yaml 모듈이 없습니다. pip install pyyaml" >&2
+    echo "[c9-run] Error: python3 yaml 모듈이 없습니다. uv add pyyaml 또는 pip install pyyaml" >&2
     exit 1
 fi
 
@@ -115,12 +115,16 @@ print(json.dumps({'name': exp_name, 'command': cmd, 'tags': ['c9', 'r${ROUND}', 
         JOB_ID=$(echo "$RESPONSE" | python3 -c "import json,sys; print(json.load(sys.stdin).get('job_id','ERROR'))")
         echo "[c9-run] $EXP_NAME → $JOB_ID"
 
-        # jobs.json 업데이트
+        # jobs.json 업데이트 (원자 저장 — partial write 방지)
         python3 -c "
-import json
-jobs = json.load(open('$JOBS_FILE'))
+import json, tempfile, os
+jobs_file = '$JOBS_FILE'
+jobs = json.load(open(jobs_file))
 jobs.append({'name': '$EXP_NAME', 'job_id': '$JOB_ID', 'status': 'QUEUED'})
-json.dump(jobs, open('$JOBS_FILE', 'w'), indent=2)
+tmp = tempfile.NamedTemporaryFile(mode='w', dir=os.path.dirname(jobs_file) or '.', delete=False, suffix='.tmp')
+json.dump(jobs, tmp, indent=2)
+tmp.close()
+os.replace(tmp.name, jobs_file)
 "
     done
 
@@ -148,14 +152,20 @@ for job in jobs:
         resp = json.loads(urllib.request.urlopen(req).read())
         status = resp.get('status', 'UNKNOWN')
         job['status'] = status
-        if status not in ('DONE', 'FAILED', 'CANCELLED'):
+        # C5 Hub는 SUCCEEDED 또는 DONE 둘 다 완료 상태로 사용 가능
+        if status not in ('DONE', 'SUCCEEDED', 'FAILED', 'CANCELLED'):
             all_done = False
         print(f'  {job[\"name\"]}: {status}')
     except Exception as e:
         print(f'  {job[\"name\"]}: ERROR ({e})')
         all_done = False
 
-json.dump(jobs, open('$JOBS_FILE', 'w'), indent=2)
+# 폴링 결과 원자 저장
+import tempfile as _tf, os as _os
+_tmp = _tf.NamedTemporaryFile(mode='w', dir=_os.path.dirname('$JOBS_FILE') or '.', delete=False, suffix='.tmp')
+json.dump(jobs, _tmp, indent=2)
+_tmp.close()
+_os.replace(_tmp.name, '$JOBS_FILE')
 sys.exit(0 if all_done else 1)
 "
     POLL_EXIT=$?

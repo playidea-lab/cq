@@ -91,10 +91,9 @@ if [[ -n "$DOORAY_WEBHOOK" ]]; then
     fi
     DOORAY_TEXT="${DOORAY_TEXT}\n_${TIMESTAMP}_"
 
-    DOORAY_PAYLOAD=$(python3 -c "
-import json
-text = '''$DOORAY_TEXT'''
-print(json.dumps({'botName': '$BOT_NAME', 'text': text}))
+    DOORAY_PAYLOAD=$(C9_TEXT="$DOORAY_TEXT" C9_BOT="$BOT_NAME" python3 -c "
+import json, os
+print(json.dumps({'botName': os.environ['C9_BOT'], 'text': os.environ['C9_TEXT']}))
 ")
 
     curl -s -X POST "$DOORAY_WEBHOOK" \
