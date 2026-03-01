@@ -9,6 +9,11 @@
 phase: string          # CONFERENCE | IMPLEMENT | RUN | CHECK | REFINE | FINISH | DONE
 round: int             # current round number (0 = baseline)
 
+# Project metadata
+project:
+  name: string                  # short project identifier (e.g., "unified-hmr")
+  goal: string                  # one-sentence research goal
+
 # Primary metric (domain-neutral)
 metric:
   name: string                  # metric identifier (MPJPE, F1, BLEU, etc.)
@@ -34,6 +39,8 @@ notify:
 # Runtime state
 active_jobs: list               # currently running job IDs
 max_rounds: int                 # safety limit
+last_check: string | null       # ISO 8601 timestamp of last CHECK phase
+steer_reason: string | null     # reason for last manual phase override (set by /c9-steer)
 
 # Experiment history (append-only)
 metric_history:

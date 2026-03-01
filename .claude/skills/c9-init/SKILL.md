@@ -49,13 +49,14 @@ ls .c9/ 2>/dev/null && echo "EXISTS" || echo "NEW"
 
 질문:
 ```
-C5 Hub URL을 입력해주세요. (https:// 형식)
+C5 Hub URL을 입력해주세요. (http:// 또는 https:// 형식)
 예시: https://your-c5-hub.fly.dev
+     http://localhost:8585  (로컬 개발용)
 ```
 
 검증:
-- `https://`로 시작하는지 확인
-- 유효하지 않으면 재요청 (retry): "URL은 https:// 형식이어야 합니다. 다시 입력해주세요."
+- `http://` 또는 `https://`로 시작하는지 확인
+- 유효하지 않으면 재요청 (retry): "URL은 http:// 또는 https:// 형식이어야 합니다. 다시 입력해주세요."
 - 유효하면 `hub_url` 변수에 저장
 
 ### Step 4: Q3 — 메트릭 설정 (AskUserQuestion)
@@ -108,7 +109,7 @@ metric:
   name: "<metric_name>"
   lower_is_better: <lower_is_better>
   baseline: <baseline>
-convergence_threshold: <convergence_threshold>
+  convergence_threshold: <convergence_threshold>
 max_rounds: 10
 
 last_check: ~
@@ -124,14 +125,14 @@ notify:
 
 active_jobs: []
 
-mpjpe_history:
+metric_history:
   - round: 0
-    best_mpjpe: <baseline>
+    value: <baseline>
     note: "baseline"
 
 finish:
   best_round: ~
-  best_mpjpe: ~
+  best_value: ~
   best_model_path: ~
   artifact_path: ~
   completed_at: ~
@@ -166,7 +167,7 @@ finish:
 - 기존 `.c9/`가 있을 때 덮어쓰기(overwrite) 전 반드시 확인 질문
 - `docs/c9-state-schema.md`의 마이그레이션(migration) 가이드 참조 안내
 - float 검증 실패 시 해당 필드만 재요청 (retry), 전체 처음부터 다시 하지 않음
-- Hub URL은 `https://`로 시작해야 하며, 유효하지 않으면 재요청
+- Hub URL은 `http://` 또는 `https://`로 시작해야 하며, 유효하지 않으면 재요청
 
 ## 사용 예시
 

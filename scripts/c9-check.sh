@@ -65,9 +65,16 @@ state = yaml.safe_load(open(state_file))
 # metric 설정 읽기 (범용화)
 metric_cfg = state.get('metric', {})
 metric_name = metric_cfg.get('name', 'mpjpe') if isinstance(metric_cfg, dict) else 'mpjpe'
+metric_unit = metric_cfg.get('unit', '') if isinstance(metric_cfg, dict) else ''
+lower_is_better = metric_cfg.get('lower_is_better', True) if isinstance(metric_cfg, dict) else True
 
-# [C9-DONE] 마커 파싱
-done_pattern = re.compile(r'\[C9-DONE\]\s+(\S+)\s+mpjpe=([\d.]+)\s+pa=([\d.]+)(?:\s+util=([\d.]+))?')
+# [C9-DONE] 마커 파싱 — metric.name 기반 범용화
+# 형식: [C9-DONE] exp_name {metric_name}=X.X [secondary=X.X] [util=X.X]
+import re as _re
+done_pattern = _re.compile(
+    rf'\[C9-DONE\]\s+(\S+)\s+{_re.escape(metric_name)}=([\d.]+)'
+    r'(?:\s+\S+=([\d.]+))?(?:\s+util=([\d.]+))?'
+)
 blocked_pattern = re.compile(r'\[C9-BLOCKED\]\s+(.*)')
 
 findings = []
@@ -76,8 +83,8 @@ blocked = []
 for m in done_pattern.finditer(results):
     findings.append({
         'exp': m.group(1),
-        'mpjpe': float(m.group(2)),
-        'pa_mpjpe': float(m.group(3)),
+        'mpjpe': float(m.group(2)),        # primary metric value
+        'pa_mpjpe': float(m.group(3)) if m.group(3) else None,
         'codebook_util': float(m.group(4)) if m.group(4) else None
     })
 
@@ -89,7 +96,8 @@ if findings:
     print('=== 실험 결과 ===')
     for f in findings:
         util_str = f' util={f["codebook_util"]:.2f}' if f['codebook_util'] else ''
-        print(f'  {f["exp"]}: MPJPE={f["mpjpe"]}mm PA={f["pa_mpjpe"]}mm{util_str}')
+        pa_str = f' PA={f["pa_mpjpe"]}{metric_unit}' if f['pa_mpjpe'] is not None else ''
+        print(f'  {f["exp"]}: {metric_name}={f["mpjpe"]}{metric_unit}{pa_str}{util_str}')
 else:
     print('=== C9-DONE 마커 없음 (실험 미완료 또는 blocked) ===')
 
@@ -114,17 +122,25 @@ if isinstance(metric_cfg, dict):
 if threshold is None:
     threshold = state.get('convergence_threshold_mm', 0.5)
 
-baseline = history[0]['best_mpjpe'] if history else 999.0
-prev_best = history[-1]['best_mpjpe'] if history else baseline
+def _get_val(entry):
+    """value 키 우선, best_mpjpe fallback (하위호환)"""
+    v = entry.get('value')
+    return v if v is not None else entry.get('best_mpjpe', 999.0)
+
+baseline = _get_val(history[0]) if history else 999.0
+prev_best = _get_val(history[-1]) if history else baseline
 
 if findings:
-    best = min(findings, key=lambda x: x['mpjpe'])
+    if lower_is_better:
+        best = min(findings, key=lambda x: x['mpjpe'])
+    else:
+        best = max(findings, key=lambda x: x['mpjpe'])
     improvement = prev_best - best['mpjpe']
 
     history.append({
         'round': round_num,
-        'best_mpjpe': best['mpjpe'],
-        'pa_mpjpe': best['pa_mpjpe'],
+        'value': best['mpjpe'],          # 신규 schema 키 (metric_history[].value)
+        'pa_value': best['pa_mpjpe'],    # 선택적 secondary metric
         'best_exp': best['exp'],
         'improvement': round(improvement, 3)
     })
@@ -134,14 +150,15 @@ if findings:
     else:
         state['metric_history'] = history
 
+    direction = '↓' if lower_is_better else '↑'
     print(f'\n=== 수렴 판정 ===')
-    print(f'  이전 best: {prev_best}mm')
-    print(f'  현재 best: {best["mpjpe"]}mm ({best["exp"]})')
-    print(f'  개선량: {improvement:.3f}mm (threshold: {threshold}mm)')
+    print(f'  이전 best: {prev_best}{metric_unit}')
+    print(f'  현재 best: {best["mpjpe"]}{metric_unit} ({best["exp"]}) {direction}')
+    print(f'  개선량: {improvement:.3f}{metric_unit} (threshold: {threshold}{metric_unit})')
 
     # 2라운드 연속 threshold 미달 체크
     recent = [h for h in history if h.get('improvement') is not None][-2:]
-    consecutive_small = len(recent) >= 2 and all(abs(h['improvement']) < threshold for h in recent)
+    consecutive_small = len(recent) >= 2 and all(abs(h.get('improvement', 0.0)) < threshold for h in recent)
 
     if consecutive_small:
         state['phase'] = 'FINISH'
@@ -163,6 +180,13 @@ else:
     state['round'] = round_num + 1
     print('  → 실험 결과 없음. phase=CONFERENCE')
 
-yaml.dump(state, open(state_file, 'w'), default_flow_style=False, allow_unicode=True)
+import tempfile, os as _os
+tmp = tempfile.NamedTemporaryFile(
+    mode='w', dir=_os.path.dirname(state_file) or '.',
+    delete=False, suffix='.tmp'
+)
+yaml.dump(state, tmp, default_flow_style=False, allow_unicode=True)
+tmp.close()
+_os.replace(tmp.name, state_file)
 print(f'\n[c9-check] state.yaml 업데이트 완료: phase={state["phase"]}')
 PYEOF

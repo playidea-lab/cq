@@ -63,7 +63,17 @@ print(s.get('$1', ''))
 }
 
 set_phase() {
-    sed -i.bak "s/^phase: .*/phase: $1/" "$STATE_FILE"
+    # docs/c9-state-schema.md 권장: NamedTemporaryFile → yaml.dump → os.replace (원자 저장)
+    python3 -c "
+import yaml, tempfile, os
+state_file = '$STATE_FILE'
+s = yaml.safe_load(open(state_file))
+s['phase'] = '$1'
+tmp = tempfile.NamedTemporaryFile(mode='w', dir=os.path.dirname(state_file) or '.', delete=False, suffix='.tmp')
+yaml.dump(s, tmp, default_flow_style=False, allow_unicode=True)
+tmp.close()
+os.replace(tmp.name, state_file)
+"
     echo "[c9-run] phase → $1"
 }
 
@@ -90,13 +100,17 @@ print(cmd)
 ")
         echo "[c9-run] 제출: $EXP_NAME"
 
-        RESPONSE=$(curl -s -X POST "$HUB_URL/v1/jobs/submit" \
+        PAYLOAD=$(python3 -c "
+import yaml, json
+cfg = yaml.safe_load(open('$exp_file'))
+cmd = cfg.get('command', '').strip()
+exp_name = cfg.get('name', '$EXP_NAME')
+print(json.dumps({'name': exp_name, 'command': cmd, 'tags': ['c9', 'r${ROUND}', exp_name]}))
+")
+        RESPONSE=$(echo "$PAYLOAD" | curl -s -X POST "$HUB_URL/v1/jobs/submit" \
             ${API_KEY:+-H "X-API-Key: $API_KEY"} \
             -H "Content-Type: application/json" \
-            --data-binary @- << ENDJSON
-{"name": "$EXP_NAME", "command": $(python3 -c "import json; print(json.dumps('$CMD'))"), "tags": ["c9", "r${ROUND}", "$EXP_NAME"]}
-ENDJSON
-        )
+            -d @-)
 
         JOB_ID=$(echo "$RESPONSE" | python3 -c "import json,sys; print(json.load(sys.stdin).get('job_id','ERROR'))")
         echo "[c9-run] $EXP_NAME → $JOB_ID"

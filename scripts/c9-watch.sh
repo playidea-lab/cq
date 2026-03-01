@@ -101,39 +101,45 @@ while [ $count -lt $MAX_POLLS ]; do
                 done
             fi
 
-            # metrics.json에서 결과 파싱
-            METRICS_JOB=$(curl -s -X POST "$HUB_URL/v1/jobs/submit" \
-                ${API_KEY:+-H "X-API-Key: $API_KEY"} \
-                -H "Content-Type: application/json" \
-                -d "{\"name\":\"c9-read-metrics-r${ROUND}\",\"command\":\"python3 -c \\\"import json; m=json.load(open('/home/pi/git/hmr_unified/experiments/paper1/${EXP_NAME}/metrics.json')); e=json.load(open('/home/pi/git/hmr_unified/experiments/paper1/${EXP_NAME}/eval_results.json')) if __import__('os').path.exists('/home/pi/git/hmr_unified/experiments/paper1/${EXP_NAME}/eval_results.json') else {}; print('MPJPE=' + str(e.get('mpjpe', '?')) + ' PA=' + str(e.get('pa_mpjpe', '?')) + ' loss=' + str(m.get('best_val_loss','?')))\\\"\"}" \
-                -o /tmp/c9_metrics_job.json 2>/dev/null)
-            METRICS_JID=$(python3 -c "import json; print(json.load(open('/tmp/c9_metrics_job.json')).get('job_id',''))" 2>/dev/null)
+            # Job 로그에서 [C9-DONE] 마커 파싱 (metric.name 기반 범용화)
+            METRIC_NAME=$(python3 -c "
+import yaml
+s = yaml.safe_load(open('$STATE_FILE'))
+m = s.get('metric', {})
+print(m.get('name', 'value') if isinstance(m, dict) else 'value')
+" 2>/dev/null || echo "value")
+            METRIC_UNIT=$(python3 -c "
+import yaml
+s = yaml.safe_load(open('$STATE_FILE'))
+m = s.get('metric', {})
+print(m.get('unit', '') if isinstance(m, dict) else '')
+" 2>/dev/null || echo "")
 
-            sleep 20
-            MPJPE="?"
-            PA="?"
-            if [ -n "$METRICS_JID" ]; then
-                curl -s "$HUB_URL/v1/jobs/$METRICS_JID/logs" \
-                    ${API_KEY:+-H "X-API-Key: $API_KEY"} \
-                    -o /tmp/c9_metrics_out.json 2>/dev/null
-                RESULT=$(python3 -c "
-import json, re
-d = json.load(open('/tmp/c9_metrics_out.json'))
+            TARGET_JOB_ID="${EVAL_JOB_ID:-$TRAIN_JOB_ID}"
+            RESULT=$(curl -s "$HUB_URL/v1/jobs/$TARGET_JOB_ID/logs" \
+                ${API_KEY:+-H "X-API-Key: $API_KEY"} | python3 -c "
+import json, re, sys
+try:
+    d = json.load(sys.stdin)
+except Exception:
+    sys.exit(1)
 lines = d.get('lines', [])
 for l in lines:
-    m = re.search(r'MPJPE=([0-9.?]+) PA=([0-9.?]+)', l)
+    m = re.search(r'\[C9-DONE\]\s+\S+\s+(\S+)=([\d.]+)', l)
     if m:
         print(m.group(1), m.group(2))
         break
 " 2>/dev/null)
-                if [ -n "$RESULT" ]; then
-                    MPJPE=$(echo "$RESULT" | awk '{print $1}')
-                    PA=$(echo "$RESULT" | awk '{print $2}')
-                fi
+
+            METRIC_KEY="?"
+            METRIC_VAL="?"
+            if [ -n "$RESULT" ]; then
+                METRIC_KEY=$(echo "$RESULT" | awk '{print $1}')
+                METRIC_VAL=$(echo "$RESULT" | awk '{print $2}')
             fi
 
-            echo "[c9-watch] Round=${ROUND} exp=${EXP_NAME} mpjpe=${MPJPE} pa=${PA}"
-            "$SCRIPT_DIR/c9-notify.sh" CHECK "훈련 완료 — MPJPE=${MPJPE}mm PA=${PA}mm" "$ROUND" "mpjpe=${MPJPE},pa=${PA}"
+            echo "[c9-watch] Round=${ROUND} exp=${EXP_NAME} ${METRIC_NAME}=${METRIC_VAL}${METRIC_UNIT}"
+            "$SCRIPT_DIR/c9-notify.sh" CHECK "훈련 완료 — ${METRIC_NAME}=${METRIC_VAL}${METRIC_UNIT}" "$ROUND" "${METRIC_NAME}=${METRIC_VAL}"
             exit 0
             ;;
 
