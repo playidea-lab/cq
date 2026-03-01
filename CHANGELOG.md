@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.48.0] - 2026-03-01
+
+### ✨ Features
+- **c5/dooray**: LLM action 확장 — `query_workers` / `query_jobs` 자연어 조회 지원 (`"서버 상태 봐바"` → `{"action":"query_workers"}` → `store.ListWorkers()` → Dooray 포맷 응답)
+- **c5/dooray**: 잡 완료 Dooray 알림 — `notifyDoorayJobComplete`: SUCCEEDED 시 최종 메트릭 요약, FAILED 시 실제 마지막 3줄 로그 전송 (DOORAY_CHANNEL env 없는 잡은 no-op)
+- **c5/dooray**: semaphore-full 시 silent drop → 유저 알림 (`"⚠️ 현재 요청이 많아 처리할 수 없습니다."`)
+- **c5/dooray**: 시스템 프롬프트 CQ 정체성 + 새 action 어휘 (`query_workers`, `query_jobs`) 추가
+- **skills**: `/c9-init` SKILL.md — 신규 C9 연구 루프 프로젝트 초기화 스킬
+- **skills**: `/c9-steer` SKILL.md — phase 전환 추상화 + 원자 저장 패턴 스킬
+
+### 🐛 Bug Fixes
+- **c5/llmclient**: 기본 모델 `gemini-3-flash-preview` 수정 (존재하는 모델 ID)
+- **c5/dooray**: `submit_job` 잡에 `DOORAY_CHANNEL` env 보존 → 완료 알림 연동
+- **c5/dooray**: `query_jobs` status 대소문자 정규화 (`strings.ToUpper`) — LLM이 소문자 반환 시 조회 실패 방지
+- **c5/dooray**: `query_jobs` limit 상한선 100 추가 — LLM 주입 대량 DB scan 방지
+- **c5/dooray**: `handleJobComplete` 내 GetJob 이중 호출 → 단일 fetch 후 deploy rules + Dooray notify 공유
+
+### ♻️ Refactoring
+- **c5/llmclient**: 중복 모델명 fallback 제거 — `config.LLM.Model`에서 단일 관리
+
+---
+
 ## [v0.47.0] - 2026-03-01
 
 ### ✨ Features
