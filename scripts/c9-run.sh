@@ -27,9 +27,9 @@ fi
 if [[ -n "${C9_HUB_URL:-}" ]]; then
     HUB_URL="$C9_HUB_URL"
 else
-    HUB_URL=$(python3 -c "
-import yaml, sys
-s = yaml.safe_load(open('$STATE_FILE'))
+    HUB_URL=$(STATE_FILE="$STATE_FILE" python3 -c "
+import yaml, sys, os
+s = yaml.safe_load(open(os.environ['STATE_FILE']))
 hub = s.get('hub', {})
 url = hub.get('url', '') if isinstance(hub, dict) else ''
 if not url:
@@ -77,7 +77,11 @@ os.replace(tmp.name, state_file)
     echo "[c9-run] phase → $1"
 }
 
-ROUND=${1:-$(get_state round)}
+if [[ "$1" == "--poll-only" ]]; then
+    ROUND=$(get_state round)
+else
+    ROUND=${1:-$(get_state round)}
+fi
 ROUNDS_DIR="$C9_DIR/rounds/r${ROUND}"
 mkdir -p "$ROUNDS_DIR"
 

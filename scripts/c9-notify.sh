@@ -102,7 +102,7 @@ import json, os
 print(json.dumps({'botName': os.environ['C9_BOT'], 'text': os.environ['C9_TEXT']}))
 ")
 
-    curl -s -X POST "$DOORAY_WEBHOOK" \
+    curl -s --max-time 10 --connect-timeout 5 -X POST "$DOORAY_WEBHOOK" \
         -H "Content-Type: application/json" \
         -d "$DOORAY_PAYLOAD" \
         -o /dev/null \
