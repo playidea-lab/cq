@@ -65,7 +65,7 @@ echo "[c9-watch] session=$SESSION_NAME interval=${POLL_INTERVAL}s max=${MAX_WAIT
 poll_job() {
     local job_id="$1"
     local poll_tmp="/tmp/c9_watch_poll_${job_id}_$$.json"
-    curl -s "$HUB_URL/v1/jobs/$job_id" \
+    curl -s --max-time 10 "$HUB_URL/v1/jobs/$job_id" \
         ${API_KEY:+-H "X-API-Key: $API_KEY"} \
         -o "$poll_tmp" 2>/dev/null
     C9_POLL_TMP="$poll_tmp" python3 -c "

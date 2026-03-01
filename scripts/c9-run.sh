@@ -164,7 +164,7 @@ for job in jobs:
     headers = {'X-API-Key': api_key} if api_key else {}
     req = urllib.request.Request(f'{hub_url}/v1/jobs/{jid}', headers=headers)
     try:
-        resp = json.loads(urllib.request.urlopen(req).read())
+        resp = json.loads(urllib.request.urlopen(req, timeout=30).read())
         status = resp.get('status', 'UNKNOWN')
         job['status'] = status
         # C5 Hub는 SUCCEEDED 또는 DONE 둘 다 완료 상태로 사용 가능
@@ -215,7 +215,7 @@ for job in jobs:
     headers = {'X-API-Key': api_key} if api_key else {}
     req = urllib.request.Request(f'{hub_url}/v1/jobs/{jid}/logs', headers=headers)
     try:
-        resp = json.loads(urllib.request.urlopen(req).read())
+        resp = json.loads(urllib.request.urlopen(req, timeout=60).read())
         lines = resp.get('lines', [])
         results.append(f'=== {job[\"name\"]} ({jid}) ===')
         results.extend(lines)
