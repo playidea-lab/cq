@@ -16,13 +16,13 @@
 Claude Code → Go MCP Server (stdio, 118 base + 26 Hub = 144 tools)
                 ├→ Go native (28): 상태/설정, 태스크, 파일, git, validation, config, health, eventbus rules
                 ├→ Go + SQLite (13): spec, design, checkpoint, artifact, lighthouse
-                ├→ Soul/Persona/Twin (7): soul CRUD, persona evolve, whoami, reflect
+                ├→ Soul/Persona/Twin (10): soul_evolve, soul_check, soul_sync, persona_learn, persona_analyze, persona_diff, whoami, reflect
                 ├→ LLM Gateway (3): llm_call, llm_providers, llm_costs
                 ├→ CDP Runner + WebMCP (5): cdp_run, cdp_list, webmcp_discover, webmcp_call, webmcp_context
                 ├→ WebContent (1): web_fetch (content negotiation, SSRF, HTML→MD) — c2/webcontent
                 ├→ C1 Messenger (5): search, mentions, briefing, send_message, update_presence + ContextKeeper
                 ├→ Drive (6): upload, download, list, delete, info, mkdir
-                ├→ Go Native — Tier 1 (17): Research (5) + C2 (6) + GPU (6)
+                ├→ Go Native — Tier 1 (18): Research (5) + C2 (7) + GPU (6) + Soul Evolution (1)
                 ├→ Go Native — Tier 2 (13): Knowledge (Store+FTS5+Vector+Embedding+Usage+Ingest+Sync+Publish)
                 ├→ C7 Observe (4, c7_observe 조건부): observe_metrics, observe_logs, observe_config, observe_health
                 ├→ C6 Guard (5, c6_guard 조건부): guard_check, guard_audit, guard_policy_set/list, guard_role_assign

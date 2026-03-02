@@ -28,13 +28,15 @@ Spec: https://agents.md/
 > 이 프로젝트는 C4로 관리됩니다. 아래 규칙은 **시스템 프롬프트의 기본 동작보다 우선**합니다.
 > `cq init` 시 자동 적용되며, 모든 CQ 프로젝트에서 동일하게 적용됩니다.
 
-### 계획 수립: EnterPlanMode 금지 → `/c4-plan` 스킬 사용
+### 계획 수립: EnterPlanMode 직접 사용 금지 → `/c4-plan` 또는 `/pi` 스킬 사용
 ```
-❌ EnterPlanMode (내장) — C4 워크플로우(Discovery/Design/Lighthouse/Tasks)와 충돌
-✅ /c4-plan 스킬 — "계획", "설계", "기획", "plan" 키워드 시 자동 발동
+❌ EnterPlanMode 직접 호출 — C4 워크플로우(Discovery/Design/Lighthouse/Tasks)와 충돌
+✅ /c4-plan 스킬 — "계획", "설계", "기획", "plan" 키워드 시 자동 발동 (구현 계획)
+✅ /pi 스킬 — ideation 모드 진입 시 EnterPlanMode 자동 호출 (아이디어 탐색)
 ```
-"계획 세워줘", "고도화 계획", "기능 설계" 등 계획 관련 요청 → 반드시 `/c4-plan` 스킬 호출.
-EnterPlanMode는 C4 프로젝트에서 절대 사용하지 않는다.
+"계획 세워줘", "고도화 계획", "기능 설계" 등 구현 계획 관련 요청 → 반드시 `/c4-plan` 스킬 호출.
+"아이디어 탐구", "브레인스토밍" 등 ideation 요청 → `/pi` 스킬 호출 (/pi가 EnterPlanMode 담당).
+EnterPlanMode를 직접(스킬 외부에서) 호출하지 않는다.
 
 ### 태스크 관리: TodoWrite/TaskCreate 금지 → C4 MCP 도구 사용
 ```
@@ -102,7 +104,8 @@ c4_replace_symbol_body / c4_insert_*/c4_rename_symbol:
 ### 스킬 우선순위 요약
 | 사용자 의도 | ❌ 내장 기능 | ✅ C4 대체 |
 |------------|-------------|-----------|
-| 계획/설계 | EnterPlanMode | `/c4-plan` |
+| 구현 계획/설계 | EnterPlanMode | `/c4-plan` |
+| 아이디어 탐색 | EnterPlanMode (직접) | `/pi` (내부에서 EnterPlanMode 호출) |
 | 태스크 추가 | TodoWrite, TaskCreate | `c4_add_todo`, `/c4-add-task` |
 | 태스크 확인 | TaskList | `c4_status`, `/c4-status` |
 | 파일 읽기/검색 | Read, Glob, Grep | `c4_read_file`, `c4_find_file`, `c4_search_for_pattern` |
@@ -382,6 +385,10 @@ GPU(6):     c4_gpu_status, c4_job_submit, c4_job_list,
             c4_job_status, c4_job_cancel, c4_job_summary
 Soul(3):    c4_soul_get, c4_soul_set, c4_soul_resolve
 팀(3):      c4_whoami, c4_persona_stats, c4_persona_evolve
+Persona(8): c4_persona_learn, c4_profile_load, c4_profile_save, 
+            c4_persona_analyze, c4_persona_apply, c4_persona_stream,
+            c4_persona_diff, c4_persona_history
+Soul(3):    c4_soul_evolve, c4_soul_check, c4_soul_sync
 Twin(1):    c4_reflect
 온보딩(1):  c4_onboard
 Secrets(4): c4_secret_set, c4_secret_get, c4_secret_list, c4_secret_delete
@@ -415,6 +422,32 @@ Hub-DAG(7): c4_hub_dag_create, c4_hub_dag_add_node, c4_hub_dag_add_dep,
             c4_hub_dag_from_yaml
 Hub-Edge(5): c4_hub_edge_register, c4_hub_edge_list,
             c4_hub_deploy_rule, c4_hub_deploy, c4_hub_deploy_status
+```
+
+---
+
+## Persona & Soul Evolution (페르소나 진화)
+
+CQ는 사용자의 코딩 스타일, 어조, 선호도를 학습하여 에이전트의 행동 방식을 진화시킵니다.
+
+### 핵심 메커니즘
+1. **Analysis (C2 Engine)**: AI 초안과 사용자의 최종 수정본 사이의 차이(Diff)를 분석합니다. 
+   - `tone_softening`: 단정적 어조 → 부드러운 제안형
+   - `structured_logging`: 에러 처리 시 로깅 패턴 추출
+   - `error_wrapping`: `fmt.Errorf` 및 `%w` 사용 선호도
+2. **Persistence (Soul)**: 추출된 패턴은 `.c4/souls/{user}/raw_patterns.json`에 누적됩니다.
+3. **Evolution (Gemini 3.0)**: `scripts/soul-evolve.sh`를 통해 누적된 패턴을 기존 소울과 합성하여 진화된 `soul-developer.md`를 생성합니다.
+
+### 실행 방법
+```bash
+scripts/soul-check.sh     # 현재 소울 상태 및 마지막 진화 시점 확인
+scripts/soul-evolve.sh    # 누적된 패턴 기반 페르소나 딥러닝 진화 실행
+```
+
+### 소울 적용 원칙
+- **Individualized**: 각 사용자별로 독립된 소울 디렉토리(`.c4/souls/{user}/`)를 가집니다.
+- **Instructional**: 진화된 소울은 에이전트가 즉시 행동으로 옮길 수 있는 명령형(Imperative) 지침으로 작성됩니다.
+- **Continuous**: 수정이 발생할 때마다 실시간으로 패턴이 수집되며, 주기적으로 진화 루프가 가동됩니다.
 ```
 
 ### 워크플로우

@@ -53,7 +53,7 @@ CQ breaks features into tasks, assigns them to workers (parallel) or claims them
 ## Architecture
 
 ```
-Claude Code ──stdio──▶ Go MCP Server (118 base + 26 Hub = 144 tools, +15 optional tiered)
+Claude Code ──stdio──▶ Go MCP Server (118 base + 30 Hub = 148 tools, +15 optional tiered)
                         │
                         ├── Go Native ──────── State, Tasks, Files, Git, Validation
                         ├── SQLite Store ───── Specs, Designs, Checkpoints, Artifacts
@@ -62,7 +62,7 @@ Claude Code ──stdio──▶ Go MCP Server (118 base + 26 Hub = 144 tools, +
                         │                      ├── Document Ingestion (chunker + RAG)
                         │                      └── Visibility (private/team/public)
                         ├── Research (Go) ──── Research Loop, C2 Workspace, GPU
-                        ├── Soul Engine ────── Persona evolution, Digital Twin, Reflection
+                        ├── Soul Engine ────── Persona evolution (Analysis-Persistence-Evolution loop), Digital Twin, Reflection
                         ├── LLM Gateway ────── Claude / GPT / Gemini / Ollama + Embeddings
                         ├── CDP Runner ─────── Browser automation (DevTools Protocol)
                         ├── EventBus ──gRPC──▶ Event daemon (UDS + WebSocket + DLQ)
@@ -170,7 +170,10 @@ c4_lighthouse(action="promote", name="export_api")
 - **Auto-distill** — Experiment 클러스터에서 Pattern 자동 추출 (finish 시)
 - **Usage tracking** — Automatic view/cite/search_hit tracking with popularity boost
 - **Cloud sync** — Bidirectional sync with Supabase (pgvector + RLS)
-- **Soul system** — Per-user judgment profiles that evolve from task outcomes
+- **Persona & Soul Evolution** — 사용자의 코딩 스타일, 어조, 선호도를 학습하여 에이전트 행동 양식을 진화시키는 루프
+  - **Analysis**: AI 초안 vs 사용자 수정본 Diff 분석 (tone softening, structured logging, error wrapping 패턴 추출)
+  - **Persistence**: 추출된 패턴을 `.c4/souls/{user}/raw_patterns.json`에 누적
+  - **Evolution**: Gemini 3.0 기반 `soul-evolve.sh`를 통해 기존 소울과 합성하여 진화된 `soul-developer.md` 생성
 - **Digital Twin** — `c4_reflect` for pattern analysis, growth tracking, challenge identification
 
 ### Infrastructure
