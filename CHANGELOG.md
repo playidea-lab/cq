@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.54.1] - 2026-03-03
+
+### 🐛 Bug Fixes
+- **reboot**: `$PPID` 빈값 버그 수정 — Bash 툴 서브셸에서 `$PPID`가 항상 비어있어 SIGTERM 미발송. `ps -o ppid= -p $$`로 claude PID 직접 조회
+- **reboot**: 세션명 덮어쓰기 버그 수정 — `cq -t <new-name>`으로 새 세션 시작 시 reboot 후 기존 저장 세션명으로 덮어쓰이던 문제. `nameWasKnown` 플래그로 차단
+
+---
+
 ## [v0.54.0] - 2026-03-03
 
 ### ✨ Features
