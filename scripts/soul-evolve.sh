@@ -1,5 +1,5 @@
 #!/bin/bash
-# soul-evolve.sh: Gemini 3.0을 활용한 사용자 페르소나 딥러닝
+# soul-evolve.sh: LLM 기반 사용자 페르소나 진화 (SOUL_LLM=auto|claude|gemini|openai)
 
 USER_NAME="changmin"
 SOUL_DIR=".c4/souls/$USER_NAME"
@@ -11,7 +11,7 @@ if [ ! -f "$RAW_PATTERNS_FILE" ]; then
     exit 0
 fi
 
-echo "🧪 Gemini 3.0 페르소나 분석 엔진을 가동합니다..."
+echo "🧪 LLM 페르소나 분석 엔진을 가동합니다... (provider: ${SOUL_LLM:-auto})"
 
 # 1. 원본 소울 파일 로드 (없으면 기본값)
 if [ -f "$SOUL_FILE" ]; then
@@ -23,7 +23,7 @@ fi
 # 2. 누적된 패턴 로드
 PATTERNS=$(cat "$RAW_PATTERNS_FILE")
 
-# 3. Gemini 3.0에게 분석 및 합성 요청
+# 3. LLM에게 분석 및 합성 요청
 PROMPT="
 당신은 'Persona Expert'입니다. 다음 제공된 사용자의 코드 수정 패턴들을 분석하여, 기존 페르소나(Soul)를 더 구체적이고 진화된 형태로 업데이트하세요.
 
@@ -40,8 +40,8 @@ $PATTERNS
 4. 출력은 오직 업데이트된 전체 마크다운 내용만 출력하세요 (기타 설명 제외).
 "
 
-# 헤드리스로 Gemini 호출 후 결과를 임시 파일에 저장
-./scripts/gemini-headless.sh "$PROMPT" > /tmp/new_soul.md
+# LLM 호출 (SOUL_LLM 환경변수로 provider 선택, 기본: auto)
+./scripts/llm-call.sh "$PROMPT" > /tmp/new_soul.md
 
 # 4. 검증 및 덮어쓰기
 if [ -s /tmp/new_soul.md ]; then
@@ -51,7 +51,7 @@ if [ -s /tmp/new_soul.md ]; then
     # 5. 원본 패턴 파일 비우기 (학습 완료)
     echo "[]" > "$RAW_PATTERNS_FILE"
 else
-    echo "❌ 소울 진화 실패: Gemini 분석 결과를 받지 못했습니다."
+    echo "❌ 소울 진화 실패: LLM 응답이 비어 있습니다."
 fi
 
 rm -f /tmp/new_soul.md

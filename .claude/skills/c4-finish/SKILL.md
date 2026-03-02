@@ -146,6 +146,13 @@ if stats.total_docs >= 5:
 ```
 Cursor에서는 수동으로 `c4_knowledge_distill` 호출하거나 건너뜁니다.
 
+### 7.6. Persona Evolution (Soul Check)
+```bash
+./scripts/soul-check.sh
+```
+- 누적된 학습 데이터가 많고 마지막 진화 후 일정 시간이 지났으면 자동으로 `soul-evolve`를 실행합니다.
+- 사용자의 최신 엔지니어링 스타일을 페르소나에 반영하여 다음 세션의 협업 품질을 높입니다.
+
 ### 8. Git Commit
 - `git status` → 변경 파일 확인
 - `git diff` → 변경 내용 검토
