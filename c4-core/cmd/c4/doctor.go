@@ -650,7 +650,7 @@ func checkOSService(_ bool) checkResult {
 			Name:    "os-service",
 			Status:  checkWarn,
 			Message: "service installed but stopped",
-			Fix:     "cq serve install  (or: launchctl start cq-serve / systemctl start cq-serve)",
+			Fix:     "launchctl start cq-serve  (macOS)  or  systemctl --user start cq-serve  (Linux)",
 		}
 	default:
 		// Not installed — check for manual serve via PID file with liveness verification.

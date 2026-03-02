@@ -220,6 +220,12 @@ func (s *SupabaseStore) EnsureChannel(ctx context.Context, ch Channel) (string, 
 	defer resp.Body.Close()
 	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 
+	if resp.StatusCode == http.StatusConflict {
+		// 409: partial unique index conflict (race between GET and POST).
+		// resolution=ignore-duplicates does not cover partial indexes on all
+		// PostgREST versions — fall back to GET to return the existing UUID.
+		return s.findChannel(ctx, tenant, ch.Platform, ch.Name)
+	}
 	if resp.StatusCode >= 400 {
 		// RLS violation, schema error, or other server-side rejection.
 		return "", fmt.Errorf("conversation: ensure channel: server error %d: %s", resp.StatusCode, string(respBody))
@@ -361,6 +367,12 @@ func (s *SupabaseStore) EnsureParticipant(ctx context.Context, p Participant) (s
 	defer resp.Body.Close()
 	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 
+	if resp.StatusCode == http.StatusConflict {
+		// 409: partial unique index conflict (race between GET and POST).
+		// resolution=ignore-duplicates does not cover partial indexes on all
+		// PostgREST versions — fall back to GET to return the existing UUID.
+		return s.findParticipant(ctx, tenant, p.Platform, p.PlatformID)
+	}
 	if resp.StatusCode >= 400 {
 		return "", fmt.Errorf("conversation: ensure participant: server error %d: %s", resp.StatusCode, string(respBody))
 	}
