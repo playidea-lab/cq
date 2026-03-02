@@ -170,14 +170,22 @@ func detectMode(cmd string) string {
 }
 
 // compress reduces output size based on mode. Returns (compressed, wasCompressed).
+// Test mode always strips === RUN lines regardless of size threshold.
 func compress(output, mode string, maxBytes int) (string, bool) {
+	// test mode: always sanitize === RUN lines, even below threshold
+	if mode == "test" {
+		sanitized := stripTestNoise(output)
+		if len(sanitized) <= defaultCompressThreshold {
+			changed := sanitized != output
+			return sanitized, changed
+		}
+		return truncate(compressTest(sanitized), maxBytes), true
+	}
 	if len(output) <= defaultCompressThreshold {
 		return output, false
 	}
 	var result string
 	switch mode {
-	case "test":
-		result = compressTest(output)
 	case "build":
 		result = compressBuild(output)
 	case "git":
@@ -186,6 +194,21 @@ func compress(output, mode string, maxBytes int) (string, bool) {
 		result = compressGeneric(output)
 	}
 	return truncate(result, maxBytes), true
+}
+
+// stripTestNoise removes === RUN / === PAUSE / === CONT lines that add no signal.
+func stripTestNoise(output string) string {
+	lines := strings.Split(output, "\n")
+	out := lines[:0]
+	for _, l := range lines {
+		if strings.HasPrefix(l, "=== RUN") ||
+			strings.HasPrefix(l, "=== PAUSE") ||
+			strings.HasPrefix(l, "=== CONT") {
+			continue
+		}
+		out = append(out, l)
+	}
+	return strings.Join(out, "\n")
 }
 
 // compressTest extracts failures, panics, errors, and summary from test output.
