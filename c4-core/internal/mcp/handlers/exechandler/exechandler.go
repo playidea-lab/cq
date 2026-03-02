@@ -27,7 +27,8 @@ func Register(reg *mcp.Registry, rootDir string) {
 	reg.Register(mcp.ToolSchema{
 		Name: "c4_execute",
 		Description: "Run a shell command and return compressed output. " +
-			"Use instead of Bash for commands with large output (tests, logs, git history, builds). " +
+			"PREFER over Bash for: go test, git log, git diff, find, cargo test, npm test, go build, make. " +
+			"Use Bash only for piped commands (cmd | cmd) or simple one-liners. " +
 			"Automatically extracts relevant lines (errors, failures, warnings) and omits noise. " +
 			"Reports original vs returned size so you know how much was compressed.",
 		InputSchema: map[string]any{

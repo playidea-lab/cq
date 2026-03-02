@@ -298,6 +298,7 @@ c4_add_todo(mode="direct", review_required=False)
 ### Efficiency Rules (컨텍스트 절약)
 - 큰 파일을 읽기 전에 **항상 line range를 제한**한다. 일부만 필요하면 전체를 읽지 않는다.
 - 컨텍스트 사용을 최소화한다.
+- **`c4_execute` 우선 원칙**: `go test`, `git log`, `git diff`, `find`, `cargo test`, `npm test`, `go build`, `make` 같은 출력이 큰 명령은 Bash 대신 `c4_execute`를 사용한다. 파이프(`|`) 체인이 필요한 경우만 Bash를 쓴다.
 
 ### Debugging (디버깅 원칙)
 - MCP 서버나 도구 연결 문제 디버깅 시, 우회책 대신 **근본 원인(모듈 경로, config 오류 등)을 수정**한다.
