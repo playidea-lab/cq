@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.55.1] - 2026-03-03
+
+### ✨ Features
+- **exec/ux**: `c4_execute` 우선 사용 원칙 강화 — AGENTS.md Efficiency Rules에 추가. `go test`, `git log`, `git diff`, `find`, `builds` 등 대용량 출력 명령은 Bash 대신 `c4_execute` 사용. 파이프(`|`) 체인만 Bash 유지. tool description도 지시적으로 강화("PREFER over Bash for: ...")
+
+### 🐛 Bug Fixes
+- **exec/test**: `=== RUN` 라인 항상 제거 — 이전에는 출력이 임계값(4KB)을 넘을 때만 제거. 이제 test 모드에서는 임계값 무관하게 항상 `=== RUN`/`=== PAUSE`/`=== CONT` 노이즈 제거
+
+---
+
 ## [v0.55.0] - 2026-03-03
 
 ### ✨ Features
