@@ -16,7 +16,7 @@ description: |
 
 ## 모드 선언 (진입 시 즉시)
 
-**이 스킬이 활성화된 순간부터 구현 모드는 없다.**
+**이 스킬이 활성화된 순간 EnterPlanMode를 호출한다.**
 
 ```
 ✗ 코드 작성 금지
@@ -25,8 +25,11 @@ description: |
 ✓ 조사, 질문, 토론, 정리만
 ```
 
-> C4 프로젝트에서 EnterPlanMode는 금지되어 있으므로,
-> /pi 자체가 그 역할을 한다 — 스킬이 살아있는 동안 구현 진입 없음.
+EnterPlanMode를 호출해 Claude Code UI에 "Plan Mode" 를 활성화한다.
+이로써 Write/Edit 도구가 차단되고 유저에게 "지금 ideation 모드"임을 시각적으로 알린다.
+
+> CLAUDE.md의 `EnterPlanMode 금지` 룰은 /c4-plan 대체 목적(구현 계획 수립)에 한함.
+> /pi는 구현 이전 ideation 단계이므로 EnterPlanMode 사용이 적합하다.
 
 ---
 
@@ -251,9 +254,10 @@ Phase 2(해석)에서 idea.md의 문제 정의, 가정, 리스크를 EARS 요구
 탐구할 아이디어: $ARGUMENTS
 
 **즉시 시작:**
-1. 이 세션에서 코드 작성, 기술 선택, 태스크 분해는 없다
-2. $ARGUMENTS가 있으면: WebSearch + c4_knowledge_search 병렬 실행
-3. 조사 결과 해석 → Landscape + 핵심 긴장 + 첫 날카로운 질문 제시
-4. 발산→수렴→심화→반론 모드를 오가며 토론
-5. 수렴 감지 시 시그널 → 유저 확인 → idea.md 생성 → c4-plan 호출
+1. EnterPlanMode 호출 (Write/Edit 차단 + Plan Mode UI 활성화)
+2. 이 세션에서 코드 작성, 기술 선택, 태스크 분해는 없다
+3. $ARGUMENTS가 있으면: WebSearch + c4_knowledge_search 병렬 실행
+4. 조사 결과 해석 → Landscape + 핵심 긴장 + 첫 날카로운 질문 제시
+5. 발산→수렴→심화→반론 모드를 오가며 토론
+6. 수렴 감지 시 시그널 → 유저 확인 → idea.md 생성 → c4-plan 호출
 </instructions>
