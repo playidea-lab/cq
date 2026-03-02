@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.54.0] - 2026-03-03
+
+### ✨ Features
+- **ux/serve**: `cq serve` 투명화 — `confirmServeInstall()` 제거, `ensureServeRunning()` 성공/타임아웃 메시지에 PID 추가
+- **ux/doctor**: `os-service` 미설치 WARN → OK ("auto-starts on next cq claude")
+- **skills/pi**: Play Idea 스킬 신설 — ideation 모드 (c4-plan 이전). 발산/수렴/심화/반론 4모드, WebSearch + c4_knowledge_search 병렬 리서치, idea.md → /c4-plan 자동 전환
+- **cloud/team**: `TeamClient` + `cq team list/invite/remove` 명령어 추가
+- **persona**: `getActiveUsername` 비결정성 수정 + `TeamMember.CloudUID` 추가
+- **infra**: migration 00029 — `c4_profiles`, `c4_pending_invitations` 테이블 + RPC
+
+### 🐛 Bug Fixes
+- **c5/conversation**: `EnsureChannel`/`EnsureParticipant` 409 Conflict 처리 추가
+
+---
+
 ## [v0.53.0] - 2026-03-02
 
 ### ✨ Features
