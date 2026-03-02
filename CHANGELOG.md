@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.56.0] - 2026-03-03
+
+### ✨ Features
+- **harness**: Cursor IDE SQLite 어댑터 추가 — `~/Library/.../state.vscdb` 5분 주기 폴링, read-only 모드, `cursor_processed` DB로 composer 레벨 중복 방지
+- **harness**: `llm-call.sh` 신규 — Gemini/Claude/OpenAI LLM 라우터 (`SOUL_LLM=auto|claude|gemini|openai`), `soul-evolve.sh` 위임
+- **infra**: migration 00030 — `c1_channels(tenant_id, platform, name) WHERE channel_type='session'` 부분 유니크 인덱스 (EnsureChannel 멱등성 보장)
+
+### 🐛 Bug Fixes
+- **harness**: `SetOffset`을 `Push` 성공 후에만 호출 — 이전에는 push 실패 시에도 offset 전진 → 메시지 유실. 이제 push 오류 시 즉시 return으로 다음 fsnotify 이벤트에서 재시도
+
+### 🔧 Chores
+- **docs**: 테스트 수 현행화 (`~2,044 → ~2,457`) + archtest allowlist 추가 (c1push HTTP status 에러)
+- **skills**: c4-finish Step 7.6 Persona Evolution (soul-check 자동 실행) 추가
+
+---
+
 ## [v0.55.1] - 2026-03-03
 
 ### ✨ Features
