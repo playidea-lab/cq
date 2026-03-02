@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/changmin/c4-core/internal/mcp"
+	"gopkg.in/yaml.v3"
 )
 
 // =========================================================================
@@ -299,6 +300,117 @@ func TestGetActiveUsername_NoFile(t *testing.T) {
 	if name != "" {
 		t.Errorf("username = %q, want empty", name)
 	}
+}
+
+func TestGetActiveUsername_ConfigKey(t *testing.T) {
+	tmpDir := t.TempDir()
+	os.MkdirAll(filepath.Join(tmpDir, ".c4"), 0755)
+
+	// team.yaml with two members
+	teamYAML := `members:
+  alice:
+    role: developer
+  bob:
+    role: backend
+`
+	os.WriteFile(filepath.Join(tmpDir, ".c4", "team.yaml"), []byte(teamYAML), 0644)
+
+	// config.yaml with explicit active_username
+	configYAML := "active_username: bob\n"
+	os.WriteFile(filepath.Join(tmpDir, ".c4", "config.yaml"), []byte(configYAML), 0644)
+
+	name := getActiveUsername(tmpDir)
+	if name != "bob" {
+		t.Errorf("username = %q, want bob (from config.yaml)", name)
+	}
+}
+
+func TestGetActiveUsername_SingleMember(t *testing.T) {
+	tmpDir := t.TempDir()
+	os.MkdirAll(filepath.Join(tmpDir, ".c4"), 0755)
+
+	// No config.yaml, single member in team.yaml
+	teamYAML := `members:
+  carol:
+    role: developer
+`
+	os.WriteFile(filepath.Join(tmpDir, ".c4", "team.yaml"), []byte(teamYAML), 0644)
+
+	name := getActiveUsername(tmpDir)
+	if name != "carol" {
+		t.Errorf("username = %q, want carol (single-member fallback)", name)
+	}
+}
+
+func TestGetActiveUsername_MultiMember_NoConfig(t *testing.T) {
+	tmpDir := t.TempDir()
+	os.MkdirAll(filepath.Join(tmpDir, ".c4"), 0755)
+
+	// Multiple members, no config.yaml active_username
+	teamYAML := `members:
+  alice:
+    role: developer
+  bob:
+    role: backend
+`
+	os.WriteFile(filepath.Join(tmpDir, ".c4", "team.yaml"), []byte(teamYAML), 0644)
+
+	name := getActiveUsername(tmpDir)
+	if name != "" {
+		t.Errorf("username = %q, want empty for multi-member without config key", name)
+	}
+}
+
+func TestTeamMemberCloudUID_RoundTrip(t *testing.T) {
+	original := TeamMember{
+		Role:          "developer",
+		Roles:         []string{"developer", "ceo"},
+		Personas:      []string{"code-reviewer"},
+		ActivePersona: "code-reviewer",
+		CloudUID:      "supabase-uid-12345",
+	}
+
+	data, err := yamlMarshal(original)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+
+	var result TeamMember
+	if err := yamlUnmarshal(data, &result); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	if result.CloudUID != original.CloudUID {
+		t.Errorf("CloudUID = %q, want %q", result.CloudUID, original.CloudUID)
+	}
+	if result.Role != original.Role {
+		t.Errorf("Role = %q, want %q", result.Role, original.Role)
+	}
+	if len(result.Roles) != len(original.Roles) {
+		t.Errorf("Roles len = %d, want %d", len(result.Roles), len(original.Roles))
+	}
+	if result.ActivePersona != original.ActivePersona {
+		t.Errorf("ActivePersona = %q, want %q", result.ActivePersona, original.ActivePersona)
+	}
+}
+
+// yamlMarshal/yamlUnmarshal are thin wrappers to allow test package to use yaml
+// without importing gopkg.in/yaml.v3 directly (already imported in persona.go).
+func yamlMarshal(v any) ([]byte, error) {
+	team := TeamConfig{Members: map[string]TeamMember{"testuser": v.(TeamMember)}}
+	data, err := yaml.Marshal(team)
+	return data, err
+}
+
+func yamlUnmarshal(data []byte, v *TeamMember) error {
+	var team TeamConfig
+	if err := yaml.Unmarshal(data, &team); err != nil {
+		return err
+	}
+	if m, ok := team.Members["testuser"]; ok {
+		*v = m
+	}
+	return nil
 }
 
 func TestApplySuggestionsToSoul(t *testing.T) {

@@ -160,9 +160,10 @@ type TeamConfig struct {
 // TeamMember represents a team member's configuration.
 type TeamMember struct {
 	Role          string   `yaml:"role"`
-	Roles         []string `yaml:"roles"`
-	Personas      []string `yaml:"personas"`
-	ActivePersona string   `yaml:"active_persona"`
+	Roles         []string `yaml:"roles,omitempty"`
+	Personas      []string `yaml:"personas,omitempty"`
+	ActivePersona string   `yaml:"active_persona,omitempty"`
+	CloudUID      string   `yaml:"cloud_uid,omitempty"` // Supabase auth.uid bound on signup
 }
 
 // RegisterTeamHandlers registers the c4_whoami tool.
@@ -309,6 +310,9 @@ func RegisterTeamHandlers(reg *mcp.Registry, projectRoot string) {
 		if personaFile != "" {
 			result["persona_file"] = personaFile
 		}
+		if member.CloudUID != "" {
+			result["cloud_uid"] = member.CloudUID
+		}
 		return result, nil
 	})
 }
@@ -379,8 +383,33 @@ func getActivePersonaForUser(projectRoot, username string) string {
 	return ""
 }
 
-// getActiveUsername reads team.yaml and returns the first member's username.
+// readConfigKey reads a top-level key from .c4/config.yaml.
+// Returns "" on any error or if the key is absent.
+func readConfigKey(projectRoot, key string) string {
+	cfgPath := filepath.Join(projectRoot, ".c4", "config.yaml")
+	data, err := os.ReadFile(cfgPath)
+	if err != nil {
+		return ""
+	}
+	var cfg map[string]any
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		return ""
+	}
+	if v, ok := cfg[key]; ok {
+		if s, ok := v.(string); ok {
+			return s
+		}
+	}
+	return ""
+}
+
+// getActiveUsername returns the active username deterministically.
+// Priority: 1) config.yaml active_username  2) single-member fallback
 func getActiveUsername(projectRoot string) string {
+	if u := readConfigKey(projectRoot, "active_username"); u != "" {
+		return u
+	}
+
 	teamPath := filepath.Join(projectRoot, ".c4", "team.yaml")
 	data, err := os.ReadFile(teamPath)
 	if err != nil {
@@ -392,9 +421,14 @@ func getActiveUsername(projectRoot string) string {
 		return ""
 	}
 
-	// Return first member (solo mode)
-	for name := range team.Members {
-		return name
+	// Deterministic only for single-member teams.
+	if len(team.Members) == 1 {
+		for name := range team.Members {
+			return name
+		}
+	}
+	if len(team.Members) > 1 {
+		fmt.Fprintf(os.Stderr, "[c4_whoami] warn: multiple team members but active_username not set in config.yaml\n")
 	}
 	return ""
 }
