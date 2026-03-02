@@ -8,6 +8,7 @@ import (
 
 	"github.com/changmin/c4-core/internal/cloud"
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 )
 
 var signupCmd = &cobra.Command{
@@ -72,7 +73,12 @@ func runAuthSignup(cmd *cobra.Command, args []string) error {
 		}
 		if password == "" {
 			fmt.Fprint(os.Stderr, "Password: ")
-			fmt.Scan(&password)
+			pw, err := term.ReadPassword(int(os.Stdin.Fd()))
+			fmt.Fprintln(os.Stderr) // newline after hidden input
+			if err != nil {
+				return fmt.Errorf("reading password: %w", err)
+			}
+			password = string(pw)
 		}
 	}
 
@@ -100,10 +106,13 @@ func runAuthSignup(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// T-TM-001-0 이전까지 선언만; actual use는 T-TM-001-0 완료 후
-	cloudURL := readCloudURL(projectDir)
-	_ = cloud.NewTeamClient(cloudURL, readCloudAnonKey(projectDir), session.AccessToken)
+	if err := client.UpsertProfile(session); err != nil {
+		// Non-fatal: profile upsert failure should not block account creation.
+		fmt.Fprintf(os.Stderr, "warn: profile setup failed: %v\n", err)
+	} else if patchErr := cloud.PatchTeamYAMLCloudUID(projectDir, session.UserID); patchErr != nil {
+		fmt.Fprintf(os.Stderr, "warn: team.yaml cloud_uid update failed: %v\n", patchErr)
+	}
 
-	fmt.Printf("Account created! Welcome, %s\nYour cloud_uid has been linked to team.yaml\n", session.User.Email)
+	fmt.Printf("Account created! Welcome, %s\n", session.Email)
 	return nil
 }

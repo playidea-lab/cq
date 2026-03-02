@@ -16,7 +16,9 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"log"
 	"net"
 	"net/http"
 	"os"
@@ -25,6 +27,8 @@ import (
 	"runtime"
 	"strconv"
 	"time"
+
+	"gopkg.in/yaml.v3"
 )
 
 // defaultCallbackPort is the preferred port for the OAuth callback server.
@@ -516,6 +520,8 @@ func (c *AuthClient) getUserInfo(accessToken string) (*User, error) {
 	}, nil
 }
 
+// SignUpWithEmail is defined in auth_signup.go (returns *AuthSession).
+
 // --- Supabase API types ---
 
 // supabaseTokenResponse is the response from /auth/v1/token.
@@ -584,4 +590,113 @@ func openBrowser(url string) error {
 		return fmt.Errorf("unsupported platform: %s", runtime.GOOS)
 	}
 	return cmd.Start()
+}
+
+// PatchTeamYAMLCloudUID sets the cloud_uid field for the single active team
+// member in projectRoot/.c4/team.yaml. It uses yaml.Node to preserve all
+// existing fields (roles, personas, active_persona, etc.).
+//
+// No-op (returns nil) if:
+//   - team.yaml does not exist
+//   - there are multiple members (ambiguous; logs a warning)
+func PatchTeamYAMLCloudUID(projectRoot, cloudUID string) error {
+	teamPath := filepath.Join(projectRoot, ".c4", "team.yaml")
+
+	data, err := os.ReadFile(teamPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("reading team.yaml: %w", err)
+	}
+
+	// Parse into a yaml.Node to preserve formatting and field order.
+	var root yaml.Node
+	if err := yaml.Unmarshal(data, &root); err != nil {
+		return fmt.Errorf("parsing team.yaml: %w", err)
+	}
+
+	// The document node wraps the actual mapping node.
+	if root.Kind != yaml.DocumentNode || len(root.Content) == 0 {
+		return errors.New("unexpected team.yaml structure")
+	}
+	docContent := root.Content[0]
+	if docContent.Kind != yaml.MappingNode {
+		return errors.New("team.yaml root is not a mapping")
+	}
+
+	// Find the "members" key.
+	membersVal := findMappingValue(docContent, "members")
+	if membersVal == nil || membersVal.Kind != yaml.MappingNode {
+		return errors.New("team.yaml missing 'members' mapping")
+	}
+
+	// Count members — key/value pairs in the mapping node.
+	memberCount := len(membersVal.Content) / 2
+	if memberCount > 1 {
+		log.Printf("warn: PatchTeamYAMLCloudUID: %d members found, skipping auto cloud_uid binding", memberCount)
+		return nil
+	}
+	if memberCount == 0 {
+		return nil
+	}
+
+	// Single member: membersVal.Content[1] is the member's value mapping node.
+	memberNode := membersVal.Content[1]
+	if memberNode.Kind != yaml.MappingNode {
+		return errors.New("member value is not a mapping node")
+	}
+
+	// Check if cloud_uid already exists; update it. Otherwise append.
+	existing := findMappingValue(memberNode, "cloud_uid")
+	if existing != nil {
+		existing.Value = cloudUID
+	} else {
+		keyNode := &yaml.Node{Kind: yaml.ScalarNode, Value: "cloud_uid", Tag: "!!str"}
+		valNode := &yaml.Node{Kind: yaml.ScalarNode, Value: cloudUID, Tag: "!!str"}
+		memberNode.Content = append(memberNode.Content, keyNode, valNode)
+	}
+
+	// Atomic write: write to temp file, then rename.
+	dir := filepath.Dir(teamPath)
+	tmp, err := os.CreateTemp(dir, "team.yaml.*")
+	if err != nil {
+		return fmt.Errorf("creating temp file for team.yaml: %w", err)
+	}
+	tmpName := tmp.Name()
+	defer func() {
+		// Best-effort cleanup of temp file if rename fails.
+		os.Remove(tmpName) //nolint:errcheck
+	}()
+
+	enc := yaml.NewEncoder(tmp)
+	enc.SetIndent(2)
+	if err := enc.Encode(&root); err != nil {
+		tmp.Close()
+		return fmt.Errorf("encoding team.yaml: %w", err)
+	}
+	if err := enc.Close(); err != nil {
+		tmp.Close()
+		return fmt.Errorf("closing yaml encoder: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("closing temp file: %w", err)
+	}
+
+	if err := os.Rename(tmpName, teamPath); err != nil {
+		return fmt.Errorf("renaming temp file to team.yaml: %w", err)
+	}
+
+	return nil
+}
+
+// findMappingValue finds the value node for the given key in a yaml MappingNode.
+// Returns nil if not found.
+func findMappingValue(mappingNode *yaml.Node, key string) *yaml.Node {
+	for i := 0; i+1 < len(mappingNode.Content); i += 2 {
+		if mappingNode.Content[i].Value == key {
+			return mappingNode.Content[i+1]
+		}
+	}
+	return nil
 }

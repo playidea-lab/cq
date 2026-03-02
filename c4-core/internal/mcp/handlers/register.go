@@ -8,6 +8,7 @@ import (
 	"github.com/changmin/c4-core/internal/mcp"
 	"github.com/changmin/c4-core/internal/mcp/handlers/artifacthandler"
 	"github.com/changmin/c4-core/internal/mcp/handlers/cfghandler"
+	"github.com/changmin/c4-core/internal/mcp/handlers/exechandler"
 	"github.com/changmin/c4-core/internal/mcp/handlers/fileops"
 	"github.com/changmin/c4-core/internal/mcp/handlers/gitops"
 	"github.com/changmin/c4-core/internal/mcp/handlers/gpuhandler"
@@ -36,6 +37,7 @@ func RegisterAll(reg *mcp.Registry, store Store) {
 func RegisterNativeHandlers(reg *mcp.Registry, rootDir string, store Store) {
 	fileops.Register(reg, rootDir)
 	gitops.Register(reg, rootDir)
+	exechandler.Register(reg, rootDir)
 	RegisterValidationHandlers(reg, rootDir)
 	if store != nil {
 		RegisterDiscoveryHandlers(reg, store, rootDir)

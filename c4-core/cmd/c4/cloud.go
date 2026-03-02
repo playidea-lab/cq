@@ -172,3 +172,49 @@ func selectCloudStore(mode string, local, remote store.Store) store.Store {
 	}
 	return cloud.NewHybridStore(local, remote)
 }
+
+// readCloudURL reads the Supabase URL from env vars or .c4/config.yaml.
+// Priority: C4_CLOUD_URL > SUPABASE_URL > config.yaml cloud.url > ldflags default.
+func readCloudURL(projDir string) string {
+	if v := os.Getenv("C4_CLOUD_URL"); v != "" {
+		return v
+	}
+	if v := os.Getenv("SUPABASE_URL"); v != "" {
+		return v
+	}
+	configPath := filepath.Join(projDir, ".c4", "config.yaml")
+	if data, err := os.ReadFile(configPath); err == nil {
+		if v := sectionYAMLValue(string(data), "cloud", "url:"); v != "" {
+			return v
+		}
+	}
+	return builtinSupabaseURL
+}
+
+// readCloudAnonKey reads the Supabase anon key from env vars or .c4/config.yaml.
+// Priority: C4_CLOUD_ANON_KEY > SUPABASE_KEY > config.yaml cloud.anon_key > ldflags default.
+func readCloudAnonKey(projDir string) string {
+	if v := os.Getenv("C4_CLOUD_ANON_KEY"); v != "" {
+		return v
+	}
+	if v := os.Getenv("SUPABASE_KEY"); v != "" {
+		return v
+	}
+	configPath := filepath.Join(projDir, ".c4", "config.yaml")
+	if data, err := os.ReadFile(configPath); err == nil {
+		if v := sectionYAMLValue(string(data), "cloud", "anon_key:"); v != "" {
+			return v
+		}
+	}
+	return builtinSupabaseKey
+}
+
+// getActiveProjectID reads the active project_id from .c4/config.yaml.
+func getActiveProjectID(projDir string) string {
+	configPath := filepath.Join(projDir, ".c4", "config.yaml")
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return ""
+	}
+	return sectionYAMLValue(string(data), "cloud", "active_project_id:")
+}
