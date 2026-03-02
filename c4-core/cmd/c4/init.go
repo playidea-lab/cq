@@ -1178,10 +1178,12 @@ func launchToolNamed(projectDir, name string) error {
 
 	// Determine initial UUID
 	currentUUID := ""
+	nameWasKnown := false // true if -t name was found in saved sessions (rename-on-reboot allowed)
 	if entry, ok := sessions[name]; ok {
 		jsonlPath := filepath.Join(sessionDir, entry.UUID+".jsonl")
 		if _, statErr := os.Stat(jsonlPath); statErr == nil {
 			currentUUID = entry.UUID
+			nameWasKnown = true
 		} else {
 			fmt.Fprintf(os.Stderr, "cq: session '%s' JSONL deleted, starting new session...\n", name)
 			delete(sessions, name)
@@ -1258,12 +1260,17 @@ func launchToolNamed(projectDir, name string) error {
 			}
 			// Re-read sessions store: the user may have renamed the session via
 			// `cq session name` between launch and reboot. Pick up the new name.
-			if freshSessions, loadErr := loadNamedSessions(); loadErr == nil {
-				for n, entry := range freshSessions {
-					if entry.UUID == currentUUID && n != name {
-						fmt.Fprintf(os.Stderr, "cq: reboot: session renamed '%s' → '%s'\n", name, n)
-						name = n
-						break
+			// Only rename when the original -t name was a known session; if the user
+			// started a fresh session with -t <new-name>, keep that name even if the
+			// UUID happens to be stored under a different name.
+			if nameWasKnown {
+				if freshSessions, loadErr := loadNamedSessions(); loadErr == nil {
+					for n, entry := range freshSessions {
+						if entry.UUID == currentUUID && n != name {
+							fmt.Fprintf(os.Stderr, "cq: reboot: session renamed '%s' → '%s'\n", name, n)
+							name = n
+							break
+						}
 					}
 				}
 			}
