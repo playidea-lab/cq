@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.55.0] - 2026-03-03
+
+### ✨ Features
+- **mcp/execute**: `c4_execute` 도구 추가 — 컨텍스트 압축 명령 실행기. 대용량 Bash 출력을 자동 압축(test/build/git/generic 모드)해 컨텍스트 소비 절감. 압축 임계값 4KB, 최대 반환 8KB, 타임아웃 60s
+- **auth/signup**: `cq auth signup` UX 개선 — `term.ReadPassword`로 password echo 방지, `UpsertProfile` + `PatchTeamYAMLCloudUID` 자동 호출, URL injection 방지(`url.QueryEscape`), io.LimitReader 응답 크기 제한
+- **cloud/project**: `ProjectClient` 신설 — `cq project list/new/use` 명령어 + `SetActiveProject` YAML round-trip
+- **skills/pi**: `EnterPlanMode` 허용 — `/pi` 스킬 ideation 진입 시 Plan Mode UI 활성화
+
+### 🐛 Bug Fixes
+- **archtest**: `getActiveProjectID` YAML section 버그 수정 — `project.id` → `cloud.active_project_id`
+- **cloud/auth**: `PatchTeamYAMLCloudUID` exported (cmd/c4에서 직접 호출 가능)
+- **exechandler**: `fmt.Errorf("command is required")` → `errors.New` (archtest ratchet)
+
+---
+
 ## [v0.54.1] - 2026-03-03
 
 ### 🐛 Bug Fixes
