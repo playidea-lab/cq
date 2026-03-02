@@ -216,7 +216,7 @@ func TestCheckOSService_NotInstalled_NoPID(t *testing.T) {
 	defer func() { servePIDDir = origPIDDir }()
 
 	r := checkOSService(false)
-	// Status must never be FAIL — not-installed is WARN, stopped is WARN, running is OK.
+	// Status must never be FAIL — not-installed is OK, stopped is WARN, running is OK.
 	if r.Status == checkFail {
 		t.Errorf("expected WARN or OK, got FAIL: %s", r.Message)
 	}
@@ -241,7 +241,7 @@ func TestCheckOSService(t *testing.T) {
 	if r.Name != "os-service" {
 		t.Errorf("expected Name='os-service', got %q", r.Name)
 	}
-	// Status must never be FAIL — not-installed is WARN, running is OK.
+	// Status must never be FAIL — not-installed is OK, running is OK.
 	if r.Status == checkFail {
 		t.Errorf("expected WARN or OK from checkOSService, got FAIL: %s", r.Message)
 	}

@@ -2,7 +2,6 @@ package main
 
 import (
 	"bufio"
-	"context"
 	"crypto/sha256"
 	_ "embed"
 	"encoding/json"
@@ -21,7 +20,6 @@ import (
 	"time"
 
 	"github.com/changmin/c4-core/internal/mailbox"
-	"github.com/kardianos/service"
 	"github.com/spf13/cobra"
 )
 
@@ -238,43 +236,6 @@ func setupShellCompletion() {
 	}
 }
 
-// confirmServeInstall prompts the user to install cq serve as an OS service.
-// If the service is already installed (StatusRunning or StatusStopped), it is skipped.
-// Installation failures are non-fatal — a warning is printed and init continues.
-func confirmServeInstall() {
-	execPath, configPath, err := resolveInstallPaths()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "cq init: WARNING: cannot resolve install paths: %v\n", err)
-		return
-	}
-	svcConfig := newServiceConfig(execPath, configPath)
-	svc, err := service.New(newServiceWrapper(), &svcConfig)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "cq init: WARNING: cannot create service: %v\n", err)
-		return
-	}
-	st, _ := svc.Status()
-	if st == service.StatusRunning || st == service.StatusStopped {
-		fmt.Fprintln(os.Stderr, "cq init: serve already installed as OS service")
-		return
-	}
-	if !yesAll {
-		fmt.Fprint(os.Stderr, "Install cq serve as OS service (auto-start on boot)? [y/N] ")
-		scanner := bufio.NewScanner(os.Stdin)
-		if scanner.Scan() {
-			answer := strings.TrimSpace(scanner.Text())
-			if answer != "y" && answer != "Y" {
-				return
-			}
-		} else {
-			return
-		}
-	}
-	if err := installServeService(context.Background(), true); err != nil {
-		fmt.Fprintf(os.Stderr, "cq init: WARNING: serve install failed: %v\n", err)
-	}
-}
-
 // initAndLaunch initializes the C4 project and launches the AI tool.
 func initAndLaunch(tool string) error {
 	dir := projectDir
@@ -323,10 +284,7 @@ func initAndLaunch(tool string) error {
 		}
 	}
 
-	// 5b. Offer OS service installation for cq serve (non-fatal)
-	confirmServeInstall()
-
-	// 5c. Add shell completion to ~/.zshrc / ~/.bashrc (non-fatal)
+	// 5b. Add shell completion to ~/.zshrc / ~/.bashrc (non-fatal)
 	setupShellCompletion()
 
 	// 6. Codex-specific setup
@@ -1736,6 +1694,7 @@ func ensureServeRunning(noServe bool) {
 		fmt.Fprintf(os.Stderr, "cq: warn: could not start serve: %v\n", err)
 		return
 	}
+	pid := cmd.Process.Pid
 	// Release resources; we don't wait for this background process.
 	_ = cmd.Process.Release()
 
@@ -1748,12 +1707,13 @@ func ensureServeRunning(noServe bool) {
 		if err == nil {
 			resp.Body.Close()
 			if resp.StatusCode == http.StatusOK {
+				fmt.Fprintf(os.Stderr, "cq: serve started (pid=%d)\n", pid)
 				return
 			}
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
-	fmt.Fprintf(os.Stderr, "cq: warn: cq serve started but health check timed out (%s)\n", serveHealthURL)
+	fmt.Fprintf(os.Stderr, "cq: warn: serve started (pid=%d) but health check timed out (%s)\n", pid, serveHealthURL)
 }
 
 // isCQServeProcess returns true if the given PID is a running "cq serve" process.

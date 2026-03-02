@@ -663,7 +663,7 @@ func checkOSService(_ bool) checkResult {
 					return checkResult{
 						Name:    "os-service",
 						Status:  checkOK,
-						Message: fmt.Sprintf("running manually (pid=%s), consider 'cq serve install'", pid),
+						Message: fmt.Sprintf("serve running (pid=%s)", pid),
 					}
 				}
 			}
@@ -672,9 +672,8 @@ func checkOSService(_ bool) checkResult {
 		}
 		return checkResult{
 			Name:    "os-service",
-			Status:  checkWarn,
-			Message: "service not installed",
-			Fix:     "cq serve install",
+			Status:  checkOK,
+			Message: "serve not running (auto-starts on next cq claude)",
 		}
 	}
 }
