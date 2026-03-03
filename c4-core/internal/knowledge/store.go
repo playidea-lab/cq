@@ -402,6 +402,80 @@ func (s *Store) List(docType string, domain string, limit int) ([]map[string]any
 	return results, rows.Err()
 }
 
+// ListPending returns knowledge documents with status="pending", filtered by confidence level.
+// confidence: "HIGH" (>=0.8), "MEDIUM" (>=0.5), "ALL" (no filter). Default limit: 5.
+func (s *Store) ListPending(confidence string, limit int) ([]map[string]any, error) {
+	if limit <= 0 {
+		limit = 5
+	}
+
+	query := `SELECT id, type, title, confidence, created_at, metadata_json, file_path
+		FROM documents
+		WHERE json_extract(metadata_json, '$.status') = 'pending'`
+	var args []any
+
+	switch strings.ToUpper(confidence) {
+	case "HIGH":
+		query += " AND confidence >= ?"
+		args = append(args, 0.8)
+	case "MEDIUM":
+		query += " AND confidence >= ?"
+		args = append(args, 0.5)
+	}
+	query += " ORDER BY confidence DESC, created_at DESC LIMIT ?"
+	args = append(args, limit)
+
+	rows, err := s.db.Query(query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list pending: %w", err)
+	}
+	defer rows.Close()
+
+	var results []map[string]any
+	for rows.Next() {
+		var id, typ, title, createdAt, metaJSON, filePath string
+		var conf float64
+		if err := rows.Scan(&id, &typ, &title, &conf, &createdAt, &metaJSON, &filePath); err != nil {
+			return nil, err
+		}
+
+		// Read body from Markdown SSOT
+		var body string
+		if data, err := os.ReadFile(filePath); err == nil {
+			_, body = parseFrontmatter(string(data))
+		}
+
+		// Map confidence float to label
+		confLabel := "LOW"
+		switch {
+		case conf >= 0.8:
+			confLabel = "HIGH"
+		case conf >= 0.5:
+			confLabel = "MEDIUM"
+		}
+
+		// Extract source_date (date part of created_at)
+		sourceDate := createdAt
+		if len(createdAt) >= 10 {
+			sourceDate = createdAt[:10]
+		}
+
+		results = append(results, map[string]any{
+			"id":          id,
+			"title":       title,
+			"content":     body,
+			"item_type":   typ,
+			"confidence":  confLabel,
+			"source_date": sourceDate,
+			"proposed_at": nil,
+		})
+	}
+	if results == nil {
+		results = []map[string]any{}
+	}
+	return results, rows.Err()
+}
+
 // SearchFTS performs full-text search using FTS5.
 func (s *Store) SearchFTS(query string, topK int) ([]map[string]any, error) {
 	if topK <= 0 {
