@@ -62,7 +62,7 @@ func extractPrompt(msgs []Message) string {
 	var sb strings.Builder
 	sb.WriteString("Analyze the following conversation messages and extract knowledge proposals.\n")
 	sb.WriteString("Return a JSON array of objects with fields: title, content, item_type, confidence (0-1), visibility.\n")
-	sb.WriteString("item_type is one of: insight, pattern, fact, rule.\n")
+	sb.WriteString("item_type must be one of: insight, pattern.\n")
 	sb.WriteString("visibility is one of: private, team, public.\n\n")
 	sb.WriteString("Messages:\n")
 	for _, m := range msgs {
@@ -89,6 +89,7 @@ func parseProposals(raw string) []Proposal {
 		Visibility string  `json:"visibility"`
 	}
 	if err := json.Unmarshal([]byte(jsonPart), &items); err != nil {
+		log.Printf("pop: parseProposals: unmarshal failed: %v (snippet: %.100s)", err, jsonPart)
 		return nil
 	}
 

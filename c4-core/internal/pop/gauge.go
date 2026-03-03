@@ -2,6 +2,7 @@ package pop
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"time"
@@ -34,6 +35,11 @@ const (
 	ThresholdTemporalQueries = 5.0
 )
 
+// DefaultGaugePath returns the canonical path for gauge.json under root.
+func DefaultGaugePath(root string) string {
+	return filepath.Join(root, ".c4", "pop", "gauge.json")
+}
+
 // NewGaugeTracker creates a GaugeTracker for the given gauge.json path.
 func NewGaugeTracker(path string) *GaugeTracker {
 	return &GaugeTracker{path: path}
@@ -58,13 +64,28 @@ func (g *GaugeTracker) Load() error {
 	return json.Unmarshal(raw, &g.data)
 }
 
-// Save persists the current gauge data to disk.
+// Save persists the current gauge data to disk atomically (tmpfile → Rename).
 func (g *GaugeTracker) Save() error {
 	raw, err := json.Marshal(&g.data)
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(g.path, raw, 0644)
+	dir := filepath.Dir(g.path)
+	tmp, err := os.CreateTemp(dir, "gauge-*.json.tmp")
+	if err != nil {
+		return fmt.Errorf("pop: gauge tmp create: %w", err)
+	}
+	tmpName := tmp.Name()
+	if _, err := tmp.Write(raw); err != nil {
+		tmp.Close()
+		os.Remove(tmpName)
+		return fmt.Errorf("pop: gauge tmp write: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		os.Remove(tmpName)
+		return fmt.Errorf("pop: gauge tmp close: %w", err)
+	}
+	return os.Rename(tmpName, g.path)
 }
 
 // Set updates (or appends) the named gauge to value.

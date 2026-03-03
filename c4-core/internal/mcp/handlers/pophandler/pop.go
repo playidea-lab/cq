@@ -106,9 +106,9 @@ func statusHandler(opts *Opts) mcp.HandlerFunc {
 			"gauges":               gauges,
 		}
 
-		// Knowledge stats (best-effort)
+		// Knowledge stats (best-effort; capped at 200 to avoid full-table scan)
 		if opts.Store != nil {
-			if docs, sErr := opts.Store.List("", "", 10000); sErr == nil {
+			if docs, sErr := opts.Store.List("", "", 200); sErr == nil {
 				typeCounts := map[string]int{}
 				for _, d := range docs {
 					dt, _ := d["type"].(string)
@@ -127,8 +127,8 @@ func statusHandler(opts *Opts) mcp.HandlerFunc {
 
 func reflectHandler(opts *Opts) mcp.HandlerFunc {
 	return func(_ json.RawMessage) (any, error) {
-		// Retrieve high-confidence proposals directly from the knowledge store.
-		docs, err := opts.Store.List("", "", 10000)
+		// Retrieve high-confidence proposals; capped at 200 to avoid full-table scan.
+		docs, err := opts.Store.List("", "", 200)
 		if err != nil {
 			return map[string]any{"error": fmt.Sprintf("failed to list proposals: %v", err)}, nil
 		}
@@ -216,17 +216,23 @@ type knowledgeStoreAdapter struct {
 	store *knowledge.Store
 }
 
+// mapItemType converts a POP proposal item_type string to a validated
+// knowledge.DocumentType. Only "pattern" maps to TypePattern; everything
+// else (including unknown values) defaults to TypeInsight.
+func mapItemType(itemType string) knowledge.DocumentType {
+	if itemType == string(knowledge.TypePattern) {
+		return knowledge.TypePattern
+	}
+	return knowledge.TypeInsight
+}
+
 func (a *knowledgeStoreAdapter) RecordProposal(_ context.Context, p pop.Proposal) (string, error) {
 	metadata := map[string]any{
 		"title":      p.Title,
 		"visibility": p.Visibility,
 		"confidence": p.Confidence,
 	}
-	docType := knowledge.DocumentType(p.ItemType)
-	if docType == "" {
-		docType = knowledge.TypeInsight
-	}
-	return a.store.Create(docType, metadata, p.Content)
+	return a.store.Create(mapItemType(p.ItemType), metadata, p.Content)
 }
 
 // soulWriterAdapter appends insights to soul-developer.md.
@@ -234,9 +240,15 @@ type soulWriterAdapter struct {
 	projectDir string
 }
 
+const maxInsightBytes = 4096
+
 func (s *soulWriterAdapter) AppendInsight(_ context.Context, userID, insight string) error {
 	if userID == "" {
 		userID = "default"
+	}
+	// Truncate LLM-generated content to prevent unbounded disk writes.
+	if len(insight) > maxInsightBytes {
+		insight = insight[:maxInsightBytes]
 	}
 	// Path traversal guard: ensure userID stays within .c4/souls/
 	soulDir := filepath.Join(s.projectDir, ".c4", "souls", userID)
@@ -266,6 +278,16 @@ func (c *cliNotifier) Notify(_ context.Context, p pop.Proposal) error {
 	fmt.Fprintf(os.Stderr, "cq: pop: [%s] %s (confidence=%.2f)\n", p.ItemType, p.Title, p.Confidence)
 	return nil
 }
+
+// Compile-time interface assertions for all POP adapters.
+var (
+	_ pop.MessageSource  = (*noopMessageSource)(nil)
+	_ pop.LLMClient      = (*noopLLMClient)(nil)
+	_ pop.LLMClient      = (*llmClientAdapter)(nil)
+	_ pop.KnowledgeStore = (*knowledgeStoreAdapter)(nil)
+	_ pop.SoulWriter     = (*soulWriterAdapter)(nil)
+	_ pop.Notifier       = (*cliNotifier)(nil)
+)
 
 // noopMessageSource returns no messages (used when no c1 integration is available).
 type noopMessageSource struct{}

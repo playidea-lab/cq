@@ -4,9 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
 	"time"
 
+	"github.com/changmin/c4-core/internal/pop"
 	"github.com/spf13/cobra"
 )
 
@@ -46,8 +46,8 @@ type gaugeFileData struct {
 }
 
 func runPopStatus(cmd *cobra.Command, args []string) error {
-	statePath := filepath.Join(projectDir, ".c4", "pop", "state.json")
-	gaugePath := filepath.Join(projectDir, ".c4", "pop", "gauge.json")
+	statePath := pop.DefaultStatePath(projectDir)
+	gaugePath := pop.DefaultGaugePath(projectDir)
 
 	// Load POP state (best-effort)
 	var state popStateFile
