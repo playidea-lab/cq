@@ -6,6 +6,7 @@ curl -fsSL https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/install.sh | s
 
 **CQ** is a project management engine for Claude Code.
 It automates the full development lifecycle — planning, implementation, review, and delivery — through a structured workflow powered by C4 Engine.
+It also learns your engineering style over time through Soul evolution and POP (Personal Ontology Pipeline).
 
 ## Tiers
 
@@ -208,6 +209,36 @@ cq ls                     # list all sessions (shows unread mail count)
 
 Named sessions allow you to resume context across terminal restarts. Attach a name to an existing session with `/c4-attach`.
 
+## Soul & Learning
+
+CQ learns your coding style, tone, and preferences — and evolves the agent's behavior over time.
+
+```sh
+scripts/soul-check.sh    # check soul status and last evolution timestamp
+scripts/soul-evolve.sh   # run deep learning evolution based on accumulated patterns
+```
+
+### POP — Personal Ontology Pipeline
+
+POP automatically extracts knowledge proposals from conversation messages and crystallizes them into your Soul.
+
+```
+Extract → Consolidate → Propose → Validate → Crystallize
+```
+
+```sh
+cq pop status   # show pipeline state, gauge values, and proposal stats
+```
+
+In Claude Code, use MCP tools:
+- `c4_pop_extract` — run an extraction cycle (requires C1 Messenger connection)
+- `c4_pop_status` — check pipeline state + gauges + knowledge stats
+- `c4_pop_reflect` — list high-confidence (≥0.8) proposals
+
+> **Note**: POP requires C1 Messenger (`full` tier) to source messages. In `solo`/`connected` mode, `c4_pop_extract` returns success but performs no extraction.
+
+---
+
 ## Mail (inter-session messaging)
 
 Send messages between sessions or from the CLI:
@@ -226,7 +257,21 @@ In Claude Code, use `c4_mail_send` / `c4_mail_ls` / `c4_mail_read` / `c4_mail_rm
 /c4-run                          → spawn workers, implement in parallel
 /c4-finish                       → build · test · docs · commit
 /c4-status                       → check progress at any time
+/pi "idea..."                    → ideation mode before planning (brainstorm → crystallize → /c4-plan)
 ```
+
+### Context Efficiency
+
+Use `c4_execute` instead of Bash for commands that produce large output — it automatically compresses results to keep context consumption low:
+
+```
+c4_execute({"command": "go test ./..."})   # test mode: extracts failures only
+c4_execute({"command": "git log"})         # git mode: keeps hash + subject only
+c4_execute({"command": "go build ./..."})  # build mode: extracts errors/warnings only
+```
+
+Prefer `c4_execute` for: `go test`, `git log`, `git diff`, `find`, `cargo test`, `npm test`, `make`.
+Use Bash only for piped commands (`cmd | cmd`) or short one-liners.
 
 ## Config
 
