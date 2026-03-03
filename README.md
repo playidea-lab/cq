@@ -1,5 +1,7 @@
 # CQ — AI Project Orchestration Engine
 
+[한국어](README.ko.md) | **English**
+
 ```sh
 curl -fsSL https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/install.sh | sh
 ```
