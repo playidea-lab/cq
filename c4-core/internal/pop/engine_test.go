@@ -110,7 +110,7 @@ func TestRunOnce_WithMessages_ProposalsExtracted(t *testing.T) {
 	sw := &mockSoulWriter{}
 	n := &mockNotifier{}
 	llm := &mockLLMClient{
-		response: `[{"title":"Input Validation","content":"Always validate inputs.","item_type":"rule","confidence":0.9,"visibility":"team"}]`,
+		response: `[{"title":"Input Validation","content":"Always validate inputs.","item_type":"insight","confidence":0.9,"visibility":"team"}]`,
 	}
 
 	e, stateFile, _ := newTestEngine(t, msgs, ks, sw, n, llm)
@@ -230,7 +230,7 @@ func TestRunOnce_KnowledgeStoreError(t *testing.T) {
 	sw := &mockSoulWriter{}
 	n := &mockNotifier{}
 	llm := &mockLLMClient{
-		response: `[{"title":"X","content":"Y","item_type":"fact","confidence":0.8,"visibility":"private"}]`,
+		response: `[{"title":"X","content":"Y","item_type":"insight","confidence":0.8,"visibility":"private"}]`,
 	}
 
 	e, _, _ := newTestEngine(t, msgs, ks, sw, n, llm)
@@ -250,7 +250,7 @@ func TestRunOnce_NotifierError_NonFatal(t *testing.T) {
 	sw := &mockSoulWriter{}
 	n := &mockNotifier{err: errors.New("notify failed")}
 	llm := &mockLLMClient{
-		response: `[{"title":"X","content":"Y","item_type":"fact","confidence":0.8,"visibility":"private"}]`,
+		response: `[{"title":"X","content":"Y","item_type":"insight","confidence":0.8,"visibility":"private"}]`,
 	}
 
 	e, _, _ := newTestEngine(t, msgs, ks, sw, n, llm)
@@ -272,7 +272,7 @@ func TestRunOnce_SoulWriterError_NonFatal(t *testing.T) {
 	sw := &mockSoulWriter{err: errors.New("soul write failed")}
 	n := &mockNotifier{}
 	llm := &mockLLMClient{
-		response: `[{"title":"X","content":"Y","item_type":"fact","confidence":0.8,"visibility":"private"}]`,
+		response: `[{"title":"X","content":"Y","item_type":"insight","confidence":0.8,"visibility":"private"}]`,
 	}
 
 	e, _, _ := newTestEngine(t, msgs, ks, sw, n, llm)
@@ -361,6 +361,11 @@ func TestRunOnce_LowConfidenceProposals_NotNotified(t *testing.T) {
 	// Low-confidence proposals must NOT be notified.
 	if len(n.notified) != 0 {
 		t.Fatalf("expected 0 notified proposals for low confidence, got %d", len(n.notified))
+	}
+
+	// Soul writes are NOT gated by confidence — all proposals with content are appended.
+	if len(sw.insights) != 1 {
+		t.Fatalf("expected 1 soul insight (confidence gating does not apply to soul), got %d", len(sw.insights))
 	}
 }
 

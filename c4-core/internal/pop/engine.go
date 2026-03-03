@@ -52,10 +52,10 @@ var ErrGaugeThresholdExceeded = errors.New("pop: KG gauge threshold exceeded —
 // exceeding LLM context limits in typical deployments.
 const extractionLimit = 50
 
-// confidenceThreshold is the minimum Confidence score (0–1) for a proposal
+// ConfidenceThreshold is the minimum Confidence score (0–1) for a proposal
 // to be delivered to the Notifier. Only "HIGH" confidence proposals are shown
 // to users; all proposals are still persisted via KnowledgeStore.RecordProposal.
-const confidenceThreshold = 0.8
+const ConfidenceThreshold = 0.8
 
 // extractPrompt builds the LLM prompt used to surface proposals from messages.
 func extractPrompt(msgs []Message) string {
@@ -147,7 +147,7 @@ func (e *Engine) RunOnce(ctx context.Context) error {
 		}
 
 		// Notify only HIGH confidence proposals (best-effort; non-fatal).
-		if p.Confidence >= confidenceThreshold {
+		if p.Confidence >= ConfidenceThreshold {
 			if notifyErr := e.notifier.Notify(ctx, p); notifyErr != nil {
 				log.Printf("pop: notify error: %v", notifyErr)
 			}

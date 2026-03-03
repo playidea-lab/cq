@@ -1,6 +1,7 @@
 package pophandler
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -49,7 +50,7 @@ func TestPopHandler_Extract(t *testing.T) {
 	opts := &Opts{ProjectDir: projectDir, Store: store, LLM: nil}
 	handler := extractHandler(opts)
 
-	result, err := handler(json.RawMessage(`{}`))
+	result, err := handler(context.Background(), json.RawMessage(`{}`))
 	if err != nil {
 		t.Fatalf("extractHandler error: %v", err)
 	}
@@ -126,5 +127,25 @@ func TestSoulWriterAdapter_PathTraversalGuard(t *testing.T) {
 	soulPath := filepath.Join(dir, ".c4", "souls", "testuser", "soul-developer.md")
 	if _, statErr := os.Stat(soulPath); statErr != nil {
 		t.Errorf("expected soul file at %s, stat error: %v", soulPath, statErr)
+	}
+}
+
+func TestMapItemType(t *testing.T) {
+	cases := []struct {
+		input string
+		want  knowledge.DocumentType
+	}{
+		{"insight", knowledge.TypeInsight},
+		{"pattern", knowledge.TypePattern},
+		{"unknown", knowledge.TypeInsight},  // fallback
+		{"fact", knowledge.TypeInsight},     // unknown → fallback
+		{"rule", knowledge.TypeInsight},     // unknown → fallback
+		{"", knowledge.TypeInsight},         // empty → fallback
+	}
+	for _, tc := range cases {
+		got := mapItemType(tc.input)
+		if got != tc.want {
+			t.Errorf("mapItemType(%q) = %q, want %q", tc.input, got, tc.want)
+		}
 	}
 }

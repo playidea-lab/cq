@@ -2,6 +2,7 @@ package pop
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"time"
@@ -35,14 +36,30 @@ func Load(path string) (*PopState, error) {
 	return &s, nil
 }
 
-// Save persists s to path, creating parent directories as needed.
+// Save persists s to path atomically (tmpfile → Rename), creating parent
+// directories as needed.
 func (s *PopState) Save(path string) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0755); err != nil {
 		return err
 	}
 	raw, err := json.Marshal(s)
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, raw, 0644)
+	tmp, err := os.CreateTemp(dir, "state-*.json.tmp")
+	if err != nil {
+		return fmt.Errorf("pop: state tmp create: %w", err)
+	}
+	tmpName := tmp.Name()
+	if _, err := tmp.Write(raw); err != nil {
+		tmp.Close()
+		os.Remove(tmpName)
+		return fmt.Errorf("pop: state tmp write: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		os.Remove(tmpName)
+		return fmt.Errorf("pop: state tmp close: %w", err)
+	}
+	return os.Rename(tmpName, path)
 }

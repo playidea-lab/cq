@@ -71,6 +71,9 @@ func (g *GaugeTracker) Save() error {
 		return err
 	}
 	dir := filepath.Dir(g.path)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return err
+	}
 	tmp, err := os.CreateTemp(dir, "gauge-*.json.tmp")
 	if err != nil {
 		return fmt.Errorf("pop: gauge tmp create: %w", err)

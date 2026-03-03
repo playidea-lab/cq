@@ -29,7 +29,7 @@ func Register(reg *mcp.Registry, opts *Opts) {
 		return
 	}
 
-	reg.Register(mcp.ToolSchema{
+	reg.RegisterBlocking(mcp.ToolSchema{
 		Name:        "c4_pop_extract",
 		Description: "Run a POP (Proactive Output Pipeline) extraction cycle: fetch recent messages, extract knowledge proposals via LLM, record them",
 		InputSchema: map[string]any{
@@ -57,13 +57,14 @@ func Register(reg *mcp.Registry, opts *Opts) {
 	}, reflectHandler(opts))
 }
 
-func extractHandler(opts *Opts) mcp.HandlerFunc {
-	return func(_ json.RawMessage) (any, error) {
+func extractHandler(opts *Opts) mcp.BlockingHandlerFunc {
+	return func(ctx context.Context, _ json.RawMessage) (any, error) {
 		engine := buildEngine(opts)
 		if engine == nil {
 			return map[string]any{"error": "POP engine unavailable (LLM or store missing)"}, nil
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		// Use a sub-deadline so extraction never exceeds 60 s regardless of caller timeout.
+		ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 		defer cancel()
 
 		err := engine.RunOnce(ctx)
@@ -83,7 +84,7 @@ func extractHandler(opts *Opts) mcp.HandlerFunc {
 func statusHandler(opts *Opts) mcp.HandlerFunc {
 	return func(_ json.RawMessage) (any, error) {
 		statePath := pop.DefaultStatePath(opts.ProjectDir)
-		gaugePath := defaultGaugePath(opts.ProjectDir)
+		gaugePath := pop.DefaultGaugePath(opts.ProjectDir)
 
 		state, err := pop.Load(statePath)
 		if err != nil {
@@ -133,13 +134,12 @@ func reflectHandler(opts *Opts) mcp.HandlerFunc {
 			return map[string]any{"error": fmt.Sprintf("failed to list proposals: %v", err)}, nil
 		}
 
-		const highConfidenceThreshold = 0.8
 		const reflectLimit = 5
 
-		var proposals []map[string]any
+		proposals := make([]map[string]any, 0)
 		for _, d := range docs {
 			conf, _ := d["confidence"].(float64)
-			if conf < highConfidenceThreshold {
+			if conf < pop.ConfidenceThreshold {
 				continue
 			}
 			proposals = append(proposals, d)
@@ -160,7 +160,7 @@ func buildEngine(opts *Opts) *pop.Engine {
 		return nil
 	}
 	stateFile := pop.DefaultStatePath(opts.ProjectDir)
-	gaugeFile := defaultGaugePath(opts.ProjectDir)
+	gaugeFile := pop.DefaultGaugePath(opts.ProjectDir)
 
 	msgSrc := &noopMessageSource{}
 	knowledgeAdapt := &knowledgeStoreAdapter{store: opts.Store}
@@ -177,9 +177,6 @@ func buildEngine(opts *Opts) *pop.Engine {
 	return pop.NewEngine(msgSrc, knowledgeAdapt, soulAdapt, notifier, llmAdapt, stateFile, gaugeFile)
 }
 
-func defaultGaugePath(projectDir string) string {
-	return filepath.Join(projectDir, ".c4", "pop", "gauge.json")
-}
 
 // =========================================================================
 // Adapter implementations
