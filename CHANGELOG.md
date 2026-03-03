@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.57.0] - 2026-03-03
+
+### ✨ Features
+- **pop**: Personal Ontology Pipeline (POP) 초기 구현 — Extract → Consolidate → Propose → Validate → Crystallize 5단계 파이프라인
+  - `c4_pop_extract` MCP tool — 메시지 기반 LLM 추출 사이클 (BlockingHandlerFunc, 60s 서브-데드라인)
+  - `c4_pop_status` MCP tool — 파이프라인 상태 + gauge 값 + knowledge 통계 (domain="pop" 필터)
+  - `c4_pop_reflect` MCP tool — HIGH confidence (≥0.8) POP 제안 조회
+  - `cq pop status` CLI 커맨드 — gauge.json + state.json 인라인 표시
+  - `GaugeTracker` — merge_ambiguity/avg_fan_out/contradictions/temporal_queries 임계값 + 원자적 Save
+  - `Engine.RunOnce()` — confidence 게이팅: RecordProposal(ALL) → Notify/soul(HIGH only)
+  - `Consolidator` — normalizedLevenshtein 기반 병합, 모순 감지, gauge 업데이트
+  - `Crystallizer` — 원자적 SOUL.md 쓰기, soul_backup/ pruning (10개 유지)
+  - `CLINotifier` — `$EDITOR` 인터랙티브 검증, y→validated/n→boundary knowledge 기록
+- **pop/pkg**: `ConfidenceThreshold = 0.8` exported 상수, `DefaultStatePath()`, `DefaultGaugePath()`
+- **pop/security**: path traversal guard (soulWriterAdapter), insight 4096 bytes truncation
+
+### 🐛 Bug Fixes
+- **pop**: `RecordProposal` — mapItemType() 검증으로 "fact"/"rule" 등 비유효 item_type의 raw DocumentType 캐스팅 방지
+- **pop**: state.Save() 원자적 쓰기 (tmpfile → Rename) — gauge.Save()와 동일 보장
+- **pop**: checkGauges non-ErrNotExist 에러 로깅 (파일 손상 감지 가능)
+- **pop**: reflectHandler에서 비-POP 고신뢰 문서 오염 제거 (`domain="pop"` 태그 + 필터)
+
+---
+
 ## [v0.56.0] - 2026-03-03
 
 ### ✨ Features
