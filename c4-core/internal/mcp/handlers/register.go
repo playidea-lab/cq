@@ -107,6 +107,12 @@ func RegisterAllHandlersWithOpts(reg *mcp.Registry, store Store, rootDir string,
 			Usage:    opts.KnowledgeUsage,
 			LLM:      opts.LLMGateway,
 		})
+		// POP (3 tools) — requires knowledge store + optional LLM
+		knowledgehandler.RegisterPOPHandlers(reg, &knowledgehandler.POPOpts{
+			ProjectDir: rootDir,
+			Store:      opts.KnowledgeStore,
+			LLM:        opts.LLMGateway,
+		})
 	} else {
 		registerKnowledgeProxy(reg, proxy, knowledgeCloud)
 	}
