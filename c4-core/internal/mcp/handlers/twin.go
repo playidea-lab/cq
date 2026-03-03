@@ -166,9 +166,9 @@ func RegisterTwinHandlers(reg *mcp.Registry, store *SQLiteStore) {
 	})
 }
 
-// RegisterPopReflectHandler registers the c4_pop_reflect MCP tool.
+// RegisterPopReflectHandlers registers the c4_pop_reflect MCP tool.
 // ks may be nil (knowledge store optional); in that case the tool returns an empty list.
-func RegisterPopReflectHandler(reg *mcp.Registry, ks *knowledge.Store) {
+func RegisterPopReflectHandlers(reg *mcp.Registry, ks *knowledge.Store) {
 	reg.Register(mcp.ToolSchema{
 		Name:        "c4_pop_reflect",
 		Description: "List pending HIGH-confidence proposals awaiting user validation. Use `cq reflect` CLI for interactive validation. This tool returns the list for programmatic access.",

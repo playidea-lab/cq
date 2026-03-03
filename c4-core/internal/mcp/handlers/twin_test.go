@@ -494,7 +494,7 @@ func newTestKnowledgeStore(t *testing.T) *knowledge.Store {
 
 func TestPopReflectNilStore(t *testing.T) {
 	reg := mcp.NewRegistry()
-	RegisterPopReflectHandler(reg, nil)
+	RegisterPopReflectHandlers(reg, nil)
 
 	result, err := reg.Call("c4_pop_reflect", json.RawMessage(`{}`))
 	if err != nil {
@@ -513,7 +513,7 @@ func TestPopReflectNilStore(t *testing.T) {
 func TestPopReflectEmptyStore(t *testing.T) {
 	ks := newTestKnowledgeStore(t)
 	reg := mcp.NewRegistry()
-	RegisterPopReflectHandler(reg, ks)
+	RegisterPopReflectHandlers(reg, ks)
 
 	result, err := reg.Call("c4_pop_reflect", json.RawMessage(`{}`))
 	if err != nil {
@@ -542,7 +542,7 @@ func TestPopReflectWithPendingItem(t *testing.T) {
 	}
 
 	reg := mcp.NewRegistry()
-	RegisterPopReflectHandler(reg, ks)
+	RegisterPopReflectHandlers(reg, ks)
 
 	result, err := reg.Call("c4_pop_reflect", json.RawMessage(`{}`))
 	if err != nil {
@@ -588,7 +588,7 @@ func TestPopReflectConfidenceFilter(t *testing.T) {
 	}, "active body")
 
 	reg := mcp.NewRegistry()
-	RegisterPopReflectHandler(reg, ks)
+	RegisterPopReflectHandlers(reg, ks)
 
 	// HIGH filter: only HIGH item
 	result, err := reg.Call("c4_pop_reflect", json.RawMessage(`{"confidence":"HIGH"}`))

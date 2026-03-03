@@ -294,7 +294,7 @@ func newMCPServer() (*mcpServer, error) {
 	handlers.RegisterTeamHandlers(reg, projectDir)
 	handlers.RegisterSoulHandlers(reg, projectDir)
 	handlers.RegisterTwinHandlers(reg, sqliteStore)
-	handlers.RegisterPopReflectHandler(reg, knowledgeStore)
+	handlers.RegisterPopReflectHandlers(reg, knowledgeStore)
 	handlers.RegisterLighthouseHandlers(reg, sqliteStore)
 	if n := handlers.LoadLighthousesOnStartup(reg, sqliteStore); n > 0 {
 		fmt.Fprintf(os.Stderr, "cq: %d lighthouse stubs loaded\n", n)
