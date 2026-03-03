@@ -1,8 +1,9 @@
-package knowledgehandler
+package pophandler
 
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -15,15 +16,15 @@ import (
 	"github.com/changmin/c4-core/internal/pop"
 )
 
-// POPOpts holds dependencies for POP MCP handlers.
-type POPOpts struct {
+// Opts holds dependencies for POP MCP handlers.
+type Opts struct {
 	ProjectDir string
 	Store      *knowledge.Store
 	LLM        *llm.Gateway // nil if LLM gateway disabled
 }
 
-// RegisterPOPHandlers registers c4_pop_extract, c4_pop_status, c4_pop_reflect.
-func RegisterPOPHandlers(reg *mcp.Registry, opts *POPOpts) {
+// Register registers c4_pop_extract, c4_pop_status, and c4_pop_reflect tools.
+func Register(reg *mcp.Registry, opts *Opts) {
 	if opts == nil || opts.Store == nil {
 		return
 	}
@@ -35,7 +36,7 @@ func RegisterPOPHandlers(reg *mcp.Registry, opts *POPOpts) {
 			"type":       "object",
 			"properties": map[string]any{},
 		},
-	}, popExtractHandler(opts))
+	}, extractHandler(opts))
 
 	reg.Register(mcp.ToolSchema{
 		Name:        "c4_pop_status",
@@ -44,19 +45,19 @@ func RegisterPOPHandlers(reg *mcp.Registry, opts *POPOpts) {
 			"type":       "object",
 			"properties": map[string]any{},
 		},
-	}, popStatusHandler(opts))
+	}, statusHandler(opts))
 
 	reg.Register(mcp.ToolSchema{
 		Name:        "c4_pop_reflect",
-		Description: "Trigger a POP reflection: notify pending high-confidence proposals via CLI",
+		Description: "Reflect on pending high-confidence POP proposals",
 		InputSchema: map[string]any{
 			"type":       "object",
 			"properties": map[string]any{},
 		},
-	}, popReflectHandler(opts))
+	}, reflectHandler(opts))
 }
 
-func popExtractHandler(opts *POPOpts) mcp.HandlerFunc {
+func extractHandler(opts *Opts) mcp.HandlerFunc {
 	return func(_ json.RawMessage) (any, error) {
 		engine := buildEngine(opts)
 		if engine == nil {
@@ -67,8 +68,7 @@ func popExtractHandler(opts *POPOpts) mcp.HandlerFunc {
 
 		err := engine.RunOnce(ctx)
 		if err != nil {
-			// ErrGaugeThresholdExceeded is a warning, not a hard failure
-			if strings.Contains(err.Error(), "gauge threshold exceeded") {
+			if errors.Is(err, pop.ErrGaugeThresholdExceeded) {
 				return map[string]any{
 					"success": true,
 					"warning": err.Error(),
@@ -80,7 +80,7 @@ func popExtractHandler(opts *POPOpts) mcp.HandlerFunc {
 	}
 }
 
-func popStatusHandler(opts *POPOpts) mcp.HandlerFunc {
+func statusHandler(opts *Opts) mcp.HandlerFunc {
 	return func(_ json.RawMessage) (any, error) {
 		statePath := pop.DefaultStatePath(opts.ProjectDir)
 		gaugePath := defaultGaugePath(opts.ProjectDir)
@@ -125,41 +125,37 @@ func popStatusHandler(opts *POPOpts) mcp.HandlerFunc {
 	}
 }
 
-func popReflectHandler(opts *POPOpts) mcp.HandlerFunc {
+func reflectHandler(opts *Opts) mcp.HandlerFunc {
 	return func(_ json.RawMessage) (any, error) {
-		var notifications []string
-		notifier := &capturingNotifier{collected: &notifications}
-
-		// Build a minimal engine with capturing notifier for reflection only
-		stateFile := pop.DefaultStatePath(opts.ProjectDir)
-		gaugeFile := defaultGaugePath(opts.ProjectDir)
-
-		// No-op message source — reflection uses stored state, not new messages
-		msgSrc := &noopMessageSource{}
-		knowledgeAdapt := &knowledgeStoreAdapter{store: opts.Store}
-		soulAdapt := &soulWriterAdapter{projectDir: opts.ProjectDir}
-		var llmAdapt pop.LLMClient
-		if opts.LLM != nil {
-			llmAdapt = &llmClientAdapter{gw: opts.LLM}
-		} else {
-			llmAdapt = &noopLLMClient{}
+		// Retrieve high-confidence proposals directly from the knowledge store.
+		docs, err := opts.Store.List("", "", 10000)
+		if err != nil {
+			return map[string]any{"error": fmt.Sprintf("failed to list proposals: %v", err)}, nil
 		}
 
-		engine := pop.NewEngine(msgSrc, knowledgeAdapt, soulAdapt, notifier, llmAdapt, stateFile, gaugeFile)
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancel()
+		const highConfidenceThreshold = 0.8
+		const reflectLimit = 5
 
-		_ = engine.RunOnce(ctx) // best-effort; errors logged internally
+		var proposals []map[string]any
+		for _, d := range docs {
+			conf, _ := d["confidence"].(float64)
+			if conf < highConfidenceThreshold {
+				continue
+			}
+			proposals = append(proposals, d)
+			if len(proposals) >= reflectLimit {
+				break
+			}
+		}
 
 		return map[string]any{
-			"reflected":     true,
-			"notifications": notifications,
+			"proposals": proposals,
 		}, nil
 	}
 }
 
 // buildEngine creates a pop.Engine wired with real dependencies.
-func buildEngine(opts *POPOpts) *pop.Engine {
+func buildEngine(opts *Opts) *pop.Engine {
 	if opts.Store == nil {
 		return nil
 	}
@@ -242,11 +238,18 @@ func (s *soulWriterAdapter) AppendInsight(_ context.Context, userID, insight str
 	if userID == "" {
 		userID = "default"
 	}
+	// Path traversal guard: ensure userID stays within .c4/souls/
 	soulDir := filepath.Join(s.projectDir, ".c4", "souls", userID)
-	if err := os.MkdirAll(soulDir, 0755); err != nil {
+	soulsBase := filepath.Join(s.projectDir, ".c4", "souls")
+	cleaned := filepath.Clean(soulDir)
+	if !strings.HasPrefix(cleaned, soulsBase+string(filepath.Separator)) && cleaned != soulsBase {
+		return errors.New("pop: soul path traversal detected")
+	}
+
+	if err := os.MkdirAll(cleaned, 0755); err != nil {
 		return err
 	}
-	soulPath := filepath.Join(soulDir, "soul-developer.md")
+	soulPath := filepath.Join(cleaned, "soul-developer.md")
 	f, err := os.OpenFile(soulPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		return err
@@ -261,16 +264,6 @@ type cliNotifier struct{}
 
 func (c *cliNotifier) Notify(_ context.Context, p pop.Proposal) error {
 	fmt.Fprintf(os.Stderr, "cq: pop: [%s] %s (confidence=%.2f)\n", p.ItemType, p.Title, p.Confidence)
-	return nil
-}
-
-// capturingNotifier collects notification messages for the reflect handler.
-type capturingNotifier struct {
-	collected *[]string
-}
-
-func (c *capturingNotifier) Notify(_ context.Context, p pop.Proposal) error {
-	*c.collected = append(*c.collected, fmt.Sprintf("[%s] %s (confidence=%.2f)", p.ItemType, p.Title, p.Confidence))
 	return nil
 }
 

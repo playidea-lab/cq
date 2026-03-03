@@ -13,6 +13,7 @@ import (
 	"github.com/changmin/c4-core/internal/mcp/handlers/gitops"
 	"github.com/changmin/c4-core/internal/mcp/handlers/gpuhandler"
 	"github.com/changmin/c4-core/internal/mcp/handlers/knowledgehandler"
+	"github.com/changmin/c4-core/internal/mcp/handlers/pophandler"
 	"github.com/changmin/c4-core/internal/mcp/handlers/researchhandler"
 	"github.com/changmin/c4-core/internal/mcp/handlers/secrethandler"
 	handlerswc "github.com/changmin/c4-core/internal/mcp/handlers/webcontent"
@@ -108,7 +109,7 @@ func RegisterAllHandlersWithOpts(reg *mcp.Registry, store Store, rootDir string,
 			LLM:      opts.LLMGateway,
 		})
 		// POP (3 tools) — requires knowledge store + optional LLM
-		knowledgehandler.RegisterPOPHandlers(reg, &knowledgehandler.POPOpts{
+		pophandler.Register(reg, &pophandler.Opts{
 			ProjectDir: rootDir,
 			Store:      opts.KnowledgeStore,
 			LLM:        opts.LLMGateway,
