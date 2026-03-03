@@ -84,4 +84,31 @@ func TestGaugeTracker_Thresholds(t *testing.T) {
 	if g.ExceedsThreshold("unknown_gauge") {
 		t.Fatal("unknown gauge should never exceed threshold")
 	}
+
+	// At-threshold values: ExceedsThreshold uses strict >, so equal values must NOT exceed.
+	atCases := []struct {
+		name      string
+		threshold float64
+	}{
+		{"merge_ambiguity", ThresholdMergeAmbiguity},
+		{"avg_fan_out", ThresholdAvgFanOut},
+		{"contradictions", ThresholdContradictions},
+		{"temporal_queries", ThresholdTemporalQueries},
+	}
+	for _, tc := range atCases {
+		t.Run(tc.name+"_at_threshold", func(t *testing.T) {
+			g.Set(tc.name, tc.threshold)
+			if g.ExceedsThreshold(tc.name) {
+				t.Fatalf("%s=%.4f (exact threshold) should NOT exceed (strict >)", tc.name, tc.threshold)
+			}
+		})
+	}
+}
+
+func TestDefaultGaugePath(t *testing.T) {
+	got := DefaultGaugePath("/project")
+	want := "/project/.c4/pop/gauge.json"
+	if got != want {
+		t.Errorf("DefaultGaugePath: got %q, want %q", got, want)
+	}
 }

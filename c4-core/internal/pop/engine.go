@@ -180,7 +180,11 @@ func (e *Engine) RunOnce(ctx context.Context) error {
 func (e *Engine) checkGauges() error {
 	gt := NewGaugeTracker(e.gaugeFile)
 	if err := gt.Load(); err != nil {
-		// If gauge file is absent, no thresholds can be exceeded.
+		// IsNotExist is handled inside Load (returns nil); any error reaching
+		// here is a real failure (MkdirAll, JSON corruption, etc.). Log it so
+		// operators can detect a damaged gauge.json, then skip threshold checks
+		// — better to skip than to panic or surface a non-gauge error.
+		log.Printf("pop: gauge load error (threshold checks skipped): %v", err)
 		return nil
 	}
 	gaugeNames := []string{"merge_ambiguity", "avg_fan_out", "contradictions", "temporal_queries"}

@@ -107,9 +107,9 @@ func statusHandler(opts *Opts) mcp.HandlerFunc {
 			"gauges":               gauges,
 		}
 
-		// Knowledge stats (best-effort; capped at 200 to avoid full-table scan)
+		// Knowledge stats (POP domain only; capped at 200 to avoid full-table scan)
 		if opts.Store != nil {
-			if docs, sErr := opts.Store.List("", "", 200); sErr == nil {
+			if docs, sErr := opts.Store.List("", "pop", 200); sErr == nil {
 				typeCounts := map[string]int{}
 				for _, d := range docs {
 					dt, _ := d["type"].(string)
@@ -128,8 +128,9 @@ func statusHandler(opts *Opts) mcp.HandlerFunc {
 
 func reflectHandler(opts *Opts) mcp.HandlerFunc {
 	return func(_ json.RawMessage) (any, error) {
-		// Retrieve high-confidence proposals; capped at 200 to avoid full-table scan.
-		docs, err := opts.Store.List("", "", 200)
+		// Retrieve high-confidence POP proposals; domain filter prevents mixing
+		// with non-POP knowledge documents.
+		docs, err := opts.Store.List("", "pop", 200)
 		if err != nil {
 			return map[string]any{"error": fmt.Sprintf("failed to list proposals: %v", err)}, nil
 		}
@@ -228,6 +229,7 @@ func (a *knowledgeStoreAdapter) RecordProposal(_ context.Context, p pop.Proposal
 		"title":      p.Title,
 		"visibility": p.Visibility,
 		"confidence": p.Confidence,
+		"domain":     "pop", // tag POP proposals for filtered queries
 	}
 	return a.store.Create(mapItemType(p.ItemType), metadata, p.Content)
 }
