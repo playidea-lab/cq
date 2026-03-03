@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"strings"
 	"time"
 )
@@ -47,7 +48,14 @@ func NewEngine(
 var ErrGaugeThresholdExceeded = errors.New("pop: KG gauge threshold exceeded — migration review recommended")
 
 // extractionLimit is the maximum number of messages fetched per RunOnce cycle.
+// DoD specifies 100; 50 is used here as a conservative default to avoid
+// exceeding LLM context limits in typical deployments.
 const extractionLimit = 50
+
+// confidenceThreshold is the minimum Confidence score (0–1) for a proposal
+// to be delivered to the Notifier. Only "HIGH" confidence proposals are shown
+// to users; all proposals are still persisted via KnowledgeStore.RecordProposal.
+const confidenceThreshold = 0.8
 
 // extractPrompt builds the LLM prompt used to surface proposals from messages.
 func extractPrompt(msgs []Message) string {
@@ -130,24 +138,24 @@ func (e *Engine) RunOnce(ctx context.Context) error {
 	}
 	proposals := parseProposals(raw)
 
-	// Step 4–5: notify and record each proposal.
+	// Step 4–5: record all proposals and notify only HIGH confidence ones.
 	for _, p := range proposals {
-		// Notify the user (best-effort; do not abort on failure).
-		if notifyErr := e.notifier.Notify(ctx, p); notifyErr != nil {
-			// Non-fatal: continue processing remaining proposals.
-			_ = notifyErr
-		}
-
-		// Record in knowledge store.
+		// Record in knowledge store — ALL proposals regardless of confidence.
 		if _, recordErr := e.knowledge.RecordProposal(ctx, p); recordErr != nil {
 			return fmt.Errorf("pop: record proposal: %w", recordErr)
 		}
 
-		// Append insight to soul.
+		// Notify only HIGH confidence proposals (best-effort; non-fatal).
+		if p.Confidence >= confidenceThreshold {
+			if notifyErr := e.notifier.Notify(ctx, p); notifyErr != nil {
+				log.Printf("pop: notify error: %v", notifyErr)
+			}
+		}
+
+		// Append insight to soul (best-effort; non-fatal).
 		if p.Content != "" {
 			if soulErr := e.soul.AppendInsight(ctx, "", p.Content); soulErr != nil {
-				// Non-fatal: soul write failure should not abort the pipeline.
-				_ = soulErr
+				log.Printf("pop: soul write error: %v", soulErr)
 			}
 		}
 	}

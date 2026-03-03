@@ -332,6 +332,38 @@ func TestRunOnce_GaugeThresholdNotExceeded(t *testing.T) {
 	}
 }
 
+func TestRunOnce_LowConfidenceProposals_NotNotified(t *testing.T) {
+	// confidence=0.5 is below confidenceThreshold (0.8) — should be recorded but not notified.
+	msgs := &mockMessageSource{msgs: []Message{
+		{ID: "1", Content: "low confidence insight", CreatedAt: time.Now().Add(-5 * time.Minute)},
+	}}
+	ks := &mockKnowledgeStore{}
+	sw := &mockSoulWriter{}
+	n := &mockNotifier{}
+	llm := &mockLLMClient{
+		response: `[{"title":"LowConf","content":"maybe something.","item_type":"insight","confidence":0.5,"visibility":"private"}]`,
+	}
+
+	e, _, _ := newTestEngine(t, msgs, ks, sw, n, llm)
+
+	if err := e.RunOnce(context.Background()); err != nil {
+		t.Fatalf("RunOnce: %v", err)
+	}
+
+	// All proposals must be recorded in the knowledge store.
+	if len(ks.recorded) != 1 {
+		t.Fatalf("expected 1 recorded proposal, got %d", len(ks.recorded))
+	}
+	if ks.recorded[0].Title != "LowConf" {
+		t.Fatalf("unexpected title: %q", ks.recorded[0].Title)
+	}
+
+	// Low-confidence proposals must NOT be notified.
+	if len(n.notified) != 0 {
+		t.Fatalf("expected 0 notified proposals for low confidence, got %d", len(n.notified))
+	}
+}
+
 func TestParseProposals_ValidJSON(t *testing.T) {
 	raw := `Some preamble. [{"title":"T1","content":"C1","item_type":"insight","confidence":0.95,"visibility":"team"}] trailing text`
 	props := parseProposals(raw)
