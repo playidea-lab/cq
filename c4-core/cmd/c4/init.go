@@ -65,23 +65,29 @@ var (
 		Args:  cobra.NoArgs,
 		RunE:  func(cmd *cobra.Command, args []string) error { return initAndLaunch("cursor") },
 	}
+	geminiCmd = &cobra.Command{
+		Use:   "gemini",
+		Short: "Init C4 project and launch Gemini CLI",
+		Args:  cobra.NoArgs,
+		RunE:  func(cmd *cobra.Command, args []string) error { return initAndLaunch("gemini") },
+	}
 )
 
 func init() {
 	// Register --tier flag on all init-related commands and the root command.
-	for _, cmd := range []*cobra.Command{rootCmd, claudeCmd, codexCmd, cursorCmd} {
+	for _, cmd := range []*cobra.Command{rootCmd, claudeCmd, codexCmd, cursorCmd, geminiCmd} {
 		cmd.Flags().StringVar(&initTier, "tier", "", "build tier: solo|connected|full (written to .c4/config.yaml)")
 	}
-	// Register -t/--tag flag for named sessions (claude only, and root default).
-	for _, cmd := range []*cobra.Command{rootCmd, claudeCmd} {
-		cmd.Flags().StringVarP(&sessionName, "tag", "t", "", "session name: resume or create named Claude Code session")
+	// Register -t/--tag flag for named sessions (claude and gemini only, and root default).
+	for _, cmd := range []*cobra.Command{rootCmd, claudeCmd, geminiCmd} {
+		cmd.Flags().StringVarP(&sessionName, "tag", "t", "", "session name: resume or create named AI session")
 	}
 	// Register -t/--tag flag completion: list named session names.
-	for _, cmd := range []*cobra.Command{rootCmd, claudeCmd} {
+	for _, cmd := range []*cobra.Command{rootCmd, claudeCmd, geminiCmd} {
 		_ = cmd.RegisterFlagCompletionFunc("tag", completeSessionNames)
 	}
 	sessionCmd.AddCommand(sessionNameCmd, sessionRmCmd, sessionMemoCmd)
-	rootCmd.AddCommand(claudeCmd, codexCmd, cursorCmd, lsCmd, sessionCmd)
+	rootCmd.AddCommand(claudeCmd, codexCmd, cursorCmd, geminiCmd, lsCmd, sessionCmd)
 }
 
 // writeDefaultConfig writes the embedded default config.yaml to .c4/config.yaml
@@ -311,8 +317,8 @@ func initAndLaunch(tool string) error {
 	ensureServeRunning(noServe)
 
 	// 8. Launch AI tool
-	if tool == "claude" && sessionName != "" {
-		return launchToolNamed(dir, sessionName)
+	if (tool == "claude" || tool == "gemini") && sessionName != "" {
+		return launchToolNamed(tool, dir, sessionName)
 	}
 	return launchTool(tool, dir)
 }
@@ -1157,18 +1163,42 @@ func rebootFlagFile() string {
 	return filepath.Join(homeDir, ".c4", ".reboot")
 }
 
-// launchToolNamed starts or resumes a named Claude Code session with a reboot loop.
+// findGeminiSessionIndex executes 'gemini --list-sessions' and parses the output
+// to find the index number corresponding to the given UUID.
+func findGeminiSessionIndex(uuid string) string {
+	if uuid == "" {
+		return "latest"
+	}
+	out, err := exec.Command("gemini", "--list-sessions").Output()
+	if err != nil {
+		return "latest"
+	}
+	lines := strings.Split(string(out), "\n")
+	for _, line := range lines {
+		if strings.Contains(line, uuid) {
+			// Extract index from line like "  10. some text [uuid]"
+			trimmed := strings.TrimSpace(line)
+			dotIdx := strings.Index(trimmed, ".")
+			if dotIdx != -1 {
+				return trimmed[:dotIdx]
+			}
+		}
+	}
+	return "latest"
+}
+
+// launchToolNamed starts or resumes a named AI tool session with a reboot loop.
 // The reboot loop restarts the session when ~/.c4/.reboot is written (e.g., by /reboot skill).
 // Env vars CQ_SESSION_NAME and CQ_SESSION_UUID are injected into the subprocess.
-func launchToolNamed(projectDir, name string) error {
+func launchToolNamed(tool, projectDir, name string) error {
 	sessions, err := loadNamedSessions()
 	if err != nil {
 		return fmt.Errorf("loading named sessions: %w", err)
 	}
 
-	toolPath, err := exec.LookPath("claude")
+	toolPath, err := exec.LookPath(tool)
 	if err != nil {
-		return fmt.Errorf("claude not found in PATH: %w", err)
+		return fmt.Errorf("%s not found in PATH: %w", tool, err)
 	}
 
 	sessionDir, err := claudeProjectDir(projectDir)
@@ -1190,16 +1220,23 @@ func launchToolNamed(projectDir, name string) error {
 		}
 	}
 
-	// Reboot loop: re-launches claude when ~/.c4/.reboot exists after exit.
+	// Reboot loop: re-launches the tool when ~/.c4/.reboot exists after exit.
 	for {
 		os.Remove(rebootFlagFile()) // clear stale flag before starting
 
-		var claudeArgs []string
+		var toolArgs []string
 		if currentUUID != "" {
-			claudeArgs = []string{"--resume", currentUUID}
-			fmt.Fprintf(os.Stderr, "cq: resuming '%s' (%s...)...\n", name, currentUUID[:8])
+			resumeID := currentUUID
+			if tool == "gemini" {
+				// gemini CLI uses index numbers (1, 2, ...) instead of UUIDs for --resume.
+				resumeID = findGeminiSessionIndex(currentUUID)
+				fmt.Fprintf(os.Stderr, "cq: resuming %s session '%s' (uuid: %s... index: %s)...\n", tool, name, currentUUID[:8], resumeID)
+			} else {
+				fmt.Fprintf(os.Stderr, "cq: resuming %s session '%s' (uuid: %s...)... \n", tool, name, currentUUID[:8])
+			}
+			toolArgs = []string{"--resume", resumeID}
 		} else {
-			fmt.Fprintf(os.Stderr, "cq: launching claude (session: '%s')...\n", name)
+			fmt.Fprintf(os.Stderr, "cq: launching %s (session: '%s')...\n", tool, name)
 		}
 
 		// Snapshot JSONL before a new session so we can detect the UUID after exit.
@@ -1214,7 +1251,7 @@ func launchToolNamed(projectDir, name string) error {
 			env = append(env, "CQ_SESSION_UUID="+currentUUID)
 		}
 
-		cmd := exec.Command(toolPath, claudeArgs...)
+		cmd := exec.Command(toolPath, toolArgs...)
 		cmd.Stdin = os.Stdin
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
@@ -1235,7 +1272,7 @@ func launchToolNamed(projectDir, name string) error {
 				sessions[name] = namedSessionEntry{
 					UUID:    currentUUID,
 					Dir:     projectDir,
-					Tool:    "claude",
+					Tool:    tool,
 					Memo:    prev.Memo,
 					Updated: time.Now().Format(time.RFC3339),
 				}
@@ -1775,8 +1812,11 @@ func launchTool(tool, dir string) error {
 	case "cursor":
 		toolCmd = "cursor"
 		toolArgs = []string{"cursor", dir}
+	case "gemini":
+		toolCmd = "gemini"
+		toolArgs = []string{"gemini"}
 	default:
-		return fmt.Errorf("unknown tool: %s (supported: claude, codex, cursor)", tool)
+		return fmt.Errorf("unknown tool: %s (supported: claude, codex, cursor, gemini)", tool)
 	}
 
 	toolPath, err := exec.LookPath(toolCmd)

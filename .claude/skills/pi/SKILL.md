@@ -16,7 +16,13 @@ description: |
 
 ## 모드 선언 (진입 시 즉시)
 
-**이 스킬이 활성화된 순간 EnterPlanMode를 호출한다.**
+**이 스킬이 활성화된 순간 다음 순서로 실행한다:**
+
+1. **sentinel 파일 생성** (gate 허용 신호):
+   ```bash
+   touch /tmp/.c4_allow_plan_mode
+   ```
+2. **EnterPlanMode 호출** — Claude Code UI에 "Plan Mode" 활성화
 
 ```
 ✗ 코드 작성 금지
@@ -25,11 +31,10 @@ description: |
 ✓ 조사, 질문, 토론, 정리만
 ```
 
-EnterPlanMode를 호출해 Claude Code UI에 "Plan Mode" 를 활성화한다.
-이로써 Write/Edit 도구가 차단되고 유저에게 "지금 ideation 모드"임을 시각적으로 알린다.
+EnterPlanMode를 호출해 Write/Edit 도구가 차단되고 유저에게 "지금 ideation 모드"임을 시각적으로 알린다.
 
-> CLAUDE.md의 `EnterPlanMode 금지` 룰은 /c4-plan 대체 목적(구현 계획 수립)에 한함.
-> /pi는 구현 이전 ideation 단계이므로 EnterPlanMode 사용이 적합하다.
+> **sentinel 패턴**: c4-gate.sh는 `/tmp/.c4_allow_plan_mode` 파일을 확인 후 즉시 삭제한다.
+> EnterPlanMode가 필요한 다른 스킬도 동일 패턴(`touch /tmp/.c4_allow_plan_mode` → EnterPlanMode) 사용.
 
 ---
 

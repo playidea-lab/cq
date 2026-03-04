@@ -103,8 +103,8 @@ _emit_deny() {
 }
 
 # =============================================================================
-# C4 프로젝트 전용: MCP 내장 도구 차단 (TodoWrite / TaskCreate / TaskUpdate)
-# EnterPlanMode는 /pi 스킬(ideation 모드)에서 합법적으로 사용 — 차단하지 않음
+# C4 프로젝트 전용: MCP 내장 도구 차단 (TodoWrite / TaskCreate / TaskUpdate / EnterPlanMode)
+# EnterPlanMode: sentinel 파일(/tmp/.c4_allow_plan_mode) 있으면 스킬 내부 호출로 간주 — 허용
 # tool_name은 "TodoWrite" 또는 MCP 네임스페이스 형식 "mcp__<ns>__TodoWrite" 두 가지 모두 처리
 # =============================================================================
 
@@ -126,8 +126,15 @@ if [[ "$_BARE_TOOL" == "TaskUpdate" ]]; then
     _emit_deny "TaskUpdate 금지 (C4 프로젝트). c4_task_list 또는 c4_status로 확인 후 c4_submit 사용"
 fi
 
-# EnterPlanMode: /pi 스킬(ideation 모드)에서 허용 — 블록 제거
-# 구현 계획 수립 목적(c4-plan 대체)으로 직접 호출 시는 /c4-plan 사용할 것
+if [[ "$_BARE_TOOL" == "EnterPlanMode" ]]; then
+    # 센티넬 파일이 있으면 스킬 내부 호출로 간주 — 1회성 허용 후 삭제
+    _sentinel="/tmp/.c4_allow_plan_mode"
+    if [[ -f "$_sentinel" ]]; then
+        rm -f "$_sentinel"
+        _emit_allow "EnterPlanMode: 스킬 sentinel 확인됨 (/pi 등)"
+    fi
+    _emit_deny "EnterPlanMode 직접 호출 금지 (C4 프로젝트). /pi(ideation) 또는 /c4-plan 스킬 사용"
+fi
 
 # =============================================================================
 # C4 워크플로우 게이트 (c4-finish 및 git commit 순서 강제)
