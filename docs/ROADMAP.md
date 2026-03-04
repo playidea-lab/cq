@@ -1,8 +1,8 @@
 # C4 Roadmap
 
-## Current Version: v0.45.0 (Named Session UX + cq ls 포맷 개선)
+## Current Version: v0.57.0 (POP + HarnessWatcher + Persona Evolution)
 
-현재 버전은 **Go MCP Server (118 base + Hub tiered 등), Native Go/Dart LSP (goast/dartast), LLM Gateway (캐시 최적화), CDP Runner + WebMCP + Auto-Discovery, Cloud Foundation (CloudPrimaryStore + Session Limit), Knowledge v4 (OllamaEmbeddings + reindex + distill), C1 Unified Dashboard Messenger (A2UI 응답 라우팅), C3 EventBus v4, C5 Hub Server (Tenant Isolation + Dooray webhook), 22개 Skills, 3-layer Deprecated 스킬 강제 시스템, 프로젝트 단위 2-layer Permission Hook, bats 테스트 스위트, Named Session (reboot/attach/ls), 쉘 자동완성, OS 서비스 통합**를 포함합니다.
+현재 버전은 **Go MCP Server (118 base + Hub tiered 등, POP 3도구), Native Go/Dart LSP (goast/dartast), LLM Gateway (캐시 최적화), CDP Runner + WebMCP + Auto-Discovery, Cloud Foundation (CloudPrimaryStore + Session Limit), Knowledge v4 (OllamaEmbeddings + reindex + distill), C1 Unified Dashboard Messenger (HarnessWatcher + Cursor 어댑터), C3 EventBus v4, C5 Hub Server (Tenant Isolation + Dooray webhook), POP (Personal Ontology Pipeline), Persona/Soul Evolution, 36개 Skills, 3-layer Deprecated 스킬 강제 시스템, 프로젝트 단위 2-layer Permission Hook, bats 테스트 스위트, Named Session (gemini 지원 포함), 쉘 자동완성, OS 서비스 통합**를 포함합니다.
 
 ### 핵심 구조
 
@@ -18,7 +18,7 @@
 - **LLM Gateway** - 4개 Provider (Anthropic/OpenAI/Gemini/Ollama), 5단계 라우팅, CostTracker, 모델 카탈로그 9종
 - **Cloud Layer** - Go PostgREST client (Auth + CloudStore + HybridStore + KnowledgeCloudClient + TokenProvider auto-refresh)
 - **Python Sidecar** - LSP 10 proxy tools (7 LSP + 2 C2 Doc + 1 Onboard)
-- **Skills** - 22개 Claude Code Skills (.claude/skills/), Commands 완전 마이그레이션 (c4-quick, c4-submit 추가)
+- **Skills** - 36개 Claude Code Skills (.claude/skills/), /pi (ideation) + c9-* (11개 ML 연구 루프) + Commands 완전 마이그레이션
 - **Lighthouse** - register_all, spec auto-generate, auto-seed, auto-backfill, llms.txt export
 - **Infra** - Supabase PostgreSQL (21 migrations, RLS, tsvector FTS, c1_members)
 
@@ -42,11 +42,47 @@
 - **C1 Documents** - 마크다운 파일 편집기, 지속성 (persona/skill/spec/config)
 - **C3 EventBus v4** - gRPC daemon (UDS) + WebSocket bridge + DLQ + Filter v2, Python sidecar piggyback, task lifecycle events
 - **코드베이스**: Go ~54.9K (c4-core) + Go ~7.3K (c5) + Python ~22.9K + Rust ~10.2K + TS+CSS ~13.7K + SQL ~1.3K = **~110.3K LOC (src)**, 테스트 ~68.7K LOC, **총 ~179.0K LOC**
-- **테스트**: Go ~1,999 (c4-core ~1,767 + c5 ~232) + Python 728 + Rust 92 = **~2,819 tests** (45 packages)
+- **테스트**: Go ~2,457 (c4-core ~2,175 + c5 ~282) + Python 728 + Rust 92 = **~3,277 tests** (51 packages)
 
 ---
 
 ## 완료된 릴리즈 이력
+
+### v0.57.0 ✅ (2026-03-03)
+- **pop**: Personal Ontology Pipeline — Extract→Consolidate→Propose→Validate→Crystallize 5단계
+- **pop**: c4_pop_extract / c4_pop_status / c4_pop_reflect MCP 도구 + cq pop status CLI
+
+### v0.56.0 ✅ (2026-03-03)
+- **harness**: Cursor IDE SQLite 어댑터 — state.vscdb 5분 주기 폴링, read-only 모드
+- **harness**: llm-call.sh LLM 라우터 (Gemini/Claude/OpenAI, SOUL_LLM=auto)
+- **infra**: migration 00030 — c1_channels 부분 유니크 인덱스
+
+### v0.55.0-v0.55.1 ✅ (2026-03-03)
+- **harness**: HarnessWatcher Phase 1 — JournalWatcher + c1push (at-least-once delivery)
+- **exec**: c4_execute 우선 사용 원칙 강화 + 대용량 출력 명령 Bash 대신 c4_execute 사용
+
+### v0.54.0 ✅ (2026-03-03)
+- **ux**: cq serve 투명화 — confirmServeInstall() 제거, auto-start 메시지
+- **skills**: /pi 스킬 신설 — ideation 모드 (발산/수렴/심화/반론 4모드, /c4-plan 자동 전환)
+
+### v0.53.0 ✅ (2026-03-02)
+- **c5**: Unified Conversation Store — EnsureChannel/ListChannels/EnsureParticipant
+- **c1**: project_id 포워딩 + conv_to_knowledge 트리거
+
+### v0.52.0 ✅ (2026-03-02)
+- **persona**: Persona/Soul Evolution — 코딩 스타일 패턴 학습, scripts/soul-evolve.sh
+
+### v0.51.0 ✅ (2026-03-01)
+- **c5/conversation**: Typed-nil safe Store, PostgREST 더블 인코딩 방지
+- **c5**: MemoryStore null byte 키 구분자 패턴
+
+### v0.48.0-v0.50.0 ✅ (2026-03-01)
+- **skills**: c9-* 시리즈 11개 추가 (c9-init/loop/run/check/standby/finish/steer/survey/report/conference/deploy)
+- **init**: cq gemini 서브커맨드 추가
+
+### v0.46.0-v0.47.0 ✅ (2026-03-01)
+- **skills**: /pi 스킬 초기 버전 + c9-init 추가
+- **research-loop**: ML 연구 루프 자동화 스킬
 
 ### v0.45.0 ✅ (2026-03-01)
 - **ls**: `cq ls` 출력 포맷 전면 개선 — 컬럼 정렬, CJK 폭 인식, `●` 인디케이터, `✉N` unread 아이콘
