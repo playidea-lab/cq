@@ -212,17 +212,42 @@ c4_knowledge_record(
 )
 ```
 
-### Step 3. /c4-plan 직접 호출
+### Step 3. 진행 방식 선택
 
 ```
 ✅ idea.md 저장: .c4/ideas/{slug}.md
 ✅ 지식 베이스 기록 완료
-
-/c4-plan {slug} 진입합니다.
-(idea.md를 Planning Document로 읽어들여 Discovery → Design → Tasks 시작)
 ```
 
-→ `Skill("c4-plan", args="{slug}")` 호출
+```python
+AskUserQuestion(questions=[{
+    "question": "아이디어가 정리됐습니다. 어떻게 진행할까요?",
+    "header": "다음 단계",
+    "options": [
+        {
+            "label": "자동 구현",
+            "description": "plan → run → finish 전체 자동 실행. 개입 없이 끝까지."
+        },
+        {
+            "label": "계획만",
+            "description": "c4-plan으로 태스크만 생성. 실행은 나중에."
+        }
+    ],
+    "multiSelect": False
+}])
+```
+
+- **자동 구현** 선택 시:
+  ```
+  🚀 자동 구현 모드 — plan → run → finish 시작합니다
+  ```
+  → `Skill("c4-plan", args="--from-pi {slug} --auto-run")` 호출
+
+- **계획만** 선택 시:
+  ```
+  📋 계획 모드 — 태스크만 생성합니다 (/c4-run은 별도 실행)
+  ```
+  → `Skill("c4-plan", args="--from-pi {slug}")` 호출
 
 ---
 
@@ -259,5 +284,5 @@ Phase 2(해석)에서 idea.md의 문제 정의, 가정, 리스크를 EARS 요구
 3. $ARGUMENTS가 있으면: WebSearch + c4_knowledge_search 병렬 실행
 4. 조사 결과 해석 → Landscape + 핵심 긴장 + 첫 날카로운 질문 제시
 5. 발산→수렴→심화→반론 모드를 오가며 토론
-6. 수렴 감지 시 시그널 → 유저 확인 → idea.md 생성 → c4-plan 호출
+6. 수렴 감지 시 시그널 → 유저 확인 → idea.md 생성 → 진행 방식 선택(자동 구현/계획만) → c4-plan 호출
 </instructions>

@@ -48,6 +48,27 @@ Required:
 
 ---
 
+## Flags (--from-pi / --auto-run)
+
+`/pi`에서 호출 시 args에 플래그가 포함될 수 있다.
+
+```python
+args = "$ARGUMENTS"  # e.g. "--from-pi my-feature --auto-run"
+FROM_PI = "--from-pi" in args
+AUTO_RUN = "--auto-run" in args
+
+if FROM_PI:
+    # slug 추출: "--from-pi {slug}" 뒤 첫 토큰
+    parts = args.split("--from-pi", 1)[1].strip().split()
+    PI_SLUG = parts[0] if parts else ""
+    idea_path = f".c4/ideas/{PI_SLUG}.md"
+    print(f"🔗 /pi 연결 모드: idea.md = {idea_path}")
+    if AUTO_RUN:
+        print("🚀 자동 실행 모드: 태스크 생성 후 /c4-run → /c4-finish 자동 진행")
+```
+
+---
+
 ## Phase 0: Context Display
 
 ### 0.0 Config 읽기 (필수 — 가장 먼저 실행)
@@ -208,6 +229,32 @@ Extraction hints:
 ---
 
 ## Phase 2.5: Discovery (EARS Requirements)
+
+### 2.5.0 /pi 컨텍스트 감지 (FROM_PI 모드)
+
+```python
+if FROM_PI:
+    # idea.md를 Discovery 소스로 사용 → Q&A 인터뷰 생략
+    idea_content = c4_read_file(path=idea_path)
+
+    print(f"""
+💡 /pi idea.md 컨텍스트 로드: {idea_path}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+{idea_content[:800]}...
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Discovery Q&A 인터뷰를 건너뜁니다 — idea.md에서 요구사항 추출 중
+""")
+
+    # idea.md의 "문제 정의", "가정", "리스크", "핵심 결정" 섹션을 파싱하여
+    # EARS 패턴으로 자동 변환 후 c4_save_spec() 저장
+    # → 2.5.3~2.5.5 실행 후 Phase 2.6으로 바로 진행
+
+else:
+    # 기존 EARS 인터뷰 진행 (2.5.1 이하)
+    pass
+```
+
+> `FROM_PI = True`이면 2.5.1~2.5.2(인터뷰)를 건너뛰고 idea.md 내용으로 spec을 직접 작성한다.
 
 ### 2.5.1 Domain Auto-Detection
 
@@ -778,9 +825,24 @@ Summarize the generated plan and confirm with user.
 - Next steps (전체 실행 플로우 포함)
 
 **Confirmation**:
-- "Proceed" -> 아래 전체 플로우를 안내하고 `/c4-run` 시작 유도
-- "Modify" -> ask which part
-- "Cancel" -> delete tasks, restart
+
+```python
+if AUTO_RUN:
+    # /pi --auto-run 모드: 사용자 확인 없이 자동 진행
+    print("""
+✅ 태스크 생성 완료
+🚀 /pi 자동 실행 모드 — /c4-run 시작합니다
+   (plan → run → finish 전체 자동 진행)
+""")
+    Skill("c4-run")
+
+else:
+    # 일반 모드: 사용자 확인 후 안내
+    # "Proceed" -> 아래 전체 플로우를 안내하고 `/c4-run` 시작 유도
+    # "Modify"  -> ask which part
+    # "Cancel"  -> delete tasks, restart
+    pass
+```
 
 **전체 실행 플로우 (반드시 이 순서로 안내)**:
 ```
@@ -829,6 +891,7 @@ Phase 0.5: Action selection
     Phase 1  : 문서 스캔
     Phase 2  : 문서 해석
     Phase 2.5: Discovery (EARS 요구사항)
+              → FROM_PI=True이면 idea.md에서 자동 추출 (Q&A 생략)
     Phase 2.6: Design (아키텍처 결정)
     Phase 2.7: Lighthouse (계약 정의)
     Phase 3  : 개발 환경 인터뷰
