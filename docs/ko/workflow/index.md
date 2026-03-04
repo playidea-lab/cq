@@ -3,13 +3,14 @@
 CQ는 구조화된 루프를 따릅니다:
 
 ```
-INIT → DISCOVERY → DESIGN → PLAN → EXECUTE → CHECKPOINT → COMPLETE
+/pi → INIT → DISCOVERY → DESIGN → PLAN → EXECUTE → CHECKPOINT → COMPLETE
 ```
 
 ## 명령어
 
 | 명령 | 단계 | 사용 시기 |
 |------|------|---------|
+| `/pi` | 아이디어 탐색 | 계획 전 아이디어 발산·수렴. 자동으로 `/c4-plan` 전환. |
 | [`/c4-plan`](/ko/workflow/plan) | Plan | 새 기능 또는 중요한 변경 |
 | [`/c4-run`](/ko/workflow/run) | Execute | 워커를 스폰하고 end-to-end 실행 |
 | [`/c4-finish`](/ko/workflow/finish) | Complete | 빌드, 테스트, 문서, 커밋 — `/c4-run`이 자동 호출, 추가 변경 후 수동 실행도 가능 |

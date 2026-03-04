@@ -19,6 +19,7 @@ Included features:
 - Skills embedded in binary
 - `cq doctor` environment checks
 - Secret store (`~/.c4/secrets.db`)
+- Personal Ontology Pipeline (POP)
 
 Best for: personal projects, offline environments, getting started.
 
@@ -38,6 +39,7 @@ Additional features on top of `solo`:
 - **C3 EventBus** — gRPC event bus for real-time notifications
 - **C0 Drive** — file storage via Supabase Storage
 - **C9 Knowledge** — semantic search + pgvector for cross-project knowledge sharing
+- **Persona/Soul Evolution** — coding style pattern learning
 
 Requires a cloud config provided by your team or organization. Place it at `~/.c4/config.yaml` before first use.
 
@@ -59,6 +61,7 @@ Additional features on top of `connected`:
 - **GPU** — local GPU job scheduler
 - **C1 Messenger** — Tauri desktop dashboard
 - **Research** — paper/experiment tracking loop
+- **Research Loop (C9)** — ML experiment loop with c9-* skills (11 skills)
 
 Best for: production deployments, ML workflows, large teams.
 
@@ -79,6 +82,9 @@ Best for: production deployments, ML workflows, large teams.
 | C5 Hub (distributed) | — | — | ✅ |
 | CDP automation | — | — | ✅ |
 | GPU scheduler | — | — | ✅ |
+| POP (Personal Ontology) | ✅ | ✅ | ✅ |
+| Persona/Soul Evolution | ✅ | ✅ | ✅ |
+| Research Loop (c9-*) | — | — | ✅ |
 
 ## Config file location
 

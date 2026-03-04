@@ -10,6 +10,7 @@
 cq claude    # Claude Code
 cq cursor    # Cursor
 cq codex     # OpenAI Codex CLI
+cq gemini    # Gemini CLI
 ```
 
 각 명령은 `CLAUDE.md`, `.c4/`, 스킬, 그리고 해당 도구의 MCP 설정 파일을 생성합니다:
@@ -19,6 +20,7 @@ cq codex     # OpenAI Codex CLI
 | `cq claude` | `.mcp.json` | `CLAUDE.md` |
 | `cq cursor` | `.cursor/mcp.json` | `CLAUDE.md` |
 | `cq codex` | `~/.codex/config.toml` | `.codex/agents/` |
+| `cq gemini` | (Gemini CLI 설정) | `CLAUDE.md` |
 
 > [AGENTS.md 표준](https://agents.md)을 지원하는 모든 도구 (예: Gemini Code Assist)는 전용 `cq` 명령 없이도 `CLAUDE.md`를 직접 읽을 수 있습니다.
 
@@ -135,6 +137,14 @@ curl http://127.0.0.1:4140/health
 # {"status":"ok","components":{"hub":{"status":"ok","detail":"port 8585"}}}
 ```
 
+### `cq pop`
+
+Personal Ontology Pipeline 상태 확인.
+
+```sh
+cq pop status   # gauge 값, 파이프라인 상태, 지식 통계 표시
+```
+
 ### `cq version`
 
 현재 바이너리 버전과 빌드 티어를 출력합니다.
@@ -147,6 +157,7 @@ curl http://127.0.0.1:4140/health
 
 | 스킬 | 트리거 | 설명 |
 |------|--------|------|
+| `/pi` | "play idea", "아이디어", "ideation" | 계획 전 아이디어 발산·수렴 |
 | `/c4-plan` | "계획", "plan", "설계" | Discovery → Design → Tasks |
 | `/c4-run` | "실행", "run", "ㄱㄱ" | pending 태스크를 위한 워커 스폰 |
 | `/c4-finish` | "마무리", "finish" | 빌드 → 테스트 → 문서 → 커밋 |
@@ -171,3 +182,14 @@ curl http://127.0.0.1:4140/health
 | `/c4-help` | "help" | 모든 스킬 빠른 레퍼런스 |
 | `/c2-paper-review` | "논문 리뷰", "paper review" | 학술 논문 리뷰 (C2 라이프사이클) |
 | `/research-loop` | "research loop" | 논문-실험 개선 루프 |
+| `/c9-init` | "c9-init" | C9 연구 프로젝트 초기화 |
+| `/c9-loop` | "c9-loop" | 메인 루프 드라이버 |
+| `/c9-run` | "c9-run" | 실험 YAML을 C5 Hub에 제출 |
+| `/c9-check` | "c9-check" | 실험 결과 파싱 + 수렴 판정 |
+| `/c9-standby` | "c9-standby" | RUN phase 대기 |
+| `/c9-finish` | "c9-finish" | 연구 루프 완료 + 문서화 |
+| `/c9-steer` | "c9-steer" | phase 전환 |
+| `/c9-survey` | "c9-survey" | 최신 논문·SOTA 수집 |
+| `/c9-report` | "c9-report" | 원격 실험 결과 수집 |
+| `/c9-conference` | "c9-conference" | 합의 토론 시뮬레이션 |
+| `/c9-deploy` | "c9-deploy" | best model edge 배포 |

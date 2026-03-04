@@ -11,6 +11,16 @@
 
 ## 섹션
 
+### `pop` — Personal Ontology Pipeline (solo+)
+
+```yaml
+pop:
+  enabled: true
+  confidence_threshold: 0.8   # Soul에 반영할 최소 신뢰도
+  max_proposals_per_cycle: 20
+  soul_path: ""               # 기본값: .c4/souls/{user}/soul-developer.md
+```
+
 ### `hub` — C5 Hub (full 티어)
 
 ```yaml

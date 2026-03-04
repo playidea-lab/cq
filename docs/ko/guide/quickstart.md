@@ -11,6 +11,7 @@ cd your-project
 cq claude   # Claude Code
 cq cursor   # Cursor
 cq codex    # OpenAI Codex CLI
+cq gemini   # Gemini CLI
 ```
 
 각 명령은 `.CLAUDE.md`, `.c4/`, 그리고 해당 도구의 MCP 설정 파일을 생성합니다:
@@ -20,6 +21,7 @@ cq codex    # OpenAI Codex CLI
 | `cq claude` | `.mcp.json` | `CLAUDE.md` |
 | `cq cursor` | `.cursor/mcp.json` | `CLAUDE.md` |
 | `cq codex` | `~/.codex/config.toml` | `.codex/agents/` |
+| `cq gemini` | (Gemini CLI 설정) | `CLAUDE.md` |
 
 그 다음 **AI 도구를 재시작**하여 새 MCP 서버를 불러옵니다.
 
@@ -42,6 +44,18 @@ cq auth login
 ```
 
 `solo` 티어는 이 단계를 건너뛰세요 — 로그인 불필요.
+
+## 1.6단계: 아이디어 탐색 (선택 사항)
+
+계획 전에 `/pi`로 아이디어를 탐색할 수 있습니다:
+
+```
+/pi
+```
+
+`/pi`는 아이디어 탐색 모드입니다 — 발산, 수렴, 리서치, 토론. 준비되면 자동으로 `/c4-plan`을 실행합니다.
+
+---
 
 ## 2단계: 연결 확인
 

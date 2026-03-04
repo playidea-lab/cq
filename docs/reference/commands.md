@@ -10,6 +10,7 @@ Initialize CQ in the current project for a specific AI coding tool.
 cq claude    # Claude Code
 cq cursor    # Cursor
 cq codex     # OpenAI Codex CLI
+cq gemini    # Gemini CLI
 ```
 
 Each command creates `CLAUDE.md`, `.c4/`, skills, and the MCP config for that tool:
@@ -19,6 +20,7 @@ Each command creates `CLAUDE.md`, `.c4/`, skills, and the MCP config for that to
 | `cq claude` | `.mcp.json` | `CLAUDE.md` |
 | `cq cursor` | `.cursor/mcp.json` | `CLAUDE.md` |
 | `cq codex` | `~/.codex/config.toml` | `.codex/agents/` |
+| `cq gemini` | (Gemini CLI config) | `CLAUDE.md` |
 
 > Any tool supporting the [AGENTS.md standard](https://agents.md) (e.g. Gemini Code Assist) can read `CLAUDE.md` directly without a dedicated `cq` command.
 
@@ -139,6 +141,14 @@ curl http://127.0.0.1:4140/health
 
 Print the current binary version and build tier.
 
+### `cq pop`
+
+Personal Ontology Pipeline status and control.
+
+```sh
+cq pop status   # Show gauge values, pipeline state, and knowledge stats
+```
+
 ---
 
 ## Skills (Claude Code slash commands)
@@ -147,6 +157,7 @@ Skills are invoked inside Claude Code as `/skill-name`.
 
 | Skill | Trigger | Description |
 |-------|---------|-------------|
+| `/pi` | "play idea", "아이디어", "ideation" | Brainstorm before planning; auto-launches `/c4-plan` |
 | `/c4-plan` | "계획", "plan", "설계" | Discovery → Design → Tasks |
 | `/c4-run` | "실행", "run", "ㄱㄱ" | Spawn workers for pending tasks |
 | `/c4-finish` | "마무리", "finish" | Build → test → docs → commit |
@@ -171,3 +182,14 @@ Skills are invoked inside Claude Code as `/skill-name`.
 | `/c4-help` | "help" | Quick reference for all skills |
 | `/c2-paper-review` | "논문 리뷰", "paper review" | Academic paper review (C2 lifecycle) |
 | `/research-loop` | "research loop" | Paper-experiment improvement loop |
+| `/c9-init` | "c9-init" | Initialize C9 ML research project |
+| `/c9-loop` | "c9-loop" | Main loop driver for ML research |
+| `/c9-run` | "c9-run" | Submit experiments to C5 Hub |
+| `/c9-check` | "c9-check" | Parse results + convergence check |
+| `/c9-standby` | "c9-standby" | Wait mode, auto-triggers CHECK |
+| `/c9-finish` | "c9-finish" | Save best model + document |
+| `/c9-steer` | "c9-steer" | Phase transition without editing YAML |
+| `/c9-survey` | "c9-survey" | Survey arXiv + SOTA with Gemini |
+| `/c9-report` | "c9-report" | Collect remote experiment results |
+| `/c9-conference` | "c9-conference" | Claude + Gemini research debate |
+| `/c9-deploy` | "c9-deploy" | Deploy best model to edge server |

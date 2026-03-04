@@ -1,6 +1,12 @@
 # 스킬 레퍼런스
 
-스킬은 Claude Code 내에서 호출하는 슬래시 명령입니다. 24개의 스킬이 모두 CQ 바이너리에 내장되어 있습니다(`skills_embed` 빌드 태그) — 설치 후 인터넷 연결 불필요.
+스킬은 Claude Code 내에서 호출하는 슬래시 명령입니다. 36개의 스킬이 모두 CQ 바이너리에 내장되어 있습니다(`skills_embed` 빌드 태그) — 설치 후 인터넷 연결 불필요.
+
+## 아이디어 탐색
+
+| 스킬 | 트리거 | 설명 |
+|------|--------|------|
+| `/pi` | play idea, 아이디어, ideation, /pi | 계획 전 아이디어 발산·수렴. 발산/수렴/리서치/토론 모드. `idea.md` 생성 후 자동으로 `/c4-plan` 실행. |
 
 ## 핵심 워크플로우
 
@@ -46,13 +52,29 @@
 | `/c2-paper-review` | 논문 리뷰, paper review | *(Deprecated — `/c4-review` 사용 권장.)* |
 | `/research-loop` | research loop | 논문-실험 개선 루프. 목표 품질 달성까지 리뷰 → 계획 → 실험 → 재리뷰를 반복. |
 
+## C9 연구 루프 (ML)
+
+| 스킬 | 트리거 | 설명 |
+|------|--------|------|
+| `/c9-init` | c9-init, c9 초기화 | C9 연구 프로젝트 초기화. `state.yaml` 생성, 메트릭/수렴 조건 설정. |
+| `/c9-loop` | c9-loop | 메인 루프 드라이버 — `state.yaml`의 현재 phase를 읽어 다음 단계 자동 실행. |
+| `/c9-run` | c9-run | 현재 라운드 실험 YAML을 C5 Hub에 제출. |
+| `/c9-check` | c9-check | 실험 결과 파싱 + 수렴 판정. C4의 checkpoint에 해당. |
+| `/c9-standby` | c9-standby | RUN phase 중 대기. mail 알림 수신 시 자동으로 CHECK 실행. |
+| `/c9-finish` | c9-finish | 연구 루프 완료 시 best model 저장 + 결과 문서화. |
+| `/c9-steer` | c9-steer | `state.yaml` 직접 편집 없이 phase 전환 및 reason 업데이트. |
+| `/c9-survey` | c9-survey | Gemini Google Search grounding으로 최신 arXiv 논문·SOTA 수집. |
+| `/c9-report` | c9-report | C5 Hub 워커를 통해 원격 서버 실험 결과 수집 및 보고서 생성. |
+| `/c9-conference` | c9-conference | Claude(Opus) + Gemini(Pro) 합의 토론 — 연구 컨퍼런스 시뮬레이션. |
+| `/c9-deploy` | c9-deploy | best model을 edge 서버에 배포. `/c9-finish`와 독립 실행 가능. |
+
 ## 유틸리티
 
 | 스킬 | 트리거 | 설명 |
 |------|--------|------|
 | `/c4-init` | init, 초기화 | 현재 프로젝트에 C4 초기화. 설치 경로 감지 후 `cq claude/cursor/codex` 실행. |
 | `/c4-release` | release | git 히스토리에서 CHANGELOG 생성. Conventional Commits 분석, 시맨틱 버전 제안, 태그 생성. |
-| `/c4-help` | help | 스킬, 에이전트, MCP 도구의 빠른 레퍼런스. 전체 24개 스킬에 대한 결정 트리 + 키워드 검색. |
+| `/c4-help` | help | 스킬, 에이전트, MCP 도구의 빠른 레퍼런스. 전체 36개 스킬에 대한 결정 트리 + 키워드 검색. |
 | `/c4-attach` | 세션 이름, attach, name this session | `cq claude -t <name>`으로 나중에 재개할 수 있도록 현재 세션에 이름 붙이기. 선택적 메모 추가 가능. |
 | `/c4-reboot` | reboot, 재시작 | 현재 이름 붙은 세션 재부팅. `cq`가 같은 세션 UUID로 자동 재개. |
 

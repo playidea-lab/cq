@@ -2,6 +2,18 @@
 
 Trigger: `/c4-plan "feature description"` or keywords: `계획`, `plan`, `설계`
 
+## Before planning: /pi
+
+If you're still exploring ideas, start with `/pi` (Play Idea) before `/c4-plan`:
+
+```
+/pi
+```
+
+`/pi` enters ideation mode — research online, debate tradeoffs, converge on a concrete concept. When ready, it writes `idea.md` and automatically calls `/c4-plan`.
+
+---
+
 ## What it does
 
 Runs a structured planning process:

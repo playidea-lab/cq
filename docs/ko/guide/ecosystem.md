@@ -52,7 +52,7 @@ C4는 오케스트레이션 코어입니다. Claude Code에 **100개 이상의 M
 - **지식 누적** — 발견 사항이 자동으로 기록되어 미래 태스크에 주입됩니다
 - **시크릿 스토어** — AES-256-GCM, 설정 파일에 저장하지 않음
 - **LLM Gateway** — Anthropic, OpenAI, Gemini, Ollama 통합 API
-- **스킬** — 바이너리에 내장된 22개 슬래시 명령
+- **스킬** — 바이너리에 내장된 36개 슬래시 명령 (/pi, c9-* 연구 루프 등)
 
 ---
 
@@ -135,6 +135,30 @@ C4 엔진을 위한 관측 가능성 레이어:
 - **스케줄러** — C4 태스크를 트리거하는 cron 스타일 잡
 - **커넥터** — Slack과 GitHub 기본 지원
 - `c8_gate` 빌드 태그로 활성화
+
+---
+
+## 페르소나 & Soul 진화
+
+CQ가 코딩 패턴을 학습하고 시간에 따라 행동 방식을 진화시킵니다:
+
+- **패턴 추출** — AI 초안과 최종 수정본 사이의 diff를 분석
+- **Soul 지속성** — 패턴이 `.c4/souls/{user}/raw_patterns.json`에 누적
+- **진화** — `scripts/soul-evolve.sh`가 누적 패턴을 `soul-developer.md`로 합성
+- `c4_persona_learn` / `c4_soul_get` / `c4_soul_set` MCP 도구
+
+---
+
+## POP (개인 온톨로지 파이프라인)
+
+대화에서 지식 제안을 자동 추출하여 Soul에 결정화합니다:
+
+- **5단계 파이프라인** — Extract → Consolidate → Propose → Validate → Crystallize
+- **신뢰도 게이팅** — HIGH 신뢰도(≥0.8) 제안만 Soul에 반영
+- **Gauge 추적** — merge_ambiguity / avg_fan_out / contradictions / temporal_queries
+- **원자적 쓰기** — soul_backup/ 유지 (10개 스냅샷)
+- `c4_pop_extract` / `c4_pop_status` / `c4_pop_reflect` MCP 도구
+- `cq pop status` CLI 커맨드
 
 ---
 

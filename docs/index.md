@@ -56,4 +56,8 @@ features:
   - icon: 📱
     title: Headless Auth
     details: "`cq auth login --device` shows a user_code to enter in a browser (RFC 8628 Device Flow). Works in SSH tunnels and containers."
+
+  - icon: 💡
+    title: Play Idea (/pi)
+    details: Brainstorm and refine ideas before planning. Diverge, research, debate — then auto-launch /c4-plan when ready.
 ---

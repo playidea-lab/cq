@@ -11,6 +11,16 @@ The sections below document available options for reference.
 
 ## Sections
 
+### `pop` — Personal Ontology Pipeline (solo+)
+
+```yaml
+pop:
+  enabled: true
+  confidence_threshold: 0.8   # minimum confidence to notify/crystallize to Soul
+  max_proposals_per_cycle: 20
+  soul_path: ""               # default: .c4/souls/{user}/soul-developer.md
+```
+
 ### `hub` — C5 Hub (full tier)
 
 ```yaml

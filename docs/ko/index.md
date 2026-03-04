@@ -53,6 +53,10 @@ features:
     title: 워크플로우 게이트
     details: 훅 기반 품질 강제. `/c4-finish` 완료 전에는 `git commit`이 차단됩니다. 더 이상 필요 없는 스킬(`/c4-polish`, `/c4-refine`)은 자동으로 리다이렉트됩니다.
 
+  - icon: 💡
+    title: Play Idea (/pi)
+    details: 계획 전 아이디어를 탐색하는 모드. 발산·수렴·리서치·토론을 통해 아이디어를 결정(結晶)시킨 후 /c4-plan을 자동 실행합니다.
+
   - icon: 📱
     title: 헤드리스 인증
     details: "`cq auth login --device`로 브라우저에 입력할 user_code를 표시합니다 (RFC 8628 Device Flow). SSH 터널과 컨테이너에서도 동작합니다."

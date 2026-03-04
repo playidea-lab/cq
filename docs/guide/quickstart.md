@@ -11,6 +11,7 @@ cd your-project
 cq claude   # Claude Code
 cq cursor   # Cursor
 cq codex    # OpenAI Codex CLI
+cq gemini   # Gemini CLI
 ```
 
 Each command creates `.CLAUDE.md`, `.c4/`, and the MCP config for your tool:
@@ -20,6 +21,7 @@ Each command creates `.CLAUDE.md`, `.c4/`, and the MCP config for your tool:
 | `cq claude` | `.mcp.json` | `CLAUDE.md` |
 | `cq cursor` | `.cursor/mcp.json` | `CLAUDE.md` |
 | `cq codex` | `~/.codex/config.toml` | `.codex/agents/` |
+| `cq gemini` | (Gemini CLI config) | `CLAUDE.md` |
 
 Then **restart your AI tool** so it picks up the new MCP server.
 
@@ -42,6 +44,16 @@ This opens GitHub OAuth in your browser and automatically patches `.c4/config.ya
 ```
 
 Skip this step for the `solo` tier — no login required.
+
+## Step 1.6: Explore ideas first (optional)
+
+Before planning, use `/pi` to brainstorm and refine your idea:
+
+```
+/pi
+```
+
+`/pi` enters ideation mode — diverge, converge, research, debate. When ready, it automatically launches `/c4-plan`.
 
 ## Step 2: Verify the connection
 

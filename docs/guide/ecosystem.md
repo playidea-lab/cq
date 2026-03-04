@@ -52,7 +52,7 @@ C4 is the orchestration core. It exposes **100+ MCP tools (varies by tier)** (`c
 - **Knowledge accumulation** — discoveries recorded automatically, injected into future tasks
 - **Secret store** — AES-256-GCM, never in config files
 - **LLM Gateway** — unified API for Anthropic, OpenAI, Gemini, Ollama
-- **Skills** — 22 slash commands embedded in the binary
+- **Skills** — 36 slash commands embedded in the binary (/pi, c9-* research loop, and more)
 
 ---
 
@@ -135,6 +135,30 @@ External integration hub:
 - **Scheduler** — cron-style jobs that trigger C4 tasks
 - **Connectors** — Slack and GitHub out of the box
 - Activated with `c8_gate` build tag
+
+---
+
+## Persona & Soul Evolution
+
+CQ learns from your coding patterns and evolves its behavior over time:
+
+- **Pattern extraction** — analyzes diffs between AI drafts and your final edits
+- **Soul persistence** — patterns stored in `.c4/souls/{user}/raw_patterns.json`
+- **Evolution** — `scripts/soul-evolve.sh` synthesizes accumulated patterns into `soul-developer.md`
+- `c4_persona_learn` / `c4_soul_get` / `c4_soul_set` MCP tools
+
+---
+
+## POP (Personal Ontology Pipeline)
+
+Automatically extracts knowledge proposals from conversation and crystallizes them into Soul:
+
+- **5-stage pipeline** — Extract → Consolidate → Propose → Validate → Crystallize
+- **Confidence gating** — only HIGH confidence (≥0.8) proposals reach Soul
+- **Gauge tracking** — merge_ambiguity / avg_fan_out / contradictions / temporal_queries
+- **Atomic writes** — soul_backup/ maintained (10 snapshots)
+- `c4_pop_extract` / `c4_pop_status` / `c4_pop_reflect` MCP tools
+- `cq pop status` CLI command
 
 ---
 

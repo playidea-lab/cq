@@ -15,8 +15,7 @@ Spawns one worker per ready task. Workers run in parallel, each in an isolated g
 → review tasks (R-001, R-002) created automatically
 → review workers spawned for each
 → respawn continues until queue is empty
-→ /c4-polish: build-test-review-fix loop until zero changes
-→ /c4-finish: build · test · docs · commit
+→ /c4-finish: polish loop (build-test-review-fix until zero changes) · build · test · docs · commit
 ```
 
 ## Worker lifecycle
@@ -44,6 +43,6 @@ A revision task (T-001-1) is created automatically. `/c4-run` will pick it up on
 
 ## After execution
 
-When all tasks are done, `/c4-run` automatically calls `/c4-polish` (build-test-review-fix loop until zero changes) and then `/c4-finish` (build · test · docs · commit). No extra steps needed.
+When all tasks are done, `/c4-run` automatically calls `/c4-finish`, which includes a built-in polish loop (build-test-review-fix until zero changes). No extra steps needed.
 
 If you make additional manual changes, run `/c4-finish` to wrap up.

@@ -19,6 +19,7 @@ curl -fsSL https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/install.sh | s
 - 바이너리에 내장된 스킬
 - `cq doctor` 환경 점검
 - 시크릿 스토어 (`~/.c4/secrets.db`)
+- Personal Ontology Pipeline (POP)
 
 적합한 경우: 개인 프로젝트, 오프라인 환경, 처음 시작할 때.
 
@@ -38,6 +39,7 @@ curl -fsSL https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/install.sh | s
 - **C3 EventBus** — 실시간 알림을 위한 gRPC 이벤트 버스
 - **C0 Drive** — Supabase Storage 파일 스토리지
 - **C9 Knowledge** — 크로스 프로젝트 지식 공유를 위한 시맨틱 검색 + pgvector
+- **페르소나/Soul 진화** — 코딩 스타일 패턴 학습
 
 팀 또는 조직에서 제공하는 클라우드 설정이 필요합니다. 첫 사용 전 `~/.c4/config.yaml`에 위치시키세요.
 
@@ -59,6 +61,7 @@ curl -fsSL https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/install.sh | s
 - **GPU** — 로컬 GPU 잡 스케줄러
 - **C1 Messenger** — Tauri 데스크톱 대시보드
 - **Research** — 논문/실험 추적 루프
+- **연구 루프 (C9)** — c9-* 스킬 11개로 ML 실험 루프 자동화
 
 적합한 경우: 프로덕션 배포, ML 워크플로우, 대규모 팀.
 
@@ -79,6 +82,9 @@ curl -fsSL https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/install.sh | s
 | C5 Hub (분산) | — | — | ✅ |
 | CDP 자동화 | — | — | ✅ |
 | GPU 스케줄러 | — | — | ✅ |
+| POP (개인 온톨로지) | ✅ | ✅ | ✅ |
+| 페르소나/Soul 진화 | ✅ | ✅ | ✅ |
+| 연구 루프 (c9-*) | — | — | ✅ |
 
 ## 설정 파일 위치
 

@@ -1,6 +1,12 @@
 # Skills Reference
 
-Skills are slash commands invoked inside Claude Code. All 24 skills are embedded in the CQ binary (`skills_embed` build tag) — no internet required after install.
+Skills are slash commands invoked inside Claude Code. All 36 skills are embedded in the CQ binary (`skills_embed` build tag) — no internet required after install.
+
+## Ideation
+
+| Skill | Triggers | Description |
+|-------|----------|-------------|
+| `/pi` | play idea, 아이디어, ideation, /pi | Brainstorm and refine ideas before planning. Diverge/converge/research/debate modes. Writes `idea.md` and auto-launches `/c4-plan`. |
 
 ## Core Workflow
 
@@ -46,13 +52,29 @@ Skills are slash commands invoked inside Claude Code. All 24 skills are embedded
 | `/c2-paper-review` | 논문 리뷰, paper review | *(Deprecated — use `/c4-review` instead.)* |
 | `/research-loop` | research loop | Paper-experiment improvement loop. Iterates review → plan → experiment → re-review until target quality reached. |
 
+## C9 Research Loop (ML)
+
+| Skill | Triggers | Description |
+|-------|----------|-------------|
+| `/c9-init` | c9-init, c9 초기화 | Initialize a new C9 research project. Creates `state.yaml` with metric, convergence conditions, and Hub URL. |
+| `/c9-loop` | c9-loop | Main loop driver — reads current phase from `state.yaml` and auto-executes next step. |
+| `/c9-run` | c9-run | Submit experiment YAMLs to C5 Hub for the current round. |
+| `/c9-check` | c9-check | Parse experiment results + convergence check. Equivalent to C4's checkpoint. |
+| `/c9-standby` | c9-standby | Wait during RUN phase; auto-triggers CHECK when training completes via mail. |
+| `/c9-finish` | c9-finish | Save best model + document results when research loop completes. |
+| `/c9-steer` | c9-steer | Change phase and update reason without editing `state.yaml` directly. |
+| `/c9-survey` | c9-survey | Survey latest arXiv papers + SOTA benchmarks using Gemini Google Search grounding. |
+| `/c9-report` | c9-report | Collect experiment results from remote server via C5 Hub worker. |
+| `/c9-conference` | c9-conference | Claude (Opus) + Gemini (Pro) debate mode — research conference simulation. |
+| `/c9-deploy` | c9-deploy | Deploy best model to edge server. Can run independently of `/c9-finish`. |
+
 ## Utilities
 
 | Skill | Triggers | Description |
 |-------|----------|-------------|
 | `/c4-init` | init, 초기화 | Initialize C4 in current project. Detects installation path, runs `cq claude/cursor/codex`. |
 | `/c4-release` | release | Generate CHANGELOG from git history. Conventional Commits analysis, semantic version suggestion, tag creation. |
-| `/c4-help` | help | Quick reference for skills, agents, and MCP tools. Decision tree + keyword search across all 24 skills. |
+| `/c4-help` | help | Quick reference for skills, agents, and MCP tools. Decision tree + keyword search across all 36 skills. |
 | `/c4-attach` | 세션 이름, attach, name this session | Attach a name to the current session for later resume with `cq claude -t <name>`. Optionally add a memo. |
 | `/c4-reboot` | reboot, 재시작 | Reboot the current named session. `cq` resumes with the same session UUID automatically. |
 
