@@ -3,7 +3,7 @@ layout: home
 
 hero:
   name: "CQ"
-  text: "AI 프로젝트 오케스트레이션 엔진"
+  text: "AI 프로젝트 자동화 엔진"
   tagline: 계획 → 구현 → 리뷰 → 배포. Claude Code로 자동화.
   actions:
     - theme: brand
