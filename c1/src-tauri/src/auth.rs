@@ -98,17 +98,36 @@ fn session_to_user(session: &AuthSession) -> AuthUser {
     }
 }
 
-/// Read Supabase config from env vars, then fall back to ~/.c4/cloud.yaml
+/// Read Supabase config from env vars, then fall back to ~/.c4/supabase.json or ~/.c4/cloud.yaml
 fn read_supabase_config() -> AuthConfig {
-    let url = std::env::var("SUPABASE_URL").ok().or_else(|| {
-        let cloud_path = dirs::home_dir()?.join(".c4").join("cloud.yaml");
-        let content = fs::read_to_string(cloud_path).ok()?;
-        let yaml: serde_yaml::Value = serde_yaml::from_str(&content).ok()?;
+    // 1) env vars
+    let env_url = std::env::var("SUPABASE_URL").ok();
+    let env_key = std::env::var("SUPABASE_ANON_KEY")
+        .or_else(|_| std::env::var("SUPABASE_KEY"))
+        .ok();
+
+    // 2) ~/.c4/supabase.json  {"url": "...", "anon_key": "..."}
+    let (json_url, json_key) = dirs::home_dir()
+        .and_then(|h| {
+            let p = h.join(".c4").join("supabase.json");
+            let s = fs::read_to_string(p).ok()?;
+            let v: serde_json::Value = serde_json::from_str(&s).ok()?;
+            let u = v.get("url")?.as_str().map(|s| s.to_string());
+            let k = v.get("anon_key")?.as_str().map(|s| s.to_string());
+            Some((u, k))
+        })
+        .unwrap_or((None, None));
+
+    // 3) ~/.c4/cloud.yaml  supabase_url: ...
+    let yaml_url = dirs::home_dir().and_then(|h| {
+        let p = h.join(".c4").join("cloud.yaml");
+        let s = fs::read_to_string(p).ok()?;
+        let yaml: serde_yaml::Value = serde_yaml::from_str(&s).ok()?;
         yaml.get("supabase_url")?.as_str().map(|s| s.to_string())
     });
-    let has_key = std::env::var("SUPABASE_ANON_KEY")
-        .or_else(|_| std::env::var("SUPABASE_KEY"))
-        .is_ok();
+
+    let url = env_url.or(json_url).or(yaml_url);
+    let has_key = env_key.is_some() || json_key.is_some();
     AuthConfig {
         supabase_url: url,
         has_anon_key: has_key,
