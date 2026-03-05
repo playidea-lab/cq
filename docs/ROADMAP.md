@@ -1,8 +1,8 @@
 # C4 Roadmap
 
-## Current Version: v0.57.0 (POP + HarnessWatcher + Persona Evolution)
+## Current Version: v0.64.1 (POP + c4-finish POP 스텝 + /pi EARS 워크플로우 재설계 + C1 MessageViewer 안정화)
 
-현재 버전은 **Go MCP Server (118 base + Hub tiered 등, POP 3도구), Native Go/Dart LSP (goast/dartast), LLM Gateway (캐시 최적화), CDP Runner + WebMCP + Auto-Discovery, Cloud Foundation (CloudPrimaryStore + Session Limit), Knowledge v4 (OllamaEmbeddings + reindex + distill), C1 Unified Dashboard Messenger (HarnessWatcher + Cursor 어댑터), C3 EventBus v4, C5 Hub Server (Tenant Isolation + Dooray webhook), POP (Personal Ontology Pipeline), Persona/Soul Evolution, 36개 Skills, 3-layer Deprecated 스킬 강제 시스템, 프로젝트 단위 2-layer Permission Hook, bats 테스트 스위트, Named Session (gemini 지원 포함), 쉘 자동완성, OS 서비스 통합**를 포함합니다.
+현재 버전은 **Go MCP Server (118 base + Hub tiered 등, POP 3도구), Native Go/Dart LSP (goast/dartast), LLM Gateway (캐시 최적화), CDP Runner + WebMCP + Auto-Discovery, Cloud Foundation (CloudPrimaryStore + Session Limit), Knowledge v4 (OllamaEmbeddings + reindex + distill), C1 Unified Dashboard Messenger (HarnessWatcher + Cursor 어댑터, MessageViewer 스크롤 안정화), C3 EventBus v4, C5 Hub Server (Tenant Isolation + Dooray webhook), POP (Personal Ontology Pipeline, c4-finish 자동 주입), Persona/Soul Evolution, 36개 Skills (/pi EARS 통합 재설계), 3-layer Deprecated 스킬 강제 시스템, 프로젝트 단위 2-layer Permission Hook, bats 테스트 스위트, Named Session (gemini 지원 포함), 쉘 자동완성, OS 서비스 통합**를 포함합니다.
 
 ### 핵심 구조
 
@@ -47,6 +47,37 @@
 ---
 
 ## 완료된 릴리즈 이력
+
+### v0.64.1 ✅ (2026-03-06)
+- **c1**: MessageViewer 스크롤 앵커링 + 깜빡임 제거 (anchor 기반 bottom-lock)
+- **hooks**: `Agent(isolation=worktree)` 차단 규칙 제거
+
+### v0.64.0 ✅ (2026-03-06)
+- **pop**: `c4_pop_extract` content 파라미터 추가 — C1 Messenger 없이 Claude Code 세션 텍스트 직접 주입
+- **pop**: `c4_pop_reflect` 구현 완성 — HIGH confidence 제안 목록 조회 (Validate 단계)
+- **skills**: `/c4-finish` Step 7.7 — 세션 요약 → `c4_pop_extract(content=...)` 자동 주입
+- **skills**: `/pi` → `/c4-plan` 워크플로우 재설계 — EARS를 /pi로 병합, idea.md가 단일 리뷰 게이트
+- **c1**: MessageViewer 가상화 제거, 스크롤/채널/auth 다수 버그 수정
+
+### v0.63.0 ✅ (2026-03-05)
+- **doctor**: stale-socket / zombie-serve / sidecar-hang 진단 체크 추가
+- **submit**: validation fail 시 c4_submit 서버 단 reject
+
+### v0.62.0 ✅ (2026-03-05)
+- **hooks**: restore `Agent(isolation=worktree)` guard + /pi sentinel 제거
+
+### v0.61.0 ✅ (2026-03-05)
+- **tool**: `cq serve` + UDS socket bridge — socket-first MCP→CLI 게이트웨이
+- **tool**: `CQ_TOOL_SOCK` 환경변수 오버라이드 지원
+
+### v0.60.0 ✅ (2026-03-05)
+- **tool**: Schema Diet 롤백
+
+### v0.59.0 ✅ (2026-03-05)
+- **tool**: `cq tool` MCP→CLI 게이트웨이 (DisableFlagParsing + 동적 cobra.Command)
+
+### v0.58.0 ✅ (2026-03-04)
+- **c1**: HarnessWatcher Cursor adapter + migration 00030 + llm-call.sh LLM 라우터
 
 ### v0.57.0 ✅ (2026-03-03)
 - **pop**: Personal Ontology Pipeline — Extract→Consolidate→Propose→Validate→Crystallize 5단계
