@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.62.0] - 2026-03-06
+
+### 🐛 Bug Fixes
+- **tool**: `CQ_TOOL_SOCK` 환경변수 오버라이드 — `cq serve`/`cq tool` 다른 디렉토리 실행 시 소켓 경로 불일치 해결
+- **pi**: sentinel 패턴 제거 (`/tmp/.c4_allow_plan_mode`) — stale 파일 gate 우회 취약점 제거, c4-gate.sh 정합성 복구
+
+### 📚 Documentation
+- **tool**: `cq tool`은 사람용 터미널 도구 명시 (에이전트는 MCP `c4_*` 사용)
+- **AGENTS.md**: /pi 스킬 EnterPlanMode 담당 문구 제거
+
+---
+
 ## [v0.61.0] - 2026-03-05
 
 ### ✨ Features
