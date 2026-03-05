@@ -331,7 +331,6 @@ type C4Config struct {
 	PermissionReviewer PermissionReviewerConfig `mapstructure:"permission_reviewer"  yaml:"permission_reviewer"`
 	ReviewAsTask     bool                       `mapstructure:"review_as_task"       yaml:"review_as_task"`
 	CheckpointAsTask bool                       `mapstructure:"checkpoint_as_task"  yaml:"checkpoint_as_task"`
-	SchemaDiet       bool                       `mapstructure:"schema_diet"          yaml:"schema_diet"`
 	Planning         PlanningConfig             `mapstructure:"planning"             yaml:"planning"`
 	Gate             GateConfig                 `mapstructure:"gate"                 yaml:"gate"`
 	Observe          ObserveConfig              `mapstructure:"observe"              yaml:"observe"`

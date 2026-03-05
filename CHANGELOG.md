@@ -7,11 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [v0.60.0] - 2026-03-05
-
-### ✨ Features
-- **tool**: Schema Diet — `schema_diet: true` (.c4/config.yaml) 활성화 시 읽기 전용 MCP 도구 37개 자동 해제 (92→55). 에이전트 컨텍스트 ~34% (~2,760 토큰/세션) 절감. 에이전트는 `Bash("cq tool <name> --json")`으로 동일 기능 호출.
-
 ## [v0.59.0] - 2026-03-05
 
 ### ✨ Features
