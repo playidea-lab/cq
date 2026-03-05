@@ -247,37 +247,43 @@ function MessageBubble({ message }: { message: SessionMessage }) {
 
 export function MessageViewer({ messages, hasMore, loading, onLoadMore }: MessageViewerProps) {
   const parentRef = useRef<HTMLDivElement>(null);
-  const topSentinelRef = useRef<HTMLDivElement>(null);
+  const prevScrollHeightRef = useRef<number>(0);
+  const prevMsgCountRef = useRef<number>(0);
 
-  // Load more when scrolled near the top (older messages)
+  // Preserve scroll position when older messages are prepended
   useEffect(() => {
-    if (!hasMore || loading) return;
-    const sentinel = topSentinelRef.current;
-    const scrollEl = parentRef.current;
-    if (!sentinel || !scrollEl) return;
+    const el = parentRef.current;
+    if (!el) return;
+    const prevCount = prevMsgCountRef.current;
+    if (messages.length > prevCount && prevCount > 0) {
+      // Messages were prepended — restore relative scroll position
+      const newScrollHeight = el.scrollHeight;
+      const diff = newScrollHeight - prevScrollHeightRef.current;
+      el.scrollTop += diff;
+    }
+    prevMsgCountRef.current = messages.length;
+    prevScrollHeightRef.current = el.scrollHeight;
+  }, [messages.length]);
 
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0].isIntersecting) {
-          onLoadMore();
-        }
-      },
-      { root: scrollEl, threshold: 0 }
-    );
-    observer.observe(sentinel);
-    return () => observer.disconnect();
-  }, [hasMore, loading, onLoadMore]);
+  // Load more when scrolled near top
+  const handleScroll = () => {
+    const el = parentRef.current;
+    if (!el || !hasMore || loading) return;
+    if (el.scrollTop < 80) {
+      prevScrollHeightRef.current = el.scrollHeight;
+      onLoadMore();
+    }
+  };
 
   if (messages.length === 0 && !loading) {
     return <div className="msg-viewer__empty">No messages</div>;
   }
 
   return (
-    <div ref={parentRef} className="msg-viewer">
-      {/* Top sentinel: triggers loading older messages */}
-      {hasMore && (
-        <div ref={topSentinelRef} className="msg-viewer__sentinel">
-          {loading && <span className="msg-viewer__loading">Loading older messages...</span>}
+    <div ref={parentRef} className="msg-viewer" onScroll={handleScroll}>
+      {loading && hasMore && (
+        <div className="msg-viewer__sentinel">
+          <span className="msg-viewer__loading">Loading...</span>
         </div>
       )}
       {messages.map((msg, i) => (
