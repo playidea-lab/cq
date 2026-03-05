@@ -427,7 +427,8 @@ func TestHandleSubmit(t *testing.T) {
 				"worker_id": "worker-test"
 			}`,
 			submitErr: nil,
-			wantErr:   false,
+			wantErr:   true,
+			errMsg:    "cannot submit",
 		},
 		{
 			name:      "missing task_id",

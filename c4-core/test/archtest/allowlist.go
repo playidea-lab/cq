@@ -96,7 +96,7 @@ var DefaultAllowlist = ErrorAllowlist{
 	"internal/mcp/handlers/soul.go":                7,
 	"internal/mcp/handlers/sqlite_store.go":        12,
 	"internal/mcp/handlers/store_review.go":        3,
-	"internal/mcp/handlers/tasks.go":               18,
+	"internal/mcp/handlers/tasks.go":               19,
 	"internal/mcp/handlers/tracking.go":            8,
 	"internal/mcp/handlers/worker_standby.go":      8,
 	"internal/mcp/mcp.go":                          1,

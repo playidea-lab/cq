@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/changmin/c4-core/internal/mcp"
@@ -535,6 +536,49 @@ func TestSubmitSchemaValidationResultsNotRequired(t *testing.T) {
 		if field == "validation_results" {
 			t.Error("validation_results must NOT be in required list (it is optional)")
 		}
+	}
+}
+
+func TestSubmitFailedValidationRejected(t *testing.T) {
+	s := newMockStore()
+	reg := mcp.NewRegistry()
+	RegisterTaskHandlers(reg, s)
+
+	args := `{
+		"task_id": "T-001-0",
+		"commit_sha": "abc123",
+		"worker_id": "worker-test",
+		"validation_results": [{"name": "unit", "status": "fail", "message": "3 tests failed"}]
+	}`
+	_, err := reg.Call("c4_submit", json.RawMessage(args))
+	if err == nil {
+		t.Fatal("expected error for failed validation, got nil")
+	}
+	if !strings.Contains(err.Error(), "cannot submit") {
+		t.Errorf("error should mention 'cannot submit', got: %s", err.Error())
+	}
+}
+
+func TestSubmitMixedValidationRejected(t *testing.T) {
+	s := newMockStore()
+	reg := mcp.NewRegistry()
+	RegisterTaskHandlers(reg, s)
+
+	args := `{
+		"task_id": "T-001-0",
+		"commit_sha": "abc123",
+		"worker_id": "worker-test",
+		"validation_results": [
+			{"name": "lint", "status": "pass"},
+			{"name": "unit", "status": "fail", "message": "1 test failed"}
+		]
+	}`
+	_, err := reg.Call("c4_submit", json.RawMessage(args))
+	if err == nil {
+		t.Fatal("expected error when any validation fails, got nil")
+	}
+	if !strings.Contains(err.Error(), `"unit"`) {
+		t.Errorf("error should name the failing validation, got: %s", err.Error())
 	}
 }
 
