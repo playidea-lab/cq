@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.64.0] - 2026-03-06
+
+### ✨ Features
+- **pop**: `c4_pop_extract` content 파라미터 추가 — C1 Messenger 없이 Claude Code 세션 텍스트 직접 주입
+- **pop**: `Engine.SetMessageSource()` — 런타임 message source override 메서드
+- **pop**: `staticMessageSource` 어댑터 — 주입된 텍스트를 단일 Message로 래핑
+- **pop**: `c4_pop_reflect` 구현 완성 — HIGH confidence 제안 목록 조회 (Validate 단계)
+- **skills**: `/c4-finish` Step 7.7 추가 — 세션 요약 → `c4_pop_extract(content=...)` 자동 주입
+- **skills**: `/pi` → `/c4-plan` 워크플로우 재설계 — EARS를 /pi로 병합
+
+### 🐛 Bug Fixes
+- **c1**: MessageViewer 가상화 제거 → 단순 overflow 스크롤
+- **c1**: messenger 모드에서 240px 빈 channelList 칸 제거
+- **c1**: messenger 탭에 ChannelsView 연결 + layout overflow 수정
+- **c1**: `auth_login` anon_key 해석 시 `supabase.json` fallback 추가
+- **c1**: `auth.rs`가 `~/.c4/supabase.json`에서 credentials 읽도록 수정
+- **c1**: Terminal `fitAddonRef.ref` → `fitAddonRef.current` 오타 수정
+- **twin**: `RegisterPopReflectHandler` → `RegisterPopReflectHandlers` 네이밍 수정
+
+---
+
 ## [v0.63.0] - 2026-03-06
 
 ### ✨ Features
