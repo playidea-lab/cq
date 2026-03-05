@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -81,6 +82,9 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 		checkHub,
 		checkSupabase,
 		func() checkResult { return checkOSService(doctorFix) },
+		checkStaleSocket,
+		checkZombieServe,
+		checkSidecarHang,
 	}
 
 	results := make([]checkResult, 0, len(checks))
@@ -553,6 +557,95 @@ func checkSupabase() checkResult {
 	}
 }
 
+// checkStaleSocket checks whether .c4/tool.sock exists but is unresponsive.
+func checkStaleSocket() checkResult {
+	sockPath := filepath.Join(projectDir, ".c4", "tool.sock")
+	if _, err := os.Stat(sockPath); os.IsNotExist(err) {
+		return checkResult{Name: "tool-socket", Status: checkOK, Message: "no socket file (serve not running)"}
+	}
+	// Try connecting — if it fails the socket is stale
+	conn, err := net.DialTimeout("unix", sockPath, time.Second)
+	if err != nil {
+		return checkResult{
+			Name:    "tool-socket",
+			Status:  checkWarn,
+			Message: fmt.Sprintf("stale socket at %s (unresponsive)", sockPath),
+			Fix:     fmt.Sprintf("rm %s", sockPath),
+		}
+	}
+	conn.Close()
+	return checkResult{Name: "tool-socket", Status: checkOK, Message: "responsive"}
+}
+
+// checkZombieServe detects multiple cq serve processes for the same project.
+func checkZombieServe() checkResult {
+	out, err := exec.Command("pgrep", "-af", "cq serve").Output()
+	if err != nil {
+		// pgrep returns exit 1 when no match — not an error
+		return checkResult{Name: "zombie-serve", Status: checkOK, Message: "no serve processes"}
+	}
+	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+	var serving []string
+	for _, l := range lines {
+		if l != "" {
+			serving = append(serving, l)
+		}
+	}
+	if len(serving) <= 1 {
+		return checkResult{Name: "zombie-serve", Status: checkOK, Message: fmt.Sprintf("%d serve process", len(serving))}
+	}
+	return checkResult{
+		Name:    "zombie-serve",
+		Status:  checkWarn,
+		Message: fmt.Sprintf("%d cq serve processes detected (possible zombies)", len(serving)),
+		Fix:     "pkill -f 'cq serve' && cq serve",
+	}
+}
+
+// checkSidecarHang detects a Python sidecar process that is running but unresponsive.
+func checkSidecarHang() checkResult {
+	// Find sidecar PID file
+	pidPath := filepath.Join(projectDir, ".c4", "sidecar.pid")
+	data, err := os.ReadFile(pidPath)
+	if err != nil {
+		return checkResult{Name: "sidecar", Status: checkOK, Message: "not running (lazy start)"}
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
+	if err != nil {
+		return checkResult{Name: "sidecar", Status: checkWarn, Message: "invalid PID file", Fix: fmt.Sprintf("rm %s", pidPath)}
+	}
+	// Check process is alive
+	proc, err := os.FindProcess(pid)
+	if err != nil {
+		return checkResult{Name: "sidecar", Status: checkWarn, Message: fmt.Sprintf("PID %d not found, stale PID file", pid), Fix: fmt.Sprintf("rm %s", pidPath)}
+	}
+	if err := proc.Signal(syscall.Signal(0)); err != nil {
+		return checkResult{Name: "sidecar", Status: checkWarn, Message: fmt.Sprintf("PID %d no longer running, stale PID file", pid), Fix: fmt.Sprintf("rm %s", pidPath)}
+	}
+	// Process alive — check responsiveness via HTTP health endpoint
+	sockPath := filepath.Join(projectDir, ".c4", "sidecar.sock")
+	if _, err := os.Stat(sockPath); os.IsNotExist(err) {
+		return checkResult{Name: "sidecar", Status: checkOK, Message: fmt.Sprintf("running (PID %d)", pid)}
+	}
+	client := &http.Client{
+		Timeout: 2 * time.Second,
+		Transport: &http.Transport{
+			DialContext: (&net.Dialer{}).DialContext,
+		},
+	}
+	resp, err := client.Get("http://unix/health")
+	if err != nil {
+		return checkResult{
+			Name:    "sidecar",
+			Status:  checkWarn,
+			Message: fmt.Sprintf("PID %d unresponsive (possible hang)", pid),
+			Fix:     fmt.Sprintf("kill %d && rm %s", pid, pidPath),
+		}
+	}
+	resp.Body.Close()
+	return checkResult{Name: "sidecar", Status: checkOK, Message: fmt.Sprintf("running and responsive (PID %d)", pid)}
+}
+
 // tryFix attempts automatic remediation for known FAIL cases.
 // Returns a short description of what was fixed, or empty string if no fix was applied.
 // The caller's checkResult pointer is updated (e.g. status downgraded to WARN).
@@ -573,6 +666,27 @@ func tryFix(r *checkResult) string {
 			return ""
 		}
 		return "hook updated"
+	case "tool-socket":
+		sockPath := filepath.Join(projectDir, ".c4", "tool.sock")
+		if os.Remove(sockPath) == nil {
+			r.Status = checkOK
+			return "stale socket removed"
+		}
+	case "zombie-serve":
+		if err := exec.Command("pkill", "-f", "cq serve").Run(); err == nil {
+			r.Status = checkOK
+			return "zombie processes killed (restart cq serve manually)"
+		}
+	case "sidecar":
+		pidPath := filepath.Join(projectDir, ".c4", "sidecar.pid")
+		if data, err := os.ReadFile(pidPath); err == nil {
+			if pid, err := strconv.Atoi(strings.TrimSpace(string(data))); err == nil {
+				_ = exec.Command("kill", strconv.Itoa(pid)).Run()
+			}
+		}
+		_ = os.Remove(pidPath)
+		r.Status = checkOK
+		return "sidecar killed and PID file removed"
 	}
 	return ""
 }
