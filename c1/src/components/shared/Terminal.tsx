@@ -34,7 +34,7 @@ export function Terminal({ onClear }: TerminalProps) {
     fitAddon.fit();
 
     xtermRef.current = term;
-    fitAddonRef.ref = fitAddon;
+    fitAddonRef.current = fitAddon;
 
     term.writeln('\x1b[1;32m[Hands]\x1b[0m AI Execution Host Ready.');
 
