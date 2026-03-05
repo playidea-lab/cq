@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.64.1] - 2026-03-06
+
+### 🐛 Bug Fixes
+- **c1**: MessageViewer 스크롤 앵커링 + 깜빡임 제거 (anchor 기반 bottom-lock)
+
+### 🔧 Chores
+- **hooks**: `Agent(isolation=worktree)` 차단 규칙 제거 — C4 worker 브랜치 자체가 이미 격리된 환경
+- **hooks**: `settings.json` 특수문자 유니코드 이스케이프 정규화
+
+---
+
 ## [v0.64.0] - 2026-03-06
 
 ### ✨ Features
