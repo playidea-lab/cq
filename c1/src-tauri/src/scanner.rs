@@ -689,7 +689,6 @@ fn upsert_session_channel(
         "project_id": project_id,
         "name": channel_name,
         "channel_type": "session",
-        "created_by": session_id,
         "description": description,
     });
 
