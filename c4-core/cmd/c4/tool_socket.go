@@ -178,8 +178,13 @@ func (t *toolSocketComponent) dispatch(ctx context.Context, req sockRequest) soc
 
 // ── Client helpers (used by tool.go) ─────────────────────────────────────────
 
-// toolSockPath returns the conventional socket path for the current project.
+// toolSockPath returns the socket path for the current project.
+// CQ_TOOL_SOCK overrides the default when cq serve and cq tool are run from
+// different directories (e.g. serve from c4-core/, tool from project root).
 func toolSockPath() string {
+	if v := os.Getenv("CQ_TOOL_SOCK"); v != "" {
+		return v
+	}
 	return filepath.Join(projectDir, ".c4", "tool.sock")
 }
 
