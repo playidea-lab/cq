@@ -126,6 +126,16 @@ if [[ "$_BARE_TOOL" == "TaskUpdate" ]]; then
     _emit_deny "TaskUpdate 금지 (C4 프로젝트). c4_task_list 또는 c4_status로 확인 후 c4_submit 사용"
 fi
 
+if [[ "$_BARE_TOOL" == "Agent" ]]; then
+    _isolation=$(echo "$INPUT" | jq -r '.tool_input.isolation // empty' 2>/dev/null)
+    if [[ "$_isolation" == "worktree" ]]; then
+        _cur_branch=$(git -C "${C4_ROOT}" branch --show-current 2>/dev/null)
+        if [[ "$_cur_branch" == c4/w-* ]]; then
+            _emit_deny "C4 worker(${_cur_branch})에서 Agent(isolation=worktree) 금지. Agent() 사용 — 부모 c4/w-* worktree 공유"
+        fi
+    fi
+fi
+
 if [[ "$_BARE_TOOL" == "EnterPlanMode" ]]; then
     # 센티넬 파일이 있으면 스킬 내부 호출로 간주 — 1회성 허용 후 삭제
     _sentinel="/tmp/.c4_allow_plan_mode"

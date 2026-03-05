@@ -295,6 +295,16 @@ c4_add_todo(mode="direct", review_required=False)
 
 **기준**: 200줄이 50줄로 쓸 수 있다면 → 다시 써라. 시니어 엔지니어가 "과하다"고 할 만하면 → 단순화.
 
+### C4 Worker 내 Sub-agent 규칙
+```
+❌ Agent(isolation="worktree") — C4 worker 브랜치(c4/w-*)와 단절된 별도 브랜치 생성
+   → sub-agent 변경사항이 c4_submit 흐름에 합류 못하고 소멸
+✅ Agent() — isolation 없이 부모 worktree(c4/w-*) 공유
+   → 부모 c4/w-* 브랜치에 커밋 → c4_submit → merge → main
+```
+C4 worker subprocess 자체가 이미 `c4/w-*` branch로 isolated.
+내부 sub-agent는 추가 isolation 불필요 — 같은 worktree에서 작업.
+
 ### Efficiency Rules (컨텍스트 절약)
 - 큰 파일을 읽기 전에 **항상 line range를 제한**한다. 일부만 필요하면 전체를 읽지 않는다.
 - 컨텍스트 사용을 최소화한다.
