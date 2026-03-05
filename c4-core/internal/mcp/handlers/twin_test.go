@@ -3,9 +3,11 @@ package handlers
 import (
 	"database/sql"
 	"encoding/json"
+	"path/filepath"
 	"testing"
 	"time"
 
+	"github.com/changmin/c4-core/internal/knowledge"
 	"github.com/changmin/c4-core/internal/mcp"
 	_ "modernc.org/sqlite"
 )
@@ -474,6 +476,138 @@ func TestRegisterAllToolCountWithTwin(t *testing.T) {
 			names = append(names, tool.Name)
 		}
 		t.Errorf("registered %d tools, want 12: %v", len(tools), names)
+	}
+}
+
+// --- c4_pop_reflect tests ---
+
+func newTestKnowledgeStore(t *testing.T) *knowledge.Store {
+	t.Helper()
+	dir := t.TempDir()
+	ks, err := knowledge.NewStore(filepath.Join(dir, "knowledge"))
+	if err != nil {
+		t.Fatalf("NewStore: %v", err)
+	}
+	t.Cleanup(func() { ks.Close() })
+	return ks
+}
+
+func TestPopReflectNilStore(t *testing.T) {
+	reg := mcp.NewRegistry()
+	RegisterPopReflectHandlers(reg, nil)
+
+	result, err := reg.Call("c4_pop_reflect", json.RawMessage(`{}`))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	m := result.(map[string]any)
+	pending := m["pending"].([]map[string]any)
+	if len(pending) != 0 {
+		t.Errorf("expected empty pending list, got %d", len(pending))
+	}
+	if m["total_pending"] != 0 {
+		t.Errorf("total_pending = %v, want 0", m["total_pending"])
+	}
+}
+
+func TestPopReflectEmptyStore(t *testing.T) {
+	ks := newTestKnowledgeStore(t)
+	reg := mcp.NewRegistry()
+	RegisterPopReflectHandlers(reg, ks)
+
+	result, err := reg.Call("c4_pop_reflect", json.RawMessage(`{}`))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	m := result.(map[string]any)
+	if m["total_pending"] != 0 {
+		t.Errorf("total_pending = %v, want 0", m["total_pending"])
+	}
+	if m["hint"] == "" {
+		t.Error("expected hint in result")
+	}
+}
+
+func TestPopReflectWithPendingItem(t *testing.T) {
+	ks := newTestKnowledgeStore(t)
+
+	// Create a pending document with HIGH confidence
+	_, err := ks.Create(knowledge.TypeInsight, map[string]any{
+		"title":      "선호: 작은 PR 지향",
+		"confidence": 0.9,
+		"status":     "pending",
+	}, "사용자는 PR 크기를 500줄 미만으로 유지하는 것을 선호한다")
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	reg := mcp.NewRegistry()
+	RegisterPopReflectHandlers(reg, ks)
+
+	result, err := reg.Call("c4_pop_reflect", json.RawMessage(`{}`))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	m := result.(map[string]any)
+	if m["total_pending"] != 1 {
+		t.Errorf("total_pending = %v, want 1", m["total_pending"])
+	}
+	pending := m["pending"].([]map[string]any)
+	if len(pending) != 1 {
+		t.Fatalf("pending len = %d, want 1", len(pending))
+	}
+	item := pending[0]
+	if item["confidence"] != "HIGH" {
+		t.Errorf("confidence = %v, want HIGH", item["confidence"])
+	}
+	if item["title"] != "선호: 작은 PR 지향" {
+		t.Errorf("title = %v, want '선호: 작은 PR 지향'", item["title"])
+	}
+}
+
+func TestPopReflectConfidenceFilter(t *testing.T) {
+	ks := newTestKnowledgeStore(t)
+
+	// HIGH confidence pending
+	_, _ = ks.Create(knowledge.TypeInsight, map[string]any{
+		"title":      "HIGH item",
+		"confidence": 0.9,
+		"status":     "pending",
+	}, "high body")
+	// MEDIUM confidence pending
+	_, _ = ks.Create(knowledge.TypeInsight, map[string]any{
+		"title":      "MEDIUM item",
+		"confidence": 0.6,
+		"status":     "pending",
+	}, "medium body")
+	// Not pending
+	_, _ = ks.Create(knowledge.TypeInsight, map[string]any{
+		"title":      "Active item",
+		"confidence": 0.9,
+		"status":     "active",
+	}, "active body")
+
+	reg := mcp.NewRegistry()
+	RegisterPopReflectHandlers(reg, ks)
+
+	// HIGH filter: only HIGH item
+	result, err := reg.Call("c4_pop_reflect", json.RawMessage(`{"confidence":"HIGH"}`))
+	if err != nil {
+		t.Fatalf("HIGH filter error: %v", err)
+	}
+	m := result.(map[string]any)
+	if m["total_pending"] != 1 {
+		t.Errorf("HIGH filter: total_pending = %v, want 1", m["total_pending"])
+	}
+
+	// ALL filter: both pending items
+	result2, err := reg.Call("c4_pop_reflect", json.RawMessage(`{"confidence":"ALL"}`))
+	if err != nil {
+		t.Fatalf("ALL filter error: %v", err)
+	}
+	m2 := result2.(map[string]any)
+	if m2["total_pending"] != 2 {
+		t.Errorf("ALL filter: total_pending = %v, want 2", m2["total_pending"])
 	}
 }
 

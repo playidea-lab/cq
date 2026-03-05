@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/changmin/c4-core/internal/knowledge"
 	"github.com/changmin/c4-core/internal/mcp"
 )
 
@@ -162,6 +163,64 @@ func RegisterTwinHandlers(reg *mcp.Registry, store *SQLiteStore) {
 		}
 
 		return store.reflect(args.Focus)
+	})
+}
+
+// RegisterPopReflectHandlers registers the c4_pop_reflect MCP tool.
+// ks may be nil (knowledge store optional); in that case the tool returns an empty list.
+func RegisterPopReflectHandlers(reg *mcp.Registry, ks *knowledge.Store) {
+	reg.Register(mcp.ToolSchema{
+		Name:        "c4_pop_reflect",
+		Description: "List pending HIGH-confidence proposals awaiting user validation. Use `cq reflect` CLI for interactive validation. This tool returns the list for programmatic access.",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"limit": map[string]any{
+					"type":        "integer",
+					"description": "Max proposals to return (default: 5)",
+				},
+				"confidence": map[string]any{
+					"type":        "string",
+					"enum":        []string{"HIGH", "MEDIUM", "ALL"},
+					"description": "Filter by confidence level (default: HIGH)",
+				},
+			},
+		},
+	}, func(rawArgs json.RawMessage) (any, error) {
+		var args struct {
+			Limit      int    `json:"limit"`
+			Confidence string `json:"confidence"`
+		}
+		if len(rawArgs) > 0 {
+			if err := json.Unmarshal(rawArgs, &args); err != nil {
+				return nil, fmt.Errorf("parsing arguments: %w", err)
+			}
+		}
+		if args.Confidence == "" {
+			args.Confidence = "HIGH"
+		}
+		if args.Limit <= 0 {
+			args.Limit = 5
+		}
+
+		if ks == nil {
+			return map[string]any{
+				"pending":       []map[string]any{},
+				"total_pending": 0,
+				"hint":          "Run `cq reflect` for interactive validation",
+			}, nil
+		}
+
+		pending, err := ks.ListPending(args.Confidence, args.Limit)
+		if err != nil {
+			return nil, fmt.Errorf("listing pending proposals: %w", err)
+		}
+
+		return map[string]any{
+			"pending":       pending,
+			"total_pending": len(pending),
+			"hint":          "Run `cq reflect` for interactive validation",
+		}, nil
 	})
 }
 
