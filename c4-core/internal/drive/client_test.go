@@ -16,8 +16,7 @@ import (
 // staticTP is a test-only tokenProvider that returns a fixed token.
 type staticTP struct{ token string }
 
-func (s *staticTP) Token() string              { return s.token }
-func (s *staticTP) Refresh() (string, error)   { return s.token, nil }
+func (s *staticTP) Token() string { return s.token }
 
 // newTestServer creates an httptest server that simulates Supabase Storage + PostgREST.
 func newTestServer(t *testing.T) *httptest.Server {
@@ -671,6 +670,88 @@ func TestMkdirWithMetadata(t *testing.T) {
 	}
 }
 
+// TestUploadMetadataRetry503 verifies that the metadata POST request retries correctly on 5xx.
+// Before the fix, GetBody was not set on metaReq, causing empty body on retry → 400 BadRequest.
+func TestUploadMetadataRetry503(t *testing.T) {
+	var storageCount, metaCount atomic.Int32
+
+	mux := http.NewServeMux()
+	// Storage upload always succeeds.
+	mux.HandleFunc("POST /storage/v1/object/c4-drive/", func(w http.ResponseWriter, r *http.Request) {
+		storageCount.Add(1)
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(map[string]string{"Key": "ok"})
+	})
+	// Metadata POST: fail first with 503, succeed second with valid JSON body decode.
+	mux.HandleFunc("POST /rest/v1/c4_drive_files", func(w http.ResponseWriter, r *http.Request) {
+		n := metaCount.Add(1)
+		if n == 1 {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		var row map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&row); err != nil {
+			// Empty body on retry would hit this branch — the bug.
+			http.Error(w, "empty body: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		row["id"] = "test-uuid"
+		row["created_at"] = "2026-01-01T00:00:00Z"
+		row["updated_at"] = "2026-01-01T00:00:00Z"
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode([]map[string]any{row})
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	client := NewClient(srv.URL, "test-key", &staticTP{"test-token"}, "test-project")
+
+	tmpDir := t.TempDir()
+	srcPath := filepath.Join(tmpDir, "retry-meta.txt")
+	os.WriteFile(srcPath, []byte("retry metadata test"), 0o644)
+
+	info, err := client.Upload(srcPath, "/retry/meta.txt", nil)
+	if err != nil {
+		t.Fatalf("Upload failed after metadata retry: %v", err)
+	}
+	if info.Name != "meta.txt" {
+		t.Errorf("Name = %q, want %q", info.Name, "meta.txt")
+	}
+	if got := metaCount.Load(); got < 2 {
+		t.Errorf("expected at least 2 metadata calls (retry), got %d", got)
+	}
+}
+
+// TestDeleteStorageFailure verifies Delete returns an error when storage DELETE returns 4xx.
+// Before the fix, storage delete failures were silently ignored.
+func TestDeleteStorageFailure(t *testing.T) {
+	const fileJSON = `[{"id":"x","name":"fail.txt","path":"/fail.txt","storage_path":"proj/ab12cd34/fail.txt","size_bytes":3,"content_hash":"sha256:abc","content_type":"application/octet-stream","is_folder":false,"created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-01T00:00:00Z"}]`
+
+	mux := http.NewServeMux()
+	// Info lookup returns the file.
+	mux.HandleFunc("GET /rest/v1/c4_drive_files", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(fileJSON))
+	})
+	// Storage DELETE returns 403.
+	mux.HandleFunc("DELETE /storage/v1/object/c4-drive/", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		w.Write([]byte(`forbidden`))
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	client := NewClient(srv.URL, "test-key", &staticTP{"test-token"}, "test-project")
+	err := client.Delete("/fail.txt")
+	if err == nil {
+		t.Fatal("expected error when storage DELETE returns 403, got nil")
+	}
+	if !strings.Contains(err.Error(), "403") {
+		t.Errorf("error = %q, want '403' substring", err.Error())
+	}
+}
+
 // TestRetryGetBodyRefresh verifies that doWithRetry re-reads the body via GetBody on retry.
 // Uses Mkdir (POST with body) and a server that fails the first POST with 503.
 func TestRetryGetBodyRefresh(t *testing.T) {
@@ -710,5 +791,76 @@ func TestRetryGetBodyRefresh(t *testing.T) {
 	}
 	if got := callCount.Load(); got < 2 {
 		t.Errorf("expected at least 2 server calls (retry), got %d", got)
+	}
+}
+
+// TestUploadMetadataFailureRollback verifies that a failed metadata insert triggers
+// a storage object DELETE (rollback) to prevent orphaned storage files.
+func TestUploadMetadataFailureRollback(t *testing.T) {
+	var storageDeleted atomic.Bool
+
+	mux := http.NewServeMux()
+	// Storage upload succeeds.
+	mux.HandleFunc("POST /storage/v1/object/c4-drive/", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(map[string]string{"Key": "ok"})
+	})
+	// Storage DELETE: record that rollback was called.
+	mux.HandleFunc("DELETE /storage/v1/object/c4-drive/", func(w http.ResponseWriter, r *http.Request) {
+		storageDeleted.Store(true)
+		w.WriteHeader(http.StatusOK)
+	})
+	// Metadata POST always fails.
+	mux.HandleFunc("POST /rest/v1/c4_drive_files", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(`internal error`))
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	client := NewClient(srv.URL, "test-key", &staticTP{"test-token"}, "test-project")
+
+	tmpDir := t.TempDir()
+	srcPath := filepath.Join(tmpDir, "orphan.txt")
+	os.WriteFile(srcPath, []byte("orphan test"), 0o644)
+
+	_, err := client.Upload(srcPath, "/orphan.txt", nil)
+	if err == nil {
+		t.Fatal("expected error when metadata insert fails, got nil")
+	}
+	if !storageDeleted.Load() {
+		t.Error("expected storage rollback DELETE to be called, but it was not")
+	}
+}
+
+// TestDownloadPartialFailureNoFile verifies that a download failure does not
+// leave a partial file at the destination path.
+func TestDownloadPartialFailureNoFile(t *testing.T) {
+	const fileJSON = `[{"id":"x","name":"partial.txt","path":"/partial.txt","storage_path":"proj/ab12cd34/partial.txt","size_bytes":100,"content_hash":"sha256:abc","content_type":"application/octet-stream","is_folder":false,"created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-01T00:00:00Z"}]`
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /rest/v1/c4_drive_files", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(fileJSON))
+	})
+	// Storage returns 500 → triggers error path in Download.
+	mux.HandleFunc("GET /storage/v1/object/c4-drive/", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(`server error`))
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	client := NewClient(srv.URL, "test-key", &staticTP{"test-token"}, "test-project")
+	tmpDir := t.TempDir()
+	destPath := filepath.Join(tmpDir, "dest.txt")
+
+	err := client.Download("/partial.txt", destPath)
+	if err == nil {
+		t.Fatal("expected error on storage 500, got nil")
+	}
+	// destPath must not exist after failure.
+	if _, statErr := os.Stat(destPath); statErr == nil {
+		t.Error("destPath exists after failed download — temp file was not cleaned up")
 	}
 }

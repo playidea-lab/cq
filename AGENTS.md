@@ -156,7 +156,7 @@ C9 Knowledge — 지식 관리 (FTS5 + pgvector + Embedding + Usage + Ingestion)
 ### 테스트 현황
 | 언어 | 테스트 수 | 패키지/모듈 |
 |------|----------|------------|
-| Go | **~2,457** | 51 packages (all pass) — c4-core ~2,175 (40pkg) + c5 ~282 (11pkg) |
+| Go | **~2,477** | 51 packages (all pass) — c4-core ~2,195 (40pkg) + c5 ~282 (11pkg) |
 | Python | **728** | tests/unit/ |
 | Rust | **92** | src-tauri |
 | **합계** | **~3,277** | |
@@ -528,6 +528,9 @@ cq tool c4_find_file --pattern="tool.go" --json      # 파일 검색
 
 에이전트 사용법: `Bash("cq tool c4_status --json")` — MCP 스키마 등록 없이 호출.
 `--timeout=<duration>` 플래그로 기본 60초 타임아웃 조정 가능.
+
+**Socket-first 라우팅**: `cq serve`가 실행 중이면 `.c4/tool.sock` UDS를 통해 ~10ms 호출.
+서버가 없으면 자동으로 inline MCP 초기화(~500ms cold start) 폴백.
 
 ---
 

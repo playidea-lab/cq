@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math/rand"
 	"net/http"
 	"net/url"
 	"os"
@@ -38,7 +39,6 @@ type FileInfo struct {
 // This local interface avoids importing the cloud package.
 type tokenProvider interface {
 	Token() string
-	Refresh() (string, error)
 }
 
 // DefaultBucketName is the default Supabase Storage bucket for C4 Drive.
@@ -100,8 +100,9 @@ func (c *Client) Upload(localPath, drivePath string, metadata json.RawMessage) (
 	}
 
 	// Storage path: {projectID}/{hash_prefix}/{filename}
+	// Use path.Base(filepath.ToSlash(...)) for URL-safe cross-platform filenames.
 	hashHex := hex.EncodeToString(h.Sum(nil))
-	storagePath := c.projectID + "/" + hashHex[:8] + "/" + filepath.Base(localPath)
+	storagePath := c.projectID + "/" + hashHex[:8] + "/" + path.Base(filepath.ToSlash(localPath))
 
 	// Upload to Supabase Storage
 	uploadURL := c.supabaseURL + "/storage/v1/object/" + c.bucketName + "/" + storagePath
@@ -161,18 +162,23 @@ func (c *Client) Upload(localPath, drivePath string, metadata json.RawMessage) (
 	if err != nil {
 		return nil, fmt.Errorf("create metadata request: %w", err)
 	}
+	metaReq.GetBody = func() (io.ReadCloser, error) {
+		return io.NopCloser(strings.NewReader(string(metaJSON))), nil
+	}
 	c.setHeaders(metaReq)
 	metaReq.Header.Set("Prefer", "return=representation,resolution=merge-duplicates")
 	metaReq.Header.Set("Content-Type", "application/json")
 
 	metaResp, err := c.doWithRetry(metaReq)
 	if err != nil {
+		c.rollbackStorageUpload(storagePath)
 		return nil, fmt.Errorf("metadata request: %w", err)
 	}
 	defer metaResp.Body.Close()
 
 	if metaResp.StatusCode >= 400 {
 		body, _ := io.ReadAll(metaResp.Body)
+		c.rollbackStorageUpload(storagePath)
 		return nil, fmt.Errorf("metadata insert failed (HTTP %d): %s", metaResp.StatusCode, string(body))
 	}
 
@@ -237,14 +243,25 @@ func (c *Client) Download(drivePath, destPath string) error {
 		return fmt.Errorf("create dest dir: %w", err)
 	}
 
-	f, err := os.Create(destPath)
+	// Write to a temp file then rename atomically to avoid partial files on failure.
+	tmp, err := os.CreateTemp(filepath.Dir(destPath), ".drive-dl-*")
 	if err != nil {
-		return fmt.Errorf("create dest file: %w", err)
+		return fmt.Errorf("create temp file: %w", err)
 	}
-	defer f.Close()
+	tmpPath := tmp.Name()
 
-	if _, err := io.Copy(f, resp.Body); err != nil {
+	if _, err := io.Copy(tmp, resp.Body); err != nil {
+		tmp.Close()
+		os.Remove(tmpPath)
 		return fmt.Errorf("write file: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		os.Remove(tmpPath)
+		return fmt.Errorf("close temp file: %w", err)
+	}
+	if err := os.Rename(tmpPath, destPath); err != nil {
+		os.Remove(tmpPath)
+		return fmt.Errorf("rename to dest: %w", err)
 	}
 
 	return nil
@@ -316,6 +333,11 @@ func (c *Client) Delete(drivePath string) error {
 		if err != nil {
 			return fmt.Errorf("storage delete request: %w", err)
 		}
+		if resp.StatusCode >= 400 {
+			body, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			return fmt.Errorf("storage delete failed (HTTP %d): %s", resp.StatusCode, string(body))
+		}
 		resp.Body.Close()
 	}
 
@@ -368,6 +390,9 @@ func (c *Client) Mkdir(folderPath string, metadata json.RawMessage) (*FileInfo, 
 	req, err := http.NewRequest("POST", mkdirURL, strings.NewReader(string(metaJSON)))
 	if err != nil {
 		return nil, fmt.Errorf("create mkdir request: %w", err)
+	}
+	req.GetBody = func() (io.ReadCloser, error) {
+		return io.NopCloser(strings.NewReader(string(metaJSON))), nil
 	}
 	c.setHeaders(req)
 	req.Header.Set("Prefer", "return=representation,resolution=merge-duplicates")
@@ -436,13 +461,29 @@ func (c *Client) setHeaders(req *http.Request) {
 	req.Header.Set("Authorization", "Bearer "+c.tp.Token())
 }
 
+// rollbackStorageUpload deletes a storage object after a failed metadata insert.
+// Best-effort: errors are ignored since the caller already has an error to return.
+func (c *Client) rollbackStorageUpload(storagePath string) {
+	deleteURL := c.supabaseURL + "/storage/v1/object/" + c.bucketName + "/" + storagePath
+	req, err := http.NewRequest("DELETE", deleteURL, nil)
+	if err != nil {
+		return
+	}
+	c.setHeaders(req)
+	if resp, err := c.httpClient.Do(req); err == nil {
+		resp.Body.Close()
+	}
+}
+
 // doWithRetry executes an HTTP request with retry on 5xx/network errors.
-// 401 is NOT retried here — callers handle token refresh separately.
+// Uses linear backoff with random jitter to avoid synchronized retries.
 func (c *Client) doWithRetry(req *http.Request) (*http.Response, error) {
 	var lastErr error
 	for attempt := range driveMaxRetries {
 		if attempt > 0 {
-			time.Sleep(time.Duration(attempt) * time.Second)
+			// Linear backoff + 0–500ms jitter to reduce thundering herd.
+			delay := time.Duration(attempt)*time.Second + time.Duration(rand.Intn(500))*time.Millisecond
+			time.Sleep(delay)
 			if req.GetBody != nil {
 				body, err := req.GetBody()
 				if err != nil {
@@ -469,9 +510,5 @@ func (c *Client) doWithRetry(req *http.Request) (*http.Response, error) {
 
 // normalizePath ensures a consistent path format: leading /, no trailing /.
 func normalizePath(p string) string {
-	p = path.Clean("/" + p)
-	if p == "." {
-		return "/"
-	}
-	return p
+	return path.Clean("/" + p)
 }

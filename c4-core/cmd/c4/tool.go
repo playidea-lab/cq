@@ -18,8 +18,8 @@ var toolCmd = &cobra.Command{
 	Short: "MCP→CLI auto-gateway: call any MCP tool from the command line",
 	Long: `cq tool exposes all registered MCP tools as CLI commands.
 
-Agents can call read-only tools via Bash("cq tool <name> --json")
-instead of registering them as MCP tools — reducing schema token overhead.
+When "cq serve" is running, calls are routed via Unix socket (~10ms).
+Otherwise, the MCP server is initialised inline (~500ms cold start).
 
 Examples:
   cq tool list
@@ -46,31 +46,53 @@ func init() {
 }
 
 func runToolList(_ *cobra.Command, _ []string) error {
-	srv, err := newMCPServer()
-	if err != nil {
-		return fmt.Errorf("initializing MCP server: %w", err)
-	}
-	defer srv.shutdown()
+	// Socket-first: if cq serve is running, avoid a full newMCPServer() init.
+	sockPath := toolSockPath()
+	var printFn func(w *tabwriter.Writer) int
 
-	tools := srv.registry.ListTools()
+	if resp, err := callSocket(sockPath, sockRequest{Op: "list"}); err == nil {
+		printFn = func(w *tabwriter.Writer) int {
+			for _, t := range resp.Tools {
+				desc := strings.ReplaceAll(t.Description, "\n", " ")
+				if len(desc) > 72 {
+					desc = desc[:69] + "..."
+				}
+				fmt.Fprintf(w, "%s\t%s\n", t.Name, desc)
+			}
+			return len(resp.Tools)
+		}
+	} else {
+		srv, err := newMCPServer()
+		if err != nil {
+			return fmt.Errorf("initializing MCP server: %w", err)
+		}
+		defer srv.shutdown()
+		tools := srv.registry.ListTools()
+		printFn = func(w *tabwriter.Writer) int {
+			for _, t := range tools {
+				desc := strings.ReplaceAll(t.Description, "\n", " ")
+				if len(desc) > 72 {
+					desc = desc[:69] + "..."
+				}
+				fmt.Fprintf(w, "%s\t%s\n", t.Name, desc)
+			}
+			return len(tools)
+		}
+	}
+
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 	fmt.Fprintf(w, "TOOL\tDESCRIPTION\n")
 	fmt.Fprintf(w, "----\t-----------\n")
-	for _, t := range tools {
-		desc := strings.ReplaceAll(t.Description, "\n", " ")
-		if len(desc) > 72 {
-			desc = desc[:69] + "..."
-		}
-		fmt.Fprintf(w, "%s\t%s\n", t.Name, desc)
-	}
+	total := printFn(w)
 	w.Flush()
-	fmt.Fprintf(os.Stdout, "\nTotal: %d tools\n", len(tools))
+	fmt.Fprintf(os.Stdout, "\nTotal: %d tools\n", total)
 	return nil
 }
 
 // runToolDynamic is the RunE for "cq tool <name> [flags]".
-// It initializes the MCP server, builds a dynamic cobra.Command for the named
-// tool from its InputSchema, and executes it with the remaining args.
+// It builds a dynamic cobra.Command from the named tool's InputSchema and
+// executes it — routing via Unix socket when "cq serve" is running, or
+// falling back to inline newMCPServer() otherwise.
 func runToolDynamic(cmd *cobra.Command, args []string) error {
 	if len(args) == 0 {
 		return cmd.Help()
@@ -79,44 +101,57 @@ func runToolDynamic(cmd *cobra.Command, args []string) error {
 	name := args[0]
 	remaining := args[1:]
 
-	// "list" is a registered subcommand; forward to it explicitly because
+	// "list" is a registered subcommand; forward explicitly because
 	// DisableFlagParsing prevents automatic subcommand dispatch.
 	if name == "list" {
 		return runToolList(cmd, remaining)
 	}
-	// Handle "--help" / "-h" at the tool level
 	if name == "--help" || name == "-h" {
 		return cmd.Help()
 	}
 
-	srv, err := newMCPServer()
-	if err != nil {
-		return fmt.Errorf("initializing MCP server: %w", err)
-	}
-	defer srv.shutdown()
+	sockPath := toolSockPath()
 
-	schema, ok := srv.registry.GetToolSchema(name)
-	if !ok {
-		return fmt.Errorf("unknown tool: %q (run 'cq tool list' to see available tools)", name)
+	// Attempt schema retrieval via socket (fast path).
+	schemaResp, sockErr := callSocket(sockPath, sockRequest{Op: "schema", Tool: name})
+	useSocket := sockErr == nil && schemaResp.Schema != nil
+
+	// Prepare the schema and (if needed) the inline server.
+	var srv *mcpServer
+	var inputSchema map[string]any
+	var toolDesc string
+
+	if useSocket {
+		inputSchema = schemaResp.Schema.InputSchema
+		toolDesc = schemaResp.Schema.Description
+	} else {
+		var err error
+		srv, err = newMCPServer()
+		if err != nil {
+			return fmt.Errorf("initializing MCP server: %w", err)
+		}
+		defer srv.shutdown()
+
+		schema, ok := srv.registry.GetToolSchema(name)
+		if !ok {
+			return fmt.Errorf("unknown tool: %q (run 'cq tool list' to see available tools)", name)
+		}
+		inputSchema = schema.InputSchema
+		toolDesc = schema.Description
 	}
 
+	// Build a dynamic cobra.Command from the tool's InputSchema.
 	dynCmd := &cobra.Command{
-		Use:          name,
-		Short:        schema.Description,
-		SilenceUsage: true,
+		Use:           name,
+		Short:         toolDesc,
+		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
-
-	// --json flag (reserved; skip if tool schema has a "json" property)
 	dynCmd.Flags().Bool("json", false, "output raw JSON")
-
-	// --timeout flag: default 60s to prevent indefinite hang
 	dynCmd.Flags().Duration("timeout", 60*time.Second, "tool call timeout")
 
-	// Generate flags from InputSchema properties
-	props := extractProperties(schema.InputSchema)
+	props := extractProperties(inputSchema)
 	for propName, propDef := range props {
-		// Skip reserved flag names
 		if propName == "json" || propName == "timeout" {
 			continue
 		}
@@ -130,6 +165,9 @@ func runToolDynamic(cmd *cobra.Command, args []string) error {
 	}
 
 	dynCmd.RunE = func(c *cobra.Command, _ []string) error {
+		if useSocket {
+			return execToolViaSocket(sockPath, c, name, props)
+		}
 		return execTool(c, name, srv, props)
 	}
 
@@ -137,14 +175,11 @@ func runToolDynamic(cmd *cobra.Command, args []string) error {
 	return dynCmd.Execute()
 }
 
-// execTool builds the args JSON from parsed flags and calls the tool.
-func execTool(cmd *cobra.Command, name string, srv *mcpServer, props map[string]any) error {
-	jsonOut, _ := cmd.Flags().GetBool("json")
-	timeout, _ := cmd.Flags().GetDuration("timeout")
-
+// buildToolArgsMap converts parsed cobra flags to the args map expected by
+// CallWithContext. Shared between execTool (inline) and execToolViaSocket.
+func buildToolArgsMap(cmd *cobra.Command, props map[string]any) (map[string]any, error) {
 	argsMap := map[string]any{}
 	for propName, propDef := range props {
-		// Skip reserved flags
 		if propName == "json" || propName == "timeout" {
 			continue
 		}
@@ -165,17 +200,17 @@ func execTool(cmd *cobra.Command, name string, srv *mcpServer, props map[string]
 		case "integer":
 			n, err := strconv.ParseInt(val, 0, 64)
 			if err != nil {
-				return fmt.Errorf("flag --%s: %q is not a valid integer: %w", propName, val, err)
+				return nil, fmt.Errorf("flag --%s: %q is not a valid integer: %w", propName, val, err)
 			}
 			argsMap[propName] = n
 		case "number":
 			f64, err := strconv.ParseFloat(val, 64)
 			if err != nil {
-				return fmt.Errorf("flag --%s: %q is not a valid number: %w", propName, val, err)
+				return nil, fmt.Errorf("flag --%s: %q is not a valid number: %w", propName, val, err)
 			}
 			argsMap[propName] = f64
 		case "array":
-			// Try JSON array first (e.g. --tags='["a","b"]'), fall back to CSV
+			// Try JSON array first (e.g. --tags='["a","b"]'), fall back to CSV.
 			var arr []any
 			if err := json.Unmarshal([]byte(val), &arr); err == nil {
 				argsMap[propName] = arr
@@ -192,6 +227,18 @@ func execTool(cmd *cobra.Command, name string, srv *mcpServer, props map[string]
 		default:
 			argsMap[propName] = val
 		}
+	}
+	return argsMap, nil
+}
+
+// execTool calls the tool via the inline mcpServer (cold-start path).
+func execTool(cmd *cobra.Command, name string, srv *mcpServer, props map[string]any) error {
+	jsonOut, _ := cmd.Flags().GetBool("json")
+	timeout, _ := cmd.Flags().GetDuration("timeout")
+
+	argsMap, err := buildToolArgsMap(cmd, props)
+	if err != nil {
+		return err
 	}
 
 	argsJSON, err := json.Marshal(argsMap)
@@ -215,8 +262,32 @@ func execTool(cmd *cobra.Command, name string, srv *mcpServer, props map[string]
 		fmt.Println(string(b))
 		return nil
 	}
-
 	return prettyPrint(result)
+}
+
+// execToolViaSocket calls the tool via the Unix socket (fast path).
+func execToolViaSocket(sockPath string, cmd *cobra.Command, name string, props map[string]any) error {
+	jsonOut, _ := cmd.Flags().GetBool("json")
+
+	argsMap, err := buildToolArgsMap(cmd, props)
+	if err != nil {
+		return err
+	}
+
+	resp, err := callSocket(sockPath, sockRequest{Op: "call", Tool: name, Args: argsMap})
+	if err != nil {
+		return fmt.Errorf("socket unavailable (is cq serve running?): %w", err)
+	}
+
+	if jsonOut {
+		b, err := json.MarshalIndent(resp.Result, "", "  ")
+		if err != nil {
+			return fmt.Errorf("encoding result: %w", err)
+		}
+		fmt.Println(string(b))
+		return nil
+	}
+	return prettyPrint(resp.Result)
 }
 
 // extractProperties returns the "properties" map from an MCP InputSchema.
