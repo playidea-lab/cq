@@ -232,35 +232,43 @@ Extraction hints:
 
 ### 2.5.0 /pi 컨텍스트 감지 (FROM_PI 모드)
 
+`FROM_PI = True`이면 인터뷰 없이 idea.md의 EARS 섹션을 직접 사용한다.
+
 ```python
 if FROM_PI:
-    # idea.md를 Discovery 소스로 사용 → Q&A 인터뷰 생략
+    # idea.md에는 /pi 세션에서 사용자가 이미 검토·승인한 EARS 요구사항이 포함됨
+    # → Q&A 인터뷰 완전 생략, 2.5.1~2.5.2 건너뜀
     idea_content = c4_read_file(path=idea_path)
 
     print(f"""
-💡 /pi idea.md 컨텍스트 로드: {idea_path}
+💡 /pi idea.md 로드: {idea_path}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 {idea_content[:800]}...
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Discovery Q&A 인터뷰를 건너뜁니다 — idea.md에서 요구사항 추출 중
+EARS 요구사항이 이미 포함된 idea.md — Discovery 인터뷰 생략
 """)
 
-    # idea.md의 "문제 정의", "가정", "리스크", "핵심 결정" 섹션을 파싱하여
-    # EARS 패턴으로 자동 변환 후 c4_save_spec() 저장
-    # → 2.5.3~2.5.5 실행 후 Phase 2.6으로 바로 진행
+    # idea.md의 "## 요구사항 (EARS)" 섹션을 직접 파싱
+    # 기능 요구사항 / 비기능 요구사항 / 범위 외(Out of Scope) 추출
+    # → c4_save_spec()으로 저장 → c4_discovery_complete() → Phase 2.6으로 진행
+    # (2.5.3~2.5.5 그대로 실행)
 
 else:
-    # 기존 EARS 인터뷰 진행 (2.5.1 이하)
+    # FROM_PI=False: 아래 2.5.1~2.5.2 인터뷰 진행
+    # 권장: /pi 스킬로 ideation → idea.md 먼저 작성 후 c4-plan 호출
     pass
 ```
 
-> `FROM_PI = True`이면 2.5.1~2.5.2(인터뷰)를 건너뛰고 idea.md 내용으로 spec을 직접 작성한다.
+> `FROM_PI = True`: 2.5.1~2.5.2 완전 생략. idea.md EARS → spec 저장 → 2.5.5 → Phase 2.6.
+> `FROM_PI = False`: 아래 인터뷰 진행 (하위 호환).
 
 ### 2.5.1 Domain Auto-Detection
 
+> **FROM_PI=True 시 생략** — idea.md의 아이디어 이름/문제 설명에서 도메인을 추론하여 조용히 설정.
+
 Analyze project structure to infer domain. For detection rules, see `references/domain-templates.md`.
 
-Confirm with user:
+Confirm with user (FROM_PI=False only):
 ```python
 AskUserQuestion(questions=[{
     "question": f"Domain detected as [{detected}]. Correct?",
@@ -277,7 +285,9 @@ AskUserQuestion(questions=[{
 
 ### 2.5.2 EARS Requirements Collection
 
-Use EARS (Easy Approach to Requirements Syntax) patterns:
+> **FROM_PI=True 시 생략** — idea.md `## 요구사항 (EARS)` 섹션이 이미 승인된 스펙이다.
+
+Use EARS (Easy Approach to Requirements Syntax) patterns (FROM_PI=False only):
 
 | Pattern | Format | Example |
 |---------|--------|---------|
@@ -287,7 +297,7 @@ Use EARS (Easy Approach to Requirements Syntax) patterns:
 | **Optional** | "If ~ is enabled, the system shall ~" | "If dark mode enabled, use dark theme" |
 | **Unwanted** | "If ~ (error), the system shall ~" | "If invalid credentials, show error" |
 
-**Interview flow**:
+**Interview flow** (FROM_PI=False):
 1. Identify core features (user-stated = must detail, AI-judged = confirm)
 2. Detail each feature with EARS patterns
 3. Confirm edge cases with follow-up questions
@@ -296,20 +306,30 @@ For domain-specific interview questions, see `references/domain-templates.md`.
 
 ### 2.5.3 Save Specification
 
+**FROM_PI=True**: idea.md `## 요구사항 (EARS)` 섹션에서 요구사항을 추출하여 저장.
+**FROM_PI=False**: 인터뷰에서 수집한 EARS 요구사항을 저장.
+
 ```python
+# FROM_PI=True 예시: idea.md EARS 섹션 직접 매핑
 c4_save_spec(
-    name="feature-name",
-    content="""
-feature: feature-name
-domain: web-backend
-description: Feature description
+    name=PI_SLUG,  # idea.md slug 사용
+    content=f"""
+feature: {PI_SLUG}
+domain: {detected_domain}
+description: {idea_one_liner}  # idea.md 첫 줄 > 핵심 문장
+source: /pi idea.md ({idea_path})
 requirements:
+  # idea.md ## 요구사항 (EARS) > ### 기능 요구사항 에서 추출
   - id: REQ-001
     pattern: event-driven
-    text: "When user submits form, system shall validate"
-  - id: REQ-002
-    pattern: unwanted
-    text: "If validation fails, system shall show error"
+    text: "WHEN [이벤트] THEN 시스템은 [동작]"
+  # ... (idea.md 항목 순서대로)
+non_functional:
+  # idea.md ## 요구사항 (EARS) > ### 비기능 요구사항 에서 추출
+  - "성능: ..."
+out_of_scope:
+  # idea.md ## 요구사항 (EARS) > ### 범위 외 에서 추출
+  - "..."
 """
 )
 ```
