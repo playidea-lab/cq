@@ -464,8 +464,9 @@
 .msg-viewer {
   display: flex;
   flex-direction: column;
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
-  height: 100%;
   padding: var(--space-lg) var(--space-xl);
 }
 

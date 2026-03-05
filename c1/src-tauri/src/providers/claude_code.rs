@@ -12,7 +12,7 @@ pub struct ClaudeCodeProvider;
 
 /// Derive a slug from a project path: /Users/foo/bar -> -Users-foo-bar
 fn path_to_slug(path: &str) -> String {
-    let slug = path.replace('/', "-").replace('\\', "-");
+    let slug = path.replace('/', "-").replace('\\', "-").replace('_', "-");
     if slug.starts_with('-') {
         slug
     } else {
