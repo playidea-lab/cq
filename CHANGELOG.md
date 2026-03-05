@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.63.0] - 2026-03-06
+
+### ✨ Features
+- **doctor**: stale-socket / zombie-serve / sidecar-hang 체크 추가
+  - `checkStaleSocket`: `.c4/tool.sock` 존재하나 연결 불가 시 WARN
+  - `checkZombieServe`: `cq serve` 프로세스 2개 이상 시 WARN
+  - `checkSidecarHang`: PID 파일 기반 프로세스 생존 + 소켓 응답 체크
+  - `cq doctor --fix` 연동: socket rm / pkill / sidecar kill 자동 처리
+- **submit**: `validation_results`에 `status="fail"` 포함 시 서버 단 reject
+  - 기존 optional 설계 유지 (생략 시 검증 없이 통과)
+  - Worker가 실패 상태로 submit 강행하는 경로 차단
+
+### 📚 Documentation / Config
+- **AGENTS.md**: insights 기반 규칙 4개 추가
+  - Workflow: 명시적 허가 전 태스크 스폰·코드 변경 금지
+  - Efficiency: 코드베이스 탐색 시 Agent 위임 우선
+  - Debugging: 조사 대상 시스템 도구 사용 금지
+  - Git Workflow: 작업 전 미커밋 변경사항 확인
+- **settings.json**: PostToolUse hook — `go vet` 추가, `python` → `uv run python`
+
+---
+
 ## [v0.62.0] - 2026-03-06
 
 ### 🐛 Bug Fixes
