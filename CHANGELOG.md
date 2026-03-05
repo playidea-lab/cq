@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.59.0] - 2026-03-05
+
+### ✨ Features
+- **tool**: `cq tool` MCP→CLI 자동 게이트웨이 PoC — `DisableFlagParsing=true` + 동적 `cobra.Command`로 모든 MCP 도구를 CLI에서 직접 호출 가능. 에이전트는 `Bash("cq tool <name> --json")`으로 스키마 등록 없이 읽기 전용 도구 호출 (Schema Diet 전략). Cold start ~0.49s. 테스트 10개.
+
+## [v0.58.0] - 2026-03-05
+
 ### ✨ Features
 - **init**: `cq gemini` 서브커맨드 추가 — Gemini CLI를 CQ 프로젝트에 통합 (cq claude와 동등, `-t` 세션 명명 지원)
 - **skills**: `/pi` → `/c4-plan` → `/c4-run` → `/c4-finish` 자동 체인 — ideation에서 배포까지 원스톱 워크플로우
