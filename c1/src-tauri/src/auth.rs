@@ -387,11 +387,18 @@ pub async fn auth_login(
     supabase_url: String,
     anon_key: String,
 ) -> Result<AuthUser, String> {
-    // Resolve anon_key: use env var if placeholder or empty
+    // Resolve anon_key: env var → ~/.c4/supabase.json → error
     let anon_key = if anon_key.is_empty() || anon_key == "__FROM_ENV__" {
         std::env::var("SUPABASE_ANON_KEY")
             .or_else(|_| std::env::var("SUPABASE_KEY"))
-            .map_err(|_| "SUPABASE_ANON_KEY (or SUPABASE_KEY) not set".to_string())?
+            .ok()
+            .or_else(|| {
+                let p = dirs::home_dir()?.join(".c4").join("supabase.json");
+                let s = std::fs::read_to_string(p).ok()?;
+                let v: serde_json::Value = serde_json::from_str(&s).ok()?;
+                v.get("anon_key")?.as_str().map(|s| s.to_string())
+            })
+            .ok_or_else(|| "SUPABASE_ANON_KEY not set and ~/.c4/supabase.json not found".to_string())?
     } else {
         anon_key
     };
