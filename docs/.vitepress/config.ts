@@ -40,6 +40,7 @@ export default defineConfig({
               text: 'Workflow',
               items: [
                 { text: 'Overview', link: '/workflow/' },
+                { text: '/pi (Ideation)', link: '/workflow/pi' },
                 { text: '/c4-plan', link: '/workflow/plan' },
                 { text: '/c4-run', link: '/workflow/run' },
                 { text: '/c4-finish', link: '/workflow/finish' },
@@ -112,6 +113,7 @@ export default defineConfig({
               text: '워크플로우',
               items: [
                 { text: '개요', link: '/ko/workflow/' },
+                { text: '/pi (아이디어 탐색)', link: '/ko/workflow/pi' },
                 { text: '/c4-plan', link: '/ko/workflow/plan' },
                 { text: '/c4-run', link: '/ko/workflow/run' },
                 { text: '/c4-finish', link: '/ko/workflow/finish' },
