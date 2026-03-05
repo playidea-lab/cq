@@ -12,6 +12,7 @@ import { ToastProvider } from './contexts/ToastContext';
 import { TaskProvider, useTask } from './contexts/TaskContext';
 import { UIProvider } from './contexts/UIContext';
 import { MainLayout } from './components/layout/MainLayout';
+import { ChannelsView } from './components/channels/ChannelsView';
 import { CommandPalette } from './components/shared/CommandPalette';
 import { Terminal } from './components/shared/Terminal';
 import { useAuth } from './hooks/useAuth';
@@ -94,11 +95,7 @@ function AppContent() {
   // Render the channel list area based on workspace mode.
   const renderChannelList = () => {
     if (workspaceMode === 'messenger') {
-      return (
-        <div className="channel-list-placeholder">
-          {/* Channel list will be rendered in T-943 */}
-        </div>
-      );
+      return null; // ChannelsView has its own internal layout
     }
     if (!projectPath) {
       return (
@@ -125,6 +122,23 @@ function AppContent() {
 
     if (!user) {
       return <LoginView />;
+    }
+
+    if (workspaceMode === 'messenger') {
+      if (!projectPath) {
+        return (
+          <div className="empty-state">
+            <h2 className="empty-state__title">Messenger</h2>
+            <p className="empty-state__description">
+              Select a C4 project to view sessions and channels.
+            </p>
+            <button className="btn btn--primary" onClick={handleOpenFolder}>
+              Open Project Folder
+            </button>
+          </div>
+        );
+      }
+      return <ChannelsView key={projectPath} projectPath={projectPath} />;
     }
 
     if (!projectPath) {
