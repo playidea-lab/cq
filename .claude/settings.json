@@ -17,12 +17,12 @@
       {
         "hooks": [
           {
-            "command": "FILE=$(echo \"$ARGUMENTS\" | jq -r '.file_path // empty') && if [[ \"$FILE\" == *.go ]]; then ROOT=$(git rev-parse --show-toplevel) && cd \"$ROOT\" && go build ./... 2>&1 | head -20 && go vet ./... 2>&1 | head -20; fi",
+            "command": "FILE=$(echo \"$ARGUMENTS\" | jq -r '.file_path // empty') \u0026\u0026 if [[ \"$FILE\" == *.go ]]; then ROOT=$(git rev-parse --show-toplevel) \u0026\u0026 cd \"$ROOT\" \u0026\u0026 go build ./... 2\u003e\u00261 | head -20 \u0026\u0026 go vet ./... 2\u003e\u00261 | head -20; fi",
             "timeout": 30,
             "type": "command"
           },
           {
-            "command": "FILE=$(echo \"$ARGUMENTS\" | jq -r '.file_path // empty') && if [[ \"$FILE\" == *.py ]]; then uv run python -m py_compile \"$FILE\" 2>&1; fi",
+            "command": "FILE=$(echo \"$ARGUMENTS\" | jq -r '.file_path // empty') \u0026\u0026 if [[ \"$FILE\" == *.py ]]; then uv run python -m py_compile \"$FILE\" 2\u003e\u00261; fi",
             "timeout": 10,
             "type": "command"
           }
