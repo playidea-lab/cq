@@ -32,7 +32,7 @@ Spec: https://agents.md/
 ```
 ❌ EnterPlanMode 직접 호출 — C4 워크플로우(Discovery/Design/Lighthouse/Tasks)와 충돌
 ✅ /c4-plan 스킬 — "계획", "설계", "기획", "plan" 키워드 시 자동 발동 (구현 계획)
-✅ /pi 스킬 — ideation 모드 진입 시 EnterPlanMode 자동 호출 (아이디어 탐색)
+✅ /pi 스킬 — ideation 모드 진입 (아이디어 탐색, EnterPlanMode 없이 동작)
 ```
 "계획 세워줘", "고도화 계획", "기능 설계" 등 구현 계획 관련 요청 → 반드시 `/c4-plan` 스킬 호출.
 "아이디어 탐구", "브레인스토밍" 등 ideation 요청 → `/pi` 스킬 호출 (/pi가 EnterPlanMode 담당).
@@ -105,7 +105,7 @@ c4_replace_symbol_body / c4_insert_*/c4_rename_symbol:
 | 사용자 의도 | ❌ 내장 기능 | ✅ C4 대체 |
 |------------|-------------|-----------|
 | 구현 계획/설계 | EnterPlanMode | `/c4-plan` |
-| 아이디어 탐색 | EnterPlanMode (직접) | `/pi` (내부에서 EnterPlanMode 호출) |
+| 아이디어 탐색 | EnterPlanMode (직접) | `/pi` (ideation 모드, EnterPlanMode 없이 동작) |
 | 태스크 추가 | TodoWrite, TaskCreate | `c4_add_todo`, `/c4-add-task` |
 | 태스크 확인 | TaskList | `c4_status`, `/c4-status` |
 | 파일 읽기/검색 | Read, Glob, Grep | `c4_read_file`, `c4_find_file`, `c4_search_for_pattern` |

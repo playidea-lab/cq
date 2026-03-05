@@ -16,13 +16,7 @@ description: |
 
 ## 모드 선언 (진입 시 즉시)
 
-**이 스킬이 활성화된 순간 다음 순서로 실행한다:**
-
-1. **sentinel 파일 생성** (gate 허용 신호):
-   ```bash
-   touch /tmp/.c4_allow_plan_mode
-   ```
-2. **EnterPlanMode 호출** — Claude Code UI에 "Plan Mode" 활성화
+**이 스킬이 활성화된 순간 선언한다:**
 
 ```
 ✗ 코드 작성 금지
@@ -31,10 +25,7 @@ description: |
 ✓ 조사, 질문, 토론, 정리만
 ```
 
-EnterPlanMode를 호출해 Write/Edit 도구가 차단되고 유저에게 "지금 ideation 모드"임을 시각적으로 알린다.
-
-> **sentinel 패턴**: c4-gate.sh는 `/tmp/.c4_allow_plan_mode` 파일을 확인 후 즉시 삭제한다.
-> EnterPlanMode가 필요한 다른 스킬도 동일 패턴(`touch /tmp/.c4_allow_plan_mode` → EnterPlanMode) 사용.
+유저에게 "지금 ideation 모드입니다 — 아이디어 결정(結晶)을 시작합니다"라고 명시적으로 알린다.
 
 ---
 
@@ -284,9 +275,8 @@ Phase 2(해석)에서 idea.md의 문제 정의, 가정, 리스크를 EARS 요구
 탐구할 아이디어: $ARGUMENTS
 
 **즉시 시작:**
-1. EnterPlanMode 호출 (Write/Edit 차단 + Plan Mode UI 활성화)
-2. 이 세션에서 코드 작성, 기술 선택, 태스크 분해는 없다
-3. $ARGUMENTS가 있으면: WebSearch + c4_knowledge_search 병렬 실행
+1. "ideation 모드 시작" 선언 — 코드 작성, 기술 선택, 태스크 분해 없음
+2. $ARGUMENTS가 있으면: WebSearch + c4_knowledge_search 병렬 실행
 4. 조사 결과 해석 → Landscape + 핵심 긴장 + 첫 날카로운 질문 제시
 5. 발산→수렴→심화→반론 모드를 오가며 토론
 6. 수렴 감지 시 시그널 → 유저 확인 → idea.md 생성 → 진행 방식 선택(자동 구현/계획만) → c4-plan 호출
