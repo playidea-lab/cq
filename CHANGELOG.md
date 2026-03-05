@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.61.0] - 2026-03-05
+
+### ✨ Features
+- **tool**: `cq serve` + Unix Domain Socket bridge — socket-first MCP→CLI 게이트웨이
+  - `toolSocketComponent`: `.c4/tool.sock` UDS 서버, `cq serve` 컴포넌트로 등록
+  - `cq tool` cold start ~500ms → socket 경유 ~10ms (serve 실행 중)
+  - `accept(ctx, ln)` 패턴으로 Stop() race condition 방지
+  - SIGTERM이 in-flight tool call에 전파 (serve ctx 스레딩)
+  - `io.LimitReader` 4MB cap, 5s read / 65s write 분리 deadline
+  - socket-first → inline MCP 폴백 자동 처리
+
+### 🔧 Chores
+- **tool**: Schema Diet 롤백 (prompt caching으로 실익 없음, 대안으로 Option D 채택)
+
+---
+
 ## [v0.59.0] - 2026-03-05
 
 ### ✨ Features
