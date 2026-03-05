@@ -159,7 +159,12 @@ function AppContent() {
   };
 
   const workspaceNav = (
-    <WorkspaceNav mode={workspaceMode} onModeChange={setWorkspaceMode} />
+    <WorkspaceNav
+      mode={workspaceMode}
+      onModeChange={setWorkspaceMode}
+      projectPath={projectPath}
+      onChangeProject={handleOpenFolder}
+    />
   );
 
   return (

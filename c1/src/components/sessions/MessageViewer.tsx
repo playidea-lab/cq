@@ -249,6 +249,7 @@ export function MessageViewer({ messages, hasMore, loading, onLoadMore }: Messag
   const parentRef = useRef<HTMLDivElement>(null);
   const prevScrollHeightRef = useRef<number>(0);
   const prevMsgCountRef = useRef<number>(0);
+  const loadingRef = useRef<boolean>(false);
 
   // Preserve scroll position when older messages are prepended
   useEffect(() => {
@@ -265,12 +266,16 @@ export function MessageViewer({ messages, hasMore, loading, onLoadMore }: Messag
     prevScrollHeightRef.current = el.scrollHeight;
   }, [messages.length]);
 
-  // Load more when scrolled near top
+  // Sync loading ref to avoid stale closure in handleScroll
+  useEffect(() => { loadingRef.current = loading; }, [loading]);
+
+  // Load more when scrolled near top — loadingRef prevents duplicate triggers
   const handleScroll = () => {
     const el = parentRef.current;
-    if (!el || !hasMore || loading) return;
+    if (!el || !hasMore || loadingRef.current) return;
     if (el.scrollTop < 80) {
       prevScrollHeightRef.current = el.scrollHeight;
+      loadingRef.current = true;
       onLoadMore();
     }
   };

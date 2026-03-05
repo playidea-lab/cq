@@ -618,7 +618,8 @@ fn truncate_string(s: &str, max_len: usize) -> String {
 
 /// Derive a slug from a project path: /Users/foo/bar -> -Users-foo-bar
 fn path_to_slug_scanner(path: &str) -> String {
-    let slug = path.replace('/', "-").replace('\\', "-");
+    // Match Claude Code slug format: replace /, \, _ with -
+    let slug = path.replace('/', "-").replace('\\', "-").replace('_', "-");
     if slug.starts_with('-') {
         slug
     } else {

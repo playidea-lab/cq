@@ -1,11 +1,13 @@
 import { useState, useEffect } from 'react';
-import { MessageSquare, LayoutDashboard, FileText, BookOpen, Settings, Sun, Moon } from 'lucide-react';
+import { MessageSquare, LayoutDashboard, FileText, BookOpen, Settings, Sun, Moon, FolderOpen } from 'lucide-react';
 import type { WorkspaceMode } from '../types';
 import '../styles/workspace-nav.css';
 
 interface WorkspaceNavProps {
   mode: WorkspaceMode;
   onModeChange: (mode: WorkspaceMode) => void;
+  projectPath?: string | null;
+  onChangeProject?: () => void;
 }
 
 const navItems: { mode: WorkspaceMode; label: string; icon: typeof MessageSquare }[] = [
@@ -24,7 +26,7 @@ function getInitialTheme(): 'dark' | 'light' {
   }
 }
 
-export function WorkspaceNav({ mode, onModeChange }: WorkspaceNavProps) {
+export function WorkspaceNav({ mode, onModeChange, projectPath, onChangeProject }: WorkspaceNavProps) {
   const [theme, setTheme] = useState<'dark' | 'light'>(getInitialTheme);
 
   useEffect(() => {
@@ -53,6 +55,17 @@ export function WorkspaceNav({ mode, onModeChange }: WorkspaceNavProps) {
         ))}
       </ul>
       <div className="workspace-nav__spacer" />
+      {onChangeProject && (
+        <button
+          className="workspace-nav__theme-toggle"
+          onClick={onChangeProject}
+          title={projectPath ? `Project: ${projectPath.split('/').pop()}
+Click to change` : 'Open project'}
+          aria-label="Change project"
+        >
+          <FolderOpen size={18} />
+        </button>
+      )}
       <button
         className="workspace-nav__theme-toggle"
         onClick={toggleTheme}
