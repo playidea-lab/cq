@@ -1,5 +1,4 @@
 import { useState, useRef, useEffect } from 'react';
-import { useVirtualizer } from '@tanstack/react-virtual';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeSanitize from 'rehype-sanitize';
@@ -248,20 +247,14 @@ function MessageBubble({ message }: { message: SessionMessage }) {
 
 export function MessageViewer({ messages, hasMore, loading, onLoadMore }: MessageViewerProps) {
   const parentRef = useRef<HTMLDivElement>(null);
-  const sentinelRef = useRef<HTMLDivElement>(null);
+  const topSentinelRef = useRef<HTMLDivElement>(null);
 
-  const virtualizer = useVirtualizer({
-    count: messages.length,
-    getScrollElement: () => parentRef.current,
-    estimateSize: () => 120,
-    overscan: 5,
-  });
-
-  // Auto-load when sentinel becomes visible
+  // Load more when scrolled near the top (older messages)
   useEffect(() => {
     if (!hasMore || loading) return;
-    const sentinel = sentinelRef.current;
-    if (!sentinel) return;
+    const sentinel = topSentinelRef.current;
+    const scrollEl = parentRef.current;
+    if (!sentinel || !scrollEl) return;
 
     const observer = new IntersectionObserver(
       (entries) => {
@@ -269,51 +262,27 @@ export function MessageViewer({ messages, hasMore, loading, onLoadMore }: Messag
           onLoadMore();
         }
       },
-      { root: parentRef.current, threshold: 0 }
+      { root: scrollEl, threshold: 0 }
     );
     observer.observe(sentinel);
     return () => observer.disconnect();
-  }, [hasMore, loading, onLoadMore, messages.length]);
+  }, [hasMore, loading, onLoadMore]);
 
   if (messages.length === 0 && !loading) {
     return <div className="msg-viewer__empty">No messages</div>;
   }
 
   return (
-    <div ref={parentRef} className="msg-viewer msg-viewer--virtual">
-      <div
-        style={{
-          height: `${virtualizer.getTotalSize()}px`,
-          width: '100%',
-          position: 'relative',
-        }}
-      >
-        {virtualizer.getVirtualItems().map(virtualItem => {
-          const msg = messages[virtualItem.index];
-          return (
-            <div
-              key={msg.uuid || virtualItem.index}
-              data-index={virtualItem.index}
-              ref={virtualizer.measureElement}
-              style={{
-                position: 'absolute',
-                top: 0,
-                left: 0,
-                width: '100%',
-                transform: `translateY(${virtualItem.start}px)`,
-              }}
-            >
-              <MessageBubble message={msg} />
-            </div>
-          );
-        })}
-      </div>
-      {/* Sentinel for infinite scroll */}
+    <div ref={parentRef} className="msg-viewer">
+      {/* Top sentinel: triggers loading older messages */}
       {hasMore && (
-        <div ref={sentinelRef} className="msg-viewer__sentinel">
-          {loading && <span className="msg-viewer__loading">Loading...</span>}
+        <div ref={topSentinelRef} className="msg-viewer__sentinel">
+          {loading && <span className="msg-viewer__loading">Loading older messages...</span>}
         </div>
       )}
+      {messages.map((msg, i) => (
+        <MessageBubble key={msg.uuid || i} message={msg} />
+      ))}
     </div>
   );
 }

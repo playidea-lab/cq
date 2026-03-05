@@ -461,16 +461,12 @@
 
 /* Message Viewer */
 
-/* Virtual scroll container for messages */
-.msg-viewer--virtual {
-  overflow-y: auto;
-  height: 100%;
-  padding: var(--space-lg) var(--space-xl);
-}
-
 .msg-viewer {
   display: flex;
   flex-direction: column;
+  overflow-y: auto;
+  height: 100%;
+  padding: var(--space-lg) var(--space-xl);
 }
 
 .msg-viewer__empty {
