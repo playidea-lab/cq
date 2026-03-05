@@ -165,13 +165,13 @@ func execTool(cmd *cobra.Command, name string, srv *mcpServer, props map[string]
 		case "integer":
 			n, err := strconv.ParseInt(val, 0, 64)
 			if err != nil {
-				return fmt.Errorf("flag --%s: %q is not a valid integer", propName, val)
+				return fmt.Errorf("flag --%s: %q is not a valid integer: %w", propName, val, err)
 			}
 			argsMap[propName] = n
 		case "number":
 			f64, err := strconv.ParseFloat(val, 64)
 			if err != nil {
-				return fmt.Errorf("flag --%s: %q is not a valid number", propName, val)
+				return fmt.Errorf("flag --%s: %q is not a valid number: %w", propName, val, err)
 			}
 			argsMap[propName] = f64
 		case "array":

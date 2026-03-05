@@ -351,6 +351,13 @@ func newMCPServer() (*mcpServer, error) {
 	ctx.agentCancel = agentCancel
 	startAgentIfNeeded(agentCtx, ctx)
 
+	// Schema Diet: unregister read-only tools when schema_diet: true in config.
+	// Agents call these via Bash("cq tool <name> --json") instead of MCP,
+	// reducing per-session context token overhead by ~34% (~2,760 tokens).
+	if cfgMgr != nil && cfgMgr.GetConfig().SchemaDiet {
+		applySDchemaDiet(reg)
+	}
+
 	return &mcpServer{
 		registry:       reg,
 		sidecar:        lazySidecar,

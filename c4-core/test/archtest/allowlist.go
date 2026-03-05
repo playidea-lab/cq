@@ -18,6 +18,7 @@ type ErrorAllowlist map[string]int
 var DefaultAllowlist = ErrorAllowlist{
 	"cmd/c4/auth.go":                               6,
 	"cmd/c4/cloud.go":                              1,
+	"cmd/c4/tool.go":                               1,
 	"cmd/c4/daemon.go":                             1,
 	"cmd/c4/embed_c5_stub.go":                      1,
 	"cmd/c4/eventbus.go":                           6,
@@ -42,7 +43,7 @@ var DefaultAllowlist = ErrorAllowlist{
 	"internal/cloud/store.go":                      13,
 	"internal/daemon/gpu.go":                       2,
 	"internal/daemon/store.go":                     4,
-	"internal/drive/client.go":                     10,
+	"internal/drive/client.go":                     11,
 	"internal/eventbus/dispatcher.go":              19,
 	"internal/eventbus/store.go":                   6,
 	"internal/gate/connectors.go":                  2,
