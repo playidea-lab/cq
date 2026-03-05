@@ -508,6 +508,29 @@ CP-001:    체크포인트
 
 ---
 
+## cq tool — MCP→CLI Auto-Gateway
+
+읽기 전용 MCP 도구를 CLI에서 직접 호출하여 에이전트 컨텍스트 토큰 비용 절감.
+
+```
+Layer 1: 전용 CLI (cq status, cq secret ...) — 자주 쓰는 것, pretty UX
+Layer 2: cq tool <name>                       — 모든 MCP 도구 자동 노출
+Layer 3: MCP (c4_*)                           — 에이전트 전용, 쓰기/상태변경
+```
+
+```bash
+cq tool list                                         # 전체 도구 목록
+cq tool c4_status --json                             # JSON 출력 (에이전트용)
+cq tool c4_task_list --json                          # 태스크 목록
+cq tool c4_knowledge_search --query="패턴" --json   # 지식 검색
+cq tool c4_find_file --pattern="tool.go" --json      # 파일 검색
+```
+
+에이전트 사용법: `Bash("cq tool c4_status --json")` — MCP 스키마 등록 없이 호출.
+`--timeout=<duration>` 플래그로 기본 60초 타임아웃 조정 가능.
+
+---
+
 ## Go Core (c4-core/) → [docs/ARCHITECTURE.md#go-core](docs/ARCHITECTURE.md)
 주요: `go build -o ~/.local/bin/cq ./cmd/c4/` — 코드 수정 후 반드시 재빌드. `cp` 복사 금지(코드 서명 무효화).
 
