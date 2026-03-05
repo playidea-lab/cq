@@ -31,10 +31,15 @@ func Register(reg *mcp.Registry, opts *Opts) {
 
 	reg.RegisterBlocking(mcp.ToolSchema{
 		Name:        "c4_pop_extract",
-		Description: "Run a POP (Proactive Output Pipeline) extraction cycle: fetch recent messages, extract knowledge proposals via LLM, record them",
+		Description: "Run a POP (Proactive Output Pipeline) extraction cycle: fetch recent messages, extract knowledge proposals via LLM, record them. Optionally pass `content` to inject conversation text directly (e.g. from Claude Code session summary) without requiring C1 Messenger.",
 		InputSchema: map[string]any{
-			"type":       "object",
-			"properties": map[string]any{},
+			"type": "object",
+			"properties": map[string]any{
+				"content": map[string]any{
+					"type":        "string",
+					"description": "Optional: conversation or session text to extract knowledge from. If omitted, falls back to C1 Messenger messages.",
+				},
+			},
 		},
 	}, extractHandler(opts))
 
@@ -58,11 +63,24 @@ func Register(reg *mcp.Registry, opts *Opts) {
 }
 
 func extractHandler(opts *Opts) mcp.BlockingHandlerFunc {
-	return func(ctx context.Context, _ json.RawMessage) (any, error) {
+	return func(ctx context.Context, rawArgs json.RawMessage) (any, error) {
+		var args struct {
+			Content string `json:"content"`
+		}
+		if len(rawArgs) > 0 {
+			_ = json.Unmarshal(rawArgs, &args)
+		}
+
 		engine := buildEngine(opts)
 		if engine == nil {
 			return map[string]any{"error": "POP engine unavailable (LLM or store missing)"}, nil
 		}
+
+		// If content is provided, override the message source with injected text.
+		if args.Content != "" {
+			engine.SetMessageSource(&staticMessageSource{content: args.Content})
+		}
+
 		// Use a sub-deadline so extraction never exceeds 60 s regardless of caller timeout.
 		ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 		defer cancel()
@@ -281,6 +299,7 @@ func (c *cliNotifier) Notify(_ context.Context, p pop.Proposal) error {
 // Compile-time interface assertions for all POP adapters.
 var (
 	_ pop.MessageSource  = (*noopMessageSource)(nil)
+	_ pop.MessageSource  = (*staticMessageSource)(nil)
 	_ pop.LLMClient      = (*noopLLMClient)(nil)
 	_ pop.LLMClient      = (*llmClientAdapter)(nil)
 	_ pop.KnowledgeStore = (*knowledgeStoreAdapter)(nil)
@@ -293,4 +312,17 @@ type noopMessageSource struct{}
 
 func (n *noopMessageSource) RecentMessages(_ context.Context, _ time.Time, _ int) ([]pop.Message, error) {
 	return nil, nil
+}
+
+// staticMessageSource injects a single text blob as a message (for Claude Code sessions).
+type staticMessageSource struct {
+	content string
+}
+
+func (s *staticMessageSource) RecentMessages(_ context.Context, _ time.Time, _ int) ([]pop.Message, error) {
+	return []pop.Message{{
+		ID:        "cc-session",
+		Content:   s.content,
+		CreatedAt: time.Now(),
+	}}, nil
 }

@@ -153,6 +153,37 @@ Cursor에서는 수동으로 `c4_knowledge_distill` 호출하거나 건너뜁니
 - 누적된 학습 데이터가 많고 마지막 진화 후 일정 시간이 지났으면 자동으로 `soul-evolve`를 실행합니다.
 - 사용자의 최신 엔지니어링 스타일을 페르소나에 반영하여 다음 세션의 협업 품질을 높입니다.
 
+### 7.7. POP Extract (세션 지식 결정화)
+
+이번 세션에서 다룬 주요 내용을 요약해서 POP 파이프라인에 주입합니다.
+C1 Messenger 연결 여부와 관계없이 동작합니다.
+
+```python
+# 세션 요약 텍스트 생성 (구현한 것, 결정한 것, 발견한 패턴, 실수 등)
+session_summary = f"""
+Session: {SESSION_SCOPE}
+Date: {TODAY}
+
+## 구현 내용
+{WHAT_WAS_IMPLEMENTED}
+
+## 기술적 결정
+{KEY_DECISIONS}
+
+## 발견한 패턴 / 실수
+{PATTERNS_AND_MISTAKES}
+
+## 다음 세션 포인트
+{NEXT_STEPS}
+"""
+
+c4_pop_extract(content=session_summary)
+# ErrGaugeThresholdExceeded 반환 시 → warning만 출력, 진행 계속
+```
+
+- 실패해도 non-fatal — warning 출력 후 다음 단계 진행
+- 추출된 제안은 `c4_pop_reflect`로 나중에 검토 가능
+
 ### 8. Git Commit
 - `git status` → 변경 파일 확인
 - `git diff` → 변경 내용 검토

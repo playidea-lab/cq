@@ -22,6 +22,11 @@ type Engine struct {
 	gaugeFile string
 }
 
+// SetMessageSource overrides the engine's message source (e.g. for injecting Claude Code session content).
+func (e *Engine) SetMessageSource(src MessageSource) {
+	e.messages = src
+}
+
 // NewEngine constructs an Engine with the given dependencies.
 func NewEngine(
 	messages MessageSource,
