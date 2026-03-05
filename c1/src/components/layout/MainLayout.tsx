@@ -17,10 +17,12 @@ export function MainLayout({
       <div className="main-layout__nav">
         {leftNav}
       </div>
-      {/* Channel list area: 240px */}
-      <div className="main-layout__channel-list">
-        {channelList}
-      </div>
+      {/* Channel list area: 240px — hidden when null */}
+      {channelList != null && (
+        <div className="main-layout__channel-list">
+          {channelList}
+        </div>
+      )}
       {/* Content area: flex-grow */}
       <div className="main-layout__content">
         {content}
