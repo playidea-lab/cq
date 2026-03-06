@@ -101,7 +101,9 @@ func runHandler(opts *Opts) mcp.BlockingHandlerFunc {
 			return map[string]any{"error": fmt.Sprintf("eval failed: %v", err)}, nil
 		}
 
-		// Save to C9 knowledge store as experiment
+		// Save to C9 knowledge store as experiment.
+		// trigger_accuracy is stored in the confidence field so statusHandler
+		// can read it from List() results (which do not include body).
 		if opts.KnowledgeStore != nil {
 			body := fmt.Sprintf(
 				"skill: %s\ntrigger_accuracy: %.4f\npass_at_k: %.4f\npass_k: %.4f\nk: %d\ntest_count: %d\ndate: %s",
@@ -114,10 +116,11 @@ func runHandler(opts *Opts) mcp.BlockingHandlerFunc {
 				time.Now().Format("2006-01-02"),
 			)
 			metadata := map[string]any{
-				"id":     result.ExpID,
-				"title":  fmt.Sprintf("Skill Eval: %s", skillName),
-				"domain": "skilleval",
-				"tags":   []string{"skill-eval", "trigger-accuracy"},
+				"id":         result.ExpID,
+				"title":      fmt.Sprintf("Skill Eval: %s", skillName),
+				"domain":     "skilleval",
+				"confidence": result.TriggerAccuracy, // indexed — read by statusHandler via List()
+				"tags":       []string{"skill-eval", "trigger-accuracy"},
 			}
 			// best-effort; ignore error to not block result return
 			opts.KnowledgeStore.Create(knowledge.TypeExperiment, metadata, body) //nolint:errcheck
@@ -179,24 +182,24 @@ func statusHandler(opts *Opts) mcp.HandlerFunc {
 			Status          string  `json:"status"`
 		}
 		skills := []skillEntry{}
-		total, ok, warn, unknown := 0, 0, 0, 0
+		total, ok, warn := 0, 0, 0
 
+		// Deduplicate by skill name — keep the most recent entry (List returns DESC updated_at).
+		seen := map[string]bool{}
 		for _, d := range docs {
-			body, _ := d["body"].(string)
-			var acc float64
-			var skillName string
-			for _, line := range strings.Split(body, "\n") {
-				line = strings.TrimSpace(line)
-				if strings.HasPrefix(line, "skill:") {
-					skillName = strings.TrimSpace(strings.TrimPrefix(line, "skill:"))
-				} else if strings.HasPrefix(line, "trigger_accuracy:") {
-					val := strings.TrimSpace(strings.TrimPrefix(line, "trigger_accuracy:"))
-					fmt.Sscanf(val, "%f", &acc) //nolint:errcheck
-				}
-			}
-			if skillName == "" {
+			// Skill name is encoded in title as "Skill Eval: <name>".
+			title, _ := d["title"].(string)
+			skillName := strings.TrimPrefix(title, "Skill Eval: ")
+			if skillName == title || skillName == "" {
 				continue
 			}
+			if seen[skillName] {
+				continue // already have the latest entry for this skill
+			}
+			seen[skillName] = true
+
+			// trigger_accuracy is stored in the confidence field (float64, indexed).
+			acc, _ := d["confidence"].(float64)
 			total++
 			status := "ok"
 			if acc < 0.90 {
@@ -210,7 +213,7 @@ func statusHandler(opts *Opts) mcp.HandlerFunc {
 
 		return map[string]any{
 			"skills":  skills,
-			"summary": map[string]int{"total": total, "ok": ok, "warn": warn, "unknown": unknown},
+			"summary": map[string]int{"total": total, "ok": ok, "warn": warn},
 		}, nil
 	}
 }
