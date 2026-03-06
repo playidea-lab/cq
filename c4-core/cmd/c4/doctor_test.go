@@ -247,6 +247,70 @@ func TestCheckOSService(t *testing.T) {
 	}
 }
 
+// setupSkillEvalDocs creates .c4/knowledge/docs/ with skill-eval-*.md files for testing.
+func setupSkillEvalDocs(t *testing.T, files map[string]string) {
+	t.Helper()
+	docsDir := filepath.Join(projectDir, ".c4", "knowledge", "docs")
+	if err := os.MkdirAll(docsDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	for name, content := range files {
+		if err := os.WriteFile(filepath.Join(docsDir, name), []byte(content), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func TestCheckSkillHealth_OK(t *testing.T) {
+	_, cleanup := setupDoctorEnv(t)
+	defer cleanup()
+
+	setupSkillEvalDocs(t, map[string]string{
+		"skill-eval-c4-plan.md": "---\nid: skill-eval-c4-plan\ntype: experiment\n---\n\ntrigger_accuracy: 0.95\n",
+	})
+
+	r := checkSkillHealth()
+	if r.Status != checkOK {
+		t.Errorf("expected OK (accuracy=0.95 >= 0.90), got %s: %s", r.Status, r.Message)
+	}
+}
+
+func TestCheckSkillHealth_Warn(t *testing.T) {
+	_, cleanup := setupDoctorEnv(t)
+	defer cleanup()
+
+	setupSkillEvalDocs(t, map[string]string{
+		"skill-eval-c4-run.md": "---\nid: skill-eval-c4-run\ntype: experiment\n---\n\ntrigger_accuracy: 0.85\n",
+	})
+
+	r := checkSkillHealth()
+	if r.Status != checkWarn {
+		t.Errorf("expected WARN (accuracy=0.85 < 0.90), got %s: %s", r.Status, r.Message)
+	}
+	if !strings.Contains(r.Message, "c4-run") {
+		t.Errorf("expected skill name in message, got: %s", r.Message)
+	}
+}
+
+func TestCheckSkillHealth_Unknown(t *testing.T) {
+	_, cleanup := setupDoctorEnv(t)
+	defer cleanup()
+	// No skill-eval docs — knowledge dir exists but empty
+	docsDir := filepath.Join(projectDir, ".c4", "knowledge", "docs")
+	if err := os.MkdirAll(docsDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	r := checkSkillHealth()
+	// unknown (no records) must be INFO, not WARN
+	if r.Status == checkWarn || r.Status == checkFail {
+		t.Errorf("expected INFO for no eval records, got %s: %s", r.Status, r.Message)
+	}
+	if r.Status != checkInfo {
+		t.Errorf("expected Status=INFO, got %s", r.Status)
+	}
+}
+
 func TestDoctor_SectionYAMLValue(t *testing.T) {
 	// Config with both hub.url and cloud.url to verify cross-section isolation.
 	content := `

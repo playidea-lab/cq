@@ -22,6 +22,7 @@ type checkStatus string
 
 const (
 	checkOK   checkStatus = "OK"
+	checkInfo checkStatus = "INFO"
 	checkWarn checkStatus = "WARN"
 	checkFail checkStatus = "FAIL"
 )
@@ -85,7 +86,7 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 		checkStaleSocket,
 		checkZombieServe,
 		checkSidecarHang,
-		func() checkResult { return checkSkillHealth(projectDir) },
+		checkSkillHealth,
 	}
 
 	results := make([]checkResult, 0, len(checks))
@@ -122,6 +123,8 @@ func printDoctorHuman(results []checkResult) {
 	for _, r := range results {
 		icon := "OK  "
 		switch r.Status {
+		case checkInfo:
+			icon = "INFO"
 		case checkWarn:
 			icon = "WARN"
 			warnCount++
@@ -793,89 +796,75 @@ func checkOSService(_ bool) checkResult {
 	}
 }
 
-// checkSkillHealth scans the skill knowledge records for low trigger accuracy.
-// Unknown skills (no eval records yet) are reported as INFO, not WARN,
-// to avoid noise during initial setup.
-func checkSkillHealth(projectDir string) checkResult {
-	skillsDir := filepath.Join(projectDir, ".claude", "skills")
-	entries, err := os.ReadDir(skillsDir)
-	if err != nil {
-		// No skills directory — OK
-		return checkResult{Name: "skill-health", Status: checkOK, Message: "no skills directory"}
-	}
+const skillHealthThreshold = 0.90
 
-	// Load knowledge records tagged with domain=skilleval from the local store dir.
-	// Records are stored as files under .c4/knowledge/docs/ with prefix "skill-eval-".
+// checkSkillHealth checks C9 experiment records for skill evaluations.
+// Records with name starting with "skill-eval-" are scanned from the knowledge docs dir.
+// trigger_accuracy < 0.90 → WARN, no records at all → INFO (not WARN, prevents noise).
+func checkSkillHealth() checkResult {
 	docsDir := filepath.Join(projectDir, ".c4", "knowledge", "docs")
-	records := map[string]float64{} // skillName → latest trigger_accuracy
-
-	if docEntries, readErr := os.ReadDir(docsDir); readErr == nil {
-		for _, de := range docEntries {
-			if !strings.HasPrefix(de.Name(), "skill-eval-") {
-				continue
-			}
-			data, readErr2 := os.ReadFile(filepath.Join(docsDir, de.Name()))
-			if readErr2 != nil {
-				continue
-			}
-			// Parse "trigger_accuracy: 0.9000" line
-			for _, line := range strings.Split(string(data), "\n") {
-				line = strings.TrimSpace(line)
-				if !strings.HasPrefix(line, "trigger_accuracy:") {
-					continue
-				}
-				parts := strings.SplitN(line, ":", 2)
-				if len(parts) != 2 {
-					break
-				}
-				val := strings.TrimSpace(parts[1])
-				var acc float64
-				if _, scanErr := fmt.Sscanf(val, "%f", &acc); scanErr == nil {
-					// Extract skill name from filename: skill-eval-{name}-YYYYMMDD.md
-					base := strings.TrimSuffix(de.Name(), ".md")
-					// Remove trailing date segment (last -YYYYMMDD)
-					if idx := strings.LastIndex(base, "-"); idx > 0 {
-						skillKey := strings.TrimPrefix(base[:idx], "skill-eval-")
-						if _, exists := records[skillKey]; !exists || acc < records[skillKey] {
-							records[skillKey] = acc
-						}
-					}
-				}
-				break
-			}
-		}
+	entries, err := os.ReadDir(docsDir)
+	if err != nil {
+		// Knowledge dir not yet initialised — not an error
+		return checkResult{Name: "skill-health", Status: checkOK, Message: "knowledge store not found (skipped)"}
 	}
 
-	warn := []string{}
-	unknown := []string{}
+	var warn []string
+	evaluated := 0
 	for _, e := range entries {
-		if !e.IsDir() {
+		name := e.Name()
+		if !strings.HasPrefix(name, "skill-eval-") || !strings.HasSuffix(name, ".md") {
 			continue
 		}
-		name := e.Name()
-		if acc, ok := records[name]; ok {
-			if acc < 0.90 {
-				warn = append(warn, fmt.Sprintf("%s(%.0f%%)", name, acc*100))
-			}
-		} else {
-			unknown = append(unknown, name)
+		skillName := strings.TrimSuffix(strings.TrimPrefix(name, "skill-eval-"), ".md")
+		data, readErr := os.ReadFile(filepath.Join(docsDir, name))
+		if readErr != nil {
+			continue
+		}
+		acc, ok := parseSkillEvalAccuracy(string(data))
+		if !ok {
+			continue
+		}
+		evaluated++
+		if acc < skillHealthThreshold {
+			warn = append(warn, fmt.Sprintf("%s: trigger_accuracy=%.2f (< %.2f)", skillName, acc, skillHealthThreshold))
 		}
 	}
 
+	if evaluated == 0 {
+		return checkResult{
+			Name:    "skill-health",
+			Status:  checkInfo,
+			Message: "no skills evaluated yet (run c4_skill_eval_run to populate)",
+		}
+	}
 	if len(warn) > 0 {
 		return checkResult{
 			Name:    "skill-health",
 			Status:  checkWarn,
-			Message: fmt.Sprintf("low trigger accuracy: %s", strings.Join(warn, ", ")),
-			Fix:     "cq tool c4_skill_eval_run --skill=<name> to re-evaluate",
+			Message: strings.Join(warn, "; "),
+			Fix:     "cq tool c4_skill_eval_run --skill=<name>",
 		}
 	}
-	if len(unknown) > 0 {
-		return checkResult{
-			Name:    "skill-health",
-			Status:  checkOK,
-			Message: fmt.Sprintf("%d skills not yet evaluated (run c4_skill_eval_run to baseline)", len(unknown)),
+	return checkResult{
+		Name:    "skill-health",
+		Status:  checkOK,
+		Message: fmt.Sprintf("all %d evaluated skills pass trigger threshold (>= %.2f)", evaluated, skillHealthThreshold),
+	}
+}
+
+// parseSkillEvalAccuracy extracts the trigger_accuracy value from a skill-eval Markdown body.
+func parseSkillEvalAccuracy(content string) (float64, bool) {
+	for _, line := range strings.Split(content, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if !strings.HasPrefix(trimmed, "trigger_accuracy:") {
+			continue
+		}
+		val := strings.TrimSpace(strings.TrimPrefix(trimmed, "trigger_accuracy:"))
+		var acc float64
+		if _, scanErr := fmt.Sscanf(val, "%f", &acc); scanErr == nil {
+			return acc, true
 		}
 	}
-	return checkResult{Name: "skill-health", Status: checkOK, Message: "all evaluated skills pass trigger accuracy ≥90%"}
+	return 0, false
 }
