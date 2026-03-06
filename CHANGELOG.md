@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.66.2] - 2026-03-06
+
+### 🐛 Bug Fixes
+- **skillevalhandler**: `c4_skill_eval_status` body 파싱 버그 수정 — `List()`가 body를 반환하지 않아 항상 빈 결과; `confidence` 필드 + title 기반으로 교체
+- **skillevalhandler**: `runHandler`에서 `confidence: trigger_accuracy` 메타데이터 저장 (indexed 필드)
+- **skillevalhandler**: 동일 스킬 중복 제거 (최신 엔트리만 유지)
+- **skillevalhandler**: 항상 0인 `unknown` 카운터 제거
+- **eval**: c4-finish EVAL.md 부정 케이스 교체 — `trigger_accuracy` 0.938 (16케이스)
+
+---
+
 ## [v0.66.1] - 2026-03-06
 
 ### 🐛 Bug Fixes
