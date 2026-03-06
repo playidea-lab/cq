@@ -5,6 +5,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"time"
 
@@ -26,11 +27,26 @@ func initHub(ctx *initContext) error {
 		return nil
 	}
 	hubCfg := ctx.cfgMgr.GetConfig().Hub
+
+	// API key resolution priority:
+	//  1. secrets store (~/.c4/secrets.db) — "hub.api_key" (AES-256-GCM encrypted)
+	//  2. env var (hubCfg.APIKeyEnv, e.g. C4_HUB_API_KEY) — handled by hub.NewClient
+	//  3. config.yaml (hubCfg.APIKey) — plaintext, deprecated
+	apiKey := hubCfg.APIKey
+	if ctx.secretStore != nil {
+		if v, err := ctx.secretStore.Get("hub.api_key"); err == nil && v != "" {
+			apiKey = v
+			if hubCfg.APIKey != "" {
+				slog.Warn("hub.api_key in config.yaml is overridden by secrets store; remove it from config")
+			}
+		}
+	}
+
 	hc := hub.NewClient(hub.HubConfig{
 		Enabled:   hubCfg.Enabled,
 		URL:       hubCfg.URL,
 		APIPrefix: hubCfg.APIPrefix,
-		APIKey:    hubCfg.APIKey,
+		APIKey:    apiKey,
 		APIKeyEnv: hubCfg.APIKeyEnv,
 		TeamID:    hubCfg.TeamID,
 	})
@@ -39,9 +55,9 @@ func initHub(ctx *initContext) error {
 		return nil
 	}
 
-	// If hub.api_key is not configured but a cloud session token is available,
-	// use the cloud JWT as the Hub Bearer token with automatic refresh support.
-	if hubCfg.APIKey == "" && hubCfg.APIKeyEnv == "" && ctx.cloudTP != nil && ctx.cloudTP.Token() != "" {
+	// If hub.api_key is not configured by any source but a cloud session token is
+	// available, use the cloud JWT as the Hub Bearer token with auto-refresh support.
+	if apiKey == "" && hubCfg.APIKeyEnv == "" && ctx.cloudTP != nil && ctx.cloudTP.Token() != "" {
 		hc.SetTokenFunc(ctx.cloudTP.Token)
 		fmt.Fprintln(os.Stderr, "cq: hub using cloud session token (auto-refresh enabled)")
 	}
