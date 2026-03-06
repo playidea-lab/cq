@@ -1,8 +1,8 @@
 # C4 Roadmap
 
-## Current Version: v0.64.1 (POP + c4-finish POP 스텝 + /pi EARS 워크플로우 재설계 + C1 MessageViewer 안정화)
+## Current Version: v0.67.0 (Drive Dataset Versioning + Skill Health Pipeline + Hub Secrets + doctor 개선)
 
-현재 버전은 **Go MCP Server (118 base + Hub tiered 등, POP 3도구), Native Go/Dart LSP (goast/dartast), LLM Gateway (캐시 최적화), CDP Runner + WebMCP + Auto-Discovery, Cloud Foundation (CloudPrimaryStore + Session Limit), Knowledge v4 (OllamaEmbeddings + reindex + distill), C1 Unified Dashboard Messenger (HarnessWatcher + Cursor 어댑터, MessageViewer 스크롤 안정화), C3 EventBus v4, C5 Hub Server (Tenant Isolation + Dooray webhook), POP (Personal Ontology Pipeline, c4-finish 자동 주입), Persona/Soul Evolution, 36개 Skills (/pi EARS 통합 재설계), 3-layer Deprecated 스킬 강제 시스템, 프로젝트 단위 2-layer Permission Hook, bats 테스트 스위트, Named Session (gemini 지원 포함), 쉘 자동완성, OS 서비스 통합**를 포함합니다.
+현재 버전은 **Go MCP Server (118 base + Hub tiered 등, POP 3도구), Native Go/Dart LSP (goast/dartast), LLM Gateway (캐시 최적화), CDP Runner + WebMCP + Auto-Discovery, Cloud Foundation (CloudPrimaryStore + Session Limit), Knowledge v4 (OllamaEmbeddings + reindex + distill), C1 Unified Dashboard Messenger (HarnessWatcher + Cursor 어댑터, MessageViewer 스크롤 안정화), C3 EventBus v4, C5 Hub Server (Tenant Isolation + Dooray webhook), POP (Personal Ontology Pipeline, c4-finish 자동 주입), Persona/Soul Evolution, 36개 Skills (/pi EARS 통합 재설계), 3-layer Deprecated 스킬 강제 시스템, 프로젝트 단위 2-layer Permission Hook, bats 테스트 스위트, Named Session (gemini 지원 포함), 쉘 자동완성, OS 서비스 통합, Skill Health Pipeline (c4_skill_eval_run/status/generate), Drive Dataset Versioning (CAS), Hub secrets store 통합**를 포함합니다.
 
 ### 핵심 구조
 
@@ -42,11 +42,29 @@
 - **C1 Documents** - 마크다운 파일 편집기, 지속성 (persona/skill/spec/config)
 - **C3 EventBus v4** - gRPC daemon (UDS) + WebSocket bridge + DLQ + Filter v2, Python sidecar piggyback, task lifecycle events
 - **코드베이스**: Go ~54.9K (c4-core) + Go ~7.3K (c5) + Python ~22.9K + Rust ~10.2K + TS+CSS ~13.7K + SQL ~1.3K = **~110.3K LOC (src)**, 테스트 ~68.7K LOC, **총 ~179.0K LOC**
-- **테스트**: Go ~2,457 (c4-core ~2,175 + c5 ~282) + Python 728 + Rust 92 = **~3,277 tests** (51 packages)
+- **테스트**: Go ~2,627 (c4-core ~2,345 + c5 ~282) + Python 728 + Rust 92 = **~3,447 tests** (58 packages)
 
 ---
 
 ## 완료된 릴리즈 이력
+
+### v0.67.0 ✅ (2026-03-06)
+- **drive**: Dataset Versioning — DatasetClient (CAS hash map), c4_drive_dataset_upload/list/pull MCP 3도구, CLI `cq drive dataset`, migration 00031 (c4_datasets)
+- **doctor**: C5 Hub 체크 시 api_prefix 반영 (`/health` → `/v1/health`), skill-health 체크 추가
+- **hub security**: secrets store 우선 조회 (`cq secret set hub.api_key`) — config.yaml 평문 제거, 키 해석 우선순위: secrets → env → config
+- **os-service**: plist `RunAtLoad=true` + `WorkingDirectory` + `--dir` 수정 → 로그인 자동시작, KeepAlive 재시작 확인
+- **binary**: `connected` tier (`llm_gateway` 포함) 빌드로 전환 → MCP 세션에서 skilleval 도구 활성화
+
+### v0.66.2 ✅ (2026-03-06)
+- **skilleval**: c4_skill_eval_status body 파싱 버그 수정 — knowledge.List() metadata-only 특성 반영, confidence 인덱스 필드로 저장
+- **EVAL.md**: 부정 케이스 교체 (build/CI 관련 → 도메인 무관 케이스), trigger_accuracy 0.938
+
+### v0.66.1 ✅ (2026-03-06)
+- **skilleval**: k 병렬화 (sync.WaitGroup) + data race fix (sync.Mutex on mockProvider.callIdx) + 5개 polish (path guard, confidence clamp, majority float, ctx cancel, eval.go uppercase fix)
+
+### v0.65.0 ✅ (2026-03-06)
+- **SHP (Skill Health Pipeline)**: c4_skill_eval_run, c4_skill_eval_generate, c4_skill_eval_status 3개 MCP 도구
+- **doctor**: checkSkillHealth — trigger_accuracy ≥ 0.90 임계값 체크, EVAL.md 기반 자동 평가
 
 ### v0.64.1 ✅ (2026-03-06)
 - **c1**: MessageViewer 스크롤 앵커링 + 깜빡임 제거 (anchor 기반 bottom-lock)
