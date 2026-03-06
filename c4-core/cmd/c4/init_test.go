@@ -1467,3 +1467,57 @@ func TestLsUnread(t *testing.T) {
 		}
 	}
 }
+
+func TestBuildLaunchArgs_FirstRun(t *testing.T) {
+	args := buildLaunchArgs(true, "claude", nil)
+	if len(args) < 3 {
+		t.Fatalf("expected at least 3 args, got %d: %v", len(args), args)
+	}
+	found := false
+	for i, a := range args {
+		if a == "--append-system-prompt" && i+1 < len(args) {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected --append-system-prompt in args; got %v", args)
+	}
+}
+
+func TestBuildLaunchArgs_NotFirstRun(t *testing.T) {
+	args := buildLaunchArgs(false, "claude", nil)
+	for _, a := range args {
+		if a == "--append-system-prompt" {
+			t.Errorf("unexpected --append-system-prompt in non-first-run args: %v", args)
+		}
+	}
+}
+
+func TestBuildLaunchArgs_BaseArgsPreserved(t *testing.T) {
+	base := []string{"--model", "claude-opus-4-6"}
+	args := buildLaunchArgs(false, "claude", base)
+	if args[0] != "claude" {
+		t.Errorf("expected first arg to be tool name; got %s", args[0])
+	}
+	if args[1] != "--model" || args[2] != "claude-opus-4-6" {
+		t.Errorf("base args not preserved: %v", args)
+	}
+}
+
+func TestBuildLaunchArgs_OnboardingMsgConst(t *testing.T) {
+	args := buildLaunchArgs(true, "claude", nil)
+	found := false
+	for i, a := range args {
+		if a == "--append-system-prompt" && i+1 < len(args) {
+			if args[i+1] != onboardingMsg {
+				t.Errorf("onboarding msg mismatch: got %q, want %q", args[i+1], onboardingMsg)
+			}
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("--append-system-prompt not found in args: %v", args)
+	}
+}

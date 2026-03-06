@@ -1798,23 +1798,55 @@ func isCQServeProcess(pid int) bool {
 }
 
 // launchTool launches the specified AI coding tool, replacing the current process.
+const onboardingMsg = "만들고 싶은 게 있으면 말씀해주세요. /c4-plan으로 시작합니다."
+
+// buildLaunchArgs returns [tool, ...baseArgs] with --append-system-prompt appended when firstRun is true.
+func buildLaunchArgs(firstRun bool, tool string, baseArgs []string) []string {
+	args := append([]string{tool}, baseArgs...)
+	if firstRun {
+		args = append(args, "--append-system-prompt", onboardingMsg)
+	}
+	return args
+}
+
+// isFirstRun returns true when ~/.c4/first_run does not exist.
+func isFirstRun() bool {
+	home, _ := os.UserHomeDir()
+	_, err := os.Stat(filepath.Join(home, ".c4", "first_run"))
+	return os.IsNotExist(err)
+}
+
+// markFirstRun creates ~/.c4/first_run to record that onboarding has occurred.
+func markFirstRun() error {
+	home, _ := os.UserHomeDir()
+	dir := filepath.Join(home, ".c4")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return err
+	}
+	f, err := os.Create(filepath.Join(dir, "first_run"))
+	if err != nil {
+		return err
+	}
+	return f.Close()
+}
+
 func launchTool(tool, dir string) error {
 	var toolCmd string
-	var toolArgs []string
+	var baseArgs []string
 
 	switch tool {
 	case "claude":
 		toolCmd = "claude"
-		toolArgs = []string{"claude"}
+		baseArgs = nil
 	case "codex":
 		toolCmd = "codex"
-		toolArgs = []string{"codex"}
+		baseArgs = nil
 	case "cursor":
 		toolCmd = "cursor"
-		toolArgs = []string{"cursor", dir}
+		baseArgs = []string{dir}
 	case "gemini":
 		toolCmd = "gemini"
-		toolArgs = []string{"gemini"}
+		baseArgs = nil
 	default:
 		return fmt.Errorf("unknown tool: %s (supported: claude, codex, cursor, gemini)", tool)
 	}
@@ -1824,6 +1856,14 @@ func launchTool(tool, dir string) error {
 		return fmt.Errorf("%s not found in PATH (install it first): %w", toolCmd, err)
 	}
 
+	first := isFirstRun()
+	toolArgs := buildLaunchArgs(first, toolCmd, baseArgs)
+
 	fmt.Fprintf(os.Stderr, "cq: launching %s...\n", tool)
+	if first {
+		if err := markFirstRun(); err != nil {
+			fmt.Fprintf(os.Stderr, "cq: warning: markFirstRun: %v\n", err)
+		}
+	}
 	return syscall.Exec(toolPath, toolArgs, os.Environ())
 }
