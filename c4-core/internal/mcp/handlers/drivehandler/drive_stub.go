@@ -10,5 +10,8 @@ import (
 // RegisterDriveHandlers is a no-op stub when c0_drive build tag is disabled.
 func RegisterDriveHandlers(_ *mcp.Registry, _ any) {}
 
+// RegisterDatasetHandlers is a no-op stub when c0_drive build tag is disabled.
+func RegisterDatasetHandlers(_ *mcp.Registry, _ any) {}
+
 // SetDriveEventBus is a no-op stub when c0_drive build tag is disabled.
 func SetDriveEventBus(_ eventbus.Publisher) {}
