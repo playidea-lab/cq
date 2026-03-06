@@ -3,61 +3,78 @@ layout: home
 
 hero:
   name: "CQ"
-  text: "AI Project Orchestration Engine"
-  tagline: Plan → Build → Review → Ship. Automated with Claude Code.
+  text: "Coding Team for AI Researchers"
+  tagline: Your experiments and tools — built by AI, directed by you.
   actions:
     - theme: brand
-      text: Get Started
+      text: Install
       link: /guide/install
     - theme: alt
-      text: Quick Start
-      link: /guide/quickstart
-    - theme: alt
-      text: GitHub
+      text: View on GitHub
       link: https://github.com/PlayIdea-Lab/cq
 
 features:
-  - icon: 🗂️
-    title: Structured Workflow
-    details: Every task has a Definition of Done, automated review, and checkpoint gates. No more guessing what's done.
+  - icon: 🗣️
+    title: Just Say It
+    details: Describe what you need. AI writes, runs, and reviews the code. No IDE required.
 
-  - icon: ⚡
-    title: Parallel Workers
-    details: Spawn multiple Claude Code agents on isolated worktrees. Each worker gets full context for one task.
+  - icon: 🖥️
+    title: Run Everywhere
+    details: Spawn AI workers across multiple servers. Experiments and builds run in parallel, around the clock.
 
-  - icon: 🧠
-    title: Knowledge Accumulation
-    details: Decisions and discoveries are recorded automatically. Future tasks learn from past patterns.
+  - icon: ☀️
+    title: Wake Up to Results
+    details: Set it before bed. Your code is written, tested, and committed by morning.
 
-  - icon: 🔒
-    title: Secure by Default
-    details: AES-256-GCM secret store. API keys never in config files. Shell command review via pre-commit hooks.
+---
 
-  - icon: 🏷️
-    title: Named Sessions
-    details: Resume any Claude Code session by name with `cq claude -t <name>`. List sessions and unread mail with `cq ls`.
+## Why CQ?
 
-  - icon: 📬
-    title: Inter-Session Mail
-    details: Send messages between sessions from CLI or MCP tools. Coordinate across parallel agents without leaving the terminal.
+I built CQ because I needed two things at once: run deep learning experiments across multiple servers *and* build the tools around them — without switching contexts.
 
-  - icon: 🩺
-    title: Auto-Heal
-    details: StaleChecker automatically detects and resets stuck in-progress tasks. No more manually unblocking frozen workers.
+The experiments run as distributed workers. The tools get built by AI through `/pi` → `/c4-run`. I just set the direction. The AI team handles the rest.
 
-  - icon: ☁️
-    title: One-Command Cloud Setup
-    details: "`cq auth login` opens GitHub OAuth and auto-configures Supabase credentials. No manual config editing required."
+That's **Human Outside the Loop** — not "AI assists you" but "AI does the work, you steer."
 
-  - icon: 🛡️
-    title: Workflow Gates
-    details: Hook-based quality enforcement. `git commit` is blocked until `/c4-finish` completes the built-in polish loop. Deprecated skills (`/c4-polish`, `/c4-refine`) are intercepted and redirected automatically.
+CQ works with any AI coding assistant: Claude Code, Gemini CLI, Codex, or Cursor. One setup. One workflow.
 
-  - icon: 📱
-    title: Headless Auth
-    details: "`cq auth login --device` shows a user_code to enter in a browser (RFC 8628 Device Flow). Works in SSH tunnels and containers."
+---
 
-  - icon: 💡
-    title: Play Idea (/pi)
-    details: Brainstorm and refine ideas before planning. Diverge, research, debate — then auto-launch /c4-plan when ready.
+## Two Ways to Use CQ
+
+### 🔬 Experiment Automation
+
+Running ML experiments across multiple GPUs or cloud servers:
+
+```
+/pi  →  describe your experiment setup
+      AI plans the pipeline, writes training scripts,
+      submits jobs to multiple servers,
+      and reports results when done.
+```
+
+You wake up to a comparison table of results.
+
+### 🛠️ Tool Development
+
+Building a research tool, CLI, or internal system:
+
+```
+/pi  →  describe what the tool should do
+      AI plans the architecture, implements features,
+      runs tests, and commits working code.
+```
+
+No boilerplate. No debugging loops. Just describe and ship.
+
+---
+
+## Get Started in 30 Seconds
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/install.sh | sh
+cq claude   # or: cq cursor / cq codex / cq gemini
+```
+
+Then type what you need. AI takes it from there.
 ---

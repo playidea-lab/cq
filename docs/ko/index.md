@@ -3,61 +3,78 @@ layout: home
 
 hero:
   name: "CQ"
-  text: "AI 프로젝트 자동화 엔진"
-  tagline: 계획 → 구현 → 리뷰 → 배포. Claude Code로 자동화.
+  text: "AI 연구자를 위한 코딩 팀"
+  tagline: 실험도, 툴 개발도 — AI가 끝까지.
   actions:
     - theme: brand
-      text: 시작하기
+      text: 설치하기
       link: /ko/guide/install
     - theme: alt
-      text: 빠른 시작
-      link: /ko/guide/quickstart
-    - theme: alt
-      text: GitHub
+      text: GitHub 보기
       link: https://github.com/PlayIdea-Lab/cq
 
 features:
-  - icon: 🗂️
-    title: 구조화된 워크플로우
-    details: 모든 태스크에는 완료 조건(DoD), 자동 리뷰, 체크포인트 게이트가 있습니다. "완료"에 대한 모호함이 없습니다.
+  - icon: 🗣️
+    title: 말하면 됩니다
+    details: 무엇이 필요한지 말하세요. AI가 코드를 작성하고, 실행하고, 리뷰합니다. IDE 불필요.
 
-  - icon: ⚡
-    title: 병렬 워커
-    details: 격리된 워크트리에서 여러 Claude Code 에이전트를 병렬 실행합니다. 각 워커는 한 태스크에 집중합니다.
+  - icon: 🖥️
+    title: 어디서든 실행
+    details: 여러 서버에 AI 워커를 병렬 실행합니다. 실험과 개발이 동시에, 쉬지 않고 진행됩니다.
 
-  - icon: 🧠
-    title: 지식 누적
-    details: 결정 사항과 발견이 자동으로 기록됩니다. 미래 태스크는 과거 패턴에서 학습합니다.
+  - icon: ☀️
+    title: 자고 일어나면 완료
+    details: 자기 전에 시작하세요. 일어나면 코드가 작성되고, 테스트되고, 커밋되어 있습니다.
 
-  - icon: 🔒
-    title: 기본 보안
-    details: AES-256-GCM 시크릿 스토어. API 키는 절대 설정 파일에 저장되지 않습니다. pre-commit 훅으로 셸 명령을 검토합니다.
+---
 
-  - icon: 🏷️
-    title: 이름 붙은 세션
-    details: "`cq claude -t <name>`으로 언제든지 세션을 재개합니다. `cq ls`로 세션 목록과 미읽은 메일을 확인합니다."
+## 왜 CQ인가?
 
-  - icon: 📬
-    title: 세션 간 메일
-    details: CLI 또는 MCP 도구로 세션 간 메시지를 주고받습니다. 터미널에서 벗어나지 않고 병렬 에이전트를 조율합니다.
+딥러닝 실험을 여러 서버에서 돌리면서 *동시에* 그 주변 툴도 개발해야 했습니다. 컨텍스트를 왔다갔다하지 않고.
 
-  - icon: 🩺
-    title: 자동 복구
-    details: StaleChecker가 멈춘 in_progress 태스크를 자동으로 감지하고 초기화합니다. 더 이상 수동으로 해제할 필요가 없습니다.
+실험은 분산 워커로 돌리고, 툴 개발은 `/pi`로 방향을 말하면 AI가 끝까지 처리합니다. 사람은 방향만 잡으면 됩니다.
 
-  - icon: ☁️
-    title: 원커맨드 클라우드 설정
-    details: "`cq auth login`으로 GitHub OAuth를 열고 Supabase 자격증명을 자동 설정합니다. 수동 설정 편집 불필요."
+이게 **Human Outside the Loop**입니다 — "AI가 도와주는 것"이 아니라 "AI가 하고, 내가 방향을 잡는 것".
 
-  - icon: 🛡️
-    title: 워크플로우 게이트
-    details: 훅 기반 품질 강제. `/c4-finish` 완료 전에는 `git commit`이 차단됩니다. 더 이상 필요 없는 스킬(`/c4-polish`, `/c4-refine`)은 자동으로 리다이렉트됩니다.
+CQ는 어떤 AI 코딩 어시스턴트와도 동작합니다: Claude Code, Gemini CLI, Codex, Cursor. 설정 한 번. 워크플로우 하나.
 
-  - icon: 💡
-    title: Play Idea (/pi)
-    details: 계획 전 아이디어를 탐색하는 모드. 발산·수렴·리서치·토론을 통해 아이디어를 결정(結晶)시킨 후 /c4-plan을 자동 실행합니다.
+---
 
-  - icon: 📱
-    title: 헤드리스 인증
-    details: "`cq auth login --device`로 브라우저에 입력할 user_code를 표시합니다 (RFC 8628 Device Flow). SSH 터널과 컨테이너에서도 동작합니다."
+## 두 가지 사용 방법
+
+### 🔬 실험 자동화
+
+여러 GPU 또는 클라우드 서버에서 ML 실험 실행:
+
+```
+/pi  →  실험 설정을 설명하세요
+      AI가 파이프라인을 설계하고, 학습 스크립트를 작성하고,
+      여러 서버에 잡을 제출하고,
+      완료되면 결과를 보고합니다.
+```
+
+비교 결과표를 보며 일어납니다.
+
+### 🛠️ 툴 개발
+
+연구 툴, CLI, 내부 시스템 개발:
+
+```
+/pi  →  툴이 무엇을 해야 하는지 설명하세요
+      AI가 구조를 설계하고, 기능을 구현하고,
+      테스트를 실행하고, 동작하는 코드를 커밋합니다.
+```
+
+보일러플레이트 없이. 디버깅 루프 없이. 말하고 출시합니다.
+
+---
+
+## 30초 시작
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/install.sh | sh
+cq claude   # 또는: cq cursor / cq codex / cq gemini
+```
+
+필요한 것을 말하면 됩니다. 나머지는 AI가 합니다.
 ---
