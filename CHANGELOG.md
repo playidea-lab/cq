@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.65.0] - 2026-03-06
+
+### ✨ Features
+- **skilleval**: `c4_skill_eval_run` — haiku LLM-as-judge 기반 스킬 트리거 정확도 측정 (pass@k / pass^k)
+- **skilleval**: `c4_skill_eval_generate` — SKILL.md → EVAL.md 자동 생성 (skill='all' 일괄 지원)
+- **skilleval**: `c4_skill_eval_status` — C9 experiment 기반 전체 스킬 헬스 요약
+- **doctor**: `checkSkillHealth` — 낮은 trigger accuracy WARN, 미평가 스킬 OK
+- **init**: `initAndLaunch()` ✓ 단계 출력 + `printReadyBox` 분리 (첫 실행 컨텍스트 주입)
+- **skills/pi**: idea.md 저장 후 에디터 자동 열기
+
+### 🐛 Bug Fixes
+- **skilleval**: 에러 트라이얼을 `false` 결과로 계산하던 accuracy 위조 수정 (successCount 분리)
+- **skilleval**: `AvgConfidence` 분모를 에러 포함 `len(Trials)` → `successCount`로 수정
+- **skilleval**: `os.Stat(err) != nil` → `errors.Is(err, os.ErrNotExist)` 가드 (EPERM 구분)
+- **skilleval**: `k` 상한 20 추가 (LLM 비용 폭탄 방지)
+- **skilleval**: `skillName` 경로 순회 방어 (.., /, \\)
+- **c1**: `.channels` flex:1 + parent flex-col — height:100% → flex 기반 교체
+- **c1**: 스크롤 영역 확보 — flex chain min-height:0 완성
+- **c1**: `sync_session_channels` 페이로드에서 `created_by` 제거
+- **c1**: sessions.css flex:1/min-height:0 + claude_code slug `_` → `-`
+- **c1**: 3개 버그 수정 — slug/스크롤/프로젝트전환
+
+### 📚 Documentation
+- **roadmap**: v0.64.1로 현행화 — v0.58~v0.64.1 이력 추가
+
+---
+
 ## [v0.64.1] - 2026-03-06
 
 ### 🐛 Bug Fixes
