@@ -37,9 +37,19 @@
 - Lighthouse operations not atomic between Registry + SQLite (race possible in theory)
 - No re-register after deprecate (getLighthouse finds deprecated record, blocks re-register)
 
+### Key Finding: SkillEval SHP Issues (2026-03-06)
+- `runner.go`: On LLM call error, appends `false` to `cr.Trials` (counts as real trial). When all k calls fail, silently skews accuracy for negative test cases (they appear correct).
+- `runner.go`: `os.Stat(evalPath)` error triggers auto-generate for ANY error (not just `os.IsNotExist`). Permissions errors cause spurious LLM calls.
+- `handler.go`: No upper bound on `k` param — caller can send k=1000, triggering 1000×N LLM calls per tool invocation.
+- `eval.go` + `handler.go`: `skillName` used directly in `filepath.Join` without `..`/`/`/`\` check. Project pattern is `strings.Contains(id, "..")` validation (see `persona.go:54`).
+- `runner.go`: `AvgConfidence` divides by `len(cr.Trials)` which includes error-appended entries, not just successful LLM calls — confidence metric is diluted.
+- Missing test cases: all-error scenario, k upper bound enforcement, path traversal rejection.
+
 ### Patterns Observed
 - All handler files follow consistent pattern: Register*Handlers + handle* functions
 - No hardcoded user paths in Go code (good)
 - Build tags properly used for gRPC (grpc_client.go)
 - Error handling generally good but some `_ = err` silencing in sqlite_store.go
 - Best-effort migrations with `_, _ = s.db.Exec(m)` swallow all errors including non-duplicate-column failures
+- **Path validation pattern**: entity IDs validated with `strings.Contains(id, "..")` + `/` + `\` (persona.go:54); file paths validated with `filepath.Clean` + `HasPrefix` (fileops.go:174-182)
+- **LLM task type routing**: `"scout"` task type resolves to haiku via `Routes["default"]` fallback when not explicitly mapped — safe, matches knowledgehandler pattern

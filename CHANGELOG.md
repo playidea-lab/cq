@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.66.0] - 2026-03-06
+
+### ✨ Features
+- **init**: 온보딩 UX — `buildLaunchArgs` 순수함수 분리 + `isFirstRun`/`markFirstRun` (`~/.c4/first_run`, 전역 1회)
+- **init**: 첫 실행 시 `--append-system-prompt`로 온보딩 컨텍스트 자동 주입 (`launchTool` + `launchToolNamed` 양쪽)
+- **init**: `printReadyBox(io.Writer)` — 동적 너비 박스 출력 (rune 카운트 기반)
+
+### 🐛 Bug Fixes
+- **doctor**: `checkSkillHealth` 리팩터링 — `checkInfo` 상수 + `parseSkillEvalAccuracy` 헬퍼 + 테스트 3개 추가
+- **c1**: MessageViewer 레이아웃 개선 + `useSessions` flex chain 수정 (min-height:0 완성)
+- **archtest**: `skillevalhandler` allowedDeps baseline + `skilleval` fmt.Errorf ratchet 추가
+
+---
+
 ## [v0.65.0] - 2026-03-06
 
 ### ✨ Features
