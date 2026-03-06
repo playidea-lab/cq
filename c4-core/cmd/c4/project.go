@@ -98,20 +98,20 @@ func runProjectList(cmd *cobra.Command, args []string) error {
 
 	activeID := getActiveProjectID(projectDir)
 
-	// Print table: ID (8 chars) | Name | Created
-	fmt.Printf("%-10s %-30s %-25s\n", "ID", "NAME", "CREATED")
-	fmt.Println(strings.Repeat("-", 67))
+	// Print table: ID (16 chars) | Name | Created
+	fmt.Printf("%-18s %-30s %-25s\n", "ID", "NAME", "CREATED")
+	fmt.Println(strings.Repeat("-", 75))
 	for _, p := range projects {
 		shortID := p.ID
-		if len(shortID) > 8 {
-			shortID = shortID[:8]
+		if len(shortID) > 16 {
+			shortID = shortID[:16]
 		}
 		created := formatProjectTime(p.CreatedAt)
 		marker := ""
 		if p.ID == activeID {
 			marker = " *"
 		}
-		fmt.Printf("%-10s %-30s %-25s%s\n", shortID, p.Name, created, marker)
+		fmt.Printf("%-18s %-30s %-25s%s\n", shortID, p.Name, created, marker)
 	}
 	if activeID != "" {
 		fmt.Println("\n* = active project")

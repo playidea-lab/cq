@@ -535,7 +535,7 @@ func (dc *DatasetClient) queryVersions(ctx context.Context, name, version string
 
 	if resp.StatusCode >= 400 {
 		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("query versions (HTTP %d): %s", resp.StatusCode, string(body))
+		return nil, wrapDatasetTableError(resp.StatusCode, body)
 	}
 
 	var raw []struct {
@@ -593,7 +593,17 @@ func (dc *DatasetClient) insertVersion(ctx context.Context, name, versionHash st
 	// 409 = ON CONFLICT DO NOTHING — acceptable
 	if resp.StatusCode >= 400 && resp.StatusCode != http.StatusConflict {
 		b, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("insert version (HTTP %d): %s", resp.StatusCode, string(b))
+		return wrapDatasetTableError(resp.StatusCode, b)
 	}
 	return nil
+}
+
+// wrapDatasetTableError wraps Supabase errors with a helpful hint when the
+// c4_datasets table is missing (HTTP 404 with PGRST205 code).
+func wrapDatasetTableError(statusCode int, body []byte) error {
+	msg := string(body)
+	if statusCode == http.StatusNotFound && strings.Contains(msg, "PGRST205") {
+		return fmt.Errorf("c4_datasets table not found — run 'supabase db push' in infra/supabase/ to apply migrations (HTTP 404): %s", msg)
+	}
+	return fmt.Errorf("dataset API error (HTTP %d): %s", statusCode, msg)
 }
