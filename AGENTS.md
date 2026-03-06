@@ -156,10 +156,10 @@ C9 Knowledge — 지식 관리 (FTS5 + pgvector + Embedding + Usage + Ingestion)
 ### 테스트 현황
 | 언어 | 테스트 수 | 패키지/모듈 |
 |------|----------|------------|
-| Go | **~2,490** | 51 packages (all pass) — c4-core ~2,208 (40pkg) + c5 ~282 (11pkg) |
+| Go | **~2,627** | 58 packages (all pass) — c4-core ~2,345 (47pkg) + c5 ~282 (11pkg) |
 | Python | **728** | tests/unit/ |
 | Rust | **92** | src-tauri |
-| **합계** | **~3,286** | |
+| **합계** | **~3,447** | |
 
 ### Monorepo 구조
 ```
