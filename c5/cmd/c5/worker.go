@@ -148,6 +148,15 @@ type workerConfig struct {
 	capabilities []model.Capability
 }
 
+// getWorkerVersion returns the cq version string for Hub registration.
+// It reads CQ_VERSION env var; falls back to "unknown" if unset.
+func getWorkerVersion() string {
+	if v := os.Getenv("CQ_VERSION"); v != "" {
+		return v
+	}
+	return "unknown"
+}
+
 func runWorker(cfg workerConfig) error {
 	client := &workerClient{
 		baseURL:      strings.TrimRight(cfg.serverURL, "/"),
@@ -164,6 +173,7 @@ func runWorker(cfg workerConfig) error {
 		TotalVRAM:     cfg.totalVRAM,
 		FreeVRAM:      cfg.totalVRAM,
 		CapabilitySet: cfg.capabilities,
+		Version:       getWorkerVersion(),
 	})
 	if err != nil {
 		return fmt.Errorf("register worker: %w", err)

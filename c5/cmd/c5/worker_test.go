@@ -579,3 +579,19 @@ func TestExecuteJob_OutputDirEnv(t *testing.T) {
 		t.Errorf("C5_INPUT_DIR = %q, want %q", lines[1], ".")
 	}
 }
+
+// TestWorkerRegister_VersionSet verifies CQ_VERSION is used in getWorkerVersion.
+func TestWorkerRegister_VersionSet(t *testing.T) {
+	t.Setenv("CQ_VERSION", "v0.62.0")
+	if got := getWorkerVersion(); got != "v0.62.0" {
+		t.Errorf("getWorkerVersion() = %q, want %q", got, "v0.62.0")
+	}
+}
+
+// TestWorkerRegister_VersionUnset verifies "unknown" fallback when CQ_VERSION is not set.
+func TestWorkerRegister_VersionUnset(t *testing.T) {
+	t.Setenv("CQ_VERSION", "")
+	if got := getWorkerVersion(); got != "unknown" {
+		t.Errorf("getWorkerVersion() = %q, want %q", got, "unknown")
+	}
+}
