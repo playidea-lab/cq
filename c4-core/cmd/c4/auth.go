@@ -221,14 +221,15 @@ func runAuthLoginHeadless(cmd *cobra.Command, isDevice bool) error {
 	return nil
 }
 
-// resolveHubURL reads hub.url from .c4/config.yaml via the doctor helper.
+// resolveHubURL reads hub.url from .c4/config.yaml, falling back to builtinHubURL.
 func resolveHubURL() string {
 	configPath := filepath.Join(projectDir, ".c4", "config.yaml")
-	data, err := os.ReadFile(configPath)
-	if err != nil {
-		return ""
+	if data, err := os.ReadFile(configPath); err == nil {
+		if v := sectionYAMLValue(string(data), "hub", "url:"); v != "" {
+			return v
+		}
 	}
-	return sectionYAMLValue(string(data), "hub", "url:")
+	return builtinHubURL
 }
 
 // ensureCloudAuth checks cloud authentication and prompts the user to log in if
