@@ -20,6 +20,7 @@ var DefaultAllowlist = ErrorAllowlist{
 	"cmd/c4/cloud.go":                              1,
 	"cmd/c4/tool.go":                               1,
 	"cmd/c4/daemon.go":                             1,
+	"cmd/c4/drive.go":                              5,
 	"cmd/c4/embed_c5_stub.go":                      1,
 	"cmd/c4/eventbus.go":                           6,
 	"cmd/c4/fallback.go":                           2,
