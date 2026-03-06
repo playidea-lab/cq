@@ -99,7 +99,7 @@ func callJudge(ctx context.Context, gateway *llm.Gateway, skillDesc, testPrompt 
 // If EVAL.md does not exist and a gateway is provided, it auto-generates one first.
 func RunEval(ctx context.Context, gateway *llm.Gateway, projectRoot, skillName string, k int) (*RunResult, error) {
 	if strings.ContainsAny(skillName, "./\\") {
-		return nil, fmt.Errorf("invalid skill name %q", skillName)
+		return nil, errors.New("invalid skill name: must not contain '.', '/', or '\\'")
 	}
 	if k <= 0 {
 		k = 5
