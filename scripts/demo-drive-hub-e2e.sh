@@ -14,7 +14,7 @@
 #   bash scripts/demo-drive-hub-e2e.sh --clean    # 디렉토리 초기화 후 재실행
 #
 # 선택적 env var:
-#   C5_HUB_URL   — .c4/config.yaml hub.url 미설정 시 필요
+#   C5_HUB_URL   — 바이너리 내장값 및 .c4/config.yaml hub.url 미설정 시에만 필요
 #   DEMO_BASE    — 데모 디렉토리 생성 위치 (기본: $HOME/git)
 set -euo pipefail
 
@@ -46,23 +46,24 @@ fi
 success "Auth OK"
 
 # ── Hub URL 결정 ──────────────────────────────────────────────────────
-# 우선순위: env var > .c4/config.yaml hub.url
+# 우선순위: env var > .c4/config.yaml hub.url > 바이너리 내장값
+# 릴리즈 바이너리는 builtinHubURL이 내장되어 있어 env var 불필요
 HUB_URL="${C5_HUB_URL:-}"
 if [[ -z "$HUB_URL" ]]; then
-    # config.yaml에서 읽기
     CONFIG_PATH="${PWD}/.c4/config.yaml"
     if [[ -f "$CONFIG_PATH" ]]; then
         HUB_URL=$(python3 -c "
-import re, sys
+import re
 content = open('${CONFIG_PATH}').read()
 m = re.search(r'hub:\s*\n(?:.*\n)*?.*url:\s*(.+)', content)
-if m:
-    print(m.group(1).strip())
+if m: print(m.group(1).strip())
 " 2>/dev/null || echo "")
     fi
 fi
 if [[ -z "$HUB_URL" ]]; then
-    die "Hub URL not set. Either:\n  - export C5_HUB_URL=https://...\n  - set hub.url in .c4/config.yaml"
+    # 릴리즈 바이너리라면 내장값 사용 — cq hub status로 확인 가능
+    warn "Hub URL not found in env or config — relying on binary built-in value"
+    HUB_URL="__builtin__"
 fi
 info "Hub URL: $HUB_URL"
 

@@ -23,10 +23,20 @@ func init() {
 
 // initHub creates the Hub client and registers Hub + Worker handlers.
 func initHub(ctx *initContext) error {
-	if ctx.cfgMgr == nil || !ctx.cfgMgr.GetConfig().Hub.Enabled {
+	if ctx.cfgMgr == nil {
 		return nil
 	}
 	hubCfg := ctx.cfgMgr.GetConfig().Hub
+
+	// Apply builtinHubURL fallback (baked in via -ldflags at build time).
+	if hubCfg.URL == "" && builtinHubURL != "" {
+		hubCfg.URL = builtinHubURL
+		hubCfg.Enabled = true
+	}
+
+	if !hubCfg.Enabled {
+		return nil
+	}
 
 	// API key resolution priority:
 	//  1. secrets store (~/.c4/secrets.db) — "hub.api_key" (AES-256-GCM encrypted)

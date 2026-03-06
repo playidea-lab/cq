@@ -11,14 +11,17 @@ BINARY_NAME := c4
 BUILD_DIR := bin
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 
-# Supabase built-in credentials — injected only when CI env vars are set.
-# Local builds leave these empty; users can override via C4_CLOUD_URL / SUPABASE_URL env vars.
+# Built-in credentials — injected only when CI env vars are set.
+# Local builds leave these empty; users can override via env vars or .c4/config.yaml.
 _SUPABASE_FLAGS :=
 ifneq ($(SUPABASE_URL),)
   _SUPABASE_FLAGS += -X main.builtinSupabaseURL=$(SUPABASE_URL)
 endif
 ifneq ($(SUPABASE_ANON_KEY),)
   _SUPABASE_FLAGS += -X main.builtinSupabaseKey=$(SUPABASE_ANON_KEY)
+endif
+ifneq ($(HUB_URL),)
+  _SUPABASE_FLAGS += -X main.builtinHubURL=$(HUB_URL)
 endif
 
 # C5 Hub version to embed when building with c5_embed tag.

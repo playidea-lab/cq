@@ -153,8 +153,16 @@ func newHubClient() (*hub.Client, error) {
 	}
 
 	hubCfg := cfgMgr.GetConfig().Hub
+
+	// Apply builtinHubURL fallback: if config has no URL but binary has one baked in,
+	// auto-enable hub so users don't need to edit config.yaml.
+	if hubCfg.URL == "" && builtinHubURL != "" {
+		hubCfg.URL = builtinHubURL
+		hubCfg.Enabled = true
+	}
+
 	if !hubCfg.Enabled {
-		return nil, fmt.Errorf("hub is not enabled in .c4/config.yaml\n\nAdd:\n  hub:\n    enabled: true\n    url: \"http://<hub-ip>:8000\"\n    api_key_env: \"C4_HUB_API_KEY\"\n    team_id: \"my-team\"")
+		return nil, fmt.Errorf("hub is not enabled in .c4/config.yaml\n\nAdd:\n  hub:\n    enabled: true\n    url: \"http://<hub-ip>:8000\"")
 	}
 
 	client := hub.NewClient(hub.HubConfig{

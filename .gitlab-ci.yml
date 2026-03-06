@@ -9,6 +9,8 @@
 #   CI_SUPABASE_URL  — Supabase project URL (e.g. https://xxx.supabase.co)
 #                      Embedded in release binaries so `cq auth login` works out of the box.
 #   CI_SUPABASE_KEY  — Supabase anon key (public, safe to embed; protected by RLS)
+#   CI_HUB_URL       — C5 Hub URL (e.g. https://piqsol-c5.fly.dev)
+#                      Embedded so hub works without config.yaml hub.url
 
 variables:
   GIT_SUBMODULE_STRATEGY: recursive
@@ -25,6 +27,7 @@ check-env:
     - 'test -n "$GH_TOKEN" || (echo "GH_TOKEN not set - add it in Settings > CI/CD > Variables" && exit 1)'
     - 'test -n "$CI_SUPABASE_URL" || echo "WARNING: CI_SUPABASE_URL not set - built-in auth will be disabled"'
     - 'test -n "$CI_SUPABASE_KEY" || echo "WARNING: CI_SUPABASE_KEY not set - built-in auth will be disabled"'
+    - 'test -n "$CI_HUB_URL" || echo "WARNING: CI_HUB_URL not set - hub will require manual config.yaml setup"'
   only:
     - /^v.*/
 
@@ -73,7 +76,7 @@ build-c5-darwin-arm64:
   script:
     - cd c4-core
     - make embed-skills
-    - make build-cross GOOS=$GOOS GOARCH=$GOARCH TIER=$TIER SUPABASE_URL=$CI_SUPABASE_URL SUPABASE_ANON_KEY=$CI_SUPABASE_KEY
+    - make build-cross GOOS=$GOOS GOARCH=$GOARCH TIER=$TIER SUPABASE_URL=$CI_SUPABASE_URL SUPABASE_ANON_KEY=$CI_SUPABASE_KEY HUB_URL=$CI_HUB_URL
   artifacts:
     paths:
       - c4-core/dist/
@@ -89,7 +92,7 @@ build-c5-darwin-arm64:
     - cd c4-core
     - make embed-skills
     - make embed-c5 C5_BIN=../c5/bin/c5-$GOOS-$GOARCH$EXT EXT=$EXT
-    - make build-cross GOOS=$GOOS GOARCH=$GOARCH TIER=full C5_VERSION=$CI_COMMIT_TAG SUPABASE_URL=$CI_SUPABASE_URL SUPABASE_ANON_KEY=$CI_SUPABASE_KEY
+    - make build-cross GOOS=$GOOS GOARCH=$GOARCH TIER=full C5_VERSION=$CI_COMMIT_TAG SUPABASE_URL=$CI_SUPABASE_URL SUPABASE_ANON_KEY=$CI_SUPABASE_KEY HUB_URL=$CI_HUB_URL
   artifacts:
     paths:
       - c4-core/dist/
