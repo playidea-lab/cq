@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -74,4 +75,31 @@ func GenerateEvalMD(ctx context.Context, gateway *llm.Gateway, projectRoot, skil
 	}
 
 	return evalPath, nil
+}
+
+// GenerateAllEvalMD generates EVAL.md for every skill that has a SKILL.md
+// but no EVAL.md. Returns lists of generated skill names and failed skill names.
+func GenerateAllEvalMD(ctx context.Context, gateway *llm.Gateway, projectRoot string) (generated []string, failed []string) {
+	skillsDir := filepath.Join(projectRoot, ".claude", "skills")
+	entries, err := os.ReadDir(skillsDir)
+	if err != nil {
+		return nil, nil
+	}
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		evalPath := EvalMDPath(projectRoot, name)
+		if _, statErr := os.Stat(evalPath); statErr == nil {
+			// Already exists — skip.
+			continue
+		}
+		if _, genErr := GenerateEvalMD(ctx, gateway, projectRoot, name); genErr != nil {
+			failed = append(failed, name)
+		} else {
+			generated = append(generated, name)
+		}
+	}
+	return generated, failed
 }

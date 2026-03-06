@@ -3,6 +3,7 @@ package skilleval
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -97,7 +98,7 @@ func RunEval(ctx context.Context, gateway *llm.Gateway, projectRoot, skillName s
 	evalPath := EvalMDPath(projectRoot, skillName)
 
 	// Auto-generate EVAL.md if missing
-	if _, statErr := os.Stat(evalPath); statErr != nil {
+	if _, statErr := os.Stat(evalPath); errors.Is(statErr, os.ErrNotExist) {
 		if gateway == nil {
 			return nil, fmt.Errorf("EVAL.md missing for skill %q and no LLM gateway available for auto-generation", skillName)
 		}
@@ -132,28 +133,35 @@ func RunEval(ctx context.Context, gateway *llm.Gateway, projectRoot, skillName s
 		}
 
 		trueCount := 0
+		successCount := 0
 		var totalConf float64
 
 		for i := 0; i < k; i++ {
 			jr, callErr := callJudge(ctx, gateway, skillDesc, test.Prompt)
 			if callErr != nil {
-				// On error, record as no-trigger (conservative)
-				cr.Trials = append(cr.Trials, false)
+				// Do not append to Trials on error — error calls must not
+				// be counted as legitimate "no-trigger" results.
 				continue
 			}
 			cr.Trials = append(cr.Trials, jr.ShouldTrigger)
+			successCount++
 			if jr.ShouldTrigger {
 				trueCount++
 			}
 			totalConf += jr.Confidence
 		}
 
-		if len(cr.Trials) > 0 {
-			cr.AvgConfidence = totalConf / float64(len(cr.Trials))
+		// If all judge calls failed, this case is unevaluable.
+		if successCount == 0 {
+			cr.Correct = false
+			cases = append(cases, cr)
+			continue
 		}
 
-		// Majority vote for trigger decision
-		majority := trueCount > len(cr.Trials)/2
+		cr.AvgConfidence = totalConf / float64(successCount)
+
+		// Majority vote uses only successful calls.
+		majority := trueCount > successCount/2
 		cr.Correct = majority == test.ShouldTrigger
 
 		// pass@k: at least one trial is correct

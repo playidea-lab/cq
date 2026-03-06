@@ -85,6 +85,7 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 		checkStaleSocket,
 		checkZombieServe,
 		checkSidecarHang,
+		func() checkResult { return checkSkillHealth(projectDir) },
 	}
 
 	results := make([]checkResult, 0, len(checks))
@@ -790,4 +791,91 @@ func checkOSService(_ bool) checkResult {
 			Message: "serve not running (auto-starts on next cq claude)",
 		}
 	}
+}
+
+// checkSkillHealth scans the skill knowledge records for low trigger accuracy.
+// Unknown skills (no eval records yet) are reported as INFO, not WARN,
+// to avoid noise during initial setup.
+func checkSkillHealth(projectDir string) checkResult {
+	skillsDir := filepath.Join(projectDir, ".claude", "skills")
+	entries, err := os.ReadDir(skillsDir)
+	if err != nil {
+		// No skills directory — OK
+		return checkResult{Name: "skill-health", Status: checkOK, Message: "no skills directory"}
+	}
+
+	// Load knowledge records tagged with domain=skilleval from the local store dir.
+	// Records are stored as files under .c4/knowledge/docs/ with prefix "skill-eval-".
+	docsDir := filepath.Join(projectDir, ".c4", "knowledge", "docs")
+	records := map[string]float64{} // skillName → latest trigger_accuracy
+
+	if docEntries, readErr := os.ReadDir(docsDir); readErr == nil {
+		for _, de := range docEntries {
+			if !strings.HasPrefix(de.Name(), "skill-eval-") {
+				continue
+			}
+			data, readErr2 := os.ReadFile(filepath.Join(docsDir, de.Name()))
+			if readErr2 != nil {
+				continue
+			}
+			// Parse "trigger_accuracy: 0.9000" line
+			for _, line := range strings.Split(string(data), "\n") {
+				line = strings.TrimSpace(line)
+				if !strings.HasPrefix(line, "trigger_accuracy:") {
+					continue
+				}
+				parts := strings.SplitN(line, ":", 2)
+				if len(parts) != 2 {
+					break
+				}
+				val := strings.TrimSpace(parts[1])
+				var acc float64
+				if _, scanErr := fmt.Sscanf(val, "%f", &acc); scanErr == nil {
+					// Extract skill name from filename: skill-eval-{name}-YYYYMMDD.md
+					base := strings.TrimSuffix(de.Name(), ".md")
+					// Remove trailing date segment (last -YYYYMMDD)
+					if idx := strings.LastIndex(base, "-"); idx > 0 {
+						skillKey := strings.TrimPrefix(base[:idx], "skill-eval-")
+						if _, exists := records[skillKey]; !exists || acc < records[skillKey] {
+							records[skillKey] = acc
+						}
+					}
+				}
+				break
+			}
+		}
+	}
+
+	warn := []string{}
+	unknown := []string{}
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		if acc, ok := records[name]; ok {
+			if acc < 0.90 {
+				warn = append(warn, fmt.Sprintf("%s(%.0f%%)", name, acc*100))
+			}
+		} else {
+			unknown = append(unknown, name)
+		}
+	}
+
+	if len(warn) > 0 {
+		return checkResult{
+			Name:    "skill-health",
+			Status:  checkWarn,
+			Message: fmt.Sprintf("low trigger accuracy: %s", strings.Join(warn, ", ")),
+			Fix:     "cq tool c4_skill_eval_run --skill=<name> to re-evaluate",
+		}
+	}
+	if len(unknown) > 0 {
+		return checkResult{
+			Name:    "skill-health",
+			Status:  checkOK,
+			Message: fmt.Sprintf("%d skills not yet evaluated (run c4_skill_eval_run to baseline)", len(unknown)),
+		}
+	}
+	return checkResult{Name: "skill-health", Status: checkOK, Message: "all evaluated skills pass trigger accuracy ≥90%"}
 }
