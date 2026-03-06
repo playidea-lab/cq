@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/piqsol/c4/c5/internal/model"
@@ -149,6 +150,25 @@ func (s *Server) handleLeaseAcquire(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeError(w, http.StatusNotFound, "worker not found: "+req.WorkerID)
 		return
+	}
+
+	// Version gate: if C5_MIN_VERSION is set, reject workers below the minimum.
+	if minVer := os.Getenv("C5_MIN_VERSION"); minVer != "" {
+		min, err := parseSemver(minVer)
+		if err != nil {
+			log.Printf("c5: invalid C5_MIN_VERSION %q: %v", minVer, err)
+		} else {
+			workerVer, err := parseSemver(worker.Version)
+			if err != nil || semverLess(workerVer, min) {
+				writeJSON(w, model.LeaseAcquireResponse{
+					Control: &model.ControlMessage{
+						Action:  "upgrade",
+						Message: "worker version " + worker.Version + " is below minimum " + minVer,
+					},
+				})
+				return
+			}
+		}
 	}
 
 	hasGPU := worker.GPUCount > 0

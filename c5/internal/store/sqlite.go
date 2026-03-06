@@ -313,7 +313,7 @@ func (s *Store) migrate() error {
 		`CREATE INDEX IF NOT EXISTS idx_jobs_capability ON jobs(capability)`,
 		// Migration: submitted_by for audit trail (nullable; master key → empty).
 		`ALTER TABLE jobs ADD COLUMN submitted_by TEXT DEFAULT NULL`,
-		// Migration: worker version string for version gate and reporting.
+		// Migration: worker version for version gate (C5_MIN_VERSION).
 		`ALTER TABLE workers ADD COLUMN version TEXT NOT NULL DEFAULT ''`,
 	} {
 		if _, err := s.db.Exec(stmt); err != nil {

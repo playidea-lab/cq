@@ -231,11 +231,6 @@ type QueueStats struct {
 	Cancelled int `json:"cancelled"`
 }
 
-// ControlMessage is sent from hub to worker to request lifecycle actions.
-type ControlMessage struct {
-	Action string `json:"action"` // "upgrade" | "shutdown"
-}
-
 // WorkerRegisterRequest is the payload for POST /v1/workers/register.
 // hub.Client sends {"capabilities": {...}} — the handler extracts fields from the map.
 type WorkerRegisterRequest struct {
@@ -283,6 +278,13 @@ type InputPresignedArtifact struct {
 	URL       string `json:"url"`
 	ExpiresAt string `json:"expires_at,omitempty"`
 	Required  bool   `json:"required,omitempty"` // propagated from ArtifactRef; false = skip on failure
+}
+
+// ControlMessage carries an out-of-band instruction from Hub to Worker
+// (e.g. upgrade directive when worker version is below minimum).
+type ControlMessage struct {
+	Action  string `json:"action"`            // e.g. "upgrade"
+	Message string `json:"message,omitempty"` // human-readable detail
 }
 
 // LeaseAcquireResponse is returned from POST /v1/leases/acquire.
