@@ -1521,3 +1521,30 @@ func TestBuildLaunchArgs_OnboardingMsgConst(t *testing.T) {
 		t.Errorf("--append-system-prompt not found in args: %v", args)
 	}
 }
+
+func TestPrintReadyBox_ContainsExpectedLines(t *testing.T) {
+	var buf bytes.Buffer
+	printReadyBox(&buf)
+	out := buf.String()
+	if !strings.Contains(out, "준비 완료") {
+		t.Errorf("expected '준비 완료' in output, got: %q", out)
+	}
+	if !strings.Contains(out, "/c4-status") {
+		t.Errorf("expected '/c4-status' in output, got: %q", out)
+	}
+}
+
+func TestPrintReadyBox_BoxIsClosed(t *testing.T) {
+	var buf bytes.Buffer
+	printReadyBox(&buf)
+	lines := strings.Split(strings.TrimRight(buf.String(), "\n"), "\n")
+	if len(lines) < 2 {
+		t.Fatalf("expected at least 2 lines, got %d", len(lines))
+	}
+	if !strings.HasPrefix(lines[0], "┌") {
+		t.Errorf("first line should start with '┌', got: %q", lines[0])
+	}
+	if !strings.HasPrefix(lines[len(lines)-1], "└") {
+		t.Errorf("last line should start with '└', got: %q", lines[len(lines)-1])
+	}
+}

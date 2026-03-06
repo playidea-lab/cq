@@ -256,7 +256,7 @@ func initAndLaunch(tool string) error {
 			return fmt.Errorf("creating directory %s: %w", d, err)
 		}
 	}
-	fmt.Fprintln(os.Stderr, "cq: .c4/ directory initialized")
+	fmt.Fprintln(os.Stderr, "✓ C4 Engine 로드")
 
 	// 1b. Write default config.yaml if it doesn't exist yet.
 	if err := writeDefaultConfig(dir); err != nil {
@@ -272,6 +272,7 @@ func initAndLaunch(tool string) error {
 	if err := setupMCPConfig(dir); err != nil {
 		return fmt.Errorf("setting up .mcp.json: %w", err)
 	}
+	fmt.Fprintln(os.Stderr, "✓ 지식 베이스 연결")
 
 	// 3. Create/update CLAUDE.md with C4 overrides
 	if err := setupClaudeMD(dir); err != nil {
@@ -309,18 +310,43 @@ func initAndLaunch(tool string) error {
 			return fmt.Errorf("setting up .cursor/mcp.json: %w", err)
 		}
 	}
+	fmt.Fprintln(os.Stderr, "✓ MCP 서버 준비")
 
 	// 7. Check cloud auth status and prompt login if needed
 	ensureCloudAuth(nil, yesAll)
 
 	// 7b. Ensure cq serve is running in background (non-fatal if it fails)
 	ensureServeRunning(noServe)
+	fmt.Fprintln(os.Stderr, "✓ 세션 컨텍스트 주입")
+
+	printReadyBox(os.Stderr)
 
 	// 8. Launch AI tool
 	if (tool == "claude" || tool == "gemini") && sessionName != "" {
 		return launchToolNamed(tool, dir, sessionName)
 	}
 	return launchTool(tool, dir)
+}
+
+// printReadyBox prints a box with ready message to w.
+func printReadyBox(w io.Writer) {
+	lines := []string{
+		"준비 완료 — Claude Code 시작합니다",
+		"도움말: /help | 상태: /c4-status",
+	}
+	maxLen := 0
+	for _, l := range lines {
+		if len([]rune(l)) > maxLen {
+			maxLen = len([]rune(l))
+		}
+	}
+	border := strings.Repeat("─", maxLen+2)
+	fmt.Fprintf(w, "┌%s┐\n", border)
+	for _, l := range lines {
+		padding := maxLen - len([]rune(l))
+		fmt.Fprintf(w, "│ %s%s │\n", l, strings.Repeat(" ", padding))
+	}
+	fmt.Fprintf(w, "└%s┘\n", border)
 }
 
 // setupClaudeMD creates or updates CLAUDE.md with C4 override rules.
