@@ -69,10 +69,10 @@ func ParseEvalMD(path string) (*EvalSpec, error) {
 			continue
 		}
 
-		// Parse test cases: - [x] or - [ ]
-		if strings.HasPrefix(trimmed, "- [x] ") || strings.HasPrefix(trimmed, "- [X] ") {
-			prompt := strings.TrimPrefix(trimmed, "- [x] ")
-			prompt = strings.TrimPrefix(prompt, "- [X] ")
+		// Parse test cases: - [x] / - [X] (checked) or - [ ] (unchecked)
+		lower := strings.ToLower(trimmed)
+		if strings.HasPrefix(lower, "- [x] ") {
+			prompt := trimmed[len("- [x] "):]
 			spec.Tests = append(spec.Tests, TriggerTest{Prompt: prompt, ShouldTrigger: true})
 			continue
 		}

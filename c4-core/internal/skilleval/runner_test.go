@@ -237,6 +237,37 @@ func TestRunEval_AllTrialsFail(t *testing.T) {
 	}
 }
 
+func TestRunEval_KZero(t *testing.T) {
+	projectRoot := t.TempDir()
+	evalContent := "# test-skill\n> desc\n\n## trigger_tests\n- [x] trigger me\n"
+	writeEvalMD(t, projectRoot, "test-skill", evalContent)
+
+	gw, _ := newMockGateway(nil) // fallback responses
+	result, err := RunEval(context.Background(), gw, projectRoot, "test-skill", 0)
+	if err != nil {
+		t.Fatalf("RunEval: %v", err)
+	}
+	// k=0 should default to 5
+	if result.K != 5 {
+		t.Errorf("K = %d, want 5 (default)", result.K)
+	}
+	if len(result.Cases[0].Trials) != 5 {
+		t.Errorf("Trials count = %d, want 5", len(result.Cases[0].Trials))
+	}
+}
+
+func TestRunEval_PathTraversal(t *testing.T) {
+	projectRoot := t.TempDir()
+
+	gw, _ := newMockGateway(nil)
+	for _, name := range []string{"../etc/passwd", "foo/bar", "foo\\bar", ".hidden"} {
+		_, err := RunEval(context.Background(), gw, projectRoot, name, 1)
+		if err == nil {
+			t.Errorf("expected error for skill name %q, got nil", name)
+		}
+	}
+}
+
 func TestRunEval_KClamp(t *testing.T) {
 	projectRoot := t.TempDir()
 	evalContent := "# test-skill\n> desc\n\n## trigger_tests\n- [x] trigger me\n"

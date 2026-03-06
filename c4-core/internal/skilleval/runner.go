@@ -85,6 +85,12 @@ func callJudge(ctx context.Context, gateway *llm.Gateway, skillDesc, testPrompt 
 		}
 		jr.Confidence = 0.5
 	}
+	// Clamp confidence to [0,1] regardless of LLM output.
+	if jr.Confidence < 0 {
+		jr.Confidence = 0
+	} else if jr.Confidence > 1 {
+		jr.Confidence = 1
+	}
 
 	return jr, nil
 }
@@ -92,6 +98,9 @@ func callJudge(ctx context.Context, gateway *llm.Gateway, skillDesc, testPrompt 
 // RunEval evaluates the skill trigger accuracy using k LLM judge calls per test case.
 // If EVAL.md does not exist and a gateway is provided, it auto-generates one first.
 func RunEval(ctx context.Context, gateway *llm.Gateway, projectRoot, skillName string, k int) (*RunResult, error) {
+	if strings.ContainsAny(skillName, "./\\") {
+		return nil, fmt.Errorf("invalid skill name %q", skillName)
+	}
 	if k <= 0 {
 		k = 5
 	}
