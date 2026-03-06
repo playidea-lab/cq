@@ -62,8 +62,11 @@ func NewDatasetClient(client *Client) *DatasetClient {
 	return &DatasetClient{client: client}
 }
 
-// validateName checks that name contains no path-separator characters or traversal sequences.
+// validateName checks that name is non-empty and contains no path-separator characters or traversal sequences.
 func validateName(name string) error {
+	if name == "" {
+		return fmt.Errorf("dataset name must not be empty")
+	}
 	if strings.ContainsAny(name, "/\\") || strings.Contains(name, "..") {
 		return fmt.Errorf("invalid dataset name %q: must not contain /, \\, or ..", name)
 	}
@@ -223,14 +226,21 @@ func (dc *DatasetClient) Pull(ctx context.Context, name, dest, version string) (
 	dlResults := make([]dlResult, len(manifest))
 	sem := make(chan struct{}, 4)
 	var wg sync.WaitGroup
-	destClean := filepath.Clean(dest) + string(os.PathSeparator)
+	// Convert dest to absolute path so the traversal guard works for relative
+	// inputs such as "." or "./data" (filepath.Clean(".") = "." which has no
+	// common prefix with "data.csv/").
+	absDest, err := filepath.Abs(dest)
+	if err != nil {
+		return nil, fmt.Errorf("resolve dest: %w", err)
+	}
+	destClean := absDest + string(os.PathSeparator)
 	for i, entry := range manifest {
 		wg.Add(1)
 		go func(idx int, me ManifestEntry) {
 			defer wg.Done()
 			sem <- struct{}{}
 			defer func() { <-sem }()
-			localPath := filepath.Join(dest, filepath.FromSlash(me.Path))
+			localPath := filepath.Join(absDest, filepath.FromSlash(me.Path))
 			// Guard against path traversal in manifest entries.
 			if !strings.HasPrefix(filepath.Clean(localPath)+string(os.PathSeparator), destClean) {
 				dlResults[idx] = dlResult{err: fmt.Errorf("manifest entry escapes destination: %q", me.Path)}

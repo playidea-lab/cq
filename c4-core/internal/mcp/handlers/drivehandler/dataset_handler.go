@@ -95,7 +95,11 @@ func RegisterDatasetHandlers(reg *mcp.Registry, client *drive.DatasetClient) {
 		if args.Name == "" {
 			return nil, errors.New("name is required")
 		}
-		result, err := client.Pull(context.Background(), args.Name, args.Dest, args.Version)
+		dest := args.Dest
+		if dest == "" {
+			dest = "./" + args.Name
+		}
+		result, err := client.Pull(context.Background(), args.Name, dest, args.Version)
 		if err != nil {
 			return nil, err
 		}

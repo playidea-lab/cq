@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -248,4 +249,114 @@ func sha256file(data []byte) string {
 	h := sha256.New()
 	h.Write(data)
 	return hex.EncodeToString(h.Sum(nil))
+}
+
+// TestDatasetPull_RelativeDest verifies that Pull works when dest is a relative
+// path such as "." (the original guard was broken for relative paths).
+func TestDatasetPull_RelativeDest(t *testing.T) {
+	dir := t.TempDir()
+	orig, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chdir(orig) //nolint:errcheck
+
+	content := []byte("hello relative")
+	h := sha256file(content)
+	manifest := []ManifestEntry{{Path: "out.txt", Hash: h, Size: int64(len(content))}}
+	mJSON, _ := json.Marshal(manifest)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && strings.Contains(r.URL.Path, "c4_datasets"):
+			rows := []map[string]any{{"version_hash": "vhash-rel", "manifest": json.RawMessage(mJSON)}}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(rows)
+		case r.Method == http.MethodGet && strings.Contains(r.URL.Path, "storage"):
+			w.Write(content)
+		default:
+			t.Errorf("unexpected: %s %s", r.Method, r.URL.Path)
+			http.Error(w, "unexpected", http.StatusInternalServerError)
+		}
+	}))
+	defer srv.Close()
+
+	dc := NewDatasetClient(setupTestClient(srv.URL, "proj-rel"))
+	result, err := dc.Pull(context.Background(), "ds-rel", ".", "")
+	if err != nil {
+		t.Fatalf("Pull with relative dest failed: %v", err)
+	}
+	if result.FilesDownloaded != 1 {
+		t.Errorf("want FilesDownloaded=1, got %d", result.FilesDownloaded)
+	}
+}
+
+// TestDatasetPull_TraversalRejected verifies that a manifest entry containing
+// a path traversal sequence is rejected with an error.
+func TestDatasetPull_TraversalRejected(t *testing.T) {
+	dest := t.TempDir()
+
+	manifest := []ManifestEntry{
+		{Path: "../escape.txt", Hash: strings.Repeat("a", 64), Size: 10},
+	}
+	mJSON, _ := json.Marshal(manifest)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && strings.Contains(r.URL.Path, "c4_datasets") {
+			rows := []map[string]any{{"version_hash": "vhash-trav", "manifest": json.RawMessage(mJSON)}}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(rows)
+		}
+	}))
+	defer srv.Close()
+
+	dc := NewDatasetClient(setupTestClient(srv.URL, "proj-trav"))
+	_, err := dc.Pull(context.Background(), "ds-trav", dest, "")
+	if err == nil {
+		t.Fatal("expected error for path traversal manifest entry, got nil")
+	}
+	if !strings.Contains(err.Error(), "escapes destination") {
+		t.Errorf("unexpected error message: %v", err)
+	}
+}
+
+// TestValidateName verifies validateName rejects empty, path-separator, and
+// dot-dot names while accepting normal names.
+func TestValidateName(t *testing.T) {
+	cases := []struct {
+		name    string
+		wantErr bool
+	}{
+		{"", true},
+		{"../etc/passwd", true},
+		{"a/b", true},
+		{`a\b`, true},
+		{"valid-name", false},
+		{"model_v1.0", false},
+	}
+	for _, tc := range cases {
+		err := validateName(tc.name)
+		if tc.wantErr && err == nil {
+			t.Errorf("validateName(%q): want error, got nil", tc.name)
+		}
+		if !tc.wantErr && err != nil {
+			t.Errorf("validateName(%q): want nil, got %v", tc.name, err)
+		}
+	}
+}
+
+// TestCasStoragePath_ShortHash verifies that casStoragePath returns an error
+// for hashes shorter than 64 characters.
+func TestCasStoragePath_ShortHash(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	defer srv.Close()
+
+	dc := NewDatasetClient(setupTestClient(srv.URL, "proj-cas"))
+	_, err := dc.casStoragePath("tooshort")
+	if err == nil {
+		t.Fatal("expected error for short hash, got nil")
+	}
 }

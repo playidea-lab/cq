@@ -45,6 +45,13 @@
 - `runner.go`: `AvgConfidence` divides by `len(cr.Trials)` which includes error-appended entries, not just successful LLM calls — confidence metric is diluted.
 - Missing test cases: all-error scenario, k upper bound enforcement, path traversal rejection.
 
+### Key Finding: Dataset Versioning Pull Guard Bug (2026-03-06)
+- `dataset.go` Pull(): path traversal guard uses `filepath.Clean(dest)+sep` as prefix
+- Guard ONLY works with absolute dest. With relative dest (`.`, `""`, `./foo`), `filepath.Clean("data.csv")+"/"` = `"data.csv/"` which does NOT HasPrefix `"./"` → every legitimate file rejected
+- CLI default `--dest "."` triggers this bug → Pull is completely broken for default usage
+- Fix: add `filepath.Abs(dest)` before computing `destClean`
+- Test gap: `TestDatasetPull_Incremental` uses `t.TempDir()` (absolute), masks the bug
+
 ### Patterns Observed
 - All handler files follow consistent pattern: Register*Handlers + handle* functions
 - No hardcoded user paths in Go code (good)
@@ -53,3 +60,6 @@
 - Best-effort migrations with `_, _ = s.db.Exec(m)` swallow all errors including non-duplicate-column failures
 - **Path validation pattern**: entity IDs validated with `strings.Contains(id, "..")` + `/` + `\` (persona.go:54); file paths validated with `filepath.Clean` + `HasPrefix` (fileops.go:174-182)
 - **LLM task type routing**: `"scout"` task type resolves to haiku via `Routes["default"]` fallback when not explicitly mapped — safe, matches knowledgehandler pattern
+- **filepath.Clean+HasPrefix traversal guard**: requires absolute path as base. Always call `filepath.Abs(base)` before computing the prefix guard, otherwise relative paths break the guard entirely (both blocking legitimate files AND failing to catch traversal).
+- **PostgREST Prefer: resolution=ignore-duplicates**: returns 200/201 on conflict (not 409). The 409 dead-code check is harmless but a sign the response semantics were misunderstood.
+- **validateName empty-string gap**: `validateName("")` returns nil — callers must check for empty separately. Pattern in this codebase: explicit `if args.Name == ""` check at handler level.
