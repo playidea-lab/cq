@@ -1548,3 +1548,38 @@ func TestPrintReadyBox_BoxIsClosed(t *testing.T) {
 		t.Errorf("last line should start with '└', got: %q", lines[len(lines)-1])
 	}
 }
+
+func TestIsFirstRun_NoFile(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	if !isFirstRun() {
+		t.Error("expected isFirstRun()=true when first_run file absent")
+	}
+}
+
+func TestIsFirstRun_FileExists(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	dir := filepath.Join(home, ".c4")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "first_run"), nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if isFirstRun() {
+		t.Error("expected isFirstRun()=false when first_run file exists")
+	}
+}
+
+func TestMarkFirstRun_Idempotent(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	if err := markFirstRun(); err != nil {
+		t.Fatalf("first call: %v", err)
+	}
+	if isFirstRun() {
+		t.Error("expected isFirstRun()=false after markFirstRun()")
+	}
+	if err := markFirstRun(); err != nil {
+		t.Fatalf("second call: %v", err)
+	}
+}

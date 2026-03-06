@@ -108,5 +108,7 @@ var DefaultAllowlist = ErrorAllowlist{
 	"internal/serve/realtime.go":                   3,
 	"internal/serve/ssesubscriber.go":              2,
 	"internal/state/machine.go":                    2,
+	"internal/skilleval/generator.go":              1,
+	"internal/skilleval/runner.go":                 2,
 	"internal/task/models.go":                      6,
 }

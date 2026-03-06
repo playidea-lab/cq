@@ -1263,6 +1263,13 @@ func launchToolNamed(tool, projectDir, name string) error {
 			toolArgs = []string{"--resume", resumeID}
 		} else {
 			fmt.Fprintf(os.Stderr, "cq: launching %s (session: '%s')...\n", tool, name)
+			// Inject onboarding context on first-ever run (new sessions only, not resumes).
+			if isFirstRun() {
+				toolArgs = append(toolArgs, "--append-system-prompt", onboardingMsg)
+				if err := markFirstRun(); err != nil {
+					fmt.Fprintf(os.Stderr, "cq: warning: markFirstRun: %v\n", err)
+				}
+			}
 		}
 
 		// Snapshot JSONL before a new session so we can detect the UUID after exit.
@@ -1823,7 +1830,6 @@ func isCQServeProcess(pid int) bool {
 	}
 }
 
-// launchTool launches the specified AI coding tool, replacing the current process.
 const onboardingMsg = "만들고 싶은 게 있으면 말씀해주세요. /c4-plan으로 시작합니다."
 
 // buildLaunchArgs returns [tool, ...baseArgs] with --append-system-prompt appended when firstRun is true.
@@ -1836,26 +1842,37 @@ func buildLaunchArgs(firstRun bool, tool string, baseArgs []string) []string {
 }
 
 // isFirstRun returns true when ~/.c4/first_run does not exist.
+// Returns false on any error other than ErrNotExist (e.g. permission denied, HOME unset).
 func isFirstRun() bool {
-	home, _ := os.UserHomeDir()
-	_, err := os.Stat(filepath.Join(home, ".c4", "first_run"))
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return false
+	}
+	_, err = os.Stat(filepath.Join(home, ".c4", "first_run"))
+	if err == nil {
+		return false
+	}
 	return os.IsNotExist(err)
 }
 
 // markFirstRun creates ~/.c4/first_run to record that onboarding has occurred.
 func markFirstRun() error {
-	home, _ := os.UserHomeDir()
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return err
+	}
 	dir := filepath.Join(home, ".c4")
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return err
 	}
-	f, err := os.Create(filepath.Join(dir, "first_run"))
+	f, err := os.OpenFile(filepath.Join(dir, "first_run"), os.O_CREATE|os.O_WRONLY, 0600)
 	if err != nil {
 		return err
 	}
 	return f.Close()
 }
 
+// launchTool launches the specified AI coding tool, replacing the current process.
 func launchTool(tool, dir string) error {
 	var toolCmd string
 	var baseArgs []string
