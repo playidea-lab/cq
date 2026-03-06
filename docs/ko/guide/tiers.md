@@ -84,6 +84,7 @@ curl -fsSL https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/install.sh | s
 | GPU 스케줄러 | — | — | ✅ |
 | POP (개인 온톨로지) | ✅ | ✅ | ✅ |
 | 페르소나/Soul 진화 | ✅ | ✅ | ✅ |
+| 스킬 헬스 파이프라인 | — | ✅ | ✅ |
 | 연구 루프 (c9-*) | — | — | ✅ |
 
 ## 설정 파일 위치
@@ -162,6 +163,8 @@ serve:
 hub:
   enabled: true
   url: http://localhost:8585
+  # API 키: cq secret set hub.api_key <값>  (암호화 저장, config 평문보다 우선)
+  # 키 미설정 시 cloud session JWT를 자동으로 사용
 
 # 백그라운드 데몬 (cq serve)
 serve:

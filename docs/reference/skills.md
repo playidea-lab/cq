@@ -68,6 +68,20 @@ Skills are slash commands invoked inside Claude Code. All 36 skills are embedded
 | `/c9-conference` | c9-conference | Claude (Opus) + Gemini (Pro) debate mode — research conference simulation. |
 | `/c9-deploy` | c9-deploy | Deploy best model to edge server. Can run independently of `/c9-finish`. |
 
+## Skill Health
+
+> Requires `connected` or `full` tier (LLM Gateway needed for haiku classification).
+
+Measure and monitor whether skills trigger correctly — ensuring Claude classifies user prompts accurately before and after changes.
+
+| MCP Tool | Description |
+|----------|-------------|
+| `c4_skill_eval_run` | Run k-trial haiku classification on a skill's EVAL.md test cases. Returns `trigger_accuracy`. |
+| `c4_skill_eval_generate` | Generate EVAL.md test cases (positive + negative prompts) for a skill using haiku. |
+| `c4_skill_eval_status` | Show trigger accuracy summary for all evaluated skills. `ok` = ≥ 0.90. |
+
+`cq doctor` includes a `skill-health` check that warns when any skill drops below the 0.90 threshold.
+
 ## Utilities
 
 | Skill | Triggers | Description |

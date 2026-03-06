@@ -26,7 +26,7 @@ Each command creates `CLAUDE.md`, `.c4/`, skills, and the MCP config for that to
 
 ### `cq doctor`
 
-Check environment health (8 items).
+Check environment health (13 items).
 
 ```sh
 cq doctor           # full report
@@ -40,10 +40,15 @@ cq doctor --fix     # auto-fix safe issues
 | .c4 directory | Database files present |
 | .mcp.json | Valid JSON + binary path exists |
 | CLAUDE.md | File exists + symlink valid |
-| hooks | Security hook installed |
+| hooks | Gate + permission-reviewer hooks installed |
 | Python sidecar | `uv` available |
-| C5 Hub | Hub config + health endpoint |
+| C5 Hub | Hub config + health endpoint (api_prefix-aware) |
 | Supabase | Cloud config + connection |
+| os-service | LaunchAgent / systemd service installed and running |
+| tool-socket | UDS socket responsive (`cq serve` running) |
+| zombie-serve | No orphaned serve processes |
+| sidecar | Python sidecar not hung |
+| skill-health | All evaluated skills pass trigger threshold (≥ 0.90) |
 
 ### `cq secret`
 
@@ -52,6 +57,7 @@ Manage API keys and secrets (stored in `~/.c4/secrets.db`, AES-256-GCM).
 ```sh
 cq secret set anthropic.api_key sk-ant-...
 cq secret set openai.api_key sk-...
+cq secret set hub.api_key <your-hub-key>   # C5 Hub API key (preferred over config.yaml)
 cq secret get anthropic.api_key
 cq secret list
 cq secret delete anthropic.api_key

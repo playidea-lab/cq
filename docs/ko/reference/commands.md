@@ -40,10 +40,15 @@ cq doctor --fix     # 안전한 이슈 자동 수정
 | .c4 directory | 데이터베이스 파일 존재 |
 | .mcp.json | 유효한 JSON + 바이너리 경로 존재 |
 | CLAUDE.md | 파일 존재 + 심링크 유효 |
-| hooks | 보안 훅 설치됨 |
+| hooks | 게이트 + 권한 리뷰어 훅 설치됨 |
 | Python sidecar | `uv` 사용 가능 |
-| C5 Hub | Hub 설정 + health 엔드포인트 |
+| C5 Hub | Hub 설정 + health 엔드포인트 (api_prefix 반영) |
 | Supabase | 클라우드 설정 + 연결 |
+| os-service | LaunchAgent / systemd 서비스 설치 및 실행 중 |
+| tool-socket | UDS 소켓 응답 (`cq serve` 실행 중) |
+| zombie-serve | 고아 serve 프로세스 없음 |
+| sidecar | Python sidecar 행 없음 |
+| skill-health | 평가된 모든 스킬 트리거 임계값 통과 (≥ 0.90) |
 
 ### `cq secret`
 
@@ -52,6 +57,7 @@ API 키와 시크릿 관리 (`~/.c4/secrets.db`에 저장, AES-256-GCM).
 ```sh
 cq secret set anthropic.api_key sk-ant-...
 cq secret set openai.api_key sk-...
+cq secret set hub.api_key <hub-키>          # C5 Hub API 키 (config.yaml 평문보다 우선)
 cq secret get anthropic.api_key
 cq secret list
 cq secret delete anthropic.api_key

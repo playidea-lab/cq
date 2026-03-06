@@ -68,6 +68,20 @@
 | `/c9-conference` | c9-conference | Claude(Opus) + Gemini(Pro) 합의 토론 — 연구 컨퍼런스 시뮬레이션. |
 | `/c9-deploy` | c9-deploy | best model을 edge 서버에 배포. `/c9-finish`와 독립 실행 가능. |
 
+## 스킬 헬스
+
+> `connected` 또는 `full` 티어 필요 (haiku 분류에 LLM Gateway 필요).
+
+스킬 트리거 정확도를 측정하고 모니터링합니다 — 변경 전후로 Claude가 사용자 프롬프트를 올바르게 분류하는지 확인.
+
+| MCP 도구 | 설명 |
+|---------|------|
+| `c4_skill_eval_run` | 스킬의 EVAL.md 테스트 케이스에 k번 haiku 분류 실행. `trigger_accuracy` 반환. |
+| `c4_skill_eval_generate` | haiku로 스킬의 EVAL.md 테스트 케이스(긍정/부정 프롬프트) 자동 생성. |
+| `c4_skill_eval_status` | 평가된 모든 스킬의 트리거 정확도 요약. `ok` = ≥ 0.90. |
+
+`cq doctor`의 `skill-health` 체크가 임계값(0.90) 미달 스킬을 자동으로 경고합니다.
+
 ## 유틸리티
 
 | 스킬 | 트리거 | 설명 |

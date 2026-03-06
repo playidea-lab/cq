@@ -84,6 +84,7 @@ Best for: production deployments, ML workflows, large teams.
 | GPU scheduler | — | — | ✅ |
 | POP (Personal Ontology) | ✅ | ✅ | ✅ |
 | Persona/Soul Evolution | ✅ | ✅ | ✅ |
+| Skill Health Pipeline | — | ✅ | ✅ |
 | Research Loop (c9-*) | — | — | ✅ |
 
 ## Config file location
@@ -177,7 +178,8 @@ serve:
 hub:
   enabled: true
   url: http://localhost:8585
-  # api_key: optional — cloud session JWT is used as fallback when omitted
+  # API key: cq secret set hub.api_key <value>  (stored encrypted, preferred over config)
+  # cloud session JWT is used as fallback when no key is configured
 
 # Background daemon (cq serve)
 serve:
