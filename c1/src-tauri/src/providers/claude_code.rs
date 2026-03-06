@@ -129,10 +129,8 @@ impl SessionProvider for ClaudeCodeProvider {
             .map_err(|e| format!("Failed to open session: {}", e))?;
 
         let reader = BufReader::new(file);
-        let mut messages = Vec::new();
+        let mut all_messages: Vec<SessionMessage> = Vec::new();
         let mut total_lines: u32 = 0;
-        let mut displayable_count: u32 = 0;
-        let page_filled = |msgs: &Vec<SessionMessage>| msgs.len() >= limit as usize;
 
         for line in reader.lines() {
             let line = match line {
@@ -154,25 +152,21 @@ impl SessionProvider for ClaudeCodeProvider {
                 continue;
             }
 
-            displayable_count += 1;
-
-            if displayable_count <= offset {
-                continue;
-            }
-
-            if page_filled(&messages) {
-                continue;
-            }
-
             if let Ok(obj) = serde_json::from_str::<serde_json::Value>(&line) {
                 let msg_type = obj.get("type").and_then(|v| v.as_str()).unwrap_or("unknown");
                 if let Some(msg) = parse_session_message(&obj, msg_type) {
-                    messages.push(msg);
+                    all_messages.push(msg);
                 }
             }
         }
 
-        let has_more = displayable_count > offset + messages.len() as u32;
+        // Paginate from end: offset=0 → newest PAGE_SIZE messages
+        let total = all_messages.len() as u32;
+        let has_more = total > offset + limit;
+        let start = total.saturating_sub(offset + limit) as usize;
+        let end = total.saturating_sub(offset) as usize;
+        let mut messages = all_messages[start..end].to_vec();
+        messages.reverse(); // newest first
 
         Ok(SessionPage {
             messages,

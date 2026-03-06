@@ -84,10 +84,12 @@ export function useSessions() {
         offset,
         limit: PAGE_SIZE,
       });
-      setPage(prev => prev ? {
-        ...result,
-        messages: [...prev.messages, ...result.messages],
-      } : result);
+      setPage(prev => {
+        if (!prev) return result;
+        const seen = new Set(prev.messages.map(m => m.uuid).filter(Boolean));
+        const fresh = result.messages.filter(m => !m.uuid || !seen.has(m.uuid));
+        return { ...result, messages: [...fresh, ...prev.messages] };
+      });
       setOffset(prev => prev + PAGE_SIZE);
     } catch {
       try {
@@ -96,10 +98,12 @@ export function useSessions() {
           offset,
           limit: PAGE_SIZE,
         });
-        setPage(prev => prev ? {
-          ...result,
-          messages: [...prev.messages, ...result.messages],
-        } : result);
+        setPage(prev => {
+          if (!prev) return result;
+          const seen = new Set(prev.messages.map(m => m.uuid).filter(Boolean));
+          const fresh = result.messages.filter(m => !m.uuid || !seen.has(m.uuid));
+          return { ...result, messages: [...fresh, ...prev.messages] };
+        });
         setOffset(prev => prev + PAGE_SIZE);
       } catch (err2) {
         setError(err2 instanceof Error ? err2.message : String(err2));

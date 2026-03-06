@@ -174,12 +174,12 @@ function AppContent() {
         leftNav={workspaceNav}
         channelList={renderChannelList()}
         content={
-          <div className="flex flex-col h-full overflow-hidden">
-            <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
+          <div className="content-wrapper">
+            <div className="content-inner">
               <ErrorBoundary>{renderContent()}</ErrorBoundary>
             </div>
             {showTerminal && (
-              <div className="h-64 border-t border-[#333]">
+              <div className="terminal-panel">
                 <Terminal onClear={() => {}} />
               </div>
             )}

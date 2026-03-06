@@ -462,11 +462,10 @@
 /* Message Viewer */
 
 .msg-viewer {
-  display: flex;
-  flex-direction: column;
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  overscroll-behavior-y: contain;
   padding: var(--space-lg) var(--space-xl);
 }
 

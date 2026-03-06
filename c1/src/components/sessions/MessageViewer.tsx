@@ -246,37 +246,37 @@ function MessageBubble({ message }: { message: SessionMessage }) {
 }
 
 export function MessageViewer({ messages, hasMore, loading, onLoadMore }: MessageViewerProps) {
-  const parentRef = useRef<HTMLDivElement>(null);
-  const prevScrollHeightRef = useRef<number>(0);
-  const prevMsgCountRef = useRef<number>(0);
-  const loadingRef = useRef<boolean>(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const loadingRef = useRef(false);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Preserve scroll position when older messages are prepended
-  useEffect(() => {
-    const el = parentRef.current;
-    if (!el) return;
-    const prevCount = prevMsgCountRef.current;
-    if (messages.length > prevCount && prevCount > 0) {
-      // Messages were prepended — restore relative scroll position
-      const newScrollHeight = el.scrollHeight;
-      const diff = newScrollHeight - prevScrollHeightRef.current;
-      el.scrollTop += diff;
-    }
-    prevMsgCountRef.current = messages.length;
-    prevScrollHeightRef.current = el.scrollHeight;
-  }, [messages.length]);
-
-  // Sync loading ref to avoid stale closure in handleScroll
+  // Sync loading ref
   useEffect(() => { loadingRef.current = loading; }, [loading]);
 
-  // Load more when scrolled near top — loadingRef prevents duplicate triggers
   const handleScroll = () => {
-    const el = parentRef.current;
-    if (!el || !hasMore || loadingRef.current) return;
-    if (el.scrollTop < 80) {
-      prevScrollHeightRef.current = el.scrollHeight;
-      loadingRef.current = true;
-      onLoadMore();
+    const el = containerRef.current;
+    if (!el) return;
+
+    if (!hasMore || loadingRef.current) {
+      if (debounceRef.current) { clearTimeout(debounceRef.current); debounceRef.current = null; }
+      return;
+    }
+
+    const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    if (distFromBottom < 80) {
+      if (debounceRef.current) return;
+      debounceRef.current = setTimeout(() => {
+        debounceRef.current = null;
+        const cur = containerRef.current;
+        if (!cur || loadingRef.current) return;
+        const d = cur.scrollHeight - cur.scrollTop - cur.clientHeight;
+        if (d < 80) {
+          loadingRef.current = true;
+          onLoadMore();
+        }
+      }, 150);
+    } else {
+      if (debounceRef.current) { clearTimeout(debounceRef.current); debounceRef.current = null; }
     }
   };
 
@@ -285,15 +285,15 @@ export function MessageViewer({ messages, hasMore, loading, onLoadMore }: Messag
   }
 
   return (
-    <div ref={parentRef} className="msg-viewer" onScroll={handleScroll}>
-      {loading && hasMore && (
-        <div className="msg-viewer__sentinel">
-          <span className="msg-viewer__loading">Loading...</span>
-        </div>
-      )}
+    <div ref={containerRef} className="msg-viewer" onScroll={handleScroll}>
       {messages.map((msg, i) => (
         <MessageBubble key={msg.uuid || i} message={msg} />
       ))}
+      {loading && hasMore && (
+        <div className="msg-viewer__top-loader">
+          <span className="msg-viewer__loading">Loading...</span>
+        </div>
+      )}
     </div>
   );
 }

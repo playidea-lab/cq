@@ -214,8 +214,7 @@ impl SessionProvider for CursorProvider {
             .unwrap_or_default();
 
         let total_lines = headers.len() as u32;
-        let mut messages = Vec::new();
-        let mut displayable_count: u32 = 0;
+        let mut all_messages: Vec<SessionMessage> = Vec::new();
 
         for header in &headers {
             let bubble_id = match header.get("bubbleId").and_then(|v| v.as_str()) {
@@ -224,16 +223,6 @@ impl SessionProvider for CursorProvider {
             };
 
             let bubble_type = header.get("type").and_then(|v| v.as_i64()).unwrap_or(0);
-
-            displayable_count += 1;
-
-            if displayable_count <= offset {
-                continue;
-            }
-
-            if messages.len() >= limit as usize {
-                continue;
-            }
 
             // Fetch bubble data
             let bubble_key = format!("bubbleId:{}:{}", composer_id, bubble_id);
@@ -252,11 +241,17 @@ impl SessionProvider for CursorProvider {
             };
 
             if let Some(msg) = parse_cursor_bubble(&bubble, bubble_type) {
-                messages.push(msg);
+                all_messages.push(msg);
             }
         }
 
-        let has_more = displayable_count > offset + messages.len() as u32;
+        // Paginate from end: offset=0 → newest PAGE_SIZE messages
+        let total = all_messages.len() as u32;
+        let has_more = total > offset + limit;
+        let start = total.saturating_sub(offset + limit) as usize;
+        let end = total.saturating_sub(offset) as usize;
+        let mut messages = all_messages[start..end].to_vec();
+        messages.reverse(); // newest first
 
         Ok(SessionPage {
             messages,

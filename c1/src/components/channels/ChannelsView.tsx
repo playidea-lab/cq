@@ -256,6 +256,7 @@ export function ChannelsView({ projectPath }: ChannelsViewProps) {
                   />
                 </div>
                 <MessageViewer
+                  key={currentSession.id}
                   messages={msgFilter.trim()
                     ? page.messages.filter(m =>
                         m.content.some(b => b.text?.toLowerCase().includes(msgFilter.toLowerCase()))

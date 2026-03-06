@@ -23,9 +23,34 @@
 
 .main-layout__content {
   flex: 1;
+  min-width: 0;
   height: 100%;
   overflow: hidden;
   background: var(--color-bg-primary);
+  display: flex;
+  flex-direction: column;
+}
+
+/* App.tsx content wrappers (replaces Tailwind utility classes) */
+.content-wrapper {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+.content-inner {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.terminal-panel {
+  height: 256px;
+  flex-shrink: 0;
+  border-top: 1px solid #333;
 }
 
 .app-header {
