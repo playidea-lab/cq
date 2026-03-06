@@ -480,7 +480,8 @@ func checkHub() checkResult {
 		}
 	}
 
-	healthURL := strings.TrimRight(url, "/") + "/health"
+	apiPrefix := strings.TrimRight(sectionYAMLValue(content, "hub", "api_prefix:"), "/")
+	healthURL := strings.TrimRight(url, "/") + apiPrefix + "/health"
 	client := &http.Client{Timeout: 5 * time.Second}
 	resp, err := client.Get(healthURL)
 	if err != nil {
