@@ -18,6 +18,7 @@ type MessengerTab = 'channels' | 'sessions';
 
 const PROVIDERS: { kind: ProviderKind; label: string }[] = [
   { kind: 'claude_code', label: 'Claude' },
+  { kind: 'gemini_cli', label: 'Gemini' },
   { kind: 'codex_cli', label: 'Codex' },
   { kind: 'cursor', label: 'Cursor' },
 ];

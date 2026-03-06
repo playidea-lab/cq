@@ -6,6 +6,7 @@
 pub mod claude_code;
 pub mod codex_cli;
 pub mod cursor;
+pub mod gemini;
 
 use crate::models::{SessionMeta, SessionPage};
 use serde::{Deserialize, Serialize};
@@ -17,6 +18,7 @@ pub enum ProviderKind {
     ClaudeCode,
     CodexCli,
     Cursor,
+    GeminiCli,
 }
 
 impl ProviderKind {
@@ -25,6 +27,7 @@ impl ProviderKind {
             Self::ClaudeCode => "claude_code",
             Self::CodexCli => "codex_cli",
             Self::Cursor => "cursor",
+            Self::GeminiCli => "gemini_cli",
         }
     }
 }
@@ -99,6 +102,12 @@ pub fn detect_providers(project_path: &str) -> Vec<ProviderInfo> {
         providers.push(info);
     }
 
+    // Gemini CLI
+    let gem = gemini::GeminiProvider;
+    if let Ok(info) = gem.info(project_path) {
+        providers.push(info);
+    }
+
     providers
 }
 
@@ -108,5 +117,6 @@ pub fn get_provider(kind: ProviderKind) -> Box<dyn SessionProvider + Send> {
         ProviderKind::ClaudeCode => Box::new(claude_code::ClaudeCodeProvider),
         ProviderKind::CodexCli => Box::new(codex_cli::CodexCliProvider),
         ProviderKind::Cursor => Box::new(cursor::CursorProvider),
+        ProviderKind::GeminiCli => Box::new(gemini::GeminiProvider),
     }
 }

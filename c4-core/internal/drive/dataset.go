@@ -1,7 +1,6 @@
 package drive
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -63,10 +62,21 @@ func NewDatasetClient(client *Client) *DatasetClient {
 	return &DatasetClient{client: client}
 }
 
+// validateName checks that name contains no path-separator characters or traversal sequences.
+func validateName(name string) error {
+	if strings.ContainsAny(name, "/\\") || strings.Contains(name, "..") {
+		return fmt.Errorf("invalid dataset name %q: must not contain /, \\, or ..", name)
+	}
+	return nil
+}
+
 // Upload walks localPath, computes a manifest, and uploads changed files to
 // Supabase Storage using content-addressed storage (CAS).
 // If the manifest hash matches the latest stored version, Changed=false is returned.
 func (dc *DatasetClient) Upload(ctx context.Context, localPath, name, extraIgnore string) (*DatasetUploadResult, error) {
+	if err := validateName(name); err != nil {
+		return nil, err
+	}
 	entries, err := WalkDir(localPath, extraIgnore)
 	if err != nil {
 		return nil, fmt.Errorf("walk dir: %w", err)
@@ -108,6 +118,12 @@ func (dc *DatasetClient) Upload(ctx context.Context, localPath, name, extraIgnor
 		}
 		totalSize += e.Size
 	}
+	// Build path→hash map before sorting, so the upload loop can look up
+	// the correct hash after manifest is sorted for deterministic JSON.
+	hashByPath := make(map[string]string, len(manifest))
+	for _, me := range manifest {
+		hashByPath[me.Path] = me.Hash
+	}
 	// Sort by path for deterministic manifest JSON.
 	sort.Slice(manifest, func(i, j int) bool { return manifest[i].Path < manifest[j].Path })
 
@@ -141,13 +157,14 @@ func (dc *DatasetClient) Upload(ctx context.Context, localPath, name, extraIgnor
 	uploadResults := make([]uploadResult, len(entries))
 	for i, e := range entries {
 		wg.Add(1)
+		relPath := filepath.ToSlash(e.RelPath)
 		go func(idx int, entry WalkEntry, hash string) {
 			defer wg.Done()
 			sem <- struct{}{}
 			defer func() { <-sem }()
 			skipped, uerr := dc.uploadCAS(ctx, entry.Path, hash)
 			uploadResults[idx] = uploadResult{skipped: skipped, err: uerr}
-		}(i, e, manifest[i].Hash)
+		}(i, e, hashByPath[relPath])
 	}
 	wg.Wait()
 
@@ -181,6 +198,9 @@ func (dc *DatasetClient) Upload(ctx context.Context, localPath, name, extraIgnor
 // Pull downloads a dataset version into dest directory, skipping files whose
 // local SHA256 already matches the manifest entry.
 func (dc *DatasetClient) Pull(ctx context.Context, name, dest, version string) (*DatasetPullResult, error) {
+	if err := validateName(name); err != nil {
+		return nil, err
+	}
 	row, err := dc.queryVersion(ctx, name, version)
 	if err != nil {
 		return nil, err
@@ -201,6 +221,7 @@ func (dc *DatasetClient) Pull(ctx context.Context, name, dest, version string) (
 	dlResults := make([]dlResult, len(manifest))
 	sem := make(chan struct{}, 4)
 	var wg sync.WaitGroup
+	destClean := filepath.Clean(dest) + string(os.PathSeparator)
 	for i, entry := range manifest {
 		wg.Add(1)
 		go func(idx int, me ManifestEntry) {
@@ -208,6 +229,11 @@ func (dc *DatasetClient) Pull(ctx context.Context, name, dest, version string) (
 			sem <- struct{}{}
 			defer func() { <-sem }()
 			localPath := filepath.Join(dest, filepath.FromSlash(me.Path))
+			// Guard against path traversal in manifest entries.
+			if !strings.HasPrefix(filepath.Clean(localPath)+string(os.PathSeparator), destClean) {
+				dlResults[idx] = dlResult{err: fmt.Errorf("manifest entry escapes destination: %q", me.Path)}
+				return
+			}
 			// Check local hash.
 			if existing, herr := hashFile(localPath); herr == nil && existing == me.Hash {
 				dlResults[idx] = dlResult{skipped: true}
@@ -315,14 +341,21 @@ func manifestVersionHash(manifestJSON []byte) string {
 }
 
 // casStoragePath returns the Storage path for a given file hash.
-func (dc *DatasetClient) casStoragePath(hash string) string {
-	return dc.client.projectID + "/cas/" + hash[:2] + "/" + hash
+// Returns an error if hash is shorter than 64 characters.
+func (dc *DatasetClient) casStoragePath(hash string) (string, error) {
+	if len(hash) < 64 {
+		return "", fmt.Errorf("invalid hash %q: expected 64-char hex", hash)
+	}
+	return dc.client.projectID + "/cas/" + hash[:2] + "/" + hash, nil
 }
 
 // uploadCAS uploads a file to CAS storage. Returns (true, nil) if already exists.
 func (dc *DatasetClient) uploadCAS(ctx context.Context, localPath, hash string) (skipped bool, err error) {
 	c := dc.client
-	storagePath := dc.casStoragePath(hash)
+	storagePath, err := dc.casStoragePath(hash)
+	if err != nil {
+		return false, err
+	}
 	objectURL := c.supabaseURL + "/storage/v1/object/" + c.bucketName + "/" + storagePath
 
 	// HEAD check: skip if already exists.
@@ -350,18 +383,15 @@ func (dc *DatasetClient) uploadCAS(ctx context.Context, localPath, hash string) 
 		return false, fmt.Errorf("stat: %w", err)
 	}
 
-	data, err := io.ReadAll(f)
-	if err != nil {
-		return false, fmt.Errorf("read: %w", err)
-	}
-
-	uploadReq, err := http.NewRequestWithContext(ctx, "POST", objectURL, bytes.NewReader(data))
+	uploadReq, err := http.NewRequestWithContext(ctx, "POST", objectURL, f)
 	if err != nil {
 		return false, fmt.Errorf("upload request: %w", err)
 	}
 	uploadReq.ContentLength = fi.Size()
+	// GetBody reopens the file so doWithRetry can replay on transient errors.
+	localPathCopy := localPath
 	uploadReq.GetBody = func() (io.ReadCloser, error) {
-		return io.NopCloser(bytes.NewReader(data)), nil
+		return os.Open(localPathCopy)
 	}
 	uploadReq.Header.Set("Content-Type", "application/octet-stream")
 	c.setHeaders(uploadReq)
@@ -381,7 +411,10 @@ func (dc *DatasetClient) uploadCAS(ctx context.Context, localPath, hash string) 
 // downloadCAS downloads a CAS object to localPath, creating parent dirs as needed.
 func (dc *DatasetClient) downloadCAS(ctx context.Context, hash, localPath string) error {
 	c := dc.client
-	storagePath := dc.casStoragePath(hash)
+	storagePath, err := dc.casStoragePath(hash)
+	if err != nil {
+		return err
+	}
 	objectURL := c.supabaseURL + "/storage/v1/object/" + c.bucketName + "/" + storagePath
 
 	req, err := http.NewRequestWithContext(ctx, "GET", objectURL, nil)
@@ -464,6 +497,13 @@ func (dc *DatasetClient) queryVersions(ctx context.Context, name, version string
 	filter := "project_id=eq." + url.QueryEscape(c.projectID) +
 		"&name=eq." + url.QueryEscape(name)
 	if version != "" {
+		// Validate that version contains only hex characters before using it in
+		// a LIKE filter — prevents PostgREST wildcard abuse via '_' or '%'.
+		for _, ch := range version {
+			if !((ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f') || (ch >= 'A' && ch <= 'F')) {
+				return nil, fmt.Errorf("invalid version hash prefix %q: must be hex only", version)
+			}
+		}
 		filter += "&version_hash=like." + url.QueryEscape(version+"%")
 	}
 	filter += fmt.Sprintf("&order=created_at.desc&limit=%d", limit)

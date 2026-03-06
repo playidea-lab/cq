@@ -32,11 +32,13 @@ CREATE POLICY "Members can insert datasets"
     ON c4_datasets FOR INSERT
     WITH CHECK (c4_is_project_member(project_id));
 
-CREATE POLICY "Members can update datasets"
+-- Dataset rows are immutable once written (content-addressable versioning).
+-- UPDATE and DELETE are restricted to service_role to preserve history integrity.
+CREATE POLICY "Service role can update datasets"
     ON c4_datasets FOR UPDATE
-    USING (c4_is_project_member(project_id))
-    WITH CHECK (c4_is_project_member(project_id));
+    USING (auth.role() = 'service_role')
+    WITH CHECK (auth.role() = 'service_role');
 
-CREATE POLICY "Members can delete datasets"
+CREATE POLICY "Service role can delete datasets"
     ON c4_datasets FOR DELETE
-    USING (c4_is_project_member(project_id));
+    USING (auth.role() = 'service_role');

@@ -1236,9 +1236,19 @@ func launchToolNamed(tool, projectDir, name string) error {
 	currentUUID := ""
 	nameWasKnown := false // true if -t name was found in saved sessions (rename-on-reboot allowed)
 	if entry, ok := sessions[name]; ok {
-		jsonlPath := filepath.Join(sessionDir, entry.UUID+".jsonl")
+		// Use saved entry.Dir first (session may have been attached from a different cwd)
+		lookupDir := projectDir
+		if entry.Dir != "" {
+			lookupDir = entry.Dir
+		}
+		entrySessionDir, dirErr := claudeProjectDir(lookupDir)
+		if dirErr != nil {
+			entrySessionDir = sessionDir
+		}
+		jsonlPath := filepath.Join(entrySessionDir, entry.UUID+".jsonl")
 		if _, statErr := os.Stat(jsonlPath); statErr == nil {
 			currentUUID = entry.UUID
+			sessionDir = entrySessionDir // use correct dir for this session
 			nameWasKnown = true
 		} else {
 			fmt.Fprintf(os.Stderr, "cq: session '%s' JSONL deleted, starting new session...\n", name)
