@@ -44,6 +44,7 @@ var DefaultAllowlist = ErrorAllowlist{
 	"internal/daemon/gpu.go":                       2,
 	"internal/daemon/store.go":                     4,
 	"internal/drive/client.go":                     11,
+	"internal/drive/dataset.go":                    6,
 	"internal/eventbus/dispatcher.go":              19,
 	"internal/eventbus/store.go":                   6,
 	"internal/gate/connectors.go":                  2,
