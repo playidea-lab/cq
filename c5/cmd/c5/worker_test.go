@@ -617,6 +617,127 @@ func TestExecuteJob_ProjectIDEmpty(t *testing.T) {
 	}
 }
 
+// =========================================================================
+// Control message tests
+// =========================================================================
+
+// TestAcquireLease_ControlShutdown verifies that a lease response containing
+// control.action="shutdown" is returned as a ControlMessage (no lease).
+func TestAcquireLease_ControlShutdown(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/leases/acquire" && r.Method == "POST" {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]any{
+				"control": map[string]string{"action": "shutdown"},
+			})
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	client := &workerClient{
+		baseURL: srv.URL,
+		http:    &http.Client{},
+	}
+
+	lease, job, artifacts, ctrl, err := client.acquireLease("w-1")
+	if err != nil {
+		t.Fatalf("acquireLease() error = %v", err)
+	}
+	if lease != nil {
+		t.Errorf("expected nil lease for control message, got %+v", lease)
+	}
+	if job != nil {
+		t.Errorf("expected nil job for control message, got %+v", job)
+	}
+	if len(artifacts) != 0 {
+		t.Errorf("expected no artifacts for control message, got %d", len(artifacts))
+	}
+	if ctrl == nil {
+		t.Fatal("expected ControlMessage, got nil")
+	}
+	if ctrl.Action != "shutdown" {
+		t.Errorf("ctrl.Action = %q, want %q", ctrl.Action, "shutdown")
+	}
+}
+
+// TestAcquireLease_ControlUpgrade verifies that a control.action="upgrade"
+// response is returned as a ControlMessage.
+func TestAcquireLease_ControlUpgrade(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/leases/acquire" && r.Method == "POST" {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]any{
+				"control": map[string]string{"action": "upgrade"},
+			})
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	client := &workerClient{
+		baseURL: srv.URL,
+		http:    &http.Client{},
+	}
+
+	_, _, _, ctrl, err := client.acquireLease("w-1")
+	if err != nil {
+		t.Fatalf("acquireLease() error = %v", err)
+	}
+	if ctrl == nil {
+		t.Fatal("expected ControlMessage, got nil")
+	}
+	if ctrl.Action != "upgrade" {
+		t.Errorf("ctrl.Action = %q, want %q", ctrl.Action, "upgrade")
+	}
+}
+
+// TestAcquireLease_ControlNil verifies that a normal lease response (no control
+// field) returns nil ControlMessage and a valid lease.
+func TestAcquireLease_ControlNil(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/leases/acquire" && r.Method == "POST" {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]any{
+				"lease_id": "lease-123",
+				"job_id":   "job-456",
+				"job": map[string]any{
+					"id":      "job-456",
+					"name":    "test-job",
+					"command": "echo hello",
+				},
+			})
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	client := &workerClient{
+		baseURL: srv.URL,
+		http:    &http.Client{},
+	}
+
+	lease, job, _, ctrl, err := client.acquireLease("w-1")
+	if err != nil {
+		t.Fatalf("acquireLease() error = %v", err)
+	}
+	if ctrl != nil {
+		t.Errorf("expected nil ControlMessage for normal lease, got %+v", ctrl)
+	}
+	if lease == nil {
+		t.Fatal("expected lease, got nil")
+	}
+	if lease.ID != "lease-123" {
+		t.Errorf("lease.ID = %q, want %q", lease.ID, "lease-123")
+	}
+	if job == nil {
+		t.Fatal("expected job, got nil")
+	}
+}
+
 // TestExecuteJob_OutputDirEnv verifies that C5_OUTPUT_DIR env is set.
 func TestExecuteJob_OutputDirEnv(t *testing.T) {
 	tmp := withTempCwd(t)

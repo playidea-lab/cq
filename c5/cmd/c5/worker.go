@@ -206,10 +206,21 @@ func runWorker(cfg workerConfig) error {
 				continue
 			}
 
-			lease, job, inputArtifacts, err := client.acquireLease(workerID)
+			lease, job, inputArtifacts, ctrl, err := client.acquireLease(workerID)
 			if err != nil {
 				log.Printf("c5-worker: acquire error: %v", err)
 				continue
+			}
+			if ctrl != nil {
+				switch ctrl.Action {
+				case "upgrade":
+					log.Println("c5-worker: control: upgrade received, running cq upgrade...")
+					exec.Command("cq", "upgrade").Run()
+					os.Exit(0)
+				case "shutdown":
+					log.Println("c5-worker: control: shutdown received, stopping after current job")
+					return nil
+				}
 			}
 			if lease == nil {
 				continue // no jobs
@@ -771,22 +782,25 @@ func (c *workerClient) heartbeat(workerID string, freeVRAM float64) {
 	}, nil)
 }
 
-func (c *workerClient) acquireLease(workerID string) (*model.Lease, *model.Job, []model.InputPresignedArtifact, error) {
+func (c *workerClient) acquireLease(workerID string) (*model.Lease, *model.Job, []model.InputPresignedArtifact, *model.ControlMessage, error) {
 	var resp model.LeaseAcquireResponse
 	if err := c.doJSON("POST", "/v1/leases/acquire", &model.LeaseAcquireRequest{
 		WorkerID: workerID,
 	}, &resp); err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, err
+	}
+	if resp.Control != nil {
+		return nil, nil, nil, resp.Control, nil
 	}
 	if resp.LeaseID == "" {
-		return nil, nil, nil, nil // no jobs
+		return nil, nil, nil, nil, nil // no jobs
 	}
 	lease := &model.Lease{
 		ID:       resp.LeaseID,
 		JobID:    resp.JobID,
 		WorkerID: workerID,
 	}
-	return lease, &resp.Job, resp.InputPresignedURLs, nil
+	return lease, &resp.Job, resp.InputPresignedURLs, nil, nil
 }
 
 func (c *workerClient) renewLease(leaseID, workerID string) error {
