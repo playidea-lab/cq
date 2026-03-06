@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.66.1] - 2026-03-06
+
+### 🐛 Bug Fixes
+- **skilleval**: k 트라이얼 병렬화 — `sync.WaitGroup` + pre-allocated slice (소켓 65s 타임아웃 해소)
+- **skilleval**: `mockProvider` race condition 수정 — `sync.Mutex` 추가 (`go test -race` clean)
+- **skilleval**: `RunEval` ctx 취소 전파 — 케이스 루프 진입 전 `ctx.Err()` 체크
+- **skilleval**: k 상한 100 + k=0 기본값 5 함수 레벨 가드 추가
+- **skilleval**: majority vote `float64` 비교로 integer division tie-bias 제거
+- **skilleval**: `RunEval` 함수 레벨 path traversal guard (`strings.ContainsAny`)
+- **skilleval**: confidence 값 `[0,1]` 클램프 (LLM 이상 출력 방어)
+- **eval**: `[X]` uppercase 체크박스 파싱 버그 수정 (`ToLower` 후 단일 prefix 비교)
+- **archtest**: `errors.New` 사용으로 `fmt.Errorf-without-%w` ratchet 준수
+
+### 🧪 Tests
+- **skilleval**: 9개 테스트 (`TestRunEval_AllTrialsFail`, `TestRunEval_KZero`, `TestRunEval_PathTraversal`, `TestRunEval_KClamp` 신규)
+
+---
+
 ## [v0.66.0] - 2026-03-06
 
 ### ✨ Features
