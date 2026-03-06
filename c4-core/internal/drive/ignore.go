@@ -1,8 +1,9 @@
 package drive
 
 import (
-	"os"
+	"io/fs"
 	"path/filepath"
+	"strings"
 
 	gitignore "github.com/sabhiram/go-gitignore"
 )
@@ -14,60 +15,85 @@ type WalkEntry struct {
 	Size    int64
 }
 
-// WalkDir walks root recursively, applying .gitignore rules from each directory
-// and optionally an extra ignore file (e.g. .cqdriveignore). Symlinks are skipped.
+// WalkDir walks root recursively, applying .gitignore rules from all ancestor
+// directories (root down to each entry's immediate parent) and optionally an
+// extra ignore file (e.g. .cqdriveignore). Symlinks are skipped.
 // SHA256 is NOT computed here — that is the caller's responsibility.
 func WalkDir(root string, extraIgnore string) ([]WalkEntry, error) {
-	var entries []WalkEntry
+	absRoot, err := filepath.Abs(root)
+	if err != nil {
+		return nil, err
+	}
 
-	// Load extra ignore rules upfront (e.g. .cqdriveignore).
+	// Step 1: Pre-collect all .gitignore matchers, keyed by relative directory
+	// path from absRoot. This avoids re-reading the same file multiple times.
+	dirMatchers := map[string]*gitignore.GitIgnore{}
+	if err := filepath.WalkDir(absRoot, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || !d.IsDir() {
+			return nil
+		}
+		gitignorePath := filepath.Join(path, ".gitignore")
+		if m, e := gitignore.CompileIgnoreFile(gitignorePath); e == nil {
+			relDir, _ := filepath.Rel(absRoot, path)
+			dirMatchers[filepath.ToSlash(relDir)] = m
+		}
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+
+	// Load extra ignore rules (e.g. .cqdriveignore).
 	var extra *gitignore.GitIgnore
 	if extraIgnore != "" {
-		if ig, err := gitignore.CompileIgnoreFile(extraIgnore); err == nil {
-			extra = ig
+		if m, e := gitignore.CompileIgnoreFile(extraIgnore); e == nil {
+			extra = m
 		}
 	}
 
-	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+	// Step 2: Walk and filter using all ancestor matchers.
+	var entries []WalkEntry
+	err = filepath.WalkDir(absRoot, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
 
-		relPath, relErr := filepath.Rel(root, path)
-		if relErr != nil {
-			return relErr
+		// Skip symlinks.
+		if d.Type()&fs.ModeSymlink != 0 {
+			return nil
 		}
 
-		// Skip the root itself.
+		relPath, _ := filepath.Rel(absRoot, path)
 		if relPath == "." {
 			return nil
 		}
+		relSlash := filepath.ToSlash(relPath)
 
-		// Skip symlinks.
-		if d.Type()&os.ModeSymlink != 0 {
-			if d.IsDir() {
-				return filepath.SkipDir
+		// Check all ancestor directory matchers (from root down to file's parent).
+		for dirRel, m := range dirMatchers {
+			if m == nil {
+				continue
 			}
-			return nil
-		}
-
-		// Load .gitignore from the directory containing this entry.
-		dir := filepath.Dir(path)
-		gitignorePath := filepath.Join(dir, ".gitignore")
-		var ig *gitignore.GitIgnore
-		if _, statErr := os.Stat(gitignorePath); statErr == nil {
-			ig, _ = gitignore.CompileIgnoreFile(gitignorePath)
-		}
-
-		// Check ignore rules using relPath (forward slashes for gitignore matching).
-		relFwd := filepath.ToSlash(relPath)
-		if ig != nil && ig.MatchesPath(relFwd) {
-			if d.IsDir() {
-				return filepath.SkipDir
+			// Compute path relative to this matcher's directory.
+			var relToMatcher string
+			if dirRel == "." {
+				relToMatcher = relSlash
+			} else {
+				prefix := dirRel + "/"
+				if !strings.HasPrefix(relSlash, prefix) {
+					continue // entry is not under this matcher's directory
+				}
+				relToMatcher = relSlash[len(prefix):]
 			}
-			return nil
+			if m.MatchesPath(relToMatcher) {
+				if d.IsDir() {
+					return filepath.SkipDir
+				}
+				return nil
+			}
 		}
-		if extra != nil && extra.MatchesPath(relFwd) {
+
+		// Check extra ignore file.
+		if extra != nil && extra.MatchesPath(relSlash) {
 			if d.IsDir() {
 				return filepath.SkipDir
 			}
@@ -86,7 +112,7 @@ func WalkDir(root string, extraIgnore string) ([]WalkEntry, error) {
 
 		entries = append(entries, WalkEntry{
 			Path:    path,
-			RelPath: relPath,
+			RelPath: relSlash,
 			Size:    info.Size(),
 		})
 		return nil
