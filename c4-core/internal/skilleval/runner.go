@@ -182,7 +182,8 @@ func RunEval(ctx context.Context, gateway *llm.Gateway, projectRoot, skillName s
 		cr.AvgConfidence = totalConf / float64(successCount)
 
 		// Majority vote uses only successful calls.
-		majority := trueCount > successCount/2
+		// float comparison avoids integer-division bias; ties (exactly 50%) resolve to false (conservative).
+		majority := float64(trueCount) > float64(successCount)/2.0
 		cr.Correct = majority == test.ShouldTrigger
 
 		// pass@k: at least one trial is correct

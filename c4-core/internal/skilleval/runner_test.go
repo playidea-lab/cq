@@ -2,6 +2,7 @@ package skilleval
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"sync"
@@ -15,6 +16,8 @@ type mockProvider struct {
 	responses []string
 	callIdx   int
 	mu        sync.Mutex
+	// err, when non-nil, is returned by every Chat call (simulates LLM failure).
+	err error
 }
 
 func (m *mockProvider) Name() string { return "mock" }
@@ -25,6 +28,9 @@ func (m *mockProvider) IsAvailable() bool { return true }
 func (m *mockProvider) Chat(_ context.Context, req *llm.ChatRequest) (*llm.ChatResponse, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if m.err != nil {
+		return nil, m.err
+	}
 	if m.callIdx >= len(m.responses) {
 		m.callIdx++
 		return &llm.ChatResponse{Content: `{"should_trigger": false, "confidence": 0.5}`}, nil
@@ -190,5 +196,63 @@ func TestRunEval_MissingEvalMD(t *testing.T) {
 	_, err := RunEval(context.Background(), gw, projectRoot, "nonexistent-skill", 1)
 	if err == nil {
 		t.Fatal("expected error for missing EVAL.md and SKILL.md")
+	}
+}
+
+func TestRunEval_AllTrialsFail(t *testing.T) {
+	projectRoot := t.TempDir()
+	evalContent := "# test-skill\n> desc\n\n## trigger_tests\n- [x] 구현 완료해줘\n"
+	writeEvalMD(t, projectRoot, "test-skill", evalContent)
+
+	// Mock always returns an error — all k trials fail for the single test case.
+	p := &mockProvider{err: errors.New("LLM error")}
+	gw := llm.NewGateway(llm.RoutingTable{
+		Default: "mock",
+		Routes:  map[string]llm.ModelRef{"scout": {Provider: "mock", Model: "mock-model"}},
+	})
+	gw.Register(p)
+
+	result, err := RunEval(context.Background(), gw, projectRoot, "test-skill", 3)
+	if err != nil {
+		t.Fatalf("RunEval: %v", err)
+	}
+	// Case is still counted in TestCount (denominator).
+	if result.TestCount != 1 {
+		t.Errorf("TestCount = %d, want 1", result.TestCount)
+	}
+	// All trials failed → Correct=false → TriggerAccuracy=0
+	if result.TriggerAccuracy != 0.0 {
+		t.Errorf("TriggerAccuracy = %.4f, want 0.0", result.TriggerAccuracy)
+	}
+	// PassAtK and PassK are also 0
+	if result.PassAtK != 0.0 {
+		t.Errorf("PassAtK = %.4f, want 0.0", result.PassAtK)
+	}
+	if result.PassK != 0.0 {
+		t.Errorf("PassK = %.4f, want 0.0", result.PassK)
+	}
+	// No trials recorded
+	if len(result.Cases[0].Trials) != 0 {
+		t.Errorf("Trials = %v, want empty (all failed)", result.Cases[0].Trials)
+	}
+}
+
+func TestRunEval_KClamp(t *testing.T) {
+	projectRoot := t.TempDir()
+	evalContent := "# test-skill\n> desc\n\n## trigger_tests\n- [x] trigger me\n"
+	writeEvalMD(t, projectRoot, "test-skill", evalContent)
+
+	// k=200 should be clamped to 100 inside RunEval.
+	gw, _ := newMockGateway(nil) // all calls return fallback (false)
+	result, err := RunEval(context.Background(), gw, projectRoot, "test-skill", 200)
+	if err != nil {
+		t.Fatalf("RunEval: %v", err)
+	}
+	if result.K != 100 {
+		t.Errorf("K = %d, want 100 (clamped from 200)", result.K)
+	}
+	// Exactly 100 trials recorded for the single test case.
+	if len(result.Cases[0].Trials) != 100 {
+		t.Errorf("Trials count = %d, want 100", len(result.Cases[0].Trials))
 	}
 }
