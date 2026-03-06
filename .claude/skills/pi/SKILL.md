@@ -185,9 +185,31 @@ WebSearch("{concept} feasibility OR limitations")
 
 사용자가 수정하면 반영. 승인되면 Step 2로 진행.
 
-### Step 2. idea.md 생성
+### Step 2. idea.md 생성 + 에디터 열기
 
-`.c4/ideas/{slug}.md` 저장:
+`.c4/ideas/{slug}.md` 저장 후 즉시 에디터에서 연다.
+
+```python
+# 1. 파일 저장
+Write(path=idea_path, content=idea_content)
+
+# 2. 에디터 열기 (macOS: 기본 앱, VS Code 설치 시 code 우선)
+import subprocess, shutil
+if shutil.which("code"):
+    Bash(f"code '{idea_path}'")
+elif shutil.which("open"):          # macOS
+    Bash(f"open '{idea_path}'")
+else:                               # 폴백: 인라인 표시
+    print(idea_content)
+
+print(f"""
+📄 idea.md 열렸습니다: {idea_path}
+   에디터에서 수정 후 저장하고 돌아오세요.
+   채팅창에서 수정 요청도 가능합니다.
+""")
+```
+
+idea.md 템플릿:
 
 ```markdown
 # {아이디어 이름}
@@ -253,8 +275,11 @@ c4_knowledge_record(
 ```
 
 ```python
+# 유저가 에디터에서 수정 후 돌아오면 idea.md를 다시 읽어 최신 내용 반영
+idea_content = c4_read_file(path=idea_path)
+
 AskUserQuestion(questions=[{
-    "question": "idea.md를 검토해주세요. 이상이 없으면 진행 방식을 선택해주세요.",
+    "question": "에디터에서 수정하셨으면 저장 후 여기서 선택해주세요. 채팅으로 수정 요청도 가능합니다.",
     "header": "다음 단계",
     "options": [
         {
