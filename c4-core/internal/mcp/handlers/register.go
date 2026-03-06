@@ -15,6 +15,7 @@ import (
 	"github.com/changmin/c4-core/internal/mcp/handlers/knowledgehandler"
 	"github.com/changmin/c4-core/internal/mcp/handlers/pophandler"
 	"github.com/changmin/c4-core/internal/mcp/handlers/researchhandler"
+	"github.com/changmin/c4-core/internal/mcp/handlers/skillevalhandler"
 	"github.com/changmin/c4-core/internal/mcp/handlers/secrethandler"
 	handlerswc "github.com/changmin/c4-core/internal/mcp/handlers/webcontent"
 	"github.com/changmin/c4-core/internal/research"
@@ -113,6 +114,12 @@ func RegisterAllHandlersWithOpts(reg *mcp.Registry, store Store, rootDir string,
 			ProjectDir: rootDir,
 			Store:      opts.KnowledgeStore,
 			LLM:        opts.LLMGateway,
+		})
+		// SkillEval (1 tool) — requires LLM gateway
+		skillevalhandler.Register(reg, &skillevalhandler.Opts{
+			ProjectDir:     rootDir,
+			LLM:            opts.LLMGateway,
+			KnowledgeStore: opts.KnowledgeStore,
 		})
 	} else {
 		registerKnowledgeProxy(reg, proxy, knowledgeCloud)
