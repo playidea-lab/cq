@@ -231,6 +231,11 @@ type QueueStats struct {
 	Cancelled int `json:"cancelled"`
 }
 
+// ControlMessage is sent from hub to worker to request lifecycle actions.
+type ControlMessage struct {
+	Action string `json:"action"` // "upgrade" | "shutdown"
+}
+
 // WorkerRegisterRequest is the payload for POST /v1/workers/register.
 // hub.Client sends {"capabilities": {...}} — the handler extracts fields from the map.
 type WorkerRegisterRequest struct {
@@ -241,9 +246,9 @@ type WorkerRegisterRequest struct {
 	FreeVRAM      float64        `json:"free_vram_gb"`
 	Tags          []string       `json:"tags,omitempty"`
 	ProjectID     string         `json:"project_id,omitempty"`
-	Version       string         `json:"version,omitempty"`
 	Capabilities  map[string]any `json:"capabilities,omitempty"`
 	CapabilitySet []Capability   `json:"capability_set,omitempty"` // structured capabilities
+	Version       string         `json:"version,omitempty"`
 }
 
 // WorkerRegisterResponse is returned from POST /v1/workers/register.
@@ -282,10 +287,11 @@ type InputPresignedArtifact struct {
 
 // LeaseAcquireResponse is returned from POST /v1/leases/acquire.
 type LeaseAcquireResponse struct {
-	JobID               string                   `json:"job_id"`
-	LeaseID             string                   `json:"lease_id"`
-	Job                 Job                      `json:"job"`
-	InputPresignedURLs  []InputPresignedArtifact `json:"input_presigned_urls,omitempty"`
+	JobID              string                   `json:"job_id"`
+	LeaseID            string                   `json:"lease_id"`
+	Job                Job                      `json:"job"`
+	InputPresignedURLs []InputPresignedArtifact `json:"input_presigned_urls,omitempty"`
+	Control            *ControlMessage          `json:"control,omitempty"`
 }
 
 // LeaseRenewRequest is the payload for POST /v1/leases/renew.

@@ -140,6 +140,78 @@ func TestArtifactRefMarshal_OmitEmpty(t *testing.T) {
 	}
 }
 
+// TestControlMessageRoundTrip verifies ControlMessage JSON round-trip.
+func TestControlMessageRoundTrip(t *testing.T) {
+	orig := ControlMessage{Action: "upgrade"}
+	data, err := json.Marshal(orig)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var got ControlMessage
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if got.Action != "upgrade" {
+		t.Errorf("Action: got %q, want %q", got.Action, "upgrade")
+	}
+}
+
+// TestLeaseAcquireResponse_ControlOmitEmpty verifies Control is absent when nil.
+func TestLeaseAcquireResponse_ControlOmitEmpty(t *testing.T) {
+	resp := LeaseAcquireResponse{JobID: "j1", LeaseID: "l1"}
+	data, err := json.Marshal(resp)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if contains(string(data), "control") {
+		t.Errorf("control should be omitted when nil, got: %s", string(data))
+	}
+}
+
+// TestLeaseAcquireResponse_ControlPresent verifies Control is serialized when set.
+func TestLeaseAcquireResponse_ControlPresent(t *testing.T) {
+	resp := LeaseAcquireResponse{
+		JobID:   "j1",
+		LeaseID: "l1",
+		Control: &ControlMessage{Action: "shutdown"},
+	}
+	data, err := json.Marshal(resp)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	s := string(data)
+	if !contains(s, "control") {
+		t.Errorf("control should be present, got: %s", s)
+	}
+	if !contains(s, "shutdown") {
+		t.Errorf("action should be shutdown, got: %s", s)
+	}
+}
+
+// TestWorkerRegisterRequest_VersionOmitEmpty verifies Version is absent when empty.
+func TestWorkerRegisterRequest_VersionOmitEmpty(t *testing.T) {
+	req := WorkerRegisterRequest{Hostname: "host1"}
+	data, err := json.Marshal(req)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if contains(string(data), "version") {
+		t.Errorf("version should be omitted when empty, got: %s", string(data))
+	}
+}
+
+// TestWorkerRegisterRequest_VersionPresent verifies Version is serialized when set.
+func TestWorkerRegisterRequest_VersionPresent(t *testing.T) {
+	req := WorkerRegisterRequest{Hostname: "host1", Version: "v1.2.3"}
+	data, err := json.Marshal(req)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if !contains(string(data), "v1.2.3") {
+		t.Errorf("version should be present, got: %s", string(data))
+	}
+}
+
 func contains(s, substr string) bool {
 	return len(s) >= len(substr) && (s == substr || len(s) > 0 && containsStr(s, substr))
 }
