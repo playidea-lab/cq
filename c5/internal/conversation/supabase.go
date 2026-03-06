@@ -209,8 +209,6 @@ func (s *SupabaseStore) EnsureChannel(ctx context.Context, ch Channel) (string, 
 	}
 	s.setHeaders(req)
 	req.Header.Set("Content-Type", "application/json")
-	// return=representation so we get the generated UUID back.
-	// resolution=ignore-duplicates maps to ON CONFLICT DO NOTHING.
 	req.Header.Set("Prefer", "return=representation,resolution=ignore-duplicates")
 
 	resp, err := s.httpClient.Do(req)
@@ -221,13 +219,9 @@ func (s *SupabaseStore) EnsureChannel(ctx context.Context, ch Channel) (string, 
 	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 
 	if resp.StatusCode == http.StatusConflict {
-		// 409: partial unique index conflict (race between GET and POST).
-		// resolution=ignore-duplicates does not cover partial indexes on all
-		// PostgREST versions — fall back to GET to return the existing UUID.
 		return s.findChannel(ctx, tenant, ch.Platform, ch.Name)
 	}
 	if resp.StatusCode >= 400 {
-		// RLS violation, schema error, or other server-side rejection.
 		return "", fmt.Errorf("conversation: ensure channel: server error %d: %s", resp.StatusCode, string(respBody))
 	}
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
@@ -237,7 +231,6 @@ func (s *SupabaseStore) EnsureChannel(ctx context.Context, ch Channel) (string, 
 		}
 	}
 
-	// 2xx but empty (ON CONFLICT DO NOTHING fired) — fetch the existing row.
 	return s.findChannel(ctx, tenant, ch.Platform, ch.Name)
 }
 
@@ -318,18 +311,15 @@ func (s *SupabaseStore) ListChannels(ctx context.Context, tenantID, projectID st
 }
 
 // EnsureParticipant creates or retrieves a member by (tenant_id, platform, platform_id).
-// Returns the member's UUID string. The partial unique index
-// uniq_c1_members_platform (migration 00028) prevents duplicates.
 func (s *SupabaseStore) EnsureParticipant(ctx context.Context, p Participant) (string, error) {
 	tenant := p.TenantID
 	if tenant == "" {
 		tenant = "default"
 	}
 	if p.PlatformID == "" {
-		return "", nil // no-op if no platform identity
+		return "", nil
 	}
 
-	// Try to find existing member.
 	if id, err := s.findParticipant(ctx, tenant, p.Platform, p.PlatformID); err == nil && id != "" {
 		return id, nil
 	}
@@ -368,9 +358,6 @@ func (s *SupabaseStore) EnsureParticipant(ctx context.Context, p Participant) (s
 	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 
 	if resp.StatusCode == http.StatusConflict {
-		// 409: partial unique index conflict (race between GET and POST).
-		// resolution=ignore-duplicates does not cover partial indexes on all
-		// PostgREST versions — fall back to GET to return the existing UUID.
 		return s.findParticipant(ctx, tenant, p.Platform, p.PlatformID)
 	}
 	if resp.StatusCode >= 400 {
@@ -383,7 +370,6 @@ func (s *SupabaseStore) EnsureParticipant(ctx context.Context, p Participant) (s
 		}
 	}
 
-	// 2xx but empty — fetch the existing row.
 	return s.findParticipant(ctx, tenant, p.Platform, p.PlatformID)
 }
 
