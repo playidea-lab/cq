@@ -541,6 +541,82 @@ func TestUploadOutputArtifacts_ContentHash(t *testing.T) {
 	}
 }
 
+// TestExecuteJob_ProjectIDEnv verifies C4_PROJECT_ID injection behavior.
+func TestExecuteJob_ProjectIDEnv(t *testing.T) {
+	tmp := withTempCwd(t)
+	outFile := filepath.Join(tmp, "proj_env.txt")
+
+	// Ensure parent process is clean
+	os.Unsetenv("C4_PROJECT_ID")
+
+	job := &model.Job{
+		ID:        "proj-test-1",
+		Name:      "proj-check",
+		Command:   fmt.Sprintf("echo $C4_PROJECT_ID > %s", outFile),
+		Workdir:   tmp,
+		ProjectID: "proj-123",
+	}
+
+	client := &workerClient{
+		baseURL: "http://localhost:0",
+		http:    &http.Client{},
+	}
+
+	exitCode, _ := executeJob(client, job, "lease-1", "worker-1", 0)
+	if exitCode != 0 {
+		t.Fatalf("executeJob() exit code = %d, want 0", exitCode)
+	}
+
+	data, err := os.ReadFile(outFile)
+	if err != nil {
+		t.Fatalf("failed to read output: %v", err)
+	}
+	got := strings.TrimSpace(string(data))
+	if got != "proj-123" {
+		t.Errorf("C4_PROJECT_ID in child = %q, want %q", got, "proj-123")
+	}
+
+	// Parent must not be polluted
+	if v := os.Getenv("C4_PROJECT_ID"); v != "" {
+		t.Errorf("parent C4_PROJECT_ID = %q, want empty (parent pollution)", v)
+	}
+}
+
+// TestExecuteJob_ProjectIDEmpty verifies no C4_PROJECT_ID is injected when ProjectID is empty.
+func TestExecuteJob_ProjectIDEmpty(t *testing.T) {
+	tmp := withTempCwd(t)
+	outFile := filepath.Join(tmp, "proj_empty.txt")
+
+	os.Unsetenv("C4_PROJECT_ID")
+
+	job := &model.Job{
+		ID:        "proj-test-2",
+		Name:      "proj-empty",
+		Command:   fmt.Sprintf("printenv C4_PROJECT_ID > %s; true", outFile),
+		Workdir:   tmp,
+		ProjectID: "", // empty — should not inject
+	}
+
+	client := &workerClient{
+		baseURL: "http://localhost:0",
+		http:    &http.Client{},
+	}
+
+	exitCode, _ := executeJob(client, job, "lease-2", "worker-1", 0)
+	if exitCode != 0 {
+		t.Fatalf("executeJob() exit code = %d, want 0", exitCode)
+	}
+
+	data, err := os.ReadFile(outFile)
+	if err != nil {
+		t.Fatalf("failed to read output: %v", err)
+	}
+	got := strings.TrimSpace(string(data))
+	if got != "" {
+		t.Errorf("C4_PROJECT_ID should not be set, but child got %q", got)
+	}
+}
+
 // TestExecuteJob_OutputDirEnv verifies that C5_OUTPUT_DIR env is set.
 func TestExecuteJob_OutputDirEnv(t *testing.T) {
 	tmp := withTempCwd(t)

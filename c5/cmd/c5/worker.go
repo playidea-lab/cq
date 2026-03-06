@@ -322,6 +322,9 @@ func executeJob(client *workerClient, job *model.Job, leaseID, workerID string, 
 
 	// Env injection: inherit current env + job env vars
 	env := os.Environ()
+	if job.ProjectID != "" {
+		env = append(env, "C4_PROJECT_ID="+job.ProjectID)
+	}
 	for k, v := range job.Env {
 		env = append(env, k+"="+v)
 	}
