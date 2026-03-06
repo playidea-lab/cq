@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.67.0] - 2026-03-06
+
+### ✨ Features
+- **drive/dataset**: 버전된 데이터셋 스토리지 (CAS + Supabase) — `DatasetClient.Upload/Pull/List`
+  - content-addressable storage (`{projectID}/cas/{hash[:2]}/{hash}`)
+  - 증분 Upload (version_hash 비교 → 변경 시만 CAS 업로드)
+  - 증분 Pull (로컬 파일 hash 비교 → 변경 파일만 다운로드)
+  - streaming upload (io.ReadAll 미사용, 대용량 파일 안전)
+- **drive/mcp**: `c4_drive_dataset_upload`, `c4_drive_dataset_list`, `c4_drive_dataset_pull` MCP 도구
+- **drive/cli**: `cq drive dataset upload/list/pull` CLI 서브커맨드
+- **infra**: migration 00031 — `c4_datasets` 테이블 + RLS (INSERT/SELECT: member, UPDATE/DELETE: service_role)
+- **hub**: secrets store에서 `hub.api_key` 우선 조회
+
+### 🐛 Bug Fixes
+- **drive/dataset**: `hashByPath` map을 `sort.Slice` 전에 구축 — 정렬 후 인덱스 불일치 버그 수정
+- **drive/dataset**: `casStoragePath` — hash 64자 미만 시 panic 대신 error 반환
+- **drive/dataset**: `Pull` dest 상대경로 처리 — `filepath.Abs()` 적용 후 경로 순회 방어
+- **drive/dataset**: `validateName` — 빈 이름, `/`, `\`, `..` 포함 시 거부
+- **drive/cli**: DatasetClient 완전 위임 — 이중 백엔드 불일치 제거
+- **archtest**: ratchet — `cmd/c4/drive.go` 5 violations 허용치 등록
+- **handlers**: `drive.go/drive_stub.go` 위임 파일 추가 — `drive_test.go` build 오류 수정
+- **doctor**: C5 Hub 체크 시 `api_prefix` 반영
+
+### 🧪 Tests
+- **drive**: 4개 신규 — `TestDatasetPull_RelativeDest`, `TestDatasetPull_TraversalRejected`, `TestValidateName`, `TestCasStoragePath_ShortHash`
+- **handlers**: `TestRegisterDriveHandlers` + drive handler 통합 테스트
+
+---
+
 ## [v0.66.2] - 2026-03-06
 
 ### 🐛 Bug Fixes
