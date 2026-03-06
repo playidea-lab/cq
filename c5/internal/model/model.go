@@ -157,6 +157,7 @@ type Worker struct {
 	FreeVRAM      float64   `json:"free_vram_gb"`
 	Tags          []string  `json:"tags,omitempty"`
 	ProjectID     string    `json:"project_id,omitempty"`
+	Version       string    `json:"version,omitempty"`
 	LastHeartbeat time.Time `json:"last_heartbeat"`
 	RegisteredAt  time.Time `json:"registered_at"`
 }
@@ -233,13 +234,14 @@ type QueueStats struct {
 // WorkerRegisterRequest is the payload for POST /v1/workers/register.
 // hub.Client sends {"capabilities": {...}} — the handler extracts fields from the map.
 type WorkerRegisterRequest struct {
-	Hostname     string         `json:"hostname"`
-	GPUCount     int            `json:"gpu_count"`
-	GPUModel     string         `json:"gpu_model,omitempty"`
-	TotalVRAM    float64        `json:"total_vram_gb"`
-	FreeVRAM     float64        `json:"free_vram_gb"`
-	Tags         []string       `json:"tags,omitempty"`
-	ProjectID    string         `json:"project_id,omitempty"`
+	Hostname      string         `json:"hostname"`
+	GPUCount      int            `json:"gpu_count"`
+	GPUModel      string         `json:"gpu_model,omitempty"`
+	TotalVRAM     float64        `json:"total_vram_gb"`
+	FreeVRAM      float64        `json:"free_vram_gb"`
+	Tags          []string       `json:"tags,omitempty"`
+	ProjectID     string         `json:"project_id,omitempty"`
+	Version       string         `json:"version,omitempty"`
 	Capabilities  map[string]any `json:"capabilities,omitempty"`
 	CapabilitySet []Capability   `json:"capability_set,omitempty"` // structured capabilities
 }
