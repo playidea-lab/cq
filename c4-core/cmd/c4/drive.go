@@ -1,13 +1,8 @@
 package main
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
-	"io"
-	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -70,13 +65,6 @@ func init() {
 	rootCmd.AddCommand(driveCmd)
 }
 
-// validateDatasetName rejects names with path separators or dot-dot.
-func validateDatasetName(name string) error {
-	if strings.ContainsAny(name, `/\`) || strings.Contains(name, "..") {
-		return fmt.Errorf("invalid dataset name %q: must not contain path separators or '..'", name)
-	}
-	return nil
-}
 
 // newDriveClient creates a Drive client from config/env/session.
 func newDriveClient() (*drive.Client, error) {
@@ -115,38 +103,13 @@ type staticToken struct{ token string }
 
 func (s *staticToken) Token() string { return s.token }
 
-// datasetDrivePath returns the drive path for a dataset file.
-// Pattern: /datasets/<name>/<versionHash>/<relPath>
-func datasetDrivePath(name, versionHash, relPath string) string {
-	return "/datasets/" + name + "/" + versionHash + "/" + relPath
-}
-
-// computeDirHash computes a stable SHA256 hash for a set of WalkEntries.
-// The hash is derived from each file's relative path and its content hash.
-func computeDirHash(entries []drive.WalkEntry) (string, error) {
-	h := sha256.New()
-	for _, e := range entries {
-		fh, err := fileHash(e.Path)
-		if err != nil {
-			return "", err
-		}
-		fmt.Fprintf(h, "%s\t%s\n", e.RelPath, fh)
-	}
-	return hex.EncodeToString(h.Sum(nil))[:8], nil
-}
-
-// fileHash computes the SHA256 hex of a local file.
-func fileHash(path string) (string, error) {
-	f, err := os.Open(path)
+// newDatasetClient creates a DatasetClient from config/env/session.
+func newDatasetClient() (*drive.DatasetClient, error) {
+	c, err := newDriveClient()
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	defer f.Close()
-	h := sha256.New()
-	if _, err := io.Copy(h, f); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(h.Sum(nil)), nil
+	return drive.NewDatasetClient(c), nil
 }
 
 func runDatasetUpload(cmd *cobra.Command, args []string) error {
@@ -154,161 +117,81 @@ func runDatasetUpload(cmd *cobra.Command, args []string) error {
 	name, _ := cmd.Flags().GetString("as")
 	ignoreFile, _ := cmd.Flags().GetString("ignore")
 
-	if err := validateDatasetName(name); err != nil {
-		return err
-	}
-
-	client, err := newDriveClient()
+	dc, err := newDatasetClient()
 	if err != nil {
 		return err
 	}
 
-	entries, err := drive.WalkDir(srcPath, ignoreFile)
+	result, err := dc.Upload(cmd.Context(), srcPath, name, ignoreFile)
 	if err != nil {
-		return fmt.Errorf("scanning directory: %w", err)
+		return err
 	}
-	if len(entries) == 0 {
-		return fmt.Errorf("no files found in %s", srcPath)
-	}
-
-	versionHash, err := computeDirHash(entries)
-	if err != nil {
-		return fmt.Errorf("computing version hash: %w", err)
-	}
-
-	// Check if this version already exists by probing the first file.
-	firstDrivePath := datasetDrivePath(name, versionHash, entries[0].RelPath)
-	if _, err := client.Info(firstDrivePath); err == nil {
-		fmt.Printf("dataset '%s' v=%s unchanged\n", name, versionHash)
+	if !result.Changed {
+		fmt.Printf("dataset '%s' v=%s unchanged\n", result.Name, result.VersionHash)
 		return nil
 	}
-
-	var uploaded, skipped int
-	var totalBytes int64
-
-	for _, e := range entries {
-		drivePath := datasetDrivePath(name, versionHash, e.RelPath)
-
-		// Check if remote already has this file (same content hash).
-		localHash, hashErr := fileHash(e.Path)
-		if hashErr == nil {
-			if info, err := client.Info(drivePath); err == nil && info.ContentHash == "sha256:"+localHash {
-				skipped++
-				totalBytes += e.Size
-				continue
-			}
-		}
-
-		if _, err := client.Upload(e.Path, drivePath, nil); err != nil {
-			return fmt.Errorf("upload %s: %w", e.RelPath, err)
-		}
-		uploaded++
-		totalBytes += e.Size
-	}
-
 	fmt.Printf("dataset '%s' v=%s uploaded (%d files, %d skipped, %s)\n",
-		name, versionHash, len(entries), skipped, formatBytes(totalBytes))
+		result.Name, result.VersionHash, result.FilesUploaded, result.FilesSkipped,
+		formatBytes(result.TotalSizeBytes))
 	return nil
 }
 
-// datasetSummary holds aggregated info per dataset name for `list`.
-type datasetSummary struct {
-	name     string
-	latest   string
-	files    int
-	size     int64
-	versions int
-}
-
 func runDatasetList(cmd *cobra.Command, args []string) error {
-	if len(args) > 0 {
-		if err := validateDatasetName(args[0]); err != nil {
-			return err
-		}
+	nameFilter := ""
+	if len(args) == 1 {
+		nameFilter = args[0]
 	}
 
-	client, err := newDriveClient()
+	dc, err := newDatasetClient()
 	if err != nil {
 		return err
 	}
 
-	folder := "/datasets"
-	if len(args) == 1 {
-		folder = "/datasets/" + args[0]
-	}
-
-	files, err := client.List(folder)
+	versions, err := dc.List(cmd.Context(), nameFilter)
 	if err != nil {
 		return fmt.Errorf("listing datasets: %w", err)
 	}
 
-	if len(files) == 0 {
+	if len(versions) == 0 {
 		fmt.Println("No datasets found.")
 		return nil
 	}
 
-	// Group by dataset name → version hash → count files/size.
-	// Drive paths: /datasets/<name>/<version>/<relpath>
-	type versionKey struct{ name, version string }
-	versionFiles := map[versionKey]int{}
-	versionSize := map[versionKey]int64{}
-	nameVersions := map[string]map[string]struct{}{}
-	nameLatest := map[string]string{}
-
-	for _, f := range files {
-		// Path format: /datasets/<name>/<version>/...
-		parts := strings.SplitN(strings.TrimPrefix(f.Path, "/datasets/"), "/", 3)
-		if len(parts) < 2 {
-			continue
+	// Group versions by name; List returns newest-first from DB.
+	type summary struct {
+		latest   string
+		files    int
+		size     int64
+		versions int
+	}
+	byName := map[string]*summary{}
+	var order []string
+	for _, v := range versions {
+		s, ok := byName[v.Name]
+		if !ok {
+			s = &summary{}
+			byName[v.Name] = s
+			order = append(order, v.Name)
 		}
-		dsName, ver := parts[0], parts[1]
-		if dsName == "" || ver == "" {
-			continue
-		}
-		k := versionKey{dsName, ver}
-		if !f.IsFolder {
-			versionFiles[k]++
-			versionSize[k] += f.SizeBytes
-		}
-		if nameVersions[dsName] == nil {
-			nameVersions[dsName] = map[string]struct{}{}
-		}
-		nameVersions[dsName][ver] = struct{}{}
-		// Use alphabetically last version as "latest" approximation.
-		if ver > nameLatest[dsName] {
-			nameLatest[dsName] = ver
+		s.versions++
+		if s.latest == "" {
+			// First entry is the newest (DB ordered by created_at DESC).
+			s.latest = v.VersionHash
+			s.files = v.FileCount
+			s.size = v.TotalSizeBytes
 		}
 	}
 
-	// Build ordered list of summaries.
-	seen := map[string]bool{}
-	var summaries []datasetSummary
-	for _, f := range files {
-		parts := strings.SplitN(strings.TrimPrefix(f.Path, "/datasets/"), "/", 3)
-		if len(parts) < 1 || parts[0] == "" {
-			continue
+	fmt.Printf("%-30s %-16s %6s %12s %8s\n", "NAME", "LATEST", "FILES", "SIZE", "VERSIONS")
+	fmt.Println(strings.Repeat("-", 78))
+	for _, n := range order {
+		s := byName[n]
+		latest := s.latest
+		if len(latest) > 16 {
+			latest = latest[:16]
 		}
-		dsName := parts[0]
-		if seen[dsName] {
-			continue
-		}
-		seen[dsName] = true
-		latest := nameLatest[dsName]
-		k := versionKey{dsName, latest}
-		summaries = append(summaries, datasetSummary{
-			name:     dsName,
-			latest:   latest,
-			files:    versionFiles[k],
-			size:     versionSize[k],
-			versions: len(nameVersions[dsName]),
-		})
-	}
-
-	fmt.Printf("%-30s %-10s %6s %12s %8s\n", "NAME", "LATEST", "FILES", "SIZE", "VERSIONS")
-	fmt.Println(strings.Repeat("-", 72))
-	for _, s := range summaries {
-		fmt.Printf("%-30s %-10s %6d %12s %8d\n",
-			s.name, s.latest, s.files, formatBytes(s.size), s.versions)
+		fmt.Printf("%-30s %-16s %6d %12s %8d\n",
+			n, latest, s.files, formatBytes(s.size), s.versions)
 	}
 	return nil
 }
@@ -318,77 +201,17 @@ func runDatasetPull(cmd *cobra.Command, args []string) error {
 	destDir, _ := cmd.Flags().GetString("dest")
 	version, _ := cmd.Flags().GetString("version")
 
-	if err := validateDatasetName(name); err != nil {
-		return err
-	}
-
-	client, err := newDriveClient()
+	dc, err := newDatasetClient()
 	if err != nil {
 		return err
 	}
 
-	// List files for this dataset to find the target version.
-	files, err := client.List("/datasets/" + name)
+	result, err := dc.Pull(cmd.Context(), name, destDir, version)
 	if err != nil {
-		return fmt.Errorf("listing dataset %q: %w", name, err)
+		return err
 	}
-	if len(files) == 0 {
-		return fmt.Errorf("dataset %q not found", name)
-	}
-
-	// Determine target version hash.
-	if version == "" {
-		// Find latest (alphabetically last).
-		for _, f := range files {
-			parts := strings.SplitN(strings.TrimPrefix(f.Path, "/datasets/"+name+"/"), "/", 2)
-			if len(parts) >= 1 && parts[0] > version {
-				version = parts[0]
-			}
-		}
-	}
-	if version == "" {
-		return fmt.Errorf("no versions found for dataset %q", name)
-	}
-
-	// Collect files for the target version.
-	var targets []string
-	for _, f := range files {
-		if !f.IsFolder && strings.HasPrefix(f.Path, "/datasets/"+name+"/"+version+"/") {
-			targets = append(targets, f.Path)
-		}
-	}
-	if len(targets) == 0 {
-		return fmt.Errorf("no files found for dataset %q version %s", name, version)
-	}
-
-	var downloaded, skipped int
-	prefix := "/datasets/" + name + "/" + version + "/"
-
-	for _, drivePath := range targets {
-		relPath := strings.TrimPrefix(drivePath, prefix)
-		destPath := filepath.Join(destDir, filepath.FromSlash(relPath))
-
-		// Skip if local file already exists with matching content.
-		if _, err := os.Stat(destPath); err == nil {
-			if info, err := client.Info(drivePath); err == nil {
-				if lh, err := fileHash(destPath); err == nil && "sha256:"+lh == info.ContentHash {
-					skipped++
-					continue
-				}
-			}
-		}
-
-		if err := os.MkdirAll(filepath.Dir(destPath), 0o755); err != nil {
-			return fmt.Errorf("create dir for %s: %w", relPath, err)
-		}
-		if err := client.Download(drivePath, destPath); err != nil {
-			return fmt.Errorf("download %s: %w", relPath, err)
-		}
-		downloaded++
-	}
-
 	fmt.Printf("'%s@%s' -> %s/ (%d downloaded, %d skipped)\n",
-		name, version, destDir, downloaded, skipped)
+		result.Name, result.VersionHash, result.Dest, result.FilesDownloaded, result.FilesSkipped)
 	return nil
 }
 

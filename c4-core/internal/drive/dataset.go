@@ -171,7 +171,9 @@ func (dc *DatasetClient) Upload(ctx context.Context, localPath, name, extraIgnor
 	uploaded, skipped := 0, 0
 	for i, r := range uploadResults {
 		if r.err != nil {
-			return nil, fmt.Errorf("upload %s: %w", manifest[i].Path, r.err)
+			// Use entries[i] (original WalkDir order) — manifest is sorted and
+			// no longer aligned with uploadResults by index.
+			return nil, fmt.Errorf("upload %s: %w", filepath.ToSlash(entries[i].RelPath), r.err)
 		}
 		if r.skipped {
 			skipped++
