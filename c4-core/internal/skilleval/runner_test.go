@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 
 	"github.com/changmin/c4-core/internal/llm"
@@ -13,6 +14,7 @@ import (
 type mockProvider struct {
 	responses []string
 	callIdx   int
+	mu        sync.Mutex
 }
 
 func (m *mockProvider) Name() string { return "mock" }
@@ -21,6 +23,8 @@ func (m *mockProvider) Models() []llm.ModelInfo {
 }
 func (m *mockProvider) IsAvailable() bool { return true }
 func (m *mockProvider) Chat(_ context.Context, req *llm.ChatRequest) (*llm.ChatResponse, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if m.callIdx >= len(m.responses) {
 		m.callIdx++
 		return &llm.ChatResponse{Content: `{"should_trigger": false, "confidence": 0.5}`}, nil

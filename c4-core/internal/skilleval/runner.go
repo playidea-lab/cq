@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/changmin/c4-core/internal/llm"
@@ -132,23 +133,37 @@ func RunEval(ctx context.Context, gateway *llm.Gateway, projectRoot, skillName s
 			Expected: test.ShouldTrigger,
 		}
 
+		// Run k judge calls concurrently — trials are independent.
+		type trialResult struct {
+			resp judgeResponse
+			ok   bool
+		}
+		results := make([]trialResult, k)
+		var wg sync.WaitGroup
+		wg.Add(k)
+		for i := 0; i < k; i++ {
+			i := i
+			go func() {
+				defer wg.Done()
+				jr, callErr := callJudge(ctx, gateway, skillDesc, test.Prompt)
+				results[i] = trialResult{resp: jr, ok: callErr == nil}
+			}()
+		}
+		wg.Wait()
+
 		trueCount := 0
 		successCount := 0
 		var totalConf float64
-
-		for i := 0; i < k; i++ {
-			jr, callErr := callJudge(ctx, gateway, skillDesc, test.Prompt)
-			if callErr != nil {
-				// Do not append to Trials on error — error calls must not
-				// be counted as legitimate "no-trigger" results.
+		for _, r := range results {
+			if !r.ok {
 				continue
 			}
-			cr.Trials = append(cr.Trials, jr.ShouldTrigger)
+			cr.Trials = append(cr.Trials, r.resp.ShouldTrigger)
 			successCount++
-			if jr.ShouldTrigger {
+			if r.resp.ShouldTrigger {
 				trueCount++
 			}
-			totalConf += jr.Confidence
+			totalConf += r.resp.Confidence
 		}
 
 		// If all judge calls failed, this case is unevaluable.
