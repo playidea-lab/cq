@@ -215,3 +215,28 @@ func TestCloudModeSetInvalidValue(t *testing.T) {
 		t.Errorf("unexpected error message: %v", err)
 	}
 }
+
+// TestGetActiveProjectID verifies C4_PROJECT_ID env var takes priority over config.yaml.
+func TestGetActiveProjectID(t *testing.T) {
+	t.Run("C4_PROJECT_ID env var overrides config", func(t *testing.T) {
+		t.Setenv("C4_PROJECT_ID", "test-id")
+		dir := t.TempDir()
+		got := getActiveProjectID(dir)
+		if got != "test-id" {
+			t.Errorf("expected %q, got %q", "test-id", got)
+		}
+	})
+
+	t.Run("empty C4_PROJECT_ID falls back to config.yaml", func(t *testing.T) {
+		t.Setenv("C4_PROJECT_ID", "")
+		dir := t.TempDir()
+		c4Dir := filepath.Join(dir, ".c4")
+		os.MkdirAll(c4Dir, 0755)
+		cfgContent := "cloud:\n  active_project_id: proj-from-config\n"
+		os.WriteFile(filepath.Join(c4Dir, "config.yaml"), []byte(cfgContent), 0644)
+		got := getActiveProjectID(dir)
+		if got != "proj-from-config" {
+			t.Errorf("expected %q, got %q", "proj-from-config", got)
+		}
+	})
+}

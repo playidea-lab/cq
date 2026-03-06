@@ -209,8 +209,12 @@ func readCloudAnonKey(projDir string) string {
 	return builtinSupabaseKey
 }
 
-// getActiveProjectID reads the active project_id from .c4/config.yaml.
+// getActiveProjectID reads the active project_id from env var or .c4/config.yaml.
+// Priority: C4_PROJECT_ID > config.yaml cloud.active_project_id.
 func getActiveProjectID(projDir string) string {
+	if v := os.Getenv("C4_PROJECT_ID"); v != "" {
+		return v
+	}
 	configPath := filepath.Join(projDir, ".c4", "config.yaml")
 	data, err := os.ReadFile(configPath)
 	if err != nil {
