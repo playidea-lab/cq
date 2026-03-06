@@ -108,12 +108,14 @@ func TestRunEval_PassAtK(t *testing.T) {
 	evalContent := "# test-skill\n> desc\n\n## trigger_tests\n- [x] 구현 완료해줘\n"
 	writeEvalMD(t, projectRoot, "test-skill", evalContent)
 
-	// k=3: first call returns false, second returns true → pass@k = true
+	// k=3: 2 trials return false (incorrect), 1 returns true (correct).
+	// Use a fallback-heavy mock: only 1 explicit true, rest fallback to false.
+	// Because goroutines pick responses concurrently (non-deterministic order),
+	// we rely on aggregate counts only: 1 correct out of 3 → pass@k=true, pass^k=false.
 	responses := []string{
-		`{"should_trigger": false, "confidence": 0.4}`,
 		`{"should_trigger": true, "confidence": 0.9}`,
-		`{"should_trigger": false, "confidence": 0.4}`,
 	}
+	// Remaining 2 calls fall through to the mock fallback → false
 
 	gw, _ := newMockGateway(responses)
 	result, err := RunEval(context.Background(), gw, projectRoot, "test-skill", 3)

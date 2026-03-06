@@ -95,6 +95,9 @@ func RunEval(ctx context.Context, gateway *llm.Gateway, projectRoot, skillName s
 	if k <= 0 {
 		k = 5
 	}
+	if k > 100 {
+		k = 100
+	}
 
 	evalPath := EvalMDPath(projectRoot, skillName)
 
@@ -128,6 +131,9 @@ func RunEval(ctx context.Context, gateway *llm.Gateway, projectRoot, skillName s
 	passKCount := 0
 
 	for _, test := range spec.Tests {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		cr := CaseResult{
 			Prompt:   test.Prompt,
 			Expected: test.ShouldTrigger,
