@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.71.0] - 2026-03-07
+
+### ✨ Features
+- **cloud**: 디렉토리명 기반 자동 project 감지 — `getActiveProjectIDWithProjects` (config.yaml `active_project` 불필요)
+- **c5/model**: `Job`/`JobSubmitRequest`에 `SnapshotVersionHash` + `GitHash` 추가 — 재현성 향상
+
+### 🐛 Bug Fixes
+- **doctor**: `checkPythonSidecar` false-positive 수정 — `uv` PATH 존재 여부만 확인 → `uv run c4-bridge --version` 실행 확인 (5s 타임아웃)
+- **install**: `install.sh`에 Python sidecar 설치 단계 추가 — `uv tool install c4` (PyPI) → git+https fallback, `--dry-run` 지원
+
+---
+
 ## [v0.70.0] - 2026-03-07
 
 ### ✨ Features
