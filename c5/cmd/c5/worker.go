@@ -260,8 +260,15 @@ func runWorker(cfg workerConfig) error {
 				// Drive pipeline: snapshot pull → cq.yaml → artifacts → run → push
 				var exitCode int
 				var resultFile string
-				if cfg.drive != nil && j.SnapshotVersionHash != "" {
-					exitCode, resultFile = runWithDrivePipeline(cfg.drive, client, j, leaseID, workerID, cfg.gpuCount, j.SnapshotVersionHash)
+				drive := cfg.drive
+				if drive == nil && j.SnapshotVersionHash != "" {
+					// Auto-create a CLI-based drive client when cq binary is available.
+					if _, err := exec.LookPath("cq"); err == nil {
+						drive = &cliDriveClient{projectID: j.ProjectID}
+					}
+				}
+				if drive != nil && j.SnapshotVersionHash != "" {
+					exitCode, resultFile = runWithDrivePipeline(drive, client, j, leaseID, workerID, cfg.gpuCount, j.SnapshotVersionHash)
 				} else {
 					exitCode, resultFile = executeJob(client, j, leaseID, workerID, cfg.gpuCount)
 				}
@@ -755,6 +762,42 @@ type driveClient interface {
 	Pull(name, destDir, version string) error
 	// Upload uploads localPath to Drive under name.
 	Upload(localPath, name string) error
+}
+
+// cliDriveClient implements driveClient by shelling out to the `cq` binary.
+// C4_PROJECT_ID is injected from the job payload so the correct project is used.
+type cliDriveClient struct {
+	projectID string // from job payload; empty = use cq's own default
+}
+
+func (c *cliDriveClient) Pull(name, destDir, version string) error {
+	args := []string{"drive", "dataset", "pull", name, "--dest", destDir, "--no-serve", "-y"}
+	if version != "" {
+		args = append(args, "--version", version)
+	}
+	cmd := exec.Command("cq", args...)
+	cmd.Env = os.Environ()
+	if c.projectID != "" {
+		cmd.Env = append(cmd.Env, "C4_PROJECT_ID="+c.projectID)
+	}
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("cq drive pull %s: %w\n%s", name, err, out)
+	}
+	return nil
+}
+
+func (c *cliDriveClient) Upload(localPath, name string) error {
+	cmd := exec.Command("cq", "drive", "dataset", "upload", localPath, "--as", name, "--no-serve", "-y")
+	cmd.Env = os.Environ()
+	if c.projectID != "" {
+		cmd.Env = append(cmd.Env, "C4_PROJECT_ID="+c.projectID)
+	}
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("cq drive upload %s: %w\n%s", name, err, out)
+	}
+	return nil
 }
 
 // cqYAML represents the cq.yaml file at the snapshot root.
