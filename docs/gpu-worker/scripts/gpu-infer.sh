@@ -22,22 +22,33 @@ if [ -z "$SCRIPT" ]; then
     exit 1
 fi
 
-# 추론 실행 (stdout+stderr 캡처)
+# 경로 트래버설 방지: .. 포함 또는 절대경로는 거부
+if [[ "$SCRIPT" =~ \.\. ]] || [[ "$SCRIPT" = /* ]]; then
+    echo "Error: script path traversal or absolute path not allowed: $SCRIPT" >&2
+    if [ -n "$RESULT_FILE" ]; then
+        python3 -c "import json,sys; print(json.dumps({'exit_code':1,'output':sys.argv[1]}))" "path not allowed: $SCRIPT" > "$RESULT_FILE"
+    fi
+    exit 1
+fi
+
+# 추론 실행 — 대용량 output 대비 temp 파일로 스트리밍 (OOM 방지)
+LOGFILE=$(mktemp)
+trap 'rm -f "$LOGFILE"' EXIT
 set +e
 read -ra ARGS_ARR <<< "$ARGS"
-OUTPUT=$(python3 "$SCRIPT" "${ARGS_ARR[@]}" 2>&1)
-EXIT_CODE=$?
+python3 "$SCRIPT" "${ARGS_ARR[@]}" 2>&1 | tee "$LOGFILE"
+EXIT_CODE=${PIPESTATUS[0]}
 set -e
 
-# 결과를 C5_RESULT_FILE에 저장
+# 결과를 C5_RESULT_FILE에 저장 (마지막 64KB만 — 완전한 로그는 LOGFILE 참조)
 if [ -n "$RESULT_FILE" ]; then
+    TAIL_OUTPUT=$(tail -c 65536 "$LOGFILE")
     python3 -c "
 import json, sys
 exit_code = int(sys.argv[1])
 output = sys.argv[2]
 print(json.dumps({'exit_code': exit_code, 'output': output}))
-" "$EXIT_CODE" "$OUTPUT" > "$RESULT_FILE"
+" "$EXIT_CODE" "$TAIL_OUTPUT" > "$RESULT_FILE"
 fi
 
-echo "$OUTPUT"
 exit "$EXIT_CODE"
