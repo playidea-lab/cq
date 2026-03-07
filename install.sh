@@ -67,6 +67,7 @@ fi
 if [ "$DRY_RUN" = "1" ]; then
   echo "Would download: ${URL}"
   echo "Would install to: ${INSTALL_DIR}/cq"
+  echo "Would install to: ${INSTALL_DIR}/c5"
   exit 0
 fi
 
@@ -88,6 +89,27 @@ fi
 chmod +x "${TMP_FILE}"
 mv "${TMP_FILE}" "${INSTALL_DIR}/cq"
 echo "Installed: ${INSTALL_DIR}/cq"
+
+# Install c5 (Hub worker daemon) — same OS/arch, no tiers
+C5_ARTIFACT="c5-${GOOS}-${GOARCH}"
+if [ -z "$VERSION" ]; then
+  C5_URL="https://github.com/PlayIdea-Lab/cq/releases/latest/download/${C5_ARTIFACT}"
+else
+  C5_URL="https://github.com/PlayIdea-Lab/cq/releases/download/${VERSION}/${C5_ARTIFACT}"
+fi
+if curl -sf --head "${C5_URL}" > /dev/null 2>&1; then
+  C5_TMP="$(mktemp)"
+  if curl -fsSL -o "${C5_TMP}" "${C5_URL}"; then
+    chmod +x "${C5_TMP}"
+    mv "${C5_TMP}" "${INSTALL_DIR}/c5"
+    echo "Installed: ${INSTALL_DIR}/c5"
+  else
+    rm -f "${C5_TMP}"
+    echo "Warning: c5 download failed (skipping)"
+  fi
+else
+  echo "Warning: c5 not found in this release (skipping)"
+fi
 
 # Auto-add INSTALL_DIR to PATH in shell rc files
 add_to_path() {
@@ -167,5 +189,5 @@ if [ -x "${INSTALL_DIR}/cq" ]; then
 fi
 
 echo ""
-echo "Done! cq is ready to use."
-echo "(Open a new terminal if 'cq' is not found yet)"
+echo "Done! cq + c5 are ready to use."
+echo "(Open a new terminal if commands are not found yet)"
