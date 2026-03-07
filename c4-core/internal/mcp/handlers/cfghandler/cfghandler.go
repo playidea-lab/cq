@@ -240,6 +240,16 @@ func inferType(val string) any {
 	return val
 }
 
+// ConfigFilePath returns the path to the config file for the given project root.
+func ConfigFilePath(projectRoot string) string {
+	return filepath.Join(projectRoot, ".c4", "config.yaml")
+}
+
+// UpdateYAMLValue is the exported form of updateYAMLValue for use by CLI commands.
+func UpdateYAMLValue(filePath string, dotKey string, rawValue string) error {
+	return updateYAMLValue(filePath, dotKey, rawValue)
+}
+
 // updateYAMLValue modifies a value in a YAML file while preserving comments and formatting.
 // Supports dot-notation keys up to 3 levels deep.
 func updateYAMLValue(filePath string, dotKey string, rawValue string) error {

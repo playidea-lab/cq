@@ -35,25 +35,34 @@ Key naming convention:
 }
 
 var secretSetCmd = &cobra.Command{
-	Use:   "set <key>",
-	Short: "Set a secret (prompts for value, not echoed)",
-	Args:  cobra.ExactArgs(1),
+	Use:   "set <key> [value]",
+	Short: "Set a secret (prompts for value if not provided)",
+	Long: `Set an encrypted secret. If value is not provided as an argument,
+it is read interactively (hidden, not echoed to terminal).
+
+Providing value as an argument is convenient for scripting but will
+appear in shell history — use the interactive prompt for sensitive values.`,
+	Args: cobra.RangeArgs(1, 2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		key := args[0]
 
-		// Open the store before prompting so the user isn't asked to type a secret
-		// that cannot be saved (e.g. disk full, permission error).
 		store, err := secrets.New()
 		if err != nil {
 			return err
 		}
 		defer store.Close()
 
-		value, err := readHiddenInput(fmt.Sprintf("Value for %q (hidden): ", key))
-		if err != nil {
-			return fmt.Errorf("read value: %w", err)
+		var value string
+		if len(args) == 2 {
+			// Value provided as argument — warn about shell history.
+			value = args[1]
+			fmt.Fprintln(os.Stderr, "cq: warning: secret value passed as argument will appear in shell history")
+		} else {
+			value, err = readHiddenInput(fmt.Sprintf("Value for %q (hidden): ", key))
+			if err != nil {
+				return fmt.Errorf("read value: %w", err)
+			}
 		}
-		// value is stored as-is; TrimSpace is only used to reject blank-only input.
 		if strings.TrimSpace(value) == "" {
 			return fmt.Errorf("value must not be empty")
 		}
