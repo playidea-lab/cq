@@ -86,17 +86,86 @@ func TestHubSubmit(t *testing.T) {
 	}
 }
 
-// TestHubSubmit_MissingRunFlag verifies that missing --run returns an error.
+// TestHubSubmit_MissingRunFlag verifies that missing --run and no cq.yaml returns an error.
 func TestHubSubmit_MissingRunFlag(t *testing.T) {
 	origRun := hubSubmitRun
 	hubSubmitRun = ""
 	defer func() { hubSubmitRun = origRun }()
 
+	// Use a temp dir with no cq.yaml so fallback also fails.
+	tmpDir := t.TempDir()
+	origWd, _ := os.Getwd()
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chdir(origWd) //nolint:errcheck
+
 	err := runHubSubmit(nil, nil)
 	if err == nil {
-		t.Fatal("expected error when --run is empty")
+		t.Fatal("expected error when --run is empty and no cq.yaml")
 	}
 	if !strings.Contains(err.Error(), "--run") {
 		t.Errorf("error %q should mention --run flag", err.Error())
+	}
+}
+
+// TestHubSubmit_CQYamlFallback verifies that the `run` field in cq.yaml is used
+// when --run flag is not provided.
+func TestHubSubmit_CQYamlFallback(t *testing.T) {
+	var captured hub.JobSubmitRequest
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/health", "/v1/health":
+			w.WriteHeader(http.StatusOK)
+		case "/jobs/submit", "/v1/jobs/submit":
+			if err := json.NewDecoder(r.Body).Decode(&captured); err != nil {
+				t.Errorf("decode body: %v", err)
+			}
+			json.NewEncoder(w).Encode(hub.JobSubmitResponse{
+				JobID:         "job-yaml-001",
+				Status:        "QUEUED",
+				QueuePosition: 1,
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	tmpDir := t.TempDir()
+	c4Dir := filepath.Join(tmpDir, ".c4")
+	if err := os.MkdirAll(c4Dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cfg := "hub:\n  enabled: true\n  url: " + srv.URL + "\n"
+	if err := os.WriteFile(filepath.Join(c4Dir, "config.yaml"), []byte(cfg), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// Write cq.yaml with run field in tmpDir (the cwd).
+	if err := os.WriteFile(filepath.Join(tmpDir, "cq.yaml"), []byte("run: python3 train.py\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	origDir := projectDir
+	projectDir = tmpDir
+	defer func() { projectDir = origDir }()
+
+	origRun := hubSubmitRun
+	hubSubmitRun = "" // --run not provided
+	defer func() { hubSubmitRun = origRun }()
+
+	origWd, _ := os.Getwd()
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chdir(origWd) //nolint:errcheck
+
+	if err := runHubSubmit(nil, nil); err != nil {
+		t.Fatalf("runHubSubmit: %v", err)
+	}
+
+	if captured.Command != "python3 train.py" {
+		t.Errorf("command = %q, want %q (from cq.yaml)", captured.Command, "python3 train.py")
 	}
 }

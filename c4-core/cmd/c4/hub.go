@@ -15,6 +15,7 @@ import (
 	"github.com/changmin/c4-core/internal/config"
 	"github.com/changmin/c4-core/internal/hub"
 	"github.com/spf13/cobra"
+	"gopkg.in/yaml.v3"
 )
 
 var hubCmd = &cobra.Command{
@@ -609,7 +610,18 @@ func runHubEdgeList(cmd *cobra.Command, args []string) error {
 func runHubSubmit(cmd *cobra.Command, args []string) error {
 	command := hubSubmitRun
 	if command == "" {
-		return fmt.Errorf("--run flag is required (e.g. --run \"python3 train.py\")")
+		// Fallback: read `run` field from cq.yaml in current directory.
+		if data, err := os.ReadFile("cq.yaml"); err == nil {
+			var cqYaml struct {
+				Run string `yaml:"run"`
+			}
+			if err := yaml.Unmarshal(data, &cqYaml); err == nil {
+				command = cqYaml.Run
+			}
+		}
+	}
+	if command == "" {
+		return fmt.Errorf("--run flag is required or set `run` in cq.yaml")
 	}
 
 	client, err := newHubClient()
