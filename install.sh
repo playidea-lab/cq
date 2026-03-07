@@ -5,7 +5,7 @@
 
 set -e
 
-TIER="solo"
+TIER="full"
 DRY_RUN=0
 INSTALL_DIR="${HOME}/.local/bin"
 VERSION=""
