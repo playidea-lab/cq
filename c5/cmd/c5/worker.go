@@ -889,8 +889,11 @@ func runWithDrivePipeline(drive driveClient, client *workerClient, job *model.Jo
 	}
 	defer os.RemoveAll(jobDir)
 
-	log.Printf("c5-worker: pipeline: pulling snapshot %s → %s", snapshotHash, jobDir)
-	if err := drive.Pull(snapshotHash, jobDir, ""); err != nil {
+	// Dataset name follows the convention set by `cq hub submit`:
+	// "hub-submit-{projectID}". The snapshotHash is the version within that dataset.
+	snapshotDatasetName := "hub-submit-" + job.ProjectID
+	log.Printf("c5-worker: pipeline: pulling snapshot %s@%s → %s", snapshotDatasetName, snapshotHash, jobDir)
+	if err := drive.Pull(snapshotDatasetName, jobDir, snapshotHash); err != nil {
 		log.Printf("c5-worker: pipeline: snapshot pull failed: %v", err)
 		return 1, ""
 	}

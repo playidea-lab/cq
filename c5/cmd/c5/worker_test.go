@@ -991,11 +991,12 @@ type snapshotAwareDrive struct {
 }
 
 func (d *snapshotAwareDrive) Pull(name, destDir, version string) error {
-	// Snapshot pull: version == "" → treat as snapshot
-	if version == "" {
-		content, ok := d.snapshotContent[name]
+	// Snapshot pull: runWithDrivePipeline calls Pull("hub-submit-{projectID}", dir, snapshotHash).
+	// Look up the snapshot content by version (=snapshotHash).
+	if strings.HasPrefix(name, "hub-submit-") {
+		content, ok := d.snapshotContent[version]
 		if !ok {
-			return fmt.Errorf("stub: snapshot %q not found", name)
+			return fmt.Errorf("stub: snapshot %q not found", version)
 		}
 		if content != "" {
 			// Write content as cq.yaml in destDir
