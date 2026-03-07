@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.73.0] - 2026-03-08
+
+### ✨ Features
+- **serve**: `knowledgeHubPoller` serve.Component 추가 — CQ Research Loop Level 1
+  - Hub 완료 잡 30초 주기 폴링 (`cfg.Hub.Enabled && cfg.Hub.URL` 조건 시 자동 등록)
+  - stdout KEY=VALUE 파싱 → `knowledge.Create(TypeExperiment)` 자동 기록
+  - `seenIDs` JSON 파일 원자적 저장 + 30일 TTL cleanup (`cleanupSeenIDs`)
+  - `hub.Client` 1회 생성 후 재사용 (per-poll allocation 제거)
+  - `sort.Strings(parts)` — knowledge body 결정적 재현성 보장
+  - `C1Notifier` optional nil-safe interface — 잡 기록 시 C1 Messenger 알림
+  - `hubPollerLogLimit=1000` 상수, HasMore 페이지네이션 스킵(의도적)
+
+### 🐛 Bug Fixes
+- **docs**: CLAUDE.md MCP HTTP transport type `url` → `http` 수정 (Claude Code 2.1.x 스키마)
+- **serve**: `os.MkdirAll` errcheck nolint 제거 → 에러 로그 + component 등록 중단
+- **hub/client**: `ListJobsCtx` limit 파라미터 추가 (≤0 = 서버 기본값)
+
+---
+
 ## [v0.72.1] - 2026-03-07
 
 ### ✨ Features
