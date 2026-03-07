@@ -699,11 +699,8 @@ func tryFix(r *checkResult) string {
 			// uv not found — cannot auto-install, show link
 			return ""
 		}
-		_, err = runWithTimeout(60*time.Second, uvPath, "tool", "install", "c4")
-		if err != nil {
-			_, err = runWithTimeout(60*time.Second, uvPath, "tool", "install",
-				"git+https://github.com/PlayIdea-Lab/cq#subdirectory=c4")
-		}
+		_, err = runWithTimeout(60*time.Second, uvPath, "tool", "install",
+			"git+https://github.com/PlayIdea-Lab/cq")
 		if err != nil {
 			return ""
 		}
