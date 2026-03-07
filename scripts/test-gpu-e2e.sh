@@ -8,7 +8,8 @@
 #
 # Required env vars:
 #   C5_HUB_URL     — Hub base URL (e.g. https://hub.example.com)
-#   C5_HUB_API_KEY — API key for X-API-Key header
+#   C5_HUB_API_KEY — API key for Hub HTTP MCP endpoint (X-API-Key header)
+#                    Note: distinct from C5_API_KEY used by c5 worker → Hub auth
 set -euo pipefail
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; CYAN='\033[0;36m'; NC='\033[0m'

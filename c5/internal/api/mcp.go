@@ -316,7 +316,9 @@ func (s *Server) mcpToolsCall(w http.ResponseWriter, r *http.Request, req mcpReq
 		return
 	}
 
-	// Register completion channel after we have the job ID.
+	// Register completion channel BEFORE notifying workers so that
+	// handleWorkerComplete (called from handleJobComplete in jobs.go) cannot
+	// fire and miss the channel in the window between CreateJob and Store.
 	// Buffered 1 so handleWorkerComplete never blocks even if we haven't
 	// entered the select yet.
 	completionCh := make(chan struct{}, 1)
@@ -324,13 +326,21 @@ func (s *Server) mcpToolsCall(w http.ResponseWriter, r *http.Request, req mcpReq
 
 	s.notifyJobAvailable()
 
+	// Compensate for the race where an in-process worker completed the job
+	// between CreateJob and the Store above: if the job is already terminal,
+	// signal the channel now so waitForCompletion returns immediately.
+	if existing, getErr := s.store.GetJob(job.ID); getErr == nil && existing.Status.IsTerminal() {
+		s.handleWorkerComplete(job.ID)
+	}
+
 	// Wait for completion (max 5 minutes for MCP sync tool calls).
 	// Respects client disconnect via r.Context().Done().
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Minute)
 	defer cancel()
 
 	if err := s.waitForCompletion(ctx, job.ID); err != nil {
-		// ctx cancelled by client disconnect or timeout — leave job running.
+		// Timeout: write error to caller. Client disconnect: silently return
+		// (the job continues running; client disconnected intentionally).
 		if ctx.Err() == context.DeadlineExceeded {
 			writeMCPError(w, req.ID, -32000, fmt.Sprintf("job %s timed out waiting for completion", job.ID))
 		}

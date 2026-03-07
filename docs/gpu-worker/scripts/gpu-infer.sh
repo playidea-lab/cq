@@ -24,7 +24,8 @@ fi
 
 # 추론 실행 (stdout+stderr 캡처)
 set +e
-OUTPUT=$(python3 "$SCRIPT" $ARGS 2>&1)
+read -ra ARGS_ARR <<< "$ARGS"
+OUTPUT=$(python3 "$SCRIPT" "${ARGS_ARR[@]}" 2>&1)
 EXIT_CODE=$?
 set -e
 
