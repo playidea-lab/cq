@@ -651,3 +651,60 @@ serve:
 - 버전 일치 시 fast-path (재추출 생략)
 - CI: `build-c5` 스테이지 → `embed/c5/` 복사 → `build-cross TIER=full`
 - 로컬 개발: `make embed-c5 C5_BIN=<path> C5_VERSION=<ver>` 후 `-tags c5_embed` 빌드
+
+### GPU Worker 연결
+
+GPU 머신을 C5 Hub에 워커로 연결하여 AI 학습·추론 잡을 실행하는 가이드.
+
+**필수 조건**
+- `curl` — Hub 헬스 체크 및 다운로드
+- `python3` — 워커 스크립트 실행
+- `nvidia-smi` — (선택) GPU 감지; CPU-only 워커도 동작
+
+**docs/gpu-worker/ 다운로드**
+```bash
+# 최신 릴리즈에서 가이드·예시 파일 다운로드
+curl -sSL https://github.com/PlayIdea-Lab/cq/releases/latest/download/gpu-worker.tar.gz | tar xz
+# 또는 리포 클론 후 참조
+ls docs/gpu-worker/
+```
+
+**환경변수 설정**
+```bash
+export C5_HUB_URL=https://<your-hub-host>:8585   # Hub 서버 주소
+export C5_HUB_API_KEY=<your-api-key>              # Hub API 인증 키
+```
+
+**gpu-caps.yaml 설정 예시**
+```yaml
+# gpu-caps.yaml — 워커가 제공할 capability 목록
+capabilities:
+  - name: gpu.train          # 학습 잡
+    runtime: python3
+    script: train.py
+  - name: gpu.inference      # 추론 잡
+    runtime: python3
+    script: infer.py
+  - name: gpu.shell          # 범용 셸 실행
+    runtime: bash
+    script: run.sh
+```
+
+**워커 실행**
+```bash
+c5 worker --caps gpu-caps.yaml --hub $C5_HUB_URL
+# C5_HUB_API_KEY 환경변수를 자동으로 읽어 인증
+```
+
+**Claude Code .mcp.json 연결 예시**
+```json
+{
+  "mcpServers": {
+    "gpu-worker": {
+      "type": "http",
+      "url": "http://<hub-host>:8585/v1/mcp",
+      "headers": { "X-API-Key": "<your-api-key>" }
+    }
+  }
+}
+```
