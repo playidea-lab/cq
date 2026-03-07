@@ -1,10 +1,36 @@
 # Installation
 
-## Requirements
+## Step 1 — Open a terminal
 
-- macOS Apple Silicon (arm64) or Linux (amd64 / arm64)
-- [Claude Code](https://claude.ai/code) CLI installed — [get it here](https://docs.anthropic.com/en/docs/claude-code/getting-started)
-- `curl` available in your shell
+::: code-group
+
+```sh [Mac]
+# Press ⌘ + Space, type "Terminal", press Enter
+# Or: Applications → Utilities → Terminal
+```
+
+```sh [Windows]
+# Press Start, search "Windows Terminal" or "Git Bash"
+# Git Bash download: https://git-scm.com/downloads
+```
+
+```sh [Linux]
+# Ctrl + Alt + T  (most distributions)
+```
+
+:::
+
+## Step 2 — Install an AI coding assistant
+
+CQ works with any of these. Pick one:
+
+- **[Claude Code](https://docs.anthropic.com/en/docs/claude-code/getting-started)** — recommended
+- **[Gemini CLI](https://github.com/google-gemini/gemini-cli)** — `npm install -g @google/gemini-cli`
+- **[Codex CLI](https://github.com/openai/codex)** — `npm install -g @openai/codex`
+
+## Step 3 — Install CQ
+
+**Supported platforms**: macOS (Apple Silicon / Intel), Linux (x86\_64 / ARM64), Windows (via Git Bash)
 
 ## One-line install
 
@@ -25,6 +51,15 @@ Open a new terminal and confirm:
 ```sh
 cq --help
 ```
+
+## Step 4 — Start your first project
+
+```sh
+cd your-project-folder
+cq claude   # or: cq cursor / cq codex / cq gemini
+```
+
+Then describe what you want to build. → [See examples](/examples/first-task)
 
 ## Install a specific tier
 

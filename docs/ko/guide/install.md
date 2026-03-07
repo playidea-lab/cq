@@ -1,10 +1,36 @@
 # 설치
 
-## 요구 사항
+## Step 1 — 터미널 열기
 
-- macOS Apple Silicon (arm64) 또는 Linux (amd64 / arm64)
-- [Claude Code](https://claude.ai/code) CLI 설치됨 — [여기서 받기](https://docs.anthropic.com/en/docs/claude-code/getting-started)
-- 셸에서 `curl` 사용 가능
+::: code-group
+
+```sh [Mac]
+# ⌘ + Space → "Terminal" 입력 → Enter
+# 또는: 응용 프로그램 → 유틸리티 → 터미널
+```
+
+```sh [Windows]
+# 시작 → "Windows Terminal" 검색, 또는 Git Bash 실행
+# Git Bash 다운로드: https://git-scm.com/downloads
+```
+
+```sh [Linux]
+# Ctrl + Alt + T  (대부분의 배포판)
+```
+
+:::
+
+## Step 2 — AI 코딩 어시스턴트 설치
+
+CQ는 다음 도구들과 함께 동작합니다. 하나를 선택하세요:
+
+- **[Claude Code](https://docs.anthropic.com/en/docs/claude-code/getting-started)** — 권장
+- **[Gemini CLI](https://github.com/google-gemini/gemini-cli)** — `npm install -g @google/gemini-cli`
+- **[Codex CLI](https://github.com/openai/codex)** — `npm install -g @openai/codex`
+
+## Step 3 — CQ 설치
+
+**지원 플랫폼**: macOS (Apple Silicon / Intel), Linux (x86\_64 / ARM64), Windows (Git Bash 경유)
 
 ## 한 줄 설치
 
@@ -25,6 +51,15 @@ curl -fsSL https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/install.sh | s
 ```sh
 cq --help
 ```
+
+## Step 4 — 첫 프로젝트 시작
+
+```sh
+cd 프로젝트-폴더
+cq claude   # 또는: cq cursor / cq codex / cq gemini
+```
+
+무엇을 만들고 싶은지 말하면 됩니다. → [예시 보기](/ko/examples/first-task)
 
 ## 특정 티어 설치
 

@@ -4,11 +4,12 @@ Real-world scenarios showing CQ in action. Each example shows the conversation b
 
 ## Examples
 
-| Example | Scenario | Skills used |
-|---------|----------|-------------|
-| [Feature Planning](/examples/feature-planning) | Build a new feature end-to-end | `/c4-plan` `/c4-run` `/c4-finish` |
-| [Quick Bug Fix](/examples/quick-fix) | Fix a bug without the full plan flow | `/c4-quick` |
-| [Distributed Experiments](/examples/distributed-experiments) | Run ML experiments across multiple machines | `/c4-plan` `/c4-standby` `/c4-status` |
+| Example | Scenario | Tier | Skills used |
+|---------|----------|:----:|-------------|
+| [Your First Task](/examples/first-task) | Generate a CSV summary script from scratch | `solo` | `/pi` `/c4-run` |
+| [Quick Bug Fix](/examples/quick-fix) | Fix a bug without the full plan flow | `solo` | `/c4-quick` |
+| [Feature Planning](/examples/feature-planning) | Build a new feature end-to-end | `solo` | `/c4-plan` `/c4-run` `/c4-finish` |
+| [Distributed Experiments](/examples/distributed-experiments) | Run ML experiments across multiple machines | `full` | `/c4-plan` `/c4-standby` `/c4-status` |
 
 ## Pattern
 
