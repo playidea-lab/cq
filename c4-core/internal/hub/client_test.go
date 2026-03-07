@@ -1,6 +1,7 @@
 package hub
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -952,5 +953,132 @@ func TestLeaseAcquireResponse_ParsesPresignedURLs(t *testing.T) {
 	}
 	if legacyResp.InputPresignedURLs != nil {
 		t.Error("InputPresignedURLs should be nil for legacy response")
+	}
+}
+
+// =========================================================================
+// ListJobsCtx
+// =========================================================================
+
+func TestListJobsCtx(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/jobs", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "GET" {
+			t.Errorf("method = %s, want GET", r.Method)
+		}
+		status := r.URL.Query().Get("status")
+		if status != "completed" {
+			t.Errorf("status = %q, want completed", status)
+		}
+		jsonResponse(w, []*Job{
+			{ID: "j1", Status: "completed"},
+			{ID: "j2", Status: "completed"},
+		})
+	})
+	client, _ := newTestServer(t, mux)
+
+	jobs, err := client.ListJobsCtx(context.Background(), "completed")
+	if err != nil {
+		t.Fatalf("ListJobsCtx: %v", err)
+	}
+	if len(jobs) != 2 {
+		t.Errorf("len = %d, want 2", len(jobs))
+	}
+	if jobs[0].ID != "j1" {
+		t.Errorf("jobs[0].ID = %q, want j1", jobs[0].ID)
+	}
+}
+
+func TestListJobsCtx_NoFilter(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/jobs", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.RawQuery != "" {
+			t.Errorf("unexpected query: %s", r.URL.RawQuery)
+		}
+		jsonResponse(w, []*Job{})
+	})
+	client, _ := newTestServer(t, mux)
+
+	jobs, err := client.ListJobsCtx(context.Background(), "")
+	if err != nil {
+		t.Fatalf("ListJobsCtx: %v", err)
+	}
+	if len(jobs) != 0 {
+		t.Errorf("expected empty, got %d", len(jobs))
+	}
+}
+
+func TestListJobsCtx_ContextCancelled(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/jobs", func(w http.ResponseWriter, r *http.Request) {
+		jsonResponse(w, []*Job{})
+	})
+	client, _ := newTestServer(t, mux)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // cancel immediately
+
+	_, err := client.ListJobsCtx(ctx, "completed")
+	if err == nil {
+		t.Fatal("expected error for cancelled context")
+	}
+}
+
+// =========================================================================
+// GetJobLogsCtx
+// =========================================================================
+
+func TestGetJobLogsCtx(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/jobs/job-ctx-1/logs", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "GET" {
+			t.Errorf("method = %s, want GET", r.Method)
+		}
+		offset := r.URL.Query().Get("offset")
+		limit := r.URL.Query().Get("limit")
+		if offset != "0" {
+			t.Errorf("offset = %q, want 0", offset)
+		}
+		if limit != "1000" {
+			t.Errorf("limit = %q, want 1000", limit)
+		}
+		jsonResponse(w, JobLogsResponse{
+			JobID:      "job-ctx-1",
+			Lines:      []string{"MPJPE=45.2", "PA_MPJPE=32.1"},
+			TotalLines: 2,
+			Offset:     0,
+			HasMore:    false,
+		})
+	})
+	client, _ := newTestServer(t, mux)
+
+	resp, err := client.GetJobLogsCtx(context.Background(), "job-ctx-1", 0, 1000)
+	if err != nil {
+		t.Fatalf("GetJobLogsCtx: %v", err)
+	}
+	if len(resp.Lines) != 2 {
+		t.Errorf("len(Lines) = %d, want 2", len(resp.Lines))
+	}
+	if resp.Lines[0] != "MPJPE=45.2" {
+		t.Errorf("Lines[0] = %q, want MPJPE=45.2", resp.Lines[0])
+	}
+	if resp.HasMore {
+		t.Error("expected HasMore = false")
+	}
+}
+
+func TestGetJobLogsCtx_ContextCancelled(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/jobs/job-ctx-2/logs", func(w http.ResponseWriter, r *http.Request) {
+		jsonResponse(w, JobLogsResponse{})
+	})
+	client, _ := newTestServer(t, mux)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // cancel immediately
+
+	_, err := client.GetJobLogsCtx(ctx, "job-ctx-2", 0, 100)
+	if err == nil {
+		t.Fatal("expected error for cancelled context")
 	}
 }

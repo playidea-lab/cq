@@ -1,6 +1,7 @@
 package hub
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -189,6 +190,58 @@ func (c *Client) getRaw(path string) ([]byte, error) {
 	return body, nil
 }
 
+// getWithContext performs a GET request with context and decodes JSON into dest.
+func (c *Client) getWithContext(ctx context.Context, path string, dest any) error {
+	req, err := http.NewRequestWithContext(ctx, "GET", c.url(path), nil)
+	if err != nil {
+		return err
+	}
+	c.setHeaders(req)
+
+	resp, err := c.doWithRetry(req)
+	if err != nil {
+		return fmt.Errorf("GET %s: %w", path, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("GET %s: %d %s", path, resp.StatusCode, string(body))
+	}
+
+	if dest != nil {
+		if err := json.NewDecoder(resp.Body).Decode(dest); err != nil {
+			return fmt.Errorf("decode %s: %w", path, err)
+		}
+	}
+	return nil
+}
+
+// getRawWithContext performs a GET request with context and returns the raw response body.
+func (c *Client) getRawWithContext(ctx context.Context, path string) ([]byte, error) {
+	req, err := http.NewRequestWithContext(ctx, "GET", c.url(path), nil)
+	if err != nil {
+		return nil, err
+	}
+	c.setHeaders(req)
+
+	resp, err := c.doWithRetry(req)
+	if err != nil {
+		return nil, fmt.Errorf("GET %s: %w", path, err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read %s: %w", path, err)
+	}
+
+	if resp.StatusCode >= 400 {
+		return nil, fmt.Errorf("GET %s: %d %s", path, resp.StatusCode, string(body))
+	}
+	return body, nil
+}
+
 // post performs a POST request with JSON body and decodes the response.
 func (c *Client) post(path string, body, dest any) error {
 	data, err := json.Marshal(body)
@@ -301,6 +354,45 @@ func (c *Client) CompleteJob(jobID, status string, exitCode int) error {
 		return fmt.Errorf("complete job: %w", err)
 	}
 	return nil
+}
+
+// ListJobsCtx returns jobs filtered by status (empty = all) using the provided context.
+// Returns a slice of Job pointers for use with context-aware callers (e.g. HubPoller).
+func (c *Client) ListJobsCtx(ctx context.Context, status string) ([]*Job, error) {
+	path := "/jobs"
+	if status != "" {
+		path += "?status=" + status
+	}
+
+	raw, err := c.getRawWithContext(ctx, path)
+	if err != nil {
+		return nil, fmt.Errorf("list jobs: %w", err)
+	}
+
+	// Try wrapped format (PiQ daemon: {"jobs": [...]})
+	var wrapped struct {
+		Jobs []*Job `json:"jobs"`
+	}
+	if err := json.Unmarshal(raw, &wrapped); err == nil && wrapped.Jobs != nil {
+		return wrapped.Jobs, nil
+	}
+
+	// Fallback: direct array (Hub server)
+	var jobs []*Job
+	if err := json.Unmarshal(raw, &jobs); err != nil {
+		return nil, fmt.Errorf("list jobs: decode: %w", err)
+	}
+	return jobs, nil
+}
+
+// GetJobLogsCtx returns log lines for a job using the provided context.
+func (c *Client) GetJobLogsCtx(ctx context.Context, jobID string, offset, limit int) (*JobLogsResponse, error) {
+	path := fmt.Sprintf("/jobs/%s/logs?offset=%d&limit=%d", jobID, offset, limit)
+	var resp JobLogsResponse
+	if err := c.getWithContext(ctx, path, &resp); err != nil {
+		return nil, fmt.Errorf("get job logs: %w", err)
+	}
+	return &resp, nil
 }
 
 // =========================================================================
