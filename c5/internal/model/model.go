@@ -63,9 +63,11 @@ type Job struct {
 	StartedAt       *time.Time        `json:"started_at,omitempty"`
 	FinishedAt      *time.Time        `json:"finished_at,omitempty"`
 	ExitCode        *int              `json:"exit_code,omitempty"`
-	Capability      string            `json:"capability,omitempty"`
-	Params          map[string]any    `json:"params,omitempty"`
-	Result          map[string]any    `json:"result,omitempty"`
+	Capability           string            `json:"capability,omitempty"`
+	Params               map[string]any    `json:"params,omitempty"`
+	Result               map[string]any    `json:"result,omitempty"`
+	SnapshotVersionHash  string            `json:"snapshot_version_hash,omitempty"`
+	GitHash              string            `json:"git_hash,omitempty"`
 }
 
 // DurationSec returns the job duration in seconds, or nil if not yet finished.
@@ -204,8 +206,10 @@ type JobSubmitRequest struct {
 	SubmittedBy     string            `json:"submitted_by,omitempty"`
 	InputArtifacts  []ArtifactRef     `json:"input_artifacts,omitempty"`
 	OutputArtifacts []ArtifactRef     `json:"output_artifacts,omitempty"`
-	Capability      string            `json:"capability,omitempty"`
-	Params          map[string]any    `json:"params,omitempty"`
+	Capability          string            `json:"capability,omitempty"`
+	Params              map[string]any    `json:"params,omitempty"`
+	SnapshotVersionHash string            `json:"snapshot_version_hash,omitempty"`
+	GitHash             string            `json:"git_hash,omitempty"`
 }
 
 // JobSubmitResponse is returned from POST /v1/jobs/submit.

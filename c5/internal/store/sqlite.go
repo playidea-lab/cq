@@ -315,6 +315,9 @@ func (s *Store) migrate() error {
 		`ALTER TABLE jobs ADD COLUMN submitted_by TEXT DEFAULT NULL`,
 		// Migration: worker version for version gate (C5_MIN_VERSION).
 		`ALTER TABLE workers ADD COLUMN version TEXT NOT NULL DEFAULT ''`,
+		// Migration: snapshot/git traceability fields.
+		`ALTER TABLE jobs ADD COLUMN snapshot_version_hash TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE jobs ADD COLUMN git_hash TEXT NOT NULL DEFAULT ''`,
 	} {
 		if _, err := s.db.Exec(stmt); err != nil {
 			if !strings.Contains(err.Error(), "duplicate column") {
@@ -353,16 +356,19 @@ func (s *Store) CreateJob(req *model.JobSubmitRequest) (*model.Job, error) {
 		SubmittedBy:     req.SubmittedBy,
 		InputArtifacts:  req.InputArtifacts,
 		OutputArtifacts: req.OutputArtifacts,
-		Capability:      req.Capability,
-		Params:          req.Params,
-		CreatedAt:       now,
+		Capability:          req.Capability,
+		Params:              req.Params,
+		SnapshotVersionHash: req.SnapshotVersionHash,
+		GitHash:             req.GitHash,
+		CreatedAt:           now,
 	}
 
 	_, err := s.db.Exec(`
 		INSERT INTO jobs (id, name, status, priority, workdir, command,
 			requires_gpu, vram_required_gb, env, tags, exp_id, memo, timeout_sec, project_id,
-			submitted_by, input_artifacts, output_artifacts, capability, params, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			submitted_by, input_artifacts, output_artifacts, capability, params,
+			snapshot_version_hash, git_hash, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		job.ID, job.Name, string(job.Status), job.Priority, job.Workdir, job.Command,
 		boolToInt(job.RequiresGPU), job.VRAMRequiredGB,
 		marshalJSON(job.Env), marshalJSON(job.Tags),
@@ -370,6 +376,7 @@ func (s *Store) CreateJob(req *model.JobSubmitRequest) (*model.Job, error) {
 		nullableText(job.SubmittedBy),
 		marshalArtifacts(job.InputArtifacts), marshalArtifacts(job.OutputArtifacts),
 		job.Capability, marshalJSON(job.Params),
+		job.SnapshotVersionHash, job.GitHash,
 		now.Format(time.RFC3339),
 	)
 	if err != nil {
@@ -2120,7 +2127,8 @@ func (s *Store) ListArtifacts(jobID string) ([]model.Artifact, error) {
 const jobSelectCols = `SELECT id, name, status, priority, workdir, command,
 	requires_gpu, vram_required_gb, env, tags, exp_id, memo, timeout_sec, worker_id,
 	created_at, started_at, finished_at, exit_code, project_id, submitted_by,
-	input_artifacts, output_artifacts, capability, params, result`
+	input_artifacts, output_artifacts, capability, params, result,
+	snapshot_version_hash, git_hash`
 
 type scanner interface {
 	Scan(dest ...any) error
@@ -2151,6 +2159,7 @@ func populateJob(sc scanner) (*model.Job, error) {
 		&j.ProjectID, &submittedBy,
 		&inputArtifactsJSON, &outputArtifactsJSON,
 		&j.Capability, &paramsJSON, &resultJSON,
+		&j.SnapshotVersionHash, &j.GitHash,
 	)
 	if err != nil {
 		return nil, err
