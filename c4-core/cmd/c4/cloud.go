@@ -222,3 +222,32 @@ func getActiveProjectID(projDir string) string {
 	}
 	return sectionYAMLValue(string(data), "cloud", "active_project_id:")
 }
+
+// getActiveProjectIDWithProjects extends getActiveProjectID with two additional
+// fallbacks using the provided project list:
+//  3. Directory-name matching: current working directory name vs project names (case-insensitive).
+//  4. Single-project auto-select: if exactly one project exists, use it.
+//
+// Priority: C4_PROJECT_ID env > config active_project_id > dir-name match > single auto-select.
+func getActiveProjectIDWithProjects(projDir string, projects []cloud.Project) string {
+	if id := getActiveProjectID(projDir); id != "" {
+		return id
+	}
+	if len(projects) == 0 {
+		return ""
+	}
+	// Fallback 3: match current directory name against project names.
+	if cwd, err := os.Getwd(); err == nil {
+		dirName := strings.ToLower(filepath.Base(cwd))
+		for _, p := range projects {
+			if strings.ToLower(p.Name) == dirName {
+				return p.ID
+			}
+		}
+	}
+	// Fallback 4: single project auto-select.
+	if len(projects) == 1 {
+		return projects[0].ID
+	}
+	return ""
+}

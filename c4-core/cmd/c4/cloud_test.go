@@ -241,4 +241,75 @@ func TestGetActiveProjectID(t *testing.T) {
 			t.Errorf("expected %q, got %q", "proj-from-config", got)
 		}
 	})
+
+	// Tests for getActiveProjectIDWithProjects (dir-name match + single auto-select).
+	projects := []cloud.Project{
+		{ID: "id-alpha", Name: "alpha"},
+		{ID: "id-beta", Name: "beta"},
+	}
+
+	t.Run("env var takes priority over projects list", func(t *testing.T) {
+		t.Setenv("C4_PROJECT_ID", "env-id")
+		dir := t.TempDir()
+		got := getActiveProjectIDWithProjects(dir, projects)
+		if got != "env-id" {
+			t.Errorf("expected %q, got %q", "env-id", got)
+		}
+	})
+
+	t.Run("config active_project_id takes priority over dir-name match", func(t *testing.T) {
+		t.Setenv("C4_PROJECT_ID", "")
+		dir := t.TempDir()
+		c4Dir := filepath.Join(dir, ".c4")
+		os.MkdirAll(c4Dir, 0755)
+		cfgContent := "cloud:\n  active_project_id: config-proj\n"
+		os.WriteFile(filepath.Join(c4Dir, "config.yaml"), []byte(cfgContent), 0644)
+		got := getActiveProjectIDWithProjects(dir, projects)
+		if got != "config-proj" {
+			t.Errorf("expected %q, got %q", "config-proj", got)
+		}
+	})
+
+	t.Run("directory name matches project name case-insensitively", func(t *testing.T) {
+		t.Setenv("C4_PROJECT_ID", "")
+		dir := t.TempDir()
+		// Create a subdirectory named "Alpha" to match project "alpha".
+		subDir := filepath.Join(dir, "Alpha")
+		os.MkdirAll(subDir, 0755)
+		origDir, _ := os.Getwd()
+		os.Chdir(subDir)
+		t.Cleanup(func() { os.Chdir(origDir) })
+		got := getActiveProjectIDWithProjects(dir, projects)
+		if got != "id-alpha" {
+			t.Errorf("expected %q, got %q", "id-alpha", got)
+		}
+	})
+
+	t.Run("single project auto-selected when no other match", func(t *testing.T) {
+		t.Setenv("C4_PROJECT_ID", "")
+		dir := t.TempDir()
+		single := []cloud.Project{{ID: "only-proj", Name: "unrelated-name"}}
+		got := getActiveProjectIDWithProjects(dir, single)
+		if got != "only-proj" {
+			t.Errorf("expected %q, got %q", "only-proj", got)
+		}
+	})
+
+	t.Run("returns empty when multiple projects and no match", func(t *testing.T) {
+		t.Setenv("C4_PROJECT_ID", "")
+		dir := t.TempDir()
+		got := getActiveProjectIDWithProjects(dir, projects)
+		if got != "" {
+			t.Errorf("expected empty string, got %q", got)
+		}
+	})
+
+	t.Run("returns empty for empty project list", func(t *testing.T) {
+		t.Setenv("C4_PROJECT_ID", "")
+		dir := t.TempDir()
+		got := getActiveProjectIDWithProjects(dir, nil)
+		if got != "" {
+			t.Errorf("expected empty string, got %q", got)
+		}
+	})
 }
