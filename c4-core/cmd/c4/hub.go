@@ -185,6 +185,7 @@ func newHubClient() (*hub.Client, error) {
 	client := hub.NewClient(hub.HubConfig{
 		Enabled:   hubCfg.Enabled,
 		URL:       hubCfg.URL,
+		APIPrefix: hubCfg.APIPrefix,
 		APIKey:    hubCfg.APIKey,
 		APIKeyEnv: hubCfg.APIKeyEnv,
 		TeamID:    hubCfg.TeamID,
