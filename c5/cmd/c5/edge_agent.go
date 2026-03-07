@@ -46,7 +46,11 @@ func edgeAgentCmd() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&hubURL, "hub-url", os.Getenv("C5_HUB_URL"), "C5 Hub URL (default: C5_HUB_URL or http://localhost:8585)")
+	defaultHubURL := builtinServerURL
+	if defaultHubURL == "" {
+		defaultHubURL = os.Getenv("C5_HUB_URL")
+	}
+	cmd.Flags().StringVar(&hubURL, "hub-url", defaultHubURL, "C5 Hub URL (default: builtin > C5_HUB_URL env > http://localhost:8585)")
 	cmd.Flags().StringVar(&apiKey, "api-key", os.Getenv("C5_API_KEY"), "API key for authentication")
 	cmd.Flags().StringVar(&edgeName, "edge-name", "", "Edge name (default: hostname)")
 	cmd.Flags().StringVar(&workdir, "workdir", ".", "Directory to download artifacts into")

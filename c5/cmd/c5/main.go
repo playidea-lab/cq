@@ -15,6 +15,13 @@ import (
 
 var version = "dev"
 
+// builtinServerURL is the default C5 Hub URL baked in at build time via ldflags:
+//
+//	-X main.builtinServerURL=https://your-hub.fly.dev
+//
+// If empty, falls back to C5_HUB_URL env var or http://localhost:8585.
+var builtinServerURL = ""
+
 func main() {
 	root := &cobra.Command{
 		Use:     "c5",

@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.71.2] - 2026-03-07
+
+### 🐛 Bug Fixes
+- **c5/worker**: `builtinServerURL` ldflags 지원 — CI `CI_HUB_URL` 변수로 Hub URL 바이너리 내장 (zero-config worker)
+- **c5/edge-agent**: 동일한 `builtinServerURL` fallback 적용
+- **ci**: c5 빌드 시 `-ldflags "-X main.builtinServerURL"` 주입
+
+---
+
 ## [v0.71.1] - 2026-03-07
 
 ### 🐛 Bug Fixes

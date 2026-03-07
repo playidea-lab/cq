@@ -125,7 +125,14 @@ func workerCmd() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&serverURL, "server", "http://localhost:8585", "C5 server URL")
+	defaultServer := builtinServerURL
+	if defaultServer == "" {
+		defaultServer = os.Getenv("C5_HUB_URL")
+	}
+	if defaultServer == "" {
+		defaultServer = "http://localhost:8585"
+	}
+	cmd.Flags().StringVar(&serverURL, "server", defaultServer, "C5 server URL")
 	cmd.Flags().StringVar(&hostname, "hostname", "", "Worker hostname (default: OS hostname)")
 	cmd.Flags().IntVar(&gpuCount, "gpu-count", 0, "Number of GPUs available")
 	cmd.Flags().StringVar(&gpuModel, "gpu-model", "", "GPU model name")
