@@ -211,6 +211,9 @@ func (s *Server) handleJobComplete(w http.ResponseWriter, r *http.Request, jobID
 		completedJob = j
 	}
 
+	// Signal any MCP tools/call waiter that the job is done.
+	s.handleWorkerComplete(jobID)
+
 	// DAG orchestrator hook: advance DAG if this job was a DAG node
 	s.onJobComplete(jobID, status, exitCode)
 

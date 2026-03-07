@@ -15,6 +15,7 @@ package api
 //   - notifications/initialized (client→server, no-op)
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -314,40 +315,68 @@ func (s *Server) mcpToolsCall(w http.ResponseWriter, r *http.Request, req mcpReq
 		writeMCPError(w, req.ID, -32000, "create job: "+err.Error())
 		return
 	}
+
+	// Register completion channel after we have the job ID.
+	// Buffered 1 so handleWorkerComplete never blocks even if we haven't
+	// entered the select yet.
+	completionCh := make(chan struct{}, 1)
+	s.completionHub.Store(job.ID, completionCh)
+
 	s.notifyJobAvailable()
 
-	// Poll for completion (max 5 minutes for MCP sync tool calls).
+	// Wait for completion (max 5 minutes for MCP sync tool calls).
 	// Respects client disconnect via r.Context().Done().
-	ticker := time.NewTicker(2 * time.Second)
-	defer ticker.Stop()
-	deadline := time.NewTimer(5 * time.Minute)
-	defer deadline.Stop()
-	for {
-		select {
-		case <-r.Context().Done():
-			// Client disconnected — leave job running, return nothing.
-			return
-		case <-deadline.C:
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Minute)
+	defer cancel()
+
+	if err := s.waitForCompletion(ctx, job.ID); err != nil {
+		// ctx cancelled by client disconnect or timeout — leave job running.
+		if ctx.Err() == context.DeadlineExceeded {
 			writeMCPError(w, req.ID, -32000, fmt.Sprintf("job %s timed out waiting for completion", job.ID))
-			return
-		case <-ticker.C:
-			j, err := s.store.GetJob(job.ID)
-			if err != nil {
-				continue
-			}
-			if j.Status.IsTerminal() {
-				if j.Status == model.StatusSucceeded {
-					result := map[string]any{"job_id": j.ID, "status": string(j.Status)}
-					if j.Result != nil {
-						result["result"] = j.Result
-					}
-					writeMCPTextResult(w, req.ID, result)
-				} else {
-					writeMCPError(w, req.ID, -32000, fmt.Sprintf("job %s %s", j.ID, j.Status))
-				}
-				return
-			}
 		}
+		return
+	}
+
+	j, err := s.store.GetJob(job.ID)
+	if err != nil {
+		writeMCPError(w, req.ID, -32000, "get job: "+err.Error())
+		return
+	}
+	if j.Status == model.StatusSucceeded {
+		result := map[string]any{"job_id": j.ID, "status": string(j.Status)}
+		if j.Result != nil {
+			result["result"] = j.Result
+		}
+		writeMCPTextResult(w, req.ID, result)
+	} else {
+		writeMCPError(w, req.ID, -32000, fmt.Sprintf("job %s %s", j.ID, j.Status))
+	}
+}
+
+// handleWorkerComplete signals any waiting mcpToolsCall that a job has reached
+// a terminal state. It is called from handleJobComplete in jobs.go.
+// Idempotent: a second call for the same jobID is a no-op (channel already deleted).
+func (s *Server) handleWorkerComplete(jobID string) {
+	if v, loaded := s.completionHub.LoadAndDelete(jobID); loaded {
+		close(v.(chan struct{}))
+	}
+}
+
+// waitForCompletion blocks until the job's completion channel is closed or ctx
+// is cancelled. The caller is responsible for providing a context with timeout.
+func (s *Server) waitForCompletion(ctx context.Context, jobID string) error {
+	v, ok := s.completionHub.Load(jobID)
+	if !ok {
+		// Channel was already consumed (very fast completion path).
+		return nil
+	}
+	ch := v.(chan struct{})
+	select {
+	case <-ch:
+		return nil
+	case <-ctx.Done():
+		s.completionHub.Delete(jobID)
+		return ctx.Err()
 	}
 }
 

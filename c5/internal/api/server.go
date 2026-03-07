@@ -71,6 +71,12 @@ type Server struct {
 	// Master key subscribers store "" and receive all events.
 	// Entries are added in handleSSEStream and removed when the connection closes.
 	sseSubs sync.Map
+
+	// completionHub maps jobID → chan struct{} (buffered 1).
+	// The channel is stored when the job is submitted via mcpToolsCall and
+	// closed by handleWorkerComplete when the job reaches a terminal state.
+	// HA note: in-process only; lost on Hub restart (single-instance v1).
+	completionHub sync.Map
 }
 
 // Config holds server configuration.
