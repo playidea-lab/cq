@@ -145,10 +145,10 @@ install_python_sidecar() {
   fi
   if ! command -v uv > /dev/null 2>&1; then
     echo ""
-    echo "┌─ Python sidecar (LSP/doc features) requires uv ─────────────────┐"
+    echo "┌─ Python sidecar (LSP/doc features) requires uv ──────────────────┐"
     echo "│  Install uv: https://docs.astral.sh/uv/getting-started/installation/ │"
-    echo "│  Then run:   uv tool install c4                                  │"
-    echo "└──────────────────────────────────────────────────────────────────┘"
+    echo "│  Then run:   cq doctor --fix                                     │"
+    echo "└───────────────────────────────────────────────────────────────────┘"
     return
   fi
   if command -v c4-bridge > /dev/null 2>&1; then
