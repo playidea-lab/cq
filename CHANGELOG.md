@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.70.0] - 2026-03-07
+
+### ✨ Features
+- **c5/worker**: Stateless Worker — Hub 잡 payload의 `project_id`를 자식 프로세스 `C4_PROJECT_ID` env로 주입
+- **c5**: Hub Version Gate — `C5_MIN_VERSION` env 기반 semver 비교, 구버전 워커에 `control: upgrade` 반환
+- **c5/worker**: Control Message 처리 — `upgrade`(cq upgrade 후 재시작) / `shutdown`(루프 종료) 분기
+- **c5/worker**: Hub 등록 시 `CQ_VERSION` 버전 보고
+- **c5/model**: `WorkerRegisterRequest.Version` + `ControlMessage` 타입 추가
+- **c5**: `workers` 테이블 `version` 컬럼 마이그레이션
+- **cloud**: `getActiveProjectID()` — `C4_PROJECT_ID` env var 우선 지원 (config.yaml보다 선행)
+
+### 🐛 Bug Fixes
+- **c5**: conversation 패키지 merge conflict 해결 (Updated upstream 기준)
+
+### 🔧 Chores
+- **archtest**: `allowlist.go`에 upgrade.go + worker.go sentinel error 허용 항목 추가
+- **docs**: C5 Hub 섹션에 Stateless Worker + Version Gate 운영 가이드 추가
+
+---
+
 ## [Unreleased]
 
 ## [v0.67.0] - 2026-03-06
