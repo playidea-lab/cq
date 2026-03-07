@@ -123,6 +123,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 	ebComp, gpuComp := registerCoreServeComponents(mgr, cfg, home)
 	registerEventSinkServeComponent(mgr, cfg, ebComp)
 	registerHubPollerServeComponent(mgr, cfg, ebComp)
+	registerKnowledgeHubPollerServeComponent(mgr, cfg)
 	registerSSESubscriberServeComponent(mgr, cfg, ebComp)
 	registerStaleCheckerServeComponent(mgr, cfg, ebComp)
 	registerToolSocketComponent(mgr, srv)

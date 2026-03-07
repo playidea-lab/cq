@@ -4,9 +4,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/changmin/c4-core/internal/config"
 	"github.com/changmin/c4-core/internal/eventbus"
+	"github.com/changmin/c4-core/internal/knowledge"
 	"github.com/changmin/c4-core/internal/mcp/handlers"
 	"github.com/changmin/c4-core/internal/serve"
 )
@@ -108,4 +110,33 @@ func registerStaleCheckerServeComponent(mgr *serve.Manager, cfg config.C4Config,
 
 	mgr.Register(serve.NewStaleChecker(sqliteStore, pub, cfg.Serve.StaleChecker).WithCloser(db))
 	fmt.Fprintf(os.Stderr, "cq serve: registered stale_checker\n")
+}
+
+// registerKnowledgeHubPollerServeComponent registers the knowledge HubPoller when
+// hub is enabled and a hub URL is configured. It opens the project knowledge store
+// and polls C5 Hub for completed jobs, recording stdout KEY=VALUE metrics as
+// knowledge.TypeExperiment documents.
+func registerKnowledgeHubPollerServeComponent(mgr *serve.Manager, cfg config.C4Config) {
+	if !cfg.Hub.Enabled || cfg.Hub.URL == "" {
+		return
+	}
+
+	knowledgeDir := filepath.Join(projectDir, ".c4", "knowledge")
+	os.MkdirAll(knowledgeDir, 0755) //nolint:errcheck
+	ks, err := knowledge.NewStore(knowledgeDir)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "cq serve: hub_knowledge_poller: open knowledge store failed: %v\n", err)
+		return
+	}
+
+	poller := newKnowledgeHubPoller(knowledgeHubPollerConfig{
+		HubURL:       cfg.Hub.URL,
+		APIKey:       cfg.Hub.APIKey,
+		APIPrefix:    cfg.Hub.APIPrefix,
+		Store:        ks,
+		SeenPath:     filepath.Join(projectDir, ".c4", "hub_poller_seen.json"),
+		PollInterval: 30 * time.Second,
+	})
+	mgr.Register(poller)
+	fmt.Fprintf(os.Stderr, "cq serve: registered hub_knowledge_poller\n")
 }
