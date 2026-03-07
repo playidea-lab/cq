@@ -227,7 +227,12 @@ func runWorker(cfg workerConfig) error {
 				switch ctrl.Action {
 				case "upgrade":
 					log.Println("c5-worker: control: upgrade received, running cq upgrade...")
-					if err := exec.Command("cq", "upgrade").Run(); err != nil {
+					cqPath := findCQBinary()
+					if cqPath == "" {
+						log.Printf("c5-worker: cq upgrade failed: cq binary not found — retrying next poll")
+						break
+					}
+					if err := exec.Command(cqPath, "upgrade").Run(); err != nil {
 						log.Printf("c5-worker: cq upgrade failed: %v — retrying next poll", err)
 					} else {
 						os.Exit(0)
@@ -267,8 +272,9 @@ func runWorker(cfg workerConfig) error {
 				drive := cfg.drive
 				if drive == nil && j.SnapshotVersionHash != "" {
 					// Auto-create a CLI-based drive client when cq binary is available.
-					if _, err := exec.LookPath("cq"); err == nil {
-						drive = &cliDriveClient{projectID: j.ProjectID}
+					// findCQBinary also checks ~/.local/bin which is absent in daemon PATH.
+					if cqPath := findCQBinary(); cqPath != "" {
+						drive = &cliDriveClient{projectID: j.ProjectID, cqPath: cqPath}
 					}
 				}
 				if drive != nil && j.SnapshotVersionHash != "" {
@@ -768,10 +774,31 @@ type driveClient interface {
 	Upload(localPath, name string) error
 }
 
+// findCQBinary returns the absolute path to the cq binary.
+// It first checks PATH, then falls back to common install locations so that
+// the worker daemon finds cq even when ~/.local/bin is not in the daemon's PATH.
+func findCQBinary() string {
+	if path, err := exec.LookPath("cq"); err == nil {
+		return path
+	}
+	home, _ := os.UserHomeDir()
+	for _, p := range []string{
+		filepath.Join(home, ".local", "bin", "cq"),
+		"/usr/local/bin/cq",
+		"/usr/bin/cq",
+	} {
+		if _, err := os.Stat(p); err == nil {
+			return p
+		}
+	}
+	return ""
+}
+
 // cliDriveClient implements driveClient by shelling out to the `cq` binary.
 // C4_PROJECT_ID is injected from the job payload so the correct project is used.
 type cliDriveClient struct {
 	projectID string // from job payload; empty = use cq's own default
+	cqPath    string // absolute path to cq binary
 }
 
 func (c *cliDriveClient) Pull(name, destDir, version string) error {
@@ -779,7 +806,7 @@ func (c *cliDriveClient) Pull(name, destDir, version string) error {
 	if version != "" {
 		args = append(args, "--version", version)
 	}
-	cmd := exec.Command("cq", args...)
+	cmd := exec.Command(c.cqPath, args...)
 	cmd.Env = os.Environ()
 	if c.projectID != "" {
 		cmd.Env = append(cmd.Env, "C4_PROJECT_ID="+c.projectID)
@@ -792,7 +819,7 @@ func (c *cliDriveClient) Pull(name, destDir, version string) error {
 }
 
 func (c *cliDriveClient) Upload(localPath, name string) error {
-	cmd := exec.Command("cq", "drive", "dataset", "upload", localPath, "--as", name, "--no-serve", "-y")
+	cmd := exec.Command(c.cqPath, "drive", "dataset", "upload", localPath, "--as", name, "--no-serve", "-y")
 	cmd.Env = os.Environ()
 	if c.projectID != "" {
 		cmd.Env = append(cmd.Env, "C4_PROJECT_ID="+c.projectID)
