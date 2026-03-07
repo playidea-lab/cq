@@ -155,9 +155,8 @@ install_python_sidecar() {
     return  # already installed
   fi
   echo "Installing c4-bridge (Python sidecar for LSP/doc features)..."
-  uv tool install c4 --quiet 2>/dev/null || \
-    uv tool install "git+https://github.com/PlayIdea-Lab/cq#subdirectory=c4" --quiet 2>/dev/null || \
-    echo "Warning: c4-bridge install skipped. Run manually: uv tool install c4"
+  uv tool install "git+https://github.com/PlayIdea-Lab/cq" --quiet 2>/dev/null || \
+    echo "Warning: c4-bridge install skipped. Run manually: uv tool install git+https://github.com/PlayIdea-Lab/cq"
 }
 
 install_python_sidecar
