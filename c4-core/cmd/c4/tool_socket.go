@@ -49,8 +49,8 @@ type toolSocketComponent struct {
 // compile-time interface assertion
 var _ serve.Component = (*toolSocketComponent)(nil)
 
-func newToolSocketComponent(sockPath string) *toolSocketComponent {
-	return &toolSocketComponent{sockPath: sockPath}
+func newToolSocketComponent(sockPath string, srv *mcpServer) *toolSocketComponent {
+	return &toolSocketComponent{sockPath: sockPath, srv: srv}
 }
 
 func (t *toolSocketComponent) Name() string { return "tool-socket" }
@@ -69,13 +69,6 @@ func (t *toolSocketComponent) Start(ctx context.Context) error {
 	}
 	t.ln = ln
 
-	srv, err := newMCPServer()
-	if err != nil {
-		ln.Close()
-		return fmt.Errorf("tool socket: MCP init: %w", err)
-	}
-	t.srv = srv
-
 	go t.accept(ctx, ln)
 	return nil
 }
@@ -84,9 +77,6 @@ func (t *toolSocketComponent) Stop(_ context.Context) error {
 	if t.ln != nil {
 		t.ln.Close()
 		t.ln = nil // #6: Health() must return "error" after Stop
-	}
-	if t.srv != nil {
-		t.srv.shutdown()
 	}
 	os.Remove(t.sockPath) //nolint:errcheck
 	return nil
@@ -214,6 +204,6 @@ func callSocket(sockPath string, req sockRequest) (sockResponse, error) {
 }
 
 // registerToolSocketComponent registers the tool socket with the serve manager.
-func registerToolSocketComponent(mgr *serve.Manager) {
-	mgr.Register(newToolSocketComponent(toolSockPath()))
+func registerToolSocketComponent(mgr *serve.Manager, srv *mcpServer) {
+	mgr.Register(newToolSocketComponent(toolSockPath(), srv))
 }

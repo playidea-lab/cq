@@ -284,6 +284,16 @@ type ServeHubConfig struct {
 	Args    []string `mapstructure:"args"    yaml:"args"`    // extra CLI args
 }
 
+// ServeMCPHTTPConfig holds configuration for the Streamable HTTP MCP endpoint.
+// This exposes the same MCP tools as the stdio transport over HTTP,
+// enabling remote Claude Code instances to connect as MCP clients.
+type ServeMCPHTTPConfig struct {
+	Enabled bool   `mapstructure:"enabled"  yaml:"enabled"`
+	Port    int    `mapstructure:"port"     yaml:"port"`    // default: 4142 (4141 is used by EventSink)
+	Bind    string `mapstructure:"bind"     yaml:"bind"`    // default: "127.0.0.1"
+	APIKey  string `mapstructure:"api_key"  yaml:"api_key"` // dev/test only; prefer secrets.db or CQ_MCP_API_KEY env
+}
+
 // ServeConfig holds settings for the cq serve command.
 type ServeConfig struct {
 	HealthPort    int                  `mapstructure:"health_port"    yaml:"health_port"`
@@ -293,8 +303,9 @@ type ServeConfig struct {
 	HubPoller     ServeComponentToggle `mapstructure:"hubpoller"      yaml:"hubpoller"`
 	GPU           ServeComponentToggle `mapstructure:"gpu"            yaml:"gpu"`
 	SSESubscriber ServeComponentToggle `mapstructure:"ssesubscriber"  yaml:"ssesubscriber"`
-	StaleChecker   StaleCheckerConfig   `mapstructure:"stale_checker"   yaml:"stale_checker"`
-	Hub            ServeHubConfig       `mapstructure:"hub"             yaml:"hub"`
+	StaleChecker  StaleCheckerConfig   `mapstructure:"stale_checker"  yaml:"stale_checker"`
+	Hub           ServeHubConfig       `mapstructure:"hub"            yaml:"hub"`
+	MCPHTTP       ServeMCPHTTPConfig   `mapstructure:"mcp_http"       yaml:"mcp_http"`
 }
 
 // PermissionReviewerConfig holds settings for the permission auto-reviewer hook.
@@ -490,6 +501,10 @@ func New(projectRoot string, cloudDefaults ...CloudDefaults) (*Manager, error) {
 	v.SetDefault("serve.hub.binary", "c5")
 	v.SetDefault("serve.hub.port", 8585)
 	v.SetDefault("serve.hub.args", []string{})
+	v.SetDefault("serve.mcp_http.enabled", false)
+	v.SetDefault("serve.mcp_http.port", 4142)
+	v.SetDefault("serve.mcp_http.bind", "127.0.0.1")
+	v.SetDefault("serve.mcp_http.api_key", "")
 	v.SetDefault("permission_reviewer.enabled", false)
 	v.SetDefault("planning.critique_loop.enabled", true)
 	v.SetDefault("planning.critique_loop.max_rounds", 3)

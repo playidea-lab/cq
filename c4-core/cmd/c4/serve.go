@@ -109,6 +109,13 @@ func runServe(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("home dir: %w", err)
 	}
 
+	// Shared MCP server — used by tool-socket (UDS) and mcp-http (HTTP) components.
+	srv, err := newMCPServer()
+	if err != nil {
+		return fmt.Errorf("cq serve: MCP init: %w", err)
+	}
+	defer srv.shutdown()
+
 	// Component manager
 	mgr := serve.NewManager()
 
@@ -118,7 +125,10 @@ func runServe(cmd *cobra.Command, args []string) error {
 	registerHubPollerServeComponent(mgr, cfg, ebComp)
 	registerSSESubscriberServeComponent(mgr, cfg, ebComp)
 	registerStaleCheckerServeComponent(mgr, cfg, ebComp)
-	registerToolSocketComponent(mgr)
+	registerToolSocketComponent(mgr, srv)
+	if cfg.Serve.MCPHTTP.Enabled {
+		registerMCPHTTPComponent(mgr, cfg.Serve.MCPHTTP, srv)
+	}
 
 	// Start all components
 	ctx, cancel := context.WithCancel(context.Background())

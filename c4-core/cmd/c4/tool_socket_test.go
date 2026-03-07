@@ -12,13 +12,12 @@ import (
 	"time"
 )
 
-// startTestSocket starts a toolSocketComponent on a temp socket path.
-// Callers must have already called setupTestDB to set the global projectDir.
-func startTestSocket(t *testing.T) (sockPath string, cleanup func()) {
+// startTestSocket starts a toolSocketComponent on a temp socket path with the given srv.
+func startTestSocket(t *testing.T, srv *mcpServer) (sockPath string, cleanup func()) {
 	t.Helper()
 
 	sockPath = filepath.Join(t.TempDir(), "tool.sock")
-	comp := newToolSocketComponent(sockPath)
+	comp := newToolSocketComponent(sockPath, srv)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	if err := comp.Start(ctx); err != nil {
@@ -46,7 +45,8 @@ func startTestSocket(t *testing.T) (sockPath string, cleanup func()) {
 func setupSocket(t *testing.T) (db *sql.DB, sockPath string, cleanup func()) {
 	t.Helper()
 	db, dbCleanup := setupTestDB(t)
-	sockPath, sockCleanup := startTestSocket(t)
+	srv := newTestMCPServer(t, db)
+	sockPath, sockCleanup := startTestSocket(t, srv)
 	return db, sockPath, func() {
 		sockCleanup()
 		dbCleanup()

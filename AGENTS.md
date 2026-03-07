@@ -625,6 +625,26 @@ serve:
 - **Cloud credential passthrough**: `cloud.url` / `cloud.anon_key` 설정 시 C5 서브프로세스에 `C5_SUPABASE_URL` / `C5_SUPABASE_KEY` 환경변수 자동 주입 (`HubComponentConfig.Env`)
 - 바이너리 미설치 시: `c5_embed` 빌드 태그로 빌드된 경우 `~/.c4/bin/c5`로 자동 추출 후 사용, 없으면 graceful skip
 
+#### cq serve HTTP MCP (mcp_http 컴포넌트)
+`cq serve`에 Streamable HTTP MCP 엔드포인트를 추가하여 원격 Claude Code가 MCP 클라이언트로 연결 가능.
+```yaml
+# .c4/config.yaml
+serve:
+  mcp_http:
+    enabled: true
+    port: 4142          # default (4141은 EventSink 전용)
+    bind: "0.0.0.0"     # 원격 접속 허용 시
+```
+- API key 설정: `cq secret set mcp_http.api_key $(openssl rand -hex 16)` (권장)
+- 또는 `CQ_MCP_API_KEY` env var, 또는 config.yaml `api_key` (dev 전용)
+- key 미설정 시 컴포넌트 시작 거부 (실수 방지)
+- 인증: `X-API-Key` 헤더 또는 `Authorization: Bearer <key>` (constant-time 비교)
+- Claude Code `.mcp.json` 연결:
+  ```json
+  { "mcpServers": { "remote": { "type": "url", "url": "http://<host>:4142/mcp", "headers": { "X-API-Key": "<key>" } } } }
+  ```
+- TLS v1 범위 밖 — reverse proxy(Caddy/nginx), SSH 터널, Tailscale 권장
+
 #### c5 embed (c5_embed 빌드 태그)
 `TIER=full` CI 빌드 시 c5 바이너리를 cq 내부에 내장합니다.
 - 추출 경로: `~/.c4/bin/c5` (버전 캐시: `~/.c4/bin/.c5-version`)
