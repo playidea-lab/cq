@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // setupDoctorEnv creates a temporary project directory with a valid .c4/ structure.
@@ -352,5 +353,34 @@ hub:
 `
 	if v := sectionYAMLValue(contentPrefixCollision, "hub", "url:"); v != "http://real-url" {
 		t.Errorf("prefix collision: url: should match http://real-url, got %q", v)
+	}
+}
+
+func TestRunWithTimeout_UvMissing(t *testing.T) {
+	_, err := runWithTimeout(2*time.Second, "uv-does-not-exist-xyzzy", "--version")
+	if err == nil {
+		t.Fatal("expected error for missing binary, got nil")
+	}
+}
+
+func TestRunWithTimeout_BridgeRunnable(t *testing.T) {
+	// echo is always available; treat success as "runnable"
+	out, err := runWithTimeout(2*time.Second, "echo", "c4-bridge 0.1.0")
+	if err != nil {
+		t.Fatalf("echo failed: %v", err)
+	}
+	if !strings.Contains(out, "c4-bridge") {
+		t.Errorf("expected output to contain 'c4-bridge', got %q", out)
+	}
+}
+
+func TestCheckPythonSidecar_UvMissing(t *testing.T) {
+	// Temporarily ensure uv is not in PATH by checking behaviour path-independently.
+	// If uv is missing, the check should warn; if present, the real c4-bridge check runs.
+	// We test the runWithTimeout helper path indirectly via UvMissing above.
+	// This test just ensures checkPythonSidecar returns a non-empty Name.
+	res := checkPythonSidecar()
+	if res.Name == "" {
+		t.Error("checkPythonSidecar returned empty Name")
 	}
 }

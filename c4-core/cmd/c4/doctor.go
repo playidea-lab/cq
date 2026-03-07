@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -410,7 +411,16 @@ func checkHooks() checkResult {
 	}
 }
 
-// checkPythonSidecar verifies uv and Python sidecar dependencies.
+// runWithTimeout runs cmd with a timeout and returns combined output and error.
+func runWithTimeout(timeout time.Duration, name string, args ...string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, name, args...)
+	out, err := cmd.CombinedOutput()
+	return strings.TrimSpace(string(out)), err
+}
+
+// checkPythonSidecar verifies that c4-bridge is runnable via uv.
 func checkPythonSidecar() checkResult {
 	uvPath, err := exec.LookPath("uv")
 	if err != nil {
@@ -422,29 +432,20 @@ func checkPythonSidecar() checkResult {
 		}
 	}
 
-	// Check if pyproject.toml or requirements exist in project
-	hasProject := false
-	for _, f := range []string{
-		filepath.Join(projectDir, "pyproject.toml"),
-		filepath.Join(projectDir, "c4", "pyproject.toml"),
-	} {
-		if _, err := os.Stat(f); err == nil {
-			hasProject = true
-			break
-		}
-	}
-	if !hasProject {
+	_, err = runWithTimeout(5*time.Second, uvPath, "run", "c4-bridge", "--version")
+	if err != nil {
 		return checkResult{
 			Name:    "Python sidecar",
-			Status:  checkOK,
-			Message: fmt.Sprintf("uv found at %s (no pyproject.toml in project)", uvPath),
+			Status:  checkWarn,
+			Message: "c4-bridge not runnable — LSP/doc tools will be unavailable",
+			Fix:     "uv tool install c4",
 		}
 	}
 
 	return checkResult{
 		Name:    "Python sidecar",
 		Status:  checkOK,
-		Message: fmt.Sprintf("uv found at %s", uvPath),
+		Message: fmt.Sprintf("c4-bridge runnable via %s", uvPath),
 	}
 }
 

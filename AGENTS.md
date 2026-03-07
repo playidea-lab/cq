@@ -156,7 +156,7 @@ C9 Knowledge — 지식 관리 (FTS5 + pgvector + Embedding + Usage + Ingestion)
 ### 테스트 현황
 | 언어 | 테스트 수 | 패키지/모듈 |
 |------|----------|------------|
-| Go | **~2,627** | 58 packages (all pass) — c4-core ~2,345 (47pkg) + c5 ~282 (11pkg) |
+| Go | **~2,630** | 58 packages (all pass) — c4-core ~2,348 (47pkg) + c5 ~282 (11pkg) |
 | Python | **728** | tests/unit/ |
 | Rust | **92** | src-tauri |
 | **합계** | **~3,447** | |
@@ -587,6 +587,8 @@ cq tool c4_status --json
 - `GET /v1/capabilities` — 등록된 capability 목록 (타입, schema, online 워커 수)
 - `POST /v1/capabilities/invoke` — capability 잡 생성
 - 워커: `c5 worker --capabilities caps.yaml` — capability YAML로 자기 선언; `C5_PARAMS`/`C5_RESULT_FILE` env로 파라미터/결과 교환
+- **Stateless Worker**: Hub가 잡 payload에 `project_id` 포함 → 워커가 자식 프로세스에 `C4_PROJECT_ID` env 주입 (로컬 config.yaml 불필요)
+- **Version Gate**: `C5_MIN_VERSION` env 설정 시 구버전 워커에 `control: {action:"upgrade"}` 반환 → 워커가 `cq upgrade` 후 재시작 (version="" 또는 "unknown"은 bypass)
 - `hub.enabled: true` + `hub.url` 설정 후 `c4_hub_submit`으로 잡 제출.
 
 ### cq serve 통합

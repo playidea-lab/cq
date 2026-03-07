@@ -1,0 +1,9 @@
+run: "echo pipeline-ok"
+
+artifacts:
+  input:
+    - name: input-dataset
+      path: data/input.bin
+  output:
+    - name: output-model
+      path: results/model.bin
