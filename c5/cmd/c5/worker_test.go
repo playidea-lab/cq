@@ -1004,7 +1004,7 @@ func (d *snapshotAwareDrive) Pull(name, destDir, version string) error {
 		}
 		return nil // snapshot exists but has no cq.yaml
 	}
-	// Artifact pull (version == "latest")
+	// Artifact pull (version == "" → latest)
 	content, ok := d.artifactContent[name]
 	if !ok {
 		return fmt.Errorf("stub: artifact %q not found", name)

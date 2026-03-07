@@ -914,7 +914,7 @@ func runWithDrivePipeline(drive driveClient, client *workerClient, job *model.Jo
 				return 1, ""
 			}
 			log.Printf("c5-worker: pipeline: pulling input artifact %s → %s", art.Name, destPath)
-			if err := drive.Pull(art.Name, filepath.Dir(destPath), "latest"); err != nil {
+			if err := drive.Pull(art.Name, filepath.Dir(destPath), ""); err != nil {
 				log.Printf("c5-worker: pipeline: input artifact pull failed %s: %v", art.Name, err)
 				return 1, ""
 			}
