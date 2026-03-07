@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.72.0] - 2026-03-07
+
+### ✨ Features
+- **serve**: HTTP MCP 엔드포인트(`mcpHTTPComponent`) 추가 — `cq serve`를 원격 MCP 서버로 노출
+  - `POST /mcp`: JSON-RPC 2.0 핸들러 (`handleRequestWithCtx` 재사용)
+  - `GET /mcp`: SSE keepalive (15초 간격)
+  - API key 인증: `X-API-Key` 헤더 / `Authorization: Bearer` (constant-time compare)
+  - key 우선순위: `secrets.db → CQ_MCP_API_KEY env → config.yaml` (dev fallback)
+  - 빈 key 시 컴포넌트 시작 거부 (실수 방지)
+  - 요청 크기 1MB 제한, write deadline 65s
+  - `newMCPServer()` 를 `runServe()` 레벨로 끌어올려 UDS(tool-socket)과 HTTP 두 transport 공유
+- **config**: `ServeMCPHTTPConfig` 추가 (`serve.mcp_http.*`, 기본 port=4142, bind=127.0.0.1)
+
+---
+
 ## [v0.71.3] - 2026-03-07
 
 ### ✨ Features
