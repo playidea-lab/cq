@@ -58,19 +58,22 @@ type ArtifactRef struct {
 
 // JobSubmitRequest is the payload for POST /v1/jobs/submit.
 type JobSubmitRequest struct {
-	Name            string            `json:"name"`
-	Workdir         string            `json:"workdir"`
-	Command         string            `json:"command"`
-	Env             map[string]string `json:"env,omitempty"`
-	Tags            []string          `json:"tags,omitempty"`
-	RequiresGPU     bool              `json:"requires_gpu"`
-	VRAMRequiredGB  float64           `json:"vram_required_gb,omitempty"`
-	Priority        int               `json:"priority,omitempty"`
-	ExpID           string            `json:"exp_id,omitempty"`
-	Memo            string            `json:"memo,omitempty"`
-	TimeoutSec      int               `json:"timeout_sec,omitempty"`
-	InputArtifacts  []ArtifactRef     `json:"input_artifacts,omitempty"`
-	OutputArtifacts []ArtifactRef     `json:"output_artifacts,omitempty"`
+	Name                string            `json:"name"`
+	Workdir             string            `json:"workdir"`
+	Command             string            `json:"command"`
+	Env                 map[string]string `json:"env,omitempty"`
+	Tags                []string          `json:"tags,omitempty"`
+	RequiresGPU         bool              `json:"requires_gpu"`
+	VRAMRequiredGB      float64           `json:"vram_required_gb,omitempty"`
+	Priority            int               `json:"priority,omitempty"`
+	ExpID               string            `json:"exp_id,omitempty"`
+	Memo                string            `json:"memo,omitempty"`
+	TimeoutSec          int               `json:"timeout_sec,omitempty"`
+	InputArtifacts      []ArtifactRef     `json:"input_artifacts,omitempty"`
+	OutputArtifacts     []ArtifactRef     `json:"output_artifacts,omitempty"`
+	SnapshotVersionHash string            `json:"snapshot_version_hash,omitempty"`
+	GitHash             string            `json:"git_hash,omitempty"`
+	ProjectID           string            `json:"project_id,omitempty"`
 }
 
 // JobSubmitResponse is the response from POST /v1/jobs/submit.

@@ -109,6 +109,18 @@ var hubEdgeListCmd = &cobra.Command{
 	RunE:  runHubEdgeList,
 }
 
+var hubSubmitCmd = &cobra.Command{
+	Use:   "submit",
+	Short: "Upload current dir snapshot and submit a Hub job",
+	Long: `Upload the current directory as a Drive CAS snapshot, then submit a job to the Hub.
+
+The --run flag specifies the command to execute on the worker.
+
+Example:
+  cq hub submit --run "python3 train.py"`,
+	RunE: runHubSubmit,
+}
+
 // Flags
 var (
 	hubWorkerName     string
@@ -117,6 +129,7 @@ var (
 	hubEdgeName       string
 	hubEdgeTags       string
 	hubEdgeRuntime    string
+	hubSubmitRun      string
 )
 
 func init() {
@@ -131,6 +144,8 @@ func init() {
 	hubEdgeRegisterCmd.Flags().StringVar(&hubEdgeRuntime, "runtime", "", "inference runtime (onnx, tflite, tensorrt)")
 	hubEdgeRegisterCmd.MarkFlagRequired("name")
 
+	hubSubmitCmd.Flags().StringVar(&hubSubmitRun, "run", "", "command to execute on the worker")
+
 	hubEdgeCmd.AddCommand(hubEdgeRegisterCmd)
 	hubEdgeCmd.AddCommand(hubEdgeListCmd)
 
@@ -138,6 +153,7 @@ func init() {
 	hubCmd.AddCommand(hubRegisterCmd)
 	hubCmd.AddCommand(hubWatchCmd)
 	hubCmd.AddCommand(hubRunCmd)
+	hubCmd.AddCommand(hubSubmitCmd)
 	hubCmd.AddCommand(hubEdgeCmd)
 	rootCmd.AddCommand(hubCmd)
 }
@@ -583,6 +599,76 @@ func runHubEdgeList(cmd *cobra.Command, args []string) error {
 			e.ID, e.Name, e.Status, arch, runtime, tags)
 	}
 	w.Flush()
+	return nil
+}
+
+// =========================================================================
+// cq hub submit
+// =========================================================================
+
+func runHubSubmit(cmd *cobra.Command, args []string) error {
+	command := hubSubmitRun
+	if command == "" {
+		return fmt.Errorf("--run flag is required (e.g. --run \"python3 train.py\")")
+	}
+
+	client, err := newHubClient()
+	if err != nil {
+		return err
+	}
+
+	ctx := context.Background()
+	cwd, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("getwd: %w", err)
+	}
+
+	// Upload current dir to Drive CAS (best-effort: skip if drive not configured).
+	var snapshotHash string
+	dc, dcErr := newDatasetClient()
+	if dcErr == nil {
+		projectID := getActiveProjectID(projectDir)
+		snapshotName := "hub-submit-" + projectID
+		result, upErr := dc.Upload(ctx, cwd, snapshotName, "")
+		if upErr != nil {
+			fmt.Fprintf(os.Stderr, "Warning: Drive upload failed (submitting without snapshot): %v\n", upErr)
+		} else {
+			snapshotHash = result.VersionHash
+			fmt.Printf("Snapshot uploaded: %s (changed=%v, files=%d)\n",
+				snapshotHash, result.Changed, result.FilesUploaded+result.FilesSkipped)
+		}
+	} else if verbose {
+		fmt.Fprintf(os.Stderr, "Drive not configured, skipping snapshot upload: %v\n", dcErr)
+	}
+
+	// git rev-parse HEAD (optional).
+	var gitHash string
+	if out, err := exec.Command("git", "rev-parse", "HEAD").Output(); err == nil {
+		gitHash = strings.TrimSpace(string(out))
+	}
+
+	req := &hub.JobSubmitRequest{
+		Name:                "hub-submit",
+		Workdir:             cwd,
+		Command:             command,
+		SnapshotVersionHash: snapshotHash,
+		GitHash:             gitHash,
+		ProjectID:           getActiveProjectID(projectDir),
+	}
+
+	resp, err := client.SubmitJob(req)
+	if err != nil {
+		return fmt.Errorf("submit job: %w", err)
+	}
+
+	fmt.Printf("Job submitted: %s (status=%s, queue_position=%d)\n",
+		resp.JobID, resp.Status, resp.QueuePosition)
+	if gitHash != "" {
+		fmt.Printf("  git:      %s\n", gitHash)
+	}
+	if snapshotHash != "" {
+		fmt.Printf("  snapshot: %s\n", snapshotHash)
+	}
 	return nil
 }
 
