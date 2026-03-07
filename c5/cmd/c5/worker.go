@@ -138,7 +138,11 @@ func workerCmd() *cobra.Command {
 	cmd.Flags().StringVar(&gpuModel, "gpu-model", "", "GPU model name")
 	cmd.Flags().Float64Var(&totalVRAM, "total-vram", 0, "Total VRAM in GB")
 	cmd.Flags().IntVar(&pollSec, "poll-interval", 5, "Poll interval in seconds")
-	cmd.Flags().StringVar(&apiKey, "api-key", os.Getenv("C5_API_KEY"), "API key for authentication")
+	defaultAPIKey := builtinAPIKey
+	if defaultAPIKey == "" {
+		defaultAPIKey = os.Getenv("C5_API_KEY")
+	}
+	cmd.Flags().StringVar(&apiKey, "api-key", defaultAPIKey, "API key for authentication")
 	cmd.Flags().StringVar(&capabilitiesFile, "capabilities", "", "Path to capabilities YAML file")
 
 	return cmd

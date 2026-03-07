@@ -22,6 +22,13 @@ var version = "dev"
 // If empty, falls back to C5_HUB_URL env var or http://localhost:8585.
 var builtinServerURL = ""
 
+// builtinAPIKey is the default API key baked in at build time via ldflags:
+//
+//	-X main.builtinAPIKey=your-api-key
+//
+// If empty, falls back to C5_API_KEY env var.
+var builtinAPIKey = ""
+
 func main() {
 	root := &cobra.Command{
 		Use:     "c5",
