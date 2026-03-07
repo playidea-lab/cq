@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.74.0] - 2026-03-08
+
+### ✨ Features
+- **c5/mcp**: 잡 완료 대기를 2초 ticker 폴링에서 `sync.Map` completion channel로 교체 — 거의 제로 레이턴시 응답
+  - `completionHub sync.Map[jobID → chan struct{}]` — `handleWorkerComplete` 훅 연동
+  - `LoadAndDelete` 원자적 삭제로 double-close panic 방지
+  - Race 보상: `notifyJobAvailable()` 호출 전에 채널 Store → Post-Store terminal 상태 체크
+  - 5분 컨텍스트 타임아웃, `DeadlineExceeded` 시 MCP 에러 응답 (기존: 행잠)
+- **gpu-worker**: GPU 워커용 스크립트 및 capability 선언 추가 (`docs/gpu-worker/`)
+  - `gpu-caps.yaml`, `gpu-status.sh`, `gpu-train.sh`, `gpu-infer.sh` — path traversal guard, OOM 방지, shell injection 방지
+- **scripts**: GPU Hub E2E smoke test (`scripts/test-gpu-e2e.sh`) — `--dry-run` 지원
+
+### 🐛 Bug Fixes
+- **docs**: GPU onboarding C5 워커 CLI 플래그 오류 수정 (`--caps`→`--capabilities`, `--hub`→`--server`, `C5_HUB_API_KEY`→`C5_API_KEY`)
+
+### 📚 Documentation
+- **agents**: C5 Hub 섹션에 `### GPU Worker 연결` 온보딩 가이드 추가
+
+### 🔧 Chores
+- **polish**: completion channel race fix + shell injection (round-1)
+- **polish**: path guard + OOM fix (round-2)
+
+---
+
 ## [v0.73.0] - 2026-03-08
 
 ### ✨ Features
