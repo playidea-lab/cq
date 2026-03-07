@@ -759,7 +759,12 @@ type driveClient interface {
 
 // cqYAML represents the cq.yaml file at the snapshot root.
 type cqYAML struct {
-	Run       string `yaml:"run"`
+	Run string `yaml:"run"`
+	// UV controls whether to prepend "uv run" to the run command.
+	// Defaults to true when omitted — uv handles venv creation and dependency
+	// installation automatically via pyproject.toml / uv.lock.
+	// Set to false to run the command as-is (e.g. bash scripts, non-Python jobs).
+	UV        *bool `yaml:"uv"`
 	Artifacts struct {
 		Input  []cqArtifact `yaml:"input"`
 		Output []cqArtifact `yaml:"output"`
@@ -839,10 +844,17 @@ func runWithDrivePipeline(drive driveClient, client *workerClient, job *model.Jo
 		}
 	}
 
-	// Step 4: Run — override Command and Workdir from cq.yaml if present
+	// Step 4: Run — override Command and Workdir from cq.yaml if present.
+	// If uv is not explicitly set to false, prepend "uv run" so that uv
+	// automatically syncs the venv (pyproject.toml / uv.lock) before running.
 	if cfg != nil && cfg.Run != "" {
 		job = shallowCopyJob(job)
-		job.Command = cfg.Run
+		useUV := cfg.UV == nil || *cfg.UV // default true
+		if useUV {
+			job.Command = "uv run " + cfg.Run
+		} else {
+			job.Command = cfg.Run
+		}
 	}
 	job = shallowCopyJob(job)
 	job.Workdir = jobDir

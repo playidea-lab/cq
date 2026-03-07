@@ -1,4 +1,5 @@
 run: "echo pipeline-ok"
+uv: false  # pipeline tests run without uv; real ML jobs omit this (default true)
 
 artifacts:
   input:

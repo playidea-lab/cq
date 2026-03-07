@@ -17,6 +17,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v0.71.3] - 2026-03-07
+
+### ✨ Features
+- **c5/worker**: `uv: true` (default) — cq.yaml의 `run:` 명령 앞에 `uv run` 자동 prefix → pyproject.toml 기반 의존성 자동 설치
+- **c5/worker**: `uv: false` 명시 시 명령어 그대로 실행 (bash 스크립트 등)
+
+---
+
 ## [v0.71.2] - 2026-03-07
 
 ### 🐛 Bug Fixes

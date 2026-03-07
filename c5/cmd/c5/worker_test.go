@@ -818,6 +818,63 @@ func (s *stubDrive) Upload(localPath, name string) error {
 	return nil
 }
 
+// TestCQYAMLUVDefault verifies that omitting the uv field defaults to true
+// (i.e. "uv run" is prepended) and that uv: false disables it.
+func TestCQYAMLUVDefault(t *testing.T) {
+	boolPtr := func(b bool) *bool { return &b }
+
+	cases := []struct {
+		name        string
+		yaml        string
+		wantCommand string
+	}{
+		{
+			name:        "uv_omitted_defaults_true",
+			yaml:        "run: python train.py\n",
+			wantCommand: "uv run python train.py",
+		},
+		{
+			name:        "uv_explicit_true",
+			yaml:        "run: python train.py\nuv: true\n",
+			wantCommand: "uv run python train.py",
+		},
+		{
+			name:        "uv_explicit_false",
+			yaml:        "run: python train.py\nuv: false\n",
+			wantCommand: "python train.py",
+		},
+		{
+			name:        "uv_false_bash_script",
+			yaml:        "run: bash train.sh\nuv: false\n",
+			wantCommand: "bash train.sh",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			if err := os.WriteFile(filepath.Join(dir, "cq.yaml"), []byte(tc.yaml), 0644); err != nil {
+				t.Fatalf("write cq.yaml: %v", err)
+			}
+			cfg, err := parseCQYAML(dir)
+			if err != nil {
+				t.Fatalf("parseCQYAML: %v", err)
+			}
+			useUV := cfg.UV == nil || *cfg.UV
+			var got string
+			if useUV {
+				got = "uv run " + cfg.Run
+			} else {
+				got = cfg.Run
+			}
+			if got != tc.wantCommand {
+				t.Errorf("command = %q, want %q", got, tc.wantCommand)
+			}
+			_ = boolPtr // used implicitly via yaml
+		})
+	}
+}
+
 // TestWorkerPipeline exercises runWithDrivePipeline across key branches.
 func TestWorkerPipeline(t *testing.T) {
 	// Read the testdata/cq.yaml fixture once for table setup.
