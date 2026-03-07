@@ -608,18 +608,32 @@ func runHubEdgeList(cmd *cobra.Command, args []string) error {
 // cq hub submit
 // =========================================================================
 
+// experimentConfig holds the optional `experiment:` section from cq.yaml.
+type experimentConfig struct {
+	Name     string         `yaml:"name"`
+	Tags     []string       `yaml:"tags"`
+	Config   map[string]any `yaml:"config"`
+	Datasets struct {
+		WorkerPath string `yaml:"worker_path"`
+	} `yaml:"datasets"`
+}
+
+// cqYamlFile represents the structure of cq.yaml.
+type cqYamlFile struct {
+	Run        string           `yaml:"run"`
+	Experiment experimentConfig `yaml:"experiment"`
+}
+
 func runHubSubmit(cmd *cobra.Command, args []string) error {
+	// Parse cq.yaml once; used for both `run` fallback and experiment metadata.
+	var cqYaml cqYamlFile
+	if data, err := os.ReadFile("cq.yaml"); err == nil {
+		_ = yaml.Unmarshal(data, &cqYaml)
+	}
+
 	command := hubSubmitRun
 	if command == "" {
-		// Fallback: read `run` field from cq.yaml in current directory.
-		if data, err := os.ReadFile("cq.yaml"); err == nil {
-			var cqYaml struct {
-				Run string `yaml:"run"`
-			}
-			if err := yaml.Unmarshal(data, &cqYaml); err == nil {
-				command = cqYaml.Run
-			}
-		}
+		command = cqYaml.Run
 	}
 	if command == "" {
 		return fmt.Errorf("--run flag is required or set `run` in cq.yaml")
@@ -669,6 +683,24 @@ func runHubSubmit(cmd *cobra.Command, args []string) error {
 		ProjectID:           getActiveProjectID(projectDir),
 	}
 
+	// Apply experiment metadata from cq.yaml experiment: section.
+	exp := cqYaml.Experiment
+	if exp.Name != "" {
+		req.ExpID = exp.Name
+		req.Tags = exp.Tags
+		if len(exp.Config) > 0 {
+			if memo, err := json.Marshal(exp.Config); err == nil {
+				req.Memo = string(memo)
+			}
+		}
+		if exp.Datasets.WorkerPath != "" {
+			if req.Env == nil {
+				req.Env = make(map[string]string)
+			}
+			req.Env["C5_DATASET_PATH"] = exp.Datasets.WorkerPath
+		}
+	}
+
 	resp, err := client.SubmitJob(req)
 	if err != nil {
 		return fmt.Errorf("submit job: %w", err)
@@ -681,6 +713,9 @@ func runHubSubmit(cmd *cobra.Command, args []string) error {
 	}
 	if snapshotHash != "" {
 		fmt.Printf("  snapshot: %s\n", snapshotHash)
+	}
+	if exp.Name != "" {
+		fmt.Printf("  exp:      %s\n", exp.Name)
 	}
 	return nil
 }

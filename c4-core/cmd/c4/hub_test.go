@@ -109,6 +109,216 @@ func TestHubSubmit_MissingRunFlag(t *testing.T) {
 	}
 }
 
+// TestHubSubmitExperiment verifies that experiment: section in cq.yaml is mapped
+// to ExpID, Tags, Memo (JSON config), and Env[C5_DATASET_PATH].
+func TestHubSubmitExperiment(t *testing.T) {
+	var captured hub.JobSubmitRequest
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/health", "/v1/health":
+			w.WriteHeader(http.StatusOK)
+		case "/jobs/submit", "/v1/jobs/submit":
+			if err := json.NewDecoder(r.Body).Decode(&captured); err != nil {
+				t.Errorf("decode body: %v", err)
+			}
+			json.NewEncoder(w).Encode(hub.JobSubmitResponse{
+				JobID:         "job-exp-001",
+				Status:        "QUEUED",
+				QueuePosition: 1,
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	tmpDir := t.TempDir()
+	c4Dir := filepath.Join(tmpDir, ".c4")
+	if err := os.MkdirAll(c4Dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cfg := "hub:\n  enabled: true\n  url: " + srv.URL + "\n"
+	if err := os.WriteFile(filepath.Join(c4Dir, "config.yaml"), []byte(cfg), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cqYamlContent := `run: python3 train.py
+experiment:
+  name: hmr-baseline
+  tags: [hmr, agora, baseline]
+  config: {lr: 0.001, backbone: vitl}
+  datasets:
+    worker_path: /data/agora
+`
+	if err := os.WriteFile(filepath.Join(tmpDir, "cq.yaml"), []byte(cqYamlContent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	origDir := projectDir
+	projectDir = tmpDir
+	defer func() { projectDir = origDir }()
+
+	origRun := hubSubmitRun
+	hubSubmitRun = "" // use cq.yaml run
+	defer func() { hubSubmitRun = origRun }()
+
+	origWd, _ := os.Getwd()
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chdir(origWd) //nolint:errcheck
+
+	if err := runHubSubmit(nil, nil); err != nil {
+		t.Fatalf("runHubSubmit: %v", err)
+	}
+
+	// 1. Name → ExpID
+	if captured.ExpID != "hmr-baseline" {
+		t.Errorf("ExpID = %q, want %q", captured.ExpID, "hmr-baseline")
+	}
+	// 2. Tags → Tags
+	if len(captured.Tags) != 3 || captured.Tags[0] != "hmr" || captured.Tags[1] != "agora" || captured.Tags[2] != "baseline" {
+		t.Errorf("Tags = %v, want [hmr agora baseline]", captured.Tags)
+	}
+	// 3. Config JSON → Memo
+	if captured.Memo == "" {
+		t.Error("Memo should not be empty when config is set")
+	}
+	var memo map[string]any
+	if err := json.Unmarshal([]byte(captured.Memo), &memo); err != nil {
+		t.Errorf("Memo is not valid JSON: %v", err)
+	}
+	// 4. WorkerPath → Env[C5_DATASET_PATH]
+	if captured.Env["C5_DATASET_PATH"] != "/data/agora" {
+		t.Errorf("Env[C5_DATASET_PATH] = %q, want %q", captured.Env["C5_DATASET_PATH"], "/data/agora")
+	}
+}
+
+// TestHubSubmitExperiment_NoExperiment verifies that without experiment: section
+// the existing behavior is unchanged (no ExpID/Tags/Memo/C5_DATASET_PATH).
+func TestHubSubmitExperiment_NoExperiment(t *testing.T) {
+	var captured hub.JobSubmitRequest
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/health", "/v1/health":
+			w.WriteHeader(http.StatusOK)
+		case "/jobs/submit", "/v1/jobs/submit":
+			if err := json.NewDecoder(r.Body).Decode(&captured); err != nil {
+				t.Errorf("decode body: %v", err)
+			}
+			json.NewEncoder(w).Encode(hub.JobSubmitResponse{JobID: "job-noexp-001", Status: "QUEUED"})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	tmpDir := t.TempDir()
+	c4Dir := filepath.Join(tmpDir, ".c4")
+	if err := os.MkdirAll(c4Dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cfg := "hub:\n  enabled: true\n  url: " + srv.URL + "\n"
+	if err := os.WriteFile(filepath.Join(c4Dir, "config.yaml"), []byte(cfg), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	origDir := projectDir
+	projectDir = tmpDir
+	defer func() { projectDir = origDir }()
+
+	origRun := hubSubmitRun
+	hubSubmitRun = "python3 train.py"
+	defer func() { hubSubmitRun = origRun }()
+
+	origWd, _ := os.Getwd()
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chdir(origWd) //nolint:errcheck
+
+	if err := runHubSubmit(nil, nil); err != nil {
+		t.Fatalf("runHubSubmit: %v", err)
+	}
+
+	if captured.ExpID != "" {
+		t.Errorf("ExpID should be empty without experiment: section, got %q", captured.ExpID)
+	}
+	if len(captured.Tags) != 0 {
+		t.Errorf("Tags should be empty without experiment: section, got %v", captured.Tags)
+	}
+	if captured.Memo != "" {
+		t.Errorf("Memo should be empty without experiment: section, got %q", captured.Memo)
+	}
+	if captured.Env["C5_DATASET_PATH"] != "" {
+		t.Errorf("C5_DATASET_PATH should not be set without experiment.datasets, got %q", captured.Env["C5_DATASET_PATH"])
+	}
+}
+
+// TestHubSubmitExperiment_NoWorkerPath verifies that C5_DATASET_PATH is not added
+// when datasets.worker_path is empty.
+func TestHubSubmitExperiment_NoWorkerPath(t *testing.T) {
+	var captured hub.JobSubmitRequest
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/health", "/v1/health":
+			w.WriteHeader(http.StatusOK)
+		case "/jobs/submit", "/v1/jobs/submit":
+			if err := json.NewDecoder(r.Body).Decode(&captured); err != nil {
+				t.Errorf("decode body: %v", err)
+			}
+			json.NewEncoder(w).Encode(hub.JobSubmitResponse{JobID: "job-nowp-001", Status: "QUEUED"})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	tmpDir := t.TempDir()
+	c4Dir := filepath.Join(tmpDir, ".c4")
+	if err := os.MkdirAll(c4Dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cfg := "hub:\n  enabled: true\n  url: " + srv.URL + "\n"
+	if err := os.WriteFile(filepath.Join(c4Dir, "config.yaml"), []byte(cfg), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// experiment: with name but no datasets.worker_path
+	cqYamlContent := "run: python3 train.py\nexperiment:\n  name: no-dataset-exp\n  tags: [test]\n"
+	if err := os.WriteFile(filepath.Join(tmpDir, "cq.yaml"), []byte(cqYamlContent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	origDir := projectDir
+	projectDir = tmpDir
+	defer func() { projectDir = origDir }()
+
+	origRun := hubSubmitRun
+	hubSubmitRun = ""
+	defer func() { hubSubmitRun = origRun }()
+
+	origWd, _ := os.Getwd()
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chdir(origWd) //nolint:errcheck
+
+	if err := runHubSubmit(nil, nil); err != nil {
+		t.Fatalf("runHubSubmit: %v", err)
+	}
+
+	if captured.ExpID != "no-dataset-exp" {
+		t.Errorf("ExpID = %q, want %q", captured.ExpID, "no-dataset-exp")
+	}
+	if captured.Env["C5_DATASET_PATH"] != "" {
+		t.Errorf("C5_DATASET_PATH should not be set when worker_path is empty, got %q", captured.Env["C5_DATASET_PATH"])
+	}
+}
+
 // TestHubSubmit_CQYamlFallback verifies that the `run` field in cq.yaml is used
 // when --run flag is not provided.
 func TestHubSubmit_CQYamlFallback(t *testing.T) {
