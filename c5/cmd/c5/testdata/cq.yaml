@@ -4,7 +4,7 @@ uv: false  # pipeline tests run without uv; real ML jobs omit this (default true
 artifacts:
   input:
     - name: input-dataset
-      path: data/input.bin
+      local_path: data/input.bin
   output:
     - name: output-model
-      path: results/model.bin
+      local_path: results/model.bin

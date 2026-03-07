@@ -847,7 +847,7 @@ type cqYAML struct {
 
 type cqArtifact struct {
 	Name string `yaml:"name"` // Drive artifact name
-	Path string `yaml:"path"` // local relative path
+	Path string `yaml:"local_path"` // local relative path
 }
 
 // parseCQYAML reads and parses cq.yaml from dir.
@@ -909,12 +909,12 @@ func runWithDrivePipeline(drive driveClient, client *workerClient, job *model.Jo
 	if cfg != nil {
 		for _, art := range cfg.Artifacts.Input {
 			destPath := filepath.Join(jobDir, art.Path)
-			if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
+			if err := os.MkdirAll(destPath, 0755); err != nil {
 				log.Printf("c5-worker: pipeline: mkdir for input artifact %s: %v", art.Name, err)
 				return 1, ""
 			}
 			log.Printf("c5-worker: pipeline: pulling input artifact %s → %s", art.Name, destPath)
-			if err := drive.Pull(art.Name, filepath.Dir(destPath), ""); err != nil {
+			if err := drive.Pull(art.Name, destPath, ""); err != nil {
 				log.Printf("c5-worker: pipeline: input artifact pull failed %s: %v", art.Name, err)
 				return 1, ""
 			}
