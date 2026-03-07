@@ -137,6 +137,28 @@ add_completion
 # fish shell requires manual setup (eval-based sourcing differs from bash/zsh):
 #   Add to ~/.config/fish/config.fish:  cq completion fish | source
 
+# Install Python sidecar (optional: provides LSP and doc parsing features)
+install_python_sidecar() {
+  if [ "$DRY_RUN" = "1" ]; then
+    echo "Would install c4-bridge (Python sidecar) via uv tool install"
+    return
+  fi
+  if ! command -v uv > /dev/null 2>&1; then
+    echo ""
+    echo "Optional: install 'uv' to enable LSP and doc features (https://astral.sh/uv)"
+    return
+  fi
+  if command -v c4-bridge > /dev/null 2>&1; then
+    return  # already installed
+  fi
+  echo "Installing c4-bridge (Python sidecar for LSP/doc features)..."
+  uv tool install c4 --quiet 2>/dev/null || \
+    uv tool install "git+https://github.com/PlayIdea-Lab/cq#subdirectory=c4" --quiet 2>/dev/null || \
+    echo "Optional: c4-bridge install skipped. LSP/doc features unavailable (run: uv tool install c4)"
+}
+
+install_python_sidecar
+
 if [ -x "${INSTALL_DIR}/cq" ]; then
   echo ""
   "${INSTALL_DIR}/cq" doctor || true
