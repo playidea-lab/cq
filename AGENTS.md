@@ -641,7 +641,7 @@ serve:
 - 인증: `X-API-Key` 헤더 또는 `Authorization: Bearer <key>` (constant-time 비교)
 - Claude Code `.mcp.json` 연결:
   ```json
-  { "mcpServers": { "remote": { "type": "url", "url": "http://<host>:4142/mcp", "headers": { "X-API-Key": "<key>" } } } }
+  { "mcpServers": { "remote": { "type": "http", "url": "http://<host>:4142/mcp", "headers": { "X-API-Key": "<key>" } } } }
   ```
 - TLS v1 범위 밖 — reverse proxy(Caddy/nginx), SSH 터널, Tailscale 권장
 
