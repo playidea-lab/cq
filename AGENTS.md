@@ -589,6 +589,24 @@ cq tool c4_status --json
 - 워커: `c5 worker --capabilities caps.yaml` — capability YAML로 자기 선언; `C5_PARAMS`/`C5_RESULT_FILE` env로 파라미터/결과 교환
 - **Stateless Worker**: Hub가 잡 payload에 `project_id` 포함 → 워커가 자식 프로세스에 `C4_PROJECT_ID` env 주입 (로컬 config.yaml 불필요)
 - **Version Gate**: `C5_MIN_VERSION` env 설정 시 구버전 워커에 `control: {action:"upgrade"}` 반환 → 워커가 `cq upgrade` 후 재시작 (version="" 또는 "unknown"은 bypass)
+- **cq hub submit**: 현재 폴더를 Drive CAS로 스냅샷 업로드 후 Hub 잡 등록 (Git 불필요, CAS 자동 dedup)
+  ```bash
+  cq hub submit [--run "python train.py"] [--project myproj]
+  # --run 생략 시 cq.yaml의 run 필드 사용
+  ```
+- **cq.yaml**: 실험 디렉토리 루트에 위치, 아티팩트 선언 (train.py에 CQ 코드 불필요)
+  ```yaml
+  run: python train.py
+  artifacts:
+    input:
+      - name: mnist_mini       # Drive dataset 이름
+        local_path: data/mnist
+    output:
+      - name: model-checkpoint
+        local_path: checkpoints/
+  ```
+- **Drive CAS Pipeline (워커)**: snapshot pull → cq.yaml 파싱 → input artifacts pull → 실행 → output push
+- **project 자동감지**: `C4_PROJECT_ID` env → config `active_project_id` → 디렉토리명 매칭 → 단일 프로젝트 자동선택 (프로젝트명 명시 불필요)
 - `hub.enabled: true` + `hub.url` 설정 후 `c4_hub_submit`으로 잡 제출.
 
 ### cq serve 통합
