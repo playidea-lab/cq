@@ -438,7 +438,7 @@ func checkPythonSidecar() checkResult {
 			Name:    "Python sidecar",
 			Status:  checkWarn,
 			Message: "c4-bridge not runnable — LSP/doc tools will be unavailable",
-			Fix:     "uv tool install c4",
+			Fix:     "cq doctor --fix",
 		}
 	}
 
@@ -693,6 +693,23 @@ func tryFix(r *checkResult) string {
 		_ = os.Remove(pidPath)
 		r.Status = checkOK
 		return "sidecar killed and PID file removed"
+	case "Python sidecar":
+		uvPath, err := exec.LookPath("uv")
+		if err != nil {
+			// uv not found — cannot auto-install, show link
+			return ""
+		}
+		_, err = runWithTimeout(60*time.Second, uvPath, "tool", "install", "c4")
+		if err != nil {
+			_, err = runWithTimeout(60*time.Second, uvPath, "tool", "install",
+				"git+https://github.com/PlayIdea-Lab/cq#subdirectory=c4")
+		}
+		if err != nil {
+			return ""
+		}
+		r.Status = checkOK
+		r.Fix = ""
+		return "c4-bridge installed via uv"
 	}
 	return ""
 }
