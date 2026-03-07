@@ -1,100 +1,160 @@
 # 예시: 분산 실험
 
-C5 Hub를 사용하여 여러 머신에서 동시에 ML 실험을 실행합니다.
+노트북에서 ML 실험을 제출하고 원격 GPU 서버에서 실행합니다 — 학습 중 서버에 SSH 접속 불필요.
 
 ::: info full 티어 필요
-이 예시는 `full` 티어 바이너리와 C5 Hub 실행이 필요합니다. `/c4-standby`로 각 머신을 잡 큐에 연결합니다.
+이 예시는 `full` 티어 바이너리, 실행 중인 C5 Hub, 하나 이상의 연결된 워커가 필요합니다. [원격 워커 설정](/ko/guide/worker-setup) 참고.
 :::
 
-## 시나리오
-
-세 가지 모델 backbone을 비교하여 최적의 정확도/효율성 트레이드오프를 찾습니다.
-
-## 1단계 — 실험 계획
-
-> **You:** "backbone 3개 비교 실험 돌려야 해. ResNet / EfficientNet / ViT"
+## 개요
 
 ```
-/c4-plan "backbone ablation: ResNet50 vs EfficientNet-B4 vs ViT-B/16"
-
-  ● Tasks created
-    T-020  train ResNet50       (GPU: 1x A100, 예상 4h)
-    T-021  train EfficientNet   (GPU: 1x A100, 예상 3h)
-    T-022  train ViT-B/16       (GPU: 1x A100, 예상 6h)
-    T-023  결과 비교 + 리포트
+내 노트북                     C5 Hub                  GPU 서버
+────────────                  ──────                  ──────────
+train.py + cq.yaml 작성 ──►  잡 큐     ◄──────────   c5 worker (실행 중)
+cq hub submit                (스냅샷 저장,             잡 pull
+                              잡 등록)                 train.py 실행
+                                                       결과 업로드
 ```
 
-## 2단계 — 각 머신에 워커 등록
+GPU 서버는 백그라운드에서 `c5 worker`를 실행합니다. 학습을 시작하기 위해 SSH 접속할 필요가 없습니다 — 그냥 submit하면 됩니다.
 
-각 머신에서 Claude Code를 열고 실행합니다:
+---
 
-```
-# machine-1
-/c4-standby
+## 실험 폴더 구성
 
-  ● Registered as worker  [id: worker-m1]
-  ◷ Waiting for jobs from C5 Hub...
-  ✓ Claimed T-020  →  training ResNet50...
-```
+**노트북에서** 실험 디렉토리를 만듭니다:
 
 ```
-# machine-2
-/c4-standby
-  ✓ Claimed T-021  →  training EfficientNet...
+mnist-exp/
+├── train.py       # 학습 스크립트
+├── cq.yaml        # CQ 아티팩트 선언
+└── requirements.txt
+```
+
+**`cq.yaml`** — 실행할 것과 사용할 데이터를 선언합니다:
+
+```yaml
+run: python train.py
+
+artifacts:
+  input:
+    - name: mnist_mini        # Drive 데이터셋 이름
+      local_path: data/mnist  # 실행 전 데이터를 놓을 위치
+  output:
+    - name: mnist-checkpoint  # 결과를 저장할 Drive 데이터셋 이름
+      local_path: checkpoints/ # 실행 후 업로드할 로컬 경로
+```
+
+**`train.py`** — 순수 Python, CQ 코드 전혀 필요 없음:
+
+```python
+import torch
+from pathlib import Path
+
+# data/와 checkpoints/는 이미 준비됨 — 워커가 미리 배치
+data_path = Path("data/mnist")
+# ... 학습 로직 ...
+torch.save(model.state_dict(), "checkpoints/model.pt")
+print("MPJPE: 42.3")
+```
+
+`import cq`, SDK, 기존 스크립트 수정 — 아무것도 필요하지 않습니다.
+
+## 데이터셋 업로드 (최초 1회)
+
+`mnist_mini`를 아직 업로드하지 않았다면:
+
+```sh
+cq drive dataset upload ./data/mnist --as mnist_mini -y
+```
+
+CQ는 Content-Addressed Storage를 사용합니다 — 같은 데이터는 두 번 업로드되지 않습니다.
+
+## 잡 제출
+
+`mnist-exp/` 폴더 안에서:
+
+```sh
+cq hub submit
+```
+
+CQ가 수행하는 작업:
+1. 현재 폴더를 스냅샷 (Drive CAS, 콘텐츠 해시로 중복 제거)
+2. 잡 등록: `{ command, snapshot_version_hash, project_id }`
+3. Hub가 다음 가용 워커에게 배분
+
+출력:
+
+```
+✓ Snapshot uploaded  hash=a3f8c1d2
+✓ Job submitted      job-id=job-abc123  status=QUEUED  position=1
+```
+
+이게 전부입니다. 노트북을 닫아도 됩니다. GPU 서버가 나머지를 처리합니다.
+
+## 워커가 하는 일
+
+워커가 잡을 받으면:
+
+1. 정확한 스냅샷 다운로드 (`a3f8c1d2` → `mnist-exp/` 내용)
+2. `cq.yaml` 읽기
+3. Drive에서 `mnist_mini` pull → `data/mnist/`
+4. `python train.py` 실행
+5. `checkpoints/` → Drive의 `mnist-checkpoint`에 업로드
+
+## 상태 확인
+
+```sh
+cq hub status job-abc123
+```
+
+또는 실시간으로:
+
+```sh
+cq hub watch job-abc123
 ```
 
 ```
-# machine-3
-/c4-standby
-  ✓ Claimed T-022  →  training ViT-B/16...
+job-abc123  RUNNING  [gpu-server-1]
+  ▶ epoch 1/10 — loss: 0.4821
+  ▶ epoch 2/10 — loss: 0.3102
+  ...
 ```
 
-워커가 잡을 자동으로 pull합니다 — 수동 할당 불필요.
+## 결과 다운로드
 
-## 3단계 — 진행 상황 모니터링
-
-> **You:** "결과 어때?"
-
-```
-/c4-status
-
-  ✓ T-020  ResNet50       MPJPE: 48.3mm  PA-MPJPE: 34.1mm  [worker-m1]
-  ✓ T-021  EfficientNet   MPJPE: 44.7mm  PA-MPJPE: 31.8mm  [worker-m2]  ← best so far
-  ▶ T-022  ViT-B/16       실행 중 3h 42m / ~6h               [worker-m3]
-  ◷ T-023  T-020, T-021, T-022 대기 중
-
-  Knowledge: 2 new experiment records saved
+```sh
+cq drive dataset download mnist-checkpoint ./results/
 ```
 
-## 4단계 — 비교 리포트 (자동 생성)
+## 여러 잡 동시 제출 (병렬)
 
-T-022가 완료되면 T-023이 실행되어 다음을 생성합니다:
+변형 실험을 연달아 제출합니다 — 각각 별도 워커에서 실행됩니다:
 
-```
-  ✓ T-023  Comparison report
-
-  | Backbone      | MPJPE  | PA-MPJPE | Params | Throughput |
-  |---------------|--------|----------|--------|------------|
-  | ResNet50      | 48.3mm | 34.1mm   | 25.6M  | 142 img/s  |
-  | EfficientNet  | 44.7mm | 31.8mm   | 19.3M  | 98 img/s   |
-  | ViT-B/16      | 41.2mm | 29.4mm   | 86.6M  | 47 img/s   |
-
-  Recommendation: EfficientNet-B4 — best accuracy/efficiency ratio
-  Knowledge recorded → next experiment will build on these findings
+```sh
+cq hub submit --run "python train.py --lr 0.01" 
+cq hub submit --run "python train.py --lr 0.001"
+cq hub submit --run "python train.py --lr 0.0001"
 ```
 
-## 확장 방법
+워커가 여러 개 연결되어 있으면 세 가지 모두 동시에 실행됩니다.
 
-각 `/c4-standby` 세션은 동일한 C5 Hub 큐에서 잡을 pull하는 독립적인 워커입니다. 더 많은 세션을 열어 머신을 추가하면 큐가 자동으로 분산됩니다.
+---
+
+## 워커 추가
+
+더 많은 머신에서 `c5 worker`를 실행하여 GPU 용량을 확장합니다. Hub가 자동으로 잡을 분산합니다 — 별도 설정 불필요.
 
 ```
 machine-1 ──┐
-machine-2 ──┼── C5 Hub ── task queue ── /c4-plan 결과
+machine-2 ──┼── C5 Hub ── 잡 큐 ◄── cq hub submit
 machine-3 ──┘
   ...
-machine-N ──
 ```
+
+각 워커는 stateless — 설치, 로그인, `c5 worker` 시작만 하면 됩니다. [원격 워커 설정](/ko/guide/worker-setup) 참고.
 
 ## 지식 루프
 
-각 실험의 결과가 자동으로 지식 베이스에 기록됩니다. 다음 라운드의 실험을 계획할 때 CQ가 관련 과거 결과를 각 워커의 컨텍스트에 주입합니다 — 워커들이 무엇이 효과가 없었는지 이미 알고 시작합니다.
+실험 결과가 자동으로 CQ 지식 베이스에 기록됩니다. 다음 라운드를 계획할 때 CQ가 관련 과거 결과를 컨텍스트에 주입합니다 — 같은 실수를 반복하지 않게 됩니다.

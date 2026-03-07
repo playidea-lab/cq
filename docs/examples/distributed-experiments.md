@@ -1,100 +1,160 @@
 # Example: Distributed Experiments
 
-Run ML experiments across multiple machines simultaneously using C5 Hub.
+Submit ML experiments from your laptop and run them on a remote GPU server — no SSH into the server during training.
 
 ::: info full tier required
-This example requires the `full` tier binary and C5 Hub running. `/c4-standby` connects each machine to the job queue.
+This example requires the `full` tier binary, a running C5 Hub, and at least one connected worker. See [Remote Worker Setup](/guide/worker-setup).
 :::
 
-## Scenario
-
-You need to compare three model backbones to find the best accuracy/efficiency tradeoff.
-
-## Step 1 — Plan the experiments
-
-> **You:** "backbone 3개 비교 실험 돌려야 해. ResNet / EfficientNet / ViT"
+## Overview
 
 ```
-/c4-plan "backbone ablation: ResNet50 vs EfficientNet-B4 vs ViT-B/16"
-
-  ● Tasks created
-    T-020  train ResNet50       (GPU: 1x A100, est. 4h)
-    T-021  train EfficientNet   (GPU: 1x A100, est. 3h)
-    T-022  train ViT-B/16       (GPU: 1x A100, est. 6h)
-    T-023  compare results + report
+Your laptop                    C5 Hub                  GPU server
+────────────                   ──────                  ──────────
+Write train.py + cq.yaml  ──►  job queue  ◄──────────  c5 worker (running)
+cq hub submit                  (stores snapshot,        pulls job
+                               queues job)              runs train.py
+                                                        pushes results
 ```
 
-## Step 2 — Register workers on each machine
+The GPU server runs `c5 worker` in the background. You never SSH in to start training — you just submit.
 
-On each machine, open Claude Code and run:
+---
 
-```
-# machine-1
-/c4-standby
+## Set up the experiment folder
 
-  ● Registered as worker  [id: worker-m1]
-  ◷ Waiting for jobs from C5 Hub...
-  ✓ Claimed T-020  →  training ResNet50...
-```
+Create your experiment directory on your **laptop**:
 
 ```
-# machine-2
-/c4-standby
-  ✓ Claimed T-021  →  training EfficientNet...
+mnist-exp/
+├── train.py       # your training script
+├── cq.yaml        # CQ artifact declarations
+└── requirements.txt
+```
+
+**`cq.yaml`** — declares what to run and which data to use:
+
+```yaml
+run: python train.py
+
+artifacts:
+  input:
+    - name: mnist_mini        # Drive dataset name
+      local_path: data/mnist  # where to put it before running
+  output:
+    - name: mnist-checkpoint  # Drive dataset name for results
+      local_path: checkpoints/ # local path to upload after running
+```
+
+**`train.py`** — plain Python, zero CQ code required:
+
+```python
+import torch
+from pathlib import Path
+
+# data/ and checkpoints/ are ready — worker put them there
+data_path = Path("data/mnist")
+# ... training logic ...
+torch.save(model.state_dict(), "checkpoints/model.pt")
+print("MPJPE: 42.3")
+```
+
+No `import cq`, no SDK, no changes to your existing scripts.
+
+## Upload your dataset (once)
+
+If you haven't uploaded `mnist_mini` yet:
+
+```sh
+cq drive dataset upload ./data/mnist --as mnist_mini -y
+```
+
+CQ uses content-addressed storage — the same data is never uploaded twice.
+
+## Submit the job
+
+From inside `mnist-exp/`:
+
+```sh
+cq hub submit
+```
+
+CQ:
+1. Snapshots the current folder (Drive CAS, deduped by content hash)
+2. Posts a job: `{ command, snapshot_version_hash, project_id }`
+3. The Hub queues it for the next available worker
+
+Output:
+
+```
+✓ Snapshot uploaded  hash=a3f8c1d2
+✓ Job submitted      job-id=job-abc123  status=QUEUED  position=1
+```
+
+That's it. Close your laptop. The GPU server handles the rest.
+
+## What the worker does
+
+When the worker picks up the job:
+
+1. Downloads the exact snapshot (`a3f8c1d2` → `mnist-exp/` contents)
+2. Reads `cq.yaml`
+3. Pulls `mnist_mini` from Drive → `data/mnist/`
+4. Runs `python train.py`
+5. Uploads `checkpoints/` → `mnist-checkpoint` in Drive
+
+## Check status
+
+```sh
+cq hub status job-abc123
+```
+
+Or watch live:
+
+```sh
+cq hub watch job-abc123
 ```
 
 ```
-# machine-3
-/c4-standby
-  ✓ Claimed T-022  →  training ViT-B/16...
+job-abc123  RUNNING  [gpu-server-1]
+  ▶ epoch 1/10 — loss: 0.4821
+  ▶ epoch 2/10 — loss: 0.3102
+  ...
 ```
 
-Workers pull jobs automatically — no manual assignment needed.
+## Download results
 
-## Step 3 — Monitor progress
-
-> **You:** "결과 어때?"
-
-```
-/c4-status
-
-  ✓ T-020  ResNet50       MPJPE: 48.3mm  PA-MPJPE: 34.1mm  [worker-m1]
-  ✓ T-021  EfficientNet   MPJPE: 44.7mm  PA-MPJPE: 31.8mm  [worker-m2]  ← best so far
-  ▶ T-022  ViT-B/16       running 3h 42m / ~6h               [worker-m3]
-  ◷ T-023  waiting on T-020, T-021, T-022
-
-  Knowledge: 2 new experiment records saved
+```sh
+cq drive dataset download mnist-checkpoint ./results/
 ```
 
-## Step 4 — Comparison report (auto-generated)
+## Submit multiple jobs (parallel)
 
-When T-022 completes, T-023 runs and produces:
+Submit variations back-to-back — each runs on a separate worker:
 
-```
-  ✓ T-023  Comparison report
-
-  | Backbone      | MPJPE  | PA-MPJPE | Params | Throughput |
-  |---------------|--------|----------|--------|------------|
-  | ResNet50      | 48.3mm | 34.1mm   | 25.6M  | 142 img/s  |
-  | EfficientNet  | 44.7mm | 31.8mm   | 19.3M  | 98 img/s   |
-  | ViT-B/16      | 41.2mm | 29.4mm   | 86.6M  | 47 img/s   |
-
-  Recommendation: EfficientNet-B4 — best accuracy/efficiency ratio
-  Knowledge recorded → next experiment will build on these findings
+```sh
+cq hub submit --run "python train.py --lr 0.01" 
+cq hub submit --run "python train.py --lr 0.001"
+cq hub submit --run "python train.py --lr 0.0001"
 ```
 
-## How it scales
+All three run in parallel if multiple workers are connected.
 
-Each `/c4-standby` session is an independent worker pulling from the same C5 Hub queue. Add more machines by opening more sessions — the queue distributes automatically.
+---
+
+## Connect more workers
+
+Add GPU capacity by running `c5 worker` on more machines. The Hub distributes jobs automatically — no configuration needed.
 
 ```
 machine-1 ──┐
-machine-2 ──┼── C5 Hub ── task queue ── /c4-plan results
+machine-2 ──┼── C5 Hub ── job queue ◄── cq hub submit
 machine-3 ──┘
   ...
-machine-N ──
 ```
+
+Each worker is stateless — just install, log in, and start `c5 worker`. See [Remote Worker Setup](/guide/worker-setup).
 
 ## Knowledge loop
 
-Results from each experiment are automatically recorded to the knowledge base. When you plan the next round of experiments, CQ injects relevant past findings into each worker's context — so workers already know what didn't work.
+Experiment results are automatically recorded in CQ's knowledge base. When you plan the next round, CQ injects relevant past findings into the context — so you don't repeat what didn't work.
