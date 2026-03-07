@@ -41,7 +41,7 @@ check-env:
     - C5_VERSION=${CI_COMMIT_TAG:-dev}
     - C5_LDFLAGS="-X main.version=$C5_VERSION"
     - 'test -n "$CI_HUB_URL" && C5_LDFLAGS="$C5_LDFLAGS -X main.builtinServerURL=$CI_HUB_URL" || true'
-    - 'test -n "$CI_HUB_API_KEY" && C5_LDFLAGS="$C5_LDFLAGS -X main.builtinAPIKey=$CI_HUB_API_KEY" || true'
+    - 'test -n "$CI_API_KEY" && C5_LDFLAGS="$C5_LDFLAGS -X main.builtinAPIKey=$CI_API_KEY" || true'
     - GOOS=$GOOS GOARCH=$GOARCH go build -ldflags "$C5_LDFLAGS" -o bin/c5-$GOOS-$GOARCH$EXT ./cmd/c5/
   artifacts:
     paths:
