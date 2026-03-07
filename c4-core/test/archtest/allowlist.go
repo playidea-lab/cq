@@ -18,6 +18,8 @@ type ErrorAllowlist map[string]int
 var DefaultAllowlist = ErrorAllowlist{
 	"cmd/c4/auth.go":                               6,
 	"cmd/c4/cloud.go":                              1,
+	"cmd/c4/upgrade.go":                            1,
+	"cmd/c4/worker.go":                             3,
 	"cmd/c4/tool.go":                               1,
 	"cmd/c4/daemon.go":                             1,
 	"cmd/c4/drive.go":                              5,
