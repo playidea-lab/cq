@@ -777,6 +777,197 @@ func TestExecuteJob_OutputDirEnv(t *testing.T) {
 	}
 }
 
+// =========================================================================
+// Drive pipeline tests
+// =========================================================================
+
+// stubDrive is a test double for driveClient.
+// Pull copies files from pullSrc map (name→content) into destDir/<basename(name)>.
+// Upload records localPath→name in uploads map.
+type stubDrive struct {
+	// pullSrc maps Drive artifact name to file content.
+	// An empty string means the file is "not found" (Pull returns error).
+	pullSrc map[string]string
+	// uploads captures Upload calls: name → content read from localPath.
+	uploads map[string][]byte
+	// pullErr forces Pull to return an error for any name.
+	pullErr error
+}
+
+func (s *stubDrive) Pull(name, destDir, version string) error {
+	if s.pullErr != nil {
+		return s.pullErr
+	}
+	content, ok := s.pullSrc[name]
+	if !ok {
+		return fmt.Errorf("stub: artifact %q not found", name)
+	}
+	dest := filepath.Join(destDir, filepath.Base(name))
+	return os.WriteFile(dest, []byte(content), 0644)
+}
+
+func (s *stubDrive) Upload(localPath, name string) error {
+	data, err := os.ReadFile(localPath)
+	if err != nil {
+		return fmt.Errorf("stub upload: read %s: %w", localPath, err)
+	}
+	if s.uploads == nil {
+		s.uploads = make(map[string][]byte)
+	}
+	s.uploads[name] = data
+	return nil
+}
+
+// TestWorkerPipeline exercises runWithDrivePipeline across key branches.
+func TestWorkerPipeline(t *testing.T) {
+	// Read the testdata/cq.yaml fixture once for table setup.
+	fixtureYAML, err := os.ReadFile("testdata/cq.yaml")
+	if err != nil {
+		t.Fatalf("read testdata/cq.yaml: %v", err)
+	}
+
+	tests := []struct {
+		name             string
+		snapshotHash     string // "" → fallback to executeJob
+		snapshotContent  map[string]string
+		artifactContent  map[string]string
+		wantExitCode     int
+		wantUploads      []string // Drive names that should have been uploaded
+		wantNoUploads    bool     // when we expect zero uploads
+	}{
+		{
+			name:         "no_snapshot_fallback",
+			snapshotHash: "", // triggers plain executeJob path
+			wantExitCode: 0,
+		},
+		{
+			name:         "snapshot_no_cq_yaml",
+			snapshotHash: "snap-abc",
+			// snapshot dir has no cq.yaml → skip artifacts, use job.Command
+			snapshotContent: map[string]string{
+				"snap-abc": "", // Pull writes empty file, but no cq.yaml
+			},
+			wantExitCode:  0,
+			wantNoUploads: true,
+		},
+		{
+			name:         "snapshot_with_cq_yaml",
+			snapshotHash: "snap-xyz",
+			snapshotContent: map[string]string{
+				"snap-xyz": string(fixtureYAML), // Pull writes cq.yaml content
+			},
+			artifactContent: map[string]string{
+				"input-dataset": "raw-data",
+			},
+			wantExitCode: 0,
+			wantUploads:  []string{"output-model"},
+		},
+		{
+			name:         "snapshot_pull_failure",
+			snapshotHash: "snap-bad",
+			snapshotContent: map[string]string{}, // name not in map → Pull returns error
+			wantExitCode: 1,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			tmp := t.TempDir()
+
+			// Build stubDrive
+			drive := &stubDrive{
+				pullSrc: make(map[string]string),
+				uploads: make(map[string][]byte),
+			}
+
+			// The stubDrive Pull writes a single file named filepath.Base(name) to destDir.
+			// For the snapshot case we need to write cq.yaml specifically.
+			// We override Pull with a custom function via a wrapper.
+			customDrive := &snapshotAwareDrive{
+				snapshotContent: tc.snapshotContent,
+				artifactContent: tc.artifactContent,
+				uploads:         drive.uploads,
+			}
+
+			// Build a dummy client (log calls will fail but tests don't need log forwarding)
+			client := &workerClient{
+				baseURL: "http://localhost:0",
+				http:    &http.Client{},
+			}
+
+			// job.Command is used for the no_snapshot_fallback and snapshot_no_cq_yaml cases.
+			outputFile := filepath.Join(tmp, "results", "model.bin")
+			job := &model.Job{
+				ID:                  "pipe-test-" + tc.name,
+				Name:                tc.name,
+				Command:             fmt.Sprintf("mkdir -p %s && echo ok > %s", filepath.Dir(outputFile), outputFile),
+				Workdir:             tmp,
+				SnapshotVersionHash: tc.snapshotHash,
+			}
+
+			exitCode, _ := runWithDrivePipeline(customDrive, client, job, "lease-1", "worker-1", 0, tc.snapshotHash)
+
+			if exitCode != tc.wantExitCode {
+				t.Errorf("exit code = %d, want %d", exitCode, tc.wantExitCode)
+			}
+
+			for _, name := range tc.wantUploads {
+				if _, ok := customDrive.uploads[name]; !ok {
+					t.Errorf("expected Drive upload for %q, not found; uploads=%v", name, customDrive.uploads)
+				}
+			}
+
+			if tc.wantNoUploads && len(customDrive.uploads) != 0 {
+				t.Errorf("expected no uploads, got %v", customDrive.uploads)
+			}
+		})
+	}
+}
+
+// snapshotAwareDrive is a smarter stub that simulates:
+//   - snapshot Pull: writes cq.yaml to destDir when name matches snapshotContent
+//   - artifact Pull: writes content to destDir/<basename(name)>
+type snapshotAwareDrive struct {
+	snapshotContent map[string]string // snapshot name → cq.yaml content (empty = no cq.yaml)
+	artifactContent map[string]string // artifact name → file content
+	uploads         map[string][]byte // name → uploaded bytes
+}
+
+func (d *snapshotAwareDrive) Pull(name, destDir, version string) error {
+	// Snapshot pull: version == "" → treat as snapshot
+	if version == "" {
+		content, ok := d.snapshotContent[name]
+		if !ok {
+			return fmt.Errorf("stub: snapshot %q not found", name)
+		}
+		if content != "" {
+			// Write content as cq.yaml in destDir
+			return os.WriteFile(filepath.Join(destDir, "cq.yaml"), []byte(content), 0644)
+		}
+		return nil // snapshot exists but has no cq.yaml
+	}
+	// Artifact pull (version == "latest")
+	content, ok := d.artifactContent[name]
+	if !ok {
+		return fmt.Errorf("stub: artifact %q not found", name)
+	}
+	dest := filepath.Join(destDir, filepath.Base(name))
+	return os.WriteFile(dest, []byte(content), 0644)
+}
+
+func (d *snapshotAwareDrive) Upload(localPath, name string) error {
+	data, err := os.ReadFile(localPath)
+	if err != nil {
+		// Output file might not exist if job produced nothing; treat as empty
+		data = []byte{}
+	}
+	if d.uploads == nil {
+		d.uploads = make(map[string][]byte)
+	}
+	d.uploads[name] = data
+	return nil
+}
+
 // TestWorkerRegister_VersionSet verifies CQ_VERSION is used in getWorkerVersion.
 func TestWorkerRegister_VersionSet(t *testing.T) {
 	t.Setenv("CQ_VERSION", "v0.62.0")

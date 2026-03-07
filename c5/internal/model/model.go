@@ -67,7 +67,10 @@ type Job struct {
 	Params               map[string]any    `json:"params,omitempty"`
 	Result               map[string]any    `json:"result,omitempty"`
 	SnapshotVersionHash  string            `json:"snapshot_version_hash,omitempty"`
+<<<<<<< HEAD
 	GitHash              string            `json:"git_hash,omitempty"`
+=======
+>>>>>>> 1f23aad7 (feat(c5/worker): Drive pipeline — snapshot pull + cq.yaml + artifacts)
 }
 
 // DurationSec returns the job duration in seconds, or nil if not yet finished.

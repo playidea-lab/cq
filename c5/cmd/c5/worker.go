@@ -146,6 +146,7 @@ type workerConfig struct {
 	pollSec      int
 	apiKey       string
 	capabilities []model.Capability
+	drive        driveClient // optional; nil skips Drive pipeline
 }
 
 // getWorkerVersion returns the cq version string for Hub registration.
@@ -249,7 +250,14 @@ func runWorker(cfg workerConfig) error {
 					}
 				}
 
-				exitCode, resultFile := executeJob(client, j, leaseID, workerID, cfg.gpuCount)
+				// Drive pipeline: snapshot pull → cq.yaml → artifacts → run → push
+				var exitCode int
+				var resultFile string
+				if cfg.drive != nil && j.SnapshotVersionHash != "" {
+					exitCode, resultFile = runWithDrivePipeline(cfg.drive, client, j, leaseID, workerID, cfg.gpuCount, j.SnapshotVersionHash)
+				} else {
+					exitCode, resultFile = executeJob(client, j, leaseID, workerID, cfg.gpuCount)
+				}
 
 				// Upload output artifacts on success
 				if exitCode == 0 && len(j.OutputArtifacts) > 0 {
@@ -725,6 +733,134 @@ func streamLogs(client *workerClient, jobID string, r io.Reader, stream string, 
 			return
 		}
 	}
+}
+
+// =========================================================================
+// Drive interface — snapshot + artifact pull/push
+// =========================================================================
+
+// driveClient abstracts C0 Drive operations needed by the worker pipeline.
+// The real implementation calls cq drive CLI or Drive HTTP API.
+// In tests, a stub is injected.
+type driveClient interface {
+	// Pull downloads a snapshot or artifact by name to destDir.
+	// version="" means "latest".
+	Pull(name, destDir, version string) error
+	// Upload uploads localPath to Drive under name.
+	Upload(localPath, name string) error
+}
+
+// cqYAML represents the cq.yaml file at the snapshot root.
+type cqYAML struct {
+	Run       string `yaml:"run"`
+	Artifacts struct {
+		Input  []cqArtifact `yaml:"input"`
+		Output []cqArtifact `yaml:"output"`
+	} `yaml:"artifacts"`
+}
+
+type cqArtifact struct {
+	Name string `yaml:"name"` // Drive artifact name
+	Path string `yaml:"path"` // local relative path
+}
+
+// parseCQYAML reads and parses cq.yaml from dir.
+// Returns nil, nil if the file does not exist (hwardward-compat).
+func parseCQYAML(dir string) (*cqYAML, error) {
+	data, err := os.ReadFile(filepath.Join(dir, "cq.yaml"))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("read cq.yaml: %w", err)
+	}
+	var cfg cqYAML
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		return nil, fmt.Errorf("parse cq.yaml: %w", err)
+	}
+	return &cfg, nil
+}
+
+// runWithDrivePipeline executes the full pipeline for a job that carries a
+// snapshot_version_hash (Drive-backed jobs):
+//  1. Pull snapshot → jobDir
+//  2. Parse cq.yaml
+//  3. Pull input artifacts
+//  4. Run job (delegate to executeJob, overriding Command from cq.yaml if set)
+//  5. Push output artifacts
+//
+// If snapshotHash is empty the function falls back to plain executeJob.
+func runWithDrivePipeline(drive driveClient, client *workerClient, job *model.Job, leaseID, workerID string, gpuCount int, snapshotHash string) (int, string) {
+	if snapshotHash == "" {
+		return executeJob(client, job, leaseID, workerID, gpuCount)
+	}
+
+	// Step 1: Pull snapshot
+	jobDir := filepath.Join(os.TempDir(), "job-"+job.ID)
+	if err := os.MkdirAll(jobDir, 0755); err != nil {
+		log.Printf("c5-worker: pipeline: mkdir %s: %v", jobDir, err)
+		return 1, ""
+	}
+	defer os.RemoveAll(jobDir)
+
+	log.Printf("c5-worker: pipeline: pulling snapshot %s → %s", snapshotHash, jobDir)
+	if err := drive.Pull(snapshotHash, jobDir, ""); err != nil {
+		log.Printf("c5-worker: pipeline: snapshot pull failed: %v", err)
+		return 1, ""
+	}
+
+	// Step 2: Parse cq.yaml
+	cfg, err := parseCQYAML(jobDir)
+	if err != nil {
+		log.Printf("c5-worker: pipeline: %v", err)
+		return 1, ""
+	}
+
+	// Step 3: Pull input artifacts
+	if cfg != nil {
+		for _, art := range cfg.Artifacts.Input {
+			destPath := filepath.Join(jobDir, art.Path)
+			if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
+				log.Printf("c5-worker: pipeline: mkdir for input artifact %s: %v", art.Name, err)
+				return 1, ""
+			}
+			log.Printf("c5-worker: pipeline: pulling input artifact %s → %s", art.Name, destPath)
+			if err := drive.Pull(art.Name, filepath.Dir(destPath), "latest"); err != nil {
+				log.Printf("c5-worker: pipeline: input artifact pull failed %s: %v", art.Name, err)
+				return 1, ""
+			}
+		}
+	}
+
+	// Step 4: Run — override Command and Workdir from cq.yaml if present
+	if cfg != nil && cfg.Run != "" {
+		job = shallowCopyJob(job)
+		job.Command = cfg.Run
+	}
+	job = shallowCopyJob(job)
+	job.Workdir = jobDir
+
+	exitCode, resultFile := executeJob(client, job, leaseID, workerID, gpuCount)
+
+	// Step 5: Push output artifacts (only on success)
+	if exitCode == 0 && cfg != nil {
+		for _, art := range cfg.Artifacts.Output {
+			localPath := filepath.Join(jobDir, art.Path)
+			log.Printf("c5-worker: pipeline: uploading output artifact %s ← %s", art.Name, localPath)
+			if err := drive.Upload(localPath, art.Name); err != nil {
+				log.Printf("c5-worker: pipeline: output artifact upload failed %s: %v", art.Name, err)
+				exitCode = 1
+			}
+		}
+	}
+
+	return exitCode, resultFile
+}
+
+// shallowCopyJob returns a shallow copy of job so we can mutate fields safely.
+func shallowCopyJob(j *model.Job) *model.Job {
+	cp := *j
+	return &cp
 }
 
 // =========================================================================
