@@ -158,8 +158,10 @@ func (s *Server) handleLeaseAcquire(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			log.Printf("c5: invalid C5_MIN_VERSION %q: %v", minVer, err)
 		} else {
-			workerVer, err := parseSemver(worker.Version)
-			if err != nil || semverLess(workerVer, min) {
+			// Unknown version ("" or "unknown") bypasses the gate to prevent
+		// infinite upgrade loops on workers built without version info.
+		workerVer, err := parseSemver(worker.Version)
+			if worker.Version != "" && worker.Version != "unknown" && (err != nil || semverLess(workerVer, min)) {
 				writeJSON(w, model.LeaseAcquireResponse{
 					Control: &model.ControlMessage{
 						Action:  "upgrade",

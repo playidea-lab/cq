@@ -128,8 +128,8 @@ func TestVersionGate(t *testing.T) {
 		workerID := registerWorkerVersion(t, srv, "v0.62.0")
 		t.Setenv("C5_MIN_VERSION", "v0.62.0")
 		resp := acquireLease(t, srv, workerID)
-		if resp.Control != nil && resp.Control.Action == "upgrade" {
-			t.Errorf("expected no upgrade control for version == min, got %v", resp.Control)
+		if resp.Control != nil {
+			t.Errorf("expected nil Control for version == min, got %v", resp.Control)
 		}
 	})
 

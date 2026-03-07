@@ -215,8 +215,11 @@ func runWorker(cfg workerConfig) error {
 				switch ctrl.Action {
 				case "upgrade":
 					log.Println("c5-worker: control: upgrade received, running cq upgrade...")
-					exec.Command("cq", "upgrade").Run()
-					os.Exit(0)
+					if err := exec.Command("cq", "upgrade").Run(); err != nil {
+						log.Printf("c5-worker: cq upgrade failed: %v — retrying next poll", err)
+					} else {
+						os.Exit(0)
+					}
 				case "shutdown":
 					log.Println("c5-worker: control: shutdown received, stopping after current job")
 					return nil
@@ -331,13 +334,14 @@ func executeJob(client *workerClient, job *model.Job, leaseID, workerID string, 
 	cmd := exec.CommandContext(ctx, "sh", "-c", command)
 	cmd.Dir = job.Workdir
 
-	// Env injection: inherit current env + job env vars
+	// Env injection: inherit current env + job env vars.
+	// C4_PROJECT_ID is appended last to take priority over job.Env overrides.
 	env := os.Environ()
-	if job.ProjectID != "" {
-		env = append(env, "C4_PROJECT_ID="+job.ProjectID)
-	}
 	for k, v := range job.Env {
 		env = append(env, k+"="+v)
+	}
+	if job.ProjectID != "" {
+		env = append(env, "C4_PROJECT_ID="+job.ProjectID)
 	}
 
 	// Capability params injection: C5_PARAMS (JSON) + C5_CAPABILITY + C5_RESULT_FILE

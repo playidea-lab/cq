@@ -203,6 +203,8 @@ func TestCloudFactorySwitch(t *testing.T) {
 // TestCloudModeSetInvalidValue verifies that invalid values are rejected.
 func TestCloudModeSetInvalidValue(t *testing.T) {
 	dir := t.TempDir()
+	origDir := projectDir
+	t.Cleanup(func() { projectDir = origDir })
 	projectDir = dir // override global for test
 
 	os.MkdirAll(filepath.Join(dir, ".c4"), 0755)
