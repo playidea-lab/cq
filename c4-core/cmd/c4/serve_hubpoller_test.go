@@ -116,14 +116,9 @@ func TestHubPoller_SeenIDs_TTLCleanup(t *testing.T) {
 		PollInterval: 30 * time.Second,
 	})
 
-	// Load and apply TTL cleanup manually (mirrors poll() logic)
+	// Load and apply TTL cleanup via the extracted helper (same logic as poll()).
 	seenIDs := p.loadSeenIDs()
-	cutoff := time.Now().Add(-30 * 24 * time.Hour)
-	for id, entry := range seenIDs {
-		if entry.CompletedAt.Before(cutoff) {
-			delete(seenIDs, id)
-		}
-	}
+	cleanupSeenIDs(seenIDs, time.Now().Add(-30*24*time.Hour))
 
 	if len(seenIDs) != 1 {
 		t.Errorf("expected 1 entry after TTL cleanup, got %d: %v", len(seenIDs), seenIDs)

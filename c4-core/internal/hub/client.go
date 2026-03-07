@@ -357,11 +357,19 @@ func (c *Client) CompleteJob(jobID, status string, exitCode int) error {
 }
 
 // ListJobsCtx returns jobs filtered by status (empty = all) using the provided context.
+// limit ≤ 0 means no limit (server default).
 // Returns a slice of Job pointers for use with context-aware callers (e.g. HubPoller).
-func (c *Client) ListJobsCtx(ctx context.Context, status string) ([]*Job, error) {
+func (c *Client) ListJobsCtx(ctx context.Context, status string, limit int) ([]*Job, error) {
 	path := "/jobs"
+	params := []string{}
 	if status != "" {
-		path += "?status=" + status
+		params = append(params, "status="+status)
+	}
+	if limit > 0 {
+		params = append(params, fmt.Sprintf("limit=%d", limit))
+	}
+	if len(params) > 0 {
+		path += "?" + strings.Join(params, "&")
 	}
 
 	raw, err := c.getRawWithContext(ctx, path)

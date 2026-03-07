@@ -977,7 +977,7 @@ func TestListJobsCtx(t *testing.T) {
 	})
 	client, _ := newTestServer(t, mux)
 
-	jobs, err := client.ListJobsCtx(context.Background(), "completed")
+	jobs, err := client.ListJobsCtx(context.Background(), "completed", 0)
 	if err != nil {
 		t.Fatalf("ListJobsCtx: %v", err)
 	}
@@ -999,7 +999,7 @@ func TestListJobsCtx_NoFilter(t *testing.T) {
 	})
 	client, _ := newTestServer(t, mux)
 
-	jobs, err := client.ListJobsCtx(context.Background(), "")
+	jobs, err := client.ListJobsCtx(context.Background(), "", 0)
 	if err != nil {
 		t.Fatalf("ListJobsCtx: %v", err)
 	}
@@ -1018,7 +1018,7 @@ func TestListJobsCtx_ContextCancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // cancel immediately
 
-	_, err := client.ListJobsCtx(ctx, "completed")
+	_, err := client.ListJobsCtx(ctx, "completed", 0)
 	if err == nil {
 		t.Fatal("expected error for cancelled context")
 	}

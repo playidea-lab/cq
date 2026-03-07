@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -14,6 +15,11 @@ import (
 	"github.com/changmin/c4-core/internal/knowledge"
 	"github.com/changmin/c4-core/internal/serve"
 )
+
+// hubPollerLogLimit is the max log lines fetched per job.
+// HasMore is intentionally ignored: we capture the first N lines of stdout
+// (enough for KEY=VALUE metric lines) and skip pagination to keep polling simple.
+const hubPollerLogLimit = 1000
 
 // seenEntry records when a completed job was first observed.
 type seenEntry struct {
@@ -42,6 +48,7 @@ type knowledgeHubPollerConfig struct {
 // It implements serve.Component.
 type knowledgeHubPoller struct {
 	cfg    knowledgeHubPollerConfig
+	client *hub.Client // created once in newKnowledgeHubPoller; reused across polls
 	cancel context.CancelFunc
 	done   chan struct{}
 
@@ -57,7 +64,12 @@ func newKnowledgeHubPoller(cfg knowledgeHubPollerConfig) *knowledgeHubPoller {
 	if cfg.PollInterval <= 0 {
 		cfg.PollInterval = 30 * time.Second
 	}
-	return &knowledgeHubPoller{cfg: cfg, status: "ok"}
+	client := hub.NewClient(hub.HubConfig{
+		URL:       cfg.HubURL,
+		APIPrefix: cfg.APIPrefix,
+		APIKey:    cfg.APIKey,
+	})
+	return &knowledgeHubPoller{cfg: cfg, client: client, status: "ok"}
 }
 
 func (p *knowledgeHubPoller) Name() string { return "hub-knowledge-poller" }
@@ -102,13 +114,7 @@ func (p *knowledgeHubPoller) loop(ctx context.Context) {
 }
 
 func (p *knowledgeHubPoller) poll(ctx context.Context) {
-	client := hub.NewClient(hub.HubConfig{
-		URL:       p.cfg.HubURL,
-		APIPrefix: p.cfg.APIPrefix,
-		APIKey:    p.cfg.APIKey,
-	})
-
-	jobs, err := client.ListJobsCtx(ctx, "completed")
+	jobs, err := p.client.ListJobsCtx(ctx, "completed", 0)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "hub-knowledge-poller: list completed jobs: %v\n", err)
 		p.mu.Lock()
@@ -129,7 +135,7 @@ func (p *knowledgeHubPoller) poll(ctx context.Context) {
 			continue
 		}
 
-		logsResp, err := client.GetJobLogsCtx(ctx, id, 0, 1000)
+		logsResp, err := p.client.GetJobLogsCtx(ctx, id, 0, hubPollerLogLimit)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "hub-knowledge-poller: get logs for job %s: %v\n", id, err)
 			continue
@@ -145,6 +151,7 @@ func (p *knowledgeHubPoller) poll(ctx context.Context) {
 		for k, v := range metrics {
 			parts = append(parts, k+"="+v)
 		}
+		sort.Strings(parts) // deterministic order for reproducible knowledge bodies
 		body := fmt.Sprintf("job: %s\nstatus: %s\n", id, job.Status)
 		if len(parts) > 0 {
 			body += "metrics: " + strings.Join(parts, ", ") + "\n"
@@ -161,6 +168,9 @@ func (p *knowledgeHubPoller) poll(ctx context.Context) {
 			meta["tags"] = job.Tags
 		}
 
+		// Store.Create is idempotent per-seenIDs guard: a job is only processed
+		// once (seenIDs[id] set after success), so duplicate documents are not
+		// created even if the process restarts between Create and saveSeenIDs.
 		_, createErr := p.cfg.Store.Create(knowledge.TypeExperiment, meta, body)
 		if createErr != nil {
 			fmt.Fprintf(os.Stderr, "hub-knowledge-poller: create knowledge for job %s: %v\n", id, createErr)
@@ -179,12 +189,7 @@ func (p *knowledgeHubPoller) poll(ctx context.Context) {
 	}
 
 	// TTL cleanup: remove entries older than 30 days.
-	cutoff := time.Now().Add(-30 * 24 * time.Hour)
-	for id, entry := range seenIDs {
-		if entry.CompletedAt.Before(cutoff) {
-			delete(seenIDs, id)
-		}
-	}
+	cleanupSeenIDs(seenIDs, time.Now().Add(-30*24*time.Hour))
 
 	if saveErr := p.saveSeenIDs(seenIDs); saveErr != nil {
 		fmt.Fprintf(os.Stderr, "hub-knowledge-poller: save seen IDs: %v\n", saveErr)
@@ -224,6 +229,15 @@ func (p *knowledgeHubPoller) loadSeenIDs() map[string]seenEntry {
 		return make(map[string]seenEntry)
 	}
 	return m
+}
+
+// cleanupSeenIDs removes entries whose CompletedAt is before cutoff (in-place).
+func cleanupSeenIDs(m map[string]seenEntry, cutoff time.Time) {
+	for id, entry := range m {
+		if entry.CompletedAt.Before(cutoff) {
+			delete(m, id)
+		}
+	}
 }
 
 func (p *knowledgeHubPoller) saveSeenIDs(m map[string]seenEntry) error {

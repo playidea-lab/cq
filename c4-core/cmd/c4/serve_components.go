@@ -116,13 +116,18 @@ func registerStaleCheckerServeComponent(mgr *serve.Manager, cfg config.C4Config,
 // hub is enabled and a hub URL is configured. It opens the project knowledge store
 // and polls C5 Hub for completed jobs, recording stdout KEY=VALUE metrics as
 // knowledge.TypeExperiment documents.
+// Note: the poller shares the hub.enabled/hub.url gate (no separate serve.hub_poller
+// toggle) because it is a lightweight side-effect of hub connectivity.
 func registerKnowledgeHubPollerServeComponent(mgr *serve.Manager, cfg config.C4Config) {
 	if !cfg.Hub.Enabled || cfg.Hub.URL == "" {
 		return
 	}
 
 	knowledgeDir := filepath.Join(projectDir, ".c4", "knowledge")
-	os.MkdirAll(knowledgeDir, 0755) //nolint:errcheck
+	if err := os.MkdirAll(knowledgeDir, 0755); err != nil {
+		fmt.Fprintf(os.Stderr, "cq serve: hub_knowledge_poller: mkdir %s: %v\n", knowledgeDir, err)
+		return
+	}
 	ks, err := knowledge.NewStore(knowledgeDir)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "cq serve: hub_knowledge_poller: open knowledge store failed: %v\n", err)
