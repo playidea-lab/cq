@@ -672,7 +672,7 @@ ls docs/gpu-worker/
 **환경변수 설정**
 ```bash
 export C5_HUB_URL=https://<your-hub-host>:8585   # Hub 서버 주소
-export C5_HUB_API_KEY=<your-api-key>              # Hub API 인증 키
+export C5_API_KEY=<your-api-key>                  # Hub API 인증 키
 ```
 
 **gpu-caps.yaml 설정 예시**
@@ -692,8 +692,8 @@ capabilities:
 
 **워커 실행**
 ```bash
-c5 worker --caps gpu-caps.yaml --hub $C5_HUB_URL
-# C5_HUB_API_KEY 환경변수를 자동으로 읽어 인증
+c5 worker --capabilities gpu-caps.yaml --server $C5_HUB_URL
+# C5_API_KEY 환경변수를 자동으로 읽어 인증
 ```
 
 **Claude Code .mcp.json 연결 예시**
