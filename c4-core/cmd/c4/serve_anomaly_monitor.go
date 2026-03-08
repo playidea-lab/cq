@@ -116,7 +116,7 @@ func (a *anomalyMonitor) check(ctx context.Context) {
 			return
 		}
 		hypID, _ := doc["id"].(string)
-		if hypID == "" || strings.Contains(hypID, "/") {
+		if hypID == "" || strings.Contains(hypID, "/") || strings.Contains(hypID, "..") {
 			continue
 		}
 
@@ -138,7 +138,6 @@ func (a *anomalyMonitor) check(ctx context.Context) {
 			a.mu.Unlock()
 			continue
 		}
-		a.lastEscalation[hypID] = time.Now()
 		a.mu.Unlock()
 
 		meta := map[string]any{
@@ -148,6 +147,11 @@ func (a *anomalyMonitor) check(ctx context.Context) {
 		}
 		if _, createErr := a.cfg.Store.Create(knowledge.TypeDebate, meta, detail); createErr != nil {
 			fmt.Fprintf(os.Stderr, "anomaly-monitor: create debate: %v\n", createErr)
+		} else {
+			// Update watermark only after successful store write.
+			a.mu.Lock()
+			a.lastEscalation[hypID] = time.Now()
+			a.mu.Unlock()
 		}
 	}
 

@@ -108,8 +108,11 @@ func researchCheckpointHandler(store *knowledge.Store, caller checkpointCaller) 
 
 		verdict := "approved"
 		var suggestions []string
+		// Conservative: if either optimizer or skeptic gives NEGATIVE, request revision.
+		upperOptimizer := strings.ToUpper(optimizerOut)
 		upperSkeptic := strings.ToUpper(skepticOut)
-		if strings.Contains(upperSkeptic, "ASSESSMENT: NEGATIVE") ||
+		if strings.Contains(upperOptimizer, "ASSESSMENT: NEGATIVE") ||
+			strings.Contains(upperSkeptic, "ASSESSMENT: NEGATIVE") ||
 			strings.Contains(upperSkeptic, "ISSUES:") {
 			verdict = "revision_requested"
 			// Search in original string to avoid multi-byte offset mismatch.
