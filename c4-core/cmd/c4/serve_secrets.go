@@ -29,9 +29,17 @@ var _ serve.Component = (*secretsSyncComponent)(nil)
 // registerSecretsSyncComponent creates a secretsSyncComponent using the provided
 // store, registers it with mgr (always first), and returns it so callers can call GetForEnv.
 // If store is nil, a no-op component is registered (non-fatal).
+// syncer may be nil for local-only mode.
 func registerSecretsSyncComponent(mgr *serve.Manager, cfg config.C4Config, store *secrets.Store) *secretsSyncComponent {
+	return registerSecretsSyncComponentWithSyncer(mgr, cfg, store, nil)
+}
+
+// registerSecretsSyncComponentWithSyncer is like registerSecretsSyncComponent but
+// accepts an explicit CloudSyncer for cloud-backed secret synchronization.
+func registerSecretsSyncComponentWithSyncer(mgr *serve.Manager, _ config.C4Config, store *secrets.Store, syncer secrets.CloudSyncer) *secretsSyncComponent {
 	comp := &secretsSyncComponent{
 		store:  store,
+		syncer: syncer,
 		health: serve.ComponentHealth{Status: "pending"},
 	}
 	mgr.Register(comp)

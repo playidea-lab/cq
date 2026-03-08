@@ -116,6 +116,7 @@ var DefaultAllowlist = ErrorAllowlist{
 	"internal/mcp/handlers/worker_standby.go":      8,
 	"internal/mcp/mcp.go":                          1,
 	"internal/secrets/store.go":                    3,
+	"internal/secrets/supabase_sync.go":            4, // HTTP status error messages (no underlying error to wrap)
 	"internal/serve/agent.go":                      4,
 	"internal/serve/gpu_component.go":              1,
 	"internal/serve/hub_component.go":              2,

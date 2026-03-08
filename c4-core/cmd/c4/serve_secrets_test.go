@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/changmin/c4-core/internal/config"
 	"github.com/changmin/c4-core/internal/secrets"
 	"github.com/changmin/c4-core/internal/serve"
 )
@@ -26,7 +27,7 @@ func newTestSecretStore(t *testing.T) *secrets.Store {
 
 func TestSecretsSyncComponent_Name(t *testing.T) {
 	mgr := serve.NewManager()
-	comp := registerSecretsSyncComponent(mgr, defaultTestConfig(), nil)
+	comp := registerSecretsSyncComponent(mgr, config.C4Config{}, nil)
 	if got := comp.Name(); got != "secrets-sync" {
 		t.Errorf("Name() = %q, want %q", got, "secrets-sync")
 	}
@@ -41,7 +42,7 @@ func TestSecretsSyncComponent_Health_NilStore_Skipped(t *testing.T) {
 
 func TestSecretsSyncComponent_Start_NilStore_Skipped(t *testing.T) {
 	mgr := serve.NewManager()
-	comp := registerSecretsSyncComponent(mgr, defaultTestConfig(), nil)
+	comp := registerSecretsSyncComponent(mgr, config.C4Config{}, nil)
 	if err := comp.Start(context.Background()); err != nil {
 		t.Fatalf("Start() error: %v", err)
 	}

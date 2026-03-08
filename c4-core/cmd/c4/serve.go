@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/changmin/c4-core/internal/config"
+	"github.com/changmin/c4-core/internal/secrets"
 	"github.com/changmin/c4-core/internal/serve"
 	"github.com/spf13/cobra"
 )
@@ -120,7 +121,13 @@ func runServe(cmd *cobra.Command, args []string) error {
 	mgr := serve.NewManager()
 
 	// Register secrets-sync FIRST so secrets are ready before other components start.
-	secComp := registerSecretsSyncComponent(mgr, cfg, srv.initCtx.secretStore)
+	// Wire Supabase cloud syncer if cloud credentials are configured.
+	var secretsSyncer secrets.CloudSyncer
+	if syncr, syncErr := secrets.NewSupabaseSyncFromConfig(cfg.Cloud.URL, cfg.Cloud.AnonKey); syncErr == nil {
+		secretsSyncer = syncr
+		fmt.Fprintln(os.Stderr, "cq serve: secrets cloud sync enabled")
+	}
+	secComp := registerSecretsSyncComponentWithSyncer(mgr, cfg, srv.initCtx.secretStore, secretsSyncer)
 
 	// Register components based on config
 	ebComp, gpuComp := registerCoreServeComponents(mgr, cfg, home, secComp)
