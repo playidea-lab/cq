@@ -124,6 +124,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 	registerEventSinkServeComponent(mgr, cfg, ebComp)
 	registerHubPollerServeComponent(mgr, cfg, ebComp)
 	registerKnowledgeHubPollerServeComponent(mgr, cfg)
+	registerKnowledgeSuggestPollerServeComponent(mgr, cfg, srv.initCtx.llmGateway)
 	registerSSESubscriberServeComponent(mgr, cfg, ebComp)
 	registerStaleCheckerServeComponent(mgr, cfg, ebComp)
 	registerToolSocketComponent(mgr, srv)

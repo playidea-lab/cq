@@ -218,6 +218,36 @@ func TestRunServeStop_OSServiceFallback(t *testing.T) {
 	})
 }
 
+// TestRegisterKnowledgeSuggestPoller_HubDisabled verifies that when hub.enabled=false,
+// no component is registered.
+func TestRegisterKnowledgeSuggestPoller_HubDisabled(t *testing.T) {
+	mgr := serve.NewManager()
+	cfg := config.C4Config{}
+	cfg.Hub.Enabled = false
+	cfg.Hub.URL = "http://hub.example.com"
+
+	registerKnowledgeSuggestPollerServeComponent(mgr, cfg, nil)
+
+	if mgr.ComponentCount() != 0 {
+		t.Errorf("ComponentCount = %d, want 0 when hub disabled", mgr.ComponentCount())
+	}
+}
+
+// TestRegisterKnowledgeSuggestPoller_NoURL verifies that when hub.url is empty,
+// no component is registered.
+func TestRegisterKnowledgeSuggestPoller_NoURL(t *testing.T) {
+	mgr := serve.NewManager()
+	cfg := config.C4Config{}
+	cfg.Hub.Enabled = true
+	cfg.Hub.URL = ""
+
+	registerKnowledgeSuggestPollerServeComponent(mgr, cfg, nil)
+
+	if mgr.ComponentCount() != 0 {
+		t.Errorf("ComponentCount = %d, want 0 when hub.url empty", mgr.ComponentCount())
+	}
+}
+
 // TestHealthHandler_SkippedNotDegraded verifies that when all components are
 // "skipped", the HealthHandler returns overall status "ok" (not "degraded").
 func TestHealthHandler_SkippedNotDegraded(t *testing.T) {

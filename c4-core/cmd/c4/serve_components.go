@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -9,6 +10,7 @@ import (
 	"github.com/changmin/c4-core/internal/config"
 	"github.com/changmin/c4-core/internal/eventbus"
 	"github.com/changmin/c4-core/internal/knowledge"
+	"github.com/changmin/c4-core/internal/llm"
 	"github.com/changmin/c4-core/internal/mcp/handlers"
 	"github.com/changmin/c4-core/internal/serve"
 )
@@ -145,4 +147,55 @@ func registerKnowledgeHubPollerServeComponent(mgr *serve.Manager, cfg config.C4C
 	})
 	mgr.Register(poller)
 	fmt.Fprintf(os.Stderr, "cq serve: registered hub_knowledge_poller\n")
+}
+
+// serveGatewayLLMCaller adapts *llm.Gateway to the LLMCaller interface used by knowledgeSuggestPoller.
+type serveGatewayLLMCaller struct {
+	gw *llm.Gateway
+}
+
+func (s *serveGatewayLLMCaller) Call(ctx context.Context, prompt string) (string, error) {
+	req := &llm.ChatRequest{
+		Messages: []llm.Message{
+			{Role: "user", Content: prompt},
+		},
+	}
+	resp, err := s.gw.Chat(ctx, "knowledge_suggest", req)
+	if err != nil {
+		return "", err
+	}
+	return resp.Content, nil
+}
+
+// registerKnowledgeSuggestPollerServeComponent registers the knowledgeSuggestPoller when
+// hub is enabled and a hub URL is configured. It shares the hub.enabled/hub.url gate with
+// the hub knowledge poller.
+func registerKnowledgeSuggestPollerServeComponent(mgr *serve.Manager, cfg config.C4Config, gw *llm.Gateway) {
+	if !cfg.Hub.Enabled || cfg.Hub.URL == "" {
+		return
+	}
+
+	knowledgeDir := filepath.Join(projectDir, ".c4", "knowledge")
+	if err := os.MkdirAll(knowledgeDir, 0755); err != nil {
+		fmt.Fprintf(os.Stderr, "cq serve: hub_suggest_poller: mkdir %s: %v\n", knowledgeDir, err)
+		return
+	}
+	ks, err := knowledge.NewStore(knowledgeDir)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "cq serve: hub_suggest_poller: open knowledge store failed: %v\n", err)
+		return
+	}
+
+	var caller LLMCaller
+	if gw != nil {
+		caller = &serveGatewayLLMCaller{gw: gw}
+	}
+
+	poller := newKnowledgeSuggestPoller(knowledgeSuggestPollerConfig{
+		Store:         ks,
+		LLMCaller:     caller,
+		WatermarkPath: filepath.Join(projectDir, ".c4", "suggest_poller_watermark.json"),
+	})
+	mgr.Register(poller)
+	fmt.Fprintf(os.Stderr, "cq serve: registered hub_suggest_poller\n")
 }
