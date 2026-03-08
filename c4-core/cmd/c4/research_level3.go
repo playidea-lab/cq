@@ -104,8 +104,9 @@ func runResearchSpec(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("create spec: %w", err)
 	}
 
+	sanitize := func(s string) string { return strings.ReplaceAll(s, "\n", " ") }
 	cqYAML := fmt.Sprintf("# cq.yaml — ExperimentSpec %s\nhypothesis_id: %s\nsuccess_condition: %s\nnull_condition: %s\n",
-		specID, hypID, successCond, nullCond)
+		specID, sanitize(hypID), sanitize(successCond), sanitize(nullCond))
 
 	fmt.Printf("spec_id: %s\n\n%s\n", specID, cqYAML)
 	return nil

@@ -23,7 +23,7 @@ func registerResearchCheckpointHandler(ctx *initContext) error {
 		return nil
 	}
 	caller := &checkpointGatewayLLMCaller{gw: ctx.llmGateway}
-	ctx.reg.Register(mcp.ToolSchema{
+	ctx.reg.RegisterBlocking(mcp.ToolSchema{
 		Name:        "c4_research_checkpoint",
 		Description: "Review an ExperimentSpec DoD with LLM-Optimizer and LLM-Skeptic roles to assess validity before Inner Loop starts",
 		InputSchema: map[string]any{
@@ -71,11 +71,11 @@ const checkpointSkepticSystem = `You are an experiment design critic. Challenge 
 3. Escalation trigger vagueness
 Respond with: ASSESSMENT: [positive/negative], FEEDBACK: [your analysis], ISSUES: [list any specific problems]`
 
-func researchCheckpointHandler(store *knowledge.Store, caller checkpointCaller) mcp.HandlerFunc {
-	return func(rawArgs json.RawMessage) (any, error) {
+func researchCheckpointHandler(store *knowledge.Store, caller checkpointCaller) mcp.BlockingHandlerFunc {
+	return func(ctx context.Context, rawArgs json.RawMessage) (any, error) {
 		var params struct {
-			SpecID        string `json:"spec_id"`
-			HypothesisID  string `json:"hypothesis_id"`
+			SpecID       string `json:"spec_id"`
+			HypothesisID string `json:"hypothesis_id"`
 		}
 		if len(rawArgs) > 0 {
 			if err := json.Unmarshal(rawArgs, &params); err != nil {
@@ -95,7 +95,6 @@ func researchCheckpointHandler(store *knowledge.Store, caller checkpointCaller) 
 		}
 
 		userMsg := fmt.Sprintf("ExperimentSpec:\n%s", doc.Body)
-		ctx := context.Background()
 
 		optimizerOut, err := caller.call(ctx, checkpointOptimizerSystem, userMsg)
 		if err != nil {
@@ -113,7 +112,8 @@ func researchCheckpointHandler(store *knowledge.Store, caller checkpointCaller) 
 		if strings.Contains(upperSkeptic, "ASSESSMENT: NEGATIVE") ||
 			strings.Contains(upperSkeptic, "ISSUES:") {
 			verdict = "revision_requested"
-			if idx := strings.Index(upperSkeptic, "ISSUES:"); idx >= 0 {
+			// Search in original string to avoid multi-byte offset mismatch.
+			if idx := strings.Index(skepticOut, "ISSUES:"); idx >= 0 {
 				issueText := skepticOut[idx+7:]
 				for _, line := range strings.Split(issueText, "\n") {
 					line = strings.TrimSpace(line)

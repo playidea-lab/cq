@@ -119,13 +119,23 @@ func runDebate(ctx context.Context, caller debateCaller, store debateStore, hypI
 		return nil, fmt.Errorf("synthesis: %w", err)
 	}
 
-	// Determine verdict from skeptic output
+	// Determine verdict: try synth JSON first, fall back to skeptic text.
 	verdict := "approved"
-	lower := strings.ToLower(skepticOut)
-	if strings.Contains(lower, "verdict: null_result") {
-		verdict = "null_result"
-	} else if strings.Contains(lower, "verdict: escalate") {
-		verdict = "escalate"
+	var synthJSON struct {
+		Verdict string `json:"verdict"`
+	}
+	if start := strings.Index(synthOut, "{"); start >= 0 {
+		if err := json.Unmarshal([]byte(synthOut[start:]), &synthJSON); err == nil && synthJSON.Verdict != "" {
+			verdict = synthJSON.Verdict
+		}
+	}
+	if verdict == "approved" {
+		lower := strings.ToLower(skepticOut)
+		if strings.Contains(lower, "verdict: null_result") {
+			verdict = "null_result"
+		} else if strings.Contains(lower, "verdict: escalate") {
+			verdict = "escalate"
+		}
 	}
 
 	// Extract next_hypothesis_draft from optimizer

@@ -67,7 +67,7 @@ func TestDebateCheckpoint_Approved(t *testing.T) {
 	handler := researchCheckpointHandler(ks, caller)
 
 	rawArgs, _ := json.Marshal(map[string]string{"spec_id": specID})
-	result, err := handler(rawArgs)
+	result, err := handler(context.Background(), rawArgs)
 	if err != nil {
 		t.Fatalf("handler: %v", err)
 	}
@@ -97,7 +97,7 @@ func TestDebateCheckpoint_RevisionRequested(t *testing.T) {
 	handler := researchCheckpointHandler(ks, caller)
 
 	rawArgs, _ := json.Marshal(map[string]string{"spec_id": specID})
-	result, err := handler(rawArgs)
+	result, err := handler(context.Background(), rawArgs)
 	if err != nil {
 		t.Fatalf("handler: %v", err)
 	}
@@ -124,7 +124,7 @@ func TestDebateCheckpoint_UnknownSpec(t *testing.T) {
 	handler := researchCheckpointHandler(ks, caller)
 
 	rawArgs, _ := json.Marshal(map[string]string{"spec_id": "nonexistent-id"})
-	_, err := handler(rawArgs)
+	_, err := handler(context.Background(), rawArgs)
 	if err == nil {
 		t.Fatal("expected error for unknown spec_id, got nil")
 	}

@@ -63,7 +63,9 @@ func (a *anomalyMonitor) Stop(_ context.Context) error {
 	if a.cancel != nil {
 		a.cancel()
 	}
-	<-a.done
+	if a.done != nil {
+		<-a.done
+	}
 	return nil
 }
 
@@ -114,7 +116,7 @@ func (a *anomalyMonitor) check(ctx context.Context) {
 			return
 		}
 		hypID, _ := doc["id"].(string)
-		if hypID == "" {
+		if hypID == "" || strings.Contains(hypID, "/") {
 			continue
 		}
 
@@ -140,8 +142,9 @@ func (a *anomalyMonitor) check(ctx context.Context) {
 		a.mu.Unlock()
 
 		meta := map[string]any{
-			"task_id": hypID,        // source hypothesis ID
-			"domain":  "escalation", // trigger_reason as domain for queryability
+			"task_id":        hypID,
+			"domain":         "escalation",
+			"trigger_reason": "escalation",
 		}
 		if _, createErr := a.cfg.Store.Create(knowledge.TypeDebate, meta, detail); createErr != nil {
 			fmt.Fprintf(os.Stderr, "anomaly-monitor: create debate: %v\n", createErr)

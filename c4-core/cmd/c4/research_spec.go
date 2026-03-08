@@ -5,6 +5,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/changmin/c4-core/internal/knowledge"
 	"github.com/changmin/c4-core/internal/mcp"
@@ -77,10 +78,11 @@ func researchSpecHandler(ks *knowledge.Store) mcp.HandlerFunc {
 			params.ExpectedMetricsRange,
 		)
 
+		sanitize := func(s string) string { return strings.ReplaceAll(s, "\n", " ") }
 		cqYAMLDraft := fmt.Sprintf("hypothesis_id: %s\nsuccess_condition: %s\nnull_condition: %s\n",
-			params.HypothesisID,
-			params.SuccessCondition,
-			params.NullCondition,
+			sanitize(params.HypothesisID),
+			sanitize(params.SuccessCondition),
+			sanitize(params.NullCondition),
 		)
 
 		specID, err := ks.Create(knowledge.TypeExperiment, map[string]any{
