@@ -214,7 +214,22 @@ func RegisterKnowledgeNativeHandlers(reg *mcp.Registry, opts *KnowledgeNativeOpt
 		},
 	}, knowledgePublishNativeHandler(opts))
 
-	// 14. c4_knowledge_distill — LLM-based pattern extraction from similar document clusters
+	// 14. c4_research_suggest — on-demand hypothesis generation from experiment documents
+	if opts.LLM != nil {
+		reg.Register(mcp.ToolSchema{
+			Name:        "c4_research_suggest",
+			Description: "Analyze experiment records and generate a hypothesis with a cq.yaml draft",
+			InputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"tag":   map[string]any{"type": "string", "description": "Filter experiments by tag"},
+					"limit": map[string]any{"type": "integer", "description": "Max experiments to analyze (default: 10)"},
+				},
+			},
+		}, researchSuggestNativeHandler(opts))
+	}
+
+	// 15. c4_knowledge_distill — LLM-based pattern extraction from similar document clusters
 	if opts.LLM != nil && opts.Searcher != nil {
 		reg.Register(mcp.ToolSchema{
 			Name:        "c4_knowledge_distill",
