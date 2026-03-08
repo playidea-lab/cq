@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.75.0] - 2026-03-08
+
+### ✨ Features
+- **c4-plan**: Phase 2.65 Conflict Gate 추가 — Design Complete 후, 태스크 생성 전 활성 워커/기존 스펙/지식과의 충돌을 감지하는 소프트 게이트
+  - 파일 충돌(HIGH), 개념 겹침(MEDIUM), 지식 참고(LOW) 3단계 분류
+  - 충돌 없으면 절대 중단 없음, 사용자는 항상 무시하고 진행 가능 (하드 블로킹 금지)
+  - 무시 결정 시 `c4_knowledge_record`로 이력 기록
+
+---
+
 ## [v0.74.1] - 2026-03-08
 
 ### 🐛 Bug Fixes
