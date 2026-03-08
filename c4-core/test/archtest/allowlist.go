@@ -92,6 +92,8 @@ var DefaultAllowlist = ErrorAllowlist{
 	"internal/mcp/handlers/hubhandler/hub_jobs.go":         7,
 	"internal/mcp/handlers/hubhandler/hub_jobs_metrics.go": 4,
 	"internal/mcp/handlers/knowledgehandler/knowledge_record.go": 1,
+	"internal/mcp/handlers/notifyhandler/notifyhandler.go":       5,
+	"internal/notify/notify.go":                                  2,
 	"internal/mcp/handlers/lighthouse.go":          17,
 	"internal/mcp/handlers/llmhandler/llm.go":      1,
 	"internal/mcp/handlers/artifacthandler/artifacthandler.go": 2,

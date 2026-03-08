@@ -16,6 +16,7 @@ import (
 	"github.com/changmin/c4-core/internal/mcp/handlers/pophandler"
 	"github.com/changmin/c4-core/internal/mcp/handlers/researchhandler"
 	"github.com/changmin/c4-core/internal/mcp/handlers/skillevalhandler"
+	"github.com/changmin/c4-core/internal/mcp/handlers/notifyhandler"
 	"github.com/changmin/c4-core/internal/mcp/handlers/secrethandler"
 	handlerswc "github.com/changmin/c4-core/internal/mcp/handlers/webcontent"
 	"github.com/changmin/c4-core/internal/research"
@@ -149,4 +150,9 @@ func RegisterConfigHandlers(reg *mcp.Registry, mgr *config.Manager, projectRoot 
 // RegisterSecretHandlers registers c4_secret_* tools via secrethandler subpackage.
 func RegisterSecretHandlers(reg *mcp.Registry, store *secrets.Store) {
 	secrethandler.Register(reg, store)
+}
+
+// RegisterNotifyHandlers registers c4_notification_set, c4_notification_get, c4_notify.
+func RegisterNotifyHandlers(reg *mcp.Registry, projectDir string) {
+	notifyhandler.Register(reg, projectDir)
 }

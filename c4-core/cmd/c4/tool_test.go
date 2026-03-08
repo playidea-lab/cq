@@ -246,3 +246,23 @@ func TestToolExecToolBadIntegerArg(t *testing.T) {
 		t.Errorf("unexpected error message: %v", err)
 	}
 }
+
+func TestTool_notification_set(t *testing.T) {
+	srv, err := newMCPServer()
+	if err != nil {
+		t.Fatalf("newMCPServer: %v", err)
+	}
+	defer srv.shutdown()
+
+	tools := srv.registry.ListTools()
+	toolNames := make(map[string]bool, len(tools))
+	for _, tool := range tools {
+		toolNames[tool.Name] = true
+	}
+
+	for _, name := range []string{"c4_notification_set", "c4_notification_get", "c4_notify"} {
+		if !toolNames[name] {
+			t.Errorf("tool %s not registered", name)
+		}
+	}
+}

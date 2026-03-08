@@ -329,6 +329,9 @@ func newMCPServer() (*mcpServer, error) {
 		handlers.RegisterSecretHandlers(reg, ctx.secretStore)
 	}
 
+	// Register notification handlers (c4_notification_set, c4_notification_get, c4_notify).
+	handlers.RegisterNotifyHandlers(reg, projectDir)
+
 	// --- Phase 4: Run post-store hooks (C1, Drive, Hub, CDP, EventBus) ---
 	// ctx.sqliteStore and ctx.proxy are now set; EventBus wiring can proceed.
 	for _, fn := range componentInitHooks {
