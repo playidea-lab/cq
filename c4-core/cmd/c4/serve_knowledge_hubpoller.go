@@ -36,6 +36,7 @@ type C1Notifier interface {
 type knowledgeHubPollerConfig struct {
 	HubURL       string
 	APIKey       string
+	APIKeyEnv    string
 	APIPrefix    string
 	Store        *knowledge.Store
 	SeenPath     string
@@ -68,6 +69,7 @@ func newKnowledgeHubPoller(cfg knowledgeHubPollerConfig) *knowledgeHubPoller {
 		URL:       cfg.HubURL,
 		APIPrefix: cfg.APIPrefix,
 		APIKey:    cfg.APIKey,
+		APIKeyEnv: cfg.APIKeyEnv,
 	})
 	return &knowledgeHubPoller{cfg: cfg, client: client, status: "ok"}
 }

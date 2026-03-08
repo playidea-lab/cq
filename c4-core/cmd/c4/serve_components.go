@@ -137,6 +137,7 @@ func registerKnowledgeHubPollerServeComponent(mgr *serve.Manager, cfg config.C4C
 	poller := newKnowledgeHubPoller(knowledgeHubPollerConfig{
 		HubURL:       cfg.Hub.URL,
 		APIKey:       cfg.Hub.APIKey,
+		APIKeyEnv:    cfg.Hub.APIKeyEnv,
 		APIPrefix:    cfg.Hub.APIPrefix,
 		Store:        ks,
 		SeenPath:     filepath.Join(projectDir, ".c4", "hub_poller_seen.json"),
