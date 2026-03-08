@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { MarkdownViewer } from '../shared/MarkdownViewer';
+import { formatTime } from '../../utils/format';
 import type { C1Message, C1Member } from '../../types';
 
 interface AgentThreadProps {
@@ -8,15 +9,6 @@ interface AgentThreadProps {
   isComplete: boolean;
   defaultExpanded?: boolean;
   getMember?: (memberId: string) => C1Member | undefined;
-}
-
-function formatTime(iso: string): string {
-  try {
-    const d = new Date(iso);
-    return d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
-  } catch {
-    return '';
-  }
 }
 
 export function AgentThread({ messages, agentName, isComplete, defaultExpanded, getMember }: AgentThreadProps) {

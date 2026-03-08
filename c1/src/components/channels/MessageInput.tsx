@@ -51,9 +51,9 @@ function MentionPopup({ members, query, selectedIndex, onSelect }: MentionPopupP
 }
 
 function extractMentions(content: string): string[] {
-  const matches = content.match(/@([\w\-. ]+)/g);
+  const matches = content.match(/@([\w\-.]+)/g);
   if (!matches) return [];
-  return matches.map(m => m.slice(1).trim());
+  return matches.map(m => m.slice(1));
 }
 
 export function MessageInput({
@@ -196,14 +196,6 @@ export function MessageInput({
     }
   }, [showPopup, filteredMembers, mentionIndex, selectMember, handleSend]);
 
-  const handleInput = useCallback(() => {
-    const el = textareaRef.current;
-    if (el) {
-      el.style.height = 'auto';
-      el.style.height = Math.min(el.scrollHeight, 120) + 'px';
-    }
-  }, []);
-
   return (
     <div className="message-input">
       <div className="message-input__wrapper">
@@ -221,7 +213,6 @@ export function MessageInput({
           value={text}
           onChange={handleChange}
           onKeyDown={handleKeyDown}
-          onInput={handleInput}
           placeholder={placeholder ?? 'Type a message... (@mention to notify an agent)'}
           disabled={disabled || sending}
           rows={1}

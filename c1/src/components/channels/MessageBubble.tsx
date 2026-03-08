@@ -1,5 +1,6 @@
 import { MarkdownViewer } from '../shared/MarkdownViewer';
 import { A2UIRenderer } from './A2UIRenderer';
+import { formatTime } from '../../utils/format';
 import type { C1Message, C1Member, SenderType } from '../../types';
 
 interface MessageBubbleProps {
@@ -52,18 +53,11 @@ function displayName(msg: C1Message, member?: C1Member, type?: SenderType): stri
   }
 }
 
-function formatTime(iso: string): string {
-  try {
-    const d = new Date(iso);
-    return d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
-  } catch {
-    return '';
-  }
-}
-
 export function MessageBubble({ message, member, onAction }: MessageBubbleProps) {
-  const type = member ? member.member_type as SenderType : inferSenderType(message);
-  const avatarClass = member ? member.member_type : type;
+  const type: SenderType = member
+    ? (member.member_type === 'user' ? 'human' : member.member_type as SenderType)
+    : inferSenderType(message);
+  const avatarClass = member ? (member.member_type === 'user' ? 'human' : member.member_type) : type;
 
   const a2uiSpec = message.metadata?.a2ui;
 
