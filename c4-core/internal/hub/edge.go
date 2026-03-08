@@ -153,6 +153,37 @@ func (c *Client) RemoveEdge(edgeID string) error {
 	return nil
 }
 
+// EdgeControlRequest is the payload for POST /v1/edges/{id}/control.
+type EdgeControlRequest struct {
+	Action string         `json:"action"`
+	Params map[string]any `json:"params,omitempty"`
+}
+
+// EdgeControlResponse is the response from POST /v1/edges/{id}/control.
+type EdgeControlResponse struct {
+	MessageID string `json:"message_id"`
+	Status    string `json:"status"`
+}
+
+// EdgeControl sends a control message to an edge device.
+func (c *Client) EdgeControl(edgeID string, req *EdgeControlRequest) (*EdgeControlResponse, error) {
+	var resp EdgeControlResponse
+	if err := c.post("/edges/"+edgeID+"/control", req, &resp); err != nil {
+		return nil, fmt.Errorf("edge control: %w", err)
+	}
+	return &resp, nil
+}
+
+// GetEdgeMetrics retrieves recent metrics for an edge device.
+func (c *Client) GetEdgeMetrics(edgeID string, limit int) (*EdgeMetricsResponse, error) {
+	path := fmt.Sprintf("/edges/%s/metrics?limit=%d", edgeID, limit)
+	var resp EdgeMetricsResponse
+	if err := c.get(path, &resp); err != nil {
+		return nil, fmt.Errorf("get edge metrics: %w", err)
+	}
+	return &resp, nil
+}
+
 // =========================================================================
 // Deploy Rule Client Methods
 // =========================================================================

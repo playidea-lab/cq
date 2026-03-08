@@ -4,6 +4,7 @@ package hubhandler
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/changmin/c4-core/internal/hub"
@@ -93,6 +94,39 @@ func registerHubEdgeHandlers(reg *mcp.Registry, hubClient *hub.Client) {
 		},
 	}, func(raw json.RawMessage) (any, error) {
 		return handleHubDeployStatus(hubClient, raw)
+	})
+
+	// c4_hub_edge_metrics — Query recent metrics for an edge device
+	reg.Register(mcp.ToolSchema{
+		Name:        "c4_hub_edge_metrics",
+		Description: "Edge 디바이스의 최근 메트릭 조회",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"edge_id": map[string]any{"type": "string", "description": "조회할 Edge ID"},
+				"limit":   map[string]any{"type": "integer", "description": "최근 N개 (기본 10)"},
+			},
+			"required": []string{"edge_id"},
+		},
+	}, func(raw json.RawMessage) (any, error) {
+		return handleHubEdgeMetrics(hubClient, raw)
+	})
+
+	// c4_hub_edge_control — Send control message to edge device
+	reg.Register(mcp.ToolSchema{
+		Name:        "c4_hub_edge_control",
+		Description: "Edge 디바이스에 control message 전송 (collect, restart 등)",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"edge_id": map[string]any{"type": "string", "description": "대상 Edge ID"},
+				"action":  map[string]any{"type": "string", "enum": []string{"collect", "restart"}, "description": "control action"},
+				"params":  map[string]any{"type": "object", "description": "action별 파라미터 (collect: {local_path: string})"},
+			},
+			"required": []string{"edge_id", "action"},
+		},
+	}, func(raw json.RawMessage) (any, error) {
+		return handleHubEdgeControl(hubClient, raw)
 	})
 }
 
@@ -211,6 +245,62 @@ func handleHubDeploy(client *hub.Client, raw json.RawMessage) (any, error) {
 		"deploy_id":    resp.DeployID,
 		"status":       resp.Status,
 		"target_count": resp.TargetCount,
+	}, nil
+}
+
+func handleHubEdgeControl(client *hub.Client, raw json.RawMessage) (any, error) {
+	var params struct {
+		EdgeID string         `json:"edge_id"`
+		Action string         `json:"action"`
+		Params map[string]any `json:"params"`
+	}
+	if err := json.Unmarshal(raw, &params); err != nil {
+		return nil, fmt.Errorf("parsing params: %w", err)
+	}
+	if params.EdgeID == "" {
+		return nil, errors.New("edge_id is required")
+	}
+	if params.Action == "" {
+		return nil, errors.New("action is required")
+	}
+
+	resp, err := client.EdgeControl(params.EdgeID, &hub.EdgeControlRequest{
+		Action: params.Action,
+		Params: params.Params,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return map[string]any{
+		"message_id": resp.MessageID,
+		"status":     resp.Status,
+	}, nil
+}
+
+func handleHubEdgeMetrics(client *hub.Client, raw json.RawMessage) (any, error) {
+	var params struct {
+		EdgeID string `json:"edge_id"`
+		Limit  int    `json:"limit"`
+	}
+	if err := json.Unmarshal(raw, &params); err != nil {
+		return nil, fmt.Errorf("parsing params: %w", err)
+	}
+	if params.EdgeID == "" {
+		return nil, fmt.Errorf("edge_id is required")
+	}
+	if params.Limit <= 0 {
+		params.Limit = 10
+	}
+
+	resp, err := client.GetEdgeMetrics(params.EdgeID, params.Limit)
+	if err != nil {
+		return nil, err
+	}
+
+	return map[string]any{
+		"edge_id": resp.EdgeID,
+		"metrics": resp.Metrics,
 	}, nil
 }
 
