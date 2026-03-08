@@ -111,7 +111,7 @@ func Run(ctx context.Context, cfg Config) error {
 	}
 
 	// ControlPoller goroutine
-	cp := newControlPoller(edgeID, baseURL, cfg.APIKey, cfg.DriveURL, cfg.DriveAPIKey, client)
+	cp := newControlPoller(edgeID, baseURL, cfg.APIKey, cfg.DriveURL, cfg.DriveAPIKey, cfg.Workdir, client)
 	go cp.Start(ctx)
 
 	// Heartbeat goroutine

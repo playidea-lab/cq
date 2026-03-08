@@ -185,7 +185,7 @@ func TestControlPollerCollect(t *testing.T) {
 	}))
 	defer hub.Close()
 
-	cp := newControlPoller("edge-1", hub.URL, "", drive.URL, "", &http.Client{Timeout: 5 * time.Second})
+	cp := newControlPoller("edge-1", hub.URL, "", drive.URL, "", dir, &http.Client{Timeout: 5 * time.Second})
 	ctx := context.Background()
 	retrieved, err := cp.Poll(ctx)
 	if err != nil {

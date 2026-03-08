@@ -7,7 +7,6 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/piqsol/c4/c5/internal/model"
@@ -17,14 +16,11 @@ import (
 // Edge IDs are UUIDs (hex digits and hyphens); reject any traversal attempts.
 var edgeIDRe = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
 
-// thresholdMu protects thresholdCooldowns against concurrent access.
-var (
-	thresholdMu        sync.Mutex
-	thresholdCooldowns = make(map[string]time.Time)
-	thresholdCooldown  = 60 * time.Second
+const (
+	maxMetricsBodyBytes = 64 * 1024       // 64 KB
+	maxMetricsLimit     = 1000            // upper bound for GET ?limit=
+	thresholdCooldown   = 60 * time.Second
 )
-
-const maxMetricsBodyBytes = 64 * 1024 // 64 KB
 
 // handleEdgeMetricsPost handles POST /v1/edges/{id}/metrics
 func (s *Server) handleEdgeMetricsPost(w http.ResponseWriter, r *http.Request) {
@@ -77,6 +73,9 @@ func (s *Server) handleEdgeMetricsGet(w http.ResponseWriter, r *http.Request) {
 	}
 
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	if limit <= 0 || limit > maxMetricsLimit {
+		limit = maxMetricsLimit
+	}
 
 	entries, err := s.store.GetEdgeMetrics(edgeID, limit)
 	if err != nil {
@@ -93,9 +92,13 @@ func (s *Server) handleEdgeMetricsGet(w http.ResponseWriter, r *http.Request) {
 // edgeIDFromMetricsPath extracts and validates edge ID from /v1/edges/{id}/metrics.
 // Returns "" if the path is malformed or the ID contains unexpected characters.
 func edgeIDFromMetricsPath(p string) string {
-	p = strings.TrimPrefix(p, "/v1/edges/")
-	p = strings.TrimSuffix(p, "/metrics")
-	id := strings.TrimSuffix(p, "/")
+	// Expected: /v1/edges/{id}/metrics
+	parts := strings.Split(strings.Trim(p, "/"), "/")
+	// parts: ["v1", "edges", "{id}", "metrics"]
+	if len(parts) != 4 || parts[0] != "v1" || parts[1] != "edges" || parts[3] != "metrics" {
+		return ""
+	}
+	id := parts[2]
 	if !edgeIDRe.MatchString(id) {
 		return ""
 	}
@@ -121,7 +124,7 @@ func checkThresholds(s *Server, edgeID string, values map[string]float64, metada
 		}
 
 		if value < threshold {
-			if !tryAcquireCooldown(edgeID, metricKey) {
+			if !s.tryAcquireCooldown(edgeID, metricKey) {
 				continue
 			}
 
@@ -137,26 +140,26 @@ func checkThresholds(s *Server, edgeID string, values map[string]float64, metada
 // has elapsed (or was never set), and records the current time.
 // Uses a mutex-protected map to prevent concurrent goroutines from both passing
 // the cooldown check for the same key simultaneously.
-func tryAcquireCooldown(edgeID, metricKey string) bool {
+func (s *Server) tryAcquireCooldown(edgeID, metricKey string) bool {
 	key := edgeID + "\x00" + metricKey
 	now := time.Now()
 
-	thresholdMu.Lock()
-	defer thresholdMu.Unlock()
+	s.thresholdMu.Lock()
+	defer s.thresholdMu.Unlock()
 
-	if last, ok := thresholdCooldowns[key]; ok && now.Sub(last) < thresholdCooldown {
+	if last, ok := s.thresholdCooldowns[key]; ok && now.Sub(last) < thresholdCooldown {
 		return false
 	}
-	thresholdCooldowns[key] = now
+	s.thresholdCooldowns[key] = now
 	return true
 }
 
 // resetThresholdCooldown removes the cooldown entry for the given key.
-// Exported for testing only.
-func resetThresholdCooldown(key string) {
-	thresholdMu.Lock()
-	delete(thresholdCooldowns, key)
-	thresholdMu.Unlock()
+// Used in tests to reset cooldown state between test cases.
+func (s *Server) resetThresholdCooldown(key string) {
+	s.thresholdMu.Lock()
+	delete(s.thresholdCooldowns, key)
+	s.thresholdMu.Unlock()
 }
 
 // publishThresholdEvent sends an edge.metrics.threshold_exceeded event to the EventBus.

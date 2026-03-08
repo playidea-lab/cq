@@ -1,6 +1,7 @@
 package hub
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 )
@@ -137,7 +138,7 @@ func (c *Client) EdgeHeartbeat(edgeID, status string) error {
 
 // RemoveEdge unregisters an edge device.
 func (c *Client) RemoveEdge(edgeID string) error {
-	req, err := newDeleteRequest(c.url("/edges/" + edgeID))
+	req, err := newDeleteRequest(context.Background(), c.url("/edges/"+edgeID))
 	if err != nil {
 		return err
 	}
@@ -210,7 +211,7 @@ func (c *Client) ListDeployRules() ([]DeployRule, error) {
 
 // DeleteDeployRule deletes a deployment rule.
 func (c *Client) DeleteDeployRule(ruleID string) error {
-	req, err := newDeleteRequest(c.url("/deploy/rules/" + ruleID))
+	req, err := newDeleteRequest(context.Background(), c.url("/deploy/rules/"+ruleID))
 	if err != nil {
 		return err
 	}
@@ -254,6 +255,6 @@ func (c *Client) GetDeployStatus(deployID string) (*Deployment, error) {
 // Helpers
 // =========================================================================
 
-func newDeleteRequest(url string) (*http.Request, error) {
-	return http.NewRequest("DELETE", url, nil)
+func newDeleteRequest(ctx context.Context, url string) (*http.Request, error) {
+	return http.NewRequestWithContext(ctx, "DELETE", url, nil)
 }

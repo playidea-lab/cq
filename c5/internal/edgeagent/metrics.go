@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os/exec"
@@ -134,5 +135,14 @@ func (m *MetricsReporter) report(ctx context.Context) {
 		log.Printf("edge-agent: POST metrics: %v", err)
 		return
 	}
-	resp.Body.Close()
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(resp.Body)
+		log.Printf("edge-agent: POST metrics non-2xx %d: %s", resp.StatusCode, body)
+		return
+	}
+	// Clear reported metrics only after confirmed delivery.
+	m.mu.Lock()
+	m.metrics = make(map[string]float64)
+	m.mu.Unlock()
 }

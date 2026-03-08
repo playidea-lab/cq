@@ -77,6 +77,10 @@ type Server struct {
 	// closed by handleWorkerComplete when the job reaches a terminal state.
 	// HA note: in-process only; lost on Hub restart (single-instance v1).
 	completionHub sync.Map
+
+	// thresholdMu protects thresholdCooldowns against concurrent access.
+	thresholdMu        sync.Mutex
+	thresholdCooldowns map[string]time.Time
 }
 
 // Config holds server configuration.
@@ -139,7 +143,8 @@ func NewServer(cfg Config) *Server {
 		doorayWebhookURL: cfg.DoorayWebhookURL,
 		doorayCmdToken:   cfg.DoorayCmdToken,
 		channelMap: cfg.ChannelMap,
-		llmSem:     make(chan struct{}, 16), // max 16 concurrent LLM goroutines
+		llmSem:             make(chan struct{}, 16), // max 16 concurrent LLM goroutines
+		thresholdCooldowns: make(map[string]time.Time),
 		convStore: func() conversation.Store {
 			if ss := conversation.NewSupabaseStore(cfg.SupabaseURL, cfg.SupabaseKey); ss != nil {
 				return ss

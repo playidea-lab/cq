@@ -101,12 +101,12 @@ func registerHubEdgeHandlers(reg *mcp.Registry, hubClient *hub.Client) {
 	// c4_hub_edge_metrics — Query recent metrics for an edge device
 	reg.Register(mcp.ToolSchema{
 		Name:        "c4_hub_edge_metrics",
-		Description: "Edge 디바이스의 최근 메트릭 조회",
+		Description: "Query recent metrics reported by an edge device",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"edge_id": map[string]any{"type": "string", "description": "조회할 Edge ID"},
-				"limit":   map[string]any{"type": "integer", "description": "최근 N개 (기본 10)"},
+				"edge_id": map[string]any{"type": "string", "description": "Edge device ID to query"},
+				"limit":   map[string]any{"type": "integer", "description": "Number of recent entries to return (default 10)"},
 			},
 			"required": []string{"edge_id"},
 		},
@@ -117,13 +117,13 @@ func registerHubEdgeHandlers(reg *mcp.Registry, hubClient *hub.Client) {
 	// c4_hub_edge_control — Send control message to edge device
 	reg.Register(mcp.ToolSchema{
 		Name:        "c4_hub_edge_control",
-		Description: "Edge 디바이스에 control message 전송 (collect, restart 등)",
+		Description: "Send a control message to an edge device (e.g. collect files, restart)",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"edge_id": map[string]any{"type": "string", "description": "대상 Edge ID"},
-				"action":  map[string]any{"type": "string", "enum": []string{"collect", "restart"}, "description": "control action"},
-				"params":  map[string]any{"type": "object", "description": "action별 파라미터 (collect: {local_path: string})"},
+				"edge_id": map[string]any{"type": "string", "description": "Target edge device ID"},
+				"action":  map[string]any{"type": "string", "enum": []string{"collect", "restart"}, "description": "Control action to execute"},
+				"params":  map[string]any{"type": "object", "description": "Action-specific parameters (collect: {local_path: string})"},
 			},
 			"required": []string{"edge_id", "action"},
 		},
@@ -266,8 +266,13 @@ func handleHubEdgeControl(client *hub.Client, raw json.RawMessage) (any, error) 
 	if params.EdgeID == "" {
 		return nil, errors.New("edge_id is required")
 	}
-	if params.Action == "" {
+	switch params.Action {
+	case "collect", "restart":
+		// valid
+	case "":
 		return nil, errors.New("action is required")
+	default:
+		return nil, fmt.Errorf("unsupported action %q: must be collect or restart", params.Action)
 	}
 
 	resp, err := client.EdgeControl(params.EdgeID, &hub.EdgeControlRequest{

@@ -18,30 +18,35 @@ import (
 	"github.com/piqsol/c4/c5/internal/model"
 )
 
-// ControlPoller polls Hub GET /v1/edges/{id}/control every 30s and executes received actions.
+// controlPollInterval is the interval between control message polls.
+const controlPollInterval = 30 * time.Second
+
+// ControlPoller polls Hub GET /v1/edges/{id}/control every controlPollInterval and executes received actions.
 type ControlPoller struct {
-	edgeID     string
-	hubURL     string
-	apiKey     string
-	driveURL   string
-	driveKey   string
-	client     *http.Client
+	edgeID   string
+	hubURL   string
+	apiKey   string
+	driveURL string
+	driveKey string
+	workdir  string // base directory allowed for collect actions (path traversal guard)
+	client   *http.Client
 }
 
-func newControlPoller(edgeID, hubURL, apiKey, driveURL, driveKey string, client *http.Client) *ControlPoller {
+func newControlPoller(edgeID, hubURL, apiKey, driveURL, driveKey, workdir string, client *http.Client) *ControlPoller {
 	return &ControlPoller{
 		edgeID:   edgeID,
 		hubURL:   hubURL,
 		apiKey:   apiKey,
 		driveURL: driveURL,
 		driveKey: driveKey,
+		workdir:  workdir,
 		client:   client,
 	}
 }
 
 // Start runs the control poll loop until ctx is done.
 func (c *ControlPoller) Start(ctx context.Context) {
-	tick := time.NewTicker(30 * time.Second)
+	tick := time.NewTicker(controlPollInterval)
 	defer tick.Stop()
 	for {
 		select {
@@ -97,10 +102,18 @@ func (c *ControlPoller) handle(ctx context.Context, msg *model.EdgeControlMessag
 			log.Printf("edge-agent: collect action missing local_path")
 			return
 		}
-		// Reject path traversal attempts from potentially compromised Hub messages.
-		if strings.Contains(filepath.Clean(localPath), "..") {
-			log.Printf("edge-agent: collect rejected suspicious path: %s", localPath)
-			return
+		// Reject paths that escape the configured workdir (path traversal guard).
+		if c.workdir != "" {
+			abs, err := filepath.Abs(localPath)
+			if err != nil {
+				log.Printf("edge-agent: collect rejected unresolvable path: %s: %v", localPath, err)
+				return
+			}
+			base := filepath.Clean(c.workdir) + string(filepath.Separator)
+			if !strings.HasPrefix(abs+string(filepath.Separator), base) {
+				log.Printf("edge-agent: collect rejected path outside workdir: %s", localPath)
+				return
+			}
 		}
 		if c.driveURL == "" {
 			log.Printf("edge-agent: collect action received but DriveURL not configured; skipping upload (local_path=%s)", localPath)
