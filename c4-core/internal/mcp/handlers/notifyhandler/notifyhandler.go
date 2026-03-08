@@ -1,21 +1,21 @@
 package notifyhandler
 
 import (
-	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/changmin/c4-core/internal/mcp"
+	"github.com/changmin/c4-core/internal/notify"
 )
 
 const configFile = "notifications.json"
 
 // notifyConfig holds persisted notification channel configuration.
+// Stored in .c4/notifications.json (0o640, .c4/ is gitignored).
 type notifyConfig struct {
 	Channel    string `json:"channel"`
 	WebhookURL string `json:"webhook_url"`
@@ -46,10 +46,10 @@ func saveConfig(projectDir string, cfg *notifyConfig) error {
 		return err
 	}
 	dir := filepath.Join(projectDir, ".c4")
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0o750); err != nil {
 		return err
 	}
-	return os.WriteFile(configPath(projectDir), data, 0600)
+	return os.WriteFile(configPath(projectDir), data, 0o640)
 }
 
 func maskURL(u string) string {
@@ -73,7 +73,8 @@ func Register(reg *mcp.Registry, projectDir string) {
 			"properties": map[string]any{
 				"channel": map[string]any{
 					"type":        "string",
-					"description": "Channel name (e.g. dooray, slack, discord, teams)",
+					"description": "Channel name: dooray|slack|discord|teams",
+					"enum":        []string{"dooray", "slack", "discord", "teams"},
 				},
 				"webhook_url": map[string]any{
 					"type":        "string",
@@ -95,6 +96,10 @@ func Register(reg *mcp.Registry, projectDir string) {
 		}
 		if p.WebhookURL == "" {
 			return nil, fmt.Errorf("webhook_url is required")
+		}
+		// Validate channel is supported by notify package.
+		if _, err := notify.NewSender(p.Channel, p.WebhookURL); err != nil {
+			return nil, fmt.Errorf("unsupported channel: %w", err)
 		}
 		cfg := &notifyConfig{Channel: p.Channel, WebhookURL: p.WebhookURL}
 		if err := saveConfig(projectDir, cfg); err != nil {
@@ -162,24 +167,19 @@ func Register(reg *mcp.Registry, projectDir string) {
 			return nil, fmt.Errorf("no notification channel configured; use c4_notification_set first")
 		}
 
-		payload := map[string]any{"text": p.Message}
-		if p.Title != "" {
-			payload["title"] = p.Title
-		}
-		body, err := json.Marshal(payload)
+		sender, err := notify.NewSender(cfg.Channel, cfg.WebhookURL)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("creating sender: %w", err)
 		}
 
-		client := &http.Client{Timeout: 10 * time.Second}
-		resp, err := client.Post(cfg.WebhookURL, "application/json", bytes.NewReader(body))
-		if err != nil {
-			return nil, fmt.Errorf("webhook POST failed: %w", err)
+		text := p.Message
+		if p.Title != "" {
+			text = p.Title + "\n" + p.Message
 		}
-		defer resp.Body.Close()
-		if resp.StatusCode >= 300 {
-			return nil, fmt.Errorf("webhook returned status %d", resp.StatusCode)
+
+		if err := sender.Send(context.Background(), text); err != nil {
+			return nil, fmt.Errorf("webhook send failed: %w", err)
 		}
-		return map[string]any{"sent": true, "channel": cfg.Channel, "status": resp.StatusCode}, nil
+		return map[string]any{"sent": true, "channel": cfg.Channel, "status": 200}, nil
 	})
 }
