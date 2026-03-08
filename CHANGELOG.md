@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.76.0] - 2026-03-08
+
+### ✨ Features
+- **serve**: HypothesisSuggester component — LLM gateway injection for experiment analysis
+- **cli**: `cq suggest list/approve` — human approval gate for TypeHypothesis
+- **knowledge**: `c4_research_suggest` MCP tool — on-demand LLM analysis of experiments
+- **knowledge/hypothesis**: shared analyzer package for LLM-based experiment analysis
+
+### 🐛 Bug Fixes
+- **suggest-poller**: restore T-1196-0 canonical knowledgeSuggestPoller impl + fix LLMCaller interface alignment
+- **research-suggest**: rename LLMCaller type to avoid collision, rune-safe truncation, actual experiment count
+
+### 🔧 Chores
+- **archtest**: add Level 2 suggest files to allowlist
+- **agents**: update Go test count for Level 2 research loop additions
+
+---
+
 ## [v0.75.0] - 2026-03-08
 
 ### ✨ Features
