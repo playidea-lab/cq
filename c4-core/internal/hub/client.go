@@ -501,3 +501,30 @@ func (c *Client) GetJobEstimate(jobID string) (*JobEstimateResponse, error) {
 	}
 	return &resp, nil
 }
+
+// =========================================================================
+// HubClient interface — used by LoopOrchestrator (injected dependency)
+// =========================================================================
+
+// HubJobRequest is the minimal job submission payload for the LoopOrchestrator.
+type HubJobRequest struct {
+	HypothesisID     string
+	ExperimentSpecID string
+	Command          string
+	ProjectID        string
+}
+
+// HubJobStatus is the minimal job status for the LoopOrchestrator.
+type HubJobStatus struct {
+	JobID       string
+	Status      string // "pending"|"running"|"completed"|"failed"|"cancelled"
+	CompletedAt *time.Time
+}
+
+// HubClient is the interface that LoopOrchestrator uses to interact with the Hub.
+// The concrete *Client implements this interface; tests use MockHubClient.
+type HubClient interface {
+	SubmitJob(ctx context.Context, req HubJobRequest) (string, error)
+	CancelJob(ctx context.Context, jobID string) error
+	GetJobStatus(ctx context.Context, jobID string) (*HubJobStatus, error)
+}

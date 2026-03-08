@@ -8,6 +8,85 @@ import (
 	"testing"
 )
 
+// =========================================================================
+// MockHubClient — reusable in LoopOrchestrator tests
+// =========================================================================
+
+// MockHubClient implements HubClient for testing.
+type MockHubClient struct {
+	SubmitJobFunc    func(ctx context.Context, req HubJobRequest) (string, error)
+	CancelJobFunc    func(ctx context.Context, jobID string) error
+	GetJobStatusFunc func(ctx context.Context, jobID string) (*HubJobStatus, error)
+}
+
+func (m *MockHubClient) SubmitJob(ctx context.Context, req HubJobRequest) (string, error) {
+	return m.SubmitJobFunc(ctx, req)
+}
+
+func (m *MockHubClient) CancelJob(ctx context.Context, jobID string) error {
+	return m.CancelJobFunc(ctx, jobID)
+}
+
+func (m *MockHubClient) GetJobStatus(ctx context.Context, jobID string) (*HubJobStatus, error) {
+	return m.GetJobStatusFunc(ctx, jobID)
+}
+
+// compile-time assertion: MockHubClient satisfies HubClient.
+var _ HubClient = (*MockHubClient)(nil)
+
+// =========================================================================
+// HubClient interface compile tests
+// =========================================================================
+
+func TestMockHubClient_SubmitJob(t *testing.T) {
+	m := &MockHubClient{
+		SubmitJobFunc: func(ctx context.Context, req HubJobRequest) (string, error) {
+			return "job-mock-1", nil
+		},
+	}
+	id, err := m.SubmitJob(context.Background(), HubJobRequest{Command: "echo hi"})
+	if err != nil {
+		t.Fatalf("SubmitJob: %v", err)
+	}
+	if id != "job-mock-1" {
+		t.Errorf("id = %q, want job-mock-1", id)
+	}
+}
+
+func TestMockHubClient_CancelJob(t *testing.T) {
+	called := false
+	m := &MockHubClient{
+		CancelJobFunc: func(ctx context.Context, jobID string) error {
+			called = true
+			return nil
+		},
+	}
+	if err := m.CancelJob(context.Background(), "job-x"); err != nil {
+		t.Fatalf("CancelJob: %v", err)
+	}
+	if !called {
+		t.Error("expected CancelJobFunc to be called")
+	}
+}
+
+func TestMockHubClient_GetJobStatus(t *testing.T) {
+	m := &MockHubClient{
+		GetJobStatusFunc: func(ctx context.Context, jobID string) (*HubJobStatus, error) {
+			return &HubJobStatus{JobID: jobID, Status: "completed"}, nil
+		},
+	}
+	s, err := m.GetJobStatus(context.Background(), "job-y")
+	if err != nil {
+		t.Fatalf("GetJobStatus: %v", err)
+	}
+	if s.Status != "completed" {
+		t.Errorf("status = %q, want completed", s.Status)
+	}
+	if s.JobID != "job-y" {
+		t.Errorf("jobID = %q, want job-y", s.JobID)
+	}
+}
+
 // newTestServer creates a hub mock server and returns a Client connected to it.
 func newTestServer(t *testing.T, handler http.Handler) (*Client, *httptest.Server) {
 	t.Helper()
