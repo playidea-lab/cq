@@ -1,5 +1,17 @@
 # Changelog
 
+## [v0.80.1] - 2026-03-08
+
+### 🐛 Bug Fixes
+- **heartbeat**: `WorkerHeartbeat` updated_at RFC3339 통일 (`datetime('now')` → Go-side `time.Now().UTC()`)
+- **heartbeat**: `errors.New` 사용으로 archtest ratchet 준수 (`fmt.Errorf` without `%w` 제거)
+- **heartbeat**: `HeartbeatIntervalSec` omitempty 제거 — 계약 필드 항상 JSON 직렬화
+
+### 🧪 Tests
+- **heartbeat**: `TestWorkerHeartbeat` T-002-0 시드 추가로 nil-모호성 해소 (stale 보호 vs 태스크 없음 구분)
+
+---
+
 ## [v0.80.0] - 2026-03-08
 
 ### ✨ Features
