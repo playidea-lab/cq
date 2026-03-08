@@ -6,155 +6,120 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/changmin/c4-core/internal/mcp"
 	"github.com/changmin/c4-core/internal/notify"
-	"github.com/changmin/c4-core/internal/secrets"
 )
 
-func newTestStore(t *testing.T) (*secrets.Store, string) {
+// soulDirForTest creates a temp project dir and returns the soul dir path.
+func soulDirForTest(t *testing.T) (projectDir, soulDir string) {
 	t.Helper()
-	dir := t.TempDir()
-	store, err := secrets.NewWithPaths(
-		filepath.Join(dir, "secrets.db"),
-		filepath.Join(dir, "master.key"),
-	)
-	if err != nil {
-		t.Fatalf("secrets.NewWithPaths: %v", err)
-	}
-	t.Cleanup(func() { _ = store.Close() })
-	return store, dir
+	projectDir = t.TempDir()
+	soulDir = filepath.Join(projectDir, ".c4", "souls", "default")
+	return
 }
 
-func callHandler(t *testing.T, opts *Opts, args map[string]any) (map[string]any, error) {
-	t.Helper()
-	reg := mcp.NewRegistry()
-	Register(reg, opts)
+// --- c4_notification_get tests ---
 
-	raw, err := json.Marshal(args)
-	if err != nil {
-		t.Fatalf("marshal args: %v", err)
-	}
-
-	result, err := reg.Call("c4_notification_set", raw)
-	if err != nil {
-		return nil, err
-	}
-	m, _ := result.(map[string]any)
-	return m, nil
-}
-
-func TestNotificationSet_Valid(t *testing.T) {
-	store, dir := newTestStore(t)
-	opts := &Opts{ProjectDir: dir, SecretStore: store}
-
-	result, err := callHandler(t, opts, map[string]any{
-		"channel":     "dooray",
-		"webhook_url": "https://example.com/hook",
-		"events":      []string{"plan.created", "finish.complete"},
-	})
+func TestNotificationGet_NotConfigured(t *testing.T) {
+	_, soulDir := soulDirForTest(t)
+	// No notifications.json exists → configured: false
+	result, err := handleGet(soulDir)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if result["success"] != true {
-		t.Errorf("expected success=true, got %v", result["success"])
+	m := result.(map[string]any)
+	if m["configured"] != false {
+		t.Errorf("want configured=false, got %v", m["configured"])
 	}
-	if result["channel"] != "dooray" {
-		t.Errorf("expected channel=dooray, got %v", result["channel"])
-	}
-
-	// Verify soul JSON was saved.
-	user := currentUser()
-	soulDir := filepath.Join(dir, ".c4", "souls", user)
-	profile, err := notify.LoadProfile(soulDir)
-	if err != nil {
-		t.Fatalf("LoadProfile: %v", err)
-	}
-	if profile == nil {
-		t.Fatal("profile is nil after save")
-	}
-	if profile.Channel != "dooray" {
-		t.Errorf("profile.Channel=%q, want dooray", profile.Channel)
-	}
-	if profile.WebhookSecretKey != "notification.dooray.webhook" {
-		t.Errorf("profile.WebhookSecretKey=%q", profile.WebhookSecretKey)
-	}
-
-	// Verify secret was saved.
-	val, err := store.Get("notification.dooray.webhook")
-	if err != nil {
-		t.Fatalf("secret.Get: %v", err)
-	}
-	if val != "https://example.com/hook" {
-		t.Errorf("secret value=%q, want https://example.com/hook", val)
+	if len(m) != 1 {
+		t.Errorf("want only 'configured' key when not configured, got %v", m)
 	}
 }
 
-func TestNotificationSet_InvalidChannel(t *testing.T) {
-	store, dir := newTestStore(t)
-	opts := &Opts{ProjectDir: dir, SecretStore: store}
+func TestNotificationGet_Configured(t *testing.T) {
+	_, soulDir := soulDirForTest(t)
 
-	_, err := callHandler(t, opts, map[string]any{
-		"channel":     "telegram",
-		"webhook_url": "https://example.com/hook",
-	})
-	if err == nil {
-		t.Fatal("expected error for invalid channel, got nil")
+	// Save a profile first
+	p := &notify.NotificationProfile{
+		Channel:          "dooray",
+		Events:           []string{"plan.created", "finish.complete"},
+		WebhookSecretKey: "notification.dooray.webhook",
 	}
-}
-
-func TestNotificationSet_EmptyWebhook(t *testing.T) {
-	store, dir := newTestStore(t)
-	opts := &Opts{ProjectDir: dir, SecretStore: store}
-
-	_, err := callHandler(t, opts, map[string]any{
-		"channel":     "slack",
-		"webhook_url": "",
-	})
-	if err == nil {
-		t.Fatal("expected error for empty webhook_url, got nil")
+	if err := p.Save(soulDir); err != nil {
+		t.Fatalf("save profile: %v", err)
 	}
-}
 
-func TestNotificationSet_DefaultEvents(t *testing.T) {
-	store, dir := newTestStore(t)
-	opts := &Opts{ProjectDir: dir, SecretStore: store}
-
-	result, err := callHandler(t, opts, map[string]any{
-		"channel":     "slack",
-		"webhook_url": "https://example.com/hook",
-		// events omitted — should default to 3 standard events
-	})
+	result, err := handleGet(soulDir)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+	m := result.(map[string]any)
 
-	events, ok := result["events"].([]string)
+	if m["configured"] != true {
+		t.Errorf("want configured=true, got %v", m["configured"])
+	}
+	if m["channel"] != "dooray" {
+		t.Errorf("want channel=dooray, got %v", m["channel"])
+	}
+	if m["webhook_secret_key"] != "notification.dooray.webhook" {
+		t.Errorf("want webhook_secret_key set, got %v", m["webhook_secret_key"])
+	}
+	// Webhook URL must NOT be returned (security)
+	if _, hasURL := m["webhook_url"]; hasURL {
+		t.Error("webhook_url must not be present in response")
+	}
+	events, ok := m["events"].([]string)
 	if !ok {
-		// JSON round-trip may produce []any
-		raw, _ := result["events"].([]any)
-		if len(raw) != 3 {
-			t.Errorf("expected 3 default events, got %v", result["events"])
-		}
-		return
+		t.Fatalf("events should be []string, got %T", m["events"])
 	}
-	if len(events) != 3 {
-		t.Errorf("expected 3 default events, got %v", events)
+	if len(events) != 2 {
+		t.Errorf("want 2 events, got %d", len(events))
 	}
+}
 
-	// Verify soul JSON reflects defaults.
-	user := currentUser()
-	soulDir := filepath.Join(dir, ".c4", "souls", user)
-	profile, err := notify.LoadProfile(soulDir)
+// --- c4_notification_set tests ---
+
+func TestNotificationSet_SavesProfile(t *testing.T) {
+	_, soulDir := soulDirForTest(t)
+
+	args, _ := json.Marshal(map[string]any{
+		"channel":            "slack",
+		"events":             []string{"checkpoint.ready"},
+		"webhook_secret_key": "notification.slack.webhook",
+	})
+	result, err := handleSet(soulDir, args)
 	if err != nil {
-		t.Fatalf("LoadProfile: %v", err)
+		t.Fatalf("unexpected error: %v", err)
 	}
-	if profile == nil || len(profile.Events) != 3 {
-		t.Errorf("expected 3 events in profile, got %v", profile)
+	m := result.(map[string]any)
+	if m["ok"] != true {
+		t.Errorf("want ok=true, got %v", m["ok"])
 	}
 
-	// Check the notifications.json file exists.
-	jsonPath := filepath.Join(soulDir, "notifications.json")
-	if _, err := os.Stat(jsonPath); err != nil {
-		t.Errorf("notifications.json not found: %v", err)
+	// Verify the file was written
+	profilePath := filepath.Join(soulDir, "notifications.json")
+	if _, err := os.Stat(profilePath); err != nil {
+		t.Errorf("notifications.json not written: %v", err)
+	}
+}
+
+func TestNotificationSet_MissingChannel(t *testing.T) {
+	_, soulDir := soulDirForTest(t)
+	args, _ := json.Marshal(map[string]any{
+		"webhook_secret_key": "notification.slack.webhook",
+	})
+	_, err := handleSet(soulDir, args)
+	if err == nil {
+		t.Error("expected error for missing channel")
+	}
+}
+
+func TestNotificationSet_MissingWebhookSecretKey(t *testing.T) {
+	_, soulDir := soulDirForTest(t)
+	args, _ := json.Marshal(map[string]any{
+		"channel": "slack",
+	})
+	_, err := handleSet(soulDir, args)
+	if err == nil {
+		t.Error("expected error for missing webhook_secret_key")
 	}
 }

@@ -1,123 +1,109 @@
-// Package notifyhandler registers the c4_notification_set MCP tool.
-// It saves per-user notification preferences to the soul directory and
-// stores the webhook URL in the encrypted secret store.
+// Package notifyhandler registers c4_notification_set and c4_notification_get MCP tools.
 package notifyhandler
 
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 	"path/filepath"
 
 	"github.com/changmin/c4-core/internal/mcp"
 	"github.com/changmin/c4-core/internal/notify"
-	"github.com/changmin/c4-core/internal/secrets"
 )
 
-var validChannels = map[string]bool{
-	"dooray": true,
-	"slack":  true,
-	"discord": true,
-	"teams":  true,
-}
-
-var defaultEvents = []string{"plan.created", "checkpoint.ready", "finish.complete"}
-
-// Opts holds dependencies for the notification handler.
-type Opts struct {
-	ProjectDir  string
-	SecretStore *secrets.Store // must not be nil
-}
-
-// Register registers c4_notification_set on the given registry.
-func Register(reg *mcp.Registry, opts *Opts) {
-	if opts == nil || opts.SecretStore == nil {
-		return
+// Register registers c4_notification_set and c4_notification_get.
+// projectDir is the root of the project (.c4 sibling).
+// userID identifies the soul directory; if empty, "default" is used.
+func Register(reg *mcp.Registry, projectDir, userID string) {
+	if userID == "" {
+		userID = "default"
 	}
+	soulDir := filepath.Join(projectDir, ".c4", "souls", userID)
 
+	registerSet(reg, soulDir)
+	registerGet(reg, soulDir)
+}
+
+func registerSet(reg *mcp.Registry, soulDir string) {
 	reg.Register(mcp.ToolSchema{
 		Name:        "c4_notification_set",
-		Description: "Save per-user notification channel configuration. The webhook URL is encrypted in the secret store; preferences are written to the soul directory.",
+		Description: "Set per-user notification preferences (channel, events, webhook secret key). Stored in soul JSON.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
 				"channel": map[string]any{
 					"type":        "string",
+					"description": "Target platform: dooray|slack|discord|teams",
 					"enum":        []string{"dooray", "slack", "discord", "teams"},
-					"description": "알람 채널 종류",
-				},
-				"webhook_url": map[string]any{
-					"type":        "string",
-					"description": "Webhook URL (암호화 저장됨)",
 				},
 				"events": map[string]any{
-					"type": "array",
-					"items": map[string]any{
-						"type": "string",
-						"enum": []string{"plan.created", "checkpoint.ready", "finish.complete", "run.task_started"},
-					},
-					"description": "구독할 이벤트 목록. 기본값: [plan.created, checkpoint.ready, finish.complete]",
+					"type":        "array",
+					"description": "Workflow events that trigger a notification",
+					"items":       map[string]any{"type": "string"},
+				},
+				"webhook_secret_key": map[string]any{
+					"type":        "string",
+					"description": "Secret store key whose value is the webhook URL (e.g. notification.dooray.webhook)",
 				},
 			},
-			"required": []string{"channel", "webhook_url"},
+			"required": []string{"channel", "webhook_secret_key"},
 		},
-	}, func(rawArgs json.RawMessage) (any, error) {
-		var args struct {
-			Channel    string   `json:"channel"`
-			WebhookURL string   `json:"webhook_url"`
-			Events     []string `json:"events"`
-		}
-		if err := json.Unmarshal(rawArgs, &args); err != nil {
-			return nil, fmt.Errorf("invalid args: %w", err)
-		}
-
-		if !validChannels[args.Channel] {
-			return nil, fmt.Errorf("invalid channel %q: must be one of dooray|slack|discord|teams", args.Channel)
-		}
-		if args.WebhookURL == "" {
-			return nil, fmt.Errorf("webhook_url must not be empty")
-		}
-
-		events := args.Events
-		if len(events) == 0 {
-			events = defaultEvents
-		}
-
-		secretKey := "notification." + args.Channel + ".webhook"
-
-		// Save webhook URL to secret store (encrypted).
-		if err := opts.SecretStore.Set(secretKey, args.WebhookURL); err != nil {
-			return nil, fmt.Errorf("save webhook secret: %w", err)
-		}
-
-		// Determine soul directory for current user.
-		user := currentUser()
-		soulDir := filepath.Join(opts.ProjectDir, ".c4", "souls", user)
-
-		// Save notification profile to soul directory.
-		profile := &notify.NotificationProfile{
-			Channel:          args.Channel,
-			Events:           events,
-			WebhookSecretKey: secretKey,
-		}
-		if err := profile.Save(soulDir); err != nil {
-			return nil, fmt.Errorf("save notification profile: %w", err)
-		}
-
-		return map[string]any{
-			"success": true,
-			"channel": args.Channel,
-			"events":  events,
-		}, nil
+	}, func(args json.RawMessage) (any, error) {
+		return handleSet(soulDir, args)
 	})
 }
 
-func currentUser() string {
-	if u := os.Getenv("USER"); u != "" {
-		return u
+func registerGet(reg *mcp.Registry, soulDir string) {
+	reg.Register(mcp.ToolSchema{
+		Name:        "c4_notification_get",
+		Description: "현재 유저의 알람 설정 조회. soul JSON에서 preference를 읽어 반환 (webhook URL 제외).",
+		InputSchema: map[string]any{
+			"type":       "object",
+			"properties": map[string]any{},
+		},
+	}, func(args json.RawMessage) (any, error) {
+		return handleGet(soulDir)
+	})
+}
+
+func handleSet(soulDir string, rawArgs json.RawMessage) (any, error) {
+	var params struct {
+		Channel          string   `json:"channel"`
+		Events           []string `json:"events"`
+		WebhookSecretKey string   `json:"webhook_secret_key"`
 	}
-	if u := os.Getenv("USERNAME"); u != "" {
-		return u
+	if err := json.Unmarshal(rawArgs, &params); err != nil {
+		return nil, fmt.Errorf("notification_set: parse args: %w", err)
 	}
-	return "default"
+	if params.Channel == "" {
+		return nil, fmt.Errorf("notification_set: channel is required")
+	}
+	if params.WebhookSecretKey == "" {
+		return nil, fmt.Errorf("notification_set: webhook_secret_key is required")
+	}
+
+	p := &notify.NotificationProfile{
+		Channel:          params.Channel,
+		Events:           params.Events,
+		WebhookSecretKey: params.WebhookSecretKey,
+	}
+	if err := p.Save(soulDir); err != nil {
+		return nil, fmt.Errorf("notification_set: save: %w", err)
+	}
+	return map[string]any{"ok": true}, nil
+}
+
+func handleGet(soulDir string) (any, error) {
+	p, err := notify.LoadProfile(soulDir)
+	if err != nil {
+		return nil, fmt.Errorf("notification_get: load: %w", err)
+	}
+	if p == nil {
+		return map[string]any{"configured": false}, nil
+	}
+	return map[string]any{
+		"configured":         true,
+		"channel":            p.Channel,
+		"events":             p.Events,
+		"webhook_secret_key": p.WebhookSecretKey,
+	}, nil
 }
