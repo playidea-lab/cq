@@ -811,6 +811,38 @@ func TestNotifyDoorayJobComplete_NoDoorayChannel(t *testing.T) {
 	}
 }
 
+func TestBuildDooraySystemPrompt_NoHardcodedPaths(t *testing.T) {
+	prompt := buildDooraySystemPrompt("", "", "")
+	if strings.Contains(prompt, "hmr_postproc") {
+		t.Error("prompt should not contain hardcoded hmr_postproc path")
+	}
+	if strings.Contains(prompt, "exp401") {
+		t.Error("prompt should not contain hardcoded experiment IDs")
+	}
+}
+
+func TestBuildDooraySystemPrompt_WithKnowledge(t *testing.T) {
+	prompt := buildDooraySystemPrompt("proj1", "some knowledge context", "")
+	if !strings.Contains(prompt, "some knowledge context") {
+		t.Error("prompt should include knowledge context")
+	}
+}
+
+func TestBuildDooraySystemPrompt_WithCaps(t *testing.T) {
+	prompt := buildDooraySystemPrompt("", "", "gpu.train: GPU training")
+	if !strings.Contains(prompt, "gpu.train") {
+		t.Error("prompt should include capability context")
+	}
+}
+
+func TestBuildDooraySystemPrompt_NoProjectID(t *testing.T) {
+	// Should not panic
+	prompt := buildDooraySystemPrompt("", "", "")
+	if prompt == "" {
+		t.Error("prompt should not be empty")
+	}
+}
+
 func TestDooray_ChannelRouting(t *testing.T) {
 	dir := t.TempDir()
 	st, err := store.New(filepath.Join(dir, "test.db"))
