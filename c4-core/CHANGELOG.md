@@ -1,5 +1,28 @@
 # Changelog
 
+## [v0.79.0] - 2026-03-08
+
+### ✨ Features
+- **c5/llmclient**: Anthropic Claude provider 추가 — `chatProvider` 인터페이스 + `anthropicProvider` 구현
+  - `NewAnthropic()`: `x-api-key` 인증, `/v1/messages` 엔드포인트, `anthropic-version: 2023-06-01` 헤더
+  - 기존 OpenAI-compat `New()` 완전 하위 호환
+- **c5/config**: `llm.provider` 필드 추가 (`openai`|`anthropic`), anthropic은 `base_url` 불필요
+  - API key 우선순위: `C5_ANTHROPIC_API_KEY` > `C5_LLM_API_KEY` > config.yaml
+- **c5/dooray**: `/cq` Dooray 봇을 Claude 기반 대화형 어시스턴트로 전환
+  - 하드코딩된 프로젝트 경로(hmr_postproc) 제거, 범용 팀 어시스턴트 역할
+  - 대화 히스토리 활용 명시, 액션 라우팅 조건 명확화
+
+설정 방법:
+```yaml
+# C5 config.yaml
+llm:
+  provider: anthropic
+  model: claude-haiku-4-5-20251001
+# API key: C5_ANTHROPIC_API_KEY 환경변수 또는 config.yaml api_key
+```
+
+---
+
 ## [v0.77.1] - 2026-03-08
 
 ### 🐛 Bug Fixes
