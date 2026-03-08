@@ -5,6 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.78.0] - 2026-03-08
+
+### ✨ Features
+- **research**: `TypeDebate` knowledge type — `DocumentType="debate"`, prefix "deb", frontmatter `hypothesis_id`/`trigger_reason`/`verdict`
+- **research**: `c4_research_spec` MCP tool — ExperimentSpec 생성 (hypothesis → DoD: success_condition, null_condition, escalation_trigger, controlled_variables)
+- **research**: `c4_research_checkpoint` MCP tool — LLM-Optimizer + LLM-Skeptic 2-agent DoD 검토, conservative verdict (either NEGATIVE → revision_requested)
+- **research**: `c4_research_debate` MCP tool — Optimizer→Skeptic→Synthesis 3-phase debate flow, TypeDebate 지식 문서 자동 기록, next_hypothesis_draft 생성
+- **serve**: `AnomalyMonitor` component — TypeExperiment frontmatter `expected_metrics_range` JSON 폴링, 24h dedup watermark, 이상 감지 시 TypeDebate 에스컬레이션 자동 생성
+- **cli**: `cq research spec/checkpoint/debate` 서브커맨드 — Level 3 연구 루프 CLI 진입점
+
+### 🐛 Bug Fixes
+- **research**: debate verdict 오프셋 버그 수정 — `strings.ToUpper` 이후 byte 오프셋 불일치 → 원본 문자열에서 직접 탐색
+- **research**: synth verdict JSON 우선 파싱 → skeptic 텍스트 fallback
+- **research**: optimizer NEGATIVE 포함 시 conservative verdict 적용
+- **serve**: AnomalyMonitor `Stop()` nil guard — `Start()` 전 `Stop()` 호출 시 deadlock 방지
+- **serve**: path traversal 방어 강화 — `"/"` + `".."` 동시 검사
+- **serve**: TypeDebate 메타 키 통일 — `hypothesis_id` (research_debate.go 계약 준수)
+- **serve**: lastEscalation 타임스탬프 업데이트를 Store.Create 성공 후로 이동
+
+### 🔧 Chores
+- **archtest**: research Level 3 파일 fmt.Errorf allowlist 추가 (`research_checkpoint.go:2`, `research_debate.go:2`, `research_spec.go:3`, `research_level3.go:1`)
+- **.gitignore**: `c5/c5` 바이너리 추가
+
+### 📚 Documentation
+- **agents**: Go 테스트 수 업데이트 (~2,021, Level 3 research 21 tests 추가)
+
+---
+
 ## [v0.77.1] - 2026-03-08
 
 ### ✨ Features
