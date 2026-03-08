@@ -120,8 +120,8 @@ type MetricsResponse struct {
 
 // EdgeMetricEntry is a single edge metrics data point.
 type EdgeMetricEntry struct {
-	Timestamp int64          `json:"timestamp"` // Unix seconds
-	Values    map[string]any `json:"values"`
+	Timestamp int64              `json:"timestamp"` // Unix seconds
+	Values    map[string]float64 `json:"values"`
 }
 
 // EdgeMetricsResponse is the response from GET /v1/edges/{edge_id}/metrics.

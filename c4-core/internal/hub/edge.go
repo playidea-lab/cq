@@ -41,11 +41,13 @@ type DeployRule struct {
 
 // DeployRuleCreateRequest is the payload for POST /v1/deploy/rules.
 type DeployRuleCreateRequest struct {
-	Name            string `json:"name,omitempty"`
-	Trigger         string `json:"trigger"`
-	EdgeFilter      string `json:"edge_filter"`
-	ArtifactPattern string `json:"artifact_pattern"`
-	PostCommand     string `json:"post_command,omitempty"`
+	Name               string `json:"name,omitempty"`
+	Trigger            string `json:"trigger"`
+	EdgeFilter         string `json:"edge_filter"`
+	ArtifactPattern    string `json:"artifact_pattern"`
+	PostCommand        string `json:"post_command,omitempty"`
+	HealthCheck        string `json:"health_check,omitempty"`
+	HealthCheckTimeout int    `json:"health_check_timeout,omitempty"`
 }
 
 // DeployRuleCreateResponse is the response from POST /v1/deploy/rules.

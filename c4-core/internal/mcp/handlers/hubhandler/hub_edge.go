@@ -54,7 +54,9 @@ func registerHubEdgeHandlers(reg *mcp.Registry, hubClient *hub.Client) {
 				"trigger":          map[string]any{"type": "string", "description": "Trigger condition (e.g. 'job_tag:production', 'dag_complete:pipeline-*')"},
 				"edge_filter":      map[string]any{"type": "string", "description": "Edge filter (e.g. 'tag:onnx', 'name:jetson-*')"},
 				"artifact_pattern": map[string]any{"type": "string", "description": "Artifact glob pattern (e.g. 'outputs/*.onnx')"},
-				"post_command":     map[string]any{"type": "string", "description": "Command to run on edge after deployment (e.g. 'systemctl restart inference')"},
+				"post_command":            map[string]any{"type": "string", "description": "Command to run on edge after deployment (e.g. 'systemctl restart inference')"},
+				"health_check":            map[string]any{"type": "string", "description": "Health check command to run on edge after deploy; deploy fails if exit code != 0"},
+				"health_check_timeout":    map[string]any{"type": "integer", "description": "Health check timeout in seconds (default: 30)"},
 			},
 			"required": []string{"trigger", "edge_filter", "artifact_pattern"},
 		},
@@ -185,11 +187,13 @@ func handleHubEdgeList(client *hub.Client) (any, error) {
 
 func handleHubDeployRule(client *hub.Client, raw json.RawMessage) (any, error) {
 	var params struct {
-		Name            string `json:"name"`
-		Trigger         string `json:"trigger"`
-		EdgeFilter      string `json:"edge_filter"`
-		ArtifactPattern string `json:"artifact_pattern"`
-		PostCommand     string `json:"post_command"`
+		Name               string `json:"name"`
+		Trigger            string `json:"trigger"`
+		EdgeFilter         string `json:"edge_filter"`
+		ArtifactPattern    string `json:"artifact_pattern"`
+		PostCommand        string `json:"post_command"`
+		HealthCheck        string `json:"health_check"`
+		HealthCheckTimeout int    `json:"health_check_timeout"`
 	}
 	if err := json.Unmarshal(raw, &params); err != nil {
 		return nil, fmt.Errorf("parsing params: %w", err)
@@ -199,11 +203,13 @@ func handleHubDeployRule(client *hub.Client, raw json.RawMessage) (any, error) {
 	}
 
 	resp, err := client.CreateDeployRule(&hub.DeployRuleCreateRequest{
-		Name:            params.Name,
-		Trigger:         params.Trigger,
-		EdgeFilter:      params.EdgeFilter,
-		ArtifactPattern: params.ArtifactPattern,
-		PostCommand:     params.PostCommand,
+		Name:               params.Name,
+		Trigger:            params.Trigger,
+		EdgeFilter:         params.EdgeFilter,
+		ArtifactPattern:    params.ArtifactPattern,
+		PostCommand:        params.PostCommand,
+		HealthCheck:        params.HealthCheck,
+		HealthCheckTimeout: params.HealthCheckTimeout,
 	})
 	if err != nil {
 		return nil, err

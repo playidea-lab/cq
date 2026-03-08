@@ -28,18 +28,27 @@ func (r *RollbackManager) BeforeDeploy(src string) error {
 	return nil
 }
 
-// Rollback restores {dst}.prev → {dst} using os.Rename (atomic on same filesystem).
+// Rollback restores {dst}.prev → {dst}.
+// Uses a temp-rename strategy to avoid leaving the edge with no artifacts if Rename fails:
+// 1. Rename dst → dst.failed (atomic)
+// 2. Rename prev → dst (atomic, prev still intact if this fails)
+// 3. RemoveAll dst.failed
 func (r *RollbackManager) Rollback(dst string) error {
 	prev := dst + ".prev"
 	if _, err := os.Stat(prev); err != nil {
 		return fmt.Errorf("no .prev to rollback from: %w", err)
 	}
-	if err := os.RemoveAll(dst); err != nil {
-		return fmt.Errorf("remove current deploy dir: %w", err)
+	failed := dst + ".failed"
+	os.RemoveAll(failed) // clean up any prior failed attempt
+	if err := os.Rename(dst, failed); err != nil {
+		return fmt.Errorf("rename current deploy dir to .failed: %w", err)
 	}
 	if err := os.Rename(prev, dst); err != nil {
+		// prev is still intact; restore from failed if possible
+		os.Rename(failed, dst) //nolint:errcheck
 		return fmt.Errorf("rename .prev → dst: %w", err)
 	}
+	os.RemoveAll(failed) //nolint:errcheck
 	return nil
 }
 

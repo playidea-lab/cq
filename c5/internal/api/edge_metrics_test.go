@@ -295,7 +295,7 @@ func TestThresholdExceededEvent(t *testing.T) {
 	edgeID := registerTestEdgeWithMeta(t, srv, "test-edge-exceeded", map[string]string{
 		"threshold_accuracy": "0.8",
 	})
-	thresholdCooldownMu.Delete(edgeID + "\x00accuracy")
+	resetThresholdCooldown(edgeID + "\x00accuracy")
 
 	w := doRequest(t, srv, "POST", "/v1/edges/"+edgeID+"/metrics", map[string]any{
 		"values": map[string]float64{"accuracy": 0.75},
@@ -330,7 +330,7 @@ func TestThresholdCooldown(t *testing.T) {
 	edgeID := registerTestEdgeWithMeta(t, srv, "test-edge-cooldown", map[string]string{
 		"threshold_accuracy": "0.8",
 	})
-	thresholdCooldownMu.Delete(edgeID + "\x00accuracy")
+	resetThresholdCooldown(edgeID + "\x00accuracy")
 
 	// First breach: accuracy=0.6 < 0.8.
 	doRequest(t, srv, "POST", "/v1/edges/"+edgeID+"/metrics", map[string]any{
@@ -380,7 +380,7 @@ func TestThresholdNoEventBusURL(t *testing.T) {
 	edgeID := registerTestEdgeWithMeta(t, srv, "test-edge-no-url", map[string]string{
 		"threshold_accuracy": "0.9",
 	})
-	thresholdCooldownMu.Delete(edgeID + "\x00accuracy")
+	resetThresholdCooldown(edgeID + "\x00accuracy")
 
 	w := doRequest(t, srv, "POST", "/v1/edges/"+edgeID+"/metrics", map[string]any{
 		"values": map[string]float64{"accuracy": 0.5},

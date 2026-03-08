@@ -9,6 +9,7 @@ import (
 	"log"
 	"mime/multipart"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -96,6 +97,11 @@ func (c *ControlPoller) handle(ctx context.Context, msg *model.EdgeControlMessag
 			log.Printf("edge-agent: collect action missing local_path")
 			return
 		}
+		// Reject path traversal attempts from potentially compromised Hub messages.
+		if strings.Contains(filepath.Clean(localPath), "..") {
+			log.Printf("edge-agent: collect rejected suspicious path: %s", localPath)
+			return
+		}
 		if c.driveURL == "" {
 			log.Printf("edge-agent: collect action received but DriveURL not configured; skipping upload (local_path=%s)", localPath)
 			return
@@ -128,8 +134,11 @@ func (c *ControlPoller) uploadToDrive(ctx context.Context, localPath string) err
 	}
 	mw.Close()
 
-	url := fmt.Sprintf("%s/upload?path=%s", strings.TrimRight(c.driveURL, "/"), filepath.Base(localPath))
-	req, err := http.NewRequestWithContext(ctx, "POST", url, &buf)
+	params := url.Values{}
+	params.Set("path", filepath.Base(localPath))
+	driveBase := strings.TrimRight(c.driveURL, "/")
+	uploadURL := driveBase + "/upload?" + params.Encode()
+	req, err := http.NewRequestWithContext(ctx, "POST", uploadURL, &buf)
 	if err != nil {
 		return err
 	}
