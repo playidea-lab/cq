@@ -452,14 +452,24 @@ func TestWorkerHeartbeat(t *testing.T) {
 	store, db := newTestSQLiteStore(t)
 	defer db.Close()
 
-	// Seed and assign a task to worker-a.
+	// Seed T-001-0 and assign to worker-a (will be backdated to simulate stale risk).
 	if err := store.AddTask(&Task{
 		ID:     "T-001-0",
 		Title:  "Heartbeat test task",
 		DoD:    "done",
 		Status: "pending",
 	}); err != nil {
-		t.Fatalf("seed: %v", err)
+		t.Fatalf("seed T-001-0: %v", err)
+	}
+	// Seed T-002-0 as a pending task so worker-b always gets something if AssignTask works.
+	// This removes the ambiguity where assignment==nil could mean either "not stolen" or "no tasks".
+	if err := store.AddTask(&Task{
+		ID:     "T-002-0",
+		Title:  "Second pending task",
+		DoD:    "done",
+		Status: "pending",
+	}); err != nil {
+		t.Fatalf("seed T-002-0: %v", err)
 	}
 	if _, err := store.AssignTask("worker-a"); err != nil {
 		t.Fatalf("assign: %v", err)
@@ -479,13 +489,19 @@ func TestWorkerHeartbeat(t *testing.T) {
 		t.Errorf("tasks_updated = %d, want 1", n)
 	}
 
-	// After heartbeat, the task must NOT be stale (< staleTimeoutMin minutes old).
+	// After heartbeat, worker-b should get T-002-0 (pending), NOT T-001-0 (heartbeat-protected).
 	assignment, err := store.AssignTask("worker-b")
 	if err != nil {
 		t.Fatalf("assign worker-b: %v", err)
 	}
-	if assignment != nil && assignment.TaskID == "T-001-0" {
-		t.Error("task was stolen despite recent heartbeat — stale detection broken")
+	if assignment == nil {
+		t.Fatal("worker-b got no task; expected T-002-0 (pending) — AssignTask may be broken")
+	}
+	if assignment.TaskID == "T-001-0" {
+		t.Error("T-001-0 was stolen despite recent heartbeat — stale detection broken")
+	}
+	if assignment.TaskID != "T-002-0" {
+		t.Errorf("worker-b got %q, want T-002-0", assignment.TaskID)
 	}
 
 	// Heartbeat for unknown worker must return 0 (no tasks to update).

@@ -430,7 +430,7 @@ C6 Guard(5): c4_guard_check, c4_guard_audit, c4_guard_policy_set, c4_guard_polic
 C8 Gate(6): c4_gate_webhook_register, c4_gate_webhook_list, c4_gate_webhook_test,
             c4_gate_schedule_add, c4_gate_schedule_list, c4_gate_connector_status
 --- Hub (hub.enabled=true 시 추가 등록, +30) ---
-Worker(3): c4_worker_standby, c4_worker_complete, c4_worker_shutdown
+Worker(4): c4_worker_standby, c4_worker_complete, c4_worker_shutdown, c4_worker_heartbeat
 Hub-Job(11): c4_hub_submit, c4_hub_status, c4_hub_list,
             c4_hub_cancel, c4_hub_metrics, c4_hub_log_metrics,
             c4_hub_watch, c4_hub_summary, c4_hub_retry, c4_hub_estimate,

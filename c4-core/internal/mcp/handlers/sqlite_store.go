@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -1091,10 +1092,14 @@ func (s *SQLiteStore) ResetTask(taskID string) error {
 // Returns the number of rows updated so the caller can detect worker-not-found (0 rows).
 // Called by the c4_worker_heartbeat MCP tool (explicit heartbeat — Option A).
 func (s *SQLiteStore) WorkerHeartbeat(workerID string) (int64, error) {
+	if workerID == "" {
+		return 0, errors.New("workerID is required")
+	}
+	now := time.Now().UTC().Format(time.RFC3339)
 	res, err := s.db.Exec(
-		`UPDATE c4_tasks SET updated_at = datetime('now')
+		`UPDATE c4_tasks SET updated_at = ?
 		 WHERE worker_id = ? AND status = 'in_progress'`,
-		workerID,
+		now, workerID,
 	)
 	if err != nil {
 		return 0, err

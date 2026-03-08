@@ -51,7 +51,7 @@ type TaskAssignment struct {
 	SoulContext      string             `json:"soul_context,omitempty"`
 	LighthouseSpec   *LighthouseContext `json:"lighthouse_spec,omitempty"`
 	KnowledgeContext     string             `json:"knowledge_context,omitempty"`
-	HeartbeatIntervalSec int                `json:"heartbeat_interval_sec,omitempty"`
+	HeartbeatIntervalSec int                `json:"heartbeat_interval_sec"`
 }
 
 // HandoffEvidence is a reference to a CDP or test artifact attached to a submit.
