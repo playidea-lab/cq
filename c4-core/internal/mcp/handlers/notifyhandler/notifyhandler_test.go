@@ -2,6 +2,8 @@ package notifyhandler
 
 import (
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
@@ -86,5 +88,149 @@ func TestNotifyNoConfig(t *testing.T) {
 	_, err := reg.Call("c4_notify", args)
 	if err == nil {
 		t.Fatal("expected error when no config")
+	}
+}
+
+func TestSetWithEvents(t *testing.T) {
+	reg := mcp.NewRegistry()
+	dir := t.TempDir()
+	Register(reg, dir)
+
+	args, _ := json.Marshal(map[string]any{
+		"channel":     "slack",
+		"webhook_url": "https://hooks.example.com/abc",
+		"events":      []string{"plan.created", "finish.complete"},
+	})
+	result, err := reg.Call("c4_notification_set", args)
+	if err != nil {
+		t.Fatalf("set failed: %v", err)
+	}
+	m := result.(map[string]any)
+	if m["success"] != true {
+		t.Errorf("expected success=true, got %v", m["success"])
+	}
+
+	// Reload config and verify events persisted
+	cfg, err := loadConfig(dir)
+	if err != nil {
+		t.Fatalf("loadConfig: %v", err)
+	}
+	if len(cfg.Events) != 2 || cfg.Events[0] != "plan.created" {
+		t.Errorf("events not persisted: got %v", cfg.Events)
+	}
+}
+
+func TestNotifyEventSkipped(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		t.Error("webhook should not be called for filtered-out event")
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	reg := mcp.NewRegistry()
+	dir := t.TempDir()
+	Register(reg, dir)
+
+	setArgs, _ := json.Marshal(map[string]any{
+		"channel":     "slack",
+		"webhook_url": srv.URL,
+		"events":      []string{"plan.created", "finish.complete"},
+	})
+	if _, err := reg.Call("c4_notification_set", setArgs); err != nil {
+		t.Fatalf("set: %v", err)
+	}
+
+	// Send with event NOT in configured list → should be skipped, no HTTP call
+	notifyArgs, _ := json.Marshal(map[string]any{
+		"message": "checkpoint reached",
+		"event":   "checkpoint.ready",
+	})
+	result, err := reg.Call("c4_notify", notifyArgs)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	m := result.(map[string]any)
+	if m["sent"] != false || m["skipped"] != true {
+		t.Errorf("expected {sent:false, skipped:true}, got %v", m)
+	}
+}
+
+func TestNotifyEventMatched(t *testing.T) {
+	var received string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]string
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		received = body["text"]
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	reg := mcp.NewRegistry()
+	dir := t.TempDir()
+	Register(reg, dir)
+
+	setArgs, _ := json.Marshal(map[string]any{
+		"channel":     "slack",
+		"webhook_url": srv.URL,
+		"events":      []string{"plan.created", "finish.complete"},
+	})
+	if _, err := reg.Call("c4_notification_set", setArgs); err != nil {
+		t.Fatalf("set: %v", err)
+	}
+
+	// Send with event IN configured list → should send
+	notifyArgs, _ := json.Marshal(map[string]any{
+		"message": "plan done",
+		"event":   "plan.created",
+	})
+	result, err := reg.Call("c4_notify", notifyArgs)
+	if err != nil {
+		t.Fatalf("c4_notify: %v", err)
+	}
+	m := result.(map[string]any)
+	if m["sent"] != true {
+		t.Errorf("expected sent=true, got %v", m)
+	}
+	if received != "plan done" {
+		t.Errorf("webhook received %q, want %q", received, "plan done")
+	}
+}
+
+func TestNotifyNoEventFilter(t *testing.T) {
+	// When no events configured, all messages pass regardless of event field.
+	called := false
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		called = true
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	reg := mcp.NewRegistry()
+	dir := t.TempDir()
+	Register(reg, dir)
+
+	setArgs, _ := json.Marshal(map[string]any{
+		"channel":     "slack",
+		"webhook_url": srv.URL,
+		// no events field
+	})
+	if _, err := reg.Call("c4_notification_set", setArgs); err != nil {
+		t.Fatalf("set: %v", err)
+	}
+
+	notifyArgs, _ := json.Marshal(map[string]any{
+		"message": "any event passes",
+		"event":   "checkpoint.ready",
+	})
+	result, err := reg.Call("c4_notify", notifyArgs)
+	if err != nil {
+		t.Fatalf("c4_notify: %v", err)
+	}
+	m := result.(map[string]any)
+	if m["sent"] != true {
+		t.Errorf("expected sent=true, got %v", m)
+	}
+	if !called {
+		t.Error("webhook not called despite no event filter")
 	}
 }

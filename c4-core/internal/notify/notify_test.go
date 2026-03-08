@@ -181,11 +181,10 @@ func testHTTPSend(t *testing.T, channel string, bodyKey string) {
 	}
 }
 
-func TestSender_Dooray_HTTP(t *testing.T) { testHTTPSend(t, "dooray", "text") }
-func TestSender_Slack_HTTP(t *testing.T)  { testHTTPSend(t, "slack", "text") }
-func TestSender_Discord_HTTP(t *testing.T) {
-	testHTTPSend(t, "discord", "content")
-}
+func TestSender_Dooray_HTTP(t *testing.T)  { testHTTPSend(t, "dooray", "text") }
+func TestSender_Slack_HTTP(t *testing.T)   { testHTTPSend(t, "slack", "text") }
+func TestSender_Discord_HTTP(t *testing.T) { testHTTPSend(t, "discord", "content") }
+func TestSender_Teams_HTTP(t *testing.T)   { testHTTPSend(t, "teams", "text") }
 
 func TestSender_Send_ServerError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

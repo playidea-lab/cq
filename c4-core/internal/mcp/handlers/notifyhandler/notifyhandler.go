@@ -18,8 +18,9 @@ const configFile = "notifications.json"
 // notifyConfig holds persisted notification channel configuration.
 // Stored in .c4/notifications.json (0o640, .c4/ is gitignored).
 type notifyConfig struct {
-	Channel    string `json:"channel"`
-	WebhookURL string `json:"webhook_url"`
+	Channel    string   `json:"channel"`
+	WebhookURL string   `json:"webhook_url"`
+	Events     []string `json:"events,omitempty"` // if empty → all events pass
 }
 
 func configPath(projectDir string) string {
@@ -68,7 +69,7 @@ func maskURL(u string) string {
 func Register(reg *mcp.Registry, projectDir string) {
 	reg.Register(mcp.ToolSchema{
 		Name:        "c4_notification_set",
-		Description: "Configure a notification channel (webhook). Stores channel name and webhook URL in .c4/notifications.json.",
+		Description: "Configure a notification channel (webhook). Stores channel name, webhook URL, and optional event filter in .c4/notifications.json.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -81,13 +82,19 @@ func Register(reg *mcp.Registry, projectDir string) {
 					"type":        "string",
 					"description": "Webhook URL for the channel",
 				},
+				"events": map[string]any{
+					"type":        "array",
+					"description": "Workflow event types that trigger a notification. Empty = all events. e.g. [\"plan.created\",\"finish.complete\",\"checkpoint.ready\"]",
+					"items":       map[string]any{"type": "string"},
+				},
 			},
 			"required": []string{"channel", "webhook_url"},
 		},
 	}, func(args json.RawMessage) (any, error) {
 		var p struct {
-			Channel    string `json:"channel"`
-			WebhookURL string `json:"webhook_url"`
+			Channel    string   `json:"channel"`
+			WebhookURL string   `json:"webhook_url"`
+			Events     []string `json:"events"`
 		}
 		if err := json.Unmarshal(args, &p); err != nil {
 			return nil, fmt.Errorf("invalid args: %w", err)
@@ -102,11 +109,11 @@ func Register(reg *mcp.Registry, projectDir string) {
 		if _, err := notify.NewSender(p.Channel, p.WebhookURL); err != nil {
 			return nil, fmt.Errorf("unsupported channel: %w", err)
 		}
-		cfg := &notifyConfig{Channel: p.Channel, WebhookURL: p.WebhookURL}
+		cfg := &notifyConfig{Channel: p.Channel, WebhookURL: p.WebhookURL, Events: p.Events}
 		if err := saveConfig(projectDir, cfg); err != nil {
 			return nil, fmt.Errorf("saving config: %w", err)
 		}
-		return map[string]any{"success": true, "channel": p.Channel}, nil
+		return map[string]any{"success": true, "channel": p.Channel, "events": p.Events}, nil
 	})
 
 	reg.Register(mcp.ToolSchema{
@@ -128,12 +135,13 @@ func Register(reg *mcp.Registry, projectDir string) {
 			"configured":  true,
 			"channel":     cfg.Channel,
 			"webhook_url": maskURL(cfg.WebhookURL),
+			"events":      cfg.Events,
 		}, nil
 	})
 
 	reg.Register(mcp.ToolSchema{
 		Name:        "c4_notify",
-		Description: "Send a notification message via the configured webhook channel.",
+		Description: "Send a notification message via the configured webhook channel. If event is provided and events filter is configured, skips silently when event not in list.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -145,6 +153,10 @@ func Register(reg *mcp.Registry, projectDir string) {
 					"type":        "string",
 					"description": "Optional title or subject",
 				},
+				"event": map[string]any{
+					"type":        "string",
+					"description": "Workflow event type (e.g. plan.created, finish.complete, checkpoint.ready). Used for event filter matching.",
+				},
 			},
 			"required": []string{"message"},
 		},
@@ -152,6 +164,7 @@ func Register(reg *mcp.Registry, projectDir string) {
 		var p struct {
 			Message string `json:"message"`
 			Title   string `json:"title"`
+			Event   string `json:"event"`
 		}
 		if err := json.Unmarshal(args, &p); err != nil {
 			return nil, fmt.Errorf("invalid args: %w", err)
@@ -168,6 +181,21 @@ func Register(reg *mcp.Registry, projectDir string) {
 			return nil, fmt.Errorf("no notification channel configured; use c4_notification_set first")
 		}
 
+		// Event filter: if events list is configured and event is provided,
+		// skip silently when event is not in the list.
+		if p.Event != "" && len(cfg.Events) > 0 {
+			matched := false
+			for _, e := range cfg.Events {
+				if e == p.Event {
+					matched = true
+					break
+				}
+			}
+			if !matched {
+				return map[string]any{"sent": false, "skipped": true, "event": p.Event}, nil
+			}
+		}
+
 		sender, err := notify.NewSender(cfg.Channel, cfg.WebhookURL)
 		if err != nil {
 			return nil, fmt.Errorf("creating sender: %w", err)
@@ -181,6 +209,6 @@ func Register(reg *mcp.Registry, projectDir string) {
 		if err := sender.Send(context.Background(), text); err != nil {
 			return nil, fmt.Errorf("webhook send failed: %w", err)
 		}
-		return map[string]any{"sent": true, "channel": cfg.Channel, "status": 200}, nil
+		return map[string]any{"sent": true, "channel": cfg.Channel}, nil
 	})
 }
