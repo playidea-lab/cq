@@ -162,6 +162,11 @@ type Worker struct {
 	Version       string    `json:"version,omitempty"`
 	LastHeartbeat time.Time `json:"last_heartbeat"`
 	RegisteredAt  time.Time `json:"registered_at"`
+	Name          string    `json:"name,omitempty"`
+	UptimeSec     int64     `json:"uptime_sec,omitempty"`
+	// LastJobAt is RFC3339 timestamp of the last completed job.
+	// Empty string means no job has been processed yet (do not use zero-time strings).
+	LastJobAt     string    `json:"last_job_at,omitempty"`
 }
 
 // Lease tracks the assignment of a job to a worker with expiry.
@@ -210,6 +215,7 @@ type JobSubmitRequest struct {
 	Params              map[string]any    `json:"params,omitempty"`
 	SnapshotVersionHash string            `json:"snapshot_version_hash,omitempty"`
 	GitHash             string            `json:"git_hash,omitempty"`
+	RequiredTags        []string          `json:"required_tags,omitempty"`
 }
 
 // JobSubmitResponse is returned from POST /v1/jobs/submit.
@@ -257,10 +263,15 @@ type WorkerRegisterResponse struct {
 
 // HeartbeatRequest is the payload for POST /v1/workers/heartbeat.
 type HeartbeatRequest struct {
-	WorkerID  string  `json:"worker_id"`
-	Status    string  `json:"status,omitempty"`
-	FreeVRAM  float64 `json:"free_vram_gb,omitempty"`
-	GPUCount  int     `json:"gpu_count,omitempty"`
+	WorkerID   string  `json:"worker_id"`
+	Status     string  `json:"status,omitempty"`
+	FreeVRAM   float64 `json:"free_vram_gb,omitempty"`
+	GPUCount   int     `json:"gpu_count,omitempty"`
+	Name       string  `json:"name,omitempty"`
+	UptimeSec  int64   `json:"uptime_sec,omitempty"`
+	// LastJobAt is RFC3339 timestamp of the last completed job.
+	// Empty string means no job has been processed yet (do not use zero-time strings).
+	LastJobAt  string  `json:"last_job_at,omitempty"`
 }
 
 // HeartbeatResponse is returned from POST /v1/workers/heartbeat.
