@@ -1,5 +1,30 @@
 # Changelog
 
+## [v0.80.0] - 2026-03-08
+
+### ✨ Features
+- **research/Level4**: CQ Research Loop Level 4 — 완전 자율 연구 루프
+  - `c4_research_loop_start`: 가설 ID로 자율 루프 시작, budget gate (cost/iteration 상한) 내장
+  - `c4_research_loop_stop`: 루프 중단 + TypeDebate(`trigger_reason: loop_stopped`) 기록
+  - `c4_research_intervene`: steering(방향 주입) / injection(새 가설 병렬 분기) / abort(즉시 취소) 3종 사람 개입
+  - `LoopOrchestrator` serve.Component: Hub 잡 완료 감지 → Debate 자동 트리거 → verdict 분기 → 다음 가설 자동 등록 → Hub 잡 재제출
+  - `LineageBuilder`: 가설 lineage 조회 (TypeDebate 히스토리, round 정렬, 최근 5회), Debate context 자동 주입
+  - `runDebate` lineage_context 파라미터 추가 — Optimizer/Skeptic 프롬프트에 lineage 자동 주입
+  - null_result N회 연속(기본 2회) → 강제 explore 플래그 자동 활성화
+- **research/watch**: `cq research watch` CLI — 메트릭 레이어(val_loss/test_metric + ▼▲ 트렌드) + 컨텍스트 레이어(verdict 히스토리, null_result streak) 동시 표시, 개입 타이밍 시그널
+- **hub**: `HubClient` 인터페이스 + `MockHubClient` 정의 (c4-core/internal/hub/client.go)
+- **heartbeat**: `c4_worker_heartbeat` MCP 도구 — staleTimeoutMin=3분 explicit heartbeat
+
+### 🐛 Bug Fixes
+- **research**: `serve_loop_orchestrator_jobdone.go` runDebate 7번째 인자(lineageContext) 누락 수정
+
+### 🔧 Chores
+- **archtest**: researchhandler allowedDeps에 internal/knowledge 추가, fmt.Errorf 카운트 업데이트
+- **handlers_test**: RegisterAll 도구 카운트 12→13 (`c4_worker_heartbeat` 반영)
+- **docs**: Go 테스트 수 업데이트 — c4-core ~2,472 (research 태그 포함)
+
+---
+
 ## [v0.79.0] - 2026-03-08
 
 ### ✨ Features
