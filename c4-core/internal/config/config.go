@@ -303,6 +303,16 @@ type ServeHypothesisSuggesterConfig struct {
 	TTL       time.Duration `mapstructure:"ttl"        yaml:"ttl"`       // hypothesis expiry duration
 }
 
+// ServeSecretsConfig holds settings for the secrets-sync serve component.
+type ServeSecretsConfig struct {
+	// EnvInject maps secret store keys to environment variable names.
+	// When secretsSyncComponent.GetForEnv is called, each key is looked up in
+	// the secret store and the resolved value is returned under the env var name.
+	// Example: {"openai.api_key": "OPENAI_API_KEY"}
+	// An empty or nil map means no injection is performed.
+	EnvInject map[string]string `mapstructure:"env_inject" yaml:"env_inject,omitempty"`
+}
+
 // ServeConfig holds settings for the cq serve command.
 type ServeConfig struct {
 	HealthPort          int                             `mapstructure:"health_port"           yaml:"health_port"`
@@ -316,6 +326,7 @@ type ServeConfig struct {
 	Hub                 ServeHubConfig                  `mapstructure:"hub"                   yaml:"hub"`
 	MCPHTTP             ServeMCPHTTPConfig              `mapstructure:"mcp_http"              yaml:"mcp_http"`
 	HypothesisSuggester ServeHypothesisSuggesterConfig  `mapstructure:"hypothesis_suggester"  yaml:"hypothesis_suggester"`
+	Secrets             ServeSecretsConfig              `mapstructure:"secrets"               yaml:"secrets,omitempty"`
 }
 
 // PermissionReviewerConfig holds settings for the permission auto-reviewer hook.
