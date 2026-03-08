@@ -9,17 +9,24 @@ import (
 	"time"
 
 	"github.com/changmin/c4-core/internal/eventbus"
+	"github.com/changmin/c4-core/internal/knowledge"
 	"github.com/changmin/c4-core/internal/mcp"
 	"github.com/changmin/c4-core/internal/research"
 )
 
 var researchEventPub eventbus.Publisher
 var researchProjectID string
+var researchKnowledgeStore *knowledge.Store
 
 // SetResearchEventBus sets the EventBus publisher and project ID for research event publishing.
 func SetResearchEventBus(pub eventbus.Publisher, projectID string) {
 	researchEventPub = pub
 	researchProjectID = projectID
+}
+
+// SetResearchKnowledgeStore sets the knowledge store used for TypeDebate recording on loop stop.
+func SetResearchKnowledgeStore(ks *knowledge.Store) {
+	researchKnowledgeStore = ks
 }
 
 // RegisterResearchNativeHandlers registers 5 research tools as Go native handlers.
@@ -93,6 +100,19 @@ func RegisterResearchNativeHandlers(reg *mcp.Registry, store *research.Store) {
 			"required": []string{"project_id"},
 		},
 	}, researchNextHandler(store))
+
+	reg.Register(mcp.ToolSchema{
+		Name:        "c4_research_loop_stop",
+		Description: "자율 연구 루프 중단 — 현재 실행 중인 루프를 graceful하게 정지",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"loop_id": map[string]any{"type": "string", "description": "중단할 루프 ID"},
+				"reason":  map[string]any{"type": "string", "description": "중단 사유 (기록용)"},
+			},
+			"required": []string{"loop_id"},
+		},
+	}, researchLoopStopHandler(store))
 }
 
 func researchStartHandler(store *research.Store) mcp.HandlerFunc {
@@ -304,6 +324,74 @@ func researchNextHandler(store *research.Store) mcp.HandlerFunc {
 		}
 
 		return store.SuggestNext(params.ProjectID), nil
+	}
+}
+
+func researchLoopStopHandler(store *research.Store) mcp.HandlerFunc {
+	return func(rawArgs json.RawMessage) (any, error) {
+		var params struct {
+			LoopID string `json:"loop_id"`
+			Reason string `json:"reason"`
+		}
+		if len(rawArgs) > 0 {
+			if err := json.Unmarshal(rawArgs, &params); err != nil {
+				return map[string]any{"error": fmt.Sprintf("invalid arguments: %v", err)}, nil
+			}
+		}
+		if params.LoopID == "" {
+			return map[string]any{"error": "loop_id is required"}, nil
+		}
+
+		project, err := store.GetProject(params.LoopID)
+		if err != nil {
+			return map[string]any{"error": fmt.Sprintf("ResearchLoopStop failed: %v", err)}, nil
+		}
+		if project == nil {
+			return map[string]any{"error": fmt.Sprintf("loop not found: %s", params.LoopID)}, nil
+		}
+
+		if err := store.UpdateProject(params.LoopID, map[string]any{"status": string(research.StatusStopped)}); err != nil {
+			return map[string]any{"error": fmt.Sprintf("update loop status: %v", err)}, nil
+		}
+
+		iterations, err := store.ListIterations(params.LoopID)
+		if err != nil {
+			return map[string]any{"error": fmt.Sprintf("list iterations: %v", err)}, nil
+		}
+
+		reason := params.Reason
+		if reason == "" {
+			reason = "manual_stop"
+		}
+
+		// Record TypeDebate knowledge doc for loop_stopped event.
+		if researchKnowledgeStore != nil {
+			debateBody := fmt.Sprintf("## Loop Stop Record\n\nloop_id: %s\ntrigger_reason: loop_stopped\nreason: %s\niterations_completed: %d",
+				params.LoopID, reason, len(iterations))
+			_, _ = researchKnowledgeStore.Create(knowledge.TypeDebate, map[string]any{
+				"title":          "Loop Stop: " + params.LoopID,
+				"loop_id":        params.LoopID,
+				"trigger_reason": "loop_stopped",
+				"reason":         reason,
+			}, debateBody)
+		}
+
+		if researchEventPub != nil {
+			payload, _ := json.Marshal(map[string]any{
+				"loop_id":              params.LoopID,
+				"status":               "stopped",
+				"reason":               reason,
+				"iterations_completed": len(iterations),
+			})
+			researchEventPub.PublishAsync("research.loop_stopped", "c4.research", payload, researchProjectID)
+		}
+
+		return map[string]any{
+			"loop_id":              params.LoopID,
+			"status":               "stopped",
+			"iterations_completed": len(iterations),
+			"reason":               reason,
+		}, nil
 	}
 }
 

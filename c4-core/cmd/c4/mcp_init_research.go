@@ -18,7 +18,7 @@ func init() {
 	registerShutdownHook(shutdownResearch)
 }
 
-// initResearch creates the research store.
+// initResearch creates the research store and wires the knowledge store.
 // Runs as a pre-store hook so ctx.researchStore is available for NativeOpts
 // before handler registration.
 func initResearch(ctx *initContext) error {
@@ -30,6 +30,10 @@ func initResearch(ctx *initContext) error {
 		return nil
 	}
 	ctx.researchStore = rs
+	// Wire knowledge store for TypeDebate recording on loop stop.
+	if ctx.knowledgeStore != nil {
+		researchhandler.SetResearchKnowledgeStore(ctx.knowledgeStore)
+	}
 	return nil
 }
 

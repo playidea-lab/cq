@@ -217,6 +217,87 @@ func TestResearchNext_Success(t *testing.T) {
 	}
 }
 
+func TestResearchLoopStop_Success(t *testing.T) {
+	store := newTestResearchStore(t)
+	startHandler := researchStartHandler(store)
+	stopHandler := researchLoopStopHandler(store)
+
+	args, _ := json.Marshal(map[string]any{"name": "Loop Test"})
+	result, _ := startHandler(args)
+	pid := result.(map[string]any)["project_id"].(string)
+
+	args, _ = json.Marshal(map[string]any{"loop_id": pid, "reason": "budget_exceeded"})
+	result, err := stopHandler(args)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	m := result.(map[string]any)
+	if m["status"] != "stopped" {
+		t.Errorf("status = %v, want stopped", m["status"])
+	}
+	if m["loop_id"] != pid {
+		t.Errorf("loop_id = %v, want %s", m["loop_id"], pid)
+	}
+	if m["reason"] != "budget_exceeded" {
+		t.Errorf("reason = %v, want budget_exceeded", m["reason"])
+	}
+	if m["iterations_completed"] == nil {
+		t.Error("expected iterations_completed")
+	}
+
+	// Verify project status updated in store
+	project, _ := store.GetProject(pid)
+	if project == nil {
+		t.Fatal("project should exist")
+	}
+	if string(project.Status) != "stopped" {
+		t.Errorf("project.Status = %v, want stopped", project.Status)
+	}
+}
+
+func TestResearchLoopStop_NoLoopID(t *testing.T) {
+	store := newTestResearchStore(t)
+	handler := researchLoopStopHandler(store)
+
+	args, _ := json.Marshal(map[string]any{})
+	result, _ := handler(args)
+	m := result.(map[string]any)
+	if _, ok := m["error"]; !ok {
+		t.Error("expected error when loop_id is missing")
+	}
+}
+
+func TestResearchLoopStop_NotFound(t *testing.T) {
+	store := newTestResearchStore(t)
+	handler := researchLoopStopHandler(store)
+
+	args, _ := json.Marshal(map[string]any{"loop_id": "nonexistent"})
+	result, _ := handler(args)
+	m := result.(map[string]any)
+	if _, ok := m["error"]; !ok {
+		t.Error("expected error for nonexistent loop")
+	}
+}
+
+func TestResearchLoopStop_DefaultReason(t *testing.T) {
+	store := newTestResearchStore(t)
+	startHandler := researchStartHandler(store)
+	stopHandler := researchLoopStopHandler(store)
+
+	args, _ := json.Marshal(map[string]any{"name": "Test"})
+	result, _ := startHandler(args)
+	pid := result.(map[string]any)["project_id"].(string)
+
+	// Stop without reason
+	args, _ = json.Marshal(map[string]any{"loop_id": pid})
+	result, _ = stopHandler(args)
+	m := result.(map[string]any)
+	if m["reason"] != "manual_stop" {
+		t.Errorf("reason = %v, want manual_stop", m["reason"])
+	}
+}
+
 func TestResearchE2E_FullFlow(t *testing.T) {
 	store := newTestResearchStore(t)
 

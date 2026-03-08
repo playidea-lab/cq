@@ -24,6 +24,7 @@ const (
 	StatusActive    ProjectStatus = "active"
 	StatusPaused    ProjectStatus = "paused"
 	StatusCompleted ProjectStatus = "completed"
+	StatusStopped   ProjectStatus = "stopped"
 )
 
 // IterationStatus represents the lifecycle state of a research iteration.
