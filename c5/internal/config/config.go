@@ -14,8 +14,9 @@ type Config struct {
 	Dooray   DoorayConfig   `yaml:"dooray"`
 }
 
-// LLMConfig holds OpenAI-compatible LLM settings for server-side processing.
+// LLMConfig holds LLM settings for server-side processing.
 type LLMConfig struct {
+	Provider  string `yaml:"provider"`   // "openai" (default) | "anthropic"
 	BaseURL   string `yaml:"base_url"`   // e.g. "https://generativelanguage.googleapis.com/v1beta/openai"
 	APIKey    string `yaml:"api_key"`    // API key for the LLM provider
 	Model     string `yaml:"model"`      // default "gemini-3-flash-preview"
@@ -73,6 +74,7 @@ func Default() Config {
 			MaxArtifactBytes: 10 << 30, // 10GB
 		},
 		LLM: LLMConfig{
+			Provider:  "openai",
 			Model:     "gemini-3-flash-preview",
 			MaxTokens: 4096,
 		},
@@ -99,5 +101,8 @@ func (c *Config) IsSupabaseEnabled() bool {
 
 // IsLLMEnabled reports whether server-side LLM processing is configured.
 func (c *Config) IsLLMEnabled() bool {
+	if c.LLM.Provider == "anthropic" {
+		return c.LLM.APIKey != "" || os.Getenv("C5_ANTHROPIC_API_KEY") != ""
+	}
 	return c.LLM.BaseURL != "" && c.LLM.APIKey != ""
 }

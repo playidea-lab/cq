@@ -134,8 +134,20 @@ func runServe(cmd *cobra.Command, configPath string, port int, dbPath, apiKey, e
 	// Build optional LLM client for server-side Dooray processing.
 	var llmCli *llmclient.Client
 	if cfg.IsLLMEnabled() {
-		llmCli = llmclient.New(cfg.LLM.BaseURL, cfg.LLM.APIKey, cfg.LLM.Model, cfg.LLM.MaxTokens)
-		log.Printf("c5: LLM enabled (model: %s)", cfg.LLM.Model)
+		apiKey := cfg.LLM.APIKey
+		if envKey := os.Getenv("C5_ANTHROPIC_API_KEY"); envKey != "" && cfg.LLM.Provider == "anthropic" {
+			apiKey = envKey
+		} else if envKey := os.Getenv("C5_LLM_API_KEY"); envKey != "" {
+			apiKey = envKey
+		}
+
+		if cfg.LLM.Provider == "anthropic" {
+			llmCli = llmclient.NewAnthropic(apiKey, cfg.LLM.Model, cfg.LLM.MaxTokens)
+			log.Printf("c5: LLM enabled (provider: anthropic, model: %s)", cfg.LLM.Model)
+		} else {
+			llmCli = llmclient.New(cfg.LLM.BaseURL, apiKey, cfg.LLM.Model, cfg.LLM.MaxTokens)
+			log.Printf("c5: LLM enabled (provider: openai-compat, model: %s)", cfg.LLM.Model)
+		}
 	}
 
 	// Build optional knowledge client.
