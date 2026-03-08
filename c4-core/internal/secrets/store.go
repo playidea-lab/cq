@@ -5,6 +5,7 @@
 package secrets
 
 import (
+	"context"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
@@ -13,9 +14,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -33,9 +36,19 @@ func nsKey(projectID, key string) string {
 }
 
 // Store is a thread-safe encrypted secret store backed by SQLite.
+// Optional cloud sync is available via SetCloud; nil syncer = local-only mode.
+//
+// Known limitations:
+//   - dirty set is in-memory only: lost on process restart (Phase 2 will add WAL persistence).
+//   - cache TTL 5 min: after key rotation, stale value may be returned for up to 5 minutes.
 type Store struct {
 	db        *sql.DB
 	masterKey [32]byte
+
+	mu        sync.RWMutex
+	cloud     CloudSyncer
+	projectID string
+	dirtyKeys map[string]struct{}
 }
 
 // GlobalDir returns the global ~/.c4 directory path.
@@ -78,11 +91,140 @@ func NewWithPaths(dbPath, masterKeyPath string) (*Store, error) {
 		return nil, fmt.Errorf("init db: %w", err)
 	}
 
-	return &Store{db: db, masterKey: masterKey}, nil
+	return &Store{db: db, masterKey: masterKey, dirtyKeys: make(map[string]struct{})}, nil
 }
 
-// Set stores (or updates) an encrypted secret.
+// SetCloud sets an optional CloudSyncer. Nil disables cloud sync (local-only mode).
+// Thread-safe; can be called after store creation.
+func (s *Store) SetCloud(syncer CloudSyncer) {
+	s.mu.Lock()
+	s.cloud = syncer
+	s.mu.Unlock()
+}
+
+// SetProjectID sets the project ID used for cloud sync operations.
+func (s *Store) SetProjectID(id string) {
+	s.mu.Lock()
+	s.projectID = id
+	s.mu.Unlock()
+}
+
+// DirtyKeys returns keys whose async cloud push has failed.
+// This is an in-memory set; it is lost on process restart.
+func (s *Store) DirtyKeys() []string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	keys := make([]string, 0, len(s.dirtyKeys))
+	for k := range s.dirtyKeys {
+		keys = append(keys, k)
+	}
+	return keys
+}
+
+// Set stores (or updates) an encrypted secret locally, then async-pushes to cloud if configured.
 func (s *Store) Set(key, value string) error {
+	ciphertext, nonce, err := s.encrypt([]byte(value))
+	if err != nil {
+		return fmt.Errorf("encrypt: %w", err)
+	}
+	now := time.Now().Unix()
+	_, err = s.db.Exec(`
+		INSERT INTO secrets(key, nonce, ciphertext, created_at, updated_at)
+		VALUES(?, ?, ?, ?, ?)
+		ON CONFLICT(key) DO UPDATE SET
+			nonce=excluded.nonce,
+			ciphertext=excluded.ciphertext,
+			updated_at=excluded.updated_at
+	`, key, nonce, ciphertext, now, now)
+	if err != nil {
+		return err
+	}
+
+	s.mu.RLock()
+	cloud := s.cloud
+	projectID := s.projectID
+	s.mu.RUnlock()
+
+	if cloud != nil {
+		go func() {
+			ctx := context.Background()
+			pushErr := cloud.Set(ctx, projectID, key, value)
+			if pushErr != nil {
+				time.Sleep(500 * time.Millisecond)
+				pushErr = cloud.Set(ctx, projectID, key, value)
+			}
+			if pushErr != nil {
+				log.Printf("secrets: async cloud push failed for %q: %v", key, pushErr)
+				s.mu.Lock()
+				s.dirtyKeys[key] = struct{}{}
+				s.mu.Unlock()
+			}
+		}()
+	}
+
+	return nil
+}
+
+// getLocal retrieves and decrypts a secret from the local SQLite store.
+// Returns (value, updatedAt, error). updatedAt is 0 if not found.
+func (s *Store) getLocal(key string) (string, int64, error) {
+	var nonce, ciphertext []byte
+	var updatedAt int64
+	err := s.db.QueryRow(
+		`SELECT nonce, ciphertext, updated_at FROM secrets WHERE key=?`, key,
+	).Scan(&nonce, &ciphertext, &updatedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", 0, ErrNotFound
+	}
+	if err != nil {
+		return "", 0, err
+	}
+	plain, err := s.decrypt(ciphertext, nonce)
+	if err != nil {
+		return "", 0, fmt.Errorf("decrypt: %w", err)
+	}
+	return string(plain), updatedAt, nil
+}
+
+// Get retrieves and decrypts a secret. Returns ErrNotFound if key doesn't exist.
+// Cache-first: if the local value is < 5 minutes old, it is returned immediately.
+// If expired or missing, GetFresh is called; on failure, the cached value is returned as fallback.
+func (s *Store) Get(key string) (string, error) {
+	val, updatedAt, localErr := s.getLocal(key)
+
+	s.mu.RLock()
+	cloud := s.cloud
+	s.mu.RUnlock()
+
+	// No cloud — behave exactly as before.
+	if cloud == nil {
+		if localErr != nil {
+			return "", localErr
+		}
+		return val, nil
+	}
+
+	// Cache hit within TTL (5 min).
+	const cacheTTL = 300
+	if localErr == nil && time.Now().Unix()-updatedAt < cacheTTL {
+		return val, nil
+	}
+
+	// Cache miss or expired — try cloud.
+	fresh, freshErr := s.GetFresh(key)
+	if freshErr == nil {
+		return fresh, nil
+	}
+
+	// Cloud failed — fall back to cached value if available.
+	if localErr == nil {
+		return val, nil
+	}
+	return "", ErrNotFound
+}
+
+// setLocal writes a secret to local SQLite only (no cloud push).
+func (s *Store) setLocal(key, value string) error {
 	ciphertext, nonce, err := s.encrypt([]byte(value))
 	if err != nil {
 		return fmt.Errorf("encrypt: %w", err)
@@ -99,23 +241,26 @@ func (s *Store) Set(key, value string) error {
 	return err
 }
 
-// Get retrieves and decrypts a secret. Returns ErrNotFound if key doesn't exist.
-func (s *Store) Get(key string) (string, error) {
-	var nonce, ciphertext []byte
-	err := s.db.QueryRow(
-		`SELECT nonce, ciphertext FROM secrets WHERE key=?`, key,
-	).Scan(&nonce, &ciphertext)
-	if errors.Is(err, sql.ErrNoRows) {
+// GetFresh fetches the secret directly from cloud and updates local cache.
+// Returns ErrNotFound if cloud is not configured or the key does not exist.
+func (s *Store) GetFresh(key string) (string, error) {
+	s.mu.RLock()
+	cloud := s.cloud
+	projectID := s.projectID
+	s.mu.RUnlock()
+
+	if cloud == nil {
 		return "", ErrNotFound
 	}
+
+	val, err := cloud.Get(context.Background(), projectID, key)
 	if err != nil {
 		return "", err
 	}
-	plain, err := s.decrypt(ciphertext, nonce)
-	if err != nil {
-		return "", fmt.Errorf("decrypt: %w", err)
-	}
-	return string(plain), nil
+
+	// Update local cache (best-effort; no async cloud push).
+	_ = s.setLocal(key, val)
+	return val, nil
 }
 
 // SetNS stores (or updates) an encrypted secret scoped to projectID.
