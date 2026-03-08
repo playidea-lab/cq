@@ -29,15 +29,17 @@ func registerResearchDebateHandler(ictx *initContext) error {
 			"properties": map[string]any{
 				"hypothesis_id":  map[string]any{"type": "string"},
 				"trigger_reason": map[string]any{"type": "string", "enum": []string{"dod_success", "dod_null", "escalation", "manual"}},
-				"context":        map[string]any{"type": "string", "description": "Optional additional context"},
+				"context":         map[string]any{"type": "string", "description": "Optional additional context"},
+				"lineage_context": map[string]any{"type": "string", "description": "Hypothesis lineage context from LineageBuilder"},
 			},
 			"required": []string{"hypothesis_id"},
 		},
 	}, func(ctx context.Context, rawArgs json.RawMessage) (any, error) {
 		var params struct {
-			HypothesisID  string `json:"hypothesis_id"`
-			TriggerReason string `json:"trigger_reason"`
-			Context       string `json:"context"`
+			HypothesisID   string `json:"hypothesis_id"`
+			TriggerReason  string `json:"trigger_reason"`
+			Context        string `json:"context"`
+			LineageContext string `json:"lineage_context"`
 		}
 		if len(rawArgs) > 0 {
 			if err := json.Unmarshal(rawArgs, &params); err != nil {
@@ -47,7 +49,7 @@ func registerResearchDebateHandler(ictx *initContext) error {
 		if params.TriggerReason == "" {
 			params.TriggerReason = "manual"
 		}
-		return runDebate(ctx, caller, store, params.HypothesisID, params.TriggerReason, params.Context)
+		return runDebate(ctx, caller, store, params.HypothesisID, params.TriggerReason, params.Context, params.LineageContext)
 	})
 	return nil
 }
@@ -86,7 +88,7 @@ func (a *knowledgeStoreAdapter) create(dt knowledge.DocumentType, meta map[strin
 }
 
 // runDebate executes the Optimizer→Skeptic→Synthesis debate flow.
-func runDebate(ctx context.Context, caller debateCaller, store debateStore, hypID, triggerReason, extraContext string) (any, error) {
+func runDebate(ctx context.Context, caller debateCaller, store debateStore, hypID, triggerReason, extraContext, lineageContext string) (any, error) {
 	if hypID == "" {
 		return nil, fmt.Errorf("hypothesis_id required")
 	}
@@ -96,8 +98,11 @@ func runDebate(ctx context.Context, caller debateCaller, store debateStore, hypI
 		return nil, fmt.Errorf("hypothesis not found: %s", hypID)
 	}
 
-	userMsg := fmt.Sprintf("Hypothesis: %s\nTrigger: %s\nContext: %s\n\nHypothesis body:\n%s",
-		hypID, triggerReason, extraContext, hypDoc.Body)
+	userMsg := fmt.Sprintf("Hypothesis: %s\nTrigger: %s\nContext: %s\n", hypID, triggerReason, extraContext)
+	if lineageContext != "" {
+		userMsg += "\n" + lineageContext + "\n"
+	}
+	userMsg += "\nHypothesis body:\n" + hypDoc.Body
 
 	optimizerSystem := `You are a research direction optimizer. Analyze the hypothesis and experimental results. Propose the most promising next research direction. Format: DIRECTION: [direction], RATIONALE: [rationale], NEXT_HYPOTHESIS: [draft hypothesis text]`
 	skepticSystem := `You are a research hypothesis critic. Challenge the current hypothesis and proposed directions. Identify blind spots, alternative explanations, and exploration directions being ignored. Format: CHALLENGE: [main challenge], ALTERNATIVE: [alternative direction], VERDICT: [approved|null_result|escalate]`

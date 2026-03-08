@@ -46,7 +46,7 @@ func TestResearchDebate_HappyPath(t *testing.T) {
 		`{"verdict":"approved","next_hypothesis_draft":"collect more samples","experiment_spec_draft":"run 100 trials"}`,
 	}}
 
-	result, err := runDebate(context.Background(), mock, &testDebateStore{store}, hypID, "manual", "")
+	result, err := runDebate(context.Background(), mock, &testDebateStore{store}, hypID, "manual", "", "")
 	if err != nil {
 		t.Fatalf("runDebate: %v", err)
 	}
@@ -75,7 +75,7 @@ func TestResearchDebate_TypeDebateDoc(t *testing.T) {
 		`{"verdict":"null_result","next_hypothesis_draft":"try again"}`,
 	}}
 
-	result, err := runDebate(context.Background(), mock, &testDebateStore{store}, hypID, "dod_null", "")
+	result, err := runDebate(context.Background(), mock, &testDebateStore{store}, hypID, "dod_null", "", "")
 	if err != nil {
 		t.Fatalf("runDebate: %v", err)
 	}
@@ -102,7 +102,7 @@ func TestResearchDebate_InvalidHypothesis(t *testing.T) {
 	store := mustNewHypothesisStore(t)
 	mock := &mockDebateLLM{responses: []string{"any"}}
 
-	_, err := runDebate(context.Background(), mock, &testDebateStore{store}, "hyp-nonexistent", "manual", "")
+	_, err := runDebate(context.Background(), mock, &testDebateStore{store}, "hyp-nonexistent", "manual", "", "")
 	if err == nil {
 		t.Error("expected error for unknown hypothesis")
 	}
@@ -124,7 +124,7 @@ func TestResearchDebate_NullResult(t *testing.T) {
 		`{"verdict":"null_result","next_hypothesis_draft":"try different approach","experiment_spec_draft":"redesign experiment"}`,
 	}}
 
-	result, err := runDebate(context.Background(), mock, &testDebateStore{store}, hypID, "dod_null", "")
+	result, err := runDebate(context.Background(), mock, &testDebateStore{store}, hypID, "dod_null", "", "")
 	if err != nil {
 		t.Fatalf("runDebate: %v", err)
 	}
@@ -134,5 +134,78 @@ func TestResearchDebate_NullResult(t *testing.T) {
 	}
 	if m["next_hypothesis_draft"] == "" {
 		t.Error("expected next_hypothesis_draft to be non-empty for null_result")
+	}
+}
+
+// capturingDebateLLM records the user messages passed to call().
+type capturingDebateLLM struct {
+	responses []string
+	idx       int
+	userMsgs  []string
+}
+
+func (c *capturingDebateLLM) call(_ context.Context, _, user string) (string, error) {
+	c.userMsgs = append(c.userMsgs, user)
+	r := c.responses[c.idx%len(c.responses)]
+	c.idx++
+	return r, nil
+}
+
+func TestRunDebate_EmptyLineageContext_BackwardCompat(t *testing.T) {
+	store := mustNewHypothesisStore(t)
+	hypID, err := store.Create(knowledge.TypeHypothesis, map[string]any{
+		"title":  "compat hyp",
+		"status": "approved",
+	}, "compat body")
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	mock := &capturingDebateLLM{responses: []string{
+		"DIRECTION: d\nRATIONALE: r\nNEXT_HYPOTHESIS: n",
+		"VERDICT: approved",
+		`{"verdict":"approved","next_hypothesis_draft":"n"}`,
+	}}
+
+	_, err = runDebate(context.Background(), mock, &testDebateStore{store}, hypID, "manual", "ctx1", "")
+	if err != nil {
+		t.Fatalf("runDebate: %v", err)
+	}
+	// With empty lineageContext the optimizer userMsg should NOT contain a double-newline block.
+	optimizerMsg := mock.userMsgs[0]
+	if strings.Contains(optimizerMsg, "\n\n\n") {
+		t.Error("empty lineageContext should not inject extra blank lines")
+	}
+	if !strings.Contains(optimizerMsg, "Context: ctx1") {
+		t.Error("userMsg should contain the extraContext")
+	}
+}
+
+func TestRunDebate_LineageContextInjected(t *testing.T) {
+	store := mustNewHypothesisStore(t)
+	hypID, err := store.Create(knowledge.TypeHypothesis, map[string]any{
+		"title":  "lineage hyp",
+		"status": "approved",
+	}, "lineage body")
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	mock := &capturingDebateLLM{responses: []string{
+		"DIRECTION: d\nRATIONALE: r\nNEXT_HYPOTHESIS: n",
+		"VERDICT: approved",
+		`{"verdict":"approved","next_hypothesis_draft":"n"}`,
+	}}
+
+	lineage := "## Lineage\nPrev failure: X"
+	_, err = runDebate(context.Background(), mock, &testDebateStore{store}, hypID, "manual", "", lineage)
+	if err != nil {
+		t.Fatalf("runDebate: %v", err)
+	}
+	// lineageContext should appear in the optimizer and skeptic userMsg.
+	for i, msg := range mock.userMsgs[:2] {
+		if !strings.Contains(msg, lineage) {
+			t.Errorf("userMsgs[%d] does not contain lineageContext", i)
+		}
 	}
 }
