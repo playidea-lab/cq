@@ -1,5 +1,15 @@
 # Changelog
 
+## [v0.77.1] - 2026-03-08
+
+### 🐛 Bug Fixes
+- **hub_poller**: `cq serve`에서 Hub Poller가 secrets.db/cloud JWT 대신 config.yaml의 API key만 사용하여 발생하는 401 오류 수정 — `initHub()`에서 이미 구성된 `hub.Client`를 HubPollerComponent에 직접 주입
+
+### 🔧 Chores
+- **serve/hub**: hubpoller stub 파일 시그니처를 `any` 파라미터로 동기화
+
+---
+
 ## [v0.77.0] - 2026-03-08
 
 ### ✨ Features
