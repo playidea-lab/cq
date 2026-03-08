@@ -19,7 +19,8 @@ import (
 // EventBus, GPU, Hub, and Agent. Returns the started EventBus component
 // so optional components (EventSink, HubPoller) can wire up a publisher,
 // and the GPU component so the caller can mount its HTTP handler.
-func registerCoreServeComponents(mgr *serve.Manager, cfg config.C4Config, home string) (*serve.EventBusComponent, *serve.GPUComponent) {
+// secComp provides access to the secrets store for env injection into C5.
+func registerCoreServeComponents(mgr *serve.Manager, cfg config.C4Config, home string, secComp *secretsSyncComponent) (*serve.EventBusComponent, *serve.GPUComponent) {
 	var ebComp *serve.EventBusComponent
 	var gpuComp *serve.GPUComponent
 
@@ -44,11 +45,13 @@ func registerCoreServeComponents(mgr *serve.Manager, cfg config.C4Config, home s
 
 	// C5 Hub subprocess
 	if cfg.Serve.Hub.Enabled {
+		hubEnv := loadC4CloudEnv(cfg)
+		hubEnv = append(hubEnv, secComp.GetForEnv(cfg.Serve.Secrets.EnvInject)...)
 		hubCfg := serve.HubComponentConfig{
 			Binary: cfg.Serve.Hub.Binary,
 			Port:   cfg.Serve.Hub.Port,
 			Args:   cfg.Serve.Hub.Args,
-			Env:    loadC4CloudEnv(cfg),
+			Env:    hubEnv,
 		}
 		// Wire embedded binary extractor when available (c5_embed build tag).
 		if EmbeddedC5FS != nil {

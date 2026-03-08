@@ -119,8 +119,11 @@ func runServe(cmd *cobra.Command, args []string) error {
 	// Component manager
 	mgr := serve.NewManager()
 
+	// Register secrets-sync FIRST so secrets are ready before other components start.
+	secComp := registerSecretsSyncComponent(mgr, cfg, srv.initCtx.secretStore)
+
 	// Register components based on config
-	ebComp, gpuComp := registerCoreServeComponents(mgr, cfg, home)
+	ebComp, gpuComp := registerCoreServeComponents(mgr, cfg, home, secComp)
 	registerEventSinkServeComponent(mgr, cfg, ebComp)
 	registerHubPollerServeComponent(mgr, cfg, ebComp, srv.initCtx.hubClient)
 	registerKnowledgeHubPollerServeComponent(mgr, cfg)

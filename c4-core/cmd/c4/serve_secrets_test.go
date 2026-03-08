@@ -6,20 +6,11 @@ import (
 	"testing"
 
 	"github.com/changmin/c4-core/internal/secrets"
+	"github.com/changmin/c4-core/internal/serve"
 )
 
-// mockSecretsSyncer implements secrets.CloudSyncer for testing.
-type mockSecretsSyncer struct {
-	synced []string
-}
-
-func (m *mockSecretsSyncer) SyncSecret(key, _ string) error {
-	m.synced = append(m.synced, key)
-	return nil
-}
-
-// newTestStore creates an in-memory (temp-file) secrets store for tests.
-func newTestStore(t *testing.T) *secrets.Store {
+// newTestSecretStore creates an in-memory (temp-file) secrets store for tests.
+func newTestSecretStore(t *testing.T) *secrets.Store {
 	t.Helper()
 	dir := t.TempDir()
 	store, err := secrets.NewWithPaths(
@@ -27,111 +18,90 @@ func newTestStore(t *testing.T) *secrets.Store {
 		filepath.Join(dir, "master.key"),
 	)
 	if err != nil {
-		t.Fatalf("newTestStore: %v", err)
+		t.Fatalf("newTestSecretStore: %v", err)
 	}
 	t.Cleanup(func() { store.Close() })
 	return store
 }
 
 func TestSecretsSyncComponent_Name(t *testing.T) {
-	c := newSecretsSyncComponent(nil, nil)
-	if got := c.Name(); got != "secrets-sync" {
+	mgr := serve.NewManager()
+	comp := registerSecretsSyncComponent(mgr, defaultTestConfig(), nil)
+	if got := comp.Name(); got != "secrets-sync" {
 		t.Errorf("Name() = %q, want %q", got, "secrets-sync")
 	}
 }
 
-func TestSecretsSyncComponent_Health_Pending(t *testing.T) {
-	c := newSecretsSyncComponent(nil, nil)
-	if got := c.Health().Status; got != "pending" {
-		t.Errorf("before Start: Health().Status = %q, want %q", got, "pending")
+func TestSecretsSyncComponent_Health_NilStore_Skipped(t *testing.T) {
+	comp := &secretsSyncComponent{store: nil}
+	if got := comp.Health().Status; got != "skipped" {
+		t.Errorf("Health().Status = %q, want %q", got, "skipped")
 	}
 }
 
 func TestSecretsSyncComponent_Start_NilStore_Skipped(t *testing.T) {
-	c := newSecretsSyncComponent(nil, nil)
-	if err := c.Start(context.Background()); err != nil {
+	mgr := serve.NewManager()
+	comp := registerSecretsSyncComponent(mgr, defaultTestConfig(), nil)
+	if err := comp.Start(context.Background()); err != nil {
 		t.Fatalf("Start() error: %v", err)
 	}
-	if got := c.Health().Status; got != "skipped" {
+	if got := comp.Health().Status; got != "skipped" {
 		t.Errorf("Health().Status = %q, want %q", got, "skipped")
 	}
 }
 
 func TestSecretsSyncComponent_Start_NilSyncer_OK(t *testing.T) {
-	// nil syncer with valid store — should not panic, health = "ok"
-	store := newTestStore(t)
-	c := newSecretsSyncComponent(store, nil)
-	if err := c.Start(context.Background()); err != nil {
+	store := newTestSecretStore(t)
+	comp := &secretsSyncComponent{
+		store:  store,
+		health: serve.ComponentHealth{Status: "pending"},
+	}
+	if err := comp.Start(context.Background()); err != nil {
 		t.Fatalf("Start() error: %v", err)
 	}
-	if got := c.Health().Status; got != "ok" {
+	if got := comp.Health().Status; got != "ok" {
 		t.Errorf("Health().Status = %q, want %q", got, "ok")
-	}
-}
-
-func TestSecretsSyncComponent_Start_CloudDisabled(t *testing.T) {
-	// syncer nil (cloud disabled) — store's cloud field remains nil, no panic
-	store := newTestStore(t)
-	c := newSecretsSyncComponent(store, nil)
-	if err := c.Start(context.Background()); err != nil {
-		t.Fatalf("Start() error: %v", err)
-	}
-	h := c.Health()
-	if h.Status != "ok" {
-		t.Errorf("expected ok, got %q", h.Status)
-	}
-}
-
-func TestSecretsSyncComponent_Start_WiresSyncer(t *testing.T) {
-	store := newTestStore(t)
-	syncer := &mockSecretsSyncer{}
-	c := newSecretsSyncComponent(store, syncer)
-	if err := c.Start(context.Background()); err != nil {
-		t.Fatalf("Start() error: %v", err)
-	}
-	if got := c.Health().Status; got != "ok" {
-		t.Errorf("Health().Status = %q, want %q", got, "ok")
-	}
-}
-
-func TestSecretsSyncComponent_GetForEnv(t *testing.T) {
-	store := newTestStore(t)
-
-	// Pre-populate secrets.
-	if err := store.Set("openai.api_key", "sk-test-123"); err != nil {
-		t.Fatalf("store.Set: %v", err)
-	}
-
-	c := newSecretsSyncComponent(store, nil)
-	if err := c.Start(context.Background()); err != nil {
-		t.Fatalf("Start: %v", err)
-	}
-
-	envInject := map[string]string{
-		"openai.api_key":  "OPENAI_API_KEY",
-		"missing.api_key": "MISSING_ENV", // should be silently omitted
-	}
-	got := c.GetForEnv(envInject)
-
-	if v, ok := got["OPENAI_API_KEY"]; !ok || v != "sk-test-123" {
-		t.Errorf("OPENAI_API_KEY = %q, want %q", v, "sk-test-123")
-	}
-	if _, ok := got["MISSING_ENV"]; ok {
-		t.Error("MISSING_ENV should not appear in result")
-	}
-}
-
-func TestSecretsSyncComponent_GetForEnv_NilStore(t *testing.T) {
-	c := newSecretsSyncComponent(nil, nil)
-	got := c.GetForEnv(map[string]string{"k": "V"})
-	if len(got) != 0 {
-		t.Errorf("expected empty map, got %v", got)
 	}
 }
 
 func TestSecretsSyncComponent_Stop(t *testing.T) {
-	c := newSecretsSyncComponent(nil, nil)
-	if err := c.Stop(context.Background()); err != nil {
+	comp := &secretsSyncComponent{}
+	if err := comp.Stop(context.Background()); err != nil {
 		t.Errorf("Stop() error: %v", err)
+	}
+}
+
+func TestSecretsSyncComponent_GetForEnv_KeyMapping(t *testing.T) {
+	store := newTestSecretStore(t)
+	if err := store.Set("anthropic.api_key", "sk-ant-test"); err != nil {
+		t.Fatalf("store.Set: %v", err)
+	}
+	if err := store.Set("openai.api_key", "sk-open-test"); err != nil {
+		t.Fatalf("store.Set: %v", err)
+	}
+
+	comp := &secretsSyncComponent{store: store}
+	envs := comp.GetForEnv([]string{"anthropic.api_key", "openai.api_key", "missing.key"})
+
+	want := map[string]string{
+		"ANTHROPIC_API_KEY": "sk-ant-test",
+		"OPENAI_API_KEY":    "sk-open-test",
+	}
+	got := make(map[string]string, len(envs))
+	for _, e := range envs {
+		for i := 0; i < len(e); i++ {
+			if e[i] == '=' {
+				got[e[:i]] = e[i+1:]
+				break
+			}
+		}
+	}
+	for k, v := range want {
+		if got[k] != v {
+			t.Errorf("env %s = %q, want %q", k, got[k], v)
+		}
+	}
+	if len(got) != 2 {
+		t.Errorf("expected 2 env vars, got %d: %v", len(got), got)
 	}
 }

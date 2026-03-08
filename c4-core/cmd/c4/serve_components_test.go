@@ -218,6 +218,52 @@ func TestRunServeStop_OSServiceFallback(t *testing.T) {
 	})
 }
 
+// TestRegisterSecretsSyncComponent_RegisteredFirst verifies that registerSecretsSyncComponent
+// adds "secrets-sync" to the manager and ComponentNames()[0] is "secrets-sync".
+func TestRegisterSecretsSyncComponent_RegisteredFirst(t *testing.T) {
+	mgr := serve.NewManager()
+	cfg := config.C4Config{}
+
+	registerSecretsSyncComponent(mgr, cfg, nil)
+
+	names := mgr.ComponentNames()
+	if len(names) == 0 {
+		t.Fatal("expected at least one component after register")
+	}
+	if names[0] != "secrets-sync" {
+		t.Errorf("ComponentNames()[0] = %q, want %q", names[0], "secrets-sync")
+	}
+}
+
+// TestSecretsSyncComponent_GetForEnv_NilStore verifies that GetForEnv returns nil when
+// the store is nil (secrets unavailable).
+func TestSecretsSyncComponent_GetForEnv_NilStore(t *testing.T) {
+	comp := &secretsSyncComponent{store: nil}
+	envs := comp.GetForEnv([]string{"c5.api_key"})
+	if envs != nil {
+		t.Errorf("expected nil env vars with nil store, got %v", envs)
+	}
+}
+
+// TestSecretsSyncComponent_GetForEnv_EmptyInject verifies that GetForEnv returns nil
+// when no keys are requested.
+func TestSecretsSyncComponent_GetForEnv_EmptyInject(t *testing.T) {
+	comp := &secretsSyncComponent{store: nil}
+	envs := comp.GetForEnv(nil)
+	if envs != nil {
+		t.Errorf("expected nil env vars with empty inject list, got %v", envs)
+	}
+}
+
+// TestSecretsSyncComponent_Health_NilStore verifies Health returns "skipped" when store is nil.
+func TestSecretsSyncComponent_Health_NilStore(t *testing.T) {
+	comp := &secretsSyncComponent{store: nil}
+	h := comp.Health()
+	if h.Status != "skipped" {
+		t.Errorf("Health().Status = %q, want %q", h.Status, "skipped")
+	}
+}
+
 // TestRegisterKnowledgeSuggestPoller_HubDisabled verifies that when hub.enabled=false,
 // no component is registered.
 func TestRegisterKnowledgeSuggestPoller_HubDisabled(t *testing.T) {

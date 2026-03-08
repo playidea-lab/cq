@@ -89,3 +89,14 @@ func (m *Manager) ComponentCount() int {
 	defer m.mu.Unlock()
 	return len(m.components)
 }
+
+// ComponentNames returns the names of all registered components in registration order.
+func (m *Manager) ComponentNames() []string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	names := make([]string, len(m.components))
+	for i, c := range m.components {
+		names[i] = c.Name()
+	}
+	return names
+}
