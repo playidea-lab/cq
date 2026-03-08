@@ -212,17 +212,45 @@ When assigned an R- task, perform a structured code review:
 }
 ```
 
+## ⏱️ Heartbeat Loop (REQUIRED for long operations)
+
+If `c4_get_task` response includes `heartbeat_interval_sec` (default: 30):
+
+```python
+import threading
+
+def heartbeat_loop(worker_id, interval_sec, stop_event):
+    while not stop_event.wait(interval_sec):
+        try:
+            mcp__cq__c4_worker_heartbeat(worker_id=worker_id)
+        except Exception:
+            pass  # non-fatal
+
+stop_event = threading.Event()
+hb_thread = threading.Thread(target=heartbeat_loop, args=(WORKER_ID, heartbeat_interval_sec, stop_event), daemon=True)
+hb_thread.start()
+
+# ... do your work (file edits, builds, etc.) ...
+
+stop_event.set()  # stop heartbeat on submit or mark_blocked
+```
+
+Start heartbeat BEFORE long operations (file edits, git operations, builds).
+Stop heartbeat AFTER `c4_submit` or `c4_mark_blocked`.
+
 ## 🛠️ Implementation Mode (task_id starts with "T-" or other)
 
 ```
+0. Start heartbeat thread (see ⏱️ Heartbeat Loop above)
 1. IF task.knowledge_context exists:
        READ the knowledge context (past patterns, insights)
        APPLY relevant lessons to implementation decisions
 2. Implement the task (follow DoD, including Rationale)
 3. Run validations, fix issues (max 3 retries)
 4. git commit
-5. c4_submit(task_id, ..., handoff=JSON with discoveries/concerns/rationale)
-6. EXIT (Task complete - fresh context for next task!)
+5. stop_event.set()  # stop heartbeat
+6. c4_submit(task_id, ..., handoff=JSON with discoveries/concerns/rationale)
+7. EXIT (Task complete - fresh context for next task!)
 ```
 
 **Implementation handoff 구조** (c4_submit 시 전달):
