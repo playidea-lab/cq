@@ -51,7 +51,7 @@ function MentionPopup({ members, query, selectedIndex, onSelect }: MentionPopupP
 }
 
 function extractMentions(content: string): string[] {
-  const matches = content.match(/@([\w\-.]+)/g);
+  const matches = content.match(/@([\w.-]+)/g);
   if (!matches) return [];
   return matches.map(m => m.slice(1));
 }

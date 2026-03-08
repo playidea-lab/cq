@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/changmin/c4-core/internal/hub"
+	"github.com/changmin/c4-core/internal/llm"
 	"github.com/changmin/c4-core/internal/serve"
 )
 
@@ -147,5 +148,24 @@ func TestLoopOrchestrator_Steer(t *testing.T) {
 	}
 	if got.SteeringGuidance != guidance {
 		t.Errorf("SteeringGuidance = %q, want %q", got.SteeringGuidance, guidance)
+	}
+}
+
+// TestRegisterLoopOrchestratorComponent_RegistersWithManager verifies that
+// registerLoopOrchestratorComponent adds loop_orchestrator to the serve manager.
+func TestRegisterLoopOrchestratorComponent_RegistersWithManager(t *testing.T) {
+	gw := llm.NewGateway(llm.RoutingTable{})
+	gw.Register(&stubLLMProvider{response: "ok"})
+
+	ictx := &initContext{
+		knowledgeStore: mustNewKnowledgeStore(t),
+		llmGateway:     gw,
+	}
+	mgr := serve.NewManager()
+	registerLoopOrchestratorComponent(mgr, ictx)
+
+	health := mgr.HealthMap()
+	if _, ok := health["loop_orchestrator"]; !ok {
+		t.Errorf("loop_orchestrator not found in manager health map; got %v", health)
 	}
 }

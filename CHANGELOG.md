@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.82.0] - 2026-03-08
+
+### ✨ Features
+- **c5/efl**: Hub Edge Feedback API Foundation — POST /edges/{id}/metrics, GET /edges/{id}/control (auto-ack), HealthCheck struct, DeployAssignmentResponse 업그레이드
+- **c5/edge**: MetricsReporter (stdout KEY=VALUE→Hub 60s), ControlPoller (GET 30s auto-ack), HealthCheckGate, RollbackManager (atomic temp-rename .prev/.failed 전략)
+- **c5/threshold**: Edge 메트릭 임계값 모니터링 — edge metadata `threshold_<key>` 기반, 60s cooldown, EventBus `edge.metrics.threshold_exceeded` 발행
+- **hub-edge**: `c4_hub_edge_control`, `c4_hub_edge_metrics` MCP 도구 추가
+- **hub-edge**: `c4_hub_deploy_rule` — `health_check`, `health_check_timeout` 파라미터 노출
+- **c5/worker**: GPU 자동 감지 + caps.yaml 자동 생성
+- **notify**: 이벤트 필터링 + Teams 알림 테스트 추가
+
+### 🐛 Bug Fixes
+- **c5/edge**: control.go collect — `filepath.Clean(..)` path traversal 방어
+- **c5/edge**: Drive 업로드 URL — `url.Values.Encode()` (인젝션 방지)
+- **c5/api**: MaxBytesReader 64KB 제한 + edgeIDRe regexp 검증
+- **c5/api**: tryAcquireCooldown race — sync.Map → sync.Mutex+map (비원자 Load+Store 제거)
+- **c5/models**: EdgeMetricEntry.Values `map[string]float64` (hub.Client와 타입 일치)
+- **c1**: 채널 UI 이슈 수정 4건
+- **skills**: c4_notify MCP namespace 파라미터 수정
+
+### 📚 Documentation
+- **agents**: Go 테스트 카운트 업데이트 — c4-core ~2,082 + c5 ~334 = ~2,416
+
+---
+
 ## [v0.78.0] - 2026-03-08
 
 ### ✨ Features

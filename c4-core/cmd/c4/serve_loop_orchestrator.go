@@ -33,7 +33,6 @@ type loopLineageBuilder interface {
 	BuildContext(ctx context.Context, hypothesisID string, limit int) (string, error)
 }
 
-func init() { registerInitHook(registerLoopOrchestratorComponent) }
 
 // HubClient is the interface for Hub job management (defined by T-1308-0).
 // Defined here as a local interface until T-1308-0 lands.
@@ -108,9 +107,9 @@ func newLoopOrchestrator(cfg LoopOrchestratorConfig) *LoopOrchestrator {
 }
 
 // registerLoopOrchestratorComponent registers the LoopOrchestrator in the serve ecosystem.
-func registerLoopOrchestratorComponent(ictx *initContext) error {
+func registerLoopOrchestratorComponent(mgr *serve.Manager, ictx *initContext) {
 	if ictx.knowledgeStore == nil || ictx.llmGateway == nil {
-		return nil
+		return
 	}
 	// Hub is optional; LoopOrchestrator can run without it (StartLoop will require it).
 	var hc HubClient
@@ -125,11 +124,8 @@ func registerLoopOrchestratorComponent(ictx *initContext) error {
 		LLMGateway: ictx.llmGateway,
 	}
 	o := newLoopOrchestrator(cfg)
-	// Register with the serve manager if available.
-	// The component is accessible via the initContext for direct calls in tests.
-	_ = o
+	mgr.Register(o)
 	fmt.Fprintf(os.Stderr, "cq serve: registered loop_orchestrator\n")
-	return nil
 }
 
 // Name implements serve.Component.

@@ -21,6 +21,7 @@ export function formatDate(ts: number | null): string {
 export function formatTime(iso: string): string {
   try {
     const d = new Date(iso);
+    if (isNaN(d.getTime())) return '';
     return d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
   } catch {
     return '';

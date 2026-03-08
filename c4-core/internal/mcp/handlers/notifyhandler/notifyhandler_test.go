@@ -196,6 +196,41 @@ func TestNotifyEventMatched(t *testing.T) {
 	}
 }
 
+func TestNotifyTitleAndMessage(t *testing.T) {
+	var received string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]string
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		received = body["text"]
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	reg := mcp.NewRegistry()
+	dir := t.TempDir()
+	Register(reg, dir)
+
+	setArgs, _ := json.Marshal(map[string]any{
+		"channel":     "slack",
+		"webhook_url": srv.URL,
+	})
+	if _, err := reg.Call("c4_notification_set", setArgs); err != nil {
+		t.Fatalf("set: %v", err)
+	}
+
+	notifyArgs, _ := json.Marshal(map[string]any{
+		"message": "body text",
+		"title":   "My Title",
+	})
+	if _, err := reg.Call("c4_notify", notifyArgs); err != nil {
+		t.Fatalf("c4_notify: %v", err)
+	}
+	want := "My Title\nbody text"
+	if received != want {
+		t.Errorf("text: got %q, want %q", received, want)
+	}
+}
+
 func TestNotifyNoEventFilter(t *testing.T) {
 	// When no events configured, all messages pass regardless of event field.
 	called := false

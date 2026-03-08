@@ -57,7 +57,7 @@ export function MessageBubble({ message, member, onAction }: MessageBubbleProps)
   const type: SenderType = member
     ? (member.member_type === 'user' ? 'human' : member.member_type as SenderType)
     : inferSenderType(message);
-  const avatarClass = member ? (member.member_type === 'user' ? 'human' : member.member_type) : type;
+  const avatarClass = type;
 
   const a2uiSpec = message.metadata?.a2ui;
 

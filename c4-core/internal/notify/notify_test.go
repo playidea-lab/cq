@@ -186,6 +186,35 @@ func TestSender_Slack_HTTP(t *testing.T)   { testHTTPSend(t, "slack", "text") }
 func TestSender_Discord_HTTP(t *testing.T) { testHTTPSend(t, "discord", "content") }
 func TestSender_Teams_HTTP(t *testing.T)   { testHTTPSend(t, "teams", "text") }
 
+func TestSender_Teams_HTTP_Payload(t *testing.T) {
+	var received map[string]string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&received); err != nil {
+			http.Error(w, "bad body", http.StatusBadRequest)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	s, err := notify.NewSender("teams", srv.URL)
+	if err != nil {
+		t.Fatalf("NewSender: %v", err)
+	}
+	if err := s.Send(context.Background(), "hello teams"); err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+	if received["@type"] != "MessageCard" {
+		t.Errorf("@type: got %q, want %q", received["@type"], "MessageCard")
+	}
+	if received["@context"] == "" {
+		t.Error("@context should not be empty")
+	}
+	if received["text"] != "hello teams" {
+		t.Errorf("text: got %q, want %q", received["text"], "hello teams")
+	}
+}
+
 func TestSender_Send_ServerError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)

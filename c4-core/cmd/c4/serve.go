@@ -136,6 +136,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 	registerKnowledgeHubPollerServeComponent(mgr, cfg)
 	registerKnowledgeSuggestPollerServeComponent(mgr, cfg, srv.initCtx.llmGateway)
 	registerHypothesisSuggesterComponent(mgr, cfg, srv.initCtx.llmGateway, srv.knowledgeStore)
+	registerLoopOrchestratorComponent(mgr, srv.initCtx)
 	registerSSESubscriberServeComponent(mgr, cfg, ebComp)
 	registerStaleCheckerServeComponent(mgr, cfg, ebComp)
 	registerToolSocketComponent(mgr, srv)

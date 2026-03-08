@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/changmin/c4-core/internal/mcp"
 	"github.com/changmin/c4-core/internal/notify"
@@ -206,7 +207,9 @@ func Register(reg *mcp.Registry, projectDir string) {
 			text = p.Title + "\n" + p.Message
 		}
 
-		if err := sender.Send(context.Background(), text); err != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		defer cancel()
+		if err := sender.Send(ctx, text); err != nil {
 			return nil, fmt.Errorf("webhook send failed: %w", err)
 		}
 		return map[string]any{"sent": true, "channel": cfg.Channel}, nil
