@@ -1,5 +1,16 @@
 # Changelog
 
+## [v0.82.0] - 2026-03-08
+
+### 🐛 Bug Fixes
+- **serve/loop_orchestrator**: `_ = o` 버그 수정 → `mgr.Register(o)` (LoopOrchestrator가 serve 생태계에 실제 등록됨)
+- **build**: `serve_loop_orchestrator_stub.go` (`//go:build !research`) 추가 — research 빌드 태그 없는 일반 빌드에서 `undefined: registerLoopOrchestratorComponent` 오류 수정
+
+### 🔧 Chores
+- **docs**: Go 테스트 수 업데이트 — c4-core ~2,437 + c5 ~378 (합계 ~2,815)
+
+---
+
 ## [v0.81.0] - 2026-03-08
 
 ### ✨ Features
