@@ -289,6 +289,34 @@ func TestLLMDefaults(t *testing.T) {
 	}
 }
 
+func TestIsLLMEnabled_Anthropic_WithAPIKey(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.LLM.Provider = "anthropic"
+	cfg.LLM.APIKey = "sk-ant-test"
+	if !cfg.IsLLMEnabled() {
+		t.Error("expected LLM enabled for anthropic with api_key")
+	}
+}
+
+func TestIsLLMEnabled_Anthropic_WithEnvKey(t *testing.T) {
+	t.Setenv("C5_ANTHROPIC_API_KEY", "sk-ant-env")
+	cfg := &config.Config{}
+	cfg.LLM.Provider = "anthropic"
+	if !cfg.IsLLMEnabled() {
+		t.Error("expected LLM enabled for anthropic with env key")
+	}
+}
+
+func TestIsLLMEnabled_OpenAI_NeedsBaseURL(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.LLM.Provider = "openai"
+	cfg.LLM.APIKey = "sk-test"
+	// no base_url → should be disabled
+	if cfg.IsLLMEnabled() {
+		t.Error("expected LLM disabled for openai without base_url")
+	}
+}
+
 // writeTempConfig writes content to a temp file and returns its path.
 func writeTempConfig(t *testing.T, content string) string {
 	t.Helper()

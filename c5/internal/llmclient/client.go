@@ -1,5 +1,6 @@
 // Package llmclient provides an OpenAI-compatible chat completion client.
-// It supports Gemini, OpenAI, and Ollama backends via the /v1/chat/completions endpoint.
+// It supports Gemini, OpenAI, and Ollama backends via the /v1/chat/completions endpoint,
+// and the official Anthropic Messages API.
 package llmclient
 
 import (
@@ -12,31 +13,72 @@ import (
 	"time"
 )
 
-// Client is a minimal OpenAI-compatible chat completion client.
-type Client struct {
-	baseURL string
-	apiKey  string
-	model   string
-	maxTok  int
-	client  *http.Client
+// chatProvider is the internal abstraction for a chat backend.
+type chatProvider interface {
+	chatWithHistory(ctx context.Context, system string, history []Message, userMsg string) (string, error)
 }
 
-// New creates a Client. baseURL should be the provider's OpenAI-compatible endpoint prefix
+// Message is an exported chat message for multi-turn conversations.
+type Message struct {
+	Role    string // "user" or "assistant"
+	Content string
+}
+
+// Client is the public handle for chat completion.
+type Client struct {
+	p chatProvider
+}
+
+// New creates a Client backed by an OpenAI-compatible endpoint.
+// baseURL should be the provider's OpenAI-compatible endpoint prefix
 // (e.g. "https://generativelanguage.googleapis.com/v1beta/openai" for Gemini,
 // "http://localhost:11434/v1" for Ollama, "https://api.openai.com/v1" for OpenAI).
 // If maxTokens <= 0, 4096 is used.
-// model should be set by the caller (e.g. from config.LLM.Model); empty string is passed through.
 func New(baseURL, apiKey, model string, maxTokens int) *Client {
 	if maxTokens <= 0 {
 		maxTokens = 4096
 	}
-	return &Client{
+	return &Client{p: &openAIProvider{
 		baseURL: baseURL,
 		apiKey:  apiKey,
 		model:   model,
 		maxTok:  maxTokens,
 		client:  &http.Client{Timeout: 60 * time.Second},
+	}}
+}
+
+// NewAnthropic creates a Client backed by the official Anthropic Messages API.
+// If maxTokens <= 0, 4096 is used.
+func NewAnthropic(apiKey, model string, maxTokens int) *Client {
+	if maxTokens <= 0 {
+		maxTokens = 4096
 	}
+	return &Client{p: &anthropicProvider{
+		apiKey: apiKey,
+		model:  model,
+		maxTok: maxTokens,
+		client: &http.Client{Timeout: 60 * time.Second},
+	}}
+}
+
+// Chat sends a chat completion request with the given system and user messages.
+func (c *Client) Chat(ctx context.Context, system, userMsg string) (string, error) {
+	return c.ChatWithHistory(ctx, system, nil, userMsg)
+}
+
+// ChatWithHistory sends a multi-turn chat completion request.
+func (c *Client) ChatWithHistory(ctx context.Context, system string, history []Message, userMsg string) (string, error) {
+	return c.p.chatWithHistory(ctx, system, history, userMsg)
+}
+
+// --- OpenAI-compatible provider ---
+
+type openAIProvider struct {
+	baseURL string
+	apiKey  string
+	model   string
+	maxTok  int
+	client  *http.Client
 }
 
 type chatMessage struct {
@@ -62,22 +104,8 @@ type chatResponse struct {
 	} `json:"error,omitempty"`
 }
 
-// Message is an exported chat message for multi-turn conversations.
-type Message struct {
-	Role    string // "user" or "assistant"
-	Content string
-}
-
-// Chat sends a chat completion request with the given system and user messages.
-// Returns an error if apiKey is empty or if the API returns a non-200 status or error body.
-func (c *Client) Chat(ctx context.Context, system, userMsg string) (string, error) {
-	return c.ChatWithHistory(ctx, system, nil, userMsg)
-}
-
-// ChatWithHistory sends a multi-turn chat completion request.
-// history contains prior user/assistant turns (oldest first); userMsg is the new user message.
-func (c *Client) ChatWithHistory(ctx context.Context, system string, history []Message, userMsg string) (string, error) {
-	if c.apiKey == "" {
+func (o *openAIProvider) chatWithHistory(ctx context.Context, system string, history []Message, userMsg string) (string, error) {
+	if o.apiKey == "" {
 		return "", fmt.Errorf("llmclient: apiKey is required")
 	}
 
@@ -91,9 +119,9 @@ func (c *Client) ChatWithHistory(ctx context.Context, system string, history []M
 	messages = append(messages, chatMessage{Role: "user", Content: userMsg})
 
 	reqBody := chatRequest{
-		Model:     c.model,
+		Model:     o.model,
 		Messages:  messages,
-		MaxTokens: c.maxTok,
+		MaxTokens: o.maxTok,
 	}
 
 	data, err := json.Marshal(reqBody)
@@ -101,20 +129,20 @@ func (c *Client) ChatWithHistory(ctx context.Context, system string, history []M
 		return "", fmt.Errorf("llmclient: marshal request: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/chat/completions", bytes.NewReader(data))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, o.baseURL+"/chat/completions", bytes.NewReader(data))
 	if err != nil {
 		return "", fmt.Errorf("llmclient: create request: %w", err)
 	}
-	req.Header.Set("Authorization", "Bearer "+c.apiKey)
+	req.Header.Set("Authorization", "Bearer "+o.apiKey)
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := c.client.Do(req)
+	resp, err := o.client.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("llmclient: http: %w", err)
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<22)) // 4 MiB safety cap
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<22))
 	if err != nil {
 		return "", fmt.Errorf("llmclient: read body: %w", err)
 	}
@@ -139,4 +167,97 @@ func (c *Client) ChatWithHistory(ctx context.Context, system string, history []M
 	}
 
 	return cr.Choices[0].Message.Content, nil
+}
+
+// --- Anthropic provider ---
+
+type anthropicProvider struct {
+	apiKey string
+	model  string
+	maxTok int
+	client *http.Client
+}
+
+type anthropicRequest struct {
+	Model     string        `json:"model"`
+	MaxTokens int           `json:"max_tokens"`
+	System    string        `json:"system,omitempty"`
+	Messages  []chatMessage `json:"messages"`
+}
+
+type anthropicResponse struct {
+	Content []struct {
+		Type string `json:"type"`
+		Text string `json:"text"`
+	} `json:"content"`
+	StopReason string `json:"stop_reason"`
+	Type       string `json:"type"`
+	Error      *struct {
+		Type    string `json:"type"`
+		Message string `json:"message"`
+	} `json:"error,omitempty"`
+}
+
+func (a *anthropicProvider) chatWithHistory(ctx context.Context, system string, history []Message, userMsg string) (string, error) {
+	if a.apiKey == "" {
+		return "", fmt.Errorf("llmclient: apiKey is required")
+	}
+
+	var messages []chatMessage
+	for _, m := range history {
+		messages = append(messages, chatMessage{Role: m.Role, Content: m.Content})
+	}
+	messages = append(messages, chatMessage{Role: "user", Content: userMsg})
+
+	reqBody := anthropicRequest{
+		Model:     a.model,
+		MaxTokens: a.maxTok,
+		System:    system,
+		Messages:  messages,
+	}
+
+	data, err := json.Marshal(reqBody)
+	if err != nil {
+		return "", fmt.Errorf("llmclient: marshal request: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://api.anthropic.com/v1/messages", bytes.NewReader(data))
+	if err != nil {
+		return "", fmt.Errorf("llmclient: create request: %w", err)
+	}
+	req.Header.Set("x-api-key", a.apiKey)
+	req.Header.Set("anthropic-version", "2023-06-01")
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := a.client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("llmclient: http: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<22))
+	if err != nil {
+		return "", fmt.Errorf("llmclient: read body: %w", err)
+	}
+
+	var ar anthropicResponse
+	if err := json.Unmarshal(body, &ar); err != nil {
+		return "", fmt.Errorf("llmclient: decode response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		if ar.Error != nil {
+			return "", fmt.Errorf("llmclient: API error: %s", ar.Error.Message)
+		}
+		errBody := body
+		if len(errBody) > 512 {
+			errBody = errBody[:512]
+		}
+		return "", fmt.Errorf("llmclient: unexpected status %d: %s", resp.StatusCode, string(errBody))
+	}
+	if len(ar.Content) == 0 {
+		return "", fmt.Errorf("llmclient: no content in response")
+	}
+
+	return ar.Content[0].Text, nil
 }
