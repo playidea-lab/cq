@@ -929,8 +929,8 @@ c4_add_todo(
     review_required=False
 )
 
-# 태스크 생성 완료 후 알림 발송 (미설정 시 no-op)
-c4_notify(event='plan.created', message='[CQ] ✅ 계획 확정\n프로젝트: {project_id} | 태스크 {N}개 생성됨')
+# 태스크 생성 완료 후 알림 발송 (미설정 시 no-op) — MUST CALL
+mcp__cq__c4_notify(message='[CQ] ✅ 계획 확정\n프로젝트: {project_id} | 태스크 {N}개 생성됨', title='C4 Plan 완료')
 ```
 
 ---
