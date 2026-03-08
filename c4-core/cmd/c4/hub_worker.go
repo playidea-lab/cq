@@ -325,7 +325,7 @@ func runWorkerInstall(cmd *cobra.Command, args []string) error {
 	if err := os.MkdirAll(filepath.Dir(destPath), 0o755); err != nil {
 		return fmt.Errorf("create service dir: %w", err)
 	}
-	if err := os.WriteFile(destPath, []byte(content), 0o640); err != nil {
+	if err := os.WriteFile(destPath, []byte(content), 0o600); err != nil {
 		return fmt.Errorf("write service file: %w", err)
 	}
 
@@ -355,7 +355,7 @@ func buildSystemdUnit(execStart, hubURL, apiKey string) string {
 	}
 	envLine := ""
 	if apiKey != "" {
-		envLine = fmt.Sprintf("Environment=C5_API_KEY=%s\n", apiKey)
+		envLine = fmt.Sprintf("Environment=\"C5_API_KEY=%s\"\n", apiKey)
 	}
 	return fmt.Sprintf(`[Unit]
 Description=%s

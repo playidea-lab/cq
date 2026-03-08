@@ -42,7 +42,7 @@ cq hub worker init --non-interactive \
   --api-key "$C5_API_KEY"
 ```
 
-This registers the worker with the Hub and writes local config to `~/.c4/worker.yaml`.
+This registers the worker with the Hub and writes local config to `~/.c5/config.yaml`.
 
 ---
 
