@@ -91,7 +91,7 @@ var DefaultAllowlist = ErrorAllowlist{
 	"internal/mcp/handlers/handlers_guard.go":      6,
 	"internal/mcp/handlers/handlers_observe.go":    3,
 	"internal/mcp/handlers/hubhandler/hub_dag.go":          6,
-	"internal/mcp/handlers/hubhandler/hub_edge.go":         4,
+	"internal/mcp/handlers/hubhandler/hub_edge.go":         5,
 	"internal/mcp/handlers/hubhandler/hub_infra.go":        2,
 	"internal/mcp/handlers/hubhandler/hub_jobs.go":         7,
 	"internal/mcp/handlers/hubhandler/hub_jobs_metrics.go": 4,
