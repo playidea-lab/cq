@@ -190,6 +190,8 @@ c4_pop_extract(content=session_summary)
 - Conventional commit message 작성 (feat/fix/docs/refactor)
 - 커밋 생성 (push는 사용자 요청 시에만)
 - 완료 후: `c4_phase_lock_release(phase="finish")` 호출
+- 완료 알림 (미설정 시 no-op):
+  `c4_notify(event='finish.complete', message='[CQ] 🎉 완료\n프로젝트: {project_id} | {commit_sha} 커밋 완료')`
 
 ### 9. Release Notes (c4-release)
 

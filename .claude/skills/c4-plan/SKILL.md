@@ -928,6 +928,9 @@ c4_add_todo(
     dependencies=["R-001-0", "R-002-0"],
     review_required=False
 )
+
+# 태스크 생성 완료 후 알림 발송 (미설정 시 no-op)
+c4_notify(event='plan.created', message='[CQ] ✅ 계획 확정\n프로젝트: {project_id} | 태스크 {N}개 생성됨')
 ```
 
 ---

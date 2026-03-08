@@ -343,6 +343,8 @@ Worker ID: {cp_worker_id}""",
                 print("✅ Checkpoint auto-reviewed — continuing run...")
                 continue  # loop 재개
             else:
+                # 체크포인트 알림 (미설정 시 no-op)
+                c4_notify(event='checkpoint.ready', message='[CQ] 🔍 검토 필요\n프로젝트: {project_id} | {cp_id} 체크포인트 도달')
                 print("⏸️ Checkpoint reached — /c4-checkpoint으로 리뷰 후 /c4-run 재실행")
                 break
 
