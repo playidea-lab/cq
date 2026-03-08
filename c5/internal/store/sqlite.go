@@ -318,9 +318,20 @@ func (s *Store) migrate() error {
 		// Migration: snapshot/git traceability fields.
 		`ALTER TABLE jobs ADD COLUMN snapshot_version_hash TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE jobs ADD COLUMN git_hash TEXT NOT NULL DEFAULT ''`,
+		// Migration: EFL — edge control message queue (at-most-once delivery).
+		`CREATE TABLE IF NOT EXISTS edge_control_queue (
+			id         TEXT PRIMARY KEY,
+			edge_id    TEXT NOT NULL,
+			action     TEXT NOT NULL,
+			params     TEXT,
+			created_at TEXT NOT NULL
+		)`,
+		// Migration: EFL — health check fields for deploy rules.
+		`ALTER TABLE deploy_rules ADD COLUMN health_check TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE deploy_rules ADD COLUMN health_check_timeout INTEGER NOT NULL DEFAULT 30`,
 	} {
 		if _, err := s.db.Exec(stmt); err != nil {
-			if !strings.Contains(err.Error(), "duplicate column") {
+			if !strings.Contains(err.Error(), "duplicate column") && !strings.Contains(err.Error(), "already exists") {
 				return fmt.Errorf("migration %q: %w", stmt, err)
 			}
 		}
@@ -1632,31 +1643,39 @@ func matchEdgeFilter(e model.Edge, filter string) bool {
 func (s *Store) CreateDeployRule(projectID string, req *model.DeployRuleCreateRequest) (*model.DeployRule, error) {
 	id := generateID("dr")
 	now := time.Now().UTC().Format(time.RFC3339)
+	hcTimeout := req.HealthCheckTimeout
+	if hcTimeout == 0 {
+		hcTimeout = 30
+	}
 
 	_, err := s.db.Exec(`
-		INSERT INTO deploy_rules (id, name, project_id, trigger_expr, edge_filter, artifact_pattern, post_command, enabled, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?)`,
-		id, req.Name, projectID, req.Trigger, req.EdgeFilter, req.ArtifactPattern, req.PostCommand, now)
+		INSERT INTO deploy_rules (id, name, project_id, trigger_expr, edge_filter, artifact_pattern, post_command, health_check, health_check_timeout, enabled, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`,
+		id, req.Name, projectID, req.Trigger, req.EdgeFilter, req.ArtifactPattern, req.PostCommand, req.HealthCheck, hcTimeout, now)
 	if err != nil {
 		return nil, fmt.Errorf("create deploy rule: %w", err)
 	}
 	return &model.DeployRule{
-		ID:              id,
-		Name:            req.Name,
-		ProjectID:       projectID,
-		Trigger:         req.Trigger,
-		EdgeFilter:      req.EdgeFilter,
-		ArtifactPattern: req.ArtifactPattern,
-		PostCommand:     req.PostCommand,
-		Enabled:         true,
-		CreatedAt:       now,
+		ID:                 id,
+		Name:               req.Name,
+		ProjectID:          projectID,
+		Trigger:            req.Trigger,
+		EdgeFilter:         req.EdgeFilter,
+		ArtifactPattern:    req.ArtifactPattern,
+		PostCommand:        req.PostCommand,
+		HealthCheck:        req.HealthCheck,
+		HealthCheckTimeout: hcTimeout,
+		Enabled:            true,
+		CreatedAt:          now,
 	}, nil
 }
 
 // ListDeployRules returns deploy rules, optionally scoped to a project.
 // Pass "" to list all rules (master key or internal callers).
 func (s *Store) ListDeployRules(projectID string) ([]model.DeployRule, error) {
-	query := `SELECT id, name, project_id, trigger_expr, edge_filter, artifact_pattern, post_command, enabled, created_at FROM deploy_rules`
+	query := `SELECT id, name, project_id, trigger_expr, edge_filter, artifact_pattern, post_command,
+	                 COALESCE(health_check,''), COALESCE(health_check_timeout,30), enabled, created_at
+	          FROM deploy_rules`
 	args := []any{}
 	if projectID != "" {
 		query += " WHERE project_id = ? OR project_id = ''"
@@ -1674,7 +1693,7 @@ func (s *Store) ListDeployRules(projectID string) ([]model.DeployRule, error) {
 		var r model.DeployRule
 		var enabled int
 		if err := rows.Scan(&r.ID, &r.Name, &r.ProjectID, &r.Trigger, &r.EdgeFilter,
-			&r.ArtifactPattern, &r.PostCommand, &enabled, &r.CreatedAt); err != nil {
+			&r.ArtifactPattern, &r.PostCommand, &r.HealthCheck, &r.HealthCheckTimeout, &enabled, &r.CreatedAt); err != nil {
 			return nil, err
 		}
 		r.Enabled = enabled != 0
@@ -1950,7 +1969,8 @@ func (s *Store) ListDeployments(limit, offset int) ([]model.Deployment, error) {
 // ListPendingAssignmentsForEdge returns pending deployment assignments for the given edge (for GET /v1/deploy/assignments/{edge_id}).
 func (s *Store) ListPendingAssignmentsForEdge(edgeID string) ([]model.PendingAssignment, error) {
 	rows, err := s.db.Query(`
-		SELECT dt.deploy_id, d.job_id, COALESCE(r.artifact_pattern,''), COALESCE(r.post_command,'')
+		SELECT dt.deploy_id, d.job_id, COALESCE(r.artifact_pattern,''), COALESCE(r.post_command,''),
+		       COALESCE(r.health_check,''), COALESCE(r.health_check_timeout,30)
 		FROM deploy_targets dt
 		JOIN deployments d ON dt.deploy_id = d.id
 		LEFT JOIN deploy_rules r ON d.rule_id = r.id
@@ -1964,7 +1984,8 @@ func (s *Store) ListPendingAssignmentsForEdge(edgeID string) ([]model.PendingAss
 	var out []model.PendingAssignment
 	for rows.Next() {
 		var a model.PendingAssignment
-		if err := rows.Scan(&a.DeployID, &a.JobID, &a.ArtifactPattern, &a.PostCommand); err != nil {
+		if err := rows.Scan(&a.DeployID, &a.JobID, &a.ArtifactPattern, &a.PostCommand,
+			&a.HealthCheck, &a.HealthCheckTimeout); err != nil {
 			return nil, err
 		}
 		out = append(out, a)

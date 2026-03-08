@@ -508,24 +508,28 @@ type EdgeHeartbeatRequest struct {
 
 // DeployRule defines an automatic deployment trigger.
 type DeployRule struct {
-	ID              string `json:"id"`
-	Name            string `json:"name,omitempty"`
-	ProjectID       string `json:"project_id,omitempty"`
-	Trigger         string `json:"trigger"`
-	EdgeFilter      string `json:"edge_filter"`
-	ArtifactPattern string `json:"artifact_pattern"`
-	PostCommand     string `json:"post_command,omitempty"`
-	Enabled         bool   `json:"enabled"`
-	CreatedAt       string `json:"created_at,omitempty"`
+	ID                  string `json:"id"`
+	Name                string `json:"name,omitempty"`
+	ProjectID           string `json:"project_id,omitempty"`
+	Trigger             string `json:"trigger"`
+	EdgeFilter          string `json:"edge_filter"`
+	ArtifactPattern     string `json:"artifact_pattern"`
+	PostCommand         string `json:"post_command,omitempty"`
+	HealthCheck         string `json:"health_check,omitempty"`
+	HealthCheckTimeout  int    `json:"health_check_timeout,omitempty"`
+	Enabled             bool   `json:"enabled"`
+	CreatedAt           string `json:"created_at,omitempty"`
 }
 
 // DeployRuleCreateRequest is the payload for POST /v1/deploy/rules.
 type DeployRuleCreateRequest struct {
-	Name            string `json:"name,omitempty"`
-	Trigger         string `json:"trigger"`
-	EdgeFilter      string `json:"edge_filter"`
-	ArtifactPattern string `json:"artifact_pattern"`
-	PostCommand     string `json:"post_command,omitempty"`
+	Name                string `json:"name,omitempty"`
+	Trigger             string `json:"trigger"`
+	EdgeFilter          string `json:"edge_filter"`
+	ArtifactPattern     string `json:"artifact_pattern"`
+	PostCommand         string `json:"post_command,omitempty"`
+	HealthCheck         string `json:"health_check,omitempty"`
+	HealthCheckTimeout  int    `json:"health_check_timeout,omitempty"`
 }
 
 // DeployRuleCreateResponse is the response from POST /v1/deploy/rules.
@@ -573,10 +577,12 @@ type DeployTriggerResponse struct {
 
 // PendingAssignment is a pending deployment assignment for an edge (store layer).
 type PendingAssignment struct {
-	DeployID        string `json:"deploy_id"`
-	JobID           string `json:"job_id"`
-	ArtifactPattern string `json:"artifact_pattern"`
-	PostCommand     string `json:"post_command,omitempty"`
+	DeployID           string `json:"deploy_id"`
+	JobID              string `json:"job_id"`
+	ArtifactPattern    string `json:"artifact_pattern"`
+	PostCommand        string `json:"post_command,omitempty"`
+	HealthCheck        string `json:"health_check,omitempty"`
+	HealthCheckTimeout int    `json:"health_check_timeout,omitempty"`
 }
 
 // DeployAssignmentArtifact is one artifact with download URL (API response).
@@ -587,11 +593,13 @@ type DeployAssignmentArtifact struct {
 
 // DeployAssignmentResponse is one item of GET /v1/deploy/assignments/{edge_id} response.
 type DeployAssignmentResponse struct {
-	DeployID        string                     `json:"deploy_id"`
-	JobID           string                     `json:"job_id"`
-	ArtifactPattern string                     `json:"artifact_pattern"`
-	PostCommand     string                     `json:"post_command,omitempty"`
-	Artifacts       []DeployAssignmentArtifact `json:"artifacts,omitempty"`
+	DeployID            string                     `json:"deploy_id"`
+	JobID               string                     `json:"job_id"`
+	ArtifactPattern     string                     `json:"artifact_pattern"`
+	PostCommand         string                     `json:"post_command,omitempty"`
+	HealthCheck         string                     `json:"health_check,omitempty"`
+	HealthCheckTimeout  int                        `json:"health_check_timeout,omitempty"`
+	Artifacts           []DeployAssignmentArtifact `json:"artifacts,omitempty"`
 }
 
 // DeployTargetStatusRequest is the payload for POST /v1/deploy/target-status (edge agent reports target status).

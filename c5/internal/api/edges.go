@@ -75,12 +75,37 @@ func (s *Server) handleEdgesList(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleEdgeByID(w http.ResponseWriter, r *http.Request) {
-	edgeID := strings.TrimPrefix(r.URL.Path, "/v1/edges/")
-	if edgeID == "" {
+	trimmed := strings.TrimPrefix(r.URL.Path, "/v1/edges/")
+	if trimmed == "" {
 		writeError(w, http.StatusBadRequest, "edge ID required")
 		return
 	}
 
+	// Sub-resource routing: /v1/edges/{id}/metrics and /v1/edges/{id}/control
+	if strings.HasSuffix(r.URL.Path, "/metrics") {
+		switch r.Method {
+		case "POST":
+			s.handleEdgeMetricsPost(w, r)
+		case "GET":
+			s.handleEdgeMetricsGet(w, r)
+		default:
+			methodNotAllowed(w)
+		}
+		return
+	}
+	if strings.HasSuffix(r.URL.Path, "/control") {
+		switch r.Method {
+		case "POST":
+			s.handleEdgeControlPost(w, r)
+		case "GET":
+			s.handleEdgeControlGet(w, r)
+		default:
+			methodNotAllowed(w)
+		}
+		return
+	}
+
+	edgeID := trimmed
 	pid := projectIDFromContext(r)
 	switch r.Method {
 	case "GET":
@@ -308,10 +333,12 @@ func (s *Server) handleDeployAssignments(w http.ResponseWriter, r *http.Request)
 	resp := make([]model.DeployAssignmentResponse, 0, len(list))
 	for _, a := range list {
 		item := model.DeployAssignmentResponse{
-			DeployID:        a.DeployID,
-			JobID:           a.JobID,
-			ArtifactPattern: a.ArtifactPattern,
-			PostCommand:     a.PostCommand,
+			DeployID:           a.DeployID,
+			JobID:              a.JobID,
+			ArtifactPattern:    a.ArtifactPattern,
+			PostCommand:        a.PostCommand,
+			HealthCheck:        a.HealthCheck,
+			HealthCheckTimeout: a.HealthCheckTimeout,
 		}
 		arts, err := s.store.ListArtifacts(a.JobID)
 		if err == nil && len(arts) > 0 && a.ArtifactPattern != "" {
