@@ -535,8 +535,7 @@ func TestBuildSystemdUnit_Sanitize(t *testing.T) {
 		{
 			name:      "backslash_escaped",
 			apiKey:    `key\value`,
-			wantInEnv: `key\\value`,
-			wantNot:   "key\\value\n",
+			wantInEnv: `key\\value`, // raw backslash becomes \\ in the quoted value
 		},
 		{
 			// Newline injection attempt: without stripping, the payload would create

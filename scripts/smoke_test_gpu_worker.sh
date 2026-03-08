@@ -30,7 +30,7 @@ fi
 
 echo "==> Submitting test job (nvidia-smi)..."
 SUBMIT_OUT=$(cq hub submit --run "nvidia-smi")
-JOB_ID=$(echo "$SUBMIT_OUT" | grep -o 'Job submitted: [^ ]*' | awk '{print $3}')
+JOB_ID=$(echo "$SUBMIT_OUT" | grep -o 'Job submitted: [^ ]*' | awk '{print $NF}')
 
 if [ -z "$JOB_ID" ]; then
   echo "FAIL: could not parse job_id from submit output: $SUBMIT_OUT"
