@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.77.1] - 2026-03-08
+
+### ✨ Features
+- **notify**: `c4_notification_set`, `c4_notification_get`, `c4_notify` MCP tools — per-user workflow alerts via Dooray/Slack/Discord/Teams webhook
+  - `c4_notification_set`: webhook URL 등록 (channel + webhook_url)
+  - `c4_notification_get`: 설정된 채널 조회 (webhook_url 마스킹)
+  - `c4_notify`: 등록된 채널에 메시지 발송 (title + message)
+  - Teams MessageCard `@context` 필드 포함, `errors.Is` 모던 Go 패턴 적용
+  - `.c4/notifications.json`에 0o640 권한으로 저장
+
+### 🐛 Bug Fixes
+- **serve**: `registerHubPollerServeComponent`에 `initCtx.hubClient` 전달 — credentials 재해결 없이 재사용
+- **serve/hub**: hubpoller stub 시그니처를 any parameter 매칭으로 업데이트
+
+---
+
 ## [v0.76.0] - 2026-03-08
 
 ### ✨ Features
