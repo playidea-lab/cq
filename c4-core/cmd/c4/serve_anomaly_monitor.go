@@ -142,7 +142,7 @@ func (a *anomalyMonitor) check(ctx context.Context) {
 		a.mu.Unlock()
 
 		meta := map[string]any{
-			"task_id":        hypID,
+			"hypothesis_id":  hypID,
 			"domain":         "escalation",
 			"trigger_reason": "escalation",
 		}

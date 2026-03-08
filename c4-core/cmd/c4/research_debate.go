@@ -138,9 +138,10 @@ func runDebate(ctx context.Context, caller debateCaller, store debateStore, hypI
 		}
 	}
 
-	// Extract next_hypothesis_draft from optimizer
+	// Extract next_hypothesis_draft from optimizer.
+	// LLM follows the fixed prompt format so "NEXT_HYPOTHESIS:" is uppercase ASCII.
 	nextHypDraft := ""
-	if idx := strings.Index(strings.ToUpper(optimizerOut), "NEXT_HYPOTHESIS:"); idx >= 0 {
+	if idx := strings.Index(optimizerOut, "NEXT_HYPOTHESIS:"); idx >= 0 {
 		nextHypDraft = strings.TrimSpace(optimizerOut[idx+16:])
 		if nl := strings.Index(nextHypDraft, "\n"); nl >= 0 {
 			nextHypDraft = nextHypDraft[:nl]

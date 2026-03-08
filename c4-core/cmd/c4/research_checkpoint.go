@@ -130,7 +130,10 @@ func researchCheckpointHandler(store *knowledge.Store, caller checkpointCaller) 
 			"skeptic_feedback":   skepticOut,
 			"suggestions":        suggestions,
 		}
-		b, _ := json.Marshal(result)
+		b, marshalErr := json.Marshal(result)
+		if marshalErr != nil {
+			return nil, fmt.Errorf("marshal result: %w", marshalErr)
+		}
 		return string(b), nil
 	}
 }
