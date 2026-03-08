@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"html"
 	"io"
+	"io/fs"
 	"net/http"
 	"os"
 	"os/exec"
@@ -325,7 +326,13 @@ func runWorkerInstall(cmd *cobra.Command, args []string) error {
 	if err := os.MkdirAll(filepath.Dir(destPath), 0o755); err != nil {
 		return fmt.Errorf("create service dir: %w", err)
 	}
-	if err := os.WriteFile(destPath, []byte(content), 0o600); err != nil {
+	// User-mode units live in the user's home; restrict to owner only.
+	// System-mode units in /etc/systemd/system must be world-readable (0644).
+	perm := fs.FileMode(0o644)
+	if workerInstallUser {
+		perm = 0o600
+	}
+	if err := os.WriteFile(destPath, []byte(content), perm); err != nil {
 		return fmt.Errorf("write service file: %w", err)
 	}
 
@@ -343,11 +350,13 @@ func runWorkerInstall(cmd *cobra.Command, args []string) error {
 }
 
 func buildSystemdUnit(execStart, hubURL, apiKey string) string {
-	// Strip newlines to prevent injection into the multi-line unit file.
+	// Strip newlines; escape backslash and double-quote inside the quoted
+	// Environment= value to prevent systemd unit-file injection.
 	sanitize := strings.NewReplacer("\n", "", "\r", "").Replace
+	sanitizeEnv := strings.NewReplacer("\n", "", "\r", "", `\`, `\\`, `"`, `\"`).Replace
 	execStart = sanitize(execStart)
 	hubURL = sanitize(hubURL)
-	apiKey = sanitize(apiKey)
+	apiKey = sanitizeEnv(apiKey)
 
 	desc := "CQ Hub Worker"
 	if hubURL != "" {

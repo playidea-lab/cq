@@ -516,3 +516,46 @@ func TestWorkerStatus_NoHubURL(t *testing.T) {
 		t.Errorf("error %q should mention hub_url", err.Error())
 	}
 }
+
+// TestBuildSystemdUnit_Sanitize verifies that special characters in apiKey are
+// properly escaped so they cannot inject extra directives into the unit file.
+func TestBuildSystemdUnit_Sanitize(t *testing.T) {
+	cases := []struct {
+		name      string
+		apiKey    string
+		wantInEnv string // substring that must appear inside Environment= line
+		wantNot   string // substring that must NOT appear (raw unescaped form)
+	}{
+		{
+			name:      "double_quote_escaped",
+			apiKey:    `key"injected`,
+			wantInEnv: `key\"injected`,
+			wantNot:   `key"injected`,
+		},
+		{
+			name:      "backslash_escaped",
+			apiKey:    `key\value`,
+			wantInEnv: `key\\value`,
+			wantNot:   "key\\value\n",
+		},
+		{
+			// Newline injection attempt: without stripping, the payload would create
+			// a second ExecStart= directive on its own line. After stripping, the
+			// injected text collapses into the quoted Environment= value (safe).
+			name:      "newline_stripped",
+			apiKey:    "key\nExecStart=/bin/sh",
+			wantInEnv: `C5_API_KEY=keyExecStart=/bin/sh`, // collapsed into value — safe
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			unit := buildSystemdUnit("/usr/local/bin/cq hub worker start", "https://hub.example.com", tc.apiKey)
+			if tc.wantInEnv != "" && !strings.Contains(unit, tc.wantInEnv) {
+				t.Errorf("expected %q in unit file, got:\n%s", tc.wantInEnv, unit)
+			}
+			if tc.wantNot != "" && strings.Contains(unit, tc.wantNot) {
+				t.Errorf("found unsafe string %q in unit file:\n%s", tc.wantNot, unit)
+			}
+		})
+	}
+}
