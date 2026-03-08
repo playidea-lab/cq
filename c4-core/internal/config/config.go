@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/spf13/viper"
 )
@@ -294,18 +295,27 @@ type ServeMCPHTTPConfig struct {
 	APIKey  string `mapstructure:"api_key"  yaml:"api_key"` // dev/test only; prefer secrets.db or CQ_MCP_API_KEY env
 }
 
+// ServeHypothesisSuggesterConfig holds settings for the hypothesis suggester component.
+type ServeHypothesisSuggesterConfig struct {
+	Enabled   bool          `mapstructure:"enabled"    yaml:"enabled"`
+	Threshold int           `mapstructure:"threshold"  yaml:"threshold"` // number of new experiments to trigger
+	Interval  string        `mapstructure:"interval"   yaml:"interval"`  // poll interval, e.g. "30s"
+	TTL       time.Duration `mapstructure:"ttl"        yaml:"ttl"`       // hypothesis expiry duration
+}
+
 // ServeConfig holds settings for the cq serve command.
 type ServeConfig struct {
-	HealthPort    int                  `mapstructure:"health_port"    yaml:"health_port"`
-	Agent         ServeComponentToggle `mapstructure:"agent"          yaml:"agent"`
-	EventBus      ServeComponentToggle `mapstructure:"eventbus"       yaml:"eventbus"`
-	EventSink     ServeComponentToggle `mapstructure:"eventsink"      yaml:"eventsink"`
-	HubPoller     ServeComponentToggle `mapstructure:"hubpoller"      yaml:"hubpoller"`
-	GPU           ServeComponentToggle `mapstructure:"gpu"            yaml:"gpu"`
-	SSESubscriber ServeComponentToggle `mapstructure:"ssesubscriber"  yaml:"ssesubscriber"`
-	StaleChecker  StaleCheckerConfig   `mapstructure:"stale_checker"  yaml:"stale_checker"`
-	Hub           ServeHubConfig       `mapstructure:"hub"            yaml:"hub"`
-	MCPHTTP       ServeMCPHTTPConfig   `mapstructure:"mcp_http"       yaml:"mcp_http"`
+	HealthPort          int                             `mapstructure:"health_port"           yaml:"health_port"`
+	Agent               ServeComponentToggle            `mapstructure:"agent"                 yaml:"agent"`
+	EventBus            ServeComponentToggle            `mapstructure:"eventbus"              yaml:"eventbus"`
+	EventSink           ServeComponentToggle            `mapstructure:"eventsink"             yaml:"eventsink"`
+	HubPoller           ServeComponentToggle            `mapstructure:"hubpoller"             yaml:"hubpoller"`
+	GPU                 ServeComponentToggle            `mapstructure:"gpu"                   yaml:"gpu"`
+	SSESubscriber       ServeComponentToggle            `mapstructure:"ssesubscriber"         yaml:"ssesubscriber"`
+	StaleChecker        StaleCheckerConfig              `mapstructure:"stale_checker"         yaml:"stale_checker"`
+	Hub                 ServeHubConfig                  `mapstructure:"hub"                   yaml:"hub"`
+	MCPHTTP             ServeMCPHTTPConfig              `mapstructure:"mcp_http"              yaml:"mcp_http"`
+	HypothesisSuggester ServeHypothesisSuggesterConfig  `mapstructure:"hypothesis_suggester"  yaml:"hypothesis_suggester"`
 }
 
 // PermissionReviewerConfig holds settings for the permission auto-reviewer hook.
