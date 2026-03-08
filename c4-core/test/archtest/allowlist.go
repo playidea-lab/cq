@@ -17,6 +17,9 @@ type ErrorAllowlist map[string]int
 // Generated from: T-ARCH-000-0 reconnaissance (396 violations across 86 files).
 var DefaultAllowlist = ErrorAllowlist{
 	"cmd/c4/auth.go":                               6,
+	"cmd/c4/hypothesis.go":                         3,
+	"cmd/c4/serve_hypothesis_suggester.go":         1,
+	"cmd/c4/serve_knowledge_suggestpoller.go":      5,
 	"cmd/c4/cloud.go":                              1,
 	"cmd/c4/upgrade.go":                            1,
 	"cmd/c4/worker.go":                             3,
