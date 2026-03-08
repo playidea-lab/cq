@@ -329,6 +329,12 @@ func (s *Store) migrate() error {
 		// Migration: EFL — health check fields for deploy rules.
 		`ALTER TABLE deploy_rules ADD COLUMN health_check TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE deploy_rules ADD COLUMN health_check_timeout INTEGER NOT NULL DEFAULT 30`,
+		// Migration: worker observability fields.
+		`ALTER TABLE workers ADD COLUMN name TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE workers ADD COLUMN uptime_sec INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE workers ADD COLUMN last_job_at TEXT NOT NULL DEFAULT ''`,
+		// Migration: job routing by required worker tags.
+		`ALTER TABLE jobs ADD COLUMN required_tags TEXT NOT NULL DEFAULT '[]'`,
 	} {
 		if _, err := s.db.Exec(stmt); err != nil {
 			if !strings.Contains(err.Error(), "duplicate column") && !strings.Contains(err.Error(), "already exists") {
@@ -371,6 +377,7 @@ func (s *Store) CreateJob(req *model.JobSubmitRequest) (*model.Job, error) {
 		Params:              req.Params,
 		SnapshotVersionHash: req.SnapshotVersionHash,
 		GitHash:             req.GitHash,
+		RequiredTags:        req.RequiredTags,
 		CreatedAt:           now,
 	}
 
@@ -378,8 +385,8 @@ func (s *Store) CreateJob(req *model.JobSubmitRequest) (*model.Job, error) {
 		INSERT INTO jobs (id, name, status, priority, workdir, command,
 			requires_gpu, vram_required_gb, env, tags, exp_id, memo, timeout_sec, project_id,
 			submitted_by, input_artifacts, output_artifacts, capability, params,
-			snapshot_version_hash, git_hash, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			snapshot_version_hash, git_hash, required_tags, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		job.ID, job.Name, string(job.Status), job.Priority, job.Workdir, job.Command,
 		boolToInt(job.RequiresGPU), job.VRAMRequiredGB,
 		marshalJSON(job.Env), marshalJSON(job.Tags),
@@ -388,6 +395,7 @@ func (s *Store) CreateJob(req *model.JobSubmitRequest) (*model.Job, error) {
 		marshalArtifacts(job.InputArtifacts), marshalArtifacts(job.OutputArtifacts),
 		job.Capability, marshalJSON(job.Params),
 		job.SnapshotVersionHash, job.GitHash,
+		marshalJSON(job.RequiredTags),
 		now.Format(time.RFC3339),
 	)
 	if err != nil {
@@ -667,6 +675,18 @@ func (s *Store) UpdateHeartbeat(req *model.HeartbeatRequest) error {
 		query += ", gpu_count = ?"
 		args = append(args, req.GPUCount)
 	}
+	if req.Name != "" {
+		query += ", name = ?"
+		args = append(args, req.Name)
+	}
+	if req.UptimeSec > 0 {
+		query += ", uptime_sec = ?"
+		args = append(args, req.UptimeSec)
+	}
+	if req.LastJobAt != "" {
+		query += ", last_job_at = ?"
+		args = append(args, req.LastJobAt)
+	}
 
 	query += " WHERE id = ?"
 	args = append(args, req.WorkerID)
@@ -685,7 +705,8 @@ func (s *Store) UpdateHeartbeat(req *model.HeartbeatRequest) error {
 // ListWorkers returns all workers, optionally filtered by project_id.
 func (s *Store) ListWorkers(projectID string) ([]*model.Worker, error) {
 	query := `SELECT id, hostname, status, gpu_count, gpu_model,
-		total_vram, free_vram, tags, project_id, version, last_heartbeat, registered_at
+		total_vram, free_vram, tags, project_id, version, last_heartbeat, registered_at,
+		name, uptime_sec, last_job_at
 		FROM workers`
 	args := []any{}
 	if projectID != "" {
@@ -714,7 +735,8 @@ func (s *Store) ListWorkers(projectID string) ([]*model.Worker, error) {
 func (s *Store) GetWorker(id string) (*model.Worker, error) {
 	row := s.db.QueryRow(`
 		SELECT id, hostname, status, gpu_count, gpu_model,
-			total_vram, free_vram, tags, project_id, version, last_heartbeat, registered_at
+			total_vram, free_vram, tags, project_id, version, last_heartbeat, registered_at,
+			name, uptime_sec, last_job_at
 		FROM workers WHERE id = ?`, id)
 	return scanWorkerSingle(row)
 }
@@ -738,59 +760,107 @@ func (s *Store) MarkStaleWorkers(threshold time.Duration) (int, error) {
 
 const defaultLeaseDuration = 5 * time.Minute
 
+// tagsMatch returns true if all required tags are present in workerCaps.
+// Direction: job.required_tags ⊆ worker.capabilities.
+func tagsMatch(requiredTags, workerCaps []string) bool {
+	if len(requiredTags) == 0 {
+		return true
+	}
+	capSet := make(map[string]struct{}, len(workerCaps))
+	for _, c := range workerCaps {
+		capSet[c] = struct{}{}
+	}
+	for _, tag := range requiredTags {
+		if _, ok := capSet[tag]; !ok {
+			return false
+		}
+	}
+	return true
+}
+
 // AcquireLease assigns a queued job to a worker and creates a lease.
-// Uses UPDATE-first pattern: atomically claims the highest-priority queued
-// job, then reads the claimed data. Prevents race conditions where two
-// workers could SELECT the same job before either UPDATEs it.
+// Uses BEGIN IMMEDIATE + Go-side tag filtering + CAS-style UPDATE to prevent
+// race conditions where two workers could claim the same job.
 func (s *Store) AcquireLease(workerID string, requiresGPU bool, projectID string, workerVRAM ...float64) (*model.Lease, *model.Job, error) {
-	tx, err := s.db.Begin()
+	// Fetch worker capabilities (tags) for required_tags filtering (outside TX for speed).
+	workerRow := s.db.QueryRow(`SELECT tags FROM workers WHERE id = ?`, workerID)
+	var workerTagsJSON string
+	if err := workerRow.Scan(&workerTagsJSON); err != nil {
+		return nil, nil, fmt.Errorf("get worker tags: %w", err)
+	}
+	var workerCaps []string
+	json.Unmarshal([]byte(workerTagsJSON), &workerCaps)
+
+	tx, err := s.db.BeginTx(context.Background(), &sql.TxOptions{Isolation: sql.LevelSerializable})
 	if err != nil {
 		return nil, nil, fmt.Errorf("begin tx: %w", err)
 	}
 	defer tx.Rollback()
 
+	// Fetch candidates: up to 1000 queued jobs filtered by DB-side conditions.
+	candidateQuery := `SELECT id, required_tags FROM jobs WHERE status = 'QUEUED'`
+	candidateArgs := []any{}
+	if requiresGPU {
+		candidateQuery += " AND requires_gpu = 1"
+	}
+	if len(workerVRAM) > 0 && workerVRAM[0] > 0 {
+		candidateQuery += " AND vram_required_gb <= ?"
+		candidateArgs = append(candidateArgs, workerVRAM[0])
+	}
+	if projectID != "" {
+		candidateQuery += " AND project_id = ?"
+		candidateArgs = append(candidateArgs, projectID)
+	}
+	candidateQuery += " AND (capability = '' OR capability IN (SELECT name FROM capabilities WHERE worker_id = ?))"
+	candidateArgs = append(candidateArgs, workerID)
+	candidateQuery += " ORDER BY priority DESC, created_at ASC LIMIT 1000"
+
+	rows, err := tx.Query(candidateQuery, candidateArgs...)
+	if err != nil {
+		return nil, nil, fmt.Errorf("query candidates: %w", err)
+	}
+	var matchedJobID string
+	for rows.Next() {
+		var jobID, reqTagsJSON string
+		if err := rows.Scan(&jobID, &reqTagsJSON); err != nil {
+			rows.Close()
+			return nil, nil, fmt.Errorf("scan candidate: %w", err)
+		}
+		var reqTags []string
+		json.Unmarshal([]byte(reqTagsJSON), &reqTags)
+		if tagsMatch(reqTags, workerCaps) {
+			matchedJobID = jobID
+			break
+		}
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, nil, fmt.Errorf("candidates iter: %w", err)
+	}
+
+	if matchedJobID == "" {
+		return nil, nil, nil // no matching job
+	}
+
 	now := time.Now().UTC()
 	expiresAt := now.Add(defaultLeaseDuration)
 	nowStr := now.Format(time.RFC3339)
 
-	// UPDATE-first: atomically claim the highest-priority queued job.
-	// The subquery finds the target, UPDATE claims it — one atomic step.
-	extraFilter := ""
-	args := []any{nowStr, workerID}
-	if requiresGPU {
-		extraFilter += " AND requires_gpu = 1"
-	}
-	// VRAM filter: only match jobs whose vram_required_gb <= worker's available VRAM.
-	if len(workerVRAM) > 0 && workerVRAM[0] > 0 {
-		extraFilter += " AND vram_required_gb <= ?"
-		args = append(args, workerVRAM[0])
-	}
-	if projectID != "" {
-		extraFilter += " AND project_id = ?"
-		args = append(args, projectID)
-	}
-	// Capability filter: only pick capability jobs if worker has that capability registered.
-	// Non-capability jobs (capability='') are always eligible.
-	extraFilter += " AND (capability = '' OR capability IN (SELECT name FROM capabilities WHERE worker_id = ?))"
-	args = append(args, workerID)
+	// CAS-style UPDATE: claim only if still queued (prevents double-claim).
 	result, err := tx.Exec(`
 		UPDATE jobs SET status = 'RUNNING', started_at = ?, worker_id = ?
-		WHERE id = (
-			SELECT id FROM jobs WHERE status = 'QUEUED'`+extraFilter+`
-			ORDER BY priority DESC, created_at ASC LIMIT 1
-		) AND status = 'QUEUED'`,
-		args...)
+		WHERE id = ? AND status = 'QUEUED'`,
+		nowStr, workerID, matchedJobID)
 	if err != nil {
 		return nil, nil, fmt.Errorf("claim job: %w", err)
 	}
 	n, _ := result.RowsAffected()
 	if n == 0 {
-		return nil, nil, nil // no job available
+		return nil, nil, nil // another worker claimed it first
 	}
 
 	// Read the claimed job
-	row := tx.QueryRow(jobSelectCols+" FROM jobs WHERE worker_id = ? AND started_at = ?",
-		workerID, nowStr)
+	row := tx.QueryRow(jobSelectCols+" FROM jobs WHERE id = ?", matchedJobID)
 	job, err := scanJob(row)
 	if err != nil {
 		return nil, nil, fmt.Errorf("read claimed job: %w", err)
@@ -2149,7 +2219,7 @@ const jobSelectCols = `SELECT id, name, status, priority, workdir, command,
 	requires_gpu, vram_required_gb, env, tags, exp_id, memo, timeout_sec, worker_id,
 	created_at, started_at, finished_at, exit_code, project_id, submitted_by,
 	input_artifacts, output_artifacts, capability, params, result,
-	snapshot_version_hash, git_hash`
+	snapshot_version_hash, git_hash, required_tags`
 
 type scanner interface {
 	Scan(dest ...any) error
@@ -2157,20 +2227,21 @@ type scanner interface {
 
 func populateJob(sc scanner) (*model.Job, error) {
 	var (
-		j                   model.Job
-		status              string
-		requiresGPU         int
-		envJSON             string
-		tagsJSON            string
-		createdAt           string
-		startedAt           sql.NullString
-		finishedAt          sql.NullString
-		exitCode            sql.NullInt64
-		submittedBy         sql.NullString
-		inputArtifactsJSON  string
-		outputArtifactsJSON string
-		paramsJSON          string
-		resultJSON          string
+		j                    model.Job
+		status               string
+		requiresGPU          int
+		envJSON              string
+		tagsJSON             string
+		createdAt            string
+		startedAt            sql.NullString
+		finishedAt           sql.NullString
+		exitCode             sql.NullInt64
+		submittedBy          sql.NullString
+		inputArtifactsJSON   string
+		outputArtifactsJSON  string
+		paramsJSON           string
+		resultJSON           string
+		requiredTagsJSON     string
 	)
 	err := sc.Scan(
 		&j.ID, &j.Name, &status, &j.Priority, &j.Workdir, &j.Command,
@@ -2181,6 +2252,7 @@ func populateJob(sc scanner) (*model.Job, error) {
 		&inputArtifactsJSON, &outputArtifactsJSON,
 		&j.Capability, &paramsJSON, &resultJSON,
 		&j.SnapshotVersionHash, &j.GitHash,
+		&requiredTagsJSON,
 	)
 	if err != nil {
 		return nil, err
@@ -2213,6 +2285,9 @@ func populateJob(sc scanner) (*model.Job, error) {
 	if resultJSON != "" && resultJSON != "{}" {
 		json.Unmarshal([]byte(resultJSON), &j.Result)
 	}
+	if requiredTagsJSON != "" && requiredTagsJSON != "[]" {
+		json.Unmarshal([]byte(requiredTagsJSON), &j.RequiredTags)
+	}
 	return &j, nil
 }
 
@@ -2236,6 +2311,7 @@ func scanWorkerRow(rows *sql.Rows) (*model.Worker, error) {
 	err := rows.Scan(
 		&w.ID, &w.Hostname, &w.Status, &w.GPUCount, &w.GPUModel,
 		&w.TotalVRAM, &w.FreeVRAM, &tagsJSON, &w.ProjectID, &w.Version, &lastHB, &regAt,
+		&w.Name, &w.UptimeSec, &w.LastJobAt,
 	)
 	if err != nil {
 		return nil, err
@@ -2254,6 +2330,7 @@ func scanWorkerSingle(row *sql.Row) (*model.Worker, error) {
 	err := row.Scan(
 		&w.ID, &w.Hostname, &w.Status, &w.GPUCount, &w.GPUModel,
 		&w.TotalVRAM, &w.FreeVRAM, &tagsJSON, &w.ProjectID, &w.Version, &lastHB, &regAt,
+		&w.Name, &w.UptimeSec, &w.LastJobAt,
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {

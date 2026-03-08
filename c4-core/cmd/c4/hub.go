@@ -110,6 +110,12 @@ var hubEdgeListCmd = &cobra.Command{
 	RunE:  runHubEdgeList,
 }
 
+var hubWorkersCmd = &cobra.Command{
+	Use:   "workers",
+	Short: "List registered Hub workers",
+	RunE:  runHubWorkers,
+}
+
 var hubSubmitCmd = &cobra.Command{
 	Use:   "submit",
 	Short: "Upload current dir snapshot and submit a Hub job",
@@ -155,6 +161,7 @@ func init() {
 	hubCmd.AddCommand(hubWatchCmd)
 	hubCmd.AddCommand(hubRunCmd)
 	hubCmd.AddCommand(hubSubmitCmd)
+	hubCmd.AddCommand(hubWorkersCmd)
 	hubCmd.AddCommand(hubEdgeCmd)
 	rootCmd.AddCommand(hubCmd)
 }
@@ -250,6 +257,47 @@ func runHubStatus(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	w.Flush()
+	return nil
+}
+
+// =========================================================================
+// cq hub workers
+// =========================================================================
+
+func runHubWorkers(cmd *cobra.Command, args []string) error {
+	client, err := newHubClient()
+	if err != nil {
+		return err
+	}
+
+	workers, err := client.ListWorkers()
+	if err != nil {
+		return fmt.Errorf("list workers: %w", err)
+	}
+
+	if len(workers) == 0 {
+		fmt.Println("No workers registered.")
+		return nil
+	}
+
+	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	fmt.Fprintf(w, "NAME\tSTATUS\tUPTIME\tLAST JOB\tCAPABILITIES\n")
+	for _, wk := range workers {
+		name := wk.Name
+		if name == "" {
+			name = wk.Hostname
+		}
+		if name == "" {
+			name = wk.ID
+		}
+		caps := "-"
+		if len(wk.Capabilities) > 0 {
+			caps = strings.Join(wk.Capabilities, ",")
+		}
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
+			name, wk.Status, formatUptime(wk.UptimeSec), formatLastJob(wk.LastJobAt), caps)
+	}
 	w.Flush()
 	return nil
 }

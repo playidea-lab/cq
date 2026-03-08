@@ -85,14 +85,18 @@ type JobSubmitResponse struct {
 
 // Worker represents a Hub worker.
 type Worker struct {
-	ID        string    `json:"id"`
-	Hostname  string    `json:"hostname,omitempty"`
-	Status    string    `json:"status"`
-	GPUCount  int       `json:"gpu_count"`
-	GPUModel  string    `json:"gpu_model,omitempty"`
-	TotalVRAM float64   `json:"total_vram_gb"`
-	FreeVRAM  float64   `json:"free_vram_gb"`
-	GPUs      []GPUInfo `json:"gpus,omitempty"`
+	ID           string         `json:"id"`
+	Name         string         `json:"name,omitempty"`
+	Hostname     string         `json:"hostname,omitempty"`
+	Status       string         `json:"status"`
+	GPUCount     int            `json:"gpu_count"`
+	GPUModel     string         `json:"gpu_model,omitempty"`
+	TotalVRAM    float64        `json:"total_vram_gb"`
+	FreeVRAM     float64        `json:"free_vram_gb"`
+	GPUs         []GPUInfo      `json:"gpus,omitempty"`
+	UptimeSec    int64          `json:"uptime_sec,omitempty"`
+	LastJobAt    string         `json:"last_job_at,omitempty"`
+	Capabilities []string       `json:"capabilities,omitempty"`
 }
 
 // GPUInfo holds per-GPU details.

@@ -1,6 +1,7 @@
 package store
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -1860,6 +1861,54 @@ func TestAcquireLease_GPUOnlyMode(t *testing.T) {
 	}
 	if job.Name != "gpu-task" {
 		t.Fatalf("expected gpu-task, got %s", job.Name)
+	}
+}
+
+// TestAcquireLease_TagFiltering verifies that required_tags routing works:
+// a worker without GPU capability should only acquire untagged jobs.
+func TestAcquireLease_TagFiltering(t *testing.T) {
+	s := newTestStore(t)
+
+	// Register a worker with no tags (no GPU capability).
+	w, _ := s.RegisterWorker(&model.WorkerRegisterRequest{Hostname: "plain-worker"})
+
+	// Submit 21 GPU-tagged jobs.
+	for i := 0; i < 21; i++ {
+		s.CreateJob(&model.JobSubmitRequest{
+			Name:         fmt.Sprintf("gpu-job-%d", i),
+			Command:      "train",
+			RequiredTags: []string{"gpu"},
+		})
+	}
+
+	// Submit 1 untagged job.
+	plain, err := s.CreateJob(&model.JobSubmitRequest{
+		Name:    "plain-job",
+		Command: "echo",
+	})
+	if err != nil {
+		t.Fatalf("create plain job: %v", err)
+	}
+
+	// The plain worker should acquire only the untagged job.
+	lease, job, err := s.AcquireLease(w.ID, false, "")
+	if err != nil {
+		t.Fatalf("acquire lease: %v", err)
+	}
+	if lease == nil || job == nil {
+		t.Fatal("expected plain worker to acquire the untagged job")
+	}
+	if job.ID != plain.ID {
+		t.Fatalf("expected plain job %s, got %s (name=%s)", plain.ID, job.ID, job.Name)
+	}
+
+	// Second acquire should return nil — only GPU jobs remain and worker has no gpu tag.
+	lease2, job2, err := s.AcquireLease(w.ID, false, "")
+	if err != nil {
+		t.Fatalf("second acquire: %v", err)
+	}
+	if lease2 != nil || job2 != nil {
+		t.Fatalf("expected no job for plain worker, got job %s", job2.Name)
 	}
 }
 

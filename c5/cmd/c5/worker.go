@@ -85,6 +85,7 @@ func workerCmd() *cobra.Command {
 	var (
 		serverURL        string
 		hostname         string
+		workerName       string
 		gpuCount         int
 		gpuModel         string
 		totalVRAM        float64
@@ -140,6 +141,7 @@ func workerCmd() *cobra.Command {
 			return runWorker(workerConfig{
 				serverURL:    serverURL,
 				hostname:     hostname,
+				name:         workerName,
 				gpuCount:     gpuCount,
 				gpuModel:     gpuModel,
 				totalVRAM:    totalVRAM,
@@ -159,6 +161,7 @@ func workerCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&serverURL, "server", defaultServer, "C5 server URL")
 	cmd.Flags().StringVar(&hostname, "hostname", "", "Worker hostname (default: OS hostname)")
+	cmd.Flags().StringVar(&workerName, "name", "", "Worker display name (default: hostname)")
 	cmd.Flags().IntVar(&gpuCount, "gpu-count", 0, "Number of GPUs available")
 	cmd.Flags().StringVar(&gpuModel, "gpu-model", "", "GPU model name")
 	cmd.Flags().Float64Var(&totalVRAM, "total-vram", 0, "Total VRAM in GB")
@@ -177,6 +180,7 @@ func workerCmd() *cobra.Command {
 type workerConfig struct {
 	serverURL    string
 	hostname     string
+	name         string
 	gpuCount     int
 	gpuModel     string
 	totalVRAM    float64
@@ -218,6 +222,9 @@ func runWorker(cfg workerConfig) error {
 	}
 	log.Printf("c5-worker: registered as %s", workerID)
 
+	startTime := time.Now()
+	var lastJobAt atomic.Value // stores string (RFC3339) or zero-value
+
 	// Graceful shutdown
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
@@ -237,7 +244,8 @@ func runWorker(cfg workerConfig) error {
 			return nil
 
 		case <-heartbeatTicker.C:
-			client.heartbeat(workerID, cfg.totalVRAM)
+			lj, _ := lastJobAt.Load().(string)
+			client.heartbeat(workerID, cfg.totalVRAM, cfg.name, int64(time.Since(startTime).Seconds()), lj)
 
 		case <-ticker.C:
 			if running.Load() {
@@ -339,6 +347,7 @@ func runWorker(cfg workerConfig) error {
 					log.Printf("c5-worker: complete error: %v", err)
 				} else {
 					log.Printf("c5-worker: job %s %s (exit %d)", j.ID, status, exitCode)
+					lastJobAt.Store(time.Now().UTC().Format(time.RFC3339))
 				}
 			}(job, lease.ID, inputArtifacts)
 		}
@@ -1037,10 +1046,13 @@ func (c *workerClient) register(req *model.WorkerRegisterRequest) (string, error
 	return resp.WorkerID, nil
 }
 
-func (c *workerClient) heartbeat(workerID string, freeVRAM float64) {
+func (c *workerClient) heartbeat(workerID string, freeVRAM float64, name string, uptimeSec int64, lastJobAt string) {
 	c.doJSON("POST", "/v1/workers/heartbeat", &model.HeartbeatRequest{
-		WorkerID: workerID,
-		FreeVRAM: freeVRAM,
+		WorkerID:  workerID,
+		FreeVRAM:  freeVRAM,
+		Name:      name,
+		UptimeSec: uptimeSec,
+		LastJobAt: lastJobAt,
 	}, nil)
 }
 

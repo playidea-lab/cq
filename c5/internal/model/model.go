@@ -68,6 +68,7 @@ type Job struct {
 	Result               map[string]any    `json:"result,omitempty"`
 	SnapshotVersionHash  string            `json:"snapshot_version_hash,omitempty"`
 	GitHash              string            `json:"git_hash,omitempty"`
+	RequiredTags         []string          `json:"required_tags,omitempty"`
 }
 
 // DurationSec returns the job duration in seconds, or nil if not yet finished.
@@ -152,6 +153,7 @@ type CapabilityUpdateRequest struct {
 type Worker struct {
 	ID            string    `json:"id"`
 	Hostname      string    `json:"hostname,omitempty"`
+	Name          string    `json:"name,omitempty"`
 	Status        string    `json:"status"` // online, offline, busy
 	GPUCount      int       `json:"gpu_count"`
 	GPUModel      string    `json:"gpu_model,omitempty"`
@@ -160,13 +162,12 @@ type Worker struct {
 	Tags          []string  `json:"tags,omitempty"`
 	ProjectID     string    `json:"project_id,omitempty"`
 	Version       string    `json:"version,omitempty"`
-	LastHeartbeat time.Time `json:"last_heartbeat"`
-	RegisteredAt  time.Time `json:"registered_at"`
-	Name          string    `json:"name,omitempty"`
 	UptimeSec     int64     `json:"uptime_sec,omitempty"`
 	// LastJobAt is RFC3339 timestamp of the last completed job.
 	// Empty string means no job has been processed yet (do not use zero-time strings).
 	LastJobAt     string    `json:"last_job_at,omitempty"`
+	LastHeartbeat time.Time `json:"last_heartbeat"`
+	RegisteredAt  time.Time `json:"registered_at"`
 }
 
 // Lease tracks the assignment of a job to a worker with expiry.

@@ -34,6 +34,7 @@ var DefaultAllowlist = ErrorAllowlist{
 	"cmd/c4/eventbus.go":                           6,
 	"cmd/c4/fallback.go":                           2,
 	"cmd/c4/hub.go":                                7,
+	"cmd/c4/hub_worker.go":                         3,
 	"cmd/c4/init.go":                               7,
 	"cmd/c4/mail.go":                               3,
 	"cmd/c4/mcp_supabase.go":                       2,
