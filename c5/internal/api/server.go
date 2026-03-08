@@ -196,6 +196,9 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("/v1/edges", s.handleEdgesList)
 	s.mux.HandleFunc("/v1/edges/", s.handleEdgeByID)
 
+	// Edge Metrics (threshold monitoring)
+	s.mux.HandleFunc("/v1/edges/metrics/", s.handleEdgeMetricsPost)
+
 	// Deploy
 	s.mux.HandleFunc("/v1/deploy/rules", s.handleDeployRulesList)
 	s.mux.HandleFunc("/v1/deploy/rules/", s.handleDeployRuleByID)
