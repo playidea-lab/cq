@@ -122,7 +122,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 	// Register components based on config
 	ebComp, gpuComp := registerCoreServeComponents(mgr, cfg, home)
 	registerEventSinkServeComponent(mgr, cfg, ebComp)
-	registerHubPollerServeComponent(mgr, cfg, ebComp)
+	registerHubPollerServeComponent(mgr, cfg, ebComp, nil)
 	registerKnowledgeHubPollerServeComponent(mgr, cfg)
 	registerKnowledgeSuggestPollerServeComponent(mgr, cfg, srv.initCtx.llmGateway)
 	registerHypothesisSuggesterComponent(mgr, cfg, srv.initCtx.llmGateway, srv.knowledgeStore)

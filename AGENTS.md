@@ -410,6 +410,7 @@ POP(3):     c4_pop_extract, c4_pop_status, c4_pop_reflect
 Twin(1):    c4_reflect
 온보딩(1):  c4_onboard
 Secrets(4): c4_secret_set, c4_secret_get, c4_secret_list, c4_secret_delete
+Notify(3):  c4_notification_set, c4_notification_get, c4_notify
 Lighthouse(1): c4_lighthouse (register/list/get/promote/update/remove/export_llms_txt)
 LLM(3):    c4_llm_call, c4_llm_providers, c4_llm_costs
 CDP(2):    c4_cdp_run, c4_cdp_list

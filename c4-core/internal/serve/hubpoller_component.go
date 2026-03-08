@@ -21,9 +21,10 @@ const (
 
 // HubPollerComponent wraps handlers.HubPoller as a managed Component.
 type HubPollerComponent struct {
-	cfg       config.HubConfig
-	pub       eventbus.Publisher
-	projectID string
+	cfg            config.HubConfig
+	pub            eventbus.Publisher
+	projectID      string
+	prebuiltClient *hub.Client // optional: already-configured client (secrets + JWT resolved)
 
 	mu           sync.Mutex
 	cancel       context.CancelFunc
@@ -43,18 +44,36 @@ func NewHubPollerComponent(cfg config.HubConfig, pub eventbus.Publisher, project
 	}
 }
 
+// NewHubPollerComponentWithClient creates a HubPollerComponent using a pre-built
+// hub.Client (already resolved from secrets store + cloud JWT).  Use this when
+// the caller has already called initHub and wants to share the same client so
+// that the poller inherits the correct API key without duplicating secret lookups.
+func NewHubPollerComponentWithClient(hc *hub.Client, pub eventbus.Publisher, projectID string) *HubPollerComponent {
+	return &HubPollerComponent{
+		prebuiltClient: hc,
+		pub:            pub,
+		projectID:      projectID,
+	}
+}
+
 func (h *HubPollerComponent) Name() string { return "hubpoller" }
 
 // Start creates the Hub client, verifies connectivity, and starts the poller goroutine.
 func (h *HubPollerComponent) Start(ctx context.Context) error {
-	hc := hub.NewClient(hub.HubConfig{
-		Enabled:   h.cfg.Enabled,
-		URL:       h.cfg.URL,
-		APIPrefix: h.cfg.APIPrefix,
-		APIKey:    h.cfg.APIKey,
-		APIKeyEnv: h.cfg.APIKeyEnv,
-		TeamID:    h.cfg.TeamID,
-	})
+	var hc *hub.Client
+	if h.prebuiltClient != nil {
+		// Reuse the client already configured by initHub (secrets + JWT resolved).
+		hc = h.prebuiltClient
+	} else {
+		hc = hub.NewClient(hub.HubConfig{
+			Enabled:   h.cfg.Enabled,
+			URL:       h.cfg.URL,
+			APIPrefix: h.cfg.APIPrefix,
+			APIKey:    h.cfg.APIKey,
+			APIKeyEnv: h.cfg.APIKeyEnv,
+			TeamID:    h.cfg.TeamID,
+		})
+	}
 	if !hc.IsAvailable() {
 		return fmt.Errorf("hub URL not configured")
 	}
