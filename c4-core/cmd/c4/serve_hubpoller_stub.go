@@ -7,6 +7,9 @@ import (
 	"github.com/changmin/c4-core/internal/serve"
 )
 
-func registerHubPollerServeComponent(mgr *serve.Manager, cfg config.C4Config, eb *serve.EventBusComponent) {
-	_, _, _ = mgr, cfg, eb
+// hubClientStub is a placeholder type when c5_hub build tag is inactive.
+type hubClientStub = any
+
+func registerHubPollerServeComponent(mgr *serve.Manager, cfg config.C4Config, eb *serve.EventBusComponent, prebuiltClient hubClientStub) {
+	_, _, _, _ = mgr, cfg, eb, prebuiltClient
 }
