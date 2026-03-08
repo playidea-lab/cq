@@ -1,5 +1,33 @@
 # Changelog
 
+## [v0.83.0] - 2026-03-09
+
+### ✨ Features
+- **worker-ux/onboarding**: `cq hub worker init/install/start/status` 서브커맨드
+  - `init` — Hub URL + API key 설정 (interactive / `--non-interactive` 양방향)
+  - `install` — systemd (Linux) / launchd (macOS) 서비스 파일 자동 생성 (`--dry-run` 지원)
+  - `start` — c5 바이너리 서브프로세스 시작, `C5_API_KEY` env 주입, `--name` 포워딩
+  - `status` — Hub에 등록된 워커 목록 tabwriter 표시 (NAME/STATUS/UPTIME/LAST JOB/CAPABILITIES)
+  - `workerYAML` — `~/.c5/config.yaml` 스키마 (hub_url, api_key, capabilities, tags, name, binary)
+  - GPU auto-detect (`nvidia-smi`, 5 s timeout) — CPU-only 워커 graceful fallback
+  - Atomic config write (tmpfile + rename), XML injection 방어 (plist), systemd ExecStart 검증
+- **worker-ux/observability**: `cq hub workers` 테이블 + Hub Worker 관찰성 필드
+  - `c4-core/internal/hub/models.go` Worker 구조체: `Name`, `UptimeSec`, `LastJobAt`, `Capabilities` 추가
+  - `hub_format.go`: `formatUptime(sec int64)`, `formatLastJob(rfc3339 string)` 표시 헬퍼
+- **worker-ux/routing**: required_tags 태그 필터 (AcquireLease)
+  - `c5/internal/model/model.go` JobSubmitRequest: `RequiredTags []string` 추가
+  - AcquireLease: worker tags를 TX 내부에서 조회 (TOCTOU 수정), `tagsMatch` 헬퍼
+- **c5/worker**: `--name` 플래그, uptime 추적, heartbeat에 Name/UptimeSec/LastJobAt 전송
+- **c5/model**: HeartbeatRequest/Worker 구조체: `Name`, `UptimeSec`, `LastJobAt` 필드 추가
+
+### 🐛 Bug Fixes
+- **skills**: c4-plan `c4_notify` → `mcp__cq__c4_notify` 파라미터 수정
+
+### 🔧 Chores
+- **docs**: Go 테스트 수 업데이트 — c4-core ~2,467 + c5 ~379 (합계 ~2,846)
+
+---
+
 ## [v0.82.0] - 2026-03-08
 
 ### 🐛 Bug Fixes
