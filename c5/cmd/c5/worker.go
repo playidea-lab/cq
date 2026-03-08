@@ -91,6 +91,7 @@ func workerCmd() *cobra.Command {
 		pollSec          int
 		apiKey           string
 		capabilitiesFile string
+		noAutoDetect     bool
 	)
 
 	cmd := &cobra.Command{
@@ -102,6 +103,23 @@ func workerCmd() *cobra.Command {
 				hostname = h
 			}
 
+			// GPU auto-detection: run when --gpu-count not set and --no-auto-detect not specified.
+			if gpuCount == 0 && !noAutoDetect {
+				detectedCount, detectedModel, detectedVRAM := detectGPU()
+				if detectedCount > 0 {
+					gpuCount = detectedCount
+					if gpuModel == "" {
+						gpuModel = detectedModel
+					}
+					if totalVRAM == 0 {
+						totalVRAM = detectedVRAM
+					}
+					log.Printf("c5-worker: GPU auto-detected: %dx %s (%.1f GB VRAM)", gpuCount, gpuModel, totalVRAM)
+				} else {
+					log.Printf("c5-worker: no GPU detected, using CPU-only capabilities")
+				}
+			}
+
 			var caps []model.Capability
 			if capabilitiesFile != "" {
 				var err error
@@ -110,6 +128,13 @@ func workerCmd() *cobra.Command {
 					return fmt.Errorf("load capabilities: %w", err)
 				}
 				log.Printf("c5-worker: loaded %d capabilities from %s", len(caps), capabilitiesFile)
+			} else if !noAutoDetect {
+				caps = defaultCapabilities(gpuCount)
+				capNames := make([]string, 0, len(caps))
+				for _, c := range caps {
+					capNames = append(capNames, c.Name)
+				}
+				log.Printf("c5-worker: using auto-generated capabilities (%s)", strings.Join(capNames, ", "))
 			}
 
 			return runWorker(workerConfig{
@@ -144,6 +169,7 @@ func workerCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&apiKey, "api-key", defaultAPIKey, "API key for authentication")
 	cmd.Flags().StringVar(&capabilitiesFile, "capabilities", "", "Path to capabilities YAML file")
+	cmd.Flags().BoolVar(&noAutoDetect, "no-auto-detect", false, "Disable GPU auto-detection and capability auto-generation")
 
 	return cmd
 }
