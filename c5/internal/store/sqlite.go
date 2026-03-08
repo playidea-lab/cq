@@ -11,6 +11,7 @@ import (
 	"encoding/base32"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -782,20 +783,23 @@ func tagsMatch(requiredTags, workerCaps []string) bool {
 // Uses BEGIN IMMEDIATE + Go-side tag filtering + CAS-style UPDATE to prevent
 // race conditions where two workers could claim the same job.
 func (s *Store) AcquireLease(workerID string, requiresGPU bool, projectID string, workerVRAM ...float64) (*model.Lease, *model.Job, error) {
-	// Fetch worker capabilities (tags) for required_tags filtering (outside TX for speed).
-	workerRow := s.db.QueryRow(`SELECT tags FROM workers WHERE id = ?`, workerID)
-	var workerTagsJSON string
-	if err := workerRow.Scan(&workerTagsJSON); err != nil {
-		return nil, nil, fmt.Errorf("get worker tags: %w", err)
-	}
-	var workerCaps []string
-	json.Unmarshal([]byte(workerTagsJSON), &workerCaps)
-
 	tx, err := s.db.BeginTx(context.Background(), &sql.TxOptions{Isolation: sql.LevelSerializable})
 	if err != nil {
 		return nil, nil, fmt.Errorf("begin tx: %w", err)
 	}
 	defer tx.Rollback()
+
+	// Fetch worker capabilities (tags) inside TX to avoid TOCTOU with concurrent heartbeats.
+	var workerTagsJSON string
+	if err := tx.QueryRow(`SELECT tags FROM workers WHERE id = ?`, workerID).Scan(&workerTagsJSON); err != nil {
+		return nil, nil, fmt.Errorf("get worker tags: %w", err)
+	}
+	var workerCaps []string
+	if workerTagsJSON != "" {
+		if err := json.Unmarshal([]byte(workerTagsJSON), &workerCaps); err != nil {
+			return nil, nil, fmt.Errorf("decode worker tags: %w", err)
+		}
+	}
 
 	// Fetch candidates: up to 1000 queued jobs filtered by DB-side conditions.
 	candidateQuery := `SELECT id, required_tags FROM jobs WHERE status = 'QUEUED'`
@@ -827,7 +831,12 @@ func (s *Store) AcquireLease(workerID string, requiresGPU bool, projectID string
 			return nil, nil, fmt.Errorf("scan candidate: %w", err)
 		}
 		var reqTags []string
-		json.Unmarshal([]byte(reqTagsJSON), &reqTags)
+		if reqTagsJSON != "" {
+			if err := json.Unmarshal([]byte(reqTagsJSON), &reqTags); err != nil {
+				rows.Close()
+				return nil, nil, fmt.Errorf("decode job required_tags: %w", err)
+			}
+		}
 		if tagsMatch(reqTags, workerCaps) {
 			matchedJobID = jobID
 			break
@@ -885,8 +894,10 @@ func (s *Store) AcquireLease(workerID string, requiresGPU bool, projectID string
 		return nil, nil, fmt.Errorf("insert lease: %w", err)
 	}
 
-	// Update worker status
-	tx.Exec(`UPDATE workers SET status = 'busy' WHERE id = ?`, workerID)
+	// Update worker status (best-effort; job is already locked via lease)
+	if _, err := tx.Exec(`UPDATE workers SET status = 'busy' WHERE id = ?`, workerID); err != nil {
+		log.Printf("c5-store: AcquireLease: set worker busy: %v", err)
+	}
 
 	if err := tx.Commit(); err != nil {
 		return nil, nil, fmt.Errorf("commit: %w", err)

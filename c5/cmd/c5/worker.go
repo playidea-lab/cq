@@ -959,8 +959,8 @@ func runWithDrivePipeline(drive driveClient, client *workerClient, job *model.Jo
 	// Step 4: Run — override Command and Workdir from cq.yaml if present.
 	// If uv is not explicitly set to false, prepend "uv run" so that uv
 	// automatically syncs the venv (pyproject.toml / uv.lock) before running.
+	job = shallowCopyJob(job)
 	if cfg != nil && cfg.Run != "" {
-		job = shallowCopyJob(job)
 		useUV := cfg.UV == nil || *cfg.UV // default true
 		if useUV {
 			job.Command = "uv run " + cfg.Run
@@ -968,7 +968,6 @@ func runWithDrivePipeline(drive driveClient, client *workerClient, job *model.Jo
 			job.Command = cfg.Run
 		}
 	}
-	job = shallowCopyJob(job)
 	job.Workdir = jobDir
 
 	exitCode, resultFile := executeJob(client, job, leaseID, workerID, gpuCount)

@@ -2,9 +2,11 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"html"
 	"io"
 	"net/http"
 	"os"
@@ -13,6 +15,7 @@ import (
 	"runtime"
 	"strings"
 	"text/tabwriter"
+	"time"
 
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
@@ -40,6 +43,7 @@ type workerYAML struct {
 	Capabilities string   `yaml:"capabilities,omitempty"`
 	Tags         []string `yaml:"tags,omitempty"`
 	Name         string   `yaml:"name,omitempty"`
+	Binary       string   `yaml:"binary,omitempty"` // override c5 binary path
 }
 
 var (
@@ -170,12 +174,14 @@ func runWorkerInit(cmd *cobra.Command, args []string) error {
 		}
 	} else {
 		// Interactive prompts with existing values as defaults.
+		// Share one reader to avoid losing buffered stdin between calls.
+		stdinReader := bufio.NewReader(os.Stdin)
 		var err error
-		hubURL, err = prompt("Hub URL", existing.HubURL)
+		hubURL, err = prompt("Hub URL", existing.HubURL, stdinReader)
 		if err != nil {
 			return err
 		}
-		apiKey, err = prompt("API key", existing.APIKey)
+		apiKey, err = prompt("API key", existing.APIKey, stdinReader)
 		if err != nil {
 			return err
 		}
@@ -208,22 +214,29 @@ func runWorkerInit(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("marshal config: %w", err)
 	}
 
-	if err := os.WriteFile(cfgPath, data, 0o600); err != nil {
-		return fmt.Errorf("write config: %w", err)
+	// Atomic write: write to temp file then rename to avoid corrupt config on crash.
+	tmpPath := cfgPath + ".tmp"
+	if err := os.WriteFile(tmpPath, data, 0o600); err != nil {
+		os.Remove(tmpPath) // best-effort cleanup of partial write
+		return fmt.Errorf("write config temp: %w", err)
+	}
+	if err := os.Rename(tmpPath, cfgPath); err != nil {
+		os.Remove(tmpPath) // best-effort cleanup
+		return fmt.Errorf("install config: %w", err)
 	}
 
 	fmt.Printf("Worker config saved: %s\n", cfgPath)
 	return nil
 }
 
-// prompt prints a prompt with optional default and reads one line.
-func prompt(label, defaultVal string) (string, error) {
+// prompt prints a prompt with optional default and reads one line from reader.
+// Callers should share a single bufio.Reader over os.Stdin to avoid losing buffered input.
+func prompt(label, defaultVal string, reader *bufio.Reader) (string, error) {
 	if defaultVal != "" {
 		fmt.Printf("%s [%s]: ", label, defaultVal)
 	} else {
 		fmt.Printf("%s: ", label)
 	}
-	reader := bufio.NewReader(os.Stdin)
 	line, err := reader.ReadString('\n')
 	if err != nil {
 		return "", fmt.Errorf("read %s: %w", label, err)
@@ -235,9 +248,11 @@ func prompt(label, defaultVal string) (string, error) {
 	return line, nil
 }
 
-// detectWorkerGPU runs nvidia-smi and returns a one-line summary, or "" if unavailable.
+// detectWorkerGPU runs nvidia-smi with a 5 s timeout and returns a one-line summary, or "" if unavailable.
 func detectWorkerGPU() string {
-	out, err := exec.Command("nvidia-smi", "--query-gpu=name,memory.total", "--format=csv,noheader,nounits").Output()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "nvidia-smi", "--query-gpu=name,memory.total", "--format=csv,noheader,nounits").Output()
 	if err != nil {
 		return ""
 	}
@@ -258,6 +273,14 @@ func runWorkerInstall(cmd *cobra.Command, args []string) error {
 	}
 
 	// Build the exec start command: c5 worker --server <url> [--capabilities <file>]
+	// systemd ExecStart uses whitespace as the argument delimiter with no shell quoting,
+	// so validate that neither HubURL nor Capabilities contain whitespace.
+	if strings.ContainsAny(cfg.HubURL, " \t") {
+		return errors.New("hub_url must not contain whitespace (incompatible with systemd ExecStart)")
+	}
+	if strings.ContainsAny(cfg.Capabilities, " \t") {
+		return errors.New("capabilities path must not contain whitespace (incompatible with systemd ExecStart)")
+	}
 	execArgs := []string{"c5", "worker"}
 	if cfg.HubURL != "" {
 		execArgs = append(execArgs, "--server", cfg.HubURL)
@@ -297,7 +320,7 @@ func runWorkerInstall(cmd *cobra.Command, args []string) error {
 	if err := os.MkdirAll(filepath.Dir(destPath), 0o755); err != nil {
 		return fmt.Errorf("create service dir: %w", err)
 	}
-	if err := os.WriteFile(destPath, []byte(content), 0o644); err != nil {
+	if err := os.WriteFile(destPath, []byte(content), 0o640); err != nil {
 		return fmt.Errorf("write service file: %w", err)
 	}
 
@@ -315,6 +338,11 @@ func runWorkerInstall(cmd *cobra.Command, args []string) error {
 }
 
 func buildSystemdUnit(execStart, hubURL string) string {
+	// Strip newlines to prevent injection into the multi-line unit file.
+	sanitize := strings.NewReplacer("\n", "", "\r", "").Replace
+	execStart = sanitize(execStart)
+	hubURL = sanitize(hubURL)
+
 	desc := "CQ Hub Worker"
 	if hubURL != "" {
 		desc = fmt.Sprintf("CQ Hub Worker (%s)", hubURL)
@@ -334,11 +362,16 @@ WantedBy=multi-user.target
 `, desc, execStart)
 }
 
+// xmlEscapeAttr escapes a string for safe use inside XML element content.
+func xmlEscapeAttr(s string) string {
+	return html.EscapeString(s)
+}
+
 func buildLaunchdPlist(execArgs []string, hubURL string) string {
 	label := "cq.worker"
 	var argsXML strings.Builder
 	for _, a := range execArgs {
-		argsXML.WriteString(fmt.Sprintf("        <string>%s</string>\n", a))
+		argsXML.WriteString(fmt.Sprintf("        <string>%s</string>\n", xmlEscapeAttr(a)))
 	}
 	desc := "CQ Hub Worker"
 	if hubURL != "" {
@@ -363,7 +396,7 @@ func buildLaunchdPlist(execArgs []string, hubURL string) string {
     <string>%s</string>
 </dict>
 </plist>
-`, label, argsXML.String(), desc)
+`, xmlEscapeAttr(label), argsXML.String(), xmlEscapeAttr(desc))
 }
 
 // =========================================================================
@@ -371,13 +404,16 @@ func buildLaunchdPlist(execArgs []string, hubURL string) string {
 // =========================================================================
 
 // resolvec5Binary returns the path to the c5 binary.
-// Resolution order: PATH → $C5_BIN env → config hub.binary field.
+// Resolution order: PATH → $C5_BIN env → config hub.binary field → "c5".
 func resolvec5Binary(cfg workerYAML) string {
 	if p, err := exec.LookPath("c5"); err == nil {
 		return p
 	}
 	if env := os.Getenv("C5_BIN"); env != "" {
 		return env
+	}
+	if cfg.Binary != "" {
+		return cfg.Binary
 	}
 	return "c5"
 }
@@ -392,13 +428,16 @@ func runWorkerStart(cmd *cobra.Command, args []string) error {
 
 	binary := resolvec5Binary(cfg)
 
-	// Build args: c5 worker [--server <url>] [--capabilities <file>]
+	// Build args: c5 worker [--server <url>] [--capabilities <file>] [--name <name>]
 	cmdArgs := []string{"worker"}
 	if cfg.HubURL != "" {
 		cmdArgs = append(cmdArgs, "--server", cfg.HubURL)
 	}
 	if cfg.Capabilities != "" {
 		cmdArgs = append(cmdArgs, "--capabilities", cfg.Capabilities)
+	}
+	if cfg.Name != "" {
+		cmdArgs = append(cmdArgs, "--name", cfg.Name)
 	}
 
 	c := workerExecCommand(binary, cmdArgs...)
@@ -449,7 +488,8 @@ func runWorkerStatus(cmd *cobra.Command, args []string) error {
 		req.Header.Set("Authorization", "Bearer "+cfg.APIKey)
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	client := &http.Client{Timeout: 15 * time.Second}
+	resp, err := client.Do(req)
 	if err != nil {
 		return fmt.Errorf("GET %s: %w", url, err)
 	}
