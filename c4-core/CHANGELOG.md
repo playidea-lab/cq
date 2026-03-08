@@ -1,5 +1,24 @@
 # Changelog
 
+## [v0.77.0] - 2026-03-08
+
+### ✨ Features
+- **notify**: `internal/notify` 패키지 — NotificationProfile + per-channel Sender (Dooray/Discord/Slack/Teams)
+- **notifyhandler**: `c4_notification_set` / `c4_notification_get` / `c4_notify` MCP 도구
+- **skills**: c4-plan/c4-run/c4-finish 마일스톤에 `c4_notify` 자동 호출
+
+### 🐛 Bug Fixes
+- **hypothesis**: status 필드 통일 — poll()과 MCP 핸들러 생성 경로 간 `status`/`hypothesis_status` 불일치 수정
+- **hypothesis**: cleanup()에서 body 덮어쓰기 버그 수정 (Update body=nil)
+- **hypothesis**: 마크다운 펜스 제거 패턴 수정 (```JSON 대소문자 처리)
+- **notifyhandler**: internal/notify 위임, 파일 권한 octal 수정
+
+### 🧪 Tests
+- **hypothesis**: CrossComponent 테스트 추가 (status 필드 통일 검증)
+- **hypothesis**: CleanupPreservesBody 테스트 추가 (body 보존 검증)
+
+---
+
 ## [v0.43.0] - 2026-03-01
 
 ### ✨ Features
