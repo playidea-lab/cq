@@ -95,10 +95,15 @@ func researchSuggestNativeHandler(opts *KnowledgeNativeOpts) mcp.HandlerFunc {
 
 		// Parse LLM JSON response
 		content := strings.TrimSpace(resp.Content)
-		// Strip markdown code fences if present
+		// Strip markdown code fences if present (handles ```json, ```JSON, ``` etc.)
 		if strings.HasPrefix(content, "```") {
-			content = strings.TrimPrefix(content, "```json")
-			content = strings.TrimPrefix(content, "```")
+			// Strip opening fence line entirely
+			if i := strings.Index(content, "\n"); i >= 0 {
+				content = content[i+1:]
+			} else {
+				content = ""
+			}
+			// Strip closing fence
 			if idx := strings.LastIndex(content, "```"); idx >= 0 {
 				content = content[:idx]
 			}

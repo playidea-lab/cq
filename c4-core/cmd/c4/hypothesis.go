@@ -50,7 +50,7 @@ func openKnowledgeStore() (*knowledge.Store, error) {
 }
 
 // readHypMeta reads expires_at and yaml_draft from the raw markdown frontmatter.
-// These fields are not mapped to Document struct, so we parse the file directly.
+// Reads directly from the file to avoid a full store.Get() round-trip.
 func readHypMeta(store *knowledge.Store, docID string) (expiresAt string, yamlDraft string) {
 	filePath := filepath.Join(store.DocsDir(), docID+".md")
 	data, err := os.ReadFile(filePath)
@@ -184,6 +184,6 @@ func runSuggestApprove(cmd *cobra.Command, args []string) error {
 		fmt.Fprintf(os.Stderr, "Warning: status update failed: %v\n", updateErr)
 	}
 
-	fmt.Printf("✅ 제출 완료: %s\n", resp.JobID)
+	fmt.Printf("submitted: %s\n", resp.JobID)
 	return nil
 }

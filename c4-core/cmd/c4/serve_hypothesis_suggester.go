@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -18,14 +17,14 @@ import (
 // hypothesisSuggester is a serve.Component that watches for new experiments
 // and generates TypeHypothesis docs when the threshold is reached.
 type hypothesisSuggester struct {
-	cfg      config.ServeHypothesisSuggesterConfig
-	gw       *llm.Gateway
-	kStore   *knowledge.Store
-	interval time.Duration
-	mu       sync.Mutex
+	cfg       config.ServeHypothesisSuggesterConfig
+	gw        *llm.Gateway
+	kStore    *knowledge.Store
+	interval  time.Duration
+	mu        sync.Mutex
 	lastCount int
-	status   string
-	cancel   context.CancelFunc
+	status    string
+	cancel    context.CancelFunc
 }
 
 // compile-time assertion
@@ -130,8 +129,15 @@ func (h *hypothesisSuggester) poll(ctx context.Context) {
 	last := h.lastCount
 	h.mu.Unlock()
 
-	newCount := len(docs) - last
-	if newCount < h.cfg.Threshold {
+	currentCount := len(docs)
+	if currentCount < last {
+		// Docs were deleted; reset baseline without triggering hypothesis generation.
+		h.mu.Lock()
+		h.lastCount = currentCount
+		h.mu.Unlock()
+		return
+	}
+	if currentCount-last < h.cfg.Threshold {
 		return
 	}
 
@@ -155,20 +161,20 @@ func (h *hypothesisSuggester) poll(ctx context.Context) {
 		}
 	}
 
-	// Store expires_at in metadata_json field of the body as JSON so cleanup() can read it.
-	expiresAt := time.Now().UTC().Add(h.cfg.TTL)
-	expiresAtStr := expiresAt.Format(time.RFC3339)
-	metaJSON, _ := json.Marshal(map[string]string{"expires_at": expiresAtStr})
+	// Store expires_at in frontmatter metadata so readHypMeta() and cleanup() can find it.
+	expiresAtStr := time.Now().UTC().Add(h.cfg.TTL).Format(time.RFC3339)
 
-	// Build the body: metadata_json line + insight
-	body := string(metaJSON) + "\n" + insight
-
+	// Use both "status" and "hypothesis_status" so CLI (runSuggestList/Approve) and
+	// cleanup() read the same canonical field regardless of creation path.
 	meta := map[string]any{
+		"title":             "Hypothesis (auto-generated)",
+		"status":            "pending",
 		"hypothesis_status": "pending",
 		"domain":            "hypothesis",
+		"expires_at":        expiresAtStr,
 	}
 
-	if _, err := h.kStore.Create(knowledge.TypeHypothesis, meta, body); err != nil {
+	if _, err := h.kStore.Create(knowledge.TypeHypothesis, meta, insight); err != nil {
 		h.mu.Lock()
 		h.status = "degraded"
 		h.mu.Unlock()
@@ -176,12 +182,12 @@ func (h *hypothesisSuggester) poll(ctx context.Context) {
 	}
 
 	h.mu.Lock()
-	h.lastCount = len(docs)
+	h.lastCount = currentCount
 	h.mu.Unlock()
 }
 
 // cleanup marks expired pending hypotheses as expired.
-// expires_at is read from the document body (first line is a JSON object with "expires_at").
+// expires_at is read from frontmatter (unified schema with poll() and hypothesis_suggest.go).
 func (h *hypothesisSuggester) cleanup() {
 	docs, err := h.kStore.List(string(knowledge.TypeHypothesis), "", 100)
 	if err != nil {
@@ -189,43 +195,30 @@ func (h *hypothesisSuggester) cleanup() {
 	}
 	now := time.Now().UTC()
 	for _, d := range docs {
-		status, _ := d["hypothesis_status"].(string)
-		if status != "pending" {
+		// Check both fields: poll() sets hypothesis_status, MCP handler sets status.
+		hypStatus, _ := d["hypothesis_status"].(string)
+		docStatus, _ := d["status"].(string)
+		if hypStatus != "pending" && docStatus != "pending" {
 			continue
 		}
 		docID, _ := d["id"].(string)
 		if docID == "" {
 			continue
 		}
-		// Read expires_at from document body (SSOT: Markdown file)
-		doc, err := h.kStore.Get(docID)
-		if err != nil || doc == nil {
+		// Read expires_at from frontmatter (same schema as poll() and hypothesis_suggest.go).
+		expiresAtStr, _ := readHypMeta(h.kStore, docID)
+		if expiresAtStr == "" {
 			continue
 		}
-		expiresAt := parseExpiresAtFromBody(doc.Body)
-		if expiresAt.IsZero() || !expiresAt.Before(now) {
+		t, parseErr := time.Parse(time.RFC3339, expiresAtStr)
+		if parseErr != nil || !t.Before(now) {
 			continue
 		}
-		expired := "expired"
-		h.kStore.Update(docID, map[string]any{"hypothesis_status": expired}, &expired) //nolint:errcheck
-	}
-}
-
-// parseExpiresAtFromBody extracts expires_at from the first line of the document body.
-// The first line is expected to be a JSON object: {"expires_at":"<RFC3339>"}.
-func parseExpiresAtFromBody(body string) time.Time {
-	firstLine := body
-	if idx := strings.Index(body, "\n"); idx >= 0 {
-		firstLine = body[:idx]
-	}
-	firstLine = strings.TrimSpace(firstLine)
-	var m map[string]string
-	if err := json.Unmarshal([]byte(firstLine), &m); err == nil {
-		if ea, ok := m["expires_at"]; ok {
-			if t, err := time.Parse(time.RFC3339, ea); err == nil {
-				return t
-			}
+		if _, updateErr := h.kStore.Update(docID, map[string]any{
+			"status":            "expired",
+			"hypothesis_status": "expired",
+		}, nil); updateErr != nil {
+			fmt.Fprintf(os.Stderr, "hypothesis-suggester: cleanup update failed for %s: %v\n", docID, updateErr)
 		}
 	}
-	return time.Time{}
 }

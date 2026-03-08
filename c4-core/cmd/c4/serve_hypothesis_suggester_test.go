@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"testing"
 	"time"
 
@@ -99,14 +98,13 @@ func TestHypothesisSuggester_NoTriggerBelowThreshold(t *testing.T) {
 func TestHypothesisSuggester_TTLCleanup(t *testing.T) {
 	ks := newTestKnowledgeStore(t)
 
-	// Store expires_at in body as JSON (same format poll() uses)
+	// Store expires_at in frontmatter metadata (same format poll() uses)
 	past := time.Now().UTC().Add(-1 * time.Hour).Format(time.RFC3339)
-	bodyMeta, _ := json.Marshal(map[string]string{"expires_at": past})
-	body := string(bodyMeta) + "\nold hypothesis"
 
 	_, err := ks.Create(knowledge.TypeHypothesis, map[string]any{
 		"hypothesis_status": "pending",
-	}, body)
+		"expires_at":        past,
+	}, "old hypothesis")
 	if err != nil {
 		t.Fatalf("Create hypothesis: %v", err)
 	}
@@ -171,6 +169,72 @@ func TestHypothesisSuggester_InvalidTTL(t *testing.T) {
 	if err == nil {
 		h.Stop(context.Background()) //nolint:errcheck
 		t.Error("expected error for TTL=0, got nil")
+	}
+}
+
+// TestHypothesisSuggester_CrossComponent: poll() creates hypothesis with unified status fields
+// so that runSuggestList (checks doc.Status) and cleanup() (checks hypothesis_status) both work.
+func TestHypothesisSuggester_CrossComponent(t *testing.T) {
+	ks := newTestKnowledgeStore(t)
+
+	// Trigger poll() to create a hypothesis
+	for i := 0; i < 5; i++ {
+		ks.Create(knowledge.TypeExperiment, map[string]any{"title": "exp"}, "body") //nolint:errcheck
+	}
+	h := newHypothesisSuggester(newTestSuggesterCfg(5, 24*time.Hour), nil, ks)
+	h.poll(context.Background())
+
+	// Hypothesis should be visible to CLI (doc.Status == "pending")
+	hyps, err := ks.List(string(knowledge.TypeHypothesis), "", 10)
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(hyps) == 0 {
+		t.Fatal("expected 1 hypothesis after poll")
+	}
+	id, _ := hyps[0]["id"].(string)
+	doc, err := ks.Get(id)
+	if err != nil || doc == nil {
+		t.Fatalf("Get(%s): %v", id, err)
+	}
+	if doc.Status != "pending" {
+		t.Errorf("doc.Status = %q, want pending (CLI must find this hypothesis)", doc.Status)
+	}
+	if doc.HypothesisStatus != "pending" {
+		t.Errorf("doc.HypothesisStatus = %q, want pending (cleanup must find this hypothesis)", doc.HypothesisStatus)
+	}
+}
+
+// TestHypothesisSuggester_CleanupPreservesBody: cleanup() must not overwrite hypothesis body.
+func TestHypothesisSuggester_CleanupPreservesBody(t *testing.T) {
+	ks := newTestKnowledgeStore(t)
+
+	past := time.Now().UTC().Add(-1 * time.Hour).Format(time.RFC3339)
+	wantBody := "original insight text"
+
+	_, err := ks.Create(knowledge.TypeHypothesis, map[string]any{
+		"hypothesis_status": "pending",
+		"status":            "pending",
+		"expires_at":        past,
+	}, wantBody)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	h := newHypothesisSuggester(newTestSuggesterCfg(5, 24*time.Hour), nil, ks)
+	h.cleanup()
+
+	docs, _ := ks.List(string(knowledge.TypeHypothesis), "", 10)
+	if len(docs) == 0 {
+		t.Fatal("expected 1 doc")
+	}
+	id, _ := docs[0]["id"].(string)
+	doc, err := ks.Get(id)
+	if err != nil || doc == nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if doc.Body != wantBody {
+		t.Errorf("body was overwritten: got %q, want %q", doc.Body, wantBody)
 	}
 }
 

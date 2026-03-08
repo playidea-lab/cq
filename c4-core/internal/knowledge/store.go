@@ -68,6 +68,8 @@ type Document struct {
 	Status           string       `json:"status,omitempty"`
 	EvidenceFor      []string     `json:"evidence_for,omitempty"`
 	EvidenceAgainst  []string     `json:"evidence_against,omitempty"`
+	ExpiresAt        string       `json:"expires_at,omitempty"`
+	YAMLDraft        string       `json:"yaml_draft,omitempty"`
 	CreatedAt        string       `json:"created_at"`
 	UpdatedAt        string       `json:"updated_at"`
 	Version          int          `json:"version"`
@@ -211,6 +213,8 @@ func (s *Store) Create(docType DocumentType, metadata map[string]any, body strin
 	doc.Status = stringVal(metadata, "status")
 	doc.EvidenceFor = stringSliceVal(metadata, "evidence_for")
 	doc.EvidenceAgainst = stringSliceVal(metadata, "evidence_against")
+	doc.ExpiresAt = stringVal(metadata, "expires_at")
+	doc.YAMLDraft = stringVal(metadata, "yaml_draft")
 
 	// Write Markdown file first (SSOT)
 	mdContent := docToMarkdown(doc)
@@ -801,6 +805,9 @@ func docToMarkdown(doc *Document) string {
 		}
 	case TypeHypothesis:
 		writeField("status", doc.Status)
+		writeField("hypothesis_status", doc.HypothesisStatus)
+		writeField("expires_at", doc.ExpiresAt)
+		writeField("yaml_draft", doc.YAMLDraft)
 		b.WriteString(fmt.Sprintf("confidence: %g\n", doc.Confidence))
 		if len(doc.EvidenceFor) > 0 {
 			b.WriteString("evidence_for:\n")
@@ -855,6 +862,8 @@ func frontmatterToDocument(fm map[string]any, body, fallbackID string) *Document
 		Status:           fmString(fm, "status"),
 		EvidenceFor:      fmStringSlice(fm, "evidence_for"),
 		EvidenceAgainst:  fmStringSlice(fm, "evidence_against"),
+		ExpiresAt:        fmString(fm, "expires_at"),
+		YAMLDraft:        fmString(fm, "yaml_draft"),
 		CreatedAt:        fmString(fm, "created_at"),
 		UpdatedAt:        fmString(fm, "updated_at"),
 		Version:          fmInt(fm, "version"),
