@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -38,7 +39,7 @@ func LoadProfile(soulDir string) (*NotificationProfile, error) {
 	path := filepath.Join(soulDir, notificationsFile)
 	data, err := os.ReadFile(path)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			return nil, nil
 		}
 		return nil, fmt.Errorf("read notifications profile: %w", err)
@@ -189,7 +190,7 @@ type teamsSender struct {
 }
 
 func (s *teamsSender) Send(ctx context.Context, message string) error {
-	payload := map[string]string{"@type": "MessageCard", "text": message}
+	payload := map[string]string{"@type": "MessageCard", "@context": "https://schema.org/extensions", "text": message}
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return fmt.Errorf("teams: marshal: %w", err)

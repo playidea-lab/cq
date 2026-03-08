@@ -3,6 +3,7 @@ package notifyhandler
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -27,7 +28,7 @@ func configPath(projectDir string) string {
 
 func loadConfig(projectDir string) (*notifyConfig, error) {
 	data, err := os.ReadFile(configPath(projectDir))
-	if os.IsNotExist(err) {
+	if errors.Is(err, os.ErrNotExist) {
 		return nil, nil
 	}
 	if err != nil {
