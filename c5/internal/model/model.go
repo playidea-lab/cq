@@ -591,16 +591,22 @@ type DeployAssignmentArtifact struct {
 	URL  string `json:"url"`
 }
 
+// HealthCheck defines a command to verify deployment health.
+type HealthCheck struct {
+	Command    string `json:"command"`
+	TimeoutSec int    `json:"timeout_sec"`
+}
+
 // DeployAssignmentResponse is one item of GET /v1/deploy/assignments/{edge_id} response.
 type DeployAssignmentResponse struct {
-	DeployID            string                     `json:"deploy_id"`
-	JobID               string                     `json:"job_id"`
-	ArtifactPattern     string                     `json:"artifact_pattern"`
-	PostCommand         string                     `json:"post_command,omitempty"`
-	HealthCheck         string                     `json:"health_check,omitempty"`
-	HealthCheckTimeout  int                        `json:"health_check_timeout,omitempty"`
-	Artifacts           []DeployAssignmentArtifact `json:"artifacts,omitempty"`
+	DeployID        string                     `json:"deploy_id"`
+	JobID           string                     `json:"job_id"`
+	ArtifactPattern string                     `json:"artifact_pattern"`
+	PostCommand     string                     `json:"post_command,omitempty"`
+	Artifacts       []DeployAssignmentArtifact `json:"artifacts,omitempty"`
+	HealthCheck     HealthCheck                `json:"health_check,omitempty"`
 }
+
 
 // DeployTargetStatusRequest is the payload for POST /v1/deploy/target-status (edge agent reports target status).
 type DeployTargetStatusRequest struct {

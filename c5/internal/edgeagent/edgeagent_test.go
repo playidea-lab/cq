@@ -3,8 +3,12 @@ package edgeagent
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -121,5 +125,218 @@ func TestRun_ContextCancel(t *testing.T) {
 		}
 	case <-time.After(3 * time.Second):
 		t.Fatal("Run() did not exit within timeout after context cancel")
+	}
+}
+
+// TestMetricsReporter verifies MetricsCommand stdout is parsed and POST'd to Hub.
+func TestMetricsReporter(t *testing.T) {
+	var received []byte
+	hub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "POST" && strings.Contains(r.URL.Path, "/metrics") {
+			received, _ = io.ReadAll(r.Body)
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer hub.Close()
+
+	mr := newMetricsReporter("edge-1", hub.URL, "", "echo accuracy=0.91", 50*time.Millisecond, &http.Client{Timeout: 5 * time.Second})
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+	mr.Start(ctx)
+
+	if !strings.Contains(string(received), "accuracy") {
+		t.Errorf("expected metrics POST to contain 'accuracy', got: %s", string(received))
+	}
+}
+
+// TestControlPollerCollect verifies that collect action uploads to Drive when DriveURL is set.
+func TestControlPollerCollect(t *testing.T) {
+	// Create a temp file to upload
+	dir := t.TempDir()
+	testFile := filepath.Join(dir, "data.bin")
+	if err := os.WriteFile(testFile, []byte("hello-drive"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var driveGot []byte
+	drive := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r.ParseMultipartForm(1 << 20)
+		if f, _, err := r.FormFile("file"); err == nil {
+			driveGot, _ = io.ReadAll(f)
+			f.Close()
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer drive.Close()
+
+	msgs := []model.EdgeControlMessage{{
+		Action: "collect",
+		Params: map[string]string{"local_path": testFile},
+	}}
+	hub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "/control") {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(msgs)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer hub.Close()
+
+	cp := newControlPoller("edge-1", hub.URL, "", drive.URL, "", &http.Client{Timeout: 5 * time.Second})
+	ctx := context.Background()
+	retrieved, err := cp.Poll(ctx)
+	if err != nil {
+		t.Fatalf("Poll: %v", err)
+	}
+	for _, m := range retrieved {
+		cp.handle(ctx, &m)
+	}
+
+	if string(driveGot) != "hello-drive" {
+		t.Errorf("drive received %q, want %q", string(driveGot), "hello-drive")
+	}
+}
+
+// TestHealthCheckPass verifies that a passing health check results in "succeeded" status.
+func TestHealthCheckPass(t *testing.T) {
+	var lastStatus string
+	assignCount := 0
+	hub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == "POST" && r.URL.Path == "/v1/edges/register":
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusCreated)
+			json.NewEncoder(w).Encode(model.EdgeRegisterResponse{EdgeID: "e1"})
+		case r.Method == "POST" && r.URL.Path == "/v1/deploy/target-status":
+			var req model.DeployTargetStatusRequest
+			json.NewDecoder(r.Body).Decode(&req)
+			lastStatus = req.Status
+			w.WriteHeader(http.StatusOK)
+		case r.Method == "GET" && strings.Contains(r.URL.Path, "/v1/deploy/assignments/"):
+			w.Header().Set("Content-Type", "application/json")
+			if assignCount == 0 {
+				assignCount++
+				json.NewEncoder(w).Encode([]model.DeployAssignmentResponse{{
+					DeployID:    "d1",
+					Artifacts:   []model.DeployAssignmentArtifact{},
+					HealthCheck: model.HealthCheck{Command: "exit 0", TimeoutSec: 5},
+				}})
+				return
+			}
+			json.NewEncoder(w).Encode([]model.DeployAssignmentResponse{})
+		default:
+			w.WriteHeader(http.StatusOK)
+		}
+	}))
+	defer hub.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+	Run(ctx, Config{ //nolint:errcheck
+		HubURL:       hub.URL,
+		EdgeName:     "e1",
+		Workdir:      t.TempDir(),
+		PollInterval: 50 * time.Millisecond,
+	})
+
+	if lastStatus != "succeeded" {
+		t.Errorf("expected status=succeeded, got %q", lastStatus)
+	}
+}
+
+// TestHealthCheckFail verifies that a failing health check triggers rollback and "failed" status.
+func TestHealthCheckFail(t *testing.T) {
+	var lastStatus string
+	callCount := 0
+	hub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == "POST" && r.URL.Path == "/v1/edges/register":
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusCreated)
+			json.NewEncoder(w).Encode(model.EdgeRegisterResponse{EdgeID: "e2"})
+		case r.Method == "POST" && r.URL.Path == "/v1/deploy/target-status":
+			var req model.DeployTargetStatusRequest
+			json.NewDecoder(r.Body).Decode(&req)
+			lastStatus = req.Status
+			w.WriteHeader(http.StatusOK)
+		case r.Method == "GET" && strings.Contains(r.URL.Path, "/v1/deploy/assignments/"):
+			w.Header().Set("Content-Type", "application/json")
+			if callCount == 0 {
+				callCount++
+				json.NewEncoder(w).Encode([]model.DeployAssignmentResponse{{
+					DeployID:    "d2",
+					Artifacts:   []model.DeployAssignmentArtifact{},
+					HealthCheck: model.HealthCheck{Command: "exit 1", TimeoutSec: 5},
+				}})
+				return
+			}
+			json.NewEncoder(w).Encode([]model.DeployAssignmentResponse{})
+		default:
+			w.WriteHeader(http.StatusOK)
+		}
+	}))
+	defer hub.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+	Run(ctx, Config{ //nolint:errcheck
+		HubURL:       hub.URL,
+		EdgeName:     "e2",
+		Workdir:      t.TempDir(),
+		PollInterval: 50 * time.Millisecond,
+	})
+
+	if lastStatus != "failed" {
+		t.Errorf("expected status=failed after health check fail, got %q", lastStatus)
+	}
+}
+
+// TestRollbackManager verifies BeforeDeploy creates .prev and Rollback restores it.
+func TestRollbackManager(t *testing.T) {
+	dir := t.TempDir()
+	deployDir := filepath.Join(dir, "deploy")
+	if err := os.MkdirAll(deployDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Write initial file
+	modelFile := filepath.Join(deployDir, "model.onnx")
+	h1 := []byte("hash-v1-content")
+	if err := os.WriteFile(modelFile, h1, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	rb := newRollbackManager(deployDir)
+
+	// Backup
+	if err := rb.BeforeDeploy(deployDir); err != nil {
+		t.Fatalf("BeforeDeploy: %v", err)
+	}
+	prev := deployDir + ".prev"
+	if _, err := os.Stat(prev); err != nil {
+		t.Fatalf(".prev should exist: %v", err)
+	}
+
+	// Simulate new deploy
+	h2 := []byte("hash-v2-content")
+	if err := os.WriteFile(modelFile, h2, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Rollback
+	if err := rb.Rollback(deployDir); err != nil {
+		t.Fatalf("Rollback: %v", err)
+	}
+
+	// Verify restored
+	got, err := os.ReadFile(filepath.Join(deployDir, "model.onnx"))
+	if err != nil {
+		t.Fatalf("read after rollback: %v", err)
+	}
+	if string(got) != string(h1) {
+		t.Errorf("after rollback got %q, want %q", string(got), string(h1))
 	}
 }

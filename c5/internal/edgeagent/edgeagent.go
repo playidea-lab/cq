@@ -24,12 +24,41 @@ type Config struct {
 	EdgeName    string
 	Workdir     string
 	PollInterval time.Duration
+
+	// Metrics reporting (optional — disabled if MetricsCommand is empty).
+	MetricsCommand  string
+	MetricsInterval time.Duration // default 60s
+
+	// Health check timeout (default 30s).
+	HealthCheckTimeout time.Duration
+
+	// Drive upload for collect control action (optional).
+	DriveURL   string
+	DriveAPIKey string
+}
+
+// runHealthCheck runs the health check command within the given timeout.
+func runHealthCheck(ctx context.Context, command string, timeout time.Duration) error {
+	hctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	cmd := exec.CommandContext(hctx, "sh", "-c", command)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("health check failed: %w: %s", err, strings.TrimSpace(string(out)))
+	}
+	return nil
 }
 
 // Run registers the edge, starts heartbeat, and runs the assignment poll loop until ctx is done.
 func Run(ctx context.Context, cfg Config) error {
 	baseURL := strings.TrimRight(cfg.HubURL, "/")
 	client := &http.Client{Timeout: 30 * time.Second}
+
+	if cfg.MetricsInterval <= 0 {
+		cfg.MetricsInterval = 60 * time.Second
+	}
+	if cfg.HealthCheckTimeout <= 0 {
+		cfg.HealthCheckTimeout = 30 * time.Second
+	}
 
 	// Register edge (retry on failure)
 	var edgeID string
@@ -74,6 +103,16 @@ func Run(ctx context.Context, cfg Config) error {
 		break
 	}
 	log.Printf("edge-agent: registered as %s", edgeID)
+
+	// MetricsReporter goroutine (no-op if MetricsCommand is empty)
+	if cfg.MetricsCommand != "" {
+		mr := newMetricsReporter(edgeID, baseURL, cfg.APIKey, cfg.MetricsCommand, cfg.MetricsInterval, client)
+		go mr.Start(ctx)
+	}
+
+	// ControlPoller goroutine
+	cp := newControlPoller(edgeID, baseURL, cfg.APIKey, cfg.DriveURL, cfg.DriveAPIKey, client)
+	go cp.Start(ctx)
 
 	// Heartbeat goroutine
 	go func() {
@@ -133,7 +172,7 @@ func Run(ctx context.Context, cfg Config) error {
 		resp.Body.Close()
 
 		for _, a := range assignments {
-			processAssignment(ctx, client, baseURL, cfg.APIKey, edgeID, cfg.Workdir, &a)
+			processAssignment(ctx, client, baseURL, cfg.APIKey, edgeID, cfg.Workdir, cfg.HealthCheckTimeout, &a)
 		}
 
 		sleepOrDone(ctx, cfg.PollInterval)
@@ -147,11 +186,18 @@ func sleepOrDone(ctx context.Context, d time.Duration) {
 	}
 }
 
-func processAssignment(ctx context.Context, client *http.Client, baseURL, apiKey, edgeID, workdir string, a *model.DeployAssignmentResponse) {
+func processAssignment(ctx context.Context, client *http.Client, baseURL, apiKey, edgeID, workdir string, healthCheckTimeout time.Duration, a *model.DeployAssignmentResponse) {
 	deployDir := filepath.Join(workdir, a.DeployID)
 	if err := os.MkdirAll(deployDir, 0o755); err != nil {
 		reportTargetStatus(ctx, client, baseURL, apiKey, a.DeployID, edgeID, "failed", err.Error())
 		return
+	}
+
+	rb := newRollbackManager(deployDir)
+	// Backup existing deploy dir before downloading new artifacts.
+	if err := rb.BeforeDeploy(deployDir); err != nil {
+		log.Printf("edge-agent: BeforeDeploy: %v", err)
+		// Non-fatal: proceed without rollback capability
 	}
 
 	// Report downloading
@@ -209,6 +255,23 @@ func processAssignment(ctx context.Context, client *http.Client, baseURL, apiKey
 		}
 	}
 
+	// Health check gate
+	if a.HealthCheck.Command != "" {
+		timeout := healthCheckTimeout
+		if a.HealthCheck.TimeoutSec > 0 {
+			timeout = time.Duration(a.HealthCheck.TimeoutSec) * time.Second
+		}
+		if err := runHealthCheck(ctx, a.HealthCheck.Command, timeout); err != nil {
+			log.Printf("edge-agent: health check failed for deploy %s: %v; rolling back", a.DeployID, err)
+			if rbErr := rb.Rollback(deployDir); rbErr != nil {
+				log.Printf("edge-agent: rollback failed: %v", rbErr)
+			}
+			reportTargetStatus(ctx, client, baseURL, apiKey, a.DeployID, edgeID, "failed", err.Error())
+			return
+		}
+	}
+
+	rb.Cleanup(deployDir)
 	reportTargetStatus(ctx, client, baseURL, apiKey, a.DeployID, edgeID, "succeeded", "")
 }
 

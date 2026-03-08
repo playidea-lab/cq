@@ -333,12 +333,14 @@ func (s *Server) handleDeployAssignments(w http.ResponseWriter, r *http.Request)
 	resp := make([]model.DeployAssignmentResponse, 0, len(list))
 	for _, a := range list {
 		item := model.DeployAssignmentResponse{
-			DeployID:           a.DeployID,
-			JobID:              a.JobID,
-			ArtifactPattern:    a.ArtifactPattern,
-			PostCommand:        a.PostCommand,
-			HealthCheck:        a.HealthCheck,
-			HealthCheckTimeout: a.HealthCheckTimeout,
+			DeployID:        a.DeployID,
+			JobID:           a.JobID,
+			ArtifactPattern: a.ArtifactPattern,
+			PostCommand:     a.PostCommand,
+			HealthCheck: model.HealthCheck{
+				Command:    a.HealthCheck,
+				TimeoutSec: a.HealthCheckTimeout,
+			},
 		}
 		arts, err := s.store.ListArtifacts(a.JobID)
 		if err == nil && len(arts) > 0 && a.ArtifactPattern != "" {

@@ -13,11 +13,16 @@ import (
 
 func edgeAgentCmd() *cobra.Command {
 	var (
-		hubURL   string
-		apiKey   string
-		edgeName string
-		workdir  string
-		pollSec  int
+		hubURL          string
+		apiKey          string
+		edgeName        string
+		workdir         string
+		pollSec         int
+		metricsCommand  string
+		metricsInterval int
+		healthCheckTimeout int
+		driveURL        string
+		driveAPIKey     string
 	)
 
 	cmd := &cobra.Command{
@@ -37,11 +42,16 @@ func edgeAgentCmd() *cobra.Command {
 			ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 			defer stop()
 			return edgeagent.Run(ctx, edgeagent.Config{
-				HubURL:       hubURL,
-				APIKey:       apiKey,
-				EdgeName:     edgeName,
-				Workdir:      workdir,
-				PollInterval: time.Duration(pollSec) * time.Second,
+				HubURL:             hubURL,
+				APIKey:             apiKey,
+				EdgeName:           edgeName,
+				Workdir:            workdir,
+				PollInterval:       time.Duration(pollSec) * time.Second,
+				MetricsCommand:     metricsCommand,
+				MetricsInterval:    time.Duration(metricsInterval) * time.Second,
+				HealthCheckTimeout: time.Duration(healthCheckTimeout) * time.Second,
+				DriveURL:           driveURL,
+				DriveAPIKey:        driveAPIKey,
 			})
 		},
 	}
@@ -59,6 +69,11 @@ func edgeAgentCmd() *cobra.Command {
 	cmd.Flags().StringVar(&edgeName, "edge-name", "", "Edge name (default: hostname)")
 	cmd.Flags().StringVar(&workdir, "workdir", ".", "Directory to download artifacts into")
 	cmd.Flags().IntVar(&pollSec, "poll-interval", 10, "Poll interval in seconds for assignments")
+	cmd.Flags().StringVar(&metricsCommand, "metrics-command", "", "Shell command to collect metrics (stdout KEY=VALUE)")
+	cmd.Flags().IntVar(&metricsInterval, "metrics-interval", 60, "Metrics reporting interval in seconds")
+	cmd.Flags().IntVar(&healthCheckTimeout, "health-check-timeout", 30, "Health check timeout in seconds")
+	cmd.Flags().StringVar(&driveURL, "drive-url", os.Getenv("C5_DRIVE_URL"), "Drive server URL for collect action uploads")
+	cmd.Flags().StringVar(&driveAPIKey, "drive-api-key", os.Getenv("C5_DRIVE_API_KEY"), "Drive API key for authentication")
 
 	return cmd
 }
