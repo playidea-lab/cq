@@ -244,6 +244,9 @@ func RegisterKnowledgeNativeHandlers(reg *mcp.Registry, opts *KnowledgeNativeOpt
 			},
 		}, knowledgeDistillNativeHandler(opts))
 	}
+
+	// 16. c4_research_loop_start — autonomous research loop
+	RegisterResearchLoopHandlers(reg, opts)
 }
 
 // =========================================================================
