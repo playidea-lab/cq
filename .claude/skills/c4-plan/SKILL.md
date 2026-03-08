@@ -453,18 +453,23 @@ c4_design_complete()  # Transitions to PLAN state
 
 ```python
 # 1. 파일 충돌 (HIGH) — 활성 워커와 동일 파일 수정 여부
+# 실패 시: 해당 소스 건너뜀 (충돌 없음으로 처리) — UX 방해 금지
 worktrees = c4_worktree_status()
 # c4/w-* 브랜치별 수정 중인 파일 목록 추출
 # → 현재 plan scope 파일들과 교집합 확인
 
 # 2. 개념 겹침 (MEDIUM) — 기존 스펙/디자인과 유사한 주제
+# 실패 시: 해당 소스 건너뜀 (충돌 없음으로 처리)
 specs   = c4_list_specs()
 designs = c4_list_designs()
 # feature명, 설명, 도메인 키워드로 현재 계획과 유사한 항목 LLM 판단
 # → 이름/설명이 현재 feature와 겹치는 것 플래그
+# → 최근 수정(14일 이내) spec/design만 비교 대상으로 한정
 
 # 3. 지식 참고 (LOW) — 동일 도메인 최근 기록
-recent = c4_knowledge_search(query="{현재 plan 요약}", limit=3)
+# 실패 시: 해당 소스 건너뜀 (충돌 없음으로 처리)
+# query = "{현재 feature명} {detected_domain}" (feature명 + 도메인 키워드 조합)
+recent = c4_knowledge_search(query=f"{current_feature} {detected_domain}", limit=3)
 # 유사 결과 있으면 참고용으로 제시 (blocking 아님)
 ```
 
@@ -519,7 +524,9 @@ AskUserQuestion(questions=[{
 }])
 ```
 
-- "검토 완료" 또는 "무시하고 계속" → Phase 2.7
+- "검토 완료" → Phase 2.7 (충돌 해소됐다고 판단, 이력 기록 불필요)
+- "충돌 무시하고 계속" → Phase 2.7 + `c4_knowledge_record`로 무시 결정 이력 기록
+  (제목: "충돌 무시 결정 — {feature}", 내용: ConflictReport 요약)
 - "계획 재검토" → Phase 2.6으로 돌아감
 
 ### 2.65 규칙
@@ -993,7 +1000,7 @@ Recommended:
 Phase 0: Status display + knowledge_search (state, tasks, specs, designs, lighthouses, docs)
     |
 Phase 0.5: Action selection
-    |-> "Plan new feature"     -> Phase 1~2.7~3~4~4.5~4.9~5
+    |-> "Plan new feature"     -> Phase 1~2.65~2.7~3~4~4.5~4.9~5
     |-> "Review/modify"        -> Phase R (detail view -> edit)
     |-> "Lighthouse"           -> Phase L (register/list/promote/remove)
     |-> "Add tasks only"       -> Phase 4~4.5~4.9~5
