@@ -67,6 +67,13 @@ func resolveExecutionMode(mode string) (string, error) {
 	}
 }
 
+// HeartbeatStore extends Store with explicit worker heartbeat capability.
+// Implemented by SQLiteStore; other store implementations (e.g., mock) need not implement it.
+// The tasks.go handler performs a type assertion to check availability at runtime.
+type HeartbeatStore interface {
+	WorkerHeartbeat(workerID string) (int64, error)
+}
+
 // RegisterTaskHandlers registers task management tools on the registry.
 func RegisterTaskHandlers(reg *mcp.Registry, store Store) {
 	// c4_get_task
@@ -215,6 +222,44 @@ func RegisterTaskHandlers(reg *mcp.Registry, store Store) {
 		},
 	}, func(args json.RawMessage) (any, error) {
 		return handleTaskList(store, args)
+	})
+
+	// c4_worker_heartbeat
+	reg.Register(mcp.ToolSchema{
+		Name:        "c4_worker_heartbeat",
+		Description: "Send a heartbeat for a worker to prevent stale task reassignment. Call every heartbeat_interval_sec seconds while doing long operations (file editing, builds).",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"worker_id": map[string]any{
+					"type":        "string",
+					"description": "Worker ID (same as used in c4_get_task)",
+				},
+			},
+			"required": []string{"worker_id"},
+		},
+	}, func(args json.RawMessage) (any, error) {
+		var p struct {
+			WorkerID string `json:"worker_id"`
+		}
+		if err := json.Unmarshal(args, &p); err != nil {
+			return nil, fmt.Errorf("invalid args: %w", err)
+		}
+		if p.WorkerID == "" {
+			return nil, fmt.Errorf("worker_id is required")
+		}
+		hs, ok := store.(HeartbeatStore)
+		if !ok {
+			return map[string]any{"ok": true, "note": "heartbeat not supported by store"}, nil
+		}
+		n, err := hs.WorkerHeartbeat(p.WorkerID)
+		if err != nil {
+			return nil, fmt.Errorf("heartbeat failed: %w", err)
+		}
+		if n == 0 {
+			return map[string]any{"ok": false, "worker_id": p.WorkerID, "tasks_updated": 0}, nil
+		}
+		return map[string]any{"ok": true, "worker_id": p.WorkerID, "tasks_updated": n}, nil
 	})
 }
 

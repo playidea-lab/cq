@@ -20,6 +20,11 @@ import (
 
 var _ store.Store = (*SQLiteStore)(nil)
 
+// staleTimeoutMin is the number of minutes after which an in_progress task
+// with no updated_at refresh is considered stale and eligible for reassignment.
+// Heartbeat interval is 30s, so 3 minutes = 6 missed heartbeats.
+const staleTimeoutMin = 3
+
 // SQLiteStore implements the handlers.Store interface backed by SQLite.
 // It operates on the shared .c4/tasks.db used by both Go and Python.
 type SQLiteStore struct {
@@ -450,13 +455,14 @@ func (s *SQLiteStore) AssignTask(workerID string) (*TaskAssignment, error) {
 
 	// Build base assignment
 	assignment := &TaskAssignment{
-		TaskID:   taskID,
-		Title:    title,
-		Scope:    scope,
-		DoD:      dod,
-		Domain:   domain,
-		WorkerID: workerID,
-		Model:    model,
+		TaskID:               taskID,
+		Title:                title,
+		Scope:                scope,
+		DoD:                  dod,
+		Domain:               domain,
+		WorkerID:             workerID,
+		Model:                model,
+		HeartbeatIntervalSec: 30,
 	}
 
 	if deps.Valid && deps.String != "" {
@@ -618,14 +624,14 @@ func (s *SQLiteStore) reassignStaleOrFindPendingTask(workerID string) (
 	sfClause := s.sessionClause("AND", "t.")
 	sfArgs := s.sessionArgs()
 
-	// Anti-fragility: try to reassign stale in_progress tasks first (>30 min without update)
-	staleArgs := append([]any{workerID}, sfArgs...)
+	// Anti-fragility: try to reassign stale in_progress tasks first (>staleTimeoutMin without update)
+	staleArgs := append([]any{staleTimeoutMin, workerID}, sfArgs...)
 	err = conn.QueryRowContext(ctx, `
 		SELECT t.task_id, t.title, t.scope, t.dod, t.dependencies, t.domain, t.priority, t.model
 		FROM c4_tasks t
 		WHERE t.status = 'in_progress'
 		AND (t.execution_mode IS NULL OR t.execution_mode IN ('', 'worker', 'auto'))
-		AND (julianday('now') - julianday(t.updated_at)) * 24 * 60 > 30
+		AND (julianday('now') - julianday(t.updated_at)) * 24 * 60 > ?
 		AND t.worker_id != ?
 		AND (t.superseded_by IS NULL OR t.superseded_by = '')`+sfClause+`
 		ORDER BY t.priority DESC, t.created_at ASC
@@ -1079,6 +1085,22 @@ func (s *SQLiteStore) ResetTask(taskID string) error {
 		return fmt.Errorf("task %s not found or not in_progress", taskID)
 	}
 	return nil
+}
+
+// WorkerHeartbeat refreshes updated_at for all in_progress tasks owned by workerID.
+// Returns the number of rows updated so the caller can detect worker-not-found (0 rows).
+// Called by the c4_worker_heartbeat MCP tool (explicit heartbeat — Option A).
+func (s *SQLiteStore) WorkerHeartbeat(workerID string) (int64, error) {
+	res, err := s.db.Exec(
+		`UPDATE c4_tasks SET updated_at = datetime('now')
+		 WHERE worker_id = ? AND status = 'in_progress'`,
+		workerID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	n, _ := res.RowsAffected()
+	return n, nil
 }
 
 // TouchCurrentWorkerHeartbeat refreshes updated_at for the currently active worker's task.

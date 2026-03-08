@@ -276,7 +276,7 @@ func TestConcurrentClaimTask_OnlyOneWins(t *testing.T) {
 }
 
 // TestStaleReassignment_TakesOverAfterTimeout verifies that a task stuck in_progress
-// for more than 30 minutes is reassigned to a new worker (anti-fragility path).
+// for more than staleTimeoutMin minutes is reassigned to a new worker (anti-fragility path).
 func TestStaleReassignment_TakesOverAfterTimeout(t *testing.T) {
 	store, db := newTestSQLiteStore(t)
 	defer db.Close()
@@ -294,9 +294,9 @@ func TestStaleReassignment_TakesOverAfterTimeout(t *testing.T) {
 		t.Fatalf("initial assign: %v", err)
 	}
 
-	// Simulate task being stuck: backdate updated_at by 31 minutes (threshold is 30).
+	// Simulate task being stuck: backdate updated_at by staleTimeoutMin+1 minutes (threshold is staleTimeoutMin=3).
 	if _, err := db.Exec(`
-		UPDATE c4_tasks SET updated_at = datetime('now', '-31 minutes')
+		UPDATE c4_tasks SET updated_at = datetime('now', '-4 minutes')
 		WHERE task_id = 'T-001-0'`); err != nil {
 		t.Fatalf("backdate: %v", err)
 	}
@@ -320,12 +320,12 @@ func TestStaleReassignment_TakesOverAfterTimeout(t *testing.T) {
 }
 
 // TestStaleReassignment_NotTriggeredBeforeTimeout verifies that a task in_progress
-// for less than 30 minutes is NOT reassigned (normal operation protected).
+// for less than staleTimeoutMin minutes is NOT reassigned (normal operation protected).
 func TestStaleReassignment_NotTriggeredBeforeTimeout(t *testing.T) {
 	store, db := newTestSQLiteStore(t)
 	defer db.Close()
 
-	// Task in_progress for only 5 minutes — must NOT be stolen.
+	// Task in_progress for only 2 minutes — must NOT be stolen (threshold is staleTimeoutMin=3).
 	if err := store.AddTask(&Task{
 		ID:     "T-001-0",
 		Title:  "Active task",
@@ -337,7 +337,7 @@ func TestStaleReassignment_NotTriggeredBeforeTimeout(t *testing.T) {
 	if _, err := store.AssignTask("worker-a"); err != nil {
 		t.Fatalf("initial assign: %v", err)
 	}
-	if _, err := db.Exec(`UPDATE c4_tasks SET updated_at = datetime('now', '-5 minutes') WHERE task_id = 'T-001-0'`); err != nil {
+	if _, err := db.Exec(`UPDATE c4_tasks SET updated_at = datetime('now', '-2 minutes') WHERE task_id = 'T-001-0'`); err != nil {
 		t.Fatalf("backdate: %v", err)
 	}
 
@@ -443,5 +443,57 @@ func TestConcurrentAssignTask_RaceDetector(t *testing.T) {
 			t.Errorf("task %s assigned to multiple workers (race condition)", id)
 		}
 		seen[id] = true
+	}
+}
+
+// TestWorkerHeartbeat verifies that WorkerHeartbeat refreshes updated_at for in_progress
+// tasks owned by the given worker, and returns 0 when the worker has no in_progress tasks.
+func TestWorkerHeartbeat(t *testing.T) {
+	store, db := newTestSQLiteStore(t)
+	defer db.Close()
+
+	// Seed and assign a task to worker-a.
+	if err := store.AddTask(&Task{
+		ID:     "T-001-0",
+		Title:  "Heartbeat test task",
+		DoD:    "done",
+		Status: "pending",
+	}); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	if _, err := store.AssignTask("worker-a"); err != nil {
+		t.Fatalf("assign: %v", err)
+	}
+
+	// Backdate updated_at so we can detect the refresh.
+	if _, err := db.Exec(`UPDATE c4_tasks SET updated_at = datetime('now', '-2 minutes') WHERE task_id = 'T-001-0'`); err != nil {
+		t.Fatalf("backdate: %v", err)
+	}
+
+	// Heartbeat for worker-a must update 1 row.
+	n, err := store.WorkerHeartbeat("worker-a")
+	if err != nil {
+		t.Fatalf("WorkerHeartbeat: %v", err)
+	}
+	if n != 1 {
+		t.Errorf("tasks_updated = %d, want 1", n)
+	}
+
+	// After heartbeat, the task must NOT be stale (< staleTimeoutMin minutes old).
+	assignment, err := store.AssignTask("worker-b")
+	if err != nil {
+		t.Fatalf("assign worker-b: %v", err)
+	}
+	if assignment != nil && assignment.TaskID == "T-001-0" {
+		t.Error("task was stolen despite recent heartbeat — stale detection broken")
+	}
+
+	// Heartbeat for unknown worker must return 0 (no tasks to update).
+	n2, err := store.WorkerHeartbeat("worker-unknown")
+	if err != nil {
+		t.Fatalf("WorkerHeartbeat unknown: %v", err)
+	}
+	if n2 != 0 {
+		t.Errorf("tasks_updated = %d, want 0 for unknown worker", n2)
 	}
 }
