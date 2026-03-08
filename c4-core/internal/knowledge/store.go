@@ -29,6 +29,7 @@ const (
 	TypePattern    DocumentType = "pattern"
 	TypeInsight    DocumentType = "insight"
 	TypeHypothesis DocumentType = "hypothesis"
+	TypeDebate     DocumentType = "debate"
 )
 
 // docTypePrefixes maps ID prefixes to document types.
@@ -37,6 +38,7 @@ var docTypePrefixes = map[string]DocumentType{
 	"pat": TypePattern,
 	"ins": TypeInsight,
 	"hyp": TypeHypothesis,
+	"deb": TypeDebate,
 }
 
 // prefixForType returns the ID prefix for a document type.
