@@ -1,5 +1,20 @@
 # Changelog
 
+## [v0.81.0] - 2026-03-08
+
+### ✨ Features
+- **c5/worker**: GPU 자동 감지 + caps.yaml 자동 생성
+  - `detectGPU()`: `nvidia-smi --query-gpu=name,memory.total --format=csv,noheader,nounits` 실행 → GPU count/model/VRAM 자동 파싱, nvidia-smi 미설치 시 graceful fallback (0, "", 0.0)
+  - `defaultCapabilities()`: GPU 감지 시 `run_command + train_model` (tags: gpu, pytorch), CPU only 시 `run_command` (tags: cpu, shell)
+  - `--no-auto-detect` 플래그: GPU 감지 + caps 자동 생성 비활성화
+  - `--gpu-count` / `--capabilities` 명시 시 자동 감지 스킵 (기존 동작 유지)
+  - 자동 감지 결과 로그 출력: `c5-worker: GPU auto-detected: Nx <model> (<VRAM> GB)`
+
+### 🧪 Tests
+- **c5/worker**: `worker_detect_test.go` — 5개 테스트 (nvidia-smi 미설치 fallback, 멀티-GPU 파싱, GPU/CPU capability 내용, 플래그 등록 확인)
+
+---
+
 ## [v0.80.1] - 2026-03-08
 
 ### 🐛 Bug Fixes
