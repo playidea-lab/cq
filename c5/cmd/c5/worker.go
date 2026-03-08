@@ -269,7 +269,8 @@ func runWorker(cfg workerConfig) error {
 					if err := exec.Command(cqPath, "upgrade").Run(); err != nil {
 						log.Printf("c5-worker: cq upgrade failed: %v — retrying next poll", err)
 					} else {
-						os.Exit(0)
+						// Exit with non-zero so systemd Restart=on-failure triggers restart with new binary.
+						os.Exit(1)
 					}
 				case "shutdown":
 					log.Println("c5-worker: control: shutdown received, stopping after current job")

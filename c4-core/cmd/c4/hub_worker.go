@@ -158,6 +158,11 @@ func init() {
 func runWorkerInit(cmd *cobra.Command, args []string) error {
 	cfgPath := workerConfigPath()
 
+	// Auto non-interactive: if both flags are provided, skip prompts without requiring --non-interactive.
+	if workerInitHubURL != "" && workerInitAPIKey != "" {
+		workerInitNonInteractive = true
+	}
+
 	// Load existing config for defaults.
 	existing := workerYAML{}
 	if data, err := os.ReadFile(cfgPath); err == nil {
@@ -300,7 +305,7 @@ func runWorkerInstall(cmd *cobra.Command, args []string) error {
 		} else {
 			destPath = "/etc/systemd/system/cq-worker.service"
 		}
-		content = buildSystemdUnit(execStart, cfg.HubURL)
+		content = buildSystemdUnit(execStart, cfg.HubURL, cfg.APIKey)
 
 	case "darwin":
 		home, _ := os.UserHomeDir()
@@ -337,15 +342,20 @@ func runWorkerInstall(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func buildSystemdUnit(execStart, hubURL string) string {
+func buildSystemdUnit(execStart, hubURL, apiKey string) string {
 	// Strip newlines to prevent injection into the multi-line unit file.
 	sanitize := strings.NewReplacer("\n", "", "\r", "").Replace
 	execStart = sanitize(execStart)
 	hubURL = sanitize(hubURL)
+	apiKey = sanitize(apiKey)
 
 	desc := "CQ Hub Worker"
 	if hubURL != "" {
 		desc = fmt.Sprintf("CQ Hub Worker (%s)", hubURL)
+	}
+	envLine := ""
+	if apiKey != "" {
+		envLine = fmt.Sprintf("Environment=C5_API_KEY=%s\n", apiKey)
 	}
 	return fmt.Sprintf(`[Unit]
 Description=%s
@@ -353,13 +363,13 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart=%s
+%sExecStart=%s
 Restart=on-failure
 RestartSec=10
 
 [Install]
 WantedBy=multi-user.target
-`, desc, execStart)
+`, desc, envLine, execStart)
 }
 
 // xmlEscapeAttr escapes a string for safe use inside XML element content.
