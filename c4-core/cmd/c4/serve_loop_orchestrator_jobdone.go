@@ -51,7 +51,7 @@ func (o *LoopOrchestrator) onJobDone(ctx context.Context, session *LoopSession, 
 	}
 
 	// Run the Optimizer→Skeptic→Synthesis debate.
-	result, err := runDebate(ctx, o.caller, o.store, session.HypothesisID, triggerReason, extraContext)
+	result, err := runDebate(ctx, o.caller, o.store, session.HypothesisID, triggerReason, extraContext, lineageContext)
 	if err != nil {
 		return fmt.Errorf("runDebate: %w", err)
 	}

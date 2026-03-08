@@ -272,6 +272,7 @@ func TestDependencyMatrix(t *testing.T) {
 		},
 		"internal/mcp/handlers/researchhandler": {
 			"internal/eventbus",
+			"internal/knowledge",
 			"internal/mcp",
 			"internal/research",
 		},
