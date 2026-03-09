@@ -1,72 +1,51 @@
 # GPU Worker — C5 Hub 연결 가이드
 
-고객 GPU 서버에서 `curl` 설치 후 3개 스크립트 실행으로 C5 Hub에 연결합니다.
-`cq` 바이너리 불필요 — `bash` + `curl` + `python3`만으로 동작합니다.
+GPU 서버를 C5 Hub 워커로 연결합니다.
 
 ## 필수 조건
 
 | 항목 | 필수 여부 | 비고 |
 |------|----------|------|
-| `bash` | 필수 | |
-| `curl` | 필수 | Hub API 통신 |
-| `python3` | 필수 | JSON 파싱 |
-| `c5` 바이너리 | 필수 | [설치 방법](#c5-설치) |
-| `nvidia-smi` | 선택 | GPU 없는 환경에서는 fallback JSON 출력 |
+| `cq` 바이너리 | 필수 | [설치 방법](#cq-설치) |
+| `nvidia-smi` | 선택 | GPU 없는 환경에서는 CPU-only 워커로 동작 |
 
-## c5 설치
+## cq 설치
 
 ```bash
-# 최신 릴리즈 다운로드 (Linux amd64 예시)
-curl -L https://github.com/PlayIdea-Lab/cq/releases/latest/download/c5-linux-amd64 -o ~/.local/bin/c5
-chmod +x ~/.local/bin/c5
-
-# 또는 cq 설치 후 내장 c5 사용
 curl -fsSL https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/install.sh | bash
 ```
 
-## Hub API Key 인증
+## 빠른 시작 (JWT 인증 — 권장)
 
-C5 Hub는 API Key 인증을 사용합니다. 워커 연결 시 반드시 설정해야 합니다.
+API key 설정 없이 2단계로 워커를 시작합니다.
 
 ```bash
-# 환경변수 설정 (권장)
-export C5_API_KEY="your-api-key-here"
+# 1. 로그인 (브라우저에서 인증)
+cq auth login --device
 
-# 또는 --api-key 플래그 직접 전달
-c5 worker --api-key "$C5_API_KEY" --capabilities gpu-caps.yaml --server "$C5_HUB_URL"
+# 2. 워커 시작 (JWT 자동 감지, 만료 시 자동 refresh)
+cq hub worker start
 ```
 
-> **Note**: `c5` 바이너리는 `C5_API_KEY` 환경변수를 사용합니다.
+끝입니다. JWT가 만료되면 자동으로 refresh 후 워커가 재시작됩니다.
 
-## 빠른 시작
+## API Key 인증 (대안)
+
+JWT 대신 API key를 직접 사용할 수도 있습니다.
 
 ```bash
-# 1. 파일 다운로드
-git clone https://github.com/PlayIdea-Lab/cq
-cd cq/docs/gpu-worker
-
-# 또는 개별 다운로드
-curl -O https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/docs/gpu-worker/gpu-caps.yaml
-mkdir -p scripts
-curl -O --output-dir scripts https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/docs/gpu-worker/scripts/gpu-status.sh
-curl -O --output-dir scripts https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/docs/gpu-worker/scripts/gpu-train.sh
-curl -O --output-dir scripts https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/docs/gpu-worker/scripts/gpu-infer.sh
-chmod +x scripts/*.sh
-
-# 2. 환경변수 설정
-export C5_HUB_URL="https://your-hub.example.com"
+# 방법 A: 환경변수
 export C5_API_KEY="your-api-key"
+cq hub worker start
 
-# 3. GPU 상태 확인
-bash scripts/gpu-status.sh
-
-# 4. 워커 시작
-c5 worker --capabilities gpu-caps.yaml --server "$C5_HUB_URL"
+# 방법 B: init (영구 저장)
+cq hub worker init   # 대화형: Hub URL + API key 입력 → ~/.c5/config.yaml
+cq hub worker start
 ```
 
-## gpu-caps.yaml 설정
+## Capability 설정 (선택)
 
-기본 제공 `gpu-caps.yaml`을 환경에 맞게 수정하세요:
+커스텀 capability를 등록하려면 `gpu-caps.yaml`을 작성합니다.
 
 ```yaml
 capabilities:
@@ -102,6 +81,13 @@ capabilities:
           type: string
 ```
 
+```bash
+# capability 파일 지정하여 워커 시작
+cq hub worker init
+# → Capabilities 경로 입력: gpu-caps.yaml
+cq hub worker start
+```
+
 ## 스크립트 동작 방식
 
 ### gpu-status.sh
@@ -120,20 +106,26 @@ C5 워커 프로토콜을 따릅니다:
 
 ## systemd 서비스 등록 (선택)
 
+```bash
+# 자동으로 systemd/launchd 서비스 파일 생성
+cq hub worker install
+
+# 또는 미리보기만
+cq hub worker install --dry-run
+```
+
+수동 설정이 필요한 경우:
+
 ```ini
-# /etc/systemd/system/c5-gpu-worker.service
+# /etc/systemd/system/cq-worker.service
 [Unit]
-Description=C5 GPU Worker
+Description=CQ Hub Worker
 After=network.target
 
 [Service]
 User=ubuntu
-Environment=C5_HUB_URL=https://your-hub.example.com
-Environment=C5_API_KEY=your-api-key
 WorkingDirectory=/opt/gpu-worker
-ExecStart=/usr/local/bin/c5 worker \
-    --capabilities gpu-caps.yaml \
-    --server ${C5_HUB_URL}
+ExecStart=/usr/local/bin/cq hub worker start
 Restart=always
 RestartSec=10
 
@@ -142,6 +134,8 @@ WantedBy=multi-user.target
 ```
 
 ```bash
-sudo systemctl enable --now c5-gpu-worker
-sudo journalctl -fu c5-gpu-worker
+sudo systemctl enable --now cq-worker
+sudo journalctl -fu cq-worker
 ```
+
+> **Note**: `cq hub worker start`는 JWT 또는 `~/.c5/config.yaml`의 API key를 자동으로 사용합니다. systemd 환경에서 JWT를 쓰려면 해당 유저로 `cq auth login --device`를 먼저 실행하세요.
