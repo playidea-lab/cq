@@ -642,6 +642,8 @@ func runWorkerStart(cmd *cobra.Command, args []string) error {
 
 	fmt.Printf("Starting: %s %s\n", binary, strings.Join(cmdArgs, " "))
 
+	const maxJWTRetries = 3
+	jwtRetries := 0
 	for {
 		c := workerExecCommand(binary, cmdArgs...)
 		c.Stdout = os.Stdout
@@ -665,7 +667,13 @@ func runWorkerStart(cmd *cobra.Command, args []string) error {
 			exitCode = exitErr.ExitCode()
 		}
 
-		fmt.Fprintf(os.Stderr, "cq: worker exited (code=%d), attempting JWT refresh...\n", exitCode)
+		jwtRetries++
+		if jwtRetries > maxJWTRetries {
+			fmt.Fprintf(os.Stderr, "cq: JWT retry limit (%d) reached — giving up\n", maxJWTRetries)
+			return err
+		}
+
+		fmt.Fprintf(os.Stderr, "cq: worker exited (code=%d), attempting JWT refresh (%d/%d)...\n", exitCode, jwtRetries, maxJWTRetries)
 
 		newJWT := loadCloudSessionJWT()
 		if newJWT == "" || newJWT == cfg.APIKey {
@@ -773,7 +781,7 @@ func refreshCloudSession() error {
 	}
 	defer resp.Body.Close()
 
-	respBody, _ := io.ReadAll(resp.Body)
+	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20)) // 1 MB limit
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("refresh failed (%d): %s", resp.StatusCode, string(respBody))
 	}
@@ -787,12 +795,15 @@ func refreshCloudSession() error {
 		return fmt.Errorf("parse refresh response: %w", err)
 	}
 
-	// Update session.json
-	updatedSession := map[string]any{
-		"access_token":  newTokens.AccessToken,
-		"refresh_token": newTokens.RefreshToken,
-		"expires_at":    time.Now().Unix() + newTokens.ExpiresIn,
+	// Update session.json — preserve existing fields (user info etc.)
+	existingData, _ := os.ReadFile(sessionPath)
+	updatedSession := map[string]any{}
+	if len(existingData) > 0 {
+		_ = json.Unmarshal(existingData, &updatedSession)
 	}
+	updatedSession["access_token"] = newTokens.AccessToken
+	updatedSession["refresh_token"] = newTokens.RefreshToken
+	updatedSession["expires_at"] = time.Now().Unix() + newTokens.ExpiresIn
 	updatedData, _ := json.MarshalIndent(updatedSession, "", "  ")
 	tmpPath := sessionPath + ".tmp"
 	if err := os.WriteFile(tmpPath, updatedData, 0o600); err != nil {

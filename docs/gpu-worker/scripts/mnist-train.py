@@ -2,11 +2,12 @@
 """MNIST 학습 예시 — GPU Worker E2E 검증용"""
 
 import time
+
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torchvision import datasets, transforms
 from torch.utils.data import DataLoader
+from torchvision import datasets, transforms
 
 print(f"PyTorch {torch.__version__}, CUDA: {torch.cuda.is_available()}")
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
