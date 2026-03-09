@@ -345,14 +345,49 @@ func runWorkerInstall(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Printf("Service file written: %s\n", destPath)
+
+	// Auto-enable and start the service.
 	if runtime.GOOS == "linux" {
 		if workerInstallUser {
-			fmt.Println("Enable with: systemctl --user enable --now cq-worker")
+			fmt.Println("Enabling service (user mode)...")
+			cmd := exec.Command("systemctl", "--user", "daemon-reload")
+			cmd.Stdout = os.Stdout
+			cmd.Stderr = os.Stderr
+			_ = cmd.Run()
+			cmd = exec.Command("systemctl", "--user", "enable", "--now", "cq-worker")
+			cmd.Stdout = os.Stdout
+			cmd.Stderr = os.Stderr
+			if err := cmd.Run(); err != nil {
+				fmt.Fprintf(os.Stderr, "Auto-start failed: %v\nManually run: systemctl --user enable --now cq-worker\n", err)
+			} else {
+				fmt.Println("Worker service started.")
+			}
 		} else {
-			fmt.Println("Enable with: sudo systemctl enable --now cq-worker")
+			fmt.Println("Enabling service...")
+			cmd := exec.Command("sudo", "systemctl", "daemon-reload")
+			cmd.Stdout = os.Stdout
+			cmd.Stderr = os.Stderr
+			_ = cmd.Run()
+			cmd = exec.Command("sudo", "systemctl", "enable", "--now", "cq-worker")
+			cmd.Stdout = os.Stdout
+			cmd.Stderr = os.Stderr
+			if err := cmd.Run(); err != nil {
+				fmt.Fprintf(os.Stderr, "Auto-start failed: %v\nManually run: sudo systemctl enable --now cq-worker\n", err)
+			} else {
+				fmt.Println("Worker service started.")
+				fmt.Println("Logs: sudo journalctl -fu cq-worker")
+			}
 		}
-	} else {
-		fmt.Printf("Enable with: launchctl load %s\n", destPath)
+	} else if runtime.GOOS == "darwin" {
+		fmt.Println("Loading service...")
+		cmd := exec.Command("launchctl", "load", destPath)
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		if err := cmd.Run(); err != nil {
+			fmt.Fprintf(os.Stderr, "Auto-start failed: %v\nManually run: launchctl load %s\n", err, destPath)
+		} else {
+			fmt.Println("Worker service started.")
+		}
 	}
 	return nil
 }
