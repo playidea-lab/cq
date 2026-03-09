@@ -580,7 +580,20 @@ func buildDockerCmd(ctx context.Context, job *model.Job, command string, env []s
 		args = append(args, "sh", "-c", command)
 	}
 
-	cmd := exec.CommandContext(ctx, "docker", args...)
+	// Check if current user can access docker socket; if not, prepend sudo.
+	dockerBin := "docker"
+	if _, err := os.Stat("/var/run/docker.sock"); err == nil {
+		if f, err := os.OpenFile("/var/run/docker.sock", os.O_RDONLY, 0); err != nil {
+			// Permission denied — use sudo
+			log.Printf("c5-worker: docker socket not accessible, using sudo")
+			args = append([]string{"docker"}, args...)
+			dockerBin = "sudo"
+		} else {
+			f.Close()
+		}
+	}
+
+	cmd := exec.CommandContext(ctx, dockerBin, args...)
 	cmd.Env = env
 	return cmd
 }
