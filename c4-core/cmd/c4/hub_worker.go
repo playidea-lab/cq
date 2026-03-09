@@ -374,19 +374,26 @@ func buildSystemdUnit(execStart, hubURL, apiKey string) string {
 	if apiKey != "" {
 		envLine = fmt.Sprintf("Environment=\"C5_API_KEY=%s\"\n", apiKey)
 	}
+	// Docker group access: if docker group exists, add SupplementaryGroups
+	dockerGroup := ""
+	if _, err := exec.LookPath("docker"); err == nil {
+		dockerGroup = "SupplementaryGroups=docker\n"
+	}
+
 	return fmt.Sprintf(`[Unit]
 Description=%s
-After=network.target
+After=network.target docker.service
+Wants=docker.service
 
 [Service]
 Type=simple
-%sExecStart=%s
+%s%sExecStart=%s
 Restart=on-failure
 RestartSec=10
 
 [Install]
 WantedBy=multi-user.target
-`, desc, envLine, execStart)
+`, desc, envLine, dockerGroup, execStart)
 }
 
 // xmlEscapeAttr escapes a string for safe use inside XML element content.
