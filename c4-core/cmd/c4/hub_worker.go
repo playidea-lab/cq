@@ -270,6 +270,14 @@ func detectWorkerGPU() string {
 // =========================================================================
 
 func runWorkerInstall(cmd *cobra.Command, args []string) error {
+	// Pre-flight: ensure Docker + NVIDIA Container Toolkit on Linux
+	if runtime.GOOS == "linux" && !workerInstallDryRun {
+		if err := ensureDockerRuntime(); err != nil {
+			fmt.Fprintf(os.Stderr, "WARNING: Docker setup incomplete: %v\n", err)
+			fmt.Fprintln(os.Stderr, "Docker runtime jobs will fall back to host execution.")
+		}
+	}
+
 	cfgPath := workerConfigPath()
 
 	// Read config for the ExecStart command.
@@ -430,6 +438,71 @@ func buildLaunchdPlist(execArgs []string, hubURL, apiKey string) string {
 // =========================================================================
 // cq hub worker start
 // =========================================================================
+
+// ensureDockerRuntime checks and installs Docker + NVIDIA Container Toolkit.
+// Each step is idempotent — already-installed components are skipped.
+func ensureDockerRuntime() error {
+	// Step 1: Docker
+	if _, err := exec.LookPath("docker"); err != nil {
+		fmt.Println("Docker not found. Installing...")
+		cmd := exec.Command("sudo", "sh", "-c", "curl -fsSL https://get.docker.com | sh")
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		if err := cmd.Run(); err != nil {
+			return fmt.Errorf("docker install failed: %w", err)
+		}
+		fmt.Println("Docker installed.")
+	} else {
+		fmt.Println("Docker: OK")
+	}
+
+	// Step 2: Add current user to docker group
+	if u := os.Getenv("USER"); u != "" {
+		// Check if already in docker group
+		check := exec.Command("id", "-nG", u)
+		out, _ := check.Output()
+		if !strings.Contains(string(out), "docker") {
+			fmt.Printf("Adding user %s to docker group...\n", u)
+			cmd := exec.Command("sudo", "usermod", "-aG", "docker", u)
+			cmd.Stdout = os.Stdout
+			cmd.Stderr = os.Stderr
+			_ = cmd.Run()
+		}
+	}
+
+	// Step 3: NVIDIA Container Toolkit (GPU support)
+	if _, err := exec.LookPath("nvidia-smi"); err == nil {
+		// GPU exists — check nvidia-ctk
+		if _, err := exec.LookPath("nvidia-ctk"); err != nil {
+			fmt.Println("NVIDIA Container Toolkit not found. Installing...")
+			script := "curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg && " +
+				"curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list | " +
+				"sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' > /etc/apt/sources.list.d/nvidia-container-toolkit.list && " +
+				"apt-get update -qq && apt-get install -y -qq nvidia-container-toolkit && " +
+				"nvidia-ctk runtime configure --runtime=docker && " +
+				"systemctl restart docker"
+			cmd := exec.Command("sudo", "sh", "-c", script)
+			cmd.Stdout = os.Stdout
+			cmd.Stderr = os.Stderr
+			if err := cmd.Run(); err != nil {
+				return fmt.Errorf("nvidia-container-toolkit install failed: %w", err)
+			}
+			fmt.Println("NVIDIA Container Toolkit installed.")
+		} else {
+			fmt.Println("NVIDIA Container Toolkit: OK")
+		}
+	} else {
+		fmt.Println("No GPU detected (nvidia-smi not found). Skipping NVIDIA toolkit.")
+	}
+
+	// Step 4: Verify docker runs
+	verifyCmd := exec.Command("docker", "info", "--format", "{{.Runtimes}}")
+	if out, err := verifyCmd.CombinedOutput(); err == nil {
+		fmt.Printf("Docker runtimes: %s\n", strings.TrimSpace(string(out)))
+	}
+
+	return nil
+}
 
 // resolvec5Binary returns the path to the c5 binary.
 // Resolution order: PATH → $C5_BIN env → config hub.binary field → "c5".
