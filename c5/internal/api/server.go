@@ -15,9 +15,7 @@ import (
 	"sync"
 	"time"
 
-	"crypto/hmac"
 	"crypto/sha256"
-	"encoding/base64"
 
 	"github.com/piqsol/c4/c5/internal/conversation"
 	"github.com/piqsol/c4/c5/internal/eventpub"
@@ -310,8 +308,8 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
-		// JWT fallback: verify as Supabase JWT if jwtSecret is configured
-		if len(s.jwtSecret) > 0 {
+		// JWT fallback: verify via Supabase GoTrue if configured
+		if s.supabaseURL != "" {
 			userID, jwtErr := s.verifyJWT(key)
 			if jwtErr == nil {
 				ctx = context.WithValue(ctx, model.CtxProjectID, "")
@@ -326,53 +324,44 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-// verifyJWT verifies a JWT token using HS256 and returns the subject (user ID).
-// Returns an error if the token is invalid, expired, or uses an unsupported algorithm.
+// verifyJWT verifies a JWT token via Supabase GoTrue /auth/v1/user endpoint.
+// This handles any signing algorithm (HS256, ES256, etc.) and checks token revocation.
+// Returns the user ID (sub claim) on success.
 func (s *Server) verifyJWT(tokenStr string) (string, error) {
-	parts := strings.SplitN(tokenStr, ".", 3)
-	if len(parts) != 3 {
-		return "", fmt.Errorf("invalid JWT format")
+	if s.supabaseURL == "" {
+		return "", fmt.Errorf("supabase URL not configured")
 	}
 
-	// Verify signature (HS256)
-	signingInput := parts[0] + "." + parts[1]
-	mac := hmac.New(sha256.New, s.jwtSecret)
-	mac.Write([]byte(signingInput))
-	expectedSig := mac.Sum(nil)
-
-	actualSig, err := base64.RawURLEncoding.DecodeString(parts[2])
+	url := strings.TrimRight(s.supabaseURL, "/") + "/auth/v1/user"
+	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
-		return "", fmt.Errorf("invalid signature encoding: %w", err)
+		return "", fmt.Errorf("build request: %w", err)
 	}
-	if !hmac.Equal(expectedSig, actualSig) {
-		return "", fmt.Errorf("signature mismatch")
-	}
+	req.Header.Set("Authorization", "Bearer "+tokenStr)
+	req.Header.Set("apikey", s.supabaseKey)
 
-	// Decode payload
-	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("invalid payload encoding: %w", err)
+		return "", fmt.Errorf("supabase request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("supabase auth failed: %d", resp.StatusCode)
 	}
 
-	var claims struct {
-		Sub string  `json:"sub"`
-		Exp float64 `json:"exp"`
-		Alg string  `json:"alg,omitempty"`
+	var user struct {
+		ID string `json:"id"`
 	}
-	if err := json.Unmarshal(payload, &claims); err != nil {
-		return "", fmt.Errorf("invalid payload JSON: %w", err)
+	if err := json.NewDecoder(resp.Body).Decode(&user); err != nil {
+		return "", fmt.Errorf("decode user: %w", err)
 	}
-
-	// Check expiry
-	if claims.Exp > 0 && time.Now().Unix() > int64(claims.Exp) {
-		return "", fmt.Errorf("token expired")
+	if user.ID == "" {
+		return "", fmt.Errorf("empty user ID")
 	}
 
-	if claims.Sub == "" {
-		return "", fmt.Errorf("missing sub claim")
-	}
-
-	return claims.Sub, nil
+	return user.ID, nil
 }
 
 // projectIDFromContext returns the authenticated project ID from context.
