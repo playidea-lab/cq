@@ -82,7 +82,7 @@ var workerEndpoints = []string{
 	"/ws/metrics/",            // WebSocket metrics (alt path)
 }
 
-// workerJobAccess lists job sub-paths that workers CAN access (explicit allowlist).
+// workerJobDenyPrefixes lists job sub-paths that workers CANNOT access.
 // Workers need to read job details and report completion, but NOT submit new jobs.
 var workerJobDenyPrefixes = []string{
 	"/v1/jobs/submit", // workers cannot submit jobs

@@ -306,7 +306,7 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 		if err == nil {
 			// Determine effective scope: prefer DB-stored scope, fallback to key prefix
 			keyScope := auth.Scope(scope)
-			if keyScope == "" || keyScope == auth.ScopeFull {
+			if keyScope == "" {
 				// For legacy keys without stored scope, infer from prefix
 				keyScope = auth.ParseScope(key)
 			}
