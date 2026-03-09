@@ -588,6 +588,11 @@ cq tool c4_status --json
 - `GET /v1/capabilities` — 등록된 capability 목록 (타입, schema, online 워커 수)
 - `POST /v1/capabilities/invoke` — capability 잡 생성
 - 워커: `c5 worker --capabilities caps.yaml` — capability YAML로 자기 선언; `C5_PARAMS`/`C5_RESULT_FILE` env로 파라미터/결과 교환
+- **1-Tier Docker Worker**: 워커 자체가 컨테이너로 실행되며, 잡을 서브프로세스로 실행 (DinD 불필요). capability에 `runtime.image`가 설정되면 `docker run`으로 잡을 실행하고, 미설정 시 호스트에서 직접 실행
+- **Scoped API Key**: 키 접두사로 접근 범위를 제한
+  - `sk-user-*` — 잡 제출/조회 전용 (submit, query, capabilities)
+  - `sk-worker-*` — 잡 폴링/완료 보고 전용 (poll, heartbeat, register)
+  - 접두사 없음 — 전체 접근 (하위 호환)
 - **Stateless Worker**: Hub가 잡 payload에 `project_id` 포함 → 워커가 자식 프로세스에 `C4_PROJECT_ID` env 주입 (로컬 config.yaml 불필요)
 - **JWT Auth Fallback**: `C5_JWT_SECRET` (또는 `SUPABASE_JWT_SECRET`) 설정 시 Hub가 HS256 JWT 토큰을 API key 대안으로 수락. `cq hub worker start`는 API key 미설정 시 `~/.c4/session.json`의 cloud JWT를 자동 주입
 - **Version Gate**: `C5_MIN_VERSION` env 설정 시 구버전 워커에 `control: {action:"upgrade"}` 반환 → 워커가 `cq upgrade` 후 재시작 (version="" 또는 "unknown"은 bypass)
@@ -658,44 +663,41 @@ serve:
 
 GPU 머신을 C5 Hub에 워커로 연결하여 AI 학습·추론 잡을 실행하는 가이드.
 
-**필수 조건**
-- `curl` — Hub 헬스 체크 및 다운로드
-- `python3` — 워커 스크립트 실행
-- `nvidia-smi` — (선택) GPU 감지; CPU-only 워커도 동작
-
-**docs/gpu-worker/ 다운로드**
+**Docker 기반 설치 (권장)**
 ```bash
-# 최신 릴리즈에서 가이드·예시 파일 다운로드
+# 1. cq 설치
+curl -fsSL https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/install.sh | bash
+
+# 2. 워커 서비스 설치 (Docker + NVIDIA toolkit 자동 설치 포함)
+cq hub worker install
+# → Docker 미설치 시 자동 설치
+# → NVIDIA Container Toolkit 자동 설치
+# → systemd 서비스 등록 + 자동 시작
+```
+
+`cq hub worker install`은 Docker, NVIDIA Container Toolkit, systemd 서비스를 한 번에 설치합니다.
+워커는 1-tier 모델로 동작: 워커 자체가 호스트에서 실행되며 `runtime.image`가 설정된 잡은 `docker run`으로 컨테이너 실행합니다.
+
+**수동 설치 (Docker Compose)**
+```bash
+# docs/gpu-worker/ 다운로드
 curl -sSL https://github.com/PlayIdea-Lab/cq/releases/latest/download/gpu-worker.tar.gz | tar xz
-# 또는 리포 클론 후 참조
-ls docs/gpu-worker/
+
+# .env 파일에 credentials 설정
+echo "C5_HUB_URL=https://<hub-host>:8585" > .env
+echo "C5_API_KEY=sk-worker-<your-key>" >> .env
+
+# Docker Compose로 실행
+docker compose up -d
 ```
 
-**환경변수 설정**
+**Scoped API Key 사용**
 ```bash
-export C5_HUB_URL=https://<your-hub-host>:8585   # Hub 서버 주소
-export C5_API_KEY=<your-api-key>                  # Hub API 인증 키
-```
+# 워커용 키 (폴링/보고만 가능, 잡 제출 불가)
+export C5_API_KEY="sk-worker-<your-key>"
 
-**gpu-caps.yaml 설정 예시**
-```yaml
-# gpu-caps.yaml — 워커가 제공할 capability 목록
-capabilities:
-  - name: gpu.train          # 학습 잡
-    runtime: python3
-    script: train.py
-  - name: gpu.inference      # 추론 잡
-    runtime: python3
-    script: infer.py
-  - name: gpu.shell          # 범용 셸 실행
-    runtime: bash
-    script: run.sh
-```
-
-**워커 실행**
-```bash
-c5 worker --capabilities gpu-caps.yaml --server $C5_HUB_URL
-# C5_API_KEY 환경변수를 자동으로 읽어 인증
+# 사용자용 키 (잡 제출/조회만 가능)
+export C5_API_KEY="sk-user-<your-key>"
 ```
 
 **Claude Code .mcp.json 연결 예시**
@@ -705,7 +707,7 @@ c5 worker --capabilities gpu-caps.yaml --server $C5_HUB_URL
     "gpu-worker": {
       "type": "http",
       "url": "http://<hub-host>:8585/v1/mcp",
-      "headers": { "X-API-Key": "<your-api-key>" }
+      "headers": { "X-API-Key": "sk-user-<your-key>" }
     }
   }
 }

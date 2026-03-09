@@ -1,12 +1,14 @@
 # GPU Worker — C5 Hub 연결 가이드
 
-GPU 서버를 C5 Hub 워커로 연결합니다.
+GPU 서버를 C5 Hub 워커로 연결합니다. 1-tier Docker 모델로 동작: 워커가 호스트에서 실행되며, `runtime.image`가 설정된 잡은 `docker run`으로 컨테이너 실행합니다 (DinD 불필요).
 
 ## 필수 조건
 
 | 항목 | 필수 여부 | 비고 |
 |------|----------|------|
 | `cq` 바이너리 | 필수 | [설치 방법](#cq-설치) |
+| Docker | 권장 | `cq hub worker install`이 자동 설치 |
+| NVIDIA Container Toolkit | 선택 | GPU 잡 실행 시 필요; `cq hub worker install`이 자동 설치 |
 | `nvidia-smi` | 선택 | GPU 없는 환경에서는 CPU-only 워커로 동작 |
 
 ## cq 설치
@@ -15,33 +17,80 @@ GPU 서버를 C5 Hub 워커로 연결합니다.
 curl -fsSL https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/install.sh | bash
 ```
 
-## 빠른 시작 (JWT 인증 — 권장)
+## 빠른 시작 — `cq hub worker install` (권장)
 
-API key 설정 없이 2단계로 워커를 시작합니다.
+Docker, NVIDIA toolkit, systemd 서비스를 한 번에 설치합니다.
 
 ```bash
-# 1. 로그인 (브라우저에서 인증)
-cq auth login --device
+# 1. cq 설치
+curl -fsSL https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/install.sh | bash
 
-# 2. 워커 시작 (JWT 자동 감지, 만료 시 자동 refresh)
-cq hub worker start
+# 2. 워커 서비스 설치 (root 권한 자동 escalation)
+cq hub worker install
+# → Docker 미설치 시 자동 설치
+# → NVIDIA Container Toolkit 자동 감지/설치
+# → 현재 사용자를 docker 그룹에 추가
+# → systemd 서비스 등록 + 즉시 시작
 ```
 
-끝입니다. JWT가 만료되면 자동으로 refresh 후 워커가 재시작됩니다.
-
-## API Key 인증 (대안)
-
-JWT 대신 API key를 직접 사용할 수도 있습니다.
+설치 후 `systemctl status cq-worker`로 상태를 확인합니다.
 
 ```bash
-# 방법 A: 환경변수
-export C5_API_KEY="your-api-key"
+# 미리보기만 (서비스 파일 출력, 설치하지 않음)
+cq hub worker install --dry-run
+
+# 사용자 레벨 systemd unit (Linux only)
+cq hub worker install --user
+```
+
+## 인증 방법
+
+### JWT 인증 (권장)
+
+API key 없이 브라우저 로그인으로 인증합니다.
+
+```bash
+cq auth login --device
+cq hub worker start   # JWT 자동 감지, 만료 시 자동 refresh
+```
+
+### Scoped API Key 인증
+
+키 접두사로 접근 범위를 제한합니다:
+
+| 접두사 | 범위 | 용도 |
+|--------|------|------|
+| `sk-user-` | 잡 제출/조회 | Claude Code에서 Hub 연결 시 |
+| `sk-worker-` | 잡 폴링/완료 보고 | 워커 인증 시 |
+| (없음) | 전체 접근 | 하위 호환, 관리자용 |
+
+```bash
+# 워커용 키 설정
+export C5_API_KEY="sk-worker-<your-key>"
 cq hub worker start
 
-# 방법 B: init (영구 저장)
+# 또는 init으로 영구 저장
 cq hub worker init   # 대화형: Hub URL + API key 입력 → ~/.c5/config.yaml
 cq hub worker start
 ```
+
+## Docker Compose로 실행 (대안)
+
+`cq hub worker install` 대신 Docker Compose로 직접 실행할 수 있습니다.
+
+```bash
+# .env 파일 설정
+cat > .env <<EOF
+C5_HUB_URL=https://<hub-host>:8585
+C5_API_KEY=sk-worker-<your-key>
+EOF
+
+# GPU 워커 실행
+docker compose up -d
+docker compose logs -f
+```
+
+`docker-compose.yml`과 `Dockerfile`은 이 디렉토리에 포함되어 있습니다.
 
 ## Capability 설정 (선택)
 
@@ -104,26 +153,20 @@ C5 워커 프로토콜을 따릅니다:
 - **입력**: `C5_PARAMS` 환경변수 (JSON) — `{"script": "train.py", "args": "--epochs 10"}`
 - **출력**: `C5_RESULT_FILE` 경로에 `{"exit_code": 0, "output": "..."}` JSON 저장
 
-## systemd 서비스 등록 (선택)
+## systemd 서비스 수동 설정
 
-```bash
-# 자동으로 systemd/launchd 서비스 파일 생성
-cq hub worker install
-
-# 또는 미리보기만
-cq hub worker install --dry-run
-```
-
-수동 설정이 필요한 경우:
+`cq hub worker install`이 자동 생성하지만, 수동 설정이 필요한 경우:
 
 ```ini
 # /etc/systemd/system/cq-worker.service
 [Unit]
 Description=CQ Hub Worker
-After=network.target
+After=network.target docker.service
+Wants=docker.service
 
 [Service]
 User=ubuntu
+SupplementaryGroups=docker
 WorkingDirectory=/opt/gpu-worker
 ExecStart=/usr/local/bin/cq hub worker start
 Restart=always
