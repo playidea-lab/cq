@@ -399,20 +399,7 @@ func executeJob(client *workerClient, job *model.Job, leaseID, workerID string, 
 		}
 	}
 
-	cmd := exec.CommandContext(ctx, "sh", "-c", command)
-	// Use job workdir only if it exists on this machine; otherwise fall back
-	// to the worker's current directory (stateless worker may not have the
-	// submitter's local path).
-	if job.Workdir != "" {
-		if _, err := os.Stat(job.Workdir); err == nil {
-			cmd.Dir = job.Workdir
-		} else {
-			log.Printf("c5-worker: workdir %q not found, using current directory", job.Workdir)
-		}
-	}
-
-	// Env injection: inherit current env + job env vars.
-	// C4_PROJECT_ID is appended last to take priority over job.Env overrides.
+	// Build environment variables first (shared between host and Docker modes).
 	env := os.Environ()
 	for k, v := range job.Env {
 		env = append(env, k+"="+v)
@@ -429,14 +416,12 @@ func executeJob(client *workerClient, job *model.Job, leaseID, workerID string, 
 			paramsJSON, _ := json.Marshal(job.Params)
 			env = append(env, "C5_PARAMS="+string(paramsJSON))
 		}
-		// Provide a temp file path for the handler to write structured JSON result.
 		resultFile = filepath.Join(os.TempDir(), "c5-result-"+job.ID+".json")
 		env = append(env, "C5_RESULT_FILE="+resultFile)
 	}
 
 	// GPU assignment: set CUDA_VISIBLE_DEVICES if job requires GPU
 	if job.RequiresGPU && gpuCount > 0 {
-		// Build device list: "0", "0,1", "0,1,2", etc.
 		devices := make([]string, gpuCount)
 		for i := range devices {
 			devices[i] = fmt.Sprintf("%d", i)
@@ -444,11 +429,26 @@ func executeJob(client *workerClient, job *model.Job, leaseID, workerID string, 
 		env = append(env, "CUDA_VISIBLE_DEVICES="+strings.Join(devices, ","))
 	}
 
-	// Artifact directory hints for job scripts
 	env = append(env, "C5_INPUT_DIR=.")
 	env = append(env, "C5_OUTPUT_DIR=.")
 
-	cmd.Env = env
+	// Docker mode: when runtime.image is set, run inside a container.
+	var cmd *exec.Cmd
+	if job.Runtime != nil && job.Runtime.Image != "" {
+		cmd = buildDockerCmd(ctx, job, command, env, gpuCount)
+		log.Printf("c5-worker: job %s running in Docker image %s", job.ID, job.Runtime.Image)
+	} else {
+		cmd = exec.CommandContext(ctx, "sh", "-c", command)
+		// Use job workdir only if it exists on this machine.
+		if job.Workdir != "" {
+			if _, err := os.Stat(job.Workdir); err == nil {
+				cmd.Dir = job.Workdir
+			} else {
+				log.Printf("c5-worker: workdir %q not found, using current directory", job.Workdir)
+			}
+		}
+		cmd.Env = env
+	}
 
 	stdout, _ := cmd.StdoutPipe()
 	stderr, _ := cmd.StderrPipe()
@@ -521,6 +521,68 @@ func executeJob(client *workerClient, job *model.Job, leaseID, workerID string, 
 		return 1, resultFile
 	}
 	return 0, resultFile
+}
+
+// buildDockerCmd constructs the docker run command for container-based execution.
+// The container inherits GPU access, environment variables, and optional volume mounts.
+func buildDockerCmd(ctx context.Context, job *model.Job, command string, env []string, gpuCount int) *exec.Cmd {
+	args := []string{"run", "--rm"}
+
+	// GPU access
+	if job.RequiresGPU && gpuCount > 0 {
+		args = append(args, "--gpus", "all")
+	}
+
+	// Environment variables: pass only job-specific ones (not host OS env).
+	// Extract keys added beyond os.Environ baseline.
+	for k, v := range job.Env {
+		args = append(args, "-e", k+"="+v)
+	}
+	if job.ProjectID != "" {
+		args = append(args, "-e", "C4_PROJECT_ID="+job.ProjectID)
+	}
+	if job.Capability != "" {
+		args = append(args, "-e", "C5_CAPABILITY="+job.Capability)
+		if job.Params != nil {
+			paramsJSON, _ := json.Marshal(job.Params)
+			args = append(args, "-e", "C5_PARAMS="+string(paramsJSON))
+		}
+	}
+	if job.RequiresGPU && gpuCount > 0 {
+		devices := make([]string, gpuCount)
+		for i := range devices {
+			devices[i] = fmt.Sprintf("%d", i)
+		}
+		args = append(args, "-e", "CUDA_VISIBLE_DEVICES="+strings.Join(devices, ","))
+	}
+
+	// Workdir inside container
+	if job.Workdir != "" && job.Workdir != "." {
+		args = append(args, "-w", job.Workdir)
+	}
+
+	// Extra volume mounts from runtime config
+	if job.Runtime != nil {
+		for _, vol := range job.Runtime.Volumes {
+			args = append(args, "-v", vol)
+		}
+	}
+
+	// Image
+	args = append(args, job.Runtime.Image)
+
+	// Command: if requirements specified, install first then run
+	if job.Runtime != nil && job.Runtime.Requirements != "" {
+		// pip install inline packages then run the command
+		shellCmd := fmt.Sprintf("pip install --no-cache-dir %s && %s", job.Runtime.Requirements, command)
+		args = append(args, "sh", "-c", shellCmd)
+	} else {
+		args = append(args, "sh", "-c", command)
+	}
+
+	cmd := exec.CommandContext(ctx, "docker", args...)
+	cmd.Env = env
+	return cmd
 }
 
 // downloadInputArtifacts fetches each presigned artifact URL to its local path.

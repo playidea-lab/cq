@@ -69,6 +69,15 @@ type Job struct {
 	SnapshotVersionHash  string            `json:"snapshot_version_hash,omitempty"`
 	GitHash              string            `json:"git_hash,omitempty"`
 	RequiredTags         []string          `json:"required_tags,omitempty"`
+	Runtime              *Runtime          `json:"runtime,omitempty"`
+}
+
+// Runtime specifies the execution environment for a job.
+// When Image is set, the worker runs the command inside a Docker container.
+type Runtime struct {
+	Image        string   `json:"image"`                  // Docker image (e.g. "pytorch/pytorch:2.5.1-cuda12.4-cudnn9-runtime")
+	Requirements string   `json:"requirements,omitempty"` // pip requirements file path or inline packages
+	Volumes      []string `json:"volumes,omitempty"`       // extra -v mounts (host:container)
 }
 
 // DurationSec returns the job duration in seconds, or nil if not yet finished.
@@ -217,6 +226,7 @@ type JobSubmitRequest struct {
 	SnapshotVersionHash string            `json:"snapshot_version_hash,omitempty"`
 	GitHash             string            `json:"git_hash,omitempty"`
 	RequiredTags        []string          `json:"required_tags,omitempty"`
+	Runtime             *Runtime          `json:"runtime,omitempty"`
 }
 
 // JobSubmitResponse is returned from POST /v1/jobs/submit.
