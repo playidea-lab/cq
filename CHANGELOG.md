@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.85.1] - 2026-03-09
+
+### 🐛 Bug Fixes
+- **env**: CI_HUB_URL/CI_API_KEY → C5_HUB_URL/C5_API_KEY 통일 — `.gitlab-ci.yml`, `auth.go`, `hub.go`, `mcp_init_hub.go` 환경변수명 일관성 수정
+
+---
+
 ## [v0.85.0] - 2026-03-09
 
 ### ✨ Features
