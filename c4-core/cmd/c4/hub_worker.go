@@ -454,6 +454,27 @@ func runWorkerStart(cmd *cobra.Command, args []string) error {
 		_ = yaml.Unmarshal(data, &cfg)
 	}
 
+	// Auto-init: if config is missing hub_url, try env vars and run init inline.
+	if cfg.HubURL == "" {
+		envURL := os.Getenv("C5_HUB_URL")
+		envKey := os.Getenv("C5_API_KEY")
+		if envURL != "" && envKey != "" {
+			fmt.Println("No worker config found — auto-initializing from C5_HUB_URL / C5_API_KEY...")
+			workerInitHubURL = envURL
+			workerInitAPIKey = envKey
+			workerInitNonInteractive = true
+			if err := runWorkerInit(nil, nil); err != nil {
+				return fmt.Errorf("auto-init: %w", err)
+			}
+			// Reload config after init.
+			if data, err := os.ReadFile(cfgPath); err == nil {
+				_ = yaml.Unmarshal(data, &cfg)
+			}
+		} else {
+			return fmt.Errorf("hub_url not set — run: cq hub worker init, or set C5_HUB_URL + C5_API_KEY env vars")
+		}
+	}
+
 	binary := resolvec5Binary(cfg)
 
 	// Build args: c5 worker [--server <url>] [--capabilities <file>] [--name <name>]
