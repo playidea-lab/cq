@@ -828,6 +828,162 @@ func TestAdminRequiresMasterKey(t *testing.T) {
 	resp.Body.Close()
 }
 
+func TestScopedAPIKeys(t *testing.T) {
+	dir := t.TempDir()
+	st, _ := store.New(filepath.Join(dir, "c5.db"))
+	defer st.Close()
+
+	srv := NewServer(Config{Store: st, APIKey: "master-key-123"})
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+	defer srv.Close()
+
+	createScopedKey := func(projID, scope string) string {
+		body := fmt.Sprintf(`{"project_id":"%s","scope":"%s"}`, projID, scope)
+		req, _ := http.NewRequest("POST", ts.URL+"/v1/admin/api-keys", strings.NewReader(body))
+		req.Header.Set("X-API-Key", "master-key-123")
+		resp, _ := http.DefaultClient.Do(req)
+		var cr model.CreateAPIKeyResponse
+		json.NewDecoder(resp.Body).Decode(&cr)
+		resp.Body.Close()
+		return cr.Key
+	}
+
+	userKey := createScopedKey("proj-A", "user")
+	workerKey := createScopedKey("proj-A", "worker")
+	fullKey := createScopedKey("proj-A", "full")
+
+	// Verify key prefixes
+	if !strings.HasPrefix(userKey, "sk-user-") {
+		t.Errorf("user key should start with sk-user-, got %s", userKey)
+	}
+	if !strings.HasPrefix(workerKey, "sk-worker-") {
+		t.Errorf("worker key should start with sk-worker-, got %s", workerKey)
+	}
+	if !strings.HasPrefix(fullKey, "c5pk_") {
+		t.Errorf("full key should start with c5pk_, got %s", fullKey)
+	}
+
+	doReqWithBody := func(key, method, path, body string) int {
+		var bodyReader io.Reader
+		if body != "" {
+			bodyReader = strings.NewReader(body)
+		}
+		req, _ := http.NewRequest(method, ts.URL+path, bodyReader)
+		req.Header.Set("X-API-Key", key)
+		if body != "" {
+			req.Header.Set("Content-Type", "application/json")
+		}
+		resp, _ := http.DefaultClient.Do(req)
+		resp.Body.Close()
+		return resp.StatusCode
+	}
+
+	jobBody := `{"name":"test","command":"echo hi","workdir":"."}`
+	workerBody := `{"hostname":"test-worker"}`
+
+	// User key: can submit jobs
+	if code := doReqWithBody(userKey, "POST", "/v1/jobs/submit", jobBody); code != http.StatusCreated {
+		t.Errorf("user key POST /v1/jobs/submit: got %d, want 201", code)
+	}
+
+	// User key: can list jobs
+	if code := doReqWithBody(userKey, "GET", "/v1/jobs?limit=10", ""); code != http.StatusOK {
+		t.Errorf("user key GET /v1/jobs: got %d, want 200", code)
+	}
+
+	// User key: cannot register worker
+	if code := doReqWithBody(userKey, "POST", "/v1/workers/register", workerBody); code != http.StatusForbidden {
+		t.Errorf("user key POST /v1/workers/register: got %d, want 403", code)
+	}
+
+	// User key: cannot acquire lease
+	if code := doReqWithBody(userKey, "POST", "/v1/leases/acquire", `{"worker_id":"w1"}`); code != http.StatusForbidden {
+		t.Errorf("user key POST /v1/leases/acquire: got %d, want 403", code)
+	}
+
+	// Worker key: can register
+	if code := doReqWithBody(workerKey, "POST", "/v1/workers/register", workerBody); code != http.StatusCreated {
+		t.Errorf("worker key POST /v1/workers/register: got %d, want 201", code)
+	}
+
+	// Worker key: cannot submit jobs
+	if code := doReqWithBody(workerKey, "POST", "/v1/jobs/submit", jobBody); code != http.StatusForbidden {
+		t.Errorf("worker key POST /v1/jobs/submit: got %d, want 403", code)
+	}
+
+	// Worker key: cannot list queue stats
+	if code := doReqWithBody(workerKey, "GET", "/v1/stats/queue", ""); code != http.StatusForbidden {
+		t.Errorf("worker key GET /v1/stats/queue: got %d, want 403", code)
+	}
+
+	// Full key: can do anything
+	if code := doReqWithBody(fullKey, "POST", "/v1/jobs/submit", jobBody); code != http.StatusCreated {
+		t.Errorf("full key POST /v1/jobs/submit: got %d, want 201", code)
+	}
+	if code := doReqWithBody(fullKey, "POST", "/v1/workers/register", workerBody); code != http.StatusCreated {
+		t.Errorf("full key POST /v1/workers/register: got %d, want 201", code)
+	}
+
+	// Master key: full access (no scope restriction)
+	if code := doReqWithBody("master-key-123", "POST", "/v1/jobs/submit", jobBody); code != http.StatusCreated {
+		t.Errorf("master key POST /v1/jobs/submit: got %d, want 201", code)
+	}
+}
+
+func TestScopedAPIKey_InvalidScope(t *testing.T) {
+	dir := t.TempDir()
+	st, _ := store.New(filepath.Join(dir, "c5.db"))
+	defer st.Close()
+
+	srv := NewServer(Config{Store: st, APIKey: "master-key-123"})
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+	defer srv.Close()
+
+	body := `{"project_id":"proj-A","scope":"admin"}`
+	req, _ := http.NewRequest("POST", ts.URL+"/v1/admin/api-keys", strings.NewReader(body))
+	req.Header.Set("X-API-Key", "master-key-123")
+	resp, _ := http.DefaultClient.Do(req)
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("invalid scope: got %d, want 400", resp.StatusCode)
+	}
+	resp.Body.Close()
+}
+
+func TestScopedAPIKey_ListIncludesScope(t *testing.T) {
+	dir := t.TempDir()
+	st, _ := store.New(filepath.Join(dir, "c5.db"))
+	defer st.Close()
+
+	srv := NewServer(Config{Store: st, APIKey: "master-key-123"})
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+	defer srv.Close()
+
+	// Create a user-scoped key
+	body := `{"project_id":"proj-A","scope":"user","description":"ci key"}`
+	req, _ := http.NewRequest("POST", ts.URL+"/v1/admin/api-keys", strings.NewReader(body))
+	req.Header.Set("X-API-Key", "master-key-123")
+	resp, _ := http.DefaultClient.Do(req)
+	resp.Body.Close()
+
+	// List keys
+	req, _ = http.NewRequest("GET", ts.URL+"/v1/admin/api-keys", nil)
+	req.Header.Set("X-API-Key", "master-key-123")
+	resp, _ = http.DefaultClient.Do(req)
+	var keys []model.APIKeyInfo
+	json.NewDecoder(resp.Body).Decode(&keys)
+	resp.Body.Close()
+
+	if len(keys) == 0 {
+		t.Fatal("expected at least 1 key")
+	}
+	if keys[0].Scope != "user" {
+		t.Errorf("key scope: got %q, want %q", keys[0].Scope, "user")
+	}
+}
+
 func TestProjectIsolation(t *testing.T) {
 	dir := t.TempDir()
 	st, _ := store.New(filepath.Join(dir, "c5.db"))

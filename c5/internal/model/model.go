@@ -707,6 +707,7 @@ type MetricMessage struct {
 type APIKeyInfo struct {
 	KeyHash     string `json:"key_hash"`
 	ProjectID   string `json:"project_id"`
+	Scope       string `json:"scope"`               // "full", "user", or "worker"
 	Description string `json:"description,omitempty"`
 	CreatedAt   string `json:"created_at"`
 }
@@ -714,6 +715,7 @@ type APIKeyInfo struct {
 // CreateAPIKeyRequest is the payload for POST /v1/admin/api-keys.
 type CreateAPIKeyRequest struct {
 	ProjectID   string `json:"project_id"`
+	Scope       string `json:"scope,omitempty"` // "user" or "worker"; empty defaults to "full"
 	Description string `json:"description,omitempty"`
 }
 
@@ -722,6 +724,7 @@ type CreateAPIKeyResponse struct {
 	Key       string `json:"key"`        // raw key (only shown once)
 	KeyHash   string `json:"key_hash"`   // SHA256 hash for reference
 	ProjectID string `json:"project_id"`
+	Scope     string `json:"scope"`
 }
 
 // =========================================================================
@@ -767,6 +770,8 @@ const (
 	CtxIsMaster ctxKey = "is_master"
 	// CtxUserID holds the JWT-authenticated user ID (sub claim) in request context.
 	CtxUserID ctxKey = "user_id"
+	// CtxKeyScope holds the API key scope ("full", "user", "worker") in request context.
+	CtxKeyScope ctxKey = "key_scope"
 )
 
 // SHA256Hex returns the hex-encoded SHA256 hash of s.

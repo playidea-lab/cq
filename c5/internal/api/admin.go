@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/piqsol/c4/c5/internal/auth"
 	"github.com/piqsol/c4/c5/internal/model"
 )
 
@@ -36,7 +37,17 @@ func (s *Server) handleAdminCreateAPIKey(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	rawKey, err := s.store.CreateAPIKey(req.ProjectID, req.Description)
+	// Validate scope if provided
+	scope := req.Scope
+	if scope == "" {
+		scope = "full"
+	}
+	if !auth.ValidScope(scope) {
+		writeError(w, http.StatusBadRequest, "invalid scope: must be full, user, or worker")
+		return
+	}
+
+	rawKey, err := s.store.CreateScopedAPIKey(req.ProjectID, scope, req.Description)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -49,6 +60,7 @@ func (s *Server) handleAdminCreateAPIKey(w http.ResponseWriter, r *http.Request)
 		Key:       rawKey,
 		KeyHash:   keyHash,
 		ProjectID: req.ProjectID,
+		Scope:     scope,
 	})
 }
 

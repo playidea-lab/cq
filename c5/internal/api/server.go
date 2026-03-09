@@ -17,6 +17,7 @@ import (
 
 	"crypto/sha256"
 
+	"github.com/piqsol/c4/c5/internal/auth"
 	"github.com/piqsol/c4/c5/internal/conversation"
 	"github.com/piqsol/c4/c5/internal/eventpub"
 	"github.com/piqsol/c4/c5/internal/knowledge"
@@ -289,21 +290,36 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 
 		ctx := r.Context()
 
-		// Check master key first
+		// Check master key first (no scope restriction)
 		if key == s.apiKey {
 			ctx = context.WithValue(ctx, model.CtxProjectID, "")
 			ctx = context.WithValue(ctx, model.CtxIsMaster, true)
+			ctx = context.WithValue(ctx, model.CtxKeyScope, string(auth.ScopeFull))
 			next.ServeHTTP(w, r.WithContext(ctx))
 			return
 		}
 
-		// Check per-project key
+		// Check per-project key (with scope enforcement)
 		h := sha256.Sum256([]byte(key))
 		keyHash := fmt.Sprintf("%x", h[:])
-		projectID, err := s.store.LookupAPIKey(keyHash)
+		projectID, scope, err := s.store.LookupAPIKeyWithScope(keyHash)
 		if err == nil {
+			// Determine effective scope: prefer DB-stored scope, fallback to key prefix
+			keyScope := auth.Scope(scope)
+			if keyScope == "" || keyScope == auth.ScopeFull {
+				// For legacy keys without stored scope, infer from prefix
+				keyScope = auth.ParseScope(key)
+			}
+
+			// Enforce scope against the requested endpoint
+			if !auth.CheckScope(keyScope, r) {
+				writeError(w, http.StatusForbidden, "API key scope does not permit this endpoint")
+				return
+			}
+
 			ctx = context.WithValue(ctx, model.CtxProjectID, projectID)
 			ctx = context.WithValue(ctx, model.CtxIsMaster, false)
+			ctx = context.WithValue(ctx, model.CtxKeyScope, string(keyScope))
 			next.ServeHTTP(w, r.WithContext(ctx))
 			return
 		}

@@ -338,6 +338,8 @@ func (s *Store) migrate() error {
 		`ALTER TABLE jobs ADD COLUMN required_tags TEXT NOT NULL DEFAULT '[]'`,
 		// Migration: Docker runtime for container-based job execution.
 		`ALTER TABLE jobs ADD COLUMN runtime TEXT NOT NULL DEFAULT ''`,
+		// Migration: scoped API keys — add scope column (full/user/worker).
+		`ALTER TABLE api_keys ADD COLUMN scope TEXT NOT NULL DEFAULT 'full'`,
 	} {
 		if _, err := s.db.Exec(stmt); err != nil {
 			if !strings.Contains(err.Error(), "duplicate column") && !strings.Contains(err.Error(), "already exists") {
@@ -2424,17 +2426,35 @@ func unmarshalArtifacts(s string) []model.ArtifactRef {
 // CreateAPIKey generates a new per-project API key and stores its SHA256 hash.
 // Returns the raw key (c5pk_<32 hex chars>) — only shown once.
 func (s *Store) CreateAPIKey(projectID, description string) (string, error) {
+	return s.CreateScopedAPIKey(projectID, "full", description)
+}
+
+// CreateScopedAPIKey generates a scoped API key with the given scope.
+// Scope must be "full", "user", or "worker".
+// Key prefix: sk-user-* for user scope, sk-worker-* for worker scope, c5pk_* for full.
+func (s *Store) CreateScopedAPIKey(projectID, scope, description string) (string, error) {
 	raw := make([]byte, 16)
 	if _, err := rand.Read(raw); err != nil {
 		return "", fmt.Errorf("generate key: %w", err)
 	}
-	key := fmt.Sprintf("c5pk_%x", raw)
+
+	var key string
+	switch scope {
+	case "user":
+		key = fmt.Sprintf("sk-user-%x", raw)
+	case "worker":
+		key = fmt.Sprintf("sk-worker-%x", raw)
+	default:
+		scope = "full"
+		key = fmt.Sprintf("c5pk_%x", raw)
+	}
+
 	hash := model.SHA256Hex(key)
 
 	_, err := s.db.Exec(
-		`INSERT INTO api_keys (key_hash, project_id, description, created_at)
-		 VALUES (?, ?, ?, datetime('now'))`,
-		hash, projectID, description)
+		`INSERT INTO api_keys (key_hash, project_id, scope, description, created_at)
+		 VALUES (?, ?, ?, ?, datetime('now'))`,
+		hash, projectID, scope, description)
 	if err != nil {
 		return "", fmt.Errorf("store api key: %w", err)
 	}
@@ -2443,12 +2463,21 @@ func (s *Store) CreateAPIKey(projectID, description string) (string, error) {
 
 // LookupAPIKey looks up a key hash and returns the associated project ID.
 func (s *Store) LookupAPIKey(keyHash string) (string, error) {
-	var projectID string
-	err := s.db.QueryRow("SELECT project_id FROM api_keys WHERE key_hash = ?", keyHash).Scan(&projectID)
+	projectID, _, err := s.LookupAPIKeyWithScope(keyHash)
+	return projectID, err
+}
+
+// LookupAPIKeyWithScope looks up a key hash and returns (projectID, scope).
+func (s *Store) LookupAPIKeyWithScope(keyHash string) (string, string, error) {
+	var projectID, scope string
+	err := s.db.QueryRow("SELECT project_id, scope FROM api_keys WHERE key_hash = ?", keyHash).Scan(&projectID, &scope)
 	if err != nil {
-		return "", fmt.Errorf("api key not found")
+		return "", "", fmt.Errorf("api key not found")
 	}
-	return projectID, nil
+	if scope == "" {
+		scope = "full" // backwards compatibility for keys created before scope column
+	}
+	return projectID, scope, nil
 }
 
 // DeleteAPIKey removes an API key by its hash.
@@ -2496,7 +2525,7 @@ func (s *Store) CleanupOldJobs(retention time.Duration) (int64, error) {
 
 // ListAPIKeys returns all API keys (without the raw key).
 func (s *Store) ListAPIKeys() ([]model.APIKeyInfo, error) {
-	rows, err := s.db.Query("SELECT key_hash, project_id, description, created_at FROM api_keys ORDER BY created_at DESC")
+	rows, err := s.db.Query("SELECT key_hash, project_id, scope, description, created_at FROM api_keys ORDER BY created_at DESC")
 	if err != nil {
 		return nil, err
 	}
@@ -2505,8 +2534,11 @@ func (s *Store) ListAPIKeys() ([]model.APIKeyInfo, error) {
 	var keys []model.APIKeyInfo
 	for rows.Next() {
 		var k model.APIKeyInfo
-		if err := rows.Scan(&k.KeyHash, &k.ProjectID, &k.Description, &k.CreatedAt); err != nil {
+		if err := rows.Scan(&k.KeyHash, &k.ProjectID, &k.Scope, &k.Description, &k.CreatedAt); err != nil {
 			continue
+		}
+		if k.Scope == "" {
+			k.Scope = "full"
 		}
 		keys = append(keys, k)
 	}
