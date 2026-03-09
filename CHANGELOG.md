@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.91.0] - 2026-03-10
+
+### ✨ Features
+- **c5/hub**: Zombie Worker GC — 24h offline 워커를 `worker_history`로 아카이브 후 자동 삭제 (lease expiry 루프, 1h rate-limit)
+- **c5/api**: `POST /v1/workers/prune` endpoint (dry_run 지원)
+- **c5/worker**: Capability 3-tier fallback chain (file → caps.yaml Command → C5_PARAMS.command)
+- **cli**: `cq hub workers prune [--dry-run]` 좀비 워커 정리 명령
+- **cli**: `cq hub workers` 기본 active-only 표시 (`--all` 플래그로 전체)
+
+### 🧪 Tests
+- `TestPurgeStaleWorkers` + `TestPurgeStaleWorkersTransaction` (store 원자성 검증)
+
+---
+
 ## [v0.90.0] - 2026-03-10
 
 ### ✨ Features
