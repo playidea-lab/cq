@@ -53,6 +53,6 @@ Pi 서버 워커는 표준 마커 출력:
 
 ## API 정보
 - Hub URL: https://piqsol-c5.fly.dev
-- API Key: cq-test-key-2026 (X-API-Key 헤더)
+- API Key: $C5_API_KEY (X-API-Key 헤더)
 - Job 상태: GET /v1/jobs/{job_id}
 - 로그: GET /v1/jobs/{job_id}/logs

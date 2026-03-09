@@ -16,7 +16,7 @@ cat .c9/state.yaml  # mpjpe_history에서 best round/exp 확인
 ```bash
 # C5 Hub Job으로 pi 서버에서 best model 복사
 curl -X POST https://piqsol-c5.fly.dev/v1/jobs/submit \
-  -H "X-API-Key: cq-test-key-2026" \
+  -H "X-API-Key: $C5_API_KEY" \
   -d '{"name":"c9-save-best","command":"cp /home/pi/git/hmr_unified/experiments/paper1/BEST_EXP/best_checkpoint.pt /home/pi/git/hmr_unified/outputs/c9_best_model.pt && echo SAVED"}'
 ```
 

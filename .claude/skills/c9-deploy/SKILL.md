@@ -20,7 +20,7 @@ cat .c9/state.yaml  # finish.best_model_path 확인
 ```bash
 # C5 Hub edge deploy
 curl -X POST https://piqsol-c5.fly.dev/v1/jobs/submit \
-  -H "X-API-Key: cq-test-key-2026" \
+  -H "X-API-Key: $C5_API_KEY" \
   -d '{
     "name": "c9-deploy",
     "command": "...",

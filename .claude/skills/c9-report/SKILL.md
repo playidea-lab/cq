@@ -15,7 +15,7 @@
 ### Step 2: C5 Hub Job 제출
 ```bash
 curl -X POST https://piqsol-c5.fly.dev/v1/jobs/submit \
-  -H "X-API-Key: cq-test-key-2026" \
+  -H "X-API-Key: $C5_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
     "name": "c9-report",
@@ -70,6 +70,6 @@ for name, mpjpe, pa in results:
 
 ## API 정보
 - Hub URL: `https://piqsol-c5.fly.dev`
-- API Key: `cq-test-key-2026` (X-API-Key 헤더)
+- API Key: `$C5_API_KEY` (X-API-Key 헤더)
 - 로그 조회: `GET /v1/jobs/{job_id}/logs`
 - Job 결과 대기: 10-15초 후 조회

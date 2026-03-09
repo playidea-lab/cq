@@ -589,6 +589,7 @@ cq tool c4_status --json
 - `POST /v1/capabilities/invoke` — capability 잡 생성
 - 워커: `c5 worker --capabilities caps.yaml` — capability YAML로 자기 선언; `C5_PARAMS`/`C5_RESULT_FILE` env로 파라미터/결과 교환
 - **Stateless Worker**: Hub가 잡 payload에 `project_id` 포함 → 워커가 자식 프로세스에 `C4_PROJECT_ID` env 주입 (로컬 config.yaml 불필요)
+- **JWT Auth Fallback**: `C5_JWT_SECRET` (또는 `SUPABASE_JWT_SECRET`) 설정 시 Hub가 HS256 JWT 토큰을 API key 대안으로 수락. `cq hub worker start`는 API key 미설정 시 `~/.c4/session.json`의 cloud JWT를 자동 주입
 - **Version Gate**: `C5_MIN_VERSION` env 설정 시 구버전 워커에 `control: {action:"upgrade"}` 반환 → 워커가 `cq upgrade` 후 재시작 (version="" 또는 "unknown"은 bypass)
 - **cq hub submit**: 현재 폴더를 Drive CAS로 스냅샷 업로드 후 Hub 잡 등록 (Git 불필요, CAS 자동 dedup)
   ```bash

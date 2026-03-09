@@ -5,17 +5,21 @@
 
 set -e
 
-REPO="PlayIdea-Lab/cq"
-HUB_URL="${C5_HUB_URL:-https://piqsol-c5.fly.dev}"
-API_KEY="${C5_API_KEY:-cq-test-key-2026}"
-INSTALL_DIR="${HOME}/.local/bin"
-BINARY="${INSTALL_DIR}/c5"
-
 # ── 색상 ──────────────────────────────────────────────────────
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; NC='\033[0m'
 info()  { echo -e "${GREEN}[c5]${NC} $*"; }
 warn()  { echo -e "${YELLOW}[c5]${NC} $*"; }
 error() { echo -e "${RED}[c5]${NC} $*" >&2; exit 1; }
+
+REPO="PlayIdea-Lab/cq"
+HUB_URL="${C5_HUB_URL:-https://piqsol-c5.fly.dev}"
+API_KEY="${C5_API_KEY:-}"
+INSTALL_DIR="${HOME}/.local/bin"
+BINARY="${INSTALL_DIR}/c5"
+
+if [ -z "$API_KEY" ]; then
+  error "C5_API_KEY 환경변수가 설정되지 않았습니다. export C5_API_KEY=<your-key> 후 재실행하세요."
+fi
 
 # ── OS/ARCH 감지 ──────────────────────────────────────────────
 OS=$(uname -s | tr '[:upper:]' '[:lower:]')

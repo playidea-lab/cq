@@ -90,6 +90,11 @@ func runServe(cmd *cobra.Command, configPath string, port int, dbPath, apiKey, e
 	if v := os.Getenv("C5_SUPABASE_KEY"); v != "" {
 		cfg.Storage.SupabaseKey = v
 	}
+	jwtSecret := os.Getenv("C5_JWT_SECRET")
+	if jwtSecret == "" {
+		// Supabase JWT secret env (common convention)
+		jwtSecret = os.Getenv("SUPABASE_JWT_SECRET")
+	}
 
 	// 3. CLI flag overrides (only if explicitly specified)
 	if cmd.Flags().Changed("eventbus-url") {
@@ -175,6 +180,7 @@ func runServe(cmd *cobra.Command, configPath string, port int, dbPath, apiKey, e
 		PublicURL:        cfg.Server.PublicURL, // MEDIUM #6: wire external URL for OAuth redirects
 		Version:          version,
 		APIKey:           apiKey,
+		JWTSecret:        jwtSecret,
 		LLMSTxt:          c5.LLMSTxt,
 		DocsFS:           c5.DocsFS,
 		EventBusURL:      resolvedEventBusURL,
@@ -217,6 +223,9 @@ func runServe(cmd *cobra.Command, configPath string, port int, dbPath, apiKey, e
 	log.Printf("c5: serving on :%d (db: %s)", resolvedPort, dbPath)
 	if apiKey != "" {
 		log.Println("c5: API key authentication enabled")
+	}
+	if jwtSecret != "" {
+		log.Println("c5: JWT authentication enabled (HS256)")
 	}
 
 	if err := httpSrv.ListenAndServe(); err != http.ErrServerClosed {

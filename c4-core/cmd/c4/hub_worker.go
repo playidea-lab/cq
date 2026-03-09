@@ -458,6 +458,16 @@ func runWorkerStart(cmd *cobra.Command, args []string) error {
 	if cfg.HubURL == "" {
 		envURL := os.Getenv("C5_HUB_URL")
 		envKey := os.Getenv("C5_API_KEY")
+		if envURL == "" && builtinHubURL != "" {
+			envURL = builtinHubURL
+		}
+		// JWT fallback: if no API key but cloud session exists, use JWT.
+		if envKey == "" {
+			if jwt := loadCloudSessionJWT(); jwt != "" {
+				envKey = jwt
+				fmt.Fprintln(os.Stderr, "cq: using cloud session JWT as C5_API_KEY (auto-refresh not supported — re-login if expired)")
+			}
+		}
 		if envURL != "" && envKey != "" {
 			fmt.Println("No worker config found — auto-initializing from C5_HUB_URL / C5_API_KEY...")
 			workerInitHubURL = envURL
@@ -471,7 +481,15 @@ func runWorkerStart(cmd *cobra.Command, args []string) error {
 				_ = yaml.Unmarshal(data, &cfg)
 			}
 		} else {
-			return fmt.Errorf("hub_url not set — run: cq hub worker init, or set C5_HUB_URL + C5_API_KEY env vars")
+			return fmt.Errorf("hub_url not set — run: cq hub worker init, or set C5_HUB_URL + C5_API_KEY env vars\n  Tip: cq auth login --device → cq hub worker start (JWT auto-fallback)")
+		}
+	}
+
+	// JWT fallback for existing config without API key.
+	if cfg.APIKey == "" {
+		if jwt := loadCloudSessionJWT(); jwt != "" {
+			cfg.APIKey = jwt
+			fmt.Fprintln(os.Stderr, "cq: using cloud session JWT as C5_API_KEY")
 		}
 	}
 
@@ -498,6 +516,26 @@ func runWorkerStart(cmd *cobra.Command, args []string) error {
 
 	fmt.Printf("Starting: %s %s\n", binary, strings.Join(cmdArgs, " "))
 	return c.Run()
+}
+
+// loadCloudSessionJWT reads the cloud session JWT from ~/.c4/session.json.
+// Returns the access_token if valid, or empty string if unavailable.
+func loadCloudSessionJWT() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	data, err := os.ReadFile(filepath.Join(home, ".c4", "session.json"))
+	if err != nil {
+		return ""
+	}
+	var session struct {
+		AccessToken string `json:"access_token"`
+	}
+	if err := json.Unmarshal(data, &session); err != nil {
+		return ""
+	}
+	return session.AccessToken
 }
 
 // =========================================================================

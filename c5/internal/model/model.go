@@ -755,6 +755,8 @@ const (
 	CtxProjectID ctxKey = "project_id"
 	// CtxIsMaster indicates whether the request was made with the master key.
 	CtxIsMaster ctxKey = "is_master"
+	// CtxUserID holds the JWT-authenticated user ID (sub claim) in request context.
+	CtxUserID ctxKey = "user_id"
 )
 
 // SHA256Hex returns the hex-encoded SHA256 hash of s.

@@ -15,7 +15,9 @@ import (
 	"sync"
 	"time"
 
+	"crypto/hmac"
 	"crypto/sha256"
+	"encoding/base64"
 
 	"github.com/piqsol/c4/c5/internal/conversation"
 	"github.com/piqsol/c4/c5/internal/eventpub"
@@ -40,6 +42,7 @@ type Server struct {
 	startTime   time.Time
 	version     string
 	apiKey      string // optional API key for authentication
+	jwtSecret   []byte // Supabase JWT secret for token verification (nil = disabled)
 	llmsTxt     string // llms.txt content
 	docsFS      fs.FS  // docs filesystem (may be nil)
 	serverURL   string // local server URL (fallback for publicURL)
@@ -89,6 +92,7 @@ type Config struct {
 	Storage          storage.Backend // if nil, auto-detected from env
 	Version          string
 	APIKey           string // if non-empty, X-API-Key header is required
+	JWTSecret        string // Supabase JWT secret for token verification (optional)
 	ServerURL        string // server's external URL (for local storage fallback)
 	PublicURL        string // external public URL (for device auth redirects, empty = ServerURL)
 	LLMSTxt          string // llms.txt content (served at /.well-known/llms.txt)
@@ -126,6 +130,7 @@ func NewServer(cfg Config) *Server {
 		startTime:        time.Now(),
 		version:          cfg.Version,
 		apiKey:           cfg.APIKey,
+		jwtSecret:        []byte(cfg.JWTSecret),
 		llmsTxt:          cfg.LLMSTxt,
 		docsFS:           cfg.DocsFS,
 		serverURL:        cfg.ServerURL,
@@ -298,15 +303,76 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 		h := sha256.Sum256([]byte(key))
 		keyHash := fmt.Sprintf("%x", h[:])
 		projectID, err := s.store.LookupAPIKey(keyHash)
-		if err != nil {
-			writeError(w, http.StatusUnauthorized, "invalid API key")
+		if err == nil {
+			ctx = context.WithValue(ctx, model.CtxProjectID, projectID)
+			ctx = context.WithValue(ctx, model.CtxIsMaster, false)
+			next.ServeHTTP(w, r.WithContext(ctx))
 			return
 		}
 
-		ctx = context.WithValue(ctx, model.CtxProjectID, projectID)
-		ctx = context.WithValue(ctx, model.CtxIsMaster, false)
-		next.ServeHTTP(w, r.WithContext(ctx))
+		// JWT fallback: verify as Supabase JWT if jwtSecret is configured
+		if len(s.jwtSecret) > 0 {
+			userID, jwtErr := s.verifyJWT(key)
+			if jwtErr == nil {
+				ctx = context.WithValue(ctx, model.CtxProjectID, "")
+				ctx = context.WithValue(ctx, model.CtxIsMaster, false)
+				ctx = context.WithValue(ctx, model.CtxUserID, userID)
+				next.ServeHTTP(w, r.WithContext(ctx))
+				return
+			}
+		}
+
+		writeError(w, http.StatusUnauthorized, "invalid API key")
 	})
+}
+
+// verifyJWT verifies a JWT token using HS256 and returns the subject (user ID).
+// Returns an error if the token is invalid, expired, or uses an unsupported algorithm.
+func (s *Server) verifyJWT(tokenStr string) (string, error) {
+	parts := strings.SplitN(tokenStr, ".", 3)
+	if len(parts) != 3 {
+		return "", fmt.Errorf("invalid JWT format")
+	}
+
+	// Verify signature (HS256)
+	signingInput := parts[0] + "." + parts[1]
+	mac := hmac.New(sha256.New, s.jwtSecret)
+	mac.Write([]byte(signingInput))
+	expectedSig := mac.Sum(nil)
+
+	actualSig, err := base64.RawURLEncoding.DecodeString(parts[2])
+	if err != nil {
+		return "", fmt.Errorf("invalid signature encoding: %w", err)
+	}
+	if !hmac.Equal(expectedSig, actualSig) {
+		return "", fmt.Errorf("signature mismatch")
+	}
+
+	// Decode payload
+	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		return "", fmt.Errorf("invalid payload encoding: %w", err)
+	}
+
+	var claims struct {
+		Sub string  `json:"sub"`
+		Exp float64 `json:"exp"`
+		Alg string  `json:"alg,omitempty"`
+	}
+	if err := json.Unmarshal(payload, &claims); err != nil {
+		return "", fmt.Errorf("invalid payload JSON: %w", err)
+	}
+
+	// Check expiry
+	if claims.Exp > 0 && time.Now().Unix() > int64(claims.Exp) {
+		return "", fmt.Errorf("token expired")
+	}
+
+	if claims.Sub == "" {
+		return "", fmt.Errorf("missing sub claim")
+	}
+
+	return claims.Sub, nil
 }
 
 // projectIDFromContext returns the authenticated project ID from context.

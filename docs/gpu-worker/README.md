@@ -29,16 +29,14 @@ curl -fsSL https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/install.sh | b
 C5 Hub는 API Key 인증을 사용합니다. 워커 연결 시 반드시 설정해야 합니다.
 
 ```bash
-# 방법 1: 환경변수 설정 (권장)
-export C5_HUB_API_KEY="your-hub-api-key-here"
-export C5_API_KEY="$C5_HUB_API_KEY"   # c5 binary가 C5_API_KEY를 읽음
+# 환경변수 설정 (권장)
+export C5_API_KEY="your-api-key-here"
 
-# 방법 2: --api-key 플래그 직접 전달
-c5 worker --api-key "$C5_HUB_API_KEY" --capabilities gpu-caps.yaml --server "$C5_HUB_URL"
+# 또는 --api-key 플래그 직접 전달
+c5 worker --api-key "$C5_API_KEY" --capabilities gpu-caps.yaml --server "$C5_HUB_URL"
 ```
 
 > **Note**: `c5` 바이너리는 `C5_API_KEY` 환경변수를 사용합니다.
-> `C5_HUB_API_KEY`를 `C5_API_KEY`로 export하거나 `--api-key` 플래그를 사용하세요.
 
 ## 빠른 시작
 
@@ -57,14 +55,13 @@ chmod +x scripts/*.sh
 
 # 2. 환경변수 설정
 export C5_HUB_URL="https://your-hub.example.com"
-export C5_HUB_API_KEY="your-api-key"
-export C5_API_KEY="$C5_HUB_API_KEY"
+export C5_API_KEY="your-api-key"
 
 # 3. GPU 상태 확인
 bash scripts/gpu-status.sh
 
 # 4. 워커 시작
-c5 worker --capabilities gpu-caps.yaml --server "$C5_HUB_URL" --api-key "$C5_HUB_API_KEY"
+c5 worker --capabilities gpu-caps.yaml --server "$C5_HUB_URL"
 ```
 
 ## gpu-caps.yaml 설정
@@ -132,13 +129,11 @@ After=network.target
 [Service]
 User=ubuntu
 Environment=C5_HUB_URL=https://your-hub.example.com
-Environment=C5_HUB_API_KEY=your-api-key
 Environment=C5_API_KEY=your-api-key
 WorkingDirectory=/opt/gpu-worker
 ExecStart=/usr/local/bin/c5 worker \
     --capabilities gpu-caps.yaml \
-    --server ${C5_HUB_URL} \
-    --api-key ${C5_HUB_API_KEY}
+    --server ${C5_HUB_URL}
 Restart=always
 RestartSec=10
 
