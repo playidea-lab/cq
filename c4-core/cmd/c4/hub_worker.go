@@ -270,6 +270,22 @@ func detectWorkerGPU() string {
 // =========================================================================
 
 func runWorkerInstall(cmd *cobra.Command, args []string) error {
+	// System-level install on Linux requires root. If not root and not --user,
+	// re-exec ourselves via sudo with the full binary path.
+	if runtime.GOOS == "linux" && !workerInstallUser && !workerInstallDryRun && os.Getuid() != 0 {
+		self, err := os.Executable()
+		if err != nil {
+			return fmt.Errorf("cannot find own binary path: %w", err)
+		}
+		fmt.Println("Root required — escalating with sudo...")
+		sudoArgs := []string{self, "hub", "worker", "install"}
+		sudoCmd := exec.Command("sudo", sudoArgs...)
+		sudoCmd.Stdout = os.Stdout
+		sudoCmd.Stderr = os.Stderr
+		sudoCmd.Stdin = os.Stdin
+		return sudoCmd.Run()
+	}
+
 	// Pre-flight: ensure Docker + NVIDIA Container Toolkit on Linux
 	if runtime.GOOS == "linux" && !workerInstallDryRun {
 		if err := ensureDockerRuntime(); err != nil {
