@@ -1,0 +1,32 @@
+# Git
+.git
+.gitignore
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# Build artifacts
+c5
+*.exe
+
+# Test artifacts
+*_test.go
+testdata/
+**/*_test.go
+
+# Docs
+docs/
+*.md
+LICENSE
+
+# Docker
+Dockerfile
+Dockerfile.*
+docker-compose*.yml
+.dockerignore
+
+# Fly.io
+fly.toml
