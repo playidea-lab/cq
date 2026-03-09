@@ -5,6 +5,36 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.85.0] - 2026-03-09
+
+### ✨ Features
+- **worker-ux**: 3-layer Worker UX — onboarding script (gpu-setup.sh), observability (cq hub log --follow), routing (capabilities auto-detect)
+- **c5/model**: HeartbeatRequest/Worker/JobSubmitRequest 필드 확장 (GPU Worker 지원)
+- **gpu-worker**: E2E smoke test script + SETUP.md 가이드
+- **hub_worker**: `cq hub worker start` — config 없으면 env에서 auto-init
+
+### 🐛 Bug Fixes
+- **hub-worker**: 3 E2E review bugs — systemd env, upgrade exit code, auto non-interactive
+- **hub_worker**: systemd unit file injection 방어 + 파일 권한 분기
+- **c5/worker**: workdir 없으면 현재 디렉토리 fallback
+- **edge**: code review 4 HIGH + 6 MEDIUM issues resolved
+- **build**: serve_loop_orchestrator_stub.go for non-research builds
+- **docs**: piqsol.com → GitHub 설치 URL 수정
+- **archtest**: update errorf ratchet for hub_edge.go + hub_worker.go
+- **skills**: c4-plan c4_notify → mcp__cq__c4_notify 파라미터 수정
+
+### 🔧 Polish
+- **worker-ux**: round 2-5 보안·안정성 수정
+- **smoke_test**: $NF + SETUP.md output 동기화 + 테스트 명확화
+- **launchd**: plist에 C5_API_KEY 주입 + 테스트 wantNot 제거
+- **hub_worker**: systemd 보안 강화
+
+### 📚 Documentation
+- **agents**: Go 테스트 카운트 업데이트 (~2,835)
+- **gpu-worker**: c5 worker UX code review with CI var mapping issue
+
+---
+
 ## [v0.82.0] - 2026-03-08
 
 ### ✨ Features
