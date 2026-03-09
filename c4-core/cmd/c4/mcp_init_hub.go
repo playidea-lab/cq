@@ -28,10 +28,15 @@ func initHub(ctx *initContext) error {
 	}
 	hubCfg := ctx.cfgMgr.GetConfig().Hub
 
-	// Apply builtinHubURL fallback (baked in via -ldflags at build time).
-	if hubCfg.URL == "" && builtinHubURL != "" {
-		hubCfg.URL = builtinHubURL
-		hubCfg.Enabled = true
+	// Apply env/builtin fallback: C5_HUB_URL env → builtinHubURL (ldflags).
+	if hubCfg.URL == "" {
+		if v := os.Getenv("C5_HUB_URL"); v != "" {
+			hubCfg.URL = v
+			hubCfg.Enabled = true
+		} else if builtinHubURL != "" {
+			hubCfg.URL = builtinHubURL
+			hubCfg.Enabled = true
+		}
 	}
 
 	if !hubCfg.Enabled {

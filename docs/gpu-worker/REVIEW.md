@@ -160,49 +160,19 @@ if req.LastJobAt != "" {
 
 ## 핵심 UX 마찰점
 
-### CI 변수명 불일치 — 심각도: HIGH
+### CI 변수명 통일 — 심각도: RESOLVED (v0.86.0)
 
-문제:
-- GitLab CI/CD 변수 컨벤션: `CI_HUB_URL`, `CI_API_KEY` (CI_ prefix는 GitLab 예약 네임스페이스)
-- c5 워커가 기대하는 변수: `C5_HUB_URL`, `C5_API_KEY`
-- hub_worker.go `runWorkerInit`에서 `--hub-url`/`--api-key` 플래그 또는 stdin만 읽으며, env 변수 fallback이 없다.
-- `c5/cmd/c5/worker.go`의 `workerCmd()`는 `C5_HUB_URL`과 `C5_API_KEY`를 env에서 읽는다.
+**해결됨**: CI/CD 변수명이 `C5_HUB_URL`, `C5_API_KEY`로 통일되었다.
 
-재현 조건:
-```bash
-# GitLab CI .gitlab-ci.yml 예시
-variables:
-  CI_HUB_URL: "https://hub.example.com"
-  CI_API_KEY: "secret"
+- `.gitlab-ci.yml`: `CI_HUB_URL` → `C5_HUB_URL`, `CI_API_KEY` → `C5_API_KEY`
+- Go 코드 (`auth.go`, `hub.go`, `mcp_init_hub.go`): `C5_HUB_URL` env var 우선 읽기
+- GitLab CI/CD Settings: 변수명 `C5_HUB_URL`, `C5_API_KEY`로 변경 완료
+- `c5/cmd/c5/worker.go`: 기존부터 `C5_HUB_URL`, `C5_API_KEY` 사용
 
-deploy:
-  script:
-    - cq hub worker init --non-interactive --hub-url "$CI_HUB_URL" --api-key "$CI_API_KEY"
-    # ↑ 작동은 하지만 사용자가 직접 변수명 매핑을 해야 한다.
-    # c5 직접 실행 시: c5 worker --server $C5_HUB_URL
-    # 하지만 환경에는 CI_HUB_URL이 있고 C5_HUB_URL이 없어 fallback이 동작하지 않는다.
-```
-
-권장 수정 옵션 A: `runWorkerInit`에 env fallback 추가
-```go
-// hub-url flag가 없으면 C5_HUB_URL → CI_HUB_URL 순서로 fallback
-if workerInitHubURL == "" {
-    if v := os.Getenv("C5_HUB_URL"); v != "" {
-        workerInitHubURL = v
-    } else if v := os.Getenv("CI_HUB_URL"); v != "" {
-        workerInitHubURL = v
-    }
-}
-// api-key도 동일하게 C5_API_KEY → CI_API_KEY fallback
-```
-
-권장 수정 옵션 B: `c5/cmd/c5/worker.go`의 workerCmd에 CI_* fallback 추가
-```go
-defaultServer = os.Getenv("C5_HUB_URL")
-if defaultServer == "" {
-    defaultServer = os.Getenv("CI_HUB_URL") // GitLab CI 호환
-}
-```
+환경변수 우선순위 (cq):
+1. `C5_HUB_URL` env var
+2. `.c4/config.yaml` hub.url
+3. `builtinHubURL` (ldflags, CI에서 `C5_HUB_URL`로 주입)
 
 ---
 
@@ -216,14 +186,14 @@ if defaultServer == "" {
 
 CI/CD 파이프라인에서의 이상적 UX:
 ```bash
-curl -sSL https://install.example.com | CI_HUB_URL=https://hub.example.com CI_API_KEY=secret bash
+curl -sSL https://install.example.com | C5_HUB_URL=https://hub.example.com C5_API_KEY=secret bash
 # → cq + c5 설치 + worker init 자동 수행 → 즉시 start 가능
 ```
 
 그러나 현재 `install.sh`는 `cq doctor`만 실행하고 worker init을 수행하지 않는다.
 
 재현 조건:
-- `CI_HUB_URL`과 `CI_API_KEY` (또는 `C5_HUB_URL`, `C5_API_KEY`)가 환경에 있을 때
+- `C5_HUB_URL`과 `C5_API_KEY`가 환경에 있을 때
   install.sh가 자동으로 `cq hub worker init --non-interactive`를 실행하지 않는다.
 - 사용자가 이 단계를 수동으로 추가해야 하며, README를 놓치면 워커가 동작하지 않는다.
 
@@ -231,9 +201,9 @@ curl -sSL https://install.example.com | CI_HUB_URL=https://hub.example.com CI_AP
 - `install.sh` 후반부에 조건부 auto-init 추가:
 ```bash
 # Auto-init worker if hub credentials provided
-if [ -n "${C5_HUB_URL:-$CI_HUB_URL}" ] && [ -n "${C5_API_KEY:-$CI_API_KEY}" ]; then
-  HUB_URL="${C5_HUB_URL:-$CI_HUB_URL}"
-  API_KEY="${C5_API_KEY:-$CI_API_KEY}"
+if [ -n "${C5_HUB_URL}" ] && [ -n "${C5_API_KEY}" ]; then
+  HUB_URL="${C5_HUB_URL}"
+  API_KEY="${C5_API_KEY}"
   echo "Auto-configuring worker credentials..."
   "${INSTALL_DIR}/cq" hub worker init --non-interactive \
     --hub-url "$HUB_URL" --api-key "$API_KEY" || \

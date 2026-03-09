@@ -221,14 +221,20 @@ func runAuthLoginHeadless(cmd *cobra.Command, isDevice bool) error {
 	return nil
 }
 
-// resolveHubURL reads hub.url from .c4/config.yaml, falling back to builtinHubURL.
+// resolveHubURL reads hub.url from env → .c4/config.yaml → builtinHubURL (ldflags).
 func resolveHubURL() string {
+	// 1. Environment variable (worker/CI environments)
+	if v := os.Getenv("C5_HUB_URL"); v != "" {
+		return v
+	}
+	// 2. Config file
 	configPath := filepath.Join(projectDir, ".c4", "config.yaml")
 	if data, err := os.ReadFile(configPath); err == nil {
 		if v := sectionYAMLValue(string(data), "hub", "url:"); v != "" {
 			return v
 		}
 	}
+	// 3. Baked-in at build time via ldflags
 	return builtinHubURL
 }
 
