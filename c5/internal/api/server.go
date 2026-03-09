@@ -53,6 +53,7 @@ type Server struct {
 	eventPub         *eventpub.Publisher
 	maxArtifactBytes int64 // max upload size for local backend
 	gpuWorkerGPUOnly bool  // if true, GPU workers only accept GPU jobs (no CPU fallback)
+	lastPurge        time.Time // last zombie worker purge time (1h rate limit)
 
 	// LLM / Dooray server-side processing fields.
 	llmClient        *llmclient.Client            // nil = server-side LLM disabled
@@ -185,6 +186,7 @@ func (s *Server) registerRoutes() {
 	// Workers
 	s.mux.HandleFunc("/v1/workers/register", s.handleWorkerRegister)
 	s.mux.HandleFunc("/v1/workers/heartbeat", s.handleWorkerHeartbeat)
+	s.mux.HandleFunc("/v1/workers/prune", s.handleWorkersPrune)
 	s.mux.HandleFunc("/v1/workers", s.handleWorkersList)
 
 	// Leases
@@ -449,6 +451,17 @@ func (s *Server) leaseExpiryLoop() {
 			log.Printf("c5: stale worker check error: %v", err)
 		} else if stale > 0 {
 			log.Printf("c5: marked %d workers as offline", stale)
+		}
+
+		// Purge zombie workers (offline > 24h), max once per hour
+		if time.Since(s.lastPurge) > time.Hour {
+			purged, err := s.store.PurgeStaleWorkers(24 * time.Hour)
+			if err != nil {
+				log.Printf("c5: purge stale workers error: %v", err)
+			} else if purged > 0 {
+				log.Printf("c5: purged %d zombie workers to history", purged)
+			}
+			s.lastPurge = time.Now()
 		}
 
 		// Mark stale edges

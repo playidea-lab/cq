@@ -117,11 +117,71 @@ func (s *Server) handleWorkersList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Filter by active_only (default: true)
+	activeOnly := r.URL.Query().Get("active_only")
+	if activeOnly != "false" {
+		filtered := make([]*model.Worker, 0, len(workers))
+		for _, w := range workers {
+			if w.Status != "offline" {
+				filtered = append(filtered, w)
+			}
+		}
+		workers = filtered
+	}
+
 	if workers == nil {
 		workers = []*model.Worker{}
 	}
 
 	writeJSON(w, workers)
+}
+
+func (s *Server) handleWorkersPrune(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		methodNotAllowed(w)
+		return
+	}
+
+	var req struct {
+		DryRun bool `json:"dry_run"`
+	}
+	if r.Body != nil {
+		_ = json.NewDecoder(r.Body).Decode(&req)
+	}
+
+	// List offline workers first (for dry-run and response)
+	allWorkers, err := s.store.ListWorkers("")
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	var offline []*model.Worker
+	for _, wk := range allWorkers {
+		if wk.Status == "offline" {
+			offline = append(offline, wk)
+		}
+	}
+
+	if req.DryRun {
+		writeJSON(w, map[string]any{
+			"dry_run": true,
+			"purged":  len(offline),
+			"workers": offline,
+		})
+		return
+	}
+
+	// Purge with 0 threshold (immediate — all offline workers)
+	purged, err := s.store.PurgeStaleWorkers(0)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	writeJSON(w, map[string]any{
+		"purged":  purged,
+		"workers": offline,
+	})
 }
 
 func (s *Server) handleLeaseAcquire(w http.ResponseWriter, r *http.Request) {

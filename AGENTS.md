@@ -596,6 +596,8 @@ cq tool c4_status --json
 - **Stateless Worker**: Hub가 잡 payload에 `project_id` 포함 → 워커가 자식 프로세스에 `C4_PROJECT_ID` env 주입 (로컬 config.yaml 불필요)
 - **JWT Auth Fallback**: `C5_JWT_SECRET` (또는 `SUPABASE_JWT_SECRET`) 설정 시 Hub가 HS256 JWT 토큰을 API key 대안으로 수락. `cq hub worker start`는 API key 미설정 시 `~/.c4/session.json`의 cloud JWT를 자동 주입
 - **Version Gate**: `C5_MIN_VERSION` env 설정 시 구버전 워커에 `control: {action:"upgrade"}` 반환 → 워커가 `cq upgrade` 후 재시작 (version="" 또는 "unknown"은 bypass)
+- **Zombie Worker GC**: 24시간 이상 offline 워커를 `worker_history` 테이블로 이동 후 삭제. Hub lease expiry 루프에서 1시간 간격 자동 실행. `cq hub workers prune [--dry-run]` CLI 제공. `cq hub workers`는 기본 active-only 표시 (`--all`로 전체)
+- **Capability Fallback**: 잡 실행 시 `capabilities/<name>` 파일 → caps.yaml `command` 필드 → `C5_PARAMS.command` (run_command) 3단계 폴백. caps.yaml에 `command:` 정의하면 파일 없이 실행 가능
 - **cq hub submit**: 현재 폴더를 Drive CAS로 스냅샷 업로드 후 Hub 잡 등록 (Git 불필요, CAS 자동 dedup)
   ```bash
   cq hub submit [--run "python train.py"] [--project myproj]

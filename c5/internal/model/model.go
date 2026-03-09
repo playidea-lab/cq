@@ -252,6 +252,16 @@ type QueueStats struct {
 	Cancelled int `json:"cancelled"`
 }
 
+// WorkerHistory represents an archived worker record.
+type WorkerHistory struct {
+	ID             string `json:"id"`
+	Hostname       string `json:"hostname"`
+	GPUModel       string `json:"gpu_model"`
+	ProjectID      string `json:"project_id"`
+	RegisteredAt   string `json:"registered_at"`
+	DeregisteredAt string `json:"deregistered_at"`
+}
+
 // WorkerRegisterRequest is the payload for POST /v1/workers/register.
 // hub.Client sends {"capabilities": {...}} — the handler extracts fields from the map.
 type WorkerRegisterRequest struct {

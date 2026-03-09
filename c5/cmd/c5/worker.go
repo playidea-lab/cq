@@ -46,6 +46,10 @@ const (
 //	        config_path: {type: string}
 //	        epochs: {type: integer}
 //	    tags: [gpu, pytorch]
+// loadedCaps holds the capabilities loaded from caps.yaml at startup.
+// Used by executeJob to resolve capability commands as fallback.
+var loadedCaps []model.Capability
+
 type capabilitiesYAML struct {
 	Capabilities []struct {
 		Name        string         `yaml:"name"`
@@ -137,6 +141,8 @@ func workerCmd() *cobra.Command {
 				}
 				log.Printf("c5-worker: using auto-generated capabilities (%s)", strings.Join(capNames, ", "))
 			}
+			// Store caps for executeJob fallback resolution
+			loadedCaps = caps
 
 			return runWorker(workerConfig{
 				serverURL:    serverURL,
@@ -392,6 +398,27 @@ func executeJob(client *workerClient, job *model.Job, leaseID, workerID string, 
 					command = candidate
 					found = true
 					break
+				}
+			}
+			if !found {
+				// Fallback: check caps.yaml command field
+				for _, cap := range loadedCaps {
+					if cap.Name == capName && cap.Command != "" {
+						command = cap.Command
+						found = true
+						log.Printf("c5-worker: capability %q using caps.yaml command: %s", capName, cap.Command)
+						break
+					}
+				}
+			}
+			// Special case: run_command reads command from C5_PARAMS
+			if !found && capName == "run_command" && job.Params != nil {
+				if cmdVal, ok := job.Params["command"]; ok {
+					if cmdStr, ok := cmdVal.(string); ok && cmdStr != "" {
+						command = cmdStr
+						found = true
+						log.Printf("c5-worker: run_command using params command: %s", cmdStr)
+					}
 				}
 			}
 			if !found {

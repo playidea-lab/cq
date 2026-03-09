@@ -2053,3 +2053,80 @@ func TestAlterTableIdempotent(t *testing.T) {
 	}
 	s2.Close()
 }
+
+func TestPurgeStaleWorkers(t *testing.T) {
+	s := newTestStore(t)
+
+	// Register 3 workers
+	w1, _ := s.RegisterWorker(&model.WorkerRegisterRequest{Hostname: "online-host", GPUModel: "A100"})
+	w2, _ := s.RegisterWorker(&model.WorkerRegisterRequest{Hostname: "offline-1h", GPUModel: "A100"})
+	w3, _ := s.RegisterWorker(&model.WorkerRegisterRequest{Hostname: "offline-25h", GPUModel: "V100"})
+
+	// Mark w2 and w3 offline with different heartbeat times
+	now := time.Now().UTC()
+	s.db.Exec("UPDATE workers SET status='offline', last_heartbeat=? WHERE id=?",
+		now.Add(-1*time.Hour).Format(time.RFC3339), w2.ID)
+	s.db.Exec("UPDATE workers SET status='offline', last_heartbeat=? WHERE id=?",
+		now.Add(-25*time.Hour).Format(time.RFC3339), w3.ID)
+
+	// Purge with 24h threshold
+	purged, err := s.PurgeStaleWorkers(24 * time.Hour)
+	if err != nil {
+		t.Fatalf("purge: %v", err)
+	}
+	if purged != 1 {
+		t.Fatalf("expected 1 purged, got %d", purged)
+	}
+
+	// Verify w1 and w2 still in workers
+	workers, _ := s.ListWorkers("")
+	if len(workers) != 2 {
+		t.Fatalf("expected 2 remaining workers, got %d", len(workers))
+	}
+
+	// Verify w3 in history
+	var count int
+	s.db.QueryRow("SELECT COUNT(*) FROM worker_history WHERE id=?", w3.ID).Scan(&count)
+	if count != 1 {
+		t.Fatalf("expected 1 history entry for %s, got %d", w3.ID, count)
+	}
+
+	// Verify w1 NOT in history
+	s.db.QueryRow("SELECT COUNT(*) FROM worker_history WHERE id=?", w1.ID).Scan(&count)
+	if count != 0 {
+		t.Fatalf("online worker should not be in history")
+	}
+}
+
+func TestPurgeStaleWorkersTransaction(t *testing.T) {
+	s := newTestStore(t)
+
+	// Register 2 workers, mark both offline > 24h
+	w1, _ := s.RegisterWorker(&model.WorkerRegisterRequest{Hostname: "zombie-1", GPUModel: "T4"})
+	w2, _ := s.RegisterWorker(&model.WorkerRegisterRequest{Hostname: "zombie-2", GPUModel: "T4"})
+
+	old := time.Now().UTC().Add(-48 * time.Hour).Format(time.RFC3339)
+	s.db.Exec("UPDATE workers SET status='offline', last_heartbeat=? WHERE id=?", old, w1.ID)
+	s.db.Exec("UPDATE workers SET status='offline', last_heartbeat=? WHERE id=?", old, w2.ID)
+
+	purged, err := s.PurgeStaleWorkers(24 * time.Hour)
+	if err != nil {
+		t.Fatalf("purge: %v", err)
+	}
+	if purged != 2 {
+		t.Fatalf("expected 2 purged, got %d", purged)
+	}
+
+	// Workers table should be empty
+	workers, _ := s.ListWorkers("")
+	if len(workers) != 0 {
+		t.Fatalf("expected 0 workers, got %d", len(workers))
+	}
+
+	// History should have 2 entries
+	var count int
+	s.db.QueryRow("SELECT COUNT(*) FROM worker_history").Scan(&count)
+	if count != 2 {
+		t.Fatalf("expected 2 history entries, got %d", count)
+	}
+}

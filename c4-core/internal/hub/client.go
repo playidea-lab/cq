@@ -413,13 +413,31 @@ func (c *Client) GetJobLogsCtx(ctx context.Context, jobID string, offset, limit 
 // Workers API
 // =========================================================================
 
-// ListWorkers returns all registered workers.
-func (c *Client) ListWorkers() ([]Worker, error) {
+// ListWorkers returns registered workers. If activeOnly is true (default),
+// only non-offline workers are returned.
+func (c *Client) ListWorkers(activeOnly ...bool) ([]Worker, error) {
+	path := "/workers?active_only=true"
+	if len(activeOnly) > 0 && !activeOnly[0] {
+		path = "/workers?active_only=false"
+	}
 	var workers []Worker
-	if err := c.get("/workers", &workers); err != nil {
+	if err := c.get(path, &workers); err != nil {
 		return nil, fmt.Errorf("list workers: %w", err)
 	}
 	return workers, nil
+}
+
+// PruneWorkers removes offline workers. If dryRun is true, only returns
+// the list of workers that would be pruned without actually deleting them.
+func (c *Client) PruneWorkers(dryRun bool) (int, error) {
+	body := map[string]any{"dry_run": dryRun}
+	var resp struct {
+		Purged int `json:"purged"`
+	}
+	if err := c.post("/workers/prune", body, &resp); err != nil {
+		return 0, fmt.Errorf("prune workers: %w", err)
+	}
+	return resp.Purged, nil
 }
 
 // HealthCheck returns true if the Hub is reachable and healthy.

@@ -101,6 +101,15 @@ func (s *Store) migrate() error {
 			registered_at  TEXT NOT NULL
 		);
 
+		CREATE TABLE IF NOT EXISTS worker_history (
+			id              TEXT NOT NULL,
+			hostname        TEXT NOT NULL DEFAULT '',
+			gpu_model       TEXT NOT NULL DEFAULT '',
+			project_id      TEXT NOT NULL DEFAULT '',
+			registered_at   TEXT NOT NULL,
+			deregistered_at TEXT NOT NULL DEFAULT (datetime('now'))
+		);
+
 		CREATE TABLE IF NOT EXISTS leases (
 			id         TEXT PRIMARY KEY,
 			job_id     TEXT NOT NULL,
@@ -757,6 +766,40 @@ func (s *Store) MarkStaleWorkers(threshold time.Duration) (int, error) {
 	if err != nil {
 		return 0, err
 	}
+	n, _ := result.RowsAffected()
+	return int(n), nil
+}
+
+// PurgeStaleWorkers deletes offline workers older than threshold and archives them
+// to worker_history. Returns the number of purged workers.
+func (s *Store) PurgeStaleWorkers(threshold time.Duration) (int, error) {
+	cutoff := time.Now().UTC().Add(-threshold).Format(time.RFC3339)
+	tx, err := s.db.Begin()
+	if err != nil {
+		return 0, fmt.Errorf("purge stale workers: begin tx: %w", err)
+	}
+	defer tx.Rollback()
+
+	// Archive to worker_history
+	_, err = tx.Exec(`
+		INSERT INTO worker_history (id, hostname, gpu_model, project_id, registered_at, deregistered_at)
+		SELECT id, hostname, gpu_model, project_id, registered_at, datetime('now')
+		FROM workers WHERE status = 'offline' AND last_heartbeat < ?`, cutoff)
+	if err != nil {
+		return 0, fmt.Errorf("purge stale workers: archive: %w", err)
+	}
+
+	// Delete from workers
+	result, err := tx.Exec(`
+		DELETE FROM workers WHERE status = 'offline' AND last_heartbeat < ?`, cutoff)
+	if err != nil {
+		return 0, fmt.Errorf("purge stale workers: delete: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return 0, fmt.Errorf("purge stale workers: commit: %w", err)
+	}
+
 	n, _ := result.RowsAffected()
 	return int(n), nil
 }

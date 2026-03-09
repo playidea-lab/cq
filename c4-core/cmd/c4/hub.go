@@ -116,6 +116,12 @@ var hubWorkersCmd = &cobra.Command{
 	RunE:  runHubWorkers,
 }
 
+var hubWorkersPruneCmd = &cobra.Command{
+	Use:   "prune",
+	Short: "Remove offline zombie workers",
+	RunE:  runHubWorkersPrune,
+}
+
 var hubSubmitCmd = &cobra.Command{
 	Use:   "submit",
 	Short: "Upload current dir snapshot and submit a Hub job",
@@ -137,6 +143,8 @@ var (
 	hubEdgeTags       string
 	hubEdgeRuntime    string
 	hubSubmitRun      string
+	hubWorkersAll     bool
+	hubPruneDryRun    bool
 )
 
 func init() {
@@ -152,6 +160,10 @@ func init() {
 	hubEdgeRegisterCmd.MarkFlagRequired("name")
 
 	hubSubmitCmd.Flags().StringVar(&hubSubmitRun, "run", "", "command to execute on the worker")
+
+	hubWorkersCmd.Flags().BoolVar(&hubWorkersAll, "all", false, "include offline workers")
+	hubWorkersPruneCmd.Flags().BoolVar(&hubPruneDryRun, "dry-run", false, "show what would be pruned without deleting")
+	hubWorkersCmd.AddCommand(hubWorkersPruneCmd)
 
 	hubEdgeCmd.AddCommand(hubEdgeRegisterCmd)
 	hubEdgeCmd.AddCommand(hubEdgeListCmd)
@@ -276,7 +288,7 @@ func runHubWorkers(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	workers, err := client.ListWorkers()
+	workers, err := client.ListWorkers(!hubWorkersAll)
 	if err != nil {
 		return fmt.Errorf("list workers: %w", err)
 	}
@@ -304,6 +316,25 @@ func runHubWorkers(cmd *cobra.Command, args []string) error {
 			name, wk.Status, formatUptime(wk.UptimeSec), formatLastJob(wk.LastJobAt), caps)
 	}
 	w.Flush()
+	return nil
+}
+
+func runHubWorkersPrune(cmd *cobra.Command, args []string) error {
+	client, err := newHubClient()
+	if err != nil {
+		return err
+	}
+
+	purged, err := client.PruneWorkers(hubPruneDryRun)
+	if err != nil {
+		return fmt.Errorf("prune workers: %w", err)
+	}
+
+	if hubPruneDryRun {
+		fmt.Printf("Would prune %d offline workers.\n", purged)
+	} else {
+		fmt.Printf("Pruned %d offline workers.\n", purged)
+	}
 	return nil
 }
 
