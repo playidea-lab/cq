@@ -17,11 +17,11 @@
 
 ```bash
 # 최신 릴리즈 다운로드 (Linux amd64 예시)
-curl -L https://github.com/piqsol/cq/releases/latest/download/c5-linux-amd64 -o ~/.local/bin/c5
+curl -L https://github.com/PlayIdea-Lab/cq/releases/latest/download/c5-linux-amd64 -o ~/.local/bin/c5
 chmod +x ~/.local/bin/c5
 
 # 또는 cq 설치 후 내장 c5 사용
-curl -fsSL https://piqsol.com/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/install.sh | bash
 ```
 
 ## Hub API Key 인증
@@ -44,15 +44,15 @@ c5 worker --api-key "$C5_HUB_API_KEY" --capabilities gpu-caps.yaml --server "$C5
 
 ```bash
 # 1. 파일 다운로드
-git clone https://github.com/piqsol/cq
+git clone https://github.com/PlayIdea-Lab/cq
 cd cq/docs/gpu-worker
 
 # 또는 개별 다운로드
-curl -O https://raw.githubusercontent.com/piqsol/cq/main/docs/gpu-worker/gpu-caps.yaml
+curl -O https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/docs/gpu-worker/gpu-caps.yaml
 mkdir -p scripts
-curl -O --output-dir scripts https://raw.githubusercontent.com/piqsol/cq/main/docs/gpu-worker/scripts/gpu-status.sh
-curl -O --output-dir scripts https://raw.githubusercontent.com/piqsol/cq/main/docs/gpu-worker/scripts/gpu-train.sh
-curl -O --output-dir scripts https://raw.githubusercontent.com/piqsol/cq/main/docs/gpu-worker/scripts/gpu-infer.sh
+curl -O --output-dir scripts https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/docs/gpu-worker/scripts/gpu-status.sh
+curl -O --output-dir scripts https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/docs/gpu-worker/scripts/gpu-train.sh
+curl -O --output-dir scripts https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/docs/gpu-worker/scripts/gpu-infer.sh
 chmod +x scripts/*.sh
 
 # 2. 환경변수 설정

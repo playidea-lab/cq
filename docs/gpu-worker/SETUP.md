@@ -16,7 +16,7 @@ Connect a remote GPU server to the C5 Hub using `cq` in 5 steps.
 ## Step 1 — Install cq
 
 ```bash
-curl -fsSL https://piqsol.com/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/install.sh | bash
 # verify
 cq version
 ```
