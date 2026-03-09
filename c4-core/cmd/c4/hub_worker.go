@@ -311,7 +311,7 @@ func runWorkerInstall(cmd *cobra.Command, args []string) error {
 	case "darwin":
 		home, _ := os.UserHomeDir()
 		destPath = filepath.Join(home, "Library", "LaunchAgents", "cq.worker.plist")
-		content = buildLaunchdPlist(execArgs, cfg.HubURL)
+		content = buildLaunchdPlist(execArgs, cfg.HubURL, cfg.APIKey)
 
 	default:
 		return fmt.Errorf("unsupported OS: %s (supported: linux, darwin)", runtime.GOOS)
@@ -386,7 +386,7 @@ func xmlEscapeAttr(s string) string {
 	return html.EscapeString(s)
 }
 
-func buildLaunchdPlist(execArgs []string, hubURL string) string {
+func buildLaunchdPlist(execArgs []string, hubURL, apiKey string) string {
 	label := "cq.worker"
 	var argsXML strings.Builder
 	for _, a := range execArgs {
@@ -395,6 +395,15 @@ func buildLaunchdPlist(execArgs []string, hubURL string) string {
 	desc := "CQ Hub Worker"
 	if hubURL != "" {
 		desc = fmt.Sprintf("CQ Hub Worker (%s)", hubURL)
+	}
+	envBlock := ""
+	if apiKey != "" {
+		envBlock = fmt.Sprintf(`    <key>EnvironmentVariables</key>
+    <dict>
+        <key>C5_API_KEY</key>
+        <string>%s</string>
+    </dict>
+`, xmlEscapeAttr(apiKey))
 	}
 	return fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -405,7 +414,7 @@ func buildLaunchdPlist(execArgs []string, hubURL string) string {
     <key>ProgramArguments</key>
     <array>
 %s    </array>
-    <key>RunAtLoad</key>
+%s    <key>RunAtLoad</key>
     <true/>
     <key>KeepAlive</key>
     <true/>
@@ -415,7 +424,7 @@ func buildLaunchdPlist(execArgs []string, hubURL string) string {
     <string>%s</string>
 </dict>
 </plist>
-`, xmlEscapeAttr(label), argsXML.String(), xmlEscapeAttr(desc))
+`, xmlEscapeAttr(label), argsXML.String(), envBlock, xmlEscapeAttr(desc))
 }
 
 // =========================================================================

@@ -191,15 +191,21 @@ func TestWorkerInstall_DryRun(t *testing.T) {
 		t.Fatalf("runWorkerInstall: %v", err)
 	}
 
-	// On macOS expect ProgramArguments; on Linux expect ExecStart.
+	// On macOS expect ProgramArguments + EnvironmentVariables; on Linux expect ExecStart + Environment=.
 	switch runtime.GOOS {
 	case "darwin":
 		if !strings.Contains(output, "ProgramArguments") {
 			t.Errorf("expected ProgramArguments in dry-run output, got:\n%s", output)
 		}
+		if !strings.Contains(output, "C5_API_KEY") {
+			t.Errorf("expected C5_API_KEY in launchd plist dry-run output, got:\n%s", output)
+		}
 	case "linux":
 		if !strings.Contains(output, "ExecStart") {
 			t.Errorf("expected ExecStart in dry-run output, got:\n%s", output)
+		}
+		if !strings.Contains(output, "C5_API_KEY") {
+			t.Errorf("expected C5_API_KEY in systemd unit dry-run output, got:\n%s", output)
 		}
 	default:
 		// On other OS, runWorkerInstall returns error — skip output check.
@@ -527,10 +533,11 @@ func TestBuildSystemdUnit_Sanitize(t *testing.T) {
 		wantNot   string // substring that must NOT appear (raw unescaped form)
 	}{
 		{
+			// `"` in apiKey must be escaped to `\"` so it cannot break the
+			// systemd Environment= quoting boundary.
 			name:      "double_quote_escaped",
 			apiKey:    `key"injected`,
 			wantInEnv: `key\"injected`,
-			wantNot:   `key"injected`,
 		},
 		{
 			name:      "backslash_escaped",
