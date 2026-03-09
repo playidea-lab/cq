@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.89.0] - 2026-03-10
+
+### ✨ Features
+- **c5/auth**: Scoped API keys — `sk-user-*`/`sk-worker-*` prefix enforcement with endpoint-level scope checking
+- **c5/worker**: 1-tier container mode (`C5_CONTAINER_MODE=1`) — worker runs jobs as subprocess, no docker-in-docker
+- **c5/worker**: `c5 worker install` — Docker pull + container run with GPU auto-detection (nvidia-smi)
+- **c5**: GPU worker Dockerfile (multi-stage: Go alpine builder + PyTorch 2.5 CUDA 12.4 runtime)
+
+### 🐛 Bug Fixes
+- **c5/auth**: scope escalation fix — DB scope "full" no longer overridden by key prefix
+
+### 📚 Documentation
+- Docker Worker 1-tier 모델 + Scoped API Key 문서 업데이트 (AGENTS.md, docs/gpu-worker/)
+
+---
+
 ## [v0.85.1] - 2026-03-09
 
 ### 🐛 Bug Fixes
