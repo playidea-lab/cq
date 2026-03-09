@@ -432,9 +432,31 @@ func executeJob(client *workerClient, job *model.Job, leaseID, workerID string, 
 	env = append(env, "C5_INPUT_DIR=.")
 	env = append(env, "C5_OUTPUT_DIR=.")
 
-	// Docker mode: when runtime.image is set, run inside a container.
+	// Execution mode selection:
+	// 1. Container mode (C5_CONTAINER_MODE=1): worker IS the container, run directly
+	// 2. Docker mode (runtime.image set): run inside a docker container
+	// 3. Host mode: run as subprocess on host
 	var cmd *exec.Cmd
-	if job.Runtime != nil && job.Runtime.Image != "" {
+	containerMode := os.Getenv("C5_CONTAINER_MODE") == "1"
+	if containerMode && job.Runtime != nil && job.Runtime.Image != "" {
+		// 1-tier mode: the worker is already inside the container.
+		// Install requirements via pip if specified, then run command.
+		shellCmd := command
+		if job.Runtime.Requirements != "" {
+			shellCmd = fmt.Sprintf("pip install --no-cache-dir %s && %s", job.Runtime.Requirements, command)
+		}
+		cmd = exec.CommandContext(ctx, "sh", "-c", shellCmd)
+		if job.Workdir != "" {
+			if _, err := os.Stat(job.Workdir); err == nil {
+				cmd.Dir = job.Workdir
+			} else {
+				log.Printf("c5-worker: workdir %q not found, using current directory", job.Workdir)
+			}
+		}
+		cmd.Env = env
+		log.Printf("c5-worker: job %s running in container mode (1-tier, skip docker)", job.ID)
+	} else if job.Runtime != nil && job.Runtime.Image != "" {
+		// 2-tier mode: launch docker container.
 		cmd = buildDockerCmd(ctx, job, command, env, gpuCount)
 		log.Printf("c5-worker: job %s running in Docker image %s", job.ID, job.Runtime.Image)
 	} else {
