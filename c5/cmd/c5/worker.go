@@ -174,6 +174,8 @@ func workerCmd() *cobra.Command {
 	cmd.Flags().StringVar(&capabilitiesFile, "capabilities", "", "Path to capabilities YAML file")
 	cmd.Flags().BoolVar(&noAutoDetect, "no-auto-detect", false, "Disable GPU auto-detection and capability auto-generation")
 
+	cmd.AddCommand(workerInstallCmd())
+
 	return cmd
 }
 
