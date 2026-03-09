@@ -1,5 +1,27 @@
 # Changelog
 
+## [v0.84.0] - 2026-03-09
+
+### ✨ Features
+- **gpu-worker/e2e**: E2E smoke test + 5단계 SETUP.md 가이드 (`docs/gpu-worker/`)
+  - `scripts/smoke_test_gpu_worker.sh` — init → start → job → verify 전체 흐름 자동 검증
+  - `docs/gpu-worker/SETUP.md` — 5단계 GPU 워커 연결 가이드 + 트러블슈팅 섹션
+
+### 🐛 Bug Fixes
+- **hub_worker/systemd**: `buildSystemdUnit` — `C5_API_KEY` `Environment=` 라인 누락 수정 (`apiKey string` 파라미터 추가)
+- **hub_worker/systemd**: `buildSystemdUnit` sanitizer — `"` → `\"`, `\` → `\\` 이스케이프 (unit file injection 방어)
+- **hub_worker/launchd**: `buildLaunchdPlist` — `EnvironmentVariables` dict에 `C5_API_KEY` 주입 (macOS 워커 인증 누락 수정)
+- **hub_worker/systemd**: 파일 권한 분기 — system-mode `0o644`, user-mode(`--user`) `0o600`
+- **hub_worker/init**: `--hub-url` + `--api-key` 동시 제공 시 자동으로 `--non-interactive` 활성화
+- **c5/worker**: `control:upgrade` 수신 시 `os.Exit(0)` → `os.Exit(1)` — systemd `Restart=on-failure` 트리거
+- **smoke_test**: `awk '{print $3}'` → `awk '{print $NF}'` (공백 수 변화에 안전)
+
+### 🧪 Tests
+- **hub_worker**: `TestBuildSystemdUnit_Sanitize` — double_quote/backslash/newline 3개 인젝션 케이스
+- **hub_worker**: `TestWorkerInstall_DryRun` — C5_API_KEY linux/darwin 양쪽 검증 추가
+
+---
+
 ## [v0.83.0] - 2026-03-09
 
 ### ✨ Features
