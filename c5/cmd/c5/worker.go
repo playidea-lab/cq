@@ -400,7 +400,16 @@ func executeJob(client *workerClient, job *model.Job, leaseID, workerID string, 
 	}
 
 	cmd := exec.CommandContext(ctx, "sh", "-c", command)
-	cmd.Dir = job.Workdir
+	// Use job workdir only if it exists on this machine; otherwise fall back
+	// to the worker's current directory (stateless worker may not have the
+	// submitter's local path).
+	if job.Workdir != "" {
+		if _, err := os.Stat(job.Workdir); err == nil {
+			cmd.Dir = job.Workdir
+		} else {
+			log.Printf("c5-worker: workdir %q not found, using current directory", job.Workdir)
+		}
+	}
 
 	// Env injection: inherit current env + job env vars.
 	// C4_PROJECT_ID is appended last to take priority over job.Env overrides.
