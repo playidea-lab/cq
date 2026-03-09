@@ -45,7 +45,7 @@ func initHub(ctx *initContext) error {
 
 	// API key resolution priority:
 	//  1. secrets store (~/.c4/secrets.db) — "hub.api_key" (AES-256-GCM encrypted)
-	//  2. env var (hubCfg.APIKeyEnv, e.g. C4_HUB_API_KEY) — handled by hub.NewClient
+	//  2. env var (hubCfg.APIKeyEnv, default C5_API_KEY; legacy C4_HUB_API_KEY fallback) — handled by hub.NewClient
 	//  3. config.yaml (hubCfg.APIKey) — plaintext, deprecated
 	apiKey := hubCfg.APIKey
 	if ctx.secretStore != nil {

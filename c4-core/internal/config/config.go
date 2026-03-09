@@ -501,7 +501,7 @@ func New(projectRoot string, cloudDefaults ...CloudDefaults) (*Manager, error) {
 	v.SetDefault("eventbus.ws_port", 0)
 	v.SetDefault("hub.enabled", false)
 	v.SetDefault("hub.url", "")
-	v.SetDefault("hub.api_key_env", "C4_HUB_API_KEY")
+	v.SetDefault("hub.api_key_env", "C5_API_KEY")
 	v.SetDefault("eventsink.enabled", false)
 	v.SetDefault("eventsink.port", 4141)
 	v.SetDefault("eventsink.token", "")

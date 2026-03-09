@@ -158,6 +158,29 @@ func TestNewClient_APIKeyEnv(t *testing.T) {
 	}
 }
 
+func TestNewClient_LegacyAPIKeyEnvFallback(t *testing.T) {
+	t.Setenv("C4_HUB_API_KEY", "legacy-key")
+	c := NewClient(HubConfig{
+		URL:       "http://localhost:8000",
+		APIKeyEnv: "C5_API_KEY", // primary env not set
+	})
+	if c.apiKey != "legacy-key" {
+		t.Errorf("apiKey = %q, want legacy-key (C4_HUB_API_KEY fallback)", c.apiKey)
+	}
+}
+
+func TestNewClient_PrimaryEnvOverridesLegacy(t *testing.T) {
+	t.Setenv("C5_API_KEY", "primary-key")
+	t.Setenv("C4_HUB_API_KEY", "legacy-key")
+	c := NewClient(HubConfig{
+		URL:       "http://localhost:8000",
+		APIKeyEnv: "C5_API_KEY",
+	})
+	if c.apiKey != "primary-key" {
+		t.Errorf("apiKey = %q, want primary-key (C5_API_KEY takes precedence)", c.apiKey)
+	}
+}
+
 // =========================================================================
 // setHeaders
 // =========================================================================

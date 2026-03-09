@@ -37,6 +37,12 @@ func NewClient(cfg HubConfig) *Client {
 			apiKey = v
 		}
 	}
+	// Legacy fallback: C4_HUB_API_KEY (deprecated, for backward compatibility)
+	if apiKey == "" {
+		if v := os.Getenv("C4_HUB_API_KEY"); v != "" {
+			apiKey = v
+		}
+	}
 	teamID := cfg.TeamID
 	if v := os.Getenv("C4_HUB_TEAM_ID"); v != "" {
 		teamID = v

@@ -507,15 +507,172 @@ func runWorkerStart(cmd *cobra.Command, args []string) error {
 		cmdArgs = append(cmdArgs, "--name", cfg.Name)
 	}
 
-	c := workerExecCommand(binary, cmdArgs...)
-	c.Stdout = os.Stdout
-	c.Stderr = os.Stderr
-
-	// Inject C5_API_KEY from config into subprocess env.
-	c.Env = append(os.Environ(), "C5_API_KEY="+cfg.APIKey)
+	isJWT := cfg.APIKey != "" && strings.Count(cfg.APIKey, ".") == 2
 
 	fmt.Printf("Starting: %s %s\n", binary, strings.Join(cmdArgs, " "))
-	return c.Run()
+
+	for {
+		c := workerExecCommand(binary, cmdArgs...)
+		c.Stdout = os.Stdout
+		c.Stderr = os.Stderr
+		c.Env = append(os.Environ(), "C5_API_KEY="+cfg.APIKey)
+
+		err := c.Run()
+		if err == nil {
+			return nil // clean exit
+		}
+
+		// JWT refresh: if using JWT and process exited with error,
+		// try refreshing the token before restarting.
+		if !isJWT {
+			return err // non-JWT: propagate error as-is
+		}
+
+		exitCode := -1
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			exitCode = exitErr.ExitCode()
+		}
+
+		fmt.Fprintf(os.Stderr, "cq: worker exited (code=%d), attempting JWT refresh...\n", exitCode)
+
+		newJWT := loadCloudSessionJWT()
+		if newJWT == "" || newJWT == cfg.APIKey {
+			// No new JWT available — try cloud session refresh
+			if refreshErr := refreshCloudSession(); refreshErr != nil {
+				fmt.Fprintf(os.Stderr, "cq: JWT refresh failed: %v\n", refreshErr)
+				return err
+			}
+			newJWT = loadCloudSessionJWT()
+			if newJWT == "" || newJWT == cfg.APIKey {
+				fmt.Fprintln(os.Stderr, "cq: JWT unchanged after refresh — giving up")
+				return err
+			}
+		}
+
+		cfg.APIKey = newJWT
+		fmt.Fprintln(os.Stderr, "cq: JWT refreshed — restarting worker")
+		time.Sleep(2 * time.Second) // brief backoff before restart
+	}
+}
+
+// refreshCloudSession attempts to refresh the cloud session using the refresh_token.
+// On success, session.json is updated with a new access_token.
+func refreshCloudSession() error {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("home dir: %w", err)
+	}
+	sessionPath := filepath.Join(home, ".c4", "session.json")
+	data, err := os.ReadFile(sessionPath)
+	if err != nil {
+		return fmt.Errorf("read session: %w", err)
+	}
+
+	var session struct {
+		AccessToken  string `json:"access_token"`
+		RefreshToken string `json:"refresh_token"`
+		ExpiresAt    int64  `json:"expires_at"`
+	}
+	if err := json.Unmarshal(data, &session); err != nil {
+		return fmt.Errorf("parse session: %w", err)
+	}
+	if session.RefreshToken == "" {
+		return fmt.Errorf("no refresh_token in session")
+	}
+
+	// Read Supabase URL from config for token refresh endpoint.
+	supabaseURL := os.Getenv("C4_CLOUD_URL")
+	if supabaseURL == "" {
+		supabaseURL = os.Getenv("SUPABASE_URL")
+	}
+	if supabaseURL == "" {
+		// Try reading from config.yaml
+		cfgPath := filepath.Join(home, ".c4", "config.yaml")
+		if cfgData, readErr := os.ReadFile(cfgPath); readErr == nil {
+			var cfgMap map[string]any
+			if yaml.Unmarshal(cfgData, &cfgMap) == nil {
+				if cloud, ok := cfgMap["cloud"].(map[string]any); ok {
+					if u, ok := cloud["url"].(string); ok {
+						supabaseURL = u
+					}
+				}
+			}
+		}
+	}
+	if supabaseURL == "" {
+		return fmt.Errorf("supabase URL not found (set C4_CLOUD_URL or cloud.url in config)")
+	}
+
+	anonKey := os.Getenv("C4_CLOUD_ANON_KEY")
+	if anonKey == "" {
+		anonKey = os.Getenv("SUPABASE_KEY")
+	}
+	if anonKey == "" {
+		cfgPath := filepath.Join(home, ".c4", "config.yaml")
+		if cfgData, readErr := os.ReadFile(cfgPath); readErr == nil {
+			var cfgMap map[string]any
+			if yaml.Unmarshal(cfgData, &cfgMap) == nil {
+				if cloud, ok := cfgMap["cloud"].(map[string]any); ok {
+					if k, ok := cloud["anon_key"].(string); ok {
+						anonKey = k
+					}
+				}
+			}
+		}
+	}
+
+	// Supabase GoTrue token refresh
+	refreshURL := strings.TrimRight(supabaseURL, "/") + "/auth/v1/token?grant_type=refresh_token"
+	body, _ := json.Marshal(map[string]string{"refresh_token": session.RefreshToken})
+
+	req, err := http.NewRequest("POST", refreshURL, strings.NewReader(string(body)))
+	if err != nil {
+		return fmt.Errorf("build refresh request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if anonKey != "" {
+		req.Header.Set("apikey", anonKey)
+	}
+
+	client := &http.Client{Timeout: 15 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("refresh request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("refresh failed (%d): %s", resp.StatusCode, string(respBody))
+	}
+
+	var newTokens struct {
+		AccessToken  string `json:"access_token"`
+		RefreshToken string `json:"refresh_token"`
+		ExpiresIn    int64  `json:"expires_in"`
+	}
+	if err := json.Unmarshal(respBody, &newTokens); err != nil {
+		return fmt.Errorf("parse refresh response: %w", err)
+	}
+
+	// Update session.json
+	updatedSession := map[string]any{
+		"access_token":  newTokens.AccessToken,
+		"refresh_token": newTokens.RefreshToken,
+		"expires_at":    time.Now().Unix() + newTokens.ExpiresIn,
+	}
+	updatedData, _ := json.MarshalIndent(updatedSession, "", "  ")
+	tmpPath := sessionPath + ".tmp"
+	if err := os.WriteFile(tmpPath, updatedData, 0o600); err != nil {
+		return fmt.Errorf("write session: %w", err)
+	}
+	if err := os.Rename(tmpPath, sessionPath); err != nil {
+		os.Remove(tmpPath)
+		return fmt.Errorf("install session: %w", err)
+	}
+
+	return nil
 }
 
 // loadCloudSessionJWT reads the cloud session JWT from ~/.c4/session.json.
