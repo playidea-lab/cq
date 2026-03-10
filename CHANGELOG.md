@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.95.0] - 2026-03-10
+
+### ✨ Features
+- **hub-edge**: `cq hub edge init --drive-url` / `--drive-api-key` 플래그 추가
+
+### 🐛 Bug Fixes
+- **edge-agent**: `collect` 액션이 Supabase Storage에 직접 업로드하도록 수정 (driveURL = Supabase 프로젝트 URL)
+  - 기존: 존재하지 않는 `POST /upload` multipart 엔드포인트 호출
+  - 수정: `POST /storage/v1/object/c4-drive/edges/{edgeID}/{filename}`
+
+---
+
 ## [v0.94.2] - 2026-03-10
 
 ### 🐛 Bug Fixes
