@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.94.6] - 2026-03-11
+
+### ✨ Features
+- **edge**: `exec` control action 추가 — Hub에서 엣지 디바이스에 임의 셸 명령 실행 (실시간 io.Pipe 스트리밍)
+- **edge**: `post_command` 출력을 CombinedOutput → 실시간 라인별 스트리밍으로 전환
+- **hub**: `cq hub job log <job-id> [--follow] [--offset N]` CLI 추가 — 워커 잡 로그 조회/스트리밍
+
+### 🐛 Bug Fixes
+- **edge**: exec action data race 수정 — `postErr` 공유 변수 → buffered channel
+- **edge**: `scanner.Err()` 미체크 수정 (exec, post_command 모두) — 64KB 초과 라인 silent truncation 방지
+- **hub**: `signal.NotifyContext` 적용 — goroutine leak 방지
+
+### 🔧 Chores
+- **infra**: Supabase Storage policy 추가 (00033) — `edges/` path 업로드/읽기 허용
+
+---
+
 ## [v0.96.2] - 2026-03-11
 
 ### 🐛 Bug Fixes
