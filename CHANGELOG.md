@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.96.2] - 2026-03-11
+
+### 🐛 Bug Fixes
+- **hub-worker**: `cq hub worker start` review 반영 — 독립 에러처리, URL 공백 검증, 테스트 격리 (d501ec19)
+
+---
+
 ## [v0.94.4] - 2026-03-11
 
 ### 🐛 Bug Fixes
