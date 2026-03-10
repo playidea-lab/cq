@@ -40,6 +40,7 @@ curl -fsSL https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/install.sh | s
 - **C0 Drive** — Supabase Storage 파일 스토리지
 - **C9 Knowledge** — 크로스 프로젝트 지식 공유를 위한 시맨틱 검색 + pgvector
 - **페르소나/Soul 진화** — 코딩 스타일 패턴 학습
+- **C6 Secret Central** — 암호화 시크릿 동기화 (Supabase 기반, cache-first)
 
 팀 또는 조직에서 제공하는 클라우드 설정이 필요합니다. 첫 사용 전 `~/.c4/config.yaml`에 위치시키세요.
 
@@ -86,6 +87,7 @@ curl -fsSL https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/install.sh | s
 | 페르소나/Soul 진화 | ✅ | ✅ | ✅ |
 | 스킬 헬스 파이프라인 | — | ✅ | ✅ |
 | 연구 루프 (c9-*) | — | — | ✅ |
+| C6 Secret Central | — | ✅ | ✅ |
 
 ## 설정 파일 위치
 

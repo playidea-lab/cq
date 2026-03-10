@@ -32,6 +32,7 @@ export default defineConfig({
                 { text: 'Quick Start', link: '/guide/quickstart' },
                 { text: 'Tiers', link: '/guide/tiers' },
                 { text: 'Remote Worker Setup', link: '/guide/worker-setup' },
+                { text: 'Researcher Workflow', link: '/guide/researcher-workflow' },
                 { text: 'C-Series Ecosystem', link: '/guide/ecosystem' },
               ]
             }
@@ -107,6 +108,7 @@ export default defineConfig({
                 { text: '빠른 시작', link: '/ko/guide/quickstart' },
                 { text: '티어', link: '/ko/guide/tiers' },
                 { text: '원격 워커 설정', link: '/ko/guide/worker-setup' },
+                { text: '연구자 워크플로우', link: '/ko/guide/researcher-workflow' },
                 { text: 'C 시리즈 생태계', link: '/ko/guide/ecosystem' },
               ]
             }

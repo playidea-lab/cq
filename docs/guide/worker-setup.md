@@ -1,10 +1,28 @@
 # Remote Worker Setup
 
+> See also: [Internal worker guide](https://github.com/aspect-build/cq/blob/main/docs/guide/worker.md) for comprehensive CLI/API/troubleshooting reference.
+
 Connect a GPU server (or any machine) to CQ Hub as a stateless job worker.
 
 ::: info full tier required
 Worker mode requires the `full` tier binary. [Install with `--tier full`](/guide/install#install-a-specific-tier).
 :::
+
+## Quick Start
+
+Connect a GPU server in 4 commands:
+
+```sh
+# On the GPU server:
+curl -fsSL https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/install.sh | sh -s -- --tier full
+cq auth login
+cq config set hub.url https://your-hub.fly.dev
+cq hub worker start
+```
+
+That's it. The server is now ready to accept jobs from `cq hub submit`.
+
+---
 
 ## How it works
 
@@ -67,6 +85,24 @@ export C5_API_KEY=YOUR_API_KEY
 ```
 
 ## Step 4 — Start the worker
+
+### Option A: `cq hub worker install` (recommended)
+
+Installs Docker, NVIDIA toolkit (if GPU present), and registers a systemd service automatically:
+
+```sh
+cq hub worker install
+```
+
+### Option B: `cq hub worker start`
+
+Start the worker in the foreground:
+
+```sh
+cq hub worker start
+```
+
+### Option C: `c5 worker` (direct)
 
 ```sh
 c5 worker
@@ -136,6 +172,28 @@ Workers built without version info (`version="unknown"`) bypass the gate to prev
 The worker never needs to know the project name or credentials ahead of time — everything arrives in the job payload.
 
 ---
+
+## Maintenance
+
+### Zombie Worker GC *(v0.91.0+)*
+
+Workers offline for 24+ hours are automatically cleaned up by the Hub. Manual pruning:
+
+```sh
+cq hub workers prune              # Remove zombie workers
+cq hub workers prune --dry-run    # Preview only
+cq hub workers                    # Active workers (default)
+cq hub workers --all              # Include offline/pruned
+```
+
+### Capability Fallback Chain *(v0.91.0+)*
+
+When executing a job, the worker resolves the command through a 3-step fallback:
+1. `capabilities/<name>` file on disk
+2. `caps.yaml` `command` field
+3. `C5_PARAMS.command` from the job payload
+
+With `command:` defined in `caps.yaml`, no capability file is needed.
 
 ## Submitting jobs from your laptop
 

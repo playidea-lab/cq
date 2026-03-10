@@ -55,6 +55,33 @@ Before planning, use `/pi` to brainstorm and refine your idea:
 
 `/pi` enters ideation mode — diverge, converge, research, debate. When ready, it automatically launches `/c4-plan`.
 
+## Step 1.7: Auto-configure with `cq doctor --fix`
+
+After initializing, run the doctor to verify and auto-fix common setup issues:
+
+```sh
+cq doctor --fix
+```
+
+This checks and automatically fixes:
+- `CLAUDE.md` / `AGENTS.md` presence and content
+- Hook installation (`.claude/hooks/c4-gate.sh`)
+- Python sidecar (`c4-bridge`) installation
+- MCP server configuration
+
+If everything is healthy, you'll see all green checks:
+
+```
+✓ CLAUDE.md         present
+✓ hooks             c4-gate.sh installed
+✓ sidecar           c4-bridge ready
+✓ mcp               cq registered
+```
+
+::: tip
+Run `cq doctor` (without `--fix`) to inspect without making changes.
+:::
+
 ## Step 2: Verify the connection
 
 In Claude Code, run:

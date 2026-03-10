@@ -45,6 +45,33 @@ cq auth login
 
 `solo` 티어는 이 단계를 건너뛰세요 — 로그인 불필요.
 
+## 1.7단계: `cq doctor --fix`로 자동 설정
+
+초기화 후 doctor를 실행하여 일반적인 설정 문제를 확인하고 자동으로 수정합니다:
+
+```sh
+cq doctor --fix
+```
+
+다음 항목을 확인하고 자동 수정합니다:
+- `CLAUDE.md` / `AGENTS.md` 존재 여부 및 내용
+- 훅 설치 (`.claude/hooks/c4-gate.sh`)
+- Python 사이드카 (`c4-bridge`) 설치
+- MCP 서버 설정
+
+모두 정상이면 초록색 체크가 표시됩니다:
+
+```
+✓ CLAUDE.md         present
+✓ hooks             c4-gate.sh installed
+✓ sidecar           c4-bridge ready
+✓ mcp               cq registered
+```
+
+::: tip
+`cq doctor` (--fix 없이)를 실행하면 변경 없이 점검만 합니다.
+:::
+
 ## 2단계: 연결 확인
 
 Claude Code에서 실행:

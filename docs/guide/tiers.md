@@ -40,6 +40,7 @@ Additional features on top of `solo`:
 - **C0 Drive** — file storage via Supabase Storage
 - **C9 Knowledge** — semantic search + pgvector for cross-project knowledge sharing
 - **Persona/Soul Evolution** — coding style pattern learning
+- **C6 Secret Central** — encrypted secret sync (Supabase-backed, cache-first)
 
 Requires a cloud config provided by your team or organization. Place it at `~/.c4/config.yaml` before first use.
 
@@ -86,6 +87,7 @@ Best for: production deployments, ML workflows, large teams.
 | Persona/Soul Evolution | ✅ | ✅ | ✅ |
 | Skill Health Pipeline | — | ✅ | ✅ |
 | Research Loop (c9-*) | — | — | ✅ |
+| C6 Secret Central | — | ✅ | ✅ |
 
 ## Config file location
 
