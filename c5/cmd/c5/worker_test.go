@@ -562,7 +562,7 @@ func TestExecuteJob_ProjectIDEnv(t *testing.T) {
 		http:    &http.Client{},
 	}
 
-	exitCode, _ := executeJob(client, job, "lease-1", "worker-1", 0)
+	exitCode, _ := executeJob(client, job, "lease-1", "worker-1", 0, &workerConfig{})
 	if exitCode != 0 {
 		t.Fatalf("executeJob() exit code = %d, want 0", exitCode)
 	}
@@ -602,7 +602,7 @@ func TestExecuteJob_ProjectIDEmpty(t *testing.T) {
 		http:    &http.Client{},
 	}
 
-	exitCode, _ := executeJob(client, job, "lease-2", "worker-1", 0)
+	exitCode, _ := executeJob(client, job, "lease-2", "worker-1", 0, &workerConfig{})
 	if exitCode != 0 {
 		t.Fatalf("executeJob() exit code = %d, want 0", exitCode)
 	}
@@ -756,7 +756,7 @@ func TestExecuteJob_OutputDirEnv(t *testing.T) {
 		http:    &http.Client{},
 	}
 
-	exitCode, _ := executeJob(client, job, "lease-1", "worker-1", 0)
+	exitCode, _ := executeJob(client, job, "lease-1", "worker-1", 0, &workerConfig{})
 	if exitCode != 0 {
 		t.Fatalf("executeJob() exit code = %d, want 0", exitCode)
 	}
@@ -962,7 +962,7 @@ func TestWorkerPipeline(t *testing.T) {
 				SnapshotVersionHash: tc.snapshotHash,
 			}
 
-			exitCode, _ := runWithDrivePipeline(customDrive, client, job, "lease-1", "worker-1", 0, tc.snapshotHash)
+			exitCode, _ := runWithDrivePipeline(customDrive, client, job, "lease-1", "worker-1", 0, tc.snapshotHash, &workerConfig{})
 
 			if exitCode != tc.wantExitCode {
 				t.Errorf("exit code = %d, want %d", exitCode, tc.wantExitCode)
@@ -1053,7 +1053,7 @@ func TestExecuteJob_ContainerMode(t *testing.T) {
 		http:    &http.Client{},
 	}
 
-	exitCode, _ := executeJob(client, job, "lease-1", "worker-1", 0)
+	exitCode, _ := executeJob(client, job, "lease-1", "worker-1", 0, &workerConfig{})
 	if exitCode != 0 {
 		t.Fatalf("executeJob() exit code = %d, want 0", exitCode)
 	}
@@ -1103,7 +1103,7 @@ func TestExecuteJob_ContainerModeRequirements(t *testing.T) {
 
 	// This will fail because pip is likely not available in test env,
 	// but that's expected. The key test is that it doesn't try to run docker.
-	exitCode, _ := executeJob(client, job, "lease-1", "worker-1", 0)
+	exitCode, _ := executeJob(client, job, "lease-1", "worker-1", 0, &workerConfig{})
 	// pip install will likely fail in test env → non-zero exit code expected
 	// The important thing is it didn't panic or try docker.
 	// If pip happens to be available, exit code could be 0.
@@ -1136,7 +1136,7 @@ func TestExecuteJob_ContainerModeOff(t *testing.T) {
 
 	// Without container mode, this should try docker (which will fail since
 	// the image doesn't exist or docker isn't available).
-	exitCode, _ := executeJob(client, job, "lease-1", "worker-1", 0)
+	exitCode, _ := executeJob(client, job, "lease-1", "worker-1", 0, &workerConfig{})
 	// Should fail because docker/image not available in test env.
 	if exitCode == 0 {
 		t.Log("docker run succeeded unexpectedly (docker available in test env)")

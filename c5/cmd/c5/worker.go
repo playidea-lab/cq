@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"crypto/sha256"
@@ -47,9 +48,22 @@ const (
 //	        config_path: {type: string}
 //	        epochs: {type: integer}
 //	    tags: [gpu, pytorch]
-// loadedCaps holds the capabilities loaded from caps.yaml at startup.
-// Used by executeJob to resolve capability commands as fallback.
-var loadedCaps []model.Capability
+// validRequirement matches a single pip package specifier (name with optional extras/version).
+// Rejects shell metacharacters (;|&$`\) to prevent injection via runtime.requirements.
+var validRequirement = regexp.MustCompile(`^[a-zA-Z0-9._\-\[\]<>=!,~]+$`)
+
+// validateRequirements splits a space-separated pip requirements string and
+// validates each token against validRequirement. Returns the sanitized string
+// and true if all tokens are valid, or ("", false) if any token is rejected.
+func validateRequirements(raw string) (string, bool) {
+	tokens := strings.Fields(raw)
+	for _, t := range tokens {
+		if !validRequirement.MatchString(t) {
+			return "", false
+		}
+	}
+	return strings.Join(tokens, " "), true
+}
 
 type capabilitiesYAML struct {
 	Capabilities []struct {
@@ -98,6 +112,7 @@ func workerCmd() *cobra.Command {
 		apiKey           string
 		capabilitiesFile string
 		noAutoDetect     bool
+		allowRunCommand  bool
 	)
 
 	cmd := &cobra.Command{
@@ -142,19 +157,17 @@ func workerCmd() *cobra.Command {
 				}
 				log.Printf("c5-worker: using auto-generated capabilities (%s)", strings.Join(capNames, ", "))
 			}
-			// Store caps for executeJob fallback resolution
-			loadedCaps = caps
-
 			return runWorker(workerConfig{
-				serverURL:    serverURL,
-				hostname:     hostname,
-				name:         workerName,
-				gpuCount:     gpuCount,
-				gpuModel:     gpuModel,
-				totalVRAM:    totalVRAM,
-				pollSec:      pollSec,
-				apiKey:       apiKey,
-				capabilities: caps,
+				serverURL:       serverURL,
+				hostname:        hostname,
+				name:            workerName,
+				gpuCount:        gpuCount,
+				gpuModel:        gpuModel,
+				totalVRAM:       totalVRAM,
+				pollSec:         pollSec,
+				apiKey:          apiKey,
+				capabilities:    caps,
+				allowRunCommand: allowRunCommand,
 			})
 		},
 	}
@@ -180,6 +193,7 @@ func workerCmd() *cobra.Command {
 	cmd.Flags().StringVar(&apiKey, "api-key", defaultAPIKey, "API key for authentication")
 	cmd.Flags().StringVar(&capabilitiesFile, "capabilities", "", "Path to capabilities YAML file")
 	cmd.Flags().BoolVar(&noAutoDetect, "no-auto-detect", false, "Disable GPU auto-detection and capability auto-generation")
+	cmd.Flags().BoolVar(&allowRunCommand, "allow-run-command", false, "Allow run_command capability (arbitrary shell execution from job params)")
 
 	cmd.AddCommand(workerInstallCmd())
 
@@ -187,16 +201,17 @@ func workerCmd() *cobra.Command {
 }
 
 type workerConfig struct {
-	serverURL    string
-	hostname     string
-	name         string
-	gpuCount     int
-	gpuModel     string
-	totalVRAM    float64
-	pollSec      int
-	apiKey       string
-	capabilities []model.Capability
-	drive        driveClient // optional; nil skips Drive pipeline
+	serverURL       string
+	hostname        string
+	name            string
+	gpuCount        int
+	gpuModel        string
+	totalVRAM       float64
+	pollSec         int
+	apiKey          string
+	capabilities    []model.Capability
+	allowRunCommand bool        // opt-in: allow run_command capability (arbitrary shell from params)
+	drive           driveClient // optional; nil skips Drive pipeline
 }
 
 // getWorkerVersion returns the cq version string for Hub registration.
@@ -322,9 +337,9 @@ func runWorker(cfg workerConfig) error {
 					}
 				}
 				if drive != nil && j.SnapshotVersionHash != "" {
-					exitCode, resultFile = runWithDrivePipeline(drive, client, j, leaseID, workerID, cfg.gpuCount, j.SnapshotVersionHash)
+					exitCode, resultFile = runWithDrivePipeline(drive, client, j, leaseID, workerID, cfg.gpuCount, j.SnapshotVersionHash, &cfg)
 				} else {
-					exitCode, resultFile = executeJob(client, j, leaseID, workerID, cfg.gpuCount)
+					exitCode, resultFile = executeJob(client, j, leaseID, workerID, cfg.gpuCount, &cfg)
 				}
 
 				// Upload output artifacts on success
@@ -364,7 +379,7 @@ func runWorker(cfg workerConfig) error {
 	}
 }
 
-func executeJob(client *workerClient, job *model.Job, leaseID, workerID string, gpuCount int) (int, string) {
+func executeJob(client *workerClient, job *model.Job, leaseID, workerID string, gpuCount int, wcfg *workerConfig) (int, string) {
 	// Set up context with optional timeout
 	ctx := context.Background()
 	var cancel context.CancelFunc
@@ -403,7 +418,7 @@ func executeJob(client *workerClient, job *model.Job, leaseID, workerID string, 
 			}
 			if !found {
 				// Fallback: check caps.yaml command field
-				for _, cap := range loadedCaps {
+				for _, cap := range wcfg.capabilities {
 					if cap.Name == capName && cap.Command != "" {
 						command = cap.Command
 						found = true
@@ -412,9 +427,14 @@ func executeJob(client *workerClient, job *model.Job, leaseID, workerID string, 
 					}
 				}
 			}
-			// Special case: run_command reads command from C5_PARAMS
+			// Special case: run_command reads command from C5_PARAMS.
+			// Requires --allow-run-command flag (opt-in) because it allows arbitrary shell execution.
 			if !found && capName == "run_command" && job.Params != nil {
-				if cmdVal, ok := job.Params["command"]; ok {
+				if !wcfg.allowRunCommand {
+					log.Printf("c5-worker: run_command rejected: --allow-run-command not set")
+					command = "true"
+					found = true
+				} else if cmdVal, ok := job.Params["command"]; ok {
 					if cmdStr, ok := cmdVal.(string); ok && cmdStr != "" {
 						command = cmdStr
 						found = true
@@ -473,7 +493,11 @@ func executeJob(client *workerClient, job *model.Job, leaseID, workerID string, 
 		// Install requirements via pip if specified, then run command.
 		shellCmd := command
 		if job.Runtime.Requirements != "" {
-			shellCmd = fmt.Sprintf("pip install --no-cache-dir %s && %s", job.Runtime.Requirements, command)
+			if reqs, ok := validateRequirements(job.Runtime.Requirements); ok {
+				shellCmd = fmt.Sprintf("pip install --no-cache-dir %s && %s", reqs, command)
+			} else {
+				log.Printf("c5-worker: job %s: invalid pip requirements rejected: %s", job.ID, job.Runtime.Requirements)
+			}
 		}
 		cmd = exec.CommandContext(ctx, "sh", "-c", shellCmd)
 		if job.Workdir != "" {
@@ -623,11 +647,15 @@ func buildDockerCmd(ctx context.Context, job *model.Job, command string, env []s
 	// Image
 	args = append(args, job.Runtime.Image)
 
-	// Command: if requirements specified, install first then run
+	// Command: if requirements specified, validate and install first then run
 	if job.Runtime != nil && job.Runtime.Requirements != "" {
-		// pip install inline packages then run the command
-		shellCmd := fmt.Sprintf("pip install --no-cache-dir %s && %s", job.Runtime.Requirements, command)
-		args = append(args, "sh", "-c", shellCmd)
+		if reqs, ok := validateRequirements(job.Runtime.Requirements); ok {
+			shellCmd := fmt.Sprintf("pip install --no-cache-dir %s && %s", reqs, command)
+			args = append(args, "sh", "-c", shellCmd)
+		} else {
+			log.Printf("c5-worker: job %s: invalid pip requirements rejected for Docker: %s", job.ID, job.Runtime.Requirements)
+			args = append(args, "sh", "-c", command)
+		}
 	} else {
 		args = append(args, "sh", "-c", command)
 	}
@@ -649,7 +677,9 @@ func buildDockerCmd(ctx context.Context, job *model.Job, command string, env []s
 	}
 
 	cmd := exec.CommandContext(ctx, dockerBin, args...)
-	cmd.Env = env
+	// Docker CLI needs host env (PATH, HOME, DOCKER_HOST) but container env
+	// is isolated via -e flags above — no host env leaks into the container.
+	cmd.Env = os.Environ()
 	return cmd
 }
 
@@ -708,7 +738,9 @@ func downloadSingleArtifact(httpClient *http.Client, url, artifactPath, localPat
 		resp.Body.Close()
 		return fmt.Errorf("create file %s: %w", localPath, err)
 	}
-	_, copyErr := io.Copy(f, resp.Body)
+	// Limit download to 10GB to prevent unbounded memory/disk usage.
+	const maxArtifactSize = 10 << 30 // 10 GB
+	_, copyErr := io.Copy(f, io.LimitReader(resp.Body, maxArtifactSize))
 	resp.Body.Close()
 	f.Close()
 	if copyErr != nil {
@@ -909,27 +941,22 @@ func (mc *metricsCollector) close() {
 }
 
 func streamLogs(client *workerClient, jobID string, r io.Reader, stream string, mc *metricsCollector) {
-	buf := make([]byte, 4096)
-	for {
-		n, err := r.Read(buf)
-		if n > 0 {
-			lines := strings.Split(strings.TrimRight(string(buf[:n]), "\n"), "\n")
-			for _, line := range lines {
-				if line != "" {
-					client.appendLog(jobID, line, stream)
-					// Parse metrics from stdout only
-					if stream == "stdout" && mc != nil {
-						mc.parseLine(line)
-					}
-				}
-			}
+	defer func() {
+		if mc != nil && stream == "stdout" {
+			mc.close()
 		}
-		if err != nil {
-			// Stop timer and flush remaining metrics on stream close
-			if mc != nil && stream == "stdout" {
-				mc.close()
-			}
-			return
+	}()
+
+	scanner := bufio.NewScanner(r)
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024) // up to 1MB per line
+	for scanner.Scan() {
+		line := scanner.Text()
+		if line == "" {
+			continue
+		}
+		client.appendLog(jobID, line, stream)
+		if stream == "stdout" && mc != nil {
+			mc.parseLine(line)
 		}
 	}
 }
@@ -1026,7 +1053,7 @@ type cqArtifact struct {
 }
 
 // parseCQYAML reads and parses cq.yaml from dir.
-// Returns nil, nil if the file does not exist (hwardward-compat).
+// Returns nil, nil if the file does not exist (backward-compat).
 func parseCQYAML(dir string) (*cqYAML, error) {
 	data, err := os.ReadFile(filepath.Join(dir, "cq.yaml"))
 	if err != nil {
@@ -1051,9 +1078,9 @@ func parseCQYAML(dir string) (*cqYAML, error) {
 //  5. Push output artifacts
 //
 // If snapshotHash is empty the function falls back to plain executeJob.
-func runWithDrivePipeline(drive driveClient, client *workerClient, job *model.Job, leaseID, workerID string, gpuCount int, snapshotHash string) (int, string) {
+func runWithDrivePipeline(drive driveClient, client *workerClient, job *model.Job, leaseID, workerID string, gpuCount int, snapshotHash string, wcfg *workerConfig) (int, string) {
 	if snapshotHash == "" {
-		return executeJob(client, job, leaseID, workerID, gpuCount)
+		return executeJob(client, job, leaseID, workerID, gpuCount, wcfg)
 	}
 
 	// Step 1: Pull snapshot
@@ -1083,7 +1110,11 @@ func runWithDrivePipeline(drive driveClient, client *workerClient, job *model.Jo
 	// Step 3: Pull input artifacts
 	if cfg != nil {
 		for _, art := range cfg.Artifacts.Input {
-			destPath := filepath.Join(jobDir, art.Path)
+			destPath := filepath.Clean(filepath.Join(jobDir, art.Path))
+			if !strings.HasPrefix(destPath, jobDir) {
+				log.Printf("c5-worker: pipeline: path traversal in input artifact %s: %s", art.Name, art.Path)
+				return 1, ""
+			}
 			if err := os.MkdirAll(destPath, 0755); err != nil {
 				log.Printf("c5-worker: pipeline: mkdir for input artifact %s: %v", art.Name, err)
 				return 1, ""
@@ -1110,12 +1141,17 @@ func runWithDrivePipeline(drive driveClient, client *workerClient, job *model.Jo
 	}
 	job.Workdir = jobDir
 
-	exitCode, resultFile := executeJob(client, job, leaseID, workerID, gpuCount)
+	exitCode, resultFile := executeJob(client, job, leaseID, workerID, gpuCount, wcfg)
 
 	// Step 5: Push output artifacts (only on success)
 	if exitCode == 0 && cfg != nil {
 		for _, art := range cfg.Artifacts.Output {
-			localPath := filepath.Join(jobDir, art.Path)
+			localPath := filepath.Clean(filepath.Join(jobDir, art.Path))
+			if !strings.HasPrefix(localPath, jobDir) {
+				log.Printf("c5-worker: pipeline: path traversal in output artifact %s: %s", art.Name, art.Path)
+				exitCode = 1
+				continue
+			}
 			log.Printf("c5-worker: pipeline: uploading output artifact %s ← %s", art.Name, localPath)
 			if err := drive.Upload(localPath, art.Name); err != nil {
 				log.Printf("c5-worker: pipeline: output artifact upload failed %s: %v", art.Name, err)
