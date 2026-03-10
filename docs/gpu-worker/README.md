@@ -1,3 +1,5 @@
+> **Deprecated**: 이 문서는 [docs/guide/worker.md](../guide/worker.md)로 통합되었습니다.
+
 # GPU Worker — C5 Hub 연결 가이드
 
 GPU 서버를 C5 Hub 워커로 연결합니다. 1-tier Docker 모델로 동작: 워커가 호스트에서 실행되며, `runtime.image`가 설정된 잡은 `docker run`으로 컨테이너 실행합니다 (DinD 불필요).

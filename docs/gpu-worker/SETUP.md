@@ -1,3 +1,5 @@
+> **Deprecated**: This document has been consolidated into [docs/guide/worker.md](../guide/worker.md).
+
 # GPU Worker Setup Guide
 
 Connect a remote GPU server to the C5 Hub using `cq` in 5 steps.

@@ -583,39 +583,18 @@ cq tool c4_status --json
 ---
 
 ## C5 Hub (c5/) → [docs/ARCHITECTURE.md#c5-hub-c5](docs/ARCHITECTURE.md)
-주요: Capability Broker + Worker Pull 모델, Lease 기반.
-- `POST /v1/mcp` — MCP Streamable HTTP (JSON-RPC 2.0): Claude Code에서 `.mcp.json`으로 직접 연결 가능
-- `GET /v1/capabilities` — 등록된 capability 목록 (타입, schema, online 워커 수)
-- `POST /v1/capabilities/invoke` — capability 잡 생성
-- 워커: `c5 worker --capabilities caps.yaml` — capability YAML로 자기 선언; `C5_PARAMS`/`C5_RESULT_FILE` env로 파라미터/결과 교환
-- **1-Tier Docker Worker**: 워커 자체가 컨테이너로 실행되며, 잡을 서브프로세스로 실행 (DinD 불필요). capability에 `runtime.image`가 설정되면 `docker run`으로 잡을 실행하고, 미설정 시 호스트에서 직접 실행
-- **Scoped API Key**: 키 접두사로 접근 범위를 제한
-  - `sk-user-*` — 잡 제출/조회 전용 (submit, query, capabilities)
-  - `sk-worker-*` — 잡 폴링/완료 보고 전용 (poll, heartbeat, register)
-  - 접두사 없음 — 전체 접근 (하위 호환)
-- **Stateless Worker**: Hub가 잡 payload에 `project_id` 포함 → 워커가 자식 프로세스에 `C4_PROJECT_ID` env 주입 (로컬 config.yaml 불필요)
-- **JWT Auth Fallback**: `C5_JWT_SECRET` (또는 `SUPABASE_JWT_SECRET`) 설정 시 Hub가 HS256 JWT 토큰을 API key 대안으로 수락. `cq hub worker start`는 API key 미설정 시 `~/.c4/session.json`의 cloud JWT를 자동 주입
-- **Version Gate**: `C5_MIN_VERSION` env 설정 시 구버전 워커에 `control: {action:"upgrade"}` 반환 → 워커가 `cq upgrade` 후 재시작 (version="" 또는 "unknown"은 bypass)
-- **Zombie Worker GC**: 24시간 이상 offline 워커를 `worker_history` 테이블로 이동 후 삭제. Hub lease expiry 루프에서 1시간 간격 자동 실행. `cq hub workers prune [--dry-run]` CLI 제공. `cq hub workers`는 기본 active-only 표시 (`--all`로 전체)
-- **Capability Fallback**: 잡 실행 시 `capabilities/<name>` 파일 → caps.yaml `command` 필드 → `C5_PARAMS.command` (run_command) 3단계 폴백. caps.yaml에 `command:` 정의하면 파일 없이 실행 가능
-- **cq hub submit**: 현재 폴더를 Drive CAS로 스냅샷 업로드 후 Hub 잡 등록 (Git 불필요, CAS 자동 dedup)
-  ```bash
-  cq hub submit [--run "python train.py"] [--project myproj]
-  # --run 생략 시 cq.yaml의 run 필드 사용
-  ```
-- **cq.yaml**: 실험 디렉토리 루트에 위치, 아티팩트 선언 (train.py에 CQ 코드 불필요)
-  ```yaml
-  run: python train.py
-  artifacts:
-    input:
-      - name: mnist_mini       # Drive dataset 이름
-        local_path: data/mnist
-    output:
-      - name: model-checkpoint
-        local_path: checkpoints/
-  ```
-- **Drive CAS Pipeline (워커)**: snapshot pull → cq.yaml 파싱 → input artifacts pull → 실행 → output push
-- **project 자동감지**: `C4_PROJECT_ID` env → config `active_project_id` → 디렉토리명 매칭 → 단일 프로젝트 자동선택 (프로젝트명 명시 불필요)
+주요: Capability Broker + Worker Pull 모델, Lease 기반. → **Full guide: [docs/guide/worker.md](docs/guide/worker.md)**
+- API: `POST /v1/mcp` (MCP Streamable HTTP), `GET /v1/capabilities`, `POST /v1/capabilities/invoke`
+- 워커: `cq hub worker start` (권장) 또는 `c5 worker --capabilities caps.yaml`
+- **1-Tier Docker Worker**: 호스트에서 실행, `runtime.image` 설정 시 `docker run`으로 잡 실행 (DinD 불필요)
+- **Scoped API Key**: `sk-user-*` (제출/조회), `sk-worker-*` (폴링/보고), 접두사 없음 (전체)
+- **Stateless Worker**: 잡 payload에 `project_id` 포함 → `C4_PROJECT_ID` env 자동 주입
+- **JWT Auth**: `cq auth login` → API key 없이 JWT 자동 사용
+- **Version Gate**: `C5_MIN_VERSION` → 구버전 워커 자동 upgrade
+- **Zombie Worker GC**: 24h+ offline → 자동 삭제, `cq hub workers prune [--dry-run]`
+- **Capability Fallback**: `capabilities/<name>` 파일 → caps.yaml `command` → `C5_PARAMS.command` 3단계
+- **cq hub submit**: Drive CAS 스냅샷 → Hub 잡 등록 (Git 불필요)
+- **project 자동감지**: `C4_PROJECT_ID` env → config → 디렉토리명 → 단일 프로젝트 자동선택
 - `hub.enabled: true` + `hub.url` 설정 후 `c4_hub_submit`으로 잡 제출.
 
 ### cq serve 통합
@@ -663,54 +642,4 @@ serve:
 
 ### GPU Worker 연결
 
-GPU 머신을 C5 Hub에 워커로 연결하여 AI 학습·추론 잡을 실행하는 가이드.
-
-**Docker 기반 설치 (권장)**
-```bash
-# 1. cq 설치
-curl -fsSL https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/install.sh | bash
-
-# 2. 워커 서비스 설치 (Docker + NVIDIA toolkit 자동 설치 포함)
-cq hub worker install
-# → Docker 미설치 시 자동 설치
-# → NVIDIA Container Toolkit 자동 설치
-# → systemd 서비스 등록 + 자동 시작
-```
-
-`cq hub worker install`은 Docker, NVIDIA Container Toolkit, systemd 서비스를 한 번에 설치합니다.
-워커는 1-tier 모델로 동작: 워커 자체가 호스트에서 실행되며 `runtime.image`가 설정된 잡은 `docker run`으로 컨테이너 실행합니다.
-
-**수동 설치 (Docker Compose)**
-```bash
-# docs/gpu-worker/ 다운로드
-curl -sSL https://github.com/PlayIdea-Lab/cq/releases/latest/download/gpu-worker.tar.gz | tar xz
-
-# .env 파일에 credentials 설정
-echo "C5_HUB_URL=https://<hub-host>:8585" > .env
-echo "C5_API_KEY=sk-worker-<your-key>" >> .env
-
-# Docker Compose로 실행
-docker compose up -d
-```
-
-**Scoped API Key 사용**
-```bash
-# 워커용 키 (폴링/보고만 가능, 잡 제출 불가)
-export C5_API_KEY="sk-worker-<your-key>"
-
-# 사용자용 키 (잡 제출/조회만 가능)
-export C5_API_KEY="sk-user-<your-key>"
-```
-
-**Claude Code .mcp.json 연결 예시**
-```json
-{
-  "mcpServers": {
-    "gpu-worker": {
-      "type": "http",
-      "url": "http://<hub-host>:8585/v1/mcp",
-      "headers": { "X-API-Key": "sk-user-<your-key>" }
-    }
-  }
-}
-```
+→ **Full guide: [docs/guide/worker.md](docs/guide/worker.md)** — 설치, 인증, capability, systemd, 트러블슈팅 포함.
