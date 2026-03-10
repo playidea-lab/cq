@@ -524,7 +524,12 @@ func ensureDockerRuntime() error {
 			cmd := exec.Command("sudo", "usermod", "-aG", "docker", u)
 			cmd.Stdout = os.Stdout
 			cmd.Stderr = os.Stderr
-			_ = cmd.Run()
+			if err := cmd.Run(); err != nil {
+				fmt.Printf("WARNING: failed to add user to docker group: %v\n", err)
+				fmt.Println("  Run manually: sudo usermod -aG docker $USER")
+			} else {
+				fmt.Println("NOTE: Run 'newgrp docker' or re-login for group change to take effect.")
+			}
 		}
 	}
 
