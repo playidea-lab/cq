@@ -25,6 +25,26 @@ ls .c9/experiments/ # 제출할 실험 파일 목록
 4. 모두 DONE/FAILED → `.c9/rounds/rN/results.txt` 저장
 5. state.yaml phase → CHECK
 
+### Step 2.5: 실험 제출 알림 (c9-run.sh 완료 직후 — MUST CALL)
+```python
+# 실험 제출 후 알림 (미설정 시 no-op)
+mcp__cq__c4_notify(
+    message='[C9] 🧪 실험 제출 — Round {round}, {n_jobs}개 잡',
+    title='C9 Experiment Submit',
+    event='experiment.submit'
+)
+```
+
+### Step 2.7: 실험 완료 알림 (폴링 완료 후 — MUST CALL)
+```python
+# 모든 잡 DONE/FAILED 후 알림 (미설정 시 no-op)
+mcp__cq__c4_notify(
+    message='[C9] ✅ 실험 완료 — Round {round}, {done}개 성공 / {failed}개 실패',
+    title='C9 Experiment Complete',
+    event='experiment.complete'
+)
+```
+
 ### Step 3: 제출 현황 보고
 ```
 ## C9 Run — Round N

@@ -27,6 +27,11 @@ description: |
 
 유저에게 "지금 ideation 모드입니다 — 아이디어 결정(結晶)을 시작합니다"라고 명시적으로 알린다.
 
+알림 발송 (미설정 시 no-op):
+```python
+mcp__cq__c4_notify(message='[CQ] 💡 Ideation 시작: {seed_summary}', title='Play Idea', event='pi.start')
+```
+
 ---
 
 ## 철학

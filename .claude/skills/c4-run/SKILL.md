@@ -310,6 +310,13 @@ for i in range(worker_count):
     workers.append({"id": worker_id, "output": result.output_file, "model": model})
     print(f"🚀 Worker {i+1}/{worker_count} spawned: {worker_id} [{model}]")
 
+# Worker spawn 알림 (미설정 시 no-op)
+mcp__cq__c4_notify(
+    message=f'[CQ] 🚀 Worker {worker_count}개 스폰 (impl={impl_spawned}, review={review_spawned})',
+    title='C4 Worker Spawn',
+    event='worker.spawn'
+)
+
 print(f"""
 🐝 C4 Run: {worker_count} workers spawned (background)
 
@@ -346,6 +353,11 @@ Ctrl+C to interrupt.
 
         # Completion conditions
         if status["status"] == "COMPLETE":
+            mcp__cq__c4_notify(
+                message='[CQ] ✅ 모든 태스크 완료 — /c4-finish로 마무리',
+                title='C4 Workers Complete',
+                event='worker.complete'
+            )
             print("🎉 All tasks complete!")
             break
 
