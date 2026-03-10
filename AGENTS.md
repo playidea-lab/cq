@@ -658,9 +658,19 @@ cq hub edge install --dry-run # 파일 미리보기
 ```
 
 **주요 동작**:
+- `cq auth login` 후 `cq hub edge start` 만으로 자동 연결 (builtinHubURL + JWT)
 - 바이너리 해석 순서: PATH(`c5`) → `$C5_BIN` env → `~/.c5/edge.yaml` `binary` 필드
 - `C5_HUB_URL` + `C5_API_KEY` env 설정 시 config 없어도 자동 init
 - `C5_API_KEY` / `C5_DRIVE_API_KEY` — env var로 전달 (ps 노출 방지)
+
+**엣지 제어**:
+```bash
+cq hub edge list                               # 등록된 엣지 목록
+cq hub edge control <edge-id> collect          # 메트릭 수집 요청
+cq hub edge control <edge-id> restart          # 에이전트 재시작
+cq hub edge control <edge-id> stop             # 에이전트 종료
+cq hub edge control <edge-id> update           # 아티팩트 업데이트
+```
 
 ### GPU Worker 연결
 

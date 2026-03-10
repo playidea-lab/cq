@@ -113,6 +113,24 @@ var hubEdgeListCmd = &cobra.Command{
 	RunE:  runHubEdgeList,
 }
 
+var hubEdgeControlCmd = &cobra.Command{
+	Use:   "control <edge-id> <action>",
+	Short: "Send a control message to an edge device",
+	Long: `Send a control message to a registered edge device.
+
+Actions:
+  collect   - Collect and report system metrics
+  restart   - Restart the edge agent process
+  stop      - Stop the edge agent gracefully
+  update    - Pull latest model artifacts
+
+Example:
+  cq hub edge control edge-123 collect
+  cq hub edge control edge-123 restart`,
+	Args: cobra.ExactArgs(2),
+	RunE: runHubEdgeControl,
+}
+
 var hubWorkersCmd = &cobra.Command{
 	Use:   "workers",
 	Short: "List registered Hub workers",
@@ -170,6 +188,7 @@ func init() {
 
 	hubEdgeCmd.AddCommand(hubEdgeRegisterCmd)
 	hubEdgeCmd.AddCommand(hubEdgeListCmd)
+	hubEdgeCmd.AddCommand(hubEdgeControlCmd)
 
 	hubCmd.AddCommand(hubStatusCmd)
 	hubCmd.AddCommand(hubRegisterCmd)
@@ -209,17 +228,25 @@ func newHubClient() (*hub.Client, error) {
 		return nil, fmt.Errorf("hub is not enabled in .c4/config.yaml\n\nAdd:\n  hub:\n    enabled: true\n    url: \"http://<hub-ip>:8000\"")
 	}
 
+	// JWT fallback: if no API key configured, try cloud session JWT (cq auth login).
+	apiKey := hubCfg.APIKey
+	if apiKey == "" {
+		if jwt := loadCloudSessionJWT(); jwt != "" {
+			apiKey = jwt
+		}
+	}
+
 	client := hub.NewClient(hub.HubConfig{
 		Enabled:   hubCfg.Enabled,
 		URL:       hubCfg.URL,
 		APIPrefix: hubCfg.APIPrefix,
-		APIKey:    hubCfg.APIKey,
+		APIKey:    apiKey,
 		APIKeyEnv: hubCfg.APIKeyEnv,
 		TeamID:    hubCfg.TeamID,
 	})
 
 	if !client.IsAvailable() {
-		return nil, fmt.Errorf("hub API key not configured. Set %s environment variable or hub.api_key in config", hubCfg.APIKeyEnv)
+		return nil, fmt.Errorf("hub API key not configured. Run 'cq auth login' or set %s environment variable or hub.api_key in config", hubCfg.APIKeyEnv)
 	}
 
 	return client, nil
@@ -688,6 +715,29 @@ func runHubEdgeList(cmd *cobra.Command, args []string) error {
 			e.ID, e.Name, e.Status, arch, runtime, tags)
 	}
 	w.Flush()
+	return nil
+}
+
+// =========================================================================
+// cq hub edge control
+// =========================================================================
+
+func runHubEdgeControl(cmd *cobra.Command, args []string) error {
+	edgeID := args[0]
+	action := args[1]
+
+	client, err := newHubClient()
+	if err != nil {
+		return err
+	}
+
+	resp, err := client.EdgeControl(edgeID, &hub.EdgeControlRequest{Action: action})
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("Control message sent: %s\n", resp.MessageID)
+	fmt.Printf("Status: %s\n", resp.Status)
 	return nil
 }
 
