@@ -45,6 +45,8 @@ type edgeYAML struct {
 var (
 	edgeInitHubURL         string
 	edgeInitAPIKey         string
+	edgeInitDriveURL       string
+	edgeInitDriveAPIKey    string
 	edgeInitNonInteractive bool
 	edgeInstallDryRun      bool
 	edgeInstallUser        bool
@@ -102,6 +104,8 @@ Example:
 func init() {
 	hubEdgeInitCmd.Flags().StringVar(&edgeInitHubURL, "hub-url", "", "Hub URL (non-interactive mode)")
 	hubEdgeInitCmd.Flags().StringVar(&edgeInitAPIKey, "api-key", "", "API key (non-interactive mode)")
+	hubEdgeInitCmd.Flags().StringVar(&edgeInitDriveURL, "drive-url", "", "Supabase project URL for collect action uploads")
+	hubEdgeInitCmd.Flags().StringVar(&edgeInitDriveAPIKey, "drive-api-key", "", "API key for Drive uploads (JWT or anon key)")
 	hubEdgeInitCmd.Flags().BoolVar(&edgeInitNonInteractive, "non-interactive", false, "Skip prompts; use --hub-url and --api-key flags")
 
 	hubEdgeInstallCmd.Flags().BoolVar(&edgeInstallDryRun, "dry-run", false, "Print service file to stdout without writing")
@@ -149,6 +153,15 @@ func runEdgeInit(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	driveURL := existing.DriveURL
+	if edgeInitDriveURL != "" {
+		driveURL = edgeInitDriveURL
+	}
+	driveAPIKey := existing.DriveAPIKey
+	if edgeInitDriveAPIKey != "" {
+		driveAPIKey = edgeInitDriveAPIKey
+	}
+
 	cfg := edgeYAML{
 		HubURL:          hubURL,
 		APIKey:          apiKey,
@@ -156,8 +169,8 @@ func runEdgeInit(cmd *cobra.Command, args []string) error {
 		Workdir:         existing.Workdir,
 		MetricsCommand:  existing.MetricsCommand,
 		MetricsInterval: existing.MetricsInterval,
-		DriveURL:        existing.DriveURL,
-		DriveAPIKey:     existing.DriveAPIKey,
+		DriveURL:        driveURL,
+		DriveAPIKey:     driveAPIKey,
 	}
 
 	if err := os.MkdirAll(filepath.Dir(cfgPath), 0o700); err != nil {

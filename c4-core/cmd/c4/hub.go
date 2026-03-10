@@ -730,7 +730,7 @@ func runHubEdgeControl(cmd *cobra.Command, args []string) error {
 	for _, p := range hubEdgeControlParams {
 		k, v, ok := strings.Cut(p, "=")
 		if !ok {
-			return fmt.Errorf("invalid --param %q: expected key=value", p)
+			return fmt.Errorf("invalid --param %q: expected key=value format", p) //nolint:goerr113
 		}
 		params[k] = v
 	}

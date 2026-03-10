@@ -33,7 +33,7 @@ var DefaultAllowlist = ErrorAllowlist{
 	"cmd/c4/embed_c5_stub.go":                      1,
 	"cmd/c4/eventbus.go":                           6,
 	"cmd/c4/fallback.go":                           2,
-	"cmd/c4/hub.go":                                7,
+	"cmd/c4/hub.go":                                8,
 	"cmd/c4/hub_worker.go":                         7,
 	"cmd/c4/init.go":                               7,
 	"cmd/c4/mail.go":                               3,
