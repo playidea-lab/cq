@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.96.0] - 2026-03-11
+
+### ✨ Features
+- **hub-edge**: `cq hub edge start` Drive 자동 설정 — `cq auth login` 하나로 충분
+  - driveURL: `edge.yaml` > `cloud.url` (config.yaml) 순 자동 폴백
+  - driveKey: `edge.yaml` > cloud session JWT 순 자동 폴백
+  - `--drive-url`, `--drive-api-key` 플래그는 파워유저용으로 유지
+
+---
+
 ## [v0.95.0] - 2026-03-10
 
 ### ✨ Features
