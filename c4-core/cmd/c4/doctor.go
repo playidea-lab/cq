@@ -505,6 +505,7 @@ func checkHub() checkResult {
 		Name:    "C5 Hub",
 		Status:  checkWarn,
 		Message: fmt.Sprintf("hub returned HTTP %d at %s", resp.StatusCode, url),
+		Fix:     "cq auth login --device",
 	}
 }
 
@@ -685,6 +686,21 @@ func tryFix(r *checkResult) string {
 		r.Status = checkOK
 		r.Fix = ""
 		return ".mcp.json generated"
+	case "C5 Hub":
+		cqBin, err := os.Executable()
+		if err != nil {
+			return ""
+		}
+		cmd := exec.Command(cqBin, "auth", "login", "--device")
+		cmd.Stdin = os.Stdin
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		if err := cmd.Run(); err != nil {
+			return ""
+		}
+		r.Status = checkOK
+		r.Fix = ""
+		return "authenticated"
 	case "tool-socket":
 		sockPath := filepath.Join(projectDir, ".c4", "tool.sock")
 		if os.Remove(sockPath) == nil {
