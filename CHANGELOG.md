@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.93.0] - 2026-03-10
+
+### ✨ Features
+- **cli**: `cq hub edge init/start/install` — edge agent를 worker start와 동일한 UX로 시작. `~/.c5/edge.yaml` 설정, systemd/launchd 서비스 자동 생성
+- **c5/store**: `MarkStaleWorkers` — `busy` 상태 zombie 워커도 stale 처리 (heartbeat 미전송 시)
+
+### 🔒 Security
+- **hub-edge**: `DriveAPIKey`를 CLI 플래그 대신 `C5_DRIVE_API_KEY` env var로 전달 (ps 노출 방지)
+- **hub-edge**: systemd `Environment=` / launchd `EnvironmentVariables` 블록에 `C5_DRIVE_API_KEY` 포함
+
+### 🧪 Tests
+- `hub_edge_start_test.go` — 8개 테스트 (init 멱등성, 플래그 검증, dry-run, Cmd.Env 캡처, env auto-init)
+- `TestMarkStaleWorkersBusy` — zombie busy worker GC 검증
+
+---
+
 ## [v0.91.0] - 2026-03-10
 
 ### ✨ Features
