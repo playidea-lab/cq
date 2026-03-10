@@ -11,6 +11,7 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/changmin/c4-core/internal/config"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 )
@@ -278,8 +279,29 @@ func runEdgeStart(cmd *cobra.Command, args []string) error {
 	if cfg.MetricsInterval > 0 {
 		cmdArgs = append(cmdArgs, "--metrics-interval", fmt.Sprintf("%d", cfg.MetricsInterval))
 	}
-	if cfg.DriveURL != "" {
-		cmdArgs = append(cmdArgs, "--drive-url", cfg.DriveURL)
+	// Drive auto-resolve: edge.yaml > cloud.url (config.yaml) > nothing.
+	// driveKey: edge.yaml > JWT (already used for Hub auth).
+	// Users only need `cq auth login` — no separate Drive setup required.
+	driveURL := cfg.DriveURL
+	driveKey := cfg.DriveAPIKey
+	if driveURL == "" {
+		if cfgMgr, err := config.New(projectDir, config.CloudDefaults{
+			URL:     builtinSupabaseURL,
+			AnonKey: builtinSupabaseKey,
+		}); err == nil {
+			if cloudURL := cfgMgr.GetConfig().Cloud.URL; cloudURL != "" {
+				driveURL = cloudURL
+			}
+		}
+	}
+	if driveKey == "" {
+		if jwt := loadCloudSessionJWT(); jwt != "" {
+			driveKey = jwt
+		}
+	}
+
+	if driveURL != "" {
+		cmdArgs = append(cmdArgs, "--drive-url", driveURL)
 	}
 	// DriveAPIKey is passed via C5_DRIVE_API_KEY env var (not CLI arg) to avoid
 	// ps-visible exposure. c5 edge-agent reads it from env as a fallback.
@@ -293,8 +315,8 @@ func runEdgeStart(cmd *cobra.Command, args []string) error {
 	if cfg.APIKey != "" {
 		env = append(env, "C5_API_KEY="+cfg.APIKey)
 	}
-	if cfg.DriveAPIKey != "" {
-		env = append(env, "C5_DRIVE_API_KEY="+cfg.DriveAPIKey)
+	if driveKey != "" {
+		env = append(env, "C5_DRIVE_API_KEY="+driveKey)
 	}
 	c.Env = env
 	return c.Run()
