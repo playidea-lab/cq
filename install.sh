@@ -185,7 +185,7 @@ install_python_sidecar
 
 if [ -x "${INSTALL_DIR}/cq" ]; then
   echo ""
-  "${INSTALL_DIR}/cq" doctor || true
+  "${INSTALL_DIR}/cq" doctor --fix || true
 fi
 
 echo ""
