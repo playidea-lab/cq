@@ -675,7 +675,16 @@ func tryFix(r *checkResult) string {
 		if err := setupProjectHooks(projectDir); err != nil {
 			return ""
 		}
+		r.Status = checkOK
+		r.Fix = ""
 		return "hook updated"
+	case ".mcp.json":
+		if err := setupMCPConfig(projectDir); err != nil {
+			return ""
+		}
+		r.Status = checkOK
+		r.Fix = ""
+		return ".mcp.json generated"
 	case "tool-socket":
 		sockPath := filepath.Join(projectDir, ".c4", "tool.sock")
 		if os.Remove(sockPath) == nil {
