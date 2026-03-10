@@ -1,6 +1,7 @@
 package edgeagent
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -9,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -121,6 +123,22 @@ func (c *ControlPoller) handle(ctx context.Context, msg *model.EdgeControlMessag
 			log.Printf("edge-agent: collect upload failed: %v", err)
 		} else {
 			log.Printf("edge-agent: collect uploaded %s to Drive", localPath)
+		}
+	case "exec":
+		cmd := msg.Params["cmd"]
+		if cmd == "" {
+			log.Printf("edge-agent: exec action missing cmd param")
+			return
+		}
+		timeout := 60 * time.Second
+		execCtx, cancel := context.WithTimeout(ctx, timeout)
+		defer cancel()
+		out, err := exec.CommandContext(execCtx, "sh", "-c", cmd).CombinedOutput()
+		out = bytes.TrimRight(out, "\n")
+		if err != nil {
+			log.Printf("edge-agent: exec failed: %v\noutput: %s", err, out)
+		} else {
+			log.Printf("edge-agent: exec succeeded\noutput: %s", out)
 		}
 	default:
 		log.Printf("edge-agent: unknown control action: %s", msg.Action)

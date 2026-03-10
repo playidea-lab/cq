@@ -199,6 +199,34 @@ func TestControlPollerCollect(t *testing.T) {
 	}
 }
 
+// TestControlPollerExec verifies that exec action runs a shell command on the edge.
+func TestControlPollerExec(t *testing.T) {
+	hub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "/control") {
+			w.Header().Set("Content-Type", "application/json")
+			msgs := []model.EdgeControlMessage{{
+				Action: "exec",
+				Params: map[string]string{"cmd": "echo hello-exec"},
+			}}
+			json.NewEncoder(w).Encode(msgs) //nolint:errcheck
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer hub.Close()
+
+	cp := newControlPoller("edge-1", hub.URL, "", "", "", "", &http.Client{Timeout: 5 * time.Second})
+	ctx := context.Background()
+	retrieved, err := cp.Poll(ctx)
+	if err != nil {
+		t.Fatalf("Poll: %v", err)
+	}
+	// exec succeeds without error — just verify no panic
+	for _, m := range retrieved {
+		cp.handle(ctx, &m)
+	}
+}
+
 // TestControlPollerCollect_NoWorkdir verifies that collect proceeds for any path when workdir is empty.
 func TestControlPollerCollect_NoWorkdir(t *testing.T) {
 	dir := t.TempDir()
