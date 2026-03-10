@@ -631,28 +631,15 @@ func buildDockerCmd(ctx context.Context, job *model.Job, command string, env []s
 		args = append(args, "sh", "-c", command)
 	}
 
-	// 3-tier Docker socket access: direct → sg docker → sudo -n docker
+	// Docker socket access: direct → sudo -n (non-interactive, no hang)
 	dockerBin := "docker"
 	if _, err := os.Stat("/var/run/docker.sock"); err == nil {
 		if f, err := os.OpenFile("/var/run/docker.sock", os.O_RDONLY, 0); err != nil {
-			// Permission denied — user not in docker group for this session.
-			// Try "sg docker" first (activates group without relogin), fall back to sudo -n.
-			if sgPath, sgErr := exec.LookPath("sg"); sgErr == nil {
-				log.Printf("c5-worker: docker socket not accessible, using sg docker")
-				// sg docker -c "docker run ..." — shell-quote each arg to preserve spaces/special chars
-				quoted := make([]string, len(args))
-				for i, a := range args {
-					quoted[i] = shellQuote(a)
-				}
-				fullCmd := "docker " + strings.Join(quoted, " ")
-				args = []string{"docker", "-c", fullCmd}
-				dockerBin = sgPath
-			} else {
-				log.Printf("c5-worker: docker socket not accessible, trying sudo -n (non-interactive)")
-				log.Printf("c5-worker: if this fails, run: sudo usermod -aG docker $USER && newgrp docker")
-				args = append([]string{"-n", "docker"}, args...)
-				dockerBin = "sudo"
-			}
+			// Permission denied — use sudo -n which fails immediately if password required
+			log.Printf("c5-worker: docker socket not accessible, using sudo -n docker")
+			log.Printf("c5-worker: to fix permanently: sudo usermod -aG docker $USER && newgrp docker")
+			args = append([]string{"-n", "docker"}, args...)
+			dockerBin = "sudo"
 		} else {
 			f.Close()
 		}
@@ -661,12 +648,6 @@ func buildDockerCmd(ctx context.Context, job *model.Job, command string, env []s
 	cmd := exec.CommandContext(ctx, dockerBin, args...)
 	cmd.Env = env
 	return cmd
-}
-
-// shellQuote wraps s in single quotes for safe shell interpolation.
-// Single quotes inside s are escaped as '\'' (end quote, escaped quote, start quote).
-func shellQuote(s string) string {
-	return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'"
 }
 
 // downloadInputArtifacts fetches each presigned artifact URL to its local path.
