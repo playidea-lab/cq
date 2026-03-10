@@ -12,6 +12,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v0.94.5] - 2026-03-11
+
+### ✨ Features
+- **edge-agent**: `exec` 컨트롤 액션 추가 — `cq hub edge control <id> exec --param cmd="..."` (111e363)
+
+---
+
 ## [v0.94.4] - 2026-03-11
 
 ### 🐛 Bug Fixes
