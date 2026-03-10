@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.94.0] - 2026-03-10
+
+### ✨ Features
+- **hub**: `cq hub edge control <edge-id> <action>` 서브커맨드 추가 (collect/restart/stop/update)
+- **hub**: `newHubClient` JWT fallback — `cq auth login` 후 hub list/control 명령 자동 인증
+
+### 🐛 Bug Fixes
+- **hub-edge**: `cq hub edge start` JWT + builtinHubURL fallback 추가 — `cq hub worker start`와 동일하게 `cq auth login`만으로 동작
+
+---
+
 ## [v0.93.0] - 2026-03-10
 
 ### ✨ Features
