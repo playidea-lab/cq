@@ -428,6 +428,67 @@ func TestEdgeStart_MinimalConfig(t *testing.T) {
 	}
 }
 
+// TestEdgeStart_JWTFallback verifies that an existing config with no APIKey
+// picks up the cloud session JWT automatically (mirrors worker behaviour).
+func TestEdgeStart_JWTFallback(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfgPath := filepath.Join(tmpDir, "edge.yaml")
+
+	// Config has hub_url but no api_key.
+	cfg := edgeYAML{HubURL: "https://hub.example.com"}
+	data, _ := yaml.Marshal(cfg)
+	if err := os.WriteFile(cfgPath, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	// Write a fake session.json so loadCloudSessionJWT returns a token.
+	homeDir := t.TempDir()
+	sessionDir := filepath.Join(homeDir, ".c4")
+	_ = os.MkdirAll(sessionDir, 0o700)
+	sessionJSON := `{"access_token":"fake.jwt.token"}`
+	if err := os.WriteFile(filepath.Join(sessionDir, "session.json"), []byte(sessionJSON), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// Override HOME so loadCloudSessionJWT reads our fake session.
+	t.Setenv("HOME", homeDir)
+
+	orig := edgeConfigPathOverride
+	edgeConfigPathOverride = cfgPath
+	defer func() { edgeConfigPathOverride = orig }()
+
+	var capturedCmd *exec.Cmd
+	origExec := edgeExecCommand
+	edgeExecCommand = func(name string, args ...string) *exec.Cmd {
+		capturedCmd = exec.Command("true")
+		return capturedCmd
+	}
+	defer func() { edgeExecCommand = origExec }()
+
+	oldStdout := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+	err := runEdgeStart(nil, nil)
+	w.Close()
+	os.Stdout = oldStdout
+	r.Close()
+
+	if err != nil {
+		t.Fatalf("runEdgeStart with JWT fallback: %v", err)
+	}
+
+	// JWT should appear as C5_API_KEY in subprocess env.
+	hasJWT := false
+	for _, e := range capturedCmd.Env {
+		if e == "C5_API_KEY=fake.jwt.token" {
+			hasJWT = true
+			break
+		}
+	}
+	if !hasJWT {
+		t.Error("C5_API_KEY with JWT not found in subprocess env")
+	}
+}
+
 // TestEdgeStart_EnvAutoInit verifies that missing config is auto-initialized
 // from C5_HUB_URL and C5_API_KEY env vars.
 func TestEdgeStart_EnvAutoInit(t *testing.T) {

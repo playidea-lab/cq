@@ -209,10 +209,19 @@ func runEdgeStart(cmd *cobra.Command, args []string) error {
 		_ = yaml.Unmarshal(data, &cfg)
 	}
 
-	// Auto-init from env vars if config missing.
+	// Auto-init: env vars → builtinHubURL → JWT (mirrors runWorkerStart).
 	if cfg.HubURL == "" {
 		envURL := os.Getenv("C5_HUB_URL")
 		envKey := os.Getenv("C5_API_KEY")
+		if envURL == "" && builtinHubURL != "" {
+			envURL = builtinHubURL
+		}
+		if envKey == "" {
+			if jwt := loadCloudSessionJWT(); jwt != "" {
+				envKey = jwt
+				fmt.Fprintln(os.Stderr, "cq: using cloud session JWT as C5_API_KEY (auto-refresh not supported — re-login if expired)")
+			}
+		}
 		if envURL != "" && envKey != "" {
 			fmt.Println("No edge config found — auto-initializing from C5_HUB_URL / C5_API_KEY...")
 			edgeInitHubURL = envURL
@@ -225,7 +234,15 @@ func runEdgeStart(cmd *cobra.Command, args []string) error {
 				_ = yaml.Unmarshal(data, &cfg)
 			}
 		} else {
-			return errors.New("hub_url not set — run: cq hub edge init, or set C5_HUB_URL + C5_API_KEY env vars")
+			return errors.New("hub_url not set — run: cq hub edge init, or set C5_HUB_URL + C5_API_KEY env vars\n  Tip: cq auth login --device → cq hub edge start (JWT auto-fallback)")
+		}
+	}
+
+	// JWT fallback for existing config without API key.
+	if cfg.APIKey == "" {
+		if jwt := loadCloudSessionJWT(); jwt != "" {
+			cfg.APIKey = jwt
+			fmt.Fprintln(os.Stderr, "cq: using cloud session JWT as C5_API_KEY")
 		}
 	}
 
