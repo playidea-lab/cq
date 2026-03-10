@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -632,16 +633,18 @@ func buildDockerCmd(ctx context.Context, job *model.Job, command string, env []s
 	}
 
 	// Docker socket access: direct → sudo -n (non-interactive, no hang)
+	// Note: os.OpenFile doesn't work on Unix sockets (ENXIO) — use net.Dial instead.
 	dockerBin := "docker"
 	if _, err := os.Stat("/var/run/docker.sock"); err == nil {
-		if f, err := os.OpenFile("/var/run/docker.sock", os.O_RDONLY, 0); err != nil {
-			// Permission denied — use sudo -n which fails immediately if password required
-			log.Printf("c5-worker: docker socket not accessible, using sudo -n docker")
+		conn, err := net.DialTimeout("unix", "/var/run/docker.sock", time.Second)
+		if err != nil {
+			// Permission denied or not accessible — use sudo -n which fails immediately if password required
+			log.Printf("c5-worker: docker socket not accessible (%v), using sudo -n docker", err)
 			log.Printf("c5-worker: to fix permanently: sudo usermod -aG docker $USER && newgrp docker")
 			args = append([]string{"-n", "docker"}, args...)
 			dockerBin = "sudo"
 		} else {
-			f.Close()
+			conn.Close()
 		}
 	}
 
