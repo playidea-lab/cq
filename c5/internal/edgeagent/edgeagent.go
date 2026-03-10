@@ -2,6 +2,7 @@
 package edgeagent
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -247,14 +248,33 @@ func processAssignment(ctx context.Context, client *http.Client, baseURL, apiKey
 	// Report deploying
 	reportTargetStatus(ctx, client, baseURL, apiKey, a.DeployID, edgeID, "deploying", "")
 
-	// Run post_command if set
+	// Run post_command if set — stream output line by line.
 	if strings.TrimSpace(a.PostCommand) != "" {
+		pr, pw := io.Pipe()
 		cmd := exec.CommandContext(ctx, "sh", "-c", a.PostCommand)
 		cmd.Dir = deployDir
 		cmd.Env = os.Environ()
-		out, err := cmd.CombinedOutput()
-		if err != nil {
-			reportTargetStatus(ctx, client, baseURL, apiKey, a.DeployID, edgeID, "failed", string(out))
+		cmd.Stdout = pw
+		cmd.Stderr = pw
+		if err := cmd.Start(); err != nil {
+			pw.Close()
+			reportTargetStatus(ctx, client, baseURL, apiKey, a.DeployID, edgeID, "failed", "start: "+err.Error())
+			return
+		}
+		waitErr := make(chan error, 1)
+		go func() {
+			waitErr <- cmd.Wait()
+			pw.Close()
+		}()
+		scanner := bufio.NewScanner(pr)
+		for scanner.Scan() {
+			log.Printf("edge-agent: post_command> %s", scanner.Text())
+		}
+		if err := scanner.Err(); err != nil {
+			log.Printf("edge-agent: post_command scanner error: %v", err)
+		}
+		if postErr := <-waitErr; postErr != nil {
+			reportTargetStatus(ctx, client, baseURL, apiKey, a.DeployID, edgeID, "failed", postErr.Error())
 			return
 		}
 	}

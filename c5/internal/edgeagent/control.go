@@ -1,7 +1,7 @@
 package edgeagent
 
 import (
-	"bytes"
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -125,20 +125,39 @@ func (c *ControlPoller) handle(ctx context.Context, msg *model.EdgeControlMessag
 			log.Printf("edge-agent: collect uploaded %s to Drive", localPath)
 		}
 	case "exec":
-		cmd := msg.Params["cmd"]
-		if cmd == "" {
+		shellCmd := msg.Params["cmd"]
+		if shellCmd == "" {
 			log.Printf("edge-agent: exec action missing cmd param")
 			return
 		}
 		timeout := 60 * time.Second
 		execCtx, cancel := context.WithTimeout(ctx, timeout)
 		defer cancel()
-		out, err := exec.CommandContext(execCtx, "sh", "-c", cmd).CombinedOutput()
-		out = bytes.TrimRight(out, "\n")
-		if err != nil {
-			log.Printf("edge-agent: exec failed: %v\noutput: %s", err, out)
+		pr, pw := io.Pipe()
+		execCmd := exec.CommandContext(execCtx, "sh", "-c", shellCmd)
+		execCmd.Stdout = pw
+		execCmd.Stderr = pw
+		if err := execCmd.Start(); err != nil {
+			pw.Close()
+			log.Printf("edge-agent: exec start failed: %v", err)
+			return
+		}
+		// Close pipe writer when process exits so scanner terminates.
+		go func() {
+			execCmd.Wait() //nolint:errcheck
+			pw.Close()
+		}()
+		scanner := bufio.NewScanner(pr)
+		for scanner.Scan() {
+			log.Printf("edge-agent: exec> %s", scanner.Text())
+		}
+		if err := scanner.Err(); err != nil {
+			log.Printf("edge-agent: exec scanner error: %v", err)
+		}
+		if execCmd.ProcessState.ExitCode() != 0 {
+			log.Printf("edge-agent: exec failed (exit %d)", execCmd.ProcessState.ExitCode())
 		} else {
-			log.Printf("edge-agent: exec succeeded\noutput: %s", out)
+			log.Printf("edge-agent: exec done")
 		}
 	default:
 		log.Printf("edge-agent: unknown control action: %s", msg.Action)

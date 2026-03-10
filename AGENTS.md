@@ -666,10 +666,18 @@ cq hub edge install --dry-run # 파일 미리보기
 **엣지 제어**:
 ```bash
 cq hub edge list                               # 등록된 엣지 목록
-cq hub edge control <edge-id> collect          # 메트릭 수집 요청
+cq hub edge control <edge-id> collect --param local_path=/home/pi/model.onnx  # 파일 Drive 업로드
+cq hub edge control <edge-id> exec --param cmd="echo hello"   # 임의 셸 명령 실행 (실시간 로그)
 cq hub edge control <edge-id> restart          # 에이전트 재시작
 cq hub edge control <edge-id> stop             # 에이전트 종료
 cq hub edge control <edge-id> update           # 아티팩트 업데이트
+```
+
+**워커 잡 로그 조회**:
+```bash
+cq hub job log <job-id>            # 잡 로그 출력 (스냅샷)
+cq hub job log <job-id> --follow   # 실시간 스트리밍 (잡 완료까지)
+cq hub job log <job-id> --offset 50  # 50번째 줄부터 출력
 ```
 
 ### GPU Worker 연결

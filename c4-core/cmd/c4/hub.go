@@ -66,6 +66,26 @@ Example:
 	RunE: runHubWatch,
 }
 
+var hubJobCmd = &cobra.Command{
+	Use:   "job",
+	Short: "Manage Hub jobs",
+}
+
+var hubJobLogCmd = &cobra.Command{
+	Use:   "log <job-id>",
+	Short: "Show or follow logs for a Hub job",
+	Long: `Display stdout/stderr logs captured from a Hub worker job.
+
+With --follow, polls for new lines every 2 seconds until the job terminates.
+
+Example:
+  cq hub job log job-abc123
+  cq hub job log job-abc123 --follow
+  cq hub job log job-abc123 --offset 50`,
+	Args: cobra.ExactArgs(1),
+	RunE: runHubJobLog,
+}
+
 var hubRunCmd = &cobra.Command{
 	Use:   "run",
 	Short: "Run worker daemon (register + heartbeat + claim loop)",
@@ -153,16 +173,18 @@ Example:
 
 // Flags
 var (
-	hubWorkerName      string
-	hubHeartbeatSec    int
-	hubWatchHistory    bool
-	hubEdgeName        string
-	hubEdgeTags        string
-	hubEdgeRuntime     string
-	hubSubmitRun       string
-	hubWorkersAll      bool
-	hubPruneDryRun     bool
+	hubWorkerName        string
+	hubHeartbeatSec      int
+	hubWatchHistory      bool
+	hubEdgeName          string
+	hubEdgeTags          string
+	hubEdgeRuntime       string
+	hubSubmitRun         string
+	hubWorkersAll        bool
+	hubPruneDryRun       bool
 	hubEdgeControlParams []string
+	hubJobLogFollow      bool
+	hubJobLogOffset      int
 )
 
 func init() {
@@ -189,6 +211,10 @@ func init() {
 	hubEdgeCmd.AddCommand(hubEdgeListCmd)
 	hubEdgeCmd.AddCommand(hubEdgeControlCmd)
 
+	hubJobLogCmd.Flags().BoolVarP(&hubJobLogFollow, "follow", "f", false, "poll for new log lines until job completes")
+	hubJobLogCmd.Flags().IntVar(&hubJobLogOffset, "offset", 0, "start reading from this line offset")
+	hubJobCmd.AddCommand(hubJobLogCmd)
+
 	hubCmd.AddCommand(hubStatusCmd)
 	hubCmd.AddCommand(hubRegisterCmd)
 	hubCmd.AddCommand(hubWatchCmd)
@@ -196,6 +222,7 @@ func init() {
 	hubCmd.AddCommand(hubSubmitCmd)
 	hubCmd.AddCommand(hubWorkersCmd)
 	hubCmd.AddCommand(hubEdgeCmd)
+	hubCmd.AddCommand(hubJobCmd)
 	rootCmd.AddCommand(hubCmd)
 }
 
@@ -869,6 +896,60 @@ func runHubSubmit(cmd *cobra.Command, args []string) error {
 		fmt.Printf("  exp:      %s\n", exp.Name)
 	}
 	return nil
+}
+
+// =========================================================================
+// cq hub job log
+// =========================================================================
+
+func runHubJobLog(cmd *cobra.Command, args []string) error {
+	client, err := newHubClient()
+	if err != nil {
+		return err
+	}
+
+	jobID := args[0]
+	offset := hubJobLogOffset
+	const batchSize = 200
+
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	printBatch := func(resp *hub.JobLogsResponse) {
+		for _, line := range resp.Lines {
+			fmt.Println(line)
+		}
+	}
+
+	for {
+		resp, err := client.GetJobLogsCtx(ctx, jobID, offset, batchSize)
+		if err != nil {
+			if ctx.Err() != nil {
+				return nil
+			}
+			return fmt.Errorf("get logs: %w", err)
+		}
+		printBatch(resp)
+		offset += len(resp.Lines)
+
+		if !hubJobLogFollow {
+			return nil
+		}
+
+		// In follow mode: if no more lines and job is terminal → stop.
+		if !resp.HasMore {
+			job, jerr := client.GetJob(jobID)
+			if jerr == nil && hub.IsTerminal(job.Status) {
+				return nil
+			}
+			// Wait before polling again.
+			select {
+			case <-ctx.Done():
+				return nil
+			case <-time.After(2 * time.Second):
+			}
+		}
+	}
 }
 
 // detectArch returns the machine architecture (arm64, amd64, etc.).
