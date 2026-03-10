@@ -119,14 +119,10 @@ var hubEdgeControlCmd = &cobra.Command{
 	Long: `Send a control message to a registered edge device.
 
 Actions:
-  collect   - Collect and report system metrics
-  restart   - Restart the edge agent process
-  stop      - Stop the edge agent gracefully
-  update    - Pull latest model artifacts
+  collect   - Upload a file from edge to Drive (requires --param local_path=<path>)
 
 Example:
-  cq hub edge control edge-123 collect
-  cq hub edge control edge-123 restart`,
+  cq hub edge control edge-123 collect --param local_path=/home/pi/model.onnx`,
 	Args: cobra.ExactArgs(2),
 	RunE: runHubEdgeControl,
 }
@@ -157,15 +153,16 @@ Example:
 
 // Flags
 var (
-	hubWorkerName     string
-	hubHeartbeatSec   int
-	hubWatchHistory   bool
-	hubEdgeName       string
-	hubEdgeTags       string
-	hubEdgeRuntime    string
-	hubSubmitRun      string
-	hubWorkersAll     bool
-	hubPruneDryRun    bool
+	hubWorkerName      string
+	hubHeartbeatSec    int
+	hubWatchHistory    bool
+	hubEdgeName        string
+	hubEdgeTags        string
+	hubEdgeRuntime     string
+	hubSubmitRun       string
+	hubWorkersAll      bool
+	hubPruneDryRun     bool
+	hubEdgeControlParams []string
 )
 
 func init() {
@@ -185,6 +182,8 @@ func init() {
 	hubWorkersCmd.Flags().BoolVar(&hubWorkersAll, "all", false, "include offline workers")
 	hubWorkersPruneCmd.Flags().BoolVar(&hubPruneDryRun, "dry-run", false, "show what would be pruned without deleting")
 	hubWorkersCmd.AddCommand(hubWorkersPruneCmd)
+
+	hubEdgeControlCmd.Flags().StringArrayVar(&hubEdgeControlParams, "param", nil, "action parameters as key=value (e.g. --param local_path=/tmp/model.onnx)")
 
 	hubEdgeCmd.AddCommand(hubEdgeRegisterCmd)
 	hubEdgeCmd.AddCommand(hubEdgeListCmd)
@@ -726,12 +725,27 @@ func runHubEdgeControl(cmd *cobra.Command, args []string) error {
 	edgeID := args[0]
 	action := args[1]
 
+	// Parse --param key=value flags into params map.
+	params := make(map[string]any, len(hubEdgeControlParams))
+	for _, p := range hubEdgeControlParams {
+		k, v, ok := strings.Cut(p, "=")
+		if !ok {
+			return fmt.Errorf("invalid --param %q: expected key=value", p)
+		}
+		params[k] = v
+	}
+
 	client, err := newHubClient()
 	if err != nil {
 		return err
 	}
 
-	resp, err := client.EdgeControl(edgeID, &hub.EdgeControlRequest{Action: action})
+	req := &hub.EdgeControlRequest{Action: action}
+	if len(params) > 0 {
+		req.Params = params
+	}
+
+	resp, err := client.EdgeControl(edgeID, req)
 	if err != nil {
 		return err
 	}
