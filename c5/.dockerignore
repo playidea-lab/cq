@@ -17,10 +17,12 @@ c5
 testdata/
 **/*_test.go
 
-# Docs
-docs/
-*.md
+# Docs (keep docs/*.md and llms.txt for go:embed)
+!docs/*.md
+!llms.txt
 LICENSE
+README.md
+CHANGELOG.md
 
 # Docker
 Dockerfile

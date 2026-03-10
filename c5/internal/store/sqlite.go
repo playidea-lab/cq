@@ -758,11 +758,13 @@ func (s *Store) GetWorker(id string) (*model.Worker, error) {
 }
 
 // MarkStaleWorkers marks workers with heartbeat older than threshold as offline.
+// Checks both 'online' and 'busy' workers — a busy worker that hasn't sent
+// a heartbeat is a zombie (job finished/crashed without cleanup).
 func (s *Store) MarkStaleWorkers(threshold time.Duration) (int, error) {
 	cutoff := time.Now().UTC().Add(-threshold).Format(time.RFC3339)
 	result, err := s.db.Exec(`
 		UPDATE workers SET status = 'offline'
-		WHERE status = 'online' AND last_heartbeat < ?`, cutoff)
+		WHERE status IN ('online', 'busy') AND last_heartbeat < ?`, cutoff)
 	if err != nil {
 		return 0, err
 	}

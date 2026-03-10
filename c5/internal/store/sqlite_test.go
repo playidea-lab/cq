@@ -2130,3 +2130,36 @@ func TestPurgeStaleWorkersTransaction(t *testing.T) {
 		t.Fatalf("expected 2 history entries, got %d", count)
 	}
 }
+
+func TestMarkStaleWorkersBusy(t *testing.T) {
+	s := newTestStore(t)
+
+	// Register a worker and set it to busy with old heartbeat (zombie)
+	w1, _ := s.RegisterWorker(&model.WorkerRegisterRequest{Hostname: "busy-zombie", GPUModel: "A100"})
+	w2, _ := s.RegisterWorker(&model.WorkerRegisterRequest{Hostname: "active-busy", GPUModel: "A100"})
+
+	old := time.Now().UTC().Add(-10 * time.Minute).Format(time.RFC3339)
+	recent := time.Now().UTC().Format(time.RFC3339)
+	s.db.Exec("UPDATE workers SET status='busy', last_heartbeat=? WHERE id=?", old, w1.ID)
+	s.db.Exec("UPDATE workers SET status='busy', last_heartbeat=? WHERE id=?", recent, w2.ID)
+
+	// Mark stale with 2min threshold — should catch busy-zombie but not active-busy
+	marked, err := s.MarkStaleWorkers(2 * time.Minute)
+	if err != nil {
+		t.Fatalf("mark stale: %v", err)
+	}
+	if marked != 1 {
+		t.Fatalf("expected 1 marked, got %d", marked)
+	}
+
+	// Verify busy-zombie is now offline
+	workers, _ := s.ListWorkers("")
+	for _, w := range workers {
+		if w.ID == w1.ID && w.Status != "offline" {
+			t.Fatalf("busy-zombie should be offline, got %s", w.Status)
+		}
+		if w.ID == w2.ID && w.Status != "busy" {
+			t.Fatalf("active-busy should stay busy, got %s", w.Status)
+		}
+	}
+}

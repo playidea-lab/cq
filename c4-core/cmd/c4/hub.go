@@ -86,6 +86,9 @@ var hubEdgeCmd = &cobra.Command{
 	Long: `Manage edge devices registered with the Hub for model deployment.
 
 Subcommands:
+  init     - Configure edge agent credentials (hub URL + API key)
+  start    - Start c5 edge-agent subprocess
+  install  - Install as a system service (systemd / launchd)
   register - Register this machine as an edge device
   list     - List all registered edge devices`,
 }

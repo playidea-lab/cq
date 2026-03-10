@@ -640,6 +640,28 @@ serve:
 - CI: `build-c5` 스테이지 → `embed/c5/` 복사 → `build-cross TIER=full`
 - 로컬 개발: `make embed-c5 C5_BIN=<path> C5_VERSION=<ver>` 후 `-tags c5_embed` 빌드
 
+### cq hub edge — Edge Agent 시작
+
+원격 엣지 디바이스(GPU 서버, Jetson 등)에서 `c5 edge-agent`를 실행하는 3단계 CLI.
+
+```bash
+# 1. 자격증명 저장 (~/.c5/edge.yaml)
+cq hub edge init --non-interactive --hub-url https://hub.example.com --api-key <key>
+
+# 2. edge-agent 시작 (foreground)
+cq hub edge start
+
+# 3. 시스템 서비스로 설치 (systemd/launchd)
+cq hub edge install           # Linux: /etc/systemd/system/cq-edge.service
+cq hub edge install --user    # Linux: ~/.config/systemd/user/cq-edge.service
+cq hub edge install --dry-run # 파일 미리보기
+```
+
+**주요 동작**:
+- 바이너리 해석 순서: PATH(`c5`) → `$C5_BIN` env → `~/.c5/edge.yaml` `binary` 필드
+- `C5_HUB_URL` + `C5_API_KEY` env 설정 시 config 없어도 자동 init
+- `C5_API_KEY` / `C5_DRIVE_API_KEY` — env var로 전달 (ps 노출 방지)
+
 ### GPU Worker 연결
 
 → **Full guide: [docs/guide/worker.md](docs/guide/worker.md)** — 설치, 인증, capability, systemd, 트러블슈팅 포함.
