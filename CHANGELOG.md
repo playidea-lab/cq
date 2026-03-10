@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.94.4] - 2026-03-11
+
+### 🐛 Bug Fixes
+- **edge-agent**: `--workdir` 기본값 `"."` 제거 — collect 액션이 cwd 외부 경로 거부하던 문제 수정 (c1b86334)
+- **hub-worker**: `cq hub worker start` 시 `.c4/config.yaml`에 `hub.enabled/url` 자동 기록 (89fce5b4)
+
+### 🧪 Tests
+- **edgeagent**: `TestControlPollerCollect_NoWorkdir` 추가 — workdir="" 분기 커버리지
+
+---
+
 ## [v0.96.0] - 2026-03-11
 
 ### ✨ Features
