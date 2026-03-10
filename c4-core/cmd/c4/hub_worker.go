@@ -18,6 +18,7 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/changmin/c4-core/internal/mcp/handlers/cfghandler"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 )
@@ -659,6 +660,18 @@ func runWorkerStart(cmd *cobra.Command, args []string) error {
 		if jwt := loadCloudSessionJWT(); jwt != "" {
 			cfg.APIKey = jwt
 			fmt.Fprintln(os.Stderr, "cq: using cloud session JWT as C5_API_KEY")
+		}
+	}
+
+	// Sync hub settings to .c4/config.yaml so MCP tools (c4_hub_*) are available.
+	if cfg.HubURL != "" {
+		cfgPath := filepath.Join(projectDir, ".c4", "config.yaml")
+		if err := cfghandler.UpdateYAMLValue(cfgPath, "hub.enabled", "true"); err != nil {
+			fmt.Fprintf(os.Stderr, "cq: warning: could not update hub.enabled: %v\n", err)
+		} else if err := cfghandler.UpdateYAMLValue(cfgPath, "hub.url", cfg.HubURL); err != nil {
+			fmt.Fprintf(os.Stderr, "cq: warning: could not update hub.url: %v\n", err)
+		} else {
+			fmt.Fprintf(os.Stderr, "cq: hub.enabled=true, hub.url=%s written to .c4/config.yaml\n", cfg.HubURL)
 		}
 	}
 
