@@ -583,6 +583,39 @@ func resolvec5Binary(cfg workerYAML) string {
 }
 
 func runWorkerStart(cmd *cobra.Command, args []string) error {
+	// Auto-fix docker group: if docker.sock exists but not accessible,
+	// and user is in docker group (just not active in this session),
+	// re-exec self under "sg docker" to activate the group.
+	if runtime.GOOS == "linux" && os.Getenv("CQ_DOCKER_GROUP_FIXED") == "" {
+		sock := "/var/run/docker.sock"
+		if _, err := os.Stat(sock); err == nil {
+			if f, err := os.OpenFile(sock, os.O_RDONLY, 0); err != nil {
+				// Check if user is in docker group in /etc/group (but not active in session)
+				u := os.Getenv("USER")
+				check := exec.Command("id", "-nG", u)
+				if out, e := check.Output(); e == nil && !strings.Contains(string(out), "docker") {
+					// Check /etc/group directly — usermod may have added but session not refreshed
+					grepCmd := exec.Command("grep", "-q", "docker.*"+u, "/etc/group")
+					if grepCmd.Run() == nil {
+						fmt.Println("Docker group not active in session — re-launching with newgrp docker...")
+						self, _ := os.Executable()
+						// newgrp docker -c is not standard; use sh -c under newgrp via sg
+						// newgrp changes primary group and is password-free for members
+						shCmd := exec.Command("bash", "-c",
+							fmt.Sprintf("newgrp docker <<'NEWGRP_EOF'\nexec %s hub worker start\nNEWGRP_EOF", self))
+						shCmd.Stdout = os.Stdout
+						shCmd.Stderr = os.Stderr
+						shCmd.Stdin = os.Stdin
+						shCmd.Env = append(os.Environ(), "CQ_DOCKER_GROUP_FIXED=1")
+						return shCmd.Run()
+					}
+				}
+			} else {
+				f.Close()
+			}
+		}
+	}
+
 	cfgPath := workerConfigPath()
 
 	cfg := workerYAML{}
