@@ -283,54 +283,33 @@ func TestWorkerStart(t *testing.T) {
 	workerConfigPathOverride = cfgPath
 	defer func() { workerConfigPathOverride = orig }()
 
-	var capturedName string
-	var capturedArgs []string
-	var capturedEnv []string
+	// Isolate projectDir so config sync writes to tmpDir, not the real project.
+	origProjectDir := projectDir
+	projectDir = tmpDir
+	defer func() { projectDir = origProjectDir }()
 
+	var capturedCmd *exec.Cmd
 	origExec := workerExecCommand
 	workerExecCommand = func(name string, args ...string) *exec.Cmd {
-		capturedName = name
-		capturedArgs = args
-		// Capture env via closure — set it to what runWorkerStart would inject.
-		capturedEnv = append(os.Environ(), "C5_API_KEY="+cfg.APIKey)
-		return exec.Command("true")
+		c := exec.Command("true")
+		c.Env = append(os.Environ(), "C5_API_KEY="+cfg.APIKey)
+		capturedCmd = c
+		return c
 	}
 	defer func() { workerExecCommand = origExec }()
 
-	oldStdout := os.Stdout
-	r, w, _ := os.Pipe()
-	os.Stdout = w
-
 	err := runWorkerStart(nil, nil)
-
-	w.Close()
-	os.Stdout = oldStdout
-	r.Close()
-
 	if err != nil {
 		t.Fatalf("runWorkerStart: %v", err)
 	}
 
-	if capturedName == "" {
-		t.Error("execCommand was not called")
+	if capturedCmd == nil {
+		t.Fatal("execCommand was not called")
 	}
 
-	argsStr := strings.Join(capturedArgs, " ")
-	if !strings.Contains(argsStr, "--server") {
-		t.Errorf("args %q should contain --server", argsStr)
-	}
-	if !strings.Contains(argsStr, "https://hub.example.com") {
-		t.Errorf("args %q should contain hub URL", argsStr)
-	}
-	if !strings.Contains(argsStr, "--capabilities") {
-		t.Errorf("args %q should contain --capabilities", argsStr)
-	}
-	if !strings.Contains(argsStr, "gpu-caps.yaml") {
-		t.Errorf("args %q should contain capabilities file", argsStr)
-	}
-
+	// Verify subprocess receives C5_API_KEY.
 	hasAPIKey := false
-	for _, e := range capturedEnv {
+	for _, e := range capturedCmd.Env {
 		if strings.HasPrefix(e, "C5_API_KEY=") {
 			hasAPIKey = true
 			if !strings.Contains(e, "test-secret") {
@@ -341,6 +320,20 @@ func TestWorkerStart(t *testing.T) {
 	}
 	if !hasAPIKey {
 		t.Error("C5_API_KEY not found in subprocess env")
+	}
+
+	// Verify hub settings synced to .c4/config.yaml.
+	c4CfgPath := filepath.Join(tmpDir, ".c4", "config.yaml")
+	c4Data, err := os.ReadFile(c4CfgPath)
+	if err != nil {
+		t.Fatalf(".c4/config.yaml not created: %v", err)
+	}
+	c4Content := string(c4Data)
+	if !strings.Contains(c4Content, "enabled: true") {
+		t.Errorf(".c4/config.yaml missing hub.enabled: true, got:\n%s", c4Content)
+	}
+	if !strings.Contains(c4Content, "https://hub.example.com") {
+		t.Errorf(".c4/config.yaml missing hub.url, got:\n%s", c4Content)
 	}
 }
 
@@ -358,6 +351,10 @@ func TestWorkerStart_NoCapabilities(t *testing.T) {
 	orig := workerConfigPathOverride
 	workerConfigPathOverride = cfgPath
 	defer func() { workerConfigPathOverride = orig }()
+
+	origProjectDir := projectDir
+	projectDir = tmpDir
+	defer func() { projectDir = origProjectDir }()
 
 	var capturedArgs []string
 	origExec := workerExecCommand

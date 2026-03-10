@@ -664,14 +664,18 @@ func runWorkerStart(cmd *cobra.Command, args []string) error {
 	}
 
 	// Sync hub settings to .c4/config.yaml so MCP tools (c4_hub_*) are available.
-	if cfg.HubURL != "" {
+	if cfg.HubURL != "" && !strings.ContainsAny(cfg.HubURL, " \t") {
 		cfgPath := filepath.Join(projectDir, ".c4", "config.yaml")
-		if err := cfghandler.UpdateYAMLValue(cfgPath, "hub.enabled", "true"); err != nil {
-			fmt.Fprintf(os.Stderr, "cq: warning: could not update hub.enabled: %v\n", err)
-		} else if err := cfghandler.UpdateYAMLValue(cfgPath, "hub.url", cfg.HubURL); err != nil {
-			fmt.Fprintf(os.Stderr, "cq: warning: could not update hub.url: %v\n", err)
-		} else {
-			fmt.Fprintf(os.Stderr, "cq: hub.enabled=true, hub.url=%s written to .c4/config.yaml\n", cfg.HubURL)
+		errEnabled := cfghandler.UpdateYAMLValue(cfgPath, "hub.enabled", "true")
+		errURL := cfghandler.UpdateYAMLValue(cfgPath, "hub.url", cfg.HubURL)
+		if errEnabled != nil {
+			fmt.Fprintf(os.Stderr, "cq: warning: could not update hub.enabled: %v\n", errEnabled)
+		}
+		if errURL != nil {
+			fmt.Fprintf(os.Stderr, "cq: warning: could not update hub.url: %v\n", errURL)
+		}
+		if errEnabled == nil && errURL == nil {
+			fmt.Printf("cq: hub.enabled=true, hub.url=%s written to .c4/config.yaml\n", cfg.HubURL)
 		}
 	}
 
