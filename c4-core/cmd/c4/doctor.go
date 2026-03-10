@@ -659,14 +659,18 @@ func tryFix(r *checkResult) string {
 	switch r.Name {
 	case "CLAUDE.md":
 		claudePath := filepath.Join(projectDir, "CLAUDE.md")
-		// Remove broken symlink so next init can recreate it
+		// Remove broken symlink before recreating
 		if fi, err := os.Lstat(claudePath); err == nil && fi.Mode()&os.ModeSymlink != 0 {
 			if _, err := os.Stat(claudePath); os.IsNotExist(err) {
-				if os.Remove(claudePath) == nil {
-					return "removed broken symlink"
-				}
+				_ = os.Remove(claudePath)
 			}
 		}
+		if err := setupClaudeMD(projectDir); err != nil {
+			return ""
+		}
+		r.Status = checkOK
+		r.Fix = ""
+		return "CLAUDE.md created"
 	case "hooks":
 		if err := setupProjectHooks(projectDir); err != nil {
 			return ""
@@ -758,8 +762,8 @@ func isHubEnabled(content string) bool {
 }
 
 // checkOSService checks whether the cq-serve OS service (LaunchAgent/systemd/Windows) is installed.
-// fix is accepted for signature consistency but --fix does not auto-install (side-effect risk in CI).
-func checkOSService(_ bool) checkResult {
+// When fix=true and the service is stopped, it attempts to start the service automatically.
+func checkOSService(fix bool) checkResult {
 	svcConfig := newServiceConfig("", "")
 	svc, err := service.New(&serviceWrapper{}, &svcConfig)
 	if err != nil {
@@ -780,6 +784,15 @@ func checkOSService(_ bool) checkResult {
 			Message: "OS service installed (running)",
 		}
 	case service.StatusStopped:
+		if fix {
+			if err := svc.Start(); err == nil {
+				return checkResult{
+					Name:    "os-service",
+					Status:  checkOK,
+					Message: "service started",
+				}
+			}
+		}
 		return checkResult{
 			Name:    "os-service",
 			Status:  checkWarn,
