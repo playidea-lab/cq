@@ -2095,3 +2095,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Checkpoint Gates (단계별 리뷰 포인트)
 - Auto-Validation (자동 lint/test 실행)
 - 다중 플랫폼 지원 (Claude Code, Cursor, Codex CLI, Gemini CLI, OpenCode)
+
+## v0.93.1 — 2026-03-10
+
+### Fixed
+- **c5 worker**: Fix Docker socket access check — `os.OpenFile` fails on Unix sockets (ENXIO) even with correct permissions; replaced with `net.DialTimeout`
+- **c5 hub**: `MarkStaleWorkers` now includes `busy` workers (zombie GC for stuck-busy workers)
+- **c5 hub**: `.dockerignore` allows `docs/*.md` and `llms.txt` for go:embed (Fly.dev deploy fix)
