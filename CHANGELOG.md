@@ -27,6 +27,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v0.94.3] - 2026-03-11
+
+### 🐛 Bug Fixes
+- **doctor**: C5 Hub 401 감지 시 `--fix`로 `cq auth login --device` 자동 실행
+
+---
+
 ## [v0.94.2] - 2026-03-10
 
 ### 🐛 Bug Fixes
