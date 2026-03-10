@@ -162,10 +162,9 @@ func TestControlPollerCollect(t *testing.T) {
 
 	var driveGot []byte
 	drive := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		r.ParseMultipartForm(1 << 20)
-		if f, _, err := r.FormFile("file"); err == nil {
-			driveGot, _ = io.ReadAll(f)
-			f.Close()
+		// Supabase Storage API: POST /storage/v1/object/c4-drive/{path}
+		if strings.HasPrefix(r.URL.Path, "/storage/v1/object/c4-drive/") {
+			driveGot, _ = io.ReadAll(r.Body)
 		}
 		w.WriteHeader(http.StatusOK)
 	}))

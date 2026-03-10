@@ -1,13 +1,11 @@
 package edgeagent
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
-	"mime/multipart"
 	"net/http"
 	"net/url"
 	"os"
@@ -129,6 +127,10 @@ func (c *ControlPoller) handle(ctx context.Context, msg *model.EdgeControlMessag
 	}
 }
 
+// uploadToDrive uploads a local file to Supabase Storage.
+// driveURL is the Supabase project URL (e.g. https://<ref>.supabase.co).
+// driveKey is the JWT or anon key.
+// Files are stored at: storage/v1/object/c4-drive/edges/{edgeID}/{filename}
 func (c *ControlPoller) uploadToDrive(ctx context.Context, localPath string) error {
 	f, err := os.Open(localPath)
 	if err != nil {
@@ -136,29 +138,26 @@ func (c *ControlPoller) uploadToDrive(ctx context.Context, localPath string) err
 	}
 	defer f.Close()
 
-	var buf bytes.Buffer
-	mw := multipart.NewWriter(&buf)
-	fw, err := mw.CreateFormFile("file", filepath.Base(localPath))
+	fi, err := f.Stat()
 	if err != nil {
-		return err
+		return fmt.Errorf("stat %s: %w", localPath, err)
 	}
-	if _, err := io.Copy(fw, f); err != nil {
-		return err
-	}
-	mw.Close()
 
-	params := url.Values{}
-	params.Set("path", filepath.Base(localPath))
-	driveBase := strings.TrimRight(c.driveURL, "/")
-	uploadURL := driveBase + "/upload?" + params.Encode()
-	req, err := http.NewRequestWithContext(ctx, "POST", uploadURL, &buf)
+	filename := filepath.Base(localPath)
+	storagePath := "edges/" + c.edgeID + "/" + filename
+	uploadURL := strings.TrimRight(c.driveURL, "/") + "/storage/v1/object/c4-drive/" + url.PathEscape(storagePath)
+
+	req, err := http.NewRequestWithContext(ctx, "POST", uploadURL, f)
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Content-Type", mw.FormDataContentType())
+	req.ContentLength = fi.Size()
+	req.Header.Set("Content-Type", "application/octet-stream")
 	if c.driveKey != "" {
+		req.Header.Set("apikey", c.driveKey)
 		req.Header.Set("Authorization", "Bearer "+c.driveKey)
 	}
+
 	resp, err := c.client.Do(req)
 	if err != nil {
 		return err
