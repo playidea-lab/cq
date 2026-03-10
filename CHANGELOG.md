@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.94.2] - 2026-03-10
+
+### 🐛 Bug Fixes
+- **doctor**: hooks fix 후 OK 상태 반영 + .mcp.json --fix 시 자동 생성 (install 후 WARN 0개)
+- **edge-agent**: collect 업로드를 Supabase Storage 직접 경유로 수정
+
+---
+
 ## [v0.94.0] - 2026-03-10
 
 ### ✨ Features
