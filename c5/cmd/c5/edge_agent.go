@@ -36,9 +36,6 @@ func edgeAgentCmd() *cobra.Command {
 				h, _ := os.Hostname()
 				edgeName = h
 			}
-			if workdir == "" {
-				workdir = "."
-			}
 			ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 			defer stop()
 			return edgeagent.Run(ctx, edgeagent.Config{
@@ -67,7 +64,7 @@ func edgeAgentCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&apiKey, "api-key", defaultEdgeAPIKey, "API key for authentication")
 	cmd.Flags().StringVar(&edgeName, "edge-name", "", "Edge name (default: hostname)")
-	cmd.Flags().StringVar(&workdir, "workdir", ".", "Directory to download artifacts into")
+	cmd.Flags().StringVar(&workdir, "workdir", "", "Base directory for collect action path guard (empty = no restriction)")
 	cmd.Flags().IntVar(&pollSec, "poll-interval", 10, "Poll interval in seconds for assignments")
 	cmd.Flags().StringVar(&metricsCommand, "metrics-command", "", "Shell command to collect metrics (stdout KEY=VALUE)")
 	cmd.Flags().IntVar(&metricsInterval, "metrics-interval", 60, "Metrics reporting interval in seconds")

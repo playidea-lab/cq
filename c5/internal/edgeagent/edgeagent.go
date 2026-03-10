@@ -53,6 +53,10 @@ func Run(ctx context.Context, cfg Config) error {
 	baseURL := strings.TrimRight(cfg.HubURL, "/")
 	client := &http.Client{Timeout: 30 * time.Second}
 
+	if cfg.Workdir == "" {
+		log.Println("edge-agent: --workdir not set; collect path guard disabled (any local path may be uploaded)")
+	}
+
 	if cfg.MetricsInterval <= 0 {
 		cfg.MetricsInterval = 60 * time.Second
 	}

@@ -199,6 +199,53 @@ func TestControlPollerCollect(t *testing.T) {
 	}
 }
 
+// TestControlPollerCollect_NoWorkdir verifies that collect proceeds for any path when workdir is empty.
+func TestControlPollerCollect_NoWorkdir(t *testing.T) {
+	dir := t.TempDir()
+	testFile := filepath.Join(dir, "result.bin")
+	if err := os.WriteFile(testFile, []byte("no-workdir-data"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var driveGot []byte
+	drive := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/storage/v1/object/c4-drive/") {
+			driveGot, _ = io.ReadAll(r.Body)
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer drive.Close()
+
+	msgs := []model.EdgeControlMessage{{
+		Action: "collect",
+		Params: map[string]string{"local_path": testFile},
+	}}
+	hub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "/control") {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(msgs) //nolint:errcheck
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer hub.Close()
+
+	// workdir="" → path guard disabled; testFile is outside any workdir restriction
+	cp := newControlPoller("edge-1", hub.URL, "", drive.URL, "", "", &http.Client{Timeout: 5 * time.Second})
+	ctx := context.Background()
+	retrieved, err := cp.Poll(ctx)
+	if err != nil {
+		t.Fatalf("Poll: %v", err)
+	}
+	for _, m := range retrieved {
+		cp.handle(ctx, &m)
+	}
+
+	if string(driveGot) != "no-workdir-data" {
+		t.Errorf("expected upload with no workdir guard, drive received %q", string(driveGot))
+	}
+}
+
 // TestHealthCheckPass verifies that a passing health check results in "succeeded" status.
 func TestHealthCheckPass(t *testing.T) {
 	var lastStatus string
