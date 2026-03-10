@@ -430,9 +430,13 @@ func TestTryFix_BrokenSymlinkRemoved(t *testing.T) {
 	if result == "" {
 		t.Error("expected tryFix to return non-empty string for broken symlink removal")
 	}
-	// Verify symlink was removed
-	if _, err := os.Lstat(claudePath); !os.IsNotExist(err) {
-		t.Error("expected broken symlink to be removed after tryFix")
+	// Verify broken symlink is gone (tryFix removes it and creates a fresh CLAUDE.md from template)
+	fi, err := os.Lstat(claudePath)
+	if err == nil && fi.Mode()&os.ModeSymlink != 0 {
+		// Still a symlink — check it's not broken
+		if _, statErr := os.Stat(claudePath); os.IsNotExist(statErr) {
+			t.Error("expected broken symlink to be removed after tryFix")
+		}
 	}
 }
 
