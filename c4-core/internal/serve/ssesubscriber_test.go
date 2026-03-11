@@ -254,9 +254,9 @@ func TestSSESubscriberComponent_PublishEventNilPublisher(t *testing.T) {
 	comp.publishEvent(`{"type":"test"}`)
 }
 
-// TestSSESubscriberWake verifies that a hub.job.completed payload sends a signal
-// on the wake channel, and that hub.job.failed also triggers a wake signal.
-// Non-job events must NOT send a wake signal.
+// TestSSESubscriberWake verifies that hub.job.completed, hub.job.failed, and
+// hub.job.cancelled payloads send a wake signal, and that non-terminal job
+// events do not.
 func TestSSESubscriberWake(t *testing.T) {
 	pub := &capturingPublisher{}
 	comp := NewSSESubscriberComponent(SSESubscriberConfig{URL: "http://x", ProjectID: "p"}, pub)
@@ -282,8 +282,17 @@ func TestSSESubscriberWake(t *testing.T) {
 		t.Error("expected wake signal for hub.job.failed")
 	}
 
+	// hub.job.cancelled should wake.
+	comp.publishEvent(`{"type":"hub.job.cancelled","job_id":"j3"}`)
+	select {
+	case <-wakeCh:
+		// OK
+	case <-time.After(100 * time.Millisecond):
+		t.Error("expected wake signal for hub.job.cancelled")
+	}
+
 	// A non-job event must NOT send a wake signal.
-	comp.publishEvent(`{"type":"hub.job.started","job_id":"j3"}`)
+	comp.publishEvent(`{"type":"hub.job.started","job_id":"j4"}`)
 	select {
 	case <-wakeCh:
 		t.Error("unexpected wake signal for hub.job.started")
