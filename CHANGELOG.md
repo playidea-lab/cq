@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.96.0] - 2026-03-12
+
+### ✨ Features
+- **experiment**: Experiment Registry Layer — SQLite store + MCP handlers + C5 wrapper
+  - `c4_experiment_register`: 실험 런 생성, run_id 반환
+  - `c4_run_checkpoint`: CAS best_metric 업데이트 + 체크포인트 히스토리 기록
+  - `c4_run_complete`: 런 완료 + knowledge auto-bridge (WithoutCancel 30s goroutine)
+  - `c4_run_should_continue`: 취소/완료 여부 폴링 게이트
+- **c5**: `ExperimentWrapper` — stdout 패턴 매칭 → MCP 체크포인트 자동 호출
+  - `strconv.ParseFloat` metric string→float64 변환 (스키마 준수)
+  - `http.Client` 필드 재사용, json.Marshal 오류 처리
+
+### 🧪 Tests
+- c4-core experiment handlers: 9개 (Register, ShouldContinue×2, Complete×4, Checkpoint_NotBest)
+- c5 worker experiment wrapper: 10개 (atomic.Int32 race-safe, MarshalError, HTTPClientReuse)
+
+---
+
 ## [v0.95.0] - 2026-03-12
 
 ### ✨ Features
