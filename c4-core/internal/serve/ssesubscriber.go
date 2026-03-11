@@ -238,6 +238,15 @@ func (c *SSESubscriberComponent) connect(ctx context.Context) error {
 // Event type is extracted via JSON parse to avoid false positives from
 // worker-supplied fields (e.g. job_id) that could contain the type string.
 func (c *SSESubscriberComponent) publishEvent(payload string) {
+	// Send wake signal regardless of publisher state so that a nil publisher
+	// (e.g. in unit tests calling SetWakeChannel without a real EventBus) still
+	// triggers the knowledgeHubPoller.
+	if c.wake != nil && isJobCompletionEvent(payload) {
+		select {
+		case c.wake <- struct{}{}:
+		default:
+		}
+	}
 	if c.pub == nil {
 		return
 	}
@@ -247,12 +256,6 @@ func (c *SSESubscriberComponent) publishEvent(payload string) {
 		json.RawMessage(payload),
 		c.cfg.ProjectID,
 	)
-	if c.wake != nil && isJobCompletionEvent(payload) {
-		select {
-		case c.wake <- struct{}{}:
-		default:
-		}
-	}
 }
 
 // isJobCompletionEvent reports whether the SSE payload is a hub.job.completed

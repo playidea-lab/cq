@@ -226,9 +226,14 @@ func TestSSEBroadcastOnJobFailed(t *testing.T) {
 	}
 }
 
-// TestSSEBroadcastSkipsNilJob verifies that when GetJob fails (nil completedJob),
-// broadcastSSEEvent is not called and the handler does not panic.
-func TestSSEBroadcastSkipsNilJob(t *testing.T) {
+// TestSSEBroadcastNoEventOnCompleteFailure verifies that when CompleteJob fails
+// (job does not exist), no SSE event is broadcast and the handler does not panic.
+//
+// Note: the path where CompleteJob succeeds but GetJob fails (DB race) is not
+// exercised here because store.Store is a concrete type without a mock interface.
+// That path is covered by code review: a log.Printf warning is emitted and the
+// handler proceeds without broadcasting.
+func TestSSEBroadcastNoEventOnCompleteFailure(t *testing.T) {
 	srv := newTestServer(t)
 
 	// Register SSE subscriber.
@@ -236,7 +241,7 @@ func TestSSEBroadcastSkipsNilJob(t *testing.T) {
 	srv.sseSubs.Store(ch, "")
 	defer srv.sseSubs.Delete(ch)
 
-	// Attempt to complete a non-existent job — CompleteJob will fail before GetJob is called.
+	// Attempt to complete a non-existent job — CompleteJob will fail; handler returns early.
 	exitZero := 0
 	w := doRequest(t, srv, "POST", "/v1/jobs/nonexistent-job-id/complete",
 		model.JobCompleteRequest{Status: "SUCCEEDED", ExitCode: &exitZero})
@@ -248,7 +253,7 @@ func TestSSEBroadcastSkipsNilJob(t *testing.T) {
 	// No SSE event should be delivered.
 	select {
 	case msg := <-ch:
-		t.Fatalf("expected no SSE event for nil job, got: %s", msg)
+		t.Fatalf("expected no SSE event for failed complete, got: %s", msg)
 	case <-time.After(100 * time.Millisecond):
 		// OK — no broadcast
 	}

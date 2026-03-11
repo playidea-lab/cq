@@ -163,6 +163,11 @@ func (s *Server) handleJobCancel(w http.ResponseWriter, r *http.Request, jobID s
 	// Clean up lease if any
 	s.store.DeleteLease(jobID)
 
+	// SSE broadcast for cancellation: consistent with completed/failed paths.
+	if j, err := s.store.GetJob(jobID); err == nil {
+		s.broadcastSSEEvent(j.ProjectID, "hub.job.cancelled", map[string]any{"job_id": jobID, "status": "CANCELLED"})
+	}
+
 	if s.eventPub.IsEnabled() {
 		if err := s.eventPub.Publish("hub.job.cancelled", "c5", map[string]any{"job_id": jobID}); err != nil {
 			log.Printf("c5: eventpub hub.job.cancelled: %v", err)
@@ -220,12 +225,14 @@ func (s *Server) handleJobComplete(w http.ResponseWriter, r *http.Request, jobID
 		log.Printf("c5: handleJobComplete: GetJob(%s) failed after CompleteJob: %v (SSE broadcast skipped)", jobID, err)
 	}
 
+	// Compute event type once for both SSE and EventBus paths.
+	evType := "hub.job.completed"
+	if status == model.StatusFailed {
+		evType = "hub.job.failed"
+	}
+
 	// SSE broadcast: notify project-scoped subscribers immediately.
 	if completedJob != nil {
-		evType := "hub.job.completed"
-		if status == model.StatusFailed {
-			evType = "hub.job.failed"
-		}
 		s.broadcastSSEEvent(completedJob.ProjectID, evType, map[string]any{
 			"job_id":    jobID,
 			"status":    string(status),
@@ -248,10 +255,6 @@ func (s *Server) handleJobComplete(w http.ResponseWriter, r *http.Request, jobID
 	s.notifyDoorayJobComplete(completedJob, status, exitCode)
 
 	if s.eventPub.IsEnabled() {
-		evType := "hub.job.completed"
-		if status == model.StatusFailed {
-			evType = "hub.job.failed"
-		}
 		if err := s.eventPub.Publish(evType, "c5", map[string]any{
 			"job_id":    jobID,
 			"status":    string(status),

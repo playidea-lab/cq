@@ -2,6 +2,9 @@ package main
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -11,46 +14,52 @@ import (
 // A subtest also verifies that a nil wake channel leaves ticker-only behavior intact.
 func TestPollerWakeChannel(t *testing.T) {
 	t.Run("wake triggers immediate poll", func(t *testing.T) {
-		// Use a very long interval so the ticker never fires during the test.
+		// Count actual HTTP requests made to the Hub during poll().
+		var pollCount atomic.Int64
+		fakeSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			pollCount.Add(1)
+			// Return empty completed-jobs list so poll() succeeds quickly.
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte("[]")) //nolint:errcheck
+		}))
+		defer fakeSrv.Close()
+
+		// Use a very long ticker interval so the ticker never fires during the test.
 		p := newKnowledgeHubPoller(knowledgeHubPollerConfig{
+			HubURL:       fakeSrv.URL,
 			PollInterval: 24 * time.Hour,
+			SeenPath:     t.TempDir() + "/seen.json",
 		})
-		// Replace poll with a counter-incrementing stub by wrapping via the wake channel.
-		// We start the loop manually and verify the poll is called after a wake signal.
 
 		wakeCh := make(chan struct{}, 1)
 		p.SetWakeChannel(wakeCh)
 
-		// Override client to nil so poll() returns quickly (it will log to stderr but not panic).
-		// We track poll invocations by counting wake-driven calls via a tight timeout.
-
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
-		// Start the loop.
 		if err := p.Start(ctx); err != nil {
 			t.Fatalf("Start: %v", err)
 		}
 
-		// Send wake signal.
+		// Capture baseline count (ticker-driven poll before wake signal).
+		time.Sleep(20 * time.Millisecond)
+		before := pollCount.Load()
+
+		// Send wake signal — should trigger an immediate poll.
 		wakeCh <- struct{}{}
 
-		// Give the loop time to process the wake signal.
-		// poll() with nil client will log an error and return quickly.
+		// Give the loop time to process.
 		time.Sleep(100 * time.Millisecond)
 
-		// Stop the poller.
+		after := pollCount.Load()
+		if after <= before {
+			t.Errorf("expected at least one wake-driven poll: before=%d after=%d", before, after)
+		}
+
 		stopCtx, stopCancel := context.WithTimeout(context.Background(), time.Second)
 		defer stopCancel()
 		if err := p.Stop(stopCtx); err != nil {
 			t.Fatalf("Stop: %v", err)
-		}
-
-		// We can't easily count poll calls without refactoring, but we verify that
-		// the loop exited cleanly (Stop returned) and the health is valid.
-		h := p.Health()
-		if h.Status == "" {
-			t.Error("Health().Status should not be empty after stop")
 		}
 	})
 
