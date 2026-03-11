@@ -214,6 +214,19 @@ func (s *Server) handleJobComplete(w http.ResponseWriter, r *http.Request, jobID
 	// Signal any MCP tools/call waiter that the job is done.
 	s.handleWorkerComplete(jobID)
 
+	// SSE broadcast: notify project-scoped subscribers immediately.
+	if completedJob != nil {
+		evType := "hub.job.completed"
+		if status == model.StatusFailed {
+			evType = "hub.job.failed"
+		}
+		s.broadcastSSEEvent(completedJob.ProjectID, evType, map[string]any{
+			"job_id":    jobID,
+			"status":    string(status),
+			"exit_code": exitCode,
+		})
+	}
+
 	// DAG orchestrator hook: advance DAG if this job was a DAG node
 	s.onJobComplete(jobID, status, exitCode)
 
