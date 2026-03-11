@@ -241,7 +241,7 @@ func (c *SSESubscriberComponent) publishEvent(payload string) {
 	// Send wake signal regardless of publisher state so that a nil publisher
 	// (e.g. in unit tests calling SetWakeChannel without a real EventBus) still
 	// triggers the knowledgeHubPoller.
-	if c.wake != nil && isJobCompletionEvent(payload) {
+	if c.wake != nil && isJobTerminalEvent(payload) {
 		select {
 		case c.wake <- struct{}{}:
 		default:
@@ -258,15 +258,19 @@ func (c *SSESubscriberComponent) publishEvent(payload string) {
 	)
 }
 
-// isJobCompletionEvent reports whether the SSE payload is a hub.job.completed
-// or hub.job.failed event. It parses only the "type" field to avoid false
-// positives from worker-supplied values in other fields.
-func isJobCompletionEvent(payload string) bool {
+// isJobTerminalEvent reports whether the SSE payload signals a terminal job
+// state (completed, failed, or cancelled). It parses only the "type" field
+// to avoid false positives from worker-supplied values in other fields.
+func isJobTerminalEvent(payload string) bool {
 	var envelope struct {
 		Type string `json:"type"`
 	}
 	if err := json.Unmarshal([]byte(payload), &envelope); err != nil {
 		return false
 	}
-	return envelope.Type == "hub.job.completed" || envelope.Type == "hub.job.failed"
+	switch envelope.Type {
+	case "hub.job.completed", "hub.job.failed", "hub.job.cancelled":
+		return true
+	}
+	return false
 }

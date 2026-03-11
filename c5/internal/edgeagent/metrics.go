@@ -152,7 +152,10 @@ func (m *MetricsReporter) report(ctx context.Context) {
 		return
 	}
 	// Clear reported metrics only after confirmed delivery.
+	// Reset capWarned so that the next cycle can emit the cap warning again
+	// if the command continues emitting unbounded keys.
 	m.mu.Lock()
 	m.metrics = make(map[string]float64)
+	m.capWarned = false
 	m.mu.Unlock()
 }
