@@ -77,6 +77,18 @@ func copyDir(src, dst string) error {
 	for _, e := range entries {
 		srcPath := src + "/" + e.Name()
 		dstPath := dst + "/" + e.Name()
+		// Preserve symlinks as-is to avoid circular-link infinite recursion and
+		// to faithfully reproduce the original directory structure on rollback.
+		if e.Type()&os.ModeSymlink != 0 {
+			target, err := os.Readlink(srcPath)
+			if err != nil {
+				return err
+			}
+			if err := os.Symlink(target, dstPath); err != nil {
+				return err
+			}
+			continue
+		}
 		if e.IsDir() {
 			if err := copyDir(srcPath, dstPath); err != nil {
 				return err

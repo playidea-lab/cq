@@ -23,24 +23,26 @@ const controlPollInterval = 30 * time.Second
 
 // ControlPoller polls Hub GET /v1/edges/{id}/control every controlPollInterval and executes received actions.
 type ControlPoller struct {
-	edgeID   string
-	hubURL   string
-	apiKey   string
-	driveURL string
-	driveKey string
-	workdir  string // base directory allowed for collect actions (path traversal guard)
-	client   *http.Client
+	edgeID    string
+	hubURL    string
+	apiKey    string
+	driveURL  string
+	driveKey  string
+	workdir   string // base directory allowed for collect actions (path traversal guard)
+	allowExec bool   // exec action is disabled by default; must be explicitly enabled
+	client    *http.Client
 }
 
-func newControlPoller(edgeID, hubURL, apiKey, driveURL, driveKey, workdir string, client *http.Client) *ControlPoller {
+func newControlPoller(edgeID, hubURL, apiKey, driveURL, driveKey, workdir string, allowExec bool, client *http.Client) *ControlPoller {
 	return &ControlPoller{
-		edgeID:   edgeID,
-		hubURL:   hubURL,
-		apiKey:   apiKey,
-		driveURL: driveURL,
-		driveKey: driveKey,
-		workdir:  workdir,
-		client:   client,
+		edgeID:    edgeID,
+		hubURL:    hubURL,
+		apiKey:    apiKey,
+		driveURL:  driveURL,
+		driveKey:  driveKey,
+		workdir:   workdir,
+		allowExec: allowExec,
+		client:    client,
 	}
 }
 
@@ -84,7 +86,7 @@ func (c *ControlPoller) Poll(ctx context.Context) ([]model.EdgeControlMessage, e
 		return nil, nil
 	}
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
 		return nil, fmt.Errorf("control poll status %d: %s", resp.StatusCode, string(body))
 	}
 	var msgs []model.EdgeControlMessage
@@ -125,6 +127,12 @@ func (c *ControlPoller) handle(ctx context.Context, msg *model.EdgeControlMessag
 			log.Printf("edge-agent: collect uploaded %s to Drive", localPath)
 		}
 	case "exec":
+		// exec is disabled by default — must be explicitly enabled via Config.AllowExec.
+		// A compromised Hub could use exec to run arbitrary shell commands on the edge node.
+		if !c.allowExec {
+			log.Printf("edge-agent: exec action received but AllowExec=false; ignoring (set --allow-exec to enable)")
+			return
+		}
 		shellCmd := msg.Params["cmd"]
 		if shellCmd == "" {
 			log.Printf("edge-agent: exec action missing cmd param")
@@ -142,9 +150,11 @@ func (c *ControlPoller) handle(ctx context.Context, msg *model.EdgeControlMessag
 			log.Printf("edge-agent: exec start failed: %v", err)
 			return
 		}
-		// Close pipe writer when process exits so scanner terminates.
+		// Use a channel to collect Wait() error and close the pipe writer atomically,
+		// avoiding the race where ProcessState is read before Wait() returns.
+		waitErr := make(chan error, 1)
 		go func() {
-			execCmd.Wait() //nolint:errcheck
+			waitErr <- execCmd.Wait()
 			pw.Close()
 		}()
 		scanner := bufio.NewScanner(pr)
@@ -154,8 +164,8 @@ func (c *ControlPoller) handle(ctx context.Context, msg *model.EdgeControlMessag
 		if err := scanner.Err(); err != nil {
 			log.Printf("edge-agent: exec scanner error: %v", err)
 		}
-		if execCmd.ProcessState.ExitCode() != 0 {
-			log.Printf("edge-agent: exec failed (exit %d)", execCmd.ProcessState.ExitCode())
+		if execErr := <-waitErr; execErr != nil {
+			log.Printf("edge-agent: exec failed: %v", execErr)
 		} else {
 			log.Printf("edge-agent: exec done")
 		}
@@ -201,7 +211,7 @@ func (c *ControlPoller) uploadToDrive(ctx context.Context, localPath string) err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		body, _ := io.ReadAll(resp.Body)
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
 		return fmt.Errorf("drive upload status %d: %s", resp.StatusCode, string(body))
 	}
 	return nil

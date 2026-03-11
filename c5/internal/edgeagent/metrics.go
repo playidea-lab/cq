@@ -61,6 +61,10 @@ func ParseMetricsLine(line string) (key string, value float64, ok bool) {
 	return k, f, true
 }
 
+// maxMetricsKeys limits the number of distinct metric keys to prevent memory exhaustion
+// when a compromised or misconfigured MetricsCommand emits unbounded unique keys.
+const maxMetricsKeys = 1000
+
 // Ingest parses a line and stores the metric if valid.
 func (m *MetricsReporter) Ingest(line string) {
 	k, v, ok := ParseMetricsLine(line)
@@ -68,7 +72,9 @@ func (m *MetricsReporter) Ingest(line string) {
 		return
 	}
 	m.mu.Lock()
-	m.metrics[k] = v
+	if len(m.metrics) < maxMetricsKeys {
+		m.metrics[k] = v
+	}
 	m.mu.Unlock()
 }
 

@@ -9,6 +9,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -34,8 +35,16 @@ type Config struct {
 	HealthCheckTimeout time.Duration
 
 	// Drive upload for collect control action (optional).
-	DriveURL   string
+	DriveURL    string
 	DriveAPIKey string
+
+	// AllowExec enables the "exec" control action (default: disabled for security).
+	// Set to true only in trusted environments where Hub-originated shell commands are acceptable.
+	AllowExec bool
+
+	// AllowedArtifactURLPrefixes restricts artifact download URLs to specific prefixes.
+	// If empty, only the Hub's own origin is allowed (same scheme+host as HubURL).
+	AllowedArtifactURLPrefixes []string
 }
 
 // runHealthCheck runs the health check command within the given timeout.
@@ -56,6 +65,14 @@ func Run(ctx context.Context, cfg Config) error {
 
 	if cfg.Workdir == "" {
 		log.Println("edge-agent: --workdir not set; collect path guard disabled (any local path may be uploaded)")
+	} else {
+		// Normalize workdir to absolute path at startup so filepath.Abs guards are stable
+		// even if the process later changes its working directory.
+		absWorkdir, err := filepath.Abs(cfg.Workdir)
+		if err != nil {
+			return fmt.Errorf("workdir: %w", err)
+		}
+		cfg.Workdir = absWorkdir
 	}
 
 	if cfg.MetricsInterval <= 0 {
@@ -65,8 +82,10 @@ func Run(ctx context.Context, cfg Config) error {
 		cfg.HealthCheckTimeout = 30 * time.Second
 	}
 
-	// Register edge (retry on failure)
+	// Register edge (retry with exponential backoff on failure)
 	var edgeID string
+	retryDelay := 5 * time.Second
+	const maxRetryDelay = 60 * time.Second
 	for {
 		reqBody, _ := json.Marshal(model.EdgeRegisterRequest{Name: cfg.EdgeName})
 		req, err := http.NewRequestWithContext(ctx, "POST", baseURL+"/v1/edges/register", strings.NewReader(string(reqBody)))
@@ -79,24 +98,36 @@ func Run(ctx context.Context, cfg Config) error {
 		}
 		resp, err := client.Do(req)
 		if err != nil {
-			log.Printf("edge-agent: register failed: %v; retrying in 5s", err)
+			log.Printf("edge-agent: register failed: %v; retrying in %s", err, retryDelay)
 			select {
 			case <-ctx.Done():
 				return ctx.Err()
-			case <-time.After(5 * time.Second):
-				continue
+			case <-time.After(retryDelay):
 			}
+			if retryDelay < maxRetryDelay {
+				retryDelay *= 2
+				if retryDelay > maxRetryDelay {
+					retryDelay = maxRetryDelay
+				}
+			}
+			continue
 		}
 		if resp.StatusCode != http.StatusCreated {
-			body, _ := io.ReadAll(resp.Body)
+			body, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
 			resp.Body.Close()
-			log.Printf("edge-agent: register returned %d: %s; retrying in 5s", resp.StatusCode, string(body))
+			log.Printf("edge-agent: register returned %d: %s; retrying in %s", resp.StatusCode, string(body), retryDelay)
 			select {
 			case <-ctx.Done():
 				return ctx.Err()
-			case <-time.After(5 * time.Second):
-				continue
+			case <-time.After(retryDelay):
 			}
+			if retryDelay < maxRetryDelay {
+				retryDelay *= 2
+				if retryDelay > maxRetryDelay {
+					retryDelay = maxRetryDelay
+				}
+			}
+			continue
 		}
 		var regResp model.EdgeRegisterResponse
 		if err := json.NewDecoder(resp.Body).Decode(&regResp); err != nil {
@@ -116,7 +147,7 @@ func Run(ctx context.Context, cfg Config) error {
 	}
 
 	// ControlPoller goroutine
-	cp := newControlPoller(edgeID, baseURL, cfg.APIKey, cfg.DriveURL, cfg.DriveAPIKey, cfg.Workdir, client)
+	cp := newControlPoller(edgeID, baseURL, cfg.APIKey, cfg.DriveURL, cfg.DriveAPIKey, cfg.Workdir, cfg.AllowExec, client)
 	go cp.Start(ctx)
 
 	// Heartbeat goroutine
@@ -134,7 +165,12 @@ func Run(ctx context.Context, cfg Config) error {
 				if cfg.APIKey != "" {
 					req.Header.Set("X-API-Key", cfg.APIKey)
 				}
-				client.Do(req)
+				resp, err := client.Do(req)
+				if err != nil {
+					log.Printf("edge-agent: heartbeat failed: %v", err)
+				} else {
+					resp.Body.Close()
+				}
 			}
 		}
 	}()
@@ -177,7 +213,7 @@ func Run(ctx context.Context, cfg Config) error {
 		resp.Body.Close()
 
 		for _, a := range assignments {
-			processAssignment(ctx, client, baseURL, cfg.APIKey, edgeID, cfg.Workdir, cfg.HealthCheckTimeout, &a)
+			processAssignment(ctx, client, baseURL, cfg.APIKey, edgeID, cfg.Workdir, cfg.HealthCheckTimeout, cfg.AllowedArtifactURLPrefixes, &a)
 		}
 
 		sleepOrDone(ctx, cfg.PollInterval)
@@ -191,7 +227,7 @@ func sleepOrDone(ctx context.Context, d time.Duration) {
 	}
 }
 
-func processAssignment(ctx context.Context, client *http.Client, baseURL, apiKey, edgeID, workdir string, healthCheckTimeout time.Duration, a *model.DeployAssignmentResponse) {
+func processAssignment(ctx context.Context, client *http.Client, baseURL, apiKey, edgeID, workdir string, healthCheckTimeout time.Duration, allowedURLPrefixes []string, a *model.DeployAssignmentResponse) {
 	deployDir := filepath.Join(workdir, a.DeployID)
 	if err := os.MkdirAll(deployDir, 0o755); err != nil {
 		reportTargetStatus(ctx, client, baseURL, apiKey, a.DeployID, edgeID, "failed", err.Error())
@@ -211,8 +247,21 @@ func processAssignment(ctx context.Context, client *http.Client, baseURL, apiKey
 	// Download artifacts
 	for _, art := range a.Artifacts {
 		dest := filepath.Join(deployDir, art.Path)
+		// Guard against path traversal (e.g. art.Path = "../../etc/passwd")
+		deployDirClean := filepath.Clean(deployDir) + string(filepath.Separator)
+		if !strings.HasPrefix(filepath.Clean(dest)+string(filepath.Separator), deployDirClean) {
+			reportTargetStatus(ctx, client, baseURL, apiKey, a.DeployID, edgeID, "failed",
+				fmt.Sprintf("artifact path traversal rejected: %s", art.Path))
+			return
+		}
 		if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
 			reportTargetStatus(ctx, client, baseURL, apiKey, a.DeployID, edgeID, "failed", "mkdir: "+err.Error())
+			return
+		}
+		// Guard against SSRF: artifact URL must match Hub origin or an explicit allowlist prefix.
+		if !isAllowedArtifactURL(art.URL, baseURL, allowedURLPrefixes) {
+			reportTargetStatus(ctx, client, baseURL, apiKey, a.DeployID, edgeID, "failed",
+				fmt.Sprintf("artifact URL not allowed (SSRF guard): %s", art.URL))
 			return
 		}
 		req, err := http.NewRequestWithContext(ctx, "GET", art.URL, nil)
@@ -297,6 +346,24 @@ func processAssignment(ctx context.Context, client *http.Client, baseURL, apiKey
 
 	rb.Cleanup(deployDir)
 	reportTargetStatus(ctx, client, baseURL, apiKey, a.DeployID, edgeID, "succeeded", "")
+}
+
+// isAllowedArtifactURL validates that rawURL is safe to fetch.
+// It first checks explicit allowlist prefixes, then falls back to same-origin as hubURL.
+// This prevents SSRF attacks where a compromised Hub directs the agent to fetch
+// internal metadata endpoints (e.g. http://169.254.169.254/).
+func isAllowedArtifactURL(rawURL, hubURL string, allowedPrefixes []string) bool {
+	for _, p := range allowedPrefixes {
+		if strings.HasPrefix(rawURL, p) {
+			return true
+		}
+	}
+	u1, err1 := url.Parse(rawURL)
+	u2, err2 := url.Parse(hubURL)
+	if err1 != nil || err2 != nil {
+		return false
+	}
+	return u1.Scheme == u2.Scheme && strings.EqualFold(u1.Host, u2.Host)
 }
 
 func reportTargetStatus(ctx context.Context, client *http.Client, baseURL, apiKey, deployID, edgeID, status, errMsg string) {

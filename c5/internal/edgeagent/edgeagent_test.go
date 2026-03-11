@@ -184,7 +184,7 @@ func TestControlPollerCollect(t *testing.T) {
 	}))
 	defer hub.Close()
 
-	cp := newControlPoller("edge-1", hub.URL, "", drive.URL, "", dir, &http.Client{Timeout: 5 * time.Second})
+	cp := newControlPoller("edge-1", hub.URL, "", drive.URL, "", dir, false, &http.Client{Timeout: 5 * time.Second})
 	ctx := context.Background()
 	retrieved, err := cp.Poll(ctx)
 	if err != nil {
@@ -215,7 +215,8 @@ func TestControlPollerExec(t *testing.T) {
 	}))
 	defer hub.Close()
 
-	cp := newControlPoller("edge-1", hub.URL, "", "", "", "", &http.Client{Timeout: 5 * time.Second})
+	// allowExec=true required; exec is disabled by default
+	cp := newControlPoller("edge-1", hub.URL, "", "", "", "", true, &http.Client{Timeout: 5 * time.Second})
 	ctx := context.Background()
 	retrieved, err := cp.Poll(ctx)
 	if err != nil {
@@ -259,7 +260,7 @@ func TestControlPollerCollect_NoWorkdir(t *testing.T) {
 	defer hub.Close()
 
 	// workdir="" → path guard disabled; testFile is outside any workdir restriction
-	cp := newControlPoller("edge-1", hub.URL, "", drive.URL, "", "", &http.Client{Timeout: 5 * time.Second})
+	cp := newControlPoller("edge-1", hub.URL, "", drive.URL, "", "", false, &http.Client{Timeout: 5 * time.Second})
 	ctx := context.Background()
 	retrieved, err := cp.Poll(ctx)
 	if err != nil {
@@ -365,6 +366,125 @@ func TestHealthCheckFail(t *testing.T) {
 
 	if lastStatus != "failed" {
 		t.Errorf("expected status=failed after health check fail, got %q", lastStatus)
+	}
+}
+
+// TestExecDeniedByDefault verifies that exec action is silently ignored when AllowExec=false.
+func TestExecDeniedByDefault(t *testing.T) {
+	hub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "/control") {
+			w.Header().Set("Content-Type", "application/json")
+			msgs := []model.EdgeControlMessage{{
+				Action: "exec",
+				Params: map[string]string{"cmd": "touch /tmp/edgeagent-exec-should-not-run"},
+			}}
+			json.NewEncoder(w).Encode(msgs) //nolint:errcheck
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer hub.Close()
+
+	// AllowExec=false (default)
+	cp := newControlPoller("edge-1", hub.URL, "", "", "", "", false, &http.Client{Timeout: 5 * time.Second})
+	ctx := context.Background()
+	msgs, err := cp.Poll(ctx)
+	if err != nil {
+		t.Fatalf("Poll: %v", err)
+	}
+	for _, m := range msgs {
+		cp.handle(ctx, &m)
+	}
+	// The file must NOT have been created
+	if _, err := os.Stat("/tmp/edgeagent-exec-should-not-run"); err == nil {
+		os.Remove("/tmp/edgeagent-exec-should-not-run")
+		t.Error("exec ran despite AllowExec=false")
+	}
+}
+
+// TestArtifactPathTraversalRejected verifies that artifact paths attempting directory traversal are rejected.
+func TestArtifactPathTraversalRejected(t *testing.T) {
+	var lastStatus string
+	hub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == "POST" && r.URL.Path == "/v1/edges/register":
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusCreated)
+			json.NewEncoder(w).Encode(model.EdgeRegisterResponse{EdgeID: "e-pt"})
+		case r.Method == "POST" && r.URL.Path == "/v1/deploy/target-status":
+			var req model.DeployTargetStatusRequest
+			json.NewDecoder(r.Body).Decode(&req)
+			lastStatus = req.Status
+			w.WriteHeader(http.StatusOK)
+		case r.Method == "GET" && strings.Contains(r.URL.Path, "/v1/deploy/assignments/"):
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode([]model.DeployAssignmentResponse{{
+				DeployID: "d-pt",
+				Artifacts: []model.DeployAssignmentArtifact{{
+					Path: "../../etc/cron.d/backdoor",
+					URL:  "http://127.0.0.1:0/artifact", // won't be reached
+				}},
+			}})
+		default:
+			w.WriteHeader(http.StatusOK)
+		}
+	}))
+	defer hub.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+	Run(ctx, Config{ //nolint:errcheck
+		HubURL:       hub.URL,
+		EdgeName:     "e-pt",
+		Workdir:      t.TempDir(),
+		PollInterval: 50 * time.Millisecond,
+	})
+
+	if lastStatus != "failed" {
+		t.Errorf("expected status=failed for path traversal, got %q", lastStatus)
+	}
+}
+
+// TestArtifactSSRFRejected verifies that artifact URLs from a different origin are rejected.
+func TestArtifactSSRFRejected(t *testing.T) {
+	var lastStatus string
+	hub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == "POST" && r.URL.Path == "/v1/edges/register":
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusCreated)
+			json.NewEncoder(w).Encode(model.EdgeRegisterResponse{EdgeID: "e-ssrf"})
+		case r.Method == "POST" && r.URL.Path == "/v1/deploy/target-status":
+			var req model.DeployTargetStatusRequest
+			json.NewDecoder(r.Body).Decode(&req)
+			lastStatus = req.Status
+			w.WriteHeader(http.StatusOK)
+		case r.Method == "GET" && strings.Contains(r.URL.Path, "/v1/deploy/assignments/"):
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode([]model.DeployAssignmentResponse{{
+				DeployID: "d-ssrf",
+				Artifacts: []model.DeployAssignmentArtifact{{
+					Path: "model.bin",
+					URL:  "http://169.254.169.254/latest/meta-data/", // SSRF target
+				}},
+			}})
+		default:
+			w.WriteHeader(http.StatusOK)
+		}
+	}))
+	defer hub.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+	Run(ctx, Config{ //nolint:errcheck
+		HubURL:       hub.URL,
+		EdgeName:     "e-ssrf",
+		Workdir:      t.TempDir(),
+		PollInterval: 50 * time.Millisecond,
+	})
+
+	if lastStatus != "failed" {
+		t.Errorf("expected status=failed for SSRF attempt, got %q", lastStatus)
 	}
 }
 
