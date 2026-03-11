@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -13,7 +12,6 @@ import (
 func TestPollerWakeChannel(t *testing.T) {
 	t.Run("wake triggers immediate poll", func(t *testing.T) {
 		// Use a very long interval so the ticker never fires during the test.
-		pollCalls := atomic.Int64{}
 		p := newKnowledgeHubPoller(knowledgeHubPollerConfig{
 			PollInterval: 24 * time.Hour,
 		})
@@ -54,9 +52,6 @@ func TestPollerWakeChannel(t *testing.T) {
 		if h.Status == "" {
 			t.Error("Health().Status should not be empty after stop")
 		}
-
-		// Suppress unused variable warning.
-		_ = pollCalls
 	})
 
 	t.Run("nil wake channel uses ticker only", func(t *testing.T) {

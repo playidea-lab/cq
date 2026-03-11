@@ -205,14 +205,20 @@ func (s *Server) handleJobComplete(w http.ResponseWriter, r *http.Request, jobID
 	// Clean up lease
 	s.store.DeleteLease(jobID)
 
-	// Fetch job once for both deploy rules and Dooray notification.
+	// Signal any MCP tools/call waiter that the job is done.
+	s.handleWorkerComplete(jobID)
+
+	// DAG orchestrator hook: advance DAG if this job was a DAG node
+	s.onJobComplete(jobID, status, exitCode)
+
+	// Fetch job once for both SSE broadcast, deploy rules and Dooray notification.
+	// Fetched after state mutations are finalized so subscribers observe consistent state.
 	var completedJob *model.Job
 	if j, err := s.store.GetJob(jobID); err == nil {
 		completedJob = j
+	} else {
+		log.Printf("c5: handleJobComplete: GetJob(%s) failed after CompleteJob: %v (SSE broadcast skipped)", jobID, err)
 	}
-
-	// Signal any MCP tools/call waiter that the job is done.
-	s.handleWorkerComplete(jobID)
 
 	// SSE broadcast: notify project-scoped subscribers immediately.
 	if completedJob != nil {
@@ -226,9 +232,6 @@ func (s *Server) handleJobComplete(w http.ResponseWriter, r *http.Request, jobID
 			"exit_code": exitCode,
 		})
 	}
-
-	// DAG orchestrator hook: advance DAG if this job was a DAG node
-	s.onJobComplete(jobID, status, exitCode)
 
 	// Deploy rules: evaluate on job success and create deployments for matching rules
 	if status == model.StatusSucceeded && completedJob != nil {
