@@ -39,6 +39,7 @@ type SSESubscriberComponent struct {
 	cfg        SSESubscriberConfig
 	pub        eventbus.Publisher
 	httpClient *http.Client // reused across connect() calls
+	wake       chan struct{} // optional; set via SetWakeChannel
 
 	mu        sync.Mutex
 	cancel    context.CancelFunc
@@ -61,6 +62,13 @@ func NewSSESubscriberComponent(cfg SSESubscriberConfig, pub eventbus.Publisher) 
 }
 
 func (c *SSESubscriberComponent) Name() string { return "ssesubscriber" }
+
+// SetWakeChannel configures a channel that receives a signal when a
+// hub.job.completed or hub.job.failed event is observed.
+// Must be called before Start.
+func (c *SSESubscriberComponent) SetWakeChannel(ch chan struct{}) {
+	c.wake = ch
+}
 
 // Start launches the background reconnect loop.
 func (c *SSESubscriberComponent) Start(ctx context.Context) error {
@@ -225,7 +233,8 @@ func (c *SSESubscriberComponent) connect(ctx context.Context) error {
 	return nil
 }
 
-// publishEvent forwards a raw SSE data payload to the EventBus.
+// publishEvent forwards a raw SSE data payload to the EventBus and optionally
+// wakes the knowledgeHubPoller when a job completion event is detected.
 func (c *SSESubscriberComponent) publishEvent(payload string) {
 	if c.pub == nil {
 		return
@@ -236,4 +245,11 @@ func (c *SSESubscriberComponent) publishEvent(payload string) {
 		json.RawMessage(payload),
 		c.cfg.ProjectID,
 	)
+	if c.wake != nil &&
+		(strings.Contains(payload, `"hub.job.completed"`) || strings.Contains(payload, `"hub.job.failed"`)) {
+		select {
+		case c.wake <- struct{}{}:
+		default:
+		}
+	}
 }

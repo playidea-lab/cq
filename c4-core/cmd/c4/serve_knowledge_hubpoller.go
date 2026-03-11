@@ -50,6 +50,7 @@ type knowledgeHubPollerConfig struct {
 type knowledgeHubPoller struct {
 	cfg    knowledgeHubPollerConfig
 	client *hub.Client // created once in newKnowledgeHubPoller; reused across polls
+	wake   chan struct{} // optional; signals immediate poll (set via SetWakeChannel)
 	cancel context.CancelFunc
 	done   chan struct{}
 
@@ -101,6 +102,15 @@ func (p *knowledgeHubPoller) Health() serve.ComponentHealth {
 	return serve.ComponentHealth{Status: p.status, Detail: p.detail}
 }
 
+// SetWakeChannel sets an optional channel that triggers an immediate poll when
+// signalled, without waiting for the next ticker tick.
+// A nil wake channel leaves the ticker-only behavior intact (Go spec: receive on
+// nil channel blocks forever, so the case is never selected).
+// Must be called before Start.
+func (p *knowledgeHubPoller) SetWakeChannel(ch chan struct{}) {
+	p.wake = ch
+}
+
 func (p *knowledgeHubPoller) loop(ctx context.Context) {
 	defer close(p.done)
 	ticker := time.NewTicker(p.cfg.PollInterval)
@@ -110,6 +120,8 @@ func (p *knowledgeHubPoller) loop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
+			p.poll(ctx)
+		case <-p.wake:
 			p.poll(ctx)
 		}
 	}

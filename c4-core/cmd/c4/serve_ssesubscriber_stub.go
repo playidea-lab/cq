@@ -7,7 +7,7 @@ import (
 	"github.com/changmin/c4-core/internal/serve"
 )
 
-func registerSSESubscriberServeComponent(mgr *serve.Manager, cfg config.C4Config, eb *serve.EventBusComponent) {
+func registerSSESubscriberServeComponent(mgr *serve.Manager, cfg config.C4Config, eb *serve.EventBusComponent, wakeCh chan struct{}) {
 	// SSESubscriber requires both c5_hub and c3_eventbus build tags.
-	_, _, _ = mgr, cfg, eb
+	_, _, _, _ = mgr, cfg, eb, wakeCh
 }
