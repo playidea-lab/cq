@@ -20,6 +20,7 @@ import (
 	"github.com/changmin/c4-core/internal/mcp"
 	"github.com/changmin/c4-core/internal/mcp/handlers"
 	"github.com/changmin/c4-core/internal/secrets"
+	storepackage "github.com/changmin/c4-core/internal/store"
 	_ "modernc.org/sqlite"
 )
 
@@ -331,6 +332,22 @@ func newMCPServer() (*mcpServer, error) {
 
 	// Register notification handlers (c4_notification_set, c4_notification_get, c4_notify).
 	handlers.RegisterNotifyHandlers(reg, projectDir)
+
+	// Register experiment registry handlers (c4_experiment_register,
+	// c4_run_checkpoint, c4_run_complete, c4_run_should_continue).
+	if expStore, expErr := storepackage.NewSQLiteExperimentStore(db); expErr != nil {
+		fmt.Fprintf(os.Stderr, "cq: experiment store init failed: %v\n", expErr)
+	} else {
+		expHandlers := handlers.ExperimentHandlers{Store: expStore}
+		if knowledgeStore != nil {
+			expHandlers.KnowledgeRecord = func(_ context.Context, title, content, domain string) error {
+				meta := map[string]any{"title": title, "domain": domain}
+				_, err := knowledgeStore.Create(knowledge.TypeInsight, meta, content)
+				return err
+			}
+		}
+		handlers.RegisterExperimentHandlers(reg, expHandlers)
+	}
 
 	// --- Phase 4: Run post-store hooks (C1, Drive, Hub, CDP, EventBus) ---
 	// ctx.sqliteStore and ctx.proxy are now set; EventBus wiring can proceed.
