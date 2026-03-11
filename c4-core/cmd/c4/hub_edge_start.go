@@ -32,15 +32,17 @@ func edgeConfigPath() string {
 
 // edgeYAML is the schema for ~/.c5/edge.yaml written by `cq hub edge init`.
 type edgeYAML struct {
-	HubURL          string `yaml:"hub_url"`
-	APIKey          string `yaml:"api_key"`
-	EdgeName        string `yaml:"edge_name,omitempty"`
-	Workdir         string `yaml:"workdir,omitempty"`
-	MetricsCommand  string `yaml:"metrics_command,omitempty"`
-	MetricsInterval int    `yaml:"metrics_interval,omitempty"` // seconds
-	DriveURL        string `yaml:"drive_url,omitempty"`
-	DriveAPIKey     string `yaml:"drive_api_key,omitempty"`
-	Binary          string `yaml:"binary,omitempty"` // override c5 binary path
+	HubURL                     string   `yaml:"hub_url"`
+	APIKey                     string   `yaml:"api_key"`
+	EdgeName                   string   `yaml:"edge_name,omitempty"`
+	Workdir                    string   `yaml:"workdir,omitempty"`
+	MetricsCommand             string   `yaml:"metrics_command,omitempty"`
+	MetricsInterval            int      `yaml:"metrics_interval,omitempty"` // seconds
+	DriveURL                   string   `yaml:"drive_url,omitempty"`
+	DriveAPIKey                string   `yaml:"drive_api_key,omitempty"`
+	Binary                     string   `yaml:"binary,omitempty"` // override c5 binary path
+	AllowExec                  bool     `yaml:"allow_exec,omitempty"`
+	AllowedArtifactURLPrefixes []string `yaml:"allowed_artifact_url_prefixes,omitempty"`
 }
 
 var (
@@ -305,6 +307,12 @@ func runEdgeStart(cmd *cobra.Command, args []string) error {
 	}
 	// DriveAPIKey is passed via C5_DRIVE_API_KEY env var (not CLI arg) to avoid
 	// ps-visible exposure. c5 edge-agent reads it from env as a fallback.
+	if cfg.AllowExec {
+		cmdArgs = append(cmdArgs, "--allow-exec")
+	}
+	for _, prefix := range cfg.AllowedArtifactURLPrefixes {
+		cmdArgs = append(cmdArgs, "--allowed-artifact-url-prefix", prefix)
+	}
 
 	fmt.Printf("Starting: %s %s\n", binary, strings.Join(cmdArgs, " "))
 
@@ -367,6 +375,12 @@ func runEdgeInstall(cmd *cobra.Command, args []string) error {
 	}
 	if cfg.DriveURL != "" {
 		execArgs = append(execArgs, "--drive-url", cfg.DriveURL)
+	}
+	if cfg.AllowExec {
+		execArgs = append(execArgs, "--allow-exec")
+	}
+	for _, prefix := range cfg.AllowedArtifactURLPrefixes {
+		execArgs = append(execArgs, "--allowed-artifact-url-prefix", prefix)
 	}
 
 	var content, destPath string

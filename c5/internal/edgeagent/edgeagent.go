@@ -349,18 +349,29 @@ func processAssignment(ctx context.Context, client *http.Client, baseURL, apiKey
 }
 
 // isAllowedArtifactURL validates that rawURL is safe to fetch.
-// It first checks explicit allowlist prefixes, then falls back to same-origin as hubURL.
+// It first checks explicit allowlist prefixes by comparing parsed origins
+// (scheme + host) to prevent prefix-spoofing attacks such as
+// https://cdn.example.com.attacker.com/ matching the prefix "https://cdn.example.com".
+// Falls back to same-origin as hubURL.
 // This prevents SSRF attacks where a compromised Hub directs the agent to fetch
 // internal metadata endpoints (e.g. http://169.254.169.254/).
 func isAllowedArtifactURL(rawURL, hubURL string, allowedPrefixes []string) bool {
+	u1, err1 := url.Parse(rawURL)
+	if err1 != nil {
+		return false
+	}
 	for _, p := range allowedPrefixes {
-		if strings.HasPrefix(rawURL, p) {
+		up, err := url.Parse(p)
+		if err != nil {
+			continue
+		}
+		// Compare by scheme+host to prevent prefix-spoofing.
+		if u1.Scheme == up.Scheme && strings.EqualFold(u1.Host, up.Host) {
 			return true
 		}
 	}
-	u1, err1 := url.Parse(rawURL)
 	u2, err2 := url.Parse(hubURL)
-	if err1 != nil || err2 != nil {
+	if err2 != nil {
 		return false
 	}
 	return u1.Scheme == u2.Scheme && strings.EqualFold(u1.Host, u2.Host)

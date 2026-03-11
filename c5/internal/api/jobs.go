@@ -166,6 +166,8 @@ func (s *Server) handleJobCancel(w http.ResponseWriter, r *http.Request, jobID s
 	// SSE broadcast for cancellation: consistent with completed/failed paths.
 	if j, err := s.store.GetJob(jobID); err == nil {
 		s.broadcastSSEEvent(j.ProjectID, "hub.job.cancelled", map[string]any{"job_id": jobID, "status": "CANCELLED"})
+	} else {
+		log.Printf("c5: handleJobCancel: GetJob(%s) failed after UpdateJobStatus: %v (SSE broadcast skipped)", jobID, err)
 	}
 
 	if s.eventPub.IsEnabled() {

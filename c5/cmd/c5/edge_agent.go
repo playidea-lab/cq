@@ -13,16 +13,18 @@ import (
 
 func edgeAgentCmd() *cobra.Command {
 	var (
-		hubURL          string
-		apiKey          string
-		edgeName        string
-		workdir         string
-		pollSec         int
-		metricsCommand  string
-		metricsInterval int
-		healthCheckTimeout int
-		driveURL        string
-		driveAPIKey     string
+		hubURL                     string
+		apiKey                     string
+		edgeName                   string
+		workdir                    string
+		pollSec                    int
+		metricsCommand             string
+		metricsInterval            int
+		healthCheckTimeout         int
+		driveURL                   string
+		driveAPIKey                string
+		allowExec                  bool
+		allowedArtifactURLPrefixes []string
 	)
 
 	cmd := &cobra.Command{
@@ -39,16 +41,18 @@ func edgeAgentCmd() *cobra.Command {
 			ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 			defer stop()
 			return edgeagent.Run(ctx, edgeagent.Config{
-				HubURL:             hubURL,
-				APIKey:             apiKey,
-				EdgeName:           edgeName,
-				Workdir:            workdir,
-				PollInterval:       time.Duration(pollSec) * time.Second,
-				MetricsCommand:     metricsCommand,
-				MetricsInterval:    time.Duration(metricsInterval) * time.Second,
-				HealthCheckTimeout: time.Duration(healthCheckTimeout) * time.Second,
-				DriveURL:           driveURL,
-				DriveAPIKey:        driveAPIKey,
+				HubURL:                     hubURL,
+				APIKey:                     apiKey,
+				EdgeName:                   edgeName,
+				Workdir:                    workdir,
+				PollInterval:               time.Duration(pollSec) * time.Second,
+				MetricsCommand:             metricsCommand,
+				MetricsInterval:            time.Duration(metricsInterval) * time.Second,
+				HealthCheckTimeout:         time.Duration(healthCheckTimeout) * time.Second,
+				DriveURL:                   driveURL,
+				DriveAPIKey:                driveAPIKey,
+				AllowExec:                  allowExec,
+				AllowedArtifactURLPrefixes: allowedArtifactURLPrefixes,
 			})
 		},
 	}
@@ -71,6 +75,8 @@ func edgeAgentCmd() *cobra.Command {
 	cmd.Flags().IntVar(&healthCheckTimeout, "health-check-timeout", 30, "Health check timeout in seconds")
 	cmd.Flags().StringVar(&driveURL, "drive-url", os.Getenv("C5_DRIVE_URL"), "Drive server URL for collect action uploads")
 	cmd.Flags().StringVar(&driveAPIKey, "drive-api-key", os.Getenv("C5_DRIVE_API_KEY"), "Drive API key for authentication")
+	cmd.Flags().BoolVar(&allowExec, "allow-exec", false, "Enable the 'exec' control action (Hub-originated shell commands; disabled by default for security)")
+	cmd.Flags().StringArrayVar(&allowedArtifactURLPrefixes, "allowed-artifact-url-prefix", nil, "Allowed artifact URL prefixes (scheme+host compared; repeatable; empty = Hub origin only)")
 
 	return cmd
 }

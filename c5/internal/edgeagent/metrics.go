@@ -27,8 +27,9 @@ type MetricsReporter struct {
 	interval time.Duration
 	client   *http.Client
 
-	mu      sync.Mutex
-	metrics map[string]float64
+	mu         sync.Mutex
+	metrics    map[string]float64
+	capWarned  bool // true after one-time cap-reached log is emitted
 }
 
 func newMetricsReporter(edgeID, hubURL, apiKey, command string, interval time.Duration, client *http.Client) *MetricsReporter {
@@ -74,6 +75,9 @@ func (m *MetricsReporter) Ingest(line string) {
 	m.mu.Lock()
 	if len(m.metrics) < maxMetricsKeys {
 		m.metrics[k] = v
+	} else if !m.capWarned {
+		m.capWarned = true
+		log.Printf("edge-agent: metrics key cap (%d) reached; new keys will be dropped until next report cycle", maxMetricsKeys)
 	}
 	m.mu.Unlock()
 }
