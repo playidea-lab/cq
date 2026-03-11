@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.95.0] - 2026-03-12
+
+### ✨ Features
+- **c5**: Hub 잡 완료 시 SSE push-on-complete — `handleJobComplete`/`handleJobCancel`에 `broadcastSSEEvent` 추가 (30초 폴링 지연 제거)
+- **c4**: `knowledgeHubPoller` wake channel 연동 — SSE `hub.job.completed`/`failed`/`cancelled` 수신 즉시 poll (ticker 대기 불필요)
+
+### 🐛 Bug Fixes
+- **edgeagent**: `isAllowedArtifactURL` SSRF 방어 강화 — `strings.HasPrefix` → URL 파싱 기반 scheme+host 비교 (prefix spoofing 방지)
+- **edgeagent**: CLI `--allow-exec` / `--allowed-artifact-url-prefix` 플래그 추가 + `cq hub edge start` YAML→CLI 전달 연결
+- **edgeagent**: Metrics `Ingest` 기존 키 갱신 stale 차단 수정 + `capWarned` 리셋 ("until next report cycle" 계약)
+
+### 🧪 Tests
+- SSE broadcast 3종 테스트 (completed/failed/cancel-on-nonexistent)
+- `TestPollerWakeChannel` — wake channel 즉시 poll 검증 (httptest + atomic counter)
+- `TestSSESubscriberWake` — `hub.job.cancelled` 케이스 추가
+- `TestEdgeStart_AllowExecFlags` — AllowExec/AllowedArtifactURLPrefixes CLI 전달 검증
+
+---
+
 ## [v0.94.7] - 2026-03-11
 
 ### 📚 Documentation
