@@ -309,6 +309,7 @@ func runEdgeStart(cmd *cobra.Command, args []string) error {
 	// ps-visible exposure. c5 edge-agent reads it from env as a fallback.
 	if cfg.AllowExec {
 		cmdArgs = append(cmdArgs, "--allow-exec")
+		fmt.Fprintln(os.Stderr, "cq: WARNING: exec action is enabled — Hub-originated shell commands will execute on this node")
 	}
 	for _, prefix := range cfg.AllowedArtifactURLPrefixes {
 		cmdArgs = append(cmdArgs, "--allowed-artifact-url-prefix", prefix)

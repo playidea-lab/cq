@@ -357,6 +357,10 @@ func TestEdgeStart_SpawnArgs(t *testing.T) {
 	if strings.Contains(argsStr, "--drive-api-key") {
 		t.Errorf("args %q must NOT contain --drive-api-key (should be in env)", argsStr)
 	}
+	// AllowExec=false must NOT produce --allow-exec flag.
+	if strings.Contains(argsStr, "--allow-exec") {
+		t.Errorf("args %q must NOT contain --allow-exec when AllowExec=false", argsStr)
+	}
 
 	// Verify actual Cmd.Env set by runEdgeStart.
 	env := capturedCmd.Env
@@ -381,6 +385,59 @@ func TestEdgeStart_SpawnArgs(t *testing.T) {
 	}
 	if !hasDriveKey {
 		t.Error("C5_DRIVE_API_KEY not found in subprocess env")
+	}
+}
+
+// TestEdgeStart_AllowExecFlags verifies that AllowExec and
+// AllowedArtifactURLPrefixes are propagated as CLI flags.
+func TestEdgeStart_AllowExecFlags(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfgPath := filepath.Join(tmpDir, "edge.yaml")
+
+	cfg := edgeYAML{
+		HubURL:                     "https://hub.example.com",
+		APIKey:                     "test-secret",
+		AllowExec:                  true,
+		AllowedArtifactURLPrefixes: []string{"https://cdn.example.com", "https://storage.example.org"},
+	}
+	data, _ := yaml.Marshal(cfg)
+	if err := os.WriteFile(cfgPath, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	orig := edgeConfigPathOverride
+	edgeConfigPathOverride = cfgPath
+	defer func() { edgeConfigPathOverride = orig }()
+
+	var capturedArgs []string
+	origExec := edgeExecCommand
+	edgeExecCommand = func(name string, args ...string) *exec.Cmd {
+		capturedArgs = args
+		return exec.Command("true")
+	}
+	defer func() { edgeExecCommand = origExec }()
+
+	oldStdout := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+	err := runEdgeStart(nil, nil)
+	w.Close()
+	os.Stdout = oldStdout
+	r.Close()
+
+	if err != nil {
+		t.Fatalf("runEdgeStart: %v", err)
+	}
+
+	argsStr := strings.Join(capturedArgs, " ")
+	if !strings.Contains(argsStr, "--allow-exec") {
+		t.Errorf("args %q should contain --allow-exec", argsStr)
+	}
+	if !strings.Contains(argsStr, "https://cdn.example.com") {
+		t.Errorf("args %q should contain first allowed prefix", argsStr)
+	}
+	if !strings.Contains(argsStr, "https://storage.example.org") {
+		t.Errorf("args %q should contain second allowed prefix", argsStr)
 	}
 }
 

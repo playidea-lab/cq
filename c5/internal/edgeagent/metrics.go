@@ -73,7 +73,8 @@ func (m *MetricsReporter) Ingest(line string) {
 		return
 	}
 	m.mu.Lock()
-	if len(m.metrics) < maxMetricsKeys {
+	if _, exists := m.metrics[k]; exists || len(m.metrics) < maxMetricsKeys {
+		// Always update existing keys; only admit new keys below the cap.
 		m.metrics[k] = v
 	} else if !m.capWarned {
 		m.capWarned = true
