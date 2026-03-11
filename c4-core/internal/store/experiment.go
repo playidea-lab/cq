@@ -10,6 +10,9 @@ import (
 	"time"
 )
 
+// ErrRunNotFound is returned when a run_id is not found in the experiment store.
+var ErrRunNotFound = errors.New("run not found")
+
 // SQLiteExperimentStore implements ExperimentStore backed by SQLite.
 type SQLiteExperimentStore struct {
 	db *sql.DB
@@ -34,8 +37,7 @@ func NewSQLiteExperimentStore(db *sql.DB) (*SQLiteExperimentStore, error) {
 }
 
 func (s *SQLiteExperimentStore) migrate() error {
-	_, err := s.db.Exec(`
-CREATE TABLE IF NOT EXISTS exp_runs (
+	if _, err := s.db.Exec(`CREATE TABLE IF NOT EXISTS exp_runs (
 	run_id           TEXT PRIMARY KEY,
 	name             TEXT NOT NULL,
 	config           TEXT,
@@ -45,14 +47,16 @@ CREATE TABLE IF NOT EXISTS exp_runs (
 	final_metric     REAL,
 	created_at       TEXT NOT NULL,
 	updated_at       TEXT NOT NULL
-);
-CREATE TABLE IF NOT EXISTS exp_checkpoints (
+)`); err != nil {
+		return err
+	}
+	_, err := s.db.Exec(`CREATE TABLE IF NOT EXISTS exp_checkpoints (
 	id               INTEGER PRIMARY KEY AUTOINCREMENT,
 	run_id           TEXT NOT NULL,
 	metric           REAL NOT NULL,
 	checkpoint_path  TEXT,
 	recorded_at      TEXT NOT NULL
-);`)
+)`)
 	return err
 }
 
@@ -126,7 +130,7 @@ func (s *SQLiteExperimentStore) CompleteRun(ctx context.Context, runID, status s
 	}
 	n, _ := res.RowsAffected()
 	if n == 0 {
-		return fmt.Errorf("complete run %s: %w", runID, errors.New("run_id not found"))
+		return fmt.Errorf("complete run %s: %w", runID, ErrRunNotFound)
 	}
 	return nil
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/changmin/c4-core/internal/mcp"
@@ -21,14 +22,17 @@ type ExperimentStore interface {
 	CompleteRun(ctx context.Context, runID, status string, finalMetric float64) error
 }
 
+// validStatuses is the set of accepted completion statuses for CompleteRun.
+var validStatuses = map[string]bool{"success": true, "failed": true, "cancelled": true}
+
 // ExperimentHandlers holds dependencies for experiment MCP handlers.
 type ExperimentHandlers struct {
 	Store           ExperimentStore
 	KnowledgeRecord func(ctx context.Context, title, content, domain string) error // nil if knowledge disabled
 }
 
-// RegisterExperimentHandlers registers c4_experiment_register, c4_run_complete,
-// and c4_run_should_continue MCP tools.
+// RegisterExperimentHandlers registers c4_experiment_register, c4_run_checkpoint,
+// c4_run_complete, and c4_run_should_continue MCP tools.
 func RegisterExperimentHandlers(reg *mcp.Registry, h ExperimentHandlers) {
 	if h.Store == nil {
 		return
@@ -46,6 +50,20 @@ func RegisterExperimentHandlers(reg *mcp.Registry, h ExperimentHandlers) {
 			"required": []string{"name"},
 		},
 	}, registerRunHandler(h))
+
+	reg.RegisterBlocking(mcp.ToolSchema{
+		Name:        "c4_run_checkpoint",
+		Description: "Record an experiment checkpoint metric. Called automatically by C5 wrapper on epoch pattern match.",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"run_id": map[string]any{"type": "string", "description": "Run ID from c4_experiment_register"},
+				"metric": map[string]any{"type": "number", "description": "Checkpoint metric value (e.g. loss, MPJPE)"},
+				"path":   map[string]any{"type": "string", "description": "Optional path to saved checkpoint file"},
+			},
+			"required": []string{"run_id", "metric"},
+		},
+	}, checkpointHandler(h))
 
 	reg.RegisterBlocking(mcp.ToolSchema{
 		Name:        "c4_run_complete",
@@ -100,6 +118,32 @@ func registerRunHandler(h ExperimentHandlers) mcp.BlockingHandlerFunc {
 	}
 }
 
+func checkpointHandler(h ExperimentHandlers) mcp.BlockingHandlerFunc {
+	return func(ctx context.Context, rawArgs json.RawMessage) (any, error) {
+		var args struct {
+			RunID  string  `json:"run_id"`
+			Metric float64 `json:"metric"`
+			Path   string  `json:"path"`
+		}
+		if err := json.Unmarshal(rawArgs, &args); err != nil {
+			return map[string]any{"error": "invalid arguments"}, nil
+		}
+		if args.RunID == "" {
+			return map[string]any{"error": "run_id is required"}, nil
+		}
+
+		isBest, err := h.Store.RecordCheckpoint(ctx, args.RunID, args.Metric, args.Path)
+		if err != nil {
+			return map[string]any{"error": fmt.Sprintf("RecordCheckpoint failed: %v", err)}, nil
+		}
+		return map[string]any{
+			"success": true,
+			"run_id":  args.RunID,
+			"is_best": isBest,
+		}, nil
+	}
+}
+
 func completeRunHandler(h ExperimentHandlers) mcp.BlockingHandlerFunc {
 	return func(ctx context.Context, rawArgs json.RawMessage) (any, error) {
 		var args struct {
@@ -117,13 +161,17 @@ func completeRunHandler(h ExperimentHandlers) mcp.BlockingHandlerFunc {
 		if args.Status == "" {
 			return map[string]any{"error": "status is required"}, nil
 		}
+		if !validStatuses[args.Status] {
+			return map[string]any{"error": fmt.Sprintf("invalid status %q: must be success, failed, or cancelled", args.Status)}, nil
+		}
 
 		if err := h.Store.CompleteRun(ctx, args.RunID, args.Status, args.FinalMetric); err != nil {
 			return map[string]any{"error": fmt.Sprintf("CompleteRun failed: %v", err)}, nil
 		}
 
 		// Auto-bridge: record results to knowledge store asynchronously.
-		// Use context.WithoutCancel so the goroutine outlives the MCP request.
+		// Use context.WithoutCancel so the goroutine outlives the MCP request,
+		// with a 30s timeout to prevent goroutine leaks if KnowledgeRecord hangs.
 		if h.KnowledgeRecord != nil {
 			title := fmt.Sprintf("Experiment %s: %s", args.RunID, args.Status)
 			content := args.Summary
@@ -131,10 +179,11 @@ func completeRunHandler(h ExperimentHandlers) mcp.BlockingHandlerFunc {
 				content = fmt.Sprintf("run_id=%s status=%s final_metric=%g",
 					args.RunID, args.Status, args.FinalMetric)
 			}
-			ctx2 := context.WithoutCancel(ctx)
 			go func() {
+				ctx2, cancel2 := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+				defer cancel2()
 				if err := h.KnowledgeRecord(ctx2, title, content, "experiment"); err != nil {
-					fmt.Printf("c4: experiment auto-bridge failed: %v\n", err)
+					fmt.Fprintf(os.Stderr, "c4: experiment auto-bridge failed: %v\n", err)
 				}
 			}()
 		}

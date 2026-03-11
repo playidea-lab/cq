@@ -9,10 +9,11 @@ import (
 
 // fakeExperimentStore is a minimal in-memory ExperimentStore for tests.
 type fakeExperimentStore struct {
-	runs       map[string]string // run_id -> status
+	runs        map[string]string // run_id -> status
 	checkpoints []checkpointRecord
 	completeErr error
 	registerErr error
+	notBest     bool // if true, RecordCheckpoint returns isBest=false
 }
 
 type checkpointRecord struct {
@@ -36,7 +37,7 @@ func (f *fakeExperimentStore) StartRun(_ context.Context, name, _ string) (strin
 
 func (f *fakeExperimentStore) RecordCheckpoint(_ context.Context, runID string, metric float64, path string) (bool, error) {
 	f.checkpoints = append(f.checkpoints, checkpointRecord{runID, metric, path})
-	return true, nil
+	return !f.notBest, nil
 }
 
 func (f *fakeExperimentStore) ShouldContinue(_ context.Context, runID string) (bool, error) {
@@ -179,6 +180,23 @@ func TestExperimentHandler_Complete_NilKnowledgeRecord(t *testing.T) {
 	}
 }
 
+func TestExperimentHandler_Complete_InvalidStatus(t *testing.T) {
+	store := newFakeStore()
+	store.runs["run-bad"] = "running"
+	h := ExperimentHandlers{Store: store}
+	fn := completeRunHandler(h)
+
+	args, _ := json.Marshal(map[string]any{"run_id": "run-bad", "status": "unknown"})
+	result, err := fn(context.Background(), args)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	m := result.(map[string]any)
+	if _, hasErr := m["error"]; !hasErr {
+		t.Errorf("expected error for invalid status, got %v", m)
+	}
+}
+
 func TestExperimentHandler_AutoBridge_UsesWithoutCancel(t *testing.T) {
 	// Verify that the bridge goroutine still runs after the parent ctx is cancelled.
 	bridgeCalled := make(chan struct{}, 1)
@@ -205,5 +223,26 @@ func TestExperimentHandler_AutoBridge_UsesWithoutCancel(t *testing.T) {
 		// success: context.WithoutCancel ensured goroutine ran despite parent cancellation
 	case <-time.After(200 * time.Millisecond):
 		t.Error("auto-bridge was not called after parent ctx cancelled (WithoutCancel not used)")
+	}
+}
+
+func TestExperimentHandler_Checkpoint_NotBest(t *testing.T) {
+	store := newFakeStore()
+	store.runs["run-nb"] = "running"
+	store.notBest = true
+	h := ExperimentHandlers{Store: store}
+	fn := checkpointHandler(h)
+
+	args, _ := json.Marshal(map[string]any{"run_id": "run-nb", "metric": 99.0})
+	result, err := fn(context.Background(), args)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	m := result.(map[string]any)
+	if m["success"] != true {
+		t.Errorf("expected success=true, got %v", m)
+	}
+	if m["is_best"] != false {
+		t.Errorf("expected is_best=false when not improving, got %v", m["is_best"])
 	}
 }
