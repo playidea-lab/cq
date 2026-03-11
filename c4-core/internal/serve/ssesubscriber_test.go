@@ -254,6 +254,44 @@ func TestSSESubscriberComponent_PublishEventNilPublisher(t *testing.T) {
 	comp.publishEvent(`{"type":"test"}`)
 }
 
+// TestSSESubscriberWake verifies that a hub.job.completed payload sends a signal
+// on the wake channel, and that hub.job.failed also triggers a wake signal.
+// Non-job events must NOT send a wake signal.
+func TestSSESubscriberWake(t *testing.T) {
+	pub := &capturingPublisher{}
+	comp := NewSSESubscriberComponent(SSESubscriberConfig{URL: "http://x", ProjectID: "p"}, pub)
+
+	wakeCh := make(chan struct{}, 1)
+	comp.SetWakeChannel(wakeCh)
+
+	// hub.job.completed should wake.
+	comp.publishEvent(`{"type":"hub.job.completed","job_id":"j1"}`)
+	select {
+	case <-wakeCh:
+		// OK
+	case <-time.After(100 * time.Millisecond):
+		t.Error("expected wake signal for hub.job.completed")
+	}
+
+	// hub.job.failed should wake.
+	comp.publishEvent(`{"type":"hub.job.failed","job_id":"j2"}`)
+	select {
+	case <-wakeCh:
+		// OK
+	case <-time.After(100 * time.Millisecond):
+		t.Error("expected wake signal for hub.job.failed")
+	}
+
+	// A non-job event must NOT send a wake signal.
+	comp.publishEvent(`{"type":"hub.job.started","job_id":"j3"}`)
+	select {
+	case <-wakeCh:
+		t.Error("unexpected wake signal for hub.job.started")
+	case <-time.After(50 * time.Millisecond):
+		// OK: no signal
+	}
+}
+
 // TestSSESubscriberComponent_EventForwarding verifies end-to-end: server sends event → publisher called.
 func TestSSESubscriberComponent_EventForwarding(t *testing.T) {
 	tsURL, sendFn, closeSrv := newSSETestServer(t)

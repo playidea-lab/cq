@@ -133,11 +133,17 @@ func runServe(cmd *cobra.Command, args []string) error {
 	ebComp, gpuComp := registerCoreServeComponents(mgr, cfg, home, secComp)
 	registerEventSinkServeComponent(mgr, cfg, ebComp)
 	registerHubPollerServeComponent(mgr, cfg, ebComp, srv.initCtx.hubClient)
-	registerKnowledgeHubPollerServeComponent(mgr, cfg)
+	knowledgePoller := registerKnowledgeHubPollerServeComponent(mgr, cfg)
+	// Wire SSESubscriber → knowledgeHubPoller: job completion events trigger immediate poll.
+	var wakeCh chan struct{}
+	if knowledgePoller != nil {
+		wakeCh = make(chan struct{}, 1)
+		knowledgePoller.SetWakeChannel(wakeCh)
+	}
 	registerKnowledgeSuggestPollerServeComponent(mgr, cfg, srv.initCtx.llmGateway)
 	registerHypothesisSuggesterComponent(mgr, cfg, srv.initCtx.llmGateway, srv.knowledgeStore)
 	registerLoopOrchestratorComponent(mgr, srv.initCtx)
-	registerSSESubscriberServeComponent(mgr, cfg, ebComp)
+	registerSSESubscriberServeComponent(mgr, cfg, ebComp, wakeCh)
 	registerStaleCheckerServeComponent(mgr, cfg, ebComp)
 	registerToolSocketComponent(mgr, srv)
 	if cfg.Serve.MCPHTTP.Enabled {

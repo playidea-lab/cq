@@ -15,7 +15,8 @@ import (
 // both c5_hub and c3_eventbus build tags are active.
 // It connects to the C5 Hub SSE endpoint and forwards events to the local EventBus.
 // If eb is nil (EventBus disabled), events are silently dropped via NoopPublisher.
-func registerSSESubscriberServeComponent(mgr *serve.Manager, cfg config.C4Config, eb *serve.EventBusComponent) {
+// If wakeCh is non-nil, the component will signal it on hub.job.completed/failed events.
+func registerSSESubscriberServeComponent(mgr *serve.Manager, cfg config.C4Config, eb *serve.EventBusComponent, wakeCh chan struct{}) {
 	if !cfg.Serve.SSESubscriber.Enabled || !cfg.Hub.Enabled {
 		return
 	}
@@ -37,6 +38,10 @@ func registerSSESubscriberServeComponent(mgr *serve.Manager, cfg config.C4Config
 		APIKey:    apiKey,
 		ProjectID: cfg.ProjectID,
 	}, pub)
+
+	if wakeCh != nil {
+		comp.SetWakeChannel(wakeCh)
+	}
 
 	mgr.Register(comp)
 	fmt.Fprintf(os.Stderr, "cq serve: registered ssesubscriber (hub url: %s)\n", cfg.Hub.URL)

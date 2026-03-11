@@ -123,20 +123,21 @@ func registerStaleCheckerServeComponent(mgr *serve.Manager, cfg config.C4Config,
 // knowledge.TypeExperiment documents.
 // Note: the poller shares the hub.enabled/hub.url gate (no separate serve.hub_poller
 // toggle) because it is a lightweight side-effect of hub connectivity.
-func registerKnowledgeHubPollerServeComponent(mgr *serve.Manager, cfg config.C4Config) {
+// Returns the created poller (nil if not registered).
+func registerKnowledgeHubPollerServeComponent(mgr *serve.Manager, cfg config.C4Config) *knowledgeHubPoller {
 	if !cfg.Hub.Enabled || cfg.Hub.URL == "" {
-		return
+		return nil
 	}
 
 	knowledgeDir := filepath.Join(projectDir, ".c4", "knowledge")
 	if err := os.MkdirAll(knowledgeDir, 0755); err != nil {
 		fmt.Fprintf(os.Stderr, "cq serve: hub_knowledge_poller: mkdir %s: %v\n", knowledgeDir, err)
-		return
+		return nil
 	}
 	ks, err := knowledge.NewStore(knowledgeDir)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "cq serve: hub_knowledge_poller: open knowledge store failed: %v\n", err)
-		return
+		return nil
 	}
 
 	poller := newKnowledgeHubPoller(knowledgeHubPollerConfig{
@@ -150,6 +151,7 @@ func registerKnowledgeHubPollerServeComponent(mgr *serve.Manager, cfg config.C4C
 	})
 	mgr.Register(poller)
 	fmt.Fprintf(os.Stderr, "cq serve: registered hub_knowledge_poller\n")
+	return poller
 }
 
 // serveGatewayLLMCaller adapts *llm.Gateway to the LLMCaller interface used by knowledgeSuggestPoller.
