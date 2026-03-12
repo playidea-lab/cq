@@ -128,8 +128,11 @@ func TestLoopOrchestrator_ResumeGate_Integration(t *testing.T) {
 	defer o.Stop(context.Background()) //nolint:errcheck
 
 	// The gate should have been replaced with a ~50ms one.
-	// EnterGate on the new gate should fire quickly.
-	ch := o.gate.EnterGate(ctx)
+	// Read gate under mu to avoid data race with Start().
+	o.mu.Lock()
+	gate := o.gate
+	o.mu.Unlock()
+	ch := gate.EnterGate(ctx)
 	select {
 	case <-ch:
 		// success

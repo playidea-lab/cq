@@ -58,7 +58,6 @@ func (b *NotifyBridge) Emit(ctx context.Context, event, title, message string) {
 		b.mu.Unlock()
 		return // still in cooldown
 	}
-	b.lastNotified[event] = time.Now()
 	b.mu.Unlock()
 
 	if err := b.notifier.Notify(ctx, title, message, event); err != nil {
@@ -66,5 +65,10 @@ func (b *NotifyBridge) Emit(ctx context.Context, event, title, message string) {
 			"event", event,
 			"error", err,
 		)
+		return
 	}
+	// Record cooldown only on success.
+	b.mu.Lock()
+	b.lastNotified[event] = time.Now()
+	b.mu.Unlock()
 }

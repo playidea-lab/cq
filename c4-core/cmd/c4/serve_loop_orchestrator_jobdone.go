@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -16,6 +17,10 @@ import (
 // After debate, it writes gate_wait state, emits notifications, blocks on gate,
 // then writes running state and proceeds to the next job.
 func (o *LoopOrchestrator) onJobDone(ctx context.Context, session *LoopSession, jobStatus *HubJobStatus) error {
+	if o.caller == nil || o.store == nil {
+		return errors.New("loop_orchestrator: debate caller/store not wired")
+	}
+
 	exploreThreshold := o.cfg.ExploreThreshold
 	if exploreThreshold <= 0 {
 		exploreThreshold = 2
@@ -71,8 +76,13 @@ func (o *LoopOrchestrator) onJobDone(ctx context.Context, session *LoopSession, 
 	}
 
 	// Persist gate_wait state and enter gate.
-	if o.state != nil && o.gate != nil {
-		deadline := time.Now().Add(o.gate.duration)
+	// Snapshot gate under mu to avoid data race with Stop().
+	o.mu.Lock()
+	gate := o.gate
+	o.mu.Unlock()
+	if o.state != nil && gate != nil {
+		gateDur := gate.Duration()
+		deadline := time.Now().Add(gateDur)
 		jobID := ""
 		if jobStatus != nil {
 			jobID = jobStatus.JobID
@@ -87,10 +97,10 @@ func (o *LoopOrchestrator) onJobDone(ctx context.Context, session *LoopSession, 
 		if o.notify != nil {
 			o.notify.Emit(ctx, EventGateEntered,
 				"Research Loop: Gate Entered",
-				fmt.Sprintf("Round %d entering %v gate", session.Round, o.gate.duration))
+				fmt.Sprintf("Round %d entering %v gate", session.Round, gateDur))
 		}
 		// Block until gate elapses or is released.
-		<-o.gate.EnterGate(ctx)
+		<-gate.EnterGate(ctx)
 		// Restore running state after gate.
 		_ = o.state.WriteState(LoopState{
 			State:               "running",
@@ -104,6 +114,7 @@ func (o *LoopOrchestrator) onJobDone(ctx context.Context, session *LoopSession, 
 				fmt.Sprintf("Round %d gate elapsed, auto-continuing", session.Round))
 		}
 	}
+
 
 	m, ok := result.(map[string]any)
 	if !ok {
@@ -124,11 +135,17 @@ func (o *LoopOrchestrator) onJobDone(ctx context.Context, session *LoopSession, 
 			if session.NullResultCount >= exploreThreshold {
 				session.ExploreFlag = true
 			}
+		} else if o.kStore == nil || o.hubCli == nil {
+			// kStore/hubCli not wired — degrade gracefully.
+			session.NullResultCount++
+			if session.NullResultCount >= exploreThreshold {
+				session.ExploreFlag = true
+			}
 		} else {
 			// Create new TypeHypothesis document.
 			newHypID, err := o.kStore.Create(knowledge.TypeHypothesis, map[string]any{
-				"title":  draft,
-				"status": "approved",
+				"title":               draft,
+				"status":              "approved",
 				"parent_hypothesis_id": session.HypothesisID,
 			}, draft)
 			if err != nil {

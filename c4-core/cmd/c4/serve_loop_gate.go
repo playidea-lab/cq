@@ -23,11 +23,19 @@ func NewGateController(d time.Duration) *GateController {
 	return &GateController{duration: d}
 }
 
+// Duration returns the configured gate duration.
+func (g *GateController) Duration() time.Duration {
+	g.mu.Lock()
+	d := g.duration
+	g.mu.Unlock()
+	return d
+}
+
 // EnterGate returns a channel that closes when the gate is released.
 // Closing conditions: Release() call or duration expiry.
-// ctx cancellation does NOT close the channel.
-// Each call creates an independent channel (re-entrant safe).
-func (g *GateController) EnterGate(ctx context.Context) <-chan struct{} {
+// ctx cancellation does NOT close the channel — gate is human-on-the-loop by design.
+// Each call creates an independent channel. A second call releases the previous gate.
+func (g *GateController) EnterGate(_ context.Context) <-chan struct{} {
 	ch := make(chan struct{})
 	d := g.duration
 	if d <= 0 {
@@ -37,8 +45,13 @@ func (g *GateController) EnterGate(ctx context.Context) <-chan struct{} {
 
 	releaseCh := make(chan struct{})
 	g.mu.Lock()
+	old := g.releaseCh
 	g.releaseCh = releaseCh
 	g.mu.Unlock()
+	// Release the previous gate if one was active (prevents goroutine leak).
+	if old != nil {
+		close(old)
+	}
 
 	go func() {
 		t := time.NewTimer(d)

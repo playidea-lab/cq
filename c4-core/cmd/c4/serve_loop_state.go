@@ -3,7 +3,9 @@
 package main
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sync"
@@ -56,7 +58,7 @@ func (w *StateYAMLWriter) WriteState(s LoopState) error {
 // Returns zero LoopState if file does not exist (no error).
 func (w *StateYAMLWriter) ReadState() (LoopState, error) {
 	data, err := os.ReadFile(w.path)
-	if os.IsNotExist(err) {
+	if errors.Is(err, fs.ErrNotExist) {
 		return LoopState{}, nil
 	}
 	if err != nil {
@@ -77,18 +79,16 @@ func atomicWriteFile(path string, data []byte, perm os.FileMode) error {
 		return fmt.Errorf("create temp: %w", err)
 	}
 	tmpPath := tmp.Name()
-	defer func() {
-		// cleanup on failure
-		if _, err2 := os.Stat(tmpPath); err2 == nil {
-			os.Remove(tmpPath)
-		}
-	}()
+	defer os.Remove(tmpPath) // cleanup on failure; no-op after successful Rename
 	if _, err := tmp.Write(data); err != nil {
 		tmp.Close()
 		return fmt.Errorf("write temp: %w", err)
 	}
 	if err := tmp.Close(); err != nil {
 		return fmt.Errorf("close temp: %w", err)
+	}
+	if err := os.Chmod(tmpPath, perm); err != nil {
+		return fmt.Errorf("chmod temp: %w", err)
 	}
 	if err := os.Rename(tmpPath, path); err != nil {
 		return fmt.Errorf("rename temp: %w", err)

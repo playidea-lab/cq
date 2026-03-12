@@ -331,6 +331,7 @@ type ServeConfig struct {
 	MCPHTTP             ServeMCPHTTPConfig              `mapstructure:"mcp_http"              yaml:"mcp_http"`
 	HypothesisSuggester ServeHypothesisSuggesterConfig  `mapstructure:"hypothesis_suggester"  yaml:"hypothesis_suggester"`
 	Secrets             ServeSecretsConfig              `mapstructure:"secrets"               yaml:"secrets"`
+	ResearchLoop        ResearchLoopConfig              `mapstructure:"research_loop"         yaml:"research_loop"`
 }
 
 // PermissionReviewerConfig holds settings for the permission auto-reviewer hook.
@@ -375,7 +376,6 @@ type C4Config struct {
 	Sessions         SessionsConfig             `mapstructure:"sessions"             yaml:"sessions"`
 	RiskRouting      RiskRoutingConfig          `mapstructure:"risk_routing"         yaml:"risk_routing"`
 	Notifications    NotificationsConfig        `mapstructure:"notifications"        yaml:"notifications"`
-	ResearchLoop     ResearchLoopConfig         `mapstructure:"research_loop"        yaml:"research_loop"`
 }
 
 // presetConfigs defines the economic mode presets.

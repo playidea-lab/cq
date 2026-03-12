@@ -96,6 +96,24 @@ type LoopOrchestrator struct {
 	kStore  *knowledge.Store
 }
 
+// loopHubClientAdapter adapts HubClient to the loopHubClient interface.
+type loopHubClientAdapter struct{ hc HubClient }
+
+func (a *loopHubClientAdapter) SubmitJob(ctx context.Context, req loopHubJobRequest) (string, error) {
+	resp, err := a.hc.SubmitJob(&hub.JobSubmitRequest{
+		Command:   req.Command,
+		ProjectID: req.ProjectID,
+		Env: map[string]string{
+			"C4_HYPOTHESIS_ID":      req.HypothesisID,
+			"C4_EXPERIMENT_SPEC_ID": req.ExperimentSpecID,
+		},
+	})
+	if err != nil {
+		return "", err
+	}
+	return resp.JobID, nil
+}
+
 // compile-time interface assertion
 var _ serve.Component = (*LoopOrchestrator)(nil)
 
@@ -131,10 +149,22 @@ func registerLoopOrchestratorComponent(mgr *serve.Manager, ictx *initContext) {
 	}
 	o := newLoopOrchestrator(cfg)
 
+	// Wire debate components.
+	if ictx.llmGateway != nil {
+		o.caller = &debateLLMCaller{gw: ictx.llmGateway}
+	}
+	if ictx.knowledgeStore != nil {
+		o.store = &knowledgeStoreAdapter{s: ictx.knowledgeStore}
+		o.kStore = ictx.knowledgeStore
+	}
+	if hc != nil {
+		o.hubCli = &loopHubClientAdapter{hc: hc}
+	}
+
 	// Gate duration from config (default 24h).
 	gateDur := 24 * time.Hour
 	if ictx.cfgMgr != nil {
-		if s := ictx.cfgMgr.GetConfig().ResearchLoop.GateDuration; s != "" {
+		if s := ictx.cfgMgr.GetConfig().Serve.ResearchLoop.GateDuration; s != "" {
 			if d, err := time.ParseDuration(s); err == nil && d > 0 {
 				gateDur = d
 			}
@@ -168,12 +198,15 @@ func (o *LoopOrchestrator) Start(ctx context.Context) error {
 	if o.state != nil && o.gate != nil {
 		if s, err := o.state.ReadState(); err == nil && s.State == "gate_wait" && s.GateDeadline != nil {
 			remaining := time.Until(*s.GateDeadline)
+			o.mu.Lock()
 			if remaining > 0 {
 				o.gate = NewGateController(remaining)
+				o.mu.Unlock()
 				slog.InfoContext(ctx, "research loop: resuming gate", "remaining", remaining)
 			} else {
 				// Deadline already passed — release immediately.
 				o.gate = NewGateController(0)
+				o.mu.Unlock()
 				slog.InfoContext(ctx, "research loop: gate deadline expired on resume, auto-continuing")
 			}
 		}
@@ -229,10 +262,17 @@ func (o *LoopOrchestrator) loop(ctx context.Context) {
 }
 
 // poll iterates over running sessions and checks Hub job status.
+// Job completion handling is deferred outside sessions.Range to avoid
+// blocking the sync.Map during the gate wait (up to 24h).
 func (o *LoopOrchestrator) poll(ctx context.Context) {
 	if o.cfg.Hub == nil {
 		return
 	}
+	type doneEntry struct {
+		session   *LoopSession
+		jobStatus *HubJobStatus
+	}
+	var done []doneEntry
 	o.sessions.Range(func(key, value any) bool {
 		session, ok := value.(*LoopSession)
 		if !ok || session.Status != "running" {
@@ -245,17 +285,18 @@ func (o *LoopOrchestrator) poll(ctx context.Context) {
 		}
 		switch job.Status {
 		case "SUCCEEDED", "FAILED", "CANCELLED":
-			jobStatus := &HubJobStatus{
-				JobID:  job.GetID(),
-				Status: job.Status,
-				Job:    job,
-			}
-			if err := o.onJobDone(ctx, session, jobStatus); err != nil {
-				fmt.Fprintf(os.Stderr, "loop_orchestrator: onJobDone %s: %v\n", session.HypothesisID, err)
-			}
+			done = append(done, doneEntry{
+				session:   session,
+				jobStatus: &HubJobStatus{JobID: job.GetID(), Status: job.Status, Job: job},
+			})
 		}
 		return true
 	})
+	for _, e := range done {
+		if err := o.onJobDone(ctx, e.session, e.jobStatus); err != nil {
+			fmt.Fprintf(os.Stderr, "loop_orchestrator: onJobDone %s: %v\n", e.session.HypothesisID, err)
+		}
+	}
 }
 
 // StartLoop registers and starts a new loop session for the given hypothesis.
