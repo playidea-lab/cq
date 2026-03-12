@@ -78,6 +78,13 @@ type CritiqueLoopConfig struct {
 	Mode      string `mapstructure:"mode"       yaml:"mode"`
 }
 
+// ResearchLoopConfig controls the autonomous research loop (LoopOrchestrator).
+type ResearchLoopConfig struct {
+	// GateDuration is the default wait duration between debate rounds.
+	// Accepts Go duration strings (e.g. "24h", "30m"). Default: "24h".
+	GateDuration string `mapstructure:"gate_duration" yaml:"gate_duration"`
+}
+
 // PlanningConfig controls c4-plan skill behavior.
 type PlanningConfig struct {
 	CritiqueLoop CritiqueLoopConfig `mapstructure:"critique_loop" yaml:"critique_loop"`
@@ -368,6 +375,7 @@ type C4Config struct {
 	Sessions         SessionsConfig             `mapstructure:"sessions"             yaml:"sessions"`
 	RiskRouting      RiskRoutingConfig          `mapstructure:"risk_routing"         yaml:"risk_routing"`
 	Notifications    NotificationsConfig        `mapstructure:"notifications"        yaml:"notifications"`
+	ResearchLoop     ResearchLoopConfig         `mapstructure:"research_loop"        yaml:"research_loop"`
 }
 
 // presetConfigs defines the economic mode presets.
