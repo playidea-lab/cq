@@ -180,6 +180,7 @@ var (
 	hubEdgeTags          string
 	hubEdgeRuntime       string
 	hubSubmitRun         string
+	hubSubmitExperiment  string
 	hubWorkersAll        bool
 	hubPruneDryRun       bool
 	hubEdgeControlParams []string
@@ -200,6 +201,7 @@ func init() {
 	hubEdgeRegisterCmd.MarkFlagRequired("name")
 
 	hubSubmitCmd.Flags().StringVar(&hubSubmitRun, "run", "", "command to execute on the worker")
+	hubSubmitCmd.Flags().StringVar(&hubSubmitExperiment, "experiment", "", "experiment name to register as a Hub experiment run (requires Hub)")
 
 	hubWorkersCmd.Flags().BoolVar(&hubWorkersAll, "all", false, "include offline workers")
 	hubWorkersPruneCmd.Flags().BoolVar(&hubPruneDryRun, "dry-run", false, "show what would be pruned without deleting")
@@ -895,6 +897,16 @@ func runHubSubmit(cmd *cobra.Command, args []string) error {
 	if exp.Name != "" {
 		fmt.Printf("  exp:      %s\n", exp.Name)
 	}
+
+	// --experiment flag: register an experiment run on the Hub.
+	if hubSubmitExperiment != "" {
+		runID, err := client.CreateExperimentRun(hubSubmitExperiment, "")
+		if err != nil {
+			return fmt.Errorf("--experiment: Hub is required (start Hub or omit --experiment): %w", err)
+		}
+		fmt.Printf("  run_id:   %s\n", runID)
+	}
+
 	return nil
 }
 
