@@ -265,12 +265,17 @@ func (o *LoopOrchestrator) loop(ctx context.Context) {
 // poll iterates over running sessions and checks Hub job status.
 // Job completion handling is deferred outside sessions.Range to avoid
 // blocking the sync.Map during the gate wait (up to 24h).
+//
+// The done slice stores value copies of sessions captured at poll time.
+// onJobDone operates on these poll-time snapshots; concurrent Steer/StopLoop
+// updates to the map are not visible to the current poll cycle but will be
+// picked up on the next round (by design — consistent per-round view).
 func (o *LoopOrchestrator) poll(ctx context.Context) {
 	if o.cfg.Hub == nil {
 		return
 	}
 	type doneEntry struct {
-		session   *LoopSession
+		session   LoopSession // value copy at poll time; independent of sync.Map pointer
 		jobStatus *HubJobStatus
 	}
 	var done []doneEntry
@@ -288,16 +293,16 @@ func (o *LoopOrchestrator) poll(ctx context.Context) {
 		case "SUCCEEDED", "FAILED", "CANCELLED",
 			"succeeded", "failed", "cancelled":
 			done = append(done, doneEntry{
-				session: session,
+				session: *session, // value copy: detached from map, safe after Range exits
 				// Normalize status to lowercase for consistent comparison in onJobDone.
 				jobStatus: &HubJobStatus{JobID: job.GetID(), Status: strings.ToLower(job.Status), Job: job},
 			})
 		}
 		return true
 	})
-	for _, e := range done {
-		if err := o.onJobDone(ctx, e.session, e.jobStatus); err != nil {
-			fmt.Fprintf(os.Stderr, "loop_orchestrator: onJobDone %s: %v\n", e.session.HypothesisID, err)
+	for i := range done {
+		if err := o.onJobDone(ctx, &done[i].session, done[i].jobStatus); err != nil {
+			fmt.Fprintf(os.Stderr, "loop_orchestrator: onJobDone %s: %v\n", done[i].session.HypothesisID, err)
 		}
 	}
 }

@@ -172,6 +172,8 @@ func (o *LoopOrchestrator) onJobDone(ctx context.Context, session *LoopSession, 
 			}
 
 			// Advance session state and re-register under the new HypothesisID.
+			// sessions.Delete is safe here: both kStore.Create and hubCli.SubmitJob
+			// succeeded above, so the old session can be removed atomically.
 			oldHypID := s.HypothesisID
 			s.HypothesisID = newHypID
 			s.JobID = newJobID
@@ -188,6 +190,7 @@ func (o *LoopOrchestrator) onJobDone(ctx context.Context, session *LoopSession, 
 		}
 
 	case "escalate":
+		// Early return: budget gate does not apply to escalated sessions.
 		s.Status = "stopped"
 		o.sessions.Store(s.HypothesisID, &s)
 		return nil
