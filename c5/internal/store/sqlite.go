@@ -10,6 +10,7 @@ import (
 	"database/sql"
 	"encoding/base32"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -3151,7 +3152,7 @@ func (s *Store) scanResearchState(projectID string) (*model.ResearchState, error
 // =========================================================================
 
 // ErrRunNotFound is returned when a run_id is not found in experiment_runs.
-var ErrRunNotFound = fmt.Errorf("experiment run not found")
+var ErrRunNotFound = errors.New("experiment run not found")
 
 // ExperimentRun holds a summary row from experiment_runs.
 type ExperimentRun struct {

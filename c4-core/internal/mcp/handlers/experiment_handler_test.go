@@ -52,7 +52,7 @@ func (f *fakeExperimentStore) ShouldContinue(_ context.Context, runID string) (b
 	return status == "running", nil
 }
 
-func (f *fakeExperimentStore) CompleteRun(_ context.Context, runID, status string, _ float64) error {
+func (f *fakeExperimentStore) CompleteRun(_ context.Context, runID, status string, _ float64, _ string) error {
 	if f.completeErr != nil {
 		return f.completeErr
 	}

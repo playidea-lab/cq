@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/changmin/c4-core/internal/mcp"
+	"github.com/changmin/c4-core/internal/store"
 )
 
 // ExperimentStore defines the data access interface for experiment runs.
@@ -23,8 +24,8 @@ type ExperimentStore interface {
 	RecordCheckpoint(ctx context.Context, runID string, metric float64, path string) (bool, error)
 	// ShouldContinue returns true if the run has not been cancelled or completed.
 	ShouldContinue(ctx context.Context, runID string) (bool, error)
-	// CompleteRun marks the run as complete with a final metric.
-	CompleteRun(ctx context.Context, runID, status string, finalMetric float64) error
+	// CompleteRun marks the run as complete with a final metric and optional summary.
+	CompleteRun(ctx context.Context, runID, status string, finalMetric float64, summary string) error
 }
 
 // validStatuses is the set of accepted completion statuses for CompleteRun.
@@ -225,6 +226,9 @@ func checkpointHandler(h ExperimentHandlers) mcp.BlockingHandlerFunc {
 			var err error
 			isBest, err = h.Store.RecordCheckpoint(ctx, args.RunID, args.Metric, args.Path)
 			if err != nil {
+				if errors.Is(err, store.ErrRunNotFound) {
+					return map[string]any{"error": "run not found", "not_found": true}, nil
+				}
 				return map[string]any{"error": fmt.Sprintf("RecordCheckpoint failed: %v", err)}, nil
 			}
 		}
@@ -266,7 +270,7 @@ func completeRunHandler(h ExperimentHandlers) mcp.BlockingHandlerFunc {
 			}, nil); err != nil {
 				return map[string]any{"error": fmt.Sprintf("CompleteRun failed: %v", err)}, nil
 			}
-		} else if err := h.Store.CompleteRun(ctx, args.RunID, args.Status, args.FinalMetric); err != nil {
+		} else if err := h.Store.CompleteRun(ctx, args.RunID, args.Status, args.FinalMetric, args.Summary); err != nil {
 			return map[string]any{"error": fmt.Sprintf("CompleteRun failed: %v", err)}, nil
 		}
 
@@ -323,6 +327,9 @@ func shouldContinueHandler(h ExperimentHandlers) mcp.BlockingHandlerFunc {
 			var err error
 			ok, err = h.Store.ShouldContinue(ctx, args.RunID)
 			if err != nil {
+				if errors.Is(err, store.ErrRunNotFound) {
+					return map[string]any{"error": "run not found", "not_found": true}, nil
+				}
 				return map[string]any{"error": fmt.Sprintf("ShouldContinue failed: %v", err)}, nil
 			}
 		}

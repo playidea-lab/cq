@@ -45,6 +45,7 @@ func (s *SQLiteExperimentStore) migrate() error {
 	best_metric      REAL,
 	checkpoint_path  TEXT,
 	final_metric     REAL,
+	summary          TEXT,
 	created_at       TEXT NOT NULL,
 	updated_at       TEXT NOT NULL
 )`); err != nil {
@@ -119,12 +120,12 @@ func (s *SQLiteExperimentStore) ShouldContinue(ctx context.Context, runID string
 	return status == "running", nil
 }
 
-// CompleteRun marks the run as complete.
-func (s *SQLiteExperimentStore) CompleteRun(ctx context.Context, runID, status string, finalMetric float64) error {
+// CompleteRun marks the run as complete with an optional summary.
+func (s *SQLiteExperimentStore) CompleteRun(ctx context.Context, runID, status string, finalMetric float64, summary string) error {
 	now := time.Now().UTC().Format(time.RFC3339)
 	res, err := s.db.ExecContext(ctx,
-		`UPDATE exp_runs SET status=?, final_metric=?, updated_at=? WHERE run_id=?`,
-		status, finalMetric, now, runID)
+		`UPDATE exp_runs SET status=?, final_metric=?, summary=?, updated_at=? WHERE run_id=?`,
+		status, finalMetric, summary, now, runID)
 	if err != nil {
 		return fmt.Errorf("complete run: %w", err)
 	}

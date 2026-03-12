@@ -93,7 +93,7 @@ func TestSQLiteExperimentStore_ShouldContinue(t *testing.T) {
 		t.Errorf("new run should continue: ok=%v err=%v", ok, err)
 	}
 
-	s.CompleteRun(ctx, runID, "success", 0.9)
+	s.CompleteRun(ctx, runID, "success", 0.9, "")
 
 	ok, err = s.ShouldContinue(ctx, runID)
 	if err != nil || ok {
@@ -123,12 +123,12 @@ func TestSQLiteExperimentStore_CompleteRun(t *testing.T) {
 	ctx := context.Background()
 	runID, _ := s.StartRun(ctx, "complete-run", "")
 
-	if err := s.CompleteRun(ctx, runID, "success", 0.95); err != nil {
+	if err := s.CompleteRun(ctx, runID, "success", 0.95, "test summary"); err != nil {
 		t.Fatalf("CompleteRun: %v", err)
 	}
 
 	// Completing a non-existent run should return an error.
-	if err := s.CompleteRun(ctx, "bad-id", "success", 0); err == nil {
+	if err := s.CompleteRun(ctx, "bad-id", "success", 0, ""); err == nil {
 		t.Error("expected error for non-existent run_id")
 	}
 }
