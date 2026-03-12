@@ -83,13 +83,10 @@ func TestAtKeyProtocol_CallsCheckpoint(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	wrapper, err := NewExperimentWrapper(srv.URL, "exp-42", "run-7", &ExperimentProtocolConfig{
+	wrapper := NewExperimentWrapper(srv.URL, "exp-42", "run-7", &ExperimentProtocolConfig{
 		MetricKey:      "loss",
 		CheckpointTool: "c4_run_checkpoint",
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
 
 	src := strings.NewReader("epoch 1/10\n@loss=0.452 @epoch=1\ntraining continues\n")
 	var dst bytes.Buffer
@@ -105,7 +102,7 @@ func TestAtKeyProtocol_CallsCheckpoint(t *testing.T) {
 	}
 
 	if capturedArgs != nil {
-		if v, ok := capturedArgs["metric"].(string); !ok || v != "0.452" {
+		if v, ok := capturedArgs["metric"].(float64); !ok || v != 0.452 {
 			t.Errorf("expected metric=0.452, got %v", capturedArgs["metric"])
 		}
 		if k, ok := capturedArgs["key"].(string); !ok || k != "loss" {
@@ -133,12 +130,9 @@ func TestAtKeyProtocol_FirstKeyFallback(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	wrapper, err := NewExperimentWrapper(srv.URL, "exp-1", "run-1", &ExperimentProtocolConfig{
+	wrapper := NewExperimentWrapper(srv.URL, "exp-1", "run-1", &ExperimentProtocolConfig{
 		MetricKey: "", // empty → use first key
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
 
 	src := strings.NewReader("@acc=0.97 @loss=0.1\n")
 	var dst bytes.Buffer
@@ -153,12 +147,9 @@ func TestAtKeyProtocol_FirstKeyFallback(t *testing.T) {
 
 func TestAtKeyProtocol_PassThrough(t *testing.T) {
 	// Lines without @key=value must still appear in dst.
-	wrapper, err := NewExperimentWrapper("http://localhost:1", "exp-1", "run-1", &ExperimentProtocolConfig{
+	wrapper := NewExperimentWrapper("http://localhost:1", "exp-1", "run-1", &ExperimentProtocolConfig{
 		MetricKey: "loss",
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
 
 	src := strings.NewReader("training started\nepoch 1 done\n")
 	var dst bytes.Buffer
@@ -178,12 +169,9 @@ func TestAtKeyProtocol_NonFatal(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	wrapper, err := NewExperimentWrapper(srv.URL, "exp-1", "run-1", &ExperimentProtocolConfig{
+	wrapper := NewExperimentWrapper(srv.URL, "exp-1", "run-1", &ExperimentProtocolConfig{
 		MetricKey: "loss",
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
 
 	src := strings.NewReader("@loss=0.5\n")
 	var dst bytes.Buffer
@@ -195,20 +183,14 @@ func TestAtKeyProtocol_NonFatal(t *testing.T) {
 // --- retained non-EpochPattern tests ---
 
 func TestNewExperimentWrapper_NilProtocol(t *testing.T) {
-	w, err := NewExperimentWrapper("http://localhost", "exp1", "run1", nil)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	w := NewExperimentWrapper("http://localhost", "exp1", "run1", nil)
 	if w == nil {
 		t.Fatal("expected non-nil wrapper")
 	}
 }
 
 func TestExperimentWrapper_WrapOutput_NoPattern(t *testing.T) {
-	w, err := NewExperimentWrapper("http://localhost", "exp1", "run1", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	w := NewExperimentWrapper("http://localhost", "exp1", "run1", nil)
 
 	src := strings.NewReader("line1\nline2\n@loss=0.3\n")
 	var dst bytes.Buffer
@@ -231,12 +213,9 @@ func TestExperimentWrapper_WrapOutput_MultipleMatches(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	wrapper, err := NewExperimentWrapper(srv.URL, "exp-1", "run-1", &ExperimentProtocolConfig{
+	wrapper := NewExperimentWrapper(srv.URL, "exp-1", "run-1", &ExperimentProtocolConfig{
 		MetricKey: "loss",
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
 
 	// 3 lines each with @loss — expect 3 checkpoint calls.
 	src := strings.NewReader("@loss=0.55\n@loss=0.50\n@loss=0.47\n")
@@ -251,31 +230,24 @@ func TestExperimentWrapper_WrapOutput_MultipleMatches(t *testing.T) {
 }
 
 func TestExperimentWrapper_WrapOutput_ContextCancelled(t *testing.T) {
-	wrapper, err := NewExperimentWrapper("http://localhost:1", "exp-1", "run-1", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	wrapper := NewExperimentWrapper("http://localhost:1", "exp-1", "run-1", nil)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // cancel immediately
 
 	src := strings.NewReader("")
 	var dst bytes.Buffer
-	err = wrapper.WrapOutput(ctx, src, &dst)
-	_ = err
+	_ = wrapper.WrapOutput(ctx, src, &dst)
 }
 
 func TestExperimentWrapper_CallMCP_MarshalError(t *testing.T) {
-	wrapper, err := NewExperimentWrapper("http://localhost:1", "exp-1", "run-1", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	wrapper := NewExperimentWrapper("http://localhost:1", "exp-1", "run-1", nil)
 
 	args := map[string]any{
 		"bad": make(chan int),
 	}
 
-	err = wrapper.callMCP(context.Background(), "c4_run_checkpoint", args)
+	err := wrapper.callMCP(context.Background(), "c4_run_checkpoint", args)
 	if err == nil {
 		t.Error("expected error marshalling channel value")
 	}
@@ -285,10 +257,7 @@ func TestExperimentWrapper_CallMCP_MarshalError(t *testing.T) {
 }
 
 func TestExperimentWrapper_HTTPClientReuse(t *testing.T) {
-	wrapper, err := NewExperimentWrapper("http://localhost", "exp-1", "run-1", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	wrapper := NewExperimentWrapper("http://localhost", "exp-1", "run-1", nil)
 	if wrapper.client == nil {
 		t.Error("expected non-nil http.Client on ExperimentWrapper")
 	}

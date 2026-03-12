@@ -574,7 +574,7 @@ func executeJob(client *workerClient, job *model.Job, leaseID, workerID string, 
 			if err := worker.ExecuteWithExperiment(ctx, &worker.WorkerConfig{
 				MCPURL:             wcfg.mcpURL,
 				ExperimentProtocol: wcfg.experimentProtocol,
-			}, payload, stdout, pw); err != nil {
+			}, payload, stdout, pw); err != nil && ctx.Err() == nil {
 				log.Printf("c5-worker: experiment-wrapper error: %v", err)
 			}
 		}()

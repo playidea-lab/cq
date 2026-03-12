@@ -12,6 +12,7 @@ import (
 	"log"
 	"net/http"
 	"regexp"
+	"strconv"
 	"time"
 )
 
@@ -45,14 +46,14 @@ type ExperimentWrapper struct {
 }
 
 // NewExperimentWrapper creates an ExperimentWrapper.
-func NewExperimentWrapper(mcpURL, expID, runID string, protocol *ExperimentProtocolConfig) (*ExperimentWrapper, error) {
+func NewExperimentWrapper(mcpURL, expID, runID string, protocol *ExperimentProtocolConfig) *ExperimentWrapper {
 	return &ExperimentWrapper{
 		mcpURL:   mcpURL,
 		expID:    expID,
 		runID:    runID,
 		protocol: protocol,
 		client:   &http.Client{Timeout: 10 * time.Second},
-	}, nil
+	}
 }
 
 // parseAtKeyValues extracts all @key=value pairs from a line.
@@ -117,15 +118,24 @@ func (w *ExperimentWrapper) WrapOutput(ctx context.Context, src io.Reader, dst i
 			tool = w.protocol.CheckpointTool
 		}
 
+		metricF, err := strconv.ParseFloat(metricVal, 64)
+		if err != nil {
+			// Regex guarantees numeric value; ParseFloat failure is unexpected — skip.
+			log.Printf("experiment-wrapper: unexpected non-numeric metric value %q: %v", metricVal, err)
+			continue
+		}
+
 		args := map[string]any{
 			"exp_id": w.expID,
 			"run_id": w.runID,
-			"metric": metricVal,
+			"metric": metricF,
 			"key":    triggerKey,
 		}
 		if w.protocol.EpochKey != "" {
 			if epochVal, ok := kv[w.protocol.EpochKey]; ok {
-				args["epoch"] = epochVal
+				if epochF, err2 := strconv.ParseFloat(epochVal, 64); err2 == nil {
+					args["epoch"] = epochF
+				}
 			}
 		}
 

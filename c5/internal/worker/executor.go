@@ -39,13 +39,6 @@ func ExecuteWithExperiment(ctx context.Context, cfg *WorkerConfig, payload JobPa
 		return err
 	}
 
-	wrapper, err := NewExperimentWrapper(cfg.MCPURL, payload.ExpID, payload.ExpRunID, cfg.ExperimentProtocol)
-	if err != nil {
-		// Pattern compile error — fall back to plain copy so the job is not broken.
-		log.Printf("executor: failed to create ExperimentWrapper: %v — falling back to plain copy", err)
-		_, err2 := io.Copy(dst, src)
-		return err2
-	}
-
-	return wrapper.WrapOutput(ctx, src, dst)
+	return NewExperimentWrapper(cfg.MCPURL, payload.ExpID, payload.ExpRunID, cfg.ExperimentProtocol).
+		WrapOutput(ctx, src, dst)
 }

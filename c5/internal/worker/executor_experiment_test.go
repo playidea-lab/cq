@@ -17,7 +17,7 @@ import (
 // and the MCP checkpoint endpoint receives the metric.
 func TestJobExecutor_ExperimentWrapper_Activated(t *testing.T) {
 	var called atomic.Int32
-	var capturedMetric string
+	var capturedMetric float64
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
@@ -25,7 +25,7 @@ func TestJobExecutor_ExperimentWrapper_Activated(t *testing.T) {
 		if err := json.Unmarshal(body, &req); err == nil {
 			if params, ok := req["params"].(map[string]any); ok {
 				if args, ok := params["arguments"].(map[string]any); ok {
-					if v, ok := args["metric"].(string); ok {
+					if v, ok := args["metric"].(float64); ok {
 						capturedMetric = v
 					}
 				}
@@ -59,7 +59,7 @@ func TestJobExecutor_ExperimentWrapper_Activated(t *testing.T) {
 	if n := called.Load(); n != 1 {
 		t.Errorf("expected 1 MCP checkpoint call, got %d", n)
 	}
-	if capturedMetric != "48.5" {
+	if capturedMetric != 48.5 {
 		t.Errorf("expected metric=48.5, got %v", capturedMetric)
 	}
 	if !strings.Contains(dst.String(), "@loss=48.5") {
