@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/piqsol/c4/c5/internal/model"
@@ -1273,5 +1274,140 @@ experiment_protocol:
 	}
 	if proto.CheckpointTool != "" {
 		t.Errorf("CheckpointTool = %q, want %q", proto.CheckpointTool, "")
+	}
+}
+
+// TestWorkerRoutes_ToExperimentWrapper verifies that when experimentProtocol is configured
+// and job.ExpRunID is non-empty, ExecuteWithExperiment is activated (MCP checkpoint called).
+func TestWorkerRoutes_ToExperimentWrapper(t *testing.T) {
+	var called atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "/mcp") || r.URL.Path == "/" {
+			called.Add(1)
+		}
+		json.NewEncoder(w).Encode(map[string]any{"result": map[string]any{"content": []any{}}})
+	}))
+	defer srv.Close()
+
+	tmp := withTempCwd(t)
+	outFile := filepath.Join(tmp, "out.txt")
+
+	job := &model.Job{
+		ID:       "exp-route-1",
+		Command:  fmt.Sprintf("echo '@loss=45.2'; echo done > %s", outFile),
+		Workdir:  tmp,
+		ExpRunID: "run-xyz",
+		ExpID:    "exp-001",
+	}
+
+	wcfg := &workerConfig{
+		experimentProtocol: &worker.ExperimentProtocolConfig{
+			MetricKey:      "loss",
+			CheckpointTool: "c4_run_checkpoint",
+		},
+		mcpURL: srv.URL,
+	}
+
+	client := &workerClient{
+		baseURL: "http://localhost:0",
+		http:    &http.Client{},
+	}
+
+	exitCode, _ := executeJob(client, job, "lease-1", "worker-1", 0, wcfg)
+	if exitCode != 0 {
+		t.Fatalf("executeJob() exit code = %d, want 0", exitCode)
+	}
+	if called.Load() == 0 {
+		t.Error("expected MCP checkpoint call via ExperimentWrapper, got none")
+	}
+}
+
+// TestWorkerFallsBack_NoRunID verifies that when experimentProtocol is set but
+// job.ExpRunID is empty, the job runs normally via plain streamLogs (no panic).
+func TestWorkerFallsBack_NoRunID(t *testing.T) {
+	tmp := withTempCwd(t)
+
+	job := &model.Job{
+		ID:      "exp-fallback-norun",
+		Command: "true",
+		Workdir: tmp,
+		ExpRunID: "", // no run ID → fallback
+	}
+
+	wcfg := &workerConfig{
+		experimentProtocol: &worker.ExperimentProtocolConfig{
+			MetricKey: "loss",
+		},
+		mcpURL: "http://localhost:0",
+	}
+
+	client := &workerClient{
+		baseURL: "http://localhost:0",
+		http:    &http.Client{},
+	}
+
+	exitCode, _ := executeJob(client, job, "lease-1", "worker-1", 0, wcfg)
+	if exitCode != 0 {
+		t.Fatalf("executeJob() exit code = %d, want 0", exitCode)
+	}
+}
+
+// TestWorkerFallsBack_NoProtocol verifies that when experimentProtocol is nil,
+// the job runs normally via plain streamLogs (no panic).
+func TestWorkerFallsBack_NoProtocol(t *testing.T) {
+	tmp := withTempCwd(t)
+
+	job := &model.Job{
+		ID:      "exp-fallback-noproto",
+		Command: "true",
+		Workdir: tmp,
+		ExpRunID: "run-abc", // run ID present but no protocol → fallback
+	}
+
+	wcfg := &workerConfig{
+		experimentProtocol: nil,
+	}
+
+	client := &workerClient{
+		baseURL: "http://localhost:0",
+		http:    &http.Client{},
+	}
+
+	exitCode, _ := executeJob(client, job, "lease-1", "worker-1", 0, wcfg)
+	if exitCode != 0 {
+		t.Fatalf("executeJob() exit code = %d, want 0", exitCode)
+	}
+}
+
+// TestWorkerExperimentWrapper_NonFatal verifies that a wrapper error (bad MCP URL)
+// does not crash the job — pw.Close() is deferred and logWg is properly accounted.
+func TestWorkerExperimentWrapper_NonFatal(t *testing.T) {
+	tmp := withTempCwd(t)
+
+	job := &model.Job{
+		ID:       "exp-nonfatal",
+		Command:  "true",
+		Workdir:  tmp,
+		ExpRunID: "run-abc",
+		ExpID:    "exp-999",
+	}
+
+	wcfg := &workerConfig{
+		experimentProtocol: &worker.ExperimentProtocolConfig{
+			MetricKey:      "loss",
+			CheckpointTool: "c4_run_checkpoint",
+		},
+		mcpURL: "http://127.0.0.1:0", // unreachable — wrapper will error
+	}
+
+	client := &workerClient{
+		baseURL: "http://localhost:0",
+		http:    &http.Client{},
+	}
+
+	// Must complete without hanging (logWg.Wait() would block if pw.Close() missing).
+	exitCode, _ := executeJob(client, job, "lease-1", "worker-1", 0, wcfg)
+	if exitCode != 0 {
+		t.Fatalf("executeJob() exit code = %d, want 0 (wrapper error must be non-fatal)", exitCode)
 	}
 }

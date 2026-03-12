@@ -130,6 +130,7 @@ func workerCmd() *cobra.Command {
 		capabilitiesFile string
 		noAutoDetect     bool
 		allowRunCommand  bool
+		mcpURL           string
 	)
 
 	cmd := &cobra.Command{
@@ -187,6 +188,7 @@ func workerCmd() *cobra.Command {
 				capabilities:       caps,
 				allowRunCommand:    allowRunCommand,
 				experimentProtocol: expProto,
+				mcpURL:             mcpURL,
 			})
 		},
 	}
@@ -213,6 +215,8 @@ func workerCmd() *cobra.Command {
 	cmd.Flags().StringVar(&capabilitiesFile, "capabilities", "", "Path to capabilities YAML file")
 	cmd.Flags().BoolVar(&noAutoDetect, "no-auto-detect", false, "Disable GPU auto-detection and capability auto-generation")
 	cmd.Flags().BoolVar(&allowRunCommand, "allow-run-command", false, "Allow run_command capability (arbitrary shell execution from job params)")
+	defaultMCPURL := os.Getenv("C4_MCP_URL")
+	cmd.Flags().StringVar(&mcpURL, "mcp-url", defaultMCPURL, "MCP server URL for experiment checkpoints (e.g. http://localhost:4142/mcp)")
 
 	cmd.AddCommand(workerInstallCmd())
 
@@ -232,6 +236,7 @@ type workerConfig struct {
 	allowRunCommand    bool                           // opt-in: allow run_command capability (arbitrary shell from params)
 	drive              driveClient                    // optional; nil skips Drive pipeline
 	experimentProtocol *worker.ExperimentProtocolConfig // optional; parsed from caps.yaml experiment_protocol section
+	mcpURL             string
 }
 
 // getWorkerVersion returns the cq version string for Hub registration.
@@ -558,7 +563,22 @@ func executeJob(client *workerClient, job *model.Job, leaseID, workerID string, 
 	mc := newMetricsCollector(client, job.ID)
 	var logWg sync.WaitGroup
 	logWg.Add(2)
-	go func() { defer logWg.Done(); streamLogs(client, job.ID, stdout, "stdout", mc) }()
+	if wcfg.experimentProtocol != nil && job.ExpRunID != "" {
+		pr, pw := io.Pipe()
+		go func() {
+			defer pw.Close()
+			payload := worker.JobPayload{ExpRunID: job.ExpRunID, ExpName: job.ExpID}
+			if err := worker.ExecuteWithExperiment(ctx, &worker.WorkerConfig{
+				MCPURL:             wcfg.mcpURL,
+				ExperimentProtocol: wcfg.experimentProtocol,
+			}, payload, stdout, pw); err != nil {
+				log.Printf("c5-worker: experiment-wrapper error: %v", err)
+			}
+		}()
+		go func() { defer logWg.Done(); streamLogs(client, job.ID, pr, "stdout", mc) }()
+	} else {
+		go func() { defer logWg.Done(); streamLogs(client, job.ID, stdout, "stdout", mc) }()
+	}
 	go func() { defer logWg.Done(); streamLogs(client, job.ID, stderr, "stderr", nil) }()
 
 	// Lease renew + cancel detection goroutine
