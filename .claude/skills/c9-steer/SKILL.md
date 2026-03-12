@@ -1,5 +1,10 @@
 # C9 Steer
 
+> **Read-Only Notice**: `.c9/state.yaml` writes are managed exclusively by `LoopOrchestrator`
+> (serve component, single writer principle). Direct state.yaml writes from this skill are
+> deprecated. To steer the loop, use `c4_research_intervene(action="steering", guidance="...")`.
+> To release the gate (skip wait), use `c4_research_intervene(action="continue")`.
+
 state.yaml을 직접 편집하지 않고 phase 전환과 reason 업데이트를 추상화하는 조종 스킬.
 partial write 방지를 위해 원자 저장 패턴(NamedTemporaryFile → os.replace)을 사용한다.
 

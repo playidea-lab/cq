@@ -1,5 +1,11 @@
 # C9 Loop
 
+> **Read-Only Notice**: `LoopOrchestrator` (serve component) is the single writer for
+> `.c9/state.yaml`. This skill reads state for status display and phase routing.
+> Direct writes to state.yaml from this skill are deprecated — all state transitions
+> (gate_wait → running → stopped) happen inside LoopOrchestrator automatically.
+> Use `c4_research_loop_start` to start a loop and `c4_research_intervene` to steer.
+
 C4 워크플로우를 ML 연구에 적용한 완전 자율 루프 드라이버.
 state.yaml의 현재 phase를 읽어 다음 단계를 자동 실행.
 

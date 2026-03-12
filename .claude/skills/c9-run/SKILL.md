@@ -1,5 +1,9 @@
 # C9 Run
 
+> **Read-Only Notice**: `.c9/state.yaml` writes are managed exclusively by `LoopOrchestrator`
+> (serve component). This skill submits jobs and reads state for display only.
+> To start the loop programmatically, call `c4_research_loop_start` instead of direct file writes.
+
 현재 round의 실험 yaml들을 C5 Hub에 제출하고 완료를 폴링.
 워커(pi 서버)가 실험을 실행하고 [C9-START]/[C9-DONE] 마커로 보고.
 

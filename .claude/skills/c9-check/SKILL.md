@@ -1,5 +1,9 @@
 # C9 Check
 
+> **Read-Only Notice**: This skill reads `.c9/state.yaml` for display purposes only.
+> State writes are managed exclusively by `LoopOrchestrator` (serve component).
+> Use `ReadState()` for programmatic access — do not write state.yaml directly.
+
 실험 결과 파싱 + 수렴 판정. C4의 checkpoint에 해당.
 
 **트리거**: "c9-check", "결과 확인", "수렴 확인", "check"
