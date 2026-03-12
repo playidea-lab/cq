@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/piqsol/c4/c5/internal/model"
+	"github.com/piqsol/c4/c5/internal/worker"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 )
@@ -65,6 +66,12 @@ func validateRequirements(raw string) (string, bool) {
 	return strings.Join(tokens, " "), true
 }
 
+type experimentProtocolYAML struct {
+	MetricKey      string `yaml:"metric_key"`
+	EpochKey       string `yaml:"epoch_key"`
+	CheckpointTool string `yaml:"checkpoint_tool"`
+}
+
 type capabilitiesYAML struct {
 	Capabilities []struct {
 		Name        string         `yaml:"name"`
@@ -74,17 +81,19 @@ type capabilitiesYAML struct {
 		Tags        []string       `yaml:"tags"`
 		Version     string         `yaml:"version"`
 	} `yaml:"capabilities"`
+	ExperimentProtocol *experimentProtocolYAML `yaml:"experiment_protocol"`
 }
 
-// loadCapabilities reads a YAML capabilities file and returns model.Capability slice.
-func loadCapabilities(path string) ([]model.Capability, error) {
+// loadCapabilities reads a YAML capabilities file and returns the capability
+// slice and optional experiment protocol config parsed from the file.
+func loadCapabilities(path string) ([]model.Capability, *worker.ExperimentProtocolConfig, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("read capabilities file: %w", err)
+		return nil, nil, fmt.Errorf("read capabilities file: %w", err)
 	}
 	var cf capabilitiesYAML
 	if err := yaml.Unmarshal(data, &cf); err != nil {
-		return nil, fmt.Errorf("parse capabilities YAML: %w", err)
+		return nil, nil, fmt.Errorf("parse capabilities YAML: %w", err)
 	}
 	caps := make([]model.Capability, 0, len(cf.Capabilities))
 	for _, c := range cf.Capabilities {
@@ -97,7 +106,15 @@ func loadCapabilities(path string) ([]model.Capability, error) {
 			Version:     c.Version,
 		})
 	}
-	return caps, nil
+	var expProto *worker.ExperimentProtocolConfig
+	if cf.ExperimentProtocol != nil {
+		expProto = &worker.ExperimentProtocolConfig{
+			MetricKey:      cf.ExperimentProtocol.MetricKey,
+			EpochKey:       cf.ExperimentProtocol.EpochKey,
+			CheckpointTool: cf.ExperimentProtocol.CheckpointTool,
+		}
+	}
+	return caps, expProto, nil
 }
 
 func workerCmd() *cobra.Command {
@@ -142,9 +159,10 @@ func workerCmd() *cobra.Command {
 			}
 
 			var caps []model.Capability
+			var expProto *worker.ExperimentProtocolConfig
 			if capabilitiesFile != "" {
 				var err error
-				caps, err = loadCapabilities(capabilitiesFile)
+				caps, expProto, err = loadCapabilities(capabilitiesFile)
 				if err != nil {
 					return fmt.Errorf("load capabilities: %w", err)
 				}
@@ -158,16 +176,17 @@ func workerCmd() *cobra.Command {
 				log.Printf("c5-worker: using auto-generated capabilities (%s)", strings.Join(capNames, ", "))
 			}
 			return runWorker(workerConfig{
-				serverURL:       serverURL,
-				hostname:        hostname,
-				name:            workerName,
-				gpuCount:        gpuCount,
-				gpuModel:        gpuModel,
-				totalVRAM:       totalVRAM,
-				pollSec:         pollSec,
-				apiKey:          apiKey,
-				capabilities:    caps,
-				allowRunCommand: allowRunCommand,
+				serverURL:          serverURL,
+				hostname:           hostname,
+				name:               workerName,
+				gpuCount:           gpuCount,
+				gpuModel:           gpuModel,
+				totalVRAM:          totalVRAM,
+				pollSec:            pollSec,
+				apiKey:             apiKey,
+				capabilities:       caps,
+				allowRunCommand:    allowRunCommand,
+				experimentProtocol: expProto,
 			})
 		},
 	}
@@ -201,17 +220,18 @@ func workerCmd() *cobra.Command {
 }
 
 type workerConfig struct {
-	serverURL       string
-	hostname        string
-	name            string
-	gpuCount        int
-	gpuModel        string
-	totalVRAM       float64
-	pollSec         int
-	apiKey          string
-	capabilities    []model.Capability
-	allowRunCommand bool        // opt-in: allow run_command capability (arbitrary shell from params)
-	drive           driveClient // optional; nil skips Drive pipeline
+	serverURL          string
+	hostname           string
+	name               string
+	gpuCount           int
+	gpuModel           string
+	totalVRAM          float64
+	pollSec            int
+	apiKey             string
+	capabilities       []model.Capability
+	allowRunCommand    bool                           // opt-in: allow run_command capability (arbitrary shell from params)
+	drive              driveClient                    // optional; nil skips Drive pipeline
+	experimentProtocol *worker.ExperimentProtocolConfig // optional; parsed from caps.yaml experiment_protocol section
 }
 
 // getWorkerVersion returns the cq version string for Hub registration.

@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/piqsol/c4/c5/internal/model"
+	"github.com/piqsol/c4/c5/internal/worker"
 )
 
 // withTempCwd changes to a temp directory for the duration of the test,
@@ -1158,5 +1159,119 @@ func TestWorkerRegister_VersionUnset(t *testing.T) {
 	t.Setenv("CQ_VERSION", "")
 	if got := getWorkerVersion(); got != "unknown" {
 		t.Errorf("getWorkerVersion() = %q, want %q", got, "unknown")
+	}
+}
+
+// TestLoadCapabilities_WithExperimentProtocol verifies that a caps.yaml with an
+// experiment_protocol section is parsed into an ExperimentProtocolConfig.
+func TestLoadCapabilities_WithExperimentProtocol(t *testing.T) {
+	yaml := `
+capabilities:
+  - name: train
+    description: "Train model"
+    command: "python train.py"
+experiment_protocol:
+  metric_key: loss
+  epoch_key: epoch
+  checkpoint_tool: c4_run_checkpoint
+`
+	f, err := os.CreateTemp(t.TempDir(), "caps-*.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.WriteString(yaml); err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+
+	caps, proto, err := loadCapabilities(f.Name())
+	if err != nil {
+		t.Fatalf("loadCapabilities() error = %v", err)
+	}
+	if len(caps) != 1 {
+		t.Errorf("len(caps) = %d, want 1", len(caps))
+	}
+	if proto == nil {
+		t.Fatal("proto = nil, want non-nil")
+	}
+	want := &worker.ExperimentProtocolConfig{
+		MetricKey:      "loss",
+		EpochKey:       "epoch",
+		CheckpointTool: "c4_run_checkpoint",
+	}
+	if proto.MetricKey != want.MetricKey {
+		t.Errorf("MetricKey = %q, want %q", proto.MetricKey, want.MetricKey)
+	}
+	if proto.EpochKey != want.EpochKey {
+		t.Errorf("EpochKey = %q, want %q", proto.EpochKey, want.EpochKey)
+	}
+	if proto.CheckpointTool != want.CheckpointTool {
+		t.Errorf("CheckpointTool = %q, want %q", proto.CheckpointTool, want.CheckpointTool)
+	}
+}
+
+// TestLoadCapabilities_WithoutExperimentProtocol verifies that a caps.yaml without
+// an experiment_protocol section returns nil for the ExperimentProtocolConfig.
+func TestLoadCapabilities_WithoutExperimentProtocol(t *testing.T) {
+	yaml := `
+capabilities:
+  - name: train
+    description: "Train model"
+    command: "python train.py"
+`
+	f, err := os.CreateTemp(t.TempDir(), "caps-*.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.WriteString(yaml); err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+
+	caps, proto, err := loadCapabilities(f.Name())
+	if err != nil {
+		t.Fatalf("loadCapabilities() error = %v", err)
+	}
+	if len(caps) != 1 {
+		t.Errorf("len(caps) = %d, want 1", len(caps))
+	}
+	if proto != nil {
+		t.Errorf("proto = %+v, want nil", proto)
+	}
+}
+
+// TestLoadCapabilities_ExperimentProtocol_Defaults verifies that optional fields
+// (checkpoint_tool omitted) default to empty string.
+func TestLoadCapabilities_ExperimentProtocol_Defaults(t *testing.T) {
+	yaml := `
+capabilities: []
+experiment_protocol:
+  metric_key: val_loss
+  epoch_key: step
+`
+	f, err := os.CreateTemp(t.TempDir(), "caps-*.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.WriteString(yaml); err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+
+	_, proto, err := loadCapabilities(f.Name())
+	if err != nil {
+		t.Fatalf("loadCapabilities() error = %v", err)
+	}
+	if proto == nil {
+		t.Fatal("proto = nil, want non-nil")
+	}
+	if proto.MetricKey != "val_loss" {
+		t.Errorf("MetricKey = %q, want %q", proto.MetricKey, "val_loss")
+	}
+	if proto.EpochKey != "step" {
+		t.Errorf("EpochKey = %q, want %q", proto.EpochKey, "step")
+	}
+	if proto.CheckpointTool != "" {
+		t.Errorf("CheckpointTool = %q, want %q", proto.CheckpointTool, "")
 	}
 }

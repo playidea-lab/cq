@@ -28,6 +28,14 @@ type ExperimentProtocolConfig struct {
 	// EpochKey is the key whose value is sent as "epoch" in checkpoint args.
 	EpochKey string
 
+	// MetricKey is the stdout key prefix used to detect metric lines.
+	// Example: "loss" matches lines like "loss: 0.342".
+	MetricKey string
+
+	// EpochKey is the stdout key prefix used to detect epoch lines.
+	// Example: "epoch" matches lines like "epoch: 5".
+	EpochKey string
+
 	// CheckpointTool is the MCP tool name to call when a metric is matched.
 	// Defaults to "c4_run_checkpoint".
 	CheckpointTool string
