@@ -84,16 +84,16 @@ type LoopOrchestrator struct {
 	status   string
 	cancel   context.CancelFunc
 	done     chan struct{}
+	// integrated components (T-RLOOP-4-0/4-1)
+	gate   *GateController  // optional; released on Stop() to unblock onJobDone gate waits
+	state  *StateYAMLWriter
+	notify *NotifyBridge
 	// jobdone fields (set by onJobDone path)
 	caller  debateCaller
 	store   debateStore
 	hubCli  loopHubClient
 	lineage loopLineageBuilder
 	kStore  *knowledge.Store
-	// integrated components (T-RLOOP-4-0)
-	gate   *GateController
-	state  *StateYAMLWriter
-	notify *NotifyBridge
 }
 
 // compile-time interface assertion
@@ -191,6 +191,9 @@ func (o *LoopOrchestrator) Stop(_ context.Context) error {
 	o.mu.Unlock()
 	if cancel != nil {
 		cancel()
+	}
+	if o.gate != nil {
+		o.gate.Release("stop") // unblock any in-progress gate wait in onJobDone
 	}
 	if done != nil {
 		<-done
