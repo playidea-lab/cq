@@ -349,6 +349,26 @@ func (s *Store) migrate() error {
 		`ALTER TABLE jobs ADD COLUMN runtime TEXT NOT NULL DEFAULT ''`,
 		// Migration: scoped API keys — add scope column (full/user/worker).
 		`ALTER TABLE api_keys ADD COLUMN scope TEXT NOT NULL DEFAULT 'full'`,
+		// Migration: experiment registry tables.
+		`CREATE TABLE IF NOT EXISTS experiment_runs (
+			run_id       TEXT PRIMARY KEY,
+			name         TEXT NOT NULL DEFAULT '',
+			capability   TEXT NOT NULL DEFAULT '',
+			status       TEXT NOT NULL DEFAULT 'running',
+			best_metric  REAL,
+			final_metric REAL,
+			summary      TEXT NOT NULL DEFAULT '',
+			created_at   TEXT NOT NULL,
+			updated_at   TEXT NOT NULL
+		)`,
+		`CREATE TABLE IF NOT EXISTS experiment_checkpoints (
+			id         INTEGER PRIMARY KEY AUTOINCREMENT,
+			run_id     TEXT NOT NULL,
+			metric     REAL NOT NULL,
+			path       TEXT NOT NULL DEFAULT '',
+			is_best    INTEGER NOT NULL DEFAULT 0,
+			created_at TEXT NOT NULL
+		)`,
 	} {
 		if _, err := s.db.Exec(stmt); err != nil {
 			if !strings.Contains(err.Error(), "duplicate column") && !strings.Contains(err.Error(), "already exists") {
@@ -3108,4 +3128,147 @@ func (s *Store) scanResearchState(projectID string) (*model.ResearchState, error
 	}
 	st.LockExpires = lockExpires
 	return &st, nil
+}
+
+// =========================================================================
+// ExperimentStore
+// =========================================================================
+
+// ErrRunNotFound is returned when a run_id is not found in experiment_runs.
+var ErrRunNotFound = fmt.Errorf("experiment run not found")
+
+// ExperimentRun holds a summary row from experiment_runs.
+type ExperimentRun struct {
+	RunID      string   `json:"run_id"`
+	Name       string   `json:"name"`
+	Capability string   `json:"capability"`
+	Status     string   `json:"status"`
+	BestMetric *float64 `json:"best_metric,omitempty"`
+}
+
+// StartRun inserts a new experiment run and returns the generated run_id.
+func (s *Store) StartRun(ctx context.Context, name, capability string) (string, error) {
+	runID := generateID("run")
+	now := time.Now().UTC().Format(time.RFC3339)
+	_, err := s.db.ExecContext(ctx,
+		`INSERT INTO experiment_runs (run_id, name, capability, status, created_at, updated_at)
+		 VALUES (?, ?, ?, 'running', ?, ?)`,
+		runID, name, capability, now, now,
+	)
+	if err != nil {
+		return "", fmt.Errorf("start run: %w", err)
+	}
+	return runID, nil
+}
+
+// RecordCheckpoint records an epoch checkpoint and returns whether it is the best so far.
+// Uses CAS UPDATE on best_metric (lower is better).
+func (s *Store) RecordCheckpoint(ctx context.Context, runID string, metric float64, path string) (bool, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return false, fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	// Fetch current best_metric.
+	var bestMetric *float64
+	err = tx.QueryRowContext(ctx,
+		`SELECT best_metric FROM experiment_runs WHERE run_id = ?`, runID,
+	).Scan(&bestMetric)
+	if err == sql.ErrNoRows {
+		return false, ErrRunNotFound
+	}
+	if err != nil {
+		return false, fmt.Errorf("fetch run: %w", err)
+	}
+
+	isBest := bestMetric == nil || metric < *bestMetric
+
+	now := time.Now().UTC().Format(time.RFC3339)
+	_, err = tx.ExecContext(ctx,
+		`INSERT INTO experiment_checkpoints (run_id, metric, path, is_best, created_at)
+		 VALUES (?, ?, ?, ?, ?)`,
+		runID, metric, path, boolToInt(isBest), now,
+	)
+	if err != nil {
+		return false, fmt.Errorf("insert checkpoint: %w", err)
+	}
+
+	if isBest {
+		_, err = tx.ExecContext(ctx,
+			`UPDATE experiment_runs SET best_metric = ?, updated_at = ? WHERE run_id = ?`,
+			metric, now, runID,
+		)
+		if err != nil {
+			return false, fmt.Errorf("update best_metric: %w", err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return false, fmt.Errorf("commit: %w", err)
+	}
+	return isBest, nil
+}
+
+// ShouldContinue returns true when the run is still in 'running' status.
+func (s *Store) ShouldContinue(ctx context.Context, runID string) (bool, error) {
+	var status string
+	err := s.db.QueryRowContext(ctx,
+		`SELECT status FROM experiment_runs WHERE run_id = ?`, runID,
+	).Scan(&status)
+	if err == sql.ErrNoRows {
+		return false, ErrRunNotFound
+	}
+	if err != nil {
+		return false, fmt.Errorf("fetch run: %w", err)
+	}
+	return status == "running", nil
+}
+
+// CompleteRun sets the final status and final_metric of a run.
+func (s *Store) CompleteRun(ctx context.Context, runID, status string, finalMetric float64, summary string) error {
+	now := time.Now().UTC().Format(time.RFC3339)
+	res, err := s.db.ExecContext(ctx,
+		`UPDATE experiment_runs SET status = ?, final_metric = ?, summary = ?, updated_at = ?
+		 WHERE run_id = ?`,
+		status, finalMetric, summary, now, runID,
+	)
+	if err != nil {
+		return fmt.Errorf("complete run: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return ErrRunNotFound
+	}
+	return nil
+}
+
+// SearchRuns performs a simple LIKE search over name and capability.
+func (s *Store) SearchRuns(ctx context.Context, query string, limit int) ([]ExperimentRun, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	pattern := "%" + query + "%"
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT run_id, name, capability, status, best_metric
+		 FROM experiment_runs
+		 WHERE name LIKE ? OR capability LIKE ?
+		 ORDER BY created_at DESC
+		 LIMIT ?`,
+		pattern, pattern, limit,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("search runs: %w", err)
+	}
+	defer rows.Close()
+
+	var runs []ExperimentRun
+	for rows.Next() {
+		var r ExperimentRun
+		if err := rows.Scan(&r.RunID, &r.Name, &r.Capability, &r.Status, &r.BestMetric); err != nil {
+			return nil, fmt.Errorf("scan run: %w", err)
+		}
+		runs = append(runs, r)
+	}
+	return runs, rows.Err()
 }

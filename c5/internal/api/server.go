@@ -263,6 +263,13 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("/v1/research/state", s.handleResearchState)
 	s.mux.HandleFunc("/v1/research/state/lock", s.handleResearchStateLock)
 
+	// Experiment registry.
+	s.mux.HandleFunc("/v1/experiment/run", s.handleExperimentCreateRun)
+	s.mux.HandleFunc("/v1/experiment/checkpoint", s.handleExperimentCheckpoint)
+	s.mux.HandleFunc("/v1/experiment/continue", s.handleExperimentContinue)
+	s.mux.HandleFunc("/v1/experiment/complete", s.handleExperimentComplete)
+	s.mux.HandleFunc("/v1/experiment/search", s.handleExperimentSearch)
+
 	// LLMs.txt + docs
 	s.registerLLMSTxtRoutes()
 }
