@@ -13,81 +13,59 @@ import (
 	"time"
 )
 
-func TestNewExperimentWrapper_InvalidPattern(t *testing.T) {
-	_, err := NewExperimentWrapper("http://localhost", "exp1", "run1", &ExperimentProtocolConfig{
-		EpochPattern: "[invalid",
-	})
-	if err == nil {
-		t.Fatal("expected error for invalid regex pattern")
+// --- parseAtKeyValues unit tests ---
+
+func TestParseAtKeyValues_Single(t *testing.T) {
+	kv, keys := parseAtKeyValues("training @loss=0.452 done")
+	if len(keys) != 1 || keys[0] != "loss" || kv["loss"] != "0.452" {
+		t.Errorf("unexpected result: keys=%v kv=%v", keys, kv)
 	}
 }
 
-func TestNewExperimentWrapper_ValidPattern(t *testing.T) {
-	w, err := NewExperimentWrapper("http://localhost", "exp1", "run1", &ExperimentProtocolConfig{
-		EpochPattern: `MPJPE:\s+(?P<value>[\d.]+)`,
-	})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+func TestParseAtKeyValues_Multi(t *testing.T) {
+	kv, keys := parseAtKeyValues("@epoch=5 @loss=0.312 @acc=0.97")
+	if len(keys) != 3 {
+		t.Fatalf("expected 3 keys, got %d: %v", len(keys), keys)
 	}
-	if w == nil {
-		t.Fatal("expected non-nil wrapper")
+	if kv["epoch"] != "5" || kv["loss"] != "0.312" || kv["acc"] != "0.97" {
+		t.Errorf("unexpected kv: %v", kv)
 	}
 }
 
-func TestNewExperimentWrapper_NilProtocol(t *testing.T) {
-	w, err := NewExperimentWrapper("http://localhost", "exp1", "run1", nil)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if w == nil {
-		t.Fatal("expected non-nil wrapper")
+func TestParseAtKeyValues_NoMatch(t *testing.T) {
+	kv, keys := parseAtKeyValues("plain log line without markers")
+	if kv != nil || keys != nil {
+		t.Errorf("expected nil results, got keys=%v kv=%v", keys, kv)
 	}
 }
 
-func TestExperimentWrapper_WrapOutput_NoPattern(t *testing.T) {
-	w, err := NewExperimentWrapper("http://localhost", "exp1", "run1", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	src := strings.NewReader("line1\nline2\nMPJPE: 45.2\n")
-	var dst bytes.Buffer
-	if err := w.WrapOutput(context.Background(), src, &dst); err != nil {
-		t.Fatalf("WrapOutput error: %v", err)
-	}
-
-	out := dst.String()
-	if !strings.Contains(out, "line1") || !strings.Contains(out, "MPJPE: 45.2") {
-		t.Errorf("unexpected output: %q", out)
+func TestParseAtKeyValues_Integer(t *testing.T) {
+	kv, keys := parseAtKeyValues("@step=100")
+	if len(keys) != 1 || kv["step"] != "100" {
+		t.Errorf("unexpected result: keys=%v kv=%v", keys, kv)
 	}
 }
 
-func TestExperimentWrapper_WrapOutput_PassThrough(t *testing.T) {
-	w, err := NewExperimentWrapper("http://localhost", "exp1", "run1", &ExperimentProtocolConfig{
-		EpochPattern: `MPJPE:\s+(?P<value>[\d.]+)`,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// no MCP server — we just want output passthrough, no pattern match lines
-	src := strings.NewReader("training started\nepoch 1 done\n")
-	var dst bytes.Buffer
-	if err := w.WrapOutput(context.Background(), src, &dst); err != nil {
-		t.Fatalf("WrapOutput error: %v", err)
-	}
-
-	out := dst.String()
-	if !strings.Contains(out, "training started") {
-		t.Errorf("expected passthrough, got: %q", out)
+func TestParseAtKeyValues_Negative(t *testing.T) {
+	kv, keys := parseAtKeyValues("@delta=-0.05")
+	if len(keys) != 1 || kv["delta"] != "-0.05" {
+		t.Errorf("unexpected result: keys=%v kv=%v", keys, kv)
 	}
 }
 
-func TestCapabilityWrapper_ExperimentProtocol_StdoutPattern(t *testing.T) {
-	// Fix 1: channel-based synchronization — no data race with time.Sleep
+func TestParseAtKeyValues_Scientific(t *testing.T) {
+	kv, keys := parseAtKeyValues("@lr=1.5e-4")
+	if len(keys) != 1 || kv["lr"] != "1.5e-4" {
+		t.Errorf("unexpected result: keys=%v kv=%v", keys, kv)
+	}
+}
+
+// --- @key=value protocol integration tests ---
+
+func TestAtKeyProtocol_CallsCheckpoint(t *testing.T) {
 	checkpointCalled := make(chan struct{}, 1)
-
 	var capturedArgs map[string]any
+
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
 		var req map[string]any
@@ -106,14 +84,14 @@ func TestCapabilityWrapper_ExperimentProtocol_StdoutPattern(t *testing.T) {
 	defer srv.Close()
 
 	wrapper, err := NewExperimentWrapper(srv.URL, "exp-42", "run-7", &ExperimentProtocolConfig{
-		EpochPattern:   `MPJPE:\s+(?P<value>[\d.]+)`,
+		MetricKey:      "loss",
 		CheckpointTool: "c4_run_checkpoint",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	src := strings.NewReader("epoch 1/10\nMPJPE: 52.3 mm\ntraining continues\n")
+	src := strings.NewReader("epoch 1/10\n@loss=0.452 @epoch=1\ntraining continues\n")
 	var dst bytes.Buffer
 	if err := wrapper.WrapOutput(context.Background(), src, &dst); err != nil {
 		t.Fatalf("WrapOutput error: %v", err)
@@ -121,19 +99,126 @@ func TestCapabilityWrapper_ExperimentProtocol_StdoutPattern(t *testing.T) {
 
 	select {
 	case <-checkpointCalled:
-		// checkpoint was called — success
+		// success
 	case <-time.After(300 * time.Millisecond):
-		t.Error("expected c4_run_checkpoint to be called when MPJPE pattern matched")
+		t.Error("expected c4_run_checkpoint to be called when @loss matched")
 	}
 
 	if capturedArgs != nil {
-		if expID, ok := capturedArgs["exp_id"].(string); !ok || expID != "exp-42" {
-			t.Errorf("expected exp_id=exp-42, got %v", capturedArgs["exp_id"])
+		if v, ok := capturedArgs["metric"].(string); !ok || v != "0.452" {
+			t.Errorf("expected metric=0.452, got %v", capturedArgs["metric"])
 		}
-		// metric is sent as float64 after strconv.ParseFloat
-		if metric, ok := capturedArgs["metric"].(float64); !ok || metric != 52.3 {
-			t.Errorf("expected metric=52.3, got %v", capturedArgs["metric"])
+		if k, ok := capturedArgs["key"].(string); !ok || k != "loss" {
+			t.Errorf("expected key=loss, got %v", capturedArgs["key"])
 		}
+	}
+}
+
+func TestAtKeyProtocol_FirstKeyFallback(t *testing.T) {
+	// MetricKey is empty → first key on line triggers checkpoint.
+	var capturedKey string
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		var req map[string]any
+		if err := json.Unmarshal(body, &req); err == nil {
+			if params, ok := req["params"].(map[string]any); ok {
+				if args, ok := params["arguments"].(map[string]any); ok {
+					capturedKey, _ = args["key"].(string)
+				}
+			}
+		}
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":{}}`))
+	}))
+	defer srv.Close()
+
+	wrapper, err := NewExperimentWrapper(srv.URL, "exp-1", "run-1", &ExperimentProtocolConfig{
+		MetricKey: "", // empty → use first key
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	src := strings.NewReader("@acc=0.97 @loss=0.1\n")
+	var dst bytes.Buffer
+	if err := wrapper.WrapOutput(context.Background(), src, &dst); err != nil {
+		t.Fatalf("WrapOutput error: %v", err)
+	}
+
+	if capturedKey != "acc" {
+		t.Errorf("expected first key 'acc', got %q", capturedKey)
+	}
+}
+
+func TestAtKeyProtocol_PassThrough(t *testing.T) {
+	// Lines without @key=value must still appear in dst.
+	wrapper, err := NewExperimentWrapper("http://localhost:1", "exp-1", "run-1", &ExperimentProtocolConfig{
+		MetricKey: "loss",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	src := strings.NewReader("training started\nepoch 1 done\n")
+	var dst bytes.Buffer
+	if err := wrapper.WrapOutput(context.Background(), src, &dst); err != nil {
+		t.Fatalf("WrapOutput error: %v", err)
+	}
+
+	if !strings.Contains(dst.String(), "training started") {
+		t.Errorf("expected passthrough, got: %q", dst.String())
+	}
+}
+
+func TestAtKeyProtocol_NonFatal(t *testing.T) {
+	// MCP server returns 500 → WrapOutput must NOT return an error (non-fatal).
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	wrapper, err := NewExperimentWrapper(srv.URL, "exp-1", "run-1", &ExperimentProtocolConfig{
+		MetricKey: "loss",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	src := strings.NewReader("@loss=0.5\n")
+	var dst bytes.Buffer
+	if err := wrapper.WrapOutput(context.Background(), src, &dst); err != nil {
+		t.Errorf("expected non-fatal MCP error, got: %v", err)
+	}
+}
+
+// --- retained non-EpochPattern tests ---
+
+func TestNewExperimentWrapper_NilProtocol(t *testing.T) {
+	w, err := NewExperimentWrapper("http://localhost", "exp1", "run1", nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if w == nil {
+		t.Fatal("expected non-nil wrapper")
+	}
+}
+
+func TestExperimentWrapper_WrapOutput_NoPattern(t *testing.T) {
+	w, err := NewExperimentWrapper("http://localhost", "exp1", "run1", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	src := strings.NewReader("line1\nline2\n@loss=0.3\n")
+	var dst bytes.Buffer
+	if err := w.WrapOutput(context.Background(), src, &dst); err != nil {
+		t.Fatalf("WrapOutput error: %v", err)
+	}
+
+	out := dst.String()
+	if !strings.Contains(out, "line1") || !strings.Contains(out, "@loss=0.3") {
+		t.Errorf("unexpected output: %q", out)
 	}
 }
 
@@ -147,13 +232,14 @@ func TestExperimentWrapper_WrapOutput_MultipleMatches(t *testing.T) {
 	defer srv.Close()
 
 	wrapper, err := NewExperimentWrapper(srv.URL, "exp-1", "run-1", &ExperimentProtocolConfig{
-		EpochPattern: `MPJPE:\s+(?P<value>[\d.]+)`,
+		MetricKey: "loss",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	src := strings.NewReader("MPJPE: 55.0\nMPJPE: 50.1\nMPJPE: 47.3\n")
+	// 3 lines each with @loss — expect 3 checkpoint calls.
+	src := strings.NewReader("@loss=0.55\n@loss=0.50\n@loss=0.47\n")
 	var dst bytes.Buffer
 	if err := wrapper.WrapOutput(context.Background(), src, &dst); err != nil {
 		t.Fatalf("WrapOutput error: %v", err)
@@ -173,22 +259,18 @@ func TestExperimentWrapper_WrapOutput_ContextCancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // cancel immediately
 
-	// Use a closed reader so scanner finishes immediately.
 	src := strings.NewReader("")
 	var dst bytes.Buffer
 	err = wrapper.WrapOutput(ctx, src, &dst)
-	// Either nil (empty reader) or context.Canceled is acceptable.
 	_ = err
 }
 
 func TestExperimentWrapper_CallMCP_MarshalError(t *testing.T) {
-	// Fix 2: json.Marshal error is handled — test that non-marshallable args cause error
 	wrapper, err := NewExperimentWrapper("http://localhost:1", "exp-1", "run-1", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	// channels cannot be marshalled to JSON
 	args := map[string]any{
 		"bad": make(chan int),
 	}
@@ -203,7 +285,6 @@ func TestExperimentWrapper_CallMCP_MarshalError(t *testing.T) {
 }
 
 func TestExperimentWrapper_HTTPClientReuse(t *testing.T) {
-	// Fix 3: verify the http.Client is set as a struct field (not nil)
 	wrapper, err := NewExperimentWrapper("http://localhost", "exp-1", "run-1", nil)
 	if err != nil {
 		t.Fatal(err)

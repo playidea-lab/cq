@@ -18,22 +18,22 @@ type JobPayload struct {
 }
 
 // ExecuteWithExperiment wraps src (typically the stdout pipe of a running job)
-// and writes all output to dst. If the WorkerConfig has a non-empty
-// ExperimentProtocol.EpochPattern AND payload.ExpRunID is non-empty, an
-// ExperimentWrapper is activated to call MCP checkpoints on metric matches.
+// and writes all output to dst. If the WorkerConfig has a non-nil
+// ExperimentProtocol AND payload.ExpRunID is non-empty, an ExperimentWrapper
+// is activated to call MCP checkpoints on @key=value matches in stdout.
 // Otherwise output is copied verbatim — behaviour identical to io.Copy.
 //
 // Returns the first error encountered by the wrapper or the plain copy.
 func ExecuteWithExperiment(ctx context.Context, cfg *WorkerConfig, payload JobPayload, src io.Reader, dst io.Writer) error {
-	if cfg == nil || cfg.ExperimentProtocol == nil || cfg.ExperimentProtocol.EpochPattern == "" {
+	if cfg == nil || cfg.ExperimentProtocol == nil {
 		// No experiment protocol configured — pass-through.
 		_, err := io.Copy(dst, src)
 		return err
 	}
 
 	if payload.ExpRunID == "" {
-		// epoch_pattern present but no run_id in job payload — skip wrapper, warn.
-		log.Printf("executor: epoch_pattern configured but exp_run_id is empty — skipping ExperimentWrapper")
+		// protocol present but no run_id in job payload — skip wrapper, warn.
+		log.Printf("executor: experiment_protocol configured but exp_run_id is empty — skipping ExperimentWrapper")
 		_, err := io.Copy(dst, src)
 		return err
 	}
