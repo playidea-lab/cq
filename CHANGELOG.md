@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.97.0] - 2026-03-12
+
+### ✨ Features
+- **c5**: Hub ExperimentStore — SQLite 기반 실험 런 관리 + HTTP API (POST /v1/experiment/run, /checkpoint, /complete, /continue, /search)
+- **experiment**: c4-core ExperimentHandlers Hub 프록시 — `HubBaseURL` 설정 시 Hub API로 자동 프록시
+- **worker**: ExperimentWrapper — `WorkerConfig.ExperimentProtocol` 기반 stdout 모니터링 + Hub 체크포인트 자동 호출
+- **hub**: `--experiment <name>` 플래그 — 잡 제출 전 Hub 실험 런 생성 후 `exp_run_id` 연결
+
+### 🐛 Bug Fixes
+- **hub**: `maybeCompleteExperimentRun` — `handleJobCancel`에서도 호출되도록 수정
+- **hub**: `--experiment` flag — `CreateExperimentRun` 호출 순서 수정 (SubmitJob 전으로 이동)
+- **hub**: 잡 상태 매핑 — `StatusSucceeded → "success"` 명시적 map 기반 변환 (소문자 변환 오류 방지)
+
+### 🔧 Chores
+- accidental mnist experiment artifacts & agent memory 제거 (`.gitignore` 업데이트)
+- 테스트 수 업데이트 — c4-core ~2,506 + c5 ~455 (~3,781 합계)
+
+### Polish
+- `ExperimentStore.CompleteRun` 인터페이스에 `summary string` 파라미터 추가 (silent drop 제거)
+- `checkpointHandler` 로컬 스토어 path `ErrRunNotFound` 구별 처리
+- `c5/store.ErrRunNotFound`: `fmt.Errorf` → `errors.New` sentinel 통일
+- `fakeExperimentStore.ShouldContinue`: 미존재 run_id → `ErrRunNotFound` 반환 + `TestExperimentHandler_ShouldContinue_UnknownRun` 신규 테스트
+
+---
+
 ## [v0.96.0] - 2026-03-12
 
 ### ✨ Features
