@@ -17,8 +17,6 @@ func TestLoopOrchestrator_GateAndState_Integration(t *testing.T) {
 
 	w := NewStateYAMLWriter(c9Dir)
 	gate := NewGateController(50 * time.Millisecond) // fast for test
-	notify := NewNotifyBridge(nil, time.Minute)       // nil notifier — no-op
-	_ = notify
 
 	// Simulate: write gate_wait state.
 	deadline := time.Now().Add(50 * time.Millisecond)
@@ -73,8 +71,6 @@ func TestLoopOrchestrator_GateAndState_Integration(t *testing.T) {
 // TestLoopOrchestrator_GateRelease_Integration verifies Release() unblocks the gate early.
 func TestLoopOrchestrator_GateRelease_Integration(t *testing.T) {
 	gate := NewGateController(10 * time.Second) // long gate — must be released manually
-	bridge := NewNotifyBridge(nil, time.Minute)
-	_ = bridge
 
 	ch := gate.EnterGate(context.Background())
 

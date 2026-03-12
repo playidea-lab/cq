@@ -103,18 +103,26 @@ func TestOnJobDone_Approved(t *testing.T) {
 	if err := o.onJobDone(context.Background(), session, jobStatus); err != nil {
 		t.Fatalf("onJobDone: %v", err)
 	}
-
-	if session.Round != 1 {
-		t.Errorf("Round = %d, want 1", session.Round)
-	}
-	if session.JobID != "job-approved-001" {
-		t.Errorf("JobID = %q, want job-approved-001", session.JobID)
-	}
-	if session.NullResultCount != 0 {
-		t.Errorf("NullResultCount = %d, want 0", session.NullResultCount)
-	}
 	if submittedJobID == "" {
 		t.Error("expected SubmitJob to be called")
+	}
+	// Copy-on-write: retrieve the updated session from the map (stored under newHypID).
+	var got *LoopSession
+	o.sessions.Range(func(_, v any) bool {
+		got = v.(*LoopSession)
+		return false
+	})
+	if got == nil {
+		t.Fatal("no session found in map after approved advance")
+	}
+	if got.Round != 1 {
+		t.Errorf("Round = %d, want 1", got.Round)
+	}
+	if got.JobID != "job-approved-001" {
+		t.Errorf("JobID = %q, want job-approved-001", got.JobID)
+	}
+	if got.NullResultCount != 0 {
+		t.Errorf("NullResultCount = %d, want 0", got.NullResultCount)
 	}
 }
 
@@ -142,22 +150,31 @@ func TestOnJobDone_NullResult_ExploreFlag(t *testing.T) {
 	if err := o.onJobDone(context.Background(), session, jobStatus); err != nil {
 		t.Fatalf("onJobDone round 1: %v", err)
 	}
-	if session.NullResultCount != 1 {
-		t.Errorf("NullResultCount after round 1 = %d, want 1", session.NullResultCount)
+	// Copy-on-write: retrieve updated session from map.
+	got1 := o.GetLoop(hypID)
+	if got1 == nil {
+		t.Fatal("session not found after round 1")
 	}
-	if session.ExploreFlag {
+	if got1.NullResultCount != 1 {
+		t.Errorf("NullResultCount after round 1 = %d, want 1", got1.NullResultCount)
+	}
+	if got1.ExploreFlag {
 		t.Error("ExploreFlag should not be set after 1 null_result")
 	}
 
-	// Second null_result → ExploreFlag=true.
+	// Second null_result → ExploreFlag=true; pass updated session pointer.
 	o.caller = &mockDebateLLM{responses: llmResponses}
-	if err := o.onJobDone(context.Background(), session, jobStatus); err != nil {
+	if err := o.onJobDone(context.Background(), got1, jobStatus); err != nil {
 		t.Fatalf("onJobDone round 2: %v", err)
 	}
-	if session.NullResultCount != 2 {
-		t.Errorf("NullResultCount after round 2 = %d, want 2", session.NullResultCount)
+	got2 := o.GetLoop(hypID)
+	if got2 == nil {
+		t.Fatal("session not found after round 2")
 	}
-	if !session.ExploreFlag {
+	if got2.NullResultCount != 2 {
+		t.Errorf("NullResultCount after round 2 = %d, want 2", got2.NullResultCount)
+	}
+	if !got2.ExploreFlag {
 		t.Error("ExploreFlag should be true after 2 consecutive null_results")
 	}
 }
@@ -183,8 +200,13 @@ func TestOnJobDone_Escalate(t *testing.T) {
 	if err := o.onJobDone(context.Background(), session, jobStatus); err != nil {
 		t.Fatalf("onJobDone: %v", err)
 	}
-	if session.Status != "stopped" {
-		t.Errorf("Status = %q, want stopped", session.Status)
+	// Copy-on-write: retrieve updated session from map.
+	got := o.GetLoop(hypID)
+	if got == nil {
+		t.Fatal("session not found after escalate")
+	}
+	if got.Status != "stopped" {
+		t.Errorf("Status = %q, want stopped", got.Status)
 	}
 }
 
@@ -210,11 +232,20 @@ func TestOnJobDone_BudgetGate(t *testing.T) {
 		t.Fatalf("onJobDone: %v", err)
 	}
 	// Round becomes 5 (== MaxIterations) → Status="completed".
-	if session.Round != 5 {
-		t.Errorf("Round = %d, want 5", session.Round)
+	// Copy-on-write: approved-advance stores under newHypID; iterate to find it.
+	var got *LoopSession
+	o.sessions.Range(func(_, v any) bool {
+		got = v.(*LoopSession)
+		return false
+	})
+	if got == nil {
+		t.Fatal("no session found in map after budget gate")
 	}
-	if session.Status != "completed" {
-		t.Errorf("Status = %q, want completed", session.Status)
+	if got.Round != 5 {
+		t.Errorf("Round = %d, want 5", got.Round)
+	}
+	if got.Status != "completed" {
+		t.Errorf("Status = %q, want completed", got.Status)
 	}
 }
 
@@ -240,12 +271,17 @@ func TestOnJobDone_ExtractDraftFailure(t *testing.T) {
 	if err := o.onJobDone(context.Background(), session, jobStatus); err != nil {
 		t.Fatalf("onJobDone: %v", err)
 	}
-	// draft extraction failure → null_result count incremented.
-	if session.NullResultCount != 1 {
-		t.Errorf("NullResultCount = %d, want 1 (extractDraft failure → null_result)", session.NullResultCount)
+	// Copy-on-write: retrieve updated session from map.
+	got := o.GetLoop(hypID)
+	if got == nil {
+		t.Fatal("session not found after extract-draft failure")
 	}
-	// Round should not advance.
-	if session.Round != 0 {
-		t.Errorf("Round = %d, want 0 (no advance on draft failure)", session.Round)
+	// draft extraction failure → null_result count incremented.
+	if got.NullResultCount != 1 {
+		t.Errorf("NullResultCount = %d, want 1 (extractDraft failure → null_result)", got.NullResultCount)
+	}
+	// Round should not advance on draft failure.
+	if got.Round != 0 {
+		t.Errorf("Round = %d, want 0 (no advance on draft failure)", got.Round)
 	}
 }

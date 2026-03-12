@@ -16,10 +16,17 @@ import (
 // It triggers the Optimizer→Skeptic→Synthesis debate and handles the verdict.
 // After debate, it writes gate_wait state, emits notifications, blocks on gate,
 // then writes running state and proceeds to the next job.
+//
+// All mutations are performed on a local copy of the session (copy-on-write) to
+// avoid data races with concurrent StopLoop / Steer goroutines.
 func (o *LoopOrchestrator) onJobDone(ctx context.Context, session *LoopSession, jobStatus *HubJobStatus) error {
 	if o.caller == nil || o.store == nil {
 		return errors.New("loop_orchestrator: debate caller/store not wired")
 	}
+
+	// Copy-on-write snapshot: all reads and writes use s; the original pointer
+	// is never mutated after this point.
+	s := *session
 
 	exploreThreshold := o.cfg.ExploreThreshold
 	if exploreThreshold <= 0 {
@@ -29,15 +36,15 @@ func (o *LoopOrchestrator) onJobDone(ctx context.Context, session *LoopSession, 
 	// Build lineage context for the debate.
 	lineageContext := ""
 	if o.lineage != nil {
-		lc, err := o.lineage.BuildContext(ctx, session.HypothesisID, 5)
+		lc, err := o.lineage.BuildContext(ctx, s.HypothesisID, 5)
 		if err == nil {
 			lineageContext = lc
 		}
 	}
 
 	// Inject explore hint if flag is set.
-	extraContext := session.SteeringGuidance
-	if session.ExploreFlag {
+	extraContext := s.SteeringGuidance
+	if s.ExploreFlag {
 		if extraContext != "" {
 			extraContext += "\nforce_explore: true"
 		} else {
@@ -59,7 +66,7 @@ func (o *LoopOrchestrator) onJobDone(ctx context.Context, session *LoopSession, 
 	}
 
 	// Run the Optimizer→Skeptic→Synthesis debate.
-	result, err := runDebate(ctx, o.caller, o.store, session.HypothesisID, triggerReason, extraContext, lineageContext)
+	result, err := runDebate(ctx, o.caller, o.store, s.HypothesisID, triggerReason, extraContext, lineageContext)
 	if err != nil {
 		return fmt.Errorf("runDebate: %w", err)
 	}
@@ -82,7 +89,7 @@ func (o *LoopOrchestrator) onJobDone(ctx context.Context, session *LoopSession, 
 		}
 		o.notify.Emit(ctx, EventDebateComplete,
 			"Research Loop: Debate Complete",
-			fmt.Sprintf("Round %d debate complete (job: %s)", session.Round, jobID))
+			fmt.Sprintf("Round %d debate complete (job: %s)", s.Round, jobID))
 	}
 
 	// Persist gate_wait state and enter gate.
@@ -99,29 +106,29 @@ func (o *LoopOrchestrator) onJobDone(ctx context.Context, session *LoopSession, 
 		}
 		_ = o.state.WriteState(LoopState{
 			State:               "gate_wait",
-			LoopCount:           session.Round,
-			CurrentHypothesisID: session.HypothesisID,
+			LoopCount:           s.Round,
+			CurrentHypothesisID: s.HypothesisID,
 			LastJobID:           jobID,
 			GateDeadline:        &deadline,
 		})
 		if o.notify != nil {
 			o.notify.Emit(ctx, EventGateEntered,
 				"Research Loop: Gate Entered",
-				fmt.Sprintf("Round %d entering %v gate", session.Round, gateDur))
+				fmt.Sprintf("Round %d entering %v gate", s.Round, gateDur))
 		}
 		// Block until gate elapses or is released.
 		<-gate.EnterGate(ctx)
 		// Restore running state after gate.
 		_ = o.state.WriteState(LoopState{
 			State:               "running",
-			LoopCount:           session.Round,
-			CurrentHypothesisID: session.HypothesisID,
+			LoopCount:           s.Round,
+			CurrentHypothesisID: s.HypothesisID,
 			LastJobID:           jobID,
 		})
 		if o.notify != nil {
 			o.notify.Emit(ctx, EventAutoContinued,
 				"Research Loop: Auto-Continued",
-				fmt.Sprintf("Round %d gate elapsed, auto-continuing", session.Round))
+				fmt.Sprintf("Round %d gate elapsed, auto-continuing", s.Round))
 		}
 	}
 
@@ -132,22 +139,24 @@ func (o *LoopOrchestrator) onJobDone(ctx context.Context, session *LoopSession, 
 		draft := extractDraft(nextHypDraft)
 		if draft == "" {
 			// extractDraft failure → treat as null_result.
-			session.NullResultCount++
-			if session.NullResultCount >= exploreThreshold {
-				session.ExploreFlag = true
+			// Round is intentionally not advanced; ExploreFlag will force exploration after threshold.
+			s.NullResultCount++
+			if s.NullResultCount >= exploreThreshold {
+				s.ExploreFlag = true
 			}
 		} else if o.kStore == nil || o.hubCli == nil {
 			// kStore/hubCli not wired — degrade gracefully.
-			session.NullResultCount++
-			if session.NullResultCount >= exploreThreshold {
-				session.ExploreFlag = true
+			// TODO: wire kStore and hubCli to enable hypothesis creation and job submission.
+			s.NullResultCount++
+			if s.NullResultCount >= exploreThreshold {
+				s.ExploreFlag = true
 			}
 		} else {
 			// Create new TypeHypothesis document.
 			newHypID, err := o.kStore.Create(knowledge.TypeHypothesis, map[string]any{
-				"title":               draft,
-				"status":              "approved",
-				"parent_hypothesis_id": session.HypothesisID,
+				"title":                draft,
+				"status":               "approved",
+				"parent_hypothesis_id": s.HypothesisID,
 			}, draft)
 			if err != nil {
 				return fmt.Errorf("create hypothesis: %w", err)
@@ -163,38 +172,43 @@ func (o *LoopOrchestrator) onJobDone(ctx context.Context, session *LoopSession, 
 			}
 
 			// Advance session state and re-register under the new HypothesisID.
-			oldHypID := session.HypothesisID
-			session.HypothesisID = newHypID
-			session.JobID = newJobID
-			session.Round++
-			session.NullResultCount = 0
-			session.ExploreFlag = false
+			oldHypID := s.HypothesisID
+			s.HypothesisID = newHypID
+			s.JobID = newJobID
+			s.Round++
+			s.NullResultCount = 0
+			s.ExploreFlag = false
 			o.sessions.Delete(oldHypID)
-			o.sessions.Store(newHypID, session)
 		}
 
 	case "null_result":
-		session.NullResultCount++
-		if session.NullResultCount >= exploreThreshold {
-			session.ExploreFlag = true
+		s.NullResultCount++
+		if s.NullResultCount >= exploreThreshold {
+			s.ExploreFlag = true
 		}
 
 	case "escalate":
-		session.Status = "stopped"
+		s.Status = "stopped"
+		o.sessions.Store(s.HypothesisID, &s)
 		return nil
 
 	default:
 		// Unknown verdict → treat as null_result.
-		session.NullResultCount++
-		if session.NullResultCount >= exploreThreshold {
-			session.ExploreFlag = true
+		s.NullResultCount++
+		if s.NullResultCount >= exploreThreshold {
+			s.ExploreFlag = true
 		}
 	}
 
 	// Budget gate: check iteration limit.
-	if session.MaxIterations > 0 && session.Round >= session.MaxIterations {
-		session.Status = "completed"
+	if s.MaxIterations > 0 && s.Round >= s.MaxIterations {
+		s.Status = "completed"
 	}
+
+	// Persist the updated session copy. For the approved-advance case,
+	// s.HypothesisID was updated to the new key above, so this correctly
+	// stores the final state (including any budget-gate completion) under the new key.
+	o.sessions.Store(s.HypothesisID, &s)
 
 	return nil
 }

@@ -172,6 +172,9 @@ func registerLoopOrchestratorComponent(mgr *serve.Manager, ictx *initContext) {
 	// State writer: .c9/state.yaml in projectDir.
 	o.state = NewStateYAMLWriter(filepath.Join(ictx.projectDir, ".c9"))
 
+	// Lineage builder: not wired yet — requires a concrete LineageBuilder implementation
+	// (TODO: wire when the lineage package is available).
+
 	// Notify bridge: nil notifier — concrete Notifier wired externally if available.
 	o.notify = NewNotifyBridge(nil, 5*time.Minute)
 
@@ -324,12 +327,15 @@ func (o *LoopOrchestrator) StopLoop(ctx context.Context, hypID string) error {
 	if !ok {
 		return fmt.Errorf("loop_orchestrator: StopLoop: session %q not found", hypID)
 	}
-	session, ok := val.(*LoopSession)
+	existing, ok := val.(*LoopSession)
 	if !ok {
 		return fmt.Errorf("loop_orchestrator: StopLoop: invalid session type for %q", hypID)
 	}
-	session.Status = "stopped"
-	o.sessions.Store(hypID, session)
+	// Copy-on-write: mutate a copy then atomically replace to avoid data races
+	// with concurrent onJobDone / Steer goroutines.
+	updated := *existing
+	updated.Status = "stopped"
+	o.sessions.Store(hypID, &updated)
 	return nil
 }
 
@@ -358,12 +364,15 @@ func (o *LoopOrchestrator) Steer(ctx context.Context, hypID string, guidance str
 	if !ok {
 		return fmt.Errorf("loop_orchestrator: Steer: session %q not found", hypID)
 	}
-	session, ok := val.(*LoopSession)
+	existing, ok := val.(*LoopSession)
 	if !ok {
 		return fmt.Errorf("loop_orchestrator: Steer: invalid session type for %q", hypID)
 	}
-	session.SteeringGuidance = guidance
-	o.sessions.Store(hypID, session)
+	// Copy-on-write: mutate a copy then atomically replace to avoid data races
+	// with concurrent onJobDone / StopLoop goroutines.
+	updated := *existing
+	updated.SteeringGuidance = guidance
+	o.sessions.Store(hypID, &updated)
 	return nil
 }
 
