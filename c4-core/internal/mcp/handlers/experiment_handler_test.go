@@ -3,6 +3,8 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 )
@@ -244,5 +246,84 @@ func TestExperimentHandler_Checkpoint_NotBest(t *testing.T) {
 	}
 	if m["is_best"] != false {
 		t.Errorf("expected is_best=false when not improving, got %v", m["is_best"])
+	}
+}
+
+// TestExperimentHandler_Proxy_Register verifies that when HubBaseURL is set,
+// registerRunHandler POSTs to the Hub API and returns the run_id from the response.
+func TestExperimentHandler_Proxy_Register(t *testing.T) {
+	called := false
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/experiment/run" || r.Method != http.MethodPost {
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+		called = true
+		w.WriteHeader(http.StatusCreated)
+		w.Write([]byte(`{"run_id":"hub-run-1","status":"running"}`)) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	h := ExperimentHandlers{HubBaseURL: srv.URL}
+	fn := registerRunHandler(h)
+	args, _ := json.Marshal(map[string]any{"name": "proxy-exp"})
+	result, err := fn(context.Background(), args)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	m := result.(map[string]any)
+	if !called {
+		t.Error("Hub API was not called")
+	}
+	if m["run_id"] != "hub-run-1" {
+		t.Errorf("expected run_id=hub-run-1, got %v", m["run_id"])
+	}
+}
+
+// TestExperimentHandler_Proxy_Checkpoint verifies that checkpointHandler proxies to Hub API.
+func TestExperimentHandler_Proxy_Checkpoint(t *testing.T) {
+	called := false
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/experiment/checkpoint" || r.Method != http.MethodPost {
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+		called = true
+		w.Write([]byte(`{"is_best":true}`)) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	h := ExperimentHandlers{HubBaseURL: srv.URL}
+	fn := checkpointHandler(h)
+	args, _ := json.Marshal(map[string]any{"run_id": "hub-run-1", "metric": 0.5})
+	result, err := fn(context.Background(), args)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	m := result.(map[string]any)
+	if !called {
+		t.Error("Hub API was not called")
+	}
+	if m["is_best"] != true {
+		t.Errorf("expected is_best=true from Hub, got %v", m["is_best"])
+	}
+}
+
+// TestExperimentHandler_Proxy_Fallback verifies that when HubBaseURL is empty,
+// the local fakeStore is called (no Hub HTTP request is made).
+func TestExperimentHandler_Proxy_Fallback(t *testing.T) {
+	store := newFakeStore()
+	h := ExperimentHandlers{Store: store} // HubBaseURL is empty → local fallback
+	fn := registerRunHandler(h)
+	args, _ := json.Marshal(map[string]any{"name": "local-exp"})
+	result, err := fn(context.Background(), args)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	m := result.(map[string]any)
+	if m["success"] != true {
+		t.Errorf("expected success=true for local fallback, got %v", m)
+	}
+	// Verify the run was actually created in the local store.
+	if _, ok := store.runs["run-local-exp"]; !ok {
+		t.Error("expected run to be recorded in local fakeStore")
 	}
 }

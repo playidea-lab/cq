@@ -335,6 +335,8 @@ func newMCPServer() (*mcpServer, error) {
 
 	// Register experiment registry handlers (c4_experiment_register,
 	// c4_run_checkpoint, c4_run_complete, c4_run_should_continue).
+	// When hub.url is configured the handlers proxy requests to the Hub API;
+	// otherwise the local SQLite store is used as fallback.
 	if expStore, expErr := storepackage.NewSQLiteExperimentStore(db); expErr != nil {
 		fmt.Fprintf(os.Stderr, "cq: experiment store init failed: %v\n", expErr)
 	} else {
@@ -344,6 +346,19 @@ func newMCPServer() (*mcpServer, error) {
 				meta := map[string]any{"title": title, "domain": domain}
 				_, err := knowledgeStore.Create(knowledge.TypeInsight, meta, content)
 				return err
+			}
+		}
+		if cfgMgr != nil {
+			if hubURL := cfgMgr.GetConfig().Hub.URL; hubURL != "" {
+				expHandlers.HubBaseURL = hubURL
+				if secretStore != nil {
+					if v, err := secretStore.Get("hub.api_key"); err == nil && v != "" {
+						expHandlers.HubAPIKey = v
+					}
+				}
+				if expHandlers.HubAPIKey == "" {
+					expHandlers.HubAPIKey = cfgMgr.GetConfig().Hub.APIKey
+				}
 			}
 		}
 		handlers.RegisterExperimentHandlers(reg, expHandlers)

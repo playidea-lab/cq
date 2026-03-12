@@ -1,9 +1,13 @@
 package handlers
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
+	"net/url"
 	"os"
 	"time"
 
@@ -29,12 +33,72 @@ var validStatuses = map[string]bool{"success": true, "failed": true, "cancelled"
 type ExperimentHandlers struct {
 	Store           ExperimentStore
 	KnowledgeRecord func(ctx context.Context, title, content, domain string) error // nil if knowledge disabled
+	HubBaseURL      string                                                          // "" → local store; non-empty → proxy to Hub API
+	HubAPIKey       string                                                          // Hub authentication key
+}
+
+// hubPost sends a POST request to the Hub experiment API and decodes the JSON response into dest.
+func (h *ExperimentHandlers) hubPost(ctx context.Context, path string, body, dest any) error {
+	data, err := json.Marshal(body)
+	if err != nil {
+		return fmt.Errorf("marshal: %w", err)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, h.HubBaseURL+path, bytes.NewReader(data))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if h.HubAPIKey != "" {
+		req.Header.Set("X-API-Key", h.HubAPIKey)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	b, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return err
+	}
+	if resp.StatusCode >= 300 {
+		return fmt.Errorf("hub API %s: status %d: %s", path, resp.StatusCode, b)
+	}
+	if dest != nil {
+		return json.Unmarshal(b, dest)
+	}
+	return nil
+}
+
+// hubGet sends a GET request to the Hub experiment API and decodes the JSON response into dest.
+func (h *ExperimentHandlers) hubGet(ctx context.Context, path string, dest any) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, h.HubBaseURL+path, nil)
+	if err != nil {
+		return err
+	}
+	if h.HubAPIKey != "" {
+		req.Header.Set("X-API-Key", h.HubAPIKey)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	b, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return err
+	}
+	if resp.StatusCode >= 300 {
+		return fmt.Errorf("hub API %s: status %d: %s", path, resp.StatusCode, b)
+	}
+	return json.Unmarshal(b, dest)
 }
 
 // RegisterExperimentHandlers registers c4_experiment_register, c4_run_checkpoint,
 // c4_run_complete, and c4_run_should_continue MCP tools.
+// When h.HubBaseURL is non-empty the handlers proxy to the Hub API;
+// otherwise h.Store (local SQLite) is used as fallback.
 func RegisterExperimentHandlers(reg *mcp.Registry, h ExperimentHandlers) {
-	if h.Store == nil {
+	if h.Store == nil && h.HubBaseURL == "" {
 		return
 	}
 
@@ -106,9 +170,21 @@ func registerRunHandler(h ExperimentHandlers) mcp.BlockingHandlerFunc {
 			return map[string]any{"error": "name is required"}, nil
 		}
 
-		runID, err := h.Store.StartRun(ctx, args.Name, args.Config)
-		if err != nil {
-			return map[string]any{"error": fmt.Sprintf("RegisterRun failed: %v", err)}, nil
+		var runID string
+		if h.HubBaseURL != "" {
+			var resp struct {
+				RunID string `json:"run_id"`
+			}
+			if err := h.hubPost(ctx, "/v1/experiment/run", map[string]any{"name": args.Name, "capability": args.Config}, &resp); err != nil {
+				return map[string]any{"error": fmt.Sprintf("RegisterRun failed: %v", err)}, nil
+			}
+			runID = resp.RunID
+		} else {
+			var err error
+			runID, err = h.Store.StartRun(ctx, args.Name, args.Config)
+			if err != nil {
+				return map[string]any{"error": fmt.Sprintf("RegisterRun failed: %v", err)}, nil
+			}
 		}
 		return map[string]any{
 			"success":    true,
@@ -132,9 +208,21 @@ func checkpointHandler(h ExperimentHandlers) mcp.BlockingHandlerFunc {
 			return map[string]any{"error": "run_id is required"}, nil
 		}
 
-		isBest, err := h.Store.RecordCheckpoint(ctx, args.RunID, args.Metric, args.Path)
-		if err != nil {
-			return map[string]any{"error": fmt.Sprintf("RecordCheckpoint failed: %v", err)}, nil
+		var isBest bool
+		if h.HubBaseURL != "" {
+			var resp struct {
+				IsBest bool `json:"is_best"`
+			}
+			if err := h.hubPost(ctx, "/v1/experiment/checkpoint", map[string]any{"run_id": args.RunID, "metric": args.Metric, "path": args.Path}, &resp); err != nil {
+				return map[string]any{"error": fmt.Sprintf("RecordCheckpoint failed: %v", err)}, nil
+			}
+			isBest = resp.IsBest
+		} else {
+			var err error
+			isBest, err = h.Store.RecordCheckpoint(ctx, args.RunID, args.Metric, args.Path)
+			if err != nil {
+				return map[string]any{"error": fmt.Sprintf("RecordCheckpoint failed: %v", err)}, nil
+			}
 		}
 		return map[string]any{
 			"success": true,
@@ -165,7 +253,16 @@ func completeRunHandler(h ExperimentHandlers) mcp.BlockingHandlerFunc {
 			return map[string]any{"error": fmt.Sprintf("invalid status %q: must be success, failed, or cancelled", args.Status)}, nil
 		}
 
-		if err := h.Store.CompleteRun(ctx, args.RunID, args.Status, args.FinalMetric); err != nil {
+		if h.HubBaseURL != "" {
+			if err := h.hubPost(ctx, "/v1/experiment/complete", map[string]any{
+				"run_id":       args.RunID,
+				"status":       args.Status,
+				"final_metric": args.FinalMetric,
+				"summary":      args.Summary,
+			}, nil); err != nil {
+				return map[string]any{"error": fmt.Sprintf("CompleteRun failed: %v", err)}, nil
+			}
+		} else if err := h.Store.CompleteRun(ctx, args.RunID, args.Status, args.FinalMetric); err != nil {
 			return map[string]any{"error": fmt.Sprintf("CompleteRun failed: %v", err)}, nil
 		}
 
@@ -208,9 +305,22 @@ func shouldContinueHandler(h ExperimentHandlers) mcp.BlockingHandlerFunc {
 			return map[string]any{"error": "run_id is required"}, nil
 		}
 
-		ok, err := h.Store.ShouldContinue(ctx, args.RunID)
-		if err != nil {
-			return map[string]any{"error": fmt.Sprintf("ShouldContinue failed: %v", err)}, nil
+		var ok bool
+		if h.HubBaseURL != "" {
+			var resp struct {
+				ShouldContinue bool `json:"should_continue"`
+			}
+			q := url.Values{"run_id": {args.RunID}}
+			if err := h.hubGet(ctx, "/v1/experiment/continue?"+q.Encode(), &resp); err != nil {
+				return map[string]any{"error": fmt.Sprintf("ShouldContinue failed: %v", err)}, nil
+			}
+			ok = resp.ShouldContinue
+		} else {
+			var err error
+			ok, err = h.Store.ShouldContinue(ctx, args.RunID)
+			if err != nil {
+				return map[string]any{"error": fmt.Sprintf("ShouldContinue failed: %v", err)}, nil
+			}
 		}
 		return map[string]any{
 			"run_id":          args.RunID,
