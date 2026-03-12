@@ -150,14 +150,10 @@ func registerLoopOrchestratorComponent(mgr *serve.Manager, ictx *initContext) {
 	}
 	o := newLoopOrchestrator(cfg)
 
-	// Wire debate components.
-	if ictx.llmGateway != nil {
-		o.caller = &debateLLMCaller{gw: ictx.llmGateway}
-	}
-	if ictx.knowledgeStore != nil {
-		o.store = &knowledgeStoreAdapter{s: ictx.knowledgeStore}
-		o.kStore = ictx.knowledgeStore
-	}
+	// Wire debate components (knowledgeStore and llmGateway are guaranteed non-nil by early return above).
+	o.caller = &debateLLMCaller{gw: ictx.llmGateway}
+	o.store = &knowledgeStoreAdapter{s: ictx.knowledgeStore}
+	o.kStore = ictx.knowledgeStore
 	if hc != nil {
 		o.hubCli = &loopHubClientAdapter{hc: hc}
 	}
@@ -309,13 +305,15 @@ func (o *LoopOrchestrator) StartLoop(ctx context.Context, session *LoopSession) 
 	if session == nil || session.HypothesisID == "" {
 		return fmt.Errorf("loop_orchestrator: StartLoop: HypothesisID is required")
 	}
-	if val, ok := o.sessions.Load(session.HypothesisID); ok {
-		if existing, ok := val.(*LoopSession); ok && existing.Status == "running" {
+	session.Status = "running"
+	actual, loaded := o.sessions.LoadOrStore(session.HypothesisID, session)
+	if loaded {
+		if existing, ok := actual.(*LoopSession); ok && existing.Status == "running" {
 			return fmt.Errorf("loop_orchestrator: StartLoop: session %q already running", session.HypothesisID)
 		}
+		// stopped/completed session: overwrite atomically.
+		o.sessions.Store(session.HypothesisID, session)
 	}
-	session.Status = "running"
-	o.sessions.Store(session.HypothesisID, session)
 	return nil
 }
 

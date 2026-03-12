@@ -63,6 +63,16 @@ func (o *LoopOrchestrator) onJobDone(ctx context.Context, session *LoopSession, 
 	if err != nil {
 		return fmt.Errorf("runDebate: %w", err)
 	}
+	// Validate result before entering the gate (may block up to 24h).
+	if result == nil {
+		return fmt.Errorf("runDebate returned nil result")
+	}
+	m, ok := result.(map[string]any)
+	if !ok {
+		return fmt.Errorf("unexpected debate result type")
+	}
+	verdict, _ := m["verdict"].(string)
+	nextHypDraft, _ := m["next_hypothesis_draft"].(string)
 
 	// Emit debate_complete after debate finishes.
 	if o.notify != nil {
@@ -114,18 +124,6 @@ func (o *LoopOrchestrator) onJobDone(ctx context.Context, session *LoopSession, 
 				fmt.Sprintf("Round %d gate elapsed, auto-continuing", session.Round))
 		}
 	}
-
-
-	if result == nil {
-		return fmt.Errorf("runDebate returned nil result")
-	}
-	m, ok := result.(map[string]any)
-	if !ok {
-		return fmt.Errorf("unexpected debate result type")
-	}
-
-	verdict, _ := m["verdict"].(string)
-	nextHypDraft, _ := m["next_hypothesis_draft"].(string)
 
 	// Handle verdict.
 	switch verdict {
