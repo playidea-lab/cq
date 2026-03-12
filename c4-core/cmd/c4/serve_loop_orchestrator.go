@@ -82,6 +82,7 @@ type LoopOrchestrator struct {
 	status   string
 	cancel   context.CancelFunc
 	done     chan struct{}
+	gate     *GateController // optional; released on Stop() to unblock onJobDone gate waits
 	// jobdone fields (set by onJobDone path)
 	caller  debateCaller
 	store   debateStore
@@ -150,6 +151,9 @@ func (o *LoopOrchestrator) Stop(_ context.Context) error {
 	o.mu.Unlock()
 	if cancel != nil {
 		cancel()
+	}
+	if o.gate != nil {
+		o.gate.Release("stop") // unblock any in-progress gate wait in onJobDone
 	}
 	if done != nil {
 		<-done
