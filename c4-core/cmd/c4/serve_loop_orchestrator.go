@@ -5,7 +5,9 @@ package main
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -88,6 +90,10 @@ type LoopOrchestrator struct {
 	hubCli  loopHubClient
 	lineage loopLineageBuilder
 	kStore  *knowledge.Store
+	// integrated components (T-RLOOP-4-0)
+	gate   *GateController
+	state  *StateYAMLWriter
+	notify *NotifyBridge
 }
 
 // compile-time interface assertion
@@ -124,6 +130,24 @@ func registerLoopOrchestratorComponent(mgr *serve.Manager, ictx *initContext) {
 		LLMGateway: ictx.llmGateway,
 	}
 	o := newLoopOrchestrator(cfg)
+
+	// Gate duration from config (default 24h).
+	gateDur := 24 * time.Hour
+	if ictx.cfgMgr != nil {
+		if s := ictx.cfgMgr.GetConfig().ResearchLoop.GateDuration; s != "" {
+			if d, err := time.ParseDuration(s); err == nil && d > 0 {
+				gateDur = d
+			}
+		}
+	}
+	o.gate = NewGateController(gateDur)
+
+	// State writer: .c9/state.yaml in projectDir.
+	o.state = NewStateYAMLWriter(filepath.Join(ictx.projectDir, ".c9"))
+
+	// Notify bridge: nil notifier — concrete Notifier wired externally if available.
+	o.notify = NewNotifyBridge(nil, 5*time.Minute)
+
 	mgr.Register(o)
 	fmt.Fprintf(os.Stderr, "cq serve: registered loop_orchestrator\n")
 }
@@ -132,12 +156,29 @@ func registerLoopOrchestratorComponent(mgr *serve.Manager, ictx *initContext) {
 func (o *LoopOrchestrator) Name() string { return "loop_orchestrator" }
 
 // Start implements serve.Component. It launches the background polling loop.
+// On start, it reads persisted state and resumes a gate if one was in progress.
 func (o *LoopOrchestrator) Start(ctx context.Context) error {
 	ctx2, cancel := context.WithCancel(ctx)
 	o.mu.Lock()
 	o.cancel = cancel
 	o.done = make(chan struct{})
 	o.mu.Unlock()
+
+	// Resume: if persisted state shows gate_wait, re-enter gate with remaining duration.
+	if o.state != nil && o.gate != nil {
+		if s, err := o.state.ReadState(); err == nil && s.State == "gate_wait" && s.GateDeadline != nil {
+			remaining := time.Until(*s.GateDeadline)
+			if remaining > 0 {
+				o.gate = NewGateController(remaining)
+				slog.InfoContext(ctx, "research loop: resuming gate", "remaining", remaining)
+			} else {
+				// Deadline already passed — release immediately.
+				o.gate = NewGateController(0)
+				slog.InfoContext(ctx, "research loop: gate deadline expired on resume, auto-continuing")
+			}
+		}
+	}
+
 	go o.loop(ctx2)
 	return nil
 }
@@ -249,6 +290,14 @@ func (o *LoopOrchestrator) GetLoop(hypID string) *LoopSession {
 	}
 	session, _ := val.(*LoopSession)
 	return session
+}
+
+// ReleaseGate releases the active gate immediately (human-intervene).
+// Used by c4_research_intervene with action="continue".
+func (o *LoopOrchestrator) ReleaseGate(reason string) {
+	if o.gate != nil {
+		o.gate.Release(reason)
+	}
 }
 
 // Steer injects steering guidance into an active session.

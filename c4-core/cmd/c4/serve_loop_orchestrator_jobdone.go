@@ -6,12 +6,15 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/changmin/c4-core/internal/knowledge"
 )
 
 // onJobDone is called when a Hub job completes (status = "completed" or "failed").
 // It triggers the Optimizer→Skeptic→Synthesis debate and handles the verdict.
+// After debate, it writes gate_wait state, emits notifications, blocks on gate,
+// then writes running state and proceeds to the next job.
 func (o *LoopOrchestrator) onJobDone(ctx context.Context, session *LoopSession, jobStatus *HubJobStatus) error {
 	exploreThreshold := o.cfg.ExploreThreshold
 	if exploreThreshold <= 0 {
@@ -54,6 +57,52 @@ func (o *LoopOrchestrator) onJobDone(ctx context.Context, session *LoopSession, 
 	result, err := runDebate(ctx, o.caller, o.store, session.HypothesisID, triggerReason, extraContext, lineageContext)
 	if err != nil {
 		return fmt.Errorf("runDebate: %w", err)
+	}
+
+	// Emit debate_complete after debate finishes.
+	if o.notify != nil {
+		jobID := ""
+		if jobStatus != nil {
+			jobID = jobStatus.JobID
+		}
+		o.notify.Emit(ctx, EventDebateComplete,
+			"Research Loop: Debate Complete",
+			fmt.Sprintf("Round %d debate complete (job: %s)", session.Round, jobID))
+	}
+
+	// Persist gate_wait state and enter gate.
+	if o.state != nil && o.gate != nil {
+		deadline := time.Now().Add(o.gate.duration)
+		jobID := ""
+		if jobStatus != nil {
+			jobID = jobStatus.JobID
+		}
+		_ = o.state.WriteState(LoopState{
+			State:               "gate_wait",
+			LoopCount:           session.Round,
+			CurrentHypothesisID: session.HypothesisID,
+			LastJobID:           jobID,
+			GateDeadline:        &deadline,
+		})
+		if o.notify != nil {
+			o.notify.Emit(ctx, EventGateEntered,
+				"Research Loop: Gate Entered",
+				fmt.Sprintf("Round %d entering %v gate", session.Round, o.gate.duration))
+		}
+		// Block until gate elapses or is released.
+		<-o.gate.EnterGate(ctx)
+		// Restore running state after gate.
+		_ = o.state.WriteState(LoopState{
+			State:               "running",
+			LoopCount:           session.Round,
+			CurrentHypothesisID: session.HypothesisID,
+			LastJobID:           jobID,
+		})
+		if o.notify != nil {
+			o.notify.Emit(ctx, EventAutoContinued,
+				"Research Loop: Auto-Continued",
+				fmt.Sprintf("Round %d gate elapsed, auto-continuing", session.Round))
+		}
 	}
 
 	m, ok := result.(map[string]any)
