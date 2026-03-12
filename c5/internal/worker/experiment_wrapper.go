@@ -12,17 +12,21 @@ import (
 	"log"
 	"net/http"
 	"regexp"
-	"strconv"
-	"strings"
 	"time"
 )
 
-// ExperimentProtocolConfig defines the pattern matching and MCP integration
+// atKeyRe matches @key=value tokens in a line, where value is a number.
+var atKeyRe = regexp.MustCompile(`@(\w+)=([+-]?\d*\.?\d+(?:[eE][+-]?\d+)?)`)
+
+// ExperimentProtocolConfig defines the @key=value protocol and MCP integration
 // configuration for an experiment run.
 type ExperimentProtocolConfig struct {
-	// EpochPattern is a regex with a named group "value" that matches metric output lines.
-	// Example: `MPJPE:\s+(?P<value>[\d.]+)`
-	EpochPattern string
+	// MetricKey is the key whose value triggers a checkpoint call.
+	// If empty, the first @key=value match on the line is used.
+	MetricKey string
+
+	// EpochKey is the key whose value is sent as "epoch" in checkpoint args.
+	EpochKey string
 
 	// CheckpointTool is the MCP tool name to call when a metric is matched.
 	// Defaults to "c4_run_checkpoint".
@@ -30,40 +34,47 @@ type ExperimentProtocolConfig struct {
 }
 
 // ExperimentWrapper wraps an io.Reader (typically stdout of an experiment process)
-// and calls MCP checkpoint tools when configured metric patterns are matched.
+// and calls MCP checkpoint tools when @key=value tokens are found in output.
 type ExperimentWrapper struct {
 	mcpURL   string
 	expID    string
 	runID    string
 	protocol *ExperimentProtocolConfig
-	epochRe  *regexp.Regexp
 	client   *http.Client
 }
 
-// NewExperimentWrapper creates an ExperimentWrapper. Returns an error if the
-// epoch pattern is set but cannot be compiled.
+// NewExperimentWrapper creates an ExperimentWrapper.
 func NewExperimentWrapper(mcpURL, expID, runID string, protocol *ExperimentProtocolConfig) (*ExperimentWrapper, error) {
-	w := &ExperimentWrapper{
+	return &ExperimentWrapper{
 		mcpURL:   mcpURL,
 		expID:    expID,
 		runID:    runID,
 		protocol: protocol,
 		client:   &http.Client{Timeout: 10 * time.Second},
-	}
+	}, nil
+}
 
-	if protocol != nil && protocol.EpochPattern != "" {
-		re, err := regexp.Compile(protocol.EpochPattern)
-		if err != nil {
-			return nil, fmt.Errorf("compile epoch pattern: %w", err)
+// parseAtKeyValues extracts all @key=value pairs from a line.
+// Returns a map of key→value strings and a slice preserving insertion order.
+func parseAtKeyValues(line string) (map[string]string, []string) {
+	matches := atKeyRe.FindAllStringSubmatch(line, -1)
+	if len(matches) == 0 {
+		return nil, nil
+	}
+	kv := make(map[string]string, len(matches))
+	keys := make([]string, 0, len(matches))
+	for _, m := range matches {
+		key, val := m[1], m[2]
+		if _, seen := kv[key]; !seen {
+			keys = append(keys, key)
 		}
-		w.epochRe = re
+		kv[key] = val
 	}
-
-	return w, nil
+	return kv, keys
 }
 
 // WrapOutput reads from src line by line, writes each line to dst, and
-// triggers MCP checkpoint calls when a metric pattern is matched.
+// triggers MCP checkpoint calls when @key=value tokens are found.
 // It returns when src is exhausted or ctx is cancelled.
 func (w *ExperimentWrapper) WrapOutput(ctx context.Context, src io.Reader, dst io.Writer) error {
 	scanner := bufio.NewScanner(src)
@@ -79,23 +90,44 @@ func (w *ExperimentWrapper) WrapOutput(ctx context.Context, src io.Reader, dst i
 			return fmt.Errorf("write output: %w", err)
 		}
 
-		if w.epochRe != nil {
-			if value, ok := w.extractMetric(line); ok {
-				tool := "c4_run_checkpoint"
-				if w.protocol.CheckpointTool != "" {
-					tool = w.protocol.CheckpointTool
-				}
-				metric, err := strconv.ParseFloat(value, 64)
-				if err != nil {
-					log.Printf("experiment-wrapper: cannot parse metric %q: %v", value, err)
-				} else if err := w.callMCP(ctx, tool, map[string]any{
-					"exp_id": w.expID,
-					"run_id": w.runID,
-					"metric": metric,
-				}); err != nil {
-					log.Printf("experiment-wrapper: checkpoint call failed: %v", err)
-				}
+		if w.protocol == nil {
+			continue
+		}
+
+		kv, keys := parseAtKeyValues(line)
+		if len(keys) == 0 {
+			continue
+		}
+
+		// Determine the metric key to use for checkpoint trigger.
+		triggerKey := w.protocol.MetricKey
+		if triggerKey == "" {
+			triggerKey = keys[0]
+		}
+		metricVal, ok := kv[triggerKey]
+		if !ok {
+			continue
+		}
+
+		tool := "c4_run_checkpoint"
+		if w.protocol.CheckpointTool != "" {
+			tool = w.protocol.CheckpointTool
+		}
+
+		args := map[string]any{
+			"exp_id": w.expID,
+			"run_id": w.runID,
+			"metric": metricVal,
+			"key":    triggerKey,
+		}
+		if w.protocol.EpochKey != "" {
+			if epochVal, ok := kv[w.protocol.EpochKey]; ok {
+				args["epoch"] = epochVal
 			}
+		}
+
+		if err := w.callMCP(ctx, tool, args); err != nil {
+			log.Printf("experiment-wrapper: checkpoint call failed: %v", err)
 		}
 	}
 
@@ -103,20 +135,6 @@ func (w *ExperimentWrapper) WrapOutput(ctx context.Context, src io.Reader, dst i
 		return fmt.Errorf("scan output: %w", err)
 	}
 	return nil
-}
-
-// extractMetric returns the value captured by the named group "value" in the epoch pattern.
-func (w *ExperimentWrapper) extractMetric(line string) (string, bool) {
-	match := w.epochRe.FindStringSubmatch(line)
-	if match == nil {
-		return "", false
-	}
-	idx := w.epochRe.SubexpIndex("value")
-	if idx < 0 || idx >= len(match) {
-		return "", false
-	}
-	v := strings.TrimSpace(match[idx])
-	return v, v != ""
 }
 
 // callMCP sends a JSON-RPC-style POST request to the MCP server invoking the

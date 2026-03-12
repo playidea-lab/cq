@@ -9,9 +9,11 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/piqsol/c4/c5/internal/model"
+	"github.com/piqsol/c4/c5/internal/worker"
 )
 
 // withTempCwd changes to a temp directory for the duration of the test,
@@ -1158,5 +1160,254 @@ func TestWorkerRegister_VersionUnset(t *testing.T) {
 	t.Setenv("CQ_VERSION", "")
 	if got := getWorkerVersion(); got != "unknown" {
 		t.Errorf("getWorkerVersion() = %q, want %q", got, "unknown")
+	}
+}
+
+// TestLoadCapabilities_WithExperimentProtocol verifies that a caps.yaml with an
+// experiment_protocol section is parsed into an ExperimentProtocolConfig.
+func TestLoadCapabilities_WithExperimentProtocol(t *testing.T) {
+	yaml := `
+capabilities:
+  - name: train
+    description: "Train model"
+    command: "python train.py"
+experiment_protocol:
+  metric_key: loss
+  epoch_key: epoch
+  checkpoint_tool: c4_run_checkpoint
+`
+	f, err := os.CreateTemp(t.TempDir(), "caps-*.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.WriteString(yaml); err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+
+	caps, proto, err := loadCapabilities(f.Name())
+	if err != nil {
+		t.Fatalf("loadCapabilities() error = %v", err)
+	}
+	if len(caps) != 1 {
+		t.Errorf("len(caps) = %d, want 1", len(caps))
+	}
+	if proto == nil {
+		t.Fatal("proto = nil, want non-nil")
+	}
+	want := &worker.ExperimentProtocolConfig{
+		MetricKey:      "loss",
+		EpochKey:       "epoch",
+		CheckpointTool: "c4_run_checkpoint",
+	}
+	if proto.MetricKey != want.MetricKey {
+		t.Errorf("MetricKey = %q, want %q", proto.MetricKey, want.MetricKey)
+	}
+	if proto.EpochKey != want.EpochKey {
+		t.Errorf("EpochKey = %q, want %q", proto.EpochKey, want.EpochKey)
+	}
+	if proto.CheckpointTool != want.CheckpointTool {
+		t.Errorf("CheckpointTool = %q, want %q", proto.CheckpointTool, want.CheckpointTool)
+	}
+}
+
+// TestLoadCapabilities_WithoutExperimentProtocol verifies that a caps.yaml without
+// an experiment_protocol section returns nil for the ExperimentProtocolConfig.
+func TestLoadCapabilities_WithoutExperimentProtocol(t *testing.T) {
+	yaml := `
+capabilities:
+  - name: train
+    description: "Train model"
+    command: "python train.py"
+`
+	f, err := os.CreateTemp(t.TempDir(), "caps-*.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.WriteString(yaml); err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+
+	caps, proto, err := loadCapabilities(f.Name())
+	if err != nil {
+		t.Fatalf("loadCapabilities() error = %v", err)
+	}
+	if len(caps) != 1 {
+		t.Errorf("len(caps) = %d, want 1", len(caps))
+	}
+	if proto != nil {
+		t.Errorf("proto = %+v, want nil", proto)
+	}
+}
+
+// TestLoadCapabilities_ExperimentProtocol_Defaults verifies that optional fields
+// (checkpoint_tool omitted) default to empty string.
+func TestLoadCapabilities_ExperimentProtocol_Defaults(t *testing.T) {
+	yaml := `
+capabilities: []
+experiment_protocol:
+  metric_key: val_loss
+  epoch_key: step
+`
+	f, err := os.CreateTemp(t.TempDir(), "caps-*.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.WriteString(yaml); err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+
+	_, proto, err := loadCapabilities(f.Name())
+	if err != nil {
+		t.Fatalf("loadCapabilities() error = %v", err)
+	}
+	if proto == nil {
+		t.Fatal("proto = nil, want non-nil")
+	}
+	if proto.MetricKey != "val_loss" {
+		t.Errorf("MetricKey = %q, want %q", proto.MetricKey, "val_loss")
+	}
+	if proto.EpochKey != "step" {
+		t.Errorf("EpochKey = %q, want %q", proto.EpochKey, "step")
+	}
+	if proto.CheckpointTool != "" {
+		t.Errorf("CheckpointTool = %q, want %q", proto.CheckpointTool, "")
+	}
+}
+
+// TestWorkerRoutes_ToExperimentWrapper verifies that when experimentProtocol is configured
+// and job.ExpRunID is non-empty, ExecuteWithExperiment is activated (MCP checkpoint called).
+func TestWorkerRoutes_ToExperimentWrapper(t *testing.T) {
+	var called atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "/mcp") || r.URL.Path == "/" {
+			called.Add(1)
+		}
+		json.NewEncoder(w).Encode(map[string]any{"result": map[string]any{"content": []any{}}})
+	}))
+	defer srv.Close()
+
+	tmp := withTempCwd(t)
+	outFile := filepath.Join(tmp, "out.txt")
+
+	job := &model.Job{
+		ID:       "exp-route-1",
+		Command:  fmt.Sprintf("echo '@loss=45.2'; echo done > %s", outFile),
+		Workdir:  tmp,
+		ExpRunID: "run-xyz",
+		ExpID:    "exp-001",
+	}
+
+	wcfg := &workerConfig{
+		experimentProtocol: &worker.ExperimentProtocolConfig{
+			MetricKey:      "loss",
+			CheckpointTool: "c4_run_checkpoint",
+		},
+		mcpURL: srv.URL,
+	}
+
+	client := &workerClient{
+		baseURL: "http://localhost:0",
+		http:    &http.Client{},
+	}
+
+	exitCode, _ := executeJob(client, job, "lease-1", "worker-1", 0, wcfg)
+	if exitCode != 0 {
+		t.Fatalf("executeJob() exit code = %d, want 0", exitCode)
+	}
+	if called.Load() == 0 {
+		t.Error("expected MCP checkpoint call via ExperimentWrapper, got none")
+	}
+}
+
+// TestWorkerFallsBack_NoRunID verifies that when experimentProtocol is set but
+// job.ExpRunID is empty, the job runs normally via plain streamLogs (no panic).
+func TestWorkerFallsBack_NoRunID(t *testing.T) {
+	tmp := withTempCwd(t)
+
+	job := &model.Job{
+		ID:      "exp-fallback-norun",
+		Command: "true",
+		Workdir: tmp,
+		ExpRunID: "", // no run ID → fallback
+	}
+
+	wcfg := &workerConfig{
+		experimentProtocol: &worker.ExperimentProtocolConfig{
+			MetricKey: "loss",
+		},
+		mcpURL: "http://localhost:0",
+	}
+
+	client := &workerClient{
+		baseURL: "http://localhost:0",
+		http:    &http.Client{},
+	}
+
+	exitCode, _ := executeJob(client, job, "lease-1", "worker-1", 0, wcfg)
+	if exitCode != 0 {
+		t.Fatalf("executeJob() exit code = %d, want 0", exitCode)
+	}
+}
+
+// TestWorkerFallsBack_NoProtocol verifies that when experimentProtocol is nil,
+// the job runs normally via plain streamLogs (no panic).
+func TestWorkerFallsBack_NoProtocol(t *testing.T) {
+	tmp := withTempCwd(t)
+
+	job := &model.Job{
+		ID:      "exp-fallback-noproto",
+		Command: "true",
+		Workdir: tmp,
+		ExpRunID: "run-abc", // run ID present but no protocol → fallback
+	}
+
+	wcfg := &workerConfig{
+		experimentProtocol: nil,
+	}
+
+	client := &workerClient{
+		baseURL: "http://localhost:0",
+		http:    &http.Client{},
+	}
+
+	exitCode, _ := executeJob(client, job, "lease-1", "worker-1", 0, wcfg)
+	if exitCode != 0 {
+		t.Fatalf("executeJob() exit code = %d, want 0", exitCode)
+	}
+}
+
+// TestWorkerExperimentWrapper_NonFatal verifies that a wrapper error (bad MCP URL)
+// does not crash the job — pw.Close() is deferred and logWg is properly accounted.
+func TestWorkerExperimentWrapper_NonFatal(t *testing.T) {
+	tmp := withTempCwd(t)
+
+	job := &model.Job{
+		ID:       "exp-nonfatal",
+		Command:  "true",
+		Workdir:  tmp,
+		ExpRunID: "run-abc",
+		ExpID:    "exp-999",
+	}
+
+	wcfg := &workerConfig{
+		experimentProtocol: &worker.ExperimentProtocolConfig{
+			MetricKey:      "loss",
+			CheckpointTool: "c4_run_checkpoint",
+		},
+		mcpURL: "http://127.0.0.1:0", // unreachable — wrapper will error
+	}
+
+	client := &workerClient{
+		baseURL: "http://localhost:0",
+		http:    &http.Client{},
+	}
+
+	// Must complete without hanging (logWg.Wait() would block if pw.Close() missing).
+	exitCode, _ := executeJob(client, job, "lease-1", "worker-1", 0, wcfg)
+	if exitCode != 0 {
+		t.Fatalf("executeJob() exit code = %d, want 0 (wrapper error must be non-fatal)", exitCode)
 	}
 }

@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/piqsol/c4/c5/internal/model"
+	"github.com/piqsol/c4/c5/internal/worker"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 )
@@ -65,6 +66,12 @@ func validateRequirements(raw string) (string, bool) {
 	return strings.Join(tokens, " "), true
 }
 
+type experimentProtocolYAML struct {
+	MetricKey      string `yaml:"metric_key"`
+	EpochKey       string `yaml:"epoch_key"`
+	CheckpointTool string `yaml:"checkpoint_tool"`
+}
+
 type capabilitiesYAML struct {
 	Capabilities []struct {
 		Name        string         `yaml:"name"`
@@ -74,17 +81,19 @@ type capabilitiesYAML struct {
 		Tags        []string       `yaml:"tags"`
 		Version     string         `yaml:"version"`
 	} `yaml:"capabilities"`
+	ExperimentProtocol *experimentProtocolYAML `yaml:"experiment_protocol"`
 }
 
-// loadCapabilities reads a YAML capabilities file and returns model.Capability slice.
-func loadCapabilities(path string) ([]model.Capability, error) {
+// loadCapabilities reads a YAML capabilities file and returns the capability
+// slice and optional experiment protocol config parsed from the file.
+func loadCapabilities(path string) ([]model.Capability, *worker.ExperimentProtocolConfig, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("read capabilities file: %w", err)
+		return nil, nil, fmt.Errorf("read capabilities file: %w", err)
 	}
 	var cf capabilitiesYAML
 	if err := yaml.Unmarshal(data, &cf); err != nil {
-		return nil, fmt.Errorf("parse capabilities YAML: %w", err)
+		return nil, nil, fmt.Errorf("parse capabilities YAML: %w", err)
 	}
 	caps := make([]model.Capability, 0, len(cf.Capabilities))
 	for _, c := range cf.Capabilities {
@@ -97,7 +106,15 @@ func loadCapabilities(path string) ([]model.Capability, error) {
 			Version:     c.Version,
 		})
 	}
-	return caps, nil
+	var expProto *worker.ExperimentProtocolConfig
+	if cf.ExperimentProtocol != nil {
+		expProto = &worker.ExperimentProtocolConfig{
+			MetricKey:      cf.ExperimentProtocol.MetricKey,
+			EpochKey:       cf.ExperimentProtocol.EpochKey,
+			CheckpointTool: cf.ExperimentProtocol.CheckpointTool,
+		}
+	}
+	return caps, expProto, nil
 }
 
 func workerCmd() *cobra.Command {
@@ -113,6 +130,7 @@ func workerCmd() *cobra.Command {
 		capabilitiesFile string
 		noAutoDetect     bool
 		allowRunCommand  bool
+		mcpURL           string
 	)
 
 	cmd := &cobra.Command{
@@ -142,9 +160,10 @@ func workerCmd() *cobra.Command {
 			}
 
 			var caps []model.Capability
+			var expProto *worker.ExperimentProtocolConfig
 			if capabilitiesFile != "" {
 				var err error
-				caps, err = loadCapabilities(capabilitiesFile)
+				caps, expProto, err = loadCapabilities(capabilitiesFile)
 				if err != nil {
 					return fmt.Errorf("load capabilities: %w", err)
 				}
@@ -158,16 +177,18 @@ func workerCmd() *cobra.Command {
 				log.Printf("c5-worker: using auto-generated capabilities (%s)", strings.Join(capNames, ", "))
 			}
 			return runWorker(workerConfig{
-				serverURL:       serverURL,
-				hostname:        hostname,
-				name:            workerName,
-				gpuCount:        gpuCount,
-				gpuModel:        gpuModel,
-				totalVRAM:       totalVRAM,
-				pollSec:         pollSec,
-				apiKey:          apiKey,
-				capabilities:    caps,
-				allowRunCommand: allowRunCommand,
+				serverURL:          serverURL,
+				hostname:           hostname,
+				name:               workerName,
+				gpuCount:           gpuCount,
+				gpuModel:           gpuModel,
+				totalVRAM:          totalVRAM,
+				pollSec:            pollSec,
+				apiKey:             apiKey,
+				capabilities:       caps,
+				allowRunCommand:    allowRunCommand,
+				experimentProtocol: expProto,
+				mcpURL:             mcpURL,
 			})
 		},
 	}
@@ -194,6 +215,8 @@ func workerCmd() *cobra.Command {
 	cmd.Flags().StringVar(&capabilitiesFile, "capabilities", "", "Path to capabilities YAML file")
 	cmd.Flags().BoolVar(&noAutoDetect, "no-auto-detect", false, "Disable GPU auto-detection and capability auto-generation")
 	cmd.Flags().BoolVar(&allowRunCommand, "allow-run-command", false, "Allow run_command capability (arbitrary shell execution from job params)")
+	defaultMCPURL := os.Getenv("C4_MCP_URL")
+	cmd.Flags().StringVar(&mcpURL, "mcp-url", defaultMCPURL, "MCP server URL for experiment checkpoints (e.g. http://localhost:4142/mcp)")
 
 	cmd.AddCommand(workerInstallCmd())
 
@@ -201,17 +224,19 @@ func workerCmd() *cobra.Command {
 }
 
 type workerConfig struct {
-	serverURL       string
-	hostname        string
-	name            string
-	gpuCount        int
-	gpuModel        string
-	totalVRAM       float64
-	pollSec         int
-	apiKey          string
-	capabilities    []model.Capability
-	allowRunCommand bool        // opt-in: allow run_command capability (arbitrary shell from params)
-	drive           driveClient // optional; nil skips Drive pipeline
+	serverURL          string
+	hostname           string
+	name               string
+	gpuCount           int
+	gpuModel           string
+	totalVRAM          float64
+	pollSec            int
+	apiKey             string
+	capabilities       []model.Capability
+	allowRunCommand    bool                           // opt-in: allow run_command capability (arbitrary shell from params)
+	drive              driveClient                    // optional; nil skips Drive pipeline
+	experimentProtocol *worker.ExperimentProtocolConfig // optional; parsed from caps.yaml experiment_protocol section
+	mcpURL             string
 }
 
 // getWorkerVersion returns the cq version string for Hub registration.
@@ -538,7 +563,22 @@ func executeJob(client *workerClient, job *model.Job, leaseID, workerID string, 
 	mc := newMetricsCollector(client, job.ID)
 	var logWg sync.WaitGroup
 	logWg.Add(2)
-	go func() { defer logWg.Done(); streamLogs(client, job.ID, stdout, "stdout", mc) }()
+	if wcfg.experimentProtocol != nil && job.ExpRunID != "" {
+		pr, pw := io.Pipe()
+		go func() {
+			defer pw.Close()
+			payload := worker.JobPayload{ExpRunID: job.ExpRunID, ExpName: job.ExpID}
+			if err := worker.ExecuteWithExperiment(ctx, &worker.WorkerConfig{
+				MCPURL:             wcfg.mcpURL,
+				ExperimentProtocol: wcfg.experimentProtocol,
+			}, payload, stdout, pw); err != nil {
+				log.Printf("c5-worker: experiment-wrapper error: %v", err)
+			}
+		}()
+		go func() { defer logWg.Done(); streamLogs(client, job.ID, pr, "stdout", mc) }()
+	} else {
+		go func() { defer logWg.Done(); streamLogs(client, job.ID, stdout, "stdout", mc) }()
+	}
 	go func() { defer logWg.Done(); streamLogs(client, job.ID, stderr, "stderr", nil) }()
 
 	// Lease renew + cancel detection goroutine
