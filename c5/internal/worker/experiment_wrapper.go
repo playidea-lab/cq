@@ -36,11 +36,12 @@ type ExperimentProtocolConfig struct {
 // ExperimentWrapper wraps an io.Reader (typically stdout of an experiment process)
 // and calls MCP checkpoint tools when @key=value tokens are found in output.
 type ExperimentWrapper struct {
-	mcpURL   string
-	expID    string
-	runID    string
-	protocol *ExperimentProtocolConfig
-	client   *http.Client
+	mcpURL               string
+	expID                string
+	runID                string
+	protocol             *ExperimentProtocolConfig
+	client               *http.Client
+	consecutiveFailures  int
 }
 
 // NewExperimentWrapper creates an ExperimentWrapper.
@@ -78,6 +79,8 @@ func parseAtKeyValues(line string) (map[string]string, []string) {
 // It returns when src is exhausted or ctx is cancelled.
 func (w *ExperimentWrapper) WrapOutput(ctx context.Context, src io.Reader, dst io.Writer) error {
 	scanner := bufio.NewScanner(src)
+	// Increase buffer to 1 MiB to handle long ML training lines (e.g. serialised tensors).
+	scanner.Buffer(make([]byte, 256*1024), 1*1024*1024)
 	for scanner.Scan() {
 		select {
 		case <-ctx.Done():
@@ -127,7 +130,16 @@ func (w *ExperimentWrapper) WrapOutput(ctx context.Context, src io.Reader, dst i
 		}
 
 		if err := w.callMCP(ctx, tool, args); err != nil {
-			log.Printf("experiment-wrapper: checkpoint call failed: %v", err)
+			w.consecutiveFailures++
+			if w.consecutiveFailures == 1 {
+				log.Printf("experiment-wrapper: checkpoint call failed: %v", err)
+			}
+			if w.consecutiveFailures >= 3 {
+				log.Printf("experiment-wrapper: 3 consecutive failures, disabling checkpoints for this job")
+				w.protocol = nil
+			}
+		} else {
+			w.consecutiveFailures = 0
 		}
 	}
 

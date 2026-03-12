@@ -176,6 +176,9 @@ func workerCmd() *cobra.Command {
 				}
 				log.Printf("c5-worker: using auto-generated capabilities (%s)", strings.Join(capNames, ", "))
 			}
+			if expProto != nil && mcpURL == "" {
+				return fmt.Errorf("experiment_protocol in caps.yaml requires --mcp-url or C4_MCP_URL env var")
+			}
 			return runWorker(workerConfig{
 				serverURL:          serverURL,
 				hostname:           hostname,
