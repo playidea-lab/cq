@@ -7,6 +7,8 @@ import (
 	"net/http/httptest"
 	"testing"
 	"time"
+
+	"github.com/changmin/c4-core/internal/store"
 )
 
 // fakeExperimentStore is a minimal in-memory ExperimentStore for tests.
@@ -45,7 +47,7 @@ func (f *fakeExperimentStore) RecordCheckpoint(_ context.Context, runID string, 
 func (f *fakeExperimentStore) ShouldContinue(_ context.Context, runID string) (bool, error) {
 	status, ok := f.runs[runID]
 	if !ok {
-		return false, nil
+		return false, store.ErrRunNotFound
 	}
 	return status == "running", nil
 }
@@ -108,6 +110,24 @@ func TestExperimentHandler_ShouldContinue_Running(t *testing.T) {
 	m := result.(map[string]any)
 	if m["should_continue"] != true {
 		t.Errorf("expected should_continue=true, got %v", m["should_continue"])
+	}
+}
+
+func TestExperimentHandler_ShouldContinue_UnknownRun(t *testing.T) {
+	h := ExperimentHandlers{Store: newFakeStore()}
+	fn := shouldContinueHandler(h)
+
+	args, _ := json.Marshal(map[string]any{"run_id": "non-existent-run"})
+	result, err := fn(context.Background(), args)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	m := result.(map[string]any)
+	if _, hasErr := m["error"]; !hasErr {
+		t.Errorf("expected error field for unknown run_id, got %v", m)
+	}
+	if m["not_found"] != true {
+		t.Errorf("expected not_found=true for unknown run_id, got %v", m)
 	}
 }
 
