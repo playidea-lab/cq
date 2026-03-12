@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.98.0] - 2026-03-12
+
+### ✨ Features
+- **c5/worker**: `@key=value` stdout experiment protocol — ML 워커가 `@loss=0.45 @epoch=1` 출력 시 MCP checkpoint 자동 호출
+- **c5/worker**: `ExperimentWrapper` — `MetricKey`/`EpochKey` 기반 멀티 key 파싱, `CheckpointTool` 오버라이드, circuit breaker (3회 연속 실패 시 비활성화)
+- **c5/worker**: `ExecuteWithExperiment` — `ExperimentProtocol != nil && ExpRunID != ""` 이중 조건 활성화, pass-through 보장
+- **c5/worker**: `caps.yaml` `experiment_protocol` 섹션 파싱 → `WorkerConfig` 주입, `--mcp-url` / `C4_MCP_URL` 검증
+
+### 🐛 Bug Fixes
+- **c5/worker**: metric 값 `string` → `float64` 전달 (JSON-RPC checkpointHandler 역직렬화 타입 불일치 수정)
+- **c5/worker**: `NewExperimentWrapper` 시그니처 `(*T, error)` → `*T` (불필요한 error 반환 제거)
+- **c5/worker**: JSON-RPC 200 OK 내 `error` 필드 파싱으로 프로토콜 레벨 에러 감지
+- **c5/worker**: context cancel 시 error log 억제, circuit breaker 카운터 증가 방지
+
+### 📚 Documentation
+- **agents**: Go 테스트 수 업데이트 — c5 worker 21 tests 추가 (~2,982)
+
+---
+
 ## [v0.97.0] - 2026-03-12
 
 ### ✨ Features
