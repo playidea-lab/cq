@@ -111,7 +111,7 @@ func (s *SQLiteExperimentStore) ShouldContinue(ctx context.Context, runID string
 	err := s.db.QueryRowContext(ctx,
 		`SELECT status FROM exp_runs WHERE run_id=?`, runID).Scan(&status)
 	if err == sql.ErrNoRows {
-		return false, nil
+		return false, ErrRunNotFound
 	}
 	if err != nil {
 		return false, fmt.Errorf("query run status: %w", err)

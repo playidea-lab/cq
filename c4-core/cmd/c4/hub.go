@@ -881,6 +881,15 @@ func runHubSubmit(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	// --experiment flag: register an experiment run on the Hub before submitting.
+	if hubSubmitExperiment != "" {
+		runID, err := client.CreateExperimentRun(hubSubmitExperiment, "")
+		if err != nil {
+			return fmt.Errorf("--experiment: Hub is required (start Hub or omit --experiment): %w", err)
+		}
+		req.ExpRunID = runID
+	}
+
 	resp, err := client.SubmitJob(req)
 	if err != nil {
 		return fmt.Errorf("submit job: %w", err)
@@ -897,14 +906,8 @@ func runHubSubmit(cmd *cobra.Command, args []string) error {
 	if exp.Name != "" {
 		fmt.Printf("  exp:      %s\n", exp.Name)
 	}
-
-	// --experiment flag: register an experiment run on the Hub.
-	if hubSubmitExperiment != "" {
-		runID, err := client.CreateExperimentRun(hubSubmitExperiment, "")
-		if err != nil {
-			return fmt.Errorf("--experiment: Hub is required (start Hub or omit --experiment): %w", err)
-		}
-		fmt.Printf("  run_id:   %s\n", runID)
+	if req.ExpRunID != "" {
+		fmt.Printf("  run_id:   %s\n", req.ExpRunID)
 	}
 
 	return nil

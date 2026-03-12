@@ -67,6 +67,7 @@ type JobSubmitRequest struct {
 	VRAMRequiredGB      float64           `json:"vram_required_gb,omitempty"`
 	Priority            int               `json:"priority,omitempty"`
 	ExpID               string            `json:"exp_id,omitempty"`
+	ExpRunID            string            `json:"exp_run_id,omitempty"`
 	Memo                string            `json:"memo,omitempty"`
 	TimeoutSec          int               `json:"timeout_sec,omitempty"`
 	InputArtifacts      []ArtifactRef     `json:"input_artifacts,omitempty"`

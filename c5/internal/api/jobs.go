@@ -429,7 +429,15 @@ func (s *Server) maybeCompleteExperimentRun(ctx context.Context, job *model.Job,
 	if job.BestMetric != nil {
 		finalMetric = *job.BestMetric
 	}
-	expStatus := strings.ToLower(string(status))
+	// Map job statuses to experiment terminal statuses.
+	expStatus := map[model.JobStatus]string{
+		model.StatusSucceeded: "success",
+		model.StatusFailed:    "failed",
+		model.StatusCancelled: "cancelled",
+	}[status]
+	if expStatus == "" {
+		expStatus = strings.ToLower(string(status))
+	}
 	if err := s.store.CompleteRun(ctx, job.ExpRunID, expStatus, finalMetric, ""); err != nil {
 		log.Printf("c5: maybeCompleteExperimentRun: run_id=%s status=%s err=%v", job.ExpRunID, expStatus, err)
 		return

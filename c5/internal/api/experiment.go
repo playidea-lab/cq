@@ -18,6 +18,10 @@ func (s *Server) handleExperimentCreateRun(w http.ResponseWriter, r *http.Reques
 	if !ok {
 		return
 	}
+	if req.Name == "" {
+		writeError(w, http.StatusBadRequest, "name is required")
+		return
+	}
 
 	runID, err := s.store.StartRun(r.Context(), req.Name, req.Capability)
 	if err != nil {
@@ -126,6 +130,9 @@ func (s *Server) handleExperimentSearch(w http.ResponseWriter, r *http.Request) 
 		if n, err := strconv.Atoi(l); err == nil && n > 0 {
 			limit = n
 		}
+	}
+	if limit > 200 {
+		limit = 200
 	}
 
 	runs, err := s.store.SearchRuns(r.Context(), q, limit)

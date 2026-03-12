@@ -52,6 +52,14 @@
 - Fix: add `filepath.Abs(dest)` before computing `destClean`
 - Test gap: `TestDatasetPull_Incremental` uses `t.TempDir()` (absolute), masks the bug
 
+### Key Finding: Experiment Hub Lifecycle Issues (2026-03-12)
+- `hub.go`: `--experiment` flag creates an experiment run but never sets `req.ExpRunID` on the job submit request — run and job are orphaned, lifecycle bridge never fires.
+- `jobs.go` `maybeCompleteExperimentRun`: stores `"succeeded"` (lowercased from `model.StatusSucceeded = "SUCCEEDED"`) but c5 API `validStatuses` and c4-core `validStatuses` both use `"success"`. Store accepts any string, so inconsistent status values accumulate silently.
+- `experiment_handler.go` `hubPost`/`hubGet`: use `http.DefaultClient` (no timeout). MCP request hangs indefinitely if Hub is slow. `hub/client.go` uses 30s timeout — same pattern should apply.
+- `c5/api/experiment.go` `handleExperimentCreateRun`: no empty-name validation — unnamed runs silently inserted.
+- `c5/api/experiment.go` `handleExperimentSearch`: no upper bound on `limit` param — unbounded DB scan possible.
+- `c4-core/store/experiment.go` `ShouldContinue`: returns `(false, nil)` for unknown run_id; c5 store returns `(false, ErrRunNotFound)` — divergent behaviour for same interface operation.
+
 ### Patterns Observed
 - All handler files follow consistent pattern: Register*Handlers + handle* functions
 - No hardcoded user paths in Go code (good)

@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"testing"
 
 	_ "modernc.org/sqlite"
@@ -106,8 +107,8 @@ func TestSQLiteExperimentStore_ShouldContinue_UnknownRun(t *testing.T) {
 		t.Fatalf("new store: %v", err)
 	}
 	ok, err := s.ShouldContinue(context.Background(), "non-existent-run")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	if !errors.Is(err, ErrRunNotFound) {
+		t.Fatalf("expected ErrRunNotFound, got: %v", err)
 	}
 	if ok {
 		t.Error("unknown run should return should_continue=false")

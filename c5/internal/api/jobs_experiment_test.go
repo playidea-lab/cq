@@ -38,7 +38,7 @@ func registerWorkerAndAcquire(t *testing.T, srv *Server, workerID string) string
 }
 
 // TestHubJobCompletion_WithExperiment_TriggersCompleteRun verifies that completing
-// a job with exp_run_id calls CompleteRun on the experiment store (status=succeeded).
+// a job with exp_run_id calls CompleteRun on the experiment store (status=success).
 func TestHubJobCompletion_WithExperiment_TriggersCompleteRun(t *testing.T) {
 	srv := newTestServer(t)
 
@@ -83,13 +83,13 @@ func TestHubJobCompletion_WithExperiment_TriggersCompleteRun(t *testing.T) {
 		t.Fatalf("complete job: got %d: %s", w3.Code, w3.Body.String())
 	}
 
-	// Verify the experiment run was completed with status "succeeded".
+	// Verify the experiment run was completed with status "success" (mapped from StatusSucceeded).
 	runs := searchRunsDirect(t, srv, "train-run")
 	if len(runs) != 1 {
 		t.Fatalf("expected 1 run, got %d", len(runs))
 	}
-	if runs[0]["status"] != "succeeded" {
-		t.Fatalf("expected run status=succeeded, got %v", runs[0]["status"])
+	if runs[0]["status"] != "success" {
+		t.Fatalf("expected run status=success, got %v", runs[0]["status"])
 	}
 }
 

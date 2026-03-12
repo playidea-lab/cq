@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -29,6 +30,9 @@ type ExperimentStore interface {
 // validStatuses is the set of accepted completion statuses for CompleteRun.
 var validStatuses = map[string]bool{"success": true, "failed": true, "cancelled": true}
 
+// hubHTTPClient is used for all Hub API calls with a 30s timeout to prevent blocking MCP goroutines.
+var hubHTTPClient = &http.Client{Timeout: 30 * time.Second}
+
 // ExperimentHandlers holds dependencies for experiment MCP handlers.
 type ExperimentHandlers struct {
 	Store           ExperimentStore
@@ -51,7 +55,7 @@ func (h *ExperimentHandlers) hubPost(ctx context.Context, path string, body, des
 	if h.HubAPIKey != "" {
 		req.Header.Set("X-API-Key", h.HubAPIKey)
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := hubHTTPClient.Do(req)
 	if err != nil {
 		return err
 	}
@@ -61,7 +65,7 @@ func (h *ExperimentHandlers) hubPost(ctx context.Context, path string, body, des
 		return err
 	}
 	if resp.StatusCode >= 300 {
-		return fmt.Errorf("hub API %s: status %d: %s", path, resp.StatusCode, b)
+		return errors.New(fmt.Sprintf("hub API %s: status %d: %s", path, resp.StatusCode, b))
 	}
 	if dest != nil {
 		return json.Unmarshal(b, dest)
@@ -78,7 +82,7 @@ func (h *ExperimentHandlers) hubGet(ctx context.Context, path string, dest any) 
 	if h.HubAPIKey != "" {
 		req.Header.Set("X-API-Key", h.HubAPIKey)
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := hubHTTPClient.Do(req)
 	if err != nil {
 		return err
 	}
@@ -88,7 +92,7 @@ func (h *ExperimentHandlers) hubGet(ctx context.Context, path string, dest any) 
 		return err
 	}
 	if resp.StatusCode >= 300 {
-		return fmt.Errorf("hub API %s: status %d: %s", path, resp.StatusCode, b)
+		return errors.New(fmt.Sprintf("hub API %s: status %d: %s", path, resp.StatusCode, b))
 	}
 	return json.Unmarshal(b, dest)
 }
