@@ -527,6 +527,25 @@ func (c *Client) GetJobEstimate(jobID string) (*JobEstimateResponse, error) {
 }
 
 // =========================================================================
+// Experiment API
+// =========================================================================
+
+// CreateExperimentRun starts a new experiment run and returns its run_id.
+func (c *Client) CreateExperimentRun(name, capability string) (string, error) {
+	body := map[string]any{
+		"name":       name,
+		"capability": capability,
+	}
+	var resp struct {
+		RunID string `json:"run_id"`
+	}
+	if err := c.post("/experiment/run", body, &resp); err != nil {
+		return "", fmt.Errorf("create experiment run: %w", err)
+	}
+	return resp.RunID, nil
+}
+
+// =========================================================================
 // HubClient interface — used by LoopOrchestrator (injected dependency)
 // =========================================================================
 

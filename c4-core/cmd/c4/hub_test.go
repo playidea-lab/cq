@@ -622,3 +622,128 @@ func TestHubSubmit_CQYamlFallback(t *testing.T) {
 		t.Errorf("command = %q, want %q (from cq.yaml)", captured.Command, "python3 train.py")
 	}
 }
+
+// TestHubSubmit_ExperimentFlag_CallsCreateRun verifies that --experiment calls
+// POST /experiment/run and prints the returned run_id.
+func TestHubSubmit_ExperimentFlag_CallsCreateRun(t *testing.T) {
+	var experimentCalled bool
+	var capturedName string
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/health", "/v1/health":
+			w.WriteHeader(http.StatusOK)
+		case "/jobs/submit", "/v1/jobs/submit":
+			json.NewEncoder(w).Encode(hub.JobSubmitResponse{JobID: "job-exp-flag-001", Status: "QUEUED"})
+		case "/experiment/run", "/v1/experiment/run":
+			experimentCalled = true
+			var body struct {
+				Name       string `json:"name"`
+				Capability string `json:"capability"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Errorf("decode experiment body: %v", err)
+			}
+			capturedName = body.Name
+			w.WriteHeader(http.StatusCreated)
+			json.NewEncoder(w).Encode(map[string]any{"run_id": "run-abc123", "status": "running"})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	tmpDir := t.TempDir()
+	c4Dir := filepath.Join(tmpDir, ".c4")
+	if err := os.MkdirAll(c4Dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cfg := "hub:\n  enabled: true\n  url: " + srv.URL + "\n"
+	if err := os.WriteFile(filepath.Join(c4Dir, "config.yaml"), []byte(cfg), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	origDir := projectDir
+	projectDir = tmpDir
+	defer func() { projectDir = origDir }()
+
+	origRun := hubSubmitRun
+	hubSubmitRun = "python3 train.py"
+	defer func() { hubSubmitRun = origRun }()
+
+	origExp := hubSubmitExperiment
+	hubSubmitExperiment = "my-exp"
+	defer func() { hubSubmitExperiment = origExp }()
+
+	origWd, _ := os.Getwd()
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chdir(origWd) //nolint:errcheck
+
+	if err := runHubSubmit(nil, nil); err != nil {
+		t.Fatalf("runHubSubmit: %v", err)
+	}
+
+	if !experimentCalled {
+		t.Error("expected POST /experiment/run to be called")
+	}
+	if capturedName != "my-exp" {
+		t.Errorf("experiment name = %q, want %q", capturedName, "my-exp")
+	}
+}
+
+// TestHubSubmit_ExperimentFlag_ErrorWrapped verifies that CreateExperimentRun errors
+// are wrapped with %w so callers can use errors.Is/As.
+func TestHubSubmit_ExperimentFlag_ErrorWrapped(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/health", "/v1/health":
+			w.WriteHeader(http.StatusOK)
+		case "/jobs/submit", "/v1/jobs/submit":
+			json.NewEncoder(w).Encode(hub.JobSubmitResponse{JobID: "job-err-001", Status: "QUEUED"})
+		case "/experiment/run", "/v1/experiment/run":
+			w.WriteHeader(http.StatusInternalServerError)
+			w.Write([]byte(`{"error":"internal"}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	tmpDir := t.TempDir()
+	c4Dir := filepath.Join(tmpDir, ".c4")
+	if err := os.MkdirAll(c4Dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cfg := "hub:\n  enabled: true\n  url: " + srv.URL + "\n"
+	if err := os.WriteFile(filepath.Join(c4Dir, "config.yaml"), []byte(cfg), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	origDir := projectDir
+	projectDir = tmpDir
+	defer func() { projectDir = origDir }()
+
+	origRun := hubSubmitRun
+	hubSubmitRun = "python3 train.py"
+	defer func() { hubSubmitRun = origRun }()
+
+	origExp := hubSubmitExperiment
+	hubSubmitExperiment = "fail-exp"
+	defer func() { hubSubmitExperiment = origExp }()
+
+	origWd, _ := os.Getwd()
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chdir(origWd) //nolint:errcheck
+
+	err := runHubSubmit(nil, nil)
+	if err == nil {
+		t.Fatal("expected error when experiment/run returns 500")
+	}
+	if !strings.Contains(err.Error(), "--experiment") {
+		t.Errorf("error %q should mention --experiment flag", err.Error())
+	}
+}
