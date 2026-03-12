@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.99.0] - 2026-03-12
+
+### ✨ Features
+- **research-loop**: `GateController` + `StateYAMLWriter` + `NotifyBridge` → `LoopOrchestrator` 통합 (T-RLOOP-4-0)
+- **research-loop**: `NotifyBridge` — per-event cooldown 알림 브릿지 (T-RLOOP-3-0)
+- **research-loop**: `StateYAMLWriter` — atomic `.c9/state.yaml` 영속성 (T-RLOOP-2-0)
+
+### 🐛 Bug Fixes
+- **research-loop**: `Stop()` hang 방지 — gate Release 추가 (T-RLOOP-4-1)
+- **research-loop**: `GateController.Release` releaseCh 연결 수정 (T-RLOOP-1-1)
+
+### ♻️ Refactoring
+- **research-loop**: `LoopSession` copy-on-write 패턴 — `StopLoop`/`Steer`/`onJobDone` 데이터 레이스 수정 (round-6/7)
+- **research-loop**: `poll()` done 슬라이스 값 복사 — poll-time 스냅샷 명시
+- **research-loop**: approved-advance + budget gate 상호작용 수정 — `sessions.Store` 항상 실행 보장
+
+---
+
 ## [v0.98.0] - 2026-03-12
 
 ### ✨ Features
