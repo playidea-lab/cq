@@ -570,7 +570,7 @@ func executeJob(client *workerClient, job *model.Job, leaseID, workerID string, 
 		pr, pw := io.Pipe()
 		go func() {
 			defer pw.Close()
-			payload := worker.JobPayload{ExpRunID: job.ExpRunID, ExpName: job.ExpID}
+			payload := worker.JobPayload{ExpRunID: job.ExpRunID, ExpID: job.ExpID}
 			if err := worker.ExecuteWithExperiment(ctx, &worker.WorkerConfig{
 				MCPURL:             wcfg.mcpURL,
 				ExperimentProtocol: wcfg.experimentProtocol,

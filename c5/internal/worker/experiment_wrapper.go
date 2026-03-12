@@ -130,10 +130,12 @@ func (w *ExperimentWrapper) WrapOutput(ctx context.Context, src io.Reader, dst i
 		}
 
 		if err := w.callMCP(ctx, tool, args); err != nil {
-			w.consecutiveFailures++
-			if w.consecutiveFailures == 1 {
-				log.Printf("experiment-wrapper: checkpoint call failed: %v", err)
+			if ctx.Err() != nil {
+				// Context cancelled — not a protocol failure, do not trip circuit breaker.
+				return ctx.Err()
 			}
+			w.consecutiveFailures++
+			log.Printf("experiment-wrapper: checkpoint call failed (attempt %d): %v", w.consecutiveFailures, err)
 			if w.consecutiveFailures >= 3 {
 				log.Printf("experiment-wrapper: 3 consecutive failures, disabling checkpoints for this job")
 				w.protocol = nil
@@ -182,6 +184,18 @@ func (w *ExperimentWrapper) callMCP(ctx context.Context, tool string, args map[s
 	if resp.StatusCode >= 400 {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
 		return fmt.Errorf("MCP returned %d: %s", resp.StatusCode, body)
+	}
+
+	// Parse JSON-RPC response to detect protocol-level errors (error in 200 OK).
+	var rpcResp struct {
+		Error *struct {
+			Code    int    `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
+	if err := json.Unmarshal(body, &rpcResp); err == nil && rpcResp.Error != nil {
+		return fmt.Errorf("MCP error %d: %s", rpcResp.Error.Code, rpcResp.Error.Message)
 	}
 
 	return nil

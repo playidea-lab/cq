@@ -13,8 +13,9 @@ type JobPayload struct {
 	// Empty string means no experiment run is associated with this job.
 	ExpRunID string
 
-	// ExpName is the human-readable experiment name.
-	ExpName string
+	// ExpID is the experiment identifier (distinct from ExpRunID which is a single run).
+	// Passed as "exp_id" in MCP checkpoint calls for downstream tracking.
+	ExpID string
 }
 
 // ExecuteWithExperiment wraps src (typically the stdout pipe of a running job)
@@ -38,7 +39,7 @@ func ExecuteWithExperiment(ctx context.Context, cfg *WorkerConfig, payload JobPa
 		return err
 	}
 
-	wrapper, err := NewExperimentWrapper(cfg.MCPURL, payload.ExpName, payload.ExpRunID, cfg.ExperimentProtocol)
+	wrapper, err := NewExperimentWrapper(cfg.MCPURL, payload.ExpID, payload.ExpRunID, cfg.ExperimentProtocol)
 	if err != nil {
 		// Pattern compile error — fall back to plain copy so the job is not broken.
 		log.Printf("executor: failed to create ExperimentWrapper: %v — falling back to plain copy", err)

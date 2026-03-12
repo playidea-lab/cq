@@ -46,7 +46,7 @@ func TestJobExecutor_ExperimentWrapper_Activated(t *testing.T) {
 	}
 	payload := JobPayload{
 		ExpRunID: "run-abc",
-		ExpName:  "exp-42",
+		ExpID:    "exp-42",
 	}
 
 	src := strings.NewReader("epoch 1\n@loss=48.5 @epoch=1\ndone\n")
