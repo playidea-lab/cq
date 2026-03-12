@@ -52,12 +52,15 @@ func (b *NotifyBridge) Emit(ctx context.Context, event, title, message string) {
 	if b.notifier == nil {
 		return
 	}
+	now := time.Now()
 	b.mu.Lock()
 	last, ok := b.lastNotified[event]
-	if ok && time.Since(last) < b.cooldown {
+	if ok && now.Sub(last) < b.cooldown {
 		b.mu.Unlock()
 		return // still in cooldown
 	}
+	// Reserve the slot before releasing the lock to prevent concurrent sends.
+	b.lastNotified[event] = now
 	b.mu.Unlock()
 
 	if err := b.notifier.Notify(ctx, title, message, event); err != nil {
@@ -65,10 +68,11 @@ func (b *NotifyBridge) Emit(ctx context.Context, event, title, message string) {
 			"event", event,
 			"error", err,
 		)
-		return
+		// Roll back reservation so a retry can be attempted after cooldown.
+		b.mu.Lock()
+		if t, ok := b.lastNotified[event]; ok && t.Equal(now) {
+			delete(b.lastNotified, event)
+		}
+		b.mu.Unlock()
 	}
-	// Record cooldown only on success.
-	b.mu.Lock()
-	b.lastNotified[event] = time.Now()
-	b.mu.Unlock()
 }

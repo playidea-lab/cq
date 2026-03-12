@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -198,17 +199,18 @@ func (o *LoopOrchestrator) Start(ctx context.Context) error {
 	if o.state != nil && o.gate != nil {
 		if s, err := o.state.ReadState(); err == nil && s.State == "gate_wait" && s.GateDeadline != nil {
 			remaining := time.Until(*s.GateDeadline)
+			var logMsg string
 			o.mu.Lock()
 			if remaining > 0 {
 				o.gate = NewGateController(remaining)
-				o.mu.Unlock()
-				slog.InfoContext(ctx, "research loop: resuming gate", "remaining", remaining)
+				logMsg = "research loop: resuming gate"
 			} else {
 				// Deadline already passed — release immediately.
 				o.gate = NewGateController(0)
-				o.mu.Unlock()
-				slog.InfoContext(ctx, "research loop: gate deadline expired on resume, auto-continuing")
+				logMsg = "research loop: gate deadline expired on resume, auto-continuing"
 			}
+			o.mu.Unlock()
+			slog.InfoContext(ctx, logMsg, "remaining", remaining)
 		}
 	}
 
@@ -284,10 +286,12 @@ func (o *LoopOrchestrator) poll(ctx context.Context) {
 			return true
 		}
 		switch job.Status {
-		case "SUCCEEDED", "FAILED", "CANCELLED":
+		case "SUCCEEDED", "FAILED", "CANCELLED",
+			"succeeded", "failed", "cancelled":
 			done = append(done, doneEntry{
-				session:   session,
-				jobStatus: &HubJobStatus{JobID: job.GetID(), Status: job.Status, Job: job},
+				session: session,
+				// Normalize status to lowercase for consistent comparison in onJobDone.
+				jobStatus: &HubJobStatus{JobID: job.GetID(), Status: strings.ToLower(job.Status), Job: job},
 			})
 		}
 		return true
@@ -304,6 +308,11 @@ func (o *LoopOrchestrator) poll(ctx context.Context) {
 func (o *LoopOrchestrator) StartLoop(ctx context.Context, session *LoopSession) error {
 	if session == nil || session.HypothesisID == "" {
 		return fmt.Errorf("loop_orchestrator: StartLoop: HypothesisID is required")
+	}
+	if val, ok := o.sessions.Load(session.HypothesisID); ok {
+		if existing, ok := val.(*LoopSession); ok && existing.Status == "running" {
+			return fmt.Errorf("loop_orchestrator: StartLoop: session %q already running", session.HypothesisID)
+		}
 	}
 	session.Status = "running"
 	o.sessions.Store(session.HypothesisID, session)

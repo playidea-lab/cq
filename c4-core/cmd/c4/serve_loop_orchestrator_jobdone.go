@@ -52,9 +52,9 @@ func (o *LoopOrchestrator) onJobDone(ctx context.Context, session *LoopSession, 
 		}
 	}
 
-	// Determine trigger reason from job status.
+	// Determine trigger reason from job status (status is normalized to lowercase by poll).
 	triggerReason := "dod_success"
-	if jobStatus != nil && jobStatus.Status == "failed" {
+	if jobStatus != nil && (jobStatus.Status == "failed" || jobStatus.Status == "cancelled") {
 		triggerReason = "dod_null"
 	}
 
@@ -116,6 +116,9 @@ func (o *LoopOrchestrator) onJobDone(ctx context.Context, session *LoopSession, 
 	}
 
 
+	if result == nil {
+		return fmt.Errorf("runDebate returned nil result")
+	}
 	m, ok := result.(map[string]any)
 	if !ok {
 		return fmt.Errorf("unexpected debate result type")
@@ -161,12 +164,15 @@ func (o *LoopOrchestrator) onJobDone(ctx context.Context, session *LoopSession, 
 				return fmt.Errorf("submit job: %w", err)
 			}
 
-			// Advance session state.
+			// Advance session state and re-register under the new HypothesisID.
+			oldHypID := session.HypothesisID
 			session.HypothesisID = newHypID
 			session.JobID = newJobID
 			session.Round++
 			session.NullResultCount = 0
 			session.ExploreFlag = false
+			o.sessions.Delete(oldHypID)
+			o.sessions.Store(newHypID, session)
 		}
 
 	case "null_result":
