@@ -166,6 +166,7 @@ func (s *Server) handleJobCancel(w http.ResponseWriter, r *http.Request, jobID s
 	// SSE broadcast for cancellation: consistent with completed/failed paths.
 	if j, err := s.store.GetJob(jobID); err == nil {
 		s.broadcastSSEEvent(j.ProjectID, "hub.job.cancelled", map[string]any{"job_id": jobID, "status": "CANCELLED"})
+		s.maybeCompleteExperimentRun(r.Context(), j, model.StatusCancelled)
 	} else {
 		log.Printf("c5: handleJobCancel: GetJob(%s) failed after UpdateJobStatus: %v (SSE broadcast skipped)", jobID, err)
 	}
@@ -223,6 +224,7 @@ func (s *Server) handleJobComplete(w http.ResponseWriter, r *http.Request, jobID
 	var completedJob *model.Job
 	if j, err := s.store.GetJob(jobID); err == nil {
 		completedJob = j
+		s.maybeCompleteExperimentRun(r.Context(), j, status)
 	} else {
 		log.Printf("c5: handleJobComplete: GetJob(%s) failed after CompleteJob: %v (SSE broadcast skipped)", jobID, err)
 	}
@@ -415,6 +417,24 @@ func (s *Server) handleJobRetry(w http.ResponseWriter, r *http.Request, jobID st
 		Status:        string(newJob.Status),
 		OriginalJobID: jobID,
 	})
+}
+
+// maybeCompleteExperimentRun completes the linked experiment run if the job has
+// an exp_run_id set. It is a no-op when job is nil or exp_run_id is empty.
+func (s *Server) maybeCompleteExperimentRun(ctx context.Context, job *model.Job, status model.JobStatus) {
+	if job == nil || job.ExpRunID == "" {
+		return
+	}
+	var finalMetric float64
+	if job.BestMetric != nil {
+		finalMetric = *job.BestMetric
+	}
+	expStatus := strings.ToLower(string(status))
+	if err := s.store.CompleteRun(ctx, job.ExpRunID, expStatus, finalMetric, ""); err != nil {
+		log.Printf("c5: maybeCompleteExperimentRun: run_id=%s status=%s err=%v", job.ExpRunID, expStatus, err)
+		return
+	}
+	log.Printf("c5: experiment run completed: run_id=%s status=%s metric=%f", job.ExpRunID, expStatus, finalMetric)
 }
 
 // notifyDoorayJobComplete sends a job completion notification to Dooray if the

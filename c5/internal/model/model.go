@@ -52,6 +52,8 @@ type Job struct {
 	Env             map[string]string `json:"env,omitempty"`
 	Tags            []string          `json:"tags,omitempty"`
 	ExpID           string            `json:"exp_id,omitempty"`
+	ExpRunID        string            `json:"exp_run_id,omitempty"`
+	BestMetric      *float64          `json:"best_metric,omitempty"`
 	Memo            string            `json:"memo,omitempty"`
 	TimeoutSec      int               `json:"timeout_sec,omitempty"`
 	ProjectID       string            `json:"project_id,omitempty"`
@@ -215,6 +217,8 @@ type JobSubmitRequest struct {
 	VRAMRequiredGB  float64           `json:"vram_required_gb,omitempty"`
 	Priority        int               `json:"priority,omitempty"`
 	ExpID           string            `json:"exp_id,omitempty"`
+	ExpRunID        string            `json:"exp_run_id,omitempty"`
+	BestMetric      *float64          `json:"best_metric,omitempty"`
 	Memo            string            `json:"memo,omitempty"`
 	TimeoutSec      int               `json:"timeout_sec,omitempty"`
 	ProjectID       string            `json:"project_id,omitempty"`

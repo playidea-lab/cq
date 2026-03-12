@@ -347,6 +347,9 @@ func (s *Store) migrate() error {
 		`ALTER TABLE jobs ADD COLUMN required_tags TEXT NOT NULL DEFAULT '[]'`,
 		// Migration: Docker runtime for container-based job execution.
 		`ALTER TABLE jobs ADD COLUMN runtime TEXT NOT NULL DEFAULT ''`,
+		// Migration: experiment run linkage for job-to-experiment lifecycle bridge.
+		`ALTER TABLE jobs ADD COLUMN exp_run_id TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE jobs ADD COLUMN best_metric REAL`,
 		// Migration: scoped API keys — add scope column (full/user/worker).
 		`ALTER TABLE api_keys ADD COLUMN scope TEXT NOT NULL DEFAULT 'full'`,
 		// Migration: experiment registry tables.
@@ -401,6 +404,8 @@ func (s *Store) CreateJob(req *model.JobSubmitRequest) (*model.Job, error) {
 		Env:             req.Env,
 		Tags:            req.Tags,
 		ExpID:           req.ExpID,
+		ExpRunID:        req.ExpRunID,
+		BestMetric:      req.BestMetric,
 		Memo:            req.Memo,
 		TimeoutSec:      req.TimeoutSec,
 		ProjectID:       req.ProjectID,
@@ -416,12 +421,18 @@ func (s *Store) CreateJob(req *model.JobSubmitRequest) (*model.Job, error) {
 		CreatedAt:           now,
 	}
 
+	var bestMetricVal any
+	if job.BestMetric != nil {
+		bestMetricVal = *job.BestMetric
+	}
+
 	_, err := s.db.Exec(`
 		INSERT INTO jobs (id, name, status, priority, workdir, command,
 			requires_gpu, vram_required_gb, env, tags, exp_id, memo, timeout_sec, project_id,
 			submitted_by, input_artifacts, output_artifacts, capability, params,
-			snapshot_version_hash, git_hash, required_tags, runtime, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			snapshot_version_hash, git_hash, required_tags, runtime, exp_run_id, best_metric,
+			created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		job.ID, job.Name, string(job.Status), job.Priority, job.Workdir, job.Command,
 		boolToInt(job.RequiresGPU), job.VRAMRequiredGB,
 		marshalJSON(job.Env), marshalJSON(job.Tags),
@@ -432,6 +443,7 @@ func (s *Store) CreateJob(req *model.JobSubmitRequest) (*model.Job, error) {
 		job.SnapshotVersionHash, job.GitHash,
 		marshalJSON(job.RequiredTags),
 		marshalJSON(job.Runtime),
+		job.ExpRunID, bestMetricVal,
 		now.Format(time.RFC3339),
 	)
 	if err != nil {
@@ -2301,7 +2313,7 @@ const jobSelectCols = `SELECT id, name, status, priority, workdir, command,
 	requires_gpu, vram_required_gb, env, tags, exp_id, memo, timeout_sec, worker_id,
 	created_at, started_at, finished_at, exit_code, project_id, submitted_by,
 	input_artifacts, output_artifacts, capability, params, result,
-	snapshot_version_hash, git_hash, required_tags, runtime`
+	snapshot_version_hash, git_hash, required_tags, runtime, exp_run_id, best_metric`
 
 type scanner interface {
 	Scan(dest ...any) error
@@ -2325,6 +2337,7 @@ func populateJob(sc scanner) (*model.Job, error) {
 		resultJSON           string
 		requiredTagsJSON     string
 		runtimeJSON          string
+		bestMetric           sql.NullFloat64
 	)
 	err := sc.Scan(
 		&j.ID, &j.Name, &status, &j.Priority, &j.Workdir, &j.Command,
@@ -2335,7 +2348,7 @@ func populateJob(sc scanner) (*model.Job, error) {
 		&inputArtifactsJSON, &outputArtifactsJSON,
 		&j.Capability, &paramsJSON, &resultJSON,
 		&j.SnapshotVersionHash, &j.GitHash,
-		&requiredTagsJSON, &runtimeJSON,
+		&requiredTagsJSON, &runtimeJSON, &j.ExpRunID, &bestMetric,
 	)
 	if err != nil {
 		return nil, err
@@ -2373,6 +2386,9 @@ func populateJob(sc scanner) (*model.Job, error) {
 	}
 	if runtimeJSON != "" {
 		json.Unmarshal([]byte(runtimeJSON), &j.Runtime)
+	}
+	if bestMetric.Valid {
+		j.BestMetric = &bestMetric.Float64
 	}
 	return &j, nil
 }
