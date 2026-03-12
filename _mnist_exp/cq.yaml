@@ -1,6 +1,0 @@
-run: pip install scikit-learn numpy torch --quiet && python3 train.py
-artifacts:
-  input:
-    - name: mnist_mini
-      local_path: data/mnist
-  output: []
