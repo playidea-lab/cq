@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -57,6 +58,17 @@ func (o *LoopOrchestrator) onJobDone(ctx context.Context, session *LoopSession, 
 			extraContext += "\n" + lineageContext
 		} else {
 			extraContext = lineageContext
+		}
+	}
+
+	// Inject experiment metrics from the latest TypeExperiment doc for this HypothesisID.
+	if o.kStore != nil {
+		if metricBlock := fetchExperimentMetrics(o.kStore, s.HypothesisID); metricBlock != "" {
+			if extraContext != "" {
+				extraContext += "\n" + metricBlock
+			} else {
+				extraContext = metricBlock
+			}
 		}
 	}
 
@@ -242,6 +254,56 @@ func (o *LoopOrchestrator) onJobDone(ctx context.Context, session *LoopSession, 
 	o.sessions.Store(s.HypothesisID, &s)
 
 	return nil
+}
+
+// fetchExperimentMetrics queries the latest TypeExperiment document for the given
+// hypothesisID, extracts val_loss and test_metric from the JSON body, and returns
+// a formatted extraContext block. Returns "" if no matching doc is found or on error
+// (fallback: debate proceeds without metric context).
+func fetchExperimentMetrics(kStore *knowledge.Store, hypothesisID string) string {
+	docs, err := kStore.List(string(knowledge.TypeExperiment), "experiment", 100)
+	if err != nil {
+		return ""
+	}
+	// Find the most-recently-created doc whose body JSON contains hypothesis_id==hypothesisID.
+	// List returns docs ORDER BY updated_at DESC, so we take the first match.
+	for _, meta := range docs {
+		id, _ := meta["id"].(string)
+		if id == "" {
+			continue
+		}
+		doc, err := kStore.Get(id)
+		if err != nil || doc == nil {
+			continue
+		}
+		var fields map[string]any
+		if err := json.Unmarshal([]byte(strings.TrimSpace(doc.Body)), &fields); err != nil {
+			continue
+		}
+		if hypID, _ := fields["hypothesis_id"].(string); hypID != hypothesisID {
+			continue
+		}
+		// Found matching doc — build metric block.
+		valLossStr := "N/A"
+		if v, ok := fields["val_loss"]; ok && v != nil {
+			if f, ok := v.(float64); ok && f != 0.0 {
+				valLossStr = fmt.Sprintf("%g", f)
+			}
+		}
+		testMetricStr := "N/A"
+		if v, ok := fields["test_metric"]; ok && v != nil {
+			if f, ok := v.(float64); ok {
+				testMetricStr = fmt.Sprintf("%g", f)
+			}
+		}
+		status, _ := fields["status"].(string)
+		if status == "" {
+			status = "unknown"
+		}
+		return fmt.Sprintf("experiment_result:\n  val_loss: %s\n  test_metric: %s\n  status: %s",
+			valLossStr, testMetricStr, status)
+	}
+	return ""
 }
 
 // extractDraft extracts the first line of the next hypothesis draft.
