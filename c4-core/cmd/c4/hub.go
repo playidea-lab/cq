@@ -225,6 +225,7 @@ func init() {
 	hubCmd.AddCommand(hubWorkersCmd)
 	hubCmd.AddCommand(hubEdgeCmd)
 	hubCmd.AddCommand(hubJobCmd)
+	hubCmd.AddCommand(hubTransferCmd)
 	rootCmd.AddCommand(hubCmd)
 }
 

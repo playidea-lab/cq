@@ -546,6 +546,35 @@ func (c *Client) CreateExperimentRun(name, capability string) (string, error) {
 }
 
 // =========================================================================
+// Capability API
+// =========================================================================
+
+// InvokeCapabilityRequest is the payload for POST /v1/capabilities/invoke.
+type InvokeCapabilityRequest struct {
+	Capability string         `json:"capability"`
+	Params     map[string]any `json:"params,omitempty"`
+	Name       string         `json:"name,omitempty"`
+	Priority   int            `json:"priority,omitempty"`
+	TimeoutSec int            `json:"timeout_sec,omitempty"`
+}
+
+// InvokeCapabilityResponse is the response from POST /v1/capabilities/invoke.
+type InvokeCapabilityResponse struct {
+	JobID         string `json:"job_id"`
+	Status        string `json:"status"`
+	QueuePosition int    `json:"queue_position"`
+}
+
+// InvokeCapability submits a job via the capability broker (POST /v1/capabilities/invoke).
+func (c *Client) InvokeCapability(req *InvokeCapabilityRequest) (*InvokeCapabilityResponse, error) {
+	var resp InvokeCapabilityResponse
+	if err := c.post("/capabilities/invoke", req, &resp); err != nil {
+		return nil, fmt.Errorf("invoke capability: %w", err)
+	}
+	return &resp, nil
+}
+
+// =========================================================================
 // HubClient interface — used by LoopOrchestrator (injected dependency)
 // =========================================================================
 
