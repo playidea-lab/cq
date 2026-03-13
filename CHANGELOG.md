@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v1.1.0] - 2026-03-13
+
+### ✨ Features
+
+- **research**: EventBus subscription for LoopOrchestrator instant wake — 30s poll delay → <1s (f20d88f9)
+- **research**: TypeExperiment metrics injection into Debate extraContext — val_loss/test_metric/stdout (f9213f6a)
+- **research**: `cq research run` CLI — Hub worker entrypoint with go test -json parsing + @KEY=VALUE stdout (00b30e0a)
+
+### 📚 Documentation
+
+- **agents**: Go 테스트 수 업데이트 — research-loop e2e 12 tests 추가 (~2,332) (ae25d6c3)
+
+---
+
 ## [v1.0.0] - 2026-03-13
 
 ### ✨ Features
