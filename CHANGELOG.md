@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v1.0.0] - 2026-03-13
+
+### ✨ Features
+- **research-loop**: `c4_research_loop_start/stop/status` MCP 핸들러 — LoopOrchestrator 외부 제어 인터페이스 (T-LA-003a)
+- **research-loop**: SpecPipeline — `generateSpec` + `reviewSpec` LLM 에이전트로 ExperimentSpec 자동 생성·검토
+- **research-loop**: `TypeExperimentSpec` knowledge 문서 타입 추가 ("esp" prefix)
+- **research-loop**: `loopSpecPipeline` — onJobDone에서 Hub 잡 제출 전 ExperimentSpec 생성 자동화
+
+### 🐛 Bug Fixes
+- **research-loop**: budget gate 우회 버그 수정 — spec null_result 경로에서도 MaxIterations 체크 (T-LA-004)
+- **research-loop**: `kStore.create` 오류 전파 — persist 실패 시 null_result 처리 (polish round-1)
+- **research-loop**: Delete 오류 로깅 추가 — 고아 hypothesis 정리 실패 추적
+
+### 🔒 Security
+- **research-loop**: `<hypothesis>` XML 태그로 LLM 프롬프트 인젝션 방어
+- **research-loop**: `reviewSpec` exact match (`toLower == "approved"`) — prefix 오탐 방지
+
+### 📚 Documentation
+- **agents**: Go 테스트 수 실측 업데이트 (~2,334 tests, 50 packages, research+c5_hub tags)
+
+---
+
 ## [v0.99.0] - 2026-03-12
 
 ### ✨ Features
