@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -169,7 +170,9 @@ func (o *LoopOrchestrator) onJobDone(ctx context.Context, session *LoopSession, 
 				if specErr != nil || nullResult {
 					// Spec failed: clean up orphaned hypothesis document.
 					if o.kStore != nil {
-						_, _ = o.kStore.Delete(newHypID)
+						if _, delErr := o.kStore.Delete(newHypID); delErr != nil {
+							fmt.Fprintf(os.Stderr, "warn: loop spec fail cleanup: %v\n", delErr)
+						}
 					}
 					s.NullResultCount++
 					if s.NullResultCount >= exploreThreshold {

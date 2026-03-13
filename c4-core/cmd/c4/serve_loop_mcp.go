@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 
 	"github.com/changmin/c4-core/internal/knowledge"
 	"github.com/changmin/c4-core/internal/mcp"
@@ -22,6 +23,9 @@ func registerLoopMCPHandlers(ctx *initContext) error {
 	}
 	lo, ok := ctx.loopOrchestrator.(*LoopOrchestrator)
 	if !ok || lo == nil {
+		if ctx.loopOrchestrator != nil {
+			fmt.Fprintf(os.Stderr, "warn: loopOrchestrator is not *LoopOrchestrator (%T); loop MCP handlers not registered\n", ctx.loopOrchestrator)
+		}
 		return nil
 	}
 
@@ -96,6 +100,8 @@ func loopStartHandler(lo *LoopOrchestrator, ks *knowledge.Store) mcp.HandlerFunc
 			HypothesisID:  hypID,
 			MaxIterations: params.MaxIterations,
 		}
+		// mcp.HandlerFunc does not carry a context; StartLoop is a sync.Map operation
+		// and completes instantly, so context.Background() is intentional here.
 		if err := lo.StartLoop(context.Background(), session); err != nil {
 			return nil, err
 		}
