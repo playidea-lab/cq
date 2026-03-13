@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v1.2.0] - 2026-03-13
+
+### ✨ Features
+
+- **hub**: `cq hub transfer` — cloudflared P2P 대용량 파일 전송 CLI (570b5a72)
+  - `cq hub transfer <path> --to <worker-id>`: NAT 뒤 워커로 파일 직접 전송
+  - cloudflared quick tunnel + Hub `run_command` capability 자동 오케스트레이션
+  - crypto/rand 토큰 기반 URL 보안, `wget -c` resume 지원
+  - `tunnelStarter` interface로 테스트 격리, 6개 테스트
+  - `hub.InvokeCapability()` 메서드 추가 (client.go)
+
+### 🔧 Polish
+
+- signal.NotifyContext를 서버 시작 전 등록 (SIGINT leak window 제거) (817c5f83)
+- wget `--` argument separator 추가 (shell injection 방지)
+
+### 📚 Documentation
+
+- **agents**: Hub P2P Transfer 문서 추가 (383d9f9d)
+
+---
+
 ## [v1.1.0] - 2026-03-13
 
 ### ✨ Features
