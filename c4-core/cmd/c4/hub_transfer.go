@@ -155,6 +155,10 @@ func runHubTransferWithTunnel(cmd *cobra.Command, args []string, ts tunnelStarte
 	token := hex.EncodeToString(tokenBytes)
 	filename := url.PathEscape(filepath.Base(filePath))
 
+	// Setup signal context before starting servers (avoids SIGINT leak window).
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
 	// Start HTTP server on a dynamic port.
 	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", hubTransferPort))
 	if err != nil {
@@ -173,10 +177,6 @@ func runHubTransferWithTunnel(cmd *cobra.Command, args []string, ts tunnelStarte
 		}),
 	}
 	go func() { _ = srv.Serve(ln) }()
-
-	// Setup signal context for cleanup.
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
 
 	// Start cloudflared tunnel.
 	fmt.Printf("Starting cloudflared tunnel (local port %d)...\n", localPort)
@@ -212,12 +212,14 @@ func runHubTransferWithTunnel(cmd *cobra.Command, args []string, ts tunnelStarte
 	defer cleanup()
 
 	// Submit wget job to the target worker via Hub capability invoke.
+	// NOTE: worker_id in Params is a routing hint — Hub may dispatch to any worker
+	// with run_command capability if server-side routing is not implemented (V2 scope).
 	client, err := newHubClient()
 	if err != nil {
 		return err
 	}
 
-	wgetCmd := fmt.Sprintf("wget -c %q", downloadURL)
+	wgetCmd := fmt.Sprintf("wget -c -- %q", downloadURL)
 	resp, err := client.InvokeCapability(&hub.InvokeCapabilityRequest{
 		Capability: "run_command",
 		Params: map[string]any{
