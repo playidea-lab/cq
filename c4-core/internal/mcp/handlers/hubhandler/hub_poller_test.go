@@ -7,12 +7,49 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/changmin/c4-core/internal/hub"
 )
+
+// capturePublisher records PublishAsync calls for test assertions.
+type capturePublisher struct {
+	calls []capturedEvent
+}
+
+type capturedEvent struct {
+	evType    string
+	source    string
+	data      json.RawMessage
+	projectID string
+}
+
+func (c *capturePublisher) PublishAsync(evType, source string, data json.RawMessage, projectID string) {
+	c.calls = append(c.calls, capturedEvent{evType: evType, source: source, data: data, projectID: projectID})
+}
+
+// mockPublisher is a thread-safe publisher for tests that need concurrent access.
+type mockPublisher struct {
+	mu     sync.Mutex
+	events []capturedEvent
+}
+
+func (m *mockPublisher) PublishAsync(evType, source string, data json.RawMessage, projectID string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.events = append(m.events, capturedEvent{evType: evType, source: source, data: data, projectID: projectID})
+}
+
+func (m *mockPublisher) getEvents() []capturedEvent {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := make([]capturedEvent, len(m.events))
+	copy(out, m.events)
+	return out
+}
 
 // newPollerTestServer creates a mock Hub server and HubPoller for testing.
 func newPollerTestServer(t *testing.T, mux *http.ServeMux) (*hub.Client, *capturePublisher) {

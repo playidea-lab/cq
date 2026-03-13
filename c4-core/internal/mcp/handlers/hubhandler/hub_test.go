@@ -1233,11 +1233,11 @@ func TestRegisterHubHandlersToolCount(t *testing.T) {
 	mux := http.NewServeMux()
 	_, reg := newHubTestServer(t, mux)
 	tools := reg.ListTools()
-	if len(tools) != 27 {
+	if len(tools) != 29 {
 		names := make([]string, 0, len(tools))
 		for _, tool := range tools {
 			names = append(names, tool.Name)
 		}
-		t.Errorf("registered %d hub tools, want 27: %v", len(tools), names)
+		t.Errorf("registered %d hub tools, want 29: %v", len(tools), names)
 	}
 }
