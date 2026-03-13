@@ -76,6 +76,13 @@ type LoopSession struct {
 	SteeringGuidance string
 }
 
+// loopSpecPipeline holds the dependencies for generateAndReview in onJobDone.
+// When nil, spec generation is skipped and the job is submitted without an ExperimentSpecID.
+type loopSpecPipeline struct {
+	caller debateCaller
+	kStore debateStore
+}
+
 // LoopOrchestrator is a serve.Component that polls Hub job status every PollInterval,
 // manages LoopSession state, and applies E&E policy (ExploreFlag).
 type LoopOrchestrator struct {
@@ -90,11 +97,12 @@ type LoopOrchestrator struct {
 	state  *StateYAMLWriter
 	notify *NotifyBridge
 	// jobdone fields (set by onJobDone path)
-	caller  debateCaller
-	store   debateStore
-	hubCli  loopHubClient
-	lineage loopLineageBuilder
-	kStore  *knowledge.Store
+	caller       debateCaller
+	store        debateStore
+	hubCli       loopHubClient
+	lineage      loopLineageBuilder
+	kStore       *knowledge.Store
+	specPipeline *loopSpecPipeline // optional; when set, runs generateAndReview before Hub job submit
 }
 
 // loopHubClientAdapter adapts HubClient to the loopHubClient interface.
@@ -156,6 +164,12 @@ func registerLoopOrchestratorComponent(mgr *serve.Manager, ictx *initContext) {
 	o.kStore = ictx.knowledgeStore
 	if hc != nil {
 		o.hubCli = &loopHubClientAdapter{hc: hc}
+	}
+
+	// Wire SpecPipeline: reuse the debate caller and knowledge store adapter.
+	o.specPipeline = &loopSpecPipeline{
+		caller: o.caller,
+		kStore: o.store,
 	}
 
 	// Gate duration from config (default 24h).

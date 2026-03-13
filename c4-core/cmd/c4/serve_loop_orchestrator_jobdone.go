@@ -162,10 +162,35 @@ func (o *LoopOrchestrator) onJobDone(ctx context.Context, session *LoopSession, 
 				return fmt.Errorf("create hypothesis: %w", err)
 			}
 
-			// Submit new Hub job.
+			// Run SpecPipeline: generate and review an ExperimentSpec.
+			var specDocID string
+			if o.specPipeline != nil {
+				_, sid, nullResult, specErr := generateAndReview(ctx, o.specPipeline.caller, o.specPipeline.kStore, draft, s.Round)
+				if specErr != nil || nullResult {
+					// Spec failed: clean up orphaned hypothesis document.
+					if o.kStore != nil {
+						_, _ = o.kStore.Delete(newHypID)
+					}
+					s.NullResultCount++
+					if s.NullResultCount >= exploreThreshold {
+						s.ExploreFlag = true
+					}
+					// Budget gate must also be checked here to prevent sessions from
+					// getting permanently stuck in "running" when spec fails at limit.
+					if s.MaxIterations > 0 && s.Round >= s.MaxIterations {
+						s.Status = "completed"
+					}
+					o.sessions.Store(s.HypothesisID, &s)
+					return nil
+				}
+				specDocID = sid
+			}
+
+			// Submit new Hub job with the approved ExperimentSpec.
 			newJobID, err := o.hubCli.SubmitJob(ctx, loopHubJobRequest{
-				HypothesisID: newHypID,
-				Command:      "cq research run",
+				HypothesisID:     newHypID,
+				ExperimentSpecID: specDocID,
+				Command:          "cq research run",
 			})
 			if err != nil {
 				return fmt.Errorf("submit job: %w", err)

@@ -25,16 +25,18 @@ import (
 type DocumentType string
 
 const (
-	TypeExperiment DocumentType = "experiment"
-	TypePattern    DocumentType = "pattern"
-	TypeInsight    DocumentType = "insight"
-	TypeHypothesis DocumentType = "hypothesis"
-	TypeDebate     DocumentType = "debate"
+	TypeExperiment     DocumentType = "experiment"
+	TypeExperimentSpec DocumentType = "experiment_spec"
+	TypePattern        DocumentType = "pattern"
+	TypeInsight        DocumentType = "insight"
+	TypeHypothesis     DocumentType = "hypothesis"
+	TypeDebate         DocumentType = "debate"
 )
 
 // docTypePrefixes maps ID prefixes to document types.
 var docTypePrefixes = map[string]DocumentType{
 	"exp": TypeExperiment,
+	"esp": TypeExperimentSpec,
 	"pat": TypePattern,
 	"ins": TypeInsight,
 	"hyp": TypeHypothesis,

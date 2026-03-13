@@ -72,23 +72,25 @@ func reviewSpec(ctx context.Context, caller debateCaller, spec ExperimentSpec) (
 }
 
 // generateAndReview runs generateSpec then reviewSpec, recording the spec in the knowledge store.
-func generateAndReview(ctx context.Context, caller debateCaller, kStore debateStore, hypothesis string, round int) (ExperimentSpec, bool, string, error) {
+// Returns (spec, specDocID, nullResult, err). nullResult=true when the spec is rejected or
+// cannot be generated; specDocID is non-empty only on approval.
+func generateAndReview(ctx context.Context, caller debateCaller, kStore debateStore, hypothesis string, round int) (ExperimentSpec, string, bool, error) {
 	spec, err := generateSpec(ctx, caller, hypothesis, round)
 	if err != nil {
-		return ExperimentSpec{}, false, "", err
+		return ExperimentSpec{}, "", true, err
 	}
 
-	approved, reason := reviewSpec(ctx, caller, spec)
+	approved, _ := reviewSpec(ctx, caller, spec)
 
 	specJSON, err := json.Marshal(spec)
 	if err != nil {
-		return spec, approved, reason, fmt.Errorf("marshal spec for storage: %w", err)
+		return spec, "", !approved, fmt.Errorf("marshal spec for storage: %w", err)
 	}
-	_, _ = kStore.create(knowledge.TypeExperimentSpec, map[string]any{
+	specDocID, _ := kStore.create(knowledge.TypeExperimentSpec, map[string]any{
 		"hypothesis_id": spec.HypothesisID,
 		"round":         round,
 		"approved":      approved,
 	}, string(specJSON))
 
-	return spec, approved, reason, nil
+	return spec, specDocID, !approved, nil
 }
