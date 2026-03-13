@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
@@ -12,11 +13,19 @@ import (
 	"sync"
 	"time"
 
+	"github.com/changmin/c4-core/internal/eventbus"
 	"github.com/changmin/c4-core/internal/hub"
 	"github.com/changmin/c4-core/internal/knowledge"
 	"github.com/changmin/c4-core/internal/llm"
 	"github.com/changmin/c4-core/internal/serve"
+	ebpb "github.com/changmin/c4-core/internal/eventbus/pb"
 )
+
+// loopEventBusSubscriber is the minimal EventBus interface needed by LoopOrchestrator.
+// *eventbus.Client satisfies this interface.
+type loopEventBusSubscriber interface {
+	Subscribe(ctx context.Context, pattern string, projectID string) (<-chan *ebpb.Event, error)
+}
 
 // loopHubClient is the minimal interface for submitting Hub jobs in the loop.
 type loopHubClient interface {
@@ -103,6 +112,8 @@ type LoopOrchestrator struct {
 	lineage      loopLineageBuilder
 	kStore       *knowledge.Store
 	specPipeline *loopSpecPipeline // optional; when set, runs generateAndReview before Hub job submit
+	// EventBus subscription (optional; nil disables push-based wake, poll fallback continues)
+	ebSub loopEventBusSubscriber
 }
 
 // loopHubClientAdapter adapts HubClient to the loopHubClient interface.
@@ -192,6 +203,11 @@ func registerLoopOrchestratorComponent(mgr *serve.Manager, ictx *initContext) {
 	// Notify bridge: nil notifier — concrete Notifier wired externally if available.
 	o.notify = NewNotifyBridge(nil, 5*time.Minute)
 
+	// Wire EventBus subscriber if available (c3_eventbus + research tags active).
+	if ebc, ok := ictx.ebClient.(*eventbus.Client); ok && ebc != nil {
+		o.ebSub = ebc
+	}
+
 	mgr.Register(o)
 	ictx.loopOrchestrator = o
 	fmt.Fprintf(os.Stderr, "cq serve: registered loop_orchestrator\n")
@@ -229,6 +245,9 @@ func (o *LoopOrchestrator) Start(ctx context.Context) error {
 	}
 
 	go o.loop(ctx2)
+	if o.ebSub != nil {
+		go o.subscribeToHub(ctx2)
+	}
 	return nil
 }
 
@@ -319,6 +338,89 @@ func (o *LoopOrchestrator) poll(ctx context.Context) {
 		if err := o.onJobDone(ctx, &done[i].session, done[i].jobStatus); err != nil {
 			fmt.Fprintf(os.Stderr, "loop_orchestrator: onJobDone %s: %v\n", done[i].session.HypothesisID, err)
 		}
+	}
+}
+
+// subscribeToHub subscribes to hub.job.completed and hub.job.failed EventBus events.
+// On event arrival it resolves the matching session and calls onJobDone immediately,
+// eliminating the 30s poll delay. poll() remains as fallback.
+//
+// subscribeToHub returns on ctx cancellation or Subscribe error; errors are logged
+// to stderr and the poll fallback continues unaffected (graceful degradation).
+func (o *LoopOrchestrator) subscribeToHub(ctx context.Context) error {
+	ch, err := o.ebSub.Subscribe(ctx, "hub.job.*", "")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "loop_orchestrator: subscribeToHub: %v (poll fallback continues)\n", err)
+		return err
+	}
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case ev, ok := <-ch:
+			if !ok {
+				return nil
+			}
+			evCopy := ev
+			func() {
+				defer func() {
+					if r := recover(); r != nil {
+						fmt.Fprintf(os.Stderr, "loop_orchestrator: subscribeToHub: panic: %v\n", r)
+					}
+				}()
+				o.handleHubEvent(ctx, evCopy)
+			}()
+		}
+	}
+}
+
+// handleHubEvent processes a hub.job.completed / hub.job.failed event.
+// It locates the session by JobID, performs an atomic LoadOrStore to prevent
+// duplicate onJobDone calls when poll() fires concurrently, then calls onJobDone.
+func (o *LoopOrchestrator) handleHubEvent(ctx context.Context, ev *ebpb.Event) {
+	evType := ev.GetType()
+	if evType != "hub.job.completed" && evType != "hub.job.failed" {
+		return
+	}
+
+	var payload struct {
+		JobID string `json:"job_id"`
+	}
+	if err := json.Unmarshal(ev.GetData(), &payload); err != nil || payload.JobID == "" {
+		return
+	}
+
+	// Find the running session whose JobID matches.
+	var matched *LoopSession
+	o.sessions.Range(func(_, value any) bool {
+		s, ok := value.(*LoopSession)
+		if ok && s.Status == "running" && s.JobID == payload.JobID {
+			matched = s
+			return false // stop iteration
+		}
+		return true
+	})
+	if matched == nil {
+		return
+	}
+
+	// Atomic duplicate prevention: mark this job as being processed by EB path.
+	// Use a synthetic "eb:jobID" key to check-and-store atomically.
+	dedupKey := "eb:" + payload.JobID
+	if _, loaded := o.sessions.LoadOrStore(dedupKey, struct{}{}); loaded {
+		return // already processed by another goroutine
+	}
+	// Clean up dedup key after processing.
+	defer o.sessions.Delete(dedupKey)
+
+	status := "succeeded"
+	if evType == "hub.job.failed" {
+		status = "failed"
+	}
+	js := &HubJobStatus{JobID: payload.JobID, Status: status}
+	session := *matched // value copy (consistent with poll() pattern)
+	if err := o.onJobDone(ctx, &session, js); err != nil {
+		fmt.Fprintf(os.Stderr, "loop_orchestrator: handleHubEvent onJobDone %s: %v\n", matched.HypothesisID, err)
 	}
 }
 

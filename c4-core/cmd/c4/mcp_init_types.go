@@ -67,6 +67,7 @@ type initContext struct {
 	// EventBus (set by initEventBus post-store hook)
 	embeddedEB   *eventbus.EmbeddedServer
 	eventsinkSrv *http.Server
+	ebClient     any // *eventbus.Client; set by wireAllEventBus (c3_eventbus tag)
 
 	// Gate (set by initGate post-store hook, c8_gate build tag)
 	gateWebhookManager gateWebhookManagerInterface

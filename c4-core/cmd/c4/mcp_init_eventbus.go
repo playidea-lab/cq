@@ -121,6 +121,7 @@ func initRemoteEB(ctx *initContext) {
 
 // wireAllEventBus fires all component EB wiring hooks plus core wiring.
 func wireAllEventBus(ctx *initContext, ebClient *eventbus.Client) {
+	ctx.ebClient = ebClient // stored for serve-time components (e.g. LoopOrchestrator)
 	for _, fn := range componentEBWireHooks {
 		fn(ctx, ebClient)
 	}
