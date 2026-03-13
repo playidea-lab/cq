@@ -77,6 +77,10 @@ type initContext struct {
 	// Typed as any to avoid importing guard in build-tag-agnostic files.
 	guardEngine any
 
+	// LoopOrchestrator (set by registerLoopOrchestratorComponent, research build tag)
+	// Typed as any to avoid importing the research-only LoopOrchestrator in build-tag-agnostic files.
+	loopOrchestrator any // *LoopOrchestrator (research build)
+
 	// Agent (set by startAgentIfNeeded in mcp_init_agent.go)
 	agentComp   *serve.Agent
 	agentCancel context.CancelFunc

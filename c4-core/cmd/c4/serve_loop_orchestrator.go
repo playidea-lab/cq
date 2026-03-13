@@ -179,6 +179,7 @@ func registerLoopOrchestratorComponent(mgr *serve.Manager, ictx *initContext) {
 	o.notify = NewNotifyBridge(nil, 5*time.Minute)
 
 	mgr.Register(o)
+	ictx.loopOrchestrator = o
 	fmt.Fprintf(os.Stderr, "cq serve: registered loop_orchestrator\n")
 }
 
