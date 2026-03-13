@@ -680,6 +680,18 @@ cq hub job log <job-id> --follow   # 실시간 스트리밍 (잡 완료까지)
 cq hub job log <job-id> --offset 50  # 50번째 줄부터 출력
 ```
 
+### P2P 파일 전송
+
+NAT 뒤 워커로 대용량 파일 직접 전송. cloudflared quick tunnel + Hub `run_command` capability 사용.
+
+```bash
+cq hub transfer /path/to/data.zip --to <worker-id>   # 자동: HTTP서버→터널→wget 잡
+cq hub transfer data.tar.gz --to worker-abc --port 8080  # 포트 지정
+```
+- 의존성: `cloudflared` (brew install cloudflared)
+- 토큰 기반 URL 보안 (`/t/<random-token>/<filename>`)
+- `wget -c` resume 지원, Ctrl+C graceful shutdown
+
 ### GPU Worker 연결
 
 → **Full guide: [docs/guide/worker.md](docs/guide/worker.md)** — 설치, 인증, capability, systemd, 트러블슈팅 포함.
