@@ -52,7 +52,7 @@ BLOCK_PATTERNS=()
 if [[ -f "$HOOK_CONFIG_JSON" ]] && command -v jq &>/dev/null; then
     _enabled=$(jq -r '.enabled // true' "$HOOK_CONFIG_JSON" 2>/dev/null)
     if [[ "$_enabled" == "false" ]]; then
-        exit 0
+        _emit_allow "Hook disabled"
     fi
     PERMISSION_MODE=$(jq -r '.mode // "model"' "$HOOK_CONFIG_JSON" 2>/dev/null)
     SUPERVISOR_MODEL=$(jq -r '.model // "claude-haiku-4-5-20251001"' "$HOOK_CONFIG_JSON" 2>/dev/null)
@@ -60,7 +60,7 @@ if [[ -f "$HOOK_CONFIG_JSON" ]] && command -v jq &>/dev/null; then
     while IFS= read -r _p; do [[ -n "$_p" ]] && BLOCK_PATTERNS+=("$_p"); done < <(jq -r '.block_patterns[]? // empty' "$HOOK_CONFIG_JSON" 2>/dev/null)
 else
     # No config: C4 project found but hook-config.json not yet generated — allow all
-    exit 0
+    _emit_allow "No hook-config.json — auto-allow"
 fi
 
 # =============================================================================
@@ -117,8 +117,7 @@ done
 if [[ "$PERMISSION_MODE" == "model" ]]; then
     api_key="${ANTHROPIC_API_KEY:-}"
     if [[ -z "$api_key" ]] || ! command -v jq &>/dev/null; then
-        # No API key or jq — allow (fail open)
-        exit 0
+        _emit_allow "No API key or jq — auto-allow"
     fi
 
     # Build context string for the model
@@ -157,12 +156,12 @@ if [[ "$PERMISSION_MODE" == "model" ]]; then
             elif [[ "$allow" == "true" ]]; then
                 _emit_allow "AI reviewer approved: $reason"
             fi
-            # allow == "null" (parse failure) → fall through to fail-open exit 0
+            # allow == "null" (parse failure) → fall through to auto-allow
         fi
     fi
 fi
 
 # =============================================================================
-# Default: allow (fail open — hook mode or API unavailable)
+# Default: auto-allow (API unavailable, parse failure, or non-model mode)
 # =============================================================================
-exit 0
+_emit_allow "Default auto-allow (no decision from model)"

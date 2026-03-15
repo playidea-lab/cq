@@ -127,6 +127,7 @@ func TestMissingConfigFileDefaults(t *testing.T) {
 
 	// Use a temp directory with no config file
 	tmpDir := t.TempDir()
+	t.Setenv("HOME", tmpDir) // isolate from global ~/.c4/config.yaml
 
 	mgr, err := New(tmpDir)
 	if err != nil {
@@ -248,6 +249,7 @@ func TestGetBackendDefault(t *testing.T) {
 	t.Setenv("SUPABASE_KEY", "")
 
 	tmpDir := t.TempDir()
+	t.Setenv("HOME", tmpDir)
 
 	mgr, err := New(tmpDir)
 	if err != nil {
@@ -265,6 +267,7 @@ func TestCloudConfig(t *testing.T) {
 		t.Setenv("SUPABASE_KEY", "")
 
 		tmpDir := t.TempDir()
+		t.Setenv("HOME", tmpDir)
 		mgr, err := New(tmpDir)
 		if err != nil {
 			t.Fatalf("New() failed: %v", err)
@@ -321,6 +324,7 @@ cloud:
 
 	t.Run("env var override", func(t *testing.T) {
 		tmpDir := t.TempDir()
+		t.Setenv("HOME", tmpDir)
 		t.Setenv("C4_CLOUD_ENABLED", "true")
 		t.Setenv("C4_CLOUD_URL", "https://env.supabase.co")
 		t.Setenv("C4_CLOUD_ANON_KEY", "env-key")
@@ -344,6 +348,7 @@ cloud:
 
 	t.Run("SUPABASE_URL/KEY fallback", func(t *testing.T) {
 		tmpDir := t.TempDir()
+		t.Setenv("HOME", tmpDir)
 		c4Dir := filepath.Join(tmpDir, ".c4")
 		if err := os.MkdirAll(c4Dir, 0o755); err != nil {
 			t.Fatal(err)
