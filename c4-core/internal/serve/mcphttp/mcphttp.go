@@ -18,7 +18,7 @@ import (
 
 // RequestHandler handles a raw JSON-RPC request and returns a raw JSON response.
 type RequestHandler interface {
-	HandleRawRequest(body []byte, ctx context.Context) []byte
+	HandleRawRequest(ctx context.Context, body []byte) []byte
 }
 
 // SecretGetter retrieves secret values by key.
@@ -235,7 +235,7 @@ func (c *Component) handleJSONRPC(w http.ResponseWriter, r *http.Request) {
 	callCtx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
 	defer cancel()
 
-	respBytes := c.handler.HandleRawRequest(body, callCtx)
+	respBytes := c.handler.HandleRawRequest(callCtx, body)
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(respBytes) //nolint:errcheck
 }

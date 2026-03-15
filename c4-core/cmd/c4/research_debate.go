@@ -54,15 +54,10 @@ func registerResearchDebateHandler(ictx *initContext) error {
 	return nil
 }
 
-// debateCaller is the interface for testability — adapts to orchestrator.DebateCaller.
-type debateCaller interface {
-	call(ctx context.Context, system, user string) (string, error)
-}
-
-// debateLLMCaller adapts *llm.Gateway for use in the debate handler.
+// debateLLMCaller adapts *llm.Gateway to orchestrator.DebateCaller.
 type debateLLMCaller struct{ gw *llm.Gateway }
 
-func (d *debateLLMCaller) call(ctx context.Context, system, user string) (string, error) {
+func (d *debateLLMCaller) Call(ctx context.Context, system, user string) (string, error) {
 	resp, err := d.gw.Chat(ctx, "research_debate", &llm.ChatRequest{
 		System:   system,
 		Messages: []llm.Message{{Role: "user", Content: user}},
@@ -73,29 +68,10 @@ func (d *debateLLMCaller) call(ctx context.Context, system, user string) (string
 	return resp.Content, nil
 }
 
-// Call implements orchestrator.DebateCaller — delegates to the unexported call method.
-func (d *debateLLMCaller) Call(ctx context.Context, system, user string) (string, error) {
-	return d.call(ctx, system, user)
-}
-
-// debateStore abstracts knowledge.Store for testability.
-type debateStore interface {
-	get(id string) (*knowledge.Document, error)
-	create(docType knowledge.DocumentType, metadata map[string]any, body string) (string, error)
-}
-
-// knowledgeStoreAdapter wraps *knowledge.Store to implement debateStore and orchestrator.DebateStore.
+// knowledgeStoreAdapter wraps *knowledge.Store to implement orchestrator.DebateStore.
 type knowledgeStoreAdapter struct{ s *knowledge.Store }
 
-func (a *knowledgeStoreAdapter) get(id string) (*knowledge.Document, error) { return a.s.Get(id) }
-func (a *knowledgeStoreAdapter) create(dt knowledge.DocumentType, meta map[string]any, body string) (string, error) {
-	return a.s.Create(dt, meta, body)
-}
-
-// Get implements orchestrator.DebateStore.
 func (a *knowledgeStoreAdapter) Get(id string) (*knowledge.Document, error) { return a.s.Get(id) }
-
-// Create implements orchestrator.DebateStore.
 func (a *knowledgeStoreAdapter) Create(dt knowledge.DocumentType, meta map[string]any, body string) (string, error) {
 	return a.s.Create(dt, meta, body)
 }

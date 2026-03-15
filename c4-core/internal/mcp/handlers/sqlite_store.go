@@ -818,30 +818,30 @@ func (s *SQLiteStore) SubmitTask(taskID, workerID, commitSHA, handoff string, re
 	// 1. Merge worktree branch to default branch (preserve changes)
 	// 2. Remove worktree directory
 	// 3. Delete the branch
-	if s.config != nil && s.config.GetConfig().Worktree.AutoCleanup && s.projectRoot != "" {
+	cfg := s.config.GetConfig()
+	if s.config != nil && cfg.Worktree.AutoCleanup && s.projectRoot != "" {
 		wtPath := filepath.Join(s.projectRoot, ".c4", "worktrees", workerID)
 		if _, statErr := os.Stat(wtPath); statErr == nil {
-			cfg := s.config.GetConfig()
 			branch := ""
 			if cfg.WorkBranchPrefix != "" {
 				branch = cfg.WorkBranchPrefix + taskID
 			}
 
 			// Step 1: Merge worktree branch to default branch before cleanup.
-			// Skip merge if commitSHA is empty (no actual changes) or branch unknown.
+			merged := false
 			if branch != "" && commitSHA != "" {
 				defaultBranch := cfg.DefaultBranch
 				if defaultBranch == "" {
 					defaultBranch = "main"
 				}
-				// Guard: only merge if HEAD is on the expected default branch.
 				currentBranch, _ := runGit(s.projectRoot, "rev-parse", "--abbrev-ref", "HEAD")
 				if currentBranch != defaultBranch {
 					fmt.Fprintf(os.Stderr, "c4: warning: skipping auto-merge — HEAD is %q, not %q; branch %s preserved\n", currentBranch, defaultBranch, branch)
 				} else if _, mergeErr := runGit(s.projectRoot, "merge", branch, "--no-ff", "-m",
 					fmt.Sprintf("Merge branch '%s' — C4 auto-merge (%s)", branch, taskID)); mergeErr != nil {
 					fmt.Fprintf(os.Stderr, "c4: warning: failed to merge branch %s to %s: %v\n", branch, defaultBranch, mergeErr)
-					// Do NOT delete branch on merge failure — preserve changes for manual recovery.
+				} else {
+					merged = true
 				}
 			}
 
@@ -850,10 +850,13 @@ func (s *SQLiteStore) SubmitTask(taskID, workerID, commitSHA, handoff string, re
 				fmt.Fprintf(os.Stderr, "c4: warning: failed to remove worktree %s: %v\n", wtPath, rmErr)
 			}
 
-			// Step 3: Delete branch (only if merge succeeded — branch still contains commitSHA).
+			// Step 3: Delete branch — skip ancestry check if merge already succeeded.
 			if branch != "" {
-				// Check if branch commits are reachable from HEAD (i.e., merge succeeded).
-				if _, containsErr := runGit(s.projectRoot, "merge-base", "--is-ancestor", branch, "HEAD"); containsErr == nil {
+				if merged {
+					if _, branchErr := runGit(s.projectRoot, "branch", "-D", branch); branchErr != nil {
+						fmt.Fprintf(os.Stderr, "c4: warning: failed to delete branch %s: %v\n", branch, branchErr)
+					}
+				} else if _, containsErr := runGit(s.projectRoot, "merge-base", "--is-ancestor", branch, "HEAD"); containsErr == nil {
 					if _, branchErr := runGit(s.projectRoot, "branch", "-D", branch); branchErr != nil {
 						fmt.Fprintf(os.Stderr, "c4: warning: failed to delete branch %s: %v\n", branch, branchErr)
 					}

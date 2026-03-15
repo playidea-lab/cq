@@ -220,17 +220,16 @@ type mcpServerRequestHandler struct {
 	srv *mcpServer
 }
 
-func (a *mcpServerRequestHandler) HandleRawRequest(body []byte, ctx context.Context) []byte {
+func (a *mcpServerRequestHandler) HandleRawRequest(ctx context.Context, body []byte) []byte {
 	var req mcpRequest
 	if err := json.Unmarshal(body, &req); err != nil {
-		resp, _ := json.Marshal(mcpResponse{
-			JSONRPC: "2.0",
-			Error:   &mcpError{Code: -32700, Message: "parse error"},
-		})
-		return resp
+		return []byte(`{"jsonrpc":"2.0","error":{"code":-32700,"message":"parse error"}}`)
 	}
 	result := a.srv.handleRequestWithCtx(&req, ctx)
-	resp, _ := json.Marshal(result)
+	resp, err := json.Marshal(result)
+	if err != nil {
+		return []byte(`{"jsonrpc":"2.0","error":{"code":-32603,"message":"internal marshal error"}}`)
+	}
 	return resp
 }
 

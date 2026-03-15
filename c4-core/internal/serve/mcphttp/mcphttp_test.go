@@ -18,7 +18,7 @@ var _ serve.Component = (*Component)(nil)
 // stubHandler is a minimal RequestHandler for testing.
 type stubHandler struct{}
 
-func (s *stubHandler) HandleRawRequest(body []byte, _ context.Context) []byte {
+func (s *stubHandler) HandleRawRequest(_ context.Context, body []byte) []byte {
 	var req Request
 	if err := json.Unmarshal(body, &req); err != nil {
 		resp, _ := json.Marshal(Response{

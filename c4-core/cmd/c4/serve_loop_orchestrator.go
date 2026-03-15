@@ -3,15 +3,12 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 	"time"
 
 	"github.com/changmin/c4-core/internal/eventbus"
-	"github.com/changmin/c4-core/internal/knowledge"
-	"github.com/changmin/c4-core/internal/llm"
 	"github.com/changmin/c4-core/internal/serve"
 	"github.com/changmin/c4-core/internal/serve/orchestrator"
 )
@@ -34,9 +31,9 @@ func registerLoopOrchestratorComponent(mgr *serve.Manager, ictx *initContext) {
 	}
 	o := orchestrator.New(cfg)
 
-	// Wire debate components (knowledgeStore and llmGateway are guaranteed non-nil by early return above).
-	caller := &orchestratorLLMCaller{gw: ictx.llmGateway}
-	store := &orchestratorStoreAdapter{s: ictx.knowledgeStore}
+	// Wire debate components — reuse adapters from research_debate.go.
+	caller := &debateLLMCaller{gw: ictx.llmGateway}
+	store := &knowledgeStoreAdapter{s: ictx.knowledgeStore}
 	var hubCli orchestrator.LoopHubClient
 	if hc != nil {
 		hubCli = orchestrator.NewHubClientAdapter(hc)
@@ -70,24 +67,4 @@ func registerLoopOrchestratorComponent(mgr *serve.Manager, ictx *initContext) {
 	fmt.Fprintf(os.Stderr, "cq serve: registered loop_orchestrator\n")
 }
 
-// orchestratorLLMCaller adapts *llm.Gateway for use in the orchestrator debate flow.
-type orchestratorLLMCaller struct{ gw *llm.Gateway }
-
-func (d *orchestratorLLMCaller) Call(ctx context.Context, system, user string) (string, error) {
-	resp, err := d.gw.Chat(ctx, "research_debate", &llm.ChatRequest{
-		System:   system,
-		Messages: []llm.Message{{Role: "user", Content: user}},
-	})
-	if err != nil {
-		return "", err
-	}
-	return resp.Content, nil
-}
-
-// orchestratorStoreAdapter wraps *knowledge.Store to implement orchestrator.DebateStore.
-type orchestratorStoreAdapter struct{ s *knowledge.Store }
-
-func (a *orchestratorStoreAdapter) Get(id string) (*knowledge.Document, error) { return a.s.Get(id) }
-func (a *orchestratorStoreAdapter) Create(dt knowledge.DocumentType, meta map[string]any, body string) (string, error) {
-	return a.s.Create(dt, meta, body)
-}
+// debateLLMCaller and knowledgeStoreAdapter are defined in research_debate.go.
