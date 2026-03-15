@@ -83,6 +83,15 @@ type ResearchLoopConfig struct {
 	// GateDuration is the default wait duration between debate rounds.
 	// Accepts Go duration strings (e.g. "24h", "30m"). Default: "24h".
 	GateDuration string `mapstructure:"gate_duration" yaml:"gate_duration"`
+	// Patience is the default max rounds without improvement before convergence.
+	// 0 means no convergence check. Default: 0.
+	Patience int `mapstructure:"patience" yaml:"patience"`
+	// MetricLowerIsBetter sets the direction for metric comparison.
+	// true = lower metric is better (e.g. loss). Default: true.
+	MetricLowerIsBetter bool `mapstructure:"metric_lower_is_better" yaml:"metric_lower_is_better"`
+	// ConvergenceThreshold is the minimum improvement to reset patience count.
+	// Default: 0.5.
+	ConvergenceThreshold float64 `mapstructure:"convergence_threshold" yaml:"convergence_threshold"`
 }
 
 // PlanningConfig controls c4-plan skill behavior.

@@ -88,6 +88,12 @@ type LoopSession struct {
 	NullResultCount  int
 	Status           string // "running" | "stopped" | "completed"
 	SteeringGuidance string
+	// Convergence tracking fields.
+	MaxPatience          int     // max rounds without improvement; 0 = no convergence check
+	ConvergenceThreshold float64 // minimum metric improvement to reset patience; default 0.5
+	PatienceCount        int     // rounds without sufficient improvement
+	BestMetric           float64 // best metric seen so far
+	MetricLowerIsBetter  bool    // direction for metric comparison
 }
 
 // LoopSpecPipeline holds the dependencies for generateAndReview in onJobDone.
