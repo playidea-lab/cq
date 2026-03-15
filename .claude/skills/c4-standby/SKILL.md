@@ -36,11 +36,34 @@ c4_worker_standby(worker_id, capabilities: {"tags": ["claude", "mcp"]})
 
 `command` 필드를 파싱하여 실행합니다:
 
-| command 패턴 | 실행 방법 |
-|-------------|----------|
+| command/capability 패턴 | 실행 방법 |
+|------------------------|----------|
 | `task_id=T-001-0` | `c4_get_task(T-001-0)` → 구현 → `c4_submit(T-001-0)` |
+| `capability=reasoning` | params.task별 분기 (아래 참조) |
 | 셸 명령 (e.g. `go test ./...`) | Bash로 직접 실행 |
 | 자연어 (e.g. "fix the login bug") | Claude가 해석하여 자율 실행 |
+
+**Reasoning 잡 처리** (capability=reasoning):
+
+| params.task | 실행 방법 |
+|------------|----------|
+| `conference` | params에서 hypothesis, metric_history, context 추출 → 토론 수행 → 새 hypothesis + experiment spec 생성 |
+| `implement` | params에서 hypothesis, spec 추출 → 코드 작성/수정 |
+| `check` | params에서 결과 데이터 추출 → 분석 보고 |
+
+Reasoning 잡 완료 시 result 포맷:
+```
+c4_worker_complete(
+  status: "SUCCEEDED",
+  result: {
+    new_hypothesis_id: "hyp-yyy",
+    experiment_specs: ["r4_exp1.yaml"],
+    next_action: "submit_experiment" | "submit_implement" | "finish",
+    files_changed: [...],
+    summary: "토론 결과 요약"
+  }
+)
+```
 
 **Lease 자동 갱신 (내장):**
 
