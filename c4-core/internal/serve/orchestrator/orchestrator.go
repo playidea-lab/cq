@@ -119,6 +119,8 @@ type LoopOrchestrator struct {
 	Gate   *GateController  // optional; released on Stop() to unblock onJobDone gate waits
 	State  *StateYAMLWriter
 	Notify *NotifyBridge
+	// convergence checker (optional; nil = no convergence check)
+	Convergence *ConvergenceChecker
 	// jobdone fields (set by onJobDone path)
 	Caller       DebateCaller
 	Store        DebateStore
@@ -194,7 +196,7 @@ func (o *LoopOrchestrator) Start(ctx context.Context) error {
 
 	// Resume: if persisted state shows gate_wait, re-enter gate with remaining duration.
 	if o.State != nil && o.Gate != nil {
-		if s, err := o.State.ReadState(); err == nil && s.State == "gate_wait" && s.GateDeadline != nil {
+		if s, err := o.State.ReadState(); err == nil && s.Phase == PhaseGateWait && s.GateDeadline != nil {
 			remaining := time.Until(*s.GateDeadline)
 			var logMsg string
 			o.mu.Lock()

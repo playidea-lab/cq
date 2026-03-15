@@ -39,6 +39,9 @@ type Job struct {
 	WorkerID        string            `json:"worker_id,omitempty"`
 	InputArtifacts  []ArtifactRef     `json:"input_artifacts,omitempty"`
 	OutputArtifacts []ArtifactRef     `json:"output_artifacts,omitempty"`
+	BestMetric      *float64          `json:"best_metric,omitempty"`
+	Capability      string            `json:"capability,omitempty"`
+	Result          map[string]any    `json:"result,omitempty"`
 }
 
 // GetID returns the job ID, preferring "id" (Hub) but falling back to "job_id" (PiQ daemon).

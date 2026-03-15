@@ -21,18 +21,53 @@ import (
 //
 // All mutations are performed on a local copy of the session (copy-on-write) to
 // avoid data races with concurrent StopLoop / Steer goroutines.
-func (o *LoopOrchestrator) onJobDone(ctx context.Context, session *LoopSession, jobStatus *HubJobStatus) error {
-	if o.Caller == nil || o.Store == nil {
-		return errors.New("loop_orchestrator: debate caller/store not wired")
-	}
+// ReasoningResult is the structured result from a reasoning Hub job.
+type ReasoningResult struct {
+	NewHypothesisID string   `json:"new_hypothesis_id"`
+	ExperimentSpecs []string `json:"experiment_specs"`
+	NextAction      string   `json:"next_action"` // "submit_experiment" | "submit_implement" | "finish"
+	FilesChanged    []string `json:"files_changed"`
+	Summary         string   `json:"summary"`
+}
 
+func (o *LoopOrchestrator) onJobDone(ctx context.Context, session *LoopSession, jobStatus *HubJobStatus) error {
 	// Copy-on-write snapshot: all reads and writes use s; the original pointer
 	// is never mutated after this point.
 	s := *session
 
+	// Capability-based dispatch: reasoning jobs have a different completion path.
+	if jobStatus != nil && jobStatus.Job != nil && jobStatus.Job.Capability == "reasoning" {
+		return o.handleReasoningResult(ctx, &s, jobStatus)
+	}
+
+	if o.Caller == nil || o.Store == nil {
+		return errors.New("loop_orchestrator: debate caller/store not wired")
+	}
+
 	exploreThreshold := o.cfg.ExploreThreshold
 	if exploreThreshold <= 0 {
 		exploreThreshold = 2
+	}
+
+	// Convergence check: run before debate to short-circuit if converged.
+	if o.Convergence != nil && jobStatus != nil && jobStatus.Job != nil {
+		metric := jobStatus.Job.BestMetric
+		if metric != nil {
+			cr := o.Convergence.Check(&s, *metric)
+			if cr.Converged {
+				s.Status = "completed"
+				if o.State != nil {
+					_ = o.State.WriteState(LoopState{Phase: PhaseFinish, LoopCount: s.Round, CurrentHypothesisID: s.HypothesisID})
+				}
+				if o.Notify != nil {
+					o.Notify.Emit(ctx, "convergence_reached",
+						"Research Loop: Converged",
+						fmt.Sprintf("Round %d converged: %s (best=%.4f)", s.Round, cr.Reason, cr.BestMetric))
+				}
+				o.Sessions.Store(s.HypothesisID, &s)
+				return nil
+			}
+		}
 	}
 
 	// Build lineage context for the debate.
@@ -118,7 +153,7 @@ func (o *LoopOrchestrator) onJobDone(ctx context.Context, session *LoopSession, 
 			jobID = jobStatus.JobID
 		}
 		_ = o.State.WriteState(LoopState{
-			State:               "gate_wait",
+			Phase:               PhaseGateWait,
 			LoopCount:           s.Round,
 			CurrentHypothesisID: s.HypothesisID,
 			LastJobID:           jobID,
@@ -133,7 +168,7 @@ func (o *LoopOrchestrator) onJobDone(ctx context.Context, session *LoopSession, 
 		<-gate.EnterGate(ctx)
 		// Restore running state after gate.
 		_ = o.State.WriteState(LoopState{
-			State:               "running",
+			Phase:               PhaseRun,
 			LoopCount:           s.Round,
 			CurrentHypothesisID: s.HypothesisID,
 			LastJobID:           jobID,
@@ -230,8 +265,18 @@ func (o *LoopOrchestrator) onJobDone(ctx context.Context, session *LoopSession, 
 		}
 
 	case "escalate":
-		// Early return: budget gate does not apply to escalated sessions.
-		s.Status = "stopped"
+		// Submit a reasoning job for human/LLM-level discussion.
+		if o.HubCli != nil {
+			if err := o.submitReasoningJob(ctx, &s, "conference"); err != nil {
+				fmt.Fprintf(os.Stderr, "loop_orchestrator: submitReasoningJob: %v\n", err)
+			}
+		}
+		// Mark as waiting_reasoning so poll() skips this session
+		// (Status != "running" guard in poll prevents re-processing).
+		s.Status = "waiting_reasoning"
+		if o.State != nil {
+			_ = o.State.WriteState(LoopState{Phase: PhaseConference, LoopCount: s.Round, CurrentHypothesisID: s.HypothesisID})
+		}
 		o.Sessions.Store(s.HypothesisID, &s)
 		return nil
 
@@ -404,4 +449,84 @@ func RunDebate(ctx context.Context, caller DebateCaller, store DebateStore, hypI
 		"next_hypothesis_draft": nextHypDraft,
 		"experiment_spec_draft": synthOut,
 	}, nil
+}
+
+// submitReasoningJob submits a reasoning job to Hub for LLM-level discussion.
+func (o *LoopOrchestrator) submitReasoningJob(ctx context.Context, session *LoopSession, task string) error {
+	if o.HubCli == nil {
+		return errors.New("loop_orchestrator: HubCli not wired")
+	}
+	_, err := o.HubCli.SubmitJob(ctx, LoopHubJobRequest{
+		HypothesisID: session.HypothesisID,
+		Command:      "reasoning",
+		Capability:   "reasoning",
+		Params: map[string]any{
+			"task":          task,
+			"hypothesis_id": session.HypothesisID,
+			"round":         session.Round,
+		},
+	})
+	return err
+}
+
+// handleReasoningResult processes the completion of a reasoning Hub job.
+// It parses the structured result and decides the next action.
+func (o *LoopOrchestrator) handleReasoningResult(ctx context.Context, session *LoopSession, jobStatus *HubJobStatus) error {
+	if jobStatus.Status == "failed" || jobStatus.Status == "cancelled" {
+		// Reasoning job failed — log and keep session running for retry.
+		fmt.Fprintf(os.Stderr, "loop_orchestrator: reasoning job %s %s\n", jobStatus.JobID, jobStatus.Status)
+		o.Sessions.Store(session.HypothesisID, session)
+		return nil
+	}
+
+	// Parse structured result from the job.
+	var result ReasoningResult
+	if jobStatus.Job != nil && jobStatus.Job.Result != nil {
+		raw, err := json.Marshal(jobStatus.Job.Result)
+		if err == nil {
+			_ = json.Unmarshal(raw, &result)
+		}
+	}
+
+	switch result.NextAction {
+	case "submit_experiment":
+		// Submit experiment job with the new hypothesis.
+		if o.HubCli != nil && result.NewHypothesisID != "" {
+			newJobID, err := o.HubCli.SubmitJob(ctx, LoopHubJobRequest{
+				HypothesisID: result.NewHypothesisID,
+				Command:      "cq research run",
+			})
+			if err != nil {
+				return fmt.Errorf("submit experiment after reasoning: %w", err)
+			}
+			session.HypothesisID = result.NewHypothesisID
+			session.JobID = newJobID
+			session.Round++
+		}
+		if o.State != nil {
+			_ = o.State.WriteState(LoopState{Phase: PhaseRun, LoopCount: session.Round, CurrentHypothesisID: session.HypothesisID})
+		}
+
+	case "submit_implement":
+		// Need implementation before experiment — submit another reasoning job.
+		if o.HubCli != nil {
+			_ = o.submitReasoningJob(ctx, session, "implement")
+		}
+		if o.State != nil {
+			_ = o.State.WriteState(LoopState{Phase: PhaseImplement, LoopCount: session.Round, CurrentHypothesisID: session.HypothesisID})
+		}
+
+	case "finish":
+		session.Status = "completed"
+		if o.State != nil {
+			_ = o.State.WriteState(LoopState{Phase: PhaseFinish, LoopCount: session.Round, CurrentHypothesisID: session.HypothesisID})
+		}
+
+	default:
+		// Unknown action — keep session running.
+		fmt.Fprintf(os.Stderr, "loop_orchestrator: unknown reasoning next_action: %q\n", result.NextAction)
+	}
+
+	o.Sessions.Store(session.HypothesisID, session)
+	return nil
 }

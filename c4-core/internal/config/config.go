@@ -87,8 +87,8 @@ type ResearchLoopConfig struct {
 	// 0 means no convergence check. Default: 0.
 	Patience int `mapstructure:"patience" yaml:"patience"`
 	// MetricLowerIsBetter sets the direction for metric comparison.
-	// true = lower metric is better (e.g. loss). Default: true.
-	MetricLowerIsBetter bool `mapstructure:"metric_lower_is_better" yaml:"metric_lower_is_better"`
+	// true = lower metric is better (e.g. loss). nil = default (true).
+	MetricLowerIsBetter *bool `mapstructure:"metric_lower_is_better" yaml:"metric_lower_is_better"`
 	// ConvergenceThreshold is the minimum improvement to reset patience count.
 	// Default: 0.5.
 	ConvergenceThreshold float64 `mapstructure:"convergence_threshold" yaml:"convergence_threshold"`
@@ -560,26 +560,33 @@ func New(projectRoot string, cloudDefaults ...CloudDefaults) (*Manager, error) {
 	v.SetDefault("risk_routing.models.low", "sonnet")
 	v.SetDefault("risk_routing.models.default", "opus")
 
-	// Config file location
-	configDir := filepath.Join(projectRoot, ".c4")
+	// Config file location — 2-tier: global (~/.c4/) then project (.c4/)
 	v.SetConfigName("config")
 	v.SetConfigType("yaml")
-	v.AddConfigPath(configDir)
+
+	// 1. Read global config as base layer (if exists)
+	if home, err := os.UserHomeDir(); err == nil {
+		globalConfig := filepath.Join(home, ".c4", "config.yaml")
+		if _, err := os.Stat(globalConfig); err == nil {
+			v.SetConfigFile(globalConfig)
+			_ = v.ReadInConfig() // ignore errors — global is optional
+		}
+	}
+
+	// 2. Merge project config on top (overrides global)
+	configDir := filepath.Join(projectRoot, ".c4")
+	projectConfig := filepath.Join(configDir, "config.yaml")
+	if _, err := os.Stat(projectConfig); err == nil {
+		v.SetConfigFile(projectConfig)
+		if err := v.MergeInConfig(); err != nil {
+			return nil, fmt.Errorf("reading project config: %w", err)
+		}
+	}
 
 	// Environment variable overrides (C4_PROJECT_ID, C4_DEFAULT_BRANCH, etc.)
 	v.SetEnvPrefix("C4")
 	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	v.AutomaticEnv()
-
-	// Read config file (ignore "not found" errors)
-	if err := v.ReadInConfig(); err != nil {
-		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
-			// Only return error for real read errors, not missing file
-			if !os.IsNotExist(err) {
-				return nil, fmt.Errorf("reading config: %w", err)
-			}
-		}
-	}
 
 	// Unmarshal into struct
 	var cfg C4Config

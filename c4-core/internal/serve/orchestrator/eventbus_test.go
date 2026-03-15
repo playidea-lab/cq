@@ -46,8 +46,8 @@ func newTestOrchestratorWithEB(t *testing.T, pollInterval time.Duration) (*LoopO
 	t.Helper()
 	ebSub := newMockEBSubscriber()
 	kStore := mustNewHypothesisStore(t)
-	// "escalate" verdict: onJobDone sets Status="stopped" and returns immediately.
-	// No gate wait, no hypothesis creation, no job submission needed.
+	// "escalate" verdict: onJobDone submits reasoning job (or no-op if HubCli nil)
+	// and writes Phase=CONFERENCE. Session remains "running" but Phase changes.
 	mock := &mockDebateLLM{responses: []string{
 		"DIRECTION: stop\nRATIONALE: test\nNEXT_HYPOTHESIS: none",
 		"CHALLENGE: quality\nALTERNATIVE: stop\nVERDICT: escalate",
@@ -64,6 +64,7 @@ func newTestOrchestratorWithEB(t *testing.T, pollInterval time.Duration) (*LoopO
 			return "", nil
 		},
 	}
+	stateWriter := NewStateYAMLWriter(t.TempDir())
 	o := &LoopOrchestrator{
 		cfg: Config{
 			Store:            kStore,
@@ -76,6 +77,7 @@ func newTestOrchestratorWithEB(t *testing.T, pollInterval time.Duration) (*LoopO
 		HubCli:  hubCli,
 		Lineage: lineage,
 		KStore:  kStore,
+		State:   stateWriter,
 		status:  "ok",
 		EBSub:   ebSub,
 	}
@@ -111,20 +113,17 @@ func TestLoopOrchestrator_EventBus_WakesOnJobComplete(t *testing.T) {
 	// Send the event (before any poll tick fires).
 	ebSub.send("hub.job.completed", "job-eb-001", "succeeded")
 
-	// Wait for the session status to change (onJobDone marks it "stopped" via escalate verdict).
+	// Wait for onJobDone to process: escalate writes Phase=CONFERENCE to state.yaml.
 	deadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {
-		s := o.GetLoop(hypID)
-		if s != nil && s.Status != "running" {
-			return // success
+		ls, _ := o.State.ReadState()
+		if ls.Phase == PhaseConference {
+			return // success: onJobDone was triggered by EventBus event
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	s := o.GetLoop(hypID)
-	if s == nil {
-		t.Fatal("session not found after EventBus wake")
-	}
-	t.Errorf("session still running after EventBus event; status=%q", s.Status)
+	ls, _ := o.State.ReadState()
+	t.Errorf("state.yaml Phase = %q after EventBus event, want %q", ls.Phase, PhaseConference)
 }
 
 // TestLoopOrchestrator_EventBus_FallbackPollStillWorks verifies that when
@@ -158,11 +157,11 @@ func TestLoopOrchestrator_EventBus_FallbackPollStillWorks(t *testing.T) {
 	}
 	defer o.Stop(context.Background()) //nolint:errcheck
 
-	// Poll should eventually fire and process the completed job.
+	// Poll should eventually fire and process the completed job (writes Phase=CONFERENCE).
 	deadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {
-		s := o.GetLoop(hypID)
-		if s != nil && s.Status != "running" {
+		ls, _ := o.State.ReadState()
+		if ls.Phase == PhaseConference {
 			return // success: poll fallback worked
 		}
 		time.Sleep(10 * time.Millisecond)
@@ -211,11 +210,11 @@ func TestLoopOrchestrator_EventBus_NoDuplicateOnJobDone(t *testing.T) {
 		ebSub.send("hub.job.completed", "job-dup-001", "succeeded")
 	}
 
-	// Wait for session to reach terminal state.
+	// Wait for onJobDone to process (writes Phase=CONFERENCE).
 	deadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {
-		s := o.GetLoop(hypID)
-		if s != nil && s.Status != "running" {
+		ls, _ := o.State.ReadState()
+		if ls.Phase == PhaseConference {
 			break
 		}
 		time.Sleep(10 * time.Millisecond)

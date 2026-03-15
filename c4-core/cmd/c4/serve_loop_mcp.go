@@ -43,10 +43,9 @@ func registerLoopMCPHandlers(ctx *initContext) error {
 		rc := ctx.cfgMgr.GetConfig().Serve.ResearchLoop
 		defaults.MaxPatience = rc.Patience
 		defaults.ConvergenceThreshold = rc.ConvergenceThreshold
-		// Only override MetricLowerIsBetter when config explicitly sets true.
-		// Go bool zero-value (false) means "not configured" → keep default (true).
-		if rc.MetricLowerIsBetter {
-			defaults.MetricLowerIsBetter = true
+		// *bool: nil = not configured (keep default true), non-nil = explicit.
+		if rc.MetricLowerIsBetter != nil {
+			defaults.MetricLowerIsBetter = *rc.MetricLowerIsBetter
 		}
 	}
 

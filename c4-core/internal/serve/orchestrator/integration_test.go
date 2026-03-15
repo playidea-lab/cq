@@ -21,20 +21,20 @@ func TestLoopOrchestrator_GateAndState_Integration(t *testing.T) {
 	// Simulate: write gate_wait state.
 	deadline := time.Now().Add(50 * time.Millisecond)
 	if err := w.WriteState(LoopState{
-		State:        "gate_wait",
+		Phase:        "gate_wait",
 		LoopCount:    1,
 		GateDeadline: &deadline,
 	}); err != nil {
-		t.Fatalf("WriteState: %v", err)
+		t.Fatalf("WritePhase: %v", err)
 	}
 
 	// Verify state persisted.
 	s, err := w.ReadState()
 	if err != nil {
-		t.Fatalf("ReadState: %v", err)
+		t.Fatalf("ReadPhase: %v", err)
 	}
-	if s.State != "gate_wait" {
-		t.Errorf("expected state=gate_wait, got %q", s.State)
+	if s.Phase != "gate_wait" {
+		t.Errorf("expected state=gate_wait, got %q", s.Phase)
 	}
 	if s.LoopCount != 1 {
 		t.Errorf("expected loop_count=1, got %d", s.LoopCount)
@@ -53,15 +53,15 @@ func TestLoopOrchestrator_GateAndState_Integration(t *testing.T) {
 	}
 
 	// Write running state.
-	if err := w.WriteState(LoopState{State: "running", LoopCount: 2}); err != nil {
+	if err := w.WriteState(LoopState{Phase: "running", LoopCount: 2}); err != nil {
 		t.Fatalf("WriteState running: %v", err)
 	}
 	s2, err := w.ReadState()
 	if err != nil {
 		t.Fatalf("ReadState running: %v", err)
 	}
-	if s2.State != "running" {
-		t.Errorf("expected state=running, got %q", s2.State)
+	if s2.Phase != "running" {
+		t.Errorf("expected state=running, got %q", s2.Phase)
 	}
 	if s2.LoopCount != 2 {
 		t.Errorf("expected loop_count=2, got %d", s2.LoopCount)
@@ -99,11 +99,11 @@ func TestLoopOrchestrator_ResumeGate_Integration(t *testing.T) {
 	// Write a gate_wait state with deadline 50ms from now.
 	deadline := time.Now().Add(50 * time.Millisecond)
 	if err := w.WriteState(LoopState{
-		State:        "gate_wait",
+		Phase:        "gate_wait",
 		LoopCount:    3,
 		GateDeadline: &deadline,
 	}); err != nil {
-		t.Fatalf("WriteState: %v", err)
+		t.Fatalf("WritePhase: %v", err)
 	}
 
 	// Build an orchestrator with a long default gate — resume should shorten it.

@@ -14,9 +14,21 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// Phase constants for C9 research loop.
+const (
+	PhaseRun        = "RUN"
+	PhaseCheck      = "CHECK"
+	PhaseConference = "CONFERENCE"
+	PhaseImplement  = "IMPLEMENT"
+	PhaseRefine     = "REFINE"
+	PhaseFinish     = "FINISH"
+	PhaseGateWait   = "gate_wait"
+	PhaseStopped    = "stopped"
+)
+
 // LoopState represents the persisted state of the research loop.
 type LoopState struct {
-	State               string     `yaml:"state"`                          // "running", "gate_wait", "stopped"
+	Phase               string     `yaml:"phase"`                          // RUN, CHECK, CONFERENCE, IMPLEMENT, REFINE, FINISH, gate_wait, stopped
 	LoopCount           int        `yaml:"loop_count"`
 	CurrentHypothesisID string     `yaml:"current_hypothesis_id,omitempty"`
 	LastJobID           string     `yaml:"last_job_id,omitempty"`

@@ -16,22 +16,22 @@ func TestStateYAMLWriter_WriteRead(t *testing.T) {
 
 	deadline := time.Now().Add(1 * time.Hour).UTC().Truncate(time.Second)
 	in := LoopState{
-		State:               "running",
+		Phase:               "running",
 		LoopCount:           3,
 		CurrentHypothesisID: "hyp-42",
 		LastJobID:           "job-99",
 		GateDeadline:        &deadline,
 	}
 	if err := w.WriteState(in); err != nil {
-		t.Fatalf("WriteState: %v", err)
+		t.Fatalf("WritePhase: %v", err)
 	}
 
 	got, err := w.ReadState()
 	if err != nil {
-		t.Fatalf("ReadState: %v", err)
+		t.Fatalf("ReadPhase: %v", err)
 	}
-	if got.State != in.State {
-		t.Errorf("State: want %q got %q", in.State, got.State)
+	if got.Phase != in.Phase {
+		t.Errorf("Phase: want %q got %q", in.Phase, got.Phase)
 	}
 	if got.LoopCount != in.LoopCount {
 		t.Errorf("LoopCount: want %d got %d", in.LoopCount, got.LoopCount)
@@ -58,7 +58,7 @@ func TestStateYAMLWriter_ConcurrentWriteNoTear(t *testing.T) {
 	w := NewStateYAMLWriter(dir)
 
 	// prime file
-	if err := w.WriteState(LoopState{State: "running", LoopCount: 0}); err != nil {
+	if err := w.WriteState(LoopState{Phase: "running", LoopCount: 0}); err != nil {
 		t.Fatalf("initial write: %v", err)
 	}
 
@@ -71,7 +71,7 @@ func TestStateYAMLWriter_ConcurrentWriteNoTear(t *testing.T) {
 		go func(n int) {
 			defer wg.Done()
 			for j := 0; j < 10; j++ {
-				s := LoopState{State: "running", LoopCount: n*10 + j}
+				s := LoopState{Phase: "running", LoopCount: n*10 + j}
 				if err := w.WriteState(s); err != nil {
 					errCh <- err
 				}
@@ -103,8 +103,8 @@ func TestStateYAMLWriter_MkdirOnMissing(t *testing.T) {
 	c9Dir := filepath.Join(base, "nonexistent", ".c9")
 	w := NewStateYAMLWriter(c9Dir)
 
-	if err := w.WriteState(LoopState{State: "stopped"}); err != nil {
-		t.Fatalf("WriteState: %v", err)
+	if err := w.WriteState(LoopState{Phase: "stopped"}); err != nil {
+		t.Fatalf("WritePhase: %v", err)
 	}
 	if _, err := os.Stat(c9Dir); err != nil {
 		t.Errorf("directory not created: %v", err)
@@ -118,15 +118,15 @@ func TestStateYAMLWriter_Resume_GateWait(t *testing.T) {
 	dir := t.TempDir()
 	w := NewStateYAMLWriter(dir)
 
-	if err := w.WriteState(LoopState{State: "gate_wait", LoopCount: 5}); err != nil {
-		t.Fatalf("WriteState: %v", err)
+	if err := w.WriteState(LoopState{Phase: "gate_wait", LoopCount: 5}); err != nil {
+		t.Fatalf("WritePhase: %v", err)
 	}
 	got, err := w.ReadState()
 	if err != nil {
-		t.Fatalf("ReadState: %v", err)
+		t.Fatalf("ReadPhase: %v", err)
 	}
-	if got.State != "gate_wait" {
-		t.Errorf("State: want %q got %q", "gate_wait", got.State)
+	if got.Phase != "gate_wait" {
+		t.Errorf("Phase: want %q got %q", "gate_wait", got.Phase)
 	}
 	if got.LoopCount != 5 {
 		t.Errorf("LoopCount: want 5 got %d", got.LoopCount)
@@ -138,20 +138,20 @@ func TestStateYAMLWriter_Resume_Running(t *testing.T) {
 	w := NewStateYAMLWriter(dir)
 
 	in := LoopState{
-		State:               "running",
+		Phase:               "running",
 		LoopCount:           12,
 		CurrentHypothesisID: "hyp-7",
 		LastJobID:           "job-55",
 	}
 	if err := w.WriteState(in); err != nil {
-		t.Fatalf("WriteState: %v", err)
+		t.Fatalf("WritePhase: %v", err)
 	}
 	got, err := w.ReadState()
 	if err != nil {
-		t.Fatalf("ReadState: %v", err)
+		t.Fatalf("ReadPhase: %v", err)
 	}
-	if got.State != "running" {
-		t.Errorf("State: want running got %q", got.State)
+	if got.Phase != "running" {
+		t.Errorf("Phase: want running got %q", got.Phase)
 	}
 	if got.CurrentHypothesisID != "hyp-7" {
 		t.Errorf("CurrentHypothesisID: want hyp-7 got %q", got.CurrentHypothesisID)
@@ -164,16 +164,16 @@ func TestStateYAMLWriter_Resume_ExpiredDeadline(t *testing.T) {
 
 	past := time.Now().Add(-2 * time.Hour).UTC().Truncate(time.Second)
 	in := LoopState{
-		State:        "gate_wait",
+		Phase:        "gate_wait",
 		LoopCount:    2,
 		GateDeadline: &past,
 	}
 	if err := w.WriteState(in); err != nil {
-		t.Fatalf("WriteState: %v", err)
+		t.Fatalf("WritePhase: %v", err)
 	}
 	got, err := w.ReadState()
 	if err != nil {
-		t.Fatalf("ReadState: %v", err)
+		t.Fatalf("ReadPhase: %v", err)
 	}
 	if got.GateDeadline == nil {
 		t.Fatal("GateDeadline should be non-nil")

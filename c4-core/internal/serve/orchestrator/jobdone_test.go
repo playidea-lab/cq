@@ -139,8 +139,9 @@ func TestOnJobDone_Escalate(t *testing.T) {
 	if got == nil {
 		t.Fatal("session not found after escalate")
 	}
-	if got.Status != "stopped" {
-		t.Errorf("Status = %q, want stopped", got.Status)
+	// Escalate submits reasoning job and sets waiting_reasoning.
+	if got.Status != "waiting_reasoning" {
+		t.Errorf("Status = %q, want waiting_reasoning", got.Status)
 	}
 }
 

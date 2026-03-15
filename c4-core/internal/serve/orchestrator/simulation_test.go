@@ -268,7 +268,8 @@ func TestResearchLoop_EscalateSimulation(t *testing.T) {
 	if got == nil {
 		t.Fatal("session not found after escalate")
 	}
-	assertString(t, "Status", got.Status, "stopped")
+	// Escalate submits reasoning job and sets waiting_reasoning.
+	assertString(t, "Status", got.Status, "waiting_reasoning")
 }
 
 // =============================================================================
