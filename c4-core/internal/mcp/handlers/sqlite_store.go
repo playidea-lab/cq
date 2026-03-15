@@ -833,7 +833,11 @@ func (s *SQLiteStore) SubmitTask(taskID, workerID, commitSHA, handoff string, re
 				if defaultBranch == "" {
 					defaultBranch = "main"
 				}
-				if _, mergeErr := runGit(s.projectRoot, "merge", branch, "--no-ff", "-m",
+				// Guard: only merge if HEAD is on the expected default branch.
+				currentBranch, _ := runGit(s.projectRoot, "rev-parse", "--abbrev-ref", "HEAD")
+				if currentBranch != defaultBranch {
+					fmt.Fprintf(os.Stderr, "c4: warning: skipping auto-merge — HEAD is %q, not %q; branch %s preserved\n", currentBranch, defaultBranch, branch)
+				} else if _, mergeErr := runGit(s.projectRoot, "merge", branch, "--no-ff", "-m",
 					fmt.Sprintf("Merge branch '%s' — C4 auto-merge (%s)", branch, taskID)); mergeErr != nil {
 					fmt.Fprintf(os.Stderr, "c4: warning: failed to merge branch %s to %s: %v\n", branch, defaultBranch, mergeErr)
 					// Do NOT delete branch on merge failure — preserve changes for manual recovery.
