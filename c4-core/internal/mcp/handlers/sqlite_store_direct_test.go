@@ -1399,7 +1399,7 @@ func newTestSQLiteStoreWithGitRepo(t *testing.T) (*SQLiteStore, *sql.DB, string)
 	return store, db, repoDir
 }
 
-func TestSubmitTask_WorktreeAutoCleanup_DeletesBranch(t *testing.T) {
+func TestSubmitTask_WorktreeAutoCleanup_MergesAndDeletesBranch(t *testing.T) {
 	store, db, repoDir := newTestSQLiteStoreWithGitRepo(t)
 	defer db.Close()
 
@@ -1419,6 +1419,22 @@ func TestSubmitTask_WorktreeAutoCleanup_DeletesBranch(t *testing.T) {
 		t.Fatalf("create worktree: %s: %v", string(out), wtErr)
 	}
 
+	// Create a file in the worktree and commit it — simulates worker making changes.
+	testFile := filepath.Join(wtPath, "worker-change.txt")
+	if err := os.WriteFile(testFile, []byte("worker was here"), 0644); err != nil {
+		t.Fatalf("write file in worktree: %v", err)
+	}
+	if out, err := exec.Command("git", "-C", wtPath, "add", "worker-change.txt").CombinedOutput(); err != nil {
+		t.Fatalf("git add in worktree: %s: %v", string(out), err)
+	}
+	commitOut, err := exec.Command("git", "-C", wtPath, "commit", "-m", "worker commit").CombinedOutput()
+	if err != nil {
+		t.Fatalf("git commit in worktree: %s: %v", string(commitOut), err)
+	}
+	// Extract commit SHA.
+	shaOut, _ := exec.Command("git", "-C", wtPath, "rev-parse", "HEAD").CombinedOutput()
+	commitSHA := strings.TrimSpace(string(shaOut))
+
 	// Seed task as in_progress owned by our worker.
 	if _, dbErr := db.Exec("UPDATE c4_tasks SET status='in_progress', worker_id=? WHERE task_id=?", workerID, taskID); dbErr != nil {
 		t.Fatalf("seed in_progress: %v", dbErr)
@@ -1428,13 +1444,9 @@ func TestSubmitTask_WorktreeAutoCleanup_DeletesBranch(t *testing.T) {
 	if _, statErr := os.Stat(wtPath); statErr != nil {
 		t.Fatalf("worktree path should exist before submit: %v", statErr)
 	}
-	branchOut, _ := exec.Command("git", "-C", repoDir, "branch", "--list", branchName).CombinedOutput()
-	if !strings.Contains(string(branchOut), branchName) {
-		t.Fatalf("branch %q should exist before submit", branchName)
-	}
 
-	// Submit — triggers auto-cleanup.
-	result, submitErr := store.SubmitTask(taskID, workerID, "abc123", "", nil)
+	// Submit — triggers auto-merge + cleanup.
+	result, submitErr := store.SubmitTask(taskID, workerID, commitSHA, "", nil)
 	if submitErr != nil {
 		t.Fatalf("submit: %v", submitErr)
 	}
@@ -1442,14 +1454,63 @@ func TestSubmitTask_WorktreeAutoCleanup_DeletesBranch(t *testing.T) {
 		t.Fatalf("expected success, got: %s", result.Message)
 	}
 
+	// Worker's changes must be on the default branch (main).
+	mainFile := filepath.Join(repoDir, "worker-change.txt")
+	if _, statErr := os.Stat(mainFile); statErr != nil {
+		t.Errorf("worker-change.txt should exist on main after merge, but: %v", statErr)
+	}
+
+	// Commit SHA must be reachable from HEAD.
+	if out, err := exec.Command("git", "-C", repoDir, "merge-base", "--is-ancestor", commitSHA, "HEAD").CombinedOutput(); err != nil {
+		t.Errorf("commit %s should be ancestor of HEAD after merge: %s: %v", commitSHA, string(out), err)
+	}
+
 	// Worktree directory must be gone.
 	if _, statErr := os.Stat(wtPath); !os.IsNotExist(statErr) {
 		t.Errorf("worktree path %q should have been removed after submit", wtPath)
 	}
 
-	// Branch must also be gone.
+	// Branch must also be gone (merged, then deleted).
 	branchOut2, _ := exec.Command("git", "-C", repoDir, "branch", "--list", branchName).CombinedOutput()
 	if strings.Contains(string(branchOut2), branchName) {
 		t.Errorf("branch %q should have been deleted after submit, still present: %q", branchName, string(branchOut2))
+	}
+}
+
+func TestSubmitTask_WorktreeAutoCleanup_NoCommit_SkipsMerge(t *testing.T) {
+	store, db, repoDir := newTestSQLiteStoreWithGitRepo(t)
+	defer db.Close()
+
+	workerID := "worker-no-commit"
+	taskID := "T-nocommit-0"
+
+	if err := store.AddTask(&Task{ID: taskID, Title: "no commit test", DoD: "done", Status: "pending"}); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := store.config.GetConfig()
+	branchName := cfg.WorkBranchPrefix + taskID
+	wtPath := filepath.Join(repoDir, ".c4", "worktrees", workerID)
+
+	if out, wtErr := exec.Command("git", "-C", repoDir, "worktree", "add", wtPath, "-b", branchName).CombinedOutput(); wtErr != nil {
+		t.Fatalf("create worktree: %s: %v", string(out), wtErr)
+	}
+
+	if _, dbErr := db.Exec("UPDATE c4_tasks SET status='in_progress', worker_id=? WHERE task_id=?", workerID, taskID); dbErr != nil {
+		t.Fatalf("seed in_progress: %v", dbErr)
+	}
+
+	// Submit with empty commitSHA — should skip merge, still cleanup.
+	result, submitErr := store.SubmitTask(taskID, workerID, "", "", nil)
+	if submitErr != nil {
+		t.Fatalf("submit: %v", submitErr)
+	}
+	if !result.Success {
+		t.Fatalf("expected success")
+	}
+
+	// Worktree must be gone.
+	if _, statErr := os.Stat(wtPath); !os.IsNotExist(statErr) {
+		t.Errorf("worktree should be removed even without merge")
 	}
 }
