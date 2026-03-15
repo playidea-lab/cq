@@ -1,3 +1,9 @@
+---
+name: c9-report
+description: |
+  C9 연구 루프 진행 보고서를 생성합니다.
+  트리거: "c9-report", "연구 보고서", "진행 리포트", "research report"
+---
 # C9 Report
 
 원격 서버의 실험 결과를 C5 Hub 워커를 통해 수집하고 구조화된 보고서를 생성.

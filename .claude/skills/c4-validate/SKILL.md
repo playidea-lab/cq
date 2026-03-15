@@ -1,4 +1,5 @@
 ---
+name: c4-validate
 description: |
   Run project validations (lint, tests, security checks) with severity-based handling.
   Executes configured validations, detects CRITICAL (commit-blocking), HIGH (review-required),

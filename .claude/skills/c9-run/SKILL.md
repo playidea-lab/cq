@@ -1,3 +1,9 @@
+---
+name: c9-run
+description: |
+  C9 연구 루프 RUN phase. 실험을 C5 Hub에 제출하고 실행합니다.
+  트리거: "c9-run", "실험 실행", "run experiment"
+---
 # C9 Run
 
 > **Read-Only Notice**: `.c9/state.yaml` writes are managed exclusively by `LoopOrchestrator`

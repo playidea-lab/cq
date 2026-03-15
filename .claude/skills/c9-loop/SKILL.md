@@ -1,3 +1,12 @@
+---
+name: c9-loop
+description: |
+  C9 연구 루프 드라이버. state.yaml phase를 읽어 다음 단계를 자동 실행합니다.
+  CONFERENCE → IMPLEMENT → RUN → CHECK → REFINE 순환, 수렴 시 FINISH.
+  LoopOrchestrator가 state.yaml 단독 쓰기, 이 스킬은 읽기+라우팅.
+  트리거: "c9-loop", "루프 시작", "다음 단계", "연구 루프", "loop start"
+---
+
 # C9 Loop
 
 > **Read-Only Notice**: `LoopOrchestrator` (serve component) is the single writer for

@@ -1,4 +1,5 @@
 ---
+name: research-loop
 description: |
   Drive the paper-experiment improvement loop through iterative cycles of review →
   plan → experiment → re-review until target quality is reached. Manages research

@@ -1,4 +1,5 @@
 ---
+name: c9-init
 description: |
   C9 연구 루프를 위한 새 프로젝트를 초기화합니다. state.yaml과 필수 디렉토리를 생성하고,
   Hub URL, 메트릭, 수렴 조건 등을 대화형으로 설정합니다.

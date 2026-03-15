@@ -1,3 +1,12 @@
+---
+name: c9-steer
+description: |
+  C9 연구 루프 조종 스킬. state.yaml을 직접 편집하지 않고 phase 전환과
+  reason 업데이트를 추상화합니다. 원자 저장 패턴으로 partial write 방지.
+  트리거: "c9-steer", "/c9-steer", "방향 바꿔", "phase 전환", "스티어",
+  "steer loop", "change direction"
+---
+
 # C9 Steer
 
 > **Read-Only Notice**: `.c9/state.yaml` writes are managed exclusively by `LoopOrchestrator`

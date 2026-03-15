@@ -1,3 +1,9 @@
+---
+name: c9-finish
+description: |
+  C9 연구 루프 FINISH phase. 최고 모델 저장, 결과 문서화, 아티팩트 정리.
+  트리거: "c9-finish", "연구 완료", "연구 마무리", "finish research"
+---
 # C9 Finish
 
 연구 루프 완료 시 best model 저장 + 결과 문서화.

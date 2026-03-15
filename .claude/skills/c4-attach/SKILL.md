@@ -1,4 +1,5 @@
 ---
+name: c4-attach
 description: |
   Attach a name to the current Claude Code session so it can be resumed later
   with `cq claude -t <name>`. Works even if the session was started without -t.

@@ -9,42 +9,23 @@ import (
 	"github.com/changmin/c4-core/test/archtest"
 )
 
-// TestDeprecatedSkillsAreStubs verifies that deprecated skills are reduced to
-// stub files (≤ 20 lines). This prevents accidentally invoking deprecated
-// workflows and keeps the skills/ directory lean.
-func TestDeprecatedSkillsAreStubs(t *testing.T) {
+// TestDeprecatedSkillsAreRemoved verifies that deprecated skills have been
+// deleted and no longer exist in the skills/ directory.
+func TestDeprecatedSkillsAreRemoved(t *testing.T) {
 	root := archtest.FindRoot(t)
 	skillsDir := filepath.Join(root, "../.claude/skills")
 
-	deprecated := []string{
+	removed := []string{
 		"c4-polish",
 		"c4-refine",
 		"c2-paper-review",
 	}
 
-	found := 0
-	for _, skill := range deprecated {
-		skill := skill
-		t.Run(skill, func(t *testing.T) {
-			path := filepath.Join(skillsDir, skill, "SKILL.md")
-			data, err := os.ReadFile(path)
-			if os.IsNotExist(err) {
-				t.Logf("skill %q not found (skipping)", skill)
-				return
-			}
-			if err != nil {
-				t.Fatalf("read %s: %v", path, err)
-			}
-			found++
-			lines := strings.Split(strings.TrimRight(string(data), "\n"), "\n")
-			if len(lines) > 20 {
-				t.Errorf("deprecated skill %q SKILL.md has %d lines (want ≤ 20); reduce to a stub redirecting to the replacement skill",
-					skill, len(lines))
-			}
-		})
-	}
-	if found == 0 {
-		t.Fatalf("skillsDir %s appears unreachable — all deprecated skills missing; verify archtest.FindRoot() and path join", skillsDir)
+	for _, skill := range removed {
+		path := filepath.Join(skillsDir, skill, "SKILL.md")
+		if _, err := os.Stat(path); err == nil {
+			t.Errorf("deprecated skill %q still exists; it should be deleted", skill)
+		}
 	}
 }
 

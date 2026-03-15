@@ -1,4 +1,5 @@
 ---
+name: c4-release
 description: |
   Generate release notes and changelogs from Git commit history. Analyzes commits
   since last tag using Conventional Commits format, categorizes changes (features,

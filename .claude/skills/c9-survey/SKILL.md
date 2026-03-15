@@ -1,3 +1,9 @@
+---
+name: c9-survey
+description: |
+  C9 연구 서베이. 관련 논문과 방법론을 조사하여 연구 방향을 탐색합니다.
+  트리거: "c9-survey", "서베이", "문헌 조사", "survey", "literature review"
+---
 # C9 Survey
 
 Gemini의 Google Search grounding을 사용해 주어진 연구 주제의 최신 arXiv 논문, SOTA 벤치마크, 경쟁 방법을 수집하고 구조화된 배경조사 보고서를 생성.

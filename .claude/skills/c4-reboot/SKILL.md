@@ -1,4 +1,5 @@
 ---
+name: c4-reboot
 description: |
   Reboot the current named Claude Code session. Writes a reboot flag so cq
   automatically resumes with the same session UUID after exit.

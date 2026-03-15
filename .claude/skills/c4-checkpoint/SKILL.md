@@ -1,4 +1,5 @@
 ---
+name: c4-checkpoint
 description: |
   Review checkpoints with strategic 4-lens analysis (holistic/user-flow/cascade/ship-ready).
   Handles CHECKPOINT state by guiding approve/request-changes/replan/redesign decisions.
@@ -12,11 +13,7 @@ description: |
 
 체크포인트 상태를 확인하고 결정을 내립니다.
 
-> ℹ️ **Checkpoint는 c4-run에 내장되어 있습니다.**
-> - `run.checkpoint_mode: interactive` (기본): c4-run이 CP 도달 시 중단 → 이 스킬 수동 호출
-> - `run.checkpoint_mode: auto`: c4-run이 Worker를 자동 스폰하여 4-lens 리뷰 후 계속 진행
->
-> 이 스킬은 `interactive` 모드 또는 별도 리뷰가 필요한 경우에만 직접 호출합니다.
+> Checkpoint는 c4-run에 내장. `run.checkpoint_mode: interactive` (기본)이면 이 스킬 수동 호출, `auto`면 Worker가 자동 리뷰.
 
 ## 사용법
 
@@ -24,291 +21,50 @@ description: |
 /c4-checkpoint
 ```
 
-대화형으로 체크포인트 리뷰를 진행합니다.
-
 ## auto_approve 설정
-
-체크포인트는 `auto_approve` 설정에 따라 동작이 다릅니다:
 
 | 설정 | 동작 |
 |------|------|
-| `auto_approve: true` (기본값) | Worker(AI)가 자동으로 리뷰. `/c4-checkpoint` 불필요 |
-| `auto_approve: false` | CHECKPOINT 상태에서 대기. **사람이 `/c4-checkpoint` 호출 필수** |
-
-```yaml
-# config.yaml 예시
-checkpoints:
-  - id: CP-QUICK
-    auto_approve: true   # AI 자동 리뷰
-
-  - id: CP-FINAL
-    auto_approve: false  # 사람 리뷰 필수 ← 이 경우 /c4-checkpoint 필요
-```
+| `auto_approve: true` (기본값) | Worker(AI)가 자동 리뷰 |
+| `auto_approve: false` | 사람이 `/c4-checkpoint` 호출 필수 |
 
 ## Instructions
 
-### 0. R- 완료 선검증 (MANDATORY — CP 진입 전 필수)
+### 0. R- 완료 선검증 (MANDATORY)
 
-CP 태스크의 `dependencies`에 T- 태스크가 직접 포함되어 있으면 **즉시 중단**하고 리뷰 레이어 누락을 리포트한다.
+CP 진입 전 리뷰 레이어 존재+완료 검증. See `references/review-gate.md` for details.
 
-```python
-status = mcp__c4__c4_status()
-# CHECKPOINT 상태이면 대기 중인 CP 태스크 확인
-# CP deps에서 T- 태스크 추출 → 대응 R- 태스크 존재+완료 여부 검증
-```
-
-#### 검증 규칙
-
-| CP deps 구조 | 판정 | 동작 |
-|-------------|------|------|
-| R- 태스크만 있고 모두 done | ✅ 통과 | Step 1로 진행 |
-| R- done + T- (review_required=False 명시 사유 있음) | ⚠️ 경고 | 사유 확인 후 진행 |
-| T- 직결 + R- 없음 (사유 없음) | ⛔ **BLOCK** | 아래 처리 |
-| R- pending/in_progress | ⏳ 대기 | R- 완료 후 재진입 |
-
-#### BLOCK 처리 (T- 직결, R- 없음)
-
-```
-⛔ CP-XXX 진입 불가 — 리뷰 레이어 누락
-
-다음 T- 태스크에 대응하는 R- 태스크가 없습니다:
-  - T-XXX-0: {title}  ← R-XXX-0 없음
-
-원인: 계획 단계에서 review_required=False로 생성됨
-
-선택지:
-  1. 긴급 리뷰 태스크 생성 → /c4-run으로 R- 완료 → 재진입
-  2. 재계획 (REPLAN) — /c4-plan으로 돌아가 태스크 구조 수정
-```
-
-> ⚠️ **예외 없음**: 리뷰 레이어 없이 CP를 통과하면 "DoD 없는 작업은 작업이 아니다" 원칙 위반.
+| CP deps 구조 | 판정 |
+|-------------|------|
+| R- 모두 done | ✅ Step 1 진행 |
+| R- done + T- (review_required=False, 사유 있음) | ⚠️ 경고 후 진행 |
+| T- 직결, R- 없음 | ⛔ BLOCK |
+| R- pending/in_progress | ⏳ 대기 |
 
 ### 1. 현재 상태 확인
 
-```
+```python
 status = mcp__c4__c4_status()
 ```
 
-### 2. 전략 리뷰 렌즈 (4-lens strategic review)
+- **CHECKPOINT**: 리뷰 진행 (Step 2로)
+- **EXECUTE**: 아직 CP 미도달 — 안내 후 종료
+- **COMPLETE/HALTED**: 리뷰 불필요
 
-체크포인트 결정 **전에** 아래 4개 전략 렌즈를 순차 점검:
+### 2. 전략 리뷰 렌즈 (4-lens)
 
-#### [holistic] Holistic Review
-- 모든 변경이 하나의 일관된 전체를 이루는가?
-- 아키텍처 결정이 서로 충돌하지 않는가?
-- 새로 도입한 패턴이 기존 패턴과 조화되는가?
-
-#### [user-flow] User Flow Validation
-- 엔드투엔드 기능이 동작하는가?
-- 에러 상태에 사용자 친화적 처리가 있는가?
-- 성능이 수용 가능한 수준인가?
-
-#### [cascade] Cascade Review
-- 이전 REQUEST_CHANGES 항목이 모두 해결되었는가?
-- 수정이 새로운 문제를 만들지 않았는가?
-- 이전 리뷰 피드백이 반영되었는가?
-
-#### [ship-ready] Ship-Ready Gate
-- 테스트 통과 (lint + unit + integration)?
-- 변경된 코드에 TODO/FIXME가 남아있지 않은가?
-- 문제 발생 시 롤백 가능한가?
-
-### 3. 상태별 처리
-
-#### CHECKPOINT 상태
-
-```
-Claude: CP-001 리뷰 준비됐습니다!
-
-  완료된 태스크:
-  - T-001: 프로젝트 설정
-  - T-002: 로그인 구현
-
-  === 전략 리뷰 (4 lenses) ===
-  [holistic] 아키텍처 일관성: OK/ISSUE
-  [user-flow] 엔드투엔드: OK/ISSUE
-  [cascade] 이전 피드백 반영: OK/ISSUE
-  [ship-ready] 배포 준비: OK/ISSUE
-
-  어떻게 처리할까요?
-  1. 승인 - 다음 단계로 진행
-  2. 수정 요청 - 변경사항 지정 후 계속
-  3. 재계획 - PLAN으로 돌아가서 재설계
-
-사용자: 1
-
-Claude: ✅ CP-001 승인 완료!
-  → 다음 단계로 진행합니다.
-```
-
-#### EXECUTE 상태 (체크포인트 전)
-
-```
-Claude: 현재 EXECUTE 상태입니다.
-
-  다음 체크포인트: CP-001
-  진행 상황:
-  - 완료: T-001, T-002 (2/4)
-  - 진행 중: T-003
-  - 대기: T-004
-
-  CP-001 조건:
-  - 필요 태스크: T-001 ~ T-004 (2/4 완료)
-  - 필요 검증: lint, unit
-
-  아직 체크포인트에 도달하지 않았습니다.
-  /c4-run으로 작업을 계속하세요.
-```
-
-#### COMPLETE/HALTED 상태
-
-```
-Claude: 현재 {상태} 상태입니다.
-  체크포인트 리뷰가 필요하지 않습니다.
-```
+| Lens | 점검 항목 |
+|------|----------|
+| **holistic** | 아키텍처 일관성, 패턴 조화 |
+| **user-flow** | E2E 동작, 에러 UX, 성능 |
+| **cascade** | 이전 REQUEST_CHANGES 해결, 새 문제 없음 |
+| **ship-ready** | 테스트 통과, TODO/FIXME 없음, 롤백 가능 |
 
 ### 3. 결정 처리
 
-#### 승인 (APPROVE)
-
-```python
-mcp__c4__c4_checkpoint(
-    checkpoint_id="CP-001",
-    decision="APPROVE",
-    notes="모든 기능 정상 동작 확인"
-)
-```
-
-결과:
-```
-Claude: ✅ CP-001 승인 완료!
-
-  다음 단계:
-  - 대기 중인 태스크: T-005, T-006
-  - /c4-run으로 계속 진행
-```
-
-#### 수정 요청 (REQUEST_CHANGES)
-
-```
-Claude: 어떤 수정이 필요한가요?
-
-사용자: 로그인 에러 메시지가 너무 기술적이야. 사용자 친화적으로 바꿔줘
-
-Claude: 수정 요청을 기록합니다:
-  - "로그인 에러 메시지를 사용자 친화적으로 변경"
-
-  다른 수정사항이 있나요? (없으면 '완료')
-
-사용자: 완료
-
-Claude: 수정 태스크를 생성합니다:
-  - T-FIX-001: 로그인 에러 메시지 개선
-
-  EXECUTE 상태로 돌아갑니다.
-  /c4-run으로 수정 작업을 시작하세요.
-```
-
-```python
-mcp__c4__c4_checkpoint(
-    checkpoint_id="CP-001",
-    decision="REQUEST_CHANGES",
-    notes="사용자 친화적 에러 메시지 필요",
-    required_changes=["로그인 에러 메시지를 사용자 친화적으로 변경"]
-)
-```
-
-#### 재계획 (REPLAN)
-
-```
-사용자: 3
-
-Claude: 재계획을 선택하셨습니다.
-  현재 구현된 내용은 유지되지만, 태스크를 다시 설계합니다.
-
-  재계획 이유를 알려주세요:
-
-사용자: API 구조를 REST에서 GraphQL로 바꾸고 싶어
-
-Claude: 이해했습니다. PLAN 상태로 돌아갑니다.
-  /c4-plan으로 새로운 계획을 수립하세요.
-```
-
-```python
-mcp__c4__c4_checkpoint(
-    checkpoint_id="CP-001",
-    decision="REPLAN",
-    notes="API 구조 변경: REST → GraphQL"
-)
-```
-
-### 4. REDESIGN 옵션 (설계 변경 필요시)
-
-아키텍처 수준의 변경이 필요한 경우:
-
-```
-Claude: 어떻게 처리할까요?
-  1. 승인
-  2. 수정 요청
-  3. 재계획
-  4. 재설계 - DESIGN 단계로 돌아가서 아키텍처 재검토
-
-사용자: 4
-
-Claude: 재설계를 선택하셨습니다.
-  DESIGN 상태로 돌아가서 아키텍처를 재검토합니다.
-
-  재설계 이유를 알려주세요:
-
-사용자: 마이크로서비스 대신 모놀리식으로 가고 싶어
-```
-
-## 대화 예시
-
-### 간단한 승인
-
-```
-사용자: /c4-checkpoint
-
-Claude: 🎯 CP-001 리뷰 준비됐습니다!
-  - 완료: T-001, T-002
-  - 검증: lint ✅ unit ✅
-
-  어떻게 할까요?
-  1. 승인  2. 수정 요청  3. 재계획
-
-사용자: 1
-
-Claude: ✅ CP-001 승인! 다음 태스크로 진행합니다.
-```
-
-### 수정 요청
-
-```
-사용자: /c4-checkpoint
-
-Claude: 🎯 CP-001 리뷰 준비됐습니다!
-  [상태 표시...]
-
-  어떻게 할까요?
-
-사용자: 2
-
-Claude: 어떤 수정이 필요한가요?
-
-사용자: 테스트 커버리지가 낮아. 80% 이상으로 올려줘
-
-Claude: 수정 태스크 생성:
-  - T-FIX-001: 테스트 커버리지 80% 달성
-
-  /c4-run으로 수정 작업을 시작하세요.
-```
-
-## Decisions 요약
-
-| 결정 | 효과 |
-|------|------|
-| APPROVE | 다음 단계 또는 COMPLETE로 진행 |
-| REQUEST_CHANGES | 수정 태스크 생성, EXECUTE로 복귀 |
-| REPLAN | PLAN 상태로 돌아가 태스크 재설계 |
-| REDESIGN | DESIGN 상태로 돌아가 아키텍처 재검토 |
+| 결정 | MCP 호출 | 효과 |
+|------|---------|------|
+| **APPROVE** | `c4_checkpoint(decision="APPROVE")` | 다음 단계 진행 |
+| **REQUEST_CHANGES** | `c4_checkpoint(decision="REQUEST_CHANGES", required_changes=[...])` | 수정 태스크 생성, EXECUTE 복귀 |
+| **REPLAN** | `c4_checkpoint(decision="REPLAN")` | PLAN 상태로 복귀 |
+| **REDESIGN** | `c4_checkpoint(decision="REDESIGN")` | DESIGN 상태로 복귀 |

@@ -1,4 +1,5 @@
 ---
+name: pi
 description: |
   Play Idea — 아이디어 발산·수렴 모드. c4-plan 이전 단계.
   온라인 조사, 지식 베이스 활용, 무한 토론을 통해 막연한 아이디어를
@@ -16,21 +17,12 @@ description: |
 
 ## 모드 선언 (진입 시 즉시)
 
-**이 스킬이 활성화된 순간 선언한다:**
-
 ```
-✗ 코드 작성 금지
-✗ 기술 스택 선택 금지
-✗ 태스크 분해 금지
+✗ 코드 작성 금지  ✗ 기술 스택 선택 금지  ✗ 태스크 분해 금지
 ✓ 조사, 질문, 토론, 정리만
 ```
 
-유저에게 "지금 ideation 모드입니다 — 아이디어 결정(結晶)을 시작합니다"라고 명시적으로 알린다.
-
-알림 발송 (미설정 시 no-op):
-```python
-mcp__cq__c4_notify(message='[CQ] 💡 Ideation 시작: {seed_summary}', title='Play Idea', event='pi.start')
-```
+알림: `c4_notify(message='Ideation 시작', event='pi.start')`
 
 ---
 
@@ -42,287 +34,95 @@ c4-plan       =  무엇을 만들지 확정됐을 때, 구현 계획을 짠다
 /pi           =  아직 뭘 만들지 모를 때, 아이디어를 결정(結晶)시킨다
 ```
 
-토론을 끊지 않는다. 유저가 준비됐을 때 넘어간다.
-검색은 아끼지 않는다. 모르는 건 즉시 찾는다.
-동의만 하지 않는다. 반론이 아이디어를 단단하게 만든다.
+토론을 끊지 않는다. 검색은 아끼지 않는다. 동의만 하지 않는다.
 
 ---
 
 ## 시작: 씨앗 이해
 
-`$ARGUMENTS`가 있으면 그것을 씨앗으로 삼는다.
-없으면: **"어떤 아이디어를 탐구해볼까요?"**
+씨앗(args)이 있으면 그것을, 없으면 **"어떤 아이디어를 탐구해볼까요?"**
 
 씨앗을 받으면 즉시 병렬 실행:
 
 ```python
-# 지식 베이스 — 과거에 비슷한 게 있었나
 c4_knowledge_search(query="{seed_idea}")
-
-# 웹 — 지금 세상에 무엇이 있나
 WebSearch("{seed_idea} 2026")
 WebSearch("{seed_idea} alternatives")
 WebSearch("{seed_idea} problems OR pain points")
 ```
 
-조사 결과를 소화해서 첫 반응:
-1. **Landscape** — 이미 존재하는 것들 (간략히)
-2. **핵심 긴장** — 이 아이디어가 흥미로운 이유, 장력(tension)
-3. **첫 날카로운 질문** — 자명하지 않은 것 하나
+첫 반응: **Landscape** (기존) + **핵심 긴장** (왜 흥미로운지) + **첫 날카로운 질문**
 
 ---
 
 ## 토론 엔진: 4개 모드
 
-### 자동 전환 규칙
-
-```
-아이디어가 좁거나 단순          → 발산
-방향이 너무 많아 산만           → 수렴
-방향이 하나로 잡히기 시작       → 심화
-유저 확신이 너무 강해짐         → 반론
-```
-
-### 발산 (Diverge)
-"이런 방향도 있다" — 유사 사례, 대안 각도, 엣지 케이스 제안.
-목적: 시야를 넓힌다.
-
-### 수렴 (Converge)
-"이것들의 공통점은" — 여러 아이디어에서 핵심 하나 추출.
-목적: 방향을 좁힌다.
-
-### 심화 (Deepen)
-"왜?", "누가?", "어떤 상황에서?" — 구체적으로 파고든다.
-목적: 개념을 단단하게 만든다.
-
-### 반론 (Counter)
-악마의 변호인. "반대로 생각하면?", "이미 있는 거 아닌가?", "실패한다면?"
-목적: 약점을 미리 발견한다.
-
----
+| 모드 | 조건 | 목적 |
+|------|------|------|
+| **발산** | 아이디어가 좁거나 단순 | 시야를 넓힌다 |
+| **수렴** | 방향이 너무 많아 산만 | 핵심 하나 추출 |
+| **심화** | 방향이 잡히기 시작 | "왜?", "누가?", "어떤 상황?" |
+| **반론** | 유저 확신이 너무 강함 | 약점 미리 발견 |
 
 ## 탐구 렌즈 (필요한 것만)
 
-```
-WHY      왜 지금? 왜 이 사람이? 왜 이 방식으로?
-WHO      누가 가장 간절히 필요로 하나? 누가 반대할까?
-WHEN     5년 전이었다면? 5년 후라면?
-ANALOGY  다른 도메인에서 같은 문제를 어떻게 풀었나?
-INVERT   반대로 하면? 없애면? 극단으로 가면?
-SCALE    10명이면? 10만 명이면? 혼자라면?
-FAILURE  어떤 이유로 실패할까? 가장 큰 리스크는?
-```
-
----
+WHY, WHO, WHEN, ANALOGY, INVERT, SCALE, FAILURE
 
 ## 리서치 트리거
 
-토론 중 다음 상황이 오면 즉시 검색:
-
-```python
-# "이미 있는지 모르겠다"
-WebSearch("{concept} existing tools OR products")
-
-# "실제 사례가 궁금하다"
-WebSearch("{concept} case study OR real world")
-
-# "숫자가 필요하다"
-WebSearch("{domain} market size OR statistics 2026")
-
-# "기술적으로 가능한지"
-WebSearch("{concept} feasibility OR limitations")
-```
-
-검색 결과는 붙여넣지 않고, **해석해서** 토론에 주입한다.
+모르면 즉시 검색 — existing tools, case studies, market size, feasibility.
 
 ---
 
 ## 수렴 감지 → 출구
 
-### 감지 조건 (3개 이상이면 수렴 준비)
+### 감지 조건 (3개 이상)
 
-```
-□ 핵심 문제가 한 문장으로 표현 가능
-□ 타깃 사용자가 구체적 (직군/상황/감정)
-□ "왜 지금, 왜 우리"가 설명됨
-□ 기존 대안과의 차별점이 명확
-□ 가장 큰 리스크를 인지하고 있음
-□ 유저가 "됐다" 또는 "계획 짜자"고 말함
-```
-
-### 수렴 시그널 (조용히 한 번만)
-
-```
-💡 아이디어가 충분히 익은 것 같습니다.
-   정리하고 계획으로 넘어갈까요? 아니면 더 탐구할 방향이 있으신가요?
-```
-
-유저가 "아직" 이라면 → 계속. 강제 종료 없음.
+- 핵심 문제가 한 문장으로 표현 가능
+- 타깃 사용자가 구체적
+- "왜 지금, 왜 우리"가 설명됨
+- 기존 대안과 차별점 명확
+- 가장 큰 리스크 인지
+- 유저가 "됐다"고 말함
 
 ---
 
-## 끝에서의 진행: 4단계
-
-유저가 "됐다"고 하면:
+## 결정화 프로세스
 
 ### Step 1. EARS 요구사항 자동 초안
 
-대화 내용을 분석해 **질문 없이** EARS 패턴으로 요구사항을 자동 도출한다.
+대화 내용에서 질문 없이 EARS 패턴으로 요구사항 자동 도출.
+사용자 수정 반영 후 승인되면 Step 2.
 
-```
-📋 요구사항 초안 (대화 기반 자동 생성)
+### Step 2. idea.md 생성
 
-기능 요구사항:
-  WHEN   [이벤트]   THEN 시스템은 [동작]
-  WHILE  [상태]     시스템은 [동작]
-  IF     [조건]     THEN 시스템은 [동작]
-  시스템은 항상     [동작]
-
-비기능 요구사항:
-  - 성능: ...
-  - 보안: ...
-
-범위 외 (Out of Scope):
-  - ...
-
-수정하거나 추가할 사항이 있으면 알려주세요. 없으면 바로 저장합니다.
-```
-
-사용자가 수정하면 반영. 승인되면 Step 2로 진행.
-
-### Step 2. idea.md 생성 + 에디터 열기
-
-`.c4/ideas/{slug}.md` 저장 후 즉시 에디터에서 연다.
+`.c4/ideas/{slug}.md` 저장. 템플릿: `references/idea-template.md`
 
 ```python
-# 1. 파일 저장
 Write(path=idea_path, content=idea_content)
-
-# 2. 에디터 열기 (macOS: 기본 앱, VS Code 설치 시 code 우선)
-import subprocess, shutil
-if shutil.which("code"):
-    Bash(f"code '{idea_path}'")
-elif shutil.which("open"):          # macOS
-    Bash(f"open '{idea_path}'")
-else:                               # 폴백: 인라인 표시
-    print(idea_content)
-
-print(f"""
-📄 idea.md 열렸습니다: {idea_path}
-   에디터에서 수정 후 저장하고 돌아오세요.
-   채팅창에서 수정 요청도 가능합니다.
-""")
-```
-
-idea.md 템플릿:
-
-```markdown
-# {아이디어 이름}
-
-> {한 문장 핵심}
-
-## 왜 이 아이디어인가
-{배경, 동기, 지금 이 시점에 의미있는 이유}
-
-## 풀고자 하는 문제
-{구체적 상황 + 누가 + 어떤 고통}
-
-## 기존 대안과 차이
-| 대안 | 한계 | 우리가 다른 점 |
-|------|------|--------------|
-
-## 요구사항 (EARS)
-
-### 기능 요구사항
-- WHEN {이벤트} THEN 시스템은 {동작}
-- WHILE {상태} 시스템은 {동작}
-- IF {조건} THEN 시스템은 {동작}
-- 시스템은 항상 {동작}
-
-### 비기능 요구사항
-- 성능: ...
-- 보안: ...
-- 가용성: ...
-
-### 범위 외 (Out of Scope)
-- ...
-
-## 리스크
-| 리스크 | 심각도 | 초기 대응 |
-|--------|--------|----------|
-
-## 탐구 중 발견한 인사이트
-{비자명한 발견들}
-
-## 참고 자료
-{리서치 중 찾은 링크/논문/제품}
-
----
-*Generated by /pi on {date}*
+# 에디터 열기: code > open > 인라인 표시 순
 ```
 
 ### Step 3. 지식 베이스 저장
 
 ```python
-c4_knowledge_record(
-    title="{아이디어 이름} — /pi 세션",
-    content="{핵심 발견 + EARS 요구사항 요약 + 리스크}",
-    domain="ideation",
-    tags=["{domain}", "pi-session"]
-)
+c4_knowledge_record(title="{이름} — /pi 세션", content="{요약}", domain="ideation")
 ```
 
 ### Step 4. 진행 방식 선택
 
-```
-✅ idea.md 저장: .c4/ideas/{slug}.md  (EARS 요구사항 포함)
-✅ 지식 베이스 기록 완료
-```
-
 ```python
-# 유저가 에디터에서 수정 후 돌아오면 idea.md를 다시 읽어 최신 내용 반영
-idea_content = c4_read_file(path=idea_path)
-
 AskUserQuestion(questions=[{
-    "question": "에디터에서 수정하셨으면 저장 후 여기서 선택해주세요. 채팅으로 수정 요청도 가능합니다.",
-    "header": "다음 단계",
+    "question": "다음 단계",
     "options": [
-        {
-            "label": "자동 구현",
-            "description": "plan → run → finish 전체 자동 실행. 개입 없이 끝까지."
-        },
-        {
-            "label": "계획만",
-            "description": "c4-plan으로 태스크만 생성. 실행은 나중에."
-        }
-    ],
-    "multiSelect": False
+        {"label": "자동 구현", "description": "plan → run → finish 전체 자동"},
+        {"label": "계획만", "description": "c4-plan으로 태스크만 생성"}
+    ]
 }])
 ```
 
-- **자동 구현** 선택 시:
-  ```
-  🚀 자동 구현 모드 — plan → run → finish 시작합니다
-  ```
-  → `Skill("c4-plan", args="--from-pi {slug} --auto-run")` 호출
-
-- **계획만** 선택 시:
-  ```
-  📋 계획 모드 — 태스크만 생성합니다 (/c4-run은 별도 실행)
-  ```
-  → `Skill("c4-plan", args="--from-pi {slug}")` 호출
-
----
-
-## c4-plan에서의 idea.md 활용
-
-c4-plan이 idea.md의 EARS 요구사항을 직접 읽어 설계와 태스크 분해에 사용한다.
-Discovery(인터뷰) 단계 없음 — idea.md가 이미 승인된 스펙이다.
-
-```
-/pi                        사용자 검토          /c4-plan
-아이디어 결정 + EARS  →  idea.md  →  [승인]  →  설계 + 의존성 그래프 + Lighthouse  →  태스크
-```
+- **자동 구현** → `Skill("c4-plan", args="--from-pi {slug} --auto-run")`
+- **계획만** → `Skill("c4-plan", args="--from-pi {slug}")`
 
 ---
 
@@ -335,18 +135,3 @@ Discovery(인터뷰) 단계 없음 — idea.md가 이미 승인된 스펙이다.
 ❌ 검색 없이 "잘 모르겠지만..."  → 모르면 찾는다
 ❌ 조건 미달인데 수렴 강요       → 유저가 준비됐을 때
 ```
-
----
-
-<instructions>
-탐구할 아이디어: $ARGUMENTS
-
-**즉시 시작:**
-1. "ideation 모드 시작" 선언 — 코드 작성, 기술 선택, 태스크 분해 없음
-2. $ARGUMENTS가 있으면: WebSearch + c4_knowledge_search 병렬 실행
-3. 조사 결과 해석 → Landscape + 핵심 긴장 + 첫 날카로운 질문 제시
-4. 발산→수렴→심화→반론 모드를 오가며 토론
-5. 수렴 감지 시 시그널 → 유저 확인
-6. EARS 자동 초안 생성 → 사용자 검토/수정 → 승인
-7. idea.md 생성 (EARS 포함) → 지식 베이스 저장 → 진행 방식 선택 → c4-plan 호출
-</instructions>

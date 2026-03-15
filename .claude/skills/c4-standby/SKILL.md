@@ -1,4 +1,5 @@
 ---
+name: c4-standby
 description: "Convert this Claude Code session into a persistent worker that waits for jobs from C5 Hub. Auto-triggers on: standby, worker mode, 대기 모드"
 ---
 

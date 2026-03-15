@@ -1,3 +1,9 @@
+---
+name: c9-check
+description: |
+  C9 연구 루프 CHECK phase. 실험 결과를 확인하고 수렴 여부를 판단합니다.
+  트리거: "c9-check", "결과 확인", "수렴 체크", "check results"
+---
 # C9 Check
 
 > **Read-Only Notice**: This skill reads `.c9/state.yaml` for display purposes only.

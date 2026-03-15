@@ -1,4 +1,5 @@
 ---
+name: c4-plan
 description: |
   Create structured implementation plans for C4 projects. Scans project state,
   specs, designs, docs, and Lighthouse contracts, then guides through Discovery
@@ -19,324 +20,137 @@ Structured project planning: Discovery, Design, Lighthouse, and Task creation.
 ### MUST NOT write code before user explicitly approves the plan
 
 ```
-Forbidden:
-- Writing code during plan explanation
-- "Let's try and adjust" approach
-- Executing tasks without user confirmation
-
-Required:
-- Plan summary -> user confirmation -> "proceed" -> code writing
-- Unclear requirements -> ask questions -> agree -> proceed
-- Change request -> modify plan -> reconfirm -> proceed
+Forbidden: Writing code during plan, "Let's try and adjust", executing without confirmation
+Required: Plan summary -> user "proceed" -> code. Unclear? Ask first.
 ```
-
-Violation: Workers' code will be rejected in review.
 
 ### Main session plans only; Workers implement
 
 ```
-Forbidden:
-- Adding tasks then "I'll do it myself" -> writing code
-- Editing files after c4_add_todo()
-- Main session doing implementation without Workers
-
-Required:
-- Create tasks -> /c4-run to spawn Workers -> Workers execute
-- Main monitors, reviews, makes decisions
-- Implementation always through Workers
+Forbidden: Adding tasks then writing code yourself
+Required: Create tasks -> /c4-run -> Workers execute. Main monitors/reviews.
 ```
 
 ---
 
 ## Flags (--from-pi / --auto-run)
 
-`/pi`에서 호출 시 args에 플래그가 포함될 수 있다.
-
 ```python
-args = "$ARGUMENTS"  # e.g. "--from-pi my-feature --auto-run"
+args = "$ARGUMENTS"
 FROM_PI = "--from-pi" in args
 AUTO_RUN = "--auto-run" in args
-
 if FROM_PI:
-    # slug 추출: "--from-pi {slug}" 뒤 첫 토큰
-    parts = args.split("--from-pi", 1)[1].strip().split()
-    PI_SLUG = parts[0] if parts else ""
+    PI_SLUG = args.split("--from-pi", 1)[1].strip().split()[0]
     idea_path = f".c4/ideas/{PI_SLUG}.md"
-    print(f"🔗 /pi 연결 모드: idea.md = {idea_path}")
-    if AUTO_RUN:
-        print("🚀 자동 실행 모드: 태스크 생성 후 /c4-run → /c4-finish 자동 진행")
 ```
 
 ---
 
 ## Phase 0: Context Display
 
-### 0.0 Config 읽기 (필수 — 가장 먼저 실행)
+### 0.0 Config 읽기 (필수)
 
 ```python
 cfg = c4_config_get(section="all")
-
-# Critique Loop 설정 읽기
 critique_cfg = cfg.get("planning", {}).get("critique_loop", {})
 CRITIQUE_ENABLED = critique_cfg.get("enabled", True)
 CRITIQUE_MAX_ROUNDS = critique_cfg.get("max_rounds", 3)
-CRITIQUE_MODE = critique_cfg.get("mode", "auto")
-# mode: "auto"        → 루프 자동 실행 (기본값)
-# mode: "interactive" → 라운드마다 사용자 확인 후 진행
-# mode: "skip"        → Phase 4.5 완전 건너뜀 (enabled=false와 동일)
-
-# 루프 비활성화 판정
+CRITIQUE_MODE = critique_cfg.get("mode", "auto")  # auto | interactive | skip
 LOOP_ACTIVE = CRITIQUE_ENABLED and CRITIQUE_MODE != "skip"
-
-# 설정 요약 출력
-if LOOP_ACTIVE:
-    print(f"📋 Plan Refine: ON (mode={CRITIQUE_MODE}, max={CRITIQUE_MAX_ROUNDS} rounds)")
-    print("   변경: .c4/config.yaml planning.critique_loop.mode = skip 으로 비활성화")
-else:
-    print(f"📋 Plan Refine: OFF (enabled={CRITIQUE_ENABLED}, mode={CRITIQUE_MODE})")
 ```
 
 ### 0.1 Data Collection
-
-Call these MCP tools to gather current state:
 
 ```
 1. c4_status()           — project state, tasks, progress
 2. c4_list_specs()       — saved specifications
 3. c4_list_designs()     — saved designs
-4. c4_lighthouse(list)   — tool contracts (stubs/implemented)
+4. c4_lighthouse(list)   — tool contracts
 5. Glob docs/**/*.md     — planning documents
-6. c4_knowledge_search(query="{feature description}")  — past patterns/insights/experiments
-7. c4_pattern_suggest(context="{domain}")              — recurring patterns from past work
+6. c4_knowledge_search(query="{feature}")  — past patterns
+7. c4_pattern_suggest(context="{domain}")  — recurring patterns
 ```
-
-**Knowledge 조회 목적**: 과거 유사 기능의 실패/성공 패턴, 아키텍처 결정의 이유,
-반복된 이슈 패턴을 참조하여 같은 실수를 방지하고 검증된 접근 방식을 재활용합니다.
-결과가 없으면 건너뜁니다.
 
 ### 0.2 Rich Status Output
 
-Display comprehensive project context. For detailed ASCII templates, see `references/output-format.md`.
+Display project context. For ASCII templates, see `references/output-format.md`.
 
-Output sections (all required):
-1. **Project Overview** — name, description, domain, key features (from README.md)
-2. **Current State** — workflow position, status, supervisor, workers, progress bar
-3. **Task Dependency Graph** — visual tree with status icons
-4. **Specifications** — EARS requirements summary per feature
-5. **Designs** — architecture options, components, decisions per feature
-6. **Lighthouse** — stub count, implemented count, active stubs list
-7. **Planning Documents** — docs/ file listing
-8. **Tech Stack** — language, package manager, database, validation tools
-
-Information sources: README.md, pyproject.toml/package.json, LICENSE, c4_status output.
+Sections: Project Overview, Current State, Task Dependency Graph, Specifications,
+Designs, Lighthouse, Planning Documents, Tech Stack.
 
 ### 0.3 Dependency Graph Rendering
 
-Show only dependency chains related to pending tasks. Start from root tasks (no deps).
-Status icons: completed, in_progress, pending, blocked.
+Show dependency chains for pending tasks. Status icons: completed, in_progress, pending, blocked.
 
 ---
 
 ## Phase 0.5: Action Selection
-
-After displaying status, ask the user what to do:
 
 ```python
 AskUserQuestion(questions=[{
     "question": "What would you like to do?",
     "header": "Action",
     "options": [
-        {"label": "Plan new feature", "description": "Discovery -> Design -> Lighthouse -> Tasks full flow"},
+        {"label": "Plan new feature", "description": "Discovery -> Design -> Lighthouse -> Tasks"},
         {"label": "Review/modify existing plan", "description": "View and edit saved Spec/Design"},
-        {"label": "Lighthouse management", "description": "Register/list/promote/remove tool contracts"},
+        {"label": "Lighthouse management", "description": "Register/list/promote/remove contracts"},
         {"label": "Add tasks only", "description": "Create tasks from existing design"},
         {"label": "View status only", "description": "Done after display"}
-    ],
-    "multiSelect": False
+    ]
 }])
 ```
 
 | Selection | Next Phase |
 |-----------|-----------|
-| Plan new feature | Phase 1 (doc scan) |
-| Review/modify | Phase R |
-| Lighthouse | Phase L |
+| Plan new feature | Phase 1 |
+| Review/modify | Phase R — see `references/output-format.md` |
+| Lighthouse | Phase L — `c4_lighthouse(action=register/list/promote/remove)` |
 | Add tasks only | Phase 4 |
 | View status only | End |
 
 ---
 
-## Phase R: Review/Modify Existing Plans
-
-### R.1 Target Selection
-
-List all specs and designs. Ask user which to review.
-
-```python
-# Build options from specs['features'] and designs['designs']
-AskUserQuestion(questions=[{
-    "question": "Which item to review?",
-    "header": "Target",
-    "options": [
-        # {"label": "{feature} (Spec)", "description": "{domain} - {N} requirements"}
-        # {"label": "{feature} (Design)", "description": "Option: {selected}, {N} components"}
-    ],
-    "multiSelect": False
-}])
-```
-
-### R.2 Detail Display
-
-- **Spec**: c4_get_spec(feature=X) -> show domain, description, all requirements with EARS patterns
-- **Design**: c4_get_design(feature=X) -> show selected option, components, decisions, mermaid diagram
-
-### R.3 Modification
-
-Ask if user wants to modify:
-- Requirements add/edit -> EARS interview -> c4_save_spec()
-- Component changes -> c4_save_design()
-- Architecture decision changes -> c4_save_design()
-- No changes -> exit
-
----
-
 ## Phase 1: Planning Document Scan
 
-> Entry: "Plan new feature" selected in Phase 0.5
-
-Scan project root and docs/ for planning documents.
-
-**Targets**: `*.md` files containing PRD, requirements, spec, plan keywords. Files > 1KB.
-
-**Output**: List found documents with size and type description.
-
----
+Scan root and docs/ for `*.md` files with PRD/requirements/spec/plan keywords (>1KB).
 
 ## Phase 2: Document Interpretation
 
-Read each planning document and extract:
-1. **Project overview**: name, goal, background
-2. **Core features**: feature list
-3. **Tech stack**: languages, frameworks, libraries
-4. **Roadmap**: phase/stage plans
-5. **Architecture**: component structure, data flow
-
-Extraction hints:
-- `- [ ]` checklists -> potential tasks
-- `Phase N:` or stage markers -> checkpoint candidates
-- Technology names -> tech stack
+Extract: project overview, core features, tech stack, roadmap, architecture.
 
 ---
 
 ## Phase 2.5: Discovery (EARS Requirements)
 
-### 2.5.0 /pi 컨텍스트 감지 (FROM_PI 모드)
+### FROM_PI 모드
 
-`FROM_PI = True`이면 인터뷰 없이 idea.md의 EARS 섹션을 직접 사용한다.
-
-```python
-if FROM_PI:
-    # idea.md에는 /pi 세션에서 사용자가 이미 검토·승인한 EARS 요구사항이 포함됨
-    # → Q&A 인터뷰 완전 생략, 2.5.1~2.5.2 건너뜀
-    idea_content = c4_read_file(path=idea_path)
-
-    print(f"""
-💡 /pi idea.md 로드: {idea_path}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-{idea_content[:800]}...
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-EARS 요구사항이 이미 포함된 idea.md — Discovery 인터뷰 생략
-""")
-
-    # idea.md의 "## 요구사항 (EARS)" 섹션을 직접 파싱
-    # 기능 요구사항 / 비기능 요구사항 / 범위 외(Out of Scope) 추출
-    # → c4_save_spec()으로 저장 → c4_discovery_complete() → Phase 2.6으로 진행
-    # (2.5.3~2.5.5 그대로 실행)
-
-else:
-    # FROM_PI=False: 아래 2.5.1~2.5.2 인터뷰 진행
-    # 권장: /pi 스킬로 ideation → idea.md 먼저 작성 후 c4-plan 호출
-    pass
-```
-
-> `FROM_PI = True`: 2.5.1~2.5.2 완전 생략. idea.md EARS → spec 저장 → 2.5.5 → Phase 2.6.
-> `FROM_PI = False`: 아래 인터뷰 진행 (하위 호환).
+`FROM_PI=True`: idea.md EARS 섹션을 직접 파싱 → `c4_save_spec()` → Phase 2.6. 인터뷰 생략.
+`FROM_PI=False`: 아래 인터뷰 진행.
 
 ### 2.5.1 Domain Auto-Detection
 
-> **FROM_PI=True 시 생략** — idea.md의 아이디어 이름/문제 설명에서 도메인을 추론하여 조용히 설정.
+Analyze project structure. For detection rules, see `references/domain-templates.md`.
+Confirm with user (FROM_PI=False only).
 
-Analyze project structure to infer domain. For detection rules, see `references/domain-templates.md`.
+### 2.5.2 EARS Requirements Collection (FROM_PI=False only)
 
-Confirm with user (FROM_PI=False only):
-```python
-AskUserQuestion(questions=[{
-    "question": f"Domain detected as [{detected}]. Correct?",
-    "header": "Domain",
-    "options": [
-        {"label": f"{detected} (detected)", "description": "Auto-detected domain"},
-        {"label": "Web Frontend", "description": "React, Vue, etc."},
-        {"label": "Web Backend", "description": "FastAPI, Express, etc."},
-        {"label": "ML/DL", "description": "PyTorch, TensorFlow, etc."}
-    ],
-    "multiSelect": True
-}])
-```
+| Pattern | Format |
+|---------|--------|
+| Ubiquitous | "The system shall ~" |
+| Event-Driven | "When ~, the system shall ~" |
+| State-Driven | "While ~, the system shall ~" |
+| Optional | "If ~ is enabled, the system shall ~" |
+| Unwanted | "If ~ (error), the system shall ~" |
 
-### 2.5.2 EARS Requirements Collection
-
-> **FROM_PI=True 시 생략** — idea.md `## 요구사항 (EARS)` 섹션이 이미 승인된 스펙이다.
-
-Use EARS (Easy Approach to Requirements Syntax) patterns (FROM_PI=False only):
-
-| Pattern | Format | Example |
-|---------|--------|---------|
-| **Ubiquitous** | "The system shall ~" | "The system shall encrypt user data" |
-| **Event-Driven** | "When ~, the system shall ~" | "When user submits login, system shall validate" |
-| **State-Driven** | "While ~, the system shall ~" | "While loading, system shall show spinner" |
-| **Optional** | "If ~ is enabled, the system shall ~" | "If dark mode enabled, use dark theme" |
-| **Unwanted** | "If ~ (error), the system shall ~" | "If invalid credentials, show error" |
-
-**Interview flow** (FROM_PI=False):
-1. Identify core features (user-stated = must detail, AI-judged = confirm)
-2. Detail each feature with EARS patterns
-3. Confirm edge cases with follow-up questions
-
-For domain-specific interview questions, see `references/domain-templates.md`.
+For domain-specific questions, see `references/domain-templates.md`.
 
 ### 2.5.3 Save Specification
 
-**FROM_PI=True**: idea.md `## 요구사항 (EARS)` 섹션에서 요구사항을 추출하여 저장.
-**FROM_PI=False**: 인터뷰에서 수집한 EARS 요구사항을 저장.
-
 ```python
-# FROM_PI=True 예시: idea.md EARS 섹션 직접 매핑
-c4_save_spec(
-    name=PI_SLUG,  # idea.md slug 사용
-    content=f"""
-feature: {PI_SLUG}
-domain: {detected_domain}
-description: {idea_one_liner}  # idea.md 첫 줄 > 핵심 문장
-source: /pi idea.md ({idea_path})
-requirements:
-  # idea.md ## 요구사항 (EARS) > ### 기능 요구사항 에서 추출
-  - id: REQ-001
-    pattern: event-driven
-    text: "WHEN [이벤트] THEN 시스템은 [동작]"
-  # ... (idea.md 항목 순서대로)
-non_functional:
-  # idea.md ## 요구사항 (EARS) > ### 비기능 요구사항 에서 추출
-  - "성능: ..."
-out_of_scope:
-  # idea.md ## 요구사항 (EARS) > ### 범위 외 에서 추출
-  - "..."
-"""
-)
+c4_save_spec(name=feature_slug, content="feature/domain/requirements/non_functional/out_of_scope YAML")
 ```
 
 ### 2.5.4 Verification Requirements
-
-Collect verification needs from conversation and domain defaults:
 
 | Domain | Default Verification |
 |--------|---------------------|
@@ -345,15 +159,9 @@ Collect verification needs from conversation and domain defaults:
 | ml-dl | cli (inference), metrics |
 | infra | cli (terraform), dryrun |
 
-Verification requirements go into task DoD (not separate tools).
-
-Verification types: `unit`, `http`, `browser`, `cli`, `metrics`, `visual`, `dryrun`.
-
 ### 2.5.5 Discovery Complete
 
 ```python
-specs = c4_list_specs()
-# Show saved specs summary
 c4_discovery_complete()  # Transitions to DESIGN state
 ```
 
@@ -361,79 +169,20 @@ c4_discovery_complete()  # Transitions to DESIGN state
 
 ## Phase 2.6: Design (Architecture Decisions)
 
-### 2.6.1 Architecture Options
+For domain-specific templates, see `references/domain-templates.md`.
 
-For each core feature, present architecture options with:
-- id, name, description, complexity (low/medium/high)
-- pros, cons, recommended flag
+1. **Architecture Options** — id, name, complexity, pros/cons, recommended
+2. **Component Design** — name, type, responsibilities, dependencies, interfaces
+3. **Data Flow + Mermaid** — sequence/flow diagrams
+4. **Design Decisions** — id (DEC-XXX), question, decision, rationale, alternatives
 
-For domain-specific architecture templates, see `references/domain-templates.md`.
-
-### 2.6.2 Component Design
-
-Define components with: name, type, description, responsibilities, dependencies, interfaces.
-
-### 2.6.3 Data Flow + Mermaid Diagram
-
-Define data flows between components. Generate Mermaid sequence/flow diagrams.
-
-### 2.6.4 Design Decisions
-
-Record decisions with: id (DEC-XXX), question, decision, rationale, alternatives_considered.
-
-### 2.6.5 Save Design
+### Save Design
 
 ```python
-c4_save_design(
-    name="feature-name",
-    content="""
-feature: feature-name
-domain: web-backend
-description: Feature design
-
-options:
-  - id: option-a
-    name: Option A Name
-    description: "Description"
-    complexity: low
-    pros: [pro1, pro2]
-    cons: [con1]
-    recommended: true
-  - id: option-b
-    name: Option B Name
-    description: "Description"
-    complexity: medium
-
-selected_option: option-a
-
-components:
-  - name: ServiceName
-    type: service
-    description: Business logic
-    responsibilities: [resp1, resp2]
-    dependencies: [Dep1, Dep2]
-
-decisions:
-  - id: DEC-001
-    question: "Which approach?"
-    decision: Option A
-    rationale: "Fits project scale"
-
-mermaid: |
-  sequenceDiagram
-    Client->>Controller: POST /api/action
-    Controller->>Service: process()
-    Service-->>Controller: Result
-    Controller-->>Client: 200 OK
-"""
-)
+c4_save_design(name="feature", content="options/selected/components/decisions/mermaid YAML")
 ```
 
-### 2.6.6 Design Confirmation
-
-Show all designs, ask user to confirm, modify, or restart from Discovery.
-
-### 2.6.7 Design Complete
+### Design Complete
 
 ```python
 c4_design_complete()  # Transitions to PLAN state
@@ -441,595 +190,123 @@ c4_design_complete()  # Transitions to PLAN state
 
 ---
 
-## Phase 2.65: Conflict Gate (소프트 게이트)
+## Phase 2.65: Conflict Gate
 
-> Entry: c4_design_complete() 직후, Phase 2.7 Lighthouse 전.
-> 목적: 진행 중인 다른 워커/기존 스펙/지식과의 충돌을 감지하여 검토를 요청한다.
-> 충돌이 없으면 조용히 통과. 충돌이 있어도 사용자가 항상 무시하고 진행할 수 있다 (소프트 게이트).
+소프트 게이트 — 워커/스펙/지식 충돌 감지. 상세: `references/conflict-gate.md`
 
-### 2.65.1 충돌 스캔
-
-병렬로 3가지 소스를 스캔한다:
-
-```python
-# 1. 파일 충돌 (HIGH) — 활성 워커와 동일 파일 수정 여부
-# 실패 시: 해당 소스 건너뜀 (충돌 없음으로 처리) — UX 방해 금지
-worktrees = c4_worktree_status()
-# c4/w-* 브랜치별 수정 중인 파일 목록 추출
-# → 현재 plan scope 파일들과 교집합 확인
-
-# 2. 개념 겹침 (MEDIUM) — 기존 스펙/디자인과 유사한 주제
-# 실패 시: 해당 소스 건너뜀 (충돌 없음으로 처리)
-specs   = c4_list_specs()
-designs = c4_list_designs()
-# feature명, 설명, 도메인 키워드로 현재 계획과 유사한 항목 LLM 판단
-# → 이름/설명이 현재 feature와 겹치는 것 플래그
-# → 최근 수정(14일 이내) spec/design만 비교 대상으로 한정
-
-# 3. 지식 참고 (LOW) — 동일 도메인 최근 기록
-# 실패 시: 해당 소스 건너뜀 (충돌 없음으로 처리)
-# query = "{현재 feature명} {detected_domain}" (feature명 + 도메인 키워드 조합)
-recent = c4_knowledge_search(query=f"{current_feature} {detected_domain}", limit=3)
-# 유사 결과 있으면 참고용으로 제시 (blocking 아님)
-```
-
-### 2.65.2 결과 처리
-
-**충돌 없음**:
-```
-✅ 충돌 없음 — 계속 진행합니다
-```
-→ Phase 2.7로 조용히 진행.
-
-**충돌 감지 시**: ConflictReport 출력 후 AskUserQuestion:
-
-```
-⚠️  충돌 감지 — 태스크 생성 전 검토 필요
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-[파일 충돌] HIGH
-  {file}
-  → 워커 {branch} ({task_id}) 수정 중
-
-[개념 겹침] MEDIUM
-  기존 Spec/Design: {name}
-  → "{현재 feature}"와 유사한 문제를 다루고 있음
-
-[지식 참고] LOW
-  Knowledge: "{title}" ({date})
-  → 동일 도메인 최근 기록 — 참고할 것
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-```
-
-```python
-AskUserQuestion(questions=[{
-    "question": "충돌이 감지됐습니다. 어떻게 진행할까요?",
-    "header": "Conflict Review",
-    "options": [
-        {
-            "label": "검토 완료, 계속 진행",
-            "description": "충돌 내용을 확인했으며 이 계획과 병행 가능하다고 판단"
-        },
-        {
-            "label": "충돌 무시하고 계속",
-            "description": "충돌이 있지만 현재 계획을 그대로 진행"
-        },
-        {
-            "label": "계획 재검토",
-            "description": "Phase 2.6 Design으로 돌아가 범위/접근 방식 수정"
-        }
-    ],
-    "multiSelect": False
-}])
-```
-
-- "검토 완료" → Phase 2.7 (충돌 해소됐다고 판단, 이력 기록 불필요)
-- "충돌 무시하고 계속" → Phase 2.7 + `c4_knowledge_record`로 무시 결정 이력 기록
-  (제목: "충돌 무시 결정 — {feature}", 내용: ConflictReport 요약)
-- "계획 재검토" → Phase 2.6으로 돌아감
-
-### 2.65 규칙
-
-```
-✅ 충돌이 없으면 절대 중단하지 않는다 — UX 방해 금지
-✅ 사용자는 항상 충돌을 무시하고 진행할 수 있다
-✅ 파일 충돌 > 개념 겹침 > 지식 참고 순으로 심각도 분류
-❌ 하드 블로킹 금지 — 소프트 게이트만
-```
+충돌 없으면 조용히 통과. 충돌 있어도 사용자가 무시하고 진행 가능.
 
 ---
 
 ## Phase 2.7: Contract-First Lighthouse
 
-> Entry: After Design complete, before Task creation.
-> Principle: "Define interface first, implement second" (TDD approach).
+> "Define interface first, implement second" (TDD approach).
 
-### 2.7.1 Extract Tool Contracts from Design
-
-Analyze design components/interfaces to identify MCP tools to expose.
-
-| Type | Example | Lighthouse? |
-|------|---------|-------------|
-| New MCP tool | c4_xyz | MUST register |
-| New API endpoint | REST/gRPC/WS | Register as tool wrapper |
-| New service interface | FooService.bar() | Register if externally exposed |
-| Internal helper | parseX(), validate() | NOT needed |
-
-**Rule**: New features MUST define Lighthouse contracts. Skip only for refactoring/bugfix (state reason).
+| Type | Lighthouse? |
+|------|-------------|
+| New MCP tool | MUST register |
+| New API endpoint | Register as tool wrapper |
+| New service interface | Register if externally exposed |
+| Internal helper | NOT needed |
 
 ```python
-AskUserQuestion(questions=[{
-    "question": "Confirm MCP tool contracts to define (required for new features)",
-    "header": "Contracts",
-    "options": [
-        # Auto-extracted from design
-        {"label": "{tool_name_1}", "description": "{description}"},
-        {"label": "{tool_name_2}", "description": "{description}"},
-        {"label": "Add custom", "description": "Define tool name and spec manually"},
-        {"label": "Skip (no new tools)", "description": "Refactoring/bugfix only"}
-    ],
-    "multiSelect": True
-}])
+c4_lighthouse(action="register", name=tool_name, description=desc,
+              input_schema=json.dumps(schema), spec=spec_text, auto_task=True)
 ```
-
-### 2.7.2 Register Lighthouse Stubs
-
-For each selected tool, define input schema + API spec, then register:
-
-```python
-c4_lighthouse(
-    action="register",
-    name=tool_name,
-    description=tool_description,
-    input_schema=json.dumps(input_schema),
-    spec=spec_text,
-    auto_task=True  # Creates T-LH-{name}-0 automatically
-)
-```
-
-### 2.7.3 Verify Stubs
-
-Call each registered stub to confirm contract is properly defined.
-
-### 2.7.4 Summary
-
-Display registered stubs with their auto-generated task IDs.
-
----
-
-## Phase L: Lighthouse Management
-
-> Entry: "Lighthouse management" selected in Phase 0.5
-
-```python
-AskUserQuestion(questions=[{
-    "question": "Select Lighthouse action",
-    "header": "LH Action",
-    "options": [
-        {"label": "Register new contract", "description": "Lighthouse stub + task creation"},
-        {"label": "List all tools", "description": "View all registered Lighthouse entries"},
-        {"label": "Manual promote", "description": "Mark implemented stub as complete"},
-        {"label": "Remove tool", "description": "Deprecate Lighthouse entry"}
-    ],
-    "multiSelect": False
-}])
-```
-
-Execute corresponding c4_lighthouse action (register/list/promote/remove).
 
 ---
 
 ## Phase 3: Development Environment Interview
 
-Ask about development environment not found in documents.
 For domain-specific questions, see `references/domain-templates.md`.
 
-### 3.1 Core Environment
-
-Ask about: language, build tool, package manager.
-
-### 3.2 Test Strategy
-
-Ask about: unit test framework, E2E framework.
-
-### 3.3 Quality Standards
-
-Ask about: linting/formatting tools (multi-select).
-
-### 3.4 C4 Workflow
-
-Ask about: checkpoint placement (per-phase/per-feature/none), task granularity, auto-execution scope.
+Ask about: language/build/package manager, test frameworks, linting tools,
+checkpoint placement, task granularity.
 
 ---
 
 ## Phase 4: Task Draft (DB 커밋 전)
 
-> ⚠️ 이 단계에서는 c4_add_todo를 호출하지 않습니다. 텍스트 초안만 작성합니다.
-> DB 커밋은 Phase 4.5 Critique Loop 수렴 후 Phase 4.9에서만 수행합니다.
+> ⚠️ c4_add_todo 호출 금지. 텍스트 초안만. DB 커밋은 Phase 4.9에서만.
 
-Create C4 tasks from interview results and design.
 For Worker Packet format and DoD principles, see `references/worker-packet.md`.
 
 ### Core Rules
 
-1. PRD checklist items -> individual tasks
-2. `scope` = affected files/directories
-3. `dod` MUST be specific and verifiable
-4. `dependencies` respect execution order
-5. Worker Packet format recommended for all tasks
-
-### Worker Packet Elements
-
-| Element | Required | Description |
-|---------|----------|-------------|
-| **Goal** | Yes | Completion criteria + out-of-scope |
-| **Rationale** | Yes | Why this approach (design decision ref, past knowledge) |
-| **ContractSpec** | Yes | API spec + test spec |
-| **LighthouseRef** | If exists | Lighthouse stub name |
-| **BoundaryMap** | Recommended | DDD layer constraints |
-| **CodePlacement** | Recommended | Files to create/modify |
-| **QualityGates** | Recommended | Validation commands |
-| **Checkpoints** | Recommended | CP1/CP2/CP3 milestones |
+1. PRD checklist → individual tasks, `scope` = affected files
+2. `dod` MUST be specific and verifiable, `dependencies` respect order
+3. Worker Packet format recommended
 
 ### DoD Quality Rules
 
 - **Verifiable**: "X works", "returns Y", "test passes"
 - **Specific**: No vague terms ("improve", "optimize")
-- **Independent**: Checkable without other tasks
+- **Goal-Driven**: 명령형 → 선언형 변환 (테스트 작성 → 통과)
 
-#### Goal-Driven 변환 원칙 (Karpathy)
+### QualityGates 표준 (CRITICAL)
 
-> "Don't tell it what to do — give it success criteria and watch it go."
-
-| 명령형 (피할 것) | 선언형 목표로 변환 |
-|----------------|-----------------|
-| "X validation 추가해" | "잘못된 입력 테스트 작성 → 모두 통과시켜라" |
-| "버그 수정해" | "버그를 재현하는 테스트 작성 → 통과시켜라" |
-| "X 최적화해" | "현재 수치 측정 → 목표(N ms/N%) 달성 테스트 → 통과" |
-| "리팩토링해" | "기존 테스트 통과 확인 → 리팩토링 → 여전히 통과" |
-
-| Bad DoD | Good DoD |
-|---------|----------|
-| "Implement login" | "Email/password login returns JWT, wrong password returns 401" |
-| "Optimize API" | "GET /users response < 100ms, existing tests pass" |
-| "Fix bug" | "null input returns empty array, add regression test" |
-
-#### QualityGates 표준 (CRITICAL)
-
-DoD에 테스트 언급이 있으면 `QualityGates`에 **파일 존재 확인 명령**을 반드시 포함한다.
-
-> ⚠️ `pnpm test` / `go test ./...` 단독 실행은 테스트 파일이 없어도 통과 → **false positive** 방지 필수.
+> `go test ./...` 단독은 테스트 파일 없어도 통과 → false positive 방지 필수.
 
 ```
-QualityGates:
-  # ❌ 잘못된 예 (테스트 파일 없어도 통과 가능)
-  - pnpm test
-
-  # ✅ 올바른 예 (파일 존재 먼저 확인)
-  - test -f src/components/Foo.test.tsx        # 테스트 파일 존재 확인
-  - pnpm test --run src/components/Foo.test.tsx # 해당 파일만 실행
-  # 또는 Go:
-  - test -f internal/foo/foo_test.go
-  - go test ./internal/foo/...
+- test -f internal/foo/foo_test.go     # 파일 존재 확인
+- go test ./internal/foo/...           # 해당 파일만 실행
 ```
 
-| 언어 | 존재 확인 | 실행 |
-|------|----------|------|
-| TypeScript | `test -f path/to/Foo.test.tsx` | `pnpm test --run Foo.test.tsx` |
-| Go | `test -f path/to/foo_test.go` | `go test ./path/to/...` |
-| Python | `test -f tests/test_foo.py` | `uv run pytest tests/test_foo.py` |
-| Rust | `grep -q '#\[test\]' src/foo.rs` | `cargo test foo` |
+### Task Size: APIs ≤3, Files ≤5, Domains = 1. 초과 시 분할 권고.
 
-### Task Size Validation
-
-| Metric | Max | If exceeded |
-|--------|-----|-------------|
-| Public APIs | 3 | Split recommended |
-| Modified files | 5 | Split recommended |
-| Domains | 1 | **Split required** |
-
-If exceeded, ask user whether to split.
-
-### DoD Starter Template
-
-DoD 초안 작성 시 아래 구조를 시작점으로 사용한다:
-
-```
-1. Assumptions: 이 태스크가 전제하는 것 (명시적으로)
-2. Success Criteria: 테스트/명령으로 검증 가능한 완료 상태
-3. Failure Modes Top 3: 예상 실패 케이스 + 대응
-4. QualityGates: 파일 존재 확인 + 테스트 실행
-```
-
-### Task Draft Format (텍스트만, DB 저장 금지)
+### Task Draft Format
 
 ```
 [DRAFT] T-001-0: Task title
   scope: src/path/
   dod: |
     Goal: ...
-    Rationale: (why this approach)
-    ContractSpec:
-      API: ...
-      Tests: ...
-      **Assumptions** (구현 전 선제 선언 — 틀리면 멈추고 확인):
-        - [이 태스크가 전제하는 파일 경로, API 형식, 외부 의존성]
-    CodePlacement:
-      Modify: ...
+    Rationale: ...
+    Assumptions: [전제사항]
+    ContractSpec: API + Tests
+    QualityGates: test -f ... && go test ...
   dependencies: []
-
-[DRAFT] CP-001: Phase 1 checkpoint
-  dod: Phase 1 implementation + review complete
-  dependencies: [R-001-0, R-002-0]
-  review_required: false
 ```
 
-Dependency tree: `T-XXX -> R-XXX -> CP-XXX -> T-YYY -> R-YYY`
-
-> ⚠️ **CP deps 규칙 (CRITICAL)**: CP 태스크의 `dependencies`에는 반드시 R- 태스크만 넣는다.
-> T- 태스크를 CP에 직접 연결하는 것은 리뷰 레이어 우회이므로 금지.
-> 예외: `review_required=False`인 경우 명시적 사유 필수 (체크포인트·docs·migration 전용 태스크만 허용).
->
-> **올바른 구조**: `T-001 → R-001 → CP-001`
-> **잘못된 구조**: `T-001 → CP-001` (R-001 없음 → CRITICAL)
+> **CP deps 규칙**: CP dependencies에 R- 태스크만. T- 직접 연결 금지 (리뷰 우회).
+> 올바른: `T-001 → R-001 → CP-001`. 잘못된: `T-001 → CP-001`.
 
 ---
 
-## Phase 4.5: Plan Refine (Worker 기반 Pre-Mortem)
+## Phase 4.5: Plan Critique Loop
 
-> Entry: Phase 4 draft 완료 직후. DB 커밋 전.
-> Exit: 수렴 선언 → Phase 4.9 (DB 커밋) → Phase 5
-> Purpose: 신선한 컨텍스트를 가진 Worker가 계획을 비판 — confirmation bias 제거.
->
-> ⚠️ **인라인 자가 비판 금지**: 계획을 만든 세션이 직접 비판하면 confirmation bias 발생.
->    매 라운드마다 반드시 새 Worker(Task agent)를 스폰하여 격리된 시각으로 검토.
+Worker 기반 Pre-Mortem 분석. 상세: `references/critique-loop.md`
 
-### 4.5.0 Config 분기
-
-```python
-# Phase 0.0에서 읽은 설정 사용
-if not LOOP_ACTIVE:
-    print("⏭️  Plan Refine 비활성화 (config: planning.critique_loop)")
-    print("   활성화: .c4/config.yaml → planning.critique_loop.enabled: true")
-    → Phase 4.9 (DB Commit) 직행
-
-INTERACTIVE = (CRITIQUE_MODE == "interactive")
-```
-
-### 4.5.1 Loop 초기화
-
-```
-round = 0 (max: CRITIQUE_MAX_ROUNDS, 기본 3)
-converged = false
-current_draft = Phase 4에서 작성한 태스크 초안 (전체 텍스트)
-```
-
-### 4.5.2 Worker 스폰: 격리된 Plan Refiner
-
-> c4-refine 패턴 적용 — 매 라운드마다 새 Worker를 스폰하여 fresh context 보장.
-
-```python
-# interactive 모드: 라운드 시작 전 확인
-if INTERACTIVE:
-    AskUserQuestion(question=f"Round {round+1}/{CRITIQUE_MAX_ROUNDS} critique를 실행할까요?")
-
-critique_result = Task(
-    subagent_type="general-purpose",
-    description=f"Plan critique round {round+1}",
-    prompt=f"""
-당신은 시니어 소프트웨어 아키텍트입니다.
-아래 C4 구현 계획 초안을 Pre-Mortem 방식으로 비판하세요.
-
-**프레임**: "이 계획대로 실행했고 3개월 후 실패했다. 가장 큰 실패 원인은?"
-
-## 계획 초안
-{current_draft}
-
-## 비판 렌즈 (각 태스크에 대해 검토)
-
-| 렌즈 | 질문 | 심각도 |
-|------|------|--------|
-| DoD 측정 가능성 | "완료됐음을 어떻게 증명하는가?" — 구체적 명령어/테스트가 있는가? | CRITICAL |
-| **R- 쌍 누락** | **T- 태스크에 대응하는 R- 태스크가 의존성 트리에 있는가? CP deps에 T-가 직접 들어있고 R-가 없으면 리뷰 레이어가 없는 것.** | **CRITICAL** |
-| **test 파일 존재 확인** | **DoD에 "X.test.tsx N개 pass"가 있으면 QualityGate에 `test -f X.test.tsx` 명령이 포함되어 있는가? 없으면 false positive 위험.** | **CRITICAL** |
-| 파일 충돌 | 두 태스크가 같은 파일을 동시에 수정하는가? | CRITICAL |
-| 가정 목록 | 이 태스크가 전제하는 것은? (파일 경로, API 형식, 외부 설정) | HIGH |
-| 의존성 누락 | 숨겨진 실행 순서 제약이 있는가? | HIGH |
-| 범위 과잉 | 수정 파일 5개 초과? API 3개 초과? 도메인 2개 이상? | HIGH |
-| 더 단순한 방법 | 50% 코드로 80% 결과를 내는 방법이 있는가? | MEDIUM |
-| 외부 의존성 | 환경 변수, 외부 서비스가 전제되어 있는가? | MEDIUM |
-
-## 출력 형식 (반드시 이 형식으로)
-
-```
-## Plan Critique Round {round+1}
-
-### CRITICAL (즉시 수정 필요)
-- [T-XXX-0] 문제: ... → 권장 수정: ...
-
-### HIGH (수정 권장)
-- [T-XXX-0] 문제: ... → 권장 수정: ...
-
-### MEDIUM (선택적)
-- [T-XXX-0] 문제: ... → 권장 수정: ...
-
-### 수렴 판정
-CRITICAL: N건 / HIGH: N건 / MEDIUM: N건
-판정: CONVERGED (0건) | NOT_CONVERGED (N건 미해결)
-```
-"""
-)
-```
-
-### 4.5.3 수정 (Revise) — 메인 세션에서 적용
-
-Worker critique 결과를 받아 메인 세션에서 draft 수정:
-
-- **CRITICAL**: 즉시 draft 수정 (DoD 재작성, 태스크 분리/병합)
-- **HIGH**: 수정 적용 또는 Rationale에 리스크 명시
-- **MEDIUM**: 사용자에게 선택 제시 (INTERACTIVE 모드) 또는 자동 적용
-
-### 4.5.4 수렴 판정
-
-```python
-critical_count = critique_result.count("CRITICAL") - 해결된 수
-high_count = critique_result.count("HIGH") - 해결된 수
-
-converged = (critical_count == 0 and high_count == 0)
-
-if converged or round + 1 >= CRITIQUE_MAX_ROUNDS:
-    → 수렴 선언 출력 → Phase 4.9
-else:
-    round += 1
-    current_draft = 수정된 draft
-    → Phase 4.5.2 (새 Worker 스폰)
-```
-
-**수렴 선언 출력**:
-```
-## 계획 수렴 ✅ (Round N/MAX)
-CRITICAL: 0 / HIGH: 0 / MEDIUM: N (허용)
-Worker 비판 횟수: N회 (각 라운드 fresh context)
-→ DB 커밋 진행
-```
-
-**MAX round 미수렴 시**:
-```
-## 계획 미수렴 ⚠️ (MAX/MAX rounds)
-미해결: CRITICAL N건, HIGH N건
-```
-→ AskUserQuestion: "(1) 현재 상태로 진행  (2) 수동 수정 후 재시작"
+매 라운드마다 fresh Worker 스폰 → 비판 → 수정 → 수렴 판정 (max 3 rounds).
+`planning.critique_loop.mode: skip`으로 비활성화 가능.
 
 ---
 
 ## Phase 4.9: DB Commit
 
-> Entry: Phase 4.5 수렴 선언 직후
-> 이 단계에서만 c4_add_todo를 호출합니다.
-
-수렴 확정된 task draft를 순서대로 DB에 기록합니다.
-Critique loop에서 발생한 수정 이력은 각 태스크 DoD의 Rationale 섹션에 포함합니다.
-
-```python
-# T-XXX creates R-XXX review task automatically (review_required default true)
-c4_add_todo(
-    task_id="T-001-0",
-    title="Task title",
-    scope="src/path/",
-    dod="Goal: ...\n\nRationale: (why this approach; critique loop에서 수정된 경우 이유 포함)\n\nContractSpec:\n  API: ...\n  Tests: ...\n\nCodePlacement:\n  Create: ...\n  Modify: ..."
-)
-
-# CP tasks depend on R tasks
-c4_add_todo(
-    task_id="CP-001",
-    title="Phase 1 checkpoint",
-    dod="Phase 1 implementation + review complete",
-    dependencies=["R-001-0", "R-002-0"],
-    review_required=False
-)
-
-# 태스크 생성 완료 후 알림 발송 (미설정 시 no-op) — MUST CALL
-mcp__cq__c4_notify(message='[CQ] ✅ 계획 확정\n프로젝트: {project_id} | 태스크 {N}개 생성됨', title='C4 Plan 완료', event='plan.created')
-```
+수렴 확정된 draft를 `c4_add_todo()`로 일괄 기록.
+알림: `c4_notify(message='계획 확정', event='plan.created')`
 
 ---
 
 ## Phase 5: Plan Confirmation
 
-Summarize the generated plan and confirm with user.
-
-**Output**:
-- Task count per phase
-- Checkpoint count
-- Validation strategy
-- Task list per phase
-- Next steps (전체 실행 플로우 포함)
-
-**Confirmation**:
-
 ```python
 if AUTO_RUN:
-    # /pi --auto-run 모드: 사용자 확인 없이 자동 진행
-    print("""
-✅ 태스크 생성 완료
-🚀 /pi 자동 실행 모드 — /c4-run 시작합니다
-   (plan → run → finish 전체 자동 진행)
-""")
-    Skill("c4-run")
-
+    Skill("c4-run")  # 자동 진행
 else:
-    # 일반 모드: 사용자 확인 후 안내
-    # "Proceed" -> 아래 전체 플로우를 안내하고 `/c4-run` 시작 유도
-    # "Modify"  -> ask which part
-    # "Cancel"  -> delete tasks, restart
-    pass
+    # Proceed / Modify / Cancel 선택
 ```
 
-**전체 실행 플로우 (반드시 이 순서로 안내)**:
-```
-/c4-run          # Worker 스폰 → 태스크 실행 → (체크포인트 처리) → polish → finish 자동 실행
-/c4-finish       # c4-run이 완료되지 못한 경우 수동으로 마무리
-```
+전체 실행 플로우: `/c4-run` → (checkpoint) → polish → finish 자동.
 
-> ℹ️ **Checkpoint는 c4-run에 내장되어 있다.**
-> - `run.checkpoint_mode: interactive`(기본): CP 도달 시 중단 + 사용자가 `/c4-checkpoint` 호출
-> - `run.checkpoint_mode: auto`: Worker가 자동으로 4-lens 리뷰 후 계속 진행
->
-> ℹ️ **Polish와 Finish도 c4-run 완료 시 자동 실행된다.**
-> c4-run이 끊겼거나 수동으로 마무리가 필요할 때만 `/c4-finish`를 별도 실행.
+### Validation Checklist
 
-### Validation Checklist (must pass before confirmation)
-
-- [ ] **Requirement clarity**: All requirements in EARS patterns?
-- [ ] **DoD specificity**: All task DoDs verifiable?
-- [ ] **Dependency validity**: No circular dependencies?
-- [ ] **Scope definition**: Each task scope clear?
-- [ ] **User approval**: Plan explicitly approved?
-
-Recommended:
-- [ ] Architecture decisions documented?
-- [ ] Validation strategy defined (lint, unit, e2e)?
-- [ ] Checkpoints at appropriate positions?
-- [ ] Technical risks identified with mitigation plans?
-
----
-
-## Flow Summary
-
-```
-/c4-plan
-    |
-Phase 0: Status display + knowledge_search (state, tasks, specs, designs, lighthouses, docs)
-    |
-Phase 0.5: Action selection
-    |-> "Plan new feature"     -> Phase 1~2.65~2.7~3~4~4.5~4.9~5
-    |-> "Review/modify"        -> Phase R (detail view -> edit)
-    |-> "Lighthouse"           -> Phase L (register/list/promote/remove)
-    |-> "Add tasks only"       -> Phase 4~4.5~4.9~5
-    |-> "View status only"     -> End
-
-"Plan new feature" 상세:
-    Phase 1  : 문서 스캔
-    Phase 2  : 문서 해석
-    Phase 2.5: Discovery (EARS 요구사항)
-              → FROM_PI=True이면 idea.md에서 자동 추출 (Q&A 생략)
-    Phase 2.6: Design (아키텍처 결정)
-    Phase 2.65: Conflict Gate (소프트 게이트 — 충돌 감지 시 검토 요청)
-    Phase 2.7: Lighthouse (계약 정의)
-    Phase 3  : 개발 환경 인터뷰
-    Phase 4  : Task Draft (텍스트만, DB 저장 금지)
-        |
-    Phase 4.5: Plan Critique Loop ← ─ ─ ─ ─ ┐
-        |  Pre-Mortem 분석 (역할 전환)        │
-        |  수정 (Critical/High/Medium)         │
-        |  수렴 판정: 미수렴이면 round++ ──── ┘
-        |  수렴 (max 3 rounds)
-        ↓
-    Phase 4.9: DB Commit (c4_add_todo 일괄 호출)
-        |
-    Phase 5  : Plan Confirmation (사용자 최종 승인)
-```
+- [ ] Requirements in EARS patterns?
+- [ ] DoDs verifiable?
+- [ ] No circular dependencies?
+- [ ] Scope clear?
+- [ ] User approved?
 
 ## Related Skills
 

@@ -1,4 +1,5 @@
 ---
+name: c4-status
 description: |
   Show the current C4 project status with visual task graph progress.
   Displays overall progress, phase breakdowns, dependency graphs, queue

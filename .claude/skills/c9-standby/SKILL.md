@@ -1,3 +1,9 @@
+---
+name: c9-standby
+description: |
+  C9 연구 루프 대기 모드. 실험 완료 알림을 기다립니다.
+  트리거: "c9-standby", "실험 대기", "standby"
+---
 # C9 Standby
 
 RUN phase 중 훈련이 진행되는 동안 대기. cq mail로 완료 알림을 받으면 자동으로 CHECK를 실행.

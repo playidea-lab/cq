@@ -1,3 +1,9 @@
+---
+name: c9-deploy
+description: |
+  C9 연구 완료 후 모델을 배포합니다.
+  트리거: "c9-deploy", "모델 배포", "deploy model"
+---
 # C9 Deploy
 
 Best model을 edge 서버에 배포. c9-finish와 독립적으로 실행 가능.

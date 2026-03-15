@@ -1,4 +1,5 @@
 ---
+name: c4-run
 description: |
   Spawn C4 workers to execute implementation tasks in parallel. **Always runs in
   continuous mode** (auto-respawn until queue empty). Analyzes task dependency
@@ -18,532 +19,130 @@ Execute C4 tasks with dependency-aware parallel workers. **Defaults to continuou
 /c4-run 3           # Continuous, initial batch 3 workers
 /c4-run --max 4     # Continuous, cap 4 workers per respawn
 /c4-run --single    # One round only (no respawn); then exit
-/c4-run 2 --single  # One round: spawn 2 workers, then exit
 ```
 
-## 🔄 Single-Task Worker Model
+## Single-Task Worker Model
 
-**Each Worker processes ONE task and exits** (context isolation principle).
+Each Worker processes ONE task and exits (context isolation).
+All workers run in background — main session remains interactive.
 
-```
-┌──────────────────────────────────────────────────┐
-│  Orchestrator (/c4-run)                          │
-│  ┌─────────┐  ┌─────────┐  ┌─────────┐          │
-│  │Worker 1 │  │Worker 2 │  │Worker 3 │  ...     │
-│  │ Task A  │  │ Task B  │  │ Task C  │          │
-│  │  EXIT   │  │  EXIT   │  │  EXIT   │          │
-│  └─────────┘  └─────────┘  └─────────┘          │
-│       ↓            ↓            ↓               │
-│  [Fresh Context] [Fresh Context] [Fresh Context]│
-│       ↓            ↓            ↓               │
-│  ┌─────────┐  ┌─────────┐  ┌─────────┐          │
-│  │Worker 4 │  │Worker 5 │  │Worker 6 │  ...     │
-│  │ Task D  │  │ Task E  │  │ Task F  │          │
-│  └─────────┘  └─────────┘  └─────────┘          │
-└──────────────────────────────────────────────────┘
-```
-
-**Why?**
-- Prevents context accumulation (12+ tasks → worker death)
-- Fresh context per task
-- Task failures isolated
-
-**All workers run in background.** Main session remains available for user interaction.
+**Why?** Prevents context accumulation, fresh context per task, failures isolated.
 
 ## Instructions
 
-### ⚠️ Pre-Flight Checks
+### Pre-Flight Checks
 
-1. **MCP Tools Only** — NEVER use CLI commands:
-   - `mcp__c4__c4_status()` - status + parallelism analysis
-   - `mcp__c4__c4_start()` - PLAN/HALTED → EXECUTE
-   - `mcp__c4__c4_get_task(worker_id)` - task assignment
-   - `mcp__c4__c4_submit(task_id, commit_sha, validation_results)` - submit
-   - `mcp__c4__c4_run_validation(names)` - validation
+1. **MCP Tools Only** — `c4_status`, `c4_start`, `c4_get_task`, `c4_submit`, `c4_run_validation`
+2. **Accept Edits Mode** — Verify enabled (`Shift+Tab`). If off, automation breaks!
 
-2. **Accept Edits Mode** — Verify enabled (bottom status bar or `Shift+Tab`).
-   ⚠️ If off, automation breaks on every file edit!
-
-### 0. Generate Worker ID (Required!)
-
-**Before spawning**, generate unique worker ID:
+### 0. Generate Worker ID
 
 ```python
 import uuid
-WORKER_ID = f"worker-{uuid.uuid4().hex[:8]}"  # e.g., "worker-a1b2c3d4"
+WORKER_ID = f"worker-{uuid.uuid4().hex[:8]}"  # NEVER hardcode!
 ```
-
-Use this ID for the entire session. **NEVER use hardcoded values like "claude-worker"!**
 
 ### 1. Status Check + Parallelism Analysis
 
 ```python
 status = mcp__c4__c4_status()
-
-# Parallelism info
 parallelism = status["parallelism"]
-# {
-#   "recommended": 4,        # Recommended worker count
-#   "ready_now": 6,          # Tasks ready to run now
-#   "max_parallelism": 5,    # DAG max width
-#   "by_model": {"opus": 3, "sonnet": 3},  # Model distribution
-#   "pending_total": 10,     # Total pending
-#   "blocked_count": 4,      # Dependency-blocked
-#   "reason": "6 tasks ready, capped at 4 workers"
-# }
+# Keys: recommended, ready_now, max_parallelism, by_model, pending_total, blocked_count, reason
 ```
 
-**State-based routing**:
-- **PLAN/HALTED**: → Step 2 (transition to EXECUTE)
-- **EXECUTE**: → Step 3 (spawn workers)
-- **CHECKPOINT**: `run.checkpoint_mode` 설정에 따라 분기 → `auto`: Worker 자동 리뷰 후 계속; `interactive`(기본): 사용자에게 `/c4-checkpoint` 안내 후 중단
-- **COMPLETE**: Output "Project complete." → exit
-- **INIT**: Output "Run /c4-plan first." → exit
+**State routing**: PLAN/HALTED→Step 2, EXECUTE→Step 3, CHECKPOINT→config분기, COMPLETE→exit, INIT→"/c4-plan first"
 
-### 2. PLAN/HALTED State: Transition to EXECUTE
+### 2. Transition to EXECUTE
 
 ```python
-result = mcp__c4__c4_start()
-# result.success == true, result.status == "EXECUTE"
+mcp__c4__c4_start()  # PLAN/HALTED → EXECUTE
 ```
 
-### 3. Worker Count Decision (Continuous by default)
+### 3. Worker Count Decision
 
 ```python
-# Parse ARGUMENTS — continuous is DEFAULT; --single = one round only
 args = "$ARGUMENTS".strip()
 single_round = "--single" in args
 continuous_mode = not single_round
-
-# Strip option flags for numeric parsing
-args_clean = args.replace("--single", "").replace("--max", "").strip()
-
-if args_clean == "" or args_clean == "--auto":
-    worker_count = parallelism["ready_now"]  # continuous: spawn all ready
-elif "--max" in args:
-    max_workers = int([x for x in args.split() if x.isdigit()][-1])
-    worker_count = min(parallelism["ready_now"], max_workers)
-elif args_clean.isdigit():
-    worker_count = int(args_clean)
-else:
-    worker_count = parallelism["ready_now"]
-
-# Cap at 7 (Claude Code subagent limit)
-worker_count = min(worker_count, 7)
-
-# Print analysis
-print(f"""
-📊 Parallelism Analysis:
-   Total: {parallelism['pending_total']} tasks
-   Ready: {parallelism['ready_now']} tasks
-   Blocked: {parallelism['blocked_count']} (deps unmet)
-   DAG max width: {parallelism['max_parallelism']}
-
-💡 Recommended: {parallelism['recommended']} workers
-   Reason: {parallelism['reason']}
-
-🚀 Executing: {worker_count} workers
-""")
+worker_count = min(parallelism["ready_now"], 7)  # cap at 7
 ```
 
 ### 4. Spawn Workers
 
-**All workers spawn as background subagents** (main session remains interactive).
+Worker prompt template: see `references/worker-prompt.md`
 
 ```python
-import uuid
+WORKER_PROMPT = Read("references/worker-prompt.md")  # {worker_id} placeholder
 
-WORKER_PROMPT = """
-You are a C4 implementation worker.
-
-## Mission
-Execute **ONE** C4 task and exit. (Context isolation principle)
-
-## MCP Tools (MUST USE)
-- `mcp__c4__c4_get_task(worker_id=WORKER_ID)` - request task
-- `mcp__c4__c4_run_validation(names=["lint", "unit"])` - validation
-- `mcp__c4__c4_submit(task_id, worker_id, commit_sha, validation_results)` - submit
-
-## ⚠️ Single Task Protocol (Context Isolation!)
-
-```
-1. task = c4_get_task(worker_id=WORKER_ID)
-2. IF task is None or no task_id:
-       PRINT "No tasks available"
-       EXIT
-3. IF task.task_id starts with "R-":
-       → SWITCH TO REVIEW MODE (see below)
-   ELSE:
-       → SWITCH TO IMPLEMENTATION MODE (see below)
-```
-
-## 🔍 Review Mode (task_id starts with "R-")
-
-When assigned an R- task, perform a structured code review:
-
-```
-1. Read the task DoD — it contains the implementation task_id and commit_sha to review
-2. Read the implementation commit:
-       git show <commit_sha> (via Bash) to see all changes
-3. Perform 6-axis review:
-       Axis 1: Correctness    — Does the code do what the DoD requires?
-       Axis 2: Security       — Any injection, auth bypass, data exposure risks?
-       Axis 3: Reliability    — Error handling, edge cases, idempotency?
-       Axis 4: Observability  — Logging, metrics, tracing adequate?
-       Axis 5: Test Coverage  — Are tests sufficient? Regressions covered?
-       Axis 6: Readability    — Style consistent with codebase? Clear naming?
-4. Decision:
-       IF all axes pass → mcp__c4__c4_submit(task_id, worker_id, commit_sha="",
-                           handoff={"summary":"APPROVED: ...", "verdict":"approved"})
-       IF issues found → mcp__c4__c4_request_changes(task_id, reason="<detailed issues>")
-                         then EXIT (no submit needed)
-5. EXIT
-```
-
-**Review handoff 구조**:
-```json
-{
-  "summary": "APPROVED: 구현이 DoD를 충족함",
-  "verdict": "approved",
-  "files_changed": [],
-  "discoveries": ["리뷰에서 발견한 긍정적 패턴"],
-  "concerns": ["minor: 향후 개선 가능한 사항"],
-  "rationale": "6-axis 리뷰 결과 승인 근거"
-}
-```
-
-## ⏱️ Heartbeat Loop (REQUIRED for long operations)
-
-If `c4_get_task` response includes `heartbeat_interval_sec` (default: 30):
-
-```python
-import threading
-
-def heartbeat_loop(worker_id, interval_sec, stop_event):
-    while not stop_event.wait(interval_sec):
-        try:
-            mcp__cq__c4_worker_heartbeat(worker_id=worker_id)
-        except Exception:
-            pass  # non-fatal
-
-stop_event = threading.Event()
-hb_thread = threading.Thread(target=heartbeat_loop, args=(WORKER_ID, heartbeat_interval_sec, stop_event), daemon=True)
-hb_thread.start()
-
-# ... do your work (file edits, builds, etc.) ...
-
-stop_event.set()  # stop heartbeat on submit or mark_blocked
-```
-
-Start heartbeat BEFORE long operations (file edits, git operations, builds).
-Stop heartbeat AFTER `c4_submit` or `c4_mark_blocked`.
-
-## 🛠️ Implementation Mode (task_id starts with "T-" or other)
-
-```
-0. Start heartbeat thread (see ⏱️ Heartbeat Loop above)
-1. IF task.knowledge_context exists:
-       READ the knowledge context (past patterns, insights)
-       APPLY relevant lessons to implementation decisions
-2. Implement the task (follow DoD, including Rationale)
-3. Run validations, fix issues (max 3 retries)
-4. git commit
-5. stop_event.set()  # stop heartbeat
-6. c4_submit(task_id, ..., handoff=JSON with discoveries/concerns/rationale)
-7. EXIT (Task complete - fresh context for next task!)
-```
-
-**Implementation handoff 구조** (c4_submit 시 전달):
-```json
-{
-  "summary": "구현 요약",
-  "files_changed": ["path/to/file.go"],
-  "discoveries": ["발견한 사항들"],
-  "concerns": ["우려 사항"],
-  "rationale": "이 접근을 선택한 이유"
-}
-```
-이 handoff 데이터는 자동으로 knowledge DB에 기록되어 향후 재활용됩니다.
-
-**CRITICAL**: Exit after ONE task completion!
-Next task → new Worker → fresh context → prevents context death.
-
-## Identity
-Your worker_id: {worker_id}
-START NOW: Call `mcp__c4__c4_get_task(worker_id="{worker_id}")`, complete ONE task, then exit!
-"""
-
-# Model routing from economic_mode config
+# Model routing
 review_model = status.get("economic_mode", {}).get("model_routing", {}).get("review", "opus")
 impl_model = status.get("economic_mode", {}).get("model_routing", {}).get("implementation", "sonnet")
 
-# Classify initial ready tasks by prefix for model routing
-initial_ready_ids = status.get("ready_task_ids", [])
-initial_review_ids = [t for t in initial_ready_ids if t.startswith("R-")]
-initial_impl_ids = [t for t in initial_ready_ids if not t.startswith("R-")]
-
-workers = []
-review_spawned = 0
-impl_spawned = 0
 for i in range(worker_count):
     worker_id = f"worker-{uuid.uuid4().hex[:8]}"
-
-    # Select model: review tasks use review_model (opus), impl tasks use impl_model
-    if review_spawned < len(initial_review_ids):
-        model = review_model
-        task_hint = initial_review_ids[review_spawned]
-        review_spawned += 1
-        desc = f"C4 Review Worker {i+1}/{worker_count} [{task_hint}]"
-    else:
-        model = impl_model
-        desc = f"C4 Worker {i+1}/{worker_count}"
-        impl_spawned += 1
-
-    result = Task(
-        subagent_type="general-purpose",
-        description=desc,
-        prompt=WORKER_PROMPT.format(worker_id=worker_id),
-        model=model,
-        run_in_background=True
-    )
-
-    workers.append({"id": worker_id, "output": result.output_file, "model": model})
-    print(f"🚀 Worker {i+1}/{worker_count} spawned: {worker_id} [{model}]")
-
-# Worker spawn 알림 (미설정 시 no-op)
-mcp__cq__c4_notify(
-    message=f'[CQ] 🚀 Worker {worker_count}개 스폰 (impl={impl_spawned}, review={review_spawned})',
-    title='C4 Worker Spawn',
-    event='worker.spawn'
-)
-
-print(f"""
-🐝 C4 Run: {worker_count} workers spawned (background)
-
-Workers:
-""")
-for w in workers:
-    print(f"  • {w['id']}: {w['output']}")
-
-if single_round:
-    print("""
-## One-round mode (--single)
-
-Workers run once; no auto-respawn.
-Monitor: /c4-status. When done, run `/c4-run` again for more or
-`/c4-finish` when all complete (polish loop is built-in).
-""")
-else:
-    # Default: Continuous — monitor and respawn until queue empty
-    print("""
-## Continuous mode (default)
-
-Auto-respawns workers until queue exhausted.
-Ctrl+C to interrupt.
-""")
-
-    import time
-
-    while continuous_mode:
-        # Wait 30s (worker execution time)
-        time.sleep(30)
-
-        # Re-check status
-        status = mcp__c4__c4_status()
-
-        # Completion conditions
-        if status["status"] == "COMPLETE":
-            mcp__cq__c4_notify(
-                message='[CQ] ✅ 모든 태스크 완료 — /c4-finish로 마무리',
-                title='C4 Workers Complete',
-                event='worker.complete'
-            )
-            print("🎉 All tasks complete!")
-            break
-
-        if status["status"] == "CHECKPOINT":
-            cfg = c4_config_get(section="all")
-            cp_mode = cfg.get("run", {}).get("checkpoint_mode", "interactive")
-
-            if cp_mode == "auto":
-                print("🔍 Checkpoint detected — auto-reviewing (run.checkpoint_mode=auto)...")
-                cp_worker_id = f"worker-{uuid.uuid4().hex[:8]}"
-                Task(
-                    subagent_type="general-purpose",
-                    description="C4 Checkpoint Auto-Review",
-                    prompt=f"""You are a C4 Checkpoint auto-reviewer.
-Call c4_status() to find the pending CP task, then perform 4-lens review:
-[holistic] architecture consistency, [user-flow] e2e, [cascade] previous feedback, [ship-ready] tests pass.
-If all lenses pass → c4_checkpoint(decision="APPROVE", notes="auto-approved: 4-lens passed").
-If issues found → c4_checkpoint(decision="REQUEST_CHANGES", notes="<issues>").
-Worker ID: {cp_worker_id}""",
-                    model=review_model,
-                    run_in_background=False
-                )
-                print("✅ Checkpoint auto-reviewed — continuing run...")
-                continue  # loop 재개
-            else:
-                # 체크포인트 알림 (미설정 시 no-op)
-                mcp__cq__c4_notify(message='[CQ] 🔍 검토 필요\n/c4-checkpoint으로 리뷰 후 /c4-run 재실행', title='C4 Checkpoint')
-                print("⏸️ Checkpoint reached — /c4-checkpoint으로 리뷰 후 /c4-run 재실행")
-                break
-
-        # Check ready tasks
-        ready = status["parallelism"]["ready_now"]
-        if ready == 0:
-            if status["queue"]["pending"] == 0:
-                print("✅ All tasks processed!")
-                break
-            else:
-                print(f"⏳ {status['queue']['pending']} tasks pending (deps unmet)...")
-                continue
-
-        # Determine model per task type (R- tasks use review model = opus)
-        review_model = status.get("economic_mode", {}).get("model_routing", {}).get("review", "opus")
-        impl_model = status.get("economic_mode", {}).get("model_routing", {}).get("implementation", "sonnet")
-
-        # Classify ready tasks by prefix
-        ready_task_ids = status.get("ready_task_ids", [])
-        review_task_ids = [t for t in ready_task_ids if t.startswith("R-")]
-        impl_task_ids = [t for t in ready_task_ids if not t.startswith("R-")]
-
-        # Spawn new workers (up to ready count)
-        busy_count = len([w for w in status.get("workers", {}).values() if w.get("state") == "busy"])
-        spawn_count = min(ready, 7 - busy_count)
-        if spawn_count > 0:
-            print(f"🚀 Spawning {spawn_count} more workers... (review: {len(review_task_ids)}, impl: {len(impl_task_ids)})")
-            spawned = 0
-            # Spawn review workers first (higher priority, use opus)
-            for t_id in review_task_ids:
-                if spawned >= spawn_count:
-                    break
-                worker_id = f"worker-{uuid.uuid4().hex[:8]}"
-                Task(
-                    subagent_type="general-purpose",
-                    description=f"C4 Review Worker (continuous) [{t_id}]",
-                    prompt=WORKER_PROMPT.format(worker_id=worker_id),
-                    model=review_model,
-                    run_in_background=True
-                )
-                print(f"  • {worker_id} [review/{review_model}]")
-                spawned += 1
-            # Spawn implementation workers
-            for t_id in impl_task_ids:
-                if spawned >= spawn_count:
-                    break
-                worker_id = f"worker-{uuid.uuid4().hex[:8]}"
-                Task(
-                    subagent_type="general-purpose",
-                    description=f"C4 Worker (continuous)",
-                    prompt=WORKER_PROMPT.format(worker_id=worker_id),
-                    model=impl_model,
-                    run_in_background=True
-                )
-                print(f"  • {worker_id} [impl/{impl_model}]")
-                spawned += 1
-            # Fallback: if no task IDs available, spawn generic workers
-            while spawned < spawn_count:
-                worker_id = f"worker-{uuid.uuid4().hex[:8]}"
-                Task(
-                    subagent_type="general-purpose",
-                    description=f"C4 Worker (continuous)",
-                    prompt=WORKER_PROMPT.format(worker_id=worker_id),
-                    model=impl_model,
-                    run_in_background=True
-                )
-                print(f"  • {worker_id} [impl/{impl_model}]")
-                spawned += 1
-
-    print("🏁 Continuous mode ended")
-
-    # Auto-finish: polish 루프 내장 실행 + 마무리
-    print("\n🏁 All tasks done — running finish routine (includes polish loop)...")
-    Skill("c4-finish")
+    # R- tasks → review_model (opus), others → impl_model (sonnet)
+    model = review_model if review_spawned < len(review_ids) else impl_model
+    Task(subagent_type="general-purpose", prompt=WORKER_PROMPT.format(worker_id=worker_id),
+         model=model, run_in_background=True)
 ```
 
-## 🌲 Worktree Isolation (Multi-Worker Requirement!)
+### 5. Continuous Mode (default)
 
-**Prevents branch conflicts when multiple workers operate on same project.**
+Auto-respawns until queue empty. 30s polling interval.
 
-`c4_get_task()` response includes `worktree_path`:
+```python
+while continuous_mode:
+    time.sleep(30)
+    status = mcp__c4__c4_status()
+
+    if status["status"] == "COMPLETE":
+        c4_notify(message='모든 태스크 완료', event='worker.complete')
+        break
+    if status["status"] == "CHECKPOINT":
+        # auto mode: spawn checkpoint reviewer
+        # interactive mode: pause + notify user
+        break
+
+    ready = status["parallelism"]["ready_now"]
+    if ready == 0 and status["queue"]["pending"] == 0:
+        break
+    # Spawn new workers for ready tasks (review first, then impl)
+
+# Auto-finish
+Skill("c4-finish")
+```
+
+## Worktree Isolation (Multi-Worker)
+
+`c4_get_task()` returns `worktree_path` — all file ops MUST occur within it.
 
 ```python
 task = c4_get_task(WORKER_ID)
-# task.worktree_path: ".c4/worktrees/worker-abc123"  ← Use this path!
-# task.branch: "c4/w-T-001-0"
+work_dir = Path(task.worktree_path)  # e.g. ".c4/worktrees/worker-abc123"
 ```
 
-**All file operations MUST occur within worktree_path**:
+## Agent Routing
 
-```python
-if task.worktree_path:
-    work_dir = Path(task.worktree_path)
-    file_to_edit = work_dir / "src" / "module.py"
-    Read(file_to_edit)
-    Edit(file_to_edit, ...)
-```
-
-## 🤖 Agent Routing
-
-`c4_get_task()` response includes agent routing info:
-
-```python
-task = c4_get_task(WORKER_ID)
-# task.recommended_agent: "frontend-developer"
-# task.agent_chain: ["frontend-developer", "test-automator", "code-reviewer"]
-```
-
-Worker auto-selects appropriate agent.
-
-## Expected Flows
-
-### Auto Mode (Default)
-```
-/c4-run
-→ Status: EXECUTE
-→ Parallelism analysis: 5 tasks ready, DAG width 4
-→ Recommended: 4 workers
-→ 🚀 Spawn 4 workers
-→ Workers process tasks in parallel
-→ ✅ All tasks complete
-```
-
-### Single Worker Mode
-```
-/c4-run 1
-→ Status: EXECUTE
-→ Parallelism analysis: (display only)
-→ 🚀 Spawn 1 worker (background)
-→ Worker processes task in background
-→ Main session available for other work
-→ ✅ All tasks complete
-```
+`c4_get_task()` returns `recommended_agent` and `agent_chain`. Worker auto-selects.
 
 ## Configuration (.c4/config.yaml)
 
 ```yaml
 run:
-  checkpoint_mode: interactive   # "auto" | "interactive" (기본값: interactive)
-  # auto        → Checkpoint 도달 시 Worker를 자동 스폰하여 4-lens 리뷰 수행 후 계속 진행
-  # interactive → Checkpoint 도달 시 중단 + "/c4-checkpoint으로 리뷰 후 /c4-run 재실행" 안내
+  checkpoint_mode: interactive  # "auto" | "interactive"
 ```
-
-| 값 | 동작 | 권장 상황 |
-|----|------|----------|
-| `interactive` (기본) | 체크포인트에서 멈추고 사람이 `/c4-checkpoint` 실행 | 중요한 설계 결정이 있는 CP |
-| `auto` | Worker가 4-lens 리뷰 후 자동 APPROVE/REQUEST_CHANGES | 단순 진행 확인용 CP |
 
 ## Constraints
 
-| Constraint | Description |
-|------------|-------------|
+| Constraint | Value |
+|------------|-------|
 | Max Workers | 7 (Claude Code subagent limit) |
 | Worktree | Required for multi-worker |
 | Accept Edits | Required for automation |
 
 ## Related Skills
 
-- `/c4-status` - Check status (includes parallelism analysis)
-- `/c4-stop` - Stop execution
-- `/c4-submit` - Manual submission
-- `/c4-checkpoint` - Manual checkpoint review (interactive mode 전용)
+- `/c4-status` — Check status
+- `/c4-stop` — Stop execution
+- `/c4-submit` — Manual submission
+- `/c4-checkpoint` — Checkpoint review
