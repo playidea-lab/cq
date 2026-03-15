@@ -622,11 +622,12 @@ func (s *SQLiteStore) reassignStaleOrFindPendingTask(workerID string) (
 	var priority int
 	var isStale bool
 
-	sfClause := s.sessionClause("AND", "t.")
-	sfArgs := s.sessionArgs()
+	// NOTE: session_id filter removed from task assignment queries.
+	// Worktree isolation already provides sufficient process-level isolation.
+	// Session filtering caused cross-session tasks to be invisible to c4_get_task
+	// while c4_status showed them as "ready" — a confusing UX mismatch.
 
 	// Anti-fragility: try to reassign stale in_progress tasks first (>staleTimeoutMin without update)
-	staleArgs := append([]any{staleTimeoutMin, workerID}, sfArgs...)
 	err = conn.QueryRowContext(ctx, `
 		SELECT t.task_id, t.title, t.scope, t.dod, t.dependencies, t.domain, t.priority, t.model
 		FROM c4_tasks t
@@ -634,9 +635,9 @@ func (s *SQLiteStore) reassignStaleOrFindPendingTask(workerID string) (
 		AND (t.execution_mode IS NULL OR t.execution_mode IN ('', 'worker', 'auto'))
 		AND (julianday('now') - julianday(t.updated_at)) * 24 * 60 > ?
 		AND t.worker_id != ?
-		AND (t.superseded_by IS NULL OR t.superseded_by = '')`+sfClause+`
+		AND (t.superseded_by IS NULL OR t.superseded_by = '')
 		ORDER BY t.priority DESC, t.created_at ASC
-		LIMIT 1`, staleArgs...,
+		LIMIT 1`, staleTimeoutMin, workerID,
 	).Scan(&taskID, &title, &scope, &dod, &deps, &domain, &priority, &model)
 
 	if err == sql.ErrNoRows {
@@ -646,14 +647,14 @@ func (s *SQLiteStore) reassignStaleOrFindPendingTask(workerID string) (
 			FROM c4_tasks t
 			WHERE t.status = 'pending'
 			AND (t.execution_mode IS NULL OR t.execution_mode IN ('', 'worker', 'auto'))
-			AND (t.superseded_by IS NULL OR t.superseded_by = '')`+sfClause+`
+			AND (t.superseded_by IS NULL OR t.superseded_by = '')
 			AND NOT EXISTS (
 				SELECT 1 FROM json_each(CASE WHEN t.dependencies IS NULL OR t.dependencies = '' THEN '[]' ELSE t.dependencies END) AS dep
 				JOIN c4_tasks dt ON dt.task_id = dep.value
 				WHERE dt.status != 'done'
 			)
 			ORDER BY t.priority DESC, t.created_at ASC
-			LIMIT 1`, sfArgs...,
+			LIMIT 1`,
 		).Scan(&taskID, &title, &scope, &dod, &deps, &domain, &priority, &model)
 		isStale = false
 	} else if err == nil {
@@ -1069,16 +1070,13 @@ func (s *SQLiteStore) removeClaimFile() {
 // StaleTasks returns in_progress tasks whose updated_at is older than minMinutes.
 // Used by the admin c4_stale_tasks tool to surface stuck workers.
 func (s *SQLiteStore) StaleTasks(minMinutes int) ([]Task, error) {
-	sfClause := s.sessionClause("AND", "")
-	sfArgs := s.sessionArgs()
-	args := append([]any{minMinutes}, sfArgs...)
 	rows, err := s.db.Query(`
 		SELECT task_id, title, worker_id, updated_at, domain
 		FROM c4_tasks
 		WHERE status = 'in_progress'
-		  AND (julianday('now') - julianday(updated_at)) * 24 * 60 > ?`+sfClause+`
+		  AND (julianday('now') - julianday(updated_at)) * 24 * 60 > ?
 		ORDER BY updated_at ASC`,
-		args...)
+		minMinutes)
 	if err != nil {
 		return nil, err
 	}
