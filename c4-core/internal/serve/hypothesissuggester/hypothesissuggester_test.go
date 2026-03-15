@@ -1,4 +1,4 @@
-package main
+package hypothesissuggester
 
 import (
 	"context"
@@ -11,8 +11,8 @@ import (
 	"github.com/changmin/c4-core/internal/serve"
 )
 
-// compile-time: hypothesisSuggester implements serve.Component
-var _ serve.Component = (*hypothesisSuggester)(nil)
+// compile-time: Suggester implements serve.Component
+var _ serve.Component = (*Suggester)(nil)
 
 // stubLLMProvider is a minimal llm.Provider for testing.
 type stubLLMProvider struct {
@@ -62,8 +62,8 @@ func TestHypothesisSuggester_TriggerOnThreshold(t *testing.T) {
 		}
 	}
 
-	h := newHypothesisSuggester(newTestSuggesterCfg(5, 24*time.Hour), gw, ks)
-	h.poll(context.Background())
+	h := New(newTestSuggesterCfg(5, 24*time.Hour), gw, ks)
+	h.Poll(context.Background())
 
 	hyps, err := ks.List(string(knowledge.TypeHypothesis), "", 10)
 	if err != nil {
@@ -82,8 +82,8 @@ func TestHypothesisSuggester_NoTriggerBelowThreshold(t *testing.T) {
 		ks.Create(knowledge.TypeExperiment, map[string]any{"title": "exp"}, "body") //nolint:errcheck
 	}
 
-	h := newHypothesisSuggester(newTestSuggesterCfg(5, 24*time.Hour), nil, ks)
-	h.poll(context.Background())
+	h := New(newTestSuggesterCfg(5, 24*time.Hour), nil, ks)
+	h.Poll(context.Background())
 
 	hyps, err := ks.List(string(knowledge.TypeHypothesis), "", 10)
 	if err != nil {
@@ -98,7 +98,7 @@ func TestHypothesisSuggester_NoTriggerBelowThreshold(t *testing.T) {
 func TestHypothesisSuggester_TTLCleanup(t *testing.T) {
 	ks := newTestKnowledgeStore(t)
 
-	// Store expires_at in frontmatter metadata (same format poll() uses)
+	// Store expires_at in frontmatter metadata (same format Poll() uses)
 	past := time.Now().UTC().Add(-1 * time.Hour).Format(time.RFC3339)
 
 	_, err := ks.Create(knowledge.TypeHypothesis, map[string]any{
@@ -109,8 +109,8 @@ func TestHypothesisSuggester_TTLCleanup(t *testing.T) {
 		t.Fatalf("Create hypothesis: %v", err)
 	}
 
-	h := newHypothesisSuggester(newTestSuggesterCfg(5, 24*time.Hour), nil, ks)
-	h.cleanup()
+	h := New(newTestSuggesterCfg(5, 24*time.Hour), nil, ks)
+	h.Cleanup()
 
 	docs, err := ks.List(string(knowledge.TypeHypothesis), "", 10)
 	if err != nil {
@@ -135,10 +135,10 @@ func TestHypothesisSuggester_LLMFailure(t *testing.T) {
 
 	// Gateway with no providers → Chat returns error
 	gw := llm.NewGateway(llm.RoutingTable{})
-	h := newHypothesisSuggester(newTestSuggesterCfg(5, 24*time.Hour), gw, ks)
+	h := New(newTestSuggesterCfg(5, 24*time.Hour), gw, ks)
 
 	// Should not panic; hypothesis is created with empty insight (graceful degradation)
-	h.poll(context.Background())
+	h.Poll(context.Background())
 
 	hyps, err := ks.List(string(knowledge.TypeHypothesis), "", 10)
 	if err != nil {
@@ -153,8 +153,8 @@ func TestHypothesisSuggester_LLMFailure(t *testing.T) {
 // TestHypothesisSuggester_InvalidTTL: TTL=0 → Start() returns error.
 func TestHypothesisSuggester_InvalidTTL(t *testing.T) {
 	ks := newTestKnowledgeStore(t)
-	// Bypass newHypothesisSuggester default TTL by constructing directly with TTL=0
-	h := &hypothesisSuggester{
+	// Bypass New default TTL by constructing directly with TTL=0
+	h := &Suggester{
 		cfg: config.ServeHypothesisSuggesterConfig{
 			Enabled:   true,
 			Threshold: 5,
@@ -172,17 +172,17 @@ func TestHypothesisSuggester_InvalidTTL(t *testing.T) {
 	}
 }
 
-// TestHypothesisSuggester_CrossComponent: poll() creates hypothesis with unified status fields
-// so that runSuggestList (checks doc.Status) and cleanup() (checks hypothesis_status) both work.
+// TestHypothesisSuggester_CrossComponent: Poll() creates hypothesis with unified status fields
+// so that runSuggestList (checks doc.Status) and Cleanup() (checks hypothesis_status) both work.
 func TestHypothesisSuggester_CrossComponent(t *testing.T) {
 	ks := newTestKnowledgeStore(t)
 
-	// Trigger poll() to create a hypothesis
+	// Trigger Poll() to create a hypothesis
 	for i := 0; i < 5; i++ {
 		ks.Create(knowledge.TypeExperiment, map[string]any{"title": "exp"}, "body") //nolint:errcheck
 	}
-	h := newHypothesisSuggester(newTestSuggesterCfg(5, 24*time.Hour), nil, ks)
-	h.poll(context.Background())
+	h := New(newTestSuggesterCfg(5, 24*time.Hour), nil, ks)
+	h.Poll(context.Background())
 
 	// Hypothesis should be visible to CLI (doc.Status == "pending")
 	hyps, err := ks.List(string(knowledge.TypeHypothesis), "", 10)
@@ -205,7 +205,7 @@ func TestHypothesisSuggester_CrossComponent(t *testing.T) {
 	}
 }
 
-// TestHypothesisSuggester_CleanupPreservesBody: cleanup() must not overwrite hypothesis body.
+// TestHypothesisSuggester_CleanupPreservesBody: Cleanup() must not overwrite hypothesis body.
 func TestHypothesisSuggester_CleanupPreservesBody(t *testing.T) {
 	ks := newTestKnowledgeStore(t)
 
@@ -221,8 +221,8 @@ func TestHypothesisSuggester_CleanupPreservesBody(t *testing.T) {
 		t.Fatalf("Create: %v", err)
 	}
 
-	h := newHypothesisSuggester(newTestSuggesterCfg(5, 24*time.Hour), nil, ks)
-	h.cleanup()
+	h := New(newTestSuggesterCfg(5, 24*time.Hour), nil, ks)
+	h.Cleanup()
 
 	docs, _ := ks.List(string(knowledge.TypeHypothesis), "", 10)
 	if len(docs) == 0 {
@@ -241,7 +241,7 @@ func TestHypothesisSuggester_CleanupPreservesBody(t *testing.T) {
 // TestHypothesisSuggester_ComponentInterface: implements serve.Component with correct Name/Health.
 func TestHypothesisSuggester_ComponentInterface(t *testing.T) {
 	ks := newTestKnowledgeStore(t)
-	h := newHypothesisSuggester(newTestSuggesterCfg(5, 24*time.Hour), nil, ks)
+	h := New(newTestSuggesterCfg(5, 24*time.Hour), nil, ks)
 
 	if h.Name() != "hypothesis-suggester" {
 		t.Errorf("Name() = %q, want hypothesis-suggester", h.Name())

@@ -1,4 +1,4 @@
-package main
+package anomaly
 
 import (
 	"context"
@@ -13,10 +13,21 @@ import (
 )
 
 // compile-time interface assertion
-var _ serve.Component = (*anomalyMonitor)(nil)
+var _ serve.Component = (*Monitor)(nil)
+
+func mustNewKnowledgeStore(t *testing.T) *knowledge.Store {
+	t.Helper()
+	dir := t.TempDir()
+	s, err := knowledge.NewStore(dir)
+	if err != nil {
+		t.Fatalf("NewStore: %v", err)
+	}
+	t.Cleanup(func() { s.Close() })
+	return s
+}
 
 func TestAnomalyMonitor_Name(t *testing.T) {
-	a := newAnomalyMonitor(anomalyMonitorConfig{Store: mustNewKnowledgeStore(t)})
+	a := New(Config{Store: mustNewKnowledgeStore(t)})
 	if a.Name() != "anomaly_monitor" {
 		t.Errorf("Name() = %q, want %q", a.Name(), "anomaly_monitor")
 	}
@@ -28,7 +39,7 @@ func TestAnomalyMonitor_DetectsAnomaly(t *testing.T) {
 	// Write an experiment doc with a metric outside range directly to the docs dir.
 	writeExperimentDoc(t, store, "exp-test01", 0.9, `[{"name":"loss","min":0.1,"max":0.5}]`)
 
-	a := newAnomalyMonitor(anomalyMonitorConfig{Store: store, PollInterval: time.Minute})
+	a := New(Config{Store: store, PollInterval: time.Minute})
 	a.check(context.Background())
 
 	debates, err := store.List(string(knowledge.TypeDebate), "", 10)
@@ -50,7 +61,7 @@ func TestAnomalyMonitor_NoAnomaly(t *testing.T) {
 	// Metric is within range: no debate should be created.
 	writeExperimentDoc(t, store, "exp-test02", 0.3, `[{"name":"loss","min":0.1,"max":0.5}]`)
 
-	a := newAnomalyMonitor(anomalyMonitorConfig{Store: store, PollInterval: time.Minute})
+	a := New(Config{Store: store, PollInterval: time.Minute})
 	a.check(context.Background())
 
 	debates, err := store.List(string(knowledge.TypeDebate), "", 10)
@@ -64,7 +75,7 @@ func TestAnomalyMonitor_NoAnomaly(t *testing.T) {
 
 func TestAnomalyMonitor_StopGraceful(t *testing.T) {
 	store := mustNewKnowledgeStore(t)
-	a := newAnomalyMonitor(anomalyMonitorConfig{Store: store, PollInterval: time.Hour})
+	a := New(Config{Store: store, PollInterval: time.Hour})
 
 	ctx := context.Background()
 	if err := a.Start(ctx); err != nil {
@@ -91,7 +102,7 @@ func TestAnomalyMonitor_NoDuplicateEscalation(t *testing.T) {
 	// Metric is out of range.
 	writeExperimentDoc(t, store, "exp-test03", 0.9, `[{"name":"loss","min":0.1,"max":0.5}]`)
 
-	a := newAnomalyMonitor(anomalyMonitorConfig{Store: store, PollInterval: time.Minute})
+	a := New(Config{Store: store, PollInterval: time.Minute})
 
 	// First check: should create one debate.
 	a.check(context.Background())

@@ -1,45 +1,21 @@
 //go:build research
 
-package main
+package orchestrator
 
 import (
 	"context"
 	"testing"
 	"time"
 
-	"github.com/changmin/c4-core/internal/hub"
-	"github.com/changmin/c4-core/internal/llm"
 	"github.com/changmin/c4-core/internal/serve"
 )
 
 // compile-time interface assertion
 var _ serve.Component = (*LoopOrchestrator)(nil)
 
-// mockHubClient implements HubClient for tests.
-type mockHubClient struct {
-	jobs map[string]*hub.Job
-}
-
-func newMockHubClient() *mockHubClient {
-	return &mockHubClient{jobs: make(map[string]*hub.Job)}
-}
-
-func (m *mockHubClient) GetJob(jobID string) (*hub.Job, error) {
-	if j, ok := m.jobs[jobID]; ok {
-		return j, nil
-	}
-	return &hub.Job{ID: jobID, Status: "RUNNING"}, nil
-}
-
-func (m *mockHubClient) SubmitJob(req *hub.JobSubmitRequest) (*hub.JobSubmitResponse, error) {
-	id := "job-new-001"
-	m.jobs[id] = &hub.Job{ID: id, Status: "QUEUED"}
-	return &hub.JobSubmitResponse{JobID: id, Status: "QUEUED"}, nil
-}
-
 func newTestLoopOrchestrator(t *testing.T) *LoopOrchestrator {
 	t.Helper()
-	return newLoopOrchestrator(LoopOrchestratorConfig{
+	return New(Config{
 		Store:        mustNewKnowledgeStore(t),
 		Hub:          newMockHubClient(),
 		PollInterval: 10 * time.Millisecond,
@@ -151,18 +127,12 @@ func TestLoopOrchestrator_Steer(t *testing.T) {
 	}
 }
 
-// TestRegisterLoopOrchestratorComponent_RegistersWithManager verifies that
-// registerLoopOrchestratorComponent adds loop_orchestrator to the serve manager.
-func TestRegisterLoopOrchestratorComponent_RegistersWithManager(t *testing.T) {
-	gw := llm.NewGateway(llm.RoutingTable{})
-	gw.Register(&stubLLMProvider{response: "ok"})
-
-	ictx := &initContext{
-		knowledgeStore: mustNewKnowledgeStore(t),
-		llmGateway:     gw,
-	}
+// TestLoopOrchestrator_RegisterComponent verifies that RegisterComponent adds
+// loop_orchestrator to the serve manager.
+func TestLoopOrchestrator_RegisterComponent(t *testing.T) {
+	o := newTestLoopOrchestrator(t)
 	mgr := serve.NewManager()
-	registerLoopOrchestratorComponent(mgr, ictx)
+	o.RegisterComponent(mgr, t.TempDir())
 
 	health := mgr.HealthMap()
 	if _, ok := health["loop_orchestrator"]; !ok {

@@ -1,6 +1,6 @@
 //go:build research
 
-package main
+package orchestrator
 
 import (
 	"context"
@@ -15,12 +15,12 @@ import (
 func mustCreateExpDoc(t *testing.T, kStore *knowledge.Store, hypothesisID, jobID string, valLoss, testMetric float64, status string) string {
 	t.Helper()
 	body, err := json.Marshal(map[string]any{
-		"type":          "experiment",
-		"hypothesis_id": hypothesisID,
-		"job_id":        jobID,
-		"val_loss":      valLoss,
-		"test_metric":   testMetric,
-		"status":        status,
+		"type":           "experiment",
+		"hypothesis_id":  hypothesisID,
+		"job_id":         jobID,
+		"val_loss":       valLoss,
+		"test_metric":    testMetric,
+		"status":         status,
 		"stdout_summary": "training complete",
 	})
 	if err != nil {
@@ -49,11 +49,7 @@ func TestOnJobDone_MetricInjected(t *testing.T) {
 	hypID := mustCreateHyp(t, kStore)
 	mustCreateExpDoc(t, kStore, hypID, "job-metric-001", 0.042, 0.891, "completed")
 
-	// Capture extraContext passed to runDebate by intercepting via the LLM mock.
-	// The debate caller receives the extraContext as part of its prompt.
-	// We verify by checking the stored session — the debate must succeed without error,
-	// and the metric block must have been built (tested via fetchExperimentMetrics directly).
-	block := fetchExperimentMetrics(kStore, hypID)
+	block := FetchExperimentMetrics(kStore, hypID)
 	if !strings.Contains(block, "experiment_result:") {
 		t.Fatalf("expected experiment_result: in block, got %q", block)
 	}
@@ -94,7 +90,7 @@ func TestOnJobDone_MetricMissing_Fallback(t *testing.T) {
 	hypID := mustCreateHyp(t, kStore)
 	// No TypeExperiment doc created — fallback expected.
 
-	block := fetchExperimentMetrics(kStore, hypID)
+	block := FetchExperimentMetrics(kStore, hypID)
 	if block != "" {
 		t.Errorf("expected empty block when no doc exists, got %q", block)
 	}
@@ -121,7 +117,7 @@ func TestOnJobDone_MetricEmptyValLoss(t *testing.T) {
 	// val_loss=0.0 (e.g. @VAL_LOSS= not set, stored as 0)
 	mustCreateExpDoc(t, kStore, hypID, "job-zeroloss-001", 0.0, 0.75, "completed")
 
-	block := fetchExperimentMetrics(kStore, hypID)
+	block := FetchExperimentMetrics(kStore, hypID)
 	if !strings.Contains(block, "experiment_result:") {
 		t.Fatalf("expected experiment_result: in block, got %q", block)
 	}

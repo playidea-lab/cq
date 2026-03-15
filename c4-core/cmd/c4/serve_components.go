@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -13,6 +14,10 @@ import (
 	"github.com/changmin/c4-core/internal/llm"
 	"github.com/changmin/c4-core/internal/mcp/handlers"
 	"github.com/changmin/c4-core/internal/serve"
+	"github.com/changmin/c4-core/internal/serve/hubpoller"
+	"github.com/changmin/c4-core/internal/serve/hypothesissuggester"
+	"github.com/changmin/c4-core/internal/serve/mcphttp"
+	"github.com/changmin/c4-core/internal/serve/suggestpoller"
 )
 
 // registerCoreServeComponents registers always-available components:
@@ -124,7 +129,7 @@ func registerStaleCheckerServeComponent(mgr *serve.Manager, cfg config.C4Config,
 // Note: the poller shares the hub.enabled/hub.url gate (no separate serve.hub_poller
 // toggle) because it is a lightweight side-effect of hub connectivity.
 // Returns the created poller (nil if not registered).
-func registerKnowledgeHubPollerServeComponent(mgr *serve.Manager, cfg config.C4Config) *knowledgeHubPoller {
+func registerKnowledgeHubPollerServeComponent(mgr *serve.Manager, cfg config.C4Config) *hubpoller.KnowledgeHubPoller {
 	if !cfg.Hub.Enabled || cfg.Hub.URL == "" {
 		return nil
 	}
@@ -140,7 +145,7 @@ func registerKnowledgeHubPollerServeComponent(mgr *serve.Manager, cfg config.C4C
 		return nil
 	}
 
-	poller := newKnowledgeHubPoller(knowledgeHubPollerConfig{
+	poller := hubpoller.New(hubpoller.Config{
 		HubURL:       cfg.Hub.URL,
 		APIKey:       cfg.Hub.APIKey,
 		APIKeyEnv:    cfg.Hub.APIKeyEnv,
@@ -154,7 +159,7 @@ func registerKnowledgeHubPollerServeComponent(mgr *serve.Manager, cfg config.C4C
 	return poller
 }
 
-// serveGatewayLLMCaller adapts *llm.Gateway to the LLMCaller interface used by knowledgeSuggestPoller.
+// serveGatewayLLMCaller adapts *llm.Gateway to the suggestpoller.LLMCaller interface.
 type serveGatewayLLMCaller struct {
 	gw *llm.Gateway
 }
@@ -172,7 +177,7 @@ func (s *serveGatewayLLMCaller) Call(ctx context.Context, prompt string) (string
 	return resp.Content, nil
 }
 
-// registerKnowledgeSuggestPollerServeComponent registers the knowledgeSuggestPoller when
+// registerKnowledgeSuggestPollerServeComponent registers the suggestpoller.KnowledgeSuggestPoller when
 // hub is enabled and a hub URL is configured. It shares the hub.enabled/hub.url gate with
 // the hub knowledge poller.
 func registerKnowledgeSuggestPollerServeComponent(mgr *serve.Manager, cfg config.C4Config, gw *llm.Gateway) {
@@ -191,16 +196,50 @@ func registerKnowledgeSuggestPollerServeComponent(mgr *serve.Manager, cfg config
 		return
 	}
 
-	var caller LLMCaller
+	var caller suggestpoller.LLMCaller
 	if gw != nil {
 		caller = &serveGatewayLLMCaller{gw: gw}
 	}
 
-	poller := newKnowledgeSuggestPoller(knowledgeSuggestPollerConfig{
+	poller := suggestpoller.New(suggestpoller.Config{
 		Store:         ks,
 		LLMCaller:     caller,
 		WatermarkPath: filepath.Join(projectDir, ".c4", "suggest_poller_watermark.json"),
 	})
 	mgr.Register(poller)
 	fmt.Fprintf(os.Stderr, "cq serve: registered hub_suggest_poller\n")
+}
+
+// registerHypothesisSuggesterComponent delegates to the hypothesissuggester package.
+func registerHypothesisSuggesterComponent(mgr *serve.Manager, cfg config.C4Config, gw *llm.Gateway, kStore *knowledge.Store) {
+	hypothesissuggester.RegisterComponent(mgr, cfg, gw, kStore)
+}
+
+// mcpServerRequestHandler adapts *mcpServer to the mcphttp.RequestHandler interface.
+type mcpServerRequestHandler struct {
+	srv *mcpServer
+}
+
+func (a *mcpServerRequestHandler) HandleRawRequest(body []byte, ctx context.Context) []byte {
+	var req mcpRequest
+	if err := json.Unmarshal(body, &req); err != nil {
+		resp, _ := json.Marshal(mcpResponse{
+			JSONRPC: "2.0",
+			Error:   &mcpError{Code: -32700, Message: "parse error"},
+		})
+		return resp
+	}
+	result := a.srv.handleRequestWithCtx(&req, ctx)
+	resp, _ := json.Marshal(result)
+	return resp
+}
+
+// registerMCPHTTPComponent registers the MCP HTTP component with the serve manager.
+func registerMCPHTTPComponent(mgr *serve.Manager, cfg config.ServeMCPHTTPConfig, srv *mcpServer) {
+	handler := &mcpServerRequestHandler{srv: srv}
+	var secretStore mcphttp.SecretGetter
+	if srv.secretStore != nil {
+		secretStore = srv.secretStore
+	}
+	mcphttp.RegisterComponent(mgr, cfg, handler, secretStore)
 }

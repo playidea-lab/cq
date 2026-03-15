@@ -1,77 +1,11 @@
 //go:build research
 
-package main
+package orchestrator
 
 import (
 	"context"
 	"testing"
-
-	"github.com/changmin/c4-core/internal/knowledge"
 )
-
-// =========================================================================
-// mock implementations
-// =========================================================================
-
-type mockLoopHubClient struct {
-	submitJobFunc func(ctx context.Context, req loopHubJobRequest) (string, error)
-}
-
-func (m *mockLoopHubClient) SubmitJob(ctx context.Context, req loopHubJobRequest) (string, error) {
-	return m.submitJobFunc(ctx, req)
-}
-
-type mockLoopLineageBuilder struct {
-	buildContextFunc func(ctx context.Context, hypothesisID string, limit int) (string, error)
-}
-
-func (m *mockLoopLineageBuilder) BuildContext(ctx context.Context, hypothesisID string, limit int) (string, error) {
-	return m.buildContextFunc(ctx, hypothesisID, limit)
-}
-
-// newTestOrchestrator creates a LoopOrchestrator with mock internals.
-func newTestOrchestrator(t *testing.T, llmResponses []string) (*LoopOrchestrator, *knowledge.Store) {
-	t.Helper()
-	kStore := mustNewHypothesisStore(t)
-	mock := &mockDebateLLM{responses: llmResponses}
-	store := &testDebateStore{s: kStore}
-	hubCli := &mockLoopHubClient{
-		submitJobFunc: func(_ context.Context, _ loopHubJobRequest) (string, error) {
-			return "job-new-001", nil
-		},
-	}
-	lineage := &mockLoopLineageBuilder{
-		buildContextFunc: func(_ context.Context, _ string, _ int) (string, error) {
-			return "", nil
-		},
-	}
-	o := &LoopOrchestrator{
-		cfg:     LoopOrchestratorConfig{ExploreThreshold: 2},
-		caller:  mock,
-		store:   store,
-		hubCli:  hubCli,
-		lineage: lineage,
-		kStore:  kStore,
-	}
-	return o, kStore
-}
-
-// mustCreateHyp creates a TypeHypothesis doc and returns its ID.
-func mustCreateHyp(t *testing.T, kStore *knowledge.Store) string {
-	t.Helper()
-	id, err := kStore.Create(knowledge.TypeHypothesis, map[string]any{
-		"title":  "test hypothesis",
-		"status": "approved",
-	}, "test body")
-	if err != nil {
-		t.Fatalf("Create hypothesis: %v", err)
-	}
-	return id
-}
-
-// =========================================================================
-// tests
-// =========================================================================
 
 func TestOnJobDone_Approved(t *testing.T) {
 	llmResponses := []string{
@@ -83,8 +17,8 @@ func TestOnJobDone_Approved(t *testing.T) {
 
 	// Override hub to capture new job ID.
 	submittedJobID := ""
-	o.hubCli = &mockLoopHubClient{
-		submitJobFunc: func(_ context.Context, _ loopHubJobRequest) (string, error) {
+	o.HubCli = &mockLoopHubClient{
+		submitJobFunc: func(_ context.Context, _ LoopHubJobRequest) (string, error) {
 			submittedJobID = "job-approved-001"
 			return submittedJobID, nil
 		},
@@ -108,7 +42,7 @@ func TestOnJobDone_Approved(t *testing.T) {
 	}
 	// Copy-on-write: retrieve the updated session from the map (stored under newHypID).
 	var got *LoopSession
-	o.sessions.Range(func(_, v any) bool {
+	o.Sessions.Range(func(_, v any) bool {
 		got = v.(*LoopSession)
 		return false
 	})
@@ -134,7 +68,7 @@ func TestOnJobDone_NullResult_ExploreFlag(t *testing.T) {
 	}
 	o, kStore := newTestOrchestrator(t, llmResponses)
 	// Duplicate responses for two calls.
-	o.caller = &mockDebateLLM{responses: llmResponses}
+	o.Caller = &mockDebateLLM{responses: llmResponses}
 
 	hypID := mustCreateHyp(t, kStore)
 	session := &LoopSession{
@@ -163,7 +97,7 @@ func TestOnJobDone_NullResult_ExploreFlag(t *testing.T) {
 	}
 
 	// Second null_result → ExploreFlag=true; pass updated session pointer.
-	o.caller = &mockDebateLLM{responses: llmResponses}
+	o.Caller = &mockDebateLLM{responses: llmResponses}
 	if err := o.onJobDone(context.Background(), got1, jobStatus); err != nil {
 		t.Fatalf("onJobDone round 2: %v", err)
 	}
@@ -234,7 +168,7 @@ func TestOnJobDone_BudgetGate(t *testing.T) {
 	// Round becomes 5 (== MaxIterations) → Status="completed".
 	// Copy-on-write: approved-advance stores under newHypID; iterate to find it.
 	var got *LoopSession
-	o.sessions.Range(func(_, v any) bool {
+	o.Sessions.Range(func(_, v any) bool {
 		got = v.(*LoopSession)
 		return false
 	})

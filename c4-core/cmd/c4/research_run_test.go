@@ -4,6 +4,8 @@ package main
 
 import (
 	"testing"
+
+	"github.com/changmin/c4-core/internal/serve/orchestrator"
 )
 
 // sampleGoTestJSON builds a synthetic go test -json output.
@@ -89,7 +91,7 @@ func TestResearchRunCmd_AllTestsPass(t *testing.T) {
 
 func TestResearchRunCmd_UnsupportedType(t *testing.T) {
 	// Verify that switch statement properly identifies ml_training
-	spec := ExperimentSpec{Type: "ml_training"}
+	spec := orchestrator.ExperimentSpec{Type: "ml_training"}
 	if spec.Type != "ml_training" {
 		t.Errorf("expected ml_training type, got %s", spec.Type)
 	}

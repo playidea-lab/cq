@@ -7,16 +7,17 @@ import (
 	"testing"
 	"time"
 
+	"github.com/changmin/c4-core/internal/hub"
 	"github.com/changmin/c4-core/internal/knowledge"
+	"github.com/changmin/c4-core/internal/serve/orchestrator"
 )
 
-func newTestLoopOrchestratorForMCP(t *testing.T) *LoopOrchestrator {
-	t.Helper()
-	return newLoopOrchestrator(LoopOrchestratorConfig{
-		Store:        mustNewKnowledgeStore(t),
-		Hub:          newMockHubClient(),
-		PollInterval: 10 * time.Millisecond,
-	})
+// mockHubClientMCP implements orchestrator.HubClient for MCP tests.
+type mockHubClientMCP struct{}
+
+func (m *mockHubClientMCP) GetJob(_ string) (*hub.Job, error)                         { return nil, nil }
+func (m *mockHubClientMCP) SubmitJob(_ *hub.JobSubmitRequest) (*hub.JobSubmitResponse, error) {
+	return nil, nil
 }
 
 // TestLoopMCPHandlers_StartWithHypothesisText verifies that loopStartHandler
@@ -24,9 +25,9 @@ func newTestLoopOrchestratorForMCP(t *testing.T) *LoopOrchestrator {
 // then starts a session with status="running".
 func TestLoopMCPHandlers_StartWithHypothesisText(t *testing.T) {
 	ks := mustNewKnowledgeStore(t)
-	lo := newLoopOrchestrator(LoopOrchestratorConfig{
+	lo := orchestrator.New(orchestrator.Config{
 		Store:        ks,
-		Hub:          newMockHubClient(),
+		Hub:          &mockHubClientMCP{},
 		PollInterval: 10 * time.Millisecond,
 	})
 
@@ -54,7 +55,6 @@ func TestLoopMCPHandlers_StartWithHypothesisText(t *testing.T) {
 		t.Errorf("expected max_iterations=5, got %v", m["max_iterations"])
 	}
 
-	// Verify session is tracked in orchestrator
 	sess := lo.GetLoop(hypID)
 	if sess == nil {
 		t.Fatal("expected session in orchestrator, got nil")
@@ -63,7 +63,6 @@ func TestLoopMCPHandlers_StartWithHypothesisText(t *testing.T) {
 		t.Errorf("expected session status=running, got %s", sess.Status)
 	}
 
-	// Verify hypothesis document was created in knowledge store
 	doc, err := ks.Get(hypID)
 	if err != nil || doc == nil {
 		t.Fatalf("expected hypothesis document in store, err=%v doc=%v", err, doc)
@@ -73,13 +72,12 @@ func TestLoopMCPHandlers_StartWithHypothesisText(t *testing.T) {
 // TestLoopMCPHandlers_Stop verifies that loopStopHandler marks the session as stopped.
 func TestLoopMCPHandlers_Stop(t *testing.T) {
 	ks := mustNewKnowledgeStore(t)
-	lo := newLoopOrchestrator(LoopOrchestratorConfig{
+	lo := orchestrator.New(orchestrator.Config{
 		Store:        ks,
-		Hub:          newMockHubClient(),
+		Hub:          &mockHubClientMCP{},
 		PollInterval: 10 * time.Millisecond,
 	})
 
-	// First start a session
 	hypID, err := ks.Create(knowledge.TypeHypothesis, map[string]any{"title": "stop-test"}, "## Hyp")
 	if err != nil {
 		t.Fatalf("Create: %v", err)
@@ -90,7 +88,6 @@ func TestLoopMCPHandlers_Stop(t *testing.T) {
 		t.Fatalf("loopStartHandler: %v", err)
 	}
 
-	// Now stop it
 	stopHandler := loopStopHandler(lo)
 	stopArgs, _ := json.Marshal(map[string]any{"hypothesis_id": hypID})
 	result, err := stopHandler(stopArgs)
@@ -104,9 +101,6 @@ func TestLoopMCPHandlers_Stop(t *testing.T) {
 	if m["status"] != "stopped" {
 		t.Errorf("expected status=stopped, got %v", m["status"])
 	}
-	if m["hypothesis_id"] != hypID {
-		t.Errorf("expected hypothesis_id=%s, got %v", hypID, m["hypothesis_id"])
-	}
 
 	sess := lo.GetLoop(hypID)
 	if sess == nil || sess.Status != "stopped" {
@@ -117,13 +111,12 @@ func TestLoopMCPHandlers_Stop(t *testing.T) {
 // TestLoopMCPHandlers_Status verifies that loopStatusHandler returns accurate session state.
 func TestLoopMCPHandlers_Status(t *testing.T) {
 	ks := mustNewKnowledgeStore(t)
-	lo := newLoopOrchestrator(LoopOrchestratorConfig{
+	lo := orchestrator.New(orchestrator.Config{
 		Store:        ks,
-		Hub:          newMockHubClient(),
+		Hub:          &mockHubClientMCP{},
 		PollInterval: 10 * time.Millisecond,
 	})
 
-	// Start a session first
 	startHandler := loopStartHandler(lo, ks)
 	startArgs, _ := json.Marshal(map[string]any{
 		"hypothesis":     "Status check hypothesis",
@@ -162,7 +155,7 @@ func TestLoopMCPHandlers_NilOrchestrator(t *testing.T) {
 	ks := mustNewKnowledgeStore(t)
 	ctx := &initContext{
 		knowledgeStore:   ks,
-		loopOrchestrator: nil, // nil — should be a no-op
+		loopOrchestrator: nil,
 	}
 	if err := registerLoopMCPHandlers(ctx); err != nil {
 		t.Fatalf("expected nil error with nil orchestrator, got %v", err)

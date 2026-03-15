@@ -1,4 +1,4 @@
-package main
+package mcphttp
 
 import (
 	"context"
@@ -16,8 +16,40 @@ import (
 	"github.com/changmin/c4-core/internal/serve"
 )
 
-// mcpHTTPComponent implements serve.Component.
-// It exposes the shared mcpServer over Streamable HTTP (JSON-RPC 2.0),
+// RequestHandler handles a raw JSON-RPC request and returns a raw JSON response.
+type RequestHandler interface {
+	HandleRawRequest(body []byte, ctx context.Context) []byte
+}
+
+// SecretGetter retrieves secret values by key.
+type SecretGetter interface {
+	Get(key string) (string, error)
+}
+
+// Request represents a JSON-RPC 2.0 request.
+type Request struct {
+	JSONRPC string          `json:"jsonrpc"`
+	ID      interface{}     `json:"id,omitempty"`
+	Method  string          `json:"method"`
+	Params  json.RawMessage `json:"params,omitempty"`
+}
+
+// Response represents a JSON-RPC 2.0 response.
+type Response struct {
+	JSONRPC string      `json:"jsonrpc"`
+	ID      interface{} `json:"id,omitempty"`
+	Result  interface{} `json:"result,omitempty"`
+	Error   *Error      `json:"error,omitempty"`
+}
+
+// Error represents a JSON-RPC 2.0 error.
+type Error struct {
+	Code    int    `json:"code"`
+	Message string `json:"message"`
+}
+
+// Component implements serve.Component.
+// It exposes the shared MCP server over Streamable HTTP (JSON-RPC 2.0),
 // enabling remote Claude Code instances to connect as MCP clients via .mcp.json type:"url".
 //
 // Claude Code .mcp.json example:
@@ -31,25 +63,27 @@ import (
 //	    }
 //	  }
 //	}
-type mcpHTTPComponent struct {
-	srv     *mcpServer
-	cfg     config.ServeMCPHTTPConfig
-	httpSrv *http.Server
-	apiKey  string // resolved at Start()
+type Component struct {
+	handler     RequestHandler
+	secretStore SecretGetter
+	cfg         config.ServeMCPHTTPConfig
+	httpSrv     *http.Server
+	apiKey      string // resolved at Start()
 }
 
 // compile-time interface assertion
-var _ serve.Component = (*mcpHTTPComponent)(nil)
+var _ serve.Component = (*Component)(nil)
 
-func newMCPHTTPComponent(srv *mcpServer, cfg config.ServeMCPHTTPConfig) *mcpHTTPComponent {
-	return &mcpHTTPComponent{srv: srv, cfg: cfg}
+// New creates a new Component.
+func New(handler RequestHandler, secretStore SecretGetter, cfg config.ServeMCPHTTPConfig) *Component {
+	return &Component{handler: handler, secretStore: secretStore, cfg: cfg}
 }
 
-func (c *mcpHTTPComponent) Name() string { return "mcp-http" }
+func (c *Component) Name() string { return "mcp-http" }
 
 // Start resolves the API key, validates it is non-empty, and begins listening.
 // Returns an error immediately if the key is empty or the port is unavailable.
-func (c *mcpHTTPComponent) Start(_ context.Context) error {
+func (c *Component) Start(_ context.Context) error {
 	apiKey := c.resolveAPIKey()
 	if apiKey == "" {
 		return errors.New("mcp-http: api_key is required — set via 'cq secret set mcp_http.api_key <key>' or CQ_MCP_API_KEY env")
@@ -82,14 +116,14 @@ func (c *mcpHTTPComponent) Start(_ context.Context) error {
 	return nil
 }
 
-func (c *mcpHTTPComponent) Stop(ctx context.Context) error {
+func (c *Component) Stop(ctx context.Context) error {
 	if c.httpSrv != nil {
 		return c.httpSrv.Shutdown(ctx)
 	}
 	return nil
 }
 
-func (c *mcpHTTPComponent) Health() serve.ComponentHealth {
+func (c *Component) Health() serve.ComponentHealth {
 	if c.httpSrv == nil || c.apiKey == "" {
 		return serve.ComponentHealth{Status: "error", Detail: "not started"}
 	}
@@ -103,9 +137,9 @@ func (c *mcpHTTPComponent) Health() serve.ComponentHealth {
 //  1. secrets.db entry "mcp_http.api_key"
 //  2. CQ_MCP_API_KEY environment variable
 //  3. config.yaml api_key field (dev/test fallback only)
-func (c *mcpHTTPComponent) resolveAPIKey() string {
-	if c.srv.secretStore != nil {
-		if v, err := c.srv.secretStore.Get("mcp_http.api_key"); err == nil && v != "" {
+func (c *Component) resolveAPIKey() string {
+	if c.secretStore != nil {
+		if v, err := c.secretStore.Get("mcp_http.api_key"); err == nil && v != "" {
 			return v
 		}
 	}
@@ -118,7 +152,7 @@ func (c *mcpHTTPComponent) resolveAPIKey() string {
 // withAuth wraps a handler with API key authentication.
 // Accepts the key in either X-API-Key header or Authorization: Bearer <key>.
 // Uses constant-time comparison to prevent timing attacks.
-func (c *mcpHTTPComponent) withAuth(next http.HandlerFunc) http.HandlerFunc {
+func (c *Component) withAuth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		key := r.Header.Get("X-API-Key")
 		if key == "" {
@@ -134,11 +168,11 @@ func (c *mcpHTTPComponent) withAuth(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
-// mcpHTTPMaxBodyBytes limits request body size to prevent memory exhaustion.
-const mcpHTTPMaxBodyBytes = 1 << 20 // 1 MB
+// MaxBodyBytes limits request body size to prevent memory exhaustion.
+const MaxBodyBytes = 1 << 20 // 1 MB
 
 // handleMCP handles POST (JSON-RPC request) and GET (SSE keepalive).
-func (c *mcpHTTPComponent) handleMCP(w http.ResponseWriter, r *http.Request) {
+func (c *Component) handleMCP(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
 		c.handleSSE(w, r)
@@ -151,7 +185,7 @@ func (c *mcpHTTPComponent) handleMCP(w http.ResponseWriter, r *http.Request) {
 
 // handleSSE streams keepalive comments at 15-second intervals.
 // This satisfies the Streamable HTTP MCP spec GET endpoint requirement.
-func (c *mcpHTTPComponent) handleSSE(w http.ResponseWriter, r *http.Request) {
+func (c *Component) handleSSE(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
@@ -173,18 +207,18 @@ func (c *mcpHTTPComponent) handleSSE(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// handleJSONRPC decodes a JSON-RPC 2.0 request, dispatches it via handleRequestWithCtx,
+// handleJSONRPC decodes a JSON-RPC 2.0 request, dispatches it via HandleRawRequest,
 // and writes the response. Notifications (id == null) are accepted with 202.
-func (c *mcpHTTPComponent) handleJSONRPC(w http.ResponseWriter, r *http.Request) {
-	body, err := io.ReadAll(io.LimitReader(r.Body, mcpHTTPMaxBodyBytes))
+func (c *Component) handleJSONRPC(w http.ResponseWriter, r *http.Request) {
+	body, err := io.ReadAll(io.LimitReader(r.Body, MaxBodyBytes))
 	if err != nil {
-		writeMCPHTTPError(w, nil, -32700, "read error")
+		writeError(w, nil, -32700, "read error")
 		return
 	}
 
-	var req mcpRequest
+	var req Request
 	if err := json.Unmarshal(body, &req); err != nil {
-		writeMCPHTTPError(w, nil, -32700, "parse error")
+		writeError(w, nil, -32700, "parse error")
 		return
 	}
 
@@ -201,23 +235,23 @@ func (c *mcpHTTPComponent) handleJSONRPC(w http.ResponseWriter, r *http.Request)
 	callCtx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
 	defer cancel()
 
-	resp := c.srv.handleRequestWithCtx(&req, callCtx)
+	respBytes := c.handler.HandleRawRequest(body, callCtx)
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp) //nolint:errcheck
+	w.Write(respBytes) //nolint:errcheck
 }
 
-// writeMCPHTTPError writes a JSON-RPC 2.0 error response.
+// writeError writes a JSON-RPC 2.0 error response.
 // JSON-RPC errors always use HTTP 200 (the error is in the payload).
-func writeMCPHTTPError(w http.ResponseWriter, id any, code int, msg string) {
+func writeError(w http.ResponseWriter, id any, code int, msg string) {
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(mcpResponse{ //nolint:errcheck
+	json.NewEncoder(w).Encode(Response{ //nolint:errcheck
 		JSONRPC: "2.0",
 		ID:      id,
-		Error:   &mcpError{Code: code, Message: msg},
+		Error:   &Error{Code: code, Message: msg},
 	})
 }
 
-// registerMCPHTTPComponent registers the MCP HTTP component with the serve manager.
-func registerMCPHTTPComponent(mgr *serve.Manager, cfg config.ServeMCPHTTPConfig, srv *mcpServer) {
-	mgr.Register(newMCPHTTPComponent(srv, cfg))
+// RegisterComponent registers the MCP HTTP component with the serve manager.
+func RegisterComponent(mgr *serve.Manager, cfg config.ServeMCPHTTPConfig, handler RequestHandler, secretStore SecretGetter) {
+	mgr.Register(New(handler, secretStore, cfg))
 }

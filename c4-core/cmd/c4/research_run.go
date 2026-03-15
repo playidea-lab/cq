@@ -12,6 +12,8 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+
+	"github.com/changmin/c4-core/internal/serve/orchestrator"
 )
 
 func init() {
@@ -55,7 +57,7 @@ func runResearchRun(cmd *cobra.Command, args []string) error {
 		os.Exit(1)
 	}
 
-	var spec ExperimentSpec
+	var spec orchestrator.ExperimentSpec
 	if err := json.Unmarshal([]byte(doc.Body), &spec); err != nil {
 		fmt.Fprintf(os.Stderr, "error: parse spec JSON: %v\n", err)
 		os.Exit(1)

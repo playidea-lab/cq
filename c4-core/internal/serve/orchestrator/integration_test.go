@@ -1,6 +1,6 @@
 //go:build research
 
-package main
+package orchestrator
 
 import (
 	"context"
@@ -108,11 +108,11 @@ func TestLoopOrchestrator_ResumeGate_Integration(t *testing.T) {
 
 	// Build an orchestrator with a long default gate — resume should shorten it.
 	o := &LoopOrchestrator{
-		cfg:    LoopOrchestratorConfig{PollInterval: time.Second},
+		cfg:    Config{PollInterval: time.Second},
 		status: "ok",
-		gate:   NewGateController(24 * time.Hour),
-		state:  w,
-		notify: NewNotifyBridge(nil, time.Minute),
+		Gate:   NewGateController(24 * time.Hour),
+		State:  w,
+		Notify: NewNotifyBridge(nil, time.Minute),
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -126,7 +126,7 @@ func TestLoopOrchestrator_ResumeGate_Integration(t *testing.T) {
 	// The gate should have been replaced with a ~50ms one.
 	// Read gate under mu to avoid data race with Start().
 	o.mu.Lock()
-	gate := o.gate
+	gate := o.Gate
 	o.mu.Unlock()
 	ch := gate.EnterGate(ctx)
 	select {
@@ -168,9 +168,9 @@ func TestLoopOrchestrator_Stop_DoesNotHang(t *testing.T) {
 }
 
 // TestLoopOrchestrator_Stop_NilGate verifies that Stop() does not panic when
-// o.gate is nil (the default state before any gate is configured).
+// o.Gate is nil (the default state before any gate is configured).
 func TestLoopOrchestrator_Stop_NilGate(t *testing.T) {
-	o := newLoopOrchestrator(LoopOrchestratorConfig{})
+	o := New(Config{})
 	ctx := context.Background()
 	if err := o.Start(ctx); err != nil {
 		t.Fatalf("Start: %v", err)

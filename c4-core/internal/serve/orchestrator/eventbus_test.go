@@ -1,6 +1,6 @@
 //go:build research
 
-package main
+package orchestrator
 
 import (
 	"context"
@@ -15,7 +15,7 @@ import (
 	"github.com/changmin/c4-core/internal/hub"
 )
 
-// mockEventBusSubscriber implements loopEventBusSubscriber for tests.
+// mockEventBusSubscriber implements EventBusSubscriber for tests.
 type mockEventBusSubscriber struct {
 	mu     sync.Mutex
 	ch     chan *ebpb.Event
@@ -55,7 +55,7 @@ func newTestOrchestratorWithEB(t *testing.T, pollInterval time.Duration) (*LoopO
 	}}
 	store := &testDebateStore{s: kStore}
 	hubCli := &mockLoopHubClient{
-		submitJobFunc: func(_ context.Context, _ loopHubJobRequest) (string, error) {
+		submitJobFunc: func(_ context.Context, _ LoopHubJobRequest) (string, error) {
 			return "job-next-001", nil
 		},
 	}
@@ -65,19 +65,19 @@ func newTestOrchestratorWithEB(t *testing.T, pollInterval time.Duration) (*LoopO
 		},
 	}
 	o := &LoopOrchestrator{
-		cfg: LoopOrchestratorConfig{
+		cfg: Config{
 			Store:            kStore,
 			Hub:              newMockHubClient(),
 			PollInterval:     pollInterval,
 			ExploreThreshold: 2,
 		},
-		caller:  mock,
-		store:   store,
-		hubCli:  hubCli,
-		lineage: lineage,
-		kStore:  kStore,
+		Caller:  mock,
+		Store:   store,
+		HubCli:  hubCli,
+		Lineage: lineage,
+		KStore:  kStore,
 		status:  "ok",
-		ebSub:   ebSub,
+		EBSub:   ebSub,
 	}
 	return o, ebSub
 }
@@ -89,7 +89,7 @@ func TestLoopOrchestrator_EventBus_WakesOnJobComplete(t *testing.T) {
 	o, ebSub := newTestOrchestratorWithEB(t, 10*time.Minute)
 
 	// Create a hypothesis document so runDebate can find it.
-	hypID := mustCreateHyp(t, o.kStore)
+	hypID := mustCreateHyp(t, o.KStore)
 
 	// Register a session with a known job ID.
 	session := &LoopSession{
@@ -133,10 +133,10 @@ func TestLoopOrchestrator_EventBus_FallbackPollStillWorks(t *testing.T) {
 	o, _ := newTestOrchestratorWithEB(t, 20*time.Millisecond)
 
 	// Make the EB subscriber always fail.
-	o.ebSub = &errorEBSubscriber{}
+	o.EBSub = &errorEBSubscriber{}
 
 	// Create a hypothesis document so runDebate can find it.
-	hypID := mustCreateHyp(t, o.kStore)
+	hypID := mustCreateHyp(t, o.KStore)
 
 	session := &LoopSession{
 		HypothesisID: hypID,
@@ -148,7 +148,7 @@ func TestLoopOrchestrator_EventBus_FallbackPollStillWorks(t *testing.T) {
 	}
 
 	// Pre-populate hub mock so GetJob returns SUCCEEDED.
-	mhc := o.cfg.Hub.(*mockHubClient)
+	mhc := o.cfg.Hub.(*testMockHubClient)
 	mhc.jobs["job-fallback-001"] = &hub.Job{ID: "job-fallback-001", Status: "SUCCEEDED"}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -179,16 +179,16 @@ func TestLoopOrchestrator_EventBus_NoDuplicateOnJobDone(t *testing.T) {
 
 	// Replace the debate caller with one that counts calls atomically.
 	var callerInvocations int64
-	o.caller = &countingDebateLLM{
-		inner:   o.caller.(*mockDebateLLM),
+	o.Caller = &countingDebateLLM{
+		inner:   o.Caller.(*mockDebateLLM),
 		counter: &callerInvocations,
 	}
 
 	// Create a hypothesis document so runDebate can find it.
-	hypID := mustCreateHyp(t, o.kStore)
+	hypID := mustCreateHyp(t, o.KStore)
 
 	// Pre-populate hub mock so poll() sees the job as completed.
-	o.cfg.Hub.(*mockHubClient).jobs["job-dup-001"] = &hub.Job{ID: "job-dup-001", Status: "SUCCEEDED"}
+	o.cfg.Hub.(*testMockHubClient).jobs["job-dup-001"] = &hub.Job{ID: "job-dup-001", Status: "SUCCEEDED"}
 
 	session := &LoopSession{
 		HypothesisID: hypID,
@@ -229,7 +229,7 @@ func TestLoopOrchestrator_EventBus_NoDuplicateOnJobDone(t *testing.T) {
 	if calls > 3 {
 		// 3 calls = 1 onJobDone (3 LLM calls per debate: Optimizer, Skeptic, Synthesis)
 		// More than 3 means onJobDone ran more than once.
-		t.Errorf("debate caller invoked %d times; expected ≤ 3 (1 debate = 3 LLM calls, dedup may have failed)", calls)
+		t.Errorf("debate caller invoked %d times; expected <= 3 (1 debate = 3 LLM calls, dedup may have failed)", calls)
 	}
 }
 
@@ -242,13 +242,13 @@ func (e *errorEBSubscriber) Subscribe(_ context.Context, _ string, _ string) (<-
 
 var errTestEBUnavailable = fmt.Errorf("test: eventbus unavailable")
 
-// countingDebateLLM wraps mockDebateLLM and counts call() invocations atomically.
+// countingDebateLLM wraps mockDebateLLM and counts Call() invocations atomically.
 type countingDebateLLM struct {
 	inner   *mockDebateLLM
 	counter *int64
 }
 
-func (c *countingDebateLLM) call(ctx context.Context, system, user string) (string, error) {
+func (c *countingDebateLLM) Call(ctx context.Context, system, user string) (string, error) {
 	atomic.AddInt64(c.counter, 1)
-	return c.inner.call(ctx, system, user)
+	return c.inner.Call(ctx, system, user)
 }

@@ -1,4 +1,4 @@
-package main
+package hubpoller
 
 import (
 	"context"
@@ -21,8 +21,8 @@ import (
 // (enough for KEY=VALUE metric lines) and skip pagination to keep polling simple.
 const hubPollerLogLimit = 1000
 
-// seenEntry records when a completed job was first observed.
-type seenEntry struct {
+// SeenEntry records when a completed job was first observed.
+type SeenEntry struct {
 	CompletedAt time.Time `json:"completed_at"`
 }
 
@@ -32,8 +32,8 @@ type C1Notifier interface {
 	SendMessage(ctx context.Context, msg string) error
 }
 
-// knowledgeHubPollerConfig holds configuration for knowledgeHubPoller.
-type knowledgeHubPollerConfig struct {
+// Config holds configuration for KnowledgeHubPoller.
+type Config struct {
 	HubURL       string
 	APIKey       string
 	APIKeyEnv    string
@@ -44,12 +44,12 @@ type knowledgeHubPollerConfig struct {
 	C1           C1Notifier // optional; nil = disabled
 }
 
-// knowledgeHubPoller polls C5 Hub for completed jobs and records
+// KnowledgeHubPoller polls C5 Hub for completed jobs and records
 // stdout KEY=VALUE metrics as knowledge.TypeExperiment documents.
 // It implements serve.Component.
-type knowledgeHubPoller struct {
-	cfg    knowledgeHubPollerConfig
-	client *hub.Client // created once in newKnowledgeHubPoller; reused across polls
+type KnowledgeHubPoller struct {
+	cfg    Config
+	client *hub.Client // created once in New; reused across polls
 	wake   chan struct{} // optional; signals immediate poll (set via SetWakeChannel)
 	cancel context.CancelFunc
 	done   chan struct{}
@@ -60,9 +60,9 @@ type knowledgeHubPoller struct {
 }
 
 // compile-time interface assertion
-var _ serve.Component = (*knowledgeHubPoller)(nil)
+var _ serve.Component = (*KnowledgeHubPoller)(nil)
 
-func newKnowledgeHubPoller(cfg knowledgeHubPollerConfig) *knowledgeHubPoller {
+func New(cfg Config) *KnowledgeHubPoller {
 	if cfg.PollInterval <= 0 {
 		cfg.PollInterval = 30 * time.Second
 	}
@@ -72,12 +72,12 @@ func newKnowledgeHubPoller(cfg knowledgeHubPollerConfig) *knowledgeHubPoller {
 		APIKey:    cfg.APIKey,
 		APIKeyEnv: cfg.APIKeyEnv,
 	})
-	return &knowledgeHubPoller{cfg: cfg, client: client, status: "ok"}
+	return &KnowledgeHubPoller{cfg: cfg, client: client, status: "ok"}
 }
 
-func (p *knowledgeHubPoller) Name() string { return "hub-knowledge-poller" }
+func (p *KnowledgeHubPoller) Name() string { return "hub-knowledge-poller" }
 
-func (p *knowledgeHubPoller) Start(ctx context.Context) error {
+func (p *KnowledgeHubPoller) Start(ctx context.Context) error {
 	ctx2, cancel := context.WithCancel(ctx)
 	p.cancel = cancel
 	p.done = make(chan struct{})
@@ -85,7 +85,7 @@ func (p *knowledgeHubPoller) Start(ctx context.Context) error {
 	return nil
 }
 
-func (p *knowledgeHubPoller) Stop(_ context.Context) error {
+func (p *KnowledgeHubPoller) Stop(_ context.Context) error {
 	if p.cancel != nil {
 		p.cancel()
 		p.cancel = nil
@@ -96,7 +96,7 @@ func (p *knowledgeHubPoller) Stop(_ context.Context) error {
 	return nil
 }
 
-func (p *knowledgeHubPoller) Health() serve.ComponentHealth {
+func (p *KnowledgeHubPoller) Health() serve.ComponentHealth {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return serve.ComponentHealth{Status: p.status, Detail: p.detail}
@@ -107,11 +107,11 @@ func (p *knowledgeHubPoller) Health() serve.ComponentHealth {
 // A nil wake channel leaves the ticker-only behavior intact (Go spec: receive on
 // nil channel blocks forever, so the case is never selected).
 // Must be called before Start.
-func (p *knowledgeHubPoller) SetWakeChannel(ch chan struct{}) {
+func (p *KnowledgeHubPoller) SetWakeChannel(ch chan struct{}) {
 	p.wake = ch
 }
 
-func (p *knowledgeHubPoller) loop(ctx context.Context) {
+func (p *KnowledgeHubPoller) loop(ctx context.Context) {
 	defer close(p.done)
 	ticker := time.NewTicker(p.cfg.PollInterval)
 	defer ticker.Stop()
@@ -127,7 +127,7 @@ func (p *knowledgeHubPoller) loop(ctx context.Context) {
 	}
 }
 
-func (p *knowledgeHubPoller) poll(ctx context.Context) {
+func (p *KnowledgeHubPoller) poll(ctx context.Context) {
 	jobs, err := p.client.ListJobsCtx(ctx, "completed", 0)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "hub-knowledge-poller: list completed jobs: %v\n", err)
@@ -155,7 +155,7 @@ func (p *knowledgeHubPoller) poll(ctx context.Context) {
 			continue
 		}
 
-		metrics := parseHubMetrics(logsResp.Lines)
+		metrics := ParseHubMetrics(logsResp.Lines)
 
 		title := job.Name
 		if title == "" {
@@ -199,11 +199,11 @@ func (p *knowledgeHubPoller) poll(ctx context.Context) {
 			}
 		}
 
-		seenIDs[id] = seenEntry{CompletedAt: time.Now()}
+		seenIDs[id] = SeenEntry{CompletedAt: time.Now()}
 	}
 
 	// TTL cleanup: remove entries older than 30 days.
-	cleanupSeenIDs(seenIDs, time.Now().Add(-30*24*time.Hour))
+	CleanupSeenIDs(seenIDs, time.Now().Add(-30*24*time.Hour))
 
 	if saveErr := p.saveSeenIDs(seenIDs); saveErr != nil {
 		fmt.Fprintf(os.Stderr, "hub-knowledge-poller: save seen IDs: %v\n", saveErr)
@@ -215,9 +215,11 @@ func (p *knowledgeHubPoller) poll(ctx context.Context) {
 	p.mu.Unlock()
 }
 
-// parseHubMetrics parses KEY=VALUE lines from job stdout logs.
+// ParseHubMetrics parses KEY=VALUE lines from job stdout logs.
 // Lines without '=' are ignored. For duplicate keys, the last value wins.
-func parseHubMetrics(lines []string) map[string]string {
+// The C5 ExperimentWrapper uses @key=value protocol in stdout; the leading
+// '@' is stripped so knowledge records use clean key names.
+func ParseHubMetrics(lines []string) map[string]string {
 	result := make(map[string]string)
 	for _, line := range lines {
 		idx := strings.Index(line, "=")
@@ -225,6 +227,7 @@ func parseHubMetrics(lines []string) map[string]string {
 			continue
 		}
 		key := strings.TrimSpace(line[:idx])
+		key = strings.TrimLeft(key, "@")
 		val := strings.TrimSpace(line[idx+1:])
 		if key != "" {
 			result[key] = val
@@ -233,20 +236,20 @@ func parseHubMetrics(lines []string) map[string]string {
 	return result
 }
 
-func (p *knowledgeHubPoller) loadSeenIDs() map[string]seenEntry {
+func (p *KnowledgeHubPoller) loadSeenIDs() map[string]SeenEntry {
 	data, err := os.ReadFile(p.cfg.SeenPath)
 	if err != nil {
-		return make(map[string]seenEntry)
+		return make(map[string]SeenEntry)
 	}
-	var m map[string]seenEntry
+	var m map[string]SeenEntry
 	if err := json.Unmarshal(data, &m); err != nil {
-		return make(map[string]seenEntry)
+		return make(map[string]SeenEntry)
 	}
 	return m
 }
 
-// cleanupSeenIDs removes entries whose CompletedAt is before cutoff (in-place).
-func cleanupSeenIDs(m map[string]seenEntry, cutoff time.Time) {
+// CleanupSeenIDs removes entries whose CompletedAt is before cutoff (in-place).
+func CleanupSeenIDs(m map[string]SeenEntry, cutoff time.Time) {
 	for id, entry := range m {
 		if entry.CompletedAt.Before(cutoff) {
 			delete(m, id)
@@ -254,7 +257,7 @@ func cleanupSeenIDs(m map[string]seenEntry, cutoff time.Time) {
 	}
 }
 
-func (p *knowledgeHubPoller) saveSeenIDs(m map[string]seenEntry) error {
+func (p *KnowledgeHubPoller) saveSeenIDs(m map[string]SeenEntry) error {
 	data, err := json.Marshal(m)
 	if err != nil {
 		return err

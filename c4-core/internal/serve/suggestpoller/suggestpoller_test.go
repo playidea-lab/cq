@@ -1,4 +1,4 @@
-package main
+package suggestpoller
 
 import (
 	"context"
@@ -14,10 +14,10 @@ import (
 )
 
 // compile-time interface assertion (TestSuggestPoller_ImplementsComponent)
-var _ serve.Component = (*knowledgeSuggestPoller)(nil)
+var _ serve.Component = (*KnowledgeSuggestPoller)(nil)
 
 func TestSuggestPoller_ImplementsComponent(t *testing.T) {
-	p := newKnowledgeSuggestPoller(knowledgeSuggestPollerConfig{
+	p := New(Config{
 		Store: mustNewKnowledgeStore(t),
 	})
 	var _ serve.Component = p
@@ -26,10 +26,10 @@ func TestSuggestPoller_ImplementsComponent(t *testing.T) {
 func TestSuggestPoller_Watermark_SaveLoad(t *testing.T) {
 	dir := t.TempDir()
 	wmPath := filepath.Join(dir, "watermark.json")
-	p := &knowledgeSuggestPoller{cfg: knowledgeSuggestPollerConfig{WatermarkPath: wmPath}}
+	p := &KnowledgeSuggestPoller{cfg: Config{WatermarkPath: wmPath}}
 
 	now := time.Now().Truncate(time.Second)
-	wm := suggestWatermark{LastAnalyzedAt: now, LastCount: 7}
+	wm := Watermark{LastAnalyzedAt: now, LastCount: 7}
 	if err := p.saveWatermark(wm); err != nil {
 		t.Fatalf("saveWatermark: %v", err)
 	}
@@ -46,9 +46,9 @@ func TestSuggestPoller_Watermark_SaveLoad(t *testing.T) {
 func TestSuggestPoller_Watermark_AtomicSave(t *testing.T) {
 	dir := t.TempDir()
 	wmPath := filepath.Join(dir, "watermark.json")
-	p := &knowledgeSuggestPoller{cfg: knowledgeSuggestPollerConfig{WatermarkPath: wmPath}}
+	p := &KnowledgeSuggestPoller{cfg: Config{WatermarkPath: wmPath}}
 
-	wm := suggestWatermark{LastAnalyzedAt: time.Now(), LastCount: 3}
+	wm := Watermark{LastAnalyzedAt: time.Now(), LastCount: 3}
 	if err := p.saveWatermark(wm); err != nil {
 		t.Fatalf("saveWatermark: %v", err)
 	}
@@ -66,7 +66,7 @@ func TestSuggestPoller_Watermark_AtomicSave(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read watermark: %v", err)
 	}
-	var out suggestWatermark
+	var out Watermark
 	if err := json.Unmarshal(data, &out); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
@@ -75,7 +75,7 @@ func TestSuggestPoller_Watermark_AtomicSave(t *testing.T) {
 func TestSuggestPoller_CountThreshold_NoAnalysis(t *testing.T) {
 	store := mustNewKnowledgeStore(t)
 	called := false
-	p := newKnowledgeSuggestPoller(knowledgeSuggestPollerConfig{
+	p := New(Config{
 		Store:                  store,
 		LLMCaller:              &trackingLLMCaller{called: &called},
 		NewExperimentThreshold: 5,
@@ -97,7 +97,7 @@ func TestSuggestPoller_CountThreshold_NoAnalysis(t *testing.T) {
 func TestSuggestPoller_LLMFailure_NoRetry(t *testing.T) {
 	store := mustNewKnowledgeStore(t)
 	callCount := 0
-	p := newKnowledgeSuggestPoller(knowledgeSuggestPollerConfig{
+	p := New(Config{
 		Store: store,
 		LLMCaller: &errLLMCaller{
 			err:       errLLMFailed,
@@ -124,7 +124,7 @@ func TestSuggestPoller_Trigger_StoresHypothesis(t *testing.T) {
 		store.Create(knowledge.TypeExperiment, map[string]any{"title": "exp"}, "body")
 	}
 
-	p := newKnowledgeSuggestPoller(knowledgeSuggestPollerConfig{
+	p := New(Config{
 		Store: store,
 		LLMCaller: &fixedLLMCaller{
 			response: `{"insight": "good experiments", "yaml_draft": "run: python train.py"}`,
@@ -162,7 +162,7 @@ func TestSuggestPoller_MalformedLLMResponse(t *testing.T) {
 		store.Create(knowledge.TypeExperiment, map[string]any{"title": "exp"}, "body")
 	}
 
-	p := newKnowledgeSuggestPoller(knowledgeSuggestPollerConfig{
+	p := New(Config{
 		Store:         store,
 		LLMCaller:     &fixedLLMCaller{response: "not json at all"},
 		WatermarkPath: filepath.Join(t.TempDir(), "wm.json"),
@@ -189,7 +189,7 @@ func TestSuggestPoller_TriggerDuringPoll_NoDuplicate(t *testing.T) {
 	blocked := make(chan struct{})
 	unblock := make(chan struct{})
 	callCount := 0
-	p := newKnowledgeSuggestPoller(knowledgeSuggestPollerConfig{
+	p := New(Config{
 		Store: store,
 		LLMCaller: &blockingLLMCaller{
 			response: `{"insight": "ok", "yaml_draft": "run: x"}`,

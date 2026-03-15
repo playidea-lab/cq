@@ -1,4 +1,4 @@
-package main
+package suggestpoller
 
 import (
 	"context"
@@ -20,6 +20,12 @@ type LLMCaller interface {
 	Call(ctx context.Context, prompt string) (string, error)
 }
 
+// C1Notifier is an optional interface for sending C1 Messenger notifications.
+// Pass nil to disable notifications.
+type C1Notifier interface {
+	SendMessage(ctx context.Context, msg string) error
+}
+
 // HypothesisResult holds the parsed LLM response.
 type HypothesisResult struct {
 	Insight   string `json:"insight"`
@@ -27,14 +33,14 @@ type HypothesisResult struct {
 	DocID     string `json:"doc_id"`
 }
 
-// suggestWatermark records the watermark for the suggest poller.
-type suggestWatermark struct {
+// Watermark records the watermark for the suggest poller.
+type Watermark struct {
 	LastAnalyzedAt time.Time `json:"last_analyzed_at"`
 	LastCount      int       `json:"last_count"`
 }
 
-// knowledgeSuggestPollerConfig holds configuration for knowledgeSuggestPoller.
-type knowledgeSuggestPollerConfig struct {
+// Config holds configuration for KnowledgeSuggestPoller.
+type Config struct {
 	Store                  *knowledge.Store
 	LLMCaller              LLMCaller
 	C1                     C1Notifier // nil = disabled
@@ -43,11 +49,11 @@ type knowledgeSuggestPollerConfig struct {
 	WatermarkPath          string // .c4/suggest_poller_watermark.json
 }
 
-// knowledgeSuggestPoller monitors experiment documents and triggers LLM analysis
+// KnowledgeSuggestPoller monitors experiment documents and triggers LLM analysis
 // when enough new experiments have accumulated since the last analysis.
 // It implements serve.Component.
-type knowledgeSuggestPoller struct {
-	cfg    knowledgeSuggestPollerConfig
+type KnowledgeSuggestPoller struct {
+	cfg    Config
 	cancel context.CancelFunc
 	done   chan struct{}
 
@@ -58,21 +64,21 @@ type knowledgeSuggestPoller struct {
 }
 
 // compile-time interface assertion
-var _ serve.Component = (*knowledgeSuggestPoller)(nil)
+var _ serve.Component = (*KnowledgeSuggestPoller)(nil)
 
-func newKnowledgeSuggestPoller(cfg knowledgeSuggestPollerConfig) *knowledgeSuggestPoller {
+func New(cfg Config) *KnowledgeSuggestPoller {
 	if cfg.NewExperimentThreshold <= 0 {
 		cfg.NewExperimentThreshold = 5
 	}
 	if cfg.PollInterval <= 0 {
 		cfg.PollInterval = 5 * time.Minute
 	}
-	return &knowledgeSuggestPoller{cfg: cfg, status: "ok"}
+	return &KnowledgeSuggestPoller{cfg: cfg, status: "ok"}
 }
 
-func (p *knowledgeSuggestPoller) Name() string { return "knowledge-suggest-poller" }
+func (p *KnowledgeSuggestPoller) Name() string { return "knowledge-suggest-poller" }
 
-func (p *knowledgeSuggestPoller) Start(ctx context.Context) error {
+func (p *KnowledgeSuggestPoller) Start(ctx context.Context) error {
 	ctx2, cancel := context.WithCancel(ctx)
 	p.cancel = cancel
 	p.done = make(chan struct{})
@@ -80,7 +86,7 @@ func (p *knowledgeSuggestPoller) Start(ctx context.Context) error {
 	return nil
 }
 
-func (p *knowledgeSuggestPoller) Stop(_ context.Context) error {
+func (p *KnowledgeSuggestPoller) Stop(_ context.Context) error {
 	if p.cancel != nil {
 		p.cancel()
 		p.cancel = nil
@@ -91,13 +97,13 @@ func (p *knowledgeSuggestPoller) Stop(_ context.Context) error {
 	return nil
 }
 
-func (p *knowledgeSuggestPoller) Health() serve.ComponentHealth {
+func (p *KnowledgeSuggestPoller) Health() serve.ComponentHealth {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return serve.ComponentHealth{Status: p.status, Detail: p.detail}
 }
 
-func (p *knowledgeSuggestPoller) loop(ctx context.Context) {
+func (p *KnowledgeSuggestPoller) loop(ctx context.Context) {
 	defer close(p.done)
 	ticker := time.NewTicker(p.cfg.PollInterval)
 	defer ticker.Stop()
@@ -111,7 +117,7 @@ func (p *knowledgeSuggestPoller) loop(ctx context.Context) {
 	}
 }
 
-func (p *knowledgeSuggestPoller) poll(ctx context.Context) {
+func (p *KnowledgeSuggestPoller) poll(ctx context.Context) {
 	wm := p.loadWatermark()
 
 	docs, err := p.cfg.Store.List(string(knowledge.TypeExperiment), "", 200)
@@ -146,7 +152,7 @@ func (p *knowledgeSuggestPoller) poll(ctx context.Context) {
 
 // Trigger manually triggers analysis for experiments matching tag (empty = recent).
 // Returns an error if analysis is already running.
-func (p *knowledgeSuggestPoller) Trigger(ctx context.Context, tag string, limit int) (*HypothesisResult, error) {
+func (p *KnowledgeSuggestPoller) Trigger(ctx context.Context, tag string, limit int) (*HypothesisResult, error) {
 	p.mu.Lock()
 	if p.analyzing {
 		p.mu.Unlock()
@@ -167,7 +173,7 @@ func (p *knowledgeSuggestPoller) Trigger(ctx context.Context, tag string, limit 
 
 // runAnalysis calls the LLM, parses the result, and stores a TypeHypothesis document.
 // It uses p.mu to prevent concurrent execution.
-func (p *knowledgeSuggestPoller) runAnalysis(ctx context.Context, docs []map[string]any, tag string) (*HypothesisResult, error) {
+func (p *KnowledgeSuggestPoller) runAnalysis(ctx context.Context, docs []map[string]any, tag string) (*HypothesisResult, error) {
 	p.mu.Lock()
 	if p.analyzing {
 		p.mu.Unlock()
@@ -186,13 +192,13 @@ func (p *knowledgeSuggestPoller) runAnalysis(ctx context.Context, docs []map[str
 		return nil, fmt.Errorf("no LLM caller configured")
 	}
 
-	prompt := buildAnalysisPrompt(docs)
+	prompt := BuildAnalysisPrompt(docs)
 	resp, err := p.cfg.LLMCaller.Call(ctx, prompt)
 	if err != nil {
 		return nil, fmt.Errorf("LLM call failed: %w", err)
 	}
 
-	result, err := parseAnalysisResponse(resp)
+	result, err := ParseAnalysisResponse(resp)
 	if err != nil {
 		return nil, fmt.Errorf("malformed LLM response: %w", err)
 	}
@@ -227,7 +233,7 @@ func (p *knowledgeSuggestPoller) runAnalysis(ctx context.Context, docs []map[str
 	}
 
 	// Advance watermark after successful analysis.
-	wm := suggestWatermark{
+	wm := Watermark{
 		LastAnalyzedAt: time.Now(),
 		LastCount:      len(docs),
 	}
@@ -238,8 +244,8 @@ func (p *knowledgeSuggestPoller) runAnalysis(ctx context.Context, docs []map[str
 	return result, nil
 }
 
-// buildAnalysisPrompt builds the LLM prompt from experiment documents.
-func buildAnalysisPrompt(docs []map[string]any) string {
+// BuildAnalysisPrompt builds the LLM prompt from experiment documents.
+func BuildAnalysisPrompt(docs []map[string]any) string {
 	var sb strings.Builder
 	sb.WriteString("당신은 ML 실험 분석가입니다. 실험 결과를 분석하고 다음 실험을 제안해주세요.\n")
 	sb.WriteString("아래 형식의 JSON으로만 응답하세요:\n")
@@ -253,8 +259,8 @@ func buildAnalysisPrompt(docs []map[string]any) string {
 	return sb.String()
 }
 
-// parseAnalysisResponse parses the JSON response from the LLM.
-func parseAnalysisResponse(resp string) (*HypothesisResult, error) {
+// ParseAnalysisResponse parses the JSON response from the LLM.
+func ParseAnalysisResponse(resp string) (*HypothesisResult, error) {
 	// Find the first '{' to handle any leading text.
 	start := strings.Index(resp, "{")
 	if start < 0 {
@@ -290,19 +296,19 @@ func countNewSince(docs []map[string]any, cutoff time.Time) int {
 	return n
 }
 
-func (p *knowledgeSuggestPoller) loadWatermark() suggestWatermark {
+func (p *KnowledgeSuggestPoller) loadWatermark() Watermark {
 	data, err := os.ReadFile(p.cfg.WatermarkPath)
 	if err != nil {
-		return suggestWatermark{}
+		return Watermark{}
 	}
-	var wm suggestWatermark
+	var wm Watermark
 	if err := json.Unmarshal(data, &wm); err != nil {
-		return suggestWatermark{}
+		return Watermark{}
 	}
 	return wm
 }
 
-func (p *knowledgeSuggestPoller) saveWatermark(wm suggestWatermark) error {
+func (p *KnowledgeSuggestPoller) saveWatermark(wm Watermark) error {
 	data, err := json.Marshal(wm)
 	if err != nil {
 		return err

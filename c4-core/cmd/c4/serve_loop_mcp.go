@@ -11,6 +11,7 @@ import (
 
 	"github.com/changmin/c4-core/internal/knowledge"
 	"github.com/changmin/c4-core/internal/mcp"
+	"github.com/changmin/c4-core/internal/serve/orchestrator"
 )
 
 func init() {
@@ -21,10 +22,10 @@ func registerLoopMCPHandlers(ctx *initContext) error {
 	if ctx.knowledgeStore == nil {
 		return nil
 	}
-	lo, ok := ctx.loopOrchestrator.(*LoopOrchestrator)
+	lo, ok := ctx.loopOrchestrator.(*orchestrator.LoopOrchestrator)
 	if !ok || lo == nil {
 		if ctx.loopOrchestrator != nil {
-			fmt.Fprintf(os.Stderr, "warn: loopOrchestrator is not *LoopOrchestrator (%T); loop MCP handlers not registered\n", ctx.loopOrchestrator)
+			fmt.Fprintf(os.Stderr, "warn: loopOrchestrator is not *orchestrator.LoopOrchestrator (%T); loop MCP handlers not registered\n", ctx.loopOrchestrator)
 		}
 		return nil
 	}
@@ -69,7 +70,7 @@ func registerLoopMCPHandlers(ctx *initContext) error {
 	return nil
 }
 
-func loopStartHandler(lo *LoopOrchestrator, ks *knowledge.Store) mcp.HandlerFunc {
+func loopStartHandler(lo *orchestrator.LoopOrchestrator, ks *knowledge.Store) mcp.HandlerFunc {
 	return func(rawArgs json.RawMessage) (any, error) {
 		var params struct {
 			Hypothesis    string `json:"hypothesis"`
@@ -96,7 +97,7 @@ func loopStartHandler(lo *LoopOrchestrator, ks *knowledge.Store) mcp.HandlerFunc
 		if hypID == "" {
 			return nil, errors.New("hypothesis or hypothesis_id is required")
 		}
-		session := &LoopSession{
+		session := &orchestrator.LoopSession{
 			HypothesisID:  hypID,
 			MaxIterations: params.MaxIterations,
 		}
@@ -113,7 +114,7 @@ func loopStartHandler(lo *LoopOrchestrator, ks *knowledge.Store) mcp.HandlerFunc
 	}
 }
 
-func loopStopHandler(lo *LoopOrchestrator) mcp.HandlerFunc {
+func loopStopHandler(lo *orchestrator.LoopOrchestrator) mcp.HandlerFunc {
 	return func(rawArgs json.RawMessage) (any, error) {
 		var params struct {
 			HypothesisID string `json:"hypothesis_id"`
@@ -131,7 +132,7 @@ func loopStopHandler(lo *LoopOrchestrator) mcp.HandlerFunc {
 	}
 }
 
-func loopStatusHandler(lo *LoopOrchestrator) mcp.HandlerFunc {
+func loopStatusHandler(lo *orchestrator.LoopOrchestrator) mcp.HandlerFunc {
 	return func(rawArgs json.RawMessage) (any, error) {
 		var params struct {
 			HypothesisID string `json:"hypothesis_id"`

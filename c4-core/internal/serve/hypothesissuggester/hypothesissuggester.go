@@ -1,9 +1,10 @@
-package main
+package hypothesissuggester
 
 import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -14,9 +15,9 @@ import (
 	"github.com/changmin/c4-core/internal/serve"
 )
 
-// hypothesisSuggester is a serve.Component that watches for new experiments
+// Suggester is a serve.Component that watches for new experiments
 // and generates TypeHypothesis docs when the threshold is reached.
-type hypothesisSuggester struct {
+type Suggester struct {
 	cfg       config.ServeHypothesisSuggesterConfig
 	gw        *llm.Gateway
 	kStore    *knowledge.Store
@@ -28,9 +29,10 @@ type hypothesisSuggester struct {
 }
 
 // compile-time assertion
-var _ serve.Component = (*hypothesisSuggester)(nil)
+var _ serve.Component = (*Suggester)(nil)
 
-func registerHypothesisSuggesterComponent(mgr *serve.Manager, cfg config.C4Config, gw *llm.Gateway, kStore *knowledge.Store) {
+// RegisterComponent registers the Suggester component with the serve manager.
+func RegisterComponent(mgr *serve.Manager, cfg config.C4Config, gw *llm.Gateway, kStore *knowledge.Store) {
 	if !cfg.Serve.HypothesisSuggester.Enabled {
 		return
 	}
@@ -38,12 +40,13 @@ func registerHypothesisSuggesterComponent(mgr *serve.Manager, cfg config.C4Confi
 		fmt.Fprintf(os.Stderr, "cq serve: hypothesis suggester skipped (no knowledge store)\n")
 		return
 	}
-	c := newHypothesisSuggester(cfg.Serve.HypothesisSuggester, gw, kStore)
+	c := New(cfg.Serve.HypothesisSuggester, gw, kStore)
 	mgr.Register(c)
 	fmt.Fprintf(os.Stderr, "cq serve: registered hypothesis-suggester\n")
 }
 
-func newHypothesisSuggester(cfg config.ServeHypothesisSuggesterConfig, gw *llm.Gateway, kStore *knowledge.Store) *hypothesisSuggester {
+// New creates a new Suggester with the given config.
+func New(cfg config.ServeHypothesisSuggesterConfig, gw *llm.Gateway, kStore *knowledge.Store) *Suggester {
 	interval := 30 * time.Second
 	if cfg.Interval != "" {
 		if d, err := time.ParseDuration(cfg.Interval); err == nil {
@@ -58,7 +61,7 @@ func newHypothesisSuggester(cfg config.ServeHypothesisSuggesterConfig, gw *llm.G
 	if ttl <= 0 {
 		ttl = 24 * time.Hour
 	}
-	return &hypothesisSuggester{
+	return &Suggester{
 		cfg: config.ServeHypothesisSuggesterConfig{
 			Enabled:   cfg.Enabled,
 			Threshold: threshold,
@@ -72,9 +75,9 @@ func newHypothesisSuggester(cfg config.ServeHypothesisSuggesterConfig, gw *llm.G
 	}
 }
 
-func (h *hypothesisSuggester) Name() string { return "hypothesis-suggester" }
+func (h *Suggester) Name() string { return "hypothesis-suggester" }
 
-func (h *hypothesisSuggester) Start(ctx context.Context) error {
+func (h *Suggester) Start(ctx context.Context) error {
 	if h.cfg.TTL <= 0 {
 		return fmt.Errorf("hypothesis-suggester: TTL must be > 0")
 	}
@@ -91,15 +94,15 @@ func (h *hypothesisSuggester) Start(ctx context.Context) error {
 			case <-cctx.Done():
 				return
 			case <-ticker.C:
-				h.poll(cctx)
-				h.cleanup()
+				h.Poll(cctx)
+				h.Cleanup()
 			}
 		}
 	}()
 	return nil
 }
 
-func (h *hypothesisSuggester) Stop(_ context.Context) error {
+func (h *Suggester) Stop(_ context.Context) error {
 	h.mu.Lock()
 	if h.cancel != nil {
 		h.cancel()
@@ -108,15 +111,15 @@ func (h *hypothesisSuggester) Stop(_ context.Context) error {
 	return nil
 }
 
-func (h *hypothesisSuggester) Health() serve.ComponentHealth {
+func (h *Suggester) Health() serve.ComponentHealth {
 	h.mu.Lock()
 	s := h.status
 	h.mu.Unlock()
 	return serve.ComponentHealth{Status: s}
 }
 
-// poll checks for new experiments and generates a hypothesis if threshold is met.
-func (h *hypothesisSuggester) poll(ctx context.Context) {
+// Poll checks for new experiments and generates a hypothesis if threshold is met.
+func (h *Suggester) Poll(ctx context.Context) {
 	docs, err := h.kStore.List(string(knowledge.TypeExperiment), "", 50)
 	if err != nil {
 		h.mu.Lock()
@@ -161,11 +164,11 @@ func (h *hypothesisSuggester) poll(ctx context.Context) {
 		}
 	}
 
-	// Store expires_at in frontmatter metadata so readHypMeta() and cleanup() can find it.
+	// Store expires_at in frontmatter metadata so ReadHypMeta() and Cleanup() can find it.
 	expiresAtStr := time.Now().UTC().Add(h.cfg.TTL).Format(time.RFC3339)
 
 	// Use both "status" and "hypothesis_status" so CLI (runSuggestList/Approve) and
-	// cleanup() read the same canonical field regardless of creation path.
+	// Cleanup() read the same canonical field regardless of creation path.
 	meta := map[string]any{
 		"title":             "Hypothesis (auto-generated)",
 		"status":            "pending",
@@ -186,16 +189,16 @@ func (h *hypothesisSuggester) poll(ctx context.Context) {
 	h.mu.Unlock()
 }
 
-// cleanup marks expired pending hypotheses as expired.
-// expires_at is read from frontmatter (unified schema with poll() and hypothesis_suggest.go).
-func (h *hypothesisSuggester) cleanup() {
+// Cleanup marks expired pending hypotheses as expired.
+// expires_at is read from frontmatter (unified schema with Poll() and hypothesis_suggest.go).
+func (h *Suggester) Cleanup() {
 	docs, err := h.kStore.List(string(knowledge.TypeHypothesis), "", 100)
 	if err != nil {
 		return
 	}
 	now := time.Now().UTC()
 	for _, d := range docs {
-		// Check both fields: poll() sets hypothesis_status, MCP handler sets status.
+		// Check both fields: Poll() sets hypothesis_status, MCP handler sets status.
 		hypStatus, _ := d["hypothesis_status"].(string)
 		docStatus, _ := d["status"].(string)
 		if hypStatus != "pending" && docStatus != "pending" {
@@ -205,8 +208,8 @@ func (h *hypothesisSuggester) cleanup() {
 		if docID == "" {
 			continue
 		}
-		// Read expires_at from frontmatter (same schema as poll() and hypothesis_suggest.go).
-		expiresAtStr, _ := readHypMeta(h.kStore, docID)
+		// Read expires_at from frontmatter (same schema as Poll() and hypothesis_suggest.go).
+		expiresAtStr, _ := ReadHypMeta(h.kStore, docID)
 		if expiresAtStr == "" {
 			continue
 		}
@@ -221,4 +224,36 @@ func (h *hypothesisSuggester) cleanup() {
 			fmt.Fprintf(os.Stderr, "hypothesis-suggester: cleanup update failed for %s: %v\n", docID, updateErr)
 		}
 	}
+}
+
+// ReadHypMeta reads expires_at and yaml_draft from a hypothesis document's frontmatter.
+func ReadHypMeta(store *knowledge.Store, docID string) (expiresAt string, yamlDraft string) {
+	filePath := filepath.Join(store.DocsDir(), docID+".md")
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		return "", ""
+	}
+	content := string(data)
+
+	// Parse frontmatter: ---\n...\n---
+	const sep = "---"
+	if !strings.HasPrefix(content, sep) {
+		return "", ""
+	}
+	rest := content[len(sep):]
+	end := strings.Index(rest, "\n---")
+	if end < 0 {
+		return "", ""
+	}
+	fm := rest[:end]
+
+	for _, line := range strings.Split(fm, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "expires_at:") {
+			expiresAt = strings.TrimSpace(strings.TrimPrefix(line, "expires_at:"))
+		} else if strings.HasPrefix(line, "yaml_draft:") {
+			yamlDraft = strings.TrimSpace(strings.TrimPrefix(line, "yaml_draft:"))
+		}
+	}
+	return expiresAt, yamlDraft
 }

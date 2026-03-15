@@ -1,6 +1,6 @@
 //go:build research
 
-package main
+package orchestrator
 
 import (
 	"context"
@@ -22,7 +22,7 @@ import (
 // All mutations are performed on a local copy of the session (copy-on-write) to
 // avoid data races with concurrent StopLoop / Steer goroutines.
 func (o *LoopOrchestrator) onJobDone(ctx context.Context, session *LoopSession, jobStatus *HubJobStatus) error {
-	if o.caller == nil || o.store == nil {
+	if o.Caller == nil || o.Store == nil {
 		return errors.New("loop_orchestrator: debate caller/store not wired")
 	}
 
@@ -37,8 +37,8 @@ func (o *LoopOrchestrator) onJobDone(ctx context.Context, session *LoopSession, 
 
 	// Build lineage context for the debate.
 	lineageContext := ""
-	if o.lineage != nil {
-		lc, err := o.lineage.BuildContext(ctx, s.HypothesisID, 5)
+	if o.Lineage != nil {
+		lc, err := o.Lineage.BuildContext(ctx, s.HypothesisID, 5)
 		if err == nil {
 			lineageContext = lc
 		}
@@ -62,8 +62,8 @@ func (o *LoopOrchestrator) onJobDone(ctx context.Context, session *LoopSession, 
 	}
 
 	// Inject experiment metrics from the latest TypeExperiment doc for this HypothesisID.
-	if o.kStore != nil {
-		if metricBlock := fetchExperimentMetrics(o.kStore, s.HypothesisID); metricBlock != "" {
+	if o.KStore != nil {
+		if metricBlock := FetchExperimentMetrics(o.KStore, s.HypothesisID); metricBlock != "" {
 			if extraContext != "" {
 				extraContext += "\n" + metricBlock
 			} else {
@@ -79,7 +79,7 @@ func (o *LoopOrchestrator) onJobDone(ctx context.Context, session *LoopSession, 
 	}
 
 	// Run the Optimizer→Skeptic→Synthesis debate.
-	result, err := runDebate(ctx, o.caller, o.store, s.HypothesisID, triggerReason, extraContext, lineageContext)
+	result, err := RunDebate(ctx, o.Caller, o.Store, s.HypothesisID, triggerReason, extraContext, lineageContext)
 	if err != nil {
 		return fmt.Errorf("runDebate: %w", err)
 	}
@@ -95,12 +95,12 @@ func (o *LoopOrchestrator) onJobDone(ctx context.Context, session *LoopSession, 
 	nextHypDraft, _ := m["next_hypothesis_draft"].(string)
 
 	// Emit debate_complete after debate finishes.
-	if o.notify != nil {
+	if o.Notify != nil {
 		jobID := ""
 		if jobStatus != nil {
 			jobID = jobStatus.JobID
 		}
-		o.notify.Emit(ctx, EventDebateComplete,
+		o.Notify.Emit(ctx, EventDebateComplete,
 			"Research Loop: Debate Complete",
 			fmt.Sprintf("Round %d debate complete (job: %s)", s.Round, jobID))
 	}
@@ -108,38 +108,38 @@ func (o *LoopOrchestrator) onJobDone(ctx context.Context, session *LoopSession, 
 	// Persist gate_wait state and enter gate.
 	// Snapshot gate under mu to avoid data race with Stop().
 	o.mu.Lock()
-	gate := o.gate
+	gate := o.Gate
 	o.mu.Unlock()
-	if o.state != nil && gate != nil {
+	if o.State != nil && gate != nil {
 		gateDur := gate.Duration()
 		deadline := time.Now().Add(gateDur)
 		jobID := ""
 		if jobStatus != nil {
 			jobID = jobStatus.JobID
 		}
-		_ = o.state.WriteState(LoopState{
+		_ = o.State.WriteState(LoopState{
 			State:               "gate_wait",
 			LoopCount:           s.Round,
 			CurrentHypothesisID: s.HypothesisID,
 			LastJobID:           jobID,
 			GateDeadline:        &deadline,
 		})
-		if o.notify != nil {
-			o.notify.Emit(ctx, EventGateEntered,
+		if o.Notify != nil {
+			o.Notify.Emit(ctx, EventGateEntered,
 				"Research Loop: Gate Entered",
 				fmt.Sprintf("Round %d entering %v gate", s.Round, gateDur))
 		}
 		// Block until gate elapses or is released.
 		<-gate.EnterGate(ctx)
 		// Restore running state after gate.
-		_ = o.state.WriteState(LoopState{
+		_ = o.State.WriteState(LoopState{
 			State:               "running",
 			LoopCount:           s.Round,
 			CurrentHypothesisID: s.HypothesisID,
 			LastJobID:           jobID,
 		})
-		if o.notify != nil {
-			o.notify.Emit(ctx, EventAutoContinued,
+		if o.Notify != nil {
+			o.Notify.Emit(ctx, EventAutoContinued,
 				"Research Loop: Auto-Continued",
 				fmt.Sprintf("Round %d gate elapsed, auto-continuing", s.Round))
 		}
@@ -149,7 +149,7 @@ func (o *LoopOrchestrator) onJobDone(ctx context.Context, session *LoopSession, 
 	switch verdict {
 	case "approved":
 		// Extract next hypothesis from draft.
-		draft := extractDraft(nextHypDraft)
+		draft := ExtractDraft(nextHypDraft)
 		if draft == "" {
 			// extractDraft failure → treat as null_result.
 			// Round is intentionally not advanced; ExploreFlag will force exploration after threshold.
@@ -157,7 +157,7 @@ func (o *LoopOrchestrator) onJobDone(ctx context.Context, session *LoopSession, 
 			if s.NullResultCount >= exploreThreshold {
 				s.ExploreFlag = true
 			}
-		} else if o.kStore == nil || o.hubCli == nil {
+		} else if o.KStore == nil || o.HubCli == nil {
 			// kStore/hubCli not wired — degrade gracefully.
 			// TODO: wire kStore and hubCli to enable hypothesis creation and job submission.
 			s.NullResultCount++
@@ -166,7 +166,7 @@ func (o *LoopOrchestrator) onJobDone(ctx context.Context, session *LoopSession, 
 			}
 		} else {
 			// Create new TypeHypothesis document.
-			newHypID, err := o.kStore.Create(knowledge.TypeHypothesis, map[string]any{
+			newHypID, err := o.KStore.Create(knowledge.TypeHypothesis, map[string]any{
 				"title":                draft,
 				"status":               "approved",
 				"parent_hypothesis_id": s.HypothesisID,
@@ -177,12 +177,12 @@ func (o *LoopOrchestrator) onJobDone(ctx context.Context, session *LoopSession, 
 
 			// Run SpecPipeline: generate and review an ExperimentSpec.
 			var specDocID string
-			if o.specPipeline != nil {
-				_, sid, nullResult, specErr := generateAndReview(ctx, o.specPipeline.caller, o.specPipeline.kStore, draft, s.Round)
+			if o.SpecPipeline != nil {
+				_, sid, nullResult, specErr := GenerateAndReview(ctx, o.SpecPipeline.Caller, o.SpecPipeline.KStore, draft, s.Round)
 				if specErr != nil || nullResult {
 					// Spec failed: clean up orphaned hypothesis document.
-					if o.kStore != nil {
-						if _, delErr := o.kStore.Delete(newHypID); delErr != nil {
+					if o.KStore != nil {
+						if _, delErr := o.KStore.Delete(newHypID); delErr != nil {
 							fmt.Fprintf(os.Stderr, "warn: loop spec fail cleanup: %v\n", delErr)
 						}
 					}
@@ -195,14 +195,14 @@ func (o *LoopOrchestrator) onJobDone(ctx context.Context, session *LoopSession, 
 					if s.MaxIterations > 0 && s.Round >= s.MaxIterations {
 						s.Status = "completed"
 					}
-					o.sessions.Store(s.HypothesisID, &s)
+					o.Sessions.Store(s.HypothesisID, &s)
 					return nil
 				}
 				specDocID = sid
 			}
 
 			// Submit new Hub job with the approved ExperimentSpec.
-			newJobID, err := o.hubCli.SubmitJob(ctx, loopHubJobRequest{
+			newJobID, err := o.HubCli.SubmitJob(ctx, LoopHubJobRequest{
 				HypothesisID:     newHypID,
 				ExperimentSpecID: specDocID,
 				Command:          "cq research run",
@@ -220,7 +220,7 @@ func (o *LoopOrchestrator) onJobDone(ctx context.Context, session *LoopSession, 
 			s.Round++
 			s.NullResultCount = 0
 			s.ExploreFlag = false
-			o.sessions.Delete(oldHypID)
+			o.Sessions.Delete(oldHypID)
 		}
 
 	case "null_result":
@@ -232,7 +232,7 @@ func (o *LoopOrchestrator) onJobDone(ctx context.Context, session *LoopSession, 
 	case "escalate":
 		// Early return: budget gate does not apply to escalated sessions.
 		s.Status = "stopped"
-		o.sessions.Store(s.HypothesisID, &s)
+		o.Sessions.Store(s.HypothesisID, &s)
 		return nil
 
 	default:
@@ -251,16 +251,16 @@ func (o *LoopOrchestrator) onJobDone(ctx context.Context, session *LoopSession, 
 	// Persist the updated session copy. For the approved-advance case,
 	// s.HypothesisID was updated to the new key above, so this correctly
 	// stores the final state (including any budget-gate completion) under the new key.
-	o.sessions.Store(s.HypothesisID, &s)
+	o.Sessions.Store(s.HypothesisID, &s)
 
 	return nil
 }
 
-// fetchExperimentMetrics queries the latest TypeExperiment document for the given
+// FetchExperimentMetrics queries the latest TypeExperiment document for the given
 // hypothesisID, extracts val_loss and test_metric from the JSON body, and returns
 // a formatted extraContext block. Returns "" if no matching doc is found or on error
 // (fallback: debate proceeds without metric context).
-func fetchExperimentMetrics(kStore *knowledge.Store, hypothesisID string) string {
+func FetchExperimentMetrics(kStore *knowledge.Store, hypothesisID string) string {
 	docs, err := kStore.List(string(knowledge.TypeExperiment), "experiment", 100)
 	if err != nil {
 		return ""
@@ -306,9 +306,9 @@ func fetchExperimentMetrics(kStore *knowledge.Store, hypothesisID string) string
 	return ""
 }
 
-// extractDraft extracts the first line of the next hypothesis draft.
+// ExtractDraft extracts the first line of the next hypothesis draft.
 // Returns empty string if draft is empty or whitespace-only.
-func extractDraft(draft string) string {
+func ExtractDraft(draft string) string {
 	draft = strings.TrimSpace(draft)
 	if draft == "" {
 		return ""
@@ -317,4 +317,91 @@ func extractDraft(draft string) string {
 		return strings.TrimSpace(draft[:nl])
 	}
 	return draft
+}
+
+// RunDebate executes the Optimizer→Skeptic→Synthesis debate flow.
+func RunDebate(ctx context.Context, caller DebateCaller, store DebateStore, hypID, triggerReason, extraContext, lineageContext string) (any, error) {
+	if hypID == "" {
+		return nil, fmt.Errorf("hypothesis_id required")
+	}
+
+	hypDoc, err := store.Get(hypID)
+	if err != nil || hypDoc == nil {
+		return nil, fmt.Errorf("hypothesis not found: %s", hypID)
+	}
+
+	userMsg := fmt.Sprintf("Hypothesis: %s\nTrigger: %s\nContext: %s\n", hypID, triggerReason, extraContext)
+	if lineageContext != "" {
+		userMsg += "\n" + lineageContext + "\n"
+	}
+	userMsg += "\nHypothesis body:\n" + hypDoc.Body
+
+	optimizerSystem := `You are a research direction optimizer. Analyze the hypothesis and experimental results. Propose the most promising next research direction. Format: DIRECTION: [direction], RATIONALE: [rationale], NEXT_HYPOTHESIS: [draft hypothesis text]`
+	skepticSystem := `You are a research hypothesis critic. Challenge the current hypothesis and proposed directions. Identify blind spots, alternative explanations, and exploration directions being ignored. Format: CHALLENGE: [main challenge], ALTERNATIVE: [alternative direction], VERDICT: [approved|null_result|escalate]`
+
+	optimizerOut, err := caller.Call(ctx, optimizerSystem, userMsg)
+	if err != nil {
+		return nil, fmt.Errorf("optimizer: %w", err)
+	}
+
+	skepticOut, err := caller.Call(ctx, skepticSystem, userMsg)
+	if err != nil {
+		return nil, fmt.Errorf("skeptic: %w", err)
+	}
+
+	synthSystem := `You are a research synthesis expert. Given optimizer and skeptic perspectives, determine the final verdict and next hypothesis. Output JSON: {"verdict":"approved|null_result|escalate","next_hypothesis_draft":"...","experiment_spec_draft":"..."}`
+	synthUser := fmt.Sprintf("Optimizer:\n%s\n\nSkeptic:\n%s", optimizerOut, skepticOut)
+	synthOut, err := caller.Call(ctx, synthSystem, synthUser)
+	if err != nil {
+		return nil, fmt.Errorf("synthesis: %w", err)
+	}
+
+	// Determine verdict: try synth JSON first, fall back to skeptic text.
+	verdict := "approved"
+	var synthJSON struct {
+		Verdict string `json:"verdict"`
+	}
+	if start := strings.Index(synthOut, "{"); start >= 0 {
+		if err := json.Unmarshal([]byte(synthOut[start:]), &synthJSON); err == nil && synthJSON.Verdict != "" {
+			verdict = synthJSON.Verdict
+		}
+	}
+	if verdict == "approved" {
+		lower := strings.ToLower(skepticOut)
+		if strings.Contains(lower, "verdict: null_result") {
+			verdict = "null_result"
+		} else if strings.Contains(lower, "verdict: escalate") {
+			verdict = "escalate"
+		}
+	}
+
+	// Extract next_hypothesis_draft from optimizer.
+	// LLM follows the fixed prompt format so "NEXT_HYPOTHESIS:" is uppercase ASCII.
+	nextHypDraft := ""
+	if idx := strings.Index(optimizerOut, "NEXT_HYPOTHESIS:"); idx >= 0 {
+		nextHypDraft = strings.TrimSpace(optimizerOut[idx+16:])
+		if nl := strings.Index(nextHypDraft, "\n"); nl >= 0 {
+			nextHypDraft = nextHypDraft[:nl]
+		}
+	}
+
+	debateBody := fmt.Sprintf("## Debate Record\n\nhypothesis_id: %s\ntrigger_reason: %s\n\n### Optimizer\n%s\n\n### Skeptic\n%s\n\n### Synthesis\n%s",
+		hypID, triggerReason, optimizerOut, skepticOut, synthOut)
+
+	debateDocID, err := store.Create(knowledge.TypeDebate, map[string]any{
+		"title":          "Debate: " + hypID,
+		"hypothesis_id":  hypID,
+		"trigger_reason": triggerReason,
+		"verdict":        verdict,
+	}, debateBody)
+	if err != nil {
+		return nil, fmt.Errorf("create debate doc: %w", err)
+	}
+
+	return map[string]any{
+		"debate_doc_id":         debateDocID,
+		"verdict":               verdict,
+		"next_hypothesis_draft": nextHypDraft,
+		"experiment_spec_draft": synthOut,
+	}, nil
 }

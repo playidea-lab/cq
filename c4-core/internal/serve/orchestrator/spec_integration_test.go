@@ -1,6 +1,6 @@
 //go:build research
 
-package main
+package orchestrator
 
 import (
 	"context"
@@ -23,7 +23,7 @@ func TestOnJobDone_SpecPipeline_NullResult(t *testing.T) {
 	}
 	o, kStore := newTestOrchestrator(t, llmResponses)
 	// Enable specPipeline using the orchestrator's existing caller and store.
-	o.specPipeline = &loopSpecPipeline{caller: o.caller, kStore: o.store}
+	o.SpecPipeline = &LoopSpecPipeline{Caller: o.Caller, KStore: o.Store}
 
 	hypID := mustCreateHyp(t, kStore)
 	session := &LoopSession{
@@ -39,14 +39,10 @@ func TestOnJobDone_SpecPipeline_NullResult(t *testing.T) {
 		t.Fatalf("onJobDone: %v", err)
 	}
 
-	// Spec rejected → null_result early return. Session stored under original hypID.
 	got := o.GetLoop(hypID)
 	if got == nil {
 		t.Fatal("session not found after spec null_result")
 	}
-	// Budget gate: Round=4 >= MaxIterations=5? No — Round is not incremented on null_result.
-	// But the budget gate at s.Round >= s.MaxIterations: Round=4 < 5, so not completed yet.
-	// NullResultCount should be 1.
 	if got.NullResultCount != 1 {
 		t.Errorf("NullResultCount = %d, want 1", got.NullResultCount)
 	}
@@ -63,7 +59,7 @@ func TestOnJobDone_SpecPipeline_NullResult_AtLimit(t *testing.T) {
 		"rejected: insufficient budget",
 	}
 	o, kStore := newTestOrchestrator(t, llmResponses)
-	o.specPipeline = &loopSpecPipeline{caller: o.caller, kStore: o.store}
+	o.SpecPipeline = &LoopSpecPipeline{Caller: o.Caller, KStore: o.Store}
 
 	hypID := mustCreateHyp(t, kStore)
 	session := &LoopSession{
@@ -79,7 +75,6 @@ func TestOnJobDone_SpecPipeline_NullResult_AtLimit(t *testing.T) {
 		t.Fatalf("onJobDone: %v", err)
 	}
 
-	// Spec failed at MaxIterations: budget gate must fire → Status="completed".
 	got := o.GetLoop(hypID)
 	if got == nil {
 		t.Fatal("session not found after spec null_result at limit")
@@ -100,12 +95,12 @@ func TestOnJobDone_SpecPipeline_Approved(t *testing.T) {
 		"approved",    // reviewSpec → approved
 	}
 	o, kStore := newTestOrchestrator(t, llmResponses)
-	o.specPipeline = &loopSpecPipeline{caller: o.caller, kStore: o.store}
+	o.SpecPipeline = &LoopSpecPipeline{Caller: o.Caller, KStore: o.Store}
 
 	// Capture submitted job to verify ExperimentSpecID.
-	var capturedReq loopHubJobRequest
-	o.hubCli = &mockLoopHubClient{
-		submitJobFunc: func(_ context.Context, req loopHubJobRequest) (string, error) {
+	var capturedReq LoopHubJobRequest
+	o.HubCli = &mockLoopHubClient{
+		submitJobFunc: func(_ context.Context, req LoopHubJobRequest) (string, error) {
 			capturedReq = req
 			return "job-spec-approved-001", nil
 		},
@@ -132,7 +127,7 @@ func TestOnJobDone_SpecPipeline_Approved(t *testing.T) {
 
 	// Session should advance: find under the new hypothesis ID.
 	var got *LoopSession
-	o.sessions.Range(func(_, v any) bool {
+	o.Sessions.Range(func(_, v any) bool {
 		got = v.(*LoopSession)
 		return false
 	})
@@ -146,4 +141,3 @@ func TestOnJobDone_SpecPipeline_Approved(t *testing.T) {
 		t.Errorf("JobID = %q, want job-spec-approved-001", got.JobID)
 	}
 }
-

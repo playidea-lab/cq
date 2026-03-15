@@ -1,4 +1,4 @@
-package main
+package anomaly
 
 import (
 	"context"
@@ -14,17 +14,17 @@ import (
 	"github.com/changmin/c4-core/internal/serve"
 )
 
-// anomalyMonitorConfig holds configuration for the anomalyMonitor component.
-type anomalyMonitorConfig struct {
+// Config holds configuration for the Monitor component.
+type Config struct {
 	Store        *knowledge.Store
 	PollInterval time.Duration
 }
 
-// anomalyMonitor implements serve.Component.
+// Monitor implements serve.Component.
 // It polls TypeExperiment documents, checks metric ranges, and creates
 // TypeDebate escalation records when anomalies are detected.
-type anomalyMonitor struct {
-	cfg    anomalyMonitorConfig
+type Monitor struct {
+	cfg    Config
 	cancel context.CancelFunc
 	done   chan struct{}
 
@@ -34,22 +34,23 @@ type anomalyMonitor struct {
 }
 
 // compile-time interface assertion
-var _ serve.Component = (*anomalyMonitor)(nil)
+var _ serve.Component = (*Monitor)(nil)
 
-func newAnomalyMonitor(cfg anomalyMonitorConfig) *anomalyMonitor {
+// New creates a new Monitor with the given config.
+func New(cfg Config) *Monitor {
 	if cfg.PollInterval <= 0 {
 		cfg.PollInterval = 30 * time.Second
 	}
-	return &anomalyMonitor{
+	return &Monitor{
 		cfg:            cfg,
 		status:         "ok",
 		lastEscalation: make(map[string]time.Time),
 	}
 }
 
-func (a *anomalyMonitor) Name() string { return "anomaly_monitor" }
+func (a *Monitor) Name() string { return "anomaly_monitor" }
 
-func (a *anomalyMonitor) Start(ctx context.Context) error {
+func (a *Monitor) Start(ctx context.Context) error {
 	ctx2, cancel := context.WithCancel(ctx)
 	a.cancel = cancel
 	a.done = make(chan struct{})
@@ -59,7 +60,7 @@ func (a *anomalyMonitor) Start(ctx context.Context) error {
 
 // Stop cancels the context and waits for the loop goroutine to exit.
 // cancel() is idempotent in Go, so no nil-out is needed.
-func (a *anomalyMonitor) Stop(_ context.Context) error {
+func (a *Monitor) Stop(_ context.Context) error {
 	if a.cancel != nil {
 		a.cancel()
 	}
@@ -69,13 +70,13 @@ func (a *anomalyMonitor) Stop(_ context.Context) error {
 	return nil
 }
 
-func (a *anomalyMonitor) Health() serve.ComponentHealth {
+func (a *Monitor) Health() serve.ComponentHealth {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	return serve.ComponentHealth{Status: a.status}
 }
 
-func (a *anomalyMonitor) loop(ctx context.Context) {
+func (a *Monitor) loop(ctx context.Context) {
 	defer close(a.done)
 	ticker := time.NewTicker(a.cfg.PollInterval)
 	defer ticker.Stop()
@@ -89,8 +90,8 @@ func (a *anomalyMonitor) loop(ctx context.Context) {
 	}
 }
 
-// metricRange represents an expected metric range from experiment frontmatter.
-type metricRange struct {
+// MetricRange represents an expected metric range from experiment frontmatter.
+type MetricRange struct {
 	Name string  `json:"name"`
 	Min  float64 `json:"min"`
 	Max  float64 `json:"max"`
@@ -99,7 +100,7 @@ type metricRange struct {
 // check scans TypeExperiment documents for metric anomalies and creates
 // TypeDebate escalation records when a metric is out of the expected range.
 // Duplicate escalations for the same hypothesis_id within 24 hours are skipped.
-func (a *anomalyMonitor) check(ctx context.Context) {
+func (a *Monitor) check(ctx context.Context) {
 	docs, err := a.cfg.Store.List(string(knowledge.TypeExperiment), "", 100)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "anomaly-monitor: list experiments: %v\n", err)
@@ -121,13 +122,13 @@ func (a *anomalyMonitor) check(ctx context.Context) {
 		}
 
 		// Read full frontmatter from Markdown file (SSOT).
-		fm := readFrontmatter(filepath.Join(docsDir, hypID+".md"))
-		ranges := parseMetricRanges(fm)
+		fm := ReadFrontmatter(filepath.Join(docsDir, hypID+".md"))
+		ranges := ParseMetricRanges(fm)
 		if len(ranges) == 0 {
 			continue
 		}
 
-		anomaly, detail := detectAnomaly(fm, ranges)
+		anomaly, detail := DetectAnomaly(fm, ranges)
 		if !anomaly {
 			continue
 		}
@@ -160,9 +161,9 @@ func (a *anomalyMonitor) check(ctx context.Context) {
 	a.mu.Unlock()
 }
 
-// readFrontmatter reads and parses YAML frontmatter from a Markdown file.
+// ReadFrontmatter reads and parses YAML frontmatter from a Markdown file.
 // Returns an empty map on any error.
-func readFrontmatter(path string) map[string]any {
+func ReadFrontmatter(path string) map[string]any {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return map[string]any{}
@@ -176,11 +177,11 @@ func readFrontmatter(path string) map[string]any {
 		return map[string]any{}
 	}
 	yamlBlock := content[3 : end+3]
-	return parseAnomalyYAML(yamlBlock)
+	return ParseAnomalyYAML(yamlBlock)
 }
 
-// parseAnomalyYAML parses simple key: value YAML frontmatter into a map.
-func parseAnomalyYAML(text string) map[string]any {
+// ParseAnomalyYAML parses simple key: value YAML frontmatter into a map.
+func ParseAnomalyYAML(text string) map[string]any {
 	result := make(map[string]any)
 	for _, line := range strings.Split(text, "\n") {
 		idx := strings.Index(line, ":")
@@ -209,9 +210,9 @@ func parseAnomalyFloat(s string) (float64, error) {
 	return f, err
 }
 
-// parseMetricRanges extracts expected_metrics_range from frontmatter.
+// ParseMetricRanges extracts expected_metrics_range from frontmatter.
 // The field value is a JSON array: [{name, min, max}, ...].
-func parseMetricRanges(fm map[string]any) []metricRange {
+func ParseMetricRanges(fm map[string]any) []MetricRange {
 	raw, ok := fm["expected_metrics_range"]
 	if !ok {
 		return nil
@@ -220,15 +221,15 @@ func parseMetricRanges(fm map[string]any) []metricRange {
 	if rawStr == "" {
 		return nil
 	}
-	var ranges []metricRange
+	var ranges []MetricRange
 	if err := json.Unmarshal([]byte(rawStr), &ranges); err != nil {
 		return nil
 	}
 	return ranges
 }
 
-// detectAnomaly returns true if any metric in the frontmatter falls outside its range.
-func detectAnomaly(fm map[string]any, ranges []metricRange) (bool, string) {
+// DetectAnomaly returns true if any metric in the frontmatter falls outside its range.
+func DetectAnomaly(fm map[string]any, ranges []MetricRange) (bool, string) {
 	for _, r := range ranges {
 		val, ok := fm[r.Name]
 		if !ok {

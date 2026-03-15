@@ -8,9 +8,10 @@ import (
 	"testing"
 
 	"github.com/changmin/c4-core/internal/knowledge"
+	"github.com/changmin/c4-core/internal/serve/orchestrator"
 )
 
-// mockDebateLLM is a test double for debateCaller.
+// mockDebateLLM is a test double for debateCaller / orchestrator.DebateCaller.
 type mockDebateLLM struct {
 	responses []string
 	idx       int
@@ -22,11 +23,24 @@ func (m *mockDebateLLM) call(_ context.Context, _, _ string) (string, error) {
 	return r, nil
 }
 
-// testDebateStore wraps *knowledge.Store to implement debateStore.
+// Call implements orchestrator.DebateCaller.
+func (m *mockDebateLLM) Call(ctx context.Context, system, user string) (string, error) {
+	return m.call(ctx, system, user)
+}
+
+// testDebateStore wraps *knowledge.Store to implement debateStore and orchestrator.DebateStore.
 type testDebateStore struct{ s *knowledge.Store }
 
 func (t *testDebateStore) get(id string) (*knowledge.Document, error) { return t.s.Get(id) }
 func (t *testDebateStore) create(dt knowledge.DocumentType, meta map[string]any, body string) (string, error) {
+	return t.s.Create(dt, meta, body)
+}
+
+// Get implements orchestrator.DebateStore.
+func (t *testDebateStore) Get(id string) (*knowledge.Document, error) { return t.s.Get(id) }
+
+// Create implements orchestrator.DebateStore.
+func (t *testDebateStore) Create(dt knowledge.DocumentType, meta map[string]any, body string) (string, error) {
 	return t.s.Create(dt, meta, body)
 }
 
@@ -46,9 +60,9 @@ func TestResearchDebate_HappyPath(t *testing.T) {
 		`{"verdict":"approved","next_hypothesis_draft":"collect more samples","experiment_spec_draft":"run 100 trials"}`,
 	}}
 
-	result, err := runDebate(context.Background(), mock, &testDebateStore{store}, hypID, "manual", "", "")
+	result, err := orchestrator.RunDebate(context.Background(), mock, &testDebateStore{store}, hypID, "manual", "", "")
 	if err != nil {
-		t.Fatalf("runDebate: %v", err)
+		t.Fatalf("RunDebate: %v", err)
 	}
 	m := result.(map[string]any)
 	if m["debate_doc_id"] == "" {
@@ -75,9 +89,9 @@ func TestResearchDebate_TypeDebateDoc(t *testing.T) {
 		`{"verdict":"null_result","next_hypothesis_draft":"try again"}`,
 	}}
 
-	result, err := runDebate(context.Background(), mock, &testDebateStore{store}, hypID, "dod_null", "", "")
+	result, err := orchestrator.RunDebate(context.Background(), mock, &testDebateStore{store}, hypID, "dod_null", "", "")
 	if err != nil {
-		t.Fatalf("runDebate: %v", err)
+		t.Fatalf("RunDebate: %v", err)
 	}
 	m := result.(map[string]any)
 
@@ -102,7 +116,7 @@ func TestResearchDebate_InvalidHypothesis(t *testing.T) {
 	store := mustNewHypothesisStore(t)
 	mock := &mockDebateLLM{responses: []string{"any"}}
 
-	_, err := runDebate(context.Background(), mock, &testDebateStore{store}, "hyp-nonexistent", "manual", "", "")
+	_, err := orchestrator.RunDebate(context.Background(), mock, &testDebateStore{store}, "hyp-nonexistent", "manual", "", "")
 	if err == nil {
 		t.Error("expected error for unknown hypothesis")
 	}
@@ -124,9 +138,9 @@ func TestResearchDebate_NullResult(t *testing.T) {
 		`{"verdict":"null_result","next_hypothesis_draft":"try different approach","experiment_spec_draft":"redesign experiment"}`,
 	}}
 
-	result, err := runDebate(context.Background(), mock, &testDebateStore{store}, hypID, "dod_null", "", "")
+	result, err := orchestrator.RunDebate(context.Background(), mock, &testDebateStore{store}, hypID, "dod_null", "", "")
 	if err != nil {
-		t.Fatalf("runDebate: %v", err)
+		t.Fatalf("RunDebate: %v", err)
 	}
 	m := result.(map[string]any)
 	if m["verdict"] != "null_result" {
@@ -137,14 +151,14 @@ func TestResearchDebate_NullResult(t *testing.T) {
 	}
 }
 
-// capturingDebateLLM records the user messages passed to call().
+// capturingDebateLLM records the user messages passed to Call().
 type capturingDebateLLM struct {
 	responses []string
 	idx       int
 	userMsgs  []string
 }
 
-func (c *capturingDebateLLM) call(_ context.Context, _, user string) (string, error) {
+func (c *capturingDebateLLM) Call(_ context.Context, _, user string) (string, error) {
 	c.userMsgs = append(c.userMsgs, user)
 	r := c.responses[c.idx%len(c.responses)]
 	c.idx++
@@ -167,11 +181,10 @@ func TestRunDebate_EmptyLineageContext_BackwardCompat(t *testing.T) {
 		`{"verdict":"approved","next_hypothesis_draft":"n"}`,
 	}}
 
-	_, err = runDebate(context.Background(), mock, &testDebateStore{store}, hypID, "manual", "ctx1", "")
+	_, err = orchestrator.RunDebate(context.Background(), mock, &testDebateStore{store}, hypID, "manual", "ctx1", "")
 	if err != nil {
-		t.Fatalf("runDebate: %v", err)
+		t.Fatalf("RunDebate: %v", err)
 	}
-	// With empty lineageContext the optimizer userMsg should NOT contain a double-newline block.
 	optimizerMsg := mock.userMsgs[0]
 	if strings.Contains(optimizerMsg, "\n\n\n") {
 		t.Error("empty lineageContext should not inject extra blank lines")
@@ -198,11 +211,10 @@ func TestRunDebate_LineageContextInjected(t *testing.T) {
 	}}
 
 	lineage := "## Lineage\nPrev failure: X"
-	_, err = runDebate(context.Background(), mock, &testDebateStore{store}, hypID, "manual", "", lineage)
+	_, err = orchestrator.RunDebate(context.Background(), mock, &testDebateStore{store}, hypID, "manual", "", lineage)
 	if err != nil {
-		t.Fatalf("runDebate: %v", err)
+		t.Fatalf("RunDebate: %v", err)
 	}
-	// lineageContext should appear in the optimizer and skeptic userMsg.
 	for i, msg := range mock.userMsgs[:2] {
 		if !strings.Contains(msg, lineage) {
 			t.Errorf("userMsgs[%d] does not contain lineageContext", i)
