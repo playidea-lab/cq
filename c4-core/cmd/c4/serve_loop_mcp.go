@@ -43,7 +43,11 @@ func registerLoopMCPHandlers(ctx *initContext) error {
 		rc := ctx.cfgMgr.GetConfig().Serve.ResearchLoop
 		defaults.MaxPatience = rc.Patience
 		defaults.ConvergenceThreshold = rc.ConvergenceThreshold
-		defaults.MetricLowerIsBetter = rc.MetricLowerIsBetter
+		// Only override MetricLowerIsBetter when config explicitly sets true.
+		// Go bool zero-value (false) means "not configured" → keep default (true).
+		if rc.MetricLowerIsBetter {
+			defaults.MetricLowerIsBetter = true
+		}
 	}
 
 	ctx.reg.Register(mcp.ToolSchema{

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -36,6 +37,8 @@ type LoopHubJobRequest struct {
 	ExperimentSpecID string
 	Command          string
 	ProjectID        string
+	Capability       string
+	Params           map[string]any
 }
 
 // LoopLineageBuilder builds lineage context strings for a hypothesis.
@@ -132,8 +135,10 @@ type loopHubClientAdapter struct{ hc HubClient }
 
 func (a *loopHubClientAdapter) SubmitJob(ctx context.Context, req LoopHubJobRequest) (string, error) {
 	resp, err := a.hc.SubmitJob(&hub.JobSubmitRequest{
-		Command:   req.Command,
-		ProjectID: req.ProjectID,
+		Command:    req.Command,
+		ProjectID:  req.ProjectID,
+		Capability: req.Capability,
+		Params:     req.Params,
 		Env: map[string]string{
 			"C4_HYPOTHESIS_ID":      req.HypothesisID,
 			"C4_EXPERIMENT_SPEC_ID": req.ExperimentSpecID,
@@ -393,6 +398,12 @@ func (o *LoopOrchestrator) StartLoop(ctx context.Context, session *LoopSession) 
 		return fmt.Errorf("loop_orchestrator: StartLoop: HypothesisID is required")
 	}
 	session.Status = "running"
+	// Initialize BestMetric to worst possible value based on metric direction.
+	if session.MetricLowerIsBetter {
+		session.BestMetric = math.Inf(1)
+	} else {
+		session.BestMetric = math.Inf(-1)
+	}
 	actual, loaded := o.Sessions.LoadOrStore(session.HypothesisID, session)
 	if loaded {
 		if existing, ok := actual.(*LoopSession); ok && existing.Status == "running" {

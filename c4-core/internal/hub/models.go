@@ -75,6 +75,8 @@ type JobSubmitRequest struct {
 	SnapshotVersionHash string            `json:"snapshot_version_hash,omitempty"`
 	GitHash             string            `json:"git_hash,omitempty"`
 	ProjectID           string            `json:"project_id,omitempty"`
+	Capability          string            `json:"capability,omitempty"`
+	Params              map[string]any    `json:"params,omitempty"`
 }
 
 // JobSubmitResponse is the response from POST /v1/jobs/submit.
