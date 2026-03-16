@@ -373,6 +373,42 @@ print(f"""
 
 이 테이블은 `/c4-finish`에서 테스트 실행 결과로 자동 갱신된다.
 
+### 수정 감지 + 연쇄 갱신
+
+에디터에서 사람이 파일을 수정하고 돌아오면 변경을 감지하여 처리한다.
+
+**단방향 연쇄 원칙**:
+```
+idea 변경 → spec 재생성 → 태스크 DoD 재생성
+spec 변경 → 태스크 DoD 갱신 (idea는 안 바뀜)
+```
+
+```python
+# idea.md 수정 감지 (FROM_PI 모드)
+if FROM_PI:
+    idea_before = idea_content  # 에디터 열기 전 저장
+    # ... 에디터 열기 + 사람 검토 ...
+    idea_after = c4_read_file(path=idea_path)
+    if idea_before != idea_after:
+        print("📝 idea.md 수정 감지 — EARS + 시나리오 재생성")
+        # EARS 재파싱 → c4_save_spec() 갱신
+        # 시나리오 재생성 → spec.md 갱신
+        # spec.md 다시 에디터 열기
+
+# spec.md 수정 감지
+spec_before = spec_content  # 에디터 열기 전 저장
+# ... 에디터 열기 + 사람 검토 ...
+spec_after = c4_read_file(path=spec_path)
+if spec_before != spec_after:
+    print("📝 spec.md 수정 감지 — 태스크 DoD 갱신")
+    # 변경된 시나리오를 분석하여 관련 태스크 DoD에 반영
+    # (이미 Phase 4.9에서 생성된 태스크가 있으면 dod 업데이트)
+
+# 수정 없이 닫음 = 승인
+if idea_before == idea_after and spec_before == spec_after:
+    print("✅ idea + spec 승인 — 구현 진행")
+```
+
 ---
 
 ## Phase 5: Plan Confirmation

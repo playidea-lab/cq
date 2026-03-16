@@ -153,6 +153,21 @@ print(f"""
 """)
 ```
 
+**갭 발견 시 종료 판단**:
+
+```python
+if unmapped or undocumented:
+    # 사람이 에디터에서 확인 후 판단
+    # (a) spec.md를 수정하지 않고 닫음 → "현 상태로 수용" → Step 4로 진행
+    # (b) spec.md에서 시나리오 추가/삭제 후 닫음 → 변경 반영, Step 4로 진행
+    #     (추가 구현은 별도 태스크로 — 이번 finish에서는 commit)
+    spec_after = c4_read_file(path=spec_path)
+    if spec_before != spec_after:
+        print("📝 spec 수정 감지 — 갱신 반영 완료")
+else:
+    print("✅ 전 시나리오 매핑 완료 — 작업 종료 조건 충족")
+```
+
 ### 4. Verify Worker Output (C4 workflow 사용 시)
 `c4_status`로 태스크 상태 + `commit_sha` 존재 여부 확인.
 
