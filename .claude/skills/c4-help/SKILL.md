@@ -27,6 +27,8 @@ Quick reference for commands, agents, and tools. Parse `$ARGUMENTS` and branch a
 
 Parse `$ARGUMENTS` for branch. No MCP calls needed (static output).
 
+**Feature matrix**: 기능별 의사결정이 필요할 때 (drive vs transfer 등) `references/feature-matrix.md` 참조.
+
 ### No args → Decision Tree + Core Commands
 
 ```
