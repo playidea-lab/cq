@@ -83,6 +83,76 @@ cd c4-core && go test -count=1 -p 1 ./...
 ```
 Python 변경 시: `uv run pytest tests/ -x`. C5 변경 시: `cd c5 && go test ./...`
 
+### 3.5. Spec Test Mapping (동작정의서 검증)
+
+> spec.md에 시나리오가 있으면, 테스트 결과와 매핑하여 동작정의서를 갱신한다.
+
+```python
+# 현재 feature의 spec 파일 탐색
+import glob
+spec_files = glob.glob(".c4/specs/*.md")
+specs_with_scenarios = []
+for sf in spec_files:
+    content = c4_read_file(path=sf)
+    if "## 동작 시나리오" in content:
+        specs_with_scenarios.append(sf)
+
+if not specs_with_scenarios:
+    print("⏭️  동작 시나리오 없음 — spec mapping skip")
+    → Step 4
+```
+
+**매핑 프로세스** (spec 파일이 있을 때):
+
+1. spec.md에서 시나리오 ID(S1, S2...) + VERIFY 조건 추출
+2. 테스트 실행 결과에서 테스트 이름 목록 추출
+3. 매핑: 테스트 이름에 시나리오 ID 포함(TestXxx_S1_Yyy) → 자동 매칭. 불일치 → LLM 추론
+4. 테스트 매핑 테이블 갱신:
+
+```markdown
+## 테스트 매핑
+| 시나리오 | 테스트 | 상태 |
+|---------|--------|------|
+| S1 | TestTransfer_S1_HappyPath | ✅ PASS |
+| S2 | TestTransfer_S2_Offline | ✅ PASS |
+| S3 | (미구현) | ⚠️ NO TEST |
+| — | TestTransfer_LargeFile | 🆕 UNDOCUMENTED |
+```
+
+상태 아이콘:
+- ✅ PASS — 시나리오 + 테스트 존재 + 통과
+- ⚠️ NO TEST — 시나리오 있지만 테스트 없음
+- ❌ FAIL — 시나리오 + 테스트 존재 + 실패
+- 🆕 UNDOCUMENTED — 테스트 있지만 시나리오 없음
+
+**Soft gate**: 미매핑 경고만 출력. blocking 아님.
+
+```python
+unmapped = [s for s in scenarios if s.status == "NO TEST"]
+if unmapped:
+    print(f"⚠️  시나리오 {len(unmapped)}건 테스트 미구현: {', '.join(s.id for s in unmapped)}")
+
+undocumented = [t for t in tests if t.status == "UNDOCUMENTED"]
+if undocumented:
+    print(f"🆕  미문서화 테스트 {len(undocumented)}건 발견")
+```
+
+**에디터 열기** (갱신 후):
+
+```python
+import shutil
+if shutil.which("code"):
+    Bash(f"code '{spec_path}'")
+elif shutil.which("open"):
+    Bash(f"open '{spec_path}'")
+
+print(f"""
+📋 동작정의서 갱신 완료: {spec_path}
+   v0 시나리오 ↔ 실제 테스트 결과를 확인해주세요.
+   ⚠️ = 테스트 추가 필요, 🆕 = 시나리오 문서화 필요
+""")
+```
+
 ### 4. Verify Worker Output (C4 workflow 사용 시)
 `c4_status`로 태스크 상태 + `commit_sha` 존재 여부 확인.
 

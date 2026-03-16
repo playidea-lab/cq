@@ -289,6 +289,92 @@ Worker 기반 Pre-Mortem 분석. 상세: `references/critique-loop.md`
 
 ---
 
+## Phase 4.95: Spec Scenarios (동작정의서)
+
+> 태스크 확정 후, 실행 전에 "이 기능이 뭘 하는가"를 시나리오로 정의한다.
+> 기획자/개발자/QA가 구현 전에 동작을 합의하는 계약서 역할.
+
+### 조건
+
+```python
+task_count = len(created_tasks)  # Phase 4.9에서 생성된 태스크 수
+if task_count <= 3:
+    print("⏭️  소규모 작업 — 시나리오 생성 skip")
+    → Phase 5
+```
+
+### 시나리오 생성
+
+기존 `.c4/specs/{slug}.md`(Phase 2.5에서 저장된 EARS spec)에 시나리오 섹션을 추가한다.
+
+```python
+spec_path = f".c4/specs/{feature_slug}.md"
+spec_content = c4_read_file(path=spec_path)
+
+# idea.md가 있으면 시나리오 힌트로 활용
+if FROM_PI:
+    idea_content = c4_read_file(path=idea_path)
+```
+
+EARS 요구사항과 태스크 DoD를 분석하여 시나리오를 도출한다.
+각 시나리오는 **WHEN-THEN-VERIFY 3계층** 형식:
+
+```markdown
+## 동작 시나리오
+
+### S1: [시나리오 이름]
+- WHEN: [사용자 행동 또는 시스템 이벤트]
+- THEN: [기대 결과 — 사람이 읽는 자연어]
+- VERIFY:
+  - [기계가 검증 가능한 조건 1]
+  - [기계가 검증 가능한 조건 2]
+
+### S2: [에러 케이스]
+- WHEN: [비정상 입력 또는 장애 상황]
+- THEN: [에러 처리 — 사용자에게 보이는 것]
+- VERIFY:
+  - [에러 코드/메시지 조건]
+```
+
+**시나리오 도출 원칙**:
+- EARS의 Event-Driven → 정상 시나리오 (S1~)
+- EARS의 Unwanted → 에러 시나리오
+- 태스크 DoD의 Success Criteria → VERIFY 조건
+- 경계값, 동시성, 권한 → 추가 시나리오
+
+### 에디터 열기
+
+```python
+# spec 파일에 시나리오 섹션 추가 후 에디터에서 열기
+import shutil
+if shutil.which("code"):
+    Bash(f"code '{spec_path}'")
+elif shutil.which("open"):
+    Bash(f"open '{spec_path}'")
+
+print(f"""
+📋 동작정의서 열렸습니다: {spec_path}
+   시나리오를 검토하고 수정해주세요.
+   WHEN-THEN은 사람용, VERIFY는 기계용입니다.
+""")
+```
+
+### 테스트 매핑 테이블 초안
+
+시나리오 생성 시 빈 테스트 매핑 테이블도 함께 추가한다:
+
+```markdown
+## 테스트 매핑
+| 시나리오 | 테스트 | 상태 |
+|---------|--------|------|
+| S1 | (구현 후 자동 매핑) | ⏳ |
+| S2 | (구현 후 자동 매핑) | ⏳ |
+```
+
+이 테이블은 `/c4-finish`에서 테스트 실행 결과로 자동 갱신된다.
+
+---
+
 ## Phase 5: Plan Confirmation
 
 ```python
