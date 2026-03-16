@@ -1,8 +1,8 @@
 # C4 Roadmap
 
-## Current Version: v0.67.0 (Drive Dataset Versioning + Skill Health Pipeline + Hub Secrets + doctor 개선)
+## Current Version: v1.3.0 (Serve Refactor + Worktree Merge Fix + Feature Discovery)
 
-현재 버전은 **Go MCP Server (118 base + Hub tiered 등, POP 3도구), Native Go/Dart LSP (goast/dartast), LLM Gateway (캐시 최적화), CDP Runner + WebMCP + Auto-Discovery, Cloud Foundation (CloudPrimaryStore + Session Limit), Knowledge v4 (OllamaEmbeddings + reindex + distill), C1 Unified Dashboard Messenger (HarnessWatcher + Cursor 어댑터, MessageViewer 스크롤 안정화), C3 EventBus v4, C5 Hub Server (Tenant Isolation + Dooray webhook), POP (Personal Ontology Pipeline, c4-finish 자동 주입), Persona/Soul Evolution, 36개 Skills (/pi EARS 통합 재설계), 3-layer Deprecated 스킬 강제 시스템, 프로젝트 단위 2-layer Permission Hook, bats 테스트 스위트, Named Session (gemini 지원 포함), 쉘 자동완성, OS 서비스 통합, Skill Health Pipeline (c4_skill_eval_run/status/generate), Drive Dataset Versioning (CAS), Hub secrets store 통합**를 포함합니다.
+현재 버전은 **Go MCP Server (148 base + Hub 30 + Tiered 15, POP 3도구), Native Go/Dart LSP (goast/dartast), LLM Gateway (캐시 최적화), CDP Runner + WebMCP + Auto-Discovery, Cloud Foundation (CloudPrimaryStore + Session Limit), Knowledge v4 (OllamaEmbeddings + reindex + distill), C1 Unified Dashboard Messenger (HarnessWatcher + Cursor 어댑터, MessageViewer 스크롤 안정화), C3 EventBus v4, C5 Hub Server (Tenant Isolation + Dooray webhook + ExperimentStore + @key=value Protocol), Research Loop (LoopOrchestrator + GateController + StateYAMLWriter + NotifyBridge + SpecPipeline + MCP handlers + EventBus instant wake + Debate metrics injection), POP (Personal Ontology Pipeline, c4-finish 자동 주입), Persona/Soul Evolution, 36개 Skills (/pi EARS 통합 재설계), 3-layer Deprecated 스킬 강제 시스템, 프로젝트 단위 2-layer Permission Hook, bats 테스트 스위트, Named Session (gemini 지원 포함), 쉘 자동완성, OS 서비스 통합, Skill Health Pipeline (c4_skill_eval_run/status/generate), Drive Dataset Versioning (CAS), Hub secrets store 통합**를 포함합니다.
 
 ### 핵심 구조
 
@@ -11,7 +11,8 @@
 - **C0 Drive** - Supabase 파일 저장소, metadata JSONB, c4_drive_mkdir 6개 도구, PostgREST URL 인코딩, server-side filtering
 - **C1 Messenger** - Tauri 2.x 통합 대시보드 (4-탭: Messenger/Documents/Settings/Team), 통합 멤버 모델 (user/agent/system), Realtime Presence, MCP 5도구
 - **C3 EventBus v4** - gRPC daemon (UDS) + WebSocket bridge + DLQ + Filter v2 + Python sidecar piggyback + correlation_id (16+ event types) + hub.* 이벤트 C1 라우팅
-- **C5 Hub Server** - 분산 작업 큐, Per-Project API Key RBAC, multi-tenant, Docker, hub.Client 완전 호환, DAG/Edge/Deploy/Artifact, EventBus 통합 (hub.job.started/completed/failed/cancelled)
+- **C5 Hub Server** - 분산 작업 큐, Per-Project API Key RBAC, multi-tenant, Docker, hub.Client 완전 호환, DAG/Edge/Deploy/Artifact, EventBus 통합 (hub.job.started/completed/failed/cancelled), ExperimentStore (run lifecycle), @key=value stdout protocol
+- **Research Loop** - LoopOrchestrator (serve.Component), GateController, StateYAMLWriter (.c9/state.yaml), NotifyBridge (per-event cooldown), SpecPipeline, MCP handlers (c4_research_loop_start/stop), EventBus instant wake, Debate extraContext metrics injection, `cq research run` CLI
 - **WebContent + WebMCP** - web_fetch (content negotiation, SSRF, rate limit, HTML→MD), webmcp_discover/call/context (Chrome DevTools Protocol), CDP auto-discovery
 - **Native LSP** - `goast/` (Go 심볼 파싱), `dartast/` (Dart 심볼 파싱), Python/JS/TS sidecar 폴백
 - **Daemon Scheduler** - 로컬 작업 스케줄러, 13 REST API, GPU 할당, 소요시간 예측
@@ -33,7 +34,7 @@
 - **Code Analysis Engine** - Multilspy → Jedi → Tree-sitter 3단계 fallback, LSP 7개 도구
 - **Knowledge Store v4** - FTS5 + Vector (OpenAI 1536d) + 3-way RRF (FTS+Vector+Popularity) + Time-Weighted Usage (30일 반감기) + FindRelated + Community Blending + Auto-Distill
 - **GPU/ML Native** - GPU 감지, 스케줄링, DAG→Task 변환
-- **Experiment Tracker** - @c4_track 데코레이터, 메트릭 자동 캡처
+- **Experiment Tracker** - ExperimentStore (Hub API proxy), @key=value stdout protocol, ExperimentWrapper auto-activation, checkpoint + status validation
 - **Artifact Store** - Content-addressable 로컬 저장소
 - **Team Collaboration** - Supabase 기반 팀 상태 공유 + Realtime WebSocket
 - **C1 Multi-Provider** - Claude Code, Codex CLI, Cursor 3개 프로바이더
@@ -42,11 +43,70 @@
 - **C1 Documents** - 마크다운 파일 편집기, 지속성 (persona/skill/spec/config)
 - **C3 EventBus v4** - gRPC daemon (UDS) + WebSocket bridge + DLQ + Filter v2, Python sidecar piggyback, task lifecycle events
 - **코드베이스**: Go ~54.9K (c4-core) + Go ~7.3K (c5) + Python ~22.9K + Rust ~10.2K + TS+CSS ~13.7K + SQL ~1.3K = **~110.3K LOC (src)**, 테스트 ~68.7K LOC, **총 ~179.0K LOC**
-- **테스트**: Go ~2,627 (c4-core ~2,345 + c5 ~282) + Python 728 + Rust 92 = **~3,447 tests** (58 packages)
+- **테스트**: Go ~3,198 (c4-core ~2,730 + c5 ~468) + Python 728 + Rust 92 = **~4,018 tests** (50+ packages)
 
 ---
 
 ## 완료된 릴리즈 이력
+
+### v1.3.0 ✅ (2026-03-16)
+- **refactor(serve)**: cmd/c4/ God Package 해체 Phase 1 — serve 컴포넌트 6개(5,878 LOC)를 internal/serve/{name}/로 이동. cmd/c4/ 32.5K→27.4K LOC (-15.7%)
+- **fix(c4)**: worktree auto-cleanup 시 branch merge 누락 수정 — merge→remove→delete 순서, HEAD 가드, merge 실패 시 브랜치 보존
+- **fix(c4)**: c4_get_task session_id 필터 제거 — 크로스세션 태스크 할당 허용
+- **fix(hubpoller)**: parseHubMetrics @key=value prefix strip 버그 수정
+- **docs**: Feature Discovery 섹션 + /c4-help feature-matrix.md (3-tier 발견 체계)
+- **docs**: AGENTS.md + claude_md.tmpl 컨텍스트 다이어트 (-69%)
+- **docs**: Soul↔AGENTS.md 관계 명시
+- **polish**: /simplify 리뷰 반영 — adapter 중복 제거, ctx 파라미터 순서, merge 최적화
+
+### v1.2.0 ✅ (2026-03-15)
+- **feat(research)**: LoopOrchestrator convergence config + ConvergenceChecker + reasoning 분기
+- **feat(config)**: global config 2-tier merge + permission hook auto-allow
+- **refactor(skills)**: skill-creator compliance + deprecated skill removal + Docker smoke test
+
+### v1.1.0 ✅ (2026-03-13)
+- **research**: EventBus subscription for LoopOrchestrator instant wake (폴링 대기 제거)
+- **research**: inject TypeExperiment metrics into Debate extraContext
+- **research**: `cq research run` CLI — Hub worker entrypoint
+
+### v1.0.0 ✅ (2026-03-13)
+- **research**: LoopOrchestrator MCP handlers (`serve_loop_mcp`) — c4_research_loop_start/stop 통합
+- **research**: SpecPipeline API alignment — generateAndReview returns specDocID + nullResult
+- **research**: LoopOrchestrator end-to-end 시뮬레이션 테스트 추가
+- **polish**: research-loop-activation 보안·오류처리 강화
+
+### v0.99.0 ✅ (2026-03-13)
+- **research-loop**: LoopOrchestrator 통합 — GateController + StateYAMLWriter + NotifyBridge 결합 (T-RLOOP-4-0)
+- **research-loop**: Stop() hang fix — release gate in Stop() to prevent shutdown (T-RLOOP-4-1)
+- **research-loop**: NotifyBridge — per-event cooldown notification bridge (T-RLOOP-3-0)
+- **research-loop**: StateYAMLWriter — atomic .c9/state.yaml persistence (T-RLOOP-2-0)
+- **research-loop**: GateController.Release via releaseCh fix (T-RLOOP-1-1)
+- **polish**: 7라운드 수렴 (데이터 레이스 copy-on-write, nil guards, TOCTOU, mutex, cooldown)
+
+### v0.98.0 ✅ (2026-03-13)
+- **c5/worker**: @key=value stdout experiment protocol — EpochPattern 대체 (T-ATKEY-001~003)
+- **worker**: experiment_protocol caps.yaml 파싱 + ExecuteWithExperiment routing
+- **polish**: scanner 1MiB 버퍼, circuit breaker 3회, mcpURL 검증, ExpName→ExpID 리네임
+
+### v0.97.0 ✅ (2026-03-13)
+- **experiment**: ExperimentStore + HTTP API (Hub, T-1201-0/T-1202-0)
+- **experiment**: ExperimentHandlers Hub API proxy (hub.url 설정 시 자동 프록시)
+- **experiment**: checkpoint handler + status validation + ErrRunNotFound sentinel
+- **worker**: ExperimentWrapper auto-activation via WorkerConfig.ExperimentProtocol
+- **hub**: maybeCompleteExperimentRun in handleJobCancel + exp_run_id job field
+- **polish**: 3라운드 수렴 (ExpRunID assignment, status mapping, HTTP timeout, CompleteRun summary 통일)
+
+### v0.96.2 ✅ (2026-03-12)
+- **hub-worker**: review 반영 — 독립 에러처리, URL 검증, 테스트 격리
+
+### v0.96.0 ✅ (2026-03-12)
+- **research**: LoopOrchestrator copy-on-write 데이터 레이스 수정 — StopLoop/Steer copy-on-write, poll() done 슬라이스 값 복사
+- **research**: approved-advance + budget gate 상호작용 버그 수정
+
+### v0.95.0 ✅ (2026-03-12)
+- **hub**: SSE push-on-complete — C5 Hub 잡 완료 시 즉각 SSE broadcast + knowledgeHubPoller wake channel 연동
+- **edge-agent**: 보안 — isAllowedArtifactURL SSRF 방어, --allow-exec/--allowed-artifact-url-prefix CLI 플래그
+- **edge-agent**: exec 컨트롤 액션 추가 — 원격 셸 명령 실행
 
 ### v0.67.0 ✅ (2026-03-06)
 - **drive**: Dataset Versioning — DatasetClient (CAS hash map), c4_drive_dataset_upload/list/pull MCP 3도구, CLI `cq drive dataset`, migration 00031 (c4_datasets)

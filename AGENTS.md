@@ -171,6 +171,19 @@ sqlite3 .c4/c4.db "SELECT gate, status, reason FROM c4_gates ORDER BY completed_
 
 ---
 
+## Feature Discovery (기능 검색)
+
+기능이나 도구를 모를 때:
+1. `/c4-help <키워드>` — 기능/도구/스킬 검색 (예: `/c4-help drive`, `/c4-help transfer`)
+2. `c4_lighthouse list` — 등록된 MCP 도구 전체 목록
+3. `c4_lighthouse get <tool_name>` — 특정 도구 사용법, 워크플로우, 예시
+4. `c4_knowledge_search(query="...")` — 과거 패턴/인사이트 검색
+
+**주요 기능 키워드**: drive(파일), hub(잡/워커), transfer(P2P전송), research(실험루프),
+knowledge(지식), edge(엣지디바이스), gpu(GPU잡), persona(학습), event(이벤트버스)
+
+---
+
 ## Architecture Quick Reference
 
 > 상세: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Hub: [docs/guide/worker.md](docs/guide/worker.md)
@@ -187,3 +200,8 @@ sqlite3 .c4/c4.db "SELECT gate, status, reason FROM c4_gates ORDER BY completed_
 
 ### MCP 도구
 118개 base + 30 Hub. 사용법: `c4_lighthouse get <tool_name>`
+
+### Soul (.c4/SOUL.md)
+AGENTS.md = **무엇을 하는가** (규칙, 워크플로우, 도구).
+SOUL.md = **어떤 기준으로 판단하는가** (리뷰 우선순위, 품질 철학, 비타협 원칙).
+에이전트는 AGENTS.md를 따르되, 판단이 필요한 순간(리뷰, 설계 결정, PR 승인)에 SOUL.md를 참조한다.
