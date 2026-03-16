@@ -1477,6 +1477,124 @@ func TestSubmitTask_WorktreeAutoCleanup_MergesAndDeletesBranch(t *testing.T) {
 	}
 }
 
+func TestSubmitTask_WorktreeAutoCleanup_S3_MergeConflict_PreservesBranch(t *testing.T) {
+	store, db, repoDir := newTestSQLiteStoreWithGitRepo(t)
+	defer db.Close()
+
+	workerID := "worker-conflict"
+	taskID := "T-conflict-0"
+
+	if err := store.AddTask(&Task{ID: taskID, Title: "conflict test", DoD: "done", Status: "pending"}); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := store.config.GetConfig()
+	branchName := cfg.WorkBranchPrefix + taskID
+	wtPath := filepath.Join(repoDir, ".c4", "worktrees", workerID)
+
+	if out, wtErr := exec.Command("git", "-C", repoDir, "worktree", "add", wtPath, "-b", branchName).CombinedOutput(); wtErr != nil {
+		t.Fatalf("create worktree: %s: %v", string(out), wtErr)
+	}
+
+	// Worker modifies a file in worktree.
+	conflictFile := filepath.Join(wtPath, "main.go")
+	os.WriteFile(conflictFile, []byte("package worker_version"), 0644)
+	exec.Command("git", "-C", wtPath, "add", "main.go").Run()
+	exec.Command("git", "-C", wtPath, "commit", "-m", "worker change").Run()
+	shaOut, _ := exec.Command("git", "-C", wtPath, "rev-parse", "HEAD").CombinedOutput()
+	commitSHA := strings.TrimSpace(string(shaOut))
+
+	// Meanwhile, main also modifies the same file — creating a conflict.
+	mainConflict := filepath.Join(repoDir, "main.go")
+	os.WriteFile(mainConflict, []byte("package main_conflicting_version"), 0644)
+	exec.Command("git", "-C", repoDir, "add", "main.go").Run()
+	exec.Command("git", "-C", repoDir, "commit", "-m", "main conflict").Run()
+
+	if _, dbErr := db.Exec("UPDATE c4_tasks SET status='in_progress', worker_id=? WHERE task_id=?", workerID, taskID); dbErr != nil {
+		t.Fatalf("seed: %v", dbErr)
+	}
+
+	// Submit — merge should fail due to conflict.
+	result, submitErr := store.SubmitTask(taskID, workerID, commitSHA, "", nil)
+	if submitErr != nil {
+		t.Fatalf("submit should succeed (merge failure is non-fatal): %v", submitErr)
+	}
+	if !result.Success {
+		t.Fatalf("expected success")
+	}
+
+	// Branch must be preserved (not deleted) because merge failed.
+	branchOut, _ := exec.Command("git", "-C", repoDir, "branch", "--list", branchName).CombinedOutput()
+	if !strings.Contains(string(branchOut), branchName) {
+		t.Errorf("branch %q should be preserved after merge conflict, but was deleted", branchName)
+	}
+
+	// Abort the lingering merge state so git is clean for cleanup.
+	exec.Command("git", "-C", repoDir, "merge", "--abort").Run()
+}
+
+func TestSubmitTask_WorktreeAutoCleanup_S4_HeadNotMain_SkipsMerge(t *testing.T) {
+	store, db, repoDir := newTestSQLiteStoreWithGitRepo(t)
+	defer db.Close()
+
+	workerID := "worker-detached"
+	taskID := "T-detached-0"
+
+	if err := store.AddTask(&Task{ID: taskID, Title: "detached test", DoD: "done", Status: "pending"}); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := store.config.GetConfig()
+	branchName := cfg.WorkBranchPrefix + taskID
+	wtPath := filepath.Join(repoDir, ".c4", "worktrees", workerID)
+
+	if out, wtErr := exec.Command("git", "-C", repoDir, "worktree", "add", wtPath, "-b", branchName).CombinedOutput(); wtErr != nil {
+		t.Fatalf("create worktree: %s: %v", string(out), wtErr)
+	}
+
+	// Worker commits in worktree.
+	os.WriteFile(filepath.Join(wtPath, "detached.txt"), []byte("data"), 0644)
+	exec.Command("git", "-C", wtPath, "add", "detached.txt").Run()
+	exec.Command("git", "-C", wtPath, "commit", "-m", "worker commit").Run()
+	shaOut, _ := exec.Command("git", "-C", wtPath, "rev-parse", "HEAD").CombinedOutput()
+	commitSHA := strings.TrimSpace(string(shaOut))
+
+	// Switch main repo to a different branch (not "main").
+	exec.Command("git", "-C", repoDir, "checkout", "-b", "feature-other").Run()
+
+	if _, dbErr := db.Exec("UPDATE c4_tasks SET status='in_progress', worker_id=? WHERE task_id=?", workerID, taskID); dbErr != nil {
+		t.Fatalf("seed: %v", dbErr)
+	}
+
+	// Capture HEAD before submit.
+	headBefore, _ := exec.Command("git", "-C", repoDir, "rev-parse", "HEAD").CombinedOutput()
+
+	// Submit — should skip merge because HEAD is not "main".
+	result, submitErr := store.SubmitTask(taskID, workerID, commitSHA, "", nil)
+	if submitErr != nil {
+		t.Fatalf("submit: %v", submitErr)
+	}
+	if !result.Success {
+		t.Fatalf("expected success")
+	}
+
+	// HEAD should be unchanged (no merge happened).
+	headAfter, _ := exec.Command("git", "-C", repoDir, "rev-parse", "HEAD").CombinedOutput()
+	if strings.TrimSpace(string(headBefore)) != strings.TrimSpace(string(headAfter)) {
+		t.Errorf("HEAD should not change when not on main: before=%s after=%s",
+			strings.TrimSpace(string(headBefore)), strings.TrimSpace(string(headAfter)))
+	}
+
+	// Branch should be preserved.
+	branchOut, _ := exec.Command("git", "-C", repoDir, "branch", "--list", branchName).CombinedOutput()
+	if !strings.Contains(string(branchOut), branchName) {
+		t.Errorf("branch %q should be preserved when HEAD != main", branchName)
+	}
+
+	// Restore main for cleanup.
+	exec.Command("git", "-C", repoDir, "checkout", "main").Run()
+}
+
 func TestSubmitTask_WorktreeAutoCleanup_NoCommit_SkipsMerge(t *testing.T) {
 	store, db, repoDir := newTestSQLiteStoreWithGitRepo(t)
 	defer db.Close()
