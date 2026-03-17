@@ -1,5 +1,8 @@
 # CQ — AI Project Orchestration Engine
 
+[![Latest Release](https://img.shields.io/github/v/release/PlayIdea-Lab/cq)](https://github.com/PlayIdea-Lab/cq/releases/latest)
+[![License](https://img.shields.io/badge/license-MIT%20%2B%20Commons%20Clause-blue)](LICENSE)
+
 [한국어](README.ko.md) | **English**
 
 ```sh
@@ -255,11 +258,35 @@ In Claude Code, use `c4_mail_send` / `c4_mail_ls` / `c4_mail_read` / `c4_mail_rm
 ## Workflow
 
 ```
-/c4-plan "feature description"   → discovery + design + tasks
+/pi "idea..."                    → ideation → idea.md → spec scenarios
+/c4-plan "feature description"   → discovery + design + behavior spec + tasks
 /c4-run                          → spawn workers, implement in parallel
-/c4-finish                       → build · test · docs · commit
+/c4-finish                       → build · test · spec verify · docs · commit
 /c4-status                       → check progress at any time
-/pi "idea..."                    → ideation mode before planning (brainstorm → crystallize → /c4-plan)
+```
+
+### Behavior Specification (v1.3.1+)
+
+CQ generates a **living behavior spec** alongside your code:
+
+```
+/pi → idea.md (why) → spec.md scenarios (what) → code (how)
+                         ↓                           ↓
+                    human reviews              tests validate
+                    before coding              after coding
+```
+
+Each spec scenario uses **WHEN-THEN-VERIFY** format:
+- **WHEN/THEN** — human-readable behavior description (for PMs & QA)
+- **VERIFY** — machine-checkable conditions (mapped to tests)
+
+After implementation, `/c4-finish` auto-maps scenarios to test results:
+```
+| Scenario | Test                    | Status    |
+|----------|-------------------------|-----------|
+| S1       | TestTransfer_HappyPath  | ✅ PASS   |
+| S2       | TestTransfer_Offline    | ✅ PASS   |
+| S3       | (not implemented)       | ⚠️ NO TEST |
 ```
 
 ### Context Efficiency
