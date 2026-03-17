@@ -103,8 +103,16 @@ Describe what you want to build:
 CQ will:
 1. Ask clarifying questions (Discovery phase)
 2. Design the approach (Design phase)
-3. Break it into tasks with Definition of Done
-4. Create the task queue
+3. Generate **behavior spec** with WHEN-THEN-VERIFY scenarios → opens in editor for review
+4. Break it into tasks with Definition of Done
+5. Create the task queue
+
+::: tip Behavior Spec (v1.3.1+)
+For features with 4+ tasks, CQ auto-generates a behavior spec in `.c4/specs/`.
+Each scenario defines **what the feature does** in human-readable format,
+with machine-checkable VERIFY conditions mapped to tests.
+Review it before implementation starts — it becomes the completion criteria.
+:::
 
 ## Step 4: Run
 
@@ -113,6 +121,14 @@ CQ will:
 ```
 
 Workers start automatically — one per task, each in an isolated git worktree. When the queue empties, `/c4-run` automatically runs polish (fix until zero changes) then finish (build · tests · docs · commit).
+
+During finish, CQ validates your behavior spec against actual test results:
+
+```
+✅ S1: Happy path     → TestAuth_S1_LoginSuccess     PASS
+✅ S2: Invalid token   → TestAuth_S2_InvalidToken     PASS
+⚠️ S3: Token expiry    → (not implemented)            NO TEST
+```
 
 You can watch progress with:
 

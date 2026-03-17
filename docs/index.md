@@ -26,6 +26,10 @@ features:
     title: Wake Up to Results
     details: Set it before bed. Your code is written, tested, and committed by morning.
 
+  - icon: 📋
+    title: Living Behavior Spec
+    details: Auto-generated behavior specs with WHEN-THEN-VERIFY scenarios. Know exactly what was built — before you touch the code.
+
 ---
 
 ## Why CQ?
