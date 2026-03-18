@@ -12,8 +12,9 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
+
+	"github.com/changmin/c4-core/internal/shell"
 )
 
 // Scheduler manages the job queue, process execution, and timeouts.
@@ -244,13 +245,13 @@ func (s *Scheduler) startJob(job *Job, gpuIndices []int) error {
 		ctx, cancelFn = context.WithCancel(context.Background())
 	}
 
-	cmd := exec.CommandContext(ctx, "sh", "-c", job.Command)
+	cmd := shell.Command(ctx, job.Command)
 	cmd.Dir = job.Workdir
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile
 
-	// Process group for clean kill
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	// Process group for clean kill (platform-specific)
+	setSysProcAttr(cmd)
 
 	// Environment
 	cmd.Env = os.Environ()
@@ -409,20 +410,6 @@ func (s *Scheduler) Cancel(jobID string) error {
 	}
 
 	return s.store.CancelJob(jobID)
-}
-
-// killProcessGroup sends SIGKILL to the entire process group.
-func (s *Scheduler) killProcessGroup(cmd *exec.Cmd) {
-	if cmd.Process == nil {
-		return
-	}
-	// Kill process group (-pid)
-	pgid, err := syscall.Getpgid(cmd.Process.Pid)
-	if err == nil {
-		syscall.Kill(-pgid, syscall.SIGKILL)
-	} else {
-		cmd.Process.Kill()
-	}
 }
 
 // GetJobLog reads the output log for a job.
