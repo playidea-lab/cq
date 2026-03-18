@@ -1279,6 +1279,16 @@ func launchToolNamed(tool, projectDir, name string) error {
 			}
 			toolArgs = []string{"--resume", resumeID}
 		} else {
+			// Confirm new session creation when no existing session found.
+			if fileInfo, _ := os.Stdin.Stat(); fileInfo != nil && (fileInfo.Mode()&os.ModeCharDevice) != 0 {
+				fmt.Fprintf(os.Stderr, "cq: session '%s' not found. Create new session? [Y/n] ", name)
+				var answer string
+				fmt.Fscan(os.Stdin, &answer)
+				if answer == "n" || answer == "N" {
+					fmt.Fprintf(os.Stderr, "aborted\n")
+					return nil
+				}
+			}
 			fmt.Fprintf(os.Stderr, "cq: launching %s (session: '%s')...\n", tool, name)
 			// Inject onboarding context on first-ever run (new sessions only, not resumes).
 			if isFirstRun() {
