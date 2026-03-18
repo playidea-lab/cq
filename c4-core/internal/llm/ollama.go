@@ -13,7 +13,10 @@ import (
 
 const defaultOllamaBaseURL = "http://localhost:11434"
 
-var _ Provider = (*OllamaProvider)(nil)
+var (
+	_ Provider      = (*OllamaProvider)(nil)
+	_ EmbedProvider = (*OllamaProvider)(nil)
+)
 
 // OllamaProvider implements the Provider interface for the Ollama local API.
 type OllamaProvider struct {
@@ -68,6 +71,72 @@ type ollamaResponse struct {
 // ollamaErrorResponse is the error response from the Ollama API.
 type ollamaErrorResponse struct {
 	Error string `json:"error"`
+}
+
+// ollamaEmbedRequest is the request body for the Ollama Embed API.
+type ollamaEmbedRequest struct {
+	Model string   `json:"model"`
+	Input []string `json:"input"`
+}
+
+// ollamaEmbedResponse is the response from the Ollama Embed API.
+type ollamaEmbedResponse struct {
+	Model      string      `json:"model"`
+	Embeddings [][]float32 `json:"embeddings"`
+}
+
+// Embed generates embeddings using the Ollama /api/embed endpoint.
+// Model defaults to "nomic-embed-text" (768 dims) if not specified.
+func (p *OllamaProvider) Embed(ctx context.Context, texts []string, model string) (*EmbedResponse, error) {
+	if model == "" {
+		model = "nomic-embed-text"
+	}
+
+	apiReq := ollamaEmbedRequest{
+		Model: model,
+		Input: texts,
+	}
+
+	body, err := json.Marshal(apiReq)
+	if err != nil {
+		return nil, fmt.Errorf("marshal embed request: %w", err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, "POST", p.baseURL+"/api/embed", bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("create embed request: %w", err)
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	resp, err := p.client.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("embed http request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read embed response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		var errResp ollamaErrorResponse
+		if json.Unmarshal(respBody, &errResp) == nil && errResp.Error != "" {
+			return nil, fmt.Errorf("ollama embed API error (%d): %s", resp.StatusCode, errResp.Error)
+		}
+		return nil, fmt.Errorf("ollama embed API error (%d): %s", resp.StatusCode, string(respBody))
+	}
+
+	var apiResp ollamaEmbedResponse
+	if err := json.Unmarshal(respBody, &apiResp); err != nil {
+		return nil, fmt.Errorf("unmarshal embed response: %w", err)
+	}
+
+	return &EmbedResponse{
+		Embeddings: apiResp.Embeddings,
+		Model:      apiResp.Model,
+		Usage:      TokenUsage{InputTokens: len(texts)},
+	}, nil
 }
 
 func (p *OllamaProvider) Chat(ctx context.Context, req *ChatRequest) (*ChatResponse, error) {

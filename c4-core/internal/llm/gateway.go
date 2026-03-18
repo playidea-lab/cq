@@ -107,6 +107,13 @@ func (g *Gateway) Register(p Provider) {
 	g.mu.Unlock()
 }
 
+// SetRoute sets a routing entry for a task type.
+func (g *Gateway) SetRoute(taskType string, ref ModelRef) {
+	g.mu.Lock()
+	g.routing.Routes[taskType] = ref
+	g.mu.Unlock()
+}
+
 // Resolve determines which provider and model to use based on routing rules.
 //
 // Priority:

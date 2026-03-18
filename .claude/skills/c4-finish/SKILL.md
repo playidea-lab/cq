@@ -200,11 +200,11 @@ if c4_knowledge_stats().total_docs >= 5:
 Conventional commit. 완료 후 `c4_phase_lock_release(phase="finish")`.
 알림: `c4_notify(message='구현 완료', event='finish.complete')`
 
-### 9. Release Notes
+### 9. Release
 ```
 /c4-release
 ```
-CHANGELOG.md + 태그. push는 사용자가 직접.
+CHANGELOG.md → 태그 → push (기본). `--no-push`로 로컬만 가능.
 
 ## Rules
 - 단계를 건너뛰지 않는다

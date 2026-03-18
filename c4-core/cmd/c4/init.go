@@ -1279,16 +1279,8 @@ func launchToolNamed(tool, projectDir, name string) error {
 			}
 			toolArgs = []string{"--resume", resumeID}
 		} else {
-			// Confirm new session creation when no existing session found.
-			if fileInfo, _ := os.Stdin.Stat(); fileInfo != nil && (fileInfo.Mode()&os.ModeCharDevice) != 0 {
-				fmt.Fprintf(os.Stderr, "cq: session '%s' not found. Create new session? [Y/n] ", name)
-				var answer string
-				fmt.Fscan(os.Stdin, &answer)
-				if answer == "n" || answer == "N" {
-					fmt.Fprintf(os.Stderr, "aborted\n")
-					return nil
-				}
-			}
+			// Notify user that a new session is being created.
+			fmt.Fprintf(os.Stderr, "cq: session '%s' not found, creating new session...\n", name)
 			fmt.Fprintf(os.Stderr, "cq: launching %s (session: '%s')...\n", tool, name)
 			// Inject onboarding context on first-ever run (new sessions only, not resumes).
 			if isFirstRun() {
@@ -1316,7 +1308,38 @@ func launchToolNamed(tool, projectDir, name string) error {
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 		cmd.Env = env
-		runErr := cmd.Run()
+
+		// Start (not Run) so we can watch for .reboot file in parallel.
+		if err := cmd.Start(); err != nil {
+			return fmt.Errorf("start %s: %w", tool, err)
+		}
+
+		// Watch for .reboot file — auto-terminate Claude Code when detected.
+		rebootDetected := make(chan struct{}, 1)
+		go func() {
+			ticker := time.NewTicker(2 * time.Second)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-ticker.C:
+					if _, err := os.Stat(rebootFlagFile()); err == nil {
+						select {
+						case rebootDetected <- struct{}{}:
+						default:
+						}
+						// Send interrupt signal to Claude Code process.
+						if cmd.Process != nil {
+							_ = cmd.Process.Signal(os.Interrupt)
+						}
+						return
+					}
+				case <-rebootDetected:
+					return
+				}
+			}
+		}()
+
+		runErr := cmd.Wait()
 
 		// If resume failed (non-zero exit with --resume), clear UUID and retry as new session.
 		if runErr != nil && currentUUID != "" {

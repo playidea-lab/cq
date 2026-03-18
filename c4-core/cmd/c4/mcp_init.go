@@ -149,15 +149,30 @@ func newMCPServer() (*mcpServer, error) {
 	} else {
 		knowledgeStore = ks
 
-		// Create embedder from LLM Gateway if OpenAI is available
+		// Create embedder from LLM Gateway
 		var embedder knowledge.Embedder
 		embDim := 1536
 		if cfgMgr != nil && cfgMgr.GetConfig().LLMGateway.Enabled {
+			gwCfg := cfgMgr.GetConfig().LLMGateway
 			embGateway := llm.NewGatewayFromConfig(toLLMGatewayConfig(cfgMgr, secretStore))
-			// Add embedding route if not configured
-			embGateway.Resolve("embedding", "")
+
+			// Configure embedding route from config (embedding_provider / embedding_model)
+			embProvider := gwCfg.EmbeddingProvider
+			embModel := gwCfg.EmbeddingModel
+			if embProvider != "" {
+				embGateway.SetRoute("embedding", llm.ModelRef{Provider: embProvider, Model: embModel})
+			}
+
+			// Determine dimension based on provider/model
+			ref := embGateway.Resolve("embedding", "")
+			if ref.Provider == "ollama" {
+				embDim = 768 // nomic-embed-text default
+				fmt.Fprintf(os.Stderr, "cq: knowledge embeddings via ollama/%s (%dd)\n", ref.Model, embDim)
+			} else {
+				fmt.Fprintf(os.Stderr, "cq: knowledge embeddings via %s/%s (%dd)\n", ref.Provider, ref.Model, embDim)
+			}
+
 			embedder = llm.NewEmbeddingProvider(embGateway, embDim)
-			fmt.Fprintln(os.Stderr, "cq: knowledge real embeddings enabled (1536d)")
 		} else {
 			embDim = 384 // fallback to mock dimension
 			fmt.Fprintln(os.Stderr, "cq: knowledge using mock embeddings (384d)")

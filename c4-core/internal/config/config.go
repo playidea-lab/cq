@@ -58,10 +58,12 @@ type LLMProviderConfig struct {
 
 // LLMGatewayConfig holds LLM gateway settings.
 type LLMGatewayConfig struct {
-	Enabled        bool                         `mapstructure:"enabled"          yaml:"enabled"`
-	Default        string                       `mapstructure:"default"          yaml:"default"`
-	CacheByDefault bool                         `mapstructure:"cache_by_default" yaml:"cache_by_default"`
-	Providers      map[string]LLMProviderConfig `mapstructure:"providers"        yaml:"providers"`
+	Enabled           bool                         `mapstructure:"enabled"            yaml:"enabled"`
+	Default           string                       `mapstructure:"default"            yaml:"default"`
+	CacheByDefault    bool                         `mapstructure:"cache_by_default"   yaml:"cache_by_default"`
+	EmbeddingProvider string                       `mapstructure:"embedding_provider" yaml:"embedding_provider"`
+	EmbeddingModel    string                       `mapstructure:"embedding_model"    yaml:"embedding_model"`
+	Providers         map[string]LLMProviderConfig `mapstructure:"providers"          yaml:"providers"`
 }
 
 // WorktreeConfig holds worktree settings.
