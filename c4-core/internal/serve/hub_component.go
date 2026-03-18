@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/exec"
 	"sync"
-	"syscall"
 	"time"
 )
 
@@ -135,8 +134,8 @@ func (h *HubComponent) Stop(ctx context.Context) error {
 	h.mu.Unlock()
 
 	if proc != nil {
-		// Graceful: SIGTERM
-		_ = proc.Signal(syscall.SIGTERM)
+		// Graceful: SIGTERM (unix) or Process.Kill (windows)
+		_ = stopProcessGraceful(proc)
 
 		// Wait for the reaper goroutine (single Wait() caller) to signal exit.
 		select {
@@ -144,11 +143,11 @@ func (h *HubComponent) Stop(ctx context.Context) error {
 			// exited cleanly
 		case <-ctx.Done():
 			// caller cancelled — force-kill
-			_ = proc.Signal(syscall.SIGKILL)
+			_ = stopProcessForce(proc)
 			<-done
 		case <-time.After(5 * time.Second):
 			// Force-kill if still running.
-			_ = proc.Signal(syscall.SIGKILL)
+			_ = stopProcessForce(proc)
 			<-done
 		}
 	}
