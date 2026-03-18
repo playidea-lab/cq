@@ -34,6 +34,21 @@ esac
 
 OS="$(uname -s)"
 case "$OS" in
+  MINGW*|MSYS*|CYGWIN*)
+    echo ""
+    echo "  Windows detected ($OS)."
+    echo ""
+    echo "  CQ requires a POSIX environment. Two options:"
+    echo ""
+    echo "  Option 1 — WSL2 (recommended)"
+    echo "    1. Install WSL2:  wsl --install  (PowerShell as Admin)"
+    echo "    2. Open Ubuntu terminal and re-run this installer."
+    echo ""
+    echo "  Option 2 — Pre-built binary from GitHub Releases"
+    echo "    https://github.com/PlayIdea-Lab/cq/releases/latest"
+    echo ""
+    exit 0
+    ;;
   Linux)  GOOS="linux" ;;
   Darwin) GOOS="darwin" ;;
   *) echo "Error: unsupported OS '$OS'" >&2; exit 1 ;;
