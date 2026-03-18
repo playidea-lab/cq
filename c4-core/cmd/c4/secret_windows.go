@@ -1,4 +1,4 @@
-//go:build !windows
+//go:build windows
 
 package main
 
@@ -7,10 +7,9 @@ import (
 	"io"
 	"os"
 	"strings"
-	"syscall"
 
 	"github.com/spf13/cobra"
-	"golang.org/x/sys/unix"
+	"golang.org/x/term"
 
 	"github.com/changmin/c4-core/internal/secrets"
 )
@@ -147,23 +146,13 @@ func readHiddenInput(prompt string) (string, error) {
 	fmt.Fprint(os.Stderr, prompt)
 
 	fd := int(os.Stdin.Fd())
-	if isTerminal(fd) {
-		// Disable echo
-		old, err := unix.IoctlGetTermios(fd, ioctlGetTermios)
+	if term.IsTerminal(fd) {
+		b, err := term.ReadPassword(fd)
+		fmt.Fprintln(os.Stderr) // newline after hidden input
 		if err != nil {
-			fmt.Fprintln(os.Stderr, "warning: could not disable echo; input will be visible")
-			return readLine()
+			return "", err
 		}
-		noEcho := *old
-		noEcho.Lflag &^= syscall.ECHO
-		if err := unix.IoctlSetTermios(fd, ioctlSetTermios, &noEcho); err != nil {
-			fmt.Fprintln(os.Stderr, "warning: could not disable echo; input will be visible")
-			return readLine()
-		}
-		defer func() {
-			unix.IoctlSetTermios(fd, ioctlSetTermios, old)
-			fmt.Fprintln(os.Stderr) // newline after hidden input
-		}()
+		return string(b), nil
 	}
 	return readLine()
 }
@@ -192,6 +181,5 @@ func readLine() (string, error) {
 }
 
 func isTerminal(fd int) bool {
-	_, err := unix.IoctlGetTermios(fd, ioctlGetTermios)
-	return err == nil
+	return term.IsTerminal(fd)
 }
