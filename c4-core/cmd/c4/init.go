@@ -1776,7 +1776,7 @@ func ensureServeRunning(noServe bool) {
 	}
 
 	cmd := exec.Command(cqPath, "serve")
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	setDetachedProcess(cmd)
 	if err := cmd.Start(); err != nil {
 		fmt.Fprintf(os.Stderr, "cq: warn: could not start serve: %v\n", err)
 		return
