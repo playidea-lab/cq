@@ -11,7 +11,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 )
 
@@ -66,13 +65,9 @@ func cleanupStaleSidecar(pidFile string) {
 		if err == nil {
 			pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
 			if err == nil && pid > 0 {
-				if err := syscall.Kill(pid, 0); err == nil {
+				if isProcessAlive(pid) {
 					fmt.Fprintf(os.Stderr, "c4: killing stale sidecar (pgid %d) from previous session\n", pid)
-					if err := syscall.Kill(-pid, syscall.SIGTERM); err != nil {
-						log.Printf("c4: sidecar: SIGTERM to pgid %d failed: %v", pid, err)
-					}
-					time.Sleep(500 * time.Millisecond)
-					_ = syscall.Kill(-pid, syscall.SIGKILL)
+					killStaleGroup(pid)
 				}
 			}
 			_ = os.Remove(pidFile)
@@ -99,11 +94,7 @@ func cleanupStaleSidecar(pidFile string) {
 			continue
 		}
 		fmt.Fprintf(os.Stderr, "c4: killing orphan c4-bridge process (pid %d, ppid=1)\n", pid)
-		if err := syscall.Kill(pid, syscall.SIGTERM); err != nil {
-			log.Printf("c4: sidecar: SIGTERM to orphan pid %d failed: %v", pid, err)
-		}
-		time.Sleep(200 * time.Millisecond)
-		_ = syscall.Kill(pid, syscall.SIGKILL)
+		killOrphan(pid)
 	}
 }
 
@@ -154,7 +145,7 @@ func StartSidecar(cfg *SidecarConfig) (*Sidecar, error) {
 	cmd.Env = append(os.Environ(), fmt.Sprintf("C4_PARENT_PID=%d", os.Getpid()))
 	// Put sidecar in its own process group so Stop() can kill
 	// the entire tree (uv wrapper + python child) with a single signal.
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	setSysProcAttr(cmd)
 
 	// Capture stdout to read the port announcement
 	stdout, err := cmd.StdoutPipe()
@@ -236,9 +227,9 @@ func (s *Sidecar) Stop() error {
 		_ = os.Remove(s.cfg.PidFile)
 	}
 
-	// Send SIGTERM to the entire process group (negative PID = process group)
-	if err := syscall.Kill(-pgid, syscall.SIGTERM); err != nil {
-		// Fallback: kill individual process
+	// Send SIGTERM to the entire process group (negative PID = process group).
+	// On Windows killGroup is a no-op; we fall back to Process.Kill directly.
+	if !killGroup(pgid, false) {
 		_ = s.cmd.Process.Kill()
 	}
 
@@ -250,8 +241,10 @@ func (s *Sidecar) Stop() error {
 	case <-done:
 		return nil
 	case <-time.After(5 * time.Second):
-		// Force kill entire process group
-		_ = syscall.Kill(-pgid, syscall.SIGKILL)
+		// Force kill entire process group (or individual process on Windows)
+		if !killGroup(pgid, true) {
+			_ = s.cmd.Process.Kill()
+		}
 		return nil
 	}
 }
@@ -422,7 +415,10 @@ func (s *Sidecar) Restart() (string, error) {
 	// Stop existing process group while holding lock to prevent concurrent access
 	if !s.stopped && s.cmd != nil && s.cmd.Process != nil {
 		pgid := s.cmd.Process.Pid
-		_ = syscall.Kill(-pgid, syscall.SIGTERM)
+		proc := s.cmd.Process
+		if !killGroup(pgid, false) {
+			_ = proc.Kill()
+		}
 		s.stopped = true
 		// Don't wait for process exit under lock — it's best-effort
 		go func(cmd *exec.Cmd, pgid int) {
@@ -431,7 +427,9 @@ func (s *Sidecar) Restart() (string, error) {
 			select {
 			case <-done:
 			case <-time.After(5 * time.Second):
-				_ = syscall.Kill(-pgid, syscall.SIGKILL)
+				if !killGroup(pgid, true) {
+					_ = cmd.Process.Kill()
+				}
 			}
 		}(s.cmd, pgid)
 	}
