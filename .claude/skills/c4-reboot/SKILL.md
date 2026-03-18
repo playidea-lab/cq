@@ -37,11 +37,15 @@ echo "SESSION: ${CQ_SESSION_NAME:-<unnamed>} / UUID: ${CQ_SESSION_UUID:-<unknown
 ### 2. Reboot 플래그 작성 + 자동 종료
 
 ```bash
-CLAUDE_PID=$(ps -o ppid= -p $$ 2>/dev/null | tr -d ' ')
-echo "${CQ_SESSION_UUID:-}" > ~/.c4/.reboot && echo "rebooting session '${CQ_SESSION_NAME}' (${CQ_SESSION_UUID})..." && kill -TERM "${CLAUDE_PID:-${PPID:-}}"
+echo "${CQ_SESSION_UUID:-}" > ~/.c4/.reboot && echo "rebooting session '${CQ_SESSION_NAME}' (${CQ_SESSION_UUID})..."
 ```
 
-`.reboot` 파일에 UUID와 세션명을 기록합니다. `cq` 부모 프로세스가 파일에서 UUID를 읽어
-`claude --resume <uuid>`를 실행합니다. UUID가 파일에 있으므로 cq 메모리 상태와 무관하게 올바른 세션으로 복귀합니다.
+`.reboot` 파일에 UUID를 기록합니다. `cq` 부모 프로세스가 Claude Code 종료 후
+파일에서 UUID를 읽어 `claude --resume <uuid>`를 실행합니다.
 
-> **SIGTERM이 실패한 경우** (`CLAUDE_PID`가 비어 있으면): 수동으로 `/exit` 또는 `Ctrl+C`를 누르세요.
+위 명령 실행 후 **반드시 `/exit`을 호출**하여 Claude Code를 종료합니다.
+`kill`로 프로세스를 종료하면 PID 불일치로 잘못된 프로세스가 종료될 수 있습니다.
+
+```
+/exit
+```

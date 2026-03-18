@@ -1236,23 +1236,30 @@ func launchToolNamed(tool, projectDir, name string) error {
 	currentUUID := ""
 	nameWasKnown := false // true if -t name was found in saved sessions (rename-on-reboot allowed)
 	if entry, ok := sessions[name]; ok {
-		// Use saved entry.Dir first (session may have been attached from a different cwd)
-		lookupDir := projectDir
-		if entry.Dir != "" {
-			lookupDir = entry.Dir
-		}
-		entrySessionDir, dirErr := claudeProjectDir(lookupDir)
-		if dirErr != nil {
-			entrySessionDir = sessionDir
-		}
-		jsonlPath := filepath.Join(entrySessionDir, entry.UUID+".jsonl")
-		if _, statErr := os.Stat(jsonlPath); statErr == nil {
-			currentUUID = entry.UUID
-			sessionDir = entrySessionDir // use correct dir for this session
-			nameWasKnown = true
-		} else {
-			fmt.Fprintf(os.Stderr, "cq: session '%s' JSONL deleted, starting new session...\n", name)
+		// If the session was created in a different project, start fresh.
+		if entry.Dir != "" && entry.Dir != projectDir {
+			fmt.Fprintf(os.Stderr, "cq: session '%s' belongs to %s (current: %s), starting new session...\n",
+				name, entry.Dir, projectDir)
 			delete(sessions, name)
+		} else {
+			// Use saved entry.Dir first (session may have been attached from a different cwd)
+			lookupDir := projectDir
+			if entry.Dir != "" {
+				lookupDir = entry.Dir
+			}
+			entrySessionDir, dirErr := claudeProjectDir(lookupDir)
+			if dirErr != nil {
+				entrySessionDir = sessionDir
+			}
+			jsonlPath := filepath.Join(entrySessionDir, entry.UUID+".jsonl")
+			if _, statErr := os.Stat(jsonlPath); statErr == nil {
+				currentUUID = entry.UUID
+				sessionDir = entrySessionDir // use correct dir for this session
+				nameWasKnown = true
+			} else {
+				fmt.Fprintf(os.Stderr, "cq: session '%s' JSONL deleted, starting new session...\n", name)
+				delete(sessions, name)
+			}
 		}
 	}
 
@@ -1299,7 +1306,18 @@ func launchToolNamed(tool, projectDir, name string) error {
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 		cmd.Env = env
-		_ = cmd.Run() // ignore exit code; user may Ctrl+C or /exit
+		runErr := cmd.Run()
+
+		// If resume failed (non-zero exit with --resume), clear UUID and retry as new session.
+		if runErr != nil && currentUUID != "" {
+			if exitErr, ok := runErr.(*exec.ExitError); ok && exitErr.ExitCode() != 0 {
+				fmt.Fprintf(os.Stderr, "cq: session '%s' resume failed, starting new session...\n", name)
+				currentUUID = ""
+				delete(sessions, name)
+				_ = saveNamedSessions(sessions)
+				continue // retry loop without --resume
+			}
+		}
 
 		// Detect new UUID for new sessions.
 		if currentUUID == "" {
