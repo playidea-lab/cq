@@ -124,8 +124,12 @@ if [[ "$PERMISSION_MODE" == "model" ]]; then
     # Build context string for the model
     if [[ -n "$COMMAND" ]]; then
         CONTEXT="Tool: $TOOL_NAME\nCommand: $COMMAND"
-    else
+    elif [[ -n "$FILE_PATH" ]]; then
         CONTEXT="Tool: $TOOL_NAME\nFile: $FILE_PATH"
+    else
+        # MCP tools or other: extract full tool_input as context
+        TOOL_INPUT=$(echo "$INPUT" | jq -c '.tool_input // {}' 2>/dev/null)
+        CONTEXT="Tool: $TOOL_NAME\nInput: $TOOL_INPUT"
     fi
 
     payload=$(jq -n \
