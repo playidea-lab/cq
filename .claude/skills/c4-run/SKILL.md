@@ -112,6 +112,19 @@ while continuous_mode:
 Skill("c4-finish")
 ```
 
+## Knowledge Context Injection (자동)
+
+`c4_get_task()` 호출 시 Go 코드가 자동으로 과거 지식을 검색하여 `knowledge_context` 필드에 주입한다.
+워커는 별도 검색 없이 이 필드를 읽으면 된다.
+
+```
+c4_get_task(worker_id)
+  → enrichWithKnowledgeContext (Go, sqlite_store_enrich.go)
+    → KnowledgeContextSearcher.Search(DoD 키워드, top 5)
+    → 관련 pattern/insight/experiment 자동 포함
+  → response.knowledge_context = "## Relevant Knowledge..."
+```
+
 ## Worktree Isolation (Multi-Worker)
 
 `c4_get_task()` returns `worktree_path` — all file ops MUST occur within it.

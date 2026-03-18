@@ -287,6 +287,24 @@ Worker 기반 Pre-Mortem 분석. 상세: `references/critique-loop.md`
 수렴 확정된 draft를 `c4_add_todo()`로 일괄 기록.
 알림: `c4_notify(message='계획 확정', event='plan.created')`
 
+### 설계 결정 지식 저장
+
+Plan 단계에서 도출된 핵심 설계 결정을 지식 베이스에 기록한다.
+다음 세션에서 "왜 이렇게 설계했는지" 검색 가능하게 한다.
+
+```python
+# Design 단계에서 결정된 핵심 사항만 기록 (전체 spec/design은 파일에 이미 있음)
+if design_decisions:  # DEC-XXX 목록
+    summary = "\n".join(f"- {d.id}: {d.question} → {d.decision} ({d.rationale})"
+                        for d in design_decisions[:5])
+    c4_knowledge_record(
+        title=f"{feature_slug} — 설계 결정",
+        content=f"## 설계 결정\n{summary}\n\n## 선택한 아키텍처\n{selected_option}",
+        domain=domain,
+        tags=[feature_slug, "design-decision"]
+    )
+```
+
 ---
 
 ## Phase 4.95: Spec Scenarios (동작정의서)

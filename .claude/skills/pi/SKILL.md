@@ -46,10 +46,13 @@ c4-plan       =  무엇을 만들지 확정됐을 때, 구현 계획을 짠다
 
 ```python
 c4_knowledge_search(query="{seed_idea}")
+Glob(".c4/ideas/*.md")  # 기존 idea.md 스캔 — 이미 탐구한 아이디어 확인
 WebSearch("{seed_idea} 2026")
 WebSearch("{seed_idea} alternatives")
 WebSearch("{seed_idea} problems OR pain points")
 ```
+
+기존 idea.md가 발견되면: "이전에 **{title}** 아이디어가 있었습니다. 연장/확장/별개?" 확인.
 
 첫 반응: **Landscape** (기존) + **핵심 긴장** (왜 흥미로운지) + **첫 날카로운 질문**
 
