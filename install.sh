@@ -46,6 +46,23 @@ warn() { printf "  ${YELLOW}[!]${NC} %s\n" "$1"; }
 fail() { printf "  ${RED}[✗]${NC} %s\n" "$1"; exit 1; }
 info() { printf "  ${CYAN}[·]${NC} %s\n" "$1"; }
 
+# ─── Windows Detection ────────────────────────────────────
+
+_os="$(uname -s 2>/dev/null || true)"
+case "$_os" in
+    MINGW*|MSYS*|CYGWIN*)
+        printf "\n  ${YELLOW}[!]${NC} Windows detected (${_os}).\n"
+        printf "\n  CQ requires a POSIX environment. Two options:\n\n"
+        printf "  ${BOLD}Option 1 — WSL2 (recommended)${NC}\n"
+        printf "    1. Install WSL2:  ${CYAN}wsl --install${NC}  (PowerShell as Admin)\n"
+        printf "    2. Open Ubuntu terminal and re-run this installer.\n\n"
+        printf "  ${BOLD}Option 2 — Pre-built binary from GitHub Releases${NC}\n"
+        printf "    Download the latest release for your platform:\n"
+        printf "    ${CYAN}https://github.com/pilab-dev/cq/releases/latest${NC}\n\n"
+        exit 0
+        ;;
+esac
+
 # ─── Project Root (auto-clone if needed) ──────────────────
 
 detect_or_clone() {
