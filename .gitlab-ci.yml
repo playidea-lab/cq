@@ -1,6 +1,6 @@
 # GitLab CI — CQ Binary Release Pipeline
 #
-# Triggers on version tags (v*). Builds 9 binaries across 3 tiers × 3 platforms,
+# Triggers on version tags (v*). Builds 12 binaries across 3 tiers × 4 platforms,
 # then uploads all artifacts to PlayIdea-Lab/cq GitHub Releases.
 #
 # Required CI variable (Settings → CI/CD → Variables):
@@ -74,6 +74,13 @@ build-c5-darwin-arm64:
     GOARCH: arm64
     EXT: ""
 
+build-c5-windows-amd64:
+  <<: *build-c5-template
+  variables:
+    GOOS: windows
+    GOARCH: amd64
+    EXT: ".exe"
+
 # ── build stage templates ─────────────────────────────────────
 
 .build-template: &build-template
@@ -127,6 +134,14 @@ build-solo-darwin-arm64:
     GOARCH: arm64
     TIER: solo
 
+build-solo-windows-amd64:
+  <<: *build-template
+  variables:
+    GOOS: windows
+    GOARCH: amd64
+    TIER: solo
+    EXT: ".exe"
+
 # ── connected tier ───────────────────────────────────────────
 build-connected-linux-amd64:
   <<: *build-template
@@ -148,6 +163,14 @@ build-connected-darwin-arm64:
     GOOS: darwin
     GOARCH: arm64
     TIER: connected
+
+build-connected-windows-amd64:
+  <<: *build-template
+  variables:
+    GOOS: windows
+    GOARCH: amd64
+    TIER: connected
+    EXT: ".exe"
 
 # ── full tier (needs build-c5 artifacts) ─────────────────────
 build-full-linux-amd64:
@@ -180,6 +203,16 @@ build-full-darwin-arm64:
     - check-env
     - build-c5-darwin-arm64
 
+build-full-windows-amd64:
+  <<: *build-full-template
+  variables:
+    GOOS: windows
+    GOARCH: amd64
+    EXT: ".exe"
+  needs:
+    - check-env
+    - build-c5-windows-amd64
+
 # ── GitHub Release ───────────────────────────────────────────
 release-github:
   stage: release
@@ -192,16 +225,16 @@ release-github:
         apt-get update -qq && apt-get install -y gh
       fi
     - |
-      # Verify all 9 cq binaries (3 tiers × 3 platforms) are present before uploading
+      # Verify all 12 cq binaries (3 tiers × 4 platforms) are present before uploading
       BINARY_COUNT=$(ls c4-core/dist/ | wc -l | tr -d ' ')
-      test "$BINARY_COUNT" = "9" || { echo "Expected 9 binaries, got $BINARY_COUNT"; exit 1; }
+      test "$BINARY_COUNT" = "12" || { echo "Expected 12 binaries, got $BINARY_COUNT"; exit 1; }
     - |
-      # Verify all 3 c5 standalone binaries are present
+      # Verify all 4 c5 standalone binaries are present
       C5_COUNT=$(ls c5/bin/ | wc -l | tr -d ' ')
-      test "$C5_COUNT" = "3" || { echo "Expected 3 c5 binaries, got $C5_COUNT"; exit 1; }
+      test "$C5_COUNT" = "4" || { echo "Expected 4 c5 binaries, got $C5_COUNT"; exit 1; }
     - |
       # Idempotent release: upload to existing release or create new one
-      # Uploads: 9 cq binaries + 3 c5 standalone binaries + install.sh = 13 assets
+      # Uploads: 12 cq binaries + 4 c5 standalone binaries + install.sh = 17 assets
       if gh release view "$CI_COMMIT_TAG" --repo PlayIdea-Lab/cq > /dev/null 2>&1; then
         echo "Release $CI_COMMIT_TAG already exists — uploading binaries with --clobber"
         gh release upload "$CI_COMMIT_TAG" c4-core/dist/* c5/bin/* c5/install.sh \
@@ -217,14 +250,18 @@ release-github:
     - build-solo-linux-amd64
     - build-solo-linux-arm64
     - build-solo-darwin-arm64
+    - build-solo-windows-amd64
     - build-connected-linux-amd64
     - build-connected-linux-arm64
     - build-connected-darwin-arm64
+    - build-connected-windows-amd64
     - build-full-linux-amd64
     - build-full-linux-arm64
     - build-full-darwin-arm64
+    - build-full-windows-amd64
     - build-c5-linux-amd64
     - build-c5-linux-arm64
     - build-c5-darwin-arm64
+    - build-c5-windows-amd64
   only:
     - /^v.*/
