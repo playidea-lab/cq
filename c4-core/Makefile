@@ -4,7 +4,7 @@
 .PHONY: build test test-grpc lint vet clean proto-gen fmt help \
         build-solo build-connected build-full build-nightly \
         install-solo install-connected install-full install-nightly \
-        embed-skills embed-c5 build-cross
+        embed-skills embed-c5 build-cross cross-compile
 
 # Build variables
 BINARY_NAME := c4
@@ -79,8 +79,31 @@ build-cross: embed-skills
 	GOOS=$(GOOS) GOARCH=$(GOARCH) go build \
 		-ldflags "-X main.version=$(VERSION) $(_SUPABASE_FLAGS) $(_C5_EMBED_FLAGS)" \
 		-tags '$(TIER_TAGS_$(TIER))' \
-		-o dist/cq-$(TIER)-$(GOOS)-$(GOARCH) \
+		-o dist/cq-$(TIER)-$(GOOS)-$(GOARCH)$(EXT) \
 		./cmd/c4/
+
+## cross-compile: Build all tiers for all platforms (linux/amd64, linux/arm64, darwin/arm64, windows/amd64)
+cross-compile: embed-skills
+	@mkdir -p dist
+	@for tier in solo connected full; do \
+		for target in linux/amd64 linux/arm64 darwin/arm64; do \
+			GOOS=$$(echo $$target | cut -d/ -f1); \
+			GOARCH=$$(echo $$target | cut -d/ -f2); \
+			echo "Building $$tier $$GOOS/$$GOARCH..."; \
+			GOOS=$$GOOS GOARCH=$$GOARCH go build \
+				-ldflags "-X main.version=$(VERSION) $(_SUPABASE_FLAGS)" \
+				-tags '$(TIER_TAGS_$(tier))' \
+				-o dist/cq-$$tier-$$GOOS-$$GOARCH \
+				./cmd/c4/ || exit 1; \
+		done; \
+		echo "Building $$tier windows/amd64..."; \
+		GOOS=windows GOARCH=amd64 go build \
+			-ldflags "-X main.version=$(VERSION) $(_SUPABASE_FLAGS)" \
+			-tags '$(TIER_TAGS_$(tier))' \
+			-o dist/cq-$$tier-windows-amd64.exe \
+			./cmd/c4/ || exit 1; \
+	done
+	@echo "All cross-compile targets done. Binaries in dist/"
 
 
 ## build: Build the c4 binary (full, all tags)
