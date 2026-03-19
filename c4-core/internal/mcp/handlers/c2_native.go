@@ -1,10 +1,13 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/changmin/c4-core/internal/c2"
@@ -71,6 +74,18 @@ func RegisterC2NativeHandlers(reg *mcp.Registry) {
 			"required": []string{"draft_path", "final_path"},
 		},
 	}, personaLearnHandler())
+
+	reg.Register(mcp.ToolSchema{
+		Name:        "c4_persona_learn_from_diff",
+		Description: "Extract coding patterns from git diff and append to raw_patterns.json. Use after polish/finish to learn from user edits.",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"commit_range": map[string]any{"type": "string", "description": "Git commit range (e.g. 'HEAD~3..HEAD', 'abc123..def456'). Analyzes changed files."},
+			},
+			"required": []string{"commit_range"},
+		},
+	}, personaLearnFromDiffHandler())
 
 	// Profile tools (2)
 	reg.Register(mcp.ToolSchema{
@@ -262,6 +277,105 @@ func personaLearnHandler() mcp.HandlerFunc {
 			"structure_updates": diff.StructureUpdates,
 		}, nil
 	}
+}
+
+func personaLearnFromDiffHandler() mcp.HandlerFunc {
+	return func(rawArgs json.RawMessage) (any, error) {
+		var params struct {
+			CommitRange string `json:"commit_range"`
+		}
+		if err := json.Unmarshal(rawArgs, &params); err != nil {
+			return nil, fmt.Errorf("parse params: %w", err)
+		}
+		if params.CommitRange == "" {
+			return nil, fmt.Errorf("commit_range is required")
+		}
+
+		// Get list of changed files from git diff
+		cmd := exec.CommandContext(context.Background(), "git", "diff", "--name-only", params.CommitRange)
+		out, err := cmd.Output()
+		if err != nil {
+			return map[string]any{"error": fmt.Sprintf("git diff --name-only: %v", err)}, nil
+		}
+
+		files := strings.Split(strings.TrimSpace(string(out)), "\n")
+		if len(files) == 0 || (len(files) == 1 && files[0] == "") {
+			return map[string]any{"patterns_found": 0, "message": "no changed files"}, nil
+		}
+
+		// For each file, get before/after content
+		var allPatterns []c2.EditPattern
+		parts := strings.SplitN(params.CommitRange, "..", 2)
+		if len(parts) != 2 {
+			return nil, fmt.Errorf("commit_range must be in 'before..after' format")
+		}
+		beforeRef, afterRef := parts[0], parts[1]
+
+		for _, file := range files {
+			if file == "" {
+				continue
+			}
+			// Skip non-code files
+			if !isCodeFile(file) {
+				continue
+			}
+
+			before, _ := exec.CommandContext(context.Background(), "git", "show", beforeRef+":"+file).Output()
+			after, _ := exec.CommandContext(context.Background(), "git", "show", afterRef+":"+file).Output()
+
+			if len(before) == 0 && len(after) == 0 {
+				continue
+			}
+
+			patterns := c2.AnalyzeEdits(string(before), string(after))
+			for i := range patterns {
+				patterns[i].Description = fmt.Sprintf("[%s] %s", file, patterns[i].Description)
+			}
+			allPatterns = append(allPatterns, patterns...)
+		}
+
+		if len(allPatterns) == 0 {
+			return map[string]any{"patterns_found": 0, "message": "no patterns detected"}, nil
+		}
+
+		// Append to raw_patterns.json
+		username := os.Getenv("USER")
+		if username == "" {
+			username = "default"
+		}
+		patternsPath := filepath.Join(".c4", "souls", username, "raw_patterns.json")
+
+		var existing []c2.EditPattern
+		if data, err := os.ReadFile(patternsPath); err == nil && len(data) > 0 {
+			_ = json.Unmarshal(data, &existing)
+		}
+		existing = append(existing, allPatterns...)
+
+		// Ensure directory exists
+		_ = os.MkdirAll(filepath.Dir(patternsPath), 0755)
+
+		data, _ := json.MarshalIndent(existing, "", "  ")
+		if err := os.WriteFile(patternsPath, data, 0644); err != nil {
+			return map[string]any{"error": fmt.Sprintf("write raw_patterns: %v", err)}, nil
+		}
+
+		return map[string]any{
+			"patterns_found":   len(allPatterns),
+			"total_patterns":   len(existing),
+			"patterns_path":    patternsPath,
+			"files_analyzed":   len(files),
+		}, nil
+	}
+}
+
+// isCodeFile returns true for files likely to contain code/config patterns.
+func isCodeFile(path string) bool {
+	for _, ext := range []string{".go", ".py", ".ts", ".tsx", ".js", ".jsx", ".rs", ".yaml", ".yml", ".toml", ".json", ".md"} {
+		if strings.HasSuffix(path, ext) {
+			return true
+		}
+	}
+	return false
 }
 
 func profileLoadHandler() mcp.HandlerFunc {

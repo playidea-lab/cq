@@ -188,9 +188,13 @@ if c4_knowledge_stats().total_docs >= 5:
     c4_knowledge_distill(dry_run=False)
 ```
 
-### 7.6. Persona Evolution
-```bash
-./scripts/soul-check.sh
+### 7.6. Persona Pattern Collection (자동)
+커밋 후 git diff에서 코딩 패턴을 자동 추출하여 raw_patterns.json에 축적.
+```python
+# 마지막 태그 또는 이전 커밋과의 diff에서 패턴 학습
+last_tag = Bash("git describe --tags --abbrev=0 2>/dev/null || echo HEAD~5").strip()
+c4_persona_learn_from_diff(commit_range=f"{last_tag}..HEAD")
+# 실패 시 non-fatal — 패턴 수집은 best-effort
 ```
 
 ### 7.7. POP Extract
