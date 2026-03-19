@@ -21,7 +21,7 @@ func setupMailTest(t *testing.T) (*mcp.Registry, *mailbox.MailStore) {
 	t.Cleanup(func() { ms.Close() })
 
 	reg := mcp.NewRegistry()
-	mailhandler.Register(reg, ms)
+	mailhandler.Register(reg, ms, nil)
 	return reg, ms
 }
 

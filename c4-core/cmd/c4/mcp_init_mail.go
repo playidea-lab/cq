@@ -28,7 +28,7 @@ func initMail(ctx *initContext) error {
 		return nil
 	}
 	ctx.mailStore = ms
-	mailhandler.Register(ctx.reg, ms)
+	mailhandler.Register(ctx.reg, ms, ctx.chatRouter)
 	return nil
 }
 

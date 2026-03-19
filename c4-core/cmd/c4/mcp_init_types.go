@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/changmin/c4-core/internal/bridge"
+	"github.com/changmin/c4-core/internal/chat"
 	"github.com/changmin/c4-core/internal/cloud"
 	"github.com/changmin/c4-core/internal/config"
 	"github.com/changmin/c4-core/internal/daemon"
@@ -91,6 +92,9 @@ type initContext struct {
 
 	// Mail (set by initMail in mcp_init_mail.go)
 	mailStore *mailbox.MailStore
+
+	// Chat router (set by newMCPServer when CQ_CHAT_CHANNEL_ID is set)
+	chatRouter *chat.Router
 }
 
 // hubClientInterface abstracts hub.Client so the stub doesn't need to import hub.

@@ -6,12 +6,14 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/changmin/c4-core/internal/chat"
 	"github.com/changmin/c4-core/internal/mailbox"
 	"github.com/changmin/c4-core/internal/mcp"
 )
 
 // Register registers c4_mail_* MCP tools.
-func Register(reg *mcp.Registry, ms *mailbox.MailStore) {
+// router is optional: when non-nil, c4_mail_send also posts to c1_messages (sender_type=agent).
+func Register(reg *mcp.Registry, ms *mailbox.MailStore, router *chat.Router) {
 	// c4_mail_send — send a message to a session
 	reg.Register(mcp.ToolSchema{
 		Name:        "c4_mail_send",
@@ -58,6 +60,14 @@ func Register(reg *mcp.Registry, ms *mailbox.MailStore) {
 		id, createdAt, err := ms.Send(args.From, args.To, args.Subject, args.Body, "")
 		if err != nil {
 			return nil, err
+		}
+		// Mirror to c1_messages (best-effort; errors do not fail the tool call).
+		if router != nil {
+			text := args.Body
+			if args.Subject != "" {
+				text = args.Subject + "\n" + args.Body
+			}
+			_ = router.Post("agent", text)
 		}
 		return map[string]any{
 			"id":         id,

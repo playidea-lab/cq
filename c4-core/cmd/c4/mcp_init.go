@@ -11,6 +11,7 @@ import (
 	"github.com/joho/godotenv"
 
 	"github.com/changmin/c4-core/internal/bridge"
+	"github.com/changmin/c4-core/internal/chat"
 	"github.com/changmin/c4-core/internal/cloud"
 	"github.com/changmin/c4-core/internal/config"
 	"github.com/changmin/c4-core/internal/eventbus"
@@ -345,8 +346,29 @@ func newMCPServer() (*mcpServer, error) {
 		handlers.RegisterSecretHandlers(reg, ctx.secretStore)
 	}
 
+	// Build chat router (best-effort): mirrors c4_notify / c4_mail_send to c1_messages.
+	// Requires CQ_CHAT_CHANNEL_ID env var + Supabase cloud credentials.
+	var chatRouter *chat.Router
+	if channelID := os.Getenv("CQ_CHAT_CHANNEL_ID"); channelID != "" && cfgMgr != nil {
+		cloudCfgChat := cfgMgr.GetConfig().Cloud
+		if cloudCfgChat.URL != "" && cloudCfgChat.AnonKey != "" {
+			var accessToken string
+			if cloudTP != nil {
+				accessToken = cloudTP.Token()
+			}
+			chatClient := chat.New(cloudCfgChat.URL, cloudCfgChat.AnonKey, accessToken)
+			if r, routerErr := chat.NewRouter(chatClient, channelID); routerErr == nil {
+				chatRouter = r
+				fmt.Fprintf(os.Stderr, "cq: chat router active (channel %s)\n", channelID)
+			} else {
+				fmt.Fprintf(os.Stderr, "cq: chat router init failed: %v\n", routerErr)
+			}
+		}
+	}
+	ctx.chatRouter = chatRouter
+
 	// Register notification handlers (c4_notification_set, c4_notification_get, c4_notify).
-	handlers.RegisterNotifyHandlers(reg, projectDir)
+	handlers.RegisterNotifyHandlers(reg, projectDir, chatRouter)
 
 	// Register experiment registry handlers (c4_experiment_register,
 	// c4_run_checkpoint, c4_run_complete, c4_run_should_continue).
