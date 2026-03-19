@@ -323,10 +323,10 @@ if task_count <= 3:
 
 ### 시나리오 생성
 
-기존 `.c4/specs/{slug}.md`(Phase 2.5에서 저장된 EARS spec)에 시나리오 섹션을 추가한다.
+기존 `docs/specs/{slug}.md`(Phase 2.5에서 저장된 EARS spec)에 시나리오 섹션을 추가한다.
 
 ```python
-spec_path = f".c4/specs/{feature_slug}.md"
+spec_path = f"docs/specs/{feature_slug}.md"
 spec_content = c4_read_file(path=spec_path)
 
 # idea.md가 있으면 시나리오 힌트로 활용

@@ -51,7 +51,7 @@ completion_criteria = {
 
 ## Output
 
-Save to `.c4/specs/{feature}/interview.md`. See `references/spec-template.md` for format.
+Save to `docs/specs/{feature}/interview.md`. See `references/spec-template.md` for format.
 
 ## Integration with C4 Workflow
 

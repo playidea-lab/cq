@@ -163,11 +163,28 @@ func makeTransitionHandler(store Store, from, to string) mcp.HandlerFunc {
 	}
 }
 
-// Document helpers — store specs/designs as files in .c4/specs/ and .c4/designs/
+// Document helpers — specs in docs/specs/ (git-tracked), designs in .c4/designs/ (local)
 
 type saveDocArgs struct {
 	Name    string `json:"name"`
 	Content string `json:"content"`
+}
+
+// docDir returns the directory for a given docType.
+// "specs" → docs/specs/ (git-tracked), others → .c4/{docType}/ (local).
+func docDir(rootDir, docType string) string {
+	if docType == "specs" {
+		return filepath.Join(rootDir, "docs", "specs")
+	}
+	return filepath.Join(rootDir, ".c4", docType)
+}
+
+// docRelPath returns the relative path for display/response.
+func docRelPath(docType, name string) string {
+	if docType == "specs" {
+		return filepath.Join("docs", "specs", name+".md")
+	}
+	return filepath.Join(".c4", docType, name+".md")
 }
 
 func handleSaveDoc(rootDir, docType string, rawArgs json.RawMessage) (any, error) {
@@ -176,7 +193,7 @@ func handleSaveDoc(rootDir, docType string, rawArgs json.RawMessage) (any, error
 		return nil, fmt.Errorf("parsing arguments: %w", err)
 	}
 
-	dir := filepath.Join(rootDir, ".c4", docType)
+	dir := docDir(rootDir, docType)
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return nil, fmt.Errorf("creating directory: %w", err)
 	}
@@ -188,7 +205,7 @@ func handleSaveDoc(rootDir, docType string, rawArgs json.RawMessage) (any, error
 
 	return map[string]any{
 		"success": true,
-		"path":    filepath.Join(".c4", docType, args.Name+".md"),
+		"path":    docRelPath(docType, args.Name),
 	}, nil
 }
 
@@ -202,10 +219,20 @@ func handleGetDoc(rootDir, docType string, rawArgs json.RawMessage) (any, error)
 		return nil, fmt.Errorf("parsing arguments: %w", err)
 	}
 
-	path := filepath.Join(rootDir, ".c4", docType, args.Name+".md")
+	path := filepath.Join(docDir(rootDir, docType), args.Name+".md")
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
+			// Fallback: check legacy .c4/specs/ path for backward compatibility
+			if docType == "specs" {
+				legacyPath := filepath.Join(rootDir, ".c4", "specs", args.Name+".md")
+				if legacyData, legacyErr := os.ReadFile(legacyPath); legacyErr == nil {
+					return map[string]any{
+						"name":    args.Name,
+						"content": string(legacyData),
+					}, nil
+				}
+			}
 			return map[string]any{
 				"error": fmt.Sprintf("%s '%s' not found", docType, args.Name),
 			}, nil
@@ -220,7 +247,7 @@ func handleGetDoc(rootDir, docType string, rawArgs json.RawMessage) (any, error)
 }
 
 func handleListDocs(rootDir, docType string) (any, error) {
-	dir := filepath.Join(rootDir, ".c4", docType)
+	dir := docDir(rootDir, docType)
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		if os.IsNotExist(err) {

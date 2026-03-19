@@ -90,7 +90,7 @@ Python 변경 시: `uv run pytest tests/ -x`. C5 변경 시: `cd c5 && go test .
 ```python
 # 현재 feature의 spec 파일 탐색
 import glob
-spec_files = glob.glob(".c4/specs/*.md")
+spec_files = glob.glob("docs/specs/*.md")
 specs_with_scenarios = []
 for sf in spec_files:
     content = c4_read_file(path=sf)

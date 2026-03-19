@@ -1,6 +1,6 @@
 # Interview Spec Output Format
 
-Save to: `.c4/specs/{feature}/interview.md`
+Save to: `docs/specs/{feature}/interview.md`
 
 ```markdown
 # {Feature} Interview Spec
