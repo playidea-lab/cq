@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -12,8 +11,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/changmin/c4-core/internal/chat"
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/changmin/c4-core/internal/c1push"
+	"github.com/changmin/c4-core/internal/chat"
 	"github.com/spf13/cobra"
 )
 
@@ -24,9 +24,10 @@ var chatCmd = &cobra.Command{
 
 If no channel name is given, defaults to "general".
 
-Special commands:
-  /sessions   List available chat channels
-  /quit       Exit the chat`,
+Keyboard shortcuts:
+  /sessions   List and switch channels
+  /quit       Exit (or Ctrl+C / Esc)
+  PgUp/PgDn   Scroll history`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: runChat,
 }
@@ -58,13 +59,6 @@ func runChat(cmd *cobra.Command, args []string) error {
 	}
 
 	accessToken := session.AccessToken
-	userName := session.User.Email
-	if userName == "" {
-		userName = session.User.Name
-	}
-	if userName == "" {
-		userName = "user"
-	}
 
 	// 2. Resolve channel name
 	channelName := "general"
@@ -86,68 +80,113 @@ func runChat(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("channel %q not found and could not be created", channelName)
 	}
 
-	fmt.Printf("Joined #%s (id: %s)\n", channelName, channelID)
-	fmt.Println("Type /sessions to list channels, /quit to exit.")
-	fmt.Println(strings.Repeat("─", 60))
+	// 4. Run bubbletea TUI (handles realtime subscribe + send internally)
+	return runTUI(ctx, supabaseURL, anonKey, accessToken, channelID, channelName)
+}
 
-	// 4. Subscribe to real-time messages
+// runTUI wires up the bubbletea TUI with the realtime chat client.
+// Side effects (send, channel switch) are handled in a pump goroutine.
+func runTUI(
+	ctx context.Context,
+	supabaseURL, anonKey, accessToken string,
+	channelID, channelName string,
+) error {
+	sendCh := make(chan string, 16)
+	switchCh := make(chan chat.ChannelSwitchedMsg, 4)
+
+	model := &sideEffectModel{
+		inner:    chat.NewTUIModel(channelID, channelName),
+		sendCh:   sendCh,
+		switchCh: switchCh,
+	}
+	p := tea.NewProgram(model, tea.WithAltScreen(), tea.WithMouseCellMotion())
+
+	// Subscribe to realtime
 	chatClient := chat.New(supabaseURL, anonKey, accessToken)
 	chatClient.Subscribe(
 		fmt.Sprintf("channel_id=eq.%s", channelID),
-		func(msg chat.Message) {
-			ts := formatChatTime(msg.CreatedAt)
-			fmt.Printf("\r[%s] %s: %s\n> ", ts, msg.SenderName, msg.Content)
-		},
+		func(msg chat.Message) { p.Send(chat.IncomingMsg(msg)) },
 	)
 	if err := chatClient.Connect(ctx); err != nil {
 		return fmt.Errorf("connecting to realtime: %w", err)
 	}
 	defer chatClient.Close()
 
-	// 5. Readline loop
-	scanner := bufio.NewScanner(os.Stdin)
-	fmt.Print("> ")
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-
-		switch {
-		case line == "/quit" || line == "/exit":
-			fmt.Println("Bye!")
-			return nil
-
-		case line == "/sessions":
-			sessions, listErr := listChatChannels(supabaseURL, anonKey, accessToken)
-			if listErr != nil {
-				fmt.Fprintf(os.Stderr, "error listing sessions: %v\n", listErr)
-			} else if len(sessions) == 0 {
-				fmt.Println("(no channels found)")
-			} else {
-				fmt.Println("Available channels:")
-				for _, s := range sessions {
-					marker := " "
-					if s.ID == channelID {
-						marker = "*"
-					}
-					fmt.Printf("  %s #%s (%s)\n", marker, s.Name, s.ID)
-				}
+	// Preload channel list
+	go func() {
+		channels, listErr := listChatChannels(supabaseURL, anonKey, accessToken)
+		if listErr == nil {
+			msgs := make(chat.ChannelListMsg, len(channels))
+			for i, ch := range channels {
+				msgs[i] = chat.ChatChannel(ch.ID, ch.Name)
 			}
+			p.Send(msgs)
+		}
+	}()
 
-		case line == "":
-			// skip empty input
-
-		default:
-			sendCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-			sendErr := chatClient.SendMessage(sendCtx, channelID, line, "user")
-			cancel()
-			if sendErr != nil {
-				fmt.Fprintf(os.Stderr, "send error: %v\n", sendErr)
+	// Pump: handle outbound messages and channel switches
+	go func() {
+		currentChannelID := channelID
+		currentClient := chatClient
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case content := <-sendCh:
+				sendCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+				if err := currentClient.SendMessage(sendCtx, currentChannelID, content, "user"); err != nil {
+					p.Send(chat.ErrorMsg{Err: err})
+				}
+				cancel()
+			case sw := <-switchCh:
+				currentChannelID = sw.ChannelID
+				currentClient.Close()
+				nc := chat.New(supabaseURL, anonKey, accessToken)
+				nc.Subscribe(
+					fmt.Sprintf("channel_id=eq.%s", sw.ChannelID),
+					func(msg chat.Message) { p.Send(chat.IncomingMsg(msg)) },
+				)
+				if err := nc.Connect(ctx); err != nil {
+					p.Send(chat.ErrorMsg{Err: fmt.Errorf("realtime: %w", err)})
+					return
+				}
+				currentClient = nc
 			}
 		}
+	}()
 
-		fmt.Print("> ")
-	}
-	return scanner.Err()
+	_, err := p.Run()
+	return err
 }
+
+// sideEffectModel wraps TUIModel to intercept SendRequestMsg / ChannelSwitchedMsg.
+type sideEffectModel struct {
+	inner    chat.TUIModel
+	sendCh   chan<- string
+	switchCh chan<- chat.ChannelSwitchedMsg
+}
+
+func (s *sideEffectModel) Init() tea.Cmd { return s.inner.Init() }
+
+func (s *sideEffectModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch m := msg.(type) {
+	case chat.SendRequestMsg:
+		select {
+		case s.sendCh <- m.Content:
+		default:
+		}
+	case chat.ChannelSwitchedMsg:
+		select {
+		case s.switchCh <- m:
+		default:
+		}
+	}
+	newInner, cmd := s.inner.Update(msg)
+	s.inner = newInner.(chat.TUIModel)
+	return s, cmd
+}
+
+func (s *sideEffectModel) View() string { return s.inner.View() }
 
 // chatChannelRow is a minimal row from c1_channels.
 type chatChannelRow struct {
@@ -190,20 +229,4 @@ func listChatChannels(supabaseURL, anonKey, accessToken string) ([]chatChannelRo
 		return nil, err
 	}
 	return rows, nil
-}
-
-// formatChatTime formats an ISO 8601 timestamp for display.
-func formatChatTime(ts string) string {
-	if ts == "" {
-		return time.Now().Format("15:04")
-	}
-	t, err := time.Parse(time.RFC3339, ts)
-	if err != nil {
-		// try without nanoseconds
-		t, err = time.Parse("2006-01-02T15:04:05", ts)
-		if err != nil {
-			return ts
-		}
-	}
-	return t.Local().Format("15:04")
 }
