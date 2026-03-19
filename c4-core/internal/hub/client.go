@@ -48,9 +48,15 @@ func NewClient(cfg HubConfig) *Client {
 		teamID = v
 	}
 
+	// Default api_prefix to "/v1" when not explicitly configured.
+	apiPrefix := strings.TrimRight(cfg.APIPrefix, "/")
+	if apiPrefix == "" {
+		apiPrefix = "/v1"
+	}
+
 	return &Client{
 		baseURL:   strings.TrimRight(cfg.URL, "/"),
-		apiPrefix: strings.TrimRight(cfg.APIPrefix, "/"),
+		apiPrefix: apiPrefix,
 		apiKey:    apiKey,
 		teamID:    teamID,
 		httpClient: &http.Client{
