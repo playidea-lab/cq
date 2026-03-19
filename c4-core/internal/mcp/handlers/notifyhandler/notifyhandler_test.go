@@ -13,7 +13,7 @@ import (
 
 func TestRegister(t *testing.T) {
 	reg := mcp.NewRegistry()
-	Register(reg, t.TempDir())
+	Register(reg, t.TempDir(), nil)
 	tools := reg.ListTools()
 	names := map[string]bool{}
 	for _, tool := range tools {
@@ -28,7 +28,7 @@ func TestRegister(t *testing.T) {
 
 func TestGetNotConfigured(t *testing.T) {
 	reg := mcp.NewRegistry()
-	Register(reg, t.TempDir())
+	Register(reg, t.TempDir(), nil)
 
 	result, err := reg.Call("c4_notification_get", nil)
 	if err != nil {
@@ -46,7 +46,7 @@ func TestGetNotConfigured(t *testing.T) {
 func TestSetAndGet(t *testing.T) {
 	reg := mcp.NewRegistry()
 	dir := t.TempDir()
-	Register(reg, dir)
+	Register(reg, dir, nil)
 
 	args, _ := json.Marshal(map[string]any{
 		"channel":     "slack",
@@ -82,7 +82,7 @@ func TestSetAndGet(t *testing.T) {
 
 func TestNotifyNoConfig(t *testing.T) {
 	reg := mcp.NewRegistry()
-	Register(reg, t.TempDir())
+	Register(reg, t.TempDir(), nil)
 
 	args, _ := json.Marshal(map[string]any{"message": "hello"})
 	_, err := reg.Call("c4_notify", args)
@@ -94,7 +94,7 @@ func TestNotifyNoConfig(t *testing.T) {
 func TestSetWithEvents(t *testing.T) {
 	reg := mcp.NewRegistry()
 	dir := t.TempDir()
-	Register(reg, dir)
+	Register(reg, dir, nil)
 
 	args, _ := json.Marshal(map[string]any{
 		"channel":     "slack",
@@ -129,7 +129,7 @@ func TestNotifyEventSkipped(t *testing.T) {
 
 	reg := mcp.NewRegistry()
 	dir := t.TempDir()
-	Register(reg, dir)
+	Register(reg, dir, nil)
 
 	setArgs, _ := json.Marshal(map[string]any{
 		"channel":     "slack",
@@ -167,7 +167,7 @@ func TestNotifyEventMatched(t *testing.T) {
 
 	reg := mcp.NewRegistry()
 	dir := t.TempDir()
-	Register(reg, dir)
+	Register(reg, dir, nil)
 
 	setArgs, _ := json.Marshal(map[string]any{
 		"channel":     "slack",
@@ -208,7 +208,7 @@ func TestNotifyTitleAndMessage(t *testing.T) {
 
 	reg := mcp.NewRegistry()
 	dir := t.TempDir()
-	Register(reg, dir)
+	Register(reg, dir, nil)
 
 	setArgs, _ := json.Marshal(map[string]any{
 		"channel":     "slack",
@@ -242,7 +242,7 @@ func TestNotifyNoEventFilter(t *testing.T) {
 
 	reg := mcp.NewRegistry()
 	dir := t.TempDir()
-	Register(reg, dir)
+	Register(reg, dir, nil)
 
 	setArgs, _ := json.Marshal(map[string]any{
 		"channel":     "slack",

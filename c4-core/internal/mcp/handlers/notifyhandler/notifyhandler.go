@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/changmin/c4-core/internal/chat"
 	"github.com/changmin/c4-core/internal/mcp"
 	"github.com/changmin/c4-core/internal/notify"
 )
@@ -67,7 +68,8 @@ func maskURL(u string) string {
 }
 
 // Register registers c4_notification_set, c4_notification_get, c4_notify.
-func Register(reg *mcp.Registry, projectDir string) {
+// router is optional: when non-nil, c4_notify also posts to c1_messages (sender_type=agent).
+func Register(reg *mcp.Registry, projectDir string, router *chat.Router) {
 	reg.Register(mcp.ToolSchema{
 		Name:        "c4_notification_set",
 		Description: "Configure a notification channel (webhook). Stores channel name, webhook URL, and optional event filter in .c4/notifications.json.",
@@ -211,6 +213,10 @@ func Register(reg *mcp.Registry, projectDir string) {
 		defer cancel()
 		if err := sender.Send(ctx, text); err != nil {
 			return nil, fmt.Errorf("webhook send failed: %w", err)
+		}
+		// Mirror to c1_messages (best-effort; errors do not fail the tool call).
+		if router != nil {
+			_ = router.Post("agent", text)
 		}
 		return map[string]any{"sent": true, "channel": cfg.Channel}, nil
 	})

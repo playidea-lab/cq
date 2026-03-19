@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"github.com/changmin/c4-core/internal/chat"
 	"github.com/changmin/c4-core/internal/config"
 	"github.com/changmin/c4-core/internal/daemon"
 	"github.com/changmin/c4-core/internal/knowledge"
@@ -153,6 +154,7 @@ func RegisterSecretHandlers(reg *mcp.Registry, store *secrets.Store) {
 }
 
 // RegisterNotifyHandlers registers c4_notification_set, c4_notification_get, c4_notify.
-func RegisterNotifyHandlers(reg *mcp.Registry, projectDir string) {
-	notifyhandler.Register(reg, projectDir)
+// router is optional: when non-nil, c4_notify also posts to c1_messages.
+func RegisterNotifyHandlers(reg *mcp.Registry, projectDir string, router *chat.Router) {
+	notifyhandler.Register(reg, projectDir, router)
 }
