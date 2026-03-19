@@ -518,6 +518,107 @@ func TestOllamaName(t *testing.T) {
 	}
 }
 
+func TestOllamaEmbed_S1_HappyPath(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/embed" {
+			t.Errorf("expected /api/embed, got %s", r.URL.Path)
+		}
+
+		var reqBody ollamaEmbedRequest
+		json.NewDecoder(r.Body).Decode(&reqBody)
+		if reqBody.Model != "nomic-embed-text" {
+			t.Errorf("model = %q, want nomic-embed-text", reqBody.Model)
+		}
+		if len(reqBody.Input) != 2 {
+			t.Fatalf("expected 2 inputs, got %d", len(reqBody.Input))
+		}
+
+		json.NewEncoder(w).Encode(map[string]any{
+			"model":      "nomic-embed-text",
+			"embeddings": [][]float32{{0.1, 0.2, 0.3}, {0.4, 0.5, 0.6}},
+		})
+	}))
+	defer server.Close()
+
+	p := NewOllamaProvider(server.URL)
+	resp, err := p.Embed(context.Background(), []string{"hello", "world"}, "nomic-embed-text")
+	if err != nil {
+		t.Fatalf("Embed() error: %v", err)
+	}
+	if len(resp.Embeddings) != 2 {
+		t.Fatalf("expected 2 embeddings, got %d", len(resp.Embeddings))
+	}
+	if len(resp.Embeddings[0]) != 3 {
+		t.Errorf("embedding dim = %d, want 3", len(resp.Embeddings[0]))
+	}
+	if resp.Model != "nomic-embed-text" {
+		t.Errorf("model = %q, want nomic-embed-text", resp.Model)
+	}
+}
+
+func TestOllamaEmbed_S2_DefaultModel(t *testing.T) {
+	var gotModel string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var reqBody ollamaEmbedRequest
+		json.NewDecoder(r.Body).Decode(&reqBody)
+		gotModel = reqBody.Model
+		json.NewEncoder(w).Encode(map[string]any{
+			"model":      reqBody.Model,
+			"embeddings": [][]float32{{0.1}},
+		})
+	}))
+	defer server.Close()
+
+	p := NewOllamaProvider(server.URL)
+	_, err := p.Embed(context.Background(), []string{"test"}, "")
+	if err != nil {
+		t.Fatalf("Embed() error: %v", err)
+	}
+	if gotModel != "nomic-embed-text" {
+		t.Errorf("default model = %q, want nomic-embed-text", gotModel)
+	}
+}
+
+func TestOllamaEmbed_S3_ServerError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "model not loaded"})
+	}))
+	defer server.Close()
+
+	p := NewOllamaProvider(server.URL)
+	_, err := p.Embed(context.Background(), []string{"test"}, "nomic-embed-text")
+	if err == nil {
+		t.Fatal("expected error for 500 response")
+	}
+	if !strings.Contains(err.Error(), "model not loaded") {
+		t.Errorf("error = %q, should contain 'model not loaded'", err.Error())
+	}
+}
+
+func TestGateway_SetRoute(t *testing.T) {
+	gw := NewGateway(RoutingTable{
+		Default: "openai",
+		Routes:  map[string]ModelRef{"default": {Provider: "openai", Model: "gpt-4o"}},
+	})
+
+	// Before SetRoute, embedding resolves to default
+	ref := gw.Resolve("embedding", "")
+	if ref.Provider != "openai" {
+		t.Errorf("before SetRoute: provider = %q, want openai", ref.Provider)
+	}
+
+	// After SetRoute, embedding resolves to ollama
+	gw.SetRoute("embedding", ModelRef{Provider: "ollama", Model: "nomic-embed-text"})
+	ref = gw.Resolve("embedding", "")
+	if ref.Provider != "ollama" {
+		t.Errorf("after SetRoute: provider = %q, want ollama", ref.Provider)
+	}
+	if ref.Model != "nomic-embed-text" {
+		t.Errorf("after SetRoute: model = %q, want nomic-embed-text", ref.Model)
+	}
+}
+
 // --- Factory Tests ---
 
 func TestNewGatewayFromConfig(t *testing.T) {
