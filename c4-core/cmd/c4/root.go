@@ -59,6 +59,10 @@ Run 'cq codex' or 'cq cursor' for other AI tools.`,
 		}
 		projectDir = absDir
 
+		// Walk up to find the best .c4 directory (prefer one with config.yaml).
+		// This handles monorepo layouts where subdirectories have .c4/ without config.
+		projectDir = findBestC4Root(projectDir)
+
 		// Verify .c4 directory exists
 		c4Dir := filepath.Join(projectDir, ".c4")
 		if _, err := os.Stat(c4Dir); os.IsNotExist(err) {
@@ -122,6 +126,37 @@ func init() {
 	rootCmd.PersistentFlags().BoolVarP(&yesAll, "yes", "y", false, "skip interactive confirmations (non-interactive/CI mode)")
 	rootCmd.PersistentFlags().BoolVar(&noServe, "no-serve", false, "skip auto-starting cq serve in background")
 	rootCmd.AddCommand(completionCmd)
+}
+
+// findBestC4Root walks up from dir to find the best project root.
+// Prefers a .c4/ directory that contains config.yaml (complete project).
+// Falls back to the first .c4/ directory found if none have config.yaml.
+// Returns the original dir if no .c4/ is found anywhere.
+func findBestC4Root(dir string) string {
+	first := "" // first dir with .c4/ (fallback)
+	cur := dir
+	for {
+		c4 := filepath.Join(cur, ".c4")
+		if info, err := os.Stat(c4); err == nil && info.IsDir() {
+			if first == "" {
+				first = cur
+			}
+			// Prefer directory with config.yaml (complete project setup)
+			cfg := filepath.Join(c4, "config.yaml")
+			if _, err := os.Stat(cfg); err == nil {
+				return cur
+			}
+		}
+		parent := filepath.Dir(cur)
+		if parent == cur {
+			break // reached filesystem root
+		}
+		cur = parent
+	}
+	if first != "" {
+		return first
+	}
+	return dir
 }
 
 // c4Dir returns the path to the .c4 directory.
