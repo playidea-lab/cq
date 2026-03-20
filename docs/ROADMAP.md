@@ -1,6 +1,6 @@
 # C4 Roadmap
 
-## Current Version: v1.3.1 (Spec Behavior Document + Worktree Tests)
+## Current Version: v1.5.0 (Chat + Worker Affinity + Ollama Embeddings)
 
 현재 버전은 **Go MCP Server (148 base + Hub 30 + Tiered 15, POP 3도구), Native Go/Dart LSP (goast/dartast), LLM Gateway (캐시 최적화), CDP Runner + WebMCP + Auto-Discovery, Cloud Foundation (CloudPrimaryStore + Session Limit), Knowledge v4 (OllamaEmbeddings + reindex + distill), C1 Unified Dashboard Messenger (HarnessWatcher + Cursor 어댑터, MessageViewer 스크롤 안정화), C3 EventBus v4, C5 Hub Server (Tenant Isolation + Dooray webhook + ExperimentStore + @key=value Protocol), Research Loop (LoopOrchestrator + GateController + StateYAMLWriter + NotifyBridge + SpecPipeline + MCP handlers + EventBus instant wake + Debate metrics injection), POP (Personal Ontology Pipeline, c4-finish 자동 주입), Persona/Soul Evolution, 36개 Skills (/pi EARS 통합 재설계), 3-layer Deprecated 스킬 강제 시스템, 프로젝트 단위 2-layer Permission Hook, bats 테스트 스위트, Named Session (gemini 지원 포함), 쉘 자동완성, OS 서비스 통합, Skill Health Pipeline (c4_skill_eval_run/status/generate), Drive Dataset Versioning (CAS), Hub secrets store 통합**를 포함합니다.
 
@@ -48,6 +48,25 @@
 ---
 
 ## 완료된 릴리즈 이력
+
+### v1.5.0 ✅ (2026-03-20)
+- **feat(chat)**: `cq chat` CLI — Supabase Realtime WebSocket + bubbletea TUI (한글 CJK) + 에이전트 메시지 실시간 수신/전송
+- **feat(chat)**: 에이전트 → 채팅 라우팅 브릿지 — c4_notify/c4_mail_send → c1_messages 자동 포스팅
+- **feat(hub)**: Worker Affinity — 이력 기반 자동 라우팅 (affinity score: project×10 + tag×3 + recency×2 + rate×5)
+- **feat(hub)**: handleLeaseAcquire affinity 기반 워커 우선 할당 + target_worker 수동 지정
+- **feat(hub)**: handleJobComplete affinity 이력 자동 갱신 (성공/실패)
+- **feat(hub)**: `cq hub workers` AFFINITY 컬럼 표시 — "hmr(10✓) cq(2✓)"
+- **feat(llm)**: Ollama 임베딩 지원 — config 기반 embedding_provider/model 라우팅 (nomic-embed-text 768d)
+- **feat(hooks)**: MCP 도구 PermissionRequest도 haiku 심사 대상으로 확장
+- **refactor(specs)**: spec 저장 경로 .c4/specs/ → docs/specs/ (git 추적)
+- **fix(skills)**: 지식 축적/재활용 갭 보충 — pi(R/W) → plan(R/W) → run(R자동) → finish(R/W)
+- **test(llm)**: Ollama Embed S1~S3 + Gateway.SetRoute 테스트
+- **feat(windows)**: 크로스 컴파일 지원 (windows/amd64 빌드 타겟)
+
+### v1.4.0 ✅ (2026-03-19)
+- **feat(c1)**: PlatformAdapter 인터페이스 + AdapterRegistry + Dooray adapter
+- **feat(c1)**: MCP Channel server + auth module (allowlist, pairing code)
+- **feat(persona)**: c4_persona_learn_from_diff — git diff 기반 자동 패턴 수집
 
 ### v1.3.1 ✅ (2026-03-17)
 - **feat(skills)**: 동작정의서 (Spec Behavior Document) — c4-plan Phase 4.95 (WHEN-THEN-VERIFY 시나리오 생성 + 에디터 열기) + c4-finish Step 3.5 (테스트↔시나리오 매핑 갱신 + 에디터 열기)
