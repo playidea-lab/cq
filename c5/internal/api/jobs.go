@@ -255,6 +255,23 @@ func (s *Server) handleJobComplete(w http.ResponseWriter, r *http.Request, jobID
 		}
 	}
 
+	// Affinity: record worker performance history (best-effort).
+	if s.affinity != nil && completedJob != nil && completedJob.ProjectID != "" && completedJob.WorkerID != "" {
+		if status == model.StatusSucceeded {
+			tags := completedJob.Tags
+			if tags == nil {
+				tags = []string{}
+			}
+			if err := s.affinity.RecordSuccess(completedJob.WorkerID, completedJob.ProjectID, tags); err != nil {
+				log.Printf("c5: affinity record success job=%s worker=%s: %v", jobID, completedJob.WorkerID, err)
+			}
+		} else if status == model.StatusFailed {
+			if err := s.affinity.RecordFailure(completedJob.WorkerID, completedJob.ProjectID); err != nil {
+				log.Printf("c5: affinity record failure job=%s worker=%s: %v", jobID, completedJob.WorkerID, err)
+			}
+		}
+	}
+
 	// Dooray completion notification (no-op if job was not from Dooray).
 	s.notifyDoorayJobComplete(completedJob, status, exitCode)
 

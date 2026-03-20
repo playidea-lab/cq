@@ -17,6 +17,7 @@ import (
 
 	"crypto/sha256"
 
+	"github.com/piqsol/c4/c5/internal/affinity"
 	"github.com/piqsol/c4/c5/internal/auth"
 	"github.com/piqsol/c4/c5/internal/conversation"
 	"github.com/piqsol/c4/c5/internal/eventpub"
@@ -36,6 +37,7 @@ type DoorayChannel struct {
 // Server is the C5 HTTP API server.
 type Server struct {
 	store       *store.Store
+	affinity    *affinity.Store
 	storage     storage.Backend
 	estimator   *Estimator
 	startTime   time.Time
@@ -89,6 +91,7 @@ type Server struct {
 // Config holds server configuration.
 type Config struct {
 	Store            *store.Store
+	Affinity         *affinity.Store // nil = affinity tracking disabled
 	Storage          storage.Backend // if nil, auto-detected from env
 	Version          string
 	APIKey           string // if non-empty, X-API-Key header is required
@@ -125,6 +128,7 @@ func NewServer(cfg Config) *Server {
 
 	s := &Server{
 		store:            cfg.Store,
+		affinity:         cfg.Affinity,
 		storage:          stor,
 		estimator:        NewEstimator(cfg.Store),
 		startTime:        time.Now(),
