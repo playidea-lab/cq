@@ -97,6 +97,7 @@ func (d *DoorayChannelComponent) AckMessage(id string) {
 }
 
 // runLoop maintains a persistent WS connection with exponential backoff reconnect.
+// Backoff resets to 1s after a successful connection (dial succeeded + readLoop ran).
 func (d *DoorayChannelComponent) runLoop(ctx context.Context) {
 	backoff := time.Second
 	const maxBackoff = 30 * time.Second
@@ -108,6 +109,9 @@ func (d *DoorayChannelComponent) runLoop(ctx context.Context) {
 		}
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "cq serve: dooray-channel: disconnected (%v), reconnect in %s\n", err, backoff)
+		} else {
+			// connect() returned nil: dial succeeded and readLoop ran; reset backoff.
+			backoff = time.Second
 		}
 
 		select {
