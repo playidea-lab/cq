@@ -58,6 +58,93 @@ pnpm test                    # Vitest (frontend)
 cd src-tauri && cargo test   # Cargo (backend)
 ```
 
+## Channel Adapter (Dooray Messenger)
+
+`c1/` 에는 Dooray Messenger를 Claude Code에 연결하는 MCP Channel 서버가 포함되어 있습니다.
+Dooray 웹훅 → Claude 알림 → reply 도구로 응답하는 양방향 채팅 브릿지입니다.
+
+### 설치
+
+```bash
+# Bun 필요 (https://bun.sh)
+bun install   # c1/ 디렉토리에서 실행
+```
+
+### 환경 변수 설정
+
+`.env` 파일 또는 셸 환경 변수로 설정합니다.
+
+| 변수 | 설명 | 기본값 |
+|------|------|--------|
+| `DOORAY_BOT_TOKEN` | Dooray REST API Bearer 토큰 | (필수) |
+| `DOORAY_TENANT_ID` | Dooray 테넌트 ID | (필수) |
+| `DOORAY_API_URL` | Dooray API Base URL | `https://api.dooray.com` |
+| `DOORAY_LISTEN_PORT` | 로컬 웹훅 수신 포트 | `9981` |
+
+```bash
+export DOORAY_BOT_TOKEN="dooray-api xxxxxxxx"
+export DOORAY_TENANT_ID="my-tenant"
+# 선택 사항
+export DOORAY_API_URL="https://api.dooray.com"
+export DOORAY_LISTEN_PORT="9981"
+```
+
+### Claude Code에 연결 (--channels 옵션)
+
+`claude --channels` 플래그로 MCP Channel 서버를 등록한 뒤 실행합니다.
+
+```bash
+# 1. 웹훅 서버 + MCP Channel 서버를 stdio로 기동
+bun run c1/index.ts &
+
+# 2. Claude Code에 MCP 서버 등록 후 실행
+claude --mcp-server "bun run c1/index.ts" --channels
+
+# 또는 .mcp.json 으로 영구 등록
+cat > .mcp.json <<'EOF'
+{
+  "mcpServers": {
+    "dooray": {
+      "command": "bun",
+      "args": ["run", "c1/index.ts"],
+      "env": {
+        "DOORAY_BOT_TOKEN": "${DOORAY_BOT_TOKEN}",
+        "DOORAY_TENANT_ID": "${DOORAY_TENANT_ID}"
+      }
+    }
+  }
+}
+EOF
+claude
+```
+
+### Dooray 웹훅 설정
+
+Dooray 관리자 콘솔에서 **Outgoing Webhook**을 생성하고 URL을 지정합니다.
+
+```
+Webhook URL: http://<your-server-ip>:9981/
+```
+
+이후 채널에서 메시지를 보내면 Claude Code가 알림을 수신하고, `reply` 도구로 응답합니다.
+
+### 테스트
+
+```bash
+# 유닛 테스트
+bun test c1/core/adapter.test.ts
+bun test c1/core/channel.test.ts
+bun test c1/adapters/dooray/dooray.test.ts
+
+# 통합 테스트 (네트워크 불필요, 전체 플로우 검증)
+bun test c1/integration.test.ts
+
+# 수동 테스트 — 로컬 웹훅 POST 시뮬레이션
+curl -X POST http://localhost:9981/ \
+  -H "Content-Type: application/json" \
+  -d '{"channelId":"ch-123","senderId":"alice","text":"hello from curl"}'
+```
+
 ## 환경 변수
 
 Team/Cloud 기능 사용 시 프로젝트 루트 `.env`에 설정:
