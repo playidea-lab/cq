@@ -5,6 +5,87 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v1.4.0] - 2026-03-20
+
+### ✨ Features
+
+- **chat**: `cq chat` TUI — Supabase Realtime WebSocket + bubbletea 한글 CJK 지원 + 채널 전환 (f2a5cf50, 7f143bec, 96cec2b5)
+- **chat**: 에이전트 메시지 → c1_messages 라우팅 브릿지 (f1b741b9)
+- **persona**: `c4_persona_learn_from_diff` — git diff 기반 자동 코딩 패턴 수집 (0889aec6)
+  - `/c4-finish` Step 7.6에서 자동 호출, 설치된 유저도 별도 설정 없이 동작
+- **llm**: Ollama 임베딩 지원 + config 기반 embedding provider 라우팅 (3c156777)
+- **hooks**: MCP 도구 PermissionRequest도 haiku 심사 대상으로 확장 (c5c35cf0)
+- **session**: `cq claude -t <name>` 새 세션 생성 시 확인 메시지 (b5f78f0d)
+- **windows**: 크로스 컴파일 지원 — platform-specific syscall 분리 (5ba86b07, 67c433c1, a03ce176, 5b7f61ae, dcbf903a)
+- **ci**: Windows/amd64 빌드 타겟 추가 (2c590c0b)
+- **install**: Windows 감지 + WSL2/GitHub Release 안내 (215b99a2)
+
+### 🐛 Bug Fixes
+
+- **hub**: api_prefix 기본값 "/v1" — config 미설정 시 404 방지 (10f2e324)
+- **skills**: 지식 축적/재활용 갭 3건 보충 (b3956f73)
+- **permission**: hook auto-allow + session dir guard (863f5853)
+
+### ♻️ Refactoring
+
+- **specs**: spec 저장 경로 `.c4/specs/` → `docs/specs/` (git 추적) (a4ed095a)
+
+### 🧪 Tests
+
+- **llm**: Ollama Embed S1~S3 + Gateway.SetRoute 테스트 (3f14f844)
+
+### 📚 Documentation
+
+- GitHub Pages — Behavior Spec 홈페이지 + quickstart 섹션 (2e14689b)
+- GitHub README — 버전 배지 + Behavior Spec 워크플로우 (465e683f)
+
+---
+
+## [v1.3.1] - 2026-03-17
+
+### ✨ Features
+
+- **skills**: 동작정의서 — c4-plan Phase 4.95 + c4-finish Step 3.5 (3f795966)
+- **skills**: 수정 감지 + 연쇄 갱신 + 종료 판단 로직 추가 (496f0db3)
+
+### 🧪 Tests
+
+- **worktree**: S3 merge 충돌 + S4 HEAD≠main 시나리오 테스트 (fc33bb99)
+
+---
+
+## [v1.3.0] - 2026-03-16
+
+### ✨ Features
+
+- **research**: LoopOrchestrator + C9 통합 Phase 1 — 자율 연구 엔진 (c215f76d, c78ffdd1)
+  - ConvergenceChecker (threshold + patience + lower_is_better)
+  - state.yaml phase/state 통합, Hub reasoning 잡 분기
+  - convergence config + MCP 파라미터 확장 (35d225b6, 9026e86c)
+- **config**: global config 2-tier merge + permission hook auto-allow (c5613f18)
+
+### 🐛 Bug Fixes
+
+- **c4**: worktree auto-merge에 HEAD≠defaultBranch 가드 추가 (1780b306)
+- **c4**: worktree auto-cleanup 시 branch merge 누락 수정 (bc3f22e7)
+- **c4**: c4_get_task session_id 필터 제거 — 크로스세션 태스크 할당 허용 (d5f4d491)
+
+### ♻️ Refactoring
+
+- **serve**: cmd/c4/ serve 컴포넌트 6개를 internal/serve/로 이동 (4deec4f4)
+- **skills**: skill-creator compliance + deprecated removal (067ffab2)
+
+### 📚 Documentation
+
+- **agents**: AGENTS.md + claude_md.tmpl 컨텍스트 다이어트 (-69%) (a214beb5)
+- Feature Discovery 섹션 + 기능 의사결정 매트릭스 (eb512d72)
+
+### 🔧 Polish
+
+- /simplify 리뷰 — adapter 중복 제거 + ctx 순서 + merge 최적화 (47e21f3d)
+
+---
+
 ## [v1.2.0] - 2026-03-13
 
 ### ✨ Features
