@@ -35,6 +35,18 @@ func (s *Server) handleJobSubmit(w http.ResponseWriter, r *http.Request) {
 		req.SubmittedBy = pid
 	}
 
+	// Auto-detect GPU requirement from command keywords.
+	if !req.RequiresGPU {
+		cmd := strings.ToLower(req.Command)
+		for _, kw := range []string{"torch", "cuda", "nvidia", "gpu", "train", "finetune", "pretrain"} {
+			if strings.Contains(cmd, kw) {
+				req.RequiresGPU = true
+				log.Printf("c5: auto-detected requires_gpu=true for job %q (keyword: %s)", req.Name, kw)
+				break
+			}
+		}
+	}
+
 	job, err := s.store.CreateJob(req)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
