@@ -7,6 +7,7 @@ description: |
   initialization issues, or start fresh. Triggers: "초기화", "상태 리셋",
   "전체 삭제", "clear c4 state", "reset c4", "delete all tasks",
   "start c4 fresh".
+allowed-tools: Bash, mcp__cq__*
 ---
 
 # C4 Clear (Development)

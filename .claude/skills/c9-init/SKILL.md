@@ -4,6 +4,7 @@ description: |
   C9 연구 루프를 위한 새 프로젝트를 초기화합니다. state.yaml과 필수 디렉토리를 생성하고,
   Hub URL, 메트릭, 수렴 조건 등을 대화형으로 설정합니다.
   트리거: "c9-init", "c9 초기화", "연구 루프 초기화", "c9 시작", "init c9"
+allowed-tools: Bash, Write, mcp__cq__*
 ---
 
 # C9 Init — 연구 루프 초기화

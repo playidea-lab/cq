@@ -8,6 +8,7 @@ description: |
   auto-judge review spawning. Triggers: "팀 협업", "스웜", "병렬 팀 실행",
   "swarm mode", "spawn team", "parallel workers with communication",
   "team collaboration", "coordinate agents".
+allowed-tools: Agent, mcp__cq__*
 ---
 
 # C4 Swarm — Agent Teams Parallel Collaboration

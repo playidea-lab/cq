@@ -5,6 +5,7 @@ description: |
   automatically resumes with the same session UUID after exit.
   Only works when launched via `cq claude -t <name>`.
   Triggers: "reboot", "재시작", "세션 재시작", "/reboot", "restart session".
+allowed-tools: Bash
 ---
 
 # C4 Reboot
@@ -40,12 +41,8 @@ echo "SESSION: ${CQ_SESSION_NAME:-<unnamed>} / UUID: ${CQ_SESSION_UUID:-<unknown
 echo "${CQ_SESSION_UUID:-}" > ~/.c4/.reboot && echo "rebooting session '${CQ_SESSION_NAME}' (${CQ_SESSION_UUID})..."
 ```
 
-`.reboot` 파일에 UUID를 기록합니다. `cq` 부모 프로세스가 Claude Code 종료 후
-파일에서 UUID를 읽어 `claude --resume <uuid>`를 실행합니다.
+`.reboot` 파일에 UUID를 기록합니다. `cq` 부모 프로세스가 2초 간격으로
+`.reboot` 파일을 감시하고 있으며, 감지되면 Claude Code에 자동으로
+interrupt 신호를 보내 종료합니다. 이후 동일 UUID로 재시작합니다.
 
-위 명령 실행 후 **반드시 `/exit`을 호출**하여 Claude Code를 종료합니다.
-`kill`로 프로세스를 종료하면 PID 불일치로 잘못된 프로세스가 종료될 수 있습니다.
-
-```
-/exit
-```
+위 명령 실행 후 **아무것도 하지 않아도 됩니다** — cq가 자동으로 처리합니다.

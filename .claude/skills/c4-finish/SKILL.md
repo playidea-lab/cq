@@ -6,6 +6,7 @@ description: |
   recording → commit. Polish loop is built-in — no separate /c4-polish needed.
   Triggers: "마무리", "완료 루틴", "구현 마무리", "finish", "c4-finish", "wrap up",
   "finalize", "complete implementation", "post-implementation".
+allowed-tools: Read, Edit, Write, Bash, Agent, Glob, Grep, Skill, mcp__cq__*
 ---
 
 # C4 Finish Routine

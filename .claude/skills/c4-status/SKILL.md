@@ -8,6 +8,8 @@ description: |
   dependency graphs, or check what tasks are ready to start. Triggers:
   "상태 확인", "진행 상황", "현황", "show status", "project status",
   "task progress", "what's ready".
+allowed-tools: mcp__cq__*
+context: fork
 ---
 
 # C4 Project Status

@@ -4,6 +4,7 @@ description: |
   C9 연구 루프 조종. c4_research_intervene MCP 도구 래핑.
   트리거: "c9-steer", "/c9-steer", "방향 바꿔", "phase 전환", "스티어",
   "steer loop", "change direction"
+allowed-tools: mcp__cq__*
 ---
 
 # C9 Steer — 연구 루프 조종

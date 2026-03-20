@@ -8,6 +8,7 @@ description: |
   generate changelog, or prepare version tags. Triggers: "릴리스", "변경 로그",
   "버전 태그", "create release", "generate changelog", "release notes",
   "prepare version".
+allowed-tools: Bash(git *), Read, mcp__cq__*
 ---
 
 # C4 Release - Changelog Generator

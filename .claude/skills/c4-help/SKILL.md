@@ -7,6 +7,8 @@ description: |
   skill list, or wants to search C4 capabilities. Triggers: "도움말",
   "명령어 목록", "도구 검색", "help", "list commands", "show agents",
   "what tools", "how to".
+allowed-tools: Read, Glob, Grep, mcp__cq__*
+context: fork
 ---
 
 # C4 Help

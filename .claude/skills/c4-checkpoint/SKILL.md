@@ -7,6 +7,7 @@ description: |
   review work before proceeding. Triggers: "체크포인트", "검토 승인", "중간 리뷰",
   "/c4-checkpoint", "review checkpoint", "approve checkpoint",
   "request changes at checkpoint".
+allowed-tools: Read, Glob, Grep, Agent, mcp__cq__*
 ---
 
 # C4 Checkpoint Review

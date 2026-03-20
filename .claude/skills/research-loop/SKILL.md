@@ -8,6 +8,7 @@ description: |
   research papers with experiment validation. Triggers: "연구 반복", "실험 루프",
   "논문 개선", "research loop", "iterate on paper", "experiment loop",
   "improve research", "paper quality loop".
+allowed-tools: Read, Bash, Agent, mcp__cq__*
 ---
 
 # Research Loop: Paper-Experiment Iteration Tracker

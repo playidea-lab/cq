@@ -7,6 +7,7 @@ description: |
   DoD criteria when requirements are vague. Use when the user wants to add a task,
   create a work item, or plan a feature. Triggers: "태스크 추가", "작업 추가",
   "할 일 생성", "add task", "create task", "add work item", "plan feature".
+allowed-tools: mcp__cq__*
 ---
 
 # C4 Add Task

@@ -7,6 +7,7 @@ description: |
   idea.md를 생성하고 /c4-plan을 직접 호출한다.
   Triggers: "/pi", "play idea", "아이디어 탐색", "ideation",
   "기획 토론", "뭔가 만들고 싶은데", "이런 거 어때", "브레인스토밍".
+allowed-tools: Read, Glob, Grep, WebSearch, WebFetch, mcp__cq__*
 ---
 
 # /pi — Play Idea

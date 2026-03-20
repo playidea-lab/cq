@@ -7,6 +7,7 @@ description: |
   quickly start working on a task without going through full planning. Triggers:
   "빠른 시작", "바로 실행", "즉시 태스크", "quick start", "start task quickly",
   "/c4-quick", "create and assign task".
+allowed-tools: Read, Edit, Write, Bash, Agent, mcp__cq__*
 ---
 
 # C4 Quick Start

@@ -3,6 +3,9 @@ name: c9-survey
 description: |
   C9 연구 서베이. 관련 논문과 방법론을 조사하여 연구 방향을 탐색합니다.
   트리거: "c9-survey", "서베이", "문헌 조사", "survey", "literature review"
+allowed-tools: Read, WebSearch, WebFetch, mcp__cq__*
+context: fork
+agent: Explore
 ---
 # C9 Survey
 

@@ -6,6 +6,7 @@ description: |
   the user wants to set up C4 for a new project or re-initialize after clearing.
   Triggers: "C4 초기화", "프로젝트 설정", "init c4", "initialize project",
   "set up c4".
+allowed-tools: Bash(cq *), mcp__cq__*
 ---
 
 # C4 Project Initialization

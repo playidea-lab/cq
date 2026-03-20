@@ -7,6 +7,7 @@ description: |
   requirements refinement, or discovering implicit assumptions. Triggers:
   "인터뷰", "요구사항 탐색", "심층 질문", "interview requirements",
   "discover requirements", "explore feature needs".
+allowed-tools: Read, Glob, Grep, mcp__cq__*
 ---
 
 # C4 Interview - Deep Exploratory Requirements Interview

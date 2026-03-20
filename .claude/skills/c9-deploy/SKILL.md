@@ -3,6 +3,7 @@ name: c9-deploy
 description: |
   C9 연구 완료 후 모델을 배포합니다.
   트리거: "c9-deploy", "모델 배포", "deploy model"
+allowed-tools: Bash, mcp__cq__*
 ---
 # C9 Deploy
 

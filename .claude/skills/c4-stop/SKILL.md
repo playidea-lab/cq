@@ -6,6 +6,7 @@ description: |
   to pause or stop an active C4 execution workflow. Stopping preserves progress and
   allows resumption with /c4-run. Triggers: "중지", "실행 멈춤", "일시 정지",
   "stop execution", "halt C4", "pause project", "stop C4".
+allowed-tools: mcp__cq__*
 ---
 
 # C4 Stop Execution

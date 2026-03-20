@@ -6,6 +6,7 @@ description: |
   and triggers checkpoint reviews when needed. Use when task implementation is done.
   Triggers: "제출", "태스크 제출", "작업 완료", "submit task", "complete task",
   "submit T-XXX", "/c4-submit".
+allowed-tools: Bash, mcp__cq__*
 ---
 
 # C4 Submit Task

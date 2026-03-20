@@ -8,6 +8,7 @@ description: |
   Use for in-depth reviews requiring equation verification or detailed technical
   analysis. Triggers: "리뷰 작성", "상세 논문 리뷰", "6축 리뷰", "수식 검증 리뷰",
   "academic review", "/c4-review". For quick reviews, use /c2-paper-review.
+allowed-tools: Read, Glob, Grep, Write, mcp__cq__*
 ---
 
 # c4-review: Academic Paper Review (c2 Lifecycle)

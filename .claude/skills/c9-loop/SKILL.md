@@ -3,6 +3,7 @@ name: c9-loop
 description: |
   C9 연구 루프 시작 + 상태 조회. LoopOrchestrator(Go)가 자율 실행.
   트리거: "c9-loop", "루프 시작", "다음 단계", "연구 루프", "loop start"
+allowed-tools: mcp__cq__*
 ---
 
 # C9 Loop — 연구 루프 시작 + 모니터링

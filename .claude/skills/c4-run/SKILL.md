@@ -6,6 +6,7 @@ description: |
   graph, spawns workers with fresh context isolation (one task per worker).
   Use when ready to execute C4 tasks. Triggers: "실행", "워커 실행", "태스크 실행",
   "run tasks", "execute plan", "spawn workers", "start implementation", "/c4-run".
+allowed-tools: Agent, Bash(cq *), mcp__cq__*
 ---
 
 # C4 Run — Continuous Auto Worker Spawner

@@ -6,6 +6,7 @@ description: |
   Optionally adds a short memo describing the session's purpose.
   Triggers: "세션 이름 붙여", "이 세션에 이름", "attach", "name this session",
   "session name", "/c4-attach".
+allowed-tools: Bash(cq *)
 ---
 
 # C4 Attach

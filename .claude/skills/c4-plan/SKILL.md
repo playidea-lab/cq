@@ -9,6 +9,7 @@ description: |
   implementation tasks. Triggers: "계획 수립", "기능 설계", "태스크 분해",
   "plan this feature", "create implementation plan", "design this",
   "break down requirements", "set up tasks".
+allowed-tools: Read, Glob, Grep, Agent, Skill, mcp__cq__*
 ---
 
 # C4 Plan Mode

@@ -8,6 +8,8 @@ description: |
   code before commits, running pre-merge checks, or security audits. Triggers:
   "검증", "테스트 실행", "린트 검사", "validate", "run validations",
   "check security", "lint and test".
+allowed-tools: Bash, mcp__cq__*
+context: fork
 ---
 
 # C4 Run Validations

@@ -3,6 +3,7 @@ name: c9-conference
 description: |
   C9 연구 루프 CONFERENCE phase. 실험 설계를 위한 토론을 진행합니다.
   트리거: "c9-conference", "실험 설계", "토론", "conference"
+allowed-tools: Read, WebSearch, mcp__cq__*
 ---
 # C9 Conference
 

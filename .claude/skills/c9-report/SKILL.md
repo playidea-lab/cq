@@ -3,6 +3,7 @@ name: c9-report
 description: |
   C9 연구 루프 진행 보고서를 생성합니다.
   트리거: "c9-report", "연구 보고서", "진행 리포트", "research report"
+allowed-tools: Read, Glob, Grep, mcp__cq__*
 ---
 # C9 Report
 
