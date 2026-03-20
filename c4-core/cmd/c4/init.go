@@ -753,7 +753,8 @@ func patchProjectSettings(projectDir string) error {
 	if arr, ok := allowRaw.([]any); ok {
 		allowList = arr
 	}
-	for _, tool := range []string{"Read", "Glob", "Grep", "WebFetch", "WebSearch"} {
+	for _, tool := range []string{"Read", "Glob", "Grep", "WebFetch", "WebSearch",
+		"Skill(c4-*)", "Skill(c9-*)", "Skill(pi)", "Skill(research-loop)", "mcp__cq__*"} {
 		found := false
 		for _, v := range allowList {
 			if s, ok := v.(string); ok && s == tool {
@@ -1417,13 +1418,36 @@ func launchToolNamed(tool, projectDir, name string) error {
 
 // currentSessionUUID detects the current Claude Code session UUID.
 // Priority: CQ_SESSION_UUID env var → JSONL content timestamp → file ModTime.
+// Walks up parent directories to find the correct Claude project JSONL dir.
 func currentSessionUUID(dir string) string {
 	// 1. Prefer env var (set by cq claude -t).
 	if uuid := os.Getenv("CQ_SESSION_UUID"); uuid != "" {
 		return uuid
 	}
-	sessionDir, err := claudeProjectDir(dir)
+
+	// 2. Try dir and parent directories (handles subdirectory execution).
+	absDir, err := filepath.Abs(dir)
 	if err != nil {
+		return ""
+	}
+	var sessionDir string
+	for d := absDir; d != filepath.Dir(d); d = filepath.Dir(d) {
+		candidate, err := claudeProjectDir(d)
+		if err != nil {
+			continue
+		}
+		entries, _ := os.ReadDir(candidate)
+		for _, e := range entries {
+			if strings.HasSuffix(e.Name(), ".jsonl") {
+				sessionDir = candidate
+				break
+			}
+		}
+		if sessionDir != "" {
+			break
+		}
+	}
+	if sessionDir == "" {
 		return ""
 	}
 	entries, err := os.ReadDir(sessionDir)

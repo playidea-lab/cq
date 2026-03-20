@@ -45,7 +45,11 @@
   "permissions": {
     "allow": [
       "Skill(c4-*)",
+      "Skill(c9-*)",
+      "Skill(pi)",
+      "Skill(research-loop)",
       "Skill(cycle-*)",
+      "Skill(simplify)",
       "mcp__cq__*",
       "mcp__piq__*",
       "mcp__serena__*",
