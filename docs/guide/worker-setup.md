@@ -195,6 +195,56 @@ When executing a job, the worker resolves the command through a 3-step fallback:
 
 With `command:` defined in `caps.yaml`, no capability file is needed.
 
+## Worker Affinity *(v1.5.0+)*
+
+Workers automatically learn which projects they're good at. The more a worker succeeds at a project's jobs, the higher its affinity score — and future jobs for that project are routed there first.
+
+### How it works
+
+```
+1st run:  HMR job → any idle worker (no history)
+2nd run:  HMR job → same worker preferred (affinity: hmr 1✓)
+10th run: HMR job → strongly preferred (affinity: hmr 10✓)
+```
+
+Scoring formula: `project_match×10 + tag_overlap×3 + recency×2 + success_rate×5`
+
+### Viewing affinity
+
+```sh
+cq hub workers
+  ID               STATUS   AFFINITY              TAGS
+  gpu-server       idle     hmr(10✓) cq(2✓)       [gpu, a100]
+  build-server     idle     cq(15✓)               [cpu, linux]
+  nas              idle     (none)                [storage]
+```
+
+### Tag-based routing
+
+Use tags to ensure jobs go to the right hardware:
+
+```sh
+# GPU-required job → only workers with 'gpu' tag
+cq hub submit --project hmr --tags gpu "train backbone"
+
+# CPU-only job → any worker
+cq hub submit --project cq "go build test"
+```
+
+Tags filter candidates first, then affinity ranks them.
+
+### Manual override
+
+Pin a job to a specific worker:
+
+```sh
+cq hub submit --worker gpu-server "urgent training"
+```
+
+This bypasses affinity scoring entirely.
+
+---
+
 ## Submitting jobs from your laptop
 
 See [Distributed Experiments](/examples/distributed-experiments) for the full submit workflow using `cq hub submit` and `cq.yaml`.
