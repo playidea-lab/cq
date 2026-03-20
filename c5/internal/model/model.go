@@ -72,6 +72,7 @@ type Job struct {
 	GitHash              string            `json:"git_hash,omitempty"`
 	RequiredTags         []string          `json:"required_tags,omitempty"`
 	Runtime              *Runtime          `json:"runtime,omitempty"`
+	TargetWorker         string            `json:"target_worker,omitempty"`
 }
 
 // Runtime specifies the execution environment for a job.
@@ -160,25 +161,34 @@ type CapabilityUpdateRequest struct {
 	CapabilitySet []Capability `json:"capability_set"`
 }
 
+// AffinityRecord holds a worker's historical performance for one project.
+// Duplicated from affinity package to keep model self-contained (no circular dep).
+type AffinityRecord struct {
+	ProjectID    string `json:"project_id"`
+	SuccessCount int    `json:"success_count"`
+	FailCount    int    `json:"fail_count,omitempty"`
+}
+
 // Worker represents a remote worker node.
 type Worker struct {
-	ID            string    `json:"id"`
-	Hostname      string    `json:"hostname,omitempty"`
-	Name          string    `json:"name,omitempty"`
-	Status        string    `json:"status"` // online, offline, busy
-	GPUCount      int       `json:"gpu_count"`
-	GPUModel      string    `json:"gpu_model,omitempty"`
-	TotalVRAM     float64   `json:"total_vram_gb"`
-	FreeVRAM      float64   `json:"free_vram_gb"`
-	Tags          []string  `json:"tags,omitempty"`
-	ProjectID     string    `json:"project_id,omitempty"`
-	Version       string    `json:"version,omitempty"`
-	UptimeSec     int64     `json:"uptime_sec,omitempty"`
+	ID            string           `json:"id"`
+	Hostname      string           `json:"hostname,omitempty"`
+	Name          string           `json:"name,omitempty"`
+	Status        string           `json:"status"` // online, offline, busy
+	GPUCount      int              `json:"gpu_count"`
+	GPUModel      string           `json:"gpu_model,omitempty"`
+	TotalVRAM     float64          `json:"total_vram_gb"`
+	FreeVRAM      float64          `json:"free_vram_gb"`
+	Tags          []string         `json:"tags,omitempty"`
+	ProjectID     string           `json:"project_id,omitempty"`
+	Version       string           `json:"version,omitempty"`
+	UptimeSec     int64            `json:"uptime_sec,omitempty"`
 	// LastJobAt is RFC3339 timestamp of the last completed job.
 	// Empty string means no job has been processed yet (do not use zero-time strings).
-	LastJobAt     string    `json:"last_job_at,omitempty"`
-	LastHeartbeat time.Time `json:"last_heartbeat"`
-	RegisteredAt  time.Time `json:"registered_at"`
+	LastJobAt     string           `json:"last_job_at,omitempty"`
+	LastHeartbeat time.Time        `json:"last_heartbeat"`
+	RegisteredAt  time.Time        `json:"registered_at"`
+	Affinity      []AffinityRecord `json:"affinity,omitempty"`
 }
 
 // Lease tracks the assignment of a job to a worker with expiry.
@@ -231,6 +241,7 @@ type JobSubmitRequest struct {
 	GitHash             string            `json:"git_hash,omitempty"`
 	RequiredTags        []string          `json:"required_tags,omitempty"`
 	Runtime             *Runtime          `json:"runtime,omitempty"`
+	TargetWorker        string            `json:"target_worker,omitempty"`
 }
 
 // JobSubmitResponse is returned from POST /v1/jobs/submit.

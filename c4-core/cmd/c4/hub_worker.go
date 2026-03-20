@@ -896,16 +896,24 @@ func loadCloudSessionJWT() string {
 // cq hub worker status
 // =========================================================================
 
+// workerAffinityRecord holds one project's affinity data for a worker.
+type workerAffinityRecord struct {
+	ProjectID    string `json:"project_id"`
+	SuccessCount int    `json:"success_count"`
+	FailCount    int    `json:"fail_count"`
+}
+
 // workerStatusRow holds the display fields for one worker row.
 type workerStatusRow struct {
-	ID           string   `json:"id"`
-	Hostname     string   `json:"hostname"`
-	Name         string   `json:"name"`
-	Status       string   `json:"status"`
-	Tags         []string `json:"tags"`
-	UptimeSec    int64    `json:"uptime_sec"`
-	LastJobAt    string   `json:"last_job_at"`
-	Capabilities []string `json:"capabilities"`
+	ID           string                 `json:"id"`
+	Hostname     string                 `json:"hostname"`
+	Name         string                 `json:"name"`
+	Status       string                 `json:"status"`
+	Tags         []string               `json:"tags"`
+	UptimeSec    int64                  `json:"uptime_sec"`
+	LastJobAt    string                 `json:"last_job_at"`
+	Capabilities []string               `json:"capabilities"`
+	Affinity     []workerAffinityRecord `json:"affinity"`
 }
 
 func runWorkerStatus(cmd *cobra.Command, args []string) error {
@@ -955,7 +963,7 @@ func runWorkerStatus(cmd *cobra.Command, args []string) error {
 	}
 
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintf(w, "NAME\tSTATUS\tUPTIME\tLAST JOB\tCAPABILITIES\n")
+	fmt.Fprintf(w, "NAME\tSTATUS\tUPTIME\tLAST JOB\tCAPABILITIES\tAFFINITY\n")
 	for _, wk := range workers {
 		name := wk.Name
 		if name == "" {
@@ -972,9 +980,22 @@ func runWorkerStatus(cmd *cobra.Command, args []string) error {
 		if len(caps) > 0 {
 			capsStr = strings.Join(caps, ",")
 		}
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
-			name, wk.Status, formatUptime(wk.UptimeSec), formatLastJob(wk.LastJobAt), capsStr)
+		affStr := formatWorkerAffinity(wk.Affinity)
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n",
+			name, wk.Status, formatUptime(wk.UptimeSec), formatLastJob(wk.LastJobAt), capsStr, affStr)
 	}
 	w.Flush()
 	return nil
+}
+
+// formatWorkerAffinity formats affinity records as "project(N✓) ..." or "(none)".
+func formatWorkerAffinity(recs []workerAffinityRecord) string {
+	if len(recs) == 0 {
+		return "(none)"
+	}
+	parts := make([]string, 0, len(recs))
+	for _, r := range recs {
+		parts = append(parts, fmt.Sprintf("%s(%d✓)", r.ProjectID, r.SuccessCount))
+	}
+	return strings.Join(parts, " ")
 }

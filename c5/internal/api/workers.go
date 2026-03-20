@@ -133,6 +133,24 @@ func (s *Server) handleWorkersList(w http.ResponseWriter, r *http.Request) {
 		workers = []*model.Worker{}
 	}
 
+	// Attach affinity data if store is available (non-fatal on error).
+	if s.affinity != nil {
+		for _, wk := range workers {
+			recs, err := s.affinity.GetWorkerAffinity(wk.ID)
+			if err != nil {
+				log.Printf("c5: affinity lookup for worker %s: %v", wk.ID, err)
+				continue
+			}
+			for _, rec := range recs {
+				wk.Affinity = append(wk.Affinity, model.AffinityRecord{
+					ProjectID:    rec.ProjectID,
+					SuccessCount: rec.SuccessCount,
+					FailCount:    rec.FailCount,
+				})
+			}
+		}
+	}
+
 	writeJSON(w, workers)
 }
 

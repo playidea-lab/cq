@@ -12,6 +12,7 @@ import (
 	"time"
 
 	c5 "github.com/piqsol/c4/c5"
+	"github.com/piqsol/c4/c5/internal/affinity"
 	"github.com/piqsol/c4/c5/internal/api"
 	"github.com/piqsol/c4/c5/internal/config"
 	"github.com/piqsol/c4/c5/internal/knowledge"
@@ -136,6 +137,13 @@ func runServe(cmd *cobra.Command, configPath string, port int, dbPath, apiKey, e
 	}
 	defer st.Close()
 
+	// Build affinity store (shares SQLite DB with main store).
+	affinityStore, err := affinity.New(st.DB())
+	if err != nil {
+		log.Printf("c5: affinity store init failed (non-fatal): %v", err)
+		affinityStore = nil
+	}
+
 	// Build optional LLM client for server-side Dooray processing.
 	var llmCli *llmclient.Client
 	if cfg.IsLLMEnabled() {
@@ -175,6 +183,7 @@ func runServe(cmd *cobra.Command, configPath string, port int, dbPath, apiKey, e
 
 	srv := api.NewServer(api.Config{
 		Store:            st,
+		Affinity:         affinityStore,
 		Storage:          storageBackend,
 		ServerURL:        serverURL,
 		PublicURL:        cfg.Server.PublicURL, // MEDIUM #6: wire external URL for OAuth redirects

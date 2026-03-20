@@ -62,6 +62,12 @@ func (s *Store) Close() error {
 	return s.db.Close()
 }
 
+// DB returns the underlying *sql.DB, allowing shared packages (e.g. affinity) to
+// reuse the same connection pool without opening a second SQLite file handle.
+func (s *Store) DB() *sql.DB {
+	return s.db
+}
+
 func (s *Store) migrate() error {
 	_, err := s.db.Exec(`
 		CREATE TABLE IF NOT EXISTS jobs (
@@ -351,6 +357,8 @@ func (s *Store) migrate() error {
 		// Migration: experiment run linkage for job-to-experiment lifecycle bridge.
 		`ALTER TABLE jobs ADD COLUMN exp_run_id TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE jobs ADD COLUMN best_metric REAL`,
+		// Migration: affinity-based worker routing — target_worker pin field.
+		`ALTER TABLE jobs ADD COLUMN target_worker TEXT NOT NULL DEFAULT ''`,
 		// Migration: scoped API keys — add scope column (full/user/worker).
 		`ALTER TABLE api_keys ADD COLUMN scope TEXT NOT NULL DEFAULT 'full'`,
 		// Migration: experiment registry tables.
@@ -419,6 +427,7 @@ func (s *Store) CreateJob(req *model.JobSubmitRequest) (*model.Job, error) {
 		GitHash:             req.GitHash,
 		RequiredTags:        req.RequiredTags,
 		Runtime:             req.Runtime,
+		TargetWorker:        req.TargetWorker,
 		CreatedAt:           now,
 	}
 
@@ -432,8 +441,8 @@ func (s *Store) CreateJob(req *model.JobSubmitRequest) (*model.Job, error) {
 			requires_gpu, vram_required_gb, env, tags, exp_id, memo, timeout_sec, project_id,
 			submitted_by, input_artifacts, output_artifacts, capability, params,
 			snapshot_version_hash, git_hash, required_tags, runtime, exp_run_id, best_metric,
-			created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			target_worker, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		job.ID, job.Name, string(job.Status), job.Priority, job.Workdir, job.Command,
 		boolToInt(job.RequiresGPU), job.VRAMRequiredGB,
 		marshalJSON(job.Env), marshalJSON(job.Tags),
@@ -445,6 +454,7 @@ func (s *Store) CreateJob(req *model.JobSubmitRequest) (*model.Job, error) {
 		marshalJSON(job.RequiredTags),
 		marshalJSON(job.Runtime),
 		job.ExpRunID, bestMetricVal,
+		job.TargetWorker,
 		now.Format(time.RFC3339),
 	)
 	if err != nil {
@@ -981,6 +991,131 @@ func (s *Store) AcquireLease(workerID string, requiresGPU bool, projectID string
 	// Update worker status (best-effort; job is already locked via lease)
 	if _, err := tx.Exec(`UPDATE workers SET status = 'busy' WHERE id = ?`, workerID); err != nil {
 		log.Printf("c5-store: AcquireLease: set worker busy: %v", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, nil, fmt.Errorf("commit: %w", err)
+	}
+
+	return lease, job, nil
+}
+
+// PendingJobCandidate holds minimal information about a queued job for affinity scoring.
+type PendingJobCandidate struct {
+	JobID        string
+	ProjectID    string
+	TargetWorker string
+	RequiredTags []string
+}
+
+// ListPendingJobCandidates returns up to limit QUEUED jobs eligible for the given worker,
+// filtered by GPU requirement, VRAM, project, and capability. This is used by the
+// affinity-aware scheduler to score candidates before claiming.
+func (s *Store) ListPendingJobCandidates(workerID string, requiresGPU bool, projectID string, workerVRAM float64, limit int) ([]PendingJobCandidate, error) {
+	// Fetch worker tags to do Go-side required_tags filtering.
+	var workerTagsJSON string
+	if err := s.db.QueryRow(`SELECT tags FROM workers WHERE id = ?`, workerID).Scan(&workerTagsJSON); err != nil {
+		return nil, fmt.Errorf("get worker tags: %w", err)
+	}
+	var workerCaps []string
+	if workerTagsJSON != "" {
+		_ = json.Unmarshal([]byte(workerTagsJSON), &workerCaps)
+	}
+
+	query := `SELECT id, project_id, target_worker, required_tags FROM jobs WHERE status = 'QUEUED'`
+	args := []any{}
+	if requiresGPU {
+		query += " AND requires_gpu = 1"
+	}
+	if workerVRAM > 0 {
+		query += " AND vram_required_gb <= ?"
+		args = append(args, workerVRAM)
+	}
+	if projectID != "" {
+		query += " AND project_id = ?"
+		args = append(args, projectID)
+	}
+	query += " AND (capability = '' OR capability IN (SELECT name FROM capabilities WHERE worker_id = ?))"
+	args = append(args, workerID)
+	query += " ORDER BY priority DESC, created_at ASC LIMIT ?"
+	args = append(args, limit)
+
+	rows, err := s.db.Query(query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list pending candidates: %w", err)
+	}
+	defer rows.Close()
+
+	var result []PendingJobCandidate
+	for rows.Next() {
+		var c PendingJobCandidate
+		var reqTagsJSON string
+		if err := rows.Scan(&c.JobID, &c.ProjectID, &c.TargetWorker, &reqTagsJSON); err != nil {
+			return nil, fmt.Errorf("scan candidate: %w", err)
+		}
+		if reqTagsJSON != "" && reqTagsJSON != "[]" {
+			_ = json.Unmarshal([]byte(reqTagsJSON), &c.RequiredTags)
+		}
+		if !tagsMatch(c.RequiredTags, workerCaps) {
+			continue
+		}
+		result = append(result, c)
+	}
+	return result, rows.Err()
+}
+
+// AcquireLeaseByJobID claims a specific queued job for a worker.
+// Returns (nil, nil, nil) if the job was already claimed by another worker.
+func (s *Store) AcquireLeaseByJobID(workerID, jobID string) (*model.Lease, *model.Job, error) {
+	tx, err := s.db.BeginTx(context.Background(), &sql.TxOptions{Isolation: sql.LevelSerializable})
+	if err != nil {
+		return nil, nil, fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback()
+
+	now := time.Now().UTC()
+	expiresAt := now.Add(defaultLeaseDuration)
+	nowStr := now.Format(time.RFC3339)
+
+	// CAS-style UPDATE: claim only if still queued.
+	result, err := tx.Exec(`
+		UPDATE jobs SET status = 'RUNNING', started_at = ?, worker_id = ?
+		WHERE id = ? AND status = 'QUEUED'`,
+		nowStr, workerID, jobID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("claim job by id: %w", err)
+	}
+	n, _ := result.RowsAffected()
+	if n == 0 {
+		return nil, nil, nil // already claimed
+	}
+
+	row := tx.QueryRow(jobSelectCols+" FROM jobs WHERE id = ?", jobID)
+	job, err := scanJob(row)
+	if err != nil {
+		return nil, nil, fmt.Errorf("read claimed job: %w", err)
+	}
+
+	leaseID := generateID("l")
+	lease := &model.Lease{
+		ID:        leaseID,
+		JobID:     job.ID,
+		WorkerID:  workerID,
+		CreatedAt: now,
+		ExpiresAt: expiresAt,
+	}
+
+	_, err = tx.Exec(`
+		INSERT INTO leases (id, job_id, worker_id, created_at, expires_at)
+		VALUES (?, ?, ?, ?, ?)`,
+		lease.ID, lease.JobID, lease.WorkerID,
+		nowStr, expiresAt.Format(time.RFC3339))
+	if err != nil {
+		return nil, nil, fmt.Errorf("insert lease: %w", err)
+	}
+
+	if _, err := tx.Exec(`UPDATE workers SET status = 'busy' WHERE id = ?`, workerID); err != nil {
+		log.Printf("c5-store: AcquireLeaseByJobID: set worker busy: %v", err)
 	}
 
 	if err := tx.Commit(); err != nil {
@@ -2314,7 +2449,8 @@ const jobSelectCols = `SELECT id, name, status, priority, workdir, command,
 	requires_gpu, vram_required_gb, env, tags, exp_id, memo, timeout_sec, worker_id,
 	created_at, started_at, finished_at, exit_code, project_id, submitted_by,
 	input_artifacts, output_artifacts, capability, params, result,
-	snapshot_version_hash, git_hash, required_tags, runtime, exp_run_id, best_metric`
+	snapshot_version_hash, git_hash, required_tags, runtime, exp_run_id, best_metric,
+	target_worker`
 
 type scanner interface {
 	Scan(dest ...any) error
@@ -2350,6 +2486,7 @@ func populateJob(sc scanner) (*model.Job, error) {
 		&j.Capability, &paramsJSON, &resultJSON,
 		&j.SnapshotVersionHash, &j.GitHash,
 		&requiredTagsJSON, &runtimeJSON, &j.ExpRunID, &bestMetric,
+		&j.TargetWorker,
 	)
 	if err != nil {
 		return nil, err
