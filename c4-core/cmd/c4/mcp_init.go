@@ -20,6 +20,7 @@ import (
 	"github.com/changmin/c4-core/internal/llm"
 	"github.com/changmin/c4-core/internal/mcp"
 	"github.com/changmin/c4-core/internal/mcp/handlers"
+	"github.com/changmin/c4-core/internal/mcp/handlers/doorayhandler"
 	"github.com/changmin/c4-core/internal/secrets"
 	storepackage "github.com/changmin/c4-core/internal/store"
 	_ "modernc.org/sqlite"
@@ -407,6 +408,20 @@ func newMCPServer() (*mcpServer, error) {
 		if err := fn(ctx); err != nil {
 			return nil, fmt.Errorf("component init: %w", err)
 		}
+	}
+
+	// Register Dooray MCP tools (c4_dooray_poll, c4_dooray_reply).
+	doorayCfg := cfgMgr.GetConfig()
+	if doorayCfg.Hub.URL != "" && cfgMgr.Get("dooray.enabled") == true {
+		webhookURL := ""
+		if ctx.secretStore != nil {
+			webhookURL, _ = ctx.secretStore.Get("dooray.webhook_url")
+		}
+		doorayhandler.Register(reg, doorayhandler.DoorayConfig{
+			HubURL:     doorayCfg.Hub.URL,
+			WebhookURL: webhookURL,
+		})
+		fmt.Fprintln(os.Stderr, "cq: dooray tools registered (hub: "+doorayCfg.Hub.URL+")")
 	}
 
 	// Start HubPoller after EventBus wiring so hubEventPub is populated.

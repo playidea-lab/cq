@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"github.com/changmin/c4-core/internal/config"
-	"github.com/changmin/c4-core/internal/mcp/handlers/doorayhandler"
 	"github.com/changmin/c4-core/internal/secrets"
 	"github.com/changmin/c4-core/internal/serve"
 	"github.com/spf13/cobra"
@@ -151,24 +150,6 @@ func runServe(cmd *cobra.Command, args []string) error {
 		registerMCPHTTPComponent(mgr, cfg.Serve.MCPHTTP, srv)
 	}
 
-	// Dooray poller: polls Hub /v1/dooray/pending and provides MCP tools.
-	doorayEnabled := cfgMgr.Get("dooray.enabled")
-	hubURL := cfg.Hub.URL
-	if hubURL != "" && doorayEnabled == true {
-		webhookURL := os.Getenv("DOORAY_WEBHOOK_URL")
-		if webhookURL == "" && srv.initCtx.secretStore != nil {
-			if v, err := srv.initCtx.secretStore.Get("dooray.webhook_url"); err == nil {
-				webhookURL = v
-			}
-		}
-		poller := serve.NewDoorayPoller(serve.DoorayPollerConfig{
-			HubURL:     hubURL,
-			WebhookURL: webhookURL,
-		})
-		mgr.Register(poller)
-		doorayhandler.Register(srv.registry, poller)
-		fmt.Fprintln(os.Stderr, "cq serve: dooray poller enabled (hub: "+hubURL+")")
-	}
 
 	// Start all components
 	ctx, cancel := context.WithCancel(context.Background())
