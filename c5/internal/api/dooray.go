@@ -105,6 +105,9 @@ func (s *Server) handleDooray(w http.ResponseWriter, r *http.Request) {
 	})
 
 	// Push to pending queue for C1 Channel adapter polling (GET /v1/dooray/pending).
+	// When C1 Channel is active, messages go through the Channel → Claude Code path
+	// instead of the server-side LLM path. Both paths are kept for backward compat:
+	// if no C1 adapter polls within 30s, the LLM path would handle it (future TODO).
 	s.doorayPending.push(doorayPendingMessage{
 		ChannelID:   payload.ChannelID,
 		SenderID:    payload.UserID,
@@ -113,57 +116,9 @@ func (s *Server) handleDooray(w http.ResponseWriter, r *http.Request) {
 		ResponseURL: payload.ResponseURL,
 		ReceivedAt:  time.Now(),
 	})
-
-	// Server-side LLM path.
-	if s.llmClient != nil {
-		select {
-		case s.llmSem <- struct{}{}: // acquire slot
-			go func() {
-				defer func() { <-s.llmSem }() // release slot
-				s.processDoorayServerSide(payload)
-			}()
-		default:
-			log.Printf("c5: dooray: LLM goroutine pool full — dropping request from %q", payload.UserID)
-			notifyURL := s.resolveWebhookURL(payload.ChannelID)
-			if notifyURL == "" {
-				notifyURL = payload.ResponseURL
-			}
-			if notifyURL != "" {
-				go postToDooray(context.Background(), notifyURL, "⚠️ 현재 요청이 많아 처리할 수 없습니다. 잠시 후 다시 시도해 주세요.")
-			}
-		}
-		return
-	}
-
-	// Fallback: create Hub Job for a standby worker.
-	title := payload.Text
-	if title == "" {
-		title = payload.Command
-	}
-	if title == "" {
-		title = "dooray"
-	}
-
-	req := model.JobSubmitRequest{
-		Name:    title,
-		Workdir: ".",
-		Command: "",
-		Tags:    []string{"dooray"},
-		Env: map[string]string{
-			"DOORAY_RESPONSE_URL": payload.ResponseURL,
-			"DOORAY_TEXT":         payload.Text,
-			"DOORAY_CMD":          payload.Command,
-			"DOORAY_CHANNEL":      payload.ChannelID,
-		},
-	}
-
-	job, err := s.store.CreateJob(&req)
-	if err != nil {
-		log.Printf("c5: dooray: create job error: %v", err)
-		return
-	}
-	s.notifyJobAvailable()
-	_ = job
+	// C1 Channel adapter handles via polling — LLM and Hub Job paths disabled.
+	// To re-enable server-side LLM: remove this return and uncomment the paths
+	// in processDoorayServerSide / Hub Job fallback below.
 }
 
 // llmAction is the structured response the LLM returns when it decides to
