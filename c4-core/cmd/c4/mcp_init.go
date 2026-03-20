@@ -420,6 +420,7 @@ func newMCPServer() (*mcpServer, error) {
 		doorayhandler.Register(reg, doorayhandler.DoorayConfig{
 			HubURL:     doorayCfg.Hub.URL,
 			WebhookURL: webhookURL,
+			Channel:    ctx.doorayChannel,
 		})
 		fmt.Fprintln(os.Stderr, "cq: dooray tools registered (hub: "+doorayCfg.Hub.URL+")")
 	}
