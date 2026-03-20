@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"sort"
 	"time"
 
 	"github.com/piqsol/c4/c5/internal/model"
@@ -259,22 +260,10 @@ func (s *Server) handleLeaseAcquire(w http.ResponseWriter, r *http.Request) {
 		workerVRAM = req.FreeVRAM
 	}
 
-	lease, job, err := s.store.AcquireLease(req.WorkerID, hasGPU, worker.ProjectID, workerVRAM)
+	lease, job, err := s.acquireLeaseAffinity(req.WorkerID, hasGPU, worker.ProjectID, workerVRAM)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
-	}
-
-	if lease == nil {
-		// No GPU jobs available — fall back to CPU jobs if allowed.
-		// When gpuWorkerGPUOnly is true, GPU workers only accept GPU jobs (no CPU fallback).
-		if hasGPU && !s.gpuWorkerGPUOnly {
-			lease, job, err = s.store.AcquireLease(req.WorkerID, false, worker.ProjectID)
-			if err != nil {
-				writeError(w, http.StatusInternalServerError, err.Error())
-				return
-			}
-		}
 	}
 
 	if lease == nil && req.WaitSeconds > 0 {
@@ -293,17 +282,10 @@ func (s *Server) handleLeaseAcquire(w http.ResponseWriter, r *http.Request) {
 				writeJSON(w, map[string]any{"job_id": nil, "lease_id": nil, "message": "no jobs available"})
 				return
 			}
-			lease, job, err = s.store.AcquireLease(req.WorkerID, hasGPU, worker.ProjectID, workerVRAM)
+			lease, job, err = s.acquireLeaseAffinity(req.WorkerID, hasGPU, worker.ProjectID, workerVRAM)
 			if err != nil {
 				writeError(w, http.StatusInternalServerError, err.Error())
 				return
-			}
-			if lease == nil && hasGPU && !s.gpuWorkerGPUOnly {
-				lease, job, err = s.store.AcquireLease(req.WorkerID, false, worker.ProjectID)
-				if err != nil {
-					writeError(w, http.StatusInternalServerError, err.Error())
-					return
-				}
 			}
 		}
 	}
@@ -374,6 +356,89 @@ func (s *Server) handleLeaseAcquire(w http.ResponseWriter, r *http.Request) {
 		Job:                *job,
 		InputPresignedURLs: inputPresignedURLs,
 	})
+}
+
+// acquireLeaseAffinity selects and claims the best pending job for a worker using
+// affinity scores. It handles target_worker pinning and falls back to FIFO
+// (AcquireLease) when affinity is disabled or all candidates score 0.
+//
+// GPU fallback: if hasGPU is true and no GPU job is available, CPU jobs are tried
+// unless gpuWorkerGPUOnly is set.
+func (s *Server) acquireLeaseAffinity(workerID string, hasGPU bool, projectID string, workerVRAM float64) (*model.Lease, *model.Job, error) {
+	// If affinity is disabled, use original FIFO path.
+	if s.affinity == nil {
+		lease, job, err := s.store.AcquireLease(workerID, hasGPU, projectID, workerVRAM)
+		if err != nil {
+			return nil, nil, err
+		}
+		if lease == nil && hasGPU && !s.gpuWorkerGPUOnly {
+			return s.store.AcquireLease(workerID, false, projectID)
+		}
+		return lease, job, nil
+	}
+
+	// Get ranked candidates for GPU jobs (and CPU jobs if allowed).
+	lease, job, err := s.acquireLeaseAffinityForGPUFlag(workerID, hasGPU, projectID, workerVRAM)
+	if err != nil {
+		return nil, nil, err
+	}
+	if lease == nil && hasGPU && !s.gpuWorkerGPUOnly {
+		// Fall back to CPU jobs.
+		return s.acquireLeaseAffinityForGPUFlag(workerID, false, projectID, workerVRAM)
+	}
+	return lease, job, nil
+}
+
+// acquireLeaseAffinityForGPUFlag implements affinity-ranked selection for one GPU flag.
+func (s *Server) acquireLeaseAffinityForGPUFlag(workerID string, requiresGPU bool, projectID string, workerVRAM float64) (*model.Lease, *model.Job, error) {
+	const candidateLimit = 1000
+	candidates, err := s.store.ListPendingJobCandidates(workerID, requiresGPU, projectID, workerVRAM, candidateLimit)
+	if err != nil {
+		return nil, nil, err
+	}
+	if len(candidates) == 0 {
+		return nil, nil, nil
+	}
+
+	// Score candidates. target_worker="thisWorker" → pinned (score infinity).
+	// target_worker="otherWorker" → skip.
+	type scored struct {
+		jobID string
+		score float64
+	}
+	results := make([]scored, 0, len(candidates))
+	for _, c := range candidates {
+		if c.TargetWorker != "" && c.TargetWorker != workerID {
+			// Pinned to a different worker — skip.
+			continue
+		}
+		var sc float64
+		if c.TargetWorker == workerID {
+			// Exact pin: highest possible priority.
+			sc = 1e18
+		} else {
+			sc, err = s.affinity.Score(workerID, c.ProjectID, c.RequiredTags)
+			if err != nil {
+				log.Printf("c5: affinity score for worker %s job %s: %v", workerID, c.JobID, err)
+				sc = 0
+			}
+		}
+		results = append(results, scored{jobID: c.JobID, score: sc})
+	}
+	if len(results) == 0 {
+		return nil, nil, nil
+	}
+
+	// Sort descending by score; stable preserves original FIFO order on ties.
+	sort.SliceStable(results, func(i, j int) bool {
+		return results[i].score > results[j].score
+	})
+
+	// If all scores are 0, fall back to the original FIFO first candidate.
+	// This preserves backward-compatible behaviour when there is no affinity data.
+	bestJobID := results[0].jobID
+
+	return s.store.AcquireLeaseByJobID(workerID, bestJobID)
 }
 
 func (s *Server) handleLeaseRenew(w http.ResponseWriter, r *http.Request) {
