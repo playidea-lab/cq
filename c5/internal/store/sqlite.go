@@ -900,6 +900,9 @@ func (s *Store) AcquireLease(workerID string, requiresGPU bool, projectID string
 	candidateArgs := []any{}
 	if requiresGPU {
 		candidateQuery += " AND requires_gpu = 1"
+	} else {
+		// Non-GPU workers must NOT pick up GPU-required jobs.
+		candidateQuery += " AND (requires_gpu = 0 OR requires_gpu IS NULL)"
 	}
 	if len(workerVRAM) > 0 && workerVRAM[0] > 0 {
 		candidateQuery += " AND vram_required_gb <= ?"
@@ -1026,6 +1029,9 @@ func (s *Store) ListPendingJobCandidates(workerID string, requiresGPU bool, proj
 	args := []any{}
 	if requiresGPU {
 		query += " AND requires_gpu = 1"
+	} else {
+		// Non-GPU workers must NOT pick up GPU-required jobs.
+		query += " AND (requires_gpu = 0 OR requires_gpu IS NULL)"
 	}
 	if workerVRAM > 0 {
 		query += " AND vram_required_gb <= ?"
