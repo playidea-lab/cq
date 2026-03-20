@@ -10,8 +10,17 @@ import (
 
 // detectGPU runs nvidia-smi to detect GPU count, model, and VRAM.
 // Returns zero values if nvidia-smi is not available.
+// Checks PATH first, then WSL2 fallback path (/usr/lib/wsl/lib/nvidia-smi).
 func detectGPU() (count int, model string, totalVRAM float64) {
-	out, err := exec.Command("nvidia-smi", "--query-gpu=name,memory.total", "--format=csv,noheader,nounits").Output()
+	nvidiaSmi := "nvidia-smi"
+	if _, err := exec.LookPath(nvidiaSmi); err != nil {
+		// WSL2 fallback: nvidia-smi is not in PATH but available at a fixed location.
+		const wslPath = "/usr/lib/wsl/lib/nvidia-smi"
+		if _, wslErr := exec.LookPath(wslPath); wslErr == nil {
+			nvidiaSmi = wslPath
+		}
+	}
+	out, err := exec.Command(nvidiaSmi, "--query-gpu=name,memory.total", "--format=csv,noheader,nounits").Output()
 	if err != nil {
 		return 0, "", 0
 	}
