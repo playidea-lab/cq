@@ -157,8 +157,9 @@ func (d *DoorayChannelComponent) connect(ctx context.Context) error {
 		conn.Close()
 		<-done
 		return nil
-	case err := <-done:
-		return err
+	case <-done:
+		// Dial succeeded and readLoop ran; return nil so runLoop resets backoff.
+		return nil
 	}
 }
 

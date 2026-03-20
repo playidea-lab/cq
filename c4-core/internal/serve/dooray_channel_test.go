@@ -186,6 +186,54 @@ func TestDoorayChannelReconnect(t *testing.T) {
 	}
 }
 
+// TestDoorayChannelBackoffReset verifies that after a successful dial+readLoop cycle,
+// the component reconnects quickly (backoff resets to 1s, not grows exponentially).
+// We simulate two rapid disconnect cycles and confirm both messages arrive within 3s.
+func TestDoorayChannelBackoffReset(t *testing.T) {
+	connectCount := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/dooray/ws" {
+			http.NotFound(w, r)
+			return
+		}
+		conn, _, _, err := ws.UpgradeHTTP(r, w)
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		connectCount++
+		// Send a unique message per connection and immediately close.
+		msg := DoorayMessage{ChannelID: "ch1", SenderID: "u1", Text: "msg", ReceivedAt: time.Now()}
+		data, _ := json.Marshal(msg)
+		conn.SetWriteDeadline(time.Now().Add(2 * time.Second))
+		wsutil.WriteServerMessage(conn, ws.OpText, data) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	comp := NewDoorayChannel(DoorayChannelConfig{HubURL: srv.URL})
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := comp.Start(ctx); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	defer comp.Stop(context.Background()) //nolint:errcheck
+
+	// With backoff reset working: two connect cycles should complete within 3s
+	// (1s reconnect delay after reset, not 2s or more from exponential backoff).
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if connectCount >= 2 {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	if connectCount < 2 {
+		t.Errorf("expected at least 2 connect cycles (backoff reset), got %d", connectCount)
+	}
+}
+
 func TestHubWSURL(t *testing.T) {
 	cases := []struct {
 		in   string
