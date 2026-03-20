@@ -234,11 +234,15 @@ func (a *mcpServerRequestHandler) HandleRawRequest(ctx context.Context, body []b
 }
 
 // registerMCPHTTPComponent registers the MCP HTTP component with the serve manager.
-func registerMCPHTTPComponent(mgr *serve.Manager, cfg config.ServeMCPHTTPConfig, srv *mcpServer) {
+// It also creates a DoorayQueue and registers the /v1/dooray/pending and /v1/dooray/reply
+// endpoints on the same port.
+func registerMCPHTTPComponent(mgr *serve.Manager, cfg config.ServeMCPHTTPConfig, srv *mcpServer) *mcphttp.DoorayQueue {
 	handler := &mcpServerRequestHandler{srv: srv}
 	var secretStore mcphttp.SecretGetter
 	if srv.secretStore != nil {
 		secretStore = srv.secretStore
 	}
-	mcphttp.RegisterComponent(mgr, cfg, handler, secretStore)
+	q := mcphttp.NewDoorayQueue()
+	mcphttp.RegisterComponentWithQueue(mgr, cfg, handler, secretStore, q)
+	return q
 }
