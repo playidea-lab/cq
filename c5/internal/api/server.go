@@ -298,7 +298,9 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 			strings.HasPrefix(r.URL.Path, "/v1/auth/device/"),
 			strings.HasPrefix(r.URL.Path, "/auth/activate"),
 			r.URL.Path == "/auth/callback",
-			r.URL.Path == "/v1/webhooks/dooray":
+			r.URL.Path == "/v1/webhooks/dooray",
+			r.URL.Path == "/v1/dooray/pending",
+			r.URL.Path == "/v1/dooray/reply":
 			next.ServeHTTP(w, r)
 			return
 		}
