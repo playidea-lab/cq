@@ -63,7 +63,6 @@ type Server struct {
 	doorayWebhookURL string                       // default Incoming Webhook URL
 	doorayCmdToken   string                       // cmd token for slash command auth
 	channelMap       map[string]DoorayChannel     // channelID → project routing
-	llmSem           chan struct{}                 // semaphore: max concurrent LLM goroutines
 	convStore        conversation.Store           // per-channel multi-turn conversation history
 
 	// doorayPending is a thread-safe queue of Dooray slash-command messages
@@ -156,7 +155,6 @@ func NewServer(cfg Config) *Server {
 		doorayWebhookURL: cfg.DoorayWebhookURL,
 		doorayCmdToken:   cfg.DoorayCmdToken,
 		channelMap: cfg.ChannelMap,
-		llmSem:             make(chan struct{}, 16), // max 16 concurrent LLM goroutines
 		thresholdCooldowns: make(map[string]time.Time),
 		convStore: func() conversation.Store {
 			if ss := conversation.NewSupabaseStore(cfg.SupabaseURL, cfg.SupabaseKey); ss != nil {

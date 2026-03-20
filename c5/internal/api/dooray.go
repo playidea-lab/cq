@@ -652,15 +652,25 @@ type doorayPendingMessage struct {
 }
 
 // doorayPendingQueue is a thread-safe FIFO queue with pop-all semantics.
+// Bounded: max 100 messages, TTL 5 minutes. Excess messages are silently dropped.
 type doorayPendingQueue struct {
 	mu   sync.Mutex
 	msgs []doorayPendingMessage
 }
 
+const (
+	maxPendingMsgs  = 100
+	pendingMsgTTL   = 5 * time.Minute
+)
+
 func (q *doorayPendingQueue) push(msg doorayPendingMessage) {
 	q.mu.Lock()
+	defer q.mu.Unlock()
+	if len(q.msgs) >= maxPendingMsgs {
+		log.Printf("c5: dooray pending queue full (%d), dropping oldest", maxPendingMsgs)
+		q.msgs = q.msgs[1:] // drop oldest
+	}
 	q.msgs = append(q.msgs, msg)
-	q.mu.Unlock()
 }
 
 func (q *doorayPendingQueue) popAll() []doorayPendingMessage {
@@ -668,7 +678,15 @@ func (q *doorayPendingQueue) popAll() []doorayPendingMessage {
 	msgs := q.msgs
 	q.msgs = nil
 	q.mu.Unlock()
-	return msgs
+	// Filter expired messages.
+	now := time.Now()
+	filtered := msgs[:0]
+	for _, m := range msgs {
+		if now.Sub(m.ReceivedAt) <= pendingMsgTTL {
+			filtered = append(filtered, m)
+		}
+	}
+	return filtered
 }
 
 // handleDoorayPending handles GET /v1/dooray/pending.
