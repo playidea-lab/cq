@@ -20,9 +20,10 @@ type SkillOptimizer struct {
 
 // OptimizeOpts controls the optimization loop parameters.
 type OptimizeOpts struct {
-	RunsPerExperiment int     // Number of simulated runs per experiment round.
-	BudgetCap         int     // Maximum number of mutation experiments before stopping.
-	TargetPassRate    float64 // Stop early if pass rate >= this for 3 consecutive rounds.
+	RunsPerExperiment int      // Number of simulated runs per experiment round.
+	BudgetCap         int      // Maximum number of mutation experiments before stopping.
+	TargetPassRate    float64  // Stop early if pass rate >= this for 3 consecutive rounds.
+	TestInputs        []string // Test inputs for skill simulation. If empty, generates generic inputs.
 }
 
 // OptimizeResult summarizes the optimization outcome.
@@ -65,7 +66,7 @@ func (o *SkillOptimizer) simulateRun(ctx context.Context, skillContent, testInpu
 
 // measurePassRate runs N simulations and scores each output against evals,
 // returning the overall pass rate and the collected EvalResult details from all runs.
-func (o *SkillOptimizer) measurePassRate(ctx context.Context, skillContent string, evals []BinaryEval, n int) (float64, []EvalResult, error) {
+func (o *SkillOptimizer) measurePassRate(ctx context.Context, skillContent string, evals []BinaryEval, n int, testInputs []string) (float64, []EvalResult, error) {
 	if n <= 0 {
 		n = 1
 	}
@@ -79,7 +80,13 @@ func (o *SkillOptimizer) measurePassRate(ctx context.Context, skillContent strin
 			return 0, nil, ctx.Err()
 		}
 
-		testInput := fmt.Sprintf("test input %d", i+1)
+		// Use provided test inputs (round-robin), fallback to generic.
+		var testInput string
+		if len(testInputs) > 0 {
+			testInput = testInputs[i%len(testInputs)]
+		} else {
+			testInput = fmt.Sprintf("test input %d", i+1)
+		}
 		output, err := o.simulateRun(ctx, skillContent, testInput)
 		if err != nil {
 			continue
@@ -129,7 +136,7 @@ func (o *SkillOptimizer) Run(ctx context.Context, skillName string, evals []Bina
 	}
 
 	// 2. Measure baseline
-	baselineRate, baselineDetails, err := o.measurePassRate(ctx, skillContent, evals, opts.RunsPerExperiment)
+	baselineRate, baselineDetails, err := o.measurePassRate(ctx, skillContent, evals, opts.RunsPerExperiment, opts.TestInputs)
 	if err != nil {
 		return nil, fmt.Errorf("baseline measurement: %w", err)
 	}
@@ -155,7 +162,7 @@ func (o *SkillOptimizer) Run(ctx context.Context, skillName string, evals []Bina
 			detailsToAnalyze = baselineDetails
 		} else {
 			// Re-measure current best to get fresh details for analysis
-			_, freshDetails, measureErr := o.measurePassRate(ctx, bestContent, evals, opts.RunsPerExperiment)
+			_, freshDetails, measureErr := o.measurePassRate(ctx, bestContent, evals, opts.RunsPerExperiment, opts.TestInputs)
 			if measureErr != nil {
 				break
 			}
@@ -176,7 +183,7 @@ func (o *SkillOptimizer) Run(ctx context.Context, skillName string, evals []Bina
 		}
 
 		// d. Measure mutated pass rate
-		mutatedRate, _, scoreErr := o.measurePassRate(ctx, mutated, evals, opts.RunsPerExperiment)
+		mutatedRate, _, scoreErr := o.measurePassRate(ctx, mutated, evals, opts.RunsPerExperiment, opts.TestInputs)
 		if scoreErr != nil {
 			// Restore best on error
 			_ = os.WriteFile(skillPath, []byte(bestContent), 0o644)

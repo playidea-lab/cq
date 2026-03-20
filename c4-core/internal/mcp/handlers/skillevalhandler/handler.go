@@ -171,6 +171,16 @@ func optimizeHandler(opts *Opts) mcp.BlockingHandlerFunc {
 			budgetCap = 50
 		}
 
+		// Parse test_inputs (optional).
+		var testInputs []string
+		if arr, ok := params["test_inputs"].([]any); ok {
+			for _, v := range arr {
+				if s, ok := v.(string); ok && s != "" {
+					testInputs = append(testInputs, s)
+				}
+			}
+		}
+
 		optimizer := &skilleval.SkillOptimizer{
 			ProjectDir: opts.ProjectDir,
 			LLM:        opts.LLM,
@@ -180,6 +190,7 @@ func optimizeHandler(opts *Opts) mcp.BlockingHandlerFunc {
 		result, err := optimizer.Run(ctx, skillName, evals, skilleval.OptimizeOpts{
 			RunsPerExperiment: runsPerExperiment,
 			BudgetCap:         budgetCap,
+			TestInputs:        testInputs,
 		})
 		if err != nil {
 			return map[string]any{"error": fmt.Sprintf("optimize failed: %v", err)}, nil

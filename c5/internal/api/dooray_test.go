@@ -130,6 +130,7 @@ func TestDoorayPOST_InvalidToken(t *testing.T) {
 }
 
 func TestDoorayPOST_JobCreated(t *testing.T) {
+	t.Skip("Hub Job fallback disabled — Dooray now uses C1 Channel polling path")
 	t.Setenv("C5_DOORAY_CMD_TOKEN", "")
 
 	srv := newTestServer(t)
@@ -224,6 +225,7 @@ func TestDoorayAuthMiddlewareExempt(t *testing.T) {
 // =========================================================================
 
 func TestDooray_ServerSide_LLMResponse(t *testing.T) {
+	t.Skip("Server-side LLM path disabled — Dooray now uses C1 Channel polling path")
 	// Mock LLM server returns a canned answer.
 	llmSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]any{
@@ -273,6 +275,7 @@ func TestDooray_ServerSide_LLMResponse(t *testing.T) {
 }
 
 func TestDooray_ServerSide_KnowledgeContext(t *testing.T) {
+	t.Skip("Server-side LLM path disabled — Dooray now uses C1 Channel polling path")
 	// Verify system prompt contains projectID from channel mapping.
 	systemPromptReceived := make(chan string, 1)
 	llmSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -353,6 +356,7 @@ func TestDooray_ServerSide_KnowledgeContext(t *testing.T) {
 }
 
 func TestDooray_ServerSide_Fallback(t *testing.T) {
+	t.Skip("Server-side LLM/Hub Job fallback disabled — Dooray now uses C1 Channel polling path")
 	// When llmClient is nil, handler must fall back to Hub Job creation.
 	t.Setenv("C5_DOORAY_CMD_TOKEN", "")
 
@@ -439,6 +443,7 @@ func TestExtractAction_QueryStatus(t *testing.T) {
 }
 
 func TestDooray_ServerSide_QueryStatus(t *testing.T) {
+	t.Skip("Server-side LLM path disabled — Dooray now uses C1 Channel polling path")
 	// LLM returns query_status action; server fetches workers + jobs and responds.
 	llmSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]any{
@@ -527,6 +532,7 @@ func TestExtractAction_EmptyAction(t *testing.T) {
 }
 
 func TestDooray_ServerSide_QueryWorkers(t *testing.T) {
+	t.Skip("Server-side LLM path disabled")
 	// LLM returns query_workers action.
 	llmSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]any{
@@ -568,6 +574,7 @@ func TestDooray_ServerSide_QueryWorkers(t *testing.T) {
 }
 
 func TestDooray_ServerSide_QueryJobs(t *testing.T) {
+	t.Skip("Server-side LLM path disabled")
 	// LLM returns query_jobs action.
 	llmSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]any{
@@ -609,6 +616,7 @@ func TestDooray_ServerSide_QueryJobs(t *testing.T) {
 }
 
 func TestDooray_ServerSide_SubmitJob_HasDoorayChannel(t *testing.T) {
+	t.Skip("Server-side LLM path disabled")
 	// LLM returns submit_job; resulting job must have DOORAY_CHANNEL in env.
 	llmSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]any{
