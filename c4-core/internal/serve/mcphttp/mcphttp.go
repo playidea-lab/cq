@@ -69,7 +69,6 @@ type Component struct {
 	cfg         config.ServeMCPHTTPConfig
 	httpSrv     *http.Server
 	apiKey      string        // resolved at Start()
-	doorayQueue *DoorayQueue  // optional: pending Dooray slash-command queue
 }
 
 // compile-time interface assertion
@@ -78,13 +77,6 @@ var _ serve.Component = (*Component)(nil)
 // New creates a new Component.
 func New(handler RequestHandler, secretStore SecretGetter, cfg config.ServeMCPHTTPConfig) *Component {
 	return &Component{handler: handler, secretStore: secretStore, cfg: cfg}
-}
-
-// WithDoorayQueue attaches an in-memory pending queue for Dooray slash commands.
-// When set, the component registers GET /v1/dooray/pending and POST /v1/dooray/reply.
-func (c *Component) WithDoorayQueue(q *DoorayQueue) *Component {
-	c.doorayQueue = q
-	return c
 }
 
 func (c *Component) Name() string { return "mcp-http" }
@@ -101,10 +93,6 @@ func (c *Component) Start(_ context.Context) error {
 	addr := fmt.Sprintf("%s:%d", c.cfg.Bind, c.cfg.Port)
 	mux := http.NewServeMux()
 	mux.HandleFunc("/mcp", c.withAuth(c.handleMCP))
-	if c.doorayQueue != nil {
-		mux.HandleFunc("/v1/dooray/pending", c.handleDoorayPending)
-		mux.HandleFunc("/v1/dooray/reply", c.handleDoorayReply)
-	}
 
 	c.httpSrv = &http.Server{
 		Addr:              addr,
@@ -268,8 +256,3 @@ func RegisterComponent(mgr *serve.Manager, cfg config.ServeMCPHTTPConfig, handle
 	mgr.Register(New(handler, secretStore, cfg))
 }
 
-// RegisterComponentWithQueue registers the MCP HTTP component together with
-// a Dooray pending queue, enabling the /v1/dooray/pending and /v1/dooray/reply endpoints.
-func RegisterComponentWithQueue(mgr *serve.Manager, cfg config.ServeMCPHTTPConfig, handler RequestHandler, secretStore SecretGetter, q *DoorayQueue) {
-	mgr.Register(New(handler, secretStore, cfg).WithDoorayQueue(q))
-}

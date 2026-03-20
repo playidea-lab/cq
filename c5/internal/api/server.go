@@ -65,10 +65,6 @@ type Server struct {
 	channelMap       map[string]DoorayChannel     // channelID → project routing
 	convStore        conversation.Store           // per-channel multi-turn conversation history
 
-	// doorayPending is a thread-safe queue of Dooray slash-command messages
-	// waiting for C1 Channel adapter to poll via GET /v1/dooray/pending.
-	doorayPending doorayPendingQueue
-
 	// doorayWSMu protects doorayWSClients.
 	doorayWSMu sync.Mutex
 	// doorayWSClients holds currently connected WS clients for the Dooray push channel.
@@ -257,8 +253,7 @@ func (s *Server) registerRoutes() {
 	// Webhooks (public — token auth is self-contained per handler)
 	s.mux.HandleFunc("/v1/webhooks/dooray", s.handleDooray)
 
-	// Dooray C1 Channel polling endpoints (localhost / API-key protected)
-	s.mux.HandleFunc("/v1/dooray/pending", s.handleDoorayPending)
+	// Dooray reply endpoint (localhost / API-key protected)
 	s.mux.HandleFunc("/v1/dooray/reply", s.handleDoorayReply)
 
 	// Dooray WebSocket push channel

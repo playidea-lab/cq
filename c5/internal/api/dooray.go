@@ -11,7 +11,6 @@ import (
 	"net/http"
 	"os"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/gobwas/ws"
@@ -115,16 +114,8 @@ func (s *Server) handleDooray(w http.ResponseWriter, r *http.Request) {
 		ReceivedAt:  time.Now(),
 	}
 
-	// Prefer push over polling: if WS clients are connected, push and return.
-	if s.pushDoorayWS(pending) {
-		return
-	}
-
-	// Fallback: push to pending queue for C1 Channel adapter polling.
-	s.doorayPending.push(pending)
-	// C1 Channel adapter handles via polling — LLM and Hub Job paths disabled.
-	// To re-enable server-side LLM: remove this return and uncomment the paths
-	// in processDoorayServerSide / Hub Job fallback below.
+	// Push to connected WS clients (dooray channel adapter).
+	s.pushDoorayWS(pending)
 }
 
 // llmAction is the structured response the LLM returns when it decides to
@@ -703,6 +694,16 @@ func (s *Server) handleDoorayWS(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// doorayPendingMessage represents a Dooray slash-command message pushed to WS clients.
+type doorayPendingMessage struct {
+	ChannelID   string    `json:"channelId"`
+	SenderID    string    `json:"senderId"`
+	SenderName  string    `json:"senderName,omitempty"`
+	Text        string    `json:"text"`
+	ResponseURL string    `json:"response_url"`
+	ReceivedAt  time.Time `json:"received_at"`
+}
+
 // pushDoorayWS broadcasts msg to all connected WS clients.
 // Returns true if at least one client received the message.
 // Clients that fail to receive (channel full) are removed as dead connections.
@@ -735,73 +736,6 @@ func (s *Server) pushDoorayWS(msg doorayPendingMessage) bool {
 		log.Printf("c5: dooray ws: removed dead client (send buffer full)")
 	}
 	return sent > 0
-}
-
-// ---------------------------------------------------------------------------
-// doorayPendingQueue — in-memory pop queue for C1 Channel polling
-// ---------------------------------------------------------------------------
-
-// doorayPendingMessage represents a Dooray slash-command awaiting C1 pickup.
-type doorayPendingMessage struct {
-	ChannelID   string    `json:"channelId"`
-	SenderID    string    `json:"senderId"`
-	SenderName  string    `json:"senderName,omitempty"`
-	Text        string    `json:"text"`
-	ResponseURL string    `json:"response_url"`
-	ReceivedAt  time.Time `json:"received_at"`
-}
-
-// doorayPendingQueue is a thread-safe FIFO queue with pop-all semantics.
-// Bounded: max 100 messages, TTL 5 minutes. Excess messages are silently dropped.
-type doorayPendingQueue struct {
-	mu   sync.Mutex
-	msgs []doorayPendingMessage
-}
-
-const (
-	maxPendingMsgs  = 100
-	pendingMsgTTL   = 5 * time.Minute
-)
-
-func (q *doorayPendingQueue) push(msg doorayPendingMessage) {
-	q.mu.Lock()
-	defer q.mu.Unlock()
-	if len(q.msgs) >= maxPendingMsgs {
-		log.Printf("c5: dooray pending queue full (%d), dropping oldest", maxPendingMsgs)
-		q.msgs = q.msgs[1:] // drop oldest
-	}
-	q.msgs = append(q.msgs, msg)
-}
-
-func (q *doorayPendingQueue) popAll() []doorayPendingMessage {
-	q.mu.Lock()
-	msgs := q.msgs
-	q.msgs = nil
-	q.mu.Unlock()
-	// Filter expired messages.
-	now := time.Now()
-	filtered := msgs[:0]
-	for _, m := range msgs {
-		if now.Sub(m.ReceivedAt) <= pendingMsgTTL {
-			filtered = append(filtered, m)
-		}
-	}
-	return filtered
-}
-
-// handleDoorayPending handles GET /v1/dooray/pending.
-// C1 Channel adapter polls this endpoint to receive messages.
-func (s *Server) handleDoorayPending(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	msgs := s.doorayPending.popAll()
-	if msgs == nil {
-		msgs = []doorayPendingMessage{}
-	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(msgs) //nolint:errcheck
 }
 
 // handleDoorayReply handles POST /v1/dooray/reply.

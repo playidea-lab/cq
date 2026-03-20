@@ -133,7 +133,6 @@ var DefaultAllowlist = ErrorAllowlist{
 	"internal/chat/router.go":                                    2,
 	"internal/mcp/handlers/c2_native.go":                         2,
 	"internal/mcp/handlers/doorayhandler/doorayhandler.go":       2,
-	"internal/serve/dooray_poller.go":                            1,
 	"internal/serve/hypothesissuggester/hypothesissuggester.go":  1,
 	"internal/serve/orchestrator/jobdone.go":                     4,
 	"internal/serve/orchestrator/orchestrator.go":                6,

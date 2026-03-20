@@ -34,7 +34,6 @@ type DoorayChannelConfig struct {
 }
 
 // DoorayChannelComponent consumes Dooray messages from Hub via WebSocket push.
-// It replaces DoorayPollerComponent (HTTP polling) with a WS-based approach:
 // Hub pushes messages to connected clients on POST /v1/webhooks/dooray.
 //
 // Messages are stored in a local buffer with peek semantics:
