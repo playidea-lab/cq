@@ -21,7 +21,7 @@ type Opts struct {
 	KnowledgeStore *knowledge.Store
 }
 
-// Register registers c4_skill_eval_generate, c4_skill_eval_run, and c4_skill_eval_status tools.
+// Register registers c4_skill_eval_generate, c4_skill_eval_run, c4_skill_eval_status, and c4_skill_optimize tools.
 func Register(reg *mcp.Registry, opts *Opts) {
 	if opts == nil || opts.LLM == nil {
 		return
@@ -52,6 +52,48 @@ func Register(reg *mcp.Registry, opts *Opts) {
 	}, statusHandler(opts))
 
 	reg.RegisterBlocking(mcp.ToolSchema{
+		Name:        "c4_skill_optimize",
+		Description: "스킬의 SKILL.md를 자동 최적화한다. 베이스라인 측정 후 변이→평가→유지/폐기 루프를 반복해 pass rate를 높인다.",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"skill": map[string]any{
+					"type":        "string",
+					"description": "스킬 이름 (e.g. 'c4-finish')",
+				},
+				"evals": map[string]any{
+					"type":        "array",
+					"description": "평가 기준 목록 [{name, question, pass, fail}]",
+					"items": map[string]any{
+						"type": "object",
+						"properties": map[string]any{
+							"name":     map[string]any{"type": "string"},
+							"question": map[string]any{"type": "string"},
+							"pass":     map[string]any{"type": "string"},
+							"fail":     map[string]any{"type": "string"},
+						},
+						"required": []string{"name", "question", "pass", "fail"},
+					},
+				},
+				"runs_per_experiment": map[string]any{
+					"type":        "integer",
+					"description": "실험당 시뮬레이션 실행 횟수 (기본 3)",
+				},
+				"budget_cap": map[string]any{
+					"type":        "integer",
+					"description": "최대 변이 실험 횟수 (기본 10)",
+				},
+				"test_inputs": map[string]any{
+					"type":        "array",
+					"description": "테스트 입력 목록 (참고용)",
+					"items":       map[string]any{"type": "string"},
+				},
+			},
+			"required": []string{"skill", "evals"},
+		},
+	}, optimizeHandler(opts))
+
+	reg.RegisterBlocking(mcp.ToolSchema{
 		Name:        "c4_skill_eval_run",
 		Description: "스킬의 트리거 정확도를 haiku 분류 호출로 측정하고 결과를 C9에 저장한다.",
 		InputSchema: map[string]any{
@@ -69,6 +111,93 @@ func Register(reg *mcp.Registry, opts *Opts) {
 			"required": []string{"skill"},
 		},
 	}, runHandler(opts))
+}
+
+func optimizeHandler(opts *Opts) mcp.BlockingHandlerFunc {
+	return func(ctx context.Context, rawArgs json.RawMessage) (any, error) {
+		var params map[string]any
+		if err := json.Unmarshal(rawArgs, &params); err != nil {
+			return map[string]any{"error": "invalid args"}, nil
+		}
+
+		skillName, _ := params["skill"].(string)
+		if skillName == "" {
+			return map[string]any{"error": "skill is required"}, nil
+		}
+		if strings.Contains(skillName, "..") || strings.Contains(skillName, "/") || strings.Contains(skillName, "\\") {
+			return map[string]any{"error": "invalid skill name"}, nil
+		}
+
+		// Parse evals array
+		evalsRaw, _ := params["evals"].([]any)
+		if len(evalsRaw) == 0 {
+			return map[string]any{"error": "evals is required and must not be empty"}, nil
+		}
+		evals := make([]skilleval.BinaryEval, 0, len(evalsRaw))
+		for _, e := range evalsRaw {
+			em, ok := e.(map[string]any)
+			if !ok {
+				continue
+			}
+			name, _ := em["name"].(string)
+			question, _ := em["question"].(string)
+			pass, _ := em["pass"].(string)
+			fail, _ := em["fail"].(string)
+			if name == "" || question == "" {
+				continue
+			}
+			evals = append(evals, skilleval.BinaryEval{
+				Name:     name,
+				Question: question,
+				Pass:     pass,
+				Fail:     fail,
+			})
+		}
+		if len(evals) == 0 {
+			return map[string]any{"error": "no valid evals provided"}, nil
+		}
+
+		runsPerExperiment := 3
+		if v, ok := params["runs_per_experiment"].(float64); ok && v > 0 {
+			runsPerExperiment = int(v)
+		}
+
+		budgetCap := 10
+		if v, ok := params["budget_cap"].(float64); ok && v > 0 {
+			budgetCap = int(v)
+		}
+		// Cap to prevent unbounded LLM cost.
+		if budgetCap > 50 {
+			budgetCap = 50
+		}
+
+		optimizer := &skilleval.SkillOptimizer{
+			ProjectDir: opts.ProjectDir,
+			LLM:        opts.LLM,
+			KStore:     opts.KnowledgeStore,
+		}
+
+		result, err := optimizer.Run(ctx, skillName, evals, skilleval.OptimizeOpts{
+			RunsPerExperiment: runsPerExperiment,
+			BudgetCap:         budgetCap,
+		})
+		if err != nil {
+			return map[string]any{"error": fmt.Sprintf("optimize failed: %v", err)}, nil
+		}
+
+		improvementPercent := 0.0
+		if result.Baseline > 0 {
+			improvementPercent = (result.FinalScore - result.Baseline) / result.Baseline * 100
+		}
+
+		return map[string]any{
+			"baseline":            result.Baseline,
+			"final_score":         result.FinalScore,
+			"experiments":         result.Experiments,
+			"kept_count":          result.KeptCount,
+			"improvement_percent": improvementPercent,
+		}, nil
+	}
 }
 
 func runHandler(opts *Opts) mcp.BlockingHandlerFunc {
