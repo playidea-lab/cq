@@ -275,6 +275,14 @@ func (s *Server) handleJobComplete(w http.ResponseWriter, r *http.Request, jobID
 	// Dooray completion notification (no-op if job was not from Dooray).
 	s.notifyDoorayJobComplete(completedJob, status, exitCode)
 
+	// Generic failure notification: alert via default webhook for any failed job
+	// that wasn't already notified through Dooray channel integration.
+	if status == model.StatusFailed && completedJob != nil {
+		if _, hasDoorayChannel := completedJob.Env["DOORAY_CHANNEL"]; !hasDoorayChannel {
+			s.notifyJobFailure(completedJob, exitCode)
+		}
+	}
+
 	if s.eventPub.IsEnabled() {
 		if err := s.eventPub.Publish(evType, "c5", map[string]any{
 			"job_id":    jobID,
@@ -513,4 +521,24 @@ func (s *Server) notifyDoorayJobComplete(job *model.Job, status model.JobStatus,
 	}
 
 	go postToDooray(context.Background(), webhookURL, text)
+}
+
+// notifyJobFailure sends a failure notification via the default webhook URL
+// for jobs that were NOT submitted through Dooray (those are handled separately).
+// No-op if no default webhook URL is configured.
+func (s *Server) notifyJobFailure(job *model.Job, exitCode int) {
+	if s.doorayWebhookURL == "" {
+		return
+	}
+	shortID := job.ID
+	if len(shortID) > 8 {
+		shortID = shortID[:8]
+	}
+	worker := job.WorkerID
+	if worker == "" {
+		worker = "(unknown)"
+	}
+	text := fmt.Sprintf("❌ Job 실패: %s (%s)\n워커: %s\n종료코드: %d\n커맨드: %s",
+		job.Name, shortID, worker, exitCode, job.Command)
+	go postToDooray(context.Background(), s.doorayWebhookURL, text)
 }
