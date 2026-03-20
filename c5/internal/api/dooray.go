@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/piqsol/c4/c5/internal/conversation"
@@ -101,6 +102,16 @@ func (s *Server) handleDooray(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(doorayResponse{
 		Text:         ackText,
 		ResponseType: "ephemeral",
+	})
+
+	// Push to pending queue for C1 Channel adapter polling (GET /v1/dooray/pending).
+	s.doorayPending.push(doorayPendingMessage{
+		ChannelID:   payload.ChannelID,
+		SenderID:    payload.UserID,
+		SenderName:  payload.UserNickname,
+		Text:        payload.Text,
+		ResponseURL: payload.ResponseURL,
+		ReceivedAt:  time.Now(),
 	})
 
 	// Server-side LLM path.
@@ -669,4 +680,121 @@ func postToDooray(ctx context.Context, webhookURL, text string) {
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		log.Printf("c5: dooray: webhook returned status %d", resp.StatusCode)
 	}
+}
+
+// ---------------------------------------------------------------------------
+// doorayPendingQueue — in-memory pop queue for C1 Channel polling
+// ---------------------------------------------------------------------------
+
+// doorayPendingMessage represents a Dooray slash-command awaiting C1 pickup.
+type doorayPendingMessage struct {
+	ChannelID   string    `json:"channelId"`
+	SenderID    string    `json:"senderId"`
+	SenderName  string    `json:"senderName,omitempty"`
+	Text        string    `json:"text"`
+	ResponseURL string    `json:"response_url"`
+	ReceivedAt  time.Time `json:"received_at"`
+}
+
+// doorayPendingQueue is a thread-safe FIFO queue with pop-all semantics.
+type doorayPendingQueue struct {
+	mu   sync.Mutex
+	msgs []doorayPendingMessage
+}
+
+func (q *doorayPendingQueue) push(msg doorayPendingMessage) {
+	q.mu.Lock()
+	q.msgs = append(q.msgs, msg)
+	q.mu.Unlock()
+}
+
+func (q *doorayPendingQueue) popAll() []doorayPendingMessage {
+	q.mu.Lock()
+	msgs := q.msgs
+	q.msgs = nil
+	q.mu.Unlock()
+	return msgs
+}
+
+// handleDoorayPending handles GET /v1/dooray/pending.
+// C1 Channel adapter polls this endpoint to receive messages.
+func (s *Server) handleDoorayPending(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	msgs := s.doorayPending.popAll()
+	if msgs == nil {
+		msgs = []doorayPendingMessage{}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(msgs) //nolint:errcheck
+}
+
+// handleDoorayReply handles POST /v1/dooray/reply.
+// C1 Channel adapter calls this to send replies via response_url.
+func (s *Server) handleDoorayReply(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	body, err := io.ReadAll(io.LimitReader(r.Body, 512<<10))
+	if err != nil {
+		http.Error(w, `{"error":"read error"}`, http.StatusBadRequest)
+		return
+	}
+
+	var args struct {
+		ResponseURL  string `json:"response_url"`
+		Text         string `json:"text"`
+		ResponseType string `json:"response_type"`
+	}
+	if err := json.Unmarshal(body, &args); err != nil {
+		http.Error(w, `{"error":"invalid JSON"}`, http.StatusBadRequest)
+		return
+	}
+	if args.ResponseURL == "" || args.Text == "" {
+		http.Error(w, `{"error":"response_url and text required"}`, http.StatusBadRequest)
+		return
+	}
+
+	// SSRF protection: only *.dooray.com URLs.
+	if !strings.Contains(args.ResponseURL, ".dooray.com") {
+		http.Error(w, `{"error":"response_url must be *.dooray.com"}`, http.StatusBadRequest)
+		return
+	}
+
+	responseType := args.ResponseType
+	if responseType == "" {
+		responseType = "inChannel"
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+
+	postToDoorayResponse(ctx, args.ResponseURL, args.Text, responseType)
+	w.Header().Set("Content-Type", "application/json")
+	w.Write([]byte(`{"ok":true}`)) //nolint:errcheck
+}
+
+// postToDoorayResponse sends a reply to a Dooray response_url.
+func postToDoorayResponse(ctx context.Context, responseURL, text, responseType string) {
+	payload, _ := json.Marshal(map[string]string{
+		"text":         text,
+		"responseType": responseType,
+	})
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, responseURL, bytes.NewReader(payload))
+	if err != nil {
+		log.Printf("c5: dooray reply: create request: %v", err)
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := doorayHTTPClient.Do(req)
+	if err != nil {
+		log.Printf("c5: dooray reply: POST: %v", err)
+		return
+	}
+	defer resp.Body.Close()
+	io.Copy(io.Discard, io.LimitReader(resp.Body, 4096)) //nolint:errcheck
 }

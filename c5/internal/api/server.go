@@ -66,6 +66,10 @@ type Server struct {
 	llmSem           chan struct{}                 // semaphore: max concurrent LLM goroutines
 	convStore        conversation.Store           // per-channel multi-turn conversation history
 
+	// doorayPending is a thread-safe queue of Dooray slash-command messages
+	// waiting for C1 Channel adapter to poll via GET /v1/dooray/pending.
+	doorayPending doorayPendingQueue
+
 	// jobMu protects jobNotify. When a new job is queued, jobNotify is closed
 	// (broadcasting to all long-poll waiters) and replaced with a new channel.
 	jobMu     sync.Mutex
@@ -247,6 +251,10 @@ func (s *Server) registerRoutes() {
 
 	// Webhooks (public — token auth is self-contained per handler)
 	s.mux.HandleFunc("/v1/webhooks/dooray", s.handleDooray)
+
+	// Dooray C1 Channel polling endpoints (localhost / API-key protected)
+	s.mux.HandleFunc("/v1/dooray/pending", s.handleDoorayPending)
+	s.mux.HandleFunc("/v1/dooray/reply", s.handleDoorayReply)
 
 	// Auth (OAuth PKCE device flow — no API key required)
 	s.mux.HandleFunc("/auth/callback", s.handleAuthCallback)
