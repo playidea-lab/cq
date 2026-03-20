@@ -98,15 +98,15 @@ func TestDoorayWS_PushOnWebhook(t *testing.T) {
 	}
 }
 
-// TestDoorayWS_FallbackToPending verifies that without WS clients, the webhook
-// still pushes to the pending queue.
-func TestDoorayWS_FallbackToPending(t *testing.T) {
+// TestDoorayWS_NoWSClients verifies that without WS clients, the webhook
+// completes without error (messages are dropped if no WS clients).
+func TestDoorayWS_NoWSClients(t *testing.T) {
 	t.Setenv("C5_DOORAY_CMD_TOKEN", "")
 
-	s, ts := newRawTestServer(t)
+	_, ts := newRawTestServer(t)
 
 	// No WS clients — post webhook.
-	payload := doorayPayload("pending-fallback", "/cq", "https://example.com/r", "", "")
+	payload := doorayPayload("no-ws-clients", "/cq", "https://example.com/r", "", "")
 	buf, _ := json.Marshal(payload)
 	resp, err := http.Post(ts.URL+"/v1/webhooks/dooray", "application/json", jsonReader(buf))
 	if err != nil {
@@ -115,15 +115,6 @@ func TestDoorayWS_FallbackToPending(t *testing.T) {
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("webhook status: got %d, want 200", resp.StatusCode)
-	}
-
-	// Message should be in the pending queue.
-	msgs := s.doorayPending.popAll()
-	if len(msgs) != 1 {
-		t.Fatalf("pending queue: got %d msgs, want 1", len(msgs))
-	}
-	if msgs[0].Text != "pending-fallback" {
-		t.Errorf("pending msg text: got %q, want %q", msgs[0].Text, "pending-fallback")
 	}
 }
 
@@ -158,7 +149,6 @@ func TestDoorayWS_DeadClientRemoved(t *testing.T) {
 	clientCount := len(s.doorayWSClients)
 	s.doorayWSMu.Unlock()
 
-	// Either removed (0) or the pending queue has the message — both are acceptable outcomes.
 	// The key invariant is: no panic and the system stays consistent.
 	_ = clientCount
 }
