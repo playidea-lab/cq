@@ -14,6 +14,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/gobwas/ws"
+	"github.com/gobwas/ws/wsutil"
 	"github.com/piqsol/c4/c5/internal/conversation"
 	"github.com/piqsol/c4/c5/internal/knowledge"
 	"github.com/piqsol/c4/c5/internal/llmclient"
@@ -104,18 +106,22 @@ func (s *Server) handleDooray(w http.ResponseWriter, r *http.Request) {
 		ResponseType: "ephemeral",
 	})
 
-	// Push to pending queue for C1 Channel adapter polling (GET /v1/dooray/pending).
-	// When C1 Channel is active, messages go through the Channel → Claude Code path
-	// instead of the server-side LLM path. Both paths are kept for backward compat:
-	// if no C1 adapter polls within 30s, the LLM path would handle it (future TODO).
-	s.doorayPending.push(doorayPendingMessage{
+	pending := doorayPendingMessage{
 		ChannelID:   payload.ChannelID,
 		SenderID:    payload.UserID,
 		SenderName:  payload.UserNickname,
 		Text:        payload.Text,
 		ResponseURL: payload.ResponseURL,
 		ReceivedAt:  time.Now(),
-	})
+	}
+
+	// Prefer push over polling: if WS clients are connected, push and return.
+	if s.pushDoorayWS(pending) {
+		return
+	}
+
+	// Fallback: push to pending queue for C1 Channel adapter polling.
+	s.doorayPending.push(pending)
 	// C1 Channel adapter handles via polling — LLM and Hub Job paths disabled.
 	// To re-enable server-side LLM: remove this return and uncomment the paths
 	// in processDoorayServerSide / Hub Job fallback below.
@@ -635,6 +641,100 @@ func postToDooray(ctx context.Context, webhookURL, text string) {
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		log.Printf("c5: dooray: webhook returned status %d", resp.StatusCode)
 	}
+}
+
+// ---------------------------------------------------------------------------
+// Dooray WebSocket push channel — GET /v1/dooray/ws
+// ---------------------------------------------------------------------------
+
+// handleDoorayWS upgrades the connection to WebSocket and registers the client
+// as a push target for incoming Dooray slash-command messages.
+// Each message is sent as a JSON-encoded doorayPendingMessage frame.
+// The connection is tracked in Server.doorayWSClients; dead connections are
+// removed automatically when a push fails or the client closes.
+func (s *Server) handleDoorayWS(w http.ResponseWriter, r *http.Request) {
+	conn, _, _, err := ws.UpgradeHTTP(r, w)
+	if err != nil {
+		log.Printf("c5: dooray ws upgrade: %v", err)
+		return
+	}
+
+	send := make(chan []byte, 16)
+
+	s.doorayWSMu.Lock()
+	s.doorayWSClients[send] = struct{}{}
+	s.doorayWSMu.Unlock()
+
+	// Cleanup on exit.
+	defer func() {
+		conn.Close()
+		s.doorayWSMu.Lock()
+		delete(s.doorayWSClients, send)
+		s.doorayWSMu.Unlock()
+	}()
+
+	// Detect client disconnect in background.
+	disconnected := make(chan struct{})
+	go func() {
+		defer close(disconnected)
+		for {
+			conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+			_, _, err := wsutil.ReadClientData(conn)
+			if err != nil {
+				return
+			}
+		}
+	}()
+
+	for {
+		select {
+		case <-disconnected:
+			return
+		case data, ok := <-send:
+			if !ok {
+				return
+			}
+			conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+			if err := wsutil.WriteServerMessage(conn, ws.OpText, data); err != nil {
+				log.Printf("c5: dooray ws write: %v", err)
+				return
+			}
+		}
+	}
+}
+
+// pushDoorayWS broadcasts msg to all connected WS clients.
+// Returns true if at least one client received the message.
+// Clients that fail to receive (channel full) are removed as dead connections.
+func (s *Server) pushDoorayWS(msg doorayPendingMessage) bool {
+	data, err := json.Marshal(msg)
+	if err != nil {
+		return false
+	}
+
+	s.doorayWSMu.Lock()
+	defer s.doorayWSMu.Unlock()
+
+	if len(s.doorayWSClients) == 0 {
+		return false
+	}
+
+	var dead []chan []byte
+	sent := 0
+	for ch := range s.doorayWSClients {
+		select {
+		case ch <- data:
+			sent++
+		default:
+			// Channel full — dead connection; schedule removal.
+			dead = append(dead, ch)
+		}
+	}
+	for _, ch := range dead {
+		delete(s.doorayWSClients, ch)
+		log.Printf("c5: dooray ws: removed dead client (send buffer full)")
+	}
+	return sent > 0
 }
 
 // ---------------------------------------------------------------------------

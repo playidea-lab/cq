@@ -69,6 +69,12 @@ type Server struct {
 	// waiting for C1 Channel adapter to poll via GET /v1/dooray/pending.
 	doorayPending doorayPendingQueue
 
+	// doorayWSMu protects doorayWSClients.
+	doorayWSMu sync.Mutex
+	// doorayWSClients holds currently connected WS clients for the Dooray push channel.
+	// key: chan []byte (unique pointer per connection), value: unused (struct{}).
+	doorayWSClients map[chan []byte]struct{}
+
 	// jobMu protects jobNotify. When a new job is queued, jobNotify is closed
 	// (broadcasting to all long-poll waiters) and replaced with a new channel.
 	jobMu     sync.Mutex
@@ -155,7 +161,8 @@ func NewServer(cfg Config) *Server {
 		doorayWebhookURL: cfg.DoorayWebhookURL,
 		doorayCmdToken:   cfg.DoorayCmdToken,
 		channelMap: cfg.ChannelMap,
-		thresholdCooldowns: make(map[string]time.Time),
+		thresholdCooldowns:  make(map[string]time.Time),
+		doorayWSClients:      make(map[chan []byte]struct{}),
 		convStore: func() conversation.Store {
 			if ss := conversation.NewSupabaseStore(cfg.SupabaseURL, cfg.SupabaseKey); ss != nil {
 				return ss
@@ -254,6 +261,9 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("/v1/dooray/pending", s.handleDoorayPending)
 	s.mux.HandleFunc("/v1/dooray/reply", s.handleDoorayReply)
 
+	// Dooray WebSocket push channel
+	s.mux.HandleFunc("/v1/dooray/ws", s.handleDoorayWS)
+
 	// Auth (OAuth PKCE device flow — no API key required)
 	s.mux.HandleFunc("/auth/callback", s.handleAuthCallback)
 	s.mux.HandleFunc("/auth/activate", s.handleActivate) // GET form, POST validate
@@ -298,7 +308,8 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 			r.URL.Path == "/auth/callback",
 			r.URL.Path == "/v1/webhooks/dooray",
 			r.URL.Path == "/v1/dooray/pending",
-			r.URL.Path == "/v1/dooray/reply":
+			r.URL.Path == "/v1/dooray/reply",
+			r.URL.Path == "/v1/dooray/ws":
 			next.ServeHTTP(w, r)
 			return
 		}
