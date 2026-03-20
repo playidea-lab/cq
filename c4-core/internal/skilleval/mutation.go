@@ -2,6 +2,7 @@ package skilleval
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -69,7 +70,7 @@ func ProposeMutation(ctx context.Context, gw *llm.Gateway, skillContent string, 
 
 	mutated = strings.TrimSpace(resp.Content)
 	if mutated == "" {
-		return "", "", fmt.Errorf("LLM returned empty mutation")
+		return "", "", errors.New("LLM returned empty mutation")
 	}
 
 	// Derive a one-line description by diffing first changed line.

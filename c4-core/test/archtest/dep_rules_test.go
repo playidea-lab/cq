@@ -193,6 +193,7 @@ func TestDependencyMatrix(t *testing.T) {
 			"internal/c2",
 			"internal/c2/webcontent",
 			"internal/cdp",
+			"internal/chat",
 			"internal/cloud",
 			"internal/config",
 			"internal/daemon",
@@ -247,6 +248,7 @@ func TestDependencyMatrix(t *testing.T) {
 		},
 		// Wave 1c sub-packages: mailhandler and artifacthandler
 		"internal/mcp/handlers/mailhandler": {
+			"internal/chat",
 			"internal/mailbox",
 			"internal/mcp",
 		},
