@@ -1,6 +1,6 @@
 # C4 Roadmap
 
-## Current Version: v1.5.0 (Chat + Worker Affinity + Ollama Embeddings)
+## Current Version: v1.5.1 (Skills 2.0 + SkillEval + Dooray Polling)
 
 현재 버전은 **Go MCP Server (148 base + Hub 30 + Tiered 15, POP 3도구), Native Go/Dart LSP (goast/dartast), LLM Gateway (캐시 최적화), CDP Runner + WebMCP + Auto-Discovery, Cloud Foundation (CloudPrimaryStore + Session Limit), Knowledge v4 (OllamaEmbeddings + reindex + distill), C1 Unified Dashboard Messenger (HarnessWatcher + Cursor 어댑터, MessageViewer 스크롤 안정화), C3 EventBus v4, C5 Hub Server (Tenant Isolation + Dooray webhook + ExperimentStore + @key=value Protocol), Research Loop (LoopOrchestrator + GateController + StateYAMLWriter + NotifyBridge + SpecPipeline + MCP handlers + EventBus instant wake + Debate metrics injection), POP (Personal Ontology Pipeline, c4-finish 자동 주입), Persona/Soul Evolution, 36개 Skills (/pi EARS 통합 재설계), 3-layer Deprecated 스킬 강제 시스템, 프로젝트 단위 2-layer Permission Hook, bats 테스트 스위트, Named Session (gemini 지원 포함), 쉘 자동완성, OS 서비스 통합, Skill Health Pipeline (c4_skill_eval_run/status/generate), Drive Dataset Versioning (CAS), Hub secrets store 통합**를 포함합니다.
 
@@ -48,6 +48,12 @@
 ---
 
 ## 완료된 릴리즈 이력
+
+### v1.5.1 ✅ (2026-03-20)
+- **feat(skills)**: Skills 2.0 마이그레이션 — 30개 스킬에 allowed-tools 추가, 4개 조회 스킬에 context:fork
+- **feat(skilleval)**: BinaryEval 채점 엔진 + MutationEngine + SkillOptimizer 자율 최적화 루프
+- **feat(c1)**: DoorayAdapter Hub polling 방식 전환 + Dooray pending queue 엔드포인트
+- **fix(c5)**: Dooray pending/reply 인증 면제
 
 ### v1.5.0 ✅ (2026-03-20)
 - **feat(chat)**: `cq chat` CLI — Supabase Realtime WebSocket + bubbletea TUI (한글 CJK) + 에이전트 메시지 실시간 수신/전송
