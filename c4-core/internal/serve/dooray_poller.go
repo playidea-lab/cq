@@ -19,15 +19,7 @@ type DoorayPollerConfig struct {
 	WebhookURL   string        // Incoming Webhook URL for replies
 }
 
-// DoorayMessage is a pending message from the Hub.
-type DoorayMessage struct {
-	ChannelID   string    `json:"channelId"`
-	SenderID    string    `json:"senderId"`
-	SenderName  string    `json:"senderName,omitempty"`
-	Text        string    `json:"text"`
-	ResponseURL string    `json:"response_url"`
-	ReceivedAt  time.Time `json:"received_at"`
-}
+// DoorayMessage is defined in dooray_channel.go (shared type).
 
 // DoorayPollerComponent polls Hub /v1/dooray/pending and stores messages
 // for MCP tool access. Implements the Component interface.
