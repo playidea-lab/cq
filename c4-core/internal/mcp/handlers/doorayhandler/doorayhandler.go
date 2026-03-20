@@ -10,12 +10,17 @@ import (
 	"time"
 
 	"github.com/changmin/c4-core/internal/mcp"
+	"github.com/changmin/c4-core/internal/serve"
 )
 
 // DoorayConfig holds Hub connection info for Dooray MCP tools.
 type DoorayConfig struct {
 	HubURL     string // Hub API base URL (e.g. https://piqsol-c5.fly.dev)
 	WebhookURL string // Dooray Incoming Webhook URL for replies
+
+	// Channel is an optional local buffer component injected by serve mode.
+	// When set, c4_dooray_poll reads from the buffer instead of the Hub HTTP endpoint.
+	Channel *serve.DoorayChannelComponent
 }
 
 // Register registers c4_dooray_poll and c4_dooray_reply MCP tools.
@@ -35,6 +40,21 @@ func Register(reg *mcp.Registry, cfg DoorayConfig) {
 			"properties": map[string]any{},
 		},
 	}, func(rawArgs json.RawMessage) (any, error) {
+		// serve mode: read from local buffer and auto-ack.
+		if cfg.Channel != nil {
+			raw := cfg.Channel.GetMessages()
+			msgs := make([]map[string]any, 0, len(raw))
+			for _, m := range raw {
+				b, _ := json.Marshal(m)
+				var entry map[string]any
+				json.Unmarshal(b, &entry) //nolint:errcheck
+				msgs = append(msgs, entry)
+				cfg.Channel.AckMessage(m.ID)
+			}
+			return map[string]any{"messages": msgs, "count": len(msgs)}, nil
+		}
+
+		// standalone mode: poll Hub HTTP endpoint.
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
