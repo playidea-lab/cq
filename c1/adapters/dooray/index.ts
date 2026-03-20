@@ -127,34 +127,19 @@ export class DoorayAdapter implements PlatformAdapter {
   // ---------------------------------------------------------------------------
 
   async send(message: unknown): Promise<boolean> {
-    const { chat_id, text, response_url } = message as {
-      chat_id: string;
-      text: string;
-      response_url?: string;
-    };
+    const { text } = message as { chat_id?: string; text: string };
 
-    // If response_url is available, use Hub reply proxy
-    if (response_url) {
-      try {
-        const resp = await fetch(`${this.hubUrl}/v1/dooray/reply`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            response_url,
-            text,
-            response_type: "inChannel",
-          }),
-          signal: AbortSignal.timeout(10000),
-        });
-        return resp.ok;
-      } catch {
-        return false;
-      }
+    try {
+      const resp = await fetch(`${this.hubUrl}/v1/dooray/reply`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text }),
+        signal: AbortSignal.timeout(10000),
+      });
+      return resp.ok;
+    } catch {
+      return false;
     }
-
-    // Fallback: no response_url (shouldn't happen in normal flow)
-    console.error(`Dooray send: no response_url for chat_id=${chat_id}`);
-    return false;
   }
 
   // ---------------------------------------------------------------------------

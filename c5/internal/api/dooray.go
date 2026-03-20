@@ -687,7 +687,8 @@ func (s *Server) handleDoorayPending(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleDoorayReply handles POST /v1/dooray/reply.
-// C1 Channel adapter calls this to send replies via response_url.
+// C1 Channel adapter calls this to send replies via Incoming Webhook.
+// Uses the server's configured doorayWebhookURL (permanent, no expiration).
 func (s *Server) handleDoorayReply(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -701,55 +702,29 @@ func (s *Server) handleDoorayReply(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var args struct {
-		ResponseURL  string `json:"response_url"`
-		Text         string `json:"text"`
-		ResponseType string `json:"response_type"`
+		Text string `json:"text"`
 	}
 	if err := json.Unmarshal(body, &args); err != nil {
 		http.Error(w, `{"error":"invalid JSON"}`, http.StatusBadRequest)
 		return
 	}
-	if args.ResponseURL == "" || args.Text == "" {
-		http.Error(w, `{"error":"response_url and text required"}`, http.StatusBadRequest)
+	if args.Text == "" {
+		http.Error(w, `{"error":"text required"}`, http.StatusBadRequest)
 		return
 	}
 
-	// SSRF protection: only *.dooray.com URLs.
-	if !strings.Contains(args.ResponseURL, ".dooray.com") {
-		http.Error(w, `{"error":"response_url must be *.dooray.com"}`, http.StatusBadRequest)
+	// Use server's configured Incoming Webhook URL (permanent, no expiration).
+	webhookURL := s.doorayWebhookURL
+	if webhookURL == "" {
+		http.Error(w, `{"error":"dooray webhook URL not configured"}`, http.StatusServiceUnavailable)
 		return
-	}
-
-	responseType := args.ResponseType
-	if responseType == "" {
-		responseType = "inChannel"
 	}
 
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
 
-	postToDoorayResponse(ctx, args.ResponseURL, args.Text, responseType)
+	postToDooray(ctx, webhookURL, args.Text)
 	w.Header().Set("Content-Type", "application/json")
 	w.Write([]byte(`{"ok":true}`)) //nolint:errcheck
 }
 
-// postToDoorayResponse sends a reply to a Dooray response_url.
-func postToDoorayResponse(ctx context.Context, responseURL, text, responseType string) {
-	payload, _ := json.Marshal(map[string]string{
-		"text":         text,
-		"responseType": responseType,
-	})
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, responseURL, bytes.NewReader(payload))
-	if err != nil {
-		log.Printf("c5: dooray reply: create request: %v", err)
-		return
-	}
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := doorayHTTPClient.Do(req)
-	if err != nil {
-		log.Printf("c5: dooray reply: POST: %v", err)
-		return
-	}
-	defer resp.Body.Close()
-	io.Copy(io.Discard, io.LimitReader(resp.Body, 4096)) //nolint:errcheck
-}
