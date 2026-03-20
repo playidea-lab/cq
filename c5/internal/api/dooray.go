@@ -603,13 +603,28 @@ func sanitizeDoorayText(text string) string {
 	return sb.String()
 }
 
-// postToDooray sends a message to a Dooray Incoming Webhook.
-// Format: {"botName":"CQ","text":"..."}
+// postToDooray sends a message to a webhook (Dooray or Discord).
+// Auto-detects Discord URLs and adjusts the payload format accordingly.
 func postToDooray(ctx context.Context, webhookURL, text string) {
-	body, err := json.Marshal(map[string]string{
-		"botName": "CQ",
-		"text":    text,
-	})
+	var body []byte
+	var err error
+	if strings.Contains(webhookURL, "discord.com/api/webhooks") {
+		// Discord format: {"username":"CQ","content":"..."}
+		// Discord limits content to 2000 chars; truncate if needed.
+		if len(text) > 1990 {
+			text = text[:1990] + "…"
+		}
+		body, err = json.Marshal(map[string]string{
+			"username": "CQ",
+			"content":  text,
+		})
+	} else {
+		// Dooray format: {"botName":"CQ","text":"..."}
+		body, err = json.Marshal(map[string]string{
+			"botName": "CQ",
+			"text":    text,
+		})
+	}
 	if err != nil {
 		log.Printf("c5: dooray: marshal webhook body: %v", err)
 		return
