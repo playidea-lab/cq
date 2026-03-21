@@ -82,7 +82,6 @@ var DefaultAllowlist = ErrorAllowlist{
 	"internal/mcp/handlers/cdphandler/cdp.go":      22,
 	"internal/mcp/handlers/cfghandler/cfghandler.go": 1,
 	"internal/mcp/handlers/drivehandler/drive.go":  5,
-	"internal/mcp/handlers/eventbushandler/dooray_tool.go": 2,
 	"internal/mcp/handlers/eventbushandler/eventbus.go": 8,
 	"internal/mcp/handlers/fileops/fileops.go":      3,
 	"internal/mcp/handlers/files_helpers.go":       2,
