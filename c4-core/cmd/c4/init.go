@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/changmin/c4-core/internal/botstore"
+	"github.com/changmin/c4-core/internal/knowledge"
 	"github.com/changmin/c4-core/internal/mailbox"
 	stdpkg "github.com/changmin/c4-core/internal/standards"
 	"github.com/google/uuid"
@@ -315,6 +316,23 @@ func initAndLaunch(tool string) error {
 		} else {
 			fmt.Fprintf(os.Stderr, "✓ 표준 규칙 적용 (%d files, team=%s, langs=%v)\n",
 				len(result.FilesCreated), result.Team, result.Langs)
+		}
+	}
+
+	// 3c. Load relevant documents from global knowledge store into project store (non-fatal).
+	{
+		projectKnowledgeDir := filepath.Join(dir, ".c4", "knowledge")
+		projectStore, psErr := knowledge.NewStore(projectKnowledgeDir)
+		if psErr == nil {
+			gkm := knowledge.NewGlobalKnowledgeManager()
+			domains := knowledge.DetectProjectDomains(dir)
+			n, loadErr := gkm.LoadRelevant(projectStore, domains)
+			if loadErr != nil {
+				fmt.Fprintf(os.Stderr, "cq: warning: global knowledge load failed: %v\n", loadErr)
+			} else if n > 0 {
+				fmt.Fprintf(os.Stderr, "✓ 글로벌 지식 %d건 로드\n", n)
+			}
+			projectStore.Close()
 		}
 	}
 
