@@ -122,14 +122,25 @@ func Apply(projectDir string, team string, langs []string) (*ApplyResult, error)
 		}
 	}
 
-	// 2. Common file mappings (agents.md → CLAUDE.md, soul.md, settings, config).
+	// 2. Common hooks (bash-security.sh, stop-guard.sh, session-start.sh).
+	for _, hm := range m.Common.Hooks {
+		if err := copyFile(hm.Src, hm.Dst, false, nil); err != nil {
+			return nil, err
+		}
+		if hm.Executable {
+			dstAbs := filepath.Join(projectDir, hm.Dst)
+			_ = os.Chmod(dstAbs, 0o755)
+		}
+	}
+
+	// 3. Common file mappings (agents.md → CLAUDE.md, soul.md, settings, config).
 	for _, fm := range m.Common.Files {
 		if err := copyFile(fm.Src, fm.Dst, fm.Merge, fm.Overwrite); err != nil {
 			return nil, err
 		}
 	}
 
-	// 3. Resolve langs — if empty and team is given, use team defaults.
+	// 4. Resolve langs — if empty and team is given, use team defaults.
 	resolvedLangs := langs
 	if len(resolvedLangs) == 0 && team != "" {
 		if tl, ok := m.Teams[team]; ok {
@@ -138,7 +149,7 @@ func Apply(projectDir string, team string, langs []string) (*ApplyResult, error)
 	}
 	result.Langs = resolvedLangs
 
-	// 4. Language layers.
+	// 5. Language layers.
 	for _, lang := range resolvedLangs {
 		_, ll := m.ResolveLanguage(lang)
 		if ll == nil {
@@ -151,7 +162,7 @@ func Apply(projectDir string, team string, langs []string) (*ApplyResult, error)
 		}
 	}
 
-	// 5. Team layer.
+	// 6. Team layer.
 	if team != "" {
 		if tl, ok := m.Teams[team]; ok {
 			for _, rule := range tl.Rules {
@@ -162,7 +173,7 @@ func Apply(projectDir string, team string, langs []string) (*ApplyResult, error)
 		}
 	}
 
-	// 6. Auto-install skills.
+	// 7. Auto-install skills.
 	_ = fs.WalkDir(pkgstandards.FS, "skills", func(path string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil || d.IsDir() {
 			return nil
@@ -177,7 +188,7 @@ func Apply(projectDir string, team string, langs []string) (*ApplyResult, error)
 		return nil
 	})
 
-	// 7. Write .piki-lock.yaml.
+	// 8. Write .piki-lock.yaml.
 	lock := lockFile{
 		Team:      team,
 		Langs:     resolvedLangs,

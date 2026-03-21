@@ -30,3 +30,22 @@ permission_reviewer:
   enabled: true
   mode: hook
   auto_approve: true
+  allow_patterns:
+    - "^git (log|show|diff|status|branch|tag|remote|stash list|ls-files|blame)( |$)"
+    - "^git (add|commit|checkout|worktree|merge|rebase|stash|fetch|pull)( |$)"
+    - "^go (build|test|vet|run|env|list|mod)( |$)"
+    - "^cd .* && go (build|test|vet)( |$)"
+    - "^uv (run|sync|pip list|pip show|lock|python)( |$)"
+    - "^(ls|ll|la|cat|head|tail|wc|stat) "
+    - "^ls$"
+    - "^(mkdir|touch|cp|mv|chmod) "
+    - "^find \\. "
+    - "^(grep|rg) "
+    - "^(echo|pwd|which|env|printenv|whoami|date|uname) "
+    - "^(test|\\[) "
+    - "^cq "
+    - "^sqlite3 "
+    - "^(cargo|rustc) (build|test|check|clippy)( |$)"
+    - "^pnpm (build|test|lint|install|dev)( |$)"
+    - "^make (build|install|test)( |$)"
+  block_patterns: []

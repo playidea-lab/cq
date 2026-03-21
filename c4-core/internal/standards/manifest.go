@@ -18,10 +18,18 @@ type Manifest struct {
 	Doctor    DoctorConfig           `yaml:"doctor"`
 }
 
-// CommonLayer holds rules and files that are always applied.
+// CommonLayer holds rules, hooks, and files that are always applied.
 type CommonLayer struct {
 	Rules []string      `yaml:"rules"`
+	Hooks []HookMapping `yaml:"hooks"`
 	Files []FileMapping `yaml:"files"`
+}
+
+// HookMapping describes a hook script to copy into a project.
+type HookMapping struct {
+	Src        string `yaml:"src"`
+	Dst        string `yaml:"dst"`
+	Executable bool   `yaml:"executable"`
 }
 
 // FileMapping describes a file copy operation from the standards FS to a project.
