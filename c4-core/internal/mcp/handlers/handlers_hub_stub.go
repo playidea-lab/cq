@@ -40,3 +40,6 @@ type WorkerDeps struct {
 
 // RegisterWorkerHandlers is a no-op stub when c5_hub build tag is disabled.
 func RegisterWorkerHandlers(_ *mcp.Registry, _ *WorkerDeps) {}
+
+// RegisterDispatchHandler is a no-op stub when c5_hub build tag is disabled.
+func RegisterDispatchHandler(_ *mcp.Registry) {}
