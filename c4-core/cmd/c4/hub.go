@@ -265,13 +265,20 @@ func newHubClient() (*hub.Client, error) {
 		}
 	}
 
+	// Resolve Supabase URL/key from cloud config for PostgREST access.
+	cloudCfg := cfgMgr.GetConfig().Cloud
+	supabaseURL := cloudCfg.URL
+	supabaseKey := cloudCfg.AnonKey
+
 	client := hub.NewClient(hub.HubConfig{
-		Enabled:   hubCfg.Enabled,
-		URL:       hubCfg.URL,
-		APIPrefix: hubCfg.APIPrefix,
-		APIKey:    apiKey,
-		APIKeyEnv: hubCfg.APIKeyEnv,
-		TeamID:    hubCfg.TeamID,
+		Enabled:      hubCfg.Enabled,
+		URL:          hubCfg.URL,
+		APIPrefix:    hubCfg.APIPrefix,
+		APIKey:       apiKey,
+		APIKeyEnv:    hubCfg.APIKeyEnv,
+		TeamID:       hubCfg.TeamID,
+		SupabaseURL:  supabaseURL,
+		SupabaseKey:  supabaseKey,
 	})
 
 	if !client.IsAvailable() {
