@@ -9,310 +9,176 @@
 curl -fsSL https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/install.sh | sh
 ```
 
-**CQ** is a project management engine for Claude Code.
-It automates the full development lifecycle — planning, implementation, review, and delivery — through a structured workflow powered by C4 Engine.
-It also learns your engineering style over time through Soul evolution and POP (Personal Ontology Pipeline).
+**CQ** is a local-first AI orchestration platform.
+It automates the full development lifecycle — planning, implementation, review, and delivery — while distributing work across multiple machines via Supabase.
 
-## Tiers
+## How It Works
 
-Choose the tier that fits your setup:
-
-| Tier | Description | Use when |
-|------|-------------|----------|
-| `solo` | Local only, no external deps | Personal / offline |
-| `connected` | + Supabase, LLM Gateway, EventBus | Team / cloud sync |
-| `full` | + Supabase Worker Queue, Drive, CDP, GPU, C1 Messenger | Full production |
-
-```sh
-# Install a specific tier (default: solo)
-curl -fsSL https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/install.sh | sh -s -- --tier connected
 ```
+Your Laptop                          Remote Workers (GPU servers, etc.)
+┌──────────────────────┐             ┌──────────────────────┐
+│  cq                  │             │  cq hub worker start │
+│  ├── Claude Code     │   Supabase  │  ├── LISTEN/NOTIFY   │
+│  ├── 133 MCP tools   │◄──────────►│  ├── claim job       │
+│  ├── Telegram bot    │   (jobs,    │  ├── execute         │
+│  └── Knowledge DB    │  knowledge) │  └── report result   │
+└──────────────────────┘             └──────────────────────┘
+```
+
+- **No server required** — Supabase handles job queue, knowledge sync, auth, and storage
+- **Works with any AI CLI** — Claude Code, Gemini CLI, Codex, Cursor
+- **Telegram control** — pair a bot and control from your phone
 
 ## Quick Start
 
 ```sh
-# 1. Check environment
-cq doctor
+# Install
+curl -fsSL https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/install.sh | sh
 
-# 2. Log in (connected / full tier)
-cq auth login               # opens GitHub OAuth in browser → auto-configures cloud
-cq auth login --device     # headless/SSH: shows user_code to enter in browser
-cq auth login --link       # prints auth URL to open manually
+# Log in
+cq auth login
 
-# 3. Initialize C4 in your project (generates .mcp.json + CLAUDE.md)
-cd your-project
-cq claude   # for Claude Code
-cq cursor   # for Cursor
+# Start Claude Code
+cq claude
 
-# 4. Open Claude Code — C4 MCP tools are now available
-#    cq init prints login status at startup:
-#      ✓ Cloud: user@example.com (expires in 47h)
-#      → Run 'cq auth login' to enable cloud sync & hub access
+# (Optional) Pair a Telegram bot for phone control
+cq setup
 ```
 
-## How it looks
+## Distributed Workers
 
-### Scenario 1 — Building a new feature
-
-> **You:** "JWT 인증 추가해줘. Google이랑 GitHub 로그인"
-
-```
-/c4-plan "JWT auth with Google and GitHub OAuth"
-
-  ● Discovery
-    Q: Session store — Redis or DB?          → DB (stateless preferred)
-    Q: Token expiry — access/refresh split?  → Yes, 15min / 7day
-    Q: Existing user model?                  → users table exists
-
-  ● Design
-    Provider abstraction → Google → GitHub → Session middleware
-    JWT: RS256, stored in httpOnly cookie
-
-  ● Tasks created
-    T-001  OAuth provider interface
-    T-002  Google provider
-    T-003  GitHub provider
-    T-004  JWT middleware + session store
-    T-005  Integration tests
-```
-
-> **You:** "ㄱㄱ"
-
-```
-/c4-run
-
-  ◆ T-001  [worker-a] worktree: c4/w-T-001-0  ████████░░  implementing...
-  ◆ T-002  [worker-b] worktree: c4/w-T-002-0  ████░░░░░░  implementing...
-  ◆ T-003  [worker-c] worktree: c4/w-T-003-0  ██░░░░░░░░  implementing...
-  ◆ T-004  waiting on T-001
-
-  ✓ T-001  submitted (sha: a3f8c21)  →  R-001 review queued
-  ✓ T-002  submitted (sha: 7b2e94d)  →  R-002 review queued
-  ...
-  ✓ All tasks complete → auto-polish → /c4-finish → done
-```
-
----
-
-### Scenario 2 — Quick bug fix
-
-> **You:** "모바일에서 로그인 버튼 클릭이 안 돼"
-
-```
-/c4-quick "fix login button not responding on mobile"
-
-  ● Task T-011-0 created
-    DoD: touch event handler added, tested on viewport <768px
-
-  ◆ [worker] implementing fix...
-  ✓ submitted  →  review passed  →  done
-
-  Changed: src/components/LoginButton.tsx (+3 -1)
-```
-
----
-
-### Scenario 3 — Checking status mid-flight
-
-> **You:** "지금 어디까지 됐어?"
-
-```
-/c4-status
-
-  Phase: EXECUTE  ████████████░░░░  75%
-
-  ✓ T-001  OAuth interface      [merged]
-  ✓ T-002  Google provider      [merged]
-  ▶ T-003  GitHub provider      [in review]
-  ◷ T-004  JWT middleware        [pending T-003]
-  ◷ T-005  Integration tests    [pending T-004]
-
-  Workers: 1 active  |  Queue: 2 pending  |  Knowledge: 8 records
-```
-
----
-
-### Scenario 4 — Distributed experiments across machines
-
-> **You:** "backbone 3개 비교 실험 돌려야 해. ResNet / EfficientNet / ViT"
-
-Workers connect directly to Supabase — no Hub server to start:
-
-```
-/c4-plan "backbone ablation: ResNet50 vs EfficientNet-B4 vs ViT-B/16"
-
-  ● Tasks created
-    T-020  train ResNet50       (GPU: 1x A100, est. 4h)
-    T-021  train EfficientNet   (GPU: 1x A100, est. 3h)
-    T-022  train ViT-B/16       (GPU: 1x A100, est. 6h)
-    T-023  compare results + report
-```
-
-각 머신에서 `/c4-standby`로 워커 등록:
-
-```
-# machine-1 (Claude Code session)
-/c4-standby
-
-  ● Registered as worker  [id: worker-m1]
-  ◷ Waiting for jobs from Supabase worker queue...
-  ✓ Claimed T-020  →  training ResNet50...
-
-# machine-2
-/c4-standby
-  ✓ Claimed T-021  →  training EfficientNet...
-
-# machine-3
-/c4-standby
-  ✓ Claimed T-022  →  training ViT-B/16...
-```
-
-> **You:** "결과 어때?"
-
-```
-/c4-status
-
-  ✓ T-020  ResNet50       MPJPE: 48.3mm  PA-MPJPE: 34.1mm  [worker-m1]
-  ✓ T-021  EfficientNet   MPJPE: 44.7mm  PA-MPJPE: 31.8mm  [worker-m2]  ← best
-  ▶ T-022  ViT-B/16       running 3h 42m / ~6h               [worker-m3]
-  ◷ T-023  waiting on T-020, T-021, T-022
-
-  Knowledge: 2 new experiment records saved
-```
-
-T-022 완료 후 비교 리포트 자동 생성:
-
-```
-  ✓ T-023  Comparison report
-
-  | Backbone      | MPJPE  | PA-MPJPE | Params | Throughput |
-  |---------------|--------|----------|--------|------------|
-  | ResNet50      | 48.3mm | 34.1mm   | 25.6M  | 142 img/s  |
-  | EfficientNet  | 44.7mm | 31.8mm   | 19.3M  | 98 img/s   |
-  | ViT-B/16      | 41.2mm | 29.4mm   | 86.6M  | 47 img/s   |
-
-  Recommendation: EfficientNet — best accuracy/efficiency ratio
-  Knowledge recorded → injected into next experiment planning
-```
-
----
-
-## Sessions
-
-Resume a previous Claude Code session by name:
+Run experiments across multiple machines — no server to manage:
 
 ```sh
-cq claude -t myproject    # start or resume a named session
-cq ls                     # list all sessions (shows unread mail count)
+# On your GPU server:
+curl -fsSL https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/install.sh | sh
+cq auth login --device
+cq hub worker start     # connects to Supabase, waits for jobs
+
+# On your laptop:
+cq hub submit --run "python train.py --lr 1e-4"
+# → Worker picks it up and executes
 ```
-
-Named sessions allow you to resume context across terminal restarts. Attach a name to an existing session with `/c4-attach`.
-
-## Soul & Learning
-
-CQ learns your coding style, tone, and preferences — and evolves the agent's behavior over time.
-
-```sh
-scripts/soul-check.sh    # check soul status and last evolution timestamp
-scripts/soul-evolve.sh   # run deep learning evolution based on accumulated patterns
-```
-
-### POP — Personal Ontology Pipeline
-
-POP automatically extracts knowledge proposals from conversation messages and crystallizes them into your Soul.
-
-```
-Extract → Consolidate → Propose → Validate → Crystallize
-```
-
-```sh
-cq pop status   # show pipeline state, gauge values, and proposal stats
-```
-
-In Claude Code, use MCP tools:
-- `c4_pop_extract` — run an extraction cycle (requires C1 Messenger connection)
-- `c4_pop_status` — check pipeline state + gauges + knowledge stats
-- `c4_pop_reflect` — list high-confidence (≥0.8) proposals
-
-> **Note**: POP requires C1 Messenger (`full` tier) to source messages. In `solo`/`connected` mode, `c4_pop_extract` returns success but performs no extraction.
-
----
-
-## Mail (inter-session messaging)
-
-Send messages between sessions or from the CLI:
-
-```sh
-cq mail ls                # list messages
-cq mail read <id>         # read a message
-```
-
-In Claude Code, use `c4_mail_send` / `c4_mail_ls` / `c4_mail_read` / `c4_mail_rm` MCP tools to communicate across sessions.
 
 ## Workflow
 
 ```
-/pi "idea..."                    → ideation → idea.md → spec scenarios
-/c4-plan "feature description"   → discovery + design + behavior spec + tasks
+/pi "idea..."                    → ideation → idea.md
+/c4-plan "feature description"   → discovery + design + tasks
 /c4-run                          → spawn workers, implement in parallel
-/c4-finish                       → build · test · spec verify · docs · commit
+/c4-finish                       → build · test · docs · commit
 /c4-status                       → check progress at any time
 ```
 
-### Behavior Specification (v1.3.1+)
+## How It Looks
 
-CQ generates a **living behavior spec** alongside your code:
+### Building a new feature
 
-```
-/pi → idea.md (why) → spec.md scenarios (what) → code (how)
-                         ↓                           ↓
-                    human reviews              tests validate
-                    before coding              after coding
-```
-
-Each spec scenario uses **WHEN-THEN-VERIFY** format:
-- **WHEN/THEN** — human-readable behavior description (for PMs & QA)
-- **VERIFY** — machine-checkable conditions (mapped to tests)
-
-After implementation, `/c4-finish` auto-maps scenarios to test results:
-```
-| Scenario | Test                    | Status    |
-|----------|-------------------------|-----------|
-| S1       | TestTransfer_HappyPath  | ✅ PASS   |
-| S2       | TestTransfer_Offline    | ✅ PASS   |
-| S3       | (not implemented)       | ⚠️ NO TEST |
-```
-
-### Context Efficiency
-
-Use `c4_execute` instead of Bash for commands that produce large output — it automatically compresses results to keep context consumption low:
+> **You:** "JWT 인증 추가해줘"
 
 ```
-c4_execute({"command": "go test ./..."})   # test mode: extracts failures only
-c4_execute({"command": "git log"})         # git mode: keeps hash + subject only
-c4_execute({"command": "go build ./..."})  # build mode: extracts errors/warnings only
+/c4-plan "JWT auth with Google and GitHub OAuth"
+
+  ● Discovery → Design → Tasks
+    T-001  OAuth provider interface
+    T-002  Google provider
+    T-003  GitHub provider
+    T-004  JWT middleware
+    T-005  Integration tests
+
+/c4-run
+
+  ◆ T-001  [worker-a]  ████████░░  implementing...
+  ◆ T-002  [worker-b]  ████░░░░░░  implementing...
+  ...
+  ✓ All tasks complete → auto-polish → done
 ```
 
-Prefer `c4_execute` for: `go test`, `git log`, `git diff`, `find`, `cargo test`, `npm test`, `make`.
-Use Bash only for piped commands (`cmd | cmd`) or short one-liners.
+### Distributed experiments
+
+> **You:** "backbone 3개 비교 돌려"
+
+```
+cq hub submit --run "python train.py --backbone resnet50"
+cq hub submit --run "python train.py --backbone efficientnet"
+cq hub submit --run "python train.py --backbone vit"
+
+# Workers on different machines pick up and run in parallel
+# Results accumulate in Supabase knowledge base
+```
+
+### Quick bug fix
+
+> **You:** "모바일에서 버튼 안 돼"
+
+```
+/c4-quick "fix login button on mobile"
+  ✓ Fixed → reviewed → merged
+  Changed: src/components/LoginButton.tsx (+3 -1)
+```
+
+## Telegram
+
+Pair a Telegram bot and control CQ from your phone:
+
+```sh
+cq setup    # BotFather → token → pairing (one-time)
+cq          # select bot → Claude Code + Telegram session
+```
+
+Then from Telegram:
+- Send messages → Claude Code processes and responds
+- Receive notifications when tasks/experiments complete
+- Works as a memo pad — messages queue while laptop is off
+
+## Knowledge System
+
+CQ accumulates knowledge from every task and experiment:
+
+```
+Task complete → auto-record (discoveries, patterns, concerns)
+                    ↓
+              Knowledge DB (FTS + vector search)
+                    ↓
+Next task assigned → auto-inject relevant past knowledge
+                    ↓
+              Better implementation → record → ...
+```
+
+Self-reinforcing loop. Knowledge syncs across devices via Supabase.
+
+## Soul & Learning
+
+CQ learns your coding style and evolves over time:
+
+- **Persona** — extracts patterns from your git diffs
+- **POP** — Personal Ontology Pipeline (conversation → knowledge)
+- **Soul** — review priorities, quality philosophy
+
+## Sessions
+
+```sh
+cq claude -t myproject    # start or resume a named session
+cq ls                     # list bots and sessions
+```
 
 ## Config
 
-`solo` tier works out of the box — no config needed.
-
-For `connected` / `full` tiers:
-
 ```sh
-cq auth login               # GitHub OAuth → auto-patches .c4/config.yaml (cloud.enabled, url, anon_key)
-cq auth login --device     # headless/SSH: shows user_code to enter in browser (RFC 8628 Device Flow)
-cq auth login --link       # prints auth URL to open manually
+cq auth login              # GitHub OAuth → auto-configures cloud
+cq auth login --device     # headless/SSH: device code flow
+cq doctor                  # check installation health
 ```
 
-After login, cloud sync and Hub access are enabled automatically. No manual config editing required.
+No manual config editing required. `cq auth login` sets up everything.
 
 ## Update
 
-Re-run the same install command to update to the latest release.
+Re-run the install command:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/install.sh | sh
+```
 
 ## Requirements
 
