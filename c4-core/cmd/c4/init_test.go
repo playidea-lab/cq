@@ -1400,7 +1400,7 @@ func TestCheckCloudAuthStatus_ExpiredSession(t *testing.T) {
 	}
 }
 
-// TestLsUnread verifies that cq ls appends "[N unread]" for sessions that have
+// TestLsUnread verifies that cq sessions appends "[N unread]" for sessions that have
 // unread messages in the mailbox, and shows no suffix for sessions without unread messages.
 func TestLsUnread(t *testing.T) {
 	// Set up temp HOME with .c4/ directory.
@@ -1435,7 +1435,7 @@ func TestLsUnread(t *testing.T) {
 		t.Fatalf("write named-sessions.json: %v", err)
 	}
 
-	// Redirect lsCmd output to a buffer.
+	// Redirect sessionsCmd output to a buffer.
 	oldStdout := os.Stdout
 	r, w, pipeErr := os.Pipe()
 	if pipeErr != nil {
@@ -1447,7 +1447,7 @@ func TestLsUnread(t *testing.T) {
 	t.Setenv("CQ_SESSION_UUID", "")
 
 	// Run the command.
-	lsCmd.RunE(lsCmd, nil) //nolint:errcheck
+	sessionsCmd.RunE(sessionsCmd, nil) //nolint:errcheck
 
 	w.Close()
 	os.Stdout = oldStdout
