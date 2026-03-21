@@ -117,7 +117,7 @@ func RegisterEventBusHandlers(reg *mcp.Registry, client *eventbus.Client, cfgMgr
 				"name":          map[string]any{"type": "string", "description": "Unique rule name"},
 				"event_pattern": map[string]any{"type": "string", "description": "Event pattern to match (e.g. drive.*, task.completed)"},
 				"filter_json":   map[string]any{"type": "string", "description": "Optional JSON filter (e.g. {\"content_type\":\"application/pdf\"})"},
-				"action_type":   map[string]any{"type": "string", "description": "Action type: log, webhook, c1_post, hub_submit, dooray_respond, dooray_respond_llm, dooray_dispatch"},
+				"action_type":   map[string]any{"type": "string", "description": "Action type: log, webhook, c1_post, hub_submit"},
 				"action_config": map[string]any{"type": "string", "description": "Action config as JSON string. For webhook, use {\"url\":\"...\"}. Shortcut: {\"channel\":\"name\"} to use a configured notification channel."},
 				"enabled":       map[string]any{"type": "boolean", "description": "Whether rule is enabled (default: true)"},
 				"priority":      map[string]any{"type": "integer", "description": "Rule priority (higher = runs first)"},
