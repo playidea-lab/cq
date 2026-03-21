@@ -46,6 +46,7 @@ type Job struct {
 	BestMetric      *float64          `json:"best_metric,omitempty"`
 	Capability      string            `json:"capability,omitempty"`
 	Result          json.RawMessage   `json:"result,omitempty"`
+	Datasets        []string          `json:"datasets,omitempty"`
 }
 
 // GetID returns the job ID, preferring "id" (Hub) but falling back to "job_id" (PiQ daemon).
@@ -85,6 +86,7 @@ type JobSubmitRequest struct {
 	ProjectID           string            `json:"project_id,omitempty"`
 	Capability          string            `json:"capability,omitempty"`
 	Params              map[string]any    `json:"params,omitempty"`
+	Datasets            []string          `json:"datasets,omitempty"`
 }
 
 // JobSubmitResponse is the response from POST /v1/jobs/submit.

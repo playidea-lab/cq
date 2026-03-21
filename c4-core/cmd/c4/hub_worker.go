@@ -19,6 +19,8 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/changmin/c4-core/internal/cqdata"
+	"github.com/changmin/c4-core/internal/drive"
 	"github.com/changmin/c4-core/internal/hub"
 	"github.com/changmin/c4-core/internal/mcp/handlers/cfghandler"
 	"github.com/spf13/cobra"
@@ -820,14 +822,39 @@ func claimAndRun(ctx context.Context, supabaseURL, anonKey, jwt, workerID string
 	}
 
 	var job struct {
-		ID      string `json:"id"`
-		Name    string `json:"name"`
-		Command string `json:"command"`
-		Workdir string `json:"workdir"`
+		ID       string   `json:"id"`
+		Name     string   `json:"name"`
+		Command  string   `json:"command"`
+		Workdir  string   `json:"workdir"`
+		Datasets []string `json:"datasets"`
 	}
 	json.Unmarshal(result.Job, &job)
 
 	fmt.Printf("cq: claimed job %s (%s) lease=%s\n", job.ID, job.Name, result.LeaseID)
+
+	// Auto-pull datasets referenced in the job before execution.
+	if len(job.Datasets) > 0 {
+		if err := pullJobDatasets(ctx, supabaseURL, anonKey, jwt, job.Workdir, job.Datasets); err != nil {
+			fmt.Fprintf(os.Stderr, "cq: dataset pull failed for job %s: %v\n", job.ID, err)
+			// Fail the job — cannot run experiment without data.
+			completeURL := supabaseURL + "/rest/v1/rpc/complete_job"
+			completeBody, _ := json.Marshal(map[string]any{
+				"p_job_id":    job.ID,
+				"p_status":    "FAILED",
+				"p_exit_code": 1,
+				"p_worker_id": workerID,
+			})
+			completeReq, _ := http.NewRequestWithContext(ctx, "POST", completeURL, strings.NewReader(string(completeBody)))
+			completeReq.Header.Set("Content-Type", "application/json")
+			completeReq.Header.Set("apikey", anonKey)
+			completeReq.Header.Set("Authorization", "Bearer "+jwt)
+			if r, e := http.DefaultClient.Do(completeReq); e == nil {
+				io.Copy(io.Discard, r.Body)
+				r.Body.Close()
+			}
+			return
+		}
+	}
 
 	// Execute the job command, capturing output for log storage.
 	if job.Command != "" {
@@ -905,6 +932,59 @@ func claimAndRun(ctx context.Context, supabaseURL, anonKey, jwt, workerID string
 			r.Body.Close()
 		}
 	}
+}
+
+// staticToken implements drive.tokenProvider for a fixed JWT string.
+type staticToken string
+
+func (t staticToken) Token() string { return string(t) }
+
+// pullJobDatasets loads .cqdata from workdir (or cwd), resolves each dataset
+// key to (name, version), and pulls via drive.DatasetClient.
+// Returns on first error — the caller should fail the job.
+func pullJobDatasets(ctx context.Context, supabaseURL, anonKey, jwt, workdir string, datasets []string) error {
+	dir := workdir
+	if dir == "" {
+		dir = "."
+	}
+	cd, err := cqdata.Load(dir)
+	if err != nil {
+		return fmt.Errorf("load .cqdata from %s: %w", dir, err)
+	}
+
+	// Read project_id from .c4/config.yaml (same key used by drive).
+	projectID := os.Getenv("C4_PROJECT_ID")
+	if projectID == "" {
+		if raw, rerr := os.ReadFile(filepath.Join(dir, ".c4", "config.yaml")); rerr == nil {
+			var cfg struct {
+				ProjectID string `yaml:"project_id"`
+			}
+			if yaml.Unmarshal(raw, &cfg) == nil && cfg.ProjectID != "" {
+				projectID = cfg.ProjectID
+			}
+		}
+	}
+	if projectID == "" {
+		return fmt.Errorf("project_id not found (set C4_PROJECT_ID or .c4/config.yaml)")
+	}
+
+	driveClient := drive.NewClient(supabaseURL, anonKey, staticToken(jwt), projectID)
+	dsClient := drive.NewDatasetClient(driveClient)
+
+	for _, key := range datasets {
+		name, version, ok := cd.GetDataset(key)
+		if !ok {
+			return fmt.Errorf("dataset key %q not found in .cqdata", key)
+		}
+		dest := filepath.Join(dir, "data", key)
+		fmt.Printf("cq: pulling dataset %q (%s@%s) → %s\n", key, name, version, dest)
+		result, err := dsClient.Pull(ctx, name, dest, version)
+		if err != nil {
+			return fmt.Errorf("pull dataset %q: %w", key, err)
+		}
+		fmt.Printf("cq: dataset %q pulled (%d downloaded, %d skipped)\n", key, result.FilesDownloaded, result.FilesSkipped)
+	}
+	return nil
 }
 
 // refreshCloudSession attempts to refresh the cloud session using the refresh_token.
