@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -248,8 +249,9 @@ func TestSetTokenFunc_NoAPIKeyNoToken(t *testing.T) {
 
 func TestHealthCheck_Healthy(t *testing.T) {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/v1/health", func(w http.ResponseWriter, r *http.Request) {
-		jsonResponse(w, map[string]string{"status": "healthy"})
+	// Supabase PostgREST health: GET /rest/v1/ returns 200 with schema info.
+	mux.HandleFunc("/rest/v1/", func(w http.ResponseWriter, r *http.Request) {
+		jsonResponse(w, map[string]string{"swagger": "2.0"})
 	})
 	client, _ := newTestServer(t, mux)
 	if !client.HealthCheck() {
@@ -258,19 +260,21 @@ func TestHealthCheck_Healthy(t *testing.T) {
 }
 
 func TestHealthCheck_Unhealthy(t *testing.T) {
+	// HealthCheck returns false on any non-2xx from /rest/v1/.
+	// Simulate by returning 503.
 	mux := http.NewServeMux()
-	mux.HandleFunc("/v1/health", func(w http.ResponseWriter, r *http.Request) {
-		jsonResponse(w, map[string]string{"status": "degraded"})
+	mux.HandleFunc("/rest/v1/", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(503)
 	})
 	client, _ := newTestServer(t, mux)
 	if client.HealthCheck() {
-		t.Error("expected HealthCheck() = false for non-healthy")
+		t.Error("expected HealthCheck() = false for 503")
 	}
 }
 
 func TestHealthCheck_Error(t *testing.T) {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/v1/health", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/rest/v1/", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(500)
 	})
 	client, _ := newTestServer(t, mux)
@@ -483,7 +487,11 @@ func TestCompleteJob(t *testing.T) {
 
 func TestListWorkers(t *testing.T) {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/v1/workers", func(w http.ResponseWriter, r *http.Request) {
+	// Supabase PostgREST: GET /rest/v1/hub_workers?status=neq.offline&...
+	mux.HandleFunc("/rest/v1/hub_workers", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "GET" {
+			t.Errorf("method = %s, want GET", r.Method)
+		}
 		jsonResponse(w, []Worker{
 			{ID: "w1", Status: "online", GPUCount: 2, GPUModel: "RTX 4090"},
 		})
@@ -587,10 +595,21 @@ func TestGetMetrics(t *testing.T) {
 
 func TestRegisterWorker(t *testing.T) {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/v1/workers/register", func(w http.ResponseWriter, r *http.Request) {
-		jsonResponse(w, WorkerRegisterResponse{WorkerID: "worker-abc"})
+	// Supabase RPC: POST /rest/v1/rpc/register_worker
+	mux.HandleFunc("/rest/v1/rpc/register_worker", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "POST" {
+			t.Errorf("method = %s, want POST", r.Method)
+		}
+		var body map[string]any
+		json.NewDecoder(r.Body).Decode(&body)
+		if body["p_worker_id"] == nil {
+			t.Error("expected p_worker_id in body")
+		}
+		// Return worker row with the worker ID
+		jsonResponse(w, map[string]any{"id": "worker-abc", "status": "online"})
 	})
 	client, _ := newTestServer(t, mux)
+	client.workerID = "worker-abc" // pre-set so RPC uses it
 
 	wid, err := client.RegisterWorker(map[string]any{"gpu_count": 1})
 	if err != nil {
@@ -606,11 +625,16 @@ func TestRegisterWorker(t *testing.T) {
 
 func TestHeartbeat(t *testing.T) {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/v1/workers/heartbeat", func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("X-Worker-ID") != "w1" {
-			t.Errorf("missing X-Worker-ID header")
+	// Supabase PostgREST PATCH: /rest/v1/hub_workers?id=eq.w1
+	mux.HandleFunc("/rest/v1/hub_workers", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "PATCH" {
+			t.Errorf("method = %s, want PATCH", r.Method)
 		}
-		jsonResponse(w, HeartbeatResponse{Acknowledged: true})
+		if !strings.Contains(r.URL.RawQuery, "id=eq.w1") {
+			t.Errorf("expected id=eq.w1 in query, got %q", r.URL.RawQuery)
+		}
+		w.WriteHeader(200)
+		w.Write([]byte(`[]`))
 	})
 	client, _ := newTestServer(t, mux)
 	client.workerID = "w1"
@@ -620,16 +644,11 @@ func TestHeartbeat(t *testing.T) {
 	}
 }
 
-func TestHeartbeat_NotAcknowledged(t *testing.T) {
-	mux := http.NewServeMux()
-	mux.HandleFunc("/v1/workers/heartbeat", func(w http.ResponseWriter, r *http.Request) {
-		jsonResponse(w, HeartbeatResponse{Acknowledged: false})
-	})
-	client, _ := newTestServer(t, mux)
-	client.workerID = "w1"
-
+func TestHeartbeat_NotRegistered(t *testing.T) {
+	// Heartbeat should fail immediately if no worker ID is set.
+	client := &Client{}
 	if err := client.Heartbeat("online"); err == nil {
-		t.Error("expected error when not acknowledged")
+		t.Error("expected error when worker not registered")
 	}
 }
 
@@ -639,11 +658,15 @@ func TestHeartbeat_NotAcknowledged(t *testing.T) {
 
 func TestClaimJob(t *testing.T) {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/v1/leases/acquire", func(w http.ResponseWriter, r *http.Request) {
-		jsonResponse(w, ClaimResponse{
-			JobID:   "j1",
-			LeaseID: "lease-1",
-			Job:     Job{ID: "j1", Name: "train", Status: "RUNNING"},
+	// Supabase RPC: POST /rest/v1/rpc/claim_job
+	// Returns jsonb {lease_id: "...", job: {...}}
+	mux.HandleFunc("/rest/v1/rpc/claim_job", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "POST" {
+			t.Errorf("method = %s, want POST", r.Method)
+		}
+		jsonResponse(w, map[string]any{
+			"lease_id": "lease-1",
+			"job":      map[string]any{"id": "j1", "name": "train", "status": "RUNNING"},
 		})
 	})
 	client, _ := newTestServer(t, mux)
@@ -666,8 +689,10 @@ func TestClaimJob(t *testing.T) {
 
 func TestClaimJob_NoJob(t *testing.T) {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/v1/leases/acquire", func(w http.ResponseWriter, r *http.Request) {
-		jsonResponse(w, ClaimResponse{})
+	// RPC returns null when no job is available.
+	mux.HandleFunc("/rest/v1/rpc/claim_job", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`null`))
 	})
 	client, _ := newTestServer(t, mux)
 	client.workerID = "w1"
@@ -687,11 +712,18 @@ func TestClaimJob_NoJob(t *testing.T) {
 
 func TestRenewLease(t *testing.T) {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/v1/leases/renew", func(w http.ResponseWriter, r *http.Request) {
-		jsonResponse(w, RenewLeaseResponse{
-			Renewed:      true,
-			NewExpiresAt: "2026-01-01T00:00:00Z",
-		})
+	// Supabase RPC: POST /rest/v1/rpc/renew_lease (returns void → null)
+	mux.HandleFunc("/rest/v1/rpc/renew_lease", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "POST" {
+			t.Errorf("method = %s, want POST", r.Method)
+		}
+		var body map[string]any
+		json.NewDecoder(r.Body).Decode(&body)
+		if body["p_lease_id"] != "lease-1" {
+			t.Errorf("p_lease_id = %v, want lease-1", body["p_lease_id"])
+		}
+		w.WriteHeader(200)
+		w.Write([]byte(`null`))
 	})
 	client, _ := newTestServer(t, mux)
 	client.workerID = "w1"
@@ -700,22 +732,24 @@ func TestRenewLease(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RenewLease: %v", err)
 	}
-	if exp != "2026-01-01T00:00:00Z" {
-		t.Errorf("expires = %q", exp)
+	if exp == "" {
+		t.Error("expected non-empty expires_at")
 	}
 }
 
-func TestRenewLease_NotRenewed(t *testing.T) {
+func TestRenewLease_Error(t *testing.T) {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/v1/leases/renew", func(w http.ResponseWriter, r *http.Request) {
-		jsonResponse(w, RenewLeaseResponse{Renewed: false})
+	// RPC returns 422 when lease not found (PostgreSQL raises exception).
+	mux.HandleFunc("/rest/v1/rpc/renew_lease", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(422)
+		w.Write([]byte(`{"message":"lease not found: lease-expired"}`))
 	})
 	client, _ := newTestServer(t, mux)
 	client.workerID = "w1"
 
 	_, err := client.RenewLease("lease-expired")
 	if err == nil {
-		t.Error("expected error when lease not renewed")
+		t.Error("expected error when lease not found")
 	}
 }
 
@@ -740,7 +774,7 @@ func TestHTTP4xx(t *testing.T) {
 
 func TestHTTP5xx(t *testing.T) {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/v1/workers", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/rest/v1/hub_workers", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(500)
 		w.Write([]byte("internal error"))
 	})

@@ -2,7 +2,6 @@ package hub
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -10,20 +9,18 @@ import (
 	"time"
 )
 
-// newLongPollTestServer creates a Client with an explicit Transport (required by
-// ClaimJobWithWait which calls c.httpClient.Transport.RoundTrip directly).
+// newLongPollTestServer creates a Client suitable for ClaimJobWithWait tests.
+// Uses http.DefaultClient (Supabase path uses httpClient.Do, not Transport.RoundTrip).
 func newLongPollTestServer(t *testing.T, handler http.Handler) (*Client, *httptest.Server) {
 	t.Helper()
 	ts := httptest.NewServer(handler)
 	t.Cleanup(ts.Close)
 	client := &Client{
-		baseURL:   ts.URL,
-		apiPrefix: "/v1",
-		apiKey:    "test-key",
-		teamID:    "test-team",
-		httpClient: &http.Client{
-			Transport: http.DefaultTransport,
-		},
+		baseURL:    ts.URL,
+		apiPrefix:  "/v1",
+		apiKey:     "test-key",
+		teamID:     "test-team",
+		httpClient: http.DefaultClient,
 	}
 	return client, ts
 }
@@ -33,13 +30,12 @@ func newLongPollTestServer(t *testing.T, handler http.Handler) (*Client, *httpte
 // =========================================================================
 
 func TestClaimJobWithWait_ZeroWait_DelegatesToClaimJob(t *testing.T) {
-	// waitSecs=0 delegates to ClaimJob which uses httpClient.Do (no Transport needed).
+	// waitSecs=0 delegates to ClaimJob which uses Supabase RPC.
 	mux := http.NewServeMux()
-	mux.HandleFunc("/v1/leases/acquire", func(w http.ResponseWriter, r *http.Request) {
-		jsonResponse(w, ClaimResponse{
-			JobID:   "job-w1",
-			LeaseID: "lease-w1",
-			Job:     Job{ID: "job-w1", Name: "train", Status: "RUNNING"},
+	mux.HandleFunc("/rest/v1/rpc/claim_job", func(w http.ResponseWriter, r *http.Request) {
+		jsonResponse(w, map[string]any{
+			"lease_id": "lease-w1",
+			"job":      map[string]any{"id": "job-w1", "name": "train", "status": "RUNNING"},
 		})
 	})
 	client, _ := newTestServer(t, mux)
@@ -61,13 +57,10 @@ func TestClaimJobWithWait_ZeroWait_DelegatesToClaimJob(t *testing.T) {
 
 func TestClaimJobWithWait_NoJob(t *testing.T) {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/v1/leases/acquire", func(w http.ResponseWriter, r *http.Request) {
-		var body map[string]any
-		json.NewDecoder(r.Body).Decode(&body)
-		if _, ok := body["wait_seconds"]; !ok {
-			t.Error("expected wait_seconds in body")
-		}
-		jsonResponse(w, ClaimResponse{}) // no job available
+	// RPC returns null when no job available.
+	mux.HandleFunc("/rest/v1/rpc/claim_job", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`null`))
 	})
 	client, _ := newLongPollTestServer(t, mux)
 
@@ -85,16 +78,10 @@ func TestClaimJobWithWait_NoJob(t *testing.T) {
 
 func TestClaimJobWithWait_WithJob(t *testing.T) {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/v1/leases/acquire", func(w http.ResponseWriter, r *http.Request) {
-		var body map[string]any
-		json.NewDecoder(r.Body).Decode(&body)
-		if ws, ok := body["wait_seconds"].(float64); !ok || ws != 30 {
-			t.Errorf("expected wait_seconds=30, got %v", body["wait_seconds"])
-		}
-		jsonResponse(w, ClaimResponse{
-			JobID:   "job-long-poll",
-			LeaseID: "lease-lp",
-			Job:     Job{ID: "job-long-poll", Name: "inference", Status: "RUNNING"},
+	mux.HandleFunc("/rest/v1/rpc/claim_job", func(w http.ResponseWriter, r *http.Request) {
+		jsonResponse(w, map[string]any{
+			"lease_id": "lease-lp",
+			"job":      map[string]any{"id": "job-long-poll", "name": "inference", "status": "RUNNING"},
 		})
 	})
 	client, _ := newLongPollTestServer(t, mux)
@@ -115,18 +102,16 @@ func TestClaimJobWithWait_ContextCancelled(t *testing.T) {
 	// Server delays response longer than context timeout.
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		time.Sleep(500 * time.Millisecond)
-		jsonResponse(w, ClaimResponse{JobID: "job-late"})
+		jsonResponse(w, map[string]any{"lease_id": "late", "job": map[string]any{"id": "job-late"}})
 	}))
 	defer server.Close()
 
 	client := &Client{
-		baseURL:   server.URL,
-		apiPrefix: "/v1",
-		apiKey:    "test-key",
-		teamID:    "test-team",
-		httpClient: &http.Client{
-			Transport: http.DefaultTransport,
-		},
+		baseURL:    server.URL,
+		apiPrefix:  "/v1",
+		apiKey:     "test-key",
+		teamID:     "test-team",
+		httpClient: http.DefaultClient,
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
@@ -135,7 +120,7 @@ func TestClaimJobWithWait_ContextCancelled(t *testing.T) {
 	// When context is cancelled before response, implementation returns nil, nil, nil.
 	job, leaseID, err := client.ClaimJobWithWait(ctx, 0.0, 60)
 	if err != nil {
-		// Implementation returns nil error when reqCtx is cancelled — log if different
+		// Implementation returns nil error when ctx is cancelled — log if different
 		t.Logf("ClaimJobWithWait context cancel: got err=%v (acceptable)", err)
 	}
 	if job != nil {
@@ -148,7 +133,7 @@ func TestClaimJobWithWait_ContextCancelled(t *testing.T) {
 
 func TestClaimJobWithWait_ServerError(t *testing.T) {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/v1/leases/acquire", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/rest/v1/rpc/claim_job", func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 	})
 	client, _ := newLongPollTestServer(t, mux)
