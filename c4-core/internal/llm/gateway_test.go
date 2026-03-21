@@ -417,6 +417,39 @@ func TestTraceHook(t *testing.T) {
 	}
 }
 
+// TestTraceHookEmptySessionID verifies that OnLLMCall is invoked even when
+// Gateway.Chat() passes an empty sessionID (the hook receives "" and must not drop the call).
+func TestTraceHookEmptySessionID(t *testing.T) {
+	t.Cleanup(func() { SetTraceHook(nil) })
+
+	hook := &mockTraceHook{}
+	SetTraceHook(hook)
+
+	gw := NewGateway(RoutingTable{Default: "mock"})
+	mock := NewMockProvider("mock")
+	mock.Response = &ChatResponse{
+		Content: "ok", Model: "mock-model",
+		FinishReason: "stop", Usage: TokenUsage{InputTokens: 1, OutputTokens: 1},
+	}
+	gw.Register(mock)
+
+	// gateway.go passes "" as sessionID — hook must still be called.
+	_, err := gw.Chat(context.Background(), "any-task", &ChatRequest{
+		Messages: []Message{{Role: "user", Content: "hi"}},
+	})
+	if err != nil {
+		t.Fatalf("Chat() error: %v", err)
+	}
+
+	if len(hook.calls) != 1 {
+		t.Fatalf("expected 1 OnLLMCall even with empty sessionID, got %d", len(hook.calls))
+	}
+	// sessionID passed by gateway is empty; hook receives it as-is.
+	if hook.calls[0].sessionID != "" {
+		t.Errorf("sessionID = %q, want empty (gateway passes empty)", hook.calls[0].sessionID)
+	}
+}
+
 // TestTraceHookOnError verifies that OnLLMCall is called even when Chat() fails.
 func TestTraceHookOnError(t *testing.T) {
 	t.Cleanup(func() { SetTraceHook(nil) })
