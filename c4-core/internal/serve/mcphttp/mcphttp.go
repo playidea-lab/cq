@@ -230,9 +230,10 @@ func (c *Component) handleJSONRPC(w http.ResponseWriter, r *http.Request) {
 
 	// Set write deadline to allow slow tools to complete (mirrors tool_socket.go).
 	rc := http.NewResponseController(w)
-	rc.SetWriteDeadline(time.Now().Add(65 * time.Second)) //nolint:errcheck
+	toolTimeout := time.Duration(c.cfg.ToolTimeoutSec) * time.Second
+	rc.SetWriteDeadline(time.Now().Add(toolTimeout + 5*time.Second)) //nolint:errcheck
 
-	callCtx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
+	callCtx, cancel := context.WithTimeout(r.Context(), toolTimeout)
 	defer cancel()
 
 	respBytes := c.handler.HandleRawRequest(callCtx, body)
