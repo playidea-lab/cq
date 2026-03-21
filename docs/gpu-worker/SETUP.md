@@ -9,8 +9,7 @@ Connect a remote GPU server to the C5 Hub using `cq` in 5 steps.
 | Item | Required | Notes |
 |------|----------|-------|
 | `cq` binary | Required | See Step 1 |
-| `C5_HUB_URL` | Required | Hub server URL |
-| `C5_API_KEY` | Required | Hub API key |
+| Hub auth | Required | `cq auth login --otp` or `C5_API_KEY` env |
 | `nvidia-smi` | Optional | CPU-only fallback if absent |
 
 ---
@@ -25,26 +24,14 @@ cq version
 
 ---
 
-## Step 2 — Set environment variables
+## Step 2 — Authenticate and initialize worker
 
 ```bash
-export C5_HUB_URL="https://piqsol-c5.fly.dev"   # or your self-hosted Hub URL
-export C5_API_KEY="<your-hub-api-key>"
+cq auth login --otp
+cq hub worker start
 ```
 
-Persist in `~/.bashrc` or `~/.zshrc` for permanent setup.
-
----
-
-## Step 3 — Initialize worker
-
-```bash
-cq hub worker init --non-interactive \
-  --hub-url "$C5_HUB_URL" \
-  --api-key "$C5_API_KEY"
-```
-
-This registers the worker with the Hub and writes local config to `~/.c5/config.yaml`.
+This authenticates via Supabase JWT and starts the worker. For API key auth, set `C5_API_KEY` env instead.
 
 ---
 
@@ -62,7 +49,7 @@ The worker polls the Hub for jobs. GPU presence is auto-detected via `nvidia-smi
 
 ---
 
-## Step 5 — Run E2E smoke test
+## Step 4 — Run E2E smoke test
 
 ```bash
 bash scripts/smoke_test_gpu_worker.sh
