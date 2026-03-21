@@ -7,7 +7,7 @@ Spec: https://agents.md/
 
 # CQ Project - AI Agent Instructions
 
-> **CQ** = C1·C2·C3·C4·C5·C9 생태계. CLI `cq`, MCP 도구 `c4_*` 접두사.
+> **CQ** = Core·Data·Infra·Surface·Doc·Plumbing 도메인 생태계. CLI `cq`, MCP 도구 `c4_*` 접두사.
 > 아키텍처 상세: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 
 ---
@@ -192,10 +192,10 @@ knowledge(지식), edge(엣지디바이스), gpu(GPU잡), persona(학습), event
 |-----------|----------|
 | **Go Core** (c4-core/) | `go build -o ~/.local/bin/cq ./cmd/c4/` — 수정 후 반드시 재빌드. `cp` 금지 (코드 서명). |
 | **Python Sidecar** (c4/) | Lazy Start. LSP는 Python/JS/TS only. |
-| **C1 Messenger** (c1/) | Tauri 2.x + Rust. 캐시 이슈 → `cargo clean`. |
-| **C3 EventBus** | gRPC UDS + WS + DLQ. 18종 이벤트. |
-| **C5 Hub** (c5/) | Worker Pull + Lease. `hub.enabled: true` 설정. |
-| **C9 Knowledge** | FTS5 + pgvector. `c4_submit` handoff에 discoveries/concerns 필수. |
+| **Telegram Plugin** (c1/) | Tauri 2.x + Rust. 캐시 이슈 → `cargo clean`. |
+| **EventBus** | gRPC UDS + WS + DLQ. 18종 이벤트. |
+| **Hub** | Worker Pull + Lease. `hub.enabled: true` 설정. |
+| **Knowledge** | FTS5 + pgvector. `c4_submit` handoff에 discoveries/concerns 필수. |
 | **Infra** (infra/) | PostgreSQL migration. 직접 DDL 금지. |
 
 ### MCP 도구
