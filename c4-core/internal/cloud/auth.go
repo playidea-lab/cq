@@ -314,6 +314,75 @@ func (c *AuthClient) RefreshTokenWithToken(refreshToken string) (*Session, error
 	return newSession, nil
 }
 
+// SendOTP sends a one-time password to the given email via Supabase Auth.
+// The user receives a 6-digit code that can be verified with VerifyOTP.
+func (c *AuthClient) SendOTP(email string) error {
+	body := map[string]string{"email": email}
+	bodyJSON, _ := json.Marshal(body)
+
+	url := c.supabaseURL + "/auth/v1/otp"
+	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(bodyJSON))
+	if err != nil {
+		return fmt.Errorf("creating OTP request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("apikey", c.anonKey)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("OTP request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		var errResp supabaseErrorResponse
+		json.NewDecoder(resp.Body).Decode(&errResp)
+		return fmt.Errorf("OTP send failed (HTTP %d): %s", resp.StatusCode, errResp.ErrorDescription)
+	}
+	return nil
+}
+
+// VerifyOTP verifies a 6-digit OTP code and returns a session on success.
+func (c *AuthClient) VerifyOTP(email, token string) (*Session, error) {
+	body := map[string]string{
+		"email": email,
+		"token": token,
+		"type":  "email",
+	}
+	bodyJSON, _ := json.Marshal(body)
+
+	url := c.supabaseURL + "/auth/v1/verify"
+	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(bodyJSON))
+	if err != nil {
+		return nil, fmt.Errorf("creating verify request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("apikey", c.anonKey)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("verify request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		var errResp supabaseErrorResponse
+		json.NewDecoder(resp.Body).Decode(&errResp)
+		return nil, fmt.Errorf("OTP verify failed (HTTP %d): %s", resp.StatusCode, errResp.ErrorDescription)
+	}
+
+	var tokenResp supabaseTokenResponse
+	if err := json.NewDecoder(resp.Body).Decode(&tokenResp); err != nil {
+		return nil, fmt.Errorf("decoding verify response: %w", err)
+	}
+
+	session := tokenResponseToSession(&tokenResp)
+	if err := c.saveSession(session); err != nil {
+		return nil, fmt.Errorf("saving session: %w", err)
+	}
+	return session, nil
+}
+
 // startCallbackServer2 starts a temporary HTTP server that handles Supabase's
 // implicit OAuth flow. Supabase returns tokens as URL fragments (#access_token=...),
 // so the callback page uses JavaScript to extract them and POST to /auth/token.

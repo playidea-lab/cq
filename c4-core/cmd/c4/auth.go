@@ -22,6 +22,8 @@ var authLoginFunc = func(mode string) error {
 		return runAuthLoginHeadless(nil, true)
 	case "link":
 		return runAuthLoginHeadless(nil, false)
+	case "otp":
+		return runAuthLoginOTP()
 	default:
 		return runAuthLogin(nil, nil) // browser OAuth fallback
 	}
@@ -98,9 +100,10 @@ Examples:
 
 func init() {
 	authLoginCmd.Flags().Bool("no-browser", false, "Do not open the browser; print the URL and SSH hint to stderr instead")
-	authLoginCmd.Flags().Bool("device", false, "Device Flow: print user_code, user enters it in browser")
-	authLoginCmd.Flags().Bool("link", false, "Direct Link: print a long URL, user opens it in browser")
-	authLoginCmd.MarkFlagsMutuallyExclusive("device", "link")
+	authLoginCmd.Flags().Bool("device", false, "Device Flow: refresh token or guided headless login")
+	authLoginCmd.Flags().Bool("link", false, "Direct Link: refresh token or guided headless login")
+	authLoginCmd.Flags().Bool("otp", false, "Email OTP: receive a 6-digit code via email (no browser needed)")
+	authLoginCmd.MarkFlagsMutuallyExclusive("device", "link", "otp")
 	authTokenCmd.Flags().String("json", "", "Session JSON string (reads from stdin if not set)")
 	authCmd.AddCommand(authLoginCmd)
 	authCmd.AddCommand(authLogoutCmd)
@@ -131,7 +134,7 @@ func newAuthClient() (*cloud.AuthClient, error) {
 
 func runAuthLogin(cmd *cobra.Command, args []string) error {
 	// Check --device / --link flags.
-	var useDevice, useLink bool
+	var useDevice, useLink, useOTP bool
 	if cmd != nil {
 		if v, err := cmd.Flags().GetBool("device"); err == nil {
 			useDevice = v
@@ -139,8 +142,14 @@ func runAuthLogin(cmd *cobra.Command, args []string) error {
 		if v, err := cmd.Flags().GetBool("link"); err == nil {
 			useLink = v
 		}
+		if v, err := cmd.Flags().GetBool("otp"); err == nil {
+			useOTP = v
+		}
 	}
 
+	if useOTP {
+		return runAuthLoginOTP()
+	}
 	if useDevice || useLink {
 		return runAuthLoginHeadless(cmd, useDevice)
 	}
@@ -299,6 +308,52 @@ func ensureCloudAuth(r io.Reader, yesAll bool) bool {
 		return false
 	}
 	return true
+}
+
+func runAuthLoginOTP() error {
+	client, err := newAuthClient()
+	if err != nil {
+		return err
+	}
+
+	scanner := bufio.NewScanner(os.Stdin)
+
+	fmt.Fprint(os.Stderr, "이메일 주소: ")
+	if !scanner.Scan() {
+		return fmt.Errorf("입력이 종료되었습니다")
+	}
+	email := strings.TrimSpace(scanner.Text())
+	if email == "" {
+		return fmt.Errorf("이메일이 비어있습니다")
+	}
+
+	fmt.Fprintf(os.Stderr, "%s 으로 인증 코드를 전송합니다...\n", email)
+	if err := client.SendOTP(email); err != nil {
+		return fmt.Errorf("OTP 전송 실패: %w", err)
+	}
+	fmt.Fprintln(os.Stderr, "✓ 인증 코드가 이메일로 전송되었습니다. (스팸 폴더도 확인하세요)")
+
+	fmt.Fprint(os.Stderr, "인증 코드 (6자리): ")
+	if !scanner.Scan() {
+		return fmt.Errorf("입력이 종료되었습니다")
+	}
+	code := strings.TrimSpace(scanner.Text())
+	if code == "" {
+		return fmt.Errorf("인증 코드가 비어있습니다")
+	}
+
+	session, err := client.VerifyOTP(email, code)
+	if err != nil {
+		return fmt.Errorf("인증 실패: %w", err)
+	}
+
+	fmt.Printf("✓ 로그인 성공: %s (%s)\n", session.User.Name, session.User.Email)
+
+	url := patchCloudConfigAfterLogin(projectDir)
+	if url != "" {
+		fmt.Fprintf(os.Stderr, "Cloud configured: %s\n", url)
+	}
+	return nil
 }
 
 func runAuthLogout(cmd *cobra.Command, args []string) error {
