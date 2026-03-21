@@ -43,6 +43,13 @@ func (s *Server) handleWorkerRegister(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 		}
+		if req.MCPURL == "" {
+			if v, ok := req.Capabilities["mcp_url"]; ok {
+				if s, ok := v.(string); ok {
+					req.MCPURL = s
+				}
+			}
+		}
 	}
 
 	if req.Hostname == "" {

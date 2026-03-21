@@ -391,6 +391,38 @@ func TestWorkerRegisterValidation(t *testing.T) {
 	}
 }
 
+func TestWorkerRegisterMCPURL(t *testing.T) {
+	srv := newTestServer(t)
+
+	// Register worker via capabilities map (hub.Client style), including mcp_url.
+	w := doRequest(t, srv, "POST", "/v1/workers/register", model.WorkerRegisterRequest{
+		Capabilities: map[string]any{
+			"hostname": "hub-worker-1",
+			"mcp_url":  "http://localhost:9000/mcp",
+		},
+	})
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp model.WorkerRegisterResponse
+	decodeJSON(t, w, &resp)
+
+	// Verify mcp_url round-trips through ListWorkers.
+	w2 := doRequest(t, srv, "GET", "/v1/workers", nil)
+	if w2.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w2.Code, w2.Body.String())
+	}
+	var workers []model.Worker
+	decodeJSON(t, w2, &workers)
+	if len(workers) != 1 {
+		t.Fatalf("expected 1 worker, got %d", len(workers))
+	}
+	if workers[0].MCPURL != "http://localhost:9000/mcp" {
+		t.Fatalf("MCPURL mismatch: got %q, want %q", workers[0].MCPURL, "http://localhost:9000/mcp")
+	}
+}
+
 func TestWorkerHeartbeat(t *testing.T) {
 	srv := newTestServer(t)
 
