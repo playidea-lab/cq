@@ -625,17 +625,15 @@ func runWorkerStart(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("cloud not configured — run: cq auth login")
 	}
 
-	// JWT for Supabase auth.
-	apiKey := supabaseKey
-	if apiKey == "" {
-		if jwt := loadCloudSessionJWT(); jwt != "" {
-			apiKey = jwt
-			fmt.Fprintln(os.Stderr, "cq: using cloud session JWT for worker auth")
-		}
-	}
-	if apiKey == "" {
+	// Supabase auth: apikey=anon_key (always), Authorization=Bearer JWT.
+	anonKey := supabaseKey
+	jwt := loadCloudSessionJWT()
+	if jwt == "" {
 		return fmt.Errorf("no auth token — run: cq auth login")
 	}
+	// For backward compat, apiKey is used in claimAndRun — set to anonKey.
+	apiKey := anonKey
+	_ = apiKey // used in claimAndRun
 
 	// Sync hub settings to .c4/config.yaml so MCP tools are available.
 	if supabaseURL != "" {
@@ -690,8 +688,8 @@ func runWorkerStart(cmd *cobra.Command, args []string) error {
 	})
 	regReq, _ := http.NewRequestWithContext(ctx, "POST", registerURL, strings.NewReader(string(regBody)))
 	regReq.Header.Set("Content-Type", "application/json")
-	regReq.Header.Set("apikey", apiKey)
-	regReq.Header.Set("Authorization", "Bearer "+apiKey)
+	regReq.Header.Set("apikey", anonKey)
+	regReq.Header.Set("Authorization", "Bearer "+jwt)
 	if resp, err := http.DefaultClient.Do(regReq); err == nil {
 		io.Copy(io.Discard, resp.Body)
 		resp.Body.Close()
@@ -718,7 +716,7 @@ func runWorkerStart(cmd *cobra.Command, args []string) error {
 					fmt.Printf("cq: NOTIFY received: job %s\n", n.Payload)
 				}
 				// Try to claim a job.
-				claimAndRun(ctx, supabaseURL, apiKey, workerName)
+				claimAndRun(ctx, supabaseURL, anonKey, jwt, workerName)
 				return nil
 			})
 			if err != nil && ctx.Err() == nil {
@@ -732,7 +730,7 @@ func runWorkerStart(cmd *cobra.Command, args []string) error {
 	defer ticker.Stop()
 
 	// Initial poll.
-	claimAndRun(ctx, supabaseURL, apiKey, workerName)
+	claimAndRun(ctx, supabaseURL, anonKey, jwt, workerName)
 
 	for {
 		select {
@@ -740,7 +738,7 @@ func runWorkerStart(cmd *cobra.Command, args []string) error {
 			fmt.Println("cq: worker stopped")
 			return nil
 		case <-ticker.C:
-			claimAndRun(ctx, supabaseURL, apiKey, workerName)
+			claimAndRun(ctx, supabaseURL, anonKey, jwt, workerName)
 		}
 	}
 }
@@ -786,7 +784,7 @@ func resolveSupabaseConfig() (url, key string) {
 }
 
 // claimAndRun tries to claim a QUEUED job via Supabase RPC and execute it.
-func claimAndRun(ctx context.Context, supabaseURL, apiKey, workerID string) {
+func claimAndRun(ctx context.Context, supabaseURL, anonKey, jwt, workerID string) {
 	claimURL := supabaseURL + "/rest/v1/rpc/claim_job"
 	body, _ := json.Marshal(map[string]any{
 		"p_worker_id":   workerID,
@@ -798,8 +796,8 @@ func claimAndRun(ctx context.Context, supabaseURL, apiKey, workerID string) {
 		return
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("apikey", apiKey)
-	req.Header.Set("Authorization", "Bearer "+apiKey)
+	req.Header.Set("apikey", anonKey)
+	req.Header.Set("Authorization", "Bearer "+jwt)
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -883,8 +881,8 @@ func claimAndRun(ctx context.Context, supabaseURL, apiKey, workerID string) {
 			logBody, _ := json.Marshal(logRows)
 			logReq, _ := http.NewRequestWithContext(ctx, "POST", logURL, strings.NewReader(string(logBody)))
 			logReq.Header.Set("Content-Type", "application/json")
-			logReq.Header.Set("apikey", apiKey)
-			logReq.Header.Set("Authorization", "Bearer "+apiKey)
+			logReq.Header.Set("apikey", anonKey)
+			logReq.Header.Set("Authorization", "Bearer "+jwt)
 			if r, e := http.DefaultClient.Do(logReq); e == nil {
 				io.Copy(io.Discard, r.Body)
 				r.Body.Close()
@@ -900,8 +898,8 @@ func claimAndRun(ctx context.Context, supabaseURL, apiKey, workerID string) {
 		})
 		completeReq, _ := http.NewRequestWithContext(ctx, "POST", completeURL, strings.NewReader(string(completeBody)))
 		completeReq.Header.Set("Content-Type", "application/json")
-		completeReq.Header.Set("apikey", apiKey)
-		completeReq.Header.Set("Authorization", "Bearer "+apiKey)
+		completeReq.Header.Set("apikey", anonKey)
+		completeReq.Header.Set("Authorization", "Bearer "+jwt)
 		if r, e := http.DefaultClient.Do(completeReq); e == nil {
 			io.Copy(io.Discard, r.Body)
 			r.Body.Close()
