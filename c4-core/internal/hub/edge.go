@@ -3,7 +3,9 @@ package hub
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
+	"time"
 )
 
 // =========================================================================
@@ -16,14 +18,14 @@ type Edge struct {
 	Name     string            `json:"name"`
 	Status   string            `json:"status"` // online, offline
 	Tags     []string          `json:"tags,omitempty"`
-	Arch     string            `json:"arch,omitempty"`     // arm64, amd64, etc.
-	Runtime  string            `json:"runtime,omitempty"`  // onnx, tflite, tensorrt, etc.
+	Arch     string            `json:"arch,omitempty"`    // arm64, amd64, etc.
+	Runtime  string            `json:"runtime,omitempty"` // onnx, tflite, tensorrt, etc.
 	Storage  float64           `json:"storage_gb,omitempty"`
 	Metadata map[string]string `json:"metadata,omitempty"`
 	LastSeen string            `json:"last_seen,omitempty"`
 }
 
-// EdgeRegisterResponse is the response from POST /v1/edges/register.
+// EdgeRegisterResponse is the response from registering an edge.
 type EdgeRegisterResponse struct {
 	EdgeID string `json:"edge_id"`
 }
@@ -32,15 +34,15 @@ type EdgeRegisterResponse struct {
 type DeployRule struct {
 	ID              string `json:"id"`
 	Name            string `json:"name,omitempty"`
-	Trigger         string `json:"trigger"`           // e.g. "job_tag:production", "dag_complete:*"
-	EdgeFilter      string `json:"edge_filter"`        // e.g. "tag:onnx,arm64", "name:jetson-*"
-	ArtifactPattern string `json:"artifact_pattern"`   // e.g. "outputs/*.onnx"
-	PostCommand     string `json:"post_command,omitempty"` // command to run on edge after deploy
+	Trigger         string `json:"trigger"`          // e.g. "job_tag:production", "dag_complete:*"
+	EdgeFilter      string `json:"edge_filter"`      // e.g. "tag:onnx,arm64", "name:jetson-*"
+	ArtifactPattern string `json:"artifact_pattern"` // e.g. "outputs/*.onnx"
+	PostCommand     string `json:"post_command,omitempty"`
 	Enabled         bool   `json:"enabled"`
 	CreatedAt       string `json:"created_at,omitempty"`
 }
 
-// DeployRuleCreateRequest is the payload for POST /v1/deploy/rules.
+// DeployRuleCreateRequest is the payload for creating a deploy rule.
 type DeployRuleCreateRequest struct {
 	Name               string `json:"name,omitempty"`
 	Trigger            string `json:"trigger"`
@@ -51,20 +53,20 @@ type DeployRuleCreateRequest struct {
 	HealthCheckTimeout int    `json:"health_check_timeout,omitempty"`
 }
 
-// DeployRuleCreateResponse is the response from POST /v1/deploy/rules.
+// DeployRuleCreateResponse is the response from creating a deploy rule.
 type DeployRuleCreateResponse struct {
 	RuleID string `json:"rule_id"`
 }
 
-// Deployment represents a deployment instance (triggered by rule or manual).
+// Deployment represents a deployment instance.
 type Deployment struct {
-	ID         string       `json:"id"`
-	RuleID     string       `json:"rule_id,omitempty"`
-	JobID      string       `json:"job_id,omitempty"`
-	Status     string       `json:"status"` // pending, deploying, completed, failed, partial
+	ID         string         `json:"id"`
+	RuleID     string         `json:"rule_id,omitempty"`
+	JobID      string         `json:"job_id,omitempty"`
+	Status     string         `json:"status"` // pending, deploying, completed, failed, partial
 	Targets    []DeployTarget `json:"targets,omitempty"`
-	CreatedAt  string       `json:"created_at,omitempty"`
-	FinishedAt string       `json:"finished_at,omitempty"`
+	CreatedAt  string         `json:"created_at,omitempty"`
+	FinishedAt string         `json:"finished_at,omitempty"`
 }
 
 // DeployTarget represents the deployment status for a single edge device.
@@ -77,16 +79,16 @@ type DeployTarget struct {
 	DoneAt    string `json:"done_at,omitempty"`
 }
 
-// DeployTriggerRequest is the payload for POST /v1/deploy/trigger.
+// DeployTriggerRequest is the payload for triggering a deployment.
 type DeployTriggerRequest struct {
 	JobID           string   `json:"job_id"`
-	ArtifactPattern string   `json:"artifact_pattern,omitempty"` // default: all artifacts
-	EdgeFilter      string   `json:"edge_filter,omitempty"`      // default: all online edges
-	EdgeIDs         []string `json:"edge_ids,omitempty"`         // explicit edge list (overrides filter)
+	ArtifactPattern string   `json:"artifact_pattern,omitempty"`
+	EdgeFilter      string   `json:"edge_filter,omitempty"`
+	EdgeIDs         []string `json:"edge_ids,omitempty"`
 	PostCommand     string   `json:"post_command,omitempty"`
 }
 
-// DeployTriggerResponse is the response from POST /v1/deploy/trigger.
+// DeployTriggerResponse is the response from triggering a deployment.
 type DeployTriggerResponse struct {
 	DeployID    string `json:"deploy_id"`
 	Status      string `json:"status"`
@@ -94,55 +96,70 @@ type DeployTriggerResponse struct {
 }
 
 // =========================================================================
-// Edge Client Methods
+// Edge Client Methods (Supabase PostgREST)
 // =========================================================================
 
-// RegisterEdge registers an edge device with the Hub.
+// RegisterEdge upserts an edge device in hub_edges.
 func (c *Client) RegisterEdge(name string, tags []string, capabilities map[string]any) (string, error) {
-	body := map[string]any{
-		"name":         name,
-		"tags":         tags,
-		"capabilities": capabilities,
+	if tags == nil {
+		tags = []string{}
 	}
-	var resp EdgeRegisterResponse
-	if err := c.post("/edges/register", body, &resp); err != nil {
+	edgeID := newID()
+	arch, _ := capabilities["arch"].(string)
+	runtime, _ := capabilities["runtime"].(string)
+	storageGB, _ := capabilities["storage_gb"].(float64)
+
+	row := map[string]any{
+		"id":         edgeID,
+		"name":       name,
+		"tags":       tags,
+		"arch":       arch,
+		"runtime":    runtime,
+		"storage":    storageGB,
+		"status":     "online",
+		"project_id": c.teamID,
+		"last_seen":  time.Now().UTC().Format(time.RFC3339),
+	}
+	var rows []struct {
+		ID string `json:"id"`
+	}
+	if err := c.supabasePost("/rest/v1/hub_edges", row, &rows); err != nil {
 		return "", fmt.Errorf("register edge: %w", err)
 	}
-	return resp.EdgeID, nil
+	if len(rows) > 0 && rows[0].ID != "" {
+		return rows[0].ID, nil
+	}
+	return edgeID, nil
 }
 
 // ListEdges returns all registered edge devices.
 func (c *Client) ListEdges() ([]Edge, error) {
 	var edges []Edge
-	if err := c.get("/edges", &edges); err != nil {
+	if err := c.supabaseGet("/rest/v1/hub_edges?order=created_at.desc", &edges); err != nil {
 		return nil, fmt.Errorf("list edges: %w", err)
 	}
 	return edges, nil
 }
 
-// EdgeHeartbeat sends a heartbeat from an edge device.
+// EdgeHeartbeat updates an edge device's last_seen timestamp.
 func (c *Client) EdgeHeartbeat(edgeID, status string) error {
 	body := map[string]any{
-		"edge_id": edgeID,
-		"status":  status,
+		"status":   status,
+		"last_seen": time.Now().UTC().Format(time.RFC3339),
 	}
-	var resp HeartbeatResponse
-	if err := c.post("/edges/heartbeat", body, &resp); err != nil {
+	if err := c.supabasePatch("/rest/v1/hub_edges?id=eq."+edgeID, body, nil); err != nil {
 		return fmt.Errorf("edge heartbeat: %w", err)
-	}
-	if !resp.Acknowledged {
-		return fmt.Errorf("edge heartbeat not acknowledged")
 	}
 	return nil
 }
 
-// RemoveEdge unregisters an edge device.
+// RemoveEdge deletes an edge device from hub_edges.
 func (c *Client) RemoveEdge(edgeID string) error {
-	req, err := newDeleteRequest(context.Background(), c.url("/edges/"+edgeID))
+	req, err := newDeleteRequest(context.Background(), c.supabaseRestURL("/rest/v1/hub_edges?id=eq."+edgeID))
 	if err != nil {
 		return err
 	}
-	c.setHeaders(req)
+	c.setSupabaseHeaders(req)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -151,71 +168,113 @@ func (c *Client) RemoveEdge(edgeID string) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode >= 400 {
-		return fmt.Errorf("remove edge: %d", resp.StatusCode)
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("remove edge: %d %s", resp.StatusCode, string(body))
 	}
 	return nil
 }
 
-// EdgeControlRequest is the payload for POST /v1/edges/{id}/control.
+// EdgeControlRequest is the payload for sending a control message to an edge.
 type EdgeControlRequest struct {
 	Action string         `json:"action"`
 	Params map[string]any `json:"params,omitempty"`
 }
 
-// EdgeControlResponse is the response from POST /v1/edges/{id}/control.
+// EdgeControlResponse is the response from an edge control operation.
 type EdgeControlResponse struct {
 	MessageID string `json:"message_id"`
 	Status    string `json:"status"`
 }
 
-// EdgeControl sends a control message to an edge device.
+// EdgeControl inserts a control message into hub_edge_control_queue.
 func (c *Client) EdgeControl(edgeID string, req *EdgeControlRequest) (*EdgeControlResponse, error) {
-	var resp EdgeControlResponse
-	if err := c.post("/edges/"+edgeID+"/control", req, &resp); err != nil {
+	msgID := newID()
+	row := map[string]any{
+		"id":      msgID,
+		"edge_id": edgeID,
+		"action":  req.Action,
+		"params":  req.Params,
+	}
+	if err := c.supabasePost("/rest/v1/hub_edge_control_queue", row, nil); err != nil {
 		return nil, fmt.Errorf("edge control: %w", err)
 	}
-	return &resp, nil
+	return &EdgeControlResponse{MessageID: msgID, Status: "queued"}, nil
 }
 
 // GetEdgeMetrics retrieves recent metrics for an edge device.
+// NOTE: Edge metrics are not stored in Supabase yet; returns empty response.
 func (c *Client) GetEdgeMetrics(edgeID string, limit int) (*EdgeMetricsResponse, error) {
-	path := fmt.Sprintf("/edges/%s/metrics?limit=%d", edgeID, limit)
-	var resp EdgeMetricsResponse
-	if err := c.get(path, &resp); err != nil {
-		return nil, fmt.Errorf("get edge metrics: %w", err)
-	}
-	return &resp, nil
+	return &EdgeMetricsResponse{EdgeID: edgeID, Metrics: []EdgeMetricEntry{}}, nil
 }
 
 // =========================================================================
-// Deploy Rule Client Methods
+// Deploy Rule Client Methods (Supabase PostgREST)
 // =========================================================================
 
-// CreateDeployRule creates an automatic deployment rule.
+// CreateDeployRule inserts a deploy rule into hub_deploy_rules.
 func (c *Client) CreateDeployRule(req *DeployRuleCreateRequest) (*DeployRuleCreateResponse, error) {
-	var resp DeployRuleCreateResponse
-	if err := c.post("/deploy/rules", req, &resp); err != nil {
+	ruleID := newID()
+	row := map[string]any{
+		"id":               ruleID,
+		"name":             req.Name,
+		"trigger_expr":     req.Trigger,
+		"edge_filter":      req.EdgeFilter,
+		"artifact_pattern": req.ArtifactPattern,
+		"post_command":     req.PostCommand,
+		"enabled":          true,
+		"project_id":       c.teamID,
+	}
+	var rows []struct {
+		ID string `json:"id"`
+	}
+	if err := c.supabasePost("/rest/v1/hub_deploy_rules", row, &rows); err != nil {
 		return nil, fmt.Errorf("create deploy rule: %w", err)
 	}
-	return &resp, nil
+	id := ruleID
+	if len(rows) > 0 && rows[0].ID != "" {
+		id = rows[0].ID
+	}
+	return &DeployRuleCreateResponse{RuleID: id}, nil
 }
 
-// ListDeployRules returns all deployment rules.
+// ListDeployRules returns all deploy rules.
 func (c *Client) ListDeployRules() ([]DeployRule, error) {
-	var rules []DeployRule
-	if err := c.get("/deploy/rules", &rules); err != nil {
+	var dbRules []struct {
+		ID              string `json:"id"`
+		Name            string `json:"name"`
+		TriggerExpr     string `json:"trigger_expr"`
+		EdgeFilter      string `json:"edge_filter"`
+		ArtifactPattern string `json:"artifact_pattern"`
+		PostCommand     string `json:"post_command"`
+		Enabled         bool   `json:"enabled"`
+		CreatedAt       string `json:"created_at"`
+	}
+	if err := c.supabaseGet("/rest/v1/hub_deploy_rules?order=created_at.desc", &dbRules); err != nil {
 		return nil, fmt.Errorf("list deploy rules: %w", err)
+	}
+	rules := make([]DeployRule, len(dbRules))
+	for i, r := range dbRules {
+		rules[i] = DeployRule{
+			ID:              r.ID,
+			Name:            r.Name,
+			Trigger:         r.TriggerExpr,
+			EdgeFilter:      r.EdgeFilter,
+			ArtifactPattern: r.ArtifactPattern,
+			PostCommand:     r.PostCommand,
+			Enabled:         r.Enabled,
+			CreatedAt:       r.CreatedAt,
+		}
 	}
 	return rules, nil
 }
 
-// DeleteDeployRule deletes a deployment rule.
+// DeleteDeployRule deletes a deploy rule.
 func (c *Client) DeleteDeployRule(ruleID string) error {
-	req, err := newDeleteRequest(context.Background(), c.url("/deploy/rules/"+ruleID))
+	req, err := newDeleteRequest(context.Background(), c.supabaseRestURL("/rest/v1/hub_deploy_rules?id=eq."+ruleID))
 	if err != nil {
 		return err
 	}
-	c.setHeaders(req)
+	c.setSupabaseHeaders(req)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -224,31 +283,64 @@ func (c *Client) DeleteDeployRule(ruleID string) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode >= 400 {
-		return fmt.Errorf("delete deploy rule: %d", resp.StatusCode)
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("delete deploy rule: %d %s", resp.StatusCode, string(body))
 	}
 	return nil
 }
 
 // =========================================================================
-// Deploy Trigger Client Methods
+// Deploy Trigger Client Methods (Supabase PostgREST)
 // =========================================================================
 
-// TriggerDeploy manually triggers deployment of artifacts to edges.
+// TriggerDeploy creates a deployment record in hub_deployments.
 func (c *Client) TriggerDeploy(req *DeployTriggerRequest) (*DeployTriggerResponse, error) {
-	var resp DeployTriggerResponse
-	if err := c.post("/deploy/trigger", req, &resp); err != nil {
+	deployID := newID()
+	row := map[string]any{
+		"id":         deployID,
+		"job_id":     req.JobID,
+		"status":     "deploying",
+		"project_id": c.teamID,
+	}
+	var rows []struct {
+		ID string `json:"id"`
+	}
+	if err := c.supabasePost("/rest/v1/hub_deployments", row, &rows); err != nil {
 		return nil, fmt.Errorf("trigger deploy: %w", err)
 	}
-	return &resp, nil
+	id := deployID
+	if len(rows) > 0 && rows[0].ID != "" {
+		id = rows[0].ID
+	}
+
+	// Count targets: either explicit EdgeIDs or EdgeFilter (just count edges for now).
+	targetCount := len(req.EdgeIDs)
+	return &DeployTriggerResponse{
+		DeployID:    id,
+		Status:      "deploying",
+		TargetCount: targetCount,
+	}, nil
 }
 
-// GetDeployStatus returns the status of a deployment.
+// GetDeployStatus returns a deployment with its targets.
 func (c *Client) GetDeployStatus(deployID string) (*Deployment, error) {
-	var deploy Deployment
-	if err := c.get("/deploy/"+deployID+"/status", &deploy); err != nil {
+	var rows []Deployment
+	if err := c.supabaseGet("/rest/v1/hub_deployments?id=eq."+deployID, &rows); err != nil {
 		return nil, fmt.Errorf("get deploy status: %w", err)
 	}
-	return &deploy, nil
+	if len(rows) == 0 {
+		return nil, fmt.Errorf("get deploy status: not found: %s", deployID)
+	}
+	deploy := &rows[0]
+
+	// Fetch targets.
+	var targets []DeployTarget
+	if err := c.supabaseGet("/rest/v1/hub_deploy_targets?deploy_id=eq."+deployID, &targets); err != nil {
+		return nil, fmt.Errorf("get deploy targets: %w", err)
+	}
+	deploy.Targets = targets
+
+	return deploy, nil
 }
 
 // =========================================================================
