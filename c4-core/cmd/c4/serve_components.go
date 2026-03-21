@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -90,6 +91,21 @@ func loadC4CloudEnv(cfg config.C4Config) []string {
 		envs = append(envs, "C5_SUPABASE_KEY="+cfg.Cloud.AnonKey)
 	}
 	return envs
+}
+
+// registerHarnessWatcherServeComponent registers HarnessWatcherComponent, which
+// captures LLM usage from ~/.claude/projects/**/*.jsonl via TraceCollector and
+// (optionally) pushes journal entries to Supabase when cloud.url is configured.
+// db may be nil — persistence is skipped but in-process trace recording still works.
+func registerHarnessWatcherServeComponent(mgr *serve.Manager, cfg config.C4Config, db *sql.DB) {
+	comp := serve.NewHarnessWatcherComponent(serve.HarnessWatcherConfig{
+		SupabaseURL: cfg.Cloud.URL,
+		AnonKey:     cfg.Cloud.AnonKey,
+		TenantID:    cfg.Cloud.ProjectID,
+		DB:          db,
+	})
+	mgr.Register(comp)
+	fmt.Fprintf(os.Stderr, "cq serve: registered harness_watcher\n")
 }
 
 // registerStaleCheckerServeComponent registers the StaleChecker component when enabled.
