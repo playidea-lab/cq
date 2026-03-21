@@ -43,12 +43,6 @@ var builtinC4Root string
 // Valid values: "solo", "connected", "full" (default).
 var initTier string
 
-// initTeam is the team name for standards.Apply() (--team flag).
-var initTeam string
-
-// initLangs is a comma-separated list of languages for standards.Apply() (--lang flag).
-var initLangs string
-
 // sessionName is an optional name for the Claude Code session (-t flag).
 var sessionName string
 
@@ -84,11 +78,6 @@ func init() {
 	// Register --tier flag on all init-related commands and the root command.
 	for _, cmd := range []*cobra.Command{rootCmd, claudeCmd, codexCmd, cursorCmd, geminiCmd} {
 		cmd.Flags().StringVar(&initTier, "tier", "", "build tier: solo|connected|full (written to .c4/config.yaml)")
-	}
-	// Register --team and --lang flags on all init-related commands and the root command.
-	for _, cmd := range []*cobra.Command{rootCmd, claudeCmd, codexCmd, cursorCmd, geminiCmd} {
-		cmd.Flags().StringVar(&initTeam, "team", "", "team name for standards rules (e.g. backend, frontend)")
-		cmd.Flags().StringVar(&initLangs, "lang", "", "comma-separated languages for standards rules (e.g. go,python)")
 	}
 	// Register -t/--tag flag for named sessions (claude and gemini only, and root default).
 	for _, cmd := range []*cobra.Command{rootCmd, claudeCmd, geminiCmd} {
@@ -291,15 +280,22 @@ func initAndLaunch(tool string) error {
 		fmt.Fprintf(os.Stderr, "cq: warning: CLAUDE.md setup failed: %v\n", err)
 	}
 
-	// 3b. Apply standards (rules, skills from embedded standards) — always run,
-	// even when no --team/--lang flags are given, so that common-only standards
-	// are applied unconditionally.
+	// 3b. Apply standards (rules, skills from embedded standards) — always run.
+	// If .piki-lock.yaml already exists with a team set, preserve existing team/langs.
+	// Otherwise apply common-only and hint the user to run `cq standards apply` for team rules.
 	{
-		langs := []string{}
-		if initLangs != "" {
-			langs = strings.Split(initLangs, ",")
+		applyTeam := ""
+		var applyLangs []string
+		if lock, lockErr := stdpkg.ReadLock(dir); lockErr == nil && lock.Team != "" {
+			applyTeam = lock.Team
+			applyLangs = lock.Langs
+		} else if lockErr == nil {
+			// lock exists but no team — common-only
+		} else {
+			// no lock file — common-only, print hint
+			fmt.Fprintln(os.Stderr, "cq: hint: run `cq standards apply --team <team>` to apply team-specific rules")
 		}
-		result, err := stdpkg.Apply(dir, initTeam, langs)
+		result, err := stdpkg.Apply(dir, applyTeam, applyLangs, stdpkg.ApplyOptions{})
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "cq: warning: standards setup failed: %v\n", err)
 		} else {
