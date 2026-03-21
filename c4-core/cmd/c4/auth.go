@@ -333,7 +333,7 @@ func runAuthLoginOTP() error {
 	}
 	fmt.Fprintln(os.Stderr, "✓ 인증 코드가 이메일로 전송되었습니다. (스팸 폴더도 확인하세요)")
 
-	fmt.Fprint(os.Stderr, "인증 코드 (6자리): ")
+	fmt.Fprint(os.Stderr, "인증 코드:")
 	if !scanner.Scan() {
 		return fmt.Errorf("입력이 종료되었습니다")
 	}
