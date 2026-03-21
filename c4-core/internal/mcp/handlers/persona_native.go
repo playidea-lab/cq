@@ -190,6 +190,12 @@ func personaLearnFromDiffHandler() mcp.HandlerFunc {
 			return map[string]any{"error": fmt.Sprintf("write raw_patterns: %v", err)}, nil
 		}
 
+		// Merge to global persona store (non-fatal)
+		if err := persona.MergeToGlobal(patternsPath, username); err != nil {
+			// log but do not fail the handler
+			_ = err
+		}
+
 		return map[string]any{
 			"patterns_found": len(allPatterns),
 			"total_patterns": len(existing),

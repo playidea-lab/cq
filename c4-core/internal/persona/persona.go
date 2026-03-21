@@ -1,9 +1,12 @@
 package persona
 
 import (
+	"crypto/sha256"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 )
@@ -192,6 +195,70 @@ func profileStringSlice(profile map[string]any, section, key string, fallback []
 		return v
 	}
 	return fallback
+}
+
+// MergeToGlobal merges project raw_patterns.json into the global persona store
+// at ~/.c4/personas/{username}/raw_patterns.json.
+// Deduplication is done by sha256 hash of category+description.
+// Failures are non-fatal — callers should log and continue.
+func MergeToGlobal(projectPatternsPath, username string) error {
+	if username == "" {
+		username = "default"
+	}
+
+	globalDir := filepath.Join(os.Getenv("HOME"), ".c4", "personas", username)
+	if err := os.MkdirAll(globalDir, 0755); err != nil {
+		return fmt.Errorf("mkdir global persona dir: %w", err)
+	}
+	globalPath := filepath.Join(globalDir, "raw_patterns.json")
+
+	// Read project patterns
+	var projectPatterns []EditPattern
+	if data, err := os.ReadFile(projectPatternsPath); err == nil && len(data) > 0 {
+		if err := json.Unmarshal(data, &projectPatterns); err != nil {
+			return fmt.Errorf("unmarshal project patterns: %w", err)
+		}
+	}
+	if len(projectPatterns) == 0 {
+		return nil
+	}
+
+	// Read global patterns (missing file is ok)
+	var globalPatterns []EditPattern
+	if data, err := os.ReadFile(globalPath); err == nil && len(data) > 0 {
+		_ = json.Unmarshal(data, &globalPatterns)
+	}
+
+	// Build hash set of existing global patterns for dedup
+	seen := make(map[string]bool, len(globalPatterns))
+	for _, p := range globalPatterns {
+		seen[patternHash(p)] = true
+	}
+
+	// Append unique project patterns
+	for _, p := range projectPatterns {
+		h := patternHash(p)
+		if !seen[h] {
+			seen[h] = true
+			globalPatterns = append(globalPatterns, p)
+		}
+	}
+
+	// Write back
+	data, err := json.MarshalIndent(globalPatterns, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal global patterns: %w", err)
+	}
+	if err := os.WriteFile(globalPath, data, 0644); err != nil {
+		return fmt.Errorf("write global patterns: %w", err)
+	}
+	return nil
+}
+
+// patternHash returns a stable hash key for an EditPattern based on category+description.
+func patternHash(p EditPattern) string {
+	h := sha256.Sum256([]byte(p.Category + "\x00" + p.Description))
+	return fmt.Sprintf("%x", h[:8])
 }
 
 // =========================================================================
