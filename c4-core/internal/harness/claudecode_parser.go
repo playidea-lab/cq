@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/changmin/c4-core/internal/channelpush"
+	"github.com/changmin/c4-core/internal/llm"
 )
 
 // LLMUsageInfo holds model and token usage extracted from a Claude Code assistant line.
@@ -15,6 +16,7 @@ type LLMUsageInfo struct {
 	OutputTok  int
 	CacheRead  int
 	CacheWrite int
+	CostUSD    float64
 }
 
 // ExtractUsage parses a single JSONL line and returns usage info if it is an assistant
@@ -48,6 +50,13 @@ func ExtractUsage(data []byte) (*LLMUsageInfo, error) {
 
 	provider := inferProvider(msg.Model)
 
+	var costUSD float64
+	if pricing, ok := llm.LookupModel(msg.Model); ok {
+		inputCost := (float64(msg.Usage.InputTokens) + float64(msg.Usage.CacheReadInputTokens)*0.1) * pricing.InputPer1M / 1_000_000
+		outputCost := float64(msg.Usage.OutputTokens) * pricing.OutputPer1M / 1_000_000
+		costUSD = inputCost + outputCost
+	}
+
 	return &LLMUsageInfo{
 		Model:      msg.Model,
 		Provider:   provider,
@@ -55,6 +64,7 @@ func ExtractUsage(data []byte) (*LLMUsageInfo, error) {
 		OutputTok:  msg.Usage.OutputTokens,
 		CacheRead:  msg.Usage.CacheReadInputTokens,
 		CacheWrite: msg.Usage.CacheCreationInputTokens,
+		CostUSD:    costUSD,
 	}, nil
 }
 
