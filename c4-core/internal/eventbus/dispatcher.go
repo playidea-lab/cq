@@ -2,7 +2,6 @@ package eventbus
 
 import (
 	"bytes"
-	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
@@ -33,7 +32,6 @@ type Dispatcher struct {
 	httpClient   *http.Client
 	c1Poster     C1Poster     // optional: for "c1_post" action type
 	hubSubmitter JobSubmitter // optional: for "hub_submit" action type
-	llmCaller    LLMCaller    // optional: for "dooray_respond_llm" action type
 	sem          chan struct{} // bounded concurrency for dispatch goroutines
 }
 
@@ -68,13 +66,6 @@ func (d *Dispatcher) SetHubSubmitter(s JobSubmitter) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.hubSubmitter = s
-}
-
-// SetLLMCaller sets the LLM caller for "dooray_respond_llm" action type.
-func (d *Dispatcher) SetLLMCaller(caller LLMCaller) {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	d.llmCaller = caller
 }
 
 // Dispatch matches rules against an event and executes their actions.
@@ -143,12 +134,6 @@ func (d *Dispatcher) ReplayRule(eventID, eventType string, eventData json.RawMes
 			execErr = d.executeC1Post(eventType, eventData, rule)
 		case "hub_submit":
 			execErr = d.executeHubSubmit(eventType, eventData, rule)
-		case "dooray_respond":
-			execErr = d.executeDoorayRespond(eventType, eventData, rule)
-		case "dooray_respond_llm":
-			execErr = d.executeDoorayRespondLLM(eventType, eventData, rule)
-		case "dooray_dispatch":
-			execErr = d.executeDoorayDispatch(eventType, eventData, rule)
 		default:
 			execErr = fmt.Errorf("unknown action type: %s", rule.ActionType)
 		}
@@ -187,12 +172,6 @@ func (d *Dispatcher) executeRule(eventID, eventType string, eventData json.RawMe
 		err = d.executeC1Post(eventType, eventData, rule)
 	case "hub_submit":
 		err = d.executeHubSubmit(eventType, eventData, rule)
-	case "dooray_respond":
-		err = d.executeDoorayRespond(eventType, eventData, rule)
-	case "dooray_respond_llm":
-		err = d.executeDoorayRespondLLM(eventType, eventData, rule)
-	case "dooray_dispatch":
-		err = d.executeDoorayDispatch(eventType, eventData, rule)
 	default:
 		err = fmt.Errorf("unknown action type: %s", rule.ActionType)
 	}
@@ -733,279 +712,6 @@ func matchDomain(hostname, pattern string) bool {
 		return strings.HasSuffix(hostname, suffix) && hostname != suffix[1:]
 	}
 	return hostname == pattern
-}
-
-// ValidateDoorayResponseURL validates that the URL is a valid *.dooray.com HTTPS URL.
-// Used by dooray_respond to prevent SSRF through attacker-controlled response_url values.
-// Exported so eventbushandler (c4_dooray_respond MCP tool) can reuse the same check.
-// Note: pre-flight DNS validation does not fully mitigate DNS rebinding. The IP check
-// happens here but http.Client re-resolves DNS independently at connect time. For
-// *.dooray.com this is an acceptable residual risk (operator-controlled domain).
-func ValidateDoorayResponseURL(rawURL string) error {
-	parsed, err := url.Parse(rawURL)
-	if err != nil {
-		return fmt.Errorf("parse response_url: %w", err)
-	}
-	if parsed.Scheme != "https" {
-		return fmt.Errorf("response_url must use https, got %s", parsed.Scheme)
-	}
-	return validateWebhookURL(rawURL, []string{"*.dooray.com"})
-}
-
-// executeDoorayRespond posts a reply to a Dooray slash command via its responseUrl.
-// The responseUrl is read from the event data (set by WebhookGatewayComponent) and must
-// resolve to a *.dooray.com host to prevent SSRF.
-func (d *Dispatcher) executeDoorayRespond(eventType string, eventData json.RawMessage, rule StoredRule) error {
-	var cfg struct {
-		Text            string `json:"text"`
-		ResponseType    string `json:"response_type"`
-		PayloadTemplate string `json:"payload_template"`
-	}
-	if err := json.Unmarshal([]byte(rule.ActionConfig), &cfg); err != nil {
-		return fmt.Errorf("parse dooray_respond action_config: %w", err)
-	}
-
-	// Extract response_url from event data
-	var data map[string]any
-	if err := json.Unmarshal(eventData, &data); err != nil {
-		return fmt.Errorf("unmarshal event data: %w", err)
-	}
-
-	responseURL, _ := data["response_url"].(string)
-	if responseURL == "" {
-		return fmt.Errorf("response_url not found in event data")
-	}
-
-	// Security: validate the response URL is a Dooray domain to prevent SSRF
-	if err := ValidateDoorayResponseURL(responseURL); err != nil {
-		return fmt.Errorf("invalid response_url: %w", err)
-	}
-
-	// Build the short event type for template resolution
-	shortType := eventType
-	if idx := strings.LastIndex(eventType, "."); idx >= 0 {
-		shortType = eventType[idx+1:]
-	}
-	data["event_type"] = shortType
-
-	// Resolve payload text
-	text := cfg.Text
-	if cfg.PayloadTemplate != "" {
-		text = resolveTemplateString(cfg.PayloadTemplate, data)
-	}
-	if text == "" {
-		text = fmt.Sprintf("[%s]", shortType)
-	}
-
-	responseType := cfg.ResponseType
-	if responseType == "" {
-		responseType = "ephemeral"
-	}
-
-	payload := map[string]any{
-		"text":         text,
-		"responseType": responseType,
-	}
-	body, err := json.Marshal(payload)
-	if err != nil {
-		return fmt.Errorf("marshal dooray response: %w", err)
-	}
-
-	req, err := http.NewRequest("POST", responseURL, bytes.NewReader(body))
-	if err != nil {
-		return fmt.Errorf("create request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := d.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("dooray_respond POST: %w", err)
-	}
-	defer func() {
-		io.Copy(io.Discard, io.LimitReader(resp.Body, 4096)) //nolint:errcheck
-		resp.Body.Close()
-	}()
-
-	if resp.StatusCode >= 400 {
-		return fmt.Errorf("dooray_respond returned HTTP %d", resp.StatusCode)
-	}
-	return nil
-}
-
-// defaultDoorayLLMModel is the fallback model used by dooray_respond_llm
-// when no model is specified in the action config.
-const defaultDoorayLLMModel = "claude-haiku-4-5-20251001"
-
-// executeDoorayRespondLLM calls an LLM with the incoming Dooray slash-command
-// text as the user message, then POSTs the reply to the response_url.
-// Processing is asynchronous: the function returns immediately and the
-// LLM call + POST happen in a background goroutine (30 s timeout).
-func (d *Dispatcher) executeDoorayRespondLLM(eventType string, eventData json.RawMessage, rule StoredRule) error {
-	d.mu.RLock()
-	caller := d.llmCaller
-	d.mu.RUnlock()
-
-	if caller == nil {
-		return fmt.Errorf("dooray_respond_llm action: LLM not configured")
-	}
-
-	var cfg struct {
-		SystemPrompt string `json:"system_prompt"`
-		Model        string `json:"model"`
-		ResponseType string `json:"response_type"`
-	}
-	if err := json.Unmarshal([]byte(rule.ActionConfig), &cfg); err != nil {
-		return fmt.Errorf("parse dooray_respond_llm action_config: %w", err)
-	}
-
-	var data map[string]any
-	if err := json.Unmarshal(eventData, &data); err != nil {
-		return fmt.Errorf("unmarshal event data: %w", err)
-	}
-
-	responseURL, _ := data["response_url"].(string)
-	if responseURL == "" {
-		// No response_url — nothing to reply to; skip silently.
-		return nil
-	}
-
-	userText, _ := data["text"].(string)
-
-	model := cfg.Model
-	if model == "" {
-		model = defaultDoorayLLMModel
-	}
-	responseType := cfg.ResponseType
-	if responseType == "" {
-		responseType = "ephemeral"
-	}
-
-	// Async: return nil immediately so executeRule records "ok" and the event is NOT sent to DLQ.
-	// Failures inside this goroutine (LLM error, HTTP POST error) are only logged;
-	// they do not surface to the DLQ or the dispatch log.
-	// Concurrency: each invocation spawns one unbounded goroutine (not bounded by d.sem).
-	// The LLM call is capped at 30s per goroutine, so maximum in-flight goroutines
-	// equals the number of simultaneous dooray_respond_llm events (typically low).
-	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancel()
-
-		reply, err := caller.Call(ctx, cfg.SystemPrompt, userText, model)
-		if err != nil {
-			log.Printf("[eventbus] dooray_respond_llm: LLM error (rule %q): %v\n", rule.Name, err)
-			return
-		}
-
-		// Security: validate response URL before POST.
-		if err := ValidateDoorayResponseURL(responseURL); err != nil {
-			log.Printf("[eventbus] dooray_respond_llm: invalid response_url (rule %q): %v\n", rule.Name, err)
-			return
-		}
-
-		payload := map[string]any{
-			"text":         reply,
-			"responseType": responseType,
-		}
-		body, err := json.Marshal(payload)
-		if err != nil {
-			log.Printf("[eventbus] dooray_respond_llm: marshal payload (rule %q): %v\n", rule.Name, err)
-			return
-		}
-
-		req, err := http.NewRequestWithContext(ctx, "POST", responseURL, bytes.NewReader(body))
-		if err != nil {
-			log.Printf("[eventbus] dooray_respond_llm: create request (rule %q): %v\n", rule.Name, err)
-			return
-		}
-		req.Header.Set("Content-Type", "application/json")
-
-		resp, err := d.httpClient.Do(req)
-		if err != nil {
-			log.Printf("[eventbus] dooray_respond_llm: POST error (rule %q): %v\n", rule.Name, err)
-			return
-		}
-		defer func() {
-			io.Copy(io.Discard, io.LimitReader(resp.Body, 4096)) //nolint:errcheck
-			resp.Body.Close()
-		}()
-
-		if resp.StatusCode >= 500 {
-			log.Printf("[eventbus] dooray_respond_llm: Dooray server error HTTP %d (rule %q)\n", resp.StatusCode, rule.Name)
-		} else if resp.StatusCode >= 400 {
-			log.Printf("[eventbus] dooray_respond_llm: Dooray client error HTTP %d (rule %q)\n", resp.StatusCode, rule.Name)
-		}
-	}()
-
-	return nil
-}
-
-// executeDoorayDispatch submits a Hub job with Dooray context (response_url, text)
-// included in the job metadata. The assigned Worker can call c4_dooray_respond
-// with metadata.dooray_response_url to send a reply back to Dooray.
-func (d *Dispatcher) executeDoorayDispatch(eventType string, eventData json.RawMessage, rule StoredRule) error {
-	d.mu.RLock()
-	submitter := d.hubSubmitter
-	d.mu.RUnlock()
-
-	if submitter == nil {
-		return fmt.Errorf("dooray_dispatch action: hub submitter not configured")
-	}
-
-	var cfg struct {
-		Name       string            `json:"name"`
-		Workdir    string            `json:"workdir"`
-		Command    string            `json:"command"`
-		Env        map[string]string `json:"env"`
-		Tags       []string          `json:"tags"`
-		Priority   int               `json:"priority"`
-		TimeoutSec int               `json:"timeout_sec"`
-	}
-	if err := json.Unmarshal([]byte(rule.ActionConfig), &cfg); err != nil {
-		return fmt.Errorf("parse dooray_dispatch action_config: %w", err)
-	}
-	if cfg.Name == "" || cfg.Workdir == "" || cfg.Command == "" {
-		return fmt.Errorf("dooray_dispatch action_config requires name, workdir, and command")
-	}
-
-	var data map[string]any
-	if err := json.Unmarshal(eventData, &data); err != nil {
-		data = make(map[string]any)
-	}
-	if idx := strings.LastIndex(eventType, "."); idx >= 0 {
-		data["event_type"] = eventType[idx+1:]
-	} else {
-		data["event_type"] = eventType
-	}
-
-	// Resolve template placeholders in string fields
-	cfg.Name = resolveTemplateString(cfg.Name, data)
-	cfg.Workdir = resolveTemplateString(cfg.Workdir, data)
-	cfg.Command = resolveTemplateString(cfg.Command, data)
-
-	// Pass dooray_response_url and text in job metadata env so Worker can reply
-	responseURL, _ := data["response_url"].(string)
-	userText, _ := data["text"].(string)
-	if cfg.Env == nil {
-		cfg.Env = make(map[string]string)
-	}
-	if responseURL != "" {
-		cfg.Env["DOORAY_RESPONSE_URL"] = responseURL
-	}
-	if userText != "" {
-		cfg.Env["DOORAY_TEXT"] = userText
-	}
-
-	spec := &JobSubmitSpec{
-		Name:       cfg.Name,
-		Workdir:    cfg.Workdir,
-		Command:    cfg.Command,
-		Env:        cfg.Env,
-		Tags:       cfg.Tags,
-		Priority:   cfg.Priority,
-		TimeoutSec: cfg.TimeoutSec,
-	}
-	_, err := submitter.Submit(spec)
-	return err
 }
 
 var privateCIDRs []*net.IPNet
