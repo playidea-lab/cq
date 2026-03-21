@@ -187,7 +187,7 @@ type GuardConfig struct {
 // NotificationChannel holds a single notification destination configuration.
 type NotificationChannel struct {
 	Name            string            `mapstructure:"name"             yaml:"name"`
-	Type            string            `mapstructure:"type"             yaml:"type"` // dooray|discord|slack|teams|generic
+	Type            string            `mapstructure:"type"             yaml:"type"` // discord|slack|teams|generic
 	URL             string            `mapstructure:"url"              yaml:"url"`
 	MessageTemplate string            `mapstructure:"message_template" yaml:"message_template"`
 	BotName         string            `mapstructure:"bot_name"         yaml:"bot_name"`
@@ -200,8 +200,6 @@ type NotificationChannel struct {
 // defaultMessageTemplate returns the type-specific default message template.
 func defaultMessageTemplate(channelType string) string {
 	switch channelType {
-	case "dooray":
-		return "[{{event_type}}] {{title}}"
 	case "discord":
 		return "**[{{event_type}}]** {{title}} ({{task_id}})"
 	case "slack":
@@ -230,9 +228,6 @@ func BuildPayloadTemplate(ch NotificationChannel) (string, string) {
 	}
 
 	switch ch.Type {
-	case "dooray":
-		payload := `{"botName":"` + jsonStr(ch.BotName) + `","text":"` + jsonStr(msg) + `"}`
-		return payload, "application/json"
 	case "discord":
 		payload := `{"content":"` + jsonStr(msg) + `","username":"` + jsonStr(ch.Username) + `"}`
 		return payload, "application/json"

@@ -710,25 +710,6 @@ func TestStaleCheckerConfigDefaults(t *testing.T) {
 	}
 }
 
-// TestNotificationBuildPayloadTemplate_Dooray tests dooray payload generation.
-func TestNotificationBuildPayloadTemplate_Dooray(t *testing.T) {
-	ch := NotificationChannel{
-		Type:            "dooray",
-		BotName:         "CQ Bot",
-		MessageTemplate: "[{{event_type}}] {{title}}",
-	}
-	payload, ct := BuildPayloadTemplate(ch)
-	if ct != "application/json" {
-		t.Errorf("contentType = %q, want application/json", ct)
-	}
-	if !contains(payload, `"botName":"CQ Bot"`) {
-		t.Errorf("payload missing botName: %s", payload)
-	}
-	if !contains(payload, `"text":"[{{event_type}}] {{title}}"`) {
-		t.Errorf("payload missing text: %s", payload)
-	}
-}
-
 // TestNotificationBuildPayloadTemplate_Discord tests discord payload generation.
 func TestNotificationBuildPayloadTemplate_Discord(t *testing.T) {
 	ch := NotificationChannel{
@@ -790,7 +771,6 @@ func TestNotificationBuildPayloadTemplate_DefaultMessageTemplate(t *testing.T) {
 		chType      string
 		wantContain string
 	}{
-		{"dooray", "[{{event_type}}] {{title}}"},
 		{"discord", "{{title}} ({{task_id}})"},
 		{"slack", "[{{event_type}}] {{title}} - {{task_id}}"},
 		{"teams", "[{{event_type}}] {{title}}"},
@@ -812,24 +792,6 @@ func TestNotificationBuildPayloadTemplate_JSONEscaping(t *testing.T) {
 		ch          NotificationChannel
 		wantContain string
 	}{
-		{
-			name: "dooray botName with double quote",
-			ch: NotificationChannel{
-				Type:            "dooray",
-				BotName:         `Bot"Name`,
-				MessageTemplate: "hello",
-			},
-			wantContain: `"botName":"Bot\"Name"`,
-		},
-		{
-			name: "dooray botName with backslash",
-			ch: NotificationChannel{
-				Type:            "dooray",
-				BotName:         `Bot\Name`,
-				MessageTemplate: "hello",
-			},
-			wantContain: `"botName":"Bot\\Name"`,
-		},
 		{
 			name: "discord username with double quote",
 			ch: NotificationChannel{
@@ -868,10 +830,6 @@ func TestNotificationGetChannel(t *testing.T) {
 	configYAML := `
 notifications:
   channels:
-    - name: dooray-team
-      type: dooray
-      url: "https://hook.dooray.com/services/test"
-      bot_name: "CQ Bot"
     - name: discord-dev
       type: discord
       url: "https://discord.com/api/webhooks/test"
@@ -885,15 +843,15 @@ notifications:
 		t.Fatalf("New() failed: %v", err)
 	}
 
-	ch, ok := mgr.GetNotificationChannel("dooray-team")
+	ch, ok := mgr.GetNotificationChannel("discord-dev")
 	if !ok {
-		t.Fatal("expected to find dooray-team channel, got not found")
+		t.Fatal("expected to find discord-dev channel, got not found")
 	}
-	if ch.Type != "dooray" {
-		t.Errorf("Type = %q, want dooray", ch.Type)
+	if ch.Type != "discord" {
+		t.Errorf("Type = %q, want discord", ch.Type)
 	}
-	if ch.BotName != "CQ Bot" {
-		t.Errorf("BotName = %q, want CQ Bot", ch.BotName)
+	if ch.Username != "CQ Bot" {
+		t.Errorf("Username = %q, want CQ Bot", ch.Username)
 	}
 
 	_, missing := mgr.GetNotificationChannel("does-not-exist")

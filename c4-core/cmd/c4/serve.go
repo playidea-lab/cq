@@ -150,14 +150,6 @@ func runServe(cmd *cobra.Command, args []string) error {
 		registerMCPHTTPComponent(mgr, cfg.Serve.MCPHTTP, srv)
 	}
 
-	// Register DoorayChannelComponent when dooray is enabled.
-	// Inject into initCtx so mcp_init.go can pass it to doorayhandler.
-	if cfg.Hub.URL != "" && cfgMgr.Get("dooray.enabled") == true {
-		dch := serve.NewDoorayChannel(serve.DoorayChannelConfig{HubURL: cfg.Hub.URL})
-		mgr.Register(dch)
-		srv.initCtx.doorayChannel = dch
-	}
-
 	// Start all components
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
