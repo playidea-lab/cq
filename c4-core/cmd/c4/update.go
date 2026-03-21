@@ -16,7 +16,7 @@ var updateCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		fmt.Println("Updating cq...")
 		sh := exec.Command("sh", "-c",
-			`curl -fsSL https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/install.sh | sh`)
+			`curl -fsSL https://raw.githubusercontent.com/playidea-lab/cq/main/install.sh | sh`)
 		sh.Stdout = os.Stdout
 		sh.Stderr = os.Stderr
 		sh.Stdin = os.Stdin
