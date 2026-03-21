@@ -12,7 +12,7 @@ import (
 
 	"github.com/changmin/c4-core/internal/hub"
 	"github.com/changmin/c4-core/internal/mcp"
-	"github.com/changmin/c4-core/internal/mcp/handlers/c1handler"
+	"github.com/changmin/c4-core/internal/mcp/handlers/messengerhandler"
 	"github.com/changmin/c4-core/internal/worker"
 )
 
@@ -26,7 +26,7 @@ type workerEntry struct {
 type WorkerDeps struct {
 	HubClient     *hub.Client
 	ShutdownStore *worker.ShutdownStore
-	Keeper        *c1handler.ContextKeeper // may be nil if C1 not enabled
+	Keeper        *messengerhandler.ContextKeeper // may be nil if C1 not enabled
 	MCPURL        string                   // local mcphttp URL advertised to Hub (e.g. "http://127.0.0.1:4142")
 
 	// activeWorkers tracks running standby goroutines by worker_id.

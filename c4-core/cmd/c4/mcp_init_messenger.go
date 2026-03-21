@@ -9,7 +9,7 @@ import (
 	"github.com/changmin/c4-core/internal/eventbus"
 	"github.com/changmin/c4-core/internal/llm"
 	"github.com/changmin/c4-core/internal/mcp/handlers"
-	"github.com/changmin/c4-core/internal/mcp/handlers/c1handler"
+	"github.com/changmin/c4-core/internal/mcp/handlers/messengerhandler"
 )
 
 func init() {
@@ -26,8 +26,8 @@ func initC1(ctx *initContext) error {
 	if cloudCfg.URL == "" || cloudCfg.AnonKey == "" || ctx.cloudTP.Token() == "" || ctx.cloudProjectID == "" {
 		return nil
 	}
-	c1Handler := c1handler.NewC1Handler(cloudCfg.URL+"/rest/v1", cloudCfg.AnonKey, ctx.cloudTP, ctx.cloudProjectID)
-	c1handler.RegisterC1Handlers(ctx.reg, c1Handler)
+	c1Handler := messengerhandler.NewC1Handler(cloudCfg.URL+"/rest/v1", cloudCfg.AnonKey, ctx.cloudTP, ctx.cloudProjectID)
+	messengerhandler.RegisterC1Handlers(ctx.reg, c1Handler)
 
 	// Create ContextKeeper — use existing LLM gateway or create a dedicated one
 	var keeperGateway *llm.Gateway
@@ -36,7 +36,7 @@ func initC1(ctx *initContext) error {
 	} else if ctx.cfgMgr.GetConfig().LLMGateway.Enabled {
 		keeperGateway = llm.NewGatewayFromConfig(toLLMGatewayConfig(ctx.cfgMgr, ctx.secretStore))
 	}
-	ctx.keeper = c1handler.NewContextKeeper(c1Handler, keeperGateway)
+	ctx.keeper = messengerhandler.NewContextKeeper(c1Handler, keeperGateway)
 	if err := ctx.keeper.EnsureSystemChannels(); err != nil {
 		fmt.Fprintf(os.Stderr, "cq: system channels setup failed: %v\n", err)
 	}
