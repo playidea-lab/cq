@@ -649,7 +649,7 @@ func resolveTemplateString(s string, data map[string]any) string {
 // It checks that:
 // - The URL scheme is http or https
 // - The resolved IP addresses are not private/internal ranges
-// - If allowedDomains is non-empty, the hostname matches one of the glob patterns (e.g. "*.dooray.com")
+// - If allowedDomains is non-empty, the hostname matches one of the glob patterns (e.g. "*.example.com")
 func validateWebhookURL(rawURL string, allowedDomains []string) error {
 	parsedURL, err := url.Parse(rawURL)
 	if err != nil {
@@ -704,11 +704,11 @@ func validateWebhookURL(rawURL string, allowedDomains []string) error {
 }
 
 // matchDomain checks if hostname matches a domain pattern.
-// Supports simple wildcard prefix: "*.dooray.com" matches "hooks.dooray.com" but not "dooray.com".
+// Supports simple wildcard prefix: "*.example.com" matches "hooks.example.com" but not "example.com".
 // Exact match is also supported (no wildcard).
 func matchDomain(hostname, pattern string) bool {
 	if strings.HasPrefix(pattern, "*.") {
-		suffix := pattern[1:] // ".dooray.com"
+		suffix := pattern[1:] // e.g. ".example.com"
 		return strings.HasSuffix(hostname, suffix) && hostname != suffix[1:]
 	}
 	return hostname == pattern

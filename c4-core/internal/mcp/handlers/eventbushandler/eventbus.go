@@ -351,7 +351,7 @@ func resolveChannelConfig(actionConfig string, cfgMgr *config.Manager) (string, 
 }
 
 // maskURL returns a URL with the path component replaced by "****".
-// Example: "https://hook.dooray.com/services/123/456" → "https://hook.dooray.com/****"
+// Example: "https://hooks.example.com/services/123/456" → "https://hooks.example.com/****"
 func maskURL(rawURL string) string {
 	if rawURL == "" {
 		return ""
