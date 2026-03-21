@@ -713,7 +713,7 @@ func tryFix(r *checkResult) string {
 		if err != nil {
 			return ""
 		}
-		result, err := standards.Apply(projectDir, lock.Team, lock.Langs)
+		result, err := standards.Apply(projectDir, lock.Team, lock.Langs, standards.ApplyOptions{})
 		if err != nil {
 			return ""
 		}
