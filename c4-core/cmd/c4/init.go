@@ -87,7 +87,7 @@ func init() {
 		_ = cmd.RegisterFlagCompletionFunc("tag", completeSessionNames)
 	}
 	sessionCmd.AddCommand(sessionNameCmd, sessionRmCmd, sessionMemoCmd)
-	rootCmd.AddCommand(claudeCmd, codexCmd, cursorCmd, geminiCmd, lsCmd, sessionCmd)
+	rootCmd.AddCommand(claudeCmd, codexCmd, cursorCmd, geminiCmd, sessionsCmd, sessionCmd)
 }
 
 // writeDefaultConfig writes the embedded default config.yaml to .c4/config.yaml
@@ -1535,13 +1535,12 @@ func jsonlLastTimestamp(path string) time.Time {
 	return time.Time{}
 }
 
-// lsCmd lists named sessions in tmux-style format.
+// sessionsCmd lists named sessions in tmux-style format.
 // Detects the current session via CQ_SESSION_UUID env var or filesystem.
-var lsCmd = &cobra.Command{
-	Use:     "ls",
-	Aliases: []string{"sessions"},
-	Short:   "List named Claude Code sessions (tmux-style)",
-	Args:    cobra.NoArgs,
+var sessionsCmd = &cobra.Command{
+	Use:   "sessions",
+	Short: "List named Claude Code sessions (tmux-style)",
+	Args:  cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		sessions, err := loadNamedSessions()
 		if err != nil {
@@ -1628,8 +1627,8 @@ var lsCmd = &cobra.Command{
 	},
 }
 
-// sessionsCmd is kept for backward compat (alias handled via lsCmd.Aliases).
-var sessionsCmd = lsCmd
+// Note: lsCmd is now defined in bot.go (lists bots).
+// sessionsCmd above replaces the old lsCmd for session listing.
 
 // lsIsWide reports whether rune r occupies 2 terminal columns (CJK, Hangul, etc.).
 func lsIsWide(r rune) bool {
