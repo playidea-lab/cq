@@ -3,7 +3,6 @@ node_modules/
 
 # Build outputs
 dist/
-src-tauri/target/
 
 # Editor
 .idea/
@@ -14,19 +13,6 @@ src-tauri/target/
 # OS
 .DS_Store
 Thumbs.db
-
-# Tauri
-src-tauri/WixTools/
-src-tauri/target/
-*.deb
-*.AppImage
-*.dmg
-*.app
-*.msi
-
-# Lock files (optional - uncomment if you want to ignore them)
-# pnpm-lock.yaml
-# Cargo.lock
 
 # Local env
 .env.local
