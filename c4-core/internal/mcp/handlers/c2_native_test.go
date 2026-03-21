@@ -12,7 +12,8 @@ import (
 func newC2Registry(t *testing.T) *mcp.Registry {
 	t.Helper()
 	reg := mcp.NewRegistry()
-	RegisterC2NativeHandlers(reg)
+	RegisterWorkspaceNativeHandlers(reg)
+	RegisterPersonaNativeHandlers(reg)
 	return reg
 }
 

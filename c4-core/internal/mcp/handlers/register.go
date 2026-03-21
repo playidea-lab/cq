@@ -138,8 +138,9 @@ func RegisterAllHandlersLazyWithOpts(reg *mcp.Registry, store Store, rootDir str
 // registerC2Native registers C2 Workspace/Profile/Persona (6 tools) + Doc parsing (2 tools).
 // Always compiled — no build tag (C2 native has no heavy external dependencies).
 func registerC2Native(reg *mcp.Registry, proxy *BridgeProxy) {
-	RegisterC2NativeHandlers(reg)
-	RegisterC2DocProxyHandlers(reg, proxy)
+	RegisterWorkspaceNativeHandlers(reg)
+	RegisterPersonaNativeHandlers(reg)
+	RegisterDocProxyHandlers(reg, proxy)
 }
 
 
