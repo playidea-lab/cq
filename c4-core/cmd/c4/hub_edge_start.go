@@ -25,12 +25,12 @@ func edgeConfigPath() string {
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return ".c5/edge.yaml"
+		return ".c4/hub-edge.yaml"
 	}
-	return filepath.Join(home, ".c5", "edge.yaml")
+	return filepath.Join(home, ".c4", "hub-edge.yaml")
 }
 
-// edgeYAML is the schema for ~/.c5/edge.yaml written by `cq hub edge init`.
+// edgeYAML is the schema for ~/.c4/hub-edge.yaml written by `cq hub edge init`.
 type edgeYAML struct {
 	HubURL                     string   `yaml:"hub_url"`
 	APIKey                     string   `yaml:"api_key"`
@@ -63,7 +63,7 @@ var hubEdgeInitCmd = &cobra.Command{
 	Short: "Configure edge agent credentials",
 	Long: `Interactively configure the edge agent connection to the C5 Hub.
 
-Saves credentials to ~/.c5/edge.yaml.
+Saves credentials to ~/.c4/hub-edge.yaml.
 Use --non-interactive with --hub-url and --api-key for automation.
 
 Example:
@@ -75,7 +75,7 @@ Example:
 var hubEdgeStartCmd = &cobra.Command{
 	Use:   "start",
 	Short: "Start c5 edge-agent subprocess",
-	Long: `Start the c5 edge-agent process, reading config from ~/.c5/edge.yaml.
+	Long: `Start the hub edge-agent process, reading config from ~/.c4/hub-edge.yaml.
 
 Resolves the c5 binary via:
   1. PATH ("c5")

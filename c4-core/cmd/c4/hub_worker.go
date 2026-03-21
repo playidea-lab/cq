@@ -33,12 +33,12 @@ func workerConfigPath() string {
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return ".c5/config.yaml"
+		return ".c4/hub-worker.yaml"
 	}
-	return filepath.Join(home, ".c5", "config.yaml")
+	return filepath.Join(home, ".c4", "hub-worker.yaml")
 }
 
-// workerYAML is the schema for ~/.c5/config.yaml written by `cq hub worker init`.
+// workerYAML is the schema for ~/.c4/hub-worker.yaml written by `cq hub worker init`.
 type workerYAML struct {
 	HubURL       string   `yaml:"hub_url"`
 	APIKey       string   `yaml:"api_key"`
@@ -85,7 +85,7 @@ var hubWorkerInitCmd = &cobra.Command{
 	Short: "Configure worker credentials",
 	Long: `Interactively configure the worker connection to the C5 Hub.
 
-Saves credentials to ~/.c5/config.yaml.
+Saves credentials to ~/.c4/hub-worker.yaml.
 Use --non-interactive with --hub-url and --api-key for automation.
 
 Example:
@@ -114,7 +114,7 @@ Example:
 var hubWorkerStartCmd = &cobra.Command{
 	Use:   "start",
 	Short: "Start c5 worker subprocess",
-	Long: `Start the c5 worker process, reading config from ~/.c5/config.yaml.
+	Long: `Start the hub worker process, reading config from ~/.c4/hub-worker.yaml.
 
 Resolves the c5 binary via:
   1. PATH ("c5")
@@ -131,7 +131,7 @@ var hubWorkerStatusCmd = &cobra.Command{
 	Short: "List workers registered with the Hub",
 	Long: `Fetch and display all workers registered with the C5 Hub.
 
-Reads hub_url and api_key from ~/.c5/config.yaml.
+Reads hub_url and api_key from ~/.c4/hub-worker.yaml.
 
 Example:
   cq hub worker status`,

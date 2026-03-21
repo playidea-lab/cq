@@ -12,7 +12,7 @@ import (
 // matches embeddedC5Version, extraction is skipped.
 var embeddedC5Version string
 
-//go:embed embed/c5/c5*
+//go:embed embed/hub/hub*
 var embeddedC5FS embed.FS
 
 // EmbeddedC5FS is a non-nil fs.FS when the binary is built with c5_embed tag.
