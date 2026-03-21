@@ -58,6 +58,13 @@ func initObserve(ctx *initContext) error {
 	// Wire contextual middleware so every tool call is logged and metered.
 	ctx.reg.UseContextual(observe.ContextualMiddlewareFunc(logger, metrics, nil))
 
+	// Create TraceCollector and wire DB persistence if available.
+	tc := observe.NewTraceCollector()
+	if ctx.db != nil {
+		tc.SetDB(ctx.db)
+	}
+	ctx.traceCollector = tc
+
 	// Initialize handler state and log ring (capacity = 500 entries).
 	handlers.InitObserveState(logger, metrics, level, format)
 	handlers.InitLogRingBuffer(500)

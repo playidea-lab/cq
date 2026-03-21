@@ -342,3 +342,108 @@ func TestCatalogCompleteness(t *testing.T) {
 		}
 	}
 }
+
+// mockTraceHook records OnLLMCall invocations for test assertions.
+type mockTraceHook struct {
+	calls []traceCall
+}
+
+type traceCall struct {
+	sessionID, taskType, provider, model string
+	inputTok, outputTok                  int
+	latencyMs                            int64
+	errMsg                               string
+	success                              bool
+}
+
+func (m *mockTraceHook) OnLLMCall(sessionID, taskType, provider, model string, inputTok, outputTok int, latencyMs int64, errMsg string, success bool) {
+	m.calls = append(m.calls, traceCall{
+		sessionID: sessionID, taskType: taskType,
+		provider: provider, model: model,
+		inputTok: inputTok, outputTok: outputTok,
+		latencyMs: latencyMs, errMsg: errMsg, success: success,
+	})
+}
+
+// TestTraceHook verifies that SetTraceHook causes OnLLMCall to be invoked on Chat().
+func TestTraceHook(t *testing.T) {
+	// Reset after test to avoid pollution.
+	t.Cleanup(func() { SetTraceHook(nil) })
+
+	hook := &mockTraceHook{}
+	SetTraceHook(hook)
+
+	gw := NewGateway(RoutingTable{Default: "mock"})
+	mock := NewMockProvider("mock")
+	mock.Response = &ChatResponse{
+		Content:      "hello",
+		Model:        "mock-model",
+		FinishReason: "stop",
+		Usage:        TokenUsage{InputTokens: 10, OutputTokens: 5},
+	}
+	gw.Register(mock)
+
+	_, err := gw.Chat(context.Background(), "test-task", &ChatRequest{
+		Messages: []Message{{Role: "user", Content: "hi"}},
+	})
+	if err != nil {
+		t.Fatalf("Chat() error: %v", err)
+	}
+
+	if len(hook.calls) != 1 {
+		t.Fatalf("expected 1 OnLLMCall, got %d", len(hook.calls))
+	}
+	c := hook.calls[0]
+	if c.taskType != "test-task" {
+		t.Errorf("taskType = %q, want %q", c.taskType, "test-task")
+	}
+	if c.provider != "mock" {
+		t.Errorf("provider = %q, want %q", c.provider, "mock")
+	}
+	if c.model != "mock-model" {
+		t.Errorf("model = %q, want %q", c.model, "mock-model")
+	}
+	if c.inputTok != 10 {
+		t.Errorf("inputTok = %d, want 10", c.inputTok)
+	}
+	if c.outputTok != 5 {
+		t.Errorf("outputTok = %d, want 5", c.outputTok)
+	}
+	if !c.success {
+		t.Error("success should be true")
+	}
+	if c.errMsg != "" {
+		t.Errorf("errMsg = %q, want empty", c.errMsg)
+	}
+}
+
+// TestTraceHookOnError verifies that OnLLMCall is called even when Chat() fails.
+func TestTraceHookOnError(t *testing.T) {
+	t.Cleanup(func() { SetTraceHook(nil) })
+
+	hook := &mockTraceHook{}
+	SetTraceHook(hook)
+
+	gw := NewGateway(RoutingTable{Default: "mock"})
+	mock := NewMockProvider("mock")
+	mock.Err = errors.New("provider failure")
+	gw.Register(mock)
+
+	_, err := gw.Chat(context.Background(), "review", &ChatRequest{
+		Messages: []Message{{Role: "user", Content: "hi"}},
+	})
+	if err == nil {
+		t.Fatal("expected Chat() to fail")
+	}
+
+	if len(hook.calls) != 1 {
+		t.Fatalf("expected 1 OnLLMCall on error, got %d", len(hook.calls))
+	}
+	c := hook.calls[0]
+	if c.success {
+		t.Error("success should be false on error")
+	}
+	if c.errMsg == "" {
+		t.Error("errMsg should be non-empty on error")
+	}
+}

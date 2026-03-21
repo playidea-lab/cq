@@ -47,6 +47,27 @@ type cacheAlertPayload struct {
 	Provider           string  `json:"provider"`
 }
 
+// TraceHook is called after every Gateway.Chat() completion.
+// The signature uses only primitive types so implementors (e.g. observe package)
+// can satisfy it without importing the llm package.
+// Implementors must not block; use async writes internally.
+type TraceHook interface {
+	OnLLMCall(sessionID, taskType, provider, model string, inputTok, outputTok int, latencyMs int64, errMsg string, success bool)
+}
+
+var (
+	globalTraceHookMu sync.RWMutex
+	globalTraceHook   TraceHook
+)
+
+// SetTraceHook sets the package-level TraceHook called by all Gateway.Chat() calls.
+// Safe for concurrent use. Pass nil to disable.
+func SetTraceHook(h TraceHook) {
+	globalTraceHookMu.Lock()
+	defer globalTraceHookMu.Unlock()
+	globalTraceHook = h
+}
+
 // Gateway is the central LLM orchestration hub.
 // It manages provider registration, request routing, and cost tracking.
 type Gateway struct {
@@ -187,6 +208,28 @@ func (g *Gateway) Chat(ctx context.Context, taskType string, req *ChatRequest) (
 	start := time.Now()
 	resp, err := provider.Chat(ctx, req)
 	latency := time.Since(start)
+
+	// Notify TraceHook regardless of success/failure.
+	globalTraceHookMu.RLock()
+	hook := globalTraceHook
+	globalTraceHookMu.RUnlock()
+	if hook != nil {
+		var inputTok, outputTok int
+		model := ref.Model
+		errMsg := ""
+		success := err == nil
+		if resp != nil {
+			inputTok = resp.Usage.InputTokens
+			outputTok = resp.Usage.OutputTokens
+			if resp.Model != "" {
+				model = resp.Model
+			}
+		}
+		if err != nil {
+			errMsg = err.Error()
+		}
+		hook.OnLLMCall("", taskType, ref.Provider, model, inputTok, outputTok, latency.Milliseconds(), errMsg, success)
+	}
 
 	if err != nil {
 		return nil, fmt.Errorf("provider %q chat error: %w", ref.Provider, err)
