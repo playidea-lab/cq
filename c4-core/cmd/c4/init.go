@@ -391,7 +391,8 @@ func initAndLaunch(tool string) error {
 
 	// Bot token injection: propagate C4_TELEGRAM_BOT_TOKEN → TELEGRAM_BOT_TOKEN so the
 	// telegram plugin can start the bot server when claude launches.
-	if tool == "claude" {
+	// Skip when CQ_NO_TELEGRAM is set (user launched without --bot).
+	if tool == "claude" && os.Getenv("CQ_NO_TELEGRAM") == "" {
 		if tok := os.Getenv("C4_TELEGRAM_BOT_TOKEN"); tok != "" {
 			if err := os.Setenv("TELEGRAM_BOT_TOKEN", tok); err != nil {
 				fmt.Fprintf(os.Stderr, "cq: warning: failed to set TELEGRAM_BOT_TOKEN: %v\n", err)
@@ -417,7 +418,7 @@ func launchClaude(cmd *cobra.Command) error {
 		if err != nil {
 			return fmt.Errorf("botstore: %w", err)
 		}
-		if name == "" || name == " " {
+		if name == "" {
 			// Interactive menu — select bot, set env, continue to launch
 			bot, err := botMenuSelect(store)
 			if err != nil {
