@@ -296,33 +296,11 @@ Go MCP Server ──JSON-RPC/TCP──→ Python Sidecar (10 tools)
 
 ---
 
-## Telegram Plugin (c1/)
+## Telegram (공식 플러그인)
 
-> Tauri 2.x 통합 대시보드 메신저. ~9.5K LOC(Rust) + ~11.8K LOC(TS+CSS). 92개 테스트.
-
-### 아키텍처
-- **Rust 백엔드**: `src-tauri/src/{commands,models,analytics,cloud,scanner,messaging,eventbus,lib}.rs`
-- **Multi-Provider**: `src-tauri/src/providers/` — Claude Code, Codex CLI, Cursor
-- **React 프론트엔드**: `src/components/`, `src/hooks/`, `src/styles/`
-- **CSS**: BEM 패턴 + `styles/tokens.css` 디자인 토큰
-- **통합 멤버 모델**: `c1_members` — 사용자/에이전트/시스템을 동등한 멤버로 관리
-
-### 4개 뷰
-| 뷰 | 데이터 소스 | 핵심 기능 |
-|-----|-------------|-----------|
-| Messenger | Supabase Realtime + c1_members | 실시간 메시징, 멤버 프레즌스, 시스템 채널 |
-| Documents | 로컬 파일시스템 | 문서 파싱, C2 연동 |
-| Settings | `~/.claude/`, `.c4/` | 설정 파일 뷰어/편집기 |
-| Team | Supabase | 팀 프로젝트, 대시보드 |
-
-### 빌드/실행
-```bash
-cd c1 && pnpm install
-cd src-tauri && cargo check && cargo test
-pnpm build            # 프론트엔드 빌드
-cargo tauri dev       # 개발 서버
-```
-- **Tauri identifier**: `com.cq.c1` (tauri.conf.json). cq 리포에서 빌드 시 `cargo clean` 후 빌드하면 경로 캐시 이슈 없음.
+> 외부 접점은 Claude Code 공식 Telegram 플러그인 사용. c1/ 코드 삭제됨 (2026-03).
+> 봇 관리: `cq setup` / `cq ls` / `cq remove`. 봇 선택: `cq` (기본 실행).
+> Go 백엔드: `internal/botstore/` (봇 CRUD), `internal/notify/telegram.go` (알림)
 
 ---
 

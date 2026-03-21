@@ -192,7 +192,7 @@ knowledge(지식), edge(엣지디바이스), gpu(GPU잡), persona(학습), event
 |-----------|----------|
 | **Go Core** (c4-core/) | `go build -o ~/.local/bin/cq ./cmd/c4/` — 수정 후 반드시 재빌드. `cp` 금지 (코드 서명). |
 | **Python Sidecar** (c4/) | Lazy Start. LSP는 Python/JS/TS only. |
-| **Telegram Plugin** (c1/) | Tauri 2.x + Rust. 캐시 이슈 → `cargo clean`. |
+| **Telegram** | 공식 플러그인 사용. 봇 관리: `cq setup/ls/remove`. |
 | **EventBus** | gRPC UDS + WS + DLQ. 18종 이벤트. |
 | **Hub** | Worker Pull + Lease. `hub.enabled: true` 설정. |
 | **Knowledge** | FTS5 + pgvector. `c4_submit` handoff에 discoveries/concerns 필수. |
