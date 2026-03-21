@@ -2,11 +2,59 @@ package harness
 
 import (
 	"encoding/json"
+	"regexp"
 	"strings"
 
 	"github.com/changmin/c4-core/internal/channelpush"
 	"github.com/changmin/c4-core/internal/llm"
 )
+
+// SessionContext holds task context inferred from a user message.
+type SessionContext struct {
+	TaskID   string
+	TaskType string
+}
+
+// taskIDRe matches task IDs like T-XXX-N or R-XXX-N.
+var taskIDRe = regexp.MustCompile(`\b([TR]-[A-Z]+-\d+-\d+)\b`)
+
+// ExtractSessionContext parses a single JSONL line and attempts to infer
+// the TaskID and TaskType from a "user" message. Returns nil if the line
+// is not a user message or no context can be inferred.
+func ExtractSessionContext(data []byte) *SessionContext {
+	var line claudeCodeLine
+	if err := json.Unmarshal(data, &line); err != nil {
+		return nil
+	}
+	if line.Type != "user" {
+		return nil
+	}
+
+	content := extractContent(line.Message)
+	if content == "" {
+		return nil
+	}
+
+	var taskType string
+	switch {
+	case strings.Contains(content, "c4_get_task") || strings.Contains(content, "Worker"):
+		taskType = "implementation"
+	case (strings.Contains(content, "R-") && strings.Contains(content, "review")) ||
+		(strings.Contains(content, "R-") && strings.Contains(content, "Review")):
+		taskType = "review"
+	}
+
+	match := taskIDRe.FindStringSubmatch(content)
+	var taskID string
+	if len(match) > 1 {
+		taskID = match[1]
+	}
+
+	if taskID == "" && taskType == "" {
+		return nil
+	}
+	return &SessionContext{TaskID: taskID, TaskType: taskType}
+}
 
 // LLMUsageInfo holds model and token usage extracted from a Claude Code assistant line.
 type LLMUsageInfo struct {
