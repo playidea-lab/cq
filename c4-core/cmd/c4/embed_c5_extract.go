@@ -52,9 +52,9 @@ func extractC5(embFS fs.FS, version string) (string, error) {
 	}
 
 	// Determine embedded binary path.
-	embedPath := "embed/c5/c5"
+	embedPath := "embed/hub/hub"
 	if runtime.GOOS == "windows" {
-		embedPath = "embed/c5/c5.exe"
+		embedPath = "embed/hub/hub.exe"
 	}
 
 	src, err := embFS.Open(embedPath)

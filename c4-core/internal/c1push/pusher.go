@@ -1,6 +1,6 @@
 // Package c1push provides a thin PostgREST HTTP client for pushing messages
 // to c1_channels and c1_messages tables in Supabase.
-// It is intentionally standalone (~50 lines) to avoid importing c5/ (separate Go module).
+// It is intentionally standalone (~50 lines) with no external Go module dependencies.
 package c1push
 
 import (

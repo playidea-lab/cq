@@ -19,7 +19,7 @@ var version = "dev"
 var (
 	builtinSupabaseURL = "" // -ldflags "-X main.builtinSupabaseURL=https://xxx.supabase.co"
 	builtinSupabaseKey = "" // -ldflags "-X main.builtinSupabaseKey=eyJ..."
-	builtinHubURL      = "" // -ldflags "-X main.builtinHubURL=https://piqsol-c5.fly.dev"
+	builtinHubURL      = "" // -ldflags "-X main.builtinHubURL=..." (legacy, unused)
 )
 
 var (
