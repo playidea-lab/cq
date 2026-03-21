@@ -2,6 +2,8 @@ package experiment
 
 import (
 	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -57,4 +59,74 @@ func TestConfigHash_MissingFile(t *testing.T) {
 	if err == nil {
 		t.Error("expected error for missing file, got nil")
 	}
+}
+
+func TestGitIsDirty_CleanRepo(t *testing.T) {
+	dir := t.TempDir()
+	// Init a git repo, add and commit a file so the tree is clean.
+	run := func(args ...string) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		if err := cmd.Run(); err != nil {
+			t.Skipf("git command failed (%v); skipping dirty-check test", err)
+		}
+	}
+	run("init")
+	run("config", "user.email", "test@test.com")
+	run("config", "user.name", "Test")
+	f := filepath.Join(dir, "README")
+	if err := os.WriteFile(f, []byte("hi"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run("add", "README")
+	run("commit", "-m", "init")
+
+	dirty, err := GitIsDirty(dir)
+	if err != nil {
+		t.Fatalf("GitIsDirty clean repo: %v", err)
+	}
+	if dirty {
+		t.Error("expected clean repo to report not dirty")
+	}
+}
+
+func TestGitIsDirty_DirtyRepo(t *testing.T) {
+	dir := t.TempDir()
+	run := func(args ...string) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		if err := cmd.Run(); err != nil {
+			t.Skipf("git command failed (%v); skipping dirty-check test", err)
+		}
+	}
+	run("init")
+	run("config", "user.email", "test@test.com")
+	run("config", "user.name", "Test")
+	// Stage a file without committing → dirty.
+	f := filepath.Join(dir, "dirty.txt")
+	if err := os.WriteFile(f, []byte("untracked"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run("add", "dirty.txt")
+
+	dirty, err := GitIsDirty(dir)
+	if err != nil {
+		t.Fatalf("GitIsDirty dirty repo: %v", err)
+	}
+	if !dirty {
+		t.Error("expected dirty repo to report dirty")
+	}
+}
+
+func TestGitIsDirty_NotARepo(t *testing.T) {
+	dir := t.TempDir() // plain dir, not a git repo
+	_, err := GitIsDirty(dir)
+	if err == nil {
+		t.Error("expected error for non-git directory, got nil")
+	}
+}
+
+func TestWarnIfDirty_NoPanic(t *testing.T) {
+	// WarnIfDirty must not panic even for a non-repo dir.
+	WarnIfDirty(t.TempDir())
 }
