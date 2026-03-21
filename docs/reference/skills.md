@@ -43,7 +43,7 @@ Skills are slash commands invoked inside Claude Code. All 36 skills are embedded
 | Skill | Triggers | Description |
 |-------|----------|-------------|
 | `/c4-swarm` | swarm | Spawn coordinator-led agent team. Modes: standard (implementation), review (read-only audit), investigate (hypothesis competition). |
-| `/c4-standby` | standby, 대기, worker mode | Convert session into persistent C5 Hub worker. Waits for jobs, executes, reports back. *full tier only* |
+| `/c4-standby` | standby, 대기, worker mode | Convert session into persistent distributed worker via Supabase. Waits for jobs, executes, reports back. *full tier only* |
 
 ## Research & Documents
 
@@ -58,13 +58,13 @@ Skills are slash commands invoked inside Claude Code. All 36 skills are embedded
 |-------|----------|-------------|
 | `/c9-init` | c9-init, c9 초기화 | Initialize a new C9 research project. Creates `state.yaml` with metric, convergence conditions, and Hub URL. |
 | `/c9-loop` | c9-loop | Main loop driver — reads current phase from `state.yaml` and auto-executes next step. |
-| `/c9-run` | c9-run | Submit experiment YAMLs to C5 Hub for the current round. |
+| `/c9-run` | c9-run | Submit experiment YAMLs to Supabase worker queue for the current round. |
 | `/c9-check` | c9-check | Parse experiment results + convergence check. Equivalent to C4's checkpoint. |
 | `/c9-standby` | c9-standby | Wait during RUN phase; auto-triggers CHECK when training completes via mail. |
 | `/c9-finish` | c9-finish | Save best model + document results when research loop completes. |
 | `/c9-steer` | c9-steer | Change phase and update reason without editing `state.yaml` directly. |
 | `/c9-survey` | c9-survey | Survey latest arXiv papers + SOTA benchmarks using Gemini Google Search grounding. |
-| `/c9-report` | c9-report | Collect experiment results from remote server via C5 Hub worker. |
+| `/c9-report` | c9-report | Collect experiment results from remote server via distributed worker. |
 | `/c9-conference` | c9-conference | Claude (Opus) + Gemini (Pro) debate mode — research conference simulation. |
 | `/c9-deploy` | c9-deploy | Deploy best model to edge server. Can run independently of `/c9-finish`. |
 

@@ -67,7 +67,7 @@ Then describe what you want to build. → [See examples](/examples/first-task)
 # connected — adds Supabase, LLM Gateway, EventBus
 curl -fsSL https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/install.sh | sh -s -- --tier connected
 
-# full — all features including Hub, Drive, CDP, GPU
+# full — all features including Supabase worker queue, Drive, CDP, GPU
 curl -fsSL https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/install.sh | sh -s -- --tier full
 ```
 

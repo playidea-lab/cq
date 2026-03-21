@@ -3,7 +3,7 @@
 End-to-end guide for running ML experiments with CQ — from idea to results.
 
 ::: info full tier required
-The researcher workflow uses C5 Hub (distributed jobs) and C9 Knowledge (experiment tracking). Both require the `full` tier.
+The researcher workflow uses the Supabase worker queue (distributed jobs) and C9 Knowledge (experiment tracking). Both require the `full` tier.
 :::
 
 ## Overview
@@ -54,7 +54,7 @@ Workers implement code in isolated git worktrees. When done, `/c4-run` automatic
 
 ---
 
-## Step 4: Submit to Hub (distributed execution)
+## Step 4: Submit to Supabase worker queue (distributed execution)
 
 Once code is ready, submit to a GPU worker:
 
@@ -64,8 +64,8 @@ cq hub submit --run "python train.py" --project my-experiment
 
 This:
 1. Snapshots your project to Drive CAS
-2. Posts a job to C5 Hub
-3. A GPU worker pulls the job, downloads the snapshot, runs it, uploads results
+2. Submits a job to the Supabase worker queue
+3. A GPU worker pulls the job via pgx LISTEN/NOTIFY, downloads the snapshot, runs it, uploads results
 
 Declare inputs/outputs in `cq.yaml`:
 

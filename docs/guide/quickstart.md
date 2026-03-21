@@ -45,7 +45,17 @@ This opens GitHub OAuth in your browser and automatically patches `.c4/config.ya
 
 Skip this step for the `solo` tier — no login required.
 
-## Step 1.6: Explore ideas first (optional)
+## Step 1.6: Set up Telegram notifications (optional)
+
+For task and experiment notifications via Telegram:
+
+```sh
+cq setup
+```
+
+This walks through Telegram bot pairing — enter your bot token and CQ auto-detects your chat ID. Skip this step if you don't need notifications.
+
+## Step 1.7: Explore ideas first (optional)
 
 Before planning, use `/pi` to brainstorm and refine your idea:
 
@@ -55,7 +65,7 @@ Before planning, use `/pi` to brainstorm and refine your idea:
 
 `/pi` enters ideation mode — diverge, converge, research, debate. When ready, it automatically launches `/c4-plan`.
 
-## Step 1.7: Auto-configure with `cq doctor --fix`
+## Step 1.8: Auto-configure with `cq doctor --fix`
 
 After initializing, run the doctor to verify and auto-fix common setup issues:
 

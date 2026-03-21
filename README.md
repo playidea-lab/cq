@@ -21,7 +21,7 @@ Choose the tier that fits your setup:
 |------|-------------|----------|
 | `solo` | Local only, no external deps | Personal / offline |
 | `connected` | + Supabase, LLM Gateway, EventBus | Team / cloud sync |
-| `full` | + Hub, Drive, CDP, GPU, C1 Messenger | Full production |
+| `full` | + Supabase Worker Queue, Drive, CDP, GPU, C1 Messenger | Full production |
 
 ```sh
 # Install a specific tier (default: solo)
@@ -136,13 +136,7 @@ cq cursor   # for Cursor
 
 > **You:** "backbone 3개 비교 실험 돌려야 해. ResNet / EfficientNet / ViT"
 
-먼저 C5 Hub를 시작합니다 (한 번만):
-
-```sh
-# .c4/config.yaml에 serve.hub.enabled: true 설정 후
-cq serve   # C5 Hub가 자동으로 서브프로세스로 시작됨
-# → {"status":"ok","components":{"hub":{"status":"ok","detail":"port 8585"}}}
-```
+Workers connect directly to Supabase — no Hub server to start:
 
 ```
 /c4-plan "backbone ablation: ResNet50 vs EfficientNet-B4 vs ViT-B/16"
@@ -161,7 +155,7 @@ cq serve   # C5 Hub가 자동으로 서브프로세스로 시작됨
 /c4-standby
 
   ● Registered as worker  [id: worker-m1]
-  ◷ Waiting for jobs from C5 Hub...
+  ◷ Waiting for jobs from Supabase worker queue...
   ✓ Claimed T-020  →  training ResNet50...
 
 # machine-2

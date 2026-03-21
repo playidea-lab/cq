@@ -24,7 +24,7 @@ C1 Messenger  — Tauri 2.x unified dashboard (4-tab: Messenger, Docs, Settings,
 C2 Docs       — Document lifecycle (parsing, workspace, profile)
 C3 EventBus   — gRPC event bus (UDS + WebSocket + DLQ)
 C4 Engine     — MCP orchestration engine  ← you are here
-C5 Hub        — Distributed job queue (worker pull model, lease-based)
+C5 Hub        — Supabase-native worker queue (pgx LISTEN/NOTIFY, lease-based)
 C6 Guard      — RBAC access control (policy, audit, role assignment)
 C7 Observe    — Observability layer (metrics, logs, tracing middleware)
 C8 Gate       — External integrations (webhooks, scheduler, connectors)
@@ -37,7 +37,7 @@ Each component can run standalone or together. CQ's tiers reflect this:
 |------|------------------|
 | solo | C4 only |
 | connected | C4 + C0 + C3 + C9 + LLM Gateway |
-| full | All components (+ C1, C5, C6, C7, C8) |
+| full | All components (+ C1, C5 worker queue, C6, C7, C8) |
 
 C6/C7/C8 are activated via build tags (`c6_guard`, `c7_observe`, `c8_gate`) — they are always compiled into the `full` tier binary.
 
@@ -83,25 +83,25 @@ Document lifecycle management:
 
 gRPC event bus connecting all components:
 
-- **19+ event types (28+ with Hub enabled)**: `task.created/started/completed/blocked/stale`, `checkpoint.approved/rejected`, `review.changes_requested`, `validation.passed/failed`, `knowledge.recorded/searched`, `lighthouse.promoted`, `llm.cache_miss_alert`, `persona.evolved`, `soul.updated`, `research.recorded/started`; Hub adds `hub.job.completed/failed/submitted/cancelled/retried`, `hub.dag.executed`, `hub.worker.registered`
+- **19+ event types (28+ with worker queue enabled)**: `task.created/started/completed/blocked/stale`, `checkpoint.approved/rejected`, `review.changes_requested`, `validation.passed/failed`, `knowledge.recorded/searched`, `lighthouse.promoted`, `llm.cache_miss_alert`, `persona.evolved`, `soul.updated`, `research.recorded/started`; worker queue adds `hub.job.completed/failed/submitted/cancelled/retried`, `hub.dag.executed`, `hub.worker.registered`
 - **DLQ** (dead letter queue) for failed deliveries
 - **Filter v2**: `$eq`, `$ne`, `$gt`, `$in`, `$regex`, `$exists`
 - **HMAC-SHA256 webhooks** for external integrations
 
 ---
 
-## C5 Hub
+## C5 Hub (Supabase Worker Queue)
 
-Distributed job queue for running workers at scale:
+Supabase-native distributed job queue for running workers at scale:
 
-- **Pull model** — workers poll for jobs, no push dependencies
+- **pgx LISTEN/NOTIFY** — workers subscribe to Supabase Postgres for real-time job delivery
 - **Lease-based** — jobs are leased with timeout, auto-requeued on failure
 - **VRAM-aware scheduling** — GPU workers matched by free VRAM; CPU fallback configurable
 - **Artifact pipeline** — workers download inputs, upload outputs via signed URLs
 - **Log retention** — automatic rotation (50k rows) + 7-day cleanup
-- REST + WebSocket API
+- Supabase PostgREST + RPC API
 
-**`cq serve` integration**: `cq serve` can manage C5 Hub as a subprocess. Enable with `serve.hub.enabled: true` — no separate process manager needed. Lifecycle (start/stop/health) is handled automatically alongside other `cq serve` components.
+Workers connect directly to Supabase — no Hub server process to start or manage.
 
 ---
 
@@ -133,7 +133,7 @@ External integration hub:
 
 - **Webhooks** — register endpoints, test payloads, HMAC-SHA256 signed
 - **Scheduler** — cron-style jobs that trigger C4 tasks
-- **Connectors** — Slack and GitHub out of the box
+- **Connectors** — Telegram and GitHub out of the box
 - Activated with `c8_gate` build tag
 
 ---
@@ -186,7 +186,7 @@ C4 Engine ──────────────── C9 Knowledge (search 
     │       │
     │       └── C1 Messenger (real-time notifications)
     │
-    ├── C5 Hub (distributed workers)
+    ├── Supabase (worker queue via pgx LISTEN/NOTIFY)
     │       └── Artifact storage via C0 Drive
     │
     └── LLM Gateway (Anthropic / OpenAI / Gemini / Ollama)

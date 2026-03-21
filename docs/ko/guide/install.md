@@ -67,7 +67,7 @@ cq claude   # 또는: cq cursor / cq codex / cq gemini
 # connected — Supabase, LLM Gateway, EventBus 추가
 curl -fsSL https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/install.sh | sh -s -- --tier connected
 
-# full — Hub, Drive, CDP, GPU 포함 전체 기능
+# full — Supabase 워커 큐, Drive, CDP, GPU 포함 전체 기능
 curl -fsSL https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/install.sh | sh -s -- --tier full
 ```
 

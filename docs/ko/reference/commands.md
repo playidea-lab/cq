@@ -42,7 +42,7 @@ cq doctor --fix     # 안전한 이슈 자동 수정
 | CLAUDE.md | 파일 존재 + 심링크 유효 |
 | hooks | 게이트 + 권한 리뷰어 훅 설치됨 |
 | Python sidecar | `uv` 사용 가능 |
-| C5 Hub | Hub 설정 + health 엔드포인트 (api_prefix 반영) |
+| Supabase 워커 큐 | Supabase 연결 + 워커 큐 상태 |
 | Supabase | 클라우드 설정 + 연결 |
 | os-service | LaunchAgent / systemd 서비스 설치 및 실행 중 |
 | tool-socket | UDS 소켓 응답 (`cq serve` 실행 중) |
@@ -57,7 +57,7 @@ API 키와 시크릿 관리 (`~/.c4/secrets.db`에 저장, AES-256-GCM).
 ```sh
 cq secret set anthropic.api_key sk-ant-...
 cq secret set openai.api_key sk-...
-cq secret set hub.api_key <hub-키>          # C5 Hub API 키 (config.yaml 평문보다 우선)
+cq secret set hub.api_key <hub-키>          # 워커 큐 API 키 (config.yaml 평문보다 우선)
 cq secret get anthropic.api_key
 cq secret list
 cq secret delete anthropic.api_key
@@ -121,9 +121,19 @@ cq mail read <id>          # 메시지 읽기 (읽음 표시)
 cq mail rm <id>            # 메시지 삭제
 ```
 
+### `cq setup`
+
+Telegram 봇 알림을 페어링합니다.
+
+```sh
+cq setup
+```
+
+Telegram 봇 페어링을 안내합니다: 봇 토큰 입력, 봇 시작, CQ가 채팅 ID를 자동 감지합니다. 설정 후 실험 및 태스크 알림이 Telegram으로 전송됩니다.
+
 ### `cq serve`
 
-백그라운드 서비스 실행 (EventBus, GPU 스케줄러, Agent 리스너, C5 Hub).
+백그라운드 서비스 실행 (EventBus, GPU 스케줄러, Agent 리스너).
 
 ```sh
 cq serve              # :4140에서 시작
@@ -135,12 +145,10 @@ cq serve status       # OS 서비스 상태 및 수동 serve 프로세스 상태
 
 Health 엔드포인트: `GET http://127.0.0.1:4140/health` — 등록된 모든 컴포넌트 상태를 반환합니다.
 
-**Hub 컴포넌트** (`full` 티어): `serve.hub.enabled: true` 설정 시, `cq serve`가 `c5` 바이너리를 관리되는 서브프로세스로 자동 시작합니다. 별도 프로세스 관리 불필요.
-
 ```sh
-# 컴포넌트 health 확인 (hub 등)
+# 컴포넌트 health 확인
 curl http://127.0.0.1:4140/health
-# {"status":"ok","components":{"hub":{"status":"ok","detail":"port 8585"}}}
+# {"status":"ok","components":{"eventbus":{"status":"ok"}}}
 ```
 
 ### `cq pop`
@@ -180,7 +188,7 @@ cq pop status   # gauge 값, 파이프라인 상태, 지식 통계 표시
 | `/c4-stop` | "stop", "중단" | 실행 중단, 진행 상황 보존 |
 | `/c4-clear` | "clear" | 디버깅용 C4 상태 초기화 |
 | `/c4-swarm` | "swarm" | 코디네이터 주도 에이전트 팀 스폰 |
-| `/c4-standby` | "대기", "standby" | C5 Hub 워커로 변환 (full 티어) |
+| `/c4-standby` | "대기", "standby" | Supabase 기반 분산 워커로 변환 (full 티어) |
 | `/c4-attach` | "세션 이름", "attach" | 나중에 재개할 현재 세션 이름 붙이기 |
 | `/c4-reboot` | "reboot", "재시작" | 현재 이름 붙은 세션 재부팅 |
 | `/c4-init` | "init", "초기화" | 현재 프로젝트에 C4 초기화 |
@@ -190,7 +198,7 @@ cq pop status   # gauge 값, 파이프라인 상태, 지식 통계 표시
 | `/research-loop` | "research loop" | 논문-실험 개선 루프 |
 | `/c9-init` | "c9-init" | C9 연구 프로젝트 초기화 |
 | `/c9-loop` | "c9-loop" | 메인 루프 드라이버 |
-| `/c9-run` | "c9-run" | 실험 YAML을 C5 Hub에 제출 |
+| `/c9-run` | "c9-run" | 실험 YAML을 Supabase 워커 큐에 제출 |
 | `/c9-check` | "c9-check" | 실험 결과 파싱 + 수렴 판정 |
 | `/c9-standby` | "c9-standby" | RUN phase 대기 |
 | `/c9-finish` | "c9-finish" | 연구 루프 완료 + 문서화 |

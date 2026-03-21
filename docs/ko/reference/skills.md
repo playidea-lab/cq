@@ -43,7 +43,7 @@
 | 스킬 | 트리거 | 설명 |
 |------|--------|------|
 | `/c4-swarm` | swarm | 코디네이터 주도 에이전트 팀 스폰. 모드: standard (구현), review (읽기 전용 감사), investigate (가설 경쟁). |
-| `/c4-standby` | standby, 대기, worker mode | 세션을 영구 C5 Hub 워커로 변환. 잡을 기다리고, 실행하고, 결과를 보고. *full 티어 전용* |
+| `/c4-standby` | standby, 대기, worker mode | 세션을 Supabase 기반 분산 워커로 변환. 잡을 기다리고, 실행하고, 결과를 보고. *full 티어 전용* |
 
 ## 리서치 및 문서
 
@@ -58,13 +58,13 @@
 |------|--------|------|
 | `/c9-init` | c9-init, c9 초기화 | C9 연구 프로젝트 초기화. `state.yaml` 생성, 메트릭/수렴 조건 설정. |
 | `/c9-loop` | c9-loop | 메인 루프 드라이버 — `state.yaml`의 현재 phase를 읽어 다음 단계 자동 실행. |
-| `/c9-run` | c9-run | 현재 라운드 실험 YAML을 C5 Hub에 제출. |
+| `/c9-run` | c9-run | 현재 라운드 실험 YAML을 Supabase 워커 큐에 제출. |
 | `/c9-check` | c9-check | 실험 결과 파싱 + 수렴 판정. C4의 checkpoint에 해당. |
 | `/c9-standby` | c9-standby | RUN phase 중 대기. mail 알림 수신 시 자동으로 CHECK 실행. |
 | `/c9-finish` | c9-finish | 연구 루프 완료 시 best model 저장 + 결과 문서화. |
 | `/c9-steer` | c9-steer | `state.yaml` 직접 편집 없이 phase 전환 및 reason 업데이트. |
 | `/c9-survey` | c9-survey | Gemini Google Search grounding으로 최신 arXiv 논문·SOTA 수집. |
-| `/c9-report` | c9-report | C5 Hub 워커를 통해 원격 서버 실험 결과 수집 및 보고서 생성. |
+| `/c9-report` | c9-report | 분산 워커를 통해 원격 서버 실험 결과 수집 및 보고서 생성. |
 | `/c9-conference` | c9-conference | Claude(Opus) + Gemini(Pro) 합의 토론 — 연구 컨퍼런스 시뮬레이션. |
 | `/c9-deploy` | c9-deploy | best model을 edge 서버에 배포. `/c9-finish`와 독립 실행 가능. |
 

@@ -18,7 +18,7 @@ Soul 진화와 POP(Personal Ontology Pipeline)을 통해 시간이 지날수록 
 |------|------|----------|
 | `solo` | 로컬 전용, 외부 의존성 없음 | 개인 / 오프라인 |
 | `connected` | + Supabase, LLM Gateway, EventBus | 팀 / 클라우드 동기화 |
-| `full` | + Hub, Drive, CDP, GPU, C1 Messenger | 풀 프로덕션 |
+| `full` | + Supabase 워커 큐, Drive, CDP, GPU, C1 Messenger | 풀 프로덕션 |
 
 ```sh
 # 특정 티어 설치 (기본값: solo)
@@ -133,12 +133,7 @@ cq cursor   # Cursor용
 
 > **You:** "backbone 3개 비교 실험 돌려야 해. ResNet / EfficientNet / ViT"
 
-먼저 C5 Hub를 시작합니다 (한 번만):
-
-```sh
-# .c4/config.yaml에 serve.hub.enabled: true 설정 후
-cq serve   # C5 Hub가 자동으로 서브프로세스로 시작됨
-```
+워커는 Supabase에 직접 연결됩니다 — 별도 Hub 서버 시작 불필요:
 
 ```
 /c4-plan "backbone ablation: ResNet50 vs EfficientNet-B4 vs ViT-B/16"

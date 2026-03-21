@@ -42,7 +42,7 @@ cq doctor --fix     # auto-fix safe issues
 | CLAUDE.md | File exists + symlink valid |
 | hooks | Gate + permission-reviewer hooks installed |
 | Python sidecar | `uv` available |
-| C5 Hub | Hub config + health endpoint (api_prefix-aware) |
+| Supabase Worker Queue | Supabase connection + worker queue health |
 | Supabase | Cloud config + connection |
 | os-service | LaunchAgent / systemd service installed and running |
 | tool-socket | UDS socket responsive (`cq serve` running) |
@@ -57,7 +57,7 @@ Manage API keys and secrets (stored in `~/.c4/secrets.db`, AES-256-GCM).
 ```sh
 cq secret set anthropic.api_key sk-ant-...
 cq secret set openai.api_key sk-...
-cq secret set hub.api_key <your-hub-key>   # C5 Hub API key (preferred over config.yaml)
+cq secret set hub.api_key <your-hub-key>   # Worker queue API key (preferred over config.yaml)
 cq secret get anthropic.api_key
 cq secret list
 cq secret delete anthropic.api_key
@@ -121,9 +121,19 @@ cq mail read <id>          # Read a message (marks as read)
 cq mail rm <id>            # Delete a message
 ```
 
+### `cq setup`
+
+Pair a Telegram bot for notifications.
+
+```sh
+cq setup
+```
+
+Walks through Telegram bot pairing: enter your bot token, start the bot, and CQ auto-detects your chat ID. After setup, CQ sends experiment and task notifications via Telegram.
+
 ### `cq serve`
 
-Run background services (EventBus, GPU scheduler, Agent listener, C5 Hub).
+Run background services (EventBus, GPU scheduler, Agent listener).
 
 ```sh
 cq serve              # start on :4140
@@ -135,12 +145,10 @@ cq serve status       # Show OS service status and manual serve process status
 
 Health endpoint: `GET http://127.0.0.1:4140/health` — returns status of all registered components.
 
-**Hub component** (`full` tier): when `serve.hub.enabled: true` in config, `cq serve` automatically starts the `c5` binary as a managed subprocess. No separate process management needed.
-
 ```sh
-# Check component health (hub + any others)
+# Check component health
 curl http://127.0.0.1:4140/health
-# {"status":"ok","components":{"hub":{"status":"ok","detail":"port 8585"}}}
+# {"status":"ok","components":{"eventbus":{"status":"ok"}}}
 ```
 
 ### `cq version`
@@ -180,7 +188,7 @@ Skills are invoked inside Claude Code as `/skill-name`.
 | `/c4-stop` | "stop", "중단" | Halt execution, preserve progress |
 | `/c4-clear` | "clear" | Reset C4 state for debugging |
 | `/c4-swarm` | "swarm" | Spawn coordinator-led agent team |
-| `/c4-standby` | "대기", "standby" | Become a C5 Hub worker (full tier) |
+| `/c4-standby` | "대기", "standby" | Become a distributed worker via Supabase (full tier) |
 | `/c4-attach` | "세션 이름", "attach" | Name the current session for later resume |
 | `/c4-reboot` | "reboot", "재시작" | Reboot the current named session |
 | `/c4-init` | "init", "초기화" | Initialize C4 in current project |
@@ -190,7 +198,7 @@ Skills are invoked inside Claude Code as `/skill-name`.
 | `/research-loop` | "research loop" | Paper-experiment improvement loop |
 | `/c9-init` | "c9-init" | Initialize C9 ML research project |
 | `/c9-loop` | "c9-loop" | Main loop driver for ML research |
-| `/c9-run` | "c9-run" | Submit experiments to C5 Hub |
+| `/c9-run` | "c9-run" | Submit experiments to Supabase worker queue |
 | `/c9-check` | "c9-check" | Parse results + convergence check |
 | `/c9-standby` | "c9-standby" | Wait mode, auto-triggers CHECK |
 | `/c9-finish` | "c9-finish" | Save best model + document |

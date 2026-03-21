@@ -3,7 +3,7 @@
 아이디어부터 결과까지 — CQ로 ML 실험을 end-to-end로 실행하는 가이드.
 
 ::: info full 티어 필요
-연구자 워크플로우는 C5 Hub (분산 잡)과 C9 Knowledge (실험 추적)를 사용합니다. 둘 다 `full` 티어가 필요합니다.
+연구자 워크플로우는 Supabase 워커 큐 (분산 잡)과 C9 Knowledge (실험 추적)를 사용합니다. 둘 다 `full` 티어가 필요합니다.
 :::
 
 ## 개요
@@ -54,7 +54,7 @@ CQ가:
 
 ---
 
-## 4단계: Hub에 제출 (분산 실행)
+## 4단계: Supabase 워커 큐에 제출 (분산 실행)
 
 코드가 준비되면 GPU 워커에 제출합니다:
 
@@ -64,8 +64,8 @@ cq hub submit --run "python train.py" --project my-experiment
 
 이 명령이:
 1. 프로젝트를 Drive CAS에 스냅샷합니다
-2. C5 Hub에 잡을 등록합니다
-3. GPU 워커가 잡을 pull하고, 스냅샷을 다운로드해 실행하고, 결과를 업로드합니다
+2. Supabase 워커 큐에 잡을 등록합니다
+3. GPU 워커가 pgx LISTEN/NOTIFY로 잡을 수신하고, 스냅샷을 다운로드해 실행하고, 결과를 업로드합니다
 
 `cq.yaml`에 입출력을 선언합니다:
 

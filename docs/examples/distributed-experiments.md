@@ -3,21 +3,21 @@
 Submit ML experiments from your laptop and run them on a remote GPU server — no SSH into the server during training.
 
 ::: info full tier required
-This example requires the `full` tier binary, a running C5 Hub, and at least one connected worker. See [Remote Worker Setup](/guide/worker-setup).
+This example requires the `full` tier binary, a Supabase connection, and at least one connected worker. See [Remote Worker Setup](/guide/worker-setup).
 :::
 
 ## Overview
 
 ```
-Your laptop                    C5 Hub                  GPU server
-────────────                   ──────                  ──────────
-Write train.py + cq.yaml  ──►  job queue  ◄──────────  c5 worker (running)
+Your laptop                    Supabase                GPU server
+────────────                   ────────                ──────────
+Write train.py + cq.yaml  ──►  job queue  ◄──────────  cq hub worker start (running)
 cq hub submit                  (stores snapshot,        pulls job
                                queues job)              runs train.py
                                                         pushes results
 ```
 
-The GPU server runs `c5 worker` in the background. You never SSH in to start training — you just submit.
+The GPU server runs `cq hub worker start` in the background. You never SSH in to start training — you just submit.
 
 ---
 
@@ -144,16 +144,16 @@ All three run in parallel if multiple workers are connected.
 
 ## Connect more workers
 
-Add GPU capacity by running `c5 worker` on more machines. The Hub distributes jobs automatically — no configuration needed.
+Add GPU capacity by running `cq hub worker start` on more machines. Supabase distributes jobs automatically — no configuration needed.
 
 ```
 machine-1 ──┐
-machine-2 ──┼── C5 Hub ── job queue ◄── cq hub submit
+machine-2 ──┼── Supabase ── job queue ◄── cq hub submit
 machine-3 ──┘
   ...
 ```
 
-Each worker is stateless — just install, log in, and start `c5 worker`. See [Remote Worker Setup](/guide/worker-setup).
+Each worker is stateless — just install, log in, and start `cq hub worker start`. See [Remote Worker Setup](/guide/worker-setup).
 
 ## Knowledge loop
 

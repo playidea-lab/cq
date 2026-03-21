@@ -3,21 +3,21 @@
 노트북에서 ML 실험을 제출하고 원격 GPU 서버에서 실행합니다 — 학습 중 서버에 SSH 접속 불필요.
 
 ::: info full 티어 필요
-이 예시는 `full` 티어 바이너리, 실행 중인 C5 Hub, 하나 이상의 연결된 워커가 필요합니다. [원격 워커 설정](/ko/guide/worker-setup) 참고.
+이 예시는 `full` 티어 바이너리, Supabase 연결, 하나 이상의 연결된 워커가 필요합니다. [원격 워커 설정](/ko/guide/worker-setup) 참고.
 :::
 
 ## 개요
 
 ```
-내 노트북                     C5 Hub                  GPU 서버
-────────────                  ──────                  ──────────
-train.py + cq.yaml 작성 ──►  잡 큐     ◄──────────   c5 worker (실행 중)
+내 노트북                     Supabase                GPU 서버
+────────────                  ────────                ──────────
+train.py + cq.yaml 작성 ──►  잡 큐     ◄──────────   cq hub worker start (실행 중)
 cq hub submit                (스냅샷 저장,             잡 pull
                               잡 등록)                 train.py 실행
                                                        결과 업로드
 ```
 
-GPU 서버는 백그라운드에서 `c5 worker`를 실행합니다. 학습을 시작하기 위해 SSH 접속할 필요가 없습니다 — 그냥 submit하면 됩니다.
+GPU 서버는 백그라운드에서 `cq hub worker start`를 실행합니다. 학습을 시작하기 위해 SSH 접속할 필요가 없습니다 — 그냥 submit하면 됩니다.
 
 ---
 
@@ -144,16 +144,16 @@ cq hub submit --run "python train.py --lr 0.0001"
 
 ## 워커 추가
 
-더 많은 머신에서 `c5 worker`를 실행하여 GPU 용량을 확장합니다. Hub가 자동으로 잡을 분산합니다 — 별도 설정 불필요.
+더 많은 머신에서 `cq hub worker start`를 실행하여 GPU 용량을 확장합니다. Supabase가 자동으로 잡을 분산합니다 — 별도 설정 불필요.
 
 ```
 machine-1 ──┐
-machine-2 ──┼── C5 Hub ── 잡 큐 ◄── cq hub submit
+machine-2 ──┼── Supabase ── 잡 큐 ◄── cq hub submit
 machine-3 ──┘
   ...
 ```
 
-각 워커는 stateless — 설치, 로그인, `c5 worker` 시작만 하면 됩니다. [원격 워커 설정](/ko/guide/worker-setup) 참고.
+각 워커는 stateless — 설치, 로그인, `cq hub worker start` 시작만 하면 됩니다. [원격 워커 설정](/ko/guide/worker-setup) 참고.
 
 ## 지식 루프
 

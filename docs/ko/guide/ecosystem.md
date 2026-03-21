@@ -24,7 +24,7 @@ C1 Messenger  — Tauri 2.x 통합 대시보드 (4탭: Messenger, Docs, Settings
 C2 Docs       — 문서 라이프사이클 (파싱, 워크스페이스, 프로필)
 C3 EventBus   — gRPC 이벤트 버스 (UDS + WebSocket + DLQ)
 C4 Engine     — MCP 오케스트레이션 엔진  ← 여기
-C5 Hub        — 분산 잡 큐 (worker pull 모델, lease 기반)
+C5 Hub        — Supabase 네이티브 워커 큐 (pgx LISTEN/NOTIFY, lease 기반)
 C6 Guard      — RBAC 접근 제어 (정책, 감사, 역할 할당)
 C7 Observe    — 관측 가능성 레이어 (메트릭, 로그, 트레이싱 미들웨어)
 C8 Gate       — 외부 통합 (웹훅, 스케줄러, 커넥터)
@@ -37,7 +37,7 @@ C9 Knowledge  — 지식 관리 (FTS5 + pgvector + 임베딩 + 수집)
 |------|-------------|
 | solo | C4만 |
 | connected | C4 + C0 + C3 + C9 + LLM Gateway |
-| full | 전체 컴포넌트 (+ C1, C5, C6, C7, C8) |
+| full | 전체 컴포넌트 (+ C1, C5 워커 큐, C6, C7, C8) |
 
 C6/C7/C8은 빌드 태그(`c6_guard`, `c7_observe`, `c8_gate`)로 활성화됩니다 — `full` 티어 바이너리에는 항상 컴파일되어 있습니다.
 
@@ -90,18 +90,18 @@ C4는 오케스트레이션 코어입니다. Claude Code에 **100개 이상의 M
 
 ---
 
-## C5 Hub
+## C5 Hub (Supabase 워커 큐)
 
-대규모 워커 실행을 위한 분산 잡 큐:
+대규모 워커 실행을 위한 Supabase 네이티브 분산 잡 큐:
 
-- **Pull 모델** — 워커가 잡을 폴링하며, push 의존성 없음
+- **pgx LISTEN/NOTIFY** — 워커가 Supabase Postgres를 구독하여 실시간 잡 수신
 - **Lease 기반** — 잡은 타임아웃이 있는 lease로 관리, 실패 시 자동 재큐
 - **VRAM 인식 스케줄링** — GPU 워커를 사용 가능한 VRAM으로 매칭, CPU fallback 설정 가능
 - **아티팩트 파이프라인** — 워커가 서명된 URL로 입력 다운로드, 출력 업로드
 - **로그 보존** — 자동 로테이션 (5만 행) + 7일 정리
-- REST + WebSocket API
+- Supabase PostgREST + RPC API
 
-**`cq serve` 통합**: `cq serve`가 C5 Hub를 서브프로세스로 관리할 수 있습니다. `serve.hub.enabled: true`로 활성화 — 별도 프로세스 관리자 불필요.
+워커는 Supabase에 직접 연결됩니다 — 별도 Hub 서버 프로세스 시작 및 관리 불필요.
 
 ---
 
@@ -133,7 +133,7 @@ C4 엔진을 위한 관측 가능성 레이어:
 
 - **웹훅** — 엔드포인트 등록, 페이로드 테스트, HMAC-SHA256 서명
 - **스케줄러** — C4 태스크를 트리거하는 cron 스타일 잡
-- **커넥터** — Slack과 GitHub 기본 지원
+- **커넥터** — Telegram과 GitHub 기본 지원
 - `c8_gate` 빌드 태그로 활성화
 
 ---
@@ -186,7 +186,7 @@ C4 Engine ──────────────── C9 Knowledge (검색 
     │       │
     │       └── C1 Messenger (실시간 알림)
     │
-    ├── C5 Hub (분산 워커)
+    ├── Supabase (pgx LISTEN/NOTIFY 워커 큐)
     │       └── C0 Drive를 통한 아티팩트 스토리지
     │
     └── LLM Gateway (Anthropic / OpenAI / Gemini / Ollama)
