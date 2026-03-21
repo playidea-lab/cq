@@ -80,9 +80,9 @@ Run 'cq codex' or 'cq cursor' for other AI tools.`,
 
 		return nil
 	},
-	// Default: no subcommand → init + launch claude
+	// Default: no subcommand → bot selection menu
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return initAndLaunch("claude")
+		return botSelectMenu()
 	},
 }
 
