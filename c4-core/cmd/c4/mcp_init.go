@@ -225,14 +225,18 @@ func newMCPServer() (*mcpServer, error) {
 	}
 
 	// --- Phase 3: Create proxy, sqliteStore, hybridStore, register core handlers ---
+	// Initialize global knowledge manager (non-fatal: nil if home dir unavailable)
+	globalKnowledgeManager := knowledge.NewGlobalKnowledgeManager()
+
 	nativeOpts := &handlers.NativeOpts{
-		ResearchStore:     ctx.researchStore,
-		KnowledgeStore:    knowledgeStore,
-		KnowledgeSearcher: knowledgeSearcher,
-		KnowledgeUsage:    knowledgeUsage,
-		LLMGateway:        ctx.llmGateway,
-		GPUStore:          ctx.daemonStore,
-		GPUScheduler:      ctx.scheduler,
+		ResearchStore:          ctx.researchStore,
+		KnowledgeStore:         knowledgeStore,
+		KnowledgeSearcher:      knowledgeSearcher,
+		KnowledgeUsage:         knowledgeUsage,
+		KnowledgeGlobalManager: globalKnowledgeManager,
+		LLMGateway:             ctx.llmGateway,
+		GPUStore:               ctx.daemonStore,
+		GPUScheduler:           ctx.scheduler,
 	}
 	// Avoid typed-nil interface bug: only assign when concrete pointer is non-nil.
 	// A nil *cloud.KnowledgeCloudClient assigned to an interface field creates a

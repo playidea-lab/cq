@@ -93,6 +93,21 @@ func knowledgeRecordNativeHandler(opts *KnowledgeNativeOpts) mcp.HandlerFunc {
 			}()
 		}
 
+		// Global knowledge store: scope=global always writes to ~/.c4/knowledge/;
+		// scope=auto writes there only if the domain is a known global domain.
+		scope, _ := params["scope"].(string)
+		domain, _ := params["domain"].(string)
+		wantGlobal := scope == "global" || (scope == "auto" && knowledge.IsGlobalDomain(domain))
+		var globalDocID string
+		if wantGlobal && opts.GlobalManager != nil {
+			gid, gerr := opts.GlobalManager.RecordGlobal(knowledge.DocumentType(docType), metadata, body)
+			if gerr != nil {
+				fmt.Fprintf(os.Stderr, "c4: knowledge global record: %v\n", gerr)
+			} else {
+				globalDocID = gid
+			}
+		}
+
 		if knowledgeEventPub != nil {
 			payload, _ := json.Marshal(map[string]any{"doc_id": docID, "doc_type": docType, "title": title})
 			knowledgeEventPub.PublishAsync("knowledge.recorded", "c4.knowledge", payload, knowledgeProjectID)
@@ -100,6 +115,9 @@ func knowledgeRecordNativeHandler(opts *KnowledgeNativeOpts) mcp.HandlerFunc {
 		result := map[string]any{
 			"success": true,
 			"doc_id":  docID,
+		}
+		if globalDocID != "" {
+			result["global_doc_id"] = globalDocID
 		}
 		if embedWarning != "" {
 			result["warning"] = embedWarning
