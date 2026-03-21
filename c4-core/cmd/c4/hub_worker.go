@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -830,7 +831,7 @@ func claimAndRun(ctx context.Context, supabaseURL, apiKey, workerID string) {
 
 	fmt.Printf("cq: claimed job %s (%s) lease=%s\n", job.ID, job.Name, result.LeaseID)
 
-	// Execute the job command.
+	// Execute the job command, capturing output for log storage.
 	if job.Command != "" {
 		cmd := exec.CommandContext(ctx, "sh", "-c", job.Command)
 		if job.Workdir != "" {
@@ -840,8 +841,11 @@ func claimAndRun(ctx context.Context, supabaseURL, apiKey, workerID string) {
 				fmt.Fprintf(os.Stderr, "cq: workdir %q not found, using current dir\n", job.Workdir)
 			}
 		}
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
+
+		// Capture stdout+stderr while also printing to terminal.
+		var outputBuf bytes.Buffer
+		cmd.Stdout = io.MultiWriter(os.Stdout, &outputBuf)
+		cmd.Stderr = io.MultiWriter(os.Stderr, &outputBuf)
 		cmdErr := cmd.Run()
 
 		// Complete the job.
@@ -856,6 +860,35 @@ func claimAndRun(ctx context.Context, supabaseURL, apiKey, workerID string) {
 			fmt.Fprintf(os.Stderr, "cq: job %s failed: %v\n", job.ID, cmdErr)
 		} else {
 			fmt.Printf("cq: job %s completed\n", job.ID)
+		}
+
+		// Store job log lines in Supabase (best-effort, max 500 lines).
+		logLines := strings.Split(outputBuf.String(), "\n")
+		if len(logLines) > 500 {
+			logLines = logLines[len(logLines)-500:]
+		}
+		var logRows []map[string]any
+		for _, line := range logLines {
+			if line == "" {
+				continue
+			}
+			logRows = append(logRows, map[string]any{
+				"job_id": job.ID,
+				"line":   line,
+				"stream": "stdout",
+			})
+		}
+		if len(logRows) > 0 {
+			logURL := supabaseURL + "/rest/v1/hub_job_logs"
+			logBody, _ := json.Marshal(logRows)
+			logReq, _ := http.NewRequestWithContext(ctx, "POST", logURL, strings.NewReader(string(logBody)))
+			logReq.Header.Set("Content-Type", "application/json")
+			logReq.Header.Set("apikey", apiKey)
+			logReq.Header.Set("Authorization", "Bearer "+apiKey)
+			if r, e := http.DefaultClient.Do(logReq); e == nil {
+				io.Copy(io.Discard, r.Body)
+				r.Body.Close()
+			}
 		}
 
 		completeURL := supabaseURL + "/rest/v1/rpc/complete_job"

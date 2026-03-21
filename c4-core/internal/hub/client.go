@@ -555,7 +555,7 @@ func (c *Client) ListJobsCtx(ctx context.Context, status string, limit int) ([]*
 
 // GetJobLogsCtx returns log lines for a job via Supabase using the provided context.
 func (c *Client) GetJobLogsCtx(ctx context.Context, jobID string, offset, limit int) (*JobLogsResponse, error) {
-	path := fmt.Sprintf("/rest/v1/hub_job_logs?job_id=eq.%s&offset=%d&limit=%d&order=line_number.asc", jobID, offset, limit)
+	path := fmt.Sprintf("/rest/v1/hub_job_logs?job_id=eq.%s&order=id.asc&offset=%d&limit=%d", jobID, offset, limit)
 	req, err := http.NewRequestWithContext(ctx, "GET", c.supabaseRestURL(path), nil)
 	if err != nil {
 		return nil, err
@@ -574,21 +574,22 @@ func (c *Client) GetJobLogsCtx(ctx context.Context, jobID string, offset, limit 
 		return nil, fmt.Errorf("get job logs: %d %s", resp.StatusCode, string(body))
 	}
 
-	var lines []struct {
-		Content string `json:"content"`
+	var rows []struct {
+		Line string `json:"line"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&lines); err != nil {
+	if err := json.NewDecoder(resp.Body).Decode(&rows); err != nil {
 		return nil, fmt.Errorf("get job logs: decode: %w", err)
 	}
 	result := &JobLogsResponse{
 		JobID:  jobID,
 		Offset: offset,
-		Lines:  make([]string, len(lines)),
+		Lines:  make([]string, len(rows)),
 	}
-	for i, l := range lines {
-		result.Lines[i] = l.Content
+	for i, r := range rows {
+		result.Lines[i] = r.Line
 	}
-	result.TotalLines = offset + len(lines)
+	result.TotalLines = offset + len(rows)
+	result.HasMore = len(rows) == limit
 	return result, nil
 }
 
