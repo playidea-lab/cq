@@ -30,7 +30,7 @@ func newFakeStore() *fakeExperimentStore {
 	return &fakeExperimentStore{runs: make(map[string]string)}
 }
 
-func (f *fakeExperimentStore) StartRun(_ context.Context, name, _ string) (string, error) {
+func (f *fakeExperimentStore) StartRun(_ context.Context, name, _, _, _ string) (string, error) {
 	if f.registerErr != nil {
 		return "", f.registerErr
 	}
@@ -78,6 +78,31 @@ func TestExperimentHandler_Register(t *testing.T) {
 	}
 	if m["run_id"] == "" {
 		t.Error("expected non-empty run_id")
+	}
+}
+
+func TestExperimentHandler_Register_WithCommitAndHash(t *testing.T) {
+	h := ExperimentHandlers{Store: newFakeStore()}
+	fn := registerRunHandler(h)
+
+	args, _ := json.Marshal(map[string]any{
+		"name":        "exp-sha",
+		"commit_sha":  "abc1234def5678901234567890123456789abcde",
+		"config_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+	})
+	result, err := fn(context.Background(), args)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	m := result.(map[string]any)
+	if m["success"] != true {
+		t.Errorf("expected success=true, got %v", m)
+	}
+	if m["commit_sha"] != "abc1234def5678901234567890123456789abcde" {
+		t.Errorf("expected commit_sha in response, got %v", m["commit_sha"])
+	}
+	if m["config_hash"] != "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" {
+		t.Errorf("expected config_hash in response, got %v", m["config_hash"])
 	}
 }
 

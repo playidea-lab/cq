@@ -41,6 +41,8 @@ func (s *SQLiteExperimentStore) migrate() error {
 	run_id           TEXT PRIMARY KEY,
 	name             TEXT NOT NULL,
 	config           TEXT,
+	commit_sha       TEXT,
+	config_hash      TEXT,
 	status           TEXT NOT NULL DEFAULT 'running',
 	best_metric      REAL,
 	checkpoint_path  TEXT,
@@ -50,6 +52,10 @@ func (s *SQLiteExperimentStore) migrate() error {
 	updated_at       TEXT NOT NULL
 )`); err != nil {
 		return err
+	}
+	// Add columns for databases created before this migration.
+	for _, col := range []string{"commit_sha", "config_hash"} {
+		_, _ = s.db.Exec(`ALTER TABLE exp_runs ADD COLUMN ` + col + ` TEXT`)
 	}
 	_, err := s.db.Exec(`CREATE TABLE IF NOT EXISTS exp_checkpoints (
 	id               INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -62,12 +68,13 @@ func (s *SQLiteExperimentStore) migrate() error {
 }
 
 // StartRun creates a new experiment run and returns its run_id.
-func (s *SQLiteExperimentStore) StartRun(ctx context.Context, name, config string) (string, error) {
+// commitSHA and configHash are optional — pass empty strings if not available.
+func (s *SQLiteExperimentStore) StartRun(ctx context.Context, name, config, commitSHA, configHash string) (string, error) {
 	runID := newRunID()
 	now := time.Now().UTC().Format(time.RFC3339)
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO exp_runs(run_id, name, config, status, created_at, updated_at) VALUES(?,?,?,?,?,?)`,
-		runID, name, config, "running", now, now)
+		`INSERT INTO exp_runs(run_id, name, config, commit_sha, config_hash, status, created_at, updated_at) VALUES(?,?,?,?,?,?,?,?)`,
+		runID, name, config, commitSHA, configHash, "running", now, now)
 	if err != nil {
 		return "", fmt.Errorf("insert exp_run: %w", err)
 	}
