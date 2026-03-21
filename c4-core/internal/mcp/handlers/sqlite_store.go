@@ -842,6 +842,8 @@ func (s *SQLiteStore) SubmitTask(taskID, workerID, commitSHA, handoff string, re
 					fmt.Fprintf(os.Stderr, "c4: warning: failed to merge branch %s to %s: %v\n", branch, defaultBranch, mergeErr)
 				} else {
 					merged = true
+					// Auto-learn coding patterns from the merged diff (best-effort).
+					s.autoLearnFromDiff("HEAD~1..HEAD")
 				}
 			}
 

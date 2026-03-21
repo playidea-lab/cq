@@ -1,9 +1,16 @@
 package handlers
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
 	"time"
+
+	"github.com/changmin/c4-core/internal/c2"
 )
 
 // injectSoulContext reads team.yaml to find the active user, then resolves
@@ -93,6 +100,85 @@ func (s *SQLiteStore) autoLearn(personaID string) {
 
 		if err := applySuggestionsToSoul(s.projectRoot, username, personaID, suggestions); err != nil {
 			fmt.Fprintf(os.Stderr, "c4: autoLearn failed for %s/%s: %v\n", username, personaID, err)
+		}
+	}()
+}
+
+// autoLearnFromDiff extracts coding patterns from a git diff and appends
+// them to raw_patterns.json. Best-effort: runs in goroutine, failures logged.
+// Called automatically after successful worktree merge in SubmitTask.
+func (s *SQLiteStore) autoLearnFromDiff(commitRange string) {
+	if s.projectRoot == "" || commitRange == "" {
+		return
+	}
+
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		cmd := exec.CommandContext(ctx, "git", "diff", "--name-only", commitRange)
+		cmd.Dir = s.projectRoot
+		out, err := cmd.Output()
+		if err != nil {
+			return
+		}
+
+		files := strings.Split(strings.TrimSpace(string(out)), "\n")
+		if len(files) == 0 || (len(files) == 1 && files[0] == "") {
+			return
+		}
+
+		parts := strings.SplitN(commitRange, "..", 2)
+		if len(parts) != 2 {
+			return
+		}
+		beforeRef, afterRef := parts[0], parts[1]
+
+		var allPatterns []c2.EditPattern
+		for _, file := range files {
+			if file == "" || !isCodeFile(file) {
+				continue
+			}
+
+			before, _ := exec.CommandContext(ctx, "git", "-C", s.projectRoot, "show", beforeRef+":"+file).Output()
+			after, _ := exec.CommandContext(ctx, "git", "-C", s.projectRoot, "show", afterRef+":"+file).Output()
+			if len(before) == 0 && len(after) == 0 {
+				continue
+			}
+
+			patterns := c2.AnalyzeEdits(string(before), string(after))
+			for i := range patterns {
+				patterns[i].Description = fmt.Sprintf("[%s] %s", file, patterns[i].Description)
+			}
+			allPatterns = append(allPatterns, patterns...)
+		}
+
+		if len(allPatterns) == 0 {
+			return
+		}
+
+		username := getActiveUsername(s.projectRoot)
+		if username == "" {
+			username = os.Getenv("USER")
+		}
+		if username == "" {
+			username = "default"
+		}
+
+		patternsPath := filepath.Join(s.projectRoot, ".c4", "souls", username, "raw_patterns.json")
+		_ = os.MkdirAll(filepath.Dir(patternsPath), 0755)
+
+		var existing []c2.EditPattern
+		if data, err := os.ReadFile(patternsPath); err == nil && len(data) > 0 {
+			_ = json.Unmarshal(data, &existing)
+		}
+		existing = append(existing, allPatterns...)
+
+		data, _ := json.MarshalIndent(existing, "", "  ")
+		if err := os.WriteFile(patternsPath, data, 0644); err != nil {
+			fmt.Fprintf(os.Stderr, "c4: autoLearnFromDiff: write failed: %v\n", err)
+		} else {
+			fmt.Fprintf(os.Stderr, "c4: autoLearnFromDiff: %d patterns from %s\n", len(allPatterns), commitRange)
 		}
 	}()
 }
