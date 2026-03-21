@@ -79,6 +79,7 @@ func initHub(ctx *initContext) error {
 
 	ctx.hubClient = hc
 	handlers.RegisterHubHandlers(ctx.reg, hc)
+	handlers.RegisterDispatchHandler(ctx.reg)
 	fmt.Fprintf(os.Stderr, "cq: hub connected (%s)\n", hubCfg.URL)
 
 	// Register Worker standby tools
