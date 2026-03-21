@@ -87,6 +87,9 @@ type initContext struct {
 	agentComp   *serve.Agent
 	agentCancel context.CancelFunc
 
+	// Observe TraceCollector (set by initObserve pre-store hook, c7_observe build tag)
+	traceCollector traceCollectorInterface
+
 	// Session (set by initSession in mcp_init_session.go)
 	sessionMonitor *session.Monitor
 
@@ -109,6 +112,12 @@ type gateWebhookManagerInterface interface{}
 // gateSchedulerInterface abstracts gate.Scheduler for the initContext.
 type gateSchedulerInterface interface {
 	Stop()
+}
+
+// traceCollectorInterface abstracts observe.TraceCollector so build-tag-agnostic
+// files can hold a reference without importing the observe package.
+type traceCollectorInterface interface {
+	OnLLMCall(sessionID, taskType, provider, model string, inputTok, outputTok int, latencyMs int64, errMsg string, success bool)
 }
 
 
