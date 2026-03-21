@@ -46,6 +46,20 @@ type LockEntry struct {
 	Hash string `yaml:"hash"`
 }
 
+// ReadLock reads and parses .piki-lock.yaml from projectDir.
+func ReadLock(projectDir string) (*LockFile, error) {
+	lockPath := filepath.Join(projectDir, ".piki-lock.yaml")
+	data, err := os.ReadFile(lockPath)
+	if err != nil {
+		return nil, fmt.Errorf("reading lock file: %w", err)
+	}
+	var lock LockFile
+	if err := yaml.Unmarshal(data, &lock); err != nil {
+		return nil, fmt.Errorf("parsing lock file: %w", err)
+	}
+	return &lock, nil
+}
+
 // Check compares project rules against embedded standards.
 func Check(projectDir string) ([]DiffResult, error) {
 	lockPath := filepath.Join(projectDir, ".piki-lock.yaml")
