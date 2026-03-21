@@ -10,43 +10,94 @@ import (
 	"github.com/changmin/c4-core/internal/botstore"
 )
 
-// botSelectMenu shows an interactive numbered menu for bot selection.
-// When cq is run without subcommands, this is the default entry point.
-//
-// Behaviour:
-//   - No bots found: print setup guidance and return.
-//   - Bots found: list project bots, then global bots, then "새 봇 만들기", then "종료".
-//   - On bot selection: set C4_TELEGRAM_BOT_TOKEN and launch claude.
-//   - "새 봇 만들기": print guidance to run `cq setup`.
-//   - "종료": exit cleanly.
-func botSelectMenu() error {
+// botLaunch selects a bot and launches claude with telegram.
+// Used when -b is the only flag (no -t).
+func botLaunch(name string) error {
 	store, err := botstore.New(projectDir)
 	if err != nil {
 		return fmt.Errorf("botstore: %w", err)
 	}
 
+	if name != "" && name != " " {
+		return botLaunchByName(store, name)
+	}
+	return botMenuAndLaunch(store)
+}
+
+// botLaunchByName finds a bot by username and launches.
+func botLaunchByName(store *botstore.Store, name string) error {
 	bots, err := store.List()
 	if err != nil {
 		return fmt.Errorf("botstore list: %w", err)
 	}
+	name = strings.TrimPrefix(name, "@")
+	for _, bot := range bots {
+		if strings.EqualFold(bot.Username, name) {
+			return launchWithBot(bot)
+		}
+	}
+	return fmt.Errorf("봇 '%s'을(를) 찾을 수 없습니다. cq --bot 으로 목록을 확인하세요.", name)
+}
+
+// botMenuAndLaunch shows menu, selects bot, and launches (used when -b only, no -t).
+func botMenuAndLaunch(store *botstore.Store) error {
+	bot, err := botMenuSelect(store)
+	if err != nil {
+		return err
+	}
+	if bot == nil {
+		return nil // cancelled
+	}
+	return launchWithBot(*bot)
+}
+
+// botMenuSelect shows interactive bot selection menu and returns the selected bot.
+// Returns nil if user cancelled. Does NOT launch — caller decides what to do.
+func botMenuSelect(store *botstore.Store) (*botstore.Bot, error) {
+	bots, err := store.List()
+	if err != nil {
+		return nil, fmt.Errorf("botstore list: %w", err)
+	}
 
 	if len(bots) == 0 {
+		fmt.Fprintln(os.Stderr, "")
 		fmt.Fprintln(os.Stderr, "등록된 봇이 없습니다.")
-		fmt.Fprintln(os.Stderr, "  cq setup 으로 시작하세요.")
-		return nil
+		fmt.Fprintln(os.Stderr, "")
+		fmt.Fprintln(os.Stderr, "  1) 새 봇 만들기")
+		fmt.Fprintln(os.Stderr, "  2) 취소")
+		fmt.Fprintln(os.Stderr, "")
+
+		scanner := bufio.NewScanner(os.Stdin)
+		for {
+			fmt.Fprint(os.Stderr, "선택 [1-2]: ")
+			if !scanner.Scan() {
+				return nil, nil
+			}
+			switch strings.TrimSpace(scanner.Text()) {
+			case "1":
+				bot, err := runSetupWizardInline(store)
+				if err != nil {
+					return nil, err
+				}
+				return &bot, nil
+			case "2":
+				return nil, nil
+			default:
+				fmt.Fprintln(os.Stderr, "1 또는 2를 입력하세요.")
+			}
+		}
 	}
 
 	printBotMenu(bots)
 
 	newBotIdx := len(bots) + 1
-	quitIdx := len(bots) + 2
+	cancelIdx := len(bots) + 2
 
 	scanner := bufio.NewScanner(os.Stdin)
 	for {
-		fmt.Fprintf(os.Stderr, "선택 [1-%d]: ", quitIdx)
+		fmt.Fprintf(os.Stderr, "선택 [1-%d]: ", cancelIdx)
 		if !scanner.Scan() {
-			// EOF / non-interactive — fall back to default launch
-			return initAndLaunch("claude")
+			return nil, nil
 		}
 		line := strings.TrimSpace(scanner.Text())
 		if line == "" {
@@ -60,22 +111,17 @@ func botSelectMenu() error {
 
 		switch {
 		case choice >= 1 && choice <= len(bots):
-			selected := bots[choice-1]
-			if err := os.Setenv("C4_TELEGRAM_BOT_TOKEN", selected.Token); err != nil {
-				return fmt.Errorf("set env: %w", err)
-			}
-			fmt.Fprintf(os.Stderr, "봇 선택: @%s\n", selected.Username)
-			return initAndLaunch("claude")
-
+			return &bots[choice-1], nil
 		case choice == newBotIdx:
-			fmt.Fprintln(os.Stderr, "새 봇 만들기: cq setup 을 실행하세요.")
-			return nil
-
-		case choice == quitIdx:
-			return nil
-
+			bot, err := runSetupWizardInline(store)
+			if err != nil {
+				return nil, err
+			}
+			return &bot, nil
+		case choice == cancelIdx:
+			return nil, nil
 		default:
-			fmt.Fprintf(os.Stderr, "잘못된 입력입니다. 1-%d 사이의 숫자를 입력하세요.\n", quitIdx)
+			fmt.Fprintf(os.Stderr, "잘못된 입력입니다. 1-%d 사이의 숫자를 입력하세요.\n", cancelIdx)
 		}
 	}
 }
@@ -108,6 +154,15 @@ func printBotMenu(bots []botstore.Bot) {
 
 	fmt.Fprintln(os.Stderr, "")
 	fmt.Fprintf(os.Stderr, "  %d) 새 봇 만들기\n", len(bots)+1)
-	fmt.Fprintf(os.Stderr, "  %d) 종료\n", len(bots)+2)
+	fmt.Fprintf(os.Stderr, "  %d) 취소\n", len(bots)+2)
 	fmt.Fprintln(os.Stderr, "")
+}
+
+// launchWithBot sets the bot token and launches claude with telegram.
+func launchWithBot(bot botstore.Bot) error {
+	if err := os.Setenv("C4_TELEGRAM_BOT_TOKEN", bot.Token); err != nil {
+		return fmt.Errorf("set env: %w", err)
+	}
+	fmt.Fprintf(os.Stderr, "봇 선택: @%s\n", bot.Username)
+	return initAndLaunch("claude")
 }

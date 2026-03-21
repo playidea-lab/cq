@@ -19,8 +19,10 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/changmin/c4-core/internal/botstore"
 	"github.com/changmin/c4-core/internal/mailbox"
 	stdpkg "github.com/changmin/c4-core/internal/standards"
+	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 )
 
@@ -46,13 +48,18 @@ var initTier string
 // sessionName is an optional name for the Claude Code session (-t flag).
 var sessionName string
 
+// botName is the optional bot name for --bot flag. Empty string means show menu.
+var botName string
+
 // Tool launcher commands: cq claude, cq codex, cq cursor
 var (
 	claudeCmd = &cobra.Command{
 		Use:   "claude",
 		Short: "Init C4 project and launch Claude Code",
 		Args:  cobra.NoArgs,
-		RunE:  func(cmd *cobra.Command, args []string) error { return initAndLaunch("claude") },
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return launchClaude(cmd)
+		},
 	}
 	codexCmd = &cobra.Command{
 		Use:   "codex",
@@ -80,12 +87,19 @@ func init() {
 		cmd.Flags().StringVar(&initTier, "tier", "", "build tier: solo|connected|full (written to .c4/config.yaml)")
 	}
 	// Register -t/--tag flag for named sessions (claude and gemini only, and root default).
+	// -t (no value) = show session picker, -t name = direct.
 	for _, cmd := range []*cobra.Command{rootCmd, claudeCmd, geminiCmd} {
 		cmd.Flags().StringVarP(&sessionName, "tag", "t", "", "session name: resume or create named AI session")
 	}
 	// Register -t/--tag flag completion: list named session names.
 	for _, cmd := range []*cobra.Command{rootCmd, claudeCmd, geminiCmd} {
 		_ = cmd.RegisterFlagCompletionFunc("tag", completeSessionNames)
+	}
+	// Register --bot flag for telegram bot selection (claude and root only).
+	// --bot (no value) = show bot menu, --bot=mybot = direct pick.
+	for _, cmd := range []*cobra.Command{rootCmd, claudeCmd} {
+		cmd.Flags().StringVar(&botName, "bot", "", "select telegram bot by name, or show bot menu if empty")
+		cmd.Flag("bot").NoOptDefVal = " " // sentinel: --bot without value
 	}
 	sessionCmd.AddCommand(sessionNameCmd, sessionRmCmd, sessionMemoCmd)
 	rootCmd.AddCommand(claudeCmd, codexCmd, cursorCmd, geminiCmd, sessionsCmd, sessionCmd)
@@ -348,11 +362,6 @@ func initAndLaunch(tool string) error {
 
 	// 8. Launch AI tool
 
-	// Deprecation warning: -t/--tag is being phased out as bots replace sessions.
-	if sessionName != "" && (tool == "claude" || tool == "gemini") {
-		fmt.Fprintln(os.Stderr, "cq: warning: -t/--tag is deprecated and will be removed in a future release. Use `cq` (bot menu) instead.")
-	}
-
 	// Bot token injection: propagate C4_TELEGRAM_BOT_TOKEN → TELEGRAM_BOT_TOKEN so the
 	// telegram plugin can start the bot server when claude launches.
 	if tool == "claude" {
@@ -367,6 +376,61 @@ func initAndLaunch(tool string) error {
 		return launchToolNamed(tool, dir, sessionName)
 	}
 	return launchTool(tool, dir)
+}
+
+// launchClaude is the unified entry point for cq and cq claude.
+// Handles -t (session) and -b (bot) flags independently.
+func launchClaude(cmd *cobra.Command) error {
+	hasBot := cmd.Flag("bot").Changed
+
+	// -b: handle bot selection → sets C4_TELEGRAM_BOT_TOKEN
+	if hasBot {
+		name := strings.TrimSpace(botName)
+		store, err := botstore.New(projectDir)
+		if err != nil {
+			return fmt.Errorf("botstore: %w", err)
+		}
+		if name == "" || name == " " {
+			// Interactive menu — select bot, set env, continue to launch
+			bot, err := botMenuSelect(store)
+			if err != nil {
+				return err
+			}
+			if bot == nil {
+				return nil // user cancelled
+			}
+			if err := os.Setenv("C4_TELEGRAM_BOT_TOKEN", bot.Token); err != nil {
+				return fmt.Errorf("set env: %w", err)
+			}
+			fmt.Fprintf(os.Stderr, "봇 선택: @%s\n", bot.Username)
+		} else {
+			// Direct pick by name
+			bots, err := store.List()
+			if err != nil {
+				return fmt.Errorf("botstore list: %w", err)
+			}
+			name = strings.TrimPrefix(name, "@")
+			var found *botstore.Bot
+			for i, bot := range bots {
+				if strings.EqualFold(bot.Username, name) {
+					found = &bots[i]
+					break
+				}
+			}
+			if found == nil {
+				return fmt.Errorf("봇 '%s'을(를) 찾을 수 없습니다. cq --bot 으로 목록을 확인하세요.", name)
+			}
+			if err := os.Setenv("C4_TELEGRAM_BOT_TOKEN", found.Token); err != nil {
+				return fmt.Errorf("set env: %w", err)
+			}
+			fmt.Fprintf(os.Stderr, "봇 선택: @%s\n", found.Username)
+		}
+	} else {
+		// No bot → suppress telegram
+		os.Setenv("CQ_NO_TELEGRAM", "1")
+	}
+
+	return initAndLaunch("claude")
 }
 
 // printReadyBox prints a box with ready message to w.
@@ -1256,7 +1320,8 @@ func findGeminiSessionIndex(uuid string) string {
 }
 
 // launchToolNamed starts or resumes a named AI tool session with a reboot loop.
-// The reboot loop restarts the session when ~/.c4/.reboot is written (e.g., by /reboot skill).
+// For claude: uses --session-id (new) or --resume (existing) with fixed UUIDs.
+// For gemini: uses --resume with index-based lookup (best effort).
 // Env vars CQ_SESSION_NAME and CQ_SESSION_UUID are injected into the subprocess.
 func launchToolNamed(tool, projectDir, name string) error {
 	sessions, err := loadNamedSessions()
@@ -1269,81 +1334,70 @@ func launchToolNamed(tool, projectDir, name string) error {
 		return fmt.Errorf("%s not found in PATH: %w", tool, err)
 	}
 
-	sessionDir, err := claudeProjectDir(projectDir)
-	if err != nil {
-		return fmt.Errorf("resolving Claude session dir: %w", err)
-	}
-
-	// Determine initial UUID
+	// Determine or create UUID for this session.
 	currentUUID := ""
-	nameWasKnown := false // true if -t name was found in saved sessions (rename-on-reboot allowed)
+	isNew := true
 	if entry, ok := sessions[name]; ok {
-		// If the session was created in a different project, start fresh.
 		if entry.Dir != "" && entry.Dir != projectDir {
 			fmt.Fprintf(os.Stderr, "cq: session '%s' belongs to %s (current: %s), starting new session...\n",
 				name, entry.Dir, projectDir)
 			delete(sessions, name)
 		} else {
-			// Use saved entry.Dir first (session may have been attached from a different cwd)
-			lookupDir := projectDir
-			if entry.Dir != "" {
-				lookupDir = entry.Dir
-			}
-			entrySessionDir, dirErr := claudeProjectDir(lookupDir)
-			if dirErr != nil {
-				entrySessionDir = sessionDir
-			}
-			jsonlPath := filepath.Join(entrySessionDir, entry.UUID+".jsonl")
-			if _, statErr := os.Stat(jsonlPath); statErr == nil {
-				currentUUID = entry.UUID
-				sessionDir = entrySessionDir // use correct dir for this session
-				nameWasKnown = true
-			} else {
-				fmt.Fprintf(os.Stderr, "cq: session '%s' JSONL deleted, starting new session...\n", name)
-				delete(sessions, name)
-			}
+			currentUUID = entry.UUID
+			isNew = false
+		}
+	}
+
+	// For new sessions, generate a UUID upfront (no JSONL scanning needed).
+	if currentUUID == "" {
+		currentUUID = uuid.New().String()
+		sessions[name] = namedSessionEntry{
+			UUID:    currentUUID,
+			Dir:     projectDir,
+			Tool:    tool,
+			Updated: time.Now().Format(time.RFC3339),
+		}
+		if err := saveNamedSessions(sessions); err != nil {
+			fmt.Fprintf(os.Stderr, "cq: warning: failed to save session: %v\n", err)
 		}
 	}
 
 	// Reboot loop: re-launches the tool when ~/.c4/.reboot exists after exit.
 	for {
-		os.Remove(rebootFlagFile()) // clear stale flag before starting
+		os.Remove(rebootFlagFile())
 
 		var toolArgs []string
-		if currentUUID != "" {
-			resumeID := currentUUID
-			if tool == "gemini" {
-				// gemini CLI uses index numbers (1, 2, ...) instead of UUIDs for --resume.
-				resumeID = findGeminiSessionIndex(currentUUID)
-				fmt.Fprintf(os.Stderr, "cq: resuming %s session '%s' (uuid: %s... index: %s)...\n", tool, name, currentUUID[:8], resumeID)
-			} else {
-				fmt.Fprintf(os.Stderr, "cq: resuming %s session '%s' (uuid: %s...)... \n", tool, name, currentUUID[:8])
-			}
-			toolArgs = []string{"--resume", resumeID}
-		} else {
-			// Notify user that a new session is being created.
-			fmt.Fprintf(os.Stderr, "cq: session '%s' not found, creating new session...\n", name)
+		if isNew {
 			fmt.Fprintf(os.Stderr, "cq: launching %s (session: '%s')...\n", tool, name)
-			// Inject onboarding context on first-ever run (new sessions only, not resumes).
+			if tool == "claude" {
+				toolArgs = []string{"--session-id", currentUUID, "--name", name}
+			}
 			if isFirstRun() {
 				toolArgs = append(toolArgs, "--append-system-prompt", onboardingMsg)
 				if err := markFirstRun(); err != nil {
 					fmt.Fprintf(os.Stderr, "cq: warning: markFirstRun: %v\n", err)
 				}
 			}
+		} else {
+			fmt.Fprintf(os.Stderr, "cq: resuming %s session '%s' (%s...)...\n", tool, name, currentUUID[:8])
+			if tool == "gemini" {
+				resumeID := findGeminiSessionIndex(currentUUID)
+				toolArgs = []string{"--resume", resumeID}
+			} else {
+				toolArgs = []string{"--resume", currentUUID}
+			}
 		}
 
-		// Snapshot JSONL before a new session so we can detect the UUID after exit.
-		var before map[string]struct{}
-		if currentUUID == "" {
-			before = listJSONLNames(sessionDir)
+		// Attach telegram channel if configured.
+		if tool == "claude" && telegramChannelConfigured() {
+			toolArgs = append(toolArgs, "--channels", "plugin:telegram@claude-plugins-official")
 		}
 
 		// Inject session context into subprocess environment.
-		env := append(os.Environ(), "CQ_SESSION_NAME="+name)
-		if currentUUID != "" {
-			env = append(env, "CQ_SESSION_UUID="+currentUUID)
-		}
+		env := append(os.Environ(),
+			"CQ_SESSION_NAME="+name,
+			"CQ_SESSION_UUID="+currentUUID,
+		)
 
 		cmd := exec.Command(toolPath, toolArgs...)
 		cmd.Stdin = os.Stdin
@@ -1351,12 +1405,11 @@ func launchToolNamed(tool, projectDir, name string) error {
 		cmd.Stderr = os.Stderr
 		cmd.Env = env
 
-		// Start (not Run) so we can watch for .reboot file in parallel.
 		if err := cmd.Start(); err != nil {
 			return fmt.Errorf("start %s: %w", tool, err)
 		}
 
-		// Watch for .reboot file — auto-terminate Claude Code when detected.
+		// Watch for .reboot file — auto-terminate when detected.
 		rebootDetected := make(chan struct{}, 1)
 		go func() {
 			ticker := time.NewTicker(2 * time.Second)
@@ -1369,7 +1422,6 @@ func launchToolNamed(tool, projectDir, name string) error {
 						case rebootDetected <- struct{}{}:
 						default:
 						}
-						// Send interrupt signal to Claude Code process.
 						if cmd.Process != nil {
 							_ = cmd.Process.Signal(os.Interrupt)
 						}
@@ -1383,69 +1435,32 @@ func launchToolNamed(tool, projectDir, name string) error {
 
 		runErr := cmd.Wait()
 
-		// If resume failed (non-zero exit with --resume), clear UUID and retry as new session.
-		if runErr != nil && currentUUID != "" {
+		// If resume failed, retry as new session with --session-id.
+		if runErr != nil && !isNew {
 			if exitErr, ok := runErr.(*exec.ExitError); ok && exitErr.ExitCode() != 0 {
 				fmt.Fprintf(os.Stderr, "cq: session '%s' resume failed, starting new session...\n", name)
-				currentUUID = ""
-				delete(sessions, name)
-				_ = saveNamedSessions(sessions)
-				continue // retry loop without --resume
-			}
-		}
-
-		// Detect new UUID for new sessions.
-		if currentUUID == "" {
-			after := listJSONLNames(sessionDir)
-			for fname := range after {
-				if _, existed := before[fname]; !existed {
-					currentUUID = strings.TrimSuffix(fname, ".jsonl")
-					break
-				}
-			}
-			if currentUUID != "" {
-				prev := sessions[name]
+				currentUUID = uuid.New().String()
+				isNew = true
 				sessions[name] = namedSessionEntry{
 					UUID:    currentUUID,
 					Dir:     projectDir,
 					Tool:    tool,
-					Memo:    prev.Memo,
 					Updated: time.Now().Format(time.RFC3339),
 				}
-				if saveErr := saveNamedSessions(sessions); saveErr != nil {
-					fmt.Fprintf(os.Stderr, "cq: warning: failed to save session: %v\n", saveErr)
-				} else {
-					fmt.Fprintf(os.Stderr, "cq: session '%s' saved (%s...)\n", name, currentUUID[:8])
-				}
-			} else {
-				fmt.Fprintf(os.Stderr, "cq: warning: could not detect session UUID for '%s'\n", name)
+				_ = saveNamedSessions(sessions)
+				continue
 			}
 		}
 
-		// Check reboot flag written by the /reboot skill.
-		// The file may contain a UUID to resume; if so, override currentUUID to ensure
-		// the correct session is resumed regardless of in-memory state.
+		// After first successful run, future iterations are resumes.
+		isNew = false
+
+		// Check reboot flag.
 		if data, err := os.ReadFile(rebootFlagFile()); err == nil {
 			os.Remove(rebootFlagFile())
-			if uuid := strings.TrimSpace(string(data)); uuid != "" && uuid != currentUUID {
-				fmt.Fprintf(os.Stderr, "cq: reboot: overriding UUID %s → %s\n", currentUUID, uuid[:min(8, len(uuid))])
-				currentUUID = uuid
-			}
-			// Re-read sessions store: the user may have renamed the session via
-			// `cq session name` between launch and reboot. Pick up the new name.
-			// Only rename when the original -t name was a known session; if the user
-			// started a fresh session with -t <new-name>, keep that name even if the
-			// UUID happens to be stored under a different name.
-			if nameWasKnown {
-				if freshSessions, loadErr := loadNamedSessions(); loadErr == nil {
-					for n, entry := range freshSessions {
-						if entry.UUID == currentUUID && n != name {
-							fmt.Fprintf(os.Stderr, "cq: reboot: session renamed '%s' → '%s'\n", name, n)
-							name = n
-							break
-						}
-					}
-				}
+			if overrideUUID := strings.TrimSpace(string(data)); overrideUUID != "" && overrideUUID != currentUUID {
+				fmt.Fprintf(os.Stderr, "cq: reboot: overriding UUID → %s\n", overrideUUID[:min(8, len(overrideUUID))])
+				currentUUID = overrideUUID
 			}
 			fmt.Fprintf(os.Stderr, "cq: rebooting session '%s'...\n", name)
 			continue
@@ -1957,11 +1972,36 @@ func isCQServeProcess(pid int) bool {
 
 const onboardingMsg = "만들고 싶은 게 있으면 말씀해주세요. /c4-plan으로 시작합니다."
 
+// telegramChannelConfigured returns true when ~/.claude/channels/telegram/.env
+// contains a TELEGRAM_BOT_TOKEN line, meaning the user has set up the telegram plugin.
+func telegramChannelConfigured() bool {
+	if os.Getenv("CQ_NO_TELEGRAM") != "" {
+		return false
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return false
+	}
+	data, err := os.ReadFile(filepath.Join(home, ".claude", "channels", "telegram", ".env"))
+	if err != nil {
+		return false
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		if strings.HasPrefix(line, "TELEGRAM_BOT_TOKEN=") && len(line) > len("TELEGRAM_BOT_TOKEN=") {
+			return true
+		}
+	}
+	return false
+}
+
 // buildLaunchArgs returns [tool, ...baseArgs] with --append-system-prompt appended when firstRun is true.
 func buildLaunchArgs(firstRun bool, tool string, baseArgs []string) []string {
 	args := append([]string{tool}, baseArgs...)
 	if firstRun {
 		args = append(args, "--append-system-prompt", onboardingMsg)
+	}
+	if tool == "claude" && telegramChannelConfigured() {
+		args = append(args, "--channels", "plugin:telegram@claude-plugins-official")
 	}
 	return args
 }

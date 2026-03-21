@@ -116,6 +116,12 @@ func runStandardsApply(cmd *cobra.Command, args []string) error {
 			fmt.Printf("  ~ %s\n", f)
 		}
 	}
+	if len(result.FilesRemoved) > 0 {
+		fmt.Printf("Removed: %d file(s)\n", len(result.FilesRemoved))
+		for _, f := range result.FilesRemoved {
+			fmt.Printf("  - %s\n", f)
+		}
+	}
 	return nil
 }
 

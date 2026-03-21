@@ -116,10 +116,6 @@ done
 # =============================================================================
 if [[ "$PERMISSION_MODE" == "model" ]]; then
     api_key="${ANTHROPIC_API_KEY:-}"
-    # Fallback: read from CQ secret store if env var not set
-    if [[ -z "$api_key" ]] && command -v cq &>/dev/null; then
-        api_key=$(cq secret get anthropic.api_key 2>/dev/null)
-    fi
     if [[ -z "$api_key" ]] || ! command -v jq &>/dev/null; then
         # No API key or jq — allow (fail open)
         exit 0
@@ -153,8 +149,6 @@ if [[ "$PERMISSION_MODE" == "model" ]]; then
 
     if [[ -n "$response" ]]; then
         text=$(echo "$response" | jq -r '.content[0].text' 2>/dev/null)
-        # Strip markdown code fences (```json ... ```)
-        text=$(echo "$text" | sed 's/^```[a-z]*//;s/```$//' | tr -d '\n' | sed 's/^ *//')
         if [[ -n "$text" && "$text" != "null" ]]; then
             allow=$(echo "$text" | jq -r '.allow // "null"' 2>/dev/null)
             reason=$(echo "$text" | jq -r '.reason // ""' 2>/dev/null)
