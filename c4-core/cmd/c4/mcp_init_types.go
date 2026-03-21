@@ -96,8 +96,6 @@ type initContext struct {
 	// Chat router (set by newMCPServer when CQ_CHAT_CHANNEL_ID is set)
 	chatRouter *chat.Router
 
-	// DoorayChannel (set by runServe when dooray is enabled in serve mode)
-	doorayChannel *serve.DoorayChannelComponent
 }
 
 // hubClientInterface abstracts hub.Client so the stub doesn't need to import hub.
