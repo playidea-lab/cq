@@ -206,7 +206,11 @@ func MergeToGlobal(projectPatternsPath, username string) error {
 		username = "default"
 	}
 
-	globalDir := filepath.Join(os.Getenv("HOME"), ".c4", "personas", username)
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("get home dir: %w", err)
+	}
+	globalDir := filepath.Join(homeDir, ".c4", "personas", username)
 	if err := os.MkdirAll(globalDir, 0755); err != nil {
 		return fmt.Errorf("mkdir global persona dir: %w", err)
 	}
@@ -251,6 +255,43 @@ func MergeToGlobal(projectPatternsPath, username string) error {
 	}
 	if err := os.WriteFile(globalPath, data, 0644); err != nil {
 		return fmt.Errorf("write global patterns: %w", err)
+	}
+	return nil
+}
+
+// SeedFromGlobal copies global persona patterns to the project if the project has none.
+// This enables new projects to inherit patterns learned in other projects.
+// Failures are non-fatal — callers should log and continue.
+func SeedFromGlobal(projectPatternsPath, username string) error {
+	if username == "" {
+		username = "default"
+	}
+
+	// Check if project already has patterns
+	if data, err := os.ReadFile(projectPatternsPath); err == nil && len(data) > 2 {
+		var existing []EditPattern
+		if json.Unmarshal(data, &existing) == nil && len(existing) > 0 {
+			return nil // project has patterns; do not overwrite
+		}
+	}
+
+	// Read global patterns
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("get home dir: %w", err)
+	}
+	globalPath := filepath.Join(homeDir, ".c4", "personas", username, "raw_patterns.json")
+	globalData, err := os.ReadFile(globalPath)
+	if err != nil || len(globalData) == 0 {
+		return nil // no global patterns; nothing to seed
+	}
+
+	// Ensure project directory exists and write global patterns as seed
+	if err := os.MkdirAll(filepath.Dir(projectPatternsPath), 0755); err != nil {
+		return fmt.Errorf("mkdir project persona dir: %w", err)
+	}
+	if err := os.WriteFile(projectPatternsPath, globalData, 0644); err != nil {
+		return fmt.Errorf("write seeded patterns: %w", err)
 	}
 	return nil
 }
