@@ -834,7 +834,11 @@ func claimAndRun(ctx context.Context, supabaseURL, apiKey, workerID string) {
 	if job.Command != "" {
 		cmd := exec.CommandContext(ctx, "sh", "-c", job.Command)
 		if job.Workdir != "" {
-			cmd.Dir = job.Workdir
+			if info, statErr := os.Stat(job.Workdir); statErr == nil && info.IsDir() {
+				cmd.Dir = job.Workdir
+			} else {
+				fmt.Fprintf(os.Stderr, "cq: workdir %q not found, using current dir\n", job.Workdir)
+			}
 		}
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
