@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/changmin/c4-core/internal/mailbox"
+	stdpkg "github.com/changmin/c4-core/internal/standards"
 	"github.com/spf13/cobra"
 )
 
@@ -41,6 +42,12 @@ var builtinC4Root string
 // initTier is the build tier written to .c4/config.yaml on project init.
 // Valid values: "solo", "connected", "full" (default).
 var initTier string
+
+// initTeam is the team name for standards.Apply() (--team flag).
+var initTeam string
+
+// initLangs is a comma-separated list of languages for standards.Apply() (--lang flag).
+var initLangs string
 
 // sessionName is an optional name for the Claude Code session (-t flag).
 var sessionName string
@@ -77,6 +84,11 @@ func init() {
 	// Register --tier flag on all init-related commands and the root command.
 	for _, cmd := range []*cobra.Command{rootCmd, claudeCmd, codexCmd, cursorCmd, geminiCmd} {
 		cmd.Flags().StringVar(&initTier, "tier", "", "build tier: solo|connected|full (written to .c4/config.yaml)")
+	}
+	// Register --team and --lang flags on all init-related commands and the root command.
+	for _, cmd := range []*cobra.Command{rootCmd, claudeCmd, codexCmd, cursorCmd, geminiCmd} {
+		cmd.Flags().StringVar(&initTeam, "team", "", "team name for standards rules (e.g. backend, frontend)")
+		cmd.Flags().StringVar(&initLangs, "lang", "", "comma-separated languages for standards rules (e.g. go,python)")
 	}
 	// Register -t/--tag flag for named sessions (claude and gemini only, and root default).
 	for _, cmd := range []*cobra.Command{rootCmd, claudeCmd, geminiCmd} {
@@ -277,6 +289,21 @@ func initAndLaunch(tool string) error {
 	// 3. Create/update CLAUDE.md with C4 overrides
 	if err := setupClaudeMD(dir); err != nil {
 		fmt.Fprintf(os.Stderr, "cq: warning: CLAUDE.md setup failed: %v\n", err)
+	}
+
+	// 3b. Apply standards (rules, skills from embedded standards)
+	if initTeam != "" || initLangs != "" {
+		langs := []string{}
+		if initLangs != "" {
+			langs = strings.Split(initLangs, ",")
+		}
+		result, err := stdpkg.Apply(dir, initTeam, langs)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "cq: warning: standards setup failed: %v\n", err)
+		} else {
+			fmt.Fprintf(os.Stderr, "✓ 표준 규칙 적용 (%d files, team=%s, langs=%v)\n",
+				len(result.FilesCreated), result.Team, result.Langs)
+		}
 	}
 
 	// 4. Deploy C4 skills (symlinks from C4 source)
