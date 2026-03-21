@@ -131,22 +131,29 @@ func (c *Client) supabaseRestURL(path string) string {
 }
 
 // setSupabaseHeaders sets Supabase PostgREST authentication headers.
-// Uses apikey + Authorization Bearer pattern as required by PostgREST.
+// PostgREST requires: apikey=anon_key (always), Authorization=Bearer JWT (for RLS).
 func (c *Client) setSupabaseHeaders(req *http.Request) {
 	req.Header.Set("Content-Type", "application/json")
-	key := c.supabaseKey
-	if key == "" {
-		key = c.apiKey
+
+	// apikey header: always the Supabase anon key (or service_role key).
+	anonKey := c.supabaseKey
+	if anonKey != "" {
+		req.Header.Set("apikey", anonKey)
 	}
+
+	// Authorization header: prefer JWT from tokenFunc, then supabaseKey, then apiKey.
+	bearerToken := anonKey
 	if c.tokenFunc != nil {
 		if t := c.tokenFunc(); t != "" {
-			key = t
+			bearerToken = t
 		}
+	} else if c.apiKey != "" {
+		bearerToken = c.apiKey
 	}
-	if key != "" {
-		req.Header.Set("apikey", key)
-		req.Header.Set("Authorization", "Bearer "+key)
+	if bearerToken != "" {
+		req.Header.Set("Authorization", "Bearer "+bearerToken)
 	}
+
 	if c.workerID != "" {
 		req.Header.Set("X-Worker-ID", c.workerID)
 	}

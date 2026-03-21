@@ -263,20 +263,12 @@ func newHubClient() (*hub.Client, error) {
 		return nil, fmt.Errorf("hub is not enabled — run: cq auth login")
 	}
 
-	// JWT fallback: if no API key configured, try cloud session JWT (cq auth login).
-	apiKey := hubCfg.APIKey
-	if apiKey == "" {
-		if jwt := loadCloudSessionJWT(); jwt != "" {
-			apiKey = jwt
-		}
-	}
-
 	// Resolve Supabase URL/key from cloud config for PostgREST access.
-	// Prefer service_key (RLS bypass) over anon_key for Hub operations.
 	supabaseURL := cloudCfg.URL
+
+	// supabaseKey = anon_key (for apikey header). Service role overrides if available.
 	supabaseKey := os.Getenv("SUPABASE_SERVICE_ROLE_KEY")
 	if supabaseKey == "" {
-		// Try project config.yaml cloud.service_key
 		if cfgData, err := os.ReadFile(filepath.Join(projectDir, ".c4", "config.yaml")); err == nil {
 			var cfgMap map[string]any
 			if yaml.Unmarshal(cfgData, &cfgMap) == nil {
@@ -292,6 +284,9 @@ func newHubClient() (*hub.Client, error) {
 		supabaseKey = cloudCfg.AnonKey
 	}
 
+	// apiKey = legacy Hub API key (not used for Supabase auth).
+	apiKey := hubCfg.APIKey
+
 	client := hub.NewClient(hub.HubConfig{
 		Enabled:      hubCfg.Enabled,
 		URL:          hubCfg.URL,
@@ -303,8 +298,12 @@ func newHubClient() (*hub.Client, error) {
 		SupabaseKey:  supabaseKey,
 	})
 
+	// Set JWT token function for Supabase auth (Authorization: Bearer JWT).
+	// This keeps apikey=anon_key while Authorization=Bearer JWT.
+	client.SetTokenFunc(loadCloudSessionJWT)
+
 	if !client.IsAvailable() {
-		return nil, fmt.Errorf("hub API key not configured. Run 'cq auth login' or set %s environment variable or hub.api_key in config", hubCfg.APIKeyEnv)
+		return nil, fmt.Errorf("not configured. Run 'cq auth login'")
 	}
 
 	return client, nil
