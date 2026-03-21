@@ -2202,3 +2202,159 @@ func TestRegisterWorker(t *testing.T) {
 		t.Fatalf("GetWorker: MCPURL mismatch: got %q, want %q", got.MCPURL, req.MCPURL)
 	}
 }
+
+// TestAcquireLeaseForWorker verifies that AcquireLeaseForWorker atomically claims
+// a QUEUED job for a specific worker, and that double-claim returns (nil,nil,nil).
+func TestAcquireLeaseForWorker(t *testing.T) {
+	s := newTestStore(t)
+
+	// Register a push-capable worker.
+	w, err := s.RegisterWorker(&model.WorkerRegisterRequest{
+		Hostname: "push-worker",
+		MCPURL:   "http://localhost:9001/mcp",
+	})
+	if err != nil {
+		t.Fatalf("RegisterWorker: %v", err)
+	}
+
+	// Create a queued job.
+	job, err := s.CreateJob(&model.JobSubmitRequest{
+		Name:    "push-job",
+		Command: "echo push",
+		Workdir: "/tmp",
+	})
+	if err != nil {
+		t.Fatalf("CreateJob: %v", err)
+	}
+
+	// First acquire should succeed.
+	lease, claimedJob, err := s.AcquireLeaseForWorker(job.ID, w.ID)
+	if err != nil {
+		t.Fatalf("AcquireLeaseForWorker: %v", err)
+	}
+	if lease == nil || claimedJob == nil {
+		t.Fatal("expected lease and job, got nil")
+	}
+	if lease.JobID != job.ID {
+		t.Fatalf("lease.JobID: want %s, got %s", job.ID, lease.JobID)
+	}
+	if lease.WorkerID != w.ID {
+		t.Fatalf("lease.WorkerID: want %s, got %s", w.ID, lease.WorkerID)
+	}
+	if claimedJob.Status != model.StatusRunning {
+		t.Fatalf("job should be RUNNING, got %s", claimedJob.Status)
+	}
+
+	// Second acquire on the same job (already RUNNING) should return nil,nil,nil.
+	lease2, job2, err2 := s.AcquireLeaseForWorker(job.ID, w.ID)
+	if err2 != nil {
+		t.Fatalf("second AcquireLeaseForWorker: unexpected error: %v", err2)
+	}
+	if lease2 != nil || job2 != nil {
+		t.Fatal("second acquire should return nil (already claimed)")
+	}
+}
+
+// TestGetWorkerForPushDispatch verifies matching logic: online workers with mcp_url
+// are returned, offline or no-mcp_url workers are excluded.
+func TestGetWorkerForPushDispatch(t *testing.T) {
+	s := newTestStore(t)
+
+	// Register two online MCP workers and one without mcp_url.
+	w1, _ := s.RegisterWorker(&model.WorkerRegisterRequest{
+		Hostname: "mcp-worker-1",
+		MCPURL:   "http://localhost:9001/mcp",
+		Tags:     []string{"gpu"},
+	})
+	_, _ = s.RegisterWorker(&model.WorkerRegisterRequest{
+		Hostname: "mcp-worker-2",
+		MCPURL:   "http://localhost:9002/mcp",
+	})
+	_, _ = s.RegisterWorker(&model.WorkerRegisterRequest{
+		Hostname: "plain-worker",
+		MCPURL:   "", // no MCP URL
+	})
+
+	job := &model.Job{
+		ID:   "test-job-id",
+		Name: "test",
+	}
+
+	// Should find one of the MCP workers.
+	found, err := s.GetWorkerForPushDispatch(job)
+	if err != nil {
+		t.Fatalf("GetWorkerForPushDispatch: %v", err)
+	}
+	if found == nil {
+		t.Fatal("expected a push worker, got nil")
+	}
+	if found.MCPURL == "" {
+		t.Fatal("returned worker has no mcp_url")
+	}
+
+	// With required_tags that only w1 has, should return w1.
+	jobWithTags := &model.Job{
+		ID:           "tagged-job",
+		RequiredTags: []string{"gpu"},
+	}
+	found2, err := s.GetWorkerForPushDispatch(jobWithTags)
+	if err != nil {
+		t.Fatalf("GetWorkerForPushDispatch with tags: %v", err)
+	}
+	if found2 == nil {
+		t.Fatal("expected w1 (gpu tag), got nil")
+	}
+	if found2.ID != w1.ID {
+		t.Fatalf("expected worker %s, got %s", w1.ID, found2.ID)
+	}
+
+	// With required_tags that no worker has, should return nil.
+	jobNoMatch := &model.Job{
+		ID:           "no-match-job",
+		RequiredTags: []string{"nonexistent-tag"},
+	}
+	found3, err := s.GetWorkerForPushDispatch(jobNoMatch)
+	if err != nil {
+		t.Fatalf("GetWorkerForPushDispatch no match: %v", err)
+	}
+	if found3 != nil {
+		t.Fatalf("expected nil for unmatched tags, got %s", found3.ID)
+	}
+}
+
+// TestReleaseLeaseAndRequeue verifies that a failed push dispatch rolls back correctly.
+func TestReleaseLeaseAndRequeue(t *testing.T) {
+	s := newTestStore(t)
+
+	w, _ := s.RegisterWorker(&model.WorkerRegisterRequest{
+		Hostname: "push-worker",
+		MCPURL:   "http://localhost:9003/mcp",
+	})
+	job, _ := s.CreateJob(&model.JobSubmitRequest{
+		Name:    "requeue-job",
+		Command: "echo requeue",
+		Workdir: "/tmp",
+	})
+
+	lease, _, err := s.AcquireLeaseForWorker(job.ID, w.ID)
+	if err != nil || lease == nil {
+		t.Fatalf("AcquireLeaseForWorker: %v, lease=%v", err, lease)
+	}
+
+	// Simulate push failure: requeue.
+	if err := s.ReleaseLeaseAndRequeue(lease.ID); err != nil {
+		t.Fatalf("ReleaseLeaseAndRequeue: %v", err)
+	}
+
+	// Job should be QUEUED again.
+	got, err := s.GetJob(job.ID)
+	if err != nil {
+		t.Fatalf("GetJob: %v", err)
+	}
+	if got.Status != model.StatusQueued {
+		t.Fatalf("expected QUEUED after requeue, got %s", got.Status)
+	}
+	if got.WorkerID != "" {
+		t.Fatalf("expected empty worker_id after requeue, got %s", got.WorkerID)
+	}
+}

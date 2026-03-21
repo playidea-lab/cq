@@ -76,6 +76,9 @@ type Server struct {
 	// thresholdMu protects thresholdCooldowns against concurrent access.
 	thresholdMu        sync.Mutex
 	thresholdCooldowns map[string]time.Time
+
+	// dispatcher pushes jobs to MCP-capable workers when mcp_url is set.
+	dispatcher *pushDispatcher
 }
 
 // Config holds server configuration.
@@ -144,6 +147,7 @@ func NewServer(cfg Config) *Server {
 			return conversation.NewMemoryStore(20, 30*time.Minute)
 		}(),
 	}
+	s.dispatcher = newPushDispatcher(cfg.Store)
 	s.registerRoutes()
 
 	// Start background lease expiry goroutine
