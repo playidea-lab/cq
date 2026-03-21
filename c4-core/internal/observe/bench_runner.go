@@ -316,7 +316,7 @@ func RunBench(cfg BenchConfig, opts ...BenchRunnerOption) ([]*BenchSummary, erro
 		if pr == nil || len(pr.results) == 0 {
 			continue
 		}
-		summary := aggregateResults(pr.results)
+		summary := AggregateBenchResults(pr.results)
 		summaries = append(summaries, summary)
 	}
 
@@ -391,8 +391,8 @@ func runOnePair(cfg BenchConfig, p pair, o *benchRunnerOpts, writeResult func(Be
 	return results, nil
 }
 
-// aggregateResults builds a BenchSummary from a slice of BenchResult for one (model,benchmark) pair.
-func aggregateResults(results []BenchResult) *BenchSummary {
+// AggregateBenchResults builds a BenchSummary from a slice of BenchResult for one (model,benchmark) pair.
+func AggregateBenchResults(results []BenchResult) *BenchSummary {
 	if len(results) == 0 {
 		return nil
 	}
