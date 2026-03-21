@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/changmin/c4-core/internal/botstore"
+	"github.com/changmin/c4-core/internal/cqdata"
 	"github.com/changmin/c4-core/internal/knowledge"
 	"github.com/changmin/c4-core/internal/mailbox"
 	stdpkg "github.com/changmin/c4-core/internal/standards"
@@ -368,6 +369,14 @@ func initAndLaunch(tool string) error {
 		}
 	}
 	fmt.Fprintln(os.Stderr, "✓ MCP 서버 준비")
+
+	// 6c. Ensure git repo and .cqdata exist (non-fatal)
+	if err := ensureGitRepo(dir); err != nil {
+		fmt.Fprintf(os.Stderr, "cq: warning: git init failed: %v\n", err)
+	}
+	if err := ensureCQData(dir); err != nil {
+		fmt.Fprintf(os.Stderr, "cq: warning: .cqdata setup failed: %v\n", err)
+	}
 
 	// 7. Check cloud auth status and prompt login if needed
 	ensureCloudAuth(nil, yesAll)
@@ -2092,4 +2101,33 @@ func launchTool(tool, dir string) error {
 		}
 	}
 	return syscall.Exec(toolPath, toolArgs, os.Environ())
+}
+
+// ensureGitRepo initialises a git repository in dir if none exists.
+func ensureGitRepo(dir string) error {
+	if _, err := os.Stat(filepath.Join(dir, ".git")); err == nil {
+		return nil // already a git repo
+	}
+	cmd := exec.Command("git", "init", dir)
+	cmd.Stdout = os.Stderr
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("git init: %w", err)
+	}
+	fmt.Fprintln(os.Stderr, "✓ git 저장소 초기화")
+	return nil
+}
+
+// ensureCQData creates an empty .cqdata template in dir if one does not exist.
+func ensureCQData(dir string) error {
+	path := filepath.Join(dir, ".cqdata")
+	if _, err := os.Stat(path); err == nil {
+		return nil // already exists
+	}
+	cd := &cqdata.CQData{}
+	if err := cd.Save(dir); err != nil {
+		return fmt.Errorf("creating .cqdata: %w", err)
+	}
+	fmt.Fprintln(os.Stderr, "✓ .cqdata 생성")
+	return nil
 }
