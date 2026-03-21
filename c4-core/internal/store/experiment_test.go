@@ -26,12 +26,44 @@ func TestSQLiteExperimentStore_StartRun(t *testing.T) {
 	}
 	ctx := context.Background()
 
-	runID, err := s.StartRun(ctx, "test-run", `{"lr":0.01}`)
+	runID, err := s.StartRun(ctx, "test-run", `{"lr":0.01}`, "", "")
 	if err != nil {
 		t.Fatalf("StartRun: %v", err)
 	}
 	if runID == "" {
 		t.Error("expected non-empty run_id")
+	}
+}
+
+func TestSQLiteExperimentStore_StartRun_WithCommitAndHash(t *testing.T) {
+	s, err := NewSQLiteExperimentStore(openTestDB(t))
+	if err != nil {
+		t.Fatalf("new store: %v", err)
+	}
+	ctx := context.Background()
+
+	sha := "abc1234def5678901234567890123456789abcde"
+	hash := "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+	runID, err := s.StartRun(ctx, "tracked-run", `{"lr":0.001}`, sha, hash)
+	if err != nil {
+		t.Fatalf("StartRun with sha/hash: %v", err)
+	}
+	if runID == "" {
+		t.Error("expected non-empty run_id")
+	}
+
+	// Verify the fields were actually persisted.
+	var gotSHA, gotHash string
+	err = s.db.QueryRowContext(ctx, `SELECT commit_sha, config_hash FROM exp_runs WHERE run_id=?`, runID).
+		Scan(&gotSHA, &gotHash)
+	if err != nil {
+		t.Fatalf("query commit_sha/config_hash: %v", err)
+	}
+	if gotSHA != sha {
+		t.Errorf("commit_sha: want %q got %q", sha, gotSHA)
+	}
+	if gotHash != hash {
+		t.Errorf("config_hash: want %q got %q", hash, gotHash)
 	}
 }
 
@@ -42,7 +74,7 @@ func TestSQLiteExperimentStore_RecordCheckpoint_Atomic(t *testing.T) {
 	}
 	ctx := context.Background()
 
-	runID, _ := s.StartRun(ctx, "chk-run", "")
+	runID, _ := s.StartRun(ctx, "chk-run", "", "", "")
 
 	// First checkpoint — should be best.
 	isBest, err := s.RecordCheckpoint(ctx, runID, 1.5, "/ckpt/1")
@@ -86,7 +118,7 @@ func TestSQLiteExperimentStore_ShouldContinue(t *testing.T) {
 	}
 	ctx := context.Background()
 
-	runID, _ := s.StartRun(ctx, "cont-run", "")
+	runID, _ := s.StartRun(ctx, "cont-run", "", "", "")
 
 	ok, err := s.ShouldContinue(ctx, runID)
 	if err != nil || !ok {
@@ -121,7 +153,7 @@ func TestSQLiteExperimentStore_CompleteRun(t *testing.T) {
 		t.Fatalf("new store: %v", err)
 	}
 	ctx := context.Background()
-	runID, _ := s.StartRun(ctx, "complete-run", "")
+	runID, _ := s.StartRun(ctx, "complete-run", "", "", "")
 
 	if err := s.CompleteRun(ctx, runID, "success", 0.95, "test summary"); err != nil {
 		t.Fatalf("CompleteRun: %v", err)

@@ -19,7 +19,8 @@ import (
 // ExperimentStore defines the data access interface for experiment runs.
 type ExperimentStore interface {
 	// StartRun creates a new experiment run and returns its ID.
-	StartRun(ctx context.Context, name, config string) (string, error)
+	// commitSHA and configHash are optional (pass empty strings if not available).
+	StartRun(ctx context.Context, name, config, commitSHA, configHash string) (string, error)
 	// RecordCheckpoint records a checkpoint metric and returns true if it's the best so far.
 	RecordCheckpoint(ctx context.Context, runID string, metric float64, path string) (bool, error)
 	// ShouldContinue returns true if the run has not been cancelled or completed.
@@ -113,8 +114,10 @@ func RegisterExperimentHandlers(reg *mcp.Registry, h ExperimentHandlers) {
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"name":   map[string]any{"type": "string", "description": "Experiment name"},
-				"config": map[string]any{"type": "string", "description": "JSON config snapshot (optional)"},
+				"name":        map[string]any{"type": "string", "description": "Experiment name"},
+				"config":      map[string]any{"type": "string", "description": "JSON config snapshot (optional)"},
+				"commit_sha":  map[string]any{"type": "string", "description": "Git commit SHA at experiment start (optional)"},
+				"config_hash": map[string]any{"type": "string", "description": "SHA256 hash of config file (optional)"},
 			},
 			"required": []string{"name"},
 		},
@@ -165,8 +168,10 @@ func RegisterExperimentHandlers(reg *mcp.Registry, h ExperimentHandlers) {
 func registerRunHandler(h ExperimentHandlers) mcp.BlockingHandlerFunc {
 	return func(ctx context.Context, rawArgs json.RawMessage) (any, error) {
 		var args struct {
-			Name   string `json:"name"`
-			Config string `json:"config"`
+			Name       string `json:"name"`
+			Config     string `json:"config"`
+			CommitSHA  string `json:"commit_sha"`
+			ConfigHash string `json:"config_hash"`
 		}
 		if err := json.Unmarshal(rawArgs, &args); err != nil {
 			return map[string]any{"error": "invalid arguments"}, nil
@@ -180,22 +185,34 @@ func registerRunHandler(h ExperimentHandlers) mcp.BlockingHandlerFunc {
 			var resp struct {
 				RunID string `json:"run_id"`
 			}
-			if err := h.hubPost(ctx, "/v1/experiment/run", map[string]any{"name": args.Name, "capability": args.Config}, &resp); err != nil {
+			if err := h.hubPost(ctx, "/v1/experiment/run", map[string]any{
+				"name":        args.Name,
+				"capability":  args.Config,
+				"commit_sha":  args.CommitSHA,
+				"config_hash": args.ConfigHash,
+			}, &resp); err != nil {
 				return map[string]any{"error": fmt.Sprintf("RegisterRun failed: %v", err)}, nil
 			}
 			runID = resp.RunID
 		} else {
 			var err error
-			runID, err = h.Store.StartRun(ctx, args.Name, args.Config)
+			runID, err = h.Store.StartRun(ctx, args.Name, args.Config, args.CommitSHA, args.ConfigHash)
 			if err != nil {
 				return map[string]any{"error": fmt.Sprintf("RegisterRun failed: %v", err)}, nil
 			}
 		}
-		return map[string]any{
+		result := map[string]any{
 			"success":    true,
 			"run_id":     runID,
 			"registered": time.Now().UTC().Format(time.RFC3339),
-		}, nil
+		}
+		if args.CommitSHA != "" {
+			result["commit_sha"] = args.CommitSHA
+		}
+		if args.ConfigHash != "" {
+			result["config_hash"] = args.ConfigHash
+		}
+		return result, nil
 	}
 }
 
