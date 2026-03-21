@@ -322,6 +322,22 @@ func initAndLaunch(tool string) error {
 	printReadyBox(os.Stderr)
 
 	// 8. Launch AI tool
+
+	// Deprecation warning: -t/--tag is being phased out as bots replace sessions.
+	if sessionName != "" && (tool == "claude" || tool == "gemini") {
+		fmt.Fprintln(os.Stderr, "cq: warning: -t/--tag is deprecated and will be removed in a future release. Use `cq` (bot menu) instead.")
+	}
+
+	// Bot token injection: propagate C4_TELEGRAM_BOT_TOKEN → TELEGRAM_BOT_TOKEN so the
+	// telegram plugin can start the bot server when claude launches.
+	if tool == "claude" {
+		if tok := os.Getenv("C4_TELEGRAM_BOT_TOKEN"); tok != "" {
+			if err := os.Setenv("TELEGRAM_BOT_TOKEN", tok); err != nil {
+				fmt.Fprintf(os.Stderr, "cq: warning: failed to set TELEGRAM_BOT_TOKEN: %v\n", err)
+			}
+		}
+	}
+
 	if (tool == "claude" || tool == "gemini") && sessionName != "" {
 		return launchToolNamed(tool, dir, sessionName)
 	}
