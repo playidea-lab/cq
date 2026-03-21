@@ -19,6 +19,7 @@ import (
 type TraceRecorder interface {
 	EnsureTrace(traceID string)
 	AddStep(traceID string, step observe.TraceStep)
+	SetTraceContext(traceID, taskID, taskType string)
 }
 
 var globalTraceRecorderMu sync.RWMutex
@@ -197,6 +198,7 @@ func readNewLines(filePath string, offset int64) ([]channelpush.PushMessage, int
 	globalTraceRecorderMu.RUnlock()
 
 	var msgs []channelpush.PushMessage
+	contextSet := false
 	for _, line := range strings.Split(string(buf), "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" {
@@ -221,6 +223,12 @@ func readNewLines(filePath string, offset int64) ([]channelpush.PushMessage, int
 					CostUSD:   info.CostUSD,
 					Success:   true,
 				})
+			}
+			if !contextSet {
+				if ctx := ExtractSessionContext(lineBytes); ctx != nil {
+					recorder.SetTraceContext(sessionUUID, ctx.TaskID, ctx.TaskType)
+					contextSet = true
+				}
 			}
 		}
 	}

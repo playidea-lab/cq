@@ -127,11 +127,18 @@ func TestJournalWatcher_NilPusherNoOp(t *testing.T) {
 	}
 }
 
-// mockTraceRecorder captures EnsureTrace and AddStep calls for testing.
+// mockTraceRecorder captures EnsureTrace, AddStep, and SetTraceContext calls for testing.
 type mockTraceRecorder struct {
-	mu      sync.Mutex
-	ensured []string
-	steps   []observe.TraceStep
+	mu       sync.Mutex
+	ensured  []string
+	steps    []observe.TraceStep
+	contexts []mockTraceContext
+}
+
+type mockTraceContext struct {
+	traceID  string
+	taskID   string
+	taskType string
 }
 
 func (m *mockTraceRecorder) EnsureTrace(traceID string) {
@@ -144,6 +151,12 @@ func (m *mockTraceRecorder) AddStep(traceID string, step observe.TraceStep) {
 	m.mu.Lock()
 	step.TraceID = traceID
 	m.steps = append(m.steps, step)
+	m.mu.Unlock()
+}
+
+func (m *mockTraceRecorder) SetTraceContext(traceID, taskID, taskType string) {
+	m.mu.Lock()
+	m.contexts = append(m.contexts, mockTraceContext{traceID: traceID, taskID: taskID, taskType: taskType})
 	m.mu.Unlock()
 }
 

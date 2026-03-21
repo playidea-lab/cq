@@ -14,7 +14,7 @@ const dbChanCap = 1000
 
 // dbOp is a single database operation sent to the async writer goroutine.
 type dbOp struct {
-	kind string // "trace_insert", "step_insert", "trace_outcome", "trace_end"
+	kind string // "trace_insert", "step_insert", "trace_outcome", "trace_end", "trace_context"
 
 	// trace_insert fields
 	traceID   string
@@ -30,6 +30,9 @@ type dbOp struct {
 
 	// trace_end fields
 	endedAt time.Time
+
+	// trace_context fields
+	taskType string
 }
 
 // TraceCollector manages the lifecycle of traces and persists them to SQLite.
@@ -64,6 +67,7 @@ CREATE TABLE IF NOT EXISTS traces (
     id          TEXT    PRIMARY KEY,
     session_id  TEXT    NOT NULL DEFAULT '',
     task_id     TEXT    NOT NULL DEFAULT '',
+    task_type   TEXT    NOT NULL DEFAULT '',
     project_id  TEXT    NOT NULL DEFAULT '',
     created_at  TEXT    NOT NULL,
     ended_at    TEXT,
@@ -154,6 +158,14 @@ func (tc *TraceCollector) writer(db *sql.DB) {
 			); err != nil {
 				slog.Warn("observe: failed to update trace ended_at", "trace_id", op.traceID, "err", err)
 			}
+
+		case "trace_context":
+			if _, err := db.Exec(
+				`UPDATE traces SET task_id = ?, task_type = ? WHERE id = ?`,
+				op.taskID, op.taskType, op.traceID,
+			); err != nil {
+				slog.Warn("observe: failed to update trace context", "trace_id", op.traceID, "err", err)
+			}
 		}
 	}
 }
@@ -236,6 +248,16 @@ func (tc *TraceCollector) EnsureTrace(traceID string) {
 		traceID:   traceID,
 		sessionID: traceID,
 		createdAt: time.Now(),
+	})
+}
+
+// SetTraceContext updates the task_id and task_type of an existing trace (async write).
+func (tc *TraceCollector) SetTraceContext(traceID, taskID, taskType string) {
+	tc.send(dbOp{
+		kind:     "trace_context",
+		traceID:  traceID,
+		taskID:   taskID,
+		taskType: taskType,
 	})
 }
 

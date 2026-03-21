@@ -5,6 +5,89 @@ import (
 	"testing"
 )
 
+func TestExtractSessionContext(t *testing.T) {
+	makeUserLine := func(content string) []byte {
+		line := map[string]any{
+			"type":   "user",
+			"isMeta": false,
+			"message": map[string]any{
+				"content": content,
+			},
+		}
+		data, _ := json.Marshal(line)
+		return data
+	}
+
+	t.Run("worker prompt with task_id returns implementation", func(t *testing.T) {
+		content := "You are a C4 worker.\nc4_get_task(worker_id=\"worker-1\")\nTask: T-TIP-002-0"
+		ctx := ExtractSessionContext(makeUserLine(content))
+		if ctx == nil {
+			t.Fatal("expected non-nil SessionContext")
+		}
+		if ctx.TaskType != "implementation" {
+			t.Errorf("TaskType=%q, want implementation", ctx.TaskType)
+		}
+		if ctx.TaskID != "T-TIP-002-0" {
+			t.Errorf("TaskID=%q, want T-TIP-002-0", ctx.TaskID)
+		}
+	})
+
+	t.Run("review prompt with R- task_id returns review", func(t *testing.T) {
+		content := "Review task R-TIP-001-0: please review the changes."
+		ctx := ExtractSessionContext(makeUserLine(content))
+		if ctx == nil {
+			t.Fatal("expected non-nil SessionContext")
+		}
+		if ctx.TaskType != "review" {
+			t.Errorf("TaskType=%q, want review", ctx.TaskType)
+		}
+		if ctx.TaskID != "R-TIP-001-0" {
+			t.Errorf("TaskID=%q, want R-TIP-001-0", ctx.TaskID)
+		}
+	})
+
+	t.Run("assistant type returns nil", func(t *testing.T) {
+		line := map[string]any{
+			"type":   "assistant",
+			"isMeta": false,
+			"message": map[string]any{
+				"content": "c4_get_task T-TIP-002-0",
+			},
+		}
+		data, _ := json.Marshal(line)
+		if ctx := ExtractSessionContext(data); ctx != nil {
+			t.Errorf("expected nil for assistant type, got %+v", ctx)
+		}
+	})
+
+	t.Run("user with no matching content returns nil", func(t *testing.T) {
+		ctx := ExtractSessionContext(makeUserLine("Hello, how are you?"))
+		if ctx != nil {
+			t.Errorf("expected nil, got %+v", ctx)
+		}
+	})
+
+	t.Run("Worker keyword triggers implementation type", func(t *testing.T) {
+		content := "Worker instructions: execute the task T-ABC-001-0"
+		ctx := ExtractSessionContext(makeUserLine(content))
+		if ctx == nil {
+			t.Fatal("expected non-nil SessionContext")
+		}
+		if ctx.TaskType != "implementation" {
+			t.Errorf("TaskType=%q, want implementation", ctx.TaskType)
+		}
+		if ctx.TaskID != "T-ABC-001-0" {
+			t.Errorf("TaskID=%q, want T-ABC-001-0", ctx.TaskID)
+		}
+	})
+
+	t.Run("invalid json returns nil", func(t *testing.T) {
+		if ctx := ExtractSessionContext([]byte("not-json")); ctx != nil {
+			t.Errorf("expected nil for invalid JSON, got %+v", ctx)
+		}
+	})
+}
+
 func TestExtractUsage(t *testing.T) {
 	t.Run("assistant with usage returns info", func(t *testing.T) {
 		line := map[string]any{
