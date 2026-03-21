@@ -449,63 +449,33 @@ func checkPythonSidecar() checkResult {
 	}
 }
 
-// checkHub checks C5 Hub connectivity when hub.enabled=true.
+// checkHub checks Hub worker queue connectivity via Supabase.
 func checkHub() checkResult {
 	cfgPath := filepath.Join(projectDir, ".c4", "config.yaml")
 	data, err := os.ReadFile(cfgPath)
 	if err != nil {
 		return checkResult{
-			Name:    "C5 Hub",
+			Name:    "Hub",
 			Status:  checkOK,
 			Message: "skipped (no config.yaml)",
 		}
 	}
 
 	content := string(data)
-	// Scope "enabled: true" check to the hub: section to avoid false positives
-	// from other sections (e.g. observe.enabled: true).
 	if !isHubEnabled(content) {
 		return checkResult{
-			Name:    "C5 Hub",
+			Name:    "Hub",
 			Status:  checkOK,
 			Message: "hub not enabled",
 		}
 	}
 
-	url := sectionYAMLValue(content, "hub", "url:")
-	if url == "" {
-		return checkResult{
-			Name:    "C5 Hub",
-			Status:  checkWarn,
-			Message: "hub.enabled=true but url not configured",
-		}
-	}
-
-	apiPrefix := strings.TrimRight(sectionYAMLValue(content, "hub", "api_prefix:"), "/")
-	healthURL := strings.TrimRight(url, "/") + apiPrefix + "/health"
-	client := &http.Client{Timeout: 5 * time.Second}
-	resp, err := client.Get(healthURL)
-	if err != nil {
-		return checkResult{
-			Name:    "C5 Hub",
-			Status:  checkFail,
-			Message: fmt.Sprintf("hub unreachable at %s: %v", url, err),
-			Fix:     "Start C5: c5 serve",
-		}
-	}
-	resp.Body.Close()
-	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-		return checkResult{
-			Name:    "C5 Hub",
-			Status:  checkOK,
-			Message: fmt.Sprintf("reachable at %s (HTTP %d)", url, resp.StatusCode),
-		}
-	}
+	// Hub now uses Supabase directly — check Supabase reachability instead of fly.io.
+	// The Supabase check is handled by checkSupabase(), so just verify hub is enabled.
 	return checkResult{
-		Name:    "C5 Hub",
-		Status:  checkWarn,
-		Message: fmt.Sprintf("hub returned HTTP %d at %s", resp.StatusCode, url),
-		Fix:     "cq auth login --device",
+		Name:    "Hub",
+		Status:  checkOK,
+		Message: "enabled (Supabase worker queue)",
 	}
 }
 
@@ -686,7 +656,7 @@ func tryFix(r *checkResult) string {
 		r.Status = checkOK
 		r.Fix = ""
 		return ".mcp.json generated"
-	case "C5 Hub":
+	case "Hub":
 		cqBin, err := os.Executable()
 		if err != nil {
 			return ""
