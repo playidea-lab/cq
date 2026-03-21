@@ -1,7 +1,7 @@
 //go:build c1_messenger
 
 
-package c1handler
+package messengerhandler
 
 import (
 	"bytes"

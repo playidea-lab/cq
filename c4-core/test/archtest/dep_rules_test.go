@@ -211,7 +211,7 @@ func TestDependencyMatrix(t *testing.T) {
 			"internal/mailbox",
 			"internal/mcp",
 			"internal/mcp/handlers/artifacthandler",
-			"internal/mcp/handlers/c1handler",
+			"internal/mcp/handlers/messengerhandler",
 			"internal/mcp/handlers/cfghandler",
 			"internal/mcp/handlers/exechandler",
 			"internal/mcp/handlers/fileops",
@@ -256,8 +256,8 @@ func TestDependencyMatrix(t *testing.T) {
 		"internal/mcp/handlers/artifacthandler": {
 			"internal/mcp",
 		},
-		// Wave 2c sub-packages: c1handler, gpuhandler, knowledgehandler, researchhandler
-		"internal/mcp/handlers/c1handler": {
+		// Wave 2c sub-packages: messengerhandler, gpuhandler, knowledgehandler, researchhandler
+		"internal/mcp/handlers/messengerhandler": {
 			"internal/cloud",
 			"internal/llm",
 			"internal/mcp",
