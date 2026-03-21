@@ -27,6 +27,7 @@ type WorkerDeps struct {
 	HubClient     *hub.Client
 	ShutdownStore *worker.ShutdownStore
 	Keeper        *c1handler.ContextKeeper // may be nil if C1 not enabled
+	MCPURL        string                   // local mcphttp URL advertised to Hub (e.g. "http://127.0.0.1:4142")
 
 	// activeWorkers tracks running standby goroutines by worker_id.
 	// A new standby cancels the previous goroutine for the same worker_id.
@@ -132,6 +133,12 @@ func handleWorkerStandby(mcpCtx context.Context, deps *WorkerDeps, raw json.RawM
 			hostname = params.WorkerID
 		}
 		caps["hostname"] = hostname
+	}
+	// Inject local MCP URL so Hub can push-dispatch jobs to this worker.
+	if deps.MCPURL != "" {
+		if _, ok := caps["mcp_url"]; !ok {
+			caps["mcp_url"] = deps.MCPURL
+		}
 	}
 	hubWorkerID, err := deps.HubClient.RegisterWorker(caps)
 	if err != nil {

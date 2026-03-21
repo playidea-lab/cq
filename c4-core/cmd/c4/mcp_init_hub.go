@@ -87,10 +87,24 @@ func initHub(ctx *initContext) error {
 	if shutdownErr != nil {
 		fmt.Fprintf(os.Stderr, "cq: worker shutdown store failed: %v\n", shutdownErr)
 	} else {
+		// Compute local MCP HTTP URL for Hub push-dispatch.
+		// Priority: CQ_WORKER_MCP_URL env > Serve.MCPHTTP config.
+		mcpURL := os.Getenv("CQ_WORKER_MCP_URL")
+		if mcpURL == "" {
+			mcpHTTPCfg := ctx.cfgMgr.GetConfig().Serve.MCPHTTP
+			if mcpHTTPCfg.Enabled && mcpHTTPCfg.Port > 0 {
+				bind := mcpHTTPCfg.Bind
+				if bind == "" {
+					bind = "127.0.0.1"
+				}
+				mcpURL = fmt.Sprintf("http://%s:%d", bind, mcpHTTPCfg.Port)
+			}
+		}
 		handlers.RegisterWorkerHandlers(ctx.reg, &handlers.WorkerDeps{
 			HubClient:     hc,
 			ShutdownStore: shutdownStore,
 			Keeper:        ctx.keeper,
+			MCPURL:        mcpURL,
 		})
 		fmt.Fprintln(os.Stderr, "cq: worker standby tools registered (3 tools)")
 	}
