@@ -64,6 +64,7 @@ func initObserve(ctx *initContext) error {
 		tc.SetDB(ctx.db)
 	}
 	ctx.traceCollector = tc
+	observe.SetTraceCollector(tc)
 
 	// Initialize handler state and log ring (capacity = 500 entries).
 	handlers.InitObserveState(logger, metrics, level, format)

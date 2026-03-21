@@ -58,6 +58,42 @@ func (tc *TraceCollector) SetDB(db *sql.DB) {
 		return
 	}
 
+	// Ensure trace tables exist (idempotent).
+	if _, err := db.Exec(`
+CREATE TABLE IF NOT EXISTS traces (
+    id          TEXT    PRIMARY KEY,
+    session_id  TEXT    NOT NULL DEFAULT '',
+    task_id     TEXT    NOT NULL DEFAULT '',
+    project_id  TEXT    NOT NULL DEFAULT '',
+    created_at  TEXT    NOT NULL,
+    ended_at    TEXT,
+    outcome_json TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_traces_session_id  ON traces (session_id);
+CREATE INDEX IF NOT EXISTS idx_traces_task_id     ON traces (task_id);
+CREATE TABLE IF NOT EXISTS trace_steps (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    trace_id    TEXT    NOT NULL REFERENCES traces(id) ON DELETE CASCADE,
+    step_type   TEXT    NOT NULL,
+    ts          TEXT    NOT NULL,
+    provider    TEXT    NOT NULL DEFAULT '',
+    model       TEXT    NOT NULL DEFAULT '',
+    task_type   TEXT    NOT NULL DEFAULT '',
+    tool_name   TEXT    NOT NULL DEFAULT '',
+    input_tok   INTEGER NOT NULL DEFAULT 0,
+    output_tok  INTEGER NOT NULL DEFAULT 0,
+    latency_ms  INTEGER NOT NULL DEFAULT 0,
+    cost_usd    REAL    NOT NULL DEFAULT 0,
+    success     INTEGER NOT NULL DEFAULT 1,
+    error_msg   TEXT    NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_trace_steps_trace_id        ON trace_steps (trace_id);
+CREATE INDEX IF NOT EXISTS idx_trace_steps_model_task_type ON trace_steps (model, task_type);
+`); err != nil {
+		slog.Warn("observe: failed to create trace tables", "err", err)
+		return
+	}
+
 	tc.ch = make(chan dbOp, dbChanCap)
 	tc.wg.Add(1)
 	go tc.writer(db)
@@ -100,6 +136,15 @@ func (tc *TraceCollector) writer(db *sql.DB) {
 				op.outcomeJSON, op.traceID,
 			); err != nil {
 				slog.Warn("observe: failed to update trace outcome", "trace_id", op.traceID, "err", err)
+			}
+
+		case "trace_ensure":
+			if _, err := db.Exec(
+				`INSERT OR IGNORE INTO traces (id, session_id, created_at) VALUES (?, ?, ?)`,
+				op.traceID, op.sessionID,
+				op.createdAt.UTC().Format(time.RFC3339Nano),
+			); err != nil {
+				slog.Warn("observe: failed to ensure trace", "trace_id", op.traceID, "err", err)
 			}
 
 		case "trace_end":
@@ -181,6 +226,17 @@ func (tc *TraceCollector) Close() {
 	}
 	close(tc.ch)
 	tc.wg.Wait()
+}
+
+// ensureTrace creates a parent trace row if it doesn't already exist.
+// Uses INSERT OR IGNORE so concurrent calls for the same traceID are safe.
+func (tc *TraceCollector) ensureTrace(traceID string) {
+	tc.send(dbOp{
+		kind:      "trace_ensure",
+		traceID:   traceID,
+		sessionID: traceID,
+		createdAt: time.Now(),
+	})
 }
 
 // boolToInt converts a bool to SQLite-compatible 0/1.

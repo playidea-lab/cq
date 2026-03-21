@@ -45,7 +45,7 @@ embed-skills:
 	@echo "Skills embedded from $(REPO_ROOT)/.claude/skills/ ($(shell git -C $(REPO_ROOT) rev-parse --short HEAD))"
 
 # Build tags — single tier (all features)
-BUILD_TAGS = c0_drive c3_eventbus c5_hub llm_gateway cdp gpu c1_messenger research skills_embed
+BUILD_TAGS = c0_drive c3_eventbus c5_hub llm_gateway cdp gpu c1_messenger research skills_embed c7_observe
 
 ## build-cross: Cross-compile for target GOOS/GOARCH (used by CI)
 build-cross: embed-skills

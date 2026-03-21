@@ -132,6 +132,7 @@ func ContextualMiddlewareFunc(logger *Logger, metrics *Metrics, publisher observ
 				if err != nil {
 					errMsg = err.Error()
 				}
+				tc.ensureTrace("unattributed")
 				tc.AddStep("unattributed", TraceStep{
 					StepType:  StepTypeTool,
 					ToolName:  name,
