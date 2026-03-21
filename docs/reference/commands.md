@@ -2,12 +2,21 @@
 
 ## cq CLI
 
-### `cq claude` / `cq cursor` / `cq codex`
+### `cq` / `cq claude`
 
-Initialize CQ in the current project for a specific AI coding tool.
+Launch Claude Code with CQ project initialization.
 
 ```sh
-cq claude    # Claude Code
+cq                          # Launch claude (no telegram)
+cq -t <name>                # Named session (fixed UUID via --session-id)
+cq --bot                    # Show bot menu → connect telegram
+cq --bot <name>             # Connect specific telegram bot
+cq -t <name> --bot <name>   # Named session + telegram
+```
+
+### Other AI tools
+
+```sh
 cq cursor    # Cursor
 cq codex     # OpenAI Codex CLI
 cq gemini    # Gemini CLI
@@ -77,22 +86,29 @@ cq auth status   # Show current authentication status
 
 ### `cq ls`
 
-List named Claude Code sessions with columnar output.
+List registered Telegram bots.
 
 ```sh
 cq ls
 ```
 
+### `cq sessions`
+
+List named Claude Code sessions.
+
+```sh
+cq sessions
+```
+
 Example output:
 
 ```
-● my-feature   a07c5035  ~/git/myproject       Mar 01 10:30
+  my-feature   a07c5035  ~/git/myproject       Mar 01 10:30
   auth-fix     5a98a761  ~/git/myproject        Feb 28 23:12  ✉2
   data-work    869fd61e  ~/git/data             Feb 26 18:03
     Analyzing training data pipeline
 ```
 
-- `●` marks the current active session
 - `✉N` shows unread inter-session mail count
 - Memo (if set) is displayed on the line below
 
@@ -106,7 +122,7 @@ cq session name <session-name> -m "memo"   # Attach name with memo
 cq session rm <session-name>               # Remove a named session
 ```
 
-Sessions can be resumed with `cq claude -t <session-name>`.
+Sessions can be resumed with `cq -t <session-name>`.
 
 Use `/c4-attach` inside Claude Code to name a session without leaving the editor.
 

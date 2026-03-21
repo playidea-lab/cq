@@ -45,15 +45,15 @@ This opens GitHub OAuth in your browser and automatically patches `.c4/config.ya
 
 Skip this step for the `solo` tier — no login required.
 
-## Step 1.6: Set up Telegram notifications (optional)
+## Step 1.6: Set up Telegram bot (optional)
 
-For task and experiment notifications via Telegram:
+To connect a Telegram bot for remote access:
 
 ```sh
-cq setup
+cq --bot
 ```
 
-This walks through Telegram bot pairing — enter your bot token and CQ auto-detects your chat ID. Skip this step if you don't need notifications.
+Select "새 봇 만들기" from the menu and follow the wizard (BotFather token + your Telegram ID). After setup, use `cq --bot` or `cq --bot <botname>` to launch with Telegram.
 
 ## Step 1.7: Explore ideas first (optional)
 

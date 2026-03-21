@@ -2,12 +2,21 @@
 
 ## cq CLI
 
-### `cq claude` / `cq cursor` / `cq codex`
+### `cq` / `cq claude`
 
-특정 AI 코딩 도구용으로 현재 프로젝트에 CQ를 초기화합니다.
+Claude Code를 CQ 프로젝트 초기화와 함께 실행합니다.
 
 ```sh
-cq claude    # Claude Code
+cq                          # Claude 실행 (텔레그램 없음)
+cq -t <name>                # Named 세션 (--session-id로 UUID 고정)
+cq --bot                    # 봇 메뉴 → 텔레그램 연결
+cq --bot <name>             # 특정 봇으로 텔레그램 연결
+cq -t <name> --bot <name>   # Named 세션 + 텔레그램
+```
+
+### 기타 AI 도구
+
+```sh
 cq cursor    # Cursor
 cq codex     # OpenAI Codex CLI
 cq gemini    # Gemini CLI
@@ -77,22 +86,29 @@ cq auth status   # 현재 인증 상태 표시
 
 ### `cq ls`
 
-이름 붙은 Claude Code 세션을 컬럼 형식으로 나열합니다.
+등록된 텔레그램 봇 목록을 표시합니다.
 
 ```sh
 cq ls
 ```
 
+### `cq sessions`
+
+이름 붙은 Claude Code 세션 목록을 표시합니다.
+
+```sh
+cq sessions
+```
+
 출력 예시:
 
 ```
-● my-feature   a07c5035  ~/git/myproject       Mar 01 10:30
+  my-feature   a07c5035  ~/git/myproject       Mar 01 10:30
   auth-fix     5a98a761  ~/git/myproject        Feb 28 23:12  ✉2
   data-work    869fd61e  ~/git/data             Feb 26 18:03
     데이터 파이프라인 분석 중
 ```
 
-- `●` 현재 활성 세션을 표시
 - `✉N` 미읽은 세션 간 메일 수를 표시
 - 메모(설정된 경우)가 아래 줄에 표시됨
 
@@ -106,7 +122,7 @@ cq session name <session-name> -m "메모"   # 메모와 함께 이름 붙이기
 cq session rm <session-name>               # 이름 붙은 세션 삭제
 ```
 
-`cq claude -t <session-name>`으로 세션을 재개할 수 있습니다.
+`cq -t <session-name>`으로 세션을 재개할 수 있습니다.
 
 Claude Code 내에서 편집기를 벗어나지 않고 세션 이름을 붙이려면 `/c4-attach`를 사용합니다.
 
