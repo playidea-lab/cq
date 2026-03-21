@@ -44,7 +44,7 @@ var DefaultAllowlist = ErrorAllowlist{
 	"cmd/c4/serve.go":                              1,
 	"cmd/c4/stop.go":                               1,
 	"internal/bridge/sidecar.go":                   8,
-	"internal/c1push/pusher.go":                     3,
+	"internal/channelpush/pusher.go":                3,
 	"internal/webcontent/fetch.go":              8,
 	"internal/cdp/cdp.go":                          5,
 	"internal/cdp/webmcp.go":                       9,

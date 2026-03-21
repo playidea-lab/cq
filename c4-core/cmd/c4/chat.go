@@ -12,7 +12,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/changmin/c4-core/internal/c1push"
+	"github.com/changmin/c4-core/internal/channelpush"
 	"github.com/changmin/c4-core/internal/chat"
 	"github.com/spf13/cobra"
 )
@@ -67,12 +67,12 @@ func runChat(cmd *cobra.Command, args []string) error {
 	}
 
 	// 3. Ensure channel exists
-	pusher := c1push.New(supabaseURL, anonKey)
+	pusher := channelpush.New(supabaseURL, anonKey)
 	if pusher == nil {
 		return fmt.Errorf("failed to create pusher: check cloud config")
 	}
 	ctx := context.Background()
-	channelID, err := pusher.EnsureChannel(ctx, session.User.ID, "", channelName, c1push.PlatformClaudeCode)
+	channelID, err := pusher.EnsureChannel(ctx, session.User.ID, "", channelName, channelpush.PlatformClaudeCode)
 	if err != nil {
 		return fmt.Errorf("entering channel %q: %w", channelName, err)
 	}

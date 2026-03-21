@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"strings"
 
-	"github.com/changmin/c4-core/internal/c1push"
+	"github.com/changmin/c4-core/internal/channelpush"
 )
 
 // LLMUsageInfo holds model and token usage extracted from a Claude Code assistant line.
@@ -83,7 +83,7 @@ type claudeCodeLine struct {
 
 // ParseClaudeCodeLine parses a single JSON line from a Claude Code journal file
 // and returns a PushMessage. Returns nil if the line should be skipped (meta, unparseable).
-func ParseClaudeCodeLine(data []byte) (*c1push.PushMessage, error) {
+func ParseClaudeCodeLine(data []byte) (*channelpush.PushMessage, error) {
 	var line claudeCodeLine
 	if err := json.Unmarshal(data, &line); err != nil {
 		return nil, err
@@ -106,7 +106,7 @@ func ParseClaudeCodeLine(data []byte) (*c1push.PushMessage, error) {
 		return nil, nil
 	}
 
-	return &c1push.PushMessage{
+	return &channelpush.PushMessage{
 		SenderName: senderType,
 		SenderType: senderType,
 		Content:    content,

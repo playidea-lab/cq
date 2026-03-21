@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/fsnotify/fsnotify"
-	"github.com/changmin/c4-core/internal/c1push"
+	"github.com/changmin/c4-core/internal/channelpush"
 	"github.com/changmin/c4-core/internal/observe"
 )
 
@@ -165,7 +165,7 @@ func (w *JournalWatcher) Stop(_ context.Context) error {
 
 // readNewLines reads new lines from filePath starting at byteOffset.
 // Returns parsed messages and the new file size as the next offset.
-func readNewLines(filePath string, offset int64) ([]c1push.PushMessage, int64) {
+func readNewLines(filePath string, offset int64) ([]channelpush.PushMessage, int64) {
 	f, err := os.Open(filePath)
 	if err != nil {
 		return nil, offset
@@ -196,7 +196,7 @@ func readNewLines(filePath string, offset int64) ([]c1push.PushMessage, int64) {
 	recorder := globalTraceRecorder
 	globalTraceRecorderMu.RUnlock()
 
-	var msgs []c1push.PushMessage
+	var msgs []channelpush.PushMessage
 	for _, line := range strings.Split(string(buf), "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" {

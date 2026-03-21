@@ -7,7 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/changmin/c4-core/internal/c1push"
+	"github.com/changmin/c4-core/internal/channelpush"
 	"github.com/changmin/c4-core/internal/harness"
 	"github.com/changmin/c4-core/internal/observe"
 )
@@ -26,7 +26,7 @@ type HarnessWatcherConfig struct {
 }
 
 // HarnessWatcherComponent watches ~/.claude/projects/**/*.jsonl and pushes new
-// lines to c1_channels via c1push.Pusher. Activated only when cloud.url is set.
+// lines to c1_channels via channelpush.Pusher. Activated only when cloud.url is set.
 // It always installs an observe.TraceCollector so LLM usage from harness journals
 // is captured regardless of cloud connectivity.
 type HarnessWatcherComponent struct {
@@ -65,7 +65,7 @@ func (h *HarnessWatcherComponent) Start(ctx context.Context) error {
 		return nil
 	}
 
-	pusher := c1push.New(h.cfg.SupabaseURL, h.cfg.AnonKey)
+	pusher := channelpush.New(h.cfg.SupabaseURL, h.cfg.AnonKey)
 	if pusher == nil {
 		fmt.Fprintf(os.Stderr, "cq serve: [harness_watcher] missing supabase credentials — journal push skipped, trace recording active\n")
 		return nil

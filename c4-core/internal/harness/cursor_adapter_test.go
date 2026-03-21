@@ -9,7 +9,7 @@ import (
 
 	_ "modernc.org/sqlite"
 
-	"github.com/changmin/c4-core/internal/c1push"
+	"github.com/changmin/c4-core/internal/channelpush"
 )
 
 // newTempCursorAdapter creates a CursorAdapter wired to a temp proc DB and
@@ -215,28 +215,28 @@ func TestCursorAdapter_PlatformCursor(t *testing.T) {
 	composerID := "composer-plat"
 	insertBubble(t, dbPath, composerID, "b001", 1, "Platform check")
 
-	var capturedPlatform c1push.Platform
+	var capturedPlatform channelpush.Platform
 	capture := &capturePlatformPusher{platform: &capturedPlatform}
 	a := newTempCursorAdapter(t, dbPath, capture)
 
 	ctx := context.Background()
 	a.sync(ctx)
 
-	if capturedPlatform != c1push.PlatformCursor {
-		t.Errorf("platform=%q, want %q", capturedPlatform, c1push.PlatformCursor)
+	if capturedPlatform != channelpush.PlatformCursor {
+		t.Errorf("platform=%q, want %q", capturedPlatform, channelpush.PlatformCursor)
 	}
 }
 
 // capturePlatformPusher records the platform used in EnsureChannel.
 type capturePlatformPusher struct {
-	platform *c1push.Platform
+	platform *channelpush.Platform
 }
 
-func (p *capturePlatformPusher) EnsureChannel(_ context.Context, _, _, _ string, platform c1push.Platform) (string, error) {
+func (p *capturePlatformPusher) EnsureChannel(_ context.Context, _, _, _ string, platform channelpush.Platform) (string, error) {
 	*p.platform = platform
 	return "chan-id", nil
 }
 
-func (p *capturePlatformPusher) AppendMessages(_ context.Context, _ string, _ []c1push.PushMessage) error {
+func (p *capturePlatformPusher) AppendMessages(_ context.Context, _ string, _ []channelpush.PushMessage) error {
 	return nil
 }
