@@ -302,10 +302,11 @@ type ServeHubConfig struct {
 // This exposes the same MCP tools as the stdio transport over HTTP,
 // enabling remote Claude Code instances to connect as MCP clients.
 type ServeMCPHTTPConfig struct {
-	Enabled bool   `mapstructure:"enabled"  yaml:"enabled"`
-	Port    int    `mapstructure:"port"     yaml:"port"`    // default: 4142 (4141 is used by EventSink)
-	Bind    string `mapstructure:"bind"     yaml:"bind"`    // default: "127.0.0.1"
-	APIKey  string `mapstructure:"api_key"  yaml:"api_key"` // dev/test only; prefer secrets.db or CQ_MCP_API_KEY env
+	Enabled        bool   `mapstructure:"enabled"          yaml:"enabled"`
+	Port           int    `mapstructure:"port"             yaml:"port"`           // default: 4142 (4141 is used by EventSink)
+	Bind           string `mapstructure:"bind"             yaml:"bind"`           // default: "127.0.0.1"
+	APIKey         string `mapstructure:"api_key"          yaml:"api_key"`        // dev/test only; prefer secrets.db or CQ_MCP_API_KEY env
+	ToolTimeoutSec int    `mapstructure:"tool_timeout_sec" yaml:"tool_timeout_sec"` // default: 60; increase for long-running tools (e.g. hub_dispatch_job)
 }
 
 // ServeHypothesisSuggesterConfig holds settings for the hypothesis suggester component.
@@ -537,6 +538,7 @@ func New(projectRoot string, cloudDefaults ...CloudDefaults) (*Manager, error) {
 	v.SetDefault("serve.mcp_http.port", 4142)
 	v.SetDefault("serve.mcp_http.bind", "127.0.0.1")
 	v.SetDefault("serve.mcp_http.api_key", "")
+	v.SetDefault("serve.mcp_http.tool_timeout_sec", 60)
 	v.SetDefault("permission_reviewer.enabled", false)
 	v.SetDefault("planning.critique_loop.enabled", true)
 	v.SetDefault("planning.critique_loop.max_rounds", 3)
