@@ -3,7 +3,7 @@ name: c4-reboot
 description: |
   Reboot the current named Claude Code session. Writes a reboot flag so cq
   automatically resumes with the same session UUID after exit.
-  Only works when launched via `cq claude -t <name>`.
+  Only works when launched via `cq -t <name>`.
   Triggers: "reboot", "재시작", "세션 재시작", "/reboot", "restart session".
 allowed-tools: Bash
 ---
@@ -15,7 +15,7 @@ allowed-tools: Bash
 ## 동작 원리
 
 ```
-cq claude -t mywork    ← cq가 부모 프로세스로 대기
+cq -t mywork           ← cq가 부모 프로세스로 대기
   └── claude (현재 세션)
         └── /reboot 실행
               ├── ~/.c4/.reboot 파일 작성
