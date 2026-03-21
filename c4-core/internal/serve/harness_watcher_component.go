@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/changmin/c4-core/internal/channelpush"
 	"github.com/changmin/c4-core/internal/harness"
+	"github.com/changmin/c4-core/internal/knowledge"
 	"github.com/changmin/c4-core/internal/observe"
 )
 
@@ -23,6 +25,9 @@ type HarnessWatcherConfig struct {
 	// DB is an optional *sql.DB for TraceCollector persistence.
 	// If nil, trace steps are still recorded in-process but not persisted.
 	DB *sql.DB
+	// KnowledgeStore is an optional knowledge store for recording session LLM
+	// usage reports on Stop(). If nil, the report is skipped.
+	KnowledgeStore *knowledge.Store
 }
 
 // HarnessWatcherComponent watches ~/.claude/projects/**/*.jsonl and pushes new
@@ -110,6 +115,10 @@ func (h *HarnessWatcherComponent) Stop(ctx context.Context) error {
 	if h.store != nil {
 		_ = h.store.Close()
 	}
+	// Record LLM usage report to knowledge store before closing TraceCollector.
+	if h.tc != nil && h.cfg.DB != nil && h.cfg.KnowledgeStore != nil {
+		h.recordLLMUsageReport()
+	}
 	// Clear global trace recorder and flush pending writes.
 	harness.SetTraceRecorder(nil)
 	if h.tc != nil {
@@ -118,6 +127,52 @@ func (h *HarnessWatcherComponent) Stop(ctx context.Context) error {
 	}
 	fmt.Fprintf(os.Stderr, "cq serve: [harness_watcher] stopped\n")
 	return nil
+}
+
+// recordLLMUsageReport queries TraceAnalyzer and writes a session LLM usage
+// summary to the knowledge store. Failures are non-fatal (logged only).
+func (h *HarnessWatcherComponent) recordLLMUsageReport() {
+	analyzer := observe.NewTraceAnalyzer(h.cfg.DB)
+	stats, err := analyzer.StatsByTaskType()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "cq serve: [harness_watcher] llm_usage_report: query failed: %v\n", err)
+		return
+	}
+	if len(stats) == 0 {
+		return
+	}
+
+	date := time.Now().UTC().Format("2006-01-02")
+	title := fmt.Sprintf("LLM 사용 리포트 %s", date)
+
+	// Build markdown summary.
+	body := fmt.Sprintf("# %s\n\n", title)
+	var totalCalls int64
+	var totalCost float64
+	for taskType, models := range stats {
+		body += fmt.Sprintf("## task_type: %s\n\n", taskType)
+		body += "| 모델 | 호출 수 | 성공률 | 평균 비용 | 평균 레이턴시 |\n"
+		body += "|------|---------|--------|-----------|---------------|\n"
+		for _, m := range models {
+			body += fmt.Sprintf("| %s | %d | %.1f%% | $%.6f | %.0fms |\n",
+				m.Model, m.Count, m.SuccessRate*100, m.AvgCost, m.AvgLatency)
+			totalCalls += m.Count
+			totalCost += m.AvgCost * float64(m.Count)
+		}
+		body += "\n"
+	}
+	body += fmt.Sprintf("---\n합계: %d 호출, 총 비용 $%.6f\n", totalCalls, totalCost)
+
+	_, err = h.cfg.KnowledgeStore.Create(knowledge.TypeInsight, map[string]any{
+		"title":  title,
+		"domain": "observe",
+		"tags":   []string{"llm-usage", "session-report"},
+	}, body)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "cq serve: [harness_watcher] llm_usage_report: knowledge record failed: %v\n", err)
+		return
+	}
+	fmt.Fprintf(os.Stderr, "cq serve: [harness_watcher] llm_usage_report: recorded (%d task types, %d calls)\n", len(stats), totalCalls)
 }
 
 // Health implements Component.

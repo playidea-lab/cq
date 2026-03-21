@@ -98,11 +98,25 @@ func loadC4CloudEnv(cfg config.C4Config) []string {
 // (optionally) pushes journal entries to Supabase when cloud.url is configured.
 // db may be nil — persistence is skipped but in-process trace recording still works.
 func registerHarnessWatcherServeComponent(mgr *serve.Manager, cfg config.C4Config, db *sql.DB) {
+	// Open knowledge store for session LLM usage report (optional — non-fatal on failure).
+	var ks *knowledge.Store
+	if db != nil {
+		knowledgeDir := filepath.Join(projectDir, ".c4", "knowledge")
+		if err := os.MkdirAll(knowledgeDir, 0755); err != nil {
+			fmt.Fprintf(os.Stderr, "cq serve: harness_watcher: mkdir knowledge %s: %v\n", knowledgeDir, err)
+		} else if s, err := knowledge.NewStore(knowledgeDir); err != nil {
+			fmt.Fprintf(os.Stderr, "cq serve: harness_watcher: open knowledge store failed: %v\n", err)
+		} else {
+			ks = s
+		}
+	}
+
 	comp := serve.NewHarnessWatcherComponent(serve.HarnessWatcherConfig{
-		SupabaseURL: cfg.Cloud.URL,
-		AnonKey:     cfg.Cloud.AnonKey,
-		TenantID:    cfg.Cloud.ProjectID,
-		DB:          db,
+		SupabaseURL:    cfg.Cloud.URL,
+		AnonKey:        cfg.Cloud.AnonKey,
+		TenantID:       cfg.Cloud.ProjectID,
+		DB:             db,
+		KnowledgeStore: ks,
 	})
 	mgr.Register(comp)
 	fmt.Fprintf(os.Stderr, "cq serve: registered harness_watcher\n")
