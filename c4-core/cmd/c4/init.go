@@ -2110,9 +2110,7 @@ func ensureGitRepo(dir string) error {
 	if _, err := os.Stat(filepath.Join(dir, ".git")); err == nil {
 		return nil // already a git repo
 	}
-	cmd := exec.Command("git", "init", dir)
-	cmd.Stdout = os.Stderr
-	cmd.Stderr = os.Stderr
+	cmd := exec.Command("git", "init", "-b", "main", dir)
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("git init: %w", err)
 	}
