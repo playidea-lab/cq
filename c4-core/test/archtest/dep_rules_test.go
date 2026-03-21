@@ -185,13 +185,14 @@ func TestDependencyMatrix(t *testing.T) {
 			"internal/mcp",
 		},
 		"internal/mcp/handlers/webcontent": {
-			// webcontent depends on internal/mcp and internal/c2/webcontent
+			// webcontent depends on internal/mcp and internal/webcontent
 			"internal/mcp",
-			"internal/c2/webcontent",
+			"internal/webcontent",
 		},
 		"internal/mcp/handlers": {
-			"internal/c2",
-			"internal/c2/webcontent",
+			"internal/persona",
+			"internal/webcontent",
+			"internal/workspace",
 			"internal/cdp",
 			"internal/chat",
 			"internal/cloud",
@@ -266,7 +267,7 @@ func TestDependencyMatrix(t *testing.T) {
 			"internal/mcp",
 		},
 		"internal/mcp/handlers/knowledgehandler": {
-			"internal/c2/webcontent",
+			"internal/webcontent",
 			"internal/eventbus",
 			"internal/knowledge",
 			"internal/llm",

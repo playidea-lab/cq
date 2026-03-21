@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/changmin/c4-core/internal/c2"
+	"github.com/changmin/c4-core/internal/persona"
 )
 
 // injectSoulContext reads team.yaml to find the active user, then resolves
@@ -134,7 +134,7 @@ func (s *SQLiteStore) autoLearnFromDiff(commitRange string) {
 		}
 		beforeRef, afterRef := parts[0], parts[1]
 
-		var allPatterns []c2.EditPattern
+		var allPatterns []persona.EditPattern
 		for _, file := range files {
 			if file == "" || !isCodeFile(file) {
 				continue
@@ -146,7 +146,7 @@ func (s *SQLiteStore) autoLearnFromDiff(commitRange string) {
 				continue
 			}
 
-			patterns := c2.AnalyzeEdits(string(before), string(after))
+			patterns := persona.AnalyzeEdits(string(before), string(after))
 			for i := range patterns {
 				patterns[i].Description = fmt.Sprintf("[%s] %s", file, patterns[i].Description)
 			}
@@ -168,7 +168,7 @@ func (s *SQLiteStore) autoLearnFromDiff(commitRange string) {
 		patternsPath := filepath.Join(s.projectRoot, ".c4", "souls", username, "raw_patterns.json")
 		_ = os.MkdirAll(filepath.Dir(patternsPath), 0755)
 
-		var existing []c2.EditPattern
+		var existing []persona.EditPattern
 		if data, err := os.ReadFile(patternsPath); err == nil && len(data) > 0 {
 			_ = json.Unmarshal(data, &existing)
 		}

@@ -6,7 +6,7 @@ import (
 	"net/url"
 	"strings"
 
-	c2webcontent "github.com/changmin/c4-core/internal/c2/webcontent"
+	c2webcontent "github.com/changmin/c4-core/internal/webcontent"
 	"github.com/changmin/c4-core/internal/mcp"
 )
 

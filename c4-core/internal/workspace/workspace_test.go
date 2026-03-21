@@ -1,4 +1,4 @@
-package c2
+package workspace
 
 import (
 	"os"

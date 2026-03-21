@@ -10,8 +10,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/changmin/c4-core/internal/c2"
 	"github.com/changmin/c4-core/internal/mcp"
+	"github.com/changmin/c4-core/internal/persona"
+	"github.com/changmin/c4-core/internal/workspace"
 )
 
 // RegisterC2NativeHandlers registers 6 C2 tools as Go native handlers.
@@ -157,19 +158,19 @@ func workspaceCreateHandler() mcp.HandlerFunc {
 			return map[string]any{"error": "name is required"}, nil
 		}
 
-		pt := c2.ProjectType(params.ProjectType)
+		pt := workspace.ProjectType(params.ProjectType)
 		if pt == "" {
-			pt = c2.AcademicPaper
+			pt = workspace.AcademicPaper
 		}
 		// Validate project type
 		switch pt {
-		case c2.AcademicPaper, c2.Proposal, c2.Report:
+		case workspace.AcademicPaper, workspace.Proposal, workspace.Report:
 			// valid
 		default:
-			pt = c2.AcademicPaper
+			pt = workspace.AcademicPaper
 		}
 
-		state := c2.CreateWorkspace(params.Name, pt, params.Goal, params.Sections)
+		state := workspace.CreateWorkspace(params.Name, pt, params.Goal, params.Sections)
 		return map[string]any{"state": state}, nil
 	}
 }
@@ -197,7 +198,7 @@ func workspaceLoadHandler() mcp.HandlerFunc {
 			return map[string]any{"error": fmt.Sprintf("C2WorkspaceLoad failed: %v", err)}, nil
 		}
 
-		state := c2.ParseWorkspace(string(data))
+		state := workspace.ParseWorkspace(string(data))
 		return map[string]any{"state": state}, nil
 	}
 }
@@ -224,12 +225,12 @@ func workspaceSaveHandler() mcp.HandlerFunc {
 			return map[string]any{"error": "state is required"}, nil
 		}
 
-		var state c2.WorkspaceState
+		var state workspace.WorkspaceState
 		if err := json.Unmarshal(stateRaw, &state); err != nil {
 			return map[string]any{"error": fmt.Sprintf("C2WorkspaceSave failed: %v", err)}, nil
 		}
 
-		savedPath, err := c2.SaveWorkspace(&state, projectDir)
+		savedPath, err := workspace.SaveWorkspace(&state, projectDir)
 		if err != nil {
 			return map[string]any{"error": fmt.Sprintf("C2WorkspaceSave failed: %v", err)}, nil
 		}
@@ -255,7 +256,7 @@ func personaLearnHandler() mcp.HandlerFunc {
 			return map[string]any{"error": "draft_path and final_path are required"}, nil
 		}
 
-		diff, err := c2.RunPersonaLearn(params.DraftPath, params.FinalPath, params.ProfilePath, params.AutoApply)
+		diff, err := persona.RunPersonaLearn(params.DraftPath, params.FinalPath, params.ProfilePath, params.AutoApply)
 		if err != nil {
 			return map[string]any{"error": fmt.Sprintf("C2PersonaLearn failed: %v", err)}, nil
 		}
@@ -304,7 +305,7 @@ func personaLearnFromDiffHandler() mcp.HandlerFunc {
 		}
 
 		// For each file, get before/after content
-		var allPatterns []c2.EditPattern
+		var allPatterns []persona.EditPattern
 		parts := strings.SplitN(params.CommitRange, "..", 2)
 		if len(parts) != 2 {
 			return nil, fmt.Errorf("commit_range must be in 'before..after' format")
@@ -327,7 +328,7 @@ func personaLearnFromDiffHandler() mcp.HandlerFunc {
 				continue
 			}
 
-			patterns := c2.AnalyzeEdits(string(before), string(after))
+			patterns := persona.AnalyzeEdits(string(before), string(after))
 			for i := range patterns {
 				patterns[i].Description = fmt.Sprintf("[%s] %s", file, patterns[i].Description)
 			}
@@ -345,7 +346,7 @@ func personaLearnFromDiffHandler() mcp.HandlerFunc {
 		}
 		patternsPath := filepath.Join(".c4", "souls", username, "raw_patterns.json")
 
-		var existing []c2.EditPattern
+		var existing []persona.EditPattern
 		if data, err := os.ReadFile(patternsPath); err == nil && len(data) > 0 {
 			_ = json.Unmarshal(data, &existing)
 		}
@@ -389,7 +390,7 @@ func profileLoadHandler() mcp.HandlerFunc {
 			}
 		}
 
-		profile, err := c2.LoadProfile(params.ProfilePath)
+		profile, err := persona.LoadProfile(params.ProfilePath)
 		if err != nil {
 			return map[string]any{"error": fmt.Sprintf("C2ProfileLoad failed: %v", err)}, nil
 		}
@@ -422,7 +423,7 @@ func profileSaveHandler() mcp.HandlerFunc {
 			json.Unmarshal(pp, &profilePath)
 		}
 
-		if err := c2.SaveProfile(data, profilePath); err != nil {
+		if err := persona.SaveProfile(data, profilePath); err != nil {
 			return map[string]any{"error": fmt.Sprintf("C2ProfileSave failed: %v", err)}, nil
 		}
 

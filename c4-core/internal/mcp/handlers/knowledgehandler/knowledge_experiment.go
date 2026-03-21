@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/changmin/c4-core/internal/c2/webcontent"
+	"github.com/changmin/c4-core/internal/webcontent"
 	"github.com/changmin/c4-core/internal/knowledge"
 	"github.com/changmin/c4-core/internal/llm"
 	"github.com/changmin/c4-core/internal/mcp"
