@@ -53,14 +53,15 @@ func RegisterNativeHandlers(reg *mcp.Registry, rootDir string, store Store) {
 // NativeOpts holds optional dependencies for native handler registration.
 // Fields may be nil when their backing service is unavailable.
 type NativeOpts struct {
-	ResearchStore     *research.Store         // nil if research DB unavailable
-	GPUStore          *daemon.Store           // nil if GPU scheduler unavailable
-	GPUScheduler      *daemon.Scheduler       // nil if scheduler not running (cancel does store-only)
-	KnowledgeStore    *knowledge.Store        // nil if knowledge DB unavailable
-	KnowledgeSearcher *knowledge.Searcher     // nil = FTS-only (no vector search)
-	KnowledgeCloud    knowledge.CloudSyncer   // nil if cloud disabled
-	KnowledgeUsage    *knowledge.UsageTracker // nil if usage tracking disabled
-	LLMGateway        *llm.Gateway            // nil if LLM gateway disabled
+	ResearchStore          *research.Store                   // nil if research DB unavailable
+	GPUStore               *daemon.Store                     // nil if GPU scheduler unavailable
+	GPUScheduler           *daemon.Scheduler                 // nil if scheduler not running (cancel does store-only)
+	KnowledgeStore         *knowledge.Store                  // nil if knowledge DB unavailable
+	KnowledgeSearcher      *knowledge.Searcher               // nil = FTS-only (no vector search)
+	KnowledgeCloud         knowledge.CloudSyncer             // nil if cloud disabled
+	KnowledgeUsage         *knowledge.UsageTracker           // nil if usage tracking disabled
+	KnowledgeGlobalManager *knowledge.GlobalKnowledgeManager // nil if global store unavailable
+	LLMGateway             *llm.Gateway                      // nil if LLM gateway disabled
 }
 
 // RegisterAllHandlersWithOpts is the full-featured registration with native opts.
@@ -105,11 +106,12 @@ func RegisterAllHandlersWithOpts(reg *mcp.Registry, store Store, rootDir string,
 	// Knowledge (13+ tools) — build-tagged via knowledgehandler subpackage
 	if opts != nil && opts.KnowledgeStore != nil {
 		knowledgehandler.RegisterKnowledgeNativeHandlers(reg, &knowledgehandler.KnowledgeNativeOpts{
-			Store:    opts.KnowledgeStore,
-			Searcher: opts.KnowledgeSearcher,
-			Cloud:    opts.KnowledgeCloud,
-			Usage:    opts.KnowledgeUsage,
-			LLM:      opts.LLMGateway,
+			Store:         opts.KnowledgeStore,
+			Searcher:      opts.KnowledgeSearcher,
+			Cloud:         opts.KnowledgeCloud,
+			Usage:         opts.KnowledgeUsage,
+			LLM:           opts.LLMGateway,
+			GlobalManager: opts.KnowledgeGlobalManager,
 		})
 		// POP (3 tools) — requires knowledge store + optional LLM
 		pophandler.Register(reg, &pophandler.Opts{

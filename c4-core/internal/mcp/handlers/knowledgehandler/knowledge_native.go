@@ -11,11 +11,12 @@ import (
 
 // KnowledgeNativeOpts holds dependencies for native knowledge handlers.
 type KnowledgeNativeOpts struct {
-	Store    *knowledge.Store
-	Searcher *knowledge.Searcher
-	Cloud    knowledge.CloudSyncer   // nil if cloud disabled
-	Usage    *knowledge.UsageTracker // nil if usage tracking disabled
-	LLM      *llm.Gateway             // nil if LLM gateway disabled (distill unavailable)
+	Store         *knowledge.Store
+	Searcher      *knowledge.Searcher
+	Cloud         knowledge.CloudSyncer          // nil if cloud disabled
+	Usage         *knowledge.UsageTracker        // nil if usage tracking disabled
+	LLM           *llm.Gateway                   // nil if LLM gateway disabled (distill unavailable)
+	GlobalManager *knowledge.GlobalKnowledgeManager // nil if global store unavailable
 }
 
 var knowledgeEventPub eventbus.Publisher
@@ -46,6 +47,7 @@ func RegisterKnowledgeNativeHandlers(reg *mcp.Registry, opts *KnowledgeNativeOpt
 				"content":  map[string]any{"type": "string", "description": "Document content (markdown)"},
 				"tags":       map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Optional tags"},
 				"visibility": map[string]any{"type": "string", "description": "Visibility: private, team, public (default: team)"},
+				"scope":      map[string]any{"type": "string", "enum": []string{"project", "global", "auto"}, "description": "Storage scope: project (default), global (~/.c4/knowledge/), auto (global if domain is go/python/ts/debugging/testing)"},
 			},
 			"required": []string{"doc_type", "title", "content"},
 		},
