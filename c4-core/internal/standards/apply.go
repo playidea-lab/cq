@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	pkgstandards "github.com/changmin/c4-core/standards"
+	pkgstandards "github.com/changmin/c4-core/cmd/c4/standards_src"
 	"gopkg.in/yaml.v3"
 )
 

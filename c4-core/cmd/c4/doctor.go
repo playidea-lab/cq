@@ -15,7 +15,7 @@ import (
 	"time"
 
 	"github.com/changmin/c4-core/internal/standards"
-	embeddedstd "github.com/changmin/c4-core/standards"
+	embeddedstd "github.com/changmin/c4-core/cmd/c4/standards_src"
 	"github.com/kardianos/service"
 	"github.com/spf13/cobra"
 )

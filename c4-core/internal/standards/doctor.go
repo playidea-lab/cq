@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	embeddedstd "github.com/changmin/c4-core/standards"
+	embeddedstd "github.com/changmin/c4-core/cmd/c4/standards_src"
 	"gopkg.in/yaml.v3"
 )
 

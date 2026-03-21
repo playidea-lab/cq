@@ -44,11 +44,16 @@ embed-skills:
 	echo "$(shell git -C $(REPO_ROOT) rev-parse --short HEAD)" > cmd/c4/skills_src/.version
 	@echo "Skills embedded from $(REPO_ROOT)/.claude/skills/ ($(shell git -C $(REPO_ROOT) rev-parse --short HEAD))"
 
+## embed-standards: Copy standards/ into cmd/c4/standards_src/ for go:embed
+embed-standards:
+	rsync -rL --exclude='*.go' $(REPO_ROOT)/standards/ cmd/c4/standards_src/
+	@echo "Standards embedded from $(REPO_ROOT)/standards/"
+
 # Build tags — single tier (all features)
 BUILD_TAGS = c0_drive c3_eventbus c5_hub llm_gateway cdp gpu c1_messenger research skills_embed c7_observe
 
 ## build-cross: Cross-compile for target GOOS/GOARCH (used by CI)
-build-cross: embed-skills
+build-cross: embed-skills embed-standards
 	@mkdir -p dist
 	GOOS=$(GOOS) GOARCH=$(GOARCH) go build \
 		-ldflags "-X main.version=$(VERSION) $(_SUPABASE_FLAGS)" \
@@ -73,12 +78,12 @@ cross-compile: embed-skills
 
 
 ## build: Build the cq binary (all features)
-build: embed-skills
+build: embed-skills embed-standards
 	@mkdir -p $(BUILD_DIR)
 	go build $(LDFLAGS) -tags '$(BUILD_TAGS)' -o $(BUILD_DIR)/$(BINARY_NAME) ./cmd/c4/
 
 ## build-nightly: Build with experimental features (C7/C6/C8)
-build-nightly: embed-skills
+build-nightly: embed-skills embed-standards
 	@mkdir -p $(BUILD_DIR)
 	go build $(LDFLAGS) -tags '$(BUILD_TAGS) c7_observe c6_guard c8_gate' -o $(BUILD_DIR)/cq-nightly ./cmd/c4/
 
