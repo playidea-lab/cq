@@ -934,11 +934,6 @@ func claimAndRun(ctx context.Context, supabaseURL, anonKey, jwt, workerID string
 	}
 }
 
-// staticToken implements drive.tokenProvider for a fixed JWT string.
-type staticToken string
-
-func (t staticToken) Token() string { return string(t) }
-
 // pullJobDatasets loads .cqdata from workdir (or cwd), resolves each dataset
 // key to (name, version), and pulls via drive.DatasetClient.
 // Returns on first error — the caller should fail the job.
@@ -968,7 +963,7 @@ func pullJobDatasets(ctx context.Context, supabaseURL, anonKey, jwt, workdir str
 		return fmt.Errorf("project_id not found (set C4_PROJECT_ID or .c4/config.yaml)")
 	}
 
-	driveClient := drive.NewClient(supabaseURL, anonKey, staticToken(jwt), projectID)
+	driveClient := drive.NewClient(supabaseURL, anonKey, &staticToken{token: jwt}, projectID)
 	dsClient := drive.NewDatasetClient(driveClient)
 
 	for _, key := range datasets {
