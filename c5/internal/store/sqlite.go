@@ -1134,6 +1134,150 @@ func (s *Store) AcquireLeaseByJobID(workerID, jobID string) (*model.Lease, *mode
 	return lease, job, nil
 }
 
+// GetWorkerForPushDispatch finds an online worker with an mcp_url that can handle the given job.
+// It matches on capability (if set), required_tags, and optional target_worker.
+// Returns nil, nil if no eligible worker is found.
+func (s *Store) GetWorkerForPushDispatch(job *model.Job) (*model.Worker, error) {
+	query := `SELECT id, hostname, status, gpu_count, gpu_model,
+		total_vram, free_vram, tags, project_id, version, last_heartbeat, registered_at,
+		name, uptime_sec, last_job_at, mcp_url
+		FROM workers
+		WHERE status = 'online' AND mcp_url != ''`
+	args := []any{}
+
+	if job.TargetWorker != "" {
+		query += " AND id = ?"
+		args = append(args, job.TargetWorker)
+	}
+	if job.ProjectID != "" {
+		query += " AND (project_id = '' OR project_id = ?)"
+		args = append(args, job.ProjectID)
+	}
+	if job.Capability != "" {
+		query += " AND id IN (SELECT worker_id FROM capabilities WHERE name = ?)"
+		args = append(args, job.Capability)
+	}
+	query += " ORDER BY last_heartbeat DESC LIMIT 100"
+
+	rows, err := s.db.Query(query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("query push workers: %w", err)
+	}
+	defer rows.Close()
+
+	var workers []*model.Worker
+	for rows.Next() {
+		w, err := scanWorkerRow(rows)
+		if err != nil {
+			return nil, fmt.Errorf("scan push worker: %w", err)
+		}
+		workers = append(workers, w)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("push worker iter: %w", err)
+	}
+
+	// Go-side required_tags filtering.
+	for _, w := range workers {
+		if tagsMatch(job.RequiredTags, w.Tags) {
+			return w, nil
+		}
+	}
+	return nil, nil
+}
+
+// AcquireLeaseForWorker atomically claims a specific QUEUED job for a specific worker.
+// Unlike AcquireLease (pull), this is used by push dispatch where the target worker is known.
+// Returns (nil, nil, nil) if the job was already claimed by another worker.
+func (s *Store) AcquireLeaseForWorker(jobID, workerID string) (*model.Lease, *model.Job, error) {
+	tx, err := s.db.BeginTx(context.Background(), &sql.TxOptions{Isolation: sql.LevelSerializable})
+	if err != nil {
+		return nil, nil, fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback()
+
+	now := time.Now().UTC()
+	expiresAt := now.Add(defaultLeaseDuration)
+	nowStr := now.Format(time.RFC3339)
+
+	// CAS-style UPDATE: claim only if still queued.
+	result, err := tx.Exec(`
+		UPDATE jobs SET status = 'RUNNING', started_at = ?, worker_id = ?
+		WHERE id = ? AND status = 'QUEUED'`,
+		nowStr, workerID, jobID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("claim job for push: %w", err)
+	}
+	n, _ := result.RowsAffected()
+	if n == 0 {
+		return nil, nil, nil // already claimed
+	}
+
+	row := tx.QueryRow(jobSelectCols+" FROM jobs WHERE id = ?", jobID)
+	job, err := scanJob(row)
+	if err != nil {
+		return nil, nil, fmt.Errorf("read claimed job: %w", err)
+	}
+
+	leaseID := generateID("l")
+	lease := &model.Lease{
+		ID:        leaseID,
+		JobID:     job.ID,
+		WorkerID:  workerID,
+		CreatedAt: now,
+		ExpiresAt: expiresAt,
+	}
+
+	_, err = tx.Exec(`
+		INSERT INTO leases (id, job_id, worker_id, created_at, expires_at)
+		VALUES (?, ?, ?, ?, ?)`,
+		lease.ID, lease.JobID, lease.WorkerID,
+		nowStr, expiresAt.Format(time.RFC3339))
+	if err != nil {
+		return nil, nil, fmt.Errorf("insert lease: %w", err)
+	}
+
+	if _, err := tx.Exec(`UPDATE workers SET status = 'busy' WHERE id = ?`, workerID); err != nil {
+		log.Printf("c5-store: AcquireLeaseForWorker: set worker busy: %v", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, nil, fmt.Errorf("commit: %w", err)
+	}
+
+	return lease, job, nil
+}
+
+// ReleaseLeaseAndRequeue rolls back a push dispatch: deletes the lease and restores the job to QUEUED.
+// Used when the push HTTP call to the worker fails.
+func (s *Store) ReleaseLeaseAndRequeue(leaseID string) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback()
+
+	// Find the lease to get jobID.
+	var jobID string
+	if err := tx.QueryRow(`SELECT job_id FROM leases WHERE id = ?`, leaseID).Scan(&jobID); err != nil {
+		return fmt.Errorf("find lease %s: %w", leaseID, err)
+	}
+
+	// Restore job to QUEUED.
+	if _, err := tx.Exec(`
+		UPDATE jobs SET status = 'QUEUED', started_at = NULL, worker_id = ''
+		WHERE id = ? AND status = 'RUNNING'`, jobID); err != nil {
+		return fmt.Errorf("requeue job %s: %w", jobID, err)
+	}
+
+	// Delete the lease.
+	if _, err := tx.Exec(`DELETE FROM leases WHERE id = ?`, leaseID); err != nil {
+		return fmt.Errorf("delete lease %s: %w", leaseID, err)
+	}
+
+	return tx.Commit()
+}
+
 // RenewLease extends a lease's expiry.
 func (s *Store) RenewLease(leaseID, workerID string) (*time.Time, error) {
 	newExpiry := time.Now().UTC().Add(defaultLeaseDuration)
