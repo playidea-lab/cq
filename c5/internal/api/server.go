@@ -28,12 +28,6 @@ import (
 	"github.com/piqsol/c4/c5/internal/store"
 )
 
-// DoorayChannel holds per-channel routing configuration for Dooray messages.
-type DoorayChannel struct {
-	ProjectID  string
-	WebhookURL string // optional; falls back to Server.doorayWebhookURL
-}
-
 // Server is the C5 HTTP API server.
 type Server struct {
 	store       *store.Store
@@ -57,19 +51,10 @@ type Server struct {
 	gpuWorkerGPUOnly bool  // if true, GPU workers only accept GPU jobs (no CPU fallback)
 	lastPurge        time.Time // last zombie worker purge time (1h rate limit)
 
-	// LLM / Dooray server-side processing fields.
-	llmClient        *llmclient.Client            // nil = server-side LLM disabled
-	knowledgeClient  *knowledge.Client            // nil = knowledge search disabled
-	doorayWebhookURL string                       // default Incoming Webhook URL
-	doorayCmdToken   string                       // cmd token for slash command auth
-	channelMap       map[string]DoorayChannel     // channelID → project routing
-	convStore        conversation.Store           // per-channel multi-turn conversation history
-
-	// doorayWSMu protects doorayWSClients.
-	doorayWSMu sync.Mutex
-	// doorayWSClients holds currently connected WS clients for the Dooray push channel.
-	// key: chan []byte (unique pointer per connection), value: unused (struct{}).
-	doorayWSClients map[chan []byte]struct{}
+	// LLM server-side processing fields.
+	llmClient       *llmclient.Client // nil = server-side LLM disabled
+	knowledgeClient *knowledge.Client // nil = knowledge search disabled
+	convStore       conversation.Store // per-channel multi-turn conversation history
 
 	// jobMu protects jobNotify. When a new job is queued, jobNotify is closed
 	// (broadcasting to all long-poll waiters) and replaced with a new channel.
@@ -111,12 +96,9 @@ type Config struct {
 	GPUWorkerGPUOnly bool   // if true, GPU workers only accept GPU jobs (no CPU fallback)
 	SupabaseURL      string // Supabase project URL for PKCE token exchange (optional)
 	SupabaseKey      string // Supabase anon key for PKCE token exchange (optional)
-	// LLM / Dooray server-side processing (optional).
-	LLMClient        *llmclient.Client        // nil = server-side LLM disabled
-	KnowledgeClient  *knowledge.Client        // nil = knowledge search disabled
-	DoorayWebhookURL string                   // default Incoming Webhook URL for LLM responses
-	DoorayCmdToken   string                   // slash command token (overrides env var)
-	ChannelMap       map[string]DoorayChannel // channelID → project routing
+	// LLM server-side processing (optional).
+	LLMClient       *llmclient.Client // nil = server-side LLM disabled
+	KnowledgeClient *knowledge.Client // nil = knowledge search disabled
 }
 
 // NewServer creates an HTTP API server.
@@ -152,13 +134,9 @@ func NewServer(cfg Config) *Server {
 		jobNotify:        make(chan struct{}),
 		maxArtifactBytes: maxBytes,
 		gpuWorkerGPUOnly: cfg.GPUWorkerGPUOnly,
-		llmClient:        cfg.LLMClient,
-		knowledgeClient:  cfg.KnowledgeClient,
-		doorayWebhookURL: cfg.DoorayWebhookURL,
-		doorayCmdToken:   cfg.DoorayCmdToken,
-		channelMap: cfg.ChannelMap,
-		thresholdCooldowns:  make(map[string]time.Time),
-		doorayWSClients:      make(map[chan []byte]struct{}),
+		llmClient:          cfg.LLMClient,
+		knowledgeClient:    cfg.KnowledgeClient,
+		thresholdCooldowns: make(map[string]time.Time),
 		convStore: func() conversation.Store {
 			if ss := conversation.NewSupabaseStore(cfg.SupabaseURL, cfg.SupabaseKey); ss != nil {
 				return ss
@@ -250,15 +228,6 @@ func (s *Server) registerRoutes() {
 	// MCP server endpoint (Streamable HTTP, JSON-RPC 2.0)
 	s.mux.HandleFunc("/v1/mcp", s.handleMCP)
 
-	// Webhooks (public — token auth is self-contained per handler)
-	s.mux.HandleFunc("/v1/webhooks/dooray", s.handleDooray)
-
-	// Dooray reply endpoint (localhost / API-key protected)
-	s.mux.HandleFunc("/v1/dooray/reply", s.handleDoorayReply)
-
-	// Dooray WebSocket push channel
-	s.mux.HandleFunc("/v1/dooray/ws", s.handleDoorayWS)
-
 	// Auth (OAuth PKCE device flow — no API key required)
 	s.mux.HandleFunc("/auth/callback", s.handleAuthCallback)
 	s.mux.HandleFunc("/auth/activate", s.handleActivate) // GET form, POST validate
@@ -300,11 +269,7 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 			r.URL.Path == "/v1/auth/device",
 			strings.HasPrefix(r.URL.Path, "/v1/auth/device/"),
 			strings.HasPrefix(r.URL.Path, "/auth/activate"),
-			r.URL.Path == "/auth/callback",
-			r.URL.Path == "/v1/webhooks/dooray",
-			r.URL.Path == "/v1/dooray/pending",
-			r.URL.Path == "/v1/dooray/reply",
-			r.URL.Path == "/v1/dooray/ws":
+			r.URL.Path == "/auth/callback":
 			next.ServeHTTP(w, r)
 			return
 		}

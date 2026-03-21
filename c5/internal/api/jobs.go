@@ -231,7 +231,7 @@ func (s *Server) handleJobComplete(w http.ResponseWriter, r *http.Request, jobID
 	// DAG orchestrator hook: advance DAG if this job was a DAG node
 	s.onJobComplete(jobID, status, exitCode)
 
-	// Fetch job once for both SSE broadcast, deploy rules and Dooray notification.
+	// Fetch job once for SSE broadcast and deploy rules.
 	// Fetched after state mutations are finalized so subscribers observe consistent state.
 	var completedJob *model.Job
 	if j, err := s.store.GetJob(jobID); err == nil {
@@ -281,17 +281,6 @@ func (s *Server) handleJobComplete(w http.ResponseWriter, r *http.Request, jobID
 			if err := s.affinity.RecordFailure(completedJob.WorkerID, completedJob.ProjectID); err != nil {
 				log.Printf("c5: affinity record failure job=%s worker=%s: %v", jobID, completedJob.WorkerID, err)
 			}
-		}
-	}
-
-	// Dooray completion notification (no-op if job was not from Dooray).
-	s.notifyDoorayJobComplete(completedJob, status, exitCode)
-
-	// Generic completion notification: alert via default webhook for any job
-	// that wasn't already notified through Dooray channel integration.
-	if completedJob != nil {
-		if _, hasDoorayChannel := completedJob.Env["DOORAY_CHANNEL"]; !hasDoorayChannel {
-			s.notifyJobCompletion(completedJob, status, exitCode)
 		}
 	}
 
@@ -482,94 +471,3 @@ func (s *Server) maybeCompleteExperimentRun(ctx context.Context, job *model.Job,
 	log.Printf("c5: experiment run completed: run_id=%s status=%s metric=%f", job.ExpRunID, expStatus, finalMetric)
 }
 
-// notifyDoorayJobComplete sends a job completion notification to Dooray if the
-// job was submitted via the Dooray integration (DOORAY_CHANNEL env set).
-// It is a no-op when job is nil or lacks the DOORAY_CHANNEL env var.
-func (s *Server) notifyDoorayJobComplete(job *model.Job, status model.JobStatus, exitCode int) {
-	if job == nil {
-		return
-	}
-	channelID, ok := job.Env["DOORAY_CHANNEL"]
-	if !ok || channelID == "" {
-		return // Not a Dooray-originated job.
-	}
-	webhookURL := s.resolveWebhookURL(channelID)
-	if webhookURL == "" {
-		log.Printf("c5: dooray complete notify: no webhook URL for channel %q", channelID)
-		return
-	}
-	shortID := job.ID
-	if len(shortID) > 8 {
-		shortID = shortID[:8]
-	}
-
-	var text string
-	if status == model.StatusSucceeded {
-		var sb strings.Builder
-		fmt.Fprintf(&sb, "✅ 실험 완료: %s (%s)\n", job.Name, shortID)
-		metrics, _ := s.store.GetMetrics(job.ID, 0, 0)
-		if len(metrics) > 0 {
-			latest := metrics[len(metrics)-1].Metrics
-			sb.WriteString("\n최종 메트릭:\n")
-			for k, v := range latest {
-				fmt.Fprintf(&sb, "• %s: %v\n", k, v)
-			}
-		}
-		text = strings.TrimSpace(sb.String())
-	} else {
-		var sb strings.Builder
-		fmt.Fprintf(&sb, "❌ 실험 실패: %s (%s) — exit %d\n", job.Name, shortID, exitCode)
-		// Fetch actual last 3 lines (not the first 200 then tail).
-		_, total, _, _ := s.store.GetLogs(job.ID, 0, 1)
-		offset := 0
-		if total > 3 {
-			offset = total - 3
-		}
-		tail, _, _, _ := s.store.GetLogs(job.ID, offset, 3)
-		if len(tail) > 0 {
-			fmt.Fprintf(&sb, "\n마지막 로그:\n%s", strings.Join(tail, "\n"))
-		}
-		text = strings.TrimSpace(sb.String())
-	}
-
-	go postToDooray(context.Background(), webhookURL, text)
-}
-
-// notifyJobCompletion sends a completion notification via the default webhook URL
-// for jobs that were NOT submitted through Dooray (those are handled separately).
-// No-op if no default webhook URL is configured.
-func (s *Server) notifyJobCompletion(job *model.Job, status model.JobStatus, exitCode int) {
-	if s.doorayWebhookURL == "" {
-		return
-	}
-	shortID := job.ID
-	if len(shortID) > 8 {
-		shortID = shortID[:8]
-	}
-	worker := job.WorkerID
-	if worker == "" {
-		worker = "(unknown)"
-	}
-
-	var text string
-	if status == model.StatusSucceeded {
-		text = fmt.Sprintf("✅ Job 완료: %s (%s)\n워커: %s\n커맨드: %s",
-			job.Name, shortID, worker, job.Command)
-		// Append metrics if available
-		if metrics, err := s.store.GetMetrics(job.ID, 0, 0); err == nil && len(metrics) > 0 {
-			latest := metrics[len(metrics)-1].Metrics
-			var sb strings.Builder
-			sb.WriteString(text)
-			sb.WriteString("\n메트릭:")
-			for k, v := range latest {
-				fmt.Fprintf(&sb, "\n• %s: %v", k, v)
-			}
-			text = sb.String()
-		}
-	} else {
-		text = fmt.Sprintf("❌ Job 실패: %s (%s)\n워커: %s\n종료코드: %d\n커맨드: %s",
-			job.Name, shortID, worker, exitCode, job.Command)
-	}
-
-	go postToDooray(context.Background(), s.doorayWebhookURL, text)
-}

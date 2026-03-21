@@ -24,7 +24,7 @@ func TestMemoryStore_AppendAndGet(t *testing.T) {
 		{Role: "user", Content: "hello"},
 		{Role: "assistant", Content: "world"},
 	}
-	if err := s.Append(context.Background(), "ch-1", "dooray", "proj-1", in); err != nil {
+	if err := s.Append(context.Background(), "ch-1", "telegram", "proj-1", in); err != nil {
 		t.Fatalf("append error: %v", err)
 	}
 	msgs, err := s.Get(context.Background(), "ch-1", 10)
