@@ -12,18 +12,19 @@ func TestHarnessWatcherComponent_Name(t *testing.T) {
 	}
 }
 
-func TestHarnessWatcherComponent_SkippedWhenNoURL(t *testing.T) {
+func TestHarnessWatcherComponent_TraceRecorderSetWhenNoURL(t *testing.T) {
 	c := NewHarnessWatcherComponent(HarnessWatcherConfig{})
 	ctx := context.Background()
 
-	// Start should succeed (no-op when URL empty).
+	// Start should succeed (journal push skipped, trace recording active).
 	if err := c.Start(ctx); err != nil {
 		t.Fatalf("Start with empty URL: %v", err)
 	}
+	defer c.Stop(ctx)
 
 	h := c.Health()
-	if h.Status != "skipped" {
-		t.Errorf("Health.Status = %q, want %q", h.Status, "skipped")
+	if h.Status != "ok" {
+		t.Errorf("Health.Status = %q, want %q", h.Status, "ok")
 	}
 }
 
