@@ -228,9 +228,9 @@ func (tc *TraceCollector) Close() {
 	tc.wg.Wait()
 }
 
-// ensureTrace creates a parent trace row if it doesn't already exist.
+// EnsureTrace creates a parent trace row if it doesn't already exist.
 // Uses INSERT OR IGNORE so concurrent calls for the same traceID are safe.
-func (tc *TraceCollector) ensureTrace(traceID string) {
+func (tc *TraceCollector) EnsureTrace(traceID string) {
 	tc.send(dbOp{
 		kind:      "trace_ensure",
 		traceID:   traceID,
