@@ -18,6 +18,9 @@ type observeEventPublisher interface {
 var (
 	globalPublisherMu sync.RWMutex
 	globalPublisher   observeEventPublisher
+
+	globalTraceCollectorMu sync.RWMutex
+	globalTraceCollector   *TraceCollector
 )
 
 // SetEventBus sets the package-level EventBus publisher used by all
@@ -26,6 +29,14 @@ func SetEventBus(p observeEventPublisher) {
 	globalPublisherMu.Lock()
 	defer globalPublisherMu.Unlock()
 	globalPublisher = p
+}
+
+// SetTraceCollector sets the package-level TraceCollector used by all
+// ContextualMiddlewareFunc instances. Safe for concurrent use.
+func SetTraceCollector(tc *TraceCollector) {
+	globalTraceCollectorMu.Lock()
+	defer globalTraceCollectorMu.Unlock()
+	globalTraceCollector = tc
 }
 
 // Middleware returns an mcp.Middleware that logs every tool call and records
@@ -109,6 +120,25 @@ func ContextualMiddlewareFunc(logger *Logger, metrics *Metrics, publisher observ
 					"error":      err != nil,
 				})
 				pub.PublishAsync("tool.called", "c4_observe", data, "")
+			}
+
+			// Record TOOL_CALL step to TraceCollector (package-level global).
+			globalTraceCollectorMu.RLock()
+			tc := globalTraceCollector
+			globalTraceCollectorMu.RUnlock()
+
+			if tc != nil {
+				errMsg := ""
+				if err != nil {
+					errMsg = err.Error()
+				}
+				tc.AddStep("unattributed", TraceStep{
+					StepType:  StepTypeTool,
+					ToolName:  name,
+					LatencyMs: elapsed.Milliseconds(),
+					Success:   err == nil,
+					ErrorMsg:  errMsg,
+				})
 			}
 
 			return result, err
