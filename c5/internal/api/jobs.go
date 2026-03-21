@@ -56,6 +56,11 @@ func (s *Server) handleJobSubmit(w http.ResponseWriter, r *http.Request) {
 	// Wake up any long-poll waiters in /v1/leases/acquire
 	s.notifyJobAvailable()
 
+	// Attempt push dispatch to MCP-capable workers (best-effort, falls back to pull).
+	if s.dispatcher != nil {
+		go s.dispatcher.TryPushDispatch(job)
+	}
+
 	queuePos, _ := s.store.CountByStatus(model.StatusQueued)
 
 	w.WriteHeader(http.StatusCreated)
