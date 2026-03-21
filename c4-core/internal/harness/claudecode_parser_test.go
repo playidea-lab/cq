@@ -160,4 +160,59 @@ func TestExtractUsage(t *testing.T) {
 			t.Fatal("expected error for invalid JSON")
 		}
 	})
+
+	t.Run("known model computes CostUSD", func(t *testing.T) {
+		// claude-sonnet-4-6: InputPer1M=3.0, OutputPer1M=15.0
+		// inputCost = (1000 + 200*0.1) * 3.0 / 1_000_000 = 1020 * 3.0 / 1_000_000 = 0.00306
+		// outputCost = 500 * 15.0 / 1_000_000 = 0.0075
+		// total = 0.01056
+		line := map[string]any{
+			"type": "assistant",
+			"message": map[string]any{
+				"model": "claude-sonnet-4-6",
+				"usage": map[string]any{
+					"input_tokens":               1000,
+					"output_tokens":              500,
+					"cache_read_input_tokens":    200,
+					"cache_creation_input_tokens": 0,
+				},
+			},
+		}
+		data, _ := json.Marshal(line)
+		info, err := ExtractUsage(data)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if info == nil {
+			t.Fatal("expected non-nil LLMUsageInfo")
+		}
+		want := 0.01056
+		if diff := info.CostUSD - want; diff > 1e-9 || diff < -1e-9 {
+			t.Errorf("CostUSD = %v, want %v", info.CostUSD, want)
+		}
+	})
+
+	t.Run("unknown model CostUSD is zero", func(t *testing.T) {
+		line := map[string]any{
+			"type": "assistant",
+			"message": map[string]any{
+				"model": "unknown-model-xyz",
+				"usage": map[string]any{
+					"input_tokens":  100,
+					"output_tokens": 50,
+				},
+			},
+		}
+		data, _ := json.Marshal(line)
+		info, err := ExtractUsage(data)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if info == nil {
+			t.Fatal("expected non-nil LLMUsageInfo")
+		}
+		if info.CostUSD != 0 {
+			t.Errorf("CostUSD = %v, want 0 for unknown model", info.CostUSD)
+		}
+	})
 }

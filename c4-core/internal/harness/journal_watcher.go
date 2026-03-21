@@ -218,6 +218,7 @@ func readNewLines(filePath string, offset int64) ([]channelpush.PushMessage, int
 					Model:     info.Model,
 					InputTok:  int64(info.InputTok),
 					OutputTok: int64(info.OutputTok),
+					CostUSD:   info.CostUSD,
 					Success:   true,
 				})
 			}
