@@ -171,7 +171,7 @@ func (p *KnowledgeHubPoller) poll(ctx context.Context) {
 			body += "metrics: " + strings.Join(parts, ", ") + "\n"
 		}
 		if len(job.Tags) > 0 {
-			body += "tags: " + strings.Join(job.Tags, ", ") + "\n"
+			body += "tags: " + string(job.Tags) + "\n"
 		}
 
 		meta := map[string]any{

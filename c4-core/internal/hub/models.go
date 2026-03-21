@@ -5,6 +5,8 @@
 // external dependencies, following the cloud/ and llm/ patterns.
 package hub
 
+import "encoding/json"
+
 // HubConfig holds Hub connection settings.
 type HubConfig struct {
 	Enabled      bool   `mapstructure:"enabled"       yaml:"enabled"`
@@ -29,8 +31,8 @@ type Job struct {
 	Command     string            `json:"command"`
 	RequiresGPU    bool              `json:"requires_gpu"`
 	VRAMRequiredGB float64           `json:"vram_required_gb,omitempty"`
-	Env            map[string]string `json:"env,omitempty"`
-	Tags        []string          `json:"tags,omitempty"`
+	Env            json.RawMessage   `json:"env,omitempty"`
+	Tags        json.RawMessage   `json:"tags,omitempty"`
 	ExpID       string            `json:"exp_id,omitempty"`
 	Memo        string            `json:"memo,omitempty"`
 	TimeoutSec  int               `json:"timeout_sec,omitempty"`
@@ -39,11 +41,11 @@ type Job struct {
 	FinishedAt  string            `json:"finished_at,omitempty"`
 	ExitCode        *int              `json:"exit_code,omitempty"`
 	WorkerID        string            `json:"worker_id,omitempty"`
-	InputArtifacts  []ArtifactRef     `json:"input_artifacts,omitempty"`
-	OutputArtifacts []ArtifactRef     `json:"output_artifacts,omitempty"`
+	InputArtifacts  json.RawMessage   `json:"input_artifacts,omitempty"`
+	OutputArtifacts json.RawMessage   `json:"output_artifacts,omitempty"`
 	BestMetric      *float64          `json:"best_metric,omitempty"`
 	Capability      string            `json:"capability,omitempty"`
-	Result          map[string]any    `json:"result,omitempty"`
+	Result          json.RawMessage   `json:"result,omitempty"`
 }
 
 // GetID returns the job ID, preferring "id" (Hub) but falling back to "job_id" (PiQ daemon).
@@ -63,6 +65,7 @@ type ArtifactRef struct {
 
 // JobSubmitRequest is the payload for POST /v1/jobs/submit.
 type JobSubmitRequest struct {
+	ID                  string            `json:"id,omitempty"`
 	Name                string            `json:"name"`
 	Workdir             string            `json:"workdir"`
 	Command             string            `json:"command"`

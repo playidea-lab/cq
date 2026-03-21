@@ -440,10 +440,13 @@ func (c *Client) supabaseRPC(funcName string, body, dest any) error {
 // Job API
 // =========================================================================
 
-// SubmitJob submits a new job to Supabase (INSERT into jobs table).
+// SubmitJob submits a new job to Supabase (INSERT into hub_jobs table).
 func (c *Client) SubmitJob(req *JobSubmitRequest) (*JobSubmitResponse, error) {
+	if req.ID == "" {
+		req.ID = "j-" + newID()
+	}
 	var rows []Job
-	if err := c.supabasePost("/rest/v1/jobs", req, &rows); err != nil {
+	if err := c.supabasePost("/rest/v1/hub_jobs", req, &rows); err != nil {
 		return nil, fmt.Errorf("submit job: %w", err)
 	}
 	if len(rows) == 0 {
@@ -458,7 +461,7 @@ func (c *Client) SubmitJob(req *JobSubmitRequest) (*JobSubmitResponse, error) {
 // GetJob returns the status of a single job from Supabase.
 func (c *Client) GetJob(jobID string) (*Job, error) {
 	var rows []Job
-	if err := c.supabaseGet("/rest/v1/jobs?id=eq."+jobID, &rows); err != nil {
+	if err := c.supabaseGet("/rest/v1/hub_jobs?id=eq."+jobID, &rows); err != nil {
 		return nil, fmt.Errorf("get job: %w", err)
 	}
 	if len(rows) == 0 {
@@ -469,7 +472,7 @@ func (c *Client) GetJob(jobID string) (*Job, error) {
 
 // ListJobs returns jobs filtered by status (empty = all) from Supabase.
 func (c *Client) ListJobs(status string, limit int) ([]Job, error) {
-	path := "/rest/v1/jobs?order=created_at.desc"
+	path := "/rest/v1/hub_jobs?order=created_at.desc"
 	if status != "" {
 		path += "&status=eq." + status
 	}
@@ -487,7 +490,7 @@ func (c *Client) ListJobs(status string, limit int) ([]Job, error) {
 // CancelJob cancels a queued or running job via Supabase PATCH.
 func (c *Client) CancelJob(jobID string) error {
 	body := map[string]any{"status": "CANCELLED"}
-	if err := c.supabasePatch("/rest/v1/jobs?id=eq."+jobID, body, nil); err != nil {
+	if err := c.supabasePatch("/rest/v1/hub_jobs?id=eq."+jobID, body, nil); err != nil {
 		return fmt.Errorf("cancel job: %w", err)
 	}
 	return nil
@@ -510,7 +513,7 @@ func (c *Client) CompleteJob(jobID, status string, exitCode int) error {
 // limit ≤ 0 means no limit (server default).
 // Returns a slice of Job pointers for use with context-aware callers (e.g. HubPoller).
 func (c *Client) ListJobsCtx(ctx context.Context, status string, limit int) ([]*Job, error) {
-	path := "/rest/v1/jobs?order=created_at.desc"
+	path := "/rest/v1/hub_jobs?order=created_at.desc"
 	if status != "" {
 		path += "&status=eq." + status
 	}
@@ -545,7 +548,7 @@ func (c *Client) ListJobsCtx(ctx context.Context, status string, limit int) ([]*
 
 // GetJobLogsCtx returns log lines for a job via Supabase using the provided context.
 func (c *Client) GetJobLogsCtx(ctx context.Context, jobID string, offset, limit int) (*JobLogsResponse, error) {
-	path := fmt.Sprintf("/rest/v1/job_logs?job_id=eq.%s&offset=%d&limit=%d&order=line_number.asc", jobID, offset, limit)
+	path := fmt.Sprintf("/rest/v1/hub_job_logs?job_id=eq.%s&offset=%d&limit=%d&order=line_number.asc", jobID, offset, limit)
 	req, err := http.NewRequestWithContext(ctx, "GET", c.supabaseRestURL(path), nil)
 	if err != nil {
 		return nil, err

@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"text/tabwriter"
@@ -253,8 +254,13 @@ func newHubClient() (*hub.Client, error) {
 		}
 	}
 
+	// Auto-enable hub if Supabase cloud is configured (no separate hub.url needed).
+	cloudCfg := cfgMgr.GetConfig().Cloud
+	if !hubCfg.Enabled && cloudCfg.URL != "" {
+		hubCfg.Enabled = true
+	}
 	if !hubCfg.Enabled {
-		return nil, fmt.Errorf("hub is not enabled in .c4/config.yaml\n\nAdd:\n  hub:\n    enabled: true\n    url: \"http://<hub-ip>:8000\"")
+		return nil, fmt.Errorf("hub is not enabled — run: cq auth login")
 	}
 
 	// JWT fallback: if no API key configured, try cloud session JWT (cq auth login).
@@ -266,9 +272,25 @@ func newHubClient() (*hub.Client, error) {
 	}
 
 	// Resolve Supabase URL/key from cloud config for PostgREST access.
-	cloudCfg := cfgMgr.GetConfig().Cloud
+	// Prefer service_key (RLS bypass) over anon_key for Hub operations.
 	supabaseURL := cloudCfg.URL
-	supabaseKey := cloudCfg.AnonKey
+	supabaseKey := os.Getenv("SUPABASE_SERVICE_ROLE_KEY")
+	if supabaseKey == "" {
+		// Try project config.yaml cloud.service_key
+		if cfgData, err := os.ReadFile(filepath.Join(projectDir, ".c4", "config.yaml")); err == nil {
+			var cfgMap map[string]any
+			if yaml.Unmarshal(cfgData, &cfgMap) == nil {
+				if cloud, ok := cfgMap["cloud"].(map[string]any); ok {
+					if sk, ok := cloud["service_key"].(string); ok {
+						supabaseKey = sk
+					}
+				}
+			}
+		}
+	}
+	if supabaseKey == "" {
+		supabaseKey = cloudCfg.AnonKey
+	}
 
 	client := hub.NewClient(hub.HubConfig{
 		Enabled:      hubCfg.Enabled,
@@ -832,29 +854,15 @@ func runHubSubmit(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	ctx := context.Background()
+	_ = context.Background() // reserved for future Drive upload
 	cwd, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("getwd: %w", err)
 	}
 
-	// Upload current dir to Drive CAS (best-effort: skip if drive not configured).
+	// Drive snapshot upload is optional — skip for now (Supabase-native mode).
+	// TODO: re-enable with proper context cancellation support in drive.Upload.
 	var snapshotHash string
-	dc, dcErr := newDatasetClient()
-	if dcErr == nil {
-		projectID := getActiveProjectID(projectDir)
-		snapshotName := "hub-submit-" + projectID
-		result, upErr := dc.Upload(ctx, cwd, snapshotName, "")
-		if upErr != nil {
-			fmt.Fprintf(os.Stderr, "Warning: Drive upload failed (submitting without snapshot): %v\n", upErr)
-		} else {
-			snapshotHash = result.VersionHash
-			fmt.Printf("Snapshot uploaded: %s (changed=%v, files=%d)\n",
-				snapshotHash, result.Changed, result.FilesUploaded+result.FilesSkipped)
-		}
-	} else if verbose {
-		fmt.Fprintf(os.Stderr, "Drive not configured, skipping snapshot upload: %v\n", dcErr)
-	}
 
 	// git rev-parse HEAD (optional).
 	var gitHash string
