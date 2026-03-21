@@ -187,9 +187,9 @@ cq serve --port 4141   # 포트 지정
 | `eventsink` | `serve.eventsink.enabled: true` + `c3_eventbus` 빌드 태그 | C5→C4 HTTP 이벤트 수신 (:4141) |
 | `gpu` | `serve.gpu.enabled: true` | GPU/CPU 작업 스케줄러 (daemon 패키지 래핑) |
 | `agent` | `serve.agent.enabled: true` + `cloud.url` + `cloud.anon_key` 설정 | Supabase Realtime @cq mention → claude -p 디스패치; claim 직후 `c1_members.status="typing"` 비동기 알림, 완료 시 `"online"` 복원; `claude -p --dir <projectDir>` |
-| `ssesubscriber` | `serve.ssesubscriber.enabled: true` + `c5_hub && c3_eventbus` 빌드 태그 | C5 SSE 스트림 구독 → EventBus 전달 |
+| `ssesubscriber` | `serve.ssesubscriber.enabled: true` + `c5_hub && c3_eventbus` 빌드 태그 | Hub SSE 스트림 구독 → EventBus 전달 |
 | `stale_checker` | `serve.stale_checker.enabled: true` | 주기적 stale 태스크(in_progress stuck) 감지 → pending 리셋 + `task.stale` 이벤트 발행 |
-| `hub` | `serve.hub.enabled: true` | C5 Hub 서버를 자식 프로세스로 관리 (c5 바이너리 필요; PATH에 없으면 WARN 후 건너뜀) |
+| `hub` | `serve.hub.enabled: true` | Supabase 기반 Hub 작업 큐 연동 (cloud.url + cloud.anon_key 필요) |
 
 **컴포넌트 활성화** (`.c4/config.yaml`):
 ```yaml
@@ -209,9 +209,7 @@ serve:
     threshold_minutes: 30   # 이 시간 이상 in_progress이면 stale 판정
     interval_seconds: 60    # 체크 주기
   hub:
-    enabled: false          # true 시 c5 바이너리를 자식 프로세스로 시작
-    binary: c5              # PATH에서 탐색 (기본값)
-    port: 8585              # c5 serve --port 값
+    enabled: false          # true 시 Supabase 기반 Hub 연동 활성화 (cloud.url + cloud.anon_key 필요)
 ```
 
 **PID 파일**: `~/.c4/serve/serve.pid` (포트 `:4140`)
@@ -388,36 +386,7 @@ guard.denied      ← C6 Guard가 발행 (ActionDeny 시)
 
 ---
 
-## C5 Hub (c5/)
+## Hub (Supabase 기반)
 
-> Go 기반 분산 작업 큐 서버. Worker Pull 모델, Lease 기반. ~6.7K LOC.
-
-### 빌드/실행
-```bash
-cd c5 && go build ./... && go test ./...
-go build -o ~/bin/c5 ./cmd/c5/
-```
-
-### 설정 (c5.yaml)
-```bash
-# 초기 템플릿 생성
-c5 serve --print-config > ~/.config/c5/c5.yaml
-```
-
-```yaml
-# ~/.config/c5/c5.yaml
-server:
-  host: "0.0.0.0"
-  port: 8585
-eventbus:
-  url: "http://localhost:4141"  # C4 EventSink
-  token: ""
-storage:
-  path: "~/.local/share/c5"
-```
-
-우선순위: CLI 플래그 > 환경변수(C5_EVENTBUS_URL, C5_EVENTBUS_TOKEN) > c5.yaml > 기본값
-
-- `eventbus.url` 미설정 시 이벤트 발행 비활성화 (graceful fallback).
-- C4-core EventSink는 `:4141` 포트에서 `POST /v1/events/publish` 수신.
-- 발행 이벤트: `hub.job.started`, `hub.job.completed`, `hub.job.failed`, `hub.job.cancelled`
+> Hub 기능은 Supabase + c4-core로 이전 완료. Worker Pull + Lease 모델.
+> 설정: `cloud.url` + `cloud.anon_key` 필요. `serve.hub.enabled: true` 활성화.
