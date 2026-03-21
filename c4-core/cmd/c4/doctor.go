@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/changmin/c4-core/internal/standards"
+	embeddedstd "github.com/changmin/c4-core/standards"
 	"github.com/kardianos/service"
 	"github.com/spf13/cobra"
 )
@@ -708,6 +709,54 @@ func tryFix(r *checkResult) string {
 		r.Status = checkOK
 		r.Fix = ""
 		return "c4-bridge installed via uv"
+	case "standards":
+		lock, err := standards.ReadLock(projectDir)
+		if err != nil {
+			return ""
+		}
+		// Build a map from dst → src for quick lookup.
+		srcByDst := make(map[string]string, len(lock.Files))
+		for _, entry := range lock.Files {
+			srcByDst[entry.Dst] = entry.Src
+		}
+
+		diffs, err := standards.Check(projectDir)
+		if err != nil {
+			return ""
+		}
+
+		var restored []string
+		for _, d := range diffs {
+			if d.Status != standards.DiffModified && d.Status != standards.DiffMissing {
+				continue
+			}
+			// Skip local-*.md files — these are user-owned overrides.
+			if strings.HasPrefix(filepath.Base(d.FileName), "local-") && strings.HasSuffix(d.FileName, ".md") {
+				continue
+			}
+			src, ok := srcByDst[d.FileName]
+			if !ok {
+				continue
+			}
+			data, readErr := embeddedstd.FS.ReadFile(src)
+			if readErr != nil {
+				continue
+			}
+			dstAbs := filepath.Join(projectDir, d.FileName)
+			if mkErr := os.MkdirAll(filepath.Dir(dstAbs), 0o755); mkErr != nil {
+				continue
+			}
+			if writeErr := os.WriteFile(dstAbs, data, 0o644); writeErr != nil {
+				continue
+			}
+			restored = append(restored, d.FileName)
+		}
+
+		if len(restored) > 0 {
+			r.Status = checkOK
+			r.Fix = ""
+			return fmt.Sprintf("restored %d file(s): %s", len(restored), strings.Join(restored, ", "))
+		}
 	}
 	return ""
 }
