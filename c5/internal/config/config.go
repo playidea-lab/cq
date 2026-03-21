@@ -38,10 +38,11 @@ type EventBusConfig struct {
 
 // StorageConfig holds local storage settings.
 type StorageConfig struct {
-	Path             string `yaml:"path"`               // default "~/.local/share/c5"
-	SupabaseURL      string `yaml:"supabase_url"`       // "" = disabled
-	SupabaseKey      string `yaml:"supabase_key"`
-	MaxArtifactBytes int64  `yaml:"max_artifact_bytes"` // default 10GB (local backend only)
+	Path              string `yaml:"path"`                // default "~/.local/share/c5"
+	SupabaseURL       string `yaml:"supabase_url"`        // "" = disabled
+	SupabaseKey       string `yaml:"supabase_key"`
+	SupabaseDirectURL string `yaml:"supabase_direct_url"` // direct postgres:// URL (port 5432) for LISTEN/NOTIFY; not the pooler (port 6543)
+	MaxArtifactBytes  int64  `yaml:"max_artifact_bytes"`  // default 10GB (local backend only)
 }
 
 // Default returns a Config populated with default values.
@@ -83,6 +84,15 @@ func (c *Config) IsEventBusEnabled() bool {
 // IsSupabaseEnabled reports whether Supabase storage integration is active.
 func (c *Config) IsSupabaseEnabled() bool {
 	return c.Storage.SupabaseURL != "" && c.Storage.SupabaseKey != ""
+}
+
+// SupabaseDirectURL returns the direct PostgreSQL connection URL for LISTEN/NOTIFY.
+// It prefers the config field, then falls back to the C5_SUPABASE_DIRECT_URL env var.
+func (c *Config) SupabaseDirectURL() string {
+	if c.Storage.SupabaseDirectURL != "" {
+		return c.Storage.SupabaseDirectURL
+	}
+	return os.Getenv("C5_SUPABASE_DIRECT_URL")
 }
 
 // IsLLMEnabled reports whether server-side LLM processing is configured.
