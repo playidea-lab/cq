@@ -1,0 +1,147 @@
+# piki manifest — cq init 연동 설정
+# cq init --team <team> --lang <lang> 실행 시 이 파일을 참조하여
+# 어떤 파일을 프로젝트에 복사할지 결정합니다.
+
+version: 1
+source: https://git.pilab.co.kr/pi/piki
+
+# 항상 적용되는 레이어
+common:
+  rules:
+    - rules/common/security.md
+    - rules/common/git-workflow.md
+    - rules/common/review-criteria.md
+    - rules/common/testing.md
+  files:
+    - src: agents.md
+      dst: CLAUDE.md
+      merge: true          # 기존 CLAUDE.md가 있으면 병합
+    - src: soul.md
+      dst: .claude/rules/soul.md
+    - src: settings/default.json
+      dst: .claude/settings.json
+      overwrite: false      # 이미 있으면 스킵
+    - src: config/default.yaml
+      dst: .c4/config.yaml
+      overwrite: false
+
+# 언어별 레이어 (--lang 으로 선택)
+languages:
+  go:
+    rules:
+      - rules/go/style.md
+    validation:
+      lint: "go vet ./..."
+      build: "go build ./..."
+      unit: "go test ./..."
+    scaffold:
+      dirs:
+        - cmd
+        - internal
+        - test
+      files:
+        - go.mod
+
+  python:
+    rules:
+      - rules/python/style.md
+    validation:
+      lint: "uv run ruff check ."
+      format: "uv run ruff format --check ."
+      unit: "uv run pytest tests/unit/ -v"
+    scaffold:
+      dirs:
+        - src
+        - tests/unit
+        - tests/integration
+      files:
+        - pyproject.toml
+
+  ts:
+    aliases: [typescript]
+    rules:
+      - rules/typescript/style.md
+    validation:
+      lint: "pnpm lint"
+      build: "pnpm build"
+      unit: "pnpm test"
+    scaffold:
+      dirs:
+        - src/components
+        - src/hooks
+        - src/utils
+        - src/types
+      files:
+        - package.json
+        - tsconfig.json
+
+# 팀별 레이어 (--team 으로 선택)
+teams:
+  backend:
+    rules:
+      - teams/backend/rules/backend.md
+    default_langs: [go]
+    domain: backend
+
+  frontend:
+    rules:
+      - teams/frontend/rules/frontend.md
+    default_langs: [ts]
+    domain: frontend
+
+  infra:
+    rules:
+      - teams/infra/rules/infra.md
+    default_langs: [go, python]
+    domain: infra
+
+  mlops:
+    rules:
+      - teams/mlops/rules/mlops.md
+    default_langs: [python]
+    domain: mlops
+
+  research:
+    rules:
+      - teams/research/rules/research.md
+    default_langs: [python]
+    domain: research
+
+  security:
+    rules:
+      - teams/security/rules/security-team.md
+    default_langs: []
+    domain: security
+
+# Skills — cq init 시 프로젝트에 복사 가능한 스킬
+skills:
+  company-review:
+    src: skills/company-review/skill.md
+    auto_install: true      # 모든 프로젝트에 자동 설치
+
+  deploy:
+    src: skills/deploy/skill.md
+    auto_install: false     # 명시적 설치만
+
+  onboarding:
+    src: skills/onboarding/skill.md
+    auto_install: false
+
+# 적용 순서 (우선순위: 높은 번호가 낮은 번호를 오버라이드)
+# 1. common (항상)
+# 2. languages (--lang)
+# 3. teams (--team)
+# 4. local-*.md (프로젝트 고유, piki가 관리하지 않음)
+
+# cq doctor 설정
+doctor:
+  check_version: true       # piki 버전과 로컬 규칙 버전 비교
+  check_gitignore:           # .gitignore 필수 패턴 확인
+    - .env
+    - .env.*
+    - "*.pem"
+    - "*.key"
+    - credentials.json
+  check_files:               # 필수 파일 존재 확인
+    - CLAUDE.md
+    - .gitignore

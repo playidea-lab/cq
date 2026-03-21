@@ -1,0 +1,27 @@
+# CQ 기본 설정 — piki 회사 표준
+# 프로젝트별 오버라이드: .c4/config.yaml에서 직접 수정
+
+project_id: ""  # cq init 시 자동 설정
+domain: ""      # cq init --team 시 자동 설정
+default_branch: main
+
+economic_mode:
+  enabled: true
+  preset: standard
+
+validation:
+  # 언어 자동 감지 후 적용 (cq init --lang)
+  # go:
+  #   lint: "go vet ./..."
+  #   unit: "go test ./..."
+  # python:
+  #   lint: "uv run ruff check ."
+  #   unit: "uv run pytest tests/unit/ -v"
+  # typescript:
+  #   lint: "pnpm lint"
+  #   unit: "pnpm test"
+
+permission_reviewer:
+  enabled: true
+  mode: hook
+  auto_approve: true
