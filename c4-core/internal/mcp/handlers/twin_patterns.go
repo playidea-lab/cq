@@ -29,6 +29,9 @@ func (s *SQLiteStore) DetectPatterns(personaID string) []Pattern {
 	// Pattern 6: Task completion speed change
 	patterns = append(patterns, s.detectSpeedChange()...)
 
+	// Pattern 7: LLM usage patterns from trace_steps
+	patterns = append(patterns, s.detectLLMUsagePattern()...)
+
 	return patterns
 }
 
@@ -283,6 +286,103 @@ func (s *SQLiteStore) detectFeedbackKeywords() []Pattern {
 			})
 		}
 	}
+	return patterns
+}
+
+// detectLLMUsagePattern analyzes trace_steps for LLM usage patterns.
+// If the trace_steps table does not exist, it returns an empty slice (graceful skip).
+func (s *SQLiteStore) detectLLMUsagePattern() []Pattern {
+	// Graceful skip if trace_steps table doesn't exist.
+	var tblCount int
+	if err := s.db.QueryRow(
+		`SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='trace_steps'`,
+	).Scan(&tblCount); err != nil || tblCount == 0 {
+		return nil
+	}
+
+	// --- Pattern A: opus overuse ---
+	rows, err := s.db.Query(`
+		SELECT model, COUNT(*) as cnt
+		FROM trace_steps
+		WHERE step_type='llm'
+		GROUP BY model`)
+	if err != nil {
+		return nil
+	}
+
+	var patterns []Pattern
+	modelCounts := map[string]int{}
+	var total int
+	for rows.Next() {
+		var model string
+		var cnt int
+		if err := rows.Scan(&model, &cnt); err != nil {
+			continue
+		}
+		modelCounts[model] = cnt
+		total += cnt
+	}
+	rows.Close()
+
+	if total > 0 {
+		opusCount := 0
+		for model, cnt := range modelCounts {
+			if strings.Contains(strings.ToLower(model), "opus") {
+				opusCount += cnt
+			}
+		}
+		opusRatio := float64(opusCount) / float64(total) * 100
+		if opusRatio >= 60 {
+			patterns = append(patterns, Pattern{
+				Type:        "behavioral",
+				Severity:    "warning",
+				Description: fmt.Sprintf("opus 과다 사용 — sonnet 전환 검토 (opus %.0f%%)", opusRatio),
+				Evidence:    []string{fmt.Sprintf("opus: %d / total: %d LLM calls", opusCount, total)},
+				Suggestion:  "opus 비율이 60%+입니다. 비용 절감을 위해 sonnet 전환을 검토하세요.",
+			})
+		}
+	}
+
+	// --- Pattern B: LLM usage growth (recent 7d vs previous 7d) ---
+	var recentCount, prevCount int
+	if err := s.db.QueryRow(`
+		SELECT COUNT(*) FROM trace_steps
+		WHERE step_type='llm'
+		  AND ts >= datetime('now', '-7 days')`).Scan(&recentCount); err != nil {
+		return patterns
+	}
+	if err := s.db.QueryRow(`
+		SELECT COUNT(*) FROM trace_steps
+		WHERE step_type='llm'
+		  AND ts >= datetime('now', '-14 days')
+		  AND ts <  datetime('now', '-7 days')`).Scan(&prevCount); err != nil {
+		return patterns
+	}
+
+	if prevCount > 0 {
+		changePct := (float64(recentCount) - float64(prevCount)) / float64(prevCount) * 100
+		direction := "증가"
+		if changePct < 0 {
+			direction = "감소"
+		}
+		absPct := changePct
+		if absPct < 0 {
+			absPct = -absPct
+		}
+		if absPct >= 20 {
+			patterns = append(patterns, Pattern{
+				Type:        "growth",
+				Severity:    "info",
+				Description: fmt.Sprintf("LLM 사용량 %.0f%% %s (최근 7일: %d, 이전 7일: %d)", absPct, direction, recentCount, prevCount),
+				Evidence: []string{
+					fmt.Sprintf("최근 7일 LLM 호출: %d", recentCount),
+					fmt.Sprintf("이전 7일 LLM 호출: %d", prevCount),
+				},
+				Suggestion: "LLM 사용량 변화를 확인하세요.",
+			})
+		}
+	}
+
 	return patterns
 }
 
