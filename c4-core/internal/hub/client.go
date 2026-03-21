@@ -586,41 +586,76 @@ func (c *Client) GetJobLogsCtx(ctx context.Context, jobID string, offset, limit 
 // Workers API
 // =========================================================================
 
-// ListWorkers returns registered workers. If activeOnly is true (default),
-// only non-offline workers are returned.
+// ListWorkers returns registered workers from Supabase hub_workers table.
+// If activeOnly is true (default), only non-offline workers are returned.
 func (c *Client) ListWorkers(activeOnly ...bool) ([]Worker, error) {
-	path := "/workers?active_only=true"
+	path := "/rest/v1/hub_workers?status=neq.offline&order=registered_at.desc"
 	if len(activeOnly) > 0 && !activeOnly[0] {
-		path = "/workers?active_only=false"
+		path = "/rest/v1/hub_workers?order=registered_at.desc"
 	}
 	var workers []Worker
-	if err := c.get(path, &workers); err != nil {
+	if err := c.supabaseGet(path, &workers); err != nil {
 		return nil, fmt.Errorf("list workers: %w", err)
 	}
 	return workers, nil
 }
 
-// PruneWorkers removes offline workers. If dryRun is true, only returns
-// the list of workers that would be pruned without actually deleting them.
+// PruneWorkers removes workers whose last_heartbeat is older than 5 minutes.
+// If dryRun is true, counts would-be pruned workers without deleting them.
 func (c *Client) PruneWorkers(dryRun bool) (int, error) {
-	body := map[string]any{"dry_run": dryRun}
-	var resp struct {
-		Purged int `json:"purged"`
+	threshold := time.Now().UTC().Add(-5 * time.Minute).Format(time.RFC3339)
+	path := "/rest/v1/hub_workers?last_heartbeat=lt." + threshold
+
+	if dryRun {
+		// Count workers that would be pruned without deleting.
+		var workers []Worker
+		if err := c.supabaseGet(path, &workers); err != nil {
+			return 0, fmt.Errorf("prune workers (dry run): %w", err)
+		}
+		return len(workers), nil
 	}
-	if err := c.post("/workers/prune", body, &resp); err != nil {
+
+	// DELETE stale workers.
+	req, err := http.NewRequest("DELETE", c.supabaseRestURL(path), nil)
+	if err != nil {
+		return 0, err
+	}
+	c.setSupabaseHeaders(req)
+	req.Header.Set("Prefer", "return=representation")
+
+	resp, err := c.doWithRetry(req)
+	if err != nil {
 		return 0, fmt.Errorf("prune workers: %w", err)
 	}
-	return resp.Purged, nil
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		body, _ := io.ReadAll(resp.Body)
+		return 0, fmt.Errorf("prune workers: %d %s", resp.StatusCode, string(body))
+	}
+
+	var deleted []Worker
+	if err := json.NewDecoder(resp.Body).Decode(&deleted); err != nil {
+		return 0, nil // DELETE may return empty body; treat as 0 deleted
+	}
+	return len(deleted), nil
 }
 
-// HealthCheck returns true if the Hub is reachable and healthy.
+// HealthCheck returns true if the Supabase PostgREST endpoint is reachable.
 func (c *Client) HealthCheck() bool {
-	var result map[string]any
-	if err := c.get("/health", &result); err != nil {
+	req, err := http.NewRequest("GET", c.supabaseRestURL("/rest/v1/"), nil)
+	if err != nil {
 		return false
 	}
-	s, _ := result["status"].(string)
-	return s == "healthy" || s == "ok"
+	c.setSupabaseHeaders(req)
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := c.doWithRetry(req)
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+	return resp.StatusCode < 400
 }
 
 // =========================================================================
