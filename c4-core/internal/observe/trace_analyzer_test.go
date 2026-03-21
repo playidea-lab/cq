@@ -88,7 +88,7 @@ func TestTraceAnalyzer_BestModel(t *testing.T) {
 		t.Fatalf("insert trace: %v", err)
 	}
 
-	// model-x: 3 successes; model-y: 1 success
+	// model-x: 3 successes (100%); model-y: 1 success + 1 failure (50%)
 	for _, row := range []struct {
 		model   string
 		success int
@@ -97,6 +97,7 @@ func TestTraceAnalyzer_BestModel(t *testing.T) {
 		{"model-x", 1},
 		{"model-x", 1},
 		{"model-y", 1},
+		{"model-y", 0},
 	} {
 		_, err := db.Exec(
 			`INSERT INTO trace_steps (trace_id, step_type, ts, model, task_type, success)

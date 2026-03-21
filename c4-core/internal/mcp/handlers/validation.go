@@ -273,15 +273,6 @@ func detectValidations(rootDir string) []validationDef {
 		})
 	}
 
-	// Cargo (Rust)
-	if fileExists(rootDir, "c1/src-tauri/Cargo.toml") {
-		defs = append(defs, validationDef{
-			Name:    "cargo-check",
-			Command: "cargo",
-			Args:    []string{"check", "--manifest-path", "c1/src-tauri/Cargo.toml"},
-		})
-	}
-
 	return defs
 }
 
