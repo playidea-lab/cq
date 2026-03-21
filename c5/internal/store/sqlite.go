@@ -361,6 +361,8 @@ func (s *Store) migrate() error {
 		`ALTER TABLE jobs ADD COLUMN target_worker TEXT NOT NULL DEFAULT ''`,
 		// Migration: scoped API keys — add scope column (full/user/worker).
 		`ALTER TABLE api_keys ADD COLUMN scope TEXT NOT NULL DEFAULT 'full'`,
+		// Migration: Hub Push Dispatch — store worker MCP endpoint URL.
+		`ALTER TABLE workers ADD COLUMN mcp_url TEXT NOT NULL DEFAULT ''`,
 		// Migration: experiment registry tables.
 		`CREATE TABLE IF NOT EXISTS experiment_runs (
 			run_id       TEXT PRIMARY KEY,
@@ -697,16 +699,17 @@ func (s *Store) RegisterWorker(req *model.WorkerRegisterRequest) (*model.Worker,
 		Tags:          req.Tags,
 		ProjectID:     req.ProjectID,
 		Version:       req.Version,
+		MCPURL:        req.MCPURL,
 		LastHeartbeat: now,
 		RegisteredAt:  now,
 	}
 
 	_, err := s.db.Exec(`
 		INSERT INTO workers (id, hostname, status, gpu_count, gpu_model,
-			total_vram, free_vram, tags, project_id, version, last_heartbeat, registered_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			total_vram, free_vram, tags, project_id, version, mcp_url, last_heartbeat, registered_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		w.ID, w.Hostname, w.Status, w.GPUCount, w.GPUModel,
-		w.TotalVRAM, w.FreeVRAM, marshalJSON(w.Tags), w.ProjectID, w.Version,
+		w.TotalVRAM, w.FreeVRAM, marshalJSON(w.Tags), w.ProjectID, w.Version, w.MCPURL,
 		now.Format(time.RFC3339), now.Format(time.RFC3339),
 	)
 	if err != nil {
@@ -765,7 +768,7 @@ func (s *Store) UpdateHeartbeat(req *model.HeartbeatRequest) error {
 func (s *Store) ListWorkers(projectID string) ([]*model.Worker, error) {
 	query := `SELECT id, hostname, status, gpu_count, gpu_model,
 		total_vram, free_vram, tags, project_id, version, last_heartbeat, registered_at,
-		name, uptime_sec, last_job_at
+		name, uptime_sec, last_job_at, mcp_url
 		FROM workers`
 	args := []any{}
 	if projectID != "" {
@@ -795,7 +798,7 @@ func (s *Store) GetWorker(id string) (*model.Worker, error) {
 	row := s.db.QueryRow(`
 		SELECT id, hostname, status, gpu_count, gpu_model,
 			total_vram, free_vram, tags, project_id, version, last_heartbeat, registered_at,
-			name, uptime_sec, last_job_at
+			name, uptime_sec, last_job_at, mcp_url
 		FROM workers WHERE id = ?`, id)
 	return scanWorkerSingle(row)
 }
@@ -2557,7 +2560,7 @@ func scanWorkerRow(rows *sql.Rows) (*model.Worker, error) {
 	err := rows.Scan(
 		&w.ID, &w.Hostname, &w.Status, &w.GPUCount, &w.GPUModel,
 		&w.TotalVRAM, &w.FreeVRAM, &tagsJSON, &w.ProjectID, &w.Version, &lastHB, &regAt,
-		&w.Name, &w.UptimeSec, &w.LastJobAt,
+		&w.Name, &w.UptimeSec, &w.LastJobAt, &w.MCPURL,
 	)
 	if err != nil {
 		return nil, err
@@ -2576,7 +2579,7 @@ func scanWorkerSingle(row *sql.Row) (*model.Worker, error) {
 	err := row.Scan(
 		&w.ID, &w.Hostname, &w.Status, &w.GPUCount, &w.GPUModel,
 		&w.TotalVRAM, &w.FreeVRAM, &tagsJSON, &w.ProjectID, &w.Version, &lastHB, &regAt,
-		&w.Name, &w.UptimeSec, &w.LastJobAt,
+		&w.Name, &w.UptimeSec, &w.LastJobAt, &w.MCPURL,
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {

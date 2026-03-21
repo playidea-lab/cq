@@ -186,6 +186,7 @@ type Worker struct {
 	// LastJobAt is RFC3339 timestamp of the last completed job.
 	// Empty string means no job has been processed yet (do not use zero-time strings).
 	LastJobAt     string           `json:"last_job_at,omitempty"`
+	MCPURL        string           `json:"mcp_url,omitempty"`
 	LastHeartbeat time.Time        `json:"last_heartbeat"`
 	RegisteredAt  time.Time        `json:"registered_at"`
 	Affinity      []AffinityRecord `json:"affinity,omitempty"`
@@ -290,6 +291,7 @@ type WorkerRegisterRequest struct {
 	Capabilities  map[string]any `json:"capabilities,omitempty"`
 	CapabilitySet []Capability   `json:"capability_set,omitempty"` // structured capabilities
 	Version       string         `json:"version,omitempty"`
+	MCPURL        string         `json:"mcp_url,omitempty"`
 }
 
 // WorkerRegisterResponse is returned from POST /v1/workers/register.
