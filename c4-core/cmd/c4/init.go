@@ -299,7 +299,7 @@ func initAndLaunch(tool string) error {
 		if initLangs != "" {
 			langs = strings.Split(initLangs, ",")
 		}
-		result, err := stdpkg.Apply(dir, initTeam, langs)
+		result, err := stdpkg.Apply(dir, initTeam, langs, stdpkg.ApplyOptions{})
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "cq: warning: standards setup failed: %v\n", err)
 		} else {

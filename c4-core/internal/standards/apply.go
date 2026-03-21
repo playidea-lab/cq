@@ -13,10 +13,18 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// ApplyOptions controls Apply() behaviour.
+type ApplyOptions struct {
+	// Force overwrites files that have been locally modified since last Apply.
+	// When false (default), modified files are skipped and reported in FilesSkipped.
+	Force bool
+}
+
 // ApplyResult reports what Apply() did.
 type ApplyResult struct {
 	FilesCreated []string
-	FilesSkipped []string // already existed with overwrite=false
+	FilesSkipped []string // already existed with overwrite=false, or user-modified without Force
+	FilesRemoved []string // orphaned files removed after team/lang change
 	Team         string
 	Langs        []string
 }
@@ -38,10 +46,21 @@ type lockFile struct {
 
 // Apply copies standard files to projectDir according to the manifest layers:
 // common → lang (in order) → team. Writes .piki-lock.yaml on success.
-func Apply(projectDir string, team string, langs []string) (*ApplyResult, error) {
+func Apply(projectDir string, team string, langs []string, opts ApplyOptions) (*ApplyResult, error) {
 	m, err := Parse()
 	if err != nil {
 		return nil, err
+	}
+
+	// Read old lock (if any) to detect orphans and modified files.
+	oldLock, _ := ReadLock(projectDir) // ignore error — may not exist yet
+
+	// Build a map from dst → hash from the old lock for fast lookup.
+	oldHashByDst := make(map[string]string)
+	if oldLock != nil {
+		for _, e := range oldLock.Files {
+			oldHashByDst[e.Dst] = e.Hash
+		}
 	}
 
 	result := &ApplyResult{
@@ -96,6 +115,23 @@ func Apply(projectDir string, team string, langs []string) (*ApplyResult, error)
 			if !doOverwrite {
 				result.FilesSkipped = append(result.FilesSkipped, dst)
 				return nil
+			}
+
+			// Check if the file was modified by the user since last Apply.
+			if !opts.Force {
+				if lockHash, tracked := oldHashByDst[dst]; tracked {
+					existing, err2 := os.ReadFile(dstAbs)
+					if err2 == nil {
+						currentHash := fmt.Sprintf("%x", sha256.Sum256(existing))[:8]
+						if currentHash != lockHash {
+							// User has modified this file — skip it.
+							result.FilesSkipped = append(result.FilesSkipped, dst)
+							// Still record in lock so it is not treated as orphan.
+							lockEntries = append(lockEntries, lockEntry{Src: src, Dst: dst, Hash: currentHash})
+							return nil
+						}
+					}
+				}
 			}
 		}
 
@@ -202,6 +238,23 @@ func Apply(projectDir string, team string, langs []string) (*ApplyResult, error)
 	lockPath := filepath.Join(projectDir, ".piki-lock.yaml")
 	if err := os.WriteFile(lockPath, lockData, 0o644); err != nil {
 		return nil, fmt.Errorf("standards: write .piki-lock.yaml: %w", err)
+	}
+
+	// 9. Remove orphaned files — present in old lock but not in new lock.
+	if oldLock != nil {
+		newDsts := make(map[string]bool, len(lockEntries))
+		for _, e := range lockEntries {
+			newDsts[e.Dst] = true
+		}
+		for _, e := range oldLock.Files {
+			if newDsts[e.Dst] {
+				continue
+			}
+			dstAbs := filepath.Join(projectDir, e.Dst)
+			if rmErr := os.Remove(dstAbs); rmErr == nil {
+				result.FilesRemoved = append(result.FilesRemoved, e.Dst)
+			}
+		}
 	}
 
 	return result, nil
