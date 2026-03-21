@@ -341,14 +341,14 @@ func TestProfileSaveHandler_InvalidJSON(t *testing.T) {
 // Registration test
 // =========================================================================
 
-func TestRegisterC2NativeHandlersToolCount(t *testing.T) {
+func TestC2NativeHandlersToolCount(t *testing.T) {
 	reg := newC2Registry(t)
 	tools := reg.ListTools()
-	if len(tools) != 6 {
+	if len(tools) != 7 {
 		names := make([]string, 0, len(tools))
 		for _, tool := range tools {
 			names = append(names, tool.Name)
 		}
-		t.Errorf("registered %d c2 tools, want 6: %v", len(tools), names)
+		t.Errorf("registered %d c2 tools, want 7: %v", len(tools), names)
 	}
 }
