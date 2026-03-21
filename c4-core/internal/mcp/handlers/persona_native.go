@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -180,6 +181,18 @@ func personaLearnFromDiffHandler() mcp.HandlerFunc {
 		if data, err := os.ReadFile(patternsPath); err == nil && len(data) > 0 {
 			_ = json.Unmarshal(data, &existing)
 		}
+
+		// Seed from global if project has no patterns yet
+		if len(existing) == 0 {
+			if err := persona.SeedFromGlobal(patternsPath, username); err != nil {
+				slog.Warn("persona: SeedFromGlobal failed", "error", err)
+			}
+			// Re-read after seeding
+			if data, err := os.ReadFile(patternsPath); err == nil && len(data) > 0 {
+				_ = json.Unmarshal(data, &existing)
+			}
+		}
+
 		existing = append(existing, allPatterns...)
 
 		// Ensure directory exists
@@ -192,8 +205,7 @@ func personaLearnFromDiffHandler() mcp.HandlerFunc {
 
 		// Merge to global persona store (non-fatal)
 		if err := persona.MergeToGlobal(patternsPath, username); err != nil {
-			// log but do not fail the handler
-			_ = err
+			slog.Warn("persona: MergeToGlobal failed", "error", err)
 		}
 
 		return map[string]any{
