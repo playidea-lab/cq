@@ -69,9 +69,17 @@ func initObserve(ctx *initContext) error {
 	handlers.InitObserveState(logger, metrics, level, format)
 	handlers.InitLogRingBuffer(500)
 
+	// Initialize trace analysis handlers when a DB is available.
+	if ctx.db != nil {
+		analyzer := observe.NewTraceAnalyzer(ctx.db)
+		policy := observe.NewTraceDrivenPolicy(analyzer, 0)
+		handlers.InitObserveTraceState(ctx.db, analyzer, policy)
+	}
+
 	// Register MCP tools.
 	handlers.RegisterObserveHandlers(ctx.reg)
+	handlers.RegisterObserveTraceHandlers(ctx.reg)
 
-	fmt.Fprintf(os.Stderr, "cq: observe enabled (level=%s, format=%s, 4 tools)\n", cfg.LogLevel, cfg.LogFormat)
+	fmt.Fprintf(os.Stderr, "cq: observe enabled (level=%s, format=%s, 7 tools)\n", cfg.LogLevel, cfg.LogFormat)
 	return nil
 }
