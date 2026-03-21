@@ -18,6 +18,7 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/changmin/c4-core/internal/hub"
 	"github.com/changmin/c4-core/internal/mcp/handlers/cfghandler"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
@@ -617,136 +618,257 @@ func runWorkerStart(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	cfgPath := workerConfigPath()
+	// Resolve Supabase URL from cloud config.
+	supabaseURL, supabaseKey := resolveSupabaseConfig()
+	if supabaseURL == "" {
+		return fmt.Errorf("cloud not configured — run: cq auth login")
+	}
 
+	// JWT for Supabase auth.
+	apiKey := supabaseKey
+	if apiKey == "" {
+		if jwt := loadCloudSessionJWT(); jwt != "" {
+			apiKey = jwt
+			fmt.Fprintln(os.Stderr, "cq: using cloud session JWT for worker auth")
+		}
+	}
+	if apiKey == "" {
+		return fmt.Errorf("no auth token — run: cq auth login")
+	}
+
+	// Sync hub settings to .c4/config.yaml so MCP tools are available.
+	if supabaseURL != "" {
+		cfgYAMLPath := filepath.Join(projectDir, ".c4", "config.yaml")
+		_ = cfghandler.UpdateYAMLValue(cfgYAMLPath, "hub.enabled", "true")
+		_ = cfghandler.UpdateYAMLValue(cfgYAMLPath, "cloud.url", supabaseURL)
+		fmt.Printf("cq: hub.enabled=true, cloud.url=%s\n", supabaseURL)
+	}
+
+	// Resolve direct URL for LISTEN/NOTIFY (port 5432).
+	directURL := os.Getenv("C4_CLOUD_DIRECT_URL")
+	if directURL == "" {
+		// Try config.yaml cloud.direct_url
+		home, _ := os.UserHomeDir()
+		cfgYAMLPath := filepath.Join(home, ".c4", "config.yaml")
+		if cfgData, readErr := os.ReadFile(cfgYAMLPath); readErr == nil {
+			var cfgMap map[string]any
+			if yaml.Unmarshal(cfgData, &cfgMap) == nil {
+				if cloud, ok := cfgMap["cloud"].(map[string]any); ok {
+					if u, ok := cloud["direct_url"].(string); ok {
+						directURL = u
+					}
+				}
+			}
+		}
+	}
+
+	// Worker name from config or hostname.
+	cfgPath := workerConfigPath()
 	cfg := workerYAML{}
 	if data, err := os.ReadFile(cfgPath); err == nil {
 		_ = yaml.Unmarshal(data, &cfg)
 	}
+	workerName := cfg.Name
+	if workerName == "" {
+		workerName, _ = os.Hostname()
+	}
 
-	// Auto-init: if config is missing hub_url, try env vars and run init inline.
-	if cfg.HubURL == "" {
-		envURL := os.Getenv("C5_HUB_URL")
-		envKey := os.Getenv("C5_API_KEY")
-		if envURL == "" && builtinHubURL != "" {
-			envURL = builtinHubURL
-		}
-		// JWT fallback: if no API key but cloud session exists, use JWT.
-		if envKey == "" {
-			if jwt := loadCloudSessionJWT(); jwt != "" {
-				envKey = jwt
-				fmt.Fprintln(os.Stderr, "cq: using cloud session JWT as C5_API_KEY (auto-refresh not supported — re-login if expired)")
+	fmt.Printf("cq: worker starting (name=%s, supabase=%s)\n", workerName, supabaseURL)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Register worker via Supabase PostgREST.
+	registerURL := supabaseURL + "/rest/v1/rpc/register_worker"
+	regBody, _ := json.Marshal(map[string]any{
+		"p_worker_id":   workerName,
+		"p_hostname":    workerName,
+		"p_capabilities": []string{},
+		"p_mcp_url":    "",
+		"p_project_id": "",
+	})
+	regReq, _ := http.NewRequestWithContext(ctx, "POST", registerURL, strings.NewReader(string(regBody)))
+	regReq.Header.Set("Content-Type", "application/json")
+	regReq.Header.Set("apikey", apiKey)
+	regReq.Header.Set("Authorization", "Bearer "+apiKey)
+	if resp, err := http.DefaultClient.Do(regReq); err == nil {
+		io.Copy(io.Discard, resp.Body)
+		resp.Body.Close()
+		fmt.Printf("cq: worker registered (status=%d)\n", resp.StatusCode)
+	} else {
+		fmt.Fprintf(os.Stderr, "cq: warning: worker registration failed: %v\n", err)
+	}
+
+	// Poll loop: check for QUEUED jobs every 30 seconds.
+	// If direct_url is set, also use LISTEN/NOTIFY for real-time.
+	pollInterval := 30 * time.Second
+	fmt.Printf("cq: polling for jobs every %s", pollInterval)
+	if directURL != "" {
+		fmt.Printf(" + LISTEN/NOTIFY on %s", directURL[:30]+"...")
+	}
+	fmt.Println()
+
+	// Start LISTEN/NOTIFY in background if direct_url available.
+	if directURL != "" {
+		listener := hub.NewJobListener(directURL)
+		go func() {
+			err := listener.Listen(ctx, func(n hub.JobNotification) error {
+				if n.Payload != "" {
+					fmt.Printf("cq: NOTIFY received: job %s\n", n.Payload)
+				}
+				// Try to claim a job.
+				claimAndRun(ctx, supabaseURL, apiKey, workerName)
+				return nil
+			})
+			if err != nil && ctx.Err() == nil {
+				fmt.Fprintf(os.Stderr, "cq: LISTEN/NOTIFY stopped: %v\n", err)
 			}
-		}
-		if envURL != "" && envKey != "" {
-			fmt.Println("No worker config found — auto-initializing from C5_HUB_URL / C5_API_KEY...")
-			workerInitHubURL = envURL
-			workerInitAPIKey = envKey
-			workerInitNonInteractive = true
-			if err := runWorkerInit(nil, nil); err != nil {
-				return fmt.Errorf("auto-init: %w", err)
-			}
-			// Reload config after init.
-			if data, err := os.ReadFile(cfgPath); err == nil {
-				_ = yaml.Unmarshal(data, &cfg)
-			}
-		} else {
-			return fmt.Errorf("hub_url not set — run: cq hub worker init, or set C5_HUB_URL + C5_API_KEY env vars\n  Tip: cq auth login --device → cq hub worker start (JWT auto-fallback)")
-		}
+		}()
 	}
 
-	// JWT fallback for existing config without API key.
-	if cfg.APIKey == "" {
-		if jwt := loadCloudSessionJWT(); jwt != "" {
-			cfg.APIKey = jwt
-			fmt.Fprintln(os.Stderr, "cq: using cloud session JWT as C5_API_KEY")
-		}
-	}
+	// Main poll loop.
+	ticker := time.NewTicker(pollInterval)
+	defer ticker.Stop()
 
-	// Sync hub settings to .c4/config.yaml so MCP tools (c4_hub_*) are available.
-	if cfg.HubURL != "" && !strings.ContainsAny(cfg.HubURL, " \t") {
-		cfgPath := filepath.Join(projectDir, ".c4", "config.yaml")
-		errEnabled := cfghandler.UpdateYAMLValue(cfgPath, "hub.enabled", "true")
-		errURL := cfghandler.UpdateYAMLValue(cfgPath, "hub.url", cfg.HubURL)
-		if errEnabled != nil {
-			fmt.Fprintf(os.Stderr, "cq: warning: could not update hub.enabled: %v\n", errEnabled)
-		}
-		if errURL != nil {
-			fmt.Fprintf(os.Stderr, "cq: warning: could not update hub.url: %v\n", errURL)
-		}
-		if errEnabled == nil && errURL == nil {
-			fmt.Printf("cq: hub.enabled=true, hub.url=%s written to .c4/config.yaml\n", cfg.HubURL)
-		}
-	}
+	// Initial poll.
+	claimAndRun(ctx, supabaseURL, apiKey, workerName)
 
-	binary := resolvec5Binary(cfg)
-
-	// Build args: c5 worker [--server <url>] [--capabilities <file>] [--name <name>]
-	cmdArgs := []string{"worker"}
-	if cfg.HubURL != "" {
-		cmdArgs = append(cmdArgs, "--server", cfg.HubURL)
-	}
-	if cfg.Capabilities != "" {
-		cmdArgs = append(cmdArgs, "--capabilities", cfg.Capabilities)
-	}
-	if cfg.Name != "" {
-		cmdArgs = append(cmdArgs, "--name", cfg.Name)
-	}
-
-	isJWT := cfg.APIKey != "" && strings.Count(cfg.APIKey, ".") == 2
-
-	fmt.Printf("Starting: %s %s\n", binary, strings.Join(cmdArgs, " "))
-
-	const maxJWTRetries = 3
-	jwtRetries := 0
 	for {
-		c := workerExecCommand(binary, cmdArgs...)
-		c.Stdout = os.Stdout
-		c.Stderr = os.Stderr
-		c.Env = append(os.Environ(), "C5_API_KEY="+cfg.APIKey)
-
-		err := c.Run()
-		if err == nil {
-			return nil // clean exit
+		select {
+		case <-ctx.Done():
+			fmt.Println("cq: worker stopped")
+			return nil
+		case <-ticker.C:
+			claimAndRun(ctx, supabaseURL, apiKey, workerName)
 		}
+	}
+}
 
-		// JWT refresh: if using JWT and process exited with error,
-		// try refreshing the token before restarting.
-		if !isJWT {
-			return err // non-JWT: propagate error as-is
+// resolveSupabaseConfig reads Supabase URL and anon key from env vars or config.
+func resolveSupabaseConfig() (url, key string) {
+	url = os.Getenv("C4_CLOUD_URL")
+	if url == "" {
+		url = os.Getenv("SUPABASE_URL")
+	}
+	key = os.Getenv("C4_CLOUD_ANON_KEY")
+	if key == "" {
+		key = os.Getenv("SUPABASE_KEY")
+	}
+	if url == "" || key == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return
 		}
-
-		exitCode := -1
-		var exitErr *exec.ExitError
-		if errors.As(err, &exitErr) {
-			exitCode = exitErr.ExitCode()
+		cfgPath := filepath.Join(home, ".c4", "config.yaml")
+		data, err := os.ReadFile(cfgPath)
+		if err != nil {
+			return
 		}
-
-		jwtRetries++
-		if jwtRetries > maxJWTRetries {
-			fmt.Fprintf(os.Stderr, "cq: JWT retry limit (%d) reached — giving up\n", maxJWTRetries)
-			return err
+		var cfgMap map[string]any
+		if yaml.Unmarshal(data, &cfgMap) != nil {
+			return
 		}
-
-		fmt.Fprintf(os.Stderr, "cq: worker exited (code=%d), attempting JWT refresh (%d/%d)...\n", exitCode, jwtRetries, maxJWTRetries)
-
-		newJWT := loadCloudSessionJWT()
-		if newJWT == "" || newJWT == cfg.APIKey {
-			// No new JWT available — try cloud session refresh
-			if refreshErr := refreshCloudSession(); refreshErr != nil {
-				fmt.Fprintf(os.Stderr, "cq: JWT refresh failed: %v\n", refreshErr)
-				return err
+		if cloud, ok := cfgMap["cloud"].(map[string]any); ok {
+			if url == "" {
+				if u, ok := cloud["url"].(string); ok {
+					url = u
+				}
 			}
-			newJWT = loadCloudSessionJWT()
-			if newJWT == "" || newJWT == cfg.APIKey {
-				fmt.Fprintln(os.Stderr, "cq: JWT unchanged after refresh — giving up")
-				return err
+			if key == "" {
+				if k, ok := cloud["anon_key"].(string); ok {
+					key = k
+				}
 			}
 		}
+	}
+	return
+}
 
-		cfg.APIKey = newJWT
-		fmt.Fprintln(os.Stderr, "cq: JWT refreshed — restarting worker")
-		time.Sleep(2 * time.Second) // brief backoff before restart
+// claimAndRun tries to claim a QUEUED job via Supabase RPC and execute it.
+func claimAndRun(ctx context.Context, supabaseURL, apiKey, workerID string) {
+	claimURL := supabaseURL + "/rest/v1/rpc/claim_job"
+	body, _ := json.Marshal(map[string]any{
+		"p_worker_id":   workerID,
+		"p_capabilities": []string{},
+		"p_project_id":  "",
+	})
+	req, err := http.NewRequestWithContext(ctx, "POST", claimURL, strings.NewReader(string(body)))
+	if err != nil {
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("apikey", apiKey)
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "cq: claim_job failed: %v\n", err)
+		return
+	}
+	defer resp.Body.Close()
+
+	respBody, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode >= 300 || len(respBody) == 0 || string(respBody) == "null" {
+		return // no job available
+	}
+
+	var result struct {
+		Job     json.RawMessage `json:"job"`
+		LeaseID string          `json:"lease_id"`
+	}
+	if json.Unmarshal(respBody, &result) != nil || result.LeaseID == "" {
+		return // no job
+	}
+
+	var job struct {
+		ID      string `json:"id"`
+		Name    string `json:"name"`
+		Command string `json:"command"`
+		Workdir string `json:"workdir"`
+	}
+	json.Unmarshal(result.Job, &job)
+
+	fmt.Printf("cq: claimed job %s (%s) lease=%s\n", job.ID, job.Name, result.LeaseID)
+
+	// Execute the job command.
+	if job.Command != "" {
+		cmd := exec.CommandContext(ctx, "sh", "-c", job.Command)
+		if job.Workdir != "" {
+			cmd.Dir = job.Workdir
+		}
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		cmdErr := cmd.Run()
+
+		// Complete the job.
+		status := "COMPLETE"
+		exitCode := 0
+		if cmdErr != nil {
+			status = "FAILED"
+			var exitErr *exec.ExitError
+			if errors.As(cmdErr, &exitErr) {
+				exitCode = exitErr.ExitCode()
+			}
+			fmt.Fprintf(os.Stderr, "cq: job %s failed: %v\n", job.ID, cmdErr)
+		} else {
+			fmt.Printf("cq: job %s completed\n", job.ID)
+		}
+
+		completeURL := supabaseURL + "/rest/v1/rpc/complete_job"
+		completeBody, _ := json.Marshal(map[string]any{
+			"p_job_id":    job.ID,
+			"p_status":    status,
+			"p_exit_code": exitCode,
+			"p_worker_id": workerID,
+		})
+		completeReq, _ := http.NewRequestWithContext(ctx, "POST", completeURL, strings.NewReader(string(completeBody)))
+		completeReq.Header.Set("Content-Type", "application/json")
+		completeReq.Header.Set("apikey", apiKey)
+		completeReq.Header.Set("Authorization", "Bearer "+apiKey)
+		if r, e := http.DefaultClient.Do(completeReq); e == nil {
+			io.Copy(io.Discard, r.Body)
+			r.Body.Close()
+		}
 	}
 }
 
