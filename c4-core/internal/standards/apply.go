@@ -144,9 +144,16 @@ func Apply(projectDir string, team string, langs []string, opts ApplyOptions) (*
 		return nil
 	}
 
-	// copyRule copies a rules file to .claude/rules/<basename>.
+	// copyRule copies a rules file to .claude/rules/<name>.
+	// For language/team rules under a subdirectory (e.g. rules/go/style.md),
+	// the parent directory is prefixed to avoid collisions: go-style.md.
 	copyRule := func(src string) error {
 		base := filepath.Base(src)
+		dir := filepath.Base(filepath.Dir(src))
+		// common rules keep their name; lang/team rules get prefixed
+		if dir != "rules" && dir != "common" {
+			base = dir + "-" + base
+		}
 		dst := filepath.Join(".claude", "rules", base)
 		return copyFile(src, dst, false, nil)
 	}
