@@ -2163,3 +2163,42 @@ func TestMarkStaleWorkersBusy(t *testing.T) {
 		}
 	}
 }
+
+// TestRegisterWorker verifies that mcp_url is persisted and retrieved via
+// RegisterWorker → ListWorkers → GetWorker round-trip.
+func TestRegisterWorker(t *testing.T) {
+	s := newTestStore(t)
+
+	req := &model.WorkerRegisterRequest{
+		Hostname: "mcp-host",
+		MCPURL:   "http://localhost:9000/mcp",
+	}
+	w, err := s.RegisterWorker(req)
+	if err != nil {
+		t.Fatalf("RegisterWorker: %v", err)
+	}
+	if w.MCPURL != req.MCPURL {
+		t.Fatalf("RegisterWorker: MCPURL mismatch: got %q, want %q", w.MCPURL, req.MCPURL)
+	}
+
+	// ListWorkers round-trip
+	list, err := s.ListWorkers("")
+	if err != nil {
+		t.Fatalf("ListWorkers: %v", err)
+	}
+	if len(list) != 1 {
+		t.Fatalf("ListWorkers: expected 1 worker, got %d", len(list))
+	}
+	if list[0].MCPURL != req.MCPURL {
+		t.Fatalf("ListWorkers: MCPURL mismatch: got %q, want %q", list[0].MCPURL, req.MCPURL)
+	}
+
+	// GetWorker round-trip
+	got, err := s.GetWorker(w.ID)
+	if err != nil {
+		t.Fatalf("GetWorker: %v", err)
+	}
+	if got.MCPURL != req.MCPURL {
+		t.Fatalf("GetWorker: MCPURL mismatch: got %q, want %q", got.MCPURL, req.MCPURL)
+	}
+}
