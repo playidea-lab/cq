@@ -218,28 +218,6 @@ func TestIsLLMEnabled(t *testing.T) {
 	}
 }
 
-func TestDoorayChannelParsing(t *testing.T) {
-	t.Setenv("C5_DOORAY_CHANNELS", "ch-1=proj-a,ch-2=proj-b")
-
-	cfg := config.Default()
-	// Load from path that doesn't exist to force defaults + env overrides.
-	loaded, err := config.Load(t.TempDir() + "/missing.yaml")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	_ = cfg // unused, just verify loaded
-	if len(loaded.Dooray.Channels) != 2 {
-		t.Fatalf("expected 2 channels, got %d", len(loaded.Dooray.Channels))
-	}
-	if loaded.Dooray.Channels["ch-1"].ProjectID != "proj-a" {
-		t.Errorf("ch-1 projectID: got %q, want proj-a", loaded.Dooray.Channels["ch-1"].ProjectID)
-	}
-	if loaded.Dooray.Channels["ch-2"].ProjectID != "proj-b" {
-		t.Errorf("ch-2 projectID: got %q, want proj-b", loaded.Dooray.Channels["ch-2"].ProjectID)
-	}
-}
-
 func TestEnvOverrides_LLM(t *testing.T) {
 	t.Setenv("C5_LLM_BASE_URL", "https://generativelanguage.googleapis.com/v1beta/openai")
 	t.Setenv("C5_LLM_API_KEY", "gemini-api-key")
@@ -260,22 +238,6 @@ func TestEnvOverrides_LLM(t *testing.T) {
 	}
 	if !cfg.IsLLMEnabled() {
 		t.Error("expected LLM enabled")
-	}
-}
-
-func TestEnvOverrides_Dooray(t *testing.T) {
-	t.Setenv("C5_DOORAY_WEBHOOK_URL", "https://dooray.example.com/webhook")
-	t.Setenv("C5_DOORAY_CMD_TOKEN", "dooray-secret")
-
-	cfg, err := config.Load(t.TempDir() + "/missing.yaml")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if cfg.Dooray.WebhookURL != "https://dooray.example.com/webhook" {
-		t.Errorf("Dooray.WebhookURL: got %q", cfg.Dooray.WebhookURL)
-	}
-	if cfg.Dooray.CmdToken != "dooray-secret" {
-		t.Errorf("Dooray.CmdToken: got %q", cfg.Dooray.CmdToken)
 	}
 }
 

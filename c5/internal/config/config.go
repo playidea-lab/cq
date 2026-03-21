@@ -11,7 +11,6 @@ type Config struct {
 	EventBus EventBusConfig `yaml:"eventbus"`
 	Storage  StorageConfig  `yaml:"storage"`
 	LLM      LLMConfig      `yaml:"llm"`
-	Dooray   DoorayConfig   `yaml:"dooray"`
 }
 
 // LLMConfig holds LLM settings for server-side processing.
@@ -21,19 +20,6 @@ type LLMConfig struct {
 	APIKey    string `yaml:"api_key"`    // API key for the LLM provider
 	Model     string `yaml:"model"`      // default "gemini-3-flash-preview"
 	MaxTokens int    `yaml:"max_tokens"` // default 4096
-}
-
-// DoorayChannelCfg holds per-channel Dooray routing configuration.
-type DoorayChannelCfg struct {
-	ProjectID  string `yaml:"project_id"`
-	WebhookURL string `yaml:"webhook_url"` // optional; falls back to DoorayConfig.WebhookURL
-}
-
-// DoorayConfig holds Dooray integration settings.
-type DoorayConfig struct {
-	WebhookURL string                      `yaml:"webhook_url"` // Incoming Webhook URL for LLM responses
-	CmdToken   string                      `yaml:"cmd_token"`   // slash command token for verification
-	Channels   map[string]DoorayChannelCfg `yaml:"channels"`    // channelID → project routing
 }
 
 // ServerConfig holds HTTP server settings.

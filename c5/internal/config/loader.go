@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
-	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -75,29 +74,6 @@ func applyEnvOverrides(cfg *Config) {
 	if v, ok := os.LookupEnv("C5_LLM_MODEL"); ok {
 		cfg.LLM.Model = v
 	}
-	if v, ok := os.LookupEnv("C5_DOORAY_WEBHOOK_URL"); ok {
-		cfg.Dooray.WebhookURL = v
-	}
-	if v, ok := os.LookupEnv("C5_DOORAY_CMD_TOKEN"); ok {
-		cfg.Dooray.CmdToken = v
-	}
-	if v, ok := os.LookupEnv("C5_DOORAY_CHANNELS"); ok && v != "" {
-		cfg.Dooray.Channels = parseDoorayChannels(v)
-	}
-}
-
-// parseDoorayChannels parses "channelId1=projectId1,channelId2=projectId2" format.
-func parseDoorayChannels(s string) map[string]DoorayChannelCfg {
-	result := make(map[string]DoorayChannelCfg)
-	for _, part := range strings.Split(s, ",") {
-		kv := strings.SplitN(strings.TrimSpace(part), "=", 2)
-		if len(kv) == 2 && kv[0] != "" && kv[1] != "" {
-			result[strings.TrimSpace(kv[0])] = DoorayChannelCfg{
-				ProjectID: strings.TrimSpace(kv[1]),
-			}
-		}
-	}
-	return result
 }
 
 // ExampleConfigYAML returns a commented example configuration YAML string
@@ -131,7 +107,7 @@ storage:
   # max_artifact_bytes: 10737418240
 
 llm:
-  # OpenAI-compatible LLM base URL (required for server-side Dooray processing).
+  # OpenAI-compatible LLM base URL.
   # Examples:
   #   Gemini:  https://generativelanguage.googleapis.com/v1beta/openai
   #   Ollama:  http://localhost:11434/v1
@@ -143,19 +119,5 @@ llm:
   # model: "gemini-3-flash-preview"
   # Max tokens in the LLM response. Default: 4096.
   # max_tokens: 4096
-
-dooray:
-  # Default Incoming Webhook URL for LLM responses.
-  # Also settable via C5_DOORAY_WEBHOOK_URL env var.
-  # webhook_url: ""
-  # Slash command token for verifying Dooray requests.
-  # Also settable via C5_DOORAY_CMD_TOKEN env var.
-  # cmd_token: ""
-  # Per-channel routing: maps channelID to projectID (and optional per-channel webhook).
-  # Also settable via C5_DOORAY_CHANNELS env var (format: "ch1=proj1,ch2=proj2").
-  # channels:
-  #   "4225637197401340462":
-  #     project_id: "c4"
-  #     webhook_url: ""  # optional; falls back to dooray.webhook_url
 `
 }

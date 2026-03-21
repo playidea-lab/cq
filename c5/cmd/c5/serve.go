@@ -144,7 +144,7 @@ func runServe(cmd *cobra.Command, configPath string, port int, dbPath, apiKey, e
 		affinityStore = nil
 	}
 
-	// Build optional LLM client for server-side Dooray processing.
+	// Build optional LLM client for server-side processing.
 	var llmCli *llmclient.Client
 	if cfg.IsLLMEnabled() {
 		apiKey := cfg.LLM.APIKey
@@ -169,18 +169,6 @@ func runServe(cmd *cobra.Command, configPath string, port int, dbPath, apiKey, e
 		knowledgeCli = knowledge.New(cfg.Storage.SupabaseURL, cfg.Storage.SupabaseKey)
 	}
 
-	// Build Dooray channel map from config.
-	var channelMap map[string]api.DoorayChannel
-	if len(cfg.Dooray.Channels) > 0 {
-		channelMap = make(map[string]api.DoorayChannel, len(cfg.Dooray.Channels))
-		for id, ch := range cfg.Dooray.Channels {
-			channelMap[id] = api.DoorayChannel{
-				ProjectID:  ch.ProjectID,
-				WebhookURL: ch.WebhookURL,
-			}
-		}
-	}
-
 	srv := api.NewServer(api.Config{
 		Store:            st,
 		Affinity:         affinityStore,
@@ -198,11 +186,8 @@ func runServe(cmd *cobra.Command, configPath string, port int, dbPath, apiKey, e
 		GPUWorkerGPUOnly: cfg.Server.GPUWorkerGPUOnly,
 		SupabaseURL:      cfg.Storage.SupabaseURL,
 		SupabaseKey:      cfg.Storage.SupabaseKey,
-		LLMClient:        llmCli,
-		KnowledgeClient:  knowledgeCli,
-		DoorayWebhookURL: cfg.Dooray.WebhookURL,
-		DoorayCmdToken:   cfg.Dooray.CmdToken,
-		ChannelMap:       channelMap,
+		LLMClient:       llmCli,
+		KnowledgeClient: knowledgeCli,
 	})
 	defer srv.Close()
 
