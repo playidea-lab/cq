@@ -7,9 +7,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
+	"strconv"
 	"time"
 
+	"github.com/changmin/c4-core/internal/botstore"
 	"github.com/changmin/c4-core/internal/chat"
 	"github.com/changmin/c4-core/internal/mcp"
 	"github.com/changmin/c4-core/internal/notify"
@@ -20,9 +21,8 @@ const configFile = "notifications.json"
 // notifyConfig holds persisted notification channel configuration.
 // Stored in .c4/notifications.json (0o640, .c4/ is gitignored).
 type notifyConfig struct {
-	Channel    string   `json:"channel"`
-	WebhookURL string   `json:"webhook_url"`
-	Events     []string `json:"events,omitempty"` // if empty → all events pass
+	BotUsername string   `json:"bot_username"`
+	Events      []string `json:"events,omitempty"` // if empty → all events pass
 }
 
 func configPath(projectDir string) string {
@@ -56,34 +56,18 @@ func saveConfig(projectDir string, cfg *notifyConfig) error {
 	return os.WriteFile(configPath(projectDir), data, 0o640)
 }
 
-func maskURL(u string) string {
-	if u == "" {
-		return ""
-	}
-	idx := strings.LastIndex(u, "/")
-	if idx < 0 || idx >= len(u)-1 {
-		return "****"
-	}
-	return u[:idx+1] + "****"
-}
-
 // Register registers c4_notification_set, c4_notification_get, c4_notify.
 // router is optional: when non-nil, c4_notify also posts to c1_messages (sender_type=agent).
 func Register(reg *mcp.Registry, projectDir string, router *chat.Router) {
 	reg.Register(mcp.ToolSchema{
 		Name:        "c4_notification_set",
-		Description: "Configure a notification channel (webhook). Stores channel name, webhook URL, and optional event filter in .c4/notifications.json.",
+		Description: "Configure a notification channel (Telegram bot). Stores bot_username and optional event filter in .c4/notifications.json. The bot must be registered in the botstore.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"channel": map[string]any{
+				"bot_username": map[string]any{
 					"type":        "string",
-					"description": "Channel name: dooray|slack|discord|teams",
-					"enum":        []string{"dooray", "slack", "discord", "teams"},
-				},
-				"webhook_url": map[string]any{
-					"type":        "string",
-					"description": "Webhook URL for the channel",
+					"description": "Telegram bot username registered in the botstore",
 				},
 				"events": map[string]any{
 					"type":        "array",
@@ -91,32 +75,32 @@ func Register(reg *mcp.Registry, projectDir string, router *chat.Router) {
 					"items":       map[string]any{"type": "string"},
 				},
 			},
-			"required": []string{"channel", "webhook_url"},
+			"required": []string{"bot_username"},
 		},
 	}, func(args json.RawMessage) (any, error) {
 		var p struct {
-			Channel    string   `json:"channel"`
-			WebhookURL string   `json:"webhook_url"`
-			Events     []string `json:"events"`
+			BotUsername string   `json:"bot_username"`
+			Events      []string `json:"events"`
 		}
 		if err := json.Unmarshal(args, &p); err != nil {
 			return nil, fmt.Errorf("invalid args: %w", err)
 		}
-		if p.Channel == "" {
-			return nil, fmt.Errorf("channel is required")
+		if p.BotUsername == "" {
+			return nil, fmt.Errorf("bot_username is required")
 		}
-		if p.WebhookURL == "" {
-			return nil, fmt.Errorf("webhook_url is required")
+		// Validate bot exists in botstore.
+		bs, err := botstore.New(projectDir)
+		if err != nil {
+			return nil, fmt.Errorf("botstore: %w", err)
 		}
-		// Validate channel is supported by notify package.
-		if _, err := notify.NewSender(p.Channel, p.WebhookURL); err != nil {
-			return nil, fmt.Errorf("unsupported channel: %w", err)
+		if _, err := bs.Get(p.BotUsername); err != nil {
+			return nil, fmt.Errorf("bot %q not found in botstore: %w", p.BotUsername, err)
 		}
-		cfg := &notifyConfig{Channel: p.Channel, WebhookURL: p.WebhookURL, Events: p.Events}
+		cfg := &notifyConfig{BotUsername: p.BotUsername, Events: p.Events}
 		if err := saveConfig(projectDir, cfg); err != nil {
 			return nil, fmt.Errorf("saving config: %w", err)
 		}
-		return map[string]any{"success": true, "channel": p.Channel, "events": p.Events}, nil
+		return map[string]any{"success": true, "bot_username": p.BotUsername, "events": p.Events}, nil
 	})
 
 	reg.Register(mcp.ToolSchema{
@@ -135,16 +119,15 @@ func Register(reg *mcp.Registry, projectDir string, router *chat.Router) {
 			return map[string]any{"configured": false}, nil
 		}
 		return map[string]any{
-			"configured":  true,
-			"channel":     cfg.Channel,
-			"webhook_url": maskURL(cfg.WebhookURL),
-			"events":      cfg.Events,
+			"configured":   true,
+			"bot_username": cfg.BotUsername,
+			"events":       cfg.Events,
 		}, nil
 	})
 
 	reg.Register(mcp.ToolSchema{
 		Name:        "c4_notify",
-		Description: "Send a notification message via the configured webhook channel. If event is provided and events filter is configured, skips silently when event not in list.",
+		Description: "Send a notification message via the configured Telegram bot. If event is provided and events filter is configured, skips silently when event not in list.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -199,10 +182,19 @@ func Register(reg *mcp.Registry, projectDir string, router *chat.Router) {
 			}
 		}
 
-		sender, err := notify.NewSender(cfg.Channel, cfg.WebhookURL)
+		// Resolve token and chat_id from botstore.
+		bs, err := botstore.New(projectDir)
 		if err != nil {
-			return nil, fmt.Errorf("creating sender: %w", err)
+			return nil, fmt.Errorf("botstore: %w", err)
 		}
+		bot, err := bs.Get(cfg.BotUsername)
+		if err != nil {
+			return nil, fmt.Errorf("bot %q not found in botstore: %w", cfg.BotUsername, err)
+		}
+		if len(bot.AllowFrom) == 0 {
+			return nil, fmt.Errorf("bot %q has no AllowFrom entries; cannot determine chat_id", cfg.BotUsername)
+		}
+		chatID := strconv.FormatInt(bot.AllowFrom[0], 10)
 
 		text := p.Message
 		if p.Title != "" {
@@ -211,13 +203,13 @@ func Register(reg *mcp.Registry, projectDir string, router *chat.Router) {
 
 		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 		defer cancel()
-		if err := sender.Send(ctx, text); err != nil {
-			return nil, fmt.Errorf("webhook send failed: %w", err)
+		if err := notify.SendTelegram(ctx, bot.Token, chatID, text); err != nil {
+			return nil, fmt.Errorf("telegram send failed: %w", err)
 		}
 		// Mirror to c1_messages (best-effort; errors do not fail the tool call).
 		if router != nil {
 			_ = router.Post("agent", text)
 		}
-		return map[string]any{"sent": true, "channel": cfg.Channel}, nil
+		return map[string]any{"sent": true, "bot_username": cfg.BotUsername}, nil
 	})
 }
