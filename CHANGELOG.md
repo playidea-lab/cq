@@ -5,6 +5,51 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v1.8.0] - 2026-03-22
+
+### ✨ Features
+
+- **cli**: `cq` 기본 = 순수 claude (텔레그램 없음), `--bot` 플래그로 텔레그램 opt-in
+- **cli**: `-t <name>` named session이 `--session-id`로 UUID 고정 — JSONL 스캔 제거, reboot 안정성 향상
+- **cli**: `--bot` 메뉴에 "새 봇 만들기" 인라인 (setup wizard 흡수)
+- **cli**: `-t`와 `--bot` 독립 조합 가능 (`cq -t mywork --bot cqbot`)
+- **standards**: `cq standards` 서브커맨드 4개 (apply, diff, status, reset) + `--team`/`--lang` 분리
+- **standards**: `Apply()` — orphan cleanup + modified-file protection + .piki-lock.yaml
+- **standards**: hooks + settings + config 고도화 — manifest 기반 자동 배포
+- **knowledge**: global store + scope option for `c4_knowledge_record`
+- **knowledge**: auto-load global knowledge on project init
+- **persona**: merge project patterns to global `~/.c4/personas/` on `learn_from_diff`
+- **doctor**: `checkStandards` — project rules vs embedded standards 해시 비교
+- **submit**: validation에 manifest validation 명령 연동
+
+### 🐛 Bug Fixes
+
+- **doctor**: pass `ApplyOptions{}` as 4th arg to `standards.Apply()`
+- **standards**: `Apply()`에 hooks 복사 + chmod 로직 추가
+- **doctor**: add standards case to `tryFix()` to restore modified/missing standard files
+- **auth**: OTP prompt — remove hardcoded digit count
+- **persona**: seed from global on new project, log `MergeToGlobal` error
+
+### ♻️ Refactoring
+
+- **cli**: `cq setup` 삭제 → `cq --bot` → "새 봇 만들기"로 통합
+- **cli**: `launchToolNamed` — JSONL diff 방식에서 `--session-id`/`--resume` 기반으로 단순화
+- **standards**: move `standards/` to repo root — piki 콘텐츠와 Go 코드 분리
+- **doctor**: `tryFix` standards 케이스를 `standards.Apply()` 위임으로 단순화
+
+### 📚 Documentation
+
+- CLI 레퍼런스 전면 개편 (`-t`, `--bot` 조합 설명)
+- telegram-bot-session spec 현행화
+- user docs (gitpages) en/ko 업데이트
+- c4-attach, c4-reboot 스킬 문서 업데이트
+
+### 🔧 Chores
+
+- fly.io 참조 제거
+
+---
+
 ## [v1.4.0] - 2026-03-20
 
 ### ✨ Features
