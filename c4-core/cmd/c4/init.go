@@ -291,8 +291,10 @@ func initAndLaunch(tool string) error {
 		fmt.Fprintf(os.Stderr, "cq: warning: CLAUDE.md setup failed: %v\n", err)
 	}
 
-	// 3b. Apply standards (rules, skills from embedded standards)
-	if initTeam != "" || initLangs != "" {
+	// 3b. Apply standards (rules, skills from embedded standards) — always run,
+	// even when no --team/--lang flags are given, so that common-only standards
+	// are applied unconditionally.
+	{
 		langs := []string{}
 		if initLangs != "" {
 			langs = strings.Split(initLangs, ",")
