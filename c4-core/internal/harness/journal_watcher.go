@@ -6,10 +6,31 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/fsnotify/fsnotify"
 	"github.com/changmin/c4-core/internal/c1push"
+	"github.com/changmin/c4-core/internal/observe"
 )
+
+// TraceRecorder is a local interface for recording LLM trace steps.
+// observe.TraceCollector satisfies this interface.
+type TraceRecorder interface {
+	EnsureTrace(traceID string)
+	AddStep(traceID string, step observe.TraceStep)
+}
+
+var globalTraceRecorderMu sync.RWMutex
+var globalTraceRecorder TraceRecorder
+
+// SetTraceRecorder installs a TraceRecorder for use in readNewLines.
+// Passing nil disables trace recording.
+func SetTraceRecorder(r TraceRecorder) {
+	globalTraceRecorderMu.Lock()
+	globalTraceRecorder = r
+	globalTraceRecorderMu.Unlock()
+}
 
 // JournalWatcher watches ~/.claude/projects/{slug}/*.jsonl for new lines
 // and pushes them to c1_channels via ChannelPusher.
@@ -169,15 +190,37 @@ func readNewLines(filePath string, offset int64) ([]c1push.PushMessage, int64) {
 		return nil, offset
 	}
 
+	sessionUUID := strings.TrimSuffix(filepath.Base(filePath), ".jsonl")
+
+	globalTraceRecorderMu.RLock()
+	recorder := globalTraceRecorder
+	globalTraceRecorderMu.RUnlock()
+
 	var msgs []c1push.PushMessage
 	for _, line := range strings.Split(string(buf), "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" {
 			continue
 		}
-		msg, _ := ParseClaudeCodeLine([]byte(line))
+		lineBytes := []byte(line)
+		msg, _ := ParseClaudeCodeLine(lineBytes)
 		if msg != nil {
 			msgs = append(msgs, *msg)
+		}
+		if recorder != nil {
+			if info, err := ExtractUsage(lineBytes); err == nil && info != nil {
+				recorder.EnsureTrace(sessionUUID)
+				recorder.AddStep(sessionUUID, observe.TraceStep{
+					TraceID:   sessionUUID,
+					StepType:  observe.StepTypeLLM,
+					Timestamp: time.Now(),
+					Provider:  info.Provider,
+					Model:     info.Model,
+					InputTok:  int64(info.InputTok),
+					OutputTok: int64(info.OutputTok),
+					Success:   true,
+				})
+			}
 		}
 	}
 	return msgs, newOffset

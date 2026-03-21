@@ -11,7 +11,7 @@ func (tc *TraceCollector) OnLLMCall(sessionID, taskType, provider, model string,
 		sessionID = "unattributed"
 	}
 	// Ensure a parent trace row exists for this sessionID.
-	tc.ensureTrace(sessionID)
+	tc.EnsureTrace(sessionID)
 	tc.AddStep(sessionID, TraceStep{
 		StepType:  StepTypeLLM,
 		Timestamp: time.Now(),

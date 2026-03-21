@@ -4,10 +4,12 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/changmin/c4-core/internal/c1push"
+	"github.com/changmin/c4-core/internal/observe"
 )
 
 // mockPusher captures pushed messages for testing.
@@ -122,5 +124,79 @@ func TestJournalWatcher_NilPusherNoOp(t *testing.T) {
 	err = watcher.Start(context.Background())
 	if err != nil {
 		t.Fatalf("expected nil error, got %v", err)
+	}
+}
+
+// mockTraceRecorder captures EnsureTrace and AddStep calls for testing.
+type mockTraceRecorder struct {
+	mu      sync.Mutex
+	ensured []string
+	steps   []observe.TraceStep
+}
+
+func (m *mockTraceRecorder) EnsureTrace(traceID string) {
+	m.mu.Lock()
+	m.ensured = append(m.ensured, traceID)
+	m.mu.Unlock()
+}
+
+func (m *mockTraceRecorder) AddStep(traceID string, step observe.TraceStep) {
+	m.mu.Lock()
+	step.TraceID = traceID
+	m.steps = append(m.steps, step)
+	m.mu.Unlock()
+}
+
+func TestReadNewLines_TraceRecorder(t *testing.T) {
+	// Install a mock TraceRecorder.
+	rec := &mockTraceRecorder{}
+	SetTraceRecorder(rec)
+	t.Cleanup(func() { SetTraceRecorder(nil) })
+
+	tmpDir := t.TempDir()
+	sessionUUID := "abc-session-1234"
+	jsonlPath := filepath.Join(tmpDir, sessionUUID+".jsonl")
+
+	// An assistant line with usage, plus a user line (no usage).
+	assistantLine := `{"type":"assistant","uuid":"a-1","isMeta":false,"message":{"model":"claude-3-5-sonnet-20241022","content":[{"type":"text","text":"Hello"}],"usage":{"input_tokens":10,"output_tokens":5,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}}}`
+	userLine := `{"type":"user","uuid":"u-1","isMeta":false,"message":{"content":"Hi"}}`
+	content := assistantLine + "\n" + userLine + "\n"
+
+	if err := os.WriteFile(jsonlPath, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	msgs, newOffset := readNewLines(jsonlPath, 0)
+	if newOffset == 0 {
+		t.Fatal("expected non-zero offset")
+	}
+	_ = msgs
+
+	// Allow goroutine scheduling (recorder calls are synchronous here).
+	time.Sleep(10 * time.Millisecond)
+
+	rec.mu.Lock()
+	defer rec.mu.Unlock()
+
+	if len(rec.ensured) == 0 {
+		t.Error("expected EnsureTrace to be called")
+	}
+	if len(rec.steps) == 0 {
+		t.Error("expected AddStep to be called")
+	}
+	if len(rec.steps) > 0 {
+		step := rec.steps[0]
+		if step.TraceID != sessionUUID {
+			t.Errorf("step.TraceID=%q, want %q", step.TraceID, sessionUUID)
+		}
+		if step.Provider != "anthropic" {
+			t.Errorf("step.Provider=%q, want %q", step.Provider, "anthropic")
+		}
+		if step.InputTok != 10 {
+			t.Errorf("step.InputTok=%d, want 10", step.InputTok)
+		}
+		if step.OutputTok != 5 {
+			t.Errorf("step.OutputTok=%d, want 5", step.OutputTok)
+		}
 	}
 }
