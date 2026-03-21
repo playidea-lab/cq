@@ -2,7 +2,7 @@
 //
 // Provides workspace management, profile YAML load/save, and persona learning
 // without requiring the Python sidecar.
-package c2
+package persona
 
 import (
 	"fmt"
