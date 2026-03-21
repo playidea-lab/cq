@@ -32,6 +32,7 @@ type Bot struct {
 	// From access.json
 	LastActive time.Time `json:"last_active,omitempty"`
 	Scope      string    `json:"scope,omitempty"` // "project" or "global"
+	AllowFrom  []int64   `json:"allow_from,omitempty"` // Telegram user/chat IDs allowed to send commands
 
 	// Internal — not persisted
 	root string
@@ -48,6 +49,7 @@ type configFile struct {
 type accessFile struct {
 	LastActive time.Time `json:"last_active,omitempty"`
 	Scope      string    `json:"scope,omitempty"`
+	AllowFrom  []int64   `json:"allow_from,omitempty"`
 }
 
 // Store manages bot configurations across project-local and global directories.
@@ -118,6 +120,7 @@ func readBot(dir string) (*Bot, error) {
 		if jsonErr := json.Unmarshal(accData, &acc); jsonErr == nil {
 			bot.LastActive = acc.LastActive
 			bot.Scope = acc.Scope
+			bot.AllowFrom = acc.AllowFrom
 		}
 	}
 	return bot, nil
@@ -220,6 +223,7 @@ func (s *Store) Save(bot Bot) error {
 	acc := accessFile{
 		LastActive: bot.LastActive,
 		Scope:      bot.Scope,
+		AllowFrom:  bot.AllowFrom,
 	}
 	if err := writeJSON(filepath.Join(dir, "access.json"), acc); err != nil {
 		return err
