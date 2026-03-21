@@ -47,6 +47,7 @@ embed-skills:
 ## embed-standards: Copy standards/ into cmd/c4/standards_src/ for go:embed
 embed-standards:
 	rsync -rL --exclude='*.go' $(REPO_ROOT)/standards/ cmd/c4/standards_src/
+	@test -f cmd/c4/standards_src/embed.go || printf 'package standards_src\n\nimport "embed"\n\n//go:embed all:*\nvar FS embed.FS\n' > cmd/c4/standards_src/embed.go
 	@echo "Standards embedded from $(REPO_ROOT)/standards/"
 
 # Build tags — single tier (all features)
