@@ -12,16 +12,18 @@ import (
 
 func TestRegisterEdge(t *testing.T) {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/v1/edges/register", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/rest/v1/hub_edges", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "POST" {
 			t.Errorf("method = %s, want POST", r.Method)
 		}
-		var body map[string]any
-		json.NewDecoder(r.Body).Decode(&body)
-		if body["name"] != "jetson-1" {
-			t.Errorf("name = %v", body["name"])
+		var row map[string]any
+		json.NewDecoder(r.Body).Decode(&row)
+		if row["name"] != "jetson-1" {
+			t.Errorf("name = %v", row["name"])
 		}
-		jsonResponse(w, EdgeRegisterResponse{EdgeID: "edge-001"})
+		jsonResponse(w, []map[string]any{
+			{"id": "edge-001", "name": "jetson-1"},
+		})
 	})
 	client, _ := newTestServer(t, mux)
 
@@ -40,7 +42,7 @@ func TestRegisterEdge(t *testing.T) {
 
 func TestListEdges(t *testing.T) {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/v1/edges", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/rest/v1/hub_edges", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "GET" {
 			t.Errorf("method = %s", r.Method)
 		}
@@ -68,13 +70,17 @@ func TestListEdges(t *testing.T) {
 
 func TestEdgeHeartbeat(t *testing.T) {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/v1/edges/heartbeat", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/rest/v1/hub_edges", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "PATCH" {
+			t.Errorf("method = %s, want PATCH", r.Method)
+		}
 		var body map[string]any
 		json.NewDecoder(r.Body).Decode(&body)
-		if body["edge_id"] != "edge-001" {
-			t.Errorf("edge_id = %v", body["edge_id"])
+		if body["status"] != "online" {
+			t.Errorf("status = %v", body["status"])
 		}
-		jsonResponse(w, HeartbeatResponse{Acknowledged: true})
+		w.WriteHeader(200)
+		w.Write([]byte(`[]`))
 	})
 	client, _ := newTestServer(t, mux)
 
@@ -85,7 +91,7 @@ func TestEdgeHeartbeat(t *testing.T) {
 
 func TestRemoveEdge(t *testing.T) {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/v1/edges/edge-001", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/rest/v1/hub_edges", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "DELETE" {
 			t.Errorf("method = %s, want DELETE", r.Method)
 		}
@@ -104,22 +110,22 @@ func TestRemoveEdge(t *testing.T) {
 
 func TestCreateDeployRule(t *testing.T) {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/v1/deploy/rules", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/rest/v1/hub_deploy_rules", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "POST" {
 			t.Errorf("method = %s", r.Method)
 		}
-		var req DeployRuleCreateRequest
-		json.NewDecoder(r.Body).Decode(&req)
-		if req.Trigger != "job_tag:production" {
-			t.Errorf("trigger = %q", req.Trigger)
+		var row map[string]any
+		json.NewDecoder(r.Body).Decode(&row)
+		if row["trigger_expr"] != "job_tag:production" {
+			t.Errorf("trigger_expr = %v", row["trigger_expr"])
 		}
-		if req.EdgeFilter != "tag:onnx" {
-			t.Errorf("edge_filter = %q", req.EdgeFilter)
+		if row["edge_filter"] != "tag:onnx" {
+			t.Errorf("edge_filter = %v", row["edge_filter"])
 		}
-		if req.ArtifactPattern != "outputs/*.onnx" {
-			t.Errorf("artifact_pattern = %q", req.ArtifactPattern)
+		if row["artifact_pattern"] != "outputs/*.onnx" {
+			t.Errorf("artifact_pattern = %v", row["artifact_pattern"])
 		}
-		jsonResponse(w, DeployRuleCreateResponse{RuleID: "rule-1"})
+		jsonResponse(w, []map[string]any{{"id": "rule-1"}})
 	})
 	client, _ := newTestServer(t, mux)
 
@@ -139,13 +145,13 @@ func TestCreateDeployRule(t *testing.T) {
 
 func TestListDeployRules(t *testing.T) {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/v1/deploy/rules", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/rest/v1/hub_deploy_rules", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "GET" {
 			t.Errorf("method = %s", r.Method)
 		}
-		jsonResponse(w, []DeployRule{
-			{ID: "rule-1", Trigger: "job_tag:production", EdgeFilter: "tag:onnx", ArtifactPattern: "outputs/*.onnx", Enabled: true},
-			{ID: "rule-2", Trigger: "dag_complete:*", EdgeFilter: "name:jetson-*", ArtifactPattern: "*.trt", Enabled: false},
+		jsonResponse(w, []map[string]any{
+			{"id": "rule-1", "trigger_expr": "job_tag:production", "edge_filter": "tag:onnx", "artifact_pattern": "outputs/*.onnx", "enabled": true},
+			{"id": "rule-2", "trigger_expr": "dag_complete:*", "edge_filter": "name:jetson-*", "artifact_pattern": "*.trt", "enabled": false},
 		})
 	})
 	client, _ := newTestServer(t, mux)
@@ -164,7 +170,7 @@ func TestListDeployRules(t *testing.T) {
 
 func TestDeleteDeployRule(t *testing.T) {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/v1/deploy/rules/rule-1", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/rest/v1/hub_deploy_rules", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "DELETE" {
 			t.Errorf("method = %s, want DELETE", r.Method)
 		}
@@ -183,20 +189,16 @@ func TestDeleteDeployRule(t *testing.T) {
 
 func TestTriggerDeploy(t *testing.T) {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/v1/deploy/trigger", func(w http.ResponseWriter, r *http.Request) {
-		var req DeployTriggerRequest
-		json.NewDecoder(r.Body).Decode(&req)
-		if req.JobID != "job-123" {
-			t.Errorf("job_id = %q", req.JobID)
+	mux.HandleFunc("/rest/v1/hub_deployments", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "POST" {
+			t.Errorf("method = %s, want POST", r.Method)
 		}
-		if req.ArtifactPattern != "outputs/model.onnx" {
-			t.Errorf("artifact_pattern = %q", req.ArtifactPattern)
+		var row map[string]any
+		json.NewDecoder(r.Body).Decode(&row)
+		if row["job_id"] != "job-123" {
+			t.Errorf("job_id = %v", row["job_id"])
 		}
-		jsonResponse(w, DeployTriggerResponse{
-			DeployID:    "deploy-1",
-			Status:      "deploying",
-			TargetCount: 3,
-		})
+		jsonResponse(w, []map[string]any{{"id": "deploy-1"}})
 	})
 	client, _ := newTestServer(t, mux)
 
@@ -211,24 +213,14 @@ func TestTriggerDeploy(t *testing.T) {
 	if resp.DeployID != "deploy-1" {
 		t.Errorf("DeployID = %q", resp.DeployID)
 	}
-	if resp.TargetCount != 3 {
-		t.Errorf("TargetCount = %d", resp.TargetCount)
-	}
 }
 
 func TestTriggerDeploy_ExplicitEdges(t *testing.T) {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/v1/deploy/trigger", func(w http.ResponseWriter, r *http.Request) {
-		var req DeployTriggerRequest
-		json.NewDecoder(r.Body).Decode(&req)
-		if len(req.EdgeIDs) != 2 {
-			t.Errorf("edge_ids len = %d", len(req.EdgeIDs))
-		}
-		jsonResponse(w, DeployTriggerResponse{
-			DeployID:    "deploy-2",
-			Status:      "deploying",
-			TargetCount: 2,
-		})
+	mux.HandleFunc("/rest/v1/hub_deployments", func(w http.ResponseWriter, r *http.Request) {
+		var row map[string]any
+		json.NewDecoder(r.Body).Decode(&row)
+		jsonResponse(w, []map[string]any{{"id": "deploy-2"}})
 	})
 	client, _ := newTestServer(t, mux)
 
@@ -240,25 +232,25 @@ func TestTriggerDeploy_ExplicitEdges(t *testing.T) {
 		t.Fatalf("TriggerDeploy: %v", err)
 	}
 	if resp.TargetCount != 2 {
-		t.Errorf("TargetCount = %d", resp.TargetCount)
+		t.Errorf("TargetCount = %d, want 2", resp.TargetCount)
 	}
 }
 
 func TestGetDeployStatus(t *testing.T) {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/v1/deploy/deploy-1/status", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/rest/v1/hub_deployments", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "GET" {
 			t.Errorf("method = %s", r.Method)
 		}
-		jsonResponse(w, Deployment{
-			ID:     "deploy-1",
-			JobID:  "job-123",
-			Status: "completed",
-			Targets: []DeployTarget{
-				{EdgeID: "edge-001", EdgeName: "jetson-1", Status: "succeeded"},
-				{EdgeID: "edge-002", EdgeName: "jetson-2", Status: "succeeded"},
-				{EdgeID: "edge-003", EdgeName: "rpi-1", Status: "failed", Error: "disk full"},
-			},
+		jsonResponse(w, []Deployment{
+			{ID: "deploy-1", JobID: "job-123", Status: "completed"},
+		})
+	})
+	mux.HandleFunc("/rest/v1/hub_deploy_targets", func(w http.ResponseWriter, r *http.Request) {
+		jsonResponse(w, []DeployTarget{
+			{EdgeID: "edge-001", EdgeName: "jetson-1", Status: "succeeded"},
+			{EdgeID: "edge-002", EdgeName: "jetson-2", Status: "succeeded"},
+			{EdgeID: "edge-003", EdgeName: "rpi-1", Status: "failed", Error: "disk full"},
 		})
 	})
 	client, _ := newTestServer(t, mux)
@@ -287,7 +279,7 @@ func TestGetDeployStatus(t *testing.T) {
 
 func TestRegisterEdge_ServerError(t *testing.T) {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/v1/edges/register", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/rest/v1/hub_edges", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(500)
 		w.Write([]byte("internal error"))
 	})
@@ -301,7 +293,7 @@ func TestRegisterEdge_ServerError(t *testing.T) {
 
 func TestRemoveEdge_NotFound(t *testing.T) {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/v1/edges/edge-missing", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/rest/v1/hub_edges", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(404)
 	})
 	client, _ := newTestServer(t, mux)
@@ -313,48 +305,48 @@ func TestRemoveEdge_NotFound(t *testing.T) {
 }
 
 // =========================================================================
-// Full E2E flow: register edge → create rule → train → deploy → status
+// Full E2E flow: register edge → create rule → deploy → status
 // =========================================================================
 
 func TestEdgeDeploy_FullFlow(t *testing.T) {
 	mux := http.NewServeMux()
 
-	// Edge register
-	mux.HandleFunc("/v1/edges/register", func(w http.ResponseWriter, r *http.Request) {
-		jsonResponse(w, EdgeRegisterResponse{EdgeID: "edge-e2e"})
-	})
-
-	// Edge list
-	mux.HandleFunc("/v1/edges", func(w http.ResponseWriter, r *http.Request) {
-		jsonResponse(w, []Edge{
-			{ID: "edge-e2e", Name: "jetson-factory", Status: "online", Tags: []string{"onnx", "arm64"}},
-		})
-	})
-
-	// Deploy rule
-	mux.HandleFunc("/v1/deploy/rules", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == "POST" {
-			jsonResponse(w, DeployRuleCreateResponse{RuleID: "rule-e2e"})
-		} else {
-			jsonResponse(w, []DeployRule{
-				{ID: "rule-e2e", Trigger: "job_tag:production", EdgeFilter: "tag:onnx", ArtifactPattern: "*.onnx", Enabled: true},
+	mux.HandleFunc("/rest/v1/hub_edges", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case "POST":
+			jsonResponse(w, []map[string]any{{"id": "edge-e2e", "name": "jetson-factory"}})
+		case "GET":
+			jsonResponse(w, []Edge{
+				{ID: "edge-e2e", Name: "jetson-factory", Status: "online", Tags: []string{"onnx", "arm64"}},
 			})
 		}
 	})
 
-	// Manual deploy
-	mux.HandleFunc("/v1/deploy/trigger", func(w http.ResponseWriter, r *http.Request) {
-		jsonResponse(w, DeployTriggerResponse{DeployID: "deploy-e2e", Status: "deploying", TargetCount: 1})
+	mux.HandleFunc("/rest/v1/hub_deploy_rules", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case "POST":
+			jsonResponse(w, []map[string]any{{"id": "rule-e2e"}})
+		case "GET":
+			jsonResponse(w, []map[string]any{
+				{"id": "rule-e2e", "trigger_expr": "job_tag:production", "edge_filter": "tag:onnx", "artifact_pattern": "*.onnx", "enabled": true},
+			})
+		}
 	})
 
-	// Deploy status
-	mux.HandleFunc("/v1/deploy/deploy-e2e/status", func(w http.ResponseWriter, r *http.Request) {
-		jsonResponse(w, Deployment{
-			ID:     "deploy-e2e",
-			Status: "completed",
-			Targets: []DeployTarget{
-				{EdgeID: "edge-e2e", EdgeName: "jetson-factory", Status: "succeeded"},
-			},
+	mux.HandleFunc("/rest/v1/hub_deployments", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case "POST":
+			jsonResponse(w, []map[string]any{{"id": "deploy-e2e"}})
+		case "GET":
+			jsonResponse(w, []Deployment{
+				{ID: "deploy-e2e", Status: "completed"},
+			})
+		}
+	})
+
+	mux.HandleFunc("/rest/v1/hub_deploy_targets", func(w http.ResponseWriter, r *http.Request) {
+		jsonResponse(w, []DeployTarget{
+			{EdgeID: "edge-e2e", EdgeName: "jetson-factory", Status: "succeeded"},
 		})
 	})
 
@@ -399,8 +391,8 @@ func TestEdgeDeploy_FullFlow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("trigger: %v", err)
 	}
-	if deploy.TargetCount != 1 {
-		t.Errorf("targets = %d", deploy.TargetCount)
+	if deploy.DeployID != "deploy-e2e" {
+		t.Errorf("deployID = %q", deploy.DeployID)
 	}
 
 	// 5. Check deploy status

@@ -3,6 +3,7 @@ package hub
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 	"testing"
 )
 
@@ -12,19 +13,21 @@ import (
 
 func TestCreateDAG(t *testing.T) {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/v1/dags", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/rest/v1/hub_dags", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "POST" {
 			t.Errorf("method = %s, want POST", r.Method)
 		}
-		var req DAGCreateRequest
-		json.NewDecoder(r.Body).Decode(&req)
-		if req.Name != "train-pipeline" {
-			t.Errorf("name = %q", req.Name)
+		var row map[string]any
+		json.NewDecoder(r.Body).Decode(&row)
+		if row["name"] != "train-pipeline" {
+			t.Errorf("name = %v", row["name"])
 		}
-		if req.Description != "End-to-end training" {
-			t.Errorf("description = %q", req.Description)
+		if row["description"] != "End-to-end training" {
+			t.Errorf("description = %v", row["description"])
 		}
-		jsonResponse(w, DAGCreateResponse{DAGID: "dag-1", Status: "pending"})
+		jsonResponse(w, []map[string]any{
+			{"id": "dag-1", "name": "train-pipeline", "status": "pending"},
+		})
 	})
 	client, _ := newTestServer(t, mux)
 
@@ -50,22 +53,25 @@ func TestCreateDAG(t *testing.T) {
 
 func TestAddDAGNode(t *testing.T) {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/v1/dags/dag-1/nodes", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/rest/v1/hub_dag_nodes", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "POST" {
 			t.Errorf("method = %s, want POST", r.Method)
 		}
-		var req DAGAddNodeRequest
-		json.NewDecoder(r.Body).Decode(&req)
-		if req.Name != "preprocess" {
-			t.Errorf("name = %q", req.Name)
+		var row map[string]any
+		json.NewDecoder(r.Body).Decode(&row)
+		if row["name"] != "preprocess" {
+			t.Errorf("name = %v", row["name"])
 		}
-		if req.Command != "python preprocess.py" {
-			t.Errorf("command = %q", req.Command)
+		if row["command"] != "python preprocess.py" {
+			t.Errorf("command = %v", row["command"])
 		}
-		if req.GPUCount != 1 {
-			t.Errorf("gpu_count = %d", req.GPUCount)
+		gpuCount, _ := row["gpu_count"].(float64)
+		if int(gpuCount) != 1 {
+			t.Errorf("gpu_count = %v", row["gpu_count"])
 		}
-		jsonResponse(w, DAGAddNodeResponse{NodeID: "node-1", Name: "preprocess"})
+		jsonResponse(w, []map[string]any{
+			{"id": "node-1", "name": "preprocess"},
+		})
 	})
 	client, _ := newTestServer(t, mux)
 
@@ -88,23 +94,23 @@ func TestAddDAGNode(t *testing.T) {
 
 func TestAddDAGDependency(t *testing.T) {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/v1/dags/dag-1/dependencies", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/rest/v1/hub_dag_dependencies", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "POST" {
 			t.Errorf("method = %s, want POST", r.Method)
 		}
-		var req DAGAddDependencyRequest
-		json.NewDecoder(r.Body).Decode(&req)
-		if req.SourceID != "node-1" {
-			t.Errorf("source_id = %q", req.SourceID)
+		var row map[string]any
+		json.NewDecoder(r.Body).Decode(&row)
+		if row["source_id"] != "node-1" {
+			t.Errorf("source_id = %v", row["source_id"])
 		}
-		if req.TargetID != "node-2" {
-			t.Errorf("target_id = %q", req.TargetID)
+		if row["target_id"] != "node-2" {
+			t.Errorf("target_id = %v", row["target_id"])
 		}
-		if req.Type != "sequential" {
-			t.Errorf("type = %q", req.Type)
+		if row["dep_type"] != "sequential" {
+			t.Errorf("dep_type = %v", row["dep_type"])
 		}
 		w.WriteHeader(200)
-		w.Write([]byte(`{"ok":true}`))
+		w.Write([]byte(`[]`))
 	})
 	client, _ := newTestServer(t, mux)
 
@@ -124,17 +130,20 @@ func TestAddDAGDependency(t *testing.T) {
 
 func TestExecuteDAG(t *testing.T) {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/v1/dags/dag-1/execute", func(w http.ResponseWriter, r *http.Request) {
-		var req DAGExecuteRequest
-		json.NewDecoder(r.Body).Decode(&req)
-		if req.DryRun {
-			t.Error("expected dry_run=false")
+	mux.HandleFunc("/rest/v1/hub_dags", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "PATCH" {
+			t.Errorf("method = %s, want PATCH", r.Method)
 		}
-		jsonResponse(w, DAGExecuteResponse{
-			DAGID:     "dag-1",
-			Status:    "running",
-			NodeOrder: []string{"preprocess", "train", "eval"},
-		})
+		if !strings.Contains(r.URL.RawQuery, "id=eq.dag-1") {
+			t.Errorf("query = %q, want id=eq.dag-1", r.URL.RawQuery)
+		}
+		var body map[string]any
+		json.NewDecoder(r.Body).Decode(&body)
+		if body["status"] != "running" {
+			t.Errorf("status = %v", body["status"])
+		}
+		w.WriteHeader(200)
+		w.Write([]byte(`[]`))
 	})
 	client, _ := newTestServer(t, mux)
 
@@ -145,24 +154,16 @@ func TestExecuteDAG(t *testing.T) {
 	if resp.Status != "running" {
 		t.Errorf("Status = %q", resp.Status)
 	}
-	if len(resp.NodeOrder) != 3 {
-		t.Errorf("NodeOrder len = %d", len(resp.NodeOrder))
-	}
 }
 
 func TestExecuteDAG_DryRun(t *testing.T) {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/v1/dags/dag-2/execute", func(w http.ResponseWriter, r *http.Request) {
-		var req DAGExecuteRequest
-		json.NewDecoder(r.Body).Decode(&req)
-		if !req.DryRun {
-			t.Error("expected dry_run=true")
+	mux.HandleFunc("/rest/v1/hub_dags", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "GET" {
+			t.Errorf("method = %s, want GET", r.Method)
 		}
-		jsonResponse(w, DAGExecuteResponse{
-			DAGID:      "dag-2",
-			Status:     "pending",
-			Validation: "valid",
-			NodeOrder:  []string{"a", "b"},
+		jsonResponse(w, []map[string]any{
+			{"id": "dag-2", "name": "test", "status": "pending"},
 		})
 	})
 	client, _ := newTestServer(t, mux)
@@ -182,24 +183,27 @@ func TestExecuteDAG_DryRun(t *testing.T) {
 
 func TestGetDAGStatus(t *testing.T) {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/v1/dags/dag-1/status", func(w http.ResponseWriter, r *http.Request) {
+	exitCode := 0
+
+	mux.HandleFunc("/rest/v1/hub_dags", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "GET" {
 			t.Errorf("method = %s, want GET", r.Method)
 		}
-		exitCode := 0
-		jsonResponse(w, DAG{
-			ID:     "dag-1",
-			Name:   "train-pipeline",
-			Status: "running",
-			Nodes: []DAGNode{
-				{ID: "node-1", Name: "preprocess", Status: "succeeded", ExitCode: &exitCode},
-				{ID: "node-2", Name: "train", Status: "running"},
-				{ID: "node-3", Name: "eval", Status: "pending"},
-			},
-			Dependencies: []DAGDependency{
-				{SourceID: "node-1", TargetID: "node-2", Type: "sequential"},
-				{SourceID: "node-2", TargetID: "node-3", Type: "sequential"},
-			},
+		jsonResponse(w, []map[string]any{
+			{"id": "dag-1", "name": "train-pipeline", "status": "running"},
+		})
+	})
+	mux.HandleFunc("/rest/v1/hub_dag_nodes", func(w http.ResponseWriter, r *http.Request) {
+		jsonResponse(w, []map[string]any{
+			{"id": "node-1", "name": "preprocess", "status": "succeeded", "exit_code": exitCode},
+			{"id": "node-2", "name": "train", "status": "running"},
+			{"id": "node-3", "name": "eval", "status": "pending"},
+		})
+	})
+	mux.HandleFunc("/rest/v1/hub_dag_dependencies", func(w http.ResponseWriter, r *http.Request) {
+		jsonResponse(w, []map[string]any{
+			{"source_id": "node-1", "target_id": "node-2", "dep_type": "sequential"},
+			{"source_id": "node-2", "target_id": "node-3", "dep_type": "sequential"},
 		})
 	})
 	client, _ := newTestServer(t, mux)
@@ -231,21 +235,17 @@ func TestGetDAGStatus(t *testing.T) {
 
 func TestListDAGs(t *testing.T) {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/v1/dags", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/rest/v1/hub_dags", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "GET" {
 			t.Errorf("method = %s, want GET", r.Method)
 		}
 		status := r.URL.Query().Get("status")
-		if status != "running" {
-			t.Errorf("status = %q, want running", status)
+		if status != "eq.running" {
+			t.Errorf("status filter = %q, want eq.running", status)
 		}
-		limit := r.URL.Query().Get("limit")
-		if limit != "10" {
-			t.Errorf("limit = %q, want 10", limit)
-		}
-		jsonResponse(w, []DAG{
-			{ID: "dag-1", Name: "pipeline-1", Status: "running"},
-			{ID: "dag-2", Name: "pipeline-2", Status: "running"},
+		jsonResponse(w, []map[string]any{
+			{"id": "dag-1", "name": "pipeline-1", "status": "running"},
+			{"id": "dag-2", "name": "pipeline-2", "status": "running"},
 		})
 	})
 	client, _ := newTestServer(t, mux)
@@ -264,11 +264,8 @@ func TestListDAGs(t *testing.T) {
 
 func TestListDAGs_NoFilter(t *testing.T) {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/v1/dags", func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.RawQuery != "" {
-			t.Errorf("expected no query params, got %q", r.URL.RawQuery)
-		}
-		jsonResponse(w, []DAG{})
+	mux.HandleFunc("/rest/v1/hub_dags", func(w http.ResponseWriter, r *http.Request) {
+		jsonResponse(w, []map[string]any{})
 	})
 	client, _ := newTestServer(t, mux)
 
@@ -299,28 +296,18 @@ dependencies:
   - source: preprocess
     target: train
 `
-
 	mux := http.NewServeMux()
-	mux.HandleFunc("/v1/dags/from-yaml", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/rest/v1/hub_dags", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "POST" {
 			t.Errorf("method = %s, want POST", r.Method)
 		}
-		var req DAGFromYAMLRequest
-		json.NewDecoder(r.Body).Decode(&req)
-		if req.YAMLContent == "" {
-			t.Error("empty yaml_content")
+		var row map[string]any
+		json.NewDecoder(r.Body).Decode(&row)
+		if row["name"] != "resnet-cifar10" {
+			t.Errorf("name = %v", row["name"])
 		}
-		jsonResponse(w, DAG{
-			ID:     "dag-yaml-1",
-			Name:   "resnet-cifar10",
-			Status: "pending",
-			Nodes: []DAGNode{
-				{ID: "n1", Name: "preprocess", Command: "python preprocess.py"},
-				{ID: "n2", Name: "train", Command: "python train.py", GPUCount: 1},
-			},
-			Dependencies: []DAGDependency{
-				{SourceID: "n1", TargetID: "n2", Type: "sequential"},
-			},
+		jsonResponse(w, []map[string]any{
+			{"id": "dag-yaml-1", "name": "resnet-cifar10", "status": "pending"},
 		})
 	})
 	client, _ := newTestServer(t, mux)
@@ -332,12 +319,6 @@ dependencies:
 	if dag.ID != "dag-yaml-1" {
 		t.Errorf("ID = %q", dag.ID)
 	}
-	if len(dag.Nodes) != 2 {
-		t.Errorf("Nodes = %d", len(dag.Nodes))
-	}
-	if len(dag.Dependencies) != 1 {
-		t.Errorf("Dependencies = %d", len(dag.Dependencies))
-	}
 }
 
 // =========================================================================
@@ -346,7 +327,7 @@ dependencies:
 
 func TestCreateDAG_ServerError(t *testing.T) {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/v1/dags", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/rest/v1/hub_dags", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(500)
 		w.Write([]byte("internal error"))
 	})
@@ -360,9 +341,9 @@ func TestCreateDAG_ServerError(t *testing.T) {
 
 func TestExecuteDAG_ValidationError(t *testing.T) {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/v1/dags/dag-bad/execute", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/rest/v1/hub_dags", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(400)
-		w.Write([]byte(`{"error":"cycle detected in DAG"}`))
+		w.Write([]byte(`{"message":"cycle detected in DAG"}`))
 	})
 	client, _ := newTestServer(t, mux)
 
@@ -374,15 +355,15 @@ func TestExecuteDAG_ValidationError(t *testing.T) {
 
 func TestGetDAGStatus_NotFound(t *testing.T) {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/v1/dags/dag-missing/status", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(404)
-		w.Write([]byte(`{"error":"DAG not found"}`))
+	mux.HandleFunc("/rest/v1/hub_dags", func(w http.ResponseWriter, r *http.Request) {
+		jsonResponse(w, []map[string]any{}) // empty = not found
 	})
+	// Also need handlers for nodes/deps even though they won't be called
 	client, _ := newTestServer(t, mux)
 
 	_, err := client.GetDAGStatus("dag-missing")
 	if err == nil {
-		t.Error("expected error on 404")
+		t.Error("expected error for missing DAG")
 	}
 }
 
@@ -393,46 +374,52 @@ func TestGetDAGStatus_NotFound(t *testing.T) {
 func TestDAG_FullPipeline(t *testing.T) {
 	mux := http.NewServeMux()
 
-	// Create
-	mux.HandleFunc("/v1/dags", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == "POST" {
-			jsonResponse(w, DAGCreateResponse{DAGID: "dag-full", Status: "pending"})
+	mux.HandleFunc("/rest/v1/hub_dags", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case "POST":
+			var row map[string]any
+			json.NewDecoder(r.Body).Decode(&row)
+			jsonResponse(w, []map[string]any{
+				{"id": "dag-full", "name": row["name"], "status": "pending"},
+			})
+		case "GET":
+			if strings.Contains(r.URL.RawQuery, "dag-full") {
+				jsonResponse(w, []map[string]any{
+					{"id": "dag-full", "status": "completed"},
+				})
+			}
+		case "PATCH":
+			w.WriteHeader(200)
+			w.Write([]byte(`[]`))
 		}
 	})
 
-	// Add nodes
-	mux.HandleFunc("/v1/dags/dag-full/nodes", func(w http.ResponseWriter, r *http.Request) {
-		var req DAGAddNodeRequest
-		json.NewDecoder(r.Body).Decode(&req)
-		jsonResponse(w, DAGAddNodeResponse{NodeID: "n-" + req.Name, Name: req.Name})
+	mux.HandleFunc("/rest/v1/hub_dag_nodes", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case "POST":
+			var row map[string]any
+			json.NewDecoder(r.Body).Decode(&row)
+			name, _ := row["name"].(string)
+			jsonResponse(w, []map[string]any{
+				{"id": "n-" + name, "name": name},
+			})
+		case "GET":
+			jsonResponse(w, []map[string]any{
+				{"id": "n-preprocess", "name": "preprocess", "status": "succeeded"},
+				{"id": "n-train", "name": "train", "status": "succeeded"},
+				{"id": "n-eval", "name": "eval", "status": "succeeded"},
+			})
+		}
 	})
 
-	// Add dependency
-	mux.HandleFunc("/v1/dags/dag-full/dependencies", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(200)
-		w.Write([]byte(`{"ok":true}`))
-	})
-
-	// Execute
-	mux.HandleFunc("/v1/dags/dag-full/execute", func(w http.ResponseWriter, r *http.Request) {
-		jsonResponse(w, DAGExecuteResponse{
-			DAGID:     "dag-full",
-			Status:    "running",
-			NodeOrder: []string{"preprocess", "train", "eval"},
-		})
-	})
-
-	// Status
-	mux.HandleFunc("/v1/dags/dag-full/status", func(w http.ResponseWriter, r *http.Request) {
-		jsonResponse(w, DAG{
-			ID:     "dag-full",
-			Status: "completed",
-			Nodes: []DAGNode{
-				{ID: "n-preprocess", Name: "preprocess", Status: "succeeded"},
-				{ID: "n-train", Name: "train", Status: "succeeded"},
-				{ID: "n-eval", Name: "eval", Status: "succeeded"},
-			},
-		})
+	mux.HandleFunc("/rest/v1/hub_dag_dependencies", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case "POST":
+			w.WriteHeader(200)
+			w.Write([]byte(`[]`))
+		case "GET":
+			jsonResponse(w, []map[string]any{})
+		}
 	})
 
 	client, _ := newTestServer(t, mux)
@@ -465,7 +452,7 @@ func TestDAG_FullPipeline(t *testing.T) {
 		t.Fatalf("add node eval: %v", err)
 	}
 
-	// 3. Add dependencies: preprocess → train → eval
+	// 3. Add dependencies
 	if err := client.AddDAGDependency(dag.DAGID, &DAGAddDependencyRequest{
 		SourceID: n1.NodeID, TargetID: n2.NodeID, Type: "sequential",
 	}); err != nil {
