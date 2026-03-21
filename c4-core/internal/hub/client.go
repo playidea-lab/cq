@@ -16,15 +16,17 @@ const (
 	retryBaseWait = 1 * time.Second
 )
 
-// Client communicates with a PiQ Hub server over REST.
+// Client communicates with a PiQ Hub server over REST or Supabase PostgREST.
 type Client struct {
-	baseURL    string
-	apiPrefix  string // e.g. "/v1" for Hub server, "" for local daemon
-	apiKey     string
-	tokenFunc  func() string // optional: overrides apiKey per request (e.g. cloud JWT auto-refresh)
-	teamID     string
-	workerID   string // set after RegisterWorker
-	httpClient *http.Client
+	baseURL      string
+	apiPrefix    string        // e.g. "/v1" for Hub server, "" for local daemon
+	apiKey       string        // legacy Hub API key (also used as Supabase anon key for X-API-Key compat)
+	tokenFunc    func() string // optional: overrides apiKey per request (e.g. cloud JWT auto-refresh)
+	teamID       string
+	workerID     string // set after RegisterWorker
+	supabaseURL  string // Supabase project URL (e.g. https://xyz.supabase.co)
+	supabaseKey  string // Supabase anon key
+	httpClient   *http.Client
 }
 
 // NewClient creates a Hub client from config.
@@ -54,11 +56,18 @@ func NewClient(cfg HubConfig) *Client {
 		apiPrefix = "/v1"
 	}
 
+	supabaseKey := cfg.SupabaseKey
+	if supabaseKey == "" {
+		supabaseKey = apiKey // fall back to legacy API key as Supabase anon key
+	}
+
 	return &Client{
-		baseURL:   strings.TrimRight(cfg.URL, "/"),
-		apiPrefix: apiPrefix,
-		apiKey:    apiKey,
-		teamID:    teamID,
+		baseURL:     strings.TrimRight(cfg.URL, "/"),
+		apiPrefix:   apiPrefix,
+		apiKey:      apiKey,
+		teamID:      teamID,
+		supabaseURL: strings.TrimRight(cfg.SupabaseURL, "/"),
+		supabaseKey: supabaseKey,
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
 			Transport: &http.Transport{
@@ -70,10 +79,10 @@ func NewClient(cfg HubConfig) *Client {
 	}
 }
 
-// IsAvailable returns true when the client has a URL configured.
+// IsAvailable returns true when the client has a URL configured (either legacy or Supabase).
 // API key is optional for local daemon mode.
 func (c *Client) IsAvailable() bool {
-	return c.baseURL != ""
+	return c.baseURL != "" || c.supabaseURL != ""
 }
 
 // SetTokenFunc sets a dynamic token function that overrides the static apiKey
@@ -109,6 +118,38 @@ func (c *Client) setHeaders(req *http.Request) {
 // For local daemon: apiPrefix="", path="/jobs" → baseURL+"/jobs"
 func (c *Client) url(path string) string {
 	return c.baseURL + c.apiPrefix + path
+}
+
+// supabaseRestURL builds a Supabase PostgREST URL for table/RPC operations.
+// path should start with "/rest/v1/..." or "/rest/v1/rpc/...".
+func (c *Client) supabaseRestURL(path string) string {
+	base := c.supabaseURL
+	if base == "" {
+		base = c.baseURL // fallback for tests
+	}
+	return base + path
+}
+
+// setSupabaseHeaders sets Supabase PostgREST authentication headers.
+// Uses apikey + Authorization Bearer pattern as required by PostgREST.
+func (c *Client) setSupabaseHeaders(req *http.Request) {
+	req.Header.Set("Content-Type", "application/json")
+	key := c.supabaseKey
+	if key == "" {
+		key = c.apiKey
+	}
+	if c.tokenFunc != nil {
+		if t := c.tokenFunc(); t != "" {
+			key = t
+		}
+	}
+	if key != "" {
+		req.Header.Set("apikey", key)
+		req.Header.Set("Authorization", "Bearer "+key)
+	}
+	if c.workerID != "" {
+		req.Header.Set("X-Worker-ID", c.workerID)
+	}
 }
 
 // isRetryableStatus returns true for HTTP status codes that warrant a retry.
@@ -290,79 +331,176 @@ func (c *Client) post(path string, body, dest any) error {
 }
 
 
+// supabaseGet performs a GET to a Supabase PostgREST URL and decodes JSON into dest.
+func (c *Client) supabaseGet(path string, dest any) error {
+	req, err := http.NewRequest("GET", c.supabaseRestURL(path), nil)
+	if err != nil {
+		return err
+	}
+	c.setSupabaseHeaders(req)
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := c.doWithRetry(req)
+	if err != nil {
+		return fmt.Errorf("GET %s: %w", path, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("GET %s: %d %s", path, resp.StatusCode, string(body))
+	}
+
+	if dest != nil {
+		if err := json.NewDecoder(resp.Body).Decode(dest); err != nil {
+			return fmt.Errorf("decode %s: %w", path, err)
+		}
+	}
+	return nil
+}
+
+// supabasePost performs a POST to a Supabase PostgREST URL with JSON body.
+func (c *Client) supabasePost(path string, body, dest any) error {
+	data, err := json.Marshal(body)
+	if err != nil {
+		return fmt.Errorf("marshal: %w", err)
+	}
+
+	req, err := http.NewRequest("POST", c.supabaseRestURL(path), strings.NewReader(string(data)))
+	if err != nil {
+		return err
+	}
+	c.setSupabaseHeaders(req)
+	req.Header.Set("Prefer", "return=representation")
+	req.GetBody = func() (io.ReadCloser, error) {
+		return io.NopCloser(strings.NewReader(string(data))), nil
+	}
+
+	resp, err := c.doWithRetry(req)
+	if err != nil {
+		return fmt.Errorf("POST %s: %w", path, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("POST %s: %d %s", path, resp.StatusCode, string(body))
+	}
+
+	if dest != nil {
+		if err := json.NewDecoder(resp.Body).Decode(dest); err != nil {
+			return fmt.Errorf("decode %s: %w", path, err)
+		}
+	}
+	return nil
+}
+
+// supabasePatch performs a PATCH to a Supabase PostgREST URL.
+func (c *Client) supabasePatch(path string, body, dest any) error {
+	data, err := json.Marshal(body)
+	if err != nil {
+		return fmt.Errorf("marshal: %w", err)
+	}
+
+	req, err := http.NewRequest("PATCH", c.supabaseRestURL(path), strings.NewReader(string(data)))
+	if err != nil {
+		return err
+	}
+	c.setSupabaseHeaders(req)
+	req.Header.Set("Prefer", "return=representation")
+	req.GetBody = func() (io.ReadCloser, error) {
+		return io.NopCloser(strings.NewReader(string(data))), nil
+	}
+
+	resp, err := c.doWithRetry(req)
+	if err != nil {
+		return fmt.Errorf("PATCH %s: %w", path, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("PATCH %s: %d %s", path, resp.StatusCode, string(body))
+	}
+
+	if dest != nil {
+		if err := json.NewDecoder(resp.Body).Decode(dest); err != nil {
+			return fmt.Errorf("decode %s: %w", path, err)
+		}
+	}
+	return nil
+}
+
+// supabaseRPC calls a Supabase PostgREST RPC function.
+func (c *Client) supabaseRPC(funcName string, body, dest any) error {
+	return c.supabasePost("/rest/v1/rpc/"+funcName, body, dest)
+}
+
 // =========================================================================
 // Job API
 // =========================================================================
 
-// SubmitJob submits a new job to the Hub queue.
+// SubmitJob submits a new job to Supabase (INSERT into jobs table).
 func (c *Client) SubmitJob(req *JobSubmitRequest) (*JobSubmitResponse, error) {
-	var resp JobSubmitResponse
-	if err := c.post("/jobs/submit", req, &resp); err != nil {
+	var rows []Job
+	if err := c.supabasePost("/rest/v1/jobs", req, &rows); err != nil {
 		return nil, fmt.Errorf("submit job: %w", err)
 	}
-	return &resp, nil
+	if len(rows) == 0 {
+		return nil, fmt.Errorf("submit job: empty response")
+	}
+	return &JobSubmitResponse{
+		JobID:  rows[0].ID,
+		Status: rows[0].Status,
+	}, nil
 }
 
-// GetJob returns the status of a single job.
+// GetJob returns the status of a single job from Supabase.
 func (c *Client) GetJob(jobID string) (*Job, error) {
-	var job Job
-	if err := c.get("/jobs/"+jobID, &job); err != nil {
+	var rows []Job
+	if err := c.supabaseGet("/rest/v1/jobs?id=eq."+jobID, &rows); err != nil {
 		return nil, fmt.Errorf("get job: %w", err)
 	}
-	return &job, nil
+	if len(rows) == 0 {
+		return nil, fmt.Errorf("get job: not found: %s", jobID)
+	}
+	return &rows[0], nil
 }
 
-// ListJobs returns jobs filtered by status (empty = all).
-// Handles both array responses (Hub server) and wrapped responses (PiQ daemon: {"jobs": [...]}).
+// ListJobs returns jobs filtered by status (empty = all) from Supabase.
 func (c *Client) ListJobs(status string, limit int) ([]Job, error) {
-	path := "/jobs"
-	params := []string{}
+	path := "/rest/v1/jobs?order=created_at.desc"
 	if status != "" {
-		params = append(params, "status="+status)
+		path += "&status=eq." + status
 	}
 	if limit > 0 {
-		params = append(params, fmt.Sprintf("limit=%d", limit))
-	}
-	if len(params) > 0 {
-		path += "?" + strings.Join(params, "&")
+		path += fmt.Sprintf("&limit=%d", limit)
 	}
 
-	raw, err := c.getRaw(path)
-	if err != nil {
-		return nil, fmt.Errorf("list jobs: %w", err)
-	}
-
-	// Try wrapped format (PiQ daemon: {"jobs": [...]})
-	var wrapped struct {
-		Jobs []Job `json:"jobs"`
-	}
-	if err := json.Unmarshal(raw, &wrapped); err == nil && wrapped.Jobs != nil {
-		return wrapped.Jobs, nil
-	}
-
-	// Fallback: direct array (Hub server)
 	var jobs []Job
-	if err := json.Unmarshal(raw, &jobs); err != nil {
-		return nil, fmt.Errorf("list jobs: decode: %w", err)
+	if err := c.supabaseGet(path, &jobs); err != nil {
+		return nil, fmt.Errorf("list jobs: %w", err)
 	}
 	return jobs, nil
 }
 
-// CancelJob cancels a queued or running job.
+// CancelJob cancels a queued or running job via Supabase PATCH.
 func (c *Client) CancelJob(jobID string) error {
-	if err := c.post("/jobs/"+jobID+"/cancel", nil, nil); err != nil {
+	body := map[string]any{"status": "CANCELLED"}
+	if err := c.supabasePatch("/rest/v1/jobs?id=eq."+jobID, body, nil); err != nil {
 		return fmt.Errorf("cancel job: %w", err)
 	}
 	return nil
 }
 
-// CompleteJob reports job completion.
+// CompleteJob reports job completion via Supabase RPC.
 func (c *Client) CompleteJob(jobID, status string, exitCode int) error {
 	body := map[string]any{
-		"status":    status,
-		"exit_code": exitCode,
+		"p_job_id":   jobID,
+		"p_status":   status,
+		"p_exit_code": exitCode,
 	}
-	if err := c.post("/jobs/"+jobID+"/complete", body, nil); err != nil {
+	if err := c.supabaseRPC("complete_job", body, nil); err != nil {
 		return fmt.Errorf("complete job: %w", err)
 	}
 	return nil
@@ -372,47 +510,76 @@ func (c *Client) CompleteJob(jobID, status string, exitCode int) error {
 // limit ≤ 0 means no limit (server default).
 // Returns a slice of Job pointers for use with context-aware callers (e.g. HubPoller).
 func (c *Client) ListJobsCtx(ctx context.Context, status string, limit int) ([]*Job, error) {
-	path := "/jobs"
-	params := []string{}
+	path := "/rest/v1/jobs?order=created_at.desc"
 	if status != "" {
-		params = append(params, "status="+status)
+		path += "&status=eq." + status
 	}
 	if limit > 0 {
-		params = append(params, fmt.Sprintf("limit=%d", limit))
-	}
-	if len(params) > 0 {
-		path += "?" + strings.Join(params, "&")
+		path += fmt.Sprintf("&limit=%d", limit)
 	}
 
-	raw, err := c.getRawWithContext(ctx, path)
+	req, err := http.NewRequestWithContext(ctx, "GET", c.supabaseRestURL(path), nil)
+	if err != nil {
+		return nil, err
+	}
+	c.setSupabaseHeaders(req)
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := c.doWithRetry(req)
 	if err != nil {
 		return nil, fmt.Errorf("list jobs: %w", err)
 	}
+	defer resp.Body.Close()
 
-	// Try wrapped format (PiQ daemon: {"jobs": [...]})
-	var wrapped struct {
-		Jobs []*Job `json:"jobs"`
-	}
-	if err := json.Unmarshal(raw, &wrapped); err == nil && wrapped.Jobs != nil {
-		return wrapped.Jobs, nil
+	if resp.StatusCode >= 400 {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("list jobs: %d %s", resp.StatusCode, string(body))
 	}
 
-	// Fallback: direct array (Hub server)
 	var jobs []*Job
-	if err := json.Unmarshal(raw, &jobs); err != nil {
+	if err := json.NewDecoder(resp.Body).Decode(&jobs); err != nil {
 		return nil, fmt.Errorf("list jobs: decode: %w", err)
 	}
 	return jobs, nil
 }
 
-// GetJobLogsCtx returns log lines for a job using the provided context.
+// GetJobLogsCtx returns log lines for a job via Supabase using the provided context.
 func (c *Client) GetJobLogsCtx(ctx context.Context, jobID string, offset, limit int) (*JobLogsResponse, error) {
-	path := fmt.Sprintf("/jobs/%s/logs?offset=%d&limit=%d", jobID, offset, limit)
-	var resp JobLogsResponse
-	if err := c.getWithContext(ctx, path, &resp); err != nil {
+	path := fmt.Sprintf("/rest/v1/job_logs?job_id=eq.%s&offset=%d&limit=%d&order=line_number.asc", jobID, offset, limit)
+	req, err := http.NewRequestWithContext(ctx, "GET", c.supabaseRestURL(path), nil)
+	if err != nil {
+		return nil, err
+	}
+	c.setSupabaseHeaders(req)
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := c.doWithRetry(req)
+	if err != nil {
 		return nil, fmt.Errorf("get job logs: %w", err)
 	}
-	return &resp, nil
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("get job logs: %d %s", resp.StatusCode, string(body))
+	}
+
+	var lines []struct {
+		Content string `json:"content"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&lines); err != nil {
+		return nil, fmt.Errorf("get job logs: decode: %w", err)
+	}
+	result := &JobLogsResponse{
+		JobID:  jobID,
+		Offset: offset,
+		Lines:  make([]string, len(lines)),
+	}
+	for i, l := range lines {
+		result.Lines[i] = l.Content
+	}
+	result.TotalLines = offset + len(lines)
+	return result, nil
 }
 
 // =========================================================================

@@ -280,17 +280,20 @@ func TestHealthCheck_Error(t *testing.T) {
 }
 
 // =========================================================================
-// SubmitJob
+// SubmitJob (Supabase PostgREST: POST /rest/v1/jobs)
 // =========================================================================
 
 func TestSubmitJob(t *testing.T) {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/v1/jobs/submit", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/rest/v1/jobs", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "POST" {
 			t.Errorf("method = %s, want POST", r.Method)
 		}
-		if r.Header.Get("X-API-Key") != "test-key" {
-			t.Errorf("missing X-API-Key header")
+		if r.Header.Get("apikey") != "test-key" {
+			t.Errorf("missing apikey header, got %q", r.Header.Get("apikey"))
+		}
+		if r.Header.Get("Authorization") != "Bearer test-key" {
+			t.Errorf("missing Authorization header, got %q", r.Header.Get("Authorization"))
 		}
 
 		var req JobSubmitRequest
@@ -299,11 +302,8 @@ func TestSubmitJob(t *testing.T) {
 			t.Errorf("name = %q, want train-resnet", req.Name)
 		}
 
-		jsonResponse(w, JobSubmitResponse{
-			JobID:         "job-123",
-			Status:        "QUEUED",
-			QueuePosition: 3,
-		})
+		// PostgREST returns array of inserted rows
+		jsonResponse(w, []Job{{ID: "job-123", Status: "QUEUED"}})
 	})
 	client, _ := newTestServer(t, mux)
 
@@ -319,16 +319,13 @@ func TestSubmitJob(t *testing.T) {
 	if resp.JobID != "job-123" {
 		t.Errorf("JobID = %q, want job-123", resp.JobID)
 	}
-	if resp.QueuePosition != 3 {
-		t.Errorf("QueuePosition = %d, want 3", resp.QueuePosition)
-	}
 }
 
 func TestSubmitJob_ServerError(t *testing.T) {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/v1/jobs/submit", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/rest/v1/jobs", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(400)
-		w.Write([]byte(`{"detail":"bad request"}`))
+		w.Write([]byte(`{"message":"bad request"}`))
 	})
 	client, _ := newTestServer(t, mux)
 
@@ -339,22 +336,26 @@ func TestSubmitJob_ServerError(t *testing.T) {
 }
 
 // =========================================================================
-// GetJob
+// GetJob (Supabase PostgREST: GET /rest/v1/jobs?id=eq.{id})
 // =========================================================================
 
 func TestGetJob(t *testing.T) {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/v1/jobs/job-456", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/rest/v1/jobs", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "GET" {
 			t.Errorf("method = %s, want GET", r.Method)
 		}
-		jsonResponse(w, Job{
+		if r.URL.Query().Get("id") != "eq.job-456" {
+			t.Errorf("id filter = %q, want eq.job-456", r.URL.Query().Get("id"))
+		}
+		// PostgREST returns array
+		jsonResponse(w, []Job{{
 			ID:      "job-456",
 			Name:    "eval",
 			Status:  "RUNNING",
 			Workdir: "/work",
 			Command: "python eval.py",
-		})
+		}})
 	})
 	client, _ := newTestServer(t, mux)
 
@@ -368,19 +369,21 @@ func TestGetJob(t *testing.T) {
 }
 
 // =========================================================================
-// ListJobs
+// ListJobs (Supabase PostgREST: GET /rest/v1/jobs?order=created_at.desc&...)
 // =========================================================================
 
 func TestListJobs(t *testing.T) {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/v1/jobs", func(w http.ResponseWriter, r *http.Request) {
-		status := r.URL.Query().Get("status")
-		limit := r.URL.Query().Get("limit")
-		if status != "RUNNING" {
-			t.Errorf("status = %q, want RUNNING", status)
+	mux.HandleFunc("/rest/v1/jobs", func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query()
+		if q.Get("status") != "eq.RUNNING" {
+			t.Errorf("status filter = %q, want eq.RUNNING", q.Get("status"))
 		}
-		if limit != "10" {
-			t.Errorf("limit = %q, want 10", limit)
+		if q.Get("limit") != "10" {
+			t.Errorf("limit = %q, want 10", q.Get("limit"))
+		}
+		if q.Get("order") != "created_at.desc" {
+			t.Errorf("order = %q, want created_at.desc", q.Get("order"))
 		}
 		jsonResponse(w, []Job{
 			{ID: "j1", Status: "RUNNING"},
@@ -400,9 +403,14 @@ func TestListJobs(t *testing.T) {
 
 func TestListJobs_NoFilter(t *testing.T) {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/v1/jobs", func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.RawQuery != "" {
-			t.Errorf("unexpected query: %s", r.URL.RawQuery)
+	mux.HandleFunc("/rest/v1/jobs", func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query()
+		// No status or limit filter, but order should still be present
+		if q.Get("status") != "" {
+			t.Errorf("unexpected status filter: %s", q.Get("status"))
+		}
+		if q.Get("limit") != "" {
+			t.Errorf("unexpected limit: %s", q.Get("limit"))
 		}
 		jsonResponse(w, []Job{})
 	})
@@ -415,16 +423,24 @@ func TestListJobs_NoFilter(t *testing.T) {
 }
 
 // =========================================================================
-// CancelJob
+// CancelJob (Supabase PostgREST: PATCH /rest/v1/jobs?id=eq.{id})
 // =========================================================================
 
 func TestCancelJob(t *testing.T) {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/v1/jobs/job-789/cancel", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != "POST" {
-			t.Errorf("method = %s, want POST", r.Method)
+	mux.HandleFunc("/rest/v1/jobs", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "PATCH" {
+			t.Errorf("method = %s, want PATCH", r.Method)
 		}
-		jsonResponse(w, map[string]bool{"cancelled": true})
+		if r.URL.Query().Get("id") != "eq.job-789" {
+			t.Errorf("id filter = %q, want eq.job-789", r.URL.Query().Get("id"))
+		}
+		var body map[string]any
+		json.NewDecoder(r.Body).Decode(&body)
+		if body["status"] != "CANCELLED" {
+			t.Errorf("status = %v, want CANCELLED", body["status"])
+		}
+		w.WriteHeader(204)
 	})
 	client, _ := newTestServer(t, mux)
 
@@ -434,18 +450,25 @@ func TestCancelJob(t *testing.T) {
 }
 
 // =========================================================================
-// CompleteJob
+// CompleteJob (Supabase RPC: POST /rest/v1/rpc/complete_job)
 // =========================================================================
 
 func TestCompleteJob(t *testing.T) {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/v1/jobs/job-100/complete", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/rest/v1/rpc/complete_job", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "POST" {
+			t.Errorf("method = %s, want POST", r.Method)
+		}
 		var body map[string]any
 		json.NewDecoder(r.Body).Decode(&body)
-		if body["status"] != "SUCCEEDED" {
-			t.Errorf("status = %v, want SUCCEEDED", body["status"])
+		if body["p_job_id"] != "job-100" {
+			t.Errorf("p_job_id = %v, want job-100", body["p_job_id"])
 		}
-		jsonResponse(w, map[string]bool{"acknowledged": true})
+		if body["p_status"] != "SUCCEEDED" {
+			t.Errorf("p_status = %v, want SUCCEEDED", body["p_status"])
+		}
+		w.WriteHeader(200)
+		w.Write([]byte(`null`))
 	})
 	client, _ := newTestServer(t, mux)
 
@@ -702,9 +725,10 @@ func TestRenewLease_NotRenewed(t *testing.T) {
 
 func TestHTTP4xx(t *testing.T) {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/v1/jobs/bad", func(w http.ResponseWriter, r *http.Request) {
+	// GetJob now calls /rest/v1/jobs?id=eq.bad via supabaseGet
+	mux.HandleFunc("/rest/v1/jobs", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(404)
-		w.Write([]byte(`{"detail":"not found"}`))
+		w.Write([]byte(`{"message":"not found"}`))
 	})
 	client, _ := newTestServer(t, mux)
 
@@ -1064,13 +1088,12 @@ func TestLeaseAcquireResponse_ParsesPresignedURLs(t *testing.T) {
 
 func TestListJobsCtx(t *testing.T) {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/v1/jobs", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/rest/v1/jobs", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "GET" {
 			t.Errorf("method = %s, want GET", r.Method)
 		}
-		status := r.URL.Query().Get("status")
-		if status != "completed" {
-			t.Errorf("status = %q, want completed", status)
+		if r.URL.Query().Get("status") != "eq.completed" {
+			t.Errorf("status filter = %q, want eq.completed", r.URL.Query().Get("status"))
 		}
 		jsonResponse(w, []*Job{
 			{ID: "j1", Status: "completed"},
@@ -1093,9 +1116,10 @@ func TestListJobsCtx(t *testing.T) {
 
 func TestListJobsCtx_NoFilter(t *testing.T) {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/v1/jobs", func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.RawQuery != "" {
-			t.Errorf("unexpected query: %s", r.URL.RawQuery)
+	mux.HandleFunc("/rest/v1/jobs", func(w http.ResponseWriter, r *http.Request) {
+		// order=created_at.desc is always present, but no status or limit
+		if r.URL.Query().Get("status") != "" {
+			t.Errorf("unexpected status filter: %s", r.URL.Query().Get("status"))
 		}
 		jsonResponse(w, []*Job{})
 	})
@@ -1112,7 +1136,7 @@ func TestListJobsCtx_NoFilter(t *testing.T) {
 
 func TestListJobsCtx_ContextCancelled(t *testing.T) {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/v1/jobs", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/rest/v1/jobs", func(w http.ResponseWriter, r *http.Request) {
 		jsonResponse(w, []*Job{})
 	})
 	client, _ := newTestServer(t, mux)
@@ -1132,24 +1156,18 @@ func TestListJobsCtx_ContextCancelled(t *testing.T) {
 
 func TestGetJobLogsCtx(t *testing.T) {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/v1/jobs/job-ctx-1/logs", func(w http.ResponseWriter, r *http.Request) {
+	// New implementation calls /rest/v1/job_logs?job_id=eq.{id}&...
+	mux.HandleFunc("/rest/v1/job_logs", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "GET" {
 			t.Errorf("method = %s, want GET", r.Method)
 		}
-		offset := r.URL.Query().Get("offset")
-		limit := r.URL.Query().Get("limit")
-		if offset != "0" {
-			t.Errorf("offset = %q, want 0", offset)
+		if r.URL.Query().Get("job_id") != "eq.job-ctx-1" {
+			t.Errorf("job_id filter = %q, want eq.job-ctx-1", r.URL.Query().Get("job_id"))
 		}
-		if limit != "1000" {
-			t.Errorf("limit = %q, want 1000", limit)
-		}
-		jsonResponse(w, JobLogsResponse{
-			JobID:      "job-ctx-1",
-			Lines:      []string{"MPJPE=45.2", "PA_MPJPE=32.1"},
-			TotalLines: 2,
-			Offset:     0,
-			HasMore:    false,
+		// Returns array of log row objects
+		jsonResponse(w, []map[string]any{
+			{"content": "MPJPE=45.2"},
+			{"content": "PA_MPJPE=32.1"},
 		})
 	})
 	client, _ := newTestServer(t, mux)
@@ -1164,15 +1182,12 @@ func TestGetJobLogsCtx(t *testing.T) {
 	if resp.Lines[0] != "MPJPE=45.2" {
 		t.Errorf("Lines[0] = %q, want MPJPE=45.2", resp.Lines[0])
 	}
-	if resp.HasMore {
-		t.Error("expected HasMore = false")
-	}
 }
 
 func TestGetJobLogsCtx_ContextCancelled(t *testing.T) {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/v1/jobs/job-ctx-2/logs", func(w http.ResponseWriter, r *http.Request) {
-		jsonResponse(w, JobLogsResponse{})
+	mux.HandleFunc("/rest/v1/job_logs", func(w http.ResponseWriter, r *http.Request) {
+		jsonResponse(w, []map[string]any{})
 	})
 	client, _ := newTestServer(t, mux)
 
