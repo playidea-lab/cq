@@ -141,6 +141,41 @@ func lighthouseRegisterExisting(store *SQLiteStore, name, description, inputSche
 	}, nil
 }
 
+// CLICommand describes a CLI subcommand for lighthouse registration.
+type CLICommand struct {
+	FullCommand string // e.g. "cq hub worker start"
+	Short       string // one-line description
+	Long        string // multi-line help text
+}
+
+// RegisterCLICommands registers CLI commands as lighthouse entries with "cli:" prefix.
+// This allows agents to discover CLI commands via c4_lighthouse get/list.
+func RegisterCLICommands(store *SQLiteStore, commands []CLICommand) int {
+	registered := 0
+	for _, cmd := range commands {
+		name := "cli:" + cmd.FullCommand
+		existing, _ := store.getLighthouse(name)
+		if existing != nil {
+			continue
+		}
+		spec := fmt.Sprintf("CLI Command: %s\n\nUsage:\n  %s\n\nDescription:\n  %s", cmd.Short, cmd.FullCommand, cmd.Long)
+		lh := &Lighthouse{
+			Name:        name,
+			Description: cmd.Short,
+			InputSchema: `{"type":"object"}`,
+			Spec:        spec,
+			Status:      "implemented",
+			Version:     1,
+			CreatedBy:   "auto-seed",
+			PromotedBy:  "cli-auto",
+		}
+		if err := store.saveLighthouse(lh); err == nil {
+			registered++
+		}
+	}
+	return registered
+}
+
 // lighthouseRegisterAll bulk-registers all existing MCP tools as lighthouse entries.
 // Skips tools that already have a lighthouse record or are the lighthouse tool itself.
 func lighthouseRegisterAll(reg *mcp.Registry, store *SQLiteStore, agentID string) (any, error) {

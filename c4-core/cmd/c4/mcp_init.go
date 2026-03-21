@@ -317,6 +317,13 @@ func newMCPServer() (*mcpServer, error) {
 		fmt.Fprintf(os.Stderr, "cq: %d lighthouse stubs loaded\n", n)
 	}
 
+	// Auto-register CLI commands in lighthouse so agents can discover them.
+	if cliCmds := collectCLICommands(rootCmd, "cq"); len(cliCmds) > 0 {
+		if n := handlers.RegisterCLICommands(sqliteStore, cliCmds); n > 0 {
+			fmt.Fprintf(os.Stderr, "cq: %d CLI commands registered in lighthouse\n", n)
+		}
+	}
+
 	// Manual recovery tools for stuck workers.
 	handlers.RegisterTaskAdminHandlers(reg, sqliteStore)
 
