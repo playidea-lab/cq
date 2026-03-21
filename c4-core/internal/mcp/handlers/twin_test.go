@@ -611,6 +611,123 @@ func TestPopReflectConfidenceFilter(t *testing.T) {
 	}
 }
 
+// --- LLM Usage Pattern tests ---
+
+// createTraceStepsTable creates the trace_steps table in the given db (for testing only).
+func createTraceStepsTable(t *testing.T, db *sql.DB) {
+	t.Helper()
+	_, err := db.Exec(`
+CREATE TABLE IF NOT EXISTS trace_steps (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    trace_id   TEXT    NOT NULL DEFAULT '',
+    step_type  TEXT    NOT NULL,
+    ts         TEXT    NOT NULL,
+    model      TEXT    NOT NULL DEFAULT ''
+)`)
+	if err != nil {
+		t.Fatalf("create trace_steps: %v", err)
+	}
+}
+
+func TestDetectLLMUsagePattern_NoTable(t *testing.T) {
+	store := newTestStore(t)
+	// trace_steps table does not exist — should return empty, no panic
+	patterns := store.detectLLMUsagePattern()
+	if len(patterns) != 0 {
+		t.Errorf("expected 0 patterns without trace_steps table, got %d", len(patterns))
+	}
+}
+
+func TestDetectLLMUsagePattern_OpusOveruse(t *testing.T) {
+	store := newTestStore(t)
+	createTraceStepsTable(t, store.db)
+
+	// Insert 7 opus + 3 sonnet calls (opus ratio 70%)
+	now := time.Now()
+	for i := 0; i < 7; i++ {
+		ts := now.Add(-time.Duration(i) * time.Hour).Format(time.RFC3339)
+		_, _ = store.db.Exec(
+			`INSERT INTO trace_steps (trace_id, step_type, ts, model) VALUES ('t1', 'llm', ?, 'claude-opus-3')`,
+			ts)
+	}
+	for i := 0; i < 3; i++ {
+		ts := now.Add(-time.Duration(i) * time.Hour).Format(time.RFC3339)
+		_, _ = store.db.Exec(
+			`INSERT INTO trace_steps (trace_id, step_type, ts, model) VALUES ('t1', 'llm', ?, 'claude-sonnet-4')`,
+			ts)
+	}
+
+	patterns := store.detectLLMUsagePattern()
+	found := false
+	for _, p := range patterns {
+		if p.Type == "behavioral" && p.Severity == "warning" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected behavioral/warning pattern for opus overuse, got %+v", patterns)
+	}
+}
+
+func TestDetectLLMUsagePattern_OpusUnderThreshold(t *testing.T) {
+	store := newTestStore(t)
+	createTraceStepsTable(t, store.db)
+
+	// Insert 3 opus + 7 sonnet (opus ratio 30% — below threshold)
+	now := time.Now()
+	for i := 0; i < 3; i++ {
+		ts := now.Add(-time.Duration(i) * time.Hour).Format(time.RFC3339)
+		_, _ = store.db.Exec(
+			`INSERT INTO trace_steps (trace_id, step_type, ts, model) VALUES ('t1', 'llm', ?, 'claude-opus-3')`,
+			ts)
+	}
+	for i := 0; i < 7; i++ {
+		ts := now.Add(-time.Duration(i) * time.Hour).Format(time.RFC3339)
+		_, _ = store.db.Exec(
+			`INSERT INTO trace_steps (trace_id, step_type, ts, model) VALUES ('t1', 'llm', ?, 'claude-sonnet-4')`,
+			ts)
+	}
+
+	patterns := store.detectLLMUsagePattern()
+	for _, p := range patterns {
+		if p.Type == "behavioral" && p.Severity == "warning" {
+			t.Errorf("unexpected behavioral/warning pattern below opus threshold: %+v", p)
+		}
+	}
+}
+
+func TestDetectLLMUsagePattern_GrowthIncrease(t *testing.T) {
+	store := newTestStore(t)
+	createTraceStepsTable(t, store.db)
+
+	now := time.Now()
+	// Recent 7 days: 10 calls
+	for i := 0; i < 10; i++ {
+		ts := now.Add(-time.Duration(i) * time.Hour).Format(time.RFC3339)
+		_, _ = store.db.Exec(
+			`INSERT INTO trace_steps (trace_id, step_type, ts, model) VALUES ('t1', 'llm', ?, 'claude-sonnet-4')`,
+			ts)
+	}
+	// Previous 7 days: 5 calls (100% increase → above 20% threshold)
+	for i := 0; i < 5; i++ {
+		ts := now.Add(-time.Duration(8+i) * 24 * time.Hour).Format(time.RFC3339)
+		_, _ = store.db.Exec(
+			`INSERT INTO trace_steps (trace_id, step_type, ts, model) VALUES ('t1', 'llm', ?, 'claude-sonnet-4')`,
+			ts)
+	}
+
+	patterns := store.detectLLMUsagePattern()
+	found := false
+	for _, p := range patterns {
+		if p.Type == "growth" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected growth pattern for LLM usage increase, got %+v", patterns)
+	}
+}
+
 // --- Helpers ---
 
 func taskIDForTest(i int) string {
