@@ -88,3 +88,13 @@ security-report.md
 HANDOFF.md
 c5/c5
 _mnist_exp/
+
+# Piki
+.piki-lock.yaml
+.cqdata
+
+# Downloaded packages
+*.whl
+
+# Local projects
+projects/
