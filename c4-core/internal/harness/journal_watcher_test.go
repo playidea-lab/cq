@@ -8,22 +8,22 @@ import (
 	"testing"
 	"time"
 
-	"github.com/changmin/c4-core/internal/c1push"
+	"github.com/changmin/c4-core/internal/channelpush"
 	"github.com/changmin/c4-core/internal/observe"
 )
 
 // mockPusher captures pushed messages for testing.
 type mockPusher struct {
 	channels []string
-	messages []c1push.PushMessage
+	messages []channelpush.PushMessage
 }
 
-func (m *mockPusher) EnsureChannel(_ context.Context, _, _, name string, _ c1push.Platform) (string, error) {
+func (m *mockPusher) EnsureChannel(_ context.Context, _, _, name string, _ channelpush.Platform) (string, error) {
 	m.channels = append(m.channels, name)
 	return "test-channel-id", nil
 }
 
-func (m *mockPusher) AppendMessages(_ context.Context, _ string, msgs []c1push.PushMessage) error {
+func (m *mockPusher) AppendMessages(_ context.Context, _ string, msgs []channelpush.PushMessage) error {
 	m.messages = append(m.messages, msgs...)
 	return nil
 }

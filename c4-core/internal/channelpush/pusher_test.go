@@ -1,4 +1,4 @@
-package c1push
+package channelpush
 
 import (
 	"context"

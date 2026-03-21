@@ -1,7 +1,7 @@
-// Package c1push provides a thin PostgREST HTTP client for pushing messages
+// Package channelpush provides a thin PostgREST HTTP client for pushing messages
 // to c1_channels and c1_messages tables in Supabase.
 // It is intentionally standalone (~50 lines) with no external Go module dependencies.
-package c1push
+package channelpush
 
 import (
 	"bytes"
@@ -71,7 +71,7 @@ func (p *Pusher) EnsureChannel(ctx context.Context, tenantID, projectID, name st
 	endpoint := p.supabaseURL + "/rest/v1/c1_channels"
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
-		return "", fmt.Errorf("c1push: ensure channel: %w", err)
+		return "", fmt.Errorf("channelpush: ensure channel: %w", err)
 	}
 	p.setHeaders(req)
 	req.Header.Set("Content-Type", "application/json")
@@ -79,7 +79,7 @@ func (p *Pusher) EnsureChannel(ctx context.Context, tenantID, projectID, name st
 
 	resp, err := p.httpClient.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("c1push: ensure channel: http: %w", err)
+		return "", fmt.Errorf("channelpush: ensure channel: http: %w", err)
 	}
 	defer resp.Body.Close()
 	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
@@ -89,7 +89,7 @@ func (p *Pusher) EnsureChannel(ctx context.Context, tenantID, projectID, name st
 		return p.findChannel(ctx, tenantID, string(platform), name)
 	}
 	if resp.StatusCode >= 400 {
-		return "", fmt.Errorf("c1push: ensure channel: server error %d: %s", resp.StatusCode, string(respBody))
+		return "", fmt.Errorf("channelpush: ensure channel: server error %d: %s", resp.StatusCode, string(respBody))
 	}
 
 	var rows []struct {
@@ -123,13 +123,13 @@ func (p *Pusher) AppendMessages(ctx context.Context, channelID string, msgs []Pu
 	}
 	body, err := json.Marshal(rows)
 	if err != nil {
-		return fmt.Errorf("c1push: append: marshal: %w", err)
+		return fmt.Errorf("channelpush: append: marshal: %w", err)
 	}
 
 	endpoint := p.supabaseURL + "/rest/v1/c1_messages"
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
-		return fmt.Errorf("c1push: append: %w", err)
+		return fmt.Errorf("channelpush: append: %w", err)
 	}
 	p.setHeaders(req)
 	req.Header.Set("Content-Type", "application/json")
@@ -137,12 +137,12 @@ func (p *Pusher) AppendMessages(ctx context.Context, channelID string, msgs []Pu
 
 	resp, err := p.httpClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("c1push: append: http: %w", err)
+		return fmt.Errorf("channelpush: append: http: %w", err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		b, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return fmt.Errorf("c1push: append: status %d: %s", resp.StatusCode, string(b))
+		return fmt.Errorf("channelpush: append: status %d: %s", resp.StatusCode, string(b))
 	}
 	return nil
 }
@@ -159,19 +159,19 @@ func (p *Pusher) findChannel(ctx context.Context, tenantID, platform, name strin
 	endpoint := p.supabaseURL + "/rest/v1/c1_channels?" + params.Encode()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
-		return "", fmt.Errorf("c1push: find channel: %w", err)
+		return "", fmt.Errorf("channelpush: find channel: %w", err)
 	}
 	p.setHeaders(req)
 	req.Header.Set("Accept", "application/json")
 
 	resp, err := p.httpClient.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("c1push: find channel: http: %w", err)
+		return "", fmt.Errorf("channelpush: find channel: http: %w", err)
 	}
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("c1push: find channel: status %d", resp.StatusCode)
+		return "", fmt.Errorf("channelpush: find channel: status %d", resp.StatusCode)
 	}
 	var rows []struct {
 		ID string `json:"id"`

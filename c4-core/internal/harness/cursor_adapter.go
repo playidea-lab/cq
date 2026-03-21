@@ -12,7 +12,7 @@ import (
 
 	_ "modernc.org/sqlite"
 
-	"github.com/changmin/c4-core/internal/c1push"
+	"github.com/changmin/c4-core/internal/channelpush"
 )
 
 // cursorDBPaths returns candidate paths for Cursor's state.vscdb by OS.
@@ -177,7 +177,7 @@ func (a *CursorAdapter) syncComposer(ctx context.Context, composerID string) {
 	}
 
 	channelName := "cursor:" + composerID
-	channelID, err := a.pusher.EnsureChannel(ctx, a.tenantID, "", channelName, c1push.PlatformCursor)
+	channelID, err := a.pusher.EnsureChannel(ctx, a.tenantID, "", channelName, channelpush.PlatformCursor)
 	if err != nil || channelID == "" {
 		return
 	}
@@ -191,7 +191,7 @@ func (a *CursorAdapter) syncComposer(ctx context.Context, composerID string) {
 }
 
 // fetchBubbles opens the cursor DB, reads all bubbles for composerID, and closes.
-func (a *CursorAdapter) fetchBubbles(ctx context.Context, composerID string) ([]c1push.PushMessage, error) {
+func (a *CursorAdapter) fetchBubbles(ctx context.Context, composerID string) ([]channelpush.PushMessage, error) {
 	db, err := sql.Open("sqlite", a.dbPath)
 	if err != nil {
 		return nil, err
@@ -207,7 +207,7 @@ func (a *CursorAdapter) fetchBubbles(ctx context.Context, composerID string) ([]
 	}
 	defer rows.Close()
 
-	var msgs []c1push.PushMessage
+	var msgs []channelpush.PushMessage
 	for rows.Next() {
 		var value string
 		if err := rows.Scan(&value); err != nil {
@@ -230,7 +230,7 @@ type cursorBubble struct {
 
 // parseCursorBubble parses a Cursor bubble JSON value into a PushMessage.
 // Returns nil if the type is not 1 (user) or 2 (assistant).
-func parseCursorBubble(value string) *c1push.PushMessage {
+func parseCursorBubble(value string) *channelpush.PushMessage {
 	var b cursorBubble
 	if err := json.Unmarshal([]byte(value), &b); err != nil {
 		return nil
@@ -244,7 +244,7 @@ func parseCursorBubble(value string) *c1push.PushMessage {
 	default:
 		return nil
 	}
-	return &c1push.PushMessage{
+	return &channelpush.PushMessage{
 		SenderName: role,
 		SenderType: role,
 		Content:    b.Text,

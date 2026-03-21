@@ -3,14 +3,14 @@ package harness
 import (
 	"context"
 
-	"github.com/changmin/c4-core/internal/c1push"
+	"github.com/changmin/c4-core/internal/channelpush"
 )
 
 // ChannelPusher is the interface JournalWatcher uses to push messages.
-// It is satisfied by *c1push.Pusher and by mock implementations in tests.
+// It is satisfied by *channelpush.Pusher and by mock implementations in tests.
 type ChannelPusher interface {
-	EnsureChannel(ctx context.Context, tenantID, projectID, name string, platform c1push.Platform) (string, error)
-	AppendMessages(ctx context.Context, channelID string, msgs []c1push.PushMessage) error
+	EnsureChannel(ctx context.Context, tenantID, projectID, name string, platform channelpush.Platform) (string, error)
+	AppendMessages(ctx context.Context, channelID string, msgs []channelpush.PushMessage) error
 }
 
 // SyncPusher wraps a ChannelPusher with per-file channel ID caching and
@@ -31,7 +31,7 @@ func newSyncPusher(pusher ChannelPusher, tenantID string) *SyncPusher {
 }
 
 // Push ensures the channel for filePath exists and appends msgs to it.
-func (s *SyncPusher) Push(ctx context.Context, filePath string, msgs []c1push.PushMessage) error {
+func (s *SyncPusher) Push(ctx context.Context, filePath string, msgs []channelpush.PushMessage) error {
 	if len(msgs) == 0 {
 		return nil
 	}
@@ -50,7 +50,7 @@ func (s *SyncPusher) ensureChannel(ctx context.Context, filePath string) (string
 		return id, nil
 	}
 	channelName := filePathToChannelName(filePath)
-	id, err := s.pusher.EnsureChannel(ctx, s.tenantID, "", channelName, c1push.PlatformClaudeCode)
+	id, err := s.pusher.EnsureChannel(ctx, s.tenantID, "", channelName, channelpush.PlatformClaudeCode)
 	if err != nil {
 		return "", err
 	}
