@@ -9,6 +9,11 @@ economic_mode:
   enabled: true
   preset: standard
 
+observe:
+  enabled: true
+  log_level: info
+  log_format: text
+
 validation:
   # 언어 자동 감지 후 적용 (cq init --lang)
   # go:

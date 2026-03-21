@@ -12,6 +12,16 @@ common:
     - rules/common/git-workflow.md
     - rules/common/review-criteria.md
     - rules/common/testing.md
+  hooks:
+    - src: hooks/bash-security.sh
+      dst: .claude/hooks/bash-security.sh
+      executable: true
+    - src: hooks/stop-guard.sh
+      dst: .claude/hooks/stop-guard.sh
+      executable: true
+    - src: hooks/session-start.sh
+      dst: .claude/hooks/session-start.sh
+      executable: true
   files:
     - src: agents.md
       dst: CLAUDE.md

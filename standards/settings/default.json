@@ -1,6 +1,17 @@
 {
+  "language": "한국어",
   "permissions": {
     "allow": [
+      "mcp__cq__*",
+      "Read",
+      "Glob",
+      "Grep",
+      "WebFetch",
+      "WebSearch",
+      "Skill(c4-*)",
+      "Skill(c9-*)",
+      "Skill(pi)",
+      "Skill(company-review)",
       "Bash(git log *)",
       "Bash(git show *)",
       "Bash(git diff *)",
@@ -39,6 +50,40 @@
       "Bash(git push --force master)",
       "Bash(pip install *)",
       "Bash(python *)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/bash-security.sh",
+            "type": "command"
+          }
+        ],
+        "matcher": "Bash"
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/session-start.sh",
+            "type": "command"
+          }
+        ],
+        "matcher": "startup|resume"
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/stop-guard.sh",
+            "type": "command"
+          }
+        ]
+      }
     ]
   }
 }
