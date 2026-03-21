@@ -21,14 +21,22 @@ pop:
   soul_path: ""               # default: .c4/souls/{user}/soul-developer.md
 ```
 
-### `hub` — C5 Hub (full tier)
+### `hub` — Distributed Worker Queue (full tier)
+
+Workers connect to Supabase directly via `pgx LISTEN/NOTIFY` — no local Hub process, no Hub URL to configure.
 
 ```yaml
 hub:
   enabled: true
-  url: "http://localhost:8585"
-  api_key: ""   # use: cq secret set hub.api_key <value>
+  # api_key: use: cq secret set hub.api_key <value>  (Supabase service role key)
+  # cloud session JWT is used as fallback when no key is configured
 ```
+
+The `hub` section uses `cloud.url` and `cloud.direct_url` (port 5432) for the LISTEN/NOTIFY connection. No `hub.url` needed.
+
+::: tip Telegram notifications
+Job completion notifications are sent via Telegram. Run `cq setup` to pair a Telegram bot via BotFather.
+:::
 
 ### `llm_gateway` — LLM providers (connected / full tier)
 
@@ -68,11 +76,6 @@ permission_reviewer:
 
 ```yaml
 serve:
-  hub:
-    enabled: false       # start C5 Hub as a subprocess (full tier)
-    binary: "c5"         # binary name to find in PATH
-    port: 8585           # port to pass as --port to c5
-    args: []             # additional CLI args
   eventbus:
     enabled: false
   gpu:
@@ -81,20 +84,13 @@ serve:
     enabled: false   # requires cloud.url + cloud.anon_key
   eventsink:
     enabled: false
-    port: 4141       # C5 Hub → C4 이벤트 수신 엔드포인트
+    port: 4141
     token: ""
   stale_checker:
     enabled: true
-    threshold_minutes: 30   # 이 시간 이상 in_progress이면 stale 판정
+    threshold_minutes: 30   # reset in_progress tasks stuck longer than this
     interval_seconds: 60
-  ssesubscriber:
-    enabled: false   # full tier 전용 (C5 Hub + C3 EventBus 빌드 태그 필요)
 ```
-
-When `serve.hub.enabled: true`, `cq serve` automatically starts the `c5` binary as a child process and manages its lifecycle:
-- Starts on `cq serve` launch (skips gracefully if binary not found in PATH)
-- Health-checked at `http://127.0.0.1:{port}/v1/health` every few seconds
-- Stopped cleanly on `cq serve` exit (SIGTERM → 5s wait → SIGKILL)
 
 ### `worktree`
 
@@ -123,4 +119,5 @@ Configured by your organization. You should not need to modify this section dire
 cloud:
   url: "https://xxxx.supabase.co"
   anon_key: ""
+  # direct_url: "postgresql://..."   # optional: used by hub for LISTEN/NOTIFY (port 5432)
 ```

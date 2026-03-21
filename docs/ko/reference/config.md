@@ -21,14 +21,22 @@ pop:
   soul_path: ""               # 기본값: .c4/souls/{user}/soul-developer.md
 ```
 
-### `hub` — C5 Hub (full 티어)
+### `hub` — 분산 워커 큐 (full 티어)
+
+워커는 `pgx LISTEN/NOTIFY`를 통해 Supabase에 직접 연결합니다 — 로컬 Hub 프로세스 없음, Hub URL 설정 불필요.
 
 ```yaml
 hub:
   enabled: true
-  url: "http://localhost:8585"
-  api_key: ""   # 사용: cq secret set hub.api_key <value>
+  # api_key: cq secret set hub.api_key <값>  (Supabase service role 키)
+  # 키 미설정 시 cloud session JWT를 자동으로 사용
 ```
+
+`hub` 섹션은 LISTEN/NOTIFY 연결에 `cloud.url`과 `cloud.direct_url` (포트 5432)을 사용합니다. `hub.url`은 필요 없습니다.
+
+::: tip Telegram 알림
+잡 완료 알림은 Telegram으로 전송됩니다. `cq setup`을 실행해 BotFather를 통해 Telegram 봇을 페어링하세요.
+:::
 
 ### `llm_gateway` — LLM 프로바이더 (connected / full 티어)
 
@@ -68,11 +76,6 @@ permission_reviewer:
 
 ```yaml
 serve:
-  hub:
-    enabled: false       # C5 Hub를 서브프로세스로 시작 (full 티어)
-    binary: "c5"         # PATH에서 찾을 바이너리명
-    port: 8585           # c5에 --port로 전달할 포트
-    args: []             # 추가 CLI 인자
   eventbus:
     enabled: false
   gpu:
@@ -81,20 +84,13 @@ serve:
     enabled: false   # cloud.url + cloud.anon_key 필요
   eventsink:
     enabled: false
-    port: 4141       # C5 Hub → C4 이벤트 수신 엔드포인트
+    port: 4141
     token: ""
   stale_checker:
     enabled: true
     threshold_minutes: 30   # 이 시간 이상 in_progress이면 stale 판정
     interval_seconds: 60
-  ssesubscriber:
-    enabled: false   # full 티어 전용 (C5 Hub + C3 EventBus 빌드 태그 필요)
 ```
-
-`serve.hub.enabled: true`일 때 `cq serve`가 `c5` 바이너리를 자식 프로세스로 자동 시작하여 라이프사이클을 관리합니다:
-- `cq serve` 실행 시 시작 (PATH에서 바이너리를 찾지 못하면 gracefully skip)
-- `http://127.0.0.1:{port}/v1/health`에서 몇 초마다 health check
-- `cq serve` 종료 시 깔끔하게 중지 (SIGTERM → 5초 대기 → SIGKILL)
 
 ### `worktree`
 
@@ -123,4 +119,5 @@ validation:
 cloud:
   url: "https://xxxx.supabase.co"
   anon_key: ""
+  # direct_url: "postgresql://..."   # 선택: hub의 LISTEN/NOTIFY에 사용 (포트 5432)
 ```

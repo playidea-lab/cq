@@ -27,7 +27,7 @@ curl -fsSL https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/install.sh | s
 
 ## connected
 
-**클라우드 동기화, LLM Gateway, EventBus 추가.**
+**클라우드 동기화, LLM Gateway, EventBus, Telegram 알림 추가.**
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/install.sh | sh -s -- --tier connected
@@ -41,6 +41,8 @@ curl -fsSL https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/install.sh | s
 - **C9 Knowledge** — 크로스 프로젝트 지식 공유를 위한 시맨틱 검색 + pgvector
 - **페르소나/Soul 진화** — 코딩 스타일 패턴 학습
 - **C6 Secret Central** — 암호화 시크릿 동기화 (Supabase 기반, cache-first)
+- **Telegram 봇** — 잡 완료 알림 + BotFather를 통한 슬래시 명령 (`cq setup`)
+- **지식 자동 pull** — 세션 시작 시 지식 베이스 자동 동기화
 
 팀 또는 조직에서 제공하는 클라우드 설정이 필요합니다. 첫 사용 전 `~/.c4/config.yaml`에 위치시키세요.
 
@@ -50,14 +52,14 @@ curl -fsSL https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/install.sh | s
 
 ## full
 
-**분산 잡 큐와 데스크톱 앱을 포함한 전체 기능.**
+**분산 워커 큐와 데스크톱 앱을 포함한 전체 기능.**
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/install.sh | sh -s -- --tier full
 ```
 
 `connected`에 추가되는 기능:
-- **C5 Hub** — 분산 워커 큐 (pull 모델, lease 기반)
+- **Supabase 워커 큐** — LISTEN/NOTIFY 기반 분산 워커 큐 (NAT-safe, 아웃바운드 연결만)
 - **CDP** — Chrome DevTools Protocol 자동화
 - **GPU** — 로컬 GPU 잡 스케줄러
 - **C1 Messenger** — Tauri 데스크톱 대시보드
@@ -80,7 +82,9 @@ curl -fsSL https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/install.sh | s
 | LLM Gateway | — | ✅ | ✅ |
 | EventBus | — | ✅ | ✅ |
 | C9 Knowledge (시맨틱) | — | ✅ | ✅ |
-| C5 Hub (분산) | — | — | ✅ |
+| Telegram 봇 | — | ✅ | ✅ |
+| 지식 자동 pull | — | ✅ | ✅ |
+| 분산 워커 (LISTEN/NOTIFY) | — | — | ✅ |
 | CDP 자동화 | — | — | ✅ |
 | GPU 스케줄러 | — | — | ✅ |
 | POP (개인 온톨로지) | ✅ | ✅ | ✅ |
@@ -157,28 +161,20 @@ serve:
 
 ```yaml
 # CQ Full 티어 설정 템플릿
-# 요구사항: connected 티어 설정 + C5 Hub
+# 요구사항: connected 티어 설정 + Supabase (cloud.url)
 
 # (connected 설정 포함, 추가:)
 
-# C5 Hub — 분산 워커 큐 (클라이언트 측)
+# Hub — 분산 워커 큐 (Supabase LISTEN/NOTIFY 사용)
 hub:
   enabled: true
-  url: http://localhost:8585
-  # API 키: cq secret set hub.api_key <값>  (암호화 저장, config 평문보다 우선)
+  # api_key: cq secret set hub.api_key <값>  (Supabase service role 키)
   # 키 미설정 시 cloud session JWT를 자동으로 사용
 
 # 백그라운드 데몬 (cq serve)
 serve:
-  # Hub 서브프로세스 — cq serve가 c5를 자동 시작
-  hub:
-    enabled: true      # C5 Hub를 자식 프로세스로 시작
-    binary: "c5"       # PATH에서 찾을 바이너리명
-    port: 8585
   stale_checker:
     enabled: true
     threshold_minutes: 30
     interval_seconds: 60
-  ssesubscriber:
-    enabled: true   # C5 Hub SSE 스트림 → EventBus 전달
 ```

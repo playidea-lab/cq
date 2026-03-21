@@ -27,7 +27,7 @@ Best for: personal projects, offline environments, getting started.
 
 ## connected
 
-**Adds cloud sync, LLM Gateway, and EventBus.**
+**Adds cloud sync, LLM Gateway, EventBus, and Telegram notifications.**
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/install.sh | sh -s -- --tier connected
@@ -41,6 +41,8 @@ Additional features on top of `solo`:
 - **C9 Knowledge** — semantic search + pgvector for cross-project knowledge sharing
 - **Persona/Soul Evolution** — coding style pattern learning
 - **C6 Secret Central** — encrypted secret sync (Supabase-backed, cache-first)
+- **Telegram bot** — job completion notifications + slash commands via BotFather (`cq setup`)
+- **Knowledge auto-pull** — knowledge base synced on session start
 
 Requires a cloud config provided by your team or organization. Place it at `~/.c4/config.yaml` before first use.
 
@@ -50,14 +52,14 @@ Best for: teams, multi-machine setups, AI-powered workflows.
 
 ## full
 
-**All features, including distributed job queue and desktop app.**
+**All features, including distributed worker queue and desktop app.**
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/install.sh | sh -s -- --tier full
 ```
 
 Additional features on top of `connected`:
-- **C5 Hub** — distributed worker queue (pull model, lease-based)
+- **Supabase Worker Queue** — distributed worker queue via LISTEN/NOTIFY (NAT-safe, outbound connection only)
 - **CDP** — Chrome DevTools Protocol automation
 - **GPU** — local GPU job scheduler
 - **C1 Messenger** — Tauri desktop dashboard
@@ -80,7 +82,9 @@ Best for: production deployments, ML workflows, large teams.
 | LLM Gateway | — | ✅ | ✅ |
 | EventBus | — | ✅ | ✅ |
 | C9 Knowledge (semantic) | — | ✅ | ✅ |
-| C5 Hub (distributed) | — | — | ✅ |
+| Telegram bot | — | ✅ | ✅ |
+| Knowledge auto-pull | — | ✅ | ✅ |
+| Distributed workers (LISTEN/NOTIFY) | — | — | ✅ |
 | CDP automation | — | — | ✅ |
 | GPU scheduler | — | — | ✅ |
 | POP (Personal Ontology) | ✅ | ✅ | ✅ |
@@ -172,28 +176,20 @@ serve:
 ```yaml
 # CQ Full tier configuration template
 # Copy to ~/.c4/config.yaml and customize
-# Requires: connected tier setup + C5 Hub
+# Requires: connected tier setup + Supabase (cloud.url)
 
 # (include all connected settings above, plus:)
 
-# C5 Hub — distributed worker queue (client side)
+# Hub — distributed worker queue (uses Supabase LISTEN/NOTIFY)
 hub:
   enabled: true
-  url: http://localhost:8585
-  # API key: cq secret set hub.api_key <value>  (stored encrypted, preferred over config)
+  # api_key: use: cq secret set hub.api_key <value>  (Supabase service role key)
   # cloud session JWT is used as fallback when no key is configured
 
 # Background daemon (cq serve)
 serve:
-  # Hub subprocess — cq serve starts c5 automatically
-  hub:
-    enabled: true      # start C5 Hub as a child process
-    binary: "c5"       # must be in PATH (install: cq install c5)
-    port: 8585
   stale_checker:
     enabled: true
     threshold_minutes: 30
     interval_seconds: 60
-  ssesubscriber:
-    enabled: true   # subscribe to C5 Hub SSE stream → forward to EventBus
 ```

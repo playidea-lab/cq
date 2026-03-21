@@ -10,13 +10,12 @@ Worker mode requires the `full` tier binary. [Install with `--tier full`](/guide
 
 ## Quick Start
 
-Connect a GPU server in 4 commands:
+Connect a GPU server in 3 commands:
 
 ```sh
 # On the GPU server:
 curl -fsSL https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/install.sh | sh -s -- --tier full
 cq auth login
-cq config set hub.url https://your-hub.fly.dev
 cq hub worker start
 ```
 
@@ -27,17 +26,18 @@ That's it. The server is now ready to accept jobs from `cq hub submit`.
 ## How it works
 
 ```
-Your laptop          C5 Hub (cloud)        GPU server
-────────────         ─────────────         ──────────
-cq hub submit   ──►  job queue        ◄──  c5 worker
-(uploads code +      (distributes)         (pulls job,
- posts job)                                runs it,
-                                           uploads results)
+Your laptop          Supabase (cloud)       GPU server
+────────────         ────────────────       ──────────
+cq hub submit   ──►  jobs table        ◄──  cq hub worker start
+(uploads code +      LISTEN/NOTIFY          (pulls job via pgx,
+ posts job)          (NAT-safe)             runs it,
+                                            uploads results)
 ```
 
-1. You run `cq hub submit` on your laptop — CQ snapshots the current folder to Drive CAS and posts a job.
-2. Any connected worker pulls the job, downloads the exact snapshot, runs it, and pushes output artifacts back.
-3. Workers are **stateless** — no project config needed on the server. The job payload carries everything.
+1. You run `cq hub submit` on your laptop — CQ snapshots the current folder to Drive CAS and inserts a job row in Supabase.
+2. Workers listen via `pgx LISTEN/NOTIFY` (outbound TCP to Supabase port 5432 — NAT-safe, no inbound port needed).
+3. The worker that picks up the job downloads the exact snapshot, runs it, and pushes output artifacts back.
+4. Workers are **stateless** — no project config needed on the server. The job payload carries everything.
 
 ---
 
@@ -68,54 +68,22 @@ A device code appears. Open the URL on any browser (your laptop is fine), enter 
 ✓ Logged in as user@example.com
 ```
 
-## Step 3 — Configure the Hub URL
-
-Set the Hub endpoint once:
-
-```sh
-cq config set hub.url https://your-hub.fly.dev
-cq config set hub.api_key YOUR_API_KEY   # if your hub requires auth
-```
-
-Or export environment variables (useful in systemd / Docker):
-
-```sh
-export C5_HUB_URL=https://your-hub.fly.dev
-export C5_API_KEY=YOUR_API_KEY
-```
-
-## Step 4 — Start the worker
-
-### Option A: `cq hub worker install` (recommended)
-
-Installs Docker, NVIDIA toolkit (if GPU present), and registers a systemd service automatically:
-
-```sh
-cq hub worker install
-```
-
-### Option B: `cq hub worker start`
-
-Start the worker in the foreground:
+## Step 3 — Start the worker
 
 ```sh
 cq hub worker start
 ```
 
-### Option C: `c5 worker` (direct)
-
-```sh
-c5 worker
-```
-
-The worker registers with Hub and waits for jobs:
+The worker connects to Supabase and waits for jobs:
 
 ```
-c5: registered worker  id=worker-abc123  host=gpu-server-1
-c5: waiting for jobs...
+cq: registered worker  id=worker-abc123  host=gpu-server-1
+cq: listening for jobs via NOTIFY...
 ```
 
 That's it. The server is now a stateless worker — no project setup, no `cq project use`, no local data needed.
+
+No Hub URL to configure. No `C5_HUB_URL` or `C5_API_KEY` environment variables. The worker uses your existing `cloud.url` from `~/.c4/config.yaml`.
 
 ---
 
@@ -124,15 +92,13 @@ That's it. The server is now a stateless worker — no project setup, no `cq pro
 For production use, keep the worker alive after SSH disconnect:
 
 ```sh
-cat > ~/.config/systemd/user/c5-worker.service << 'EOF'
+cat > ~/.config/systemd/user/cq-worker.service << 'EOF'
 [Unit]
-Description=CQ C5 Worker
+Description=CQ Hub Worker
 After=network-online.target
 
 [Service]
-ExecStart=%h/.local/bin/c5 worker
-Environment=C5_HUB_URL=https://your-hub.fly.dev
-Environment=C5_API_KEY=YOUR_API_KEY
+ExecStart=%h/.local/bin/cq hub worker start
 Restart=always
 RestartSec=10
 
@@ -141,21 +107,21 @@ WantedBy=default.target
 EOF
 
 systemctl --user daemon-reload
-systemctl --user enable --now c5-worker
-systemctl --user status c5-worker
+systemctl --user enable --now cq-worker
+systemctl --user status cq-worker
 ```
 
 Check logs anytime:
 
 ```sh
-journalctl --user -u c5-worker -f
+journalctl --user -u cq-worker -f
 ```
 
 ---
 
 ## Version gate (automatic upgrades)
 
-If the Hub operator sets `C5_MIN_VERSION`, workers below that version receive an `upgrade` control message instead of a job. The worker automatically runs `cq upgrade` and restarts — no manual intervention needed.
+If the Hub operator sets a minimum version requirement, workers below that version receive an `upgrade` control message instead of a job. The worker automatically runs `cq upgrade` and restarts — no manual intervention needed.
 
 Workers built without version info (`version="unknown"`) bypass the gate to prevent upgrade loops.
 
