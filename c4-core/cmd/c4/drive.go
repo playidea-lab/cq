@@ -11,6 +11,9 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// cqdataShortLen is the number of version hash characters shown in the .cqdata hint.
+const cqdataShortLen = 8
+
 // driveCmd is the top-level `cq drive` command.
 var driveCmd = &cobra.Command{
 	Use:   "drive",
@@ -54,6 +57,7 @@ func init() {
 	datasetUploadCmd.Flags().String("as", "", "Dataset name (required)")
 	datasetUploadCmd.MarkFlagRequired("as") //nolint:errcheck
 	datasetUploadCmd.Flags().String("ignore", "", "Path to ignore file (e.g. .cqdriveignore)")
+	datasetUploadCmd.Flags().Bool("update-cqdata", true, "Update .cqdata with name+version after upload")
 
 	datasetPullCmd.Flags().String("dest", ".", "Destination directory")
 	datasetPullCmd.Flags().String("version", "", "Version hash to pull (default: latest)")
@@ -116,6 +120,7 @@ func runDatasetUpload(cmd *cobra.Command, args []string) error {
 	srcPath := args[0]
 	name, _ := cmd.Flags().GetString("as")
 	ignoreFile, _ := cmd.Flags().GetString("ignore")
+	updateCQData, _ := cmd.Flags().GetBool("update-cqdata")
 
 	dc, err := newDatasetClient()
 	if err != nil {
@@ -133,6 +138,16 @@ func runDatasetUpload(cmd *cobra.Command, args []string) error {
 	fmt.Printf("dataset '%s' v=%s uploaded (%d files, %d skipped, %s)\n",
 		result.Name, result.VersionHash, result.FilesUploaded, result.FilesSkipped,
 		formatBytes(result.TotalSizeBytes))
+	if updateCQData {
+		if err := drive.ApplyCQData(projectDir, result.Name, result.VersionHash); err != nil {
+			return fmt.Errorf("update .cqdata: %w", err)
+		}
+		short := result.VersionHash
+		if len(short) > cqdataShortLen {
+			short = short[:cqdataShortLen]
+		}
+		fmt.Printf("Updated .cqdata: %s → %s. Run: git add .cqdata\n", result.Name, short)
+	}
 	return nil
 }
 
