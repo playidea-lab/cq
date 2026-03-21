@@ -82,6 +82,14 @@ func New(projectDir string) (*Store, error) {
 	return s, nil
 }
 
+// inferScope returns "project" or "global" based on root index.
+func (s *Store) inferScope(rootIndex int) string {
+	if rootIndex == 0 && s.projectRoot != "" {
+		return "project"
+	}
+	return "global"
+}
+
 // roots returns the search order: project first, then global.
 func (s *Store) roots() []string {
 	if s.projectRoot != "" {
@@ -156,11 +164,7 @@ func (s *Store) List() ([]Bot, error) {
 				continue // skip malformed entries silently
 			}
 			if bot.Scope == "" {
-				if i == 0 && s.projectRoot != "" {
-					bot.Scope = "project"
-				} else {
-					bot.Scope = "global"
-				}
+				bot.Scope = s.inferScope(i)
 			}
 			bots = append(bots, *bot)
 		}

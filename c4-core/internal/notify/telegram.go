@@ -8,6 +8,9 @@ import (
 	"time"
 )
 
+// telegramClient is reused across calls to benefit from HTTP keep-alive.
+var telegramClient = &http.Client{Timeout: 15 * time.Second}
+
 // SendTelegram sends a Markdown message to a Telegram chat via the Bot API.
 // token is the bot token (without the "bot" prefix), chatID is the target chat identifier.
 // A 15-second HTTP timeout is applied automatically.
@@ -28,9 +31,8 @@ func sendTelegram(ctx context.Context, baseURL, token, chatID, message string) e
 	}
 
 	url := fmt.Sprintf("%s/bot%s/sendMessage", baseURL, token)
-	client := &http.Client{Timeout: 15 * time.Second}
 
-	if err := postJSON(ctx, client, url, body); err != nil {
+	if err := postJSON(ctx, telegramClient, url, body); err != nil {
 		return fmt.Errorf("telegram: %w", err)
 	}
 	return nil

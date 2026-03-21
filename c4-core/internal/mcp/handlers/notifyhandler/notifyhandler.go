@@ -59,6 +59,9 @@ func saveConfig(projectDir string, cfg *notifyConfig) error {
 // Register registers c4_notification_set, c4_notification_get, c4_notify.
 // router is optional: when non-nil, c4_notify also posts to c1_messages (sender_type=agent).
 func Register(reg *mcp.Registry, projectDir string, router *chat.Router) {
+	// Shared botstore instance — avoids re-resolving paths on every call.
+	bs, bsErr := botstore.New(projectDir)
+
 	reg.Register(mcp.ToolSchema{
 		Name:        "c4_notification_set",
 		Description: "Configure a notification channel (Telegram bot). Stores bot_username and optional event filter in .c4/notifications.json. The bot must be registered in the botstore.",
@@ -89,9 +92,8 @@ func Register(reg *mcp.Registry, projectDir string, router *chat.Router) {
 			return nil, fmt.Errorf("bot_username is required")
 		}
 		// Validate bot exists in botstore.
-		bs, err := botstore.New(projectDir)
-		if err != nil {
-			return nil, fmt.Errorf("botstore: %w", err)
+		if bsErr != nil {
+			return nil, fmt.Errorf("botstore: %w", bsErr)
 		}
 		if _, err := bs.Get(p.BotUsername); err != nil {
 			return nil, fmt.Errorf("bot %q not found in botstore: %w", p.BotUsername, err)
@@ -183,9 +185,8 @@ func Register(reg *mcp.Registry, projectDir string, router *chat.Router) {
 		}
 
 		// Resolve token and chat_id from botstore.
-		bs, err := botstore.New(projectDir)
-		if err != nil {
-			return nil, fmt.Errorf("botstore: %w", err)
+		if bsErr != nil {
+			return nil, fmt.Errorf("botstore: %w", bsErr)
 		}
 		bot, err := bs.Get(cfg.BotUsername)
 		if err != nil {

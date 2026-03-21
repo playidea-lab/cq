@@ -21,7 +21,7 @@ const (
 )
 
 // Notifier is the interface for sending notifications.
-// The c4_notify MCP tool or Dooray webhook implements this.
+// The c4_notify MCP tool implements this.
 type Notifier interface {
 	Notify(ctx context.Context, title, message, event string) error
 }

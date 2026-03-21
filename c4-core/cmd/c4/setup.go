@@ -96,10 +96,7 @@ func runSetupWizard(r io.Reader, w io.Writer) error {
 		LastActive:  time.Now(),
 		Scope:       "global",
 	}
-	if err := store.Save(bot); err != nil {
-		return fmt.Errorf("config.json 저장 실패: %w", err)
-	}
-	fmt.Fprintf(w, "  ✓ 저장 완료: ~/.claude/bots/%s/config.json\n", info.Username)
+	fmt.Fprintf(w, "  ✓ 봇 확인 완료. 페어링 단계로 진행합니다.\n")
 
 	// ── Step 3: 페어링 ───────────────────────────────────────────────────
 	fmt.Fprintln(w, "")
@@ -126,10 +123,9 @@ func runSetupWizard(r io.Reader, w io.Writer) error {
 		return fmt.Errorf("채팅 ID 파싱 실패: %q는 유효한 정수가 아닙니다", chatIDStr)
 	}
 
-	// allowFrom 업데이트 후 재저장
 	bot.AllowFrom = []int64{chatID}
 	if err := store.Save(bot); err != nil {
-		return fmt.Errorf("access.json 저장 실패: %w", err)
+		return fmt.Errorf("봇 설정 저장 실패: %w", err)
 	}
 	fmt.Fprintf(w, "  ✓ 페어링 완료: 채팅 ID %d 허용됨\n", chatID)
 

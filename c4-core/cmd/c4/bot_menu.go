@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/changmin/c4-core/internal/botstore"
@@ -37,11 +38,6 @@ func botSelectMenu() error {
 
 	printBotMenu(bots)
 
-	// Extra menu items after bot list
-	const (
-		newBotLabel = "새 봇 만들기"
-		quitLabel   = "종료"
-	)
 	newBotIdx := len(bots) + 1
 	quitIdx := len(bots) + 2
 
@@ -57,14 +53,9 @@ func botSelectMenu() error {
 			continue
 		}
 
-		// Parse numeric choice
-		choice := 0
-		for _, ch := range line {
-			if ch < '0' || ch > '9' {
-				choice = -1
-				break
-			}
-			choice = choice*10 + int(ch-'0')
+		choice, err := strconv.Atoi(line)
+		if err != nil {
+			choice = -1
 		}
 
 		switch {
