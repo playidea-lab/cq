@@ -99,7 +99,7 @@ func runStandardsApply(cmd *cobra.Command, args []string) error {
 
 	team, langs := parseTeamLangs(args)
 
-	result, err := standards.Apply(dir, team, langs)
+	result, err := standards.Apply(dir, team, langs, standards.ApplyOptions{Force: standardsForce})
 	if err != nil {
 		return err
 	}
