@@ -306,6 +306,26 @@ func (g *Gateway) ProviderCount() int {
 	return len(g.providers)
 }
 
+// GetRouting returns a snapshot of the current routing table.
+func (g *Gateway) GetRouting() RoutingTable {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	// Copy routes and aliases to avoid exposing internal maps.
+	routes := make(map[string]ModelRef, len(g.routing.Routes))
+	for k, v := range g.routing.Routes {
+		routes[k] = v
+	}
+	aliases := make(map[string]string, len(g.routing.Aliases))
+	for k, v := range g.routing.Aliases {
+		aliases[k] = v
+	}
+	return RoutingTable{
+		Default: g.routing.Default,
+		Routes:  routes,
+		Aliases: aliases,
+	}
+}
+
 // checkCacheAlert inspects the current GlobalCacheHitRate and fires an alert
 // if it has transitioned below the configured threshold.
 func (g *Gateway) checkCacheAlert(provider string) {
