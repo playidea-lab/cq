@@ -424,6 +424,34 @@ func newMCPServer() (*mcpServer, error) {
 	ctx.agentCancel = agentCancel
 	startAgentIfNeeded(agentCtx, ctx)
 
+	// Background knowledge pull: sync cloud knowledge to local FTS on session start.
+	// Best-effort — errors logged, not fatal. Goroutine is abandoned after 10s timeout.
+	if knowledgeStore != nil && knowledgeCloud != nil {
+		go func() {
+			type pullResult struct {
+				r   *knowledge.PullResult
+				err error
+			}
+			ch := make(chan pullResult, 1)
+			go func() {
+				r, err := knowledge.Pull(knowledgeStore, knowledgeCloud, "", 50, false)
+				ch <- pullResult{r, err}
+			}()
+			select {
+			case res := <-ch:
+				if res.err != nil {
+					fmt.Fprintf(os.Stderr, "cq: knowledge sync: skipped (%v)\n", res.err)
+				} else {
+					fmt.Fprintf(os.Stderr, "cq: knowledge sync: pulled %d, updated %d\n", res.r.Pulled, res.r.Updated)
+				}
+			case <-time.After(10 * time.Second):
+				fmt.Fprintln(os.Stderr, "cq: knowledge sync: timed out (10s)")
+			}
+		}()
+	} else {
+		fmt.Fprintln(os.Stderr, "cq: knowledge sync: skipped (no cloud)")
+	}
+
 	return &mcpServer{
 		registry:       reg,
 		sidecar:        lazySidecar,
