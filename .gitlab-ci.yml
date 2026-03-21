@@ -1,14 +1,12 @@
 # GitLab CI — CQ Binary Release Pipeline
 #
-# Triggers on version tags (v*). Builds 9 binaries across 3 tiers × 3 platforms,
-# then uploads all artifacts to PlayIdea-Lab/cq GitHub Releases.
+# Triggers on version tags (v*). Builds 3 binaries (3 platforms),
+# then uploads to PlayIdea-Lab/cq GitHub Releases.
 #
 # Required CI variable (Settings → CI/CD → Variables):
 #   GH_TOKEN         — GitHub PAT with `repo` scope for PlayIdea-Lab/cq
-#                      Mark as "Protected" so it's only available on protected tags.
-#   CI_SUPABASE_URL  — Supabase project URL (e.g. https://xxx.supabase.co)
-#                      Embedded in release binaries so `cq auth login` works out of the box.
-#   CI_SUPABASE_KEY  — Supabase anon key (public, safe to embed; protected by RLS)
+#   CI_SUPABASE_URL  — Supabase project URL
+#   CI_SUPABASE_KEY  — Supabase anon key (safe to embed; protected by RLS)
 
 variables:
   GIT_SUBMODULE_STRATEGY: recursive
@@ -21,20 +19,18 @@ stages:
 check-env:
   stage: check-env
   script:
-    - 'test -n "$GH_TOKEN" || (echo "GH_TOKEN not set - add it in Settings > CI/CD > Variables" && exit 1)'
-    - 'test -n "$CI_SUPABASE_URL" || echo "WARNING: CI_SUPABASE_URL not set - built-in auth will be disabled"'
-    - 'test -n "$CI_SUPABASE_KEY" || echo "WARNING: CI_SUPABASE_KEY not set - built-in auth will be disabled"'
+    - 'test -n "$GH_TOKEN" || (echo "GH_TOKEN not set" && exit 1)'
+    - 'test -n "$CI_SUPABASE_URL" || echo "WARNING: CI_SUPABASE_URL not set"'
+    - 'test -n "$CI_SUPABASE_KEY" || echo "WARNING: CI_SUPABASE_KEY not set"'
   only:
     - /^v.*/
-
-# ── build stage templates ─────────────────────────────────────
 
 .build-template: &build-template
   stage: build
   script:
     - cd c4-core
     - make embed-skills
-    - make build-cross GOOS=$GOOS GOARCH=$GOARCH TIER=$TIER SUPABASE_URL=$CI_SUPABASE_URL SUPABASE_ANON_KEY=$CI_SUPABASE_KEY
+    - make build-cross GOOS=$GOOS GOARCH=$GOARCH SUPABASE_URL=$CI_SUPABASE_URL SUPABASE_ANON_KEY=$CI_SUPABASE_KEY
   artifacts:
     paths:
       - c4-core/dist/
@@ -44,94 +40,40 @@ check-env:
   needs:
     - check-env
 
-# ── solo tier ────────────────────────────────────────────────
-build-solo-linux-amd64:
+build-linux-amd64:
   <<: *build-template
   variables:
     GOOS: linux
     GOARCH: amd64
-    TIER: solo
 
-build-solo-linux-arm64:
+build-linux-arm64:
   <<: *build-template
   variables:
     GOOS: linux
     GOARCH: arm64
-    TIER: solo
 
-build-solo-darwin-arm64:
+build-darwin-arm64:
   <<: *build-template
   variables:
     GOOS: darwin
     GOARCH: arm64
-    TIER: solo
 
-# ── connected tier ───────────────────────────────────────────
-build-connected-linux-amd64:
-  <<: *build-template
-  variables:
-    GOOS: linux
-    GOARCH: amd64
-    TIER: connected
-
-build-connected-linux-arm64:
-  <<: *build-template
-  variables:
-    GOOS: linux
-    GOARCH: arm64
-    TIER: connected
-
-build-connected-darwin-arm64:
-  <<: *build-template
-  variables:
-    GOOS: darwin
-    GOARCH: arm64
-    TIER: connected
-
-# ── full tier ────────────────────────────────────────────────
-build-full-linux-amd64:
-  <<: *build-template
-  variables:
-    GOOS: linux
-    GOARCH: amd64
-    TIER: full
-
-build-full-linux-arm64:
-  <<: *build-template
-  variables:
-    GOOS: linux
-    GOARCH: arm64
-    TIER: full
-
-build-full-darwin-arm64:
-  <<: *build-template
-  variables:
-    GOOS: darwin
-    GOARCH: arm64
-    TIER: full
-
-# ── GitHub Release ───────────────────────────────────────────
 release-github:
   stage: release
   script:
     - |
-      # Install gh CLI if not available
       if ! command -v gh > /dev/null 2>&1; then
         curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
         echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" > /etc/apt/sources.list.d/github-cli.list
         apt-get update -qq && apt-get install -y gh
       fi
     - |
-      # Verify all 9 cq binaries (3 tiers × 3 platforms) are present
       BINARY_COUNT=$(ls c4-core/dist/ | wc -l | tr -d ' ')
-      test "$BINARY_COUNT" = "9" || { echo "Expected 9 binaries, got $BINARY_COUNT"; ls c4-core/dist/; exit 1; }
+      test "$BINARY_COUNT" = "3" || { echo "Expected 3 binaries, got $BINARY_COUNT"; ls c4-core/dist/; exit 1; }
     - |
-      # Idempotent release: upload to existing release or create new one
       if gh release view "$CI_COMMIT_TAG" --repo PlayIdea-Lab/cq > /dev/null 2>&1; then
-        echo "Release $CI_COMMIT_TAG already exists — uploading binaries with --clobber"
         gh release upload "$CI_COMMIT_TAG" c4-core/dist/* user/install.sh \
-          --repo PlayIdea-Lab/cq \
-          --clobber
+          --repo PlayIdea-Lab/cq --clobber
       else
         gh release create "$CI_COMMIT_TAG" c4-core/dist/* user/install.sh \
           --repo PlayIdea-Lab/cq \
@@ -139,14 +81,8 @@ release-github:
           --notes "Binary release $CI_COMMIT_TAG"
       fi
   needs:
-    - build-solo-linux-amd64
-    - build-solo-linux-arm64
-    - build-solo-darwin-arm64
-    - build-connected-linux-amd64
-    - build-connected-linux-arm64
-    - build-connected-darwin-arm64
-    - build-full-linux-amd64
-    - build-full-linux-arm64
-    - build-full-darwin-arm64
+    - build-linux-amd64
+    - build-linux-arm64
+    - build-darwin-arm64
   only:
     - /^v.*/

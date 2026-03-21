@@ -2,8 +2,7 @@
 # ============================
 
 .PHONY: build test test-grpc lint vet clean proto-gen fmt help \
-        build-solo build-connected build-full build-nightly \
-        install-solo install-connected install-full install-nightly \
+        build-nightly install install-nightly \
         embed-skills build-cross cross-compile
 
 # Build variables
@@ -45,93 +44,55 @@ embed-skills:
 	echo "$(shell git -C $(REPO_ROOT) rev-parse --short HEAD)" > cmd/c4/skills_src/.version
 	@echo "Skills embedded from $(REPO_ROOT)/.claude/skills/ ($(shell git -C $(REPO_ROOT) rev-parse --short HEAD))"
 
-# Cross-compilation target — output goes to dist/ for CI artifact collection
-# Usage: make build-cross GOOS=linux GOARCH=amd64 TIER=solo
-TIER_TAGS_solo      = skills_embed
-TIER_TAGS_connected = c0_drive c3_eventbus llm_gateway skills_embed
-TIER_TAGS_full      = c0_drive c3_eventbus c5_hub llm_gateway cdp gpu c1_messenger research skills_embed
+# Build tags — single tier (all features)
+BUILD_TAGS = c0_drive c3_eventbus c5_hub llm_gateway cdp gpu c1_messenger research skills_embed
 
-## build-cross: Cross-compile for target GOOS/GOARCH/TIER (used by CI)
+## build-cross: Cross-compile for target GOOS/GOARCH (used by CI)
 build-cross: embed-skills
 	@mkdir -p dist
 	GOOS=$(GOOS) GOARCH=$(GOARCH) go build \
 		-ldflags "-X main.version=$(VERSION) $(_SUPABASE_FLAGS)" \
-		-tags '$(TIER_TAGS_$(TIER))' \
-		-o dist/cq-$(TIER)-$(GOOS)-$(GOARCH)$(EXT) \
+		-tags '$(BUILD_TAGS)' \
+		-o dist/cq-$(GOOS)-$(GOARCH)$(EXT) \
 		./cmd/c4/
 
-## cross-compile: Build all tiers for all platforms (linux/amd64, linux/arm64, darwin/arm64, windows/amd64)
+## cross-compile: Build for all platforms (linux/amd64, linux/arm64, darwin/arm64)
 cross-compile: embed-skills
 	@mkdir -p dist
-	@for tier in solo connected full; do \
-		for target in linux/amd64 linux/arm64 darwin/arm64; do \
-			GOOS=$$(echo $$target | cut -d/ -f1); \
-			GOARCH=$$(echo $$target | cut -d/ -f2); \
-			echo "Building $$tier $$GOOS/$$GOARCH..."; \
-			GOOS=$$GOOS GOARCH=$$GOARCH go build \
-				-ldflags "-X main.version=$(VERSION) $(_SUPABASE_FLAGS)" \
-				-tags '$(TIER_TAGS_$(tier))' \
-				-o dist/cq-$$tier-$$GOOS-$$GOARCH \
-				./cmd/c4/ || exit 1; \
-		done; \
-		echo "Building $$tier windows/amd64..."; \
-		GOOS=windows GOARCH=amd64 go build \
+	@for target in linux/amd64 linux/arm64 darwin/arm64; do \
+		GOOS=$$(echo $$target | cut -d/ -f1); \
+		GOARCH=$$(echo $$target | cut -d/ -f2); \
+		echo "Building $$GOOS/$$GOARCH..."; \
+		GOOS=$$GOOS GOARCH=$$GOARCH go build \
 			-ldflags "-X main.version=$(VERSION) $(_SUPABASE_FLAGS)" \
-			-tags '$(TIER_TAGS_$(tier))' \
-			-o dist/cq-$$tier-windows-amd64.exe \
+			-tags '$(BUILD_TAGS)' \
+			-o dist/cq-$$GOOS-$$GOARCH \
 			./cmd/c4/ || exit 1; \
 	done
 	@echo "All cross-compile targets done. Binaries in dist/"
 
 
-## build: Build the c4 binary (full, all tags)
-build:
+## build: Build the cq binary (all features)
+build: embed-skills
 	@mkdir -p $(BUILD_DIR)
-	go build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME) ./cmd/c4/
+	go build $(LDFLAGS) -tags '$(BUILD_TAGS)' -o $(BUILD_DIR)/$(BINARY_NAME) ./cmd/c4/
 
-## build-solo: Build offline-only binary (skills_embed, no external deps)
-build-solo: embed-skills
-	@mkdir -p $(BUILD_DIR)
-	go build $(LDFLAGS) -tags 'skills_embed' -o $(BUILD_DIR)/cq-solo ./cmd/c4/
-
-## build-connected: Build with cloud/LLM/EventBus integrations + skills_embed
-build-connected: embed-skills
-	@mkdir -p $(BUILD_DIR)
-	go build $(LDFLAGS) -tags 'c0_drive c3_eventbus llm_gateway skills_embed' -o $(BUILD_DIR)/cq-connected ./cmd/c4/
-
-## build-full: Build with all integrations (Hub, CDP, GPU, C1, Research) + skills_embed
-build-full: embed-skills
-	@mkdir -p $(BUILD_DIR)
-	go build $(LDFLAGS) -tags 'c0_drive c3_eventbus c5_hub llm_gateway cdp gpu c1_messenger research skills_embed' -o $(BUILD_DIR)/cq-full ./cmd/c4/
-
-## build-nightly: Build with all integrations including Observe/Guard/Gate (C7/C6/C8) + skills_embed
+## build-nightly: Build with experimental features (C7/C6/C8)
 build-nightly: embed-skills
 	@mkdir -p $(BUILD_DIR)
-	go build $(LDFLAGS) -tags 'c0_drive c3_eventbus c5_hub llm_gateway cdp gpu c1_messenger research c7_observe c6_guard c8_gate skills_embed' -o $(BUILD_DIR)/cq-nightly ./cmd/c4/
+	go build $(LDFLAGS) -tags '$(BUILD_TAGS) c7_observe c6_guard c8_gate' -o $(BUILD_DIR)/cq-nightly ./cmd/c4/
 
-## install-nightly: Build nightly tier and install to ~/.local/bin/cq
+## install: Build and install to ~/.local/bin/cq
+install: build
+	@mkdir -p $(dir $(INSTALL_BIN))
+	@cp $(BUILD_DIR)/$(BINARY_NAME) $(INSTALL_BIN).tmp && mv $(INSTALL_BIN).tmp $(INSTALL_BIN) || { rm -f $(INSTALL_BIN).tmp; exit 1; }
+	@echo "Installed → $(INSTALL_BIN)"
+
+## install-nightly: Build nightly and install to ~/.local/bin/cq
 install-nightly: build-nightly
 	@mkdir -p $(dir $(INSTALL_BIN))
 	@cp $(BUILD_DIR)/cq-nightly $(INSTALL_BIN).tmp && mv $(INSTALL_BIN).tmp $(INSTALL_BIN) || { rm -f $(INSTALL_BIN).tmp; exit 1; }
-	@echo "Installed nightly tier → $(INSTALL_BIN)"
-
-## install-solo: Build solo tier and install to ~/.local/bin/cq
-install-solo: build-solo
-	@mkdir -p $(dir $(INSTALL_BIN))
-	@cp $(BUILD_DIR)/cq-solo $(INSTALL_BIN).tmp && mv $(INSTALL_BIN).tmp $(INSTALL_BIN) || { rm -f $(INSTALL_BIN).tmp; exit 1; }
-	@echo "Installed solo tier → $(INSTALL_BIN)"
-
-## install-connected: Build connected tier and install to ~/.local/bin/cq
-install-connected: build-connected
-	@mkdir -p $(dir $(INSTALL_BIN))
-	@cp $(BUILD_DIR)/cq-connected $(INSTALL_BIN).tmp && mv $(INSTALL_BIN).tmp $(INSTALL_BIN) || { rm -f $(INSTALL_BIN).tmp; exit 1; }
-	@echo "Installed connected tier → $(INSTALL_BIN)"
-
-## install-full: Build full tier and install to ~/.local/bin/cq
-install-full: build-full
-	@mkdir -p $(dir $(INSTALL_BIN))
-	@cp $(BUILD_DIR)/cq-full $(INSTALL_BIN).tmp && mv $(INSTALL_BIN).tmp $(INSTALL_BIN) || { rm -f $(INSTALL_BIN).tmp; exit 1; }
-	@echo "Installed full tier → $(INSTALL_BIN)"
+	@echo "Installed nightly → $(INSTALL_BIN)"
 
 ## test: Run all tests
 test:
