@@ -2,9 +2,7 @@ package main
 
 import (
 	"bufio"
-	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -170,55 +168,38 @@ func runAuthLogin(cmd *cobra.Command, args []string) error {
 
 // runAuthLoginHeadless handles --device and --link flows via C5 Hub.
 func runAuthLoginHeadless(cmd *cobra.Command, isDevice bool) error {
-	hubURL := resolveHubURL()
-	if hubURL == "" {
-		return fmt.Errorf("C5 Hub URL이 설정되지 않았습니다. cq config set hub.url <URL>")
-	}
-
-	supabaseURL := os.Getenv("C4_CLOUD_URL")
-	if supabaseURL == "" {
-		supabaseURL = os.Getenv("SUPABASE_URL")
-	}
-	if supabaseURL == "" {
-		supabaseURL = builtinSupabaseURL
-	}
-
-	cfg := cloud.DeviceFlowConfig{
-		HubURL:      hubURL,
-		SupabaseURL: supabaseURL,
-	}
-
-	ctx := context.Background()
-	var session *cloud.Session
-	var err error
-	if isDevice {
-		session, err = cloud.LoginWithDevice(ctx, cfg)
-	} else {
-		session, err = cloud.LoginWithLink(ctx, cfg)
-	}
-	if err != nil {
-		if errors.Is(err, context.DeadlineExceeded) {
-			return fmt.Errorf("인증 시간 초과 (5분)")
-		}
-		return err
-	}
-
+	// Try refresh token first — works without any server.
 	authClient, err := newAuthClient()
 	if err != nil {
 		return err
 	}
-	if err := authClient.SaveSessionPublic(session); err != nil {
-		return fmt.Errorf("saving session: %w", err)
+	session, getErr := authClient.GetSession()
+	if getErr == nil && session != nil && session.RefreshToken != "" {
+		// Have a refresh token — try refreshing.
+		newSession, refreshErr := authClient.RefreshTokenWithToken(session.RefreshToken)
+		if refreshErr == nil {
+			fmt.Printf("✓ 토큰 갱신 성공 (%s)\n", newSession.User.Email)
+			url := patchCloudConfigAfterLogin(projectDir)
+			if url != "" {
+				fmt.Fprintf(os.Stderr, "Cloud configured: %s\n", url)
+			}
+			return nil
+		}
+		fmt.Fprintf(os.Stderr, "cq: 토큰 갱신 실패: %v\n", refreshErr)
 	}
 
-	fmt.Println("✓ 로그인 성공. 세션이 저장되었습니다.")
-
-	// Auto-patch .c4/config.yaml cloud section after successful login.
-	url := patchCloudConfigAfterLogin(projectDir)
-	if url != "" {
-		fmt.Fprintf(os.Stderr, "Cloud configured: %s\n", url)
-	}
-	return nil
+	// No refresh token or refresh failed — guide the user.
+	fmt.Fprintln(os.Stderr, "")
+	fmt.Fprintln(os.Stderr, "Headless login requires a refresh token from another machine.")
+	fmt.Fprintln(os.Stderr, "")
+	fmt.Fprintln(os.Stderr, "On a machine with a browser:")
+	fmt.Fprintln(os.Stderr, "  1. cq auth login              (브라우저 OAuth)")
+	fmt.Fprintln(os.Stderr, "  2. cq auth status             (refresh token 확인)")
+	fmt.Fprintln(os.Stderr, "")
+	fmt.Fprintln(os.Stderr, "Then on this machine:")
+	fmt.Fprintln(os.Stderr, "  cq auth refresh <refresh_token>")
+	fmt.Fprintln(os.Stderr, "")
+	return fmt.Errorf("headless login: no refresh token available")
 }
 
 // resolveHubURL reads hub.url from env → .c4/config.yaml → builtinHubURL (ldflags).
