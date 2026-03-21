@@ -1,36 +1,29 @@
 #!/bin/sh
 # CQ installer — POSIX sh compatible
-# Usage: sh install.sh --tier solo
-#        sh install.sh --dry-run --tier connected
+# Usage: curl -fsSL https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/install.sh | sh
+#        sh install.sh --dry-run
+#        sh install.sh --version v1.6.2
 
 set -e
 
-TIER="full"
 DRY_RUN=0
 INSTALL_DIR="${HOME}/.local/bin"
 VERSION=""
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --tier)      shift; TIER="$1" ;;
-    --tier=*)    TIER="${1#--tier=}" ;;
     --dry-run)   DRY_RUN=1 ;;
     --install-dir) shift; INSTALL_DIR="$1" ;;
     --install-dir=*) INSTALL_DIR="${1#--install-dir=}" ;;
     --version) shift; VERSION="$1" ;;
     --version=*) VERSION="${1#--version=}" ;;
     -h|--help)
-      echo "Usage: install.sh [--tier solo|connected|full] [--dry-run] [--version vX.Y.Z]"
+      echo "Usage: install.sh [--dry-run] [--version vX.Y.Z] [--install-dir PATH]"
       exit 0 ;;
     *) echo "Unknown option: $1" >&2; exit 1 ;;
   esac
   shift
 done
-
-case "$TIER" in
-  solo|connected|full) ;;
-  *) echo "Error: invalid tier '$TIER'. Must be solo, connected, or full." >&2; exit 1 ;;
-esac
 
 OS="$(uname -s)"
 case "$OS" in
@@ -67,7 +60,7 @@ if [ "$GOOS" = "darwin" ] && [ "$GOARCH" = "amd64" ]; then
   if [ "$DRY_RUN" = "1" ]; then exit 0; else exit 1; fi
 fi
 
-ARTIFACT="cq-${TIER}-${GOOS}-${GOARCH}"
+ARTIFACT="cq-${GOOS}-${GOARCH}"
 if [ -z "$VERSION" ]; then
   URL="https://github.com/PlayIdea-Lab/cq/releases/latest/download/${ARTIFACT}"
 else
@@ -82,11 +75,10 @@ fi
 if [ "$DRY_RUN" = "1" ]; then
   echo "Would download: ${URL}"
   echo "Would install to: ${INSTALL_DIR}/cq"
-  echo "Would verify: ${INSTALL_DIR}/cq doctor --fix"
   exit 0
 fi
 
-echo "Installing cq (tier: ${TIER}, os: ${GOOS}, arch: ${GOARCH})..."
+echo "Installing cq (${GOOS}/${GOARCH})..."
 
 if ! curl -sf --head "${URL}" > /dev/null 2>&1; then
   echo "Error: Release not found: ${URL}" >&2
@@ -142,7 +134,7 @@ add_completion() {
     fi
     MARKER="cq completion ${SHELL_NAME}"
     if grep -qF "$MARKER" "$RC_FILE" 2>/dev/null; then
-      continue # already set up
+      continue
     fi
     printf '\n# cq shell completion\neval "$(cq completion %s)"\n' "$SHELL_NAME" >> "$RC_FILE"
     echo "Shell completion added: $RC_FILE"
@@ -150,15 +142,9 @@ add_completion() {
 }
 
 add_completion
-# fish shell requires manual setup (eval-based sourcing differs from bash/zsh):
-#   Add to ~/.config/fish/config.fish:  cq completion fish | source
 
 # Install Python sidecar (provides LSP and doc parsing features)
 install_python_sidecar() {
-  if [ "$DRY_RUN" = "1" ]; then
-    echo "Would install c4-bridge (Python sidecar) via uv tool install"
-    return
-  fi
   if ! command -v uv > /dev/null 2>&1; then
     echo ""
     echo "┌─ Python sidecar (LSP/doc features) requires uv ──────────────────┐"
@@ -168,7 +154,7 @@ install_python_sidecar() {
     return
   fi
   if command -v c4-bridge > /dev/null 2>&1; then
-    return  # already installed
+    return
   fi
   echo "Installing c4-bridge (Python sidecar for LSP/doc features)..."
   uv tool install "git+https://github.com/PlayIdea-Lab/cq" --quiet 2>/dev/null || \
@@ -183,5 +169,11 @@ if [ -x "${INSTALL_DIR}/cq" ]; then
 fi
 
 echo ""
-echo "Done! cq is ready to use."
+echo "Done! cq is ready."
+echo ""
+echo "Next steps:"
+echo "  cq claude     # Start with Claude Code"
+echo "  cq setup      # Pair a Telegram bot (optional)"
+echo "  cq doctor     # Check installation"
+echo ""
 echo "(Open a new terminal if commands are not found yet)"
