@@ -7,12 +7,14 @@ package hub
 
 // HubConfig holds Hub connection settings.
 type HubConfig struct {
-	Enabled   bool   `mapstructure:"enabled"     yaml:"enabled"`
-	URL       string `mapstructure:"url"         yaml:"url"`
-	APIPrefix string `mapstructure:"api_prefix"  yaml:"api_prefix"` // e.g. "/v1" for Hub server, "" for local daemon
-	APIKey    string `mapstructure:"api_key"     yaml:"api_key"`
-	APIKeyEnv string `mapstructure:"api_key_env" yaml:"api_key_env"`
-	TeamID    string `mapstructure:"team_id"     yaml:"team_id"`
+	Enabled      bool   `mapstructure:"enabled"       yaml:"enabled"`
+	URL          string `mapstructure:"url"           yaml:"url"`           // legacy Hub server URL (kept for backward compat)
+	APIPrefix    string `mapstructure:"api_prefix"    yaml:"api_prefix"`    // e.g. "/v1" for Hub server, "" for local daemon
+	APIKey       string `mapstructure:"api_key"       yaml:"api_key"`       // legacy Hub API key
+	APIKeyEnv    string `mapstructure:"api_key_env"   yaml:"api_key_env"`
+	TeamID       string `mapstructure:"team_id"       yaml:"team_id"`
+	SupabaseURL  string `mapstructure:"supabase_url"  yaml:"supabase_url"`  // Supabase project URL (overrides URL)
+	SupabaseKey  string `mapstructure:"supabase_key"  yaml:"supabase_key"`  // Supabase anon key
 }
 
 // Job represents a Hub job.
