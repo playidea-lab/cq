@@ -1408,7 +1408,7 @@ func launchToolNamed(tool, projectDir, name string) error {
 
 		// Attach telegram channel if configured.
 		if tool == "claude" && telegramChannelConfigured() {
-			toolArgs = append(toolArgs, "--channels", "plugin:telegram@claude-plugins-official")
+			toolArgs = append(toolArgs, "--channels", telegramChannelPlugin)
 		}
 
 		// Inject session context into subprocess environment.
@@ -1989,6 +1989,7 @@ func isCQServeProcess(pid int) bool {
 }
 
 const onboardingMsg = "만들고 싶은 게 있으면 말씀해주세요. /c4-plan으로 시작합니다."
+const telegramChannelPlugin = "plugin:telegram@claude-plugins-official"
 
 // telegramChannelConfigured returns true when ~/.claude/channels/telegram/.env
 // contains a TELEGRAM_BOT_TOKEN line, meaning the user has set up the telegram plugin.
@@ -2019,7 +2020,7 @@ func buildLaunchArgs(firstRun bool, tool string, baseArgs []string) []string {
 		args = append(args, "--append-system-prompt", onboardingMsg)
 	}
 	if tool == "claude" && telegramChannelConfigured() {
-		args = append(args, "--channels", "plugin:telegram@claude-plugins-official")
+		args = append(args, "--channels", telegramChannelPlugin)
 	}
 	return args
 }

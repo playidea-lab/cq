@@ -10,47 +10,6 @@ import (
 	"github.com/changmin/c4-core/internal/botstore"
 )
 
-// botLaunch selects a bot and launches claude with telegram.
-// Used when -b is the only flag (no -t).
-func botLaunch(name string) error {
-	store, err := botstore.New(projectDir)
-	if err != nil {
-		return fmt.Errorf("botstore: %w", err)
-	}
-
-	if name != "" && name != " " {
-		return botLaunchByName(store, name)
-	}
-	return botMenuAndLaunch(store)
-}
-
-// botLaunchByName finds a bot by username and launches.
-func botLaunchByName(store *botstore.Store, name string) error {
-	bots, err := store.List()
-	if err != nil {
-		return fmt.Errorf("botstore list: %w", err)
-	}
-	name = strings.TrimPrefix(name, "@")
-	for _, bot := range bots {
-		if strings.EqualFold(bot.Username, name) {
-			return launchWithBot(bot)
-		}
-	}
-	return fmt.Errorf("봇 '%s'을(를) 찾을 수 없습니다. cq --bot 으로 목록을 확인하세요.", name)
-}
-
-// botMenuAndLaunch shows menu, selects bot, and launches (used when -b only, no -t).
-func botMenuAndLaunch(store *botstore.Store) error {
-	bot, err := botMenuSelect(store)
-	if err != nil {
-		return err
-	}
-	if bot == nil {
-		return nil // cancelled
-	}
-	return launchWithBot(*bot)
-}
-
 // botMenuSelect shows interactive bot selection menu and returns the selected bot.
 // Returns nil if user cancelled. Does NOT launch — caller decides what to do.
 func botMenuSelect(store *botstore.Store) (*botstore.Bot, error) {
@@ -126,7 +85,6 @@ func botMenuSelect(store *botstore.Store) (*botstore.Bot, error) {
 	}
 }
 
-// printBotMenu prints the numbered bot list to stderr.
 func printBotMenu(bots []botstore.Bot) {
 	fmt.Fprintln(os.Stderr, "")
 	fmt.Fprintln(os.Stderr, "봇을 선택하세요:")
@@ -156,13 +114,4 @@ func printBotMenu(bots []botstore.Bot) {
 	fmt.Fprintf(os.Stderr, "  %d) 새 봇 만들기\n", len(bots)+1)
 	fmt.Fprintf(os.Stderr, "  %d) 취소\n", len(bots)+2)
 	fmt.Fprintln(os.Stderr, "")
-}
-
-// launchWithBot sets the bot token and launches claude with telegram.
-func launchWithBot(bot botstore.Bot) error {
-	if err := os.Setenv("C4_TELEGRAM_BOT_TOKEN", bot.Token); err != nil {
-		return fmt.Errorf("set env: %w", err)
-	}
-	fmt.Fprintf(os.Stderr, "봇 선택: @%s\n", bot.Username)
-	return initAndLaunch("claude")
 }
