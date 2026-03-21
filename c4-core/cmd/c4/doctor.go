@@ -14,6 +14,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/changmin/c4-core/internal/standards"
 	"github.com/kardianos/service"
 	"github.com/spf13/cobra"
 )
@@ -88,6 +89,7 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 		checkZombieServe,
 		checkSidecarHang,
 		checkSkillHealth,
+		checkStandards,
 	}
 
 	results := make([]checkResult, 0, len(checks))
@@ -891,4 +893,57 @@ func parseSkillEvalAccuracy(content string) (float64, bool) {
 		}
 	}
 	return 0, false
+}
+
+func checkStandards() checkResult {
+	diffs, err := standards.Check(projectDir)
+	if err != nil {
+		return checkResult{
+			Name:    "standards",
+			Status:  checkInfo,
+			Message: fmt.Sprintf("Standards check skipped: %v", err),
+		}
+	}
+	if len(diffs) == 0 {
+		return checkResult{
+			Name:    "standards",
+			Status:  checkOK,
+			Message: "Standards up to date",
+		}
+	}
+	// No lock file = standards not applied yet
+	if len(diffs) == 1 && diffs[0].Status == standards.DiffMissing && diffs[0].FileName == ".piki-lock.yaml" {
+		return checkResult{
+			Name:    "standards",
+			Status:  checkInfo,
+			Message: "Standards not applied (run cq init --team <team> --lang <lang>)",
+		}
+	}
+
+	var modified, missing int
+	var names []string
+	for _, d := range diffs {
+		switch d.Status {
+		case standards.DiffModified:
+			modified++
+			names = append(names, d.FileName+" (modified)")
+		case standards.DiffMissing:
+			missing++
+			names = append(names, d.FileName+" (missing)")
+		}
+	}
+	if modified == 0 && missing == 0 {
+		return checkResult{
+			Name:    "standards",
+			Status:  checkOK,
+			Message: "Standards up to date",
+		}
+	}
+	msg := fmt.Sprintf("%d modified, %d missing: %s", modified, missing, strings.Join(names, ", "))
+	return checkResult{
+		Name:    "standards",
+		Status:  checkWarn,
+		Message: msg,
+		Fix:     "run: cq init --team <team> --lang <lang>",
+	}
 }
